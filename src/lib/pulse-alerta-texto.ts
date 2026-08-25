@@ -9,9 +9,9 @@ export function textoAlerta(alerta: PulseAlerta): string {
   const titulo = p?.titulo ?? (p?.catalog_product_id ? `ficha ${p.catalog_product_id}` : 'um produto do radar');
   const payload = alerta.payload;
   const valor = (v: unknown) => (Number.isFinite(Number(v)) ? fmtBRL(Number(v)) : null);
-  // Nome congelado no payload pelo coletor. Vendedor visto pela primeira vez no tier quente ainda
-  // não tem linha em `pulse_vendedores` (o passo de vendedores só roda no tier completo), então o
-  // fallback pelo id é o caso normal, não a exceção.
+  // Nome congelado no payload pelo coletor. O fallback pelo id atende os 262 alertas históricos,
+  // gravados antes do ADR-0133, cujo payload não tem `nickname` — não vendedor sem perfil: esse o
+  // `entradaDiffRelevante` derruba por dados insuficientes, e ele nunca chega a payload de alerta.
   const quem = typeof payload.nickname === 'string' && payload.nickname.trim()
     ? payload.nickname.trim()
     : (payload.seller_id != null ? `vendedor ${payload.seller_id}` : null);

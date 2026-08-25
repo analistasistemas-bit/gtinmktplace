@@ -304,9 +304,20 @@ export async function gravarAlertasRelevantes(
 /** ADR-0133 D-10: prometer ação num lote 100% informativo treina o operador a ignorar a
  *  notificação — e a próxima, que era real, morre junto. */
 export function textoNotificacaoAlertas(
-  { total, acao, pendentesAcao }: { total: number; acao: number; pendentesAcao: number },
+  { total, acao, pendentesAcao, naoClassificavel }: {
+    total: number; acao: number; pendentesAcao: number;
+    /** A org não tem `conta_externa_id` numérica: sem o nosso seller_id não há "nosso preço", todo
+     *  alerta nasceu `info` e `acao === 0` é falta de dado, não ausência de decisão. Afirmar
+     *  "nenhuma exige decisão" aqui é a errata 1 uma camada acima. */
+    naoClassificavel?: boolean;
+  },
 ): string {
-  if (acao === 0) return `Pulse: ${total} atualização(ões) de mercado, nenhuma exige decisão.`;
+  if (acao === 0) {
+    return naoClassificavel
+      ? `Pulse: ${total} atualização(ões) de mercado. A conta do Mercado Livre desta organização `
+        + 'não está configurada, então nenhum alerta pôde ser avaliado como decisão de preço.'
+      : `Pulse: ${total} atualização(ões) de mercado, nenhuma exige decisão.`;
+  }
   const sufixo = pendentesAcao > acao ? ` (${pendentesAcao} aguardando no total)` : '';
   return `Pulse: ${acao} alerta(s) exigem decisão de preço${sufixo} — abra a aba Alertas do Pulse.`;
 }
@@ -326,8 +337,10 @@ export async function processarColetaOrg(
   const proprioSellerId = conexao.contaExternaId ? Number(conexao.contaExternaId) : null;
   // Sem o nosso seller_id não existe "nosso preço", e TODO alerta da org nasce `info` — a
   // notificação passaria a afirmar "nenhuma exige decisão" quando na verdade não dá para saber.
-  // Falha de configuração não pode virar afirmação positiva em silêncio (ADR-0133 D-2).
-  if (proprioSellerId == null || !Number.isFinite(proprioSellerId)) {
+  // Falha de configuração não pode virar afirmação positiva em silêncio (ADR-0133 D-2). O log não
+  // basta: quem lê a notificação não lê o log, então a flag viaja até o texto.
+  const naoClassificavel = proprioSellerId == null || !Number.isFinite(proprioSellerId);
+  if (naoClassificavel) {
     console.error(
       `pulse-coletar: org ${orgId} sem conta_externa_id numérica em marketplace_connections — `
       + 'nenhum alerta desta execução pode ser classificado como decisão de preço.',
@@ -686,6 +699,7 @@ export async function processarColetaOrg(
         .eq('org_id', orgId).eq('lido', false).eq('severidade', 'acao');
       await notificarCategoria(admin, orgId, 'pulse', textoNotificacaoAlertas({
         total: alertasTotal, acao: resultadoAlertas.acao, pendentesAcao: count ?? 0,
+        naoClassificavel,
       }));
     }
   }

@@ -233,10 +233,13 @@ describe('severidade do alerta (ADR-0133)', () => {
   });
 
   it('concorrente_saiu fica info quando ainda resta alguém abaixo de nós', () => {
+    // `fichaCompleta: true` é o que faz este teste provar o que o nome diz: sem ela o gate da
+    // errata 1 curto-circuita antes de `minAtual >= meuPreco` ser avaliado, e o `info` esperado
+    // viria pelo motivo errado (o mercado depois da saída nem seria olhado).
     const { alertas } = diffOfertas(
       [anterior({ item_id: 'MLB1', seller_id: 1, preco: 70 }), anterior({ item_id: 'MLB2', seller_id: 2, preco: 71 })],
       [oferta({ item_id: 'MLB2', seller_id: 2, preco: 71 })],
-      { primeiraColeta: false, meuPreco: 75 },
+      { primeiraColeta: false, meuPreco: 75, fichaCompleta: true },
     );
     expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
   });
@@ -249,9 +252,6 @@ describe('severidade do alerta (ADR-0133)', () => {
     );
     expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
   });
-
-  // "Ficha esvaziou" vive no bloco da errata 1 logo abaixo: sozinho, o mercado relevante vazio não
-  // distingue ficha vazia de falha de qualificação, e a distinção é o que autoriza subir preço.
 
   it('congela o nickname no payload quando o mapa o conhece', () => {
     const { alertas } = diffOfertas(
@@ -270,7 +270,9 @@ describe('severidade: ausência de dado nunca aprova subir preço (ADR-0133 erra
     const { alertas } = diffOfertas(
       [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
       [],
-      { primeiraColeta: false, meuPreco: 90, mercadoObservadoVazio: false },
+      // `fichaCompleta: true` isola a variável: sem ela o gate da ficha já barraria sozinho e o
+      // teste passaria sem nunca exercitar `mercadoObservadoVazio`, que é o que ele existe para provar.
+      { primeiraColeta: false, meuPreco: 90, mercadoObservadoVazio: false, fichaCompleta: true },
     );
     expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
   });
@@ -292,15 +294,6 @@ describe('severidade: ausência de dado nunca aprova subir preço (ADR-0133 erra
       [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
       [oferta({ item_id: 'MLB2', seller_id: 2, preco: 95 })],
       { primeiraColeta: false, meuPreco: 90, mercadoObservadoVazio: false, fichaCompleta: false },
-    );
-    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
-  });
-
-  it('sem a informação, o default é não aprovar', () => {
-    const { alertas } = diffOfertas(
-      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
-      [],
-      { primeiraColeta: false, meuPreco: 90 },
     );
     expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
   });

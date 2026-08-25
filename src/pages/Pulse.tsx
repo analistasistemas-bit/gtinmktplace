@@ -64,6 +64,7 @@ export default function Pulse() {
     queryKey: QK.pulseAlertasContagem('acao'),
     queryFn: () => contarPulseAlertas('acao'),
     enabled: !!modulos?.includes('pulse'),
+    staleTime: 30_000,
   });
 
   // Uma única query de ofertas para a página inteira: KPIs e tabela leem o mesmo Map. A chave usa
@@ -141,7 +142,7 @@ export default function Pulse() {
           <TabsTrigger value="sonar">Sonar</TabsTrigger>
           <TabsTrigger value="alertas">
             Alertas
-            {!!acaoPendente && acaoPendente > 0 && (
+            {!!acaoPendente && (
               <span className="ml-1.5 rounded-full bg-warning px-1.5 text-xs font-medium text-warning-foreground">
                 {acaoPendente}
               </span>

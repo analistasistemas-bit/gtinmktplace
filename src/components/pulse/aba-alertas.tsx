@@ -45,12 +45,14 @@ export function AbaAlertas({
   const { data: contagem } = useQuery({
     queryKey: QK.pulseAlertasContagem(severidade),
     queryFn: () => contarPulseAlertas(severidade),
+    staleTime: 30_000,
   });
   // Necessária mesmo fora do filtro Informativo: é o número que o estado vazio de Ação oferece
   // como próximo passo ("Ver informativos (N)").
   const { data: contagemInfo } = useQuery({
     queryKey: QK.pulseAlertasContagem('info'),
     queryFn: () => contarPulseAlertas('info'),
+    staleTime: 30_000,
   });
 
   const chaveLista = QK.pulseAlertas(severidade);
@@ -113,7 +115,22 @@ export function AbaAlertas({
 
   const marcarTodosLidos = useMutation({
     mutationFn: (ateCriadoEm: string) => marcarAlertasLidos(severidade, ateCriadoEm),
-    onError: (e: Error) => toast.error(e.message),
+    // Mesmo argumento do ✓ de linha única, e mais forte em lote: com 145 não lidos, sem isto as 50
+    // linhas ficam paradas na tela durante o update MAIS o refetch da lista e das duas contagens.
+    // Esvaziar tudo é correto sob a âncora — a lista vem em ordem decrescente, então `maisNovoVisto`
+    // é o máximo do que está renderizado e cada linha em cache é, por construção, `<= ateCriadoEm`.
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: chaveLista });
+      const anterior = qc.getQueryData<PaginasAlertas>(chaveLista);
+      qc.setQueryData<PaginasAlertas>(chaveLista, (atual) => (
+        atual && { ...atual, pages: atual.pages.map(() => []) }
+      ));
+      return { anterior };
+    },
+    onError: (e: Error, _ate, ctx) => {
+      if (ctx?.anterior) qc.setQueryData(chaveLista, ctx.anterior);
+      toast.error(e.message);
+    },
     onSettled: invalidar,
   });
 
@@ -158,11 +175,10 @@ export function AbaAlertas({
                   key={valor}
                   type="button"
                   aria-pressed={ativo}
-                  // `data-state`, e só ele, é o que o Radix marcava — replicar mantém a aparência
-                  // idêntica. Cuidado: as classes herdadas do TabsTrigger pedem `data-active`, que
-                  // o Radix nunca escreve; marcá-lo aqui daria a estes botões um realce que nenhuma
-                  // outra aba do app tem. (Que o realce ativo não apareça em lugar nenhum é um
-                  // desencontro antigo do ui/tabs.tsx, para resolver fora desta revisão.)
+                  // `data-state` é o que o Radix marcava e o que o realce de ativo usa — replicá-lo
+                  // dá a estes botões a aparência idêntica à das abas de verdade. Medido no CSS
+                  // computado contra o dev server: "Ação" ativo e a aba "Alertas" ativa resolvem
+                  // para o mesmo `oklab(1 0 0 / 0.042)`, e os inativos para transparente.
                   data-state={ativo ? 'active' : 'inactive'}
                   className={tabsTriggerClassName}
                   onClick={() => setSeveridade(valor)}

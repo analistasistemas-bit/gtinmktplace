@@ -74,6 +74,8 @@ export interface PulseVendedor {
   perfil_coletado_em: string | null;
 }
 /** ADR-0133. `acao` = muda decisão de preço; `info` = movimento de mercado sem decisão. */
+// Espelha `SeveridadeAlerta` de supabase/functions/_shared/pulse/tipos.ts — os dois runtimes não
+// se importam (Deno vs. Vite), então o tipo vive nos dois lados. Manter em sincronia.
 export type SeveridadeAlerta = 'acao' | 'info';
 export type FiltroSeveridade = SeveridadeAlerta | 'todos';
 export const ALERTAS_POR_PAGINA = 50;

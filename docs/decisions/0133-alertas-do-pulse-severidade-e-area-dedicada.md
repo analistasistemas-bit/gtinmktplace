@@ -1,6 +1,6 @@
 # ADR-0133 — Alertas do Pulse: severidade gravada e área dedicada
 
-**Status:** Aceito — design fechado em entrevista (brainstorming + revisão adversarial, 2026-08-25); backend em produção desde 2026-08-25 (migration aplicada, `pulse-coletar` v25), frontend em implementação
+**Status:** Aceito — design fechado em entrevista (brainstorming + revisão adversarial, 2026-08-25); backend em produção desde 2026-08-25 (migration aplicada, `pulse-coletar` v26), frontend em implementação
 **Data:** 2026-08-25
 **Relacionados:** ADR-0119 (Pulse v1), ADR-0130 (concorrentes relevantes), ADR-0086 (config org-scoped)
 
@@ -105,9 +105,16 @@ ter existido para ele — e o número que o botão anunciou não seria o número
 
 **Invariante real: "nada mais novo do que o operador viu"** — não "nada que o operador não viu". O
 teto exclui apenas o que for mais novo que a primeira linha; tudo o que for mais antigo é marcado,
-**inclusive as páginas que ninguém rolou**. Isso é intencional e é o que o D-7 promete: o rótulo
-mostra a contagem verdadeira do filtro e o clique marca exatamente esse conjunto. A âncora protege
-contra a corrida com o coletor, não contra a paginação.
+**inclusive as páginas que ninguém rolou**. Isso é intencional. A âncora protege contra a corrida
+com o coletor, não contra a paginação.
+
+**O rótulo e o clique podem divergir, e a diferença é sempre para menos.** `contarPulseAlertas` não
+aplica a âncora (ela nem existe no momento da contagem) e `marcarAlertasLidos` aplica: um alerta que
+o coletor insira entre a contagem e a leitura da lista entra no número do botão e fica fora do
+`.lte('criado_em', …)`. Na prática o rótulo diz "Marcar 150" e o clique marca 145, com os 5 restantes
+continuando na tela depois do refetch. É o trade-off aceito do D-7: preferimos deixar a mais do que
+apagar em silêncio um alerta que nunca existiu para o operador. Fechar a janela exigiria contar e
+marcar na mesma transação, e com ~12 alertas de ação por dia isso não se paga.
 
 ## Consequências aceitas
 

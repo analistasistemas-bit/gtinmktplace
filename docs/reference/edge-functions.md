@@ -963,7 +963,11 @@ falha ao ler `organizations` não libera.
   histórico acumula desde o dia 1), mas o texto de ação manda abrir a aba Alertas do Pulse e uma
   org sem o módulo não tem esse menu: os operadores da Avil chegaram a receber alertas de um menu
   que não podiam abrir (2026-08-18). O texto informativo não manda abrir nada, mas o gate é do
-  envio inteiro — uma notificação sobre um módulo que a org não tem não teria destino. Os alertas continuam gravados e aparecem no painel quando o módulo for ligado.
+  envio inteiro — uma notificação sobre um módulo que a org não tem não teria destino. Os alertas continuam gravados e aparecem na aba Alertas do Pulse quando o módulo for ligado.
+  Há um **terceiro texto** para a org sem `conta_externa_id` numérica em `marketplace_connections`:
+  sem o nosso `seller_id` não existe "nosso preço", todo alerta nasce `info` e `acao === 0` é
+  falta de dado, não ausência de decisão — a notificação diz que a conta não está configurada em
+  vez de afirmar "nenhuma exige decisão" (mesma doutrina da errata 1, uma camada acima).
   **Passo 7 — visitas 30d (ADR-0120), só no baseline** (`baseline = !scopedOrgId && tier ===
   'completo'`: a varredura agendada da madrugada, nunca o botão manual nem o tier `quente` — senão
   cada clique dispararia a varredura inteira por um número que não se move a cada 6h). Mede as

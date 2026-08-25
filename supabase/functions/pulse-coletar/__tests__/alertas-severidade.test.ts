@@ -166,4 +166,15 @@ describe('textoNotificacaoAlertas (ADR-0133 D-10)', () => {
     expect(textoNotificacaoAlertas({ total: 9, acao: 2, pendentesAcao: 7 }))
       .toBe('Pulse: 2 alerta(s) exigem decisão de preço (7 aguardando no total) — abra a aba Alertas do Pulse.');
   });
+
+  it('não afirma ausência de decisão quando a org não pôde ser classificada', () => {
+    // Espelho da errata 1 uma camada acima: sem `conta_externa_id` numérica não existe "nosso
+    // preço", todo alerta nasce `info` e `acao` é 0 por falta de dado — não por ausência de
+    // decisão. O texto padrão afirmaria "nenhuma exige decisão" sem ter como saber.
+    expect(textoNotificacaoAlertas({ total: 4, acao: 0, pendentesAcao: 0, naoClassificavel: true }))
+      .toBe(
+        'Pulse: 4 atualização(ões) de mercado. A conta do Mercado Livre desta organização não está '
+        + 'configurada, então nenhum alerta pôde ser avaliado como decisão de preço.',
+      );
+  });
 });
