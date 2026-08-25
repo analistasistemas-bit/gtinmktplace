@@ -42,9 +42,13 @@ interface AlertaPendente {
   anteriores: OfertaAnteriorComVisitas[];
   atuais: OfertaColetada[];
   estadoGravado: boolean;
+  /** Preço da nossa oferta no MESMO snapshot das concorrentes (ADR-0133 D-3). Viaja em memória
+   *  de propósito: reler `pulse_produtos` herdaria o update abaixo, que não checa erro. */
+  meuPreco: number | null;
 }
 interface PerfilVendedorAtual {
   seller_id: number;
+  nickname: string | null;
   transactions_total: number | null;
   nivel: string | null;
   dia: string;
@@ -188,7 +192,7 @@ async function perfisAtuaisParaAlertas(
     const lote = ids.slice(inicio, inicio + 100);
     const perfis = await paginarTudo<PerfilVendedorAtual>((de, ate) =>
       admin.from('pulse_vendedores')
-        .select('seller_id, transactions_total, nivel, dia, perfil_coletado_em')
+        .select('seller_id, nickname, transactions_total, nivel, dia, perfil_coletado_em')
         .eq('org_id', orgId).in('seller_id', lote)
         .order('seller_id', { ascending: true })
         .order('perfil_coletado_em', { ascending: false, nullsFirst: false })
@@ -237,15 +241,19 @@ function ofertaParaDiffRelevante<T extends OfertaColetada>(
   };
 }
 
-async function gravarAlertasRelevantes(
+export async function gravarAlertasRelevantes(
   admin: SupabaseClient, orgId: string, pendentes: AlertaPendente[],
-): Promise<number> {
-  if (pendentes.length === 0) return 0;
+): Promise<{ total: number; acao: number }> {
+  if (pendentes.length === 0) return { total: 0, acao: 0 };
   const [perfis, visitasAtuais] = await Promise.all([
     perfisAtuaisParaAlertas(admin, orgId, pendentes),
     visitasAtuaisParaAlertas(admin, orgId, pendentes),
   ]);
+  const nicknames = new Map<number, string | null>(
+    [...perfis.entries()].map(([sellerId, p]) => [sellerId, p.nickname ?? null]),
+  );
   let total = 0;
+  let acao = 0;
   for (const pendente of pendentes) {
     const anteriores = entradaDiffRelevante(pendente.anteriores.map((oferta) =>
       ofertaParaDiffRelevante(oferta, perfis.get(oferta.seller_id), oferta.visitas_30d),
@@ -259,6 +267,12 @@ async function gravarAlertasRelevantes(
     ));
     const { alertas } = diffOfertas(anteriores, atuais, {
       primeiraColeta: pendente.anteriores.length === 0,
+      meuPreco: pendente.meuPreco,
+      nicknames,
+      // ANTES da qualificação: `atuais` aqui é `pendente.atuais`, cru. Passar a lista já filtrada
+      // faria "não qualifiquei ninguém" se passar por "a ficha esvaziou" — e o alerta mandaria
+      // subir preço com concorrente vendendo abaixo (ADR-0133 errata 1).
+      mercadoObservadoVazio: pendente.atuais.length === 0,
     });
     if (alertas.length === 0) continue;
     if (!pendente.estadoGravado) {
@@ -268,12 +282,27 @@ async function gravarAlertasRelevantes(
       continue;
     }
     const { error } = await admin.from('pulse_alertas').insert(
-      alertas.map((a) => ({ org_id: orgId, produto_id: pendente.produtoId, tipo: a.tipo, payload: a.payload })),
+      alertas.map((a) => ({
+        org_id: orgId, produto_id: pendente.produtoId,
+        tipo: a.tipo, payload: a.payload, severidade: a.severidade,
+      })),
     );
-    if (!error) total += alertas.length;
-    else console.warn(`pulse-coletar: alertas do produto ${pendente.produtoId} falharam:`, error.message);
+    if (!error) {
+      total += alertas.length;
+      acao += alertas.filter((a) => a.severidade === 'acao').length;
+    } else console.warn(`pulse-coletar: alertas do produto ${pendente.produtoId} falharam:`, error.message);
   }
-  return total;
+  return { total, acao };
+}
+
+/** ADR-0133 D-10: prometer ação num lote 100% informativo treina o operador a ignorar a
+ *  notificação — e a próxima, que era real, morre junto. */
+export function textoNotificacaoAlertas(
+  { total, acao, pendentesAcao }: { total: number; acao: number; pendentesAcao: number },
+): string {
+  if (acao === 0) return `Pulse: ${total} atualização(ões) de mercado, nenhuma exige decisão.`;
+  const sufixo = pendentesAcao > acao ? ` (${pendentesAcao} aguardando no total)` : '';
+  return `Pulse: ${acao} alerta(s) exigem decisão de preço${sufixo} — abra a aba Alertas do Pulse.`;
 }
 
 export async function processarColetaOrg(
@@ -383,16 +412,21 @@ export async function processarColetaOrg(
     }
     // A persistência conserva TODAS as ofertas. O diff que gera alerta só será calculado depois
     // dos perfis e das visitas desta execução, quando já há dados para qualificar cada lado.
-    alertasPendentes.push({ produtoId: produto.id, anteriores, atuais, estadoGravado });
-    // Nome da ficha: uma vez por produto, direto do ML. `anuncios_externos.titulo` está vazio na
-    // maioria dos anúncios, e sem nome a lista mostra só o id da ficha ("MLB18407878"), que não
-    // diz nada ao operador. Falha aqui não é fatal — tenta de novo no próximo ciclo.
+    //
     // Preço VIVO do nosso anúncio, da mesma resposta das concorrentes (Errata 4 do ADR-0119).
     // Escrito sempre — inclusive como null: se o anúncio saiu da ficha (pausado, sem estoque,
     // vínculo perdido), manter o último preço conhecido faria a tela afirmar uma posição de
     // mercado que não existe mais. Só chegamos aqui com a leitura da ficha bem-sucedida.
+    // Lido ANTES do push porque a severidade do alerta compara contra ele (ADR-0133 D-3).
     const nossa = extrairNossaOferta(json, proprioSellerId);
     if (nossa) precoEfetivoPorItem.set(nossa.item_id, nossa.preco);
+    alertasPendentes.push({
+      produtoId: produto.id, anteriores, atuais, estadoGravado,
+      meuPreco: nossa?.preco ?? null,
+    });
+    // Nome da ficha: uma vez por produto, direto do ML. `anuncios_externos.titulo` está vazio na
+    // maioria dos anúncios, e sem nome a lista mostra só o id da ficha ("MLB18407878"), que não
+    // diz nada ao operador. Falha aqui não é fatal — tenta de novo no próximo ciclo.
     const agora = new Date().toISOString();
     const patch: Record<string, string | number | null> = {
       ultimo_snapshot_em: agora,
@@ -618,7 +652,8 @@ export async function processarColetaOrg(
 
   // 7) Alertas usam somente ofertas relevantes, avaliadas depois de perfis e visitas. A coleta
   // continua persistindo o mercado bruto acima para auditoria e para uma qualificação futura.
-  alertasTotal = await gravarAlertasRelevantes(admin, orgId, alertasPendentes);
+  const resultadoAlertas = await gravarAlertasRelevantes(admin, orgId, alertasPendentes);
+  alertasTotal = resultadoAlertas.total;
 
   // Uma notificação agregada por org por execução — SÓ para org com o módulo habilitado.
   if (alertasTotal > 0) {
@@ -630,13 +665,10 @@ export async function processarColetaOrg(
     } else {
       const { count } = await admin.from('pulse_alertas')
         .select('id', { count: 'exact', head: true })
-        .eq('org_id', orgId).eq('lido', false);
-      const pendentes = count ?? 0;
-      const sufixo = pendentes > alertasTotal ? ` (${pendentes} aguardando no total)` : '';
-      await notificarCategoria(
-        admin, orgId, 'pulse',
-        `Pulse: ${alertasTotal} alerta(s) novo(s) de mercado${sufixo} — abra o menu Pulse para agir.`,
-      );
+        .eq('org_id', orgId).eq('lido', false).eq('severidade', 'acao');
+      await notificarCategoria(admin, orgId, 'pulse', textoNotificacaoAlertas({
+        total: alertasTotal, acao: resultadoAlertas.acao, pendentesAcao: count ?? 0,
+      }));
     }
   }
 

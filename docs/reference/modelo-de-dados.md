@@ -729,9 +729,19 @@ valor do dia e a UF nunca entraria).
 ### `pulse_alertas`
 Alerta gerado pelo diff de ofertas de uma coleta. `produto_id` (FK `pulse_produtos`, `on delete
 cascade`), `tipo` (check: `preco_caiu` | `novo_concorrente` | `concorrente_saiu`), `payload`
-(jsonb, default `{}`), `lido` (default `false`). Índice `pulse_alertas_org_lido_idx` em
-`(org_id, lido, criado_em desc)`. RLS: select org + **update org restrito à coluna `lido`**
+(jsonb, default `{}`), `lido` (default `false`), `severidade` (check: `acao` | `info`, default
+`info`). Índices `pulse_alertas_org_lido_idx` em `(org_id, lido, criado_em desc)` e
+`pulse_alertas_org_sev_lido_idx` em `(org_id, severidade, lido, criado_em desc)` — este último
+serve o badge e o filtro por severidade. RLS: select org + **update org restrito à coluna `lido`**
 (`grant update (lido)`) — o sino de alertas do app marca como lido sem passar por edge function.
+
+**`severidade` (ADR-0133, `20260825133452_pulse_alertas_severidade.sql`).** `acao` = o evento muda
+a decisão de preço (alguém passou a vender abaixo de nós, ou o último que estava abaixo saiu);
+`info` = movimento de mercado sem decisão. É **congelada no instante do evento** pelo coletor,
+comparando contra o nosso preço vivo do mesmo snapshot (`payload.meu_preco`) — nunca recalculada
+na leitura, porque o preço de hoje não explica um alerta de ontem. Sem preço nosso no snapshot, o
+alerta nasce `info`: ausência de dado nunca aprova. O `default 'info'` **é** o backfill dos alertas
+históricos, pelo mesmo motivo.
 
 **Categoria de notificação `pulse`.** A mesma migration altera dois CHECK constraints para incluir
 `'pulse'`: `notificacoes_categoria_check` (`public.notificacoes.categoria`) e

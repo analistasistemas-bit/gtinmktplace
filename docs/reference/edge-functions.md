@@ -936,18 +936,27 @@ falha ao ler `organizations` não libera.
   valor visto e reemitir alerta a cada rodada. O link público de cada oferta é derivado localmente
   do `item_id` (`MLB123` → `https://produto.mercadolivre.com.br/MLB-123`), porque o endpoint
   `/items` restringe detalhes de anúncios concorrentes; links válidos já gravados são preservados.
-  A notificação traz **os novos desta execução e o
-  total ainda não lido** — sem o segundo número a conta nunca fecha com o painel, que mostra o
-  acumulado pendente (três execuções de 5, 3 e 1 viram "9 alertas novos" na tela). O caminho
+  A notificação conta **os alertas de severidade `acao` desta execução e o total de `acao` ainda
+  não lido** — sem o segundo número a conta nunca fecha com a aba, que mostra o acumulado
+  pendente. Lote 100% informativo não promete decisão: o texto vira "N atualização(ões) de
+  mercado, nenhuma exige decisão" (ADR-0133 D-10), porque prometer ação num lote informativo treina
+  o operador a ignorar a notificação seguinte, que era real. O caminho
   interativo (botão, sem `upstash-signature`) checa `exigirModulo(admin, scopedOrgId, 'pulse')`
   logo após resolver `scopedOrgId` (achado F9, CLAUDE-SECURITY-20260822-113640 — faltava; o
   caminho QStash não é alcançável por atacante e ficou fora do escopo do achado).
   **Alertas usam só o mercado relevante** (`gravarAlertasRelevantes`, avaliado depois de perfis e
   visitas frescos) — a coleta continua persistindo o mercado observado bruto para auditoria, mas
   `preco_caiu`/`novo_concorrente`/`concorrente_saiu` só disparam para ofertas qualificadas pela
-  regra compartilhada (ver `analisar-viabilidade` abaixo). Alertas em `pulse_alertas` + 1 notificação agregada por org por execução na categoria `pulse` —
+  regra compartilhada (ver `analisar-viabilidade` abaixo). **Cada alerta nasce com `severidade`
+  (ADR-0133)**: o coletor leva ao classificador o nosso preço vivo do MESMO snapshot (lido de
+  `extrairNossaOferta` antes de enfileirar o pendente, não relido do banco) e o `nickname` do
+  vendedor, congelado no `payload`. `acao` exige um preço medido abaixo do nosso; `concorrente_saiu`
+  ainda exige que ninguém tenha ficado abaixo — e "nenhum relevante sobrou" só aprova quando a
+  **ficha veio vazia antes da qualificação** (`mercadoObservadoVazio`, olhando a lista crua), senão
+  "não consegui qualificar ninguém" mandaria subir preço com concorrente vendendo mais barato
+  (errata 1 do ADR-0133). Alertas em `pulse_alertas` + 1 notificação agregada por org por execução na categoria `pulse` —
   **somente para org com `pulse` em `modulos_habilitados`**. A coleta roda para todas as orgs (o
-  histórico acumula desde o dia 1), mas a mensagem diz "abra o menu Pulse" e uma org sem o módulo
+  histórico acumula desde o dia 1), mas a mensagem manda abrir o Pulse e uma org sem o módulo
   não tem esse menu: os operadores da Avil chegaram a receber alertas de um menu que não podiam
   abrir (2026-08-18). Os alertas continuam gravados e aparecem no painel quando o módulo for ligado.
   **Passo 7 — visitas 30d (ADR-0120), só no baseline** (`baseline = !scopedOrgId && tier ===
