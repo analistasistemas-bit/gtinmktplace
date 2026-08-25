@@ -1,6 +1,6 @@
 # ADR-0133 — Alertas do Pulse: severidade gravada e área dedicada
 
-**Status:** Aceito — design fechado em entrevista (brainstorming + revisão adversarial, 2026-08-25); implementação não iniciada
+**Status:** Aceito — design fechado em entrevista (brainstorming + revisão adversarial, 2026-08-25); backend em produção desde 2026-08-25 (migration aplicada, `pulse-coletar` v25), frontend em implementação
 **Data:** 2026-08-25
 **Relacionados:** ADR-0119 (Pulse v1), ADR-0130 (concorrentes relevantes), ADR-0086 (config org-scoped)
 
@@ -58,7 +58,7 @@ nos dois lados antes do diff que gera alerta. D-1 do ADR-0130 está implementado
 | **D-7** | **Toda contagem exibida vem de `count: 'exact', head: true`**, separada da query de página, que passa a usar `.range()` com "carregar mais". Fim do `.limit(20)` com `lista.length` no rótulo. | Um número exibido tem de ser o número verdadeiro. O teto de leitura é da página, não da contagem. |
 | **D-8** | A coluna nasce `not null default 'info'` com `check (severidade in ('acao','info'))`; os alertas já existentes ficam **todos** como `info`, sem `UPDATE` de backfill. | Classificar 262 linhas históricas contra o preço de hoje contradiz D-1. O default resolve o backfill na própria migration, e essas linhas serão marcadas como lidas em um dia de uso. |
 | **D-9** | O escopo de "Marcar N como lidos" só admite **colunas locais de `pulse_alertas`** (`severidade`, `tipo`, `lido`). Busca por título de produto **não existe** na área. | O `update` do PostgREST não filtra por coluna de recurso embutido (`pulse_produtos.titulo`). Uma busca no escopo do marcar ou apagaria alertas que o operador não viu, ou marcaria só os carregados e mentiria no N — as duas saídas são piores que não ter busca. |
-| **D-10** | A notificação por Telegram passa a distinguir severidade: "para agir" só quando houver `acao > 0`; caso contrário, texto neutro. O link carrega `?tab=alertas`. | Uma notificação que promete ação e entrega uma lista informativa treina o operador a ignorá-la — e a próxima, que era real, morre junto. |
+| **D-10** | A notificação por Telegram passa a distinguir severidade: "para agir" só quando houver `acao > 0`; caso contrário, texto neutro. O texto de ação cita a aba Alertas por escrito — **sem deep-link**: `notificacoes` grava só `user_id, org_id, categoria, texto`, e o Telegram recebe texto puro. | Uma notificação que promete ação e entrega uma lista informativa treina o operador a ignorá-la — e a próxima, que era real, morre junto. |
 
 ## Errata 1 (2026-08-25, revisão do diff da Task 1 — antes do deploy) — ausência de dado não aprova
 
@@ -77,9 +77,18 @@ relevantes a R$80 e R$85; hoje o de R$80 sai e o de R$85 aparece sem perfil. A r
 classificaria `acao`, a notificação diria "exige decisão de preço", e o operador subiria o preço com
 alguém vendendo mais barato — perdendo posição de venda.
 
-**Correção:** a aprovação passa a exigir que a ficha não tenha trazido **nenhuma oferta observada**
-(antes da qualificação, não depois), informação que o coletor tem e repassa ao classificador. Sem
-essa informação, o padrão é **não aprovar**. Ausência de dado nunca aprova — a mesma doutrina que já
+**Correção — são duas condições, uma para cada motivo acima:**
+
+1. Contra a não-qualificação: a aprovação exige que a ficha não tenha trazido **nenhuma oferta
+   observada**, contada **antes** da qualificação e não depois.
+2. Contra o truncamento: a aprovação exige que a ficha tenha sido **lida por inteiro**. Não basta
+   `ofertasNaoLidas() === 0` — essa função devolve `0` tanto para "li tudo" quanto para "a resposta
+   não trouxe `paging`", ambiguidade inofensiva num aviso de log e inaceitável numa resposta que
+   autoriza subir preço. A checagem exige o `paging.total` explicitamente.
+
+Sem qualquer uma das duas informações, o padrão é **não aprovar** — inclusive quando o menor preço
+lido está acima do nosso, porque numa ficha truncada esse "menor" é só o menor da página lida.
+Ausência de dado nunca aprova — a mesma doutrina que já
 valia para `meu_preco` nulo, e o espelho do D-3 do ADR-0130 ("ausência de dado nunca reprova
 sozinha"): aqui, ausência de dado nunca *aprova* sozinha.
 

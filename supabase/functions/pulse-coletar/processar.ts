@@ -10,7 +10,7 @@ import { paginarTudo } from '../_shared/pagina.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import {
-  extrairNossaOferta, ofertasNaoLidas, parseComissao, parseOfertasProduto, parsePriceToWin,
+  extrairNossaOferta, leituraCompletaDaFicha, ofertasNaoLidas, parseComissao, parseOfertasProduto, parsePriceToWin,
   parseStatusAnuncios, type AnuncioMultiget,
 } from '../_shared/pulse/parse.ts';
 import { enrichPulsePermalinks } from '../_shared/pulse/permalink.ts';
@@ -45,8 +45,10 @@ interface AlertaPendente {
   /** Preço da nossa oferta no MESMO snapshot das concorrentes (ADR-0133 D-3). Viaja em memória
    *  de propósito: reler `pulse_produtos` herdaria o update abaixo, que não checa erro. */
   meuPreco: number | null;
-  /** A ficha coube inteira na página lida (`ofertasNaoLidas === 0`). Sem isso, o menor preço
-   *  observado é só o menor do que foi LIDO, e não autoriza subir preço (ADR-0133 errata 1). */
+  /** A ficha coube inteira na página lida — por `leituraCompletaDaFicha`, não por
+   *  `ofertasNaoLidas === 0`: aquele 0 também significa "a resposta não trouxe paging", e aqui
+   *  "não sei" não pode valer por "li tudo". Sem isso, o menor preço observado é só o menor do que
+   *  foi LIDO, e não autoriza subir preço (ADR-0133 errata 1). */
   fichaCompleta: boolean;
 }
 interface PerfilVendedorAtual {
@@ -363,7 +365,7 @@ export async function processarColetaOrg(
     // json===null viraria diffOfertas([...], []) e fabricaria concorrente_saiu para todo mundo.
     if (json === null) return;
     const naoLidas = ofertasNaoLidas(json);
-    const fichaCompleta = naoLidas === 0;
+    const fichaCompleta = leituraCompletaDaFicha(json);
     if (naoLidas > 0) {
       console.warn(
         `pulse-coletar: ficha ${produto.catalog_product_id} tem ${naoLidas} oferta(s) além da página lida — radar parcial`,

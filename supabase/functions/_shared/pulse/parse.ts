@@ -74,6 +74,20 @@ export function ofertasNaoLidas(json: unknown): number {
 }
 
 /**
+ * A ficha foi lida por inteiro. **Não** é o mesmo que `ofertasNaoLidas() === 0`: aquela devolve 0
+ * também quando a resposta não trouxe `paging`, porque para um aviso de log "não sei" e "li tudo"
+ * dão na mesma. Aqui não dão: esta resposta autoriza o alerta de subir preço (ADR-0133 errata 1),
+ * e uma oferta mais barata escondida na página não lida faria a regra afirmar "ninguém abaixo de
+ * você" contra um concorrente real. Sem `paging.total` não sabemos — e não saber nunca aprova.
+ */
+export function leituraCompletaDaFicha(json: unknown): boolean {
+  const total = (json as { paging?: { total?: unknown } } | null)?.paging?.total;
+  const results = (json as { results?: unknown } | null)?.results;
+  if (typeof total !== 'number' || !Array.isArray(results)) return false;
+  return total <= results.length;
+}
+
+/**
  * Multiget `/items?ids=...` — situação dos NOSSOS anúncios. A resposta é uma lista de envelopes
  * `{ code, body }`: um id inválido volta com `code` de erro no meio dos que deram certo, e tratar
  * o lote inteiro como perdido apagaria a situação de todos os outros.

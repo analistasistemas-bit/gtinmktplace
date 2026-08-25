@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  extrairNossaOferta, ofertasNaoLidas, parseComissao, parseOfertasProduto, parsePriceToWin,
+  extrairNossaOferta, leituraCompletaDaFicha, ofertasNaoLidas, parseComissao, parseOfertasProduto, parsePriceToWin,
   parseStatusAnuncios,
 } from '../parse.ts';
 
@@ -179,6 +179,30 @@ describe('ofertasNaoLidas', () => {
   it('sem paging não inventa excedente', () => {
     expect(ofertasNaoLidas({ results: [{}] })).toBe(0);
     expect(ofertasNaoLidas(null)).toBe(0);
+  });
+});
+
+// O 0 de `ofertasNaoLidas` é ambíguo por desenho — "li tudo" e "não sei" devolvem o mesmo número,
+// o que basta para um aviso de log. Esta função desfaz a ambiguidade porque a resposta dela
+// autoriza o alerta de subir preço (ADR-0133 errata 1).
+describe('leituraCompletaDaFicha', () => {
+  it('ficha inteira lida → true', () => {
+    expect(leituraCompletaDaFicha({ results: [{}, {}], paging: { total: 2 } })).toBe(true);
+  });
+
+  it('ficha truncada → false', () => {
+    expect(leituraCompletaDaFicha({ results: new Array(100).fill({}), paging: { total: 137 } })).toBe(false);
+  });
+
+  it('sem paging → false, porque não saber não é o mesmo que ter lido tudo', () => {
+    expect(leituraCompletaDaFicha({ results: [{}] })).toBe(false);
+    expect(leituraCompletaDaFicha({ results: [{}], paging: {} })).toBe(false);
+    expect(leituraCompletaDaFicha(null)).toBe(false);
+  });
+
+  it('results ausente ou não-array → false', () => {
+    expect(leituraCompletaDaFicha({ paging: { total: 0 } })).toBe(false);
+    expect(leituraCompletaDaFicha({ results: 'nada', paging: { total: 0 } })).toBe(false);
   });
 });
 
