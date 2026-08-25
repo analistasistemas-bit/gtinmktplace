@@ -225,7 +225,7 @@ describe('severidade do alerta (ADR-0133)', () => {
     const { alertas } = diffOfertas(
       [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 }), anterior({ item_id: 'MLB2', seller_id: 2, preco: 95 })],
       [oferta({ item_id: 'MLB2', seller_id: 2, preco: 95 })],
-      { primeiraColeta: false, meuPreco: 90 },
+      { primeiraColeta: false, meuPreco: 90, fichaCompleta: true },
     );
     const saiu = alertas.filter((a) => a.tipo === 'concorrente_saiu');
     expect(saiu).toHaveLength(1);
@@ -279,9 +279,21 @@ describe('severidade: ausência de dado nunca aprova subir preço (ADR-0133 erra
     const { alertas } = diffOfertas(
       [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
       [],
-      { primeiraColeta: false, meuPreco: 90, mercadoObservadoVazio: true },
+      { primeiraColeta: false, meuPreco: 90, mercadoObservadoVazio: true, fichaCompleta: true },
     );
     expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('acao');
+  });
+
+  it('não vira acao quando a ficha foi truncada e a oferta mais barata ficou fora da página', () => {
+    // Motivo #2 da errata 1: a ficha tem mais de 100 ofertas. A página lida trouxe 100 relevantes,
+    // todos >= 95, e a oferta de 85 (abaixo dos nossos 90) está na posição 140, não lida.
+    // `mercadoObservadoVazio` não protege aqui — a lista crua veio cheia. Só `fichaCompleta` sabe.
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
+      [oferta({ item_id: 'MLB2', seller_id: 2, preco: 95 })],
+      { primeiraColeta: false, meuPreco: 90, mercadoObservadoVazio: false, fichaCompleta: false },
+    );
+    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
   });
 
   it('sem a informação, o default é não aprovar', () => {
@@ -339,7 +351,7 @@ describe('severidade: as células que faltavam da matriz 3×3 (ADR-0133)', () =>
     const { alertas } = diffOfertas(
       [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 }), anterior({ item_id: 'MLB2', seller_id: 2, preco: 90 })],
       [oferta({ item_id: 'MLB2', seller_id: 2, preco: 90 })],
-      { primeiraColeta: false, meuPreco: 90 },
+      { primeiraColeta: false, meuPreco: 90, fichaCompleta: true },
     );
     expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('acao');
   });

@@ -101,10 +101,14 @@ sozinha"): aqui, ausência de dado nunca *aprova* sozinha.
   do produto, não esta aba.
 - **Sem agrupamento por produto na lista.** Agrupar quebra com paginação por `criado_em`: o mesmo
   produto cai em páginas diferentes e o grupo se parte ou se duplica a cada "carregar mais".
-- **Nome do vendedor pode faltar.** O texto do alerta passa a nomear quem entrou ou saiu, com o
-  `nickname` congelado no payload. Vendedor visto pela primeira vez no tier quente ainda não tem
-  linha em `pulse_vendedores` (o passo de vendedores só roda no tier completo — lacuna já
-  registrada no ADR-0130); nesses casos o texto cai no `seller_id`.
+- **Nome do vendedor pode faltar nos alertas históricos.** O texto do alerta passa a nomear quem
+  entrou ou saiu, com o `nickname` congelado no payload, e mantém um fallback para o `seller_id`.
+  O fallback **não** existe para vendedor sem perfil: `qualificarOferta` devolve `observacao`
+  quando `transactions_total` é null e `entradaDiffRelevante` só deixa passar `relevante`, então
+  vendedor sem linha em `pulse_vendedores` nunca chega a um payload de alerta — e na medição de
+  2026-08-25 `pulse_vendedores.nickname` não tinha nenhum nulo (0 de 2.729 linhas, 470 vendedores).
+  O fallback existe para os **262 alertas históricos**, gravados antes desta mudança, cujo payload
+  não tem o campo `nickname`.
 
 ## Alternativas descartadas
 

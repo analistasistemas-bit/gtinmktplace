@@ -45,6 +45,9 @@ interface AlertaPendente {
   /** Preço da nossa oferta no MESMO snapshot das concorrentes (ADR-0133 D-3). Viaja em memória
    *  de propósito: reler `pulse_produtos` herdaria o update abaixo, que não checa erro. */
   meuPreco: number | null;
+  /** A ficha coube inteira na página lida (`ofertasNaoLidas === 0`). Sem isso, o menor preço
+   *  observado é só o menor do que foi LIDO, e não autoriza subir preço (ADR-0133 errata 1). */
+  fichaCompleta: boolean;
 }
 interface PerfilVendedorAtual {
   seller_id: number;
@@ -273,6 +276,7 @@ export async function gravarAlertasRelevantes(
       // faria "não qualifiquei ninguém" se passar por "a ficha esvaziou" — e o alerta mandaria
       // subir preço com concorrente vendendo abaixo (ADR-0133 errata 1).
       mercadoObservadoVazio: pendente.atuais.length === 0,
+      fichaCompleta: pendente.fichaCompleta,
     });
     if (alertas.length === 0) continue;
     if (!pendente.estadoGravado) {
@@ -315,8 +319,18 @@ export async function processarColetaOrg(
 ): Promise<ResultadoColeta> {
   const token = await getValidAccessTokenConexao(conexao);
   // Nossa conta no ML: a lista de ofertas do catálogo inclui o NOSSO anúncio, que não é
-  // concorrente de si mesmo (valor não-numérico → NaN → nada é filtrado, comportamento seguro).
+  // concorrente de si mesmo (valor não-numérico → NaN → nada é filtrado: no FILTRO isso é seguro,
+  // só deixa a nossa oferta entrar como concorrente; na severidade não é — ver o guard abaixo).
   const proprioSellerId = conexao.contaExternaId ? Number(conexao.contaExternaId) : null;
+  // Sem o nosso seller_id não existe "nosso preço", e TODO alerta da org nasce `info` — a
+  // notificação passaria a afirmar "nenhuma exige decisão" quando na verdade não dá para saber.
+  // Falha de configuração não pode virar afirmação positiva em silêncio (ADR-0133 D-2).
+  if (proprioSellerId == null || !Number.isFinite(proprioSellerId)) {
+    console.error(
+      `pulse-coletar: org ${orgId} sem conta_externa_id numérica em marketplace_connections — `
+      + 'nenhum alerta desta execução pode ser classificado como decisão de preço.',
+    );
+  }
 
   if (tier === 'completo') await sincronizarRadar(admin, orgId);
 
@@ -349,6 +363,7 @@ export async function processarColetaOrg(
     // json===null viraria diffOfertas([...], []) e fabricaria concorrente_saiu para todo mundo.
     if (json === null) return;
     const naoLidas = ofertasNaoLidas(json);
+    const fichaCompleta = naoLidas === 0;
     if (naoLidas > 0) {
       console.warn(
         `pulse-coletar: ficha ${produto.catalog_product_id} tem ${naoLidas} oferta(s) além da página lida — radar parcial`,
@@ -423,6 +438,7 @@ export async function processarColetaOrg(
     alertasPendentes.push({
       produtoId: produto.id, anteriores, atuais, estadoGravado,
       meuPreco: nossa?.preco ?? null,
+      fichaCompleta,
     });
     // Nome da ficha: uma vez por produto, direto do ML. `anuncios_externos.titulo` está vazio na
     // maioria dos anúncios, e sem nome a lista mostra só o id da ficha ("MLB18407878"), que não

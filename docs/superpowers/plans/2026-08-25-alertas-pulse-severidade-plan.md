@@ -46,6 +46,7 @@ Copiadas do `CLAUDE.md` do projeto e da memória do operador. Cada task as inclu
 | `supabase/functions/_shared/pulse/diff.ts` | modificar | Classificar cada alerta que emite (regra pura) |
 | `supabase/functions/_shared/pulse/__tests__/diff.test.ts` | modificar | Provar a regra de severidade |
 | `supabase/functions/pulse-coletar/processar.ts` | modificar | Fornecer `meuPreco` e `nickname`; gravar severidade; notificar por severidade |
+| `supabase/functions/pulse-coletar/__tests__/alertas-severidade.test.ts` | **criar** | Provar a regra na fronteira do coletor (errata 1) e o texto da notificação |
 | `src/lib/pulse.ts` | modificar | Leitura paginada, contagem exata, marcar escopado |
 | `src/lib/queries.ts` | modificar | Chaves de cache por severidade e página |
 | `src/lib/pulse-alerta-texto.ts` | modificar | Nomear o vendedor no texto |
@@ -56,7 +57,9 @@ Copiadas do `CLAUDE.md` do projeto e da memória do operador. Cada task as inclu
 | `src/components/pulse/__tests__/painel-alertas.test.tsx` | **remover** | Idem |
 | `src/pages/Pulse.tsx` | modificar | Terceira aba + badge; painel sai do Radar |
 
-Dois arquivos novos apenas — a aba e seu teste. O restante é modificação.
+Três arquivos novos — a aba, seu teste e o teste do coletor. O restante é modificação. O teste do
+coletor é o que prova a regra da errata 1 no ponto em que o coletor decide o que passar ao
+classificador; a regra pura já tem cobertura em `diff.test.ts`, mas nenhuma das duas cobre a outra.
 
 ---
 
@@ -388,6 +391,11 @@ No `diffOfertas` dentro do laço:
       mercadoObservadoVazio: pendente.atuais.length === 0,
     });
 ```
+
+`textoNotificacaoAlertas` e `gravarAlertasRelevantes` são **exportadas** (`export function` /
+`export async function`) para permitir `pulse-coletar/__tests__/alertas-severidade.test.ts`, que
+chama as duas direto com um fake do `SupabaseClient`. Sem o export, a regra da errata 1 só teria
+prova na função pura do `_shared`, e a passagem coletor → classificador ficaria sem cobertura.
 
 **Não confundir os dois `atuais` deste trecho:** o `const atuais` local é a lista **já filtrada** por
 `entradaDiffRelevante`; `pendente.atuais` é a lista **crua** da ficha. `mercadoObservadoVazio` só
@@ -726,6 +734,14 @@ group by 1;
 -- Nenhum alerta de ação pode existir sem meu_preco no payload.
 select count(*) from pulse_alertas
 where severidade = 'acao' and (payload->>'meu_preco') is null;   -- esperado: 0
+
+-- COMPLEMENTO OBRIGATÓRIO da query acima, e o mais importante das três. Sozinha, ela é
+-- vacuamente satisfeita: se `meuPreco` regredir para sempre-null, nenhum alerta vira `acao`, e
+-- "zero linhas acao" devolve zero violações. Ou seja, a armadilha da ordem do `extrairNossaOferta`
+-- (passo 2.3) passaria despercebida justamente pela query que deveria pegá-la.
+select count(*) from pulse_alertas
+where criado_em > now() - interval '1 hour'
+  and (payload->>'meu_preco') is not null;   -- esperado: > 0 em produto que vendemos
 
 -- preco_caiu marcado como acao tem de estar abaixo do preço congelado.
 select count(*) from pulse_alertas

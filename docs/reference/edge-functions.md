@@ -951,14 +951,19 @@ falha ao ler `organizations` não libera.
   (ADR-0133)**: o coletor leva ao classificador o nosso preço vivo do MESMO snapshot (lido de
   `extrairNossaOferta` antes de enfileirar o pendente, não relido do banco) e o `nickname` do
   vendedor, congelado no `payload`. `acao` exige um preço medido abaixo do nosso; `concorrente_saiu`
-  ainda exige que ninguém tenha ficado abaixo — e "nenhum relevante sobrou" só aprova quando a
-  **ficha veio vazia antes da qualificação** (`mercadoObservadoVazio`, olhando a lista crua), senão
-  "não consegui qualificar ninguém" mandaria subir preço com concorrente vendendo mais barato
-  (errata 1 do ADR-0133). Alertas em `pulse_alertas` + 1 notificação agregada por org por execução na categoria `pulse` —
+  ainda exige que ninguém tenha ficado abaixo, e essa aprovação depende de **duas** condições
+  (errata 1 do ADR-0133, porque ausência de dado nunca aprova): a **ficha tem de ter sido lida por
+  inteiro** (`fichaCompleta`, nenhuma oferta além da página do `limit=100` — senão o menor preço
+  observado é só o menor do que foi lido, e a oferta mais barata pode estar na página que não veio)
+  **e**, no caso em que não sobrou nenhum relevante, a **ficha tem de ter vindo vazia antes da
+  qualificação** (`mercadoObservadoVazio`, olhando a lista crua — senão "não consegui qualificar
+  ninguém" passaria por "a ficha esvaziou"). Falhando qualquer uma, o alerta nasce `info`; aprovar
+  mandaria subir preço com concorrente vendendo mais barato. Alertas em `pulse_alertas` + 1 notificação agregada por org por execução na categoria `pulse` —
   **somente para org com `pulse` em `modulos_habilitados`**. A coleta roda para todas as orgs (o
-  histórico acumula desde o dia 1), mas a mensagem manda abrir o Pulse e uma org sem o módulo
-  não tem esse menu: os operadores da Avil chegaram a receber alertas de um menu que não podiam
-  abrir (2026-08-18). Os alertas continuam gravados e aparecem no painel quando o módulo for ligado.
+  histórico acumula desde o dia 1), mas o texto de ação manda abrir a aba Alertas do Pulse e uma
+  org sem o módulo não tem esse menu: os operadores da Avil chegaram a receber alertas de um menu
+  que não podiam abrir (2026-08-18). O texto informativo não manda abrir nada, mas o gate é do
+  envio inteiro — uma notificação sobre um módulo que a org não tem não teria destino. Os alertas continuam gravados e aparecem no painel quando o módulo for ligado.
   **Passo 7 — visitas 30d (ADR-0120), só no baseline** (`baseline = !scopedOrgId && tier ===
   'completo'`: a varredura agendada da madrugada, nunca o botão manual nem o tier `quente` — senão
   cada clique dispararia a varredura inteira por um número que não se move a cada 6h). Mede as

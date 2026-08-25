@@ -25,6 +25,8 @@ interface Cenario {
   vendedores: Array<Record<string, unknown>>;
   ofertasAtual: Array<Record<string, unknown>>;
   inseridos: Array<Record<string, unknown>>;
+  /** Erro devolvido pelo insert em `pulse_alertas`, para provar que alerta não gravado não conta. */
+  erroInsert?: { message: string };
 }
 
 /** Fake mínimo do SupabaseClient: só os padrões de query que `gravarAlertasRelevantes` usa
@@ -49,7 +51,7 @@ function fakeAdmin(cenario: Cenario): SupabaseClient {
         return {
           insert: (linhas: Array<Record<string, unknown>>) => {
             cenario.inseridos.push(...linhas);
-            return Promise.resolve({ error: null });
+            return Promise.resolve({ error: cenario.erroInsert ?? null });
           },
         };
       }
@@ -58,13 +60,16 @@ function fakeAdmin(cenario: Cenario): SupabaseClient {
   } as unknown as SupabaseClient;
 }
 
-// Vendedor 1 qualifica (transações acima do mínimo, reputação verde). Vendedor 2 NÃO tem linha em
-// `pulse_vendedores` — é o vendedor visto pela primeira vez no tier quente, que o
-// `entradaDiffRelevante` derruba por dados insuficientes.
+// Vendedor 1 qualifica (transações acima do mínimo, reputação verde) e é por ele que o
+// `nickname` congelado no payload é exercitado. Vendedor 2 aparece nos cenários em dois papéis
+// distintos: SEM linha em `pulse_vendedores` é o vendedor visto pela primeira vez no tier quente,
+// que o `entradaDiffRelevante` derruba por dados insuficientes (e por isso nunca chega a payload
+// nenhum); com `VENDEDOR_QUALIFICADO_2` ele passa e vira alerta.
 const VENDEDOR_QUALIFICADO = {
   seller_id: 1, nickname: 'LOJA UM', transactions_total: 50,
   nivel: '5_green', dia: '2026-08-25', perfil_coletado_em: '2026-08-25T10:00:00Z',
 };
+const VENDEDOR_QUALIFICADO_2 = { ...VENDEDOR_QUALIFICADO, seller_id: 2, nickname: 'LOJA DOIS' };
 
 describe('gravarAlertasRelevantes: severidade (ADR-0133)', () => {
   it('não aprova subir preço quando a ficha trouxe oferta que só não pôde ser qualificada', async () => {
@@ -78,6 +83,8 @@ describe('gravarAlertasRelevantes: severidade (ADR-0133)', () => {
       atuais: [oferta({ item_id: 'MLB2', seller_id: 2, preco: 85 })],
       estadoGravado: true,
       meuPreco: 90,
+      // A ficha coube inteira: o que barra a aprovação aqui é a NÃO-QUALIFICAÇÃO, não truncamento.
+      fichaCompleta: true,
     }]);
 
     expect(cenario.inseridos).toHaveLength(1);
@@ -93,12 +100,54 @@ describe('gravarAlertasRelevantes: severidade (ADR-0133)', () => {
       atuais: [],
       estadoGravado: true,
       meuPreco: 90,
+      fichaCompleta: true,
     }]);
 
     expect(cenario.inseridos).toHaveLength(1);
     expect(cenario.inseridos[0]).toMatchObject({ tipo: 'concorrente_saiu', severidade: 'acao' });
     expect(cenario.inseridos[0].payload).toMatchObject({ meu_preco: 90, nickname: 'LOJA UM' });
     expect(resultado).toEqual({ total: 1, acao: 1 });
+  });
+
+  it('sem meuPreco nenhum alerta vira acao, mesmo com a ficha inteira e vazia', async () => {
+    // Doutrina do D-2 na fronteira do coletor: sem preço nosso não vendemos o item e não há
+    // decisão de preço a tomar. Tudo o mais neste cenário aprovaria (ficha lida por inteiro,
+    // ninguém restou, quem saiu estava barato) — só falta o nosso preço.
+    const cenario: Cenario = {
+      vendedores: [VENDEDOR_QUALIFICADO, VENDEDOR_QUALIFICADO_2], ofertasAtual: [], inseridos: [],
+    };
+    const resultado = await gravarAlertasRelevantes(fakeAdmin(cenario), ORG, [{
+      produtoId: PRODUTO,
+      anteriores: [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
+      atuais: [oferta({ item_id: 'MLB2', seller_id: 2, preco: 70 })],
+      estadoGravado: true,
+      meuPreco: null,
+      fichaCompleta: true,
+    }]);
+
+    expect(cenario.inseridos.length).toBeGreaterThan(0);
+    expect(cenario.inseridos.every((a) => a.severidade === 'info')).toBe(true);
+    expect(resultado.acao).toBe(0);
+  });
+
+  it('insert que falha não conta alerta nenhum', async () => {
+    // Cenário deliberadamente de `acao` (ficha esvaziou de verdade): com os contadores
+    // incrementados antes de checar o erro, o retorno seria { total: 1, acao: 1 } e a notificação
+    // prometeria uma decisão que não existe no banco.
+    const cenario: Cenario = {
+      vendedores: [VENDEDOR_QUALIFICADO], ofertasAtual: [], inseridos: [],
+      erroInsert: { message: 'permission denied for table pulse_alertas' },
+    };
+    const resultado = await gravarAlertasRelevantes(fakeAdmin(cenario), ORG, [{
+      produtoId: PRODUTO,
+      anteriores: [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
+      atuais: [],
+      estadoGravado: true,
+      meuPreco: 90,
+      fichaCompleta: true,
+    }]);
+
+    expect(resultado).toEqual({ total: 0, acao: 0 });
   });
 });
 

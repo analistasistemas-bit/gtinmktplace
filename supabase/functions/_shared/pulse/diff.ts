@@ -14,6 +14,13 @@ export interface OpcoesDiff {
    * mas só a primeira autoriza subir preço. Omitir é o caso seguro (não autoriza).
    */
   mercadoObservadoVazio?: boolean;
+  /**
+   * A ficha foi lida por inteiro — nenhuma oferta ficou além da página. Sem isso, `minAtual` é o
+   * mínimo do que foi LIDO, não do que existe: uma oferta mais barata na página não lida faria a
+   * regra afirmar "ninguém abaixo de você" e mandar subir preço contra um concorrente real.
+   * Omitir é o caso seguro (não autoriza).
+   */
+  fichaCompleta?: boolean;
 }
 
 /** Só um preço medido abaixo do nosso ameaça a posição. `meuPreco` nulo nunca qualifica. */
@@ -104,13 +111,22 @@ export function diffOfertas(
   // A decisão que este alerta habilita é SUBIR preço, e ela depende do mercado DEPOIS da saída:
   // com relevantes a 70 e 71 e nosso preço 75, a saída do de 70 não nos torna o menor.
   //
-  // `minAtual` não-finito (`Math.min` de lista vazia é Infinity, não null) significa "nenhum
-  // relevante sobrou" — e isso acontece por dois motivos que a lista não distingue: a ficha
-  // esvaziou, ou ninguém pôde ser qualificado nesta rodada (vendedor sem perfil no tier quente,
-  // ficha truncada no limit=100). Só o primeiro autoriza subir preço; tratar os dois como
-  // aprovação mandaria o operador subir preço com um concorrente ainda vendendo abaixo dele.
-  // Ausência de dado nunca aprova — mesma doutrina do `meuPreco` nulo (ADR-0133 errata 1).
+  // Duas ausências de dado diferentes podem fingir "ninguém abaixo de nós", e nenhuma delas
+  // aparece na lista relevante:
+  //
+  // 1. NÃO-QUALIFICAÇÃO — `minAtual` não-finito (`Math.min` de lista vazia é Infinity, não null)
+  //    significa "nenhum relevante sobrou", e isso tanto pode ser a ficha esvaziando quanto
+  //    ninguém ter sido qualificado nesta rodada (vendedor visto pela 1ª vez no tier quente ainda
+  //    não tem perfil). Só o primeiro caso autoriza; `mercadoObservadoVazio` os separa.
+  // 2. TRUNCAMENTO — com `minAtual` finito ele é o mínimo do que foi LIDO, não do que existe: a
+  //    ficha estourou o `limit=100` e a oferta mais barata pode estar na página que não veio.
+  //    `fichaCompleta` é o que sabe disso, e ela governa os dois ramos.
+  //
+  // Em qualquer um deles, aprovar mandaria o operador subir preço com um concorrente ainda
+  // vendendo abaixo dele. Ausência de dado nunca aprova — mesma doutrina do `meuPreco` nulo
+  // (ADR-0133 errata 1).
   const ninguemAbaixoAgora = meuPreco != null && Number.isFinite(meuPreco)
+    && opcoes?.fichaCompleta === true
     && (Number.isFinite(minAtual) ? minAtual >= meuPreco : opcoes?.mercadoObservadoVazio === true);
   for (const d of desativar) {
     if (!sellersAtuais.has(d.seller_id)) {
