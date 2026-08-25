@@ -8,6 +8,12 @@ export interface OpcoesDiff {
   meuPreco?: number | null;
   /** Apelido por seller_id, para congelar o nome no payload e não depender de join no render. */
   nicknames?: Map<number, string | null>;
+  /**
+   * A ficha não trouxe NENHUMA oferta — antes da qualificação, não depois. É o que separa "a ficha
+   * esvaziou" de "não consegui qualificar ninguém": as duas chegam aqui como lista relevante vazia,
+   * mas só a primeira autoriza subir preço. Omitir é o caso seguro (não autoriza).
+   */
+  mercadoObservadoVazio?: boolean;
 }
 
 /** Só um preço medido abaixo do nosso ameaça a posição. `meuPreco` nulo nunca qualifica. */
@@ -96,11 +102,16 @@ export function diffOfertas(
   const desativar = anteriores.filter((o) => o.ativo && !itensAtuais.has(o.item_id));
   const sellersAtuais = new Set(atuais.map((o) => o.seller_id));
   // A decisão que este alerta habilita é SUBIR preço, e ela depende do mercado DEPOIS da saída:
-  // com relevantes a 70 e 71 e nosso preço 75, a saída do de 70 não nos torna o menor. Ficha que
-  // ficou sem nenhuma oferta relevante é o caso mais forte — `Math.min` de lista vazia devolve
-  // Infinity, não null, então a checagem de finitude tem de vir primeiro e como aprovação.
+  // com relevantes a 70 e 71 e nosso preço 75, a saída do de 70 não nos torna o menor.
+  //
+  // `minAtual` não-finito (`Math.min` de lista vazia é Infinity, não null) significa "nenhum
+  // relevante sobrou" — e isso acontece por dois motivos que a lista não distingue: a ficha
+  // esvaziou, ou ninguém pôde ser qualificado nesta rodada (vendedor sem perfil no tier quente,
+  // ficha truncada no limit=100). Só o primeiro autoriza subir preço; tratar os dois como
+  // aprovação mandaria o operador subir preço com um concorrente ainda vendendo abaixo dele.
+  // Ausência de dado nunca aprova — mesma doutrina do `meuPreco` nulo (ADR-0133 errata 1).
   const ninguemAbaixoAgora = meuPreco != null && Number.isFinite(meuPreco)
-    && (!Number.isFinite(minAtual) || minAtual >= meuPreco);
+    && (Number.isFinite(minAtual) ? minAtual >= meuPreco : opcoes?.mercadoObservadoVazio === true);
   for (const d of desativar) {
     if (!sellersAtuais.has(d.seller_id)) {
       alertas.push({

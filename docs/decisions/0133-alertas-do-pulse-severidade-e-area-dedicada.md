@@ -60,6 +60,29 @@ nos dois lados antes do diff que gera alerta. D-1 do ADR-0130 está implementado
 | **D-9** | O escopo de "Marcar N como lidos" só admite **colunas locais de `pulse_alertas`** (`severidade`, `tipo`, `lido`). Busca por título de produto **não existe** na área. | O `update` do PostgREST não filtra por coluna de recurso embutido (`pulse_produtos.titulo`). Uma busca no escopo do marcar ou apagaria alertas que o operador não viu, ou marcaria só os carregados e mentiria no N — as duas saídas são piores que não ter busca. |
 | **D-10** | A notificação por Telegram passa a distinguir severidade: "para agir" só quando houver `acao > 0`; caso contrário, texto neutro. O link carrega `?tab=alertas`. | Uma notificação que promete ação e entrega uma lista informativa treina o operador a ignorá-la — e a próxima, que era real, morre junto. |
 
+## Errata 1 (2026-08-25, revisão do diff da Task 1 — antes do deploy) — ausência de dado não aprova
+
+D-2 tratava "nenhum concorrente relevante restante" como o caso mais forte de `acao`: não sobrou
+ninguém para nos furar, logo dá para subir preço. **Está errado**, e o defeito é financeiro.
+
+A lista relevante fica vazia por dois motivos que ela não distingue:
+
+1. a ficha realmente esvaziou;
+2. ninguém pôde ser **qualificado** nesta rodada — vendedor visto pela primeira vez no tier quente
+   ainda não tem linha em `pulse_vendedores` (o passo de vendedores só roda no tier completo), ou a
+   ficha foi truncada no `limit=100` e a oferta mais barata não foi lida.
+
+No caso 2 o concorrente continua vendendo abaixo de nós. Cenário concreto: nosso preço R$90, ontem
+relevantes a R$80 e R$85; hoje o de R$80 sai e o de R$85 aparece sem perfil. A regra original
+classificaria `acao`, a notificação diria "exige decisão de preço", e o operador subiria o preço com
+alguém vendendo mais barato — perdendo posição de venda.
+
+**Correção:** a aprovação passa a exigir que a ficha não tenha trazido **nenhuma oferta observada**
+(antes da qualificação, não depois), informação que o coletor tem e repassa ao classificador. Sem
+essa informação, o padrão é **não aprovar**. Ausência de dado nunca aprova — a mesma doutrina que já
+valia para `meu_preco` nulo, e o espelho do D-3 do ADR-0130 ("ausência de dado nunca reprova
+sozinha"): aqui, ausência de dado nunca *aprova* sozinha.
+
 ## Consequências aceitas
 
 - **O modelo permanece evento com marcar-lido.** A alternativa (condição aberta que se resolve

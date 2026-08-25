@@ -182,8 +182,6 @@ describe('diffOfertas', () => {
 });
 
 describe('severidade do alerta (ADR-0133)', () => {
-  const semMeuPreco = { primeiraColeta: false };
-
   it('preco_caiu vira acao quando o menor fica abaixo do nosso preço', () => {
     const { alertas } = diffOfertas(
       [anterior({ item_id: 'MLB1', preco: 100 })],
@@ -206,7 +204,7 @@ describe('severidade do alerta (ADR-0133)', () => {
     const { alertas } = diffOfertas(
       [anterior({ item_id: 'MLB1', preco: 100 })],
       [oferta({ item_id: 'MLB1', preco: 10 }), oferta({ item_id: 'MLB2', seller_id: 2, preco: 5 })],
-      semMeuPreco,
+      { primeiraColeta: false },
     );
     expect(alertas.length).toBeGreaterThan(0);
     expect(alertas.every((a) => a.severidade === 'info')).toBe(true);
@@ -252,14 +250,8 @@ describe('severidade do alerta (ADR-0133)', () => {
     expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
   });
 
-  it('ficha que ficou sem nenhuma oferta relevante é acao', () => {
-    const { alertas } = diffOfertas(
-      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
-      [],
-      { primeiraColeta: false, meuPreco: 90 },
-    );
-    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('acao');
-  });
+  // "Ficha esvaziou" vive no bloco da errata 1 logo abaixo: sozinho, o mercado relevante vazio não
+  // distingue ficha vazia de falha de qualificação, e a distinção é o que autoriza subir preço.
 
   it('congela o nickname no payload quando o mapa o conhece', () => {
     const { alertas } = diffOfertas(
@@ -268,5 +260,87 @@ describe('severidade do alerta (ADR-0133)', () => {
       { primeiraColeta: false, meuPreco: 90, nicknames: new Map([[2, 'LOJA DOIS']]) },
     );
     expect(alertas.find((a) => a.tipo === 'novo_concorrente')?.payload.nickname).toBe('LOJA DOIS');
+  });
+});
+
+describe('severidade: ausência de dado nunca aprova subir preço (ADR-0133 errata 1)', () => {
+  it('não vira acao quando não sobrou relevante mas a ficha AINDA tem ofertas observadas', () => {
+    // S2 continua vendendo a 85 (abaixo dos nossos 90), só não pôde ser qualificado nesta rodada:
+    // vendedor visto pela 1ª vez no tier quente não tem perfil. Dizer "pode subir" aqui custa venda.
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
+      [],
+      { primeiraColeta: false, meuPreco: 90, mercadoObservadoVazio: false },
+    );
+    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
+  });
+
+  it('vira acao quando a ficha esvaziou de verdade', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
+      [],
+      { primeiraColeta: false, meuPreco: 90, mercadoObservadoVazio: true },
+    );
+    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('acao');
+  });
+
+  it('sem a informação, o default é não aprovar', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
+      [],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
+  });
+});
+
+describe('severidade: as células que faltavam da matriz 3×3 (ADR-0133)', () => {
+  it('novo_concorrente que entra ACIMA do nosso preço é info', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', preco: 100 })],
+      [oferta({ item_id: 'MLB1', preco: 100 }), oferta({ item_id: 'MLB2', seller_id: 2, preco: 95 })],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    expect(alertas.find((a) => a.tipo === 'novo_concorrente')?.severidade).toBe('info');
+  });
+
+  it('concorrente_saiu com meuPreco nulo é info', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
+      [],
+      { primeiraColeta: false, meuPreco: null, mercadoObservadoVazio: true },
+    );
+    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('info');
+  });
+
+  // Empate exato não é ameaça: quem está no MESMO preço que nós não nos tira a posição, e tratá-lo
+  // como ameaça encheria a aba de decisões que não existem. Trava o `<` estrito contra virar `<=`.
+  it('novo_concorrente que entra EXATAMENTE no nosso preço é info', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', preco: 100 })],
+      [oferta({ item_id: 'MLB1', preco: 100 }), oferta({ item_id: 'MLB2', seller_id: 2, preco: 90 })],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    expect(alertas.find((a) => a.tipo === 'novo_concorrente')?.severidade).toBe('info');
+  });
+
+  it('preco_caiu que para EXATAMENTE no nosso preço é info', () => {
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', preco: 100 })],
+      [oferta({ item_id: 'MLB1', preco: 90 })],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    expect(alertas.find((a) => a.tipo === 'preco_caiu')?.severidade).toBe('info');
+  });
+
+  it('concorrente_saiu com quem sobrou EXATAMENTE no nosso preço é acao', () => {
+    // Ninguém abaixo de nós — empate não nos tira a posição, então subir preço é decisão real.
+    // Trava o `minAtual >= meuPreco` contra virar `>`.
+    const { alertas } = diffOfertas(
+      [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 }), anterior({ item_id: 'MLB2', seller_id: 2, preco: 90 })],
+      [oferta({ item_id: 'MLB2', seller_id: 2, preco: 90 })],
+      { primeiraColeta: false, meuPreco: 90 },
+    );
+    expect(alertas.find((a) => a.tipo === 'concorrente_saiu')?.severidade).toBe('acao');
   });
 });

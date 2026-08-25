@@ -382,8 +382,16 @@ No `diffOfertas` dentro do laço:
       primeiraColeta: pendente.anteriores.length === 0,
       meuPreco: pendente.meuPreco,
       nicknames,
+      // ANTES da qualificação: `atuais` aqui é `pendente.atuais`, cru. Passar a lista já filtrada
+      // faria "não qualifiquei ninguém" se passar por "a ficha esvaziou" — e o alerta mandaria
+      // subir preço com concorrente vendendo abaixo (ADR-0133 errata 1).
+      mercadoObservadoVazio: pendente.atuais.length === 0,
     });
 ```
+
+**Não confundir os dois `atuais` deste trecho:** o `const atuais` local é a lista **já filtrada** por
+`entradaDiffRelevante`; `pendente.atuais` é a lista **crua** da ficha. `mercadoObservadoVazio` só
+pode olhar a crua.
 
 No insert:
 
@@ -723,6 +731,12 @@ where severidade = 'acao' and (payload->>'meu_preco') is null;   -- esperado: 0
 select count(*) from pulse_alertas
 where severidade = 'acao' and tipo = 'preco_caiu'
   and (payload->>'para')::numeric >= (payload->>'meu_preco')::numeric;   -- esperado: 0
+
+-- concorrente_saiu marcado como acao: quem saiu tinha de estar abaixo do preço congelado.
+-- É o que o `preco` no payload existe para permitir auditar.
+select count(*) from pulse_alertas
+where severidade = 'acao' and tipo = 'concorrente_saiu'
+  and (payload->>'preco')::numeric >= (payload->>'meu_preco')::numeric;  -- esperado: 0
 ```
 
 3. Conferir na tela: badge com o número da consulta de contagem, filtro trocando a lista, "Marcar N
