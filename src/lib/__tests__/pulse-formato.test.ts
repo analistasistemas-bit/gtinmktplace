@@ -172,6 +172,14 @@ describe('motivoSemPrecoProprio', () => {
     expect(s).toContain('under_review');
   });
 
+  // Pausa preventiva do ML (ADR-0035, adendo 25/08): `under_review` + `suspended_for_prevention`
+  // é pausa administrativa, não moderação — dizer "fora do ar" assusta à toa.
+  it('pausa preventiva é tratada como pausado, não como fora do ar', () => {
+    const s = motivoSemPrecoProprio({ ...base, anuncio_status: 'under_review', anuncio_sub_status: ['suspended_for_prevention'] });
+    expect(s).toContain('pausado');
+    expect(s).not.toContain('under_review');
+  });
+
   it('situação do anúncio vence o vínculo: pausado é pausado, mesmo sem vínculo', () => {
     const s = motivoSemPrecoProprio({
       ...base, catalogo_status: 'ficha_divergente', anuncio_status: 'paused', anuncio_sub_status: ['out_of_stock'],
@@ -202,6 +210,8 @@ describe('seloAnuncio', () => {
 
   it('estoque zerado e pausa comum são etiquetas distintas', () => {
     expect(seloAnuncio({ anuncio_status: 'paused', anuncio_sub_status: ['out_of_stock'] })?.texto).toBe('Sem estoque');
+    expect(seloAnuncio({ anuncio_status: 'under_review', anuncio_sub_status: ['suspended_for_prevention'] })?.texto).toBe('Pausado no ML');
+
     expect(seloAnuncio({ anuncio_status: 'paused', anuncio_sub_status: [] })?.texto).toBe('Pausado no ML');
   });
 

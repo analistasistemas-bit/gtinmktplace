@@ -12,6 +12,10 @@ import { getConnector } from '../_shared/canais/registry.ts';
 import { resolverAlvosPush } from '../_shared/estoque/alvos.ts';
 import type { SincronizarEstoqueJob } from '../_shared/queue.ts';
 import type { ChannelConnector, ContextoCanal } from '../_shared/canais/contrato.ts';
+import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import {
+  montarMensagemEstoqueZerado, montarMensagemVoltaAoAr, type VariacaoZerada,
+} from '../_shared/notificacoes/estoque.ts';
 
 /**
  * Obtenção de token POR CANAL. Hoje só o ML existe; a Shopee entra aqui no E5.
@@ -33,6 +37,8 @@ export interface DepsSincronizacao {
   getConnector: typeof getConnector;
   /** OBRIGATORIAMENTE injetável — ver comentário no topo. */
   fabricarToken: (canal: string, conexao: unknown) => (() => Promise<string>) | null;
+  /** Injetável para o teste ver o texto do alerta sem Telegram nem tabela (ADR-0134). */
+  notificar?: typeof notificarCategoria;
 }
 
 export interface RespostaSincronizacao { status: number; body: Record<string, unknown> }
@@ -51,18 +57,82 @@ export interface RespostaSincronizacao { status: number; body: Record<string, un
  */
 async function reativarSePausado(
   conn: ChannelConnector, ctx: ContextoCanal, canal: string, itemExternoId: string,
-): Promise<'ok' | 'retentavel'> {
+): Promise<'ok' | 'retentavel' | 'reativado'> {
   const vivo = await conn.lerStatus(ctx, [itemExternoId]);
   if (vivo[itemExternoId]?.status !== 'pausado') return 'ok';
 
   const r = await conn.atualizarStatus(ctx, itemExternoId, 'ativo');
   if (r.ok) {
     console.log('estoque_reativou_anuncio', canal, itemExternoId);
-    return 'ok';
+    // 'reativado' só sai na transição real (leu pausado + PUT ok) — é a própria dedup do aviso de
+    // volta ao ar (ADR-0134): na reentrega do QStash o anúncio já está ativo e nada é enviado.
+    return 'reativado';
   }
   if (r.erro?.retentavel) return 'retentavel';
   console.error('estoque_reativar_definitivo', canal, itemExternoId, r.erro);
   return 'ok';
+}
+
+interface ContextoAlerta {
+  orgId: string;
+  codigoPai: string;
+  produto: string | null;
+  permalink: string | null;
+  /** Rótulo de cada SKU do produto, para nomear a variação zerada na mensagem. */
+  rotuloPorSku: Map<string, { nome: string | null; cor: string | null }>;
+  estoquePorSku: Record<string, number>;
+  /** Sem anúncio publicado não há "anúncio pausado" a anunciar: marca e não envia. */
+  temAnuncio: boolean;
+}
+
+/**
+ * ADR-0134 — avisa que o estoque zerou (e que, se tudo zerou, o anúncio saiu do ar).
+ *
+ * A transição vem de `estoque_movimentos` (>0 → 0), não do saldo atual: `variacoes.estoque = 0`
+ * não diz QUANDO zerou e re-alertaria a cada push. A dedup é a marca `alertado_em`, gravada com
+ * `is('alertado_em', null)` + `select()` — só o que a marcação devolve é notificado, então a
+ * reentrega do QStash (push idempotente, repete de propósito) não duplica o aviso.
+ *
+ * Best-effort: falha aqui é logada e não derruba o push, que já cumpriu seu papel.
+ */
+async function alertarEstoqueZerado(
+  admin: SupabaseClient, notificar: typeof notificarCategoria, ctx: ContextoAlerta,
+): Promise<void> {
+  try {
+    const { data: candidatos } = await admin.from('estoque_movimentos')
+      .select('id, codigo')
+      .eq('org_id', ctx.orgId).eq('codigo_pai', ctx.codigoPai)
+      .eq('estoque_resultante', 0).gt('estoque_anterior', 0)
+      .is('alertado_em', null);
+    const ids = (candidatos ?? []).map((m) => m.id as string);
+    if (ids.length === 0) return;
+
+    const { data: marcados } = await admin.from('estoque_movimentos')
+      .update({ alertado_em: new Date().toISOString() })
+      .in('id', ids).is('alertado_em', null)
+      .select('codigo');
+    const codigos = [...new Set((marcados ?? []).map((m) => m.codigo as string))];
+    if (codigos.length === 0) return;
+    // Marcado mas não enviado: publicar um produto velho não pode despejar a história inteira de
+    // zeradas de uma vez (mesmo erro do primeiro run do alerta de cancelamento, ADR-0121).
+    if (!ctx.temAnuncio) return;
+
+    const zeradas: VariacaoZerada[] = codigos.map((codigo) => ({
+      codigo,
+      nome: ctx.rotuloPorSku.get(codigo)?.nome ?? null,
+      cor: ctx.rotuloPorSku.get(codigo)?.cor ?? null,
+    }));
+    const totais = Object.values(ctx.estoquePorSku);
+    await notificar(admin, ctx.orgId, 'estoque', montarMensagemEstoqueZerado({
+      produto: ctx.produto,
+      codigoPai: ctx.codigoPai,
+      zeradas,
+      produtoInteiroZerado: totais.length > 0 && totais.every((q) => q <= 0),
+      permalink: ctx.permalink,
+    }));
+  } catch (e) {
+    console.error('estoque_alerta_zerado_falhou', ctx.codigoPai, String(e));
+  }
 }
 
 export async function processarSincronizacao(
@@ -73,14 +143,21 @@ export async function processarSincronizacao(
 
   // 1) Estoque canônico ATUAL: variações da família mais recente (mesma âncora da baixa).
   const { data: familia } = await admin.from('familias')
-    .select('id').eq('org_id', org_id).eq('codigo_pai', codigo_pai)
+    // nome_pai/ml_permalink entram só para o texto do alerta de estoque zerado (ADR-0134).
+    .select('id, nome_pai, ml_permalink').eq('org_id', org_id).eq('codigo_pai', codigo_pai)
     .order('criado_em', { ascending: false }).limit(1).maybeSingle();
   if (!familia) return { status: 200, body: { ok: true, skip: 'produto sem família' } };
 
   const { data: variacoes } = await admin.from('variacoes')
-    .select('codigo, estoque').eq('familia_id', familia.id);
+    .select('codigo, estoque, nome, cor').eq('familia_id', familia.id);
   const estoquePorSku: Record<string, number> = {};
-  for (const v of variacoes ?? []) estoquePorSku[v.codigo as string] = (v.estoque as number) ?? 0;
+  const rotuloPorSku = new Map<string, { nome: string | null; cor: string | null }>();
+  for (const v of variacoes ?? []) {
+    estoquePorSku[v.codigo as string] = (v.estoque as number) ?? 0;
+    rotuloPorSku.set(v.codigo as string, {
+      nome: (v.nome as string | null) ?? null, cor: (v.cor as string | null) ?? null,
+    });
+  }
   if (Object.keys(estoquePorSku).length === 0) {
     return { status: 200, body: { ok: true, skip: 'sem variações' } };
   }
@@ -99,7 +176,21 @@ export async function processarSincronizacao(
   const alvos = resolverAlvosPush(
     (anuncios ?? []) as never, (itensUP ?? []) as never, estoquePorSku, canal_origem,
   );
-  if (alvos.length === 0) return { status: 200, body: { ok: true, alvos: 0 } };
+  const notificar = deps.notificar ?? notificarCategoria;
+  const ctxAlerta: ContextoAlerta = {
+    orgId: org_id,
+    codigoPai: codigo_pai,
+    produto: (familia.nome_pai as string | null) ?? null,
+    permalink: (familia.ml_permalink as string | null) ?? null,
+    rotuloPorSku,
+    estoquePorSku,
+    temAnuncio: alvos.length > 0,
+  };
+  if (alvos.length === 0) {
+    // Sem canal publicado o saldo não pausa anúncio nenhum: fecha os movimentos sem avisar.
+    await alertarEstoqueZerado(admin, notificar, ctxAlerta);
+    return { status: 200, body: { ok: true, alvos: 0 } };
+  }
 
   // 3) Push absoluto, um alvo por vez. Falha de um canal nunca afeta outro.
   const retentaveis: string[] = [];
@@ -137,6 +228,11 @@ export async function processarSincronizacao(
       if (r.ok && job.reativar && alvo.estoques.some((e) => e.estoque > 0)) {
         const reativacao = await reativarSePausado(conn, { getToken }, alvo.canal, alvo.itemExternoId);
         if (reativacao === 'retentavel') retentaveis.push(`${alvo.canal}:${alvo.itemExternoId}:status`);
+        if (reativacao === 'reativado') {
+          await notificar(admin, org_id, 'estoque', montarMensagemVoltaAoAr({
+            produto: ctxAlerta.produto, codigoPai: codigo_pai, permalink: ctxAlerta.permalink,
+          })).catch((e) => console.error('estoque_alerta_volta_falhou', codigo_pai, String(e)));
+        }
       }
     } catch (e) {
       // Exceção inesperada é tratada como RETENTÁVEL: melhor o QStash tentar de novo
@@ -147,6 +243,10 @@ export async function processarSincronizacao(
   }
 
   // Push é absoluto: repetir é seguro, então 500 para o QStash re-tentar.
+  // O alerta fica para a retentativa: dizer "anúncio pausado" antes de o canal ter recebido o
+  // zero seria mentira (ADR-0134).
   if (retentaveis.length > 0) return { status: 500, body: { retry: retentaveis } };
+
+  await alertarEstoqueZerado(admin, notificar, ctxAlerta);
   return { status: 200, body: { ok: true, alvos: alvos.length } };
 }

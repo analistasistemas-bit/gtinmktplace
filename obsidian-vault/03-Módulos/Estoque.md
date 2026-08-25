@@ -80,6 +80,25 @@ lê o status ao vivo depois do push e devolve `pausado` → `ativo`.
   (incidente 2026-08-06, ver [[Incidentes]]).
 - Idempotente por leitura: anúncio já ativo não recebe PUT.
 
+## Alerta de estoque zerado e de volta ao ar (ADR-0134)
+
+Desde 25/08/2026 o `sincronizar-estoque` avisa, na categoria de notificação **`estoque`**
+(Telegram + in-app), quando o saldo chega a zero e quando a reposição devolve o anúncio ao ar.
+
+- **Gatilho por variação:** cada transição `>0 → 0` em `estoque_movimentos` gera aviso. Se **todas**
+  as variações do produto estão em zero, a mensagem diz "anúncio pausado no Mercado Livre"; se
+  restam outras, diz que o anúncio segue no ar sem aquela.
+- **Depois do push, nunca antes:** com alvo retentável o aviso espera a retentativa — dizer que o
+  anúncio foi pausado antes de o canal receber o zero seria mentira.
+- **Dedup na linha do movimento** (`alertado_em`, marcado com `UPDATE … WHERE alertado_em IS NULL`):
+  o push é idempotente e o QStash reentrega de propósito.
+- **Produto sem anúncio publicado:** movimentos marcados, nada enviado — senão publicar um produto
+  velho despejaria toda a história de zeradas de uma vez (o erro que o alerta de cancelamento
+  cometeu no primeiro run, ver [[Incidentes]]).
+- **Volta ao ar:** sai quando a reativação do ADR-0111 de fato acontece (leu `pausado` + PUT ok), o
+  que é a própria dedup.
+- Migration de estreia fechou os 1.479 movimentos históricos como já alertados.
+
 ## Cadastro manual e entrada de mercadoria
 
 Bloco B do E6b (ADR-0094): produto entra **sem planilha**. Edges `cadastrar-produto` e

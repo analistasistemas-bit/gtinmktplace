@@ -580,6 +580,13 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   planos user products (ADR-0088). Token por canal via `fabricarTokenPadrao` (hoje só ML; Shopee
   entra no E5). Falha de um canal nunca afeta outro (try/catch por alvo); exceção inesperada é
   tratada como retentável — devolve 500 para o QStash re-tentar (push absoluto é idempotente).
+  **Alerta de estoque zerado (ADR-0134):** depois do push — e só quando nenhum alvo ficou
+  retentável — o worker varre `estoque_movimentos` por transições `>0 → 0` ainda sem `alertado_em`,
+  marca com `UPDATE … WHERE alertado_em IS NULL … RETURNING` (a dedup contra a reentrega do QStash)
+  e notifica a categoria `estoque`. A mensagem distingue produto inteiro zerado ("anúncio pausado
+  no Mercado Livre") de variação isolada ("segue no ar sem ela"). Produto sem anúncio publicado tem
+  os movimentos marcados **sem envio** — senão publicar um produto velho despejaria a história
+  inteira de uma vez. Reativação bem-sucedida manda o aviso de volta ao ar pela mesma categoria.
   **Reativação ao repor (ADR-0111):** com `reativar` no job e saldo > 0 no alvo, depois do push OK
   o worker lê o status ao vivo e devolve o anúncio de `pausado` para `ativo`. Lê antes de escrever
   (o job é reentregue): já ativo não recebe PUT. `moderado`/`encerrado`/`inativo`/`indisponivel`

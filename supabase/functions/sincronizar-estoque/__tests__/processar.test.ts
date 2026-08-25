@@ -8,28 +8,56 @@ import { processarSincronizacao, type DepsSincronizacao } from '../processar';
 import { fakeConnector } from '../../_shared/canais/fake';
 import type { ChannelConnector } from '../../_shared/canais/contrato';
 
-interface DB {
-  familia: { id: string } | null;
-  variacoes: Array<{ codigo: string; estoque: number }>;
-  anuncios: Array<Record<string, unknown>>;
-  itensUP: Array<Record<string, unknown>>;
+interface MovimentoFake {
+  id: string; org_id: string; codigo_pai: string; codigo: string;
+  estoque_anterior: number; estoque_resultante: number; alertado_em: string | null;
 }
 
-/** Fake mínimo do SupabaseClient: só os padrões de query que processarSincronizacao usa. */
+interface DB {
+  familia: { id: string; nome_pai?: string | null; ml_permalink?: string | null } | null;
+  variacoes: Array<{ codigo: string; estoque: number; nome?: string | null; cor?: string | null }>;
+  anuncios: Array<Record<string, unknown>>;
+  itensUP: Array<Record<string, unknown>>;
+  /** ADR-0134: transições >0 → 0 candidatas a alerta. */
+  movimentos?: MovimentoFake[];
+}
+
+/** Fake mínimo do SupabaseClient: só os padrões de query que processarSincronizacao usa.
+ * `estoque_movimentos` guarda estado de verdade (filtros + update) porque a dedup do alerta
+ * (ADR-0134) É o update condicional — testá-la com um stub que ignora filtro não provaria nada. */
 function fakeAdmin(db: DB) {
   function chain(tabela: string) {
+    // deno-lint-ignore no-explicit-any
+    const filtros: Array<(r: any) => boolean> = [];
+    let valoresUpdate: Record<string, unknown> | null = null;
+
+    function movimentosFiltrados(): MovimentoFake[] {
+      return (db.movimentos ?? []).filter((r) => filtros.every((f) => f(r)));
+    }
     function ler(): { data: unknown; error: null } {
       if (tabela === 'familias') return { data: db.familia, error: null };
       if (tabela === 'variacoes') return { data: db.variacoes, error: null };
       if (tabela === 'anuncios_externos') return { data: db.anuncios, error: null };
       if (tabela === 'anuncios_externos_itens') return { data: db.itensUP, error: null };
+      if (tabela === 'estoque_movimentos') {
+        const alvo = movimentosFiltrados();
+        if (valoresUpdate) for (const r of alvo) Object.assign(r, valoresUpdate);
+        return { data: alvo.map((r) => ({ ...r })), error: null };
+      }
       return { data: null, error: null };
     }
     // deno-lint-ignore no-explicit-any
     const api: any = {
       select: () => api,
-      eq: () => api,
-      in: () => api,
+      update: (v: Record<string, unknown>) => { valoresUpdate = v; return api; },
+      // deno-lint-ignore no-explicit-any
+      eq: (c: string, v: unknown) => { filtros.push((r: any) => r[c] === v); return api; },
+      // deno-lint-ignore no-explicit-any
+      gt: (c: string, v: number) => { filtros.push((r: any) => r[c] > v); return api; },
+      // deno-lint-ignore no-explicit-any
+      is: (c: string, v: unknown) => { filtros.push((r: any) => (r[c] ?? null) === v); return api; },
+      // deno-lint-ignore no-explicit-any
+      in: (c: string, vs: unknown[]) => { filtros.push((r: any) => vs.includes(r[c])); return api; },
       order: () => api,
       limit: () => api,
       maybeSingle: async () => ler(),
@@ -286,5 +314,105 @@ describe('processarSincronizacao — reativação ao repor estoque (ADR-0111)', 
     };
     await processarSincronizacao(deps(db), { ...JOB, reativar: true });
     expect(chamadasDeStatus()).toEqual([{ itemExternoId: 'FK-A1', status: 'ativo' }]);
+  });
+});
+
+// ─── ADR-0134: alerta de estoque zerado e de volta ao ar ──────────────────────
+describe('alerta de estoque (ADR-0134)', () => {
+  beforeEach(() => fakeConnector.reset());
+
+  const enviados: Array<{ categoria: string; texto: string }> = [];
+  const notificar = (async (_admin: unknown, _org: string, categoria: string, texto: string) => {
+    enviados.push({ categoria, texto });
+    return 1;
+  }) as unknown as NonNullable<DepsSincronizacao['notificar']>;
+
+  beforeEach(() => { enviados.length = 0; });
+
+  const mov = (over: Partial<MovimentoFake> = {}): MovimentoFake => ({
+    id: 'm1', org_id: 'org-1', codigo_pai: 'P001', codigo: 'A1',
+    estoque_anterior: 2, estoque_resultante: 0, alertado_em: null, ...over,
+  });
+
+  const produto = (variacoes: DB['variacoes'], movimentos: MovimentoFake[], comAnuncio = true): DB => ({
+    familia: { id: 'f1', nome_pai: 'Sabonete Nivea 200ml', ml_permalink: 'https://ml/MLB1' },
+    variacoes,
+    anuncios: comAnuncio
+      ? [{ id: 'x', canal: 'fake', item_externo_id: 'FK1', variacoes_externas: { A1: {}, A2: {} } }]
+      : [],
+    itensUP: [],
+    movimentos,
+  });
+
+  it('produto inteiro zerado avisa que o anúncio foi pausado', async () => {
+    const db = produto([{ codigo: 'A1', estoque: 0 }], [mov()]);
+    await processarSincronizacao(deps(db, { notificar }), JOB);
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0].categoria).toBe('estoque');
+    expect(enviados[0].texto).toContain('Sabonete Nivea 200ml');
+    expect(enviados[0].texto).toContain('anúncio pausado no Mercado Livre');
+  });
+
+  it('só uma variação zerada não anuncia pausa — o anúncio segue vendendo as outras', async () => {
+    const db = produto(
+      [{ codigo: 'A1', estoque: 0, cor: 'Azul' }, { codigo: 'A2', estoque: 4 }],
+      [mov()],
+    );
+    await processarSincronizacao(deps(db, { notificar }), JOB);
+    expect(enviados[0].texto).toContain('segue no ar');
+    expect(enviados[0].texto).toContain('Azul (A1)');
+  });
+
+  it('reentrega do QStash não duplica: o movimento já marcado não alerta de novo', async () => {
+    const db = produto([{ codigo: 'A1', estoque: 0 }], [mov()]);
+    const d = deps(db, { notificar });
+    await processarSincronizacao(d, JOB);
+    await processarSincronizacao(d, JOB);
+    expect(enviados).toHaveLength(1);
+    expect(db.movimentos![0].alertado_em).not.toBeNull();
+  });
+
+  it('baixa que não zerou (2 → 1) não alerta', async () => {
+    const db = produto([{ codigo: 'A1', estoque: 1 }], [mov({ estoque_resultante: 1 })]);
+    await processarSincronizacao(deps(db, { notificar }), JOB);
+    expect(enviados).toEqual([]);
+  });
+
+  it('zerada de produto que já nasceu zerado (0 → 0) não alerta', async () => {
+    const db = produto([{ codigo: 'A1', estoque: 0 }], [mov({ estoque_anterior: 0 })]);
+    await processarSincronizacao(deps(db, { notificar }), JOB);
+    expect(enviados).toEqual([]);
+  });
+
+  // Publicar um produto velho não pode despejar a história inteira de zeradas de uma vez.
+  it('produto sem anúncio publicado: marca o movimento e não envia nada', async () => {
+    const db = produto([{ codigo: 'A1', estoque: 0 }], [mov()], false);
+    await processarSincronizacao(deps(db, { notificar }), JOB);
+    expect(enviados).toEqual([]);
+    expect(db.movimentos![0].alertado_em).not.toBeNull();
+  });
+
+  it('push retentável não alerta agora — o canal ainda não recebeu o zero', async () => {
+    fakeConnector.falharProximo('ESTOQUE', true);
+    const db = produto([{ codigo: 'A1', estoque: 0 }], [mov()]);
+    const r = await processarSincronizacao(deps(db, { notificar }), JOB);
+    expect(r.status).toBe(500);
+    expect(enviados).toEqual([]);
+    expect(db.movimentos![0].alertado_em).toBeNull();
+  });
+
+  it('reposição que reativa o anúncio avisa a volta ao ar', async () => {
+    fakeConnector.statusVivo = 'pausado';
+    const db = produto([{ codigo: 'A1', estoque: 5 }], []);
+    await processarSincronizacao(deps(db, { notificar }), { ...JOB, reativar: true });
+    expect(enviados).toHaveLength(1);
+    expect(enviados[0].texto).toContain('voltou ao ar');
+  });
+
+  it('anúncio que já estava ativo não avisa volta ao ar', async () => {
+    fakeConnector.statusVivo = 'ativo';
+    const db = produto([{ codigo: 'A1', estoque: 5 }], []);
+    await processarSincronizacao(deps(db, { notificar }), { ...JOB, reativar: true });
+    expect(enviados).toEqual([]);
   });
 });

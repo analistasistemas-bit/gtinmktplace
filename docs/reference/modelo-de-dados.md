@@ -398,6 +398,9 @@ QStash — sem isso, uma RPC que commita seguida de enfileiramento que falha vir
 **`push_canal_origem`** (a **intenção** de propagação gravada por quem criou o movimento: venda =
 canal da venda que já se decrementou sozinho; entrada/estorno = `null` = todos os canais — um
 despachante genérico que reusasse um único `canal_origem` por lote confundiria as duas políticas),
+**`alertado_em`** (ADR-0134: quando o alerta de estoque zerado deste movimento saiu; `null` = ainda
+não avisado — a dedup do aviso mora na linha da transição, não no saldo atual, porque o push é
+idempotente e o QStash reentrega),
 `criado_por` (FK auth.users), `criado_em`.
 
 Índices:
@@ -408,6 +411,8 @@ despachante genérico que reusasse um único `canal_origem` por lote confundiria
 - `estoque_movimentos_org_codigo_idx` — `(org_id, codigo, criado_em desc)`.
 - `estoque_movimentos_push_pendente_idx` — `(org_id, criado_em) where push_enfileirado_em is null
   and codigo_pai <> ''`: varredura do outbox.
+- `estoque_movimentos_zerados_nao_alertados` — `(org_id, codigo_pai) where estoque_resultante = 0
+  and estoque_anterior > 0 and alertado_em is null`: candidatos ao alerta de estoque zerado.
 
 RLS: policy `"estoque_movimentos: select org"` (`for select to authenticated using org_id =
 (select current_org_id())`); **sem policy de escrita** — só `service_role`, via as RPCs abaixo.
@@ -591,7 +596,8 @@ Anúncios moderados/pausados + coordenação de alertas. *Migration `20260622115
 ### `notificacoes`
 Notificação in-app, espelho do alerta Telegram. *Migration `20260721094323_notificacoes_in_app.sql`
 (ADR-0085).* `user_id`, `org_id` (NOT NULL), `categoria` (mesmo enum textual de
-`profiles.telegram_categorias`), `texto` (mesma string formatada enviada ao Telegram, já com o
+`profiles.telegram_categorias` — `vendas`, `perguntas`, `pos_venda`, `financeiro`, `moderacao`,
+`mensagens`, `integracao`, `pulse`, `estoque`), `texto` (mesma string formatada enviada ao Telegram, já com o
 link quando houver), `lida`, `criada_em`. Gravada pelo mesmo ponto único que dispara o Telegram
 (`notificarCategoria`, `_shared/notificacoes/config.ts`) — todo assinante de uma categoria recebe,
 com ou sem Telegram configurado. RLS `select own`; escrita só do worker (`service_role`, bypassa

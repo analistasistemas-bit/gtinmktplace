@@ -145,5 +145,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0131 | [Sugestão de categoria pela ficha de catálogo](../../docs/decisions/0131-sugestao-categoria-pela-ficha-catalogo.md) |
 | 0132 | [Análise Avançada com JoomPulse](../../docs/decisions/0132-analise-avancada-joompulse.md) |
 | 0133 | [Alertas do Pulse: severidade gravada e área dedicada](../../docs/decisions/0133-alertas-do-pulse-severidade-e-area-dedicada.md) |
+| 0134 | [Alerta de estoque zerado e de volta ao ar](../../docs/decisions/0134-alerta-de-estoque-zerado-e-volta-ao-ar.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

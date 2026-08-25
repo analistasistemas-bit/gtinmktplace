@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Alerta de estoque zerado e de volta ao ar (ADR-0134) — 2026-08-25
+
+- [x] Categoria de notificação nova `estoque` (Deno + front, `notificacoes_categoria_check` e
+  `profiles_telegram_categorias_validas` atualizados). Backfill: quem assina `moderacao` passou a
+  assinar `estoque` (6 assinantes).
+- [x] `estoque_movimentos.alertado_em` + índice parcial dos candidatos; migration fecha os 1.479
+  movimentos históricos para o primeiro push não virar avalanche.
+- [x] `sincronizar-estoque` alerta a transição `>0 → 0` depois do push (dedup pelo update
+  condicional), distinguindo produto inteiro zerado (anúncio pausado) de variação isolada; e avisa
+  a volta ao ar quando a reativação do ADR-0111 acontece.
+- [x] Selo do Pulse: `suspended_for_prevention` vira "Pausado no ML" em vez de "Fora do ar" — o
+  Pulse guarda o status cru do ML e não passava pelo `parseStatusML`.
+
 ## Fix — pausa preventiva do ML não é moderação (ADR-0035, adendo) — 2026-08-25
 
 - [x] `parseStatusML` (`_shared/ml/status.ts`): `sub_status: suspended_for_prevention` sozinho vira

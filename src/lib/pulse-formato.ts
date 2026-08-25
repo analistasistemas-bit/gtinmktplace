@@ -106,12 +106,20 @@ export function motivoSemPrecoProprio(
     if (p.anuncio_sub_status?.includes('out_of_stock')) {
       return 'Seu anúncio está pausado no Mercado Livre por estoque zerado — repor o estoque o reativa.';
     }
+    if (pausaPreventiva(p.anuncio_sub_status)) {
+      return 'Seu anúncio está pausado preventivamente pelo Mercado Livre — não é moderação; reative-o em Publicados.';
+    }
     return `Seu anúncio não está à venda no Mercado Livre (situação: ${p.anuncio_status}).`;
   }
   if (p.catalogo_status && p.catalogo_status !== 'vinculado') {
     return 'Seu anúncio não está vinculado a esta ficha, então não aparece entre as ofertas dela.';
   }
   return 'Seu anúncio não está entre as ofertas ativas da ficha.';
+}
+
+/** Pausa preventiva do ML — ver PREVENTIVA_SUBS em supabase/functions/_shared/ml/status.ts. */
+function pausaPreventiva(sub: string[] | null | undefined): boolean {
+  return !!sub?.includes('suspended_for_prevention');
 }
 
 /** Etiqueta da situação do anúncio no ML, para a lista. `null` quando está tudo normal (ativo). */
@@ -124,6 +132,12 @@ export function seloAnuncio(
   }
   if (p.anuncio_status === 'paused') {
     return { texto: 'Pausado no ML', tom: 'atencao', ajuda: 'Anúncio pausado no Mercado Livre.' };
+  }
+  // O ML devolve `under_review` na pausa preventiva; o Pulse guarda o status cru, então a
+  // distinção que `parseStatusML` faz (ADR-0035, adendo 25/08) precisa existir aqui também —
+  // senão pausa administrativa aparece como "Fora do ar".
+  if (pausaPreventiva(p.anuncio_sub_status)) {
+    return { texto: 'Pausado no ML', tom: 'atencao', ajuda: 'Pausa preventiva do Mercado Livre (não é moderação).' };
   }
   return { texto: 'Fora do ar', tom: 'risco', ajuda: `Situação do anúncio no ML: ${p.anuncio_status}.` };
 }
