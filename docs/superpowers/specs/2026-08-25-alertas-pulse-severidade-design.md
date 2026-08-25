@@ -96,10 +96,17 @@ Regra (ADR-0133 D-2). `meuPreco` nulo ou não finito → **tudo `info`**, sem ex
 |---|---|
 | `preco_caiu` | `minAtual < meuPreco` |
 | `novo_concorrente` | `atual.preco < meuPreco` |
-| `concorrente_saiu` | o item que saiu era o **menor preço entre os anteriores ativos** (`preco <= minAntes`) **e** `preco < meuPreco` |
+| `concorrente_saiu` | quem saiu estava abaixo de nós (`d.preco < meuPreco`) **e**, depois da saída, ninguém mais está: `!Number.isFinite(minAtual) \|\| minAtual >= meuPreco` |
 
-`<=` e não `===` na comparação com `minAntes`: dois itens podem empatar no menor preço, e a saída de
-qualquer um deles muda a nossa posição da mesma forma.
+A condição do `concorrente_saiu` olha o mercado **depois** da saída, não o de antes. Testar contra
+`minAntes` produz um alerta perigoso: com concorrentes a R$70 e R$71 e nosso preço a R$75, a saída
+do de R$70 avisaria "pode subir" enquanto o de R$71 continua abaixo de nós. As duas condições juntas
+significam exatamente "quem nos segurava embaixo saiu e ninguém tomou o lugar".
+
+`minAtual` já é calculado logo acima do laço de saídas (`diff.ts:64`) e está em escopo. O cuidado com
+`Number.isFinite` é o mesmo do `preco_caiu` (`diff.ts:65`): `Math.min(...[])` devolve `Infinity`, não
+`null` — ficha que ficou sem nenhuma oferta relevante é o caso mais forte de `acao` (não sobrou
+ninguém para nos furar), e um teste de finitude solto a descartaria em silêncio.
 
 As entradas já chegam filtradas por `entradaDiffRelevante`, então "menor" aqui é sempre "menor
 relevante" — não reimplementar a qualificação (ADR-0130 D-4 proíbe cópia da regra).
@@ -181,7 +188,7 @@ Substitui `painel-alertas.tsx` (que é removido junto com seu teste).
 
 | Arquivo | Cobre |
 |---|---|
-| `_shared/pulse/__tests__/diff.test.ts` | Severidade dos 3 tipos × `meuPreco` nulo / acima / abaixo. Inclui: `concorrente_saiu` do menor relevante abaixo do nosso preço → `acao`; saída de um não-menor → `info`; `meuPreco` nulo → tudo `info`. |
+| `_shared/pulse/__tests__/diff.test.ts` | Severidade dos 3 tipos × `meuPreco` nulo / acima / abaixo. Inclui: `concorrente_saiu` do único que estava abaixo → `acao`; saída de um dos dois que estavam abaixo, restando um → `info`; saída de quem estava acima → `info`; ficha que ficou sem oferta relevante → `acao`; `meuPreco` nulo → tudo `info`. |
 | `src/components/pulse/__tests__/aba-alertas.test.tsx` | Abre em Ação; troca de filtro refaz a query; contagem vem da query de count (não de `lista.length`); `Marcar N como lidos` chama `marcarAlertasLidos` com a severidade ativa; estado vazio de Ação mostra os dois caminhos; erro mostra a faixa. |
 | `src/lib/__tests__/pulse-alerta-texto.test.ts` | Nickname presente, nickname ausente com `seller_id`, ambos ausentes. |
 
