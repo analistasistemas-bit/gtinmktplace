@@ -31,6 +31,12 @@ describe('parseStatusML', () => {
   it('paused + suspended_for_prevention → pausado', () => {
     expect(parseStatusML({ id: 'x', status: 'paused', sub_status: ['suspended_for_prevention'] }).status).toBe('pausado');
   });
+  it('closed/inactive com suspended_for_prevention mantêm o status próprio', () => {
+    // `pausado` é o único estado que `sincronizar-estoque` reativa sozinho (PUT active, ADR-0111):
+    // encerrado/inativo não podem cair nesse balde por causa do sub_status preventivo.
+    expect(parseStatusML({ id: 'x', status: 'closed', sub_status: ['suspended_for_prevention'] }).status).toBe('encerrado');
+    expect(parseStatusML({ id: 'x', status: 'inactive', sub_status: ['suspended_for_prevention'] }).status).toBe('inativo');
+  });
   it('under_review sem sub_status segue moderado', () => {
     expect(parseStatusML({ id: 'x', status: 'under_review' }).status).toBe('moderado');
   });

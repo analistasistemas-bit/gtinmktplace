@@ -61,8 +61,11 @@ export function parseStatusML(item: ItemMLStatus | null): StatusParsed {
   const preventiva = sub.length > 0 && sub.every((s) => PREVENTIVA_SUBS.includes(s));
   const moderado = sub.some((s) => MODERACAO_SUBS.includes(s))
     || (item.status === 'under_review' && !preventiva);
+  // Só o `under_review` precisa do desvio: `paused` já cai em `pausado` pelo MAP, e
+  // `closed`/`inactive` têm de manter o status próprio — `pausado` é o único estado que
+  // `sincronizar-estoque` reativa sem decisão humana (ADR-0111).
   const status = moderado ? 'moderado'
-    : preventiva ? 'pausado'
+    : (preventiva && item.status === 'under_review') ? 'pausado'
     : (MAP[item.status] ?? 'indisponivel');
   return {
     status,

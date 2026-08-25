@@ -79,6 +79,11 @@ havia 5 dias.
 (`pending_documentation`, `picture_downloading_pending`, …), segue `moderado` — comportamento
 inalterado.
 
+**Escopo do desvio:** só `under_review` vira `pausado` por pausa preventiva. `closed` e `inactive`
+com o mesmo `sub_status` mantêm `encerrado`/`inativo` — `pausado` é o único estado que
+`sincronizar-estoque` reativa sem decisão humana, e alargar esse balde reabriria a escrita que fez
+o ML cancelar um anúncio em 06/08/2026.
+
 **Consequência aceita:** como pausa preventiva vira `pausado`, uma reposição de estoque faz
 `sincronizar-estoque` reativar o anúncio (ADR-0111, `reativarSePausado` → `PUT status=active`) —
 que é exatamente o caminho de recuperação que o ML documenta para esse caso.
