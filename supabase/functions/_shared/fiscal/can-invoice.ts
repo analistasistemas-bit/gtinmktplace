@@ -26,6 +26,22 @@ export async function listarItensUP(
   return itens ?? [];
 }
 
+/** Códigos das variações (não excluídas da publicação) de uma família — o universo completo de
+ *  SKUs que DEVERIAM ter item vinculado no ML. Fix (achado do review final): a reconciliação de
+ *  monitorar-moderados chamava `skusOrfaosUP` com os SKUs dos PRÓPRIOS itensUP em vez dos SKUs
+ *  reais da família — variação sem NENHUMA linha em anuncios_externos_itens ficava invisível
+ *  (nunca detectada como órfã), podendo reescrever `true` onde o worker de push já tinha marcado
+ *  `false`. Mesma query que sincronizar-fiscal-ml/index.ts usa pra montar o payload; erro de
+ *  leitura LANÇA — nunca degrada pra [] (o mesmo padrão de listarItensUP acima). */
+export async function listarSkusFamilia(
+  admin: SupabaseClient, familiaId: string,
+): Promise<string[]> {
+  const { data, error } = await admin.from('variacoes')
+    .select('codigo').eq('familia_id', familiaId).eq('excluida_da_publicacao', false);
+  if (error) throw new Error(`listarSkusFamilia: ${error.message}`);
+  return (data ?? []).map((v: { codigo: string }) => v.codigo);
+}
+
 /** IDs distintos a checar pra uma família: rota UP usa os itens dos filhos já resolvidos (SKU
  *  órfão fica de fora do AND — é `skusOrfaosUP`, abaixo, quem decide o que fazer com ele; nunca
  *  chamar sem checar órfão antes, ou a família UP incompleta pode reconciliar como pronta);

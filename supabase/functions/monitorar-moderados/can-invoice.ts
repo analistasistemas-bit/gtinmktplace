@@ -11,7 +11,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
   calcularSemaforoCanInvoice, idsParaChecar, listarItensUP as listarItensUPReal,
-  skusOrfaosUP, type LerCanInvoice,
+  listarSkusFamilia as listarSkusFamiliaReal, skusOrfaosUP, type LerCanInvoice,
 } from '../_shared/fiscal/can-invoice.ts';
 
 export type { LerCanInvoice };
@@ -27,6 +27,10 @@ export async function reconciliarCanInvoice(
   // Injeção pro mesmo padrão de deps de sincronizar-fiscal-ml — default é a implementação real
   // (mesma query, mesma trava contra erro de leitura degradar em silêncio).
   listarItensUP: (admin: SupabaseClient, orgId: string, codigoPai: string) => ReturnType<typeof listarItensUPReal> = listarItensUPReal,
+  // Fix (achado do review final): MESMO universo de SKU órfão que o worker de push usa — os
+  // códigos de `variacoes` da família, não os SKUs dos próprios itensUP (ver comentário em
+  // _shared/fiscal/can-invoice.ts#listarSkusFamilia).
+  listarSkusFamilia: (admin: SupabaseClient, familiaId: string) => ReturnType<typeof listarSkusFamiliaReal> = listarSkusFamiliaReal,
 ): Promise<number> {
   const { data: org, error: orgErr } = await admin.from('organizations')
     .select('modulos_habilitados').eq('id', orgId).maybeSingle();
@@ -48,7 +52,13 @@ export async function reconciliarCanInvoice(
     // pode ficar de fora do AND em silêncio (a família reconciliaria como `true` com 1 SKU
     // nunca vinculado no ML). Mesmo gate de sincronizar-fiscal-ml/processar.ts, mesma causa;
     // short-circuit ANTES de ler can_invoice no ML, como o worker também faz.
-    const skusOrfaos = skusOrfaosUP(itensUP.map((i) => i.sku), itensUP);
+    // Fix (review final): universo de SKU vem de `variacoes` da família — os SKUs dos PRÓPRIOS
+    // itensUP (como antes) tornam invisível a variação sem NENHUMA linha em
+    // anuncios_externos_itens; ela nunca aparecia como órfã. Só busca em rota UP (itensUP não
+    // vazio) — em Legacy o conceito não existe e skusOrfaosUP já devolveria [] de qualquer jeito.
+    const skusOrfaos = itensUP.length > 0
+      ? skusOrfaosUP(await listarSkusFamilia(admin, f.id), itensUP)
+      : [];
     if (skusOrfaos.length > 0) {
       const { error } = await admin.from('familias').update({
         can_invoice: false, can_invoice_causa: `SKU(s) sem item vinculado no ML: ${skusOrfaos.join(', ')}`,

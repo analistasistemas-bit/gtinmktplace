@@ -85,9 +85,10 @@ describe('reconciliarCanInvoice (ADR-0135 D-10 — o estado exibido é o do ML)'
       { sku: 'S1', item_externo_id: 'MLB1' },
       { sku: 'S2', item_externo_id: 'MLB2' },
     ]);
+    const listarSkusFamilia = vi.fn(async () => ['S1', 'S2']);
     const ler = vi.fn(async (_t: string, itemId: string) =>
       ({ pronto: itemId === 'MLB1', causa: itemId === 'MLB1' ? null : 'motivo-ml' }));
-    const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP);
+    const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP, listarSkusFamilia);
     expect(n).toBe(1);
     expect(ler).toHaveBeenCalledWith('tok', 'MLB1');
     expect(ler).toHaveBeenCalledWith('tok', 'MLB2');
@@ -102,10 +103,31 @@ describe('reconciliarCanInvoice (ADR-0135 D-10 — o estado exibido é o do ML)'
       { sku: 'S1', item_externo_id: 'MLB1' },
       { sku: 'S2', item_externo_id: null }, // ainda pendente no ML
     ]);
+    const listarSkusFamilia = vi.fn(async () => ['S1', 'S2']);
     const ler = vi.fn(async () => ({ pronto: true, causa: null }));
-    const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP);
+    const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP, listarSkusFamilia);
     expect(n).toBe(1);
     // Mesmo gate do worker (Q3): SKU pendente é decisão definitiva — nem lê can_invoice no ML.
+    expect(ler).not.toHaveBeenCalled();
+    expect(updates[0]).toEqual({
+      id: 'f1', can_invoice: false, can_invoice_causa: 'SKU(s) sem item vinculado no ML: S2',
+    });
+  });
+
+  it('review final — variação SEM NENHUMA linha em anuncios_externos_itens: universo vem de variacoes, não dos itensUP; can_invoice=false, causa cita o SKU, NUNCA true', async () => {
+    const { admin, updates } = fakeAdmin({
+      familias: [{ id: 'f1', codigo_pai: 'CP1', ml_item_id: 'MLB1' }],
+    });
+    // S1 tem item resolvido; S2 é uma variação da família que nunca ganhou linha em
+    // anuncios_externos_itens — não aparece aqui (diferente do caso "item_externo_id null" acima).
+    const listarItensUP = vi.fn(async () => [{ sku: 'S1', item_externo_id: 'MLB1' }]);
+    const listarSkusFamilia = vi.fn(async () => ['S1', 'S2']);
+    const ler = vi.fn(async () => ({ pronto: true, causa: null }));
+    const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP, listarSkusFamilia);
+    expect(n).toBe(1);
+    expect(listarSkusFamilia).toHaveBeenCalledWith(admin, 'f1');
+    // Antes do fix, skusOrfaosUP era chamado com os SKUs dos próprios itensUP (só 'S1') e nunca
+    // via S2 — reconciliaria como pronto mesmo com a variação órfã.
     expect(ler).not.toHaveBeenCalled();
     expect(updates[0]).toEqual({
       id: 'f1', can_invoice: false, can_invoice_causa: 'SKU(s) sem item vinculado no ML: S2',

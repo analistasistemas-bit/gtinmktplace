@@ -1,7 +1,7 @@
 // ADR-0135 D-7 — gate de escrita de anúncio: org com módulo fiscal não publica família
 // fiscalmente incompleta. LOUD via throw (cai no catch do worker → status='erro' visível).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { exigirModulo } from '../produto/modulo.ts';
+import { moduloHabilitadoStrict } from '../produto/modulo.ts';
 import { camposFiscaisFaltantes, type CamposFiscaisFamilia } from './validar.ts';
 
 export interface FamiliaFiscalRow extends CamposFiscaisFamilia {
@@ -10,11 +10,14 @@ export interface FamiliaFiscalRow extends CamposFiscaisFamilia {
   nome_pai: string;
 }
 
-/** @returns false = org sem módulo (nada a fazer); true = módulo ativo e família OK. */
+/** @returns false = org sem módulo (nada a fazer); true = módulo ativo e família OK.
+ *  Fix (achado do review final): erro de LEITURA do módulo nunca pode virar "sem módulo" aqui —
+ *  isso publicaria a família SEM gate e sem enqueue do push fiscal. Usa a variante strict (lança
+ *  em erro); o throw cai no catch do worker como transitório (sem `.status`, retenta). */
 export async function exigirFiscalCompletoSePreciso(
   admin: SupabaseClient, familia: FamiliaFiscalRow,
 ): Promise<boolean> {
-  if (!(await exigirModulo(admin, familia.org_id, 'fiscal'))) return false;
+  if (!(await moduloHabilitadoStrict(admin, familia.org_id, 'fiscal'))) return false;
 
   const { data: empresa } = await admin.from('empresa_fiscal')
     .select('regime_tributario').eq('org_id', familia.org_id).maybeSingle();

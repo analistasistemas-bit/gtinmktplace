@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { calcularSemaforoCanInvoice, idsParaChecar, listarItensUP, skusOrfaosUP } from '../can-invoice.ts';
+import {
+  calcularSemaforoCanInvoice, idsParaChecar, listarItensUP, listarSkusFamilia, skusOrfaosUP,
+} from '../can-invoice.ts';
 
 // Fake admin mínimo pra exercitar a query real de listarItensUP (Task 7 nunca testou
 // diretamente essa implementação — só via vi.fn() injetado em DepsFiscal). Extraída pra shared
@@ -9,6 +11,8 @@ function fakeAdmin(opts: {
   raizesErro?: string;
   itens?: Array<{ sku: string; item_externo_id: string | null }>;
   itensErro?: string;
+  variacoes?: Array<{ codigo: string }>;
+  variacoesErro?: string;
 }) {
   return {
     from: (t: string) => {
@@ -24,6 +28,13 @@ function fakeAdmin(opts: {
           select: () => ({ in: () => ({ eq: async () =>
             opts.itensErro ? { data: null, error: { message: opts.itensErro } }
                              : { data: opts.itens ?? [], error: null } }) }),
+        };
+      }
+      if (t === 'variacoes') {
+        return {
+          select: () => ({ eq: () => ({ eq: async () =>
+            opts.variacoesErro ? { data: null, error: { message: opts.variacoesErro } }
+                                 : { data: opts.variacoes ?? [], error: null } }) }),
         };
       }
       throw new Error(`tabela não mapeada: ${t}`);
@@ -55,6 +66,18 @@ describe('listarItensUP', () => {
   it('erro ao ler itens dos filhos também LANÇA', async () => {
     const admin = fakeAdmin({ raizes: [{ id: 'raiz1' }], itensErro: 'timeout' });
     await expect(listarItensUP(admin, 'o1', 'CP1')).rejects.toThrow(/timeout/);
+  });
+});
+
+describe('listarSkusFamilia', () => {
+  it('devolve os códigos das variações não excluídas da publicação', async () => {
+    const admin = fakeAdmin({ variacoes: [{ codigo: 'S1' }, { codigo: 'S2' }] });
+    expect(await listarSkusFamilia(admin, 'f1')).toEqual(['S1', 'S2']);
+  });
+
+  it('erro ao ler variações LANÇA — nunca degrada pra []', async () => {
+    const admin = fakeAdmin({ variacoesErro: 'timeout' });
+    await expect(listarSkusFamilia(admin, 'f1')).rejects.toThrow(/timeout/);
   });
 });
 

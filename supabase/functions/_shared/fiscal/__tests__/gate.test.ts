@@ -7,8 +7,22 @@ function adminFake(modulos: string[], regime: string | null) {
       select: () => ({
         eq: () => ({
           maybeSingle: async () => tabela === 'organizations'
-            ? { data: { modulos_habilitados: modulos } }
+            ? { data: { modulos_habilitados: modulos }, error: null }
             : { data: regime ? { regime_tributario: regime } : null },
+        }),
+      }),
+    }),
+  } as never;
+}
+
+function adminFakeErroOrganizations() {
+  return {
+    from: (tabela: string) => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: async () => tabela === 'organizations'
+            ? { data: null, error: { message: 'timeout' } }
+            : { data: null },
         }),
       }),
     }),
@@ -41,5 +55,9 @@ describe('exigirFiscalCompletoSePreciso (ADR-0135 D-7)', () => {
   it('erro lançado é definitivo (status 400) — não pode ser retentado pelo QStash', async () => {
     await expect(exigirFiscalCompletoSePreciso(adminFake(['fiscal'], 'simples'), { ...completa, ncm: null }))
       .rejects.toMatchObject({ status: 400 });
+  });
+  it('erro de LEITURA do módulo (organizations) lança — nunca vira "sem módulo" (fail-open)', async () => {
+    await expect(exigirFiscalCompletoSePreciso(adminFakeErroOrganizations(), completa))
+      .rejects.toThrow(/organizations/);
   });
 });
