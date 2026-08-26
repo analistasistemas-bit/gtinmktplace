@@ -70,18 +70,16 @@ export type LoteRow = Database['public']['Tables']['lotes']['Row'];
 export type FamiliaRow = Database['public']['Tables']['familias']['Row'];
 export type VariacaoRow = Database['public']['Tables']['variacoes']['Row'];
 
-type FormatoPublicacaoMlRow = { categoria_id: string };
-
 async function fetchCategoriasUserProducts(categoriaIds: Array<string | null>): Promise<Set<string>> {
   const categorias = [...new Set(categoriaIds.filter((id): id is string => !!id))];
   if (categorias.length === 0) return new Set<string>();
-  // A migration é recente e database.types.ts ainda não foi regenerado; leitura continua
-  // protegida por RLS da organização, como as demais auxiliares desta tela.
-  const { data } = await (supabase.from('ml_formato_publicacao' as never) as ReturnType<typeof supabase.from>)
+  // Leitura protegida por RLS da organização, como as demais auxiliares desta tela.
+  const { data } = await supabase
+    .from('ml_formato_publicacao')
     .select('categoria_id')
     .eq('formato', 'user_products')
     .in('categoria_id', categorias);
-  return new Set((data ?? []).map((r: unknown) => (r as FormatoPublicacaoMlRow).categoria_id));
+  return new Set((data ?? []).map((r) => r.categoria_id));
 }
 
 export async function fetchLotes(): Promise<LoteRow[]> {
@@ -135,7 +133,6 @@ async function fetchAnunciosPorCodigoPai(codigosPai: string[]): Promise<Map<stri
 // raiz partição 0 em anuncios_externos → filhos NÃO-retirados COM item_externo_id em
 // anuncios_externos_itens (só esses já existem no ML). Família Legacy: sem linhas filhas → Set vazio →
 // nenhum efeito (a checagem cai em ml_variation_id, como antes). RLS org-scoped filtra por org.
-// A tabela ainda não está em database.types.ts (db push sem regen) → cast pontual.
 async function fetchSkusAtivosUP(codigosPai: string[]): Promise<Map<string, Set<string>>> {
   const porCodigo = new Map<string, Set<string>>();
   if (codigosPai.length === 0) return porCodigo;
@@ -146,16 +143,17 @@ async function fetchSkusAtivosUP(codigosPai: string[]): Promise<Map<string, Set<
     .eq('particao', 0)
     .in('codigo_pai', codigosPai);
   const codigoPorRaiz = new Map<string, string>();
-  for (const r of (raizes ?? []) as { id: string; codigo_pai: string }[]) codigoPorRaiz.set(r.id, r.codigo_pai);
+  for (const r of raizes ?? []) codigoPorRaiz.set(r.id, r.codigo_pai);
   const rootIds = [...codigoPorRaiz.keys()];
   if (rootIds.length === 0) return porCodigo;
 
-  const { data: itens } = await (supabase.from('anuncios_externos_itens' as never) as ReturnType<typeof supabase.from>)
+  const { data: itens } = await supabase
+    .from('anuncios_externos_itens')
     .select('anuncio_externo_id, sku')
     .in('anuncio_externo_id', rootIds)
     .eq('retirado', false)
     .not('item_externo_id', 'is', null);
-  for (const it of (itens ?? []) as { anuncio_externo_id: string; sku: string }[]) {
+  for (const it of itens ?? []) {
     const codigoPai = codigoPorRaiz.get(it.anuncio_externo_id);
     if (!codigoPai) continue;
     const set = porCodigo.get(codigoPai) ?? new Set<string>();

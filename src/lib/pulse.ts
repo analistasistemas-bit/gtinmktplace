@@ -4,15 +4,6 @@ import { supabase } from './supabase';
 import { fetchAliquotas } from './queries';
 import { estadoAtualOfertas, mercadoPulse } from './pulse-margem';
 
-// As tabelas pulse_* são recentes e database.types.ts ainda não foi regenerado (mesmo padrão
-// de cast pontual usado em queries.ts para ml_formato_publicacao); RLS continua protegendo a
-// leitura pela organização normalmente.
-function pulseFrom(
-  tabela: 'pulse_produtos' | 'pulse_ofertas' | 'pulse_ofertas_atual' | 'pulse_vendedores' | 'pulse_alertas',
-) {
-  return supabase.from(tabela as never) as ReturnType<typeof supabase.from>;
-}
-
 export interface PulseProduto {
   id: string; catalog_product_id: string; codigo_pai: string | null; titulo: string | null; gtin: string | null;
   origem: 'auto' | 'manual'; status: 'ativo' | 'pausado' | 'arquivado';
@@ -92,7 +83,7 @@ export async function fetchPulseProdutos(): Promise<PulseProduto[]> {
   // `meu_preco` vem do próprio radar: o coletor lê a nossa oferta na ficha, na mesma resposta das
   // concorrentes. A versão anterior derivava esse número das variações locais, que só são escritas
   // quando o app publica — preço alterado fora do app ficava congelado no banco (Errata 4).
-  const { data, error } = await pulseFrom('pulse_produtos')
+  const { data, error } = await supabase.from('pulse_produtos')
     .select(
       'id, catalog_product_id, codigo_pai, titulo, gtin, origem, status, catalogo_status, ptw_status, ptw_preco_sugerido, ptw_aplicavel, ptw_custos, ultimo_snapshot_em, meu_preco, meu_preco_em, anuncio_status, anuncio_sub_status, anuncio_status_em, comissao_pct, comissao_fixa, comissao_preco, comissao_em',
     )
@@ -118,13 +109,13 @@ export async function fetchPulseDetalhe(
 ): Promise<{ ofertas: PulseOferta[]; ofertasAtuais: PulseOferta[]; vendedores: PulseVendedor[] }> {
   // Estado atual vem da VIEW (última linha por item, sem truncamento); o histórico bruto
   // (limit 400, linhas mais recentes) alimenta só a lista "menor preço por dia".
-  const { data: atuaisData, error: atuaisErro } = await pulseFrom('pulse_ofertas_atual')
+  const { data: atuaisData, error: atuaisErro } = await supabase.from('pulse_ofertas_atual')
     .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d, visitas_30d_em, full_ml')
     .eq('produto_id', produtoId);
   if (atuaisErro) throw atuaisErro;
   const ofertasAtuais = (atuaisData ?? []) as PulseOferta[];
 
-  const { data: ofertasData, error: ofertasErro } = await pulseFrom('pulse_ofertas')
+  const { data: ofertasData, error: ofertasErro } = await supabase.from('pulse_ofertas')
     .select('item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d, visitas_30d_em, full_ml')
     .eq('produto_id', produtoId)
     .order('dia', { ascending: false })
@@ -135,7 +126,7 @@ export async function fetchPulseDetalhe(
   const sellerIds = [...new Set(ofertasAtuais.map((o) => o.seller_id))];
   if (sellerIds.length === 0) return { ofertas, ofertasAtuais, vendedores: [] };
 
-  const { data: vendedoresData, error: vendedoresErro } = await pulseFrom('pulse_vendedores')
+  const { data: vendedoresData, error: vendedoresErro } = await supabase.from('pulse_vendedores')
     .select('seller_id, nickname, power_seller, nivel, transactions_total, dia, uf, reputacao_detalhe, perfil_coletado_em')
     .in('seller_id', sellerIds)
     .order('dia', { ascending: true });
@@ -167,7 +158,7 @@ export async function fetchPulseResumoOfertas(produtoIds: string[]): Promise<Map
   const PAGINA = 1000;
   const linhas: (PulseOferta & { produto_id: string })[] = [];
   for (let de = 0; ; de += PAGINA) {
-    const { data, error } = await pulseFrom('pulse_ofertas_atual')
+    const { data, error } = await supabase.from('pulse_ofertas_atual')
       .select('produto_id, item_id, seller_id, preco, tier, frete_gratis, loja_oficial, ativo, dia, permalink, visitas_30d, visitas_30d_em, full_ml')
       .in('produto_id', produtoIds)
       .order('produto_id', { ascending: true })
@@ -207,7 +198,7 @@ async function fetchPulseVendedoresResumo(sellerIds: number[]): Promise<PulseVen
   for (let inicio = 0; inicio < sellerIds.length; inicio += POR_LOTE) {
     const lote = sellerIds.slice(inicio, inicio + POR_LOTE);
     for (let de = 0; ; de += PAGINA) {
-      const { data, error } = await pulseFrom('pulse_vendedores')
+      const { data, error } = await supabase.from('pulse_vendedores')
         .select('seller_id, nickname, power_seller, nivel, transactions_total, dia, uf, reputacao_detalhe, perfil_coletado_em')
         .in('seller_id', lote)
         .order('seller_id', { ascending: true })
@@ -224,7 +215,7 @@ async function fetchPulseVendedoresResumo(sellerIds: number[]): Promise<PulseVen
 }
 
 export async function pausarPulseProduto(id: string, pausar: boolean): Promise<void> {
-  const { error } = await pulseFrom('pulse_produtos')
+  const { error } = await supabase.from('pulse_produtos')
     .update({ status: pausar ? 'pausado' : 'ativo' })
     .eq('id', id);
   if (error) throw error;
@@ -246,7 +237,7 @@ export async function fetchPulseAlertas(
   // baixo, e marcar um como lido encolhe o conjunto filtrado. Risco aceito — o alerta deslocado
   // aparece no próximo refetch, e a alternativa (cursor por criado_em+id) não paga o custo com
   // ~12 alertas de ação por dia.
-  let q = pulseFrom('pulse_alertas')
+  let q = supabase.from('pulse_alertas')
     .select('id, produto_id, tipo, severidade, payload, lido, criado_em, pulse_produtos(titulo, codigo_pai, catalog_product_id)')
     .eq('lido', false)
     .order('criado_em', { ascending: false })
@@ -261,7 +252,7 @@ export async function fetchPulseAlertas(
 /** Contagem VERDADEIRA de não lidos do filtro — separada da página. O rótulo antigo usava o
  *  tamanho da lista, que era o teto de leitura: dizia "20" com 145 não lidos (ADR-0133 D-7). */
 export async function contarPulseAlertas(severidade: FiltroSeveridade): Promise<number> {
-  let q = pulseFrom('pulse_alertas')
+  let q = supabase.from('pulse_alertas')
     .select('id', { count: 'exact', head: true })
     .eq('lido', false);
   if (severidade !== 'todos') q = q.eq('severidade', severidade);
@@ -272,7 +263,7 @@ export async function contarPulseAlertas(severidade: FiltroSeveridade): Promise<
 
 /** Marca o alerta como lido — grant é column-level só em `lido` (não pode ir mais nada no update). */
 export async function marcarAlertaLido(id: string): Promise<void> {
-  const { error } = await pulseFrom('pulse_alertas').update({ lido: true }).eq('id', id);
+  const { error } = await supabase.from('pulse_alertas').update({ lido: true }).eq('id', id);
   if (error) throw error;
 }
 
@@ -294,7 +285,7 @@ export async function marcarAlertaLido(id: string): Promise<void> {
 export async function marcarAlertasLidos(
   severidade: FiltroSeveridade, ateCriadoEm: string,
 ): Promise<void> {
-  let q = pulseFrom('pulse_alertas').update({ lido: true })
+  let q = supabase.from('pulse_alertas').update({ lido: true })
     .eq('lido', false)
     .lte('criado_em', ateCriadoEm);
   if (severidade !== 'todos') q = q.eq('severidade', severidade);
