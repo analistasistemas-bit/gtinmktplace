@@ -20,6 +20,12 @@ export function fiscalVazio(): FiscalForm {
   return { ncm: '', cest: '', origemNfe: '', fci: '', exTipi: '', tributacaoIcms: '' };
 }
 
+// Códigos de origem_nfe que exigem FCI (spec §2.3). Usado tanto na validação (fiscalCompleto)
+// quanto no onChange do select abaixo — trocar de origem para fora deste conjunto precisa
+// LIMPAR o fci, senão um valor de FCI de uma origem anterior sobrevive escondido no payload
+// (dado fiscal sujo em silêncio — regra inviolável do projeto).
+const ORIGENS_COM_FCI = [3, 5, 8];
+
 /** Mesmas regras de `camposFiscaisFaltantes`, restritas aos campos deste form (unidade fica de
  *  fora — validada pela edge sobre o campo `unidade` da família, fora do escopo deste tipo). */
 export function fiscalCompleto(f: FiscalForm, origem: 'nacional' | 'importado' | null): boolean {
@@ -28,7 +34,7 @@ export function fiscalCompleto(f: FiscalForm, origem: 'nacional' | 'importado' |
   if (!f.origemNfe) return false;
   const origemNfe = Number(f.origemNfe);
   if (!ORIGENS_NFE_POR_ORIGEM[origem].includes(origemNfe)) return false;
-  if ([3, 5, 8].includes(origemNfe) && !f.fci.trim()) return false;
+  if (ORIGENS_COM_FCI.includes(origemNfe) && !f.fci.trim()) return false;
   if (!f.tributacaoIcms.trim()) return false;
   if (f.cest && !/^\d{7}$/.test(f.cest)) return false;
   return true;
@@ -78,7 +84,7 @@ export function EtapaFiscalForm({ valor, origem, onMudar, sugestaoNcm, carregand
   onAplicarSugestao: () => void;
 }) {
   const codigosOrigem = origem ? ORIGENS_NFE_POR_ORIGEM[origem] : [];
-  const fciVisivel = [3, 5, 8].includes(Number(valor.origemNfe));
+  const fciVisivel = ORIGENS_COM_FCI.includes(Number(valor.origemNfe));
 
   return (
     <div className="flex min-w-0 flex-col gap-4">
@@ -134,7 +140,10 @@ export function EtapaFiscalForm({ valor, origem, onMudar, sugestaoNcm, carregand
             aria-label="Origem fiscal (NF-e)"
             className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             value={valor.origemNfe}
-            onChange={(e) => onMudar({ origemNfe: e.target.value })}
+            onChange={(e) => {
+              const v = e.target.value;
+              onMudar({ origemNfe: v, ...(ORIGENS_COM_FCI.includes(Number(v)) ? {} : { fci: '' }) });
+            }}
           >
             <option value="">Selecione…</option>
             {codigosOrigem.map((c) => (

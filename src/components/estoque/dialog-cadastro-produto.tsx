@@ -213,19 +213,30 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
   // Dispara a sugestão de NCM UMA vez ao entrar na etapa fiscal (ADR-0135 D-9). A família ainda
   // não existe neste ponto do cadastro — `sugerir-ncm` aceita `{ nome, descricao }` direto dos
   // campos digitados na etapa 1 (T10), sem precisar de `familiaId`.
+  //
+  // Fix round 1 (F1): o dialog fica montado permanentemente nos dois call sites (Estoque.tsx,
+  // viabilidade-linha.tsx) — fechar ANTES da resposta chegar não cancela o fetch. Sem a flag
+  // `ignore`, a resposta de um produto A resolvia depois de fechado e aplicava `setSugestaoNcm`
+  // no produto B (reaberto com outro nome), que via o NCM de A rotulado "Sugerida por IA". O
+  // cleanup roda sempre que `aberto` OU `etapaFiscal` mudam — inclusive ao fechar, mesmo com
+  // `etapaFiscal` ainda true nesse instante — então a resposta tardia é descartada. `!aberto` no
+  // guard evita reabrir a MESMA etapa fiscal disparando um fetch novo antes do reset (que já
+  // limpa `sugestaoNcm`) rodar.
   useEffect(() => {
-    if (!etapaFiscal || sugestaoNcm || carregandoSugestao) return;
+    if (!aberto || !etapaFiscal || sugestaoNcm || carregandoSugestao) return;
+    let ignore = false;
     setCarregandoSugestao(true);
     supabase.functions.invoke('sugerir-ncm', { body: { nome: nomePai, descricao: descricaoPai || undefined } })
       .then(({ data, error }) => {
-        if (error) return;
+        if (ignore || error) return;
         const r = data as { ncm: string | null; justificativa: string };
         if (r?.ncm) setSugestaoNcm({ ncm: r.ncm, justificativa: r.justificativa });
       })
       .catch(() => {})
       .finally(() => setCarregandoSugestao(false));
+    return () => { ignore = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [etapaFiscal]);
+  }, [etapaFiscal, aberto]);
 
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));

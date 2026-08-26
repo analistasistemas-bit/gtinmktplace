@@ -24,4 +24,29 @@ describe('EtapaFiscalForm (ADR-0135 D-9)', () => {
     expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '0', tributacaoIcms: '102' }, 'nacional')).toBe(true);
     expect(fiscalCompleto({ ...fiscalVazio(), ncm: '39269090', origemNfe: '1', tributacaoIcms: '102' }, 'nacional')).toBe(false);
   });
+
+  // F2, fix round 1: trocar de uma origem que exige FCI (3/5/8) para uma que não exige
+  // precisa LIMPAR o fci no mesmo patch — senão o valor sobrevive escondido (campo oculto) e
+  // vai no payload como dado fiscal sujo em silêncio.
+  it('trocar origemNfe de 3 para 0 limpa o fci no mesmo patch', () => {
+    const onMudar = vi.fn();
+    render(<EtapaFiscalForm
+      valor={{ ...fiscalVazio(), origemNfe: '3', fci: 'FCI-ANTIGO' }}
+      origem="nacional" onMudar={onMudar}
+      sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()}
+    />);
+    fireEvent.change(screen.getByLabelText(/origem fiscal/i), { target: { value: '0' } });
+    expect(onMudar).toHaveBeenCalledWith({ origemNfe: '0', fci: '' });
+  });
+
+  it('trocar origemNfe de 3 para 5 (ambas exigem FCI) preserva o fci', () => {
+    const onMudar = vi.fn();
+    render(<EtapaFiscalForm
+      valor={{ ...fiscalVazio(), origemNfe: '3', fci: 'FCI-ATUAL' }}
+      origem="nacional" onMudar={onMudar}
+      sugestaoNcm={null} carregandoSugestao={false} onAplicarSugestao={vi.fn()}
+    />);
+    fireEvent.change(screen.getByLabelText(/origem fiscal/i), { target: { value: '5' } });
+    expect(onMudar).toHaveBeenCalledWith({ origemNfe: '5' });
+  });
 });

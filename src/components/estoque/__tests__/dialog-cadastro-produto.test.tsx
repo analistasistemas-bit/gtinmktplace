@@ -749,6 +749,17 @@ describe('DialogCadastroProduto — prop inicial (pré-preenchimento da Viabilid
   });
 });
 
+// F3(c), fix round 1: sem o módulo fiscal, `sugerir-ncm` nunca deveria ser chamada — a maioria
+// dos testes deste arquivo já roda com `modulosMock` no default (`[]`), este só torna a
+// asserção negativa explícita.
+it('DialogCadastroProduto sem o módulo fiscal nunca invoca sugerir-ncm', async () => {
+  const user = userEvent.setup();
+  renderDialog();
+  await preencherEEnviar(user, 'Produto Sem Fiscal');
+  const chamadas = (supabase.functions.invoke as ReturnType<typeof vi.fn>).mock.calls.map((c) => c[0]);
+  expect(chamadas).not.toContain('sugerir-ncm');
+});
+
 // ADR-0135 D-9: com o módulo fiscal ativo, o cadastro ganha uma etapa no meio (dados+variações
 // → fiscal → fotos). O caminho sem módulo (todo o resto deste arquivo) fica intacto — a
 // etapa fiscal só existe atrás do `useModulosHabilitados` mockado abaixo.
@@ -762,7 +773,11 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
   afterEach(() => {
     modulosMock.mockReturnValue({ data: [], isLoading: false });
     cadastrarProdutoMock.mockClear();
-    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockReset();
+    // mockClear (não mockReset): reset apaga a IMPLEMENTAÇÃO do mock compartilhado
+    // (`supabase.functions.invoke` é uma única instância pra todo o arquivo) — quem adicionar
+    // describe depois deste herdaria um `vi.fn()` sem implementação alguma. mockClear só zera
+    // o histórico de chamadas; o `beforeEach` acima já ressseta a implementação a cada teste.
+    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockClear();
   });
 
   async function avancarParaEtapaFiscal(user: ReturnType<typeof userEvent.setup>) {
@@ -823,5 +838,57 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
     expect(payload.fiscal).toEqual({
       ncm: '39269090', cest: null, origemNfe: 0, fci: null, exTipi: null, tributacaoIcms: '102',
     });
+  });
+
+  // F3(a), fix round 1: Voltar não deve refazer a busca — a etapa fiscal já tem sugestão
+  // (guard `sugestaoNcm` truthy em dialog-cadastro-produto.tsx).
+  it('Avançar → Voltar → Avançar dispara a sugestão de NCM uma vez só', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await avancarParaEtapaFiscal(user);
+    await waitFor(() => expect(supabase.functions.invoke).toHaveBeenCalledTimes(1));
+
+    await user.click(screen.getByRole('button', { name: 'Voltar' }));
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+    expect(await screen.findByText('Cadastrar produto · etapa 2 de 3')).toBeInTheDocument();
+
+    expect(supabase.functions.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  // F1/F3(b), fix round 1: fechar ANTES da resposta de sugerir-ncm chegar e reabrir com um
+  // produto novo não pode deixar a resposta tardia do produto anterior vazar pro formulário
+  // novo. Sem a flag `ignore` no cleanup do effect, este teste falhava mostrando o NCM do
+  // Produto A rotulado como sugestão do Produto B.
+  it('fechar antes da resposta e reabrir com produto novo re-dispara com o nome novo, sem vazar a sugestão antiga', async () => {
+    const invoke = supabase.functions.invoke as ReturnType<typeof vi.fn>;
+    let resolveA: (v: unknown) => void = () => {};
+    invoke.mockImplementationOnce(() => new Promise((resolve) => { resolveA = resolve; }));
+
+    const user = userEvent.setup();
+    const { fechar, reabrir } = renderDialogControlado();
+
+    await user.type(screen.getByLabelText('Nome'), 'Produto A');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+    expect(await screen.findByText('Cadastrar produto · etapa 2 de 3')).toBeInTheDocument();
+    expect(invoke).toHaveBeenNthCalledWith(1, 'sugerir-ncm', { body: { nome: 'Produto A', descricao: undefined } });
+
+    // Fecha ANTES da resposta de A chegar — a etapa fiscal ainda está montada neste instante.
+    fechar();
+    reabrir({ nomePai: 'Produto B' });
+
+    // Resposta tardia do produto A resolve DEPOIS do fechar/reabrir.
+    resolveA({ data: { ncm: '11111111', justificativa: 'produto A (stale)' }, error: null });
+
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+    expect(await screen.findByText('Cadastrar produto · etapa 2 de 3')).toBeInTheDocument();
+
+    // A resposta de B (mockResolvedValue do beforeEach) é a que deve aparecer — nunca a de A.
+    await waitFor(() => expect(screen.getByRole('button', { name: /39269090/ })).toBeInTheDocument());
+    expect(screen.queryByText(/11111111/)).not.toBeInTheDocument();
+    expect(invoke).toHaveBeenNthCalledWith(2, 'sugerir-ncm', { body: { nome: 'Produto B', descricao: undefined } });
   });
 });
