@@ -98,7 +98,7 @@ export interface AlvoEntrada {
  * Abaixo de `md` as células 2/4/5 ficam `hidden`, sobrando exatamente 3 itens para 3 tracks.
  */
 export const GRID_LINHA_PRODUTO =
-  'grid items-center gap-x-2 grid-cols-[minmax(0,1fr)_3.25rem_5.5rem] md:gap-x-3 md:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem_8rem_8rem_15rem]';
+  'grid items-center gap-x-2 grid-cols-[minmax(0,1fr)_3.25rem_5.5rem] md:gap-x-3 md:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem_8rem_8rem_19rem]';
 
 const CELULA_MD = 'hidden md:block';
 
