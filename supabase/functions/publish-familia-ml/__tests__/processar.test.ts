@@ -2,20 +2,28 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Cadeia de imports reais (token/queue/espelhar) puxa jsr/QStash — mockado para o vitest.
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: async () => 'fake-token' }));
-vi.mock('../../_shared/queue.ts', () => ({ enfileirarVinculacaoCatalogo: async () => {} }));
+vi.mock('../../_shared/queue.ts', () => ({
+  enfileirarVinculacaoCatalogo: async () => {},
+  enfileirarSincronizacaoFiscal: vi.fn(async () => 'msg-1'),
+}));
 vi.mock('../../_shared/anuncios/espelhar.ts', () => ({ espelharAnuncioExterno: async () => {} }));
 
 import { processarFamiliaML, type ProcessarDeps } from '../processar';
 import { fakeConnector } from '../../_shared/canais/fake';
 import type { FormatoRepo, FormatoPublicacaoML } from '../../_shared/ml/formato-publicacao';
 import type { ResultadoUP } from '../../_shared/user-products/publicar-familia-up';
+import { enfileirarSincronizacaoFiscal } from '../../_shared/queue';
 
 // ── Fake admin: familias/variacoes/marketplace_connections (o caminho UP é injetado, não toca DB). ──
-function fakeAdmin(over: { variacoes?: Record<string, unknown>[]; familia?: Record<string, unknown>; conexao?: Record<string, unknown> | null } = {}) {
+function fakeAdmin(over: {
+  variacoes?: Record<string, unknown>[]; familia?: Record<string, unknown>; conexao?: Record<string, unknown> | null;
+  modulosHabilitados?: string[];
+} = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia ?? { ...FAMILIA_BASE };
   const variacoes = over.variacoes ?? [{ ...VAR_BASE }];
   const conexao = over.conexao === undefined ? { id: 'conn-1', org_id: 'org-1', canal: 'mercado_livre', conta_externa_id: 'seller-1', expires_at: null } : over.conexao;
+  const modulosHabilitados = over.modulosHabilitados ?? [];
   function chain(table: string) {
     const rec = { table, op: '', payload: {} as Record<string, unknown>, filters: {} as Record<string, unknown> };
     const ler = () => {
@@ -23,6 +31,8 @@ function fakeAdmin(over: { variacoes?: Record<string, unknown>[]; familia?: Reco
       if (table === 'variacoes') return variacoes;
       if (table === 'marketplace_connections') return conexao;
       if (table === 'configuracoes') return { desconto_pct: 15 };
+      if (table === 'organizations') return { modulos_habilitados: modulosHabilitados };
+      if (table === 'empresa_fiscal') return { regime_tributario: 'simples' };
       if (table === 'lotes' || table === 'anuncios_externos') return null;
       return null;
     };
@@ -58,6 +68,13 @@ function multiCor() {
   ];
 }
 const JOB = { familia_id: 'fam-1', lote_id: 'lote-1' };
+// Fiscal completo (satisfaz camposFiscaisFaltantes, regime simples) — usado só nos testes de
+// enqueue fiscal via rota UP (fix round 1); as demais famílias do arquivo ficam incompletas de
+// propósito (módulo fiscal desligado nelas, ver fakeAdmin acima).
+const FAMILIA_FISCAL_OK = {
+  ...FAMILIA_BASE, ncm: '39269090', origem: 'nacional', origem_nfe: 0, cest: null, fci: null,
+  ex_tipi: null, tributacao_icms: '102', tributacao_icms_regime: 'simples', unidade: 'UN',
+};
 
 function fakeFormatoRepo(seed?: FormatoPublicacaoML): { repo: FormatoRepo; salvos: Array<{ formato: FormatoPublicacaoML }> } {
   let val = seed ?? null;
@@ -118,6 +135,26 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(0);
     expect(upChamado).toBe(true);
     expect(r.tipo).toBe('ok');
+  });
+
+  it('fix round 1: rota UP com módulo fiscal ativo e cadastro completo → enfileira o push fiscal', async () => {
+    vi.mocked(enfileirarSincronizacaoFiscal).mockClear();
+    const { admin } = fakeAdmin({ variacoes: multiCor(), familia: FAMILIA_FISCAL_OK, modulosHabilitados: ['fiscal'] });
+    const { repo } = fakeFormatoRepo('user_products');
+    const deps = baseDeps(admin, { formatoRepo: repo, publicarUP: async () => ({ estado: 'ativo', itemExternoId: 'MLB-AZUL', permalink: null }) });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarSincronizacaoFiscal).toHaveBeenCalledWith(JOB.familia_id);
+  });
+
+  it('fix round 1: rota UP sem módulo fiscal → NÃO enfileira o push fiscal', async () => {
+    vi.mocked(enfileirarSincronizacaoFiscal).mockClear();
+    const { admin } = fakeAdmin({ variacoes: multiCor(), familia: FAMILIA_FISCAL_OK, modulosHabilitados: [] });
+    const { repo } = fakeFormatoRepo('user_products');
+    const deps = baseDeps(admin, { formatoRepo: repo, publicarUP: async () => ({ estado: 'ativo', itemExternoId: 'MLB-AZUL', permalink: null }) });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarSincronizacaoFiscal).not.toHaveBeenCalled();
   });
 
   it('multi-cor, cache user_products e desconto ativo → erro definitivo sem POST nem saga', async () => {

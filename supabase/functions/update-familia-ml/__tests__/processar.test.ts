@@ -2,8 +2,12 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 // Cadeia de imports reais (token/queue/espelhar) puxa jsr/QStash — mockado para o vitest.
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: async () => 'fake-token' }));
-const { enfileirarSpy, espelharSpy } = vi.hoisted(() => ({ enfileirarSpy: vi.fn(), espelharSpy: vi.fn() }));
-vi.mock('../../_shared/queue.ts', () => ({ enfileirarVinculacaoCatalogo: enfileirarSpy }));
+const { enfileirarSpy, espelharSpy, enfileirarFiscalSpy } = vi.hoisted(() => ({
+  enfileirarSpy: vi.fn(), espelharSpy: vi.fn(), enfileirarFiscalSpy: vi.fn(async () => 'msg-1'),
+}));
+vi.mock('../../_shared/queue.ts', () => ({
+  enfileirarVinculacaoCatalogo: enfileirarSpy, enfileirarSincronizacaoFiscal: enfileirarFiscalSpy,
+}));
 vi.mock('../../_shared/anuncios/espelhar.ts', () => ({ espelharAnuncioExterno: espelharSpy }));
 
 const { notificarCategoriaSpy } = vi.hoisted(() => ({ notificarCategoriaSpy: vi.fn() }));
@@ -26,6 +30,13 @@ const VAR_CASADA = { codigo: 'V1', cor: 'Azul', estoque: 5, preco_publicacao: 29
 
 const CONEXAO_ROW = { id: 'conn-1', org_id: 'org-1', canal: 'mercado_livre', conta_externa_id: 'seller-1', expires_at: null };
 const JOB = { familia_id: 'fam-1', lote_id: 'lote-1' };
+// Fiscal completo (satisfaz camposFiscaisFaltantes, regime simples) — só nos testes de enqueue
+// fiscal via rota UP (fix round 1); as demais famílias ficam incompletas de propósito (módulo
+// fiscal desligado nelas por padrão em fakeAdmin).
+const FAMILIA_FISCAL_OK = {
+  ...FAMILIA_BASE, ncm: '39269090', origem: 'nacional', origem_nfe: 0, cest: null, fci: null,
+  ex_tipi: null, tributacao_icms: '102', tributacao_icms_regime: 'simples', unidade: 'UN',
+};
 
 function fakeAdmin(over: {
   familia?: Record<string, unknown> | null;
@@ -36,6 +47,7 @@ function fakeAdmin(over: {
   raizErr?: boolean;   // simula erro na query de roteamento (raiz UP)
   itensErr?: boolean;  // simula erro na query de roteamento (itens UP)
   lote?: Record<string, unknown> | null; // ADR-0129 D-11: lotes.select('origem')
+  modulosHabilitados?: string[];
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
@@ -44,6 +56,7 @@ function fakeAdmin(over: {
   const raizUP = over.raizUP ?? null;
   const itensUP = over.itensUP ?? [];
   const lote = over.lote === undefined ? null : over.lote;
+  const modulosHabilitados = over.modulosHabilitados ?? [];
   function chain(table: string) {
     const rec = { table, op: '', filters: {} as Record<string, unknown>, payload: {} as Record<string, unknown> };
     const ler = () => {
@@ -51,6 +64,8 @@ function fakeAdmin(over: {
       if (table === 'variacoes') return variacoes;
       if (table === 'marketplace_connections') return conexao;
       if (table === 'configuracoes') return { desconto_pct: 15 };
+      if (table === 'organizations') return { modulos_habilitados: modulosHabilitados };
+      if (table === 'empresa_fiscal') return { regime_tributario: 'simples' };
       if (table === 'anuncios_externos') return raizUP;
       if (table === 'anuncios_externos_itens') return itensUP;
       if (table === 'lotes') return lote;
@@ -84,7 +99,10 @@ function baseDeps(admin: never, extra: Partial<ProcessarDeps> = {}): ProcessarDe
   return { admin, conn: fakeConnector as never, finalizarLote: async () => {}, ...extra };
 }
 
-beforeEach(() => { fakeConnector.reset(); enfileirarSpy.mockReset(); espelharSpy.mockReset(); notificarCategoriaSpy.mockReset(); });
+beforeEach(() => {
+  fakeConnector.reset(); enfileirarSpy.mockReset(); espelharSpy.mockReset();
+  notificarCategoriaSpy.mockReset(); enfileirarFiscalSpy.mockClear();
+});
 
 describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
   it('família COM linhas em anuncios_externos_itens → caminho UP; Legacy (atualizarAnuncio) NUNCA chamado', async () => {
@@ -100,6 +118,28 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
     expect(fakeConnector.chamadas.filter((c) => c.metodo === 'atualizarAnuncio')).toHaveLength(0);
     expect(r).toEqual({ tipo: 'ok', itemExternoId: 'MLB-EXISTENTE', novas: 1 });
     expect(finalizou).toBe(true);
+  });
+
+  it('fix round 1: rota UP com módulo fiscal ativo e cadastro completo → enfileira o push fiscal', async () => {
+    const { admin } = fakeAdmin({
+      familia: FAMILIA_FISCAL_OK, modulosHabilitados: ['fiscal'],
+      raizUP: { id: 'root-1', titulo: 'AGULHA MATTE', criado_em: '2026-07-22T00:00:00Z' }, itensUP: [{ id: 'it-1' }],
+    });
+    const deps = baseDeps(admin, { atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'ok', adicionadas: 0 }) });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarFiscalSpy).toHaveBeenCalledWith(JOB.familia_id);
+  });
+
+  it('fix round 1: rota UP sem módulo fiscal → NÃO enfileira o push fiscal', async () => {
+    const { admin } = fakeAdmin({
+      familia: FAMILIA_FISCAL_OK, modulosHabilitados: [],
+      raizUP: { id: 'root-1', titulo: 'AGULHA MATTE', criado_em: '2026-07-22T00:00:00Z' }, itensUP: [{ id: 'it-1' }],
+    });
+    const deps = baseDeps(admin, { atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'ok', adicionadas: 0 }) });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarFiscalSpy).not.toHaveBeenCalled();
   });
 
   it('UP retry (mudança de composição incompleta) → tipo retry, NÃO finaliza lote nem marca erro', async () => {

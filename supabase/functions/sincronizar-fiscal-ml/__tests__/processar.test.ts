@@ -8,14 +8,15 @@ const familia = {
 };
 const variacoes = [{ codigo: '00101', gtin: '7891234567895', peso_gramas: 200, ml_variation_id: 'v1' }];
 
-function deps(opts: { modulosHabilitados?: string[] } = {}) {
+function deps(opts: { modulosHabilitados?: string[]; familiaOverride?: Record<string, unknown> } = {}) {
   const modulosHabilitados = opts.modulosHabilitados ?? ['fiscal'];
+  const familiaUsada = { ...familia, ...opts.familiaOverride };
   const updates: Record<string, unknown>[] = [];
   const admin = {
     from: (t: string) => ({
       select: () => ({
         eq: (_c: string, _v: string) => ({
-          single: async () => ({ data: t === 'familias' ? familia : null }),
+          single: async () => ({ data: t === 'familias' ? familiaUsada : null }),
           maybeSingle: async () => ({
             data: t === 'organizations' ? { modulos_habilitados: modulosHabilitados }
               : t === 'empresa_fiscal' ? { origin_type: 'reseller', regime_tributario: 'simples' }
@@ -50,6 +51,17 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
       sku: '00101', item_id: 'MLB1', variation_id: 'v1',
     });
     expect(d.updates.some((u) => u.can_invoice === true)).toBe(true);
+  });
+
+  it('fix round 1: família sem ncm — 200 definitivo, can_invoice=false gravado, portas NUNCA chamadas', async () => {
+    const d = deps({ familiaOverride: { ncm: null } });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(200);
+    expect(d.updates.some((u) => u.can_invoice === false)).toBe(true);
+    expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
+    expect(d.portas.vincularSkuAnuncio).not.toHaveBeenCalled();
+    expect(d.portas.lerCanInvoice).not.toHaveBeenCalled();
+    expect(d.resolverConexao).not.toHaveBeenCalled();
   });
 
   it('org sem módulo: skip 200 sem tocar o ML', async () => {

@@ -749,10 +749,13 @@ falha ao ler `organizations` não libera.
   confirma módulo `fiscal` ativo e cadastro completo — pula org sem módulo. Idempotente: upsert
   POST→409→PUT no push, e 409 no vínculo SKU↔anúncio é sucesso (replay do QStash). 4xx do ML é
   definitivo (200 com `can_invoice=false` + causa, sem retry); 5xx/timeout é 500 texto para o
-  QStash retentar. **Gap conhecido:** só cobre o caminho Legacy de `publish-familia-ml`/
-  `update-familia-ml` — famílias roteadas para a saga User Products (`rotaSagaUP`/`rodarUP`,
-  ADR-0088) não enfileiram o push ainda, porque a replicação de dados fiscais entre os itens
-  técnicos UP é o item "A verificar #4" do ADR-0135 (não verificado em conta real).
+  QStash retentar. Também roteia pela saga User Products (`rotaSagaUP`/`rodarUP`, ADR-0088):
+  ambos os caminhos enfileiram no sucesso, guardados pelo mesmo `fiscalAtivo` (fix round 1) — a
+  replicação de `fiscal_information` para os itens técnicos irmãos é comportamento documentado do
+  ML, mas segue como "A verificar #4" do ADR-0135 (não confirmado em conta real); o risco fica
+  monitorado pelo próprio semáforo `can_invoice` em vez de bloquear o enqueue. O worker também
+  revalida `camposFiscaisFaltantes` antes de montar o payload (não confia que o gate rodou —
+  re-enqueue manual via QStash é operação de rotina neste projeto).
 
 ### Faturamento
 - **sync-venda** — antes de qualquer escrita, recusa pedido cujo `seller.id` não seja a conta

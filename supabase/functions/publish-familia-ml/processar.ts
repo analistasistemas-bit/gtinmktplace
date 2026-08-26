@@ -135,7 +135,15 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       } catch { /* fallback hard-coded do montarPayloadItem */ }
       const r = await publicarUP({ admin, conn, ctx, conexao: conexao!, familia, anuncio, categoriaId: categoria!, aceitaEmptyGtin });
       await finalizarLote(job.lote_id);
-      if (r.estado === 'ativo') return { tipo: 'ok', itemExternoId: r.itemExternoId };
+      if (r.estado === 'ativo') {
+        // ADR-0135 (fix round 1): rota UP também enfileira — o ML replica fiscal_information
+        // para os itens irmãos; falha de enqueue NÃO desfaz a publicação (spec §3).
+        if (fiscalAtivo) {
+          try { await enfileirarSincronizacaoFiscal(job.familia_id); }
+          catch (e) { console.error('enfileirar push fiscal falhou:', (e as Error).message); }
+        }
+        return { tipo: 'ok', itemExternoId: r.itemExternoId };
+      }
       return { tipo: 'erro', mensagem: r.mensagem };
     };
 

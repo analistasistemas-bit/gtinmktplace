@@ -180,7 +180,15 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       });
       if (r.estado === 'retry') return { tipo: 'retry', mensagem: r.mensagem };
       await finalizarLote(job.lote_id);
-      if (r.estado === 'ok') return { tipo: 'ok', itemExternoId: familia.ml_item_id, novas: r.adicionadas };
+      if (r.estado === 'ok') {
+        // ADR-0135 (fix round 1): rota UP também enfileira — o ML replica fiscal_information
+        // para os itens irmãos; falha de enqueue NÃO desfaz o UPDATE (spec §3).
+        if (fiscalAtivo) {
+          try { await enfileirarSincronizacaoFiscal(job.familia_id); }
+          catch (e) { console.error('enfileirar push fiscal falhou:', (e as Error).message); }
+        }
+        return { tipo: 'ok', itemExternoId: familia.ml_item_id, novas: r.adicionadas };
+      }
       return { tipo: 'erro', mensagem: r.mensagem };
     };
 

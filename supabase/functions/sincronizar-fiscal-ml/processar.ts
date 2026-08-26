@@ -4,6 +4,7 @@ import type { SincronizarFiscalJob } from '../_shared/queue.ts';
 import {
   montarFiscalInformation, type FamiliaFiscalPush, type VariacaoFiscalPush,
 } from '../_shared/canais/fiscal-ml.ts';
+import { camposFiscaisFaltantes, type CamposFiscaisFamilia } from '../_shared/fiscal/validar.ts';
 
 export interface DepsFiscal {
   admin: SupabaseClient;
@@ -38,12 +39,27 @@ export async function processarSincronizacaoFiscal(
   }
   const { data: empresa } = await admin.from('empresa_fiscal')
     .select('origin_type, regime_tributario').eq('org_id', familia.org_id).maybeSingle();
+  const agora = () => new Date().toISOString();
+
+  // Fix round 1: o gate (D-7) roda no publish/update, mas o worker é alvo de re-enqueue MANUAL
+  // via QStash (operação de rotina neste projeto) — nunca confiar que o gate já passou. Valida
+  // de novo aqui, ANTES de montar/empurrar qualquer payload. Também evita origin_detail: "null"
+  // (String(null)) caso origem_nfe tenha sido apagado depois do push original.
+  const regime = (empresa?.regime_tributario ?? 'simples') as 'simples' | 'normal';
+  const faltas = camposFiscaisFaltantes(familia as CamposFiscaisFamilia, regime);
+  if (faltas.length) {
+    await admin.from('familias').update({
+      can_invoice: false,
+      can_invoice_causa: `push recusado: cadastro incompleto — ${faltas.join('; ')}`,
+      can_invoice_em: agora(),
+    }).eq('id', familia.id);
+    return { status: 200, body: { erro: `cadastro incompleto — ${faltas.join('; ')}` } };
+  }
 
   const conexao = await deps.resolverConexao(admin, familia.org_id, 'mercado_livre');
   if (!conexao) return { status: 200, body: { erro: 'org sem conexão com o Mercado Livre' } };
   const token = await deps.getToken(conexao);
   const variacoes = await deps.listarVariacoes(admin, familia.id);
-  const agora = () => new Date().toISOString();
 
   try {
     for (const v of variacoes) {
