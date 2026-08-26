@@ -15,6 +15,7 @@ import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared
 import { ehCorIndefinida } from '../_shared/cor/indefinida.ts';
 import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
+import { exigirFiscalCompletoSePreciso } from '../_shared/fiscal/gate.ts';
 import { atualizarFamiliaUP, type AtualizarFamiliaUPArgs, type ResultadoAtualizarUP } from '../_shared/user-products/atualizar-familia-up.ts';
 import {
   adotarFamiliaMigrada, type PortasAdocao, type EntradaAdocao, type ResultadoAdocao,
@@ -121,8 +122,19 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
   // → "Picture id ... does not exist" no retry). Declarados fora do try p/ visibilidade no catch.
   let capa2SubidaAgora = false;
   let capa3SubidaAgora = false;
+  // Task 7 usa fiscalAtivo para decidir o enqueue do push fiscal pós-atualização.
+  let fiscalAtivo = false;
+  void fiscalAtivo;
 
   try {
+    // ADR-0135 D-7: mesmo gate do publish, antes de QUALQUER escrita no ML. `somenteEstoque`
+    // NÃO passa por aqui — reposição de estoque e preço não são bloqueadas pela pendência
+    // fiscal (spec §5.1). Dentro do try (não logo após montar `ctx`) para que o throw caia no
+    // catch existente da função e grave `erro_mensagem` (mesmo caminho LOUD do publish).
+    if (!job.somenteEstoque) {
+      fiscalAtivo = await exigirFiscalCompletoSePreciso(admin, familia);
+    }
+
     if (!familia.ml_item_id) {
       const err = new Error('Família UPDATE sem ml_item_id herdado (400)') as Error & { status?: number };
       err.status = 400;

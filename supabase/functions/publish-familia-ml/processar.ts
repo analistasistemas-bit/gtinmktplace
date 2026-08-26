@@ -12,6 +12,7 @@ import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarAnuncioCanonico } from '../_shared/anuncios/montar-canonico.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
+import { exigirFiscalCompletoSePreciso } from '../_shared/fiscal/gate.ts';
 import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel, decidirRetryTransitorio } from '../_shared/publicacao/retry.ts';
 import { enfileirarVinculacaoCatalogo } from '../_shared/queue.ts';
 import {
@@ -102,6 +103,11 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
     // roteamento (deveria ter ido ao split) → LOUD, nada é enviado ao ML. Roda SEMPRE — inclusive
     // no caminho UP (o gate financeiro nunca pode ser pulado pelo atalho de cache).
     garantirPrecoUniforme(variacoes, 'CREATE');
+
+    // ADR-0135 D-7: fiscal completo antes de QUALQUER escrita no ML (org com módulo).
+    // Task 7 usa fiscalAtivo para decidir o enqueue do push fiscal pós-publicação.
+    const fiscalAtivo = await exigirFiscalCompletoSePreciso(admin, familia);
+    void fiscalAtivo;
 
     // Gate de atributos obrigatórios. Aviamento conhecido (override) → validador por-tipo (atual);
     // categoria prevista/manual → lista genérica persistida (E3/E4, schema da API); sem categoria → bloqueia.
