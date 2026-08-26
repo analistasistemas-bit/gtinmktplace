@@ -6,6 +6,43 @@ export function normalizarNcm(bruto: unknown): string {
   return String(bruto ?? '').replace(/\D/g, '');
 }
 
+interface GrupoFiscal {
+  ncm?: string | null;
+  cest?: string | null;
+  origem_nfe?: number | null;
+  tributacao_icms?: string | null;
+}
+
+interface FamiliaFiscalAnterior {
+  cest?: string | null;
+  origem_nfe?: number | null;
+  tributacao_icms?: string | null;
+  tributacao_icms_regime?: string | null;
+}
+
+/**
+ * Monta os campos fiscais do INSERT/UPDATE de `familias`. NCM não herda (obrigatório na
+ * planilha da org fiscal — `exigirFiscalExplicito` já garante). Os opcionais (CEST,
+ * ORIGEM_NFE, CSOSN/tributacao_icms) HERDAM do registro anterior quando a célula da
+ * planilha vem vazia — achado da revisão do task-5: sem isso, um re-ingest com a coluna
+ * opcional em branco apagava em silêncio dado curado antes (dialog ou planilha anterior).
+ * Célula preenchida e válida sempre vence o anterior. Regime herda JUNTO com o valor de
+ * `tributacao_icms`, nunca separado (senão um CSOSN antigo herdaria sob 'simples'
+ * hardcoded mesmo que o cadastro anterior fosse 'normal'/CST).
+ */
+export function resolverCamposFiscais(g: GrupoFiscal, ant: FamiliaFiscalAnterior | undefined) {
+  const cestPlanilha = g.cest ? g.cest.replace(/\D/g, '') : '';
+  return {
+    // `|| null` em vez do `''` cru: célula só com espaço passa a validação (trim vazio =
+    // "ausente") mas chegaria aqui truthy e violaria o CHECK de formato da coluna.
+    ncm: normalizarNcm(g.ncm) || null,
+    cest: cestPlanilha || ant?.cest || null,
+    origem_nfe: g.origem_nfe ?? ant?.origem_nfe ?? null,
+    tributacao_icms: g.tributacao_icms ?? ant?.tributacao_icms ?? null,
+    tributacao_icms_regime: g.tributacao_icms ? 'simples' : ant?.tributacao_icms_regime ?? null,
+  };
+}
+
 // Códigos de CSOSN listados no combo do cadastro manual (task-12-brief.md:64) — a planilha
 // não pode aceitar um código que a UI nem oferece.
 const CSOSN_VALIDOS = ['101', '102', '103', '201', '202', '203', '300', '400', '500', '900'];

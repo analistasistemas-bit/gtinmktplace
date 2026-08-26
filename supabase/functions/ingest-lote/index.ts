@@ -6,7 +6,7 @@ import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matc
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { mapearLinha } from './mapear-linha.ts';
 import { verificarOrigemInviolavel, exigirOrigemExplicita } from './verificar-origem.ts';
-import { exigirFiscalExplicito, normalizarNcm } from './verificar-fiscal.ts';
+import { exigirFiscalExplicito, resolverCamposFiscais } from './verificar-fiscal.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { enfileirarFamilias } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
@@ -138,7 +138,7 @@ Deno.serve(async (req) => {
     // preço e análise de concorrência de OUTRA org para dentro desta família.
     const { data: anteriores } = await admin
       .from('familias')
-      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, categoria_nome, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao)')
+      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, categoria_nome, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, cest, origem_nfe, tributacao_icms, tributacao_icms_regime, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao)')
       .in('codigo_pai', codigosPai)
       .eq('org_id', lote.org_id)
       .not('ml_item_id', 'is', null)
@@ -196,16 +196,9 @@ Deno.serve(async (req) => {
       // costuma nomear a foto pelo código vendável (filho), não pelo PAI (bug lote #26).
       const codigosFoto = [g.codigo_pai, ...g.variacoes.map((v) => v.CODIGO)];
       // ADR-0135: campos fiscais só gravados na org com o módulo — sem ele, INSERT idêntico
-      // ao de hoje (colunas ficam no DEFAULT/NULL da tabela).
-      const fiscal = moduloFiscal ? {
-        // `|| null` em vez do `''` cru: célula só com espaço passa a validação (trim vazio =
-        // "ausente") mas chegaria aqui truthy e violaria o CHECK de formato da coluna.
-        ncm: normalizarNcm(g.ncm) || null,
-        cest: (g.cest ? g.cest.replace(/\D/g, '') : '') || null,
-        origem_nfe: g.origem_nfe ?? null,
-        tributacao_icms: g.tributacao_icms ?? null,
-        tributacao_icms_regime: g.tributacao_icms ? 'simples' : null,
-      } : {};
+      // ao de hoje (colunas ficam no DEFAULT/NULL da tabela). Opcionais herdam de `ant`
+      // quando a célula vem vazia no re-ingest (ver `resolverCamposFiscais`).
+      const fiscal = moduloFiscal ? resolverCamposFiscais(g, ant) : {};
       if (!ant) {
         // CREATE — comportamento atual.
         return {
