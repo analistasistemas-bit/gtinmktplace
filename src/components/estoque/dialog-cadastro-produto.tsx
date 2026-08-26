@@ -30,6 +30,8 @@ import { supabase } from '@/lib/supabase';
 import { QK } from '@/lib/queries';
 import { effectiveOrgId, useSupportStore, canWrite } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
+import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 import {
   cadastrarProduto, uploadFotoProduto, ProdutoJaExisteError, CadastroResultadoAmbiguoError,
   type ResultadoCadastro,
@@ -39,6 +41,7 @@ import {
   LinhaVariacaoForm, novaLinha, parseNum, erroCampo, type LinhaVariacao,
 } from '@/components/estoque/linha-variacao-form';
 import { CampoFoto } from '@/components/estoque/campo-foto';
+import { EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm } from '@/components/estoque/etapa-fiscal-form';
 
 // Todo campo numérico que `erroCampo` valida — usado pelo gate `podeSalvar` para travar o
 // submit se QUALQUER um, em QUALQUER linha, tiver erro (não só `preco`).
@@ -69,6 +72,9 @@ function montarPayload(
   pai: { nomePai: string; descricaoPai: string; unidade: string; fornecedor: string; origem: 'nacional' | 'importado' },
   linhas: LinhaVariacao[],
   chaveCadastro: string,
+  // ADR-0135: só a org com o módulo fiscal preenche a etapa fiscal — sem módulo, `fiscal` fica
+  // `undefined` e o payload sai byte a byte igual ao de hoje.
+  fiscal?: FiscalForm,
 ): ProdutoEntrada {
   const variacoes: VariacaoEntrada[] = linhas.map((l) => ({
     nome: l.nome.trim() || null,
@@ -89,6 +95,16 @@ function montarPayload(
     origem: pai.origem,
     chaveCadastro,
     variacoes,
+    ...(fiscal ? {
+      fiscal: {
+        ncm: fiscal.ncm,
+        cest: fiscal.cest || null,
+        origemNfe: Number(fiscal.origemNfe),
+        fci: fiscal.fci || null,
+        exTipi: fiscal.exTipi || null,
+        tributacaoIcms: fiscal.tributacaoIcms,
+      },
+    } : {}),
   };
 }
 
@@ -106,6 +122,8 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
 }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const { data: modulos } = useModulosHabilitados();
+  const fiscalAtivo = !!modulos?.includes('fiscal');
 
   const [nomePai, setNomePai] = useState('');
   const [descricaoPai, setDescricaoPai] = useState('');
@@ -153,6 +171,12 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
   // "Cadastrar" clicado ao menos uma vez — junto com o blur por campo, decide quando as
   // mensagens de erro inline aparecem (§5.4, Achado 4 da revisão final).
   const [tentouSalvar, setTentouSalvar] = useState(false);
+  // ADR-0135 D-9: etapa intermediária, só existe com o módulo fiscal ativo. `fiscal` e
+  // `sugestaoNcm` resetam junto com o resto do formulário ao fechar.
+  const [etapaFiscal, setEtapaFiscal] = useState(false);
+  const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
+  const [sugestaoNcm, setSugestaoNcm] = useState<{ ncm: string; justificativa: string } | null>(null);
+  const [carregandoSugestao, setCarregandoSugestao] = useState(false);
 
   useEffect(() => {
     if (aberto) return;
@@ -170,6 +194,10 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
     setTrocando(new Set());
     setConfirmarFechar(null);
     setTentouSalvar(false);
+    setEtapaFiscal(false);
+    setFiscal(fiscalVazio());
+    setSugestaoNcm(null);
+    setCarregandoSugestao(false);
   }, [aberto, resultadoAmbiguo]);
 
   // Efeito de ABERTURA (T5) — separado do reset acima, que roda ao FECHAR e fica intocado.
@@ -181,6 +209,23 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
     setDescricaoPai(inicial.descricaoPai ?? '');
     setLinhas([{ ...novaLinha(), ...inicial.variacao }]);
   }, [aberto, inicial]);
+
+  // Dispara a sugestão de NCM UMA vez ao entrar na etapa fiscal (ADR-0135 D-9). A família ainda
+  // não existe neste ponto do cadastro — `sugerir-ncm` aceita `{ nome, descricao }` direto dos
+  // campos digitados na etapa 1 (T10), sem precisar de `familiaId`.
+  useEffect(() => {
+    if (!etapaFiscal || sugestaoNcm || carregandoSugestao) return;
+    setCarregandoSugestao(true);
+    supabase.functions.invoke('sugerir-ncm', { body: { nome: nomePai, descricao: descricaoPai || undefined } })
+      .then(({ data, error }) => {
+        if (error) return;
+        const r = data as { ncm: string | null; justificativa: string };
+        if (r?.ncm) setSugestaoNcm({ ncm: r.ncm, justificativa: r.justificativa });
+      })
+      .catch(() => {})
+      .finally(() => setCarregandoSugestao(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etapaFiscal]);
 
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
@@ -203,6 +248,7 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
     try {
       const r = await cadastrarProduto(montarPayload(
         { nomePai, descricaoPai, unidade, fornecedor, origem }, linhas, chaveCadastro,
+        fiscalAtivo ? fiscal : undefined,
       ));
       setResultado(r);
       onCadastrado?.();
@@ -347,8 +393,15 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
           horizontal), entao a largura so precisa acomodar um card por vez. */}
       <DialogContent className="max-h-[90vh] sm:max-w-3xl overflow-y-auto">
         <DialogHeader>
-          {/* Item 6 da auditoria: o dialog tem 2 etapas e nada indicava isso. */}
-          <DialogTitle>{resultado ? 'Fotos do produto · etapa 2 de 2' : 'Cadastrar produto · etapa 1 de 2'}</DialogTitle>
+          {/* Item 6 da auditoria: o dialog tem 2 etapas e nada indicava isso. Com o módulo
+              fiscal ativo (ADR-0135 D-9) vira 3: dados+variações, fiscal, fotos. */}
+          <DialogTitle>
+            {resultado
+              ? `Fotos do produto · etapa ${fiscalAtivo ? 3 : 2} de ${fiscalAtivo ? 3 : 2}`
+              : fiscalAtivo
+                ? `Cadastrar produto · etapa ${etapaFiscal ? 2 : 1} de 3`
+                : 'Cadastrar produto · etapa 1 de 2'}
+          </DialogTitle>
           <DialogDescription>
             {resultado
               // Item 1 da auditoria: se alguma foto já subiu com sucesso e não há falha
@@ -361,7 +414,16 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
           </DialogDescription>
         </DialogHeader>
 
-        {!resultado ? (
+        {!resultado && etapaFiscal ? (
+          <EtapaFiscalForm
+            valor={fiscal}
+            origem={origem}
+            onMudar={(patch) => setFiscal((prev) => ({ ...prev, ...patch }))}
+            sugestaoNcm={sugestaoNcm}
+            carregandoSugestao={carregandoSugestao}
+            onAplicarSugestao={() => sugestaoNcm && setFiscal((prev) => ({ ...prev, ncm: sugestaoNcm.ncm }))}
+          />
+        ) : !resultado ? (
           // min-w-0 obrigatorio: DialogContent e um `grid` sem `minmax(0,1fr)` (grid-cols nao
           // definido), entao o min-content do conteudo interno vaza pro dialog inteiro em vez
           // de ficar contido na largura do proprio wrapper. Sem isto, o dialog abre mais largo
@@ -403,7 +465,21 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="cad-unidade" className="text-sm font-medium">Unidade</label>
-                <Input id="cad-unidade" value={unidade} onChange={(e) => setUnidade(e.target.value)} />
+                {/* Com o módulo fiscal ativo, a coluna alimenta a NF-e — precisa ser uma das
+                    UNIDADES_FISCAIS (a edge recusa qualquer outra, ADR-0135). Sem módulo, texto
+                    livre — comportamento intacto. */}
+                {fiscalAtivo ? (
+                  <select
+                    id="cad-unidade"
+                    className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                    value={unidade}
+                    onChange={(e) => setUnidade(e.target.value)}
+                  >
+                    {UNIDADES_FISCAIS.map((u) => <option key={u} value={u}>{u}</option>)}
+                  </select>
+                ) : (
+                  <Input id="cad-unidade" value={unidade} onChange={(e) => setUnidade(e.target.value)} />
+                )}
               </div>
               <div className="flex flex-col gap-1.5">
                 <label htmlFor="cad-fornecedor" className="text-sm font-medium">Fornecedor</label>
@@ -634,7 +710,22 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
         )}
 
         <DialogFooter>
-          {!resultado ? (
+          {!resultado && etapaFiscal ? (
+            <>
+              <Button variant="outline" onClick={() => setEtapaFiscal(false)} disabled={salvando}>Voltar</Button>
+              <Button
+                onClick={() => { setTentouSalvar(true); salvar(); }}
+                disabled={!fiscalCompleto(fiscal, origem) || salvando}
+              >
+                {salvando ? 'Cadastrando…' : 'Cadastrar'}
+              </Button>
+            </>
+          ) : !resultado && fiscalAtivo ? (
+            <>
+              <Button variant="outline" onClick={() => comConfirmacao(onFechar)} disabled={ocupado}>Cancelar</Button>
+              <Button onClick={() => setEtapaFiscal(true)} disabled={!podeSalvar}>Avançar</Button>
+            </>
+          ) : !resultado ? (
             <>
               <Button variant="outline" onClick={() => comConfirmacao(onFechar)} disabled={ocupado}>Cancelar</Button>
               {/* setTentouSalvar: por completude com a spec (§5.4, branch "b"). Na prática o

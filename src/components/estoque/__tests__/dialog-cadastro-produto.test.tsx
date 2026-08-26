@@ -10,6 +10,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { DialogCadastroProduto, type CadastroInicial } from '../dialog-cadastro-produto';
 import { QK } from '@/lib/queries';
 import { ProdutoJaExisteError, CadastroResultadoAmbiguoError } from '@/lib/produtos-saldo';
+import { supabase } from '@/lib/supabase';
 
 const cadastrarProdutoMock = vi.fn().mockRejectedValue(new Error('falhou'));
 // Hoisted (não `vi.fn()` inline na factory) para o teste do lote de fotos poder inspecionar
@@ -45,6 +46,14 @@ vi.mock('@/stores/support-store', () => ({
 }));
 vi.mock('@/hooks/useUploadLote', () => ({
   storageOwnerForUpload: () => 'owner-1',
+}));
+// `modulosMock` controla o retorno de useModulosHabilitados por teste — a suíte inteira roda
+// sem o módulo fiscal (ADR-0135) por padrão, mesmo padrão de Estoque.test.tsx e
+// viabilidade-linha-cadastrar.test.tsx. O describe da etapa fiscal, mais abaixo, troca para
+// `['fiscal']` a cada teste seu.
+const modulosMock = vi.fn(() => ({ data: [] as string[], isLoading: false }));
+vi.mock('@/hooks/useModulosHabilitados', () => ({
+  useModulosHabilitados: () => modulosMock(),
 }));
 
 function renderDialogCom(
@@ -737,5 +746,82 @@ describe('DialogCadastroProduto — prop inicial (pré-preenchimento da Viabilid
     await preencherEEnviar(user, 'Produto Teste');
 
     await waitFor(() => expect(onCadastrado).toHaveBeenCalledTimes(1));
+  });
+});
+
+// ADR-0135 D-9: com o módulo fiscal ativo, o cadastro ganha uma etapa no meio (dados+variações
+// → fiscal → fotos). O caminho sem módulo (todo o resto deste arquivo) fica intacto — a
+// etapa fiscal só existe atrás do `useModulosHabilitados` mockado abaixo.
+describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
+  beforeEach(() => {
+    modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false });
+    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: { ncm: '39269090', justificativa: 'plástico reciclado' }, error: null,
+    });
+  });
+  afterEach(() => {
+    modulosMock.mockReturnValue({ data: [], isLoading: false });
+    cadastrarProdutoMock.mockClear();
+    (supabase.functions.invoke as ReturnType<typeof vi.fn>).mockReset();
+  });
+
+  async function avancarParaEtapaFiscal(user: ReturnType<typeof userEvent.setup>) {
+    expect(screen.getByText('Cadastrar produto · etapa 1 de 3')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Nome'), 'Produto Fiscal');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+    expect(await screen.findByText('Cadastrar produto · etapa 2 de 3')).toBeInTheDocument();
+  }
+
+  it('Avançar leva à etapa fiscal, que busca a sugestão de NCM uma vez e só grava no clique', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await avancarParaEtapaFiscal(user);
+
+    expect(supabase.functions.invoke).toHaveBeenCalledWith(
+      'sugerir-ncm', { body: { nome: 'Produto Fiscal', descricao: undefined } },
+    );
+    await waitFor(() => expect(screen.getByRole('button', { name: /39269090/ })).toBeInTheDocument());
+    expect(screen.getByLabelText('NCM')).toHaveValue('');
+
+    await user.click(screen.getByRole('button', { name: /39269090/ }));
+    expect(screen.getByLabelText('NCM')).toHaveValue('39269090');
+    expect(supabase.functions.invoke).toHaveBeenCalledTimes(1);
+  });
+
+  it('Voltar retorna à etapa 1 sem perder os dados já digitados', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await avancarParaEtapaFiscal(user);
+
+    await user.click(screen.getByRole('button', { name: 'Voltar' }));
+    expect(screen.getByText('Cadastrar produto · etapa 1 de 3')).toBeInTheDocument();
+    expect(screen.getByLabelText('Nome')).toHaveValue('Produto Fiscal');
+  });
+
+  it('Cadastrar fica travado até NCM/origem/CSOSN completos e envia fiscal no payload', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'lote-1', familiaId: 'fam-1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }],
+    });
+    const user = userEvent.setup();
+    renderDialog();
+    await avancarParaEtapaFiscal(user);
+
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+
+    await user.type(screen.getByLabelText('NCM'), '39269090');
+    await user.selectOptions(screen.getByLabelText(/Origem fiscal/i), '0');
+    await user.selectOptions(screen.getByLabelText('CSOSN'), '102');
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    const payload = cadastrarProdutoMock.mock.calls[0][0];
+    expect(payload.fiscal).toEqual({
+      ncm: '39269090', cest: null, origemNfe: 0, fci: null, exTipi: null, tributacaoIcms: '102',
+    });
   });
 });

@@ -21,6 +21,17 @@ export interface VariacaoEntrada {
   comprimentoCm?: number | null;
 }
 
+// ADR-0135: só enviado quando a org tem o módulo fiscal habilitado — espelho de
+// FiscalEntrada em supabase/functions/_shared/produto/validar.ts.
+export interface FiscalEntrada {
+  ncm: string;
+  cest?: string | null;
+  origemNfe: number;
+  fci?: string | null;
+  exTipi?: string | null;
+  tributacaoIcms: string;
+}
+
 export interface ProdutoEntrada {
   nomePai: string;
   descricaoPai?: string | null;
@@ -32,4 +43,5 @@ export interface ProdutoEntrada {
   // nunca a cada tentativa (ver dialog-cadastro-produto.tsx).
   chaveCadastro: string;
   variacoes: VariacaoEntrada[];
+  fiscal?: FiscalEntrada;
 }
