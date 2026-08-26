@@ -201,12 +201,6 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       console.error(`CRÍTICO: item ${ref.itemExternoId} criado no ML mas falhou ao persistir: ${upErr.message}`);
     }
 
-    // ADR-0135: push fiscal pós-publicação. Falha de enqueue NÃO desfaz a publicação (spec §3).
-    if (fiscalAtivo) {
-      try { await enfileirarSincronizacaoFiscal(job.familia_id); }
-      catch (e) { console.error('enfileirar push fiscal falhou:', (e as Error).message); }
-    }
-
     if (familia.descricao_ml) {
       try {
         await conn.garantirDescricao(ctx, ref.itemExternoId, familia.descricao_ml);
@@ -222,6 +216,12 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       if (precoSku != null) patch.preco_publicado_ml = Number(precoSku);
       await admin.from('variacoes').update(patch)
         .eq('familia_id', job.familia_id).eq('codigo', codigo);
+    }
+
+    // ADR-0135: push fiscal pós-publicação. Falha de enqueue NÃO desfaz a publicação (spec §3).
+    if (fiscalAtivo) {
+      try { await enfileirarSincronizacaoFiscal(job.familia_id); }
+      catch (e) { console.error('enfileirar push fiscal falhou:', (e as Error).message); }
     }
 
     try {

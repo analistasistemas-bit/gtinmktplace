@@ -6,11 +6,15 @@ import {
 } from '../_shared/canais/fiscal-ml.ts';
 import { camposFiscaisFaltantes, type CamposFiscaisFamilia } from '../_shared/fiscal/validar.ts';
 
+export interface ItemUP { sku: string; item_externo_id: string | null }
+
 export interface DepsFiscal {
   admin: SupabaseClient;
   resolverConexao: (admin: SupabaseClient, orgId: string, canal: string) => Promise<{ id: string } | null>;
   getToken: (conexao: unknown) => Promise<string>;
   listarVariacoes: (admin: SupabaseClient, familiaId: string) => Promise<VariacaoFiscalPush[]>;
+  /** Fix round 2 (C1): filhos User Products da família (ADR-0088). [] = Legacy (1 item só). */
+  listarItensUP: (admin: SupabaseClient, orgId: string, codigoPai: string) => Promise<ItemUP[]>;
   portas: {
     empurrarFiscalSku: (token: string, payload: Record<string, unknown>) => Promise<void>;
     vincularSkuAnuncio: (token: string, v: { sku: string; item_id: string; variation_id?: string }) => Promise<void>;
@@ -28,7 +32,7 @@ export async function processarSincronizacaoFiscal(
 ): Promise<{ status: number; body: unknown }> {
   const { admin } = deps;
   const { data: familia } = await admin.from('familias')
-    .select('id, org_id, nome_pai, ml_item_id, unidade, origem, ncm, cest, origem_nfe, fci, ex_tipi, tributacao_icms, tributacao_icms_regime')
+    .select('id, org_id, codigo_pai, nome_pai, ml_item_id, unidade, origem, ncm, cest, origem_nfe, fci, ex_tipi, tributacao_icms, tributacao_icms_regime')
     .eq('id', job.familia_id).single();
   if (!familia) return { status: 404, body: { erro: 'família não encontrada' } };
 
@@ -41,35 +45,48 @@ export async function processarSincronizacaoFiscal(
     .select('origin_type, regime_tributario').eq('org_id', familia.org_id).maybeSingle();
   const agora = () => new Date().toISOString();
 
-  // Fix round 1: o gate (D-7) roda no publish/update, mas o worker é alvo de re-enqueue MANUAL
-  // via QStash (operação de rotina neste projeto) — nunca confiar que o gate já passou. Valida
-  // de novo aqui, ANTES de montar/empurrar qualquer payload. Também evita origin_detail: "null"
-  // (String(null)) caso origem_nfe tenha sido apagado depois do push original.
-  const regime = (empresa?.regime_tributario ?? 'simples') as 'simples' | 'normal';
-  const faltas = camposFiscaisFaltantes(familia as CamposFiscaisFamilia, regime);
-  if (faltas.length) {
+  const recusar = async (causa: string): Promise<{ status: number; body: unknown }> => {
     await admin.from('familias').update({
-      can_invoice: false,
-      can_invoice_causa: `push recusado: cadastro incompleto — ${faltas.join('; ')}`,
-      can_invoice_em: agora(),
+      can_invoice: false, can_invoice_causa: causa, can_invoice_em: agora(),
     }).eq('id', familia.id);
-    return { status: 200, body: { erro: `cadastro incompleto — ${faltas.join('; ')}` } };
+    return { status: 200, body: { erro: causa } };
+  };
+
+  // Fix round 1/2: o gate (D-7) roda no publish/update, mas o worker é alvo de re-enqueue MANUAL
+  // via QStash (operação de rotina neste projeto) — nunca confiar que o gate já passou. Valida
+  // de novo aqui, ANTES de montar/empurrar qualquer payload. `regime_tributario` NUNCA defaulta
+  // em silêncio quando `empresa_fiscal` não existe (I5) — e v1 só emite Simples Nacional (C2/D-6).
+  if (!empresa) return await recusar('push recusado: organização sem cadastro em empresa_fiscal');
+  if (!empresa.origin_type) return await recusar('push recusado: origin_type não cadastrado em empresa_fiscal');
+  if (empresa.regime_tributario !== 'simples') {
+    return await recusar('v1 emite só Simples Nacional — regime da org é normal (ADR-0135 D-6)');
   }
+  const faltas = camposFiscaisFaltantes(familia as CamposFiscaisFamilia, 'simples');
+  if (faltas.length) return await recusar(`push recusado: cadastro incompleto — ${faltas.join('; ')}`);
 
   const conexao = await deps.resolverConexao(admin, familia.org_id, 'mercado_livre');
   if (!conexao) return { status: 200, body: { erro: 'org sem conexão com o Mercado Livre' } };
   const token = await deps.getToken(conexao);
   const variacoes = await deps.listarVariacoes(admin, familia.id);
 
+  // C1: rota UP tem um item ML POR SKU (anuncios_externos_itens); familias.ml_item_id só guarda o
+  // 1º item da partição 0 — usá-lo pra TODOS os SKUs afirmaria fiscal no item errado. Família
+  // Legacy (sem filhos) não muda: 1 item só, de familias.ml_item_id, como sempre foi.
+  const itensUP = await deps.listarItensUP(admin, familia.org_id, familia.codigo_pai);
+  const itemIdPorSku = new Map(itensUP.map((i) => [i.sku, i.item_externo_id]));
+  const itemIdDoSku = (sku: string): string | null =>
+    itensUP.length > 0 ? (itemIdPorSku.get(sku) ?? null) : familia.ml_item_id;
+
   try {
     for (const v of variacoes) {
       const payload = montarFiscalInformation(familia as FamiliaFiscalPush, v, {
-        origin_type: empresa?.origin_type ?? null,
+        origin_type: empresa.origin_type,
       });
       await deps.portas.empurrarFiscalSku(token, payload);
-      if (familia.ml_item_id) {
+      const itemId = itemIdDoSku(v.codigo);
+      if (itemId) {
         await deps.portas.vincularSkuAnuncio(token, {
-          sku: v.codigo, item_id: familia.ml_item_id,
+          sku: v.codigo, item_id: itemId,
           ...(v.ml_variation_id ? { variation_id: v.ml_variation_id } : {}),
         });
       }
@@ -88,11 +105,25 @@ export async function processarSincronizacaoFiscal(
     return { status: 200, body: { erro: (e as Error).message } };
   }
 
-  if (familia.ml_item_id) {
-    const pront = await deps.portas.lerCanInvoice(token, familia.ml_item_id);
-    if (pront) {
+  // Semáforo: um item por SKU na rota UP (AND — qualquer item não-pronto derruba a família toda,
+  // causa citando qual item), um item só na Legacy. Leitura falha (null) em QUALQUER item NÃO
+  // escreve nada — nunca regride um `true` já gravado por causa de uma falha transitória de
+  // leitura (I7); só grava quando TODOS os itens responderam de verdade.
+  const idsParaChecar = itensUP.length > 0
+    ? Array.from(new Set(itensUP.map((i) => i.item_externo_id).filter((id): id is string => !!id)))
+    : (familia.ml_item_id ? [familia.ml_item_id] : []);
+  if (idsParaChecar.length > 0) {
+    const resultados = await Promise.all(idsParaChecar.map(async (itemId) => ({
+      itemId, r: await deps.portas.lerCanInvoice(token, itemId),
+    })));
+    if (resultados.every(({ r }) => r != null)) {
+      const falha = resultados.find(({ r }) => !r!.pronto);
+      const pronto = !falha;
+      const causa = falha
+        ? (itensUP.length > 0 ? `item ${falha.itemId}: ${falha.r!.causa}` : falha.r!.causa)
+        : null;
       await admin.from('familias').update({
-        can_invoice: pront.pronto, can_invoice_causa: pront.causa, can_invoice_em: agora(),
+        can_invoice: pronto, can_invoice_causa: causa, can_invoice_em: agora(),
       }).eq('id', familia.id);
     }
   }

@@ -742,20 +742,31 @@ falha ao ler `organizations` não libera.
 
 ### Fiscal (ADR-0135)
 - **sincronizar-fiscal-ml** *(worker, disparado por `enfileirarSincronizacaoFiscal`)* — empurra
-  `fiscal_information` (NCM, CSOSN, CEST, FCI, EX-TIPI, EAN, peso) por SKU e vincula ao
-  `ml_item_id`, depois lê `can_invoice` e grava o semáforo (`familias.can_invoice` +
+  `fiscal_information` (NCM, CSOSN, CEST, FCI, EX-TIPI, EAN, peso) por SKU, vincula cada SKU ao
+  item ML certo e lê `can_invoice`, gravando o semáforo (`familias.can_invoice` +
   `can_invoice_causa` + `can_invoice_em`, `fiscal_sincronizado_em`). Enfileirado por
   `publish-familia-ml` e `update-familia-ml` só quando `exigirFiscalCompletoSePreciso` (D-7)
   confirma módulo `fiscal` ativo e cadastro completo — pula org sem módulo. Idempotente: upsert
   POST→409→PUT no push, e 409 no vínculo SKU↔anúncio é sucesso (replay do QStash). 4xx do ML é
   definitivo (200 com `can_invoice=false` + causa, sem retry); 5xx/timeout é 500 texto para o
-  QStash retentar. Também roteia pela saga User Products (`rotaSagaUP`/`rodarUP`, ADR-0088):
-  ambos os caminhos enfileiram no sucesso, guardados pelo mesmo `fiscalAtivo` (fix round 1) — a
-  replicação de `fiscal_information` para os itens técnicos irmãos é comportamento documentado do
-  ML, mas segue como "A verificar #4" do ADR-0135 (não confirmado em conta real); o risco fica
-  monitorado pelo próprio semáforo `can_invoice` em vez de bloquear o enqueue. O worker também
-  revalida `camposFiscaisFaltantes` antes de montar o payload (não confia que o gate rodou —
-  re-enqueue manual via QStash é operação de rotina neste projeto).
+  QStash retentar.
+  **Vínculo por rota (fix round 2, C1):** família Legacy (1 item ML, N variações) usa
+  `familias.ml_item_id` pra todo SKU, como sempre. Família User Products (ADR-0088, N itens
+  técnicos, um por cor) detecta os filhos em `anuncios_externos_itens` (mesmo padrão de
+  `vincular-catalogo/vinculacao.ts`, partição 0) e vincula CADA SKU ao SEU `item_externo_id` —
+  usar o `ml_item_id` da família (só o 1º item da partição) pra todo SKU afirmaria fiscal no item
+  errado num anúncio já publicado. O semáforo em UP é AND entre os itens distintos (qualquer item
+  não-pronto derruba a família toda, causa citando qual item); uma leitura de `can_invoice` que
+  falhar (`null`) em QUALQUER item não escreve nada, pra nunca regredir um `true` já gravado.
+  Roteia pela saga (`rotaSagaUP`/`rodarUP`) no publish/update: ambos os caminhos enfileiram no
+  sucesso, guardados pelo mesmo `fiscalAtivo` — a replicação de `fiscal_information` para os itens
+  técnicos irmãos é comportamento documentado do ML, mas segue como "A verificar #4" do ADR-0135
+  (não confirmado em conta real); o risco fica monitorado pelo semáforo, não bloqueando o enqueue.
+  **Validação no próprio worker (fix round 2, C2/I5):** antes de montar qualquer payload, recusa
+  definitivo (200, `can_invoice=false` + causa, portas nunca chamadas) se `empresa_fiscal` não
+  existir, se `origin_type` estiver vazio, se o regime da org não for `simples` (v1 só emite
+  Simples Nacional, D-6) ou se `camposFiscaisFaltantes` achar pendência — nunca confia que o gate
+  do publish/update já rodou, porque re-enqueue manual via QStash é operação de rotina aqui.
 
 ### Faturamento
 - **sync-venda** — antes de qualquer escrita, recusa pedido cujo `seller.id` não seja a conta

@@ -109,6 +109,24 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(famUpd?.payload.ml_item_id).toBe('FAKE-V1');
   });
 
+  it('fix round 2 (I6): Legacy com módulo fiscal ativo e cadastro completo → enfileira o push fiscal', async () => {
+    vi.mocked(enfileirarSincronizacaoFiscal).mockClear();
+    const { admin } = fakeAdmin({ familia: FAMILIA_FISCAL_OK, modulosHabilitados: ['fiscal'] });
+    const deps = baseDeps(admin);
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarSincronizacaoFiscal).toHaveBeenCalledWith(JOB.familia_id);
+  });
+
+  it('fix round 2 (I6): Legacy sem módulo fiscal → NÃO enfileira o push fiscal', async () => {
+    vi.mocked(enfileirarSincronizacaoFiscal).mockClear();
+    const { admin } = fakeAdmin({ familia: FAMILIA_FISCAL_OK, modulosHabilitados: [] });
+    const deps = baseDeps(admin);
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarSincronizacaoFiscal).not.toHaveBeenCalled();
+  });
+
   it('multi-cor, cache desconhecido, ML rejeita variations (FORMATO_INCOMPATIVEL) → confirma cache + saga → publicado', async () => {
     const { admin } = fakeAdmin({ variacoes: multiCor() });
     fakeConnector.falharProximo('FORMATO_INCOMPATIVEL', false);

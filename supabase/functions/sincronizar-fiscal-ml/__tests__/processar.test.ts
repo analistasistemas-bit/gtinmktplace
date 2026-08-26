@@ -2,15 +2,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { processarSincronizacaoFiscal } from '../processar.ts';
 
 const familia = {
-  id: 'f1', org_id: 'o1', nome_pai: 'X', ml_item_id: 'MLB1', unidade: 'UN',
+  id: 'f1', org_id: 'o1', codigo_pai: 'CP1', nome_pai: 'X', ml_item_id: 'MLB1', unidade: 'UN',
   origem: 'nacional', ncm: '39269090', cest: null, origem_nfe: 0, fci: null,
   ex_tipi: null, tributacao_icms: '102', tributacao_icms_regime: 'simples',
 };
 const variacoes = [{ codigo: '00101', gtin: '7891234567895', peso_gramas: 200, ml_variation_id: 'v1' }];
+const EMPRESA_OK = { origin_type: 'reseller', regime_tributario: 'simples' };
 
-function deps(opts: { modulosHabilitados?: string[]; familiaOverride?: Record<string, unknown> } = {}) {
+function deps(opts: {
+  modulosHabilitados?: string[];
+  familiaOverride?: Record<string, unknown>;
+  empresaOverride?: Record<string, unknown> | null;
+  itensUP?: Array<{ sku: string; item_externo_id: string | null }>;
+  variacoesOverride?: typeof variacoes;
+} = {}) {
   const modulosHabilitados = opts.modulosHabilitados ?? ['fiscal'];
   const familiaUsada = { ...familia, ...opts.familiaOverride };
+  const empresaUsada = opts.empresaOverride === undefined ? EMPRESA_OK : opts.empresaOverride;
   const updates: Record<string, unknown>[] = [];
   const admin = {
     from: (t: string) => ({
@@ -19,7 +27,7 @@ function deps(opts: { modulosHabilitados?: string[]; familiaOverride?: Record<st
           single: async () => ({ data: t === 'familias' ? familiaUsada : null }),
           maybeSingle: async () => ({
             data: t === 'organizations' ? { modulos_habilitados: modulosHabilitados }
-              : t === 'empresa_fiscal' ? { origin_type: 'reseller', regime_tributario: 'simples' }
+              : t === 'empresa_fiscal' ? empresaUsada
               : null,
           }),
         }),
@@ -31,7 +39,8 @@ function deps(opts: { modulosHabilitados?: string[]; familiaOverride?: Record<st
     admin: admin as never,
     resolverConexao: vi.fn(async () => ({ id: 'cx1' })),
     getToken: vi.fn(async () => 'tok'),
-    listarVariacoes: vi.fn(async () => variacoes),
+    listarVariacoes: vi.fn(async () => opts.variacoesOverride ?? variacoes),
+    listarItensUP: vi.fn(async () => opts.itensUP ?? []),
     portas: {
       empurrarFiscalSku: vi.fn(async () => {}),
       vincularSkuAnuncio: vi.fn(async () => {}),
@@ -88,10 +97,72 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
     expect(r.status).toBe(500);
   });
 
-  it('replay: segunda chamada com mesmo job repete upsert sem efeito colateral novo (idempotente)', async () => {
+  it('replay: leitura falha (null) no can_invoice NÃO regride um true já gravado (I7)', async () => {
     const d = deps();
+    await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' }); // run 1: lerCanInvoice → {pronto:true}
+    expect(d.updates.some((u) => u.can_invoice === true)).toBe(true);
+    d.updates.length = 0; // isola o que o run 2 grava
+    (d.portas.lerCanInvoice as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+    await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' }); // run 2: leitura falha
+    expect(d.updates.some((u) => 'can_invoice' in u)).toBe(false); // nenhum update do semáforo
+    expect(d.portas.empurrarFiscalSku).toHaveBeenCalledTimes(2); // push em si continua idempotente (upsert)
+  });
+
+  it('fix round 2 (C1): rota UP vincula cada SKU ao SEU item, não ao ml_item_id genérico', async () => {
+    const d = deps({
+      itensUP: [{ sku: 'V1', item_externo_id: 'MLB-V1' }, { sku: 'V2', item_externo_id: 'MLB-V2' }],
+      variacoesOverride: [
+        { codigo: 'V1', gtin: null, peso_gramas: 100, ml_variation_id: null },
+        { codigo: 'V2', gtin: null, peso_gramas: 100, ml_variation_id: null },
+      ],
+    });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(200);
+    expect(d.portas.vincularSkuAnuncio).toHaveBeenCalledWith('tok', { sku: 'V1', item_id: 'MLB-V1' });
+    expect(d.portas.vincularSkuAnuncio).toHaveBeenCalledWith('tok', { sku: 'V2', item_id: 'MLB-V2' });
+    expect(d.portas.lerCanInvoice).toHaveBeenCalledWith('tok', 'MLB-V1');
+    expect(d.portas.lerCanInvoice).toHaveBeenCalledWith('tok', 'MLB-V2');
+  });
+
+  it('fix round 2 (C1): semáforo UP é AND entre itens — 1 não-pronto derruba a família, causa cita o item', async () => {
+    const d = deps({
+      itensUP: [{ sku: 'V1', item_externo_id: 'MLB-V1' }, { sku: 'V2', item_externo_id: 'MLB-V2' }],
+      variacoesOverride: [
+        { codigo: 'V1', gtin: null, peso_gramas: 100, ml_variation_id: null },
+        { codigo: 'V2', gtin: null, peso_gramas: 100, ml_variation_id: null },
+      ],
+    });
+    (d.portas.lerCanInvoice as ReturnType<typeof vi.fn>).mockImplementation(async (_tok: string, itemId: string) =>
+      itemId === 'MLB-V2' ? { pronto: false, causa: 'faltando X' } : { pronto: true, causa: null });
     await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
-    await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
-    expect(d.portas.empurrarFiscalSku).toHaveBeenCalledTimes(2); // PUT-upsert: replay é inofensivo
+    const upd = d.updates.find((u) => u.can_invoice === false);
+    expect(upd).toBeDefined();
+    expect(String(upd?.can_invoice_causa)).toContain('MLB-V2');
+  });
+
+  it('fix round 2 (C2): regime normal — recusa definitiva (v1 só Simples), portas nunca chamadas', async () => {
+    const d = deps({ empresaOverride: { origin_type: 'reseller', regime_tributario: 'normal' } });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(200);
+    expect(d.updates.some((u) => u.can_invoice === false)).toBe(true);
+    const causa = String(d.updates.find((u) => u.can_invoice === false)?.can_invoice_causa);
+    expect(causa).toContain('Simples');
+    expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
+  });
+
+  it('fix round 2 (I5): org sem cadastro em empresa_fiscal — recusa definitiva, não default pra simples', async () => {
+    const d = deps({ empresaOverride: null });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(200);
+    expect(d.updates.some((u) => u.can_invoice === false)).toBe(true);
+    expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
+  });
+
+  it('fix round 2 (I5): origin_type ausente em empresa_fiscal — recusa definitiva', async () => {
+    const d = deps({ empresaOverride: { origin_type: null, regime_tributario: 'simples' } });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(200);
+    expect(d.updates.some((u) => u.can_invoice === false)).toBe(true);
+    expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
   });
 });

@@ -27,8 +27,19 @@ Deno.serve(async (req) => {
     getToken: (cx) => getValidAccessTokenConexao(cx as never),
     listarVariacoes: async (admin, familiaId) => {
       const { data } = await admin.from('variacoes')
-        .select('codigo, gtin, peso_gramas, ml_variation_id').eq('familia_id', familiaId);
+        .select('codigo, gtin, peso_gramas, ml_variation_id')
+        .eq('familia_id', familiaId).eq('excluida_da_publicacao', false);
       return data ?? [];
+    },
+    // C1: filhos User Products (ADR-0088) — partição 0, mesmo padrão de vincular-catalogo/vinculacao.ts.
+    listarItensUP: async (admin, orgId, codigoPai) => {
+      const { data: raizes } = await admin.from('anuncios_externos')
+        .select('id').eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('canal', 'mercado_livre').eq('particao', 0);
+      const rootIds = (raizes ?? []).map((r: { id: string }) => r.id);
+      if (rootIds.length === 0) return [];
+      const { data: itens } = await admin.from('anuncios_externos_itens')
+        .select('sku, item_externo_id').in('anuncio_externo_id', rootIds).eq('retirado', false);
+      return itens ?? [];
     },
     portas: { empurrarFiscalSku, vincularSkuAnuncio, lerCanInvoice },
   }, job);

@@ -178,6 +178,22 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
     expect(writes.find((w) => w.table === 'familias' && w.payload.status === 'publicado')).toBeDefined();
   });
 
+  it('fix round 2 (I6): Legacy com módulo fiscal ativo e cadastro completo → enfileira o push fiscal', async () => {
+    const { admin } = fakeAdmin({ raizUP: null, itensUP: [], familia: FAMILIA_FISCAL_OK, modulosHabilitados: ['fiscal'] });
+    const deps = baseDeps(admin, { atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'ok', adicionadas: 0 }) });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarFiscalSpy).toHaveBeenCalledWith(JOB.familia_id);
+  });
+
+  it('fix round 2 (I6): Legacy sem módulo fiscal → NÃO enfileira o push fiscal', async () => {
+    const { admin } = fakeAdmin({ raizUP: null, itensUP: [], familia: FAMILIA_FISCAL_OK, modulosHabilitados: [] });
+    const deps = baseDeps(admin, { atualizarUP: async (): Promise<ResultadoAtualizarUP> => ({ estado: 'ok', adicionadas: 0 }) });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarFiscalSpy).not.toHaveBeenCalled();
+  });
+
   it('REGRESSÃO Legacy: raiz existe mas SEM itens filhos (item-plano-1-var ADR-0084) → Legacy intocado', async () => {
     const { admin } = fakeAdmin({ raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [] });
     let upChamado = false;
