@@ -137,3 +137,6 @@ verify_jwt = true
 # ADR-0135: worker QStash do push fiscal (fiscal_information + can_invoice).
 [functions.sincronizar-fiscal-ml]
 verify_jwt = false
+# ADR-0135 D-9: edição dos campos fiscais da família, chamada pelo APP com JWT.
+[functions.atualizar-fiscal-familia]
+verify_jwt = true
