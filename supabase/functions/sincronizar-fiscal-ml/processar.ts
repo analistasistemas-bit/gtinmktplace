@@ -6,7 +6,7 @@ import {
 } from '../_shared/canais/fiscal-ml.ts';
 import { camposFiscaisFaltantes, type CamposFiscaisFamilia } from '../_shared/fiscal/validar.ts';
 import {
-  calcularSemaforoCanInvoice, idsParaChecar, type ItemFiscalUP,
+  calcularSemaforoCanInvoice, idsParaChecar, skusOrfaosUP, type ItemFiscalUP,
 } from '../_shared/fiscal/can-invoice.ts';
 
 export type ItemUP = ItemFiscalUP;
@@ -94,7 +94,9 @@ export async function processarSincronizacaoFiscal(
 
   // Q3: SKU da rota UP sem item resolvido (pendente/criacao_incerta) não pode ficar de fora do
   // AND em silêncio — sem isso a família gravaria can_invoice=true com um SKU nunca vinculado.
-  const skusOrfaos: string[] = [];
+  // (Task 8 fix round 1: gate extraído pra _shared/fiscal/can-invoice.ts — reusado também pela
+  // reconciliação de monitorar-moderados, que tinha esse mesmo gap.)
+  const skusOrfaos = skusOrfaosUP(variacoes.map((v) => v.codigo), itensUP);
 
   try {
     for (const v of variacoes) {
@@ -108,8 +110,6 @@ export async function processarSincronizacaoFiscal(
           sku: v.codigo, item_id: itemId,
           ...(v.ml_variation_id ? { variation_id: v.ml_variation_id } : {}),
         });
-      } else if (itensUP.length > 0) {
-        skusOrfaos.push(v.codigo);
       }
     }
   } catch (e) {

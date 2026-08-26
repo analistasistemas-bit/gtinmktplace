@@ -94,7 +94,7 @@ describe('reconciliarCanInvoice (ADR-0135 D-10 — o estado exibido é o do ML)'
     expect(updates[0]).toEqual({ id: 'f1', can_invoice: false, can_invoice_causa: 'item MLB2: motivo-ml' });
   });
 
-  it('SKU órfão (item_externo_id null) na rota UP fica fora do AND — não derruba nem afirma sozinho', async () => {
+  it('fix round 1 — SKU órfão (item_externo_id null) na rota UP: can_invoice=false, causa cita o SKU, NUNCA true', async () => {
     const { admin, updates } = fakeAdmin({
       familias: [{ id: 'f1', codigo_pai: 'CP1', ml_item_id: 'MLB1' }],
     });
@@ -105,9 +105,11 @@ describe('reconciliarCanInvoice (ADR-0135 D-10 — o estado exibido é o do ML)'
     const ler = vi.fn(async () => ({ pronto: true, causa: null }));
     const n = await reconciliarCanInvoice(admin, 'o1', 'tok', ler, listarItensUP);
     expect(n).toBe(1);
-    expect(ler).toHaveBeenCalledTimes(1);
-    expect(ler).toHaveBeenCalledWith('tok', 'MLB1');
-    expect(updates[0].can_invoice).toBe(true);
+    // Mesmo gate do worker (Q3): SKU pendente é decisão definitiva — nem lê can_invoice no ML.
+    expect(ler).not.toHaveBeenCalled();
+    expect(updates[0]).toEqual({
+      id: 'f1', can_invoice: false, can_invoice_causa: 'SKU(s) sem item vinculado no ML: S2',
+    });
   });
 
   it('falha de leitura do ML (lerCanInvoice → null) NÃO regride o estado gravado', async () => {

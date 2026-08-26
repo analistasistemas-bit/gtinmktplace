@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calcularSemaforoCanInvoice, idsParaChecar, listarItensUP } from '../can-invoice.ts';
+import { calcularSemaforoCanInvoice, idsParaChecar, listarItensUP, skusOrfaosUP } from '../can-invoice.ts';
 
 // Fake admin mínimo pra exercitar a query real de listarItensUP (Task 7 nunca testou
 // diretamente essa implementação — só via vi.fn() injetado em DepsFiscal). Extraída pra shared
@@ -97,5 +97,26 @@ describe('calcularSemaforoCanInvoice', () => {
   it('qualquer leitura falhando (null) → null, nunca regride estado gravado (I7)', async () => {
     const ler = async (_t: string, id: string) => (id === 'I1' ? { pronto: true, causa: null } : null);
     expect(await calcularSemaforoCanInvoice('tok', ['I1', 'I2'], ler, true)).toBeNull();
+  });
+});
+
+describe('skusOrfaosUP (fix round 1 — T8: gate compartilhado com o worker de push, Q3)', () => {
+  it('Legacy (itensUP vazio): nunca há órfão — conceito não existe fora de UP', () => {
+    expect(skusOrfaosUP(['S1', 'S2'], [])).toEqual([]);
+  });
+
+  it('UP: SKU sem entrada em itensUP é órfão', () => {
+    const itensUP = [{ sku: 'S1', item_externo_id: 'I1' }];
+    expect(skusOrfaosUP(['S1', 'S2'], itensUP)).toEqual(['S2']);
+  });
+
+  it('UP: SKU com item_externo_id null é órfão', () => {
+    const itensUP = [{ sku: 'S1', item_externo_id: 'I1' }, { sku: 'S2', item_externo_id: null }];
+    expect(skusOrfaosUP(['S1', 'S2'], itensUP)).toEqual(['S2']);
+  });
+
+  it('UP: todos resolvidos → []', () => {
+    const itensUP = [{ sku: 'S1', item_externo_id: 'I1' }, { sku: 'S2', item_externo_id: 'I2' }];
+    expect(skusOrfaosUP(['S1', 'S2'], itensUP)).toEqual([]);
   });
 });

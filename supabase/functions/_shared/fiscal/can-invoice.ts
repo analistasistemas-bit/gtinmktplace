@@ -27,12 +27,24 @@ export async function listarItensUP(
 }
 
 /** IDs distintos a checar pra uma família: rota UP usa os itens dos filhos já resolvidos (SKU
- *  órfão — sem item_externo_id — fica de fora; é o worker de push que trata órfão como pendência,
- *  a reconciliação só lê o que já existe); Legacy usa o único item de familias.ml_item_id. */
+ *  órfão fica de fora do AND — é `skusOrfaosUP`, abaixo, quem decide o que fazer com ele; nunca
+ *  chamar sem checar órfão antes, ou a família UP incompleta pode reconciliar como pronta);
+ *  Legacy usa o único item de familias.ml_item_id. */
 export function idsParaChecar(itensUP: ItemFiscalUP[], mlItemId: string | null): string[] {
   return itensUP.length > 0
     ? Array.from(new Set(itensUP.map((i) => i.item_externo_id).filter((id): id is string => !!id)))
     : (mlItemId ? [mlItemId] : []);
+}
+
+/** SKUs da rota UP sem item_externo_id resolvido (pendente/criacao_incerta no ML). Presença de
+ *  QUALQUER um aqui é pendência — nunca pode ficar de fora do resultado em silêncio (Task 7 Q3:
+ *  o AND de `idsParaChecar` só olha os itens resolvidos; sem este gate, 1 SKU pendente + resto
+ *  pronto reconciliaria a família inteira como `true`). `[]` em Legacy (itensUP vazio) — lá não
+ *  existe o conceito de "SKU sem item", é sempre o único item de ml_item_id. */
+export function skusOrfaosUP(skus: string[], itensUP: ItemFiscalUP[]): string[] {
+  if (itensUP.length === 0) return [];
+  const itemIdPorSku = new Map(itensUP.map((i) => [i.sku, i.item_externo_id]));
+  return skus.filter((sku) => !itemIdPorSku.get(sku));
 }
 
 /** AND do semáforo sobre 1+ itens ML. `citarItem` prefixa a causa com o item (rota UP, vários

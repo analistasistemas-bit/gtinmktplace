@@ -11,7 +11,7 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
   calcularSemaforoCanInvoice, idsParaChecar, listarItensUP as listarItensUPReal,
-  type LerCanInvoice,
+  skusOrfaosUP, type LerCanInvoice,
 } from '../_shared/fiscal/can-invoice.ts';
 
 export type { LerCanInvoice };
@@ -43,6 +43,21 @@ export async function reconciliarCanInvoice(
   let atualizadas = 0;
   for (const f of (familias ?? []) as FamiliaCanInvoice[]) {
     const itensUP = await listarItensUP(admin, orgId, f.codigo_pai);
+
+    // Fix round 1 (T8): SKU UP sem item resolvido é pendência, igual ao worker de push — nunca
+    // pode ficar de fora do AND em silêncio (a família reconciliaria como `true` com 1 SKU
+    // nunca vinculado no ML). Mesmo gate de sincronizar-fiscal-ml/processar.ts, mesma causa;
+    // short-circuit ANTES de ler can_invoice no ML, como o worker também faz.
+    const skusOrfaos = skusOrfaosUP(itensUP.map((i) => i.sku), itensUP);
+    if (skusOrfaos.length > 0) {
+      const { error } = await admin.from('familias').update({
+        can_invoice: false, can_invoice_causa: `SKU(s) sem item vinculado no ML: ${skusOrfaos.join(', ')}`,
+        can_invoice_em: new Date().toISOString(),
+      }).eq('id', f.id);
+      if (!error) atualizadas += 1;
+      continue;
+    }
+
     const ids = idsParaChecar(itensUP, f.ml_item_id);
     if (ids.length === 0) continue;
     const resultado = await calcularSemaforoCanInvoice(token, ids, ler, itensUP.length > 0);
