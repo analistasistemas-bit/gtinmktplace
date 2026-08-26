@@ -38,4 +38,8 @@ describe('exigirFiscalCompletoSePreciso (ADR-0135 D-7)', () => {
     await expect(exigirFiscalCompletoSePreciso(adminFake(['fiscal'], 'normal'), completa))
       .rejects.toThrow(/recadastre/);
   });
+  it('erro lançado é definitivo (status 400) — não pode ser retentado pelo QStash', async () => {
+    await expect(exigirFiscalCompletoSePreciso(adminFake(['fiscal'], 'simples'), { ...completa, ncm: null }))
+      .rejects.toMatchObject({ status: 400 });
+  });
 });

@@ -22,10 +22,14 @@ export async function exigirFiscalCompletoSePreciso(
 
   const faltas = camposFiscaisFaltantes(familia, regime);
   if (faltas.length) {
-    throw new Error(
+    const e = new Error(
       `Cadastro fiscal incompleto em "${familia.nome_pai}" — preencha antes de publicar: ` +
       `${faltas.join('; ')} (ADR-0135 D-7)`,
-    );
+    ) as Error & { status?: number };
+    // Definitivo: sem isso decidirRetryPorErro trata status=undefined como retriável e o
+    // QStash retenta até 10x uma falha que não muda sem ação humana (fix round 1).
+    e.status = 400;
+    throw e;
   }
   return true;
 }
