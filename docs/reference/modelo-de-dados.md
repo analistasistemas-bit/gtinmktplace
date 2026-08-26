@@ -58,6 +58,14 @@ org; `revoke all from public`, `grant execute to authenticated`).
 Esconder o menu é **navegação**, não fronteira de segurança (ADR-0047): o gate real são as edges
 `cadastrar-produto` e `entrada-estoque`, que respondem 403 para org sem o módulo.
 
+**`tipo_pessoa` text** (`'pf'` | `'pj'`, default `'pf'`, migration `20260826004934_adr135_cadastro_fiscal.sql`,
+ADR-0135 D-2): default seguro — PF nunca emite. Editado só pelo super-admin (edge `usuarios`,
+action `set_tipo_pessoa_org`). Constraint **no banco**, não só na UI —
+`organizations_fiscal_exige_pj`: `not ('fiscal' = any(modulos_habilitados)) or tipo_pessoa = 'pj'`
+— PF não consegue ligar o módulo `fiscal` nem via SQL direto. Marcar a org como PJ, sozinho, não
+exige nada (a obrigatoriedade nasce no ato de ligar o módulo, ver [Fiscal](#fiscal-adr-0135)
+abaixo).
+
 ### `marketplace_connections`
 **Substitui `ml_credentials`** como fonte da credencial de canal — a conexão é da **organização**,
 não do usuário (fecha a pendência do ADR-0047 "membros não publicam"). *Migration
@@ -217,6 +225,19 @@ Grupos de colunas:
 - **Origem/imposto (ADR-0055):** `origem` (enum `origem_produto` `nacional`/`importado`,
   default `nacional`), lida da coluna opcional `ORIGEM` da planilha (linha PAI).
   *Migration `20260703113001_imposto_origem_e_aliquotas.sql`.*
+- **Fiscal (ADR-0135 D-4, migration `20260826004934_adr135_cadastro_fiscal.sql`):** `ncm` (8
+  dígitos, obrigatório para emitir — gate na publicação, não `NOT NULL`), `cest` (7 dígitos,
+  opcional, só com Substituição Tributária), `origem_nfe` (smallint 0–8, check de faixa; **não
+  deriva** de `origem` acima — os dois são digitados independentes, coerência validada em app: par
+  válido só `nacional`→`{0,3,4,5,8}` / `importado`→`{1,2,6,7}`), `fci` (UUID da Ficha de Conteúdo de
+  Importação, condicional a `origem_nfe` em `(3,5,8)`), `ex_tipi` (opcional). `tributacao_icms`
+  guarda o **CSOSN** (Simples) ou o **CST** (Regime Normal) — o campo-irmão
+  `tributacao_icms_regime` registra qual regime gerou o valor, para detectar troca de regime sem
+  adivinhar (org cuja `empresa_fiscal.regime_tributario` divirja falha LOUD nomeando a família).
+  `can_invoice` (boolean, nullable) + `can_invoice_causa` + `can_invoice_em` são o semáforo lido de
+  `GET /can_invoice` do ML (D-10, nunca calculado localmente); `fiscal_sincronizado_em` é só
+  diagnóstico do último push. `unidade` (já existente) passa a vocabulário controlado no ML quando
+  o módulo fiscal está ativo. Ver seção [Fiscal](#fiscal-adr-0135) abaixo.
 - **Copy (IA):** `titulo_ml`, `descricao_ml`, `atributos_ml jsonb`, `tokens_input/output`,
   `titulo_descartes jsonb` (ADR-0116 — diagnóstico: lista de `{slot, etapa, de, para}` com o que
   cada etapa do pipeline de título alterou ou removeu; `para=""` é descarte, outro valor é
@@ -457,6 +478,62 @@ escrever saldo direto; ver a pendência em `docs/TASKS.md`. **Uma RPC de estoque
 `revoke update (estoque)` porque privilégios de coluna são **cumulativos** em Postgres: como
 `authenticated` já tem `UPDATE` na tabela inteira, revogar só a coluna seria inócuo. Toda mudança
 de saldo passa por entrada, baixa, estorno ou **ajuste** (ADR-0110) — nunca por `UPDATE` do app.
+
+---
+
+## Fiscal (ADR-0135)
+
+> Cadastro fiscal de empresa e produto; a emissão em si é do **Faturador do Mercado Livre** (a
+> porta `DadosFiscaisCanal` empurra dados e lê prontidão, não transmite NF-e). V1 Simples Nacional
+> apenas. *Migrations `20260826004934_adr135_cadastro_fiscal.sql`,
+> `20260826061358_estoque_resumo_fiscal.sql`, `20260826063450_estoque_resumo_nomes_fiscal_fix.sql`
+> (as duas últimas só estendem a RPC `produtos_estoque_resumo()`, já documentada em
+> [Estoque](#estoque-adr-0094) acima, com os campos fiscais).* Colunas novas em `organizations`
+> (`tipo_pessoa`) e `familias` (fiscal por produto) estão documentadas em cada tabela, acima; esta
+> seção cobre a tabela nova.
+
+### `empresa_fiscal`
+Um registro por org (PK `org_id`, FK `organizations` `on delete cascade`). Superconjunto mínimo
+portável — sobrevive a qualquer troca de emissor futura (D-3). Todo campo é **nullable no
+schema**: a obrigatoriedade é do gate de ativação do módulo (edge `usuarios`), nunca do INSERT.
+
+Grupos de colunas:
+- **Identidade:** `cnpj`, `razao_social`, `nome_fantasia`, `inscricao_estadual`,
+  `regime_tributario` (check `simples`/`normal` — v1 só libera `simples`, D-6).
+- **Endereço fiscal:** `cep`, `logradouro`, `numero`, `complemento`, `bairro`, `municipio`,
+  `municipio_ibge` (check 7 dígitos), `uf` (check `^[A-Z]{2}$`). **Não confundir com
+  `configuracoes.uf_empresa`** (ADR-0112, que segue governando a alíquota interna) — a ativação do
+  módulo valida LOUD que as duas UFs coincidem, nomeando as duas se divergirem.
+- **Operação:** `natureza_operacao`, `cfop_dentro_uf`, `cfop_fora_uf_nao_contribuinte`,
+  `cfop_fora_uf_contribuinte` (nullable — slot para PJ com IE), `cst_pis`, `cst_cofins`.
+- **ML:** `origin_type` (check `manufacturer`/`reseller`/`imported`) — papel da empresa, exigido
+  pelo payload de `fiscal_information` (é da org, não do produto).
+- **Corte temporal:** `emissao_a_partir_de date` — vendas com `date_created` anterior nunca viram
+  pendência fiscal nem alerta (D-8, mesmo anti-padrão de 1º-run já conhecido do projeto).
+- **Auditoria:** `criado_em`, `atualizado_em`.
+
+RLS por org: SELECT de qualquer membro; INSERT/UPDATE só admin da org (mesma variante de
+`configuracoes`). `grant select, insert, update to authenticated`.
+
+### Gates que dependem deste schema
+- **Ativação do módulo** (`fiscal`, edge `usuarios`, só super-admin): `tipo_pessoa='pj'` +
+  `empresa_fiscal` completa + `regime_tributario='simples'` + UF coerente com
+  `configuracoes.uf_empresa` + `emissao_a_partir_de` preenchida.
+- **Publicação/UPDATE** (`publish-familia-ml`/`update-familia-ml`): família sem `ncm`,
+  `origem_nfe` ou `tributacao_icms` (ou regime divergente, ou `fci` ausente com origem 3/5/8) falha
+  LOUD nomeando o campo, antes de qualquer escrita no ML.
+- **`ingest-lote`**: coluna `NCM` na planilha — org com módulo aborta o lote se ausente/inválida
+  (mesmo contrato do `ORIGEM`, ADR-0107); org sem módulo ignora a coluna.
+
+### Limitação conhecida da v1 (D-10)
+Anúncio externo/migrado **sem família** (`user_products` adotado via `anuncios_externos`) não tem
+de onde herdar dado fiscal — a intenção da D-10 é essa linha aparecer em Publicados marcada "sem
+cadastro fiscal — vincular a produto", nunca sumir em silêncio. O `BadgeFiscal` da UI já trata esse
+caso, mas `fetchPublicados` (`src/lib/queries.ts`) descarta esses itens antes de chegarem à tela
+(`if (!rep) continue` no loop de `anuncios_externos`) — comportamento pré-existente da própria
+tela Publicados, não introduzido por este ADR. Resultado: hoje não há sinal fiscal na UI para esse
+caso específico; fechar o `continue` é item futuro nomeado (task-14-report.md), não pendência
+silenciosa.
 
 ---
 

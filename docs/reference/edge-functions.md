@@ -1,6 +1,6 @@
 # Referência — Edge Functions
 
-> **Tipo:** Reference (Diátaxis). As 56 Edge Functions Deno do PubliAI (`supabase/functions/`).
+> **Tipo:** Reference (Diátaxis). As 60 Edge Functions Deno do PubliAI (`supabase/functions/`).
 > `verify_jwt` é extraído de `supabase/config.toml` (verdade de configuração). Trigger e
 > idempotência vêm do código de cada `index.ts`. Termos em [glossario.md](glossario.md);
 > deploy em [../how-to/deploy-e-migrations.md](../how-to/deploy-e-migrations.md).
@@ -55,6 +55,8 @@
 | adicionar-variacoes-familia | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, D-8) |
 | **Fiscal (ADR-0135)** ||||
 | sincronizar-fiscal-ml | false | QStash worker | sim (upsert POST→409→PUT por SKU) |
+| atualizar-fiscal-familia | true | HTTP (frontend) | sim (upsert dos campos, `familiaId` idempotente) |
+| sugerir-ncm | true | HTTP (frontend) | sim (leitura/IA; nunca grava) |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
 | ml-webhook | false | Webhook do ML | sim (dedup) |
 | sync-venda | false | QStash worker | sim (upsert) |
@@ -144,6 +146,8 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
 | `estoque/*` (ADR-0094) | `baixa.ts` → `registrarBaixaVenda`/`estornarVendaCancelada` (chamam as RPCs `baixar_estoque`/`estornar_estoque`), `lerPushPendente`/`despacharPushPendente` (drena o outbox do ledger); `alvos.ts` → `resolverAlvosPush` (resolve qual item externo recebe qual SKU: variações num item, split em N partições, ou N itens planos user products) |
 | `notificacoes/*` | Telegram: `montarMensagem*` + `enviarTelegram` (`telegram.ts`); `notificarCategoria(admin, orgId, categoria, texto)` resolve os assinantes por categoria, grava notificação in-app (tabela `notificacoes`, ADR-0085) e envia Telegram a quem tem chat_id (`config.ts`); `categorias.ts` (7 categorias canônicas) e `sanitizarDestinatario` (`destinatario.ts`). Assinatura por profile (`telegram_categorias`) vale para os dois canais; bot Telegram é por org (ADR-0068) |
 | `parser.ts` | Validação de colunas da planilha, agrupamento por PAI, matching de fotos |
+| `fiscal/*` (ADR-0135) | `ativacao.ts` → `pendenciasAtivacaoFiscal` (checklist de ativação do módulo `fiscal`, 5 itens, §5.3 da spec); `can-invoice.ts` → resolução Legacy/UP + `calcularSemaforoCanInvoice` (AND entre itens distintos, nunca regride um `true` já gravado), reusado por `sincronizar-fiscal-ml` (push) e `monitorar-moderados` (reconciliação 6/6h); `gate.ts` → `exigirFiscalCompletoSePreciso` chamado por `publish-familia-ml`/`update-familia-ml`; `validar.ts` → `validarCoerenciaOrigem` (par `origem`×`origem_nfe`), `camposFiscaisFaltantes`, `validarCnpj` |
+| `canais/fiscal-ml.ts` | Porta `DadosFiscaisCanal` (ADR-0024/0135), adaptador único ML: `montarFiscalInformation`, `empurrarFiscalSku` (upsert POST→409→PUT), `vincularSkuAnuncio`, `lerCanInvoice` (`GET /can_invoice`) |
 
 ---
 
@@ -191,6 +195,14 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   também é livre pro cliente escrever no mesmo UPDATE que grava o path).
 - **upload-imagens-lote** — recebe FormData de imagens e casa por nome de arquivo
   (`00CODIGO`, `CAPA_…`, `CAPA2_…`, `CAPA3_…`) com variações/família.
+- **Colunas fiscais da planilha (ADR-0135 D-7.2, `_shared/types.ts` + `ingest-lote/verificar-fiscal.ts`):**
+  `NCM` (linha PAI), `CEST`/`ORIGEM_NFE`/`CSOSN` (opcionais). Não entram em `COLUNAS_OBRIGATORIAS` —
+  só a org com o módulo `fiscal` ativo é obrigada: `NCM` ausente/inválido (não bate `^\d{8}$`)
+  aborta o lote inteiro **antes de persistir** (mesmo contrato do `ORIGEM`, ADR-0107), listando
+  todos os PAIs afetados de uma vez. Colunas opcionais presentes com valor inválido também abortam
+  (parâmetro fiscal nunca degrada em silêncio); quando a célula vem **vazia**, o re-ingest herda o
+  valor já curado da família anterior (dialog de edição ou planilha anterior) em vez de apagar.
+  Org sem o módulo: as 4 colunas são ignoradas — planilhas de hoje continuam válidas.
 
 ### Processamento / publicação
 - **process-familia** *(worker)* — claim atômico `pendente→processando`, resolve cor
@@ -767,6 +779,22 @@ falha ao ler `organizations` não libera.
   existir, se `origin_type` estiver vazio, se o regime da org não for `simples` (v1 só emite
   Simples Nacional, D-6) ou se `camposFiscaisFaltantes` achar pendência — nunca confia que o gate
   do publish/update já rodou, porque re-enqueue manual via QStash é operação de rotina aqui.
+- **atualizar-fiscal-familia** *(HTTP, JWT do app)* — modo edição do D-9: grava os campos fiscais
+  de uma família já cadastrada (`ncm`, `cest`, `origem_nfe`, `fci`, `ex_tipi`, `tributacao_icms`)
+  e, quando a família já está publicada, enfileira `sincronizar-fiscal-ml` para o re-push. 403 sem
+  módulo `fiscal`; 404 família não encontrada; upsert idempotente por `familiaId`. Alimenta o
+  dialog de edição em fila da tela `/estoque` (filtro "fiscal pendente" + "Salvar e próximo").
+- **sugerir-ncm** *(HTTP, JWT do app)* — IA (OpenRouter, mesmo padrão `resolverModeloTexto`
+  ADR-0074) sugere um NCM a partir de nome/descrição/categoria ML e devolve a sugestão marcada
+  como tal; **nunca escreve no banco** — só `atualizar-fiscal-familia` grava, e só com confirmação
+  ativa do operador (D-9). 403 sem módulo `fiscal`; sem sugestão viável devolve `{ncm: null,
+  justificativa: "..."}` em vez de inventar um código.
+- **Nenhum schedule QStash novo neste ADR.** O semáforo `can_invoice` (D-10) é escrito por dois
+  caminhos: na hora, pelo próprio `sincronizar-fiscal-ml` após o push; e a cada 6h, pendurado no
+  cron já existente do `monitorar-moderados` (`reconciliarCanInvoice`,
+  `monitorar-moderados/can-invoice.ts`) — cobre mudança feita por fora do app (ex.: ajuste manual
+  no painel do ML). Decisão de execução: o cron horário `reconciliar-faturamento` já tem orçamento
+  de 120s apertado; 6h é suficiente porque o push já mantém o semáforo fresco no caminho normal.
 
 ### Faturamento
 - **sync-venda** — antes de qualquer escrita, recusa pedido cujo `seller.id` não seja a conta

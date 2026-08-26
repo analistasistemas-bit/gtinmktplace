@@ -1,6 +1,6 @@
 ---
 tags: [modulo, configuracoes]
-atualizado: 2026-08-24
+atualizado: 2026-08-26
 ---
 
 # Configurações
@@ -15,6 +15,8 @@ Rota `/configuracoes` (`src/pages/Configuracoes.tsx`). Ver [[Banco de Dados]] (t
 
 ## O que configura
 
+- **Empresa** (ADR-0135, módulo pago `fiscal`) — cadastro fiscal da organização
+  (`empresa_fiscal`), visível para toda org PJ mas só obrigatório com o módulo ligado. Ver [[Fiscal]].
 - **Conexão Mercado Livre** — status via `useMlConnection` (lê `ml_credentials`); conectar/
   desconectar via `iniciarConexaoML`/`desconectarML` (`src/lib/ml-oauth.ts`). Ver [[Segurança]].
 - **Desconto de marketing** — `desconto_pct` por org (`useDescontoPct`, `useSalvarDescontoPct`).

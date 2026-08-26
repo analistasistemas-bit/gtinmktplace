@@ -310,6 +310,12 @@ recusam org sem o módulo com **403** — é ali que está a fronteira de segura
   conexão `mercado_livre` da org (mesma conta, ADR-0093), alimentando só `estorno` e
   `money_release_date` em `ml_vendas`.
 - **Monitoramento** (ADR-0035): varredura de anúncios moderados + alertas Telegram.
+- **Fiscal** (ADR-0135, módulo pago `fiscal`): cadastro fiscal de empresa (`empresa_fiscal`) e
+  produto (colunas em `familias`), empurrado para o ML via a porta `DadosFiscaisCanal`
+  (`_shared/canais/fiscal-ml.ts`, padrão ADR-0024, adaptador único). O PubliAI **não transmite
+  NF-e** — quem emite é o Faturador do próprio Mercado Livre (grátis); o PubliAI cadastra, empurra
+  o dado por SKU e mostra a prontidão real (`can_invoice`) como semáforo em Publicados. `pf` jamais
+  liga o módulo (constraint no banco). V1 só Simples Nacional.
 - **Viabilidade** (ADR-0014/0015): análise de concorrência e margem antes de cadastrar. Desde
   2026-08-08 também é **porta de entrada do pipeline**: o botão "Cadastrar" na linha do resultado
   abre o cadastro manual pré-preenchido com o que a análise já sabe (nome e descrição da ficha de

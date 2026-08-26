@@ -60,9 +60,28 @@
 | **Reconciliação de estoque** | Job diário (`reconciliar-estoque`, schedule QStash `30 12 * * *`) — rede de segurança do **push**, não do webhook: só re-empurra produto com movimento no ledger (outbox pendente ou movimento recente); nunca re-empurra produto sem movimento nenhum. |
 | **Ajuste (zeragem)** | Movimento que **reduz ou zera** o saldo fora de uma venda (motivo `ajuste`, RPC `ajustar_estoque`, edge `ajustar-estoque`), **admin-only** e propagado a todos os canais (ADR-0110). `novo_saldo > saldo_atual` é **rejeitado** — aumentar continua sendo **entrada de mercadoria**, que exige custo e alimenta markup/preço. A escrita direta de `variacoes.estoque` segue bloqueada por trigger (`variacoes_bloquear_escrita_direta_estoque`): toda mudança de saldo passa por entrada, baixa, estorno ou ajuste. Ajuste com `quantidade = 0` é trilha deliberada (alguém conferiu o saldo). |
 | **Reativação por reposição** | Push de **reposição** (entrada ou estorno) com saldo > 0 devolve o anúncio de `pausado` para `ativo`, lendo o status ao vivo antes de escrever (ADR-0111). Só sai de `pausado` — `moderado`, `encerrado`, `inativo` e `indisponivel` são intocados —, a reconciliação diária **não** reativa, e o ajuste nunca reativa (só reduz). |
-| **Módulo** | Funcionalidade **paga** opcional, habilitada por organização pelo super-admin (`organizations.modulos_habilitados`, hoje só `'estoque'`), espelhando `canais_habilitados` — com uma diferença: **não há módulo obrigatório**, lista vazia é o default de toda org. Gate em dois níveis: esconder o menu **e** recusar a edge com 403 — diferente de **permissão de menu**, que é só navegação (ADR-0047). |
+| **Módulo** | Funcionalidade **paga** opcional, habilitada por organização pelo super-admin (`organizations.modulos_habilitados`, hoje `'estoque'` e `'fiscal'`), espelhando `canais_habilitados` — com uma diferença: **não há módulo obrigatório**, lista vazia é o default de toda org. Gate em dois níveis: esconder o menu **e** recusar a edge com 403 — diferente de **permissão de menu**, que é só navegação (ADR-0047). |
 | **Cadastro manual** | Criar produto pela UI, sem planilha (edge `cadastrar-produto`, módulo `estoque`). Grava um lote normal com `lotes.origem='manual'` e cai na **mesma Revisão** do fluxo de planilha, então publicação, split e user products não mudam. Não publica nada — publicar continua sendo ato explícito na Revisão. |
 | **Sessão de cadastro = um lote** | Vários produtos cadastrados em sequência entram no **mesmo** lote manual aberto da org, em vez de um lote por produto (D-1.1). "Aberto" = `origem='manual'` e status em `importando`/`processando`/`revisao`. |
+
+## Fiscal (ADR-0135)
+
+> Cadastro fiscal de empresa e produto; a **emissão** da nota é do Faturador do Mercado Livre, não
+> do PubliAI. V1 cobre só Simples Nacional.
+
+| Termo | Definição |
+|---|---|
+| **Faturador do Mercado Livre** | Serviço **grátis** do próprio ML que emite a NF-e (Simples ou Regime Normal): automático no Full, um clique nas demais logísticas. Opt-in, certificado A1 e série são configurados no painel do ML — sem API, o PubliAI não pergunta nem registra essa etapa, só verifica o resultado via `can_invoice`. |
+| **NCM** | Nomenclatura Comum do Mercosul — 8 dígitos, classifica fiscalmente o produto. Obrigatório por família (não muda com a cor) para emitir; sugerido por IA mas só gravado com confirmação ativa do operador (D-9), nunca em lote. |
+| **CEST** | Código Especificador da Substituição Tributária — 7 dígitos, só preenchido quando o produto está sob ST. Opcional. |
+| **CSOSN / CST** | Código de tributação do ICMS: **CSOSN** sob Simples Nacional, **CST** sob Regime Normal — o mesmo campo (`familias.tributacao_icms`) guarda um ou outro, e `tributacao_icms_regime` registra qual dos dois gerou o valor (detecta troca de regime sem adivinhar). |
+| **Origem (0–8, NF-e)** | `familias.origem_nfe` — código fiscal de procedência da mercadoria (0 nacional, 1–2/6–7 importado por tipo de operação, 3/5/8 com Fundo de Conteúdo de Importação, 4 nacional com processo produtivo básico). **Não deriva** de `familias.origem` (binário nacional/importado do ADR-0055/0107, que segue calculando o imposto 8%/16%) — os dois são digitados independentes, com trava de coerência LOUD (nunca default silencioso, regra financeira do projeto). |
+| **FCI** | Ficha de Conteúdo de Importação — UUID exigido quando `origem_nfe` é 3, 5 ou 8. |
+| **`empresa_fiscal`** | Tabela com o cadastro fiscal da organização (CNPJ, endereço, CFOP, `origin_type`, `emissao_a_partir_de`) — superconjunto mínimo portável, pensado para sobreviver a troca de emissor. Um registro por org. |
+| **`tipo_pessoa`** | `organizations.tipo_pessoa` (`pf`\|`pj`, default `pf`). PF **nunca** liga o módulo `fiscal` — trava por constraint no banco, não só na UI. Marcado manualmente pelo super-admin (o PubliAI não detecta conversão de conta no ML). |
+| **`can_invoice`** | O semáforo "pronto para faturar" **do ML** (`GET /can_invoice/items/{id}`), não uma dedução local — o operador pode alterar dados pelo painel do ML por fora do PubliAI. Escrito na hora pelo push (`sincronizar-fiscal-ml`) e reconciliado a cada 6h junto do `monitorar-moderados` (nenhum worker novo). Badge em Publicados: verde (pronto), vermelho (pendência, com causa), sem badge para org sem o módulo. |
+| **`DadosFiscaisCanal`** | Porta de canal (padrão ADR-0024) com um único adaptador (ML) para empurrar dados fiscais por SKU e ler prontidão. Existe para caber um segundo emissor no futuro; não é implementada agora. |
+| **`emissao_a_partir_de`** | Data que separa vendas "de antes de ser PJ" (nunca viram pendência fiscal) das vendas faturáveis — dado, não estrutura: a mesma org/conta ML muda de tipo, nunca cria org nova (D-8). |
 
 ## Estados (enums)
 

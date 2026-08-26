@@ -2,6 +2,43 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Cadastro fiscal e Faturador do Mercado Livre (ADR-0135) — 2026-08-25/26
+
+Branch `worktree-fiscal-cadastro-nfe`, 15 tasks concluídas (SDD). O PubliAI não transmite NF-e —
+cadastra empresa/produto, empurra por SKU e mostra a prontidão real do Faturador do ML
+(`can_invoice`). Supersede parcialmente o ADR-0114. **Aguardando CI verde + merge do Diego; deploy
+das edges e migrations em produção documentado em `docs/how-to/deploy-e-migrations.md` (seção
+"Deploy pós-merge — módulo fiscal").**
+
+- [x] T1 — Migration `20260826004934_adr135_cadastro_fiscal.sql` (`organizations.tipo_pessoa` +
+  constraint `fiscal_exige_pj`, `empresa_fiscal`, colunas fiscais em `familias`) + types + prova
+  da constraint no Postgres real.
+- [x] T2 — Domínio fiscal compartilhado (`_shared/fiscal/validar.ts`): coerência
+  `origem`×`origem_nfe`, `camposFiscaisFaltantes`, `validarCnpj`.
+- [x] T3 — Módulo `fiscal` em `MODULOS_VALIDOS`/`src/lib/modulos.ts` + checklist de ativação
+  (`_shared/fiscal/ativacao.ts`, edge `usuarios`) + `tipo_pessoa`.
+- [x] T4 — `cadastrar-produto` aceita e exige fiscal em org com módulo.
+- [x] T5 — `ingest-lote`: colunas `NCM`/`CEST`/`ORIGEM_NFE`/`CSOSN` (`verificar-fiscal.ts`),
+  aborta o lote sem NCM na org fiscal; opcionais herdam da família anterior quando a célula vem
+  vazia.
+- [x] T6 — Gate de publicação e UPDATE (`_shared/fiscal/gate.ts`,
+  `exigirFiscalCompletoSePreciso`) em `publish-familia-ml`/`update-familia-ml`.
+- [x] T7 — Porta `DadosFiscaisCanal` (`_shared/canais/fiscal-ml.ts`) + worker
+  `sincronizar-fiscal-ml` + enqueue pós-publicação/edição.
+- [x] T8 — Reconciliação do `can_invoice` pendurada no `monitorar-moderados` (6/6h) — nenhum
+  schedule novo.
+- [x] T9 — Edge `atualizar-fiscal-familia` (modo edição + re-push).
+- [x] T10 — Edge `sugerir-ncm` (IA sugere via OpenRouter, nunca grava).
+- [x] T11 — Front: card "Empresa" em `/configuracoes` (ADR-0135 D-3).
+- [x] T12 — Front: etapa fiscal no dialog de cadastro (3 etapas quando o módulo está ativo).
+- [x] T13 — Front: dialog de edição fiscal em fila + filtro "Fiscal pendente" em `/estoque`.
+- [x] T14 — Front: badge `can_invoice` em Publicados + coluna "Tipo" (PF/PJ) em `/organizacoes`.
+  **Gap conhecido:** anúncio externo sem família ainda não aparece com o aviso "sem cadastro
+  fiscal" — `fetchPublicados` descarta esses itens antes de chegar à UI (pré-existente, não desta
+  entrega; ver `task-14-report.md`).
+- [x] T15 — Docs (modelo de dados, edge functions, glossário, arquitetura, roadmap), gates finais,
+  checklist de deploy pós-merge, Graphify.
+
 ## Alerta de estoque zerado e de volta ao ar (ADR-0134) — 2026-08-25
 
 - [x] Categoria de notificação nova `estoque` (Deno + front, `notificacoes_categoria_check` e

@@ -134,3 +134,76 @@ gh api -X POST   repos/analistasistemas-bit/gtinmktplace/branches/main/protectio
 > → só então a main. O Render auto-deploya no push da main, então inverter coloca no ar um
 > frontend que chama algo que ainda não existe (incidente evitado no E6b Bloco B: a RPC
 > `modulos_habilitados_da_org` é lida dentro do `MenuGuard`, que bloqueia **toda** rota).
+
+---
+
+## Deploy pós-merge — módulo fiscal (ADR-0135)
+
+Checklist pronto para copiar depois que a branch `worktree-fiscal-cadastro-nfe` mergear na main
+com CI verde.
+
+### Migrations — já aplicadas em produção, nada a fazer aqui
+
+As 3 migrations do ADR-0135 já rodaram em produção antes deste merge (schema é **aditivo**, sem
+`db push` pendente):
+
+- `20260826004934_adr135_cadastro_fiscal.sql` — `organizations.tipo_pessoa` + constraint
+  `fiscal_exige_pj`, tabela `empresa_fiscal`, colunas fiscais em `familias`.
+- `20260826061358_estoque_resumo_fiscal.sql` — RPC `produtos_estoque_resumo()` ganha os campos
+  fiscais.
+- `20260826063450_estoque_resumo_nomes_fiscal_fix.sql` — fix round 1 da anterior (restaura
+  `nomes`/`v.nome` que tinha sido apagado por `create or replace` a partir da versão errada da
+  RPC) + completa os campos que o filtro "fiscal pendente" precisa (`cest`, `fci`,
+  `tributacao_icms_regime`).
+
+As edges antigas continuam funcionando normalmente até o deploy abaixo — nenhuma delas lê coluna
+que não existisse antes deste ADR.
+
+### Edge Functions a redeployar
+
+Lista **confirmada por grep de imports reais** (não a lista especulativa do brief original) de
+`_shared/fiscal/*`, `_shared/canais/fiscal-ml.ts` e dos símbolos novos que este ADR acrescentou a
+três módulos `_shared/` já existentes: `enfileirarSincronizacaoFiscal` (`queue.ts`), o campo
+`fiscal`/`FiscalEntrada` de `ProdutoEntrada` (`produto/validar.ts`) e as colunas
+`NCM`/`CEST`/`ORIGEM_NFE`/`CSOSN` de `PlanilhaRow` (`types.ts`).
+
+> **Por que isso não contradiz "redeploye todas as que importam" acima:** a regra geral vale
+> quando não dá para garantir que a mudança no `_shared/` é aditiva. Aqui é — os três módulos só
+> ganharam export/campo novo, nenhum export existente mudou de shape ou comportamento — então só
+> quem **usa o símbolo novo** precisa do redeploy; o restante dos ~28 importadores de `queue.ts` e
+> dos importadores de `types.ts`/`produto/validar.ts` roda o bundle antigo sem diferença funcional.
+> Confirmado por grep no `import` de fato (não só menção em comentário — `adicionar-variacoes-familia`
+> cita `_shared/produto/validar.ts` só num comentário de estilo, sem importar o módulo):
+> `grep -rlE "^import.*enfileirarSincronizacaoFiscal" supabase/functions --include="*.ts"` → 3
+> funções; `grep -rlE "^import.*from '\.\./_shared/produto/validar\.ts'" supabase/functions
+> --include="*.ts"` → `cadastrar-produto`; `grep -rlE "^import.*from '\.\./_shared/types\.ts'"
+> supabase/functions --include="*.ts"` → `ingest-lote`. Junto com quem importa `_shared/fiscal/*`
+> direto, dá exatamente as 6 funções afetadas listadas abaixo. `publicar-split-ml`,
+> `sincronizar-estoque`, `reconciliar-faturamento`, `reconciliar-convergencia-up`,
+> `entrada-estoque` e `adicionar-variacoes-familia` **não** aparecem em nenhum desses greps.
+
+```bash
+supabase functions deploy \
+  sincronizar-fiscal-ml atualizar-fiscal-familia sugerir-ncm \
+  usuarios cadastrar-produto ingest-lote publish-familia-ml update-familia-ml monitorar-moderados
+```
+
+- **Novas (3):** `sincronizar-fiscal-ml` (worker QStash, `verify_jwt=false`), `atualizar-fiscal-familia`
+  e `sugerir-ncm` (HTTP com JWT, `verify_jwt=true`) — os três já estão em `supabase/config.toml`.
+- **Afetadas por `_shared/` (6):** `usuarios` (gate de ativação + `set_tipo_pessoa_org`),
+  `cadastrar-produto` (fiscal na entrada manual), `ingest-lote` (colunas NCM/CEST/ORIGEM_NFE/CSOSN
+  + `_shared/produto/validar.ts`), `publish-familia-ml`/`update-familia-ml` (gate de publicação +
+  enqueue do push fiscal), `monitorar-moderados` (reconciliação do `can_invoice`, 6/6h).
+
+Depois do deploy, **conferir a versão de cada função** (`supabase functions list` ou painel) antes
+de considerar concluído — regra do projeto, deploy nunca fica defasado.
+
+**Nenhum schedule QStash novo.** O semáforo `can_invoice` é escrito na hora pelo push e
+reconciliado a cada 6h pendurado no cron já existente do `monitorar-moderados`.
+
+### Validação pós-deploy (runtime real)
+
+Numa org de teste (`is_test`): marcar PJ, preencher `empresa_fiscal`, ligar o módulo `fiscal`
+(esperar recusa nomeando pendências quando faltar campo), cadastrar produto com fiscal completo, e
+confirmar que a publicação sem NCM é recusada nomeando o campo. Comparar 1:1 com a tela antes de
+fechar a branch.

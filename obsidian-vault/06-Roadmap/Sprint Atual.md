@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-08-24
+atualizado: 2026-08-26
 ---
 
 # Sprint Atual
@@ -136,6 +136,19 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > no `git fetch` pré-merge — os arquivos têm nomes diferentes, então não gerou conflito de git,
 > só duplicidade semântica de número. Rebase + renumeração em todo o código/docs antes do merge.
 > **Pendente:** validação E2E ao vivo (cor nova aparecendo de fato no anúncio publicado no ML).
+
+> **📋 ADR-0135: Cadastro fiscal e Faturador do Mercado Livre (2026-08-25/26) — 15 tasks
+> concluídas na branch `worktree-fiscal-cadastro-nfe`, aguardando CI verde + merge do Diego.**
+> Supersede parcialmente o ADR-0114: o PubliAI **não transmite NF-e** — o Faturador grátis do
+> próprio ML emite —, e passa a cadastrar empresa (`empresa_fiscal`, card "Empresa" em
+> `/configuracoes`) e produto (NCM/CEST/origem fiscal/CSOSN por família), empurrar por SKU via a
+> porta `DadosFiscaisCanal` (adaptador único ML) e mostrar a prontidão real (`can_invoice`) como
+> semáforo em Publicados. `organizations.tipo_pessoa` com constraint no banco impede PF de ligar
+> o módulo `fiscal`. Dialog de cadastro em 3 etapas + fila "fiscal pendente" em `/estoque`; NCM
+> sugerido por IA, só grava com confirmação ativa. V1 Simples Nacional apenas. Ver [[Fiscal]].
+> **Deploy das 3 edges novas + 6 afetadas por `_shared/fiscal` fica para depois do merge**
+> (checklist em `docs/how-to/deploy-e-migrations.md`); as 3 migrations do schema já rodaram em
+> produção (aditivo).
 
 ## 📍 Fase 1 (2026-08-13) — detecção
 

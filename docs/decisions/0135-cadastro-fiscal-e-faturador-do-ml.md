@@ -194,6 +194,13 @@ fiscal roda via QStash com idempotência, como todo worker do projeto.
 fiscal: aparecem explicitamente como "sem cadastro fiscal — vincular a produto", nunca somem em
 silêncio.
 
+**Limitação conhecida da v1 (achado da Task 14):** essa intenção ainda não fecha ponta a ponta —
+`fetchPublicados` descarta anúncio externo sem família **antes** dele chegar à tela (`if (!rep)
+continue`, comportamento pré-existente da tela Publicados, não introduzido por este ADR). O
+`BadgeFiscal` já sabe renderizar o aviso; falta o caminho de dado que produza esse item na lista.
+Hoje não há sinal fiscal na UI para esse caso específico — item futuro nomeado, não pendência
+silenciosa (ver `docs/reference/modelo-de-dados.md#fiscal-adr-0135`).
+
 ## Fora da v1 (V2 nomeadas)
 
 1. **Consumo da nota emitida** — `GET /users/{id}/invoices/orders/{order_id}`, chave/número/XML/
