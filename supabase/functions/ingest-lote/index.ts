@@ -6,6 +6,8 @@ import { validarColunas, agruparPorPai, matchImagem, matchCapa, matchCapa2, matc
 import type { PlanilhaRow } from '../_shared/types.ts';
 import { mapearLinha } from './mapear-linha.ts';
 import { verificarOrigemInviolavel, exigirOrigemExplicita } from './verificar-origem.ts';
+import { exigirFiscalExplicito, normalizarNcm } from './verificar-fiscal.ts';
+import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { enfileirarFamilias } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
 import { donoDoPathNaOrg, filtrarPathsDeDonos } from '../_shared/lote/exclusao.ts';
@@ -111,6 +113,9 @@ Deno.serve(async (req) => {
     validarColunas(Object.keys(rowsRaw[0]));
     // ORIGEM explícita em todo PAI (ADR-0107): falha antes de qualquer trabalho, nada é persistido.
     exigirOrigemExplicita(rowsRaw);
+    // ADR-0135: NCM obrigatório SÓ quando a org emite nota — org sem o módulo segue intacta.
+    const moduloFiscal = await exigirModulo(admin, orgId, 'fiscal');
+    if (moduloFiscal) exigirFiscalExplicito(rowsRaw);
 
     const rows: PlanilhaRow[] = rowsRaw.map(mapearLinha);
 
@@ -190,6 +195,15 @@ Deno.serve(async (req) => {
       // Candidatos para casar as fotos comuns: PAI + códigos das variações. O operador
       // costuma nomear a foto pelo código vendável (filho), não pelo PAI (bug lote #26).
       const codigosFoto = [g.codigo_pai, ...g.variacoes.map((v) => v.CODIGO)];
+      // ADR-0135: campos fiscais só gravados na org com o módulo — sem ele, INSERT idêntico
+      // ao de hoje (colunas ficam no DEFAULT/NULL da tabela).
+      const fiscal = moduloFiscal ? {
+        ncm: normalizarNcm(g.ncm),
+        cest: g.cest ? g.cest.replace(/\D/g, '') : null,
+        origem_nfe: g.origem_nfe ?? null,
+        tributacao_icms: g.tributacao_icms ?? null,
+        tributacao_icms_regime: g.tributacao_icms ? 'simples' : null,
+      } : {};
       if (!ant) {
         // CREATE — comportamento atual.
         return {
@@ -197,6 +211,7 @@ Deno.serve(async (req) => {
           nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
           fornecedor: g.fornecedor,
           origem: g.origem,
+          ...fiscal,
           operacao: 'CREATE', status: 'pendente',
           capa_storage_path: matchCapa(codigosFoto, lote.imagens_paths) ?? null,
           capa2_storage_path: matchCapa2(codigosFoto, lote.imagens_paths) ?? null,
@@ -212,6 +227,7 @@ Deno.serve(async (req) => {
         nome_pai: g.nome_pai, descricao_pai: g.descricao_pai, unidade: g.unidade,
         fornecedor: g.fornecedor,
         origem: g.origem,
+        ...fiscal,
         operacao: 'UPDATE',
         // Com cor nova: 'pendente' p/ o process-familia resolver a cor das novas (ADR-0004).
         // Sem cor nova: 'pronto' direto, sem IA.

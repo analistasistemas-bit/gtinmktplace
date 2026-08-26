@@ -25,5 +25,12 @@ export function mapearLinha(r: Record<string, unknown>): PlanilhaRow {
     FORNECEDOR: String(r.FORNECEDOR ?? ''),
     // Case-insensitive: `validarColunas` aceita `Origem` no cabeçalho, o map tem que achar igual.
     ORIGEM: lerOrigemCrua(r),
+    // ADR-0135: fiscais, opcionais aqui — a obrigatoriedade (org com módulo) é do
+    // `exigirFiscalExplicito`, que lê `rowsRaw` direto (antes deste map), não este campo.
+    NCM: r.NCM ? String(r.NCM) : undefined,
+    CEST: r.CEST ? String(r.CEST) : undefined,
+    // 0 é código válido (mercadoria nacional) — não pode cair no `? :` truthy como GTIN.
+    ORIGEM_NFE: r.ORIGEM_NFE != null && r.ORIGEM_NFE !== '' ? String(r.ORIGEM_NFE) : undefined,
+    CSOSN: r.CSOSN ? String(r.CSOSN) : undefined,
   };
 }

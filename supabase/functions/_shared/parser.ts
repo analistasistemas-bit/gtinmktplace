@@ -98,6 +98,12 @@ export function agruparPorPai(rows: PlanilhaRow[]): ResultadoAgrupamento {
       unidade: pai.UNIDADE,
       fornecedor: pai.FORNECEDOR,
       origem: normalizarOrigem(pai.ORIGEM),
+      // ADR-0135: passam crus (como ORIGEM antes de normalizarOrigem) — normalização/gate
+      // de gravação ficam no ingest (index.ts), só quando a org tem o módulo fiscal.
+      ncm: pai.NCM ?? null,
+      cest: pai.CEST ?? null,
+      origem_nfe: pai.ORIGEM_NFE != null && pai.ORIGEM_NFE !== '' ? Number(pai.ORIGEM_NFE) : null,
+      tributacao_icms: pai.CSOSN ?? null,
       variacoes,
     });
   }

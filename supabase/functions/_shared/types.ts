@@ -14,6 +14,11 @@ export interface PlanilhaRow {
   COMPRIMENTO_CM: number;
   FORNECEDOR: string;
   ORIGEM?: string;
+  // ADR-0135: fiscais, só exigidos (via exigirFiscalExplicito) na org com módulo fiscal.
+  NCM?: string;
+  CEST?: string;
+  ORIGEM_NFE?: string;
+  CSOSN?: string;
 }
 
 export interface FamiliaAgrupada {
@@ -23,6 +28,10 @@ export interface FamiliaAgrupada {
   unidade: string;
   fornecedor: string;
   origem: 'nacional' | 'importado';
+  ncm?: string | null;
+  cest?: string | null;
+  origem_nfe?: number | null;
+  tributacao_icms?: string | null;
   variacoes: PlanilhaRow[];
 }
 
