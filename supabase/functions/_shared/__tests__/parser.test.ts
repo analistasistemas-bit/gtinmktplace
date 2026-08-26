@@ -109,6 +109,31 @@ describe('agruparPorPai', () => {
     expect(grupos.find((g) => g.codigo_pai === '00000200')!.origem).toBe('nacional');
   });
 
+  it('popula os 4 campos fiscais a partir da linha PAI (ADR-0135)', () => {
+    const rows = [
+      row({
+        CODIGO: '100', PAI: '0', NOME: 'LINHA',
+        NCM: '3926.90.90', CEST: '0102300', ORIGEM_NFE: '1', CSOSN: '102',
+      }),
+      row({ CODIGO: '101', PAI: '100', NCM: 'IGNORADO', CEST: 'IGNORADO', ORIGEM_NFE: '9', CSOSN: 'IGNORADO' }),
+    ];
+    const { grupos } = agruparPorPai(rows);
+    // Cru (com máscara) — normalização fica a cargo do ingest, não de agruparPorPai.
+    expect(grupos[0].ncm).toBe('3926.90.90');
+    expect(grupos[0].cest).toBe('0102300');
+    expect(grupos[0].origem_nfe).toBe(1);
+    expect(grupos[0].tributacao_icms).toBe('102');
+  });
+
+  it('campos fiscais ausentes na linha PAI → null (org sem módulo não é afetada)', () => {
+    const rows = [row({ CODIGO: '100', PAI: '0' }), row({ CODIGO: '101', PAI: '100' })];
+    const { grupos } = agruparPorPai(rows);
+    expect(grupos[0].ncm).toBeNull();
+    expect(grupos[0].cest).toBeNull();
+    expect(grupos[0].origem_nfe).toBeNull();
+    expect(grupos[0].tributacao_icms).toBeNull();
+  });
+
   it('combinação das três anomalias coexiste num só lote', () => {
     const rows = [
       row({ CODIGO: '100', PAI: '0' }),

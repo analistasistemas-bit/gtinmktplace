@@ -25,4 +25,11 @@ describe('exigirFiscalExplicito (org com módulo fiscal — ADR-0135)', () => {
     expect(() => exigirFiscalExplicito([pai({ NCM: '39269090', ORIGEM_NFE: '9' })]))
       .toThrow(/ORIGEM_NFE/);
   });
+  it('CSOSN de um dos códigos do cadastro manual passa', () => {
+    expect(() => exigirFiscalExplicito([pai({ NCM: '39269090', CSOSN: '102' })])).not.toThrow();
+  });
+  it('CSOSN fora da lista aborta (opcional ≠ silencioso)', () => {
+    expect(() => exigirFiscalExplicito([pai({ NCM: '39269090', CSOSN: '999' })]))
+      .toThrow(/CSOSN/);
+  });
 });

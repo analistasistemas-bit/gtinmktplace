@@ -34,4 +34,24 @@ describe('mapearLinha', () => {
     expect(r.CUSTO).toBe(0);
     expect(r.CODIGO).toBe('5');
   });
+
+  it('carrega os 4 campos fiscais (ADR-0135)', () => {
+    const r = mapearLinha({ ...CRU, NCM: '39269090', CEST: '0102300', ORIGEM_NFE: '1', CSOSN: '102' });
+    expect(r.NCM).toBe('39269090');
+    expect(r.CEST).toBe('0102300');
+    expect(r.ORIGEM_NFE).toBe('1');
+    expect(r.CSOSN).toBe('102');
+  });
+
+  it('ORIGEM_NFE = 0 (número, código NFe válido) sobrevive — não é a mesma armadilha do truthy de GTIN', () => {
+    expect(mapearLinha({ ...CRU, ORIGEM_NFE: 0 }).ORIGEM_NFE).toBe('0');
+  });
+
+  it('campos fiscais ausentes → undefined (org sem módulo não é afetada)', () => {
+    const r = mapearLinha(CRU);
+    expect(r.NCM).toBeUndefined();
+    expect(r.CEST).toBeUndefined();
+    expect(r.ORIGEM_NFE).toBeUndefined();
+    expect(r.CSOSN).toBeUndefined();
+  });
 });

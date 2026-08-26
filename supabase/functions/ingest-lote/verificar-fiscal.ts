@@ -6,6 +6,10 @@ export function normalizarNcm(bruto: unknown): string {
   return String(bruto ?? '').replace(/\D/g, '');
 }
 
+// Códigos de CSOSN listados no combo do cadastro manual (task-12-brief.md:64) — a planilha
+// não pode aceitar um código que a UI nem oferece.
+const CSOSN_VALIDOS = ['101', '102', '103', '201', '202', '203', '300', '400', '500', '900'];
+
 export function exigirFiscalExplicito(rowsRaw: Record<string, unknown>[]): void {
   const problemas: string[] = [];
   const vistos = new Set<string>();
@@ -29,6 +33,10 @@ export function exigirFiscalExplicito(rowsRaw: Record<string, unknown>[]): void 
     const cest = String(r.CEST ?? '').replace(/\D/g, '');
     if (String(r.CEST ?? '').trim() !== '' && !/^\d{7}$/.test(cest)) {
       problemas.push(`${cod} (CEST = "${String(r.CEST).trim()}" — 7 dígitos)`);
+    }
+    const csosn = String(r.CSOSN ?? '').trim();
+    if (csosn !== '' && !CSOSN_VALIDOS.includes(csosn)) {
+      problemas.push(`${cod} (CSOSN = "${csosn}" — use um dos códigos: ${CSOSN_VALIDOS.join(', ')})`);
     }
   }
   if (problemas.length) {

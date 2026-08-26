@@ -198,8 +198,10 @@ Deno.serve(async (req) => {
       // ADR-0135: campos fiscais só gravados na org com o módulo — sem ele, INSERT idêntico
       // ao de hoje (colunas ficam no DEFAULT/NULL da tabela).
       const fiscal = moduloFiscal ? {
-        ncm: normalizarNcm(g.ncm),
-        cest: g.cest ? g.cest.replace(/\D/g, '') : null,
+        // `|| null` em vez do `''` cru: célula só com espaço passa a validação (trim vazio =
+        // "ausente") mas chegaria aqui truthy e violaria o CHECK de formato da coluna.
+        ncm: normalizarNcm(g.ncm) || null,
+        cest: (g.cest ? g.cest.replace(/\D/g, '') : '') || null,
         origem_nfe: g.origem_nfe ?? null,
         tributacao_icms: g.tributacao_icms ?? null,
         tributacao_icms_regime: g.tributacao_icms ? 'simples' : null,
