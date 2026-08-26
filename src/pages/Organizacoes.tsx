@@ -26,6 +26,7 @@ interface OrgRow {
   canais_habilitados: string[];
   modulos_habilitados: string[];
   is_test: boolean;
+  tipo_pessoa: 'pf' | 'pj' | null;
 }
 
 async function callUsuarios(body: Record<string, unknown>) {
@@ -96,6 +97,16 @@ export default function Organizacoes() {
     }
   }
 
+  async function handleTipoPessoa(org: OrgRow, tipo: 'pf' | 'pj') {
+    try {
+      await callUsuarios({ action: 'set_tipo_pessoa_org', org_id: org.id, tipo_pessoa: tipo });
+      toast.success('✓ Tipo de pessoa atualizado');
+      await qc.invalidateQueries({ queryKey: ['organizacoes'] });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Falha ao atualizar tipo de pessoa');
+    }
+  }
+
   async function cancelRequest(request: SupportRequest) {
     setCancellingRequestId(request.id);
     try {
@@ -124,6 +135,7 @@ export default function Organizacoes() {
               <TableHead>Empresa</TableHead>
               <TableHead className="hidden md:table-cell">Slug</TableHead>
               <TableHead className="hidden md:table-cell">Membros</TableHead>
+              <TableHead className="hidden md:table-cell">Tipo</TableHead>
               <TableHead className="hidden md:table-cell">Canais</TableHead>
               <TableHead className="hidden md:table-cell">Criada em</TableHead>
               <TableHead className="text-right">Ações</TableHead>
@@ -131,7 +143,7 @@ export default function Organizacoes() {
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} className="text-sm text-muted-foreground">Carregando…</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} className="text-sm text-muted-foreground">Carregando…</TableCell></TableRow>
             ) : orgs.map((o) => {
               const request = supportByOrg.get(o.id);
               const canStart = request?.status === 'approved'
@@ -148,6 +160,17 @@ export default function Organizacoes() {
                 </TableCell>
                 <TableCell className="hidden text-muted-foreground md:table-cell">{o.slug}</TableCell>
                 <TableCell className="hidden md:table-cell">{o.membros}</TableCell>
+                <TableCell className="hidden md:table-cell">
+                  <select
+                    aria-label={`Tipo de pessoa de ${o.nome}`}
+                    className="h-8 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                    value={o.tipo_pessoa ?? 'pf'}
+                    onChange={(e) => handleTipoPessoa(o, e.target.value as 'pf' | 'pj')}
+                  >
+                    <option value="pf">Pessoa física</option>
+                    <option value="pj">Pessoa jurídica</option>
+                  </select>
+                </TableCell>
                 <TableCell className="hidden md:table-cell">
                   <div className="flex flex-wrap gap-1">
                     {(o.canais_habilitados ?? ['mercado_livre']).map((c) => <CanalBadge key={c} canal={c} />)}

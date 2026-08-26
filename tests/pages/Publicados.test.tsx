@@ -20,6 +20,7 @@ const useCanaisHabilitadosMock = vi.fn();
 const useAnuncioCanonicoMock = vi.fn();
 const useFamiliaMock = vi.fn();
 const fetchMovimentosEstoqueMock = vi.fn();
+const useModulosHabilitadosMock = vi.fn();
 
 vi.mock('@/hooks/usePublicados', () => ({
   usePublicados: () => usePublicadosMock(),
@@ -92,6 +93,19 @@ vi.mock('@/lib/movimentos-estoque', async (importOriginal) => {
   };
 });
 
+// Gate do módulo fiscal (ADR-0135 D-13) — mockado no nível do módulo porque viabilidade-linha.tsx
+// (dentro do painel expandido) também chama o hook.
+vi.mock('@/hooks/useModulosHabilitados', () => ({
+  useModulosHabilitados: () => useModulosHabilitadosMock(),
+}));
+
+// DialogFiscalProduto (T13) busca dados fiscais direto no supabase — fora do escopo deste teste
+// de página. Um stub que expõe `familiaId` basta para provar que o clique dispara o handler certo.
+vi.mock('@/components/estoque/dialog-fiscal-produto', () => ({
+  DialogFiscalProduto: ({ familiaId }: { familiaId: string | null }) =>
+    familiaId ? <div data-testid="dialog-fiscal-produto">{familiaId}</div> : null,
+}));
+
 function itemBase(over: Partial<PublicadoItem> = {}): PublicadoItem {
   return {
     familiaId: 'f1',
@@ -121,6 +135,7 @@ function mockHooksPadrao() {
     data: [itemBase()],
     isLoading: false,
     error: null,
+    refetch: vi.fn(),
   });
   useStatusPublicadosMock.mockReturnValue({
     data: { itens: [] },
@@ -165,6 +180,8 @@ function mockHooksPadrao() {
   useAnuncioCanonicoMock.mockReturnValue({ data: { listings: {} }, isSuccess: true, isError: false });
   useFamiliaMock.mockReturnValue({ data: undefined, isLoading: false, isError: false });
   fetchMovimentosEstoqueMock.mockResolvedValue({ itens: [], total: 0 });
+  // Default: org sem o módulo fiscal — a coluna "Fiscal" não existe (ver describe dedicado abaixo).
+  useModulosHabilitadosMock.mockReturnValue({ data: [] });
 }
 
 describe('Publicados', () => {
@@ -411,6 +428,97 @@ describe('Publicados', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Tentar catálogo de novo' })).not.toBeInTheDocument();
+  });
+
+  // ADR-0135 D-10: badge de prontidão fiscal — só existe pra org com o módulo.
+  describe('coluna Fiscal (ADR-0135 D-10)', () => {
+    it('sem o módulo fiscal: a coluna nem aparece', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: [] });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByText('Fiscal')).not.toBeInTheDocument();
+      expect(screen.queryByText('Fiscal OK')).not.toBeInTheDocument();
+    });
+
+    it('canInvoice=true: pill "Fiscal OK"', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['fiscal'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ canInvoice: true })],
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.getByText('Fiscal')).toBeInTheDocument(); // header
+      expect(screen.getByText('Fiscal OK')).toBeInTheDocument();
+    });
+
+    it('canInvoice=null: pill neutra "Fiscal —"', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['fiscal'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ canInvoice: null })],
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.getByText('Fiscal —')).toBeInTheDocument();
+    });
+
+    it('canInvoice=false: pill "Fiscal pendente" e o clique abre o dialog sem expandir a linha', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['fiscal'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ canInvoice: false })],
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      const pill = screen.getByText('Fiscal pendente');
+      expect(pill.closest('[data-tone="danger"]')).toBeInTheDocument();
+
+      fireEvent.click(pill);
+
+      expect(screen.getByTestId('dialog-fiscal-produto')).toHaveTextContent('f1');
+      // O clique não deve também expandir a linha (stopPropagation) — sem isso, além do
+      // dialog, useFamilia('f1') dispararia à toa.
+      expect(screen.getByRole('button', { name: 'Expandir análise' })).toHaveAttribute('aria-expanded', 'false');
+    });
+
+    // ADR-0135 D-10: "nunca somem em silêncio". `fetchPublicados` ainda descarta anúncios externos
+    // sem família representativa (`if (!rep) continue`), então este caso não é alcançável hoje por
+    // nenhum dado real — o teste garante só que, se um dia chegar um item assim, a UI não finge que
+    // ele tem cadastro fiscal.
+    it('item sem familiaId: pill neutra "Sem cadastro fiscal"', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['fiscal'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ familiaId: '', canInvoice: null })],
+        isLoading: false,
+        error: null,
+        refetch: vi.fn(),
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.getByText('Sem cadastro fiscal — vincular a produto')).toBeInTheDocument();
+    });
   });
 });
 

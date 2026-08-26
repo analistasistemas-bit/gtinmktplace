@@ -928,6 +928,7 @@ export function publicadoFromRow(
     mlPermalink: r.ml_permalink ?? null,
     publicadoEm: r.publicado_em ?? null,
     catalogRetentavel,
+    canInvoice: r.can_invoice ?? null,
   };
 }
 
@@ -997,7 +998,7 @@ async function carregarItensUpRetentaveisPorCodigo(
 export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
     .not('ml_item_id', 'is', null)
     .order('publicado_em', { ascending: false });
   if (error) throw error;

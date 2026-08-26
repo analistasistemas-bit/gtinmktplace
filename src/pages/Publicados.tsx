@@ -35,7 +35,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
-import { filtrarPublicados, ordenarPublicados, rotuloTipo } from '@/lib/publicados';
+import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente } from '@/lib/publicados';
 import { CanalTabs } from '@/components/canal-tabs';
 import { CanalBadge } from '@/components/canal-badge';
 import { MovimentosEstoque } from '@/components/movimentos-estoque';
@@ -56,6 +56,8 @@ import type { ExportConfig, ReportData } from '@/lib/export';
 import { useSessionState } from '@/hooks/useSessionState';
 import { useFamilia } from '@/hooks/useFamilia';
 import { usePublicados } from '@/hooks/usePublicados';
+import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { DialogFiscalProduto } from '@/components/estoque/dialog-fiscal-produto';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { usePrepararRepublicacao, useRemoverPublicado } from '@/hooks/useRemoverPublicado';
@@ -100,6 +102,32 @@ function BadgeStatus({ status, motivo }: { status: StatusPublicado; motivo?: str
   );
 }
 
+// Prontidão de emissão do ML (ADR-0135 D-10). Anúncio externo/migrado sem família (D-10:
+// "nunca some em silêncio") não tem de onde herdar cadastro fiscal — pill neutra explícita.
+function BadgeFiscal({ familiaId, canInvoice, onPreencher }: {
+  familiaId: string;
+  canInvoice: boolean | null | undefined;
+  onPreencher: () => void;
+}) {
+  if (!familiaId) {
+    return <StatusPill tone="neutral">Sem cadastro fiscal — vincular a produto</StatusPill>;
+  }
+  if (canInvoice === true) return <StatusPill tone="success">Fiscal OK</StatusPill>;
+  if (fiscalPendente({ canInvoice })) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onPreencher(); }}
+        className="text-left"
+        title="O ML ainda não consegue emitir a nota deste anúncio — complete o cadastro fiscal."
+      >
+        <StatusPill tone="danger">Fiscal pendente</StatusPill>
+      </button>
+    );
+  }
+  return <StatusPill tone="neutral" title="Prontidão ainda não verificada pelo ML.">Fiscal —</StatusPill>;
+}
+
 // ============================================================================
 // Helpers
 // ============================================================================
@@ -124,6 +152,8 @@ interface LinhaProps {
   onRetentarCatalogo: (familiaId: string) => void;
   retentandoCatalogo: boolean;
   isAdmin: boolean;
+  temFiscal: boolean;
+  onPreencherFiscal: (familiaId: string) => void;
 }
 
 const CONTEUDO_ML = (
@@ -150,7 +180,7 @@ function SeloModo({ listingType }: { listingType?: 'classico' | 'premium' | null
 
 function LinhaTabela({
   item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando,
-  onRetentarCatalogo, retentandoCatalogo, isAdmin,
+  onRetentarCatalogo, retentandoCatalogo, isAdmin, temFiscal, onPreencherFiscal,
 }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   // Chave por anúncio (mlItemId): familiaId é compartilhado entre anúncios split (ADR-0048).
@@ -205,6 +235,15 @@ function LinhaTabela({
       <TableCell>
         <BadgeStatus status={item.status ?? 'indisponivel'} motivo={item.motivo} />
       </TableCell>
+      {temFiscal && (
+        <TableCell>
+          <BadgeFiscal
+            familiaId={item.familiaId}
+            canInvoice={item.canInvoice}
+            onPreencher={() => onPreencherFiscal(item.familiaId)}
+          />
+        </TableCell>
+      )}
       <TableCell className="text-sm">{fmtData(item.publicadoEm)}</TableCell>
       <TableCell className="relative">
         <div className="absolute right-2 top-0">
@@ -356,7 +395,7 @@ function LinhaTabela({
     </TableRow>
     {aberto && (
       <TableRow className="hover:bg-transparent">
-        <TableCell colSpan={9} className="whitespace-normal bg-muted/30 p-3">
+        <TableCell colSpan={temFiscal ? 10 : 9} className="whitespace-normal bg-muted/30 p-3">
           {carregandoFamilia ? (
             <p className="text-xs text-muted-foreground">carregando análise…</p>
           ) : erroFamilia || !familia ? (
@@ -432,7 +471,7 @@ function ThOrdenavel({ coluna, label, ord, onOrdenar, className }: ThOrdenavelPr
 
 export default function Publicados() {
   const navigate = useNavigate();
-  const { data: publicados = [], isLoading: loadingPublicados, error: erroPublicados } = usePublicados();
+  const { data: publicados = [], isLoading: loadingPublicados, error: erroPublicados, refetch: refetchPublicados } = usePublicados();
   const { data: statusData, isFetching: fetchingStatus, refetch: refetchStatus } = useStatusPublicados();
   const { data: familiasRisco } = useCatalogoEmRisco();
   // Fase 3 (2026-08-13): só os anúncios com a tag catalog_forewarning do ML entram no card — o
@@ -451,6 +490,11 @@ export default function Publicados() {
   const { mutate: retentarCatalogoMut, isPending: retentandoCatalogo } = useRetentarCatalogo();
   const { isAdmin } = useProfile();
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
+  const { data: modulos } = useModulosHabilitados();
+  const temFiscal = !!modulos?.includes('fiscal');
+  // id da família aberta no DialogFiscalProduto (T13) — null = fechado. Fila vazia: edição
+  // single a partir do badge, sem "salvar e próximo" (isso é o fluxo em lote do Estoque).
+  const [fiscalAberto, setFiscalAberto] = useState<string | null>(null);
 
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
@@ -866,6 +910,7 @@ export default function Publicados() {
                   <ThOrdenavel coluna="unidadesVendidas" label="Unid. vendidas" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="valorVendido" label="Valor vendido" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="status" label="Status" ord={ord} onOrdenar={ordenarPor} />
+                  {temFiscal && <TableHead>Fiscal</TableHead>}
                   <ThOrdenavel coluna="publicadoEm" label="Publicado em" ord={ord} onOrdenar={ordenarPor} />
                   <TableHead>Ações</TableHead>
                 </TableRow>
@@ -873,7 +918,7 @@ export default function Publicados() {
               <TableBody>
                 {itensExibidos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-6 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={temFiscal ? 10 : 9} className="py-6 text-center text-sm text-muted-foreground">
                       Nenhum resultado para os filtros aplicados.
                     </TableCell>
                   </TableRow>
@@ -893,6 +938,8 @@ export default function Publicados() {
                       onRetentarCatalogo={handleRetentarCatalogo}
                       retentandoCatalogo={retentandoCatalogo && retentandoCatalogoId === item.familiaId}
                       isAdmin={isAdmin}
+                      temFiscal={temFiscal}
+                      onPreencherFiscal={setFiscalAberto}
                     />
                   ))
                 )}
@@ -913,6 +960,16 @@ export default function Publicados() {
             onTamanho={setTamanho}
           />
         </>
+      )}
+
+      {temFiscal && (
+        <DialogFiscalProduto
+          familiaId={fiscalAberto}
+          fila={[]}
+          onFechar={() => setFiscalAberto(null)}
+          onAvancar={setFiscalAberto}
+          onSalvo={() => refetchPublicados()}
+        />
       )}
     </div>
   );

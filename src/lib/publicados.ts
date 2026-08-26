@@ -42,6 +42,8 @@ export interface PublicadoItem {
   qtdVariacoes?: number;
   /** Alguma variação/item publicado sem vínculo de catálogo em erro ou não elegível (retentável). */
   catalogRetentavel?: boolean;
+  /** Prontidão de emissão do ML (ADR-0135 D-10) — `familias.can_invoice`. null = ainda não verificado. */
+  canInvoice?: boolean | null;
 }
 
 /**
@@ -124,6 +126,11 @@ export interface FiltroPublicados {
 /** Anúncio encalhado: ativo e sem nenhuma venda no período. */
 export function ehEncalhado(i: PublicadoItem): boolean {
   return i.status === 'ativo' && (i.unidadesVendidas ?? 0) === 0;
+}
+
+/** Cadastro fiscal incompleto no ML (ADR-0135 D-10) — false explícito, não null/undefined (ainda não verificado). */
+export function fiscalPendente(i: Pick<PublicadoItem, 'canInvoice'>): boolean {
+  return i.canInvoice === false;
 }
 
 export function filtrarPublicados(
