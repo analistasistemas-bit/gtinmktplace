@@ -36,13 +36,17 @@ export async function processarSincronizacaoFiscal(
     .eq('id', job.familia_id).single();
   if (!familia) return { status: 404, body: { erro: 'família não encontrada' } };
 
-  const { data: org } = await admin.from('organizations')
+  // Fix round 3 (Q2): erro de LEITURA (transitório) nunca vira decisão definitiva — 500 pro
+  // QStash retentar. Só `data == null` de verdade (linha ausente) é decisão.
+  const { data: org, error: orgErr } = await admin.from('organizations')
     .select('modulos_habilitados').eq('id', familia.org_id).maybeSingle();
+  if (orgErr) return { status: 500, body: orgErr.message };
   if (!((org?.modulos_habilitados ?? []) as string[]).includes('fiscal')) {
     return { status: 200, body: { skip: 'org sem módulo fiscal' } };
   }
-  const { data: empresa } = await admin.from('empresa_fiscal')
+  const { data: empresa, error: empresaErr } = await admin.from('empresa_fiscal')
     .select('origin_type, regime_tributario').eq('org_id', familia.org_id).maybeSingle();
+  if (empresaErr) return { status: 500, body: empresaErr.message };
   const agora = () => new Date().toISOString();
 
   const recusar = async (causa: string): Promise<{ status: number; body: unknown }> => {
@@ -67,15 +71,27 @@ export async function processarSincronizacaoFiscal(
   const conexao = await deps.resolverConexao(admin, familia.org_id, 'mercado_livre');
   if (!conexao) return { status: 200, body: { erro: 'org sem conexão com o Mercado Livre' } };
   const token = await deps.getToken(conexao);
-  const variacoes = await deps.listarVariacoes(admin, familia.id);
 
-  // C1: rota UP tem um item ML POR SKU (anuncios_externos_itens); familias.ml_item_id só guarda o
-  // 1º item da partição 0 — usá-lo pra TODOS os SKUs afirmaria fiscal no item errado. Família
-  // Legacy (sem filhos) não muda: 1 item só, de familias.ml_item_id, como sempre foi.
-  const itensUP = await deps.listarItensUP(admin, familia.org_id, familia.codigo_pai);
+  // Fix round 3 (Q1): listarVariacoes/listarItensUP lançam em erro de leitura (index.ts) — nunca
+  // vira decisão definitiva, sempre 500 pro QStash retentar, sem tocar can_invoice.
+  let variacoes: VariacaoFiscalPush[];
+  let itensUP: ItemUP[];
+  try {
+    variacoes = await deps.listarVariacoes(admin, familia.id);
+    // C1: rota UP tem um item ML POR SKU (anuncios_externos_itens); familias.ml_item_id só guarda
+    // o 1º item da partição 0 — usá-lo pra TODOS os SKUs afirmaria fiscal no item errado. Família
+    // Legacy (sem filhos) não muda: 1 item só, de familias.ml_item_id, como sempre foi.
+    itensUP = await deps.listarItensUP(admin, familia.org_id, familia.codigo_pai);
+  } catch (e) {
+    return { status: 500, body: (e as Error).message };
+  }
   const itemIdPorSku = new Map(itensUP.map((i) => [i.sku, i.item_externo_id]));
   const itemIdDoSku = (sku: string): string | null =>
     itensUP.length > 0 ? (itemIdPorSku.get(sku) ?? null) : familia.ml_item_id;
+
+  // Q3: SKU da rota UP sem item resolvido (pendente/criacao_incerta) não pode ficar de fora do
+  // AND em silêncio — sem isso a família gravaria can_invoice=true com um SKU nunca vinculado.
+  const skusOrfaos: string[] = [];
 
   try {
     for (const v of variacoes) {
@@ -89,6 +105,8 @@ export async function processarSincronizacaoFiscal(
           sku: v.codigo, item_id: itemId,
           ...(v.ml_variation_id ? { variation_id: v.ml_variation_id } : {}),
         });
+      } else if (itensUP.length > 0) {
+        skusOrfaos.push(v.codigo);
       }
     }
   } catch (e) {
@@ -103,6 +121,15 @@ export async function processarSincronizacaoFiscal(
       can_invoice_em: agora(),
     }).eq('id', familia.id);
     return { status: 200, body: { erro: (e as Error).message } };
+  }
+
+  if (skusOrfaos.length > 0) {
+    const causa = `SKU(s) sem item vinculado no ML: ${skusOrfaos.join(', ')}`;
+    await admin.from('familias').update({
+      can_invoice: false, can_invoice_causa: causa, can_invoice_em: agora(),
+    }).eq('id', familia.id);
+    await admin.from('familias').update({ fiscal_sincronizado_em: agora() }).eq('id', familia.id);
+    return { status: 200, body: { erro: causa } };
   }
 
   // Semáforo: um item por SKU na rota UP (AND — qualquer item não-pronto derruba a família toda,

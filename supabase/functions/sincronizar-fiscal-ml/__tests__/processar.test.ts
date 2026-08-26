@@ -15,6 +15,8 @@ function deps(opts: {
   empresaOverride?: Record<string, unknown> | null;
   itensUP?: Array<{ sku: string; item_externo_id: string | null }>;
   variacoesOverride?: typeof variacoes;
+  orgErro?: string;
+  empresaErro?: string;
 } = {}) {
   const modulosHabilitados = opts.modulosHabilitados ?? ['fiscal'];
   const familiaUsada = { ...familia, ...opts.familiaOverride };
@@ -25,11 +27,16 @@ function deps(opts: {
       select: () => ({
         eq: (_c: string, _v: string) => ({
           single: async () => ({ data: t === 'familias' ? familiaUsada : null }),
-          maybeSingle: async () => ({
-            data: t === 'organizations' ? { modulos_habilitados: modulosHabilitados }
-              : t === 'empresa_fiscal' ? empresaUsada
-              : null,
-          }),
+          maybeSingle: async () => {
+            if (t === 'organizations' && opts.orgErro) return { data: null, error: { message: opts.orgErro } };
+            if (t === 'empresa_fiscal' && opts.empresaErro) return { data: null, error: { message: opts.empresaErro } };
+            return {
+              data: t === 'organizations' ? { modulos_habilitados: modulosHabilitados }
+                : t === 'empresa_fiscal' ? empresaUsada
+                : null,
+              error: null,
+            };
+          },
         }),
       }),
       update: (patch: Record<string, unknown>) => ({ eq: async () => { updates.push(patch); return { error: null }; } }),
@@ -164,5 +171,50 @@ describe('processarSincronizacaoFiscal (ADR-0135 D-1/D-10)', () => {
     expect(r.status).toBe(200);
     expect(d.updates.some((u) => u.can_invoice === false)).toBe(true);
     expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
+  });
+
+  it('fix round 3 (Q1): erro de leitura em listarItensUP — 500, nenhum update de can_invoice', async () => {
+    const d = deps();
+    (d.listarItensUP as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('listarItensUP (raízes): boom'));
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+    expect(d.updates.some((u) => 'can_invoice' in u)).toBe(false);
+    expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
+  });
+
+  it('fix round 3 (Q2): erro de leitura em empresa_fiscal — 500, nada gravado (não confunde com "sem cadastro")', async () => {
+    const d = deps({ empresaErro: 'timeout' });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+    expect(d.updates.length).toBe(0);
+    expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
+  });
+
+  it('fix round 3 (Q2): erro de leitura em organizations — 500, nada gravado', async () => {
+    const d = deps({ orgErro: 'timeout' });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(500);
+    expect(d.updates.length).toBe(0);
+    expect(d.portas.empurrarFiscalSku).not.toHaveBeenCalled();
+  });
+
+  it('fix round 3 (Q3): UP com 1 SKU sem item vinculado — can_invoice=false citando o SKU órfão, nunca true', async () => {
+    const d = deps({
+      itensUP: [{ sku: 'V1', item_externo_id: 'MLB-V1' }], // V2 não tem item resolvido ainda
+      variacoesOverride: [
+        { codigo: 'V1', gtin: null, peso_gramas: 100, ml_variation_id: null },
+        { codigo: 'V2', gtin: null, peso_gramas: 100, ml_variation_id: null },
+      ],
+    });
+    const r = await processarSincronizacaoFiscal(d as never, { familia_id: 'f1' });
+    expect(r.status).toBe(200);
+    // empurra fiscal dos SKUs resolvidos e do órfão também (payload não depende do item) — só o
+    // vínculo e o semáforo são afetados.
+    expect(d.portas.empurrarFiscalSku).toHaveBeenCalledTimes(2);
+    expect(d.portas.vincularSkuAnuncio).toHaveBeenCalledTimes(1); // só V1, que tem item
+    expect(d.updates.some((u) => u.can_invoice === true)).toBe(false);
+    const upd = d.updates.find((u) => u.can_invoice === false);
+    expect(upd).toBeDefined();
+    expect(String(upd?.can_invoice_causa)).toContain('V2');
   });
 });
