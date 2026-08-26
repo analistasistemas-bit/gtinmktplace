@@ -19,7 +19,7 @@ import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { validarProdutoNovo, montarLinhasProduto, type ProdutoEntrada } from '../_shared/produto/validar.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, codigosJaUsados, derivarCodigos } from '../_shared/produto/codigos.ts';
-import { estoqueInicialDiverge, variacoesDivergem } from './processar.ts';
+import { estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, fiscalEfetivo } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -40,12 +40,34 @@ Deno.serve(async (req) => {
     return json({ error: 'Módulo de estoque não habilitado para esta organização.' }, 403);
   }
 
+  const moduloFiscal = await exigirModulo(admin, orgId, 'fiscal');
+  // `?? 'simples'` nunca é alcançado numa org com o módulo ligado: `usuarios/index.ts` só deixa
+  // `modulos_habilitados` incluir 'fiscal' depois de `pendenciasAtivacaoFiscal` passar, que por
+  // sua vez recusa regime_tributario != 'simples' (v1 é só Simples Nacional, ADR-0135 D-6) e
+  // exige a linha de empresa_fiscal completa — não é um default fiscal, é o valor único possível.
+  let regimeOrg: 'simples' | 'normal' = 'simples';
+  if (moduloFiscal) {
+    const { data: emp } = await admin.from('empresa_fiscal')
+      .select('regime_tributario').eq('org_id', orgId).maybeSingle();
+    regimeOrg = (emp?.regime_tributario ?? 'simples') as 'simples' | 'normal';
+  }
+
   let produto: ProdutoEntrada;
   try { produto = await req.json() as ProdutoEntrada; }
   catch { return json({ error: 'JSON inválido' }, 400); }
 
+  // Org sem o módulo fica com comportamento intacto: dado fiscal enviado por engano (ou por um
+  // cliente HTTP direto) nunca deve chegar em `montarLinhasProduto`, que grava a coluna só pela
+  // PRESENÇA de `fiscal`.
+  produto.fiscal = fiscalEfetivo(produto, moduloFiscal);
+
   const erros = validarProdutoNovo(produto);
   if (erros.length > 0) return json({ erros }, 400);
+
+  const faltasFiscais = validarFiscalDaEntrada(produto, moduloFiscal, regimeOrg);
+  if (faltasFiscais.length > 0) {
+    return json({ erros: faltasFiscais.map((mensagem) => ({ campo: 'fiscal', mensagem })) }, 400);
+  }
 
   // D-9: idempotência da submissão. Com código gerado, um retry produz códigos NOVOS e os
   // guards de duplicata não disparam — sem esta checagem, um timeout depois do insert
@@ -181,6 +203,7 @@ Deno.serve(async (req) => {
       codigoPai: gerados.codigoPai,
       codigos: gerados.codigos,
       chaveCadastro: produto.chaveCadastro,
+      regimeOrg,
     });
 
     const { data: familiaCriada, error: famErr } = await admin.from('familias')

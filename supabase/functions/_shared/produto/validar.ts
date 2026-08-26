@@ -14,6 +14,17 @@ export interface VariacaoEntrada {
   comprimentoCm?: number | null;
 }
 
+// ADR-0135: só usado quando a org tem o módulo fiscal habilitado — ver
+// cadastrar-produto/processar.ts (validarFiscalDaEntrada).
+export interface FiscalEntrada {
+  ncm: string;
+  cest?: string | null;
+  origemNfe: number;
+  fci?: string | null;
+  exTipi?: string | null;
+  tributacaoIcms: string;
+}
+
 export interface ProdutoEntrada {
   nomePai: string;
   descricaoPai?: string | null;
@@ -24,6 +35,7 @@ export interface ProdutoEntrada {
   // produto: o código é gerado, então os guards de duplicata NÃO pegam a repetição.
   chaveCadastro: string;
   variacoes: VariacaoEntrada[];
+  fiscal?: FiscalEntrada;
 }
 
 export interface ErroValidacao { campo: string; mensagem: string }
@@ -80,6 +92,7 @@ export function montarLinhasProduto(
   ctx: {
     loteId: string; userId: string; orgId: string;
     codigoPai: string; codigos: string[]; chaveCadastro: string;
+    regimeOrg?: 'simples' | 'normal';
   },
 ): { familia: Record<string, unknown>; variacoes: Array<Record<string, unknown>> } {
   const familia = {
@@ -97,6 +110,17 @@ export function montarLinhasProduto(
     origem: p.origem,
     operacao: 'CREATE',
     status: 'pendente',
+    // ADR-0135 D-4: colunas fiscais só quando a entrada trouxe fiscal (org com módulo).
+    // O regime que gerou o valor fica gravado junto (detecção de troca de regime, D-6).
+    ...(p.fiscal ? {
+      ncm: p.fiscal.ncm,
+      cest: p.fiscal.cest?.trim() || null,
+      origem_nfe: p.fiscal.origemNfe,
+      fci: p.fiscal.fci?.trim() || null,
+      ex_tipi: p.fiscal.exTipi?.trim() || null,
+      tributacao_icms: p.fiscal.tributacaoIcms,
+      tributacao_icms_regime: ctx.regimeOrg ?? 'simples',
+    } : {}),
   };
 
   const variacoes = p.variacoes.map((v, i) => {

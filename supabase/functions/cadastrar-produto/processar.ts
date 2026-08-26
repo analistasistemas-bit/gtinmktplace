@@ -3,7 +3,35 @@
 // estoque na variação errada — valor financeiro não se assume, falha alto. Contagem NÃO basta:
 // reordenar duas linhas, ou excluir uma e adicionar outra, mantém a contagem.
 import { centavosExatos } from '../_shared/dinheiro.ts';
-import type { VariacaoEntrada } from '../_shared/produto/validar.ts';
+import type { VariacaoEntrada, ProdutoEntrada } from '../_shared/produto/validar.ts';
+import { camposFiscaisFaltantes } from '../_shared/fiscal/validar.ts';
+
+/** Org sem módulo fiscal nunca deve gravar fiscal — `montarLinhasProduto` grava a coluna pela
+ *  mera PRESENÇA de `fiscal`, então um payload com o campo (engano, ou chamada HTTP direta) tem
+ *  que ser descartado ANTES de chegar lá, senão a org sem módulo grava NCM/CST não validados. */
+export function fiscalEfetivo(
+  p: ProdutoEntrada, moduloFiscalAtivo: boolean,
+): ProdutoEntrada['fiscal'] {
+  return moduloFiscalAtivo ? p.fiscal : undefined;
+}
+
+/** Org com módulo fiscal exige entrada fiscal completa; sem módulo, ignora (spec §5). */
+export function validarFiscalDaEntrada(
+  p: ProdutoEntrada, moduloFiscalAtivo: boolean, regimeOrg: 'simples' | 'normal',
+): string[] {
+  if (!moduloFiscalAtivo) return [];
+  return camposFiscaisFaltantes({
+    ncm: p.fiscal?.ncm ?? null,
+    cest: p.fiscal?.cest ?? null,
+    origem_nfe: p.fiscal?.origemNfe ?? null,
+    fci: p.fiscal?.fci ?? null,
+    ex_tipi: p.fiscal?.exTipi ?? null,
+    tributacao_icms: p.fiscal?.tributacaoIcms ?? null,
+    tributacao_icms_regime: regimeOrg,
+    unidade: p.unidade ?? null,
+    origem: p.origem,
+  }, regimeOrg);
+}
 
 /** Uma linha de `variacoes` já gravada, como o `select` do handler devolve (colunas snake_case,
  *  todas podendo chegar como string — as colunas são `numeric`). */
