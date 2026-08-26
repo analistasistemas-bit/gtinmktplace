@@ -2,6 +2,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { sanitizarDestinatario } from '../_shared/notificacoes/destinatario.ts';
+import { pendenciasAtivacaoFiscal } from '../_shared/fiscal/ativacao.ts';
 
 // Espelho de src/lib/menus.ts. Divergir daqui faz `allowed_menus` sanitizar e descartar
 // silenciosamente a permissão do menu novo.
@@ -27,7 +28,7 @@ Deno.serve(async (req) => {
   const { data: me } = await db.from('profiles')
     .select('is_admin, is_super_admin, is_active, org_id').eq('id', caller.id).single();
   if (!me || !me.is_active) return json({ error: 'forbidden' }, 403);
-  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'set_modulos_org', 'delete_org'].includes(action);
+  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'set_modulos_org', 'set_tipo_pessoa_org', 'delete_org'].includes(action);
   if (!(me.is_super_admin && !me.org_id && platformAction)) {
     if (!me.org_id || !me.is_admin) return json({ error: 'forbidden' }, 403);
   }
@@ -105,7 +106,7 @@ Deno.serve(async (req) => {
     case 'list_orgs': {
       if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
       const [{ data: orgs }, { data: profiles }] = await Promise.all([
-        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, modulos_habilitados, is_test').order('criado_em'),
+        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, modulos_habilitados, is_test, tipo_pessoa').order('criado_em'),
         db.from('profiles').select('org_id'),
       ]);
       const counts = new Map<string, number>();
@@ -113,7 +114,7 @@ Deno.serve(async (req) => {
       const result = (orgs ?? []).map((o) => ({
           id: o.id, nome: o.nome, slug: o.slug, criado_em: o.criado_em,
           canais_habilitados: o.canais_habilitados, modulos_habilitados: o.modulos_habilitados ?? [],
-          is_test: o.is_test, membros: counts.get(o.id) ?? 0,
+          is_test: o.is_test, membros: counts.get(o.id) ?? 0, tipo_pessoa: o.tipo_pessoa,
       }));
       return json({ orgs: result });
     }
@@ -172,15 +173,53 @@ Deno.serve(async (req) => {
       const alvo = String(body.org_id ?? '');
       if (!alvo) return json({ error: 'org_id obrigatório' }, 400);
       // Mesmos ids do registry do frontend (src/lib/modulos.ts) — manter em sincronia.
-      const MODULOS_VALIDOS = ['estoque', 'pulse'];
+      const MODULOS_VALIDOS = ['estoque', 'pulse', 'fiscal'];
       const modulos = Array.isArray(body.modulos)
         ? (body.modulos as string[]).filter((m) => MODULOS_VALIDOS.includes(m))
         : [];
+      // ADR-0135 D-2/D-7.3: ligar o módulo fiscal exige o checklist completo — as
+      // pendências saem TODAS de uma vez. A constraint fiscal_exige_pj é a rede no banco;
+      // esta é a mensagem legível.
+      if (modulos.includes('fiscal')) {
+        const [{ data: org }, { data: empresa }, { data: cfg }] = await Promise.all([
+          db.from('organizations').select('tipo_pessoa').eq('id', alvo).maybeSingle(),
+          db.from('empresa_fiscal').select('*').eq('org_id', alvo).maybeSingle(),
+          db.from('configuracoes').select('uf_empresa').eq('org_id', alvo).maybeSingle(),
+        ]);
+        const pendencias = pendenciasAtivacaoFiscal(
+          { tipoPessoa: (org?.tipo_pessoa ?? 'pf') as 'pf' | 'pj' },
+          empresa ?? null,
+          cfg?.uf_empresa ?? null,
+        );
+        if (pendencias.length) {
+          return json({ error: `Módulo fiscal não pode ser ligado:\n- ${pendencias.join('\n- ')}` }, 400);
+        }
+      }
       // Diferente de set_canais_org: NÃO há módulo obrigatório. Lista vazia é estado
       // válido (org sem nenhum módulo) e é o default de toda org.
       const { error } = await db.from('organizations')
         .update({ modulos_habilitados: [...new Set(modulos)], atualizado_em: new Date().toISOString() })
         .eq('id', alvo);
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
+    }
+    case 'set_tipo_pessoa_org': {
+      if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
+      const alvo = String(body.org_id ?? '');
+      const tipo = String(body.tipo_pessoa ?? '');
+      if (!alvo || !['pf', 'pj'].includes(tipo)) {
+        return json({ error: 'org_id e tipo_pessoa (pf|pj) obrigatórios' }, 400);
+      }
+      if (tipo === 'pf') {
+        // A constraint recusaria de qualquer forma; aqui a mensagem explica a ordem certa.
+        const { data: o } = await db.from('organizations')
+          .select('modulos_habilitados').eq('id', alvo).maybeSingle();
+        if (((o?.modulos_habilitados ?? []) as string[]).includes('fiscal')) {
+          return json({ error: 'Desligue o módulo fiscal antes de voltar a organização para pessoa física.' }, 400);
+        }
+      }
+      const { error } = await db.from('organizations')
+        .update({ tipo_pessoa: tipo, atualizado_em: new Date().toISOString() }).eq('id', alvo);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
     }
