@@ -8,6 +8,7 @@ import {
   fetchTelegramConfig, salvarTelegramConfig, enviarTesteTelegram, verificarModeradosAgora,
   fetchModeloTexto, upsertModeloTexto,
   fetchModeloImagem, upsertModeloImagem,
+  fetchEmpresaFiscal, upsertEmpresaFiscal, type EmpresaFiscalRow,
 } from '@/lib/queries';
 
 export function useDescontoPct() {
@@ -90,6 +91,17 @@ export function useSalvarModeloTexto() {
   return useMutation({
     mutationFn: (slug: string) => upsertModeloTexto(slug),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'ai_model_texto'] }),
+  });
+}
+
+export function useEmpresaFiscal() {
+  return useQuery({ queryKey: ['configuracoes', 'empresa-fiscal'], queryFn: fetchEmpresaFiscal });
+}
+export function useSalvarEmpresaFiscal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (patch: Partial<EmpresaFiscalRow>) => upsertEmpresaFiscal(patch),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'empresa-fiscal'] }),
   });
 }
 

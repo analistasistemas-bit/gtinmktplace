@@ -1,5 +1,7 @@
 // ADR-0135 — regras puras do cadastro fiscal (sem imports Deno: testável por vitest).
 // Parâmetro fiscal NUNCA defaulta em silêncio: tudo aqui falha nomeando o campo.
+// ORIGENS_NFE_POR_ORIGEM, UNIDADES_FISCAIS e validarCnpj têm espelho em src/lib/fiscal.ts
+// (o front não compartilha módulo com o Deno). Manter os dois em sincronia.
 
 // D-5: dois campos de origem, sem derivação. A tabela é a da spec §2.3.
 export const ORIGENS_NFE_POR_ORIGEM: Record<'nacional' | 'importado', number[]> = {

@@ -651,6 +651,27 @@ export async function upsertAliquotas(a: {
   if (error) throw error;
 }
 
+// ── Cadastro fiscal da empresa (card "Empresa" em Configurações, ADR-0135) ────
+
+export type EmpresaFiscalRow = Database['public']['Tables']['empresa_fiscal']['Row'];
+
+export async function fetchEmpresaFiscal(): Promise<EmpresaFiscalRow | null> {
+  const orgId = effectiveOrgId();
+  if (!orgId) return null;
+  const { data, error } = await supabase.from('empresa_fiscal')
+    .select('*').eq('org_id', orgId).maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+export async function upsertEmpresaFiscal(patch: Partial<EmpresaFiscalRow>): Promise<void> {
+  const orgId = effectiveOrgId();
+  if (!orgId) throw new Error('sem organização');
+  const { error } = await supabase.from('empresa_fiscal')
+    .upsert({ org_id: orgId, ...patch, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
+  if (error) throw error;
+}
+
 export async function fetchDescontoConcorrenciaPct(): Promise<number> {
   const orgId = effectiveOrgId();
   if (!orgId) return 5;

@@ -1,7 +1,7 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Configuracoes from '@/pages/Configuracoes';
 
 vi.mock('@/hooks/useMlConnection', () => ({
@@ -9,8 +9,7 @@ vi.mock('@/hooks/useMlConnection', () => ({
 }));
 vi.mock('@/components/config-telegram', () => ({ ConfigTelegram: () => <div /> }));
 
-const salvarReancoraLiderAtiva = vi.fn();
-const salvarMostrarLucroDashboard = vi.fn();
+const salvarEmpresa = vi.fn();
 
 vi.mock('@/hooks/useConfiguracoes', () => ({
   useDescontoPct: () => ({ data: 15 }),
@@ -20,15 +19,15 @@ vi.mock('@/hooks/useConfiguracoes', () => ({
   useAliquotas: () => ({ data: { nacional: 8, importado: 16 } }),
   useSalvarAliquotas: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
   useReancoraLiderAtiva: () => ({ data: true }),
-  useSalvarReancoraLiderAtiva: () => ({ mutate: salvarReancoraLiderAtiva, isPending: false, isSuccess: false }),
+  useSalvarReancoraLiderAtiva: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
   useMostrarLucroDashboard: () => ({ data: false }),
-  useSalvarMostrarLucroDashboard: () => ({ mutate: salvarMostrarLucroDashboard, isPending: false, isSuccess: false }),
+  useSalvarMostrarLucroDashboard: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
   useModeloTexto: () => ({ data: 'openai/gpt-4o-mini' }),
   useSalvarModeloTexto: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
   useModeloImagem: () => ({ data: 'google/gemini-2.5-flash-image' }),
   useSalvarModeloImagem: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
   useEmpresaFiscal: () => ({ data: { cnpj: null, razao_social: null, regime_tributario: null } }),
-  useSalvarEmpresaFiscal: () => ({ mutate: vi.fn(), isPending: false, isSuccess: false }),
+  useSalvarEmpresaFiscal: () => ({ mutate: salvarEmpresa, isPending: false, isSuccess: false }),
 }));
 
 function renderPage() {
@@ -42,26 +41,23 @@ function renderPage() {
   );
 }
 
-describe('Configurações — re-âncora no piso dos MercadoLíderes', () => {
-  it('reflete o valor atual e dispara a mutation ao alternar', () => {
+describe('Configurações — card Empresa (ADR-0135)', () => {
+  beforeEach(() => salvarEmpresa.mockClear());
+
+  it('card Empresa aparece e salva CNPJ válido no blur', () => {
     renderPage();
-
-    const toggle = screen.getByRole('switch', { name: /ancorar preço no piso dos MercadoLíderes/i });
-    expect(toggle).toHaveAttribute('data-state', 'checked');
-
-    fireEvent.click(toggle);
-    expect(salvarReancoraLiderAtiva).toHaveBeenCalledWith(false);
+    const cnpj = screen.getByLabelText(/CNPJ/i);
+    fireEvent.change(cnpj, { target: { value: '11.222.333/0001-81' } });
+    fireEvent.blur(cnpj);
+    expect(salvarEmpresa).toHaveBeenCalledWith(expect.objectContaining({ cnpj: '11222333000181' }));
   });
-});
 
-describe('Configurações — mostrar lucro no Dashboard', () => {
-  it('reflete o valor atual (desligado) e dispara a mutation ao alternar', () => {
+  it('CNPJ com dígito errado não salva e mostra o erro', () => {
     renderPage();
-
-    const toggle = screen.getByRole('switch', { name: /mostrar lucro no card do dashboard/i });
-    expect(toggle).toHaveAttribute('data-state', 'unchecked');
-
-    fireEvent.click(toggle);
-    expect(salvarMostrarLucroDashboard).toHaveBeenCalledWith(true);
+    const cnpj = screen.getByLabelText(/CNPJ/i);
+    fireEvent.change(cnpj, { target: { value: '11222333000180' } });
+    fireEvent.blur(cnpj);
+    expect(salvarEmpresa).not.toHaveBeenCalled();
+    expect(screen.getByText(/dígito verificador/i)).toBeInTheDocument();
   });
 });

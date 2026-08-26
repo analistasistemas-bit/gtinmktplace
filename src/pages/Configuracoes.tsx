@@ -14,10 +14,32 @@ import {
   useReancoraLiderAtiva, useSalvarReancoraLiderAtiva,
   useMostrarLucroDashboard, useSalvarMostrarLucroDashboard,
   useModeloTexto, useSalvarModeloTexto, useModeloImagem, useSalvarModeloImagem,
+  useEmpresaFiscal, useSalvarEmpresaFiscal,
 } from '@/hooks/useConfiguracoes';
 import { MODELOS_TEXTO, MODELOS_IMAGEM } from '@/lib/ai-modelos';
+import { validarCnpj } from '@/lib/fiscal';
+import { cn } from '@/lib/utils';
 import { useProfile } from '@/hooks/useProfile';
 import { ConfigTelegram } from '@/components/config-telegram';
+
+// ADR-0135 — campo de texto do card "Empresa": estado local (buffer até o blur) + patch
+// individual no blur, mesmo padrão do card de alíquotas.
+function CampoEmpresa({ id, rotulo, valor, onSalvar, disabled, placeholder, erro, largura = 'w-full' }: {
+  id: string; rotulo: string; valor: string; disabled: boolean;
+  onSalvar: (v: string) => void; placeholder?: string; erro?: string | null; largura?: string;
+}) {
+  const [v, setV] = useState(valor);
+  useEffect(() => setV(valor), [valor]);
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="text-xs font-medium">{rotulo}</label>
+      <Input id={id} className={cn('h-8 text-sm', largura)} value={v} placeholder={placeholder}
+        disabled={disabled} onChange={(e) => setV(e.target.value)}
+        onBlur={() => { if (v !== valor) onSalvar(v); }} />
+      {erro && <p className="text-xs text-destructive">{erro}</p>}
+    </div>
+  );
+}
 
 export default function Configuracoes() {
   const [searchParams] = useSearchParams();
@@ -98,6 +120,45 @@ export default function Configuracoes() {
       ufEmpresa: u === '' ? null : u,
       internaPct: u === '' ? null : p,
     });
+  };
+
+  const { data: empresa } = useEmpresaFiscal();
+  const salvarEmpresa = useSalvarEmpresaFiscal();
+  const [erroCnpj, setErroCnpj] = useState<string | null>(null);
+  const [erroIbge, setErroIbge] = useState<string | null>(null);
+  const [erroUf, setErroUf] = useState<string | null>(null);
+  const [emissaoInput, setEmissaoInput] = useState('');
+
+  useEffect(() => {
+    setEmissaoInput(empresa?.emissao_a_partir_de ?? '');
+  }, [empresa?.emissao_a_partir_de]);
+
+  // Um patch por campo (spec do card) — texto simples nunca precisa de validação própria.
+  const salvarCampoEmpresa = (campo: keyof NonNullable<typeof empresa>) => (v: string) =>
+    salvarEmpresa.mutate({ [campo]: v.trim() === '' ? null : v.trim() });
+
+  const salvarCnpj = (v: string) => {
+    const digitos = v.replace(/\D/g, '');
+    if (digitos === '') { setErroCnpj(null); salvarEmpresa.mutate({ cnpj: null }); return; }
+    if (!validarCnpj(digitos)) { setErroCnpj('CNPJ inválido (dígito verificador não confere).'); return; }
+    setErroCnpj(null);
+    salvarEmpresa.mutate({ cnpj: digitos });
+  };
+
+  const salvarIbge = (v: string) => {
+    const t = v.trim();
+    if (t === '') { setErroIbge(null); salvarEmpresa.mutate({ municipio_ibge: null }); return; }
+    if (!/^\d{7}$/.test(t)) { setErroIbge('Código IBGE inválido (7 dígitos).'); return; }
+    setErroIbge(null);
+    salvarEmpresa.mutate({ municipio_ibge: t });
+  };
+
+  const salvarUf = (v: string) => {
+    const u = v.trim().toUpperCase();
+    if (u === '') { setErroUf(null); salvarEmpresa.mutate({ uf: null }); return; }
+    if (!/^[A-Z]{2}$/.test(u)) { setErroUf('UF inválida (2 letras, ex.: PE).'); return; }
+    setErroUf(null);
+    salvarEmpresa.mutate({ uf: u });
   };
 
   // OAuth do ML retorna para /configuracoes (URL fixa na edge) — o card agora mora em /canais.
@@ -425,6 +486,124 @@ export default function Configuracoes() {
               )}
             </div>
             {erroInterna && <p className="mt-2 text-xs text-destructive">{erroInterna}</p>}
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Empresa</h2>
+            {salvarEmpresa.isPending && <span className="text-xs text-muted-foreground">Salvando…</span>}
+            {salvarEmpresa.isSuccess && !salvarEmpresa.isPending && !erroCnpj && !erroIbge && !erroUf && (
+              <span className="text-xs text-success">✓ Salvo</span>
+            )}
+          </div>
+          <p className="mb-4 text-xs text-muted-foreground">
+            Emissão fiscal exige organização PJ — quem marca é o administrador da plataforma.
+          </p>
+
+          <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Identidade</h3>
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <CampoEmpresa id="cnpj" rotulo="CNPJ" valor={empresa?.cnpj ?? ''} disabled={!isAdmin}
+              placeholder="00.000.000/0000-00" erro={erroCnpj} onSalvar={salvarCnpj} />
+            <CampoEmpresa id="razao_social" rotulo="Razão social" valor={empresa?.razao_social ?? ''}
+              disabled={!isAdmin} onSalvar={salvarCampoEmpresa('razao_social')} />
+            <CampoEmpresa id="nome_fantasia" rotulo="Nome fantasia" valor={empresa?.nome_fantasia ?? ''}
+              disabled={!isAdmin} onSalvar={salvarCampoEmpresa('nome_fantasia')} />
+            <CampoEmpresa id="inscricao_estadual" rotulo="Inscrição estadual"
+              valor={empresa?.inscricao_estadual ?? ''} disabled={!isAdmin}
+              onSalvar={salvarCampoEmpresa('inscricao_estadual')} />
+            <div className="flex flex-col gap-1">
+              <label htmlFor="regime_tributario" className="text-xs font-medium">Regime tributário</label>
+              <Select value={empresa?.regime_tributario ?? undefined} disabled={!isAdmin}
+                onValueChange={(v) => salvarEmpresa.mutate({ regime_tributario: v })}>
+                <SelectTrigger id="regime_tributario" aria-label="Regime tributário" className="h-8 text-sm">
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="simples">Simples Nacional</SelectItem>
+                  <SelectItem value="normal">Regime Normal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Endereço</h3>
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <CampoEmpresa id="cep" rotulo="CEP" valor={empresa?.cep ?? ''} disabled={!isAdmin}
+              onSalvar={salvarCampoEmpresa('cep')} />
+            <CampoEmpresa id="logradouro" rotulo="Logradouro" valor={empresa?.logradouro ?? ''}
+              disabled={!isAdmin} onSalvar={salvarCampoEmpresa('logradouro')} />
+            <CampoEmpresa id="numero" rotulo="Número" valor={empresa?.numero ?? ''} disabled={!isAdmin}
+              onSalvar={salvarCampoEmpresa('numero')} />
+            <CampoEmpresa id="complemento" rotulo="Complemento" valor={empresa?.complemento ?? ''}
+              disabled={!isAdmin} onSalvar={salvarCampoEmpresa('complemento')} />
+            <CampoEmpresa id="bairro" rotulo="Bairro" valor={empresa?.bairro ?? ''} disabled={!isAdmin}
+              onSalvar={salvarCampoEmpresa('bairro')} />
+            <CampoEmpresa id="municipio" rotulo="Município" valor={empresa?.municipio ?? ''}
+              disabled={!isAdmin} onSalvar={salvarCampoEmpresa('municipio')} />
+            <CampoEmpresa id="municipio_ibge" rotulo="Código IBGE do município"
+              valor={empresa?.municipio_ibge ?? ''} disabled={!isAdmin} placeholder="2611606"
+              erro={erroIbge} onSalvar={salvarIbge} />
+            <CampoEmpresa id="uf" rotulo="UF" valor={empresa?.uf ?? ''} disabled={!isAdmin}
+              placeholder="PE" largura="w-20" erro={erroUf} onSalvar={salvarUf} />
+          </div>
+
+          <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Operação fiscal</h3>
+          <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <CampoEmpresa id="natureza_operacao" rotulo="Natureza da operação"
+              valor={empresa?.natureza_operacao ?? ''} disabled={!isAdmin}
+              onSalvar={salvarCampoEmpresa('natureza_operacao')} />
+            <CampoEmpresa id="cfop_dentro_uf" rotulo="CFOP dentro da UF"
+              valor={empresa?.cfop_dentro_uf ?? ''} disabled={!isAdmin}
+              onSalvar={salvarCampoEmpresa('cfop_dentro_uf')} />
+            <CampoEmpresa id="cfop_fora_uf_nao_contribuinte" rotulo="CFOP fora da UF (não contribuinte)"
+              valor={empresa?.cfop_fora_uf_nao_contribuinte ?? ''} disabled={!isAdmin}
+              onSalvar={salvarCampoEmpresa('cfop_fora_uf_nao_contribuinte')} />
+            <CampoEmpresa id="cfop_fora_uf_contribuinte" rotulo="CFOP fora da UF (contribuinte, opcional)"
+              valor={empresa?.cfop_fora_uf_contribuinte ?? ''} disabled={!isAdmin}
+              onSalvar={salvarCampoEmpresa('cfop_fora_uf_contribuinte')} />
+            <CampoEmpresa id="cst_pis" rotulo="CST de PIS" valor={empresa?.cst_pis ?? ''}
+              disabled={!isAdmin} onSalvar={salvarCampoEmpresa('cst_pis')} />
+            <CampoEmpresa id="cst_cofins" rotulo="CST de COFINS" valor={empresa?.cst_cofins ?? ''}
+              disabled={!isAdmin} onSalvar={salvarCampoEmpresa('cst_cofins')} />
+            <div className="flex flex-col gap-1">
+              <label htmlFor="origin_type" className="text-xs font-medium">Papel da empresa</label>
+              <Select value={empresa?.origin_type ?? undefined} disabled={!isAdmin}
+                onValueChange={(v) => salvarEmpresa.mutate({ origin_type: v })}>
+                <SelectTrigger id="origin_type" aria-label="Papel da empresa" className="h-8 text-sm">
+                  <SelectValue placeholder="Selecione" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="manufacturer">Fabricante</SelectItem>
+                  <SelectItem value="reseller">Revendedor</SelectItem>
+                  <SelectItem value="imported">Importador</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Emissão</h3>
+          <div className="mb-4 flex flex-col gap-1">
+            <label htmlFor="emissao_a_partir_de" className="text-xs font-medium">Emitir a partir de</label>
+            <Input id="emissao_a_partir_de" type="date" className="h-8 w-40 text-sm"
+              value={emissaoInput} disabled={!isAdmin}
+              onChange={(e) => setEmissaoInput(e.target.value)}
+              onBlur={() => {
+                if (emissaoInput === (empresa?.emissao_a_partir_de ?? '')) return;
+                salvarEmpresa.mutate({ emissao_a_partir_de: emissaoInput === '' ? null : emissaoInput });
+              }}
+            />
+            <p className="text-xs text-muted-foreground">
+              Vendas anteriores a esta data nunca entram no fluxo fiscal.
+            </p>
+          </div>
+
+          <div className="border-t pt-3">
+            <p className="text-xs text-muted-foreground">
+              No painel do Mercado Livre (Preferências de venda → Emissor de NF-e): ativar o
+              Faturador, enviar o certificado A1 e configurar a série. O PubliAI verifica a
+              prontidão pelo próprio ML (semáforo nos Publicados).
+            </p>
           </div>
         </Card>
       </div>
