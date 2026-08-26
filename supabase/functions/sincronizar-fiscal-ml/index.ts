@@ -6,6 +6,7 @@ import { verificarAssinatura, type SincronizarFiscalJob } from '../_shared/queue
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { empurrarFiscalSku, lerCanInvoice, vincularSkuAnuncio } from '../_shared/canais/fiscal-ml.ts';
+import { listarItensUP } from '../_shared/fiscal/can-invoice.ts';
 import { processarSincronizacaoFiscal } from './processar.ts';
 
 Deno.serve(async (req) => {
@@ -34,18 +35,9 @@ Deno.serve(async (req) => {
       if (error) throw new Error(`listarVariacoes: ${error.message}`);
       return data ?? [];
     },
-    // C1: filhos User Products (ADR-0088) — partição 0, mesmo padrão de vincular-catalogo/vinculacao.ts.
-    listarItensUP: async (admin, orgId, codigoPai) => {
-      const { data: raizes, error: errRaizes } = await admin.from('anuncios_externos')
-        .select('id').eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('canal', 'mercado_livre').eq('particao', 0);
-      if (errRaizes) throw new Error(`listarItensUP (raízes): ${errRaizes.message}`);
-      const rootIds = (raizes ?? []).map((r: { id: string }) => r.id);
-      if (rootIds.length === 0) return [];
-      const { data: itens, error: errItens } = await admin.from('anuncios_externos_itens')
-        .select('sku, item_externo_id').in('anuncio_externo_id', rootIds).eq('retirado', false);
-      if (errItens) throw new Error(`listarItensUP (itens): ${errItens.message}`);
-      return itens ?? [];
-    },
+    // C1: filhos User Products (ADR-0088) — Task 8 extraiu pra _shared/fiscal/can-invoice.ts,
+    // reusado também pela reconciliação de monitorar-moderados.
+    listarItensUP,
     portas: { empurrarFiscalSku, vincularSkuAnuncio, lerCanInvoice },
   }, job);
   return new Response(

@@ -5,8 +5,11 @@ import {
   montarFiscalInformation, type FamiliaFiscalPush, type VariacaoFiscalPush,
 } from '../_shared/canais/fiscal-ml.ts';
 import { camposFiscaisFaltantes, type CamposFiscaisFamilia } from '../_shared/fiscal/validar.ts';
+import {
+  calcularSemaforoCanInvoice, idsParaChecar, type ItemFiscalUP,
+} from '../_shared/fiscal/can-invoice.ts';
 
-export interface ItemUP { sku: string; item_externo_id: string | null }
+export type ItemUP = ItemFiscalUP;
 
 export interface DepsFiscal {
   admin: SupabaseClient;
@@ -135,22 +138,14 @@ export async function processarSincronizacaoFiscal(
   // Semáforo: um item por SKU na rota UP (AND — qualquer item não-pronto derruba a família toda,
   // causa citando qual item), um item só na Legacy. Leitura falha (null) em QUALQUER item NÃO
   // escreve nada — nunca regride um `true` já gravado por causa de uma falha transitória de
-  // leitura (I7); só grava quando TODOS os itens responderam de verdade.
-  const idsParaChecar = itensUP.length > 0
-    ? Array.from(new Set(itensUP.map((i) => i.item_externo_id).filter((id): id is string => !!id)))
-    : (familia.ml_item_id ? [familia.ml_item_id] : []);
-  if (idsParaChecar.length > 0) {
-    const resultados = await Promise.all(idsParaChecar.map(async (itemId) => ({
-      itemId, r: await deps.portas.lerCanInvoice(token, itemId),
-    })));
-    if (resultados.every(({ r }) => r != null)) {
-      const falha = resultados.find(({ r }) => !r!.pronto);
-      const pronto = !falha;
-      const causa = falha
-        ? (itensUP.length > 0 ? `item ${falha.itemId}: ${falha.r!.causa}` : falha.r!.causa)
-        : null;
+  // leitura (I7); só grava quando TODOS os itens responderam de verdade. (Task 8: lógica extraída
+  // pra _shared/fiscal/can-invoice.ts — reusada pela reconciliação de monitorar-moderados.)
+  const ids = idsParaChecar(itensUP, familia.ml_item_id);
+  if (ids.length > 0) {
+    const resultado = await calcularSemaforoCanInvoice(token, ids, deps.portas.lerCanInvoice, itensUP.length > 0);
+    if (resultado) {
       await admin.from('familias').update({
-        can_invoice: pronto, can_invoice_causa: causa, can_invoice_em: agora(),
+        can_invoice: resultado.pronto, can_invoice_causa: resultado.causa, can_invoice_em: agora(),
       }).eq('id', familia.id);
     }
   }

@@ -10,6 +10,8 @@ import { estenderEscopoModeracao } from '../_shared/canais/escopo-up.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { enviarTelegram, montarMensagemModerados, type ItemAlerta } from '../_shared/notificacoes/telegram.ts';
 import { lerConfigTelegram, notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { lerCanInvoice } from '../_shared/canais/fiscal-ml.ts';
+import { reconciliarCanInvoice } from './can-invoice.ts';
 
 // E7: iteração por conexão (marketplace_connections), não mais por ml_credentials.user_id.
 type ConexaoComDono = ConexaoCanal & { criadoPor: string | null };
@@ -168,11 +170,21 @@ Deno.serve(async (req) => {
   let totalNovos = 0;
   let falhou = false;
   for (const row of (conexoesRaw ?? []) as ConexaoRow[]) {
+    const cx = mapCx(row);
     try {
-      totalNovos += await processarConexao(admin, conn, mapCx(row));
+      totalNovos += await processarConexao(admin, conn, cx);
     } catch (e) {
       falhou = true;
       console.error(`monitorar-moderados: falhou para org ${row.org_id}:`, e instanceof Error ? e.message : e);
+    }
+    // ADR-0135 D-10: reconciliação do semáforo can_invoice, pendurada neste worker de status
+    // (6/6h) — independente da moderação acima, então falha aqui não afeta esse fluxo.
+    try {
+      const token = await getValidAccessTokenConexao(cx);
+      const n = await reconciliarCanInvoice(admin, cx.orgId, token, lerCanInvoice);
+      if (n > 0) console.log(`can_invoice reconciliado: ${n} famílias (org ${cx.orgId})`);
+    } catch (e) {
+      console.warn('reconciliar can_invoice falhou:', e instanceof Error ? e.message : e);
     }
   }
 
