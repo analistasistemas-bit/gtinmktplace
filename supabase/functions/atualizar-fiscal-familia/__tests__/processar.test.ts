@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { processarAtualizacaoFiscal, type DepsAtualizarFiscal, type EntradaFiscal } from '../processar';
+import { processarAtualizacaoFiscal, validarShapeEntrada, type DepsAtualizarFiscal, type EntradaFiscal } from '../processar';
 
 // ── Fake admin: familias/empresa_fiscal (padrão igual ao de publish-familia-ml). ──
 function fakeAdmin(over: {
@@ -129,3 +129,18 @@ describe('processarAtualizacaoFiscal', () => {
     expect(r).toEqual({ tipo: 'falha', mensagem: 'constraint violation' });
   });
 });
+
+describe('validarShapeEntrada', () => {
+  it('body sem fiscal → mensagem de campo obrigatório', () => {
+    expect(validarShapeEntrada({ familiaId: 'fam-1' })).toBe('familiaId (string) e fiscal (objeto) são obrigatórios');
+  });
+
+  it('body sem familiaId → mensagem de campo obrigatório', () => {
+    expect(validarShapeEntrada({ fiscal: FISCAL_OK })).toBe('familiaId (string) e fiscal (objeto) são obrigatórios');
+  });
+
+  it('body válido → null', () => {
+    expect(validarShapeEntrada({ familiaId: 'fam-1', fiscal: FISCAL_OK })).toBeNull();
+  });
+});
+

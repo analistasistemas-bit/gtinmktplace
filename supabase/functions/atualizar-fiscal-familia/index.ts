@@ -5,7 +5,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
-import { processarAtualizacaoFiscal, type EntradaFiscal } from './processar.ts';
+import { processarAtualizacaoFiscal, validarShapeEntrada, type EntradaFiscal } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -27,6 +27,9 @@ Deno.serve(async (req) => {
   let entrada: EntradaFiscal;
   try { entrada = await req.json() as EntradaFiscal; }
   catch { return json({ error: 'JSON inválido' }, 400); }
+
+  const erroShape = validarShapeEntrada(entrada);
+  if (erroShape) return json({ erros: [{ campo: 'body', mensagem: erroShape }] }, 400);
 
   const resultado = await processarAtualizacaoFiscal(
     { admin, orgId, enfileirarPush: enfileirarSincronizacaoFiscal }, entrada,

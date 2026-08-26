@@ -20,6 +20,16 @@ export type ResultadoFiscal =
   | { tipo: 'falha'; mensagem: string }
   | { tipo: 'ok'; pushEnfileirado: boolean };
 
+// Fronteira de confiança (index.ts): shape mínimo antes de tocar `entrada.fiscal.*` — sem isto
+// um body sem `fiscal` explode em TypeError cru (sem CORS/JSON) e um body sem `familiaId` vira
+// `.eq('id', undefined)` (500 em vez de 400).
+export function validarShapeEntrada(body: unknown): string | null {
+  const b = body as Partial<EntradaFiscal> | null;
+  const valido = !!b && typeof b.familiaId === 'string' && b.familiaId.length > 0
+    && typeof b.fiscal === 'object' && b.fiscal !== null;
+  return valido ? null : 'familiaId (string) e fiscal (objeto) são obrigatórios';
+}
+
 export async function processarAtualizacaoFiscal(
   deps: DepsAtualizarFiscal, entrada: EntradaFiscal,
 ): Promise<ResultadoFiscal> {
