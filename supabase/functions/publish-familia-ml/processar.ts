@@ -14,7 +14,7 @@ import { montarAnuncioCanonico } from '../_shared/anuncios/montar-canonico.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import { exigirFiscalCompletoSePreciso } from '../_shared/fiscal/gate.ts';
 import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel, decidirRetryTransitorio } from '../_shared/publicacao/retry.ts';
-import { enfileirarVinculacaoCatalogo } from '../_shared/queue.ts';
+import { enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
 import {
   lerFormatoPublicacao, confirmarFormatoPublicacao, formatoRepoSupabase, type FormatoRepo,
 } from '../_shared/ml/formato-publicacao.ts';
@@ -105,9 +105,7 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
     garantirPrecoUniforme(variacoes, 'CREATE');
 
     // ADR-0135 D-7: fiscal completo antes de QUALQUER escrita no ML (org com módulo).
-    // Task 7 usa fiscalAtivo para decidir o enqueue do push fiscal pós-publicação.
     const fiscalAtivo = await exigirFiscalCompletoSePreciso(admin, familia);
-    void fiscalAtivo;
 
     // Gate de atributos obrigatórios. Aviamento conhecido (override) → validador por-tipo (atual);
     // categoria prevista/manual → lista genérica persistida (E3/E4, schema da API); sem categoria → bloqueia.
@@ -193,6 +191,12 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
     }).eq('id', job.familia_id);
     if (upErr) {
       console.error(`CRÍTICO: item ${ref.itemExternoId} criado no ML mas falhou ao persistir: ${upErr.message}`);
+    }
+
+    // ADR-0135: push fiscal pós-publicação. Falha de enqueue NÃO desfaz a publicação (spec §3).
+    if (fiscalAtivo) {
+      try { await enfileirarSincronizacaoFiscal(job.familia_id); }
+      catch (e) { console.error('enfileirar push fiscal falhou:', (e as Error).message); }
     }
 
     if (familia.descricao_ml) {

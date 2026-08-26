@@ -47,6 +47,20 @@ export async function enfileirarFamilia(job: ProcessFamiliaJob): Promise<string>
   return messageId;
 }
 
+export interface SincronizarFiscalJob { familia_id: string }
+
+/** ADR-0135: push dos dados fiscais da família pro ML (worker sincronizar-fiscal-ml). */
+export async function enfileirarSincronizacaoFiscal(familiaId: string): Promise<string> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/sincronizar-fiscal-ml`;
+  const { messageId } = await qstashClient().publishJSON({
+    url: target,
+    body: { familia_id: familiaId } satisfies SincronizarFiscalJob,
+    retries: 3,
+  });
+  return messageId;
+}
+
 // Lote #44 (03/08, 3299 linhas): ingest-lote enfileirava 1 publish por família num loop
 // sequencial e o QStash devolveu "Rate limit exceeded for trace ..., Retry after 42349ms" já
 // na 1ª chamada, derrubando o lote inteiro — 18 famílias travadas em 'pendente' sem nenhuma

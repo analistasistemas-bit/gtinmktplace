@@ -1,6 +1,6 @@
 # Referência — Edge Functions
 
-> **Tipo:** Reference (Diátaxis). As 55 Edge Functions Deno do PubliAI (`supabase/functions/`).
+> **Tipo:** Reference (Diátaxis). As 56 Edge Functions Deno do PubliAI (`supabase/functions/`).
 > `verify_jwt` é extraído de `supabase/config.toml` (verdade de configuração). Trigger e
 > idempotência vêm do código de cada `index.ts`. Termos em [glossario.md](glossario.md);
 > deploy em [../how-to/deploy-e-migrations.md](../how-to/deploy-e-migrations.md).
@@ -53,6 +53,8 @@
 | ajustar-estoque | **true** | HTTP (frontend, **admin**) | sim (`ref` por item: `ajuste:{ref}:{codigo}`) |
 | excluir-produto | **true** | HTTP (frontend, **admin**) | sim (delete por `codigo_pai`; repetir devolve 404) |
 | adicionar-variacoes-familia | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, D-8) |
+| **Fiscal (ADR-0135)** ||||
+| sincronizar-fiscal-ml | false | QStash worker | sim (upsert POST→409→PUT por SKU) |
 | **Faturamento (vendas/perguntas/devoluções)** ||||
 | ml-webhook | false | Webhook do ML | sim (dedup) |
 | sync-venda | false | QStash worker | sim (upsert) |
@@ -737,6 +739,20 @@ falha ao ler `organizations` não libera.
   preço propague normalmente. Lote nasce em `status='publicando'` de propósito — **nunca** aparece
   na fila de Revisão; se o encadeamento falhar, rebaixa para `'revisao'` só como rota de
   recuperação visível na tela Lotes.
+
+### Fiscal (ADR-0135)
+- **sincronizar-fiscal-ml** *(worker, disparado por `enfileirarSincronizacaoFiscal`)* — empurra
+  `fiscal_information` (NCM, CSOSN, CEST, FCI, EX-TIPI, EAN, peso) por SKU e vincula ao
+  `ml_item_id`, depois lê `can_invoice` e grava o semáforo (`familias.can_invoice` +
+  `can_invoice_causa` + `can_invoice_em`, `fiscal_sincronizado_em`). Enfileirado por
+  `publish-familia-ml` e `update-familia-ml` só quando `exigirFiscalCompletoSePreciso` (D-7)
+  confirma módulo `fiscal` ativo e cadastro completo — pula org sem módulo. Idempotente: upsert
+  POST→409→PUT no push, e 409 no vínculo SKU↔anúncio é sucesso (replay do QStash). 4xx do ML é
+  definitivo (200 com `can_invoice=false` + causa, sem retry); 5xx/timeout é 500 texto para o
+  QStash retentar. **Gap conhecido:** só cobre o caminho Legacy de `publish-familia-ml`/
+  `update-familia-ml` — famílias roteadas para a saga User Products (`rotaSagaUP`/`rodarUP`,
+  ADR-0088) não enfileiram o push ainda, porque a replicação de dados fiscais entre os itens
+  técnicos UP é o item "A verificar #4" do ADR-0135 (não verificado em conta real).
 
 ### Faturamento
 - **sync-venda** — antes de qualquer escrita, recusa pedido cujo `seller.id` não seja a conta

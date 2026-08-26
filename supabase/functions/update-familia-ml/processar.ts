@@ -7,7 +7,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import type { ChannelConnector } from '../_shared/canais/contrato.ts';
-import { enfileirarVinculacaoCatalogo } from '../_shared/queue.ts';
+import { enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
 import { pctEfetivo } from '../_shared/preco/desconto.ts';
 import type { FaixaAtacado } from '../_shared/ml/atacado.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
@@ -122,9 +122,8 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
   // → "Picture id ... does not exist" no retry). Declarados fora do try p/ visibilidade no catch.
   let capa2SubidaAgora = false;
   let capa3SubidaAgora = false;
-  // Task 7 usa fiscalAtivo para decidir o enqueue do push fiscal pós-atualização.
+  // ADR-0135: decide o enqueue do push fiscal pós-atualização (caminho de sucesso do UPDATE).
   let fiscalAtivo = false;
-  void fiscalAtivo;
 
   try {
     // ADR-0135 D-7: mesmo gate do publish, antes de QUALQUER escrita no ML. `somenteEstoque`
@@ -505,6 +504,12 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       ml_permalink: familia.ml_permalink ?? null,
       publicado_em: new Date().toISOString(),
     }, varsEspelho ?? []);
+
+    // ADR-0135: push fiscal pós-atualização. Falha de enqueue NÃO desfaz o UPDATE (spec §3).
+    if (fiscalAtivo) {
+      try { await enfileirarSincronizacaoFiscal(job.familia_id); }
+      catch (e) { console.error('enfileirar push fiscal falhou:', (e as Error).message); }
+    }
 
     await finalizarLote(job.lote_id);
     return { tipo: 'ok', itemExternoId: familia.ml_item_id, novas: novasComFoto.length };
