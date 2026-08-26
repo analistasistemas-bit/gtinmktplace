@@ -284,8 +284,98 @@ export type Database = {
           },
         ]
       }
+      empresa_fiscal: {
+        Row: {
+          atualizado_em: string
+          bairro: string | null
+          cep: string | null
+          cfop_dentro_uf: string | null
+          cfop_fora_uf_contribuinte: string | null
+          cfop_fora_uf_nao_contribuinte: string | null
+          cnpj: string | null
+          complemento: string | null
+          criado_em: string
+          cst_cofins: string | null
+          cst_pis: string | null
+          emissao_a_partir_de: string | null
+          inscricao_estadual: string | null
+          logradouro: string | null
+          municipio: string | null
+          municipio_ibge: string | null
+          natureza_operacao: string | null
+          nome_fantasia: string | null
+          numero: string | null
+          org_id: string
+          origin_type: string | null
+          razao_social: string | null
+          regime_tributario: string | null
+          uf: string | null
+        }
+        Insert: {
+          atualizado_em?: string
+          bairro?: string | null
+          cep?: string | null
+          cfop_dentro_uf?: string | null
+          cfop_fora_uf_contribuinte?: string | null
+          cfop_fora_uf_nao_contribuinte?: string | null
+          cnpj?: string | null
+          complemento?: string | null
+          criado_em?: string
+          cst_cofins?: string | null
+          cst_pis?: string | null
+          emissao_a_partir_de?: string | null
+          inscricao_estadual?: string | null
+          logradouro?: string | null
+          municipio?: string | null
+          municipio_ibge?: string | null
+          natureza_operacao?: string | null
+          nome_fantasia?: string | null
+          numero?: string | null
+          org_id: string
+          origin_type?: string | null
+          razao_social?: string | null
+          regime_tributario?: string | null
+          uf?: string | null
+        }
+        Update: {
+          atualizado_em?: string
+          bairro?: string | null
+          cep?: string | null
+          cfop_dentro_uf?: string | null
+          cfop_fora_uf_contribuinte?: string | null
+          cfop_fora_uf_nao_contribuinte?: string | null
+          cnpj?: string | null
+          complemento?: string | null
+          criado_em?: string
+          cst_cofins?: string | null
+          cst_pis?: string | null
+          emissao_a_partir_de?: string | null
+          inscricao_estadual?: string | null
+          logradouro?: string | null
+          municipio?: string | null
+          municipio_ibge?: string | null
+          natureza_operacao?: string | null
+          nome_fantasia?: string | null
+          numero?: string | null
+          org_id?: string
+          origin_type?: string | null
+          razao_social?: string | null
+          regime_tributario?: string | null
+          uf?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "empresa_fiscal_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       estoque_movimentos: {
         Row: {
+          alertado_em: string | null
           canal_origem: string | null
           codigo: string
           codigo_pai: string
@@ -306,6 +396,7 @@ export type Database = {
           referencia_externa: string | null
         }
         Insert: {
+          alertado_em?: string | null
           canal_origem?: string | null
           codigo: string
           codigo_pai?: string
@@ -326,6 +417,7 @@ export type Database = {
           referencia_externa?: string | null
         }
         Update: {
+          alertado_em?: string | null
           canal_origem?: string | null
           codigo?: string
           codigo_pai?: string
@@ -365,14 +457,22 @@ export type Database = {
           atributos_faltantes: Json | null
           atributos_ml: Json
           atualizado_em: string
+          can_invoice: boolean | null
+          can_invoice_causa: string | null
+          can_invoice_em: string | null
           capa_ml_picture_id: string | null
           capa_storage_path: string | null
           capa2_ml_picture_id: string | null
           capa2_storage_path: string | null
           capa3_ml_picture_id: string | null
           capa3_storage_path: string | null
+          catalogo_categoria_sugerida_id: string | null
+          catalogo_categoria_sugerida_nome: string | null
+          catalogo_categoria_sugerida_vendedores: number | null
           categoria_ml_id: string | null
           categoria_nome: string | null
+          cest: string | null
+          chave_cadastro: string | null
           codigo_pai: string
           concorrencia_categoria_id: string | null
           concorrencia_classe: Database["public"]["Enums"]["classe_concorrencia"]
@@ -393,7 +493,10 @@ export type Database = {
           estrategia_preco:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
+          ex_tipi: string | null
           exibir_com_desconto: boolean
+          fci: string | null
+          fiscal_sincronizado_em: string | null
           fornecedor: string | null
           frete_gratis: boolean
           id: string
@@ -401,11 +504,13 @@ export type Database = {
           ml_item_id: string | null
           ml_permalink: string | null
           mudanca_estrutural: Json | null
+          ncm: string | null
           nome_pai: string
           observacao_operador: string | null
           operacao: Database["public"]["Enums"]["operacao_ml"]
           org_id: string
           origem: Database["public"]["Enums"]["origem_produto"]
+          origem_nfe: number | null
           preco_reancorado_lider: boolean
           publicado_em: string | null
           qstash_message_id: string | null
@@ -414,10 +519,13 @@ export type Database = {
           status: Database["public"]["Enums"]["familia_status"]
           tipo_aviamento: Database["public"]["Enums"]["tipo_aviamento"] | null
           tipo_origem: Database["public"]["Enums"]["tipo_origem"] | null
+          titulo_descartes: Json | null
           titulo_editado_pelo_operador: boolean
           titulo_ml: string | null
           tokens_input: number | null
           tokens_output: number | null
+          tributacao_icms: string | null
+          tributacao_icms_regime: string | null
           unidade: string | null
           user_id: string
           variacao_principal_codigo: string | null
@@ -431,14 +539,22 @@ export type Database = {
           atributos_faltantes?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
+          can_invoice?: boolean | null
+          can_invoice_causa?: string | null
+          can_invoice_em?: string | null
           capa_ml_picture_id?: string | null
           capa_storage_path?: string | null
           capa2_ml_picture_id?: string | null
           capa2_storage_path?: string | null
           capa3_ml_picture_id?: string | null
           capa3_storage_path?: string | null
+          catalogo_categoria_sugerida_id?: string | null
+          catalogo_categoria_sugerida_nome?: string | null
+          catalogo_categoria_sugerida_vendedores?: number | null
           categoria_ml_id?: string | null
           categoria_nome?: string | null
+          cest?: string | null
+          chave_cadastro?: string | null
           codigo_pai: string
           concorrencia_categoria_id?: string | null
           concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
@@ -459,7 +575,10 @@ export type Database = {
           estrategia_preco?:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
+          ex_tipi?: string | null
           exibir_com_desconto?: boolean
+          fci?: string | null
+          fiscal_sincronizado_em?: string | null
           fornecedor?: string | null
           frete_gratis?: boolean
           id?: string
@@ -467,11 +586,13 @@ export type Database = {
           ml_item_id?: string | null
           ml_permalink?: string | null
           mudanca_estrutural?: Json | null
+          ncm?: string | null
           nome_pai: string
           observacao_operador?: string | null
           operacao: Database["public"]["Enums"]["operacao_ml"]
           org_id: string
           origem?: Database["public"]["Enums"]["origem_produto"]
+          origem_nfe?: number | null
           preco_reancorado_lider?: boolean
           publicado_em?: string | null
           qstash_message_id?: string | null
@@ -480,10 +601,13 @@ export type Database = {
           status?: Database["public"]["Enums"]["familia_status"]
           tipo_aviamento?: Database["public"]["Enums"]["tipo_aviamento"] | null
           tipo_origem?: Database["public"]["Enums"]["tipo_origem"] | null
+          titulo_descartes?: Json | null
           titulo_editado_pelo_operador?: boolean
           titulo_ml?: string | null
           tokens_input?: number | null
           tokens_output?: number | null
+          tributacao_icms?: string | null
+          tributacao_icms_regime?: string | null
           unidade?: string | null
           user_id: string
           variacao_principal_codigo?: string | null
@@ -497,14 +621,22 @@ export type Database = {
           atributos_faltantes?: Json | null
           atributos_ml?: Json
           atualizado_em?: string
+          can_invoice?: boolean | null
+          can_invoice_causa?: string | null
+          can_invoice_em?: string | null
           capa_ml_picture_id?: string | null
           capa_storage_path?: string | null
           capa2_ml_picture_id?: string | null
           capa2_storage_path?: string | null
           capa3_ml_picture_id?: string | null
           capa3_storage_path?: string | null
+          catalogo_categoria_sugerida_id?: string | null
+          catalogo_categoria_sugerida_nome?: string | null
+          catalogo_categoria_sugerida_vendedores?: number | null
           categoria_ml_id?: string | null
           categoria_nome?: string | null
+          cest?: string | null
+          chave_cadastro?: string | null
           codigo_pai?: string
           concorrencia_categoria_id?: string | null
           concorrencia_classe?: Database["public"]["Enums"]["classe_concorrencia"]
@@ -525,7 +657,10 @@ export type Database = {
           estrategia_preco?:
             | Database["public"]["Enums"]["estrategia_preco"]
             | null
+          ex_tipi?: string | null
           exibir_com_desconto?: boolean
+          fci?: string | null
+          fiscal_sincronizado_em?: string | null
           fornecedor?: string | null
           frete_gratis?: boolean
           id?: string
@@ -533,11 +668,13 @@ export type Database = {
           ml_item_id?: string | null
           ml_permalink?: string | null
           mudanca_estrutural?: Json | null
+          ncm?: string | null
           nome_pai?: string
           observacao_operador?: string | null
           operacao?: Database["public"]["Enums"]["operacao_ml"]
           org_id?: string
           origem?: Database["public"]["Enums"]["origem_produto"]
+          origem_nfe?: number | null
           preco_reancorado_lider?: boolean
           publicado_em?: string | null
           qstash_message_id?: string | null
@@ -546,10 +683,13 @@ export type Database = {
           status?: Database["public"]["Enums"]["familia_status"]
           tipo_aviamento?: Database["public"]["Enums"]["tipo_aviamento"] | null
           tipo_origem?: Database["public"]["Enums"]["tipo_origem"] | null
+          titulo_descartes?: Json | null
           titulo_editado_pelo_operador?: boolean
           titulo_ml?: string | null
           tokens_input?: number | null
           tokens_output?: number | null
+          tributacao_icms?: string | null
+          tributacao_icms_regime?: string | null
           unidade?: string | null
           user_id?: string
           variacao_principal_codigo?: string | null
@@ -1335,7 +1475,9 @@ export type Database = {
           marca_padrao: string | null
           modulos_habilitados: string[]
           nome: string
+          produto_seq: number
           slug: string
+          tipo_pessoa: string
         }
         Insert: {
           atualizado_em?: string
@@ -1347,7 +1489,9 @@ export type Database = {
           marca_padrao?: string | null
           modulos_habilitados?: string[]
           nome: string
+          produto_seq?: number
           slug: string
+          tipo_pessoa?: string
         }
         Update: {
           atualizado_em?: string
@@ -1359,7 +1503,9 @@ export type Database = {
           marca_padrao?: string | null
           modulos_habilitados?: string[]
           nome?: string
+          produto_seq?: number
           slug?: string
+          tipo_pessoa?: string
         }
         Relationships: []
       }
@@ -1415,6 +1561,322 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      pulse_alertas: {
+        Row: {
+          criado_em: string
+          id: string
+          lido: boolean
+          org_id: string
+          payload: Json
+          produto_id: string | null
+          severidade: string
+          tipo: string
+        }
+        Insert: {
+          criado_em?: string
+          id?: string
+          lido?: boolean
+          org_id: string
+          payload?: Json
+          produto_id?: string | null
+          severidade?: string
+          tipo: string
+        }
+        Update: {
+          criado_em?: string
+          id?: string
+          lido?: boolean
+          org_id?: string
+          payload?: Json
+          produto_id?: string | null
+          severidade?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pulse_alertas_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pulse_alertas_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "pulse_produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pulse_ofertas: {
+        Row: {
+          ativo: boolean
+          criado_em: string
+          dia: string
+          frete_gratis: boolean
+          full_ml: boolean
+          id: string
+          item_id: string
+          loja_oficial: boolean
+          org_id: string
+          permalink: string | null
+          preco: number
+          produto_id: string
+          seller_id: number
+          tier: string | null
+          visitas_30d: number | null
+          visitas_30d_em: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          criado_em?: string
+          dia?: string
+          frete_gratis?: boolean
+          full_ml?: boolean
+          id?: string
+          item_id: string
+          loja_oficial?: boolean
+          org_id: string
+          permalink?: string | null
+          preco: number
+          produto_id: string
+          seller_id: number
+          tier?: string | null
+          visitas_30d?: number | null
+          visitas_30d_em?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          criado_em?: string
+          dia?: string
+          frete_gratis?: boolean
+          full_ml?: boolean
+          id?: string
+          item_id?: string
+          loja_oficial?: boolean
+          org_id?: string
+          permalink?: string | null
+          preco?: number
+          produto_id?: string
+          seller_id?: number
+          tier?: string | null
+          visitas_30d?: number | null
+          visitas_30d_em?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pulse_ofertas_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pulse_ofertas_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "pulse_produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pulse_produtos: {
+        Row: {
+          anuncio_status: string | null
+          anuncio_status_em: string | null
+          anuncio_sub_status: string[] | null
+          atualizado_em: string
+          catalog_product_id: string
+          catalogo_status: string | null
+          codigo_pai: string | null
+          comissao_em: string | null
+          comissao_fixa: number | null
+          comissao_pct: number | null
+          comissao_preco: number | null
+          criado_em: string
+          gtin: string | null
+          id: string
+          meu_item_id: string | null
+          meu_preco: number | null
+          meu_preco_em: string | null
+          org_id: string
+          origem: string
+          ptw_aplicavel: boolean | null
+          ptw_atualizado_em: string | null
+          ptw_custos: Json | null
+          ptw_preco_sugerido: number | null
+          ptw_status: string | null
+          status: string
+          titulo: string | null
+          ultimo_snapshot_em: string | null
+        }
+        Insert: {
+          anuncio_status?: string | null
+          anuncio_status_em?: string | null
+          anuncio_sub_status?: string[] | null
+          atualizado_em?: string
+          catalog_product_id: string
+          catalogo_status?: string | null
+          codigo_pai?: string | null
+          comissao_em?: string | null
+          comissao_fixa?: number | null
+          comissao_pct?: number | null
+          comissao_preco?: number | null
+          criado_em?: string
+          gtin?: string | null
+          id?: string
+          meu_item_id?: string | null
+          meu_preco?: number | null
+          meu_preco_em?: string | null
+          org_id: string
+          origem?: string
+          ptw_aplicavel?: boolean | null
+          ptw_atualizado_em?: string | null
+          ptw_custos?: Json | null
+          ptw_preco_sugerido?: number | null
+          ptw_status?: string | null
+          status?: string
+          titulo?: string | null
+          ultimo_snapshot_em?: string | null
+        }
+        Update: {
+          anuncio_status?: string | null
+          anuncio_status_em?: string | null
+          anuncio_sub_status?: string[] | null
+          atualizado_em?: string
+          catalog_product_id?: string
+          catalogo_status?: string | null
+          codigo_pai?: string | null
+          comissao_em?: string | null
+          comissao_fixa?: number | null
+          comissao_pct?: number | null
+          comissao_preco?: number | null
+          criado_em?: string
+          gtin?: string | null
+          id?: string
+          meu_item_id?: string | null
+          meu_preco?: number | null
+          meu_preco_em?: string | null
+          org_id?: string
+          origem?: string
+          ptw_aplicavel?: boolean | null
+          ptw_atualizado_em?: string | null
+          ptw_custos?: Json | null
+          ptw_preco_sugerido?: number | null
+          ptw_status?: string | null
+          status?: string
+          titulo?: string | null
+          ultimo_snapshot_em?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pulse_produtos_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pulse_vendedores: {
+        Row: {
+          criado_em: string
+          dia: string
+          id: string
+          nickname: string | null
+          nivel: string | null
+          org_id: string
+          perfil_coletado_em: string | null
+          power_seller: string | null
+          reputacao_detalhe: Json | null
+          seller_id: number
+          transactions_total: number | null
+          uf: string | null
+        }
+        Insert: {
+          criado_em?: string
+          dia?: string
+          id?: string
+          nickname?: string | null
+          nivel?: string | null
+          org_id: string
+          perfil_coletado_em?: string | null
+          power_seller?: string | null
+          reputacao_detalhe?: Json | null
+          seller_id: number
+          transactions_total?: number | null
+          uf?: string | null
+        }
+        Update: {
+          criado_em?: string
+          dia?: string
+          id?: string
+          nickname?: string | null
+          nivel?: string | null
+          org_id?: string
+          perfil_coletado_em?: string | null
+          power_seller?: string | null
+          reputacao_detalhe?: Json | null
+          seller_id?: number
+          transactions_total?: number | null
+          uf?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pulse_vendedores_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sonar_snapshots: {
+        Row: {
+          catalog_product_id: string | null
+          criado_em: string
+          gerado_em: string
+          id: string
+          item_id: string
+          patrocinado: boolean | null
+          posicao: number | null
+          preco: number | null
+          termo: string
+          titulo: string | null
+          vendedor: string | null
+          vendidos: number | null
+        }
+        Insert: {
+          catalog_product_id?: string | null
+          criado_em?: string
+          gerado_em: string
+          id?: string
+          item_id: string
+          patrocinado?: boolean | null
+          posicao?: number | null
+          preco?: number | null
+          termo: string
+          titulo?: string | null
+          vendedor?: string | null
+          vendidos?: number | null
+        }
+        Update: {
+          catalog_product_id?: string | null
+          criado_em?: string
+          gerado_em?: string
+          id?: string
+          item_id?: string
+          patrocinado?: boolean | null
+          posicao?: number | null
+          preco?: number | null
+          termo?: string
+          titulo?: string | null
+          vendedor?: string | null
+          vendidos?: number | null
+        }
+        Relationships: []
       }
       support_audit_events: {
         Row: {
@@ -1707,11 +2169,123 @@ export type Database = {
           },
         ]
       }
+      venda_item_custo: {
+        Row: {
+          codigo: string | null
+          congelado_em: string
+          custo_unitario: number
+          fonte: string
+          id: string
+          ml_item_id: string | null
+          org_id: string | null
+          user_id: string
+          variation_id: number | null
+          venda_id: string
+        }
+        Insert: {
+          codigo?: string | null
+          congelado_em?: string
+          custo_unitario: number
+          fonte: string
+          id?: string
+          ml_item_id?: string | null
+          org_id?: string | null
+          user_id: string
+          variation_id?: number | null
+          venda_id: string
+        }
+        Update: {
+          codigo?: string | null
+          congelado_em?: string
+          custo_unitario?: number
+          fonte?: string
+          id?: string
+          ml_item_id?: string | null
+          org_id?: string | null
+          user_id?: string
+          variation_id?: number | null
+          venda_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "venda_item_custo_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "venda_item_custo_venda_id_fkey"
+            columns: ["venda_id"]
+            isOneToOne: false
+            referencedRelation: "ml_vendas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
-      [_ in never]: never
+      pulse_ofertas_atual: {
+        Row: {
+          ativo: boolean | null
+          dia: string | null
+          frete_gratis: boolean | null
+          full_ml: boolean | null
+          id: string | null
+          item_id: string | null
+          loja_oficial: boolean | null
+          org_id: string | null
+          permalink: string | null
+          preco: number | null
+          produto_id: string | null
+          seller_id: number | null
+          tier: string | null
+          visitas_30d: number | null
+          visitas_30d_em: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pulse_ofertas_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pulse_ofertas_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "pulse_produtos"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      adotar_familia_migrada_up: {
+        Args: {
+          p_codigo_pai: string
+          p_familia_id: string
+          p_family_name: string
+          p_filhos: Json
+          p_ml_item_id: string
+          p_ml_item_id_antigo: string
+          p_org_id: string
+          p_user_id: string
+        }
+        Returns: string
+      }
+      ajustar_estoque: {
+        Args: {
+          p_codigo: string
+          p_criado_por: string
+          p_novo_saldo: number
+          p_obs: string
+          p_org: string
+          p_ref: string
+        }
+        Returns: number
+      }
       baixar_estoque: {
         Args: {
           p_canal: string
@@ -1765,10 +2339,15 @@ export type Database = {
       }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      limpar_movimentos_orfaos: { Args: { p_org: string }; Returns: number }
       marcar_mensagens_lidas: { Args: { p_pack_id: string }; Returns: number }
       marcar_notificacoes_lidas: { Args: { p_ids?: string[] }; Returns: number }
       modulos_habilitados_da_org: { Args: never; Returns: string[] }
       produtos_estoque_resumo: { Args: never; Returns: Json }
+      proximo_codigo_produto: {
+        Args: { p_org: string; p_qtd: number; p_resync?: boolean }
+        Returns: number
+      }
       proximo_numero_lote: { Args: { p_org: string }; Returns: number }
       reconciliar_backfill_up_candidatas: {
         Args: { p_org_id: string }
@@ -1819,10 +2398,7 @@ export type Database = {
         Returns: number
       }
       registrar_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
-      skus_estoque_org: {
-        Args: never
-        Returns: Json[]
-      }
+      skus_estoque_org: { Args: never; Returns: Json[] }
       start_support_session: {
         Args: { p_now: string; p_request_id: string; p_requester_id: string }
         Returns: {
@@ -1878,10 +2454,6 @@ export type Database = {
         }
         Returns: string
       }
-      variacoes_estoque_produto: {
-        Args: { p_codigo_pai: string }
-        Returns: Json[]
-      }
       upsert_ml_credentials: {
         Args: {
           p_access_token: string
@@ -1893,6 +2465,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: undefined
+      }
+      variacoes_estoque_produto: {
+        Args: { p_codigo_pai: string }
+        Returns: Json[]
       }
     }
     Enums: {
