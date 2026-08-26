@@ -219,8 +219,9 @@ describe('ProdutoCard', () => {
     expect(screen.getByText(/remova pela tela Publicados/i)).toBeInTheDocument();
   });
 
-  // ADR-0135 D-9: ação "Preencher fiscal" só aparece com fiscalPendente E familiaId E a prop —
-  // as três precisam bater, senão o clique não teria pra onde abrir o dialog (T13).
+  // ADR-0135 D-9 (fix round 1, I1): `fiscalPendente` é prop da página (`produtoFiscalPendente`,
+  // depende do regime tributário), não campo do resumo — ação "Preencher fiscal" só aparece com
+  // fiscalPendente E familiaId E a prop onPreencherFiscal, as três precisam bater.
   it('ação "Preencher fiscal" só aparece quando fiscalPendente, familiaId e a prop estão presentes', () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const onPreencherFiscal = vi.fn();
@@ -229,21 +230,24 @@ describe('ProdutoCard', () => {
         <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} onPreencherFiscal={onPreencherFiscal} />
       </QueryClientProvider>,
     );
-    // produto fixture não tem fiscalPendente/familiaId — botão não aparece.
+    // produto fixture não tem familiaId, e fiscalPendente não foi passado — botão não aparece.
     expect(screen.queryByLabelText(/Preencher fiscal/)).not.toBeInTheDocument();
 
-    const pendente = { ...produto, fiscalPendente: true, familiaId: 'fam-1' };
+    const pendente = { ...produto, familiaId: 'fam-1' };
     rerender(
       <QueryClientProvider client={qc}>
-        <ProdutoCard produto={pendente} canais={[]} onDarEntrada={vi.fn()} onPreencherFiscal={onPreencherFiscal} />
+        <ProdutoCard
+          produto={pendente} canais={[]} onDarEntrada={vi.fn()}
+          onPreencherFiscal={onPreencherFiscal} fiscalPendente
+        />
       </QueryClientProvider>,
     );
     expect(screen.getByLabelText(/Preencher fiscal/)).toBeInTheDocument();
 
-    // Sem a prop, mesmo pendente, o botão não aparece.
+    // Sem a prop onPreencherFiscal, mesmo pendente, o botão não aparece.
     rerender(
       <QueryClientProvider client={qc}>
-        <ProdutoCard produto={pendente} canais={[]} onDarEntrada={vi.fn()} />
+        <ProdutoCard produto={pendente} canais={[]} onDarEntrada={vi.fn()} fiscalPendente />
       </QueryClientProvider>,
     );
     expect(screen.queryByLabelText(/Preencher fiscal/)).not.toBeInTheDocument();
@@ -252,10 +256,13 @@ describe('ProdutoCard', () => {
   it('clicar em "Preencher fiscal" chama a prop com o produto', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const onPreencherFiscal = vi.fn();
-    const pendente = { ...produto, fiscalPendente: true, familiaId: 'fam-1' };
+    const pendente = { ...produto, familiaId: 'fam-1' };
     render(
       <QueryClientProvider client={qc}>
-        <ProdutoCard produto={pendente} canais={[]} onDarEntrada={vi.fn()} onPreencherFiscal={onPreencherFiscal} />
+        <ProdutoCard
+          produto={pendente} canais={[]} onDarEntrada={vi.fn()}
+          onPreencherFiscal={onPreencherFiscal} fiscalPendente
+        />
       </QueryClientProvider>,
     );
     await userEvent.click(screen.getByLabelText(/Preencher fiscal/));

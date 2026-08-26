@@ -32,7 +32,13 @@ export function validarShapeEntrada(body: unknown): string | null {
   const b = body as Partial<EntradaFiscal> | null;
   const valido = !!b && typeof b.familiaId === 'string' && b.familiaId.length > 0
     && typeof b.fiscal === 'object' && b.fiscal !== null;
-  return valido ? null : 'familiaId (string) e fiscal (objeto) são obrigatórios';
+  if (!valido) return 'familiaId (string) e fiscal (objeto) são obrigatórios';
+  // Fix round 1 (I3): `fiscal.unidade` é opcional, mas se vier tem que ser string — sem isto
+  // `unidade: 5` chegava intacto até `.toUpperCase()` em processarAtualizacaoFiscal e estourava
+  // TypeError cru (500) em vez de um 400 de validação.
+  const unidade = (b.fiscal as { unidade?: unknown }).unidade;
+  if (unidade !== undefined && typeof unidade !== 'string') return 'fiscal.unidade deve ser string';
+  return null;
 }
 
 export async function processarAtualizacaoFiscal(

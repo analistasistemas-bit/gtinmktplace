@@ -103,22 +103,65 @@ describe('canaisEfetivos', () => {
   });
 });
 
+// Fix round 1 (I1): o filtro passou a espelhar o gate real (`fiscalIncompleto`/`produtoFiscalPendente`),
+// não só 4 campos null — precisa do regime da org (`regimeOrg`), como o gate da edge.
+const FISCAL_OK = {
+  ncm: '39269090', cest: null, origemNfe: 0, fci: null,
+  tributacaoIcms: '102', tributacaoIcmsRegime: 'simples' as const, canInvoice: true,
+};
+
 describe('filtrarProdutos — fiscal-pendente (ADR-0135 D-9)', () => {
   it('produto sem ncm aparece em fiscal-pendente e em todos', () => {
-    const pendente = produto({ fiscalPendente: true });
-    expect(filtrarProdutos([pendente], { ...base, termo: '', filtro: 'fiscal-pendente' })).toHaveLength(1);
-    expect(filtrarProdutos([pendente], { ...base, termo: '', filtro: 'todos' })).toHaveLength(1);
+    const pendente = produto({ ...FISCAL_OK, ncm: null });
+    const opts = { ...base, termo: '', filtro: 'fiscal-pendente' as FiltroEstoque, regimeOrg: 'simples' as const };
+    expect(filtrarProdutos([pendente], opts)).toHaveLength(1);
+    expect(filtrarProdutos([pendente], { ...opts, filtro: 'todos' })).toHaveLength(1);
   });
 
   it('produto com fiscal completo não aparece em fiscal-pendente', () => {
-    const completo = produto({ fiscalPendente: false });
-    expect(filtrarProdutos([completo], { ...base, termo: '', filtro: 'fiscal-pendente' })).toHaveLength(0);
+    const completo = produto({ ...FISCAL_OK });
+    expect(filtrarProdutos([completo], {
+      ...base, termo: '', filtro: 'fiscal-pendente', regimeOrg: 'simples',
+    })).toHaveLength(0);
   });
 
-  it('produto sem fiscalPendente calculado (fixture antigo) não aparece em fiscal-pendente', () => {
-    const semCampo = produto();
-    delete (semCampo as { fiscalPendente?: boolean }).fiscalPendente;
-    expect(filtrarProdutos([semCampo], { ...base, termo: '', filtro: 'fiscal-pendente' })).toHaveLength(0);
+  it('sem regimeOrg (ainda não carregou) não marca ninguém como pendente', () => {
+    const semNcm = produto({ ...FISCAL_OK, ncm: null });
+    expect(filtrarProdutos([semNcm], {
+      ...base, termo: '', filtro: 'fiscal-pendente', regimeOrg: undefined,
+    })).toHaveLength(0);
+  });
+
+  it('can_invoice === false marca pendente mesmo com o cadastro fiscal completo', () => {
+    const semCanInvoice = produto({ ...FISCAL_OK, canInvoice: false });
+    expect(filtrarProdutos([semCanInvoice], {
+      ...base, termo: '', filtro: 'fiscal-pendente', regimeOrg: 'simples',
+    })).toHaveLength(1);
+  });
+
+  // Ruling do controller: o filtro anterior via só ncm/origem_nfe/tributacao_icms/can_invoice —
+  // deixava passar por "OK" um cadastro que o gate real (unidade, origem×origem_nfe, fci, regime)
+  // reprovaria. `produtoFiscalPendente` cobre os mesmos casos que `fiscalIncompleto`.
+  it('unidade fora do vocabulário fiscal marca pendente mesmo com ncm/csosn preenchidos', () => {
+    const unidadeInvalida = produto({ ...FISCAL_OK, unidade: 'PACOTE' });
+    expect(filtrarProdutos([unidadeInvalida], {
+      ...base, termo: '', filtro: 'fiscal-pendente', regimeOrg: 'simples',
+    })).toHaveLength(1);
+  });
+
+  it('origem_nfe incoerente com origem marca pendente', () => {
+    // origem_nfe 1 (estrangeira) com origem 'nacional' — combinação inválida (ADR-0135 D-5).
+    const incoerente = produto({ ...FISCAL_OK, origemNfe: 1, origem: 'nacional' });
+    expect(filtrarProdutos([incoerente], {
+      ...base, termo: '', filtro: 'fiscal-pendente', regimeOrg: 'simples',
+    })).toHaveLength(1);
+  });
+
+  it('regime divergente do gravado marca pendente', () => {
+    const regimeDivergente = produto({ ...FISCAL_OK, tributacaoIcmsRegime: 'normal' });
+    expect(filtrarProdutos([regimeDivergente], {
+      ...base, termo: '', filtro: 'fiscal-pendente', regimeOrg: 'simples',
+    })).toHaveLength(1);
   });
 });
 

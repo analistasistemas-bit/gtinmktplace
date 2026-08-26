@@ -69,13 +69,13 @@ export interface ProdutoEstoqueResumo {
    *  fixtures de teste de telas que não mexem com fiscal não precisam preenchê-lo. */
   familiaId?: string;
   ncm?: string | null;
+  cest?: string | null;
   origemNfe?: number | null;
+  fci?: string | null;
   tributacaoIcms?: string | null;
+  tributacaoIcmsRegime?: string | null;
   /** Prontidão de emissão do ML (D-10) — `null` = ainda não verificado. */
   canInvoice?: boolean | null;
-  /** `!ncm || origem_nfe == null || !tributacao_icms || can_invoice === false` — mesma regra do
-   *  brief da Task 13, calculada uma vez aqui (fonte única para o filtro "Fiscal pendente"). */
-  fiscalPendente?: boolean;
 }
 
 export interface ProdutoComSaldo {
@@ -146,8 +146,11 @@ interface ProdutoResumoRpc {
   sku_unico: string | null;
   familia_id: string;
   ncm: string | null;
+  cest: string | null;
   origem_nfe: number | null;
+  fci: string | null;
   tributacao_icms: string | null;
+  tributacao_icms_regime: string | null;
   can_invoice: boolean | null;
 }
 
@@ -207,10 +210,12 @@ export function mapResumoEstoqueRpc(raw: ResumoRpcRaw): ResumoEstoqueRpc {
       skuUnico: p.sku_unico,
       familiaId: p.familia_id,
       ncm: p.ncm,
+      cest: p.cest,
       origemNfe: p.origem_nfe,
+      fci: p.fci,
       tributacaoIcms: p.tributacao_icms,
+      tributacaoIcmsRegime: p.tributacao_icms_regime,
       canInvoice: p.can_invoice,
-      fiscalPendente: !p.ncm || p.origem_nfe == null || !p.tributacao_icms || p.can_invoice === false,
     })),
   };
 }

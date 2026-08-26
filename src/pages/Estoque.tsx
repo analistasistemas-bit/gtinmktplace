@@ -19,7 +19,10 @@ import { ProdutoCard, CabecalhoProdutos, type AlvoEntrada } from '@/components/e
 import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque';
 import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
-import { filtrarProdutos, canaisEfetivos, type FiltroEstoque, type OrdemEstoque } from '@/lib/produtos-saldo-filtro';
+import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
+import {
+  filtrarProdutos, canaisEfetivos, produtoFiscalPendente, type FiltroEstoque, type OrdemEstoque,
+} from '@/lib/produtos-saldo-filtro';
 import { QK } from '@/lib/queries';
 import {
   fetchProdutosEstoqueResumo, fetchCanaisPorProduto,
@@ -39,6 +42,12 @@ const RESUMO_VAZIO: ResumoEstoque = {
 export default function Estoque() {
   const qc = useQueryClient();
   const { data: modulos, isLoading: modulosLoading } = useModulosHabilitados();
+  // ADR-0135 D-9 (fix round 1, I1): regime da org pro filtro fiscalPendente bater com o gate
+  // real (`camposFiscaisFaltantes`); `undefined` enquanto a query não resolveu.
+  const { data: empresaFiscal } = useEmpresaFiscal();
+  const regimeOrg = empresaFiscal === undefined
+    ? undefined
+    : ((empresaFiscal?.regime_tributario ?? 'simples') as 'simples' | 'normal');
   const [busca, setBusca] = useState('');
   const [filtro, setFiltro] = useState<FiltroEstoque>('todos');
   const [ordem, setOrdem] = useState<OrdemEstoque>('nome');
@@ -117,19 +126,23 @@ export default function Estoque() {
 
   const filtroEfetivo = canaisIndisponivel && filtro === 'nao-publicado' ? 'todos' : filtro;
 
+  const mostrarFiscal = !!modulos?.includes('fiscal');
+
   const lista = filtrarProdutos(produtos, {
     termo: busca, filtro: filtroEfetivo, ordem,
     canaisPorProduto: canaisIndisponivel ? undefined : canaisPorProduto,
+    regimeOrg: mostrarFiscal ? regimeOrg : undefined,
   });
 
-  const mostrarFiscal = !!modulos?.includes('fiscal');
   // ADR-0135 D-9: fila do dialog de edição fiscal — ids dos pendentes NA ORDEM da lista atual
   // (filtro/busca/ordenação já aplicados). `familiaId` é opcional no tipo (fixtures antigos de
   // teste não o preenchem); um pendente real sempre tem — o filter descarta o resto em silêncio.
-  const filaFiscal = lista
-    .filter((p) => p.fiscalPendente)
-    .map((p) => p.familiaId)
-    .filter((id): id is string => !!id);
+  const filaFiscal = mostrarFiscal
+    ? lista
+      .filter((p) => produtoFiscalPendente(p, regimeOrg))
+      .map((p) => p.familiaId)
+      .filter((id): id is string => !!id)
+    : [];
 
   return (
     <div className="p-4 md:p-6">
@@ -196,6 +209,7 @@ export default function Estoque() {
                 onAdicionarVariacao={isAdmin ? setProdutoAddVariacao : undefined}
                 statusUpdate={statusMap.get(p.codigoPai)}
                 onPreencherFiscal={mostrarFiscal ? (produto) => setFiscalAberto(produto.familiaId ?? null) : undefined}
+                fiscalPendente={mostrarFiscal ? produtoFiscalPendente(p, regimeOrg) : false}
               />
             ))}
             {lista.length === 0 && (

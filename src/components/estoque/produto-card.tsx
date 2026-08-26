@@ -134,7 +134,7 @@ function CelulaSaldo({ saldo }: { saldo: number }) {
 
 export function ProdutoCard({
   produto, canais, onDarEntrada, onAjustar, onExcluir, onAdicionarVariacao, statusUpdate,
-  onPreencherFiscal,
+  onPreencherFiscal, fiscalPendente,
 }: {
   produto: ProdutoEstoqueResumo;
   canais: string[];
@@ -147,9 +147,12 @@ export function ProdutoCard({
   /** ADR-0129 D-11: família UPDATE mais recente deste produto (lib estoque-update-status.ts). */
   statusUpdate?: 'atualizando' | 'erro';
   /** ADR-0135 D-9: abre o DialogFiscalProduto (T13) para esta família. Só a página passa esta
-   *  prop quando a org tem o módulo fiscal — o botão em si só some quando `produto.fiscalPendente`
-   *  é false (ou a família não tem `familiaId`, ex.: fixture antigo de teste). */
+   *  prop quando a org tem o módulo fiscal — o botão em si só some quando `fiscalPendente` é
+   *  false (ou a família não tem `familiaId`, ex.: fixture antigo de teste). */
   onPreencherFiscal?: (produto: ProdutoEstoqueResumo) => void;
+  /** Calculado pela página (`produtoFiscalPendente`, depende do regime tributário da org — não
+   *  é um campo do resumo). Fix round 1 (I1): deixou de vir embutido no `produto`. */
+  fiscalPendente?: boolean;
 }) {
   const [aberto, setAberto] = useState(false);
   const painelId = useId();
@@ -274,7 +277,7 @@ export function ProdutoCard({
               <span className="hidden truncate md:inline">Ajustar</span>
             </Button>
           )}
-          {onPreencherFiscal && produto.fiscalPendente && produto.familiaId && (
+          {onPreencherFiscal && fiscalPendente && produto.familiaId && (
             <Button
               variant="outline"
               size="sm"

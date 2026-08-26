@@ -74,11 +74,19 @@ describe('DialogFiscalProduto — carrega valores existentes', () => {
     expect(screen.getByLabelText('CSOSN')).toHaveValue('102');
   });
 
-  it('busca a sugestão de NCM ao abrir, com o familiaId', async () => {
+  // Fix round 1 (I2): só busca sugestão quando a família vem SEM ncm — 1 chamada LLM a menos
+  // por produto já preenchido no backfill.
+  it('família SEM ncm: busca a sugestão de NCM ao abrir, com o familiaId', async () => {
+    mockFamilia({ ...FAMILIA_MOCK, ncm: null });
     renderDialog();
-    await waitFor(() => expect(supabase.functions.invoke).toHaveBeenCalledWith(
-      'sugerir-ncm', { body: { familiaId: 'fam-1' } },
-    ));
+    await waitFor(() => expect(screen.getByLabelText('NCM')).toHaveValue(''));
+    expect(supabase.functions.invoke).toHaveBeenCalledWith('sugerir-ncm', { body: { familiaId: 'fam-1' } });
+  });
+
+  it('família COM ncm: não busca sugestão (economiza a chamada LLM)', async () => {
+    renderDialog(); // FAMILIA_MOCK.ncm = '39269090'
+    await waitFor(() => expect(screen.getByLabelText('NCM')).toHaveValue('39269090'));
+    expect(supabase.functions.invoke).not.toHaveBeenCalledWith('sugerir-ncm', expect.anything());
   });
 
   it('familiaId null não renderiza conteúdo carregado (dialog fechado)', () => {
@@ -165,6 +173,43 @@ describe('DialogFiscalProduto — Salvar e próximo (fila)', () => {
 
     await waitFor(() => expect(onAvancar).toHaveBeenCalledWith('fam-2'));
     expect(onFechar).not.toHaveBeenCalled();
+  });
+});
+
+// Fix round 1 (C2, crítico): ao trocar `familiaId` com o dialog montado ("Salvar e próximo"),
+// o form mantinha os dados do produto ANTERIOR até o fetch do próximo resolver — um clique
+// rápido em Salvar gravava o NCM/CSOSN errado no produto seguinte.
+describe('DialogFiscalProduto — troca de familiaId com fetch pendente (C2)', () => {
+  it('form fica vazio e Salvar desabilitado enquanto o fetch do próximo não resolve', async () => {
+    let resolveFam2: (v: { data: unknown; error: null }) => void = () => {};
+    (supabase.from as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      select: () => ({
+        eq: (_col: string, id: string) => ({
+          maybeSingle: () => {
+            if (id === 'fam-1') return Promise.resolve({ data: FAMILIA_MOCK, error: null });
+            return new Promise((resolve) => { resolveFam2 = resolve; });
+          },
+        }),
+      }),
+    }));
+
+    const { rerender } = renderDialog({ familiaId: 'fam-1', fila: ['fam-1', 'fam-2'] });
+    await waitFor(() => expect(screen.getByLabelText('NCM')).toHaveValue('39269090'));
+
+    rerender(
+      <DialogFiscalProduto
+        familiaId="fam-2" fila={['fam-1', 'fam-2']}
+        onFechar={vi.fn()} onAvancar={vi.fn()} onSalvo={vi.fn()}
+      />,
+    );
+
+    // Enquanto o fetch de fam-2 está pendente: nada do produto anterior sobra na tela, e
+    // Salvar não pode ser clicado com dado errado.
+    expect(screen.queryByLabelText('NCM')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Salvar' })).toBeDisabled();
+
+    resolveFam2({ data: { ...FAMILIA_MOCK, ncm: '11111111' }, error: null });
+    await waitFor(() => expect(screen.getByLabelText('NCM')).toHaveValue('11111111'));
   });
 });
 

@@ -49,10 +49,19 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
   // Carrega a família + dispara a sugestão de NCM a cada troca de `familiaId` — um efeito só,
   // com uma única flag `ignore`, para não repetir o hazard de ordenação entre dois efeitos que
   // dependem do mesmo id (um limpando o estado do outro).
+  //
+  // Fix round 1 (C2, crítico): reset SEMPRE no início do efeito, não só quando `familiaId` é
+  // null. Sem isto, trocar de família ("Salvar e próximo") mantinha `familia`/`fiscal`/`unidade`
+  // do produto ANTERIOR de pé durante a janela do fetch — `podeSalvar` ficava true com o NCM/CSOSN
+  // errado, e um clique rápido gravava o cadastro fiscal do produto anterior no próximo.
   useEffect(() => {
     setErros([]);
     setSugestaoNcm(null);
-    if (!familiaId) { setFamilia(null); setFiscal(fiscalVazio()); setUnidade(''); return; }
+    setCarregandoSugestao(false);
+    setFamilia(null);
+    setFiscal(fiscalVazio());
+    setUnidade('');
+    if (!familiaId) return;
     let ignore = false;
 
     supabase.from('familias')
@@ -72,17 +81,21 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
         setFamilia({ nomePai: data.nome_pai, origem: data.origem as 'nacional' | 'importado', unidade: data.unidade });
         setFiscal(f);
         setUnidade(unidadeValida(data.unidade) ? String(data.unidade).toUpperCase().trim() : '');
-      });
 
-    setCarregandoSugestao(true);
-    supabase.functions.invoke('sugerir-ncm', { body: { familiaId } })
-      .then(({ data, error }) => {
-        if (ignore || error) return;
-        const r = data as { ncm: string | null; justificativa: string };
-        if (r?.ncm) setSugestaoNcm({ ncm: r.ncm, justificativa: r.justificativa });
-      })
-      .catch(() => {})
-      .finally(() => { if (!ignore) setCarregandoSugestao(false); });
+        // Fix round 1 (I2): só busca sugestão quando a família vem SEM ncm — economiza 1
+        // chamada LLM por produto que o backfill já preencheu.
+        if (!data.ncm) {
+          setCarregandoSugestao(true);
+          supabase.functions.invoke('sugerir-ncm', { body: { familiaId } })
+            .then(({ data: sugestao, error: erroSugestao }) => {
+              if (ignore || erroSugestao) return;
+              const r = sugestao as { ncm: string | null; justificativa: string };
+              if (r?.ncm) setSugestaoNcm({ ncm: r.ncm, justificativa: r.justificativa });
+            })
+            .catch(() => {})
+            .finally(() => { if (!ignore) setCarregandoSugestao(false); });
+        }
+      });
 
     return () => { ignore = true; };
   }, [familiaId]);

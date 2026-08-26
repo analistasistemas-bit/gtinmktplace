@@ -181,5 +181,16 @@ describe('validarShapeEntrada', () => {
   it('body válido → null', () => {
     expect(validarShapeEntrada({ familiaId: 'fam-1', fiscal: FISCAL_OK })).toBeNull();
   });
+
+  // Fix round 1 (I3): `unidade: 5` chegava intacto até `.toUpperCase()` em
+  // processarAtualizacaoFiscal e estourava TypeError cru (500) em vez de 400 de validação.
+  it('fiscal.unidade não-string → mensagem de erro', () => {
+    expect(validarShapeEntrada({ familiaId: 'fam-1', fiscal: { ...FISCAL_OK, unidade: 5 } }))
+      .toBe('fiscal.unidade deve ser string');
+  });
+
+  it('fiscal.unidade string → null (válido)', () => {
+    expect(validarShapeEntrada({ familiaId: 'fam-1', fiscal: { ...FISCAL_OK, unidade: 'UN' } })).toBeNull();
+  });
 });
 
