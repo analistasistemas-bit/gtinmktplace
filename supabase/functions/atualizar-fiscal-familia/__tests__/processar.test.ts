@@ -130,6 +130,45 @@ describe('processarAtualizacaoFiscal', () => {
   });
 });
 
+// Ruling do controller (Task 13): família legada com `unidade` fora de UNIDADES_FISCAIS travava
+// a fila sem saída, porque o payload fiscal nunca editava unidade. `fiscal.unidade` opcional
+// resolve: presente, valida e grava; ausente, comportamento intacto (usa a unidade já gravada).
+describe('processarAtualizacaoFiscal — unidade opcional (fix da fila travada)', () => {
+  it('família com unidade fora do vocabulário, sem `unidade` no payload → continua invalido (documenta a trava)', async () => {
+    const { admin, writes } = fakeAdmin({ familia: { ...FAMILIA_BASE, unidade: 'PACOTE' } });
+    const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r.tipo).toBe('invalido');
+    if (r.tipo === 'invalido') expect(r.erros.some((e) => e.includes('unidade fiscal'))).toBe(true);
+    expect(writes.length).toBe(0);
+  });
+
+  it('família com unidade fora do vocabulário + `unidade` válida no payload → grava a nova unidade e passa', async () => {
+    const { admin, writes } = fakeAdmin({ familia: { ...FAMILIA_BASE, unidade: 'PACOTE' } });
+    const r = await processarAtualizacaoFiscal(deps(admin), {
+      familiaId: 'fam-1', fiscal: { ...FISCAL_OK, unidade: 'UN' },
+    });
+    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: true });
+    expect(writes.length).toBe(1);
+    expect(writes[0].payload.unidade).toBe('UN');
+  });
+
+  it('`unidade` fora da whitelist no payload → invalido, nada gravado', async () => {
+    const { admin, writes } = fakeAdmin({ familia: { ...FAMILIA_BASE, unidade: 'PACOTE' } });
+    const r = await processarAtualizacaoFiscal(deps(admin), {
+      familiaId: 'fam-1', fiscal: { ...FISCAL_OK, unidade: 'PACOTE' },
+    });
+    expect(r.tipo).toBe('invalido');
+    expect(writes.length).toBe(0);
+  });
+
+  it('família já com unidade válida, `unidade` ausente no payload → não grava unidade (comportamento intacto)', async () => {
+    const { admin, writes } = fakeAdmin(); // FAMILIA_BASE.unidade = 'UN'
+    const r = await processarAtualizacaoFiscal(deps(admin), { familiaId: 'fam-1', fiscal: FISCAL_OK });
+    expect(r).toEqual({ tipo: 'ok', pushEnfileirado: true });
+    expect(writes[0].payload.unidade).toBeUndefined();
+  });
+});
+
 describe('validarShapeEntrada', () => {
   it('body sem fiscal → mensagem de campo obrigatório', () => {
     expect(validarShapeEntrada({ familiaId: 'fam-1' })).toBe('familiaId (string) e fiscal (objeto) são obrigatórios');

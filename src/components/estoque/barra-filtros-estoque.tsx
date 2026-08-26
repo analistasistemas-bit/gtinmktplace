@@ -8,11 +8,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { cn } from '@/lib/utils';
 import type { FiltroEstoque, OrdemEstoque } from '@/lib/produtos-saldo-filtro';
 
-const FILTROS: Array<{ valor: FiltroEstoque; rotulo: string }> = [
+const FILTROS_BASE: Array<{ valor: FiltroEstoque; rotulo: string }> = [
   { valor: 'todos', rotulo: 'Todos' },
   { valor: 'sem-estoque', rotulo: 'Sem estoque' },
   { valor: 'nao-publicado', rotulo: 'Não publicado' },
 ];
+
+// ADR-0135 D-9: só existe pra quem tem o módulo fiscal — sem o módulo, `ncm`/`can_invoice`
+// nem fazem sentido pro catálogo da org.
+const FILTRO_FISCAL_PENDENTE: { valor: FiltroEstoque; rotulo: string } = {
+  valor: 'fiscal-pendente', rotulo: 'Fiscal pendente',
+};
 
 const ORDENS: Array<{ valor: OrdemEstoque; rotulo: string }> = [
   { valor: 'nome', rotulo: 'Nome (A-Z)' },
@@ -21,7 +27,7 @@ const ORDENS: Array<{ valor: OrdemEstoque; rotulo: string }> = [
 ];
 
 export function BarraFiltrosEstoque({
-  termo, filtro, ordem, canaisCarregando, canaisErro, onTermo, onFiltro, onOrdem,
+  termo, filtro, ordem, canaisCarregando, canaisErro, mostrarFiscal, onTermo, onFiltro, onOrdem,
 }: {
   termo: string;
   filtro: FiltroEstoque;
@@ -30,11 +36,14 @@ export function BarraFiltrosEstoque({
   canaisCarregando: boolean;
   /** Erro real — desabilita a opção E mostra o motivo. */
   canaisErro: boolean;
+  /** ADR-0135 D-9: só a org com o módulo fiscal vê o filtro "Fiscal pendente". */
+  mostrarFiscal: boolean;
   onTermo: (v: string) => void;
   onFiltro: (v: FiltroEstoque) => void;
   onOrdem: (v: OrdemEstoque) => void;
 }) {
   const canaisIndisponivel = canaisCarregando || canaisErro;
+  const filtros = mostrarFiscal ? [...FILTROS_BASE, FILTRO_FISCAL_PENDENTE] : FILTROS_BASE;
   return (
     <div className="mb-3 flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -55,7 +64,7 @@ export function BarraFiltrosEstoque({
 
         {/* Segmented control: o contêiner com borda é o que comunica "escolha uma destas". */}
         <div role="group" aria-label="Filtrar produtos" className="flex items-center gap-0.5 rounded-lg border bg-muted/40 p-0.5">
-          {FILTROS.map((f) => {
+          {filtros.map((f) => {
             const desabilitado = f.valor === 'nao-publicado' && canaisIndisponivel;
             const ativo = filtro === f.valor;
             return (

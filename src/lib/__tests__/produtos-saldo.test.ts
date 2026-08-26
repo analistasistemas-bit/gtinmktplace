@@ -178,6 +178,7 @@ describe('mapResumoEstoqueRpc', () => {
         fornecedor: 'X', unidade: 'UN', origem: 'nacional',
         ml_item_id: null, criado_em: '2026-08-01T10:00:00Z',
         gtins: ['789'], codigos: ['A1', 'A2'], cores: ['Azul'], nomes: ['Camiseta P'], sku_unico: null,
+        familia_id: 'fam-1', ncm: '39269090', origem_nfe: 0, tributacao_icms: '102', can_invoice: true,
       }],
     });
     expect(r.kpis.skusSemEstoque).toBe(1);
@@ -186,5 +187,35 @@ describe('mapResumoEstoqueRpc', () => {
     expect(r.produtos[0].gtins).toEqual(['789']);
     expect(r.produtos[0].cores).toEqual(['Azul']);
     expect(r.produtos[0].nomes).toEqual(['Camiseta P']);
+    expect(r.produtos[0].familiaId).toBe('fam-1');
+    expect(r.produtos[0].fiscalPendente).toBe(false);
+  });
+
+  // ADR-0135 D-9: fonte única do filtro "Fiscal pendente" — qualquer um dos quatro campos
+  // faltando/negativo marca o produto como pendente.
+  it('fiscalPendente é true quando falta ncm, origem_nfe, tributacao_icms, ou can_invoice é false', async () => {
+    const { mapResumoEstoqueRpc } = await import('../produtos-saldo');
+    const produtoBase = {
+      codigo_pai: 'P1', nome_pai: 'Camiseta', descricao_pai: null,
+      saldo_total: 1, qtd_skus: 1, capa_storage_path: null, capa_ml_picture_id: null,
+      fornecedor: null, unidade: 'UN', origem: 'nacional', ml_item_id: null,
+      criado_em: '2026-08-01T10:00:00Z', gtins: [], codigos: [], cores: [], nomes: [], sku_unico: null,
+      familia_id: 'fam-1', ncm: '39269090', origem_nfe: 0, tributacao_icms: '102', can_invoice: true,
+    };
+    const kpis = {
+      produtos: 1, skus: 1, unidades: 1, skus_sem_estoque: 0, valor_em_estoque: 0, skus_sem_custo: 0,
+    };
+    const casos = [
+      { over: { ncm: null }, esperado: true },
+      { over: { origem_nfe: null }, esperado: true },
+      { over: { tributacao_icms: null }, esperado: true },
+      { over: { can_invoice: false }, esperado: true },
+      { over: { can_invoice: null }, esperado: false },
+      { over: {}, esperado: false },
+    ];
+    for (const c of casos) {
+      const r = mapResumoEstoqueRpc({ kpis, produtos: [{ ...produtoBase, ...c.over }] });
+      expect(r.produtos[0].fiscalPendente).toBe(c.esperado);
+    }
   });
 });

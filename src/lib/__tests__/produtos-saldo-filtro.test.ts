@@ -103,6 +103,25 @@ describe('canaisEfetivos', () => {
   });
 });
 
+describe('filtrarProdutos — fiscal-pendente (ADR-0135 D-9)', () => {
+  it('produto sem ncm aparece em fiscal-pendente e em todos', () => {
+    const pendente = produto({ fiscalPendente: true });
+    expect(filtrarProdutos([pendente], { ...base, termo: '', filtro: 'fiscal-pendente' })).toHaveLength(1);
+    expect(filtrarProdutos([pendente], { ...base, termo: '', filtro: 'todos' })).toHaveLength(1);
+  });
+
+  it('produto com fiscal completo não aparece em fiscal-pendente', () => {
+    const completo = produto({ fiscalPendente: false });
+    expect(filtrarProdutos([completo], { ...base, termo: '', filtro: 'fiscal-pendente' })).toHaveLength(0);
+  });
+
+  it('produto sem fiscalPendente calculado (fixture antigo) não aparece em fiscal-pendente', () => {
+    const semCampo = produto();
+    delete (semCampo as { fiscalPendente?: boolean }).fiscalPendente;
+    expect(filtrarProdutos([semCampo], { ...base, termo: '', filtro: 'fiscal-pendente' })).toHaveLength(0);
+  });
+});
+
 describe('filtrarProdutos — ordenação', () => {
   const a = produto({ codigoPai: 'A', nomePai: 'Zinco', saldoTotal: 1, criadoEm: '2026-01-01T00:00:00Z' });
   const b = produto({ codigoPai: 'B', nomePai: 'Abacate', saldoTotal: 9, criadoEm: '2026-08-01T00:00:00Z' });

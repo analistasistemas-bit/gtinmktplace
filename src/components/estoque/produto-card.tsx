@@ -5,7 +5,7 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronRight, MoreVertical, PackageMinus, PackagePlus, Plus, Trash2 } from 'lucide-react';
+import { ChevronRight, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -134,6 +134,7 @@ function CelulaSaldo({ saldo }: { saldo: number }) {
 
 export function ProdutoCard({
   produto, canais, onDarEntrada, onAjustar, onExcluir, onAdicionarVariacao, statusUpdate,
+  onPreencherFiscal,
 }: {
   produto: ProdutoEstoqueResumo;
   canais: string[];
@@ -145,6 +146,10 @@ export function ProdutoCard({
   onAdicionarVariacao?: (produto: ProdutoEstoqueResumo) => void;
   /** ADR-0129 D-11: família UPDATE mais recente deste produto (lib estoque-update-status.ts). */
   statusUpdate?: 'atualizando' | 'erro';
+  /** ADR-0135 D-9: abre o DialogFiscalProduto (T13) para esta família. Só a página passa esta
+   *  prop quando a org tem o módulo fiscal — o botão em si só some quando `produto.fiscalPendente`
+   *  é false (ou a família não tem `familiaId`, ex.: fixture antigo de teste). */
+  onPreencherFiscal?: (produto: ProdutoEstoqueResumo) => void;
 }) {
   const [aberto, setAberto] = useState(false);
   const painelId = useId();
@@ -267,6 +272,18 @@ export function ProdutoCard({
             >
               <PackageMinus className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden truncate md:inline">Ajustar</span>
+            </Button>
+          )}
+          {onPreencherFiscal && produto.fiscalPendente && produto.familiaId && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 min-w-0 flex-1 px-2 md:h-7"
+              aria-label={`Preencher fiscal de ${produto.nomePai}`}
+              onClick={() => onPreencherFiscal(produto)}
+            >
+              <Receipt className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden truncate md:inline">Fiscal</span>
             </Button>
           )}
           {(onExcluir || onAdicionarVariacao) && (

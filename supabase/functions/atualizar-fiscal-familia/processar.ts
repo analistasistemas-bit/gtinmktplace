@@ -1,12 +1,17 @@
 // ADR-0135 D-9 — edição fiscal de família existente (o "modo edição" que faltava).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { camposFiscaisFaltantes } from '../_shared/fiscal/validar.ts';
+import { camposFiscaisFaltantes, UNIDADES_FISCAIS } from '../_shared/fiscal/validar.ts';
 
 export interface EntradaFiscal {
   familiaId: string;
   fiscal: {
     ncm: string; cest?: string | null; origemNfe: number;
     fci?: string | null; exTipi?: string | null; tributacaoIcms: string;
+    // Ruling do controller (Task 13): o payload fiscal nunca editava `unidade`, então família
+    // legada com unidade fora de UNIDADES_FISCAIS travava a fila sem saída (camposFiscaisFaltantes
+    // reprova para sempre a mesma unidade inválida gravada). Opcional: ausente = comportamento
+    // intacto (usa `familia.unidade`); presente = valida contra a whitelist e grava.
+    unidade?: string;
   };
 }
 export interface DepsAtualizarFiscal {
@@ -50,11 +55,21 @@ export async function processarAtualizacaoFiscal(
   const regime = (emp?.regime_tributario ?? 'simples') as 'simples' | 'normal';
 
   const f = entrada.fiscal;
+
+  let unidadeEfetiva: string | null = familia.unidade;
+  if (f.unidade !== undefined) {
+    const normalizada = f.unidade.toUpperCase().trim();
+    if (!(UNIDADES_FISCAIS as readonly string[]).includes(normalizada)) {
+      return { tipo: 'invalido', erros: [`unidade fiscal (use uma de: ${UNIDADES_FISCAIS.join(', ')})`] };
+    }
+    unidadeEfetiva = normalizada;
+  }
+
   const erros = camposFiscaisFaltantes({
     ncm: f.ncm ?? null, cest: f.cest ?? null, origem_nfe: f.origemNfe ?? null,
     fci: f.fci ?? null, ex_tipi: f.exTipi ?? null,
     tributacao_icms: f.tributacaoIcms ?? null, tributacao_icms_regime: regime,
-    unidade: familia.unidade, origem: familia.origem,
+    unidade: unidadeEfetiva, origem: familia.origem,
   }, regime);
   if (erros.length) return { tipo: 'invalido', erros };
 
@@ -62,6 +77,7 @@ export async function processarAtualizacaoFiscal(
     ncm: f.ncm, cest: f.cest?.trim() || null, origem_nfe: f.origemNfe,
     fci: f.fci?.trim() || null, ex_tipi: f.exTipi?.trim() || null,
     tributacao_icms: f.tributacaoIcms, tributacao_icms_regime: regime,
+    ...(f.unidade !== undefined ? { unidade: unidadeEfetiva } : {}),
     atualizado_em: new Date().toISOString(),
   }).eq('id', familia.id);
   if (error) return { tipo: 'falha', mensagem: error.message };

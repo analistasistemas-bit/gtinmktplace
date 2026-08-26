@@ -9,7 +9,7 @@ beforeAll(() => { Element.prototype.scrollIntoView = vi.fn(); });
 
 const props = {
   termo: '', filtro: 'todos' as const, ordem: 'nome' as const,
-  canaisCarregando: false, canaisErro: false,
+  canaisCarregando: false, canaisErro: false, mostrarFiscal: false,
   onTermo: vi.fn(), onFiltro: vi.fn(), onOrdem: vi.fn(),
 };
 
@@ -39,6 +39,21 @@ describe('BarraFiltrosEstoque', () => {
   it('com canais disponíveis o filtro está habilitado', () => {
     render(<BarraFiltrosEstoque {...props} />);
     expect(screen.getByRole('button', { name: 'Não publicado' })).toBeEnabled();
+  });
+
+  // ADR-0135 D-9: o filtro "Fiscal pendente" só existe para quem tem o módulo fiscal.
+  it('sem mostrarFiscal, o filtro "Fiscal pendente" nem aparece', () => {
+    render(<BarraFiltrosEstoque {...props} mostrarFiscal={false} />);
+    expect(screen.queryByRole('button', { name: 'Fiscal pendente' })).not.toBeInTheDocument();
+  });
+
+  it('com mostrarFiscal, o filtro "Fiscal pendente" aparece e emite ao clicar', async () => {
+    const onFiltro = vi.fn();
+    const user = userEvent.setup();
+    render(<BarraFiltrosEstoque {...props} mostrarFiscal onFiltro={onFiltro} />);
+    const botao = screen.getByRole('button', { name: 'Fiscal pendente' });
+    await user.click(botao);
+    expect(onFiltro).toHaveBeenCalledWith('fiscal-pendente');
   });
 
   // Os botões de filtro são toggles excludentes — sem `aria-pressed`, tecnologia assistiva não

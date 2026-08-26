@@ -2,7 +2,7 @@
 // que decide o que o operador vê, e precisa ser testável sem render.
 import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 
-export type FiltroEstoque = 'todos' | 'sem-estoque' | 'nao-publicado';
+export type FiltroEstoque = 'todos' | 'sem-estoque' | 'nao-publicado' | 'fiscal-pendente';
 export type OrdemEstoque = 'nome' | 'saldo-asc' | 'recente';
 
 export interface OpcoesFiltro {
@@ -56,6 +56,7 @@ export function filtrarProdutos(produtos: ProdutoEstoqueResumo[], opts: OpcoesFi
     // <= 0, não === 0: saldo negativo é sintoma de bug de ledger e precisa ser ENCONTRÁVEL.
     if (opts.filtro === 'sem-estoque') return p.saldoTotal <= 0;
     if (opts.filtro === 'nao-publicado') return !produtoPublicado(p, opts.canaisPorProduto);
+    if (opts.filtro === 'fiscal-pendente') return p.fiscalPendente === true;
     return true;
   });
 

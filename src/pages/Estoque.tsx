@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DialogEntrada } from '@/components/estoque/dialog-entrada';
 import { DialogAjuste } from '@/components/estoque/dialog-ajuste';
 import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-produto';
+import { DialogFiscalProduto } from '@/components/estoque/dialog-fiscal-produto';
 import { DialogExcluirProduto } from '@/components/estoque/dialog-excluir-produto';
 import { DialogAdicionarVariacao } from '@/components/estoque/dialog-adicionar-variacao';
 import { ProdutoCard, CabecalhoProdutos, type AlvoEntrada } from '@/components/estoque/produto-card';
@@ -48,6 +49,8 @@ export default function Estoque() {
   const [produtoAjuste, setProdutoAjuste] = useState<ProdutoComSaldo | null>(null);
   const [produtoExcluir, setProdutoExcluir] = useState<ProdutoEstoqueResumo | null>(null);
   const [produtoAddVariacao, setProdutoAddVariacao] = useState<ProdutoEstoqueResumo | null>(null);
+  // ADR-0135 D-9: id da família aberta no DialogFiscalProduto (T13) — `null` = fechado.
+  const [fiscalAberto, setFiscalAberto] = useState<string | null>(null);
 
   const { data: estoque, isLoading, isError } = useQuery({
     queryKey: QK.produtosEstoqueResumo,
@@ -119,6 +122,15 @@ export default function Estoque() {
     canaisPorProduto: canaisIndisponivel ? undefined : canaisPorProduto,
   });
 
+  const mostrarFiscal = !!modulos?.includes('fiscal');
+  // ADR-0135 D-9: fila do dialog de edição fiscal — ids dos pendentes NA ORDEM da lista atual
+  // (filtro/busca/ordenação já aplicados). `familiaId` é opcional no tipo (fixtures antigos de
+  // teste não o preenchem); um pendente real sempre tem — o filter descarta o resto em silêncio.
+  const filaFiscal = lista
+    .filter((p) => p.fiscalPendente)
+    .map((p) => p.familiaId)
+    .filter((id): id is string => !!id);
+
   return (
     <div className="p-4 md:p-6">
       <PageHeader
@@ -159,7 +171,7 @@ export default function Estoque() {
           <ResumoEstoqueKpis resumo={resumo} />
           <BarraFiltrosEstoque
             termo={busca} filtro={filtro} ordem={ordem}
-            canaisCarregando={canaisLoading} canaisErro={canaisErro}
+            canaisCarregando={canaisLoading} canaisErro={canaisErro} mostrarFiscal={mostrarFiscal}
             onTermo={setBusca} onFiltro={setFiltro} onOrdem={setOrdem}
           />
           {lista.length > 0 && (
@@ -183,6 +195,7 @@ export default function Estoque() {
                 onExcluir={isAdmin ? setProdutoExcluir : undefined}
                 onAdicionarVariacao={isAdmin ? setProdutoAddVariacao : undefined}
                 statusUpdate={statusMap.get(p.codigoPai)}
+                onPreencherFiscal={mostrarFiscal ? (produto) => setFiscalAberto(produto.familiaId ?? null) : undefined}
               />
             ))}
             {lista.length === 0 && (
@@ -220,6 +233,13 @@ export default function Estoque() {
         produto={produtoAddVariacao}
         aberto={produtoAddVariacao != null}
         onFechar={() => setProdutoAddVariacao(null)}
+      />
+      <DialogFiscalProduto
+        familiaId={fiscalAberto}
+        fila={filaFiscal}
+        onFechar={() => setFiscalAberto(null)}
+        onAvancar={setFiscalAberto}
+        onSalvo={() => qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo })}
       />
     </div>
   );

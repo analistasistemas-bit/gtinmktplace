@@ -65,6 +65,17 @@ export interface ProdutoEstoqueResumo {
   nomes: string[];
   /** Preenchido quando qtdSkus === 1 — pré-seleção no DialogEntrada. */
   skuUnico: string | null;
+  /** ADR-0135 D-9 — id real da família canônica, para a edição fiscal (T13). Opcional: os
+   *  fixtures de teste de telas que não mexem com fiscal não precisam preenchê-lo. */
+  familiaId?: string;
+  ncm?: string | null;
+  origemNfe?: number | null;
+  tributacaoIcms?: string | null;
+  /** Prontidão de emissão do ML (D-10) — `null` = ainda não verificado. */
+  canInvoice?: boolean | null;
+  /** `!ncm || origem_nfe == null || !tributacao_icms || can_invoice === false` — mesma regra do
+   *  brief da Task 13, calculada uma vez aqui (fonte única para o filtro "Fiscal pendente"). */
+  fiscalPendente?: boolean;
 }
 
 export interface ProdutoComSaldo {
@@ -133,6 +144,11 @@ interface ProdutoResumoRpc {
   cores: string[];
   nomes: string[];
   sku_unico: string | null;
+  familia_id: string;
+  ncm: string | null;
+  origem_nfe: number | null;
+  tributacao_icms: string | null;
+  can_invoice: boolean | null;
 }
 
 interface KpisRpc {
@@ -189,6 +205,12 @@ export function mapResumoEstoqueRpc(raw: ResumoRpcRaw): ResumoEstoqueRpc {
       cores: p.cores ?? [],
       nomes: p.nomes ?? [],
       skuUnico: p.sku_unico,
+      familiaId: p.familia_id,
+      ncm: p.ncm,
+      origemNfe: p.origem_nfe,
+      tributacaoIcms: p.tributacao_icms,
+      canInvoice: p.can_invoice,
+      fiscalPendente: !p.ncm || p.origem_nfe == null || !p.tributacao_icms || p.can_invoice === false,
     })),
   };
 }

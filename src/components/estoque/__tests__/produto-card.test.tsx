@@ -219,6 +219,49 @@ describe('ProdutoCard', () => {
     expect(screen.getByText(/remova pela tela Publicados/i)).toBeInTheDocument();
   });
 
+  // ADR-0135 D-9: ação "Preencher fiscal" só aparece com fiscalPendente E familiaId E a prop —
+  // as três precisam bater, senão o clique não teria pra onde abrir o dialog (T13).
+  it('ação "Preencher fiscal" só aparece quando fiscalPendente, familiaId e a prop estão presentes', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onPreencherFiscal = vi.fn();
+    const { rerender } = render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} onPreencherFiscal={onPreencherFiscal} />
+      </QueryClientProvider>,
+    );
+    // produto fixture não tem fiscalPendente/familiaId — botão não aparece.
+    expect(screen.queryByLabelText(/Preencher fiscal/)).not.toBeInTheDocument();
+
+    const pendente = { ...produto, fiscalPendente: true, familiaId: 'fam-1' };
+    rerender(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={pendente} canais={[]} onDarEntrada={vi.fn()} onPreencherFiscal={onPreencherFiscal} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByLabelText(/Preencher fiscal/)).toBeInTheDocument();
+
+    // Sem a prop, mesmo pendente, o botão não aparece.
+    rerender(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={pendente} canais={[]} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    expect(screen.queryByLabelText(/Preencher fiscal/)).not.toBeInTheDocument();
+  });
+
+  it('clicar em "Preencher fiscal" chama a prop com o produto', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const onPreencherFiscal = vi.fn();
+    const pendente = { ...produto, fiscalPendente: true, familiaId: 'fam-1' };
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={pendente} canais={[]} onDarEntrada={vi.fn()} onPreencherFiscal={onPreencherFiscal} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByLabelText(/Preencher fiscal/));
+    expect(onPreencherFiscal).toHaveBeenCalledWith(pendente);
+  });
+
   it('virtualiza a lista quando há mais variações que o limiar', async () => {
     const n = VARIACOES_VIRTUAL_THRESHOLD + 1;
     const variacoes = mockVariacoes(n);
