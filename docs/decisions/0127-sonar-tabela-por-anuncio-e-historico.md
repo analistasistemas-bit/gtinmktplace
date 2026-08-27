@@ -389,6 +389,13 @@ Plano completo em `docs/superpowers/plans/2026-08-27-sonar-ean-enriquecimento.md
   responde "você já vende este produto" e `pulse_produtos.catalog_product_id` responde "já está no
   seu Radar". Duas leituras locais sob RLS, zero rede externa. Quando as duas dão vazio, a ausência
   também informa: é produto novo para a operação.
+- **O imposto entra mostrando as DUAS origens, nunca presumindo uma.** O líquido por venda sem
+  imposto responde metade da pergunta, mas o Sonar consulta produto de terceiro: não há como saber
+  se é nacional ou importado, e escolher uma alíquota seria exatamente o que a regra LOUD do
+  ADR-0055 proíbe. A tela mostra o líquido nas duas alíquotas **configuradas da org**
+  (`useAliquotas`), e quem lê identifica a linha do seu caso. Alíquota não confirmada não vira
+  número nem zero: vira o aviso de ir confirmar em Configurações, mesmo tratamento do simulador de
+  margem do nicho (`dialog-margem-sonar.tsx`, "origem obrigatória e SEM default").
 - **"De/por" na tabela de EAN fica FORA — não é promoção.** A tentação óbvia era derivar desconto
   da diferença entre `price` e `sale_price`, como a tabela do nicho faz. No caminho do catálogo
   isso **mentiria**: `aplicarPrecoVencedorCatalogo` sobrescreve `sale_price` com o preço do

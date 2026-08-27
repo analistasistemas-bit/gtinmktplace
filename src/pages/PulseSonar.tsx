@@ -37,6 +37,7 @@ import {
   aplicarFiltrosAnuncios, temFiltroAnunciosAtivo, FILTROS_ANUNCIOS_VAZIOS, type FiltrosAnuncios,
 } from '@/lib/sonar-filtros';
 import { calcularTarifaML } from '@/lib/tarifa';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
 
 // Detecta EAN/GTIN no campo de busca (ADR-0127 Errata 1) — espelho de
@@ -234,19 +235,52 @@ function SonarEanLiquido({ preco, categoriaMlId }: { preco: number; categoriaMlI
   // número inventado numa tela de decisão de preço.
   if (!tarifa) return null;
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
-      <span className="font-medium">Vendendo a {fmtBRL(preco)}</span>
-      <span className="text-muted-foreground">
-        comissão <strong className="font-semibold text-foreground">{fmtBRL(tarifa.classico.comissao)}</strong>
+    <div className="mb-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
+        <span className="font-medium">Vendendo a {fmtBRL(preco)}</span>
+        <span className="text-muted-foreground">
+          comissão <strong className="font-semibold text-foreground">{fmtBRL(tarifa.classico.comissao)}</strong>
+        </span>
+        <span className="text-muted-foreground">
+          frete <strong className="font-semibold text-foreground">{fmtBRL(tarifa.frete)}</strong>
+        </span>
+        <span className="text-success">
+          você recebe <strong className="font-semibold">{fmtBRL(tarifa.classico.recebe)}</strong>
+        </span>
+        <span className="text-muted-foreground">
+          (Premium: {fmtBRL(tarifa.premium.recebe)})
+        </span>
+      </div>
+      <SonarEanImposto preco={preco} recebe={tarifa.classico.recebe} />
+    </div>
+  );
+}
+
+/**
+ * Imposto sobre o líquido (ADR-0055). O produto do Sonar não é nosso: não dá para saber a origem,
+ * e presumir alíquota é o que a regra LOUD proíbe. Então mostra as DUAS, com os percentuais
+ * configurados da org — quem lê escolhe a linha do seu caso. Alíquota não confirmada não vira
+ * número: vira o aviso de ir confirmar.
+ */
+export function SonarEanImposto({ preco, recebe }: { preco: number; recebe: number }) {
+  const { data: aliquotas, isLoading, isError } = useAliquotas();
+  if (isLoading) return null;
+  if (isError || !aliquotas?.confirmada) {
+    return (
+      <div className="mt-1.5 border-t pt-1.5 text-muted-foreground">
+        Imposto fora da conta: confirme as alíquotas da organização em Configurações.
+      </div>
+    );
+  }
+  const liquido = (pct: number) => fmtBRL(recebe - preco * (pct / 100));
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 border-t pt-1.5 text-muted-foreground">
+      <span>menos imposto —</span>
+      <span>
+        nacional {aliquotas.nacional}%: <strong className="font-semibold text-foreground">{liquido(aliquotas.nacional)}</strong>
       </span>
-      <span className="text-muted-foreground">
-        frete <strong className="font-semibold text-foreground">{fmtBRL(tarifa.frete)}</strong>
-      </span>
-      <span className="text-success">
-        você recebe <strong className="font-semibold">{fmtBRL(tarifa.classico.recebe)}</strong>
-      </span>
-      <span className="text-muted-foreground">
-        (Premium: {fmtBRL(tarifa.premium.recebe)})
+      <span>
+        importado {aliquotas.importado}%: <strong className="font-semibold text-foreground">{liquido(aliquotas.importado)}</strong>
       </span>
     </div>
   );

@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
-import { SonarVendas, SonarEanResultado } from '../PulseSonar';
+import { describe, expect, it, vi } from 'vitest';
+import { SonarVendas, SonarEanResultado, SonarEanImposto } from '../PulseSonar';
 import type {
   CruzamentoEan, ItemVendasSonar, PainelVendasSonar, ResultadoEanCatalogado,
 } from '@/lib/sonar';
@@ -152,5 +152,41 @@ describe('SonarEanResultado — cruzamento com o catálogo da org (Errata 2)', (
     const resp = respEan({ descricao_catalogo: 'Leite em pó integral, zero lactose, sachê 700 g.' });
     render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
     expect(screen.getByText(/zero lactose, sachê 700 g/)).toBeInTheDocument();
+  });
+});
+
+// ADR-0055 / regra LOUD: imposto nunca é presumido. No Sonar o produto não é nosso, então a
+// origem é desconhecida — a tela mostra as duas alíquotas em vez de escolher uma.
+let aliquotasMock: { nacional: number; importado: number; confirmada: boolean } | undefined;
+let aliquotasErro = false;
+vi.mock('@/hooks/useConfiguracoes', () => ({
+  useAliquotas: () => ({ data: aliquotasMock, isLoading: false, isError: aliquotasErro }),
+}));
+
+describe('SonarEanImposto — imposto entra sem presumir origem', () => {
+  it('alíquotas confirmadas: mostra o líquido nas duas origens, com os percentuais da org', () => {
+    aliquotasMock = { nacional: 8, importado: 16, confirmada: true };
+    aliquotasErro = false;
+    render(<SonarEanImposto preco={80} recebe={55.85} />);
+    // 55,85 − 8% de 80 = 49,45 ; 55,85 − 16% de 80 = 43,05
+    expect(screen.getByText(/nacional 8%/)).toBeInTheDocument();
+    expect(screen.getByText('R$ 49,45')).toBeInTheDocument();
+    expect(screen.getByText(/importado 16%/)).toBeInTheDocument();
+    expect(screen.getByText('R$ 43,05')).toBeInTheDocument();
+  });
+
+  it('alíquotas NÃO confirmadas: manda confirmar em vez de inventar percentual', () => {
+    aliquotasMock = { nacional: 8, importado: 16, confirmada: false };
+    aliquotasErro = false;
+    render(<SonarEanImposto preco={80} recebe={55.85} />);
+    expect(screen.getByText(/confirme as alíquotas da organização/i)).toBeInTheDocument();
+    expect(screen.queryByText('R$ 49,45')).not.toBeInTheDocument();
+  });
+
+  it('falha ao ler alíquotas não vira imposto zero', () => {
+    aliquotasMock = undefined;
+    aliquotasErro = true;
+    render(<SonarEanImposto preco={80} recebe={55.85} />);
+    expect(screen.getByText(/confirme as alíquotas/i)).toBeInTheDocument();
   });
 });
