@@ -1,0 +1,61 @@
+.border-trail {
+  position: relative;
+  isolation: isolate;
+  border-radius: var(--border-trail-radius, 8px);
+}
+
+.border-trail__track,
+.border-trail__fallback {
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.border-trail__track {
+  padding: 1px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+}
+
+.border-trail__glow {
+  position: absolute;
+  width: 3.5rem;
+  aspect-ratio: 1;
+  border-radius: 999px;
+  background: var(--primary);
+  box-shadow: 0 0 0.8rem var(--primary), 0 0 1.5rem color-mix(in oklch, var(--primary) 65%, transparent);
+  offset-path: rect(0 auto auto 0 round var(--border-trail-radius, 8px));
+  /* ponytail: 3s fora de `durationMs` de propósito — o contrato de motion (§6.1) limita a 400ms
+     as interações funcionais e abre exceção para estado indeterminado, que é o caso desta volta
+     contínua. Token só se outro componente pedir a mesma duração de loop. */
+  animation: border-trail-spin 3s linear infinite;
+}
+
+.border-trail__fallback {
+  border: 1px solid color-mix(in oklch, var(--primary) 65%, transparent);
+  opacity: 0;
+}
+
+@keyframes border-trail-spin {
+  to { offset-distance: 100%; }
+}
+
+@supports not (offset-path: rect(0 auto auto 0 round 8px)) {
+  .border-trail__track { display: none; }
+  .border-trail__fallback { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .border-trail__track { display: none; }
+  .border-trail__fallback { opacity: 1; }
+}
+
+@media (forced-colors: active) {
+  .border-trail__track { display: none; }
+  .border-trail__fallback { border-color: Highlight; opacity: 1; }
+}

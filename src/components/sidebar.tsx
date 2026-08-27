@@ -8,6 +8,10 @@ import { menusDeModulosDesabilitados } from '@/lib/modulos';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { usePrefetchEstoque } from '@/hooks/usePrefetchEstoque';
 import { useSupportStore } from '@/stores/support-store';
+import { useQuery } from '@tanstack/react-query';
+import { BorderTrail } from '@/components/ui/border-trail';
+import { contarPulseAlertas } from '@/lib/pulse-contagem';
+import { QK } from '@/lib/queries';
 
 export const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutDashboard; end: boolean; key: MenuKey }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, key: 'dashboard' },
@@ -33,6 +37,13 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const context = useSupportStore((state) => state.context);
   const { data: modulos } = useModulosHabilitados();
   const { prefetchEstoque } = usePrefetchEstoque();
+  const pulseHabilitado = !!modulos?.includes('pulse');
+  const { data: alertasPulse = 0 } = useQuery({
+    queryKey: QK.pulseAlertasContagem('acao'),
+    queryFn: () => contarPulseAlertas('acao'),
+    enabled: pulseHabilitado,
+    staleTime: 30_000,
+  });
   const allowed = new Set(visibleMenus(profile ?? { is_admin: false, is_active: true, allowed_menus: [] }, !!context));
   // Módulo desligado (ou ainda carregando) → menu some. Falha fechada: mostrar e sumir
   // é pior que aparecer um instante depois.
@@ -40,25 +51,30 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav className="flex flex-1 flex-col gap-0.5 px-2 py-3">
       {NAV_ITEMS.filter((item) => allowed.has(item.key)).map(({ to, label, icon: Icon, end, key }) => (
-        <NavLink
-          key={to}
-          to={to}
-          end={end}
-          onClick={onNavigate}
-          onMouseEnter={key === 'estoque' ? prefetchEstoque : undefined}
-          onFocus={key === 'estoque' ? prefetchEstoque : undefined}
-          className={({ isActive }) =>
-            cn(
-              'flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50',
+        <BorderTrail key={to} active={key === 'pulse' && alertasPulse > 0} radius={6}>
+          <NavLink
+            to={to}
+            end={end}
+            onClick={onNavigate}
+            onMouseEnter={key === 'estoque' ? prefetchEstoque : undefined}
+            onFocus={key === 'estoque' ? prefetchEstoque : undefined}
+            className={({ isActive }) => cn(
+              'relative z-[2] flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/50',
+              key === 'pulse' && 'tracking-[0.01em]',
               isActive
                 ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-                : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'
-            )
-          }
-        >
-          <Icon className="h-4 w-4 shrink-0" />
-          {label}
-        </NavLink>
+                : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground',
+            )}
+          >
+            <Icon className={cn('h-4 w-4 shrink-0', key === 'pulse' && 'text-primary')} />
+            <span>{label}</span>
+            {key === 'pulse' && alertasPulse > 0 && (
+              <span className="ml-auto min-w-5 rounded-full bg-primary/12 px-1.5 py-0.5 text-center text-[10px] font-semibold leading-none text-primary">
+                {alertasPulse > 99 ? '99+' : alertasPulse}
+              </span>
+            )}
+          </NavLink>
+        </BorderTrail>
       ))}
     </nav>
   );

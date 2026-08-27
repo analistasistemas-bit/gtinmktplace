@@ -251,15 +251,7 @@ export async function fetchPulseAlertas(
 
 /** Contagem VERDADEIRA de não lidos do filtro — separada da página. O rótulo antigo usava o
  *  tamanho da lista, que era o teto de leitura: dizia "20" com 145 não lidos (ADR-0133 D-7). */
-export async function contarPulseAlertas(severidade: FiltroSeveridade): Promise<number> {
-  let q = supabase.from('pulse_alertas')
-    .select('id', { count: 'exact', head: true })
-    .eq('lido', false);
-  if (severidade !== 'todos') q = q.eq('severidade', severidade);
-  const { count, error } = await q;
-  if (error) throw error;
-  return count ?? 0;
-}
+export { contarPulseAlertas } from './pulse-contagem';
 
 /** Marca o alerta como lido — grant é column-level só em `lido` (não pode ir mais nada no update). */
 export async function marcarAlertaLido(id: string): Promise<void> {

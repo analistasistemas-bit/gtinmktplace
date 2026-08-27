@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Identidade visual do Pulse — 2026-08-27
+
+Branch `worktree-feat-pulse-visual`. Header do Pulse com moldura própria e faixa de telemetria
+(itens no radar, ofertas observadas/relevantes, hora da última leitura), trilha de luz enquanto a
+coleta roda, count-up nos cards de contagem, e no menu lateral badge de alertas de ação não lidos
++ a mesma trilha quando há alerta.
+
+- [x] `BorderTrail` em CSS puro (`src/components/ui/border-trail.{tsx,css}`), sem dependência de
+  animação, com fallback de borda estática para navegador sem `offset-path`, `prefers-reduced-motion`
+  e `forced-colors`. Duração do loop fora de `durationMs` por ser estado indeterminado (contrato de
+  motion §6.1).
+- [x] `useCountUp` (`src/hooks/use-count-up.ts`) reinicia do valor atual quando o alvo muda.
+- [x] `contarPulseAlertas` movida para `src/lib/pulse-contagem.ts`: a sidebar está no bundle inicial
+  e importar `lib/pulse` inteiro arrastava `pulse-margem` + qualificação de mercado para todas as
+  páginas. Verificado no `vite build` — o chunk de entrada só carrega `pulse_alertas`.
 ## Financeiro — "Selecionar todos" cobre o filtro inteiro (ADR-0117) — 2026-08-27
 
 ADR: `docs/decisions/0117-financeiro-controle-de-liberacao-e-saque.md` (adendo 2026-08-27)

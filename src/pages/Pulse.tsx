@@ -17,6 +17,7 @@ import {
   type FiltrosPulse, type FocoPulse, type StatusAnuncio,
 } from '@/lib/pulse-filtros';
 import { PageHeader } from '@/components/ui/page-header';
+import { BorderTrail } from '@/components/ui/border-trail';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TabelaRadar } from '@/components/pulse/tabela-radar';
@@ -31,7 +32,25 @@ import {
   type PulseAlerta, type PulseProduto,
 } from '@/lib/pulse';
 import { cn } from '@/lib/utils';
+import { fmtInt } from '@/lib/formato';
+import { useCountUp } from '@/hooks/use-count-up';
 import PulseSonar from './PulseSonar';
+
+function coletaMaisRecente(produtos: PulseProduto[]): string | null {
+  let maisRecente: string | null = null;
+  for (const produto of produtos) {
+    if (produto.ultimo_snapshot_em && (!maisRecente || produto.ultimo_snapshot_em > maisRecente)) {
+      maisRecente = produto.ultimo_snapshot_em;
+    }
+  }
+  return maisRecente;
+}
+
+function horarioColeta(iso: string): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+  }).format(new Date(iso));
+}
 
 export default function Pulse() {
   const { data: modulos, isLoading: modulosLoading } = useModulosHabilitados();
@@ -88,6 +107,10 @@ export default function Pulse() {
     () => contarPulse(produtos ?? [], menorRelevanteDe),
     [produtos, menorRelevanteDe],
   );
+  const totalAnimado = useCountUp(contagens.total);
+  const maisCaroAnimado = useCountUp(contagens.maisCaro);
+  const menorPrecoAnimado = useCountUp(contagens.menorPreco);
+  const semVinculoAnimado = useCountUp(contagens.semVinculo);
 
   /** Clicar no card já aplicado remove o recorte — o card é um interruptor, não um destino. */
   const alternarFoco = (foco: FocoPulse) =>
@@ -110,28 +133,54 @@ export default function Pulse() {
   if (!modulos?.includes('pulse')) return <Navigate to="/" replace />;
 
   const lista = produtos ?? [];
+  const ofertasObservadas = [...(resumoOfertas?.values() ?? [])]
+    .reduce((total, resumo) => total + resumo.nOfertas, 0);
+  const ofertasRelevantes = [...(resumoOfertas?.values() ?? [])]
+    .reduce((total, resumo) => total + resumo.nOfertasRelevantes, 0);
+  const ultimaColeta = coletaMaisRecente(lista);
   const produtoDetalhe = lista.find((p) => p.id === detalheId) ?? null;
   const filtrada = filtrarProdutos(lista, filtros, menorRelevanteDe);
   const filtrando = temFiltroAtivo(filtros);
 
   return (
     <div className="p-4 md:p-6">
-      <PageHeader
-        title="Pulse"
-        subtitle="Radar de concorrência dos seus produtos de catálogo, com alertas e referência de preço do ML."
-        actions={tab === 'radar' ? (
-          <>
-            <Button variant="outline" onClick={() => atualizar.mutate()} disabled={atualizar.isPending}>
-              <RefreshCw className={cn('mr-2 h-4 w-4', atualizar.isPending && 'animate-spin')} />
-              Atualizar agora
-            </Button>
-            <Button onClick={() => setAdicionarAberto(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Adicionar produto
-            </Button>
-          </>
-        ) : undefined}
-      />
+      <BorderTrail active={atualizar.isPending} radius={12} className="mb-6">
+        <div className="relative z-[2] rounded-xl border border-primary/15 bg-gradient-to-br from-primary/[0.055] via-background to-background px-4 pt-4 shadow-sm md:px-5 md:pt-5">
+          <PageHeader
+            className="mb-3"
+            title="Pulse"
+            subtitle="Inteligência de mercado para detectar movimentos, priorizar decisões e proteger sua margem."
+            actions={tab === 'radar' ? (
+              <>
+                <Button variant="outline" onClick={() => atualizar.mutate()} disabled={atualizar.isPending}>
+                  <RefreshCw className={cn('mr-2 h-4 w-4', atualizar.isPending && 'animate-spin')} />
+                  {atualizar.isPending ? 'Analisando mercado…' : 'Atualizar agora'}
+                </Button>
+                <Button onClick={() => setAdicionarAberto(true)}>
+                  <Plus className="mr-2 h-4 w-4" />
+                  Adicionar produto
+                </Button>
+              </>
+            ) : undefined}
+          />
+          {tab === 'radar' && lista.length > 0 && (
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-primary/10 py-3 text-xs text-muted-foreground" aria-label="Telemetria do Pulse">
+              <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+                <span className={cn('h-1.5 w-1.5 rounded-full bg-primary', atualizar.isPending && 'animate-pulse')} />
+                {atualizar.isPending ? 'Motor analisando' : 'Mercado monitorado'}
+              </span>
+              <span><strong className="font-semibold text-foreground">{fmtInt(lista.length)}</strong> itens no radar</span>
+              {resumoOfertas && (
+                <>
+                  <span><strong className="font-semibold text-foreground">{fmtInt(ofertasObservadas)}</strong> ofertas observadas</span>
+                  <span><strong className="font-semibold text-foreground">{fmtInt(ofertasRelevantes)}</strong> relevantes</span>
+                </>
+              )}
+              {ultimaColeta && <span className="ml-auto">Última leitura {horarioColeta(ultimaColeta)}</span>}
+            </div>
+          )}
+        </div>
+      </BorderTrail>
 
       <Tabs
         value={tab}
@@ -158,7 +207,7 @@ export default function Pulse() {
           <KpiCard
             size="compact"
             label="No radar"
-            value={contagens.total}
+            value={fmtInt(totalAnimado)}
             icon={Activity}
             tom="info"
             onClick={() => setFiltros(FILTROS_VAZIOS)}
@@ -167,7 +216,7 @@ export default function Pulse() {
           <KpiCard
             size="compact"
             label="Mais caro que o mercado"
-            value={contagens.maisCaro}
+            value={fmtInt(maisCaroAnimado)}
             icon={TrendingUp}
             tom={contagens.maisCaro > 0 ? 'warning' : 'success'}
             hint={contagens.comparaveis > 0 ? `de ${contagens.comparaveis} comparáveis` : 'sem comparação ainda'}
@@ -177,7 +226,7 @@ export default function Pulse() {
           <KpiCard
             size="compact"
             label="Você é o menor preço"
-            value={contagens.menorPreco}
+            value={fmtInt(menorPrecoAnimado)}
             icon={TrendingUp}
             tom="success"
             onClick={() => alternarFoco('menor_preco')}
@@ -186,7 +235,7 @@ export default function Pulse() {
           <KpiCard
             size="compact"
             label="Sem vínculo de catálogo"
-            value={contagens.semVinculo}
+            value={fmtInt(semVinculoAnimado)}
             icon={Bell}
             tom={contagens.semVinculo > 0 ? 'warning' : 'info'}
             hint={contagens.semVinculo > 0 ? 'não disputam a página' : undefined}
