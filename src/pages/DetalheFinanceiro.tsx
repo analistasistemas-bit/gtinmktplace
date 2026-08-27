@@ -20,7 +20,9 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { registrarSaque, desfazerSaque } from '@/lib/faturamento';
-import { resumoSelecaoSaque, selecionarPedidosFaturaveis } from '@/lib/saque-selecao';
+import {
+  resumoSelecaoSaque, selecionarPedidosFaturaveis, type ResumoSelecaoSaque,
+} from '@/lib/saque-selecao';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { calcularResumo } from '@/lib/resumo-vendas';
 import { orderIdsComDevolucaoReal } from '@/lib/devolucoes';
@@ -447,10 +449,13 @@ export default function DetalheFinanceiro() {
   }
 
   // Confirmação de saque em massa: guarda os dados da operação já validada até o operador
-  // confirmar. null = nada pendente.
+  // confirmar. null = nada pendente. O resumo é congelado no clique junto com os ids: `useVendas`
+  // faz poll de 3min e refetch ao focar a aba, então recalcular em render mostraria uma quantidade
+  // diferente da que a RPC vai receber.
   const [confirmarSaque, setConfirmarSaque] = useState<{
     acao: 'registrar' | 'desfazer';
     vars: SaqueMutationVars;
+    resumo: ResumoSelecaoSaque;
   } | null>(null);
 
   function onRegistrarSaque() {
@@ -460,8 +465,9 @@ export default function DetalheFinanceiro() {
       return;
     }
     // Acima do limite, confirma antes: "selecionar todos" pode marcar centenas de pedidos.
-    if (resumoSelecaoSaque(pedidos).precisaConfirmar) {
-      setConfirmarSaque({ acao: 'registrar', vars });
+    const resumo = resumoSelecaoSaque(pedidos);
+    if (resumo.precisaConfirmar) {
+      setConfirmarSaque({ acao: 'registrar', vars, resumo });
       return;
     }
     mutationRegistrar.mutate(vars);
@@ -473,8 +479,9 @@ export default function DetalheFinanceiro() {
       toast.error('Selecione pedido(s) sacado(s).');
       return;
     }
-    if (resumoSelecaoSaque(pedidos).precisaConfirmar) {
-      setConfirmarSaque({ acao: 'desfazer', vars });
+    const resumo = resumoSelecaoSaque(pedidos);
+    if (resumo.precisaConfirmar) {
+      setConfirmarSaque({ acao: 'desfazer', vars, resumo });
       return;
     }
     mutationDesfazer.mutate(vars);
@@ -483,13 +490,6 @@ export default function DetalheFinanceiro() {
   // Totais e markup agregado sobre os pedidos FILTRADOS (coerente com o que está visível), contando
   // só faturáveis — igual ao banner de KPIs (ADR-0038).
   const totaisFiltrados = useMemo(() => totaisFinanceiro(pedidosFiltrados), [pedidosFiltrados]);
-
-  // Números do diálogo de confirmação: mesma base elegível que o handler usou para decidir.
-  const resumoConfirmacao = resumoSelecaoSaque(
-    confirmarSaque
-      ? selecaoPorStatus(confirmarSaque.acao === 'desfazer' ? 'sacado' : 'liberado').pedidos
-      : [],
-  );
 
   // Somatório do que o operador marcou — TODAS as linhas selecionadas, não só as elegíveis a saque:
   // ele quer conferir o valor do que está lendo na tela, e uma linha já sacada continua marcada.
@@ -681,11 +681,11 @@ export default function DetalheFinanceiro() {
           <DialogHeader>
             <DialogTitle>
               {confirmarSaque?.acao === 'desfazer' ? 'Desfazer' : 'Registrar'} saque de{' '}
-              {fmtInt(resumoConfirmacao.quantidade)} pedidos?
+              {fmtInt(confirmarSaque?.resumo.quantidade ?? 0)} pedidos?
             </DialogTitle>
             <DialogDescription>
               {confirmarSaque?.acao === 'desfazer' ? 'Remove' : 'Marca'}{' '}
-              {fmtBRL(resumoConfirmacao.valor)} {confirmarSaque?.acao === 'desfazer' ? 'do' : 'como já'}{' '}
+              {fmtBRL(confirmarSaque?.resumo.valor ?? 0)} {confirmarSaque?.acao === 'desfazer' ? 'do' : 'como já'}{' '}
               sacado. Não movimenta dinheiro no Mercado Livre — é o seu controle de conciliação.
             </DialogDescription>
           </DialogHeader>

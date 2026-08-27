@@ -125,6 +125,12 @@ Como a seleção global pode alcançar centenas de pedidos, a confirmação acim
 proteger as duas ações em massa: **Registrar saque** e **Desfazer saque**. Quantidade e valor da
 confirmação consideram apenas os pedidos elegíveis à ação escolhida.
 
+Esses números são **congelados no clique**, junto com os ids que vão para a RPC. `useVendas` faz
+poll de 3min e refetch ao voltar o foco da aba (ADR-0081/0082), então recalcular o resumo a cada
+render deixava o diálogo anunciar uma quantidade diferente da que a ação executa — basta outro
+operador da org sacar parte da seleção enquanto o diálogo está aberto. Ação em massa sobre dinheiro
+não pode anunciar 17 e submeter 25.
+
 ## Fora de escopo
 
 `upsertDevolucao` (`_shared/faturamento/devolucoes-io.ts`) também não valida se a order é uma venda, então um claim sobre compra pode recriar linha em `ml_devolucoes`. Não corrigido aqui: é o menu Faturamento, e a trava óbvia (exigir venda existente) arriscaria descartar devolução legítima cuja venda ainda não sincronizou. Registrado para a próxima rodada.

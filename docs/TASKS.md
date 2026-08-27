@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Financeiro — "Selecionar todos" cobre o filtro inteiro (ADR-0117) — 2026-08-27
+
+ADR: `docs/decisions/0117-financeiro-controle-de-liberacao-e-saque.md` (adendo 2026-08-27)
+
+- [x] **Motivo.** Com 912 vendas no período, o checkbox do cabeçalho marcava só as 50 linhas da
+  página, contrariando a intenção de selecionar todos. Passou a cobrir todos os pedidos
+  **faturáveis** do filtro e da busca ativos; a paginação limita apenas a renderização.
+  Commit `afa06e20`.
+- [x] **Confirmação nas duas ações.** Como a seleção global pode alcançar centenas de pedidos, o
+  limite de 20 (`LIMITE_CONFIRMA_SAQUE`) passou a proteger **Registrar saque** e **Desfazer saque**.
+- [x] **Números do diálogo congelados no clique.** `useVendas` faz poll de 3min e refetch ao focar a
+  aba (ADR-0081/0082): recalcular o resumo em render fazia o título divergir dos ids que a RPC
+  recebe. Cenário provado em teste: 8 dos 25 pedidos marcados sacados por outro operador da org com
+  o diálogo aberto → título dizia **17**, botão mandava os **25** do clique. Ação sobre dinheiro não
+  pode anunciar uma quantidade e executar outra.
+- [x] **Testes.** `src/lib/__tests__/saque-selecao.test.ts`, `tests/lib/saque-confirmacao.test.ts` e
+  `src/pages/__tests__/DetalheFinanceiro.confirmacao.test.tsx` (render real: falha sem a congelação).
+
 ## Cadastro fiscal e Faturador do Mercado Livre (ADR-0135) — 2026-08-25/26
 
 Branch `worktree-fiscal-cadastro-nfe`, 15 tasks concluídas (SDD). O PubliAI não transmite NF-e —
