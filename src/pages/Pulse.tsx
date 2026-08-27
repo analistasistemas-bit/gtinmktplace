@@ -18,6 +18,7 @@ import {
 } from '@/lib/pulse-filtros';
 import { PageHeader } from '@/components/ui/page-header';
 import { BorderTrail } from '@/components/ui/border-trail';
+import { PulsoAoVivo } from '@/components/ui/ao-vivo';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TabelaRadar } from '@/components/pulse/tabela-radar';
@@ -165,9 +166,12 @@ export default function Pulse() {
           />
           {tab === 'radar' && lista.length > 0 && (
             <div role="group" className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-primary/10 py-3 text-xs text-muted-foreground" aria-label="Telemetria do Pulse">
-              <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-                <span className={cn('h-1.5 w-1.5 rounded-full bg-primary', atualizar.isPending && 'animate-pulse')} />
-                {atualizar.isPending ? 'Motor analisando' : 'Mercado monitorado'}
+              <span
+                className="inline-flex items-center gap-1.5 font-medium text-foreground"
+                title="Coleta completa todo dia às 06:00 e coleta rápida a cada 6h. A tela lê o que já foi coletado — use Atualizar agora para forçar uma leitura nova."
+              >
+                <PulsoAoVivo isFetching={atualizar.isPending} tom="primary" />
+                {atualizar.isPending ? 'Motor analisando' : 'Monitorando mercado'}
               </span>
               <span><strong className="font-semibold text-foreground">{fmtInt(lista.length)}</strong> itens no radar</span>
               {resumoOfertas && (
