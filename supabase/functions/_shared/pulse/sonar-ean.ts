@@ -19,6 +19,8 @@ export function validarEan(v: unknown): string | null {
 export interface OfertaEan {
   item_id: string | null;
   seller_id: number | null;
+  /** nickname do vendedor; `null` quando o perfil não pôde ser lido (a UI cai no id). */
+  vendedor_nome: string | null;
   preco: number | null;
   frete_gratis: boolean;
   full: boolean;
@@ -36,6 +38,7 @@ export interface OfertaEan {
 export function montarOfertasEan(
   ofertasOficiais: OfertaVendedor[],
   itensApify: ItemVendas[] | null,
+  nomesVendedores: Record<string, string> = {},
 ): OfertaEan[] {
   const vendidosPorItemId = new Map<string, number | null>();
   if (itensApify) {
@@ -46,6 +49,7 @@ export function montarOfertasEan(
   return ofertasOficiais.map((o) => ({
     item_id: o.item_id,
     seller_id: o.seller_id,
+    vendedor_nome: o.seller_id != null ? nomesVendedores[String(o.seller_id)] ?? null : null,
     preco: o.preco,
     frete_gratis: o.frete_gratis,
     full: o.full,
@@ -60,6 +64,9 @@ export interface RespostaEan {
   product_id: string;
   nome_produto: string | null;
   descricao_catalogo: string | null;
+  /** Categoria do produto — o cliente usa em `calcular-tarifa-ml` para dizer quanto sobra por
+   *  venda. `null` quando nenhuma oferta trouxe o campo. */
+  categoria_ml_id: string | null;
   /** O que efetivamente foi calculado — pode ser false mesmo com com_vendas pedido, se a Apify
    *  estava indisponível ou o run falhou (ver `vendas_indisponivel`). */
   com_vendas: boolean;
@@ -75,6 +82,8 @@ export function montarRespostaEan(params: {
   productId: string;
   nomeProduto: string | null;
   descricaoCatalogo: string | null;
+  categoriaMlId: string | null;
+  nomesVendedores: Record<string, string>;
   comVendas: boolean;
   vendasIndisponivel: boolean;
   ofertasOficiais: OfertaVendedor[];
@@ -82,8 +91,8 @@ export function montarRespostaEan(params: {
   geradoEm: string;
 }): RespostaEan {
   const {
-    ean, productId, nomeProduto, descricaoCatalogo, comVendas, vendasIndisponivel,
-    ofertasOficiais, itensApify, geradoEm,
+    ean, productId, nomeProduto, descricaoCatalogo, categoriaMlId, nomesVendedores,
+    comVendas, vendasIndisponivel, ofertasOficiais, itensApify, geradoEm,
   } = params;
   return {
     conectado: true,
@@ -92,9 +101,10 @@ export function montarRespostaEan(params: {
     product_id: productId,
     nome_produto: nomeProduto,
     descricao_catalogo: descricaoCatalogo,
+    categoria_ml_id: categoriaMlId,
     com_vendas: comVendas,
     ...(vendasIndisponivel ? { vendas_indisponivel: true } : {}),
-    ofertas: montarOfertasEan(ofertasOficiais, itensApify),
+    ofertas: montarOfertasEan(ofertasOficiais, itensApify, nomesVendedores),
     gerado_em: geradoEm,
   };
 }

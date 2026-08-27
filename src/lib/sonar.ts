@@ -204,6 +204,8 @@ export function linkDoAnuncio(link: string | null, itemId: string): string | nul
 export interface OfertaEan {
   item_id: string | null;
   seller_id: number | null;
+  /** nickname do vendedor; `null` quando o perfil não pôde ser lido (a tabela cai no id). */
+  vendedor_nome: string | null;
   preco: number | null;
   frete_gratis: boolean;
   full: boolean;
@@ -218,6 +220,8 @@ export interface ResultadoEanCatalogado {
   product_id: string;
   nome_produto: string | null;
   descricao_catalogo: string | null;
+  /** Categoria do produto — destrava `calcularTarifaML` (quanto sobra por venda). */
+  categoria_ml_id: string | null;
   com_vendas: boolean;
   vendas_indisponivel?: boolean;
   ofertas: OfertaEan[];

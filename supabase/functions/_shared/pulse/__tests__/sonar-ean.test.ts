@@ -38,7 +38,10 @@ describe('montarOfertasEan (interseção por item_id)', () => {
     const oficiais = [oferta({ item_id: 'MLB1' })];
     const apify = [itemApify({ item_id: 'MLB1', vendidos: 500 })];
     expect(montarOfertasEan(oficiais, apify)).toEqual([
-      { item_id: 'MLB1', seller_id: 111, preco: 100, frete_gratis: true, full: false, vendidos: 500 },
+      {
+        item_id: 'MLB1', seller_id: 111, vendedor_nome: null, preco: 100,
+        frete_gratis: true, full: false, vendidos: 500,
+      },
     ]);
   });
 
@@ -74,13 +77,18 @@ describe('montarRespostaEan', () => {
   it('monta o shape completo, sem vendas_indisponivel quando não pedido', () => {
     const resp = montarRespostaEan({
       ean: '7891234567890', productId: 'MLB123', nomeProduto: 'Produto X',
-      descricaoCatalogo: 'desc', comVendas: false, vendasIndisponivel: false,
+      descricaoCatalogo: 'desc', categoriaMlId: 'MLB1234', nomesVendedores: { '111': 'LOJA X' },
+      comVendas: false, vendasIndisponivel: false,
       ofertasOficiais: [oferta({ item_id: 'MLB1' })], itensApify: null, geradoEm: '2026-08-22T00:00:00.000Z',
     });
     expect(resp).toEqual({
       conectado: true, catalogado: true, ean: '7891234567890', product_id: 'MLB123',
-      nome_produto: 'Produto X', descricao_catalogo: 'desc', com_vendas: false,
-      ofertas: [{ item_id: 'MLB1', seller_id: 111, preco: 100, frete_gratis: true, full: false, vendidos: null }],
+      nome_produto: 'Produto X', descricao_catalogo: 'desc', categoria_ml_id: 'MLB1234',
+      com_vendas: false,
+      ofertas: [{
+        item_id: 'MLB1', seller_id: 111, vendedor_nome: 'LOJA X', preco: 100,
+        frete_gratis: true, full: false, vendidos: null,
+      }],
       gerado_em: '2026-08-22T00:00:00.000Z',
     });
     expect(resp).not.toHaveProperty('vendas_indisponivel');
@@ -89,10 +97,23 @@ describe('montarRespostaEan', () => {
   it('inclui vendas_indisponivel:true quando pedido mas não calculado', () => {
     const resp = montarRespostaEan({
       ean: '7891234567890', productId: 'MLB123', nomeProduto: null, descricaoCatalogo: null,
+      categoriaMlId: null, nomesVendedores: {},
       comVendas: false, vendasIndisponivel: true, ofertasOficiais: [], itensApify: null,
       geradoEm: '2026-08-22T00:00:00.000Z',
     });
     expect(resp.vendas_indisponivel).toBe(true);
     expect(resp.com_vendas).toBe(false);
+  });
+
+  it('nome do vendedor entra por seller_id; vendedor sem perfil fica null', () => {
+    const resp = montarRespostaEan({
+      ean: '7891234567890', productId: 'MLB123', nomeProduto: null, descricaoCatalogo: null,
+      categoriaMlId: 'MLB1234', nomesVendedores: { '111': 'LOJA X' },
+      comVendas: false, vendasIndisponivel: false,
+      ofertasOficiais: [oferta({ item_id: 'MLB1' }), oferta({ item_id: 'MLB2', seller_id: 222 })],
+      itensApify: null, geradoEm: '2026-08-22T00:00:00.000Z',
+    });
+    expect(resp.ofertas[0].vendedor_nome).toBe('LOJA X');
+    expect(resp.ofertas[1].vendedor_nome).toBeNull();
   });
 });

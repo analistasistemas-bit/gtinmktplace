@@ -7,6 +7,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mlGet } from '../_shared/ml/http.ts';
+import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { apifyConfigurado, buscarAnunciosML } from '../_shared/apify/client.ts';
@@ -33,14 +34,42 @@ interface LookupCache {
   product_id: string | null; // null = tombstone: EAN sem ficha de catálogo, não rebusca
   nome_produto: string | null;
   descricao_catalogo: string | null;
+  /** Categoria do produto, lida das ofertas. É o que destrava o cálculo de "quanto você recebe"
+   *  no cliente (`calcular-tarifa-ml`) — `parseItensProduto` sempre calculou e a Errata 1
+   *  descartava. Foi por causa dele que a chave subiu para v2. */
+  categoria_ml_id: string | null;
+  /** nickname por seller_id, resolvido uma vez por vendedor distinto: a lookup de catálogo não
+   *  traz nome, e `780167992` não diz nada a quem está decidindo se entra no produto. */
+  vendedores: Record<string, string>;
   ofertas: OfertaVendedor[];
+}
+
+/**
+ * Nome de cada vendedor distinto (1 chamada por seller, não por oferta). Vendedor sem perfil
+ * legível fica de fora do mapa e a UI cai no id — perder o nome não pode derrubar a consulta,
+ * então falha individual é ignorada de propósito.
+ */
+async function resolverNomesVendedores(
+  sellerIds: number[],
+  token: string,
+): Promise<Record<string, string>> {
+  const perfis = await Promise.all(
+    sellerIds.map((id) => buscarPerfilVendedor(token, id).catch(() => null)),
+  );
+  const mapa: Record<string, string> = {};
+  for (const p of perfis) {
+    if (p?.nickname) mapa[String(p.seller_id)] = p.nickname;
+  }
+  return mapa;
 }
 
 /** `null` = falha transitória do ML (timeout/5xx) — NUNCA cacheia, distingue de "EAN sem
  *  ficha" (HTTP 200 com `results` vazio, isso sim é tombstone válido). Mesma regra da
  *  pulse-sonar-visitas: erro transitório não pode travar a resposta por 24h com afirmação falsa. */
 async function resolverLookup(ean: string, token: string): Promise<LookupCache | null> {
-  const chave = `sonar:ean:v1:${ean}`;
+  // v2 (Errata 2): o shape ganhou `categoria_ml_id` e `vendedores`. Entrada v1 não é migrável —
+  // não tem os campos — então a chave sobe em vez de tentar completar o que não foi lido.
+  const chave = `sonar:ean:v2:${ean}`;
   const cacheado = await redisGet(chave).catch(() => null);
   if (cacheado) return JSON.parse(cacheado);
 
@@ -51,7 +80,10 @@ async function resolverLookup(ean: string, token: string): Promise<LookupCache |
   if (busca === null) return null; // falha do ML, não "sem ficha"
   const productId = parseProdutoBusca(busca);
   if (!productId) {
-    const tombstone: LookupCache = { product_id: null, nome_produto: null, descricao_catalogo: null, ofertas: [] };
+    const tombstone: LookupCache = {
+      product_id: null, nome_produto: null, descricao_catalogo: null,
+      categoria_ml_id: null, vendedores: {}, ofertas: [],
+    };
     await redisSet(chave, JSON.stringify(tombstone), CACHE_TTL_LOOKUP_S).catch(() => {});
     return tombstone;
   }
@@ -71,6 +103,8 @@ async function resolverLookup(ean: string, token: string): Promise<LookupCache |
     product_id: productId,
     nome_produto: parseNomeProdutoBusca(busca),
     descricao_catalogo: parseDescricaoCatalogo(produtoJson),
+    categoria_ml_id: dadosOfertas.category_id,
+    vendedores: await resolverNomesVendedores(dadosOfertas.seller_ids, token),
     ofertas: dadosOfertas.ofertas_detalhe,
   };
   await redisSet(chave, JSON.stringify(lookup), CACHE_TTL_LOOKUP_S).catch(() => {});
@@ -139,6 +173,8 @@ Deno.serve(async (req) => {
     productId: lookup.product_id,
     nomeProduto: lookup.nome_produto,
     descricaoCatalogo: lookup.descricao_catalogo,
+    categoriaMlId: lookup.categoria_ml_id,
+    nomesVendedores: lookup.vendedores,
     comVendas: itensApify !== null,
     vendasIndisponivel,
     ofertasOficiais: lookup.ofertas,

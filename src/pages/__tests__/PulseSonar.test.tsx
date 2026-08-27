@@ -53,8 +53,12 @@ function respEan(overrides: Partial<ResultadoEanCatalogado> = {}): ResultadoEanC
   return {
     conectado: true, catalogado: true, ean: '7891000444764', product_id: 'MLB123',
     nome_produto: 'Leite Em Pó Ninho Zero Lactose Sachê 700g', descricao_catalogo: null,
+    categoria_ml_id: null,
     com_vendas: false, gerado_em: '2026-08-27T00:00:00Z',
-    ofertas: [{ item_id: 'MLB1', seller_id: 780167992, preco: 80, frete_gratis: true, full: false, vendidos: null }],
+    ofertas: [{
+      item_id: 'MLB1', seller_id: 780167992, vendedor_nome: null, preco: 80,
+      frete_gratis: true, full: false, vendidos: null,
+    }],
     ...overrides,
   };
 }
@@ -94,6 +98,41 @@ describe('SonarEanResultado — cruzamento com o catálogo da org (Errata 2)', (
     render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
     expect(screen.queryByText(/Produto novo para a operação/)).not.toBeInTheDocument();
     expect(screen.queryByText(/Você já vende/)).not.toBeInTheDocument();
+  });
+
+  it('vendedor: mostra o nickname quando a edge resolveu o perfil', () => {
+    const resp = respEan({
+      ofertas: [{
+        item_id: 'MLB1', seller_id: 780167992, vendedor_nome: 'NESTLE OFICIAL', preco: 80,
+        frete_gratis: true, full: false, vendidos: null,
+      }],
+    });
+    render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
+    expect(screen.getByText('NESTLE OFICIAL')).toBeInTheDocument();
+    expect(screen.queryByText('780167992')).not.toBeInTheDocument();
+  });
+
+  it('vendedor sem perfil legível: cai no id em vez de campo vazio', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    expect(screen.getByText('780167992')).toBeInTheDocument();
+  });
+
+  it('visitas: zero medido escreve 0, falha de medição vira "—"', () => {
+    const resp = respEan({
+      ofertas: [
+        { item_id: 'MLB1', seller_id: 1, vendedor_nome: null, preco: 80, frete_gratis: true, full: false, vendidos: null },
+        { item_id: 'MLB2', seller_id: 2, vendedor_nome: null, preco: 90, frete_gratis: false, full: false, vendidos: null },
+      ],
+    });
+    render(
+      <SonarEanResultado
+        resp={resp}
+        visitas={{ MLB1: { total: 0, por_dia: [] }, MLB2: null }}
+        onNovaConsulta={() => {}}
+      />
+    );
+    // 0 medido é informação: o anúncio existe e ninguém olha. Não pode virar "—".
+    expect(screen.getByText('0')).toBeInTheDocument();
   });
 
   it('descrição do catálogo já vinha na resposta e agora é renderizada', () => {

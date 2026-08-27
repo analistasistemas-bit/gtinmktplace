@@ -36,6 +36,7 @@ import {
 import {
   aplicarFiltrosAnuncios, temFiltroAnunciosAtivo, FILTROS_ANUNCIOS_VAZIOS, type FiltrosAnuncios,
 } from '@/lib/sonar-filtros';
+import { calcularTarifaML } from '@/lib/tarifa';
 import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
 
 // Detecta EAN/GTIN no campo de busca (ADR-0127 Errata 1) — espelho de
@@ -214,6 +215,44 @@ function SonarEanEscolha({ ean, onEscolher }: { ean: string; onEscolher: (comVen
 // VereditoSonar (conceitos de NICHO: ticket médio, lojas oficiais, "vencedor do nicho" não fazem
 // sentido para 1 produto já identificado pelo EAN).
 /**
+ * "Se eu vender pelo preço do mercado, quanto sobra?" (ADR-0127 Errata 2) — a pergunta que a
+ * consulta por EAN existia sem responder. Uma chamada só, no menor preço ativo: é o piso que o
+ * analista teria de bater para entrar. Reusa `calcular-tarifa-ml`, que já é a fonte oficial de
+ * comissão/frete do app e já tem cache por (org, categoria, preço).
+ * O frete sai das dimensões DEFAULT do ML — o produto não é nosso, não temos as reais.
+ */
+function SonarEanLiquido({ preco, categoriaMlId }: { preco: number; categoriaMlId: string }) {
+  const { data: tarifa, isLoading } = useQuery({
+    queryKey: ['pulse', 'sonar-ean-tarifa', categoriaMlId, preco],
+    queryFn: () => calcularTarifaML(preco, categoriaMlId),
+    staleTime: Infinity,
+  });
+  if (isLoading) {
+    return <Skeleton className="mb-3 h-12 w-full max-w-xl rounded-lg" />;
+  }
+  // `null` = a edge recusou (sem conexão ML, categoria sem tabela). Silêncio é melhor que um
+  // número inventado numa tela de decisão de preço.
+  if (!tarifa) return null;
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
+      <span className="font-medium">Vendendo a {fmtBRL(preco)}</span>
+      <span className="text-muted-foreground">
+        comissão <strong className="font-semibold text-foreground">{fmtBRL(tarifa.classico.comissao)}</strong>
+      </span>
+      <span className="text-muted-foreground">
+        frete <strong className="font-semibold text-foreground">{fmtBRL(tarifa.frete)}</strong>
+      </span>
+      <span className="text-success">
+        você recebe <strong className="font-semibold">{fmtBRL(tarifa.classico.recebe)}</strong>
+      </span>
+      <span className="text-muted-foreground">
+        (Premium: {fmtBRL(tarifa.premium.recebe)})
+      </span>
+    </div>
+  );
+}
+
+/**
  * "Eu já vendo isto?" (ADR-0127 Errata 2). A ausência também informa — produto que não está nem no
  * catálogo nem no Radar é oportunidade nova, e o operador precisa ver isso dito, não deduzido de
  * um espaço em branco.
@@ -243,11 +282,17 @@ function SonarEanCruzamento({ cruzamento }: { cruzamento: CruzamentoEan }) {
   );
 }
 
-export function SonarEanResultado({ resp, cruzamento, onNovaConsulta }: {
+export function SonarEanResultado({ resp, cruzamento, visitas, onNovaConsulta }: {
   resp: ResultadoEanCatalogado;
   cruzamento?: CruzamentoEan;
+  /** `undefined` = ainda carregando; `null` no item = falha da chamada; `total: 0` = zero medido. */
+  visitas?: Record<string, VisitasAnuncio | null>;
   onNovaConsulta: () => void;
 }) {
+  // Menor preço ATIVO do produto: é o número contra o qual o analista teria de competir, e é
+  // sobre ele que o líquido por venda faz sentido.
+  const precos = resp.ofertas.map((o) => o.preco).filter((p): p is number => p != null && p > 0);
+  const menorPreco = precos.length ? Math.min(...precos) : null;
   const colunas: Column<OfertaEan>[] = [
     {
       key: 'preco', header: 'Preço', className: 'tabular-nums',
@@ -255,11 +300,11 @@ export function SonarEanResultado({ resp, cruzamento, onNovaConsulta }: {
       sortValue: (o) => o.preco,
     },
     {
-      // Sem nome de vendedor nesta resposta (só a lookup de catálogo, não /users/{id}) — mostra o
-      // seller_id cru.
-      key: 'vendedor', header: 'Vendedor', className: 'tabular-nums',
-      cell: (o) => (o.seller_id != null ? String(o.seller_id) : '—'),
-      sortValue: (o) => o.seller_id,
+      // Nome resolvido na edge (1 chamada por vendedor distinto). Sem perfil legível, cai no id:
+      // um número identifica menos, mas ainda é melhor que campo vazio.
+      key: 'vendedor', header: 'Vendedor',
+      cell: (o) => o.vendedor_nome ?? (o.seller_id != null ? String(o.seller_id) : '—'),
+      sortValue: (o) => o.vendedor_nome ?? o.seller_id,
     },
     {
       key: 'frete', header: 'Frete grátis',
@@ -268,6 +313,18 @@ export function SonarEanResultado({ resp, cruzamento, onNovaConsulta }: {
     {
       key: 'full', header: 'Full',
       cell: (o) => (o.full ? <Badge variant="outline">FULL</Badge> : '—'),
+    },
+    {
+      // Demanda real da oferta, sem passar pela Apify: mesma edge (e mesmo cache por item) que a
+      // tabela do nicho usa. `total: 0` é zero MEDIDO e se escreve 0 — só ausência vira "—".
+      key: 'visitas', header: 'Visitas 30d', className: 'tabular-nums',
+      cell: (o) => {
+        if (!o.item_id) return '—';
+        if (!visitas) return <span className="text-muted-foreground">…</span>;
+        const v = visitas[o.item_id];
+        return v ? fmtInt(v.total) : <span title="Não foi possível medir as visitas deste anúncio">—</span>;
+      },
+      sortValue: (o) => (o.item_id ? visitas?.[o.item_id]?.total ?? null : null),
     },
     {
       key: 'vendidos', header: 'Vendidos', className: 'tabular-nums',
@@ -307,6 +364,9 @@ export function SonarEanResultado({ resp, cruzamento, onNovaConsulta }: {
         </p>
       )}
       {cruzamento && <SonarEanCruzamento cruzamento={cruzamento} />}
+      {resp.categoria_ml_id && menorPreco != null && (
+        <SonarEanLiquido preco={menorPreco} categoriaMlId={resp.categoria_ml_id} />
+      )}
       {resp.vendas_indisponivel && (
         <p className="mb-2 text-xs text-warning">
           Vendidos indisponível nesta consulta (Apify sem token configurado, ou a busca falhou).
@@ -495,6 +555,20 @@ export default function PulseSonar() {
     enabled: !!eanCatalogado,
     staleTime: 60_000,
   });
+
+  // Visitas 30d das ofertas do EAN: mesma edge da tabela do nicho, que já tem cache global por
+  // item (dado público). Não passa pela Apify — vale também na consulta grátis.
+  const itemIdsEan = useMemo(
+    () => (eanCatalogado?.ofertas ?? []).map((o) => o.item_id).filter((id): id is string => !!id),
+    [eanCatalogado],
+  );
+  const { data: visitasEanResp } = useQuery({
+    queryKey: ['pulse', 'sonar-ean-visitas', itemIdsEan],
+    queryFn: () => fetchVisitasSonar(itemIdsEan.slice(0, 20)),
+    enabled: itemIdsEan.length > 0,
+    staleTime: Infinity,
+  });
+  const visitasEan = visitasEanResp?.conectado ? visitasEanResp.por_item : undefined;
 
   const itens = useMemo(
     () => (vendas?.configurado ? itensDaAmostra(vendas) : []),
@@ -788,6 +862,7 @@ export default function PulseSonar() {
           <SonarEanResultado
             resp={resultadoEan}
             cruzamento={cruzamentoEan}
+            visitas={visitasEan}
             onNovaConsulta={() => { setEanBuscado(null); setTermo(''); inputRef.current?.focus(); }}
           />
         ) : null
