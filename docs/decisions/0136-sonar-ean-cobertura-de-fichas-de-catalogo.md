@@ -1,7 +1,7 @@
 # ADR-0136 — Sonar por EAN: cobertura de fichas de catálogo e escopo declarado
 
 **Data:** 2026-08-27
-**Status:** aceito, não implementado
+**Status:** aceito, implementado (2026-08-27)
 **Relacionado:** [0127](0127-sonar-tabela-por-anuncio-e-historico.md) (Errata 1 criou a consulta por
 EAN; Errata 2 enriqueceu a view), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (§ endpoints
 do ML que devolvem 403 para terceiros), [0122](0122-sonar-vendas-estimadas-via-apify.md) (Apify como
@@ -10,6 +10,11 @@ termo).
 
 > **Este ADR é a especificação de implementação.** Foi escrito para ser executado por outro agente,
 > sem acesso à conversa que o originou. Tudo que é necessário está aqui.
+
+> **Implementado em 2026-08-27.** Três ajustes que a especificação não previa, todos registrados no
+> corpo do ADR: o cache não grava resultado parcial (§ D-5), `resolverNomesVendedores` passou a usar
+> o `pool` de 5 do projeto (§ Consequências) e `fetchCruzamentoEan` passou a receber a lista de
+> fichas (§ D-2).
 
 ## Contexto
 
@@ -63,6 +68,11 @@ ganha `product_id` e `produto_nome` da ficha que a originou, e a tabela agrupa o
 O `nome_produto` do topo passa a ser o da **primeira** ficha (comportamento atual), com a contagem de
 fichas ao lado quando houver mais de uma.
 
+**Consequência não prevista na redação original:** `fetchCruzamentoEan` cruzava o Radar por
+`.eq('catalog_product_id', product_id)` — o do topo. Com `product_id` valendo só a primeira ficha, um
+produto monitorado sob a ficha #2 passaria a ser anunciado como "produto novo para a operação". A
+função recebe a lista de fichas e usa `.in(...).limit(1)`.
+
 ### D-3 — A resposta declara o escopo do que mediu
 
 Campos novos em `RespostaEan`:
@@ -88,6 +98,12 @@ porque, para este EAN, ela seguirá mostrando menos anúncios que o site, e isso
 `LookupCache` muda de shape (uma ficha → lista de fichas). Entrada v2 não é migrável. Chave sobe para
 `sonar:ean:v3:{ean}`, TTL 24h inalterado. O tombstone de EAN sem ficha (`product_id: null`) continua
 igual, no shape novo.
+
+**Resultado parcial não é cacheado.** A versão de ficha única já tinha a regra "falha transitória do
+ML nunca vira entrada de cache" (`itensJson === null` → sem `redisSet`), porque congelar "sem ofertas
+ativas" por 24h é afirmação falsa. O D-1 ("ficha que falhou sai da lista") reintroduziria o mesmo bug
+em escala menor: ficha 3 dá timeout, grava-se 4-de-5 por 24h e o operador vê uma lista curta o dia
+inteiro. `redisSet` só roda quando **todas** as fichas do teto responderam.
 
 ### D-6 — Apify NÃO entra neste caminho
 
@@ -171,6 +187,14 @@ função importa `_shared/pulse/sonar-ean.ts` — confirmado com
 
 - Fan-out de até 5 `/products/{id}/items` por EAN novo, uma vez a cada 24h por EAN (cache). Chamadas
   gratuitas na API oficial.
+- `resolverNomesVendedores` usava `Promise.all` sem teto. Com uma ficha a lista de vendedores era
+  curta e passava; a união de até 5 fichas multiplica o fan-out e derrubaria a consulta inteira por
+  rate limit do ML — por um dado cosmético (o nickname). Passou a usar o `pool(5, ...)` de
+  `_shared/concorrencia/pool.ts`, o mesmo teto da `pulse-sonar-visitas`.
+- Deploy: `parse.ts` mudou **só por adição** (`parseProdutosBusca`, +13/−0); `parseProdutoBusca` e
+  `parseNomeProdutoBusca` estão byte a byte iguais, então `analisar-viabilidade`, `vincular-catalogo`,
+  `process-familia` e `retentar-catalogo` não mudam de comportamento e não foram redeployadas —
+  redeployar o caminho de publicação sem motivo funcional é risco maior que o ganho.
 - A consulta continuará mostrando **menos** anúncios que a busca do site para EANs com muitos avulsos.
   Isso passa a ser dito na tela, e é a diferença entre "incompleto" e "com escopo declarado".
 - `parseProdutoBusca` continua existindo para os outros consumidores; a divergência entre "uma ficha"

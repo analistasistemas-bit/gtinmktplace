@@ -15,6 +15,19 @@ export function parseNomeProdutoBusca(json: unknown): string | null {
 }
 
 /**
+ * Todos os produtos de catálogo de `/products/search` (ADR-0136 D-1). Diferente de
+ * `parseProdutoBusca`, que fica com o primeiro — os outros consumidores (analisar-viabilidade,
+ * pulse-coletar) continuam com uma ficha só, de propósito.
+ */
+export function parseProdutosBusca(json: unknown): Array<{ id: string; nome: string | null }> {
+  const results = (json as { results?: Array<{ id?: string; name?: string }> } | null)?.results;
+  if (!Array.isArray(results)) return [];
+  return results
+    .filter((r): r is { id: string; name?: string } => typeof r?.id === 'string' && r.id.length > 0)
+    .map((r) => ({ id: r.id, nome: typeof r.name === 'string' && r.name.length > 0 ? r.name : null }));
+}
+
+/**
  * Extrai `short_description.content` do payload de `GET /products/{id}` (spike 037, §7.1).
  * Defensivo: ficha antiga/incompleta não pode derrubar a análise de viabilidade — ausência,
  * `null`, tipo inesperado ou string vazia sempre viram `null`, nunca lançam.

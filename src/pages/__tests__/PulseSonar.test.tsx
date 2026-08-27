@@ -57,8 +57,10 @@ function respEan(overrides: Partial<ResultadoEanCatalogado> = {}): ResultadoEanC
     com_vendas: false, gerado_em: '2026-08-27T00:00:00Z',
     ofertas: [{
       item_id: 'MLB1', seller_id: 780167992, vendedor_nome: null, preco: 80,
-      frete_gratis: true, full: false, vendidos: null,
+      frete_gratis: true, full: false, vendidos: null, product_id: 'MLB123', produto_nome: null,
     }],
+    fichas_consultadas: 1, fichas_encontradas: 1,
+    fichas: [{ product_id: 'MLB123', nome: 'Leite Em Pó Ninho Zero Lactose Sachê 700g', ofertas: 1 }],
     ...overrides,
   };
 }
@@ -104,7 +106,7 @@ describe('SonarEanResultado — cruzamento com o catálogo da org (Errata 2)', (
     const resp = respEan({
       ofertas: [{
         item_id: 'MLB1', seller_id: 780167992, vendedor_nome: 'NESTLE OFICIAL', preco: 80,
-        frete_gratis: true, full: false, vendidos: null,
+        frete_gratis: true, full: false, vendidos: null, product_id: 'MLB123', produto_nome: null,
       }],
     });
     render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
@@ -120,8 +122,8 @@ describe('SonarEanResultado — cruzamento com o catálogo da org (Errata 2)', (
   it('visitas: zero medido escreve 0, falha de medição vira "—"', () => {
     const resp = respEan({
       ofertas: [
-        { item_id: 'MLB1', seller_id: 1, vendedor_nome: null, preco: 80, frete_gratis: true, full: false, vendidos: null },
-        { item_id: 'MLB2', seller_id: 2, vendedor_nome: null, preco: 90, frete_gratis: false, full: false, vendidos: null },
+        { item_id: 'MLB1', seller_id: 1, vendedor_nome: null, preco: 80, frete_gratis: true, full: false, vendidos: null, product_id: 'MLB123', produto_nome: null },
+        { item_id: 'MLB2', seller_id: 2, vendedor_nome: null, preco: 90, frete_gratis: false, full: false, vendidos: null, product_id: 'MLB123', produto_nome: null },
       ],
     });
     render(
@@ -152,6 +154,57 @@ describe('SonarEanResultado — cruzamento com o catálogo da org (Errata 2)', (
     const resp = respEan({ descricao_catalogo: 'Leite em pó integral, zero lactose, sachê 700 g.' });
     render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
     expect(screen.getByText(/zero lactose, sachê 700 g/)).toBeInTheDocument();
+  });
+});
+
+// ADR-0136: um EAN pode casar com várias fichas de catálogo do ML. A tela precisa declarar
+// quantas fichas entraram, rotular a oferta pela ficha de origem, e dizer o que fica fora.
+describe('SonarEanResultado — cobertura de fichas de catálogo (ADR-0136)', () => {
+  it('duas fichas: metadados dizem "em 2 fichas de catálogo" e a coluna Ficha aparece rotulada', () => {
+    const resp = respEan({
+      ofertas: [
+        { item_id: 'MLB1', seller_id: 1, vendedor_nome: null, preco: 80, frete_gratis: true, full: false, vendidos: null, product_id: 'MLB123', produto_nome: 'Ficha A' },
+        { item_id: 'MLB2', seller_id: 2, vendedor_nome: null, preco: 90, frete_gratis: false, full: false, vendidos: null, product_id: 'MLB456', produto_nome: 'Ficha B' },
+      ],
+      fichas_consultadas: 2, fichas_encontradas: 2,
+      fichas: [
+        { product_id: 'MLB123', nome: 'Ficha A', ofertas: 1 },
+        { product_id: 'MLB456', nome: 'Ficha B', ofertas: 1 },
+      ],
+    });
+    render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/2 ofertas em 2 fichas de catálogo/)).toBeInTheDocument();
+    expect(screen.getByText('Ficha')).toBeInTheDocument();
+    expect(screen.getByText('Ficha A')).toBeInTheDocument();
+    expect(screen.getByText('Ficha B')).toBeInTheDocument();
+  });
+
+  it('uma ficha só: texto de hoje ("EAN ... oferta(s)"), sem coluna Ficha — não-regressão', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/EAN 7891000444764 · 1 oferta/)).toBeInTheDocument();
+    expect(screen.queryByText(/fichas de catálogo/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Ficha')).not.toBeInTheDocument();
+  });
+
+  it('ML retornou mais fichas do que o teto consultou: aviso com os dois números', () => {
+    const resp = respEan({ fichas_consultadas: 5, fichas_encontradas: 7 });
+    render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/retornou 7 fichas.*apenas 5 foram consultadas/)).toBeInTheDocument();
+  });
+
+  it('sem excesso de fichas: nenhum aviso de teto', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    expect(screen.queryByText(/foram consultadas/)).not.toBeInTheDocument();
+  });
+
+  it('nota de escopo permanente: anúncio fora do catálogo, com link do ML para o EAN', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/Anúncios fora do catálogo do Mercado Livre não entram nesta consulta/))
+      .toBeInTheDocument();
+    const link = screen.getByRole('link', { name: /Ver todos os anúncios deste EAN no site/ });
+    expect(link).toHaveAttribute('href', 'https://lista.mercadolivre.com.br/7891000444764');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
   });
 });
 

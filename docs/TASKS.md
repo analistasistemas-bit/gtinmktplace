@@ -4,16 +4,20 @@
 
 ## Sonar por EAN — cobertura de fichas de catálogo (ADR-0136) — 2026-08-27
 
-**Especificado, não implementado.** ADR escrito para outro agente executar:
-`docs/decisions/0136-sonar-ean-cobertura-de-fichas-de-catalogo.md` (plano de implementação, critérios
-de aceite e refutações inclusos).
+**Implementado.** ADR em `docs/decisions/0136-sonar-ean-cobertura-de-fichas-de-catalogo.md`
+(critérios de aceite e refutações inclusos).
 
-- [ ] Consultar todas as fichas do EAN (hoje `parseProdutoBusca` usa `results[0]` e descarta o resto —
+- [x] Consultar todas as fichas do EAN (hoje `parseProdutoBusca` usa `results[0]` e descarta o resto —
   foi por isso que o EAN `7891113175371` trouxe 1 oferta contra 23 resultados na busca do ML).
-- [ ] Oferta carrega a ficha de origem; resposta declara `fichas_consultadas`/`fichas_encontradas`.
-- [ ] Tela diz "N ofertas em M fichas" e assume que anúncio fora do catálogo é inalcançável (403 do
+- [x] Oferta carrega a ficha de origem; resposta declara `fichas_consultadas`/`fichas_encontradas`.
+- [x] Tela diz "N ofertas em M fichas" e assume que anúncio fora do catálogo é inalcançável (403 do
   ML, medido no ADR-0119) — com link para a busca do EAN no site.
-- [ ] Bump `sonar:ean:v2` → `v3` + deploy da edge.
+- [x] Bump `sonar:ean:v2` → `v3` + deploy da edge.
+- [x] Fora do ADR, achados na implementação: cache não grava resultado parcial (uma ficha que falha
+  não congela cobertura menor por 24h); `resolverNomesVendedores` com `pool(5)` em vez de
+  `Promise.all` solto (a união de fichas multiplicaria o fan-out e estouraria o rate limit do ML);
+  `fetchCruzamentoEan` cruza o Radar contra TODAS as fichas (com o `product_id` do topo, produto
+  monitorado sob a ficha #2 viraria "produto novo"); teto de visitas 20 → 40.
 
 ## Sonar por EAN — enriquecimento, etapa 1 (ADR-0127 Errata 2) — 2026-08-27
 

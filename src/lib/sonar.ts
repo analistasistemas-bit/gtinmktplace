@@ -211,12 +211,23 @@ export interface OfertaEan {
   full: boolean;
   /** null = sem dado (consulta grátis ou fora da amostra Apify) — nunca 0 por ausência. */
   vendidos: number | null;
+  /** Ficha de catálogo que originou a oferta (ADR-0136 D-2). */
+  product_id: string | null;
+  produto_nome: string | null;
+}
+
+/** Resumo por ficha de catálogo (ADR-0136 D-3). */
+export interface ResumoFichaEan {
+  product_id: string;
+  nome: string | null;
+  ofertas: number;
 }
 
 export interface ResultadoEanCatalogado {
   conectado: true;
   catalogado: true;
   ean: string;
+  /** Primeira ficha — o nome do topo vem dela. */
   product_id: string;
   nome_produto: string | null;
   descricao_catalogo: string | null;
@@ -225,6 +236,9 @@ export interface ResultadoEanCatalogado {
   com_vendas: boolean;
   vendas_indisponivel?: boolean;
   ofertas: OfertaEan[];
+  fichas_consultadas: number;
+  fichas_encontradas: number;
+  fichas: ResumoFichaEan[];
   gerado_em: string;
 }
 
@@ -268,12 +282,18 @@ export interface CruzamentoEan {
  * Responde "eu já vendo isto?" e "já está no meu Radar?" sem tocar no ML: duas leituras locais
  * sob RLS. É a informação de maior sinal da consulta por EAN e a mais barata — o escopo da org
  * sai da RLS, nunca de filtro por `user_id` (a conexão pode ser de outro membro).
+ *
+ * `productIds` é lista, não id único (ADR-0136): desde que a consulta por EAN passou a cobrir
+ * várias fichas, o produto pode estar no Radar sob QUALQUER uma delas, não só a primeira — usar só
+ * `product_id` do topo faria a tela dizer "produto novo" para um produto que já está no Radar sob
+ * a ficha #2. `.limit(1)` é obrigatório porque `.in()` pode casar 2+ linhas e `maybeSingle()`
+ * sozinho erraria (uma linha só é esperada por `.eq`, não por `.in`).
  */
-export async function fetchCruzamentoEan(ean: string, productId: string): Promise<CruzamentoEan> {
+export async function fetchCruzamentoEan(ean: string, productIds: string[]): Promise<CruzamentoEan> {
   const [variacoes, radar] = await Promise.all([
     supabase.from('variacoes').select('codigo,nome,preco').eq('gtin', ean).order('codigo'),
     supabase.from('pulse_produtos').select('id,titulo,status')
-      .eq('catalog_product_id', productId).maybeSingle(),
+      .in('catalog_product_id', productIds).limit(1).maybeSingle(),
   ]);
   if (variacoes.error) throw variacoes.error;
   // `maybeSingle` devolve error quando a linha não existe em algumas versões do client — ausência

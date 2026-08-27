@@ -8,16 +8,21 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mlGet } from '../_shared/ml/http.ts';
 import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
+import { pool } from '../_shared/concorrencia/pool.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { apifyConfigurado, buscarAnunciosML } from '../_shared/apify/client.ts';
 import { parseItensApify, type ItemVendas } from '../_shared/pulse/sonar-vendas.ts';
 import {
-  aplicarPrecoVencedorCatalogo, parseDescricaoCatalogo, parseItensProduto, parseNomeProdutoBusca,
-  parseProdutoBusca,
+  aplicarPrecoVencedorCatalogo, parseDescricaoCatalogo, parseItensProduto, parseProdutosBusca,
 } from '../_shared/concorrencia/parse.ts';
-import type { OfertaVendedor } from '../_shared/concorrencia/tipos.ts';
 import { montarRespostaEan, validarEan } from '../_shared/pulse/sonar-ean.ts';
+import type { FichaEan } from '../_shared/pulse/sonar-ean.ts';
+
+// Teto de fichas por EAN (ADR-0136 D-1): medição do caso real deu 2, nenhum EAN de teste passou
+// de 3 — acima disso o custo de fan-out não se paga. Fichas descartadas pelo teto são contadas em
+// `fichas_encontradas`, nunca cortadas em silêncio.
+const TETO_FICHAS = 5;
 
 const API = 'https://api.mercadolibre.com';
 // Preço/oferta muda mais rápido que "vendidos" — TTL menor que o de sonar-vendas (7d).
@@ -31,7 +36,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 interface LookupCache {
-  product_id: string | null; // null = tombstone: EAN sem ficha de catálogo, não rebusca
+  product_id: string | null; // primeira ficha; null = tombstone: EAN sem ficha de catálogo, não rebusca
   nome_produto: string | null;
   descricao_catalogo: string | null;
   /** Categoria do produto, lida das ofertas. É o que destrava o cálculo de "quanto você recebe"
@@ -41,7 +46,10 @@ interface LookupCache {
   /** nickname por seller_id, resolvido uma vez por vendedor distinto: a lookup de catálogo não
    *  traz nome, e `780167992` não diz nada a quem está decidindo se entra no produto. */
   vendedores: Record<string, string>;
-  ofertas: OfertaVendedor[];
+  /** Todas as fichas do EAN que responderam (ADR-0136 D-1), até o teto. */
+  fichas: FichaEan[];
+  /** Quantas o `/products/search` retornou, antes do teto (ADR-0136 D-3). */
+  fichas_encontradas: number;
 }
 
 /**
@@ -53,9 +61,10 @@ async function resolverNomesVendedores(
   sellerIds: number[],
   token: string,
 ): Promise<Record<string, string>> {
-  const perfis = await Promise.all(
-    sellerIds.map((id) => buscarPerfilVendedor(token, id).catch(() => null)),
-  );
+  // Teto de 5 simultâneas (o mesmo da pulse-sonar-visitas): com uma ficha só a lista de vendedores
+  // era curta e o `Promise.all` solto passava, mas a união de até 5 fichas (ADR-0136) multiplica o
+  // fan-out e derrubaria a consulta inteira por rate limit do ML — por um dado cosmético.
+  const perfis = await pool(5, sellerIds, (id) => buscarPerfilVendedor(token, id).catch(() => null));
   const mapa: Record<string, string> = {};
   for (const p of perfis) {
     if (p?.nickname) mapa[String(p.seller_id)] = p.nickname;
@@ -67,9 +76,9 @@ async function resolverNomesVendedores(
  *  ficha" (HTTP 200 com `results` vazio, isso sim é tombstone válido). Mesma regra da
  *  pulse-sonar-visitas: erro transitório não pode travar a resposta por 24h com afirmação falsa. */
 async function resolverLookup(ean: string, token: string): Promise<LookupCache | null> {
-  // v2 (Errata 2): o shape ganhou `categoria_ml_id` e `vendedores`. Entrada v1 não é migrável —
-  // não tem os campos — então a chave sobe em vez de tentar completar o que não foi lido.
-  const chave = `sonar:ean:v2:${ean}`;
+  // v3 (ADR-0136): o shape trocou "uma ficha" por "lista de fichas". v2 não é migrável — shape
+  // diferente — então a chave sobe em vez de tentar completar o que não foi lido.
+  const chave = `sonar:ean:v3:${ean}`;
   const cacheado = await redisGet(chave).catch(() => null);
   if (cacheado) return JSON.parse(cacheado);
 
@@ -78,36 +87,64 @@ async function resolverLookup(ean: string, token: string): Promise<LookupCache |
     token,
   );
   if (busca === null) return null; // falha do ML, não "sem ficha"
-  const productId = parseProdutoBusca(busca);
-  if (!productId) {
+  const produtos = parseProdutosBusca(busca);
+  if (produtos.length === 0) {
     const tombstone: LookupCache = {
       product_id: null, nome_produto: null, descricao_catalogo: null,
-      categoria_ml_id: null, vendedores: {}, ofertas: [],
+      categoria_ml_id: null, vendedores: {}, fichas: [], fichas_encontradas: 0,
     };
     await redisSet(chave, JSON.stringify(tombstone), CACHE_TTL_LOOKUP_S).catch(() => {});
     return tombstone;
   }
 
-  const [produtoJson, itensJson] = await Promise.all([
-    mlGet(`${API}/products/${productId}`, token),
-    mlGet(`${API}/products/${productId}/items`, token),
-  ]);
-  // `itensJson` é a lista de ofertas — se o ML falhou em devolvê-la, `parseItensProduto` cairia
-  // no shape vazio e cachearia "sem ofertas ativas" como se fosse dado confirmado. `produtoJson`
-  // nulo é tolerável (só perde o preço vencedor/descrição do catálogo, `aplicarPrecoVencedorCatalogo`
-  // já degrada sozinho para esse caso).
-  if (itensJson === null) return null;
-  const itensComPrecos = aplicarPrecoVencedorCatalogo(itensJson, produtoJson);
-  const dadosOfertas = parseItensProduto(itensComPrecos);
+  const fichasEncontradas = produtos.length;
+  const candidatas = produtos.slice(0, TETO_FICHAS);
+  const resolvidas = await Promise.all(candidatas.map(async (produto) => {
+    const [produtoJson, itensJson] = await Promise.all([
+      mlGet(`${API}/products/${produto.id}`, token),
+      mlGet(`${API}/products/${produto.id}/items`, token),
+    ]);
+    // `itensJson` é a lista de ofertas — se o ML falhou em devolvê-la, `parseItensProduto` cairia
+    // no shape vazio e trataria "sem ofertas ativas" como dado confirmado. `produtoJson` nulo é
+    // tolerável (só perde o preço vencedor/descrição do catálogo dessa ficha,
+    // `aplicarPrecoVencedorCatalogo` já degrada sozinho para esse caso). Ficha que falhou sai da
+    // lista — as demais seguem (ADR-0136 D-1).
+    if (itensJson === null) return null;
+    // buy_box_winner é POR FICHA — aplicar o de uma em outra corromperia o preço.
+    const itensComPrecos = aplicarPrecoVencedorCatalogo(itensJson, produtoJson);
+    const dadosOfertas = parseItensProduto(itensComPrecos);
+    return {
+      ficha: { product_id: produto.id, nome: produto.nome, ofertas: dadosOfertas.ofertas_detalhe } as FichaEan,
+      descricao_catalogo: parseDescricaoCatalogo(produtoJson),
+      categoria_ml_id: dadosOfertas.category_id,
+      seller_ids: dadosOfertas.seller_ids,
+    };
+  }));
+  const ok = resolvidas.filter((r): r is NonNullable<typeof r> => r !== null);
+  // Todas as fichas falharam: mesmo comportamento de hoje (nula → 502), não uma resposta parcial vazia.
+  if (ok.length === 0) return null;
+
+  const fichas = ok.map((r) => r.ficha);
+  const sellerIdsUnicos = [...new Set(ok.flatMap((r) => r.seller_ids))];
   const lookup: LookupCache = {
-    product_id: productId,
-    nome_produto: parseNomeProdutoBusca(busca),
-    descricao_catalogo: parseDescricaoCatalogo(produtoJson),
-    categoria_ml_id: dadosOfertas.category_id,
-    vendedores: await resolverNomesVendedores(dadosOfertas.seller_ids, token),
-    ofertas: dadosOfertas.ofertas_detalhe,
+    product_id: fichas[0].product_id,
+    nome_produto: fichas[0].nome,
+    // Mesmo critério de `product_id`/`nome_produto`: primeira ficha (comportamento histórico).
+    descricao_catalogo: ok[0].descricao_catalogo,
+    // Exceção explícita do ADR: categoria vem da 1ª ficha que TROUXER o campo, não da 1ª ficha —
+    // sem isso uma ficha sem categoria na frente apagaria o dado que outra ficha tem.
+    categoria_ml_id: ok.find((r) => r.categoria_ml_id)?.categoria_ml_id ?? null,
+    vendedores: await resolverNomesVendedores(sellerIdsUnicos, token),
+    fichas,
+    fichas_encontradas: fichasEncontradas,
   };
-  await redisSet(chave, JSON.stringify(lookup), CACHE_TTL_LOOKUP_S).catch(() => {});
+  // Não cachear resultado parcial: se UMA ficha falhou (transitório do ML), a resposta ainda sai
+  // (as fichas que responderam valem), mas gravar isso por 24h congelaria uma cobertura menor que
+  // a real assim que o ML voltar — o mesmo bug que o comentário de `itensJson === null` acima já
+  // evita para o caso de ficha única, reintroduzido em escala menor pelo multi-ficha.
+  if (ok.length === candidatas.length) {
+    await redisSet(chave, JSON.stringify(lookup), CACHE_TTL_LOOKUP_S).catch(() => {});
+  }
   return lookup;
 }
 
@@ -170,14 +207,13 @@ Deno.serve(async (req) => {
 
   return json(montarRespostaEan({
     ean,
-    productId: lookup.product_id,
-    nomeProduto: lookup.nome_produto,
+    fichas: lookup.fichas,
+    fichasEncontradas: lookup.fichas_encontradas,
     descricaoCatalogo: lookup.descricao_catalogo,
     categoriaMlId: lookup.categoria_ml_id,
     nomesVendedores: lookup.vendedores,
     comVendas: itensApify !== null,
     vendasIndisponivel,
-    ofertasOficiais: lookup.ofertas,
     itensApify,
     geradoEm: new Date().toISOString(),
   }));

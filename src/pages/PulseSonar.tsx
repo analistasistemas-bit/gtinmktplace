@@ -354,12 +354,23 @@ export function SonarEanResultado({ resp, cruzamento, visitas, onNovaConsulta }:
   // sobre ele que o líquido por venda faz sentido.
   const precos = resp.ofertas.map((o) => o.preco).filter((p): p is number => p != null && p > 0);
   const menorPreco = precos.length ? Math.min(...precos) : null;
+  // Coluna "Ficha" só com mais de uma ficha consultada (ADR-0136 D-2): com uma só ela seria ruído,
+  // e é o critério de não-regressão do caso de hoje (EAN de ficha única).
+  const multiplasFichas = resp.fichas_consultadas > 1;
   const colunas: Column<OfertaEan>[] = [
     {
       key: 'preco', header: 'Preço', className: 'tabular-nums',
       cell: (o) => (o.preco != null ? fmtBRL(o.preco) : '—'),
       sortValue: (o) => o.preco,
     },
+    ...(multiplasFichas ? [{
+      key: 'ficha', header: 'Ficha',
+      cell: (o: OfertaEan) => {
+        const nome = o.produto_nome ?? o.product_id ?? '—';
+        return <span className="block max-w-[12rem] truncate" title={nome}>{nome}</span>;
+      },
+      sortValue: (o: OfertaEan) => o.produto_nome ?? o.product_id,
+    } as Column<OfertaEan>] : []),
     {
       // Nome resolvido na edge (1 chamada por vendedor distinto). Sem perfil legível, cai no id:
       // um número identifica menos, mas ainda é melhor que campo vazio.
@@ -407,7 +418,15 @@ export function SonarEanResultado({ resp, cruzamento, visitas, onNovaConsulta }:
           {/* O badge qualifica a CONSULTA, não o produto: colado no nome, "grátis" era lido como
               se o item fosse de graça. Fica na linha dos metadados, com o rótulo completo. */}
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>EAN {resp.ean} · {resp.ofertas.length} oferta{resp.ofertas.length === 1 ? '' : 's'}</span>
+            <span>
+              EAN {resp.ean} ·{' '}
+              {multiplasFichas
+                // ADR-0136 D-3: com mais de uma ficha, "N oferta(s)" sozinho lia como se fosse um
+                // produto só — o operador precisa saber que são fichas diferentes do catálogo. O
+                // EAN continua na linha: é o que confirma que a consulta bateu no produto certo.
+                ? `${resp.ofertas.length} oferta${resp.ofertas.length === 1 ? '' : 's'} em ${resp.fichas_consultadas} fichas de catálogo`
+                : `${resp.ofertas.length} oferta${resp.ofertas.length === 1 ? '' : 's'}`}
+            </span>
             {resp.com_vendas ? (
               <Badge variant="outline" className="border-warning/40 text-warning">consulta com vendidos</Badge>
             ) : (
@@ -433,12 +452,36 @@ export function SonarEanResultado({ resp, cruzamento, visitas, onNovaConsulta }:
           Vendidos indisponível nesta consulta (Apify sem token configurado, ou a busca falhou).
         </p>
       )}
+      {/* ADR-0136 D-1: teto de 5 fichas por EAN. Corte silencioso é o que este ADR corrige — se o
+          ML achou mais fichas do que o teto consultou, isso precisa aparecer na tela. */}
+      {resp.fichas_encontradas > resp.fichas_consultadas && (
+        <p className="mb-2 text-xs text-warning">
+          O Mercado Livre retornou {resp.fichas_encontradas} fichas de catálogo para este EAN;
+          apenas {resp.fichas_consultadas} foram consultadas (teto por consulta).
+        </p>
+      )}
       <DataTable
         columns={colunas}
         rows={resp.ofertas}
         rowKey={(o) => o.item_id ?? `${o.seller_id}-${o.preco}`}
         empty={<EmptyState icon={Package} title="Sem ofertas ativas para este produto." />}
       />
+      {/* ADR-0136 D-4: nota de escopo permanente, não condicional. Anúncio fora do catálogo do ML
+          (avulso, não vinculado a nenhuma ficha) é inalcançável pela API oficial — /items/{id} de
+          terceiro e /sites/MLB/search devolvem 403 sempre (ADR-0119). Para EANs com muitos avulsos
+          esta tabela vai continuar mostrando menos que a busca do site, e isso é esperado: o link
+          leva para onde o operador vê o mercado inteiro. */}
+      <p className="mt-3 text-xs text-muted-foreground">
+        Anúncios fora do catálogo do Mercado Livre não entram nesta consulta.{' '}
+        <a
+          href={`https://lista.mercadolivre.com.br/${resp.ean}`}
+          target="_blank"
+          rel="noreferrer"
+          className="underline underline-offset-2 hover:text-foreground"
+        >
+          Ver todos os anúncios deste EAN no site
+        </a>
+      </p>
     </div>
   );
 }
@@ -610,9 +653,21 @@ export default function PulseSonar() {
   // ficha de catálogo, não pelo EAN digitado. Falha aqui não derruba o resultado do EAN — o bloco
   // some e o resto da tela continua.
   const eanCatalogado = resultadoEan?.conectado && resultadoEan.catalogado ? resultadoEan : null;
+  // Todas as fichas, não só a primeira (ADR-0136): o produto pode estar no Radar sob qualquer uma
+  // delas. A lista de ids entra na queryKey — senão o cache do react-query poderia servir o
+  // cruzamento de um EAN anterior com fichas diferentes.
+  const fichaIdsEan = useMemo(
+    // Front e edge deployam separado neste projeto: se o front subir antes do `pulse-sonar-ean`, a
+    // resposta ainda não tem `fichas`. Cair para o `product_id` do topo (comportamento anterior) —
+    // lista vazia faria `.in(...)` não casar nada e a tela diria "produto novo" para um produto que
+    // está no Radar.
+    () => eanCatalogado?.fichas?.map((f) => f.product_id)
+      ?? (eanCatalogado ? [eanCatalogado.product_id] : []),
+    [eanCatalogado],
+  );
   const { data: cruzamentoEan } = useQuery({
-    queryKey: ['pulse', 'sonar-ean-cruzamento', eanCatalogado?.ean, eanCatalogado?.product_id],
-    queryFn: () => fetchCruzamentoEan(eanCatalogado!.ean, eanCatalogado!.product_id),
+    queryKey: ['pulse', 'sonar-ean-cruzamento', eanCatalogado?.ean, fichaIdsEan],
+    queryFn: () => fetchCruzamentoEan(eanCatalogado!.ean, fichaIdsEan),
     enabled: !!eanCatalogado,
     staleTime: 60_000,
   });
@@ -625,7 +680,10 @@ export default function PulseSonar() {
   );
   const { data: visitasEanResp } = useQuery({
     queryKey: ['pulse', 'sonar-ean-visitas', itemIdsEan],
-    queryFn: () => fetchVisitasSonar(itemIdsEan.slice(0, 20)),
+    // Teto 40: união de até 5 fichas (ADR-0136) pode passar de 20 ofertas. Cada item é 1 chamada
+    // ao ML na edge (que já lotea a concorrência) — 40 é folga sobre o pior caso medido sem virar
+    // fan-out descontrolado.
+    queryFn: () => fetchVisitasSonar(itemIdsEan.slice(0, 40)),
     enabled: itemIdsEan.length > 0,
     staleTime: Infinity,
   });
