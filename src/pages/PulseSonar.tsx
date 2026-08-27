@@ -342,16 +342,16 @@ export function SonarEanResultado({ resp, cruzamento, visitas, onNovaConsulta }:
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-medium">{resp.nome_produto ?? `Produto ${resp.product_id}`}</span>
+          <div className="text-sm font-medium">{resp.nome_produto ?? `Produto ${resp.product_id}`}</div>
+          {/* O badge qualifica a CONSULTA, não o produto: colado no nome, "grátis" era lido como
+              se o item fosse de graça. Fica na linha dos metadados, com o rótulo completo. */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>EAN {resp.ean} · {resp.ofertas.length} oferta{resp.ofertas.length === 1 ? '' : 's'}</span>
             {resp.com_vendas ? (
-              <Badge variant="outline" className="border-warning/40 text-warning">com vendidos</Badge>
+              <Badge variant="outline" className="border-warning/40 text-warning">consulta com vendidos</Badge>
             ) : (
-              <Badge variant="outline" className="border-success/40 text-success">grátis</Badge>
+              <Badge variant="outline" className="border-success/40 text-success">consulta grátis</Badge>
             )}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            EAN {resp.ean} · {resp.ofertas.length} oferta{resp.ofertas.length === 1 ? '' : 's'}
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={onNovaConsulta}>Nova consulta</Button>

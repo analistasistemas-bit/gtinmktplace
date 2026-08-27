@@ -135,6 +135,19 @@ describe('SonarEanResultado — cruzamento com o catálogo da org (Errata 2)', (
     expect(screen.getByText('0')).toBeInTheDocument();
   });
 
+  it('badge qualifica a consulta, não o produto: rótulo completo e fora da linha do nome', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    const badge = screen.getByText('consulta grátis');
+    // "grátis" sozinho, colado no nome, lia como se o produto fosse de graça.
+    expect(screen.queryByText('grátis')).not.toBeInTheDocument();
+    expect(badge.parentElement).toHaveTextContent(/EAN 7891000444764/);
+  });
+
+  it('consulta paga se identifica como tal', () => {
+    render(<SonarEanResultado resp={respEan({ com_vendas: true })} onNovaConsulta={() => {}} />);
+    expect(screen.getByText('consulta com vendidos')).toBeInTheDocument();
+  });
+
   it('descrição do catálogo já vinha na resposta e agora é renderizada', () => {
     const resp = respEan({ descricao_catalogo: 'Leite em pó integral, zero lactose, sachê 700 g.' });
     render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
