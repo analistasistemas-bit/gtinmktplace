@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar por EAN — cobertura de fichas de catálogo (ADR-0136) — 2026-08-27
+
+**Especificado, não implementado.** ADR escrito para outro agente executar:
+`docs/decisions/0136-sonar-ean-cobertura-de-fichas-de-catalogo.md` (plano de implementação, critérios
+de aceite e refutações inclusos).
+
+- [ ] Consultar todas as fichas do EAN (hoje `parseProdutoBusca` usa `results[0]` e descarta o resto —
+  foi por isso que o EAN `7891113175371` trouxe 1 oferta contra 23 resultados na busca do ML).
+- [ ] Oferta carrega a ficha de origem; resposta declara `fichas_consultadas`/`fichas_encontradas`.
+- [ ] Tela diz "N ofertas em M fichas" e assume que anúncio fora do catálogo é inalcançável (403 do
+  ML, medido no ADR-0119) — com link para a busca do EAN no site.
+- [ ] Bump `sonar:ean:v2` → `v3` + deploy da edge.
+
 ## Sonar por EAN — enriquecimento, etapa 1 (ADR-0127 Errata 2) — 2026-08-27
 
 Origem: o EAN `7891000444764` devolvia 1 linha (R$ 80,00, vendedor `780167992`, tudo `—`) e não
