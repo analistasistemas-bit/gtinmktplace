@@ -20,7 +20,9 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { registrarSaque, desfazerSaque } from '@/lib/faturamento';
-import { resumoSelecaoSaque } from '@/lib/saque-selecao';
+import {
+  resumoSelecaoSaque, selecionarPedidosFaturaveis, type ResumoSelecaoSaque,
+} from '@/lib/saque-selecao';
 import { periodoFromParams, resolverJanela, type Periodo } from '@/lib/metricas';
 import { calcularResumo } from '@/lib/resumo-vendas';
 import { orderIdsComDevolucaoReal } from '@/lib/devolucoes';
@@ -368,11 +370,14 @@ export default function DetalheFinanceiro() {
   // vazia por estar na página 7 do resultado anterior.
   useEffect(() => { setPagina(1); }, [busca, filtroLib]);
 
-  // "Visíveis" com paginação é a PÁGINA, não o filtro inteiro: o checkbox do cabeçalho não pode
-  // marcar 985 pedidos que o operador não está vendo.
-  const idsVisiveis = useMemo(() => new Set(pedidosPagina.map((p) => p.chave)), [pedidosPagina]);
-  const selecionadosVisiveis = pedidosPagina.filter((p) => selecionados.has(p.chave));
-  const todosVisiveisSelecionados = pedidosPagina.length > 0 && pedidosPagina.every((p) => selecionados.has(p.chave));
+  // Selecionar todos cobre o filtro inteiro; a paginação limita apenas o que é renderizado.
+  const pedidosSelecionaveis = useMemo(
+    () => pedidosFiltrados.filter((p) => p.faturavel),
+    [pedidosFiltrados],
+  );
+  const selecionadosVisiveis = pedidosSelecionaveis.filter((p) => selecionados.has(p.chave));
+  const todosVisiveisSelecionados = pedidosSelecionaveis.length > 0
+    && pedidosSelecionaveis.every((p) => selecionados.has(p.chave));
 
   function setSelecionado(chave: string, checked: boolean) {
     setSelecionados((prev) => {
@@ -383,13 +388,7 @@ export default function DetalheFinanceiro() {
   }
 
   function selecionarVisiveis(checked: boolean) {
-    setSelecionados((prev) => {
-      const next = new Set(prev);
-      for (const id of idsVisiveis) {
-        if (checked) next.add(id); else next.delete(id);
-      }
-      return next;
-    });
+    setSelecionados((prev) => selecionarPedidosFaturaveis(prev, pedidosFiltrados, checked));
   }
 
   type SaqueMutationVars = { ids: string[]; ignoradosCliente: number };
@@ -422,9 +421,13 @@ export default function DetalheFinanceiro() {
     onError: (e) => toast.error('Falha ao desfazer saque', { description: e instanceof Error ? e.message : 'Erro desconhecido' }),
   });
 
-  function vendaIdsPorStatus(statusEsperado: StatusLiberacao): SaqueMutationVars {
+  function selecaoPorStatus(statusEsperado: StatusLiberacao): {
+    vars: SaqueMutationVars;
+    pedidos: Pedido[];
+  } {
     const now = Date.now();
     const ids: string[] = [];
+    const pedidos: Pedido[] = [];
     let ignoradosCliente = 0;
     for (const pedido of selecionadosVisiveis) {
       // Trava final antes da RPC: pedido devolvido/cancelado não tem valor a sacar (ADR-0038).
@@ -437,50 +440,56 @@ export default function DetalheFinanceiro() {
       }, now);
       if (status === statusEsperado) {
         ids.push(...pedido.vendaIds);
+        pedidos.push(pedido);
       } else {
-      ignoradosCliente += pedido.vendaIds.length;
+        ignoradosCliente += pedido.vendaIds.length;
       }
     }
-    return { ids, ignoradosCliente };
+    return { vars: { ids, ignoradosCliente }, pedidos };
   }
 
   // Confirmação de saque em massa: guarda os dados da operação já validada até o operador
-  // confirmar. null = nada pendente.
-  const [confirmarSaque, setConfirmarSaque] = useState<SaqueMutationVars | null>(null);
+  // confirmar. null = nada pendente. O resumo é congelado no clique junto com os ids: `useVendas`
+  // faz poll de 3min e refetch ao focar a aba, então recalcular em render mostraria uma quantidade
+  // diferente da que a RPC vai receber.
+  const [confirmarSaque, setConfirmarSaque] = useState<{
+    acao: 'registrar' | 'desfazer';
+    vars: SaqueMutationVars;
+    resumo: ResumoSelecaoSaque;
+  } | null>(null);
 
   function onRegistrarSaque() {
-    const { ids, ignoradosCliente } = vendaIdsPorStatus('liberado');
-    if (ids.length === 0) {
+    const { vars, pedidos } = selecaoPorStatus('liberado');
+    if (vars.ids.length === 0) {
       toast.error('Selecione pedido(s) liberado(s).');
       return;
     }
-    // Acima do limite, confirma antes: "selecionar todos" marca a página inteira, e o operador
-    // pode não ter percebido o tamanho da seleção.
-    const elegiveis = selecionadosVisiveis.filter((p) => p.faturavel && p.sacado_em == null);
-    if (resumoSelecaoSaque(elegiveis).precisaConfirmar) {
-      setConfirmarSaque({ ids, ignoradosCliente });
+    // Acima do limite, confirma antes: "selecionar todos" pode marcar centenas de pedidos.
+    const resumo = resumoSelecaoSaque(pedidos);
+    if (resumo.precisaConfirmar) {
+      setConfirmarSaque({ acao: 'registrar', vars, resumo });
       return;
     }
-    mutationRegistrar.mutate({ ids, ignoradosCliente });
+    mutationRegistrar.mutate(vars);
   }
 
   function onDesfazerSaque() {
-    const { ids, ignoradosCliente } = vendaIdsPorStatus('sacado');
-    if (ids.length === 0) {
+    const { vars, pedidos } = selecaoPorStatus('sacado');
+    if (vars.ids.length === 0) {
       toast.error('Selecione pedido(s) sacado(s).');
       return;
     }
-    mutationDesfazer.mutate({ ids, ignoradosCliente });
+    const resumo = resumoSelecaoSaque(pedidos);
+    if (resumo.precisaConfirmar) {
+      setConfirmarSaque({ acao: 'desfazer', vars, resumo });
+      return;
+    }
+    mutationDesfazer.mutate(vars);
   }
 
   // Totais e markup agregado sobre os pedidos FILTRADOS (coerente com o que está visível), contando
   // só faturáveis — igual ao banner de KPIs (ADR-0038).
   const totaisFiltrados = useMemo(() => totaisFinanceiro(pedidosFiltrados), [pedidosFiltrados]);
-
-  // Números do diálogo de confirmação: mesma base elegível que o handler usou para decidir.
-  const resumoConfirmacao = resumoSelecaoSaque(
-    selecionadosVisiveis.filter((p) => p.faturavel && p.sacado_em == null),
-  );
 
   // Somatório do que o operador marcou — TODAS as linhas selecionadas, não só as elegíveis a saque:
   // ele quer conferir o valor do que está lendo na tela, e uma linha já sacada continua marcada.
@@ -592,7 +601,7 @@ export default function DetalheFinanceiro() {
                 <Checkbox
                   checked={todosVisiveisSelecionados}
                   onCheckedChange={(checked) => selecionarVisiveis(checked === true)}
-                  aria-label="Selecionar pedidos visíveis"
+                  aria-label="Selecionar todos os pedidos do filtro"
                 />
               </TableHead>
               <ThSort k="data" label="Data" sort={sort} onSort={toggleSort} />
@@ -670,21 +679,29 @@ export default function DetalheFinanceiro() {
       <Dialog open={confirmarSaque != null} onOpenChange={(o) => !o && setConfirmarSaque(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Registrar saque de {fmtInt(resumoConfirmacao.quantidade)} pedidos?</DialogTitle>
+            <DialogTitle>
+              {confirmarSaque?.acao === 'desfazer' ? 'Desfazer' : 'Registrar'} saque de{' '}
+              {fmtInt(confirmarSaque?.resumo.quantidade ?? 0)} pedidos?
+            </DialogTitle>
             <DialogDescription>
-              Marca {fmtBRL(resumoConfirmacao.valor)} como já sacado. Não movimenta dinheiro no
-              Mercado Livre — é o seu controle de conciliação, e dá para desfazer.
+              {confirmarSaque?.acao === 'desfazer' ? 'Remove' : 'Marca'}{' '}
+              {fmtBRL(confirmarSaque?.resumo.valor ?? 0)} {confirmarSaque?.acao === 'desfazer' ? 'do' : 'como já'}{' '}
+              sacado. Não movimenta dinheiro no Mercado Livre — é o seu controle de conciliação.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConfirmarSaque(null)}>Cancelar</Button>
             <Button
               onClick={() => {
-                if (confirmarSaque) mutationRegistrar.mutate(confirmarSaque);
+                if (confirmarSaque?.acao === 'desfazer') mutationDesfazer.mutate(confirmarSaque.vars);
+                else if (confirmarSaque) mutationRegistrar.mutate(confirmarSaque.vars);
                 setConfirmarSaque(null);
               }}
             >
-              <CheckCircle2 className="mr-1.5 h-4 w-4" />Registrar saque
+              {confirmarSaque?.acao === 'desfazer'
+                ? <RotateCcw className="mr-1.5 h-4 w-4" />
+                : <CheckCircle2 className="mr-1.5 h-4 w-4" />}
+              {confirmarSaque?.acao === 'desfazer' ? 'Desfazer saque' : 'Registrar saque'}
             </Button>
           </DialogFooter>
         </DialogContent>

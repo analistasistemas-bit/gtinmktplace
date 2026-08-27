@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
-import { SonarVendas } from '../PulseSonar';
-import type { ItemVendasSonar, PainelVendasSonar } from '@/lib/sonar';
+import { describe, expect, it, vi } from 'vitest';
+import { SonarVendas, SonarEanResultado, SonarEanImposto, SonarEanCarregando } from '../PulseSonar';
+import type {
+  CruzamentoEan, ItemVendasSonar, PainelVendasSonar, ResultadoEanCatalogado,
+} from '@/lib/sonar';
 
 // Card "Produto destaque" (SonarVendas): mesma regra de href do item_id da coluna de ações
 // (D15/ADR-0127), aplicada ao `produto_destaque` do payload — ver task 15/16 (coordenador pediu
@@ -42,5 +44,222 @@ describe('SonarVendas — card "Produto destaque" usa a mesma regra de link da c
     render(<SonarVendas resp={respBase(destaque)} />);
     expect(screen.queryByRole('link', { name: 'Sem item_id' })).not.toBeInTheDocument();
     expect(screen.getByText('Sem item_id')).toBeInTheDocument();
+  });
+});
+
+// ADR-0127 Errata 2: a consulta por EAN precisa responder "devo vender isto?". O caso que originou
+// a errata (EAN 7891000444764, 1 oferta, tudo "—") não dizia nada ao analista comercial.
+function respEan(overrides: Partial<ResultadoEanCatalogado> = {}): ResultadoEanCatalogado {
+  return {
+    conectado: true, catalogado: true, ean: '7891000444764', product_id: 'MLB123',
+    nome_produto: 'Leite Em Pó Ninho Zero Lactose Sachê 700g', descricao_catalogo: null,
+    categoria_ml_id: null,
+    com_vendas: false, gerado_em: '2026-08-27T00:00:00Z',
+    ofertas: [{
+      item_id: 'MLB1', seller_id: 780167992, vendedor_nome: null, preco: 80,
+      frete_gratis: true, full: false, vendidos: null, product_id: 'MLB123', produto_nome: null,
+    }],
+    fichas_consultadas: 1, fichas_encontradas: 1,
+    fichas: [{ product_id: 'MLB123', nome: 'Leite Em Pó Ninho Zero Lactose Sachê 700g', ofertas: 1 }],
+    ...overrides,
+  };
+}
+
+describe('SonarEanResultado — cruzamento com o catálogo da org (Errata 2)', () => {
+  it('já vendo o produto: mostra código e preço da variação', () => {
+    const cruzamento: CruzamentoEan = {
+      minhas: [{ codigo: '1042', nome: 'Ninho Zero Lactose', preco: 74.9 }],
+      no_radar: null,
+    };
+    render(<SonarEanResultado resp={respEan()} cruzamento={cruzamento} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/Você já vende: 1042/)).toBeInTheDocument();
+    expect(screen.getByText(/74,90/)).toBeInTheDocument();
+  });
+
+  it('produto já monitorado: informa o Radar, com o status quando não está ativo', () => {
+    const cruzamento: CruzamentoEan = {
+      minhas: [],
+      no_radar: { id: 'p1', titulo: 'Ninho', status: 'pausado' },
+    };
+    render(<SonarEanResultado resp={respEan()} cruzamento={cruzamento} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/Já está no seu Radar \(pausado\)/)).toBeInTheDocument();
+  });
+
+  it('sem nada: diz que é produto novo — ausência informa, não é espaço em branco', () => {
+    render(
+      <SonarEanResultado
+        resp={respEan()}
+        cruzamento={{ minhas: [], no_radar: null }}
+        onNovaConsulta={() => {}}
+      />
+    );
+    expect(screen.getByText(/Produto novo para a operação/)).toBeInTheDocument();
+  });
+
+  it('cruzamento ainda carregando: não afirma nem que vende nem que é novo', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    expect(screen.queryByText(/Produto novo para a operação/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Você já vende/)).not.toBeInTheDocument();
+  });
+
+  it('vendedor: mostra o nickname quando a edge resolveu o perfil', () => {
+    const resp = respEan({
+      ofertas: [{
+        item_id: 'MLB1', seller_id: 780167992, vendedor_nome: 'NESTLE OFICIAL', preco: 80,
+        frete_gratis: true, full: false, vendidos: null, product_id: 'MLB123', produto_nome: null,
+      }],
+    });
+    render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
+    expect(screen.getByText('NESTLE OFICIAL')).toBeInTheDocument();
+    expect(screen.queryByText('780167992')).not.toBeInTheDocument();
+  });
+
+  it('vendedor sem perfil legível: cai no id em vez de campo vazio', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    expect(screen.getByText('780167992')).toBeInTheDocument();
+  });
+
+  it('visitas: zero medido escreve 0, falha de medição vira "—"', () => {
+    const resp = respEan({
+      ofertas: [
+        { item_id: 'MLB1', seller_id: 1, vendedor_nome: null, preco: 80, frete_gratis: true, full: false, vendidos: null, product_id: 'MLB123', produto_nome: null },
+        { item_id: 'MLB2', seller_id: 2, vendedor_nome: null, preco: 90, frete_gratis: false, full: false, vendidos: null, product_id: 'MLB123', produto_nome: null },
+      ],
+    });
+    render(
+      <SonarEanResultado
+        resp={resp}
+        visitas={{ MLB1: { total: 0, por_dia: [] }, MLB2: null }}
+        onNovaConsulta={() => {}}
+      />
+    );
+    // 0 medido é informação: o anúncio existe e ninguém olha. Não pode virar "—".
+    expect(screen.getByText('0')).toBeInTheDocument();
+  });
+
+  it('badge qualifica a consulta, não o produto: rótulo completo e fora da linha do nome', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    const badge = screen.getByText('consulta grátis');
+    // "grátis" sozinho, colado no nome, lia como se o produto fosse de graça.
+    expect(screen.queryByText('grátis')).not.toBeInTheDocument();
+    expect(badge.parentElement).toHaveTextContent(/EAN 7891000444764/);
+  });
+
+  it('consulta paga se identifica como tal', () => {
+    render(<SonarEanResultado resp={respEan({ com_vendas: true })} onNovaConsulta={() => {}} />);
+    expect(screen.getByText('consulta com vendidos')).toBeInTheDocument();
+  });
+
+  it('descrição do catálogo já vinha na resposta e agora é renderizada', () => {
+    const resp = respEan({ descricao_catalogo: 'Leite em pó integral, zero lactose, sachê 700 g.' });
+    render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/zero lactose, sachê 700 g/)).toBeInTheDocument();
+  });
+});
+
+// ADR-0136: um EAN pode casar com várias fichas de catálogo do ML. A tela precisa declarar
+// quantas fichas entraram, rotular a oferta pela ficha de origem, e dizer o que fica fora.
+describe('SonarEanResultado — cobertura de fichas de catálogo (ADR-0136)', () => {
+  it('duas fichas: metadados dizem "em 2 fichas de catálogo" e a coluna Ficha aparece rotulada', () => {
+    const resp = respEan({
+      ofertas: [
+        { item_id: 'MLB1', seller_id: 1, vendedor_nome: null, preco: 80, frete_gratis: true, full: false, vendidos: null, product_id: 'MLB123', produto_nome: 'Ficha A' },
+        { item_id: 'MLB2', seller_id: 2, vendedor_nome: null, preco: 90, frete_gratis: false, full: false, vendidos: null, product_id: 'MLB456', produto_nome: 'Ficha B' },
+      ],
+      fichas_consultadas: 2, fichas_encontradas: 2,
+      fichas: [
+        { product_id: 'MLB123', nome: 'Ficha A', ofertas: 1 },
+        { product_id: 'MLB456', nome: 'Ficha B', ofertas: 1 },
+      ],
+    });
+    render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/2 ofertas em 2 fichas de catálogo/)).toBeInTheDocument();
+    expect(screen.getByText('Ficha')).toBeInTheDocument();
+    expect(screen.getByText('Ficha A')).toBeInTheDocument();
+    expect(screen.getByText('Ficha B')).toBeInTheDocument();
+  });
+
+  it('uma ficha só: texto de hoje ("EAN ... oferta(s)"), sem coluna Ficha — não-regressão', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/EAN 7891000444764 · 1 oferta/)).toBeInTheDocument();
+    expect(screen.queryByText(/fichas de catálogo/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Ficha')).not.toBeInTheDocument();
+  });
+
+  it('ML retornou mais fichas do que o teto consultou: aviso com os dois números', () => {
+    const resp = respEan({ fichas_consultadas: 5, fichas_encontradas: 7 });
+    render(<SonarEanResultado resp={resp} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/retornou 7 fichas.*apenas 5 foram consultadas/)).toBeInTheDocument();
+  });
+
+  it('sem excesso de fichas: nenhum aviso de teto', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    expect(screen.queryByText(/foram consultadas/)).not.toBeInTheDocument();
+  });
+
+  it('nota de escopo permanente: anúncio fora do catálogo, com link do ML para o EAN', () => {
+    render(<SonarEanResultado resp={respEan()} onNovaConsulta={() => {}} />);
+    expect(screen.getByText(/Anúncios fora do catálogo do Mercado Livre não entram nesta consulta/))
+      .toBeInTheDocument();
+    const link = screen.getByRole('link', { name: /Ver todos os anúncios deste EAN no site/ });
+    expect(link).toHaveAttribute('href', 'https://lista.mercadolivre.com.br/7891000444764');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer');
+  });
+});
+
+// ADR-0055 / regra LOUD: imposto nunca é presumido. No Sonar o produto não é nosso, então a
+// origem é desconhecida — a tela mostra as duas alíquotas em vez de escolher uma.
+let aliquotasMock: { nacional: number; importado: number; confirmada: boolean } | undefined;
+let aliquotasErro = false;
+vi.mock('@/hooks/useConfiguracoes', () => ({
+  useAliquotas: () => ({ data: aliquotasMock, isLoading: false, isError: aliquotasErro }),
+}));
+
+describe('SonarEanImposto — imposto entra sem presumir origem', () => {
+  it('alíquotas confirmadas: mostra o líquido nas duas origens, com os percentuais da org', () => {
+    aliquotasMock = { nacional: 8, importado: 16, confirmada: true };
+    aliquotasErro = false;
+    render(<SonarEanImposto preco={80} recebe={55.85} />);
+    // 55,85 − 8% de 80 = 49,45 ; 55,85 − 16% de 80 = 43,05
+    expect(screen.getByText(/nacional 8%/)).toBeInTheDocument();
+    expect(screen.getByText('R$ 49,45')).toBeInTheDocument();
+    expect(screen.getByText(/importado 16%/)).toBeInTheDocument();
+    expect(screen.getByText('R$ 43,05')).toBeInTheDocument();
+  });
+
+  it('alíquotas NÃO confirmadas: manda confirmar em vez de inventar percentual', () => {
+    aliquotasMock = { nacional: 8, importado: 16, confirmada: false };
+    aliquotasErro = false;
+    render(<SonarEanImposto preco={80} recebe={55.85} />);
+    expect(screen.getByText(/confirme as alíquotas da organização/i)).toBeInTheDocument();
+    expect(screen.queryByText('R$ 49,45')).not.toBeInTheDocument();
+  });
+
+  it('falha ao ler alíquotas não vira imposto zero', () => {
+    aliquotasMock = undefined;
+    aliquotasErro = true;
+    render(<SonarEanImposto preco={80} recebe={55.85} />);
+    expect(screen.getByText(/confirme as alíquotas/i)).toBeInTheDocument();
+  });
+});
+
+describe('SonarEanCarregando — a espera diz o que está acontecendo', () => {
+  it('anuncia a consulta como status para leitor de tela, com o EAN visível', () => {
+    render(<SonarEanCarregando ean="7891000444764" comVendas={false} />);
+    // `role=status` + aria-live: quem não vê a trilha nem a logo precisa ser avisado mesmo assim.
+    expect(screen.getByRole('status')).toHaveTextContent('7891000444764');
+    expect(screen.getByLabelText('PubliAI')).toBeInTheDocument();
+    expect(document.querySelector('.border-trail__track')).toBeInTheDocument();
+  });
+
+  it('consulta grátis: promete resposta rápida na segunda vez', () => {
+    render(<SonarEanCarregando ean="7891000444764" comVendas={false} />);
+    expect(screen.getByText(/responde na hora/i)).toBeInTheDocument();
+  });
+
+  it('consulta paga: avisa que os vendidos podem levar minutos', () => {
+    render(<SonarEanCarregando ean="7891000444764" comVendas />);
+    expect(screen.getByText(/pode levar alguns minutos/i)).toBeInTheDocument();
   });
 });

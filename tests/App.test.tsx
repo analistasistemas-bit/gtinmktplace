@@ -1,10 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { configure, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@/components/theme-provider';
 import { AppRoutes } from '@/App';
 import '@/pages/Dashboard';
+
+// O default de 1s do findBy* transformava este smoke de roteamento num teste de performance do
+// transform do Vite: no CI, com shards em paralelo, o primeiro lazy load passa de 1s e reprova
+// rota que funciona. Regressão de peso do bundle é medida no `vite build`, não aqui.
+configure({ asyncUtilTimeout: 5_000 });
 
 // AppRoutes carrega as páginas com React.lazy. Pré-transformar o Dashboard durante a coleta
 // impede que este smoke test de roteamento inclua no timeout do findByRole o custo variável do

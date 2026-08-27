@@ -354,3 +354,64 @@ dependência nova.
   `resolverConexao` + `getValidAccessTokenConexao` + `exigirModulo(admin, orgId, 'pulse')`);
   `catalogado: false` (EAN sem ficha) e `conectado: false` (org sem conexão ML) são respostas
   válidas com HTTP 200, mesmo padrão de degradação explícita do resto do Sonar.
+
+## Errata 2 (2026-08-27) — a consulta por EAN precisa responder "devo vender isto?"
+
+**Como apareceu:** o Diego bipou o EAN `7891000444764` (Leite Ninho Zero Lactose 700g) e a tela
+devolveu uma linha: R$ 80,00, vendedor `780167992`, Full `—`, Vendidos `—`. A resposta é
+tecnicamente correta e comercialmente inútil — diz que o produto existe e nada além disso.
+
+A recusa da Errata 1 em reaproveitar veredito/raio-x/painel de vendas continua **certa**: ticket
+médio, lojas oficiais e "vencedor do nicho" são conceitos de nicho e não se aplicam a um produto
+já identificado. O erro não foi tirar; foi não pôr nada no lugar. Um analista comercial que bipa
+um código de barras está perguntando **"devo vender isto, e a que preço eu ganho dinheiro?"**, e
+cinco colunas cruas não respondem isso.
+
+Plano completo em `docs/superpowers/plans/2026-08-27-sonar-ean-enriquecimento.md`. As decisões:
+
+- **A view enriquece com o que já existe, não com fonte de dado nova.** Quase tudo que falta já é
+  helper compartilhado (`_shared/ml/listing-prices.ts`, `tarifa.ts`, `frete.ts`,
+  `perfil-vendedor.ts`) ou dado que a própria função já calcula e descarta. Nenhuma dependência
+  nova, nenhuma edge nova.
+- **Ordem por valor de decisão, não por custo.** Primeiro o que a org já sabe sozinha (cruzamento
+  local), depois o que já está na resposta e não é exibido, depois o líquido por venda, e só então
+  vendedor e visitas. Cada etapa é entregável isolada.
+- **`category_id` é calculado e descartado — usá-lo exige bump de cache.** `parseItensProduto`
+  produz `category_id`, mas `LookupCache` (`sonar:ean:v1:{ean}`, TTL 24h) guarda só
+  `{ product_id, nome_produto, descricao_catalogo, ofertas }`. Como ele é a chave da comissão, a
+  etapa do líquido por venda sobe a chave para `sonar:ean:v2:{ean}` — sem o bump, entrada antiga
+  desserializa sem o campo e a UI nova abre buraco. Etapas que não precisam dele **não** sobem a
+  versão.
+- **Visitas reusam `pulse-sonar-visitas`, não uma rota nova.** A edge já aceita de 1 a 20
+  `item_ids`, já tem cache global por item (dado público, ADR-0120 §3) e já tem cliente no
+  frontend (`src/lib/sonar.ts`). O caminho do EAN chama a mesma edge com os itens do produto.
+- **O cruzamento com dado próprio é a informação de maior sinal e a mais barata.** `variacoes.gtin`
+  responde "você já vende este produto" e `pulse_produtos.catalog_product_id` responde "já está no
+  seu Radar". Duas leituras locais sob RLS, zero rede externa. Quando as duas dão vazio, a ausência
+  também informa: é produto novo para a operação.
+- **O imposto entra mostrando as DUAS origens, nunca presumindo uma.** O líquido por venda sem
+  imposto responde metade da pergunta, mas o Sonar consulta produto de terceiro: não há como saber
+  se é nacional ou importado, e escolher uma alíquota seria exatamente o que a regra LOUD do
+  ADR-0055 proíbe. A tela mostra o líquido nas duas alíquotas **configuradas da org**
+  (`useAliquotas`), e quem lê identifica a linha do seu caso. Alíquota não confirmada não vira
+  número nem zero: vira o aviso de ir confirmar em Configurações, mesmo tratamento do simulador de
+  margem do nicho (`dialog-margem-sonar.tsx`, "origem obrigatória e SEM default").
+- **"De/por" na tabela de EAN fica FORA — não é promoção.** A tentação óbvia era derivar desconto
+  da diferença entre `price` e `sale_price`, como a tabela do nicho faz. No caminho do catálogo
+  isso **mentiria**: `aplicarPrecoVencedorCatalogo` sobrescreve `sale_price` com o preço do
+  `buy_box_winner`, então a diferença mede "este item é o vencedor da buy box", não "está em
+  promoção". Um selo "N% OFF" ali seria falso sempre que o vencedor tiver preço abaixo do `price`
+  do item. Refutação registrada: não tentar de novo sem ler `original_price` do item, que é outro
+  campo e outra medição.
+- **A coluna "Vendidos" vazia na consulta grátis não recebe fix cosmético.** Ela incomoda hoje
+  porque é a única coisa na tela; com o enriquecimento vira uma ausência entre informações, com o
+  tooltip que já distingue "não consultei" de "consultei e a Apify não pegou". Corrigir a coluna
+  isolada seria trabalho revertido pela etapa seguinte.
+- **O modo EAN passa a se anunciar antes do resultado.** `EAN_RE = /^\d{8,14}$/` troca o fluxo
+  inteiro sem aviso: o operador digita e só descobre no resultado que pediu outra coisa. Foi
+  exatamente essa surpresa que originou este levantamento. O campo sinaliza a detecção antes do
+  submit.
+
+**Escopo entregue nesta primeira etapa:** cruzamento local (`variacoes.gtin` + `pulse_produtos`) e
+exibição da `descricao_catalogo` que já vinha na resposta e não era renderizada. Nenhuma chamada
+nova ao ML, nenhum bump de cache, nenhuma mudança no contrato da edge.

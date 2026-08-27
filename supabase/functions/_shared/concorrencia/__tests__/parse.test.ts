@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { aplicarPrecoVencedorCatalogo, parseProdutoBusca, parseNomeProdutoBusca, parseItensProduto, parseDescricaoCatalogo } from '../parse';
+import { aplicarPrecoVencedorCatalogo, parseProdutoBusca, parseProdutosBusca, parseNomeProdutoBusca, parseItensProduto, parseDescricaoCatalogo } from '../parse';
 
 describe('parseProdutoBusca', () => {
   it('payload vazio/inválido → null', () => {
@@ -21,6 +21,37 @@ describe('parseProdutoBusca', () => {
 
   it('id ausente no 1º resultado → null', () => {
     expect(parseProdutoBusca({ results: [{ name: 'sem id' }] })).toBe(null);
+  });
+});
+
+describe('parseProdutosBusca', () => {
+  it('payload vazio/inválido → array vazio', () => {
+    expect(parseProdutosBusca({ results: [] })).toEqual([]);
+    expect(parseProdutosBusca({})).toEqual([]);
+    expect(parseProdutosBusca(null)).toEqual([]);
+  });
+
+  it('descarta entrada sem id', () => {
+    expect(parseProdutosBusca({ results: [{ name: 'sem id' }] })).toEqual([]);
+  });
+
+  it('entrada sem name → nome null', () => {
+    expect(parseProdutosBusca({ results: [{ id: 'MLB1' }] })).toEqual([{ id: 'MLB1', nome: null }]);
+  });
+
+  it('mantém todos os resultados, na ordem do ML', () => {
+    const json = {
+      results: [
+        { id: 'MLB1', name: 'Produto A' },
+        { id: 'MLB2', name: 'Produto B' },
+        { id: 'MLB3', name: 'Produto C' },
+      ],
+    };
+    expect(parseProdutosBusca(json)).toEqual([
+      { id: 'MLB1', nome: 'Produto A' },
+      { id: 'MLB2', nome: 'Produto B' },
+      { id: 'MLB3', nome: 'Produto C' },
+    ]);
   });
 });
 

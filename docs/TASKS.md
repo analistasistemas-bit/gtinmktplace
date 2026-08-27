@@ -2,6 +2,73 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar por EAN — cobertura de fichas de catálogo (ADR-0136) — 2026-08-27
+
+**Implementado.** ADR em `docs/decisions/0136-sonar-ean-cobertura-de-fichas-de-catalogo.md`
+(critérios de aceite e refutações inclusos).
+
+- [x] Consultar todas as fichas do EAN (hoje `parseProdutoBusca` usa `results[0]` e descarta o resto —
+  foi por isso que o EAN `7891113175371` trouxe 1 oferta contra 23 resultados na busca do ML).
+- [x] Oferta carrega a ficha de origem; resposta declara `fichas_consultadas`/`fichas_encontradas`.
+- [x] Tela diz "N ofertas em M fichas" e assume que anúncio fora do catálogo é inalcançável (403 do
+  ML, medido no ADR-0119) — com link para a busca do EAN no site.
+- [x] Bump `sonar:ean:v2` → `v3` + deploy da edge.
+- [x] Fora do ADR, achados na implementação: cache não grava resultado parcial (uma ficha que falha
+  não congela cobertura menor por 24h); `resolverNomesVendedores` com `pool(5)` em vez de
+  `Promise.all` solto (a união de fichas multiplicaria o fan-out e estouraria o rate limit do ML);
+  `fetchCruzamentoEan` cruza o Radar contra TODAS as fichas (com o `product_id` do topo, produto
+  monitorado sob a ficha #2 viraria "produto novo"); teto de visitas 20 → 40.
+
+## Sonar por EAN — enriquecimento, etapa 1 (ADR-0127 Errata 2) — 2026-08-27
+
+Origem: o EAN `7891000444764` devolvia 1 linha (R$ 80,00, vendedor `780167992`, tudo `—`) e não
+respondia "devo vender isto?". Plano completo em
+`docs/superpowers/plans/2026-08-27-sonar-ean-enriquecimento.md`.
+
+- [x] **Errata 2 do ADR-0127** com as decisões, a ordem das etapas e duas refutações registradas:
+  "de/por" na tabela de EAN mente (o `sale_price` é sobrescrito pelo `buy_box_winner`, então a
+  diferença mede buy box, não promoção) e a coluna "Vendidos" vazia não recebe fix cosmético.
+- [x] **Cruzamento local** (`fetchCruzamentoEan`): `variacoes.gtin` responde "você já vende" e
+  `pulse_produtos.catalog_product_id` responde "já está no Radar". Duas leituras sob RLS, zero
+  chamada ao ML. Quando as duas dão vazio, a tela **diz** que é produto novo — ausência informa.
+- [x] **`descricao_catalogo` renderizada**: já vinha na resposta e no cache desde a Errata 1, a UI
+  só não mostrava.
+- [ ] Etapas seguintes (não implementadas): líquido por venda (exige bump `sonar:ean:v2`), nome do
+  vendedor, visitas 30d reusando `pulse-sonar-visitas`, aviso do modo EAN antes do submit.
+
+## Identidade visual do Pulse — 2026-08-27
+
+Branch `worktree-feat-pulse-visual`. Header do Pulse com moldura própria e faixa de telemetria
+(itens no radar, ofertas observadas/relevantes, hora da última leitura), trilha de luz enquanto a
+coleta roda, count-up nos cards de contagem, e no menu lateral badge de alertas de ação não lidos
++ a mesma trilha quando há alerta.
+
+- [x] `BorderTrail` em CSS puro (`src/components/ui/border-trail.{tsx,css}`), sem dependência de
+  animação, com fallback de borda estática para navegador sem `offset-path`, `prefers-reduced-motion`
+  e `forced-colors`. Duração do loop fora de `durationMs` por ser estado indeterminado (contrato de
+  motion §6.1).
+- [x] `useCountUp` (`src/hooks/use-count-up.ts`) reinicia do valor atual quando o alvo muda.
+- [x] `contarPulseAlertas` movida para `src/lib/pulse-contagem.ts`: a sidebar está no bundle inicial
+  e importar `lib/pulse` inteiro arrastava `pulse-margem` + qualificação de mercado para todas as
+  páginas. Verificado no `vite build` — o chunk de entrada só carrega `pulse_alertas`.
+## Financeiro — "Selecionar todos" cobre o filtro inteiro (ADR-0117) — 2026-08-27
+
+ADR: `docs/decisions/0117-financeiro-controle-de-liberacao-e-saque.md` (adendo 2026-08-27)
+
+- [x] **Motivo.** Com 912 vendas no período, o checkbox do cabeçalho marcava só as 50 linhas da
+  página, contrariando a intenção de selecionar todos. Passou a cobrir todos os pedidos
+  **faturáveis** do filtro e da busca ativos; a paginação limita apenas a renderização.
+  Commit `afa06e20`.
+- [x] **Confirmação nas duas ações.** Como a seleção global pode alcançar centenas de pedidos, o
+  limite de 20 (`LIMITE_CONFIRMA_SAQUE`) passou a proteger **Registrar saque** e **Desfazer saque**.
+- [x] **Números do diálogo congelados no clique.** `useVendas` faz poll de 3min e refetch ao focar a
+  aba (ADR-0081/0082): recalcular o resumo em render fazia o título divergir dos ids que a RPC
+  recebe. Cenário provado em teste: 8 dos 25 pedidos marcados sacados por outro operador da org com
+  o diálogo aberto → título dizia **17**, botão mandava os **25** do clique. Ação sobre dinheiro não
+  pode anunciar uma quantidade e executar outra.
+- [x] **Testes.** `src/lib/__tests__/saque-selecao.test.ts`, `tests/lib/saque-confirmacao.test.ts` e
+  `src/pages/__tests__/DetalheFinanceiro.confirmacao.test.tsx` (render real: falha sem a congelação).
+
 ## Cadastro fiscal e Faturador do Mercado Livre (ADR-0135) — 2026-08-25/26
 
 Branch `worktree-fiscal-cadastro-nfe`, 15 tasks concluídas (SDD). O PubliAI não transmite NF-e —

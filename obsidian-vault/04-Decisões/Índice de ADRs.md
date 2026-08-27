@@ -148,5 +148,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0133 | [Alertas do Pulse: severidade gravada e área dedicada](../../docs/decisions/0133-alertas-do-pulse-severidade-e-area-dedicada.md) |
 | 0134 | [Alerta de estoque zerado e de volta ao ar](../../docs/decisions/0134-alerta-de-estoque-zerado-e-volta-ao-ar.md) |
 | 0135 | [Cadastro fiscal e emissão via Faturador do Mercado Livre](../../docs/decisions/0135-cadastro-fiscal-e-faturador-do-ml.md) |
+| 0136 | [Sonar por EAN: cobertura de fichas de catálogo e escopo declarado](../../docs/decisions/0136-sonar-ean-cobertura-de-fichas-de-catalogo.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
