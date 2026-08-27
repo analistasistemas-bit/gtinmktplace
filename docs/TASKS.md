@@ -2,6 +2,23 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar por EAN — enriquecimento, etapa 1 (ADR-0127 Errata 2) — 2026-08-27
+
+Origem: o EAN `7891000444764` devolvia 1 linha (R$ 80,00, vendedor `780167992`, tudo `—`) e não
+respondia "devo vender isto?". Plano completo em
+`docs/superpowers/plans/2026-08-27-sonar-ean-enriquecimento.md`.
+
+- [x] **Errata 2 do ADR-0127** com as decisões, a ordem das etapas e duas refutações registradas:
+  "de/por" na tabela de EAN mente (o `sale_price` é sobrescrito pelo `buy_box_winner`, então a
+  diferença mede buy box, não promoção) e a coluna "Vendidos" vazia não recebe fix cosmético.
+- [x] **Cruzamento local** (`fetchCruzamentoEan`): `variacoes.gtin` responde "você já vende" e
+  `pulse_produtos.catalog_product_id` responde "já está no Radar". Duas leituras sob RLS, zero
+  chamada ao ML. Quando as duas dão vazio, a tela **diz** que é produto novo — ausência informa.
+- [x] **`descricao_catalogo` renderizada**: já vinha na resposta e no cache desde a Errata 1, a UI
+  só não mostrava.
+- [ ] Etapas seguintes (não implementadas): líquido por venda (exige bump `sonar:ean:v2`), nome do
+  vendedor, visitas 30d reusando `pulse-sonar-visitas`, aviso do modo EAN antes do submit.
+
 ## Identidade visual do Pulse — 2026-08-27
 
 Branch `worktree-feat-pulse-visual`. Header do Pulse com moldura própria e faixa de telemetria

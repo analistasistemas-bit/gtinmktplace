@@ -28,10 +28,10 @@ import {
 } from '@/lib/sonar-buscas-recentes';
 import { calcularVereditoAnuncios, contextoNichoAnuncios } from '@/lib/veredito-sonar';
 import {
-  fetchSonarPorEan, fetchVendasSonar, fetchVisitasSonar, itensDaAmostra, linkDoAnuncio,
-  normalizarSerieVisitas, passosProgresso,
-  type EtapaProgresso, type ItemVendasSonar, type OfertaEan, type PainelVendasSonar,
-  type RaioXNicho, type ResultadoEanCatalogado, type VisitasAnuncio,
+  fetchCruzamentoEan, fetchSonarPorEan, fetchVendasSonar, fetchVisitasSonar, itensDaAmostra,
+  linkDoAnuncio, normalizarSerieVisitas, passosProgresso,
+  type CruzamentoEan, type EtapaProgresso, type ItemVendasSonar, type OfertaEan,
+  type PainelVendasSonar, type RaioXNicho, type ResultadoEanCatalogado, type VisitasAnuncio,
 } from '@/lib/sonar';
 import {
   aplicarFiltrosAnuncios, temFiltroAnunciosAtivo, FILTROS_ANUNCIOS_VAZIOS, type FiltrosAnuncios,
@@ -213,7 +213,41 @@ function SonarEanEscolha({ ean, onEscolher }: { ean: string; onEscolher: (comVen
 // Resultado da busca por EAN: view PRÓPRIA e enxuta — NÃO reaproveita SonarVendas/RaioXBarra/
 // VereditoSonar (conceitos de NICHO: ticket médio, lojas oficiais, "vencedor do nicho" não fazem
 // sentido para 1 produto já identificado pelo EAN).
-function SonarEanResultado({ resp, onNovaConsulta }: { resp: ResultadoEanCatalogado; onNovaConsulta: () => void }) {
+/**
+ * "Eu já vendo isto?" (ADR-0127 Errata 2). A ausência também informa — produto que não está nem no
+ * catálogo nem no Radar é oportunidade nova, e o operador precisa ver isso dito, não deduzido de
+ * um espaço em branco.
+ */
+function SonarEanCruzamento({ cruzamento }: { cruzamento: CruzamentoEan }) {
+  const { minhas, no_radar } = cruzamento;
+  if (minhas.length === 0 && !no_radar) {
+    return (
+      <p className="mb-3 text-xs text-muted-foreground">
+        Produto novo para a operação: não está no seu catálogo nem no Radar.
+      </p>
+    );
+  }
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+      {minhas.length > 0 && (
+        <span className="font-medium text-success">
+          Você já vende: {minhas.map((v) => `${v.codigo} (${fmtBRL(v.preco)})`).join(' · ')}
+        </span>
+      )}
+      {no_radar && (
+        <span className="text-muted-foreground">
+          Já está no seu Radar{no_radar.status !== 'ativo' ? ` (${no_radar.status})` : ''}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function SonarEanResultado({ resp, cruzamento, onNovaConsulta }: {
+  resp: ResultadoEanCatalogado;
+  cruzamento?: CruzamentoEan;
+  onNovaConsulta: () => void;
+}) {
   const colunas: Column<OfertaEan>[] = [
     {
       key: 'preco', header: 'Preço', className: 'tabular-nums',
@@ -265,6 +299,14 @@ function SonarEanResultado({ resp, onNovaConsulta }: { resp: ResultadoEanCatalog
         </div>
         <Button variant="outline" size="sm" onClick={onNovaConsulta}>Nova consulta</Button>
       </div>
+      {/* Já vinha na resposta (e no cache) desde a Errata 1, só não era renderizada: é o que
+          confirma que o EAN bateu na ficha certa, além do nome. */}
+      {resp.descricao_catalogo && (
+        <p className="mb-3 max-w-3xl text-xs leading-relaxed text-muted-foreground">
+          {resp.descricao_catalogo}
+        </p>
+      )}
+      {cruzamento && <SonarEanCruzamento cruzamento={cruzamento} />}
       {resp.vendas_indisponivel && (
         <p className="mb-2 text-xs text-warning">
           Vendidos indisponível nesta consulta (Apify sem token configurado, ou a busca falhou).
@@ -441,6 +483,17 @@ export default function PulseSonar() {
     enabled: !!eanBuscado,
     staleTime: Infinity,
     retry: false,
+  });
+
+  // Leitura local (RLS), sem ML: chave pelo product_id porque o cruzamento com o Radar é por
+  // ficha de catálogo, não pelo EAN digitado. Falha aqui não derruba o resultado do EAN — o bloco
+  // some e o resto da tela continua.
+  const eanCatalogado = resultadoEan?.conectado && resultadoEan.catalogado ? resultadoEan : null;
+  const { data: cruzamentoEan } = useQuery({
+    queryKey: ['pulse', 'sonar-ean-cruzamento', eanCatalogado?.ean, eanCatalogado?.product_id],
+    queryFn: () => fetchCruzamentoEan(eanCatalogado!.ean, eanCatalogado!.product_id),
+    enabled: !!eanCatalogado,
+    staleTime: 60_000,
   });
 
   const itens = useMemo(
@@ -734,6 +787,7 @@ export default function PulseSonar() {
         ) : resultadoEan && resultadoEan.conectado && resultadoEan.catalogado ? (
           <SonarEanResultado
             resp={resultadoEan}
+            cruzamento={cruzamentoEan}
             onNovaConsulta={() => { setEanBuscado(null); setTermo(''); inputRef.current?.focus(); }}
           />
         ) : null

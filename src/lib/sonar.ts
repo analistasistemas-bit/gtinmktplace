@@ -245,6 +245,42 @@ export async function fetchSonarPorEan(ean: string, comVendas: boolean): Promise
   return json as RespostaSonarEan;
 }
 
+// --- Cruzamento com o catálogo da própria org (ADR-0127 Errata 2) -------------------------------
+
+export interface VariacaoPropria {
+  codigo: string;
+  nome: string | null;
+  preco: number;
+}
+
+export interface CruzamentoEan {
+  /** Variações da própria org com este GTIN. Vazio = produto novo para a operação. */
+  minhas: VariacaoPropria[];
+  /** Produto já monitorado no Radar, pela mesma ficha de catálogo. */
+  no_radar: { id: string; titulo: string | null; status: string } | null;
+}
+
+/**
+ * Responde "eu já vendo isto?" e "já está no meu Radar?" sem tocar no ML: duas leituras locais
+ * sob RLS. É a informação de maior sinal da consulta por EAN e a mais barata — o escopo da org
+ * sai da RLS, nunca de filtro por `user_id` (a conexão pode ser de outro membro).
+ */
+export async function fetchCruzamentoEan(ean: string, productId: string): Promise<CruzamentoEan> {
+  const [variacoes, radar] = await Promise.all([
+    supabase.from('variacoes').select('codigo,nome,preco').eq('gtin', ean).order('codigo'),
+    supabase.from('pulse_produtos').select('id,titulo,status')
+      .eq('catalog_product_id', productId).maybeSingle(),
+  ]);
+  if (variacoes.error) throw variacoes.error;
+  // `maybeSingle` devolve error quando a linha não existe em algumas versões do client — ausência
+  // não é falha aqui, mas erro de verdade (RLS, rede) não pode virar "não tenho no Radar".
+  if (radar.error && radar.status !== 406) throw radar.error;
+  return {
+    minhas: variacoes.data ?? [],
+    no_radar: radar.data ?? null,
+  };
+}
+
 // --- Simulador de margem ------------------------------------------------------------------------
 
 /**
