@@ -1,5 +1,5 @@
-// Registrar saque é ação em massa sobre dinheiro: com "selecionar todos" numa página cheia, um
-// clique marcava dezenas de pedidos sem confirmação (code-review-v11, M1).
+// Registrar ou desfazer saque é ação em massa sobre dinheiro: "selecionar todos" cobre o filtro
+// inteiro, então um clique pode atingir centenas de pedidos.
 import { describe, it, expect } from 'vitest';
 import { resumoSelecaoSaque, LIMITE_CONFIRMA_SAQUE } from '@/lib/saque-selecao';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
