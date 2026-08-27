@@ -85,11 +85,10 @@ describe('SidebarNav', () => {
     const badge = await screen.findByText('3');
     const pulse = screen.getByRole('link', { name: /Pulse/i });
     expect(pulse).toContainElement(badge);
-    // A trilha marca só o Pulse: um wrapper para todo o menu significaria alerta genérico. O
-    // wrapper `.border-trail` agora está sempre presente (todo item de menu); o decorativo
-    // `.border-trail__track` é o que só existe quando ativo.
-    expect(document.querySelectorAll('.border-trail__track')).toHaveLength(1);
-    expect(pulse.closest('.border-trail')).toContainElement(document.querySelector('.border-trail__track'));
+    // A aura marca só o Pulse: uma para todo o menu significaria destaque genérico. O wrapper
+    // `.glow-effect` envolve todo item; a aura só existe no Pulse, e a variante forte é o alerta.
+    expect(document.querySelectorAll('.glow-effect__aura')).toHaveLength(1);
+    expect(pulse.closest('.glow-effect')).toHaveClass('glow-effect--forte');
   });
 
   it('módulo pulse sem alertas: sem badge e sem trilha', async () => {
@@ -101,6 +100,8 @@ describe('SidebarNav', () => {
     // realmente resolver (não só o link existir) evita que um badge com contagem 0 passe batido.
     await waitFor(() => expect(qc.getQueryState(QK.pulseAlertasContagem('acao'))?.status).toBe('success'));
     expect(pulse).not.toHaveTextContent(/\d/);
-    expect(document.querySelector('.border-trail__track')).not.toBeInTheDocument();
+    // Sem alerta o Pulse mantém a aura (destaque do módulo), mas não a variante forte.
+    expect(document.querySelectorAll('.glow-effect__aura')).toHaveLength(1);
+    expect(pulse.closest('.glow-effect')).not.toHaveClass('glow-effect--forte');
   });
 });

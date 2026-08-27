@@ -1,0 +1,50 @@
+/* Aura difusa que percorre as cores por trás do filho (referência: motion-primitives GlowEffect).
+   Em CSS puro pelo mesmo motivo da border-trail: o efeito não justifica trazer uma runtime de
+   animação para o bundle inicial, que é onde a sidebar vive. */
+.glow-effect {
+  position: relative;
+  isolation: isolate;
+  border-radius: var(--glow-effect-radius, 8px);
+}
+
+.glow-effect__aura {
+  position: absolute;
+  inset: -3px;
+  z-index: 1;
+  pointer-events: none;
+  border-radius: inherit;
+  /* Paleta do produto, não o arco-íris do exemplo: a sidebar é escura e o Pulse é da cor primária.
+     A repetição da primeira cor no fim fecha o ciclo sem emenda visível. */
+  background: linear-gradient(
+    90deg,
+    var(--chart-1),
+    var(--chart-2),
+    var(--chart-3),
+    var(--chart-1)
+  );
+  background-size: 300% 100%;
+  filter: blur(7px);
+  opacity: 0.45;
+  animation: glow-effect-shift 6s linear infinite;
+}
+
+/* Intensidade é o que separa "módulo em destaque" de "tem coisa te esperando aqui". */
+.glow-effect--forte .glow-effect__aura {
+  opacity: 0.8;
+  filter: blur(9px);
+  animation-duration: 3s;
+}
+
+@keyframes glow-effect-shift {
+  to { background-position: 300% 0; }
+}
+
+/* Movimento é o enfeite; a aura parada continua destacando o item. */
+@media (prefers-reduced-motion: reduce) {
+  .glow-effect__aura { animation: none; }
+}
+
+/* Alto contraste: aura borrada vira ruído, some e o item volta ao desenho padrão. */
+@media (forced-colors: active) {
+  .glow-effect__aura { display: none; }
+}

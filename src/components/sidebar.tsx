@@ -9,7 +9,7 @@ import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { usePrefetchEstoque } from '@/hooks/usePrefetchEstoque';
 import { useSupportStore } from '@/stores/support-store';
 import { useQuery } from '@tanstack/react-query';
-import { BorderTrail } from '@/components/ui/border-trail';
+import { GlowEffect } from '@/components/ui/glow-effect';
 import { contarPulseAlertas } from '@/lib/pulse-contagem';
 import { QK } from '@/lib/queries';
 
@@ -52,7 +52,14 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <nav className="flex flex-1 flex-col gap-0.5 px-2 py-3">
       {NAV_ITEMS.filter((item) => allowed.has(item.key)).map(({ to, label, icon: Icon, end, key }) => (
-        <BorderTrail key={to} active={key === 'pulse' && alertasPulse > 0} radius={6}>
+        // Glow só no Pulse: aura permanente marca o módulo, e a versão forte diz que há alerta
+        // esperando. Item comum passa reto pelo wrapper, sem aura.
+        <GlowEffect
+          key={to}
+          ativo={key === 'pulse'}
+          forte={key === 'pulse' && alertasPulse > 0}
+          radius={6}
+        >
           <NavLink
             to={to}
             end={end}
@@ -78,7 +85,7 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
               </span>
             )}
           </NavLink>
-        </BorderTrail>
+        </GlowEffect>
       ))}
     </nav>
   );
