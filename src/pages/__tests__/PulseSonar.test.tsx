@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { SonarVendas, SonarEanResultado, SonarEanImposto } from '../PulseSonar';
+import { SonarVendas, SonarEanResultado, SonarEanImposto, SonarEanCarregando } from '../PulseSonar';
 import type {
   CruzamentoEan, ItemVendasSonar, PainelVendasSonar, ResultadoEanCatalogado,
 } from '@/lib/sonar';
@@ -188,5 +188,25 @@ describe('SonarEanImposto — imposto entra sem presumir origem', () => {
     aliquotasErro = true;
     render(<SonarEanImposto preco={80} recebe={55.85} />);
     expect(screen.getByText(/confirme as alíquotas/i)).toBeInTheDocument();
+  });
+});
+
+describe('SonarEanCarregando — a espera diz o que está acontecendo', () => {
+  it('anuncia a consulta como status para leitor de tela, com o EAN visível', () => {
+    render(<SonarEanCarregando ean="7891000444764" comVendas={false} />);
+    // `role=status` + aria-live: quem não vê a trilha nem a logo precisa ser avisado mesmo assim.
+    expect(screen.getByRole('status')).toHaveTextContent('7891000444764');
+    expect(screen.getByLabelText('PubliAI')).toBeInTheDocument();
+    expect(document.querySelector('.border-trail__track')).toBeInTheDocument();
+  });
+
+  it('consulta grátis: promete resposta rápida na segunda vez', () => {
+    render(<SonarEanCarregando ean="7891000444764" comVendas={false} />);
+    expect(screen.getByText(/responde na hora/i)).toBeInTheDocument();
+  });
+
+  it('consulta paga: avisa que os vendidos podem levar minutos', () => {
+    render(<SonarEanCarregando ean="7891000444764" comVendas />);
+    expect(screen.getByText(/pode levar alguns minutos/i)).toBeInTheDocument();
   });
 });

@@ -36,6 +36,8 @@ import {
 import {
   aplicarFiltrosAnuncios, temFiltroAnunciosAtivo, FILTROS_ANUNCIOS_VAZIOS, type FiltrosAnuncios,
 } from '@/lib/sonar-filtros';
+import { BorderTrail } from '@/components/ui/border-trail';
+import { Logo } from '@/components/ui/logo';
 import { calcularTarifaML } from '@/lib/tarifa';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
@@ -215,6 +217,31 @@ function SonarEanEscolha({ ean, onEscolher }: { ean: string; onEscolher: (comVen
 // Resultado da busca por EAN: view PRÓPRIA e enxuta — NÃO reaproveita SonarVendas/RaioXBarra/
 // VereditoSonar (conceitos de NICHO: ticket médio, lojas oficiais, "vencedor do nicho" não fazem
 // sentido para 1 produto já identificado pelo EAN).
+/**
+ * Espera da consulta por EAN. Três skeletons cinzentos não diziam o que estava acontecendo — e a
+ * consulta pode passar de um minuto quando o EAN é novo (sem cache). Aqui a marca fica visível
+ * pulsando, a trilha corre na borda enquanto durar, e o texto diz a etapa.
+ */
+export function SonarEanCarregando({ ean, comVendas }: { ean: string; comVendas: boolean }) {
+  return (
+    <BorderTrail active radius={12}>
+      <div
+        role="status"
+        aria-live="polite"
+        className="relative z-[2] flex flex-col items-center gap-3 rounded-xl border bg-card px-6 py-12 text-center"
+      >
+        <Logo className="animate-pulse" symbolClassName="h-9 w-9" wordmarkClassName="text-lg" />
+        <p className="text-sm font-medium">Consultando o EAN {ean} no Mercado Livre</p>
+        <p className="max-w-md text-xs text-muted-foreground">
+          {comVendas
+            ? 'Lendo a ficha do catálogo e buscando os vendidos. A busca de vendidos é a parte lenta — pode levar alguns minutos.'
+            : 'Lendo a ficha do catálogo e as ofertas ativas. Da segunda vez o mesmo EAN responde na hora.'}
+        </p>
+      </div>
+    </BorderTrail>
+  );
+}
+
 /**
  * "Se eu vender pelo preço do mercado, quanto sobra?" (ADR-0127 Errata 2) — a pergunta que a
  * consulta por EAN existia sem responder. Uma chamada só, no menor preço ativo: é o piso que o
@@ -864,9 +891,7 @@ export default function PulseSonar() {
         <SonarEanEscolha ean={eanPendente} onEscolher={escolherConsultaEan} />
       ) : eanBuscado ? (
         eanCarregando ? (
-          <div className="flex flex-col gap-1.5">
-            {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
-          </div>
+          <SonarEanCarregando ean={eanBuscado.ean} comVendas={eanBuscado.comVendas} />
         ) : eanErro ? (
           <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
             <p className="text-sm font-medium text-destructive">

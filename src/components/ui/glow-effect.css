@@ -9,10 +9,18 @@
 
 .glow-effect__aura {
   position: absolute;
-  inset: -3px;
+  inset: -2px;
   z-index: 1;
   pointer-events: none;
   border-radius: inherit;
+  /* Recorta o miolo: sem isto a aura PREENCHE o item, porque o filho (NavLink) é transparente e
+     não tampa o meio como o botão sólido da referência. O blur depois espalha o anel para os dois
+     lados e vira halo. */
+  padding: 2px;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
   /* Paleta do produto, não o arco-íris do exemplo: a sidebar é escura e o Pulse é da cor primária.
      A repetição da primeira cor no fim fecha o ciclo sem emenda visível. */
   background: linear-gradient(
@@ -23,15 +31,15 @@
     var(--chart-1)
   );
   background-size: 300% 100%;
-  filter: blur(7px);
-  opacity: 0.45;
-  animation: glow-effect-shift 6s linear infinite;
+  filter: blur(3px);
+  opacity: 0.5;
+  animation: glow-effect-shift 8s linear infinite;
 }
 
 /* Intensidade é o que separa "módulo em destaque" de "tem coisa te esperando aqui". */
 .glow-effect--forte .glow-effect__aura {
-  opacity: 0.8;
-  filter: blur(9px);
+  opacity: 0.9;
+  filter: blur(5px);
   animation-duration: 3s;
 }
 
