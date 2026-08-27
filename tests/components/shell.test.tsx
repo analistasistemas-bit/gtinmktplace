@@ -1,11 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from '@/components/theme-provider';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { SidebarNav } from '@/components/sidebar';
 import { MENU_KEYS } from '@/lib/menus';
+import { QK } from '@/lib/queries';
 
 // Perfil não-admin com TODOS os menus permitidos. O que sobra na sidebar depende só do
 // gate de módulo (E6b, D-13): 'estoque' está em MENU_KEYS mas é de módulo pago.
@@ -31,11 +32,12 @@ vi.mock('@/lib/pulse-contagem', () => ({
 // provider do App.
 function renderNav() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
+  const utils = render(
     <QueryClientProvider client={qc}>
       <MemoryRouter><SidebarNav /></MemoryRouter>
     </QueryClientProvider>
   );
+  return { ...utils, qc };
 }
 
 describe('ThemeToggle', () => {
@@ -83,17 +85,22 @@ describe('SidebarNav', () => {
     const badge = await screen.findByText('3');
     const pulse = screen.getByRole('link', { name: /Pulse/i });
     expect(pulse).toContainElement(badge);
-    // A trilha marca só o Pulse: um wrapper para todo o menu significaria alerta genérico.
-    expect(document.querySelectorAll('.border-trail')).toHaveLength(1);
-    expect(document.querySelector('.border-trail')).toContainElement(pulse);
+    // A trilha marca só o Pulse: um wrapper para todo o menu significaria alerta genérico. O
+    // wrapper `.border-trail` agora está sempre presente (todo item de menu); o decorativo
+    // `.border-trail__track` é o que só existe quando ativo.
+    expect(document.querySelectorAll('.border-trail__track')).toHaveLength(1);
+    expect(pulse.closest('.border-trail')).toContainElement(document.querySelector('.border-trail__track'));
   });
 
   it('módulo pulse sem alertas: sem badge e sem trilha', async () => {
     modulosHabilitados = ['pulse'];
-    renderNav();
+    const { qc } = renderNav();
 
-    const pulse = await screen.findByRole('link', { name: /Pulse/i });
+    const pulse = screen.getByRole('link', { name: /Pulse/i });
+    // 0 alertas não muda o DOM em relação ao estado "ainda carregando" — esperar a query
+    // realmente resolver (não só o link existir) evita que um badge com contagem 0 passe batido.
+    await waitFor(() => expect(qc.getQueryState(QK.pulseAlertasContagem('acao'))?.status).toBe('success'));
     expect(pulse).not.toHaveTextContent(/\d/);
-    expect(document.querySelector('.border-trail')).not.toBeInTheDocument();
+    expect(document.querySelector('.border-trail__track')).not.toBeInTheDocument();
   });
 });

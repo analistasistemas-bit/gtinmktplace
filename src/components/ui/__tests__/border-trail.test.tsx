@@ -11,7 +11,8 @@ describe('BorderTrail', () => {
     );
 
     expect(screen.getByText('Conteúdo')).toBeInTheDocument();
-    expect(document.querySelector('.border-trail')).not.toBeInTheDocument();
+    expect(document.querySelector('.border-trail__track')).not.toBeInTheDocument();
+    expect(document.querySelector('.border-trail__fallback')).not.toBeInTheDocument();
   });
 
   it('ativo: renderiza filho dentro do wrapper com trilha', () => {

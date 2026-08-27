@@ -38,16 +38,17 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const { data: modulos } = useModulosHabilitados();
   const { prefetchEstoque } = usePrefetchEstoque();
   const pulseHabilitado = !!modulos?.includes('pulse');
-  const { data: alertasPulse = 0 } = useQuery({
-    queryKey: QK.pulseAlertasContagem('acao'),
-    queryFn: () => contarPulseAlertas('acao'),
-    enabled: pulseHabilitado,
-    staleTime: 30_000,
-  });
   const allowed = new Set(visibleMenus(profile ?? { is_admin: false, is_active: true, allowed_menus: [] }, !!context));
   // Módulo desligado (ou ainda carregando) → menu some. Falha fechada: mostrar e sumir
   // é pior que aparecer um instante depois.
   for (const m of menusDeModulosDesabilitados(modulos ?? [])) allowed.delete(m);
+  // Quem não vê o menu Pulse não paga a query do badge — não é hook, então não afeta a ordem.
+  const { data: alertasPulse = 0 } = useQuery({
+    queryKey: QK.pulseAlertasContagem('acao'),
+    queryFn: () => contarPulseAlertas('acao'),
+    enabled: pulseHabilitado && allowed.has('pulse'),
+    staleTime: 30_000,
+  });
   return (
     <nav className="flex flex-1 flex-col gap-0.5 px-2 py-3">
       {NAV_ITEMS.filter((item) => allowed.has(item.key)).map(({ to, label, icon: Icon, end, key }) => (
@@ -69,7 +70,10 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
             <Icon className={cn('h-4 w-4 shrink-0', key === 'pulse' && 'text-primary')} />
             <span>{label}</span>
             {key === 'pulse' && alertasPulse > 0 && (
-              <span className="ml-auto min-w-5 rounded-full bg-primary/12 px-1.5 py-0.5 text-center text-[10px] font-semibold leading-none text-primary">
+              <span
+                aria-label={`${alertasPulse} alertas de ação`}
+                className="ml-auto min-w-5 rounded-full bg-primary/12 px-1.5 py-0.5 text-center text-[10px] font-semibold leading-none text-primary"
+              >
                 {alertasPulse > 99 ? '99+' : alertasPulse}
               </span>
             )}

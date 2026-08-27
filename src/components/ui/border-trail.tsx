@@ -20,16 +20,20 @@ export function BorderTrail({
   className,
   children,
 }: BorderTrailProps) {
-  if (!active) return <>{children}</>;
-
   const style: BorderTrailStyle = { '--border-trail-radius': `${radius}px` };
 
+  // Wrapper sempre presente: alternar `active` não pode desmontar `children` (perderia foco/estado)
+  // nem descartar `className` (o layout do chamador salta sem ele). Só os decorativos são condicionais.
   return (
     <div className={cn('border-trail', className)} style={style}>
-      <span className="border-trail__track" aria-hidden="true">
-        <span className="border-trail__glow" />
-      </span>
-      <span className="border-trail__fallback" aria-hidden="true" />
+      {active && (
+        <>
+          <span className="border-trail__track" aria-hidden="true">
+            <span className="border-trail__glow" />
+          </span>
+          <span className="border-trail__fallback" aria-hidden="true" />
+        </>
+      )}
       {children}
     </div>
   );

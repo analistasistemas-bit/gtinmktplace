@@ -52,6 +52,11 @@ function horarioColeta(iso: string): string {
   }).format(new Date(iso));
 }
 
+/** Isola o re-render por frame da animação nos cards — o rAF não pode repintar a tabela inteira. */
+function ValorAnimado({ n }: { n: number }) {
+  return <>{fmtInt(useCountUp(n))}</>;
+}
+
 export default function Pulse() {
   const { data: modulos, isLoading: modulosLoading } = useModulosHabilitados();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -107,11 +112,6 @@ export default function Pulse() {
     () => contarPulse(produtos ?? [], menorRelevanteDe),
     [produtos, menorRelevanteDe],
   );
-  const totalAnimado = useCountUp(contagens.total);
-  const maisCaroAnimado = useCountUp(contagens.maisCaro);
-  const menorPrecoAnimado = useCountUp(contagens.menorPreco);
-  const semVinculoAnimado = useCountUp(contagens.semVinculo);
-
   /** Clicar no card já aplicado remove o recorte — o card é um interruptor, não um destino. */
   const alternarFoco = (foco: FocoPulse) =>
     setFiltros((f) => ({ ...f, foco: f.foco === foco ? null : foco }));
@@ -164,7 +164,7 @@ export default function Pulse() {
             ) : undefined}
           />
           {tab === 'radar' && lista.length > 0 && (
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-primary/10 py-3 text-xs text-muted-foreground" aria-label="Telemetria do Pulse">
+            <div role="group" className="flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-primary/10 py-3 text-xs text-muted-foreground" aria-label="Telemetria do Pulse">
               <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
                 <span className={cn('h-1.5 w-1.5 rounded-full bg-primary', atualizar.isPending && 'animate-pulse')} />
                 {atualizar.isPending ? 'Motor analisando' : 'Mercado monitorado'}
@@ -207,7 +207,7 @@ export default function Pulse() {
           <KpiCard
             size="compact"
             label="No radar"
-            value={fmtInt(totalAnimado)}
+            value={<ValorAnimado n={contagens.total} />}
             icon={Activity}
             tom="info"
             onClick={() => setFiltros(FILTROS_VAZIOS)}
@@ -216,7 +216,7 @@ export default function Pulse() {
           <KpiCard
             size="compact"
             label="Mais caro que o mercado"
-            value={fmtInt(maisCaroAnimado)}
+            value={<ValorAnimado n={contagens.maisCaro} />}
             icon={TrendingUp}
             tom={contagens.maisCaro > 0 ? 'warning' : 'success'}
             hint={contagens.comparaveis > 0 ? `de ${contagens.comparaveis} comparáveis` : 'sem comparação ainda'}
@@ -226,7 +226,7 @@ export default function Pulse() {
           <KpiCard
             size="compact"
             label="Você é o menor preço"
-            value={fmtInt(menorPrecoAnimado)}
+            value={<ValorAnimado n={contagens.menorPreco} />}
             icon={TrendingUp}
             tom="success"
             onClick={() => alternarFoco('menor_preco')}
@@ -235,7 +235,7 @@ export default function Pulse() {
           <KpiCard
             size="compact"
             label="Sem vínculo de catálogo"
-            value={fmtInt(semVinculoAnimado)}
+            value={<ValorAnimado n={contagens.semVinculo} />}
             icon={Bell}
             tom={contagens.semVinculo > 0 ? 'warning' : 'info'}
             hint={contagens.semVinculo > 0 ? 'não disputam a página' : undefined}

@@ -1,4 +1,4 @@
-import { useState, type ComponentType, type KeyboardEvent } from 'react';
+import { useState, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowUp, ArrowDown, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -12,7 +12,7 @@ export type KpiTom = 'info' | 'success' | 'warning' | 'danger';
 
 interface KpiCardProps {
   label: string;
-  value: string | number;
+  value: ReactNode;
   icon?: ComponentType<{ className?: string }>;
   delta?: string;
   deltaTrend?: DeltaTrend;
