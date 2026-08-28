@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Análise PubliAI — desenho fechado (ADR-0140) — 2026-08-28
+
+**Desenho aprovado, implementação bloqueada.** 19 decisões fechadas em entrevista com Diego.
+ADR em `docs/decisions/0140-analise-publiai-joompulse-radar-e-sonar.md`; termos novos no
+glossário. **Nenhum código escrito** — a ADR-0132 ainda não fechou como conectar (#4–#16).
+
+- [x] Nome único **Análise PubliAI** nas 3 telas; slug `analise_avancada` intacto
+- [x] Três camadas: MCP traz dado → código do PubliAI calcula dinheiro → IA só redige
+- [x] Radar: coluna substitui "Referência do ML"; prévia do ganhador do buy-box em 1 consulta
+      por página; painel determinístico + 1 frase de IA
+- [x] Sonar: botão gera 6 seções de mercado na hora; DRE sob demanda com custo/origem/peso/dim.
+- [x] Apify **permanece** (nem toda org terá JoomPulse); rótulos distintos por unidade e janela
+- [x] Nicho = os `item_id` da amostra do Sonar (ADR-0127), correlação direta com `id`
+- [x] Top 5 por faturamento = conjunto único; < 5 anúncios não aplica média sem extremos
+- [x] Relatório salvo por produto/dia com botão atualizar; DRE recalcula local
+- [x] Custo de IA registrado por org, sem teto no v1
+- [x] DRE **estende** `calcularSimulacaoML()` — nenhum motor financeiro novo
+- [x] Imposto = alíquota confirmada da org por origem; frete e comissão pelas APIs do ML
+- [ ] **Bloqueado:** questões #4–#16 da ADR-0132 (OAuth, credenciais, cache, quotas, parceria)
+- [ ] **Bloqueado:** sonda de cobertura em produção antes de qualquer promessa de UI
+- [ ] Decidir na implementação: o que fazer com a Referência do ML no dialog de detalhe
+      (a coluna sai, mas há uma segunda exibição em `dialog-detalhe.tsx:442-448`)
+
 ## Spike JoomPulse — parcial (ADR-0132) — 2026-08-28
 
 **Concluído (parcial).** Relatório em

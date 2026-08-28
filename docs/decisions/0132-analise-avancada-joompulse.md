@@ -5,6 +5,14 @@
 **Decisores:** Diego
 **Relaciona:** [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Pulse; o 403 de vendas por anúncio de terceiro), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) (Sonar + Apify, fora do v1), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0086](0086-configuracao-org-scoped.md) (módulos), [0024](0024-abstracao-de-canais.md) (Canal ≠ provedor de análise), [0027](0027-multi-tenancy-organizations.md) (multi-tenancy), [0043](0043-migrations-canal-unico.md) (migrations canal único)
 
+> **Revisão concluída 2026-08-28 → [ADR-0140](0140-analise-publiai-joompulse-radar-e-sonar.md).**
+> A revisão exigida pela D-17 foi feita em entrevista com Diego e produziu a ADR-0140, que
+> **supersede a D-3** (escopo do v1) e **emenda a D-7** (padrão de chamada). Todo o resto desta
+> ADR permanece em vigor: Gateway como único cliente MCP (D-2), módulo desligado por padrão
+> (D-4), OAuth por organização (D-5), conexão em Canais (D-6, com o rótulo renomeado para
+> "Análise PubliAI"), allowlist fechada (D-9), isolamento por organização (D-15). As questões
+> #4–#16 continuam bloqueando a implementação.
+>
 > **Adendo 2026-08-28 — spike parcial executado.** As questões #1, #2 e #3 estão fechadas;
 > **#4–#15 continuam bloqueando** e uma questão nova (#16) foi levantada. O resultado é
 > **incompatível com a D-3** e exige revisão da decisão antes de qualquer código, conforme a
