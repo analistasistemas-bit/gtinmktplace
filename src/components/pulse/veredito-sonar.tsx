@@ -80,6 +80,8 @@ function MiniRegua({ regua }: { regua: ExplicacaoRegua }) {
  *  única barreira que preço não abre. */
 const ICONE_BARREIRA: Record<Barreira, typeof Unlock> = {
   nenhuma: Unlock,
+  // Interrogação, não cadeado aberto: o caminho B não confirma campo aberto (ADR-0137/0138 §1).
+  topo_nao_confirmado: HelpCircle,
   concorrencia: Target,
   mercado_apertado: Target,
   marca: Lock,

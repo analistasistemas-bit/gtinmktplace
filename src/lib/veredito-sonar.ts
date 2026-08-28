@@ -28,7 +28,16 @@ export type NivelEntrada = 'aberta' | 'fechada' | 'nao_medida';
  * jurídica (risco de moderação por propriedade intelectual — incidente Aquaphor, 06/08), onde
  * desconto nenhum resolve.
  */
-export type Barreira = 'nenhuma' | 'concorrencia' | 'marca' | 'mercado_apertado' | 'nao_medida';
+export type Barreira =
+  | 'nenhuma'
+  /** Caminho B da Disputa sem nada ruim: nenhum anúncio domina, mas sem nome de loja não dá para
+   *  confirmar que os anúncios do topo são de donos diferentes — ADR-0137 proíbe declarar campo
+   *  aberto sobre essa evidência, e a proibição vale para o TEXTO, não só para o score. */
+  | 'topo_nao_confirmado'
+  | 'concorrencia'
+  | 'marca'
+  | 'mercado_apertado'
+  | 'nao_medida';
 
 /** Rival no pódio por faturamento (vendidos×preço), incluindo anúncios sem rótulo de loja. */
 export interface RivalPodio {
@@ -132,6 +141,7 @@ const ROTULO_DEMANDA: Record<NivelFator, string> = {
 
 const ROTULO_BARREIRA: Record<Barreira, string> = {
   nenhuma: 'campo aberto',
+  topo_nao_confirmado: 'topo aparentemente aberto',
   concorrencia: 'concorrência pesada',
   marca: 'risco de marca',
   mercado_apertado: 'mercado apertado',
@@ -147,7 +157,7 @@ const ROTULO_BARREIRA: Record<Barreira, string> = {
  */
 function derivarBarreira(
   entrada: NivelEntrada,
-  disputa: { nivel: NivelFator } | null,
+  disputa: DisputaMedida | null,
   tracao: { nivel: NivelFator } | null,
   marca: { nivel: NivelFator } | null,
 ): Barreira {
@@ -155,6 +165,12 @@ function derivarBarreira(
   if (marca?.nivel === 'ruim') return 'marca';
   if (disputa?.nivel === 'ruim') return 'concorrencia';
   if (tracao?.nivel === 'ruim') return 'mercado_apertado';
+  // O teto 'medio' do caminho B (ADR-0137) tem de chegar ao TEXTO, não só ao score: sem nome de
+  // loja, N anúncios de um dono contam como N rivais, então "nenhum líder dominante" pode ser
+  // território de marca disfarçado. Dizer "campo aberto" aqui contradiz a própria frase do Saiba
+  // mais ("este caminho nunca declara o campo aberto") e empurra estoque para um topo que talvez
+  // tenha um dono só. `entrada` e `nivel` seguem intocados — isto é só o rótulo.
+  if (disputa?.caminho === 'anuncio') return 'topo_nao_confirmado';
   return 'nenhuma';
 }
 
@@ -190,7 +206,7 @@ function ramosDeEntrada(fullPct: number | null): RamoEntrada[] {
   return [
     {
       rotulo: 'Com Full',
-      texto: `iguale o preço do concorrente equivalente ao seu produto — com ${pct(fullPct as number)} do topo entregando por Full, o prazo empata e a decisão volta pro preço.`,
+      texto: `iguale o preço do concorrente equivalente ao seu produto — com ${pct(fullPct as number)} do topo medido entregando por Full, o prazo empata e a decisão volta pro preço.`,
     },
     {
       rotulo: 'Sem Full',
@@ -210,7 +226,12 @@ function acaoVeredito(
   ramos: RamoEntrada[],
 ): string {
   if (gateDemanda) {
-    return 'Não compre estoque neste nicho. Sem prova de compra, volume é prejuízo. Só faria sentido com diferencial forte (preço de fábrica, kit exclusivo ou marca própria), e mesmo assim depois de validar a demanda.';
+    // Se o veredito também é parcial, a causa precisa aparecer em algum lugar: com o gate ativo o
+    // card de insight fala de demanda, não da concorrência, e o subtítulo que explicava isso morreu.
+    const parcial = razaoParcial != null
+      ? ` Além disso, não deu para avaliar a concorrência: ${razaoParcial}.`
+      : '';
+    return `Não compre estoque neste nicho. Sem prova de compra, volume é prejuízo. Só faria sentido com diferencial forte (preço de fábrica, kit exclusivo ou marca própria), e mesmo assim depois de validar a demanda.${parcial}`;
   }
   if (barreira === 'marca') {
     return 'Preço não resolve aqui: com a loja oficial dominando o topo, revender corre risco de moderação por propriedade intelectual — o anúncio pode ser derrubado com o estoque já comprado. Só entra com autorização de revenda da marca ou com marca própria.';
@@ -219,19 +240,25 @@ function acaoVeredito(
     const causa = razaoParcial != null ? razaoParcial : 'concorrência incompleta';
     return `Avaliação parcial: ${causa}. No máximo um anúncio-teste mínimo — nunca volume. Se for marca de laboratório/fórmula, trate como risco de marca até conferir a loja oficial.`;
   }
+  // Invariante: `ramos` só é não-vazio com Full ≥ 60%, o que força Disputa 'ruim' nos DOIS caminhos
+  // e portanto `barreira === 'concorrencia'` (marca já saiu acima). Por isso a condição de entrada
+  // aparece só neste ramo — interpolá-la nos demais seria código morto.
   const condicao = ramos.length > 0
     ? ` ${ramos.map((r) => `${r.rotulo}: ${r.texto}`).join(' ')}`
     : '';
   if (barreira === 'concorrencia') {
     return `Dá para entrar, mas o topo já está ocupado — a fatia vem pelo preço, não por chegar primeiro.${condicao} Comece com anúncio-teste e valide o giro antes de comprar volume.`;
   }
+  if (barreira === 'topo_nao_confirmado') {
+    return 'Nenhum anúncio domina o faturamento pelo que deu para medir — mas os cards do topo não trazem nome de loja, então pode ser um dono só com vários anúncios em vez de vários concorrentes. Antes de comprar volume, abra os anúncios do topo e confira quem está por trás deles. Enquanto isso, anúncio-teste.';
+  }
   if (barreira === 'mercado_apertado') {
-    return `O topo está livre, mas o faturamento está diluído entre os concorrentes — cada um leva pouco. Só compensa com custo baixo o bastante para volume pequeno fechar.${condicao} Comece com anúncio-teste.`;
+    return 'O topo está livre, mas o faturamento está diluído entre os concorrentes — cada um leva pouco. Só compensa com custo baixo o bastante para volume pequeno fechar. Comece com anúncio-teste.';
   }
   if (nivel === 'alta') {
-    return `Campo aberto e demanda comprovada.${condicao} Publique com estoque conservador e valide o giro real nas primeiras semanas.`;
+    return 'Campo aberto e venda comprovada. Publique com estoque conservador e valide o giro real nas primeiras semanas.';
   }
-  return `Dá para entrar sem briga pesada.${condicao} Valide preço e frete contra os líderes antes de investir em estoque.`;
+  return 'Dá para entrar sem briga pesada. Valide preço e frete contra os líderes antes de investir em estoque.';
 }
 
 /** Frase curta à direita do card. Nunca diz "demanda insuficiente" se a demanda não for o gate, e
@@ -241,19 +268,28 @@ function resumoVeredito(
   barreira: Barreira,
   nivel: NivelVeredito,
   gateDemanda: boolean,
-  fullPct: number | null,
+  disputa: DisputaMedida | null,
 ): string {
   if (gateDemanda) return 'Poucas provas de venda por aqui — teste antes de comprar estoque.';
   if (barreira === 'nao_medida') return 'Tem gente comprando, mas não deu pra medir quem já ocupa o topo — vá com cautela, sem volume.';
   if (barreira === 'marca') return 'A loja oficial domina o topo. O risco aqui não é preço, é ter o anúncio derrubado por propriedade intelectual.';
   if (barreira === 'concorrencia') {
-    return fullDomina(fullPct)
-      ? 'Mercado aquecido e disputado no prazo: o topo entrega por Full. Dá pra entrar, mas o preço tem que compensar a entrega.'
-      : 'Mercado aquecido, mas um punhado de anúncios concentra o faturamento. Entrar exige preço melhor que o deles.';
+    if (fullDomina(disputa?.fullPct ?? null)) {
+      return 'Mercado aquecido e disputado no prazo: o topo entrega por Full. Dá pra entrar, mas o preço tem que compensar a entrega.';
+    }
+    // A causa muda a frase: o caminho B mede UM anúncio concentrando o faturamento; o caminho A
+    // mede POUCOS concorrentes no topo. Dizer "um anúncio concentra" num nicho pulverizado com
+    // faturamento uniforme seria afirmar um mecanismo que ninguém mediu.
+    return disputa?.caminho === 'anuncio'
+      ? 'Mercado aquecido, mas um anúncio concentra a maior parte do faturamento. Entrar exige preço melhor que o dele.'
+      : 'Mercado aquecido, mas poucos concorrentes dominam o topo. Entrar exige preço melhor que o deles.';
+  }
+  if (barreira === 'topo_nao_confirmado') {
+    return 'Ninguém domina o faturamento pelo que deu para medir — mas os cards não trazem nome de loja, então pode ser um dono só com vários anúncios. Confira antes de comprar volume.';
   }
   if (barreira === 'mercado_apertado') return 'Tem venda, mas o faturamento está diluído — sobra pouco por concorrente. Só compensa com custo baixo.';
   return nivel === 'alta'
-    ? 'Demanda comprovada e topo ainda aberto. Comece enxuto e valide o giro.'
+    ? 'Venda comprovada e topo ainda aberto. Comece enxuto e valide o giro.'
     : 'Dá pra entrar sem briga pesada. Confira preço e frete contra os líderes antes de comprar volume.';
 }
 
@@ -261,20 +297,25 @@ function resumoVeredito(
  *  está escrito no próprio título (ADR-0138 §1b). `null` quando não há número a mostrar. */
 function chipBarreira(
   barreira: Barreira,
-  fullPct: number | null,
+  gateDemanda: boolean,
   disputa: DisputaMedida | null,
   sub: SubamostraNomeada,
 ): string | null {
+  // Sob o gate de demanda o título é "Sem prova de venda", sem eixo de barreira: um chip de
+  // concorrência ali ficaria pendurado sem nada que o sustente.
+  if (gateDemanda) return null;
   // `nao_medida` não ganha chip: o título já diz "· concorrência não medida", e repetir seria a
   // mesma redundância que aposentou o subtítulo.
   if (barreira === 'nao_medida') return null;
   if (barreira === 'marca') return 'loja oficial';
-  if (barreira !== 'concorrencia') return null;
-  if (fullDomina(fullPct)) return `${pct(fullPct as number)} Full`;
+  if (barreira !== 'concorrencia' && barreira !== 'topo_nao_confirmado') return null;
+  if (fullDomina(disputa?.fullPct ?? null)) return `${pct(disputa!.fullPct as number)} Full`;
   if (disputa?.caminho === 'anuncio' && disputa.concentracao != null) {
     return `líder leva ${pct(disputa.concentracao.top1 * 100)}`;
   }
-  if (disputa?.caminho === 'rotulo') return `${sub.distintos} lojas no topo`;
+  // "concorrentes", nunca "lojas": o card do ML imprime a MARCA (ADR-0127), e afirmar loja aqui
+  // desmentiria a ressalva que o próprio Saiba mais faz duas linhas abaixo.
+  if (disputa?.caminho === 'rotulo') return `${sub.distintos} concorrentes no topo`;
   return null;
 }
 
@@ -804,14 +845,13 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
 
   // Barreira e textos comerciais (ADR-0138). `barreira` é derivada dos FATORES, nunca de `nivel`.
   const barreira = derivarBarreira(entrada, disputa, tracao, marca);
-  const fullPct = disputa?.fullPct ?? null;
   // Sem prova de venda não há entrada a condicionar; sob risco de marca, desconto não resolve.
   const ramosEntrada = gateDemanda || barreira === 'marca' || barreira === 'nao_medida'
     ? []
-    : ramosDeEntrada(fullPct);
-  const chip = chipBarreira(barreira, fullPct, disputa, sub);
+    : ramosDeEntrada(disputa?.fullPct ?? null);
+  const chip = chipBarreira(barreira, gateDemanda, disputa, sub);
   const acao = acaoVeredito(barreira, nivel, gateDemanda, razaoParcial, ramosEntrada) + fraseRivaisPodio(rivais);
-  const resumo = resumoVeredito(barreira, nivel, gateDemanda, fullPct);
+  const resumo = resumoVeredito(barreira, nivel, gateDemanda, disputa);
 
   return {
     nivel,
@@ -902,9 +942,13 @@ export function insightEntrada(v: VereditoAnuncios): InsightEntrada {
   const semBarreira = v.barreira === 'nenhuma';
   const detalhe = semBarreira
     ? 'Sem barreira estrutural detectada nesta amostra — campo livre pra quem chega agora.'
-    : v.barreira === 'mercado_apertado'
-      ? 'O topo está livre, mas o bolo é pequeno por concorrente: a entrada depende do seu custo, não da briga por espaço.'
-      : 'O topo já está ocupado, mas a fatia se conquista no preço — não por chegar primeiro.';
+    : v.barreira === 'topo_nao_confirmado'
+      // Nunca 'bom' aqui, e nunca a palavra "livre": o caminho B pode estar escondendo território
+      // de marca (ADR-0137). O card manda conferir, não manda entrar.
+      ? 'Nenhum anúncio domina o faturamento medido, mas os cards do topo não trazem nome de loja — vários anúncios podem ser do mesmo dono. Abra os anúncios do topo e confira quem está por trás antes de tratar como campo aberto.'
+      : v.barreira === 'mercado_apertado'
+        ? 'O topo está livre, mas o bolo é pequeno por concorrente: a entrada depende do seu custo, não da briga por espaço.'
+        : 'O topo já está ocupado, mas a fatia se conquista no preço — não por chegar primeiro.';
   return {
     titulo: 'Como entrar neste nicho',
     tom: semBarreira ? 'bom' : 'medio',

@@ -61,7 +61,7 @@ describe('calcularVereditoAnuncios — gabarito D12 (fixtures REAIS medidos na T
     expect(v.explicacao.pontuacao).toEqual({ soma: 4, maximo: 6 });
     expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'ruim', 'bom']);
     expect(v.parcial).toBe(false);
-    expect(v.resumo).toBe('Mercado aquecido, mas um punhado de anúncios concentra o faturamento. Entrar exige preço melhor que o deles.');
+    expect(v.resumo).toBe('Mercado aquecido, mas poucos concorrentes dominam o topo. Entrar exige preço melhor que o deles.');
   });
   it('protetor solar facial → média (4/6)', () => {
     const { vendas, visitas_total } = fixture('protetor-solar-facial');
@@ -110,7 +110,7 @@ describe('cobertura de rótulo <50% (D10) — cede ao caminho B quando há dado 
     // disputa 🟡 (3/4) e 🟢 (4/4) igualmente — o teto ficaria invisível justo na faixa que decide
     // compra de estoque.
     expect(v.nivel).toBe('media');
-    expect(v.titulo).toBe('Alta demanda · campo aberto');
+    expect(v.titulo).toBe('Alta demanda · topo aparentemente aberto');
   });
 
   it('mesmo sem rótulo, a explicação de Tração aparece explicando por que ela saiu da conta', () => {
@@ -137,7 +137,7 @@ describe('ADR-0128 — Demanda ≠ Entrada', () => {
     // Entrada destravada (era o ponto do ADR-0137), mas sem chegar a "alta": a Disputa veio do
     // caminho B, cuja evidência o próprio ADR classifica como fraca.
     expect(v.nivel).toBe('media');
-    expect(v.titulo).toBe('Alta demanda · campo aberto');
+    expect(v.titulo).toBe('Alta demanda · topo aparentemente aberto');
   });
 
   it('fantasma com alto faturamento aparece no rivaisPodio com vendedor null', () => {
@@ -483,6 +483,105 @@ describe('ADR-0138 — matriz de título (Demanda × Barreira) e travas de lingu
       for (const r of v.ramosEntrada) expect(r.texto).not.toMatch(/R\$/);
     });
   }
+});
+
+describe('ADR-0138 — travas de coerência do card (o que 53 verdes não pegavam)', () => {
+  /** Todas as barreiras alcançáveis, cada uma com uma amostra que a produz de verdade. */
+  const cenarios = (): { barreira: string; v: VereditoAnuncios }[] => {
+    const uniforme = (o: Partial<ItemVendasSonar>, n = 20) =>
+      Array.from({ length: n }, (_, i) => itemV2({ item_id: `${o.item_id ?? 'I'}${i}`, vendedor: `L${i}`, ...o }));
+    return [
+      { barreira: 'nenhuma', v: calcularVereditoAnuncios(painelSintetico(uniforme({ item_id: 'A', vendidos: 1_000, preco: 400, full: false })), null) },
+      { barreira: 'concorrencia', v: calcularVereditoAnuncios(painelSintetico(uniforme({ item_id: 'B', vendidos: 1_000, preco: 400, full: true })), null) },
+      { barreira: 'mercado_apertado', v: calcularVereditoAnuncios(painelSintetico(uniforme({ item_id: 'C', vendidos: 1_000, preco: 1, full: false })), null) },
+      {
+        barreira: 'marca',
+        v: calcularVereditoAnuncios(painelSintetico(Array.from({ length: 20 }, (_, i) => itemV2({
+          item_id: `D${i}`, vendedor: `L${i}`, vendidos: 1_000, preco: 400, full: false, loja_oficial: i < 11,
+        }))), null),
+      },
+      {
+        barreira: 'topo_nao_confirmado',
+        v: calcularVereditoAnuncios(painelSintetico([
+          ...Array.from({ length: 4 }, (_, i) => itemV2({ item_id: `E${i}`, vendedor: `L${i}`, vendidos: 2_000 })),
+          ...Array.from({ length: 16 }, (_, i) => itemV2({ item_id: `Ex${i}`, vendedor: null, vendidos: 2_000 })),
+        ]), null),
+      },
+      {
+        barreira: 'nao_medida',
+        v: calcularVereditoAnuncios(painelSintetico([
+          ...Array.from({ length: 4 }, (_, i) => itemV2({ item_id: `F${i}`, vendedor: `V${i}`, vendidos: 2_000, preco: null })),
+          ...Array.from({ length: 14 }, (_, i) => itemV2({ item_id: `Fx${i}`, vendedor: null, vendidos: null, preco: 100 })),
+          ...Array.from({ length: 2 }, (_, i) => itemV2({ item_id: `Fv${i}`, vendedor: null, vendidos: 500, preco: 50 })),
+        ]), null),
+      },
+    ];
+  };
+
+  it('cada barreira é alcançável e produz o rótulo esperado no título', () => {
+    for (const { barreira, v } of cenarios()) expect(v.barreira).toBe(barreira);
+  });
+
+  it('o título NUNCA declara campo aberto quando a Disputa veio do caminho B (ADR-0137)', () => {
+    // A trava que faltava: o Saiba mais do caminho B diz "este caminho nunca declara o campo
+    // aberto". Sem este teste, o título dizia exatamente isso — em verde — e 53 testes passavam.
+    for (const { v } of cenarios()) {
+      const caminhoB = v.explicacao.fatores.some((f) => f.chave === 'disputa' && /nome de loja/i.test(f.frase));
+      if (!caminhoB) continue;
+      expect(v.titulo).not.toMatch(/campo aberto/);
+      expect(v.resumo).not.toMatch(/campo (aberto|livre)/);
+      expect(insightEntrada(v).tom).not.toBe('bom');
+      expect(insightEntrada(v).detalhe).not.toMatch(/campo livre/);
+    }
+  });
+
+  it('"não compre" só aparece sob gate de demanda; risco de marca avisa do takedown, não proíbe', () => {
+    for (const { barreira, v } of cenarios()) {
+      const proibe = /não compre|não entre/i.test(v.explicacao.acao) || /não compre|não entre/i.test(v.resumo);
+      // Implicação, não equivalência: fora do gate nenhum texto pode mandar não comprar — é a
+      // promessa central do ADR-0138 §5, e é o que impede o card de contradizer "Como entrar".
+      if (proibe) expect(v.explicacao.gateDemanda).toBe(true);
+      if (barreira === 'marca') {
+        expect(v.explicacao.acao).toMatch(/propriedade intelectual/i);
+        expect(v.explicacao.acao).toMatch(/Preço não resolve/i);
+      }
+    }
+    const semVenda = calcularVereditoAnuncios(painelSintetico(Array.from({ length: 10 }, (_, i) => itemV2({
+      item_id: `G${i}`, vendedor: `L${i}`, vendidos: i < 1 ? 100 : null,
+    }))), null);
+    expect(semVenda.explicacao.acao).toMatch(/Não compre estoque/);
+  });
+
+  it('chip: número que sustenta a barreira, nunca conta "lojas", e ausente sob gate de demanda', () => {
+    // "loja oficial" é nome de recurso do ML e continua válido; o proibido é CONTAR lojas
+    // ("3 lojas no topo"), que afirmaria conta de vendedor onde o card do ML imprime a marca.
+    for (const { v } of cenarios()) {
+      if (v.chip != null && v.barreira !== 'marca') expect(v.chip).not.toMatch(/\blojas?\b/i);
+    }
+    const porRotulo = calcularVereditoAnuncios(painelSintetico(Array.from({ length: 20 }, (_, i) => itemV2({
+      item_id: `H${i}`, vendedor: `L${i % 3}`, vendidos: 1_000, preco: 400, full: false,
+    }))), null);
+    expect(porRotulo.barreira).toBe('concorrencia');
+    expect(porRotulo.chip).toBe('3 concorrentes no topo');
+
+    const semVenda = calcularVereditoAnuncios(painelSintetico(Array.from({ length: 20 }, (_, i) => itemV2({
+      item_id: `J${i}`, vendedor: `L${i}`, vendidos: i < 1 ? 100 : null, full: true,
+    }))), null);
+    expect(semVenda.explicacao.gateDemanda).toBe(true);
+    expect(semVenda.chip).toBeNull();
+  });
+
+  it('gate + avaliação parcial: a causa da parcialidade continua visível na ação', () => {
+    // O subtítulo que explicava isso morreu no §6; sob o gate o insight fala de demanda, não de
+    // concorrência — então a razão tem de sobreviver na ação, ou o badge "parcial" fica órfão.
+    const v = calcularVereditoAnuncios(painelSintetico([
+      ...Array.from({ length: 9 }, (_, i) => itemV2({ item_id: `K${i}`, vendedor: `L${i}`, vendidos: null, preco: 100 })),
+      itemV2({ item_id: 'Kv', vendedor: 'LX', vendidos: 100, preco: 100 }),
+    ]), null);
+    expect(v.explicacao.gateDemanda).toBe(true);
+    expect(v.parcial).toBe(true);
+    expect(v.explicacao.acao).toMatch(/não deu para avaliar a concorrência/i);
+  });
 });
 
 describe('insightEntrada', () => {

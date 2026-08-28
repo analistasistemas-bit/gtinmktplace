@@ -43,7 +43,8 @@ Mudança **exclusivamente de apresentação**. Nenhum corte de calibração se m
 interface. A tela passa a ler uma derivação:
 
 ```ts
-type Barreira = 'nenhuma' | 'concorrencia' | 'marca' | 'mercado_apertado' | 'nao_medida';
+type Barreira =
+  | 'nenhuma' | 'topo_nao_confirmado' | 'concorrencia' | 'marca' | 'mercado_apertado' | 'nao_medida';
 ```
 
 **`Barreira` é função pura dos FATORES, nunca de `nivel`.** Essa é a diferença que importa: a
@@ -51,20 +52,35 @@ type Barreira = 'nenhuma' | 'concorrencia' | 'marca' | 'mercado_apertado' | 'nao
 quando a causa real era outra. Derivar do `nivel` reintroduziria a mesma classe de bug.
 
 ```ts
-if (entrada === 'nao_medida')     return 'nao_medida';
-if (marca?.nivel === 'ruim')      return 'marca';            // barreira jurídica vence tudo
-if (disputa?.nivel === 'ruim')    return 'concorrencia';
-if (tracao?.nivel === 'ruim')     return 'mercado_apertado'; // bolo pequeno, topo livre
+if (entrada === 'nao_medida')      return 'nao_medida';
+if (marca?.nivel === 'ruim')       return 'marca';            // barreira jurídica vence tudo
+if (disputa?.nivel === 'ruim')     return 'concorrencia';
+if (tracao?.nivel === 'ruim')      return 'mercado_apertado'; // bolo pequeno, topo livre
+if (disputa?.caminho === 'anuncio') return 'topo_nao_confirmado'; // teto do caminho B (ADR-0137)
 return 'nenhuma';
 ```
 
 | `Barreira` | Causa | Rótulo na tela |
 |---|---|---|
-| `nenhuma` | nenhum fator ruim | campo aberto |
+| `nenhuma` | nenhum fator ruim, Disputa medida **por rótulo** | campo aberto |
+| `topo_nao_confirmado` | nenhum fator ruim, mas Disputa veio do **caminho B** | topo aparentemente aberto |
 | `concorrencia` | Disputa ruim (Full ≥ 60% ou líder concentrado) | concorrência pesada |
 | `marca` | Marca ruim (loja oficial > 50%) | risco de marca |
 | `mercado_apertado` | Tração ruim com topo livre | mercado apertado |
 | `nao_medida` | `parcial` | concorrência não medida |
+
+**`topo_nao_confirmado` — o teto do ADR-0137 vale para o TEXTO, não só para o score.** A errata do
+ADR-0137 impediu o caminho B de chegar a "alta" porque a concentração por anúncio *subestima* a
+concentração real (sem nome de loja, N anúncios de um dono contam como N rivais). Mas a primeira
+versão deste ADR mandava esse caso para `nenhuma`, e o card passava a dizer **"campo aberto"** três
+vezes, em verde — enquanto o Saiba mais do mesmo card dizia *"este caminho nunca declara o campo
+aberto"*. Território de marca oculto (10 anúncios da mesma marca, ~10% de share cada, Full baixo)
+apareceria como campo livre para quem decide compra de estoque olhando o título.
+
+O estado próprio resolve sem tocar em `entrada` nem em `nivel`: rótulo hedgeado, ícone de
+interrogação (não cadeado aberto), tom `medio` (nunca `bom`), e o texto manda **conferir quem está
+por trás dos anúncios do topo** antes de tratar como campo aberto. Travado por teste
+(`o título NUNCA declara campo aberto quando a Disputa veio do caminho B`).
 
 Consistência com o ADR-0128: `entrada === 'fechada'` ⟺ `Barreira ∈ {concorrencia, marca}`;
 `mercado_apertado` é subcaso de `entrada === 'aberta'`. `entrada` **não muda** — segue governando
@@ -85,11 +101,16 @@ que sustenta a barreira**, porque o estado já está escrito no próprio título
 
 | `Barreira` | Chip |
 |---|---|
-| `concorrencia`, Full ≥ 60% | `100% Full` |
-| `concorrencia`, líder concentrado | `líder leva 41%` |
+| `concorrencia`/`topo_nao_confirmado`, Full ≥ 60% | `100% Full` |
+| `concorrencia`/`topo_nao_confirmado`, caminho B | `líder leva 41%` |
+| `concorrencia`, caminho A sem Full dominante | `3 concorrentes no topo` |
 | `marca` | `loja oficial` |
-| `nao_medida` | `não medida` |
-| `nenhuma`, `mercado_apertado` | sem chip |
+| `nenhuma`, `mercado_apertado`, `nao_medida` | sem chip |
+
+Nunca `N lojas`: o ADR-0127 registra que o card do ML imprime a **marca**, não o nickname —
+contar "lojas" no chip desmentiria a ressalva que o Saiba mais faz duas linhas abaixo. `nao_medida`
+não ganha chip porque o título já diz "· concorrência não medida", e o gate de demanda também não:
+lá o título é "Sem prova de venda", sem eixo de barreira que sustente um chip de concorrência.
 
 Badge `avaliação parcial` permanece como está.
 
@@ -105,6 +126,7 @@ Título passa a ser sempre `<Demanda> · <Barreira>`:
 | aberta + alta | Oportunidade alta | Alta demanda · campo aberto |
 | aberta + média | Oportunidade média | Demanda comprovada · campo aberto |
 | aberta + baixa | Oportunidade baixa | Demanda comprovada · mercado apertado |
+| caminho B sem fator ruim | Oportunidade média | Alta demanda · topo aparentemente aberto |
 | concorrência + demanda bom | Demanda forte · entrada fechada | Alta demanda · concorrência pesada |
 | concorrência + demanda medio | Demanda ok · entrada fechada | Demanda comprovada · concorrência pesada |
 | marca + demanda bom | Demanda forte · entrada fechada | Alta demanda · risco de marca |
@@ -209,13 +231,24 @@ R$ 39,90" e, ao lado, mandaria não entrar. O eixo passa a ser `Barreira`, não 
 | `nao_medida` | Tem gente comprando, mas não deu pra medir quem já ocupa o topo — vá com cautela, sem volume. |
 | `marca` | A loja oficial domina o topo. O risco aqui não é preço, é ter o anúncio derrubado por propriedade intelectual. |
 | `concorrencia`, Full dominante | Mercado aquecido e disputado no prazo: todo o topo entrega por Full. Dá pra entrar, mas o preço tem que compensar a entrega. |
-| `concorrencia`, líder concentrado | Mercado aquecido, mas um anúncio concentra a maior parte do faturamento. Entrar exige preço melhor que o dele. |
+| `concorrencia`, caminho B com líder dominante | Mercado aquecido, mas **um anúncio** concentra a maior parte do faturamento. Entrar exige preço melhor que o dele. |
+| `concorrencia`, caminho A por pulverização | Mercado aquecido, mas **poucos concorrentes** dominam o topo. Entrar exige preço melhor que o deles. |
+| `topo_nao_confirmado` | Ninguém domina o faturamento pelo que deu para medir — mas os cards não trazem nome de loja, então pode ser um dono só com vários anúncios. Confira antes de comprar volume. |
 | `mercado_apertado` | Tem venda, mas o faturamento está diluído — sobra pouco por concorrente. Só compensa com custo baixo. |
-| `nenhuma` + `nivel` alta | Demanda comprovada e topo ainda aberto. Comece enxuto e valide o giro. |
+| `nenhuma` + `nivel` alta | Venda comprovada e topo ainda aberto. Comece enxuto e valide o giro. |
 | `nenhuma` + demais | Dá pra entrar sem briga pesada. Confira preço e frete contra os líderes antes de comprar volume. |
 
-Nenhum resumo diz "não compre" fora do gate de demanda e do risco de marca — as duas únicas
-situações em que preço não resolve.
+**A causa decide a frase.** Caminho A ruim mede *poucos concorrentes no topo*; caminho B ruim mede
+*um anúncio concentrando faturamento*. Usar a segunda frase para o primeiro caso afirmaria um
+mecanismo que ninguém mediu — num nicho com 4 rótulos e faturamento uniforme, nenhum anúncio
+concentra nada.
+
+O resumo de `alta` diz "venda comprovada", não "demanda comprovada": esse é o rótulo do nível
+**médio** de Demanda no §2, e `nivel === 'alta'` é alcançável com Demanda média.
+
+Nenhum resumo e nenhuma ação dizem "não compre" fora do gate de demanda — travado por teste.
+O risco de marca **avisa do takedown** ("preço não resolve: só entra com autorização de revenda ou
+marca própria") em vez de proibir: a decisão de assumir o risco é do operador, o dado é o aviso.
 
 ### 6. `motivo` (subtítulo) é removido
 
