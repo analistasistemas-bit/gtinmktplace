@@ -1,7 +1,7 @@
 # Plan: Refatoração de design e arquitetura de informação da tela Configurações
 
 _Locked via grill-with-docs (Ato 1) — Claude + Diego, 2026-08-28._
-_Revisado nas rodadas 1 e 2 do Ato 2 (Codex adversarial) — ver `PLAN-REVIEW-LOG.md`._
+_Revisado em 8 rodadas do Ato 2 (Codex adversarial) — ver `PLAN-REVIEW-LOG.md`._
 _Modo frontend-design: **system work**. Sistema herdado: tokens oklch em `src/index.css`,
 Geist Variable, shadcn em `src/components/ui/`, primitivos `Section`/`PageHeader`,
 `src/pages/StyleGuide.tsx` como referência canônica._
@@ -57,36 +57,68 @@ predicado global: um `podeVer` genérico que liberasse toda seção restrita ao 
 `Membros`, que o suporte **nunca** viu — `menus.ts:14` devolve `[...MENU_KEYS]` e
 `MENU_KEYS` não contém `usuarios`. A matriz é por seção:
 
+A tela escreve em **duas tabelas com policies diferentes**, então há dois predicados de
+edição — não um. **Leitura não é gateada em nenhum dos dois casos:** o `SELECT` de
+`configuracoes` e o de `empresa_fiscal` são liberados a qualquer membro da organização, e
+este plano **não** introduz gate de leitura.
+
+| Predicado | Tabela | Regra RLS replicada |
+|---|---|---|
+| `podeEditarConfig` | `configuracoes` — descontos, ancorar piso, mostrar lucro, modelos de IA, Telegram, **alíquotas** | `is_admin() OR current_support_scope() = 'full'` (`support_access.sql:285-298`) |
+| `podeEditarEmpresa` | `empresa_fiscal` — os ~20 campos do cadastro da empresa | `is_admin()` apenas, **sem** escape de suporte (`adr135_cadastro_fiscal.sql:49-57`) |
+
+Os dois recebem **`canWrite()` como conjunto adicional**: `podeEditarConfig =
+canWrite() && (isAdmin || escopoSuporte === 'full')` e `podeEditarEmpresa =
+canWrite() && isAdmin`. `canWrite()` é `false` numa sessão de suporte com escopo `read`, e o
+super-admin que abre essa sessão carrega `profiles.is_admin = true` (o backfill de
+`profiles_e_helpers.sql:71-76` marcou o usuário existente como admin, e `is_admin()` lê essa
+mesma coluna). Sem o conjunto, uma sessão de suporte **somente leitura** apareceria com os
+controles habilitados. Usado sozinho `canWrite()` seria permissivo demais (§ abaixo); usado
+como conjunto ele só **restringe**, com código que já existe.
+
 | Seção | Conteúdo | Quem vê | Quem edita |
 |---|---|---|---|
 | Geral | Card "Canais conectados" (link p/ `/canais`); Mostrar lucro no card do Dashboard | todos | `podeEditarConfig` |
 | Preços | Desconto de marketing; Desconto sobre concorrência; Ancorar no piso dos MercadoLíderes | todos | `podeEditarConfig` |
-| Fiscal | Imposto por origem (+ venda dentro do estado); Empresa (Identidade, Endereço, Operação fiscal, Emissão) | admin ou suporte | `podeEditarConfig` |
+| Fiscal | Imposto por origem (+ venda dentro do estado) | todos | `podeEditarConfig` |
+| Fiscal | Empresa (Identidade, Endereço, Operação fiscal, Emissão) | todos | `podeEditarEmpresa` |
 | Notificações | `ConfigTelegram` | todos | `podeEditarConfig` |
-| IA | Modelo de texto; Modelo de imagem | admin ou suporte | `podeEditarConfig` |
-| Membros e acessos | a página `Usuarios` atual, sem alteração de lógica | **só admin** | `isAdmin` |
+| IA | Modelo de texto; Modelo de imagem | todos | `podeEditarConfig` |
+| Membros e acessos | a página `Usuarios` atual, sem alteração de lógica | **só admin** (via `visibleMenus`) | `canWrite() && isAdmin` |
 
-**`podeEditarConfig` = `isAdmin || escopoDeSuporte === 'full'`** — a réplica exata da policy
-RLS de `configuracoes` (`20260725224000_support_access.sql:285-298`, INSERT e UPDATE exigem
-`is_admin() OR current_support_scope() = 'full'`).
+**Só `Membros` tem gate de visibilidade**, e esse gate **não é re-derivado de `isAdmin`** — é
+lido da fonte de verdade que já existe: `visibleMenus(profile, !!context).includes('usuarios')`,
+a mesma chamada do `sidebar.tsx:41`. Re-derivar por `isAdmin` divergiria justamente na sessão
+de suporte, onde `visibleMenus(p, true)` devolve `MENU_KEYS` (sem `usuarios`) mas o
+super-admin que abre a sessão tem `profiles.is_admin = true` — `Membros` reapareceria para o
+suporte, que nunca o viu. Reusar a função elimina a classe inteira do erro.
+
+Todo o resto é visível a qualquer membro que já tenha o menu `configuracoes`, exatamente como
+hoje: o `SELECT` das duas tabelas é liberado na org, e esconder a alíquota vigente de quem
+precifica seria esconder dado que ele tem direito de ver.
+
+A seção Fiscal é a única que cruza os dois predicados de edição: numa sessão de suporte
+`full`, as alíquotas são editáveis e o cadastro da empresa não. O aviso de leitura é **por
+bloco**, não por tela.
 
 Isso corrige um **defeito pré-existente**, não introduz um: hoje Geral, Preços e Notificações
 não têm gate nenhum na UI, então um operador não-admin vê os controles habilitados, digita,
 o blur dispara o save, o RLS recusa — e como não há ramo de erro na tela, ele acha que salvou.
-Tudo em `/configuracoes` é admin-only no banco; a UI passa a dizer a verdade.
 
-- **Não use `canWrite()` aqui.** `canWrite()` (`support-store.ts:56`) devolve `true` para
-  qualquer membro com `org_id` — é mais permissivo que o RLS desta tabela e reproduziria o
-  mesmo defeito.
+- **`canWrite()` nunca sozinho.** `canWrite()` (`support-store.ts:56`) devolve `true` para
+  qualquer membro com `org_id`; usado como único gate seria mais permissivo que as duas
+  policies e reproduziria o defeito. Ele entra só como conjunto restritivo, para fechar a
+  sessão de suporte em escopo `read`.
 - **Armadilha:** o escopo de suporte vem do store; ler por função pura não re-renderiza. O
   componente usa `useSupportStore((s) => s.context)`.
-- Consequência para o operador não-admin: as seções continuam visíveis em **leitura** (ele
-  precisa saber qual desconto está valendo), com um aviso único no topo da tela dizendo que a
-  edição é do administrador — em vez de campos que aceitam digitação e descartam em silêncio.
-  Isso substitui, para o não-admin, a decisão original de "esconder a seção": esconder tudo
-  deixaria `/configuracoes` vazio, já que a tela inteira é admin-only no banco.
-- `Membros` é **admin-only para ver e para editar**, sem exceção de suporte. Isso preserva o
-  gate atual (`visibleMenus` só dá `usuarios` ao admin) e o ADR-0068, que define a gestão de
+- **Ajuste consciente da decisão original.** Diego escolheu "esconder a seção do não-admin"
+  quando a alternativa era a parede de inputs cinzas. Com o modo leitura desenhado e o RLS
+  medido, esconder perde o motivo e passa a ter custo: **nenhuma** seção é editável por
+  membro comum (`configuracoes` aceita admin ou suporte `full`; `empresa_fiscal` e `Membros`,
+  só admin), então esconder toda seção não editável deixaria `/configuracoes` vazio para o
+  operador — e ele deixaria de enxergar qual desconto e qual alíquota estão valendo.
+- `Membros` é **admin-only para ver e para editar**, sem exceção de suporte, com visibilidade
+  lida de `visibleMenus`. Isso preserva o gate atual e o ADR-0068, que define a gestão de
   notificações por destinatário como ação de admin na tela Usuários. Diagnóstico de membros
   pelo suporte, se um dia for necessário, é feature separada — não efeito colateral de um
   refactor de layout.
@@ -170,12 +202,37 @@ Solução em três partes:
    campo; o `finally` só escreve no mapa se o id ainda for o mais recente daquele campo. Sem
    isso, dois blurs seguidos **no mesmo campo** deixam o `finally` do primeiro sobrescrever o
    resultado do segundo.
-3. **Serialização das alíquotas — corrida de dados, não só visual.** `upsertAliquotas`
-   (`useConfiguracoes.ts:39`) grava o snapshot inteiro (`nacional`, `importado`, `ufEmpresa`,
-   `internaPct`) a cada chamada. Duas chamadas resolvendo fora de ordem fazem a mais **velha**
-   sobrescrever o valor mais novo no banco — o dado fica errado mesmo com o estado visual
-   correto. Os saves de alíquota passam a ser single-flight: uma chamada em voo por vez, a
-   seguinte aguarda a anterior e reconstrói o patch a partir do estado já atualizado.
+3. **Serialização — corrida de dados, não só visual.** `upsertAliquotas`
+   (`queries.ts:632`) grava o snapshot inteiro (`nacional`, `importado`, `ufEmpresa`,
+   `internaPct`) a cada chamada, e `upsertEmpresaFiscal` faz patch por campo mas sem
+   ordenação garantida. Em ambos, duas chamadas resolvendo fora de ordem fazem a mais
+   **velha** sobrescrever o valor mais novo no banco — o dado fica errado mesmo com o estado
+   visual correto.
+
+   Os saves passam a ser **single-flight por tabela** — uma fila para `configuracoes`, outra
+   para `empresa_fiscal`, independentes entre si (uma gravação de cada pode estar em voo ao
+   mesmo tempo; o que não pode é duas da mesma tabela). Dentro de uma fila, a próxima só parte
+   quando a anterior termina, no `finally`, **inclusive após erro**: uma falha não descarta o
+   que está enfileirado atrás.
+
+   **A fonte do payload enfileirado não é o cache do react-query.** `invalidateQueries` não
+   atualiza `useAliquotas().data` / `useEmpresaFiscal().data` de forma síncrona, então
+   remontar o patch a partir do cache reenviaria um snapshot velho. Cada fila mantém um
+   **snapshot desejado mutável**, atualizado no momento em que a edição entra na fila; é dele
+   que sai o payload. Como consequência, a fila e o snapshot vivem no contêiner da seção, um
+   por tabela — **não** um `useMutation` por campo, que quebraria o compartilhamento da fila.
+
+   **Inicialização do snapshot é parte da trava, não detalhe.** `upsertAliquotas` grava as
+   quatro chaves de uma vez: se a fila aceitar uma edição antes de o snapshot estar carregado,
+   ou o inicializar com defaults, um save de `nacional` apaga `ufEmpresa`/`internaPct` que o
+   operador nunca tocou — a mesma classe de falha silenciosa que o ADR-0112 existe para
+   impedir. O snapshot é semeado **uma vez**, com o resultado bem-sucedido de `useAliquotas()`
+   (idem `useEmpresaFiscal()`), e a seção não aceita edição antes disso: enquanto carrega, as
+   linhas ficam em skeleton (§10), não em input vazio.
+
+   Como só há uma chamada em voo por tabela, respostas fora de ordem deixam de ser possíveis
+   por construção. O que os testes provam é a garantia real: a segunda chamada **começa**
+   depois de a primeira terminar, e leva o valor mais recente.
 
 ### 7. Seção Fiscal
 
@@ -231,24 +288,32 @@ ação, não uma grade de inputs em branco).
   1. `/configuracoes?ml_claim=X` → URL final `/canais?ml_claim=X`, com a query preservada, e
      `confirmarConexaoML` recebe o claim.
   2. `/configuracoes` sem slug → primeira seção visível.
-  3. Não-admin sem sessão de suporte em `/configuracoes/fiscal`, `/ia`, `/membros` → é
-     redirecionado; não vê campos desabilitados.
-  4. Sessão de suporte não-admin **vê** Fiscal e IA com controles desabilitados, e **não vê
-     `Membros`** — nem na sub-nav, nem por deep-link em `/configuracoes/membros`.
-  5. Sessão de suporte com escopo `read` não consegue editar nada, Telegram incluído.
+  3. Não-admin em `/configuracoes/membros` → é redirecionado, na sub-nav e por deep-link.
+     `Fiscal` e `IA` **não** redirecionam: aparecem em leitura, com os valores vigentes.
+  4. Sessão de suporte não-admin **vê** Fiscal e IA, e **não vê `Membros`** — nem na sub-nav,
+     nem por deep-link em `/configuracoes/membros`.
+  5. Sessão de suporte com escopo `read` não consegue editar nada — Telegram, alíquotas e
+     Empresa inclusos — **mesmo que o perfil do super-admin traga `is_admin = true`**.
   6. Operador não-admin vê os valores das seções em leitura e **não consegue digitar** em
      nenhum controle — o gate da UI bate com a policy RLS, sem save que falha em silêncio.
   7. Salvar um campo de Empresa acende `✓ Salvo` só naquela linha.
-  8. Dois blurs concorrentes em campos diferentes produzem dois estados independentes,
-     **inclusive resolvendo fora de ordem**, e um erro num deles não apaga o sucesso do outro
-     nem deixa a outra linha presa em "salvando".
+  8. Dois blurs em campos diferentes produzem dois estados de linha independentes, e um erro
+     num deles não apaga o sucesso do outro nem deixa a outra linha presa em "salvando".
   9. Dois blurs no **mesmo** campo: vence o mais recente; o `finally` do primeiro não
      sobrescreve o resultado do segundo.
-  10. Alíquotas: dois saves disparados em sequência resolvendo fora de ordem deixam no banco o
-      valor do **último**, não do primeiro.
-  11. `/usuarios` como admin redireciona para `/configuracoes/membros`; como não-admin, cai no
+  10. Single-flight, um caso por tabela (`configuracoes` e `empresa_fiscal`): o segundo save
+      só **inicia** depois de o primeiro terminar, e seu payload carrega o valor mais recente
+      — tirado do snapshot da fila, não do cache do react-query. Vale também quando o primeiro
+      **falha**: a fila não é descartada. E as duas filas são independentes: um save de cada
+      tabela pode estar em voo ao mesmo tempo.
+  11. Salvar **um** campo de alíquota preserva os outros três: com `ufEmpresa`/`internaPct`
+      já configurados, alterar `nacional` não os apaga. O snapshot foi semeado do
+      `useAliquotas()` carregado, não de defaults.
+  12. Sessão de suporte `full` na seção Fiscal: alíquotas editáveis, cadastro da empresa em
+      leitura — as duas policies são distintas.
+  13. `/usuarios` como admin redireciona para `/configuracoes/membros`; como não-admin, cai no
       `MenuGuard` e vai para o primeiro menu permitido — igual a hoje.
-  12. `Usuarios.test.tsx` continua passando sem alteração.
+  14. `Usuarios.test.tsx` continua passando sem alteração.
 - Validação de runtime com Playwright em sessão isolada, com screenshot real em 1440px e
   360px (snapshot de acessibilidade não pega bug de layout CSS).
 
@@ -263,7 +328,7 @@ ação, não uma grade de inputs em branco).
 | **Usuários** vira seção; **Canais** fica no menu | Mover os dois; mover só Canais; não mover nada | Encurta o menu pelo item que é config de verdade; Canais é operação (OAuth, reconexão) e cresce com o E5/Shopee (ADR-0077) |
 | Capacidade declarada por seção | Um `podeVer`/`podeEditar` global | Um predicado global que libera "seção restrita" ao suporte vaza `Membros`, que o suporte nunca viu (`MENU_KEYS` não contém `usuarios`) |
 | `podeEditarConfig` replica a policy RLS | `canWrite()`; só `isAdmin` | `canWrite()` é mais permissivo que o RLS de `configuracoes` e reproduz o save que falha em silêncio para não-admin |
-| Não-admin vê em leitura, não some com a seção | Esconder toda seção não editável | A tela inteira é admin-only no banco; esconder tudo deixaria `/configuracoes` vazio, e o operador precisa saber qual desconto está valendo |
+| Não-admin vê em leitura; só `Membros` esconde | Esconder toda seção não editável | O `SELECT` das duas tabelas é liberado na org, e nenhuma seção é editável por membro comum (`configuracoes`: admin ou suporte `full`; `empresa_fiscal` e `Membros`: só admin) — esconder o não editável deixaria `/configuracoes` vazio e tiraria do operador o desconto e a alíquota vigentes |
 | `Membros` admin-only, sem exceção de suporte | Visível ao suporte em leitura | Preserva o gate atual e o ADR-0068; diagnóstico pelo suporte é feature, não efeito colateral |
 | Mapa por campo via `mutateAsync` + `finally` | `mutation.variables`; callbacks de `mutate()`; N mutations | `variables` envia todas as chaves nas alíquotas; callbacks de `mutate()` podem não disparar em chamadas consecutivas e travam a linha em "salvando" |
 | Telegram mantém botão Salvar explícito | Uniformizar para autosave-on-blur | Comportamento travado por teste; token de bot não deve gravar a cada blur |
@@ -282,10 +347,17 @@ ação, não uma grade de inputs em branco).
   org, inclusive PF, que não emite nota. Se sim, é trabalho separado.
 - O contador "N de M" depende da lista de obrigatórios do ADR-0135; conferir campo a campo
   contra o ADR, não por inferência do formulário.
-- **Defeito pré-existente encontrado durante a revisão** (`support_access.sql:285-298`): toda
-  escrita em `configuracoes` exige admin, mas Geral, Preços e Notificações não têm gate na UI
-  — o não-admin digita, o RLS recusa, e a tela não mostra erro. Este plano fecha o buraco na
-  UI. Fica a pergunta para o Diego, **fora do escopo**: a policy deveria ser afrouxada para
+- **Questão de backend levantada na revisão, fora do escopo:** o helper RLS `is_admin()`
+  (`profiles_e_helpers.sql:20-25`) lê `profiles.is_admin`, e um super-admin de plataforma
+  carrega essa flag. Numa sessão de suporte, o banco portanto trata o super-admin como admin
+  da organização visitada — a UI deste plano fecha isso pelo conjunto `canWrite()`, mas o RLS
+  continua permitindo. Distinguir "admin da plataforma" de "admin do tenant" nas policies é
+  trabalho de backend com ADR próprio, não de um refactor de layout.
+- **Defeito pré-existente encontrado durante a revisão** (`support_access.sql:285-298`):
+  escrever em `configuracoes` exige `is_admin() OR current_support_scope() = 'full'`, mas
+  Geral, Preços e Notificações não têm gate na UI — o membro comum digita, o RLS recusa, e a
+  tela não mostra erro. Este plano fecha o buraco na UI. Fica a pergunta para o Diego,
+  **fora do escopo**: a policy deveria ser afrouxada para
   membro comum editar preferências não-sensíveis (desconto de marketing, mostrar lucro)? Se
   sim, é mudança de regra de negócio, com ADR e migration próprios.
 

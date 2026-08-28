@@ -104,3 +104,35 @@ em **leitura**, com aviso único no topo. Isso ajusta a resposta original do Die
 a seção"), que foi dada antes deste fato aparecer.
 
 (2) vira single-flight nos saves de alíquota; (3) vira id de operação por campo.
+
+## Rounds 5–8 — Codex
+
+Quatro rodadas de afunilamento, todas **REVISE**, todos os achados aceitos sem contestação.
+Os achados encolheram de arquitetura para redação — o padrão de convergência.
+
+- **R5:** `empresa_fiscal` tem policy **diferente** de `configuracoes` (só `is_admin()`, sem
+  escape de suporte — `adr135_cadastro_fiscal.sql:49-57`), então um predicado só não serve;
+  a corrida de dados também existe em `empresa_fiscal`; o teste de "resolver fora de ordem"
+  contradizia single-flight. → dois predicados; single-flight nas duas tabelas; teste
+  reescrito.
+- **R6:** contradição minha — eu escrevi "leitura não é gateada" e mantive Fiscal/IA
+  visíveis só para admin. → só `Membros` tem gate de visibilidade; o resto aparece em
+  leitura. Filas independentes por tabela; snapshot fora do cache do react-query, porque
+  `invalidateQueries` não é síncrono.
+- **R7:** três trechos ainda diziam "admin-only" onde a policy é `admin OR suporte full`;
+  a inicialização do snapshot estava subespecificada (snapshot parcial apagaria
+  `ufEmpresa`/`internaPct` não tocados — mesma classe do ADR-0112). → redação corrigida;
+  snapshot semeado uma vez da query bem-sucedida, com skeleton antes disso.
+- **R8:** o super-admin que abre sessão de suporte carrega `profiles.is_admin = true`
+  (`profiles_e_helpers.sql:71-76`), então gates re-derivados de `isAdmin` reabririam
+  `Membros` e a edição em escopo `read`. → visibilidade de `Membros` passa a ser lida de
+  `visibleMenus(profile, !!context)`, a mesma fonte do `sidebar.tsx:41`, em vez de
+  re-derivada; `canWrite()` entra como conjunto restritivo nos dois predicados de escrita.
+
+### Encerramento do Ato 2
+
+Oito rodadas, sem `APPROVED`. **Não é impasse:** não houve um único achado contestado — cada
+rodada gerou correções aceitas e achados progressivamente menores. O último item aberto do
+Codex é uma distinção "admin de plataforma × admin de tenant" nas policies RLS: questão de
+backend, com ADR próprio, que um refactor de layout não deve decidir. Registrada em
+"Risks / open questions" e entregue ao Diego.
