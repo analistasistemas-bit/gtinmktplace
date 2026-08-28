@@ -129,10 +129,27 @@ Os achados encolheram de arquitetura para redação — o padrão de convergênc
   `visibleMenus(profile, !!context)`, a mesma fonte do `sidebar.tsx:41`, em vez de
   re-derivada; `canWrite()` entra como conjunto restritivo nos dois predicados de escrita.
 
-### Encerramento do Ato 2
+### Encerramento do Ato 2 — e uma crítica ao próprio loop
 
-Oito rodadas, sem `APPROVED`. **Não é impasse:** não houve um único achado contestado — cada
-rodada gerou correções aceitas e achados progressivamente menores. O último item aberto do
-Codex é uma distinção "admin de plataforma × admin de tenant" nas policies RLS: questão de
-backend, com ADR próprio, que um refactor de layout não deve decidir. Registrada em
-"Risks / open questions" e entregue ao Diego.
+Oito rodadas, sem `APPROVED`, com **100% dos achados aceitos e nenhum contestado**. Isso não
+é sinal de convergência: o papel de árbitro final que a skill atribui ao Claude não foi
+exercido em nenhuma rodada.
+
+Em retrospecto, **o loop deveria ter parado por volta da rodada 4**, quando os achados
+cruzaram de arquitetura (rotas, guard de OAuth, gate de permissão, corrida de dados) para
+detalhe de implementação e redação. Duas evidências de que passou do ponto:
+
+- A contradição da rodada 6 foi **introduzida por mim na rodada 5**, ao corrigir um achado da
+  própria rodada 5. O loop passou a gerar o próprio trabalho.
+- O `canWrite()` como conjunto (rodada 8) entra depois de o plano ter escrito "não use
+  `canWrite()` aqui" na rodada 4. As duas afirmações convivem hoje e exigem um parágrafo de
+  reconciliação — isso é cicatriz de loop, não decisão de design.
+- A rodada 8 terminou numa questão de RLS sobre super-admin, que não tem relação com layout.
+
+O valor real do Ato 2 concentra-se nas rodadas 1–4: o guard de OAuth perdendo a query, o gate
+de permissão vazando `Membros`, a corrida de dados das alíquotas e — o achado mais valioso —
+o RLS de `configuracoes` que reprova a escrita do membro comum sem que a UI mostre erro.
+
+O último item aberto do Codex é a distinção "admin de plataforma × admin de tenant" nas
+policies: questão de backend, com ADR próprio, que um refactor de layout não deve decidir.
+Registrada em "Risks / open questions" e entregue ao Diego.
