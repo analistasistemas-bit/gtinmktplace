@@ -415,3 +415,18 @@ Plano completo em `docs/superpowers/plans/2026-08-27-sonar-ean-enriquecimento.md
 **Escopo entregue nesta primeira etapa:** cruzamento local (`variacoes.gtin` + `pulse_produtos`) e
 exibição da `descricao_catalogo` que já vinha na resposta e não era renderizada. Nenhuma chamada
 nova ao ML, nenhum bump de cache, nenhuma mudança no contrato da edge.
+
+## Errata 3 (2026-08-27) — ordem inicial da tabela: `vendidos` desc
+
+**D1 dizia "na ordem da busca"; a tabela agora abre ordenada por `Vendidos`, do maior para o
+menor.** A ordem da busca é o ranking de relevância do ML, que mistura Full, anúncio patrocinado,
+desconto ativo e conversão recente — abre a tela respondendo "quem o ML está empurrando", não "o
+que vende neste nicho", que é a pergunta do garimpo. Medido na consulta "Latas Ninho Nestle Zero
+Lactose 700gr": o #1 da busca tinha 290 visitas e nenhuma venda exibida, enquanto o anúncio com
+"+1 mil vendidos" aparecia em #2.
+
+Nada se perde: a posição de relevância continua na coluna `#`, e um clique no cabeçalho volta a
+ordenar por ela. Os anúncios sem "+N vendidos" caem para o fim da lista — o comparador do
+`DataTable` põe nulo por último em qualquer direção, então ausência de dado não vira posição alta.
+Consulta grátis (sem Apify) não tem `vendidos` em nenhuma linha e a ordem recebida é preservada,
+porque o comparador é estável para valores todos nulos.

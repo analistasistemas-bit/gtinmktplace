@@ -776,8 +776,10 @@ export default function PulseSonar() {
     inputRef.current?.focus();
   };
 
-  // Sem `defaultSort`: a ordem que chega da amostra é o ranking de relevância do ML, e perder
-  // isso ao abrir a tela custaria mais que a conveniência de já vir ordenado por alguma coluna.
+  // Ordem inicial por `vendidos` desc (o que mais vende primeiro): é a pergunta que o operador faz
+  // ao abrir o garimpo. O ranking de relevância do ML não se perde — continua na coluna `#`, que
+  // reordena com um clique. Nulos vão para o fim pelo comparador do DataTable, então os anúncios
+  // sem "+N vendidos" não sobem por falta de dado.
   const colunas = useMemo<Column<ItemVendasSonar>[]>(() => [
     {
       key: 'posicao', header: '#', className: 'tabular-nums',
@@ -1110,6 +1112,7 @@ export default function PulseSonar() {
           <DataTable
             columns={colunas}
             rows={visiveis}
+            defaultSort={{ key: 'vendidos', dir: 'desc' }}
             rowKey={(i) => i.item_id ?? `pos-${i.posicao ?? 'x'}-${i.titulo}`}
             empty={<EmptyState icon={Package} title="Nenhum anúncio passa pelos filtros ativos." />}
           />
