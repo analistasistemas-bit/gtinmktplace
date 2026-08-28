@@ -1,9 +1,16 @@
 # ADR-0132 — Análise Avançada com JoomPulse
 
-**Status:** Aceito com bloqueios — direção arquitetural aprovada; implementação não iniciada e bloqueada pelo spike e pelas questões marcadas como "A definir"
+**Status:** Aceito com bloqueios, **em revisão** — direção arquitetural aprovada; implementação não iniciada. Spike parcial executado em 2026-08-28 fechou as questões #1–#3 e produziu resultado **incompatível com a D-3**, o que aciona a revisão prevista na D-17. Questões #4–#15 (mais a nova #16) seguem bloqueando
 **Data:** 2026-08-23
 **Decisores:** Diego
 **Relaciona:** [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Pulse; o 403 de vendas por anúncio de terceiro), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) (Sonar + Apify, fora do v1), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0086](0086-configuracao-org-scoped.md) (módulos), [0024](0024-abstracao-de-canais.md) (Canal ≠ provedor de análise), [0027](0027-multi-tenancy-organizations.md) (multi-tenancy), [0043](0043-migrations-canal-unico.md) (migrations canal único)
+
+> **Adendo 2026-08-28 — spike parcial executado.** As questões #1, #2 e #3 estão fechadas;
+> **#4–#15 continuam bloqueando** e uma questão nova (#16) foi levantada. O resultado é
+> **incompatível com a D-3** e exige revisão da decisão antes de qualquer código, conforme a
+> D-17. Ver [Adendo — resultado do spike parcial](#adendo--resultado-do-spike-parcial-2026-08-28)
+> no fim deste documento e o [Spike 038](../spikes/038-joompulse-parcial-correlacao-e-semantica.md).
+> A tabela de decisões abaixo **não foi alterada** — permanece como aprovada em 2026-08-23.
 
 ## Problema
 
@@ -458,3 +465,50 @@ Se a causa for incompatibilidade de contrato, identificador ou semântica, o mó
 - Hunter Spy e Avant PRO no mesmo bloco estabelecem o lugar de futuros provedores sem transformá-los em Canal.
 - A parceria formal remove o bloqueio de termos de uso, mas não substitui o spike nem resolve identificadores, semântica, quotas ou ciclo de vida.
 - Enquanto as questões abertas não forem fechadas, a direção arquitetural está aceita, mas a implementação permanece bloqueada.
+
+---
+
+## Adendo — resultado do spike parcial (2026-08-28)
+
+Fonte: [Spike 038](../spikes/038-joompulse-parcial-correlacao-e-semantica.md), executado contra o
+MCP real da JoomPulse. Este adendo **registra achados e aponta o que precisa de revisão**; ele
+não altera nenhuma decisão `D-*`, conforme o procedimento da D-17.
+
+### Questões fechadas
+
+| # | Resposta |
+|---|---|
+| 1 | **Não existe GTIN nos cubos da JoomPulse.** As chaves são `id` (listagem `MLB…`) e `productId` (catálogo; stub `MLB-…` para não-catálogo). Ambas **já existem** no PubliAI como `ml_item_id` e `catalog_product_id`; a Viabilidade já carrega o `product_id` resolvido e já falha explicitamente quando ele é nulo. Nenhum mecanismo novo de correlação precisa ser criado. |
+| 2 | Uma única ferramenta no v1: `query_cubejs_meli`. Ela **não expõe operações de domínio** — recebe uma string JSON no formato CubeJS `/load`. A allowlist da D-9 é, portanto, de **cubos/dimensões/measures/filtros**, montados pelo Gateway; nunca fragmento vindo do cliente. Reforço concreto: a chave `segments` é **descartada em silêncio e devolve linhas sem filtro, sem erro**. |
+| 3 | `orderCount*`/`orderGmv*`/`catalog*` são estimativas (divulgação obrigatória pela própria fonte); `priceAmount` é real; `sold`/`soldItem`/`catalogSales` são faixas vitalícias do selo do ML; `conversionRate` não é populado. Janelas `1d/1w/1m` são **móveis**, ancoradas no snapshot D-1 (coleta ~03:25 UTC, lag ~24h). `orderCountMin/Max` são agregadores do slice, **não banda de confiança** — a estimativa é rótulo, não faixa. |
+
+### Achado que exige revisão da D-3 e da D-10
+
+`orderCount1m` **concentra-se no ganhador do buy-box**; as demais listagens do mesmo catálogo
+devolvem `0`. Verificado em 3 catálogos com 15 listagens, e confirmado pela regra `SN-10` da
+própria JoomPulse. Num catálogo com 15–18 concorrentes, 14 a 17 devolvem `0` — e esse `0`
+significa "não atribuído a esta listagem", não "não vendeu".
+
+A D-3 promete "vendas e receita estimadas **do rival**". A fonte entrega a estimativa **do
+ganhador do buy-box** mais a demanda **do catálogo**. São coisas diferentes, e exibir o `0` como
+venda do rival seria dado inventado — o inverso exato do que a D-3 proíbe.
+
+A máquina de estados também fica curta: "Sem dado para este item" precisa virar quatro estados
+distintos (não rastreado / ganhador com estimativa / não-ganhador com demanda de catálogo /
+catálogo sem venda estimada). Tabela-verdade no Spike 038.
+
+### Questão nova
+
+**#16 — a superfície entregue é um assistente analítico voltado a agente, não uma API de dados**
+(scripts de recusa, divulgação obrigatória, e roteamento explícito da análise de concorrentes
+para a UI da JoomPulse). A D-18 foi escrita antes de alguém ver essa superfície. Falta confirmar
+com a JoomPulse se a parceria cobre uso server-to-server por um Gateway do PubliAI, ou se existe
+API de dados própria para esse fim.
+
+### Continua bloqueado
+
+Questões **#4–#15** — nenhuma delas é testável a partir desta superfície: OAuth multi-conta,
+refresh, revogação, storage/cifragem de credencial, cache e invariância entre contas, quotas,
+latência, cold start, ciclo de vida, expurgo e alertas. A cobertura real (quantos anúncios do
+PubliAI existem no snapshot da JoomPulse) também **não foi medida** e precisa de sonda em
+produção.

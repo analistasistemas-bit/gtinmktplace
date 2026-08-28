@@ -2,6 +2,34 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Spike JoomPulse — parcial (ADR-0132) — 2026-08-28
+
+**Concluído (parcial).** Relatório em
+`docs/spikes/038-joompulse-parcial-correlacao-e-semantica.md`; adendo na ADR-0132.
+**Nenhum código de produção** — a ADR segue bloqueada, agora em revisão pela D-17.
+
+- [x] Ler `pulse://tables`, `pulse://tables/MercadoProductsWeekly` e `pulse://rules`
+- [x] **Q#1 correlação fechada** — sem GTIN na JoomPulse; `ml_item_id` → `id` e
+      `catalog_product_id` → `productId`, ambas já persistidas (`pulse_produtos` tem unique
+      `(org_id, catalog_product_id)`); Viabilidade já falha explícito com `product_id` nulo
+- [x] **Q#2 allowlist fechada** — só `query_cubejs_meli`; recebe JSON CubeJS cru, então o
+      Gateway monta a query (D-9 vira allowlist de cubos/campos). `segments` é descartado em
+      silêncio e devolve linhas **sem filtro**
+- [x] **Q#3 semântica fechada** — janelas móveis sobre snapshot D-1 (coleta ~03:25 UTC);
+      `orderCountMin/Max` são agregadores do slice, não banda de confiança; `conversionRate`
+      não populado
+- [x] **Achado que derruba a D-3** — `orderCount1m` só existe para o ganhador do buy-box;
+      14–17 rivais por catálogo devolvem `0` = "não atribuído", não "não vendeu". Tabela-verdade
+      de 4 estados no spike
+- [ ] **Decisão do Diego (D-17):** aceitar o v1 possível (demanda do catálogo + buy-box +
+      estimativa do ganhador) ou revisar a D-3 de outra forma. **Bloqueia tudo abaixo.**
+- [ ] Perguntar à JoomPulse (#16): a parceria cobre uso server-to-server desta superfície por um
+      Gateway, ou existe API de dados própria?
+- [ ] Sonda de cobertura em produção: taxa de acerto dos `ml_item_id`/`catalog_product_id` reais
+      no snapshot da JoomPulse
+- [ ] Spike 2 (exige credenciais de 2 orgs): OAuth multi-conta, refresh, revogação, quotas,
+      latência, cold start, isolamento — questões #4–#15
+
 ## Fundo de partículas nas telas de auth (ADR-0139) — 2026-08-28
 
 **Implementado.** ADR em `docs/decisions/0139-particulas-gpgpu-nas-telas-de-auth.md`.
