@@ -143,11 +143,14 @@ mercado mudar sozinho — e já está **duplicado** por fator dentro do "Saiba m
 (`veredito-sonar.tsx:316`), onde permanece. Nenhuma informação é perdida; o adendo do ADR-0124
 (explicar o que abriria o nicho) segue cumprido, só deixa de ser manchete.
 
-Preço de referência: **preço do líder por faturamento** (`rivaisPodio[0].preco`).
+A condição é expressa **em percentual, nunca em reais**:
 
 ```
-Com Full  → bata R$ 39,90 (líder, +10.000 vendidos).
-Sem Full  → avalie R$ 37,90 (5% abaixo) para compensar o prazo de entrega.
+Com Full  → iguale o preço do concorrente equivalente ao seu produto — com 95% do topo
+            entregando por Full, o prazo empata e a decisão volta pro preço.
+Sem Full  → igualar não basta: o comprador escolhe pelo prazo. Avalie entrar 5% abaixo do
+            concorrente equivalente para compensar a entrega — e confira na Viabilidade
+            se esse desconto ainda fecha sua margem.
 ```
 
 **Por que dois ramos.** Empatar preço com um concorrente Full sendo não-Full não empata a disputa:
@@ -165,15 +168,28 @@ Escolha explícita contra escalar o desconto pelo `% Full`: seria uma curva que 
 este arquivo é construído sobre a regra de não imprimir número sem lastro. Precisão falsa engana
 mais que número redondo declarado como heurística.
 
+**Percentual, nunca reais — e por que (regra do operador, 28/08).** Este card só existe na busca
+por **termo**, cuja amostra mistura embalagens: "abraçadeira nylon" devolve Kit 500 a R$ 39,90,
+Kit 1000 a R$ 77,96 e Kit 50 a R$ 19,06 lado a lado. Um `bata R$ 39,90` seria alvo de prejuízo
+para quem for cadastrar outro tamanho de kit — exatamente o erro que a **Errata 1 do ADR-0124**
+proíbe (ela matou as faixas de preço do Sonar porque *tercil sobre embalagens diferentes não
+descreve nicho nenhum*), reintroduzido justo no card que decide compra de estoque.
+
+Percentual atravessa embalagem: "5% abaixo do equivalente" vale para qualquer kit. Valor absoluto
+fica reservado à **consulta por EAN**, onde o produto é um só e a comparação é legítima — e aquela
+view (`SonarEanResultado`, `PulseSonar.tsx:981`) é própria e **não usa este card**, então nada aqui
+precisa de flag de modo.
+
 **Regras de exibição:**
 
-- Ramo "Sem Full" só aparece quando `fullPct >= DISPUTA_V2.fullMuito` (60%) — é onde o handicap
-  existe de verdade.
-- `Barreira === 'marca'` **não mostra preço nenhum**. Copy: *"X% do topo é loja oficial —
-  revender aqui corre risco de moderação por propriedade intelectual. Preço não resolve: só entra
-  com autorização de revenda ou marca própria."*
-- Sem `rivaisPodio[0].preco` → só o texto qualitativo, sem número inventado.
-- O card aponta a Viabilidade para conferir se o preço-alvo fecha a margem.
+- Os dois ramos só aparecem quando `fullPct >= DISPUTA_V2.fullMuito` (60%) — sem Full dominante não
+  há handicap de prazo a compensar, e o card fica só com o texto de barreira.
+- `Barreira === 'marca'` **não mostra condição de preço nenhuma**. Copy: *"X% do topo é loja
+  oficial — revender aqui corre risco de moderação por propriedade intelectual. Preço não resolve:
+  só entra com autorização de revenda ou marca própria."*
+- `gateDemanda` também não mostra: sem prova de compra não há entrada a condicionar.
+- Nenhum ramo pode imprimir `R$` — travado por teste.
+- O card aponta a Viabilidade para conferir se o desconto ainda fecha a margem.
 
 ### 4. Ação deixa de ser ordem
 

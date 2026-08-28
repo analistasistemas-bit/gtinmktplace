@@ -470,11 +470,17 @@ describe('ADR-0138 — matriz de título (Demanda × Barreira) e travas de lingu
       const v = calcularVereditoAnuncios(painelSintetico(caso.itens), null);
       expect(v.barreira).toBe(caso.barreira);
       expect(v.titulo).toBe(caso.titulo);
-      // A trava que importa: preço a bater só existe onde preço resolve. Marca (moderação por IP)
-      // e ausência de demanda nunca ganham número.
-      const podeTerPreco = !v.explicacao.gateDemanda && v.barreira !== 'marca' && v.barreira !== 'nao_medida';
-      expect(v.ramosEntrada.length > 0).toBe(podeTerPreco);
-      for (const t of textosGerados(v)) expect(t).not.toMatch(/entrada fechada|Oportunidade (alta|média|baixa)/i);
+      // A trava que importa: a condição de entrada só existe onde há handicap de Full a compensar,
+      // e nunca sob risco de marca (moderação por IP) ou sem prova de venda — ali preço não resolve.
+      const fullDomina = caso.itens.every((i) => i.full === true);
+      const podeTerCondicao = fullDomina && !v.explicacao.gateDemanda
+        && v.barreira !== 'marca' && v.barreira !== 'nao_medida';
+      expect(v.ramosEntrada.length > 0).toBe(podeTerCondicao);
+      for (const t of textosGerados(v)) {
+        expect(t).not.toMatch(/entrada fechada|Oportunidade (alta|média|baixa)/i);
+      }
+      // Valor absoluto é exclusivo da consulta por EAN: neste card, só percentual (ADR-0138 §3).
+      for (const r of v.ramosEntrada) expect(r.texto).not.toMatch(/R\$/);
     });
   }
 });
@@ -487,7 +493,7 @@ describe('insightEntrada', () => {
     const insight = insightEntrada(v);
     expect(insight.titulo).toBe('Como entrar neste nicho');
     expect(insight.tom).toBe('bom');
-    expect(insight.ramos.map((r) => r.rotulo)).toEqual(['Preço a bater']);
+    expect(insight.ramos).toEqual([]); // Full não domina: sem handicap de prazo, nada a compensar
   });
 
   it('concorrência pesada por Full → dois ramos, e o "Sem Full" traz 5% abaixo do líder', () => {
@@ -501,8 +507,28 @@ describe('insightEntrada', () => {
     const insight = insightEntrada(v);
     expect(insight.titulo).toBe('Como entrar neste nicho');
     expect(insight.ramos.map((r) => r.rotulo)).toEqual(['Com Full', 'Sem Full']);
-    // Líder a R$ 100 → alvo do não-Full é R$ 95,00 (5% abaixo, arredondado pra baixo em centavos).
-    expect(insight.ramos[1].texto).toMatch(/R\$\s?95,00/);
+    // Percentual, nunca reais: a busca por termo mistura embalagens (ADR-0138 §3).
+    expect(insight.ramos[1].texto).toMatch(/5% abaixo/);
+  });
+
+  it('amostra com embalagens diferentes: NENHUM valor em reais, só percentual', () => {
+    // O caso real do print: Kit 500 a R$ 39,90, Kit 1000 a R$ 77,96 e Kit 50 a R$ 19,06 no mesmo
+    // nicho. A Errata 1 do ADR-0124 matou faixas de preço justamente porque estatística de preço
+    // sobre embalagens diferentes não descreve nicho — um "bata R$ 39,90" aqui seria alvo de
+    // prejuízo para quem for cadastrar outro kit. Percentual atravessa embalagem; reais não.
+    const itens = [
+      itemV2({ item_id: 'K500', vendedor: 'L1', titulo: 'Kit 500 Abraçadeira Nylon', vendidos: 10_000, preco: 39.9, full: true }),
+      itemV2({ item_id: 'K1000', vendedor: 'L2', titulo: 'Kit 1000 Abraçadeiras Nylon', vendidos: 1_000, preco: 77.96, full: true }),
+      itemV2({ item_id: 'K50', vendedor: 'L3', titulo: 'Kit 50 Abraçadeira Universal', vendidos: 1_000, preco: 19.06, full: true }),
+      ...Array.from({ length: 9 }, (_, i) => itemV2({ item_id: `X${i}`, vendedor: `L${i + 4}`, titulo: `Outro ${i}`, vendidos: 500, preco: 30 + i, full: true })),
+    ];
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    expect(v.barreira).toBe('concorrencia');
+    const [comFull, semFull] = v.ramosEntrada;
+    expect(comFull.texto).toMatch(/equivalente ao seu produto/);
+    expect(semFull.texto).toMatch(/5% abaixo do concorrente equivalente/);
+    // A trava: nenhum ramo pode imprimir reais na busca por termo (valor é exclusivo do EAN).
+    for (const r of v.ramosEntrada) expect(r.texto).not.toMatch(/R\$/);
   });
 
   it('risco de marca NUNCA mostra preço a bater — desconto não evita moderação por IP', () => {
@@ -596,7 +622,7 @@ describe('insightEntrada', () => {
     expect(insight.titulo).toBe('Como entrar neste nicho');
     expect(insight.tom).toBe('bom');
     expect(insight.detalhe).toBe('Sem barreira estrutural detectada nesta amostra — campo livre pra quem chega agora.');
-    expect(insight.ramos.map((r) => r.rotulo)).toEqual(['Preço a bater']);
+    expect(insight.ramos).toEqual([]); // Full não domina: sem handicap de prazo, nada a compensar
   });
 });
 

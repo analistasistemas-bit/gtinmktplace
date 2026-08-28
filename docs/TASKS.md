@@ -13,8 +13,9 @@ Só apresentação: nenhum corte de calibração se moveu, gabarito intacto.
       título e continua governando só a cor do card
 - [x] Dicionário do comércio: Disputa→Concorrência, Tração→Faturamento por concorrente,
       "rótulo de loja"→"concorrente" (a ressalva do ADR-0127 desce para o Saiba mais)
-- [x] Card "Como entrar neste nicho" com preço a bater do líder e ramo "Sem Full"
-      (`HANDICAP_NAO_FULL` 5%); risco de marca e gate de demanda nunca mostram preço
+- [x] Card "Como entrar neste nicho": ramos "Com Full" / "Sem Full" (`HANDICAP_NAO_FULL` 5%),
+      sempre em percentual — valor em reais fica só na consulta por EAN, porque a busca por termo
+      mistura embalagens; risco de marca e gate de demanda não mostram condição de preço
 - [x] `motivo` (subtítulo) removido — redundante com o título de dois eixos
 - [x] Teste de matriz `(demanda × barreira)` + trava de vocabulário contra "entrada fechada"
 

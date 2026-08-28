@@ -171,26 +171,30 @@ const fullDomina = (fullPct: number | null) => fullPct != null && fullPct >= DIS
 export interface RamoEntrada { rotulo: string; texto: string }
 
 /**
- * Condição de entrada com número (ADR-0138 §3). Referência é o preço do anúncio LÍDER EM
- * FATURAMENTO (`rivaisPodio[0]`), não a mediana: é contra quem lidera que se disputa a fatia.
- * Sem preço de líder na amostra devolve vazio — nunca inventa número.
- * Fonte única dos dois lugares que mostram preço (ação e card de insight), para não divergirem.
+ * Condição de entrada (ADR-0138 §3) — sempre em PERCENTUAL, nunca em reais.
+ *
+ * Este card só existe na busca por TERMO, cuja amostra mistura embalagens: "abraçadeira nylon"
+ * devolve Kit 500 a R$ 39,90, Kit 1000 a R$ 77,96 e Kit 50 a R$ 19,06 lado a lado. Um "bata
+ * R$ 39,90" seria alvo de prejuízo para quem for cadastrar outro tamanho de kit — a mesma
+ * armadilha que a Errata 1 do ADR-0124 usou para matar as faixas de preço do Sonar (estatística de
+ * preço sobre itens incomparáveis não descreve nicho nenhum). Percentual atravessa embalagem:
+ * "5% abaixo do equivalente" vale para qualquer kit.
+ *
+ * Valor absoluto fica reservado à consulta por EAN (`SonarEanResultado`), onde o produto é um só e
+ * a comparação é legítima — regra do operador, 28/08. Aquela view NÃO usa este card.
+ *
+ * Vazio quando o Full não domina o topo: sem handicap de prazo não há o que compensar.
  */
-function ramosDeEntrada(precoLider: number | null, fullPct: number | null): RamoEntrada[] {
-  if (precoLider == null) return [];
-  if (!fullDomina(fullPct)) {
-    return [{ rotulo: 'Preço a bater', texto: `${fmtBRL(precoLider)}, preço do anúncio líder em faturamento.` }];
-  }
-  // Piso em centavos (floor, não round): erra sempre para o lado seguro do operador.
-  const alvo = Math.floor(precoLider * (1 - HANDICAP_NAO_FULL) * 100) / 100;
+function ramosDeEntrada(fullPct: number | null): RamoEntrada[] {
+  if (!fullDomina(fullPct)) return [];
   return [
     {
       rotulo: 'Com Full',
-      texto: `bata ${fmtBRL(precoLider)}, preço do anúncio líder. ${pct(fullPct as number)} do topo entrega por Full: o prazo empata e a decisão volta pro preço.`,
+      texto: `iguale o preço do concorrente equivalente ao seu produto — com ${pct(fullPct as number)} do topo entregando por Full, o prazo empata e a decisão volta pro preço.`,
     },
     {
       rotulo: 'Sem Full',
-      texto: `${fmtBRL(precoLider)} não basta — o comprador escolhe pelo prazo. Avalie entrar em ${fmtBRL(alvo)} (${pct(HANDICAP_NAO_FULL * 100)} abaixo) para compensar a entrega. Confira na Viabilidade se esse preço ainda fecha sua margem.`,
+      texto: `igualar não basta: o comprador escolhe pelo prazo. Avalie entrar ${pct(HANDICAP_NAO_FULL * 100)} abaixo do concorrente equivalente para compensar a entrega — e confira na Viabilidade se esse desconto ainda fecha sua margem.`,
     },
   ];
 }
@@ -261,7 +265,9 @@ function chipBarreira(
   disputa: DisputaMedida | null,
   sub: SubamostraNomeada,
 ): string | null {
-  if (barreira === 'nao_medida') return 'não medida';
+  // `nao_medida` não ganha chip: o título já diz "· concorrência não medida", e repetir seria a
+  // mesma redundância que aposentou o subtítulo.
+  if (barreira === 'nao_medida') return null;
   if (barreira === 'marca') return 'loja oficial';
   if (barreira !== 'concorrencia') return null;
   if (fullDomina(fullPct)) return `${pct(fullPct as number)} Full`;
@@ -350,9 +356,7 @@ export interface VereditoAnuncios {
   barreira: Barreira;
   /** Número que sustenta a barreira, para o chip ao lado do título. `null` = sem chip. */
   chip: string | null;
-  /** Preço do anúncio líder em faturamento — referência do "preço a bater" (ADR-0138). */
-  precoLider: number | null;
-  /** Condição de entrada com número; vazio quando não há preço de líder na amostra. */
+  /** Condição de entrada em percentual (ADR-0138); vazio quando o Full não domina o topo. */
   ramosEntrada: RamoEntrada[];
   /** Top 5 rivais por faturamento na amostra (inclui fantasmas sem rótulo). */
   rivaisPodio: RivalPodio[];
@@ -542,7 +546,8 @@ function nivelTracaoV2(sub: SubamostraNomeada): { nivel: NivelFator; detalhe: st
   const porRotulo = sub.faturamento / sub.distintos;
   const nivel: NivelFator = porRotulo >= TRACAO_V2.boa ? 'bom'
     : porRotulo >= TRACAO_V2.media ? 'medio' : 'ruim';
-  return { nivel, detalhe: `${brlMil(porRotulo)} por concorrente`, porRotulo };
+  // Sem "por concorrente" no detalhe: o label do fator já diz isso (ADR-0138 §2).
+  return { nivel, detalhe: `${brlMil(porRotulo)} na amostra`, porRotulo };
 }
 
 /** Marca vira % da AMOSTRA de anúncios com loja oficial (antes era % de fichas). Não pontua
@@ -800,11 +805,10 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
   // Barreira e textos comerciais (ADR-0138). `barreira` é derivada dos FATORES, nunca de `nivel`.
   const barreira = derivarBarreira(entrada, disputa, tracao, marca);
   const fullPct = disputa?.fullPct ?? null;
-  const precoLider = rivais[0]?.preco ?? null;
-  // Sem prova de venda não existe "preço a bater": o número só faria sentido se houvesse comprador.
+  // Sem prova de venda não há entrada a condicionar; sob risco de marca, desconto não resolve.
   const ramosEntrada = gateDemanda || barreira === 'marca' || barreira === 'nao_medida'
     ? []
-    : ramosDeEntrada(precoLider, fullPct);
+    : ramosDeEntrada(fullPct);
   const chip = chipBarreira(barreira, fullPct, disputa, sub);
   const acao = acaoVeredito(barreira, nivel, gateDemanda, razaoParcial, ramosEntrada) + fraseRivaisPodio(rivais);
   const resumo = resumoVeredito(barreira, nivel, gateDemanda, fullPct);
@@ -818,7 +822,6 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     entrada,
     barreira,
     chip,
-    precoLider,
     ramosEntrada,
     rivaisPodio: rivais,
     resumo,
@@ -905,9 +908,7 @@ export function insightEntrada(v: VereditoAnuncios): InsightEntrada {
   return {
     titulo: 'Como entrar neste nicho',
     tom: semBarreira ? 'bom' : 'medio',
-    detalhe: v.ramosEntrada.length > 0
-      ? detalhe
-      : `${detalhe} Nenhum anúncio da amostra traz preço e vendas suficientes para calcular o preço a bater.`,
+    detalhe,
     ramos: v.ramosEntrada,
   };
 }
