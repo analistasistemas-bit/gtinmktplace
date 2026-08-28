@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  calcularVereditoAnuncios, contextoNichoAnuncios, insightEntrada, rivaisPodioVisitas, subamostraNomeada,
+  calcularVereditoAnuncios, contextoNichoAnuncios, insightEntrada, rivaisPodio, rivaisPodioVisitas,
+  subamostraNomeada,
 } from '../veredito-sonar';
 import type { VereditoAnuncios } from '../veredito-sonar';
 import type { ItemVendasSonar, PainelVendasSonar, VisitasAnuncio } from '../sonar';
@@ -402,7 +403,7 @@ describe('rivaisPodioVisitas — pódio por visitas (independente de `vendidos`)
     const vendas = painelSintetico([itemV2({ item_id: 'MLB1', vendidos: null, preco: 80 })]);
     const visitasPorItem = new Map([['MLB1', v(290)]]);
     expect(rivaisPodioVisitas(vendas, visitasPorItem)).toEqual([
-      { item_id: 'MLB1', titulo: 'X', preco: 80, visitas: 290 },
+      { item_id: 'MLB1', titulo: 'X', preco: 80, visitas: 290, href: 'https://produto.mercadolivre.com.br/MLB-1' },
     ]);
   });
 
@@ -437,5 +438,23 @@ describe('rivaisPodioVisitas — pódio por visitas (independente de `vendidos`)
 
   it('lista vazia devolve []', () => {
     expect(rivaisPodioVisitas(painelSintetico([]), new Map())).toEqual([]);
+  });
+
+  it('item_id conhecido produz href apontando para o anúncio', () => {
+    const vendas = painelSintetico([itemV2({ item_id: 'MLB999', vendidos: null, link: null })]);
+    const visitasPorItem = new Map([['MLB999', v(10)]]);
+    expect(rivaisPodioVisitas(vendas, visitasPorItem)[0].href).toBe('https://produto.mercadolivre.com.br/MLB-999');
+  });
+});
+
+describe('rivaisPodio — href resolvido no lib (ADR-0136)', () => {
+  it('item com item_id conhecido produz href apontando para o anúncio', () => {
+    const vendas = painelSintetico([itemV2({ item_id: 'MLB1', link: null, vendidos: 10, preco: 10 })]);
+    expect(rivaisPodio(vendas)[0].href).toBe('https://produto.mercadolivre.com.br/MLB-1');
+  });
+
+  it('rival fantasma sem item_id e sem link tem href: null', () => {
+    const vendas = painelSintetico([itemV2({ item_id: null, link: null, vendedor: null, vendidos: 9_000, preco: 200 })]);
+    expect(rivaisPodio(vendas)[0].href).toBeNull();
   });
 });

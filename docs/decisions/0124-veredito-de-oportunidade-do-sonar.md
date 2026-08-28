@@ -217,3 +217,27 @@ maioria das consultas — exatamente os anúncios mais visitados costumam ser os
 medição, exclui; `0` exclui). `rivaisPodio` e `calcularVereditoAnuncios` continuam intocados —
 `rivaisPodioVisitas` é uma função autônoma que só recebe o Map de visitas por item, já montado em
 `PulseSonar.tsx` para outro uso, sem chamada de rede nova.
+
+### Refinamento do card (2026-08-27, mesma errata)
+
+O primeiro corte do card duplo foi rejeitado na revisão visual por falta de hierarquia: título do
+card, cabeçalhos de coluna e conteúdo compartilhavam `text-xs text-muted-foreground`, e o número
+que ordena cada ranking ficava no fim da linha, sem alinhamento vertical — não dava para comparar
+o #1 com o #5 sem ler linha a linha. O card virou um placar: posição em coluna fixa, título do
+anúncio linkado, e o valor do ranking alinhado à direita em `tabular-nums`.
+
+Duas mudanças de conteúdo entram junto e não são cosméticas:
+
+**Visitas passam de `fmtMilhar` para `fmtInt`.** `fmtMilhar` arredonda para "N mil", então 1.100 e
+1.900 visitas viravam ambos "1 mil" — duas posições diferentes do ranking apareciam empatadas na
+tela, sem nada explicando por que uma estava acima da outra. Ranking exige o número que ordena;
+abreviação só serve onde a ordem não depende do dígito. Não reintroduzir `fmtMilhar` aqui.
+
+**Faturamento perde os centavos** (`≈ R$ 1.111.500`). O valor é `vendidos × preço` sobre uma faixa
+piso do ML, não uma medição — exibir centavos comunicaria uma precisão que o dado não tem. O `≈`
+continua obrigatório pelo mesmo motivo.
+
+O título de cada anúncio abre o anúncio no ML em nova aba, reusando `linkDoAnuncio` (D15: prioriza
+o link do Apify, cai na URL canônica do `item_id`). O `href` é resolvido no lib, dentro de
+`rivaisPodio`/`rivaisPodioVisitas`, e não no componente: assim o caso "fantasma sem `item_id` não
+vira link morto" é coberto pelo teste do lib, e não só por teste de render.

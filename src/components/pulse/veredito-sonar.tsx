@@ -4,7 +4,8 @@
 // ADR-0128: título separa Demanda de Entrada; chip de entrada ao lado do badge parcial.
 import { useState } from 'react';
 import {
-  ChevronDown, Eye, Gauge, HelpCircle, Lock, Minus, ShieldAlert, Trophy, TrendingDown, TrendingUp, Unlock,
+  ChevronDown, CircleDollarSign, Eye, ExternalLink, Gauge, HelpCircle, Lock, Minus, ShieldAlert, Trophy,
+  TrendingDown, TrendingUp, Unlock,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -13,7 +14,7 @@ import type {
   ContextoItem, ExplicacaoRegua, NivelEntrada, NivelFator, VereditoAnuncios,
 } from '@/lib/veredito-sonar';
 import type { PainelVendasSonar, VisitasAnuncio } from '@/lib/sonar';
-import { fmtBRL, fmtMilhar } from '@/lib/formato';
+import { fmtBRL, fmtInt } from '@/lib/formato';
 
 /** Borda do card: baixa=vermelho, alta=verde; demais (média / não medida / fechada) = warning. */
 const CLS_VEREDITO = {
@@ -83,6 +84,54 @@ const ICONE_ENTRADA: Record<NivelEntrada, typeof Unlock> = {
   nao_medida: HelpCircle,
 };
 
+function PodioColuna({ titulo, dica, Icone, itens }: {
+  titulo: string;
+  dica: string;
+  Icone: typeof Trophy;
+  /** `valorDica` existe para o valor que a coluna exibe sem unidade (as visitas, cuja unidade já
+   *  está no cabeçalho): repetir "visitas" em cada linha alarga a coluna e desalinha os dígitos. */
+  itens: Array<{
+    chave: string; posicao: number; nome: string; href: string | null;
+    valor: string; valorDica?: string; meta: string;
+  }>;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground" title={dica}>
+        <Icone className="h-3 w-3" aria-hidden /> {titulo}
+      </div>
+      <ul className="flex flex-col gap-2">
+        {itens.map((i) => (
+          <li key={i.chave} className="grid grid-cols-[1rem_1fr_auto] items-baseline gap-x-2 gap-y-0.5">
+            <span className={cn('text-[11px] tabular-nums text-muted-foreground', i.posicao === 1 && 'font-semibold text-foreground')}>
+              {i.posicao}
+            </span>
+            {i.href ? (
+              <a
+                href={i.href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={`Abrir "${i.nome}" no Mercado Livre (nova aba)`}
+                title={i.nome}
+                className="flex min-w-0 items-center gap-1 text-xs font-medium hover:underline focus-visible:underline focus-visible:outline-none"
+              >
+                <span className="truncate">{i.nome}</span>
+                <ExternalLink className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
+              </a>
+            ) : (
+              <span className="min-w-0 truncate text-xs font-medium" title={i.nome}>{i.nome}</span>
+            )}
+            <span className="text-xs font-semibold tabular-nums" title={i.valorDica}>{i.valor}</span>
+            {i.meta !== '' && (
+              <span className="col-start-2 col-span-2 text-[11px] tabular-nums text-muted-foreground">{i.meta}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function VereditoSonar({
   veredito, contexto, vendas, visitasPorItem,
 }: {
@@ -97,6 +146,26 @@ export function VereditoSonar({
   const rivaisVisitas = rivaisPodioVisitas(vendas, visitasPorItem);
   const temFaturamento = veredito.rivaisPodio.length > 0;
   const temVisitas = rivaisVisitas.length > 0;
+  const itensFaturamento = veredito.rivaisPodio.map((r, idx) => ({
+    chave: r.item_id || r.titulo,
+    posicao: idx + 1,
+    nome: r.titulo,
+    href: r.href,
+    valor: `≈ R$ ${fmtInt(Math.round(r.faturamento))}`,
+    meta: [
+      r.preco != null ? fmtBRL(r.preco) : null,
+      r.vendidos != null ? `+${fmtInt(r.vendidos)} vendidos` : null,
+    ].filter(Boolean).join(' · '),
+  }));
+  const itensVisitas = rivaisVisitas.map((r, idx) => ({
+    chave: r.item_id,
+    posicao: idx + 1,
+    nome: r.titulo,
+    href: r.href,
+    valor: fmtInt(r.visitas),
+    valorDica: `${fmtInt(r.visitas)} ${r.visitas === 1 ? 'visita' : 'visitas'} nos últimos 30 dias`,
+    meta: r.preco != null ? fmtBRL(r.preco) : '',
+  }));
   return (
     <Card className={`mb-4 border ${cls.borda} ${cls.fundo} p-4`}>
       <div className="flex flex-wrap items-start gap-3">
@@ -185,43 +254,25 @@ export function VereditoSonar({
 
           {(temFaturamento || temVisitas) && (
             <div className="flex w-full flex-col gap-2 rounded-md border bg-card p-2">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Trophy className="h-3.5 w-3.5" aria-hidden /> Pódio de rivais
+              <div className="flex items-center gap-1.5 text-sm font-semibold">
+                <Trophy className="h-4 w-4" aria-hidden /> Pódio de rivais
               </div>
               <div className={cn('grid gap-3', temFaturamento && temVisitas && 'sm:grid-cols-2')}>
                 {temFaturamento && (
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground" title="Top 5 por faturamento (vendidos × preço) na amostra">
-                      <Trophy className="h-3 w-3" aria-hidden /> Quem mais fatura
-                    </div>
-                    <ol className="list-decimal space-y-1.5 pl-4 text-xs">
-                      {veredito.rivaisPodio.map((r) => (
-                        <li key={r.item_id || r.titulo}>
-                          <span className="block truncate font-medium" title={r.titulo}>{r.titulo}</span>
-                          <span className="block text-muted-foreground">
-                            {r.preco != null ? `${fmtBRL(r.preco)} · ` : ''}≈ {fmtBRL(r.faturamento)}
-                          </span>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
+                  <PodioColuna
+                    titulo="Quem mais fatura"
+                    dica="Top 5 por faturamento (vendidos × preço) na amostra"
+                    Icone={CircleDollarSign}
+                    itens={itensFaturamento}
+                  />
                 )}
                 {temVisitas && (
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground" title="Top 5 por visitas na amostra">
-                      <Eye className="h-3 w-3" aria-hidden /> Quem mais recebe visitas
-                    </div>
-                    <ol className="list-decimal space-y-1.5 pl-4 text-xs">
-                      {rivaisVisitas.map((r) => (
-                        <li key={r.item_id}>
-                          <span className="block truncate font-medium" title={r.titulo}>{r.titulo}</span>
-                          <span className="block text-muted-foreground">
-                            {r.preco != null ? `${fmtBRL(r.preco)} · ` : ''}{fmtMilhar(r.visitas)} {r.visitas === 1 ? 'visita' : 'visitas'}
-                          </span>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
+                  <PodioColuna
+                    titulo="Quem mais recebe visitas"
+                    dica="Top 5 por visitas na amostra"
+                    Icone={Eye}
+                    itens={itensVisitas}
+                  />
                 )}
               </div>
             </div>

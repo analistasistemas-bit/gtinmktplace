@@ -10,7 +10,7 @@
 // trouxeram. Faixas calibradas em 18/08 (ADR-0124) contra 3 nichos reais; são constantes
 // nomeadas de propósito, para recalibrar sem caçar número solto no meio do código.
 import { fmtBRL, fmtInt, fmtMilhar } from './formato';
-import { itensDaAmostra } from './sonar';
+import { itensDaAmostra, linkDoAnuncio } from './sonar';
 import type { PainelVendasSonar, VisitasAnuncio } from './sonar';
 
 export type NivelFator = 'bom' | 'medio' | 'ruim';
@@ -27,6 +27,7 @@ export interface RivalPodio {
   vendidos: number | null;
   preco: number | null;
   faturamento: number;
+  href: string | null;
 }
 
 export interface Fator {
@@ -388,6 +389,7 @@ export function rivaisPodio(vendas: PainelVendasSonar): RivalPodio[] {
       vendidos: i.vendidos,
       preco: i.preco,
       faturamento: (i.vendidos as number) * (i.preco as number),
+      href: linkDoAnuncio(i.link, i.item_id ?? ''),
     }))
     .filter((r) => r.faturamento > 0)
     .sort((a, b) => b.faturamento - a.faturamento)
@@ -639,7 +641,9 @@ export function insightEntrada(v: VereditoAnuncios): InsightEntrada {
   };
 }
 
-export interface RivalVisitas { item_id: string; titulo: string; preco: number | null; visitas: number }
+export interface RivalVisitas {
+  item_id: string; titulo: string; preco: number | null; visitas: number; href: string | null;
+}
 
 /**
  * Top 5 rivais por visitas na amostra. Elegibilidade DELIBERADAMENTE diferente de `rivaisPodio`:
@@ -659,6 +663,7 @@ export function rivaisPodioVisitas(
       titulo: i.titulo,
       preco: i.preco,
       visitas: visitasPorItem.get(i.item_id as string)?.total ?? 0,
+      href: linkDoAnuncio(i.link, i.item_id as string),
     }))
     .filter((r) => r.visitas > 0)
     .sort((a, b) => b.visitas - a.visitas)
