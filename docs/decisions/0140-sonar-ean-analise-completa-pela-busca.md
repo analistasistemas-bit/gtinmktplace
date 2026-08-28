@@ -98,6 +98,26 @@ Radar" vira "Produto novo para o seu catálogo", que é o que de fato se mediu.
 Esta é a mesma regra LOUD que o projeto aplica a imposto e a visitas: ausência de dado nunca vira
 afirmação de ausência do fato.
 
+### D-3.1 — O campo se limpa e se refoca depois de um scan
+
+Regressão pega na revisão, antes de fechar: a limpeza e o refoco do campo viviam nos handlers da
+view antiga (`escolherConsultaEan` e o "Nova consulta" do resultado), que este ADR remove. Sem eles
+o `inputRef` continuava declarado e ligado ao `<Input>`, mas nunca mais era chamado — nada em tsc,
+lint ou na suíte acusaria.
+
+O leitor de código de barras emula teclado: digita os dígitos e manda Enter. Enter submete o form
+mas **não limpa nem desfoca** o input. Com o campo sujo, o 2º código é anexado ao 1º
+(`7891113175371` + `7891000444764` = 26 dígitos), o que não casa mais com o `EAN_RE`, passa pelo
+piso de 3 caracteres e vira **uma busca paga em lixo** — justo no caminho onde a opção grátis
+acabou de sair.
+
+`garimpar()` limpa o campo e refoca **só quando o que foi buscado é um EAN**. Termo digitado
+continua visível no campo (comportamento de sempre — a tela de resultado não repete o termo em
+lugar nenhum, e quem digitou pode querer editar).
+
+Coberto por teste de página, com checagem RED registrada: revertendo só essas duas linhas, o teste
+"após o scan o campo fica vazio e focado" falha.
+
 ### D-4 — `pulse-sonar-ean` deixa de ser chamada, mas continua deployada
 
 O front perde `fetchSonarPorEan` e os tipos da resposta (órfãos desta mudança). A edge

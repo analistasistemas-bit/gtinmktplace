@@ -342,9 +342,11 @@ export default function PulseSonar() {
   const [termoBuscado, setTermoBuscado] = useState<string | null>(null);
   const [, forcarRender] = useState(0);
   const iniciadoEmRef = useRef(0);
-  // Refoco após a escolha grátis/com vendidos e após "Nova consulta" (ADR-0127 Errata 1): o
-  // leitor físico de código de barras precisa do campo focado para o próximo scan — sem isso, o
-  // 2º produto escaneado logo após escolher "grátis"/"com vendidos" se perde no vazio.
+  // Limpeza + refoco do campo depois de um scan (ADR-0140; antes disso o gatilho era a escolha
+  // grátis/com vendidos, que deixou de existir). O leitor físico emula teclado: digita os dígitos e
+  // manda Enter. Enter submete o form mas NÃO limpa nem desfoca o input — sem limpar aqui, o 2º
+  // código escaneado é anexado ao 1º ("789…371" + "789…764" = 26 dígitos), o que não casa mais com
+  // EAN_RE, passa pelo piso de 3 caracteres e vira uma busca paga em lixo.
   const inputRef = useRef<HTMLInputElement>(null);
   const [anuncioSimulando, setAnuncioSimulando] = useState<AnuncioSimulavel | null>(null);
   const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(lerBuscasRecentes);
@@ -441,9 +443,14 @@ export default function PulseSonar() {
   // para o EAN do ADR-0136, contra 1 pelo lookup de catálogo). Sem escolha grátis/paga: toda
   // consulta é a mesma, e o custo é o mesmo da busca por termo.
   const garimpar = (t: string) => {
-    setTermo(t);
+    const ehEan = EAN_RE.test(t);
+    // Termo digitado continua no campo (comportamento de sempre — a tela de resultado não repete o
+    // termo em lugar nenhum). EAN sai: quem escaneia não digitou, e o campo cheio quebra o próximo
+    // scan. Ver o comentário do `inputRef`.
+    setTermo(ehEan ? '' : t);
     setBuscasRecentes(registrarBusca(t));
     setTermoBuscado(t);
+    if (ehEan) inputRef.current?.focus();
   };
 
   const buscar = (e: FormEvent) => {

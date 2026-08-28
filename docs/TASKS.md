@@ -23,6 +23,9 @@
   vez de mandar `.in(...)` vazio ao PostgREST.
 - [x] Órfãos removidos no front: `SonarEanEscolha`, `SonarEanCarregando`, `SonarEanResultado`,
   `SonarEanLiquido`, `SonarEanImposto`, `fetchSonarPorEan` e os tipos da resposta.
+- [x] Regressão do leitor de código de barras corrigida (D-3.1): a limpeza/refoco do campo vivia nos
+  handlers removidos. Sem ela o 2º scan concatenava no 1º (26 dígitos) e virava busca paga em lixo.
+  `garimpar()` limpa e refoca só quando o buscado é EAN; teste de página com checagem RED.
 - [ ] Follow-up: a edge `pulse-sonar-ean` e `_shared/pulse/sonar-ean.ts` continuam deployadas sem
   chamador (ADR-0140 D-4). Remover quando a cobertura pela busca estiver confirmada em uso.
 
