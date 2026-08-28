@@ -108,7 +108,7 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
     <Card className="mb-4 p-4">
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium">Vendas do nicho</span>
-        <Badge variant="outline">estimativa · via Apify</Badge>
+        <Badge variant="outline">estimativa</Badge>
         <span className="text-xs text-muted-foreground">
           amostra dos {resp.itens_analisados} anúncios mais relevantes — "+N vendidos" acumulado,
           piso do nicho e não venda mensal
@@ -205,7 +205,7 @@ function SonarEanEscolha({ ean, onEscolher }: { ean: string; onEscolher: (comVen
         >
           <div>
             <div className="text-sm font-medium">Consultar com vendidos</div>
-            <div className="text-xs text-muted-foreground">usa dados pagos (Apify) — tem custo por consulta</div>
+            <div className="text-xs text-muted-foreground">usa dados pagos — tem custo por consulta</div>
           </div>
           <Badge variant="outline" className="border-warning/40 text-warning">tem custo</Badge>
         </button>
@@ -405,7 +405,7 @@ export function SonarEanResultado({ resp, cruzamento, visitas, onNovaConsulta }:
         // Tooltip depende de resp.com_vendas: "—" sozinho não distingue "não paguei por isso" de
         // "paguei e a Apify não capturou este anúncio" — a operadora precisa saber qual dos dois.
         : <span title={resp.com_vendas
-          ? 'Consultado (Apify), mas este anúncio ficou fora da amostra capturada'
+          ? 'Consultado, mas este anúncio ficou fora da amostra capturada'
           : 'Consulta grátis: vendidos não foi consultado'}>—</span>),
       sortValue: (o) => o.vendidos,
     },
@@ -449,7 +449,7 @@ export function SonarEanResultado({ resp, cruzamento, visitas, onNovaConsulta }:
       )}
       {resp.vendas_indisponivel && (
         <p className="mb-2 text-xs text-warning">
-          Vendidos indisponível nesta consulta (Apify sem token configurado, ou a busca falhou).
+          Vendidos indisponível nesta consulta (fonte de vendas não configurada, ou a busca falhou).
         </p>
       )}
       {/* ADR-0136 D-1: teto de 5 fichas por EAN. Corte silencioso é o que este ADR corrige — se o
@@ -1026,7 +1026,7 @@ export default function PulseSonar() {
             description={
               'Varre um nicho do Mercado Livre antes de você cadastrar o produto: os anúncios reais '
               + 'da busca, vendas acumuladas, visitas e concorrência. Fonte: amostra dos 20 anúncios '
-              + 'mais relevantes (via Apify) + visitas da API oficial.'
+              + 'mais relevantes + visitas da API oficial.'
             }
           />
         )
@@ -1036,9 +1036,9 @@ export default function PulseSonar() {
         // D16 modo 1: sem APIFY_TOKEN → estado vazio explícito, nada de tabela fantasma.
         <EmptyState
           icon={Search}
-          title="O Sonar depende da Apify"
-          description={'A tabela de anúncios nasce da amostra Apify. Configure o token '
-            + '(variável APIFY_TOKEN no backend) para prospectar. Sem ele não há dado — '
+          title="Fonte de dados do Sonar não configurada"
+          description={'A tabela de anúncios nasce de uma amostra de mercado. Configure a fonte de '
+            + 'dados no backend para prospectar. Sem ela não há dado — '
             + 'não mostramos tela vazia fingindo nicho morto.'}
         />
       ) : isError ? (
