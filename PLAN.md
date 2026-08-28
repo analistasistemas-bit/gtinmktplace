@@ -282,9 +282,14 @@ ação, não uma grade de inputs em branco).
 
 - `pnpm lint` + `pnpm test` verdes; `npx tsc -b --force` antes do push (o build local
   incremental passa com `tsbuildinfo` velho enquanto o `tsc -b` do CI reprova).
-- Testes **novos** (não existe teste da página `Configuracoes` hoje; `config-telegram.test.tsx`
-  deve continuar passando **sem alteração**). Todos asseguram a **URL final**, não só o texto
-  renderizado:
+- **Errata (2026-08-28):** este plano afirmava que não existia teste da página `Configuracoes`.
+  Falso — existem dois, em `tests/pages/Configuracoes.test.tsx` e
+  `tests/pages/ConfiguracoesEmpresa.test.tsx`. A afirmação veio de um achado do Codex que
+  aceitei sem verificar, e a verificação que fiz estava ancorada em `src/`, cega para a segunda
+  árvore de testes do repo (`tests/`). Os dois quebraram com o refactor e foram **reescritos**
+  para montar a seção dona de cada controle, com as mesmas asserções — não deletados.
+- Testes **novos** (`config-telegram.test.tsx` e `Usuarios.test.tsx` devem continuar passando
+  **sem alteração**). Todos asseguram a **URL final**, não só o texto renderizado:
   1. `/configuracoes?ml_claim=X` → URL final `/canais?ml_claim=X`, com a query preservada, e
      `confirmarConexaoML` recebe o claim.
   2. `/configuracoes` sem slug → primeira seção visível.

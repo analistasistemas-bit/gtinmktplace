@@ -1,4 +1,4 @@
-import { Navigate, NavLink, useLocation, useSearchParams } from 'react-router-dom';
+import { Navigate, NavLink, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/ui/page-header';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -124,14 +124,11 @@ function SubNav({ secoes, atual, fiscalPendente }: {
 function SelectSecao({ secoes, atual, fiscalPendente }: {
   secoes: Secao[]; atual: Secao; fiscalPendente: boolean;
 }) {
-  const location = useLocation();
+  const navegar = useNavigate();
   return (
     <Select
       value={atual.slug}
-      onValueChange={(v) => {
-        // HashRouter: navegação por hash mantém o comportamento de voltar do navegador.
-        window.location.hash = `#/configuracoes/${v}${location.search}`;
-      }}
+      onValueChange={(v) => navegar(`/configuracoes/${v}`)}
     >
       <SelectTrigger id="secao-config" className="h-9 w-full text-sm">
         <SelectValue />

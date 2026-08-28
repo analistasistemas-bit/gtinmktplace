@@ -1,7 +1,8 @@
 import { Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
+import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const perfil = {
@@ -50,6 +51,8 @@ function montar(rota: string) {
           <Routes>
             <Route path="/configuracoes/*" element={<Configuracoes />} />
             <Route path="/canais" element={<div>tela-canais</div>} />
+            {/* Espelha App.tsx: /usuarios virou redirect para a seção Membros. */}
+            <Route path="/usuarios" element={<Navigate to="/configuracoes/membros" replace />} />
           </Routes>
         </Suspense>
       </QueryClientProvider>
@@ -152,5 +155,42 @@ describe('Configurações — marcador de alíquotas não confirmadas', () => {
   it('marca a seção Fiscal na sub-nav enquanto não confirmadas', () => {
     montar('/configuracoes/geral');
     expect(screen.getByLabelText('Alíquotas não confirmadas')).toBeInTheDocument();
+  });
+});
+
+describe('Configurações — rota legada /usuarios', () => {
+  it('admin cai na seção Membros', async () => {
+    perfil.atual = { ...perfil.atual, is_admin: true };
+    montar('/usuarios');
+    expect(url()).toBe('/configuracoes/membros');
+    expect(await screen.findByText('conteudo-membros')).toBeInTheDocument();
+  });
+
+  // Sem a chave `usuarios` a seção não existe, então o redirect legado cai na primeira
+  // visível em vez de renderizar uma tela que o perfil não pode ver.
+  it('não-admin não alcança Membros pela rota legada', () => {
+    montar('/usuarios');
+    expect(url()).toBe('/configuracoes/geral');
+  });
+});
+
+describe('Configurações — sub-nav em tela estreita', () => {
+  // Abaixo de lg o Select é a ÚNICA navegação entre seções: se o onValueChange não navegar,
+  // a tela fica presa numa seção no celular.
+  beforeEach(() => {
+    // jsdom não implementa a API de pointer capture que o Select do Radix usa para abrir.
+    HTMLElement.prototype.scrollIntoView = vi.fn();
+    HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+    HTMLElement.prototype.releasePointerCapture = vi.fn();
+  });
+
+  it('escolher no Select navega para a seção', async () => {
+    const user = userEvent.setup();
+    montar('/configuracoes/geral');
+
+    await user.click(screen.getByRole('combobox', { name: /seção/i }));
+    await user.click(await screen.findByRole('option', { name: /preços/i }));
+
+    expect(url()).toBe('/configuracoes/precos');
   });
 });

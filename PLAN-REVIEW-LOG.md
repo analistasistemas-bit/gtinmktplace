@@ -42,6 +42,11 @@ Os 10 achados foram conferidos no código antes de aceitar. Todos procedem — n
 - (M1) Estado da linha derivado de `mutation.variables` em vez de N mutations — menor diff. §4.
 - (M2) `ConfigTelegram` mantém o botão Salvar explícito; a conversão é só de moldura. Nova §6.
 - (M3) §9 reescrita: cinco testes novos, `config-telegram.test.tsx` intocado.
+  **Errata (2026-08-28):** o achado M3 do Codex ("não existe teste da página Configuracoes")
+  estava ERRADO, e eu o aceitei sem verificar. Existem dois em `tests/pages/`. Minha própria
+  conferência repetiu o erro: o grep de triagem estava ancorado em `src/`, cego para a segunda
+  árvore de testes do repo. Foi o único achado das 8 rodadas que não deveria ter sido aceito —
+  e o único que exigia checar, não confiar.
 - (M4) Gate fiscal do ADR-0135 **preservado como está** e movido para "pergunta aberta" +
   "out of scope". Aplicá-lo seria mudança de regra de negócio dentro de um refactor de
   layout — exatamente a classe de incidente que o CLAUDE.md proíbe.
