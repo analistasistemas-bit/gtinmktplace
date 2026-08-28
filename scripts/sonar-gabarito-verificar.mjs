@@ -7,6 +7,10 @@
 //
 // Confere as 4 variantes (nickname cru vs. normalizado × %Full sobre N vs. só sobre medidos);
 // sai com código 1 se qualquer variante não bater o gabarito.
+//
+// Ganha também a variante do caminho B (ADR-0137): censura os rótulos dos 3 fixtures (todo
+// `vendedor` vira null), força a concentração por anúncio e confere contra o gabarito medido em
+// 27/08 — a definição executável do caminho B, nos moldes das 4 variantes acima.
 import { readFileSync } from 'node:fs';
 
 const DIR = 'src/lib/__tests__/fixtures/sonar-gabarito';
@@ -15,10 +19,18 @@ const GABARITO = [
   ['protetor-solar-facial', 'media'],
   ['tecido-oxford-10-metros', 'alta'],
 ];
+// ADR-0137 §Calibração: Disputa medida pelo caminho B com os rótulos dos mesmos 3 fixtures censurados.
+const GABARITO_CAMINHO_B = [
+  ['eucerin-protetor-solar', 'ruim'], // top1 36,8% >= 30%
+  ['protetor-solar-facial', 'ruim'], // Full 100% sobre os medidos >= 60%
+  ['tecido-oxford-10-metros', 'medio'], // top1 19,6% < 30%, Full 21% < 60% — teto do caminho B
+];
 
 // --- Cortes (ADR-0127, seção "Calibração v2") ---------------------------------------------------
 const DEMANDA = { liquidezBoa: 0.70, vendasBoas: 5_000, vendasMinimas: 1_000, liquidezRuim: 0.30 };
 const DISPUTA_V2 = { pulverizacaoConcentrada: 0.25, pulverizacaoAberta: 0.40, fullMuito: 60, fullPouco: 40 };
+// Caminho B da Disputa (ADR-0137): concentração por anúncio, quando o rótulo não cobre a amostra.
+const DISPUTA_B = { top1Dominante: 0.30, minElegiveis: 5 };
 const TRACAO_V2 = { boa: 350_000, media: 15_000 };
 const COBERTURA_MIN = 0.50; // "menos de 50% derruba" — 0,50 exato PASSA (oxford está nele)
 // Com a trava de cobertura sobra só a Demanda: `maximo` cai para 2 e `soma >= maximo - 1` faria a
@@ -98,5 +110,36 @@ for (const [normalizar, fullLoud] of [[false, false], [true, false], [false, tru
     );
   }
 }
-if (falhou) { console.error('\nGabarito NÃO reproduzido — não mexer nos cortes sem re-medir (ADR-0127/D12).'); process.exit(1); }
-console.log('\nGabarito reproduzido nas 4 variantes: média / média / alta.');
+// --- Caminho B (ADR-0137): rótulos censurados, concentração por anúncio -------------------------
+function concentracaoCaminhoB(amostra) {
+  const elegiveis = amostra.filter((i) => i.vendidos != null && i.preco != null);
+  if (elegiveis.length < DISPUTA_B.minElegiveis) return null;
+  const faturamentos = elegiveis.map((i) => i.vendidos * i.preco);
+  const total = faturamentos.reduce((a, f) => a + f, 0);
+  if (total <= 0) return null;
+  const top1 = Math.max(...faturamentos) / total;
+  const corte = Math.max(DISPUTA_B.top1Dominante, 2 / elegiveis.length);
+  return { elegiveis: elegiveis.length, top1, corte, dominante: top1 >= corte };
+}
+
+function disputaCaminhoB(amostra) {
+  const comFull = amostra.filter((i) => i.full != null);
+  const fullPct = comFull.length > 0 ? (comFull.filter((i) => i.full === true).length / comFull.length) * 100 : null;
+  const conc = concentracaoCaminhoB(amostra);
+  if (fullPct == null && conc == null) return null; // nem envio nem concentração — nada pra medir
+  return (fullPct != null && fullPct >= DISPUTA_V2.fullMuito) || conc?.dominante === true ? 'ruim' : 'medio';
+}
+
+console.log('\n--- caminho B (ADR-0137): rótulos censurados, concentração por anúncio ---');
+for (const [slug, esperado] of GABARITO_CAMINHO_B) {
+  const fixture = JSON.parse(readFileSync(`${DIR}/${slug}.json`, 'utf8'));
+  const v = fixture.vendas;
+  const amostra = Array.isArray(v.itens) ? v.itens : Object.values(v.por_anuncio);
+  const r = disputaCaminhoB(amostra); // "censura" é implícita: a função nunca lê `vendedor`
+  const ok = r === esperado;
+  if (!ok) falhou = true;
+  console.log(`${ok ? 'ok  ' : 'FALHA'} ${slug.padEnd(24)} disputaB=${String(r).padEnd(6)} (esperado ${esperado})`);
+}
+
+if (falhou) { console.error('\nGabarito NÃO reproduzido — não mexer nos cortes sem re-medir (ADR-0127/D12, ADR-0137).'); process.exit(1); }
+console.log('\nGabarito reproduzido nas 4 variantes do caminho A (média/média/alta) e no caminho B (ruim/ruim/medio).');

@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  calcularVereditoAnuncios, contextoNichoAnuncios, insightEntrada, rivaisPodio, rivaisPodioVisitas,
-  subamostraNomeada,
+  calcularVereditoAnuncios, concentracaoAmostra, contextoNichoAnuncios, insightEntrada, rivaisPodio,
+  rivaisPodioVisitas, subamostraNomeada,
 } from '../veredito-sonar';
 import type { VereditoAnuncios } from '../veredito-sonar';
 import type { ItemVendasSonar, PainelVendasSonar, VisitasAnuncio } from '../sonar';
@@ -85,41 +85,43 @@ describe('calcularVereditoAnuncios — gabarito D12 (fixtures REAIS medidos na T
   });
 });
 
-describe('trava de cobertura <50% (D10) — nunca medir concorrência sobre meia dúzia de rótulos', () => {
-  const travado = () => {
+describe('cobertura de rótulo <50% (D10) — cede ao caminho B quando há dado suficiente (ADR-0137)', () => {
+  // Mesma amostra que antes travava tudo (só 4/20 nomeados): agora os 20 itens são elegíveis por
+  // venda (vendidos+preço), então o caminho B mede a Disputa em vez de desistir.
+  const semRotuloComVendas = () => {
     const nomeados = Array.from({ length: 4 }, (_, i) => itemV2({ item_id: `MLB${i}`, vendedor: `V${i}`, vendidos: 2000 }));
     const anonimos = Array.from({ length: 16 }, (_, i) => itemV2({ item_id: `MLBx${i}`, vendedor: null, vendidos: 2000 }));
     return calcularVereditoAnuncios(painelSintetico([...nomeados, ...anonimos]), null);
   };
 
-  it('4/20 nomeados → só o fator Demanda pontua; Disputa e Tração fora', () => {
-    expect(travado().fatores.map((f) => f.chave)).toEqual(['demanda']);
+  it('4/20 nomeados mas 20 elegíveis por venda → caminho B mede a Disputa (medio); Tração continua fora (exige rótulo)', () => {
+    const v = semRotuloComVendas();
+    expect(v.fatores.map((f) => f.chave)).toEqual(['demanda', 'disputa']);
+    expect(v.fatores.find((f) => f.chave === 'disputa')?.nivel).toBe('medio');
   });
 
-  it('Demanda 🟢 sozinha NÃO vira oportunidade alta (piso de 2 fatores)', () => {
-    const v = travado();
-    expect(v.fatores[0].nivel).toBe('bom');
+  it('caminho B mediu → parcial false e entrada aberta, mas o veredito PARA em média (errata do ADR-0137)', () => {
+    const v = semRotuloComVendas();
+    expect(v.parcial).toBe(false);
+    expect(v.entrada).toBe('aberta');
+    // "Alta" significa "compre estoque" e exige a Disputa medida por rótulo. Sem esta trava o teto
+    // 'medio' do caminho B não chegaria ao veredito: com a Tração fora, `soma >= maximo - 1` aprova
+    // disputa 🟡 (3/4) e 🟢 (4/4) igualmente — o teto ficaria invisível justo na faixa que decide
+    // compra de estoque.
     expect(v.nivel).toBe('media');
+    expect(v.titulo).toBe('Oportunidade média');
   });
 
-  it('veredito se declara PARCIAL — a trava não rebaixa em silêncio', () => {
-    const v = travado();
-    expect(v.parcial).toBe(true);
-    expect(v.motivo).toMatch(/concorrência/i);
-    expect(v.explicacao.acao).toMatch(/parcial/i);
-    expect(v.explicacao.fatores.some((f) => f.chave === 'disputa' && f.regua === null)).toBe(true);
-  });
-
-  it('ADR-0128: título NÃO é "Oportunidade média" — Demanda forte · concorrência não medida', () => {
-    const v = travado();
-    expect(v.entrada).toBe('nao_medida');
-    expect(v.titulo).toBe('Demanda forte · concorrência não medida');
-    expect(v.titulo).not.toBe('Oportunidade média');
+  it('mesmo sem rótulo, a explicação de Tração aparece explicando por que ela saiu da conta', () => {
+    const v = semRotuloComVendas();
+    const tracaoExplicacao = v.explicacao.fatores.find((f) => f.chave === 'tracao');
+    expect(tracaoExplicacao?.regua).toBeNull();
+    expect(tracaoExplicacao?.frase).toMatch(/rótulo de loja/i);
   });
 });
 
 describe('ADR-0128 — Demanda ≠ Entrada', () => {
-  it('cobertura 2/20 + demanda forte → entrada nao_medida, nivel media, título separado', () => {
+  it('cobertura 2/20 mas 20 elegíveis por venda → caminho B mede a Disputa, entrada aberta, nivel alta (ADR-0137)', () => {
     const nomeados = Array.from({ length: 2 }, (_, i) => itemV2({
       item_id: `MLBn${i}`, vendedor: `LOJA-${i}`, vendidos: 10_000, preco: 100, full: false,
     }));
@@ -128,11 +130,13 @@ describe('ADR-0128 — Demanda ≠ Entrada', () => {
     }));
     const v = calcularVereditoAnuncios(painelSintetico([...nomeados, ...fantasmas]), null);
     expect(v.fatores.find((f) => f.chave === 'demanda')?.nivel).toBe('bom');
-    expect(v.entrada).toBe('nao_medida');
+    expect(v.fatores.find((f) => f.chave === 'disputa')?.nivel).toBe('medio');
+    expect(v.entrada).toBe('aberta');
+    expect(v.parcial).toBe(false);
+    // Entrada destravada (era o ponto do ADR-0137), mas sem chegar a "alta": a Disputa veio do
+    // caminho B, cuja evidência o próprio ADR classifica como fraca.
     expect(v.nivel).toBe('media');
-    expect(v.parcial).toBe(true);
-    expect(v.titulo).toBe('Demanda forte · concorrência não medida');
-    expect(v.titulo).not.toBe('Oportunidade média');
+    expect(v.titulo).toBe('Oportunidade média');
   });
 
   it('fantasma com alto faturamento aparece no rivaisPodio com vendedor null', () => {
@@ -235,6 +239,113 @@ describe('subamostraNomeada — numerador e denominador do MESMO universo', () =
   it('rótulo é o texto CRU do card (o gabarito foi medido assim): "EUCERIN" ≠ "EUCERIN Loja oficial"', () => {
     const s = subamostraNomeada(fixture('eucerin-protetor-solar').vendas);
     expect(s).toMatchObject({ analisados: 20, nomeados: 20, distintos: 2, cobertura: 1 });
+  });
+});
+
+// =============== Caminho B da Disputa (ADR-0137): concentração por anúncio ======================
+
+describe('concentracaoAmostra', () => {
+  it('menos de 5 elegíveis → null (o caso da consulta real que motivou o ADR)', () => {
+    const painel = painelSintetico(Array.from({ length: 4 }, (_, i) => itemV2({
+      item_id: `MLB${i}`, vendedor: null, vendidos: 100, preco: 10,
+    })));
+    expect(concentracaoAmostra(painel)).toBeNull();
+  });
+
+  it('item sem vendidos ou sem preço não é elegível', () => {
+    const elegiveis = Array.from({ length: 5 }, (_, i) => itemV2({
+      item_id: `MLBe${i}`, vendedor: null, vendidos: 10, preco: 10, // faturamento 100 cada, 500 no total
+    }));
+    const naoElegiveis = [
+      itemV2({ item_id: 'MLBn1', vendedor: null, vendidos: null, preco: 999_999 }),
+      itemV2({ item_id: 'MLBn2', vendedor: null, vendidos: 999_999, preco: null }),
+    ];
+    const painel = painelSintetico([...elegiveis, ...naoElegiveis]);
+    const c = concentracaoAmostra(painel);
+    // Se os "fantasmas" tivessem entrado na conta, dominariam o faturamento — como ficaram de
+    // fora, o líder é só mais 1/5 do total medido.
+    expect(c).toEqual({ elegiveis: 5, top1: 0.2, corte: 0.4, dominante: false });
+  });
+
+  it('top1 calculado sobre o faturamento medido, com o corte de 30% quando há muitos elegíveis', () => {
+    const lider = itemV2({ item_id: 'MLB-lider', vendedor: null, vendidos: 325, preco: 1 });
+    const outros = Array.from({ length: 9 }, (_, i) => itemV2({ item_id: `MLBo${i}`, vendedor: null, vendidos: 75, preco: 1 }));
+    const painel = painelSintetico([lider, ...outros]);
+    const c = concentracaoAmostra(painel);
+    expect(c).toEqual({ elegiveis: 10, top1: 0.325, corte: 0.3, dominante: true });
+  });
+
+  it('base pequena: com 5 elegíveis o corte é 40% (2/5), então top1 de 35% NÃO é dominante — prova do fator 2× sobre o uniforme', () => {
+    const lider = itemV2({ item_id: 'MLB-lider', vendedor: null, vendidos: 350, preco: 1 });
+    const outros = Array.from({ length: 4 }, (_, i) => itemV2({ item_id: `MLBo${i}`, vendedor: null, vendidos: 162.5, preco: 1 }));
+    const painel = painelSintetico([lider, ...outros]);
+    const c = concentracaoAmostra(painel);
+    expect(c).toEqual({ elegiveis: 5, top1: 0.35, corte: 0.4, dominante: false });
+  });
+});
+
+describe('Disputa caminho B (ADR-0137) — via calcularVereditoAnuncios, cobertura de rótulo < 50%', () => {
+  it('Full ≥ 60% fecha a Disputa mesmo sem rótulo nenhum e sem concentração calculável', () => {
+    const itens = Array.from({ length: 10 }, (_, i) => itemV2({
+      item_id: `MLB${i}`, vendedor: null, vendidos: null, preco: null, full: i < 7,
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    expect(v.fatores.find((f) => f.chave === 'disputa')?.nivel).toBe('ruim');
+  });
+
+  it('líder dominante fecha a Disputa mesmo com Full baixo', () => {
+    const lider = itemV2({ item_id: 'MLB-lider', vendedor: null, vendidos: 1000, preco: 1, full: false });
+    const outros = Array.from({ length: 5 }, (_, i) => itemV2({ item_id: `MLBo${i}`, vendedor: null, vendidos: 100, preco: 1, full: false }));
+    const v = calcularVereditoAnuncios(painelSintetico([lider, ...outros]), null);
+    expect(v.fatores.find((f) => f.chave === 'disputa')?.nivel).toBe('ruim');
+  });
+
+  it('sem dominância e Full baixo → medio, nunca bom (teto do caminho B)', () => {
+    const itens = Array.from({ length: 6 }, (_, i) => itemV2({
+      item_id: `MLB${i}`, vendedor: null, vendidos: 100, preco: 1, full: false,
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    const disputa = v.fatores.find((f) => f.chave === 'disputa');
+    expect(disputa?.nivel).toBe('medio');
+    expect(disputa?.nivel).not.toBe('bom');
+  });
+
+  it('parcial === false e a Entrada não fica nao_medida quando o caminho B mediu — regressão que o ADR-0137 corrige', () => {
+    const itens = Array.from({ length: 6 }, (_, i) => itemV2({
+      item_id: `MLB${i}`, vendedor: null, vendidos: 100, preco: 1, full: false,
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    expect(v.parcial).toBe(false);
+    expect(v.entrada).not.toBe('nao_medida');
+  });
+
+  it('sem envio identificado E menos de 5 elegíveis → Disputa fora, parcial === true, razão cita venda/envio (nunca rótulo)', () => {
+    // Demanda com dados suficientes (evita o gate) via itens com `vendidos` mas SEM `preco` — contam
+    // pra liquidez da Demanda mas não pra elegibilidade de concentração (que exige os dois).
+    const nomeados = Array.from({ length: 3 }, (_, i) => itemV2({
+      item_id: `MLBn${i}`, vendedor: `V${i}`, vendidos: null, preco: 100,
+    }));
+    const comVendaSemPreco = Array.from({ length: 5 }, (_, i) => itemV2({
+      item_id: `MLBv${i}`, vendedor: null, vendidos: 1000, preco: null,
+    }));
+    const elegiveis = Array.from({ length: 2 }, (_, i) => itemV2({
+      item_id: `MLBe${i}`, vendedor: null, vendidos: 1000, preco: 50,
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico([...nomeados, ...comVendaSemPreco, ...elegiveis]), null);
+    expect(v.fatores.map((f) => f.chave)).not.toContain('disputa');
+    expect(v.parcial).toBe(true);
+    expect(v.motivo).toMatch(/tipo de envio/i);
+    expect(v.motivo).toMatch(/vendidos e preço|concentração/i);
+    expect(v.motivo).not.toMatch(/rótulo/i);
+  });
+
+  it('não-regressão do caminho A: painel com cobertura ≥ 50% continua medindo por pulverização, resultado intocado', () => {
+    const { vendas, visitas_total } = fixture('eucerin-protetor-solar');
+    const v = calcularVereditoAnuncios(vendas, visitas_total);
+    expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'ruim', 'bom']);
+    expect(v.explicacao.pontuacao).toEqual({ soma: 4, maximo: 6 });
+    // Caminho A tem régua de 2 cortes (pulverização); caminho B nunca tem régua (corte único).
+    expect(v.explicacao.fatores.find((f) => f.chave === 'disputa')?.regua).not.toBeNull();
   });
 });
 
@@ -350,10 +461,13 @@ describe('insightEntrada', () => {
     expect(insight.detalhe).toMatch(/loja oficial/);
   });
 
-  it('entrada não medida (trava D10) → detalhe cita a cobertura de rótulo de loja', () => {
-    const nomeados = Array.from({ length: 4 }, (_, i) => itemV2({ item_id: `MLB${i}`, vendedor: `V${i}`, vendidos: 2000 }));
-    const anonimos = Array.from({ length: 16 }, (_, i) => itemV2({ item_id: `MLBx${i}`, vendedor: null, vendidos: 2000 }));
-    const v = calcularVereditoAnuncios(painelSintetico([...nomeados, ...anonimos]), null);
+  it('entrada não medida (nenhum caminho da Disputa mediu) → detalhe cita a cobertura de rótulo de loja', () => {
+    // Diferente da trava D10 antiga: aqui nem o caminho A (rótulo) nem o B (concentração por
+    // anúncio, ADR-0137) medem — cobertura de rótulo <50% E menos de 5 anúncios elegíveis por venda.
+    const nomeados = Array.from({ length: 4 }, (_, i) => itemV2({ item_id: `MLBn${i}`, vendedor: `V${i}`, vendidos: null, preco: 100 }));
+    const anonimosSemVenda = Array.from({ length: 14 }, (_, i) => itemV2({ item_id: `MLBx${i}`, vendedor: null, vendidos: null, preco: 100 }));
+    const anonimosComVenda = Array.from({ length: 2 }, (_, i) => itemV2({ item_id: `MLBv${i}`, vendedor: null, vendidos: 500, preco: 50 }));
+    const v = calcularVereditoAnuncios(painelSintetico([...nomeados, ...anonimosSemVenda, ...anonimosComVenda]), null);
     expect(v.entrada).toBe('nao_medida');
     const insight = insightEntrada(v);
     expect(insight.titulo).toBe('Concorrência não medida');

@@ -255,6 +255,12 @@ export interface VereditoAnuncios {
 // PROIBIDO reaproveitar DISPUTA/TRACAO/VISITAS acima: a escala deles morreu com a fonte (D11).
 // `scripts/sonar-gabarito-verificar.mjs` é a definição executável destas fórmulas.
 const DISPUTA_V2 = { pulverizacaoConcentrada: 0.25, pulverizacaoAberta: 0.40, fullMuito: 60, fullPouco: 40 };
+/** Caminho B da Disputa (ADR-0137): concentração por anúncio, quando o rótulo não cobre a amostra.
+ *  `top1Dominante` saiu do vão medido entre o nicho aberto (oxford, 19,6%) e o fechado mais próximo
+ *  (EUCERIN, 36,8%). `minElegiveis` + o fator 2× sobre o share uniforme evitam dominância por
+ *  artefato de base pequena. PROIBIDO trocar top1 por top3 sem re-medir: no gabarito o top3 separa
+ *  os nichos por 3 pontos (57,1% aberto vs. 60,2% fechado), ruído puro. */
+const DISPUTA_B = { top1Dominante: 0.30, minElegiveis: 5 };
 const TRACAO_V2 = { boa: 350_000, media: 15_000 };
 /** "MENOS de 50% derruba" — 0,50 exato passa. O oxford, único nicho que o gabarito obriga a
  *  aprovar, mede exatamente 0,50: um `>` aqui derrubaria o critério de aceite. */
@@ -319,6 +325,35 @@ function fullPctAmostra(vendas: PainelVendasSonar): number | null {
   return (medidos.filter((i) => i.full === true).length / medidos.length) * 100;
 }
 
+/** Concentração por anúncio (ADR-0137, caminho B da Disputa): share do anúncio líder no
+ *  faturamento medido da amostra. Só entra em jogo quando o rótulo de loja não cobre a amostra —
+ *  ver `nivelDisputaB`. */
+export interface ConcentracaoAmostra {
+  elegiveis: number;
+  /** Share do anúncio líder no faturamento medido, 0-1. */
+  top1: number;
+  /** Corte aplicado: max(0,30 ; 2 ÷ elegíveis). */
+  corte: number;
+  dominante: boolean;
+}
+
+/**
+ * Elegível = `vendidos != null && preco != null` (mesma regra de `subamostraNomeada` para
+ * faturamento: ausência ≠ zero). `null` quando faltam elegíveis (< `DISPUTA_B.minElegiveis`) ou o
+ * faturamento total é zero/negativo (evita divisão por zero) — LOUD: amostra insuficiente não vira
+ * "sem concentração", vira "não medido".
+ */
+export function concentracaoAmostra(vendas: PainelVendasSonar): ConcentracaoAmostra | null {
+  const elegiveis = itensDaAmostra(vendas).filter((i) => i.vendidos != null && i.preco != null);
+  if (elegiveis.length < DISPUTA_B.minElegiveis) return null;
+  const faturamentos = elegiveis.map((i) => (i.vendidos as number) * (i.preco as number));
+  const total = faturamentos.reduce((a, f) => a + f, 0);
+  if (total <= 0) return null;
+  const top1 = Math.max(...faturamentos) / total;
+  const corte = Math.max(DISPUTA_B.top1Dominante, 2 / elegiveis.length);
+  return { elegiveis: elegiveis.length, top1, corte, dominante: top1 >= corte };
+}
+
 /** Demanda intacta (D11) + visitas como CONTEXTO no detalhe. Não existe `VISITAS_V2`: o único
  *  consumidor de um corte de visitas era o fallback do ADR-0124 §6, revogado. */
 function nivelDemandaV2(vendas: PainelVendasSonar, visitasTotal: number | null) {
@@ -331,10 +366,15 @@ function nivelDemandaV2(vendas: PainelVendasSonar, visitasTotal: number | null) 
   };
 }
 
-function nivelDisputaV2(vendas: PainelVendasSonar, sub: SubamostraNomeada): {
-  nivel: NivelFator; detalhe: string; pulverizacao: number; fullPct: number | null;
-} | null {
-  if (sub.cobertura < COBERTURA_MINIMA || sub.nomeados === 0) return null; // trava D10
+/** Medição da Disputa por um dos dois caminhos (ADR-0137). Caminho A (rótulo) é o titular — só
+ *  ele pode declarar disputa 'bom' (território de marca). Caminho B (concentração por anúncio)
+ *  entra quando o rótulo não cobre a amostra; teto 'medio', nunca 'bom' — ver `nivelDisputaB`. */
+type DisputaMedida =
+  | { caminho: 'rotulo'; nivel: NivelFator; detalhe: string; pulverizacao: number; fullPct: number | null }
+  | { caminho: 'anuncio'; nivel: NivelFator; detalhe: string; concentracao: ConcentracaoAmostra | null; fullPct: number | null };
+
+function nivelDisputaV2(vendas: PainelVendasSonar, sub: SubamostraNomeada): DisputaMedida | null {
+  if (sub.cobertura < COBERTURA_MINIMA || sub.nomeados === 0) return null; // trava D10 → cede ao caminho B (ADR-0137)
   const pulverizacao = sub.distintos / sub.nomeados;
   const fullPct = fullPctAmostra(vendas);
   // Topo concentrado sob poucos rótulos = território fechado; maioria Full = concorrente com
@@ -349,9 +389,40 @@ function nivelDisputaV2(vendas: PainelVendasSonar, sub: SubamostraNomeada): {
       ? 'bom'
       : 'medio';
   return {
+    caminho: 'rotulo',
     nivel,
     detalhe: `${sub.distintos} rótulos de loja em ${sub.nomeados} anúncios · ${textoFull(fullPct)}`,
     pulverizacao,
+    fullPct,
+  };
+}
+
+function detalheDisputaB(conc: ConcentracaoAmostra | null, fullPct: number | null): string {
+  const partes: string[] = [];
+  if (conc != null) partes.push(`o líder leva ${pct(conc.top1 * 100)} do faturamento medido (${conc.elegiveis} anúncios com venda)`);
+  if (fullPct != null) partes.push(textoFull(fullPct));
+  return partes.join(' · ');
+}
+
+/**
+ * Caminho B da Disputa (ADR-0137): concentração por anúncio, quando o caminho A (rótulo) não
+ * mediu. Nunca devolve 'bom' — o teto é 'medio': sem rótulo de loja, anúncios da mesma loja podem
+ * estar contados como rivais separados, então a concentração por anúncio SUBESTIMA a concentração
+ * real; declarar o nicho aberto sobre essa subestimativa seria promover ausência de dado, proibido
+ * em todo este arquivo (mesma regra do Full não medido).
+ */
+function nivelDisputaB(vendas: PainelVendasSonar): DisputaMedida | null {
+  const fullPct = fullPctAmostra(vendas);
+  const conc = concentracaoAmostra(vendas);
+  if (fullPct == null && conc == null) return null; // nem envio nem concentração — nada pra medir
+  const nivel: NivelFator = (fullPct != null && fullPct >= DISPUTA_V2.fullMuito) || conc?.dominante === true
+    ? 'ruim'
+    : 'medio';
+  return {
+    caminho: 'anuncio',
+    nivel,
+    detalhe: detalheDisputaB(conc, fullPct),
+    concentracao: conc,
     fullPct,
   };
 }
@@ -457,6 +528,34 @@ function destravarDisputaV2(nivel: NivelFator, pulverizacao: number, fullPct: nu
   return `com pulverização a partir de ${num2(DISPUTA_V2.pulverizacaoAberta)} e Full até ${DISPUTA_V2.fullPouco}% a disputa entraria na faixa tranquila — hoje: ${num2(pulverizacao)} e ${textoFull(fullPct)}`;
 }
 
+/** Frase do fator Disputa no caminho B (ADR-0137 §Textos) — LOUD sobre três coisas: (a) o share é
+ *  sobre o faturamento MEDIDO, e a faixa "+N vendidos" do ML é piso — o share real pode ser menor;
+ *  (b) sem rótulo de loja, anúncios da mesma loja podem estar contados como rivais separados —
+ *  por isso este caminho nunca declara o nicho aberto; (c) quantos anúncios entraram na conta. */
+function fraseDisputaB(d: Extract<DisputaMedida, { caminho: 'anuncio' }>): string {
+  const { concentracao: conc, fullPct, nivel } = d;
+  const partes: string[] = [];
+  if (conc != null) {
+    partes.push(`o anúncio líder leva ${pct(conc.top1 * 100)} do faturamento medido entre ${conc.elegiveis} anúncios com venda registrada na amostra — a faixa "+N vendidos" do Mercado Livre é piso, então o share real pode ser menor`);
+  }
+  if (fullPct != null) {
+    partes.push(`${textoFull(fullPct)} sobre os anúncios com envio identificado`);
+  }
+  const aviso = 'sem rótulo de loja para agrupar, dois anúncios da mesma loja entram como se fossem dois concorrentes nesta conta — por isso este caminho nunca declara o nicho aberto, no máximo médio';
+  const fecho = nivel === 'ruim' ? 'o topo já está concentrado' : 'disputa moderada pelo que deu para medir';
+  return `${partes.join('; ')}; ${aviso}; ${fecho}.`;
+}
+
+function destravarDisputaB(d: Extract<DisputaMedida, { caminho: 'anuncio' }>): string {
+  if (d.nivel === 'ruim') {
+    if (d.concentracao?.dominante) {
+      return `com o líder abaixo de ${pct(d.concentracao.corte * 100)} do faturamento medido a disputa sairia da zona crítica — hoje: ${pct(d.concentracao.top1 * 100)}`;
+    }
+    return `com Full abaixo de ${DISPUTA_V2.fullMuito}% a disputa sairia da zona crítica — hoje: ${textoFull(d.fullPct)}`;
+  }
+  return 'este caminho tem teto médio: rótulo de loja identificável em pelo menos metade da amostra destravaria a medição completa (pulverização + Full) e abriria caminho para disputa boa';
+}
+
 function fraseTracaoV2(nivel: NivelFator, porRotulo: number): string {
   const valor = brlMil(porRotulo);
   const universo = 'numerador e denominador no mesmo universo (só anúncios com rótulo de loja)';
@@ -477,14 +576,18 @@ const marcaTexto = (s: string) => s
 export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal: number | null): VereditoAnuncios {
   const sub = subamostraNomeada(vendas);
   const demanda = nivelDemandaV2(vendas, visitasTotal);
-  const disputa = nivelDisputaV2(vendas, sub);
+  // Caminho A (rótulo) é o titular; caminho B (concentração por anúncio, ADR-0137) só entra
+  // quando o A não mediu (cobertura de rótulo < 50%).
+  const disputa = nivelDisputaV2(vendas, sub) ?? nivelDisputaB(vendas);
   const tracao = nivelTracaoV2(sub);
-  // Duas causas de veredito parcial, ambas LOUD: sem rótulo de loja na maioria dos anúncios
-  // (trava D10) ou sem NENHUM tipo de envio informado (metade da Disputa não medida).
-  const semRotulo = disputa == null || tracao == null;
-  const semFull = disputa != null && disputa.fullPct == null;
-  const razaoParcial = semRotulo
-    ? 'menos da metade dos anúncios traz rótulo de loja'
+  const elegiveisVenda = itensDaAmostra(vendas).filter((i) => i.vendidos != null && i.preco != null).length;
+  // `parcial` (ADR-0137 §"parcial redefinido"): nenhum caminho da Disputa mediu, OU o caminho A
+  // mediu mas o Full (metade dele) não. `tracao == null` deixou de causar parcial sozinho — ele é
+  // sempre null quando o caminho B está ativo, e travar por isso derrubaria exatamente as
+  // consultas que o caminho B existe para destravar.
+  const semFull = disputa != null && disputa.caminho === 'rotulo' && disputa.fullPct == null;
+  const razaoParcial = disputa == null
+    ? `nenhum anúncio da amostra informa o tipo de envio e só ${elegiveisVenda} de ${sub.analisados} anúncios têm vendidos e preço suficientes para medir concentração por anúncio (mínimo: ${DISPUTA_B.minElegiveis})`
     : semFull ? 'nenhum anúncio da amostra informa o tipo de envio' : null;
   const parcial = razaoParcial != null;
 
@@ -500,8 +603,18 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
   const rivais = rivaisPodio(vendas);
   // "Alta" exige dado completo + entrada aberta (ADR-0128): marca ruim / disputa ruim fecham a
   // Entrada e impedem "alta"; parcial também (falta de dado nunca promove).
+  //
+  // ADR-0137 (errata): "alta" exige a Disputa medida POR RÓTULO. O caminho B tem teto 'medio' de
+  // propósito — ele subestima a concentração real (N anúncios de um dono contam como N rivais) —,
+  // mas sem esta cláusula o teto não chegava ao veredito: com a Tração fora, `fatores` tem 2 itens,
+  // `maximo` é 4, e `soma >= maximo - 1` aprova tanto disputa 🟡 (3) quanto 🟢 (4). Ou seja, 🟡 e 🟢
+  // davam a MESMA resposta final e o teto ficava invisível justamente em "alta", que é a única
+  // faixa que significa "compre estoque". Evidência que o próprio ADR chama de fraca não decide
+  // compra de estoque.
+  const disputaPorRotulo = disputa?.caminho === 'rotulo';
   const nivel: NivelVeredito = gateDemanda || soma <= maximo / 3 ? 'baixa'
-    : soma >= maximo - 1 && fatores.length >= PISO_FATORES_ALTA && !parcial && entrada === 'aberta' ? 'alta'
+    : soma >= maximo - 1 && fatores.length >= PISO_FATORES_ALTA && !parcial && entrada === 'aberta'
+      && disputaPorRotulo ? 'alta'
       : 'media';
 
   const fatoresExplicacao: ExplicacaoFator[] = [{
@@ -512,18 +625,30 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     destravar: demanda.nivel === 'bom' ? null : destravarDemanda(demanda.nivel, demanda.vendasTotais, demanda.liquidez),
   }];
   if (disputa) {
-    fatoresExplicacao.push({
-      chave: 'disputa',
-      nivel: disputa.nivel,
-      frase: fraseDisputaV2(disputa.nivel, sub, disputa.pulverizacao, disputa.fullPct)
-        + (semFull
-          ? ' Nenhum anúncio da amostra informa o tipo de envio: metade da Disputa (o % Full) não pôde ser medida, então o fator não passa de intermediário e o veredito sai parcial — sem dado completo não se declara oportunidade alta.'
-          : ''),
-      // Pulverização MAIOR é melhor (campo aberto) — régua não invertida, ao contrário da antiga,
-      // que contava vendedores absolutos.
-      regua: regua(0, 1, [DISPUTA_V2.pulverizacaoConcentrada, DISPUTA_V2.pulverizacaoAberta], disputa.pulverizacao, false),
-      destravar: disputa.nivel === 'bom' ? null : destravarDisputaV2(disputa.nivel, disputa.pulverizacao, disputa.fullPct),
-    });
+    if (disputa.caminho === 'rotulo') {
+      fatoresExplicacao.push({
+        chave: 'disputa',
+        nivel: disputa.nivel,
+        frase: fraseDisputaV2(disputa.nivel, sub, disputa.pulverizacao, disputa.fullPct)
+          + (semFull
+            ? ' Nenhum anúncio da amostra informa o tipo de envio: metade da Disputa (o % Full) não pôde ser medida, então o fator não passa de intermediário e o veredito sai parcial — sem dado completo não se declara oportunidade alta.'
+            : ''),
+        // Pulverização MAIOR é melhor (campo aberto) — régua não invertida, ao contrário da antiga,
+        // que contava vendedores absolutos.
+        regua: regua(0, 1, [DISPUTA_V2.pulverizacaoConcentrada, DISPUTA_V2.pulverizacaoAberta], disputa.pulverizacao, false),
+        destravar: disputa.nivel === 'bom' ? null : destravarDisputaV2(disputa.nivel, disputa.pulverizacao, disputa.fullPct),
+      });
+    } else {
+      // Caminho B (ADR-0137): um corte só (dominância por faturamento), sem a régua de 3 zonas do
+      // caminho A — inventar um segundo corte pra desenhar a régua seria número não medido.
+      fatoresExplicacao.push({
+        chave: 'disputa',
+        nivel: disputa.nivel,
+        frase: fraseDisputaB(disputa),
+        regua: null,
+        destravar: destravarDisputaB(disputa),
+      });
+    }
   }
   if (tracao) {
     const teto = TRACAO_V2.boa * 2;
@@ -536,13 +661,26 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
       destravar: tracao.nivel === 'bom' ? null
         : `a partir de ${brlMil(tracao.nivel === 'ruim' ? TRACAO_V2.media : TRACAO_V2.boa)} por rótulo de loja a tração subiria de faixa — hoje: ${brlMil(tracao.porRotulo)}`,
     });
+  } else if (disputa != null && disputa.caminho === 'anuncio') {
+    // Caminho B mediu a Disputa, mas a Tração exige rótulo de loja (escala R$/rótulo não transfere
+    // pra "por anúncio" sem segunda calibração, ADR-0137 §"parcial redefinido") — sem isso o
+    // operador veria a Tração sumir sem explicação.
+    fatoresExplicacao.push({
+      chave: 'tracao',
+      nivel: 'medio',
+      frase: 'A Tração mede R$ por rótulo de loja distinto — sem rótulo de loja cobrindo a amostra não há como calculá-la nesta escala, então o fator saiu da pontuação (ausência não vira nota ruim).',
+      regua: null,
+      destravar: null,
+    });
   }
-  if (semRotulo) {
-    // Trava D10 visível no "Saiba mais": indisponível ≠ ruim, e o veredito diz isso em voz alta.
+  if (disputa == null) {
+    // Nem o caminho A (rótulo) nem o B (concentração por anúncio) mediram: sem base para declarar
+    // a concorrência do nicho. LOUD sobre o motivo real — nunca só "sem rótulo", porque a causa
+    // também pode ser falta de anúncios com venda suficientes para medir concentração.
     fatoresExplicacao.push({
       chave: 'disputa',
       nivel: 'medio',
-      frase: `Só ${sub.nomeados} de ${sub.analisados} anúncios da amostra trazem rótulo de loja (mínimo: ${Math.round(COBERTURA_MINIMA * 100)}%) — sem base para medir a concorrência do nicho. Disputa e Tração saíram da pontuação; não viraram nota ruim, e por isso este veredito é parcial e não declara oportunidade alta.`,
+      frase: `Só ${sub.nomeados} de ${sub.analisados} anúncios trazem rótulo de loja e só ${elegiveisVenda} anúncios têm vendidos e preço suficientes para medir concentração por anúncio (mínimo: ${DISPUTA_B.minElegiveis}) — nem o Full nem a concentração por anúncio puderam medir a concorrência deste nicho. Disputa e Tração saíram da pontuação; não viraram nota ruim, e por isso este veredito é parcial e não declara oportunidade alta.`,
       regua: null,
       destravar: null,
     });
