@@ -18,6 +18,12 @@ Só apresentação: nenhum corte de calibração se moveu, gabarito intacto.
       mistura embalagens; risco de marca e gate de demanda não mostram condição de preço
 - [x] `motivo` (subtítulo) removido — redundante com o título de dois eixos
 - [x] Teste de matriz `(demanda × barreira)` + trava de vocabulário contra "entrada fechada"
+- [x] Barreira `topo_nao_confirmado`: o teto do caminho B (ADR-0137) chega ao TEXTO — sem nome de
+      loja o card nunca declara campo aberto, e sem concentração medida nunca afirma que ninguém
+      domina o faturamento
+- [ ] **Pendência menor, pré-existente:** `fraseRivaisPodio` imprime centavos ("≈ R$ 647.123,45")
+      enquanto o pódio na tela arredonda — a Errata 1 do ADR-0124 é explícita sobre centavos
+      comunicarem precisão que o dado não tem. Fora do escopo do ADR-0138.
 
 ## Sonar por EAN — cobertura de fichas de catálogo (ADR-0136) — 2026-08-27
 

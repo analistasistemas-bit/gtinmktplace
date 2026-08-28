@@ -83,8 +83,18 @@ por trás dos anúncios do topo** antes de tratar como campo aberto. Travado por
 (`o título NUNCA declara campo aberto quando a Disputa veio do caminho B`).
 
 Consistência com o ADR-0128: `entrada === 'fechada'` ⟺ `Barreira ∈ {concorrencia, marca}`;
-`mercado_apertado` é subcaso de `entrada === 'aberta'`. `entrada` **não muda** — segue governando
-o composite `nivel` como está.
+`mercado_apertado` **e** `topo_nao_confirmado` são subcasos de `entrada === 'aberta'`. `entrada`
+**não muda** — segue governando o composite `nivel` como está.
+
+`mercado_apertado` e `topo_nao_confirmado` são disjuntos por construção, não por ordem das
+cláusulas: o caminho B só existe com cobertura de rótulo < 50%, condição em que `nivelTracaoV2`
+devolve `null` — então quando a cláusula do caminho B é alcançada, a Tração nunca foi medida.
+
+**Sub-caso sem concentração medida.** `nivelDisputaB` devolve `medio` também quando SÓ o Full foi
+medido (menos de `DISPUTA_B.minElegiveis` anúncios com vendidos **e** preço). Aí o faturamento não
+entrou na conta, e nenhum texto pode afirmar "ninguém domina o faturamento" — seria ausência de
+dado virando não-dominância. `VereditoAnuncios.concentracaoMedida` marca a diferença, e resumo,
+ação e insight trocam para um texto que fala só do que foi medido. Travado por teste.
 
 **Inversão deliberada de prioridade:** hoje `resumoVeredito` resolve Full **antes** de marca.
 A partir daqui **marca ruim vence sempre**, mesmo com Full dominante junto. Motivo: a recomendação
@@ -101,8 +111,8 @@ que sustenta a barreira**, porque o estado já está escrito no próprio título
 
 | `Barreira` | Chip |
 |---|---|
-| `concorrencia`/`topo_nao_confirmado`, Full ≥ 60% | `100% Full` |
-| `concorrencia`/`topo_nao_confirmado`, caminho B | `líder leva 41%` |
+| `concorrencia`, Full ≥ 60% | `100% Full` |
+| `concorrencia`/`topo_nao_confirmado`, caminho B com concentração medida | `líder leva 41%` |
 | `concorrencia`, caminho A sem Full dominante | `3 concorrentes no topo` |
 | `marca` | `loja oficial` |
 | `nenhuma`, `mercado_apertado`, `nao_medida` | sem chip |

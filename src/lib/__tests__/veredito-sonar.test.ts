@@ -522,6 +522,25 @@ describe('ADR-0138 — travas de coerência do card (o que 53 verdes não pegava
     for (const { barreira, v } of cenarios()) expect(v.barreira).toBe(barreira);
   });
 
+  it('topo não confirmado SEM concentração medida: nenhum texto afirma que ninguém domina', () => {
+    // `nivelDisputaB` devolve 'medio' também quando só o Full foi medido (< 5 anúncios elegíveis
+    // por venda). Aí o faturamento não entrou na conta — dizer "ninguém domina o faturamento"
+    // seria ausência de dado virando não-dominância, a mesma armadilha do teto do caminho B.
+    const v = calcularVereditoAnuncios(painelSintetico([
+      // liquidez 50% e 1.600 vendas → demanda 'medio', sem gate; `preco: null` mantém fora da
+      // elegibilidade de concentração, que exige vendidos E preço.
+      ...Array.from({ length: 8 }, (_, i) => itemV2({ item_id: `M${i}`, vendedor: null, vendidos: 200, preco: null, full: false })),
+      ...Array.from({ length: 2 }, (_, i) => itemV2({ item_id: `Mv${i}`, vendedor: null, vendidos: 100, preco: 50, full: false })),
+      ...Array.from({ length: 10 }, (_, i) => itemV2({ item_id: `Mx${i}`, vendedor: null, vendidos: null, preco: 100, full: false })),
+    ]), null);
+    expect(v.barreira).toBe('topo_nao_confirmado');
+    expect(v.concentracaoMedida).toBe(false);
+    for (const t of [v.resumo, v.explicacao.acao, insightEntrada(v).detalhe]) {
+      expect(t).not.toMatch(/ningu[ée]m domina|nenhum an[úu]ncio domina/i);
+    }
+    expect(insightEntrada(v).detalhe).toMatch(/não deu para medir/i);
+  });
+
   it('o título NUNCA declara campo aberto quando a Disputa veio do caminho B (ADR-0137)', () => {
     // A trava que faltava: o Saiba mais do caminho B diz "este caminho nunca declara o campo
     // aberto". Sem este teste, o título dizia exatamente isso — em verde — e 53 testes passavam.

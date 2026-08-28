@@ -183,6 +183,12 @@ function tituloVeredito(barreira: Barreira, demanda: NivelFator): string {
 
 const fullDomina = (fullPct: number | null) => fullPct != null && fullPct >= DISPUTA_V2.fullMuito;
 
+/** O caminho B chegou a medir a concentração por anúncio? `false` quando só o Full foi medido
+ *  (menos de `DISPUTA_B.minElegiveis` anúncios com vendidos E preço) — aí nenhum texto pode
+ *  afirmar que ninguém domina o faturamento. */
+const concentracaoMedida = (disputa: DisputaMedida | null) =>
+  disputa?.caminho === 'anuncio' && disputa.concentracao != null;
+
 /** Um ramo da condição de entrada — "Com Full → bata R$ X" / "Sem Full → avalie R$ Y". */
 export interface RamoEntrada { rotulo: string; texto: string }
 
@@ -224,6 +230,7 @@ function acaoVeredito(
   gateDemanda: boolean,
   razaoParcial: string | null,
   ramos: RamoEntrada[],
+  concentracaoConhecida: boolean,
 ): string {
   if (gateDemanda) {
     // Se o veredito também é parcial, a causa precisa aparecer em algum lugar: com o gate ativo o
@@ -250,7 +257,9 @@ function acaoVeredito(
     return `Dá para entrar, mas o topo já está ocupado — a fatia vem pelo preço, não por chegar primeiro.${condicao} Comece com anúncio-teste e valide o giro antes de comprar volume.`;
   }
   if (barreira === 'topo_nao_confirmado') {
-    return 'Nenhum anúncio domina o faturamento pelo que deu para medir — mas os cards do topo não trazem nome de loja, então pode ser um dono só com vários anúncios em vez de vários concorrentes. Antes de comprar volume, abra os anúncios do topo e confira quem está por trás deles. Enquanto isso, anúncio-teste.';
+    return concentracaoConhecida
+      ? 'Nenhum anúncio domina o faturamento pelo que deu para medir — mas os cards do topo não trazem nome de loja, então pode ser um dono só com vários anúncios em vez de vários concorrentes. Antes de comprar volume, abra os anúncios do topo e confira quem está por trás deles. Enquanto isso, anúncio-teste.'
+      : 'O Full não domina o topo, mas a amostra não tem anúncios com venda suficientes para saber se alguém concentra o faturamento, e os cards do topo não trazem nome de loja. Antes de comprar volume, abra os anúncios do topo e confira quem está por trás deles. Enquanto isso, anúncio-teste.';
   }
   if (barreira === 'mercado_apertado') {
     return 'O topo está livre, mas o faturamento está diluído entre os concorrentes — cada um leva pouco. Só compensa com custo baixo o bastante para volume pequeno fechar. Comece com anúncio-teste.';
@@ -285,7 +294,10 @@ function resumoVeredito(
       : 'Mercado aquecido, mas poucos concorrentes dominam o topo. Entrar exige preço melhor que o deles.';
   }
   if (barreira === 'topo_nao_confirmado') {
-    return 'Ninguém domina o faturamento pelo que deu para medir — mas os cards não trazem nome de loja, então pode ser um dono só com vários anúncios. Confira antes de comprar volume.';
+    // Só afirma não-dominância se a concentração FOI medida; senão o texto fala apenas do Full.
+    return concentracaoMedida(disputa)
+      ? 'Ninguém domina o faturamento pelo que deu para medir — mas os cards não trazem nome de loja, então pode ser um dono só com vários anúncios. Confira antes de comprar volume.'
+      : 'O Full não domina o topo, mas poucos anúncios têm venda registrada e os cards não trazem nome de loja — não deu para saber se alguém concentra o faturamento. Confira antes de comprar volume.';
   }
   if (barreira === 'mercado_apertado') return 'Tem venda, mas o faturamento está diluído — sobra pouco por concorrente. Só compensa com custo baixo.';
   return nivel === 'alta'
@@ -399,6 +411,11 @@ export interface VereditoAnuncios {
   chip: string | null;
   /** Condição de entrada em percentual (ADR-0138); vazio quando o Full não domina o topo. */
   ramosEntrada: RamoEntrada[];
+  /** Só importa sob `topo_nao_confirmado`: a concentração por anúncio chegou a ser medida?
+   *  `nivelDisputaB` devolve 'medio' também quando SÓ o Full foi medido (menos de 5 anúncios
+   *  elegíveis por venda). Nesse caso nenhum texto pode afirmar "ninguém domina o faturamento" —
+   *  seria ausência de dado virando não-dominância, a mesma armadilha do teto do caminho B. */
+  concentracaoMedida: boolean;
   /** Top 5 rivais por faturamento na amostra (inclui fantasmas sem rótulo). */
   rivaisPodio: RivalPodio[];
   /** Uma frase visível no card, sem abrir Saiba mais — linguajar de operador, não de score. */
@@ -850,7 +867,9 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     ? []
     : ramosDeEntrada(disputa?.fullPct ?? null);
   const chip = chipBarreira(barreira, gateDemanda, disputa, sub);
-  const acao = acaoVeredito(barreira, nivel, gateDemanda, razaoParcial, ramosEntrada) + fraseRivaisPodio(rivais);
+  const concMedida = concentracaoMedida(disputa);
+  const acao = acaoVeredito(barreira, nivel, gateDemanda, razaoParcial, ramosEntrada, concMedida)
+    + fraseRivaisPodio(rivais);
   const resumo = resumoVeredito(barreira, nivel, gateDemanda, disputa);
 
   return {
@@ -863,6 +882,7 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     barreira,
     chip,
     ramosEntrada,
+    concentracaoMedida: concMedida,
     rivaisPodio: rivais,
     resumo,
     explicacao: { pontuacao: { soma, maximo }, gateDemanda, fatores: fatoresExplicacao, acao },
@@ -944,8 +964,11 @@ export function insightEntrada(v: VereditoAnuncios): InsightEntrada {
     ? 'Sem barreira estrutural detectada nesta amostra — campo livre pra quem chega agora.'
     : v.barreira === 'topo_nao_confirmado'
       // Nunca 'bom' aqui, e nunca a palavra "livre": o caminho B pode estar escondendo território
-      // de marca (ADR-0137). O card manda conferir, não manda entrar.
-      ? 'Nenhum anúncio domina o faturamento medido, mas os cards do topo não trazem nome de loja — vários anúncios podem ser do mesmo dono. Abra os anúncios do topo e confira quem está por trás antes de tratar como campo aberto.'
+      // de marca (ADR-0137). O card manda conferir, não manda entrar. E só afirma não-dominância
+      // quando a concentração foi realmente medida.
+      ? (v.concentracaoMedida
+        ? 'Nenhum anúncio domina o faturamento medido, mas os cards do topo não trazem nome de loja — vários anúncios podem ser do mesmo dono. Abra os anúncios do topo e confira quem está por trás antes de tratar como campo aberto.'
+        : 'Não deu para medir se algum anúncio concentra o faturamento (poucos anúncios com venda registrada) e os cards do topo não trazem nome de loja. Abra os anúncios do topo e confira quem está por trás antes de tratar como campo aberto.')
       : v.barreira === 'mercado_apertado'
         ? 'O topo está livre, mas o bolo é pequeno por concorrente: a entrada depende do seu custo, não da briga por espaço.'
         : 'O topo já está ocupado, mas a fatia se conquista no preço — não por chegar primeiro.';
