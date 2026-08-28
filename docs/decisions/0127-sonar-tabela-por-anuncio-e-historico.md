@@ -312,6 +312,12 @@ sozinho em 24h.
 
 ## Errata 1 (2026-08-22) — busca por EAN/GTIN: produto específico, não nicho
 
+> **Superada em 2026-08-28 pelo [ADR-0140](0140-sonar-ean-analise-completa-pela-busca.md).**
+> A consulta por EAN deixou de ter caminho e view próprios: passou a percorrer o mesmo pipeline da
+> busca por termo, e a escolha "grátis / com vendidos" saiu da tela. O que esta errata decidiu sobre
+> detecção de GTIN no campo e sobre o cruzamento com o catálogo da org continua valendo.
+
+
 O Sonar buscava só por termo livre (nicho: vários concorrentes). Pedido do Diego (escopo fechado):
 suportar também busca por EAN/GTIN, restrita a **um produto específico**, com leitor de código de
 barras físico (USB/Bluetooth) funcionando de graça — ele emula teclado, então só precisou de

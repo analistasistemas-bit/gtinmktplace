@@ -63,7 +63,21 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > itens. Cruzamento ficha↔anúncio do ADR-0125/D4 e a busca de vendedores/UF por fonte oficial
 > saem de circulação. ADR-0127 supersede em parte o ADR-0125/D4.
 
-> **✅ Sonar — busca por EAN/GTIN EM PRODUÇÃO no código (ADR-0127 Errata 1, 2026-08-22).** Além da
+> **✅ Sonar — busca por EAN entrega a análise COMPLETA, sem escolha grátis/paga (ADR-0140, 2026-08-28).**
+> Pedido do Diego: consultar por EAN tem de dar a mesma tela da consulta por descrição, com o
+> recorte de um produto só, e sem perguntar "grátis ou paga". Medido antes de implementar (EAN
+> `7891113175371`, o caso do ADR-0136): a busca da Apify aceita o EAN como keyword e devolve **20
+> dos 24 anúncios** que o ML reporta, todos do produto certo e com vendidos — contra **1 oferta**
+> pelo lookup oficial de catálogo, e cobrindo os anúncios fora do catálogo que o ADR-0136 tinha
+> registrado como inalcançáveis. Então o EAN deixou de ter caminho próprio: vira `termoBuscado` e
+> percorre o pipeline do termo (veredito, insights, pódio, vendas, visitas, filtros, simulador).
+> **Revoga o ADR-0136 D-6** e o default grátis da Errata 1 do ADR-0127 — cada EAN novo custa
+> ~US$ 0,10, com o mesmo cache de 7 dias. Sobrevive da view antiga só o cruzamento com o catálogo
+> da org, agora com regra nova: `minhas` (GTIN exato) segue afirmando ausência, mas o **Radar só é
+> afirmado no positivo**, porque os `catalog_product_id` passaram a vir da amostra e vieram em 7 de
+> 20 anúncios. A edge `pulse-sonar-ean` fica deployada sem chamador (follow-up de remoção).
+
+> **⚠️ Superado pelo ADR-0140 (acima) — Sonar — busca por EAN/GTIN (ADR-0127 Errata 1, 2026-08-22).** Além da
 > busca por termo (nicho), o Sonar aceita EAN/GTIN, restrito a **1 produto específico**. Lookup
 > oficial de catálogo grátis (edge nova `pulse-sonar-ean`); "vendidos" só entra sob escolha
 > explícita do operador ("Consultar grátis" vs. "Consultar com vendidos", custo visível na UI),
