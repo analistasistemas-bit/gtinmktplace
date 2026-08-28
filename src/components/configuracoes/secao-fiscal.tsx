@@ -89,24 +89,33 @@ function Subgrupo({ titulo, campos, empresa, children }: {
 export function SecaoFiscal() {
   const { podeEditarConfig, podeEditarEmpresa } = usePermissoesConfig();
 
-  const { data: aliquotas } = useAliquotas();
+  const { data: aliquotas, isLoading: aliquotasCarregando } = useAliquotas();
   const salvarAliquotas = useSalvarAliquotas();
-  const { data: empresa } = useEmpresaFiscal();
+  const { data: empresa, isLoading: empresaCarregando } = useEmpresaFiscal();
   const salvarEmpresa = useSalvarEmpresaFiscal();
 
   // Uma fila por tabela. Independentes entre si: uma gravação de cada pode estar em voo ao
   // mesmo tempo; o que não pode é duas da mesma tabela (ver useFilaDeSalvamento).
+  //
+  // "carregado e vazio" (`null`, org que ainda não cadastrou nada) NÃO é "carregando": quem
+  // separa é o `isLoading`. Tratar os dois como a mesma coisa deixava o bloco Empresa em
+  // skeleton para sempre numa org sem cadastro — o formulário nunca aparecia.
   const filaAliquotas = useFilaDeSalvamento<SnapshotAliquotas>(
-    aliquotas
-      ? {
-          nacional: aliquotas.nacional,
-          importado: aliquotas.importado,
-          ufEmpresa: aliquotas.ufEmpresa ?? null,
-          internaPct: aliquotas.internaPct ?? null,
-        }
-      : undefined,
+    aliquotasCarregando
+      ? undefined
+      : {
+          nacional: aliquotas?.nacional ?? 8,
+          importado: aliquotas?.importado ?? 16,
+          ufEmpresa: aliquotas?.ufEmpresa ?? null,
+          internaPct: aliquotas?.internaPct ?? null,
+        },
   );
-  const filaEmpresa = useFilaDeSalvamento<Empresa>((empresa as Empresa | null) ?? undefined);
+  const filaEmpresa = useFilaDeSalvamento<Empresa>(
+    empresaCarregando ? undefined : ((empresa as Empresa | null) ?? {}),
+  );
+
+  const empresaVazia = !empresaCarregando && (empresa == null
+    || Object.values(OBRIGATORIOS).every((campos) => preenchidos(empresa as Empresa, campos) === 0));
 
   const [nacionalInput, setNacionalInput] = useState('8');
   const [importadoInput, setImportadoInput] = useState('16');
@@ -229,7 +238,7 @@ export function SecaoFiscal() {
           </>
         }
       >
-        {!filaAliquotas.pronto ? (
+        {aliquotasCarregando ? (
           <LinhasCarregando linhas={2} />
         ) : (
           <>
@@ -325,10 +334,18 @@ export function SecaoFiscal() {
         descricao="Dados usados na emissão fiscal. Emissão exige organização PJ — quem marca é o administrador da plataforma."
         aviso={!podeEditarEmpresa && <AvisoLeitura>Só um administrador da organização altera o cadastro da empresa.</AvisoLeitura>}
       >
-        {!filaEmpresa.pronto && empresa == null ? (
+        {empresaCarregando ? (
           <LinhasCarregando linhas={3} />
         ) : (
           <>
+            {empresaVazia && (
+              <div className="px-4 py-3.5">
+                <p className="text-xs text-muted-foreground">
+                  Esta organização ainda não tem cadastro fiscal. Comece pelo CNPJ — os
+                  contadores de cada bloco mostram o que falta para o cadastro ficar completo.
+                </p>
+              </div>
+            )}
             <Subgrupo titulo="Identidade" campos={OBRIGATORIOS.identidade} empresa={empresa as Empresa}>
               {campo('cnpj', 'CNPJ', { placeholder: '00.000.000/0000-00', erro: erroCnpj, onSalvar: salvarCnpj })}
               {campo('razao_social', 'Razão social')}
