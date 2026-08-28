@@ -1,41 +1,91 @@
 import { describe, it, expect } from 'vitest';
-import { orientar } from '../auth-particulas';
+import {
+  amostrarPoisson,
+  distanciasPorDensidade,
+  ruido1d,
+} from '../auth-particulas/amostragem';
 
-const RAIO = 100;
+/** Gerador determinístico: sem isto o teste de distância mínima seria flaky. */
+function randomSemente(semente: number): () => number {
+  let s = semente >>> 0;
+  return () => {
+    s = (s * 1664525 + 1013904223) >>> 0;
+    return s / 4294967296;
+  };
+}
 
-describe('orientar', () => {
-  it('fica em repouso quando o cursor está fora do raio', () => {
-    expect(orientar(0.7, 0, 0, 300, 0, RAIO)).toEqual({ ang: 0.7, peso: 0 });
+describe('distanciasPorDensidade', () => {
+  it('interpola min 10→2 e max 11→3 entre densidade 0 e 300', () => {
+    expect(distanciasPorDensidade(0)).toEqual({ min: 10, max: 11 });
+    expect(distanciasPorDensidade(300)).toEqual({ min: 2, max: 3 });
   });
 
-  it('fica em repouso quando o cursor está exatamente sobre a partícula', () => {
-    expect(orientar(0.7, 10, 10, 10, 10, RAIO)).toEqual({ ang: 0.7, peso: 0 });
+  it('na densidade default (230) chega perto dos números do efeito original', () => {
+    const { min, max } = distanciasPorDensidade(230);
+    expect(min).toBeCloseTo(3.87, 2);
+    expect(max).toBeCloseTo(4.87, 2);
   });
 
-  it('aponta para o cursor com peso máximo quando ele está colado', () => {
-    // cursor à direita, a 1px: peso ≈ 1 → ângulo ≈ 0 (horizontal)
-    const r = orientar(1.2, 0, 0, 1, 0, RAIO);
-    expect(r.ang).toBeCloseTo(0, 1);
-    expect(r.peso).toBeCloseTo(1, 1);
+  it('trava fora da faixa em vez de extrapolar', () => {
+    expect(distanciasPorDensidade(-50)).toEqual(distanciasPorDensidade(0));
+    expect(distanciasPorDensidade(9000)).toEqual(distanciasPorDensidade(300));
   });
+});
 
-  it('interpola pela metade na metade do raio', () => {
-    // base 0, cursor na vertical a 50px de um raio 100 → alvo π/2, peso 0.5
-    const r = orientar(0, 0, 0, 0, 50, RAIO);
-    expect(r.peso).toBeCloseTo(0.5, 5);
-    expect(r.ang).toBeCloseTo(Math.PI / 4, 5);
-  });
+describe('amostrarPoisson', () => {
+  const lado = 100;
+  const distMin = 5;
+  const pontos = amostrarPoisson(lado, distMin, 7, randomSemente(42));
 
-  it('o peso cai linearmente com a distância', () => {
-    expect(orientar(0, 0, 0, 25, 0, RAIO).peso).toBeCloseTo(0.75, 5);
-    expect(orientar(0, 0, 0, 90, 0, RAIO).peso).toBeCloseTo(0.1, 5);
-  });
-
-  it('gira no máximo 90° — o traço é simétrico, não precisa dar meia-volta', () => {
-    // girar +π/2 ou -π/2 desenha o mesmo traço; a rotação escolhida é sempre a menor.
-    for (const base of [0.1, 1.0, 2.0, 3.0]) {
-      const delta = orientar(base, 0, 0, 1, 0, RAIO).ang - base;
-      expect(Math.abs(delta)).toBeLessThanOrEqual(Math.PI / 2 + 1e-9);
+  it('respeita a distância mínima entre todos os pares', () => {
+    // É o contrato do Poisson-disk: sem isto o campo teria grumos e buracos.
+    let menor = Infinity;
+    for (let i = 0; i < pontos.length; i++) {
+      for (let j = i + 1; j < pontos.length; j++) {
+        const dx = pontos[i][0] - pontos[j][0];
+        const dy = pontos[i][1] - pontos[j][1];
+        menor = Math.min(menor, Math.hypot(dx, dy));
+      }
     }
+    expect(menor).toBeGreaterThanOrEqual(distMin);
+  });
+
+  it('mantém todos os pontos dentro da grade', () => {
+    for (const [x, y] of pontos) {
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThan(lado);
+      expect(y).toBeLessThan(lado);
+    }
+  });
+
+  it('preenche a área — bem mais denso que um sorteio ralo', () => {
+    // Empacotamento de Poisson-disk fica em torno de 0,7·área/distMin²; exijo metade disso
+    // para o teste não quebrar com variação do gerador.
+    expect(pontos.length).toBeGreaterThan((0.35 * lado * lado) / (distMin * distMin));
+  });
+
+  it('é determinístico com a mesma semente', () => {
+    expect(amostrarPoisson(lado, distMin, 7, randomSemente(42))).toEqual(pontos);
+  });
+});
+
+describe('ruido1d', () => {
+  it('fica em [0,1)', () => {
+    for (let t = 0; t < 50; t += 0.37) {
+      expect(ruido1d(t)).toBeGreaterThanOrEqual(0);
+      expect(ruido1d(t)).toBeLessThan(1);
+    }
+  });
+
+  it('é contínuo — o anel não pode teleportar entre quadros', () => {
+    for (let t = 0; t < 20; t += 0.5) {
+      expect(Math.abs(ruido1d(t + 0.01) - ruido1d(t))).toBeLessThan(0.05);
+    }
+  });
+
+  it('varia de verdade ao longo do tempo', () => {
+    const amostras = Array.from({ length: 40 }, (_, i) => ruido1d(i * 0.7));
+    expect(Math.max(...amostras) - Math.min(...amostras)).toBeGreaterThan(0.5);
   });
 });

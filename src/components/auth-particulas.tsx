@@ -1,173 +1,128 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { Campo } from '@/components/auth-particulas/campo';
 
-/** 1 partícula a cada ~2400px² (≈ 540 em 1440×900), com teto para telas grandes. */
-const DENSIDADE = 1 / 2400;
-const MAX_PARTICULAS = 900;
-/** Raio de influência do cursor, em px. Fora dele a partícula fica no estado de repouso. */
-const RAIO_CURSOR = 230;
-/** Fração do caminho até o alvo percorrida por frame (easing exponencial). */
-const SUAVIZACAO = 0.1;
-/** Quanto o traço estica e acende no centro do halo (multiplicadores sobre o repouso). */
-const GANHO_COMPRIMENTO = 0.9;
-const GANHO_BRILHO = 2.2;
-
-// ponytail: cores em RGB fixo — o shell de auth é sempre dark (ADR-0080), e ler
-// `--brand-gradient` exigiria um probe de getComputedStyle + parse de oklch só para
-// chegar nos mesmos três tons. Hues da marca (277–300).
-const CORES: Array<[rgb: string, alpha: number]> = [
-  ['139, 108, 255', 0.4],
-  ['176, 102, 245', 0.36],
-  ['120, 160, 255', 0.26],
-];
+/** Abaixo disso o campo entra com metade da densidade e sem interação de ponteiro. */
+const LARGURA_MOBILE = 768;
 
 /**
- * Estado da partícula em função do cursor: para onde apontar e o quanto está sob
- * influência (0 = repouso, 1 = colada no cursor). O `peso` alimenta ângulo, brilho e
- * comprimento — só a rotação move os extremos do traço em ~2px, invisível sozinha.
+ * Só vale carregar o Three depois de saber que o campo roda aqui. A simulação escreve numa
+ * textura float, o que exige WebGL2 com `EXT_color_buffer_float`; sem isso o import seria
+ * 170KB gastos para nada. Também é o que mantém o Three fora dos testes, onde o jsdom não
+ * devolve contexto nenhum.
+ */
+function suportaCampo(): boolean {
+  try {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('webgl2');
+    if (!ctx) return false;
+    const ok = !!ctx.getExtension('EXT_color_buffer_float');
+    ctx.getExtension('WEBGL_lose_context')?.loseContext();
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+const CORES: Record<'dark' | 'light', [string, string, string]> = {
+  dark: ['#7189ff', '#3074f9', '#000000'],
+  light: ['#2c64ed', '#f84242', '#ffcf03'],
+};
+
+export interface AuthParticulasProps {
+  /** 0–300. Quantidade de partículas via distância mínima do Poisson-disk. */
+  density?: number;
+  particlesScale?: number;
+  ringRadius?: number;
+  ringWidth?: number;
+  ringWidth2?: number;
+  /** O que mais muda a personalidade do efeito: o quanto o anel empurra as partículas. */
+  ringDisplacement?: number;
+  theme?: 'dark' | 'light';
+  /** Opacidade global. Baixa de propósito — aqui o formulário é a estrela, não o fundo. */
+  opacity?: number;
+}
+
+/**
+ * Fundo das telas de auth: campo de partículas com simulação GPGPU em Three.js, no mesmo
+ * desenho da landing do Google Antigravity. O estado de cada partícula vive numa textura
+ * float atualizada por um shader a cada quadro (ping-pong entre dois render targets), e o
+ * "seguir o mouse" é um anel que persegue o cursor com interpolação lenta — o atraso é o
+ * que dá a sensação orgânica. Detalhes da simulação em `auth-particulas/shaders.ts`.
  *
- * A rotação é módulo π: o traço é simétrico, então girar 180° dá o mesmo desenho e
- * seria só uma pirueta à toa quando o cursor cruza a partícula.
+ * O Three entra por import dinâmico: são ~170KB gzip que não podem pesar no primeiro
+ * carregamento de uma tela de login. Enquanto não chega — e em qualquer ambiente sem
+ * WebGL2 com `EXT_color_buffer_float` — fica só o gradiente estático de fundo.
  */
-export function orientar(
-  base: number,
-  px: number,
-  py: number,
-  mx: number,
-  my: number,
-  raio = RAIO_CURSOR,
-): { ang: number; peso: number } {
-  const dx = mx - px;
-  const dy = my - py;
-  const dist = Math.hypot(dx, dy);
-  if (dist === 0 || dist >= raio) return { ang: base, peso: 0 };
-
-  let delta = (Math.atan2(dy, dx) - base) % Math.PI;
-  if (delta > Math.PI / 2) delta -= Math.PI;
-  if (delta < -Math.PI / 2) delta += Math.PI;
-
-  const peso = 1 - dist / raio;
-  return { ang: base + delta * peso, peso };
-}
-
-interface Particula {
-  x: number;
-  y: number;
-  base: number;
-  ang: number;
-  peso: number;
-  comprimento: number;
-  rgb: string;
-  alpha: number;
-}
-
-/**
- * Campo de partículas do fundo das telas de auth: traços curtos que giram apontando
- * para o cursor e acendem em volta dele. Puramente decorativo (`aria-hidden` +
- * `pointer-events-none`) — por isso os listeners ficam no `window`, não no canvas.
- */
-export function AuthParticulas() {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const cursor = useRef({ x: -9999, y: -9999 });
+export function AuthParticulas({
+  density = 230,
+  particlesScale = 0.59,
+  ringRadius = 0.2,
+  ringWidth = 0.006,
+  ringWidth2 = 0.107,
+  ringDisplacement = 0.62,
+  theme = 'dark',
+  opacity = 0.3,
+}: AuthParticulasProps = {}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [ativo, setAtivo] = useState(false);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return; // jsdom não implementa canvas 2D — testes montam o shell sem efeito
+    const container = containerRef.current;
+    if (!container) return;
 
-    let particulas: Particula[] = [];
-    let raf = 0;
+    if (!suportaCampo()) return;
 
-    function montar() {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const largura = canvas!.clientWidth;
-      const altura = canvas!.clientHeight;
-      canvas!.width = Math.round(largura * dpr);
-      canvas!.height = Math.round(altura * dpr);
-      ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
+    let campo: Campo | null = null;
+    let descartado = false;
 
-      const total = Math.min(MAX_PARTICULAS, Math.round(largura * altura * DENSIDADE));
-      particulas = Array.from({ length: total }, () => {
-        const base = Math.random() * Math.PI;
-        const [rgb, alpha] = CORES[Math.floor(Math.random() * CORES.length)];
-        return {
-          x: Math.random() * largura,
-          y: Math.random() * altura,
-          base,
-          ang: base,
-          peso: 0,
-          comprimento: 9 + Math.random() * 8,
-          rgb,
-          alpha,
-        };
+    const mobile = window.innerWidth < LARGURA_MOBILE;
+    const opcoes = {
+      densidade: mobile ? density * 0.5 : density,
+      escalaParticulas: particlesScale,
+      raioAnel: ringRadius,
+      larguraAnel: ringWidth,
+      larguraAnel2: ringWidth2,
+      deslocamentoAnel: ringDisplacement,
+      opacidade: opacity,
+      cores: CORES[theme],
+      // jsdom não implementa matchMedia: sem a guarda, montar o AuthShell num teste explode.
+      estatico:
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+      semPonteiro: mobile,
+    };
+
+    import('@/components/auth-particulas/campo')
+      .then(({ criarCampo }) => {
+        if (descartado || !containerRef.current) return;
+        campo = criarCampo(containerRef.current, opcoes);
+        setAtivo(campo !== null);
+      })
+      .catch(() => {
+        // Sem o chunk do Three (offline, bloqueio de rede) fica o gradiente estático.
       });
-    }
-
-    function desenhar() {
-      ctx!.clearRect(0, 0, canvas!.clientWidth, canvas!.clientHeight);
-      ctx!.lineCap = 'round';
-      ctx!.lineWidth = 2;
-      for (const p of particulas) {
-        const alvo = orientar(p.base, p.x, p.y, cursor.current.x, cursor.current.y);
-        p.ang += (alvo.ang - p.ang) * SUAVIZACAO;
-        p.peso += (alvo.peso - p.peso) * SUAVIZACAO;
-
-        const meio = (p.comprimento * (1 + p.peso * GANHO_COMPRIMENTO)) / 2;
-        const dx = Math.cos(p.ang) * meio;
-        const dy = Math.sin(p.ang) * meio;
-        ctx!.strokeStyle = `rgba(${p.rgb}, ${p.alpha * (1 + p.peso * GANHO_BRILHO)})`;
-        ctx!.beginPath();
-        ctx!.moveTo(p.x - dx, p.y - dy);
-        ctx!.lineTo(p.x + dx, p.y + dy);
-        ctx!.stroke();
-      }
-    }
-
-    montar();
-
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      desenhar(); // campo estático nos ângulos base: sem RAF, sem listener de mouse
-      const aoRedimensionarEstatico = () => {
-        montar();
-        desenhar();
-      };
-      window.addEventListener('resize', aoRedimensionarEstatico);
-      return () => window.removeEventListener('resize', aoRedimensionarEstatico);
-    }
-
-    const aoMover = (e: MouseEvent) => {
-      const r = canvas!.getBoundingClientRect();
-      cursor.current = { x: e.clientX - r.left, y: e.clientY - r.top };
-    };
-    // No `document`, `mouseleave` só dispara ao sair da janela. No `window`, `mouseout`
-    // dispararia a cada troca de elemento sob o cursor e apagaria o halo em pleno movimento.
-    const aoSair = () => {
-      cursor.current = { x: -9999, y: -9999 };
-    };
-
-    window.addEventListener('mousemove', aoMover, { passive: true });
-    document.addEventListener('mouseleave', aoSair);
-    window.addEventListener('resize', montar);
-
-    const loop = () => {
-      desenhar();
-      raf = requestAnimationFrame(loop);
-    };
-    raf = requestAnimationFrame(loop);
 
     return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener('mousemove', aoMover);
-      document.removeEventListener('mouseleave', aoSair);
-      window.removeEventListener('resize', montar);
+      descartado = true;
+      campo?.destruir();
+      setAtivo(false);
     };
-  }, []);
+  }, [
+    density,
+    particlesScale,
+    ringRadius,
+    ringWidth,
+    ringWidth2,
+    ringDisplacement,
+    theme,
+    opacity,
+  ]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      aria-hidden
-      className="pointer-events-none absolute inset-0 h-full w-full"
-    />
+    <div ref={containerRef} aria-hidden className="pointer-events-none absolute inset-0">
+      {!ativo && (
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_45%_at_50%_40%,oklch(0.64_0.18_277/0.10),transparent)]" />
+      )}
+    </div>
   );
 }
