@@ -1,3 +1,4 @@
+import { AuthParticulas } from '@/components/auth-particulas';
 import { Card } from '@/components/ui/card';
 import { Logo } from '@/components/ui/logo';
 import { cn } from '@/lib/utils';
@@ -21,6 +22,7 @@ export function AuthShell({ subtitle, saindo, children }: AuthShellProps) {
       className="dark relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background p-4 text-foreground"
       style={{ colorScheme: 'dark' }}
     >
+      <AuthParticulas />
       <div aria-hidden className="auth-grid pointer-events-none absolute inset-0" />
 
       <div
