@@ -2,6 +2,37 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Configurações — sub-navegação por seção e idioma único de configuração — 2026-08-28
+
+**Implementado.** Sem ADR: é arquitetura de informação e layout, reversível por commit. Plano e
+transcrição da revisão adversarial em `PLAN.md` / `PLAN-REVIEW-LOG.md` da branch.
+
+- [x] `/configuracoes/*` com rota por seção (geral, precos, fiscal, notificacoes, ia, membros);
+      registro declarativo em `src/components/configuracoes/secoes.tsx`
+- [x] Sub-nav sticky no desktop, `Select` abaixo de `lg`; item = rótulo/descrição à esquerda,
+      controle à direita
+- [x] Guard de OAuth do ML isolado antes dos hooks da tela, preservando `searchParams`
+- [x] Usuários vira a seção "Membros e acessos"; `/usuarios` redireciona; `MENU_KEYS` intacto.
+      Canais **fica** no menu (operação, e cresce com o E5/Shopee — ADR-0077)
+- [x] Remove "Estratégia de preço": UI morta, sem `value`/`onValueChange`/hook. O enum real é
+      `familias.estrategia_preco`, por família, decidido pelo motor
+- [x] **Defeito em produção corrigido:** Geral/Preços/Notificações não tinham gate na UI, mas a
+      escrita em `configuracoes` exige admin ou suporte `full` — o membro comum digitava, o RLS
+      recusava e a tela não mostrava erro. Dois predicados agora replicam as duas policies
+      (`configuracoes` e `empresa_fiscal` têm regras diferentes)
+- [x] Visibilidade de "Membros" lida de `visibleMenus`, não derivada de `is_admin` (o
+      super-admin em sessão de suporte tem a flag e reabriria a seção)
+- [x] Gravação single-flight por tabela, estado por linha com `aria-live`, snapshot semeado do
+      dado carregado (parcial apagaria `uf_empresa`/`aliquota_interna_pct` não tocados)
+- [x] 27 testes; `config-telegram.test.tsx` e `Usuarios.test.tsx` passam sem alteração
+- [x] Validado em runtime (Playwright, sessão isolada): 1440px e 360px, sem overflow horizontal
+      nas 6 seções, console sem erros
+- [ ] **Pendente de decisão do Diego:** afrouxar a policy de `configuracoes` para membro comum
+      editar preferência não-sensível? E aplicar o gate fiscal do ADR-0135
+      (`tipo_pessoa='pj'` + módulo) na seção Fiscal, hoje visível até para org PF?
+- [ ] **Pendente (backend, ADR próprio):** `is_admin()` não distingue admin de plataforma de
+      admin de tenant — numa sessão de suporte o banco trata o super-admin como admin da org
+
 ## Sonar por EAN — cobertura de fichas de catálogo (ADR-0136) — 2026-08-27
 
 **Implementado.** ADR em `docs/decisions/0136-sonar-ean-cobertura-de-fichas-de-catalogo.md`
