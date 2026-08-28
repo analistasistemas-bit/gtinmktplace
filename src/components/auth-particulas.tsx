@@ -23,9 +23,18 @@ function suportaCampo(): boolean {
   }
 }
 
+/**
+ * Tokens da marca convertidos de oklch para hex — o `THREE.Color` não entende `oklch()`, e
+ * resolver a variável em runtime exigiria pintar num canvas só para ler o pixel de volta.
+ * Se a paleta de `src/index.css` mudar, estes três vêm de lá:
+ *   dark  → --primary / fim do --brand-gradient / --accent
+ *   light → início e fim do --brand-gradient / --accent
+ * A terceira cor é a escura de cada tema: é ela que faz parte do campo sumir no fundo,
+ * papel que no efeito original cabia ao preto.
+ */
 const CORES: Record<'dark' | 'light', [string, string, string]> = {
-  dark: ['#7189ff', '#3074f9', '#000000'],
-  light: ['#2c64ed', '#f84242', '#ffcf03'],
+  dark: ['#737cf7', '#a670f3', '#312941'],
+  light: ['#5c5ceb', '#9152e3', '#d1c8e5'],
 };
 
 export interface AuthParticulasProps {
