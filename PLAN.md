@@ -1,97 +1,299 @@
-# Plan: retry limitado quando catálogo do ML devolve "não elegível" (vincular-catalogo)
-_Round 2 — revised by Claude after 2 rounds of Codex critique (ver PLAN-REVIEW-LOG.md)_
+# Plan: Refatoração de design e arquitetura de informação da tela Configurações
 
-Plano detalhado (tasks TDD completas, código exato, testes, commits) em
-`superpowers/plans/2026-07-15-fix-catalogo-nao-elegivel-retry.md`. Este arquivo é o resumo p/ review.
+_Locked via grill-with-docs (Ato 1) — Claude + Diego, 2026-08-28._
+_Revisado nas rodadas 1 e 2 do Ato 2 (Codex adversarial) — ver `PLAN-REVIEW-LOG.md`._
+_Modo frontend-design: **system work**. Sistema herdado: tokens oklch em `src/index.css`,
+Geist Variable, shadcn em `src/components/ui/`, primitivos `Section`/`PageHeader`,
+`src/pages/StyleGuide.tsx` como referência canônica._
 
 ## Goal
 
-O worker `vincular-catalogo` (ADR-0021) checa a elegibilidade de catálogo do ML uma única vez,
-10min após o publish. Se a resposta não for `READY_FOR_OPTIN` nem `FAMILY_DIFF`, ele grava
-`catalog_status='nao_elegivel'` e nunca mais reavalia. Confirmado ao vivo (2026-07-15): um item
-(MLB4862137331) que está gravado como `nao_elegivel` há 8 dias está, agora, `READY_FOR_OPTIN` +
-`buy_box_eligible:true` de verdade no ML — ou seja, a resposta era transitória, não definitiva.
-Sistêmico: nenhuma vinculação nova desde 17/06 (~1035 variações presas em `nao_elegivel`).
-
-Objetivo: dar mais rodadas espaçadas (backoff) antes de tratar `nao_elegivel` como definitivo, e só
-alertar o operador (ADR-0036) depois de esgotar essas rodadas.
+`/configuracoes` hoje é uma coluna `max-w-2xl` com 10 cards de peso visual idêntico, sem
+hierarquia: fiscal (Empresa ~20 campos + Imposto por origem) ocupa ~60% da altura e esmaga
+preferências de uma linha. A refatoração dá à tela uma sub-navegação por seção com rota
+própria, um idioma único de item de configuração (rótulo à esquerda / controle à direita),
+absorve `Usuários` como seção, e remove o controle que não persiste nada. **Nenhuma regra de
+negócio muda**: os mesmos hooks, as mesmas mutations, os mesmos gates, os mesmos ADRs.
 
 ## Approach
 
-1. `_shared/ml/catalogo.ts`: **uma única função pura** `decidirResultadoRodadaCatalogo(resumo, tentativaAtual)`
-   substitui o que antes eram dois branches soltos no worker — decide, nesta ordem fixa e testada:
-   - `pendente > 0` → `{ acao: 'aguardar_elegibilidade' }` (comportamento atual preservado: o worker
-     devolve 500, QStash retenta rápido/nativo — **isso sempre vence**, mesmo com `nao_elegivel` misto).
-   - senão, `nao_elegivel > 0` e ainda há tentativa sobrando → `{ acao: 'reagendar', delaySegundos, proximaTentativa }`.
-   - senão → `{ acao: 'finalizar', deveAlertar: deveAlertarCatalogoNoMatch(resumo) }`.
-   Backoff **a partir da 2ª rodada** (a 1ª é a existente, 10min): `CATALOGO_BACKOFF_SEGUNDOS = [3600, 21600, 86400, 172800]`
-   (1h, 6h, 24h, 48h). `CATALOGO_MAX_TENTATIVAS = 5` (1ª rodada existente + 4 daqui). Total até
-   desistir: 10min+1h+6h+24h+48h ≈ **3,3 dias** (recalculado com cuidado — a versão anterior deste
-   plano somava errado e chegava a 11 dias, o que atrasaria demais o alerta proativo do ADR-0036).
-2. `ResumoCatalogo` ganha campo **`sem_variation_id`** (em memória, NÃO é um valor novo de
-   `catalog_status` no banco — a linha continua gravando `'nao_elegivel'`, que já é um valor válido
-   do check constraint). Variação sem `ml_variation_id` é estrutural (nunca vai aparecer via espera)
-   → não entra na condição de retry, só em `nao_elegivel > 0` (resposta real do ML) entra.
-3. `deveAlertarCatalogoNoMatch`: passa a considerar `nao_elegivel > 0` também (hoje só olha
-   `ficha_divergente`/`sem_produto`). Continua pura/míope — quem garante que só dispara depois de
-   esgotar as rodadas é `decidirResultadoRodadaCatalogo` (chama ela só no branch `finalizar`).
-4. `_shared/queue.ts`: `VincularCatalogoJob` ganha campo `tentativa?: number`.
-   `enfileirarVinculacaoCatalogo(familiaId, delaySeconds=600, tentativa=1, retries=5)` — as chamadas
-   de **reenfileiramento explícito** (reagendar) usam `retries=2` (não 5), reduzindo a superfície de
-   fan-out por reentrega duplicada do QStash sobre um backoff que já é de negócio, não de rede.
-5. `vincular-catalogo/index.ts`: valida `tentativa` do job (`Number.isInteger(job.tentativa) &&
-   job.tentativa >= 1 ? job.tentativa : 1`), chama `decidirResultadoRodadaCatalogo`, executa a ação
-   (500 / reenfileira e retorna 200 / segue pro alerta+espelhamento existente).
-6. Alerta (`montarMensagemCatalogoNoMatch`) ganha parâmetro opcional `motivo` pra diferenciar a frase
-   entre "ficha de kit/divergente" e "elegibilidade esgotada" sem criar um sistema de template novo.
-   Filtro de cores do worker passa a incluir `catalog_status === 'nao_elegivel'` também (hoje só
-   `ficha_divergente`/`sem_produto` — sem isso, o alerta pra um caso só-`nao_elegivel` sairia com
-   lista de cores vazia).
-7. Sem migration de banco — `tentativa` viaja no payload do job; `sem_variation_id` é só contador
-   em memória, nunca persistido como string nova.
+### 1. Rotas e o guard de OAuth
+
+- `src/App.tsx:57` vira `<Route path="/configuracoes/*" element={<Configuracoes />} />`.
+  Sem o `/*`, `/configuracoes/fiscal` cai no `NotFound`.
+- **Todas** as seções são filhas, com prefixo explícito: `/configuracoes/geral`,
+  `/configuracoes/precos`, `/configuracoes/fiscal`, `/configuracoes/notificacoes`,
+  `/configuracoes/ia`, `/configuracoes/membros`. Nenhum slug de topo — `menuKeyForPath`
+  (`src/lib/menus.ts`) olha só o primeiro segmento, e um `/fiscal` de topo devolveria `null`,
+  liberando o menu por engano.
+
+**O guard de OAuth vira um componente próprio, `OAuthRedirectGate`**, e não uma condição
+dentro do layout. Motivo: o `if` de hoje (`Configuracoes.tsx:167`) roda depois de ~15 hooks;
+"colocar o guard primeiro" dentro do mesmo componente violaria as Rules of Hooks. O gate:
+
+```
+<Route path="/configuracoes/*" element={<OAuthRedirectGate><ConfiguracoesLayout /></OAuthRedirectGate>} />
+```
+
+- Usa só `useSearchParams`. Se houver `ml_conectado`, `ml_erro` ou `ml_claim`, navega para
+  **`{ pathname: '/canais', search: searchParams.toString() }`** — preservando a query, como
+  o código atual já faz. `Canais.tsx` lê esses parâmetros para chamar `confirmarConexaoML`;
+  um `<Navigate to="/canais">` sem a search mata a confirmação da conexão em silêncio.
+- Só depois do gate o layout decide a seção: slug ausente, desconhecido, ou de seção
+  invisível ao perfil → `<Navigate replace>` para a primeira seção visível. Nunca renderizar
+  campos desabilitados como fallback de permissão.
+- Sem loop: o destino é sempre um slug da mesma lista visível calculada no mesmo render, e
+  `/canais` não volta para Configurações. A garantia depende de o `MenuGuard` já ter
+  carregado o perfil e de existir ao menos uma seção visível — a seção `Geral` não tem gate,
+  então a lista nunca é vazia.
+
+### 2. Registro de seções, visibilidade e edição
+
+Um único array declarativo (`SECOES`) com `{ slug, titulo, descricao, icone, visivel,
+Componente }`. Sub-nav, roteamento e gate leem todos desse array.
+
+**Visibilidade ≠ edição, e cada seção declara as duas explicitamente.** Não existe um
+predicado global: um `podeVer` genérico que liberasse toda seção restrita ao suporte vazaria
+`Membros`, que o suporte **nunca** viu — `menus.ts:14` devolve `[...MENU_KEYS]` e
+`MENU_KEYS` não contém `usuarios`. A matriz é por seção:
+
+| Seção | Conteúdo | Quem vê | Quem edita |
+|---|---|---|---|
+| Geral | Card "Canais conectados" (link p/ `/canais`); Mostrar lucro no card do Dashboard | todos | `podeEditarConfig` |
+| Preços | Desconto de marketing; Desconto sobre concorrência; Ancorar no piso dos MercadoLíderes | todos | `podeEditarConfig` |
+| Fiscal | Imposto por origem (+ venda dentro do estado); Empresa (Identidade, Endereço, Operação fiscal, Emissão) | admin ou suporte | `podeEditarConfig` |
+| Notificações | `ConfigTelegram` | todos | `podeEditarConfig` |
+| IA | Modelo de texto; Modelo de imagem | admin ou suporte | `podeEditarConfig` |
+| Membros e acessos | a página `Usuarios` atual, sem alteração de lógica | **só admin** | `isAdmin` |
+
+**`podeEditarConfig` = `isAdmin || escopoDeSuporte === 'full'`** — a réplica exata da policy
+RLS de `configuracoes` (`20260725224000_support_access.sql:285-298`, INSERT e UPDATE exigem
+`is_admin() OR current_support_scope() = 'full'`).
+
+Isso corrige um **defeito pré-existente**, não introduz um: hoje Geral, Preços e Notificações
+não têm gate nenhum na UI, então um operador não-admin vê os controles habilitados, digita,
+o blur dispara o save, o RLS recusa — e como não há ramo de erro na tela, ele acha que salvou.
+Tudo em `/configuracoes` é admin-only no banco; a UI passa a dizer a verdade.
+
+- **Não use `canWrite()` aqui.** `canWrite()` (`support-store.ts:56`) devolve `true` para
+  qualquer membro com `org_id` — é mais permissivo que o RLS desta tabela e reproduziria o
+  mesmo defeito.
+- **Armadilha:** o escopo de suporte vem do store; ler por função pura não re-renderiza. O
+  componente usa `useSupportStore((s) => s.context)`.
+- Consequência para o operador não-admin: as seções continuam visíveis em **leitura** (ele
+  precisa saber qual desconto está valendo), com um aviso único no topo da tela dizendo que a
+  edição é do administrador — em vez de campos que aceitam digitação e descartam em silêncio.
+  Isso substitui, para o não-admin, a decisão original de "esconder a seção": esconder tudo
+  deixaria `/configuracoes` vazio, já que a tela inteira é admin-only no banco.
+- `Membros` é **admin-only para ver e para editar**, sem exceção de suporte. Isso preserva o
+  gate atual (`visibleMenus` só dá `usuarios` ao admin) e o ADR-0068, que define a gestão de
+  notificações por destinatário como ação de admin na tela Usuários. Diagnóstico de membros
+  pelo suporte, se um dia for necessário, é feature separada — não efeito colateral de um
+  refactor de layout.
+
+**Gate fiscal preservado como está.** O ADR-0135 condiciona o módulo fiscal a
+`organizations.tipo_pessoa = 'pj'` + `'fiscal' ∈ modulos_habilitados` (com constraint no
+banco), e a UI já tem `useModulosHabilitados`. Este plano **não** introduz esse gate: hoje o
+card aparece para qualquer org, e mudar isso é regra de negócio. Fica como pergunta aberta.
+
+### 3. Usuários vira seção (decisão de 2026-08-28)
+
+Motivo: o menu tem 12 itens e gestão de acesso é canonicamente uma seção de configurações.
+`Canais` **não** se move — é operação (destino do callback OAuth, reconexão de token) e vai
+ganhar peso com o E5/Shopee, conforme ADR-0077, que desenhou a UI multicanal para escalar até
+5 marketplaces.
+
+- `Usuarios.tsx` vira o `Componente` da seção `membros`. **Zero mudança na lógica da página**
+  — só perde o próprio `PageHeader`, que passa a ser o cabeçalho da seção. Nenhuma prop nova
+  obrigatória: `Usuarios.test.tsx:30` renderiza `<Usuarios />` direto e deve continuar
+  passando sem alteração. Se um dia precisar de prop, ela nasce opcional com default seguro.
+- O `lazy(() => import('./pages/Usuarios'))` sai de `App.tsx:14` e vai para o registro de
+  seções — senão fica uma declaração não usada e o ESLint reprova.
+- `NAV_ITEMS` perde a entrada `usuarios`, e o import `Users` do lucide sai junto
+  (`sidebar.tsx:2`) — import órfão é erro de lint, não aviso.
+- `MENU_KEYS`/`MenuKey`/`visibleMenus` ficam **intactos**: a chave `usuarios` continua
+  existindo e continua sendo dada só ao admin, e `menuKeyForPath('/usuarios')` continua
+  resolvendo — mexer nisso rippla no `MenuGuard`.
+- `/usuarios` continua existindo como rota, redirecionando (`replace`) para
+  `/configuracoes/membros`. O `MenuGuard` intercepta antes: admin passa e é redirecionado;
+  quem não tem a chave `usuarios` (inclusive sessão de suporte) é mandado para o primeiro
+  menu permitido, **exatamente como hoje**. Não há `navigate('/usuarios')` no código — as
+  referências vivem na rota, na sidebar e nos testes.
+
+### 4. Layout
+
+- Duas colunas: sub-nav sticky à esquerda (`w-56`), painel da seção à direita, largura de
+  leitura limitada (`max-w-3xl`) para o texto de apoio não passar de ~75 caracteres. A seção
+  `membros` usa largura cheia — é tabela, não formulário.
+- Item ativo marcado por fundo `bg-accent` + peso, seguindo o idioma do `sidebar.tsx`.
+- Abaixo de `sm:`, a sub-nav vira um `Select` no topo ("Seção: Preços ▾").
+- Espaçamento só em passos de 4px.
+- `useAliquotas()` é chamado **no layout pai**: o marcador de "alíquotas não confirmadas" na
+  sub-nav precisa existir enquanto o operador está em outra seção, e o hook só roda onde está
+  montado. Mesma `queryKey`, então o react-query dedupe com a leitura da seção Fiscal.
+
+### 5. Primitivos novos — em `src/components/configuracoes/`, não em `ui/`
+
+Ficam em `src/components/configuracoes/settings-row.tsx`. Só promovem para
+`src/components/ui/` (e para o `StyleGuide`) depois de um segundo consumidor real fora de
+Configurações — primitivo público com um único uso é API prematura.
+
+- `SettingsGroup` — card com título opcional, itens separados por `divide-y`.
+- `SettingsRow` — grid de 2 colunas: `{ titulo, descricao, children (controle), estado }`.
+  Rótulo/descrição à esquerda, controle alinhado à direita e ao topo; abaixo de `sm:` colapsa
+  para uma coluna. `htmlFor`/`id` amarrando rótulo e controle.
+- `EstadoSalvo` — `Salvando… / ✓ Salvo / erro`, com `role="status" aria-live="polite"`; o erro
+  da linha é ligado ao input por `aria-describedby` e o input recebe `aria-invalid`.
+  `CampoEmpresa` precisa ser estendido para expor `id` de erro, `aria-describedby` e
+  `aria-invalid` — hoje só renderiza um `<p>` solto.
+- **Sem card aninhado:** `ConfigTelegram` hoje retorna um `Card` próprio. Ele passa a aceitar
+  renderização sem card quando montado dentro de um `SettingsGroup`. Card dentro de card é
+  exatamente o ruído visual que esta refatoração existe para remover.
+- Alvo de toque ≥44px na linha inteira; `:focus-visible` visível em todos os controles.
+
+### 6. Estado de salvamento por linha
+
+`useSalvarEmpresaFiscal` e `useSalvarAliquotas` são mutations **compartilhadas** por vários
+campos: hoje um `isSuccess` acende o `✓ Salvo` de todas as linhas.
+
+Derivar de `mutation.variables` **não resolve**: `salvarAliquotas.mutate()` sempre envia
+`nacional`, `importado`, `ufEmpresa` e `internaPct` juntos, então "o patch contém a chave
+desta linha" é verdade para todas; e em v5 `variables` reflete só a última chamada.
+
+Solução em três partes:
+
+1. **Estado:** um mapa por campo, `Map<campo, 'salvando' | 'salvo' | 'erro'>`, alimentado por
+   `mutateAsync()` com `try/catch/finally` — não pelos callbacks do segundo argumento de
+   `mutate()`, que em v5 podem não disparar em chamadas consecutivas e deixariam a primeira
+   linha presa em "salvando".
+2. **Sequência por campo:** cada `mutateAsync` carrega um id de operação incremental por
+   campo; o `finally` só escreve no mapa se o id ainda for o mais recente daquele campo. Sem
+   isso, dois blurs seguidos **no mesmo campo** deixam o `finally` do primeiro sobrescrever o
+   resultado do segundo.
+3. **Serialização das alíquotas — corrida de dados, não só visual.** `upsertAliquotas`
+   (`useConfiguracoes.ts:39`) grava o snapshot inteiro (`nacional`, `importado`, `ufEmpresa`,
+   `internaPct`) a cada chamada. Duas chamadas resolvendo fora de ordem fazem a mais **velha**
+   sobrescrever o valor mais novo no banco — o dado fica errado mesmo com o estado visual
+   correto. Os saves de alíquota passam a ser single-flight: uma chamada em voo por vez, a
+   seguinte aguarda a anterior e reconstrói o patch a partir do estado já atualizado.
+
+### 7. Seção Fiscal
+
+- O alerta "Alíquotas não confirmadas" fica **fixo no topo da seção**, com a mesma
+  intensidade visual de hoje (borda/fundo `warning`, botão Confirmar). A trava é do
+  **ADR-0086** ("Configuração org-scoped — imposto LOUD"), que refina o ADR-0055 no ponto do
+  default silencioso: a publicação falha enquanto as alíquotas não forem confirmadas. O
+  ADR-0055 define a regra tributária em si (8%/16% por origem), não o bloqueio. O comentário
+  inline atual em `Configuracoes.tsx` cita 0055 para a trava — corrigir a citação junto.
+  Rebaixar o alerta a um selo discreto é regressão, não polimento.
+- A seção Fiscal recebe também um marcador na sub-nav enquanto não confirmadas (dado do
+  `useAliquotas` do layout pai, §4).
+- Os 4 subgrupos (Identidade, Endereço, Operação fiscal, Emissão) continuam visíveis em
+  sequência, cada um com contador de preenchimento (ex.: "Endereço · 6 de 8"). Denominador =
+  só os obrigatórios listados no ADR-0135, conferidos campo a campo contra o ADR;
+  `cfop_fora_uf_contribuinte` é opcional e fica fora. O contador é informativo — não bloqueia
+  nada, não muda validação.
+- `CampoEmpresa` mantém buffer local + patch individual no blur (ADR-0135), e a trava de
+  meia-configuração da alíquota interna (ADR-0112) segue intacta.
+
+### 8. Seção Notificações
+
+`ConfigTelegram` **não** é autosave-on-blur: tem botão explícito "Salvar configurações",
+habilitado só quando há alteração, e `config-telegram.test.tsx` trava esse comportamento. O
+botão fica, junto com "Enviar teste" e "Verificar agora". A conversão é só de moldura visual.
+Uniformizar para autosave quebraria um teste que existe por motivo: token de bot não deve ser
+gravado a cada blur.
+
+### 9. Remoções
+
+- **`Estratégia de preço`** sai. UI morta: `RadioGroup` com `defaultValue="condicional"`, sem
+  `value`, sem `onValueChange`, sem hook, sem mutation (`Configuracoes.tsx:311`;
+  `useConfiguracoes.ts` não tem hook de estratégia). O enum real é
+  `familias.estrategia_preco: 'proprio' | 'competitivo' | 'manual'`, **por família**, decidido
+  pelo motor (`queries.ts:512`) — não é config de organização, e "condicional" nem existe no
+  enum. Não contraria o ADR-0008: aquele ADR descreve a política que o motor aplica sozinho, e
+  a política não muda. Verificado de forma independente pelo Codex nas duas rodadas.
+- Permanecem por decisão explícita do Diego: `Modelo de imagem` e o card `Canais conectados`.
+
+### 10. Estados
+
+Cada seção cobre: carregando (skeleton nas linhas, não spinner de página), salvando, salvo,
+erro de salvamento por linha, e o vazio do Fiscal (nenhum campo preenchido → chamada para
+ação, não uma grade de inputs em branco).
+
+### 11. Verificação
+
+- `pnpm lint` + `pnpm test` verdes; `npx tsc -b --force` antes do push (o build local
+  incremental passa com `tsbuildinfo` velho enquanto o `tsc -b` do CI reprova).
+- Testes **novos** (não existe teste da página `Configuracoes` hoje; `config-telegram.test.tsx`
+  deve continuar passando **sem alteração**). Todos asseguram a **URL final**, não só o texto
+  renderizado:
+  1. `/configuracoes?ml_claim=X` → URL final `/canais?ml_claim=X`, com a query preservada, e
+     `confirmarConexaoML` recebe o claim.
+  2. `/configuracoes` sem slug → primeira seção visível.
+  3. Não-admin sem sessão de suporte em `/configuracoes/fiscal`, `/ia`, `/membros` → é
+     redirecionado; não vê campos desabilitados.
+  4. Sessão de suporte não-admin **vê** Fiscal e IA com controles desabilitados, e **não vê
+     `Membros`** — nem na sub-nav, nem por deep-link em `/configuracoes/membros`.
+  5. Sessão de suporte com escopo `read` não consegue editar nada, Telegram incluído.
+  6. Operador não-admin vê os valores das seções em leitura e **não consegue digitar** em
+     nenhum controle — o gate da UI bate com a policy RLS, sem save que falha em silêncio.
+  7. Salvar um campo de Empresa acende `✓ Salvo` só naquela linha.
+  8. Dois blurs concorrentes em campos diferentes produzem dois estados independentes,
+     **inclusive resolvendo fora de ordem**, e um erro num deles não apaga o sucesso do outro
+     nem deixa a outra linha presa em "salvando".
+  9. Dois blurs no **mesmo** campo: vence o mais recente; o `finally` do primeiro não
+     sobrescreve o resultado do segundo.
+  10. Alíquotas: dois saves disparados em sequência resolvendo fora de ordem deixam no banco o
+      valor do **último**, não do primeiro.
+  11. `/usuarios` como admin redireciona para `/configuracoes/membros`; como não-admin, cai no
+      `MenuGuard` e vai para o primeiro menu permitido — igual a hoje.
+  12. `Usuarios.test.tsx` continua passando sem alteração.
+- Validação de runtime com Playwright em sessão isolada, com screenshot real em 1440px e
+  360px (snapshot de acessibilidade não pega bug de layout CSS).
 
 ## Key decisions & tradeoffs
 
-- **Uma função de decisão só, não duas.** A 1ª versão deste plano tinha `decidirProximaTentativaCatalogo`
-  separado do branch de `pendente` no worker — Codex achou um bug real de ordenação nisso (família
-  com `pendente>0` E `nao_elegivel>0` misturados atrasava as pendentes pro backoff longo). Fundir tudo
-  numa função pura com ordem fixa elimina a classe inteira desse bug e fica 100% testável sem mock de
-  QStash/Supabase — mesmo padrão de `decidirAcaoCatalogo`/`decidirErroCriarAnuncio` já usado no projeto.
-- **`sem_variation_id` só em memória.** Persistir um valor novo no banco exigiria migration (o check
-  constraint não aceita); como o filtro de cores do alerta já vai incluir `nao_elegivel`, não precisa
-  de um status novo pra isso funcionar.
-- **Backoff ~3,3 dias, não ~9-11.** Não sabemos o SLA real de settle do ML, mas o propósito do
-  ADR-0036 é avisar o operador ANTES do ML pausar — um backoff de 11 dias arriscaria o alerta chegar
-  tarde demais. 3,3 dias é uma janela ampla (480x o comportamento atual de 10min) sem exagerar.
-- **`retries=2` (não 5) nos reenfileiramentos explícitos.** Mitiga (não elimina) o risco de fan-out
-  por reentrega duplicada do QStash sobre um backoff que já é de negócio.
-- **`sem_produto`/`ficha_divergente`/`family_diff` continuam sem retry.** São decisões de CONTEÚDO
-  (ficha errada, família diferente) — esperar não muda o dado, só `nao_elegivel` é "ainda não sei".
-- **Task 6 (reenfileirar as ~1035 variações já presas) fica fora da implementação** — decisão
-  operacional do Diego, não parte do código.
+| Decisão | Alternativas descartadas | Por quê |
+|---|---|---|
+| Sub-nav lateral com rota por seção | Abas horizontais; coluna única agrupada | Deep-link e escala; abas não passam de ~6 itens e somem no estreito |
+| Fiscal como seção dentro de Configurações | Rota `/fiscal` no menu; aba em `/faturamento` | Não mexe no menu nem no guard de OAuth; não exige ADR novo |
+| Rótulo/controle em duas colunas | Card por opção (hoje); lista empilhada | A coluna de controles vira eixo de varredura; o texto longo desta tela não empurra mais o input |
+| Sub-nav vira `Select` no mobile | Abas roláveis; página única com âncoras | Sempre cabe em 360px; Fiscal sozinho tornaria a página única um scroll enorme |
+| **Usuários** vira seção; **Canais** fica no menu | Mover os dois; mover só Canais; não mover nada | Encurta o menu pelo item que é config de verdade; Canais é operação (OAuth, reconexão) e cresce com o E5/Shopee (ADR-0077) |
+| Capacidade declarada por seção | Um `podeVer`/`podeEditar` global | Um predicado global que libera "seção restrita" ao suporte vaza `Membros`, que o suporte nunca viu (`MENU_KEYS` não contém `usuarios`) |
+| `podeEditarConfig` replica a policy RLS | `canWrite()`; só `isAdmin` | `canWrite()` é mais permissivo que o RLS de `configuracoes` e reproduz o save que falha em silêncio para não-admin |
+| Não-admin vê em leitura, não some com a seção | Esconder toda seção não editável | A tela inteira é admin-only no banco; esconder tudo deixaria `/configuracoes` vazio, e o operador precisa saber qual desconto está valendo |
+| `Membros` admin-only, sem exceção de suporte | Visível ao suporte em leitura | Preserva o gate atual e o ADR-0068; diagnóstico pelo suporte é feature, não efeito colateral |
+| Mapa por campo via `mutateAsync` + `finally` | `mutation.variables`; callbacks de `mutate()`; N mutations | `variables` envia todas as chaves nas alíquotas; callbacks de `mutate()` podem não disparar em chamadas consecutivas e travam a linha em "salvando" |
+| Telegram mantém botão Salvar explícito | Uniformizar para autosave-on-blur | Comportamento travado por teste; token de bot não deve gravar a cada blur |
+| Primitivos em `components/configuracoes/` | Direto em `components/ui/` | API pública com um consumidor só é prematura; promove no segundo uso |
+| Gate fiscal do ADR-0135 preservado | Aplicar o gate na seção | Mudança de regra de negócio dentro de refactor de layout |
 
-## Risks / open questions (com o que ficou ACEITO como risco conhecido, sem fix estrutural)
+**ADR:** nenhum. Layout e arquitetura de informação, reversível por commit. A movimentação de
+`Usuários` não cria nem remove permissão — a chave de menu e o gate de admin continuam iguais.
 
-- **Idempotência do opt-in sob entrega duplicada do QStash é um gap PRÉ-EXISTENTE**, não introduzido
-  por este fix — `vincularVariacoesCatalogo` já checa `catalog_listing_id` antes do POST (bloqueia o
-  pior caso: opt-in real duplicado), mas não tem lock atômico entre check e POST. Não construí
-  claim/lock transacional pra isso — seria expandir o escopo pra uma auditoria de idempotência do
-  módulo inteiro. Mitigado parcialmente (não eliminado) pelo `retries=2` no reenfileiramento.
-- **Família republicada (UPDATE) durante a janela de ~3,3 dias pode gerar 2 chains de retry em
-  paralelo** (o antigo + o novo do republish). Sem fix estrutural (exigiria geração/epoch de
-  publicação — escopo de sistema distribuído). Mitigação: o worker sempre relê `familia`/`variacoes`
-  frescos do banco (nunca usa dado stale do payload); pior caso é trabalho redundante + possível
-  alerta duplicado, e o ADR-0036 já aceita realertar em republish como "desejável".
-- Não sabemos o SLA real de settle do ML — 3,3 dias pode não ser suficiente em todos os casos
-  (aceitável: vira `nao_elegivel` definitivo + alerta, igual ao comportamento hoje, só que mais tarde).
-- Loop infinito? Não — `tentativaAtual < CATALOGO_MAX_TENTATIVAS` é estritamente decrescente até
-  false; não há caminho de código que incremente sem checar o teto.
+## Risks / open questions
+
+- O guard de OAuth é o ponto de maior risco, em dois pontos: rodar antes do redirecionamento
+  de seção **e** preservar a query. Teste §11.1 cobre os dois.
+- Pergunta aberta, **fora do escopo deste plano**: a seção Fiscal deveria respeitar o gate do
+  ADR-0135 (`tipo_pessoa = 'pj'` + módulo `fiscal`)? Hoje o cadastro aparece para qualquer
+  org, inclusive PF, que não emite nota. Se sim, é trabalho separado.
+- O contador "N de M" depende da lista de obrigatórios do ADR-0135; conferir campo a campo
+  contra o ADR, não por inferência do formulário.
+- **Defeito pré-existente encontrado durante a revisão** (`support_access.sql:285-298`): toda
+  escrita em `configuracoes` exige admin, mas Geral, Preços e Notificações não têm gate na UI
+  — o não-admin digita, o RLS recusa, e a tela não mostra erro. Este plano fecha o buraco na
+  UI. Fica a pergunta para o Diego, **fora do escopo**: a policy deveria ser afrouxada para
+  membro comum editar preferências não-sensíveis (desconto de marketing, mostrar lucro)? Se
+  sim, é mudança de regra de negócio, com ADR e migration próprios.
 
 ## Out of scope
 
-- Task 6 (remediação das ~1035 variações já presas em produção).
-- Qualquer migration de banco.
-- Mudar `decidirAcaoCatalogo` (o classificador puro em si está correto — o bug é na
-  orquestração/retry ao redor dele).
-- Lock/claim transacional pro opt-in (gap pré-existente, mais amplo que esta correção).
-- Geração/epoch de publicação pra invalidar chains de retry de republicações antigas.
+- Implementar de verdade a escolha de estratégia de preço.
+- Aplicar o gate fiscal do ADR-0135 na UI.
+- Mover `Canais` para dentro de Configurações; mexer em `/faturamento`.
+- Mudar quem pode editar a configuração do Telegram.
+- Qualquer mudança de regra de negócio: alíquotas, markup, descontos, fluxo fiscal.
+- Trocar tokens, tipografia ou paleta do design system.
