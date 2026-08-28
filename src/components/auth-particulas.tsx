@@ -63,14 +63,14 @@ export interface AuthParticulasProps {
  * WebGL2 com `EXT_color_buffer_float` — fica só o gradiente estático de fundo.
  */
 export function AuthParticulas({
-  density = 230,
+  density = 20,
   particlesScale = 0.59,
   ringRadius = 0.2,
   ringWidth = 0.006,
   ringWidth2 = 0.107,
-  ringDisplacement = 0.62,
+  ringDisplacement = 0.35,
   theme = 'dark',
-  opacity = 0.75,
+  opacity = 0.7,
 }: AuthParticulasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ativo, setAtivo] = useState(false);

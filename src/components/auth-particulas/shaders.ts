@@ -238,7 +238,7 @@ void main() {
   // mesma faixa e a tela vira manchas de um tom só em vez de elementos que se alternam.
   // O branco fica em minoria — sobre o fundo preto ele domina se vier em peso igual.
   float sorteio = vSeeds.y;
-  vec3 cor = sorteio < 0.45 ? uCorA : (sorteio < 0.80 ? uCorB : uCorC);
+  vec3 cor = sorteio < 0.45 ? uCorA : (sorteio < 0.85 ? uCorB : uCorC);
 
   // Mesma ideia do piso de tamanho: a velocidade em repouso fica em ~0.2 e sozinha deixaria
   // o campo inteiro transparente demais para ser percebido.
