@@ -234,8 +234,11 @@ void main() {
   float forma = 1.0 - smoothstep(-0.02, 0.04, d);
   if (forma <= 0.001) discard;
 
-  float m = sn(vLocal * 2.0, uTime * 0.5) * 0.5 + 0.5;
-  vec3 cor = mix(mix(uCorA, uCorB, smoothstep(0.0, 0.55, m)), uCorC, smoothstep(0.5, 1.0, m));
+  // A cor sai da semente da partícula, não de ruído espacial: com ruído, vizinhas caem na
+  // mesma faixa e a tela vira manchas de um tom só em vez de elementos que se alternam.
+  // O branco fica em minoria — sobre o fundo preto ele domina se vier em peso igual.
+  float sorteio = vSeeds.y;
+  vec3 cor = sorteio < 0.45 ? uCorA : (sorteio < 0.80 ? uCorB : uCorC);
 
   // Mesma ideia do piso de tamanho: a velocidade em repouso fica em ~0.2 e sozinha deixaria
   // o campo inteiro transparente demais para ser percebido.

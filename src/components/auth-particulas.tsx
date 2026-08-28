@@ -26,15 +26,15 @@ function suportaCampo(): boolean {
 /**
  * Tokens da marca convertidos de oklch para hex — o `THREE.Color` não entende `oklch()`, e
  * resolver a variável em runtime exigiria pintar num canvas só para ler o pixel de volta.
- * Se a paleta de `src/index.css` mudar, estes três vêm de lá:
- *   dark  → --primary / fim do --brand-gradient / --accent
- *   light → início e fim do --brand-gradient / --accent
- * A terceira cor é a escura de cada tema: é ela que faz parte do campo sumir no fundo,
- * papel que no efeito original cabia ao preto.
+ * Os dois primeiros vêm de `src/index.css`: --primary e o fim do --brand-gradient.
+ *
+ * O terceiro é o contraste puro contra o fundo do tema — branco no dark, quase-preto no
+ * light. Sem ele o campo inteiro fica na mesma faixa de violeta e some no fundo preto do
+ * shell de auth; é o que dá o brilho que faz o efeito aparecer.
  */
 const CORES: Record<'dark' | 'light', [string, string, string]> = {
-  dark: ['#737cf7', '#a670f3', '#312941'],
-  light: ['#5c5ceb', '#9152e3', '#d1c8e5'],
+  dark: ['#737cf7', '#a670f3', '#ffffff'],
+  light: ['#5c5ceb', '#9152e3', '#241b30'],
 };
 
 export interface AuthParticulasProps {
@@ -70,7 +70,7 @@ export function AuthParticulas({
   ringWidth2 = 0.107,
   ringDisplacement = 0.62,
   theme = 'dark',
-  opacity = 0.3,
+  opacity = 0.75,
 }: AuthParticulasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [ativo, setAtivo] = useState(false);
