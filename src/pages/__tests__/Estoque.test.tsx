@@ -198,13 +198,19 @@ describe('Estoque', () => {
     expect(screen.getByText('Protetor Solar')).toBeInTheDocument();
   });
 
+  // `statusUpdatePorProduto` só marca "erro" dentro de uma janela de 7 dias
+  // (`src/lib/estoque-update-status.ts`), e mede contra `new Date()`. Data fixa aqui vira
+  // bomba-relógio: o caso do erro passou até 2026-08-28T10:05Z e reprovou o CI da main a
+  // partir daí, exatamente 7 dias depois do valor que estava escrito. Sempre relativo.
+  const agoraMenos = (minutos: number) => new Date(Date.now() - minutos * 60_000).toISOString();
+
   // Achado 2026-08-21: o badge "Atualizando…" só sumia — sem toast nem invalidação da lista
   // expandida do card, o operador ficava sem saber se tinha dado certo (relato do Diego).
   it('família sai de "atualizando" sem virar erro: toast de sucesso + invalida a lista de variações do card', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
     famRowsMock.mockReturnValue([{
-      codigo_pai: '00000004', status: 'publicando', operacao: 'UPDATE', criado_em: '2026-08-21T10:00:00Z',
+      codigo_pai: '00000004', status: 'publicando', operacao: 'UPDATE', criado_em: agoraMenos(5),
     }]);
     render(
       <QueryClientProvider client={qc}>
@@ -225,7 +231,7 @@ describe('Estoque', () => {
   it('família sai de "atualizando" virando "erro": sem toast de sucesso (já tem o badge vermelho próprio)', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     famRowsMock.mockReturnValue([{
-      codigo_pai: '00000004', status: 'publicando', operacao: 'UPDATE', criado_em: '2026-08-21T10:00:00Z',
+      codigo_pai: '00000004', status: 'publicando', operacao: 'UPDATE', criado_em: agoraMenos(5),
     }]);
     render(
       <QueryClientProvider client={qc}>
@@ -235,7 +241,7 @@ describe('Estoque', () => {
     await screen.findByText('Atualizando…');
 
     famRowsMock.mockReturnValue([{
-      codigo_pai: '00000004', status: 'erro', operacao: 'UPDATE', criado_em: '2026-08-21T10:05:00Z',
+      codigo_pai: '00000004', status: 'erro', operacao: 'UPDATE', criado_em: agoraMenos(1),
     }]);
     await qc.refetchQueries({ queryKey: QK.familiasNaoPublicadas });
 
