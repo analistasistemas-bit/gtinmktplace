@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Layers, ListChecks, Settings, Package, Scale, Wallet, Receipt, Users, Plug, Boxes, Activity } from 'lucide-react';
+import { LayoutDashboard, Layers, ListChecks, Settings, Package, Scale, Wallet, Receipt, Plug, Boxes, Activity } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/ui/logo';
 import { useProfile } from '@/hooks/useProfile';
@@ -25,7 +25,6 @@ export const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutDashboar
   { to: '/viabilidade', label: 'Viabilidade', icon: Scale, end: false, key: 'viabilidade' },
   { to: '/canais', label: 'Canais', icon: Plug, end: false, key: 'canais' },
   { to: '/configuracoes', label: 'Configurações', icon: Settings, end: false, key: 'configuracoes' },
-  { to: '/usuarios', label: 'Usuários', icon: Users, end: false, key: 'usuarios' },
 ];
 
 export function BrandMark() {

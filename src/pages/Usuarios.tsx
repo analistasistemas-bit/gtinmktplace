@@ -72,7 +72,12 @@ function MenuChecklist({ value, onChange, disabled }: { value: string[]; onChang
   );
 }
 
-export default function Usuarios() {
+/**
+ * `semCabecalho`: montada como a seção "Membros e acessos" de /configuracoes, que já traz o
+ * próprio título e o próprio padding. Opcional e com default seguro — a página continua
+ * idêntica quando renderizada sozinha.
+ */
+export default function Usuarios({ semCabecalho = false }: { semCabecalho?: boolean } = {}) {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -104,19 +109,28 @@ export default function Usuarios() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl p-4 lg:p-6">
-      <PageHeader
-        title="Usuários"
-        subtitle="Convide membros e defina quais menus cada um acessa."
-        actions={
-          <>
-            <Button asChild variant="outline">
-              <Link to="/suporte"><History aria-hidden="true" />Histórico de suporte</Link>
-            </Button>
-            <Button onClick={() => setInviteOpen(true)}>Convidar usuário</Button>
-          </>
-        }
-      />
+    <div className={semCabecalho ? '' : 'mx-auto max-w-4xl p-4 lg:p-6'}>
+      {semCabecalho ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline">
+            <Link to="/suporte"><History aria-hidden="true" />Histórico de suporte</Link>
+          </Button>
+          <Button onClick={() => setInviteOpen(true)}>Convidar usuário</Button>
+        </div>
+      ) : (
+        <PageHeader
+          title="Usuários"
+          subtitle="Convide membros e defina quais menus cada um acessa."
+          actions={
+            <>
+              <Button asChild variant="outline">
+                <Link to="/suporte"><History aria-hidden="true" />Histórico de suporte</Link>
+              </Button>
+              <Button onClick={() => setInviteOpen(true)}>Convidar usuário</Button>
+            </>
+          }
+        />
+      )}
 
       <Card className="mt-4 overflow-hidden">
         <Table>
