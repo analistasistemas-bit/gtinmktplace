@@ -2,6 +2,23 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fundo de partículas nas telas de auth (ADR-0138) — 2026-08-28
+
+**Implementado.** ADR em `docs/decisions/0138-particulas-gpgpu-nas-telas-de-auth.md`.
+
+- [x] Campo GPGPU em Three.js no `AuthShell` (login, reset-senha, definir-senha): estado das
+  partículas numa textura float em ping-pong, `gl_Points` com SDF de retângulo arredondado.
+- [x] Anel que persegue o cursor com lerp 0.02 (o atraso é o efeito) e vaga por ruído sem ponteiro.
+- [x] `three` por `import()` dinâmico atrás de teste de WebGL2 + `EXT_color_buffer_float` —
+  chunk próprio de ~131KB gzip, fora do bundle principal.
+- [x] Cores dos tokens da marca (`--primary`, fim do `--brand-gradient`) mais branco para
+  contraste no fundo dark.
+- [x] Máscara radial `.auth-particulas` contendo o campo no miolo, irmã da do `.auth-grid`.
+- [x] `prefers-reduced-motion` → quadro estático; < 768px → metade da densidade e sem ponteiro;
+  sem WebGL2 → gradiente estático.
+- [x] Teste das partes puras (Poisson-disk e ruído do passeio) em
+  `src/components/__tests__/auth-particulas.test.ts`.
+
 ## Sonar por EAN — cobertura de fichas de catálogo (ADR-0136) — 2026-08-27
 
 **Implementado.** ADR em `docs/decisions/0136-sonar-ean-cobertura-de-fichas-de-catalogo.md`
