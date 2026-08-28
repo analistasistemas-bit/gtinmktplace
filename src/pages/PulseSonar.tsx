@@ -28,22 +28,20 @@ import {
 } from '@/lib/sonar-buscas-recentes';
 import { calcularVereditoAnuncios, contextoNichoAnuncios } from '@/lib/veredito-sonar';
 import {
-  fetchCruzamentoEan, fetchSonarPorEan, fetchVendasSonar, fetchVisitasSonar, itensDaAmostra,
+  fetchCruzamentoEan, fetchVendasSonar, fetchVisitasSonar, itensDaAmostra,
   linkDoAnuncio, normalizarSerieVisitas, passosProgresso,
-  type CruzamentoEan, type EtapaProgresso, type ItemVendasSonar, type OfertaEan,
-  type PainelVendasSonar, type RaioXNicho, type ResultadoEanCatalogado, type VisitasAnuncio,
+  type CruzamentoEan, type EtapaProgresso, type ItemVendasSonar,
+  type PainelVendasSonar, type RaioXNicho, type VisitasAnuncio,
 } from '@/lib/sonar';
 import {
   aplicarFiltrosAnuncios, temFiltroAnunciosAtivo, FILTROS_ANUNCIOS_VAZIOS, type FiltrosAnuncios,
 } from '@/lib/sonar-filtros';
-import { BorderTrail } from '@/components/ui/border-trail';
-import { Logo } from '@/components/ui/logo';
-import { calcularTarifaML } from '@/lib/tarifa';
-import { useAliquotas } from '@/hooks/useConfiguracoes';
 import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
 
-// Detecta EAN/GTIN no campo de busca (ADR-0127 Errata 1) — espelho de
-// supabase/functions/_shared/pulse/entrada.ts (regex Deno não é importável no bundle Vite).
+// Detecta EAN/GTIN no campo de busca — espelho de supabase/functions/_shared/pulse/entrada.ts
+// (regex Deno não é importável no bundle Vite). Desde o ADR-0140 não decide MAIS o caminho da
+// consulta (EAN e termo percorrem o mesmo pipeline): decide só se há GTIN para cruzar com o
+// catálogo da org.
 const EAN_RE = /^\d{8,14}$/;
 
 function SonarProgresso({ passos }: { passos: EtapaProgresso[] }) {
@@ -180,150 +178,26 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
   );
 }
 
-// Busca por EAN (ADR-0127 Errata 1): produto específico, não nicho. O lookup oficial de catálogo
-// é grátis; "vendidos" só entra sob escolha explícita do operador, porque usa Apify (tem custo).
-function SonarEanEscolha({ ean, onEscolher }: { ean: string; onEscolher: (comVendas: boolean) => void }) {
-  return (
-    <Card className="max-w-md p-4">
-      <p className="mb-3 text-sm font-medium">Como consultar o EAN {ean}?</p>
-      <div className="flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={() => onEscolher(false)}
-          className="flex items-center justify-between gap-3 rounded-lg border p-3 text-left hover:bg-accent"
-        >
-          <div>
-            <div className="text-sm font-medium">Consultar grátis</div>
-            <div className="text-xs text-muted-foreground">sem número de vendidos</div>
-          </div>
-          <Badge variant="outline" className="border-success/40 text-success">grátis</Badge>
-        </button>
-        <button
-          type="button"
-          onClick={() => onEscolher(true)}
-          className="flex items-center justify-between gap-3 rounded-lg border p-3 text-left hover:bg-accent"
-        >
-          <div>
-            <div className="text-sm font-medium">Consultar com vendidos</div>
-            <div className="text-xs text-muted-foreground">usa dados pagos — tem custo por consulta</div>
-          </div>
-          <Badge variant="outline" className="border-warning/40 text-warning">tem custo</Badge>
-        </button>
-      </div>
-    </Card>
-  );
-}
-
-// Resultado da busca por EAN: view PRÓPRIA e enxuta — NÃO reaproveita SonarVendas/RaioXBarra/
-// VereditoSonar (conceitos de NICHO: ticket médio, lojas oficiais, "vencedor do nicho" não fazem
-// sentido para 1 produto já identificado pelo EAN).
 /**
- * Espera da consulta por EAN. Três skeletons cinzentos não diziam o que estava acontecendo — e a
- * consulta pode passar de um minuto quando o EAN é novo (sem cache). Aqui a marca fica visível
- * pulsando, a trilha corre na borda enquanto durar, e o texto diz a etapa.
+ * "Eu já vendo isto?" (ADR-0127 Errata 2). A ausência também informa — produto que não está no
+ * catálogo é oportunidade nova, e o operador precisa ver isso dito, não deduzido de um espaço em
+ * branco. É a única informação da view antiga por EAN que a tela por termo não tem.
+ *
+ * ADR-0140 D-3: as duas metades têm confiabilidade DIFERENTE e a tela não pode tratá-las igual.
+ * `minhas` cruza `variacoes.gtin` com o EAN — leitura local exata, sob RLS, sem Apify: a ausência
+ * dela é afirmação válida. `no_radar` cruza por `catalog_product_id`, e desde que a consulta por
+ * EAN passou a nascer da busca (e não do lookup de catálogo) esses ids vêm só do que a amostra
+ * trouxer — medido em 28/08: 7 de 20 anúncios. Por isso o Radar **só é afirmado no positivo**:
+ * achou, escreve; não achou, cala. Escrever "não está no Radar" a partir de uma amostra que
+ * sabidamente não tem 13 dos 20 ids seria a mesma mentira que a regra LOUD proíbe em imposto e
+ * visitas — ausência de dado nunca vira afirmação de ausência do fato.
  */
-export function SonarEanCarregando({ ean, comVendas }: { ean: string; comVendas: boolean }) {
-  return (
-    <BorderTrail active radius={12}>
-      <div
-        role="status"
-        aria-live="polite"
-        className="relative z-[2] flex flex-col items-center gap-3 rounded-xl border bg-card px-6 py-12 text-center"
-      >
-        <Logo className="animate-pulse" symbolClassName="h-9 w-9" wordmarkClassName="text-lg" />
-        <p className="text-sm font-medium">Consultando o EAN {ean} no Mercado Livre</p>
-        <p className="max-w-md text-xs text-muted-foreground">
-          {comVendas
-            ? 'Lendo a ficha do catálogo e buscando os vendidos. A busca de vendidos é a parte lenta — pode levar alguns minutos.'
-            : 'Lendo a ficha do catálogo e as ofertas ativas. Da segunda vez o mesmo EAN responde na hora.'}
-        </p>
-      </div>
-    </BorderTrail>
-  );
-}
-
-/**
- * "Se eu vender pelo preço do mercado, quanto sobra?" (ADR-0127 Errata 2) — a pergunta que a
- * consulta por EAN existia sem responder. Uma chamada só, no menor preço ativo: é o piso que o
- * analista teria de bater para entrar. Reusa `calcular-tarifa-ml`, que já é a fonte oficial de
- * comissão/frete do app e já tem cache por (org, categoria, preço).
- * O frete sai das dimensões DEFAULT do ML — o produto não é nosso, não temos as reais.
- */
-function SonarEanLiquido({ preco, categoriaMlId }: { preco: number; categoriaMlId: string }) {
-  const { data: tarifa, isLoading } = useQuery({
-    queryKey: ['pulse', 'sonar-ean-tarifa', categoriaMlId, preco],
-    queryFn: () => calcularTarifaML(preco, categoriaMlId),
-    staleTime: Infinity,
-  });
-  if (isLoading) {
-    return <Skeleton className="mb-3 h-12 w-full max-w-xl rounded-lg" />;
-  }
-  // `null` = a edge recusou (sem conexão ML, categoria sem tabela). Silêncio é melhor que um
-  // número inventado numa tela de decisão de preço.
-  if (!tarifa) return null;
-  return (
-    <div className="mb-3 rounded-lg border bg-muted/30 px-3 py-2 text-xs">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1">
-        <span className="font-medium">Vendendo a {fmtBRL(preco)}</span>
-        <span className="text-muted-foreground">
-          comissão <strong className="font-semibold text-foreground">{fmtBRL(tarifa.classico.comissao)}</strong>
-        </span>
-        <span className="text-muted-foreground">
-          frete <strong className="font-semibold text-foreground">{fmtBRL(tarifa.frete)}</strong>
-        </span>
-        <span className="text-success">
-          você recebe <strong className="font-semibold">{fmtBRL(tarifa.classico.recebe)}</strong>
-        </span>
-        <span className="text-muted-foreground">
-          (Premium: {fmtBRL(tarifa.premium.recebe)})
-        </span>
-      </div>
-      <SonarEanImposto preco={preco} recebe={tarifa.classico.recebe} />
-    </div>
-  );
-}
-
-/**
- * Imposto sobre o líquido (ADR-0055). O produto do Sonar não é nosso: não dá para saber a origem,
- * e presumir alíquota é o que a regra LOUD proíbe. Então mostra as DUAS, com os percentuais
- * configurados da org — quem lê escolhe a linha do seu caso. Alíquota não confirmada não vira
- * número: vira o aviso de ir confirmar.
- */
-export function SonarEanImposto({ preco, recebe }: { preco: number; recebe: number }) {
-  const { data: aliquotas, isLoading, isError } = useAliquotas();
-  if (isLoading) return null;
-  if (isError || !aliquotas?.confirmada) {
-    return (
-      <div className="mt-1.5 border-t pt-1.5 text-muted-foreground">
-        Imposto fora da conta: confirme as alíquotas da organização em Configurações.
-      </div>
-    );
-  }
-  const liquido = (pct: number) => fmtBRL(recebe - preco * (pct / 100));
-  return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-5 gap-y-1 border-t pt-1.5 text-muted-foreground">
-      <span>menos imposto —</span>
-      <span>
-        nacional {aliquotas.nacional}%: <strong className="font-semibold text-foreground">{liquido(aliquotas.nacional)}</strong>
-      </span>
-      <span>
-        importado {aliquotas.importado}%: <strong className="font-semibold text-foreground">{liquido(aliquotas.importado)}</strong>
-      </span>
-    </div>
-  );
-}
-
-/**
- * "Eu já vendo isto?" (ADR-0127 Errata 2). A ausência também informa — produto que não está nem no
- * catálogo nem no Radar é oportunidade nova, e o operador precisa ver isso dito, não deduzido de
- * um espaço em branco.
- */
-function SonarEanCruzamento({ cruzamento }: { cruzamento: CruzamentoEan }) {
+export function SonarEanCruzamento({ cruzamento }: { cruzamento: CruzamentoEan }) {
   const { minhas, no_radar } = cruzamento;
   if (minhas.length === 0 && !no_radar) {
     return (
       <p className="mb-3 text-xs text-muted-foreground">
-        Produto novo para a operação: não está no seu catálogo nem no Radar.
+        Produto novo para o seu catálogo: nenhuma variação sua tem este GTIN.
       </p>
     );
   }
@@ -339,149 +213,6 @@ function SonarEanCruzamento({ cruzamento }: { cruzamento: CruzamentoEan }) {
           Já está no seu Radar{no_radar.status !== 'ativo' ? ` (${no_radar.status})` : ''}
         </span>
       )}
-    </div>
-  );
-}
-
-export function SonarEanResultado({ resp, cruzamento, visitas, onNovaConsulta }: {
-  resp: ResultadoEanCatalogado;
-  cruzamento?: CruzamentoEan;
-  /** `undefined` = ainda carregando; `null` no item = falha da chamada; `total: 0` = zero medido. */
-  visitas?: Record<string, VisitasAnuncio | null>;
-  onNovaConsulta: () => void;
-}) {
-  // Menor preço ATIVO do produto: é o número contra o qual o analista teria de competir, e é
-  // sobre ele que o líquido por venda faz sentido.
-  const precos = resp.ofertas.map((o) => o.preco).filter((p): p is number => p != null && p > 0);
-  const menorPreco = precos.length ? Math.min(...precos) : null;
-  // Coluna "Ficha" só com mais de uma ficha consultada (ADR-0136 D-2): com uma só ela seria ruído,
-  // e é o critério de não-regressão do caso de hoje (EAN de ficha única).
-  const multiplasFichas = resp.fichas_consultadas > 1;
-  const colunas: Column<OfertaEan>[] = [
-    {
-      key: 'preco', header: 'Preço', className: 'tabular-nums',
-      cell: (o) => (o.preco != null ? fmtBRL(o.preco) : '—'),
-      sortValue: (o) => o.preco,
-    },
-    ...(multiplasFichas ? [{
-      key: 'ficha', header: 'Ficha',
-      cell: (o: OfertaEan) => {
-        const nome = o.produto_nome ?? o.product_id ?? '—';
-        return <span className="block max-w-[12rem] truncate" title={nome}>{nome}</span>;
-      },
-      sortValue: (o: OfertaEan) => o.produto_nome ?? o.product_id,
-    } as Column<OfertaEan>] : []),
-    {
-      // Nome resolvido na edge (1 chamada por vendedor distinto). Sem perfil legível, cai no id:
-      // um número identifica menos, mas ainda é melhor que campo vazio.
-      key: 'vendedor', header: 'Vendedor',
-      cell: (o) => o.vendedor_nome ?? (o.seller_id != null ? String(o.seller_id) : '—'),
-      sortValue: (o) => o.vendedor_nome ?? o.seller_id,
-    },
-    {
-      key: 'frete', header: 'Frete grátis',
-      cell: (o) => (o.frete_gratis ? <Badge variant="outline">Sim</Badge> : '—'),
-    },
-    {
-      key: 'full', header: 'Full',
-      cell: (o) => (o.full ? <Badge variant="outline">FULL</Badge> : '—'),
-    },
-    {
-      // Demanda real da oferta, sem passar pela Apify: mesma edge (e mesmo cache por item) que a
-      // tabela do nicho usa. `total: 0` é zero MEDIDO e se escreve 0 — só ausência vira "—".
-      key: 'visitas', header: 'Visitas 30d', className: 'tabular-nums',
-      cell: (o) => {
-        if (!o.item_id) return '—';
-        if (!visitas) return <span className="text-muted-foreground">…</span>;
-        const v = visitas[o.item_id];
-        return v ? fmtInt(v.total) : <span title="Não foi possível medir as visitas deste anúncio">—</span>;
-      },
-      sortValue: (o) => (o.item_id ? visitas?.[o.item_id]?.total ?? null : null),
-    },
-    {
-      key: 'vendidos', header: 'Vendidos', className: 'tabular-nums',
-      cell: (o) => (o.vendidos != null
-        ? <span title="Acumulado da vida do anúncio, faixa piso do ML">+{fmtInt(o.vendidos)}</span>
-        // Tooltip depende de resp.com_vendas: "—" sozinho não distingue "não paguei por isso" de
-        // "paguei e a Apify não capturou este anúncio" — a operadora precisa saber qual dos dois.
-        : <span title={resp.com_vendas
-          ? 'Consultado, mas este anúncio ficou fora da amostra capturada'
-          : 'Consulta grátis: vendidos não foi consultado'}>—</span>),
-      sortValue: (o) => o.vendidos,
-    },
-  ];
-  return (
-    <div>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="text-sm font-medium">{resp.nome_produto ?? `Produto ${resp.product_id}`}</div>
-          {/* O badge qualifica a CONSULTA, não o produto: colado no nome, "grátis" era lido como
-              se o item fosse de graça. Fica na linha dos metadados, com o rótulo completo. */}
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <span>
-              EAN {resp.ean} ·{' '}
-              {multiplasFichas
-                // ADR-0136 D-3: com mais de uma ficha, "N oferta(s)" sozinho lia como se fosse um
-                // produto só — o operador precisa saber que são fichas diferentes do catálogo. O
-                // EAN continua na linha: é o que confirma que a consulta bateu no produto certo.
-                ? `${resp.ofertas.length} oferta${resp.ofertas.length === 1 ? '' : 's'} em ${resp.fichas_consultadas} fichas de catálogo`
-                : `${resp.ofertas.length} oferta${resp.ofertas.length === 1 ? '' : 's'}`}
-            </span>
-            {resp.com_vendas ? (
-              <Badge variant="outline" className="border-warning/40 text-warning">consulta com vendidos</Badge>
-            ) : (
-              <Badge variant="outline" className="border-success/40 text-success">consulta grátis</Badge>
-            )}
-          </div>
-        </div>
-        <Button variant="outline" size="sm" onClick={onNovaConsulta}>Nova consulta</Button>
-      </div>
-      {/* Já vinha na resposta (e no cache) desde a Errata 1, só não era renderizada: é o que
-          confirma que o EAN bateu na ficha certa, além do nome. */}
-      {resp.descricao_catalogo && (
-        <p className="mb-3 max-w-3xl text-xs leading-relaxed text-muted-foreground">
-          {resp.descricao_catalogo}
-        </p>
-      )}
-      {cruzamento && <SonarEanCruzamento cruzamento={cruzamento} />}
-      {resp.categoria_ml_id && menorPreco != null && (
-        <SonarEanLiquido preco={menorPreco} categoriaMlId={resp.categoria_ml_id} />
-      )}
-      {resp.vendas_indisponivel && (
-        <p className="mb-2 text-xs text-warning">
-          Vendidos indisponível nesta consulta (fonte de vendas não configurada, ou a busca falhou).
-        </p>
-      )}
-      {/* ADR-0136 D-1: teto de 5 fichas por EAN. Corte silencioso é o que este ADR corrige — se o
-          ML achou mais fichas do que o teto consultou, isso precisa aparecer na tela. */}
-      {resp.fichas_encontradas > resp.fichas_consultadas && (
-        <p className="mb-2 text-xs text-warning">
-          O Mercado Livre retornou {resp.fichas_encontradas} fichas de catálogo para este EAN;
-          apenas {resp.fichas_consultadas} foram consultadas (teto por consulta).
-        </p>
-      )}
-      <DataTable
-        columns={colunas}
-        rows={resp.ofertas}
-        rowKey={(o) => o.item_id ?? `${o.seller_id}-${o.preco}`}
-        empty={<EmptyState icon={Package} title="Sem ofertas ativas para este produto." />}
-      />
-      {/* ADR-0136 D-4: nota de escopo permanente, não condicional. Anúncio fora do catálogo do ML
-          (avulso, não vinculado a nenhuma ficha) é inalcançável pela API oficial — /items/{id} de
-          terceiro e /sites/MLB/search devolvem 403 sempre (ADR-0119). Para EANs com muitos avulsos
-          esta tabela vai continuar mostrando menos que a busca do site, e isso é esperado: o link
-          leva para onde o operador vê o mercado inteiro. */}
-      <p className="mt-3 text-xs text-muted-foreground">
-        Anúncios fora do catálogo do Mercado Livre não entram nesta consulta.{' '}
-        <a
-          href={`https://lista.mercadolivre.com.br/${resp.ean}`}
-          target="_blank"
-          rel="noreferrer"
-          className="underline underline-offset-2 hover:text-foreground"
-        >
-          Ver todos os anúncios deste EAN no site
-        </a>
-      </p>
     </div>
   );
 }
@@ -623,11 +354,6 @@ export default function PulseSonar() {
   // Filtros da tabela (D13): 100% client-side, estado local — sem URL/localStorage nesta entrega.
   const [filtros, setFiltros] = useState<FiltrosAnuncios>(FILTROS_ANUNCIOS_VAZIOS);
 
-  // Busca por EAN (ADR-0127 Errata 1): eanPendente = EAN detectado, aguardando escolha
-  // grátis/com vendidos; eanBuscado = escolha feita, dispara a query abaixo.
-  const [eanPendente, setEanPendente] = useState<string | null>(null);
-  const [eanBuscado, setEanBuscado] = useState<{ ean: string; comVendas: boolean } | null>(null);
-
   // Query PRIMÁRIA (ADR-0127/D3): a tabela nasce da Apify. retry desligado — cada tentativa
   // sem cache dispara um run pago (US$ 0,10).
   const { data: vendas, isFetching, isError, error, refetch } = useQuery({
@@ -638,57 +364,6 @@ export default function PulseSonar() {
     retry: false,
   });
 
-  // retry desligado pelo mesmo motivo: "com vendidos" dispara Apify (custo por tentativa).
-  const {
-    data: resultadoEan, isFetching: eanCarregando, isError: eanErro, error: eanErroObj, refetch: refetchEan,
-  } = useQuery({
-    queryKey: ['pulse', 'sonar-ean', eanBuscado?.ean, eanBuscado?.comVendas],
-    queryFn: () => fetchSonarPorEan(eanBuscado!.ean, eanBuscado!.comVendas),
-    enabled: !!eanBuscado,
-    staleTime: Infinity,
-    retry: false,
-  });
-
-  // Leitura local (RLS), sem ML: chave pelo product_id porque o cruzamento com o Radar é por
-  // ficha de catálogo, não pelo EAN digitado. Falha aqui não derruba o resultado do EAN — o bloco
-  // some e o resto da tela continua.
-  const eanCatalogado = resultadoEan?.conectado && resultadoEan.catalogado ? resultadoEan : null;
-  // Todas as fichas, não só a primeira (ADR-0136): o produto pode estar no Radar sob qualquer uma
-  // delas. A lista de ids entra na queryKey — senão o cache do react-query poderia servir o
-  // cruzamento de um EAN anterior com fichas diferentes.
-  const fichaIdsEan = useMemo(
-    // Front e edge deployam separado neste projeto: se o front subir antes do `pulse-sonar-ean`, a
-    // resposta ainda não tem `fichas`. Cair para o `product_id` do topo (comportamento anterior) —
-    // lista vazia faria `.in(...)` não casar nada e a tela diria "produto novo" para um produto que
-    // está no Radar.
-    () => eanCatalogado?.fichas?.map((f) => f.product_id)
-      ?? (eanCatalogado ? [eanCatalogado.product_id] : []),
-    [eanCatalogado],
-  );
-  const { data: cruzamentoEan } = useQuery({
-    queryKey: ['pulse', 'sonar-ean-cruzamento', eanCatalogado?.ean, fichaIdsEan],
-    queryFn: () => fetchCruzamentoEan(eanCatalogado!.ean, fichaIdsEan),
-    enabled: !!eanCatalogado,
-    staleTime: 60_000,
-  });
-
-  // Visitas 30d das ofertas do EAN: mesma edge da tabela do nicho, que já tem cache global por
-  // item (dado público). Não passa pela Apify — vale também na consulta grátis.
-  const itemIdsEan = useMemo(
-    () => (eanCatalogado?.ofertas ?? []).map((o) => o.item_id).filter((id): id is string => !!id),
-    [eanCatalogado],
-  );
-  const { data: visitasEanResp } = useQuery({
-    queryKey: ['pulse', 'sonar-ean-visitas', itemIdsEan],
-    // Teto 40: união de até 5 fichas (ADR-0136) pode passar de 20 ofertas. Cada item é 1 chamada
-    // ao ML na edge (que já lotea a concorrência) — 40 é folga sobre o pior caso medido sem virar
-    // fan-out descontrolado.
-    queryFn: () => fetchVisitasSonar(itemIdsEan.slice(0, 40)),
-    enabled: itemIdsEan.length > 0,
-    staleTime: Infinity,
-  });
-  const visitasEan = visitasEanResp?.conectado ? visitasEanResp.por_item : undefined;
-
   const itens = useMemo(
     () => (vendas?.configurado ? itensDaAmostra(vendas) : []),
     [vendas],
@@ -697,6 +372,25 @@ export default function PulseSonar() {
     () => itens.map((i) => i.item_id).filter((x): x is string => x != null),
     [itens],
   );
+
+  // ADR-0140 D-1: EAN não tem mais caminho próprio — percorre o mesmo pipeline do termo. O que
+  // sobra de específico é o cruzamento com o catálogo da org, que só faz sentido quando o que foi
+  // buscado É um GTIN (por termo não há o que cruzar).
+  const eanBuscado = termoBuscado && EAN_RE.test(termoBuscado) ? termoBuscado : null;
+  // Ids de catálogo que a amostra trouxer (D-3): são parciais por natureza — a maioria dos
+  // anúncios da busca não é de catálogo. Servem para ACHAR o produto no Radar, nunca para negar
+  // que ele esteja lá. Entram na queryKey porque mudam com a amostra.
+  const catalogIdsAmostra = useMemo(
+    () => [...new Set(itens.map((i) => i.catalog_product_id).filter((x): x is string => !!x))],
+    [itens],
+  );
+  // Leitura local (RLS), sem ML. Falha aqui não derruba o resultado — o bloco some e o resto fica.
+  const { data: cruzamentoEan } = useQuery({
+    queryKey: ['pulse', 'sonar-ean-cruzamento', eanBuscado, catalogIdsAmostra],
+    queryFn: () => fetchCruzamentoEan(eanBuscado!, catalogIdsAmostra),
+    enabled: !!eanBuscado && itens.length > 0,
+    staleTime: 60_000,
+  });
 
   // Visitas (D3): dispara quando a lista de anúncios chega. Grátis (API oficial) — retry ok.
   const { data: visitas, isFetching: visitasCarregando } = useQuery({
@@ -742,19 +436,12 @@ export default function PulseSonar() {
     return () => clearTimeout(t);
   }, [carregando]);
 
+  // ADR-0140 D-1/D-2: EAN não ramifica mais. Vira `termoBuscado` como qualquer termo — a busca do
+  // ML por código de barras já devolve só os anúncios daquele produto (medido: 20 de 24 anúncios
+  // para o EAN do ADR-0136, contra 1 pelo lookup de catálogo). Sem escolha grátis/paga: toda
+  // consulta é a mesma, e o custo é o mesmo da busca por termo.
   const garimpar = (t: string) => {
     setTermo(t);
-    // EAN é produto específico (não nicho): não dispara a busca direto, mostra a escolha
-    // grátis/com vendidos primeiro — o registro em "buscas recentes" acontece só quando o
-    // operador escolher (escolherConsultaEan), que é quando a consulta de fato roda.
-    if (EAN_RE.test(t)) {
-      setTermoBuscado(null);
-      setEanBuscado(null);
-      setEanPendente(t);
-      return;
-    }
-    setEanPendente(null);
-    setEanBuscado(null);
     setBuscasRecentes(registrarBusca(t));
     setTermoBuscado(t);
   };
@@ -762,18 +449,9 @@ export default function PulseSonar() {
   const buscar = (e: FormEvent) => {
     e.preventDefault();
     const t = termo.trim();
-    if (EAN_RE.test(t)) { garimpar(t); return; }
+    // O piso de 3 caracteres não atrapalha o EAN (mínimo 8 dígitos) e é o mesmo do backend.
     if (t.length < 3) { toast.error('Digite ao menos 3 caracteres para prospectar.'); return; }
     garimpar(t);
-  };
-
-  const escolherConsultaEan = (comVendas: boolean) => {
-    if (!eanPendente) return;
-    setBuscasRecentes(registrarBusca(eanPendente));
-    setEanBuscado({ ean: eanPendente, comVendas });
-    setEanPendente(null);
-    setTermo('');
-    inputRef.current?.focus();
   };
 
   // Ordem inicial por `vendidos` desc (o que mais vende primeiro): é a pergunta que o operador faz
@@ -941,51 +619,13 @@ export default function PulseSonar() {
             autoFocus
           />
         </div>
-        <Button type="submit" disabled={carregando || eanCarregando}>
+        <Button type="submit" disabled={carregando}>
           <Search className="mr-2 h-4 w-4" />
           Prospectar
         </Button>
       </form>
 
-      {eanPendente ? (
-        <SonarEanEscolha ean={eanPendente} onEscolher={escolherConsultaEan} />
-      ) : eanBuscado ? (
-        eanCarregando ? (
-          <SonarEanCarregando ean={eanBuscado.ean} comVendas={eanBuscado.comVendas} />
-        ) : eanErro ? (
-          <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-            <p className="text-sm font-medium text-destructive">
-              Não foi possível consultar o EAN "{eanBuscado.ean}".
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {eanErroObj instanceof Error ? eanErroObj.message : 'Erro desconhecido.'}
-            </p>
-            <Button variant="outline" size="sm" className="mt-2" onClick={() => refetchEan()}>
-              Tentar de novo
-            </Button>
-          </div>
-        ) : resultadoEan && !resultadoEan.conectado ? (
-          // Mesmo padrão de degradação explícita das outras rotas do Sonar.
-          <EmptyState
-            icon={Search}
-            title="Sem conexão com o Mercado Livre"
-            description="Conecte uma conta do Mercado Livre para consultar EAN — é dado público, mas o lookup oficial exige token de alguma conta conectada."
-          />
-        ) : resultadoEan && resultadoEan.conectado && !resultadoEan.catalogado ? (
-          <EmptyState
-            icon={Package}
-            title={`EAN "${eanBuscado.ean}" sem ficha de catálogo no Mercado Livre`}
-            description="Não é erro — acontece com faixas GS1 internas (ex.: aviamento) ou produtos ainda não catalogados. Tente outro EAN ou busque por termo."
-          />
-        ) : resultadoEan && resultadoEan.conectado && resultadoEan.catalogado ? (
-          <SonarEanResultado
-            resp={resultadoEan}
-            cruzamento={cruzamentoEan}
-            visitas={visitasEan}
-            onNovaConsulta={() => { setEanBuscado(null); setTermo(''); inputRef.current?.focus(); }}
-          />
-        ) : null
-      ) : !termoBuscado ? (
+      {!termoBuscado ? (
         buscasRecentes.length > 0 ? (
           <Card className="max-w-2xl p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -1084,6 +724,9 @@ export default function PulseSonar() {
         </div>
       ) : vendas?.configurado ? (
         <>
+          {/* ADR-0140 D-3: só na consulta por EAN — é o que a busca por termo não tem como
+              responder ("eu já vendo isto?" precisa de um GTIN para cruzar). */}
+          {eanBuscado && cruzamentoEan && <SonarEanCruzamento cruzamento={cruzamentoEan} />}
           <VereditoSonar
             veredito={calcularVereditoAnuncios(vendas, visitasTotal)}
             contexto={contextoNichoAnuncios(vendas)}

@@ -202,8 +202,11 @@ export interface RamoEntrada { rotulo: string; texto: string }
  * preço sobre itens incomparáveis não descreve nicho nenhum). Percentual atravessa embalagem:
  * "5% abaixo do equivalente" vale para qualquer kit.
  *
- * Valor absoluto fica reservado à consulta por EAN (`SonarEanResultado`), onde o produto é um só e
- * a comparação é legítima — regra do operador, 28/08. Aquela view NÃO usa este card.
+ * A regra do operador (28/08) reservava o valor absoluto à consulta por EAN, onde o produto é um só
+ * e a comparação é legítima — mas aquela view tinha card próprio e não usava este. Com o ADR-0140 a
+ * consulta por EAN passou a percorrer este mesmo caminho, então hoje ela também lê percentual.
+ * Continua correto (percentual atravessa embalagem); só é menos preciso do que o EAN permitiria.
+ * Um card em valor absoluto para busca por GTIN não foi feito nesta entrega.
  *
  * Vazio quando o Full não domina o topo: sem handicap de prazo não há o que compensar.
  */

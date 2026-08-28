@@ -197,72 +197,6 @@ export function linkDoAnuncio(link: string | null, itemId: string): string | nul
   return canonico;
 }
 
-// --- Busca por EAN (ADR-0127 Errata 1): produto específico, não nicho --------------------------
-// Tipos espelhados de supabase/functions/_shared/pulse/sonar-ean.ts (mesma regra de sem import
-// cross-runtime). Diferente da busca por termo (vários concorrentes), a busca por EAN é 1 produto.
-
-export interface OfertaEan {
-  item_id: string | null;
-  seller_id: number | null;
-  /** nickname do vendedor; `null` quando o perfil não pôde ser lido (a tabela cai no id). */
-  vendedor_nome: string | null;
-  preco: number | null;
-  frete_gratis: boolean;
-  full: boolean;
-  /** null = sem dado (consulta grátis ou fora da amostra Apify) — nunca 0 por ausência. */
-  vendidos: number | null;
-  /** Ficha de catálogo que originou a oferta (ADR-0136 D-2). */
-  product_id: string | null;
-  produto_nome: string | null;
-}
-
-/** Resumo por ficha de catálogo (ADR-0136 D-3). */
-export interface ResumoFichaEan {
-  product_id: string;
-  nome: string | null;
-  ofertas: number;
-}
-
-export interface ResultadoEanCatalogado {
-  conectado: true;
-  catalogado: true;
-  ean: string;
-  /** Primeira ficha — o nome do topo vem dela. */
-  product_id: string;
-  nome_produto: string | null;
-  descricao_catalogo: string | null;
-  /** Categoria do produto — destrava `calcularTarifaML` (quanto sobra por venda). */
-  categoria_ml_id: string | null;
-  com_vendas: boolean;
-  vendas_indisponivel?: boolean;
-  ofertas: OfertaEan[];
-  fichas_consultadas: number;
-  fichas_encontradas: number;
-  fichas: ResumoFichaEan[];
-  gerado_em: string;
-}
-
-/** `conectado:false` = org sem conexão ML; `catalogado:false` = EAN sem ficha de catálogo no ML
- *  (não é erro — faixa GS1 interna de aviamento cai aqui, por exemplo). */
-export type RespostaSonarEan =
-  | { conectado: false }
-  | { conectado: true; catalogado: false }
-  | ResultadoEanCatalogado;
-
-/** POST /functions/v1/pulse-sonar-ean { ean, com_vendas } → RespostaSonarEan. */
-export async function fetchSonarPorEan(ean: string, comVendas: boolean): Promise<RespostaSonarEan> {
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) throw new Error('Sem sessão');
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pulse-sonar-ean`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ ean, com_vendas: comVendas }),
-  });
-  const json = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
-  return json as RespostaSonarEan;
-}
-
 // --- Cruzamento com o catálogo da própria org (ADR-0127 Errata 2) -------------------------------
 
 export interface VariacaoPropria {
@@ -283,17 +217,23 @@ export interface CruzamentoEan {
  * sob RLS. É a informação de maior sinal da consulta por EAN e a mais barata — o escopo da org
  * sai da RLS, nunca de filtro por `user_id` (a conexão pode ser de outro membro).
  *
- * `productIds` é lista, não id único (ADR-0136): desde que a consulta por EAN passou a cobrir
- * várias fichas, o produto pode estar no Radar sob QUALQUER uma delas, não só a primeira — usar só
- * `product_id` do topo faria a tela dizer "produto novo" para um produto que já está no Radar sob
- * a ficha #2. `.limit(1)` é obrigatório porque `.in()` pode casar 2+ linhas e `maybeSingle()`
- * sozinho erraria (uma linha só é esperada por `.eq`, não por `.in`).
+ * `productIds` é lista, não id único (ADR-0136): o produto pode estar no Radar sob QUALQUER ficha
+ * de catálogo, não só uma. `.limit(1)` é obrigatório porque `.in()` pode casar 2+ linhas e
+ * `maybeSingle()` sozinho erraria (uma linha só é esperada por `.eq`, não por `.in`).
+ *
+ * ADR-0140 D-3: desde que a consulta por EAN passou a nascer da BUSCA (e não do lookup oficial de
+ * catálogo), os ids vêm do que a amostra trouxer — e a maioria dos anúncios da busca não é de
+ * catálogo (medido 28/08: 7 de 20). Lista vazia é o caso normal, não erro: pula a consulta ao
+ * Radar em vez de mandar `.in(...)` com array vazio ao PostgREST. Quem chama precisa tratar
+ * `no_radar: null` como "não sei", nunca como "não está no Radar".
  */
 export async function fetchCruzamentoEan(ean: string, productIds: string[]): Promise<CruzamentoEan> {
   const [variacoes, radar] = await Promise.all([
     supabase.from('variacoes').select('codigo,nome,preco').eq('gtin', ean).order('codigo'),
-    supabase.from('pulse_produtos').select('id,titulo,status')
-      .in('catalog_product_id', productIds).limit(1).maybeSingle(),
+    productIds.length > 0
+      ? supabase.from('pulse_produtos').select('id,titulo,status')
+        .in('catalog_product_id', productIds).limit(1).maybeSingle()
+      : Promise.resolve({ data: null, error: null, status: 200 }),
   ]);
   if (variacoes.error) throw variacoes.error;
   // `maybeSingle` devolve error quando a linha não existe em algumas versões do client — ausência

@@ -152,5 +152,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0137 | [Sonar: Disputa com caminho B (concentração por anúncio) quando o rótulo não cobre a amostra](../../docs/decisions/0137-sonar-disputa-caminho-b-concentracao-por-anuncio.md) |
 | 0138 | [Sonar: linguagem comercial do veredito e condição de entrada](../../docs/decisions/0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) |
 | 0139 | [Campo de partículas das telas de auth em Three.js (GPGPU), carregado sob demanda](../../docs/decisions/0139-particulas-gpgpu-nas-telas-de-auth.md) |
+| 0140 | [Sonar por EAN: análise completa pela busca, sem escolha grátis/paga](../../docs/decisions/0140-sonar-ean-analise-completa-pela-busca.md) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
