@@ -33,6 +33,29 @@ transcrição da revisão adversarial em `PLAN.md` / `PLAN-REVIEW-LOG.md` da bra
 - [ ] **Pendente (backend, ADR próprio):** `is_admin()` não distingue admin de plataforma de
       admin de tenant — numa sessão de suporte o banco trata o super-admin como admin da org
 
+## Sonar — linguagem comercial do veredito e condição de entrada (ADR-0138) — 2026-08-28
+
+**Implementado.** ADR em `docs/decisions/0138-sonar-linguagem-comercial-e-condicao-de-entrada.md`.
+Só apresentação: nenhum corte de calibração se moveu, gabarito intacto.
+
+- [x] `Barreira` derivada dos fatores (campo aberto / concorrência pesada / risco de marca /
+      mercado apertado / não medida) — "entrada fechada" sai da tela; marca vence Full
+- [x] Gramática única de título `<Demanda> · <Barreira>`; "Oportunidade alta/média/baixa" some do
+      título e continua governando só a cor do card
+- [x] Dicionário do comércio: Disputa→Concorrência, Tração→Faturamento por concorrente,
+      "rótulo de loja"→"concorrente" (a ressalva do ADR-0127 desce para o Saiba mais)
+- [x] Card "Como entrar neste nicho": ramos "Com Full" / "Sem Full" (`HANDICAP_NAO_FULL` 5%),
+      sempre em percentual — valor em reais fica só na consulta por EAN, porque a busca por termo
+      mistura embalagens; risco de marca e gate de demanda não mostram condição de preço
+- [x] `motivo` (subtítulo) removido — redundante com o título de dois eixos
+- [x] Teste de matriz `(demanda × barreira)` + trava de vocabulário contra "entrada fechada"
+- [x] Barreira `topo_nao_confirmado`: o teto do caminho B (ADR-0137) chega ao TEXTO — sem nome de
+      loja o card nunca declara campo aberto, e sem concentração medida nunca afirma que ninguém
+      domina o faturamento
+- [ ] **Pendência menor, pré-existente:** `fraseRivaisPodio` imprime centavos ("≈ R$ 647.123,45")
+      enquanto o pódio na tela arredonda — a Errata 1 do ADR-0124 é explícita sobre centavos
+      comunicarem precisão que o dado não tem. Fora do escopo do ADR-0138.
+
 ## Sonar por EAN — cobertura de fichas de catálogo (ADR-0136) — 2026-08-27
 
 **Implementado.** ADR em `docs/decisions/0136-sonar-ean-cobertura-de-fichas-de-catalogo.md`
