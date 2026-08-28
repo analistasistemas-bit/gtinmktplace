@@ -2,9 +2,9 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Fundo de partículas nas telas de auth (ADR-0138) — 2026-08-28
+## Fundo de partículas nas telas de auth (ADR-0139) — 2026-08-28
 
-**Implementado.** ADR em `docs/decisions/0138-particulas-gpgpu-nas-telas-de-auth.md`.
+**Implementado.** ADR em `docs/decisions/0139-particulas-gpgpu-nas-telas-de-auth.md`.
 
 - [x] Campo GPGPU em Three.js no `AuthShell` (login, reset-senha, definir-senha): estado das
   partículas numa textura float em ping-pong, `gl_Points` com SDF de retângulo arredondado.
@@ -18,6 +18,60 @@
   sem WebGL2 → gradiente estático.
 - [x] Teste das partes puras (Poisson-disk e ruído do passeio) em
   `src/components/__tests__/auth-particulas.test.ts`.
+
+## Configurações — sub-navegação por seção e idioma único de configuração — 2026-08-28
+
+**Implementado.** Sem ADR: é arquitetura de informação e layout, reversível por commit. Plano e
+transcrição da revisão adversarial em `PLAN.md` / `PLAN-REVIEW-LOG.md` da branch.
+
+- [x] `/configuracoes/*` com rota por seção (geral, precos, fiscal, notificacoes, ia, membros);
+      registro declarativo em `src/components/configuracoes/secoes.tsx`
+- [x] Sub-nav sticky no desktop, `Select` abaixo de `lg`; item = rótulo/descrição à esquerda,
+      controle à direita
+- [x] Guard de OAuth do ML isolado antes dos hooks da tela, preservando `searchParams`
+- [x] Usuários vira a seção "Membros e acessos"; `/usuarios` redireciona; `MENU_KEYS` intacto.
+      Canais **fica** no menu (operação, e cresce com o E5/Shopee — ADR-0077)
+- [x] Remove "Estratégia de preço": UI morta, sem `value`/`onValueChange`/hook. O enum real é
+      `familias.estrategia_preco`, por família, decidido pelo motor
+- [x] **Defeito em produção corrigido:** Geral/Preços/Notificações não tinham gate na UI, mas a
+      escrita em `configuracoes` exige admin ou suporte `full` — o membro comum digitava, o RLS
+      recusava e a tela não mostrava erro. Dois predicados agora replicam as duas policies
+      (`configuracoes` e `empresa_fiscal` têm regras diferentes)
+- [x] Visibilidade de "Membros" lida de `visibleMenus`, não derivada de `is_admin` (o
+      super-admin em sessão de suporte tem a flag e reabriria a seção)
+- [x] Gravação single-flight por tabela, estado por linha com `aria-live`, snapshot semeado do
+      dado carregado (parcial apagaria `uf_empresa`/`aliquota_interna_pct` não tocados)
+- [x] 27 testes; `config-telegram.test.tsx` e `Usuarios.test.tsx` passam sem alteração
+- [x] Validado em runtime (Playwright, sessão isolada): 1440px e 360px, sem overflow horizontal
+      nas 6 seções, console sem erros
+- [ ] **Pendente de decisão do Diego:** afrouxar a policy de `configuracoes` para membro comum
+      editar preferência não-sensível? E aplicar o gate fiscal do ADR-0135
+      (`tipo_pessoa='pj'` + módulo) na seção Fiscal, hoje visível até para org PF?
+- [ ] **Pendente (backend, ADR próprio):** `is_admin()` não distingue admin de plataforma de
+      admin de tenant — numa sessão de suporte o banco trata o super-admin como admin da org
+
+## Sonar — linguagem comercial do veredito e condição de entrada (ADR-0138) — 2026-08-28
+
+**Implementado.** ADR em `docs/decisions/0138-sonar-linguagem-comercial-e-condicao-de-entrada.md`.
+Só apresentação: nenhum corte de calibração se moveu, gabarito intacto.
+
+- [x] `Barreira` derivada dos fatores (campo aberto / concorrência pesada / risco de marca /
+      mercado apertado / não medida) — "entrada fechada" sai da tela; marca vence Full
+- [x] Gramática única de título `<Demanda> · <Barreira>`; "Oportunidade alta/média/baixa" some do
+      título e continua governando só a cor do card
+- [x] Dicionário do comércio: Disputa→Concorrência, Tração→Faturamento por concorrente,
+      "rótulo de loja"→"concorrente" (a ressalva do ADR-0127 desce para o Saiba mais)
+- [x] Card "Como entrar neste nicho": ramos "Com Full" / "Sem Full" (`HANDICAP_NAO_FULL` 5%),
+      sempre em percentual — valor em reais fica só na consulta por EAN, porque a busca por termo
+      mistura embalagens; risco de marca e gate de demanda não mostram condição de preço
+- [x] `motivo` (subtítulo) removido — redundante com o título de dois eixos
+- [x] Teste de matriz `(demanda × barreira)` + trava de vocabulário contra "entrada fechada"
+- [x] Barreira `topo_nao_confirmado`: o teto do caminho B (ADR-0137) chega ao TEXTO — sem nome de
+      loja o card nunca declara campo aberto, e sem concentração medida nunca afirma que ninguém
+      domina o faturamento
+- [ ] **Pendência menor, pré-existente:** `fraseRivaisPodio` imprime centavos ("≈ R$ 647.123,45")
+      enquanto o pódio na tela arredonda — a Errata 1 do ADR-0124 é explícita sobre centavos
+      comunicarem precisão que o dado não tem. Fora do escopo do ADR-0138.
 
 ## Sonar por EAN — cobertura de fichas de catálogo (ADR-0136) — 2026-08-27
 

@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route } from 'react-router-dom';
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Suspense, lazy } from 'react';
 import { AppShell } from '@/components/app-shell';
 import { AdminShell } from '@/components/admin-shell';
@@ -11,7 +11,6 @@ import { SupportRoute } from '@/components/support-route';
 const Login = lazy(() => import('@/pages/Login'));
 const DefinirSenha = lazy(() => import('@/pages/DefinirSenha'));
 const ResetSenha = lazy(() => import('@/pages/ResetSenha'));
-const Usuarios = lazy(() => import('@/pages/Usuarios'));
 const Organizacoes = lazy(() => import('@/pages/Organizacoes'));
 const SupportRequests = lazy(() => import('@/pages/SupportRequests'));
 const SemAcesso = lazy(() => import('@/pages/SemAcesso'));
@@ -54,7 +53,7 @@ export function AppRoutes() {
             <Route path="/revisao" element={<RevisaoIndex />} />
             <Route path="/revisao/:loteId" element={<Revisao />} />
             <Route path="/relatorio/:loteId" element={<Relatorio />} />
-            <Route path="/configuracoes" element={<Configuracoes />} />
+            <Route path="/configuracoes/*" element={<Configuracoes />} />
             <Route path="/canais" element={<Canais />} />
             <Route path="/publicados" element={<Publicados />} />
             <Route path="/publicados/vendas" element={<DetalheVendas />} />
@@ -64,7 +63,8 @@ export function AppRoutes() {
             <Route path="/financeiro" element={<Financeiro />} />
             <Route path="/financeiro/detalhe" element={<DetalheFinanceiro />} />
             <Route path="/viabilidade" element={<Viabilidade />} />
-            <Route path="/usuarios" element={<Usuarios />} />
+            {/* Usuários virou a seção "Membros e acessos". O MenuGuard barra antes quem não tem a chave `usuarios`, então o redirect só é alcançado por admin — igual a antes. */}
+            <Route path="/usuarios" element={<Navigate to="/configuracoes/membros" replace />} />
             <Route path="/suporte" element={<SupportRequests />} />
             <Route path="/admin/suporte" element={<SupportRequests />} />
             <Route path="/style-guide" element={<StyleGuide />} />

@@ -1,12 +1,65 @@
 ---
 tags: [modulo, configuracoes]
-atualizado: 2026-08-26
+atualizado: 2026-08-28
 ---
 
 # Configurações
 
-Rota `/configuracoes` (`src/pages/Configuracoes.tsx`). Ver [[Banco de Dados]] (tabela
+Rota `/configuracoes/*` (`src/pages/Configuracoes.tsx`). Ver [[Banco de Dados]] (tabela
 `configuracoes`), [[Integrações]].
+
+## Estrutura da tela (desde 2026-08-28)
+
+Era uma coluna única com 10 cards de peso visual igual, onde o bloco fiscal ocupava ~60% da
+altura. Virou uma tela com **sub-navegação por seção, cada uma com rota própria**: `geral`,
+`precos`, `fiscal`, `notificacoes`, `ia`, `membros`. Registro declarativo em
+`src/components/configuracoes/secoes.tsx` — sub-nav, roteamento e gate leem do mesmo array.
+Coluna sticky no desktop; abaixo de `lg` vira um `Select`. Cada opção é uma `SettingsRow`:
+rótulo e descrição à esquerda, controle à direita, divisor entre linhas.
+
+- **Guard de OAuth do ML**: a edge devolve o callback em `/configuracoes` (URL fixa), mas quem
+  confirma a conexão é `/canais`. O guard vive no componente de página, **antes de qualquer
+  hook da tela**, e preserva `searchParams` — sem a query, `Canais.tsx` não chama
+  `confirmarConexaoML` e a conexão morre sem erro visível.
+- **[[Usuários]] virou a seção "Membros e acessos"**; `/usuarios` redireciona. `Canais` fica no
+  menu lateral (é operação, e cresce com o E5/Shopee, ADR-0077).
+- **Estratégia de preço saiu**: era UI morta (`RadioGroup` sem `value`/`onValueChange`/hook). O
+  enum real é `familias.estrategia_preco` (`proprio|competitivo|manual`), **por família**,
+  decidido pelo motor — nunca foi configuração de organização, e "condicional" nem existe no
+  enum. O ADR-0008 segue valendo: descreve a política que o motor aplica sozinho.
+
+## Quem pode editar
+
+A tela escreve em **duas tabelas com policies diferentes**, então há dois predicados
+(`src/components/configuracoes/permissoes.ts`). **Leitura não é gateada** — o `SELECT` das duas
+é liberado a qualquer membro da org, de propósito: quem precifica precisa ver a alíquota e o
+desconto vigentes.
+
+| Predicado | Tabela | Regra RLS replicada |
+|---|---|---|
+| `podeEditarConfig` | `configuracoes` | `is_admin() OR current_support_scope() = 'full'` |
+| `podeEditarEmpresa` | `empresa_fiscal` | `is_admin()` apenas, sem escape de suporte |
+
+Isso **corrigiu um defeito que estava em produção**: Geral, Preços e Notificações não tinham
+gate nenhum na UI, mas a escrita em `configuracoes` sempre exigiu admin. O membro comum
+digitava, o RLS recusava, e a tela não tinha ramo de erro — ele achava que tinha salvo.
+
+Aberto, fora do escopo daquela entrega: `is_admin()` não distingue admin de plataforma de admin
+de tenant, então numa sessão de suporte o banco trata o super-admin como admin da org visitada.
+
+## Gravação
+
+`upsertAliquotas` grava as quatro chaves de uma vez, e `useSalvarEmpresaFiscal` é uma mutation
+compartilhada por ~20 campos. Daí `useFilaDeSalvamento`
+(`src/components/configuracoes/settings-row.tsx`): **fila single-flight por tabela** (uma
+requisição em voo por vez, a fila sobrevive a falha), estado `Salvando…/✓ Salvo/erro` **por
+linha** com `aria-live` — não há botão Salvar, então sem isso o leitor de tela nunca sabe que
+gravou. O payload sai de um **snapshot semeado uma vez do dado carregado**, não do cache do
+react-query (`invalidateQueries` não é síncrono, e snapshot parcial apagaria
+`uf_empresa`/`aliquota_interna_pct` que o operador não tocou).
+
+Exceção: **Telegram mantém o botão "Salvar configurações" explícito** — token de bot não deve
+ser gravado a cada blur, e `config-telegram.test.tsx` trava esse contrato.
 
 **Escopo por ORGANIZAÇÃO desde o E7** (ADR-0027, migration `20260705174455_e7_config_org.sql`)
 — era por usuário antes disso. Toda leitura/escrita filtra por `org_id` (`fetchX`/`upsertX` em
@@ -17,7 +70,8 @@ Rota `/configuracoes` (`src/pages/Configuracoes.tsx`). Ver [[Banco de Dados]] (t
 
 - **Empresa** (ADR-0135, módulo pago `fiscal`) — cadastro fiscal da organização
   (`empresa_fiscal`), visível para toda org PJ mas só obrigatório com o módulo ligado. Ver [[Fiscal]].
-- **Conexão Mercado Livre** — status via `useMlConnection` (lê `ml_credentials`); conectar/
+- **Conexão Mercado Livre** — **não** se configura mais aqui: mora em `/canais` (ADR-0077). A
+  seção Geral só tem o atalho. Status via `useMlConnection` (lê `ml_credentials`); conectar/
   desconectar via `iniciarConexaoML`/`desconectarML` (`src/lib/ml-oauth.ts`). Ver [[Segurança]].
 - **Desconto de marketing** — `desconto_pct` por org (`useDescontoPct`, `useSalvarDescontoPct`).
 - **Telegram** — `ConfigTelegram` (componente): ativa/configura alertas

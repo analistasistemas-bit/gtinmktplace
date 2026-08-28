@@ -10,7 +10,18 @@ import {
   useEnviarTesteTelegram, useVerificarModeradosAgora,
 } from '@/hooks/useConfiguracoes';
 
-export function ConfigTelegram() {
+/**
+ * `semCard`: renderiza sem o próprio Card, para entrar dentro de um SettingsGroup — card
+ * dentro de card é ruído. `podeEditar`: replica a policy de `configuracoes` (admin ou
+ * suporte `full`). Ambas opcionais e com default seguro: o componente continua funcionando
+ * exatamente como antes quando montado sozinho.
+ *
+ * O botão "Salvar configurações" explícito FICA. Não vira autosave-on-blur: token de bot não
+ * deve ser gravado a cada blur, e o teste do componente trava esse contrato.
+ */
+export function ConfigTelegram({ semCard = false, podeEditar = true }: {
+  semCard?: boolean; podeEditar?: boolean;
+} = {}) {
   const { data: cfg } = useTelegramConfig();
   const salvar = useSalvarTelegramConfig();
   const teste = useEnviarTesteTelegram();
@@ -58,14 +69,15 @@ export function ConfigTelegram() {
   const tokenPlaceholder = cfg?.temToken ? '•••••••• (configurado — deixe vazio p/ manter)' : 'Cole o token do @BotFather';
   const temAlteracoes = chatId !== (cfg?.chatId ?? '') || Boolean(botToken.trim());
 
-  return (
-    <Card className="p-4">
+  const corpo = (
+    <>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold">Alertas no Telegram</h2>
+        {!semCard && <h2 className="text-sm font-semibold">Alertas no Telegram</h2>}
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">{ativo ? 'Ativo' : 'Inativo'}</span>
           <Switch
             checked={ativo}
+            disabled={!podeEditar}
             onCheckedChange={(v) => { setAtivo(v); persistir({ ativo: v }); }}
             aria-label="Ativar alertas no Telegram"
           />
@@ -85,6 +97,7 @@ export function ConfigTelegram() {
             className="h-8 text-sm"
             value={chatId}
             placeholder="ex.: 123456789"
+            disabled={!podeEditar}
             onChange={(e) => setChatId(e.target.value)}
           />
           <p className="mt-1 text-xs text-muted-foreground">
@@ -100,6 +113,7 @@ export function ConfigTelegram() {
             className="h-8 text-sm"
             value={botToken}
             placeholder={tokenPlaceholder}
+            disabled={!podeEditar}
             onChange={(e) => setBotToken(e.target.value)}
           />
         </div>
@@ -108,7 +122,7 @@ export function ConfigTelegram() {
           <Button
             size="sm"
             onClick={() => persistir({ chatId, botToken: botToken.trim() || undefined })}
-            disabled={!temAlteracoes || salvar.isPending}
+            disabled={!podeEditar || !temAlteracoes || salvar.isPending}
           >
             <Save className="mr-1.5 h-3.5 w-3.5" />
             {salvar.isPending ? 'Salvando…' : 'Salvar configurações'}
@@ -150,6 +164,8 @@ export function ConfigTelegram() {
           Depois ligue o alerta e clique em "Enviar teste".
         </p>
       </details>
-    </Card>
+    </>
   );
+
+  return semCard ? <div className="px-4 py-3.5">{corpo}</div> : <Card className="p-4">{corpo}</Card>;
 }

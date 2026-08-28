@@ -1,4 +1,4 @@
-# ADR-0138: Campo de partículas das telas de auth roda em Three.js (GPGPU), carregado sob demanda
+# ADR-0139: Campo de partículas das telas de auth roda em Three.js (GPGPU), carregado sob demanda
 
 **Status:** Aceito
 **Data:** 2026-08-28

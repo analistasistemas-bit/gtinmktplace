@@ -4,14 +4,14 @@
 // ADR-0128: título separa Demanda de Entrada; chip de entrada ao lado do badge parcial.
 import { useState } from 'react';
 import {
-  ChevronDown, CircleDollarSign, Eye, ExternalLink, Gauge, HelpCircle, Lock, Minus, ShieldAlert, Trophy,
-  TrendingDown, TrendingUp, Unlock,
+  ChevronDown, CircleDollarSign, Eye, ExternalLink, Gauge, HelpCircle, Lock, Minus, ShieldAlert,
+  Target, Trophy, TrendingDown, TrendingUp, Unlock,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { insightEntrada, rivaisPodioVisitas } from '@/lib/veredito-sonar';
 import type {
-  ContextoItem, ExplicacaoRegua, NivelEntrada, NivelFator, VereditoAnuncios,
+  Barreira, ContextoItem, ExplicacaoRegua, NivelFator, VereditoAnuncios,
 } from '@/lib/veredito-sonar';
 import type { PainelVendasSonar, VisitasAnuncio } from '@/lib/sonar';
 import { fmtBRL, fmtInt } from '@/lib/formato';
@@ -23,11 +23,8 @@ const CLS_VEREDITO = {
   baixa: { borda: 'border-destructive/40', fundo: 'bg-destructive/5', texto: 'text-destructive' },
 } as const;
 
-const LABEL_ENTRADA: Record<NivelEntrada, string> = {
-  aberta: 'entrada aberta',
-  fechada: 'entrada fechada',
-  nao_medida: 'concorrência não medida',
-};
+// ADR-0138: o chip deixou de ser mapa de estado (o estado já está escrito no título) e passa a
+// carregar o NÚMERO que sustenta a barreira — `veredito.chip`, montado na lib.
 
 const CLS_FATOR: Record<NivelFator, string> = {
   bom: 'text-success',
@@ -41,10 +38,11 @@ const ICONE_FATOR: Record<NivelFator, typeof TrendingUp> = {
   ruim: TrendingDown,
 };
 
+/** Rótulos do "Saiba mais" — dicionário do comércio (ADR-0138 §2). As chaves seguem internas. */
 const LABEL_FATOR: Record<'demanda' | 'disputa' | 'tracao' | 'marca', string> = {
   demanda: 'Demanda',
-  disputa: 'Disputa',
-  tracao: 'Tração',
+  disputa: 'Concorrência',
+  tracao: 'Faturamento por concorrente',
   marca: 'Marca',
 };
 
@@ -78,9 +76,15 @@ function MiniRegua({ regua }: { regua: ExplicacaoRegua }) {
 }
 
 /** Ícone do card de Entrada, coerente com o chip textual já usado no header. */
-const ICONE_ENTRADA: Record<NivelEntrada, typeof Unlock> = {
-  aberta: Unlock,
-  fechada: Lock,
+/** Ícone do card de insight por Barreira (ADR-0138). `marca` é o único cadeado que restou — é a
+ *  única barreira que preço não abre. */
+const ICONE_BARREIRA: Record<Barreira, typeof Unlock> = {
+  nenhuma: Unlock,
+  // Interrogação, não cadeado aberto: o caminho B não confirma campo aberto (ADR-0137/0138 §1).
+  topo_nao_confirmado: HelpCircle,
+  concorrencia: Target,
+  mercado_apertado: Target,
+  marca: Lock,
   nao_medida: HelpCircle,
 };
 
@@ -142,7 +146,7 @@ export function VereditoSonar({
   const cls = CLS_VEREDITO[veredito.nivel];
   const { explicacao } = veredito;
   const entrada = insightEntrada(veredito);
-  const IconeEntrada = ICONE_ENTRADA[veredito.entrada];
+  const IconeBarreira = ICONE_BARREIRA[veredito.barreira];
   const rivaisVisitas = rivaisPodioVisitas(vendas, visitasPorItem);
   const temFaturamento = veredito.rivaisPodio.length > 0;
   const temVisitas = rivaisVisitas.length > 0;
@@ -181,23 +185,18 @@ export function VereditoSonar({
                 avaliação parcial
               </span>
             )}
-            <span
-              className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
-              title="Entrada no nicho (ADR-0128): pergunta separada da Demanda."
-            >
-              {LABEL_ENTRADA[veredito.entrada]}
-            </span>
+            {veredito.chip && (
+              <span
+                className="rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground"
+                title="Número que sustenta a barreira de entrada (ADR-0138)."
+              >
+                {veredito.chip}
+              </span>
+            )}
           </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">{veredito.motivo}</p>
-          {/* `montarMotivoAnuncios` só menciona o motivo da avaliação parcial quando o nível NÃO é
-              'baixa' (o gate de demanda já explica o 'baixa' sozinho) — sem esta linha o badge
-              "avaliação parcial" ficaria sem explicação visível nesse caso. */}
-          {veredito.parcial && veredito.nivel === 'baixa' && (
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              Além disso, não foi possível avaliar a concorrência do nicho por completo — falta de
-              dado não é sinal de negócio.
-            </p>
-          )}
+          {/* Subtítulo removido no ADR-0138 §6: sob a gramática de dois eixos ele repetia o título
+              com outras palavras, e a caixa de resumo já faz a leitura. A causa da avaliação
+              parcial vive no card "Concorrência não medida" dos Insights. */}
         </div>
       </div>
 
@@ -246,10 +245,21 @@ export function VereditoSonar({
         <div className="mt-2 flex flex-col gap-2">
           <div className="flex flex-col gap-1 rounded-md border bg-card p-2">
             <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <IconeEntrada className={`h-3.5 w-3.5 ${CLS_FATOR[entrada.tom]}`} aria-hidden />
+              <IconeBarreira className={`h-3.5 w-3.5 ${CLS_FATOR[entrada.tom]}`} aria-hidden />
               {entrada.titulo}
             </div>
             <p className="text-xs text-muted-foreground">{entrada.detalhe}</p>
+            {/* Condição de entrada com número (ADR-0138 §3): o ramo "Sem Full" só existe quando o
+                topo é majoritariamente Full — é onde o handicap de prazo existe de verdade. */}
+            {entrada.ramos.length > 0 && (
+              <ul className="mt-0.5 flex flex-col gap-1">
+                {entrada.ramos.map((r) => (
+                  <li key={r.rotulo} className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{r.rotulo}</span> → {r.texto}
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {(temFaturamento || temVisitas) && (

@@ -234,8 +234,13 @@ describe('Estoque', () => {
     );
     await screen.findByText('Atualizando…');
 
+    // Data RELATIVA de propósito: `statusUpdatePorProduto` só marca 'erro' dentro de uma janela de
+    // 7 dias (`SETE_DIAS_MS`, estoque-update-status.ts). Um timestamp cravado aqui é bomba-relógio —
+    // o valor anterior ('2026-08-21T10:05:00Z') venceu em 28/08/2026 às 10:05 UTC e passou a
+    // reprovar o CI de toda branch, sem ninguém ter mexido no Estoque.
     famRowsMock.mockReturnValue([{
-      codigo_pai: '00000004', status: 'erro', operacao: 'UPDATE', criado_em: '2026-08-21T10:05:00Z',
+      codigo_pai: '00000004', status: 'erro', operacao: 'UPDATE',
+      criado_em: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     }]);
     await qc.refetchQueries({ queryKey: QK.familiasNaoPublicadas });
 
