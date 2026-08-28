@@ -11,7 +11,7 @@
 // nomeadas de propósito, para recalibrar sem caçar número solto no meio do código.
 import { fmtBRL, fmtInt, fmtMilhar } from './formato';
 import { itensDaAmostra } from './sonar';
-import type { PainelVendasSonar } from './sonar';
+import type { PainelVendasSonar, VisitasAnuncio } from './sonar';
 
 export type NivelFator = 'bom' | 'medio' | 'ruim';
 export type NivelVeredito = 'alta' | 'media' | 'baixa';
@@ -407,13 +407,8 @@ function derivarEntrada(
 
 function fraseRivaisPodio(rivais: RivalPodio[]): string {
   if (rivais.length === 0) return '';
-  const lista = rivais
-    .map((r) => (r.vendedor == null ? 'sem rótulo' : r.vendedor))
-    .join(', ');
-  const fantasma = rivais.some((r) => r.vendedor == null)
-    ? ' Anúncio sem rótulo de loja ainda é rival — o líder sem nome não some da briga.'
-    : '';
-  return `${fantasma} Pódio por faturamento: ${lista}.`;
+  const lider = rivais[0];
+  return ` Líder por faturamento: ${lider.titulo} (≈ ${fmtBRL(lider.faturamento)}).`;
 }
 
 function montarMotivoAnuncios(nivel: NivelVeredito, fatores: Fator[], razaoParcial: string | null): string {
@@ -600,10 +595,12 @@ export function contextoNichoAnuncios(vendas: PainelVendasSonar): ContextoItem[]
   return itens;
 }
 
-// ================= Insights do nicho (ADR-0124 addendum 2026-08-21) ============================
-// Três mini-cards SEMPRE visíveis (não escondidos no "Saiba mais"): entrada, pódio de rivais
-// (reusa `rivaisPodio` acima, sem função nova) e faixas de preço. 100% derivados do que
-// `calcularVereditoAnuncios`/`PainelVendasSonar` já trazem — sem chamada de rede, sem novo custo.
+// ================= Insights do nicho (ADR-0124 addendum 2026-08-21; Errata 1 2026-08-27) =======
+// Dois mini-cards SEMPRE visíveis (não escondidos no "Saiba mais"): entrada e pódio de rivais
+// (duas colunas — faturamento e visitas). Faixas de preço morreram na Errata 1 (tercil sobre
+// embalagens diferentes não descreve nicho nenhum) e o pódio de faturamento perdeu o rótulo de
+// loja (Apify raramente traz `vendedor`). 100% derivados do que `calcularVereditoAnuncios`/
+// `PainelVendasSonar`/visitas já trazem — sem chamada de rede nova, sem novo custo.
 
 export interface InsightEntrada { titulo: string; detalhe: string; tom: NivelFator }
 
@@ -642,32 +639,28 @@ export function insightEntrada(v: VereditoAnuncios): InsightEntrada {
   };
 }
 
-export interface FaixaPreco { rotulo: string; min: number; max: number }
-export interface FaixasPrecoAmostra { modo: 'tercis' | 'min_max'; faixas: FaixaPreco[] }
+export interface RivalVisitas { item_id: string; titulo: string; preco: number | null; visitas: number }
 
-/** Barato/Médio/Premium por tercis do `preco` da amostra — nova leitura sobre dado já lido, sem
- *  entrar no score. 0 itens some o card; 1-2 itens não dá pra terciar, cai pra uma faixa min-max. */
-export function faixasPrecoAmostra(vendas: PainelVendasSonar): FaixasPrecoAmostra | null {
-  const precos = itensDaAmostra(vendas)
-    .map((i) => i.preco)
-    .filter((p): p is number => p != null)
-    .sort((a, b) => a - b);
-  if (precos.length === 0) return null;
-  if (precos.length <= 2) {
-    return {
-      modo: 'min_max',
-      faixas: [{ rotulo: 'Preço observado', min: precos[0], max: precos[precos.length - 1] }],
-    };
-  }
-  const n = precos.length;
-  const c1 = Math.floor(n / 3);
-  const c2 = Math.floor((2 * n) / 3);
-  const fatia = (rotulo: string, ini: number, fim: number): FaixaPreco => {
-    const parte = precos.slice(ini, fim);
-    return { rotulo, min: parte[0], max: parte[parte.length - 1] };
-  };
-  return {
-    modo: 'tercis',
-    faixas: [fatia('Barato', 0, c1), fatia('Médio', c1, c2), fatia('Premium', c2, n)],
-  };
+/**
+ * Top 5 rivais por visitas na amostra. Elegibilidade DELIBERADAMENTE diferente de `rivaisPodio`:
+ * aqui não existe `vendidos != null` — se herdasse esse filtro, o pódio de visitas nasceria vazio
+ * na maioria das consultas (o ML não expõe "+N vendidos" para os anúncios mais visitados; ver
+ * Errata 1 do ADR-0124). Elegível: `item_id` conhecido (dá pra chavear no Map de visitas), `preco`
+ * conhecido e visitas medidas > 0 (Map devolve `null` = falha de medição, exclui; 0 exclui).
+ */
+export function rivaisPodioVisitas(
+  vendas: PainelVendasSonar,
+  visitasPorItem: Map<string, VisitasAnuncio | null>,
+): RivalVisitas[] {
+  return itensDaAmostra(vendas)
+    .filter((i) => i.item_id != null && i.preco != null)
+    .map((i) => ({
+      item_id: i.item_id as string,
+      titulo: i.titulo,
+      preco: i.preco,
+      visitas: visitasPorItem.get(i.item_id as string)?.total ?? 0,
+    }))
+    .filter((r) => r.visitas > 0)
+    .sort((a, b) => b.visitas - a.visitas)
+    .slice(0, 5);
 }

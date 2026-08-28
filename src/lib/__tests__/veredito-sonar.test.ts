@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  calcularVereditoAnuncios, contextoNichoAnuncios, faixasPrecoAmostra, insightEntrada, subamostraNomeada,
+  calcularVereditoAnuncios, contextoNichoAnuncios, insightEntrada, rivaisPodioVisitas, subamostraNomeada,
 } from '../veredito-sonar';
 import type { VereditoAnuncios } from '../veredito-sonar';
-import type { ItemVendasSonar, PainelVendasSonar } from '../sonar';
+import type { ItemVendasSonar, PainelVendasSonar, VisitasAnuncio } from '../sonar';
 
 // =============== Veredito v2 (ADR-0127/D10-D12): a unidade é o ANÚNCIO ==========================
 // Fixtures REAIS medidos em 19/08 (US$ 0,30 de Apify), congelados em fixtures/sonar-gabarito/.
@@ -395,74 +395,47 @@ describe('insightEntrada', () => {
   });
 });
 
-describe('faixasPrecoAmostra', () => {
-  it('amostra vazia → null (card some)', () => {
-    expect(faixasPrecoAmostra(painelSintetico([]))).toBeNull();
-  });
+describe('rivaisPodioVisitas — pódio por visitas (independente de `vendidos`)', () => {
+  const v = (total: number): VisitasAnuncio => ({ total, por_dia: [] });
 
-  it('1 item → min_max com a mesma faixa', () => {
-    const v = painelSintetico([itemV2({ item_id: 'MLB1', preco: 50 })]);
-    expect(faixasPrecoAmostra(v)).toEqual({
-      modo: 'min_max',
-      faixas: [{ rotulo: 'Preço observado', min: 50, max: 50 }],
-    });
-  });
-
-  it('2 itens → min_max única faixa cobrindo os dois preços', () => {
-    const v = painelSintetico([
-      itemV2({ item_id: 'MLB1', preco: 30 }),
-      itemV2({ item_id: 'MLB2', preco: 10 }),
+  it('item com visitas e SEM vendidos entra no pódio — NÃO herda o filtro `vendidos != null` de rivaisPodio', () => {
+    const vendas = painelSintetico([itemV2({ item_id: 'MLB1', vendidos: null, preco: 80 })]);
+    const visitasPorItem = new Map([['MLB1', v(290)]]);
+    expect(rivaisPodioVisitas(vendas, visitasPorItem)).toEqual([
+      { item_id: 'MLB1', titulo: 'X', preco: 80, visitas: 290 },
     ]);
-    expect(faixasPrecoAmostra(v)).toEqual({
-      modo: 'min_max',
-      faixas: [{ rotulo: 'Preço observado', min: 10, max: 30 }],
-    });
   });
 
-  it('3 itens → tercis, uma unidade por faixa', () => {
-    const v = painelSintetico([
-      itemV2({ item_id: 'MLB1', preco: 30 }),
-      itemV2({ item_id: 'MLB2', preco: 10 }),
-      itemV2({ item_id: 'MLB3', preco: 20 }),
+  it('ordena por visitas desc e corta no top 5', () => {
+    const itens = Array.from({ length: 6 }, (_, i) => itemV2({ item_id: `MLB${i}`, vendidos: null }));
+    const vendas = painelSintetico(itens);
+    const visitasPorItem = new Map(itens.map((it, i) => [it.item_id!, v((i + 1) * 10)]));
+    const resultado = rivaisPodioVisitas(vendas, visitasPorItem);
+    expect(resultado).toHaveLength(5);
+    expect(resultado.map((r) => r.visitas)).toEqual([60, 50, 40, 30, 20]);
+  });
+
+  it('exclui visitas == 0 e exclui item cujo Map devolve null (falha de medição)', () => {
+    const vendas = painelSintetico([
+      itemV2({ item_id: 'MLB1' }),
+      itemV2({ item_id: 'MLB2' }),
+      itemV2({ item_id: 'MLB3' }),
     ]);
-    expect(faixasPrecoAmostra(v)).toEqual({
-      modo: 'tercis',
-      faixas: [
-        { rotulo: 'Barato', min: 10, max: 10 },
-        { rotulo: 'Médio', min: 20, max: 20 },
-        { rotulo: 'Premium', min: 30, max: 30 },
-      ],
-    });
-  });
-
-  it('9 itens → tercis com 3 preços cada, cortes em 3 e 6', () => {
-    const precos = [10, 20, 30, 40, 50, 60, 70, 80, 90];
-    const v = painelSintetico(precos.map((preco, i) => itemV2({ item_id: `MLB${i}`, preco })));
-    expect(faixasPrecoAmostra(v)).toEqual({
-      modo: 'tercis',
-      faixas: [
-        { rotulo: 'Barato', min: 10, max: 30 },
-        { rotulo: 'Médio', min: 40, max: 60 },
-        { rotulo: 'Premium', min: 70, max: 90 },
-      ],
-    });
-  });
-
-  it('itens sem preço (null) são filtrados antes de ordenar', () => {
-    const v = painelSintetico([
-      itemV2({ item_id: 'MLB1', preco: 40 }),
-      itemV2({ item_id: 'MLB2', preco: null }),
-      itemV2({ item_id: 'MLB3', preco: 20 }),
-      itemV2({ item_id: 'MLB4', preco: 60 }),
+    const visitasPorItem = new Map<string, VisitasAnuncio | null>([
+      ['MLB1', v(0)],
+      ['MLB2', null],
+      ['MLB3', v(15)],
     ]);
-    // 3 itens com preço válido (o null é filtrado) → n=3, cortes floor(3/3)=1 e floor(6/3)=2.
-    expect(faixasPrecoAmostra(v)).toEqual({
-      modo: 'tercis',
-      faixas: [
-        { rotulo: 'Barato', min: 20, max: 20 },
-        { rotulo: 'Médio', min: 40, max: 40 },
-        { rotulo: 'Premium', min: 60, max: 60 },
-      ],
-    });
+    expect(rivaisPodioVisitas(vendas, visitasPorItem).map((r) => r.item_id)).toEqual(['MLB3']);
+  });
+
+  it('exclui item com item_id == null (não dá para chavear no Map)', () => {
+    const vendas = painelSintetico([itemV2({ item_id: null })]);
+    const visitasPorItem = new Map<string, VisitasAnuncio | null>();
+    expect(rivaisPodioVisitas(vendas, visitasPorItem)).toEqual([]);
+  });
+
+  it('lista vazia devolve []', () => {
+    expect(rivaisPodioVisitas(painelSintetico([]), new Map())).toEqual([]);
   });
 });

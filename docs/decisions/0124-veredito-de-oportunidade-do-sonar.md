@@ -186,3 +186,34 @@ novo não pedido.
 
 Implementação prevista em `src/lib/veredito-sonar.ts` (dados) e
 `src/components/pulse/veredito-sonar.tsx` (render), como entrega separada desta sessão de design.
+
+## Errata 1 (2026-08-27) — o pódio vira duplo e as faixas de preço morrem
+
+O Adendo (2026-08-21) acima, §5, fechou três cards para a área "Insights do nicho": entrada, pódio
+de rivais por faturamento e faixas de preço da amostra. O operador rejeitou os dois últimos depois
+de ver a tela em uso real. Esta errata contradiz aquele item e substitui os dois cards por um só.
+
+Faixas de preço saem porque tercil de preço sobre uma amostra de embalagens diferentes (kit de 12
+litros, sachê de 700g, lata de 380g) não descreve nicho nenhum — "Barato: R$ 22,23 – R$ 61,99"
+comparava produtos que não competem entre si. O card fazia terciamento estatístico correto sobre
+um conjunto sem coerência de unidade de venda, e o resultado não ajudava a decidir nada.
+
+O rótulo de loja sai do pódio: o Apify raramente traz `vendedor` (5 de 5 fantasmas na consulta
+medida "Latas Ninho Nestle Zero Lactose 700gr"), então a linha em destaque do card antigo exibia
+"sem rótulo" repetido — informação zero, ocupando o lugar mais proeminente do item. O pódio passa
+a ser sobre anúncios, não sobre lojas.
+
+Entra o pódio por visitas ao lado do de faturamento, com preço na linha de cada anúncio. Motivo:
+faturamento e visitas rankeiam anúncios DIFERENTES — o líder de visitas da consulta medida (290
+visitas) não tem "+N vendidos" registrado, então não aparece no pódio de faturamento de jeito
+nenhum. Um pódio só escondia metade do nicho: quem mais recebe tráfego pode ser justamente quem
+ainda não converteu, e isso é sinal de oportunidade tão relevante quanto quem já fatura.
+
+Por isso a nova função `rivaisPodioVisitas` (em `veredito-sonar.ts`) NÃO herda o filtro
+`vendidos != null` que `rivaisPodio` aplica. Se herdasse, o pódio de visitas nasceria vazio na
+maioria das consultas — exatamente os anúncios mais visitados costumam ser os que ainda não têm
+"+N vendidos" exibido pelo ML. A elegibilidade do pódio de visitas é outra: `item_id` conhecido,
+`preco` conhecido e visitas medidas maiores que zero (Map de visitas devolvendo `null` é falha de
+medição, exclui; `0` exclui). `rivaisPodio` e `calcularVereditoAnuncios` continuam intocados —
+`rivaisPodioVisitas` é uma função autônoma que só recebe o Map de visitas por item, já montado em
+`PulseSonar.tsx` para outro uso, sem chamada de rede nova.

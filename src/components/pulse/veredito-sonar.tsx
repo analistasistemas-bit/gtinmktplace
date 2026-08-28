@@ -4,16 +4,16 @@
 // ADR-0128: título separa Demanda de Entrada; chip de entrada ao lado do badge parcial.
 import { useState } from 'react';
 import {
-  ChevronDown, Gauge, HelpCircle, Lock, Minus, ShieldAlert, Tags, Trophy, TrendingDown, TrendingUp, Unlock,
+  ChevronDown, Eye, Gauge, HelpCircle, Lock, Minus, ShieldAlert, Trophy, TrendingDown, TrendingUp, Unlock,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { faixasPrecoAmostra, insightEntrada } from '@/lib/veredito-sonar';
+import { insightEntrada, rivaisPodioVisitas } from '@/lib/veredito-sonar';
 import type {
   ContextoItem, ExplicacaoRegua, NivelEntrada, NivelFator, VereditoAnuncios,
 } from '@/lib/veredito-sonar';
-import type { PainelVendasSonar } from '@/lib/sonar';
-import { fmtBRL } from '@/lib/formato';
+import type { PainelVendasSonar, VisitasAnuncio } from '@/lib/sonar';
+import { fmtBRL, fmtMilhar } from '@/lib/formato';
 
 /** Borda do card: baixa=vermelho, alta=verde; demais (média / não medida / fechada) = warning. */
 const CLS_VEREDITO = {
@@ -84,14 +84,19 @@ const ICONE_ENTRADA: Record<NivelEntrada, typeof Unlock> = {
 };
 
 export function VereditoSonar({
-  veredito, contexto, vendas,
-}: { veredito: VereditoAnuncios; contexto: ContextoItem[]; vendas: PainelVendasSonar }) {
+  veredito, contexto, vendas, visitasPorItem,
+}: {
+  veredito: VereditoAnuncios; contexto: ContextoItem[]; vendas: PainelVendasSonar;
+  visitasPorItem: Map<string, VisitasAnuncio | null>;
+}) {
   const [aberto, setAberto] = useState(false);
   const cls = CLS_VEREDITO[veredito.nivel];
   const { explicacao } = veredito;
   const entrada = insightEntrada(veredito);
   const IconeEntrada = ICONE_ENTRADA[veredito.entrada];
-  const faixas = faixasPrecoAmostra(vendas);
+  const rivaisVisitas = rivaisPodioVisitas(vendas, visitasPorItem);
+  const temFaturamento = veredito.rivaisPodio.length > 0;
+  const temVisitas = rivaisVisitas.length > 0;
   return (
     <Card className={`mb-4 border ${cls.borda} ${cls.fundo} p-4`}>
       <div className="flex flex-wrap items-start gap-3">
@@ -161,58 +166,66 @@ export function VereditoSonar({
         </div>
       )}
 
-      {/* Insights do nicho (ADR-0124 addendum 2026-08-21): sempre visíveis, diferencial de SaaS
-          premium — ao contrário do resto da explicação, não ficam escondidos no "Saiba mais".
-          Reaproveita o padrão de mini-card de `painel-analise.tsx` (borda, bg-card, ícone + label).
-          Cada card só aparece se tiver dado — nunca mostra "vazio". */}
+      {/* Insights do nicho (ADR-0124 addendum 2026-08-21; Errata 1 2026-08-27): sempre visíveis,
+          diferencial de SaaS premium — ao contrário do resto da explicação, não ficam escondidos
+          no "Saiba mais". Reaproveita o padrão de mini-card de `painel-analise.tsx` (borda,
+          bg-card, ícone + label). Cada card só aparece se tiver dado — nunca mostra "vazio". */}
       <div className="mt-3 border-t pt-3">
         <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Insights do nicho
         </span>
-        <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <div className="flex w-full flex-1 flex-col gap-1 rounded-md border bg-card p-2 sm:w-auto sm:min-w-[180px]">
-          <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-            <IconeEntrada className={`h-3.5 w-3.5 ${CLS_FATOR[entrada.tom]}`} aria-hidden />
-            {entrada.titulo}
-          </div>
-          <p className="text-xs text-muted-foreground">{entrada.detalhe}</p>
-        </div>
-
-        {veredito.rivaisPodio.length > 0 && (
-          <div className="flex w-full flex-1 flex-col gap-1 rounded-md border bg-card p-2 sm:w-auto sm:min-w-[180px]">
-            <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground" title="Top 5 por faturamento (vendidos × preço) na amostra">
-              <Trophy className="h-3.5 w-3.5" aria-hidden /> Pódio de rivais — por faturamento
-            </div>
-            <ol className="list-decimal space-y-1.5 pl-4 text-xs">
-              {veredito.rivaisPodio.map((r) => (
-                <li key={r.item_id || r.titulo}>
-                  <span className="block truncate font-medium" title={r.vendedor ?? 'sem rótulo'}>
-                    {r.vendedor ?? 'sem rótulo'}
-                  </span>
-                  <span className="block truncate text-muted-foreground" title={r.titulo}>
-                    {r.titulo}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
-
-        {faixas && (
-          <div className="flex w-full flex-1 flex-col gap-1 rounded-md border bg-card p-2 sm:w-auto sm:min-w-[180px]">
+        <div className="mt-2 flex flex-col gap-2">
+          <div className="flex flex-col gap-1 rounded-md border bg-card p-2">
             <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-              <Tags className="h-3.5 w-3.5" aria-hidden /> Faixas de preço
+              <IconeEntrada className={`h-3.5 w-3.5 ${CLS_FATOR[entrada.tom]}`} aria-hidden />
+              {entrada.titulo}
             </div>
-            <div className="flex flex-col gap-0.5 text-xs">
-              {faixas.faixas.map((f) => (
-                <span key={f.rotulo}>
-                  <span className="font-medium text-foreground">{f.rotulo}:</span>{' '}
-                  {f.min === f.max ? fmtBRL(f.min) : `${fmtBRL(f.min)} – ${fmtBRL(f.max)}`}
-                </span>
-              ))}
-            </div>
+            <p className="text-xs text-muted-foreground">{entrada.detalhe}</p>
           </div>
-        )}
+
+          {(temFaturamento || temVisitas) && (
+            <div className="flex w-full flex-col gap-2 rounded-md border bg-card p-2">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Trophy className="h-3.5 w-3.5" aria-hidden /> Pódio de rivais
+              </div>
+              <div className={cn('grid gap-3', temFaturamento && temVisitas && 'sm:grid-cols-2')}>
+                {temFaturamento && (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground" title="Top 5 por faturamento (vendidos × preço) na amostra">
+                      <Trophy className="h-3 w-3" aria-hidden /> Quem mais fatura
+                    </div>
+                    <ol className="list-decimal space-y-1.5 pl-4 text-xs">
+                      {veredito.rivaisPodio.map((r) => (
+                        <li key={r.item_id || r.titulo}>
+                          <span className="block truncate font-medium" title={r.titulo}>{r.titulo}</span>
+                          <span className="block text-muted-foreground">
+                            {r.preco != null ? `${fmtBRL(r.preco)} · ` : ''}≈ {fmtBRL(r.faturamento)}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+                {temVisitas && (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground" title="Top 5 por visitas na amostra">
+                      <Eye className="h-3 w-3" aria-hidden /> Quem mais recebe visitas
+                    </div>
+                    <ol className="list-decimal space-y-1.5 pl-4 text-xs">
+                      {rivaisVisitas.map((r) => (
+                        <li key={r.item_id}>
+                          <span className="block truncate font-medium" title={r.titulo}>{r.titulo}</span>
+                          <span className="block text-muted-foreground">
+                            {r.preco != null ? `${fmtBRL(r.preco)} · ` : ''}{fmtMilhar(r.visitas)} {r.visitas === 1 ? 'visita' : 'visitas'}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
