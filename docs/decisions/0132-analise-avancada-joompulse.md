@@ -8,8 +8,8 @@
 > **Adendo 2026-08-28 — spike parcial executado.** As questões #1, #2 e #3 estão fechadas;
 > **#4–#15 continuam bloqueando** e uma questão nova (#16) foi levantada. O resultado é
 > **incompatível com a D-3** e exige revisão da decisão antes de qualquer código, conforme a
-> D-17. Ver [Adendo — resultado do spike parcial](#adendo--resultado-do-spike-parcial-2026-08-28)
-> no fim deste documento e o [Spike 038](../spikes/038-joompulse-parcial-correlacao-e-semantica.md).
+> D-17. Ver a seção "Adendo — resultado do spike parcial" no fim deste documento e o
+> [Spike 038](../spikes/038-joompulse-parcial-correlacao-e-semantica.md).
 > A tabela de decisões abaixo **não foi alterada** — permanece como aprovada em 2026-08-23.
 
 ## Problema
