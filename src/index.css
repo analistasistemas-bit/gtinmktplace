@@ -206,6 +206,12 @@
     mask-image: radial-gradient(ellipse 70% 55% at 50% 38%, black, transparent);
   }
 
+  /* Campo de partículas das telas de auth — mesma lógica do .auth-grid: concentra no miolo
+     e esvanece antes das bordas, senão vira wallpaper e compete com o formulário. */
+  .auth-particulas {
+    mask-image: radial-gradient(ellipse 56% 52% at 50% 42%, black 38%, transparent 82%);
+  }
+
   /* Trilho de progresso indeterminado: usado quando a duração é desconhecida
      (ex.: exclusão de lote, uma chamada atômica sem progresso granular). */
   .track-indeterminate {

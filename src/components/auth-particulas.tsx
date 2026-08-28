@@ -128,7 +128,11 @@ export function AuthParticulas({
   ]);
 
   return (
-    <div ref={containerRef} aria-hidden className="pointer-events-none absolute inset-0">
+    <div
+      ref={containerRef}
+      aria-hidden
+      className="auth-particulas pointer-events-none absolute inset-0"
+    >
       {!ativo && (
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_60%_45%_at_50%_40%,oklch(0.64_0.18_277/0.10),transparent)]" />
       )}

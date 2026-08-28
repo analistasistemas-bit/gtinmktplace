@@ -46,7 +46,7 @@ const LERP_SEM_CURSOR = 0.01;
  * que esta simulação produz em repouso — sem o ganho o ponto sai com menos de 1px e o campo
  * some. É o parâmetro para mexer se o fundo ficar tímido ou pesado demais.
  */
-const GANHO_TAMANHO = 7;
+const GANHO_TAMANHO = 4.5;
 
 /**
  * Monta o campo GPGPU dentro do container. Devolve `null` quando o ambiente não suporta
