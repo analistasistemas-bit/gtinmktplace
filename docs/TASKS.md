@@ -4,7 +4,7 @@
 
 ## Análise PubliAI — desenho fechado (ADR-0140) — 2026-08-28
 
-**Desenho aprovado, implementação bloqueada.** 19 decisões fechadas em entrevista com Diego.
+**Desenho aprovado, implementação bloqueada.** 24 decisões fechadas em entrevista com Diego — nenhuma pendente do lado do produto.
 ADR em `docs/decisions/0140-analise-publiai-joompulse-radar-e-sonar.md`; termos novos no
 glossário. **Nenhum código escrito** — a ADR-0132 ainda não fechou como conectar (#4–#16).
 
@@ -20,10 +20,20 @@ glossário. **Nenhum código escrito** — a ADR-0132 ainda não fechou como con
 - [x] Custo de IA registrado por org, sem teto no v1
 - [x] DRE **estende** `calcularSimulacaoML()` — nenhum motor financeiro novo
 - [x] Imposto = alíquota confirmada da org por origem; frete e comissão pelas APIs do ML
-- [ ] **Bloqueado:** questões #4–#16 da ADR-0132 (OAuth, credenciais, cache, quotas, parceria)
-- [ ] **Bloqueado:** sonda de cobertura em produção antes de qualquer promessa de UI
-- [ ] Decidir na implementação: o que fazer com a Referência do ML no dialog de detalhe
-      (a coluna sai, mas há uma segunda exibição em `dialog-detalhe.tsx:442-448`)
+- [x] Desconectar preserva relatórios como histórico; credencial apagada (fecha #8 local)
+- [x] Conexão é da org, não cai com saída de membro; avisa o admin ao remover (fecha #13)
+- [x] Retenção: cache 7d, relatório 12m, auditoria permanente (fecha #14)
+- [x] Alertas por tipo: credencial/quota → admin da org; schema/indisponibilidade → super-admin
+      (fecha #15)
+- [x] "Referência do ML" sai da UI inteira (coluna **e** `dialog-detalhe.tsx:442-448`), para
+      todas as orgs; coleta continua, `ptw_custos` intacto; saem `seloPriceToWin`/
+      `ordemPriceToWin` e os 26 testes órfãos
+- [ ] **Falar com a JoomPulse** — uma conversa resolve #16 (parceria cobre server-to-server?),
+      #7 (revogação e refresh rotation) e #10 (pode cachear? resposta é igual entre contas?).
+      **A #16 precede tudo:** se a resposta for não, nada desta ADR acontece
+- [ ] **Trabalho técnico, exige medir:** #4 contrato HTTP, #5/#6 storage e cifragem de
+      credencial, #9 backend do cache, #11/#12 rate limits, latência e cold start
+- [ ] **Sonda de cobertura em produção** antes de qualquer promessa de UI
 
 ## Spike JoomPulse — parcial (ADR-0132) — 2026-08-28
 

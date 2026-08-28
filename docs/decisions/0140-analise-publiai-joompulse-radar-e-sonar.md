@@ -1,6 +1,6 @@
 # ADR-0140 — Análise PubliAI: JoomPulse no Radar e no Sonar
 
-**Status:** Aceito — desenho fechado em entrevista com Diego (2026-08-28). **Implementação continua bloqueada** pelas questões #4–#16 da [ADR-0132](0132-analise-avancada-joompulse.md): OAuth multi-conta, storage de credencial, cache, quotas e a confirmação da parceria para uso server-to-server.
+**Status:** Aceito — desenho fechado em entrevista com Diego (2026-08-28); 24 decisões, **nenhuma pendente do lado do produto**. As decisões D-20 a D-24 fecham as questões #13, #14, #15 e a parte local da #8 da [ADR-0132](0132-analise-avancada-joompulse.md). **Implementação continua bloqueada** pelo que resta: trabalho técnico contra o ambiente real (#4, #5, #6, #9, #11, #12) e três respostas que só a JoomPulse pode dar (#7, #10 e sobretudo **#16 — a parceria cobre uso server-to-server?**).
 **Data:** 2026-08-28
 **Decisores:** Diego
 **Relaciona:** [0132](0132-analise-avancada-joompulse.md) (arquitetura do Gateway e do módulo — **esta ADR supersede a D-3 e emenda a D-7**), [Spike 038](../spikes/038-joompulse-parcial-correlacao-e-semantica.md) (achados que motivaram a revisão), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Radar; o 403 do ML; Errata 8 e Errata 10), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) / [0127](0127-sonar-tabela-por-anuncio-e-historico.md) (Sonar, Apify e a tabela por anúncio), [0124](0124-veredito-de-oportunidade-do-sonar.md) / [0137](0137-sonar-disputa-caminho-b-concentracao-por-anuncio.md) / [0138](0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) (veredito), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0020](0020-estrategia-de-preco-liquido-minimo.md) / [0055](0055-imposto-por-origem-nacional-importado.md) / [0107](0107-origem-obrigatoria-na-planilha.md) (margem e imposto por origem), [0086](0086-configuracao-org-scoped.md) (módulos)
@@ -36,6 +36,11 @@ A D-17 da ADR-0132 manda voltar para decisão. Esta ADR é essa decisão, tomada
 | D-17 | **O imposto é a alíquota confirmada da organização, escolhida pela origem do produto** (`configuracoes.aliquota_nacional_pct` / `aliquota_importado_pct`, ADR-0055/0107), e o operador informa a origem (nacional/importado). **Não existe campo livre de alíquota no relatório.** Vale a mesma trava LOUD já implementada no Sonar: sem alíquota confirmada, não se calcula. |
 | D-18 | **Comissão e frete vêm das APIs oficiais do Mercado Livre já integradas** — `/sites/MLB/listing_prices` por categoria e tipo de anúncio (`_shared/ml/listing-prices.ts`) e `/users/{id}/shipping_options/free` (`_shared/ml/tabela-frete.ts`). **Nenhuma tabela de frete ou de comissão é embutida em código, prompt ou banco.** O valor da API já vem com o desconto de reputação do vendedor aplicado, então a distinção MercadoLíder/Verde sai automática. Não é necessária verificação diária de atualização de tabela: não há tabela local para envelhecer. |
 | D-19 | **Quem enxerga o Pulse pode gerar a Análise PubliAI.** Conectar e desconectar a conta permanece restrito ao admin da organização (D-5 da ADR-0132). Usar consome cota da conta JoomPulse da org, mas o cache da D-13 limita o consumo, e restringir o uso a admin esvaziaria a feature para o operador que de fato garimpa. |
+| D-20 | **Desconectar apaga e inutiliza a credencial, mas preserva os relatórios já gerados**, marcados com a data de geração e um aviso de fonte desconectada; nenhum novo é gerado até reconectar. Um relatório não é só dado da JoomPulse — carrega a DRE calculada com o custo da própria org e sustentou uma decisão comercial. Apagá-lo destruiria o rastro de por que a organização entrou ou deixou de entrar num produto. **Fecha a parte local da questão #8 da ADR-0132**; o que "Desconectar" executa remotamente continua dependendo da #7. |
+| D-21 | **A conexão pertence à organização e não cai quando um membro sai ou perde o papel de admin** — mesmo princípio de `marketplace_connections` (ADR-0027/0095), cuja versão por usuário foi deprecada depois de causar incidente. Mas, como a assinatura JoomPulse pode ser pessoal e o PubliAI não tem como saber, fica registrado quem conectou e quando, e ao remover essa pessoa o app avisa o admin para confirmar se a assinatura é da empresa. Nunca há quebra automática. **Fecha a questão #13.** |
+| D-22 | **Retenção por natureza do dado:** cache de resposta crua 7 dias (é performance; a fonte muda diariamente), relatório gerado 12 meses (artefato de decisão, custou cota e token, permite comparar o mesmo nicho ao longo do ano), auditoria de conexão e desconexão permanente (registro de segurança, volume desprezível). O offboarding da organização apaga os três. **Fecha a questão #14.** |
+| D-23 | **Alerta com destinatário por tipo de falha**, no canal Telegram org-scoped já existente (ADR-0086). Ao **admin da organização**: credencial expirada ou revogada e quota da assinatura esgotada — só ele resolve. Ao **super-admin**: resposta fora do schema esperado (significa que a JoomPulse mudou o contrato e quebra todas as orgs) e indisponibilidade que persista além da janela. Falha transitória não alerta ninguém: aparece na tela e se resolve. **Fecha a questão #15.** |
+| D-24 | **A "Referência do preço do ML" sai da interface por completo** — a coluna do Radar e a linha secundária do dialog de detalhe (`dialog-detalhe.tsx:442-448`) — **para todas as organizações**, inclusive as sem o módulo, que ficam com uma coluna a menos. A Errata 10 da ADR-0119 documenta que o número induz decisão errada (produto mais barato entre concorrentes reais exibido como "acima da referência", porque o ML inclui universo não comparável); se engana na coluna, engana no dialog e engana quem não assina JoomPulse. Já foi mitigado duas vezes (Erratas 3 e 10) — uma terceira mitigação parcial não resolve. **A coleta continua e o dado permanece no banco**, o que torna a remoção reversível. O campo irmão `ptw_custos` (comissão e frete) **não é tocado**: alimenta o cálculo de margem. Saem junto o código que ficou órfão (`seloPriceToWin` / `ordemPriceToWin` em `pulse-formato.ts`) e seus 26 testes. |
 
 ## O que muda na ADR-0132
 
@@ -107,7 +112,7 @@ A Errata 8 da ADR-0119 mediu 36 ofertas e registrou que a API do ML não devolve
 ## Consequências
 
 - O Radar passa a responder uma pergunta que **nenhuma tela do PubliAI responde hoje**: quem está levando a venda, e se a org é mais barata e mesmo assim perde.
-- Sai da tela a "Referência do ML", cujo problema já estava documentado na Errata 10 da ADR-0119 (produto mais barato entre concorrentes reais exibido como "acima da referência", porque a referência do ML inclui universo não comparável). O campo irmão `ptw_custos` (comissão/frete) **permanece** — alimenta a margem. A exibição secundária no dialog de detalhe precisa de decisão própria na implementação.
+- Sai da interface a "Referência do ML" (D-24), cujo problema já estava documentado na Errata 10 da ADR-0119. **Organizações sem o módulo ficam com uma coluna a menos e nada no lugar** — perda aceita conscientemente: o número enganava com ou sem JoomPulse. O campo irmão `ptw_custos` (comissão/frete) **permanece** e a coleta continua, o que torna a remoção reversível.
 - O Sonar ganha profundidade sem perder autonomia: quem não tem JoomPulse continua com o Sonar íntegro.
 - Duas fontes de "vendas" convivem na mesma tela para quem tem as duas coisas — mitigado por rótulo (D-7), não eliminado.
 - O custo de IA passa a existir por clique, registrado e observável, mas sem teto no v1.
@@ -116,15 +121,21 @@ A Errata 8 da ADR-0119 mediu 36 ofertas e registrou que a API do ML não devolve
 
 ## O que continua bloqueando a implementação
 
-Esta ADR fecha **o quê**. A ADR-0132 ainda não fechou **como conectar**:
+Esta ADR fecha **o quê**, e as decisões D-20 a D-24 fecharam as questões da ADR-0132 que dependiam de escolha do dono do produto (#13, #14, #15 e a parte local da #8). O que resta **não é decisão** — é trabalho técnico contra o ambiente real, ou resposta que só a JoomPulse pode dar.
+
+**Trabalho técnico (exige medir, não escolher):**
 
 - #4 contrato HTTP do Gateway
 - #5/#6 storage e cifragem de credencial
-- #7/#8 refresh rotation, revogação e o que "Desconectar" executa
-- #9/#10 backend de cache, TTLs e invariância entre contas
+- #9 backend do cache das consultas cruas (os TTLs estão fixados na D-22)
 - #11/#12 rate limits, timeouts, latência e cold start
-- #13/#14 ciclo de vida da credencial e expurgo no offboarding
-- #15 alertas e thresholds
-- #16 confirmação com a JoomPulse de que a parceria cobre uso server-to-server desta superfície
+
+**Depende da JoomPulse — uma conversa resolve as três:**
+
+- **#16 a parceria cobre uso server-to-server** por um Gateway do PubliAI? Se a resposta for não, nada nesta ADR acontece; é a pergunta que precede todas as outras
+- #7 existe revogação de token e rotação de refresh? (define o lado remoto da #8)
+- #10 as respostas podem ser cacheadas, e são invariáveis entre contas e planos?
+
+**Ainda não medido:** a cobertura real — quantos anúncios do PubliAI existem no snapshot da JoomPulse. Sem esse número não dá para dimensionar quantas linhas do Radar cairiam em "sem dado", e nenhuma promessa de UI deve ser feita antes dele.
 
 A cobertura real (quantos anúncios do PubliAI existem no snapshot da JoomPulse) também não foi medida e precisa de sonda em produção antes de qualquer promessa de UI.
