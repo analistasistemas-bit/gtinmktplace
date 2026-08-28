@@ -45,7 +45,8 @@ const painelSintetico = (itens: ItemVendasSonar[]): PainelVendasSonar => {
 
 /** Todo texto que a UI mostra — alimenta a trava de vocabulário (ADR-0127 §Fragilidades). */
 const textosGerados = (v: VereditoAnuncios): string[] => [
-  v.titulo, v.motivo,
+  v.titulo, v.resumo, v.chip ?? '',
+  ...v.ramosEntrada.flatMap((r) => [r.rotulo, r.texto]),
   ...v.fatores.map((f) => f.detalhe),
   ...(v.marca ? [v.marca.detalhe] : []),
   v.explicacao.acao,
@@ -60,7 +61,7 @@ describe('calcularVereditoAnuncios — gabarito D12 (fixtures REAIS medidos na T
     expect(v.explicacao.pontuacao).toEqual({ soma: 4, maximo: 6 });
     expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'ruim', 'bom']);
     expect(v.parcial).toBe(false);
-    expect(v.resumo).toBe('Bom volume de venda, mas poucas lojas já dominam o topo — pouco espaço pra mais um player.');
+    expect(v.resumo).toBe('Mercado aquecido, mas um punhado de anúncios concentra o faturamento. Entrar exige preço melhor que o deles.');
   });
   it('protetor solar facial → média (4/6)', () => {
     const { vendas, visitas_total } = fixture('protetor-solar-facial');
@@ -74,7 +75,7 @@ describe('calcularVereditoAnuncios — gabarito D12 (fixtures REAIS medidos na T
     const v = calcularVereditoAnuncios(vendas, visitas_total);
     expect(v.nivel).toBe('alta');
     expect(v.entrada).toBe('aberta');
-    expect(v.titulo).toBe('Oportunidade alta');
+    expect(v.titulo).toBe('Alta demanda · campo aberto');
     expect(v.explicacao.pontuacao).toEqual({ soma: 5, maximo: 6 });
     expect(v.fatores.map((f) => f.nivel)).toEqual(['bom', 'bom', 'medio']);
   });
@@ -109,14 +110,14 @@ describe('cobertura de rótulo <50% (D10) — cede ao caminho B quando há dado 
     // disputa 🟡 (3/4) e 🟢 (4/4) igualmente — o teto ficaria invisível justo na faixa que decide
     // compra de estoque.
     expect(v.nivel).toBe('media');
-    expect(v.titulo).toBe('Oportunidade média');
+    expect(v.titulo).toBe('Alta demanda · campo aberto');
   });
 
   it('mesmo sem rótulo, a explicação de Tração aparece explicando por que ela saiu da conta', () => {
     const v = semRotuloComVendas();
     const tracaoExplicacao = v.explicacao.fatores.find((f) => f.chave === 'tracao');
     expect(tracaoExplicacao?.regua).toBeNull();
-    expect(tracaoExplicacao?.frase).toMatch(/rótulo de loja/i);
+    expect(tracaoExplicacao?.frase).toMatch(/nome de loja/i);
   });
 });
 
@@ -136,7 +137,7 @@ describe('ADR-0128 — Demanda ≠ Entrada', () => {
     // Entrada destravada (era o ponto do ADR-0137), mas sem chegar a "alta": a Disputa veio do
     // caminho B, cuja evidência o próprio ADR classifica como fraca.
     expect(v.nivel).toBe('media');
-    expect(v.titulo).toBe('Oportunidade média');
+    expect(v.titulo).toBe('Alta demanda · campo aberto');
   });
 
   it('fantasma com alto faturamento aparece no rivaisPodio com vendedor null', () => {
@@ -171,8 +172,8 @@ describe('ADR-0128 — Demanda ≠ Entrada', () => {
     expect(v.nivel).toBe('baixa');
     expect(v.entrada).toBe('fechada');
     expect(v.explicacao.gateDemanda).toBe(false);
-    expect(v.titulo).toMatch(/entrada fechada/);
-    expect(v.resumo).toBe('Mercado aquecido, mas dominado por quem já tem Full — entrar com estoque grande é nadar contra a maré.');
+    expect(v.titulo).toMatch(/concorrência pesada|risco de marca/);
+    expect(v.resumo).toBe('Mercado aquecido e disputado no prazo: o topo entrega por Full. Dá pra entrar, mas o preço tem que compensar a entrega.');
     expect(v.explicacao.acao).not.toMatch(/Demanda insuficiente/i);
     expect(v.explicacao.acao).toMatch(/entrada fechada|Full/i);
   });
@@ -192,7 +193,7 @@ describe('ADR-0128 — Demanda ≠ Entrada', () => {
     expect(v.entrada).toBe('fechada');
     expect(v.nivel).not.toBe('alta');
     expect(v.parcial).toBe(false);
-    expect(v.titulo).toMatch(/entrada fechada/);
+    expect(v.titulo).toMatch(/concorrência pesada|risco de marca/);
   });
 });
 
@@ -334,9 +335,9 @@ describe('Disputa caminho B (ADR-0137) — via calcularVereditoAnuncios, cobertu
     const v = calcularVereditoAnuncios(painelSintetico([...nomeados, ...comVendaSemPreco, ...elegiveis]), null);
     expect(v.fatores.map((f) => f.chave)).not.toContain('disputa');
     expect(v.parcial).toBe(true);
-    expect(v.motivo).toMatch(/tipo de envio/i);
-    expect(v.motivo).toMatch(/vendidos e preço|concentração/i);
-    expect(v.motivo).not.toMatch(/rótulo/i);
+    expect(v.explicacao.acao).toMatch(/tipo de envio/i);
+    expect(v.explicacao.acao).toMatch(/vendidos e preço|concentração/i);
+    expect(v.explicacao.acao).not.toMatch(/rótulo/i);
   });
 
   it('não-regressão do caminho A: painel com cobertura ≥ 50% continua medindo por pulverização, resultado intocado', () => {
@@ -367,7 +368,11 @@ describe('vocabulário (ADR-0127 §Fragilidades) — o card imprime a MARCA, nã
     for (const v of casos) {
       // "ficha" morreu junto com o painel de catálogo (D1/D3): a unidade agora é o anúncio.
       for (const texto of textosGerados(v)) expect(texto).not.toMatch(/vendedor|ficha/i);
-      expect(textosGerados(v).some((t) => /rótulo/i.test(t))).toBe(true);
+      // ADR-0138: o termo deliberado na tela virou "concorrente" — comercial e, ao contrário de
+      // "vendedor", sem afirmar que o card traz uma conta de loja (ele traz a marca).
+      expect(textosGerados(v).some((t) => /concorrente/i.test(t))).toBe(true);
+      // "entrada fechada" nunca é impressa: o dado mede custo de entrada, não porta trancada.
+      for (const texto of textosGerados(v)) expect(texto).not.toMatch(/entrada fechada/i);
     }
   });
 });
@@ -424,55 +429,138 @@ describe('contextoNichoAnuncios — leitura complementar, fora do score', () => 
 
 // =============== Insights do nicho (ADR-0124 addendum 2026-08-21) ===============================
 
+describe('ADR-0138 — matriz de título (Demanda × Barreira) e travas de linguagem', () => {
+  // Uma amostra por par, montada pelos fatores que produzem cada barreira. O que este bloco pega
+  // e nenhum outro pega: um par (demanda, barreira) mapeado para o texto errado.
+  const casos: { nome: string; itens: ItemVendasSonar[]; titulo: string; barreira: string }[] = [
+    {
+      nome: 'sem prova de venda (gate) — título sem segundo eixo',
+      itens: Array.from({ length: 10 }, (_, i) => itemV2({ item_id: `A${i}`, vendedor: `L${i}`, vendidos: i < 1 ? 100 : null })),
+      titulo: 'Sem prova de venda', barreira: 'nao_medida',
+    },
+    {
+      nome: 'alta demanda · campo aberto',
+      itens: Array.from({ length: 20 }, (_, i) => itemV2({ item_id: `B${i}`, vendedor: `L${i}`, vendidos: 1_000, preco: 400, full: i < 4 })),
+      titulo: 'Alta demanda · campo aberto', barreira: 'nenhuma',
+    },
+    {
+      nome: 'alta demanda · concorrência pesada (Full)',
+      itens: Array.from({ length: 20 }, (_, i) => itemV2({ item_id: `C${i}`, vendedor: `L${i}`, vendidos: 1_000, preco: 400, full: true })),
+      titulo: 'Alta demanda · concorrência pesada', barreira: 'concorrencia',
+    },
+    {
+      nome: 'alta demanda · risco de marca',
+      itens: Array.from({ length: 20 }, (_, i) => itemV2({ item_id: `D${i}`, vendedor: `L${i}`, vendidos: 1_000, preco: 400, full: false, loja_oficial: i < 11 })),
+      titulo: 'Alta demanda · risco de marca', barreira: 'marca',
+    },
+    {
+      nome: 'demanda comprovada · concorrência pesada (o print do Diego)',
+      itens: Array.from({ length: 20 }, (_, i) => itemV2({ item_id: `E${i}`, vendedor: `L${i}`, vendidos: i < 12 ? 500 : null, preco: 100, full: true })),
+      titulo: 'Demanda comprovada · concorrência pesada', barreira: 'concorrencia',
+    },
+    {
+      nome: 'alta demanda · mercado apertado (topo livre, bolo pequeno)',
+      itens: Array.from({ length: 20 }, (_, i) => itemV2({ item_id: `F${i}`, vendedor: `L${i}`, vendidos: 1_000, preco: 1, full: i < 4 })),
+      titulo: 'Alta demanda · mercado apertado', barreira: 'mercado_apertado',
+    },
+  ];
+
+  for (const caso of casos) {
+    it(caso.nome, () => {
+      const v = calcularVereditoAnuncios(painelSintetico(caso.itens), null);
+      expect(v.barreira).toBe(caso.barreira);
+      expect(v.titulo).toBe(caso.titulo);
+      // A trava que importa: preço a bater só existe onde preço resolve. Marca (moderação por IP)
+      // e ausência de demanda nunca ganham número.
+      const podeTerPreco = !v.explicacao.gateDemanda && v.barreira !== 'marca' && v.barreira !== 'nao_medida';
+      expect(v.ramosEntrada.length > 0).toBe(podeTerPreco);
+      for (const t of textosGerados(v)) expect(t).not.toMatch(/entrada fechada|Oportunidade (alta|média|baixa)/i);
+    });
+  }
+});
+
 describe('insightEntrada', () => {
-  it('entrada aberta com folga restante → menciona o próximo delta (destravar)', () => {
+  it('campo aberto → card "Como entrar" com o preço a bater do líder', () => {
     const { vendas, visitas_total } = fixture('tecido-oxford-10-metros');
     const v = calcularVereditoAnuncios(vendas, visitas_total);
-    expect(v.entrada).toBe('aberta');
+    expect(v.barreira).toBe('nenhuma');
     const insight = insightEntrada(v);
-    expect(insight.titulo).toBe('Entrada aberta');
+    expect(insight.titulo).toBe('Como entrar neste nicho');
     expect(insight.tom).toBe('bom');
-    expect(insight.detalhe).toMatch(/Ainda dá para melhorar/);
+    expect(insight.ramos.map((r) => r.rotulo)).toEqual(['Preço a bater']);
   });
 
-  it('entrada fechada por disputa (Full dominante) → detalhe usa o destravar da disputa', () => {
+  it('concorrência pesada por Full → dois ramos, e o "Sem Full" traz 5% abaixo do líder', () => {
     const itens = Array.from({ length: 20 }, (_, i) => itemV2({
       item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: i < 12 ? 500 : null, preco: 100,
       full: i < 19, loja_oficial: false,
     }));
     const v = calcularVereditoAnuncios(painelSintetico(itens), null);
-    expect(v.entrada).toBe('fechada');
+    expect(v.barreira).toBe('concorrencia');
+    expect(v.chip).toBe('95% Full');
     const insight = insightEntrada(v);
-    expect(insight.titulo).toBe('Entrada fechada');
-    expect(insight.tom).toBe('ruim');
-    expect(insight.detalhe).toMatch(/Para destravar:/);
+    expect(insight.titulo).toBe('Como entrar neste nicho');
+    expect(insight.ramos.map((r) => r.rotulo)).toEqual(['Com Full', 'Sem Full']);
+    // Líder a R$ 100 → alvo do não-Full é R$ 95,00 (5% abaixo, arredondado pra baixo em centavos).
+    expect(insight.ramos[1].texto).toMatch(/R\$\s?95,00/);
   });
 
-  it('entrada fechada por marca (disputa boa) → detalhe usa o destravar da marca, não da disputa', () => {
+  it('risco de marca NUNCA mostra preço a bater — desconto não evita moderação por IP', () => {
     const itens = Array.from({ length: 20 }, (_, i) => itemV2({
       item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: 1_000, preco: 400,
       full: false, loja_oficial: i < 11, // 11/20 = 55% > 50%
     }));
     const v = calcularVereditoAnuncios(painelSintetico(itens), null);
-    expect(v.entrada).toBe('fechada');
+    expect(v.barreira).toBe('marca');
     expect(v.fatores.find((f) => f.chave === 'disputa')?.nivel).not.toBe('ruim');
+    expect(v.ramosEntrada).toEqual([]);
     const insight = insightEntrada(v);
-    expect(insight.titulo).toBe('Entrada fechada');
+    expect(insight.titulo).toBe('Risco de marca');
+    expect(insight.ramos).toEqual([]);
     expect(insight.detalhe).toMatch(/loja oficial/);
+    expect(insight.detalhe).toMatch(/Preço não resolve/);
   });
 
-  it('entrada não medida (nenhum caminho da Disputa mediu) → detalhe cita a cobertura de rótulo de loja', () => {
-    // Diferente da trava D10 antiga: aqui nem o caminho A (rótulo) nem o B (concentração por
-    // anúncio, ADR-0137) medem — cobertura de rótulo <50% E menos de 5 anúncios elegíveis por venda.
-    const nomeados = Array.from({ length: 4 }, (_, i) => itemV2({ item_id: `MLBn${i}`, vendedor: `V${i}`, vendidos: null, preco: 100 }));
+  it('marca ruim vence Full dominante: a barreira mais cara é a que aparece (ADR-0138 §1)', () => {
+    const itens = Array.from({ length: 20 }, (_, i) => itemV2({
+      item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: 1_000, preco: 400,
+      full: true, loja_oficial: i < 11, // Full 100% E loja oficial 55%
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    expect(v.fatores.find((f) => f.chave === 'disputa')?.nivel).toBe('ruim');
+    expect(v.barreira).toBe('marca');
+    expect(v.ramosEntrada).toEqual([]);
+  });
+
+  it('concorrência não medida → sem preço a bater, detalhe cita a causa real', () => {
+    // Nem o caminho A (nome de loja <50%) nem o B (menos de 5 elegíveis por venda) medem.
+    // `preco: null` nos nomeados: contam pra liquidez da Demanda (evita o gate) mas não são
+    // elegíveis para concentração, que exige vendidos E preço.
+    const nomeados = Array.from({ length: 4 }, (_, i) => itemV2({ item_id: `MLBn${i}`, vendedor: `V${i}`, vendidos: 2_000, preco: null }));
     const anonimosSemVenda = Array.from({ length: 14 }, (_, i) => itemV2({ item_id: `MLBx${i}`, vendedor: null, vendidos: null, preco: 100 }));
     const anonimosComVenda = Array.from({ length: 2 }, (_, i) => itemV2({ item_id: `MLBv${i}`, vendedor: null, vendidos: 500, preco: 50 }));
     const v = calcularVereditoAnuncios(painelSintetico([...nomeados, ...anonimosSemVenda, ...anonimosComVenda]), null);
     expect(v.entrada).toBe('nao_medida');
+    expect(v.barreira).toBe('nao_medida');
+    expect(v.explicacao.gateDemanda).toBe(false);
+    expect(v.ramosEntrada).toEqual([]);
     const insight = insightEntrada(v);
     expect(insight.titulo).toBe('Concorrência não medida');
     expect(insight.tom).toBe('medio');
-    expect(insight.detalhe).toMatch(/rótulo de loja/);
+    expect(insight.detalhe).toMatch(/nome de loja/);
+  });
+
+  it('sem prova de venda → card diz que não existe preço a bater, nunca um número', () => {
+    const itens = Array.from({ length: 10 }, (_, i) => itemV2({
+      item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: i < 1 ? 100 : null, preco: 100,
+    }));
+    const v = calcularVereditoAnuncios(painelSintetico(itens), null);
+    expect(v.explicacao.gateDemanda).toBe(true);
+    expect(v.titulo).toBe('Sem prova de venda');
+    expect(v.ramosEntrada).toEqual([]);
+    const insight = insightEntrada(v);
+    expect(insight.titulo).toBe('Sem prova de venda');
+    expect(insight.ramos).toEqual([]);
   });
 
   it('entrada não medida por Full não informado (cobertura OK, sem trava D10) → detalhe cita o envio, não o genérico', () => {
@@ -495,7 +583,7 @@ describe('insightEntrada', () => {
     expect(insight.detalhe).not.toBe('Não deu para medir a concorrência do nicho com os dados desta amostra.');
   });
 
-  it('entrada aberta sem nenhum destravar (tudo já bom) → detalhe genérico de campo livre', () => {
+  it('campo aberto sem nenhuma barreira → detalhe genérico de campo livre', () => {
     const itens = Array.from({ length: 20 }, (_, i) => itemV2({
       item_id: `MLB${i}`, vendedor: `LOJA-${i}`, vendidos: 1_000, preco: 400,
       full: false, loja_oficial: false,
@@ -503,10 +591,12 @@ describe('insightEntrada', () => {
     const v = calcularVereditoAnuncios(painelSintetico(itens), null);
     expect(v.entrada).toBe('aberta');
     expect(v.explicacao.fatores.every((f) => f.destravar == null)).toBe(true);
+    expect(v.barreira).toBe('nenhuma');
     const insight = insightEntrada(v);
-    expect(insight.titulo).toBe('Entrada aberta');
+    expect(insight.titulo).toBe('Como entrar neste nicho');
     expect(insight.tom).toBe('bom');
     expect(insight.detalhe).toBe('Sem barreira estrutural detectada nesta amostra — campo livre pra quem chega agora.');
+    expect(insight.ramos.map((r) => r.rotulo)).toEqual(['Preço a bater']);
   });
 });
 

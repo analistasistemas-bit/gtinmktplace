@@ -15,8 +15,20 @@ import type { PainelVendasSonar, VisitasAnuncio } from './sonar';
 
 export type NivelFator = 'bom' | 'medio' | 'ruim';
 export type NivelVeredito = 'alta' | 'media' | 'baixa';
-/** Entrada no nicho (ADR-0128): pergunta separada da Demanda — "dá para entrar?" ≠ "vende?". */
+/** Entrada no nicho (ADR-0128): pergunta separada da Demanda — "dá para entrar?" ≠ "vende?".
+ *  ESTADO INTERNO desde o ADR-0138: governa o composite `nivel`, mas a palavra "fechada" nunca
+ *  chega à tela — o que o operador lê é `Barreira`. */
 export type NivelEntrada = 'aberta' | 'fechada' | 'nao_medida';
+
+/**
+ * O que separa o operador do topo do nicho (ADR-0138). Substitui "entrada aberta/fechada" na
+ * interface: o dado mede CUSTO de entrada, não porta trancada — nicho nenhum do ML é fechado a
+ * preço. Separa as duas causas que o ADR-0128 colapsava numa palavra só, porque são negócios
+ * diferentes: `concorrencia` é barreira de preço e logística (superável); `marca` é barreira
+ * jurídica (risco de moderação por propriedade intelectual — incidente Aquaphor, 06/08), onde
+ * desconto nenhum resolve.
+ */
+export type Barreira = 'nenhuma' | 'concorrencia' | 'marca' | 'mercado_apertado' | 'nao_medida';
 
 /** Rival no pódio por faturamento (vendidos×preço), incluindo anúncios sem rótulo de loja. */
 export interface RivalPodio {
@@ -101,73 +113,163 @@ function nivelDemanda(vendas: PainelVendasSonar): { nivel: NivelFator; detalhe: 
   return { nivel: 'medio', detalhe, liquidez, vendasTotais: vendas.vendas_totais };
 }
 
-const TITULO_BAIXA = 'Oportunidade baixa';
-const TITULO_ALTA = 'Oportunidade alta';
-const TITULO_MEDIA = 'Oportunidade média';
+// --- Linguagem comercial (ADR-0138) ------------------------------------------------------------
+// Nenhum corte se move aqui: só o vocabulário. "Entrada fechada" morreu porque afirmava
+// impossibilidade onde o dado mede CUSTO — nicho nenhum do ML é fechado a preço competitivo.
 
-function tituloVeredito(nivel: NivelVeredito, entrada: NivelEntrada, demanda: NivelFator): string {
-  if (demanda === 'ruim') return TITULO_BAIXA;
-  if (entrada === 'nao_medida') {
-    return demanda === 'bom'
-      ? 'Demanda forte · concorrência não medida'
-      : 'Demanda ok · concorrência não medida';
-  }
-  if (entrada === 'fechada') {
-    return demanda === 'bom'
-      ? 'Demanda forte · entrada fechada'
-      : 'Demanda ok · entrada fechada';
-  }
-  if (nivel === 'baixa') return TITULO_BAIXA;
-  if (nivel === 'alta') return TITULO_ALTA;
-  return TITULO_MEDIA;
+/** Handicap de preço para quem NÃO opera por Full, quando o topo do nicho é majoritariamente Full.
+ *  HEURÍSTICA COMERCIAL do operador (28/08) — NÃO medida contra gabarito, ao contrário de
+ *  DISPUTA_V2 / TRACAO_V2 / DEMANDA. Única constante não medida do arquivo; recalibrar com venda
+ *  real, nunca com opinião. Motivo do handicap: empatar preço com um Full sendo não-Full não
+ *  empata a disputa — o comprador decide pelo prazo antes de decidir pelo preço. */
+const HANDICAP_NAO_FULL = 0.05;
+
+const ROTULO_DEMANDA: Record<NivelFator, string> = {
+  bom: 'Alta demanda',
+  medio: 'Demanda comprovada',
+  ruim: 'Sem prova de venda',
+};
+
+const ROTULO_BARREIRA: Record<Barreira, string> = {
+  nenhuma: 'campo aberto',
+  concorrencia: 'concorrência pesada',
+  marca: 'risco de marca',
+  mercado_apertado: 'mercado apertado',
+  nao_medida: 'concorrência não medida',
+};
+
+/**
+ * Função pura dos FATORES — nunca de `nivel` (ADR-0138 §1). Derivar do composite reintroduziria a
+ * classe de bug que a Correção 2026-08-20 do ADR-0128 consertou: `nivel === 'baixa'` sequestrando
+ * o título quando a causa real era outra. Marca vence tudo porque a recomendação de preço é
+ * inválida sob risco de moderação — desconto nenhum evita anúncio derrubado por propriedade
+ * intelectual.
+ */
+function derivarBarreira(
+  entrada: NivelEntrada,
+  disputa: { nivel: NivelFator } | null,
+  tracao: { nivel: NivelFator } | null,
+  marca: { nivel: NivelFator } | null,
+): Barreira {
+  if (entrada === 'nao_medida') return 'nao_medida';
+  if (marca?.nivel === 'ruim') return 'marca';
+  if (disputa?.nivel === 'ruim') return 'concorrencia';
+  if (tracao?.nivel === 'ruim') return 'mercado_apertado';
+  return 'nenhuma';
 }
 
+/** Gramática única em todos os casos: `<Demanda> · <Barreira>`. "Oportunidade alta/média/baixa"
+ *  saiu do título — o nível continua governando a COR do card, só deixou de ser a manchete. */
+function tituloVeredito(barreira: Barreira, demanda: NivelFator): string {
+  if (demanda === 'ruim') return ROTULO_DEMANDA.ruim;
+  return `${ROTULO_DEMANDA[demanda]} · ${ROTULO_BARREIRA[barreira]}`;
+}
+
+const fullDomina = (fullPct: number | null) => fullPct != null && fullPct >= DISPUTA_V2.fullMuito;
+
+/** Um ramo da condição de entrada — "Com Full → bata R$ X" / "Sem Full → avalie R$ Y". */
+export interface RamoEntrada { rotulo: string; texto: string }
+
+/**
+ * Condição de entrada com número (ADR-0138 §3). Referência é o preço do anúncio LÍDER EM
+ * FATURAMENTO (`rivaisPodio[0]`), não a mediana: é contra quem lidera que se disputa a fatia.
+ * Sem preço de líder na amostra devolve vazio — nunca inventa número.
+ * Fonte única dos dois lugares que mostram preço (ação e card de insight), para não divergirem.
+ */
+function ramosDeEntrada(precoLider: number | null, fullPct: number | null): RamoEntrada[] {
+  if (precoLider == null) return [];
+  if (!fullDomina(fullPct)) {
+    return [{ rotulo: 'Preço a bater', texto: `${fmtBRL(precoLider)}, preço do anúncio líder em faturamento.` }];
+  }
+  // Piso em centavos (floor, não round): erra sempre para o lado seguro do operador.
+  const alvo = Math.floor(precoLider * (1 - HANDICAP_NAO_FULL) * 100) / 100;
+  return [
+    {
+      rotulo: 'Com Full',
+      texto: `bata ${fmtBRL(precoLider)}, preço do anúncio líder. ${pct(fullPct as number)} do topo entrega por Full: o prazo empata e a decisão volta pro preço.`,
+    },
+    {
+      rotulo: 'Sem Full',
+      texto: `${fmtBRL(precoLider)} não basta — o comprador escolhe pelo prazo. Avalie entrar em ${fmtBRL(alvo)} (${pct(HANDICAP_NAO_FULL * 100)} abaixo) para compensar a entrega. Confira na Viabilidade se esse preço ainda fecha sua margem.`,
+    },
+  ];
+}
+
+/** Texto de ação do "Saiba mais": condição de entrada, não ordem de compra. O gate de demanda e o
+ *  risco de marca são as duas únicas situações que mantêm tom imperativo — nelas preço não
+ *  resolve. */
 function acaoVeredito(
+  barreira: Barreira,
   nivel: NivelVeredito,
-  entrada: NivelEntrada,
   gateDemanda: boolean,
   razaoParcial: string | null,
+  ramos: RamoEntrada[],
 ): string {
   if (gateDemanda) {
-    return 'Não compre estoque neste nicho. Demanda insuficiente — sem prova de compra, volume é prejuízo. Esse nicho só faria sentido com diferencial forte (preço de fábrica, kit exclusivo ou marca própria), e mesmo assim só depois de validar a demanda.';
+    return 'Não compre estoque neste nicho. Sem prova de compra, volume é prejuízo. Só faria sentido com diferencial forte (preço de fábrica, kit exclusivo ou marca própria), e mesmo assim depois de validar a demanda.';
   }
-  if (entrada === 'nao_medida') {
+  if (barreira === 'marca') {
+    return 'Preço não resolve aqui: com a loja oficial dominando o topo, revender corre risco de moderação por propriedade intelectual — o anúncio pode ser derrubado com o estoque já comprado. Só entra com autorização de revenda da marca ou com marca própria.';
+  }
+  if (barreira === 'nao_medida') {
     const causa = razaoParcial != null ? razaoParcial : 'concorrência incompleta';
-    return `Avaliação parcial: ${causa}. No máximo um anúncio-teste mínimo — nunca volume. Se for marca de laboratório/fórmula, trate como entrada fechada até conferir loja oficial.`;
+    return `Avaliação parcial: ${causa}. No máximo um anúncio-teste mínimo — nunca volume. Se for marca de laboratório/fórmula, trate como risco de marca até conferir a loja oficial.`;
   }
-  if (entrada === 'fechada') {
-    return 'Não compre estoque neste nicho. Tem gente comprando, mas a entrada está fechada (Full dominante ou loja oficial no topo). Volume é prejuízo. Só faria sentido com preço de fábrica, kit exclusivo ou marca própria — e mesmo assim só um anúncio-teste mínimo.';
+  const condicao = ramos.length > 0
+    ? ` ${ramos.map((r) => `${r.rotulo}: ${r.texto}`).join(' ')}`
+    : '';
+  if (barreira === 'concorrencia') {
+    return `Dá para entrar, mas o topo já está ocupado — a fatia vem pelo preço, não por chegar primeiro.${condicao} Comece com anúncio-teste e valide o giro antes de comprar volume.`;
   }
-  if (nivel === 'baixa') {
-    return 'Não compre estoque neste nicho. O mercado não sustenta mais um player genérico (disputa/tração). Só com diferencial forte, e só depois de validar.';
+  if (barreira === 'mercado_apertado') {
+    return `O topo está livre, mas o faturamento está diluído entre os concorrentes — cada um leva pouco. Só compensa com custo baixo o bastante para volume pequeno fechar.${condicao} Comece com anúncio-teste.`;
   }
   if (nivel === 'alta') {
-    return 'Entrada aberta e sinais favoráveis. Ainda assim, publique com estoque conservador e valide o giro real nas primeiras semanas.';
+    return `Campo aberto e demanda comprovada.${condicao} Publique com estoque conservador e valide o giro real nas primeiras semanas.`;
   }
-  return 'Entrada aberta, nicho viável com ressalvas. Valide preço e frete contra os líderes antes de investir em estoque — e mesmo assim comece conservador.';
+  return `Dá para entrar sem briga pesada.${condicao} Valide preço e frete contra os líderes antes de investir em estoque.`;
 }
 
-/** Frase curta à direita do card. Nunca diz "demanda insuficiente" se a demanda não for o gate. */
+/** Frase curta à direita do card. Nunca diz "demanda insuficiente" se a demanda não for o gate, e
+ *  nunca manda não entrar fora do gate e do risco de marca — as duas situações em que preço não
+ *  resolve. Sem isso o card se contradiria: "Como entrar: bata R$ 39,90" ao lado de "não entre". */
 function resumoVeredito(
+  barreira: Barreira,
   nivel: NivelVeredito,
-  entrada: NivelEntrada,
   gateDemanda: boolean,
-  disputa: { nivel: NivelFator; fullPct: number | null } | null,
-  marca: { nivel: NivelFator } | null,
+  fullPct: number | null,
 ): string {
-  if (gateDemanda) return 'Poucas provas de venda por aqui — vale testar antes de investir em estoque.';
-  const fullFecha = disputa != null && disputa.fullPct != null && disputa.fullPct >= DISPUTA_V2.fullMuito;
-  if (entrada === 'nao_medida') {
-    return 'Tem gente comprando, mas não deu pra medir quem mais está vendendo aqui — vá com cautela, sem comprar volume.';
+  if (gateDemanda) return 'Poucas provas de venda por aqui — teste antes de comprar estoque.';
+  if (barreira === 'nao_medida') return 'Tem gente comprando, mas não deu pra medir quem já ocupa o topo — vá com cautela, sem volume.';
+  if (barreira === 'marca') return 'A loja oficial domina o topo. O risco aqui não é preço, é ter o anúncio derrubado por propriedade intelectual.';
+  if (barreira === 'concorrencia') {
+    return fullDomina(fullPct)
+      ? 'Mercado aquecido e disputado no prazo: o topo entrega por Full. Dá pra entrar, mas o preço tem que compensar a entrega.'
+      : 'Mercado aquecido, mas um punhado de anúncios concentra o faturamento. Entrar exige preço melhor que o deles.';
   }
-  if (entrada === 'fechada') {
-    if (fullFecha) return 'Mercado aquecido, mas dominado por quem já tem Full — entrar com estoque grande é nadar contra a maré.';
-    if (marca?.nivel === 'ruim') return 'Bom volume de venda, só que a loja oficial manda no topo — dá pra testar, não pra apostar alto.';
-    return 'Bom volume de venda, mas poucas lojas já dominam o topo — pouco espaço pra mais um player.';
+  if (barreira === 'mercado_apertado') return 'Tem venda, mas o faturamento está diluído — sobra pouco por concorrente. Só compensa com custo baixo.';
+  return nivel === 'alta'
+    ? 'Demanda comprovada e topo ainda aberto. Comece enxuto e valide o giro.'
+    : 'Dá pra entrar sem briga pesada. Confira preço e frete contra os líderes antes de comprar volume.';
+}
+
+/** Chip ao lado do título: o NÚMERO que sustenta a barreira, não o nome do estado — o estado já
+ *  está escrito no próprio título (ADR-0138 §1b). `null` quando não há número a mostrar. */
+function chipBarreira(
+  barreira: Barreira,
+  fullPct: number | null,
+  disputa: DisputaMedida | null,
+  sub: SubamostraNomeada,
+): string | null {
+  if (barreira === 'nao_medida') return 'não medida';
+  if (barreira === 'marca') return 'loja oficial';
+  if (barreira !== 'concorrencia') return null;
+  if (fullDomina(fullPct)) return `${pct(fullPct as number)} Full`;
+  if (disputa?.caminho === 'anuncio' && disputa.concentracao != null) {
+    return `líder leva ${pct(disputa.concentracao.top1 * 100)}`;
   }
-  if (nivel === 'baixa') return 'O mercado é pequeno demais pra sustentar mais um concorrente parecido com os outros — sem diferencial forte, não compensa.';
-  if (nivel === 'alta') return 'Boa oportunidade: demanda comprovada e espaço pra entrar. Comece enxuto e valide o giro.';
-  return 'Dá pra entrar, mas sem muita folga — vale conferir preço e frete antes de comprar volume.';
+  if (disputa?.caminho === 'rotulo') return `${sub.distintos} lojas no topo`;
+  return null;
 }
 
 function regua(min: number, max: number, cortes: [number, number], valor: number, invertida: boolean): ExplicacaoRegua {
@@ -235,15 +337,23 @@ function destravarMarca(nivel: NivelFator, p: number): string {
 export interface VereditoAnuncios {
   nivel: NivelVeredito;
   titulo: string;
-  motivo: string;
   fatores: Fator[];
   marca: AlertaMarca | null;
   /** true quando faltou dado para medir a concorrência: a trava de cobertura (D10) tirou Disputa e
    *  Tração da conta, ou nenhum anúncio informou o tipo de envio (metade da Disputa). O veredito se
    *  DECLARA parcial e não chega a "alta" — falta de dado não é sinal de negócio, nem para cima. */
   parcial: boolean;
-  /** Entrada no nicho (ADR-0128): aberta / fechada / não medida — pergunta separada da Demanda. */
+  /** Entrada no nicho (ADR-0128): aberta / fechada / não medida — estado INTERNO, nunca impresso.
+   *  O que a tela mostra é `barreira` (ADR-0138). */
   entrada: NivelEntrada;
+  /** O que separa o operador do topo (ADR-0138) — derivado dos fatores, nunca de `nivel`. */
+  barreira: Barreira;
+  /** Número que sustenta a barreira, para o chip ao lado do título. `null` = sem chip. */
+  chip: string | null;
+  /** Preço do anúncio líder em faturamento — referência do "preço a bater" (ADR-0138). */
+  precoLider: number | null;
+  /** Condição de entrada com número; vazio quando não há preço de líder na amostra. */
+  ramosEntrada: RamoEntrada[];
   /** Top 5 rivais por faturamento na amostra (inclui fantasmas sem rótulo). */
   rivaisPodio: RivalPodio[];
   /** Uma frase visível no card, sem abrir Saiba mais — linguajar de operador, não de score. */
@@ -391,7 +501,7 @@ function nivelDisputaV2(vendas: PainelVendasSonar, sub: SubamostraNomeada): Disp
   return {
     caminho: 'rotulo',
     nivel,
-    detalhe: `${sub.distintos} rótulos de loja em ${sub.nomeados} anúncios · ${textoFull(fullPct)}`,
+    detalhe: `${sub.distintos} concorrentes nos ${sub.nomeados} anúncios do topo · ${textoFull(fullPct)}`,
     pulverizacao,
     fullPct,
   };
@@ -432,7 +542,7 @@ function nivelTracaoV2(sub: SubamostraNomeada): { nivel: NivelFator; detalhe: st
   const porRotulo = sub.faturamento / sub.distintos;
   const nivel: NivelFator = porRotulo >= TRACAO_V2.boa ? 'bom'
     : porRotulo >= TRACAO_V2.media ? 'medio' : 'ruim';
-  return { nivel, detalhe: `${brlMil(porRotulo)} por rótulo de loja`, porRotulo };
+  return { nivel, detalhe: `${brlMil(porRotulo)} por concorrente`, porRotulo };
 }
 
 /** Marca vira % da AMOSTRA de anúncios com loja oficial (antes era % de fichas). Não pontua
@@ -484,24 +594,14 @@ function fraseRivaisPodio(rivais: RivalPodio[]): string {
   return ` Líder por faturamento: ${lider.titulo} (≈ ${fmtBRL(lider.faturamento)}).`;
 }
 
-function montarMotivoAnuncios(nivel: NivelVeredito, fatores: Fator[], razaoParcial: string | null): string {
-  if (razaoParcial != null && nivel !== 'baixa') {
-    return `Não deu para avaliar a concorrência do nicho: ${razaoParcial}.`;
-  }
-  const pior = fatores.find((f) => f.nivel === 'ruim');
-  if (nivel === 'baixa') {
-    if (pior?.chave === 'demanda') return 'Sem vendas comprovadas entre os anúncios do topo.';
-    if (pior?.chave === 'tracao') return 'Muitos rótulos de loja brigando por pouco dinheiro.';
-    return 'Concorrência alta demais para o tamanho do mercado.';
-  }
-  if (nivel === 'alta') return 'Demanda comprovada e topo da busca ainda aberto.';
-  if (pior?.chave === 'disputa') return 'Mercado forte, mas o topo da busca já está ocupado.';
-  if (pior?.chave === 'tracao') return 'Há procura, mas o dinheiro está diluído entre os rótulos de loja da amostra.';
-  return 'Nicho viável, sem folga — depende do seu custo.';
-}
+// `montarMotivoAnuncios` foi removido no ADR-0138 §6: sob a gramática de dois eixos o subtítulo
+// virou redundância pura ("Concorrência alta demais para o tamanho do mercado" embaixo de
+// "Demanda comprovada · concorrência pesada"), e o resumo já faz a leitura do card.
 
 function fraseDisputaV2(nivel: NivelFator, sub: SubamostraNomeada, pulverizacao: number, fullPct: number | null): string {
-  const base = `${sub.distintos} rótulos de loja distintos em ${sub.nomeados} anúncios com rótulo identificável (pulverização ${num2(pulverizacao)})`;
+  // Ressalva do ADR-0127 no texto do operador: o card do ML imprime a MARCA, não o nickname da
+  // loja, então duas lojas da mesma marca contam como uma. Fica no Saiba mais, não no facial.
+  const base = `${sub.distintos} concorrentes distintos em ${sub.nomeados} anúncios identificáveis (pulverização ${num2(pulverizacao)}) — o Mercado Livre mostra a marca no card, não a loja, então duas lojas da mesma marca contam como uma`;
   if (nivel === 'ruim') {
     const partes: string[] = [];
     if (pulverizacao <= DISPUTA_V2.pulverizacaoConcentrada) {
@@ -520,7 +620,7 @@ function fraseDisputaV2(nivel: NivelFator, sub: SubamostraNomeada, pulverizacao:
 
 function destravarDisputaV2(nivel: NivelFator, pulverizacao: number, fullPct: number | null): string {
   if (nivel === 'ruim' && pulverizacao <= DISPUTA_V2.pulverizacaoConcentrada) {
-    return `a partir de pulverização ${num2(DISPUTA_V2.pulverizacaoAberta)} (rótulos de loja distintos ÷ anúncios com rótulo) a disputa sairia da zona crítica — hoje é ${num2(pulverizacao)}`;
+    return `a partir de pulverização ${num2(DISPUTA_V2.pulverizacaoAberta)} (concorrentes distintos ÷ anúncios identificáveis) a concorrência sairia da zona crítica — hoje é ${num2(pulverizacao)}`;
   }
   if (nivel === 'ruim') {
     return `com Full abaixo de ${DISPUTA_V2.fullMuito}% a disputa sairia da zona crítica — hoje: ${textoFull(fullPct)}`;
@@ -541,7 +641,7 @@ function fraseDisputaB(d: Extract<DisputaMedida, { caminho: 'anuncio' }>): strin
   if (fullPct != null) {
     partes.push(`${textoFull(fullPct)} sobre os anúncios com envio identificado`);
   }
-  const aviso = 'sem rótulo de loja para agrupar, dois anúncios da mesma loja entram como se fossem dois concorrentes nesta conta — por isso este caminho nunca declara o nicho aberto, no máximo médio';
+  const aviso = 'sem nome de loja no card para agrupar, dois anúncios do mesmo dono entram como se fossem dois concorrentes nesta conta — por isso este caminho nunca declara o campo aberto, no máximo médio';
   const fecho = nivel === 'ruim' ? 'o topo já está concentrado' : 'disputa moderada pelo que deu para medir';
   return `${partes.join('; ')}; ${aviso}; ${fecho}.`;
 }
@@ -553,19 +653,19 @@ function destravarDisputaB(d: Extract<DisputaMedida, { caminho: 'anuncio' }>): s
     }
     return `com Full abaixo de ${DISPUTA_V2.fullMuito}% a disputa sairia da zona crítica — hoje: ${textoFull(d.fullPct)}`;
   }
-  return 'este caminho tem teto médio: rótulo de loja identificável em pelo menos metade da amostra destravaria a medição completa (pulverização + Full) e abriria caminho para disputa boa';
+  return 'este caminho tem teto médio: nome de loja identificável em pelo menos metade da amostra destravaria a medição completa (pulverização + Full) e abriria caminho para campo aberto';
 }
 
 function fraseTracaoV2(nivel: NivelFator, porRotulo: number): string {
   const valor = brlMil(porRotulo);
-  const universo = 'numerador e denominador no mesmo universo (só anúncios com rótulo de loja)';
+  const universo = 'numerador e denominador no mesmo universo (só anúncios com concorrente identificável)';
   if (nivel === 'ruim') {
-    return `Cada rótulo de loja identificado fatura ${valor} na amostra — abaixo de ${brlMil(TRACAO_V2.media)}, o bolo dividido é pequeno para justificar a entrada; ${universo}.`;
+    return `Cada concorrente identificado fatura ${valor} na amostra — abaixo de ${brlMil(TRACAO_V2.media)}, o bolo dividido é pequeno para justificar a entrada; ${universo}.`;
   }
   if (nivel === 'bom') {
-    return `Cada rótulo de loja identificado fatura ${valor} na amostra — acima de ${brlMil(TRACAO_V2.boa)}, o nicho sustenta quem entra agora; ${universo}.`;
+    return `Cada concorrente identificado fatura ${valor} na amostra — acima de ${brlMil(TRACAO_V2.boa)}, o nicho sustenta quem entra agora; ${universo}.`;
   }
-  return `Cada rótulo de loja identificado fatura ${valor} na amostra — entre ${brlMil(TRACAO_V2.media)} e ${brlMil(TRACAO_V2.boa)}, dá para entrar sem grande folga; ${universo}.`;
+  return `Cada concorrente identificado fatura ${valor} na amostra — entre ${brlMil(TRACAO_V2.media)} e ${brlMil(TRACAO_V2.boa)}, dá para entrar sem grande folga; ${universo}.`;
 }
 
 /** Reuso das frases da Marca trocando o substantivo: agora medimos anúncios, não fichas. */
@@ -591,9 +691,11 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     : semFull ? 'nenhum anúncio da amostra informa o tipo de envio' : null;
   const parcial = razaoParcial != null;
 
+  // Rótulos comerciais (ADR-0138 §2): as CHAVES continuam 'disputa'/'tracao' — são nomes internos
+  // e o gabarito depende delas —, só o texto na tela virou dicionário do comércio.
   const fatores: Fator[] = [{ chave: 'demanda', label: 'Demanda', nivel: demanda.nivel, detalhe: demanda.detalhe }];
-  if (disputa) fatores.push({ chave: 'disputa', label: 'Disputa', nivel: disputa.nivel, detalhe: disputa.detalhe });
-  if (tracao) fatores.push({ chave: 'tracao', label: 'Tração', nivel: tracao.nivel, detalhe: tracao.detalhe });
+  if (disputa) fatores.push({ chave: 'disputa', label: 'Concorrência', nivel: disputa.nivel, detalhe: disputa.detalhe });
+  if (tracao) fatores.push({ chave: 'tracao', label: 'Faturamento por concorrente', nivel: tracao.nivel, detalhe: tracao.detalhe });
 
   const soma = fatores.reduce((acc, f) => acc + PONTOS[f.nivel], 0);
   const maximo = fatores.length * 2; // escala proporcional (ADR-0124 §4) absorve a trava D10
@@ -631,7 +733,7 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
         nivel: disputa.nivel,
         frase: fraseDisputaV2(disputa.nivel, sub, disputa.pulverizacao, disputa.fullPct)
           + (semFull
-            ? ' Nenhum anúncio da amostra informa o tipo de envio: metade da Disputa (o % Full) não pôde ser medida, então o fator não passa de intermediário e o veredito sai parcial — sem dado completo não se declara oportunidade alta.'
+            ? ' Nenhum anúncio da amostra informa o tipo de envio: metade da Concorrência (o % Full) não pôde ser medida, então o fator não passa de intermediário e o veredito sai parcial — sem dado completo não se declara campo aberto.'
             : ''),
         // Pulverização MAIOR é melhor (campo aberto) — régua não invertida, ao contrário da antiga,
         // que contava vendedores absolutos.
@@ -659,7 +761,7 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
       // Marcador preso ao teto: nicho de marca chega a R$ 5,7 mi/rótulo e sairia da barra.
       regua: regua(0, teto, [TRACAO_V2.media, TRACAO_V2.boa], Math.min(Math.round(tracao.porRotulo), teto), false),
       destravar: tracao.nivel === 'bom' ? null
-        : `a partir de ${brlMil(tracao.nivel === 'ruim' ? TRACAO_V2.media : TRACAO_V2.boa)} por rótulo de loja a tração subiria de faixa — hoje: ${brlMil(tracao.porRotulo)}`,
+        : `a partir de ${brlMil(tracao.nivel === 'ruim' ? TRACAO_V2.media : TRACAO_V2.boa)} por concorrente o faturamento subiria de faixa — hoje: ${brlMil(tracao.porRotulo)}`,
     });
   } else if (disputa != null && disputa.caminho === 'anuncio') {
     // Caminho B mediu a Disputa, mas a Tração exige rótulo de loja (escala R$/rótulo não transfere
@@ -668,7 +770,7 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     fatoresExplicacao.push({
       chave: 'tracao',
       nivel: 'medio',
-      frase: 'A Tração mede R$ por rótulo de loja distinto — sem rótulo de loja cobrindo a amostra não há como calculá-la nesta escala, então o fator saiu da pontuação (ausência não vira nota ruim).',
+      frase: 'O faturamento por concorrente mede R$ por loja distinta — sem nome de loja cobrindo a amostra não há como calculá-lo nesta escala, então o fator saiu da pontuação (ausência não vira nota ruim).',
       regua: null,
       destravar: null,
     });
@@ -680,7 +782,7 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     fatoresExplicacao.push({
       chave: 'disputa',
       nivel: 'medio',
-      frase: `Só ${sub.nomeados} de ${sub.analisados} anúncios trazem rótulo de loja e só ${elegiveisVenda} anúncios têm vendidos e preço suficientes para medir concentração por anúncio (mínimo: ${DISPUTA_B.minElegiveis}) — nem o Full nem a concentração por anúncio puderam medir a concorrência deste nicho. Disputa e Tração saíram da pontuação; não viraram nota ruim, e por isso este veredito é parcial e não declara oportunidade alta.`,
+      frase: `Só ${sub.nomeados} de ${sub.analisados} anúncios trazem nome de loja e só ${elegiveisVenda} anúncios têm vendidos e preço suficientes para medir concentração por anúncio (mínimo: ${DISPUTA_B.minElegiveis}) — nem o Full nem a concentração por anúncio puderam medir a concorrência deste nicho. Concorrência e faturamento por concorrente saíram da pontuação; não viraram nota ruim, e por isso este veredito é parcial e não declara campo aberto.`,
       regua: null,
       destravar: null,
     });
@@ -695,17 +797,29 @@ export function calcularVereditoAnuncios(vendas: PainelVendasSonar, visitasTotal
     });
   }
 
-  const acao = acaoVeredito(nivel, entrada, gateDemanda, razaoParcial) + fraseRivaisPodio(rivais);
-  const resumo = resumoVeredito(nivel, entrada, gateDemanda, disputa, marca);
+  // Barreira e textos comerciais (ADR-0138). `barreira` é derivada dos FATORES, nunca de `nivel`.
+  const barreira = derivarBarreira(entrada, disputa, tracao, marca);
+  const fullPct = disputa?.fullPct ?? null;
+  const precoLider = rivais[0]?.preco ?? null;
+  // Sem prova de venda não existe "preço a bater": o número só faria sentido se houvesse comprador.
+  const ramosEntrada = gateDemanda || barreira === 'marca' || barreira === 'nao_medida'
+    ? []
+    : ramosDeEntrada(precoLider, fullPct);
+  const chip = chipBarreira(barreira, fullPct, disputa, sub);
+  const acao = acaoVeredito(barreira, nivel, gateDemanda, razaoParcial, ramosEntrada) + fraseRivaisPodio(rivais);
+  const resumo = resumoVeredito(barreira, nivel, gateDemanda, fullPct);
 
   return {
     nivel,
-    titulo: tituloVeredito(nivel, entrada, demanda.nivel),
-    motivo: montarMotivoAnuncios(nivel, fatores, razaoParcial),
+    titulo: tituloVeredito(barreira, demanda.nivel),
     fatores,
     marca,
     parcial,
     entrada,
+    barreira,
+    chip,
+    precoLider,
+    ramosEntrada,
     rivaisPodio: rivais,
     resumo,
     explicacao: { pontuacao: { soma, maximo }, gateDemanda, fatores: fatoresExplicacao, acao },
@@ -742,13 +856,25 @@ export function contextoNichoAnuncios(vendas: PainelVendasSonar): ContextoItem[]
 // loja (Apify raramente traz `vendedor`). 100% derivados do que `calcularVereditoAnuncios`/
 // `PainelVendasSonar`/visitas já trazem — sem chamada de rede nova, sem novo custo.
 
-export interface InsightEntrada { titulo: string; detalhe: string; tom: NivelFator }
+export interface InsightEntrada { titulo: string; detalhe: string; tom: NivelFator; ramos: RamoEntrada[] }
 
-/** Por que a entrada está aberta/fechada + como destravar — diferencial citado no ADR: nenhum
- *  concorrente (Hunter Spy, JoomPulse) explica o que precisaria mudar pra abrir o nicho. */
+/**
+ * Card "Como entrar neste nicho" (ADR-0138 §3) — antes era "Entrada fechada / Para destravar…".
+ * O "para destravar" saiu daqui porque é conselho inexecutável (manda esperar o mercado mudar
+ * sozinho) e já aparece por fator dentro do "Saiba mais" — nenhuma informação foi perdida, só
+ * deixou de ser manchete.
+ */
 export function insightEntrada(v: VereditoAnuncios): InsightEntrada {
   const fatores = v.explicacao.fatores;
-  if (v.entrada === 'nao_medida') {
+  if (v.explicacao.gateDemanda) {
+    return {
+      titulo: 'Sem prova de venda',
+      tom: 'ruim',
+      detalhe: 'Não há preço a bater aqui: os anúncios do topo não mostram compra suficiente para justificar estoque. Valide a demanda antes de pensar em entrada.',
+      ramos: [],
+    };
+  }
+  if (v.barreira === 'nao_medida') {
     // Duas causas possíveis (calcularVereditoAnuncios): trava de cobertura D10 (fator sem régua) ou
     // Full não medido em nenhum anúncio (fator 'disputa' comum, cuja frase já explica a causa).
     const causa = fatores.find((f) => f.regua === null) ?? fatores.find((f) => f.chave === 'disputa');
@@ -756,26 +882,33 @@ export function insightEntrada(v: VereditoAnuncios): InsightEntrada {
       titulo: 'Concorrência não medida',
       tom: 'medio',
       detalhe: causa?.frase ?? 'Não deu para medir a concorrência do nicho com os dados desta amostra.',
+      ramos: [],
     };
   }
-  if (v.entrada === 'fechada') {
-    // Mesma prioridade do resumoVeredito: Full/disputa fecha primeiro, marca depois.
-    const causa = fatores.find((f) => f.nivel === 'ruim' && f.chave === 'disputa')
-      ?? fatores.find((f) => f.nivel === 'ruim' && f.chave === 'marca');
-    const detalhe = causa?.destravar != null
-      ? `Para destravar: ${causa.destravar}.`
-      : causa?.frase ?? 'Disputa ou marca fecharam a entrada nesta amostra.';
-    return { titulo: 'Entrada fechada', tom: 'ruim', detalhe };
+  if (v.barreira === 'marca') {
+    // Sem preço, deliberadamente: desconto nenhum evita anúncio derrubado por propriedade
+    // intelectual (incidente Aquaphor, 06/08). Mostrar "preço a bater" aqui seria conselho errado.
+    const causa = fatores.find((f) => f.chave === 'marca');
+    return {
+      titulo: 'Risco de marca',
+      tom: 'ruim',
+      detalhe: `${causa?.frase ?? 'A loja oficial domina o topo desta amostra.'} Preço não resolve: só entra com autorização de revenda da marca ou com marca própria.`,
+      ramos: [],
+    };
   }
-  // Aberta: se ainda houver delta em disputa/tração/marca (nicho bom mas não perfeito), resume o
-  // próximo passo; se todos já são 'bom' (nenhum destravar), não há barreira a apontar.
-  const proximoDelta = fatores.find((f) => f.chave !== 'demanda' && f.destravar != null);
+  const semBarreira = v.barreira === 'nenhuma';
+  const detalhe = semBarreira
+    ? 'Sem barreira estrutural detectada nesta amostra — campo livre pra quem chega agora.'
+    : v.barreira === 'mercado_apertado'
+      ? 'O topo está livre, mas o bolo é pequeno por concorrente: a entrada depende do seu custo, não da briga por espaço.'
+      : 'O topo já está ocupado, mas a fatia se conquista no preço — não por chegar primeiro.';
   return {
-    titulo: 'Entrada aberta',
-    tom: 'bom',
-    detalhe: proximoDelta != null
-      ? `Ainda dá para melhorar: ${proximoDelta.destravar}.`
-      : 'Sem barreira estrutural detectada nesta amostra — campo livre pra quem chega agora.',
+    titulo: 'Como entrar neste nicho',
+    tom: semBarreira ? 'bom' : 'medio',
+    detalhe: v.ramosEntrada.length > 0
+      ? detalhe
+      : `${detalhe} Nenhum anúncio da amostra traz preço e vendas suficientes para calcular o preço a bater.`,
+    ramos: v.ramosEntrada,
   };
 }
 

@@ -2,6 +2,22 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sonar — linguagem comercial do veredito e condição de entrada (ADR-0138) — 2026-08-28
+
+**Implementado.** ADR em `docs/decisions/0138-sonar-linguagem-comercial-e-condicao-de-entrada.md`.
+Só apresentação: nenhum corte de calibração se moveu, gabarito intacto.
+
+- [x] `Barreira` derivada dos fatores (campo aberto / concorrência pesada / risco de marca /
+      mercado apertado / não medida) — "entrada fechada" sai da tela; marca vence Full
+- [x] Gramática única de título `<Demanda> · <Barreira>`; "Oportunidade alta/média/baixa" some do
+      título e continua governando só a cor do card
+- [x] Dicionário do comércio: Disputa→Concorrência, Tração→Faturamento por concorrente,
+      "rótulo de loja"→"concorrente" (a ressalva do ADR-0127 desce para o Saiba mais)
+- [x] Card "Como entrar neste nicho" com preço a bater do líder e ramo "Sem Full"
+      (`HANDICAP_NAO_FULL` 5%); risco de marca e gate de demanda nunca mostram preço
+- [x] `motivo` (subtítulo) removido — redundante com o título de dois eixos
+- [x] Teste de matriz `(demanda × barreira)` + trava de vocabulário contra "entrada fechada"
+
 ## Sonar por EAN — cobertura de fichas de catálogo (ADR-0136) — 2026-08-27
 
 **Implementado.** ADR em `docs/decisions/0136-sonar-ean-cobertura-de-fichas-de-catalogo.md`

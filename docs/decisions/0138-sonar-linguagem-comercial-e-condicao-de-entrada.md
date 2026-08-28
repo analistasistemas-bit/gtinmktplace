@@ -43,15 +43,32 @@ Mudança **exclusivamente de apresentação**. Nenhum corte de calibração se m
 interface. A tela passa a ler uma derivação:
 
 ```ts
-type Barreira = 'nenhuma' | 'concorrencia' | 'marca' | 'nao_medida';
+type Barreira = 'nenhuma' | 'concorrencia' | 'marca' | 'mercado_apertado' | 'nao_medida';
 ```
 
-| `entrada` | Marca | `Barreira` | Rótulo na tela |
-|---|---|---|---|
-| `aberta` | — | `nenhuma` | campo aberto |
-| `fechada` | `ruim` | `marca` | risco de marca |
-| `fechada` | não ruim | `concorrencia` | concorrência pesada |
-| `nao_medida` | — | `nao_medida` | concorrência não medida |
+**`Barreira` é função pura dos FATORES, nunca de `nivel`.** Essa é a diferença que importa: a
+*Correção 2026-08-20* do ADR-0128 existe porque `nivel === 'baixa'` sequestrava título e ação
+quando a causa real era outra. Derivar do `nivel` reintroduziria a mesma classe de bug.
+
+```ts
+if (entrada === 'nao_medida')     return 'nao_medida';
+if (marca?.nivel === 'ruim')      return 'marca';            // barreira jurídica vence tudo
+if (disputa?.nivel === 'ruim')    return 'concorrencia';
+if (tracao?.nivel === 'ruim')     return 'mercado_apertado'; // bolo pequeno, topo livre
+return 'nenhuma';
+```
+
+| `Barreira` | Causa | Rótulo na tela |
+|---|---|---|
+| `nenhuma` | nenhum fator ruim | campo aberto |
+| `concorrencia` | Disputa ruim (Full ≥ 60% ou líder concentrado) | concorrência pesada |
+| `marca` | Marca ruim (loja oficial > 50%) | risco de marca |
+| `mercado_apertado` | Tração ruim com topo livre | mercado apertado |
+| `nao_medida` | `parcial` | concorrência não medida |
+
+Consistência com o ADR-0128: `entrada === 'fechada'` ⟺ `Barreira ∈ {concorrencia, marca}`;
+`mercado_apertado` é subcaso de `entrada === 'aberta'`. `entrada` **não muda** — segue governando
+o composite `nivel` como está.
 
 **Inversão deliberada de prioridade:** hoje `resumoVeredito` resolve Full **antes** de marca.
 A partir daqui **marca ruim vence sempre**, mesmo com Full dominante junto. Motivo: a recomendação
@@ -60,6 +77,21 @@ propriedade intelectual. A barreira mais cara tem de ser a que aparece.
 
 A palavra **"fechada" nunca é impressa**. Fica como nome de estado interno significando
 "barreira detectada".
+
+### 1b. Chip: evidência, não estado
+
+`LABEL_ENTRADA` (mapa estado → rótulo) morre. O chip ao lado do título passa a carregar o **número
+que sustenta a barreira**, porque o estado já está escrito no próprio título:
+
+| `Barreira` | Chip |
+|---|---|
+| `concorrencia`, Full ≥ 60% | `100% Full` |
+| `concorrencia`, líder concentrado | `líder leva 41%` |
+| `marca` | `loja oficial` |
+| `nao_medida` | `não medida` |
+| `nenhuma`, `mercado_apertado` | sem chip |
+
+Badge `avaliação parcial` permanece como está.
 
 ### 2. Gramática única de título e dicionário comercial
 
@@ -148,6 +180,33 @@ mais que número redondo declarado como heurística.
 `acaoVeredito` sai de *"**Não compre estoque neste nicho.**"* e passa a enunciar a condição:
 *"Para entrar aqui, X e Y precisam ser verdade."* O gate de demanda (`gateDemanda`) é a **única**
 exceção que mantém tom imperativo — sem prova de compra não há preço que resolva.
+
+### 5. `resumoVeredito` — a caixa colorida, reescrita por `Barreira`
+
+Esta é a frase do print (*"…entrar com estoque grande é nadar contra a maré"*) e a que mais
+contradiz o card novo: sem reescrevê-la, a tela anunciaria "Como entrar neste nicho: bata
+R$ 39,90" e, ao lado, mandaria não entrar. O eixo passa a ser `Barreira`, não `entrada`:
+
+| Situação | Resumo |
+|---|---|
+| `gateDemanda` | Poucas provas de venda por aqui — teste antes de comprar estoque. |
+| `nao_medida` | Tem gente comprando, mas não deu pra medir quem já ocupa o topo — vá com cautela, sem volume. |
+| `marca` | A loja oficial domina o topo. O risco aqui não é preço, é ter o anúncio derrubado por propriedade intelectual. |
+| `concorrencia`, Full dominante | Mercado aquecido e disputado no prazo: todo o topo entrega por Full. Dá pra entrar, mas o preço tem que compensar a entrega. |
+| `concorrencia`, líder concentrado | Mercado aquecido, mas um anúncio concentra a maior parte do faturamento. Entrar exige preço melhor que o dele. |
+| `mercado_apertado` | Tem venda, mas o faturamento está diluído — sobra pouco por concorrente. Só compensa com custo baixo. |
+| `nenhuma` + `nivel` alta | Demanda comprovada e topo ainda aberto. Comece enxuto e valide o giro. |
+| `nenhuma` + demais | Dá pra entrar sem briga pesada. Confira preço e frete contra os líderes antes de comprar volume. |
+
+Nenhum resumo diz "não compre" fora do gate de demanda e do risco de marca — as duas únicas
+situações em que preço não resolve.
+
+### 6. `motivo` (subtítulo) é removido
+
+Sob a gramática de dois eixos o subtítulo vira redundância pura: *"Concorrência alta demais para o
+tamanho do mercado"* embaixo de *"Demanda comprovada · concorrência pesada"* repete o título com
+outras palavras, e a caixa de resumo (§5) já faz a leitura. `montarMotivoAnuncios` e o campo
+`VereditoAnuncios.motivo` são deletados; único consumidor era `veredito-sonar.tsx:191`.
 
 ## Consequências
 
