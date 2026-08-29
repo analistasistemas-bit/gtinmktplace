@@ -20,12 +20,29 @@ O que o Spike 040 deixou de pé, em ordem de ataque:
 - [ ] **Seção 1 do relatório precisa de duas formas.** Modo EAN: média sem extremos em R$. Modo
       termo: percentual / equivalente por unidade. O contrato da seção tem que dizer qual modo
       gerou o número, e a UI não pode oferecer a forma errada para o modo errado.
-- [ ] **Proveniência obrigatória no dinheiro.** Comissão e frete hoje convertem falha em zero
-      (`listing-prices.ts:17`, `tarifa.ts:24`, `frete.ts:21`) e dimensões ausentes caem em
-      `DIMENSOES_DEFAULT` (16×11×6 cm, 300 g) em silêncio. Propagar
-      `Proveniencia = 'official' | 'partial' | 'estimated'` (`calculadora-ml.ts:15`) até a célula e
-      **recusar a DRE** quando não for `official`. Fault injection cobrindo 400/401/429/500,
-      timeout, schema sem `sale_fee_amount`, `list_cost` ausente e `me2=false`.
+- [ ] **Proveniência obrigatória no dinheiro — exige ADR antes de codar.** Comissão e frete hoje
+      convertem falha em zero (`listing-prices.ts:17`, `tarifa.ts:24`, `frete.ts:21`) e dimensões
+      ausentes caem em `DIMENSOES_DEFAULT` (16×11×6 cm, 300 g) em silêncio.
+
+      **Restrição medida (2026-08-28):** essas funções **não podem ter o contrato alterado**. Os
+      chamadores são caminhos de produção fora da Análise PubliAI — `process-familia` (publicação,
+      3 call sites), `pulse-coletar/processar.ts:594`, `analisar-viabilidade`, `calcular-tarifa-ml`
+      e `_shared/analise/analisar-item-viabilidade.ts`. Trocar o `0` por exceção quebraria a
+      publicação.
+
+      **Desenho proposto:** manter as funções atuais como estão e adicionar uma variante que
+      devolve `{ valor, proveniencia }`, com as atuais passando a ser um wrapper fino que colapsa
+      para `0`. Só o caminho da DRE usa a variante, e **recusa o cálculo** quando a proveniência
+      não for `official`. O tipo já existe (`Proveniencia` em `calculadora-ml.ts:15`) e o padrão já
+      tem precedente no repo: o homônimo `buscarFreteVendedor` de `_shared/faturamento/io.ts:193`
+      devolve `number | null` justamente para não inventar zero.
+
+      **Cuidado registrado:** existem **duas funções com o mesmo nome** `buscarFreteVendedor` e
+      contratos opostos (`ml/frete.ts` devolve `0` em falha; `faturamento/io.ts` devolve `null`).
+      Qualquer mudança aqui precisa dizer de qual está falando.
+
+      Fault injection cobrindo 400/401/429/500, timeout, schema sem `sale_fee_amount`, `list_cost`
+      ausente e `me2=false`: todo caso deve produzir "DRE indisponível", nunca zero.
 - [ ] **Cinco cenários exigem cinco cotações.** `calcularSensibilidade()` extrapola comissão
       linearmente e preserva taxa fixa e frete; erra ao cruzar os degraus de R$ 79 e R$ 150.
 - [ ] **Medir a cobertura no universo real do Sonar** (termo e EAN) e o `N` elegível por consulta —
