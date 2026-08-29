@@ -13,10 +13,12 @@ a fórmula em 9 de 9
 1. **A fórmula do [Spike 047](047-joompulse-comparada-com-a-nossa-metrica.md) §1 se confirma em
    escala:** `vendas/mês = catalogSales ÷ daysInAd × 30`, agora **100 de 100 catálogos exatos**,
    noutra categoria (Bebês) e noutro corte. E `receita = vendas × preço do buy-box`, 98 de 99.
-2. **Achado principal — o acervo vitalício é atribuído por inteiro a quem está na caixa de compra
-   no dia da coleta.** Em **12 de 60** ganhadores auditados, o número de **um mês de um anúncio
-   supera o ano inteiro da loja toda** pela API oficial do ML, que vem na **mesma linha** da
-   resposta deles (§2).
+2. **Achado principal — o agregado do catálogo é copiado para a linha do ganhador do buy-box e
+   zerado nas demais**, e é oferecido no grão de anúncio (`orderCount1m` = "Vendas estimadas",
+   filtro "Vendas mensais" da busca). Em **12 de 60** ganhadores de alto volume em Bebês
+   (amostra filtrada por `orderCount1m > 300`, enviesada para cima), o número de **um mês de um
+   anúncio supera o ano inteiro da loja toda** pela API oficial do ML — que vem na **mesma linha**
+   da resposta deles (§2).
 3. **Achado novo — a estimativa não carrega informação do produto.** Sete catálogos de mesma idade
    e mesmo selo recebem o **mesmo** número de vendas, a preços de R$ 18,90 a R$ 299,90 (§1.2).
 4. **Achado novo — ela explode em catálogo novo.** 33 dias no ar com selo "+10 mil" viram
@@ -119,11 +121,30 @@ número reflita o presente.
 
 ## 2. Achado novo — a atribuição, que a própria resposta deles denuncia
 
-No catálogo do Aptamil (`MLB10512495`, `numBuyBoxSellers = 53`), a resposta do cubo traz
-`orderCount1m = 1021` para **uma** oferta e **0** para as outras 39: a que está com
-`buyBoxWiner = true`.
+**O mecanismo primeiro, porque ele é o que sustenta o achado.** O
+[Spike 043](043-como-a-joompulse-estima-vendas.md) §2 já havia medido que `orderCount1m` e
+`catalogOrderCount1m` são **o mesmo número, idênticos em 100/100 linhas**. O que este spike
+acrescenta é *como* essa cópia se distribui pelas ofertas do catálogo:
 
-Na **mesma linha** vem `shopSales365Days`, que o [Spike 047](047-joompulse-comparada-com-a-nossa-metrica.md)
+| | `orderCount1m` | `catalogOrderCount1m` |
+|---|---:|---:|
+| oferta com `buyBoxWiner = true` | **1.021** | 1.021 |
+| as outras 39 da amostra | **0** | 1.021 |
+
+**O agregado do catálogo é copiado para a linha do ganhador do buy-box e zerado nas demais.**
+Ninguém "estimou 1.021 vendas para a ANDRESSAMELOARF" — o número é do catálogo inteiro, e ela
+recebeu a cópia por estar na caixa no dia da coleta.
+
+Isso não é detalhe de implementação que absolva o número: a documentação deles mapeia
+`orderCount1m` para `Vendas estimadas (dia/semana/mês)` no **grão de anúncio**, separado de
+`catalogOrderCount1m` → `Vendas do catálogo`, e a Busca de Produtos expõe "Vendas mensais" como
+filtro **por anúncio**. A cópia é oferecida como venda do anúncio. Daí a afirmação defensável:
+
+> **Todo uso de `orderCount1m` no grão de anúncio herda o agregado do catálogo — e em 12 de 60
+> ganhadores isso produz um número que a API do ML refuta na mesma linha da resposta.**
+
+No catálogo do Aptamil (`MLB10512495`, `numBuyBoxSellers = 53`), essa mesma linha traz
+`shopSales365Days`, que o [Spike 047](047-joompulse-comparada-com-a-nossa-metrica.md)
 §2 provou ser o nosso `transactions.total` (Δ < 0,4% em 5 de 5) e que o
 [Spike 048](048-transactions-total-e-janela-provada.md) provou ser janela móvel de 365 dias:
 
@@ -145,14 +166,19 @@ where item_id = 'MLB3250921353';
 vendedores ao longo de oito anos; a JoomPulse entrega o acervo inteiro a quem ganhou a caixa no dia
 da coleta.
 
-### Quão comum é
+### Quão comum é — e o viés da amostra, declarado
 
-60 ganhadores de buy-box da categoria Bebês com `orderCount1m > 300`:
+60 ganhadores de buy-box da categoria Bebês **filtrados por `orderCount1m > 300`**:
 
 | Teste | Resultado |
 |---|---:|
 | um **mês** do anúncio > um **ano** da loja inteira (API oficial) | **12 de 60** |
 | estimativa **anualizada** > o ano da loja inteira | **37 de 60** |
+
+> **O filtro enviesa para cima, e o número deve ser sempre citado com ele.** `orderCount1m > 300`
+> seleciona justamente numerador grande sobre denominador pequeno, que é a condição que gera a
+> impossibilidade. Logo: **20% dos ganhadores de alto volume em Bebês**, e não 20% dos catálogos.
+> A taxa sobre o universo inteiro não foi medida.
 
 Os extremos:
 
@@ -205,7 +231,8 @@ a JoomPulse lê.
 
 - A [ADR-0147](../decisions/0147-radar-mostra-a-disputa-do-catalogo.md) mostra a **disputa** e nunca
   o ganhador. Correto: o ganhador não é obtenível pela API, e o único fornecedor que o publica erra
-  a atribuição de forma verificável em 20% dos casos auditados.
+  a atribuição de forma verificável em **12 de 60 ganhadores de alto volume em Bebês** (amostra
+  filtrada por `orderCount1m > 300`, enviesada para cima — §2).
 - A recusa em publicar "vendas do produto" continua certa.
 - **O aviso de ofertas abaixo da referência mirou no anúncio certo.** Ele sinaliza a oferta de
   R$ 49,90 de um vendedor sem histórico; o `buyBoxWiner` da JoomPulse mostra que **é justamente

@@ -150,7 +150,7 @@ Duas regras que a ADR do Radar deveria adotar explicitamente:
 |---|---|---|
 | **Reviews como numerador** | pool agregado na família: 7 dos 9 catálogos do aptamil devolvem o mesmo `paging.total`; razão review/pedido varia **7x dentro da mesma loja** | Spike 048 §5 |
 | **Selo ÷ idade como métrica principal** | é a conta da JoomPulse; numerador em degraus de **2x a 5x** (25, 50, 100, 500, 1k, 5k, 10k, 50k, 100k, 250k), e o resultado é média vitalícia, não ritmo | Spikes 047 §1, 048 §6, 050 §1.1 |
-| **Selo ÷ idade para venda do anúncio de um terceiro** | além do acima, a JoomPulse atribui o acervo inteiro do catálogo ao ganhador do buy-box do dia: em **12 de 60**, o mês de um anúncio supera o ano da loja toda pela API oficial | Spike 050 §2 |
+| **Selo ÷ idade para venda do anúncio de um terceiro** | além do acima, o agregado do catálogo é **copiado** para a linha do ganhador do buy-box e zerado nas demais; em 12 de 60 ganhadores de alto volume (amostra enviesada), o mês de um anúncio supera o ano da loja toda pela API oficial | Spike 050 §2 |
 | **`/items/{id}` e `/items?ids=` para vendedor de terceiro** | 403 nos dois | ADR-0119 |
 | **`buy_box_winner`** | null em 40/40 | §2 acima |
 

@@ -235,8 +235,9 @@ Próximos passos, em ordem de ataque:
       passa de 9/9 para **100 de 100 catálogos exatos**, noutra categoria. De quebra aplica ao
       corpo do 047 a errata que o Spike 048 §6.4 obrigou e ninguém tinha aplicado (a escala do selo
       tem degraus de 2x a 5x, não potências de 10), e acrescenta o degrau **250.000**.
-      Achado principal: o acervo vitalício é atribuído inteiro a quem está na caixa
-      no dia — em **12 de 60** ganhadores, o mês de um anúncio supera o ano da loja toda pela API
+      Achado principal: o agregado do catálogo é **copiado** para a linha do ganhador do buy-box e
+      zerado nas demais, e é oferecido no grão de anúncio — em 12 de 60 ganhadores de alto volume
+      (amostra enviesada para cima), o mês de um anúncio supera o ano da loja toda pela API
       oficial do ML, que vem na mesma linha. Resposta ao Apify: os insumos são públicos e o 047 §6
       já mostrou que temos a idade sem scraping — nunca esteve bloqueado, decidimos não fazer.
       Não existe edge para isso — as `pulse-*` de hoje são coletor, adicionar,
