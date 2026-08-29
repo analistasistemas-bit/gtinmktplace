@@ -56,8 +56,15 @@ O que o Spike 040 deixou de pé, em ordem de ataque:
 - [ ] **Confirmar se `catalogOrderCount1m` é contagem ou faixa.** Os valores repetem num conjunto
       pequeno e dois catálogos distintos devolveram exatamente `1021` — cheira a bucket. Se for,
       exibir número exato é precisão falsa. Resolver antes de desenhar a célula de demanda.
-- [ ] **Fechar o contrato das seções 2, 3 e 7** do relatório (campos, fonte, unidade, nulabilidade,
-      critério de aceite) antes de qualquer código de relatório.
+- [x] **Contrato das seções 2, 3 e 7 fechado** — `docs/reference/contrato-analise-publiai-secoes-2-3-7.md`:
+      22 campos com fonte, unidade, cálculo e comportamento na ausência, mais 11 critérios de aceite
+      testáveis. Reusa a fórmula de concentração da ADR-0137 sem alterá-la e acrescenta **7.4,
+      concentração por vendedor** (`buyBoxShopName`), que mede o que a 0137 registrou como limitação
+      do caminho B e não podia medir.
+- [ ] **Decisão de Diego: onde fica "Peso Físico × Peso Volumétrico" e o enquadramento do frete.**
+      Foram pedidos na seção 3, mas dependem de peso e dimensões, que só existem no bloco da DRE
+      (D-5) — e a D-16 exige um único lugar para digitar peso. **Recomendado: mover para a seção 6.**
+      Se ficarem na 3, a promessa "6 seções saem na hora" cai para 5.
 - [ ] Trabalho técnico da ADR-0132 que segue de pé: #4 contrato HTTP do Gateway, #5/#6 storage e
       cifragem da credencial, #9 backend do cache (chave precisa conter a data do snapshot — C-3),
       #11/#12 rate limits, timeouts, latência e cold start.
