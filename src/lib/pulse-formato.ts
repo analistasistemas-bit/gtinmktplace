@@ -1,5 +1,5 @@
 // Pulse (ADR-0119): tradução do jargão do ML para a linguagem do operador. Puro, sem I/O.
-import type { PulseProduto } from './pulse';
+import type { PulseProduto, PulseResumoOfertas } from './pulse';
 import type { MotivoQualificacao, StatusQualificacao } from '../../supabase/functions/_shared/concorrencia/qualificacao';
 
 export type Tom = 'neutro' | 'ok' | 'atencao' | 'risco';
@@ -155,4 +155,50 @@ export function classeTom(tom: Tom): string {
     case 'risco': return 'border-destructive/30 bg-destructive/10 text-destructive';
     default: return 'border-border bg-muted/50 text-muted-foreground';
   }
+}
+
+/**
+ * Disputa do catálogo (ADR-0147). Três fatos verificáveis — quantos disputam, entre que preços, e
+ * onde o nosso preço cairia — e nenhuma afirmação sobre quem leva a venda: o ganhador do buy-box
+ * não é obtenível pela API (Spike 049, `buy_box_winner` null em 40 de 40 catálogos).
+ *
+ * A posição é HIPOTÉTICA de propósito. O anúncio da org não é anúncio de catálogo (0 de 137 na
+ * AVIL), então ele não está na lista que gerou a faixa — dizer "você é o 4º" colocaria a org numa
+ * disputa da qual ela não participa.
+ */
+export interface DisputaCatalogo {
+  anunciosRelevantes: number;
+  menor: number;
+  maior: number;
+  /** 1-indexado; `null` quando não há preço nosso para posicionar. */
+  posicao: number | null;
+  /** Denominador da posição: os relevantes MAIS o nosso, que ainda não está lá. */
+  totalComNosso: number;
+}
+
+export function disputaCatalogo(
+  resumo: Pick<PulseResumoOfertas,
+    'nOfertasRelevantes' | 'menorRelevante' | 'maiorRelevante' | 'precosRelevantes'> | undefined,
+  meuPreco: number | null,
+): DisputaCatalogo | null {
+  // Sem oferta relevante não é "zero concorrentes": é catálogo sem disputa observável, e a tela
+  // tem frase própria para isso (ADR-0147 D-4). Devolver um objeto zerado viraria "0 anúncios
+  // disputam entre R$ 0 e R$ 0".
+  if (!resumo || resumo.nOfertasRelevantes === 0) return null;
+  if (resumo.menorRelevante == null || resumo.maiorRelevante == null) return null;
+
+  // Empate não passa na frente de quem já está no catálogo — por isso `<=`, e não `<`: com o mesmo
+  // preço, quem já está lá continua na frente. Otimismo aqui vira promessa de posição que o ML não
+  // daria.
+  const posicao = meuPreco == null
+    ? null
+    : resumo.precosRelevantes.filter((p) => p <= meuPreco).length + 1;
+
+  return {
+    anunciosRelevantes: resumo.nOfertasRelevantes,
+    menor: resumo.menorRelevante,
+    maior: resumo.maiorRelevante,
+    posicao,
+    totalComNosso: resumo.nOfertasRelevantes + 1,
+  };
 }

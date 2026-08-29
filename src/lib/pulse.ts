@@ -139,8 +139,12 @@ export interface PulseResumoOfertas {
   menorPreco: number | null;
   menorObservado: number | null;
   menorRelevante: number | null;
+  /** Teto da faixa da disputa (ADR-0147). Já vinha de `resumirMercadoQualificado`, sem uso. */
+  maiorRelevante: number | null;
   nOfertas: number;
   nOfertasRelevantes: number;
+  /** Preços das ofertas relevantes. A coluna da disputa posiciona o nosso preço entre eles. */
+  precosRelevantes: number[];
 }
 
 /**
@@ -184,8 +188,12 @@ export async function fetchPulseResumoOfertas(produtoIds: string[]): Promise<Map
       menorPreco: mercado.menor_relevante,
       menorObservado: mercado.menor_observado,
       menorRelevante: mercado.menor_relevante,
+      maiorRelevante: mercado.maior_relevante,
       nOfertas: mercado.total_observadas,
       nOfertasRelevantes: mercado.total_relevantes,
+      precosRelevantes: mercado.ofertas
+        .filter((o) => o.qualificacao.status === 'relevante')
+        .map((o) => o.preco),
     });
   }
   return resumo;

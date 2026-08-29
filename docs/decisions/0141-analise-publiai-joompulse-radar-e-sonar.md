@@ -47,6 +47,10 @@
 > (`/items/{id}/price_to_win`), mas só para anúncio próprio (403 para terceiro). E o custo real são
 > ~229 chamadas / 17 s com cache frio — **trabalho de coletor, não de abertura de página**, o que
 > dissolve a exceção aberta na emenda da D-7.
+>
+> **Resolvida pela [ADR-0147](0147-radar-mostra-a-disputa-do-catalogo.md) (2026-08-29):** a
+> célula passa a mostrar a **disputa** do catálogo — quantos anúncios relevantes disputam, entre
+> que preços, e em que posição o nosso preço cairia — e nunca o ganhador. **Implementada.**
 
 **Status:** **Em revisão** — o desenho segue válido, a fonte foi trocada (ver Errata 1 acima). O texto abaixo é de 2026-08-28 e ainda descreve a JoomPulse como fonte; leia-o através da errata.
 

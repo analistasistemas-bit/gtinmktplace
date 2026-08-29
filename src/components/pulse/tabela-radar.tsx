@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { pausarPulseProduto, type PulseProduto, type PulseResumoOfertas } from '@/lib/pulse';
 import {
-  classeTom, motivoSemPrecoProprio, posicaoVsMercado, seloAnuncio,
+  classeTom, disputaCatalogo, motivoSemPrecoProprio, posicaoVsMercado, seloAnuncio,
 } from '@/lib/pulse-formato';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
@@ -148,6 +148,43 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       className: 'hidden text-right md:table-cell',
       sortValue: (p) => resumo?.get(p.id)?.nOfertas ?? null,
       cell: (p) => celulaMercado(<span className="tabular-nums">{resumo?.get(p.id)?.nOfertas ?? '—'}</span>),
+    },
+    {
+      key: 'disputa',
+      // ADR-0147: substitui a "Referência do ML" (D-24). Não diz quem leva a venda — o ganhador do
+      // buy-box não vem pela API, e a org sequer disputa (0 de 137 anúncios de catálogo na AVIL).
+      header: 'Análise PubliAI',
+      className: 'hidden lg:table-cell',
+      // Ordena pela posição hipotética: quem cairia pior sobe primeiro em desc — a fila do dia.
+      sortValue: (p) => disputaCatalogo(resumo?.get(p.id), p.meu_preco)?.posicao ?? null,
+      cell: (p) => {
+        const d = disputaCatalogo(resumo?.get(p.id), p.meu_preco);
+        if (!d) {
+          return celulaMercado(
+            <span className="text-muted-foreground">Sem concorrente relevante no catálogo</span>,
+          );
+        }
+        return celulaMercado(
+          <div className="text-xs leading-relaxed">
+            <span>
+              {d.anunciosRelevantes === 1
+                ? '1 anúncio relevante disputa'
+                : `${d.anunciosRelevantes} anúncios relevantes disputam`}
+            </span>
+            {/* Um único anúncio não tem faixa: "R$ 70,19 – R$ 70,19" lê como bug. */}
+            <span className="block tabular-nums text-muted-foreground">
+              {d.menor === d.maior ? fmtBRL(d.menor) : `${fmtBRL(d.menor)} – ${fmtBRL(d.maior)}`}
+            </span>
+            {/* "ficaria" e não "está": o nosso anúncio não é anúncio de catálogo, então ele não
+                participa da disputa que gerou a faixa (ADR-0147 D-5). */}
+            {d.posicao != null && p.meu_preco != null && (
+              <span className="block tabular-nums text-muted-foreground">
+                seu preço {fmtBRL(p.meu_preco)} ficaria em {d.posicao}º de {d.totalComNosso}
+              </span>
+            )}
+          </div>,
+        );
+      },
     },
     {
       key: 'acoes',

@@ -193,7 +193,13 @@ Próximos passos, em ordem de ataque:
       testes que só existiam para elas. Duas travas de regressão no lugar, ambas provadas RED sem
       a mudança. `ptw_custos` (comissão/frete) intacto — alimenta a margem — e a coleta continua,
       o que mantém a remoção reversível.
-- [ ] **Implementar a D-4 no Radar — bloqueada por decisão de produto.** **Ler antes:**
+- [x] **D-4 resolvida e implementada (2026-08-29) pela [ADR-0147](decisions/0147-radar-mostra-a-disputa-do-catalogo.md):**
+      a coluna "Análise PubliAI" mostra a disputa do catálogo (quantos anúncios relevantes
+      disputam, a faixa de preço, e a posição HIPOTÉTICA do nosso preço), nunca o ganhador.
+      Custo zero: sai de `pulse_ofertas_atual`, que o `pulse-coletar` já preenche pela mesma ponte
+      `/products/{id}/items` — sem chamada nova, sem migration, sem edge function. Fica de fora o
+      painel com frase de IA: ele existia para narrar o buy-box, que deixou de existir.
+- [ ] **Histórico da decisão da D-4 (não é mais tarefa, é registro).** **Ler antes:**
       `docs/reference/licoes-joompulse-para-o-radar.md` — transpõe os spikes 043/047/048 e a
       ADR-0146 para o que o Radar pode e não pode fazer, com 3 perguntas abertas a fechar na ADR.
       **Dificultado, não facilitado:** o `buy_box_winner` que a Errata 1 da ADR-0141 e o Spike 047

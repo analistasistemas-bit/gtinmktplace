@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  motivoSemPrecoProprio, seloAnuncio, tipoAnuncio, reputacao,
+  disputaCatalogo, motivoSemPrecoProprio, seloAnuncio, tipoAnuncio, reputacao,
   posicaoVsMercado, rotuloMotivoQualificacao, rotuloReputacao, rotuloStatusQualificacao,
 } from '../pulse-formato';
+import type { PulseResumoOfertas } from '../pulse';
 
 describe('motivoSemPrecoProprio', () => {
   const base = {
@@ -168,5 +169,59 @@ describe('posicaoVsMercado', () => {
     expect(posicaoVsMercado(null, 100)).toBeNull();
     expect(posicaoVsMercado(100, null)).toBeNull();
     expect(posicaoVsMercado(100, 0)).toBeNull();
+  });
+});
+
+// ADR-0147: a coluna do Radar mostra a DISPUTA do catálogo, nunca o ganhador — ele não é obtenível
+// (Spike 049: buy_box_winner null em 40/40) e a org nem disputa (0 de 137 anúncios de catálogo na
+// AVIL). Por isso a posição é declaradamente hipotética: "ficaria em Nº".
+describe('disputaCatalogo', () => {
+  const precos = [130, 139.9, 144.56, 186.9, 209.9];
+  const resumo = (over: Partial<PulseResumoOfertas> = {}): PulseResumoOfertas => ({
+    menorPreco: 130, menorObservado: 36, menorRelevante: 130, maiorRelevante: 209.9,
+    nOfertas: 13, nOfertasRelevantes: 5, precosRelevantes: precos, ...over,
+  });
+
+  it('devolve contagem, faixa e a posição hipotética do nosso preço', () => {
+    const d = disputaCatalogo(resumo(), 149.99)!;
+    expect(d.anunciosRelevantes).toBe(5);
+    expect(d.menor).toBe(130);
+    expect(d.maior).toBe(209.9);
+    expect(d.posicao).toBe(4);
+    expect(d.totalComNosso).toBe(6);
+  });
+
+  it('preço mais barato que todos ficaria em 1º; mais caro, em último', () => {
+    expect(disputaCatalogo(resumo(), 1)!.posicao).toBe(1);
+    expect(disputaCatalogo(resumo(), 999)!.posicao).toBe(6);
+  });
+
+  it('empate no preço não passa na frente de quem já está lá', () => {
+    expect(disputaCatalogo(resumo(), 130)!.posicao).toBe(2);
+  });
+
+  it('sem preço nosso não há posição, mas a disputa continua visível', () => {
+    const d = disputaCatalogo(resumo(), null)!;
+    expect(d.posicao).toBeNull();
+    expect(d.anunciosRelevantes).toBe(5);
+    expect(d.menor).toBe(130);
+  });
+
+  // 22% dos catálogos do Radar não têm anúncio de catálogo ativo (Spike 049 §5). É estado de
+  // mercado, não ausência de dado — e por isso tem frase própria na tela, não "—".
+  it('catálogo sem oferta relevante devolve null, para a tela dizer a frase de ausência', () => {
+    expect(disputaCatalogo(resumo({ nOfertasRelevantes: 0, precosRelevantes: [], menorRelevante: null, maiorRelevante: null }), 149.99)).toBeNull();
+  });
+
+  it('resumo ainda não carregado devolve null', () => {
+    expect(disputaCatalogo(undefined, 149.99)).toBeNull();
+  });
+
+  // A faixa NUNCA sai do menor observado: ele inclui oferta desqualificada, e foi exatamente esse
+  // o engano que a coluna "Menor relevante" já corrigiu uma vez.
+  it('a faixa ignora o menor observado', () => {
+    const d = disputaCatalogo(resumo({ menorObservado: 36 }), 149.99)!;
+    expect(d.menor).toBe(130);
+    expect(d.menor).not.toBe(36);
   });
 });
