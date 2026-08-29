@@ -18,6 +18,9 @@ const entrada = (over: Partial<EntradaDreSonar> = {}): EntradaDreSonar => ({
   custoProduto: 42,
   origem: 'nacional',
   aliquotas: { nacional: 8, importado: 16 },
+  // Lata de 800 g: 18×13×13 cm, 950 g. Sem isto o ML cota o pacote padrão e a proveniência
+  // nunca chega a `official` (ADR-0148 D-28) — ver o bloco da D-16 no fim do arquivo.
+  dimensoes: { alturaCm: 18, larguraCm: 13, comprimentoCm: 13, pesoKg: 0.95 },
   tarifa: tarifa(),
   ...over,
 });
@@ -127,5 +130,70 @@ describe('precosDerivadosDre', () => {
     const p = precosDerivadosDre(entrada({ tarifa: null }), 25);
     expect(p.pontoEquilibrio).toBeNull();
     expect(p.precoAlvo).toBeNull();
+  });
+
+  it('sem dimensões não há preço derivado — mesmo guard da DRE', () => {
+    const p = precosDerivadosDre(entrada({ dimensoes: null }), 25);
+    expect(p.pontoEquilibrio).toBeNull();
+    expect(p.precoAlvo).toBeNull();
+  });
+});
+
+// D-16 (Diego, 2026-08-28; aberta desde a ADR-0141): a seção 6 é dona de peso físico, peso
+// volumétrico e peso taxável. Sem dimensões o ML cota o pacote padrão de 16×11×6 cm / 300 g, a
+// proveniência vira `partial` e a DRE recusa SEMPRE — a seção nascia morta no Sonar.
+describe('montarDreSonar — dimensões e peso (D-16)', () => {
+  it('dimensões não informadas recusam, e o motivo NÃO culpa o Mercado Livre', () => {
+    // A tarifa aqui é a que o ML devolveria sem dimensões: pacote padrão, logo `partial`.
+    const d = montarDreSonar(entrada({
+      dimensoes: null,
+      tarifa: tarifa({ proveniencia: 'partial', motivo_proveniencia: 'o frete foi calculado com um pacote padrão' }),
+    }));
+    expect(d.estado).toBe('indisponivel');
+    if (d.estado !== 'indisponivel') return;
+    // O campo em branco é do operador: a frase tem que PEDIR a ação a ele, não relatar uma falha
+    // do ML — mandá-lo esperar uma cotação seria mandá-lo esperar nada.
+    expect(d.motivo).toMatch(/^informe .*(dimens|peso)/i);
+    expect(d.motivo).not.toMatch(/não respondeu|não devolveu/i);
+  });
+
+  it('com dimensões, devolve peso físico, volumétrico e taxável', () => {
+    const d = montarDreSonar(entrada());
+    expect(d.estado).toBe('calculada');
+    if (d.estado !== 'calculada') return;
+    expect(d.peso.pesoCubadoKg).toBeCloseTo(0.507, 3); // 18 × 13 × 13 ÷ 6000
+    expect(d.peso.pesoUtilizadoKg).toBeCloseTo(0.95, 3); // o físico vence
+  });
+
+  it('caixa grande e leve: o volumétrico vence e vira o peso taxável', () => {
+    const d = montarDreSonar(entrada({
+      dimensoes: { alturaCm: 40, larguraCm: 40, comprimentoCm: 40, pesoKg: 1 },
+    }));
+    if (d.estado !== 'calculada') return;
+    expect(d.peso.pesoCubadoKg).toBeCloseTo(10.667, 3); // 64000 ÷ 6000
+    expect(d.peso.pesoUtilizadoKg).toBeCloseTo(10.667, 3);
+  });
+
+  // Os 18 anúncios com 0,10 cm em produção ensinaram que dimensão inválida chega de verdade.
+  // `calcularPesoUtilizado` lança RangeError; a seção 6 não pode derrubar a árvore do React.
+  it.each([
+    ['altura zero', { alturaCm: 0, larguraCm: 13, comprimentoCm: 13, pesoKg: 0.95 }],
+    ['peso zero', { alturaCm: 18, larguraCm: 13, comprimentoCm: 13, pesoKg: 0 }],
+    ['largura negativa', { alturaCm: 18, larguraCm: -1, comprimentoCm: 13, pesoKg: 0.95 }],
+  ])('dimensão inválida (%s) recusa em vez de estourar', (_nome, dimensoes) => {
+    const d = montarDreSonar(entrada({ dimensoes }));
+    expect(d.estado).toBe('indisponivel');
+    if (d.estado !== 'indisponivel') return;
+    expect(d.motivo).toMatch(/dimens|peso/i);
+  });
+
+  it('quem paga o frete sai da cotação, não de regra nossa', () => {
+    const pago = montarDreSonar(entrada());
+    if (pago.estado !== 'calculada') return;
+    expect(pago.vendedorPagaFrete).toBe(true);
+
+    const gratis = montarDreSonar(entrada({ tarifa: tarifa({ frete: 0 }) }));
+    if (gratis.estado !== 'calculada') return;
+    expect(gratis.vendedorPagaFrete).toBe(false);
   });
 });

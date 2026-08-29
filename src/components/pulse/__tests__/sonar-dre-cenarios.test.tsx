@@ -48,6 +48,11 @@ async function preencher() {
   const user = userEvent.setup();
   await user.type(screen.getByLabelText(/custo do produto/i), '42');
   await user.click(screen.getByRole('radio', { name: /nacional/i }));
+  // D-16: sem o pacote, a cotação sai do padrão do ML e todos os cinco cenários recusam.
+  await user.type(screen.getByLabelText(/peso do pacote/i), '950');
+  await user.type(screen.getByLabelText(/altura/i), '18');
+  await user.type(screen.getByLabelText(/largura/i), '13');
+  await user.type(screen.getByLabelText(/comprimento/i), '13');
   return user;
 }
 

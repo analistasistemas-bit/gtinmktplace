@@ -19,6 +19,11 @@ import {
 } from '@/lib/dre-cenarios';
 import { fmtBRL, parseNumeroPtBr } from '@/lib/formato';
 
+/** Peso em kg com 3 casas: o cubado de uma caixa pequena vive na terceira (0,507 kg). */
+function fmtKg(kg: number): string {
+  return `${kg.toLocaleString('pt-BR', { minimumFractionDigits: 3, maximumFractionDigits: 3 })} kg`;
+}
+
 /** Âncora da DRE: o anúncio cujo preço abre a conta. Mesma forma que o simulador de margem do
  *  Sonar já usa, para não existirem duas ideias de "produto de referência". */
 export interface AncoraDre {
@@ -79,18 +84,50 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
   const [origem, setOrigem] = useState<OrigemProduto | null>(null);
   const [margemAlvoTexto, setMargemAlvoTexto] = useState('');
   const [qtdTexto, setQtdTexto] = useState('');
+  // D-16: sem pacote informado o ML cota 16×11×6 cm / 300 g e a proveniência nunca é `official`.
+  const [pesoTexto, setPesoTexto] = useState('');
+  const [alturaTexto, setAlturaTexto] = useState('');
+  const [larguraTexto, setLarguraTexto] = useState('');
+  const [comprimentoTexto, setComprimentoTexto] = useState('');
 
   const precoAncora = ancora?.preco_referencia ?? null;
   const categoria = ancora?.category_id ?? null;
 
   const { data: aliquotas } = useQuery({ queryKey: ['aliquotas'], queryFn: fetchAliquotas });
 
+  // O pacote só existe quando os quatro campos estão preenchidos: cotar com três deles seria
+  // completar o quarto com o padrão do ML — o palpite silencioso que a D-28 mata.
+  const dimensoes = useMemo(() => {
+    const g = parseNumeroPtBr(pesoTexto);
+    const a = parseNumeroPtBr(alturaTexto);
+    const l = parseNumeroPtBr(larguraTexto);
+    const c = parseNumeroPtBr(comprimentoTexto);
+    if (g == null || a == null || l == null || c == null) return null;
+    return { alturaCm: a, larguraCm: l, comprimentoCm: c, pesoKg: g / 1000 };
+  }, [pesoTexto, alturaTexto, larguraTexto, comprimentoTexto]);
+
+  // O que vai para o ML usa gramas; o motor de margem usa kg. Uma conversão, num lugar só.
+  const dimFrete = useMemo(
+    () => (dimensoes == null ? null : {
+      alturaCm: dimensoes.alturaCm,
+      larguraCm: dimensoes.larguraCm,
+      comprimentoCm: dimensoes.comprimentoCm,
+      pesoGramas: Math.round(dimensoes.pesoKg * 1000),
+    }),
+    [dimensoes],
+  );
+  // Entra na chave: sem isto o react-query serve a cotação do pacote anterior quando o operador
+  // corrige uma medida, e a tela mostra frete de uma caixa que ele já trocou.
+  const chaveDim = dimFrete
+    ? `${dimFrete.alturaCm}x${dimFrete.larguraCm}x${dimFrete.comprimentoCm},${dimFrete.pesoGramas}`
+    : 'sem-dimensoes';
+
   // Passo 1: cotação da âncora. Só ela permite derivar equilíbrio e preço-alvo — não há como cotar
   // um preço antes de conhecê-lo.
   const { data: tarifaAncora, isLoading: cotandoAncora } = useQuery({
-    queryKey: ['sonar', 'dre', 'tarifa', categoria, precoAncora],
-    queryFn: () => calcularTarifaML(precoAncora!, categoria!),
-    enabled: precoAncora != null && categoria != null,
+    queryKey: ['sonar', 'dre', 'tarifa', categoria, precoAncora, chaveDim],
+    queryFn: () => calcularTarifaML(precoAncora!, categoria!, dimFrete),
+    enabled: precoAncora != null && categoria != null && dimFrete != null,
   });
 
   const custoProduto = custoTexto.trim() === '' ? null : parseNumeroPtBr(custoTexto);
@@ -105,9 +142,10 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
 
   const derivados = useMemo(
     () => (precoAncora == null ? { pontoEquilibrio: null, precoAlvo: null } : precosDerivadosDre({
-      precoAnuncio: precoAncora, custoProduto, origem, aliquotas: aliq, tarifa: tarifaAncora ?? null,
+      precoAnuncio: precoAncora, custoProduto, origem, aliquotas: aliq, dimensoes,
+      tarifa: tarifaAncora ?? null,
     }, margemAlvoPct)),
-    [precoAncora, custoProduto, origem, aliq, tarifaAncora, margemAlvoPct],
+    [precoAncora, custoProduto, origem, aliq, dimensoes, tarifaAncora, margemAlvoPct],
   );
 
   const cenarios = useMemo(() => precosDosCenarios({
@@ -121,9 +159,9 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
   // Passo 2: cada preço é recotado NO PRÓPRIO VALOR. É isto que corrige a extrapolação.
   const cotacoes = useQueries({
     queries: cenarios.map((c) => ({
-      queryKey: ['sonar', 'dre', 'tarifa', categoria, c.preco],
-      queryFn: () => calcularTarifaML(c.preco, categoria!),
-      enabled: categoria != null,
+      queryKey: ['sonar', 'dre', 'tarifa', categoria, c.preco, chaveDim],
+      queryFn: () => calcularTarifaML(c.preco, categoria!, dimFrete),
+      enabled: categoria != null && dimFrete != null,
     })),
   });
 
@@ -149,7 +187,7 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
   const comDre = montarCenariosDre(
     cenarios,
     cenarios.map((c, i) => ({ preco: c.preco, tarifa: cotacoes[i]?.data ?? null })),
-    { custoProduto, origem, aliquotas: aliq },
+    { custoProduto, origem, aliquotas: aliq, dimensoes },
   );
 
   // O bloco do lote usa o cenário da âncora — o preço que o operador está olhando.
@@ -158,7 +196,12 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
     ? capitalDoLote(quantidade, daAncora.dre.custoProduto, daAncora.dre.lucro)
     : null;
 
-  const faltaEntrada = custoProduto == null || origem == null;
+  const faltaEntrada = custoProduto == null || origem == null || dimensoes == null;
+  const motivoDaFalta = custoProduto == null
+    ? 'informe o custo do produto — sem ele não há lucro a calcular'
+    : origem == null
+      ? 'informe a origem do produto — a alíquota de imposto depende dela e não é presumida'
+      : 'informe o peso e as dimensões do pacote — sem eles o frete sai de um pacote padrão e não vale como número oficial';
   const cotando = cotandoAncora || cotacoes.some((q) => q.isLoading);
 
   return (
@@ -203,16 +246,64 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
         </div>
       </div>
 
+      {/* D-16: o pacote é do operador, não do ML. Os quatro são obrigatórios — o frete cobrado sai
+          do maior entre peso físico e cubado, e cotar com um pacote padrão daria número oficial
+          sobre uma caixa que não existe. */}
+      <div className="grid gap-3 sm:grid-cols-4">
+        <div className="space-y-1">
+          <label htmlFor="dre-peso" className="text-xs text-muted-foreground">Peso do pacote (g)</label>
+          <Input id="dre-peso" inputMode="decimal" placeholder="ex.: 950"
+            value={pesoTexto} onChange={(e) => setPesoTexto(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="dre-altura" className="text-xs text-muted-foreground">Altura (cm)</label>
+          <Input id="dre-altura" inputMode="decimal" placeholder="ex.: 18"
+            value={alturaTexto} onChange={(e) => setAlturaTexto(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="dre-largura" className="text-xs text-muted-foreground">Largura (cm)</label>
+          <Input id="dre-largura" inputMode="decimal" placeholder="ex.: 13"
+            value={larguraTexto} onChange={(e) => setLarguraTexto(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="dre-comprimento" className="text-xs text-muted-foreground">Comprimento (cm)</label>
+          <Input id="dre-comprimento" inputMode="decimal" placeholder="ex.: 13"
+            value={comprimentoTexto} onChange={(e) => setComprimentoTexto(e.target.value)} />
+        </div>
+      </div>
+
       {faltaEntrada ? (
-        <Indisponivel motivo={custoProduto == null
-          ? 'informe o custo do produto — sem ele não há lucro a calcular'
-          : 'informe a origem do produto — a alíquota de imposto depende dela e não é presumida'} />
+        <Indisponivel motivo={motivoDaFalta} />
       ) : cotando ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> cotando cada preço no Mercado Livre…
         </p>
       ) : (
         <>
+          {/* D-16: a seção 6 é dona do peso. O ML cobra pelo MAIOR entre físico e cubado, então
+              uma caixa grande e vazia paga frete de caixa cheia — é a informação que decide
+              embalagem, e ela não existia em tela nenhuma. */}
+          {daAncora?.dre.estado === 'calculada' && (
+            <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-md border bg-muted/30 p-3 text-xs">
+              <span className="tabular-nums text-muted-foreground">
+                peso físico <span className="font-medium text-foreground">{fmtKg(dimensoes!.pesoKg)}</span>
+              </span>
+              <span className="tabular-nums text-muted-foreground">
+                peso volumétrico <span className="font-medium text-foreground">{fmtKg(daAncora.dre.peso.pesoCubadoKg)}</span>
+                {' '}({alturaTexto}×{larguraTexto}×{comprimentoTexto} ÷ 6000)
+              </span>
+              <span className="tabular-nums text-muted-foreground">
+                peso taxável <span className="font-medium text-foreground">{fmtKg(daAncora.dre.peso.pesoUtilizadoKg)}</span>
+                {' '}— {daAncora.dre.peso.pesoCubadoKg > dimensoes!.pesoKg ? 'o volumétrico venceu' : 'o físico venceu'}
+              </span>
+              <span className="text-muted-foreground">
+                {daAncora.dre.vendedorPagaFrete
+                  ? `neste preço o frete é seu: ${fmtBRL(daAncora.dre.frete)}`
+                  : 'neste preço quem paga o frete é o comprador'}
+              </span>
+            </div>
+          )}
+
           <div>{comDre.map((c) => <LinhaCenario key={c.chave} c={c} />)}</div>
 
           {lote && (

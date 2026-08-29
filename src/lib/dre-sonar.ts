@@ -7,7 +7,13 @@
 // Não há cenários, sensibilidade nem ROI nesta fatia: os 5 cenários exigem 5 cotações e nunca
 // foram enumerados, e o ROI não tem definição de quantidade, capital ou horizonte (Spike 040).
 
-import { calcularSimulacaoML, type CotacoesOficiaisPorModalidade } from './calculadora-ml';
+import {
+  calcularPesoUtilizado,
+  calcularSimulacaoML,
+  type CotacoesOficiaisPorModalidade,
+  type DimensoesProduto,
+  type PesoUtilizado,
+} from './calculadora-ml';
 import { provenienciaDaTarifa, type Tarifa } from './tarifa';
 
 export type OrigemProduto = 'nacional' | 'importado';
@@ -19,6 +25,14 @@ export interface EntradaDreSonar {
   /** Sem origem não há alíquota, e alíquota não se presume (ADR-0055 / ADR-0148 D-6). */
   origem: OrigemProduto | null;
   aliquotas: { nacional: number; importado: number } | null;
+  /**
+   * Pacote informado pelo operador (D-16). `null` enquanto ele não digitou.
+   *
+   * Não é campo opcional: sem ele o `calcular-tarifa-ml` cai no pacote padrão de 16×11×6 cm /
+   * 300 g, a proveniência do frete vira `partial` e o guard da D-28 recusa **sempre**. A seção 6
+   * nascia morta no Sonar, onde o produto é do concorrente e nunca tem dimensão nossa.
+   */
+  dimensoes: DimensoesProduto | null;
   /** `null` quando o ML não respondeu a cotação. */
   tarifa: Tarifa | null;
 }
@@ -34,6 +48,10 @@ export type DreSonar =
     custoProduto: number;
     lucro: number;
     margemPct: number;
+    /** Peso físico × cubado, e o taxável que o ML usa para cobrar (D-16). */
+    peso: PesoUtilizado;
+    /** Sai da cotação (`frete > 0`), não de regra nossa sobre faixa de preço. */
+    vendedorPagaFrete: boolean;
     /** O que NÃO entrou na conta, declarado na tela (ADR-0148 D-5). */
     forasDoCalculo: string[];
   }
@@ -58,6 +76,7 @@ export function precosDerivadosDre(
     precoVenda: e.precoAnuncio,
     custoProduto: base.custoProduto,
     aliquotaImpostoPct: base.aliquotaPct,
+    dimensoes: e.dimensoes ?? undefined,
     custosFixos: 0,
     custosVariaveis: 0,
     rebate: 0,
@@ -114,6 +133,20 @@ export function montarDreSonar(e: EntradaDreSonar): DreSonar {
     return { estado: 'indisponivel', motivo: 'informe a origem do produto — a alíquota de imposto depende dela e não é presumida' };
   }
 
+  // D-16, e ANTES da tarifa de propósito: sem dimensões a cotação sai do pacote padrão e volta
+  // `partial` sempre. Dizer "o frete usou um pacote padrão" mandaria o operador esperar o ML
+  // resolver um campo que só ele pode preencher.
+  if (e.dimensoes == null) {
+    return { estado: 'indisponivel', motivo: 'informe o peso e as dimensões do pacote — sem eles o frete sai de um pacote padrão e não vale como número oficial' };
+  }
+  // Reusa a validação do próprio motor em vez de repeti-la aqui: uma segunda cópia das regras
+  // seria a segunda fonte de verdade que a D-15 existe para evitar. Dimensão inválida chega de
+  // verdade — 18 anúncios em produção têm 0,10 cm.
+  const peso = pesoOuNulo(e.dimensoes);
+  if (peso == null) {
+    return { estado: 'indisponivel', motivo: 'as dimensões e o peso precisam ser maiores que zero' };
+  }
+
   if (e.tarifa == null) {
     return { estado: 'indisponivel', motivo: 'o Mercado Livre não respondeu a cotação de comissão e frete' };
   }
@@ -130,6 +163,7 @@ export function montarDreSonar(e: EntradaDreSonar): DreSonar {
     precoVenda: e.precoAnuncio,
     custoProduto: e.custoProduto,
     aliquotaImpostoPct: aliquotaPct,
+    dimensoes: e.dimensoes,
     // Zeros declarados em `FORA_DO_CALCULO`, não zeros silenciosos (ADR-0148 D-5).
     custosFixos: 0,
     custosVariaveis: 0,
@@ -152,6 +186,20 @@ export function montarDreSonar(e: EntradaDreSonar): DreSonar {
     custoProduto: classico.custos.custoProduto,
     lucro: classico.lucro,
     margemPct: classico.margemPct,
+    peso,
+    // O ML só devolve `list_cost` quando o vendedor absorve o frete (ver `_shared/ml/frete.ts`);
+    // frete 0 é "o comprador paga", já validado como `official` pela D-28.
+    vendedorPagaFrete: classico.custos.frete > 0,
     forasDoCalculo: FORA_DO_CALCULO,
   };
+}
+
+/** `calcularPesoUtilizado` lança `RangeError` em dimensão não-positiva. A seção 6 recebe digitação
+ *  livre do operador, então a exceção vira recusa — nunca uma árvore do React derrubada. */
+function pesoOuNulo(dimensoes: DimensoesProduto): PesoUtilizado | null {
+  try {
+    return calcularPesoUtilizado(dimensoes);
+  } catch {
+    return null;
+  }
 }

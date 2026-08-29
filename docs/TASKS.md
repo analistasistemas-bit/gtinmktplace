@@ -181,6 +181,14 @@ Próximos passos, em ordem de ataque:
       físico, peso volumétrico (`C × L × A ÷ 6000`), peso taxável e do cruzamento peso × faixa de
       preço; são os mesmos campos que `calcularSimulacaoML()` já consome, então não nasce entrada
       nova — deixa de existir uma segunda.
+      **Implementada em 2026-08-29** (Errata 1 da [ADR-0149](decisions/0149-dre-fatia-2-cinco-precos-e-capital-do-lote.md)),
+      depois que Diego pesquisou o Aptamil no Sonar e os **cinco** cenários recusaram com o mesmo
+      texto de pacote padrão. Causa: a D-5 pedia "custo, origem, peso e dimensões" e só custo e
+      origem foram construídos — `calcularTarifaML` já aceitava o argumento, a tela nunca passava,
+      toda cotação caía no `DIMENSOES_DEFAULT` e o guard da D-28 recusava sempre. Dimensão
+      automática está **descartada por medição**: `/products/{id}` só dá `UNIT_WEIGHT` (peso do
+      produto, não do pacote) e a ponte não dá nada. Medido no Aptamil: o pacote padrão erra o
+      frete em R$ 0,30 a R$ 2,80 conforme o preço.
 - [ ] Trabalho técnico da ADR-0132 que segue de pé: #4 contrato HTTP do Gateway, #5/#6 storage e
       cifragem da credencial, #9 backend do cache (chave precisa conter a data do snapshot — C-3),
       #11/#12 rate limits, timeouts, latência e cold start.

@@ -115,7 +115,8 @@ não se presume.
 - **Custos de lote que não escalam** (frete de compra, importação) — sem eles o percentual de
   retorno é o markup, como a D-4 registra.
 - **Horizonte de tempo / prazo de giro** — excluído por falta de dado confiável.
-- **A D-16** (mover peso taxável da seção 3 para a 6), que segue aberta desde a ADR-0141.
+- ~~**A D-16** (mover peso taxável da seção 3 para a 6), que segue aberta desde a ADR-0141.~~
+  **Fechada em 2026-08-29 — ver Errata 1.**
 - **Endpoint em lote** para as cotações (D-2).
 - **A dívida do `cotacoesOficiaisDaTarifa`** herdada da ADR-0148: a calculadora da Revisão continua
   cravando `official`. Medido em 2026-08-29: **18 anúncios publicados** têm dimensão inválida
@@ -144,3 +145,70 @@ corrigidos **antes** de virar código.
    diferente do markup.
 7. Nenhum texto promete prazo, giro ou horizonte.
 8. `pnpm test`, `pnpm lint`, `npx tsc -b --force`, `deno lint` e `pnpm docs:links` verdes.
+
+---
+
+## Errata 1 (2026-08-29) — a D-16 fechada, porque sem ela a seção 6 nascia morta
+
+Diego pesquisou o Aptamil Premium 2 no Sonar e os **cinco** cenários recusaram, todos com o mesmo
+texto: *"o frete foi calculado com um pacote padrão porque as dimensões do produto não foram
+informadas"*.
+
+**Não era defeito: era a fatia 1 funcionando e a D-5 pela metade.** A D-5 da ADR-0148 especificou um
+formulário que pede *"custo, origem, peso e dimensões"*; só custo e origem foram construídos.
+`calcularTarifaML(preco, categoria, dim?)` **já aceitava** o terceiro argumento — a tela nunca o
+passava. Logo toda cotação saía do `DIMENSOES_DEFAULT` (16×11×6 cm, 300 g) de
+`_shared/ml/frete.ts`, a proveniência voltava `partial` e o guard da D-28 recusava **sempre**. A
+própria ADR-0148 previu o sintoma ("no Sonar o produto é do concorrente — dimensões faltando ali é o
+caso comum") sem notar que ele tornava a seção inutilizável.
+
+### Dimensão automática está descartada, e isso foi medido
+
+| Fonte | O que devolve |
+|---|---|
+| `GET /products/{catalog_product_id}` | apenas `UNIT_WEIGHT = 800 g` — peso do **produto**, não do pacote; nenhum `PACKAGE_*` |
+| `GET /products/{id}/items` (a ponte) | `shipping` sem dimensão alguma |
+
+Usar os 800 g como peso de envio seria o palpite silencioso que a D-28 existe para matar. **O
+pacote só pode vir do operador**, como a origem já vinha (ADR-0107 / D-6).
+
+### O que muda
+
+1. **`dimensoes` é entrada obrigatória de `EntradaDreSonar`**, não campo opcional. Quatro campos
+   novos na seção 6: peso (g), altura, largura e comprimento (cm). Só existem juntos — cotar com
+   três deles seria completar o quarto com o padrão do ML.
+2. **O guard das dimensões vem ANTES do da tarifa.** Sem eles, dizer "o frete usou um pacote
+   padrão" mandaria o operador esperar o ML resolver um campo que só ele preenche. A frase passa a
+   ser *"informe o peso e as dimensões do pacote"*.
+3. **Dimensão inválida recusa, não estoura.** `calcularPesoUtilizado` lança `RangeError` em valor
+   não-positivo e a seção 6 recebe digitação livre. A validação do motor é reusada, não repetida —
+   uma segunda cópia das regras seria a segunda fonte de verdade que a D-15 proíbe.
+4. **A seção 6 passa a mostrar peso físico, volumétrico (`C × L × A ÷ 6000`) e taxável**, dizendo
+   qual venceu, mais quem paga o frete naquele preço. `calcularPesoUtilizado` já existia em
+   `calculadora-ml.ts` e já era devolvido por `calcularSimulacaoML` — nada de aritmética nova.
+
+### O que estava em jogo, medido
+
+Cotação real no catálogo `MLB10512495` (categoria `MLB269341`), pacote padrão contra a lata de
+800 g (18×13×13 cm, 950 g):
+
+| Preço | Pacote padrão | Lata real | Delta |
+|---|---:|---:|---:|
+| R$ 70,19 | R$ 8,15 | R$ 8,45 | +R$ 0,30 |
+| R$ 73,55 | R$ 8,15 | R$ 8,45 | +R$ 0,30 |
+| R$ 297,61 | R$ 21,65 | R$ 24,45 | +R$ 2,80 |
+
+O erro é pequeno em reais e **irrelevante para a decisão**: o guard não recusa por magnitude, recusa
+por não poder afirmar. O que a errata corrige é que ele recusava sem oferecer saída.
+
+### Custo
+
+Cinco preços × uma cotação cada, agora com a dimensão na `queryKey` — sem isso o react-query serviria
+a cotação do pacote anterior quando o operador corrigisse uma medida. Nenhuma chamada nova: as
+mesmas cinco, com um parâmetro a mais.
+
+### Segue aberto
+
+A dívida do `cotacoesOficiaisDaTarifa` na Revisão, e os **18 anúncios publicados com 0,10 cm** —
+que esta errata torna mais visível, não menos: agora o Sonar exige do operador exatamente o dado
+que aqueles anúncios têm errado.

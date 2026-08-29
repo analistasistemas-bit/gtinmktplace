@@ -37,11 +37,17 @@ function renderDre(over: Partial<Parameters<typeof SonarDre>[0]> = {}) {
   );
 }
 
-/** Preenche custo e escolhe a origem — o mínimo que a DRE exige. */
+/** Preenche custo, origem e o pacote — o mínimo que a DRE exige (D-16). */
 async function preencher(custo = '42', origem = 'Nacional') {
   const user = userEvent.setup();
   await user.type(screen.getByLabelText(/custo do produto/i), custo);
   await user.click(screen.getByRole('radio', { name: new RegExp(origem, 'i') }));
+  // D-16: o pacote é entrada obrigatória — sem ele a cotação sai do pacote padrão do ML e o guard
+  // da D-28 recusa. Lata de 800 g.
+  await user.type(screen.getByLabelText(/peso do pacote/i), '950');
+  await user.type(screen.getByLabelText(/altura/i), '18');
+  await user.type(screen.getByLabelText(/largura/i), '13');
+  await user.type(screen.getByLabelText(/comprimento/i), '13');
   return user;
 }
 
@@ -122,5 +128,71 @@ describe('SonarDre — seção 6 (ADR-0148)', () => {
   it('sem categoria não há cotação possível, e a seção diz isso', () => {
     renderDre({ ancora: { ...ancora, category_id: null } });
     expect(screen.getByText(/categoria/i)).toBeInTheDocument();
+  });
+});
+
+// D-16 — a seção 6 é dona do peso. Antes disto a tela não pedia pacote nenhum, cotava com o
+// padrão do ML (16×11×6 cm / 300 g) e o guard da D-28 recusava os cinco preços SEMPRE.
+describe('SonarDre — pacote e peso (D-16)', () => {
+  it('sem o pacote informado, pede peso e dimensões em vez de culpar o Mercado Livre', async () => {
+    renderDre();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/custo do produto/i), '42');
+    await user.click(screen.getByRole('radio', { name: /nacional/i }));
+
+    const aviso = await screen.findByText(/informe o peso e as dimensões/i);
+    expect(aviso).toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/não respondeu|não devolveu/i);
+  });
+
+  it('a cotação vai ao ML COM as dimensões digitadas', async () => {
+    const { calcularTarifaML } = await import('@/lib/tarifa');
+    renderDre();
+    await preencher();
+    await waitFor(() => expect(calcularTarifaML).toHaveBeenCalled());
+    // O bug original era exatamente este: a tela tinha o campo e não passava o valor.
+    expect(calcularTarifaML).toHaveBeenCalledWith(
+      expect.any(Number),
+      'MLB1234',
+      { alturaCm: 18, larguraCm: 13, comprimentoCm: 13, pesoGramas: 950 },
+    );
+  });
+
+  it('mostra peso físico, volumétrico e taxável, e diz qual venceu', async () => {
+    renderDre();
+    await preencher();
+    await waitFor(() => expect(screen.getByText(/peso taxável/i)).toBeInTheDocument());
+    expect(screen.getByText(/0,507 kg/)).toBeInTheDocument(); // 18 × 13 × 13 ÷ 6000
+    expect(screen.getAllByText(/0,950 kg/).length).toBeGreaterThan(0);
+    expect(document.body.textContent).toMatch(/o físico venceu/i);
+  });
+
+  it('caixa grande e leve: o volumétrico vence e a tela diz isso', async () => {
+    renderDre();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/custo do produto/i), '42');
+    await user.click(screen.getByRole('radio', { name: /nacional/i }));
+    await user.type(screen.getByLabelText(/peso do pacote/i), '1000');
+    await user.type(screen.getByLabelText(/altura/i), '40');
+    await user.type(screen.getByLabelText(/largura/i), '40');
+    await user.type(screen.getByLabelText(/comprimento/i), '40');
+
+    // Aparece duas vezes de propósito: quando o volumétrico vence, ele É o taxável.
+    await waitFor(() => expect(screen.getAllByText(/10,667 kg/).length).toBe(2));
+    expect(document.body.textContent).toMatch(/o volumétrico venceu/i);
+  });
+
+  it('dimensão zerada recusa em vez de derrubar a tela', async () => {
+    renderDre();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/custo do produto/i), '42');
+    await user.click(screen.getByRole('radio', { name: /nacional/i }));
+    await user.type(screen.getByLabelText(/peso do pacote/i), '950');
+    await user.type(screen.getByLabelText(/altura/i), '0');
+    await user.type(screen.getByLabelText(/largura/i), '13');
+    await user.type(screen.getByLabelText(/comprimento/i), '13');
+
+    await waitFor(() => expect(screen.getAllByText(/DRE indisponível/i).length).toBeGreaterThan(0));
+    expect(document.body.textContent).toMatch(/maiores que zero/i);
   });
 });
