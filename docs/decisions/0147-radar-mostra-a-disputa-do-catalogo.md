@@ -107,6 +107,33 @@ Depois: 1100 px não exibe a coluna (correto), 1440 px cabe exato, e em 1280 px 
 
 Um teste guarda a decisão: o preço próprio aparece **uma** vez na linha.
 
+## Errata 2 (2026-08-29) — a invisibilidade no catálogo ganha aviso próprio, sem afirmar ganhador
+
+Conferência contra a JoomPulse pediu por Diego, nos catálogos `MLB10512495` e `MLB10512516`. **A
+faixa bate**: no Aptamil Premium 2, menor e maior idênticos (R$ 54,00 / R$ 391,98); no Premium 1 a
+diferença é de centavos, compatível com o snapshot D-1 deles. E a **nossa cobertura é maior** — 98
+anúncios contra 55, 69 contra 50.
+
+O que a conferência revelou não foi erro de número, e sim **um silêncio da tela**: existe oferta
+ativa muito abaixo da referência relevante, e o operador não sabia. Medido: **34 dos 178 produtos**
+do Radar estão nessa situação; no Aptamil Premium 1 são **25 ofertas, a mais barata 48,7% abaixo**.
+
+O dialog de detalhe passa a exibir um aviso **separado da faixa**:
+
+> ⚠ 25 ofertas ativas abaixo da sua referência, a partir de R$ 36,00 (49% abaixo de R$ 70,19). São
+> vendedores sem histórico suficiente, então não entram na comparação de preço — mas aparecem na
+> mesma página do catálogo que a sua.
+
+**A régua de relevância não muda.** Perseguir preço de vendedor sem histórico destrói margem atrás
+de quem não se sustenta (ADR-0020/0050). O aviso informa; não recomenda.
+
+**O aviso não diz quem leva a venda, e essa é a decisão.** A formulação inicialmente proposta era
+*"o catálogo está sendo levado a R$ X"* — e ela é falsa por duas razões já provadas nesta ADR: o
+ganhador do buy-box não é obtenível (Spike 049, `buy_box_winner` null em 40/40) e **o mais barato
+não é o ganhador** (medido: só em 9 de 17 catálogos disputados). Confirmado no próprio caso: o mais
+barato está em R$ 36,00 e a JoomPulse aponta o buy-box em outra oferta, de R$ 49,90 — de um
+vendedor com **1 venda em 365 dias**.
+
 ## O que esta decisão NÃO resolve
 
 **A org continua fora dos catálogos.** Entrar (opt-in de `catalog_listing`) é decisão comercial do

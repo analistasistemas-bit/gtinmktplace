@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada, comissaoNoPreco,
-  margemEhEstimativa, mercadoPulse,
+  margemEhEstimativa, mercadoPulse, ofertasAbaixoDaReferencia,
 } from '../pulse-margem';
 import type { PulseOferta, PulseVendedor } from '../pulse';
 
@@ -283,5 +283,46 @@ describe('margemEhEstimativa', () => {
 
   it('sem preço simulado → estimativa (nunca afirma exatidão sobre nada)', () => {
     expect(margemEhEstimativa(null, 39.9)).toBe(true);
+  });
+});
+
+// O Radar compara contra concorrentes RELEVANTES — vendedores com histórico, régua que impede o
+// operador de perseguir preço de quem não se sustenta (ADR-0020/0050). Mas existir oferta ativa
+// muito abaixo dessa faixa é fato que ele precisa saber: são anúncios que o comprador vê na mesma
+// página do catálogo. Medido em 2026-08-29: 34 dos 178 produtos do Radar estão nessa situação.
+//
+// O que este cálculo NÃO afirma: quem leva a venda. O ganhador do buy-box não é obtenível pela API
+// (Spike 049) e o mais barato NÃO é o ganhador — medido, ele é em apenas 9 de 17 catálogos
+// disputados. Confirmado no Aptamil Premium 1: o mais barato é R$ 36,00 e o buy-box está com outra
+// oferta, de R$ 49,90.
+describe('ofertasAbaixoDaReferencia', () => {
+  const mercadoCom = (precos: Array<[number, number]>) => mercadoPulse(
+    precos.map(([preco, seller], i) => oferta({ item_id: `I${i}`, seller_id: seller, preco, visitas_30d: 5 })),
+    [
+      vendedor({ seller_id: 1, transactions_total: 0 }),
+      vendedor({ seller_id: 2, transactions_total: 500, nivel: '5_green' }),
+    ],
+  );
+
+  it('conta as ofertas abaixo da referência e o quanto a mais barata está abaixo', () => {
+    const r = ofertasAbaixoDaReferencia(mercadoCom([[36, 1], [50, 1], [70.19, 2], [90, 2]]))!;
+    expect(r.contagem).toBe(2);
+    expect(r.menorPreco).toBe(36);
+    expect(r.referencia).toBe(70.19);
+    expect(r.pctAbaixo).toBeCloseTo(48.7, 1);
+  });
+
+  it('não existe aviso quando ninguém está abaixo da referência', () => {
+    expect(ofertasAbaixoDaReferencia(mercadoCom([[70.19, 2], [90, 2]]))).toBeNull();
+  });
+
+  it('sem referência relevante não há do que estar abaixo', () => {
+    expect(ofertasAbaixoDaReferencia(mercadoCom([[36, 1], [50, 1]]))).toBeNull();
+  });
+
+  it('a referência é sempre a relevante mais barata — nunca uma oferta desqualificada', () => {
+    const r = ofertasAbaixoDaReferencia(mercadoCom([[50, 2], [70.19, 2], [36, 1]]))!;
+    expect(r.referencia).toBe(50);
+    expect(r.contagem).toBe(1);
   });
 });

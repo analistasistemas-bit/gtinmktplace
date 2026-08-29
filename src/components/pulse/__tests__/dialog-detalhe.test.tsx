@@ -286,3 +286,28 @@ describe('DialogDetalhe — o gráfico do menor preço não inventa alta', () =>
     expect(grafico).not.toHaveAccessibleName(/a\s*R\$\s*79,99/);
   });
 });
+
+// A fixture padrão tem a oferta de R$ 36,00 (vendedor sem histórico) e a de R$ 70,19 (relevante).
+describe('DialogDetalhe — aviso das ofertas abaixo da referência', () => {
+  it('conta as ofertas abaixo e diz o quanto a mais barata está abaixo', () => {
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+
+    const aviso = screen.getByText(/oferta ativa abaixo da sua referência|ofertas ativas abaixo da sua referência/);
+    expect(aviso).toBeInTheDocument();
+    expect(aviso.parentElement).toHaveTextContent(/R\$\s*36,00/);
+    expect(aviso.parentElement).toHaveTextContent(/49% abaixo/);
+  });
+
+  // O ponto todo do aviso: ele NÃO afirma quem leva a venda. O ganhador do buy-box não é obtenível
+  // (Spike 049) e o mais barato não é o ganhador (9 de 17 catálogos medidos).
+  it('não afirma quem leva a venda nem chama o mais barato de ganhador', () => {
+    const { container } = renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+    expect(container.textContent).not.toMatch(/ganhador|buy.?box|leva a venda|está levando/i);
+  });
+
+  it('sem oferta abaixo da referência, não existe aviso', () => {
+    detalhe.ofertasAtuais = [oferta({ item_id: 'MLB-OFFER-70', seller_id: 2, preco: 70.19 })];
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+    expect(screen.queryByText(/abaixo da sua referência/)).not.toBeInTheDocument();
+  });
+});

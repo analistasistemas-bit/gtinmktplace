@@ -18,7 +18,8 @@ import {
   type PulseProduto, type PulseVendedor, type PulseOferta,
 } from '@/lib/pulse';
 import {
-  estadoAtualOfertas, mercadoPulse, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada, margemEhEstimativa,
+  estadoAtualOfertas, mercadoPulse, menorPrecoPorDia, ofertasAbaixoDaReferencia,
+  vendasEstimadasVendedor, margemEstimada, margemEhEstimativa,
 } from '@/lib/pulse-margem';
 import {
   classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, rotuloMotivoQualificacao,
@@ -157,6 +158,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
   // `atuais` entra para o último ponto do gráfico bater com o "Menor oferta observada" logo acima:
   // o histórico é limitado a 400 linhas e a view é a verdade do presente.
   const historico = menorPrecoPorDia(ofertas, atuais).slice(-14);
+  const abaixoDaReferencia = ofertasAbaixoDaReferencia(mercado);
 
   const vendedoresPorSeller = new Map<number, PulseVendedor[]>();
   for (const v of data?.vendedores ?? []) {
@@ -440,6 +442,28 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                       )}
                     </div>
                   </div>
+
+                  {/* Separado da faixa de propósito: estas ofertas NÃO entram na comparação de
+                      preço (régua de relevância, ADR-0020/0050), mas o comprador as vê na mesma
+                      página do catálogo. O texto não diz quem leva a venda — não é obtenível
+                      (Spike 049), e o mais barato não é o ganhador. */}
+                  {abaixoDaReferencia && (
+                    <p className="mt-3 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-2.5 text-xs">
+                      <Store className="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden />
+                      <span>
+                        <span className="font-medium">
+                          {abaixoDaReferencia.contagem === 1
+                            ? '1 oferta ativa abaixo da sua referência'
+                            : `${abaixoDaReferencia.contagem} ofertas ativas abaixo da sua referência`}
+                        </span>
+                        , a partir de <span className="tabular-nums">{fmtBRL(abaixoDaReferencia.menorPreco)}</span>{' '}
+                        ({Math.round(abaixoDaReferencia.pctAbaixo)}% abaixo de{' '}
+                        <span className="tabular-nums">{fmtBRL(abaixoDaReferencia.referencia)}</span>).{' '}
+                        São vendedores sem histórico suficiente, então não entram na comparação de
+                        preço — mas aparecem na mesma página do catálogo que a sua.
+                      </span>
+                    </p>
+                  )}
 
                   <div className="mt-4 flex flex-wrap items-end gap-3 border-t pt-4">
                     <div className="flex flex-col gap-1">

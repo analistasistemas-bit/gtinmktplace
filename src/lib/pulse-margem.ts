@@ -158,3 +158,42 @@ export function margemEstimada(args: {
   const margemPct = (liquido / preco) * 100;
   return { liquido, margemPct, comissao };
 }
+
+export interface AbaixoDaReferencia {
+  /** Quantas ofertas ativas estão abaixo da referência relevante. */
+  contagem: number;
+  /** A mais barata delas. */
+  menorPreco: number;
+  /** O menor relevante — o número que a tela usa para comparar preço. */
+  referencia: number;
+  pctAbaixo: number;
+}
+
+/**
+ * Ofertas ativas abaixo da referência relevante. Elas não entram na comparação de preço, por
+ * decisão da régua de qualificação (ADR-0020/0050) — perseguir preço de vendedor sem histórico
+ * destrói margem atrás de quem não se sustenta. Mas elas existem, e o comprador as vê na mesma
+ * página do catálogo: a tela precisa dizer que estão lá.
+ *
+ * **Não afirma quem leva a venda.** O ganhador do buy-box não é obtenível pela API do ML
+ * (Spike 049: `buy_box_winner` null em 40 de 40) e o mais barato **não** é o ganhador — medido, ele
+ * é em apenas 9 de 17 catálogos disputados. No Aptamil Premium 1 o mais barato está em R$ 36,00 e
+ * o buy-box, em outra oferta de R$ 49,90.
+ */
+export function ofertasAbaixoDaReferencia(mercado: MercadoQualificado): AbaixoDaReferencia | null {
+  const referencia = mercado.menor_relevante;
+  if (referencia == null) return null;
+
+  const abaixo = mercado.ofertas.filter(
+    (o) => o.qualificacao.status !== 'relevante' && o.preco < referencia,
+  );
+  if (abaixo.length === 0) return null;
+
+  const menorPreco = Math.min(...abaixo.map((o) => o.preco));
+  return {
+    contagem: abaixo.length,
+    menorPreco,
+    referencia,
+    pctAbaixo: ((referencia - menorPreco) / referencia) * 100,
+  };
+}
