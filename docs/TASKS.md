@@ -27,11 +27,11 @@ limpos, e migration `20260829100720_drop_gateway_joompulse.sql` aplicada em prod
 
 Próximos passos, em ordem de ataque:
 
-- [ ] **Calcular o delta por vendedor** a partir de `pulse_vendedores` (dado já coletado, sem
-      migration). Trava obrigatória: delta negativo é `sem estimativa no período` — nunca zero,
-      nunca negativo exibido —, porque a janela de `transactions` é móvel (365 dias) e expulsa
-      vendas antigas (pior caso medido: −4.875). Usar **mediana**, nunca média: a média do
-      universo rastreado (3.553/mês) é puxada por outliers; a mediana é ~21/mês.
+- [ ] **Calcular o delta por vendedor** — **especificado na
+      [ADR-0142](decisions/0142-vendas-mensais-por-vendedor.md), liberado para implementação.**
+      Função pura em `supabase/functions/_shared/pulse/`, sem migration (o dado já é coletado).
+      As travas D-3 a D-6 e os 6 critérios de aceite estão no ADR; as 5 refutações registradas
+      dizem o que **não** tentar de novo.
 - [ ] **Emendar o contrato das seções 2/3/7** trocando a proveniência dos campos 2.6, 3.1–3.4,
       7.2 e 7.4, e revisar os rótulos da regra global 1 (fonte, unidade e janela).
 - [ ] **Aproveitar os 25 campos do Apify que o parser ignora.** Run de 2026-08-29 devolveu **40

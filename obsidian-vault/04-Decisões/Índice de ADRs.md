@@ -153,6 +153,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0138 | [Sonar: linguagem comercial do veredito e condição de entrada](../../docs/decisions/0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) |
 | 0139 | [Campo de partículas das telas de auth em Three.js (GPGPU), carregado sob demanda](../../docs/decisions/0139-particulas-gpgpu-nas-telas-de-auth.md) |
 | 0140 | [Sonar por EAN: análise completa pela busca, sem escolha grátis/paga](../../docs/decisions/0140-sonar-ean-analise-completa-pela-busca.md) |
-| 0141 | [Análise PubliAI: JoomPulse no Radar e no Sonar](../../docs/decisions/0141-analise-publiai-joompulse-radar-e-sonar.md) — supersede a D-3 da 0132 |
+| 0141 | [Análise PubliAI: JoomPulse no Radar e no Sonar](../../docs/decisions/0141-analise-publiai-joompulse-radar-e-sonar.md) — supersede a D-3 da 0132; **Errata 1 troca a fonte** (JoomPulse fora) |
+| 0142 | [Vendas mensais estimadas por vendedor](../../docs/decisions/0142-vendas-mensais-por-vendedor.md) — substitui a proveniência JoomPulse dos campos 2.6 e 3.1–3.4 |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
