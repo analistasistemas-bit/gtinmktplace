@@ -91,6 +91,11 @@ elegíveis**. Passa, e passa raspando — um vendedor a menos e o card apaga.
 Isso é a trava funcionando, não um defeito. Mas registra-se que o modo EAN opera **na fronteira**
 do piso, e nichos menores continuarão silenciosos até a base crescer.
 
+> **Errata 2 (2026-08-29, [ADR-0145](0145-vendedor-estabelecido-atividade-e-intensidade.md)):** a
+> fragilidade acima foi resolvida. O piso passa a contar **vendedores estabelecidos** (≥ 50 vendas
+> históricas) e **degrada em vez de apagar**: abaixo de 5, suprime a mediana e mantém a métrica de
+> atividade, que é contagem e não estimador de tendência central.
+
 ---
 
 ## O que fica registrado como risco aceito
@@ -121,7 +126,13 @@ Recusada por Diego em favor da resposta imediata.
 
 **Ganhamos** o modo EAN, que é a pergunta mais direta do Sonar. Medido no fio de viscose: mediana
 de **1.005 un./mês** entre 5 vendedores — contra o silêncio de antes, e em contraste útil com a
-mediana **0** do `aptamil premium 2`, que é nicho parado.
+mediana **0** do `aptamil premium 2`.
+
+> **Errata 1 (2026-08-29, [ADR-0145](0145-vendedor-estabelecido-atividade-e-intensidade.md)):** a
+> leitura de que o `aptamil premium 2` seria "nicho parado" **estava errada**. O zero era artefato
+> de composição da população — a ponte do catálogo trazia 116 vendedores, mais da metade com menos
+> de 50 vendas na vida. Filtrando por vendedor estabelecido: **50 concorrentes, 74% com movimento,
+> mediana 303 un./mês**. Nicho ativo.
 
 **Perdemos** a propriedade de que toda leitura do Pulse é estritamente org-scoped. A exceção é
 única, nomeada e auditável: uma função, uma coluna a menos, um `grant`.
@@ -133,5 +144,6 @@ mediana **0** do `aptamil premium 2`, que é nicho parado.
 3. `execute` negado a `anon` e `authenticated`, concedido a `service_role` — verificado por query
    de privilégio, não por inspeção do arquivo.
 4. Vendedor coletado por duas orgs no mesmo dia produz **uma** linha na série.
-5. O modo EAN do Sonar passa a exibir 3.2; `aptamil premium 2` continua com mediana 0.
+5. O modo EAN do Sonar passa a exibir 3.2. ~~`aptamil premium 2` continua com mediana 0~~ →
+   **Errata 1:** o aptamil passa a exibir mediana **> 0** sobre a população estabelecida (ADR-0145).
 6. `pnpm test`, `pnpm lint` e `npx tsc -b --force` verdes.

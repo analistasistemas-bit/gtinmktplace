@@ -1,6 +1,19 @@
 # ADR-0142 — Vendas mensais estimadas por vendedor
 
-**Status:** Aceito, **liberado para implementação**. Decisão de Diego em 2026-08-29 (opção C), depois de três candidatas medidas. Substitui a proveniência JoomPulse dos campos 2.6, 3.1, 3.2, 3.3 e 3.4 do relatório.
+> **Errata 1 (2026-08-29, [ADR-0145](0145-vendedor-estabelecido-atividade-e-intensidade.md)):**
+> a janela declarada aqui **não existe**. Medido na API: `seller_reputation.transactions` devolve
+> `{"period": "historic"}` — o total é **vitalício**, não uma janela móvel de 365 dias. A D-2 e a
+> D-3 abaixo estão erradas nesse ponto.
+>
+> A descoberta **melhora** a fórmula: com contador vitalício, o delta é venda nova de fato, e não
+> saldo de janela deslizante. O que cai é o rótulo — nenhum texto de tela ou documento pode dizer
+> "365d". A trava de delta negativo **permanece**, agora como fato empírico sem explicação
+> confirmada (525 quedas medidas, mediana −12, pior −2.036; grande demais para ser cancelamento).
+>
+> A D-1 (a unidade é o vendedor) e a fórmula da D-5 seguem válidas. A **população** sobre a qual
+> elas se aplicam foi restringida pela ADR-0145: só vendedor com ≥ 50 vendas históricas.
+
+**Status:** Aceito, **liberado para implementação**. Ver Errata 1 acima. Decisão de Diego em 2026-08-29 (opção C), depois de três candidatas medidas. Substitui a proveniência JoomPulse dos campos 2.6, 3.1, 3.2, 3.3 e 3.4 do relatório.
 **Data:** 2026-08-29
 **Decisores:** Diego
 **Relaciona:** [0141](0141-analise-publiai-joompulse-radar-e-sonar.md) (o relatório — ver Errata 1), [0132](0132-analise-avancada-joompulse.md) (Gateway JoomPulse, **abandonado**), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (o 403 do ML e o pivot por vendedor, Errata de 16/08), [0122](0122-sonar-vendas-estimadas-via-apify.md) (Apify), [0127](0127-sonar-tabela-por-anuncio-e-historico.md) (`sonar_snapshots`), [Spike 043](../spikes/043-como-a-joompulse-estima-vendas.md), [Spike 044](../spikes/044-vendas-mensais-sem-joompulse.md)
@@ -95,14 +108,14 @@ Decisão de Diego (opção C), porque as duas perguntas do operador são diferen
 | Pergunta do operador | Unidade | Fonte | Rótulo |
 |---|---|---|---|
 | "Quem está ganhando aqui e a que preço?" | **anúncio** | badge da página (Apify) | `+N vendidos desde a publicação` |
-| "Esse nicho comporta minha entrada?" | **vendedor** | `transactions.total` (API do ML) | `N/mês estimado — loja inteira, janela 365d` |
+| "Esse nicho comporta minha entrada?" | **vendedor** | `transactions.total` (API do ML) | ~~`N/mês estimado — loja inteira, janela 365d`~~ → **Errata 1:** `N/mês estimado — loja inteira, movimento observado em D dias` |
 
 O Top 5 da seção 4 é **ordenado pelo acumulado por anúncio**. O tamanho do nicho (2.6, 2.9, 3.1,
 3.2) sai da agregação **por vendedor**. Nunca misturar os dois num mesmo número.
 
 ### D-3 — Delta negativo é ausência, nunca zero
 
-`transactions.total` cobre **365 dias móveis**: quando uma venda de um ano atrás sai pela cauda, o
+**Errata 1: este parágrafo está factualmente errado** — `period` é `historic`. A trava continua; a explicação, não. Texto original: `transactions.total` cobre **365 dias móveis**: quando uma venda de um ano atrás sai pela cauda, o
 total cai sem nada ter acontecido no presente. Pior caso medido: **−4.875**.
 
 Delta negativo devolve o estado **`sem estimativa no período`** — nunca zero, nunca negativo

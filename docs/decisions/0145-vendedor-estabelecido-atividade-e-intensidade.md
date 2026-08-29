@@ -178,7 +178,9 @@ negativos (D-5).
 4. EAN `7891113175371`: os 5 vendedores passam o filtro e a mediana permanece na casa de 1.000.
 5. Com 1 a 4 estabelecidos: intensidade suprimida, **atividade exibida** com aviso de base pequena.
 6. Delta negativo continua `sem_estimativa_no_periodo` (caso real −4.875).
-7. Nenhum rótulo, comentário ou documento contém "365d" — `grep` limpo no diff.
+7. Nenhum **rótulo de tela** nem **comentário de código** contém "365": `grep -rn "365" src/ supabase/functions/`
+   volta vazio. Em `docs/`, as ocorrências restantes são apenas dentro de errata ou de citação do
+   texto antigo (a ADR-0141 §112 descreve a JoomPulse, abandonada, e fica como registro histórico).
 8. A atividade exibe os dias de janela observados ("em N dias"), nunca uma janela do ML.
 9. Mediana nunca é calculada com menos de 5 estabelecidos; média aritmética continua banida
    (ADR-0142 D-6).

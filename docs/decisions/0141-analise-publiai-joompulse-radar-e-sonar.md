@@ -27,7 +27,8 @@
 > **Decisão de Diego (2026-08-29), opção C:** o relatório passa a usar **duas unidades**, cada uma
 > na pergunta que ela responde de verdade — **acumulado por anúncio** ordena o Top 5 (rótulo:
 > "+N vendidos desde a publicação"), e **vendas/mês por vendedor** mede o tamanho do nicho
-> (rótulo: janela de 365 dias, número do vendedor e não do anúncio). Delta negativo é
+> (rótulo: **corrigido pela ADR-0145** — `period` é `historic`, não 365 dias; o rótulo passa a
+> declarar a janela de observação). Delta negativo é
 > `sem estimativa no período` — nunca zero, nunca negativo exibido — porque a janela é móvel e
 > expulsa vendas antigas (pior caso medido: −4.875).
 >
