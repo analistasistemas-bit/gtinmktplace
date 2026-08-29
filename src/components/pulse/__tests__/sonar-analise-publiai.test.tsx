@@ -67,6 +67,19 @@ describe('SonarAnalisePubliAI — ADR-0143', () => {
     expect(vendedores.textContent).not.toMatch(/\d+%/);
   });
 
+  it('o percentual de 7.4 carrega o próprio denominador, não o de 3.3', () => {
+    render237(resposta({
+      '7.4': {
+        elegiveis: 5, vendedores_distintos: 5, top1: 0.949, corte: 0.4, dominante: true,
+        rotulo: 'concentração por vendedor — 5 com venda registrada na amostra',
+      },
+    }));
+    const linha = screen.getByText(/Top vendedor/);
+    // 3.3 fala de 126 vendedores; este 95% é sobre 5 e precisa dizer isso na mesma frase.
+    expect(linha.textContent).toContain('95% de 5 com venda registrada na amostra');
+    expect(linha.textContent).toContain('dominante');
+  });
+
   it('sem conexão do ML explica em vez de dar erro', () => {
     render237({ conectado: false });
     expect(screen.getByText(/Conecte o Mercado Livre/)).toBeInTheDocument();

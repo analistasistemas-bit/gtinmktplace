@@ -56,8 +56,14 @@ Deno.serve(async (req) => {
   if (!conexao) return json({ conectado: false });
   const token = await getValidAccessTokenConexao(conexao);
 
+  // conta_externa_id é o seller_id da org no ML: a ficha do catálogo traz a nossa própria oferta.
+  const proprioSellerId = Number(conexao.contaExternaId);
   const catalogos = catalogosDaAmostra(itens);
-  const doCatalogo = await resolverVendedoresDosCatalogos(catalogos, token);
+  const doCatalogo = await resolverVendedoresDosCatalogos(
+    catalogos,
+    token,
+    Number.isFinite(proprioSellerId) ? proprioSellerId : null,
+  );
   const { anuncios, semSellerId } = anunciosDaAmostra(itens, doCatalogo.sellerPorItem);
 
   const serie = await carregarSeriePulseVendedores(db, orgId, doCatalogo.sellerIds);
@@ -65,7 +71,7 @@ Deno.serve(async (req) => {
   const secoes237 = montarSecoes237({
     anuncios,
     anunciosNaAmostra: itens.length,
-    anunciosComCatalogo: anunciosComCatalogo(itens),
+    anunciosComCatalogo: anunciosComCatalogo(itens, doCatalogo.catalogosOk),
     sellerIdsCatalogo: doCatalogo.sellerIds,
     serie,
   });

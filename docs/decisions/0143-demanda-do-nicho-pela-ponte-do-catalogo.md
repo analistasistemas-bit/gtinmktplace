@@ -117,10 +117,30 @@ a organização não rastreia, a cobertura cai para perto de zero.** Estender o 
 vendedores descobertos pelo Sonar (o caminho 2, `/users/{id}`, que já funciona) é trabalho futuro,
 não parte desta decisão.
 
-### D-7 — Custo por consulta é uma chamada por catálogo
+### D-7 — Custo por consulta é uma chamada por catálogo, com cache de 24h
 
-Medido: 4 a 9 catálogos por consulta do Sonar, 26 no acervo inteiro. Mesmo teto de concorrência das
-outras edges do Sonar, e o mesmo cache de dado público.
+Medido: 4 a 9 catálogos por consulta do Sonar, 26 no acervo inteiro. Pool de 5, o mesmo teto das
+outras edges do Sonar.
+
+Cache global por catálogo em `sonar:cat-vendedores:v1:{catalogId}`, **TTL 24h** — dado público
+(ADR-0120 §3) e a lista de quem disputa uma ficha muda em dias, não em minutos. Sem ele, todo
+"atualizar" refaz as 4 a 9 chamadas. **Falha não cacheia:** erro transitório não pode esconder um
+catálogo por um dia.
+
+### D-8 — A conta da própria organização não é concorrente
+
+`/products/{cat}/items` inclui a nossa oferta. Ela é excluída pelo `conta_externa_id` da conexão,
+mesmo motivo do `excluirSellerId` do Radar (`_shared/pulse/parse.ts`): contá-la inflaria o nicho com
+um rival que somos nós. Medido: `9757132` (`$ANALISTA$`) aparecia entre os 190 vendedores.
+
+O Sonar roda antes de cadastrar, então em geral a própria conta não está no catálogo — mas "em
+geral" não é guarda.
+
+### D-9 — Ficha que falha não conta como cobertura
+
+Um catálogo cuja ficha não responde some do conjunto de vendedores por trás de 3.2. Se continuasse
+contando em 3.3, a cobertura subiria exatamente quando o ML está instável. Só catálogos resolvidos
+com sucesso entram no numerador de anúncios cobertos.
 
 ---
 
@@ -151,4 +171,6 @@ para nichos que a organização não rastreia no Radar (D-6).
 4. O rótulo diz "vendedores que disputam os catálogos desta amostra".
 5. 3.3 conta a amostra inteira de anúncios, como a Errata 2 já exige.
 6. Sem conexão do ML → estado de ausência com 200, não erro (mesmo padrão da `pulse-sonar-visitas`).
-7. `pnpm test`, `pnpm lint` e `npx tsc -b --force` verdes.
+7. Catálogo cuja ficha falha **não** conta como coberto em 3.3 (D-9).
+8. A conta da própria organização não aparece entre os vendedores do nicho (D-8).
+9. `pnpm test`, `pnpm lint` e `npx tsc -b --force` verdes.

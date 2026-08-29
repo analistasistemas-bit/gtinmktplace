@@ -130,15 +130,12 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
       <LinhasCobertura cobertura={s['3.3']} semEstimativa={s['3.4']} />
 
       {conc != null && (
-        <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-          <span className="text-muted-foreground">{conc.rotulo}</span>
+        // 7.4 tem denominador próprio (anúncios da amostra), diferente do de 3.3 logo acima —
+        // o percentual carrega o seu para não ser lido como share dos vendedores do catálogo.
+        <div className="mt-3 text-xs text-muted-foreground">
           <span>
-            <span className="text-muted-foreground">Top vendedor: </span>
-            <span className="font-semibold tabular-nums">{Math.round(conc.top1 * 100)}%</span>
-          </span>
-          <span>
-            <span className="text-muted-foreground">Dominante: </span>
-            <span className="font-semibold">{conc.dominante ? 'sim' : 'não'}</span>
+            {`Top vendedor: ${Math.round(conc.top1 * 100)}% de ${conc.elegiveis} com venda registrada na amostra`}
+            {conc.dominante ? ' — dominante' : ''}
           </span>
         </div>
       )}
