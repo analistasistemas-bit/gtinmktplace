@@ -3,7 +3,9 @@
 **Data:** 2026-08-29
 **Origem:** [Spike 043](../spikes/043-como-a-joompulse-estima-vendas.md),
 [Spike 047](../spikes/047-joompulse-comparada-com-a-nossa-metrica.md),
-[Spike 048](../spikes/048-transactions-total-e-janela-provada.md), [ADR-0146](../decisions/0146-media-mensal-12m-e-tendencia.md)
+[Spike 048](../spikes/048-transactions-total-e-janela-provada.md),
+[Spike 050](../spikes/050-a-formula-da-joompulse-reconstruida.md),
+[ADR-0146](../decisions/0146-media-mensal-12m-e-tendencia.md)
 **Para:** a ADR que vai implementar a **D-4** (coluna Análise PubliAI no Radar) e a **D-24**
 (remoção da "Referência do ML") da [ADR-0141](../decisions/0141-analise-publiai-joompulse-radar-e-sonar.md)
 
@@ -147,7 +149,8 @@ Duas regras que a ADR do Radar deveria adotar explicitamente:
 | Caminho | Por quê | Onde |
 |---|---|---|
 | **Reviews como numerador** | pool agregado na família: 7 dos 9 catálogos do aptamil devolvem o mesmo `paging.total`; razão review/pedido varia **7x dentro da mesma loja** | Spike 048 §5 |
-| **Selo ÷ idade como métrica principal** | é a conta da JoomPulse; numerador em degraus de **2x a 5x** (25, 50, 100, 500, 1k, 5k, 10k, 50k, 100k), e o resultado é média vitalícia, não ritmo | Spikes 047 §1, 048 §6 |
+| **Selo ÷ idade como métrica principal** | é a conta da JoomPulse; numerador em degraus de **2x a 5x** (25, 50, 100, 500, 1k, 5k, 10k, 50k, 100k, 250k), e o resultado é média vitalícia, não ritmo | Spikes 047 §1, 048 §6, 050 §1.1 |
+| **Selo ÷ idade para venda do anúncio de um terceiro** | além do acima, a JoomPulse atribui o acervo inteiro do catálogo ao ganhador do buy-box do dia: em **12 de 60**, o mês de um anúncio supera o ano da loja toda pela API oficial | Spike 050 §2 |
 | **`/items/{id}` e `/items?ids=` para vendedor de terceiro** | 403 nos dois | ADR-0119 |
 | **`buy_box_winner`** | null em 40/40 | §2 acima |
 

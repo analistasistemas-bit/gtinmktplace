@@ -47,6 +47,13 @@ idade) e o GMV é `count × preço`.
 1. **O numerador é um bucket em potências de 10.** `catalogSales` só assume 100, 1.000, 10.000,
    100.000 — é o selo "+N vendidos" do ML, arredondado para baixo. Um catálogo com 199.999 vendas
    entra como 100.000: **erro de até 2x, sempre para baixo**.
+
+   > **Errata — não são potências de 10.** A escala medida é **25, 50, 100, 500, 1k, 5k, 10k, 50k,
+   > 100k, 250k**, com degraus de **2x a 5x**: o erro do numerador vai **até ~5x**, não 2x. A
+   > direção (sempre para baixo) permanece. Errata obrigada pelo
+   > [Spike 048](048-transactions-total-e-janela-provada.md) §6.4 e nunca aplicada a este corpo;
+   > o [Spike 050](050-a-formula-da-joompulse-reconstruida.md) §1.1 a confirma noutra categoria e
+   > acrescenta o degrau **250.000**.
 2. **O denominador é a idade do anúncio.** O resultado é a **média vitalícia**, não o ritmo atual.
    MLB10512495 está no ar há **2.938 dias (8 anos)**: os 1.021/mês são a média desde 2018, e não
    dizem nada sobre o mês corrente.

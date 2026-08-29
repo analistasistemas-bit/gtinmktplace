@@ -229,7 +229,17 @@ Próximos passos, em ordem de ataque:
       Ground truth só para anúncio próprio (`/items/{id}/price_to_win`; 403 para terceiro).
       Custo medido: 17 s para 229 catálogos com cache frio → **coletor, não abertura de página**.
       E 22% dos catálogos não têm nenhum anúncio de catálogo ativo (`/items` 404 com `/products`
-      200 `active`) — estado legítimo, merece texto próprio. Não existe edge para isso — as `pulse-*` de hoje são coletor, adicionar,
+      200 `active`) — estado legítimo, merece texto próprio.
+      **[Spike 050](spikes/050-a-formula-da-joompulse-reconstruida.md) confirma a fórmula do
+      Spike 047 em escala e a ADR-0147 sem emenda:** `vendas/mês = selo ÷ idade do catálogo × 30`
+      passa de 9/9 para **100 de 100 catálogos exatos**, noutra categoria. De quebra aplica ao
+      corpo do 047 a errata que o Spike 048 §6.4 obrigou e ninguém tinha aplicado (a escala do selo
+      tem degraus de 2x a 5x, não potências de 10), e acrescenta o degrau **250.000**.
+      Achado principal: o acervo vitalício é atribuído inteiro a quem está na caixa
+      no dia — em **12 de 60** ganhadores, o mês de um anúncio supera o ano da loja toda pela API
+      oficial do ML, que vem na mesma linha. Resposta ao Apify: os insumos são públicos e o 047 §6
+      já mostrou que temos a idade sem scraping — nunca esteve bloqueado, decidimos não fazer.
+      Não existe edge para isso — as `pulse-*` de hoje são coletor, adicionar,
       os dois do Sonar e a `pulse-analise-secoes237`. Reusa o mesmo caminho já validado no Sonar
       (`/products/{cat}/items`, ADR-0143) e o `conta_externa_id` da conexão para dizer se quem leva
       a venda é a org ou um rival.
