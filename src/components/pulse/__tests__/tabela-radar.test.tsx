@@ -81,6 +81,9 @@ describe('TabelaRadar — Análise PubliAI: a disputa do catálogo', () => {
     expect(screen.getByText('5 anúncios relevantes disputam')).toBeInTheDocument();
     expect(screen.getByText(/R\$\s*130,00\s*–\s*R\$\s*209,90/)).toBeInTheDocument();
     expect(screen.getByText(/ficaria em 4º de 6/)).toBeInTheDocument();
+    // O preço próprio aparece UMA vez na linha — na coluna "Seu preço". Repeti-lo na célula da
+    // disputa fazia a tabela estourar o container abaixo de 1440px (medido no runtime).
+    expect(screen.getAllByText(/R\$\s*149,99/)).toHaveLength(1);
   });
 
   // Critério de aceite 5 da ADR-0147: o vocabulário do buy-box não entra na tela, porque o dado

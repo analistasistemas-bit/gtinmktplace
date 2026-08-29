@@ -88,6 +88,25 @@ de existir. Reabri-lo agora seria desenhar em cima de uma pergunta que ninguém 
 
 Fica fora, explicitamente, e volta quando houver pergunta que o painel responda.
 
+## Errata 1 (2026-08-29, na validação visual) — a célula não repete o preço próprio, e a coluna sobe para `xl`
+
+A D-1 desenhou a terceira linha como `seu preço R$ 149,99 ficaria em 4º`. Medido no runtime com a
+tela real, essa linha custava caro: a célula ficava com **222 px** de largura intrínseca e fazia a
+tabela **estourar o container em 1024, 1100 e 1280 px**. Sem a coluna, a tabela cabe exata em toda
+largura — o estouro era inteiramente dela.
+
+Duas correções, ambas medidas:
+
+1. **O preço sai da célula.** Ele já é a coluna "Seu preço", na mesma linha. A terceira linha vira
+   `seu preço ficaria em 4º de 6` — a redundância era o que empurrava a tabela.
+2. **A coluna passa de `lg` para `xl`.** A antiga "Referência do ML" cabia em `lg` por ser um badge
+   de uma palavra; três linhas de texto não cabem.
+
+Depois: 1100 px não exibe a coluna (correto), 1440 px cabe exato, e em 1280 px sobra um resíduo de
+**4 px** — piso do próprio cabeçalho, absorvido pelo `overflow-x: auto` que a tabela já tem.
+
+Um teste guarda a decisão: o preço próprio aparece **uma** vez na linha.
+
 ## O que esta decisão NÃO resolve
 
 **A org continua fora dos catálogos.** Entrar (opt-in de `catalog_listing`) é decisão comercial do

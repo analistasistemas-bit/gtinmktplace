@@ -154,7 +154,10 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       // ADR-0147: substitui a "Referência do ML" (D-24). Não diz quem leva a venda — o ganhador do
       // buy-box não vem pela API, e a org sequer disputa (0 de 137 anúncios de catálogo na AVIL).
       header: 'Análise PubliAI',
-      className: 'hidden lg:table-cell',
+      // `xl` e não `lg`: medido no runtime, esta célula tem largura intrínseca de ~222px e fazia a
+      // tabela estourar o container em 1024–1280 (sem ela a tabela cabe exata em toda largura).
+      // A coluna antiga cabia em `lg` porque era um badge de uma palavra.
+      className: 'hidden xl:table-cell',
       // Ordena pela posição hipotética: quem cairia pior sobe primeiro em desc — a fila do dia.
       sortValue: (p) => disputaCatalogo(resumo?.get(p.id), p.meu_preco)?.posicao ?? null,
       cell: (p) => {
@@ -165,7 +168,7 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
           );
         }
         return celulaMercado(
-          <div className="text-xs leading-relaxed">
+          <div className="max-w-[175px] text-xs leading-relaxed">
             <span>
               {d.anunciosRelevantes === 1
                 ? '1 anúncio relevante disputa'
@@ -177,9 +180,11 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
             </span>
             {/* "ficaria" e não "está": o nosso anúncio não é anúncio de catálogo, então ele não
                 participa da disputa que gerou a faixa (ADR-0147 D-5). */}
+            {/* O preço próprio não se repete aqui: ele já é a coluna "Seu preço", na mesma linha,
+                e repeti-lo era o que fazia a célula estourar a tabela abaixo de 1440px. */}
             {d.posicao != null && p.meu_preco != null && (
               <span className="block tabular-nums text-muted-foreground">
-                seu preço {fmtBRL(p.meu_preco)} ficaria em {d.posicao}º de {d.totalComNosso}
+                seu preço ficaria em {d.posicao}º de {d.totalComNosso}
               </span>
             )}
           </div>,
