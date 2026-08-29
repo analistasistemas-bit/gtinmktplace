@@ -127,6 +127,17 @@ Próximos passos, em ordem de ataque:
 - [ ] Resolver as contradições internas C-1 (D-11 × D-12) e C-4 (rótulo "anúncio não rastreado" numa
       consulta que passou a ser por catálogo); testar a revogação remota (C-5).
 
+> **Os itens abaixo são decisões de desenho fechadas (ADR-0141), não implementação.** Conferido no
+> código em 2026-08-29: só o **Sonar** está implementado. O **Radar continua exibindo a coluna
+> "Referência do ML"** (`tabela-radar.tsx:156`) — a D-4 (coluna Análise PubliAI com o ganhador do
+> buy-box) e a D-24 (remover a Referência do ML da coluna e do dialog) **não foram escritas**.
+
+- [ ] **Implementar a D-4 e a D-24 no Radar.** A Errata 1 da ADR-0141 registra que a D-4 "sobrevive
+      inteira via API do ML (`/products/{id}` → `buy_box_winner`), perdendo só a estimativa de
+      vendas do catálogo". Não existe edge para isso — as `pulse-*` de hoje são coletor, adicionar,
+      os dois do Sonar e a `pulse-analise-secoes237`. Reusa o mesmo caminho já validado no Sonar
+      (`/products/{cat}/items`, ADR-0143) e o `conta_externa_id` da conexão para dizer se quem leva
+      a venda é a org ou um rival.
 - [x] Nome único **Análise PubliAI** nas 3 telas; slug `analise_avancada` intacto
 - [x] Três camadas: MCP traz dado → código do PubliAI calcula dinheiro → IA só redige
 - [x] Radar: coluna substitui "Referência do ML"; prévia do ganhador do buy-box em 1 consulta
