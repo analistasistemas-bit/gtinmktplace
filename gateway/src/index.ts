@@ -5,6 +5,7 @@
 // cache (D-11) entram depois, sobre esta base.
 
 import { createServer } from 'node:http'
+import { CAMINHO_CIMD, cimdCoerente, ehCimd } from './cimd.js'
 import { chaveDaEnv } from './cripto.js'
 import { cabecalhosCors, origemPermitida, origensDaEnv } from './cors.js'
 import { erro, pedidoDe, tratar, type DepsRotas } from './rotas.js'
@@ -29,6 +30,18 @@ function main(): void {
   const origens = origensDaEnv(process.env.ORIGENS_PERMITIDAS)
   const porta = Number(process.env.PORT ?? 10000)
 
+  // Modo CIMD: o client_id é a URL onde ESTE serviço publica o documento do cliente. A
+  // especificação exige que o id declarado no documento seja idêntico à URL que o serviu, então
+  // um client_id https apontando para outro caminho nunca funcionaria. Falhar aqui é muito melhor
+  // que descobrir no meio da conexão de um cliente.
+  if (!cimdCoerente(clientId)) {
+    throw new Error(
+      `JOOMPULSE_CLIENT_ID é uma URL (modo CIMD) mas não termina em ${CAMINHO_CIMD}: ${clientId}`)
+  }
+  if (ehCimd(clientId)) {
+    console.log(`[gateway] modo CIMD: documento do cliente publicado em ${CAMINHO_CIMD}`)
+  }
+
   if (origens.length === 0) {
     console.warn('[gateway] ORIGENS_PERMITIDAS vazio: nenhuma origem de browser será aceita.')
   }
@@ -43,6 +56,7 @@ function main(): void {
     chaveCredencial,
     buscar: fetch,
     urlAppCanais,
+    uriApp: process.env.APP_URL,
     versao: process.env.RENDER_GIT_COMMIT?.slice(0, 8) ?? 'dev',
   }
 

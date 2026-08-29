@@ -735,3 +735,65 @@ Verificado antes do commit: 54 testes no gateway, `tsc -b` limpo, `eslint` sem e
 serviço no ar — `/health` 200, `iniciar` sem token 401, 405 em método errado, callback com state
 desconhecido e com recusa do usuário redirecionando corretamente, `DELETE` sem token 401, e boot
 recusado tanto sem a chave quanto com chave de 16 bytes.
+
+---
+
+## Errata 3 (2026-08-29) — o Gateway dispensa o `client_id` da JoomPulse (modo CIMD)
+
+Responde a pergunta "dá para funcionar sem a JoomPulse fornecer o `client_id`?". **Provavelmente
+sim**, e o Gateway agora está pronto para os dois caminhos.
+
+### E-12 — O provedor declara suporte a Client ID Metadata Document
+
+Do metadado lido na Errata 2, duas linhas decidem:
+
+- `client_id_metadata_document_supported: true`
+- **não existe** `registration_endpoint`
+
+A ausência de `registration_endpoint` fecha o registro dinâmico. A presença do CIMD abre outra
+porta: o `client_id` pode ser uma **URL HTTPS que serve um documento descrevendo o próprio
+cliente**. Em vez de a JoomPulse emitir um identificador, o Gateway **publica um documento e o
+endereço dele vira o identificador**.
+
+O Gateway passa a servir esse documento em **`GET /v1/client-metadata.json`**, público — quem o
+busca é o servidor de autorização, server-to-server, antes de qualquer usuário existir. Exigir
+token ali quebraria o fluxo inteiro.
+
+Conteúdo: `client_id` (idêntico à URL de publicação), `client_name`, `redirect_uris` com **um só**
+endereço, `grant_types` exatamente os que a JoomPulse anuncia (`authorization_code`,
+`refresh_token`), `response_types: [code]`, `scope: mcp` e `token_endpoint_auth_method` — `none`
+sem secret, `client_secret_basic` com secret. Nenhum segredo entra num documento que é público por
+construção; há teste que verifica isso.
+
+### E-13 — Coerência do `client_id` é conferida no boot
+
+A especificação exige que o `client_id` **dentro** do documento seja idêntico à URL de onde ele foi
+servido. Como o Gateway publica num caminho fixo, um `client_id` HTTPS apontando para outro lugar
+jamais funcionaria — e o erro apareceria no meio da conexão de um cliente, não no deploy.
+
+Por isso o boot recusa: `JOOMPULSE_CLIENT_ID` começando com `https://` **precisa** terminar em
+`/v1/client-metadata.json`. Identificador opaco (caminho registrado) passa sem checagem, porque
+não há o que conferir.
+
+### O que NÃO foi provado
+
+Testei o `authorize` com um `client_id` inventado e com um em forma de URL: **os dois responderam a
+mesma coisa** — redirect para a tela de login da JoomPulse. O servidor só valida o cliente depois
+que o usuário autentica, então sem sessão os dois casos são indistinguíveis e o teste não conclui
+nada.
+
+Um `POST /oauth2/register` não anunciado devolveu **429**, não 404. Rate limit não é evidência nem
+de existir nem de não existir, e insistir num provedor parceiro seria má prática — o probe parou aí.
+
+**O teste que resolve exige uma conta JoomPulse logada:** com o Gateway no ar, abrir a URL de
+autorização usando a própria URL do serviço como `client_id` e ver se o provedor aceita. Só o
+Diego pode fazer.
+
+**Consequência prática:** o `client_id` da JoomPulse deixa de ser bloqueio para *subir e testar*.
+Se o CIMD funcionar, ele deixa de ser necessário; se não funcionar, o campo continua aceitando o
+identificador opaco sem nenhuma mudança de código.
+
+Verificado antes do commit: 68 testes no gateway, e smoke com o serviço no ar — documento servido
+em 200 sem token, `client_id` batendo com a URL de publicação, `token_endpoint_auth_method: none`
+sem secret, nenhum segredo no corpo, `POST` no mesmo caminho devolvendo 404, e boot recusando um
+`client_id` HTTPS incoerente.

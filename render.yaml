@@ -49,7 +49,17 @@ services:
       # JoomPulse. Gerar com: openssl rand -base64 32
       - key: CREDENCIAL_CHAVE_BASE64
         sync: false
+      # Duas formas válidas:
+      #  (a) identificador opaco, se a JoomPulse emitir um;
+      #  (b) modo CIMD — a URL pública DESTE serviço em /v1/client-metadata.json. O provedor
+      #      declara client_id_metadata_document_supported: true e não tem registration_endpoint,
+      #      então o Gateway publica o próprio documento e dispensa registro prévio.
+      #      Ex.: https://publiai-gateway-mercado.onrender.com/v1/client-metadata.json
+      #      O boot recusa uma URL https que não termine nesse caminho.
       - key: JOOMPULSE_CLIENT_ID
+        sync: false
+      # Opcional: vira `client_uri` no documento do cliente, para a tela de consentimento.
+      - key: APP_URL
         sync: false
       # Opcional: sem ele o Gateway atua como client público, e o PKCE (S256) segue protegendo o
       # code — `none` está em token_endpoint_auth_methods_supported do provedor.

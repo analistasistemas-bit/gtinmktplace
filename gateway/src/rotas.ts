@@ -13,6 +13,7 @@ import {
   type RepositorioCredenciais,
 } from './credenciais.js'
 import { iniciar, trocarCodePorToken, type BuscarHttp, type ClienteOAuth } from './oauth.js'
+import { CAMINHO_CIMD, documentoCimd } from './cimd.js'
 
 export const VERSAO_CONTRATO = 'v1'
 
@@ -46,6 +47,8 @@ export interface DepsRotas extends DepsAutorizacao {
   buscar: BuscarHttp
   /** Para onde devolver o browser depois do callback. */
   urlAppCanais: string
+  /** Endereço público do app, exposto no documento do cliente. Opcional. */
+  uriApp?: string
   agora?: () => Date
 }
 
@@ -68,6 +71,20 @@ async function exigirAdmin(p: Pedido, deps: DepsRotas) {
 
 export async function tratar(p: Pedido, deps: DepsRotas): Promise<Resposta> {
   const agora = deps.agora ?? (() => new Date())
+
+  // Público de propósito: é o servidor de autorização da JoomPulse que busca este documento,
+  // server-to-server, antes de qualquer usuário existir. Não revela nada de organização nenhuma.
+  if (p.metodo === 'GET' && p.caminho === CAMINHO_CIMD) {
+    return {
+      status: 200,
+      corpo: documentoCimd({
+        clientId: deps.cliente.clientId,
+        redirectUri: deps.cliente.redirectUri,
+        temSecret: Boolean(deps.cliente.clientSecret),
+        uriApp: deps.uriApp,
+      }),
+    }
+  }
 
   if (p.metodo === 'GET' && p.caminho === '/health') {
     return { status: 200, corpo: { ok: true, versao: deps.versao, contrato: VERSAO_CONTRATO } }
