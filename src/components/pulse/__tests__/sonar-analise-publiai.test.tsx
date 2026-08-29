@@ -17,13 +17,22 @@ function resposta(over: Partial<Secoes237Sonar> = {}): RespostaSecoes237Sonar {
       '3.3': {
         com_estimativa: 102,
         vendedores_distintos: 126,
+        estabelecidos: 110,
         proporcao: 102 / 126,
         anuncios_na_amostra: 20,
         anuncios_com_catalogo: 9,
         proporcao_anuncios: 9 / 20,
-        rotulo: '9 de 20 anúncios da amostra têm catálogo — 102 de 126 vendedores com estimativa mensal',
+        rotulo: '9 de 20 anúncios da amostra têm catálogo — 102 de 110 vendedores estabelecidos com estimativa mensal',
       },
       '3.4': { contagem: 24, rotulo: '24 vendedores sem estimativa mensal' },
+      '3.6': {
+        estabelecidos: 50,
+        ativos: 37,
+        proporcao: 37 / 50,
+        dias_janela: 10,
+        base_pequena: false,
+        rotulo: '37 de 50 vendedores estabelecidos venderam em 10 dias',
+      },
       limitacao_3_2: 'loja inteira do vendedor; catálogos desta amostra',
       '7.4': null,
       ...over,
@@ -61,8 +70,8 @@ describe('SonarAnalisePubliAI — ADR-0143', () => {
     expect(anuncios.textContent).toContain('45%');
     expect(anuncios.textContent).not.toContain('vendedores');
 
-    const vendedores = screen.getByText(/vendedores com estimativa mensal/);
-    expect(vendedores.textContent).toContain('102 de 126');
+    const vendedores = screen.getByText(/vendedores estabelecidos com estimativa mensal/);
+    expect(vendedores.textContent).toContain('102 de 110');
     expect(vendedores.textContent).toContain('24 sem estimativa');
     expect(vendedores.textContent).not.toMatch(/\d+%/);
   });
@@ -91,5 +100,47 @@ describe('SonarAnalisePubliAI — ADR-0143', () => {
     }));
     expect(screen.getByText(/amostra insuficiente: 1 de 5/)).toBeInTheDocument();
     expect(screen.getByText(/anúncios da amostra têm catálogo/).textContent).toContain('9 de 20');
+  });
+
+  it('exibe os dois KpiCard lado a lado: atividade e mediana', () => {
+    render237(resposta());
+    expect(screen.getByText('Concorrentes vendendo')).toBeInTheDocument();
+    expect(screen.getByText('37 de 50')).toBeInTheDocument();
+    expect(screen.getByText('Mediana de vendas/mês por vendedor')).toBeInTheDocument();
+    expect(screen.getByText('0 un./mês')).toBeInTheDocument();
+  });
+
+  it('3.2 sem_dado com estabelecidos > 0: a atividade continua aparecendo (ADR-0145 D-3)', () => {
+    render237(resposta({
+      '3.2': { estado: 'sem_dado', mensagem: 'amostra insuficiente: 3 de 5 vendedores estabelecidos mínimos com estimativa mensal' },
+    }));
+    expect(screen.getByText('Concorrentes vendendo')).toBeInTheDocument();
+    expect(screen.getByText('37 de 50')).toBeInTheDocument();
+  });
+
+  it('base pequena mostra aviso curto', () => {
+    render237(resposta({
+      '3.6': {
+        estabelecidos: 3, ativos: 2, proporcao: 2 / 3, dias_janela: 10, base_pequena: true,
+        rotulo: '2 de 3 vendedores estabelecidos venderam em 10 dias',
+      },
+    }));
+    expect(screen.getByText(/Base pequena/)).toBeInTheDocument();
+  });
+
+  it('sem vendedor estabelecido nenhum, o card de atividade não aparece', () => {
+    render237(resposta({
+      '3.6': {
+        estabelecidos: 0, ativos: 0, proporcao: null, dias_janela: null, base_pequena: false,
+        rotulo: 'nenhum vendedor estabelecido nos catálogos desta amostra',
+      },
+    }));
+    expect(screen.queryByText('Concorrentes vendendo')).toBeNull();
+    expect(screen.getByText('Mediana de vendas/mês por vendedor')).toBeInTheDocument();
+  });
+
+  it('nenhum texto renderizado contém "365"', () => {
+    const { container } = render237(resposta());
+    expect(container.textContent).not.toMatch(/365/);
   });
 });

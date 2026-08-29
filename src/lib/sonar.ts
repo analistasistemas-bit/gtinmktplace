@@ -282,6 +282,7 @@ export type VolumeNichoSonar = CampoComEstado<{
 export type CoberturaEstimativaSonar = {
   com_estimativa: number;
   vendedores_distintos: number;
+  estabelecidos: number;
   proporcao: number | null;
   anuncios_na_amostra: number;
   anuncios_com_catalogo: number;
@@ -291,6 +292,16 @@ export type CoberturaEstimativaSonar = {
 
 export type VendedoresSemEstimativaSonar = {
   contagem: number;
+  rotulo: string;
+};
+
+/** 3.6 — atividade do nicho entre os vendedores estabelecidos (ADR-0145). */
+export type AtividadeNichoSonar = {
+  estabelecidos: number;
+  ativos: number;
+  proporcao: number | null;
+  dias_janela: number | null;
+  base_pequena: boolean;
   rotulo: string;
 };
 
@@ -311,6 +322,7 @@ export type Secoes237Sonar = {
   '3.2': VolumeNichoSonar;
   '3.3': CoberturaEstimativaSonar;
   '3.4': VendedoresSemEstimativaSonar;
+  '3.6': AtividadeNichoSonar;
   limitacao_3_2: string;
   '7.4': ConcentracaoPorVendedorSonar;
 };

@@ -7,6 +7,7 @@
 // vindos de uma única conta institucional. Ausência declarada > precisão falsa.
 
 import {
+  agruparSeriePorVendedor,
   estimarVendasMensais,
   medianaVendasMensaisDoUniverso,
   normalizarSellerId,
@@ -35,6 +36,8 @@ export type VolumeNicho = CampoComEstado<{
 export type CoberturaEstimativa = {
   com_estimativa: number;
   vendedores_distintos: number;
+  /** Quantos dos vendedores distintos são estabelecidos (ADR-0145 D-1). */
+  estabelecidos: number;
   proporcao: number | null;
   /** Total de anúncios da amostra, inclusive os sem catálogo (spike 045). */
   anuncios_na_amostra: number;
@@ -49,6 +52,16 @@ export type VendedoresSemEstimativa = {
   rotulo: string;
 };
 
+/** 3.6 — atividade do nicho, entre os vendedores estabelecidos (ADR-0145 D-2). */
+export type AtividadeNicho = {
+  estabelecidos: number;
+  ativos: number;
+  proporcao: number | null;
+  dias_janela: number | null;
+  base_pequena: boolean;
+  rotulo: string;
+};
+
 export type ConcentracaoPorVendedor = {
   elegiveis: number;
   vendedores_distintos: number;
@@ -59,15 +72,41 @@ export type ConcentracaoPorVendedor = {
 } | null;
 
 const MIN_ELEGIVEIS_CONCENTRACAO = 5;
-// Spike 045: com 1 vendedor a mediana é esse vendedor. Mesmo piso de 7.3/7.4.
+// Spike 045: com 1 vendedor a mediana é esse vendedor. Mesmo piso de 7.3/7.4. ADR-0145 D-3: agora
+// conta estabelecidos com estimativa, não a população crua.
 const MIN_VENDEDORES_NICHO = 5;
+// ADR-0145 D-3: abaixo disso a atividade (contagem) ainda aparece, mas com aviso de base pequena —
+// diferente do piso acima, que suprime a mediana.
+const MIN_BASE_ATIVIDADE = 5;
+
+// Spike 046: abaixo de 50 transações históricas, 67% dos vendedores dão delta zero em 13 dias —
+// é a faixa sobre a qual o instrumento não tem resolução. Acima, 97-100% mostram movimento.
+// Calibração inicial revisável (ADR-0145 D-7), não constante universal.
+const MIN_TOTAL_ESTABELECIDO = 50;
 
 /** Rótulo obrigatório da ADR-0143 D-2 — o conjunto NÃO é "vendedores da amostra". */
 export const UNIDADE_VENDEDOR =
-  'vendedores que disputam os catálogos desta amostra (vendas/mês da loja inteira, janela 365d)';
+  'vendedores que disputam os catálogos desta amostra (vendas/mês da loja inteira)';
 
 function distintos(sellerIds: Array<string | number>): Set<string> {
   return new Set(sellerIds.map(normalizarSellerId));
+}
+
+/** Estabelecido = total >= 50 no PRIMEIRO snapshot. Nunca filtrar pelo delta (ADR-0145 D-1). */
+export function vendedoresEstabelecidos(
+  sellerIds: Array<string | number>,
+  serie: SnapshotVendedor[],
+): Set<string> {
+  const ids = distintos(sellerIds);
+  const porVendedor = agruparSeriePorVendedor(serie);
+  const out = new Set<string>();
+  for (const id of ids) {
+    const snaps = porVendedor.get(id);
+    if (snaps && snaps.length > 0 && snaps[0].transactions_total >= MIN_TOTAL_ESTABELECIDO) {
+      out.add(id);
+    }
+  }
+  return out;
 }
 
 function contarComEstimativa(ids: Set<string>, estimativas: Map<string, VendasMensais>): number {
@@ -76,39 +115,105 @@ function contarComEstimativa(ids: Set<string>, estimativas: Map<string, VendasMe
   return n;
 }
 
-/** 3.2 — mediana de vendas_mes entre os vendedores do catálogo com estado valor (D-6 da 0142). */
+/** Mediana arredondada — só serve para contagens de dias (dias_janela é inteiro por natureza).
+ *  Não reusar para un./mês ou R$: arredondar aí seria perda de precisão indevida. */
+function medianaDiasArredondada(valores: number[]): number | null {
+  if (valores.length === 0) return null;
+  const v = [...valores].sort((a, b) => a - b);
+  const mid = Math.floor(v.length / 2);
+  const m = v.length % 2 === 0 ? (v[mid - 1] + v[mid]) / 2 : v[mid];
+  return Math.round(m);
+}
+
+/** Mediana de `dias_janela` entre os `ids` com estado `valor` — reusa o dado já calculado por
+ *  `estimarVendasMensais`, nunca recalcula (regra do ADR-0145). */
+function medianaDiasJanela(ids: Set<string>, estimativas: Map<string, VendasMensais>): number | null {
+  const dias: number[] = [];
+  for (const id of ids) {
+    const est = estimativas.get(id);
+    if (est?.estado === 'valor') dias.push(est.dias_janela);
+  }
+  return medianaDiasArredondada(dias);
+}
+
+/** 3.6 — atividade: quantos estabelecidos venderam, e em quantos dias (ADR-0145 D-2/D-6). */
+export function calcularAtividadeNicho(
+  sellerIds: Array<string | number>,
+  serie: SnapshotVendedor[],
+): AtividadeNicho {
+  const estabelecidos = vendedoresEstabelecidos(sellerIds, serie);
+  const estimativas = estimarVendasMensais(serie);
+
+  let ativos = 0;
+  for (const id of estabelecidos) {
+    const est = estimativas.get(id);
+    if (est?.estado === 'valor' && est.vendas_mes > 0) ativos++;
+  }
+
+  const diasJanela = medianaDiasJanela(estabelecidos, estimativas);
+  const nEstabelecidos = estabelecidos.size;
+
+  let rotulo: string;
+  if (nEstabelecidos === 0) {
+    rotulo = 'nenhum vendedor estabelecido nos catálogos desta amostra';
+  } else {
+    const sufixoDias = diasJanela != null ? ` em ${diasJanela} dias` : '';
+    rotulo = `${ativos} de ${nEstabelecidos} vendedores estabelecidos venderam${sufixoDias}`;
+  }
+
+  return {
+    estabelecidos: nEstabelecidos,
+    ativos,
+    proporcao: nEstabelecidos > 0 ? ativos / nEstabelecidos : null,
+    dias_janela: diasJanela,
+    base_pequena: nEstabelecidos > 0 && nEstabelecidos < MIN_BASE_ATIVIDADE,
+    rotulo,
+  };
+}
+
+/**
+ * 3.2 — mediana de vendas_mes entre os vendedores ESTABELECIDOS do catálogo com estado valor
+ * (D-6 da 0142, população restrita pela D-1 da 0145).
+ */
 export function calcularVolumeNicho(
   sellerIds: Array<string | number>,
   serieVendedores: SnapshotVendedor[],
 ): VolumeNicho {
-  const ids = distintos(sellerIds);
+  const estabelecidos = vendedoresEstabelecidos(sellerIds, serieVendedores);
+  if (estabelecidos.size === 0) {
+    return { estado: 'sem_dado', mensagem: 'nenhum vendedor estabelecido nos catálogos desta amostra' };
+  }
+
   const estimativas = estimarVendasMensais(serieVendedores);
-
-  const subset = new Map<string, VendasMensais>();
-  for (const id of ids) {
-    const est = estimativas.get(id);
-    if (est) subset.set(id, est);
-  }
-
-  const mediana = medianaVendasMensaisDoUniverso(subset);
-  const comEstimativa = contarComEstimativa(ids, estimativas);
-
-  if (mediana == null || comEstimativa === 0) {
-    return { estado: 'sem_dado', mensagem: 'não dá para estimar o volume deste nicho' };
-  }
+  const comEstimativa = contarComEstimativa(estabelecidos, estimativas);
 
   if (comEstimativa < MIN_VENDEDORES_NICHO) {
     return {
       estado: 'sem_dado',
-      mensagem: `amostra insuficiente: ${comEstimativa} de ${MIN_VENDEDORES_NICHO} vendedores mínimos com estimativa mensal`,
+      mensagem: `amostra insuficiente: ${comEstimativa} de ${MIN_VENDEDORES_NICHO} vendedores estabelecidos mínimos com estimativa mensal`,
     };
   }
 
+  const subset = new Map<string, VendasMensais>();
+  for (const id of estabelecidos) {
+    const est = estimativas.get(id);
+    if (est) subset.set(id, est);
+  }
+
+  const medianaVendas = medianaVendasMensaisDoUniverso(subset);
+  if (medianaVendas == null) {
+    return { estado: 'sem_dado', mensagem: 'não dá para estimar o volume deste nicho' };
+  }
+
+  const diasJanela = medianaDiasJanela(estabelecidos, estimativas);
+  const sufixoDias = diasJanela != null ? ` em ${diasJanela} dias,` : ',';
+
   return {
     estado: 'valor',
-    vendas_mes_mediana: mediana,
+    vendas_mes_mediana: medianaVendas,
     vendedores_com_estimativa: comEstimativa,
-    rotulo: `mediana de vendas/mês — ${UNIDADE_VENDEDOR} (${comEstimativa} vendedores)`,
+    rotulo: `mediana de vendas/mês — movimento observado${sufixoDias} extrapolado para 30 `
+      + `(loja inteira, ${comEstimativa} vendedores estabelecidos)`,
   };
 }
 
@@ -124,20 +229,25 @@ export function calcularCoberturaEstimativa(
   anunciosComCatalogo: number,
 ): CoberturaEstimativa {
   const ids = distintos(sellerIds);
+  const estabelecidos = vendedoresEstabelecidos(sellerIds, serieVendedores);
   const estimativas = estimarVendasMensais(serieVendedores);
-  const comEstimativa = contarComEstimativa(ids, estimativas);
+  const comEstimativa = contarComEstimativa(estabelecidos, estimativas);
 
   const rotuloAnuncios = anunciosNaAmostra > 0
     ? `${anunciosComCatalogo} de ${anunciosNaAmostra} anúncios da amostra têm catálogo`
     : '0 anúncios na amostra';
-  const rotuloVendedores = ids.size > 0
-    ? ` — ${comEstimativa} de ${ids.size} vendedores com estimativa mensal`
+  const rotuloVendedores = estabelecidos.size > 0
+    ? ` — ${comEstimativa} de ${estabelecidos.size} vendedores estabelecidos com estimativa mensal`
     : '';
 
   return {
     com_estimativa: comEstimativa,
     vendedores_distintos: ids.size,
-    proporcao: ids.size > 0 ? comEstimativa / ids.size : null,
+    estabelecidos: estabelecidos.size,
+    // Numerador e denominador têm que ser a MESMA população. `comEstimativa` já conta só
+    // estabelecidos (ADR-0145 D-1); dividir pela população crua daria 37/116 ao lado de um rótulo
+    // dizendo "37 de 50" — o defeito de denominador que o spike 045 já pegou uma vez.
+    proporcao: estabelecidos.size > 0 ? comEstimativa / estabelecidos.size : null,
     anuncios_na_amostra: anunciosNaAmostra,
     anuncios_com_catalogo: anunciosComCatalogo,
     proporcao_anuncios: anunciosNaAmostra > 0 ? anunciosComCatalogo / anunciosNaAmostra : null,
@@ -145,16 +255,16 @@ export function calcularCoberturaEstimativa(
   };
 }
 
-/** 3.4 — vendedores em serie_insuficiente, sem_estimativa_no_periodo ou sem série alguma. */
+/** 3.4 — estabelecidos em serie_insuficiente, sem_estimativa_no_periodo ou sem série alguma. */
 export function calcularVendedoresSemEstimativa(
   sellerIds: Array<string | number>,
   serieVendedores: SnapshotVendedor[],
 ): VendedoresSemEstimativa {
-  const ids = distintos(sellerIds);
+  const estabelecidos = vendedoresEstabelecidos(sellerIds, serieVendedores);
   const estimativas = estimarVendasMensais(serieVendedores);
   let sem = 0;
 
-  for (const id of ids) {
+  for (const id of estabelecidos) {
     const est = estimativas.get(id);
     if (
       est == null

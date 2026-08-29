@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  calcularAtividadeNicho,
   calcularCoberturaEstimativa,
   calcularConcentracaoPorVendedor,
   calcularVendedoresSemEstimativa,
   calcularVolumeNicho,
   UNIDADE_VENDEDOR,
+  vendedoresEstabelecidos,
   type AnuncioAmostra,
 } from '../nicho-vendedor.ts';
 
@@ -51,13 +53,19 @@ describe('calcularVolumeNicho — contrato 3.2', () => {
     expect(r.vendas_mes_mediana).not.toBeCloseTo(2014, 0);
   });
 
-  it('rotula a unidade da ADR-0143: catálogos da amostra, não a amostra', () => {
+  it('rotula com dias observados e "estabelecidos", nunca "365" — critério aceite 7/8', () => {
     const ids = ['a', 'b', 'c', 'd', 'e'];
     const r = calcularVolumeNicho(ids, ids.flatMap((v) => serieTipica(v)));
     expect(r.estado).toBe('valor');
     if (r.estado !== 'valor') return;
-    expect(r.rotulo).toContain(UNIDADE_VENDEDOR);
-    expect(r.rotulo).toContain('catálogos desta amostra');
+    expect(r.rotulo).toContain('em 30 dias');
+    expect(r.rotulo).toContain('5 vendedores estabelecidos');
+    expect(r.rotulo).not.toContain('365');
+  });
+
+  it('UNIDADE_VENDEDOR não cita "365" e mantém "catálogos desta amostra"', () => {
+    expect(UNIDADE_VENDEDOR).toContain('catálogos desta amostra');
+    expect(UNIDADE_VENDEDOR).not.toContain('365');
   });
 
   it('mediana zero é valor medido, nunca ausência (D-3/D-4 da 0142)', () => {
@@ -84,6 +92,21 @@ describe('calcularVolumeNicho — contrato 3.2', () => {
     expect(r.mensagem).toContain('5');
   });
 
+  it('sub-50 não entra na mediana nem no denominador do piso — critério aceite 1 (caso aptamil)', () => {
+    // 5 estabelecidos com o mesmo movimento (delta 21) + 3 "fantasmas" que nunca chegam a 50 no
+    // primeiro snapshot, mesmo com delta grande. Sem o filtro, a mediana de 8 despencaria.
+    const estabelecidos = ['a', 'b', 'c', 'd', 'e'].flatMap((v) => serieTipica(v));
+    const fantasmas = ['f1', 'f2', 'f3'].flatMap((v) => snap(v, 10, 910));
+    const r = calcularVolumeNicho(
+      ['a', 'b', 'c', 'd', 'e', 'f1', 'f2', 'f3'],
+      [...estabelecidos, ...fantasmas],
+    );
+    expect(r.estado).toBe('valor');
+    if (r.estado !== 'valor') return;
+    expect(r.vendas_mes_mediana).toBeCloseTo(21, 0);
+    expect(r.vendedores_com_estimativa).toBe(5);
+  });
+
   it('vendedor único gigante não vira nicho (regressão spike 045)', () => {
     const r = calcularVolumeNicho(
       ['480265022'],
@@ -93,15 +116,80 @@ describe('calcularVolumeNicho — contrato 3.2', () => {
   });
 });
 
+describe('vendedoresEstabelecidos — ADR-0145 D-1', () => {
+  it('total < 50 no primeiro snapshot fica fora — critério aceite 1', () => {
+    const serie = snap('pequeno', 40, 45);
+    expect(vendedoresEstabelecidos(['pequeno'], serie).size).toBe(0);
+  });
+
+  it('total >= 50 no primeiro snapshot entra', () => {
+    const serie = snap('grande', 50, 60);
+    expect(vendedoresEstabelecidos(['grande'], serie)).toEqual(new Set(['grande']));
+  });
+
+  it('filtro usa o PRIMEIRO snapshot: t0=40, t1=80 continua fora — critério aceite 2', () => {
+    const serie = snap('cresceu', 40, 80);
+    expect(vendedoresEstabelecidos(['cresceu'], serie).size).toBe(0);
+  });
+
+  it('vendedor sem série não é estabelecido', () => {
+    expect(vendedoresEstabelecidos(['fantasma'], []).size).toBe(0);
+  });
+});
+
+describe('calcularAtividadeNicho — contrato 3.6', () => {
+  it('conta ativos entre estabelecidos e devolve dias_janela — critério aceite 8', () => {
+    const ids = ['a', 'b', 'c'];
+    const serie = [
+      ...serieTipica('a'), // ativo
+      ...serieTipica('b'), // ativo
+      ...snap('c', 100, 100), // estabelecido, parado
+    ];
+    const a = calcularAtividadeNicho(ids, serie);
+    expect(a.estabelecidos).toBe(3);
+    expect(a.ativos).toBe(2);
+    expect(a.dias_janela).toBe(30);
+    expect(a.rotulo).toContain('2 de 3 vendedores estabelecidos venderam em 30 dias');
+    expect(a.rotulo).not.toContain('365');
+  });
+
+  it('com 1 a 4 estabelecidos ainda aparece, com base_pequena — critério aceite 5', () => {
+    const ids = ['a', 'b', 'c'];
+    const serie = ids.flatMap((v) => serieTipica(v));
+    const a = calcularAtividadeNicho(ids, serie);
+    expect(a.estabelecidos).toBe(3);
+    expect(a.base_pequena).toBe(true);
+
+    const volume = calcularVolumeNicho(ids, serie);
+    expect(volume.estado).toBe('sem_dado');
+  });
+
+  it('sem estabelecido nenhum devolve rótulo de ausência, sem base_pequena', () => {
+    const a = calcularAtividadeNicho(['x'], snap('x', 10, 20));
+    expect(a.estabelecidos).toBe(0);
+    expect(a.base_pequena).toBe(false);
+    expect(a.rotulo).toBe('nenhum vendedor estabelecido nos catálogos desta amostra');
+  });
+
+  it('vendedor abaixo de 50 não entra na atividade, mesmo vendendo muito em termos relativos', () => {
+    const a = calcularAtividadeNicho(['pequeno'], snap('pequeno', 10, 40));
+    expect(a.estabelecidos).toBe(0);
+    expect(a.ativos).toBe(0);
+  });
+});
+
 describe('calcularCoberturaEstimativa — contrato 3.3', () => {
-  it('reporta vendedores com estimativa / distintos — critério aceite 7', () => {
+  it('reporta vendedores com estimativa / distintos / estabelecidos — critério aceite 7', () => {
     const ids = ['1', '2', '3', '4'];
     const serie = [...serieTipica('1'), ...serieTipica('2')];
     const c = calcularCoberturaEstimativa(ids, serie, 20, 8);
     expect(c.com_estimativa).toBe(2);
     expect(c.vendedores_distintos).toBe(4);
-    expect(c.proporcao).toBe(0.5);
-    expect(c.rotulo).toContain('2 de 4 vendedores com estimativa mensal');
+    expect(c.estabelecidos).toBe(2);
+    // proporcao é sobre ESTABELECIDOS (2 de 2), nunca sobre os 4 distintos — mesma população do rótulo
+    expect(c.proporcao).toBe(1);
+    expect(c.rotulo).toContain('2 de 2 vendedores estabelecidos com estimativa mensal');
+    expect(c.rotulo).not.toContain('365');
   });
 
   it('o denominador de anúncios é a amostra inteira, não os que têm catálogo (spike 045)', () => {
@@ -119,19 +207,41 @@ describe('calcularCoberturaEstimativa — contrato 3.3', () => {
     expect(c.proporcao).toBeNull();
     expect(c.proporcao_anuncios).toBeNull();
   });
+
+  it('proporcao e rótulo usam a mesma população — nunca estabelecidos sobre população crua', () => {
+    // 6 no catálogo, 2 estabelecidos, os 2 com estimativa. O defeito seria devolver 2/6 = 33%.
+    const ids = ['g1', 'g2', 'f1', 'f2', 'f3', 'f4'];
+    const serie = [
+      ...serieTipica('g1'), ...serieTipica('g2'),
+      ...['f1', 'f2', 'f3', 'f4'].flatMap((v) => snap(v, 10, 30)),
+    ];
+    const c = calcularCoberturaEstimativa(ids, serie, 20, 6);
+    expect(c.vendedores_distintos).toBe(6);
+    expect(c.estabelecidos).toBe(2);
+    expect(c.com_estimativa).toBe(2);
+    expect(c.proporcao).toBe(1);
+    expect(c.rotulo).toContain('2 de 2 vendedores estabelecidos');
+  });
 });
 
 describe('calcularVendedoresSemEstimativa — contrato 3.4', () => {
-  it('conta serie_insuficiente, sem_estimativa_no_periodo e sem série alguma', () => {
+  it('conta serie_insuficiente e sem_estimativa_no_periodo, só entre estabelecidos', () => {
     const serie = [
       ...serieTipica('ok'),
       { seller_id: 'insuf', transactions_total: 100, dia: '2026-08-01' },
       ...snap('neg', 20_000, 15_125, '2026-08-16', '2026-08-29'),
     ];
+    // 'nunca-visto' não tem série: não é estabelecido (ADR-0145 D-1), sai do denominador inteiro.
     const r = calcularVendedoresSemEstimativa(['ok', 'insuf', 'neg', 'nunca-visto'], serie);
-    expect(r.contagem).toBe(3);
+    expect(r.contagem).toBe(2);
     expect(r.rotulo).not.toMatch(/venderam/i);
     expect(r.rotulo).toContain('sem estimativa mensal');
+  });
+
+  it('vendedor abaixo de 50 no primeiro snapshot não entra na conta (critério aceite 1)', () => {
+    const serie = snap('pequeno', 10, 12);
+    const r = calcularVendedoresSemEstimativa(['pequeno'], serie);
+    expect(r.contagem).toBe(0);
   });
 });
 

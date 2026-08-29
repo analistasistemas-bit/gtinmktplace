@@ -13,13 +13,14 @@ const snap = (seller_id: string, t0: number, t1: number) => [
 
 const IDS = ['v1', 'v2', 'v3', 'v4', 'v5'];
 
+// t0 = 100 (>= 50, ADR-0145 D-1): os 5 são estabelecidos.
 function entrada(over: Partial<EntradaSecoes237> = {}): EntradaSecoes237 {
   return {
     anuncios: [],
     anunciosNaAmostra: 20,
     anunciosComCatalogo: 7,
     sellerIdsCatalogo: IDS,
-    serie: IDS.flatMap((v) => snap(v, 0, 21)),
+    serie: IDS.flatMap((v) => snap(v, 100, 121)),
     ...over,
   };
 }
@@ -76,5 +77,29 @@ describe('montarSecoes237', () => {
     }));
     expect(s['3.2'].estado).toBe('sem_dado');
     expect(s['7.4']).toBeNull();
+  });
+
+  it('3.6 traz a atividade dos 5 estabelecidos (ADR-0145)', () => {
+    const s = montarSecoes237(entrada());
+    expect(s['3.6'].estabelecidos).toBe(5);
+    expect(s['3.6'].ativos).toBe(5);
+    expect(s['3.6'].base_pequena).toBe(false);
+    expect(s['3.6'].rotulo).toContain('5 de 5 vendedores estabelecidos venderam');
+  });
+
+  it('com 1 a 4 estabelecidos, 3.2 vira sem_dado e 3.6 mostra base_pequena — critério aceite 5', () => {
+    const poucos = ['v1', 'v2', 'v3'];
+    const s = montarSecoes237(entrada({
+      sellerIdsCatalogo: poucos,
+      serie: poucos.flatMap((v) => snap(v, 100, 121)),
+    }));
+    expect(s['3.2'].estado).toBe('sem_dado');
+    expect(s['3.6'].estabelecidos).toBe(3);
+    expect(s['3.6'].base_pequena).toBe(true);
+  });
+
+  it('nenhum rótulo do payload contém "365" — critério aceite 7', () => {
+    const s = montarSecoes237(entrada());
+    expect(JSON.stringify(s)).not.toContain('365');
   });
 });

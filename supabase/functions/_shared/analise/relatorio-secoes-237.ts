@@ -7,11 +7,13 @@
 // 2.9 permanece apenas como ausência declarada, porque a seção 2 promete o campo.
 
 import {
+  calcularAtividadeNicho,
   calcularCoberturaEstimativa,
   calcularConcentracaoPorVendedor,
   calcularVendedoresSemEstimativa,
   calcularVolumeNicho,
   type AnuncioAmostra,
+  type AtividadeNicho,
   type CoberturaEstimativa,
   type ConcentracaoPorVendedor,
   type VendedoresSemEstimativa,
@@ -19,10 +21,12 @@ import {
 } from '../pulse/nicho-vendedor.ts';
 import type { SnapshotVendedor } from '../pulse/vendas-mensais-vendedor.ts';
 
-/** Limitação registrada ADR-0142 D-1 / ADR-0143 D-2 — loja inteira, e do catálogo, não do anúncio. */
+/** Limitação registrada ADR-0142 D-1 / ADR-0143 D-2 / ADR-0145 D-4 — loja inteira, e do catálogo
+ *  de vendedores estabelecidos, não do anúncio nem de uma janela do ML. */
 export const LIMITACAO_3_2 =
-  'As vendas/mês são da loja inteira do vendedor (janela móvel de 365 dias sobre transactions.total), '
-  + 'e o conjunto são os vendedores que disputam os catálogos desta amostra — não os anúncios listados.';
+  'As vendas/mês são da loja inteira do vendedor (movimento observado na nossa janela de coleta, '
+  + 'extrapolado para 30 dias — não uma janela do Mercado Livre), e o conjunto são os vendedores '
+  + 'estabelecidos que disputam os catálogos desta amostra — não os anúncios listados.';
 
 /** ADR-0143 D-3: não é ausência de dado, é decisão de não publicar precisão falsa. */
 export const MOTIVO_SEM_FATURAMENTO =
@@ -35,6 +39,7 @@ export type Secoes237 = {
   '3.2': VolumeNicho;
   '3.3': CoberturaEstimativa;
   '3.4': VendedoresSemEstimativa;
+  '3.6': AtividadeNicho;
   limitacao_3_2: string;
   '7.4': ConcentracaoPorVendedor;
 };
@@ -62,6 +67,7 @@ export function montarSecoes237(e: EntradaSecoes237): Secoes237 {
       e.anunciosComCatalogo,
     ),
     '3.4': calcularVendedoresSemEstimativa(e.sellerIdsCatalogo, e.serie),
+    '3.6': calcularAtividadeNicho(e.sellerIdsCatalogo, e.serie),
     limitacao_3_2: LIMITACAO_3_2,
     '7.4': calcularConcentracaoPorVendedor(e.anuncios),
   };

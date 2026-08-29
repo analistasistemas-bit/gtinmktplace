@@ -44,8 +44,10 @@ function LinhasCobertura(
     : '';
   const linhaAnuncios =
     `${cobertura.anuncios_com_catalogo} de ${cobertura.anuncios_na_amostra} anúncios da amostra têm catálogo${pct}`;
+  // ADR-0145: com_estimativa e a contagem de 3.4 já são sobre ESTABELECIDOS — o denominador
+  // desta linha precisa ser o mesmo conjunto, senão "X de Y" mistura população crua com filtrada.
   const linhaVendedores =
-    `${cobertura.com_estimativa} de ${cobertura.vendedores_distintos} vendedores com estimativa mensal`
+    `${cobertura.com_estimativa} de ${cobertura.estabelecidos} vendedores estabelecidos com estimativa mensal`
     + (semEstimativa.contagem > 0 ? ` · ${semEstimativa.contagem} sem estimativa` : '');
 
   return (
@@ -107,6 +109,7 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
 
   const s = data.secoes237;
   const conc = s['7.4'];
+  const atividade = s['3.6'];
 
   return (
     <Card className="mb-4 p-4">
@@ -114,18 +117,36 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
         <span className="text-sm font-medium">Análise PubliAI</span>
         <Badge variant="outline">demanda por vendedor</Badge>
         <span className="text-xs text-muted-foreground">
-          vendas/mês = loja inteira do vendedor, janela móvel 365d
+          vendas/mês = loja inteira do vendedor
         </span>
       </div>
 
-      <KpiCard
-        size="compact"
-        label="Mediana de vendas/mês por vendedor"
-        value={formatarMedianaVendasMesSecoes237(s['3.2'])}
-        hint={s['3.2'].estado === 'valor' ? s['3.2'].rotulo : undefined}
-        icon={BarChart3}
-        tom="info"
-      />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {atividade.estabelecidos > 0 && (
+          <KpiCard
+            size="compact"
+            label="Concorrentes vendendo"
+            value={`${atividade.ativos} de ${atividade.estabelecidos}`}
+            hint={atividade.rotulo}
+            icon={Users}
+            tom="info"
+          />
+        )}
+        <KpiCard
+          size="compact"
+          label="Mediana de vendas/mês por vendedor"
+          value={formatarMedianaVendasMesSecoes237(s['3.2'])}
+          hint={s['3.2'].estado === 'valor' ? s['3.2'].rotulo : undefined}
+          icon={BarChart3}
+          tom="info"
+        />
+      </div>
+
+      {atividade.base_pequena && (
+        <p className="mt-2 text-xs text-warning">
+          Base pequena: só {atividade.estabelecidos} vendedor{atividade.estabelecidos === 1 ? '' : 'es'} estabelecido{atividade.estabelecidos === 1 ? '' : 's'} nesta amostra.
+        </p>
+      )}
 
       <LinhasCobertura cobertura={s['3.3']} semEstimativa={s['3.4']} />
 

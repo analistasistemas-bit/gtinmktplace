@@ -1,5 +1,7 @@
-// Vendas mensais estimadas por vendedor (ADR-0142): delta de transactions.total na janela
-// móvel de 365d do ML, extrapolado para 30 dias. Função pura — sem I/O.
+// Vendas mensais estimadas por vendedor (ADR-0142, corrigido pela ADR-0145 D-4/errata 1):
+// transactions.total vem com `period: "historic"` — é vitalício, não uma janela móvel do ML.
+// O delta observado na nossa própria janela de coleta é extrapolado para 30 dias. Função pura —
+// sem I/O.
 
 export type SnapshotVendedor = { seller_id: string; transactions_total: number; dia: string };
 
