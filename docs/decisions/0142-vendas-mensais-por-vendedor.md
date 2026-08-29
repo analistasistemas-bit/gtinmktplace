@@ -1,14 +1,16 @@
 # ADR-0142 — Vendas mensais estimadas por vendedor
 
-> **Errata 1 (2026-08-29, [ADR-0145](0145-vendedor-estabelecido-atividade-e-intensidade.md)):**
-> a janela declarada aqui **não existe**. Medido na API: `seller_reputation.transactions` devolve
-> `{"period": "historic"}` — o total é **vitalício**, não uma janela móvel de 365 dias. A D-2 e a
-> D-3 abaixo estão erradas nesse ponto.
+> **Errata 1 (2026-08-29, revisada no mesmo dia pelo
+> [Spike 047](../spikes/047-joompulse-comparada-com-a-nossa-metrica.md)):** a API devolve
+> `{"period": "historic"}`, o que sugeriu por algumas horas que o total fosse **vitalício**.
+> **Medição posterior refutou essa leitura** (0,24x contra 1,41x em 40 vendedores; contas abertas
+> entre 2002 e 2010 com totais baixos demais para serem de vida inteira; `RON_VIANA2010`, de 2010,
+> marca zero). **A janela de ~365 dias desta ADR se sustenta**, e com ela a explicação original do
+> delta negativo.
 >
-> A descoberta **melhora** a fórmula: com contador vitalício, o delta é venda nova de fato, e não
-> saldo de janela deslizante. O que cai é o rótulo — nenhum texto de tela ou documento pode dizer
-> "365d". A trava de delta negativo **permanece**, agora como fato empírico sem explicação
-> confirmada (525 quedas medidas, mediana −12, pior −2.036; grande demais para ser cancelamento).
+> O que muda de fato: **nenhum rótulo promete a janela do fornecedor**. A tela declara a **nossa**
+> janela de observação ("movimento observado em N dias"), correta sob qualquer leitura e
+> independente de o ML documentar o campo. Ver ADR-0145 D-4.
 >
 > A D-1 (a unidade é o vendedor) e a fórmula da D-5 seguem válidas. A **população** sobre a qual
 > elas se aplicam foi restringida pela ADR-0145: só vendedor com ≥ 50 vendas históricas.
@@ -59,7 +61,13 @@ Precisa da idade do anúncio, que não existe em fonte alguma disponível:
 
 - **Não vem do scrape.** Run real do actor Apify (20 itens, US$ 0,10) devolveu **40 campos**; nenhum
   é data de criação. O único campo temporal, `Tiempo`, é o timestamp do próprio scrape.
-- **Não vem da JoomPulse.** `createdAt` não existe no schema de `MlbProductsSortedByProductId`.
+- ~~**Não vem da JoomPulse.** `createdAt` não existe no schema de `MlbProductsSortedByProductId`.~~
+  > **Errata 2 (2026-08-29, [Spike 047](../spikes/047-joompulse-comparada-com-a-nossa-metrica.md)):**
+  > **errado** — o schema expõe `adPublishDate` e `daysInAd`. E é exatamente daí que sai o número
+  > dela: `catalogOrderCount1m = catalogSales ÷ daysInAd × 30`, exato em 9 de 9. **A candidata B é
+  > o método da JoomPulse**, com o selo (potência de 10) no numerador e a idade no denominador —
+  > o que também expõe os dois defeitos dela. A refutação continua válida **para nós**: nenhuma
+  > fonte nossa traz a idade do anúncio.
 - **Não vem do ID.** Calibrando com `familias` (`ml_item_id` × `publicado_em`), duas faixas
   disjuntas aparecem **no mesmo dia** (11/06: `MLB4765…` e `MLB6943…`). Dentro de cada faixa a
   ordem cresce com a data, mas são **sequências paralelas** — uma curva única erra por ordens de
@@ -108,14 +116,14 @@ Decisão de Diego (opção C), porque as duas perguntas do operador são diferen
 | Pergunta do operador | Unidade | Fonte | Rótulo |
 |---|---|---|---|
 | "Quem está ganhando aqui e a que preço?" | **anúncio** | badge da página (Apify) | `+N vendidos desde a publicação` |
-| "Esse nicho comporta minha entrada?" | **vendedor** | `transactions.total` (API do ML) | ~~`N/mês estimado — loja inteira, janela 365d`~~ → **Errata 1:** `N/mês estimado — loja inteira, movimento observado em D dias` |
+| "Esse nicho comporta minha entrada?" | **vendedor** | `transactions.total` (API do ML) | **Errata 1:** `N/mês estimado — loja inteira, movimento observado em D dias` — declara a nossa janela, não a do ML |
 
 O Top 5 da seção 4 é **ordenado pelo acumulado por anúncio**. O tamanho do nicho (2.6, 2.9, 3.1,
 3.2) sai da agregação **por vendedor**. Nunca misturar os dois num mesmo número.
 
 ### D-3 — Delta negativo é ausência, nunca zero
 
-**Errata 1: este parágrafo está factualmente errado** — `period` é `historic`. A trava continua; a explicação, não. Texto original: `transactions.total` cobre **365 dias móveis**: quando uma venda de um ano atrás sai pela cauda, o
+**Errata 1 (revisada):** a janela de 365 dias **se sustenta** — a leitura "vitalício" foi refutada pelo Spike 047. Este parágrafo volta a valer, com a ressalva de que o ML **não documenta o campo assim** (`period: "historic"`). `transactions.total` cobre **365 dias móveis**: quando uma venda de um ano atrás sai pela cauda, o
 total cai sem nada ter acontecido no presente. Pior caso medido: **−4.875**.
 
 Delta negativo devolve o estado **`sem estimativa no período`** — nunca zero, nunca negativo
