@@ -2,12 +2,28 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Análise PubliAI — liberado para implementação (ADR-0140) — 2026-08-28
+## Análise PubliAI — implementação BLOQUEADA (ADR-0140 + Spike 040) — 2026-08-28
 
-**Desenho aprovado e LIBERADO para implementação.** 27 decisões. A JoomPulse confirmou que a parceria cobre uso server-to-server — o bloqueio que precedia todos os outros caiu.
+**Desenho aprovado; implementação BLOQUEADA.** 27 decisões. A liberação anterior caiu na
+revisão adversarial (`docs/spikes/040-revisao-adversarial-adr-0140.md`, 2026-08-28), que confirmou
+com citação literal: (B-1) os termos da JoomPulse (§4.2) proíbem construir API sobre o serviço, uso
+automatizado por script e revender ou distribuir os dados "sem permissão explícita", e o §5.3 dá
+licença intransferível e revogável para fins internos — a D-25 registra apenas confirmação verbal
+do suporte; (B-2) a D-9 reintroduz o preço médio absoluto no Sonar, que a ADR-0138 proibiu no mesmo
+dia. Somam-se furos financeiros no código atual (comissão e frete convertem falha em zero) e duas
+premissas não medidas (cobertura do universo do Sonar; consulta em lote da D-4 no tamanho real).
 ADR em `docs/decisions/0140-analise-publiai-joompulse-radar-e-sonar.md`; termos novos no
-glossário. **Nenhum código escrito ainda** — resta só trabalho técnico (#4, #5, #6, #9, #11, #12)
-e a sonda de cobertura, que é o primeiro passo.
+glossário. **Nenhum código escrito ainda.**
+
+- [ ] **B-1 — autorização escrita da JoomPulse** nomeando Gateway server-to-server, exposição a
+      organizações terceiras em produto pago, cache de 7 dias, relatório derivado retido por 12
+      meses e uso do dado como insumo de IA. **Precede todo o resto.**
+- [ ] **B-2 — reescrever a D-9** em percentual/equivalente por unidade, ou restringi-la ao modo EAN
+- [ ] Fault injection nas APIs do ML (400/401/429/500, timeout, schema sem `sale_fee_amount`,
+      `list_cost` ausente, `me2=false`): todo caso deve produzir "DRE indisponível", nunca zero
+- [ ] Medir a cobertura no universo real do Sonar (termo e EAN), com o `N` elegível por consulta
+- [ ] Testar a consulta em lote no tamanho real do Radar e definir o lote (limite 100 do CubeJS)
+- [ ] Fechar o contrato das seções 2, 3 e 7 do relatório antes de qualquer código
 
 - [x] Nome único **Análise PubliAI** nas 3 telas; slug `analise_avancada` intacto
 - [x] Três camadas: MCP traz dado → código do PubliAI calcula dinheiro → IA só redige

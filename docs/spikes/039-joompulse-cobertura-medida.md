@@ -1,6 +1,6 @@
 # Spike 039 — Cobertura real da JoomPulse sobre os dados do PubliAI
 
-**Data:** 2026-08-29
+**Data:** 2026-08-28
 **ADR:** [0140](../decisions/0140-analise-publiai-joompulse-radar-e-sonar.md) — pré-requisito declarado ("nenhuma promessa de UI antes desse número")
 **Antecede:** [Spike 038](038-joompulse-parcial-correlacao-e-semantica.md), que fechou correlação, allowlist e semântica
 **Método:** amostras aleatórias (seed fixa) de produção via Management API, consultadas contra o MCP real da JoomPulse

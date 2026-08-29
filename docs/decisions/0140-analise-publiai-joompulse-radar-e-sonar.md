@@ -1,6 +1,6 @@
 # ADR-0140 — Análise PubliAI: JoomPulse no Radar e no Sonar
 
-**Status:** Aceito, **implementação bloqueada** pela revisão adversarial ([Spike 040](../spikes/040-revisao-adversarial-adr-0140.md), 2026-08-28) — ver a seção final. O desenho continua válido; o que caiu foi a liberação. Desenho fechado em entrevista com Diego (2026-08-28); 27 decisões. **A JoomPulse confirmou que a parceria cobre uso server-to-server** (D-25), o que era o bloqueio que precedia todos os outros. As decisões D-20 a D-27 fecham as questões #7, #8, #10, #13, #14, #15 e #16 da [ADR-0132](0132-analise-avancada-joompulse.md). Não resta nenhuma pendência de decisão nem de resposta externa: o que falta é trabalho técnico normal (#4, #5, #6, #9, #11, #12) e a sonda de cobertura em produção.
+**Status:** Aceito, **implementação bloqueada** pela revisão adversarial ([Spike 040](../spikes/040-revisao-adversarial-adr-0140.md), 2026-08-28) — ver a seção final. O desenho continua válido; o que caiu foi a liberação. Desenho fechado em entrevista com Diego (2026-08-28); 27 decisões. As decisões D-20 a D-27 fecham as questões #7, #8, #10, #13, #14, #15 e #16 da [ADR-0132](0132-analise-avancada-joompulse.md), e a cobertura foi medida ([Spike 039](../spikes/039-joompulse-cobertura-medida.md)). O que reabriu o bloqueio foi a **forma** da autorização da D-25: a parceria foi confirmada verbalmente a Diego, e o §4.2 dos termos da JoomPulse exige permissão **explícita**. Se existir aditivo escrito cobrindo Gateway, redistribuição a organizações-cliente e derivação por IA, **este status volta a "liberado" numa linha** — a decisão é de Diego, não desta revisão.
 **Data:** 2026-08-28
 **Decisores:** Diego
 **Relaciona:** [0132](0132-analise-avancada-joompulse.md) (arquitetura do Gateway e do módulo — **esta ADR supersede a D-3 e emenda a D-7**), [Spike 038](../spikes/038-joompulse-parcial-correlacao-e-semantica.md) (achados que motivaram a revisão), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Radar; o 403 do ML; Errata 8 e Errata 10), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) / [0127](0127-sonar-tabela-por-anuncio-e-historico.md) (Sonar, Apify e a tabela por anúncio), [0124](0124-veredito-de-oportunidade-do-sonar.md) / [0137](0137-sonar-disputa-caminho-b-concentracao-por-anuncio.md) / [0138](0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) (veredito), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0020](0020-estrategia-de-preco-liquido-minimo.md) / [0055](0055-imposto-por-origem-nacional-importado.md) / [0107](0107-origem-obrigatoria-na-planilha.md) (margem e imposto por origem), [0086](0086-configuracao-org-scoped.md) (módulos)
@@ -124,6 +124,9 @@ A Errata 8 da ADR-0119 mediu 36 ofertas e registrou que a API do ML não devolve
 
 ## O que continua bloqueando a implementação
 
+> **Revogado em 2026-08-28.** O parágrafo abaixo era válido antes da revisão adversarial; a seção
+> seguinte o substitui. Preservado para o rastro da decisão.
+
 **Nada.** Esta ADR fecha o **quê**; as decisões D-20 a D-27 fecharam as questões #7, #8, #10, #13, #14, #15 e #16. Não há mais decisão de produto pendente nem resposta externa a esperar.
 
 O que falta é trabalho técnico normal, que exige medir contra o ambiente real em vez de escolher:
@@ -134,7 +137,7 @@ O que falta é trabalho técnico normal, que exige medir contra o ambiente real 
 - #11/#12 rate limits, timeouts, latência e cold start
 - teste de revogação e refresh rotation — não bloqueia (a D-27 já adota o pior caso); se houver revogação remota, o comportamento melhora
 
-**Cobertura: medida em 2026-08-29** — [Spike 039](../spikes/039-joompulse-cobertura-medida.md). Catálogos monitorados **90%**, anúncios de concorrentes **82%**, anúncios próprios **≈4%**. Projeção para a tela do Radar: ~67% das linhas com prévia útil, ~23% com catálogo sem venda estimada, ~10% em "sem dado". A coluna se sustenta; a D-4 foi emendada para identificar o ganhador **por vendedor**, não por anúncio.
+**Cobertura: medida em 2026-08-28** — [Spike 039](../spikes/039-joompulse-cobertura-medida.md). Catálogos monitorados **90%**, anúncios de concorrentes **82%**, anúncios próprios **≈4%**. Projeção para a tela do Radar: ~67% das linhas com prévia útil, ~23% com catálogo sem venda estimada, ~10% em "sem dado". A coluna se sustenta; a D-4 foi emendada para identificar o ganhador **por vendedor**, não por anúncio.
 
 Dois ajustes que o Spike 039 impõe à implementação:
 
@@ -151,8 +154,9 @@ supõem seguro:
 - **B-1 — a D-25 não é autorização suficiente.** Os termos públicos da JoomPulse (§4.2) proíbem
   construir APIs sobre o serviço, uso automatizado por scripts e revender ou distribuir os dados
   "sem permissão explícita"; o §5.3 concede licença **intransferível e revogável para fins
-  comerciais internos**. Confirmação verbal do suporte não cobre Gateway, redistribuição a
-  organizações-cliente nem derivação por IA. **Nenhuma linha de Gateway antes da autorização escrita.**
+  comerciais internos**. A confirmação registrada é verbal e não nomeia Gateway,
+  redistribuição a organizações-cliente nem derivação por IA. **Se houver aditivo escrito que cubra
+  isso, o bloqueio cai** — o achado é sobre a forma do registro, não sobre a existência da parceria.
 - **B-2 — a D-9 reintroduz o preço absoluto que a [ADR-0138](0138-sonar-linguagem-comercial-e-condicao-de-entrada.md)
   proibiu no mesmo dia**, pelo mesmo motivo (a busca por termo mistura embalagens; média sobre kits
   de 50, 500 e 1000 é alvo de prejuízo). Precisa virar percentual/equivalente por unidade, ou existir
