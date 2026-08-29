@@ -99,6 +99,23 @@ Próximos passos, em ordem de ataque:
       - [ ] **Estender o `pulse-coletar` aos vendedores descobertos pelo Sonar** (caminho 2,
             `/users/{id}`, que já funciona). Sem isso, nicho que a org não rastreia no Radar tem
             cobertura perto de zero — os 122 de 190 medidos vêm de catálogos que a DSA já monitora.
+
+            **Medido no modo EAN (2026-08-29), e o resultado é mais forte do que parecia.** No EAN
+            `7891113175371` (fio de viscose Círculo): 20 anúncios, 7 catálogos, **9 vendedores**
+            distintos. Desses, **6 já estão em `pulse_vendedores` — mas todos sob a org Avil, 0 sob
+            a DSA**. A consulta filtra `org_id`, então a DSA vê zero e o card fica silencioso.
+            O dado de mercado **existe e é coletado diariamente**; só não está visível para a org
+            que perguntou. Os 6 têm movimento real (`transactions.total` de 93 a 65.228).
+
+            Duas saídas, e a escolha é de Diego:
+            1. **Coletar por org** (esta task): cada org passa a acompanhar os vendedores que o
+               próprio Sonar descobre. Isolamento intacto. Custo: 1 chamada `/users/{id}` por
+               vendedor novo, e a estimativa só existe **a partir do 2º dia** (D-4 exige 2
+               snapshots) — confiável em ~1 semana.
+            2. **Tornar a série de vendedores global.** `transactions.total` é dado **público** do
+               ML (`/users/{id}` de terceiro, sem escopo especial), não dado da organização que o
+               coletou — mas `pulse_vendedores` é org-scoped com RLS, e mexer nisso encosta na
+               regra de multi-tenancy. **Exige ADR própria**; não fazer sem decisão explícita.
       - [ ] Desenhar uma construção de faturamento do nicho que não multiplique a loja inteira do
             vendedor pelo preço de um anúncio — pendência herdada da ADR-0142 e assumida na 0143.
 - [x] **Lote da consulta do Radar definido** — `docs/spikes/041-joompulse-censo-do-radar-e-validacao-da-d4.md`:
