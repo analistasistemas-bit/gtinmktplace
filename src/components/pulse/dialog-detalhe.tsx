@@ -3,7 +3,7 @@
 // para descobrir que estava vendendo no prejuízo.
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Truck, Store, ExternalLink } from 'lucide-react';
+import { Truck, Store, ExternalLink, Zap } from 'lucide-react';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from '@/components/ui/dialog';
@@ -19,7 +19,7 @@ import {
 } from '@/lib/pulse';
 import {
   estadoAtualOfertas, mercadoPulse, menorPrecoPorDia, ofertasAbaixoDaReferencia,
-  vendasEstimadasVendedor, margemEstimada, margemEhEstimativa,
+  porteDoVendedor, shareDeVisitas, margemEstimada, margemEhEstimativa,
 } from '@/lib/pulse-margem';
 import {
   classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, rotuloMotivoQualificacao,
@@ -72,6 +72,13 @@ function Sparkline({ pontos }: { pontos: { dia: string; preco: number }[] }) {
 }
 
 type OfertaClassificada = PulseOferta & { qualificacao: QualificacaoOferta };
+
+/** Tendência do porte: sinal do delta contra o mesmo período de 12 meses atrás (ADR-0146 D-3). */
+const ROTULO_TENDENCIA = {
+  crescendo: 'vende mais que há 1 ano',
+  estavel: 'mesmo ritmo de 1 ano atrás',
+  encolhendo: 'vende menos que há 1 ano',
+} as const;
 
 function registro(valor: unknown): Record<string, unknown> | null {
   return typeof valor === 'object' && valor != null && !Array.isArray(valor)
@@ -190,10 +197,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
     titulo: produto?.titulo ?? null,
   });
 
-  const vendasDe = (o: PulseOferta) => {
-    const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
-    return hist[hist.length - 1]?.transactions_total ?? null;
-  };
+  const porteDe = (o: PulseOferta) => porteDoVendedor(vendedoresPorSeller.get(o.seller_id) ?? []);
   const nomeDe = (o: PulseOferta) => {
     const hist = vendedoresPorSeller.get(o.seller_id) ?? [];
     return hist[hist.length - 1]?.nickname ?? `Vendedor ${o.seller_id}`;
@@ -294,22 +298,27 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
       },
     },
     {
-      key: 'vendas',
-      // "na conta" fica no cabeçalho de propósito: é o total do vendedor no ML inteiro, não deste
-      // produto. Uma coluna ordenável chamada só "Vendas" convidaria a ler como vendas do anúncio.
-      header: 'Vendas na conta',
-      className: 'w-32 text-right',
-      sortValue: (o) => vendasDe(o),
+      key: 'porte',
+      // Antes esta coluna somava o total da conta e exibia embaixo o DELTA de `transactions_total`
+      // como "≈N no período". O Spike 048 provou que esse campo é janela móvel de 365 dias, então o
+      // delta é "venda de agora menos venda de um ano atrás" — não venda. Aqui o Radar passa a usar
+      // a MESMA definição do Sonar (ADR-0146): média mensal de 12 meses, e o delta vira tendência.
+      // Continua sendo a LOJA INTEIRA: venda por anúncio de terceiro não é obtenível (ADR-0142).
+      header: 'Porte do vendedor',
+      className: 'w-36 text-right',
+      sortValue: (o) => porteDe(o)?.mediaMensal ?? null,
       cell: (o) => {
-        const total = vendasDe(o);
-        const delta = vendasEstimadasVendedor(vendedoresPorSeller.get(o.seller_id) ?? []);
-        if (total == null) return <span className="text-xs text-muted-foreground">não coletado</span>;
+        const porte = porteDe(o);
+        if (porte == null) return <span className="text-xs text-muted-foreground">não coletado</span>;
         return (
-          <div className="tabular-nums">
-            {fmtInt(total)}
-            {delta != null && delta > 0 && (
-              <div className="text-xs text-muted-foreground" title="Desde que este vendedor entrou no radar">
-                ≈{fmtInt(delta)} no período
+          <div
+            className="tabular-nums"
+            title={`Média mensal dos últimos 12 meses da loja inteira deste vendedor. Não é venda deste anúncio — a API do Mercado Livre não expõe venda por anúncio de terceiro.`}
+          >
+            {fmtInt(Math.round(porte.mediaMensal))}<span className="text-xs text-muted-foreground">/mês</span>
+            {porte.tendencia && (
+              <div className={cn('text-xs', porte.tendencia === 'encolhendo' ? 'text-warning' : 'text-muted-foreground')}>
+                {ROTULO_TENDENCIA[porte.tendencia]}
               </div>
             )}
           </div>
@@ -319,17 +328,30 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
     {
       key: 'visitas',
       // Demanda do anúncio do concorrente: a única medida por anúncio que a API oficial dá
-      // (Errata 9 do ADR-0119). Medida uma vez por dia, no baseline — o painel não a atualiza.
+      // (Errata 9 do ADR-0119) — e por isso o melhor proxy de tração DAQUELE anúncio, bem melhor
+      // que o porte da loja. Medida uma vez por dia, no baseline; o painel não a atualiza.
       header: 'Visitas 30d',
-      className: 'w-28 text-right',
+      className: 'w-32 text-right',
       // Sem coalescer para 0: o DataTable já joga nulo para o fim nas duas direções, e "não
       // medido" ordenado como zero visitas afirmaria justamente o que não sabemos.
       sortValue: (o) => o.visitas_30d,
-      cell: (o) => (
-        o.visitas_30d == null
-          ? <span className="text-xs text-muted-foreground" title="Ainda não medido">—</span>
-          : <span className="tabular-nums" title="Visitas no anúncio nos últimos 30 dias">{fmtInt(o.visitas_30d)}</span>
-      ),
+      cell: (o) => {
+        if (o.visitas_30d == null) {
+          return <span className="text-xs text-muted-foreground" title="Ainda não medido">—</span>;
+        }
+        const share = shareDeVisitas(mercado, o.visitas_30d);
+        return (
+          <div className="tabular-nums" title="Visitas no anúncio nos últimos 30 dias">
+            {fmtInt(o.visitas_30d)}
+            {/* Fatia entre os RELEVANTES. Tráfego não é conversão: não é fatia de mercado. */}
+            {share != null && o.qualificacao.status === 'relevante' && (
+              <div className="text-xs text-muted-foreground" title="Fatia das visitas entre os concorrentes relevantes. Tráfego não é venda.">
+                {share.toFixed(share < 10 ? 1 : 0)}% das visitas
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: 'anuncio',
@@ -337,12 +359,20 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
       className: 'w-28',
       sortValue: (o) => tipoAnuncio(o.tier),
       cell: (o) => (
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
           {tipoAnuncio(o.tier)}
           {o.frete_gratis && (
             <span className="inline-flex items-center gap-1 text-success" title="Frete grátis">
               <Truck className="h-3 w-3" />
               grátis
+            </span>
+          )}
+          {/* `full_ml` já era coletado e entrava na qualificação, mas nunca chegava à tela. FULL
+              muda prazo de entrega, que é o que decide a compra quando o preço empata. */}
+          {o.full_ml && (
+            <span className="inline-flex items-center gap-1 text-info" title="Mercado Envios Full: estoque no centro de distribuição do ML">
+              <Zap className="h-3 w-3" />
+              FULL
             </span>
           )}
         </div>
@@ -564,6 +594,23 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                     ({mercado.total_relevantes} {mercado.total_relevantes === 1 ? 'relevante' : 'relevantes'} de {mercado.total_observadas} {mercado.total_observadas === 1 ? 'observada' : 'observadas'})
                   </span>
                 </h3>
+                {/* Composição dos relevantes: já era calculada em `resumirMercadoQualificado` e
+                    nunca chegava à tela. Diz COMO a disputa é feita — preço empatado com metade
+                    dos rivais no FULL é outra decisão. */}
+                {mercado.total_relevantes > 0 && (
+                  <p className="mb-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span className="tabular-nums">
+                      {mercado.vendedores_relevantes} {mercado.vendedores_relevantes === 1 ? 'vendedor' : 'vendedores'}
+                    </span>
+                    <span className="tabular-nums">·  {mercado.frete_gratis_relevantes} com frete grátis</span>
+                    <span className="tabular-nums">·  {mercado.full_relevantes} no FULL</span>
+                    {mercado.maior_relevante != null && mercado.menor_relevante != null && (
+                      <span className="tabular-nums">
+                        ·  disputa de {fmtBRL(mercado.menor_relevante)} a {fmtBRL(mercado.maior_relevante)}
+                      </span>
+                    )}
+                  </p>
+                )}
                 {atuais.length === 0 ? (
                   <p className="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
                     Nenhuma oferta coletada ainda. Use “Atualizar agora” na lista para forçar uma coleta.

@@ -4,6 +4,7 @@ import {
   resumirMercadoQualificado,
   type MercadoQualificado,
 } from '../../supabase/functions/_shared/concorrencia/qualificacao';
+import { mediaMensal12m } from '../../supabase/functions/_shared/pulse/vendas-mensais-vendedor';
 import type { PulseOferta, PulseVendedor } from './pulse';
 
 /** Junta cada oferta ao perfil mais recente de seu vendedor e aplica a regra compartilhada. */
@@ -94,17 +95,6 @@ export function menorPrecoPorDia(
   return serie;
 }
 
-/** Delta de `transactions_total` entre a 1ª e a última leitura — proxy de vendas do VENDEDOR
- *  inteiro (não do anúncio; ver Fatos empíricos do plano). Precisa de pelo menos 2 pontos. */
-export function vendasEstimadasVendedor(hist: PulseVendedor[]): number | null {
-  if (hist.length < 2) return null;
-  const ordenado = [...hist].sort((a, b) => a.dia.localeCompare(b.dia));
-  const primeiro = ordenado[0].transactions_total;
-  const ultimo = ordenado[ordenado.length - 1].transactions_total;
-  if (primeiro == null || ultimo == null) return null;
-  return ultimo - primeiro;
-}
-
 /**
  * Comissão do ML para um preço, a partir da estrutura lida na coleta. `null` sem a estrutura —
  * comissão nunca é estimada por regra de três a partir de um valor pronto de outro preço, que foi
@@ -157,6 +147,64 @@ export function margemEstimada(args: {
   const liquido = preco - comissao - frete - (preco * aliquotaPct) / 100 - custoProduto;
   const margemPct = (liquido / preco) * 100;
   return { liquido, margemPct, comissao };
+}
+
+export type TendenciaVendedor = 'crescendo' | 'estavel' | 'encolhendo';
+
+export interface PorteVendedor {
+  /** Média mensal dos últimos 12 meses da LOJA INTEIRA (ADR-0146 D-1). */
+  mediaMensal: number;
+  /** Sinal do delta contra o mesmo período de 12 meses atrás. `null` com menos de 2 leituras. */
+  tendencia: TendenciaVendedor | null;
+}
+
+/**
+ * Porte do vendedor, na MESMA definição que o Sonar usa (ADR-0146): `transactions_total ÷ 12`.
+ *
+ * O Radar mostrava o **delta** de `transactions_total` chamado de "≈N no período" — e o Spike 048
+ * provou que esse campo é janela móvel de 365 dias, então o delta é *venda de agora menos venda do
+ * mesmo período de um ano atrás*, não venda. Duas telas calculando contas diferentes do mesmo
+ * campo e chamando as duas de venda era o defeito mais caro que a entrega do Sonar podia deixar
+ * para trás (`docs/reference/licoes-joompulse-para-o-radar.md` §3).
+ *
+ * Continua sendo da **loja inteira**: venda por anúncio de terceiro não é obtenível (ADR-0142).
+ */
+export function porteDoVendedor(hist: PulseVendedor[]): PorteVendedor | null {
+  if (hist.length === 0) return null;
+  const ordenado = [...hist].sort((a, b) => a.dia.localeCompare(b.dia));
+  const ultimo = ordenado[ordenado.length - 1].transactions_total;
+  if (ultimo == null) return null;
+
+  let tendencia: TendenciaVendedor | null = null;
+  if (ordenado.length >= 2) {
+    const primeiro = ordenado[0].transactions_total;
+    if (primeiro != null) {
+      const delta = ultimo - primeiro;
+      tendencia = delta > 0 ? 'crescendo' : delta < 0 ? 'encolhendo' : 'estavel';
+    }
+  }
+  return { mediaMensal: mediaMensal12m(ultimo), tendencia };
+}
+
+/**
+ * Fatia de visitas deste anúncio entre os RELEVANTES. É a única medida por anúncio que a API
+ * oficial dá (Errata 9 da ADR-0119), então é o melhor proxy de tração daquele anúncio — bem melhor
+ * que "vendas na conta", que soma os anúncios do vendedor em nichos sem relação.
+ *
+ * **Não é fatia de mercado:** tráfego não é conversão, e não temos taxa de conversão. Anúncios com
+ * visitas `null` (não medido) ficam fora do denominador — contá-los como zero afirmaria o que não
+ * sabemos.
+ */
+export function shareDeVisitas(
+  mercado: MercadoQualificado,
+  visitasDoAnuncio: number | null,
+): number | null {
+  if (visitasDoAnuncio == null) return null;
+  const total = mercado.ofertas.reduce(
+    (soma, o) => (o.qualificacao.status === 'relevante' && o.visitas_30d != null ? soma + o.visitas_30d : soma),
+    0,
+  );
+  return total > 0 ? (visitasDoAnuncio / total) * 100 : null;
 }
 
 export interface AbaixoDaReferencia {

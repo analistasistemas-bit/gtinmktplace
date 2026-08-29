@@ -134,6 +134,50 @@ não é o ganhador** (medido: só em 9 de 17 catálogos disputados). Confirmado 
 barato está em R$ 36,00 e a JoomPulse aponta o buy-box em outra oferta, de R$ 49,90 — de um
 vendedor com **1 venda em 365 dias**.
 
+## Errata 3 (2026-08-29) — o detalhe do Radar passa a usar a definição do Sonar
+
+Revisão da tela de detalhe pedida por Diego. O achado central: **o Radar exibia o delta de
+`transactions_total` como "≈N no período"** — e o [Spike 048](../spikes/048-transactions-total-e-janela-provada.md)
+provou que esse campo é janela móvel de 365 dias, então o delta é *venda de agora menos venda do
+mesmo período de um ano atrás*, não venda. O Sonar já tinha corrigido isso na
+[ADR-0146](0146-media-mensal-12m-e-tendencia.md); o Radar ficou para trás, e **as duas telas
+calculavam contas diferentes do mesmo campo chamando as duas de venda** — o defeito descrito em
+[Lições da JoomPulse para o Radar](../reference/licoes-joompulse-para-o-radar.md) §3.
+
+Verificado em produção: `Mercado Livre Brasil` foi de 31.347.465 a 31.746.992 em 8 dias de coleta.
+O número era real; o rótulo é que estava errado.
+
+| | antes | depois |
+|---|---:|---:|
+| Mercado Livre Brasil | ≈399.527 "no período" | **2.645.583/mês** |
+| WEBSTOREVIX | ≈137 | **2.791/mês** |
+| CIRURGICANOVAERA | ≈1.413 | **2.980/mês** |
+
+Mudanças:
+
+1. **"Vendas na conta" vira "Porte do vendedor"** — `transactions_total ÷ 12` (mesma
+   `mediaMensal12m` que o Sonar usa) mais a tendência (crescendo / estável / encolhendo). Continua
+   sendo a **loja inteira**, e o tooltip diz isso: venda por anúncio de terceiro não é obtenível
+   (ADR-0142). `vendasEstimadasVendedor` ficou órfã e foi removida.
+2. **Visitas 30d ganha a fatia entre os relevantes.** É a única medida **por anúncio** que a API
+   oficial dá, e por isso o melhor proxy de tração daquele anúncio. Medido no `aptamil premium 1`:
+   a WEBSTOREVIX é 13x maior como loja que a DROGACENTERATAC e tem **10 visitas contra 735** — o
+   porte da loja e a disputa daquele produto contam histórias opostas. **Não é fatia de mercado:**
+   tráfego não é conversão, e anúncios sem medição ficam fora do denominador.
+3. **FULL passa a aparecer.** `full_ml` já era coletado, já entrava na qualificação e nunca
+   chegava à tela.
+4. **Composição dos relevantes** acima da tabela (vendedores, frete grátis, FULL, faixa da
+   disputa) — tudo já calculado em `resumirMercadoQualificado` e descartado.
+
+**Rejeitado:** remover a coluna "Anúncio". A sugestão veio de `tier` vir vazio na ponte do
+catálogo, mas em `pulse_ofertas_atual` ele está preenchido — **1.059 `gold_special` e 353
+`gold_pro`** —, e distingue Clássico de Premium, que muda a comissão de 14% para 18%.
+
+**Registrado, não corrigido:** `fetchPulseDetalhe` lê `pulse_vendedores` sem paginar
+(`src/lib/pulse.ts`), enquanto `fetchPulseResumoOfertas` pagina de propósito contra o truncamento
+silencioso do PostgREST. Hoje são 495 linhas no total e no máximo 13 por vendedor — risco latente,
+longe do limite.
+
 ## O que esta decisão NÃO resolve
 
 **A org continua fora dos catálogos.** Entrar (opt-in de `catalog_listing`) é decisão comercial do

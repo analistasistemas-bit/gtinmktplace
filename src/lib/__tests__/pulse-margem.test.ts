@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  estadoAtualOfertas, menorPrecoPorDia, vendasEstimadasVendedor, margemEstimada, comissaoNoPreco,
-  margemEhEstimativa, mercadoPulse, ofertasAbaixoDaReferencia,
+  estadoAtualOfertas, menorPrecoPorDia, margemEstimada, comissaoNoPreco,
+  margemEhEstimativa, mercadoPulse, ofertasAbaixoDaReferencia, porteDoVendedor, shareDeVisitas,
 } from '../pulse-margem';
 import type { PulseOferta, PulseVendedor } from '../pulse';
 
@@ -169,29 +169,6 @@ describe('menorPrecoPorDia', () => {
   });
 });
 
-describe('vendasEstimadasVendedor', () => {
-  it('retorna null com menos de 2 pontos', () => {
-    expect(vendasEstimadasVendedor([])).toBeNull();
-    expect(vendasEstimadasVendedor([vendedor({})])).toBeNull();
-  });
-
-  it('calcula o delta entre a 1ª e a última leitura (ordena por dia)', () => {
-    const hist = [
-      vendedor({ dia: '2026-08-14', transactions_total: 130 }),
-      vendedor({ dia: '2026-08-10', transactions_total: 100 }),
-    ];
-    expect(vendasEstimadasVendedor(hist)).toBe(30);
-  });
-
-  it('retorna null se algum ponto não tiver transactions_total', () => {
-    const hist = [
-      vendedor({ dia: '2026-08-10', transactions_total: null }),
-      vendedor({ dia: '2026-08-14', transactions_total: 130 }),
-    ];
-    expect(vendasEstimadasVendedor(hist)).toBeNull();
-  });
-});
-
 describe('comissaoNoPreco', () => {
   it('percentual mais parcela fixa', () => {
     expect(comissaoNoPreco(39.9, { pct: 14, fixa: 0 })).toBeCloseTo(5.586, 3);
@@ -324,5 +301,81 @@ describe('ofertasAbaixoDaReferencia', () => {
     const r = ofertasAbaixoDaReferencia(mercadoCom([[50, 2], [70.19, 2], [36, 1]]))!;
     expect(r.referencia).toBe(50);
     expect(r.contagem).toBe(1);
+  });
+});
+
+// O Radar mostrava o DELTA de `transactions_total` como "≈N no período". O Spike 048 provou que
+// esse campo é janela móvel de 365 dias, então o delta é "venda de agora menos venda do mesmo
+// período de um ano atrás" — não venda. O Sonar já corrigiu isso (ADR-0146); aqui o Radar passa a
+// usar a MESMA definição, para as duas telas não calcularem contas diferentes do mesmo campo.
+describe('porteDoVendedor', () => {
+  it('a média mensal é o total mais recente dividido por 12', () => {
+    const p = porteDoVendedor([
+      vendedor({ transactions_total: 31347465, dia: '2026-08-20' }),
+      vendedor({ transactions_total: 31746992, dia: '2026-08-29' }),
+    ])!;
+    expect(p.mediaMensal).toBeCloseTo(31746992 / 12, 2);
+    expect(p.tendencia).toBe('crescendo');
+  });
+
+  it('usa a leitura mais recente mesmo com a série fora de ordem', () => {
+    const p = porteDoVendedor([
+      vendedor({ transactions_total: 2400, dia: '2026-08-29' }),
+      vendedor({ transactions_total: 1200, dia: '2026-08-20' }),
+    ])!;
+    expect(p.mediaMensal).toBe(200);
+  });
+
+  it('vendedor estável não é vendedor parado', () => {
+    expect(porteDoVendedor([
+      vendedor({ transactions_total: 1200, dia: '2026-08-20' }),
+      vendedor({ transactions_total: 1200, dia: '2026-08-29' }),
+    ])!.tendencia).toBe('estavel');
+  });
+
+  it('delta negativo é encolhendo, não ausência', () => {
+    expect(porteDoVendedor([
+      vendedor({ transactions_total: 1300, dia: '2026-08-20' }),
+      vendedor({ transactions_total: 1200, dia: '2026-08-29' }),
+    ])!.tendencia).toBe('encolhendo');
+  });
+
+  it('uma leitura só dá porte sem tendência — não inventa direção', () => {
+    const p = porteDoVendedor([vendedor({ transactions_total: 1200, dia: '2026-08-29' })])!;
+    expect(p.mediaMensal).toBe(100);
+    expect(p.tendencia).toBeNull();
+  });
+
+  it('sem leitura ou sem total não há porte', () => {
+    expect(porteDoVendedor([])).toBeNull();
+    expect(porteDoVendedor([vendedor({ transactions_total: null as unknown as number })])).toBeNull();
+  });
+});
+
+describe('shareDeVisitas', () => {
+  const mercado = () => mercadoPulse([
+    oferta({ item_id: 'A', seller_id: 2, preco: 70, visitas_30d: 735 }),
+    oferta({ item_id: 'B', seller_id: 2, preco: 76, visitas_30d: 10 }),
+    oferta({ item_id: 'C', seller_id: 1, preco: 36, visitas_30d: 500 }), // sem histórico: fora
+  ], [
+    vendedor({ seller_id: 1, transactions_total: 0 }),
+    vendedor({ seller_id: 2, transactions_total: 500, nivel: '5_green' }),
+  ]);
+
+  it('a fatia é entre os RELEVANTES — a oferta desqualificada não entra no denominador', () => {
+    // 735 / (735 + 10) = 98,7%. Se a de 500 visitas entrasse, daria 59%.
+    expect(shareDeVisitas(mercado(), 735)).toBeCloseTo(98.7, 1);
+  });
+
+  it('anúncio sem medição não tem fatia — e não vira zero', () => {
+    expect(shareDeVisitas(mercado(), null)).toBeNull();
+  });
+
+  it('sem visitas medidas em ninguém não há fatia a calcular', () => {
+    const semVisitas = mercadoPulse(
+      [oferta({ item_id: 'A', seller_id: 2, preco: 70, visitas_30d: null })],
+      [vendedor({ seller_id: 2, transactions_total: 500, nivel: '5_green' })],
+    );
+    expect(shareDeVisitas(semVisitas, 10)).toBeNull();
   });
 });

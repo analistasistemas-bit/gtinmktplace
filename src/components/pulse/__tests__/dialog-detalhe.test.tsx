@@ -311,3 +311,68 @@ describe('DialogDetalhe — aviso das ofertas abaixo da referência', () => {
     expect(screen.queryByText(/abaixo da sua referência/)).not.toBeInTheDocument();
   });
 });
+
+// O Radar mostrava o DELTA de transactions_total como "≈N no período" — número que o Spike 048
+// provou não ser venda, e que o Sonar já tinha corrigido (ADR-0146). As duas telas passam a usar a
+// mesma definição: média mensal de 12 meses, com o delta virando tendência.
+describe('DialogDetalhe — porte do vendedor em vez de "vendas na conta"', () => {
+  it('mostra a média mensal de 12 meses, não o total nem o delta', () => {
+    // vendedor 2 da fixture: transactions_total 10 → 10/12 ≈ 1/mês.
+    detalhe.vendedores = [
+      { ...vendedor(2, 'OUTRO'), transactions_total: 2400, dia: '2026-08-20' },
+      { ...vendedor(2, 'OUTRO'), transactions_total: 2412, dia: '2026-08-29' },
+    ];
+    detalhe.ofertasAtuais = [oferta({ item_id: 'MLB-OFFER-70', seller_id: 2, preco: 70.19, visitas_30d: 735 })];
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+
+    expect(screen.getByRole('columnheader', { name: 'Porte do vendedor' })).toBeInTheDocument();
+    expect(screen.getByText('201')).toBeInTheDocument();          // 2412 / 12
+    expect(screen.getByText(/vende mais que há 1 ano/)).toBeInTheDocument();
+    // O rótulo antigo e o total cru saem de cena.
+    expect(screen.queryByRole('columnheader', { name: 'Vendas na conta' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/no período/)).not.toBeInTheDocument();
+    expect(screen.queryByText('2.412')).not.toBeInTheDocument();
+  });
+
+  it('uma leitura só dá porte sem afirmar direção', () => {
+    detalhe.vendedores = [{ ...vendedor(2, 'OUTRO'), transactions_total: 2412, dia: '2026-08-29' }];
+    detalhe.ofertasAtuais = [oferta({ item_id: 'MLB-OFFER-70', seller_id: 2, preco: 70.19 })];
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+
+    expect(screen.getByText('201')).toBeInTheDocument();
+    expect(screen.queryByText(/há 1 ano/)).not.toBeInTheDocument();
+  });
+
+  it('a coluna não promete venda daquele anúncio', () => {
+    const { container } = renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+    expect(container.textContent).not.toMatch(/vendas do anúncio|vendeu neste produto/i);
+  });
+});
+
+describe('DialogDetalhe — visitas, FULL e composição', () => {
+  it('mostra a fatia de visitas entre os relevantes', () => {
+    detalhe.ofertasAtuais = [
+      oferta({ item_id: 'A', seller_id: 2, preco: 70.19, visitas_30d: 735 }),
+      oferta({ item_id: 'B', seller_id: 2, preco: 76, visitas_30d: 245 }),
+    ];
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+    expect(screen.getByText(/75% das visitas/)).toBeInTheDocument();
+  });
+
+  it('anúncio no FULL se identifica — o dado era coletado e nunca exibido', () => {
+    detalhe.ofertasAtuais = [oferta({ item_id: 'A', seller_id: 2, preco: 70.19, full_ml: true })];
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+    expect(screen.getByTitle(/Mercado Envios Full/)).toBeInTheDocument();
+  });
+
+  it('a composição dos relevantes aparece acima da tabela', () => {
+    detalhe.ofertasAtuais = [
+      oferta({ item_id: 'A', seller_id: 2, preco: 70.19, frete_gratis: true, full_ml: true }),
+      oferta({ item_id: 'B', seller_id: 2, preco: 99, frete_gratis: false, full_ml: false }),
+    ];
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+    expect(screen.getByText(/1 com frete grátis/)).toBeInTheDocument();
+    expect(screen.getByText(/1 no FULL/)).toBeInTheDocument();
+    expect(screen.getByText(/disputa de R\$\s*70,19 a R\$\s*99,00/)).toBeInTheDocument();
+  });
+});
