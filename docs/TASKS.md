@@ -12,6 +12,14 @@ termos novos no glossário. **Nenhum código escrito ainda.**
 
 O que o Spike 040 deixou de pé, em ordem de ataque:
 
+- [ ] **BLOQUEIO EXTERNO — pedir o `client_id` à JoomPulse.** Medido em 2026-08-29
+      (ADR-0132 Errata 5): o `/oauth2/authorize` responde `invalid_client` **sem buscar** nosso
+      documento de cliente, apesar de o metadado anunciar
+      `client_id_metadata_document_supported: true`. O log de acesso do Gateway prova a ausência da
+      requisição. Informar a eles: redirect `https://publiai-gateway-mercado.onrender.com/v1/oauth/callback`,
+      escopo `mcp`, authorization code + PKCE S256, secret opcional. Adotar o id emitido é **trocar
+      uma variável de ambiente** — o código já aceita as duas formas.
+
 - [x] **B-2 — D-9 decidida por Diego (2026-08-28): modo EAN.** Preço médio **em reais só no modo
       EAN**, onde a amostra é o mesmo produto; no **modo termo**, percentual / equivalente por
       unidade. D-9 e D-10 emendadas na ADR-0141. A D-10 também passou a testar **anúncios

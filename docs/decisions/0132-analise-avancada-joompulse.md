@@ -833,3 +833,58 @@ protegido por 32 bytes de aleatoriedade, uso único e PKCE.
 
 Há teste travando o piso em 15 minutos e o teto em 60, para que ninguém encurte a janela sem
 perceber e para que ela nunca vire sessão. Verificado em RED: com 10 minutos, o teste reprova.
+
+---
+
+## Errata 5 (2026-08-29) — o CIMD é anunciado mas não funciona: precisamos do `client_id` da JoomPulse
+
+Fecha a hipótese aberta na Errata 3. **A resposta é não:** o `client_id` da JoomPulse **é
+necessário**.
+
+### E-16 — Medido: o provedor recusa o cliente sem sequer buscar o documento
+
+Com o Gateway no ar (`https://publiai-gateway-mercado.onrender.com`) e o documento publicado e
+acessível, Diego abriu a URL de autorização usando a URL do documento como `client_id`. Resultado:
+
+```json
+{"error":"invalid_client","error_description":"client authentication failed"}
+```
+
+O navegador exibiu, junto, um diálogo de usuário e senha — que **não é** a tela de login da
+JoomPulse (que é por telefone + chave, ver Errata 4). É o prompt nativo do Chrome para HTTP Basic,
+disparado pelo `401` + `WWW-Authenticate: Basic` que a RFC 6749 §5.2 manda emitir em
+`invalid_client`. Vale registrar para ninguém reabrir esse diagnóstico do zero: **o diálogo é
+sintoma do erro OAuth, não um método de login alternativo.**
+
+**O que decide a questão** é o log de acesso do Gateway (introduzido justamente para isso): na
+janela que cobre a tentativa, **não houve nenhuma requisição da JoomPulse ao
+`/v1/client-metadata.json`**. As únicas leituras do documento foram um teste nosso e os health
+checks do Render.
+
+Ou seja: o servidor de autorização **recusou o cliente sem tentar resolvê-lo**. O
+`client_id_metadata_document_supported: true` do metadado (Errata 2) **não corresponde ao
+comportamento** do endpoint de autorização.
+
+### E-17 — Consequência: pedir o `client_id`, e o código não muda
+
+O campo `JOOMPULSE_CLIENT_ID` já aceita as duas formas (Errata 3), então adotar o identificador
+emitido por eles é **trocar o valor de uma variável de ambiente** — nenhuma alteração de código, e
+o PKCE continua valendo.
+
+Dados a informar à JoomPulse:
+
+| Campo | Valor |
+|---|---|
+| Redirect URI | `https://publiai-gateway-mercado.onrender.com/v1/oauth/callback` |
+| Escopo | `mcp` |
+| Fluxo | authorization code + PKCE (S256) |
+| Client secret | opcional — `none` está em `token_endpoint_auth_methods_supported` |
+
+Vale mencionar a eles que o metadado anuncia suporte a Client ID Metadata Document e o
+`/oauth2/authorize` não o honra — pode ser defeito do lado deles, e a informação é útil.
+
+**Ressalva honesta:** a primeira tentativa de Diego ocorreu quando o serviço podia estar hibernando
+(plano free, Errata do `render.yaml`). Se a JoomPulse tentou buscar o documento naquele momento,
+falhou e guardou um resultado negativo em cache, o comportamento observado depois seria o mesmo. O
+código do CIMD **fica onde está** — custa nada e volta a valer se eles corrigirem ou se a hipótese
+do cache se confirmar.
