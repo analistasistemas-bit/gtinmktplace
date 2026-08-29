@@ -118,6 +118,19 @@ Próximos passos, em ordem de ataque:
                regra de multi-tenancy. **Exige ADR própria**; não fazer sem decisão explícita.
       - [ ] Desenhar uma construção de faturamento do nicho que não multiplique a loja inteira do
             vendedor pelo preço de um anúncio — pendência herdada da ADR-0142 e assumida na 0143.
+      - [x] **Revisar a estatística** (pedido de Diego, 2026-08-29: "fica estranho o aptamil com
+            mediana zero, mesmo tendo fornecedores vendendo"). Consultoria + medição em
+            `docs/spikes/046-mediana-zero-e-a-cauda-do-catalogo.md`, decidido na
+            [ADR-0145](decisions/0145-vendedor-estabelecido-atividade-e-intensidade.md):
+            só **vendedor estabelecido** (≥50 vendas históricas no 1º snapshot) entra na conta, e a
+            tela ganha **duas métricas** — atividade ("37 de 50 venderam") e intensidade (mediana).
+            Aptamil sai de **0 para 303 un./mês**; o EAN não se mexe.
+            Achado colateral: `transactions.total` tem `period: "historic"` — **o rótulo "janela
+            365d" era falso** e saiu de 4 documentos e da tela.
+      - [ ] **Revisitar o corte de 50** quando a base de mercado crescer (ADR-0145 D-7). Foi
+            calibrado sobre 432 vendedores enviesados para os nichos que a DSA já monitora.
+      - [ ] **Descobrir a causa dos deltas negativos.** 525 quedas medidas, mediana −12, pior
+            −2.036 — grande demais para cancelamento. A trava fica; a explicação está em aberto.
 - [x] **Lote da consulta do Radar definido** — `docs/spikes/041-joompulse-censo-do-radar-e-validacao-da-d4.md`:
       lotes de **75 ids**, `ceil(catálogos / 75)` consultas em paralelo (3 hoje). Medido: 3 lotes de
       77 passaram sem erro. O censo dos 229 confirmou a projeção do Spike 039 (64% com prévia útil,
