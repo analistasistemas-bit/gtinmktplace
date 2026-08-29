@@ -74,8 +74,19 @@ Próximos passos, em ordem de ataque:
       ausente e `me2=false`: todo caso deve produzir "DRE indisponível", nunca zero.
 - [ ] **Cinco cenários exigem cinco cotações.** `calcularSensibilidade()` extrapola comissão
       linearmente e preserva taxa fixa e frete; erra ao cruzar os degraus de R$ 79 e R$ 150.
-- [ ] **Medir a cobertura no universo real do Sonar** (termo e EAN) e o `N` elegível por consulta —
-      os 82% do Spike 039 são do universo do Radar (`pulse_ofertas`).
+- [x] **Medir a cobertura no universo real do Sonar** (termo e EAN) e o `N` elegível por consulta —
+      `docs/spikes/045-cobertura-do-sonar-por-vendedor.md`. **Resultado: 3,5%.** O `seller_id` da
+      amostra resolve em 4 de 113 anúncios; sobra **1 vendedor distinto** no acervo, e ele é a conta
+      **"Mercado Livre Brasil"** — que renderiza R$ 100,7 mi/mês de faturamento de nicho com
+      cobertura exibida de 100%. `N elegível por consulta = 1` (o contrato exige 5 para 7.4).
+      Causa: `pulse_ofertas_atual` é o universo do Radar, disjunto do termo arbitrário do Sonar;
+      `vendedorID` do Apify vem vazio; e `pulse_vendedores` ⊆ vendedores do Radar (0 sobra).
+      **Bloqueia o merge da ADR-0142.** Pendências abertas pelo spike:
+      - [ ] 3.3 conta cobertura sobre os sobreviventes, não sobre a amostra — defeito contra o
+            contrato escrito ("sem ele o operador lê 3.2 como se cobrisse o nicho inteiro").
+      - [ ] 2.6 e 3.2 não têm N mínimo; mediana de 1 elemento vai para tela.
+      - [ ] Medir `/items?ids=` (multiget) como fonte de `seller_id` — o 403 da ADR-0119 foi medido
+            em `/items/{id}` individual, o multiget não foi testado.
 - [x] **Lote da consulta do Radar definido** — `docs/spikes/041-joompulse-censo-do-radar-e-validacao-da-d4.md`:
       lotes de **75 ids**, `ceil(catálogos / 75)` consultas em paralelo (3 hoje). Medido: 3 lotes de
       77 passaram sem erro. O censo dos 229 confirmou a projeção do Spike 039 (64% com prévia útil,
