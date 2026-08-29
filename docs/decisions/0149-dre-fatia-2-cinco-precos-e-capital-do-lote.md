@@ -143,6 +143,9 @@ corrigidos **antes** de virar código.
 5. Sem quantidade informada, não há capital nem lucro de lote na tela.
 6. O percentual de retorno é rotulado como retorno sobre o custo, **nunca** como um número
    diferente do markup.
+   > **Errata (2026-08-29, Errata 3):** o rótulo passa a ser **"markup líquido"**. "Retorno sobre o
+   > custo" era uma perífrase correta que escondia a informação útil — que é literalmente o mesmo
+   > número do card "Markup no período" de Publicados e Faturamento.
 7. Nenhum texto promete prazo, giro ou horizonte.
 8. `pnpm test`, `pnpm lint`, `npx tsc -b --force`, `deno lint` e `pnpm docs:links` verdes.
 
@@ -261,3 +264,53 @@ Com a coluna de custo, cada linha fecha na horizontal:
 `custo × N` e `lucro × N`, e o percentual de retorno ignora a quantidade (D-4). Diego optou por
 manter: ver o capital travado em reais ajuda a decidir a compra. Registrado aqui para não voltar
 a ser proposto.
+
+---
+
+## Errata 3 (2026-08-29) — dois "Markup" no produto, com fórmulas diferentes
+
+Diego olhou a tela e perguntou por que **margem 25,7%** e **retorno sobre o custo 63,1%** divergiam
+tanto para o mesmo lucro. A resposta é o denominador:
+
+```
+margem            = lucro ÷ PREÇO   =  18,92 ÷ 73,55  = 25,7%
+markup líquido    = lucro ÷ CUSTO   =  18,92 ÷ 30,00  = 63,1%
+```
+
+A razão entre as duas é `preço ÷ custo` (2,45x, neste caso). Nenhuma está errada; uma mede a venda,
+a outra o estoque. **A tela é que não dizia sobre o quê.** Daí a segunda pergunta dele — "retorno
+sobre o custo seria markup?" — e a resposta é **sim, literalmente**.
+
+### O achado: o projeto tem duas fórmulas chamadas "Markup"
+
+| Onde | Fórmula | No mesmo produto |
+|---|---|---|
+| `detalhe-vendas.ts:78` (**ADR-0055**) — card "Markup no período" | `lucro ÷ custo` — **líquido** de comissão, frete e imposto | **+63%** |
+| `analise-viabilidade.ts:75` — coluna do relatório exportado | `(preço − custo) ÷ custo` — **bruto** | **+145%** |
+
+As duas passam pelo mesmo `fmtMarkup` e **convivem no mesmo PDF exportado** (`export/adapters.ts`
+linhas 230 e 277). Divergência de mais de 2x, sob o mesmo nome.
+
+**Medido, e isto limita o estrago:** o markup bruto **não aparece em tela nenhuma**. O
+`resumoViabilidade` é consumido só por `Publicados.tsx:681`, que o usa exclusivamente para montar o
+export. O card "Markup no período" de Publicados vem do caminho da ADR-0055 (`useResumoVendas`), ou
+seja, já é o líquido.
+
+### Decisão de Diego
+
+> *"Markup líquido, tem de ser o real que rende 63%."*
+
+1. **"retorno sobre o custo" → "markup líquido"** na seção 6. É o número da ADR-0055; a perífrase
+   escondia isso.
+2. **Cabeçalho "Margem" → "Margem s/ venda"**, para o denominador estar no nome das duas.
+3. **Coluna do export "Markup s/ custo" → "Markup bruto (s/ taxas)"**, para os dois deixarem de
+   partilhar nome no mesmo relatório. A palavra "Markup" sem qualificador passa a ser sempre o
+   líquido.
+
+### O que NÃO foi feito, e por quê
+
+**O markup da Viabilidade continua bruto.** Torná-lo líquido não é mudança de rótulo: o
+`ResumoViabilidade` tem preço, custo e concorrência, e **não tem comissão, frete nem imposto** —
+`ptw_custos` existe só no domínio do Pulse, sobre `produtos`, não no caminho de famílias. Calcular
+o líquido ali exigiria uma cotação por família, o que é feature e mexe numa superfície financeira
+de produção. **Fica aberto para decisão de Diego**, agora com o nome honesto enquanto isso.

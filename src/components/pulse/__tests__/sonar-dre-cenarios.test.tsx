@@ -127,8 +127,10 @@ describe('SonarDre — cenários (ADR-0149)', () => {
     expect(screen.getByText(/R\$\s*4\.200,00/)).toBeInTheDocument();
   });
 
-  // Critério 6: o percentual é o markup, e é rotulado assim — não como um "ROI" novo.
-  it('não chama o retorno de ROI nem promete horizonte de tempo', async () => {
+  // Critério 6: o percentual É o markup e tem que ser rotulado assim — não como "ROI", e não como
+  // uma perífrase ("retorno sobre o custo") que esconde ser o mesmo número do card "Markup no
+  // período" de Publicados/Faturamento. Ver Errata 3 da ADR-0149.
+  it('chama o retorno de markup líquido, e não de ROI nem de horizonte', async () => {
     const { container } = renderDre();
     const user = await preencher();
     await waitFor(() => expect(screen.getByText(/anúncio que mais vende/i)).toBeInTheDocument());
@@ -136,6 +138,14 @@ describe('SonarDre — cenários (ADR-0149)', () => {
     await waitFor(() => expect(screen.getByText(/capital imobilizado/i)).toBeInTheDocument());
     expect(container.textContent).not.toMatch(/\bROI\b/);
     expect(container.textContent).not.toMatch(/giro|prazo|horizonte/i);
-    expect(screen.getByText(/sobre o custo/i)).toBeInTheDocument();
+    expect(screen.getByText(/markup líquido/i)).toBeInTheDocument();
+  });
+
+  // As duas percentagens da seção partilham o numerador (o lucro) e diferem só no denominador.
+  // Sem o "s/ venda" no cabeçalho, 25,7% e 63,1% pareciam contradição — foi o que Diego perguntou.
+  it('o cabeçalho da margem diz sobre o que ela é', async () => {
+    renderDre();
+    await preencher();
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: /margem s\/ venda/i })).toBeInTheDocument());
   });
 });

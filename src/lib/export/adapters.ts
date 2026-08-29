@@ -173,7 +173,10 @@ const COLS_PUBLICADOS: Coluna[] = [
 const COLS_VIABILIDADE: Coluna[] = [
   { chave: 'precoPub', titulo: 'Preço publicação', alinhamento: DIR },
   { chave: 'custo', titulo: 'Custo', alinhamento: DIR },
-  { chave: 'markup', titulo: 'Markup s/ custo', alinhamento: DIR },
+  // "bruto" no título porque este markup é `(preço − custo) ÷ custo` (`analise-viabilidade.ts`),
+  // sem comissão, frete nem imposto — e o MESMO relatório traz "Markup no período", que é líquido
+  // (ADR-0055). Para o mesmo produto os dois divergem por mais de 2x. O nome desempata.
+  { chave: 'markup', titulo: 'Markup bruto (s/ taxas)', alinhamento: DIR },
   { chave: 'vendedores', titulo: 'Concorrentes', alinhamento: DIR },
   { chave: 'menorConc', titulo: 'Menor preço conc.', alinhamento: DIR },
   { chave: 'mercado', titulo: 'Faixa de mercado' },

@@ -332,7 +332,9 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
                 <TableHead className="text-right">Imposto</TableHead>
                 <TableHead className="text-right">Custo</TableHead>
                 <TableHead className="text-right">Lucro</TableHead>
-                <TableHead className="text-right">Margem</TableHead>
+                {/* "s/ venda" no nome porque o denominador é o que separa esta coluna do markup
+                    líquido do bloco do lote: margem é lucro ÷ PREÇO, markup é lucro ÷ CUSTO. */}
+                <TableHead className="text-right">Margem s/ venda</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -379,11 +381,12 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
                     {fmtBRL(lote.lucroTotal)}
                   </span>
                 </span>
-                {/* NÃO é um "ROI" novo: a quantidade cancela na razão, então este percentual é o
-                    retorno sobre o custo — o mesmo do markup (ADR-0149 D-4). */}
+                {/* NÃO é um "ROI" novo: a quantidade cancela na razão. É `lucro ÷ custo` — a MESMA
+                    fórmula do markup da ADR-0055 (`detalhe-vendas.ts`), o número do card "Markup no
+                    período" em Publicados e Faturamento. Chamar de outra coisa escondia isso. */}
                 {lote.retornoSobreCustoPct != null && (
                   <span className="tabular-nums text-muted-foreground">
-                    retorno sobre o custo {lote.retornoSobreCustoPct.toFixed(1)}%
+                    markup líquido {lote.retornoSobreCustoPct.toFixed(1)}%
                   </span>
                 )}
               </div>
