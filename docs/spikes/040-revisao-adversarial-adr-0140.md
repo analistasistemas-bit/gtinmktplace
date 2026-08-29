@@ -6,13 +6,18 @@
 
 ## Resposta curta
 
-A ADR-0140 declara **"nada bloqueia a implementação"**. Isso não se sustenta. Cinco achados
-foram confirmados com citação literal, e dois deles são bloqueadores duros: a autorização de
-uso registrada na D-25 contradiz os termos públicos da JoomPulse, e a D-9 reintroduz no Sonar
-exatamente o número que a ADR-0138 proibiu **no mesmo dia**.
+A ADR-0140 declarava **"nada bloqueia a implementação"**. Cinco achados foram confirmados com
+citação literal, e dois eram bloqueadores duros.
 
-O status da ADR precisa voltar para *aceito, implementação bloqueada*. As decisões de produto
-continuam boas; o que caiu foi a liberação.
+**Desfecho (2026-08-28, mesmo dia):**
+
+- **B-1 (autorização) — RESOLVIDO.** Diego confirmou ter a autorização necessária para usar a
+  licença JoomPulse desta forma. A revisão questionava a *forma do registro* na D-25, não a
+  existência da parceria. **A ADR-0140 volta a "liberado para implementação".**
+- **B-2 (D-9) — em aberto.** É decisão de produto de Diego, não de engenharia: a D-9 contradiz
+  a ADR-0138, escrita no mesmo dia a partir de regra do próprio operador.
+- **Furos financeiros e premissas não medidas — permanecem** como trabalho técnico obrigatório
+  antes de a DRE ir ao ar.
 
 ---
 

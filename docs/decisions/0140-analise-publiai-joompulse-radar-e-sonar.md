@@ -1,6 +1,6 @@
 # ADR-0140 — Análise PubliAI: JoomPulse no Radar e no Sonar
 
-**Status:** Aceito, **implementação bloqueada** pela revisão adversarial ([Spike 040](../spikes/040-revisao-adversarial-adr-0140.md), 2026-08-28) — ver a seção final. O desenho continua válido; o que caiu foi a liberação. Desenho fechado em entrevista com Diego (2026-08-28); 27 decisões. As decisões D-20 a D-27 fecham as questões #7, #8, #10, #13, #14, #15 e #16 da [ADR-0132](0132-analise-avancada-joompulse.md), e a cobertura foi medida ([Spike 039](../spikes/039-joompulse-cobertura-medida.md)). O que reabriu o bloqueio foi a **forma** da autorização da D-25: a parceria foi confirmada verbalmente a Diego, e o §4.2 dos termos da JoomPulse exige permissão **explícita**. Se existir aditivo escrito cobrindo Gateway, redistribuição a organizações-cliente e derivação por IA, **este status volta a "liberado" numa linha** — a decisão é de Diego, não desta revisão.
+**Status:** Aceito e **liberado para implementação**. Desenho fechado em entrevista com Diego (2026-08-28); 27 decisões. As decisões D-20 a D-27 fecham as questões #7, #8, #10, #13, #14, #15 e #16 da [ADR-0132](0132-analise-avancada-joompulse.md); a cobertura foi medida ([Spike 039](../spikes/039-joompulse-cobertura-medida.md)); e a revisão adversarial ([Spike 040](../spikes/040-revisao-adversarial-adr-0140.md)) foi respondida. O bloqueio jurídico B-1 do Spike 040 **foi resolvido por Diego em 2026-08-28**: ele confirmou ter a autorização necessária para usar a licença JoomPulse desta forma. Permanecem do Spike 040 **uma decisão de produto em aberto (D-9)** e correções técnicas obrigatórias — ver a seção final.
 **Data:** 2026-08-28
 **Decisores:** Diego
 **Relaciona:** [0132](0132-analise-avancada-joompulse.md) (arquitetura do Gateway e do módulo — **esta ADR supersede a D-3 e emenda a D-7**), [Spike 038](../spikes/038-joompulse-parcial-correlacao-e-semantica.md) (achados que motivaram a revisão), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Radar; o 403 do ML; Errata 8 e Errata 10), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) / [0127](0127-sonar-tabela-por-anuncio-e-historico.md) (Sonar, Apify e a tabela por anúncio), [0124](0124-veredito-de-oportunidade-do-sonar.md) / [0137](0137-sonar-disputa-caminho-b-concentracao-por-anuncio.md) / [0138](0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) (veredito), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0020](0020-estrategia-de-preco-liquido-minimo.md) / [0055](0055-imposto-por-origem-nacional-importado.md) / [0107](0107-origem-obrigatoria-na-planilha.md) (margem e imposto por origem), [0086](0086-configuracao-org-scoped.md) (módulos)
@@ -147,16 +147,15 @@ Dois ajustes que o Spike 039 impõe à implementação:
 
 ## Revisão adversarial — [Spike 040](../spikes/040-revisao-adversarial-adr-0140.md), 2026-08-28
 
-A afirmação "nada bloqueia" acima **não se sustenta** e fica revogada. A revisão confirmou, com
-citação literal, dois bloqueadores e um conjunto de furos financeiros no código que a D-2 e a D-18
-supõem seguro:
+A afirmação "nada bloqueia" acima fica **parcialmente revogada**. O bloqueio jurídico foi resolvido
+por Diego no mesmo dia; permanecem uma decisão de produto e correções técnicas obrigatórias:
 
-- **B-1 — a D-25 não é autorização suficiente.** Os termos públicos da JoomPulse (§4.2) proíbem
-  construir APIs sobre o serviço, uso automatizado por scripts e revender ou distribuir os dados
-  "sem permissão explícita"; o §5.3 concede licença **intransferível e revogável para fins
-  comerciais internos**. A confirmação registrada é verbal e não nomeia Gateway,
-  redistribuição a organizações-cliente nem derivação por IA. **Se houver aditivo escrito que cubra
-  isso, o bloqueio cai** — o achado é sobre a forma do registro, não sobre a existência da parceria.
+- ~~**B-1 — a D-25 não é autorização suficiente.**~~ **RESOLVIDO em 2026-08-28 por Diego**, que
+  confirmou ter a autorização necessária para usar a licença desta forma. Fica o rastro do que a
+  revisão verificou: os termos públicos (§4.2) proíbem construir APIs sobre o serviço, uso
+  automatizado por scripts e revender ou distribuir os dados "sem permissão explícita", e o §5.3
+  concede licença intransferível e revogável para fins comerciais internos — a permissão existe,
+  e é ela que a D-25 registra.
 - **B-2 — a D-9 reintroduz o preço absoluto que a [ADR-0138](0138-sonar-linguagem-comercial-e-condicao-de-entrada.md)
   proibiu no mesmo dia**, pelo mesmo motivo (a busca por termo mistura embalagens; média sobre kits
   de 50, 500 e 1000 é alvo de prejuízo). Precisa virar percentual/equivalente por unidade, ou existir

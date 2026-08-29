@@ -2,28 +2,42 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Análise PubliAI — implementação BLOQUEADA (ADR-0140 + Spike 040) — 2026-08-28
+## Análise PubliAI — liberado para implementação (ADR-0140 + Spike 040) — 2026-08-28
 
-**Desenho aprovado; implementação BLOQUEADA.** 27 decisões. A liberação anterior caiu na
-revisão adversarial (`docs/spikes/040-revisao-adversarial-adr-0140.md`, 2026-08-28), que confirmou
-com citação literal: (B-1) os termos da JoomPulse (§4.2) proíbem construir API sobre o serviço, uso
-automatizado por script e revender ou distribuir os dados "sem permissão explícita", e o §5.3 dá
-licença intransferível e revogável para fins internos — a D-25 registra apenas confirmação verbal
-do suporte; (B-2) a D-9 reintroduz o preço médio absoluto no Sonar, que a ADR-0138 proibiu no mesmo
-dia. Somam-se furos financeiros no código atual (comissão e frete convertem falha em zero) e duas
-premissas não medidas (cobertura do universo do Sonar; consulta em lote da D-4 no tamanho real).
-ADR em `docs/decisions/0140-analise-publiai-joompulse-radar-e-sonar.md`; termos novos no
-glossário. **Nenhum código escrito ainda.**
+**Desenho aprovado e liberado para implementação.** 27 decisões. A revisão adversarial
+(`docs/spikes/040-revisao-adversarial-adr-0140.md`, 2026-08-28) levantou o bloqueio jurídico B-1, e
+**Diego confirmou no mesmo dia ter a autorização necessária para usar a licença JoomPulse desta
+forma** — B-1 encerrado. ADR em `docs/decisions/0140-analise-publiai-joompulse-radar-e-sonar.md`;
+termos novos no glossário. **Nenhum código escrito ainda.**
 
-- [ ] **B-1 — autorização escrita da JoomPulse** nomeando Gateway server-to-server, exposição a
-      organizações terceiras em produto pago, cache de 7 dias, relatório derivado retido por 12
-      meses e uso do dado como insumo de IA. **Precede todo o resto.**
-- [ ] **B-2 — reescrever a D-9** em percentual/equivalente por unidade, ou restringi-la ao modo EAN
-- [ ] Fault injection nas APIs do ML (400/401/429/500, timeout, schema sem `sale_fee_amount`,
-      `list_cost` ausente, `me2=false`): todo caso deve produzir "DRE indisponível", nunca zero
-- [ ] Medir a cobertura no universo real do Sonar (termo e EAN), com o `N` elegível por consulta
-- [ ] Testar a consulta em lote no tamanho real do Radar e definir o lote (limite 100 do CubeJS)
-- [ ] Fechar o contrato das seções 2, 3 e 7 do relatório antes de qualquer código
+O que o Spike 040 deixou de pé, em ordem de ataque:
+
+- [ ] **B-2 — decisão de Diego sobre a D-9.** Ela calcula um preço médio **em reais** sobre o Top 5
+      do nicho; a ADR-0138, escrita no mesmo dia a partir de regra do próprio operador, proíbe
+      valor absoluto na busca por termo (a amostra mistura Kit 50, Kit 500 e Kit 1000, e o alvo em
+      reais vira prejuízo para quem cadastra outro tamanho). Saídas: **(a)** preço médio só no modo
+      EAN, onde a amostra é o mesmo produto, e percentual/equivalente por unidade no modo termo —
+      **recomendada**, é a saída que a própria 0138 adotou; **(b)** preço médio absoluto em ambos os
+      modos, aceitando conscientemente o risco que a 0138 documentou.
+- [ ] **Proveniência obrigatória no dinheiro.** Comissão e frete hoje convertem falha em zero
+      (`listing-prices.ts:17`, `tarifa.ts:24`, `frete.ts:21`) e dimensões ausentes caem em
+      `DIMENSOES_DEFAULT` (16×11×6 cm, 300 g) em silêncio. Propagar
+      `Proveniencia = 'official' | 'partial' | 'estimated'` (`calculadora-ml.ts:15`) até a célula e
+      **recusar a DRE** quando não for `official`. Fault injection cobrindo 400/401/429/500,
+      timeout, schema sem `sale_fee_amount`, `list_cost` ausente e `me2=false`.
+- [ ] **Cinco cenários exigem cinco cotações.** `calcularSensibilidade()` extrapola comissão
+      linearmente e preserva taxa fixa e frete; erra ao cruzar os degraus de R$ 79 e R$ 150.
+- [ ] **Medir a cobertura no universo real do Sonar** (termo e EAN) e o `N` elegível por consulta —
+      os 82% do Spike 039 são do universo do Radar (`pulse_ofertas`).
+- [ ] **Definir o lote da consulta do Radar.** O Radar não pagina (`src/pages/Pulse.tsx:79`): 229
+      catálogos contra o limite de 100 do CubeJS medido no Spike 038.
+- [ ] **Fechar o contrato das seções 2, 3 e 7** do relatório (campos, fonte, unidade, nulabilidade,
+      critério de aceite) antes de qualquer código de relatório.
+- [ ] Trabalho técnico da ADR-0132 que segue de pé: #4 contrato HTTP do Gateway, #5/#6 storage e
+      cifragem da credencial, #9 backend do cache (chave precisa conter a data do snapshot — C-3),
+      #11/#12 rate limits, timeouts, latência e cold start.
+- [ ] Resolver as contradições internas C-1 (D-11 × D-12) e C-4 (rótulo "anúncio não rastreado" numa
+      consulta que passou a ser por catálogo); testar a revogação remota (C-5).
 
 - [x] Nome único **Análise PubliAI** nas 3 telas; slug `analise_avancada` intacto
 - [x] Três camadas: MCP traz dado → código do PubliAI calcula dinheiro → IA só redige
