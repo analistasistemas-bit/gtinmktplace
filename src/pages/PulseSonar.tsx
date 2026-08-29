@@ -762,7 +762,6 @@ export default function PulseSonar() {
             carregando={secoes237Carregando}
             erro={secoes237Erro ? (secoes237ErroObj instanceof Error ? secoes237ErroObj : new Error('Erro desconhecido.')) : null}
             onRetry={() => refetchSecoes237()}
-            meta={secoes237?.meta}
           />
 
           <div className="mb-2 flex flex-wrap items-center gap-2">

@@ -9,8 +9,9 @@ import {
   formatarFaturamentoSecoes237,
   formatarMedianaVendasMesSecoes237,
   formatarProporcaoCobertura,
-  type MetaSecoes237Sonar,
+  type CoberturaEstimativaSonar,
   type RespostaSecoes237Sonar,
+  type VendedoresSemEstimativaSonar,
 } from '@/lib/sonar';
 
 export type SonarAnalisePubliAIProps = {
@@ -18,10 +19,41 @@ export type SonarAnalisePubliAIProps = {
   carregando: boolean;
   erro: Error | null;
   onRetry?: () => void;
-  meta?: MetaSecoes237Sonar;
 };
 
-export function SonarAnalisePubliAI({ data, carregando, erro, onRetry, meta }: SonarAnalisePubliAIProps) {
+/**
+ * 3.3 + 3.4 em duas linhas, uma por unidade (spike 045): o percentual pertence aos anúncios, e a
+ * contagem de 3.4 só faz sentido ao lado do denominador de vendedores. Misturar as duas é o
+ * defeito que o contrato criou 3.3 para impedir.
+ */
+function LinhasCobertura(
+  { cobertura, semEstimativa }:
+  { cobertura: CoberturaEstimativaSonar; semEstimativa: VendedoresSemEstimativaSonar },
+) {
+  const pct = cobertura.proporcao_anuncios != null
+    ? ` (${formatarProporcaoCobertura(cobertura.proporcao_anuncios)})`
+    : '';
+  const linhaAnuncios =
+    `${cobertura.anuncios_cobertos} de ${cobertura.anuncios_na_amostra} anúncios da amostra cobertos${pct}`;
+  const linhaVendedores =
+    `${cobertura.com_estimativa} de ${cobertura.vendedores_distintos} vendedores com estimativa mensal`
+    + (semEstimativa.contagem > 0 ? ` · ${semEstimativa.contagem} sem estimativa` : '');
+
+  return (
+    <div className="mt-3 space-y-1 text-sm text-muted-foreground">
+      <p>
+        <BarChart3 className="mr-1.5 inline h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span>{linhaAnuncios}</span>
+      </p>
+      <p>
+        <Users className="mr-1.5 inline h-3.5 w-3.5 shrink-0" aria-hidden />
+        <span>{linhaVendedores}</span>
+      </p>
+    </div>
+  );
+}
+
+export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAnalisePubliAIProps) {
   if (carregando) {
     return (
       <Card className="mb-4 p-4">
@@ -66,6 +98,7 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry, meta }: S
           <Badge variant="outline">demanda por vendedor</Badge>
         </div>
         <p className="text-sm text-muted-foreground">{fat.mensagem}</p>
+        <LinhasCobertura cobertura={s['3.3']} semEstimativa={s['3.4']} />
       </Card>
     );
   }
@@ -99,21 +132,7 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry, meta }: S
         />
       </div>
 
-      <div className="mt-3 space-y-2 text-sm">
-        <p className="text-muted-foreground">
-          <Users className="mr-1.5 inline h-3.5 w-3.5 shrink-0" aria-hidden />
-          {s['3.3'].rotulo}
-          {s['3.3'].proporcao_anuncios != null && (
-            <span className="ml-1 font-medium tabular-nums text-foreground">
-              ({formatarProporcaoCobertura(s['3.3'].proporcao_anuncios)})
-            </span>
-          )}
-        </p>
-        <p className="text-muted-foreground">
-          {s['3.4'].rotulo}
-          <span className="ml-1 font-medium tabular-nums text-foreground">{s['3.4'].contagem}</span>
-        </p>
-      </div>
+      <LinhasCobertura cobertura={s['3.3']} semEstimativa={s['3.4']} />
 
       <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
         {s['2.9'].parecer}
@@ -134,12 +153,6 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry, meta }: S
       )}
 
       <p className="mt-3 text-[11px] text-muted-foreground/80">{s.limitacao_3_2}</p>
-
-      {meta != null && meta.sem_seller_id > 0 && (
-        <p className="mt-1 text-[11px] text-muted-foreground/70">
-          {meta.sem_seller_id} anúncio{meta.sem_seller_id === 1 ? '' : 's'} da amostra sem seller_id identificado.
-        </p>
-      )}
     </Card>
   );
 }
