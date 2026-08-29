@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   indexarPorAnuncio, linhasSnapshot, montarPainelVendas, parseItensApify, parsePrecoApify,
-  parseTotalAnuncios, parseVendidos, type ItemVendas,
+  parseSellerId, parseTotalAnuncios, parseVendidos, type ItemVendas,
 } from '../sonar-vendas.ts';
 
 // Campos "extra" default de um ItemVendas totalmente vazio (T1) — usado nos testes que já
@@ -9,7 +9,7 @@ import {
 const EXTRA_VAZIO = {
   item_id: null, catalog_product_id: null, avaliacao_nota: null, avaliacao_qtd: null,
   posicao: null, patrocinado: null, selo: null, preco_anterior: null, desconto_pct: null,
-  flex: null, category_id: null,
+  flex: null, category_id: null, seller_id: null,
 };
 
 describe('parseVendidos', () => {
@@ -28,6 +28,20 @@ describe('parseVendidos', () => {
     expect(parseVendidos(undefined)).toBeNull();
     expect(parseVendidos('novo')).toBeNull();
     expect(parseVendidos(-3)).toBeNull();
+  });
+});
+
+describe('parseSellerId', () => {
+  it('número ou string numérica vira inteiro positivo', () => {
+    expect(parseSellerId(123456)).toBe(123456);
+    expect(parseSellerId('987654')).toBe(987654);
+  });
+  it('ausente, zero, negativo ou ilegível → null', () => {
+    expect(parseSellerId(null)).toBeNull();
+    expect(parseSellerId('')).toBeNull();
+    expect(parseSellerId(0)).toBeNull();
+    expect(parseSellerId(-1)).toBeNull();
+    expect(parseSellerId('abc')).toBeNull();
   });
 });
 
@@ -91,6 +105,12 @@ describe('parseItensApify', () => {
     expect(item.internacional).toBeNull();
     expect(item.full).toBeNull(); // envio vazio → não dá pra afirmar que não é Full
   });
+  it('vendedorID: string numérica ou número mapeia seller_id; ausente → null', () => {
+    expect(parseItensApify([{ eTituloProduto: 'X', vendedorID: '12345' }])[0].seller_id).toBe(12345);
+    expect(parseItensApify([{ eTituloProduto: 'X', vendedorID: 67890 }])[0].seller_id).toBe(67890);
+    expect(parseItensApify([{ eTituloProduto: 'X' }])[0].seller_id).toBeNull();
+  });
+
   it('corpo inválido → []', () => {
     expect(parseItensApify(null)).toEqual([]);
     expect(parseItensApify({ error: 'x' })).toEqual([]);
@@ -255,7 +275,7 @@ describe('montarPainelVendas', () => {
 
 const itemBase = (over: Partial<ItemVendas> = {}): ItemVendas => ({
   titulo: 'Abraçadeira nylon 200un', preco: 12.9, vendidos: 500, link: null, imagem: null,
-  vendedor: 'FIXA-FORTE', frete_gratis: true, loja_oficial: false, internacional: false,
+  vendedor: 'FIXA-FORTE', seller_id: null, frete_gratis: true, loja_oficial: false, internacional: false,
   full: true, item_id: 'MLB111', catalog_product_id: null, category_id: 'MLB1499',
   avaliacao_nota: 4.8, avaliacao_qtd: 84, posicao: 1, patrocinado: false, selo: null,
   preco_anterior: null, desconto_pct: null, flex: false, ...over,

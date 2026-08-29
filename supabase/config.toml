@@ -134,6 +134,9 @@ verify_jwt = true
 # chamada pelo APP com o JWT do usuário.
 [functions.pulse-sonar-ean]
 verify_jwt = true
+# ADR-0142: monta seções 2/3/7 do relatório Análise PubliAI a partir da amostra Sonar + pulse_vendedores.
+[functions.pulse-analise-secoes237]
+verify_jwt = true
 # ADR-0135: worker QStash do push fiscal (fiscal_information + can_invoice).
 [functions.sincronizar-fiscal-ml]
 verify_jwt = false

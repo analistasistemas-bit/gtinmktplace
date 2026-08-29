@@ -11,6 +11,8 @@ export interface ItemVendas {
   link: string | null;
   imagem: string | null;
   vendedor: string | null;
+  /** ID numérico do vendedor no ML (campo Apify `vendedorID`, ADR-0142). */
+  seller_id: number | null;
   frete_gratis: boolean | null;
   loja_oficial: boolean | null;
   internacional: boolean | null;
@@ -95,6 +97,16 @@ export function parsePrecoApify(v: unknown): number | null {
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v : null);
 const bool = (v: unknown): boolean | null => (typeof v === 'boolean' ? v : null);
 
+/** vendedorID do actor: string numérica ou número; ausente/inválido → null. */
+export function parseSellerId(v: unknown): number | null {
+  if (typeof v === 'number') return Number.isFinite(v) && v > 0 ? Math.floor(v) : null;
+  if (typeof v !== 'string') return null;
+  const s = v.trim();
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
+}
+
 /** produtoReviews: "4.9" | "4,9" → número; fora de 0–5 (ex. "6", nota inválida) → null. */
 const parseAvaliacaoNota = (v: unknown): number | null => {
   const n = parsePrecoApify(v);
@@ -146,6 +158,7 @@ export function parseItensApify(json: unknown): ItemVendas[] {
       link: str(o.zProdutoLink),
       imagem: str(o.imagemLink),
       vendedor: str(o.Vendedor),
+      seller_id: parseSellerId(o.vendedorID),
       frete_gratis: bool(o.freteGratis),
       loja_oficial: bool(o.lojaOficial),
       internacional: bool(o.eCompraInternacional),

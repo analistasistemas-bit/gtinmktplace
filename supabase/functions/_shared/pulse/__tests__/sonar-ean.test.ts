@@ -14,7 +14,7 @@ const ficha = (over: Partial<FichaEan> = {}): FichaEan => ({
 
 const itemApify = (over: Partial<ItemVendas> = {}): ItemVendas => ({
   titulo: 't', preco: null, vendidos: null, link: null, imagem: null, vendedor: null,
-  frete_gratis: null, loja_oficial: null, internacional: null, full: null, item_id: null,
+  seller_id: null, frete_gratis: null, loja_oficial: null, internacional: null, full: null, item_id: null,
   catalog_product_id: null, avaliacao_nota: null, avaliacao_qtd: null, posicao: null,
   patrocinado: null, selo: null, preco_anterior: null, desconto_pct: null, flex: null,
   category_id: null, ...over,
