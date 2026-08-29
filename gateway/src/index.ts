@@ -8,6 +8,7 @@ import { createServer } from 'node:http'
 import { CAMINHO_CIMD, cimdCoerente, ehCimd } from './cimd.js'
 import { chaveDaEnv } from './cripto.js'
 import { cabecalhosCors, origemPermitida, origensDaEnv } from './cors.js'
+import { formatarAcesso, resumirAgente } from './log-acesso.js'
 import { erro, pedidoDe, tratar, type DepsRotas } from './rotas.js'
 import { criarClienteAdmin, depsDoSupabase, repositorioDoSupabase } from './supabase.js'
 
@@ -61,16 +62,30 @@ function main(): void {
   }
 
   const servidor = createServer((req, res) => {
+    const inicio = Date.now()
     const origem = origemPermitida(req.headers.origin, origens)
     const cors = cabecalhosCors(origem)
+    const p = pedidoDe(req)
+
+    // Uma linha por requisição, sem query string: ela carrega `code`, `state` e, num redirect de
+    // erro do provedor, pedaços de credencial.
+    const registrar = (status: number) => console.log(formatarAcesso({
+      metodo: req.method ?? '?',
+      caminho: p.caminho,
+      status,
+      duracaoMs: Date.now() - inicio,
+      agente: resumirAgente(req.headers['user-agent']),
+    }))
 
     if (req.method === 'OPTIONS') {
       res.writeHead(204, cors).end()
+      registrar(204)
       return
     }
 
-    void tratar(pedidoDe(req), deps)
+    void tratar(p, deps)
       .then((resposta) => {
+        registrar(resposta.status)
         if (resposta.redirecionarPara) {
           res.writeHead(resposta.status, { ...cors, Location: resposta.redirecionarPara }).end()
           return
@@ -81,6 +96,7 @@ function main(): void {
       .catch((e: unknown) => {
         // Nunca vazar a mensagem original: pode carregar fragmento de token, code ou query.
         console.error('[gateway] erro nao tratado', e)
+        registrar(500)
         const r = erro('erro_interno', 'Erro interno no Gateway.', 500)
         res.writeHead(r.status, { ...cors, 'Content-Type': 'application/json' })
         res.end(JSON.stringify(r.corpo))
