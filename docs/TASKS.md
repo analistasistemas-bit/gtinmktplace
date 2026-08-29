@@ -61,10 +61,12 @@ O que o Spike 040 deixou de pé, em ordem de ataque:
       testáveis. Reusa a fórmula de concentração da ADR-0137 sem alterá-la e acrescenta **7.4,
       concentração por vendedor** (`buyBoxShopName`), que mede o que a 0137 registrou como limitação
       do caminho B e não podia medir.
-- [ ] **Decisão de Diego: onde fica "Peso Físico × Peso Volumétrico" e o enquadramento do frete.**
-      Foram pedidos na seção 3, mas dependem de peso e dimensões, que só existem no bloco da DRE
-      (D-5) — e a D-16 exige um único lugar para digitar peso. **Recomendado: mover para a seção 6.**
-      Se ficarem na 3, a promessa "6 seções saem na hora" cai para 5.
+- [x] **Peso e enquadramento de frete movidos para a seção 6** (Diego, 2026-08-28). A seção 3 fica
+      puramente demanda do nicho, e a promessa da D-5 — as 6 seções de mercado saem na hora, sem
+      pedir nada ao operador — continua valendo integralmente. A seção 6 passa a ser dona de peso
+      físico, peso volumétrico (`C × L × A ÷ 6000`), peso taxável e do cruzamento peso × faixa de
+      preço; são os mesmos campos que `calcularSimulacaoML()` já consome, então não nasce entrada
+      nova — deixa de existir uma segunda.
 - [ ] Trabalho técnico da ADR-0132 que segue de pé: #4 contrato HTTP do Gateway, #5/#6 storage e
       cifragem da credencial, #9 backend do cache (chave precisa conter a data do snapshot — C-3),
       #11/#12 rate limits, timeouts, latência e cold start.

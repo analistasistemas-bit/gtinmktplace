@@ -59,13 +59,12 @@ igual e critérios diferentes na mesma tela é defeito de aceite, não questão 
 
 ## Seção 3 — Painel de Vendas
 
-> **Desvio recomendado em relação ao pedido original.** A seção 3 especificada continha
-> "Peso Físico × Peso Volumétrico" e "Enquadramento da Taxa Fixa / Frete". Esses dois dependem de
-> **peso e dimensões**, que o operador só informa no bloco da DRE (D-5), e a D-16 exige **um único
-> lugar para digitar peso**. Mantê-los aqui obrigaria a pedir dado antes das "6 seções que saem
-> imediatamente" (D-5) ou a duplicar o campo. **Recomendação: movê-los para a seção 6**, que já os
-> pede. A seção 3 fica sendo puramente demanda. Se Diego preferir mantê-los aqui, a seção 3 passa a
-> ser parcial como a 6, e a promessa "6 seções na hora" cai para 5.
+> **Decidido por Diego em 2026-08-28: movidos para a seção 6.** O pedido original colocava
+> "Peso Físico × Peso Volumétrico" e "Enquadramento da Taxa Fixa / Frete" nesta seção, mas os dois
+> dependem de **peso e dimensões**, que o operador só informa no bloco da DRE (D-5), e a D-16 exige
+> **um único lugar para digitar peso**. Mantê-los aqui obrigaria a pedir dado antes das seções de
+> mercado ou a duplicar o campo. **A seção 3 é puramente demanda do nicho**, e com isso a promessa
+> da D-5 — as 6 seções de mercado saem imediatamente, sem pedir nada — continua valendo integralmente.
 
 | # | Campo | Fonte | Unidade | Cálculo | Quando falta |
 |---|---|---|---|---|---|
@@ -74,6 +73,15 @@ igual e critérios diferentes na mesma tela é defeito de aceite, não questão 
 | 3.3 | Cobertura da estimativa | Derivado | contagem | `anúncios com catálogo rastreado / total da amostra`. **Campo obrigatório**, não opcional: sem ele o operador lê 3.2 como se cobrisse o nicho inteiro. | — |
 | 3.4 | Anúncios sem venda atribuída | JoomPulse | contagem | Quantos elegíveis-candidatos devolveram `orderCount1m = 0`. Rotulado **"sem venda atribuída a esta listagem"**, jamais "não venderam". | — |
 | 3.5 | Custos operacionais básicos | Cálculo do PubliAI | R$ | Comissão (2.2) e imposto da organização por origem (D-17). **Sem frete** — frete depende de peso, que vive na seção 6. | Alíquota não confirmada → trava LOUD, **não calcula** (D-17) |
+
+### O que a seção 6 herda desta mudança
+
+Fora do escopo deste contrato (a seção 6 é regida pelas D-15, D-16 e D-28), mas registrado para não
+se perder: a seção 6 passa a ser dona de **peso físico**, **peso volumétrico**
+(`C × L × A ÷ 6000`), **peso taxável** (o maior dos dois) e do **enquadramento de taxa fixa e
+frete** resultante do cruzamento peso × faixa de preço. São os mesmos campos que a
+`calcularSimulacaoML()` já consome, então não nasce entrada nova — apenas deixa de existir uma
+segunda.
 
 ### Sobre 3.2 — limitação registrada
 
@@ -139,4 +147,5 @@ Um teste por linha. A seção está implementada quando todos passam.
 - **Seções 1, 4, 5 e 6** — já especificadas por Diego e regidas pelas D-9, D-10, D-15, D-16 e D-28.
 - **A discretização de `catalogOrderCount1m`** — pergunta aberta do Spike 041; o contrato a
   contorna exibindo faixa, não a resolve.
-- **O destino de "Peso Físico × Peso Volumétrico"** — o desvio recomendado acima aguarda Diego.
+- **O detalhamento da seção 6** — ela recebeu peso e enquadramento de frete nesta decisão, mas seu
+  contrato campo a campo continua regido pelas D-15, D-16 e D-28, não por este documento.
