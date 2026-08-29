@@ -4,7 +4,7 @@
 **ADR:** [0142](../decisions/0142-vendas-mensais-por-vendedor.md) — mede se o caminho decidido (D-1, D-2) tem dado para funcionar
 **Contrato:** [seções 2/3/7](../reference/contrato-analise-publiai-secoes-2-3-7.md) — campos 2.6, 2.8, 2.9, 3.1–3.4, 7.4
 **Fecha a task:** "Medir a cobertura no universo real do Sonar (termo e EAN) e o `N` elegível por consulta"
-**Método:** SQL read-only via Management API sobre produção (`txvncrgkoynoxwopfkbp`), sobre as 5 consultas já persistidas em `sonar_snapshots` (120 linhas, 113 `item_id` distintos)
+**Método:** SQL read-only via Management API sobre produção (`txvncrgkoynoxwopfkbp`), sobre as 5 consultas já persistidas em `sonar_snapshots` (120 linhas, **104** `item_id` distintos — 113 é a soma por termo, com sobreposição entre as duas consultas de aptamil)
 
 ## Resposta curta
 
@@ -15,8 +15,8 @@ cobertura exibida de **100%**.
 
 | Estágio do funil | Valor | Onde se perde |
 |---|---|---|
-| A. Anúncios distintos na amostra (5 consultas) | **113** | — |
-| B. Com `seller_id` resolvido pelo fallback | **4 (3,5%)** | `pulse_ofertas_atual` é o universo do Radar, disjunto do termo do Sonar |
+| A. Anúncios distintos na amostra (5 consultas) | **104** | — |
+| B. Com `seller_id` resolvido pelo fallback | **4 (3,8%)** | `pulse_ofertas_atual` é o universo do Radar, disjunto do termo do Sonar |
 | C. Vendedores distintos | **1** | idem |
 | D. Presentes em `pulse_vendedores` | **1** | nenhuma perda aqui — e nunca haverá ganho, ver §2 |
 | E. Com ≥ 2 snapshots | **1** (8 snapshots) | — |
@@ -138,7 +138,7 @@ Três defeitos empilhados num único número:
    já exige mínimo de 5 em 7.3 e 7.4 e não estendeu a regra a 2.6/3.2.
 3. **A cobertura mente.** 3.3 divide por `vendedores distintos na amostra` — mas
    `anunciosDaAmostra()` já **descartou** os 96% sem `seller_id`. O denominador conta só os
-   sobreviventes, então a tela diz **100%** onde a cobertura real é **1 de 113 anúncios**.
+   sobreviventes, então a tela diz **100%** onde a cobertura real é **1 de 104 anúncios**.
    O contrato criou 3.3 exatamente para impedir isso: *"sem ele o operador lê 3.2 como se cobrisse
    o nicho inteiro"*. `meta.sem_seller_id` existe, mas é rodapé em texto pequeno, fora da conta.
 
@@ -187,3 +187,89 @@ restantes, e é a medição que falta.
    catálogo.
 5. **Fechar o caminho primário** chamando `pulse-sonar-vendas` uma vez e olhando `seller_id` — não
    muda a conclusão, mas define se o caminho 1 precisa existir ou se o Apify já entrega.
+
+
+---
+
+## 7. Medição 2 (2026-08-29, mesma data) — os três caminhos, testados com token real
+
+Feita com o token do ML da org DSA (leitura pura: `GET`, nenhuma escrita, nenhum refresh — o
+`refresh_token` é rotativo e rodá-lo fora do fluxo invalidaria a credencial, ADR-0012).
+
+### Caminho 3 (multiget `/items?ids=`) — **refutado**
+
+104 `item_id` do acervo, em 6 lotes de até 20:
+
+| Código | Itens |
+|---|---|
+| `200` | **1** |
+| `403 access_denied` | **103** |
+
+O multiget devolve HTTP 200 no envelope e **403 por item**:
+
+```
+GET /items?ids=MLB1593587758
+[{"code": 403, "body": {"id":"MLB1593587758","error":"access_denied","status":403}}]
+
+GET /items/MLB1593587758   → 403 access_denied
+```
+
+**O 403 da ADR-0119 vale igual no multiget.** O único item que voltou 200 é da própria org.
+Some da lista de caminhos: não existe rota que devolva `seller_id` de anúncio de terceiro por
+`item_id`.
+
+### Caminho 1 (`/products/{catalog_product_id}/items`) — **vivo, e é o único**
+
+26 catálogos distintos no acervo do Sonar, **26 de 26 responderam `200`**, revelando **190
+vendedores distintos**. Destes, **122 já estão em `pulse_vendedores` (DSA)** — já têm série
+histórica, sem coletar nada novo.
+
+### Caminho 2 (`/users/{id}`) — **confirmado para terceiros**
+
+```
+/users/1912121   → ACMENESES        transactions.total = 1029
+/users/25326669  → RON_VIANA2010    transactions.total = 0
+```
+
+Terceiro devolve `transactions.total` normalmente. É o que `buscarPerfilVendedor()` já faz.
+
+---
+
+## 8. As duas formas de usar o caminho 1 — e só uma funciona
+
+O `/products/{cat}/items` devolve `item_id` **e** `seller_id` de todos os concorrentes do catálogo.
+Isso permite duas leituras, e a diferença entre elas decide a funcionalidade.
+
+| Termo | Itens | Resolvidos | **A**: vend. da amostra | **A**: elegíveis | **B**: vend. do catálogo | **B**: elegíveis |
+|---|---|---|---|---|---|---|
+| `abraçadeira nylon` | 33 | 5 | 3 | **0** | 20 | **0** |
+| `fórmula infantil danone aptamil premium 2 800g` | 20 | 7 | 4 | **4** | 124 | **102** |
+| `latas ninho nestle zero lactose 700gr` | 20 | 4 | 4 | **2** | 47 | **11** |
+| `aptamil premium 2` | 20 | 9 | 5 | **4** | 126 | **102** |
+| `7891113175371` (EAN) | 20 | 7 | 6 | **0** | 9 | **0** |
+
+*Elegível = vendedor com ≥ 2 snapshots em `pulse_vendedores` e delta ≥ 0 — o `N` que 2.6 e 3.2 exigem.*
+
+**A — vendedores dos anúncios da amostra** (mantém a definição atual de nicho, "os `item_id` da
+amostra", ADR-0127): resolve 4 a 9 anúncios por consulta, e o **máximo de elegíveis é 4**.
+**Nenhuma das cinco consultas atinge o piso de 5.** Trocar a fonte do `seller_id` e parar aí não
+liga a funcionalidade.
+
+**B — vendedores dos catálogos representados na amostra**: **102, 102 e 11 elegíveis** em três das
+cinco consultas. É a única forma medida que produz número.
+
+O preço de B é uma mudança de definição: o conjunto passa a ser *"quem disputa os catálogos que
+apareceram na amostra"*, e inclui vendedores que não estão na amostra do Sonar. É uma medida
+**melhor** do nicho — não depende da página 1 da busca — mas **não é** a mesma coisa que o contrato
+chama de nicho hoje, e o rótulo tem que dizer isso.
+
+As duas consultas que dão zero em B são as de nicho sem catálogo: `abraçadeira nylon` (5 catálogos
+para 33 anúncios) e o EAN (9 vendedores, nenhum com série). **B destrava o nicho de catálogo, não
+o nicho inteiro** — e continua honestamente silencioso onde não há dado.
+
+### O que muda na conclusão do §2
+
+A afirmação *"resolver o estágio B sozinho não produz nem uma estimativa a mais"* estava certa pelo
+motivo errado. O gargalo não é que `pulse_vendedores` seja pequena — ela já cobre **122 dos 190**
+vendedores dos catálogos da amostra. O gargalo é a **ponte**: ligar amostra → vendedor por
+`item_id` perde quase tudo; ligar por **catálogo** recupera.
