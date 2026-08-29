@@ -384,6 +384,14 @@ export default function PulseSonar() {
       preco_referencia: i.preco,
     };
   }, [itens]);
+  /** Preços observados do nicho para os cenários da DRE (ADR-0149 D-1). */
+  const precosDoNicho = useMemo(() => {
+    const validos = itens.map((i) => i.preco).filter((p): p is number => p != null && p > 0);
+    return {
+      maisBarato: validos.length ? Math.min(...validos) : null,
+      medioDoNicho: vendas?.configurado ? (vendas.raio_x?.ticket_medio ?? null) : null,
+    };
+  }, [itens, vendas]);
   const itemIds = useMemo(
     () => itens.map((i) => i.item_id).filter((x): x is string => x != null),
     [itens],
@@ -779,7 +787,7 @@ export default function PulseSonar() {
           {/* Seção 6 (ADR-0148). Âncora: o PRIMEIRO anúncio da amostra — na ordenação padrão, o
               que mais vende no nicho. A pergunta é "o produto que puxa este nicho dá lucro para
               mim?". Um seletor de âncora fica para a fatia seguinte. */}
-          <SonarDre ancora={ancoraDre} />
+          <SonarDre ancora={ancoraDre} precos={precosDoNicho} />
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <SonarFiltrosPopover filtros={filtros} setFiltros={setFiltros} />

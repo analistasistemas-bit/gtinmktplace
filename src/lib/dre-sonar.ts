@@ -39,6 +39,38 @@ export type DreSonar =
   }
   | { estado: 'indisponivel'; motivo: string };
 
+/**
+ * Preços que não são observados no mercado: eles saem da cotação da ÂNCORA, porque não há como
+ * cotar um preço antes de conhecê-lo (ADR-0149 D-3). São **projeção** — a tela os marca assim, e
+ * cada um é recotado no próprio valor antes de virar número exibido.
+ *
+ * `margemAlvoPct` nulo não vira meta presumida: sem meta, não há preço-alvo.
+ */
+export function precosDerivadosDre(
+  e: EntradaDreSonar,
+  margemAlvoPct: number | null,
+): { pontoEquilibrio: number | null; precoAlvo: number | null } {
+  const base = montarDreSonar(e);
+  if (base.estado !== 'calculada' || e.tarifa == null) {
+    return { pontoEquilibrio: null, precoAlvo: null };
+  }
+  const simulacao = calcularSimulacaoML({
+    precoVenda: e.precoAnuncio,
+    custoProduto: base.custoProduto,
+    aliquotaImpostoPct: base.aliquotaPct,
+    custosFixos: 0,
+    custosVariaveis: 0,
+    rebate: 0,
+    margemAlvoPct: margemAlvoPct ?? 0,
+  }, cotacoesDaTarifa(e.tarifa));
+
+  const classico = simulacao.modalidades.classico;
+  return {
+    pontoEquilibrio: classico?.precoEquilibrio.valor ?? null,
+    precoAlvo: margemAlvoPct == null ? null : (classico?.precoAlvo.valor ?? null),
+  };
+}
+
 /** Declarado, não silencioso: o formulário desta fatia não pede estes três, e eles entram como
  *  zero em `EntradaCalculadoraML` — zero que infla o lucro se ninguém disser que está lá. */
 const FORA_DO_CALCULO = [
@@ -46,6 +78,28 @@ const FORA_DO_CALCULO = [
   'custos variáveis por venda',
   'rebate ou bonificação do fornecedor',
 ];
+
+/** Adapta a tarifa já verificada como `official` para o formato do motor. O frete é o mesmo nas
+ *  duas modalidades (ver `_shared/ml/frete.ts`). */
+function cotacoesDaTarifa(tarifa: Tarifa): CotacoesOficiaisPorModalidade {
+  return {
+    origem: 'official',
+    classico: {
+      percentualComissaoPct: tarifa.classico.percentual,
+      taxaFixa: tarifa.classico.fixa,
+      comissaoTotal: tarifa.classico.comissao,
+      frete: tarifa.frete,
+      proveniencia: 'official',
+    },
+    premium: {
+      percentualComissaoPct: tarifa.premium.percentual,
+      taxaFixa: tarifa.premium.fixa,
+      comissaoTotal: tarifa.premium.comissao,
+      frete: tarifa.frete,
+      proveniencia: 'official',
+    },
+  };
+}
 
 export function montarDreSonar(e: EntradaDreSonar): DreSonar {
   // O que o operador ainda não digitou vem PRIMEIRO: enquanto falta custo ou origem, dizer "o
@@ -72,25 +126,6 @@ export function montarDreSonar(e: EntradaDreSonar): DreSonar {
 
   const aliquotaPct = e.origem === 'importado' ? e.aliquotas.importado : e.aliquotas.nacional;
 
-  // A cotação já veio oficial do ML; o frete é o mesmo nas duas modalidades (ver _shared/ml/frete).
-  const cotacoes: CotacoesOficiaisPorModalidade = {
-    origem: 'official',
-    classico: {
-      percentualComissaoPct: e.tarifa.classico.percentual,
-      taxaFixa: e.tarifa.classico.fixa,
-      comissaoTotal: e.tarifa.classico.comissao,
-      frete: e.tarifa.frete,
-      proveniencia: 'official',
-    },
-    premium: {
-      percentualComissaoPct: e.tarifa.premium.percentual,
-      taxaFixa: e.tarifa.premium.fixa,
-      comissaoTotal: e.tarifa.premium.comissao,
-      frete: e.tarifa.frete,
-      proveniencia: 'official',
-    },
-  };
-
   const simulacao = calcularSimulacaoML({
     precoVenda: e.precoAnuncio,
     custoProduto: e.custoProduto,
@@ -100,7 +135,7 @@ export function montarDreSonar(e: EntradaDreSonar): DreSonar {
     custosVariaveis: 0,
     rebate: 0,
     margemAlvoPct: 0,
-  }, cotacoes);
+  }, cotacoesDaTarifa(e.tarifa));
 
   const classico = simulacao.modalidades.classico;
   if (classico == null) {

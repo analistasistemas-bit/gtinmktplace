@@ -1,23 +1,26 @@
-// Seção 6 do relatório da Análise PubliAI — a DRE (ADR-0148, fatia 1).
+// Seção 6 do relatório da Análise PubliAI — a DRE (ADR-0148 + ADR-0149).
 //
-// Nenhum número nasce aqui: a decomposição vem de `montarDreSonar`, que por sua vez delega a
-// aritmética a `calcularSimulacaoML()` (D-15 da ADR-0141). Este arquivo é formulário e texto.
+// Nenhum número nasce aqui: a decomposição vem de `montarDreSonar`, que delega a aritmética a
+// `calcularSimulacaoML()` (D-15 da ADR-0141). Este arquivo é formulário e texto.
 //
-// A seção calcula UM preço: o do anúncio-âncora. Sem cenários, sem sensibilidade, sem ROI — os
-// cinco cenários nunca foram enumerados e o ROI não tem definição (Spike 040).
-import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+// Cinco PREÇOS de venda, cada um com a SUA cotação — nada é extrapolado, porque comissão e frete
+// do ML têm degraus por faixa. O preço do buy-box não é um deles: não é obtenível (Spike 049).
+import { useQueries, useQuery } from '@tanstack/react-query';
+import { useMemo, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { fetchAliquotas } from '@/lib/queries';
 import { calcularTarifaML } from '@/lib/tarifa';
-import { montarDreSonar, type OrigemProduto } from '@/lib/dre-sonar';
+import { precosDerivadosDre, type OrigemProduto } from '@/lib/dre-sonar';
+import {
+  capitalDoLote, montarCenariosDre, precosDosCenarios, type CenarioComDre,
+} from '@/lib/dre-cenarios';
 import { fmtBRL, parseNumeroPtBr } from '@/lib/formato';
 
-/** Âncora da DRE: o anúncio cujo preço é a receita da conta. Mesma forma que o simulador de
- *  margem do Sonar já usa, para não existirem duas ideias de "produto de referência". */
+/** Âncora da DRE: o anúncio cujo preço abre a conta. Mesma forma que o simulador de margem do
+ *  Sonar já usa, para não existirem duas ideias de "produto de referência". */
 export interface AncoraDre {
   id: string;
   nome: string;
@@ -25,18 +28,15 @@ export interface AncoraDre {
   preco_referencia: number | null;
 }
 
-function Linha({ rotulo, valor, negativo }: { rotulo: string; valor: string; negativo?: boolean }) {
-  return (
-    <div className="flex items-baseline justify-between gap-4 py-1">
-      <span className="text-muted-foreground">{rotulo}</span>
-      <span className="tabular-nums">{negativo ? `−${valor}` : valor}</span>
-    </div>
-  );
+/** Preços observados no nicho, vindos da amostra. */
+export interface PrecosDoNicho {
+  maisBarato: number | null;
+  medioDoNicho: number | null;
 }
 
-function Indisponivel({ motivo }: { motivo: string }) {
+function Indisponivel({ motivo, compacto }: { motivo: string; compacto?: boolean }) {
   return (
-    <div className="flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 p-3 text-sm">
+    <div className={`flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 ${compacto ? 'p-2 text-xs' : 'p-3 text-sm'}`}>
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
       <p>
         <span className="font-medium">DRE indisponível</span> — {motivo}. Não calculamos com estimativa.
@@ -45,25 +45,89 @@ function Indisponivel({ motivo }: { motivo: string }) {
   );
 }
 
-export function SonarDre({ ancora }: { ancora: AncoraDre | null }) {
+function LinhaCenario({ c }: { c: CenarioComDre }) {
+  return (
+    <div className="border-t py-2 first:border-t-0">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-sm">
+          {c.rotulo}
+          {/* Derivado de outra cotação, não observado no mercado (ADR-0149 D-3). */}
+          {c.projecao && <span className="ml-1.5 text-xs text-muted-foreground">(projeção)</span>}
+        </span>
+        <span className="tabular-nums text-sm font-medium">{fmtBRL(c.preco)}</span>
+      </div>
+      {c.dre.estado === 'indisponivel' ? (
+        <div className="mt-1.5">
+          <Indisponivel motivo={c.dre.motivo} compacto />
+        </div>
+      ) : (
+        <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-muted-foreground sm:grid-cols-4">
+          <span className="tabular-nums">comissão −{fmtBRL(c.dre.comissao)}</span>
+          <span className="tabular-nums">frete −{fmtBRL(c.dre.frete)}</span>
+          <span className="tabular-nums">imposto −{fmtBRL(c.dre.imposto)}</span>
+          <span className={`tabular-nums font-medium ${c.dre.lucro < 0 ? 'text-destructive' : 'text-foreground'}`}>
+            lucro {fmtBRL(c.dre.lucro)} ({c.dre.margemPct.toFixed(1)}%)
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?: PrecosDoNicho }) {
   const [custoTexto, setCustoTexto] = useState('');
   const [origem, setOrigem] = useState<OrigemProduto | null>(null);
+  const [margemAlvoTexto, setMargemAlvoTexto] = useState('');
+  const [qtdTexto, setQtdTexto] = useState('');
 
-  const preco = ancora?.preco_referencia ?? null;
+  const precoAncora = ancora?.preco_referencia ?? null;
   const categoria = ancora?.category_id ?? null;
 
-  const { data: aliquotas } = useQuery({
-    queryKey: ['aliquotas'],
-    queryFn: fetchAliquotas,
+  const { data: aliquotas } = useQuery({ queryKey: ['aliquotas'], queryFn: fetchAliquotas });
+
+  // Passo 1: cotação da âncora. Só ela permite derivar equilíbrio e preço-alvo — não há como cotar
+  // um preço antes de conhecê-lo.
+  const { data: tarifaAncora, isLoading: cotandoAncora } = useQuery({
+    queryKey: ['sonar', 'dre', 'tarifa', categoria, precoAncora],
+    queryFn: () => calcularTarifaML(precoAncora!, categoria!),
+    enabled: precoAncora != null && categoria != null,
   });
 
-  const { data: tarifa, isLoading: cotando } = useQuery({
-    queryKey: ['sonar', 'dre', 'tarifa', ancora?.id, preco, categoria],
-    queryFn: () => calcularTarifaML(preco!, categoria!),
-    enabled: preco != null && categoria != null,
+  const custoProduto = custoTexto.trim() === '' ? null : parseNumeroPtBr(custoTexto);
+  const margemAlvoPct = margemAlvoTexto.trim() === '' ? null : parseNumeroPtBr(margemAlvoTexto);
+  const quantidade = qtdTexto.trim() === '' ? null : parseNumeroPtBr(qtdTexto);
+  // Memoizado porque é dependência dos useMemo abaixo: objeto novo a cada render os invalidaria
+  // sempre, e o memo não memoizaria nada.
+  const aliq = useMemo(
+    () => (aliquotas ? { nacional: aliquotas.nacional, importado: aliquotas.importado } : null),
+    [aliquotas],
+  );
+
+  const derivados = useMemo(
+    () => (precoAncora == null ? { pontoEquilibrio: null, precoAlvo: null } : precosDerivadosDre({
+      precoAnuncio: precoAncora, custoProduto, origem, aliquotas: aliq, tarifa: tarifaAncora ?? null,
+    }, margemAlvoPct)),
+    [precoAncora, custoProduto, origem, aliq, tarifaAncora, margemAlvoPct],
+  );
+
+  const cenarios = useMemo(() => precosDosCenarios({
+    maisBarato: precos?.maisBarato ?? null,
+    medioDoNicho: precos?.medioDoNicho ?? null,
+    anuncioQueMaisVende: precoAncora,
+    precoAlvo: derivados.precoAlvo,
+    pontoEquilibrio: derivados.pontoEquilibrio,
+  }), [precos, precoAncora, derivados]);
+
+  // Passo 2: cada preço é recotado NO PRÓPRIO VALOR. É isto que corrige a extrapolação.
+  const cotacoes = useQueries({
+    queries: cenarios.map((c) => ({
+      queryKey: ['sonar', 'dre', 'tarifa', categoria, c.preco],
+      queryFn: () => calcularTarifaML(c.preco, categoria!),
+      enabled: categoria != null,
+    })),
   });
 
-  if (ancora == null || preco == null) {
+  if (ancora == null || precoAncora == null) {
     return (
       <Card className="p-4">
         <p className="text-sm text-muted-foreground">
@@ -82,81 +146,107 @@ export function SonarDre({ ancora }: { ancora: AncoraDre | null }) {
     );
   }
 
-  const custoProduto = custoTexto.trim() === '' ? null : parseNumeroPtBr(custoTexto);
-  const dre = montarDreSonar({
-    precoAnuncio: preco,
-    custoProduto,
-    origem,
-    aliquotas: aliquotas ? { nacional: aliquotas.nacional, importado: aliquotas.importado } : null,
-    tarifa: tarifa ?? null,
-  });
+  const comDre = montarCenariosDre(
+    cenarios,
+    cenarios.map((c, i) => ({ preco: c.preco, tarifa: cotacoes[i]?.data ?? null })),
+    { custoProduto, origem, aliquotas: aliq },
+  );
+
+  // O bloco do lote usa o cenário da âncora — o preço que o operador está olhando.
+  const daAncora = comDre.find((c) => c.chave === 'anuncio_que_mais_vende');
+  const lote = daAncora?.dre.estado === 'calculada'
+    ? capitalDoLote(quantidade, daAncora.dre.custoProduto, daAncora.dre.lucro)
+    : null;
+
+  const faltaEntrada = custoProduto == null || origem == null;
+  const cotando = cotandoAncora || cotacoes.some((q) => q.isLoading);
 
   return (
     <Card className="space-y-4 p-4">
       <div>
         <p className="text-sm font-medium">6. Dá lucro?</p>
         <p className="text-xs text-muted-foreground">
-          No preço deste anúncio: {fmtBRL(preco)} · {ancora.nome}
+          Cinco preços de venda deste nicho, cada um cotado no Mercado Livre · {ancora.nome}
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-4">
         <div className="space-y-1">
           <label htmlFor="dre-custo" className="text-xs text-muted-foreground">Custo do produto</label>
-          <Input
-            id="dre-custo"
-            inputMode="decimal"
-            placeholder="quanto você paga por unidade"
-            value={custoTexto}
-            onChange={(e) => setCustoTexto(e.target.value)}
-          />
+          <Input id="dre-custo" inputMode="decimal" placeholder="por unidade"
+            value={custoTexto} onChange={(e) => setCustoTexto(e.target.value)} />
         </div>
         <div className="space-y-1">
           {/* Origem não tem default: a alíquota depende dela e imposto não se presume (ADR-0055). */}
           <span className="text-xs text-muted-foreground">Origem</span>
-          <RadioGroup
-            className="flex gap-4 pt-1"
-            value={origem ?? ''}
-            onValueChange={(v) => setOrigem(v as OrigemProduto)}
-          >
-            <div className="flex items-center gap-2">
+          <RadioGroup className="flex gap-3 pt-1" value={origem ?? ''}
+            onValueChange={(v) => setOrigem(v as OrigemProduto)}>
+            <div className="flex items-center gap-1.5">
               <RadioGroupItem value="nacional" id="dre-nacional" />
               <label htmlFor="dre-nacional" className="text-sm">Nacional</label>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <RadioGroupItem value="importado" id="dre-importado" />
               <label htmlFor="dre-importado" className="text-sm">Importado</label>
             </div>
           </RadioGroup>
         </div>
+        <div className="space-y-1">
+          <label htmlFor="dre-margem" className="text-xs text-muted-foreground">Margem desejada (%)</label>
+          <Input id="dre-margem" inputMode="decimal" placeholder="opcional"
+            value={margemAlvoTexto} onChange={(e) => setMargemAlvoTexto(e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <label htmlFor="dre-qtd" className="text-xs text-muted-foreground">Quantidade do lote</label>
+          <Input id="dre-qtd" inputMode="numeric" placeholder="opcional"
+            value={qtdTexto} onChange={(e) => setQtdTexto(e.target.value)} />
+        </div>
       </div>
 
-      {/* O que falta digitar aparece na hora: fazer o operador esperar a cotação para descobrir
-          que precisa informar o custo seria esperar por nada. */}
-      {cotando && custoProduto != null && origem != null ? (
+      {faltaEntrada ? (
+        <Indisponivel motivo={custoProduto == null
+          ? 'informe o custo do produto — sem ele não há lucro a calcular'
+          : 'informe a origem do produto — a alíquota de imposto depende dela e não é presumida'} />
+      ) : cotando ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" /> cotando comissão e frete no Mercado Livre…
+          <Loader2 className="size-4 animate-spin" /> cotando cada preço no Mercado Livre…
         </p>
-      ) : dre.estado === 'indisponivel' ? (
-        <Indisponivel motivo={dre.motivo} />
       ) : (
-        <div className="space-y-1 text-sm">
-          <Linha rotulo="receita" valor={fmtBRL(dre.receita)} />
-          <Linha rotulo="comissão (Clássico)" valor={fmtBRL(dre.comissao)} negativo />
-          <Linha rotulo="frete que você absorve" valor={fmtBRL(dre.frete)} negativo />
-          <Linha rotulo={`imposto (${dre.aliquotaPct}%)`} valor={fmtBRL(dre.imposto)} negativo />
-          <Linha rotulo="custo do produto" valor={fmtBRL(dre.custoProduto)} negativo />
-          <div className="mt-2 flex items-baseline justify-between gap-4 border-t pt-2 font-medium">
-            <span>lucro</span>
-            <span className="tabular-nums">
-              {fmtBRL(dre.lucro)} <span className="text-muted-foreground">({dre.margemPct.toFixed(1)}%)</span>
-            </span>
-          </div>
+        <>
+          <div>{comDre.map((c) => <LinhaCenario key={c.chave} c={c} />)}</div>
+
+          {lote && (
+            <div className="rounded-md border bg-muted/30 p-3 text-sm">
+              <p className="mb-1 text-xs text-muted-foreground">
+                Comprando {quantidade} unidades, ao preço do anúncio que mais vende:
+              </p>
+              <div className="flex flex-wrap gap-x-6 gap-y-1">
+                <span className="tabular-nums">
+                  capital imobilizado <span className="font-medium">{fmtBRL(lote.capitalImobilizado)}</span>
+                </span>
+                <span className="tabular-nums">
+                  {lote.lucroTotal < 0 ? 'prejuízo do lote' : 'lucro do lote'}{' '}
+                  <span className={`font-medium ${lote.lucroTotal < 0 ? 'text-destructive' : ''}`}>
+                    {fmtBRL(lote.lucroTotal)}
+                  </span>
+                </span>
+                {/* NÃO é um "ROI" novo: a quantidade cancela na razão, então este percentual é o
+                    retorno sobre o custo — o mesmo do markup (ADR-0149 D-4). */}
+                {lote.retornoSobreCustoPct != null && (
+                  <span className="tabular-nums text-muted-foreground">
+                    retorno sobre o custo {lote.retornoSobreCustoPct.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Zeros declarados, não silenciosos (ADR-0148 D-5). */}
-          <p className="pt-2 text-xs text-muted-foreground">
-            Não inclui: {dre.forasDoCalculo.join(', ')}.
+          <p className="text-xs text-muted-foreground">
+            Não inclui: custos fixos do seu negócio, custos variáveis por venda, rebate ou
+            bonificação do fornecedor, nem custos de compra do lote (frete, importação).
           </p>
-        </div>
+        </>
       )}
     </Card>
   );

@@ -76,13 +76,17 @@ Próximos passos, em ordem de ataque:
       `proveniencia: 'official'`, então a calculadora da Revisão pode afirmar número oficial sobre
       um frete vindo do pacote padrão — o defeito da D-28 sobrevivendo uma tela ao lado. Não foi
       tocado porque mudaria o veredito de uma superfície de produção fora do mandato da fatia 1.
-- [ ] **Fatia 2 da DRE — o que a ADR-0148 deixou de fora, e depende de decisão do Diego:**
-      **os 5 cenários comerciais nunca foram enumerados** e **o ROI não tem definição** (quantidade,
-      capital imobilizado, horizonte). Sem isso não dá para implementar sem inventar regra
-      financeira. Também aberto: a D-16 (mover peso taxável da seção 3 para a 6) e um seletor de
-      âncora (hoje é o primeiro anúncio da amostra, ADR-0148 D-8).
-- [ ] **Cinco cenários exigem cinco cotações.** `calcularSensibilidade()` extrapola comissão
-      linearmente e preserva taxa fixa e frete; erra ao cruzar os degraus de R$ 79 e R$ 150.
+- [x] **Fatia 2 da DRE — IMPLEMENTADA em 2026-08-29** ([ADR-0149](decisions/0149-dre-fatia-2-cinco-precos-e-capital-do-lote.md)).
+      Diego definiu as duas lacunas: cenários são **preços de venda** (não testes de estresse) e o
+      retorno é sobre **capital de um lote**. Duas correções entraram antes do código: o preço do
+      buy-box **não existe** para nós (Spike 049) e foi trocado pelo anúncio que mais vende; e ROI
+      sobre capital é **aritmeticamente igual ao markup** (a quantidade cancela), então a tela
+      mostra os absolutos — capital imobilizado e lucro do lote — e rotula o percentual como
+      retorno sobre o custo.
+- [x] **Cinco cenários exigem cinco cotações — RESOLVIDO pela ADR-0149 D-2.** Cada preço é
+      cotado no próprio valor (cinco chamadas ao `calcular-tarifa-ml`, cache de 6h cada).
+      `calcularSensibilidade()` continua sem ser usada pela DRE, porque extrapola comissão
+      linearmente e congela taxa fixa e frete.
 - [x] **Medir a cobertura no universo real do Sonar** (termo e EAN) e o `N` elegível por consulta —
       `docs/spikes/045-cobertura-do-sonar-por-vendedor.md`. **Resultado: 3,5%.** O `seller_id` da
       amostra resolve em 4 de 113 anúncios; sobra **1 vendedor distinto** no acervo, e ele é a conta

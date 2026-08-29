@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { montarDreSonar, type EntradaDreSonar } from '../dre-sonar';
+import { montarDreSonar, precosDerivadosDre, type EntradaDreSonar } from '../dre-sonar';
 import type { Tarifa } from '../tarifa';
 
 // ADR-0148: a DRE calcula com UMA cotação real, no preço do anúncio, e RECUSA quando o número não
@@ -103,5 +103,29 @@ describe('montarDreSonar', () => {
     expect(d.estado).toBe('calculada');
     if (d.estado !== 'calculada') return;
     expect(d.lucro).toBeLessThan(0);
+  });
+});
+
+// ADR-0149 D-3: preço-alvo e ponto de equilíbrio saem da cotação da ÂNCORA, porque não há como
+// cotar um preço antes de conhecê-lo. São projeção, e a tela os marca como tal.
+describe('precosDerivadosDre', () => {
+  it('devolve ponto de equilíbrio e preço-alvo a partir da cotação da âncora', () => {
+    const p = precosDerivadosDre(entrada(), 25);
+    expect(p.pontoEquilibrio).not.toBeNull();
+    expect(p.precoAlvo).not.toBeNull();
+    // Equilíbrio zera o lucro: fica abaixo do preço atual, que dá lucro.
+    expect(p.pontoEquilibrio!).toBeLessThan(89.9);
+    // Meta de 25% é mais cara que o preço atual, que rende ~21,9%.
+    expect(p.precoAlvo!).toBeGreaterThan(89.9);
+  });
+
+  it('sem margem-alvo informada não há preço-alvo — não se presume uma meta', () => {
+    expect(precosDerivadosDre(entrada(), null).precoAlvo).toBeNull();
+  });
+
+  it('sem cotação oficial não há preço derivado nenhum', () => {
+    const p = precosDerivadosDre(entrada({ tarifa: null }), 25);
+    expect(p.pontoEquilibrio).toBeNull();
+    expect(p.precoAlvo).toBeNull();
   });
 });

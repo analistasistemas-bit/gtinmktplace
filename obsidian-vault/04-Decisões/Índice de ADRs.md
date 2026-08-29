@@ -161,5 +161,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0146 | [A intensidade vira média mensal de 12 meses; o delta vira tendência](../../docs/decisions/0146-media-mensal-12m-e-tendencia.md) — o [Spike 048](../../docs/spikes/048-transactions-total-e-janela-provada.md) **provou** que `transactions.total` é janela de 365 dias; `total ÷ 12` é venda de verdade e destrava o modo EAN |
 | 0147 | [O Radar mostra a disputa do catálogo, não o ganhador](../../docs/decisions/0147-radar-mostra-a-disputa-do-catalogo.md) — emenda a D-4 da 0141: `buy_box_winner` é null em 40/40 e a org tem 0 de 137 anúncios de catálogo; custo zero, sai de `pulse_ofertas_atual` |
 | 0148 | [DRE, fatia 1: uma cotação real e o guard de proveniência](../../docs/decisions/0148-dre-fatia-1-uma-cotacao-e-o-guard-de-proveniencia.md) — implementa a D-28: comissão e frete deixam de virar zero em silêncio, e fora de `official` a DRE recusa dizendo por quê |
+| 0149 | [DRE, fatia 2: cinco preços e o capital do lote](../../docs/decisions/0149-dre-fatia-2-cinco-precos-e-capital-do-lote.md) — define a D-15, que estava em aberto; cada preço tem cotação própria, e o "ROI" por quantidade é o markup (a quantidade cancela) |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

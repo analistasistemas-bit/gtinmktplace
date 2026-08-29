@@ -61,10 +61,12 @@ describe('SonarDre — seção 6 (ADR-0148)', () => {
   it('com custo e origem, decompõe e mostra o lucro', async () => {
     renderDre();
     await preencher();
-    await waitFor(() => expect(screen.getByText(/R\$\s*19,67/)).toBeInTheDocument());
-    expect(screen.getByText(/R\$\s*12,59/)).toBeInTheDocument(); // comissão
-    expect(screen.getByText(/R\$\s*8,45/)).toBeInTheDocument();  // frete
-    expect(screen.getByText(/R\$\s*7,19/)).toBeInTheDocument();  // imposto 8%
+    // getAllByText desde a ADR-0149: a seção passou a mostrar cinco cenários, e este mock devolve
+    // a mesma cotação para todos os preços — logo a comissão se repete em mais de uma linha.
+    await waitFor(() => expect(screen.getAllByText(/R\$\s*19,67/).length).toBeGreaterThan(0));
+    expect(screen.getAllByText(/R\$\s*12,59/).length).toBeGreaterThan(0); // comissão
+    expect(screen.getAllByText(/R\$\s*8,45/).length).toBeGreaterThan(0);  // frete
+    expect(screen.getAllByText(/R\$\s*7,19/).length).toBeGreaterThan(0);  // imposto 8%
   });
 
   // Critério de aceite 6 da ADR-0148: alíquota nunca se presume.
