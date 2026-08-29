@@ -526,3 +526,91 @@ refresh, revogação, storage/cifragem de credencial, cache e invariância entre
 latência, cold start, ciclo de vida, expurgo e alertas. A cobertura real (quantos anúncios do
 PubliAI existem no snapshot da JoomPulse) também **não foi medida** e precisa de sonda em
 produção.
+
+---
+
+## Errata 1 (2026-08-29) — o Gateway existe: contrato inicial, onde mora e como é testado
+
+Fecha a **questão #4** (contrato HTTP) e decide a colocação do serviço, que a ADR não tinha
+tratado. Não fecha #5/#6 (credencial), #9 (cache) nem #11/#12 (limites) — nada disso está
+implementado, e a Errata diz o que ficou de fora justamente para não parecer pronto.
+
+### E-1 — O Gateway mora em `gateway/`, sob o tooling da raiz
+
+Não é pacote pnpm separado, e isso é decisão de **cobertura de CI**, não de gosto.
+
+O CI da raiz roda `pnpm install --frozen-lockfile` → `pnpm lint` → `pnpm build` (`tsc -b`) e a
+suíte do vitest. Um `gateway/` com `package.json` e lockfile próprios não seria alcançado por
+nenhum desses: ficaria sem lint, sem type check e sem teste — no serviço que guarda credencial
+OAuth de todas as organizações e aplica o gate do módulo. Seria o código menos verificado do repo
+protegendo o dado mais sensível, com os checks obrigatórios verdes o tempo todo.
+
+A colocação sob a raiz resolve isso sem tocar em `pnpm-workspace.yaml` nem no lockfile:
+
+| Amarra | Como o gateway entra |
+|---|---|
+| Type check | `gateway/tsconfig.json` referenciado por `tsconfig.json` → entra no `tsc -b` do `pnpm build` |
+| Lint | `eslint .` já varre `gateway/` (verificado com erro proposital: acusou) |
+| Testes | `./gateway/__tests__/**/*.test.ts` no `include` do `vitest.config.ts` |
+| Deploy | segundo serviço no `render.yaml`, `rootDir: .`, `pnpm gateway:build` / `pnpm gateway:start` |
+
+Os três primeiros alimentam o gate `frontend`, que é check exigido pela proteção da `main`. Job
+novo de CI teria sido inútil: sem ser adicionado à proteção, não bloqueia nada.
+
+### E-2 — Contrato `/v1`: operações de domínio e envelope de erro com código
+
+Mantém a D-8 e a instancia. Rotas desta entrega:
+
+| Rota | Auth | Resposta |
+|---|---|---|
+| `GET /health` | pública | `{ ok, versao, contrato }` |
+| `GET /v1/sessao` | Bearer | `{ org_id, is_admin, modulo_habilitado }` |
+
+`/health` é público de propósito: o Render precisa dele antes de qualquer credencial existir, e
+ele não revela nada de organização nenhuma.
+
+Erro tem envelope único, `{ erro: { codigo, mensagem } }`. **O código é a parte que importa** — a
+D-13 exige estados distintos, e a UI precisa diferenciar "seu token venceu" de "sua organização
+não tem o módulo". Códigos: `sem_token`, `token_invalido`, `perfil_ausente`, `perfil_inativo`,
+`sem_org`, `modulo_desligado`, `rota_desconhecida`, `metodo_nao_suportado`, `erro_interno`.
+
+Falta de identidade responde **401**; falta de permissão, **403**.
+
+### E-3 — A ordem das verificações é regra, não acaso
+
+Token → usuário → perfil → ativo → org → módulo. Um token inválido **nunca** pode produzir
+"módulo desligado", que mandaria o operador procurar problema na configuração da organização
+quando o problema é a sessão dele. Há teste que prova a ordem: com token inválido, a consulta de
+módulos nem é chamada.
+
+### E-4 — `org_id` sai do token, e o Gateway usa service role para isso
+
+A D-15 diz que `org_id` nunca vem de payload. Em consequência, o Gateway **verifica o JWT** e lê
+`profiles` e `organizations.modulos_habilitados` por conta própria, com service role. Com o token
+do chamador ele leria pelas mesmas lentes de quem pergunta, e o gate da D-4 deixaria de ser
+server-side.
+
+Service role ignora RLS, então a contrapartida está no código: toda consulta filtra pelo `org_id`
+já derivado do token. **Não se usa `resolverOrgPorUserId`** (`_shared/faturamento/io.ts`), que
+resolve org por `marketplace_connections` — é o padrão que causou o incidente de 2026-08-11, em
+que um membro cadastrou e outro era dono da conexão.
+
+`is_active` nulo é tratado como **inativo**: perfil sem a flag preenchida não prova acesso.
+
+### E-5 — CORS com allowlist explícita, sem curinga
+
+A D-2 põe o browser chamando o Gateway direto, o que torna o CORS superfície de segurança. A
+origem vem de `ORIGENS_PERMITIDAS` (lista por vírgula) e `*` é proibido: curinga somado a
+`Authorization` é exatamente o que o navegador tenta impedir. `Vary: Origin` sempre presente, para
+um proxy não servir a uma origem a resposta liberada para outra.
+
+### O que esta entrega NÃO faz
+
+- **Não fala com a JoomPulse.** Nenhuma chamada MCP, nenhuma allowlist de ferramenta (D-9).
+- **Não guarda credencial** (#5/#6) nem implementa o OAuth da D-5.
+- **Não tem cache** (#9, D-11) nem rate limit (#11/#12, D-12).
+- **Não tem métricas** (D-16) além de log de erro.
+
+Verificado antes do commit: 16 testes verdes, `tsc -b` limpo, `eslint` sem erro, e smoke real com
+o serviço no ar — `/health` 200, `/v1/sessao` 401 com `sem_token`, 404, 405, preflight 204, origem
+fora da allowlist sem cabeçalho de CORS, e boot recusado sem variável obrigatória.

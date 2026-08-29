@@ -15,3 +15,32 @@ services:
       - type: rewrite
         source: /*
         destination: /index.html
+
+  # Gateway de mercado (ADR-0132 D-2, D-14): Web Service separado, único cliente MCP/OAuth da
+  # JoomPulse. Deploy independente do frontend estático acima — é o ponto da D-14.
+  #
+  # `rootDir: .` de propósito: o gateway usa o tsconfig, o eslint e o vitest da raiz, e é por isso
+  # que ele entra nos checks que a proteção da main exige. Pacote pnpm separado ficaria sem CI
+  # nenhum — inaceitável no serviço que guarda credencial de todas as organizações.
+  - type: web
+    name: publiai-gateway-mercado
+    runtime: node
+    rootDir: .
+    plan: starter
+    buildCommand: pnpm install --frozen-lockfile && pnpm gateway:build
+    startCommand: pnpm gateway:start
+    healthCheckPath: /health
+    pullRequestPreviewsEnabled: false
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: SUPABASE_URL
+        sync: false
+      # Service role: o Gateway verifica o token e lê profiles/organizations de forma independente
+      # do que o browser afirma (D-4, D-15). Nunca sai do serviço, nunca vai a log.
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Allowlist de origens do browser, separadas por vírgula. Sem curinga: a D-2 põe o browser
+      # chamando o Gateway direto, então CORS aqui é superfície de segurança.
+      - key: ORIGENS_PERMITIDAS
+        sync: false

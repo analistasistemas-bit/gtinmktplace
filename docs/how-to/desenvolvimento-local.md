@@ -62,6 +62,8 @@ pnpm dev          # Vite em http://localhost:5173
 | `pnpm build-storybook` | Build estático do Storybook |
 | `pnpm db:check` | Valida alinhamento das migrations (`scripts/db-check.sh`) |
 | `pnpm docs:links` | Verifica que todo link markdown de `docs/` aponta para arquivo existente (`scripts/checar-links-docs.mjs`) |
+| `pnpm gateway:build` | Compila o Gateway de mercado (`gateway/` → `gateway/dist/`) |
+| `pnpm gateway:start` | Sobe o Gateway já compilado (exige `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ORIGENS_PERMITIDAS`) |
 | `pnpm lint:functions` | `deno lint` nas edge functions |
 | `pnpm check:functions` | `deno check` (type check) nas edge functions |
 
