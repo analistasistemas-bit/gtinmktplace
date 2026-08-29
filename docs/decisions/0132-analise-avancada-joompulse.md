@@ -3,7 +3,7 @@
 **Status:** Aceito com bloqueios, **em revisão** — direção arquitetural aprovada; implementação não iniciada. Spike parcial executado em 2026-08-28 fechou as questões #1–#3 e produziu resultado **incompatível com a D-3**, o que aciona a revisão prevista na D-17. Questões #4–#15 (mais a nova #16) seguem bloqueando
 **Data:** 2026-08-23
 **Decisores:** Diego
-**Relaciona:** [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Pulse; o 403 de vendas por anúncio de terceiro), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) (Sonar + Apify, fora do v1), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0086](0086-configuracao-org-scoped.md) (módulos), [0024](0024-abstracao-de-canais.md) (Canal ≠ provedor de análise), [0027](0027-multi-tenancy-organizations.md) (multi-tenancy), [0043](0043-migrations-canal-unico.md) (migrations canal único)
+**Relaciona:** [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Pulse; o 403 de vendas por anúncio de terceiro), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) (Sonar + Apify, fora do v1), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0086](0086-configuracao-org-scoped.md) (módulos), [0024](0024-camada-de-abstracao-de-canais.md) (Canal ≠ provedor de análise), [0027](0027-multi-tenancy-organizations.md) (multi-tenancy), [0043](0043-fluxo-canonico-de-migrations.md) (migrations canal único)
 
 > **2026-08-28 — a JoomPulse confirmou que a parceria cobre uso server-to-server por um Gateway
 > do PubliAI, e que as respostas podem ser cacheadas.** Isso fecha a questão #16 (levantada pelo
