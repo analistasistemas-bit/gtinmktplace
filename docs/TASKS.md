@@ -2,23 +2,43 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Análise PubliAI — liberado para implementação (ADR-0141 + Spike 040) — 2026-08-28
+## Análise PubliAI — fonte trocada, desenho mantido (ADR-0141 Errata 1) — 2026-08-29
 
-**Desenho aprovado e liberado para implementação.** 27 decisões. A revisão adversarial
-(`docs/spikes/040-revisao-adversarial-adr-0141.md`, 2026-08-28) levantou o bloqueio jurídico B-1, e
-**Diego confirmou no mesmo dia ter a autorização necessária para usar a licença JoomPulse desta
-forma** — B-1 encerrado. ADR em `docs/decisions/0141-analise-publiai-joompulse-radar-e-sonar.md`;
-termos novos no glossário. **Nenhum código escrito ainda.**
+**A JoomPulse saiu.** Passaram a cobrar pelo `client_id` OAuth em condições que Diego recusou, e
+sem ele nenhum login é possível (ADR-0132 Errata 5, agora **Abandonado**). **A funcionalidade
+continua** — muda a fonte, não o desenho: Apify (já em produção) + API do ML + série própria.
 
-O que o Spike 040 deixou de pé, em ordem de ataque:
+Três medições de 2026-08-29 sustentam a troca:
 
-- [ ] **BLOQUEIO EXTERNO — pedir o `client_id` à JoomPulse.** Medido em 2026-08-29
-      (ADR-0132 Errata 5): o `/oauth2/authorize` responde `invalid_client` **sem buscar** nosso
-      documento de cliente, apesar de o metadado anunciar
-      `client_id_metadata_document_supported: true`. O log de acesso do Gateway prova a ausência da
-      requisição. Informar a eles: redirect `https://publiai-gateway-mercado.onrender.com/v1/oauth/callback`,
-      escopo `mcp`, authorization code + PKCE S256, secret opcional. Adotar o id emitido é **trocar
-      uma variável de ambiente** — o código já aceita as duas formas.
+- `docs/spikes/043-como-a-joompulse-estima-vendas.md` — a JoomPulse **não contava vendas**:
+  `orderCount1m = orderGmv1m ÷ buyBoxPriceAmount`, exato em 15/15 linhas. Também resolve a
+  suspeita de discretização do Spike 041 §5 (eram quocientes, não faixas).
+- `docs/spikes/044-vendas-mensais-sem-joompulse.md` — vendas mensais **por anúncio** não são
+  reproduzíveis por fonte nenhuma (delta do badge = 0 em 7/7 em 8 dias; idade do anúncio não vem
+  do scrape nem do ID). A substituta é o delta de `transactions.total` **por vendedor**, já
+  validada em produção (`pulse_vendedores`, 14 dias, 495 vendedores, 64% com movimento).
+- **Decisão de Diego (opção C):** duas unidades no relatório — acumulado por anúncio ordena o
+  Top 5; vendas/mês por vendedor mede o tamanho do nicho.
+
+**Desfeito em 2026-08-29** (sem resíduo): serviço `publiai-gateway-mercado` deletado no Render,
+diretório `gateway/` removido, `render.yaml`/`package.json`/`tsconfig.json`/`vitest.config.ts`
+limpos, e migration `20260829100720_drop_gateway_joompulse.sql` aplicada em produção derrubando
+`joompulse_credenciais` e `joompulse_oauth_estados` (**0 linhas cada** — verificado antes do drop).
+
+Próximos passos, em ordem de ataque:
+
+- [ ] **Calcular o delta por vendedor** a partir de `pulse_vendedores` (dado já coletado, sem
+      migration). Trava obrigatória: delta negativo é `sem estimativa no período` — nunca zero,
+      nunca negativo exibido —, porque a janela de `transactions` é móvel (365 dias) e expulsa
+      vendas antigas (pior caso medido: −4.875). Usar **mediana**, nunca média: a média do
+      universo rastreado (3.553/mês) é puxada por outliers; a mediana é ~21/mês.
+- [ ] **Emendar o contrato das seções 2/3/7** trocando a proveniência dos campos 2.6, 3.1–3.4,
+      7.2 e 7.4, e revisar os rótulos da regra global 1 (fonte, unidade e janela).
+- [ ] **Aproveitar os 25 campos do Apify que o parser ignora.** Run de 2026-08-29 devolveu **40
+      campos**; `sonar-vendas.ts` mapeia 15. Candidatos úteis: `produtoDomainID` (agrupamento
+      melhor que categoria), `SKU`, `idProdutoUsuario`, `resultadosTotais`, `promocoes`.
+      Medido vazio nesta amostra e portanto sem valor hoje: `vendedorID`, `localizacao`,
+      `disponivelEm`.
 
 - [x] **B-2 — D-9 decidida por Diego (2026-08-28): modo EAN.** Preço médio **em reais só no modo
       EAN**, onde a amostra é o mesmo produto; no **modo termo**, percentual / equivalente por

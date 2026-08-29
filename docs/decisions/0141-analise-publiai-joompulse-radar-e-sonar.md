@@ -1,6 +1,48 @@
 # ADR-0141 — Análise PubliAI: JoomPulse no Radar e no Sonar
 
-**Status:** Aceito e **liberado para implementação**. Desenho fechado em entrevista com Diego (2026-08-28); 27 decisões. As decisões D-20 a D-27 fecham as questões #7, #8, #10, #13, #14, #15 e #16 da [ADR-0132](0132-analise-avancada-joompulse.md); a cobertura foi medida ([Spike 039](../spikes/039-joompulse-cobertura-medida.md)); e a revisão adversarial ([Spike 040](../spikes/040-revisao-adversarial-adr-0141.md)) foi respondida. O bloqueio jurídico B-1 do Spike 040 **foi resolvido por Diego em 2026-08-28**: ele confirmou ter a autorização necessária para usar a licença JoomPulse desta forma. Permanecem do Spike 040 **uma decisão de produto em aberto (D-9)** e correções técnicas obrigatórias — ver a seção final.
+> ## Errata 1 (2026-08-29) — a fonte mudou; o desenho fica
+>
+> A JoomPulse saiu (ADR-0132 abandonado: passaram a cobrar pelo `client_id`). **A Análise PubliAI
+> continua**, com fonte própria. O que muda e o que não muda:
+>
+> **Não muda:** a estrutura das 7 seções, a D-2 (nenhum número nasce na IA), a D-3 (ausência tem
+> estado próprio, nunca zero), a D-9/D-10 (modo termo × EAN, N elegível), a D-16/D-17 (peso num
+> lugar só; imposto com trava LOUD), e todas as regras financeiras. Nada disso dependia da fonte.
+>
+> **Muda a proveniência de todo campo marcado "JoomPulse"** (2.6, 3.1, 3.2, 3.3, 3.4, 7.2, 7.4).
+> Três medições redesenham essas seções:
+>
+> 1. **A JoomPulse não contava vendas** — derivava `orderCount1m = orderGmv1m ÷ buyBoxPriceAmount`,
+>    exato em 15/15 linhas ([Spike 043](../spikes/043-como-a-joompulse-estima-vendas.md)). Também
+>    resolve a suspeita de discretização do Spike 041 §5: eram quocientes, não faixas.
+> 2. **Vendas mensais por anúncio não são reproduzíveis por nenhuma fonte disponível.** O delta do
+>    badge "+N vendidos" deu **zero em 7 de 7 anúncios em 8 dias** (degraus de 100/500/1.000), e a
+>    idade do anúncio não vem nem do scrape (40 campos, nenhum de data) nem do ID (duas sequências
+>    paralelas no mesmo dia) — [Spike 044](../spikes/044-vendas-mensais-sem-joompulse.md).
+> 3. **A fonte substituta é o delta de `transactions.total` por vendedor**, já aprovada na Errata
+>    de 16/08 da [ADR-0119](0119-pulse-inteligencia-de-mercado-dirigida.md) e **validada em
+>    produção**: `pulse_vendedores` já coleta há 14 dias, 495 vendedores, `transactions_total` em
+>    100% das linhas, e **64% mostram crescimento** no período. Sem migration.
+>
+> **Decisão de Diego (2026-08-29), opção C:** o relatório passa a usar **duas unidades**, cada uma
+> na pergunta que ela responde de verdade — **acumulado por anúncio** ordena o Top 5 (rótulo:
+> "+N vendidos desde a publicação"), e **vendas/mês por vendedor** mede o tamanho do nicho
+> (rótulo: janela de 365 dias, número do vendedor e não do anúncio). Delta negativo é
+> `sem estimativa no período` — nunca zero, nunca negativo exibido — porque a janela é móvel e
+> expulsa vendas antigas (pior caso medido: −4.875).
+>
+> **Consequência para a D-4 do Radar:** sobrevive inteira via API do ML (`/products/{id}` →
+> `buy_box_winner`), perdendo só a estimativa de vendas do catálogo.
+
+**Status:** **Em revisão** — o desenho segue válido, a fonte foi trocada (ver Errata 1 acima). O texto abaixo é de 2026-08-28 e ainda descreve a JoomPulse como fonte; leia-o através da errata.
+
+<details>
+<summary>Status original (2026-08-28)</summary>
+
+Aceito e **liberado para implementação**. Desenho fechado em entrevista com Diego (2026-08-28); 27 decisões. As decisões D-20 a D-27 fecham as questões #7, #8, #10, #13, #14, #15 e #16 da [ADR-0132](0132-analise-avancada-joompulse.md); a cobertura foi medida ([Spike 039](../spikes/039-joompulse-cobertura-medida.md)); e a revisão adversarial ([Spike 040](../spikes/040-revisao-adversarial-adr-0141.md)) foi respondida. O bloqueio jurídico B-1 do Spike 040 **foi resolvido por Diego em 2026-08-28**: ele confirmou ter a autorização necessária para usar a licença JoomPulse desta forma. Permanecem do Spike 040 **uma decisão de produto em aberto (D-9)** e correções técnicas obrigatórias — ver a seção final.
+
+</details>
+
 **Data:** 2026-08-28
 **Decisores:** Diego
 **Relaciona:** [0132](0132-analise-avancada-joompulse.md) (arquitetura do Gateway e do módulo — **esta ADR supersede a D-3 e emenda a D-7**), [Spike 038](../spikes/038-joompulse-parcial-correlacao-e-semantica.md) (achados que motivaram a revisão), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Radar; o 403 do ML; Errata 8 e Errata 10), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) / [0127](0127-sonar-tabela-por-anuncio-e-historico.md) (Sonar, Apify e a tabela por anúncio), [0124](0124-veredito-de-oportunidade-do-sonar.md) / [0137](0137-sonar-disputa-caminho-b-concentracao-por-anuncio.md) / [0138](0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) (veredito), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0020](0020-estrategia-de-preco-liquido-minimo.md) / [0055](0055-imposto-por-origem-nacional-importado.md) / [0107](0107-origem-obrigatoria-na-planilha.md) (margem e imposto por origem), [0086](0086-configuracao-org-scoped.md) (módulos)
