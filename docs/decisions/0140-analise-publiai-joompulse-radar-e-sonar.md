@@ -1,6 +1,6 @@
 # ADR-0140 — Análise PubliAI: JoomPulse no Radar e no Sonar
 
-**Status:** Aceito e **liberado para implementação** — desenho fechado em entrevista com Diego (2026-08-28); 27 decisões. **A JoomPulse confirmou que a parceria cobre uso server-to-server** (D-25), o que era o bloqueio que precedia todos os outros. As decisões D-20 a D-27 fecham as questões #7, #8, #10, #13, #14, #15 e #16 da [ADR-0132](0132-analise-avancada-joompulse.md). Não resta nenhuma pendência de decisão nem de resposta externa: o que falta é trabalho técnico normal (#4, #5, #6, #9, #11, #12) e a sonda de cobertura em produção.
+**Status:** Aceito, **implementação bloqueada** pela revisão adversarial ([Spike 040](../spikes/040-revisao-adversarial-adr-0140.md), 2026-08-28) — ver a seção final. O desenho continua válido; o que caiu foi a liberação. Desenho fechado em entrevista com Diego (2026-08-28); 27 decisões. **A JoomPulse confirmou que a parceria cobre uso server-to-server** (D-25), o que era o bloqueio que precedia todos os outros. As decisões D-20 a D-27 fecham as questões #7, #8, #10, #13, #14, #15 e #16 da [ADR-0132](0132-analise-avancada-joompulse.md). Não resta nenhuma pendência de decisão nem de resposta externa: o que falta é trabalho técnico normal (#4, #5, #6, #9, #11, #12) e a sonda de cobertura em produção.
 **Data:** 2026-08-28
 **Decisores:** Diego
 **Relaciona:** [0132](0132-analise-avancada-joompulse.md) (arquitetura do Gateway e do módulo — **esta ADR supersede a D-3 e emenda a D-7**), [Spike 038](../spikes/038-joompulse-parcial-correlacao-e-semantica.md) (achados que motivaram a revisão), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Radar; o 403 do ML; Errata 8 e Errata 10), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) / [0127](0127-sonar-tabela-por-anuncio-e-historico.md) (Sonar, Apify e a tabela por anúncio), [0124](0124-veredito-de-oportunidade-do-sonar.md) / [0137](0137-sonar-disputa-caminho-b-concentracao-por-anuncio.md) / [0138](0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) (veredito), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0020](0020-estrategia-de-preco-liquido-minimo.md) / [0055](0055-imposto-por-origem-nacional-importado.md) / [0107](0107-origem-obrigatoria-na-planilha.md) (margem e imposto por origem), [0086](0086-configuracao-org-scoped.md) (módulos)
@@ -142,4 +142,30 @@ Dois ajustes que o Spike 039 impõe à implementação:
 - No painel de concorrentes, **89% das linhas virão com `orderCount1m` = 0**. O painel lidera com *quem ganha* e *demanda do catálogo*; venda por anúncio é exceção informativa, nunca coluna principal.
 - A Análise PubliAI fala do **catálogo e do mercado**, não do desempenho do anúncio da própria organização — ali a cobertura é de 4%, e o PubliAI já tem o dado real de vendas internamente.
 
-A cobertura real (quantos anúncios do PubliAI existem no snapshot da JoomPulse) também não foi medida e precisa de sonda em produção antes de qualquer promessa de UI.
+## Revisão adversarial — [Spike 040](../spikes/040-revisao-adversarial-adr-0140.md), 2026-08-28
+
+A afirmação "nada bloqueia" acima **não se sustenta** e fica revogada. A revisão confirmou, com
+citação literal, dois bloqueadores e um conjunto de furos financeiros no código que a D-2 e a D-18
+supõem seguro:
+
+- **B-1 — a D-25 não é autorização suficiente.** Os termos públicos da JoomPulse (§4.2) proíbem
+  construir APIs sobre o serviço, uso automatizado por scripts e revender ou distribuir os dados
+  "sem permissão explícita"; o §5.3 concede licença **intransferível e revogável para fins
+  comerciais internos**. Confirmação verbal do suporte não cobre Gateway, redistribuição a
+  organizações-cliente nem derivação por IA. **Nenhuma linha de Gateway antes da autorização escrita.**
+- **B-2 — a D-9 reintroduz o preço absoluto que a [ADR-0138](0138-sonar-linguagem-comercial-e-condicao-de-entrada.md)
+  proibiu no mesmo dia**, pelo mesmo motivo (a busca por termo mistura embalagens; média sobre kits
+  de 50, 500 e 1000 é alvo de prejuízo). Precisa virar percentual/equivalente por unidade, ou existir
+  só no modo EAN.
+- **Comissão e frete convertem falha em zero** (`listing-prices.ts:17`, `tarifa.ts:24`,
+  `frete.ts:21`), e dimensões ausentes caem num pacote default em silêncio (`frete.ts:27`). Os cinco
+  cenários da D-15 exigem cinco cotações: `calcularSensibilidade()` extrapola comissão linearmente e
+  preserva taxa fixa e frete, errando ao cruzar os degraus de R$ 79 e R$ 150.
+- **A cobertura do universo do Sonar não foi medida** — os 82% do Spike 039 vêm de `pulse_ofertas`,
+  que é o universo do Radar. E a consulta em lote da D-4 nunca foi testada no tamanho real: o Radar
+  não pagina (`src/pages/Pulse.tsx:79`), são 229 catálogos contra o limite de 100 do CubeJS.
+
+Contradições internas a resolver: D-11 × D-12 (anúncio sem ficha), D-13 × D-22 (chave do cache
+diário dentro de TTL de 7 dias), D-27 × a política publicada da JoomPulse (§7: "a desconexão revoga
+as credenciais de acesso anteriormente emitidas"), e o rótulo "anúncio não rastreado" numa consulta
+que passou a ser por catálogo.
