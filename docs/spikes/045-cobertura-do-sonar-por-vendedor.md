@@ -273,3 +273,62 @@ A afirmação *"resolver o estágio B sozinho não produz nem uma estimativa a m
 motivo errado. O gargalo não é que `pulse_vendedores` seja pequena — ela já cobre **122 dos 190**
 vendedores dos catálogos da amostra. O gargalo é a **ponte**: ligar amostra → vendedor por
 `item_id` perde quase tudo; ligar por **catálogo** recupera.
+
+---
+
+## 9. O que B renderiza de verdade — e por que 2.6 não sobrevive a nenhum dos caminhos
+
+Simulação com os 102 vendedores elegíveis do termo `aptamil premium 2` (9 catálogos, 126
+vendedores com preço), aplicando as fórmulas do contrato tal como estão:
+
+| Campo | Valor sob B |
+|---|---|
+| 2.6 Faturamento do nicho | **R$ 187.207.201/mês** |
+| 2.8 Meta de entrada (10%) | R$ 18.720.720/mês |
+| 2.9 Parecer | "nicho comporta entrada" |
+| 3.2 Mediana vendas/mês | **0 un./mês** |
+
+**94,5% do 2.6 vem de um único vendedor** — `480265022`, "Mercado Livre Brasil", 1.331.757 un./mês
+× R$ 132,90. Os três maiores concentram **97,9%**.
+
+O piso de 5 vendedores, que hoje é a única coisa suprimindo esse número, **deixa de disparar sob B**
+(102 ≥ 5). O piso era um proxy: o defeito nunca foi o N pequeno, é a **soma**. Multiplicar a
+movimentação da loja inteira de um vendedor pelo preço de um anúncio do nicho e somar sobre 102
+vendedores é a pergunta em aberto da ADR-0142 ("quanto do movimento de um vendedor vem do anúncio
+analisado") virando número na tela.
+
+**Nenhum dos dois caminhos salva 2.6.** A resolve pouco (máx. 4 elegíveis, abaixo do piso); B
+resolve muito e amplifica o defeito por 102.
+
+### O que B entrega de fato: 3.2, 3.3 e 3.4
+
+Distribuição dos 102 elegíveis:
+
+| | |
+|---|---|
+| `vendas_mes = 0` | **54 (53%)** |
+| p50 | **0** |
+| p90 | 633 |
+| máximo | 1.331.757 |
+| com ≥ 5 un./mês | 46 |
+
+A mediana de **0 un./mês** é exatamente o que a D-6 da ADR-0142 foi escrita para produzir: o
+vendedor típico do catálogo **não teve movimento mensurável na janela**, e a média (que seria
+~24 mil) não descreveria vendedor nenhum. É um número honesto e acionável — diz ao operador que
+metade dos concorrentes do catálogo está parada.
+
+## Recomendação revista
+
+1. **Não implementar B inteiro.** Ligar 2.6 sob B troca "R$ 100,7 mi com 1 vendedor" por
+   "R$ 187,2 mi com 102" — pior, e sem o piso para segurar.
+2. **B parcial é a única entrega defensável hoje:** usar `/products/{cat}/items` como ponte para o
+   vendedor e ligar **apenas 3.2, 3.3 e 3.4**, mantendo 2.6/2.8/2.9 suprimidos até existir uma
+   construção de faturamento que não multiplique a loja inteira pelo preço de um anúncio.
+3. **Isto é decisão de Diego**, não de implementação: muda a definição de nicho de "os `item_id` da
+   amostra" (ADR-0127) para "os vendedores dos catálogos representados na amostra", e desiste —
+   por ora — do campo de faturamento que a seção 2 promete.
+
+**Ressalva sobre os 122 de 190:** os catálogos de `aptamil` coincidem com catálogos que a DSA já
+monitora no Radar. Para um nicho que a organização **não** rastreia, o estágio D cairia para perto
+de zero até o `pulse-coletar` passar a coletar os vendedores descobertos pelo Sonar (caminho 2).
+Não ler 122/190 como taxa de cobertura geral.
