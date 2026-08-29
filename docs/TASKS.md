@@ -72,6 +72,10 @@ Próximos passos, em ordem de ataque:
 
       Fault injection cobrindo 400/401/429/500, timeout, schema sem `sale_fee_amount`, `list_cost`
       ausente e `me2=false`: todo caso deve produzir "DRE indisponível", nunca zero.
+- [ ] **Dívida conhecida da ADR-0148:** `cotacoesOficiaisDaTarifa` (`src/lib/tarifa.ts`) crava
+      `proveniencia: 'official'`, então a calculadora da Revisão pode afirmar número oficial sobre
+      um frete vindo do pacote padrão — o defeito da D-28 sobrevivendo uma tela ao lado. Não foi
+      tocado porque mudaria o veredito de uma superfície de produção fora do mandato da fatia 1.
 - [ ] **Fatia 2 da DRE — o que a ADR-0148 deixou de fora, e depende de decisão do Diego:**
       **os 5 cenários comerciais nunca foram enumerados** e **o ROI não tem definição** (quantidade,
       capital imobilizado, horizonte). Sem isso não dá para implementar sem inventar regra

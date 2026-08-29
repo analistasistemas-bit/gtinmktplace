@@ -116,6 +116,12 @@ Reusa a mesma forma do simulador de margem (`AnuncioSimulavel`), para não exist
 - **O ROI** — sem definição de quantidade, capital ou horizonte.
 - **A D-16** (mover peso taxável da seção 3 para a 6).
 - **Sensibilidade** de qualquer espécie, pela razão da D-1.
+- **A calculadora da Revisão continua cravando `official`.** `cotacoesOficiaisDaTarifa`
+  (`src/lib/tarifa.ts`) escreve `proveniencia: 'official'` literalmente, então aquela tela pode
+  afirmar número oficial sobre um frete que veio do pacote padrão — **o mesmo defeito que a D-28
+  existe para matar, uma tela ao lado**. Não foi tocado de propósito: mudar ali alteraria o
+  veredito de uma superfície de produção que esta fatia não tem mandato para mexer (critério de
+  aceite 1). **Fica registrado como dívida conhecida**, não como esquecimento.
 
 Tudo isso permanece aberto no `TASKS.md`, e a definição dos cenários e do ROI é de Diego.
 
