@@ -29,8 +29,15 @@ O que o Spike 040 deixou de pé, em ordem de ataque:
       linearmente e preserva taxa fixa e frete; erra ao cruzar os degraus de R$ 79 e R$ 150.
 - [ ] **Medir a cobertura no universo real do Sonar** (termo e EAN) e o `N` elegível por consulta —
       os 82% do Spike 039 são do universo do Radar (`pulse_ofertas`).
-- [ ] **Definir o lote da consulta do Radar.** O Radar não pagina (`src/pages/Pulse.tsx:79`): 229
-      catálogos contra o limite de 100 do CubeJS medido no Spike 038.
+- [x] **Lote da consulta do Radar definido** — `docs/spikes/041-joompulse-censo-do-radar-e-validacao-da-d4.md`:
+      lotes de **75 ids**, `ceil(catálogos / 75)` consultas em paralelo (3 hoje). Medido: 3 lotes de
+      77 passaram sem erro. O censo dos 229 confirmou a projeção do Spike 039 (64% com prévia útil,
+      23% sem venda estimada, 13% sem dado) e **validou a D-4**: a org aparece como ganhadora do
+      buy-box em 16 catálogos. Correlação literal por `productId`, sem normalizar — os 229 ids do
+      PubliAI são todos `^MLB[0-9]+$`.
+- [ ] **Confirmar se `catalogOrderCount1m` é contagem ou faixa.** Os valores repetem num conjunto
+      pequeno e dois catálogos distintos devolveram exatamente `1021` — cheira a bucket. Se for,
+      exibir número exato é precisão falsa. Resolver antes de desenhar a célula de demanda.
 - [ ] **Fechar o contrato das seções 2, 3 e 7** do relatório (campos, fonte, unidade, nulabilidade,
       critério de aceite) antes de qualquer código de relatório.
 - [ ] Trabalho técnico da ADR-0132 que segue de pé: #4 contrato HTTP do Gateway, #5/#6 storage e
