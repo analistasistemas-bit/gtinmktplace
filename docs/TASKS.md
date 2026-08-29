@@ -20,7 +20,7 @@ O que o Spike 040 deixou de pé, em ordem de ataque:
 - [ ] **Seção 1 do relatório precisa de duas formas.** Modo EAN: média sem extremos em R$. Modo
       termo: percentual / equivalente por unidade. O contrato da seção tem que dizer qual modo
       gerou o número, e a UI não pode oferecer a forma errada para o modo errado.
-- [ ] **Proveniência obrigatória no dinheiro — exige ADR antes de codar.** Comissão e frete hoje
+- [ ] **Proveniência obrigatória no dinheiro — decidida (D-28), implementa junto com a DRE.** Diego escolheu a opção A em 2026-08-28, depois de medir: o zero silencioso **nunca ocorreu em produção** (`docs/spikes/042-zero-silencioso-quantas-vezes-aconteceu.md`) — é seguro, então o guard entra com a DRE em vez de antes dela, para não criar código sem chamador. Comissão e frete hoje
       convertem falha em zero (`listing-prices.ts:17`, `tarifa.ts:24`, `frete.ts:21`) e dimensões
       ausentes caem em `DIMENSOES_DEFAULT` (16×11×6 cm, 300 g) em silêncio.
 
