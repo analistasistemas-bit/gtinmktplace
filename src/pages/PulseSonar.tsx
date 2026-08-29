@@ -23,6 +23,7 @@ import { Switch } from '@/components/ui/switch';
 import { Sparkline } from '@/components/ui/sparkline';
 import { DialogMargemSonar, type AnuncioSimulavel } from '@/components/pulse/dialog-margem-sonar';
 import { SonarAnalisePubliAI } from '@/components/pulse/sonar-analise-publiai';
+import { SonarDre } from '@/components/pulse/sonar-dre';
 import { VereditoSonar } from '@/components/pulse/veredito-sonar';
 import {
   lerBuscasRecentes, limparBuscasRecentes, registrarBusca, tempoRelativo, type BuscaRecente,
@@ -371,6 +372,18 @@ export default function PulseSonar() {
     () => (vendas?.configurado ? itensDaAmostra(vendas) : []),
     [vendas],
   );
+  /** Âncora da DRE (ADR-0148 D-8): o primeiro anúncio da amostra. Mesma forma do simulador de
+   *  margem, para não existirem duas ideias de "produto de referência" na mesma tela. */
+  const ancoraDre = useMemo(() => {
+    const i = itens[0];
+    if (!i) return null;
+    return {
+      id: i.item_id ?? i.titulo,
+      nome: i.titulo,
+      category_id: i.category_id ?? null,
+      preco_referencia: i.preco,
+    };
+  }, [itens]);
   const itemIds = useMemo(
     () => itens.map((i) => i.item_id).filter((x): x is string => x != null),
     [itens],
@@ -763,6 +776,10 @@ export default function PulseSonar() {
             erro={secoes237Erro ? (secoes237ErroObj instanceof Error ? secoes237ErroObj : new Error('Erro desconhecido.')) : null}
             onRetry={() => refetchSecoes237()}
           />
+          {/* Seção 6 (ADR-0148). Âncora: o PRIMEIRO anúncio da amostra — na ordenação padrão, o
+              que mais vende no nicho. A pergunta é "o produto que puxa este nicho dá lucro para
+              mim?". Um seletor de âncora fica para a fatia seguinte. */}
+          <SonarDre ancora={ancoraDre} />
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <SonarFiltrosPopover filtros={filtros} setFiltros={setFiltros} />

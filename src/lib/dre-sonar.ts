@@ -48,6 +48,18 @@ const FORA_DO_CALCULO = [
 ];
 
 export function montarDreSonar(e: EntradaDreSonar): DreSonar {
+  // O que o operador ainda não digitou vem PRIMEIRO: enquanto falta custo ou origem, dizer "o
+  // Mercado Livre não respondeu" seria culpar o ML por um campo em branco — e mandaria o operador
+  // esperar uma cotação que não resolveria nada.
+  if (e.custoProduto == null) {
+    return { estado: 'indisponivel', motivo: 'informe o custo do produto — sem ele não há lucro a calcular' };
+  }
+  // Imposto nunca defaulta: sem origem, sem alíquota, sem DRE (mesmo padrão de
+  // `montarAliquotaResolver` em custos.ts).
+  if (e.origem == null || e.aliquotas == null) {
+    return { estado: 'indisponivel', motivo: 'informe a origem do produto — a alíquota de imposto depende dela e não é presumida' };
+  }
+
   if (e.tarifa == null) {
     return { estado: 'indisponivel', motivo: 'o Mercado Livre não respondeu a cotação de comissão e frete' };
   }
@@ -56,15 +68,6 @@ export function montarDreSonar(e: EntradaDreSonar): DreSonar {
   const { proveniencia, motivo } = provenienciaDaTarifa(e.tarifa);
   if (proveniencia !== 'official') {
     return { estado: 'indisponivel', motivo: motivo ?? 'os números da cotação não são oficiais' };
-  }
-
-  if (e.custoProduto == null) {
-    return { estado: 'indisponivel', motivo: 'informe o custo do produto — sem ele não há lucro a calcular' };
-  }
-  // Imposto nunca defaulta: sem origem, sem alíquota, sem DRE (mesmo padrão de
-  // `montarAliquotaResolver` em custos.ts).
-  if (e.origem == null || e.aliquotas == null) {
-    return { estado: 'indisponivel', motivo: 'informe a origem do produto — a alíquota de imposto depende dela e não é presumida' };
   }
 
   const aliquotaPct = e.origem === 'importado' ? e.aliquotas.importado : e.aliquotas.nacional;

@@ -100,6 +100,15 @@ presumido. O operador escolhe `NACIONAL` ou `IMPORTADO` explicitamente, como a p
 A DRE usa `calcularSimulacaoML()` (`src/lib/calculadora-ml.ts`), como manda a D-15. O projeto já
 tem quatro superfícies calculando margem; **não haverá uma quinta**.
 
+### D-8 — A âncora é o primeiro anúncio da amostra
+
+A DRE precisa de uma receita, e a ADR-0141 nunca disse de qual anúncio. Nesta fatia a âncora é o
+**primeiro item da amostra** — na ordenação padrão do Sonar, o que mais vende no nicho. A pergunta
+fica: *"o produto que puxa este nicho dá lucro para mim?"*.
+
+Reusa a mesma forma do simulador de margem (`AnuncioSimulavel`), para não existirem duas ideias de
+"produto de referência" na mesma tela. **Um seletor de âncora fica para a fatia seguinte.**
+
 ## O que esta fatia NÃO entrega
 
 - **Os 5 cenários comerciais** — sem definição; exigem 5 cotações reais (15 chamadas ao ML) e a
