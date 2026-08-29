@@ -332,3 +332,27 @@ metade dos concorrentes do catálogo está parada.
 monitora no Radar. Para um nicho que a organização **não** rastreia, o estágio D cairia para perto
 de zero até o `pulse-coletar` passar a coletar os vendedores descobertos pelo Sonar (caminho 2).
 Não ler 122/190 como taxa de cobertura geral.
+
+---
+
+## 10. Validação da entrega em runtime real (edge v3, 2026-08-29)
+
+A `pulse-analise-secoes237` v3 foi chamada em produção com o JWT da conta de validação (org DSA) e
+os itens reais de três consultas do acervo. Regra do projeto após o incidente da ADR-0129: mock não
+basta.
+
+| Consulta | 3.2 | 3.3 | 7.4 |
+|---|---|---|---|
+| `aptamil premium 2` | **0 un./mês** (102 vendedores) | 9 de 20 anúncios têm catálogo — 102 de 126 vendedores | 5 elegíveis, top1 **94,9%**, dominante |
+| `abraçadeira nylon` | `sem_dado` | 8 de 40 — **0 de 20** vendedores | `null` |
+| `7891113175371` (EAN) | `sem_dado` | 7 de 20 — **0 de 9** vendedores | 5 elegíveis, top1 29,1% |
+
+Bate com a medição do §8 sem desvio. Confirmado no payload real:
+
+- **nenhum campo 2.6, 2.7, 2.8 ou 3.1**, e nenhum `R$` em lugar nenhum;
+- o nicho sem catálogo continua silencioso, com a cobertura explicando o motivo;
+- `mediana = 0` sai como `estado: 'valor'`, não como ausência.
+
+**Ganho colateral não previsto:** 7.4 passou a renderizar em duas das três consultas. Ela nunca
+tinha aparecido — a ponte do catálogo resolve `seller_id` de anúncios da amostra que a ponte por
+`item_id` perdia, e o mínimo de 5 vendedores elegíveis passou a ser atingido.
