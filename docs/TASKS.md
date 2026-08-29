@@ -179,7 +179,17 @@ Próximos passos, em ordem de ataque:
 > "Referência do ML"** (`tabela-radar.tsx:156`) — a D-4 (coluna Análise PubliAI com o ganhador do
 > buy-box) e a D-24 (remover a Referência do ML da coluna e do dialog) **não foram escritas**.
 
-- [ ] **Implementar a D-4 e a D-24 no Radar.** A Errata 1 da ADR-0141 registra que a D-4 "sobrevive
+- [ ] **A idade do catálogo está disponível — reavaliar a candidata B da ADR-0142.**
+      `GET /products/{catalog_product_id}` devolve `date_created` com **200 para catálogo de
+      terceiro** (o 403 da ADR-0119 é só em `/items/{id}`). É daí que a JoomPulse tira o `daysInAd`,
+      e com ela reproduzimos o número dela em 9/9 — ver
+      `docs/spikes/047-joompulse-comparada-com-a-nossa-metrica.md` §6. Copiar a fórmula dela copia
+      os defeitos dela (selo em potência de 10, média vitalícia); só vale com **numerador melhor**.
+      Candidato: `/reviews/item/{id}` responde 200 para terceiro e devolve contagem **exata**
+      (3.765 no `MLB2107927039`), não bucket. Em investigação.
+- [ ] **Implementar a D-4 e a D-24 no Radar.** **Facilitado:** `/products/{cat}` devolve
+      `buy_box_winner` na mesma chamada que a ponte do catálogo já faz — sem custo adicional.
+      A Errata 1 da ADR-0141 registra que a D-4 "sobrevive
       inteira via API do ML (`/products/{id}` → `buy_box_winner`), perdendo só a estimativa de
       vendas do catálogo". Não existe edge para isso — as `pulse-*` de hoje são coletor, adicionar,
       os dois do Sonar e a `pulse-analise-secoes237`. Reusa o mesmo caminho já validado no Sonar
