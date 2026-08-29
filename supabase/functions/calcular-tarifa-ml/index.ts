@@ -4,9 +4,9 @@ import { adminClient } from '../_shared/supabase.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
-import { montarTarifa } from '../_shared/ml/tarifa.ts';
+import { montarTarifaComProveniencia } from '../_shared/ml/tarifa.ts';
 import { buscarListingPrice } from '../_shared/ml/listing-prices.ts';
-import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
+import { buscarFreteVendedorComProveniencia } from '../_shared/ml/frete.ts';
 import type { DimensoesPacote } from '../_shared/ml/pacote.ts';
 
 const CACHE_TTL_S = 6 * 60 * 60; // 6h — comissões mudam raramente
@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
   const precoKey = preco.toFixed(2);
   // Frete depende do peso/dimensões e da reputação do vendedor → entram na chave.
   const dimKey = `${dim.altura_cm ?? 0}x${dim.largura_cm ?? 0}x${dim.comprimento_cm ?? 0}x${dim.peso_gramas ?? 0}`;
-  const cacheKey = `tarifa:v2:${orgId}:${categoria_ml_id}:${precoKey}:${dimKey}`;
+  const cacheKey = `tarifa:v3:${orgId}:${categoria_ml_id}:${precoKey}:${dimKey}`;
 
   try {
     const cached = await redisGet(cacheKey);
@@ -60,9 +60,16 @@ Deno.serve(async (req) => {
     const [classicoML, premiumML, frete] = await Promise.all([
       buscarListingPrice(token, preco, categoria_ml_id, 'gold_special'),
       buscarListingPrice(token, preco, categoria_ml_id, 'gold_pro'),
-      buscarFreteVendedor(token, mlUserId, preco, categoria_ml_id, dim),
+      // Variante com proveniência (ADR-0148 D-2): a Revisão segue lendo só os números, mas a DRE
+      // precisa saber se o frete veio do ML com as dimensões reais ou de um pacote padrão.
+      buscarFreteVendedorComProveniencia(token, mlUserId, preco, categoria_ml_id, dim),
     ]);
-    const tarifa = montarTarifa(preco, classicoML, premiumML, frete);
+    const comProveniencia = montarTarifaComProveniencia(preco, classicoML, premiumML, frete);
+    const tarifa = {
+      ...comProveniencia.valor,
+      proveniencia: comProveniencia.proveniencia,
+      ...(comProveniencia.motivo ? { motivo_proveniencia: comProveniencia.motivo } : {}),
+    };
 
     await redisSet(cacheKey, JSON.stringify(tarifa), CACHE_TTL_S);
     return json(tarifa);

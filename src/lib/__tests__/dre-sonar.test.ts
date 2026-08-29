@@ -1,0 +1,107 @@
+import { describe, expect, it } from 'vitest';
+import { montarDreSonar, type EntradaDreSonar } from '../dre-sonar';
+import type { Tarifa } from '../tarifa';
+
+// ADR-0148: a DRE calcula com UMA cotação real, no preço do anúncio, e RECUSA quando o número não
+// é oficial. Nunca zero, nunca traço mudo, nunca número com asterisco.
+
+const tarifa = (over: Partial<Tarifa> = {}): Tarifa => ({
+  classico: { comissao: 12.59, percentual: 14, fixa: 0, imposto: 0, recebe: 68.86 },
+  premium: { comissao: 16.18, percentual: 18, fixa: 0, imposto: 0, recebe: 65.27 },
+  frete: 8.45,
+  proveniencia: 'official',
+  ...over,
+});
+
+const entrada = (over: Partial<EntradaDreSonar> = {}): EntradaDreSonar => ({
+  precoAnuncio: 89.9,
+  custoProduto: 42,
+  origem: 'nacional',
+  aliquotas: { nacional: 8, importado: 16 },
+  tarifa: tarifa(),
+  ...over,
+});
+
+describe('montarDreSonar', () => {
+  it('calcula com cotação oficial e decompõe receita, comissão, frete, imposto e custo', () => {
+    const d = montarDreSonar(entrada());
+    expect(d.estado).toBe('calculada');
+    if (d.estado !== 'calculada') return;
+    expect(d.receita).toBe(89.9);
+    expect(d.comissao).toBe(12.59);
+    expect(d.frete).toBe(8.45);
+    expect(d.imposto).toBeCloseTo(7.19, 2); // 89,90 × 8%
+    expect(d.custoProduto).toBe(42);
+    expect(d.lucro).toBeCloseTo(19.67, 2);
+    expect(d.margemPct).toBeCloseTo(21.88, 1);
+  });
+
+  it('origem importada usa a alíquota de importado', () => {
+    const d = montarDreSonar(entrada({ origem: 'importado' }));
+    if (d.estado !== 'calculada') return;
+    expect(d.imposto).toBeCloseTo(14.38, 2); // 89,90 × 16%
+  });
+
+  // Critério de aceite 6: imposto nunca defaulta em silêncio (ADR-0055 / ADR-0148 D-6).
+  it('origem não informada NÃO calcula — imposto não se presume', () => {
+    const d = montarDreSonar(entrada({ origem: null }));
+    expect(d.estado).toBe('indisponivel');
+    if (d.estado !== 'indisponivel') return;
+    expect(d.motivo).toMatch(/origem/i);
+  });
+
+  // Critérios 3 e 4: fora de `official`, recusa.
+  it.each([
+    ['partial', 'o frete foi calculado com um pacote padrão'],
+    ['estimated', 'o Mercado Livre não respondeu o frete'],
+  ] as const)('proveniência %s recusa e repete o motivo do ML', (proveniencia, motivo) => {
+    const d = montarDreSonar(entrada({ tarifa: tarifa({ proveniencia, motivo_proveniencia: motivo }) }));
+    expect(d.estado).toBe('indisponivel');
+    if (d.estado !== 'indisponivel') return;
+    expect(d.motivo).toContain(motivo);
+  });
+
+  it('tarifa sem campo de proveniência falha fechado — nunca vira oficial por omissão', () => {
+    const semCampo = tarifa();
+    delete semCampo.proveniencia;
+    const d = montarDreSonar(entrada({ tarifa: semCampo }));
+    expect(d.estado).toBe('indisponivel');
+  });
+
+  it('cotação ausente (o ML não respondeu) recusa', () => {
+    const d = montarDreSonar(entrada({ tarifa: null }));
+    expect(d.estado).toBe('indisponivel');
+  });
+
+  // Critério 2: frete zero legítimo não impede a DRE.
+  it('frete zero porque o comprador paga: calcula normalmente', () => {
+    const d = montarDreSonar(entrada({ tarifa: tarifa({ frete: 0 }) }));
+    expect(d.estado).toBe('calculada');
+    if (d.estado !== 'calculada') return;
+    expect(d.frete).toBe(0);
+    expect(d.lucro).toBeCloseTo(28.12, 2);
+  });
+
+  it('custo não informado recusa — sem custo não há lucro a afirmar', () => {
+    const d = montarDreSonar(entrada({ custoProduto: null }));
+    expect(d.estado).toBe('indisponivel');
+    if (d.estado !== 'indisponivel') return;
+    expect(d.motivo).toMatch(/custo/i);
+  });
+
+  // Critério 5: o que ficou de fora é declarado, não omitido.
+  it('declara que custos fixos, variáveis e rebate estão fora do número', () => {
+    const d = montarDreSonar(entrada());
+    if (d.estado !== 'calculada') return;
+    expect(d.forasDoCalculo).toEqual(
+      expect.arrayContaining([expect.stringMatching(/fixos/i), expect.stringMatching(/vari/i), expect.stringMatching(/rebate/i)]),
+    );
+  });
+
+  it('lucro negativo é resultado válido, não recusa', () => {
+    const d = montarDreSonar(entrada({ custoProduto: 80 }));
+    expect(d.estado).toBe('calculada');
+    if (d.estado !== 'calculada') return;
+    expect(d.lucro).toBeLessThan(0);
+  });
+});

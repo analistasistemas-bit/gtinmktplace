@@ -1,4 +1,5 @@
 import type { ListingPriceML } from './tarifa.ts';
+import type { ValorComProveniencia } from './proveniencia.ts';
 
 /** GET /sites/MLB/listing_prices para um preço/categoria/tipo de anúncio. Lança em erro HTTP. */
 export async function buscarListingPrice(
@@ -15,8 +16,24 @@ export async function buscarListingPrice(
 
 /** Comissão (%/fixa em R$) a partir da resposta de listing_prices. */
 export function comissaoDe(lp: ListingPriceML): { percentual: number; fixa: number } {
-  return {
-    percentual: lp.sale_fee_details?.percentage_fee ?? 0,
-    fixa: lp.sale_fee_details?.fixed_fee ?? 0,
-  };
+  return comissaoDeComProveniencia(lp).valor;
+}
+
+/**
+ * Variante com proveniência, para a DRE (ADR-0148 D-2). O `?? 0` acima transforma schema
+ * incompleto em comissão zero, que a DRE leria como "produto sem comissão" — lucro inflado. Aqui
+ * a ausência do bloco `sale_fee_details` é declarada, e zero explícito continua sendo resposta.
+ */
+export function comissaoDeComProveniencia(
+  lp: ListingPriceML,
+): ValorComProveniencia<{ percentual: number; fixa: number }> {
+  const d = lp.sale_fee_details;
+  if (!d || d.percentage_fee == null || d.fixed_fee == null) {
+    return {
+      valor: { percentual: d?.percentage_fee ?? 0, fixa: d?.fixed_fee ?? 0 },
+      proveniencia: 'estimated',
+      motivo: 'o Mercado Livre respondeu sem `sale_fee_details` — a comissão não veio detalhada',
+    };
+  }
+  return { valor: { percentual: d.percentage_fee, fixa: d.fixed_fee }, proveniencia: 'official' };
 }

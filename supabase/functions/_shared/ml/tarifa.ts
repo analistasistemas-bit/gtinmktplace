@@ -1,3 +1,6 @@
+// Sem importar `listing-prices.ts`: ele já importa o tipo daqui, e o par viraria import circular.
+import { piorProveniencia, type Proveniencia, type ValorComProveniencia } from './proveniencia.ts';
+
 export interface ListingPriceML {
   sale_fee_amount: number;
   sale_fee_details?: { percentage_fee?: number; fixed_fee?: number };
@@ -47,4 +50,46 @@ export function montarTarifa(
     premium: tipo(preco, premiumML, frete),
     frete: arredondar2(frete),
   };
+}
+
+/**
+ * Variante com proveniência, para a DRE (ADR-0148 D-2). A tarifa vale a PIOR proveniência entre
+ * as duas modalidades e o frete: comissão oficial com frete estimado não é número oficial.
+ */
+export function montarTarifaComProveniencia(
+  preco: number,
+  classicoML: ListingPriceML,
+  premiumML: ListingPriceML,
+  frete: ValorComProveniencia<number>,
+): ValorComProveniencia<Tarifa> {
+  const partes = [
+    provenienciaDaListingPrice(classicoML, 'Clássico'),
+    provenienciaDaListingPrice(premiumML, 'Premium'),
+    frete,
+  ];
+  return {
+    valor: montarTarifa(preco, classicoML, premiumML, frete.valor),
+    ...piorProveniencia(...partes),
+  };
+}
+
+/** `sale_fee_amount` e o bloco de detalhes viram zero no `tipo()` acima — aqui isso é declarado. */
+function provenienciaDaListingPrice(
+  lp: ListingPriceML,
+  modalidade: string,
+): { proveniencia: Proveniencia; motivo?: string } {
+  if (lp?.sale_fee_amount == null) {
+    return {
+      proveniencia: 'estimated',
+      motivo: `o Mercado Livre respondeu sem \`sale_fee_amount\` para o ${modalidade} — a comissão não veio`,
+    };
+  }
+  const d = lp.sale_fee_details;
+  if (!d || d.percentage_fee == null || d.fixed_fee == null) {
+    return {
+      proveniencia: 'estimated',
+      motivo: `o Mercado Livre respondeu sem \`sale_fee_details\` para o ${modalidade} — a comissão não veio detalhada`,
+    };
+  }
+  return { proveniencia: 'official' };
 }

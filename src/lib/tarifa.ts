@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import type { CotacoesOficiaisPorModalidade } from './calculadora-ml';
+import type { CotacoesOficiaisPorModalidade, Proveniencia } from './calculadora-ml';
 
 export interface TarifaTipo {
   comissao: number;
@@ -15,6 +15,29 @@ export interface Tarifa {
   premium: TarifaTipo;
   /** Frete que o vendedor absorve (frete grátis ao comprador). 0 quando o comprador paga. */
   frete: number;
+  /** De onde vieram comissão e frete (ADR-0148 D-3). Ausente = resposta antiga, tratada como
+   *  não-oficial pela DRE. */
+  proveniencia?: Proveniencia;
+  /** Por que não é `official` — vai para a tela na recusa da DRE. */
+  motivo_proveniencia?: string;
+}
+
+/**
+ * Proveniência da tarifa para a DRE, **falhando fechado** (ADR-0148 D-3): resposta sem o campo é
+ * `estimated`, nunca `official`. Só existe uma forma de a DRE calcular, e ela é o ML ter
+ * respondido tudo com as dimensões reais.
+ *
+ * Não use isto para a calculadora da Revisão: ela segue com `cotacoesOficiaisDaTarifa`, cujo
+ * comportamento esta fatia não altera (ADR-0148, critério de aceite 1).
+ */
+export function provenienciaDaTarifa(tarifa: Tarifa): { proveniencia: Proveniencia; motivo?: string } {
+  if (tarifa.proveniencia == null) {
+    return { proveniencia: 'estimated', motivo: 'a cotação veio sem informar a origem dos números' };
+  }
+  return {
+    proveniencia: tarifa.proveniencia,
+    ...(tarifa.motivo_proveniencia ? { motivo: tarifa.motivo_proveniencia } : {}),
+  };
 }
 
 /** Adapta a resposta oficial sem recomputar comissão, taxa fixa ou frete no cliente. */

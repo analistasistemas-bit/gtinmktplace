@@ -3,6 +3,7 @@
 // simulador de custos do ML. Recurso à parte da comissão; não bloqueia (best-effort).
 
 import { type DimensoesPacote, dimensoesValidas } from './pacote.ts';
+import type { ValorComProveniencia } from './proveniencia.ts';
 
 interface CoverageAllCountry {
   list_cost?: number;
@@ -45,7 +46,29 @@ export async function buscarFreteVendedor(
   categoria: string,
   dim?: DimensoesPacote | null,
 ): Promise<number> {
-  const d = dim && dimensoesValidas(dim) ? dim : DIMENSOES_DEFAULT;
+  return (await buscarFreteVendedorComProveniencia(token, mlUserId, preco, categoria, dim)).valor;
+}
+
+/**
+ * Variante com proveniência, para a DRE (ADR-0148 D-2, implementa a D-28 da ADR-0141).
+ *
+ * O helper acima devolve `0` em três situações com significados opostos: o comprador paga
+ * (resposta legítima), o ML não respondeu (ausência), e o schema veio incompleto. A DRE precisa
+ * recusar nos dois últimos e calcular no primeiro — daí esta variante. O contrato do helper antigo
+ * **não muda**: ele serve `process-familia`, `pulse-coletar`, `analisar-viabilidade` e
+ * `calcular-tarifa-ml`, e lançar ali quebraria a publicação.
+ *
+ * Não confundir com o homônimo de `_shared/faturamento/io.ts:193`, que devolve `number | null`.
+ */
+export async function buscarFreteVendedorComProveniencia(
+  token: string,
+  mlUserId: string,
+  preco: number,
+  categoria: string,
+  dim?: DimensoesPacote | null,
+): Promise<ValorComProveniencia<number>> {
+  const dimInformadas = !!(dim && dimensoesValidas(dim));
+  const d = dimInformadas ? dim! : DIMENSOES_DEFAULT;
   const dimensions =
     `${Math.round(d.altura_cm!)}x${Math.round(d.largura_cm!)}x${Math.round(d.comprimento_cm!)},${Math.round(d.peso_gramas!)}`;
   const url = `https://api.mercadolibre.com/users/${mlUserId}/shipping_options/free`
@@ -55,11 +78,31 @@ export async function buscarFreteVendedor(
   let resp: Response;
   try {
     resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-  } catch {
-    return 0;
+  } catch (e) {
+    return { valor: 0, proveniencia: 'estimated', motivo: `o Mercado Livre não respondeu o frete (${(e as Error).message})` };
   }
-  if (!resp.ok) return 0;
+  if (!resp.ok) {
+    return { valor: 0, proveniencia: 'estimated', motivo: `o Mercado Livre recusou o cálculo de frete (HTTP ${resp.status})` };
+  }
+
   const ac = (await resp.json())?.coverage?.all_country as CoverageAllCountry | undefined;
-  return freteSeVendedorPaga(ac);
+  // 200 sem `coverage.all_country` é resposta vazia (ex.: item fora do me2), não frete zero.
+  if (!ac) {
+    return { valor: 0, proveniencia: 'estimated', motivo: 'o Mercado Livre respondeu sem cobertura de frete para este item' };
+  }
+  // Vendedor paga mas o ML não disse quanto: ausência, não zero.
+  const vendedorPaga = ac.free_shipping_by_meli === true || ac.discount?.type === 'mandatory';
+  if (vendedorPaga && !Number(ac.list_cost)) {
+    return { valor: 0, proveniencia: 'estimated', motivo: 'o Mercado Livre disse que o vendedor paga o frete, mas não informou o valor' };
+  }
+
+  const valor = freteSeVendedorPaga(ac);
+  return dimInformadas
+    ? { valor, proveniencia: 'official' }
+    : {
+      valor,
+      proveniencia: 'partial',
+      motivo: 'o frete foi calculado com um pacote padrão porque as dimensões do produto não foram informadas',
+    };
 }
 
