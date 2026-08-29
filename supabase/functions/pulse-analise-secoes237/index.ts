@@ -1,13 +1,19 @@
-// Análise PubliAI — seções 2/3/7 via pulse_vendedores + amostra Sonar (ADR-0142).
-// POST { itens: ItemVendas[] } → payload contrato + meta. Só leitura.
+// Análise PubliAI — campos 2.9/3.2/3.3/3.4/7.4 via catálogo + pulse_vendedores (ADR-0142/0143).
+// POST { itens: ItemVendas[] } → payload do contrato + meta. Só leitura, no banco e no ML.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
+import { resolverConexao } from '../_shared/canais/conexao.ts';
+import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { anunciosDaAmostra } from '../_shared/analise/amostra-sonar.ts';
 import { carregarSeriePulseVendedores } from '../_shared/analise/carregar-serie-vendedores.ts';
 import { montarSecoes237 } from '../_shared/analise/relatorio-secoes-237.ts';
-import { resolverSellerIdsPorItem } from '../_shared/analise/resolver-seller-ids.ts';
-import { normalizarSellerId } from '../_shared/pulse/vendas-mensais-vendedor.ts';
+import {
+  anunciosComCatalogo,
+  catalogosDaAmostra,
+  resolverVendedoresDosCatalogos,
+} from '../_shared/analise/vendedores-do-catalogo.ts';
 import type { ItemVendas } from '../_shared/pulse/sonar-vendas.ts';
 
 function json(body: unknown, status = 200): Response {
@@ -29,6 +35,11 @@ Deno.serve(async (req) => {
     throw resp;
   }
 
+  const db = adminClient();
+  if (!(await exigirModulo(db, orgId, 'pulse'))) {
+    return json({ erro: 'Módulo Pulse não habilitado para esta organização.' }, 403);
+  }
+
   let body: { itens?: ItemVendas[] };
   try {
     body = await req.json();
@@ -37,31 +48,38 @@ Deno.serve(async (req) => {
   }
 
   if (!Array.isArray(body.itens)) return json({ erro: 'itens obrigatório (array)' }, 400);
+  const itens = body.itens;
 
-  const db = adminClient();
-  const itemIds = body.itens
-    .map((i) => i.item_id)
-    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  // Sem conexão do ML não há ponte para o vendedor: ausência explícita com 200, mesmo padrão da
+  // pulse-sonar-visitas — a tela vive e diz o motivo (ADR-0143, critério 6).
+  const conexao = await resolverConexao(db, orgId, 'mercado_livre');
+  if (!conexao) return json({ conectado: false });
+  const token = await getValidAccessTokenConexao(conexao);
 
-  const sellerPorItem = await resolverSellerIdsPorItem(db, orgId, itemIds);
-  const { anuncios, semSellerId } = anunciosDaAmostra(body.itens, sellerPorItem);
+  const catalogos = catalogosDaAmostra(itens);
+  const doCatalogo = await resolverVendedoresDosCatalogos(catalogos, token);
+  const { anuncios, semSellerId } = anunciosDaAmostra(itens, doCatalogo.sellerPorItem);
 
-  const sellerIds = [
-    ...new Set(anuncios.map((a) => Number(normalizarSellerId(a.seller_id)))),
-  ].filter((id) => Number.isFinite(id));
+  const serie = await carregarSeriePulseVendedores(db, orgId, doCatalogo.sellerIds);
 
-  const serie = await carregarSeriePulseVendedores(db, orgId, sellerIds);
-  const secoes237 = montarSecoes237(anuncios, serie, body.itens.length);
-
-  const vendedoresDistintos = new Set(anuncios.map((a) => normalizarSellerId(a.seller_id))).size;
+  const secoes237 = montarSecoes237({
+    anuncios,
+    anunciosNaAmostra: itens.length,
+    anunciosComCatalogo: anunciosComCatalogo(itens),
+    sellerIdsCatalogo: doCatalogo.sellerIds,
+    serie,
+  });
 
   return json({
+    conectado: true,
     secoes237,
     meta: {
-      vendedores_distintos: vendedoresDistintos,
+      vendedores_distintos: doCatalogo.sellerIds.length,
       sem_seller_id: semSellerId,
-      anuncios_na_amostra: body.itens.length,
       serie_linhas: serie.length,
+      anuncios_na_amostra: itens.length,
+      catalogos_consultados: doCatalogo.catalogos_consultados,
+      catalogos_com_falha: doCatalogo.catalogos_com_falha,
     },
   });
 });

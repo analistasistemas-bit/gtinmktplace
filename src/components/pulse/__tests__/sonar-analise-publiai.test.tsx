@@ -1,80 +1,82 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import type { RespostaSecoes237Sonar } from '@/lib/sonar';
+import type { RespostaSecoes237Sonar, Secoes237Sonar } from '@/lib/sonar';
 import { SonarAnalisePubliAI } from '../sonar-analise-publiai';
 
-function resposta(over: Partial<RespostaSecoes237Sonar['secoes237']> = {}): RespostaSecoes237Sonar {
+function resposta(over: Partial<Secoes237Sonar> = {}): RespostaSecoes237Sonar {
   return {
+    conectado: true,
     secoes237: {
-      '2.6': {
-        estado: 'valor',
-        faturamento_mes: 12_345,
-        vendedores_com_estimativa: 5,
-        vendedores_distintos: 8,
-        rotulo: 'faturamento de 5 vendedores com estimativa',
-      },
-      '2.9': { parecer: 'nicho pequeno para a meta' },
+      '2.9': { estado: 'sem_dado', mensagem: 'o faturamento do nicho não é publicado (ADR-0143)' },
       '3.2': {
         estado: 'valor',
-        vendas_mes_mediana: 21,
-        vendedores_com_estimativa: 5,
-        rotulo: 'mediana de vendas/mês',
+        vendas_mes_mediana: 0,
+        vendedores_com_estimativa: 102,
+        rotulo: 'mediana de vendas/mês — vendedores que disputam os catálogos desta amostra (102 vendedores)',
       },
       '3.3': {
-        com_estimativa: 5,
-        vendedores_distintos: 8,
-        proporcao: 5 / 8,
-        anuncios_na_amostra: 113,
-        anuncios_cobertos: 5,
-        proporcao_anuncios: 5 / 113,
-        rotulo: '5 de 113 anúncios da amostra cobertos — 5 de 8 vendedores com estimativa mensal',
+        com_estimativa: 102,
+        vendedores_distintos: 126,
+        proporcao: 102 / 126,
+        anuncios_na_amostra: 20,
+        anuncios_com_catalogo: 9,
+        proporcao_anuncios: 9 / 20,
+        rotulo: '9 de 20 anúncios da amostra têm catálogo — 102 de 126 vendedores com estimativa mensal',
       },
-      '3.4': { contagem: 3, rotulo: '3 vendedores sem estimativa mensal' },
-      limitacao_3_2: 'loja inteira do vendedor',
+      '3.4': { contagem: 24, rotulo: '24 vendedores sem estimativa mensal' },
+      limitacao_3_2: 'loja inteira do vendedor; catálogos desta amostra',
       '7.4': null,
       ...over,
     },
-    meta: { vendedores_distintos: 8, sem_seller_id: 108, serie_linhas: 40, anuncios_na_amostra: 113 },
+    meta: {
+      vendedores_distintos: 126, sem_seller_id: 11, serie_linhas: 900,
+      anuncios_na_amostra: 20, catalogos_consultados: 9, catalogos_com_falha: 0,
+    },
   };
 }
 
 const render237 = (data: RespostaSecoes237Sonar) =>
   render(<SonarAnalisePubliAI data={data} carregando={false} erro={null} />);
 
-describe('SonarAnalisePubliAI — cobertura honesta (spike 045)', () => {
-  it('o percentual acompanha os anúncios, não a contagem de vendedores', () => {
+describe('SonarAnalisePubliAI — ADR-0143', () => {
+  it('mediana zero aparece como número medido, nunca como ausência', () => {
     render237(resposta());
-    // Uma linha para cada unidade; o % nunca fica colado na cláusula de vendedores.
-    const anuncios = screen.getByText(/anúncios da amostra cobertos/);
-    expect(anuncios.textContent).toContain('5 de 113');
-    expect(anuncios.textContent).toContain('4%');
+    expect(screen.getByText('0 un./mês')).toBeInTheDocument();
+    expect(screen.queryByText(/sem estimativa no período/i)).toBeNull();
+  });
+
+  it('não exibe valor de faturamento — só o motivo de ele não existir', () => {
+    const { container } = render237(resposta());
+    expect(container.textContent).not.toMatch(/R\$/);
+    expect(container.textContent).not.toMatch(/comporta entrada/i);
+    expect(container.textContent).not.toMatch(/meta de entrada/i);
+    // 2.9 permanece como ausência declarada (ADR-0143 D-3), e o operador lê o motivo.
+    expect(screen.getByText(/não é publicado/)).toBeInTheDocument();
+  });
+
+  it('o percentual acompanha os anúncios, não a contagem de vendedores (spike 045)', () => {
+    render237(resposta());
+    const anuncios = screen.getByText(/anúncios da amostra têm catálogo/);
+    expect(anuncios.textContent).toContain('9 de 20');
+    expect(anuncios.textContent).toContain('45%');
     expect(anuncios.textContent).not.toContain('vendedores');
 
     const vendedores = screen.getByText(/vendedores com estimativa mensal/);
-    expect(vendedores.textContent).toContain('5 de 8');
+    expect(vendedores.textContent).toContain('102 de 126');
+    expect(vendedores.textContent).toContain('24 sem estimativa');
     expect(vendedores.textContent).not.toMatch(/\d+%/);
   });
 
-  it('3.4 fica junto da linha de vendedores — mesmo denominador', () => {
-    render237(resposta());
-    const vendedores = screen.getByText(/vendedores com estimativa mensal/);
-    // 5 com estimativa + 3 sem = os 8 vendedores resolvidos.
-    expect(vendedores.textContent).toContain('3 sem estimativa');
+  it('sem conexão do ML explica em vez de dar erro', () => {
+    render237({ conectado: false });
+    expect(screen.getByText(/Conecte o Mercado Livre/)).toBeInTheDocument();
   });
 
-  it('sem faturamento ainda mostra a cobertura — o operador precisa saber por quê', () => {
+  it('3.2 sem dado ainda mostra a cobertura — o operador precisa saber por quê', () => {
     render237(resposta({
-      '2.6': {
-        estado: 'sem_dado',
-        mensagem: 'amostra insuficiente: 1 de 5 vendedores mínimos com estimativa mensal',
-      },
+      '3.2': { estado: 'sem_dado', mensagem: 'amostra insuficiente: 1 de 5 vendedores mínimos com estimativa mensal' },
     }));
     expect(screen.getByText(/amostra insuficiente: 1 de 5/)).toBeInTheDocument();
-    expect(screen.getByText(/anúncios da amostra cobertos/).textContent).toContain('5 de 113');
-  });
-
-  it('não repete a contagem de anúncios sem seller_id em rodapé', () => {
-    render237(resposta());
-    expect(screen.queryByText(/sem seller_id identificado/)).toBeNull();
+    expect(screen.getByText(/anúncios da amostra têm catálogo/).textContent).toContain('9 de 20');
   });
 });

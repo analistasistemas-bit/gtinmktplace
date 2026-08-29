@@ -77,7 +77,7 @@
 | pulse-sonar-vendas | true | HTTP (frontend) | sim (leitura + grava `sonar_snapshots`; cache Redis 7d por termo) |
 | pulse-sonar-visitas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por item) |
 | pulse-sonar-ean | true | HTTP (frontend) | sim (leitura; cache Redis 24h lookup + 7d vendas Apify) |
-| pulse-analise-secoes237 | true | HTTP (frontend) | sim (leitura; monta seções 2/3/7 do relatório) |
+| pulse-analise-secoes237 | true | HTTP (frontend) | sim (leitura; demanda do nicho por vendedor, ponte pelo catálogo) |
 | **Status / métricas / viabilidade** ||||
 | status-publicados | true | HTTP (frontend) | sim (leitura) |
 | atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
@@ -1153,13 +1153,23 @@ falha ao ler `organizations` não libera.
   falha). Resposta 200 catalogada: `{conectado:true, catalogado:true, ean, product_id,
   nome_produto, descricao_catalogo, com_vendas, vendas_indisponivel?, ofertas: [{item_id,
   seller_id, preco, frete_gratis, full, vendidos}], gerado_em}`.
-- **pulse-analise-secoes237** (ADR-0142, `verify_jwt=true`, chamada pelo app com o JWT do
-  usuário) — monta o payload das seções 2.6–2.9, 3.1–3.4 e 7.4 do relatório Análise PubliAI a
-  partir da amostra Sonar já paga. Recebe `{itens: ItemVendas[]}` (mesmo shape da resposta de
-  `pulse-sonar-vendas`); resolve `seller_id` via campo Apify `vendedorID` e backfill em
-  `pulse_ofertas_atual`; carrega série histórica de `pulse_vendedores`; agrega em
-  `montarSecoes237` (`_shared/analise/relatorio-secoes-237.ts`, função pura). Resposta:
-  `{secoes237, meta: {vendedores_distintos, sem_seller_id, serie_linhas}}`. Só leitura; sem IA.
+- **pulse-analise-secoes237** (ADR-0142 + **ADR-0143**, `verify_jwt=true`, chamada pelo app com o
+  JWT do usuário) — monta o payload dos campos 2.9, 3.2, 3.3, 3.4 e 7.4 do relatório Análise
+  PubliAI a partir da amostra Sonar já paga. Recebe `{itens: ItemVendas[]}` (mesmo shape da
+  resposta de `pulse-sonar-vendas`).
+
+  **A ponte para o vendedor é o catálogo** (ADR-0143 D-1): `catalogosDaAmostra()` extrai os
+  `catalog_product_id` distintos e `resolverVendedoresDosCatalogos()` chama
+  `/products/{id}/items` (pool de 5). Medido em 2026-08-29: `/items?ids=` devolve **403
+  `access_denied` em 103 de 104** anúncios de terceiro, e `/items/{id}` idem — **não trocar por
+  multiget** (Spike 045). Depois carrega a série de `pulse_vendedores` e agrega em
+  `montarSecoes237` (`_shared/analise/relatorio-secoes-237.ts`, função pura).
+
+  **Não devolve faturamento do nicho** (2.6/2.7/2.8/3.1 saíram na ADR-0143 D-3). Sem conexão do ML
+  responde `{conectado: false}` com **HTTP 200**, mesmo padrão da `pulse-sonar-visitas`. Resposta:
+  `{conectado: true, secoes237, meta: {vendedores_distintos, sem_seller_id, serie_linhas,
+  anuncios_na_amostra, catalogos_consultados, catalogos_com_falha}}`. Exige o módulo `pulse`.
+  Só leitura, no banco e no ML; sem IA.
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal

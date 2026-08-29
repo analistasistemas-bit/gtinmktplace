@@ -1,6 +1,6 @@
 // Sonar (ADR-0120): garimpo on-demand por termo — par do Radar (que vigia o que já vendemos, o
 // Sonar vasculha um nicho antes de cadastrar).
-import { fmtBRL, fmtInt } from './formato';
+import { fmtInt } from './formato';
 import { supabase } from './supabase';
 
 // --- Vendas estimadas via Apify (ADR-0122) ------------------------------------------------------
@@ -267,20 +267,13 @@ export function margemSimulada({ precoAlvo, custo, aliquotaPct, tarifa }: {
   return { recebe, imposto, liquido, margemPct };
 }
 
-// --- Análise PubliAI seções 2/3/7 (ADR-0142): espelho de relatorio-secoes-237.ts + nicho-vendedor.ts
+// --- Análise PubliAI seções 2/3/7 (ADR-0142 + ADR-0143): espelho de relatorio-secoes-237.ts
 
-type CampoComEstado<T extends 'valor', V> =
-  | ({ estado: T } & V)
+type CampoComEstado<V> =
+  | ({ estado: 'valor' } & V)
   | { estado: 'sem_dado'; mensagem: string };
 
-export type FaturamentoNichoSonar = CampoComEstado<'valor', {
-  faturamento_mes: number;
-  vendedores_com_estimativa: number;
-  vendedores_distintos: number;
-  rotulo: string;
-}>;
-
-export type VolumeNichoSonar = CampoComEstado<'valor', {
+export type VolumeNichoSonar = CampoComEstado<{
   vendas_mes_mediana: number;
   vendedores_com_estimativa: number;
   rotulo: string;
@@ -291,7 +284,7 @@ export type CoberturaEstimativaSonar = {
   vendedores_distintos: number;
   proporcao: number | null;
   anuncios_na_amostra: number;
-  anuncios_cobertos: number;
+  anuncios_com_catalogo: number;
   proporcao_anuncios: number | null;
   rotulo: string;
 };
@@ -310,10 +303,10 @@ export type ConcentracaoPorVendedorSonar = {
   rotulo: string;
 } | null;
 
-export type ParecerTamanhoNichoSonar = { parecer: string };
+/** 2.9 só existe como ausência declarada — o faturamento do nicho saiu do ar (ADR-0143 D-3). */
+export type ParecerTamanhoNichoSonar = { estado: 'sem_dado'; mensagem: string };
 
 export type Secoes237Sonar = {
-  '2.6': FaturamentoNichoSonar;
   '2.9': ParecerTamanhoNichoSonar;
   '3.2': VolumeNichoSonar;
   '3.3': CoberturaEstimativaSonar;
@@ -327,12 +320,14 @@ export type MetaSecoes237Sonar = {
   sem_seller_id: number;
   serie_linhas: number;
   anuncios_na_amostra: number;
+  catalogos_consultados: number;
+  catalogos_com_falha: number;
 };
 
-export type RespostaSecoes237Sonar = {
-  secoes237: Secoes237Sonar;
-  meta: MetaSecoes237Sonar;
-};
+/** Sem conexão do ML não há ponte para o vendedor: ausência explícita, não erro (ADR-0143). */
+export type RespostaSecoes237Sonar =
+  | { conectado: false }
+  | { conectado: true; secoes237: Secoes237Sonar; meta: MetaSecoes237Sonar };
 
 /** POST /functions/v1/pulse-analise-secoes237 { itens } → RespostaSecoes237Sonar. */
 export async function fetchSecoes237Sonar(itens: ItemVendasSonar[]): Promise<RespostaSecoes237Sonar> {
@@ -348,13 +343,7 @@ export async function fetchSecoes237Sonar(itens: ItemVendasSonar[]): Promise<Res
   return json as RespostaSecoes237Sonar;
 }
 
-/** Faturamento 2.6 — R$/mês ou mensagem de indisponibilidade (nunca zero inventado). */
-export function formatarFaturamentoSecoes237(f: FaturamentoNichoSonar): string {
-  if (f.estado === 'sem_dado') return f.mensagem;
-  return fmtBRL(f.faturamento_mes);
-}
-
-/** Mediana 3.2 — unidades/mês por vendedor (loja inteira), não R$. */
+/** Mediana 3.2 — unidades/mês por vendedor (loja inteira), não R$. Zero é valor medido. */
 export function formatarMedianaVendasMesSecoes237(v: VolumeNichoSonar): string {
   if (v.estado === 'sem_dado') return v.mensagem;
   return `${fmtInt(Math.round(v.vendas_mes_mediana))} un./mês`;

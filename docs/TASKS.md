@@ -87,14 +87,20 @@ Próximos passos, em ordem de ataque:
             unidades. Edge `pulse-analise-secoes237` **v2 deployada**.
       - [x] 2.6 e 3.2 sem N mínimo — **corrigido**: piso de 5 vendedores com estimativa, o mesmo
             de 7.3/7.4. O caso real do spike (1 vendedor → R$ 100,7 mi) virou teste de regressão.
-      - [ ] **Medir `/items?ids=` (multiget) como fonte de `seller_id`** — decide se dá para cobrir
-            os 71% de anúncios do Sonar sem `catalog_product_id`. O 403 da ADR-0119 foi medido em
-            `/items/{id}` individual; o multiget não foi testado e exige token do ML.
-      - [ ] **Fechar o caminho primário:** chamar `pulse-sonar-vendas` uma vez e inspecionar
-            `itens[].seller_id` (~US$ 0,10 de Apify). Não muda a conclusão do spike — define se o
-            caminho 1 precisa existir.
-      - [ ] 2.7 (piso R$ 30.000) e 2.8 (meta de entrada) não aparecem na tela, só o parecer 2.9.
-            O contrato pede 2.7 "exibida como tal".
+      - [x] **Medir `/items?ids=` (multiget) como fonte de `seller_id`** — **refutado**: 403
+            `access_denied` em 103 de 104 anúncios. O envelope volta 200 e cada item traz
+            `code: 403`. Não existe rota `item_id → seller_id` de terceiro.
+      - [x] **Achar a ponte que funciona** — `/products/{cat}/items`: 26 de 26 catálogos em 200,
+            190 vendedores distintos, 122 já com série. **Decidido na
+            [ADR-0143](decisions/0143-demanda-do-nicho-pela-ponte-do-catalogo.md)** (opção B
+            parcial, Diego): a ponte é o catálogo, e **2.6/2.7/2.8/3.1 saem do contrato** porque
+            sob a ponte nova o faturamento daria R$ 187,2 mi/mês com 94,5% vindos da conta do
+            próprio ML. 3.2/3.3/3.4 entregues; `pulse-analise-secoes237` v3.
+      - [ ] **Estender o `pulse-coletar` aos vendedores descobertos pelo Sonar** (caminho 2,
+            `/users/{id}`, que já funciona). Sem isso, nicho que a org não rastreia no Radar tem
+            cobertura perto de zero — os 122 de 190 medidos vêm de catálogos que a DSA já monitora.
+      - [ ] Desenhar uma construção de faturamento do nicho que não multiplique a loja inteira do
+            vendedor pelo preço de um anúncio — pendência herdada da ADR-0142 e assumida na 0143.
 - [x] **Lote da consulta do Radar definido** — `docs/spikes/041-joompulse-censo-do-radar-e-validacao-da-d4.md`:
       lotes de **75 ids**, `ceil(catálogos / 75)` consultas em paralelo (3 hoje). Medido: 3 lotes de
       77 passaram sem erro. O censo dos 229 confirmou a projeção do Spike 039 (64% com prévia útil,

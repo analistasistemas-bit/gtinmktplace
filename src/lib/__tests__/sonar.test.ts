@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   passosProgresso, margemSimulada, ETAPAS_SONAR, itensDaAmostra, normalizarSerieVisitas, linkDoAnuncio,
-  formatarFaturamentoSecoes237, formatarMedianaVendasMesSecoes237, formatarProporcaoCobertura,
+  formatarMedianaVendasMesSecoes237, formatarProporcaoCobertura,
   fetchSecoes237Sonar,
 } from '../sonar';
 import { supabase } from '../supabase';
@@ -143,28 +143,28 @@ describe('linkDoAnuncio — href do anúncio na coluna de ações (ADR-0127/D15)
   });
 });
 
-describe('formatarFaturamentoSecoes237 / formatarMedianaVendasMesSecoes237 — ADR-0142', () => {
+describe('formatarMedianaVendasMesSecoes237 — ADR-0142/0143', () => {
   it('sem_dado devolve mensagem, nunca zero', () => {
-    expect(formatarFaturamentoSecoes237({ estado: 'sem_dado', mensagem: 'nenhum vendedor na amostra' }))
-      .toBe('nenhum vendedor na amostra');
     expect(formatarMedianaVendasMesSecoes237({ estado: 'sem_dado', mensagem: 'não dá para estimar o volume deste nicho' }))
       .toBe('não dá para estimar o volume deste nicho');
   });
 
-  it('valor formata faturamento em BRL e mediana em un./mês', () => {
-    expect(formatarFaturamentoSecoes237({
-      estado: 'valor',
-      faturamento_mes: 12500.5,
-      vendedores_com_estimativa: 3,
-      vendedores_distintos: 5,
-      rotulo: 'faturamento de 3 vendedores com estimativa (vendas/mês — loja inteira, janela 365d)',
-    })).toBe('R$ 12.500,50');
+  it('valor formata a mediana em un./mês', () => {
     expect(formatarMedianaVendasMesSecoes237({
       estado: 'valor',
       vendas_mes_mediana: 42.7,
       vendedores_com_estimativa: 3,
-      rotulo: 'mediana de vendas/mês — loja inteira, janela 365d (3 vendedores)',
+      rotulo: 'mediana de vendas/mês',
     })).toBe('43 un./mês');
+  });
+
+  it('mediana zero é "0 un./mês" — zero medido, não ausência (ADR-0143 D-4)', () => {
+    expect(formatarMedianaVendasMesSecoes237({
+      estado: 'valor',
+      vendas_mes_mediana: 0,
+      vendedores_com_estimativa: 102,
+      rotulo: 'mediana de vendas/mês',
+    })).toBe('0 un./mês');
   });
 
   it('formatarProporcaoCobertura arredonda percentual ou traço', () => {

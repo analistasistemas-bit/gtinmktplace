@@ -1,12 +1,13 @@
-// Análise PubliAI no Sonar (ADR-0142): seções 2.6–2.9, 3.2–3.4 e 7.4 — só exibe payload da edge.
-import { BarChart3, CircleDollarSign, Loader2, Users } from 'lucide-react';
+// Análise PubliAI no Sonar (ADR-0142 + ADR-0143): demanda do nicho por vendedor.
+// Só exibe o payload da edge — nenhum número nasce aqui. O faturamento do nicho (2.6) não existe
+// mais: a estimativa é da loja inteira do vendedor, não do anúncio (ADR-0143 D-3).
+import { BarChart3, Loader2, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  formatarFaturamentoSecoes237,
   formatarMedianaVendasMesSecoes237,
   formatarProporcaoCobertura,
   type CoberturaEstimativaSonar,
@@ -21,10 +22,18 @@ export type SonarAnalisePubliAIProps = {
   onRetry?: () => void;
 };
 
+function Cabecalho() {
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-2">
+      <span className="text-sm font-medium">Análise PubliAI</span>
+      <Badge variant="outline">demanda por vendedor</Badge>
+    </div>
+  );
+}
+
 /**
  * 3.3 + 3.4 em duas linhas, uma por unidade (spike 045): o percentual pertence aos anúncios, e a
- * contagem de 3.4 só faz sentido ao lado do denominador de vendedores. Misturar as duas é o
- * defeito que o contrato criou 3.3 para impedir.
+ * contagem de 3.4 só faz sentido ao lado do denominador de vendedores.
  */
 function LinhasCobertura(
   { cobertura, semEstimativa }:
@@ -34,7 +43,7 @@ function LinhasCobertura(
     ? ` (${formatarProporcaoCobertura(cobertura.proporcao_anuncios)})`
     : '';
   const linhaAnuncios =
-    `${cobertura.anuncios_cobertos} de ${cobertura.anuncios_na_amostra} anúncios da amostra cobertos${pct}`;
+    `${cobertura.anuncios_com_catalogo} de ${cobertura.anuncios_na_amostra} anúncios da amostra têm catálogo${pct}`;
   const linhaVendedores =
     `${cobertura.com_estimativa} de ${cobertura.vendedores_distintos} vendedores com estimativa mensal`
     + (semEstimativa.contagem > 0 ? ` · ${semEstimativa.contagem} sem estimativa` : '');
@@ -85,23 +94,19 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
 
   if (!data) return null;
 
-  const s = data.secoes237;
-  const fat = s['2.6'];
-  const vol = s['3.2'];
-  const conc = s['7.4'];
-
-  if (fat.estado === 'sem_dado') {
+  if (!data.conectado) {
     return (
       <Card className="mb-4 p-4">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <span className="text-sm font-medium">Análise PubliAI</span>
-          <Badge variant="outline">demanda por vendedor</Badge>
-        </div>
-        <p className="text-sm text-muted-foreground">{fat.mensagem}</p>
-        <LinhasCobertura cobertura={s['3.3']} semEstimativa={s['3.4']} />
+        <Cabecalho />
+        <p className="text-sm text-muted-foreground">
+          Conecte o Mercado Livre para estimar a demanda do nicho por vendedor.
+        </p>
       </Card>
     );
   }
+
+  const s = data.secoes237;
+  const conc = s['7.4'];
 
   return (
     <Card className="mb-4 p-4">
@@ -113,30 +118,16 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
         </span>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <KpiCard
-          size="compact"
-          label="Faturamento do nicho"
-          value={formatarFaturamentoSecoes237(fat)}
-          hint={fat.rotulo}
-          icon={CircleDollarSign}
-          tom="info"
-        />
-        <KpiCard
-          size="compact"
-          label="Mediana vendas/mês por vendedor"
-          value={formatarMedianaVendasMesSecoes237(vol)}
-          hint={vol.estado === 'valor' ? vol.rotulo : undefined}
-          icon={BarChart3}
-          tom="info"
-        />
-      </div>
+      <KpiCard
+        size="compact"
+        label="Mediana de vendas/mês por vendedor"
+        value={formatarMedianaVendasMesSecoes237(s['3.2'])}
+        hint={s['3.2'].estado === 'valor' ? s['3.2'].rotulo : undefined}
+        icon={BarChart3}
+        tom="info"
+      />
 
       <LinhasCobertura cobertura={s['3.3']} semEstimativa={s['3.4']} />
-
-      <div className="mt-3 rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-        {s['2.9'].parecer}
-      </div>
 
       {conc != null && (
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
@@ -153,6 +144,7 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
       )}
 
       <p className="mt-3 text-[11px] text-muted-foreground/80">{s.limitacao_3_2}</p>
+      <p className="mt-1 text-[11px] text-muted-foreground/70">{s['2.9'].mensagem}</p>
     </Card>
   );
 }

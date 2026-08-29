@@ -1,5 +1,10 @@
-// Agregações de nicho por vendedor (ADR-0142): campos 2.6, 3.1–3.4 e 7.4 do contrato.
-// Função pura — sem I/O. Usa estimarVendasMensais + medianaVendasMensaisDoUniverso.
+// Agregações de nicho por vendedor (ADR-0142 + ADR-0143): campos 3.2, 3.3, 3.4 e 7.4 do contrato.
+// Função pura — sem I/O. A ponte da amostra para o vendedor é o CATÁLOGO (ADR-0143 D-1): estas
+// funções recebem os vendedores já resolvidos, não os deduzem do item_id.
+//
+// 2.6/2.8/3.1 não existem mais: o faturamento do nicho saiu do ar (ADR-0143 D-3) porque somar
+// `vendas_mes` da loja inteira × preço de um anúncio do nicho produziu R$ 187,2 mi com 94,5%
+// vindos de uma única conta institucional. Ausência declarada > precisão falsa.
 
 import {
   estimarVendasMensais,
@@ -13,7 +18,7 @@ export type AnuncioAmostra = {
   item_id: string;
   seller_id: string | number;
   preco: number | null;
-  /** Acumulado Apify — só para preço representativo e 7.4. */
+  /** Acumulado Apify — usado só por 7.4 (concentração por anúncio da amostra). */
   vendidos: number | null;
 };
 
@@ -21,30 +26,20 @@ export type CampoComEstado<V> =
   | ({ estado: 'valor' } & V)
   | { estado: 'sem_dado'; mensagem: string };
 
-export type FaturamentoNicho = CampoComEstado<
-  {
-    faturamento_mes: number;
-    vendedores_com_estimativa: number;
-    vendedores_distintos: number;
-    rotulo: string;
-  }
->;
-
-export type VolumeNicho = CampoComEstado<
-  {
-    vendas_mes_mediana: number;
-    vendedores_com_estimativa: number;
-    rotulo: string;
-  }
->;
+export type VolumeNicho = CampoComEstado<{
+  vendas_mes_mediana: number;
+  vendedores_com_estimativa: number;
+  rotulo: string;
+}>;
 
 export type CoberturaEstimativa = {
   com_estimativa: number;
   vendedores_distintos: number;
   proporcao: number | null;
-  /** Total de anúncios da amostra, inclusive os que nunca resolveram seller_id (spike 045). */
+  /** Total de anúncios da amostra, inclusive os sem catálogo (spike 045). */
   anuncios_na_amostra: number;
-  anuncios_cobertos: number;
+  /** Anúncios com `catalog_product_id` — os únicos com ponte para o vendedor (ADR-0143 D-1). */
+  anuncios_com_catalogo: number;
   proporcao_anuncios: number | null;
   rotulo: string;
 };
@@ -64,145 +59,42 @@ export type ConcentracaoPorVendedor = {
 } | null;
 
 const MIN_ELEGIVEIS_CONCENTRACAO = 5;
-// Spike 045: com 1 vendedor a tela exibiu R$ 100,7 mi de "faturamento do nicho". Mesmo piso de 7.3/7.4.
+// Spike 045: com 1 vendedor a mediana é esse vendedor. Mesmo piso de 7.3/7.4.
 const MIN_VENDEDORES_NICHO = 5;
-const TOP1_DOMINANTE = 0.3;
 
-/** Agrupa anúncios da amostra por seller_id normalizado. */
-export function agruparAnunciosPorVendedor(
-  anuncios: AnuncioAmostra[],
-): Map<string, AnuncioAmostra[]> {
-  const porVendedor = new Map<string, AnuncioAmostra[]>();
-  for (const a of anuncios) {
-    const id = normalizarSellerId(a.seller_id);
-    const bucket = porVendedor.get(id);
-    if (bucket) bucket.push(a);
-    else porVendedor.set(id, [a]);
-  }
-  return porVendedor;
+/** Rótulo obrigatório da ADR-0143 D-2 — o conjunto NÃO é "vendedores da amostra". */
+export const UNIDADE_VENDEDOR =
+  'vendedores que disputam os catálogos desta amostra (vendas/mês da loja inteira, janela 365d)';
+
+function distintos(sellerIds: Array<string | number>): Set<string> {
+  return new Set(sellerIds.map(normalizarSellerId));
 }
 
-/** Preço representativo do vendedor na amostra (contrato 2.6). */
-export function precoRepresentativo(anunciosDoVendedor: AnuncioAmostra[]): number | null {
-  let melhorScore = -1;
-  let precoMelhorScore: number | null = null;
-  let maiorPreco: number | null = null;
-
-  for (const a of anunciosDoVendedor) {
-    if (a.preco == null) continue;
-    if (maiorPreco == null || a.preco > maiorPreco) maiorPreco = a.preco;
-    if (a.vendidos != null) {
-      const score = a.vendidos * a.preco;
-      if (score > melhorScore) {
-        melhorScore = score;
-        precoMelhorScore = a.preco;
-      }
-    }
-  }
-
-  return precoMelhorScore ?? maiorPreco;
-}
-
-function vendedoresDistintos(anuncios: AnuncioAmostra[]): Set<string> {
-  return new Set(anuncios.map((a) => normalizarSellerId(a.seller_id)));
-}
-
-function estimativasNaAmostra(
-  anuncios: AnuncioAmostra[],
-  serieVendedores: SnapshotVendedor[],
-): {
-  distintos: Set<string>;
-  porVendedor: Map<string, AnuncioAmostra[]>;
-  estimativas: Map<string, VendasMensais>;
-} {
-  const porVendedor = agruparAnunciosPorVendedor(anuncios);
-  const distintos = vendedoresDistintos(anuncios);
-  const estimativas = estimarVendasMensais(serieVendedores);
-  return { distintos, porVendedor, estimativas };
-}
-
-function contarComEstimativa(
-  distintos: Set<string>,
-  estimativas: Map<string, VendasMensais>,
-): number {
+function contarComEstimativa(ids: Set<string>, estimativas: Map<string, VendasMensais>): number {
   let n = 0;
-  for (const id of distintos) {
-    if (estimativas.get(id)?.estado === 'valor') n++;
-  }
+  for (const id of ids) if (estimativas.get(id)?.estado === 'valor') n++;
   return n;
 }
 
-/** 2.6 / 3.1 — soma de vendas_mes × preço representativo por vendedor com estimativa. */
-export function calcularFaturamentoNichoTopN(
-  anuncios: AnuncioAmostra[],
-  serieVendedores: SnapshotVendedor[],
-): FaturamentoNicho {
-  const { distintos, porVendedor, estimativas } = estimativasNaAmostra(anuncios, serieVendedores);
-  const totalDistintos = distintos.size;
-
-  if (totalDistintos === 0) {
-    return {
-      estado: 'sem_dado',
-      mensagem: 'nenhum vendedor na amostra',
-    };
-  }
-
-  let faturamento = 0;
-  let comEstimativa = 0;
-
-  for (const sellerId of distintos) {
-    const est = estimativas.get(sellerId);
-    if (est?.estado !== 'valor') continue;
-    const preco = precoRepresentativo(porVendedor.get(sellerId) ?? []);
-    if (preco == null) continue;
-    faturamento += est.vendas_mes * preco;
-    comEstimativa++;
-  }
-
-  if (comEstimativa === 0) {
-    return {
-      estado: 'sem_dado',
-      mensagem: 'nenhum vendedor da amostra tem estimativa mensal',
-    };
-  }
-
-  if (comEstimativa < MIN_VENDEDORES_NICHO) {
-    return {
-      estado: 'sem_dado',
-      mensagem: `amostra insuficiente: ${comEstimativa} de ${MIN_VENDEDORES_NICHO} vendedores mínimos com estimativa mensal`,
-    };
-  }
-
-  return {
-    estado: 'valor',
-    faturamento_mes: faturamento,
-    vendedores_com_estimativa: comEstimativa,
-    vendedores_distintos: totalDistintos,
-    rotulo: `faturamento de ${comEstimativa} vendedor${comEstimativa === 1 ? '' : 'es'} com estimativa (vendas/mês — loja inteira, janela 365d)`,
-  };
-}
-
-/** 3.2 — mediana de vendas_mes entre vendedores com estado valor (D-6). */
+/** 3.2 — mediana de vendas_mes entre os vendedores do catálogo com estado valor (D-6 da 0142). */
 export function calcularVolumeNicho(
-  anuncios: AnuncioAmostra[],
+  sellerIds: Array<string | number>,
   serieVendedores: SnapshotVendedor[],
 ): VolumeNicho {
-  const { distintos, estimativas } = estimativasNaAmostra(anuncios, serieVendedores);
+  const ids = distintos(sellerIds);
+  const estimativas = estimarVendasMensais(serieVendedores);
 
   const subset = new Map<string, VendasMensais>();
-  for (const id of distintos) {
+  for (const id of ids) {
     const est = estimativas.get(id);
     if (est) subset.set(id, est);
   }
 
   const mediana = medianaVendasMensaisDoUniverso(subset);
-  const comEstimativa = contarComEstimativa(distintos, estimativas);
+  const comEstimativa = contarComEstimativa(ids, estimativas);
 
   if (mediana == null || comEstimativa === 0) {
-    return {
-      estado: 'sem_dado',
-      mensagem: 'não dá para estimar o volume deste nicho',
-    };
+    return { estado: 'sem_dado', mensagem: 'não dá para estimar o volume deste nicho' };
   }
 
   if (comEstimativa < MIN_VENDEDORES_NICHO) {
@@ -216,61 +108,58 @@ export function calcularVolumeNicho(
     estado: 'valor',
     vendas_mes_mediana: mediana,
     vendedores_com_estimativa: comEstimativa,
-    rotulo: `mediana de vendas/mês — loja inteira, janela 365d (${comEstimativa} vendedor${comEstimativa === 1 ? '' : 'es'})`,
+    rotulo: `mediana de vendas/mês — ${UNIDADE_VENDEDOR} (${comEstimativa} vendedores)`,
   };
 }
 
 /**
- * 3.3 — cobertura em duas unidades. `anunciosNaAmostra` é o total ANTES do descarte de
- * `anunciosDaAmostra()`: sem ele o denominador só conta sobreviventes e a tela diz 100% de
- * cobertura sobre 1 de 113 anúncios (spike 045).
+ * 3.3 — cobertura em duas unidades. `anunciosNaAmostra` é o total da amostra e
+ * `anunciosComCatalogo` os que têm ponte para o vendedor: sem esse par o operador lê 3.2 como se
+ * cobrisse o nicho inteiro (spike 045, onde a razão de sobreviventes exibia 100%).
  */
 export function calcularCoberturaEstimativa(
-  anuncios: AnuncioAmostra[],
+  sellerIds: Array<string | number>,
   serieVendedores: SnapshotVendedor[],
   anunciosNaAmostra: number,
+  anunciosComCatalogo: number,
 ): CoberturaEstimativa {
-  const { distintos, porVendedor, estimativas } = estimativasNaAmostra(anuncios, serieVendedores);
-  const total = distintos.size;
-  const comEstimativa = contarComEstimativa(distintos, estimativas);
-
-  let anunciosCobertos = 0;
-  for (const [sellerId, doVendedor] of porVendedor) {
-    if (estimativas.get(sellerId)?.estado === 'valor') anunciosCobertos += doVendedor.length;
-  }
+  const ids = distintos(sellerIds);
+  const estimativas = estimarVendasMensais(serieVendedores);
+  const comEstimativa = contarComEstimativa(ids, estimativas);
 
   const rotuloAnuncios = anunciosNaAmostra > 0
-    ? `${anunciosCobertos} de ${anunciosNaAmostra} anúncios da amostra cobertos`
+    ? `${anunciosComCatalogo} de ${anunciosNaAmostra} anúncios da amostra têm catálogo`
     : '0 anúncios na amostra';
-  const rotuloVendedores = total > 0
-    ? ` — ${comEstimativa} de ${total} vendedores com estimativa mensal`
+  const rotuloVendedores = ids.size > 0
+    ? ` — ${comEstimativa} de ${ids.size} vendedores com estimativa mensal`
     : '';
 
   return {
     com_estimativa: comEstimativa,
-    vendedores_distintos: total,
-    proporcao: total > 0 ? comEstimativa / total : null,
+    vendedores_distintos: ids.size,
+    proporcao: ids.size > 0 ? comEstimativa / ids.size : null,
     anuncios_na_amostra: anunciosNaAmostra,
-    anuncios_cobertos: anunciosCobertos,
-    proporcao_anuncios: anunciosNaAmostra > 0 ? anunciosCobertos / anunciosNaAmostra : null,
+    anuncios_com_catalogo: anunciosComCatalogo,
+    proporcao_anuncios: anunciosNaAmostra > 0 ? anunciosComCatalogo / anunciosNaAmostra : null,
     rotulo: rotuloAnuncios + rotuloVendedores,
   };
 }
 
-/** 3.4 — vendedores em serie_insuficiente ou sem_estimativa_no_periodo. */
+/** 3.4 — vendedores em serie_insuficiente, sem_estimativa_no_periodo ou sem série alguma. */
 export function calcularVendedoresSemEstimativa(
-  anuncios: AnuncioAmostra[],
+  sellerIds: Array<string | number>,
   serieVendedores: SnapshotVendedor[],
 ): VendedoresSemEstimativa {
-  const { distintos, estimativas } = estimativasNaAmostra(anuncios, serieVendedores);
+  const ids = distintos(sellerIds);
+  const estimativas = estimarVendasMensais(serieVendedores);
   let sem = 0;
 
-  for (const id of distintos) {
+  for (const id of ids) {
     const est = estimativas.get(id);
     if (
-      est == null ||
-      est.estado === 'serie_insuficiente' ||
-      est.estado === 'sem_estimativa_no_periodo'
+      est == null
+      || est.estado === 'serie_insuficiente'
+      || est.estado === 'sem_estimativa_no_periodo'
     ) {
       sem++;
     }
@@ -282,7 +171,24 @@ export function calcularVendedoresSemEstimativa(
   };
 }
 
-/** 7.4 — concentração por seller_id (ADR-0137-style share sobre Σ vendidos×preço). */
+/** Agrupa anúncios da amostra por seller_id normalizado (7.4). */
+export function agruparAnunciosPorVendedor(
+  anuncios: AnuncioAmostra[],
+): Map<string, AnuncioAmostra[]> {
+  const porVendedor = new Map<string, AnuncioAmostra[]>();
+  for (const a of anuncios) {
+    const id = normalizarSellerId(a.seller_id);
+    const bucket = porVendedor.get(id);
+    if (bucket) bucket.push(a);
+    else porVendedor.set(id, [a]);
+  }
+  return porVendedor;
+}
+
+/**
+ * 7.4 — concentração por seller_id sobre os ANÚNCIOS da amostra (share ADR-0137). Continua na
+ * unidade anúncio, sem mudança: a ADR-0143 D-2 restringe só 3.2/3.3/3.4.
+ */
 export function calcularConcentracaoPorVendedor(anuncios: AnuncioAmostra[]): ConcentracaoPorVendedor {
   const porVendedor = agruparAnunciosPorVendedor(anuncios);
   const faturamentos: number[] = [];
@@ -305,7 +211,7 @@ export function calcularConcentracaoPorVendedor(anuncios: AnuncioAmostra[]): Con
   if (total <= 0) return null;
 
   const top1 = Math.max(...faturamentos) / total;
-  const corte = Math.max(TOP1_DOMINANTE, 2 / faturamentos.length);
+  const corte = Math.max(0.3, 2 / faturamentos.length);
 
   return {
     elegiveis: faturamentos.length,

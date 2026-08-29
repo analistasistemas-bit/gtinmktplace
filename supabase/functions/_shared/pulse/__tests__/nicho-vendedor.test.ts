@@ -2,10 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   calcularCoberturaEstimativa,
   calcularConcentracaoPorVendedor,
-  calcularFaturamentoNichoTopN,
   calcularVendedoresSemEstimativa,
   calcularVolumeNicho,
-  precoRepresentativo,
+  UNIDADE_VENDEDOR,
   type AnuncioAmostra,
 } from '../nicho-vendedor.ts';
 
@@ -34,94 +33,9 @@ function anuncio(
   };
 }
 
-describe('precoRepresentativo', () => {
-  it('escolhe preço do anúncio com maior vendidos×preço', () => {
-    const preco = precoRepresentativo([
-      anuncio({ seller_id: 'A', item_id: '1', vendidos: 100, preco: 10 }),
-      anuncio({ seller_id: 'A', item_id: '2', vendidos: 50, preco: 100 }),
-    ]);
-    expect(preco).toBe(100);
-  });
-
-  it('sem vendidos usa maior preço', () => {
-    const preco = precoRepresentativo([
-      anuncio({ seller_id: 'A', vendidos: null, preco: 30 }),
-      anuncio({ seller_id: 'A', vendidos: null, preco: 45 }),
-    ]);
-    expect(preco).toBe(45);
-  });
-});
-
-describe('calcularFaturamentoNichoTopN — contrato 2.6/3.1', () => {
-  it('soma vendas_mes × preço representativo por vendedor com estimativa', () => {
-    const anuncios = [
-      anuncio({ seller_id: 'v1', vendidos: 1000, preco: 10 }),
-      anuncio({ seller_id: 'v2', vendidos: 500, preco: 20 }),
-      anuncio({ seller_id: 'v3', vendidos: 500, preco: 10 }),
-      anuncio({ seller_id: 'v4', vendidos: 500, preco: 10 }),
-      anuncio({ seller_id: 'v5', vendidos: 500, preco: 10 }),
-    ];
-    const serie = ['v1', 'v2', 'v3', 'v4', 'v5'].flatMap((v) => serieTipica(v));
-    const r = calcularFaturamentoNichoTopN(anuncios, serie);
-    expect(r.estado).toBe('valor');
-    if (r.estado !== 'valor') return;
-    // v1: 21×10=210, v2: 21×20=420, v3–v5: 21×10=210 cada → 1260
-    expect(r.faturamento_mes).toBeCloseTo(1260, 0);
-    expect(r.vendedores_com_estimativa).toBe(5);
-    expect(r.rotulo).toContain('5 vendedores');
-  });
-
-  it('rotula N real de vendedores — critério aceite 3', () => {
-    const comEstimativa = ['a', 'b', 'c', 'd', 'e', 'f'];
-    const anuncios = [...comEstimativa, 'g', 'h'].map((seller_id) =>
-      anuncio({ seller_id, preco: 10, vendidos: 1 }),
-    );
-    const serie = [
-      ...comEstimativa.flatMap((v) => serieTipica(v)),
-      { seller_id: 'g', transactions_total: 100, dia: '2026-08-01' },
-      ...snap('h', 1000, 500),
-    ];
-    const r = calcularFaturamentoNichoTopN(anuncios, serie);
-    expect(r.estado).toBe('valor');
-    if (r.estado !== 'valor') return;
-    expect(r.vendedores_com_estimativa).toBe(6);
-    expect(r.vendedores_distintos).toBe(8);
-    expect(r.rotulo).toContain('6 vendedores');
-  });
-
-  it('sem estimativa válida devolve sem_dado', () => {
-    const r = calcularFaturamentoNichoTopN(
-      [anuncio({ seller_id: 'x', preco: 10, vendidos: 1 })],
-      [{ seller_id: 'x', transactions_total: 100, dia: '2026-08-01' }],
-    );
-    expect(r).toEqual({
-      estado: 'sem_dado',
-      mensagem: 'nenhum vendedor da amostra tem estimativa mensal',
-    });
-  });
-
-  it('menos de 5 vendedores com estimativa não renderiza (spike 045)', () => {
-    const vs = ['a', 'b', 'c', 'd'];
-    const anuncios = vs.map((seller_id) => anuncio({ seller_id, preco: 10, vendidos: 1 }));
-    const r = calcularFaturamentoNichoTopN(anuncios, vs.flatMap((v) => serieTipica(v)));
-    expect(r.estado).toBe('sem_dado');
-    if (r.estado !== 'sem_dado') return;
-    expect(r.mensagem).toContain('5');
-  });
-
-  it('vendedor único gigante não vira faturamento de nicho (regressão spike 045)', () => {
-    // "Mercado Livre Brasil": 399.527 transações em 9 dias → 1,33 mi/mês × R$ 75,59.
-    const r = calcularFaturamentoNichoTopN(
-      [anuncio({ seller_id: '480265022', preco: 75.59, vendidos: 100_000 })],
-      snap('480265022', 31_347_465, 31_746_992, '2026-08-20', '2026-08-29'),
-    );
-    expect(r.estado).toBe('sem_dado');
-  });
-});
-
 describe('calcularVolumeNicho — contrato 3.2', () => {
   it('usa mediana, nunca soma nem média — critério aceite 6', () => {
-    const anuncios = ['a', 'b', 'c', 'd', 'e'].map((seller_id) => anuncio({ seller_id }));
+    const ids = ['a', 'b', 'c', 'd', 'e'];
     const serie = [
       ...snap('a', 100, 110),
       ...snap('b', 100, 115),
@@ -129,7 +43,7 @@ describe('calcularVolumeNicho — contrato 3.2', () => {
       ...snap('d', 100, 125),
       ...snap('e', 100, 10_100),
     ];
-    const r = calcularVolumeNicho(anuncios, serie);
+    const r = calcularVolumeNicho(ids, serie);
     expect(r.estado).toBe('valor');
     if (r.estado !== 'valor') return;
     expect(r.vendas_mes_mediana).toBeCloseTo(20, 0);
@@ -137,19 +51,43 @@ describe('calcularVolumeNicho — contrato 3.2', () => {
     expect(r.vendas_mes_mediana).not.toBeCloseTo(2014, 0);
   });
 
+  it('rotula a unidade da ADR-0143: catálogos da amostra, não a amostra', () => {
+    const ids = ['a', 'b', 'c', 'd', 'e'];
+    const r = calcularVolumeNicho(ids, ids.flatMap((v) => serieTipica(v)));
+    expect(r.estado).toBe('valor');
+    if (r.estado !== 'valor') return;
+    expect(r.rotulo).toContain(UNIDADE_VENDEDOR);
+    expect(r.rotulo).toContain('catálogos desta amostra');
+  });
+
+  it('mediana zero é valor medido, nunca ausência (D-3/D-4 da 0142)', () => {
+    // Caso real do aptamil: 53% dos vendedores do catálogo têm delta zero.
+    const parados = ['p1', 'p2', 'p3'].flatMap((v) => snap(v, 500, 500));
+    const ativos = ['a1', 'a2'].flatMap((v) => serieTipica(v));
+    const r = calcularVolumeNicho(['p1', 'p2', 'p3', 'a1', 'a2'], [...parados, ...ativos]);
+    expect(r.estado).toBe('valor');
+    if (r.estado !== 'valor') return;
+    expect(r.vendas_mes_mediana).toBe(0);
+    expect(r.vendedores_com_estimativa).toBe(5);
+  });
+
   it('sem vendedores com estimativa devolve sem_dado', () => {
-    const r = calcularVolumeNicho(
-      [anuncio({ seller_id: 'solo' })],
-      [{ seller_id: 'solo', transactions_total: 50, dia: '2026-08-15' }],
-    );
+    const r = calcularVolumeNicho(['solo'], [{ seller_id: 'solo', transactions_total: 50, dia: '2026-08-15' }]);
     expect(r.estado).toBe('sem_dado');
   });
 
   it('mediana de menos de 5 vendedores não vai para tela (spike 045)', () => {
-    const vs = ['a', 'b', 'c', 'd'];
+    const ids = ['a', 'b', 'c', 'd'];
+    const r = calcularVolumeNicho(ids, ids.flatMap((v) => serieTipica(v)));
+    expect(r.estado).toBe('sem_dado');
+    if (r.estado !== 'sem_dado') return;
+    expect(r.mensagem).toContain('5');
+  });
+
+  it('vendedor único gigante não vira nicho (regressão spike 045)', () => {
     const r = calcularVolumeNicho(
-      vs.map((seller_id) => anuncio({ seller_id })),
-      vs.flatMap((v) => serieTipica(v)),
+      ['480265022'],
+      snap('480265022', 31_347_465, 31_746_992, '2026-08-20', '2026-08-29'),
     );
     expect(r.estado).toBe('sem_dado');
   });
@@ -157,51 +95,41 @@ describe('calcularVolumeNicho — contrato 3.2', () => {
 
 describe('calcularCoberturaEstimativa — contrato 3.3', () => {
   it('reporta vendedores com estimativa / distintos — critério aceite 7', () => {
-    const anuncios = ['1', '2', '3', '4'].map((seller_id) => anuncio({ seller_id }));
+    const ids = ['1', '2', '3', '4'];
     const serie = [...serieTipica('1'), ...serieTipica('2')];
-    const c = calcularCoberturaEstimativa(anuncios, serie, anuncios.length);
+    const c = calcularCoberturaEstimativa(ids, serie, 20, 8);
     expect(c.com_estimativa).toBe(2);
     expect(c.vendedores_distintos).toBe(4);
     expect(c.proporcao).toBe(0.5);
     expect(c.rotulo).toContain('2 de 4 vendedores com estimativa mensal');
   });
 
-  it('o denominador de anúncios é a amostra inteira, não os resolvidos (spike 045)', () => {
-    // 113 anúncios na amostra, 2 resolveram seller_id, 1 vendedor com estimativa.
-    const anuncios = [
-      anuncio({ seller_id: '480265022', item_id: 'MLB2107927039' }),
-      anuncio({ seller_id: '480265022', item_id: 'MLB2108050393' }),
-    ];
-    const c = calcularCoberturaEstimativa(anuncios, serieTipica('480265022'), 113);
-    expect(c.anuncios_na_amostra).toBe(113);
-    expect(c.anuncios_cobertos).toBe(2);
-    expect(c.proporcao_anuncios).toBeCloseTo(2 / 113, 6);
-    // o defeito antigo: proporção de vendedores dizia 100%
+  it('o denominador de anúncios é a amostra inteira, não os que têm catálogo (spike 045)', () => {
+    const c = calcularCoberturaEstimativa(['480265022'], serieTipica('480265022'), 104, 26);
+    expect(c.anuncios_na_amostra).toBe(104);
+    expect(c.anuncios_com_catalogo).toBe(26);
+    expect(c.proporcao_anuncios).toBeCloseTo(26 / 104, 6);
+    // o defeito antigo: a proporção de vendedores sozinha dizia 100%
     expect(c.proporcao).toBe(1);
-    expect(c.rotulo).toContain('2 de 113 anúncios');
+    expect(c.rotulo).toContain('26 de 104 anúncios da amostra têm catálogo');
   });
 
   it('amostra vazia não divide por zero', () => {
-    const c = calcularCoberturaEstimativa([], [], 0);
+    const c = calcularCoberturaEstimativa([], [], 0, 0);
     expect(c.proporcao).toBeNull();
     expect(c.proporcao_anuncios).toBeNull();
   });
 });
 
 describe('calcularVendedoresSemEstimativa — contrato 3.4', () => {
-  it('conta serie_insuficiente e sem_estimativa_no_periodo', () => {
-    const anuncios = [
-      anuncio({ seller_id: 'ok' }),
-      anuncio({ seller_id: 'insuf' }),
-      anuncio({ seller_id: 'neg' }),
-    ];
+  it('conta serie_insuficiente, sem_estimativa_no_periodo e sem série alguma', () => {
     const serie = [
       ...serieTipica('ok'),
       { seller_id: 'insuf', transactions_total: 100, dia: '2026-08-01' },
       ...snap('neg', 20_000, 15_125, '2026-08-16', '2026-08-29'),
     ];
-    const r = calcularVendedoresSemEstimativa(anuncios, serie);
-    expect(r.contagem).toBe(2);
+    const r = calcularVendedoresSemEstimativa(['ok', 'insuf', 'neg', 'nunca-visto'], serie);
+    expect(r.contagem).toBe(3);
     expect(r.rotulo).not.toMatch(/venderam/i);
     expect(r.rotulo).toContain('sem estimativa mensal');
   });
@@ -210,15 +138,9 @@ describe('calcularVendedoresSemEstimativa — contrato 3.4', () => {
 describe('calcularConcentracaoPorVendedor — contrato 7.4', () => {
   it('agrupa por seller_id — critério aceite 10', () => {
     const anuncios = Array.from({ length: 6 }, (_, i) =>
-      anuncio({
-        seller_id: i < 3 ? 'L1' : 'L2',
-        item_id: `MLB${i}`,
-        vendidos: 100,
-        preco: 10,
-      }),
+      anuncio({ seller_id: i < 3 ? 'L1' : 'L2', item_id: `MLB${i}`, vendidos: 100, preco: 10 }),
     );
-    const c = calcularConcentracaoPorVendedor(anuncios);
-    expect(c).toBeNull();
+    expect(calcularConcentracaoPorVendedor(anuncios)).toBeNull();
   });
 
   it('calcula share ADR-0137 sobre faturamento por vendedor', () => {
