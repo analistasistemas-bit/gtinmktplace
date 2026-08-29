@@ -262,3 +262,27 @@ describe('DialogDetalhe — D-24: o preço-alvo do ML não existe mais', () => {
     expect(screen.queryByText(/R\$\s*82,00/)).not.toBeInTheDocument();
   });
 });
+
+// `pulse_ofertas` guarda só o que MUDOU no dia. O gráfico tirava o mínimo dessas linhas, então num
+// dia em que só ofertas caras mexeram ele subia. Medido no Aptamil Premium 1 (2026-08-29): mínimo
+// real R$ 36,00 desde 20/08 e o gráfico marcando R$ 79,99 — uma alta de 122% que não aconteceu.
+describe('DialogDetalhe — o gráfico do menor preço não inventa alta', () => {
+  it('mantém a oferta barata vigente nos dias em que só as caras foram regravadas', () => {
+    detalhe.ofertas = [
+      oferta({ item_id: 'BARATA', preco: 36, dia: '2026-08-20' }),
+      oferta({ item_id: 'CARA', seller_id: 2, preco: 90, dia: '2026-08-20' }),
+      oferta({ item_id: 'CARA', seller_id: 2, preco: 79.99, dia: '2026-08-28' }),
+    ];
+    detalhe.ofertasAtuais = [
+      oferta({ item_id: 'BARATA', preco: 36, dia: '2026-08-20' }),
+      oferta({ item_id: 'CARA', seller_id: 2, preco: 79.99, dia: '2026-08-28' }),
+    ];
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1800' });
+
+    // O gráfico declara a faixa no aria-label: piso e teto do período.
+    const grafico = screen.getByRole('img', { name: /Menor preço variou/ });
+    expect(grafico).toHaveAccessibleName(/de\s*R\$\s*36,00/);
+    // A conta antiga produziria R$ 79,99 como topo da série do menor preço.
+    expect(grafico).not.toHaveAccessibleName(/a\s*R\$\s*79,99/);
+  });
+});

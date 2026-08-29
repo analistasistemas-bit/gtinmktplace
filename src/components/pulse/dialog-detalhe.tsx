@@ -154,7 +154,9 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
   const ofertasExibidas = filtroOfertas === 'relevantes'
     ? ofertasClassificadas.filter((oferta) => oferta.qualificacao.status === 'relevante')
     : ofertasClassificadas;
-  const historico = menorPrecoPorDia(ofertas).slice(-14);
+  // `atuais` entra para o último ponto do gráfico bater com o "Menor oferta observada" logo acima:
+  // o histórico é limitado a 400 linhas e a view é a verdade do presente.
+  const historico = menorPrecoPorDia(ofertas, atuais).slice(-14);
 
   const vendedoresPorSeller = new Map<number, PulseVendedor[]>();
   for (const v of data?.vendedores ?? []) {

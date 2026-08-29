@@ -88,18 +88,84 @@ describe('estadoAtualOfertas', () => {
   });
 });
 
+// `pulse_ofertas` é histórico de MUDANÇAS: o coletor só grava a oferta que mudou naquele dia.
+// Calcular o mínimo entre as linhas do dia responde "qual a mais barata que mexeu hoje", não
+// "qual a mais barata do mercado hoje" — e num dia em que só ofertas caras mexeram a linha SOBE,
+// desenhando uma alta que não aconteceu. Medido em produção (Aptamil Premium 1, 2026-08-29): o
+// mínimo real era R$ 36,00 desde 20/08 e o gráfico marcava R$ 79,99, porque naquele dia só três
+// ofertas caras foram regravadas.
+//
+// A conta certa é o estado VIGENTE: para cada dia, o último preço conhecido de cada oferta.
 describe('menorPrecoPorDia', () => {
-  it('agrupa o menor preço entre as ofertas ativas de cada dia, em ordem cronológica', () => {
+  it('carrega o preço vigente de cada oferta para os dias seguintes', () => {
     const ofertas = [
       oferta({ dia: '2026-08-12', preco: 90, item_id: 'A' }),
       oferta({ dia: '2026-08-10', preco: 100, item_id: 'A' }),
       oferta({ dia: '2026-08-10', preco: 80, item_id: 'B' }),
-      oferta({ dia: '2026-08-11', preco: 70, item_id: 'C', ativo: false }), // desativada: ignora
+    ];
+    // Em 12/08 a oferta B continua ativa a 80 mesmo sem ter sido regravada — ela é o mínimo.
+    expect(menorPrecoPorDia(ofertas)).toEqual([
+      { dia: '2026-08-10', preco: 80 },
+      { dia: '2026-08-12', preco: 80 },
+    ]);
+  });
+
+  it('o dia em que só uma oferta cara mudou NÃO faz a linha subir', () => {
+    const ofertas = [
+      oferta({ dia: '2026-08-20', preco: 36, item_id: 'BARATA' }),
+      oferta({ dia: '2026-08-20', preco: 90, item_id: 'CARA' }),
+      oferta({ dia: '2026-08-28', preco: 79.99, item_id: 'CARA' }),
+    ];
+    const serie = menorPrecoPorDia(ofertas);
+    expect(serie[serie.length - 1]).toEqual({ dia: '2026-08-28', preco: 36 });
+  });
+
+  it('oferta desativada sai do cálculo a partir do dia da desativação', () => {
+    const ofertas = [
+      oferta({ dia: '2026-08-10', preco: 50, item_id: 'A' }),
+      oferta({ dia: '2026-08-10', preco: 80, item_id: 'B' }),
+      oferta({ dia: '2026-08-11', preco: 50, item_id: 'A', ativo: false }),
+    ];
+    expect(menorPrecoPorDia(ofertas)).toEqual([
+      { dia: '2026-08-10', preco: 50 },
+      { dia: '2026-08-11', preco: 80 },
+    ]);
+  });
+
+  it('oferta que nasce desativada nunca entra', () => {
+    const ofertas = [
+      oferta({ dia: '2026-08-10', preco: 80, item_id: 'B' }),
+      oferta({ dia: '2026-08-11', preco: 70, item_id: 'C', ativo: false }),
     ];
     expect(menorPrecoPorDia(ofertas)).toEqual([
       { dia: '2026-08-10', preco: 80 },
-      { dia: '2026-08-12', preco: 90 },
+      { dia: '2026-08-11', preco: 80 },
     ]);
+  });
+
+  it('dia sem nenhuma oferta ativa é omitido, não vira zero', () => {
+    const ofertas = [
+      oferta({ dia: '2026-08-10', preco: 80, item_id: 'B' }),
+      oferta({ dia: '2026-08-11', preco: 80, item_id: 'B', ativo: false }),
+    ];
+    expect(menorPrecoPorDia(ofertas)).toEqual([{ dia: '2026-08-10', preco: 80 }]);
+  });
+
+  // A view do estado atual é a verdade do presente; o histórico é limitado a 400 linhas e pode
+  // ter perdido a primeira aparição de alguma oferta. Quando os dois discordam, o último ponto do
+  // gráfico segue a view — senão o gráfico contradiz o número logo acima dele na tela.
+  it('o último ponto usa o estado atual, que é a verdade do presente', () => {
+    const ofertas = [oferta({ dia: '2026-08-28', preco: 79.99, item_id: 'CARA' })];
+    const atuais = [
+      oferta({ dia: '2026-08-28', preco: 79.99, item_id: 'CARA' }),
+      oferta({ dia: '2026-08-20', preco: 36, item_id: 'BARATA' }),
+    ];
+    const serie = menorPrecoPorDia(ofertas, atuais);
+    expect(serie[serie.length - 1].preco).toBe(36);
+  });
+
+  it('sem histórico não inventa série', () => {
+    expect(menorPrecoPorDia([])).toEqual([]);
   });
 });
 
