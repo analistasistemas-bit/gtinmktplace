@@ -1,4 +1,11 @@
-// Carrega série histórica de pulse_vendedores para estimativa mensal (ADR-0142). Só I/O.
+// Carrega a série de transactions_total por vendedor (ADR-0142 → ADR-0144). Só I/O.
+//
+// A leitura NÃO é mais um select org-scoped em pulse_vendedores: passa pela RPC
+// `mercado_serie_vendedores`, que agrega a série entre organizações e devolve sem `org_id`
+// (ADR-0144 D-1/D-2). Motivo medido: no modo EAN, 6 dos 9 vendedores do catálogo já estavam no
+// banco — todos sob outra org — e o filtro por org_id fazia a consulta ler zero.
+//
+// A tabela continua org-scoped com RLS; quem atravessa é só esta função, e só para service_role.
 
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { SnapshotVendedor } from '../pulse/vendas-mensais-vendedor.ts';
@@ -7,7 +14,7 @@ export type { SnapshotVendedor };
 
 const PAGE_SIZE = 1000;
 
-type LinhaPulseVendedor = {
+type LinhaSerie = {
   seller_id: number;
   transactions_total: number;
   dia: string;
@@ -15,7 +22,6 @@ type LinhaPulseVendedor = {
 
 export async function carregarSeriePulseVendedores(
   db: SupabaseClient,
-  orgId: string,
   sellerIds: number[],
 ): Promise<SnapshotVendedor[]> {
   if (sellerIds.length === 0) return [];
@@ -24,17 +30,12 @@ export async function carregarSeriePulseVendedores(
   const out: SnapshotVendedor[] = [];
 
   for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await db.from('pulse_vendedores')
-      .select('seller_id, transactions_total, dia')
-      .eq('org_id', orgId)
-      .in('seller_id', unicos)
-      .not('transactions_total', 'is', null)
-      .order('seller_id', { ascending: true })
-      .order('dia', { ascending: true })
+    const { data, error } = await db
+      .rpc('mercado_serie_vendedores', { p_seller_ids: unicos })
       .range(offset, offset + PAGE_SIZE - 1);
 
     if (error) throw error;
-    const linhas = (data ?? []) as LinhaPulseVendedor[];
+    const linhas = (data ?? []) as LinhaSerie[];
     if (linhas.length === 0) break;
 
     for (const row of linhas) {

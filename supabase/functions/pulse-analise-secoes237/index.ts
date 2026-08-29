@@ -66,7 +66,9 @@ Deno.serve(async (req) => {
   );
   const { anuncios, semSellerId } = anunciosDaAmostra(itens, doCatalogo.sellerPorItem);
 
-  const serie = await carregarSeriePulseVendedores(db, orgId, doCatalogo.sellerIds);
+  // Base de mercado, não org-scoped (ADR-0144): o número é público e a série de um vendedor
+  // coletada por outra organização vale igual para esta.
+  const serie = await carregarSeriePulseVendedores(db, doCatalogo.sellerIds);
 
   const secoes237 = montarSecoes237({
     anuncios,

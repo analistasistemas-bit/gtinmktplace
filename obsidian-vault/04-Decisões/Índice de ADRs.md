@@ -156,5 +156,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0141 | [Análise PubliAI: JoomPulse no Radar e no Sonar](../../docs/decisions/0141-analise-publiai-joompulse-radar-e-sonar.md) — supersede a D-3 da 0132; **Errata 1 troca a fonte** (JoomPulse fora) |
 | 0142 | [Vendas mensais estimadas por vendedor](../../docs/decisions/0142-vendas-mensais-por-vendedor.md) — substitui a proveniência JoomPulse dos campos 2.6 e 3.1–3.4 |
 | 0143 | [A ponte da amostra para o vendedor é o catálogo](../../docs/decisions/0143-demanda-do-nicho-pela-ponte-do-catalogo.md) — `/items?ids=` dá 403; **2.6/2.7/2.8/3.1 saem do contrato** |
+| 0144 | [A série de vendedores é base de mercado](../../docs/decisions/0144-serie-de-vendedores-como-base-de-mercado.md) — RPC sem `org_id`, só `service_role`; destrava o modo EAN |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

@@ -952,3 +952,19 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 - Sem `organization_members`/papéis finos (m2m) — 1 organização por usuário (`profiles.org_id`),
   decisão consciente do E7 (ADR-0027, D-E7.1/D-E7.2); m2m e enum de papéis ficam para o E8 (billing).
 - `canal_externo` só tem `mercado_livre` — ganha valor novo quando entrar o 2º canal.
+
+
+## `mercado_serie_vendedores(bigint[])` — leitura de mercado (ADR-0144)
+
+Função `SECURITY DEFINER` que devolve `(seller_id, dia, transactions_total)` de `pulse_vendedores`
+**agregado entre organizações e sem `org_id`**, deduplicado por `(seller_id, dia)` com `max()`.
+
+É a **única** leitura do Pulse que atravessa o escopo de organização, e é deliberada:
+`transactions_total` vem de `/users/{id}` de terceiro, é o mesmo número da página pública do
+vendedor. O que continua privado é *quem monitora quem* — por isso a função **não enumera**:
+responde apenas sobre `seller_id` que o chamador já descobriu pela ponte do catálogo (ADR-0143).
+
+- `execute` **negado** a `anon` e `authenticated`; concedido só a `service_role`. O navegador não a
+  alcança; quem chama é a edge `pulse-analise-secoes237` com `adminClient()`.
+- `pulse_vendedores` mantém `org_id` e RLS; nenhuma policy foi alterada.
+- Índice `pulse_vendedores_seller_dia_idx (seller_id, dia)` acompanha a função.
