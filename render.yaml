@@ -26,7 +26,15 @@ services:
     name: publiai-gateway-mercado
     runtime: node
     rootDir: .
-    plan: starter
+    # `free` porque `starter` exige dados de pagamento na conta — o
+    # `render blueprints validate` reprova com `need_payment_info`. O serviço foi criado assim em
+    # 2026-08-29 para destravar o teste do CIMD.
+    #
+    # ATENÇÃO para produção: no plano free o serviço HIBERNA após ~15 min sem tráfego, e o próximo
+    # pedido paga um cold start de dezenas de segundos. Como o Radar chama o Gateway ao ABRIR a
+    # tela (D-4), isso é inaceitável para o operador — a D-14 já mandava medir cold start. Trocar
+    # para `starter` é mudar esta linha, depois de haver forma de pagamento na conta.
+    plan: free
     buildCommand: pnpm install --frozen-lockfile && pnpm gateway:build
     startCommand: pnpm gateway:start
     healthCheckPath: /health
