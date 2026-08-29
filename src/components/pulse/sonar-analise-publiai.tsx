@@ -103,9 +103,9 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry, meta }: S
         <p className="text-muted-foreground">
           <Users className="mr-1.5 inline h-3.5 w-3.5 shrink-0" aria-hidden />
           {s['3.3'].rotulo}
-          {s['3.3'].proporcao != null && (
+          {s['3.3'].proporcao_anuncios != null && (
             <span className="ml-1 font-medium tabular-nums text-foreground">
-              ({formatarProporcaoCobertura(s['3.3'].proporcao)})
+              ({formatarProporcaoCobertura(s['3.3'].proporcao_anuncios)})
             </span>
           )}
         </p>

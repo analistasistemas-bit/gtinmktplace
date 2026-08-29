@@ -30,7 +30,7 @@ import {
 import { calcularVereditoAnuncios, contextoNichoAnuncios } from '@/lib/veredito-sonar';
 import {
   fetchCruzamentoEan, fetchSecoes237Sonar, fetchVendasSonar, fetchVisitasSonar,
-  itensDaAmostra, itensParaSecoes237, linkDoAnuncio, normalizarSerieVisitas, passosProgresso,
+  itensDaAmostra, linkDoAnuncio, normalizarSerieVisitas, passosProgresso,
   type CruzamentoEan, type EtapaProgresso, type ItemVendasSonar,
   type PainelVendasSonar, type RaioXNicho, type VisitasAnuncio,
 } from '@/lib/sonar';
@@ -413,7 +413,7 @@ export default function PulseSonar() {
     refetch: refetchSecoes237,
   } = useQuery({
     queryKey: ['pulse', 'sonar-secoes237', termoBuscado, itemIds],
-    queryFn: () => fetchSecoes237Sonar(itensParaSecoes237(itens)),
+    queryFn: () => fetchSecoes237Sonar(itens),
     enabled: !!vendas?.configurado && itens.length > 0,
     staleTime: Infinity,
     retry: 1,

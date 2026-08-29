@@ -69,10 +69,15 @@ function calcularParecerTamanho(faturamento: FaturamentoNicho): ParecerTamanhoNi
   };
 }
 
-/** Agrega campos 2.6–2.9, 3.1–3.4 e 7.4 a partir da amostra + série pulse_vendedores. */
+/**
+  * Agrega campos 2.6–2.9, 3.1–3.4 e 7.4 a partir da amostra + série pulse_vendedores.
+  * `anunciosNaAmostra` é o total antes do descarte por seller_id ausente — denominador honesto
+  * de 3.3 (spike 045).
+  */
 export function montarSecoes237(
   anuncios: AnuncioAmostra[],
   serie: SnapshotVendedor[],
+  anunciosNaAmostra: number,
 ): Secoes237 {
   const faturamento = calcularFaturamentoNichoTopN(anuncios, serie);
 
@@ -88,7 +93,7 @@ export function montarSecoes237(
     '2.9': calcularParecerTamanho(faturamento),
     '3.1': faturamento,
     '3.2': calcularVolumeNicho(anuncios, serie),
-    '3.3': calcularCoberturaEstimativa(anuncios, serie),
+    '3.3': calcularCoberturaEstimativa(anuncios, serie, anunciosNaAmostra),
     '3.4': calcularVendedoresSemEstimativa(anuncios, serie),
     limitacao_3_2: LIMITACAO_3_2,
     '7.4': calcularConcentracaoPorVendedor(anuncios),

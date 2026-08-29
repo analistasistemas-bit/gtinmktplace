@@ -17,12 +17,11 @@ export type AnuncioAmostra = {
   vendidos: number | null;
 };
 
-export type CampoComEstado<T extends string, V = never> =
+export type CampoComEstado<V> =
   | ({ estado: 'valor' } & V)
   | { estado: 'sem_dado'; mensagem: string };
 
 export type FaturamentoNicho = CampoComEstado<
-  'valor',
   {
     faturamento_mes: number;
     vendedores_com_estimativa: number;
@@ -32,7 +31,6 @@ export type FaturamentoNicho = CampoComEstado<
 >;
 
 export type VolumeNicho = CampoComEstado<
-  'valor',
   {
     vendas_mes_mediana: number;
     vendedores_com_estimativa: number;
@@ -44,6 +42,10 @@ export type CoberturaEstimativa = {
   com_estimativa: number;
   vendedores_distintos: number;
   proporcao: number | null;
+  /** Total de anúncios da amostra, inclusive os que nunca resolveram seller_id (spike 045). */
+  anuncios_na_amostra: number;
+  anuncios_cobertos: number;
+  proporcao_anuncios: number | null;
   rotulo: string;
 };
 
@@ -62,6 +64,8 @@ export type ConcentracaoPorVendedor = {
 } | null;
 
 const MIN_ELEGIVEIS_CONCENTRACAO = 5;
+// Spike 045: com 1 vendedor a tela exibiu R$ 100,7 mi de "faturamento do nicho". Mesmo piso de 7.3/7.4.
+const MIN_VENDEDORES_NICHO = 5;
 const TOP1_DOMINANTE = 0.3;
 
 /** Agrupa anúncios da amostra por seller_id normalizado. */
@@ -162,6 +166,13 @@ export function calcularFaturamentoNichoTopN(
     };
   }
 
+  if (comEstimativa < MIN_VENDEDORES_NICHO) {
+    return {
+      estado: 'sem_dado',
+      mensagem: `amostra insuficiente: ${comEstimativa} de ${MIN_VENDEDORES_NICHO} vendedores mínimos com estimativa mensal`,
+    };
+  }
+
   return {
     estado: 'valor',
     faturamento_mes: faturamento,
@@ -194,6 +205,13 @@ export function calcularVolumeNicho(
     };
   }
 
+  if (comEstimativa < MIN_VENDEDORES_NICHO) {
+    return {
+      estado: 'sem_dado',
+      mensagem: `amostra insuficiente: ${comEstimativa} de ${MIN_VENDEDORES_NICHO} vendedores mínimos com estimativa mensal`,
+    };
+  }
+
   return {
     estado: 'valor',
     vendas_mes_mediana: mediana,
@@ -202,20 +220,40 @@ export function calcularVolumeNicho(
   };
 }
 
-/** 3.3 — vendedores com estimativa válida ÷ vendedores distintos na amostra. */
+/**
+ * 3.3 — cobertura em duas unidades. `anunciosNaAmostra` é o total ANTES do descarte de
+ * `anunciosDaAmostra()`: sem ele o denominador só conta sobreviventes e a tela diz 100% de
+ * cobertura sobre 1 de 113 anúncios (spike 045).
+ */
 export function calcularCoberturaEstimativa(
   anuncios: AnuncioAmostra[],
   serieVendedores: SnapshotVendedor[],
+  anunciosNaAmostra: number,
 ): CoberturaEstimativa {
-  const { distintos, estimativas } = estimativasNaAmostra(anuncios, serieVendedores);
+  const { distintos, porVendedor, estimativas } = estimativasNaAmostra(anuncios, serieVendedores);
   const total = distintos.size;
   const comEstimativa = contarComEstimativa(distintos, estimativas);
+
+  let anunciosCobertos = 0;
+  for (const [sellerId, doVendedor] of porVendedor) {
+    if (estimativas.get(sellerId)?.estado === 'valor') anunciosCobertos += doVendedor.length;
+  }
+
+  const rotuloAnuncios = anunciosNaAmostra > 0
+    ? `${anunciosCobertos} de ${anunciosNaAmostra} anúncios da amostra cobertos`
+    : '0 anúncios na amostra';
+  const rotuloVendedores = total > 0
+    ? ` — ${comEstimativa} de ${total} vendedores com estimativa mensal`
+    : '';
 
   return {
     com_estimativa: comEstimativa,
     vendedores_distintos: total,
     proporcao: total > 0 ? comEstimativa / total : null,
-    rotulo: total > 0 ? `${comEstimativa} de ${total} vendedores com estimativa mensal` : '0 vendedores na amostra',
+    anuncios_na_amostra: anunciosNaAmostra,
+    anuncios_cobertos: anunciosCobertos,
+    proporcao_anuncios: anunciosNaAmostra > 0 ? anunciosCobertos / anunciosNaAmostra : null,
+    rotulo: rotuloAnuncios + rotuloVendedores,
   };
 }
 

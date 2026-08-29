@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
   ].filter((id) => Number.isFinite(id));
 
   const serie = await carregarSeriePulseVendedores(db, orgId, sellerIds);
-  const secoes237 = montarSecoes237(anuncios, serie);
+  const secoes237 = montarSecoes237(anuncios, serie, body.itens.length);
 
   const vendedoresDistintos = new Set(anuncios.map((a) => normalizarSellerId(a.seller_id))).size;
 
@@ -60,6 +60,7 @@ Deno.serve(async (req) => {
     meta: {
       vendedores_distintos: vendedoresDistintos,
       sem_seller_id: semSellerId,
+      anuncios_na_amostra: body.itens.length,
       serie_linhas: serie.length,
     },
   });

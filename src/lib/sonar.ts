@@ -290,6 +290,9 @@ export type CoberturaEstimativaSonar = {
   com_estimativa: number;
   vendedores_distintos: number;
   proporcao: number | null;
+  anuncios_na_amostra: number;
+  anuncios_cobertos: number;
+  proporcao_anuncios: number | null;
   rotulo: string;
 };
 
@@ -323,17 +326,13 @@ export type MetaSecoes237Sonar = {
   vendedores_distintos: number;
   sem_seller_id: number;
   serie_linhas: number;
+  anuncios_na_amostra: number;
 };
 
 export type RespostaSecoes237Sonar = {
   secoes237: Secoes237Sonar;
   meta: MetaSecoes237Sonar;
 };
-
-/** Passa a amostra completa — a edge resolve seller_id ausente via pulse_vendedores. */
-export function itensParaSecoes237(itens: ItemVendasSonar[]): ItemVendasSonar[] {
-  return itens;
-}
 
 /** POST /functions/v1/pulse-analise-secoes237 { itens } → RespostaSecoes237Sonar. */
 export async function fetchSecoes237Sonar(itens: ItemVendasSonar[]): Promise<RespostaSecoes237Sonar> {

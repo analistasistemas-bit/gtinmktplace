@@ -6,7 +6,12 @@ tinham título mas nenhuma definição — sem campos, fontes, unidades ou crit�
 implementações diferentes poderiam alegar conformidade.
 
 **Data:** 2026-08-28
-**Errata 2026-08-29:** campos antes marcados "JoomPulse" (2.6, 3.1–3.4, 7.2, 7.4) passam a usar
+**Errata 2 (2026-08-29, [Spike 045](../spikes/045-cobertura-do-sonar-por-vendedor.md)):** 2.6 e 3.2
+passam a exigir **mínimo de 5 vendedores com estimativa** — o mesmo piso já usado em 7.3/7.4 —
+depois que a medição em produção renderizou R$ 100,7 mi/mês a partir de **um** vendedor. E o
+denominador de 3.3 passa a ser a **amostra inteira**, não os anúncios que resolveram `seller_id`.
+
+**Errata 1 (2026-08-29):** campos antes marcados "JoomPulse" (2.6, 3.1–3.4, 7.2, 7.4) passam a usar
 `pulse_vendedores` + amostra Apify conforme [ADR-0142](../decisions/0142-vendas-mensais-por-vendedor.md)
 e Errata 1 da [ADR-0141](../decisions/0141-analise-publiai-joompulse-radar-e-sonar.md). JoomPulse
 não é mais fonte deste contrato.
@@ -59,7 +64,7 @@ Valem para todo campo das três seções.
 | 2.3 | Preço médio sem extremos | Top 5 da seção 4 | R$ | **EAN-only** (D-9). Ordena os elegíveis por preço, descarta o menor e o maior, média aritmética do restante. | `N elegível < 5` → **não calcula** e diz por quê, citando `N` (D-10) |
 | 2.4 | Preço equivalente por unidade | Top 5 da seção 4 | R$/unidade e % | **Termo-only** (D-9). Substitui 2.3 no modo termo. Preço ÷ quantidade declarada por embalagem; a saída principal é o **percentual** de distância entre o candidato e a mediana dos elegíveis. | Quantidade por embalagem não parseável em ≥3 elegíveis → **não calcula**; nunca cai para o valor absoluto |
 | 2.5 | Menor e maior preço retido | Top 5 | R$ | Os dois valores **descartados** por 2.3, exibidos nomeadamente para o operador ver o que saiu. | Só existe quando 2.3 existe |
-| 2.6 | Faturamento do nicho (Top N vendedores) | `pulse_vendedores` + preço na amostra Apify | R$/mês (estimativa) | Por **vendedor distinto** na amostra: `vendas_mes × preço representativo`, onde `vendas_mes` vem do delta de `transactions.total` (ADR-0142 D-5) e o preço representativo é o do anúncio desse vendedor na amostra com maior `vendidos × preço` (ou o maior preço se `vendidos` for nulo). **Soma** sobre vendedores com estado `valor` — nunca mediana (D-6 aplica só a 3.2). **O rótulo diz o N real** — "faturamento de N vendedores com estimativa", não um N fixo quando menos vendedores têm dado. | Nenhum vendedor com estimativa válida → "nenhum vendedor da amostra tem estimativa mensal"; a seção continua com 2.1 e 2.2 |
+| 2.6 | Faturamento do nicho (Top N vendedores) | `pulse_vendedores` + preço na amostra Apify | R$/mês (estimativa) | Por **vendedor distinto** na amostra: `vendas_mes × preço representativo`, onde `vendas_mes` vem do delta de `transactions.total` (ADR-0142 D-5) e o preço representativo é o do anúncio desse vendedor na amostra com maior `vendidos × preço` (ou o maior preço se `vendidos` for nulo). **Soma** sobre vendedores com estado `valor` — nunca mediana (D-6 aplica só a 3.2). **Mínimo de 5 vendedores com estimativa** (Errata 2): abaixo disso o campo não renderiza. **O rótulo diz o N real** — "faturamento de N vendedores com estimativa", não um N fixo quando menos vendedores têm dado. | Nenhum vendedor com estimativa → "nenhum vendedor da amostra tem estimativa mensal"; 1 a 4 vendedores → "amostra insuficiente: N de 5 vendedores mínimos com estimativa mensal"; a seção continua com 2.1 e 2.2 |
 | 2.7 | Piso de nicho | Regra do operador | R$/mês | Constante **R$ 30.000/mês**, comparada a 2.6. É **regra comercial de Diego**, não medição — exibida como tal. | — |
 | 2.8 | Meta de entrada | Derivado | R$/mês | `2.6 × 10%`. Objetivo declarado, não previsão. | Só existe quando 2.6 existe |
 | 2.9 | Parecer de tamanho do nicho | Derivado | texto | `2.6 ≥ 2.7` → "nicho comporta entrada"; abaixo → "nicho pequeno para a meta". **Compara faturamento com piso, nada mais.** | Nenhum vendedor com estimativa → "não dá para medir o tamanho deste nicho" |
@@ -85,8 +90,8 @@ igual e critérios diferentes na mesma tela é defeito de aceite, não questão 
 | # | Campo | Fonte | Unidade | Cálculo | Quando falta |
 |---|---|---|---|---|---|
 | 3.1 | Faturamento dos líderes | `pulse_vendedores` + amostra Apify | R$/mês (estimativa) | Mesmo número de 2.6, repetido aqui como cabeçalho do painel. **Uma origem, um valor** — nunca recalculado. | herda de 2.6 |
-| 3.2 | Volume de vendas do nicho | `pulse_vendedores` | unidades/mês (estimativa) | **Mediana** de `vendas_mes` entre vendedores distintos da amostra com estado `valor` (ADR-0142 D-6) — nunca soma nem média aritmética. Representa o "vendedor típico", não o nicho inteiro. | Nenhum vendedor com estimativa válida → "não dá para estimar o volume deste nicho" |
-| 3.3 | Cobertura da estimativa | Derivado | contagem e % | `vendedores com estimativa válida ÷ vendedores distintos na amostra`. **Campo obrigatório**, não opcional: sem ele o operador lê 3.2 como se cobrisse o nicho inteiro. | — |
+| 3.2 | Volume de vendas do nicho | `pulse_vendedores` | unidades/mês (estimativa) | **Mediana** de `vendas_mes` entre vendedores distintos da amostra com estado `valor` (ADR-0142 D-6) — nunca soma nem média aritmética. Representa o "vendedor típico", não o nicho inteiro. **Mesmo mínimo de 5 de 2.6** (Errata 2): mediana de 1 elemento é esse elemento, não uma medida do nicho. | Nenhum vendedor com estimativa → "não dá para estimar o volume deste nicho"; 1 a 4 → "amostra insuficiente" |
+| 3.3 | Cobertura da estimativa | Derivado | contagem e % | **Duas unidades, as duas obrigatórias** (Errata 2): `anúncios cobertos ÷ **total de anúncios da amostra**` e `vendedores com estimativa ÷ vendedores distintos`. O denominador de anúncios é o total **antes** do descarte dos que não resolveram `seller_id` — medido: contar só os sobreviventes exibia 100% onde a cobertura real era 1 de 113. **Campo obrigatório**, não opcional: sem ele o operador lê 3.2 como se cobrisse o nicho inteiro. | Amostra vazia → proporções nulas, nunca 100% |
 | 3.4 | Vendedores sem estimativa | Derivado | contagem | Quantos vendedores distintos da amostra estão em `serie_insuficiente` ou `sem estimativa no período`. Rotulado **"sem estimativa mensal"**, jamais "não venderam". | — |
 | 3.5 | Custos operacionais básicos | Cálculo do PubliAI | R$ | Comissão (2.2) e imposto da organização por origem (D-17). **Sem frete** — frete depende de peso, que vive na seção 6. | Alíquota não confirmada → trava LOUD, **não calcula** (D-17) |
 
@@ -146,16 +151,17 @@ Um teste por linha. A seção está implementada quando todos passam.
    presente, 2.3 e 2.5 ausentes do payload — não vazios, ausentes.
 2. **`N elegível < 5` suprime 2.3 e 7.3** com a mensagem citando o `N` real. Entrada: 20 anúncios,
    2 elegíveis. Esperado: nenhuma média, nenhuma concentração, e o texto diz "2 de 20".
-3. **2.6 rotula o N real de vendedores.** Entrada: 5 vendedores distintos, 3 com estimativa válida.
-   Esperado: rótulo cita **3**, não um N fixo ou o total da amostra.
+3. **2.6 rotula o N real de vendedores.** Entrada: 8 vendedores distintos, 6 com estimativa válida.
+   Esperado: rótulo cita **6**, não um N fixo ou o total da amostra.
 4. **Falha de comissão suprime 2.2 e 3.5.** Entrada: `/listing_prices` responde 200 sem
    `sale_fee_details`. Esperado: "não foi possível confirmar a comissão oficial"; **nenhum R$ 0**.
 5. **Alíquota não confirmada trava 3.5.** Entrada: organização sem `aliquota_nacional_pct`.
    Esperado: falha explícita, sem cálculo (D-17).
-6. **3.2 usa mediana, nunca soma nem média.** Entrada: vendedores com `vendas_mes` 10, 20 e 10.000.
-   Esperado: 3.2 = **20** (mediana), não 10.030 nem 3.343.
-7. **3.3 é obrigatório sempre que 3.2 existe.** Entrada: 4 vendedores distintos, 2 com estimativa.
-   Esperado: 3.3 = "2 de 4" (ou equivalente); payload com 3.2 e sem 3.3 é inválido.
+6. **3.2 usa mediana, nunca soma nem média.** Entrada: vendedores com `vendas_mes` 10, 15, 20, 25
+   e 10.000. Esperado: 3.2 = **20** (mediana), não 10.070 (soma) nem 2.014 (média).
+7. **3.3 é obrigatório sempre que 3.2 existe, e conta a amostra inteira.** Entrada: 113 anúncios na
+   amostra, 2 com `seller_id` resolvido, 1 vendedor com estimativa. Esperado: 3.3 = **"2 de 113
+   anúncios"**, jamais "1 de 1" nem 100%; payload com 3.2 e sem 3.3 é inválido.
 8. **3.4 nunca usa a palavra "venderam".** Teste de string no texto renderizado; rotulo honesto
    ("sem estimativa mensal").
 9. **7.1 devolve `não rastreado`**, não `tradicional`, quando o item não volta do ML.
@@ -163,7 +169,10 @@ Um teste por linha. A seção está implementada quando todos passam.
     faturamentos iguais por vendedor. Esperado: concentração mede **2** rivais, não 6.
 11. **A IA não cita número fora do contrato.** Extrair todo numeral do texto gerado e conferir
     contra os campos calculados; qualquer sobra reprova.
-12. **2.9 e o veredito do Sonar não compartilham visual.** Revisão de UI, não teste automatizado —
+12. **Menos de 5 vendedores com estimativa não renderiza 2.6 nem 3.2** (Errata 2). Entrada: o caso
+    real do Spike 045 — 1 vendedor ("Mercado Livre Brasil", 1,33 mi un./mês, R$ 75,59). Esperado:
+    2.6, 2.8, 2.9 e 3.2 em estado de ausência; **nunca** R$ 100,7 mi na tela.
+13. **2.9 e o veredito do Sonar não compartilham visual.** Revisão de UI, não teste automatizado —
     mas é critério de aceite.
 
 ## O que este contrato deliberadamente não fecha

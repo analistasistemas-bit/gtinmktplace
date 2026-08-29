@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   passosProgresso, margemSimulada, ETAPAS_SONAR, itensDaAmostra, normalizarSerieVisitas, linkDoAnuncio,
   formatarFaturamentoSecoes237, formatarMedianaVendasMesSecoes237, formatarProporcaoCobertura,
-  fetchSecoes237Sonar, itensParaSecoes237,
+  fetchSecoes237Sonar,
 } from '../sonar';
 import { supabase } from '../supabase';
 
@@ -170,16 +170,6 @@ describe('formatarFaturamentoSecoes237 / formatarMedianaVendasMesSecoes237 — A
   it('formatarProporcaoCobertura arredonda percentual ou traço', () => {
     expect(formatarProporcaoCobertura(0.667)).toBe('67%');
     expect(formatarProporcaoCobertura(null)).toBe('—');
-  });
-});
-
-describe('itensParaSecoes237 — identidade da amostra', () => {
-  const itens = [{ titulo: 'X', preco: 10, vendidos: 5, link: null, imagem: null, vendedor: null,
-    frete_gratis: null, loja_oficial: null, internacional: null, full: null, item_id: 'MLB1',
-    catalog_product_id: null, avaliacao_nota: null, avaliacao_qtd: null, posicao: 1,
-    patrocinado: null, selo: null, preco_anterior: null, desconto_pct: null, flex: null }];
-  it('passa a amostra sem transformar', () => {
-    expect(itensParaSecoes237(itens)).toBe(itens);
   });
 });
 
