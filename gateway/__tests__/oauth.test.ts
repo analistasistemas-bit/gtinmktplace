@@ -42,6 +42,17 @@ describe('iniciar', () => {
     expect(a.codeVerifier).not.toBe(b.codeVerifier)
   })
 
+  // Trava contra encurtar a janela sem perceber: o login da JoomPulse é por telefone + chave
+  // enviada por mensagem, então entre Conectar e aprovar o operador ESPERA a mensagem chegar.
+  // Uma janela curta expira nesse meio-tempo e ele volta para "estado expirado" tendo feito tudo
+  // certo. 15 min é o piso; hoje o valor é 20.
+  it('a janela do state comporta a espera da chave por mensagem', () => {
+    const i = iniciar(cliente, AGORA)
+    const minutos = (i.expiraEm.getTime() - AGORA.getTime()) / 60_000
+    expect(minutos).toBeGreaterThanOrEqual(15)
+    expect(minutos).toBeLessThanOrEqual(60) // segredo de uso único não vira sessão
+  })
+
   it('o desafio S256 confere com o cálculo do provedor', () => {
     const v = 'verifier-de-teste'
     expect(desafioS256(v)).toBe(createHash('sha256').update(v).digest('base64url'))

@@ -26,8 +26,19 @@ export const TOKEN_URL = 'https://joompulse.com/noauth/oauth2/token'
 export const INTROSPECT_URL = 'https://joompulse.com/noauth/oauth2/introspect'
 export const ESCOPO = 'mcp'
 
-/** Janela do `state`. Curta: é uma ida ao provedor e a volta, não uma sessão. */
-export const VALIDADE_ESTADO_MS = 10 * 60 * 1000
+/**
+ * Janela do `state`.
+ *
+ * Não é só "ida e volta ao provedor": o login da JoomPulse é por **telefone + chave enviada por
+ * mensagem**, não usuário e senha. Entre clicar em Conectar e aprovar o acesso, o operador digita
+ * o telefone, **espera a mensagem chegar** e digita a chave. Os 10 minutos que este valor tinha
+ * originalmente expiravam nesse meio-tempo quando a mensagem demorava, e o operador voltava para
+ * um "estado expirado" sem entender por quê — tendo feito tudo certo.
+ *
+ * 20 minutos cobrem a espera com folga e continuam curtos para um segredo de uso único, que ainda
+ * é protegido por aleatoriedade de 32 bytes, uso único e PKCE.
+ */
+export const VALIDADE_ESTADO_MS = 20 * 60 * 1000
 
 export interface ClienteOAuth {
   clientId: string

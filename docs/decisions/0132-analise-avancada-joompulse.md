@@ -797,3 +797,39 @@ Verificado antes do commit: 68 testes no gateway, e smoke com o serviço no ar �
 em 200 sem token, `client_id` batendo com a URL de publicação, `token_endpoint_auth_method: none`
 sem secret, nenhum segredo no corpo, `POST` no mesmo caminho devolvendo 404, e boot recusando um
 `client_id` HTTPS incoerente.
+
+---
+
+## Errata 4 (2026-08-29) — o login da JoomPulse é por telefone e chave, e isso muda a janela do OAuth
+
+### E-14 — A autenticação acontece INTEIRA na JoomPulse, e o PubliAI nunca vê telefone nem chave
+
+Informado por Diego: a JoomPulse não usa usuário e senha. O operador informa o **telefone** e
+recebe uma **chave por mensagem**.
+
+Isso **não muda nada** no desenho, e é exatamente o motivo de o fluxo ser OAuth: o navegador é
+enviado para a tela da própria JoomPulse, o operador se autentica lá do jeito que eles definirem,
+e o PubliAI recebe apenas a credencial no final. **Telefone e chave nunca passam pelo PubliAI.**
+
+Fica registrado como restrição para quem for mexer depois: **nunca** construir uma tela de login
+da JoomPulse dentro do PubliAI. Pedir o telefone ou a chave do operador na nossa interface seria
+coletar credencial de terceiro — e destruiria a razão de existir do OAuth. Se um dia a tela deles
+mudar de método, o PubliAI não precisa saber.
+
+### E-15 — A janela do `state` subiu de 10 para 20 minutos
+
+Consequência prática do E-14. O `state` precisa sobreviver ao caminho inteiro:
+
+> clicar em Conectar → tela da JoomPulse → digitar telefone → **esperar a mensagem chegar** →
+> digitar a chave → aprovar o acesso → voltar ao PubliAI
+
+Os 10 minutos originais foram dimensionados para "ida e volta ao provedor", que é o caso de um
+login com senha. Com espera de mensagem no meio, uma entrega lenta ou uma distração estouram a
+janela, e o operador volta para **"estado expirado" tendo feito tudo certo** — o pior tipo de
+erro, porque não indica o que corrigir.
+
+20 minutos cobrem a espera com folga e continuam curtos para um segredo de uso único, que segue
+protegido por 32 bytes de aleatoriedade, uso único e PKCE.
+
+Há teste travando o piso em 15 minutos e o teto em 60, para que ninguém encurte a janela sem
+perceber e para que ela nunca vire sessão. Verificado em RED: com 10 minutos, o teste reprova.
