@@ -136,6 +136,10 @@ um rival que somos nós. Medido: `9757132` (`$ANALISTA$`) aparecia entre os 190 
 O Sonar roda antes de cadastrar, então em geral a própria conta não está no catálogo — mas "em
 geral" não é guarda.
 
+**A exclusão é no uso, não no armazenamento.** O cache da D-7 guarda a ficha **completa** e cada
+organização filtra a própria conta ao ler. Fosse o contrário, a chave global guardaria uma lista já
+filtrada pela org que a esquentou, e uma consulta da Avil herdaria a exclusão da DSA.
+
 ### D-9 — Ficha que falha não conta como cobertura
 
 Um catálogo cuja ficha não responde some do conjunto de vendedores por trás de 3.2. Se continuasse
