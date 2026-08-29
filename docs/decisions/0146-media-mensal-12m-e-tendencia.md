@@ -108,6 +108,19 @@ histórico próprio.
 
 ---
 
+## Errata 1 (2026-08-29, na própria implementação) — 3.4 redefinido
+
+A D-2 tem uma consequência que o desenho não previu: se **um snapshot basta** para 3.2, e ser
+estabelecido **exige** um snapshot, então "estabelecido sem estimativa" é inalcançável. O campo 3.4
+passaria a exibir **sempre zero**.
+
+Campo que só diz zero é ruído. 3.4 é redefinido para declarar **quem a régua excluiu**:
+
+> `66 de 116 concorrentes ficaram de fora: menos de 50 vendas na vida`
+
+É a informação honesta que faltava sobre o corte da D-4 — o operador passa a ver o tamanho da
+exclusão, não só o resultado dela.
+
 ## O que esta decisão NÃO resolve
 
 A atribuição anúncio ↔ vendedor continua aberta: o número é da **loja inteira**, não do produto do

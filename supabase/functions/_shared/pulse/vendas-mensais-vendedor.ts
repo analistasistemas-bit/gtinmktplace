@@ -1,7 +1,8 @@
-// Vendas mensais estimadas por vendedor (ADR-0142, corrigido pela ADR-0145 D-4/errata 1):
-// transactions.total vem com `period: "historic"` — é vitalício, não uma janela móvel do ML.
-// O delta observado na nossa própria janela de coleta é extrapolado para 30 dias. Função pura —
-// sem I/O.
+// Vendas mensais estimadas por vendedor (ADR-0142, corrigido pela ADR-0145, e pela ADR-0146 —
+// Spike 048 provou que transactions.total é janela MÓVEL de ~365 dias, não vitalícia).
+// A intensidade (3.2) usa `mediaMensal12m`: total do snapshot mais recente ÷ 12, direto — sem
+// selo, sem série. O delta ponta-a-ponta da série (estimarVendasMensais) não mede mais venda: vira
+// TENDÊNCIA (3.6) — venda de agora comparada com a de um ano atrás. Função pura — sem I/O.
 
 export type SnapshotVendedor = { seller_id: string; transactions_total: number; dia: string };
 
@@ -89,4 +90,24 @@ export function medianaVendasMensaisDoUniverso(resultados: Map<string, VendasMen
   const mid = Math.floor(valores.length / 2);
   if (valores.length % 2 === 0) return (valores[mid - 1] + valores[mid]) / 2;
   return valores[mid];
+}
+
+/**
+ * ADR-0146 D-1: média mensal exata dos últimos 12 meses. `transactions_total` é a contagem de
+ * pedidos dos últimos 365 dias (Spike 048 §1, provado com verdade fundamental) — dividir por 12 dá
+ * o mês médio, direto, sem selo, sem idade, sem bucket. Um snapshot basta (D-2): não depende de
+ * série.
+ */
+export function mediaMensal12m(totalMaisRecente: number): number {
+  return totalMaisRecente / 12;
+}
+
+/** Total do snapshot mais recente por vendedor (o mais recente da série ordenada por dia). */
+export function totalMaisRecentePorVendedor(serie: SnapshotVendedor[]): Map<string, number> {
+  const porVendedor = agruparSeriePorVendedor(serie);
+  const out = new Map<string, number>();
+  for (const [sellerId, snaps] of porVendedor) {
+    out.set(sellerId, snaps[snaps.length - 1].transactions_total);
+  }
+  return out;
 }

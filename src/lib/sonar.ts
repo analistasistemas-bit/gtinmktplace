@@ -290,16 +290,21 @@ export type CoberturaEstimativaSonar = {
   rotulo: string;
 };
 
-export type VendedoresSemEstimativaSonar = {
+export type VendedoresForaDaContaSonar = {
   contagem: number;
+  total_no_catalogo: number;
   rotulo: string;
 };
 
-/** 3.6 — atividade do nicho entre os vendedores estabelecidos (ADR-0145). */
-export type AtividadeNichoSonar = {
+/** 3.6 — tendência do nicho: delta ponta-a-ponta dos estabelecidos com série, contra o ano
+ *  passado (ADR-0146). Delta negativo NÃO some — conta em `encolhendo`. */
+export type TendenciaNichoSonar = {
   estabelecidos: number;
-  ativos: number;
-  proporcao: number | null;
+  crescendo: number;
+  estaveis: number;
+  encolhendo: number;
+  sem_serie: number;
+  proporcao_crescendo: number | null;
   dias_janela: number | null;
   base_pequena: boolean;
   rotulo: string;
@@ -321,8 +326,8 @@ export type Secoes237Sonar = {
   '2.9': ParecerTamanhoNichoSonar;
   '3.2': VolumeNichoSonar;
   '3.3': CoberturaEstimativaSonar;
-  '3.4': VendedoresSemEstimativaSonar;
-  '3.6': AtividadeNichoSonar;
+  '3.4': VendedoresForaDaContaSonar;
+  '3.6': TendenciaNichoSonar;
   limitacao_3_2: string;
   '7.4': ConcentracaoPorVendedorSonar;
 };

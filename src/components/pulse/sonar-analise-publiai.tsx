@@ -12,7 +12,7 @@ import {
   formatarProporcaoCobertura,
   type CoberturaEstimativaSonar,
   type RespostaSecoes237Sonar,
-  type VendedoresSemEstimativaSonar,
+  type VendedoresForaDaContaSonar,
 } from '@/lib/sonar';
 
 export type SonarAnalisePubliAIProps = {
@@ -36,8 +36,8 @@ function Cabecalho() {
  * contagem de 3.4 só faz sentido ao lado do denominador de vendedores.
  */
 function LinhasCobertura(
-  { cobertura, semEstimativa }:
-  { cobertura: CoberturaEstimativaSonar; semEstimativa: VendedoresSemEstimativaSonar },
+  { cobertura, foraDaConta }:
+  { cobertura: CoberturaEstimativaSonar; foraDaConta: VendedoresForaDaContaSonar },
 ) {
   const pct = cobertura.proporcao_anuncios != null
     ? ` (${formatarProporcaoCobertura(cobertura.proporcao_anuncios)})`
@@ -48,7 +48,7 @@ function LinhasCobertura(
   // desta linha precisa ser o mesmo conjunto, senão "X de Y" mistura população crua com filtrada.
   const linhaVendedores =
     `${cobertura.com_estimativa} de ${cobertura.estabelecidos} vendedores estabelecidos com estimativa mensal`
-    + (semEstimativa.contagem > 0 ? ` · ${semEstimativa.contagem} sem estimativa` : '');
+    + (foraDaConta.contagem > 0 ? ` · ${foraDaConta.contagem} fora da conta (< 50 vendas na vida)` : '');
 
   return (
     <div className="mt-3 space-y-1 text-sm text-muted-foreground">
@@ -109,7 +109,8 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
 
   const s = data.secoes237;
   const conc = s['7.4'];
-  const atividade = s['3.6'];
+  const tendencia = s['3.6'];
+  const comparaveis = tendencia.estabelecidos - tendencia.sem_serie;
 
   return (
     <Card className="mb-4 p-4">
@@ -117,24 +118,24 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
         <span className="text-sm font-medium">Análise PubliAI</span>
         <Badge variant="outline">demanda por vendedor</Badge>
         <span className="text-xs text-muted-foreground">
-          vendas/mês = loja inteira do vendedor
+          média dos últimos 12 meses · loja inteira do vendedor
         </span>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {atividade.estabelecidos > 0 && (
+        {comparaveis > 0 && (
           <KpiCard
             size="compact"
-            label="Concorrentes vendendo"
-            value={`${atividade.ativos} de ${atividade.estabelecidos}`}
-            hint={atividade.rotulo}
+            label="Concorrentes vendendo mais que há um ano"
+            value={`${tendencia.crescendo} de ${comparaveis}`}
+            hint={tendencia.rotulo}
             icon={Users}
             tom="info"
           />
         )}
         <KpiCard
           size="compact"
-          label="Mediana de vendas/mês por vendedor"
+          label="Média mensal por vendedor (12 meses)"
           value={formatarMedianaVendasMesSecoes237(s['3.2'])}
           hint={s['3.2'].estado === 'valor' ? s['3.2'].rotulo : undefined}
           icon={BarChart3}
@@ -142,13 +143,19 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
         />
       </div>
 
-      {atividade.base_pequena && (
-        <p className="mt-2 text-xs text-warning">
-          Base pequena: só {atividade.estabelecidos} vendedor{atividade.estabelecidos === 1 ? '' : 'es'} estabelecido{atividade.estabelecidos === 1 ? '' : 's'} nesta amostra.
+      {comparaveis > 0 && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {`${tendencia.crescendo} crescendo · ${tendencia.estaveis} estáveis · ${tendencia.encolhendo} encolhendo`}
         </p>
       )}
 
-      <LinhasCobertura cobertura={s['3.3']} semEstimativa={s['3.4']} />
+      {tendencia.base_pequena && (
+        <p className="mt-2 text-xs text-warning">
+          Base pequena: só {tendencia.estabelecidos} vendedor{tendencia.estabelecidos === 1 ? '' : 'es'} estabelecido{tendencia.estabelecidos === 1 ? '' : 's'} nesta amostra.
+        </p>
+      )}
+
+      <LinhasCobertura cobertura={s['3.3']} foraDaConta={s['3.4']} />
 
       {conc != null && (
         // 7.4 tem denominador próprio (anúncios da amostra), diferente do de 3.3 logo acima —

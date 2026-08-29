@@ -8,11 +8,12 @@
 
 import {
   agruparSeriePorVendedor,
+  diasDecorridos,
   estimarVendasMensais,
-  medianaVendasMensaisDoUniverso,
+  mediaMensal12m,
   normalizarSellerId,
+  totalMaisRecentePorVendedor,
   type SnapshotVendedor,
-  type VendasMensais,
 } from './vendas-mensais-vendedor.ts';
 
 export type AnuncioAmostra = {
@@ -47,16 +48,23 @@ export type CoberturaEstimativa = {
   rotulo: string;
 };
 
-export type VendedoresSemEstimativa = {
+/** 3.4 — quem ficou de fora da conta, e por quê (ADR-0146 Errata 1). */
+export type VendedoresForaDaConta = {
   contagem: number;
+  total_no_catalogo: number;
   rotulo: string;
 };
 
-/** 3.6 — atividade do nicho, entre os vendedores estabelecidos (ADR-0145 D-2). */
-export type AtividadeNicho = {
+/** 3.6 — tendência do nicho: delta ponta-a-ponta dos estabelecidos com série, contra o ano
+ *  passado (ADR-0146 D-3). Delta negativo NÃO some — conta em `encolhendo`. */
+export type TendenciaNicho = {
   estabelecidos: number;
-  ativos: number;
-  proporcao: number | null;
+  crescendo: number;
+  estaveis: number;
+  encolhendo: number;
+  /** Menos de 2 snapshots — não dá para comparar com o ano passado. */
+  sem_serie: number;
+  proporcao_crescendo: number | null;
   dias_janela: number | null;
   base_pequena: boolean;
   rotulo: string;
@@ -79,8 +87,9 @@ const MIN_VENDEDORES_NICHO = 5;
 // diferente do piso acima, que suprime a mediana.
 const MIN_BASE_ATIVIDADE = 5;
 
-// Spike 046: abaixo de 50 transações históricas, 67% dos vendedores dão delta zero em 13 dias —
-// é a faixa sobre a qual o instrumento não tem resolução. Acima, 97-100% mostram movimento.
+// ADR-0146 D-4: com `total ÷ 12` não há problema de resolução (a média é exata, não depende de
+// janela). O corte sobrevive por COMPOSIÇÃO — a cauda de contas que nunca venderam domina a
+// mediana. Medido no aptamil premium 2: sem o corte, mediana 1; com o corte, mediana 322.
 // Calibração inicial revisável (ADR-0145 D-7), não constante universal.
 const MIN_TOTAL_ESTABELECIDO = 50;
 
@@ -109,9 +118,11 @@ export function vendedoresEstabelecidos(
   return out;
 }
 
-function contarComEstimativa(ids: Set<string>, estimativas: Map<string, VendasMensais>): number {
+/** Quantos `ids` têm entrada em `totais` (total do snapshot mais recente) — ADR-0146: um
+ *  snapshot já basta, então isto é praticamente "quantos têm série alguma". */
+function contarComTotal12m(ids: Set<string>, totais: Map<string, number>): number {
   let n = 0;
-  for (const id of ids) if (estimativas.get(id)?.estado === 'valor') n++;
+  for (const id of ids) if (totais.has(id)) n++;
   return n;
 }
 
@@ -125,46 +136,75 @@ function medianaDiasArredondada(valores: number[]): number | null {
   return Math.round(m);
 }
 
-/** Mediana de `dias_janela` entre os `ids` com estado `valor` — reusa o dado já calculado por
- *  `estimarVendasMensais`, nunca recalcula (regra do ADR-0145). */
-function medianaDiasJanela(ids: Set<string>, estimativas: Map<string, VendasMensais>): number | null {
-  const dias: number[] = [];
-  for (const id of ids) {
-    const est = estimativas.get(id);
-    if (est?.estado === 'valor') dias.push(est.dias_janela);
-  }
-  return medianaDiasArredondada(dias);
+/** Mediana exata (sem arredondar) — para un./mês, nunca média aritmética (ADR-0142 D-6). */
+function mediana(valores: number[]): number | null {
+  if (valores.length === 0) return null;
+  const v = [...valores].sort((a, b) => a - b);
+  const mid = Math.floor(v.length / 2);
+  return v.length % 2 === 0 ? (v[mid - 1] + v[mid]) / 2 : v[mid];
 }
 
-/** 3.6 — atividade: quantos estabelecidos venderam, e em quantos dias (ADR-0145 D-2/D-6). */
-export function calcularAtividadeNicho(
+/**
+ * 3.6 — tendência: delta ponta-a-ponta dos estabelecidos com série, contra o mesmo período de um
+ * ano atrás (ADR-0146 D-3). Reusa os estados de `estimarVendasMensais` — ela já classifica o sinal
+ * do delta (`valor` com `vendas_mes` >0/=0 → crescendo/estável; `sem_estimativa_no_periodo` →
+ * encolhendo; `serie_insuficiente` → sem_serie) — e só recalcula os dias de janela por fora,
+ * porque o estado negativo não carrega `dias_janela`.
+ */
+export function calcularTendenciaNicho(
   sellerIds: Array<string | number>,
   serie: SnapshotVendedor[],
-): AtividadeNicho {
+): TendenciaNicho {
   const estabelecidos = vendedoresEstabelecidos(sellerIds, serie);
   const estimativas = estimarVendasMensais(serie);
+  const porVendedor = agruparSeriePorVendedor(serie);
 
-  let ativos = 0;
+  let crescendo = 0;
+  let estaveis = 0;
+  let encolhendo = 0;
+  let semSerie = 0;
+  const dias: number[] = [];
+
   for (const id of estabelecidos) {
     const est = estimativas.get(id);
-    if (est?.estado === 'valor' && est.vendas_mes > 0) ativos++;
+    if (est == null || est.estado === 'serie_insuficiente') {
+      semSerie++;
+      continue;
+    }
+    if (est.estado === 'sem_estimativa_no_periodo') {
+      encolhendo++;
+    } else if (est.vendas_mes > 0) {
+      crescendo++;
+    } else {
+      estaveis++;
+    }
+    const snaps = porVendedor.get(id);
+    if (snaps && snaps.length >= 2) {
+      dias.push(diasDecorridos(snaps[0].dia, snaps[snaps.length - 1].dia));
+    }
   }
 
-  const diasJanela = medianaDiasJanela(estabelecidos, estimativas);
   const nEstabelecidos = estabelecidos.size;
+  const comparaveis = nEstabelecidos - semSerie;
+  const diasJanela = medianaDiasArredondada(dias);
 
   let rotulo: string;
   if (nEstabelecidos === 0) {
     rotulo = 'nenhum vendedor estabelecido nos catálogos desta amostra';
   } else {
-    const sufixoDias = diasJanela != null ? ` em ${diasJanela} dias` : '';
-    rotulo = `${ativos} de ${nEstabelecidos} vendedores estabelecidos venderam${sufixoDias}`;
+    const sufixoDias = diasJanela != null
+      ? ` (comparado com os mesmos ${diasJanela} dias de 12 meses atrás)`
+      : '';
+    rotulo = `${crescendo} de ${comparaveis} vendedores estabelecidos vendendo mais que há um ano${sufixoDias}`;
   }
 
   return {
     estabelecidos: nEstabelecidos,
-    ativos,
-    proporcao: nEstabelecidos > 0 ? ativos / nEstabelecidos : null,
+    crescendo,
+    estaveis,
+    encolhendo,
+    sem_serie: semSerie,
+    proporcao_crescendo: comparaveis > 0 ? crescendo / comparaveis : null,
     dias_janela: diasJanela,
     base_pequena: nEstabelecidos > 0 && nEstabelecidos < MIN_BASE_ATIVIDADE,
     rotulo,
@@ -172,8 +212,9 @@ export function calcularAtividadeNicho(
 }
 
 /**
- * 3.2 — mediana de vendas_mes entre os vendedores ESTABELECIDOS do catálogo com estado valor
- * (D-6 da 0142, população restrita pela D-1 da 0145).
+ * 3.2 — mediana da média mensal dos últimos 12 meses (`total ÷ 12`) entre os vendedores
+ * ESTABELECIDOS do catálogo (ADR-0146 D-1, população restrita pela D-1 da 0145). Um snapshot
+ * basta (D-2): não depende de série nem de delta — inclusive delta negativo entra (D-3).
  */
 export function calcularVolumeNicho(
   sellerIds: Array<string | number>,
@@ -184,38 +225,32 @@ export function calcularVolumeNicho(
     return { estado: 'sem_dado', mensagem: 'nenhum vendedor estabelecido nos catálogos desta amostra' };
   }
 
-  const estimativas = estimarVendasMensais(serieVendedores);
-  const comEstimativa = contarComEstimativa(estabelecidos, estimativas);
+  const totais = totalMaisRecentePorVendedor(serieVendedores);
+  const medias: number[] = [];
+  for (const id of estabelecidos) {
+    const total = totais.get(id);
+    if (total != null) medias.push(mediaMensal12m(total));
+  }
 
-  if (comEstimativa < MIN_VENDEDORES_NICHO) {
+  if (medias.length < MIN_VENDEDORES_NICHO) {
     return {
       estado: 'sem_dado',
       // "N de 5 mínimos" só lê certo quando estabelecidos == 5 por coincidência. Com 20
       // estabelecidos e 4 com estimativa, o operador leria que o nicho tem 5 vendedores.
-      mensagem: `apenas ${comEstimativa} vendedor${comEstimativa === 1 ? '' : 'es'} estabelecido${comEstimativa === 1 ? '' : 's'} com estimativa mensal (mínimo ${MIN_VENDEDORES_NICHO})`,
+      mensagem: `apenas ${medias.length} vendedor${medias.length === 1 ? '' : 'es'} estabelecido${medias.length === 1 ? '' : 's'} com estimativa mensal (mínimo ${MIN_VENDEDORES_NICHO})`,
     };
   }
 
-  const subset = new Map<string, VendasMensais>();
-  for (const id of estabelecidos) {
-    const est = estimativas.get(id);
-    if (est) subset.set(id, est);
-  }
-
-  const medianaVendas = medianaVendasMensaisDoUniverso(subset);
+  const medianaVendas = mediana(medias);
   if (medianaVendas == null) {
     return { estado: 'sem_dado', mensagem: 'não dá para estimar o volume deste nicho' };
   }
 
-  const diasJanela = medianaDiasJanela(estabelecidos, estimativas);
-  const sufixoDias = diasJanela != null ? ` em ${diasJanela} dias,` : ',';
-
   return {
     estado: 'valor',
     vendas_mes_mediana: medianaVendas,
-    vendedores_com_estimativa: comEstimativa,
-    rotulo: `mediana de vendas/mês — movimento observado${sufixoDias} extrapolado para 30 `
-      + `(loja inteira, ${comEstimativa} vendedores estabelecidos)`,
+    vendedores_com_estimativa: medias.length,
+    rotulo: `média mensal dos últimos 12 meses — loja inteira (${medias.length} vendedores estabelecidos)`,
   };
 }
 
@@ -232,8 +267,10 @@ export function calcularCoberturaEstimativa(
 ): CoberturaEstimativa {
   const ids = distintos(sellerIds);
   const estabelecidos = vendedoresEstabelecidos(sellerIds, serieVendedores);
-  const estimativas = estimarVendasMensais(serieVendedores);
-  const comEstimativa = contarComEstimativa(estabelecidos, estimativas);
+  // ADR-0146: com_estimativa agora conta estabelecidos com média de 12 meses — praticamente todos
+  // os que têm ao menos 1 snapshot (um snapshot já basta, D-2).
+  const totais = totalMaisRecentePorVendedor(serieVendedores);
+  const comEstimativa = contarComTotal12m(estabelecidos, totais);
 
   const rotuloAnuncios = anunciosNaAmostra > 0
     ? `${anunciosComCatalogo} de ${anunciosNaAmostra} anúncios da amostra têm catálogo`
@@ -257,29 +294,28 @@ export function calcularCoberturaEstimativa(
   };
 }
 
-/** 3.4 — estabelecidos em serie_insuficiente, sem_estimativa_no_periodo ou sem série alguma. */
-export function calcularVendedoresSemEstimativa(
+/**
+ * 3.4 — vendedores do catálogo que ficaram **fora** da conta por não serem estabelecidos.
+ *
+ * A definição anterior ("sem estimativa mensal") virou estruturalmente zero na ADR-0146: como um
+ * snapshot já basta para 3.2 e ser estabelecido exige um snapshot, não existe estabelecido sem
+ * estimativa. Campo que só diz zero é ruído — este passa a declarar **quem a régua excluiu**, que
+ * é a informação honesta a dar ao operador.
+ */
+export function calcularVendedoresForaDaConta(
   sellerIds: Array<string | number>,
   serieVendedores: SnapshotVendedor[],
-): VendedoresSemEstimativa {
+): VendedoresForaDaConta {
+  const ids = distintos(sellerIds);
   const estabelecidos = vendedoresEstabelecidos(sellerIds, serieVendedores);
-  const estimativas = estimarVendasMensais(serieVendedores);
-  let sem = 0;
-
-  for (const id of estabelecidos) {
-    const est = estimativas.get(id);
-    if (
-      est == null
-      || est.estado === 'serie_insuficiente'
-      || est.estado === 'sem_estimativa_no_periodo'
-    ) {
-      sem++;
-    }
-  }
+  const fora = ids.size - estabelecidos.size;
 
   return {
-    contagem: sem,
-    rotulo: `${sem} vendedor${sem === 1 ? '' : 'es'} sem estimativa mensal`,
+    contagem: fora,
+    total_no_catalogo: ids.size,
+    rotulo: fora > 0
+      ? `${fora} de ${ids.size} concorrentes ficaram de fora: menos de ${MIN_TOTAL_ESTABELECIDO} vendas na vida`
+      : 'nenhum concorrente ficou de fora da conta',
   };
 }
 

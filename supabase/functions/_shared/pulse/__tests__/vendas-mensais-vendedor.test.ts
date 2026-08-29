@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   diasDecorridos,
   estimarVendasMensais,
+  mediaMensal12m,
   medianaVendasMensaisDoUniverso,
+  totalMaisRecentePorVendedor,
 } from '../vendas-mensais-vendedor.ts';
 
 describe('estimarVendasMensais — ADR-0142 critérios de aceite', () => {
@@ -107,5 +109,40 @@ describe('medianaVendasMensaisDoUniverso', () => {
       { seller_id: 'a', transactions_total: 100, dia: '2026-08-01' },
     ]);
     expect(medianaVendasMensaisDoUniverso(resultados)).toBeNull();
+  });
+});
+
+describe('mediaMensal12m — ADR-0146 D-1', () => {
+  it('divide o total mais recente por 12', () => {
+    expect(mediaMensal12m(3_864)).toBe(322);
+  });
+
+  it('total zero devolve média zero, não ausência', () => {
+    expect(mediaMensal12m(0)).toBe(0);
+  });
+});
+
+describe('totalMaisRecentePorVendedor — ADR-0146 D-2', () => {
+  it('pega o total do ÚLTIMO snapshot da série ordenada, não o primeiro', () => {
+    const totais = totalMaisRecentePorVendedor([
+      { seller_id: 'a', transactions_total: 100, dia: '2026-08-01' },
+      { seller_id: 'a', transactions_total: 121, dia: '2026-08-31' },
+    ]);
+    expect(totais.get('a')).toBe(121);
+  });
+
+  it('um único snapshot já basta — não exige série de 2 pontos', () => {
+    const totais = totalMaisRecentePorVendedor([
+      { seller_id: 'solo', transactions_total: 500, dia: '2026-08-20' },
+    ]);
+    expect(totais.get('solo')).toBe(500);
+  });
+
+  it('delta negativo não é excluído: o total mais recente entra igual', () => {
+    const totais = totalMaisRecentePorVendedor([
+      { seller_id: 'neg', transactions_total: 20_000, dia: '2026-08-16' },
+      { seller_id: 'neg', transactions_total: 15_125, dia: '2026-08-29' },
+    ]);
+    expect(totais.get('neg')).toBe(15_125);
   });
 });

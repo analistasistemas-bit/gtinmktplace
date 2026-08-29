@@ -7,26 +7,26 @@
 // 2.9 permanece apenas como ausência declarada, porque a seção 2 promete o campo.
 
 import {
-  calcularAtividadeNicho,
   calcularCoberturaEstimativa,
   calcularConcentracaoPorVendedor,
-  calcularVendedoresSemEstimativa,
+  calcularTendenciaNicho,
+  calcularVendedoresForaDaConta,
   calcularVolumeNicho,
   type AnuncioAmostra,
-  type AtividadeNicho,
   type CoberturaEstimativa,
   type ConcentracaoPorVendedor,
-  type VendedoresSemEstimativa,
+  type TendenciaNicho,
+  type VendedoresForaDaConta,
   type VolumeNicho,
 } from '../pulse/nicho-vendedor.ts';
 import type { SnapshotVendedor } from '../pulse/vendas-mensais-vendedor.ts';
 
-/** Limitação registrada ADR-0142 D-1 / ADR-0143 D-2 / ADR-0145 D-4 — loja inteira, e do catálogo
- *  de vendedores estabelecidos, não do anúncio nem de uma janela do ML. */
+/** Limitação registrada ADR-0142 D-1 / ADR-0143 D-2 / ADR-0146 D-1 — loja inteira, e do catálogo
+ *  de vendedores estabelecidos, não do anúncio. */
 export const LIMITACAO_3_2 =
-  'As vendas/mês são da loja inteira do vendedor (movimento observado na nossa janela de coleta, '
-  + 'extrapolado para 30 dias — não uma janela do Mercado Livre), e o conjunto são os vendedores '
-  + 'estabelecidos que disputam os catálogos desta amostra — não os anúncios listados.';
+  'A média mensal é da loja inteira do vendedor, dos últimos 12 meses (ADR-0146), e o conjunto '
+  + 'são os vendedores estabelecidos que disputam os catálogos desta amostra — não os anúncios '
+  + 'listados.';
 
 /** ADR-0143 D-3: não é ausência de dado, é decisão de não publicar precisão falsa. */
 export const MOTIVO_SEM_FATURAMENTO =
@@ -38,8 +38,8 @@ export type Secoes237 = {
   '2.9': ParecerTamanhoNicho;
   '3.2': VolumeNicho;
   '3.3': CoberturaEstimativa;
-  '3.4': VendedoresSemEstimativa;
-  '3.6': AtividadeNicho;
+  '3.4': VendedoresForaDaConta;
+  '3.6': TendenciaNicho;
   limitacao_3_2: string;
   '7.4': ConcentracaoPorVendedor;
 };
@@ -66,8 +66,8 @@ export function montarSecoes237(e: EntradaSecoes237): Secoes237 {
       e.anunciosNaAmostra,
       e.anunciosComCatalogo,
     ),
-    '3.4': calcularVendedoresSemEstimativa(e.sellerIdsCatalogo, e.serie),
-    '3.6': calcularAtividadeNicho(e.sellerIdsCatalogo, e.serie),
+    '3.4': calcularVendedoresForaDaConta(e.sellerIdsCatalogo, e.serie),
+    '3.6': calcularTendenciaNicho(e.sellerIdsCatalogo, e.serie),
     limitacao_3_2: LIMITACAO_3_2,
     '7.4': calcularConcentracaoPorVendedor(e.anuncios),
   };

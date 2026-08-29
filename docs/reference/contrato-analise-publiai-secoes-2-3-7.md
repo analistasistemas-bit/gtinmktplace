@@ -6,6 +6,15 @@ tinham título mas nenhuma definição — sem campos, fontes, unidades ou crit�
 implementações diferentes poderiam alegar conformidade.
 
 **Data:** 2026-08-28
+**Errata 5 (2026-08-29, [ADR-0146](../decisions/0146-media-mensal-12m-e-tendencia.md)):**
+`transactions.total` foi **provado** ser a contagem de pedidos dos **últimos 365 dias**
+([Spike 048](../spikes/048-transactions-total-e-janela-provada.md)). Com isso: **3.2 passa a ser a
+mediana de `total ÷ 12`** (média mensal real, um snapshot basta); **3.6 deixa de ser "atividade" e
+vira "tendência"** (crescendo / estável / encolhendo), e **delta negativo deixa de ser ausência**;
+**3.4 é redefinido** — de "vendedores sem estimativa", que virou sempre zero, para **"quem ficou de
+fora da conta"** (menos de 50 vendas na vida). O piso de 5 e o corte de 50 permanecem, o corte agora
+justificado por **composição** e não por resolução.
+
 **Errata 4 (2026-08-29, [ADR-0145](../decisions/0145-vendedor-estabelecido-atividade-e-intensidade.md)):**
 a população de 3.2/3.3/3.4 passa a ser **só o vendedor estabelecido** (`transactions_total ≥ 50` no
 primeiro snapshot); nasce o campo **3.6 — atividade do nicho**; o piso de 5 conta estabelecidos e
@@ -101,10 +110,10 @@ igual e critérios diferentes na mesma tela é defeito de aceite, não questão 
 
 | # | Campo | Fonte | Unidade | Cálculo | Quando falta |
 |---|---|---|---|---|---|
-| 3.2 | Volume de vendas do nicho | `pulse_vendedores` + `/products/{id}/items` | unidades/mês (estimativa) | **Mediana** de `vendas_mes` entre os **vendedores que disputam os catálogos representados na amostra** (Errata 3) com estado `valor` — nunca soma nem média aritmética (ADR-0142 D-6). Representa o "vendedor típico", não o nicho inteiro. **Mínimo de 5 vendedores com estimativa** (Errata 2). `vendas_mes = 0` é **valor medido**, nunca ausência: medido, 53% dos vendedores de um catálogo real ficam em zero. | Nenhum vendedor com estimativa → "não dá para estimar o volume deste nicho"; 1 a 4 → "amostra insuficiente" |
+| 3.2 | Volume de vendas do nicho | `pulse_vendedores` + `/products/{id}/items` | unidades/mês (**média real dos últimos 12 meses**, Errata 5) | **Mediana** de `vendas_mes` entre os **vendedores que disputam os catálogos representados na amostra** (Errata 3) com estado `valor` — nunca soma nem média aritmética (ADR-0142 D-6). Representa o "vendedor típico", não o nicho inteiro. **Mínimo de 5 vendedores com estimativa** (Errata 2). `vendas_mes = 0` é **valor medido**, nunca ausência: medido, 53% dos vendedores de um catálogo real ficam em zero. | Nenhum vendedor com estimativa → "não dá para estimar o volume deste nicho"; 1 a 4 → "amostra insuficiente" |
 | 3.3 | Cobertura da estimativa | Derivado | contagem e % | **Duas unidades, as duas obrigatórias** (Erratas 2 e 3): `anúncios **com catálogo** ÷ **total de anúncios da amostra**` — porque só o anúncio com catálogo tem ponte para o vendedor — e `vendedores com estimativa ÷ vendedores distintos`. O denominador de anúncios é o total **antes** do descarte dos que não resolveram `seller_id` — medido: contar só os sobreviventes exibia 100% onde a cobertura real era 1 de 113. **Campo obrigatório**, não opcional: sem ele o operador lê 3.2 como se cobrisse o nicho inteiro. | Amostra vazia → proporções nulas, nunca 100% |
-| 3.4 | Vendedores sem estimativa | Derivado | contagem | Quantos vendedores dos catálogos da amostra estão em `serie_insuficiente`, `sem estimativa no período` **ou sem série alguma** em `pulse_vendedores`. Rotulado **"sem estimativa mensal"**, jamais "não venderam". | — |
-| 3.6 | **Atividade do nicho** | Derivado de `pulse_vendedores` | contagem e % | **Novo (Errata 4).** `X de N vendedores estabelecidos com delta > 0`, na janela observada. Responde "tem demanda aqui?" — é o discriminador de nicho parado, que a mediana da população crua não conseguia dar. **Contagem, não estimador:** não tem piso de robustez e é exibida mesmo com base pequena. | `0 estabelecidos` → "nenhum vendedor estabelecido nos catálogos desta amostra" |
+| 3.4 | **Vendedores fora da conta** | Derivado | contagem | **Redefinido pela Errata 5.** Quantos vendedores do catálogo ficaram **de fora** por não serem estabelecidos (`transactions_total < 50` no primeiro snapshot), sobre o total do catálogo. A definição anterior virou estruturalmente zero quando um snapshot passou a bastar para 3.2 — campo que só diz zero é ruído; este declara **quem a régua excluiu**. Rotulado **"sem estimativa mensal"**, jamais "não venderam". | — |
+| 3.6 | **Tendência do nicho** | Derivado de `pulse_vendedores` | contagem e % | **Novo na Errata 4 como "atividade", redefinido na Errata 5 como tendência.** `X de N vendedores estabelecidos vendendo mais que há um ano`, com os três estados **crescendo / estável / encolhendo**. O delta sempre foi tendência — só estava rotulado como venda. **Delta negativo é o dado**, não ausência: significa encolhendo, e a causa é a venda do ano passado saindo pela cauda da janela. **Contagem, não estimador:** sem piso de robustez, exibida mesmo com base pequena. | `0 estabelecidos` → "nenhum vendedor estabelecido nos catálogos desta amostra" |
 | 3.5 | Custos operacionais básicos | Cálculo do PubliAI | R$ | Comissão (2.2) e imposto da organização por origem (D-17). **Sem frete** — frete depende de peso, que vive na seção 6. | Alíquota não confirmada → trava LOUD, **não calcula** (D-17) |
 
 ### O que a seção 6 herda desta mudança
