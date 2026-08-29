@@ -32,6 +32,7 @@ Próximos passos, em ordem de ataque:
       Função pura em `supabase/functions/_shared/pulse/vendas-mensais-vendedor.ts` (D-3 a D-6);
       testes unitários + integração contra `pulse_vendedores`. Sem migration — o dado já é coletado.
 - [x] Wire seções 2/3/7 (campos pulse_vendedores) — edge `pulse-analise-secoes237` + `relatorio-secoes-237.ts`
+- [x] Hook Sonar → edge pulse-analise-secoes237 (painel demanda por vendedor)
 - [x] **Emendar o contrato das seções 2/3/7** trocando a proveniência dos campos 2.6, 3.1–3.4,
       7.2 e 7.4, e revisar os rótulos da regra global 1 (fonte, unidade e janela).
 - [ ] **Aproveitar os 25 campos do Apify que o parser ignora.** Run de 2026-08-29 devolveu **40

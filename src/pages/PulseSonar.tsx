@@ -22,14 +22,15 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Switch } from '@/components/ui/switch';
 import { Sparkline } from '@/components/ui/sparkline';
 import { DialogMargemSonar, type AnuncioSimulavel } from '@/components/pulse/dialog-margem-sonar';
+import { SonarAnalisePubliAI } from '@/components/pulse/sonar-analise-publiai';
 import { VereditoSonar } from '@/components/pulse/veredito-sonar';
 import {
   lerBuscasRecentes, limparBuscasRecentes, registrarBusca, tempoRelativo, type BuscaRecente,
 } from '@/lib/sonar-buscas-recentes';
 import { calcularVereditoAnuncios, contextoNichoAnuncios } from '@/lib/veredito-sonar';
 import {
-  fetchCruzamentoEan, fetchVendasSonar, fetchVisitasSonar, itensDaAmostra,
-  linkDoAnuncio, normalizarSerieVisitas, passosProgresso,
+  fetchCruzamentoEan, fetchSecoes237Sonar, fetchVendasSonar, fetchVisitasSonar,
+  itensDaAmostra, itensParaSecoes237, linkDoAnuncio, normalizarSerieVisitas, passosProgresso,
   type CruzamentoEan, type EtapaProgresso, type ItemVendasSonar,
   type PainelVendasSonar, type RaioXNicho, type VisitasAnuncio,
 } from '@/lib/sonar';
@@ -403,6 +404,21 @@ export default function PulseSonar() {
     retry: 1,
   });
 
+  // Análise PubliAI seções 2/3/7 (ADR-0142): demanda por vendedor via pulse_vendedores.
+  const {
+    data: secoes237,
+    isFetching: secoes237Carregando,
+    isError: secoes237Erro,
+    error: secoes237ErroObj,
+    refetch: refetchSecoes237,
+  } = useQuery({
+    queryKey: ['pulse', 'sonar-secoes237', termoBuscado, itemIds],
+    queryFn: () => fetchSecoes237Sonar(itensParaSecoes237(itens)),
+    enabled: !!vendas?.configurado && itens.length > 0,
+    staleTime: Infinity,
+    retry: 1,
+  });
+
   // D8: entrada ausente/null = "—" (falha ou sem conexão); {total: 0} = "0" (zero medido).
   const visitasPorItem = useMemo(() => {
     const map = new Map<string, VisitasAnuncio | null>();
@@ -741,6 +757,13 @@ export default function PulseSonar() {
             visitasPorItem={visitasPorItem}
           />
           <SonarVendas resp={vendas} />
+          <SonarAnalisePubliAI
+            data={secoes237}
+            carregando={secoes237Carregando}
+            erro={secoes237Erro ? (secoes237ErroObj instanceof Error ? secoes237ErroObj : new Error('Erro desconhecido.')) : null}
+            onRetry={() => refetchSecoes237()}
+            meta={secoes237?.meta}
+          />
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <SonarFiltrosPopover filtros={filtros} setFiltros={setFiltros} />

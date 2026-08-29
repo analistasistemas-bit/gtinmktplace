@@ -1,5 +1,6 @@
 // Sonar (ADR-0120): garimpo on-demand por termo — par do Radar (que vigia o que já vendemos, o
 // Sonar vasculha um nicho antes de cadastrar).
+import { fmtBRL, fmtInt } from './formato';
 import { supabase } from './supabase';
 
 // --- Vendas estimadas via Apify (ADR-0122) ------------------------------------------------------
@@ -30,6 +31,8 @@ export interface ItemVendasSonar {
   flex: boolean | null;
   /** Espelho de sonar-vendas.ts; opcional porque cache v4 pré-ADR-0127 não tem. */
   category_id?: string | null;
+  /** ID numérico do vendedor no ML (campo Apify `vendedorID`, ADR-0142). */
+  seller_id?: number | null;
 }
 
 /** Contagens DA AMOSTRA de anúncios (a UI rotula); só `total_anuncios` é o absoluto do nicho. */
@@ -262,4 +265,104 @@ export function margemSimulada({ precoAlvo, custo, aliquotaPct, tarifa }: {
   const liquido = recebe - imposto - custo;
   const margemPct = custo > 0 ? (liquido / custo) * 100 : 0;
   return { recebe, imposto, liquido, margemPct };
+}
+
+// --- Análise PubliAI seções 2/3/7 (ADR-0142): espelho de relatorio-secoes-237.ts + nicho-vendedor.ts
+
+type CampoComEstado<T extends 'valor', V> =
+  | ({ estado: T } & V)
+  | { estado: 'sem_dado'; mensagem: string };
+
+export type FaturamentoNichoSonar = CampoComEstado<'valor', {
+  faturamento_mes: number;
+  vendedores_com_estimativa: number;
+  vendedores_distintos: number;
+  rotulo: string;
+}>;
+
+export type VolumeNichoSonar = CampoComEstado<'valor', {
+  vendas_mes_mediana: number;
+  vendedores_com_estimativa: number;
+  rotulo: string;
+}>;
+
+export type CoberturaEstimativaSonar = {
+  com_estimativa: number;
+  vendedores_distintos: number;
+  proporcao: number | null;
+  rotulo: string;
+};
+
+export type VendedoresSemEstimativaSonar = {
+  contagem: number;
+  rotulo: string;
+};
+
+export type ConcentracaoPorVendedorSonar = {
+  elegiveis: number;
+  vendedores_distintos: number;
+  top1: number;
+  corte: number;
+  dominante: boolean;
+  rotulo: string;
+} | null;
+
+export type ParecerTamanhoNichoSonar = { parecer: string };
+
+export type Secoes237Sonar = {
+  '2.6': FaturamentoNichoSonar;
+  '2.9': ParecerTamanhoNichoSonar;
+  '3.2': VolumeNichoSonar;
+  '3.3': CoberturaEstimativaSonar;
+  '3.4': VendedoresSemEstimativaSonar;
+  limitacao_3_2: string;
+  '7.4': ConcentracaoPorVendedorSonar;
+};
+
+export type MetaSecoes237Sonar = {
+  vendedores_distintos: number;
+  sem_seller_id: number;
+  serie_linhas: number;
+};
+
+export type RespostaSecoes237Sonar = {
+  secoes237: Secoes237Sonar;
+  meta: MetaSecoes237Sonar;
+};
+
+/** Passa a amostra completa — a edge resolve seller_id ausente via pulse_vendedores. */
+export function itensParaSecoes237(itens: ItemVendasSonar[]): ItemVendasSonar[] {
+  return itens;
+}
+
+/** POST /functions/v1/pulse-analise-secoes237 { itens } → RespostaSecoes237Sonar. */
+export async function fetchSecoes237Sonar(itens: ItemVendasSonar[]): Promise<RespostaSecoes237Sonar> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('Sem sessão');
+  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pulse-analise-secoes237`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+    body: JSON.stringify({ itens }),
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
+  return json as RespostaSecoes237Sonar;
+}
+
+/** Faturamento 2.6 — R$/mês ou mensagem de indisponibilidade (nunca zero inventado). */
+export function formatarFaturamentoSecoes237(f: FaturamentoNichoSonar): string {
+  if (f.estado === 'sem_dado') return f.mensagem;
+  return fmtBRL(f.faturamento_mes);
+}
+
+/** Mediana 3.2 — unidades/mês por vendedor (loja inteira), não R$. */
+export function formatarMedianaVendasMesSecoes237(v: VolumeNichoSonar): string {
+  if (v.estado === 'sem_dado') return v.mensagem;
+  return `${fmtInt(Math.round(v.vendas_mes_mediana))} un./mês`;
+}
+
+/** Proporção 3.3 — percentual inteiro ou traço quando indeterminado. */
+export function formatarProporcaoCobertura(proporcao: number | null): string {
+  if (proporcao == null) return '—';
+  return `${Math.round(proporcao * 100)}%`;
 }

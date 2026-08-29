@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { passosProgresso, margemSimulada, ETAPAS_SONAR, itensDaAmostra, normalizarSerieVisitas, linkDoAnuncio } from '../sonar';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  passosProgresso, margemSimulada, ETAPAS_SONAR, itensDaAmostra, normalizarSerieVisitas, linkDoAnuncio,
+  formatarFaturamentoSecoes237, formatarMedianaVendasMesSecoes237, formatarProporcaoCobertura,
+  fetchSecoes237Sonar, itensParaSecoes237,
+} from '../sonar';
+import { supabase } from '../supabase';
 
 describe('passosProgresso — máquina dos 4 passos (ADR-0120/0127; busca de fichas morreu)', () => {
   it('início (0ms, sem resposta): 1º passo ativo, resto pendente', () => {
@@ -135,5 +140,82 @@ describe('linkDoAnuncio — href do anúncio na coluna de ações (ADR-0127/D15)
   it('itemId inválido (não casa com MLB\\d+) e sem link utilizável devolve null', () => {
     expect(linkDoAnuncio(null, 'XYZ123')).toBeNull();
     expect(linkDoAnuncio('', '')).toBeNull();
+  });
+});
+
+describe('formatarFaturamentoSecoes237 / formatarMedianaVendasMesSecoes237 — ADR-0142', () => {
+  it('sem_dado devolve mensagem, nunca zero', () => {
+    expect(formatarFaturamentoSecoes237({ estado: 'sem_dado', mensagem: 'nenhum vendedor na amostra' }))
+      .toBe('nenhum vendedor na amostra');
+    expect(formatarMedianaVendasMesSecoes237({ estado: 'sem_dado', mensagem: 'não dá para estimar o volume deste nicho' }))
+      .toBe('não dá para estimar o volume deste nicho');
+  });
+
+  it('valor formata faturamento em BRL e mediana em un./mês', () => {
+    expect(formatarFaturamentoSecoes237({
+      estado: 'valor',
+      faturamento_mes: 12500.5,
+      vendedores_com_estimativa: 3,
+      vendedores_distintos: 5,
+      rotulo: 'faturamento de 3 vendedores com estimativa (vendas/mês — loja inteira, janela 365d)',
+    })).toBe('R$ 12.500,50');
+    expect(formatarMedianaVendasMesSecoes237({
+      estado: 'valor',
+      vendas_mes_mediana: 42.7,
+      vendedores_com_estimativa: 3,
+      rotulo: 'mediana de vendas/mês — loja inteira, janela 365d (3 vendedores)',
+    })).toBe('43 un./mês');
+  });
+
+  it('formatarProporcaoCobertura arredonda percentual ou traço', () => {
+    expect(formatarProporcaoCobertura(0.667)).toBe('67%');
+    expect(formatarProporcaoCobertura(null)).toBe('—');
+  });
+});
+
+describe('itensParaSecoes237 — identidade da amostra', () => {
+  const itens = [{ titulo: 'X', preco: 10, vendidos: 5, link: null, imagem: null, vendedor: null,
+    frete_gratis: null, loja_oficial: null, internacional: null, full: null, item_id: 'MLB1',
+    catalog_product_id: null, avaliacao_nota: null, avaliacao_qtd: null, posicao: 1,
+    patrocinado: null, selo: null, preco_anterior: null, desconto_pct: null, flex: null }];
+  it('passa a amostra sem transformar', () => {
+    expect(itensParaSecoes237(itens)).toBe(itens);
+  });
+});
+
+describe('fetchSecoes237Sonar — POST pulse-analise-secoes237', () => {
+  const item = { titulo: 'Prod', preco: 99, vendidos: 10, link: null, imagem: null, vendedor: 'Loja',
+    seller_id: 123, frete_gratis: true, loja_oficial: false, internacional: false, full: true,
+    item_id: 'MLB999', catalog_product_id: null, avaliacao_nota: 4.5, avaliacao_qtd: 20, posicao: 1,
+    patrocinado: false, selo: null, preco_anterior: null, desconto_pct: null, flex: null };
+
+  beforeEach(() => {
+    vi.spyOn(supabase.auth, 'getSession').mockResolvedValue({
+      data: { session: { access_token: 'tok-test' } },
+      error: null,
+    } as never);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('monta URL, auth e body { itens } corretamente', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ secoes237: {}, meta: { vendedores_distintos: 1, sem_seller_id: 0, serie_linhas: 0 } }),
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchSecoes237Sonar([item]);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/functions/v1/pulse-analise-secoes237'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer tok-test' }),
+        body: JSON.stringify({ itens: [item] }),
+      }),
+    );
   });
 });
