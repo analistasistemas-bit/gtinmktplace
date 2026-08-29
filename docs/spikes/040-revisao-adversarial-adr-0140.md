@@ -14,8 +14,9 @@ citação literal, e dois eram bloqueadores duros.
 - **B-1 (autorização) — RESOLVIDO.** Diego confirmou ter a autorização necessária para usar a
   licença JoomPulse desta forma. A revisão questionava a *forma do registro* na D-25, não a
   existência da parceria. **A ADR-0140 volta a "liberado para implementação".**
-- **B-2 (D-9) — em aberto.** É decisão de produto de Diego, não de engenharia: a D-9 contradiz
-  a ADR-0138, escrita no mesmo dia a partir de regra do próprio operador.
+- **B-2 (D-9) — RESOLVIDO.** Diego decidiu: preço médio **em reais só no modo EAN**, onde a
+  amostra é o mesmo produto; no **modo termo**, percentual / equivalente por unidade. É a saída
+  que a própria ADR-0138 adotou. A D-9 e a D-10 da ADR-0140 já refletem isso.
 - **Furos financeiros e premissas não medidas — permanecem** como trabalho técnico obrigatório
   antes de a DRE ir ao ar.
 
@@ -61,8 +62,8 @@ A "média sem extremos" é um tercil com outro nome, aplicado ao mesmo universo 
 relatório que decide compra de estoque. O Top 5 por faturamento **agrava** o problema: kits
 grandes concentram receita, então a média puxa para o kit de 1000 e o operador aplica no de 50.
 
-**Resolve:** ou a D-9 passa a operar em percentual/preço equivalente por unidade (a saída que a
-0138 adotou), ou o preço médio só existe no modo EAN, onde a amostra é o mesmo produto.
+**Resolvido em 2026-08-28 por Diego:** as duas saídas, cada uma no seu modo — preço médio em reais
+**só no modo EAN**, percentual / equivalente por unidade **no modo termo**.
 
 ---
 

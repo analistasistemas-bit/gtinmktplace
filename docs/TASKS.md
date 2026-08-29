@@ -12,13 +12,14 @@ termos novos no glossário. **Nenhum código escrito ainda.**
 
 O que o Spike 040 deixou de pé, em ordem de ataque:
 
-- [ ] **B-2 — decisão de Diego sobre a D-9.** Ela calcula um preço médio **em reais** sobre o Top 5
-      do nicho; a ADR-0138, escrita no mesmo dia a partir de regra do próprio operador, proíbe
-      valor absoluto na busca por termo (a amostra mistura Kit 50, Kit 500 e Kit 1000, e o alvo em
-      reais vira prejuízo para quem cadastra outro tamanho). Saídas: **(a)** preço médio só no modo
-      EAN, onde a amostra é o mesmo produto, e percentual/equivalente por unidade no modo termo —
-      **recomendada**, é a saída que a própria 0138 adotou; **(b)** preço médio absoluto em ambos os
-      modos, aceitando conscientemente o risco que a 0138 documentou.
+- [x] **B-2 — D-9 decidida por Diego (2026-08-28): modo EAN.** Preço médio **em reais só no modo
+      EAN**, onde a amostra é o mesmo produto; no **modo termo**, percentual / equivalente por
+      unidade. D-9 e D-10 emendadas na ADR-0140. A D-10 também passou a testar **anúncios
+      elegíveis** (com faturamento estimado), não o tamanho do nicho — 20 anúncios com 2 elegíveis
+      passavam no teste antigo e a exclusão de extremos deixava zero elementos.
+- [ ] **Seção 1 do relatório precisa de duas formas.** Modo EAN: média sem extremos em R$. Modo
+      termo: percentual / equivalente por unidade. O contrato da seção tem que dizer qual modo
+      gerou o número, e a UI não pode oferecer a forma errada para o modo errado.
 - [ ] **Proveniência obrigatória no dinheiro.** Comissão e frete hoje convertem falha em zero
       (`listing-prices.ts:17`, `tarifa.ts:24`, `frete.ts:21`) e dimensões ausentes caem em
       `DIMENSOES_DEFAULT` (16×11×6 cm, 300 g) em silêncio. Propagar
