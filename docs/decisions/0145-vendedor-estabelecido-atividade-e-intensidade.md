@@ -36,14 +36,31 @@ Efeito secundário registrado: dentro da faixa `<50`, 13 dias não separa "vende
 mês" — um vendedor de 2/mês tem ~58% de chance de delta zero (Poisson, λ≈0,87). É a faixa sobre a
 qual **o instrumento não tem resolução**, o que reforça a mesma decisão.
 
-### Causa 2 — a janela declarada não existe
+### Causa 2 — a janela declarada não é verificável por nós
 
 A ADR-0142 D-3 afirma que `transactions.total` cobre "365 dias móveis". A API devolve
-**`{"period": "historic"}`**: é vitalício. O rótulo `janela móvel 365d` está errado na tela e em
-três documentos.
+**`{"period": "historic"}`**, o que sugeria contador vitalício.
 
-A descoberta **melhora** a fórmula — com contador vitalício, o delta é venda nova de fato, não
-saldo de janela deslizante. O que cai é o rótulo, não a conta.
+> **Errata (2026-08-29, [Spike 047](../spikes/047-joompulse-comparada-com-a-nossa-metrica.md)):**
+> **a leitura "vitalício" está refutada por medição.** Comparando 40 vendedores contra uma
+> estimativa mensal independente, `total ÷ meses de vida da loja` dá **0,24x** enquanto
+> `total ÷ 12` dá **1,41x** — e contas de 2002 a 2010 têm totais baixos demais para serem
+> vitalícios (`RON_VIANA2010`, aberta em 2010, marca **zero**). O campo se comporta como janela de
+> ~365 dias, como a ADR-0142 dizia. O `period: "historic"` do ML **não** deve ser lido como "desde
+> sempre".
+>
+> **A D-4 abaixo sobrevive intacta, e agora por um motivo mais forte:** não sabemos a janela do
+> fornecedor com certeza, então a tela declara **a nossa** — "movimento observado em N dias". Esse
+> rótulo é correto sob as duas leituras.
+>
+> **A trava de delta negativo (D-5) também sobrevive**, e ganha de volta uma explicação plausível:
+> numa janela móvel, a venda que sai pela cauda derruba o total sem nada ter acontecido hoje.
+> Continua sem confirmação — a medição do §5 do Spike 046 mostrou que as quedas não são um degrau
+> isolado.
+
+Fica registrado o que **não** sabemos: se a janela é móvel, um vendedor em regime estacionário
+teria delta zero, e 63% da base tem delta positivo. Ou a base está em crescimento, ou a janela não
+é pura. Nenhum dado disponível fecha isso.
 
 ---
 
