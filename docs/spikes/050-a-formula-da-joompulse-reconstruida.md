@@ -17,10 +17,13 @@ a fórmula em 9 de 9
    no dia da coleta.** Em **12 de 60** ganhadores auditados, o número de **um mês de um anúncio
    supera o ano inteiro da loja toda** pela API oficial do ML, que vem na **mesma linha** da
    resposta deles (§2).
-4. **Achado novo — a estimativa não carrega informação do produto.** Sete catálogos de mesma idade
+3. **Achado novo — a estimativa não carrega informação do produto.** Sete catálogos de mesma idade
    e mesmo selo recebem o **mesmo** número de vendas, a preços de R$ 18,90 a R$ 299,90 (§1.2).
-5. **Achado novo — ela explode em catálogo novo.** 33 dias no ar com selo "+10 mil" viram
+4. **Achado novo — ela explode em catálogo novo.** 33 dias no ar com selo "+10 mil" viram
    **9.091 vendas/mês** (§1.3).
+5. **Aplicada de passagem a errata que o [Spike 048](048-transactions-total-e-janela-provada.md)
+   §6.4 obrigou** e nunca foi escrita no corpo do 047 — a escala do selo tem degraus de 2x a 5x,
+   não potências de 10. Esta amostra a confirma e acrescenta o degrau **250.000** (§1.1).
 6. **Resposta ao Apify: dá, e é esse o ponto.** Os dois insumos são públicos. O que não existe em
    fonte alguma é venda por anúncio de terceiro — a JoomPulse não a possui, ela a substitui por
    esta conta (§3).
