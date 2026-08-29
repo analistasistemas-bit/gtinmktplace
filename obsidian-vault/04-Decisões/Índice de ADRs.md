@@ -158,5 +158,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0143 | [A ponte da amostra para o vendedor é o catálogo](../../docs/decisions/0143-demanda-do-nicho-pela-ponte-do-catalogo.md) — `/items?ids=` dá 403; **2.6/2.7/2.8/3.1 saem do contrato** |
 | 0144 | [A série de vendedores é base de mercado](../../docs/decisions/0144-serie-de-vendedores-como-base-de-mercado.md) — RPC sem `org_id`, só `service_role`; destrava o modo EAN |
 | 0145 | [Vendedor estabelecido, atividade e intensidade](../../docs/decisions/0145-vendedor-estabelecido-atividade-e-intensidade.md) — a mediana 0 era cauda do catálogo; **corrige o rótulo "365d", que é falso** |
+| 0146 | [A intensidade vira média mensal de 12 meses; o delta vira tendência](../../docs/decisions/0146-media-mensal-12m-e-tendencia.md) — o [Spike 048](../../docs/spikes/048-transactions-total-e-janela-provada.md) **provou** que `transactions.total` é janela de 365 dias; `total ÷ 12` é venda de verdade e destrava o modo EAN |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

@@ -187,11 +187,17 @@ Próximos passos, em ordem de ataque:
       os defeitos dela (selo em potência de 10, média vitalícia); só vale com **numerador melhor**.
       Candidato: `/reviews/item/{id}` responde 200 para terceiro e devolve contagem **exata**
       (3.765 no `MLB2107927039`), não bucket. Em investigação.
-- [ ] **Implementar a D-4 e a D-24 no Radar.** **Facilitado:** `/products/{cat}` devolve
-      `buy_box_winner` na mesma chamada que a ponte do catálogo já faz — sem custo adicional.
-      A Errata 1 da ADR-0141 registra que a D-4 "sobrevive
-      inteira via API do ML (`/products/{id}` → `buy_box_winner`), perdendo só a estimativa de
-      vendas do catálogo". Não existe edge para isso — as `pulse-*` de hoje são coletor, adicionar,
+- [ ] **Implementar a D-4 e a D-24 no Radar.** **Ler antes:**
+      `docs/reference/licoes-joompulse-para-o-radar.md` — transpõe os spikes 043/047/048 e a
+      ADR-0146 para o que o Radar pode e não pode fazer, com 3 perguntas abertas a fechar na ADR.
+      **Dificultado, não facilitado:** o `buy_box_winner` que a Errata 1 da ADR-0141 e o Spike 047
+      davam como resolvido vem **null em 40/40** catálogos — a identificação do ganhador é pergunta
+      **aberta**, e "o mais barato ganha" está **refutado** (o 1º da ponte é o mais barato em só
+      9 de 17 catálogos disputados). A ponte entrega `seller_id`, `price` e `paging.total`
+      (= `numBuyBoxSellers`), o que sustenta "a org disputa, com N concorrentes, ao preço X".
+      Também muda o custo: a D-4 previa 3 chamadas em lote de 75 ids (CubeJS); pela API do ML são
+      **~229 chamadas por abertura de página**, mitigadas pelo cache de 24 h do
+      `_shared/analise/vendedores-do-catalogo.ts`. Não existe edge para isso — as `pulse-*` de hoje são coletor, adicionar,
       os dois do Sonar e a `pulse-analise-secoes237`. Reusa o mesmo caminho já validado no Sonar
       (`/products/{cat}/items`, ADR-0143) e o `conta_externa_id` da conexão para dizer se quem leva
       a venda é a org ou um rival.

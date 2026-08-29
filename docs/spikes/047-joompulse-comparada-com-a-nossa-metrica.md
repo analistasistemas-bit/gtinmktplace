@@ -188,7 +188,17 @@ em potência de 10. Se a razão review/venda for estável dentro de uma categori
 
 **Não medido ainda** — em investigação.
 
-### Achado colateral para o Radar
+### Achado colateral para o Radar — **REFUTADO em 2026-08-29**
 
-`/products/{catalog_product_id}` também devolve **`buy_box_winner`**, que é exatamente o que a
-D-4 da ADR-0141 precisa e que está aberto no TASKS. Mesma chamada, sem custo adicional.
+> ~~`/products/{catalog_product_id}` também devolve **`buy_box_winner`**, que é exatamente o que a
+> D-4 da ADR-0141 precisa e que está aberto no TASKS. Mesma chamada, sem custo adicional.~~
+>
+> **Errado.** Medido em 40 catálogos ativos: `buy_box_winner` vem **null em 40/40** com o nosso
+> token — inclusive com `?attributes=buy_box_winner` e `?include_attributes=all`. `/highlights/`
+> devolve 404, `/sites/MLB/search?catalog_product_id=` devolve 403, e o campo `tier` dos itens vem
+> vazio em 166/166. Eu li o campo na documentação da resposta e não conferi o valor.
+>
+> O que a ponte entrega de verdade, e a hipótese que sobra para o ganhador, estão em
+> [`../reference/licoes-joompulse-para-o-radar.md`](../reference/licoes-joompulse-para-o-radar.md) §2.
+> Lá também fica provado que **menor preço ≠ ganhador** (o 1º da lista é o mais barato em só 9 de
+> 17 catálogos disputados).

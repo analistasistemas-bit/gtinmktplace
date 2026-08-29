@@ -32,8 +32,13 @@
 > `sem estimativa no período` — nunca zero, nunca negativo exibido — porque a janela é móvel e
 > expulsa vendas antigas (pior caso medido: −4.875).
 >
-> **Consequência para a D-4 do Radar:** sobrevive inteira via API do ML (`/products/{id}` →
-> `buy_box_winner`), perdendo só a estimativa de vendas do catálogo.
+> **Consequência para a D-4 do Radar:** ~~sobrevive inteira via API do ML (`/products/{id}` →
+> `buy_box_winner`)~~, perdendo só a estimativa de vendas do catálogo.
+> **Emendado em 2026-08-29:** `buy_box_winner` vem **null em 40/40** catálogos com o nosso
+> token — a D-4 **não** sobrevive inteira. O que resta da fonte do ML, o que está refutado e
+> as três perguntas que a ADR do Radar precisa fechar estão em
+> [`../reference/licoes-joompulse-para-o-radar.md`](../reference/licoes-joompulse-para-o-radar.md)
+> — **leitura obrigatória antes de escrever a ADR do Radar.**
 
 **Status:** **Em revisão** — o desenho segue válido, a fonte foi trocada (ver Errata 1 acima). O texto abaixo é de 2026-08-28 e ainda descreve a JoomPulse como fonte; leia-o através da errata.
 

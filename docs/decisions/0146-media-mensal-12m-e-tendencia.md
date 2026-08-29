@@ -74,6 +74,9 @@ O campo 3.6 passa a ser: **"X de N vendedores estabelecidos vendendo mais que h�
 Medido no `aptamil premium 2` (116 vendedores com série): **48 crescendo, 54 estáveis, 14
 encolhendo**. Os 54 estáveis são exatamente os que a métrica antiga contava como "não venderam".
 
+> **Esta tabela é medida sobre os 116 com série, ANTES do corte de estabelecido da D-4.** A tela
+> aplica o corte e por isso exibe outro par de números — ver Errata 2.
+
 ### D-4 — O corte de 50 fica, e agora tem justificativa própria
 
 A ADR-0145 D-1 justificou o corte pela **resolução** do instrumento. Essa justificativa cai: com
@@ -120,6 +123,22 @@ Campo que só diz zero é ruído. 3.4 é redefinido para declarar **quem a régu
 
 É a informação honesta que faltava sobre o corte da D-4 — o operador passa a ver o tamanho da
 exclusão, não só o resultado dela.
+
+## Errata 2 (2026-08-29, na validação em produção) — os estáveis vivem todos fora do corte
+
+A produção exibe, no `aptamil premium 2`, **0 estáveis** (36 crescendo, 13 encolhendo sobre 49
+estabelecidos), enquanto a tabela da D-3 registra **54 estáveis**. Não é divergência: a D-3 mede os
+**116 com série**, a tela mede os **estabelecidos**. Verificado por consulta direta:
+
+| | estabelecido (`t0 ≥ 50`) | fora (`t0 < 50`) |
+|---|---:|---:|
+| crescendo | 37 | 11 |
+| **estável** | **0** | **54** |
+| encolhendo | 13 | 1 |
+
+**Todos os 54 estáveis estão abaixo do corte** — nenhum vendedor é perdido por
+`calcularTendenciaNicho`. O achado reforça a D-4 por um caminho que ela não previa: o corte de 50
+não corrige apenas a mediana, ele remove a população que é **estruturalmente parada**.
 
 ## O que esta decisão NÃO resolve
 
