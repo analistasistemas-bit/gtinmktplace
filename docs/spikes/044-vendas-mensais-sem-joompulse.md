@@ -84,6 +84,48 @@ com 40 anúncios tem suas transações somadas. O relatório pode dizer "o líde
 no total da loja" — nunca "este anúncio vende X/mês". É uma pergunta diferente da que a JoomPulse
 respondia, e a UI precisa dizer isso.
 
+### C validada com dados de produção — e sem migration
+
+A coleta **já existe e já rodou**. `pulse_vendedores` grava `seller_id`, `transactions_total` e
+`dia` desde 16/08:
+
+| Métrica | Valor |
+|---|---|
+| Linhas | 4.237 |
+| Vendedores distintos | 495 |
+| Dias de série | 14 (16/08 → 29/08) |
+| `transactions_total` preenchido | **4.237 / 4.237 (100%)** |
+
+Delta entre o primeiro e o último snapshot de cada vendedor (janela média de 9,9 dias):
+
+| Resultado | Vendedores | % |
+|---|---|---|
+| **Cresceu** | 305 | **64%** |
+| Parado | 109 | 23% |
+| Negativo | 62 | 13% |
+
+**64% de movimento, contra 0% do badge.** É a diferença entre um número exato e um degrau, medida
+no mesmo intervalo de tempo.
+
+Distribuição do delta (em ~10 dias): **mediana 7**, **p90 513**. Extrapolando para 30 dias, o
+vendedor mediano do universo rastreado movimenta ~21 unidades/mês e o decil superior ~1.500/mês.
+A média (3.553/mês) é puxada por outliers e **não deve ser usada** — a mediana é o número honesto.
+
+### Os 13% negativos são a janela, não erro
+
+`transactions.total` cobre **365 dias móveis**: quando uma venda de um ano atrás sai pela cauda, o
+total cai sem que nada tenha acontecido no presente (pior caso medido: −4.875).
+
+**Regra obrigatória:** delta negativo é `sem estimativa no período`, **nunca zero e nunca negativo
+exibido** — mesmo tratamento que a regra global 3 do contrato dá à ausência. Sem essa trava, um
+concorrente ativo apareceria como "vendeu −4.875", que é pior que não mostrar nada.
+
+### Conclusão operacional
+
+**Nenhuma migration é necessária.** A tabela, a coluna e o coletor diário já estão em produção. O
+que falta é apenas o **cálculo do delta** e sua exibição rotulada — código de leitura, não de
+schema.
+
 ## Consequência para o relatório
 
 A seção 4 (Top 5 com vendas mensais por anúncio) **não é reproduzível** com as fontes disponíveis.
