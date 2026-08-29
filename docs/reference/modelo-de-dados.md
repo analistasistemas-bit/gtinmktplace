@@ -857,6 +857,51 @@ total.
 
 ---
 
+## Gateway de mercado — JoomPulse (ADR-0132 Errata 2)
+
+Duas tabelas com ciclos de vida opostos, aplicadas em produção em 2026-08-29
+(`20260829080749_gateway_joompulse_credenciais`).
+
+**Ninguém além do service role lê estas duas.** Diferente de todas as outras tabelas de domínio,
+elas têm RLS ligada e **nenhuma policy**, mais `revoke` explícito de `authenticated` e `anon` — o
+conteúdo é credencial, não dado de tela. Verificado em produção: o PostgREST responde `401
+permission denied` para as duas com a chave anon, enquanto `pulse_produtos` responde `200`, o que
+prova que a negativa vem do grant e não de erro de rota.
+
+### `joompulse_credenciais`
+
+Uma linha por organização, vive até o "Desconectar".
+
+**`org_id` uuid PK** → `organizations(id)`, `on delete cascade`.
+**`access_token_cifrado` text NOT NULL** e **`refresh_token_cifrado` text** — envelope
+`base64(iv[12] || tag[16] || ciphertext)` do **AES-256-GCM**. A chave vive na env do Web Service e
+**nunca no banco**: um dump do Postgres, sozinho, não dá acesso à JoomPulse.
+**`versao_chave` smallint NOT NULL default 1** — permite rotacionar a chave sem reconectar todas
+as orgs. Credencial gravada com versão diferente da atual **falha e pede reconexão**, em vez de
+decifrar com a chave errada.
+**`expira_em` timestamptz**, **`escopo` text** (`mcp`).
+**`conectado_por` uuid** → `auth.users(id)`, para a D-21 avisar o admin quando o titular sai.
+Nunca serve para resolver org — isso vem do token (D-15).
+**`conectado_em`**, **`atualizado_em`** timestamptz NOT NULL.
+
+### `joompulse_oauth_estados`
+
+Uma linha por tentativa de conexão, vive 10 minutos. É a **única prova de identidade no callback**,
+que chega do provedor sem o JWT do usuário.
+
+**`state` text PK** — 32 bytes aleatórios url-safe.
+**`org_id` uuid NOT NULL** → `organizations(id)`, **`iniciado_por` uuid NOT NULL** → `auth.users(id)`.
+**`code_verifier` text NOT NULL** — PKCE. Fica no servidor de propósito: se trafegasse pelo browser
+junto do state, o PKCE deixaria de proteger contra interceptação do `code`.
+**`redirect_uri` text NOT NULL**, **`criado_em`**, **`expira_em`** timestamptz NOT NULL.
+**`usado_em` timestamptz** — marcado por `UPDATE ... WHERE usado_em IS NULL`, não por
+ler-e-depois-escrever: duas requisições simultâneas com o mesmo state precisam que exatamente uma
+vença. Segunda tentativa é replay e falha.
+
+Índice `joompulse_oauth_estados_expira_idx` em `(expira_em)`, para o expurgo.
+
+---
+
 ## Storage
 
 Bucket **`imagens`** (privado). Paths no formato `{user_id}/{lote_id}/{arquivo}` — **não mudaram
