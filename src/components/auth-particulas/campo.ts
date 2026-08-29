@@ -35,18 +35,18 @@ export interface Campo {
  * usa ~0.32; aqui vai mais alto porque o card de login ocupa o meio da tela e um anel preso
  * ao centro ficaria escondido atrás dele.
  */
-const ALCANCE_CURSOR = 0.75;
+const ALCANCE_CURSOR = 0.5;
 /** Amplitude do passeio de ruído do anel (x, y). */
-const AMPLITUDE_PASSEIO = { x: 0.2, y: 0.1 };
+const AMPLITUDE_PASSEIO = { x: 0.12, y: 0.06 };
 /** O atraso é intencional: o anel nunca alcança o cursor, ele o persegue. */
-const LERP_COM_CURSOR = 0.02;
+const LERP_COM_CURSOR = 0.012;
 const LERP_SEM_CURSOR = 0.01;
 /**
  * A fórmula de tamanho do efeito original assume uma escala de partícula bem maior que a
  * que esta simulação produz em repouso — sem o ganho o ponto sai com menos de 1px e o campo
  * some. É o parâmetro para mexer se o fundo ficar tímido ou pesado demais.
  */
-const GANHO_TAMANHO = 4.5;
+const GANHO_TAMANHO = 3.8;
 
 /**
  * Monta o campo GPGPU dentro do container. Devolve `null` quando o ambiente não suporta

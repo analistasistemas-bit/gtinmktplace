@@ -145,11 +145,11 @@ void main() {
   t += t2 * 3.0;
 
   float t3 = 1.0 - smoothstep(0.0, uRingRadius, dist);
-  t += t3 * 0.4;
-  t += sn(posRef * 30.0, uTime * 0.5) * t3 * 0.5;
+  t += t3 * 0.3;
+  t += sn(posRef * 30.0, uTime * 0.5) * t3 * 0.35;
 
   // Cintilação de base, para o campo nunca ficar completamente morto longe do cursor.
-  t += pow((sn(posRef * 2.0, uTime * 0.5) + 1.5) * 0.5, 2.0) * 0.6;
+  t += pow((sn(posRef * 2.0, uTime * 0.5) + 1.5) * 0.5, 2.0) * 0.4;
 
   vec2 disp = deslocamento(posRef, uTime, dist);
   offset -= (uRingPos - (posRef + disp)) * pow(t2, 0.75) * uRingDisplacement;
@@ -238,7 +238,7 @@ void main() {
   // mesma faixa e a tela vira manchas de um tom só em vez de elementos que se alternam.
   // O branco fica em minoria — sobre o fundo preto ele domina se vier em peso igual.
   float sorteio = vSeeds.y;
-  vec3 cor = sorteio < 0.45 ? uCorA : (sorteio < 0.85 ? uCorB : uCorC);
+  vec3 cor = sorteio < 0.45 ? uCorA : (sorteio < 0.88 ? uCorB : uCorC);
 
   // Mesma ideia do piso de tamanho: a velocidade em repouso fica em ~0.2 e sozinha deixaria
   // o campo inteiro transparente demais para ser percebido.

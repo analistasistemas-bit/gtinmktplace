@@ -1,0 +1,22 @@
+/* Pulso suave na logo durante o login — só enfeite; o status vem do aria-live. */
+.auth-carregando__logo {
+  animation: auth-carregando-pulse 1.8s var(--motion-ease-reversible) infinite;
+}
+
+@keyframes auth-carregando-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.04);
+    opacity: 0.92;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-carregando__logo {
+    animation: none;
+  }
+}

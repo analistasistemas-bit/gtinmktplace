@@ -1,3 +1,4 @@
+import { AuthCarregandoOverlay } from '@/components/auth-carregando-overlay';
 import { AuthParticulas } from '@/components/auth-particulas';
 import { Card } from '@/components/ui/card';
 import { Logo } from '@/components/ui/logo';
@@ -8,6 +9,10 @@ interface AuthShellProps {
   subtitle?: string;
   /** true → card anima fade-out (usado no sucesso antes de navegar). */
   saindo?: boolean;
+  /** Overlay com logo animada enquanto autentica. */
+  carregando?: boolean;
+  /** Confirmação no overlay antes de navegar (login). */
+  sucesso?: boolean;
   /** Conteúdo do card — form/estados específicos de cada página. */
   children: React.ReactNode;
 }
@@ -16,12 +21,13 @@ interface AuthShellProps {
  * Shell compartilhado das telas de auth (login, reset-senha, definir-senha).
  * Sempre dark, independente do tema salvo do usuário — ver ADR-0080.
  */
-export function AuthShell({ subtitle, saindo, children }: AuthShellProps) {
+export function AuthShell({ subtitle, saindo, carregando, sucesso, children }: AuthShellProps) {
   return (
     <div
       className="dark relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-background p-4 text-foreground"
       style={{ colorScheme: 'dark' }}
     >
+      <AuthCarregandoOverlay visivel={!!(carregando || sucesso)} sucesso={sucesso} />
       <AuthParticulas />
       <div aria-hidden className="auth-grid pointer-events-none absolute inset-0" />
 

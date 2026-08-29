@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Check } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { AuthShell } from '@/components/auth-shell';
@@ -33,13 +32,17 @@ export default function Login() {
       setTimeout(() => nav(dest, { replace: true }), reduz ? 0 : durationMs.overlay);
     } catch (err) {
       setErro(err instanceof Error ? err.message : 'Falha no login');
-    } finally {
       setCarregando(false);
     }
   }
 
   return (
-    <AuthShell subtitle="Publicação de anúncios para Marketplaces" saindo={sucesso}>
+    <AuthShell
+      subtitle="Publicação de anúncios para Marketplaces"
+      saindo={sucesso}
+      carregando={carregando}
+      sucesso={sucesso}
+    >
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
         <Input
           type="email"
@@ -58,14 +61,8 @@ export default function Login() {
           autoComplete="current-password"
         />
         {erro && <div className="text-xs text-destructive">{erro}</div>}
-        <Button type="submit" disabled={carregando || sucesso} className={sucesso ? 'shadow-brand' : undefined}>
-          {sucesso ? (
-            <Check aria-label="Sucesso" className="duration-(--motion-duration-state) ease-success animate-in zoom-in-50" />
-          ) : carregando ? (
-            'Entrando…'
-          ) : (
-            'Entrar'
-          )}
+        <Button type="submit" disabled={carregando || sucesso}>
+          Entrar
         </Button>
       </form>
       <div className="mt-4 flex justify-end text-xs text-muted-foreground">
