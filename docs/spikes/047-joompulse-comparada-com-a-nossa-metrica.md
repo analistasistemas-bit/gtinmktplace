@@ -135,3 +135,60 @@ estabelecidos deste nicho estão movimentando agora".
 2. **ADR-0142, §Candidata B:** *"A JoomPulse também não tem: `createdAt` não existe no schema"* está
    **errado**. Existem `adPublishDate` e `daysInAd`, e é deles que sai o número dela.
 3. **Spike 043:** a direção da derivação é `GMV = count × preço`, não `count = GMV ÷ preço`.
+
+---
+
+## 6. De onde a JoomPulse tira a idade — e nós temos a mesma fonte
+
+`GET /products/{catalog_product_id}` devolve **`date_created`**, com **HTTP 200 para catálogo de
+terceiro**, usando o nosso token. O 403 da ADR-0119 é só em `/items/{id}`.
+
+O `daysInAd` da JoomPulse é a **idade do catálogo**, não do anúncio, apesar do nome:
+
+| Catálogo | `date_created` (nosso) | Nossos dias | `daysInAd` (JP) | Erro |
+|---|---|---|---|---|
+| MLB10512495 | 2018-08-14 | 2.937 | 2.938 | −1 |
+| MLB10512516 | 2018-08-14 | 2.937 | 2.938 | −1 |
+| MLB17343352 | 2021-01-28 | 2.039 | 2.040 | −1 |
+| MLB17343353 | 2021-01-28 | 2.039 | 2.040 | −1 |
+| MLB17377790 | 2021-02-17 | 2.019 | 2.020 | −1 |
+| MLB10933634 | 2018-09-03 | 2.917 | 2.918 | −1 |
+| MLB34450041 | 2024-03-15 | 897 | 912 | −15 |
+| MLB34280841 | 2024-03-11 | 901 | 912 | −11 |
+| MLB29724117 | 2024-01-15 | 957 | 972 | −15 |
+
+**6 de 9 em ±1 dia.** Os três que erram por 11–15 dias são catálogos de 2024 — provável defasagem
+do snapshot dela, não fonte diferente.
+
+Reproduzindo a conta dela com a **nossa** data, bate em 9 de 9:
+
+| Catálogo | selo ÷ nossos dias × 30 | JoomPulse |
+|---|---|---|
+| MLB10512495 | 1.021,5 | 1021 |
+| MLB34450041 | 334,4 | 329 |
+| MLB17343353 | 14,7 | 15 |
+| MLB10933634 | 10,3 | 10 |
+| MLB29724117 | 3,1 | 3 |
+
+### O que isso destrava, e o que não
+
+**Destrava:** a "candidata B" da ADR-0142 (`acumulado ÷ idade`) deixa de estar bloqueada por falta
+de idade. Podemos calcular exatamente o que a JoomPulse calcula.
+
+**Não destrava sozinho:** copiar a fórmula copia os dois defeitos dela — numerador em potência de
+10 e média vitalícia em vez de ritmo atual. **A idade só vale se houver um numerador melhor que o
+selo.**
+
+### Candidato a numerador melhor: reviews
+
+`GET /reviews/item/{item_id}` responde **200 para item de terceiro** e devolve
+`paging.total` — no `MLB2107927039`, **3.765 avaliações**. É um contador **exato**, não um bucket
+em potência de 10. Se a razão review/venda for estável dentro de uma categoria,
+`reviews ÷ idade` teria resolução muito melhor que `selo ÷ idade`.
+
+**Não medido ainda** — em investigação.
+
+### Achado colateral para o Radar
+
+`/products/{catalog_product_id}` também devolve **`buy_box_winner`**, que é exatamente o que a
+D-4 da ADR-0141 precisa e que está aberto no TASKS. Mesma chamada, sem custo adicional.
