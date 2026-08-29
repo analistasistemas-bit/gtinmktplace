@@ -187,7 +187,13 @@ Próximos passos, em ordem de ataque:
       os defeitos dela (selo em potência de 10, média vitalícia); só vale com **numerador melhor**.
       Candidato: `/reviews/item/{id}` responde 200 para terceiro e devolve contagem **exata**
       (3.765 no `MLB2107927039`), não bucket. Em investigação.
-- [ ] **Implementar a D-4 e a D-24 no Radar.** **Ler antes:**
+- [x] **D-24 implementada (2026-08-29).** A coluna "Referência do ML" saiu de `tabela-radar.tsx`,
+      a linha do preço-alvo saiu de `dialog-detalhe.tsx`, e `seloPriceToWin`/`ordemPriceToWin` +
+      `REFERENCIA`/`MARKDOWN`/`ORDEM`/`contradizMercadoReal` saíram de `pulse-formato.ts` com os 16
+      testes que só existiam para elas. Duas travas de regressão no lugar, ambas provadas RED sem
+      a mudança. `ptw_custos` (comissão/frete) intacto — alimenta a margem — e a coleta continua,
+      o que mantém a remoção reversível.
+- [ ] **Implementar a D-4 no Radar — bloqueada por decisão de produto.** **Ler antes:**
       `docs/reference/licoes-joompulse-para-o-radar.md` — transpõe os spikes 043/047/048 e a
       ADR-0146 para o que o Radar pode e não pode fazer, com 3 perguntas abertas a fechar na ADR.
       **Dificultado, não facilitado:** o `buy_box_winner` que a Errata 1 da ADR-0141 e o Spike 047
@@ -197,7 +203,14 @@ Próximos passos, em ordem de ataque:
       (= `numBuyBoxSellers`), o que sustenta "a org disputa, com N concorrentes, ao preço X".
       Também muda o custo: a D-4 previa 3 chamadas em lote de 75 ids (CubeJS); pela API do ML são
       **~229 chamadas por abertura de página**, mitigadas pelo cache de 24 h do
-      `_shared/analise/vendedores-do-catalogo.ts`. Não existe edge para isso — as `pulse-*` de hoje são coletor, adicionar,
+      `_shared/analise/vendedores-do-catalogo.ts`.
+      **[Spike 049](spikes/049-buy-box-do-radar-o-que-e-mensuravel.md) fecha as 3 perguntas
+      abertas e muda o quadro:** a causa não é cobertura, é **opt-in** — AVIL tem **0 de 137**
+      anúncios em catálogo, então a célula "quem leva a venda" seria vazia para o cliente real.
+      Ground truth só para anúncio próprio (`/items/{id}/price_to_win`; 403 para terceiro).
+      Custo medido: 17 s para 229 catálogos com cache frio → **coletor, não abertura de página**.
+      E 22% dos catálogos não têm nenhum anúncio de catálogo ativo (`/items` 404 com `/products`
+      200 `active`) — estado legítimo, merece texto próprio. Não existe edge para isso — as `pulse-*` de hoje são coletor, adicionar,
       os dois do Sonar e a `pulse-analise-secoes237`. Reusa o mesmo caminho já validado no Sonar
       (`/products/{cat}/items`, ADR-0143) e o `conta_externa_id` da conexão para dizer se quem leva
       a venda é a org ou um rival.

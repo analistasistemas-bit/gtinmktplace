@@ -11,79 +11,6 @@ export interface Selo {
   ajuda?: string;
 }
 
-// Os textos abaixo traduzem os status de /suggestions/items/{id}/details exatamente como a
-// documentação do ML os define — nada é inferido. O ML compara o preço do anúncio com um "preço
-// de referência" próprio (concorrentes internos e externos, que podem ser de fora do Mercado
-// Livre), que NÃO é o menor preço da ficha: por isso um produto pode estar abaixo da referência e
-// ainda assim mais caro que o menor rival — e vice-versa. Por não ser um dado auditável (não dá
-// pra abrir e conferir, como dá com o menor concorrente real), o tom é sempre neutro.
-// https://developers.mercadolivre.com.br/pt_br/referencias-de-precos
-
-/** Posição do preço frente à referência do ML, do mais barato ao mais caro. */
-const REFERENCIA: Record<string, Selo> = {
-  no_benchmark_lowest: { texto: 'Abaixo da referência', tom: 'neutro', ajuda: 'Seu preço está abaixo do preço de referência do Mercado Livre.' },
-  no_benchmark_ok: { texto: 'Na referência', tom: 'neutro', ajuda: 'Seu preço é igual ao preço de referência do Mercado Livre.' },
-  with_benchmark_high: { texto: 'Acima da referência', tom: 'neutro', ajuda: 'Seu preço está alto em relação ao preço de referência do Mercado Livre.' },
-  with_benchmark_highest: { texto: 'Acima de todos', tom: 'neutro', ajuda: 'Seu preço está acima do preço de referência e acima do maior preço dos concorrentes.' },
-};
-
-/** Quando a referência vencedora é do tipo Markdown, o ML devolve o estado da promoção. */
-const MARKDOWN: Record<string, Selo> = {
-  not_optin_applied: { texto: 'Promoção sugerida', tom: 'atencao', ajuda: 'O Mercado Livre sugere uma promoção para este anúncio, e ela ainda não foi aceita.' },
-  promotion_scheduled: { texto: 'Promoção agendada', tom: 'neutro', ajuda: 'A promoção foi aceita e começa na data programada.' },
-  promotion_active: { texto: 'Promoção ativa', tom: 'ok', ajuda: 'A promoção está valendo agora.' },
-};
-
-/**
- * Selo da coluna "Referência do ML". Sem vínculo de catálogo o ML não calcula referência nenhuma
- * (404 em /suggestions) — dizer isso vale mais que um traço mudo, porque é acionável:
- * resolver a ficha divergente devolve a disputa e a referência de preço.
- */
-/** A referência do ML não pode contradizer o menor concorrente real (dado auditável). */
-function contradizMercadoReal(
-  p: Pick<PulseProduto, 'ptw_preco_sugerido'>,
-  menorConcorrenteReal: number | null,
-): boolean {
-  return p.ptw_preco_sugerido != null && menorConcorrenteReal != null
-    && p.ptw_preco_sugerido < menorConcorrenteReal;
-}
-
-export function seloPriceToWin(
-  p: Pick<PulseProduto, 'ptw_status' | 'catalogo_status' | 'origem' | 'ptw_aplicavel' | 'ptw_preco_sugerido'>,
-  menorConcorrenteReal: number | null,
-): Selo | null {
-  // O ML marcou a própria referência como não aplicável: a tela não pode usá-la para dizer que o
-  // preço está alto ou baixo, senão afirma mais do que a fonte afirma — e o selo é lido como
-  // veredito ("Acima da referência" empurra para baixar preço). `null` é outra coisa: significa que
-  // a leitura não trouxe o campo, e aí o comportamento anterior vale.
-  if (p.ptw_aplicavel === false) {
-    return {
-      texto: 'Referência não aplicável',
-      tom: 'neutro',
-      ajuda: 'O Mercado Livre calculou uma referência de preço para este anúncio, mas marcou que ela não se aplica agora. Por isso a tela não diz se o seu preço está alto ou baixo.',
-    };
-  }
-  // Status novo do ML não vira badge com nome de API na tela do operador — o código cru fica no
-  // tooltip, para o suporte conseguir rastrear. E o fallback não pode sugerir posição de preço
-  // nenhuma: um status que não conhecemos não é "barato" nem "caro".
-  if (p.ptw_status) {
-    if (p.ptw_status in REFERENCIA && contradizMercadoReal(p, menorConcorrenteReal)) return null;
-    return REFERENCIA[p.ptw_status] ?? MARKDOWN[p.ptw_status]
-      ?? { texto: 'Status não reconhecido', tom: 'neutro', ajuda: `Status do ML: ${p.ptw_status}` };
-  }
-  if (p.catalogo_status && p.catalogo_status !== 'vinculado') {
-    return {
-      texto: 'Sem vínculo de catálogo',
-      tom: 'atencao',
-      ajuda: 'Seu anúncio não está vinculado a esta ficha, então não disputa a página e o ML não calcula preço para ganhar. Resolva o vínculo pelo fluxo de catálogo.',
-    };
-  }
-  if (p.origem === 'manual') {
-    return { texto: 'Você não vende', tom: 'neutro', ajuda: 'Ficha adicionada para pesquisa — o price-to-win só existe para anúncios seus.' };
-  }
-  return null;
-}
-
 /**
  * Por que a coluna "Seu preço" está vazia. Célula financeira em branco sem motivo lê como tela
  * quebrada; e o motivo é acionável — "sem vínculo" tem conserto, "pausado" não é problema.
@@ -145,27 +72,6 @@ export function seloAnuncio(
 // Escala de preço frente à referência, do mais barato ao mais caro. Os estados de Markdown ficam
 // de fora de propósito: "promoção agendada" não é uma posição de preço e ordená-la entre as
 // outras inventaria uma comparação que o ML não fez.
-const ORDEM: Record<string, number> = {
-  no_benchmark_lowest: 0,
-  no_benchmark_ok: 1,
-  with_benchmark_high: 2,
-  with_benchmark_highest: 3,
-};
-
-export function ordemPriceToWin(
-  p: Pick<PulseProduto, 'ptw_status' | 'catalogo_status' | 'origem' | 'ptw_aplicavel' | 'ptw_preco_sugerido'>,
-  menorConcorrenteReal: number | null,
-): number | null {
-  // Referência que o ML marcou como não aplicável não entra na escala de preço: ordenar por ela
-  // colocaria a linha entre as posições ("abaixo", "acima") e contradiria o próprio selo, que diz
-  // justamente que não há posição a afirmar.
-  if (p.ptw_aplicavel === false) return 99;
-  if (p.ptw_status && p.ptw_status in ORDEM && !contradizMercadoReal(p, menorConcorrenteReal)) {
-    return ORDEM[p.ptw_status];
-  }
-  return seloPriceToWin(p, menorConcorrenteReal) ? 99 : null; // sem escala vai para o fim
-}
-
 /** Tipo de anúncio do ML na linguagem do vendedor. */
 export function tipoAnuncio(tier: string | null): string {
   if (!tier) return '—';

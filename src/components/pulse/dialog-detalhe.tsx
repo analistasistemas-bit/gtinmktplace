@@ -439,16 +439,6 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                     </div>
                   </div>
 
-                  {produto.ptw_aplicavel === true && produto.ptw_preco_sugerido != null
-                    && (menorConcorrente == null || produto.ptw_preco_sugerido >= menorConcorrente) && (
-                    <p
-                      className="mt-2 text-xs text-muted-foreground"
-                      title="Preço calculado pelo Mercado Livre a partir de produtos semelhantes — pode incluir preços de fora do Mercado Livre. Não é necessariamente um concorrente que você pode abrir e conferir."
-                    >
-                      Preço-alvo do algoritmo do ML: {fmtBRL(produto.ptw_preco_sugerido)} (pode incluir preços fora do ML e produtos apenas semelhantes)
-                    </p>
-                  )}
-
                   <div className="mt-4 flex flex-wrap items-end gap-3 border-t pt-4">
                     <div className="flex flex-col gap-1">
                       <label htmlFor="pulse-simulador" className="text-xs text-muted-foreground">

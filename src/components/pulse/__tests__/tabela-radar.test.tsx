@@ -31,3 +31,26 @@ describe('TabelaRadar — mercado relevante', () => {
     expect(screen.getByText('+17% mais caro')).toBeInTheDocument();
   });
 });
+
+// ADR-0141 D-24: a "Referência do ML" saiu da tela para TODAS as organizações. O número compara o
+// preço contra um universo não comparável (Errata 10 da ADR-0119, reproduzida ao vivo no Spike
+// 049: a nossa pomada de 50 ml comparada com apresentações de 49 g), então induz decisão errada.
+// A coleta continua e a coluna do banco permanece — só a exibição sai.
+describe('TabelaRadar — D-24: a Referência do ML não existe mais', () => {
+  const comReferencia: PulseProduto = {
+    ...produto, ptw_status: 'with_benchmark_high', ptw_aplicavel: true, ptw_preco_sugerido: 69.9,
+  };
+
+  it('não renderiza a coluna nem o selo, mesmo com o produto trazendo referência do ML', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TabelaRadar produtos={[comReferencia]} resumo={new Map([[produto.id, resumo]])} resumoCarregando={false} onAbrirDetalhe={() => undefined} />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.queryByRole('columnheader', { name: 'Referência do ML' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/referência/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Acima de todos/)).not.toBeInTheDocument();
+  });
+});

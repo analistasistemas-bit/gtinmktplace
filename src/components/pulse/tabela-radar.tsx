@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { pausarPulseProduto, type PulseProduto, type PulseResumoOfertas } from '@/lib/pulse';
 import {
-  classeTom, motivoSemPrecoProprio, ordemPriceToWin, posicaoVsMercado, seloAnuncio, seloPriceToWin,
+  classeTom, motivoSemPrecoProprio, posicaoVsMercado, seloAnuncio,
 } from '@/lib/pulse-formato';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
@@ -148,25 +148,6 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       className: 'hidden text-right md:table-cell',
       sortValue: (p) => resumo?.get(p.id)?.nOfertas ?? null,
       cell: (p) => celulaMercado(<span className="tabular-nums">{resumo?.get(p.id)?.nOfertas ?? '—'}</span>),
-    },
-    {
-      key: 'ptw',
-      // "Price-to-win" é o nome de outra API do ML (a disputa pelo primeiro lugar do catálogo).
-      // O que esta coluna mostra é o preço de referência que o ML calcula para o anúncio.
-      header: 'Referência do ML',
-      className: 'hidden lg:table-cell',
-      // Escala ordinal (mais barato → mais caro), não alfabética: ordenar por texto colocaria
-      // "Abaixo da referência" antes de "Acima da referência" e misturaria a leitura.
-      sortValue: (p) => ordemPriceToWin(p, menorDe(p)),
-      cell: (p) => {
-        const selo = seloPriceToWin(p, menorDe(p));
-        if (!selo) return <span className="text-muted-foreground">—</span>;
-        return (
-          <Badge variant="outline" className={cn('font-normal', classeTom(selo.tom))} title={selo.ajuda}>
-            {selo.texto}
-          </Badge>
-        );
-      },
     },
     {
       key: 'acoes',

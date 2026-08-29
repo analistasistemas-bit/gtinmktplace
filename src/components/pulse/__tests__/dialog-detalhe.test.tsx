@@ -245,3 +245,20 @@ describe('DialogDetalhe — concorrentes relevantes', () => {
     expect(screen.getByText('Sua posição').parentElement).toHaveTextContent('—');
   });
 });
+
+// ADR-0141 D-24: a linha secundária do preço-alvo do ML sai junto com a coluna do Radar. Se
+// engana na coluna, engana no dialog — e engana também quem não assina o módulo.
+describe('DialogDetalhe — D-24: o preço-alvo do ML não existe mais', () => {
+  // 82,00 >= 70,19 (o menor relevante da fixture) de propósito: é exatamente a condição que o
+  // código removido exigia para renderizar. Com um valor abaixo do menor relevante o teste
+  // passaria sem provar nada.
+  it('não mostra o preço-alvo mesmo com a referência aplicável e acima do menor relevante', () => {
+    renderDetalhe({
+      ...produtoBase, codigo_pai: 'APTAMIL-1800',
+      ptw_aplicavel: true, ptw_preco_sugerido: 82, ptw_status: 'with_benchmark_high',
+    });
+
+    expect(screen.queryByText(/Preço-alvo do algoritmo do ML/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/R\$\s*82,00/)).not.toBeInTheDocument();
+  });
+});
