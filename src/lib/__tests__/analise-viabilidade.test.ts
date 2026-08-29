@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { propsAnaliseDaVariacao, variacaoRepresentativa } from '../analise-viabilidade';
+import { propsAnaliseDaVariacao, resumoViabilidade, variacaoRepresentativa } from '../analise-viabilidade';
 import type { Familia, Variacao } from '../tipos-dominio';
 
 const variacao = (over: Partial<Variacao>): Variacao => ({
@@ -56,5 +56,19 @@ describe('propsAnaliseDaVariacao', () => {
 
   it('usa o piso (preco) como preço quando não há preço de publicação', () => {
     expect(propsAnaliseDaVariacao(variacao({ precoPublicacao: null, preco: 22.5 })).preco).toBe(22.5);
+  });
+});
+
+// Trava contra o markup BRUTO voltar (ADR-0149 Errata 3). Este módulo já calculou
+// `(preço − custo) ÷ custo` e o publicou como "Markup" no relatório exportado — o MESMO PDF que
+// traz "Markup no período", que é líquido (ADR-0055). Para o mesmo produto: +145% contra +63%.
+// Diego mandou remover a coluna: markup, neste projeto, é sempre o líquido.
+describe('resumoViabilidade — markup bruto não existe aqui', () => {
+  it('não expõe markup: aqui não há comissão, frete nem imposto para torná-lo líquido', () => {
+    const r = resumoViabilidade(familia([variacao({ precoPublicacao: 100, custo: 40 })]));
+    expect(r).not.toHaveProperty('markup');
+    // O que o resumo entrega continua de pé.
+    expect(r.precoPublicacao).toBe(100);
+    expect(r.custo).toBe(40);
   });
 });

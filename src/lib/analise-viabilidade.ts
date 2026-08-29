@@ -44,8 +44,6 @@ export interface ResumoViabilidade {
   precoExibido: number;
   /** Custo da variação representativa (a de menor preço de publicação). null sem custo. */
   custo: number | null;
-  /** Markup bruto sobre o custo: (preço − custo) ÷ custo. null sem custo. */
-  markup: number | null;
   concorrenciaVendedores: number;
   concorrenciaPrecoMin: number | null;
   /** Maior preço observado entre concorrentes (teto da faixa de mercado). */
@@ -72,13 +70,10 @@ export function resumoViabilidade(familia: Familia, precoOverride?: number): Res
     : null;
   const custo = representativa?.custo ?? null;
 
-  const markup = custo != null && custo > 0 ? (precoExibido - custo) / custo : null;
-
   return {
     precoPublicacao,
     precoExibido,
     custo,
-    markup,
     concorrenciaVendedores: familia.concorrenciaVendedores,
     concorrenciaPrecoMin: familia.concorrenciaPrecoMin ?? null,
     mercadoMax: familia.analiseMercado?.preco_max ?? null,

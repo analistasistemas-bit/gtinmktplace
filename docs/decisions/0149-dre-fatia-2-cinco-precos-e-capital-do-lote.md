@@ -303,14 +303,21 @@ seja, já é o líquido.
 1. **"retorno sobre o custo" → "markup líquido"** na seção 6. É o número da ADR-0055; a perífrase
    escondia isso.
 2. **Cabeçalho "Margem" → "Margem s/ venda"**, para o denominador estar no nome das duas.
-3. **Coluna do export "Markup s/ custo" → "Markup bruto (s/ taxas)"**, para os dois deixarem de
-   partilhar nome no mesmo relatório. A palavra "Markup" sem qualificador passa a ser sempre o
-   líquido.
+3. **A coluna de markup bruto do relatório exportado foi REMOVIDA.** Primeiro ela foi renomeada
+   para "Markup bruto (s/ taxas)"; apresentadas as três saídas, Diego escolheu **remover**. A
+   palavra "Markup" no produto passa a designar sempre o líquido, sem qualificador necessário.
 
-### O que NÃO foi feito, e por quê
+### Por que remover, e não converter para líquido
 
-**O markup da Viabilidade continua bruto.** Torná-lo líquido não é mudança de rótulo: o
-`ResumoViabilidade` tem preço, custo e concorrência, e **não tem comissão, frete nem imposto** —
-`ptw_custos` existe só no domínio do Pulse, sobre `produtos`, não no caminho de famílias. Calcular
-o líquido ali exigiria uma cotação por família, o que é feature e mexe numa superfície financeira
-de produção. **Fica aberto para decisão de Diego**, agora com o nome honesto enquanto isso.
+Converter não era mudança de rótulo. O `ResumoViabilidade` tem preço, custo e concorrência, e
+**não tem comissão, frete nem imposto** — `ptw_custos` existe só no domínio do Pulse, sobre
+`produtos`, não no caminho de famílias. Calcular o líquido ali exigiria uma cotação por família:
+feature, numa superfície financeira de produção.
+
+Como o número bruto **não aparecia em tela nenhuma** (só no export), removê-lo custou uma coluna e
+eliminou a contradição inteira. `ResumoViabilidade.markup` e o cálculo
+`(precoExibido − custo) ÷ custo` ficaram órfãos e saíram junto — `tsc` limpo confirma que nada mais
+os consumia. Há trava em `analise-viabilidade.test.ts` contra o bruto voltar.
+
+**O que se perdeu:** a triagem rápida de "quanto este preço está acima do custo" antes de publicar.
+Se fizer falta, o caminho certo é a cotação por família — e aí o número nasce líquido.
