@@ -2,7 +2,7 @@
 
 **Data:** 2026-08-28
 **Pedido de:** Diego, antes de autorizar a implementação da opção A (proteger a DRE da Análise PubliAI)
-**Origem:** [Spike 040](040-revisao-adversarial-adr-0140.md), furos financeiros confirmados no código
+**Origem:** [Spike 040](040-revisao-adversarial-adr-0141.md), furos financeiros confirmados no código
 **Método:** todo o dado gravado em produção pelos caminhos que usam esses helpers, via Management API
 
 ## Resposta curta
@@ -64,7 +64,7 @@ O contraste fecha o argumento: **das 2.282 vendas pagas, nenhuma tem comissão z
 2. **A urgência cai; a decisão não.** A DRE é o lugar onde um zero silencioso teria o maior
    estrago, porque decide compra de estoque. O guard entra junto com a DRE.
 3. **Não faz sentido implementar o guard antes da DRE existir** — seria código sem chamador. A
-   regra fica registrada como decisão vinculante (D-28 da ADR-0140) para não se perder no caminho.
+   regra fica registrada como decisão vinculante (D-28 da ADR-0141) para não se perder no caminho.
 4. **A razão de nunca ter acontecido é que a API do ML respondeu sempre**, não que o código esteja
    protegido. Uma indisponibilidade do ML produziria exatamente o cenário do Spike 040. O risco é
    latente, não inexistente.

@@ -1,7 +1,7 @@
 # Spike 041 — Censo do Radar na JoomPulse e validação da D-4
 
 **Data:** 2026-08-28
-**ADR:** [0140](../decisions/0140-analise-publiai-joompulse-radar-e-sonar.md) — fecha o item "definir o lote da consulta do Radar" do [Spike 040](040-revisao-adversarial-adr-0140.md)
+**ADR:** [0141](../decisions/0141-analise-publiai-joompulse-radar-e-sonar.md) — fecha o item "definir o lote da consulta do Radar" do [Spike 040](040-revisao-adversarial-adr-0141.md)
 **Antecede:** [Spike 039](039-joompulse-cobertura-medida.md), que estimou por amostra de 90
 **Método:** os **229 catálogos ativos** (`pulse_produtos.status='ativo'`, 2 organizações) consultados contra o MCP real da JoomPulse em 3 lotes
 
@@ -79,7 +79,7 @@ Os valores retornados repetem-se num conjunto pequeno — `0, 1, 2, 3, 4, 13, 14
 200, 231, 820, 1021, 1542, 1752, 1974` — e dois catálogos distintos devolveram exatamente `1021`,
 outros dois exatamente `19`. Isso sugere **faixa/bucket**, não contagem exata.
 
-Se for bucket, exibir "27 vendas/mês" seria precisão falsa, e a ADR-0140 já obriga rótulo de
+Se for bucket, exibir "27 vendas/mês" seria precisão falsa, e a ADR-0141 já obriga rótulo de
 estimativa. **Não confirmado** — precisa de uma consulta longitudinal ou da documentação da
 JoomPulse antes de qualquer decisão de UI. Fica registrado como pergunta, não como achado.
 

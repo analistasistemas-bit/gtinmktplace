@@ -1,12 +1,12 @@
 # Contrato das seções 2, 3 e 7 — relatório da Análise PubliAI
 
 **Status:** referência normativa. Fecha o item "contrato das seções 2, 3 e 7" do
-[Spike 040](../spikes/040-revisao-adversarial-adr-0140.md), que apontou que essas três seções
+[Spike 040](../spikes/040-revisao-adversarial-adr-0141.md), que apontou que essas três seções
 tinham título mas nenhuma definição — sem campos, fontes, unidades ou critério de aceite, duas
 implementações diferentes poderiam alegar conformidade.
 
 **Data:** 2026-08-28
-**Rege:** [ADR-0140](../decisions/0140-analise-publiai-joompulse-radar-e-sonar.md) (D-2, D-5, D-7, D-9, D-10, D-17, D-18, D-28)
+**Rege:** [ADR-0141](../decisions/0141-analise-publiai-joompulse-radar-e-sonar.md) (D-2, D-5, D-7, D-9, D-10, D-17, D-18, D-28)
 **Reusa:** [ADR-0137](../decisions/0137-sonar-disputa-caminho-b-concentracao-por-anuncio.md) (concentração), [ADR-0124](../decisions/0124-veredito-de-oportunidade-do-sonar.md) / [ADR-0138](../decisions/0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) (veredito), [ADR-0127](../decisions/0127-sonar-tabela-por-anuncio-e-historico.md) (modos termo e EAN)
 **Mede-se contra:** [Spike 039](../spikes/039-joompulse-cobertura-medida.md) e [Spike 041](../spikes/041-joompulse-censo-do-radar-e-validacao-da-d4.md)
 

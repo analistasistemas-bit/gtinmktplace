@@ -1,7 +1,7 @@
 # Spike 039 — Cobertura real da JoomPulse sobre os dados do PubliAI
 
 **Data:** 2026-08-28
-**ADR:** [0140](../decisions/0140-analise-publiai-joompulse-radar-e-sonar.md) — pré-requisito declarado ("nenhuma promessa de UI antes desse número")
+**ADR:** [0141](../decisions/0141-analise-publiai-joompulse-radar-e-sonar.md) — pré-requisito declarado ("nenhuma promessa de UI antes desse número")
 **Antecede:** [Spike 038](038-joompulse-parcial-correlacao-e-semantica.md), que fechou correlação, allowlist e semântica
 **Método:** amostras aleatórias (seed fixa) de produção via Management API, consultadas contra o MCP real da JoomPulse
 
@@ -26,9 +26,9 @@ Amostra de 90 dos 229 catálogos ativos (2 organizações).
 - **21 encontrados sem venda estimada** (26% dos encontrados): o catálogo existe, mas não tem venda no período. É o quarto estado da tabela-verdade do Spike 038, e ele **não é raro**
 - Concorrentes por catálogo: **mediana 6**, máximo 90
 
-### Correção a uma afirmação da ADR-0140
+### Correção a uma afirmação da ADR-0141
 
-O Spike 038 media catálogos com 15 e 18 concorrentes e a ADR-0140 generalizou "num catálogo com 15–18 concorrentes, 14 a 17 devolvem `0`". A mediana real é **6 concorrentes**. A afirmação continua verdadeira em direção, mas a escala típica é menor: **no catálogo mediano, 5 dos 6 devolvem `0`**; nos maiores, 89 de 90.
+O Spike 038 media catálogos com 15 e 18 concorrentes e a ADR-0141 generalizou "num catálogo com 15–18 concorrentes, 14 a 17 devolvem `0`". A mediana real é **6 concorrentes**. A afirmação continua verdadeira em direção, mas a escala típica é menor: **no catálogo mediano, 5 dos 6 devolvem `0`**; nos maiores, 89 de 90.
 
 ### Projeção para a tela (229 catálogos ativos)
 
@@ -52,7 +52,7 @@ Amostra de 90 dos 396 anúncios de terceiros coletados nos últimos 7 dias.
 
 Isto **confirma em escala** o achado que derrubou a D-3 da ADR-0132: o zero é a regra, não a exceção. Numa tela de concorrentes, aproximadamente 9 em cada 10 linhas trariam `0`, e renderizar esse zero como "não vendeu" seria falso em quase toda a tabela.
 
-A decisão da ADR-0140 de nunca exibir esse zero como venda deixa de ser precaução teórica e passa a ser o caso dominante.
+A decisão da ADR-0141 de nunca exibir esse zero como venda deixa de ser precaução teórica e passa a ser o caso dominante.
 
 ---
 
@@ -76,7 +76,7 @@ O perfil explica o resto: **os anúncios da organização têm no máximo 3 mese
 
 ### O falso negativo que isso criaria — e a correção
 
-A D-4 da ADR-0140 previa uma célula que diz "Você leva" ou "Rival leva". Ler isso comparando `buyBoxWiner` com o **anúncio** da organização quebraria: com 4% dos nossos anúncios indexados, a org quase nunca seria identificada como ganhadora — **inclusive quando de fato estivesse ganhando**. A tela diria "rival leva" o tempo todo.
+A D-4 da ADR-0141 previa uma célula que diz "Você leva" ou "Rival leva". Ler isso comparando `buyBoxWiner` com o **anúncio** da organização quebraria: com 4% dos nossos anúncios indexados, a org quase nunca seria identificada como ganhadora — **inclusive quando de fato estivesse ganhando**. A tela diria "rival leva" o tempo todo.
 
 **A correção medida e confirmada:** comparar pelo **vendedor**, não pelo anúncio. O cubo expõe `buyBoxShopId` e `buyBoxShopName` como measures, e o PubliAI conhece o `seller_id` da conta ML da organização.
 

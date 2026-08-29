@@ -1,22 +1,22 @@
-# Spike 040 — Revisão adversarial da ADR-0140
+# Spike 040 — Revisão adversarial da ADR-0141
 
 **Data:** 2026-08-28
 **Revisor:** Codex `gpt-5.6-sol` (effort high), read-only sobre a worktree — **achados reconferidos um a um** contra o código, as ADRs e as fontes públicas da JoomPulse
-**Revisa:** [ADR-0140](../decisions/0140-analise-publiai-joompulse-radar-e-sonar.md), com apoio de [ADR-0132](../decisions/0132-analise-avancada-joompulse.md), [Spike 038](038-joompulse-parcial-correlacao-e-semantica.md), [Spike 039](039-joompulse-cobertura-medida.md)
+**Revisa:** [ADR-0141](../decisions/0141-analise-publiai-joompulse-radar-e-sonar.md), com apoio de [ADR-0132](../decisions/0132-analise-avancada-joompulse.md), [Spike 038](038-joompulse-parcial-correlacao-e-semantica.md), [Spike 039](039-joompulse-cobertura-medida.md)
 
 ## Resposta curta
 
-A ADR-0140 declarava **"nada bloqueia a implementação"**. Cinco achados foram confirmados com
+A ADR-0141 declarava **"nada bloqueia a implementação"**. Cinco achados foram confirmados com
 citação literal, e dois eram bloqueadores duros.
 
 **Desfecho (2026-08-28, mesmo dia):**
 
 - **B-1 (autorização) — RESOLVIDO.** Diego confirmou ter a autorização necessária para usar a
   licença JoomPulse desta forma. A revisão questionava a *forma do registro* na D-25, não a
-  existência da parceria. **A ADR-0140 volta a "liberado para implementação".**
+  existência da parceria. **A ADR-0141 volta a "liberado para implementação".**
 - **B-2 (D-9) — RESOLVIDO.** Diego decidiu: preço médio **em reais só no modo EAN**, onde a
   amostra é o mesmo produto; no **modo termo**, percentual / equivalente por unidade. É a saída
-  que a própria ADR-0138 adotou. A D-9 e a D-10 da ADR-0140 já refletem isso.
+  que a própria ADR-0138 adotou. A D-9 e a D-10 da ADR-0141 já refletem isso.
 - **Furos financeiros e premissas não medidas — permanecem** como trabalho técnico obrigatório
   antes de a DRE ir ao ar.
 
@@ -128,7 +128,7 @@ devolve o frete de outro pacote. Serve para orientação, não para a DRE "exata
 
 ## Premissas ainda não medidas
 
-O Spike 039 mediu o universo do **Radar**. A ADR-0140 aplica esses números ao **Sonar**, e isso
+O Spike 039 mediu o universo do **Radar**. A ADR-0141 aplica esses números ao **Sonar**, e isso
 não foi verificado:
 
 1. **Os 82% vêm de `pulse_ofertas`** — concorrentes catalogados coletados pelo Radar. O Sonar

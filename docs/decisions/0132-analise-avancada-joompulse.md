@@ -7,12 +7,12 @@
 
 > **2026-08-28 — a JoomPulse confirmou que a parceria cobre uso server-to-server por um Gateway
 > do PubliAI, e que as respostas podem ser cacheadas.** Isso fecha a questão #16 (levantada pelo
-> Spike 038) e a #10. Com as decisões da ADR-0140, **as questões #7, #8, #10, #13, #14, #15 e #16
+> Spike 038) e a #10. Com as decisões da ADR-0141, **as questões #7, #8, #10, #13, #14, #15 e #16
 > estão fechadas** e a integração está **liberada para implementação**. Continuam pendentes apenas
 > #4, #5, #6, #9, #11 e #12 — trabalho técnico contra o ambiente real, não decisão.
 >
-> **Revisão concluída 2026-08-28 → [ADR-0140](0140-analise-publiai-joompulse-radar-e-sonar.md).**
-> A revisão exigida pela D-17 foi feita em entrevista com Diego e produziu a ADR-0140, que
+> **Revisão concluída 2026-08-28 → [ADR-0141](0141-analise-publiai-joompulse-radar-e-sonar.md).**
+> A revisão exigida pela D-17 foi feita em entrevista com Diego e produziu a ADR-0141, que
 > **supersede a D-3** (escopo do v1) e **emenda a D-7** (padrão de chamada). Todo o resto desta
 > ADR permanece em vigor: Gateway como único cliente MCP (D-2), módulo desligado por padrão
 > (D-4), OAuth por organização (D-5), conexão em Canais (D-6, com o rótulo renomeado para

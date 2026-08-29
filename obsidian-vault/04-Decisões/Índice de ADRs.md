@@ -144,7 +144,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0129 | [Adicionar variação a família publicada, direto da tela Estoque](../../docs/decisions/0129-adicionar-variacao-a-familia-publicada.md) |
 | 0130 | [Concorrentes relevantes no Pulse e na Viabilidade](../../docs/decisions/0130-concorrentes-relevantes-pulse-viabilidade.md) |
 | 0131 | [Sugestão de categoria pela ficha de catálogo](../../docs/decisions/0131-sugestao-categoria-pela-ficha-catalogo.md) |
-| 0132 | [Análise Avançada com JoomPulse](../../docs/decisions/0132-analise-avancada-joompulse.md) — D-3 superseded pela 0140 |
+| 0132 | [Análise Avançada com JoomPulse](../../docs/decisions/0132-analise-avancada-joompulse.md) — D-3 superseded pela 0141 |
 | 0133 | [Alertas do Pulse: severidade gravada e área dedicada](../../docs/decisions/0133-alertas-do-pulse-severidade-e-area-dedicada.md) |
 | 0134 | [Alerta de estoque zerado e de volta ao ar](../../docs/decisions/0134-alerta-de-estoque-zerado-e-volta-ao-ar.md) |
 | 0135 | [Cadastro fiscal e emissão via Faturador do Mercado Livre](../../docs/decisions/0135-cadastro-fiscal-e-faturador-do-ml.md) |
@@ -152,6 +152,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0137 | [Sonar: Disputa com caminho B (concentração por anúncio) quando o rótulo não cobre a amostra](../../docs/decisions/0137-sonar-disputa-caminho-b-concentracao-por-anuncio.md) |
 | 0138 | [Sonar: linguagem comercial do veredito e condição de entrada](../../docs/decisions/0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) |
 | 0139 | [Campo de partículas das telas de auth em Three.js (GPGPU), carregado sob demanda](../../docs/decisions/0139-particulas-gpgpu-nas-telas-de-auth.md) |
-| 0140 | [Análise PubliAI: JoomPulse no Radar e no Sonar](../../docs/decisions/0140-analise-publiai-joompulse-radar-e-sonar.md) — supersede a D-3 da 0132 |
+| 0140 | [Sonar por EAN: análise completa pela busca, sem escolha grátis/paga](../../docs/decisions/0140-sonar-ean-analise-completa-pela-busca.md) |
+| 0141 | [Análise PubliAI: JoomPulse no Radar e no Sonar](../../docs/decisions/0141-analise-publiai-joompulse-radar-e-sonar.md) — supersede a D-3 da 0132 |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.

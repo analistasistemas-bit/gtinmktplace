@@ -15,7 +15,7 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
   'Líquido no faturamento':
     'Valor líquido recebido pelos pedidos aprovados no período, já descontados comissão do Mercado Livre, frete pago pelo vendedor e imposto estimado por origem, contado por pedido (carrinho), não por linha de venda.',
   'Markup no período':
-    '(Líquido recebido − imposto − custo) ÷ custo, somado sobre as vendas do período que têm custo cadastrado. Vendas sem custo não entram na conta.',
+    '(Líquido recebido − imposto − custo) ÷ custo, onde o líquido já vem descontado de comissão do Mercado Livre e frete pago pelo vendedor. Calculado sobre o total do período: soma dos líquidos (já sem imposto) menos soma dos custos, dividido pela soma dos custos. Só entram vendas com custo cadastrado.',
   Compradores:
     'Número de compradores únicos com pelo menos 1 pedido aprovado no período.',
   'A receber':
@@ -35,7 +35,7 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
   'Ticket médio::Publicados':
     'Faturamento do período dividido pelo número de pedidos desta tela. Pode diferir do "Ticket médio" do menu Faturamento pelo mesmo motivo do KPI "Pedidos".',
   'Lucro no período':
-    'Líquido menos custo dos produtos vendidos, somado sobre as vendas do período com custo cadastrado.',
+    'Líquido menos imposto menos custo dos produtos vendidos, somado sobre as vendas do período com custo cadastrado. O líquido já vem descontado de comissão do Mercado Livre e frete pago pelo vendedor.',
   'Saúde dos anúncios':
     'Quantos dos seus anúncios publicados estão ativos, quantos têm algum problema (moderação, estoque zerado etc.) e quantas variações estão publicadas ao todo.',
   'Encalhados (sem venda no período)':
@@ -59,7 +59,7 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
   'Vendas no período':
     'Número de pedidos aprovados no período.',
   'Lucro líquido no período':
-    'Líquido menos custo menos imposto, somado sobre as vendas do período com custo cadastrado.',
+    'Líquido menos custo menos imposto, somado sobre as vendas do período com custo cadastrado. O líquido já vem descontado de comissão do Mercado Livre e frete pago pelo vendedor.',
 
   // ── Faturamento / aba Vendas ──────────────────────────────────────────
   'Faturamento::Faturamento/Vendas':
@@ -75,7 +75,7 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
   'Itens / pedido':
     'Média de itens (linhas de produto) por pedido no período.',
   Markup:
-    '(Líquido recebido − imposto − custo) ÷ custo de cada pedido, somado sobre os pedidos do período com custo cadastrado.',
+    '(Líquido recebido − imposto − custo) ÷ custo, onde o líquido já vem descontado de comissão do Mercado Livre e frete pago pelo vendedor. Calculado sobre o total do período: soma dos líquidos (já sem imposto) menos soma dos custos, dividido pela soma dos custos. Só entram pedidos com custo cadastrado.',
 
   // ── Faturamento / aba Geografia ───────────────────────────────────────
   'Estados atingidos':

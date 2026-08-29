@@ -2,19 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Análise PubliAI — liberado para implementação (ADR-0140 + Spike 040) — 2026-08-28
+## Análise PubliAI — liberado para implementação (ADR-0141 + Spike 040) — 2026-08-28
 
 **Desenho aprovado e liberado para implementação.** 27 decisões. A revisão adversarial
-(`docs/spikes/040-revisao-adversarial-adr-0140.md`, 2026-08-28) levantou o bloqueio jurídico B-1, e
+(`docs/spikes/040-revisao-adversarial-adr-0141.md`, 2026-08-28) levantou o bloqueio jurídico B-1, e
 **Diego confirmou no mesmo dia ter a autorização necessária para usar a licença JoomPulse desta
-forma** — B-1 encerrado. ADR em `docs/decisions/0140-analise-publiai-joompulse-radar-e-sonar.md`;
+forma** — B-1 encerrado. ADR em `docs/decisions/0141-analise-publiai-joompulse-radar-e-sonar.md`;
 termos novos no glossário. **Nenhum código escrito ainda.**
 
 O que o Spike 040 deixou de pé, em ordem de ataque:
 
 - [x] **B-2 — D-9 decidida por Diego (2026-08-28): modo EAN.** Preço médio **em reais só no modo
       EAN**, onde a amostra é o mesmo produto; no **modo termo**, percentual / equivalente por
-      unidade. D-9 e D-10 emendadas na ADR-0140. A D-10 também passou a testar **anúncios
+      unidade. D-9 e D-10 emendadas na ADR-0141. A D-10 também passou a testar **anúncios
       elegíveis** (com faturamento estimado), não o tamanho do nicho — 20 anúncios com 2 elegíveis
       passavam no teste antigo e a exclusão de extremos deixava zero elementos.
 - [ ] **Seção 1 do relatório precisa de duas formas.** Modo EAN: média sem extremos em R$. Modo
@@ -139,6 +139,32 @@ O que o Spike 040 deixou de pé, em ordem de ataque:
       no snapshot da JoomPulse
 - [ ] Spike 2 (exige credenciais de 2 orgs): OAuth multi-conta, refresh, revogação, quotas,
       latência, cold start, isolamento — questões #4–#15
+## Sonar por EAN: análise completa pela busca (ADR-0140) — 2026-08-28
+
+**Implementado.** ADR em `docs/decisions/0140-sonar-ean-analise-completa-pela-busca.md`.
+
+- [x] EAN deixa de ter caminho próprio: `garimpar()` não ramifica mais e o código de barras vira
+  `termoBuscado` como qualquer termo — veredito, insights, pódio de rivais, vendas, visitas,
+  filtros e simulador de margem por anúncio passam a valer para a consulta por EAN.
+- [x] Escolha "consulta grátis / com vendidos" removida (`SonarEanEscolha`). Revoga o ADR-0136 D-6
+  e o default grátis da Errata 1 do ADR-0127. Cada EAN novo custa ~US$ 0,10, com o mesmo cache de
+  7 dias por termo normalizado.
+- [x] Medido antes de implementar (EAN `7891113175371`, o caso do ADR-0136): a busca via Apify
+  devolve 20 dos 24 anúncios que o ML reporta, todos do produto certo e com vendidos — contra 1
+  oferta pelo lookup oficial de catálogo. Cobre inclusive anúncio fora do catálogo, que o
+  ADR-0136 registrou como inalcançável pela API oficial.
+- [x] Cruzamento com o catálogo da org preservado, com a regra nova (D-3): `minhas` (GTIN exato em
+  `variacoes`) segue afirmando ausência; o Radar **só é afirmado no positivo**, porque os
+  `catalog_product_id` agora vêm da amostra e vieram em 7 de 20 anúncios.
+- [x] `fetchCruzamentoEan` pula a consulta ao Radar com lista de ids vazia (caso normal agora), em
+  vez de mandar `.in(...)` vazio ao PostgREST.
+- [x] Órfãos removidos no front: `SonarEanEscolha`, `SonarEanCarregando`, `SonarEanResultado`,
+  `SonarEanLiquido`, `SonarEanImposto`, `fetchSonarPorEan` e os tipos da resposta.
+- [x] Regressão do leitor de código de barras corrigida (D-3.1): a limpeza/refoco do campo vivia nos
+  handlers removidos. Sem ela o 2º scan concatenava no 1º (26 dígitos) e virava busca paga em lixo.
+  `garimpar()` limpa e refoca só quando o buscado é EAN; teste de página com checagem RED.
+- [ ] Follow-up: a edge `pulse-sonar-ean` e `_shared/pulse/sonar-ean.ts` continuam deployadas sem
+  chamador (ADR-0140 D-4). Remover quando a cobertura pela busca estiver confirmada em uso.
 
 ## Fundo de partículas nas telas de auth (ADR-0139) — 2026-08-28
 

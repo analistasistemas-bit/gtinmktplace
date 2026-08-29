@@ -1,7 +1,7 @@
 # ADR-0136 — Sonar por EAN: cobertura de fichas de catálogo e escopo declarado
 
 **Data:** 2026-08-27
-**Status:** aceito, implementado (2026-08-27)
+**Status:** aceito, implementado (2026-08-27) — **D-6 revogado pelo [ADR-0140](0140-sonar-ean-analise-completa-pela-busca.md) (2026-08-28)**
 **Relacionado:** [0127](0127-sonar-tabela-por-anuncio-e-historico.md) (Errata 1 criou a consulta por
 EAN; Errata 2 enriqueceu a view), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (§ endpoints
 do ML que devolvem 403 para terceiros), [0122](0122-sonar-vendas-estimadas-via-apify.md) (Apify como
@@ -105,7 +105,13 @@ ativas" por 24h é afirmação falsa. O D-1 ("ficha que falhou sai da lista") re
 em escala menor: ficha 3 dá timeout, grava-se 4-de-5 por 24h e o operador vê uma lista curta o dia
 inteiro. `redisSet` só roda quando **todas** as fichas do teto responderam.
 
-### D-6 — Apify NÃO entra neste caminho
+### D-6 — Apify NÃO entra neste caminho — REVOGADO pelo ADR-0140
+
+> **Revogado em 2026-08-28.** Medição posterior mostrou que a busca da Apify aceita o EAN como
+> keyword e devolve 20 dos 24 anúncios do produto (contra 1 por este caminho), incluindo os
+> anúncios fora do catálogo que este ADR declarou inalcançáveis. A consulta por EAN passou a ser
+> paga e a percorrer o mesmo pipeline da busca por termo. Ver [ADR-0140](0140-sonar-ean-analise-completa-pela-busca.md).
+
 
 A tentação óbvia de "resolver" a causa 2 é buscar por EAN na Apify, como faz o Sonar por termo.
 Recusado: a Errata 1 do ADR-0127 decidiu que a busca por EAN é **grátis por padrão**, e a Apify já
