@@ -10,7 +10,7 @@ honra a decisão de [ADR-0087](0087-family-name-deteccao-reativa.md) §6 e do AD
 [ADR-0084](0084-family-name-categoria-zipper.md) no UPDATE; aplica ao caminho UP a mesma classe de
 invariante de [ADR-0078](0078-preco-por-variacao-split-por-faixa-e-controle-de-preco-no-update.md) F2 #3
 (`somente_estoque` não empurra preço) e de [ADR-0089](0089-atualizacao-rapida-de-estoque.md)
-("não pausa nada automaticamente no ML"). Reposição de estoque = [ADR-0016](0016-update-com-reposicao.md).
+("não pausa nada automaticamente no ML"). Reposição de estoque = [ADR-0016](0016-publicacao-update-reposicao-estoque.md).
 
 ## Contexto
 

@@ -2,7 +2,7 @@
 
 **Data:** 2026-07-14
 **Status:** aceito (branch local `worktree-gross-up-frete-iterado`, aguardando validação do Diego)
-**Refina:** [ADR-0050](0050-frete-no-gross-up-preco-proprio.md) (frete no gross-up), [ADR-0020](0020-estrategia-de-preco-liquido-minimo.md), [ADR-0055](0055-imposto-por-origem.md)
+**Refina:** [ADR-0050](0050-frete-no-gross-up-preco-proprio.md) (frete no gross-up), [ADR-0020](0020-estrategia-de-preco-liquido-minimo.md), [ADR-0055](0055-imposto-por-origem-nacional-importado.md)
 
 ## Contexto
 

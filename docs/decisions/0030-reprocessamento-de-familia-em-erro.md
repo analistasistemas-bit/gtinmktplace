@@ -2,7 +2,7 @@
 
 **Status:** Aceito
 **Data:** 2026-06-17
-**Relacionado:** [ADR-0005](0005-lifecycle-publish-update.md) (lifecycle), `process-familia`, trigger `update_lote_counters`
+**Relacionado:** [ADR-0005](0005-lifecycle-publish-and-update.md) (lifecycle), `process-familia`, trigger `update_lote_counters`
 
 ## Contexto
 

@@ -2,7 +2,7 @@
 
 **Status:** Aceito
 **Data:** 2026-06-17
-**Estende:** [ADR-0016](0016-update-com-reposicao-e-cor-nova.md) (cor nova entra desmarcada no UPDATE — opt-in)
+**Estende:** [ADR-0016](0016-publicacao-update-reposicao-estoque.md) (cor nova entra desmarcada no UPDATE — opt-in)
 
 ## Contexto
 

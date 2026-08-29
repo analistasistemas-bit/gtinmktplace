@@ -962,8 +962,8 @@ E atualizar a linha "Última atualização: 2026-05-28".
 Localizar a seção que indexa specs e planos; adicionar entradas:
 
 ```markdown
-- [Spec foto-capa por família (2026-05-28)](superpowers/specs/2026-05-28-foto-capa-familia-design.md)
-- [Plano 05 — foto-capa (2026-05-28)](superpowers/plans/2026-05-28-plan-05-foto-capa.md)
+- [Spec foto-capa por família (2026-05-28)](../specs/2026-05-28-foto-capa-familia-design.md)
+- [Plano 05 — foto-capa (2026-05-28)](2026-05-28-plan-05-foto-capa.md)
 ```
 
 - [ ] **Step 5: Commit final**

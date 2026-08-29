@@ -2,7 +2,7 @@
 
 **Data:** 2026-07-11
 **Status:** aceito
-**Relaciona:** [ADR-0027](0027-multi-tenancy-organizations.md), [ADR-0035](0035-alerta-moderacao-telegram.md), [ADR-0037](0037-modulo-faturamento-webhooks-ml.md), [ADR-0047](0047-operacao-compartilhada-rbac-menu.md)
+**Relaciona:** [ADR-0027](0027-multi-tenancy-organizations.md), [ADR-0035](0035-monitoramento-anuncios-moderados.md), [ADR-0037](0037-modulo-faturamento-webhooks-ml.md), [ADR-0047](0047-operacao-compartilhada-rbac-menu.md)
 
 ## Contexto
 

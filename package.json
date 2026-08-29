@@ -14,6 +14,7 @@
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
     "db:check": "bash scripts/db-check.sh",
+    "docs:links": "node scripts/checar-links-docs.mjs",
     "lint:functions": "deno lint --config supabase/functions/deno.json",
     "check:functions": "deno check --config supabase/functions/deno.json $(git ls-files 'supabase/functions/**/*.ts' | grep -v __tests__)"
   },

@@ -101,7 +101,7 @@ mudanças estruturais. Ao implementar, decidimos os detalhes abaixo.
 Em `CLAUDE.md`, na seção "Decisões arquiteturais já tomadas (todos os ADRs)", adicionar a linha:
 
 ```markdown
-| [0016](docs/decisions/0016-publicacao-update-reposicao-estoque.md) | Publicação UPDATE: reposição de estoque herdando o anúncio anterior (refina 0005) |
+| [0016](../../decisions/0016-publicacao-update-reposicao-estoque.md) | Publicação UPDATE: reposição de estoque herdando o anúncio anterior (refina 0005) |
 ```
 
 - [ ] **Step 3: Commit**

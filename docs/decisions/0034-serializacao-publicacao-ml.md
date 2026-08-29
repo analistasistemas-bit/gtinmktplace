@@ -2,7 +2,7 @@
 
 **Status:** Aceito
 **Data:** 2026-06-20
-**Relacionado:** [ADR-0033](0033-retry-interno-foto-em-processamento.md) (foto em processamento), [ADR-0006](0006-qstash-em-vez-de-fila-no-postgres.md) (QStash), `publicar-familias`, `_shared/queue.ts`
+**Relacionado:** [ADR-0033](0033-retry-interno-foto-em-processamento.md) (foto em processamento), [ADR-0006](0006-qstash-em-vez-de-postgres-queue.md) (QStash), `publicar-familias`, `_shared/queue.ts`
 
 ## Contexto
 

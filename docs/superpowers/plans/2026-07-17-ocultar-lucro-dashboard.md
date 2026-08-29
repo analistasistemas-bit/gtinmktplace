@@ -523,8 +523,8 @@ descrição.`), adicionar:
   org) segue 1:1 o padrão de `reancora_lider_ativa`; toggle em Configurações
   (`useMostrarLucroDashboard`/`useSalvarMostrarLucroDashboard`). `Dashboard.tsx` só monta o
   `hint` do `KpiCard` quando o toggle está ligado. Spec:
-  [2026-07-17-ocultar-lucro-dashboard-design.md](superpowers/specs/2026-07-17-ocultar-lucro-dashboard-design.md)
-  · Plano: [2026-07-17-ocultar-lucro-dashboard.md](superpowers/plans/2026-07-17-ocultar-lucro-dashboard.md).
+  [2026-07-17-ocultar-lucro-dashboard-design.md](../specs/2026-07-17-ocultar-lucro-dashboard-design.md)
+  · Plano: [2026-07-17-ocultar-lucro-dashboard.md](2026-07-17-ocultar-lucro-dashboard.md).
   TDD (3 testes novos/ajustados). Só frontend + 1 coluna nova (sem RLS nova).
 ```
 

@@ -61,18 +61,19 @@ pnpm dev          # Vite em http://localhost:5173
 | `pnpm storybook` | Storybook (`localhost:6006`) |
 | `pnpm build-storybook` | Build estático do Storybook |
 | `pnpm db:check` | Valida alinhamento das migrations (`scripts/db-check.sh`) |
+| `pnpm docs:links` | Verifica que todo link markdown de `docs/` aponta para arquivo existente (`scripts/checar-links-docs.mjs`) |
 | `pnpm lint:functions` | `deno lint` nas edge functions |
 | `pnpm check:functions` | `deno check` (type check) nas edge functions |
 
 ## Portão de qualidade antes de commitar
 
-O CI roda `pnpm lint` → `pnpm test` → `pnpm build` (job `frontend`) e `deno lint` → `deno check`
+O CI roda `pnpm lint` → `pnpm docs:links` → `pnpm test` → `pnpm build` (job `frontend`) e `deno lint` → `deno check`
 (job `backend-lint`). Desde 2026-07-23 os dois jobs são **required status checks** no `main`
 (branch protection) — PR com qualquer um vermelho não mergeia (só admin em bypass manual). Rode
 localmente antes de commitar:
 
 ```bash
-pnpm lint && pnpm test && pnpm build
+pnpm lint && pnpm docs:links && pnpm test && pnpm build
 pnpm lint:functions && pnpm check:functions
 ```
 

@@ -222,7 +222,7 @@ Sem épico numerado. Consolidação da apuração financeira e do módulo de est
 
 ## Onde aprofundar
 
-- Estado atual: [project-status.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/project-status.md)
-- Checklist operacional: [TASKS.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/TASKS.md)
-- Reauditoria recente: [auditoria-e1-e4-browser-use.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/auditoria-e1-e4-browser-use.md)
-- Decisoes tecnicas: [decisions](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/decisions)
+- Estado atual: [project-status.md](project-status.md)
+- Checklist operacional: [TASKS.md](TASKS.md)
+- Reauditoria recente: [auditoria-e1-e4-browser-use.md](auditoria-e1-e4-browser-use.md)
+- Decisoes tecnicas: [decisions](decisions)

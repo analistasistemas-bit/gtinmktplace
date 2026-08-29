@@ -11,7 +11,7 @@ demanda, D-14 Simples-only na v1).
 (origem binária e imposto), [0086](0086-configuracao-org-scoped.md) (config por org),
 [0094](0094-estoque-unico-cadastro-manual.md) (módulo gated, cadastro manual),
 [0112](0112-aliquota-interna-por-uf-da-empresa.md) (`uf_empresa`),
-[0026](0026-ia-para-atributos.md) (IA sugere, humano decide).
+[0026](0026-generalizacao-categorizacao-atributos-por-ia.md) (IA sugere, humano decide).
 
 ## Contexto
 

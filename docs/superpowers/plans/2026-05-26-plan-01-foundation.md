@@ -17,7 +17,7 @@
 - MCPs: `supabase-mcp-server`, `upstash`, `render`, `shadcn`, `context7`
 
 **Documentos relacionados:**
-- Spec: [docs/superpowers/specs/2026-05-26-publiai-design.md](../specs/2026-05-26-publiai-design.md)
+- Spec: [docs/superpowers/specs/2026-05-26-ean2marketplace-design.md](../specs/2026-05-26-ean2marketplace-design.md)
 - ADR-0001 (stack): [docs/decisions/0001-stack-tecnologico.md](../../decisions/0001-stack-tecnologico.md)
 - CLAUDE.md (regras do projeto): [CLAUDE.md](../../../CLAUDE.md)
 
@@ -220,7 +220,7 @@ Sistema interno que transforma planilhas de produtos em anúncios no Mercado Liv
 
 ## Documentação
 
-Toda documentação em [`docs/`](docs/). Comece por [docs/README.md](docs/README.md) e [CLAUDE.md](CLAUDE.md).
+Toda documentação em [`docs/`](../../). Comece por [docs/README.md](../../README.md) e [CLAUDE.md](../../../CLAUDE.md).
 
 ## Stack
 

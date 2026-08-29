@@ -2,7 +2,7 @@
 
 **Status:** Aceito
 **Data:** 2026-06-19
-**Relacionado:** [ADR-0005](0005-lifecycle-publish-update.md) (lifecycle), [ADR-0006](0006-qstash-em-vez-de-fila-no-postgres.md) (QStash), `publish-familia-ml`, `_shared/publicacao/retry.ts`, commits `075a774` (tratamento original) e `9757b43` (A4, a regressão)
+**Relacionado:** [ADR-0005](0005-lifecycle-publish-and-update.md) (lifecycle), [ADR-0006](0006-qstash-em-vez-de-postgres-queue.md) (QStash), `publish-familia-ml`, `_shared/publicacao/retry.ts`, commits `075a774` (tratamento original) e `9757b43` (A4, a regressão)
 
 ## Contexto
 

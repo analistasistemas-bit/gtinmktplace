@@ -34,10 +34,10 @@
 **Status:** Aceito
 **Data:** 2026-07-03
 **Decisores:** Diego
-**Relaciona:** estende [ADR-0022](0022-categoria-cola-e-seletor-manual.md) (seletor manual — pendência nunca fechada),
-[ADR-0026](0026-generalizacao-categorizacao-atributos-por-ia.md) (E3 — schema dinâmico/preditor),
-[ADR-0051](0051-tipo-aviamento-derivado-da-categoria-do-preditor.md) (limite conhecido: "operador ainda não tem
-seletor de categoria livre"), [ADR-0054](0054-categoria-titulo-tipo-produto-generico.md) (Fase 2 adiada: por que
+**Relaciona:** estende [ADR-0022](../../decisions/0022-categoria-cola-e-seletor-manual.md) (seletor manual — pendência nunca fechada),
+[ADR-0026](../../decisions/0026-generalizacao-categorizacao-atributos-por-ia.md) (E3 — schema dinâmico/preditor),
+[ADR-0051](../../decisions/0051-tipo-aviamento-derivado-da-categoria-do-preditor.md) (limite conhecido: "operador ainda não tem
+seletor de categoria livre"), [ADR-0054](../../decisions/0054-categoria-titulo-tipo-produto-generico.md) (Fase 2 adiada: por que
 a categoria do concorrente não pode ser aplicada automaticamente)
 
 ## Contexto

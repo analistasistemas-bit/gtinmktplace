@@ -2,7 +2,7 @@
 
 **Status:** Aceito
 **Data:** 2026-06-22
-**Relacionado:** [ADR-0006](0006-qstash-em-vez-de-fila-no-postgres.md) (QStash), [ADR-0024](0024-camada-de-abstracao-de-canais.md) (conectores), [ADR-0027](0027-multi-tenancy.md) (RLS por user), `status-publicados`, `_shared/ml/status.ts`, `_shared/queue.ts`
+**Relacionado:** [ADR-0006](0006-qstash-em-vez-de-postgres-queue.md) (QStash), [ADR-0024](0024-camada-de-abstracao-de-canais.md) (conectores), [ADR-0027](0027-multi-tenancy-organizations.md) (RLS por user), `status-publicados`, `_shared/ml/status.ts`, `_shared/queue.ts`
 
 ## Contexto
 

@@ -2,7 +2,7 @@
 
 **Status:** Aceito
 **Data:** 2026-08-25
-**Relacionado:** [ADR-0094](0094-push-de-estoque-por-valor-absoluto.md) (push absoluto),
+**Relacionado:** [ADR-0094](0094-estoque-unico-cadastro-manual.md) (push absoluto),
 [ADR-0111](0111-reativacao-automatica-ao-repor-estoque.md) (reativação na reposição),
 [ADR-0068](0068-notificacoes-telegram-por-destinatario-e-categoria.md) (categorias),
 [ADR-0085](0085-notificacao-in-app.md) (notificação in-app), [ADR-0035](0035-monitoramento-anuncios-moderados.md)

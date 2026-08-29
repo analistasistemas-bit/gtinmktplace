@@ -2,7 +2,7 @@
 
 **Status:** Aceito
 **Data:** 2026-06-22
-**Relacionado:** [ADR-0021](0021-vinculacao-ao-catalogo.md) (opt-in de catálogo), `project_incidente_catalogo_kit`, `reference_ml_catalogo_nao_encontro_variacao`, `vincular-catalogo`, `_shared/ml/catalogo.ts`, `_shared/notificacoes/telegram.ts`, `monitorar-moderados`
+**Relacionado:** [ADR-0021](0021-vinculacao-automatica-ao-catalogo-ml.md) (opt-in de catálogo), `project_incidente_catalogo_kit`, `reference_ml_catalogo_nao_encontro_variacao`, `vincular-catalogo`, `_shared/ml/catalogo.ts`, `_shared/notificacoes/telegram.ts`, `monitorar-moderados`
 
 ## Contexto
 

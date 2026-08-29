@@ -38,6 +38,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      # Vive aqui, e não num job próprio, porque `lint-build` já alimenta o gate `frontend` que a
+      # proteção da `main` exige — job novo precisaria ser adicionado à proteção para bloquear.
+      # Roda antes do build: falha em 1s e o diagnóstico não fica soterrado pelo log do Vite.
+      - run: pnpm docs:links
       - run: pnpm build
 
   test:

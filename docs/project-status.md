@@ -380,7 +380,7 @@ Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem
 
 ## Revalidacoes mais recentes
 
-- Reauditoria browser-use de `E1` a `E4` registrada em [auditoria-e1-e4-browser-use.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/auditoria-e1-e4-browser-use.md)
+- Reauditoria browser-use de `E1` a `E4` registrada em [auditoria-e1-e4-browser-use.md](auditoria-e1-e4-browser-use.md)
 - Publicacao real de prova apos fix final de retry de foto: `MLB6967261422`
 - Espelho em `anuncios_externos` validado e cleanup confirmado
 - `remover-publicado` ajustado para limpar tambem o espelho multicanal
@@ -443,7 +443,7 @@ real do E6 ("ML + Shopee simultâneos", D-E6.7) fecha junto com ele.
 
 ## Fontes de verdade
 
-- Checklist operacional: [TASKS.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/TASKS.md)
-- Estrategia e fases: [ROADMAP.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/ROADMAP.md)
-- Decisoes: [decisions](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/decisions)
-- Historico: [project-history.md](/Users/diego/Desktop/IA/Anuncios%20MktPlace/docs/project-history.md)
+- Checklist operacional: [TASKS.md](TASKS.md)
+- Estrategia e fases: [ROADMAP.md](ROADMAP.md)
+- Decisoes: [decisions](decisions)
+- Historico: [project-history.md](project-history.md)

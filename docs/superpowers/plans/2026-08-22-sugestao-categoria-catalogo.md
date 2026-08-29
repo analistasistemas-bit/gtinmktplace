@@ -883,7 +883,7 @@ Conteúdo (formato dos ADRs vizinhos — Status/Data/Decisores/Relaciona, Contex
 Acrescentar após a linha da 0130:
 
 ```markdown
-| 0131 | [Sugestão de categoria pela ficha de catálogo](../../docs/decisions/0131-sugestao-categoria-pela-ficha-catalogo.md) |
+| 0131 | [Sugestão de categoria pela ficha de catálogo](../../decisions/0131-sugestao-categoria-pela-ficha-catalogo.md) |
 ```
 
 (Manter o formato exato da tabela existente — conferir as colunas reais do arquivo antes de editar.)

@@ -5,7 +5,7 @@
 **Data:** 2026-05-26
 **Status:** aprovado (brainstorming concluído com Diego)
 **Plano de implementação:** será gerado em seguida via `superpowers:writing-plans` → `docs/superpowers/plans/`
-**Spec relacionado:** [docs/superpowers/specs/2026-05-26-publiai-design.md](./2026-05-26-publiai-design.md)
+**Spec relacionado:** [docs/superpowers/specs/2026-05-26-ean2marketplace-design.md](./2026-05-26-ean2marketplace-design.md)
 
 ---
 

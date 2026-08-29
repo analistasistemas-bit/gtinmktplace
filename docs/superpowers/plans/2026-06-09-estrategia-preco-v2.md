@@ -117,7 +117,7 @@ De:
 ```
 Para:
 ```markdown
-**Status:** Substituído por [ADR-0020](0020-estrategia-de-preco-liquido-minimo.md) (2026-06-09)
+**Status:** Substituído por [ADR-0020](../../decisions/0020-estrategia-de-preco-liquido-minimo.md) (2026-06-09)
 ```
 
 - [ ] **Step 3: Commit**
@@ -801,7 +801,7 @@ git commit -m "feat(preco): semaforo por cor + rotulo min. liquido no VariacaoCa
 
 Em `CLAUDE.md`, na tabela "Decisões arquiteturais já tomadas", adicionar a linha:
 ```markdown
-| [0020](docs/decisions/0020-estrategia-de-preco-liquido-minimo.md) | PRECO = líquido mínimo após comissão ML; com concorrente preço = menor × 0,95, sem concorrente gross-up até cobrir o piso; arredonda múltiplos de R$ 0,05; semáforo verde/amarelo/vermelho de viabilidade (substitui ADR-0008) |
+| [0020](../../decisions/0020-estrategia-de-preco-liquido-minimo.md) | PRECO = líquido mínimo após comissão ML; com concorrente preço = menor × 0,95, sem concorrente gross-up até cobrir o piso; arredonda múltiplos de R$ 0,05; semáforo verde/amarelo/vermelho de viabilidade (substitui ADR-0008) |
 ```
 
 - [ ] **Step 2: Adicionar a linha de histórico**
