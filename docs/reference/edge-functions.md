@@ -1232,7 +1232,7 @@ falha ao ler `organizations` não libera.
   ficha de catálogo** — medido no spike: os atributos do produto são de especificação
   (`BRAND`, `SALE_FORMAT`, `UNITS_PER_PACK`…), e peso/medidas são `SELLER_PACKAGE_*`, atributo
   do anúncio de cada vendedor.
-- **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor).
+- **calcular-tarifa-ml** — comissões (classic + premium) por preço/categoria + frete que o vendedor absorve (frete grátis ao comprador, via `GET /users/{id}/shipping_options/free`); `recebe = preço − comissão − frete − imposto` (imposto por origem somado ao cálculo client, ADR-0055). Body aceita `dimensoes` (peso/medidas da variação representativa); cache Redis 6h (chave inclui dimensões + vendedor). **Desde a ADR-0148:** a resposta carrega `proveniencia` (`official` / `partial` / `estimated`) e `motivo_proveniencia`; o cache foi para `tarifa:v3:` porque a forma mudou. `partial` significa que o frete usou o pacote padrão por falta de dimensões — a DRE recusa calcular fora de `official`, a Revisão segue lendo só os números.
 - **buscar-categorias-ml** — sugestões opcionais para a Calculadora ML (ADR-0126). Recebe
   `{ query }` com 3–120 caracteres e devolve até 8 itens `{ id, nome, caminho? }` do preditor
   oficial do Mercado Livre. Exige JWT e resolve a conexão pela `org_id` da sessão. É

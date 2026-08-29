@@ -49,7 +49,7 @@ Próximos passos, em ordem de ataque:
 - [ ] **Seção 1 do relatório precisa de duas formas.** Modo EAN: média sem extremos em R$. Modo
       termo: percentual / equivalente por unidade. O contrato da seção tem que dizer qual modo
       gerou o número, e a UI não pode oferecer a forma errada para o modo errado.
-- [ ] **Proveniência obrigatória no dinheiro — decidida (D-28), implementa junto com a DRE.** Diego escolheu a opção A em 2026-08-28, depois de medir: o zero silencioso **nunca ocorreu em produção** (`docs/spikes/042-zero-silencioso-quantas-vezes-aconteceu.md`) — é seguro, então o guard entra com a DRE em vez de antes dela, para não criar código sem chamador. Comissão e frete hoje
+- [x] **Proveniência obrigatória no dinheiro — IMPLEMENTADA em 2026-08-29** ([ADR-0148](decisions/0148-dre-fatia-1-uma-cotacao-e-o-guard-de-proveniencia.md)), junto com a seção 6. Os três helpers ganharam variante `{ valor, proveniencia, motivo? }` e viraram wrapper fino; nenhum mudou de contrato. `calcular-tarifa-ml` devolve a proveniência (cache v3) e `provenienciaDaTarifa` falha FECHADO. Fault injection completa. **Histórico da decisão:** Diego escolheu a opção A em 2026-08-28, depois de medir: o zero silencioso **nunca ocorreu em produção** (`docs/spikes/042-zero-silencioso-quantas-vezes-aconteceu.md`) — é seguro, então o guard entra com a DRE em vez de antes dela, para não criar código sem chamador. Comissão e frete hoje
       convertem falha em zero (`listing-prices.ts:17`, `tarifa.ts:24`, `frete.ts:21`) e dimensões
       ausentes caem em `DIMENSOES_DEFAULT` (16×11×6 cm, 300 g) em silêncio.
 
@@ -72,6 +72,11 @@ Próximos passos, em ordem de ataque:
 
       Fault injection cobrindo 400/401/429/500, timeout, schema sem `sale_fee_amount`, `list_cost`
       ausente e `me2=false`: todo caso deve produzir "DRE indisponível", nunca zero.
+- [ ] **Fatia 2 da DRE — o que a ADR-0148 deixou de fora, e depende de decisão do Diego:**
+      **os 5 cenários comerciais nunca foram enumerados** e **o ROI não tem definição** (quantidade,
+      capital imobilizado, horizonte). Sem isso não dá para implementar sem inventar regra
+      financeira. Também aberto: a D-16 (mover peso taxável da seção 3 para a 6) e um seletor de
+      âncora (hoje é o primeiro anúncio da amostra, ADR-0148 D-8).
 - [ ] **Cinco cenários exigem cinco cotações.** `calcularSensibilidade()` extrapola comissão
       linearmente e preserva taxa fixa e frete; erra ao cruzar os degraus de R$ 79 e R$ 150.
 - [x] **Medir a cobertura no universo real do Sonar** (termo e EAN) e o `N` elegível por consulta —
