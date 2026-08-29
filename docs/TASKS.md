@@ -83,6 +83,16 @@ Próximos passos, em ordem de ataque:
       sobre capital é **aritmeticamente igual ao markup** (a quantidade cancela), então a tela
       mostra os absolutos — capital imobilizado e lucro do lote — e rotula o percentual como
       retorno sobre o custo.
+      **Errata 2 (2026-08-29):** Diego apontou a tabela ilegível e pediu escolher Clássico ou
+      Premium. Ao implementar apareceu que **a DRE afirmava Clássico sem dizer que era Clássico** —
+      `calcularSimulacaoML` sempre devolveu as duas modalidades e o código lia só uma, em dois
+      lugares; quem vende Premium lia comissão de 14% onde a dele é 18%. A modalidade também move
+      o **ponto de equilíbrio**, que era calculado no Clássico fixo (piso otimista para quem vende
+      Premium). `modalidade` virou campo **obrigatório** de `EntradaDreSonar` — default silencioso
+      foi o que causou o problema. A lista de cenários virou tabela com cabeçalho e ganhou a coluna
+      **Custo**, que faltava: sem ela o lucro não era conferível. Cai também a proibição da palavra
+      "cenário" (critério 7 da ADR-0148): ela vetava promessa vazia quando havia **um** preço, e a
+      ADR-0149 entregou cinco — "sensibilidade" e "ROI" seguem proibidos e testados.
 - [x] **Cinco cenários exigem cinco cotações — RESOLVIDO pela ADR-0149 D-2.** Cada preço é
       cotado no próprio valor (cinco chamadas ao `calcular-tarifa-ml`, cache de 6h cada).
       `calcularSensibilidade()` continua sem ser usada pela DRE, porque extrapola comissão

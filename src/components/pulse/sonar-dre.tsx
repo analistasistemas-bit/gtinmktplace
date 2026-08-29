@@ -8,12 +8,18 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Loader2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Separator } from '@/components/ui/separator';
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
 import { fetchAliquotas } from '@/lib/queries';
 import { calcularTarifaML } from '@/lib/tarifa';
-import { precosDerivadosDre, type OrigemProduto } from '@/lib/dre-sonar';
+import type { ModalidadeML } from '@/lib/calculadora-ml';
+import { NOME_MODALIDADE, precosDerivadosDre, type OrigemProduto } from '@/lib/dre-sonar';
 import {
   capitalDoLote, montarCenariosDre, precosDosCenarios, type CenarioComDre,
 } from '@/lib/dre-cenarios';
@@ -50,32 +56,38 @@ function Indisponivel({ motivo, compacto }: { motivo: string; compacto?: boolean
   );
 }
 
+/** Total de colunas numéricas da tabela (Preço, Comissão, Frete, Imposto, Custo, Lucro, Margem) —
+ *  o colSpan da recusa precisa cobri-las todas, senão a mensagem some atrás de células vazias. */
+const COLUNAS_NUMERICAS = 7;
+
 function LinhaCenario({ c }: { c: CenarioComDre }) {
   return (
-    <div className="border-t py-2 first:border-t-0">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className="text-sm">
-          {c.rotulo}
-          {/* Derivado de outra cotação, não observado no mercado (ADR-0149 D-3). */}
-          {c.projecao && <span className="ml-1.5 text-xs text-muted-foreground">(projeção)</span>}
-        </span>
-        <span className="tabular-nums text-sm font-medium">{fmtBRL(c.preco)}</span>
-      </div>
+    <TableRow>
+      <TableCell className="whitespace-normal">
+        {c.rotulo}
+        {/* Derivado de outra cotação, não observado no mercado (ADR-0149 D-3). */}
+        {c.projecao && <span className="ml-1.5 text-xs text-muted-foreground">(projeção)</span>}
+      </TableCell>
       {c.dre.estado === 'indisponivel' ? (
-        <div className="mt-1.5">
+        <TableCell colSpan={COLUNAS_NUMERICAS}>
           <Indisponivel motivo={c.dre.motivo} compacto />
-        </div>
+        </TableCell>
       ) : (
-        <div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 text-xs text-muted-foreground sm:grid-cols-4">
-          <span className="tabular-nums">comissão −{fmtBRL(c.dre.comissao)}</span>
-          <span className="tabular-nums">frete −{fmtBRL(c.dre.frete)}</span>
-          <span className="tabular-nums">imposto −{fmtBRL(c.dre.imposto)}</span>
-          <span className={`tabular-nums font-medium ${c.dre.lucro < 0 ? 'text-destructive' : 'text-foreground'}`}>
-            lucro {fmtBRL(c.dre.lucro)} ({c.dre.margemPct.toFixed(1)}%)
-          </span>
-        </div>
+        <>
+          <TableCell className="text-right tabular-nums font-medium">{fmtBRL(c.preco)}</TableCell>
+          <TableCell className="text-right tabular-nums text-muted-foreground">−{fmtBRL(c.dre.comissao)}</TableCell>
+          <TableCell className="text-right tabular-nums text-muted-foreground">−{fmtBRL(c.dre.frete)}</TableCell>
+          <TableCell className="text-right tabular-nums text-muted-foreground">−{fmtBRL(c.dre.imposto)}</TableCell>
+          <TableCell className="text-right tabular-nums text-muted-foreground">−{fmtBRL(c.dre.custoProduto)}</TableCell>
+          <TableCell className={`text-right tabular-nums font-medium ${c.dre.lucro < 0 ? 'text-destructive' : 'text-foreground'}`}>
+            {fmtBRL(c.dre.lucro)}
+          </TableCell>
+          <TableCell className={`text-right tabular-nums ${c.dre.lucro < 0 ? 'text-destructive' : 'text-foreground'}`}>
+            {c.dre.margemPct.toFixed(1)}%
+          </TableCell>
+        </>
       )}
-    </div>
+    </TableRow>
   );
 }
 
@@ -84,6 +96,9 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
   const [origem, setOrigem] = useState<OrigemProduto | null>(null);
   const [margemAlvoTexto, setMargemAlvoTexto] = useState('');
   const [qtdTexto, setQtdTexto] = useState('');
+  // Clássico ou Premium: muda a comissão e, por consequência, equilíbrio e preço-alvo (ver
+  // `EntradaDreSonar.modalidade` em dre-sonar.ts). O frete é o mesmo nas duas — trocar não recota.
+  const [modalidade, setModalidade] = useState<ModalidadeML>('classico');
   // D-16: sem pacote informado o ML cota 16×11×6 cm / 300 g e a proveniência nunca é `official`.
   const [pesoTexto, setPesoTexto] = useState('');
   const [alturaTexto, setAlturaTexto] = useState('');
@@ -142,10 +157,10 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
 
   const derivados = useMemo(
     () => (precoAncora == null ? { pontoEquilibrio: null, precoAlvo: null } : precosDerivadosDre({
-      precoAnuncio: precoAncora, custoProduto, origem, aliquotas: aliq, dimensoes,
+      precoAnuncio: precoAncora, custoProduto, origem, aliquotas: aliq, dimensoes, modalidade,
       tarifa: tarifaAncora ?? null,
     }, margemAlvoPct)),
-    [precoAncora, custoProduto, origem, aliq, dimensoes, tarifaAncora, margemAlvoPct],
+    [precoAncora, custoProduto, origem, aliq, dimensoes, modalidade, tarifaAncora, margemAlvoPct],
   );
 
   const cenarios = useMemo(() => precosDosCenarios({
@@ -187,7 +202,7 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
   const comDre = montarCenariosDre(
     cenarios,
     cenarios.map((c, i) => ({ preco: c.preco, tarifa: cotacoes[i]?.data ?? null })),
-    { custoProduto, origem, aliquotas: aliq, dimensoes },
+    { custoProduto, origem, aliquotas: aliq, dimensoes, modalidade },
   );
 
   // O bloco do lote usa o cenário da âncora — o preço que o operador está olhando.
@@ -204,71 +219,98 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
       : 'informe o peso e as dimensões do pacote — sem eles o frete sai de um pacote padrão e não vale como número oficial';
   const cotando = cotandoAncora || cotacoes.some((q) => q.isLoading);
 
+  // Só existe cotação da âncora depois que ela responde — antes disso o rótulo fica genérico
+  // (não crava 14%/18% às cegas; deriva do que o ML realmente devolveu para este anúncio).
+  const pctComissao = tarifaAncora
+    ? { classico: tarifaAncora.classico.percentual, premium: tarifaAncora.premium.percentual }
+    : null;
+
   return (
     <Card className="space-y-4 p-4">
-      <div>
-        <p className="text-sm font-medium">6. Dá lucro?</p>
-        <p className="text-xs text-muted-foreground">
-          Cinco preços de venda deste nicho, cada um cotado no Mercado Livre · {ancora.nome}
-        </p>
-      </div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium">6. Dá lucro?</p>
+          <p className="text-xs text-muted-foreground">
+            Cinco preços de venda deste nicho, cada um cotado no Mercado Livre · {ancora.nome}
+          </p>
+        </div>
 
-      <div className="grid gap-3 sm:grid-cols-4">
-        <div className="space-y-1">
-          <label htmlFor="dre-custo" className="text-xs text-muted-foreground">Custo do produto</label>
-          <Input id="dre-custo" inputMode="decimal" placeholder="por unidade"
-            value={custoTexto} onChange={(e) => setCustoTexto(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          {/* Origem não tem default: a alíquota depende dela e imposto não se presume (ADR-0055). */}
-          <span className="text-xs text-muted-foreground">Origem</span>
-          <RadioGroup className="flex gap-3 pt-1" value={origem ?? ''}
-            onValueChange={(v) => setOrigem(v as OrigemProduto)}>
-            <div className="flex items-center gap-1.5">
-              <RadioGroupItem value="nacional" id="dre-nacional" />
-              <label htmlFor="dre-nacional" className="text-sm">Nacional</label>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <RadioGroupItem value="importado" id="dre-importado" />
-              <label htmlFor="dre-importado" className="text-sm">Importado</label>
-            </div>
-          </RadioGroup>
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="dre-margem" className="text-xs text-muted-foreground">Margem desejada (%)</label>
-          <Input id="dre-margem" inputMode="decimal" placeholder="opcional"
-            value={margemAlvoTexto} onChange={(e) => setMargemAlvoTexto(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="dre-qtd" className="text-xs text-muted-foreground">Quantidade do lote</label>
-          <Input id="dre-qtd" inputMode="numeric" placeholder="opcional"
-            value={qtdTexto} onChange={(e) => setQtdTexto(e.target.value)} />
+        <div className="flex flex-col items-end gap-1">
+          <span className="text-xs text-muted-foreground">Modalidade do anúncio — muda a comissão</span>
+          <div className="inline-flex gap-0.5 rounded-lg border p-0.5">
+            {(['classico', 'premium'] as const).map((m) => (
+              <Button key={m} type="button" size="sm" aria-pressed={modalidade === m}
+                variant={modalidade === m ? 'default' : 'ghost'}
+                onClick={() => setModalidade(m)}>
+                {NOME_MODALIDADE[m]}{pctComissao && ` ${pctComissao[m]}%`}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* D-16: o pacote é do operador, não do ML. Os quatro são obrigatórios — o frete cobrado sai
-          do maior entre peso físico e cubado, e cotar com um pacote padrão daria número oficial
-          sobre uma caixa que não existe. */}
-      <div className="grid gap-3 sm:grid-cols-4">
-        <div className="space-y-1">
-          <label htmlFor="dre-peso" className="text-xs text-muted-foreground">Peso do pacote (g)</label>
-          <Input id="dre-peso" inputMode="decimal" placeholder="ex.: 950"
-            value={pesoTexto} onChange={(e) => setPesoTexto(e.target.value)} />
+      <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
+        <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Produto e negócio</p>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <div className="space-y-1">
+            <label htmlFor="dre-custo" className="text-xs text-muted-foreground">Custo do produto</label>
+            <Input id="dre-custo" inputMode="decimal" placeholder="por unidade"
+              value={custoTexto} onChange={(e) => setCustoTexto(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            {/* Origem não tem default: a alíquota depende dela e imposto não se presume (ADR-0055). */}
+            <span className="text-xs text-muted-foreground">Origem</span>
+            <RadioGroup className="flex gap-3 pt-1" value={origem ?? ''}
+              onValueChange={(v) => setOrigem(v as OrigemProduto)}>
+              <div className="flex items-center gap-1.5">
+                <RadioGroupItem value="nacional" id="dre-nacional" />
+                <label htmlFor="dre-nacional" className="text-sm">Nacional</label>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <RadioGroupItem value="importado" id="dre-importado" />
+                <label htmlFor="dre-importado" className="text-sm">Importado</label>
+              </div>
+            </RadioGroup>
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="dre-margem" className="text-xs text-muted-foreground">Margem desejada (%)</label>
+            <Input id="dre-margem" inputMode="decimal" placeholder="opcional"
+              value={margemAlvoTexto} onChange={(e) => setMargemAlvoTexto(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="dre-qtd" className="text-xs text-muted-foreground">Quantidade do lote</label>
+            <Input id="dre-qtd" inputMode="numeric" placeholder="opcional"
+              value={qtdTexto} onChange={(e) => setQtdTexto(e.target.value)} />
+          </div>
         </div>
-        <div className="space-y-1">
-          <label htmlFor="dre-altura" className="text-xs text-muted-foreground">Altura (cm)</label>
-          <Input id="dre-altura" inputMode="decimal" placeholder="ex.: 18"
-            value={alturaTexto} onChange={(e) => setAlturaTexto(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="dre-largura" className="text-xs text-muted-foreground">Largura (cm)</label>
-          <Input id="dre-largura" inputMode="decimal" placeholder="ex.: 13"
-            value={larguraTexto} onChange={(e) => setLarguraTexto(e.target.value)} />
-        </div>
-        <div className="space-y-1">
-          <label htmlFor="dre-comprimento" className="text-xs text-muted-foreground">Comprimento (cm)</label>
-          <Input id="dre-comprimento" inputMode="decimal" placeholder="ex.: 13"
-            value={comprimentoTexto} onChange={(e) => setComprimentoTexto(e.target.value)} />
+
+        <Separator />
+
+        {/* D-16: o pacote é do operador, não do ML. Os quatro são obrigatórios — o frete cobrado sai
+            do maior entre peso físico e cubado, e cotar com um pacote padrão daria número oficial
+            sobre uma caixa que não existe. */}
+        <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Pacote (frete)</p>
+        <div className="grid gap-3 sm:grid-cols-4">
+          <div className="space-y-1">
+            <label htmlFor="dre-peso" className="text-xs text-muted-foreground">Peso do pacote (g)</label>
+            <Input id="dre-peso" inputMode="decimal" placeholder="ex.: 950"
+              value={pesoTexto} onChange={(e) => setPesoTexto(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="dre-altura" className="text-xs text-muted-foreground">Altura (cm)</label>
+            <Input id="dre-altura" inputMode="decimal" placeholder="ex.: 18"
+              value={alturaTexto} onChange={(e) => setAlturaTexto(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="dre-largura" className="text-xs text-muted-foreground">Largura (cm)</label>
+            <Input id="dre-largura" inputMode="decimal" placeholder="ex.: 13"
+              value={larguraTexto} onChange={(e) => setLarguraTexto(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <label htmlFor="dre-comprimento" className="text-xs text-muted-foreground">Comprimento (cm)</label>
+            <Input id="dre-comprimento" inputMode="decimal" placeholder="ex.: 13"
+              value={comprimentoTexto} onChange={(e) => setComprimentoTexto(e.target.value)} />
+          </div>
         </div>
       </div>
 
@@ -280,31 +322,47 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
         </p>
       ) : (
         <>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Cenário</TableHead>
+                <TableHead className="text-right">Preço</TableHead>
+                <TableHead className="text-right">Comissão</TableHead>
+                <TableHead className="text-right">Frete</TableHead>
+                <TableHead className="text-right">Imposto</TableHead>
+                <TableHead className="text-right">Custo</TableHead>
+                <TableHead className="text-right">Lucro</TableHead>
+                <TableHead className="text-right">Margem</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {comDre.map((c) => <LinhaCenario key={c.chave} c={c} />)}
+            </TableBody>
+          </Table>
+
           {/* D-16: a seção 6 é dona do peso. O ML cobra pelo MAIOR entre físico e cubado, então
               uma caixa grande e vazia paga frete de caixa cheia — é a informação que decide
-              embalagem, e ela não existia em tela nenhuma. */}
+              embalagem. Secundária à tabela acima: por isso o tom mais discreto. */}
           {daAncora?.dre.estado === 'calculada' && (
-            <div className="flex flex-wrap gap-x-6 gap-y-1 rounded-md border bg-muted/30 p-3 text-xs">
-              <span className="tabular-nums text-muted-foreground">
+            <div className="flex flex-wrap gap-x-5 gap-y-1 rounded-md border border-dashed p-2 text-[11px] text-muted-foreground">
+              <span className="tabular-nums">
                 peso físico <span className="font-medium text-foreground">{fmtKg(dimensoes!.pesoKg)}</span>
               </span>
-              <span className="tabular-nums text-muted-foreground">
+              <span className="tabular-nums">
                 peso volumétrico <span className="font-medium text-foreground">{fmtKg(daAncora.dre.peso.pesoCubadoKg)}</span>
                 {' '}({alturaTexto}×{larguraTexto}×{comprimentoTexto} ÷ 6000)
               </span>
-              <span className="tabular-nums text-muted-foreground">
+              <span className="tabular-nums">
                 peso taxável <span className="font-medium text-foreground">{fmtKg(daAncora.dre.peso.pesoUtilizadoKg)}</span>
                 {' '}— {daAncora.dre.peso.pesoCubadoKg > dimensoes!.pesoKg ? 'o volumétrico venceu' : 'o físico venceu'}
               </span>
-              <span className="text-muted-foreground">
+              <span>
                 {daAncora.dre.vendedorPagaFrete
                   ? `neste preço o frete é seu: ${fmtBRL(daAncora.dre.frete)}`
                   : 'neste preço quem paga o frete é o comprador'}
               </span>
             </div>
           )}
-
-          <div>{comDre.map((c) => <LinhaCenario key={c.chave} c={c} />)}</div>
 
           {lote && (
             <div className="rounded-md border bg-muted/30 p-3 text-sm">

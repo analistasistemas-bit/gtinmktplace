@@ -61,6 +61,7 @@ describe('montarCenariosDre', () => {
     aliquotas: { nacional: 8, importado: 16 },
     // O mesmo pacote nos cinco preços: muda o preço, não o produto (D-16).
     dimensoes: { alturaCm: 18, larguraCm: 13, comprimentoCm: 13, pesoKg: 0.95 },
+    modalidade: 'classico' as const,
   };
 
   // Critério 2: cada cenário usa a cotação DO SEU preço.

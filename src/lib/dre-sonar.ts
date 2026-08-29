@@ -12,6 +12,7 @@ import {
   calcularSimulacaoML,
   type CotacoesOficiaisPorModalidade,
   type DimensoesProduto,
+  type ModalidadeML,
   type PesoUtilizado,
 } from './calculadora-ml';
 import { provenienciaDaTarifa, type Tarifa } from './tarifa';
@@ -33,6 +34,14 @@ export interface EntradaDreSonar {
    * nascia morta no Sonar, onde o produto é do concorrente e nunca tem dimensão nossa.
    */
   dimensoes: DimensoesProduto | null;
+  /**
+   * Clássico ou Premium. Muda a comissão (14% × 18%) e, por consequência, o ponto de equilíbrio e
+   * o preço-alvo — não é só uma linha diferente na decomposição.
+   *
+   * O frete é o mesmo nas duas (`_shared/ml/frete.ts`), então trocar de modalidade **não custa
+   * cotação nova**: `calcularSimulacaoML` já devolve as duas e o código só lia uma.
+   */
+  modalidade: ModalidadeML;
   /** `null` quando o ML não respondeu a cotação. */
   tarifa: Tarifa | null;
 }
@@ -83,10 +92,12 @@ export function precosDerivadosDre(
     margemAlvoPct: margemAlvoPct ?? 0,
   }, cotacoesDaTarifa(e.tarifa));
 
-  const classico = simulacao.modalidades.classico;
+  // A modalidade escolhida, não o Clássico fixo: no Premium a comissão é 18%, então o preço que
+  // zera o lucro é OUTRO. Cravar Clássico aqui daria um equilíbrio otimista a quem vende Premium.
+  const m = simulacao.modalidades[e.modalidade];
   return {
-    pontoEquilibrio: classico?.precoEquilibrio.valor ?? null,
-    precoAlvo: margemAlvoPct == null ? null : (classico?.precoAlvo.valor ?? null),
+    pontoEquilibrio: m?.precoEquilibrio.valor ?? null,
+    precoAlvo: margemAlvoPct == null ? null : (m?.precoAlvo.valor ?? null),
   };
 }
 
@@ -171,28 +182,33 @@ export function montarDreSonar(e: EntradaDreSonar): DreSonar {
     margemAlvoPct: 0,
   }, cotacoesDaTarifa(e.tarifa));
 
-  const classico = simulacao.modalidades.classico;
-  if (classico == null) {
-    return { estado: 'indisponivel', motivo: 'não foi possível montar a decomposição de custos para o Clássico' };
+  const m = simulacao.modalidades[e.modalidade];
+  if (m == null) {
+    return { estado: 'indisponivel', motivo: `não foi possível montar a decomposição de custos para o ${NOME_MODALIDADE[e.modalidade]}` };
   }
 
   return {
     estado: 'calculada',
     receita: e.precoAnuncio,
-    comissao: classico.custos.comissao,
-    frete: classico.custos.frete,
-    imposto: classico.custos.imposto,
+    comissao: m.custos.comissao,
+    frete: m.custos.frete,
+    imposto: m.custos.imposto,
     aliquotaPct,
-    custoProduto: classico.custos.custoProduto,
-    lucro: classico.lucro,
-    margemPct: classico.margemPct,
+    custoProduto: m.custos.custoProduto,
+    lucro: m.lucro,
+    margemPct: m.margemPct,
     peso,
     // O ML só devolve `list_cost` quando o vendedor absorve o frete (ver `_shared/ml/frete.ts`);
     // frete 0 é "o comprador paga", já validado como `official` pela D-28.
-    vendedorPagaFrete: classico.custos.frete > 0,
+    vendedorPagaFrete: m.custos.frete > 0,
     forasDoCalculo: FORA_DO_CALCULO,
   };
 }
+
+export const NOME_MODALIDADE: Record<ModalidadeML, string> = {
+  classico: 'Clássico',
+  premium: 'Premium',
+};
 
 /** `calcularPesoUtilizado` lança `RangeError` em dimensão não-positiva. A seção 6 recebe digitação
  *  livre do operador, então a exceção vira recusa — nunca uma árvore do React derrubada. */

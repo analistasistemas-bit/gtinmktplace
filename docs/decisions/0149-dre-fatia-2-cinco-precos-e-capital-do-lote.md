@@ -209,6 +209,55 @@ mesmas cinco, com um parâmetro a mais.
 
 ### Segue aberto
 
-A dívida do `cotacoesOficiaisDaTarifa` na Revisão, e os **18 anúncios publicados com 0,10 cm** —
-que esta errata torna mais visível, não menos: agora o Sonar exige do operador exatamente o dado
-que aqueles anúncios têm errado.
+A dívida do `cotacoesOficiaisDaTarifa` na Revisão. (Os **18 anúncios publicados com 0,10 cm**
+saíram de pauta: Diego encerrou a correção em 2026-08-29. Fica como registro, não como tarefa.)
+
+---
+
+## Errata 2 (2026-08-29) — a DRE afirmava Clássico sem dizer que era Clássico
+
+Diego pediu "a opção para escolher se o anúncio será clássico ou premium". Ao implementar,
+apareceu que isto **não era só uma funcionalidade que faltava: era uma afirmação silenciosa.**
+
+`calcularSimulacaoML()` devolve `modalidades: { classico, premium }` — as **duas**, sempre. O
+`dre-sonar.ts` lia apenas `simulacao.modalidades.classico`, em dois lugares, e a tela apresentava
+o resultado sem rótulo de modalidade. Um operador que vende Premium lia comissão de 14% onde a
+dele é 18%, sem nenhum aviso — o mesmo gênero de defeito que a D-28 existe para matar, só que por
+omissão de rótulo em vez de proveniência.
+
+### O que muda
+
+1. **`modalidade` é campo obrigatório de `EntradaDreSonar`**, não opcional com default. Default
+   silencioso é exatamente o que produziu o problema.
+2. **A modalidade move o ponto de equilíbrio e o preço-alvo**, não apenas a linha da comissão.
+   `precosDerivadosDre` lia `classico` fixo; quem vende Premium via um piso otimista. Há teste
+   provando que o equilíbrio do Premium é maior.
+3. **Quase custo zero de cotação — e a exceção importa.** A tarifa traz Clássico e Premium na
+   mesma resposta, e o frete é idêntico nas duas (`_shared/ml/frete.ts`: *"Clássico == Premium
+   (mesmo custo), então uma chamada basta"*). Logo os preços **observados** (mais barato, médio,
+   anúncio que mais vende) **não** são recotados ao trocar de modalidade.
+
+   Mas o ponto de equilíbrio **é outro preço** no Premium, e a D-2 exige que cada preço seja cotado
+   no próprio valor — então a troca dispara **uma** cotação, a do preço que se moveu (duas, se
+   houver margem-alvo preenchida). Há teste cravando `antes + 1`.
+
+   > Uma versão anterior desta errata afirmava "o seletor não acrescenta nenhuma chamada ao ML".
+   > **Estava errado**, e foi o teste que derrubou a afirmação antes dela virar verdade oficial.
+
+### A tabela, e a coluna que faltava
+
+Diego também apontou que a lista de cenários estava ilegível ("no lugar de ter os nomes ao lado dos
+valores, ter as colunas com nomes"). Ao redesenhar apareceu uma ausência: **a decomposição não
+mostrava o custo do produto.** Com comissão, frete e imposto apenas, o lucro não era conferível.
+Com a coluna de custo, cada linha fecha na horizontal:
+
+```
+70,19 − 9,83 − 8,45 − 5,62 − 30,00 = 16,29
+```
+
+### O que NÃO mudou, por decisão de Diego
+
+**"Quantidade do lote" fica.** Eu recomendei remover — as duas contas que ela produz são
+`custo × N` e `lucro × N`, e o percentual de retorno ignora a quantidade (D-4). Diego optou por
+manter: ver o capital travado em reais ajuda a decidir a compra. Registrado aqui para não voltar
+a ser proposto.

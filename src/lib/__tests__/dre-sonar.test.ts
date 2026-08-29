@@ -21,6 +21,7 @@ const entrada = (over: Partial<EntradaDreSonar> = {}): EntradaDreSonar => ({
   // Lata de 800 g: 18×13×13 cm, 950 g. Sem isto o ML cota o pacote padrão e a proveniência
   // nunca chega a `official` (ADR-0148 D-28) — ver o bloco da D-16 no fim do arquivo.
   dimensoes: { alturaCm: 18, larguraCm: 13, comprimentoCm: 13, pesoKg: 0.95 },
+  modalidade: 'classico',
   tarifa: tarifa(),
   ...over,
 });
@@ -185,6 +186,25 @@ describe('montarDreSonar — dimensões e peso (D-16)', () => {
     expect(d.estado).toBe('indisponivel');
     if (d.estado !== 'indisponivel') return;
     expect(d.motivo).toMatch(/dimens|peso/i);
+  });
+
+  it('Premium usa a comissão de 18%, não a do Clássico', () => {
+    const d = montarDreSonar(entrada({ modalidade: 'premium' }));
+    expect(d.estado).toBe('calculada');
+    if (d.estado !== 'calculada') return;
+    expect(d.comissao).toBe(16.18);          // contra 12,59 do Clássico
+    expect(d.frete).toBe(8.45);              // frete é o MESMO nas duas (frete.ts)
+    expect(d.lucro).toBeCloseTo(16.08, 2);   // 89,90 − 16,18 − 8,45 − 7,19 − 42
+    expect(d.margemPct).toBeCloseTo(17.88, 1);
+  });
+
+  // Se o equilíbrio ficasse no Clássico, quem vende Premium veria um piso otimista.
+  it('a modalidade move o ponto de equilíbrio, não só a linha da comissão', () => {
+    const c = precosDerivadosDre(entrada({ modalidade: 'classico' }), null).pontoEquilibrio;
+    const p = precosDerivadosDre(entrada({ modalidade: 'premium' }), null).pontoEquilibrio;
+    expect(c).not.toBeNull();
+    expect(p).not.toBeNull();
+    expect(p!).toBeGreaterThan(c!); // comissão maior exige preço maior para zerar
   });
 
   it('quem paga o frete sai da cotação, não de regra nossa', () => {

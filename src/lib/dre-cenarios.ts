@@ -7,7 +7,7 @@
 // O preço do buy-box NÃO é um dos cinco: ele não é obtenível (Spike 049, `buy_box_winner` null em
 // 40 de 40). O lugar dele é do anúncio que mais vende.
 
-import type { DimensoesProduto } from './calculadora-ml';
+import type { DimensoesProduto, ModalidadeML } from './calculadora-ml';
 import { montarDreSonar, type DreSonar, type OrigemProduto } from './dre-sonar';
 import type { Tarifa } from './tarifa';
 
@@ -82,6 +82,8 @@ export function montarCenariosDre(
     aliquotas: { nacional: number; importado: number } | null;
     /** O mesmo pacote nos cinco preços: muda o preço, não o produto (D-16). */
     dimensoes: DimensoesProduto | null;
+    /** A mesma modalidade nos cinco: é uma escolha de anúncio, não de preço. */
+    modalidade: ModalidadeML;
   },
 ): CenarioComDre[] {
   const porPreco = new Map(cotacoes.map((c) => [c.preco, c.tarifa]));
@@ -93,6 +95,7 @@ export function montarCenariosDre(
       origem: entrada.origem,
       aliquotas: entrada.aliquotas,
       dimensoes: entrada.dimensoes,
+      modalidade: entrada.modalidade,
       // `undefined` (preço nunca cotado) e `null` (cotação falhou) caem no mesmo lugar: sem número.
       tarifa: porPreco.get(c.preco) ?? null,
     }),

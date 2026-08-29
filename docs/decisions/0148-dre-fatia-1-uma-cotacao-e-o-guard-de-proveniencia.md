@@ -148,4 +148,8 @@ caso comum, não a exceção.
 5. A tela declara que custos fixos, variáveis e rebate estão fora do número.
 6. Origem não informada não calcula imposto nem DRE.
 7. Nenhum texto da seção 6 promete cenário, sensibilidade ou ROI.
+   > **Errata (2026-08-29, ADR-0149 Errata 2):** a proibição da palavra **"cenário"** cai. Ela fazia
+   > sentido quando esta fatia tinha **um** preço e o termo seria promessa vazia; a ADR-0149
+   > entregou cinco cenários, cada um com cotação própria, e a palavra passou a descrever o que
+   > existe — é o cabeçalho da coluna. **"Sensibilidade" e "ROI" continuam proibidos** e testados.
 8. `pnpm test`, `pnpm lint`, `npx tsc -b --force` e `pnpm docs:links` verdes.

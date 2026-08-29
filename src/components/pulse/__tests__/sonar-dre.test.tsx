@@ -118,11 +118,17 @@ describe('SonarDre — seção 6 (ADR-0148)', () => {
   });
 
   // Critério 7: esta fatia não promete o que não entrega.
-  it('não promete cenário, sensibilidade nem ROI', async () => {
+  // Nasceu no critério 7 da ADR-0148, quando a seção tinha UM preço e "cenário" seria promessa
+  // vazia. A ADR-0149 **entregou** cinco cenários com cotação própria cada, então a palavra passou
+  // a descrever o que existe — e é o cabeçalho da coluna. Sensibilidade e ROI continuam proibidos:
+  // a primeira nunca foi entregue (D-1), e o retorno é markup e é rotulado assim (D-4). A guarda
+  // de ROI/prazo/giro/horizonte vive também em `sonar-dre-cenarios.test.tsx`, independente desta.
+  it('não promete sensibilidade nem ROI', async () => {
     const { container } = renderDre();
     await preencher();
     await waitFor(() => expect(screen.getByText(/R\$\s*19,67/)).toBeInTheDocument());
-    expect(container.textContent).not.toMatch(/cenário|sensibilidade|ROI/i);
+    expect(container.textContent).not.toMatch(/sensibilidade/i);
+    expect(container.textContent).not.toMatch(/\bROI\b/i);
   });
 
   it('sem categoria não há cotação possível, e a seção diz isso', () => {
@@ -182,6 +188,18 @@ describe('SonarDre — pacote e peso (D-16)', () => {
     expect(document.body.textContent).toMatch(/o volumétrico venceu/i);
   });
 
+  it('a tabela tem cabeçalho de colunas, e a linha fecha na horizontal', async () => {
+    renderDre();
+    await preencher();
+    await waitFor(() => expect(screen.getByRole('columnheader', { name: /cenário/i })).toBeInTheDocument());
+    for (const col of ['Preço', 'Comissão', 'Frete', 'Imposto', 'Custo', 'Lucro', 'Margem']) {
+      expect(screen.getByRole('columnheader', { name: new RegExp(col, 'i') })).toBeInTheDocument();
+    }
+    // A coluna Custo é a que faltava: sem ela o lucro não era conferível.
+    // 89,90 − 12,59 − 8,45 − 7,19 − 42,00 = 19,67
+    expect(screen.getAllByText(/R\$\s*42,00/).length).toBeGreaterThan(0);
+  });
+
   it('dimensão zerada recusa em vez de derrubar a tela', async () => {
     renderDre();
     const user = userEvent.setup();
@@ -194,5 +212,46 @@ describe('SonarDre — pacote e peso (D-16)', () => {
 
     await waitFor(() => expect(screen.getAllByText(/DRE indisponível/i).length).toBeGreaterThan(0));
     expect(document.body.textContent).toMatch(/maiores que zero/i);
+  });
+});
+
+// Antes disto a seção lia `modalidades.classico` fixo e não dizia que era Clássico: quem vende
+// Premium lia comissão de 14% onde a dele é 18% (ADR-0149 Errata 2).
+describe('SonarDre — Clássico × Premium', () => {
+  it('trocar para Premium muda a comissão da tabela inteira', async () => {
+    renderDre();
+    const user = await preencher();
+    await waitFor(() => expect(screen.getAllByText(/R\$\s*12,59/).length).toBeGreaterThan(0));
+
+    await user.click(screen.getByRole('button', { name: /premium/i }));
+
+    await waitFor(() => expect(screen.getAllByText(/R\$\s*16,18/).length).toBeGreaterThan(0));
+    expect(screen.queryByText(/R\$\s*12,59/)).not.toBeInTheDocument();
+  });
+
+  it('o percentual do seletor vem da cotação, não está cravado no código', async () => {
+    renderDre();
+    await preencher();
+    // tarifaOficial do mock: 14% no Clássico, 18% no Premium.
+    await waitFor(() => expect(screen.getByRole('button', { name: /clássico 14%/i })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: /premium 18%/i })).toBeInTheDocument();
+  });
+
+  // Não é "zero cotação nova": o ponto de equilíbrio do Premium é OUTRO preço, e a D-2 exige que
+  // cada preço seja cotado no próprio valor. O que a troca não faz é recotar os preços observados
+  // (mais barato, médio, anúncio que mais vende) — para eles o frete e a comissão já vieram, e a
+  // modalidade se resolve com a mesma resposta, porque a tarifa traz Clássico e Premium juntos.
+  it('trocar de modalidade recota só o preço que se moveu, não os observados', async () => {
+    const { calcularTarifaML } = await import('@/lib/tarifa');
+    renderDre();
+    const user = await preencher();
+    await waitFor(() => expect(screen.getAllByText(/R\$\s*12,59/).length).toBeGreaterThan(0));
+    const antes = vi.mocked(calcularTarifaML).mock.calls.length;
+
+    await user.click(screen.getByRole('button', { name: /premium/i }));
+    await waitFor(() => expect(screen.getAllByText(/R\$\s*16,18/).length).toBeGreaterThan(0));
+
+    // Só o equilíbrio se move (não há margem-alvo preenchida neste teste).
+    expect(vi.mocked(calcularTarifaML).mock.calls.length).toBe(antes + 1);
   });
 });
