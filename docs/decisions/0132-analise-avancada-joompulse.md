@@ -5,6 +5,12 @@
 **Decisores:** Diego
 **Relaciona:** [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Pulse; o 403 de vendas por anúncio de terceiro), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) (Sonar + Apify, fora do v1), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0086](0086-configuracao-org-scoped.md) (módulos), [0024](0024-abstracao-de-canais.md) (Canal ≠ provedor de análise), [0027](0027-multi-tenancy-organizations.md) (multi-tenancy), [0043](0043-migrations-canal-unico.md) (migrations canal único)
 
+> **2026-08-28 — a JoomPulse confirmou que a parceria cobre uso server-to-server por um Gateway
+> do PubliAI, e que as respostas podem ser cacheadas.** Isso fecha a questão #16 (levantada pelo
+> Spike 038) e a #10. Com as decisões da ADR-0140, **as questões #7, #8, #10, #13, #14, #15 e #16
+> estão fechadas** e a integração está **liberada para implementação**. Continuam pendentes apenas
+> #4, #5, #6, #9, #11 e #12 — trabalho técnico contra o ambiente real, não decisão.
+>
 > **Revisão concluída 2026-08-28 → [ADR-0140](0140-analise-publiai-joompulse-radar-e-sonar.md).**
 > A revisão exigida pela D-17 foi feita em entrevista com Diego e produziu a ADR-0140, que
 > **supersede a D-3** (escopo do v1) e **emenda a D-7** (padrão de chamada). Todo o resto desta

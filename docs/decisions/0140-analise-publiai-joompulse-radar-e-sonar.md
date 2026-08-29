@@ -1,6 +1,6 @@
 # ADR-0140 — Análise PubliAI: JoomPulse no Radar e no Sonar
 
-**Status:** Aceito — desenho fechado em entrevista com Diego (2026-08-28); 24 decisões, **nenhuma pendente do lado do produto**. As decisões D-20 a D-24 fecham as questões #13, #14, #15 e a parte local da #8 da [ADR-0132](0132-analise-avancada-joompulse.md). **Implementação continua bloqueada** pelo que resta: trabalho técnico contra o ambiente real (#4, #5, #6, #9, #11, #12) e três respostas que só a JoomPulse pode dar (#7, #10 e sobretudo **#16 — a parceria cobre uso server-to-server?**).
+**Status:** Aceito e **liberado para implementação** — desenho fechado em entrevista com Diego (2026-08-28); 27 decisões. **A JoomPulse confirmou que a parceria cobre uso server-to-server** (D-25), o que era o bloqueio que precedia todos os outros. As decisões D-20 a D-27 fecham as questões #7, #8, #10, #13, #14, #15 e #16 da [ADR-0132](0132-analise-avancada-joompulse.md). Não resta nenhuma pendência de decisão nem de resposta externa: o que falta é trabalho técnico normal (#4, #5, #6, #9, #11, #12) e a sonda de cobertura em produção.
 **Data:** 2026-08-28
 **Decisores:** Diego
 **Relaciona:** [0132](0132-analise-avancada-joompulse.md) (arquitetura do Gateway e do módulo — **esta ADR supersede a D-3 e emenda a D-7**), [Spike 038](../spikes/038-joompulse-parcial-correlacao-e-semantica.md) (achados que motivaram a revisão), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (Radar; o 403 do ML; Errata 8 e Errata 10), [0120](0120-pulse-sonar-garimpo-por-termo.md) / [0122](0122-sonar-vendas-estimadas-via-apify.md) / [0127](0127-sonar-tabela-por-anuncio-e-historico.md) (Sonar, Apify e a tabela por anúncio), [0124](0124-veredito-de-oportunidade-do-sonar.md) / [0137](0137-sonar-disputa-caminho-b-concentracao-por-anuncio.md) / [0138](0138-sonar-linguagem-comercial-e-condicao-de-entrada.md) (veredito), [0130](0130-concorrentes-relevantes-pulse-viabilidade.md) (mercado relevante), [0020](0020-estrategia-de-preco-liquido-minimo.md) / [0055](0055-imposto-por-origem-nacional-importado.md) / [0107](0107-origem-obrigatoria-na-planilha.md) (margem e imposto por origem), [0086](0086-configuracao-org-scoped.md) (módulos)
@@ -41,6 +41,9 @@ A D-17 da ADR-0132 manda voltar para decisão. Esta ADR é essa decisão, tomada
 | D-22 | **Retenção por natureza do dado:** cache de resposta crua 7 dias (é performance; a fonte muda diariamente), relatório gerado 12 meses (artefato de decisão, custou cota e token, permite comparar o mesmo nicho ao longo do ano), auditoria de conexão e desconexão permanente (registro de segurança, volume desprezível). O offboarding da organização apaga os três. **Fecha a questão #14.** |
 | D-23 | **Alerta com destinatário por tipo de falha**, no canal Telegram org-scoped já existente (ADR-0086). Ao **admin da organização**: credencial expirada ou revogada e quota da assinatura esgotada — só ele resolve. Ao **super-admin**: resposta fora do schema esperado (significa que a JoomPulse mudou o contrato e quebra todas as orgs) e indisponibilidade que persista além da janela. Falha transitória não alerta ninguém: aparece na tela e se resolve. **Fecha a questão #15.** |
 | D-24 | **A "Referência do preço do ML" sai da interface por completo** — a coluna do Radar e a linha secundária do dialog de detalhe (`dialog-detalhe.tsx:442-448`) — **para todas as organizações**, inclusive as sem o módulo, que ficam com uma coluna a menos. A Errata 10 da ADR-0119 documenta que o número induz decisão errada (produto mais barato entre concorrentes reais exibido como "acima da referência", porque o ML inclui universo não comparável); se engana na coluna, engana no dialog e engana quem não assina JoomPulse. Já foi mitigado duas vezes (Erratas 3 e 10) — uma terceira mitigação parcial não resolve. **A coleta continua e o dado permanece no banco**, o que torna a remoção reversível. O campo irmão `ptw_custos` (comissão e frete) **não é tocado**: alimenta o cálculo de margem. Saem junto o código que ficou órfão (`seloPriceToWin` / `ordemPriceToWin` em `pulse-formato.ts`) e seus 26 testes. |
+| D-25 | **A parceria autoriza uso server-to-server desta superfície por um Gateway do PubliAI** — confirmado pela JoomPulse a Diego em 2026-08-28. **Fecha a questão #16**, levantada pelo Spike 038, que precedia todas as outras: sem ela nada nesta ADR aconteceria. A D-18 da ADR-0132 ("termos de uso não são bloqueante") fica confirmada para o formato concreto de integração, não só em princípio. |
+| D-26 | **O cache é isolado por organização e não cruza clientes.** A JoomPulse confirmou que as respostas podem ser cacheadas e que são iguais entre contas e planos — mas isso autoriza guardar a resposta dentro da conta do cliente, não servir a organização B com dado obtido pela cota da organização A, que é redistribuição entre clientes e exigiria autorização específica. A economia do cache global hoje seria próxima de zero (duas organizações, catálogos com baixa sobreposição) e o custo de cota permanece com quem consome. Mantém a D-11 e a D-15 da ADR-0132 como estão. **Fecha a questão #10**; reavaliar só com escala e sobreposição medida. |
+| D-27 | **Revogação remota é tratada como inexistente até prova em contrário.** O suporte da JoomPulse não soube informar se há revogação de token e rotação de refresh (#7), e a resposta depende de teste. Adota-se o pior caso previsto pela própria ADR-0132: "Desconectar" **inutiliza e apaga a credencial localmente**, e a UI declara explicitamente que a autorização pode continuar ativa do lado da JoomPulse até o cliente revogá-la lá. A limitação **é exibida, nunca ocultada**. O teste entra no spike do Gateway; se houver revogação remota, o comportamento melhora sem quebrar nada. Isso desbloqueia a implementação sem esperar a resposta. |
 
 ## O que muda na ADR-0132
 
@@ -121,21 +124,16 @@ A Errata 8 da ADR-0119 mediu 36 ofertas e registrou que a API do ML não devolve
 
 ## O que continua bloqueando a implementação
 
-Esta ADR fecha **o quê**, e as decisões D-20 a D-24 fecharam as questões da ADR-0132 que dependiam de escolha do dono do produto (#13, #14, #15 e a parte local da #8). O que resta **não é decisão** — é trabalho técnico contra o ambiente real, ou resposta que só a JoomPulse pode dar.
+**Nada.** Esta ADR fecha o **quê**; as decisões D-20 a D-27 fecharam as questões #7, #8, #10, #13, #14, #15 e #16. Não há mais decisão de produto pendente nem resposta externa a esperar.
 
-**Trabalho técnico (exige medir, não escolher):**
+O que falta é trabalho técnico normal, que exige medir contra o ambiente real em vez de escolher:
 
 - #4 contrato HTTP do Gateway
-- #5/#6 storage e cifragem de credencial
-- #9 backend do cache das consultas cruas (os TTLs estão fixados na D-22)
+- #5/#6 storage e cifragem da credencial
+- #9 backend do cache das consultas cruas (os TTLs já estão fixados na D-22 e o isolamento na D-26)
 - #11/#12 rate limits, timeouts, latência e cold start
+- teste de revogação e refresh rotation — não bloqueia (a D-27 já adota o pior caso); se houver revogação remota, o comportamento melhora
 
-**Depende da JoomPulse — uma conversa resolve as três:**
-
-- **#16 a parceria cobre uso server-to-server** por um Gateway do PubliAI? Se a resposta for não, nada nesta ADR acontece; é a pergunta que precede todas as outras
-- #7 existe revogação de token e rotação de refresh? (define o lado remoto da #8)
-- #10 as respostas podem ser cacheadas, e são invariáveis entre contas e planos?
-
-**Ainda não medido:** a cobertura real — quantos anúncios do PubliAI existem no snapshot da JoomPulse. Sem esse número não dá para dimensionar quantas linhas do Radar cairiam em "sem dado", e nenhuma promessa de UI deve ser feita antes dele.
+**Único pré-requisito de produto ainda não medido:** a cobertura real — quantos anúncios do PubliAI existem no snapshot da JoomPulse. Sem esse número não dá para dimensionar quantas linhas do Radar cairiam em "sem dado", e nenhuma promessa de UI deve ser feita antes dele. É a primeira coisa a fazer na implementação.
 
 A cobertura real (quantos anúncios do PubliAI existem no snapshot da JoomPulse) também não foi medida e precisa de sonda em produção antes de qualquer promessa de UI.

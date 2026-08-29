@@ -2,11 +2,12 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Análise PubliAI — desenho fechado (ADR-0140) — 2026-08-28
+## Análise PubliAI — liberado para implementação (ADR-0140) — 2026-08-28
 
-**Desenho aprovado, implementação bloqueada.** 24 decisões fechadas em entrevista com Diego — nenhuma pendente do lado do produto.
+**Desenho aprovado e LIBERADO para implementação.** 27 decisões. A JoomPulse confirmou que a parceria cobre uso server-to-server — o bloqueio que precedia todos os outros caiu.
 ADR em `docs/decisions/0140-analise-publiai-joompulse-radar-e-sonar.md`; termos novos no
-glossário. **Nenhum código escrito** — a ADR-0132 ainda não fechou como conectar (#4–#16).
+glossário. **Nenhum código escrito ainda** — resta só trabalho técnico (#4, #5, #6, #9, #11, #12)
+e a sonda de cobertura, que é o primeiro passo.
 
 - [x] Nome único **Análise PubliAI** nas 3 telas; slug `analise_avancada` intacto
 - [x] Três camadas: MCP traz dado → código do PubliAI calcula dinheiro → IA só redige
@@ -28,12 +29,17 @@ glossário. **Nenhum código escrito** — a ADR-0132 ainda não fechou como con
 - [x] "Referência do ML" sai da UI inteira (coluna **e** `dialog-detalhe.tsx:442-448`), para
       todas as orgs; coleta continua, `ptw_custos` intacto; saem `seloPriceToWin`/
       `ordemPriceToWin` e os 26 testes órfãos
-- [ ] **Falar com a JoomPulse** — uma conversa resolve #16 (parceria cobre server-to-server?),
-      #7 (revogação e refresh rotation) e #10 (pode cachear? resposta é igual entre contas?).
-      **A #16 precede tudo:** se a resposta for não, nada desta ADR acontece
-- [ ] **Trabalho técnico, exige medir:** #4 contrato HTTP, #5/#6 storage e cifragem de
-      credencial, #9 backend do cache, #11/#12 rate limits, latência e cold start
-- [ ] **Sonda de cobertura em produção** antes de qualquer promessa de UI
+- [x] **JoomPulse confirmou: a parceria cobre uso server-to-server** (fecha #16 — era o bloqueio
+      que precedia todos os outros) e as respostas podem ser cacheadas (fecha #10)
+- [x] Cache **isolado por org**: "pode cachear" autoriza guardar dentro da conta do cliente, não
+      servir a org B com cota da org A; economia hoje ~zero e mantém a D-11/D-15 da 0132
+- [x] Revogação remota (#7): suporte não soube informar → adota-se o pior caso da própria 0132 —
+      desconectar inutiliza e apaga local, e a UI **declara** que a autorização pode seguir ativa
+      na JoomPulse. Não bloqueia; teste entra no spike do Gateway
+- [ ] **1º passo da implementação — sonda de cobertura em produção.** Quantos `ml_item_id` reais
+      existem no snapshot da JoomPulse. Nenhuma promessa de UI antes desse número
+- [ ] Construir: #4 contrato HTTP do Gateway, #5/#6 storage e cifragem da credencial,
+      #9 backend do cache (TTLs já fixados na D-22), #11/#12 rate limits, latência e cold start
 
 ## Spike JoomPulse — parcial (ADR-0132) — 2026-08-28
 
