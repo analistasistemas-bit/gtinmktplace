@@ -141,7 +141,8 @@ Isso não é detalhe de implementação que absolva o número: a documentação 
 filtro **por anúncio**. A cópia é oferecida como venda do anúncio. Daí a afirmação defensável:
 
 > **Todo uso de `orderCount1m` no grão de anúncio herda o agregado do catálogo — e em 12 de 60
-> ganhadores isso produz um número que a API do ML refuta na mesma linha da resposta.**
+> ganhadores de alto volume em Bebês (amostra enviesada, ver abaixo) isso produz um número que a
+> API do ML refuta na mesma linha da resposta.**
 
 No catálogo do Aptamil (`MLB10512495`, `numBuyBoxSellers = 53`), essa mesma linha traz
 `shopSales365Days`, que o [Spike 047](047-joompulse-comparada-com-a-nossa-metrica.md)
