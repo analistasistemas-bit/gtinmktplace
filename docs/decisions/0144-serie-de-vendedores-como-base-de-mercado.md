@@ -3,7 +3,7 @@
 **Status:** Aceito. Decisão de Diego em 2026-08-29 ("opção B, base de mercado compartilhado"), depois de medido que o modo EAN falha por escopo, não por falta de dado.
 **Data:** 2026-08-29
 **Decisores:** Diego
-**Relaciona:** [0143](0143-demanda-do-nicho-pela-ponte-do-catalogo.md) (a ponte pelo catálogo), [0142](0142-vendas-mensais-por-vendedor.md) (o cálculo), [0027](0027-multi-tenancy.md) (isolamento por organização), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (o coletor que popula `pulse_vendedores`), [Spike 045](../spikes/045-cobertura-do-sonar-por-vendedor.md)
+**Relaciona:** [0143](0143-demanda-do-nicho-pela-ponte-do-catalogo.md) (a ponte pelo catálogo), [0142](0142-vendas-mensais-por-vendedor.md) (o cálculo), [0027](0027-multi-tenancy-organizations.md) (isolamento por organização), [0119](0119-pulse-inteligencia-de-mercado-dirigida.md) (o coletor que popula `pulse_vendedores`), [Spike 045](../spikes/045-cobertura-do-sonar-por-vendedor.md)
 **Contrato regido:** [contrato-analise-publiai-secoes-2-3-7.md](../reference/contrato-analise-publiai-secoes-2-3-7.md)
 
 ---
