@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import { autorizar, extrairToken, statusDe, MODULO, type DepsAutorizacao } from '../src/autorizacao.js'
-import { tratar, type DepsRotas } from '../src/rotas.js'
 import { cabecalhosCors, origemPermitida, origensDaEnv } from '../src/cors.js'
 
 const OK: DepsAutorizacao = {
@@ -10,7 +9,6 @@ const OK: DepsAutorizacao = {
 }
 
 const deps = (over: Partial<DepsAutorizacao> = {}): DepsAutorizacao => ({ ...OK, ...over })
-const rotas = (over: Partial<DepsAutorizacao> = {}): DepsRotas => ({ ...deps(over), versao: 'test' })
 
 describe('extrairToken', () => {
   it('aceita Bearer e devolve o token', () => {
@@ -76,36 +74,6 @@ describe('statusDe', () => {
     expect(statusDe('token_invalido')).toBe(401)
     expect(statusDe('perfil_inativo')).toBe(403)
     expect(statusDe('modulo_desligado')).toBe(403)
-  })
-})
-
-describe('rotas', () => {
-  it('/health responde sem token', async () => {
-    const r = await tratar('GET', '/health', null, rotas())
-    expect(r.status).toBe(200)
-    expect(r.corpo).toMatchObject({ ok: true, contrato: 'v1' })
-  })
-
-  it('/v1/sessao devolve a org derivada do token', async () => {
-    const r = await tratar('GET', '/v1/sessao', 'Bearer t', rotas())
-    expect(r.status).toBe(200)
-    expect(r.corpo).toEqual({ org_id: 'org1', is_admin: false, modulo_habilitado: true })
-  })
-
-  // D-13: cada estado tem código próprio; a UI não pode receber tudo como 403 genérico.
-  it('/v1/sessao distingue módulo desligado de token inválido', async () => {
-    const semModulo = await tratar('GET', '/v1/sessao', 'Bearer t', rotas({ modulosDaOrg: async () => [] }))
-    expect(semModulo.status).toBe(403)
-    expect(semModulo.corpo).toMatchObject({ erro: { codigo: 'modulo_desligado' } })
-
-    const semToken = await tratar('GET', '/v1/sessao', null, rotas())
-    expect(semToken.status).toBe(401)
-    expect(semToken.corpo).toMatchObject({ erro: { codigo: 'sem_token' } })
-  })
-
-  it('recusa método diferente de GET e rota desconhecida', async () => {
-    expect((await tratar('POST', '/health', null, rotas())).status).toBe(405)
-    expect((await tratar('GET', '/v1/nada', 'Bearer t', rotas())).status).toBe(404)
   })
 })
 

@@ -614,3 +614,124 @@ um proxy não servir a uma origem a resposta liberada para outra.
 Verificado antes do commit: 16 testes verdes, `tsc -b` limpo, `eslint` sem erro, e smoke real com
 o serviço no ar — `/health` 200, `/v1/sessao` 401 com `sem_token`, 404, 405, preflight 204, origem
 fora da allowlist sem cabeçalho de CORS, e boot recusado sem variável obrigatória.
+
+---
+
+## Errata 2 (2026-08-29) — OAuth e credencial: endpoints medidos, PKCE, cifragem e a confirmação da D-27
+
+Fecha as questões **#5** (storage da credencial) e **#6** (cifragem), e implementa o OAuth da D-5.
+Continua sem fechar #9 (cache) e #11/#12 (limites).
+
+### E-6 — Os endpoints do provedor foram MEDIDOS, não presumidos
+
+Lidos em `https://joompulse.com/.well-known/oauth-authorization-server` em 2026-08-29:
+
+| Campo | Valor |
+|---|---|
+| `authorization_endpoint` | `https://joompulse.com/oauth2/authorize` |
+| `token_endpoint` | `https://joompulse.com/noauth/oauth2/token` |
+| `introspection_endpoint` | `https://joompulse.com/noauth/oauth2/introspect` |
+| `grant_types_supported` | `authorization_code`, `refresh_token` |
+| `code_challenge_methods_supported` | `S256` |
+| `token_endpoint_auth_methods_supported` | `client_secret_post`, `client_secret_basic`, `none` |
+| `scopes_supported` | `mcp` |
+
+`POST /mcp` sem token responde `401` com
+`WWW-Authenticate: Bearer resource_metadata="https://joompulse.com/.well-known/oauth-protected-resource"`,
+confirmando o par recurso/servidor de autorização.
+
+**A ADR-0141 D-27 fica confirmada tecnicamente.** Ela adotava o pior caso — "revogação remota é
+inexistente até prova em contrário" — porque o suporte não soube informar. O metadado do próprio
+servidor de autorização **não anuncia `revocation_endpoint`**: não existe revogação padronizada a
+chamar. A UI deve continuar dizendo que a autorização pode seguir ativa do lado da JoomPulse.
+
+Existe, em compensação, `introspection_endpoint`: dá para **detectar** credencial já inválida.
+Detectar, não causar. Isso vira insumo do estado de saúde da credencial (D-13), não uma promessa
+de revogação.
+
+E `refresh_token` está em `grant_types_supported`, o que responde metade da questão #7: renovação
+existe. Se há **rotação** do refresh a cada uso, só o uso real dirá — por isso `renovarComRefresh`
+preserva o refresh antigo quando o provedor não devolve um novo. Descartá-lo desconectaria a
+organização no ciclo seguinte.
+
+### E-7 — PKCE S256 sempre, e o `code_verifier` nunca sai do servidor
+
+O provedor suporta `S256` e aceita client público (`none`). O Gateway usa PKCE **mesmo quando há
+client secret**: protege o `code` em trânsito, e torna o serviço utilizável antes de a JoomPulse
+emitir um segredo — `JOOMPULSE_CLIENT_SECRET` é opcional por isso.
+
+O `code_verifier` fica no banco, ligado ao `state`. Se trafegasse pelo browser junto do state, o
+PKCE deixaria de proteger contra interceptação do code. Há teste que prova que a URL de
+autorização não contém o verifier.
+
+### E-8 — O `state` é a única prova de identidade no callback
+
+O redirect da JoomPulse chega ao Gateway **sem o JWT do usuário**. Em consequência, o `state`:
+
+- é aleatório de 32 bytes (`randomBytes`, url-safe);
+- vale **10 minutos**;
+- é de **uso único**, marcado por `UPDATE ... WHERE usado_em IS NULL` — não por ler-e-depois-escrever,
+  porque duas requisições simultâneas com o mesmo state precisam que exatamente uma vença;
+- é comparado em tempo constante, defesa contra um repositório que faça match frouxo.
+
+Quatro recusas distintas, todas com teste: `desconhecido`, `expirado`, `ja_usado`, `nao_confere`.
+Nenhuma delas chama o provedor.
+
+### E-9 — Cifragem: AES-256-GCM, chave fora do banco
+
+Envelope `base64(iv[12] || tag[16] || ciphertext)`, IV aleatório por operação.
+
+**GCM e não CBC porque autentica:** ciphertext adulterado falha ao abrir, em vez de devolver lixo
+que o resto do código trataria como token. Há teste virando um bit do ciphertext e outro virando
+um bit da tag; os dois têm de falhar.
+
+A chave (`CREDENCIAL_CHAVE_BASE64`, 32 bytes) vive na env do Web Service e **nunca no banco**. Um
+dump do Postgres, sozinho, não dá acesso à JoomPulse — é o ponto de cifrar em vez de confiar só na
+RLS. Chave ausente ou de tamanho errado **derruba o boot**: não pode degradar para "guardar sem
+cifrar".
+
+`versao_chave` na tabela permite rotacionar sem reconectar todas as orgs de uma vez. Credencial
+gravada com versão diferente da atual **falha e pede reconexão**, em vez de decifrar com a chave
+errada e tratar o resultado como token.
+
+### E-10 — Schema: duas tabelas, nenhum grant a `authenticated`
+
+`joompulse_credenciais` (uma linha por org, vive até o "Desconectar") e `joompulse_oauth_estados`
+(uma por tentativa, vive 10 minutos).
+
+Diferente das tabelas do Pulse, **nem o membro da própria organização recebe `select`**: o
+conteúdo é credencial, não dado de tela. RLS ligada e nenhuma policy permissiva — o acesso é do
+Gateway, com service role. As policies ausentes e o `revoke` são duas trancas independentes, o
+mesmo raciocínio já registrado na migration do Pulse.
+
+### E-11 — Rotas novas
+
+| Rota | Método | Quem pode | O que faz |
+|---|---|---|---|
+| `/v1/oauth/iniciar` | POST | **admin da org** (D-5) | gera state+PKCE, guarda no servidor, devolve a URL de autorização |
+| `/v1/oauth/callback` | GET | ninguém autenticado — o `state` é a prova | troca o code, grava cifrado, redireciona ao app |
+| `/v1/oauth/conexao` | DELETE | **admin da org** (D-5) | apaga a credencial |
+| `/v1/sessao` | GET | qualquer membro | agora informa `conectado` e `expira_em` |
+
+O callback **sempre** termina em redirect para a tela de Canais com `?joompulse=<resultado>`: o
+usuário está numa janela de navegador, e JSON cru ali seria um beco sem saída. Falha na troca do
+code redireciona com `falha_troca` e **não** ecoa o erro do provedor na URL, que pode carregar
+fragmento do code.
+
+`DELETE /v1/oauth/conexao` responde `{ desconectado: true, revogado_no_provedor: false }`. O
+segundo campo é honestidade obrigatória pela E-6: o Gateway apagou a credencial local e **não**
+revogou nada na JoomPulse.
+
+### O que esta entrega ainda NÃO faz
+
+- **Não consulta o MCP.** Nenhuma chamada de ferramenta, nenhuma allowlist (D-9).
+- **Não tem cache** (#9, D-11) nem rate limit (#11/#12, D-12).
+- **Não renova sozinho:** `renovarComRefresh` existe e está testado, mas nada o chama ainda — o
+  laço de renovação entra junto da primeira consulta real.
+- **A migration não foi aplicada em produção.** O arquivo está no repo; `supabase db push` é passo
+  separado, com o Diego.
+
+Verificado antes do commit: 54 testes no gateway, `tsc -b` limpo, `eslint` sem erro, e smoke com o
+serviço no ar — `/health` 200, `iniciar` sem token 401, 405 em método errado, callback com state
+desconhecido e com recusa do usuário redirecionando corretamente, `DELETE` sem token 401, e boot
+recusado tanto sem a chave quanto com chave de 16 bytes.

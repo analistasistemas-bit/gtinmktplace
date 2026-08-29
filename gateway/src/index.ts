@@ -1,13 +1,14 @@
 // Ponto de entrada do Gateway de mercado (ADR-0132 D-2, D-14).
 //
-// Web Service separado no Render. Ainda NÃO fala com a JoomPulse: esta primeira entrega estabelece
-// identidade, org e gate do módulo. A allowlist de ferramentas MCP (D-9) e o cache (D-11) entram
-// depois, sobre esta base.
+// Web Service separado no Render. Nesta entrega ele já conecta a conta JoomPulse por OAuth e
+// guarda a credencial cifrada. Ainda NÃO consulta o MCP: a allowlist de ferramentas (D-9) e o
+// cache (D-11) entram depois, sobre esta base.
 
 import { createServer } from 'node:http'
+import { chaveDaEnv } from './cripto.js'
 import { cabecalhosCors, origemPermitida, origensDaEnv } from './cors.js'
-import { caminhoDe, erro, tratar, type DepsRotas } from './rotas.js'
-import { criarClienteAdmin, depsDoSupabase } from './supabase.js'
+import { erro, pedidoDe, tratar, type DepsRotas } from './rotas.js'
+import { criarClienteAdmin, depsDoSupabase, repositorioDoSupabase } from './supabase.js'
 
 /** Falha no boot é melhor que 500 na primeira requisição de produção. */
 function obrigatoria(nome: string): string {
@@ -19,17 +20,29 @@ function obrigatoria(nome: string): string {
 function main(): void {
   const url = obrigatoria('SUPABASE_URL')
   const serviceRoleKey = obrigatoria('SUPABASE_SERVICE_ROLE_KEY')
+  // Falha alto se ausente ou do tamanho errado: chave inválida jamais pode degradar para
+  // "guardar sem cifrar".
+  const chaveCredencial = chaveDaEnv(obrigatoria('CREDENCIAL_CHAVE_BASE64'))
+  const clientId = obrigatoria('JOOMPULSE_CLIENT_ID')
+  const redirectUri = obrigatoria('GATEWAY_REDIRECT_URI')
+  const urlAppCanais = obrigatoria('APP_URL_CANAIS')
   const origens = origensDaEnv(process.env.ORIGENS_PERMITIDAS)
   const porta = Number(process.env.PORT ?? 10000)
 
   if (origens.length === 0) {
-    // Sem allowlist o Gateway sobe mas nenhum browser consegue usá-lo. Avisar alto é melhor que
-    // deixar o time caçando um erro de CORS no console do usuário.
     console.warn('[gateway] ORIGENS_PERMITIDAS vazio: nenhuma origem de browser será aceita.')
   }
 
+  const admin = criarClienteAdmin(url, serviceRoleKey)
   const deps: DepsRotas = {
-    ...depsDoSupabase(criarClienteAdmin(url, serviceRoleKey)),
+    ...depsDoSupabase(admin),
+    repo: repositorioDoSupabase(admin),
+    // Sem secret o provedor aceita client público (`none` está em
+    // token_endpoint_auth_methods_supported), e o PKCE segue protegendo o code.
+    cliente: { clientId, clientSecret: process.env.JOOMPULSE_CLIENT_SECRET, redirectUri },
+    chaveCredencial,
+    buscar: fetch,
+    urlAppCanais,
     versao: process.env.RENDER_GIT_COMMIT?.slice(0, 8) ?? 'dev',
   }
 
@@ -42,13 +55,17 @@ function main(): void {
       return
     }
 
-    void tratar(req.method, caminhoDe(req), req.headers.authorization, deps)
+    void tratar(pedidoDe(req), deps)
       .then((resposta) => {
+        if (resposta.redirecionarPara) {
+          res.writeHead(resposta.status, { ...cors, Location: resposta.redirecionarPara }).end()
+          return
+        }
         res.writeHead(resposta.status, { ...cors, 'Content-Type': 'application/json' })
         res.end(JSON.stringify(resposta.corpo))
       })
       .catch((e: unknown) => {
-        // Nunca vazar a mensagem original: ela pode carregar fragmento de token ou de query.
+        // Nunca vazar a mensagem original: pode carregar fragmento de token, code ou query.
         console.error('[gateway] erro nao tratado', e)
         const r = erro('erro_interno', 'Erro interno no Gateway.', 500)
         res.writeHead(r.status, { ...cors, 'Content-Type': 'application/json' })
