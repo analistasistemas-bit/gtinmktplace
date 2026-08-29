@@ -131,6 +131,23 @@ Próximos passos, em ordem de ataque:
             calibrado sobre 432 vendedores enviesados para os nichos que a DSA já monitora.
       - [ ] **Descobrir a causa dos deltas negativos.** 525 quedas medidas, mediana −12, pior
             −2.036 — grande demais para cancelamento. A trava fica; a explicação está em aberto.
+            **Refutado (2026-08-29):** não é reset pontual no meio da série — a mediana dos passos
+            diários resgataria só **4 dos 59** vendedores net-negativos (7%). Para 55 deles o
+            contador desce de forma **persistente**. Tolerância proporcional também recusada: com
+            0,5%, a conta institucional do ML absorveria −158.000 como "movimento zero".
+      - [ ] **3.6 mistura "não medido" com "não vendeu".** O denominador da atividade inclui
+            estabelecidos em `serie_insuficiente` ou delta negativo, e o rótulo diz que eles "não
+            venderam". Direção do erro é conservadora (subestima atividade), mas 132 vendedores já
+            foram afetados por quedas — se isso for frequente, o share oscila por motivo que não é
+            demanda.
+      - [ ] **Não existe piso de janela de observação.** O corte de 50 foi calibrado sobre janelas
+            ≥5 dias, mas produção extrapola janela de 1 dia × 30 sem restrição. Hoje inofensivo (a
+            mediana de janelas é 10 dias); vira problema em nicho recém-rastreado. Medir a
+            prevalência de janelas <3 dias entre estabelecidos quando a base crescer.
+      - [ ] **Estado "sem ponte" sem mensagem própria em 3.2.** `abraçadeira nylon` cai em "nenhum
+            vendedor estabelecido nos catálogos desta amostra", que atribui a ausência aos
+            vendedores quando a causa é não haver catálogo. A informação está em 3.3, mas o
+            operador precisa compor. Cosmético (ADR-0145 D-6 parcialmente implementada).
 - [x] **Lote da consulta do Radar definido** — `docs/spikes/041-joompulse-censo-do-radar-e-validacao-da-d4.md`:
       lotes de **75 ids**, `ceil(catálogos / 75)` consultas em paralelo (3 hoje). Medido: 3 lotes de
       77 passaram sem erro. O censo dos 229 confirmou a projeção do Spike 039 (64% com prévia útil,

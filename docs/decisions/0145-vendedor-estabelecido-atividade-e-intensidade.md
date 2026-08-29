@@ -175,7 +175,14 @@ negativos (D-5).
 2. O filtro usa o **primeiro** snapshot: vendedor com `t0 = 40` e `t1 = 80` continua fora.
 3. `aptamil premium 2` com dados reais: mediana **> 0**, ou ausência por cobertura — nunca mais
    "0 un./mês" como resumo do nicho.
-4. EAN `7891113175371`: os 5 vendedores passam o filtro e a mediana permanece na casa de 1.000.
+4. ~~EAN `7891113175371`: os 5 vendedores passam o filtro e a mediana permanece na casa de 1.000.~~
+   **Errata (2026-08-29, revisão final):** este critério **nasceu contraditório com a D-3 e nunca foi
+   satisfazível**. Prova aritmética: a mediana 1.067 da tabela do Spike 046 foi calculada sobre
+   **4** estimativas, não 5 — o `BAZAR HORIZONTE` (65.370 transações) já estava com delta negativo
+   na data do spike, e as três medianas da tabela só se reproduzem sob essa hipótese (corte 0 →
+   1.005; corte 50 → (1005+1128)/2 = 1.067; corte 500 → 1.128). A D-3 manda suprimir mediana com
+   menos de 5 valores. **Comportamento correto do EAN: atividade sem mediana**, que é o que a
+   implementação faz. O defeito era do documento, não do código.
 5. Com 1 a 4 estabelecidos: intensidade suprimida, **atividade exibida** com aviso de base pequena.
 6. Delta negativo continua `sem_estimativa_no_periodo` (caso real −4.875).
 7. Nenhum **rótulo de tela** nem **comentário de código** contém "365": `grep -rn "365" src/ supabase/functions/`

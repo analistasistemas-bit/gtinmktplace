@@ -134,3 +134,57 @@ mercado (ADR-0144) cresce, não constante universal. Deve constar como tal na AD
 - **ADR-0144:** a frase "aptamil premium 2, que é nicho parado" está errada — era artefato de
   composição da população.
 - **`vendas-mensais-vendedor.ts`:** o comentário do topo repete "janela móvel de 365d".
+
+---
+
+## 6. Revisão final (2026-08-29) — o que a implementação revelou
+
+### O critério de aceite 4 da ADR-0145 nasceu contraditório
+
+A tabela do §2 deste spike foi calculada **sem aplicar o piso de 5**. A revisão reconstituiu a
+aritmética e provou que a mediana de 1.067 do EAN saiu de **4** estimativas, não 5 — o
+`BAZAR HORIZONTE` (65.370 transações) já estava com delta negativo na data da medição:
+
+| Corte | Valores na mediana | Reconstituição | Tabela do §2 |
+|---|---|---|---|
+| 0 | {157, 254, 1005, 1128, 4142} | **1.005** | 1.005 ✓ |
+| 50 | {1005, 1128} + 2 | (1005+1128)/2 = **1.066,5** | 1.067 ✓ |
+| 500 | {1005, 1128, 4142} | **1.128** | 1.128 ✓ |
+
+Três de três. **O comportamento correto do EAN é atividade sem mediana** — que é o que a
+implementação faz. Errata aplicada na ADR-0145.
+
+**Lição:** a tabela de sensibilidade de um corte precisa aplicar **todas** as regras vigentes, não
+só a que está sendo calibrada.
+
+### A tolerância proporcional para delta negativo foi recusada
+
+Tentação: o `BAZAR HORIZONTE` é descartado por uma queda de **−159 sobre 65.370 (0,24%)**. Um
+limiar percentual o resgataria.
+
+Recusado por três motivos, o primeiro decisivo:
+
+1. **A escala é errada.** Com tolerância de 0,5%, a conta "Mercado Livre Brasil" (31,7 mi de
+   transações) absorveria **−158.000** como "movimento zero". Ninguém mediu que o processo gerador
+   das quedas seja proporcional ao histórico.
+2. **−159 não é ruído nesta distribuição.** Mediana das quedas é −12; um limiar que resgata algo
+   13× a mediana não é filtro de ruído, é política.
+3. **"Virar zero" fabrica dois dados:** injeta um 0 na mediana e declara parado um vendedor de 65
+   mil transações.
+
+### O estimador alternativo também foi refutado — medido
+
+A hipótese era: o delta ponta-a-ponta joga fora os passos intermediários, e a mediana dos passos
+diários seria robusta a um evento de recálculo no meio da série.
+
+```
+vendedores hoje sem estimativa (delta ponta-a-ponta < 0) : 59
+        resgatados pela mediana dos passos diários       :  4  (7%)
+        inalterados                                      : 376
+```
+
+**7% não é a maioria.** A hipótese do "reset pontual no meio da série" está **refutada**: para 55
+dos 59, o contador desce de forma persistente, não num degrau isolado.
+
+**Conclusão: `sem_estimativa_no_periodo` fica exatamente como está.** A causa do decréscimo
+continua desconhecida, e agora sabe-se também que ela **não é** um evento pontual.

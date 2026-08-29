@@ -190,7 +190,9 @@ export function calcularVolumeNicho(
   if (comEstimativa < MIN_VENDEDORES_NICHO) {
     return {
       estado: 'sem_dado',
-      mensagem: `amostra insuficiente: ${comEstimativa} de ${MIN_VENDEDORES_NICHO} vendedores estabelecidos mínimos com estimativa mensal`,
+      // "N de 5 mínimos" só lê certo quando estabelecidos == 5 por coincidência. Com 20
+      // estabelecidos e 4 com estimativa, o operador leria que o nicho tem 5 vendedores.
+      mensagem: `apenas ${comEstimativa} vendedor${comEstimativa === 1 ? '' : 'es'} estabelecido${comEstimativa === 1 ? '' : 's'} com estimativa mensal (mínimo ${MIN_VENDEDORES_NICHO})`,
     };
   }
 
