@@ -36,8 +36,15 @@ e a sonda de cobertura, que é o primeiro passo.
 - [x] Revogação remota (#7): suporte não soube informar → adota-se o pior caso da própria 0132 —
       desconectar inutiliza e apaga local, e a UI **declara** que a autorização pode seguir ativa
       na JoomPulse. Não bloqueia; teste entra no spike do Gateway
-- [ ] **1º passo da implementação — sonda de cobertura em produção.** Quantos `ml_item_id` reais
-      existem no snapshot da JoomPulse. Nenhuma promessa de UI antes desse número
+- [x] **Sonda de cobertura executada** — `docs/spikes/039-joompulse-cobertura-medida.md`.
+      Catálogos **90%**, anúncios de concorrentes **82%**, anúncios próprios **≈4%**.
+      Projeção do Radar: ~67% das linhas com prévia útil, ~23% catálogo sem venda, ~10% sem dado
+- [x] **D-4 emendada:** identificar o ganhador por `buyBoxShopId` × `seller_id` da org, **nunca
+      pelo anúncio** — com 4% dos anúncios próprios indexados, comparar por anúncio faria a org
+      quase nunca aparecer como ganhadora mesmo ganhando
+- [ ] Na implementação: estado "catálogo sem venda estimada" (~23% das linhas) precisa de visual
+      próprio, separado de "sem dado"; painel de concorrentes lidera com quem ganha + demanda do
+      catálogo, porque 89% das linhas trarão venda por anúncio igual a zero
 - [ ] Construir: #4 contrato HTTP do Gateway, #5/#6 storage e cifragem da credencial,
       #9 backend do cache (TTLs já fixados na D-22), #11/#12 rate limits, latência e cold start
 
