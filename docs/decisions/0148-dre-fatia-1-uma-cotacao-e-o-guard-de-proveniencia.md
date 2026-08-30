@@ -123,6 +123,31 @@ Reusa a mesma forma do simulador de margem (`AnuncioSimulavel`), para não exist
   veredito de uma superfície de produção que esta fatia não tem mandato para mexer (critério de
   aceite 1). **Fica registrado como dívida conhecida**, não como esquecimento.
 
+  > **Errata (2026-08-29) — este parágrafo exagera a dívida, e o erro é de método.** Ele saiu de
+  > ler `cotacoesOficiaisDaTarifa` **isolada**, sem ler quem a chama. Diego desconfiou —
+  > *"não está sendo feito de acordo com as medidas que são cadastradas nos produtos?"* — e a
+  > leitura da cadeia inteira mostra que **o guard existe**, só que noutro arquivo:
+  >
+  > ```ts
+  > // src/hooks/useCalculadoraML.ts:85 — cotacaoOficialComFreteConfirmado
+  > const cotacao = cotacoesOficiaisDaTarifa(tarifa)
+  > if (entrada.dimensoes) return cotacao        // cotou COM as medidas reais → official é verdade
+  > return { ...cotacao.classico, frete: freteManualConfirmado(taxas), proveniencia: 'partial' }
+  > ```
+  >
+  > A Revisão passa `entrada.dimensoes`, que vem do produto (da planilha). Cotação feita com medida
+  > real **é** oficial. Sem medida, a tela já marca `partial`.
+  >
+  > **O buraco real é um terceiro caso, estreito:** dimensão *presente porém abaixo do piso*
+  > `PISO_MEDIDA_CM = 0.2` (`_shared/ml/pacote.ts:17`, do adendo da ADR-0018, feito para descartar
+  > o placeholder de 0,1 cm da planilha antiga). Aí a edge function devolve `partial` corretamente,
+  > o `if (entrada.dimensoes)` passa assim mesmo, e o `partial` é **sobrescrito** por `official`.
+  > Atinge exatamente os 18 anúncios de 1 mm.
+  >
+  > **Diego decidiu não consertar** (2026-08-29): o conserto marcaria esses 18 como não-oficiais na
+  > Revisão, e a correção do dado ficou fora de pauta. Registro, não tarefa. Se um dia voltar, a
+  > mudança é uma linha — respeitar `tarifa.proveniencia` em vez de presumir `official`.
+
 Tudo isso permanece aberto no `TASKS.md`, e a definição dos cenários e do ROI é de Diego.
 
 ## Consequências

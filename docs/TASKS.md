@@ -72,10 +72,19 @@ Próximos passos, em ordem de ataque:
 
       Fault injection cobrindo 400/401/429/500, timeout, schema sem `sale_fee_amount`, `list_cost`
       ausente e `me2=false`: todo caso deve produzir "DRE indisponível", nunca zero.
-- [ ] **Dívida conhecida da ADR-0148:** `cotacoesOficiaisDaTarifa` (`src/lib/tarifa.ts`) crava
-      `proveniencia: 'official'`, então a calculadora da Revisão pode afirmar número oficial sobre
-      um frete vindo do pacote padrão — o defeito da D-28 sobrevivendo uma tela ao lado. Não foi
-      tocado porque mudaria o veredito de uma superfície de produção fora do mandato da fatia 1.
+- [ ] **Dívida da ADR-0148 — RESTRITA em 2026-08-29, e MENOR do que estava escrito.** A descrição
+      anterior ("a Revisão pode afirmar número oficial sobre frete de pacote padrão") saiu de ler
+      `cotacoesOficiaisDaTarifa` isolada, sem ler quem a chama. **Quem chama é o guard:**
+      `cotacaoOficialComFreteConfirmado` (`src/hooks/useCalculadoraML.ts:85`) devolve `partial` com
+      frete manual quando `entrada.dimensoes` não existe. E a Revisão cota com as medidas reais do
+      produto, vindas da planilha — nesse caso `official` é a verdade.
+      **O buraco real é um terceiro caso:** dimensão *presente porém abaixo do piso* de
+      `PISO_MEDIDA_CM = 0.2` (`_shared/ml/pacote.ts:17`, criado no adendo da ADR-0018 para descartar
+      o placeholder de 0,1 cm). Aí a edge function reporta `partial` corretamente, o
+      `if (entrada.dimensoes)` passa mesmo assim, e o `partial` é sobrescrito por `official`.
+      Atinge exatamente os 18 anúncios de 1 mm. **Diego decidiu em 2026-08-29 não consertar**: o
+      conserto marcaria aqueles 18 como não-oficiais na Revisão, e a correção do dado ficou fora de
+      pauta. Fica como registro, não como tarefa.
 - [x] **Fatia 2 da DRE — IMPLEMENTADA em 2026-08-29** ([ADR-0149](decisions/0149-dre-fatia-2-cinco-precos-e-capital-do-lote.md)).
       Diego definiu as duas lacunas: cenários são **preços de venda** (não testes de estresse) e o
       retorno é sobre **capital de um lote**. Duas correções entraram antes do código: o preço do

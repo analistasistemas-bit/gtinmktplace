@@ -118,9 +118,11 @@ não se presume.
 - ~~**A D-16** (mover peso taxável da seção 3 para a 6), que segue aberta desde a ADR-0141.~~
   **Fechada em 2026-08-29 — ver Errata 1.**
 - **Endpoint em lote** para as cotações (D-2).
-- **A dívida do `cotacoesOficiaisDaTarifa`** herdada da ADR-0148: a calculadora da Revisão continua
-  cravando `official`. Medido em 2026-08-29: **18 anúncios publicados** têm dimensão inválida
-  (0,10 cm) e recebem frete de pacote padrão hoje.
+- **A dívida do `cotacoesOficiaisDaTarifa`** herdada da ADR-0148 — **restrita e encerrada em
+  2026-08-29, ver a errata daquela ADR.** Ela é bem menor do que estava escrito: o guard existe em
+  `useCalculadoraML.ts:85`, e a Revisão cota com as medidas reais do produto. O buraco real é só
+  quando a dimensão está presente **abaixo do piso de 0,2 cm** — os 18 anúncios de 1 mm. Diego
+  decidiu não consertar.
 
 ## Consequências
 
@@ -212,8 +214,10 @@ mesmas cinco, com um parâmetro a mais.
 
 ### Segue aberto
 
-A dívida do `cotacoesOficiaisDaTarifa` na Revisão. (Os **18 anúncios publicados com 0,10 cm**
-saíram de pauta: Diego encerrou a correção em 2026-08-29. Fica como registro, não como tarefa.)
+Nada nesta frente. (A "dívida do `cotacoesOficiaisDaTarifa`" foi **restrita** em 2026-08-29 — a
+descrição anterior exagerava; ver a errata na ADR-0148 — e Diego decidiu não consertar o caso real
+que sobrou, porque ele só atinge os **18 anúncios com 0,10 cm**, cuja correção de dado também saiu
+de pauta. Registro, não tarefa.)
 
 ---
 

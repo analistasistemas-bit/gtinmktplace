@@ -40,7 +40,20 @@ export function provenienciaDaTarifa(tarifa: Tarifa): { proveniencia: Provenienc
   };
 }
 
-/** Adapta a resposta oficial sem recomputar comissão, taxa fixa ou frete no cliente. */
+/**
+ * Adapta a resposta oficial sem recomputar comissão, taxa fixa ou frete no cliente.
+ *
+ * **Ela crava `proveniencia: 'official'` de propósito, e NÃO é o guard.** Quem decide se a cotação
+ * merece esse selo é o chamador: `cotacaoOficialComFreteConfirmado`
+ * (`src/hooks/useCalculadoraML.ts:85`) só devolve esta adaptação quando `entrada.dimensoes` existe
+ * — sem dimensões ele troca por frete manual e marca `partial`.
+ *
+ * Ler esta função isolada leva a concluir que a Revisão afirma "oficial" sobre qualquer frete.
+ * **Não afirma** — e a ADR-0148 chegou a registrar essa dívida maior do que ela é por causa desta
+ * leitura (ver a errata de lá). O caso que de fato escapa é dimensão presente porém **abaixo do
+ * piso** de `PISO_MEDIDA_CM = 0.2`: a edge function devolve `partial`, o `if (entrada.dimensoes)`
+ * passa mesmo assim, e o `partial` é sobrescrito. Decisão de Diego em 2026-08-29: não consertar.
+ */
 export function cotacoesOficiaisDaTarifa(tarifa: Tarifa): CotacoesOficiaisPorModalidade {
   return {
     origem: 'official',
