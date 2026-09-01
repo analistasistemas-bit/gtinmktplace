@@ -15,6 +15,7 @@ import { PageHeader } from '@/components/ui/page-header';
 import { Pagination } from '@/components/ui/pagination';
 import { usePaginacao } from '@/hooks/usePaginacao';
 import { useSessionState } from '@/hooks/useSessionState';
+import { AvisoCoresNovas } from '@/components/aviso-cores-novas';
 import { FamiliaRow } from '@/components/familia-row';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import { JornadaLote } from '@/components/jornada-lote';
@@ -480,17 +481,7 @@ export default function Revisao() {
         </div>
       )}
       {totalCoresNovas > 0 && (
-        <div className="border-b border-warning/40 bg-warning/10 px-4 py-2 text-xs text-warning">
-          <strong>{totalCoresNovas} cor(es) nova(s)</strong> vieram na planilha e precisam de foto
-          para publicar. Expanda{' '}
-          {coresNovas.map((f, i) => (
-            <span key={f.codigoPai}>
-              {i > 0 && ', '}
-              <span className="font-medium">{f.titulo || f.codigoPai}</span> ({f.codigos.length})
-            </span>
-          ))}{' '}
-          e use o botão de foto em cada cor nova.
-        </div>
+        <AvisoCoresNovas coresNovas={coresNovas} totalCoresNovas={totalCoresNovas} />
       )}
       {loteId && (
         <div className="border-b bg-background px-3 py-2">

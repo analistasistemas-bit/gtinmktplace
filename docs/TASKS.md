@@ -2,6 +2,22 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Banner de cores novas recolhível na Revisão — 2026-09-01
+
+Com muitas famílias (ex.: 266 cores novas), o banner "cores novas precisam de foto" ocupava
+a tela inteira da Revisão. O aviso passa a nascer **recolhido** (contagem + nº de famílias +
+botão "Ver famílias afetadas") e expande sob demanda.
+
+- [x] `src/components/aviso-cores-novas.tsx` (novo) — componente `AvisoCoresNovas` extraído do
+      bloco inline; disclosure com `aria-expanded`/`aria-controls`, foco visível padrão DS
+      (`focus-visible:ring-ring`, alvo ≥24px), motion tokens v5 (`--motion-duration-micro` /
+      `--motion-duration-state`), `motion-safe`/`motion-reduce`.
+- [x] `src/pages/Revisao.tsx` — usa o componente; guarda `totalCoresNovas > 0` preservada.
+- [x] `src/components/__tests__/aviso-cores-novas.test.tsx` — 2 testes (recolhido por padrão;
+      toggle expande/recolhe). Suíte completa 4333 testes verde; `pnpm build` OK.
+
+---
+
 ## CREATE foto cache + lote Revisão — 2026-09-01
 
 Incidente PAI 00446050: CREATE falhou com picture id inexistente; Reenviar reutilizava
