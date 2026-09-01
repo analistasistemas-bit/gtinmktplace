@@ -2,6 +2,23 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## CREATE foto cache + lote Revisão — 2026-09-01
+
+Incidente PAI 00446050: CREATE falhou com picture id inexistente; Reenviar reutilizava
+`capa2_ml_picture_id` porque o worker CREATE não limpava caches efêmeros (UPDATE já limpava).
+Sidebar `/revisao` abria o lote mais novo (sucesso) em vez do lote com erro.
+
+- [x] `publish-familia-ml`: em erro definitivo de foto (`does not exist` / `Problema nas fotos`),
+      zera `ml_picture_id` das variações e `capa*_ml_picture_id` da família (ADR-0016 follow-up;
+      ADR-0033 preservado — não limpa em retry de `item.pictures.unavailable`).
+- [x] `remover-publicado` modo republicar: `operacao: 'CREATE'` + zera picture ids antes do próximo
+      publish (spec 2026-07-28).
+- [x] `decidirStatusLote`: lote só com erros (`erro > 0 && publicado === 0`) fica em `revisao`.
+- [x] `escolherLoteRevisao` + `RevisaoIndex`: prefere lote em `revisao` ou com erros.
+- [x] Docs: `edge-functions.md`, `operacoes-rotineiras.md`.
+
+---
+
 ## Análise PubliAI — fonte trocada, desenho mantido (ADR-0141 Errata 1) — 2026-08-29
 
 **A JoomPulse saiu.** Passaram a cobrar pelo `client_id` OAuth em condições que Diego recusou, e

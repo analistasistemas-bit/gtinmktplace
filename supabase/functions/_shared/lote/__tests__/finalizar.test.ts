@@ -1,21 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { decidirStatusLote, contarFamilias, talvezFinalizarLote } from '../finalizar';
 
+const ZEROS = { publicando: 0, pronto: 0, emPreparo: 0, publicado: 0, erro: 0 };
+
 describe('decidirStatusLote', () => {
   it('há família publicando → não mexe', () => {
-    expect(decidirStatusLote({ publicando: 1, pronto: 0, emPreparo: 0 })).toBeNull();
+    expect(decidirStatusLote({ ...ZEROS, publicando: 1 })).toBeNull();
   });
   it('há família pronta → revisao', () => {
-    expect(decidirStatusLote({ publicando: 0, pronto: 2, emPreparo: 0 })).toBe('revisao');
+    expect(decidirStatusLote({ ...ZEROS, pronto: 2 })).toBe('revisao');
   });
   it('nada pronto mas há família pendente/processando → processando, NÃO concluido', () => {
-    expect(decidirStatusLote({ publicando: 0, pronto: 0, emPreparo: 1 })).toBe('processando');
+    expect(decidirStatusLote({ ...ZEROS, emPreparo: 1 })).toBe('processando');
   });
   it('pronto E pendente ao mesmo tempo → revisao (há o que revisar agora)', () => {
-    expect(decidirStatusLote({ publicando: 0, pronto: 1, emPreparo: 1 })).toBe('revisao');
+    expect(decidirStatusLote({ ...ZEROS, pronto: 1, emPreparo: 1 })).toBe('revisao');
+  });
+  it('só erros, nenhum publicado → revisao (operador pode Reenviar)', () => {
+    expect(decidirStatusLote({ ...ZEROS, erro: 1 })).toBe('revisao');
+  });
+  it('publicado + erro misturados → concluido', () => {
+    expect(decidirStatusLote({ ...ZEROS, publicado: 1, erro: 1 })).toBe('concluido');
   });
   it('nada em curso → concluido', () => {
-    expect(decidirStatusLote({ publicando: 0, pronto: 0, emPreparo: 0 })).toBe('concluido');
+    expect(decidirStatusLote(ZEROS)).toBe('concluido');
   });
 });
 
@@ -26,12 +34,12 @@ describe('contarFamilias', () => {
       { status: 'publicando' },
       { status: 'pronto' }, { status: 'pronto' },
       { status: 'pendente' }, { status: 'processando' },
-    ])).toEqual({ publicando: 1, pronto: 2, emPreparo: 2 });
+    ])).toEqual({ publicando: 1, pronto: 2, emPreparo: 2, publicado: 0, erro: 0 });
   });
   it('status terminais e nulos não contam como trabalho em curso', () => {
     expect(contarFamilias([
       { status: 'publicado' }, { status: 'erro' }, { status: null },
-    ])).toEqual({ publicando: 0, pronto: 0, emPreparo: 0 });
+    ])).toEqual({ publicando: 0, pronto: 0, emPreparo: 0, publicado: 1, erro: 1 });
   });
 });
 
@@ -69,6 +77,12 @@ describe('talvezFinalizarLote', () => {
     const { admin, updates } = fakeAdmin([{ status: 'publicado' }, { status: 'erro' }]);
     await talvezFinalizarLote(admin, 'lote-1');
     expect(updates).toEqual([{ tabela: 'lotes', payload: { status: 'concluido' } }]);
+  });
+
+  it('lote só com erros → revisao', async () => {
+    const { admin, updates } = fakeAdmin([{ status: 'erro' }, { status: 'erro' }]);
+    await talvezFinalizarLote(admin, 'lote-1');
+    expect(updates).toEqual([{ tabela: 'lotes', payload: { status: 'revisao' } }]);
   });
 
   it('ainda há família publicando → nenhum update', async () => {

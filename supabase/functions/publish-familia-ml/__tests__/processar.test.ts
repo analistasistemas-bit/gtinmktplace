@@ -223,6 +223,35 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(r.tipo).toBe('erro');
   });
 
+  it('saga UP com Picture id does not exist → limpa caches de foto', async () => {
+    const { admin, writes } = fakeAdmin({
+      variacoes: multiCor(),
+      familia: { ...FAMILIA_BASE, capa2_ml_picture_id: 'CAPA2-MORTA' },
+    });
+    const { repo } = fakeFormatoRepo('user_products');
+    const r = await processarFamiliaML(baseDeps(admin, {
+      formatoRepo: repo,
+      publicarUP: async () => ({
+        estado: 'erro',
+        mensagem: 'Problema nas fotos do anúncio (Picture id 939880-MLB111925046462_062026 does not exist.). Verifique as imagens das variações.',
+      }),
+      finalizarLote: async () => {},
+    }), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'variacoes',
+      payload: { ml_picture_id: null },
+    }));
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'familias',
+      payload: {
+        capa_ml_picture_id: null,
+        capa2_ml_picture_id: null,
+        capa3_ml_picture_id: null,
+      },
+    }));
+  });
+
   it('multi-cor LEGACY (criarAnuncio ok) → segue o tail de sucesso normal, sem UP', async () => {
     const { admin, writes } = fakeAdmin({ variacoes: multiCor() });
     const { repo } = fakeFormatoRepo(); // desconhecido
@@ -232,6 +261,62 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(r.tipo).toBe('ok');
     expect(upChamado).toBe(false);
     expect(writes.some((w) => w.table === 'familias' && w.payload.status === 'publicado')).toBe(true);
+  });
+
+  const MSG_FOTO_MORTA =
+    'Problema nas fotos do anúncio (Picture id 939880-MLB111925046462_062026 does not exist.). Verifique as imagens das variações.';
+
+  function connErroFotoDefinitivo(mensagem = MSG_FOTO_MORTA, retentavel = false) {
+    return {
+      ...fakeConnector,
+      criarAnuncio: async (_ctx: unknown, anuncio: unknown) => {
+        fakeConnector.chamadas.push({ metodo: 'criarAnuncio', args: anuncio });
+        return {
+          ok: false,
+          erro: { codigo: 'FOTO' as const, mensagemOperador: mensagem, retentavel },
+        };
+      },
+    } as never;
+  }
+
+  it('erro definitivo de foto (Picture id does not exist) → limpa caches ml_picture_id e capas', async () => {
+    const { admin, writes } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, capa2_ml_picture_id: 'CAPA2-MORTA' },
+      variacoes: [{ ...VAR_BASE, ml_picture_id: 'PIC1' }],
+    });
+    const r = await processarFamiliaML(baseDeps(admin, {
+      conn: connErroFotoDefinitivo(),
+      finalizarLote: async () => {},
+    }), JOB, { tentativas: 3 });
+
+    expect(r.tipo).toBe('erro');
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'variacoes',
+      payload: { ml_picture_id: null },
+      filters: expect.objectContaining({ familia_id: 'fam-1' }),
+    }));
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'familias',
+      payload: {
+        capa_ml_picture_id: null,
+        capa2_ml_picture_id: null,
+        capa3_ml_picture_id: null,
+      },
+    }));
+  });
+
+  it('foto retentável (item.pictures.unavailable) → NÃO limpa picture ids', async () => {
+    const { admin, writes } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, capa2_ml_picture_id: 'CAPA2' },
+      variacoes: [{ ...VAR_BASE, ml_picture_id: 'PIC1' }],
+    });
+    const r = await processarFamiliaML(baseDeps(admin, {
+      conn: connErroFotoDefinitivo('item.pictures.unavailable', true),
+    }), JOB, { tentativas: 0 });
+
+    expect(r).toEqual({ tipo: 'retry', mensagem: 'item.pictures.unavailable' });
+    expect(writes.filter((w) => w.payload.ml_picture_id === null)).toHaveLength(0);
+    expect(writes.filter((w) => w.payload.capa_ml_picture_id === null)).toHaveLength(0);
   });
 
   it('DESCONTO_INCOMPATIVEL → confirma cache UP, marca erro e não retenta', async () => {

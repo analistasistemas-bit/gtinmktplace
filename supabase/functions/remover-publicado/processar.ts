@@ -170,11 +170,16 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
       publicado_em: null,
       status: 'pronto',
       erro_mensagem: null,
+      operacao: 'CREATE',
+      capa_ml_picture_id: null,
+      capa2_ml_picture_id: null,
+      capa3_ml_picture_id: null,
     }).eq('id', alvo.id).eq('org_id', orgId);
     if (famErr) throw new Error(`remover-publicado: preparar família para republicação falhou: ${famErr.message}`);
     const { error: varErr } = await admin.from('variacoes').update({
       ml_variation_id: null,
       preco_publicado_ml: null,
+      ml_picture_id: null,
     }).eq('familia_id', alvo.id);
     if (varErr) throw new Error(`remover-publicado: limpar vínculos das variações falhou: ${varErr.message}`);
     const { error: extErr } = await admin.from('anuncios_externos')

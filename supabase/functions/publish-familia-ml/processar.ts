@@ -41,6 +41,20 @@ export interface ProcessarDeps {
 }
 export interface ProcessarOpts { tentativas: number }
 
+/** Erro definitivo de foto cujo picture_id cacheado expirou ou não existe mais no ML. */
+function ehErroDefinitivoFoto(msg: string): boolean {
+  return /does not exist/i.test(msg) || /Problema nas fotos/i.test(msg);
+}
+
+async function limparCacheFotosFamilia(admin: SupabaseClient, familiaId: string): Promise<void> {
+  await admin.from('variacoes').update({ ml_picture_id: null }).eq('familia_id', familiaId);
+  await admin.from('familias').update({
+    capa_ml_picture_id: null,
+    capa2_ml_picture_id: null,
+    capa3_ml_picture_id: null,
+  }).eq('id', familiaId);
+}
+
 export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: ProcessarOpts): Promise<ResultadoProcessar> {
   const { admin, conn } = deps;
   const formatoRepo = deps.formatoRepo ?? formatoRepoSupabase(admin);
@@ -144,6 +158,9 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
         }
         return { tipo: 'ok', itemExternoId: r.itemExternoId };
       }
+      if (r.mensagem && ehErroDefinitivoFoto(r.mensagem)) {
+        await limparCacheFotosFamilia(admin, job.familia_id);
+      }
       return { tipo: 'erro', mensagem: r.mensagem };
     };
 
@@ -186,6 +203,9 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       }
       const msg = e.codigo === 'FOTO' ? mensagemErroFotoRecuperavel(e.mensagemOperador) : e.mensagemOperador;
       await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
+      if (ehErroDefinitivoFoto(msg)) {
+        await limparCacheFotosFamilia(admin, job.familia_id);
+      }
       await finalizarLote(job.lote_id);
       return { tipo: 'erro', mensagem: msg };
     }
@@ -276,6 +296,9 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       status: 'erro',
       erro_mensagem: retentavelFoto ? mensagemErroFotoRecuperavel(msg) : msg,
     }).eq('id', job.familia_id);
+    if (ehErroDefinitivoFoto(msg)) {
+      await limparCacheFotosFamilia(admin, job.familia_id);
+    }
     await finalizarLote(job.lote_id);
     return { tipo: 'erro', mensagem: msg };
   }

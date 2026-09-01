@@ -20,6 +20,11 @@ curl -X POST https://<project>.supabase.co/functions/v1/reprocessar-familia \
 
 A função reseta `erro → pendente` e re-enfileira (guard idempotente — ADR-0030).
 
+**Erro de picture id inexistente no ML** (ex.: `Picture id … does not exist` após republicar):
+depois do fix de 2026-09-01, o CREATE limpa os caches efêmeros de foto ao marcar erro definitivo
+e o modo "Corrigir e republicar" zera os picture ids antes do próximo publish — o Reenviar passa
+a re-subir as imagens em vez de reutilizar ids mortos no ML.
+
 ## Retentar vínculo de catálogo
 
 Quando uma variação publicada ficou em `catalog_status` **erro** ou **nao_elegivel** (sem

@@ -10,7 +10,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 // então o lote nunca era resgatado e ficava concluído com família publicável dentro.
 
 /** Contagem de famílias do lote por situação relevante. */
-export interface ContagemLote { publicando: number; pronto: number; emPreparo: number }
+export interface ContagemLote { publicando: number; pronto: number; emPreparo: number; publicado: number; erro: number }
 
 /**
  * Status que o lote deve assumir, ou null para "não mexer".
@@ -21,15 +21,18 @@ export function decidirStatusLote(c: ContagemLote): 'revisao' | 'processando' | 
   if (c.publicando > 0) return null;
   if (c.pronto > 0) return 'revisao';
   if (c.emPreparo > 0) return 'processando';
+  if (c.erro > 0 && c.publicado === 0) return 'revisao';
   return 'concluido';
 }
 
 export function contarFamilias(familias: Array<{ status: string | null }>): ContagemLote {
-  const c: ContagemLote = { publicando: 0, pronto: 0, emPreparo: 0 };
+  const c: ContagemLote = { publicando: 0, pronto: 0, emPreparo: 0, publicado: 0, erro: 0 };
   for (const f of familias) {
     if (f.status === 'publicando') c.publicando++;
     else if (f.status === 'pronto') c.pronto++;
     else if (f.status === 'pendente' || f.status === 'processando') c.emPreparo++;
+    else if (f.status === 'publicado') c.publicado++;
+    else if (f.status === 'erro') c.erro++;
   }
   return c;
 }

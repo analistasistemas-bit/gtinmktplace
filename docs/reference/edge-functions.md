@@ -323,7 +323,10 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   um dos três roteia pro split.
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado
   (PxQ), espelha em `anuncios_externos` e enfileira o vínculo de catálogo com delay. Reusa
-  `picture_id` em retry (idempotência). Retry de foto: ADR-0033.
+  `picture_id` em retry (idempotência). Retry de foto: ADR-0033. **Cache efêmero (2026-09-01):**
+  em erro definitivo cujo texto bate `does not exist` ou `Problema nas fotos`, zera
+  `variacoes.ml_picture_id` e `familias.capa*_ml_picture_id` — o próximo Reenviar sobe fotos
+  frescas (mesmo comportamento que UPDATE já tinha no catch).
   **Preço uniforme (ADR-0078 F2):** `garantirPrecoUniforme` recusa (400 LOUD, nada enviado) quando
   as variações têm preços de publicação divergentes — sinal de roteamento errado; a família deveria
   ter ido para o split por faixa de preço (`publicar-split-ml`).
@@ -530,9 +533,10 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   **E6 (ADR-0061):** aceita `canal` (default `'mercado_livre'`) — remove só da linha
   `(org_id, canal, codigo_pai)` especificada, sem afetar o produto em outros canais.
   **Modo republicar (`preservar_familia: true`, "Corrigir e republicar", 2026-07-28):** pausa os
-  itens no ML, preserva família/variações/imagens, zera só os vínculos de publicação
-  (`ml_item_id`, `ml_variation_id`, `preco_publicado_ml`, `anuncios_externos`) e devolve o lote
-  para `revisao` — a próxima publicação vira CREATE. **Pausa da raiz Legacy (2026-08-17):** em
+  itens no ML, preserva família/variações/imagens, zera os vínculos de publicação
+  (`ml_item_id`, `ml_variation_id`, `preco_publicado_ml`, `anuncios_externos`), zera os caches
+  efêmeros de foto (`capa*_ml_picture_id`, `variacoes.ml_picture_id`), define `operacao: 'CREATE'`
+  e devolve o lote para `revisao` — a próxima publicação sobe fotos frescas e cria item novo. **Pausa da raiz Legacy (2026-08-17):** em
   família sem filhos UP a saga não roda, então o modo republicar pausa o PRÓPRIO `ml_item_id`
   (GET decide: `active` → PUT pausar; pausado/closed/moderado → segue sem PUT; 404/410 → item já
   sumiu, seguro; erro transiente aborta fail-closed ANTES de qualquer mutação local). Antes disso

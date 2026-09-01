@@ -109,11 +109,22 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
     expect(updates).toEqual(expect.arrayContaining([
       {
         tabela: 'familias',
-        payload: expect.objectContaining({ ml_item_id: null, status: 'pronto' }),
+        payload: expect.objectContaining({
+          ml_item_id: null,
+          status: 'pronto',
+          operacao: 'CREATE',
+          capa_ml_picture_id: null,
+          capa2_ml_picture_id: null,
+          capa3_ml_picture_id: null,
+        }),
       },
       {
         tabela: 'variacoes',
-        payload: expect.objectContaining({ ml_variation_id: null, preco_publicado_ml: null }),
+        payload: expect.objectContaining({
+          ml_variation_id: null,
+          preco_publicado_ml: null,
+          ml_picture_id: null,
+        }),
       },
     ]));
     expect(removidos).toEqual([]);

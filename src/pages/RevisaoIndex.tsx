@@ -2,6 +2,7 @@ import { Link, Navigate } from 'react-router-dom';
 import { ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
+import { escolherLoteRevisao } from '@/lib/escolher-lote-revisao';
 import { useLotes } from '@/hooks/useLotes';
 
 export default function RevisaoIndex() {
@@ -28,5 +29,6 @@ export default function RevisaoIndex() {
     );
   }
 
-  return <Navigate to={`/revisao/${lotes[0].id}`} replace />;
+  const alvo = escolherLoteRevisao(lotes) ?? lotes[0];
+  return <Navigate to={`/revisao/${alvo.id}`} replace />;
 }
