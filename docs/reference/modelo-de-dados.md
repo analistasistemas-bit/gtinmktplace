@@ -834,9 +834,15 @@ porque o `on_conflict` do PostgREST só aceita nome de coluna — um índice sob
 seria inalcançável pelo upsert. **(2)** `dedupe_preco_caiu` é `null` fora do `preco_caiu` (e sem
 produto/par de preços), e em índice único linha com `null` nunca colide: os outros tipos ficam
 naturalmente de fora. **(3)** o dia mora em coluna `date` própria em vez de concatenado na chave
-porque `date → text` depende de `DateStyle` e coluna gerada exige expressão imutável; é UTC (e não
-o `America/Sao_Paulo` de `pulse_ofertas.dia`/`pulse_vendedores.dia`) porque `at time zone 'UTC'` é
-justamente o que torna a conversão imutável, e o coletor usa a mesma janela em `inicioDoDiaUtc()`.
+porque `date → text` depende de `DateStyle` e coluna gerada exige expressão imutável — o
+`at time zone <zona>` é o que resolve isso (`criado_em::date` sozinho depende do GUC `TimeZone` e é
+recusado), mas com **qualquer** zona literal, então a imutabilidade não escolhe o fuso. **Quem
+escolhe é o cron:** os schedules do `pulse-coletar` são UTC (`0 9 * * *` e `0 */6 * * *`), logo as
+execuções do tier quente — 00, 06, 12 e 18 UTC — caem todas no mesmo dia UTC; em
+`America/Sao_Paulo` a das 00:00 cai no dia anterior e o caso que motivou a migration
+(`2026-08-30 00:00:08` e `18:00:06` UTC) viraria duas janelas e não seria pego. Daí divergir de
+`pulse_ofertas.dia`/`pulse_vendedores.dia`, que são dia civil do operador, não janela de execução;
+o coletor usa a mesma janela em `inicioDoDiaUtc()`.
 A migration **apaga** as reemissões já gravadas antes de criar o índice (mantém a mais antiga de
 cada chave — a validação mostrou que a primeira é a detecção real).
 

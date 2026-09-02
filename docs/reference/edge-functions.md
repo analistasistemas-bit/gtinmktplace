@@ -1044,9 +1044,10 @@ falha ao ler `organizations` não libera.
   alertar por causa de uma consulta que caiu trocaria ruído por silêncio, e o índice ainda segura a
   duplicata. Queda igual em **dias diferentes** continua gerando alerta — é movimento real (o preço
   voltou e caiu de novo). A janela é UTC de propósito, diferente de `pulse_ofertas.dia` /
-  `pulse_vendedores.dia` (America/Sao_Paulo): o que importa é Deno e Postgres concordarem sobre a
-  mesma janela, e `at time zone 'UTC'` é o que torna a expressão imutável o bastante para coluna
-  gerada. O que isso **não** conserta: a assimetria a montante da qualificação de relevância
+  `pulse_vendedores.dia` (America/Sao_Paulo): **o cron desta função é UTC** (`0 9 * * *` e
+  `0 */6 * * *`), então as execuções do tier quente — 00, 06, 12 e 18 UTC — caem todas no mesmo dia
+  UTC; em BRT a das 00:00 cai no dia anterior e o caso que motivou o dedupe (`00:00:08` e
+  `18:00:06` UTC do mesmo dia) viraria duas janelas e escaparia. O que isso **não** conserta: a assimetria a montante da qualificação de relevância
   (`anteriores` usa `visitas_30d` congelado, `atuais` busca ao vivo), que é o que faz a mesma queda
   ser redetectada sem movimento de preço — mudar a régua é decisão de ADR novo.
   Alertas em `pulse_alertas` + 1 notificação agregada por org por execução na categoria `pulse` —

@@ -255,9 +255,10 @@ export function chaveDedupePrecoCaiu(produtoId: string, de: unknown, para: unkno
  * Início do dia civil **UTC** do instante dado, em ISO. É a janela do dedupe e é o MESMO dia
  * usado pela coluna gerada `dedupe_preco_caiu` (`(criado_em at time zone 'UTC')::date`).
  *
- * UTC de propósito, mesmo com `pulse_ofertas.dia`/`pulse_vendedores.dia` em America/Sao_Paulo:
- * aqui a janela só precisa ser estável e igual dos dois lados (Deno e Postgres), e o dia local
- * exigiria `AT TIME ZONE` combinando com o fuso do runtime para não divergir na virada.
+ * UTC de propósito, mesmo com `pulse_ofertas.dia`/`pulse_vendedores.dia` em America/Sao_Paulo: o
+ * cron do coletor é UTC (diário às 9h e de 6 em 6 horas), então as execuções do tier quente — 00,
+ * 06, 12 e 18 UTC — caem todas no mesmo dia UTC. Em BRT a das 00:00 cai no dia anterior, e o caso
+ * que motivou o dedupe (00:00:08 e 18:00:06 UTC do mesmo dia) viraria dois dias BRT e escaparia.
  */
 export function inicioDoDiaUtc(agora: Date = new Date()): string {
   return `${agora.toISOString().slice(0, 10)}T00:00:00.000Z`;
@@ -288,21 +289,36 @@ export async function alertasJaGravadosHoje(
   admin: SupabaseClient, orgId: string, produtoIds: string[],
 ): Promise<Set<string>> {
   const chaves = new Set<string>();
-  if (produtoIds.length === 0) return chaves;
-  const { data, error } = await admin.from('pulse_alertas')
-    .select('produto_id, payload')
-    .eq('org_id', orgId).eq('tipo', 'preco_caiu')
-    .in('produto_id', produtoIds)
-    .gte('criado_em', inicioDoDiaUtc());
-  // Falha aqui NÃO derruba o alerta: sem a leitura, o comportamento volta a ser o de hoje (grava).
-  // Deixar de alertar por causa de uma consulta que caiu seria trocar ruído por silêncio — e o
-  // índice único de `dedupe_preco_caiu` ainda absorve a duplicata na gravação.
-  if (error) {
-    console.warn('pulse-coletar: dedupe de preco_caiu indisponível, gravando sem filtro:', error.message);
-    return chaves;
-  }
-  for (const linha of (data ?? []) as { produto_id: string; payload: Record<string, unknown> }[]) {
-    chaves.add(chaveDedupePrecoCaiu(linha.produto_id, linha.payload.de, linha.payload.para));
+  // Uma janela só para o lote inteiro: recalcular por lote deixaria a virada UTC no meio da coleta
+  // partir o filtro em dois dias.
+  const desde = inicioDoDiaUtc();
+  // Lotes de 50 ids pelo mesmo motivo do baseline de visitas mais abaixo nesta função: `.in()` vai
+  // na query string e 200 UUIDs dariam ~7,6 KB de request line — território de 414 no gateway. O
+  // teto do tier completo é justamente 200 produtos, então sem o lote esta leitura falharia
+  // exatamente no tier em que ela mais importa.
+  for (let i = 0; i < produtoIds.length; i += 50) {
+    const lote = produtoIds.slice(i, i + 50);
+    try {
+      const { data, error } = await admin.from('pulse_alertas')
+        .select('produto_id, payload')
+        .eq('org_id', orgId).eq('tipo', 'preco_caiu')
+        .in('produto_id', lote)
+        .gte('criado_em', desde);
+      if (error) throw new Error(error.message);
+      for (const linha of (data ?? []) as { produto_id: string; payload: Record<string, unknown> }[]) {
+        chaves.add(chaveDedupePrecoCaiu(linha.produto_id, linha.payload.de, linha.payload.para));
+      }
+    } catch (e) {
+      // Falha aqui NÃO derruba o passo da org (o cliente pode lançar, não só devolver `error`):
+      // sem a leitura o comportamento volta a ser o de hoje (grava), e o índice único ainda
+      // absorve a duplicata. Deixar de alertar por causa de uma consulta que caiu seria trocar
+      // ruído por silêncio. As chaves dos lotes que deram certo continuam valendo — cada uma é um
+      // alerta que existe no banco, nenhuma é falso positivo.
+      console.warn(
+        'pulse-coletar: dedupe de preco_caiu indisponível neste lote, gravando sem filtro:',
+        e instanceof Error ? e.message : e,
+      );
+    }
   }
   return chaves;
 }

@@ -46,12 +46,17 @@ alter table public.pulse_alertas
     ) stored;
 
 -- O dia fica em coluna própria, `date`, e não concatenado na chave acima: `date -> text` depende
--- de `DateStyle` e coluna gerada exige expressão imutável. `at time zone 'UTC'` é justamente o
--- que torna a conversão imutável (`criado_em::date` sozinho não é).
+-- de `DateStyle` e coluna gerada exige expressão imutável. O `at time zone <zona>` é o que resolve
+-- isso (`criado_em::date` sozinho depende do GUC `TimeZone` e é recusado) — mas com QUALQUER zona
+-- literal, inclusive 'America/Sao_Paulo'. Ou seja: a imutabilidade não escolhe o fuso.
 --
--- É o dia civil **UTC** — o mesmo de `inicioDoDiaUtc()` em pulse-coletar/processar.ts. Difere de
--- propósito de `pulse_ofertas.dia`/`pulse_vendedores.dia` (America/Sao_Paulo): aqui o que importa
--- é os dois lados (Deno e Postgres) concordarem sobre a mesma janela.
+-- **Quem escolhe o fuso é o cron do coletor.** Os schedules são `0 9 * * *` e `0 */6 * * *`, em
+-- UTC: o tier quente roda 00, 06, 12 e 18 UTC, as quatro execuções dentro do MESMO dia UTC. Em
+-- America/Sao_Paulo (UTC-3) a execução das 00:00 cai no dia anterior, e o caso que motivou esta
+-- migration — 2026-08-30 00:00:08 e 18:00:06 UTC — viraria 29/08 e 30/08 em BRT: duas janelas
+-- diferentes, duplicata não pega. É o mesmo dia de `inicioDoDiaUtc()` em
+-- pulse-coletar/processar.ts, e diverge de propósito de `pulse_ofertas.dia`/`pulse_vendedores.dia`
+-- (America/Sao_Paulo), que são dia civil do operador, não janela de execução.
 alter table public.pulse_alertas
   add column if not exists dedupe_dia_utc date
     generated always as ((criado_em at time zone 'UTC')::date) stored;

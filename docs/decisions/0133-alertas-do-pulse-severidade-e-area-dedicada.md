@@ -137,6 +137,15 @@ travas — a leitura `alertasJaGravadosHoje` descarta o repetido antes de gravar
 das colunas geradas `(dedupe_preco_caiu, dedupe_dia_utc)` fecha a corrida entre duas execuções
 simultâneas (`ignoreDuplicates`, não erro).
 
+**Por que a janela é o dia UTC, e não o dia BRT dos vizinhos** (`pulse_ofertas.dia`,
+`pulse_vendedores.dia`): o cron desta função é UTC (`0 9 * * *` e `0 */6 * * *`), então as quatro
+execuções do tier quente — 00, 06, 12 e 18 UTC — caem dentro do mesmo dia UTC. Em
+`America/Sao_Paulo` a das 00:00 cai no dia anterior, e o caso medido (00:00:08 e 18:00:06 UTC de
+2026-08-30) viraria 29/08 e 30/08: duas janelas, duplicata não pega. O dia civil do operador é o
+recorte certo para o histórico de mercado; para uma janela de idempotência, o recorte certo é o da
+execução. (A imutabilidade da expressão na coluna gerada **não** entra nessa escolha:
+`at time zone <zona>` torna a conversão imutável com qualquer zona literal.)
+
 **Limites explícitos.** A janela é o dia, não "os últimos N alertas": a mesma queda em dias
 diferentes é movimento real (o preço voltou e caiu de novo) e continua alertando — a mesma
 medição achou dois casos assim, em 3 e em 2 dias distintos. Se a leitura de dedupe falhar, o

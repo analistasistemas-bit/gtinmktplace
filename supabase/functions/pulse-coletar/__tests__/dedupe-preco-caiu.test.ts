@@ -4,7 +4,9 @@ import { describe, expect, it, vi } from 'vitest';
 // `import { createClient } from 'jsr:...'` (valor real) — sob vitest isso quebra a resolução do módulo.
 vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: async () => 'fake-token' }));
 
-import { chaveDedupePrecoCaiu, filtrarAlertasJaGravados, inicioDoDiaUtc } from '../processar.ts';
+import {
+  alertasJaGravadosHoje, chaveDedupePrecoCaiu, filtrarAlertasJaGravados, inicioDoDiaUtc,
+} from '../processar.ts';
 
 const alerta = (de: number, para: number) => ({
   tipo: 'preco_caiu' as const,
@@ -57,5 +59,58 @@ describe('inicioDoDiaUtc: a janela do dedupe é o dia UTC, não o local', () => 
   it('a virada UTC é às 00:00Z — o instante exato já pertence ao dia novo', () => {
     expect(inicioDoDiaUtc(new Date('2026-08-31T00:00:00.000Z'))).toBe('2026-08-31T00:00:00.000Z');
     expect(inicioDoDiaUtc(new Date('2026-08-30T23:59:59.999Z'))).toBe('2026-08-30T00:00:00.000Z');
+  });
+});
+
+// Fake que REGISTRA os argumentos do `.in()` — o de `alertas-severidade.test.ts` descarta tudo e
+// por isso não serviria aqui: o que está sob teste é justamente o tamanho do lote.
+function fakeLeitura(porLote: (lote: string[]) => { data: unknown[]; error: null } | Error) {
+  const lotes: string[][] = [];
+  const admin = {
+    from: () => {
+      let capturado: string[] = [];
+      // deno-lint-ignore no-explicit-any
+      const api: any = {
+        select: () => api,
+        eq: () => api,
+        in: (_coluna: string, lote: string[]) => { capturado = lote; lotes.push(lote); return api; },
+        gte: () => {
+          const r = porLote(capturado);
+          if (r instanceof Error) throw r;
+          return Promise.resolve(r);
+        },
+      };
+      return api;
+    },
+  };
+  // deno-lint-ignore no-explicit-any
+  return { admin: admin as any, lotes };
+}
+
+describe('alertasJaGravadosHoje: lote de 50 ids (200 UUIDs num `.in()` = 414 no gateway)', () => {
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `p${i}`);
+
+  it('quebra o teto de 200 produtos do tier completo em lotes de no máximo 50', async () => {
+    const { admin, lotes } = fakeLeitura(() => ({ data: [], error: null }));
+    await alertasJaGravadosHoje(admin, 'org', ids(200));
+    expect(lotes.map((l) => l.length)).toEqual([50, 50, 50, 50]);
+  });
+
+  it('não consulta nada quando não há produto', async () => {
+    const { admin, lotes } = fakeLeitura(() => ({ data: [], error: null }));
+    expect(await alertasJaGravadosHoje(admin, 'org', [])).toEqual(new Set());
+    expect(lotes).toHaveLength(0);
+  });
+
+  it('lote que LANÇA não derruba o passo da org e preserva as chaves dos que deram certo', async () => {
+    // O cliente pode lançar em vez de devolver `{ error }` — sem o try/catch por lote, a exceção
+    // subiria por `gravarAlertasRelevantes` e mataria os alertas da org inteira.
+    const { admin } = fakeLeitura((lote) => (
+      lote.includes('p60')
+        ? new Error('statement timeout')
+        : { data: [{ produto_id: 'p1', payload: { de: 71.99, para: 68.99 } }], error: null }
+    ));
+    const chaves = await alertasJaGravadosHoje(admin, 'org', ids(120));
+    expect(chaves.has(chaveDedupePrecoCaiu('p1', 71.99, 68.99))).toBe(true);
   });
 });
