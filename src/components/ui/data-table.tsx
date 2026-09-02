@@ -74,15 +74,22 @@ export function DataTable<T>({
     setSort((s) => (s?.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
   };
 
+  // `w-full` faz a tabela CABER comprimindo colunas em vez de estourar; com uma coluna fixa e
+  // opaca por cima, as comprimidas ficam embaixo dela e inalcançáveis. `w-max min-w-full` dimensiona
+  // pelo conteúdo e devolve a rolagem — medido no Sonar: "Envio" invisível em 1440, e "Vendidos" a
+  // "Envio" inalcançáveis em 820.
+  const temColunaFixa = columns.some((c) => c.stickyRight);
+
   return (
-    <div
-      className={cn('overflow-x-auto rounded-lg border', className)}
-      // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- região scrollável precisa ser focável (WCAG 2.1.1)
-      tabIndex={0}
-      role="region"
-      aria-label="Tabela de dados"
+    <Table
+      containerClassName={cn('rounded-lg border', className)}
+      containerProps={{
+        tabIndex: 0,
+        role: 'region',
+        'aria-label': 'Tabela de dados',
+      }}
+      className={temColunaFixa ? 'w-max min-w-full' : undefined}
     >
-      <Table>
         <TableHeader className="sticky top-0 z-10 bg-muted/50 backdrop-blur">
           <TableRow>
             {columns.map((c) => {
@@ -192,6 +199,5 @@ export function DataTable<T>({
           )}
         </TableBody>
       </Table>
-    </div>
   );
 }

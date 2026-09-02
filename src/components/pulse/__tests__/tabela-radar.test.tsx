@@ -111,3 +111,17 @@ describe('TabelaRadar — Análise PubliAI: a disputa do catálogo', () => {
     expect(screen.queryByText(/0 anúncios relevantes/)).not.toBeInTheDocument();
   });
 });
+
+// Em 820px a tabela do Radar estoura 823px num container de 770 e o ⋮ saía da tela — e ele é o
+// único acesso a "Pausar no radar" no tablet de demo.
+describe('TabelaRadar — a coluna de ações não sai da tela', () => {
+  it('a coluna de ações é fixa à direita', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TabelaRadar produtos={[produto]} resumo={new Map([[produto.id, resumo]])} resumoCarregando={false} onAbrirDetalhe={() => undefined} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole('columnheader', { name: 'Ações' }).className).toContain('sticky');
+  });
+});

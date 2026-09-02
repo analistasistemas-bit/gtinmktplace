@@ -195,6 +195,9 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       key: 'acoes',
       header: <span className="sr-only">Ações</span>,
       className: 'w-10',
+      // Em 820px a tabela estoura o container; sem isto o ⋮ — único acesso a "Pausar no radar" —
+      // sai da tela.
+      stickyRight: true,
       cell: (p) => (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

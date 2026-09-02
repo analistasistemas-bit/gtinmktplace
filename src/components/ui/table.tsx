@@ -2,11 +2,20 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
+function Table({
+  className, containerClassName, containerProps, ...props
+}: React.ComponentProps<"table"> & {
+  /** Classe do DIV que rola. Quem embrulha a tabela precisa alcançá-lo: um segundo
+   *  `overflow-x-auto` por fora cria dois scrollports aninhados e o de fora nunca rola. */
+  containerClassName?: string
+  /** Atributos do mesmo DIV — `role`/`tabIndex` têm de ficar em QUEM ROLA (WCAG 2.1.1). */
+  containerProps?: React.ComponentProps<"div">
+}) {
   return (
     <div
       data-slot="table-container"
-      className="relative w-full overflow-x-auto"
+      className={cn("relative w-full overflow-x-auto", containerClassName)}
+      {...containerProps}
     >
       <table
         data-slot="table"
