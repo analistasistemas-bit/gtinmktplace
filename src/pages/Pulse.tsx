@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Activity, Bell, Plus, RefreshCw, Search, TrendingUp, X } from 'lucide-react';
+import { Activity, Plus, RefreshCw, Search, TrendingUp, Unlink, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KpiCard } from '@/components/ui/kpi-card';
@@ -232,7 +232,9 @@ export default function Pulse() {
             label="Você é o menor preço"
             value={<ValorAnimado n={contagens.menorPreco} />}
             icon={TrendingUp}
-            tom="success"
+            // Zero em "menor preço" não é bom nem ruim — verde com 0 lê como parabéns por nada.
+            // Mesma alternância que "Mais caro que o mercado" já usa logo acima.
+            tom={contagens.menorPreco > 0 ? 'success' : 'info'}
             onClick={() => alternarFoco('menor_preco')}
             ativo={filtros.foco === 'menor_preco'}
           />
@@ -240,7 +242,7 @@ export default function Pulse() {
             size="compact"
             label="Sem vínculo de catálogo"
             value={<ValorAnimado n={contagens.semVinculo} />}
-            icon={Bell}
+            icon={Unlink}
             tom={contagens.semVinculo > 0 ? 'warning' : 'info'}
             hint={contagens.semVinculo > 0 ? 'não disputam a página' : undefined}
             onClick={() => alternarFoco('sem_vinculo')}
