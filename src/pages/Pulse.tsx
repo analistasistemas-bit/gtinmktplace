@@ -360,6 +360,9 @@ export default function Pulse() {
           // Falha de leitura não pode virar esqueleto eterno: como na query irmã de ofertas, o
           // carregamento termina e a célula cai no travessão.
           contextos={codigosPai.length === 0 || contextoErro ? new Map() : contextosMargem}
+          // A tabela precisa saber POR QUE o Map caiu vazio — senão "falhou a consulta" e "consultei
+          // e não achei custo" viram o mesmo travessão com o motivo errado.
+          contextosErro={contextoErro}
           // Como na query irmã de contexto de margem: sem isto, uma falha de leitura deixa o valor
           // `undefined` para sempre e a coluna inteira fica em esqueleto eterno, sem nunca cair no
           // estado vazio. Em falha, Map vazio = célula vazia, que é a verdade ("não temos série").

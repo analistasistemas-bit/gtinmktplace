@@ -30,7 +30,7 @@ function relativo(iso: string | null): string {
 }
 
 export function TabelaRadar({
-  produtos, resumo, resumoCarregando, contextos, historico, onAbrirDetalhe, onReprecificar,
+  produtos, resumo, resumoCarregando, contextos, contextosErro, historico, onAbrirDetalhe, onReprecificar,
 }: {
   produtos: PulseProduto[];
   /** Ofertas por produto — a query vive na página, para KPIs e tabela lerem o mesmo dado. */
@@ -42,6 +42,10 @@ export function TabelaRadar({
   /** Custo + alíquota por `codigo_pai` (ADR-0119 Errata 12 D-3). `undefined` = ainda carregando —
    *  e aí a célula mostra skeleton, porque um `—` significaria "insumo faltando". */
   contextos: Map<string, ContextoMargem> | undefined;
+  /** A página cai para Map vazio quando a query de contexto falha (não fica em skeleton eterno) —
+   *  sem esta flag, "Map vazio" é indistinguível de "consultamos e não achamos custo", e a célula
+   *  mentiria "falta custo do produto" quando na verdade não conseguimos nem consultar. */
+  contextosErro?: boolean;
   onAbrirDetalhe: (produtoId: string) => void;
   onReprecificar: (produto: PulseProduto) => void;
 }) {
@@ -222,6 +226,15 @@ export function TabelaRadar({
         if (p.codigo_pai && contextos === undefined) return <Skeleton className="ml-auto h-4 w-16" />;
         if (p.meu_preco == null) {
           return <span className="cursor-help text-muted-foreground" title={motivoSemPrecoProprio(p)}>—</span>;
+        }
+        // Falha de leitura ≠ cadastro incompleto: o operador não pode ser mandado conferir o
+        // produto por um erro de rede.
+        if (p.codigo_pai && contextosErro) {
+          return (
+            <span className="cursor-help text-muted-foreground" title="Margem indisponível: falha ao consultar o custo do produto">
+              —
+            </span>
+          );
         }
         const falta = insumoFaltante(contextoDe(p), p);
         if (falta) {

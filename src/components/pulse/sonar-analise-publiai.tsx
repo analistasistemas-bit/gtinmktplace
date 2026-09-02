@@ -4,7 +4,6 @@
 import { BarChart3, Loader2, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SecaoSonar } from './secao-sonar';
@@ -59,23 +58,23 @@ function LinhasCobertura(
 export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAnalisePubliAIProps) {
   if (carregando) {
     return (
-      <Card className="mb-4 p-4">
+      <SecaoSonar titulo="Quem vende neste nicho" selo={<Badge variant="outline">demanda por vendedor</Badge>}>
         <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          Análise PubliAI — demanda por vendedor
+          Carregando…
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Skeleton className="h-16 rounded-lg" />
           <Skeleton className="h-16 rounded-lg" />
         </div>
-      </Card>
+      </SecaoSonar>
     );
   }
 
   if (erro) {
     return (
       <div role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-        <p className="text-sm font-medium text-destructive">Não foi possível carregar a Análise PubliAI.</p>
+        <p className="text-sm font-medium text-destructive">Não foi possível carregar “Quem vende neste nicho”.</p>
         <p className="mt-1 text-sm text-muted-foreground">{erro.message}</p>
         {onRetry && (
           <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>

@@ -233,6 +233,28 @@ describe('TabelaRadar — Sobra hoje', () => {
     expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
   });
 
+  // Revisão final: a página cai para Map vazio quando a consulta de contexto falha (mesmo motivo
+  // acima: nunca fica em skeleton eterno). Sem a flag `contextosErro`, essa célula caía no mesmo
+  // "falta custo do produto" de um cadastro genuinamente incompleto — motivo falso.
+  it('Map vazio por cadastro incompleto → motivo é "falta custo do produto"', () => {
+    renderComContexto(comCustos, new Map());
+    expect(screen.getByTitle('Margem indisponível: falta custo do produto')).toHaveTextContent('—');
+  });
+
+  it('Map vazio por falha de leitura → motivo é a falha, não o cadastro', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TabelaRadar
+          produtos={[comCustos]} resumo={new Map([[comCustos.id, resumo]])} resumoCarregando={false}
+          contextos={new Map()} contextosErro onAbrirDetalhe={() => undefined} onReprecificar={() => undefined}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByTitle('Margem indisponível: falha ao consultar o custo do produto')).toHaveTextContent('—');
+    expect(screen.queryByTitle('Margem indisponível: falta custo do produto')).not.toBeInTheDocument();
+  });
+
   it('a linha tem "Reprecificar", e ele não abre o detalhe por baixo', async () => {
     const abrir = vi.fn();
     const reprecificar = vi.fn();

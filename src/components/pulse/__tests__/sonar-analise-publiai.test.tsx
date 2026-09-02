@@ -179,3 +179,33 @@ describe('SonarAnalisePubliAI — ADR-0146', () => {
     expect(container.textContent).not.toMatch(/365/);
   });
 });
+
+// Renomeação da task 19 ("Análise PubliAI" → "Quem vende neste nicho") ficou pela metade: só os
+// estados sem_conexão e com_dados foram trocados, e carregando/erro continuaram com o nome velho.
+describe('SonarAnalisePubliAI — nome novo em todos os estados', () => {
+  it('carregando não mostra o nome antigo', () => {
+    const { container } = render(<SonarAnalisePubliAI data={undefined} carregando erro={null} />);
+    expect(container.textContent).not.toMatch(/Análise PubliAI/);
+    expect(screen.getByText('Quem vende neste nicho')).toBeInTheDocument();
+  });
+
+  it('erro não mostra o nome antigo', () => {
+    const { container } = render(
+      <SonarAnalisePubliAI data={undefined} carregando={false} erro={new Error('falhou')} />,
+    );
+    expect(container.textContent).not.toMatch(/Análise PubliAI/);
+    expect(screen.getByText(/Quem vende neste nicho/)).toBeInTheDocument();
+  });
+
+  it('sem conexão não mostra o nome antigo', () => {
+    const { container } = render(
+      <SonarAnalisePubliAI data={{ conectado: false }} carregando={false} erro={null} />,
+    );
+    expect(container.textContent).not.toMatch(/Análise PubliAI/);
+  });
+
+  it('com dados não mostra o nome antigo', () => {
+    const { container } = render237(resposta());
+    expect(container.textContent).not.toMatch(/Análise PubliAI/);
+  });
+});
