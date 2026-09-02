@@ -196,14 +196,19 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
         }
       }
       // item.pictures.unavailable: a foto recém-subida ainda propaga no ML (~2,5 min, medido no
-      // lote #31). NÃO re-subimos nem limpamos o picture_id; reusamos o mesmo id e retentamos via
-      // QStash. Só marca 'erro' visível quando esgotam os retries.
+      // lote #31). Enquanto durar o retry, NÃO re-subimos nem limpamos o picture_id — reusamos o
+      // mesmo id via QStash. Só ao ESGOTAR os retries (ramo abaixo) é que vira 'erro' visível e o
+      // cache é limpo: nesse ponto o id não propagou a tempo (ou está morto) e o próximo Reenviar
+      // precisa re-subir do zero.
       if (decidirErroCriarAnuncio(e, tentativas) === 'retentar') {
         return { tipo: 'retry', mensagem: e.mensagemOperador };
       }
       const msg = e.codigo === 'FOTO' ? mensagemErroFotoRecuperavel(e.mensagemOperador) : e.mensagemOperador;
       await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
-      if (ehErroDefinitivoFoto(msg)) {
+      // codigo 'FOTO' cobre estruturalmente qualquer erro de foto (ex.: item.pictures.unavailable
+      // esgotado); o regex é o fallback pro caso raro em que a classificação vier DESCONHECIDO mas
+      // a mensagem crua do ML ainda denuncia foto morta (ver ehErroDefinitivoFoto).
+      if (e.codigo === 'FOTO' || ehErroDefinitivoFoto(msg)) {
         await limparCacheFotosFamilia(admin, job.familia_id);
       }
       await finalizarLote(job.lote_id);
@@ -296,7 +301,9 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       status: 'erro',
       erro_mensagem: retentavelFoto ? mensagemErroFotoRecuperavel(msg) : msg,
     }).eq('id', job.familia_id);
-    if (ehErroDefinitivoFoto(msg)) {
+    // Mesma lógica do ramo criarAnuncio acima: `retentavelFoto` é o sinal estrutural (a exceção
+    // já chega marcada como erro de foto retentável), o regex é o fallback por texto.
+    if (retentavelFoto || ehErroDefinitivoFoto(msg)) {
       await limparCacheFotosFamilia(admin, job.familia_id);
     }
     await finalizarLote(job.lote_id);

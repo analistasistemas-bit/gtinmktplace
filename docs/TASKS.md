@@ -2,6 +2,32 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Publicar lento: limpeza de cache de foto ao esgotar retry (item.pictures.unavailable) — 2026-09-02
+
+Diego reportou publicação lenta ("2 de 3" travado). Investigação com logs de produção (24h):
+`item.pictures.unavailable` martelando a cada ~30s por até 10 tentativas (~5min) na mesma família
+— dentro do desenho do ADR-0033, mas o fix de `does not exist` (2026-09-01) dependia do TEXTO da
+mensagem humanizada bater um regex, então não cobria estruturalmente o código `FOTO` nem o worker
+`publicar-split-ml` (nunca limpava). Nota: nos dois clusters medidos hoje o ML acabou aceitando a
+foto antes de esgotar os retries — o travamento de ~5min do operador vem do design normal do
+ADR-0033 + da fila serial por usuário (ADR-0034, `parallelism: 1`), não deste bug; este fix é
+anti-regressão para quando o `picture_id` cacheado está genuinamente morto.
+
+- [x] `publish-familia-ml/processar.ts`: limpeza de cache passa a disparar também por
+      `e.codigo === 'FOTO'`/`retentavelFoto` (sinal estrutural), além do regex de texto existente —
+      só no ramo já `'definitivo'` (retries esgotados), nunca durante o retry.
+- [x] `publicar-split-ml/index.ts`: ganhou a mesma limpeza (não tinha nenhuma antes), escopada a
+      cores sem `ml_variation_id` — partições já publicadas não perdem o `picture_id`.
+- [x] Testes (TDD): `publish-familia-ml/__tests__/processar.test.ts` — 4 casos novos (esgotado por
+      código, esgotado por exceção, guarda "ainda retentando", regressão do caminho real de
+      produção com `codigo: 'DESCONHECIDO'`). `publicar-split-ml` sem `processar.ts` extraído — sem
+      teste unitário; coberto por revisão + `deno check`/`deno lint`.
+- [x] Docs: `edge-functions.md`.
+- [ ] Deploy (`supabase functions deploy publish-familia-ml publicar-split-ml`) — pendente de OK do
+      Diego antes de ir pra produção.
+
+---
+
 ## How-to do Pulse alinhado à tela de hoje — 2026-09-02
 
 O guia `docs/how-to/usar-o-pulse.md` descrevia "Menor concorrente" e "Referência do ML" (removida

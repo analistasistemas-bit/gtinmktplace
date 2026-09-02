@@ -84,6 +84,13 @@ Deno.serve(async (req) => {
       : Promise.reject(new Error('Organização sem conexão com o Mercado Livre')),
   };
 
+  // Caches de foto efêmeros subidos NESTE attempt: se a publicação falhar (foto morta/retries
+  // esgotados), são limpos no catch p/ o retry manual re-subir do zero. Declarados fora do try
+  // p/ visibilidade no catch (mesmo padrão de update-familia-ml).
+  let capaSubidaAgora = false;
+  let capa2SubidaAgora = false;
+  let capa3SubidaAgora = false;
+
   try {
     const { data: variacoes } = await admin.from('variacoes')
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
@@ -121,16 +128,19 @@ Deno.serve(async (req) => {
     if (!capaPictureId && familia.capa_storage_path) {
       capaPictureId = await conn.subirFoto(ctx, await signed(familia.capa_storage_path));
       await admin.from('familias').update({ capa_ml_picture_id: capaPictureId }).eq('id', job.familia_id);
+      capaSubidaAgora = true;
     }
     let capa2PictureId: string | null = familia.capa2_ml_picture_id ?? null;
     if (!capa2PictureId && familia.capa2_storage_path) {
       capa2PictureId = await conn.subirFoto(ctx, await signed(familia.capa2_storage_path));
       await admin.from('familias').update({ capa2_ml_picture_id: capa2PictureId }).eq('id', job.familia_id);
+      capa2SubidaAgora = true;
     }
     let capa3PictureId: string | null = familia.capa3_ml_picture_id ?? null;
     if (!capa3PictureId && familia.capa3_storage_path) {
       capa3PictureId = await conn.subirFoto(ctx, await signed(familia.capa3_storage_path));
       await admin.from('familias').update({ capa3_ml_picture_id: capa3PictureId }).eq('id', job.familia_id);
+      capa3SubidaAgora = true;
     }
 
     // Foto de cada variação (idempotente via ml_picture_id).
@@ -480,6 +490,21 @@ Deno.serve(async (req) => {
       status: 'erro',
       erro_mensagem: retentavelFoto ? mensagemErroFotoRecuperavel(msg) : msg,
     }).eq('id', job.familia_id);
+    // Esgotou os retries de foto (item.pictures.unavailable) ou o picture_id cacheado já morreu
+    // no ML ("does not exist"): limpa os caches efêmeros subidos NESTE attempt p/ o próximo
+    // Reenviar re-subir do zero, em vez de martelar o mesmo id morto (espelha update-familia-ml).
+    // Escopo: só cores ainda sem `ml_variation_id` — partições já publicadas não perdem o id.
+    if (retentavelFoto || /does not exist|Problema nas fotos/i.test(msg)) {
+      await admin.from('variacoes').update({ ml_picture_id: null })
+        .eq('familia_id', job.familia_id).is('ml_variation_id', null);
+      const limparCapas: Record<string, null> = {};
+      if (capaSubidaAgora) limparCapas.capa_ml_picture_id = null;
+      if (capa2SubidaAgora) limparCapas.capa2_ml_picture_id = null;
+      if (capa3SubidaAgora) limparCapas.capa3_ml_picture_id = null;
+      if (Object.keys(limparCapas).length > 0) {
+        await admin.from('familias').update(limparCapas).eq('id', job.familia_id);
+      }
+    }
     await talvezFinalizarLote(admin, job.lote_id);
     return new Response(JSON.stringify({ erro: msg }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }

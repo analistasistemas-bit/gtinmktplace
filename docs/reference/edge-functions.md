@@ -323,10 +323,15 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   um dos três roteia pro split.
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado
   (PxQ), espelha em `anuncios_externos` e enfileira o vínculo de catálogo com delay. Reusa
-  `picture_id` em retry (idempotência). Retry de foto: ADR-0033. **Cache efêmero (2026-09-01):**
-  em erro definitivo cujo texto bate `does not exist` ou `Problema nas fotos`, zera
-  `variacoes.ml_picture_id` e `familias.capa*_ml_picture_id` — o próximo Reenviar sobe fotos
-  frescas (mesmo comportamento que UPDATE já tinha no catch).
+  `picture_id` em retry (idempotência). Retry de foto: ADR-0033. **Cache efêmero (2026-09-01,
+  estendido 2026-09-02):** ao esgotar os retries (nunca durante — reiniciar o relógio de
+  propagação seria pior, ADR-0033), zera `variacoes.ml_picture_id` e `familias.capa*_ml_picture_id`
+  quando o erro é de foto — `codigo === 'FOTO'`/`retentavel` (sinal estrutural, cobre
+  `item.pictures.unavailable` esgotado) OU o texto bate `does not exist`/`Problema nas fotos`
+  (fallback por mensagem, cobre respostas do ML sem `cause` classificável). O próximo Reenviar
+  sobe fotos frescas em vez de martelar o mesmo `picture_id` morto (mesmo comportamento que UPDATE
+  já tinha no catch; `publicar-split-ml` ganhou o mesmo tratamento, escopado às cores sem
+  `ml_variation_id` — partições já publicadas não perdem o id).
   **Preço uniforme (ADR-0078 F2):** `garantirPrecoUniforme` recusa (400 LOUD, nada enviado) quando
   as variações têm preços de publicação divergentes — sinal de roteamento errado; a família deveria
   ter ido para o split por faixa de preço (`publicar-split-ml`).
@@ -455,7 +460,10 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   (`lerStatus`) quando "somente estoque" não tem esse dado local. Título distinto por IA por
   partição, cap de estoque (99.999) via conector. Grava o item da partição cedo (anti-duplicação em
   retry); partição 0 herda `ml_item_id` existente. Catálogo por-partição é follow-up (hoje cobre só
-  a partição 0). Retry de foto via QStash (ADR-0033).
+  a partição 0). Retry de foto via QStash (ADR-0033). **Cache efêmero (2026-09-02):** ao esgotar os
+  retries de foto (mesma condição de `publish-familia-ml` acima), zera `variacoes.ml_picture_id`
+  das cores sem `ml_variation_id` e as `capa*_ml_picture_id` subidas neste attempt — partições já
+  publicadas (`ml_variation_id` setado) não perdem o id.
   **Desconto/atacado por grupo de preço (ADR-0078 F2):** `resolverConfigGrupo` resolve a config
   efetiva de cada partição a partir das colunas por-variação (herança NULL do família-level; LOUD em
   config divergente dentro do mesmo grupo; LOUD se um produto com preços divergentes herdaria config

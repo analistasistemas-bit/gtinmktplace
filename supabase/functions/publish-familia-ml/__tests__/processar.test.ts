@@ -319,6 +319,97 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(writes.filter((w) => w.payload.capa_ml_picture_id === null)).toHaveLength(0);
   });
 
+  it('item.pictures.unavailable com retries esgotados (codigo FOTO) → limpa cache mesmo sem "does not exist" na mensagem', async () => {
+    const { admin, writes } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, capa2_ml_picture_id: 'CAPA2-MORTA' },
+      variacoes: [{ ...VAR_BASE, ml_picture_id: 'PIC1' }],
+    });
+    const r = await processarFamiliaML(baseDeps(admin, {
+      conn: connErroFotoDefinitivo('item.pictures.unavailable', true),
+      finalizarLote: async () => {},
+    }), JOB, { tentativas: 10 });
+
+    expect(r.tipo).toBe('erro');
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'variacoes',
+      payload: { ml_picture_id: null },
+    }));
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'familias',
+      payload: { capa_ml_picture_id: null, capa2_ml_picture_id: null, capa3_ml_picture_id: null },
+    }));
+  });
+
+  it('regressão real de produção: does not exist com codigo DESCONHECIDO (classificarErroCanal não emite FOTO aqui) → ainda limpa cache pelo texto', async () => {
+    const { admin, writes } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, capa2_ml_picture_id: 'CAPA2-MORTA' },
+      variacoes: [{ ...VAR_BASE, ml_picture_id: 'PIC1' }],
+    });
+    const connDesconhecido = {
+      ...fakeConnector,
+      criarAnuncio: async (_ctx: unknown, anuncio: unknown) => {
+        fakeConnector.chamadas.push({ metodo: 'criarAnuncio', args: anuncio });
+        return { ok: false, erro: { codigo: 'DESCONHECIDO' as const, mensagemOperador: MSG_FOTO_MORTA, retentavel: false } };
+      },
+    } as never;
+    const r = await processarFamiliaML(baseDeps(admin, {
+      conn: connDesconhecido,
+      finalizarLote: async () => {},
+    }), JOB, { tentativas: 3 });
+
+    expect(r.tipo).toBe('erro');
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'variacoes',
+      payload: { ml_picture_id: null },
+    }));
+  });
+
+  function connLancaErro(mensagem: string, retentavel: boolean) {
+    return {
+      ...fakeConnector,
+      criarAnuncio: async () => {
+        const e = new Error(mensagem) as Error & { retentavel?: boolean };
+        e.retentavel = retentavel;
+        throw e;
+      },
+    } as never;
+  }
+
+  it('catch geral: exceção retentável com retries esgotados → limpa cache (cobre subirFoto/montarAnuncioCanonico falhando)', async () => {
+    const { admin, writes } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, capa2_ml_picture_id: 'CAPA2-MORTA' },
+      variacoes: [{ ...VAR_BASE, ml_picture_id: 'PIC1' }],
+    });
+    const r = await processarFamiliaML(baseDeps(admin, {
+      conn: connLancaErro('item.pictures.unavailable', true),
+      finalizarLote: async () => {},
+    }), JOB, { tentativas: 10 });
+
+    expect(r.tipo).toBe('erro');
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'variacoes',
+      payload: { ml_picture_id: null },
+    }));
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: 'familias',
+      payload: { capa_ml_picture_id: null, capa2_ml_picture_id: null, capa3_ml_picture_id: null },
+    }));
+  });
+
+  it('catch geral: exceção retentável AINDA dentro da janela de retry → NÃO limpa cache (guarda ADR-0033)', async () => {
+    const { admin, writes } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, capa2_ml_picture_id: 'CAPA2' },
+      variacoes: [{ ...VAR_BASE, ml_picture_id: 'PIC1' }],
+    });
+    const r = await processarFamiliaML(baseDeps(admin, {
+      conn: connLancaErro('item.pictures.unavailable', true),
+    }), JOB, { tentativas: 9 });
+
+    expect(r).toEqual({ tipo: 'retry', mensagem: 'item.pictures.unavailable' });
+    expect(writes.filter((w) => w.payload.ml_picture_id === null)).toHaveLength(0);
+    expect(writes.filter((w) => w.payload.capa_ml_picture_id === null)).toHaveLength(0);
+  });
+
   it('DESCONTO_INCOMPATIVEL → confirma cache UP, marca erro e não retenta', async () => {
     const { admin, writes } = fakeAdmin({
       familia: { ...FAMILIA_BASE, categoria_ml_id: 'MLB271227', exibir_com_desconto: true },
