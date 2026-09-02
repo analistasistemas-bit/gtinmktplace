@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   BadgeCheck, Check, Circle, CircleDollarSign, Clock, ExternalLink, Filter, Globe, Loader2,
-  Package, Receipt, Search, ShoppingCart, Store, Trash2, Trophy, Truck, X, Zap,
+  Package, Plus, Receipt, Search, ShoppingCart, Store, Trash2, Trophy, Truck, X, Zap,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,10 +21,11 @@ import { DataTable, type Column } from '@/components/ui/data-table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Sparkline } from '@/components/ui/sparkline';
-import { DialogMargemSonar, type AnuncioSimulavel } from '@/components/pulse/dialog-margem-sonar';
 import { SonarAnalisePubliAI } from '@/components/pulse/sonar-analise-publiai';
 import { SonarDre } from '@/components/pulse/sonar-dre';
+import { SecaoSonar } from '@/components/pulse/secao-sonar';
 import { VereditoSonar } from '@/components/pulse/veredito-sonar';
+import { DialogAdicionar } from '@/components/pulse/dialog-adicionar';
 import {
   lerBuscasRecentes, limparBuscasRecentes, registrarBusca, tempoRelativo, type BuscaRecente,
 } from '@/lib/sonar-buscas-recentes';
@@ -105,15 +106,11 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
   // D15: mesma regra do link cru vs. canônico da coluna de ações, aplicada ao destaque.
   const hrefDestaque = destaque ? linkDoAnuncio(destaque.link, destaque.item_id ?? '') : null;
   return (
-    <Card className="mb-4 p-4">
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">Vendas do nicho</span>
-        <Badge variant="outline">estimativa</Badge>
-        <span className="text-xs text-muted-foreground">
-          amostra dos {resp.itens_analisados} anúncios mais relevantes — "+N vendidos" acumulado,
-          piso do nicho e não venda mensal
-        </span>
-      </div>
+    <SecaoSonar
+      titulo="Vendas do nicho"
+      selo={<Badge variant="outline">estimativa</Badge>}
+      subtitulo={`amostra dos ${resp.itens_analisados} anúncios mais relevantes — "+N vendidos" acumulado, piso do nicho e não venda mensal`}
+    >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <KpiCard
           size="compact"
@@ -121,7 +118,7 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
           // "unidades" explícito: sem a palavra o número passa por valor em reais (dúvida real do
           // Diego em 18/08). Quem é valor é o card ao lado.
           value={`≈ ${fmtMilhar(resp.vendas_totais, 1)} unidades`}
-          hint={`${resp.itens_com_vendas} de ${resp.itens_analisados} anúncios com o dado`}
+          hint={`${resp.itens_com_vendas} de ${resp.itens_analisados} anúncios · na vida dos anúncios`}
           icon={ShoppingCart}
           tom="info"
         />
@@ -129,7 +126,7 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
           size="compact"
           label="Mercado endereçável"
           value={`≈ R$ ${fmtMilhar(resp.valor_mercado, 1)}`}
-          hint="Σ preço × vendidos acumulados"
+          hint="Σ preço × vendidos, na vida dos anúncios"
           icon={CircleDollarSign}
           tom="info"
         />
@@ -176,7 +173,7 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
           </div>
         </div>
       )}
-    </Card>
+    </SecaoSonar>
   );
 }
 
@@ -339,6 +336,10 @@ function SonarFiltrosPopover({ filtros, setFiltros }: {
   );
 }
 
+/** Identidade de uma linha da amostra. Mesma chave do `rowKey` da DataTable: `item_id` sozinho é
+ *  nulo em parte dos anúncios, e cair no título deixaria dois homônimos com a mesma identidade. */
+const chaveDoItem = (i: ItemVendasSonar) => i.item_id ?? `pos-${i.posicao ?? 'x'}-${i.titulo}`;
+
 export default function PulseSonar() {
   const [termo, setTermo] = useState('');
   const [termoBuscado, setTermoBuscado] = useState<string | null>(null);
@@ -350,13 +351,13 @@ export default function PulseSonar() {
   // código escaneado é anexado ao 1º ("789…371" + "789…764" = 26 dígitos), o que não casa mais com
   // EAN_RE, passa pelo piso de 3 caracteres e vira uma busca paga em lixo.
   const inputRef = useRef<HTMLInputElement>(null);
-  const [anuncioSimulando, setAnuncioSimulando] = useState<AnuncioSimulavel | null>(null);
   const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(lerBuscasRecentes);
   // Mantém o stepper visível um instante depois da resposta chegar, para mostrar as etapas
   // concluídas antes de trocar pelo resultado.
   const [mostrarProgresso, setMostrarProgresso] = useState(false);
   // Filtros da tabela (D13): 100% client-side, estado local — sem URL/localStorage nesta entrega.
   const [filtros, setFiltros] = useState<FiltrosAnuncios>(FILTROS_ANUNCIOS_VAZIOS);
+  const [adicionarAberto, setAdicionarAberto] = useState(false);
 
   // Query PRIMÁRIA (ADR-0127/D3): a tabela nasce da Apify. retry desligado — cada tentativa
   // sem cache dispara um run pago (US$ 0,10).
@@ -372,18 +373,28 @@ export default function PulseSonar() {
     () => (vendas?.configurado ? itensDaAmostra(vendas) : []),
     [vendas],
   );
-  /** Âncora da DRE (ADR-0148 D-8): o primeiro anúncio da amostra. Mesma forma do simulador de
-   *  margem, para não existirem duas ideias de "produto de referência" na mesma tela. */
+  /** Âncora da DRE. Padrão: o primeiro anúncio da amostra (ADR-0148 D-8) — na ordenação inicial, o
+   *  que mais vende. O botão "Simular" da linha troca por outro (ADR-0150 D-2), e o seletor que a
+   *  D-8 deixou para "a fatia seguinte" é exatamente isto. */
+  const [ancoraId, setAncoraId] = useState<string | null>(null);
+  // Amostra nova, âncora nova: manter a escolha do nicho anterior apontaria para um anúncio que
+  // não está mais na tela.
+  useEffect(() => setAncoraId(null), [termoBuscado]);
+  // A DRE (task 19) começa fechada — abre quando o operador clica "Simular" numa linha da tabela.
+  // Nicho novo: mesma lógica do reset acima, a DRE aberta apontaria para um contexto que já foi.
+  const [dreAberta, setDreAberta] = useState(false);
+  useEffect(() => setDreAberta(false), [termoBuscado]);
+
   const ancoraDre = useMemo(() => {
-    const i = itens[0];
+    const i = itens.find((x) => chaveDoItem(x) === ancoraId) ?? itens[0];
     if (!i) return null;
     return {
-      id: i.item_id ?? i.titulo,
+      id: chaveDoItem(i),
       nome: i.titulo,
       category_id: i.category_id ?? null,
       preco_referencia: i.preco,
     };
-  }, [itens]);
+  }, [itens, ancoraId]);
   /** Preços observados do nicho para os cenários da DRE (ADR-0149 D-1). */
   const precosDoNicho = useMemo(() => {
     const validos = itens.map((i) => i.preco).filter((p): p is number => p != null && p > 0);
@@ -415,6 +426,18 @@ export default function PulseSonar() {
     enabled: !!eanBuscado && itens.length > 0,
     staleTime: 60_000,
   });
+
+  // Cabeçalho por EAN: "Nicho: {número}" não faz sentido para busca por código de barras — troca
+  // pelo nome do produto, sem chamada nova (o cruzamento acima já é local e já está na tela).
+  // Prioridade: nome do catálogo da própria org (o mais confiável) > título do primeiro anúncio
+  // da amostra (é de um anúncio, não do catálogo — sinalizado na tela) > nada, só o código.
+  const nomeProdutoEan = useMemo(() => {
+    if (!eanBuscado) return null;
+    const doCatalogo = cruzamentoEan?.minhas.find((v) => v.nome)?.nome;
+    if (doCatalogo) return { texto: doCatalogo, deAnuncio: false };
+    const doAnuncio = itens[0]?.titulo;
+    return doAnuncio ? { texto: doAnuncio, deAnuncio: true } : null;
+  }, [eanBuscado, cruzamentoEan, itens]);
 
   // Visitas (D3): dispara quando a lista de anúncios chega. Grátis (API oficial) — retry ok.
   const { data: visitas, isFetching: visitasCarregando } = useQuery({
@@ -616,12 +639,17 @@ export default function PulseSonar() {
         const href = linkDoAnuncio(i.link, i.item_id ?? '');
         return (
           <div className="flex items-center justify-end gap-1.5">
-            <Button variant="outline" size="sm" onClick={() => setAnuncioSimulando({
-              id: i.item_id ?? i.titulo,
-              nome: i.titulo,
-              category_id: i.category_id ?? null,
-              preco_referencia: i.preco,
-            })} title="Simular margem deste anúncio">
+            <Button
+              variant={chaveDoItem(i) === ancoraDre?.id ? 'default' : 'outline'}
+              size="sm"
+              aria-pressed={chaveDoItem(i) === ancoraDre?.id}
+              onClick={() => {
+                setAncoraId(chaveDoItem(i));
+                setDreAberta(true);
+                document.getElementById('sonar-dre')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+              }}
+              title="Usar este anúncio como referência da DRE"
+            >
               Simular
             </Button>
             {href && (
@@ -636,7 +664,7 @@ export default function PulseSonar() {
         );
       },
     },
-  ], [visitasPorItem]);
+  ], [visitasPorItem, ancoraDre?.id]);
 
   const elapsedMs = iniciadoEmRef.current ? Date.now() - iniciadoEmRef.current : 0;
 
@@ -771,6 +799,48 @@ export default function PulseSonar() {
           {/* ADR-0140 D-3: só na consulta por EAN — é o que a busca por termo não tem como
               responder ("eu já vendo isto?" precisa de um GTIN para cruzar). */}
           {eanBuscado && cruzamentoEan && <SonarEanCruzamento cruzamento={cruzamentoEan} />}
+          {/* O resultado não tinha título: por EAN o campo é limpo, e ao rolar 2.128px até a tabela
+              ninguém sabia mais o que estava sendo analisado. A idade do cache também era
+              invisível — e é ela que diz se a próxima busca custa. */}
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b pb-3">
+            <div className="min-w-0">
+              <h2
+                className="truncate text-base font-semibold"
+                title={
+                  eanBuscado
+                    ? `${vendas.termo}${nomeProdutoEan ? ` — ${nomeProdutoEan.texto}${nomeProdutoEan.deAnuncio ? ' (título do anúncio)' : ''}` : ''}`
+                    : `Nicho: ${vendas.termo}`
+                }
+              >
+                {eanBuscado ? (
+                  nomeProdutoEan ? (
+                    <>
+                      {vendas.termo} — {nomeProdutoEan.texto}
+                      {nomeProdutoEan.deAnuncio && (
+                        <span className="font-normal text-muted-foreground"> (título do anúncio)</span>
+                      )}
+                    </>
+                  ) : (
+                    vendas.termo
+                  )
+                ) : (
+                  `Nicho: ${vendas.termo}`
+                )}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                amostra de {vendas.itens_analisados} anúncios
+                {vendas.gerado_em && ` · coletado ${tempoRelativo(vendas.gerado_em, new Date())}`}
+                {' '}· reabrir este termo não dispara coleta nova (cache de 7 dias); um termo novo, sim
+              </p>
+            </div>
+            {/* ADR-0140 D-3: só com GTIN há o que vigiar — o Radar acompanha ficha de catálogo. */}
+            {eanBuscado && (
+              <Button variant="outline" size="sm" onClick={() => setAdicionarAberto(true)}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Adicionar ao Radar
+              </Button>
+            )}
+          </div>
           <VereditoSonar
             veredito={calcularVereditoAnuncios(vendas, visitasTotal)}
             contexto={contextoNichoAnuncios(vendas)}
@@ -784,10 +854,15 @@ export default function PulseSonar() {
             erro={secoes237Erro ? (secoes237ErroObj instanceof Error ? secoes237ErroObj : new Error('Erro desconhecido.')) : null}
             onRetry={() => refetchSecoes237()}
           />
-          {/* Seção 6 (ADR-0148). Âncora: o PRIMEIRO anúncio da amostra — na ordenação padrão, o
-              que mais vende no nicho. A pergunta é "o produto que puxa este nicho dá lucro para
-              mim?". Um seletor de âncora fica para a fatia seguinte. */}
-          <SonarDre ancora={ancoraDre} precos={precosDoNicho} />
+          {/* Seção 6 (ADR-0148). Âncora padrão: o PRIMEIRO anúncio da amostra — na ordenação
+              inicial, o que mais vende no nicho. O botão "Simular" de cada linha troca a âncora
+              (ADR-0150 D-2): é o único simulador de margem do Sonar. */}
+          <SonarDre
+            ancora={ancoraDre}
+            precos={precosDoNicho}
+            aberta={dreAberta}
+            onAlternar={setDreAberta}
+          />
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <SonarFiltrosPopover filtros={filtros} setFiltros={setFiltros} />
@@ -811,7 +886,7 @@ export default function PulseSonar() {
             columns={colunas}
             rows={visiveis}
             defaultSort={{ key: 'vendidos', dir: 'desc' }}
-            rowKey={(i) => i.item_id ?? `pos-${i.posicao ?? 'x'}-${i.titulo}`}
+            rowKey={chaveDoItem}
             empty={<EmptyState icon={Package} title="Nenhum anúncio passa pelos filtros ativos." />}
           />
         </>
@@ -821,7 +896,11 @@ export default function PulseSonar() {
         </div>
       )}
 
-      <DialogMargemSonar ficha={anuncioSimulando} onFechar={() => setAnuncioSimulando(null)} />
+      <DialogAdicionar
+        aberto={adicionarAberto}
+        entradaInicial={eanBuscado ?? ''}
+        onFechar={() => setAdicionarAberto(false)}
+      />
     </div>
   );
 }

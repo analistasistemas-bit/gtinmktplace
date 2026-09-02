@@ -4,9 +4,9 @@
 import { BarChart3, Loader2, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
 import { KpiCard } from '@/components/ui/kpi-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { SecaoSonar } from './secao-sonar';
 import {
   formatarMedianaVendasMesSecoes237,
   formatarProporcaoCobertura,
@@ -21,15 +21,6 @@ export type SonarAnalisePubliAIProps = {
   erro: Error | null;
   onRetry?: () => void;
 };
-
-function Cabecalho() {
-  return (
-    <div className="mb-2 flex flex-wrap items-center gap-2">
-      <span className="text-sm font-medium">Análise PubliAI</span>
-      <Badge variant="outline">demanda por vendedor</Badge>
-    </div>
-  );
-}
 
 /**
  * 3.3 + 3.4 em duas linhas, uma por unidade (spike 045): o percentual pertence aos anúncios, e a
@@ -67,23 +58,23 @@ function LinhasCobertura(
 export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAnalisePubliAIProps) {
   if (carregando) {
     return (
-      <Card className="mb-4 p-4">
+      <SecaoSonar titulo="Quem vende neste nicho" selo={<Badge variant="outline">demanda por vendedor</Badge>}>
         <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-          Análise PubliAI — demanda por vendedor
+          Carregando…
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Skeleton className="h-16 rounded-lg" />
           <Skeleton className="h-16 rounded-lg" />
         </div>
-      </Card>
+      </SecaoSonar>
     );
   }
 
   if (erro) {
     return (
       <div role="alert" className="mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-        <p className="text-sm font-medium text-destructive">Não foi possível carregar a Análise PubliAI.</p>
+        <p className="text-sm font-medium text-destructive">Não foi possível carregar “Quem vende neste nicho”.</p>
         <p className="mt-1 text-sm text-muted-foreground">{erro.message}</p>
         {onRetry && (
           <Button variant="outline" size="sm" className="mt-2" onClick={onRetry}>
@@ -98,12 +89,11 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
 
   if (!data.conectado) {
     return (
-      <Card className="mb-4 p-4">
-        <Cabecalho />
+      <SecaoSonar titulo="Quem vende neste nicho" selo={<Badge variant="outline">demanda por vendedor</Badge>}>
         <p className="text-sm text-muted-foreground">
           Conecte o Mercado Livre para estimar a demanda do nicho por vendedor.
         </p>
-      </Card>
+      </SecaoSonar>
     );
   }
 
@@ -113,16 +103,17 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
   const comparaveis = tendencia.estabelecidos - tendencia.sem_serie;
 
   return (
-    <Card className="mb-4 p-4">
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">Análise PubliAI</span>
-        <Badge variant="outline">demanda por vendedor</Badge>
-        <span className="text-xs text-muted-foreground">
-          média dos últimos 12 meses · loja inteira do vendedor
-        </span>
-      </div>
+    <SecaoSonar
+      titulo="Quem vende neste nicho"
+      selo={<Badge variant="outline">demanda por vendedor</Badge>}
+      subtitulo="Porte e tendência dos concorrentes, pela loja inteira deles (ADR-0142/0146)."
+      colapsavelAbertaPorPadrao={false}
+    >
+      <span className="text-xs text-muted-foreground">
+        média dos últimos 12 meses · loja inteira do vendedor
+      </span>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {comparaveis > 0 && (
           <KpiCard
             size="compact"
@@ -170,6 +161,6 @@ export function SonarAnalisePubliAI({ data, carregando, erro, onRetry }: SonarAn
 
       <p className="mt-3 text-[11px] text-muted-foreground/80">{s.limitacao_3_2}</p>
       <p className="mt-1 text-[11px] text-muted-foreground/70">{s['2.9'].mensagem}</p>
-    </Card>
+    </SecaoSonar>
   );
 }

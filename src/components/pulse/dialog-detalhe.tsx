@@ -19,7 +19,7 @@ import {
 } from '@/lib/pulse';
 import {
   estadoAtualOfertas, mercadoPulse, menorPrecoPorDia, ofertasAbaixoDaReferencia,
-  porteDoVendedor, shareDeVisitas, margemEstimada, margemEhEstimativa,
+  porteDoVendedor, shareDeVisitas, margemEstimada, margemEhEstimativa, insumoFaltante,
 } from '@/lib/pulse-margem';
 import {
   classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, rotuloMotivoQualificacao,
@@ -30,22 +30,6 @@ import { buildPulseSearchUrl } from '@/lib/pulse-url';
 import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 import { cn } from '@/lib/utils';
 import type { QualificacaoOferta } from '../../../supabase/functions/_shared/concorrencia/qualificacao';
-
-/**
- * A comissão TEM que vir de `comissao_pct` (lida no preço praticado). Cair em
- * `ptw_custos.comissao` seria voltar ao defeito da Errata 6: aquele valor é calculado sobre o
- * preço sugerido pelo ML e superestima a sobra em todo anúncio acima da sugestão.
- */
-function insumoFaltante(
-  contexto: { custo: number | null; aliquotaPct: number | null } | undefined,
-  produto: { comissao_pct: number | null; ptw_custos: { frete: number | null } | null } | null,
-): string | null {
-  if (!contexto || contexto.custo == null) return 'custo do produto';
-  if (contexto.aliquotaPct == null) return 'alíquota de imposto';
-  if (produto?.comissao_pct == null) return 'comissão do Mercado Livre';
-  if (produto.ptw_custos?.frete == null) return 'custo de frete do Mercado Livre';
-  return null;
-}
 
 /** Minigráfico do menor preço no tempo. Sem lib: 40 linhas de SVG contra 40 KB de dependência. */
 function Sparkline({ pontos }: { pontos: { dia: string; preco: number }[] }) {
@@ -229,60 +213,55 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
     },
     {
       key: 'vendedor',
+      // Três colunas para o mesmo sujeito viraram uma: cor da reputação, selo de MercadoLíder e o
+      // veredito da régua (ADR-0130) descrevem o MESMO vendedor. Nada sai da tela — muda o
+      // agrupamento, para o dialog caber sem duplo scroll.
       header: 'Vendedor',
-      className: 'w-64',
+      className: 'w-72',
       sortValue: (o) => nomeDe(o).toLowerCase(),
       cell: (o) => {
-        return (
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-            <span className="max-w-52 truncate font-medium" title={nomeDe(o)}>{nomeDe(o)}</span>
-            {o.loja_oficial && (
-              <Badge variant="outline" className="text-[10px] font-normal">
-                <Store className="mr-1 h-3 w-3" />
-                Loja oficial
-              </Badge>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      key: 'qualificacao',
-      header: 'Qualificação',
-      className: 'w-40',
-      sortValue: (o) => o.qualificacao.status,
-      cell: (o) => {
-        const selo = o.qualificacao.status === 'relevante'
-          ? { texto: rotuloStatusQualificacao(o.qualificacao.status), tom: 'ok' as const }
-          : o.qualificacao.status === 'observacao'
-            ? { texto: rotuloStatusQualificacao(o.qualificacao.status), tom: 'atencao' as const }
-            : { texto: rotuloStatusQualificacao(o.qualificacao.status), tom: 'risco' as const };
-        return (
-          <div className="flex flex-col items-start gap-1">
-            <Badge variant="outline" className={cn('font-normal', classeTom(selo.tom))}>{selo.texto}</Badge>
-            <span className="text-xs text-muted-foreground">
-              {o.qualificacao.motivos.map(rotuloMotivoQualificacao).join(' · ')}
-            </span>
-          </div>
-        );
-      },
-    },
-    {
-      key: 'reputacao',
-      header: 'Reputação',
-      className: 'w-36',
-      sortValue: (o) => vendedorAtualDe(o)?.nivel,
-      cell: (o) => {
         const vendedor = vendedorAtualDe(o);
-        return <DetalhesConta vendedor={vendedor} rotulo={rotuloReputacao(vendedor?.nivel ?? null)} nome={nomeDe(o)} />;
+        const q = o.qualificacao;
+        const tom = q.status === 'relevante' ? 'ok' as const
+          : q.status === 'observacao' ? 'atencao' as const : 'risco' as const;
+        const selo = reputacao(vendedor?.power_seller ?? null);
+        return (
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
+              <span className="max-w-52 truncate font-medium" title={nomeDe(o)}>{nomeDe(o)}</span>
+              {o.loja_oficial && (
+                <Badge variant="outline" className="text-[10px] font-normal">
+                  <Store className="mr-1 h-3 w-3" />
+                  Loja oficial
+                </Badge>
+              )}
+              <Badge
+                variant="outline"
+                className={cn('text-[10px] font-normal', classeTom(tom))}
+                // Os motivos saem do corpo da célula para o tooltip do badge: eles explicam o
+                // veredito, e o veredito é o que decide se a oferta entra na comparação.
+                title={q.motivos.map(rotuloMotivoQualificacao).join(' · ')}
+              >
+                {rotuloStatusQualificacao(q.status)}
+              </Badge>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+              {/* O motivo continua no corpo da célula (não só no title do selo, que só o badge
+                  carrega): "não sai da tela" vale para o motivo de não ser relevante também. Só
+                  para quem não é relevante — a linha relevante fica compacta de propósito. */}
+              {q.status !== 'relevante' && (
+                <span>{q.motivos.map(rotuloMotivoQualificacao).join(' · ')}</span>
+              )}
+              <DetalhesConta
+                vendedor={vendedor}
+                rotulo={rotuloReputacao(vendedor?.nivel ?? null)}
+                nome={nomeDe(o)}
+              />
+              {selo && <span>· {selo}</span>}
+            </div>
+          </div>
+        );
       },
-    },
-    {
-      key: 'mercado-lider',
-      header: 'MercadoLíder',
-      className: 'w-32',
-      sortValue: (o) => vendedorAtualDe(o)?.power_seller,
-      cell: (o) => reputacao(vendedorAtualDe(o)?.power_seller ?? null) ?? <span className="text-muted-foreground">—</span>,
     },
     {
       key: 'uf',
@@ -430,12 +409,15 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
           </DialogHeader>
 
           {isLoading ? (
-            <div className="flex flex-col gap-3">
+            <div className="flex min-w-0 flex-col gap-3">
               <Skeleton className="h-24 w-full rounded-lg" />
               <Skeleton className="h-40 w-full rounded-lg" />
             </div>
           ) : (
-            <div className="flex flex-col gap-5">
+            // `min-w-0`: filho de grid não encolhe abaixo do conteúdo por padrão, e sem isso o
+            // `overflow-x-auto` da tabela de concorrentes não tem largura para agir — em 820px o
+            // dialog estourava para 1251px e cortava "Sua posição" e "Reprecificar".
+            <div className="flex min-w-0 flex-col gap-5">
               {/* Bloco de decisão: o que o operador veio saber, antes da evidência. */}
               {produto?.codigo_pai && (
                 <section className="rounded-lg border bg-muted/30 p-4">
@@ -509,24 +491,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                       />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <span className="text-xs text-muted-foreground">
-                        Sobra para você
-                        {/* A conta fica à vista: foi uma comissão errada, silenciosa, que
-                            superestimou a sobra deste produto em R$ 0,97 (Errata 6). */}
-                        {margem && (
-                          <span
-                            className="ml-1 cursor-help opacity-70"
-                            title={[
-                              `Comissão do ML: ${fmtBRL(margem.comissao)}`,
-                              `Frete: ${fmtBRL(produto.ptw_custos?.frete ?? 0)}`,
-                              `Imposto: ${contexto?.aliquotaPct ?? 0}%`,
-                              `Custo do produto: ${fmtBRL(contexto?.custo ?? 0)}`,
-                            ].join(' · ')}
-                          >
-                            (comissão {fmtBRL(margem.comissao)})
-                          </span>
-                        )}
-                      </span>
+                      <span className="text-xs text-muted-foreground">Sobra para você</span>
                       {contextoCarregando ? (
                         <span className="text-sm text-muted-foreground">calculando…</span>
                       ) : faltando ? (
@@ -541,8 +506,10 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                           )}
                         >
                           {fmtBRL(margem.liquido)}
+                          {/* ADR-0150 D-1: o denominador vai no nome. Markup (lucro ÷ custo) e
+                              margem s/ venda (lucro ÷ preço) convivem no Pulse e não se misturam. */}
                           <span className="ml-1 text-sm font-normal opacity-80">
-                            ({margem.margemPct.toFixed(1)}%)
+                            ({margem.margemPct.toFixed(1)}% s/ venda)
                           </span>
                           {margemEstimativa && (
                             <span
@@ -570,6 +537,26 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                     <p className="mt-3 text-sm text-destructive">
                       Nesse preço você perde {fmtBRL(Math.abs(margem!.liquido))} por unidade vendida.
                     </p>
+                  )}
+
+                  {/* A conta fica à vista, e não num `title`: tooltip não funciona em touch e some
+                      em demo projetada. Foi uma comissão errada e silenciosa que superestimou a
+                      sobra deste produto em R$ 0,97 (Errata 6 da ADR-0119). Mesmo padrão de tabela
+                      que a DRE do Sonar já usa. */}
+                  {margem && (
+                    <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 border-t pt-3 text-xs sm:grid-cols-4">
+                      {[
+                        ['Comissão do ML', margem.comissao],
+                        ['Frete', produto.ptw_custos?.frete ?? 0],
+                        [`Imposto (${contexto?.aliquotaPct}%)`, (precoSimulado! * (contexto?.aliquotaPct ?? 0)) / 100],
+                        ['Custo do produto', contexto?.custo ?? 0],
+                      ].map(([rotulo, valor]) => (
+                        <div key={rotulo as string}>
+                          <dt className="text-muted-foreground">{rotulo}</dt>
+                          <dd className="tabular-nums">−{fmtBRL(valor as number)}</dd>
+                        </div>
+                      ))}
+                    </dl>
                   )}
                 </section>
               )}

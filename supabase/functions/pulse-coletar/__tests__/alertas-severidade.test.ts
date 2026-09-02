@@ -25,12 +25,15 @@ interface Cenario {
   vendedores: Array<Record<string, unknown>>;
   ofertasAtual: Array<Record<string, unknown>>;
   inseridos: Array<Record<string, unknown>>;
-  /** Erro devolvido pelo insert em `pulse_alertas`, para provar que alerta não gravado não conta. */
+  /** Erro devolvido pelo upsert em `pulse_alertas`, para provar que alerta não gravado não conta. */
   erroInsert?: { message: string };
+  /** Alertas de hoje devolvidos pela leitura de dedupe (ADR-0133 Errata 3). Vazio = nada a filtrar. */
+  jaGravados?: Array<Record<string, unknown>>;
 }
 
 /** Fake mínimo do SupabaseClient: só os padrões de query que `gravarAlertasRelevantes` usa
- *  (leitura paginada por `paginarTudo` em duas tabelas + insert em `pulse_alertas`). */
+ *  (leitura paginada por `paginarTudo` em duas tabelas + leitura de dedupe e upsert em
+ *  `pulse_alertas`). */
 function fakeAdmin(cenario: Cenario): SupabaseClient {
   function leitura(linhas: Array<Record<string, unknown>>) {
     // deno-lint-ignore no-explicit-any
@@ -39,6 +42,10 @@ function fakeAdmin(cenario: Cenario): SupabaseClient {
       eq: () => api,
       in: () => api,
       order: () => api,
+      // `paginarTudo` termina em `.range()`; a leitura de dedupe termina em `.gte()`. As duas
+      // pontas resolvem — deixar `gte` devolvendo `api` "funcionaria" só por acidente (await de
+      // objeto não-thenable) e esconderia a quebra seguinte.
+      gte: () => Promise.resolve({ data: linhas, error: null }),
       range: () => Promise.resolve({ data: linhas, error: null }),
     };
     return api;
@@ -48,11 +55,14 @@ function fakeAdmin(cenario: Cenario): SupabaseClient {
       if (tabela === 'pulse_vendedores') return leitura(cenario.vendedores);
       if (tabela === 'pulse_ofertas_atual') return leitura(cenario.ofertasAtual);
       if (tabela === 'pulse_alertas') {
+        const gravar = (linhas: Array<Record<string, unknown>>) => {
+          cenario.inseridos.push(...linhas);
+          return Promise.resolve({ error: cenario.erroInsert ?? null });
+        };
         return {
-          insert: (linhas: Array<Record<string, unknown>>) => {
-            cenario.inseridos.push(...linhas);
-            return Promise.resolve({ error: cenario.erroInsert ?? null });
-          },
+          select: leitura(cenario.jaGravados ?? []).select,
+          insert: gravar,
+          upsert: gravar,
         };
       }
       throw new Error(`tabela inesperada: ${tabela}`);
@@ -128,6 +138,46 @@ describe('gravarAlertasRelevantes: severidade (ADR-0133)', () => {
     expect(cenario.inseridos.length).toBeGreaterThan(0);
     expect(cenario.inseridos.every((a) => a.severidade === 'info')).toBe(true);
     expect(resultado.acao).toBe(0);
+  });
+
+  it('descarta a queda já gravada hoje sem levar junto os outros alertas do lote', async () => {
+    // Errata 3, e o único teste que exercita `alertasJaGravadosHoje` → `filtrarAlertasJaGravados`
+    // LIGADOS: os testes puros do dedupe passariam com a leitura consultando a coluna errada.
+    // O mesmo cenário produz `preco_caiu(de:80, para:70)` + `novo_concorrente` — a metade que
+    // importa é a segunda continuar entrando, senão o filtro estaria pulando o lote inteiro.
+    const cenario: Cenario = {
+      vendedores: [VENDEDOR_QUALIFICADO, VENDEDOR_QUALIFICADO_2], ofertasAtual: [], inseridos: [],
+      jaGravados: [{ produto_id: PRODUTO, payload: { de: 80, para: 70 } }],
+    };
+    await gravarAlertasRelevantes(fakeAdmin(cenario), ORG, [{
+      produtoId: PRODUTO,
+      anteriores: [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
+      atuais: [oferta({ item_id: 'MLB2', seller_id: 2, preco: 70 })],
+      estadoGravado: true,
+      meuPreco: 90,
+      fichaCompleta: true,
+    }]);
+
+    expect(cenario.inseridos.filter((a) => a.tipo === 'preco_caiu')).toHaveLength(0);
+    expect(cenario.inseridos.filter((a) => a.tipo === 'novo_concorrente')).toHaveLength(1);
+  });
+
+  it('a queda de OUTRO par de preços passa mesmo com o dedupe carregado', async () => {
+    // Trava contra o dedupe virar "já alertei este produto hoje": a chave inclui o par.
+    const cenario: Cenario = {
+      vendedores: [VENDEDOR_QUALIFICADO, VENDEDOR_QUALIFICADO_2], ofertasAtual: [], inseridos: [],
+      jaGravados: [{ produto_id: PRODUTO, payload: { de: 99, para: 98 } }],
+    };
+    await gravarAlertasRelevantes(fakeAdmin(cenario), ORG, [{
+      produtoId: PRODUTO,
+      anteriores: [anterior({ item_id: 'MLB1', seller_id: 1, preco: 80 })],
+      atuais: [oferta({ item_id: 'MLB2', seller_id: 2, preco: 70 })],
+      estadoGravado: true,
+      meuPreco: 90,
+      fichaCompleta: true,
+    }]);
+
+    expect(cenario.inseridos.filter((a) => a.tipo === 'preco_caiu')).toHaveLength(1);
   });
 
   it('insert que falha não conta alerta nenhum', async () => {

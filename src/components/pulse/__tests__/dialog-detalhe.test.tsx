@@ -10,13 +10,17 @@ const detalhe = vi.hoisted(() => ({
   vendedores: [] as PulseVendedor[],
 }));
 
+const contextoMargem = vi.hoisted(() => ({
+  valor: { custo: null as number | null, aliquotaPct: null as number | null },
+}));
+
 vi.mock('@tanstack/react-query', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-query')>();
   return {
     ...actual,
     useQuery: ({ queryKey }: { queryKey: unknown[] }) => (
       queryKey[1] === 'contexto-margem'
-        ? { data: { custo: null, aliquotaPct: null }, isLoading: false }
+        ? { data: contextoMargem.valor, isLoading: false }
         : { data: detalhe, isLoading: false }
     ),
   };
@@ -88,6 +92,27 @@ function renderDetalhe(produto: PulseProduto = produtoBase) {
   return render(<DialogDetalhe produto={produto} onFechar={vi.fn()} />);
 }
 
+/** Produto com os QUATRO insumos da margem — custo 30, alíquota 8%, comissão 14% + 0 fixo lida
+ *  em R$ 100 (sem "estimativa"), frete 5 — a R$ 100. Sobra: 100 − 14 − 5 − 8 − 30 = 43,00 (43.0%). */
+function renderDetalheComMargem() {
+  contextoMargem.valor = { custo: 30, aliquotaPct: 8 };
+  return renderDetalhe({
+    ...produtoBase, codigo_pai: 'APTAMIL-1', meu_preco: 100,
+    comissao_pct: 14, comissao_fixa: 0, comissao_preco: 100,
+    ptw_custos: { comissao: null, frete: 5 },
+  });
+}
+
+/** Uma oferta RELEVANTE (ADR-0130: ≥10 transações, visitas 30d ≠ 0, reputação verde) de "LOJA UM",
+ *  MercadoLíder Platinum, sem `reputacao_detalhe` (o <details> não abre; o rótulo sai em <span>). */
+function renderDetalheComOfertas() {
+  detalhe.ofertasAtuais = [oferta({ item_id: 'MLB-UM', seller_id: 7, preco: 70.19, visitas_30d: 120 })];
+  detalhe.vendedores = [{
+    ...vendedor(7, 'LOJA UM'), transactions_total: 500, nivel: '5_green', power_seller: 'platinum',
+  }];
+  return renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1' });
+}
+
 beforeEach(() => {
   detalhe.ofertas = [];
   detalhe.ofertasAtuais = [
@@ -117,6 +142,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  contextoMargem.valor = { custo: null, aliquotaPct: null };
 });
 
 describe('DialogDetalhe — links de ofertas do Mercado Livre', () => {
@@ -180,7 +206,7 @@ describe('DialogDetalhe — concorrentes relevantes', () => {
     expect(screen.getByText('SOUZABRUNA20230210001211')).toBeInTheDocument();
     expect(screen.getByText('Fora da referência')).toBeInTheDocument();
     expect(screen.getByText('Poucas transações')).toBeInTheDocument();
-    expect(screen.getByText('MercadoLíder Gold')).toBeInTheDocument();
+    expect(screen.getByText(/MercadoLíder Gold/)).toBeInTheDocument();
     expect(screen.getByText('Reputação amarela')).toBeInTheDocument();
   });
 
@@ -374,5 +400,68 @@ describe('DialogDetalhe — visitas, FULL e composição', () => {
     expect(screen.getByText(/1 com frete grátis/)).toBeInTheDocument();
     expect(screen.getByText(/1 no FULL/)).toBeInTheDocument();
     expect(screen.getByText(/disputa de R\$\s*70,19 a R\$\s*99,00/)).toBeInTheDocument();
+  });
+});
+
+// Filho de grid tem min-width:auto e não encolhe: em 820px o dialog cortava "Sua posição" e o
+// botão "Reprecificar" pela direita, sem barra de rolagem.
+describe('DialogDetalhe — o conteúdo pode encolher dentro do grid do dialog', () => {
+  it('o corpo do dialog carrega min-w-0', () => {
+    renderDetalhe();
+    const corpo = document.querySelector('[data-slot="dialog-content"] > .flex.flex-col.gap-5');
+    expect(corpo).not.toBeNull();
+    expect(corpo).toHaveClass('min-w-0');
+  });
+});
+
+// ADR-0150 D-1: `%` sozinho não diz o denominador, e markup e margem s/ venda convivem no Pulse.
+describe('DialogDetalhe — o percentual da sobra diz o denominador', () => {
+  it('mostra "s/ venda" junto do percentual', () => {
+    renderDetalheComMargem();
+    expect(screen.getByText(/43\.0%\s*s\/\s*venda/)).toBeInTheDocument();
+  });
+});
+
+describe('DialogDetalhe — a tabela de concorrentes cabe na tela', () => {
+  it('são 7 colunas, e Reputação/MercadoLíder não existem mais como colunas próprias', () => {
+    renderDetalheComOfertas();
+    const cabecalhos = screen.getAllByRole('columnheader').map((th) => th.textContent?.trim());
+    expect(cabecalhos).toEqual([
+      'Preço', 'Vendedor', 'Estado', 'Porte do vendedor', 'Visitas 30d', 'Anúncio', 'Oferta',
+    ]);
+  });
+
+  it('a reputação e o selo de MercadoLíder continuam visíveis, dentro de "Vendedor"', () => {
+    renderDetalheComOfertas();
+    const celula = screen.getByText('LOJA UM').closest('td')!;
+    expect(within(celula).getByText(/Reputação verde/)).toBeInTheDocument();
+    expect(within(celula).getByText(/MercadoLíder Platinum/)).toBeInTheDocument();
+    expect(within(celula).getByText('Relevante')).toBeInTheDocument();
+  });
+});
+
+// A decomposição vivia só no `title`: tooltip não funciona em touch e some em demo projetada. Foi
+// uma comissão errada e silenciosa que superestimou a sobra deste produto em R$ 0,97 (Errata 6).
+describe('DialogDetalhe — a conta da margem fica à vista', () => {
+  it('os quatro descontos aparecem como números na tela, não só no title', () => {
+    renderDetalheComMargem(); // custo 30, alíquota 8%, comissão 14%, frete 5, preço 100
+    expect(screen.getByText('Comissão do ML')).toBeInTheDocument();
+    expect(screen.getByText('Frete')).toBeInTheDocument();
+    expect(screen.getByText('Imposto (8%)')).toBeInTheDocument();
+    expect(screen.getByText('Custo do produto')).toBeInTheDocument();
+    expect(screen.getByText('−R$ 14,00')).toBeInTheDocument();
+    expect(screen.getByText('−R$ 5,00')).toBeInTheDocument();
+    expect(screen.getByText('−R$ 8,00')).toBeInTheDocument();
+    expect(screen.getByText('−R$ 30,00')).toBeInTheDocument();
+  });
+
+  it('sem insumo, não há decomposição — só o motivo', () => {
+    // `codigo_pai` é obrigatório: sem ele o bloco de decisão inteiro não renderiza
+    // (dialog-detalhe.tsx:427). contexto mock (beforeEach/afterEach) já é custo/alíquota null.
+    renderDetalhe({ ...produtoBase, codigo_pai: 'APTAMIL-1' });
+    expect(screen.getByText(/Margem indisponível: falta custo do produto/)).toBeInTheDocument();
+    expect(screen.queryByText('Comissão do ML')).not.toBeInTheDocument();
+    // Regra LOUD: insumo ausente nunca vira zero.
+    expect(screen.queryByText('−R$ 0,00')).not.toBeInTheDocument();
   });
 });

@@ -248,25 +248,6 @@ export async function fetchCruzamentoEan(ean: string, productIds: string[]): Pro
   };
 }
 
-// --- Simulador de margem ------------------------------------------------------------------------
-
-/**
- * Margem do simulador do Sonar: diferente de `margemEstimada` (pulse-margem.ts), que divide pelo
- * PREÇO — aqui o brief pede margem sobre o CUSTO (markup), formato que faz sentido pra decidir
- * "vale cadastrar este produto" antes de ele existir no catálogo. "recebe" mostrado é bruto
- * (preço − comissão − frete); o imposto só entra no líquido, separado, para não confundir os dois.
- */
-export function margemSimulada({ precoAlvo, custo, aliquotaPct, tarifa }: {
-  precoAlvo: number; custo: number; aliquotaPct: number;
-  tarifa: { comissao: number; frete: number };
-}): { recebe: number; imposto: number; liquido: number; margemPct: number } {
-  const recebe = precoAlvo - tarifa.comissao - tarifa.frete;
-  const imposto = (aliquotaPct / 100) * precoAlvo;
-  const liquido = recebe - imposto - custo;
-  const margemPct = custo > 0 ? (liquido / custo) * 100 : 0;
-  return { recebe, imposto, liquido, margemPct };
-}
-
 // --- Análise PubliAI seções 2/3/7 (ADR-0142 + ADR-0143): espelho de relatorio-secoes-237.ts
 
 type CampoComEstado<V> =

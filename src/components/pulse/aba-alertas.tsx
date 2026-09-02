@@ -13,10 +13,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { QK } from '@/lib/queries';
 import { cn } from '@/lib/utils';
 import {
-  ALERTAS_POR_PAGINA, contarPulseAlertas, fetchPulseAlertas, marcarAlertaLido, marcarAlertasLidos,
-  type FiltroSeveridade, type PulseAlerta,
+  ALERTAS_POR_PAGINA, contarPulseAlertas, fetchPulseAlertas, marcarAlertasLidos,
+  marcarAlertasLidosPorIds, type FiltroSeveridade, type PulseAlerta,
 } from '@/lib/pulse';
-import { textoAlerta } from '@/lib/pulse-alerta-texto';
+import { agruparAlertasPorProduto } from '@/lib/pulse-alertas-grupo';
+import { idadeAlerta, textoAlerta } from '@/lib/pulse-alerta-texto';
 
 const FILTROS: { valor: FiltroSeveridade; rotulo: string }[] = [
   { valor: 'acao', rotulo: 'Ação' },
@@ -70,15 +71,18 @@ export function AbaAlertas({
   const invalidar = () => qc.invalidateQueries({ queryKey: ['pulse', 'alertas'] });
 
   const marcarLido = useMutation({
-    mutationFn: marcarAlertaLido,
+    // Lambda, não a referência nua: o react-query v5 passa um segundo argumento (contexto da
+    // mutation) para a `mutationFn`, e o que vai ao banco tem que ser só a lista de ids.
+    mutationFn: (ids: string[]) => marcarAlertasLidosPorIds(ids),
     // Update otimista: a linha sai na hora. Sem ele, o clique no ✓ só tinha efeito visível depois
     // do refetch de todas as páginas carregadas mais as duas contagens — até cinco idas ao banco
-    // sem nenhuma resposta na tela.
-    onMutate: async (id: string) => {
+    // sem nenhuma resposta na tela. A linha inteira sai, e ela representa N alertas.
+    onMutate: async (ids: string[]) => {
       await qc.cancelQueries({ queryKey: chaveLista });
       const anterior = qc.getQueryData<PaginasAlertas>(chaveLista);
+      const fora = new Set(ids);
       qc.setQueryData<PaginasAlertas>(chaveLista, (atual) => (
-        atual && { ...atual, pages: atual.pages.map((p) => p.filter((a) => a.id !== id)) }
+        atual && { ...atual, pages: atual.pages.map((p) => p.filter((a) => !fora.has(a.id))) }
       ));
       // ponytail: a contagem fica para a invalidação do `onSettled`. Ajustá-la aqui exigiria mexer
       // em três chaves de cache (o filtro ativo, 'todos' e a severidade da própria linha) para
@@ -87,7 +91,7 @@ export function AbaAlertas({
       // "Carregar mais" até a invalidação restaurar — auto-corrige no mesmo `onSettled`.
       return { anterior };
     },
-    onError: (e: Error, _id, ctx) => {
+    onError: (e: Error, _ids, ctx) => {
       if (ctx?.anterior) qc.setQueryData(chaveLista, ctx.anterior);
       toast.error(e.message);
     },
@@ -105,6 +109,16 @@ export function AbaAlertas({
       return true;
     });
   }, [data]);
+
+  // A linha é o PRODUTO, não o evento (ADR-0133 Errata 4 D-1). Agrupamento de exibição, sobre as
+  // páginas já carregadas: `N movimentos` conta os alertas CARREGADOS e cresce a cada "Carregar mais".
+  const grupos = useMemo(() => agruparAlertasPorProduto(lista), [lista]);
+  const [expandidos, setExpandidos] = useState<Set<string>>(new Set());
+  const alternarGrupo = (chave: string) => setExpandidos((s) => {
+    const novo = new Set(s);
+    if (!novo.delete(chave)) novo.add(chave);
+    return novo;
+  });
 
   // Teto do "marcar todos": o alerta mais novo já carregado. A lista vem em ordem decrescente, então
   // é o primeiro item. O invariante que ele garante é "nada MAIS NOVO do que o operador viu" — a
@@ -225,63 +239,93 @@ export function AbaAlertas({
         )
       ) : (
         <div className="flex flex-col gap-0 rounded-lg border">
-          {lista.map((alerta) => {
-            const texto = textoAlerta(alerta);
+          {grupos.map((g) => {
+            const texto = textoAlerta(g.maisRecente);
+            const idade = idadeAlerta(g.maisRecente.criado_em);
+            const aberto = expandidos.has(g.chave);
+            // Reprecificar segue o GRUPO: a queda mais recente do grupo, mesmo que um
+            // `novo_concorrente` posterior seja quem a linha exibe. Sem isso, queda encoberta
+            // perdia o botão (ADR-0133 Errata 4 D-1).
+            const queda = [g.maisRecente, ...g.demais]
+              .find((a) => a.tipo === 'preco_caiu' && a.pulse_produtos?.codigo_pai);
             return (
-              <div
-                key={alerta.id}
-                className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b px-4 py-2 text-sm last:border-0"
-              >
-                {/* "Todos" é o único filtro que mistura as duas severidades — e o único lugar onde
-                    ela ficaria invisível. Selo em texto, não só cor. */}
-                {severidade === 'todos' && (
-                  <span
-                    className={cn(
-                      'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium',
-                      alerta.severidade === 'acao'
-                        ? 'bg-warning text-warning-foreground'
-                        : 'bg-muted text-muted-foreground',
+              <div key={g.chave} className="border-b px-4 py-2 text-sm last:border-0">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {/* "Todos" é o único filtro que mistura as duas severidades — e o único lugar onde
+                      ela ficaria invisível. Selo em texto, não só cor. */}
+                  {severidade === 'todos' && (
+                    <span
+                      className={cn(
+                        'shrink-0 rounded px-1.5 py-0.5 text-xs font-medium',
+                        g.maisRecente.severidade === 'acao'
+                          ? 'bg-warning text-warning-foreground'
+                          : 'bg-muted text-muted-foreground',
+                      )}
+                    >
+                      {g.maisRecente.severidade === 'acao' ? 'Ação' : 'Info'}
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1 truncate" title={texto}>{texto}</span>
+                  {idade && <span className="shrink-0 text-xs text-muted-foreground">{idade}</span>}
+                  {/* O total é de ALERTAS. O botão do topo continua contando alertas também —
+                      é ele que descreve o que o clique faz no banco (D-7 e Errata 2). */}
+                  {g.total > 1 && (
+                    <button
+                      type="button"
+                      aria-expanded={aberto}
+                      className="shrink-0 rounded px-1.5 py-0.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      onClick={() => alternarGrupo(g.chave)}
+                    >
+                      · {g.total} movimentos
+                    </button>
+                  )}
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {/* O texto do alerta entra no nome acessível dos três botões: 50 linhas por página
+                        produziam 50 "Ver produto" indistinguíveis na navegação por lista de botões. */}
+                    {g.produtoId && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label={`Ver produto: ${texto}`}
+                        onClick={() => onVerProduto(g.produtoId!)}
+                      >
+                        Ver produto
+                      </Button>
                     )}
-                  >
-                    {alerta.severidade === 'acao' ? 'Ação' : 'Info'}
-                  </span>
-                )}
-                <span className="min-w-0 flex-1 truncate" title={texto}>{texto}</span>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {/* O texto do alerta entra no nome acessível dos três botões: 50 linhas por página
-                      produziam 50 "Ver produto" indistinguíveis na navegação por lista de botões. */}
-                  {alerta.produto_id && (
+                    {queda && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        aria-label={`Reprecificar: ${texto}`}
+                        onClick={() => onReprecificar(queda)}
+                      >
+                        Reprecificar
+                      </Button>
+                    )}
                     <Button
-                      variant="outline"
-                      size="sm"
-                      aria-label={`Ver produto: ${texto}`}
-                      onClick={() => onVerProduto(alerta.produto_id!)}
+                      variant="ghost"
+                      size="icon"
+                      className="h-11 w-11 sm:h-7 sm:w-7"
+                      aria-label={`Marcar como lido: ${texto}`}
+                      onClick={() => marcarLido.mutate(g.ids)}
                     >
-                      Ver produto
+                      <Check className="h-4 w-4" />
                     </Button>
-                  )}
-                  {alerta.tipo === 'preco_caiu' && alerta.pulse_produtos?.codigo_pai && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      aria-label={`Reprecificar: ${texto}`}
-                      onClick={() => onReprecificar(alerta)}
-                    >
-                      Reprecificar
-                    </Button>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-11 w-11 sm:h-7 sm:w-7"
-                    aria-label={`Marcar como lido: ${texto}`}
-                    onClick={() => marcarLido.mutate(alerta.id)}
-                    // Só o alerta em voo desabilita — a mutation é compartilhada e congelava a lista toda.
-                    disabled={marcarLido.isPending && marcarLido.variables === alerta.id}
-                  >
-                    <Check className="h-4 w-4" />
-                  </Button>
+                  </div>
                 </div>
+                {aberto && (
+                  <ul className="mt-1 ml-1 border-l pl-3 text-xs text-muted-foreground">
+                    {g.demais.map((a) => {
+                      const idadeDemais = idadeAlerta(a.criado_em);
+                      return (
+                        <li key={a.id} className="py-0.5">
+                          {textoAlerta(a)}
+                          {idadeDemais && <span className="opacity-70"> · {idadeDemais}</span>}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
               </div>
             );
           })}

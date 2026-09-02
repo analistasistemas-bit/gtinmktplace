@@ -56,6 +56,11 @@ const ALL_EXPECTED_KEYS = [
   'Mais caro que o mercado',
   'Você é o menor preço',
   'Sem vínculo de catálogo',
+  // Pulse / Sonar — "Mercado endereçável" é o número mais forte da demo e era o menos explicado.
+  'Vendas acumuladas',
+  'Mercado endereçável',
+  'Concorrentes vendendo mais que há um ano',
+  'Média mensal por vendedor (12 meses)',
 ];
 
 describe('kpi-descriptions', () => {
@@ -76,5 +81,10 @@ describe('kpi-descriptions', () => {
 
   it('resolves the exact markup formula text for the non-divergent "Markup no período"', () => {
     expect(getKpiDescription('Markup no período')).toMatch(/custo/);
+  });
+
+  it('"Mercado endereçável" diz que é acumulado da vida dos anúncios, não TAM anual', () => {
+    expect(getKpiDescription('Mercado endereçável')).toMatch(/vida dos anúncios/i);
+    expect(getKpiDescription('Mercado endereçável')).not.toMatch(/por ano|anual|mensal/i);
   });
 });

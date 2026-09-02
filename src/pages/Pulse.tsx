@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Activity, Bell, Plus, RefreshCw, Search, TrendingUp, X } from 'lucide-react';
+import { Activity, Plus, RefreshCw, Search, TrendingUp, Unlink, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KpiCard } from '@/components/ui/kpi-card';
@@ -30,12 +30,15 @@ import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { QK } from '@/lib/queries';
 import {
   fetchPulseProdutos, fetchPulseResumoOfertas, coletarPulseAgora, contarPulseAlertas,
-  type PulseAlerta, type PulseProduto,
+  fetchContextoMargemEmLote, fetchPulseHistoricoOfertas, type PulseProduto,
 } from '@/lib/pulse';
 import { cn } from '@/lib/utils';
 import { fmtInt } from '@/lib/formato';
 import { useCountUp } from '@/hooks/use-count-up';
 import PulseSonar from './PulseSonar';
+
+/** Alvo único da reprecificação: a aba Alertas e a linha do Radar alimentam o MESMO dialog. */
+type AlvoReprecificar = { codigoPai: string | null; precoInicial: number | null; produtoId: string | null };
 
 function coletaMaisRecente(produtos: PulseProduto[]): string | null {
   let maisRecente: string | null = null;
@@ -73,7 +76,7 @@ export default function Pulse() {
 
   const [adicionarAberto, setAdicionarAberto] = useState(false);
   const [detalheId, setDetalheId] = useState<string | null>(null);
-  const [alertaReprecificar, setAlertaReprecificar] = useState<PulseAlerta | null>(null);
+  const [reprecificar, setReprecificar] = useState<AlvoReprecificar | null>(null);
   const [filtros, setFiltros] = useState<FiltrosPulse>(FILTROS_VAZIOS);
 
   const { data: produtos, isLoading, isError, error, refetch } = useQuery({
@@ -100,6 +103,28 @@ export default function Pulse() {
     queryKey: ['pulse', 'ofertas-resumo', ids],
     queryFn: () => fetchPulseResumoOfertas(ids),
     enabled: ids.length > 0,
+  });
+
+  // Consulta separada e de baixa prioridade: a série é enfeite decisório, não bloqueia a lista.
+  // Desligada até o resumo chegar — a âncora do último ponto vem dele. A chave não depende do
+  // resumo: um refetch dele só re-ancora o histórico depois do `staleTime`.
+  const { data: historicoOfertas, isError: historicoErro } = useQuery({
+    queryKey: ['pulse', 'historico-ofertas', ids],
+    queryFn: () => fetchPulseHistoricoOfertas(
+      ids, new Map([...resumoOfertas!].map(([id, r]) => [id, r.menorObservado])),
+    ),
+    enabled: ids.length > 0 && !!resumoOfertas,
+    staleTime: 5 * 60_000,
+  });
+
+  // Uma consulta para a página inteira (ADR-0119 Errata 12 D-3): 229 catálogos seriam 229 idas ao
+  // PostgREST só para desenhar uma coluna.
+  const codigosPai = [...new Set((produtos ?? []).map((p) => p.codigo_pai).filter((c): c is string => !!c))];
+  const { data: contextosMargem, isError: contextoErro } = useQuery({
+    queryKey: ['pulse', 'contexto-margem-lote', codigosPai],
+    queryFn: () => fetchContextoMargemEmLote(codigosPai),
+    enabled: codigosPai.length > 0,
+    staleTime: 60_000,
   });
 
   const menorRelevanteDe = useCallback(
@@ -196,7 +221,11 @@ export default function Pulse() {
           <TabsTrigger value="alertas">
             Alertas
             {!!acaoPendente && (
-              <span className="ml-1.5 rounded-full bg-warning px-1.5 text-xs font-medium text-warning-foreground">
+              // animate-pulse: mesmo padrão de destaque já usado no Financeiro e no app de
+              // faturamento (opacidade, sem trocar cor). motion-reduce:animate-none é reforço
+              // explícito — o bloco global em src/index.css já zera a duração da animação sob
+              // prefers-reduced-motion, então isto nunca chega a piscar para quem pediu menos movimento.
+              <span className="ml-1.5 animate-pulse rounded-full bg-warning px-1.5 text-xs font-medium text-warning-foreground motion-reduce:animate-none">
                 {acaoPendente}
               </span>
             )}
@@ -204,6 +233,12 @@ export default function Pulse() {
         </TabsList>
 
         <TabsContent value="radar">
+      <p className="mb-4 text-sm text-muted-foreground">
+        Acompanha os anúncios de catálogo que você já vende, compara o preço com o dos
+        concorrentes e avisa quando o mercado se move — o par do Sonar, que prospecta antes de
+        você cadastrar.
+      </p>
+
       {lista.length > 0 && (
         // Cada card é o atalho para as linhas que ele conta. "No radar" não filtra nada — ele
         // limpa: é o caminho de volta para a lista inteira depois de qualquer recorte.
@@ -232,7 +267,9 @@ export default function Pulse() {
             label="Você é o menor preço"
             value={<ValorAnimado n={contagens.menorPreco} />}
             icon={TrendingUp}
-            tom="success"
+            // Zero em "menor preço" não é bom nem ruim — verde com 0 lê como parabéns por nada.
+            // Mesma alternância que "Mais caro que o mercado" já usa logo acima.
+            tom={contagens.menorPreco > 0 ? 'success' : 'info'}
             onClick={() => alternarFoco('menor_preco')}
             ativo={filtros.foco === 'menor_preco'}
           />
@@ -240,7 +277,7 @@ export default function Pulse() {
             size="compact"
             label="Sem vínculo de catálogo"
             value={<ValorAnimado n={contagens.semVinculo} />}
-            icon={Bell}
+            icon={Unlink}
             tom={contagens.semVinculo > 0 ? 'warning' : 'info'}
             hint={contagens.semVinculo > 0 ? 'não disputam a página' : undefined}
             onClick={() => alternarFoco('sem_vinculo')}
@@ -330,7 +367,20 @@ export default function Pulse() {
           produtos={filtrada}
           resumo={resumoOfertas}
           resumoCarregando={resumoCarregando}
+          // Falha de leitura não pode virar esqueleto eterno: como na query irmã de ofertas, o
+          // carregamento termina e a célula cai no travessão.
+          contextos={codigosPai.length === 0 || contextoErro ? new Map() : contextosMargem}
+          // A tabela precisa saber POR QUE o Map caiu vazio — senão "falhou a consulta" e "consultei
+          // e não achei custo" viram o mesmo travessão com o motivo errado.
+          contextosErro={contextoErro}
+          // Como na query irmã de contexto de margem: sem isto, uma falha de leitura deixa o valor
+          // `undefined` para sempre e a coluna inteira fica em esqueleto eterno, sem nunca cair no
+          // estado vazio. Em falha, Map vazio = célula vazia, que é a verdade ("não temos série").
+          historico={historicoErro ? new Map() : historicoOfertas}
           onAbrirDetalhe={setDetalheId}
+          onReprecificar={(p) => setReprecificar({
+            codigoPai: p.codigo_pai!, precoInicial: p.meu_preco, produtoId: p.id,
+          })}
         />
       )}
         </TabsContent>
@@ -342,7 +392,11 @@ export default function Pulse() {
         <TabsContent value="alertas">
           <AbaAlertas
             onVerProduto={setDetalheId}
-            onReprecificar={setAlertaReprecificar}
+            onReprecificar={(a) => setReprecificar({
+              codigoPai: a.pulse_produtos?.codigo_pai ?? null,
+              precoInicial: Number(a.payload.para),
+              produtoId: a.produto_id,
+            })}
             onVerRadar={() => {
               setSearchParams({}, { replace: true });
               setFiltros((f) => ({ ...f, foco: 'mais_caro' }));
@@ -354,10 +408,10 @@ export default function Pulse() {
       <DialogAdicionar aberto={adicionarAberto} onFechar={() => setAdicionarAberto(false)} />
       <DialogDetalhe produto={produtoDetalhe} onFechar={() => setDetalheId(null)} />
       <DialogReprecificar
-        codigoPai={alertaReprecificar?.pulse_produtos?.codigo_pai ?? null}
-        precoInicial={alertaReprecificar ? Number(alertaReprecificar.payload.para) : null}
+        codigoPai={reprecificar?.codigoPai ?? null}
+        precoInicial={reprecificar?.precoInicial ?? null}
         custos={(() => {
-          const p = lista.find((x) => x.id === alertaReprecificar?.produto_id);
+          const p = lista.find((x) => x.id === reprecificar?.produtoId);
           return p
             ? {
                 comissaoPct: p.comissao_pct, comissaoFixa: p.comissao_fixa,
@@ -365,7 +419,7 @@ export default function Pulse() {
               }
             : null;
         })()}
-        onFechar={() => setAlertaReprecificar(null)}
+        onFechar={() => setReprecificar(null)}
       />
     </div>
   );

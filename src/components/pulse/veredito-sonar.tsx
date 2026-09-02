@@ -119,11 +119,11 @@ function PodioColuna({ titulo, dica, Icone, itens }: {
                 title={i.nome}
                 className="flex min-w-0 items-center gap-1 text-xs font-medium hover:underline focus-visible:underline focus-visible:outline-none"
               >
-                <span className="truncate">{i.nome}</span>
+                <span className="line-clamp-2">{i.nome}</span>
                 <ExternalLink className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
               </a>
             ) : (
-              <span className="min-w-0 truncate text-xs font-medium" title={i.nome}>{i.nome}</span>
+              <span className="min-w-0 line-clamp-2 text-xs font-medium" title={i.nome}>{i.nome}</span>
             )}
             <span className="text-xs font-semibold tabular-nums" title={i.valorDica}>{i.valor}</span>
             {i.meta !== '' && (

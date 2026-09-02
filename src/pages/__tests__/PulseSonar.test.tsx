@@ -1,11 +1,11 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import PulseSonar, { SonarVendas, SonarEanCruzamento } from '../PulseSonar';
-import { fetchVendasSonar } from '@/lib/sonar';
-import type { CruzamentoEan, ItemVendasSonar, PainelVendasSonar } from '@/lib/sonar';
+import { fetchCruzamentoEan, fetchSecoes237Sonar, fetchVendasSonar } from '@/lib/sonar';
+import type { CruzamentoEan, ItemVendasSonar, PainelVendasSonar, RespostaSecoes237Sonar } from '@/lib/sonar';
 
 // Card "Produto destaque" (SonarVendas): mesma regra de href do item_id da coluna de ações
 // (D15/ADR-0127), aplicada ao `produto_destaque` do payload — ver task 15/16 (coordenador pediu
@@ -98,12 +98,17 @@ vi.mock('@/lib/sonar', async (importOriginal) => ({
   fetchVendasSonar: vi.fn(async () => ({ configurado: false as const })),
   fetchVisitasSonar: vi.fn(async () => ({ conectado: false as const })),
   fetchCruzamentoEan: vi.fn(async () => ({ minhas: [], no_radar: null })),
+  // Pendente para sempre: mantém a Análise PubliAI em "carregando" e evita um `fetch` real.
+  fetchSecoes237Sonar: vi.fn(() => new Promise<never>(() => {})),
 }));
 vi.mock('@/lib/sonar-buscas-recentes', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/sonar-buscas-recentes')>()),
   lerBuscasRecentes: () => [],
   registrarBusca: () => [],
 }));
+
+// jsdom não implementa scrollIntoView, e o botão "Simular" rola até a DRE ao trocar a âncora.
+beforeAll(() => { Element.prototype.scrollIntoView = vi.fn(); });
 
 function renderSonar() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -116,6 +121,43 @@ function renderSonar() {
   );
   return screen.getByLabelText(/Termo de busca ou EAN/i);
 }
+
+/** Página com uma amostra: o mock de `fetchVendasSonar` devolve `itens`, e o termo é digitado como o
+ *  operador faria. Resolve quando a tabela aparece (o stepper segura o resultado por 400 ms). */
+async function renderSonarComAmostra(itens: ItemVendasSonar[], termo = 'tecido oxford') {
+  vi.mocked(fetchVendasSonar).mockResolvedValue({
+    ...respBase(null), termo, itens, itens_analisados: itens.length, itens_com_vendas: itens.length,
+  });
+  const campo = renderSonar();
+  await userEvent.type(campo, `${termo}{Enter}`);
+  await screen.findByRole('table', {}, { timeout: 3000 });
+  return campo;
+}
+
+/** Página com a resposta dada (termo, gerado_em, amostra vêm do payload). */
+async function renderSonarComResposta(resp: PainelVendasSonar, termoDigitado = 'tecido oxford') {
+  vi.mocked(fetchVendasSonar).mockResolvedValue(resp);
+  const campo = renderSonar();
+  await userEvent.type(campo, `${termoDigitado}{Enter}`);
+  // "amostra de N anúncios" está nas duas variantes do cabeçalho (termo e EAN) — o texto do
+  // heading em si diverge por busca (ver describe "cabeçalho do resultado por EAN").
+  await screen.findByText(/amostra de \d+ anúncios/, {}, { timeout: 3000 });
+  return campo;
+}
+
+/** Amostra mínima que chega ao ramo de resultado: `itens: []` cai em "amostra vazia" (`PulseSonar.tsx:758`)
+ *  e `respBase(null)` puro (itens_analisados 1, sem `itens`) cai em "cache antigo" — nenhum dos dois
+ *  renderiza o cabeçalho. */
+const comAmostra: PainelVendasSonar = {
+  ...respBase(null), itens: [itemBase({ item_id: 'MLB1', preco: 10, category_id: 'MLBX' })], itens_analisados: 1,
+};
+
+/** Busca por EAN: o campo é limpo após o scan (ADR-0140), então `eanBuscado` só vive no estado. */
+const renderSonarComEan = (ean: string) => renderSonarComResposta({ ...comAmostra, termo: ean }, ean);
+
+/** Título na TABELA — o mesmo texto aparece no pódio do veredito e no `dre-ancora`. */
+const linhaDaTabela = (titulo: string) =>
+  screen.getAllByText(titulo).map((el) => el.closest('tr')).find((tr): tr is HTMLTableRowElement => tr != null)!;
 
 describe('PulseSonar — EAN vai para a análise completa, como a busca por descrição', () => {
   beforeEach(() => { vi.mocked(fetchVendasSonar).mockClear(); });
@@ -148,5 +190,204 @@ describe('PulseSonar — EAN vai para a análise completa, como a busca por desc
     await userEvent.type(campo, 'tecido oxford 10 metros{Enter}');
     expect(campo).toHaveValue('tecido oxford 10 metros');
     expect(fetchVendasSonar).toHaveBeenCalledWith('tecido oxford 10 metros');
+  });
+});
+
+// ADR-0150 D-2: o Sonar tinha dois simuladores com bases diferentes respondendo à mesma pergunta.
+describe('PulseSonar — um simulador só', () => {
+  const amostra = () => [
+    itemBase({ titulo: 'Oxford Marrom', item_id: 'MLB1', preco: 100, category_id: 'MLB1234', vendidos: 50 }),
+    itemBase({ titulo: 'Oxford Azul', item_id: 'MLB2', preco: 80, category_id: 'MLB1234', vendidos: 10 }),
+  ];
+
+  it('"Simular" troca a âncora da DRE em vez de abrir um segundo simulador', async () => {
+    await renderSonarComAmostra(amostra());
+
+    // Âncora padrão continua sendo o primeiro da amostra (ADR-0148 D-8).
+    expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Marrom');
+
+    await userEvent.click(within(linhaDaTabela('Oxford Azul')).getByRole('button', { name: /Simular/ }));
+
+    expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Azul');
+    // Nada de dialog: o segundo simulador não existe mais.
+    expect(screen.queryByRole('dialog', { name: 'Simular margem' })).not.toBeInTheDocument();
+  });
+
+  it('buscar outro nicho devolve a âncora ao primeiro anúncio da amostra nova', async () => {
+    const campo = await renderSonarComAmostra(amostra());
+    await userEvent.click(within(linhaDaTabela('Oxford Azul')).getByRole('button', { name: /Simular/ }));
+    expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Azul');
+
+    // Termo novo → `termoBuscado` muda → a escolha anterior apontaria para um anúncio que não está
+    // mais na tela. O mock devolve a mesma amostra para qualquer termo.
+    await userEvent.clear(campo);
+    await userEvent.type(campo, 'outro nicho{Enter}');
+    expect(await screen.findByTestId('dre-ancora', {}, { timeout: 3000 })).toHaveTextContent('Oxford Marrom');
+  });
+
+  // Caso real: cache pré-ADR-0127 vem sem `category_id`. A DRE recusa cotar (e deve recusar), mas
+  // o operador ainda precisa ver que o clique trocou a âncora — senão "Simular" parece não fazer
+  // nada. O cartão de recusa carrega o mesmo `id`/`data-testid` que o bloco calculado.
+  it('âncora troca mesmo quando a DRE está recusando cotar (amostra sem categoria)', async () => {
+    await renderSonarComAmostra([
+      itemBase({ titulo: 'Oxford Marrom', item_id: 'MLB1', preco: 100, category_id: null, vendidos: 50 }),
+      itemBase({ titulo: 'Oxford Azul', item_id: 'MLB2', preco: 80, category_id: null, vendidos: 10 }),
+    ]);
+
+    expect(screen.getByText(/não dá para cotar/)).toBeInTheDocument();
+    expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Marrom');
+
+    await userEvent.click(within(linhaDaTabela('Oxford Azul')).getByRole('button', { name: /Simular/ }));
+
+    expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Azul');
+    // A recusa continua recusando — o que mudou é só de quem ela está falando.
+    expect(screen.getByText(/não dá para cotar/)).toBeInTheDocument();
+  });
+});
+
+describe('PulseSonar — cabeçalho do resultado', () => {
+  it('repete o termo buscado, o tamanho da amostra e a idade do cache', async () => {
+    await renderSonarComResposta({
+      ...respBase(null),
+      termo: '7896004700113',
+      gerado_em: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+      itens_analisados: 20,
+      itens: comAmostra.itens,
+    });
+    const cabecalho = await screen.findByRole('heading', { name: /Nicho: 7896004700113/ });
+    expect(cabecalho).toBeInTheDocument();
+    expect(screen.getByText(/amostra de 20/)).toBeInTheDocument();
+    expect(screen.getByText(/há 2 dias/)).toBeInTheDocument();
+  });
+
+  // Cache antigo (pré-ADR-0125/D2, campo aditivo) grava payloads sem `gerado_em` mesmo o tipo
+  // declarando o campo obrigatório — regra LOUD: sem data real, a guarda tem que OMITIR a idade,
+  // nunca supor "coletado agora". `as unknown as PainelVendasSonar` simula esse payload real, que
+  // o TS não vê chegar da rede.
+  it('sem gerado_em no payload, o cabeçalho sai com termo e amostra e sem qualquer idade', async () => {
+    const { gerado_em: _semGeradoEm, ...semData } = comAmostra;
+    await renderSonarComResposta({ ...semData, termo: 'tecido oxford' } as unknown as PainelVendasSonar);
+    expect(await screen.findByRole('heading', { name: /^Nicho: tecido oxford/ })).toBeInTheDocument();
+    expect(screen.getByText(/amostra de 1/)).toBeInTheDocument();
+    expect(screen.queryByText(/coletado/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/há \d/)).not.toBeInTheDocument();
+  });
+
+  it('o resultado em cache diz que reabrir é grátis e nova busca custa', async () => {
+    await renderSonarComResposta(comAmostra);
+    expect(screen.getByText(/reabrir este termo não dispara coleta nova/i)).toBeInTheDocument();
+  });
+
+  it('oferece "Adicionar ao Radar" com o EAN buscado pré-preenchido', async () => {
+    await renderSonarComEan('7896004700113');
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar ao Radar' }));
+    expect(await screen.findByDisplayValue('7896004700113')).toBeInTheDocument();
+  });
+
+  it('sem EAN buscado, o botão não aparece — não há o que vigiar por termo', async () => {
+    await renderSonarComResposta({ ...comAmostra, termo: 'tecido oxford' });
+    expect(screen.queryByRole('button', { name: 'Adicionar ao Radar' })).not.toBeInTheDocument();
+  });
+});
+
+// Pedido do Diego: "Nicho: 4005900183125" não diz nada — quem buscou por EAN buscou um produto,
+// não um nicho. O nome vem de fonte já carregada na tela (sem chamada nova ao serviço externo):
+// 1º o catálogo da própria org (cruzamentoEan.minhas, o mais confiável), 2º o título do primeiro
+// anúncio da amostra (sinalizado como tal), por último só o código.
+describe('PulseSonar — cabeçalho do resultado por EAN', () => {
+  it('nome do catálogo disponível: cabeçalho mostra código e nome, sem rótulo "Nicho"', async () => {
+    vi.mocked(fetchCruzamentoEan).mockResolvedValueOnce({
+      minhas: [{ codigo: '00123', nome: 'Cabo USB-C 1m', preco: 19.9 }],
+      no_radar: null,
+    });
+    await renderSonarComEan('7896004700113');
+    const cabecalho = await screen.findByRole('heading', { name: /7896004700113 — Cabo USB-C 1m/ });
+    expect(cabecalho).toBeInTheDocument();
+    expect(cabecalho).not.toHaveTextContent(/Nicho/);
+    expect(cabecalho).not.toHaveTextContent(/título do anúncio/);
+  });
+
+  it('sem nome do catálogo: cai para o título do primeiro anúncio, marcado como tal', async () => {
+    vi.mocked(fetchCruzamentoEan).mockResolvedValueOnce({ minhas: [], no_radar: null });
+    await renderSonarComEan('7896004700113');
+    // itemBase() usa 'Produto destaque' como título do anúncio quando o teste não sobrescreve.
+    const cabecalho = await screen.findByRole('heading', { name: /7896004700113 — Produto destaque/ });
+    expect(cabecalho).toHaveTextContent(/título do anúncio/);
+  });
+
+  it('sem catálogo e sem título de anúncio: só o código, sem preenchimento inventado', async () => {
+    vi.mocked(fetchCruzamentoEan).mockResolvedValueOnce({ minhas: [], no_radar: null });
+    await renderSonarComResposta(
+      { ...comAmostra, termo: '7896004700113', itens: [{ ...comAmostra.itens![0], titulo: '' }] },
+      '7896004700113',
+    );
+    const cabecalho = await screen.findByRole('heading', { name: '7896004700113' });
+    expect(cabecalho).toBeInTheDocument();
+  });
+
+  it('busca por termo (não EAN): cabeçalho continua "Nicho: {termo}", sem mudança', async () => {
+    await renderSonarComResposta({ ...comAmostra, termo: 'tecido oxford' });
+    expect(await screen.findByRole('heading', { name: 'Nicho: tecido oxford' })).toBeInTheDocument();
+  });
+});
+
+// Task 19: quatro blocos com quatro cabeçalhos diferentes, e a tabela começava a 2.128px do topo
+// em 1440 — a DRE (o argumento de venda mais forte) a 1.685px. Vendas e o veredito continuam
+// sempre abertos (contexto que sustenta a conclusão); DRE e Análise PubliAI abrem fechados.
+//
+// `fetchSecoes237Sonar` vem mockado no topo do arquivo como uma Promise que nunca resolve (as
+// buscas por EAN não olham a Análise PubliAI). Aqui ela importa: sem resolver, a seção nunca sai
+// de "carregando" — que é um Card simples, sem botão — e "Quem vende neste nicho" nunca aparece.
+const secoes237Conectado: RespostaSecoes237Sonar = {
+  conectado: true,
+  secoes237: {
+    '2.9': { estado: 'sem_dado', mensagem: 'o faturamento do nicho não é publicado (ADR-0143)' },
+    '3.2': { estado: 'sem_dado', mensagem: 'amostra insuficiente' },
+    '3.3': {
+      com_estimativa: 0, vendedores_distintos: 0, estabelecidos: 0, proporcao: null,
+      anuncios_na_amostra: 1, anuncios_com_catalogo: 0, proporcao_anuncios: null, rotulo: '',
+    },
+    '3.4': { contagem: 0, total_no_catalogo: 0, rotulo: '' },
+    '3.6': {
+      estabelecidos: 0, crescendo: 0, estaveis: 0, encolhendo: 0, sem_serie: 0,
+      proporcao_crescendo: null, dias_janela: null, base_pequena: false, rotulo: '',
+    },
+    limitacao_3_2: '',
+    '7.4': null,
+  },
+  meta: {
+    vendedores_distintos: 0, sem_seller_id: 0, serie_linhas: 0,
+    anuncios_na_amostra: 1, catalogos_consultados: 0, catalogos_com_falha: 0,
+  },
+};
+
+describe('PulseSonar — os blocos de contexto abrem fechados', () => {
+  beforeEach(() => { vi.mocked(fetchSecoes237Sonar).mockResolvedValue(secoes237Conectado); });
+
+  it('a DRE e a Análise PubliAI começam colapsadas; o veredito e as vendas, não', async () => {
+    await renderSonarComAmostra([itemBase({ titulo: 'Oxford', item_id: 'MLB1', preco: 100, category_id: 'MLB1' })]);
+    expect(screen.getByRole('button', { name: /Dá lucro\?/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(await screen.findByRole('button', { name: /Quem vende neste nicho/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /Vendas do nicho/ })).not.toBeInTheDocument();
+  });
+
+  // Restrição: recolher um bloco não pode esconder recusa financeira. A prova de que a DRE nunca
+  // esconde uma recusa em curso está em duas partes: (1) o caso "sem categoria" acima
+  // ("âncora troca mesmo quando a DRE está recusando cotar") passa sem tocar em nada — o cartão de
+  // recusa fica FORA da SecaoSonar, sempre visível, colapsada ou não; (2) aqui, a recusa "por falta
+  // de insumo" (sem custo/origem/pacote) fica dentro do corpo colapsável, mas "Simular" abre a seção
+  // ao trocar a âncora — então o motivo nunca fica preso atrás de um clique extra.
+  it('clicar em "Simular" numa linha abre a DRE, além de trocar a âncora — e a recusa por falta de insumo já aparece', async () => {
+    await renderSonarComAmostra([itemBase({ titulo: 'Oxford', item_id: 'MLB1', preco: 100, category_id: 'MLB1' })]);
+    await userEvent.click(screen.getByRole('button', { name: /Simular/ }));
+    expect(screen.getByRole('button', { name: /Dá lucro\?/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText(/informe o custo do produto/i)).toBeInTheDocument();
+  });
+
+  it('a numeração órfã "6." não existe mais', async () => {
+    // `renderSonarComAmostra` devolve o campo de busca, não o resultado de `render` — sem
+    // `container`, a checagem é no `document.body` (mesmo escopo que `screen` usa por baixo).
+    await renderSonarComAmostra([itemBase({ titulo: 'Oxford', item_id: 'MLB1', preco: 100, category_id: 'MLB1' })]);
+    expect(document.body.textContent).not.toMatch(/\b6\.\s*Dá lucro/);
   });
 });

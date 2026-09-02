@@ -47,6 +47,8 @@ export function estadoAtualOfertas(ofertas: PulseOferta[]): PulseOferta[] {
     .sort((a, b) => a.preco - b.preco);
 }
 
+type OfertaPorDia = Pick<PulseOferta, 'item_id' | 'preco' | 'ativo' | 'dia'>;
+
 /** Menor preço entre as ofertas ativas de cada dia, em ordem cronológica. */
 /**
  * Menor preço VIGENTE por dia. `pulse_ofertas` é histórico de **mudanças** — o coletor só grava a
@@ -63,10 +65,12 @@ export function estadoAtualOfertas(ofertas: PulseOferta[]): PulseOferta[] {
  * o histórico é limitado a 400 linhas e pode ter perdido a primeira aparição de alguma oferta.
  */
 export function menorPrecoPorDia(
-  ofertas: PulseOferta[],
-  atuais?: PulseOferta[],
+  // Só os campos que a função de fato lê: quem consulta por dia não precisa (nem deve fingir que
+  // tem) a linha inteira de `pulse_ofertas` — a lista lê 6 colunas para não trafegar o resto.
+  ofertas: OfertaPorDia[],
+  atuais?: Pick<PulseOferta, 'preco' | 'ativo'>[],
 ): { dia: string; preco: number }[] {
-  const porDia = new Map<string, PulseOferta[]>();
+  const porDia = new Map<string, OfertaPorDia[]>();
   for (const o of ofertas) {
     const lista = porDia.get(o.dia) ?? [];
     lista.push(o);
@@ -244,4 +248,63 @@ export function ofertasAbaixoDaReferencia(mercado: MercadoQualificado): AbaixoDa
     referencia,
     pctAbaixo: ((referencia - menorPreco) / referencia) * 100,
   };
+}
+
+export interface FamiliaComVariacoes {
+  origem: string | null;
+  variacoes: { custo: number | null }[] | null;
+}
+
+/**
+ * Custo do produto e origem, a partir das famílias de um `codigo_pai` **já ordenadas da mais
+ * recente para a mais antiga**. Uma função só, chamada pelo caminho unitário e pelo lote: duas
+ * implementações da regra de custo divergem em silêncio, e divergência silenciosa em custo é a
+ * família de defeito mais cara deste projeto.
+ *
+ * Família recém-criada (ainda sem variações gravadas) não pode se passar pela fonte de custo —
+ * regra LOUD: cai em `null`, nunca em 0.
+ */
+export function custoDaFamilia(
+  familias: FamiliaComVariacoes[],
+): { custo: number | null; origem: string | null } {
+  const familia = familias.find((f) => (f.variacoes ?? []).length > 0);
+  if (!familia) return { custo: null, origem: null };
+  const custos = (familia.variacoes ?? []).map((v) => v.custo).filter((c): c is number => c != null);
+  return { custo: custos.length > 0 ? Math.max(...custos) : null, origem: familia.origem };
+}
+
+/**
+ * As duas formas em que os custos do ML chegam a `insumoFaltante`: a linha de `pulse_produtos`
+ * (lista e detalhe) e a estrutura de comissão do dialog de reprecificar. União, e não campos
+ * opcionais, de propósito — com opcionais um objeto sem NENHUMA das duas formas passaria pelo
+ * compilador e cairia em "falta comissão" para sempre, sem ninguém notar.
+ */
+export type CustosParaMargem =
+  | { comissao_pct: number | null; ptw_custos: { frete: number | null } | null }
+  | { comissaoPct: number | null; frete: number | null };
+
+/**
+ * Qual insumo impede o cálculo da margem. Vive aqui, e não na tela, porque a lista, o detalhe e o
+ * reprecificar precisam responder a MESMA coisa para o mesmo produto — um `—` num lugar e um
+ * número no outro seria contradição na mesma tela (ADR-0119 Errata 12 D-2). Estava duplicada como
+ * função privada em `dialog-detalhe.tsx` e `dialog-reprecificar.tsx`.
+ *
+ * A comissão TEM que vir do percentual lido no preço praticado. Cair em `ptw_custos.comissao`
+ * seria voltar ao defeito da Errata 6: aquele valor é calculado sobre o preço SUGERIDO pelo ML e
+ * superestima a sobra em todo anúncio acima da sugestão.
+ */
+export function insumoFaltante(
+  contexto: { custo: number | null; aliquotaPct: number | null } | undefined,
+  produto: CustosParaMargem | null,
+): string | null {
+  if (!contexto || contexto.custo == null) return 'custo do produto';
+  if (contexto.aliquotaPct == null) return 'alíquota de imposto';
+  const emCamelCase = produto != null && 'comissaoPct' in produto;
+  const comissaoPct = produto == null ? null
+    : emCamelCase ? produto.comissaoPct : produto.comissao_pct;
+  const frete = produto == null ? null
+    : emCamelCase ? produto.frete : produto.ptw_custos?.frete ?? null;
+  if (comissaoPct == null) return 'comissão do Mercado Livre';
+  if (frete == null) return 'custo de frete do Mercado Livre';
+  return null;
 }

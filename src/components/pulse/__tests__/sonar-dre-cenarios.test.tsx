@@ -39,7 +39,9 @@ function renderDre(over: Record<string, unknown> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <SonarDre ancora={ancora} precos={precos} {...over} />
+      {/* aberta=true: estes testes olham o corpo da DRE direto, sem passar pelo "Simular" da
+          tabela que abre a seção na página real. */}
+      <SonarDre ancora={ancora} precos={precos} aberta onAlternar={() => {}} {...over} />
     </QueryClientProvider>,
   );
 }

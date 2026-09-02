@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
-  passosProgresso, margemSimulada, ETAPAS_SONAR, itensDaAmostra, normalizarSerieVisitas, linkDoAnuncio,
+  passosProgresso, ETAPAS_SONAR, itensDaAmostra, normalizarSerieVisitas, linkDoAnuncio,
   formatarMedianaVendasMesSecoes237, formatarProporcaoCobertura,
   fetchSecoes237Sonar,
 } from '../sonar';
@@ -86,30 +86,6 @@ describe('itensDaAmostra — lista da tabela com fallback para cache v4 antigo',
     expect(itensDaAmostra({ ...base, itens: [item], por_anuncio: {} })).toEqual([item]);
     expect(itensDaAmostra({ ...base, por_anuncio: { MLB1: item } })).toEqual([item]);
     expect(itensDaAmostra({ ...base })).toEqual([]);
-  });
-});
-
-describe('margemSimulada — recebe/imposto/margem sobre custo (não sobre preço, ver brief Task 4 #4)', () => {
-  it('calcula recebe (preço − comissão − frete), imposto (alíquota × preço) e margem sobre o custo', () => {
-    // recebe = 100 - 15 - 5 = 80; imposto = 8% de 100 = 8; líquido = 80 - 8 - 40 = 32; margem = 32/40 = 80%
-    const r = margemSimulada({
-      precoAlvo: 100, custo: 40, aliquotaPct: 8, tarifa: { comissao: 15, frete: 5 },
-    });
-    expect(r).toEqual({ recebe: 80, imposto: 8, liquido: 32, margemPct: 80 });
-  });
-
-  it('alíquota importado (16%) — imposto maior reduz a margem', () => {
-    const r = margemSimulada({
-      precoAlvo: 100, custo: 40, aliquotaPct: 16, tarifa: { comissao: 15, frete: 5 },
-    });
-    expect(r.imposto).toBe(16);
-    expect(r.liquido).toBe(24);
-    expect(r.margemPct).toBe(60);
-  });
-
-  it('custo zero não estoura (margem 0, não Infinity/NaN)', () => {
-    const r = margemSimulada({ precoAlvo: 100, custo: 0, aliquotaPct: 8, tarifa: { comissao: 15, frete: 5 } });
-    expect(r.margemPct).toBe(0);
   });
 });
 

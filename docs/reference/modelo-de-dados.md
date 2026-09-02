@@ -815,8 +815,36 @@ cascade`), `tipo` (check: `preco_caiu` | `novo_concorrente` | `concorrente_saiu`
 (jsonb, default `{}`), `lido` (default `false`), `severidade` (check: `acao` | `info`, default
 `info`). Índices `pulse_alertas_org_lido_idx` em `(org_id, lido, criado_em desc)` e
 `pulse_alertas_org_sev_lido_idx` em `(org_id, severidade, lido, criado_em desc)` — este último
-serve o badge e o filtro por severidade. RLS: select org + **update org restrito à coluna `lido`**
-(`grant update (lido)`) — o sino de alertas do app marca como lido sem passar por edge function.
+serve o badge e o filtro por severidade. Índice **único** `pulse_alertas_dedupe_preco_caiu_uniq`
+em `(dedupe_preco_caiu, dedupe_dia_utc)` — ver abaixo. RLS: select org + **update org restrito à
+coluna `lido`** (`grant update (lido)`) — o sino de alertas do app marca como lido sem passar por
+edge function.
+
+**`dedupe_preco_caiu` / `dedupe_dia_utc` (ADR-0133 Errata 3,
+`20260902011825_pulse_alertas_dedupe_preco_caiu.sql`).** Duas colunas **geradas** (`stored`) que
+existem só para dar a `pulse_alertas` a idempotência que `pulse_ofertas` já tinha:
+`dedupe_preco_caiu` = `produto_id|payload->>'de'|payload->>'para'` e `dedupe_dia_utc` =
+`(criado_em at time zone 'UTC')::date`. O índice único sobre as duas faz a mesma queda, no mesmo
+produto, no mesmo **dia civil UTC**, caber uma vez só; o coletor grava com
+`onConflict: 'dedupe_preco_caiu,dedupe_dia_utc'` + `ignoreDuplicates`, então a repetição é
+absorvida em silêncio em vez de virar erro.
+
+Três decisões de forma que parecem detalhe e não são: **(1)** a chave é coluna, não expressão,
+porque o `on_conflict` do PostgREST só aceita nome de coluna — um índice sobre `payload->>'de'`
+seria inalcançável pelo upsert. **(2)** `dedupe_preco_caiu` é `null` fora do `preco_caiu` (e sem
+produto/par de preços), e em índice único linha com `null` nunca colide: os outros tipos ficam
+naturalmente de fora. **(3)** o dia mora em coluna `date` própria em vez de concatenado na chave
+porque `date → text` depende de `DateStyle` e coluna gerada exige expressão imutável — o
+`at time zone <zona>` é o que resolve isso (`criado_em::date` sozinho depende do GUC `TimeZone` e é
+recusado), mas com **qualquer** zona literal, então a imutabilidade não escolhe o fuso. **Quem
+escolhe é o cron:** os schedules do `pulse-coletar` são UTC (`0 9 * * *` e `0 */6 * * *`), logo as
+execuções do tier quente — 00, 06, 12 e 18 UTC — caem todas no mesmo dia UTC; em
+`America/Sao_Paulo` a das 00:00 cai no dia anterior e o caso que motivou a migration
+(`2026-08-30 00:00:08` e `18:00:06` UTC) viraria duas janelas e não seria pego. Daí divergir de
+`pulse_ofertas.dia`/`pulse_vendedores.dia`, que são dia civil do operador, não janela de execução;
+o coletor usa a mesma janela em `inicioDoDiaUtc()`.
+A migration **apaga** as reemissões já gravadas antes de criar o índice (mantém a mais antiga de
+cada chave — a validação mostrou que a primeira é a detecção real).
 
 **`severidade` (ADR-0133, `20260825133452_pulse_alertas_severidade.sql`).** `acao` = o evento muda
 a decisão de preço (alguém passou a vender abaixo de nós, ou o último que estava abaixo saiu);

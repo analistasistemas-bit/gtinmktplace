@@ -4,8 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AbaAlertas } from '../aba-alertas';
 import {
-  ALERTAS_POR_PAGINA, contarPulseAlertas, fetchPulseAlertas, marcarAlertaLido, marcarAlertasLidos,
-  type PulseAlerta,
+  ALERTAS_POR_PAGINA, contarPulseAlertas, fetchPulseAlertas, marcarAlertasLidos,
+  marcarAlertasLidosPorIds, type PulseAlerta,
 } from '@/lib/pulse';
 
 vi.mock('@/lib/pulse', async () => {
@@ -14,7 +14,7 @@ vi.mock('@/lib/pulse', async () => {
     ...real,
     fetchPulseAlertas: vi.fn(async () => []),
     contarPulseAlertas: vi.fn(async () => 0),
-    marcarAlertaLido: vi.fn(async () => undefined),
+    marcarAlertasLidosPorIds: vi.fn(async () => undefined),
     marcarAlertasLidos: vi.fn(async () => undefined),
   };
 });
@@ -33,7 +33,8 @@ const alerta = (over: Partial<PulseAlerta> = {}): PulseAlerta => ({
 
 /** Página cheia — é o que faz `getNextPageParam` liberar o "Carregar mais". */
 const paginaCheia = (prefixo: string) =>
-  Array.from({ length: ALERTAS_POR_PAGINA }, (_, i) => alerta({ id: `${prefixo}-${i}` }));
+  Array.from({ length: ALERTAS_POR_PAGINA }, (_, i) =>
+    alerta({ id: `${prefixo}-${i}`, produto_id: `produto-${prefixo}-${i}` }));
 
 const verProduto = () => screen.getAllByRole('button', { name: /^Ver produto: / });
 
@@ -54,7 +55,7 @@ afterEach(() => {
   // retorno vazava para os seguintes (mock "persistente" por acidente de ordem, não por garantia).
   vi.mocked(fetchPulseAlertas).mockResolvedValue([]);
   vi.mocked(contarPulseAlertas).mockResolvedValue(0);
-  vi.mocked(marcarAlertaLido).mockResolvedValue(undefined);
+  vi.mocked(marcarAlertasLidosPorIds).mockResolvedValue(undefined);
 });
 
 describe('AbaAlertas', () => {
@@ -73,7 +74,9 @@ describe('AbaAlertas', () => {
 
   it('cabeçalho mostra a contagem real, não o tamanho da página carregada', async () => {
     vi.mocked(contarPulseAlertas).mockImplementation(async (severidade) => (severidade === 'acao' ? 145 : 0));
-    vi.mocked(fetchPulseAlertas).mockResolvedValue([alerta({ id: 'a1' }), alerta({ id: 'a2' })]);
+    vi.mocked(fetchPulseAlertas).mockResolvedValue([
+      alerta({ id: 'a1', produto_id: 'p1' }), alerta({ id: 'a2', produto_id: 'p2' }),
+    ]);
     renderAba();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Marcar 145 como lidos' })).toBeInTheDocument());
     // A lista carregada tem só 2 — se o rótulo tivesse usado lista.length em vez da contagem, diria "2".
@@ -160,13 +163,19 @@ describe('AbaAlertas', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Carregar mais' })).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: 'Carregar mais' }));
     await waitFor(() => expect(verProduto()).toHaveLength(ALERTAS_POR_PAGINA + 1));
+    // A contagem de linhas sozinha parou de discriminar depois do agrupamento: a linha repetida tem
+    // o mesmo `produto_id` da gêmea, então o grupo a absorve e o total de linhas continua igual.
+    // Quem denuncia a duplicata é o grupo aparecer com dois movimentos.
+    expect(screen.queryByText(/movimentos/)).not.toBeInTheDocument();
   });
 
   // I6: a linha sai na hora, não depois de refetchar as páginas carregadas + as duas contagens.
   it('marcar lido remove a linha antes da resposta do banco', async () => {
     const user = userEvent.setup();
-    vi.mocked(marcarAlertaLido).mockImplementation(() => new Promise(() => {}));
-    vi.mocked(fetchPulseAlertas).mockResolvedValue([alerta({ id: 'a1' }), alerta({ id: 'a2' })]);
+    vi.mocked(marcarAlertasLidosPorIds).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(fetchPulseAlertas).mockResolvedValue([
+      alerta({ id: 'a1', produto_id: 'p1' }), alerta({ id: 'a2', produto_id: 'p2' }),
+    ]);
     renderAba();
     await waitFor(() => expect(verProduto()).toHaveLength(2));
     await user.click(screen.getAllByRole('button', { name: /^Marcar como lido: / })[0]);
@@ -178,12 +187,89 @@ describe('AbaAlertas', () => {
   it('filtro Todos mostra a severidade de cada linha em texto', async () => {
     const user = userEvent.setup();
     vi.mocked(fetchPulseAlertas).mockResolvedValue([
-      alerta({ id: 'a1', severidade: 'acao' }),
-      alerta({ id: 'a2', severidade: 'info' }),
+      alerta({ id: 'a1', produto_id: 'p1', severidade: 'acao' }),
+      alerta({ id: 'a2', produto_id: 'p2', severidade: 'info' }),
     ]);
     renderAba();
     await user.click(screen.getByRole('button', { name: 'Todos' }));
     await waitFor(() => expect(screen.getByText('Ação', { selector: 'span' })).toBeInTheDocument());
     expect(screen.getByText('Info', { selector: 'span' })).toBeInTheDocument();
+  });
+});
+
+// ADR-0133 Errata 4: a fila do operador é de produtos, não de eventos.
+describe('AbaAlertas — agrupada por produto', () => {
+  it('dois alertas do mesmo produto viram uma linha com "2 movimentos"', async () => {
+    vi.mocked(fetchPulseAlertas).mockResolvedValueOnce([
+      alerta({ id: 'a1', produto_id: 'p1', criado_em: '2026-09-01T11:00:00.000Z' }),
+      alerta({ id: 'a2', produto_id: 'p1', criado_em: '2026-09-01T09:00:00.000Z' }),
+    ]);
+    renderAba();
+    expect(await screen.findByText(/2 movimentos/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /^Ver produto/ })).toHaveLength(1);
+  });
+
+  it('a linha diz a idade do alerta mais recente', async () => {
+    vi.mocked(fetchPulseAlertas).mockResolvedValueOnce([
+      alerta({ criado_em: new Date(Date.now() - 3 * 3600_000).toISOString() }),
+    ]);
+    renderAba();
+    expect(await screen.findByText(/há cerca de 3 horas/)).toBeInTheDocument();
+  });
+
+  // Escopo do ✓: exatamente os ids daquela linha. O `p2` está aqui para provar o "nem mais" — se o
+  // clique mandasse a lista carregada, a asserção pegaria 'b1' junto.
+  it('o ✓ do grupo marca TODOS os alertas daquele produto, numa chamada só', async () => {
+    vi.mocked(fetchPulseAlertas).mockResolvedValueOnce([
+      alerta({ id: 'a1', produto_id: 'p1' }), alerta({ id: 'a2', produto_id: 'p1' }),
+      alerta({ id: 'b1', produto_id: 'p2' }),
+    ]);
+    renderAba();
+    // `: ` no padrão de propósito: sem ele o nome casa também com o "Marcar como lidos" do topo
+    // enquanto a contagem está pendente, e o clique cairia no botão errado (desabilitado).
+    await userEvent.click((await screen.findAllByRole('button', { name: /^Marcar como lido: / }))[0]);
+    await waitFor(() => expect(marcarAlertasLidosPorIds).toHaveBeenCalledWith(['a1', 'a2']));
+  });
+
+  it('o botão do topo continua contando ALERTAS, não grupos', async () => {
+    vi.mocked(contarPulseAlertas).mockResolvedValue(9);
+    vi.mocked(fetchPulseAlertas).mockResolvedValueOnce([
+      alerta({ id: 'a1', produto_id: 'p1' }), alerta({ id: 'a2', produto_id: 'p1' }),
+    ]);
+    renderAba();
+    expect(await screen.findByRole('button', { name: 'Marcar 9 como lidos' })).toBeInTheDocument();
+  });
+
+  it('expandir o grupo mostra os movimentos anteriores', async () => {
+    // `tipo` explícito: o default do helper é 'novo_concorrente', que não renderiza "de X para Y".
+    vi.mocked(fetchPulseAlertas).mockResolvedValueOnce([
+      alerta({ id: 'a1', produto_id: 'p1', tipo: 'preco_caiu', criado_em: '2026-09-01T11:00:00.000Z', payload: { de: 70.19, para: 67.99 } }),
+      alerta({ id: 'a2', produto_id: 'p1', tipo: 'preco_caiu', criado_em: '2026-09-01T09:00:00.000Z', payload: { de: 69.8, para: 67.99 } }),
+    ]);
+    renderAba();
+    await userEvent.click(await screen.findByText(/2 movimentos/));
+    expect(screen.getByText(/de R\$\s*69,80 para R\$\s*67,99/)).toBeInTheDocument();
+  });
+
+  // D-1: queda encoberta por um `novo_concorrente` posterior mantém o botão, e ele reprecifica
+  // contra o par de preços mais fresco — não contra o alerta que a linha exibe.
+  it('Reprecificar segue o grupo, não o alerta exibido', async () => {
+    const onReprecificar = vi.fn();
+    const queda = alerta({
+      id: 'a2', produto_id: 'p1', tipo: 'preco_caiu',
+      criado_em: '2026-09-01T09:00:00.000Z', payload: { de: 70, para: 68 },
+    });
+    vi.mocked(fetchPulseAlertas).mockResolvedValueOnce([
+      alerta({ id: 'a1', produto_id: 'p1', tipo: 'novo_concorrente', criado_em: '2026-09-01T11:00:00.000Z' }),
+      queda,
+    ]);
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <AbaAlertas onVerProduto={vi.fn()} onReprecificar={onReprecificar} onVerRadar={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(await screen.findByRole('button', { name: /^Reprecificar/ }));
+    expect(onReprecificar).toHaveBeenCalledWith(queda);
   });
 });

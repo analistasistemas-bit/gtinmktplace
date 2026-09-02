@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   estadoAtualOfertas, menorPrecoPorDia, margemEstimada, comissaoNoPreco,
   margemEhEstimativa, mercadoPulse, ofertasAbaixoDaReferencia, porteDoVendedor, shareDeVisitas,
+  custoDaFamilia, insumoFaltante,
 } from '../pulse-margem';
 import type { PulseOferta, PulseVendedor } from '../pulse';
 
@@ -377,5 +378,74 @@ describe('shareDeVisitas', () => {
       [vendedor({ seller_id: 2, transactions_total: 500, nivel: '5_green' })],
     );
     expect(shareDeVisitas(semVisitas, 10)).toBeNull();
+  });
+});
+
+describe('custoDaFamilia — a mesma regra para o caminho unitário e o lote', () => {
+  it('usa a primeira família COM variações, não a mais recente sem elas', () => {
+    expect(custoDaFamilia([
+      { origem: 'nacional', variacoes: [] },
+      { origem: 'importado', variacoes: [{ custo: 10 }, { custo: 12 }] },
+    ])).toEqual({ custo: 12, origem: 'importado' });
+  });
+
+  it('sem nenhuma família com variação, cai em null — nunca em zero', () => {
+    expect(custoDaFamilia([{ origem: 'nacional', variacoes: [] }]))
+      .toEqual({ custo: null, origem: null });
+  });
+
+  it('família com variações mas todas sem custo devolve custo null e a origem', () => {
+    expect(custoDaFamilia([{ origem: 'nacional', variacoes: [{ custo: null }] }]))
+      .toEqual({ custo: null, origem: 'nacional' });
+  });
+
+  it('lista vazia devolve null', () => {
+    expect(custoDaFamilia([])).toEqual({ custo: null, origem: null });
+  });
+});
+
+describe('insumoFaltante — os QUATRO insumos, na ordem em que o operador os resolve', () => {
+  const produtoOk = { comissao_pct: 14, ptw_custos: { frete: 5 } };
+  const contextoOk = { custo: 30, aliquotaPct: 8 };
+
+  it('sem contexto carregado, o custo é o que falta', () => {
+    expect(insumoFaltante(undefined, produtoOk)).toBe('custo do produto');
+  });
+  it('sem custo', () => {
+    expect(insumoFaltante({ custo: null, aliquotaPct: 8 }, produtoOk)).toBe('custo do produto');
+  });
+  it('sem alíquota', () => {
+    expect(insumoFaltante({ custo: 30, aliquotaPct: null }, produtoOk)).toBe('alíquota de imposto');
+  });
+  it('sem comissão', () => {
+    expect(insumoFaltante(contextoOk, { comissao_pct: null, ptw_custos: { frete: 5 } }))
+      .toBe('comissão do Mercado Livre');
+  });
+  it('sem frete', () => {
+    expect(insumoFaltante(contextoOk, { comissao_pct: 14, ptw_custos: null }))
+      .toBe('custo de frete do Mercado Livre');
+  });
+  it('com os quatro, não falta nada', () => {
+    expect(insumoFaltante(contextoOk, produtoOk)).toBeNull();
+  });
+
+  // A função era duplicada (dialog-detalhe.tsx e dialog-reprecificar.tsx) e o segundo argumento
+  // chegava em DUAS formas. A assinatura única aceita as duas — e tem que responder o mesmo para
+  // os mesmos números, senão a contradição na tela só mudou de lugar (ADR-0119 Errata 12 D-2).
+  describe('a forma camelCase do reprecificar responde igual à forma da linha de produto', () => {
+    it('sem comissão', () => {
+      expect(insumoFaltante(contextoOk, { comissaoPct: null, frete: 5 }))
+        .toBe('comissão do Mercado Livre');
+    });
+    it('sem frete', () => {
+      expect(insumoFaltante(contextoOk, { comissaoPct: 14, frete: null }))
+        .toBe('custo de frete do Mercado Livre');
+    });
+    it('com os quatro, não falta nada', () => {
+      expect(insumoFaltante(contextoOk, { comissaoPct: 14, frete: 5 })).toBeNull();
+    });
+    it('custos ausentes por inteiro é falta de comissão, não zero', () => {
+      expect(insumoFaltante(contextoOk, null)).toBe('comissão do Mercado Livre');
+    });
   });
 });

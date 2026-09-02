@@ -179,7 +179,7 @@ describe('disputaCatalogo', () => {
   const precos = [130, 139.9, 144.56, 186.9, 209.9];
   const resumo = (over: Partial<PulseResumoOfertas> = {}): PulseResumoOfertas => ({
     menorPreco: 130, menorObservado: 36, menorRelevante: 130, maiorRelevante: 209.9,
-    nOfertas: 13, nOfertasRelevantes: 5, precosRelevantes: precos, ...over,
+    nOfertas: 13, nOfertasRelevantes: 5, precosRelevantes: precos, abaixoDaReferencia: null, ...over,
   });
 
   it('devolve contagem, faixa e a posição hipotética do nosso preço', () => {

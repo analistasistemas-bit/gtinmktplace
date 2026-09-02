@@ -6,14 +6,16 @@ import { MoreVertical, Pause, Play } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Sparkline } from '@/components/ui/sparkline';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { pausarPulseProduto, type PulseProduto, type PulseResumoOfertas } from '@/lib/pulse';
+import { pausarPulseProduto, type ContextoMargem, type PulseProduto, type PulseResumoOfertas } from '@/lib/pulse';
 import {
   classeTom, disputaCatalogo, motivoSemPrecoProprio, posicaoVsMercado, seloAnuncio,
 } from '@/lib/pulse-formato';
+import { insumoFaltante, margemEhEstimativa, margemEstimada } from '@/lib/pulse-margem';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 
@@ -27,12 +29,25 @@ function relativo(iso: string | null): string {
   return `há ${Math.round(diffH / 24)}d`;
 }
 
-export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe }: {
+export function TabelaRadar({
+  produtos, resumo, resumoCarregando, contextos, contextosErro, historico, onAbrirDetalhe, onReprecificar,
+}: {
   produtos: PulseProduto[];
   /** Ofertas por produto — a query vive na página, para KPIs e tabela lerem o mesmo dado. */
   resumo: Map<string, PulseResumoOfertas> | undefined;
   resumoCarregando: boolean;
+  /** Série do menor OBSERVADO por dia, por produto. `undefined` = ainda carregando (skeleton);
+   *  produto ausente do Map = sem histórico suficiente, e aí a célula fica vazia. */
+  historico?: Map<string, { dia: string; preco: number }[]>;
+  /** Custo + alíquota por `codigo_pai` (ADR-0119 Errata 12 D-3). `undefined` = ainda carregando —
+   *  e aí a célula mostra skeleton, porque um `—` significaria "insumo faltando". */
+  contextos: Map<string, ContextoMargem> | undefined;
+  /** A página cai para Map vazio quando a query de contexto falha (não fica em skeleton eterno) —
+   *  sem esta flag, "Map vazio" é indistinguível de "consultamos e não achamos custo", e a célula
+   *  mentiria "falta custo do produto" quando na verdade não conseguimos nem consultar. */
+  contextosErro?: boolean;
   onAbrirDetalhe: (produtoId: string) => void;
+  onReprecificar: (produto: PulseProduto) => void;
 }) {
   const qc = useQueryClient();
 
@@ -51,6 +66,21 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
 
   const menorDe = (p: PulseProduto) => resumo?.get(p.id)?.menorRelevante ?? null;
   const posicaoDe = (p: PulseProduto) => posicaoVsMercado(p.meu_preco, menorDe(p));
+
+  const contextoDe = (p: PulseProduto) => (p.codigo_pai ? contextos?.get(p.codigo_pai) : undefined);
+  /** `null` quando qualquer insumo falta — a mesma resposta que o detalhe dá (regra LOUD). */
+  const sobraDe = (p: PulseProduto) => {
+    if (p.meu_preco == null || p.meu_preco <= 0) return null;
+    const ctx = contextoDe(p);
+    if (insumoFaltante(ctx, p)) return null;
+    return margemEstimada({
+      preco: p.meu_preco,
+      custoProduto: ctx!.custo,
+      comissao: { pct: p.comissao_pct, fixa: p.comissao_fixa },
+      frete: p.ptw_custos?.frete ?? null,
+      aliquotaPct: ctx!.aliquotaPct,
+    });
+  };
 
   const colunas: Column<PulseProduto>[] = [
     {
@@ -119,10 +149,50 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       sortValue: (p) => menorDe(p),
       cell: (p) => {
         const v = menorDe(p);
+        const abaixo = resumo?.get(p.id)?.abaixoDaReferencia ?? null;
         return celulaMercado(
-          <span className={cn('tabular-nums', v == null && 'text-muted-foreground')}>
-            {v != null ? fmtBRL(v) : 'Sem concorrente relevante'}
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className={cn('tabular-nums', v == null && 'text-muted-foreground')}>
+              {v != null ? fmtBRL(v) : 'Sem concorrente relevante'}
+            </span>
+            {/* Não promove a referência: o número da coluna continua sendo o menor RELEVANTE. */}
+            {abaixo && (
+              <span
+                className="cursor-help text-xs text-warning"
+                title={`${abaixo.contagem === 1 ? '1 oferta ativa' : `${abaixo.contagem} ofertas ativas`} a partir de ${fmtBRL(abaixo.menorPreco)}. São vendedores sem histórico suficiente, então não entram na comparação de preço — mas aparecem na mesma página do catálogo que a sua.`}
+              >
+                · {abaixo.contagem} abaixo
+              </span>
+            )}
           </span>,
+        );
+      },
+    },
+    {
+      key: 'tendencia',
+      // "O piso da ficha caiu 8% em 7 dias" é a leitura que decide antes de abrir o detalhe. O
+      // sparkline existia só lá dentro. É o menor OBSERVADO (todas as ofertas ativas), como no
+      // detalhe — não o relevante; o cabeçalho diz isso para a coluna ao lado não ser lida como fonte.
+      header: <span title="Menor oferta observada na ficha, por dia — inclui ofertas fora da régua de relevância">7 dias (observado)</span>,
+      className: 'hidden w-28 xl:table-cell',
+      cell: (p) => {
+        if (historico === undefined) return <Skeleton className="h-4 w-16" />;
+        const serie = historico.get(p.id);
+        // Série de um ponto só não vira reta: reta afirma estabilidade que não foi medida. A lib
+        // já corta em < 2, mas a prop é pública — sem este piso aqui, um ponto só renderizaria o
+        // wrapper `role="img"` nomeando uma faixa que o `Sparkline` (que devolve null) não desenha.
+        if (!serie || serie.length < 2) return null;
+        const precos = serie.map((s) => s.preco);
+        // `Sparkline` (src/components/ui/sparkline.tsx) recebe `{ data: string; total: number }[]`
+        // e NÃO aceita `aria-label` — daí o wrapper com `role="img"`. É o mesmo componente que a
+        // coluna de visitas do Sonar usa; um segundo sparkline no app seria a terceira versão.
+        return (
+          <span
+            role="img"
+            aria-label={`Menor oferta observada variou de ${fmtBRL(Math.min(...precos))} a ${fmtBRL(Math.max(...precos))} nos últimos ${serie.length} dias com coleta`}
+          >
+            <Sparkline dados={serie.map((s) => ({ data: s.dia, total: s.preco }))} />
+          </span>
         );
       },
     },
@@ -143,6 +213,73 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       },
     },
     {
+      key: 'sobra',
+      // A pergunta 3 do how-to ("até onde posso baixar") não tinha resposta na tela onde a decisão
+      // é tomada: a margem só existia depois de 2 cliques e um dialog 7xl (ADR-0119 Errata 12).
+      header: 'Sobra hoje',
+      // `md:` e não `lg:`: o botão "Reprecificar" da coluna de ações usa o MESMO breakpoint, para
+      // que o atalho de reagir nunca apareça sem o número que justifica reagir.
+      className: 'hidden text-right md:table-cell',
+      sortValue: (p) => sobraDe(p)?.liquido ?? null,
+      cell: (p) => {
+        // Contexto ainda carregando: um "—" aqui afirmaria "falta insumo", que é outra coisa.
+        if (p.codigo_pai && contextos === undefined) return <Skeleton className="ml-auto h-4 w-16" />;
+        if (p.meu_preco == null) {
+          return <span className="cursor-help text-muted-foreground" title={motivoSemPrecoProprio(p)}>—</span>;
+        }
+        // Falha de leitura ≠ cadastro incompleto: o operador não pode ser mandado conferir o
+        // produto por um erro de rede.
+        if (p.codigo_pai && contextosErro) {
+          return (
+            <span className="cursor-help text-muted-foreground" title="Margem indisponível: falha ao consultar o custo do produto">
+              —
+            </span>
+          );
+        }
+        const falta = insumoFaltante(contextoDe(p), p);
+        if (falta) {
+          return (
+            <span className="cursor-help text-muted-foreground" title={`Margem indisponível: falta ${falta}`}>
+              —
+            </span>
+          );
+        }
+        // Com todos os insumos presentes, `sobraDe` ainda devolve null para preço <= 0 — invariante
+        // dela, mais larga que a da célula. Um `!` aqui derrubava a LINHA inteira, não a célula.
+        const m = sobraDe(p);
+        if (!m) {
+          return (
+            <span className="cursor-help text-muted-foreground" title="Margem indisponível: preço do anúncio inválido">
+              —
+            </span>
+          );
+        }
+        // Mesmo limiar do detalhe: dois limiares de "prejuízo" no mesmo módulo é exatamente o
+        // defeito que a Errata 6 nos custou.
+        return (
+          <span className={cn('tabular-nums', m.liquido < 0 ? 'text-destructive' : 'text-success')}>
+            {fmtBRL(m.liquido)}
+            <span className="ml-1 text-xs font-normal opacity-80">
+              ({m.margemPct.toFixed(1)}% s/ venda)
+            </span>
+            {/* Mesmo rótulo e mesmo texto do detalhe (dialog-detalhe.tsx) e do reprecificar: um
+                número marcado num lugar e cru no outro, para o mesmo produto, é a contradição que
+                a Errata 12 proíbe. Na lista o preço é sempre o vigente, então o rótulo aparece
+                sempre que a comissão foi lida em outra faixa — o estado normal de quem já
+                reprecificou, que é justamente a população que esta coluna serve. */}
+            {margemEhEstimativa(p.meu_preco, p.comissao_preco) && (
+              <span
+                className="ml-1 text-xs font-normal text-muted-foreground"
+                title="A comissão do ML muda por faixa de preço, e a que temos foi lida em outro preço. Neste preço, o número é aproximado."
+              >
+                estimativa
+              </span>
+            )}
+          </span>
+        );
+      },
+    },
+    {
       key: 'ofertas',
       header: 'Ofertas',
       className: 'hidden text-right md:table-cell',
@@ -151,77 +288,99 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
     },
     {
       key: 'disputa',
-      // ADR-0147: substitui a "Referência do ML" (D-24). Não diz quem leva a venda — o ganhador do
-      // buy-box não vem pela API, e a org sequer disputa (0 de 137 anúncios de catálogo na AVIL).
-      header: 'Análise PubliAI',
-      // `xl` e não `lg`: medido no runtime, esta célula tem largura intrínseca de ~222px e fazia a
-      // tabela estourar o container em 1024–1280 (sem ela a tabela cabe exata em toda largura).
-      // A coluna antiga cabia em `lg` porque era um badge de uma palavra.
+      // ADR-0147: substitui a "Referência do ML" (D-24). "Análise PubliAI" prometia veredito de IA
+      // e entrega três fatos verificáveis — o nome do próprio ADR é o que está na célula.
+      header: 'Disputa do catálogo',
+      // Com a célula de 3 linhas a linha media 76px e só 5 de 13 cabiam acima da dobra em 1440×900
+      // (medido). Badge + tooltip devolve a linha ao ritmo das outras; nada de informação sai da
+      // tela — a posição hipotética passa a viver no title/sr-only, junto do resto da conta.
       className: 'hidden xl:table-cell',
-      // Ordena pela posição hipotética: quem cairia pior sobe primeiro em desc — a fila do dia.
       sortValue: (p) => disputaCatalogo(resumo?.get(p.id), p.meu_preco)?.posicao ?? null,
       cell: (p) => {
         const d = disputaCatalogo(resumo?.get(p.id), p.meu_preco);
         if (!d) {
+          // Texto inalterado: a coluna `menor` já diz "Sem concorrente relevante"; sem o
+          // "no catálogo" as duas células ficam idênticas e o teste da linha 110 acha duas.
           return celulaMercado(
-            <span className="text-muted-foreground">Sem concorrente relevante no catálogo</span>,
+            <span className="text-xs text-muted-foreground">Sem concorrente relevante no catálogo</span>,
           );
         }
+        const faixa = d.menor === d.maior ? fmtBRL(d.menor) : `${fmtBRL(d.menor)} – ${fmtBRL(d.maior)}`;
+        // "ficaria" e não "está": o nosso anúncio não é anúncio de catálogo, então não participa da
+        // disputa que gerou a faixa (ADR-0147 D-5).
+        const ajuda = [
+          `${d.anunciosRelevantes} ${d.anunciosRelevantes === 1 ? 'anúncio relevante disputa' : 'anúncios relevantes disputam'} esta ficha, de ${faixa}.`,
+          d.posicao != null && p.meu_preco != null
+            ? `Com o seu preço, você ficaria em ${d.posicao}º de ${d.totalComNosso}.`
+            : null,
+        ].filter(Boolean).join(' ');
         return celulaMercado(
-          <div className="max-w-[175px] text-xs leading-relaxed">
-            <span>
-              {d.anunciosRelevantes === 1
-                ? '1 anúncio relevante disputa'
-                : `${d.anunciosRelevantes} anúncios relevantes disputam`}
-            </span>
-            {/* Um único anúncio não tem faixa: "R$ 70,19 – R$ 70,19" lê como bug. */}
-            <span className="block tabular-nums text-muted-foreground">
-              {d.menor === d.maior ? fmtBRL(d.menor) : `${fmtBRL(d.menor)} – ${fmtBRL(d.maior)}`}
-            </span>
-            {/* "ficaria" e não "está": o nosso anúncio não é anúncio de catálogo, então ele não
-                participa da disputa que gerou a faixa (ADR-0147 D-5). */}
-            {/* O preço próprio não se repete aqui: ele já é a coluna "Seu preço", na mesma linha,
-                e repeti-lo era o que fazia a célula estourar a tabela abaixo de 1440px. */}
-            {d.posicao != null && p.meu_preco != null && (
-              <span className="block tabular-nums text-muted-foreground">
-                seu preço ficaria em {d.posicao}º de {d.totalComNosso}
-              </span>
-            )}
-          </div>,
+          // Coluna `hidden xl:table-cell`: só existe em desktop grande, onde há mouse — o `title`
+          // cobre o hover. `sr-only` (não role/tabIndex) dá a mesma explicação ao leitor de tela
+          // sem criar um controle interativo morto na linha, que já é focável e clicável inteira
+          // (ver data-table.tsx) — Tab não pode parar duas vezes por linha sem o segundo ponto
+          // fazer nada.
+          <span className="inline-flex cursor-help items-center gap-1.5" title={ajuda}>
+            <Badge variant="outline" className="font-normal tabular-nums">
+              {d.anunciosRelevantes} {d.anunciosRelevantes === 1 ? 'disputa' : 'disputam'}
+            </Badge>
+            <span className="text-xs tabular-nums text-muted-foreground">{faixa}</span>
+            <span className="sr-only">{ajuda}</span>
+          </span>,
         );
       },
     },
     {
       key: 'acoes',
       header: <span className="sr-only">Ações</span>,
-      className: 'w-10',
+      className: 'w-12 text-right md:w-44',
+      // Em 820px a tabela estoura o container; sem isto o ⋮ — único acesso a "Pausar no radar" —
+      // sai da tela.
+      stickyRight: true,
       cell: (p) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <div className="flex items-center justify-end gap-1">
+          {p.codigo_pai && (
             <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Mais ações para ${p.titulo ?? p.catalog_product_id}`}
-              // O clique do menu não pode abrir o detalhe da linha (a linha inteira é clicável).
-              onClick={(e) => e.stopPropagation()}
+              variant="outline"
+              size="sm"
+              // Mesmo breakpoint da coluna "Sobra hoje": abaixo dele o número não aparece, e
+              // oferecer o atalho de reagir sem ele devolve inteiro o problema que a coluna
+              // existe para resolver.
+              className="hidden md:inline-flex"
+              aria-label={`Reprecificar ${p.titulo ?? p.catalog_product_id}`}
+              // A linha inteira é clicável: sem isto, reprecificar abriria o detalhe por baixo.
+              onClick={(e) => { e.stopPropagation(); onReprecificar(p); }}
             >
-              <MoreVertical className="h-3.5 w-3.5" />
+              Reprecificar
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {p.status === 'pausado' ? (
-              <DropdownMenuItem onSelect={() => pausar.mutate({ id: p.id, pausar: false })}>
-                <Play className="mr-2 h-3.5 w-3.5" />
-                Reativar no radar
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem onSelect={() => pausar.mutate({ id: p.id, pausar: true })}>
-                <Pause className="mr-2 h-3.5 w-3.5" />
-                Pausar no radar
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Mais ações para ${p.titulo ?? p.catalog_product_id}`}
+                // O clique do menu não pode abrir o detalhe da linha (a linha inteira é clicável).
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreVertical className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {p.status === 'pausado' ? (
+                <DropdownMenuItem onSelect={() => pausar.mutate({ id: p.id, pausar: false })}>
+                  <Play className="mr-2 h-3.5 w-3.5" />
+                  Reativar no radar
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onSelect={() => pausar.mutate({ id: p.id, pausar: true })}>
+                  <Pause className="mr-2 h-3.5 w-3.5" />
+                  Pausar no radar
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       ),
     },
   ];

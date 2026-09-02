@@ -1,8 +1,10 @@
+import type { ComponentProps } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
 import { TabelaRadar } from '../tabela-radar';
-import type { PulseProduto, PulseResumoOfertas } from '@/lib/pulse';
+import type { ContextoMargem, PulseProduto, PulseResumoOfertas } from '@/lib/pulse';
 
 const produto: PulseProduto = {
   id: 'produto-1', catalog_product_id: 'MLB123456', codigo_pai: 'APTAMIL-1800', titulo: 'Aptamil', gtin: null,
@@ -14,17 +16,35 @@ const produto: PulseProduto = {
 
 const resumo: PulseResumoOfertas = {
   menorPreco: 36, menorObservado: 36, menorRelevante: 70.19, maiorRelevante: 70.19,
-  nOfertas: 2, nOfertasRelevantes: 1, precosRelevantes: [70.19],
+  nOfertas: 2, nOfertasRelevantes: 1, precosRelevantes: [70.19], abaixoDaReferencia: null,
+};
+
+const disputado: PulseResumoOfertas = {
+  menorPreco: 130, menorObservado: 36, menorRelevante: 130, maiorRelevante: 209.9,
+  nOfertas: 13, nOfertasRelevantes: 5, precosRelevantes: [130, 139.9, 144.56, 186.9, 209.9],
+  abaixoDaReferencia: null,
+};
+
+const renderRadar = (
+  produtos: PulseProduto[],
+  r: PulseResumoOfertas,
+  extra: Partial<Omit<ComponentProps<typeof TabelaRadar>, 'produtos' | 'resumo' | 'resumoCarregando'>> = {},
+) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(
+    <QueryClientProvider client={client}>
+      <TabelaRadar
+        produtos={produtos} resumo={new Map([[produtos[0].id, r]])} resumoCarregando={false}
+        contextos={new Map()} onAbrirDetalhe={() => undefined} onReprecificar={() => undefined}
+        {...extra}
+      />
+    </QueryClientProvider>,
+  );
 };
 
 describe('TabelaRadar — mercado relevante', () => {
   it('exibe o menor relevante, nunca o menor observado', () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <TabelaRadar produtos={[produto]} resumo={new Map([[produto.id, resumo]])} resumoCarregando={false} onAbrirDetalhe={() => undefined} />
-      </QueryClientProvider>,
-    );
+    renderRadar([produto], resumo);
 
     expect(screen.getByRole('columnheader', { name: 'Menor relevante' })).toBeInTheDocument();
     // getAllByText: desde a ADR-0147 o mesmo preço aparece também na coluna da disputa. O que este
@@ -45,12 +65,7 @@ describe('TabelaRadar — D-24: a Referência do ML não existe mais', () => {
   };
 
   it('não renderiza a coluna nem o selo, mesmo com o produto trazendo referência do ML', () => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    render(
-      <QueryClientProvider client={client}>
-        <TabelaRadar produtos={[comReferencia]} resumo={new Map([[produto.id, resumo]])} resumoCarregando={false} onAbrirDetalhe={() => undefined} />
-      </QueryClientProvider>,
-    );
+    renderRadar([comReferencia], resumo);
 
     expect(screen.queryByRole('columnheader', { name: 'Referência do ML' })).not.toBeInTheDocument();
     expect(screen.queryByText(/referência do ML/i)).not.toBeInTheDocument();
@@ -59,31 +74,39 @@ describe('TabelaRadar — D-24: a Referência do ML não existe mais', () => {
 });
 
 // ADR-0147: a coluna que ocupa o lugar da "Referência do ML" mostra a DISPUTA do catálogo.
-describe('TabelaRadar — Análise PubliAI: a disputa do catálogo', () => {
-  const disputado: PulseResumoOfertas = {
-    menorPreco: 130, menorObservado: 36, menorRelevante: 130, maiorRelevante: 209.9,
-    nOfertas: 13, nOfertasRelevantes: 5, precosRelevantes: [130, 139.9, 144.56, 186.9, 209.9],
-  };
-
-  const renderRadar = (produtos: PulseProduto[], r: PulseResumoOfertas) => {
-    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    return render(
-      <QueryClientProvider client={client}>
-        <TabelaRadar produtos={produtos} resumo={new Map([[produtos[0].id, r]])} resumoCarregando={false} onAbrirDetalhe={() => undefined} />
-      </QueryClientProvider>,
-    );
-  };
-
+// "Análise PubliAI" prometia veredito de IA e entregava três fatos; o nome do ADR é o que está lá.
+describe('TabelaRadar — Disputa do catálogo', () => {
   it('mostra quantos disputam, a faixa, e a posição como hipótese — nunca como fato', () => {
     renderRadar([{ ...produto, meu_preco: 149.99 }], disputado);
 
-    expect(screen.getByRole('columnheader', { name: 'Análise PubliAI' })).toBeInTheDocument();
-    expect(screen.getByText('5 anúncios relevantes disputam')).toBeInTheDocument();
-    expect(screen.getByText(/R\$\s*130,00\s*–\s*R\$\s*209,90/)).toBeInTheDocument();
-    expect(screen.getByText(/ficaria em 4º de 6/)).toBeInTheDocument();
-    // O preço próprio aparece UMA vez na linha — na coluna "Seu preço". Repeti-lo na célula da
-    // disputa fazia a tabela estourar o container abaixo de 1440px (medido no runtime).
+    expect(screen.getByRole('columnheader', { name: 'Disputa do catálogo' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Análise PubliAI' })).not.toBeInTheDocument();
+    expect(screen.getByText('5 disputam')).toBeInTheDocument();
+    // getAllByText: a faixa também está no texto sr-only (mesma célula, explicação completa
+    // para leitor de tela) — ver teste dedicado abaixo.
+    expect(screen.getAllByText(/R\$\s*130,00\s*–\s*R\$\s*209,90/).length).toBeGreaterThan(0);
+    // O preço próprio aparece UMA vez na linha — na coluna "Seu preço".
     expect(screen.getAllByText(/R\$\s*149,99/)).toHaveLength(1);
+  });
+
+  it('a posição hipotética sai do badge e vive no tooltip, sem sumir da tela', () => {
+    renderRadar([{ ...produto, meu_preco: 149.99 }], disputado);
+    const badge = screen.getByText('5 disputam');
+    expect(badge.closest('[title]')?.getAttribute('title')).toMatch(/ficaria em 4º de 6/);
+  });
+
+  // `title` só é alcançável no hover do mouse: sem texto permanente, a explicação some para
+  // leitor de tela (a coluna não recebe foco próprio — a linha inteira já é focável e clicável,
+  // ver data-table.tsx — então o texto vira conteúdo `sr-only`, não um controle novo).
+  it('a explicação está sempre acessível ao leitor de tela, associada à célula da disputa', () => {
+    renderRadar([{ ...produto, meu_preco: 149.99 }], disputado);
+    const explicacao = screen.getByText(/ficaria em 4º de 6/, { selector: '.sr-only' });
+    expect(explicacao.closest('[title]')).toHaveTextContent('5 disputam');
+  });
+
+  it('a célula ocupa uma linha só — a de três linhas alongava a linha para 76px', () => {
+    renderRadar([{ ...produto, meu_preco: 149.99 }], disputado);
+    expect(screen.queryByText(/^seu preço ficaria em/)).not.toBeInTheDocument();
   });
 
   // Critério de aceite 5 da ADR-0147: o vocabulário do buy-box não entra na tela, porque o dado
@@ -100,7 +123,7 @@ describe('TabelaRadar — Análise PubliAI: a disputa do catálogo', () => {
 
   it('sem preço nosso, a disputa aparece e a linha de posição some', () => {
     renderRadar([{ ...produto, meu_preco: null }], disputado);
-    expect(screen.getByText('5 anúncios relevantes disputam')).toBeInTheDocument();
+    expect(screen.getByText('5 disputam')).toBeInTheDocument();
     expect(screen.queryByText(/ficaria em/)).not.toBeInTheDocument();
   });
 
@@ -109,5 +132,191 @@ describe('TabelaRadar — Análise PubliAI: a disputa do catálogo', () => {
     renderRadar([produto], { ...disputado, nOfertasRelevantes: 0, precosRelevantes: [] });
     expect(screen.getByText('Sem concorrente relevante no catálogo')).toBeInTheDocument();
     expect(screen.queryByText(/0 anúncios relevantes/)).not.toBeInTheDocument();
+  });
+});
+
+// Em 820px a tabela do Radar estoura 823px num container de 770 e o ⋮ saía da tela — e ele é o
+// único acesso a "Pausar no radar" no tablet de demo.
+describe('TabelaRadar — a coluna de ações não sai da tela', () => {
+  it('a coluna de ações é fixa à direita', () => {
+    renderRadar([produto], resumo);
+    expect(screen.getByRole('columnheader', { name: 'Ações' }).className).toContain('sticky');
+  });
+});
+
+// Errata 12 da ADR-0119: a lista abre ordenada por "Sua posição" e mandava reprecificar sem dizer
+// se havia margem para reagir.
+describe('TabelaRadar — Sobra hoje', () => {
+  const comCustos: PulseProduto = {
+    ...produto, meu_preco: 100, comissao_pct: 14, comissao_fixa: 0, comissao_preco: 100,
+    ptw_custos: { comissao: null, frete: 5 },
+  };
+  const ctx = (c: ContextoMargem) => new Map([['APTAMIL-1800', c]]);
+
+  const renderComContexto = (
+    p: PulseProduto,
+    contextos: Map<string, ContextoMargem> | undefined,
+    onReprecificar = () => undefined,
+    onAbrirDetalhe = () => undefined,
+  ) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <TabelaRadar
+          produtos={[p]} resumo={new Map([[p.id, resumo]])} resumoCarregando={false}
+          contextos={contextos} onAbrirDetalhe={onAbrirDetalhe} onReprecificar={onReprecificar}
+        />
+      </QueryClientProvider>,
+    );
+  };
+
+  it('mostra o líquido no preço vigente e o percentual sobre a venda', () => {
+    // 100 − 14 (comissão) − 5 (frete) − 8 (imposto 8%) − 30 (custo) = 43,00 → 43,0%
+    renderComContexto(comCustos, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.getByRole('columnheader', { name: 'Sobra hoje' })).toBeInTheDocument();
+    expect(screen.getByText(/R\$\s*43,00/)).toBeInTheDocument();
+    // `toFixed(1)` devolve "43.0" (ponto) — é o que o detalhe já exibe hoje (dialog-detalhe.tsx:544).
+    expect(screen.getByText(/43\.0%\s*s\/\s*venda/)).toBeInTheDocument();
+  });
+
+  it('sem custo → "—" com o motivo, nunca zero', () => {
+    renderComContexto(comCustos, ctx({ custo: null, aliquotaPct: 8 }));
+    expect(screen.getByTitle('Margem indisponível: falta custo do produto')).toHaveTextContent('—');
+    expect(screen.queryByText(/R\$\s*0,00/)).not.toBeInTheDocument();
+  });
+
+  it('sem alíquota → "—" com o motivo, nunca a alíquota padrão', () => {
+    renderComContexto(comCustos, ctx({ custo: 30, aliquotaPct: null }));
+    expect(screen.getByTitle('Margem indisponível: falta alíquota de imposto')).toHaveTextContent('—');
+    expect(screen.queryByText(/R\$\s*(53|43),00/)).not.toBeInTheDocument();
+  });
+
+  it('sem comissão lida → "—" com o motivo', () => {
+    renderComContexto({ ...comCustos, comissao_pct: null }, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.getByTitle('Margem indisponível: falta comissão do Mercado Livre')).toHaveTextContent('—');
+  });
+
+  it('sem frete → "—" com o motivo', () => {
+    renderComContexto({ ...comCustos, ptw_custos: null }, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.getByTitle('Margem indisponível: falta custo de frete do Mercado Livre')).toHaveTextContent('—');
+  });
+
+  it('prejuízo aparece em vermelho', () => {
+    // 100 − 14 − 5 − 8 − 110 = −37,00
+    renderComContexto(comCustos, ctx({ custo: 110, aliquotaPct: 8 }));
+    expect(screen.getByText(/R\$\s*-?37,00/).className).toContain('text-destructive');
+  });
+
+  // A comissão do ML muda de faixa com o preço. Um produto já reprecificado tem a comissão lida
+  // em OUTRO preço — a população exata que esta coluna serve —, e o detalhe já marca esse número
+  // como estimativa: cru na lista e marcado no detalhe seria contradição na mesma tela (Errata 12).
+  it('comissão lida em outro preço → o número sai marcado como estimativa', () => {
+    renderComContexto({ ...comCustos, comissao_preco: 250 }, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.getByText('estimativa')).toBeInTheDocument();
+    expect(screen.getByText('estimativa').title).toContain('faixa de preço');
+  });
+
+  it('comissão lida no preço vigente → sem rótulo, o número é exato', () => {
+    renderComContexto(comCustos, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.queryByText('estimativa')).not.toBeInTheDocument();
+  });
+
+  // `sobraDe` também devolve null para preço <= 0 — invariante mais larga que a da célula. Com
+  // `!` isto estourava e derrubava a linha inteira, não só a célula.
+  it('preço zerado devolve "—", não derruba a linha', () => {
+    renderComContexto({ ...comCustos, meu_preco: 0 }, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.getByTitle('Margem indisponível: preço do anúncio inválido')).toHaveTextContent('—');
+  });
+
+  it('enquanto o contexto carrega não mente com "—": mostra skeleton', () => {
+    const { container } = renderComContexto(comCustos, undefined);
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+  });
+
+  // Revisão final: a página cai para Map vazio quando a consulta de contexto falha (mesmo motivo
+  // acima: nunca fica em skeleton eterno). Sem a flag `contextosErro`, essa célula caía no mesmo
+  // "falta custo do produto" de um cadastro genuinamente incompleto — motivo falso.
+  it('Map vazio por cadastro incompleto → motivo é "falta custo do produto"', () => {
+    renderComContexto(comCustos, new Map());
+    expect(screen.getByTitle('Margem indisponível: falta custo do produto')).toHaveTextContent('—');
+  });
+
+  it('Map vazio por falha de leitura → motivo é a falha, não o cadastro', () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <TabelaRadar
+          produtos={[comCustos]} resumo={new Map([[comCustos.id, resumo]])} resumoCarregando={false}
+          contextos={new Map()} contextosErro onAbrirDetalhe={() => undefined} onReprecificar={() => undefined}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByTitle('Margem indisponível: falha ao consultar o custo do produto')).toHaveTextContent('—');
+    expect(screen.queryByTitle('Margem indisponível: falta custo do produto')).not.toBeInTheDocument();
+  });
+
+  it('a linha tem "Reprecificar", e ele não abre o detalhe por baixo', async () => {
+    const abrir = vi.fn();
+    const reprecificar = vi.fn();
+    renderComContexto(comCustos, ctx({ custo: 30, aliquotaPct: 8 }), reprecificar, abrir);
+    await userEvent.click(screen.getByRole('button', { name: 'Reprecificar Aptamil' }));
+    expect(reprecificar).toHaveBeenCalledWith(comCustos);
+    expect(abrir).not.toHaveBeenCalled();
+  });
+});
+
+// ADR-0130 D-1/D-6: elas não entram na comparação, mas o comprador as vê na mesma página do
+// catálogo. A lista precisa dizer que estão lá — o dado já é calculado (ofertasAbaixoDaReferencia).
+describe('TabelaRadar — ofertas abaixo da referência', () => {
+  const comAbaixo: PulseResumoOfertas = {
+    ...resumo, menorRelevante: 70.19, abaixoDaReferencia: { contagem: 2, menorPreco: 36 },
+  };
+
+  it('mostra "2 abaixo" ao lado do menor relevante, sem trocar a referência', () => {
+    renderRadar([produto], comAbaixo);
+    // getAllByText: desde a ADR-0147 o mesmo preço também é a faixa da coluna da disputa (ver linha 30).
+    expect(screen.getAllByText(/R\$\s*70,19/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/2 abaixo/)).toBeInTheDocument();
+    // O menor OBSERVADO nunca vira o número da coluna.
+    expect(screen.queryByText(/^R\$\s*36,00$/)).not.toBeInTheDocument();
+  });
+
+  it('o tooltip diz a partir de quanto, e por que elas não contam', () => {
+    renderRadar([produto], comAbaixo);
+    expect(screen.getByText(/2 abaixo/).closest('[title]')?.getAttribute('title'))
+      .toMatch(/R\$\s*36,00.*não entram na comparação/s);
+  });
+
+  it('sem ofertas abaixo, nada é acrescentado à célula', () => {
+    renderRadar([produto], { ...resumo, abaixoDaReferencia: null });
+    expect(screen.queryByText(/abaixo/)).not.toBeInTheDocument();
+  });
+
+  it('uma só oferta usa o singular', () => {
+    renderRadar([produto], { ...comAbaixo, abaixoDaReferencia: { contagem: 1, menorPreco: 36 } });
+    expect(screen.getByText(/1 abaixo/)).toBeInTheDocument();
+  });
+});
+
+/** Sobre o `renderRadar` hoisted (Task 4). `undefined` = histórico ainda carregando. */
+const renderRadarComHistorico = (historico: Map<string, { dia: string; preco: number }[]> | undefined) =>
+  renderRadar([produto], resumo, { historico });
+
+describe('TabelaRadar — tendência do menor observado', () => {
+  it('desenha o sparkline quando há série, com rótulo acessível', () => {
+    renderRadarComHistorico(new Map([['produto-1', [
+      { dia: '2026-08-26', preco: 80 }, { dia: '2026-08-28', preco: 75 }, { dia: '2026-09-01', preco: 70.19 },
+    ]]]));
+    expect(screen.getByRole('img', { name: /menor oferta observada/i })).toBeInTheDocument();
+  });
+
+  it('sem série, a célula fica vazia — reta falsa mentiria sobre estabilidade', () => {
+    renderRadarComHistorico(new Map());
+    expect(screen.queryByRole('img', { name: /menor oferta observada/i })).not.toBeInTheDocument();
+  });
+
+  it('enquanto o histórico carrega, mostra skeleton em vez de nada', () => {
+    const { container } = renderRadarComHistorico(undefined);
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
   });
 });

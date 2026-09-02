@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/table';
 import { fetchAliquotas } from '@/lib/queries';
 import { calcularTarifaML } from '@/lib/tarifa';
+import { SecaoSonar } from './secao-sonar';
 import type { ModalidadeML } from '@/lib/calculadora-ml';
 import { NOME_MODALIDADE, precosDerivadosDre, type OrigemProduto } from '@/lib/dre-sonar';
 import {
@@ -91,7 +92,13 @@ function LinhaCenario({ c }: { c: CenarioComDre }) {
   );
 }
 
-export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?: PrecosDoNicho }) {
+export function SonarDre({ ancora, precos, aberta, onAlternar }: {
+  ancora: AncoraDre | null;
+  precos?: PrecosDoNicho;
+  /** Controlada pela página: clicar em "Simular" numa linha da tabela precisa ABRIR a seção. */
+  aberta: boolean;
+  onAlternar: (aberta: boolean) => void;
+}) {
   const [custoTexto, setCustoTexto] = useState('');
   const [origem, setOrigem] = useState<OrigemProduto | null>(null);
   const [margemAlvoTexto, setMargemAlvoTexto] = useState('');
@@ -180,20 +187,29 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
     })),
   });
 
+  // Os dois cartões de recusa carregam o mesmo `id` do bloco e nomeiam a âncora: sem isso, trocar
+  // de âncora pela tabela não rolaria até aqui (getElementById devolveria null) e não mudaria texto
+  // nenhum na tela. A recusa continua recusando — o que se ganha é o retorno de que ela trocou.
   if (ancora == null || precoAncora == null) {
     return (
-      <Card className="p-4">
+      <Card id="sonar-dre" className="p-4">
         <p className="text-sm text-muted-foreground">
-          Sem anúncio de referência com preço, não há receita para montar a DRE.
+          {ancora != null && (
+            <>
+              <span data-testid="dre-ancora" className="font-medium text-foreground">{ancora.nome}</span>:{' '}
+            </>
+          )}
+          sem anúncio de referência com preço, não há receita para montar a DRE.
         </p>
       </Card>
     );
   }
   if (categoria == null) {
     return (
-      <Card className="p-4">
+      <Card id="sonar-dre" className="p-4">
         <p className="text-sm text-muted-foreground">
-          Este anúncio veio sem categoria do Mercado Livre, e a comissão depende dela — não dá para cotar.
+          <span data-testid="dre-ancora" className="font-medium text-foreground">{ancora.nome}</span> veio sem
+          categoria do Mercado Livre, e a comissão depende dela — não dá para cotar.
         </p>
       </Card>
     );
@@ -226,15 +242,19 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
     : null;
 
   return (
-    <Card className="space-y-4 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium">6. Dá lucro?</p>
-          <p className="text-xs text-muted-foreground">
-            Cinco preços de venda deste nicho, cada um cotado no Mercado Livre · {ancora.nome}
-          </p>
-        </div>
-
+    <SecaoSonar
+      id="sonar-dre"
+      titulo="Dá lucro?"
+      subtitulo={(
+        <>
+          Cinco preços de venda deste nicho, cada um cotado no Mercado Livre ·{' '}
+          <span data-testid="dre-ancora" className="font-medium text-foreground">{ancora.nome}</span>
+        </>
+      )}
+      colapsavelAbertaPorPadrao={false}
+      aberta={aberta}
+      onAlternar={onAlternar}
+      acoes={(
         <div className="flex flex-col items-end gap-1">
           <span className="text-xs text-muted-foreground">Modalidade do anúncio — muda a comissão</span>
           <div className="inline-flex gap-0.5 rounded-lg border p-0.5">
@@ -247,8 +267,9 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
             ))}
           </div>
         </div>
-      </div>
-
+      )}
+    >
+      <div className="space-y-4">
       <div className="space-y-3 rounded-lg border bg-muted/20 p-3">
         <p className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">Produto e negócio</p>
         <div className="grid gap-3 sm:grid-cols-4">
@@ -400,6 +421,7 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
           </p>
         </>
       )}
-    </Card>
+      </div>
+    </SecaoSonar>
   );
 }
