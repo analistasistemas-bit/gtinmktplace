@@ -121,7 +121,7 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
           // "unidades" explícito: sem a palavra o número passa por valor em reais (dúvida real do
           // Diego em 18/08). Quem é valor é o card ao lado.
           value={`≈ ${fmtMilhar(resp.vendas_totais, 1)} unidades`}
-          hint={`${resp.itens_com_vendas} de ${resp.itens_analisados} anúncios com o dado`}
+          hint={`${resp.itens_com_vendas} de ${resp.itens_analisados} anúncios · na vida dos anúncios`}
           icon={ShoppingCart}
           tom="info"
         />
@@ -129,7 +129,7 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
           size="compact"
           label="Mercado endereçável"
           value={`≈ R$ ${fmtMilhar(resp.valor_mercado, 1)}`}
-          hint="Σ preço × vendidos acumulados"
+          hint="Σ preço × vendidos, na vida dos anúncios"
           icon={CircleDollarSign}
           tom="info"
         />

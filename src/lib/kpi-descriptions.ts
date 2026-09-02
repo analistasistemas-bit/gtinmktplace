@@ -112,6 +112,16 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Em quantas fichas o seu preço publicado é o mais barato entre os concorrentes coletados. Sua própria oferta nunca entra na comparação.',
   'Sem vínculo de catálogo':
     'Fichas em que o seu anúncio não está vinculado ao catálogo do Mercado Livre. Sem vínculo ele não disputa a página e o ML não calcula preço para ganhar — resolver a ficha divergente devolve as duas coisas.',
+
+  // ── Pulse / Sonar (ADR-0122, ADR-0142, ADR-0146) ───────────────────────
+  'Vendas acumuladas':
+    'Soma do "+N vendidos" que o Mercado Livre exibe nos anúncios da amostra. É acumulado da VIDA de cada anúncio, não venda do mês, e o número do ML é uma faixa-piso ("+100" pode ser 199) — por isso a soma é um piso do nicho, nunca uma estimativa de ritmo.',
+  'Mercado endereçável':
+    'Σ (preço atual × vendidos acumulados) dos anúncios da amostra. É faturamento acumulado na vida dos anúncios, não a receita de um ano: multiplica o preço de hoje por vendas feitas ao longo de meses, e com desconto ativo usa o preço promocional. Serve para comparar nichos entre si, não para projetar receita.',
+  'Concorrentes vendendo mais que há um ano':
+    'Quantos vendedores da amostra têm hoje mais transações na conta do que no mesmo ponto de 12 meses atrás. É a LOJA INTEIRA do vendedor (ADR-0142): a API do Mercado Livre não expõe venda por anúncio de terceiro. Sinal de nicho em expansão ou retração, nunca de venda deste produto.',
+  'Média mensal por vendedor (12 meses)':
+    'Total de transações da conta do vendedor dividido por 12 (ADR-0146). O campo do ML é uma janela móvel de 365 dias, provada no Spike 048 — por isso ÷12 é média mensal de verdade. Continua sendo da loja inteira, somando nichos sem relação com o que você está prospectando.',
 };
 
 /** Resolve a descrição de um KPI pelo `label` (ou `infoKey` composto). undefined = sem entrada
