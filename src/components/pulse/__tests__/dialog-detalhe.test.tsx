@@ -376,3 +376,14 @@ describe('DialogDetalhe — visitas, FULL e composição', () => {
     expect(screen.getByText(/disputa de R\$\s*70,19 a R\$\s*99,00/)).toBeInTheDocument();
   });
 });
+
+// Filho de grid tem min-width:auto e não encolhe: em 820px o dialog cortava "Sua posição" e o
+// botão "Reprecificar" pela direita, sem barra de rolagem.
+describe('DialogDetalhe — o conteúdo pode encolher dentro do grid do dialog', () => {
+  it('o corpo do dialog carrega min-w-0', () => {
+    renderDetalhe();
+    const corpo = document.querySelector('[data-slot="dialog-content"] > .flex.flex-col.gap-5');
+    expect(corpo).not.toBeNull();
+    expect(corpo).toHaveClass('min-w-0');
+  });
+});

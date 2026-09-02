@@ -430,12 +430,15 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
           </DialogHeader>
 
           {isLoading ? (
-            <div className="flex flex-col gap-3">
+            <div className="flex min-w-0 flex-col gap-3">
               <Skeleton className="h-24 w-full rounded-lg" />
               <Skeleton className="h-40 w-full rounded-lg" />
             </div>
           ) : (
-            <div className="flex flex-col gap-5">
+            // `min-w-0`: filho de grid não encolhe abaixo do conteúdo por padrão, e sem isso o
+            // `overflow-x-auto` da tabela de concorrentes não tem largura para agir — em 820px o
+            // dialog estourava para 1251px e cortava "Sua posição" e "Reprecificar".
+            <div className="flex min-w-0 flex-col gap-5">
               {/* Bloco de decisão: o que o operador veio saber, antes da evidência. */}
               {produto?.codigo_pai && (
                 <section className="rounded-lg border bg-muted/30 p-4">
