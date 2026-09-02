@@ -275,3 +275,26 @@ describe('TabelaRadar — ofertas abaixo da referência', () => {
     expect(screen.getByText(/1 abaixo/)).toBeInTheDocument();
   });
 });
+
+/** Sobre o `renderRadar` hoisted (Task 4). `undefined` = histórico ainda carregando. */
+const renderRadarComHistorico = (historico: Map<string, { dia: string; preco: number }[]> | undefined) =>
+  renderRadar([produto], resumo, { historico });
+
+describe('TabelaRadar — tendência do menor observado', () => {
+  it('desenha o sparkline quando há série, com rótulo acessível', () => {
+    renderRadarComHistorico(new Map([['produto-1', [
+      { dia: '2026-08-26', preco: 80 }, { dia: '2026-08-28', preco: 75 }, { dia: '2026-09-01', preco: 70.19 },
+    ]]]));
+    expect(screen.getByRole('img', { name: /menor oferta observada/i })).toBeInTheDocument();
+  });
+
+  it('sem série, a célula fica vazia — reta falsa mentiria sobre estabilidade', () => {
+    renderRadarComHistorico(new Map());
+    expect(screen.queryByRole('img', { name: /menor oferta observada/i })).not.toBeInTheDocument();
+  });
+
+  it('enquanto o histórico carrega, mostra skeleton em vez de nada', () => {
+    const { container } = renderRadarComHistorico(undefined);
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+  });
+});

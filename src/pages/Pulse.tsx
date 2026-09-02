@@ -30,7 +30,7 @@ import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { QK } from '@/lib/queries';
 import {
   fetchPulseProdutos, fetchPulseResumoOfertas, coletarPulseAgora, contarPulseAlertas,
-  fetchContextoMargemEmLote, type PulseProduto,
+  fetchContextoMargemEmLote, fetchPulseHistoricoOfertas, type PulseProduto,
 } from '@/lib/pulse';
 import { cn } from '@/lib/utils';
 import { fmtInt } from '@/lib/formato';
@@ -103,6 +103,18 @@ export default function Pulse() {
     queryKey: ['pulse', 'ofertas-resumo', ids],
     queryFn: () => fetchPulseResumoOfertas(ids),
     enabled: ids.length > 0,
+  });
+
+  // Consulta separada e de baixa prioridade: a série é enfeite decisório, não bloqueia a lista.
+  // Desligada até o resumo chegar — a âncora do último ponto vem dele. A chave não depende do
+  // resumo: um refetch dele só re-ancora o histórico depois do `staleTime`.
+  const { data: historicoOfertas } = useQuery({
+    queryKey: ['pulse', 'historico-ofertas', ids],
+    queryFn: () => fetchPulseHistoricoOfertas(
+      ids, new Map([...resumoOfertas!].map(([id, r]) => [id, r.menorObservado])),
+    ),
+    enabled: ids.length > 0 && !!resumoOfertas,
+    staleTime: 5 * 60_000,
   });
 
   // Uma consulta para a página inteira (ADR-0119 Errata 12 D-3): 229 catálogos seriam 229 idas ao
@@ -348,6 +360,7 @@ export default function Pulse() {
           // Falha de leitura não pode virar esqueleto eterno: como na query irmã de ofertas, o
           // carregamento termina e a célula cai no travessão.
           contextos={codigosPai.length === 0 || contextoErro ? new Map() : contextosMargem}
+          historico={historicoOfertas}
           onAbrirDetalhe={setDetalheId}
           onReprecificar={(p) => setReprecificar({
             codigoPai: p.codigo_pai!, precoInicial: p.meu_preco, produtoId: p.id,

@@ -3,7 +3,8 @@
 import { supabase } from './supabase';
 import { fetchAliquotas } from './queries';
 import {
-  custoDaFamilia, estadoAtualOfertas, mercadoPulse, ofertasAbaixoDaReferencia, type FamiliaComVariacoes,
+  custoDaFamilia, estadoAtualOfertas, menorPrecoPorDia, mercadoPulse, ofertasAbaixoDaReferencia,
+  type FamiliaComVariacoes,
 } from './pulse-margem';
 
 export interface PulseProduto {
@@ -227,6 +228,69 @@ async function fetchPulseVendedoresResumo(sellerIds: number[]): Promise<PulseVen
     }
   }
   return vendedores;
+}
+
+/** Dias lidos e dias exibidos. Ler 30 e mostrar 7 não é desperdício: `pulse_ofertas` é histórico de
+ *  MUDANÇAS, e `menorPrecoPorDia` só carrega para a frente o que está na janela. Uma oferta que
+ *  mudou há 20 dias e nunca mais é o menor preço de hoje — cortar em 7 a apagaria, e o gráfico
+ *  desenharia uma alta que não aconteceu (medido em 2026-08-29). */
+const DIAS_HISTORICO_LIDOS = 30;
+const DIAS_HISTORICO_EXIBIDOS = 7;
+
+/**
+ * Série do menor OBSERVADO por produto (todas as ofertas ativas — a mesma conta do gráfico do
+ * detalhe), para o sparkline da lista. Não é o menor relevante: a qualificação por dia não existe
+ * agregada, e chamar isto de "relevante" promoveria oferta desqualificada a referência (ADR-0130).
+ * Série com menos de 2 pontos não é devolvida: reta de um ponto afirma estabilidade não medida.
+ *
+ * Dois limites conhecidos e aceitos: oferta que não muda há mais de 30 dias fica fora da semente do
+ * carry-forward; e os `DIAS_HISTORICO_EXIBIDOS` são dias COM COLETA, não dias de calendário — num
+ * produto esparso os 7 pontos podem cobrir os 30 dias lidos. Por isso o rótulo acessível diz
+ * "dias com coleta", e não "últimos 7 dias".
+ */
+export async function fetchPulseHistoricoOfertas(
+  produtoIds: string[],
+  /** `resumo.menorObservado` por produto — ancora o último ponto na view, como o detalhe faz com
+   *  `atuais` (a janela lida é de 30 dias; a view é a verdade do presente). */
+  menorObservadoAtual: Map<string, number | null> = new Map(),
+): Promise<Map<string, { dia: string; preco: number }[]>> {
+  const series = new Map<string, { dia: string; preco: number }[]>();
+  if (produtoIds.length === 0) return series;
+
+  const desde = new Date(Date.now() - DIAS_HISTORICO_LIDOS * 86_400_000).toISOString().slice(0, 10);
+  const PAGINA = 1000;
+  const porProduto = new Map<string, PulseOferta[]>();
+  for (let de = 0; ; de += PAGINA) {
+    const { data, error } = await supabase.from('pulse_ofertas')
+      .select('produto_id, item_id, seller_id, preco, ativo, dia')
+      .in('produto_id', produtoIds)
+      .gte('dia', desde)
+      // A tupla do ORDER BY tem de ser a chave única de `pulse_ofertas`
+      // (`pulse_ofertas_prod_item_dia_uniq` = produto_id, item_id, dia). Cada `range()` é uma
+      // requisição própria, com snapshot próprio: sob ordem ambígua, linhas empatadas podem
+      // reordenar entre páginas e uma delas some. Sumir justo a linha do preço mais barato é a
+      // alta-fantasma que esta função existe para não desenhar.
+      .order('produto_id', { ascending: true })
+      .order('item_id', { ascending: true })
+      .order('dia', { ascending: true })
+      .range(de, de + PAGINA - 1);
+    if (error) throw error;
+    const pagina = (data ?? []) as (PulseOferta & { produto_id: string })[];
+    for (const linha of pagina) {
+      const lista = porProduto.get(linha.produto_id) ?? [];
+      lista.push(linha);
+      porProduto.set(linha.produto_id, lista);
+    }
+    if (pagina.length < PAGINA) break;
+  }
+
+  for (const [produtoId, ofertas] of porProduto) {
+    const serie = menorPrecoPorDia(ofertas).slice(-DIAS_HISTORICO_EXIBIDOS);
+    const atual = menorObservadoAtual.get(produtoId);
+    if (atual != null && serie.length) serie[serie.length - 1] = { ...serie[serie.length - 1], preco: atual };
+    if (serie.length >= 2) series.set(produtoId, serie);
+  }
+  return series;
 }
 
 export async function pausarPulseProduto(id: string, pausar: boolean): Promise<void> {

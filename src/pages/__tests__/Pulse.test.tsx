@@ -22,6 +22,8 @@ vi.mock('@/lib/pulse', async () => {
     // A coluna "Sobra hoje" lê o contexto de margem da página inteira: sem mock, o `...real` levaria
     // a query ao Supabase de verdade (os produtos do teste têm `codigo_pai`, então ela é habilitada).
     fetchContextoMargemEmLote: vi.fn(async () => new Map()),
+    // Mesma razão: a coluna de tendência dispara uma query própria assim que o resumo chega.
+    fetchPulseHistoricoOfertas: vi.fn(async () => new Map()),
   };
 });
 

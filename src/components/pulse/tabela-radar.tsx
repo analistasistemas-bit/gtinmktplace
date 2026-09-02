@@ -6,6 +6,7 @@ import { MoreVertical, Pause, Play } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Sparkline } from '@/components/ui/sparkline';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -29,12 +30,15 @@ function relativo(iso: string | null): string {
 }
 
 export function TabelaRadar({
-  produtos, resumo, resumoCarregando, contextos, onAbrirDetalhe, onReprecificar,
+  produtos, resumo, resumoCarregando, contextos, historico, onAbrirDetalhe, onReprecificar,
 }: {
   produtos: PulseProduto[];
   /** Ofertas por produto — a query vive na página, para KPIs e tabela lerem o mesmo dado. */
   resumo: Map<string, PulseResumoOfertas> | undefined;
   resumoCarregando: boolean;
+  /** Série do menor OBSERVADO por dia, por produto. `undefined` = ainda carregando (skeleton);
+   *  produto ausente do Map = sem histórico suficiente, e aí a célula fica vazia. */
+  historico?: Map<string, { dia: string; preco: number }[]>;
   /** Custo + alíquota por `codigo_pai` (ADR-0119 Errata 12 D-3). `undefined` = ainda carregando —
    *  e aí a célula mostra skeleton, porque um `—` significaria "insumo faltando". */
   contextos: Map<string, ContextoMargem> | undefined;
@@ -157,6 +161,32 @@ export function TabelaRadar({
               </span>
             )}
           </span>,
+        );
+      },
+    },
+    {
+      key: 'tendencia',
+      // "O piso da ficha caiu 8% em 7 dias" é a leitura que decide antes de abrir o detalhe. O
+      // sparkline existia só lá dentro. É o menor OBSERVADO (todas as ofertas ativas), como no
+      // detalhe — não o relevante; o cabeçalho diz isso para a coluna ao lado não ser lida como fonte.
+      header: <span title="Menor oferta observada na ficha, por dia — inclui ofertas fora da régua de relevância">7 dias (observado)</span>,
+      className: 'hidden w-28 xl:table-cell',
+      cell: (p) => {
+        if (historico === undefined) return <Skeleton className="h-4 w-16" />;
+        const serie = historico.get(p.id);
+        // Série de um ponto só não vira reta: reta afirma estabilidade que não foi medida.
+        if (!serie) return null;
+        const precos = serie.map((s) => s.preco);
+        // `Sparkline` (src/components/ui/sparkline.tsx) recebe `{ data: string; total: number }[]`
+        // e NÃO aceita `aria-label` — daí o wrapper com `role="img"`. É o mesmo componente que a
+        // coluna de visitas do Sonar usa; um segundo sparkline no app seria a terceira versão.
+        return (
+          <span
+            role="img"
+            aria-label={`Menor oferta observada variou de ${fmtBRL(Math.min(...precos))} a ${fmtBRL(Math.max(...precos))} nos últimos ${serie.length} dias com coleta`}
+          >
+            <Sparkline dados={serie.map((s) => ({ data: s.dia, total: s.preco }))} />
+          </span>
         );
       },
     },
