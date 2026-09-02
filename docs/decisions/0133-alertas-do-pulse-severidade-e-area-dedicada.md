@@ -144,6 +144,100 @@ coletor **grava assim mesmo**: deixar de alertar por causa de uma consulta que c
 por silêncio, e é o silêncio que custa dinheiro. E a assimetria de visitas continua lá — o que
 sumiu foi a linha duplicada, não a redetecção.
 
+## Errata 4 (2026-09-01, validação em runtime com dados reais) — a lista é por produto, e cada linha tem idade
+
+A ADR-0133 acertou o que é decisão (`acao`) e o que é ruído (`info`), mas mediu isso **por evento**.
+Na org de validação, os 9 alertas de Ação são na prática **4 produtos**: "Aptamil Premium 1" com duas
+quedas (69,80→67,99 e 70,19→67,99), "Eucerin Aquaphor" com duas (77,87→72,31 e 70,90→68,90) e
+"Aptamil Premium 2" com duas quedas idênticas (71,99→68,99). A fila de trabalho do operador é de
+4 itens; a tela mostrava 9.
+
+E `criado_em` só era usado para calcular a âncora do "marcar todos" (`aba-alertas.tsx:114`): a linha
+não dizia **quando**. Sem isso não dá para priorizar nem para saber se já foi reagido — e, no caso
+das duas quedas idênticas, nem para distinguir reemissão de queda real.
+
+> **Medição da investigação (Task 13 do plano 2026-09-01, consultas read-only em produção):**
+>
+> **(A) mesmo produto + mesmo par `de`/`para` + mesmo dia UTC, `tipo = 'preco_caiu'`, 30 dias — 1 linha:**
+> `produto_id=a00c41cc-a54c-4729-b69f-07ad8b3ac519`, `de=71.99`, `para=68.99`, dia `2026-08-30` (UTC),
+> `severidade=acao`, `lido=false`, `n=2`, primeiro `2026-08-30 00:00:08 UTC`, último `2026-08-30 18:00:06 UTC`.
+> A reconstrução em `pulse_ofertas` mostra que às 18:00 **nenhuma linha nova foi gravada** para esse
+> produto: o preço não se mexeu entre os dois alertas.
+>
+> **(B) alertas de Ação não lidos, por produto — 16 produtos**, de 1 a 4 alertas cada (`5fbba21c…`: 4;
+> `f84c8184…`, `aa09e2a4…`, `1c3730a7…`, `65c24cbf…`, `a00c41cc…`, `f9afebe4…`: 2 cada; outros 9 com 1).
+> Os "9 alertas / 4 produtos" acima são a foto anterior; esta é a de 2026-09-01, com mais dado
+> acumulado. Não se contradizem — as duas medem a mesma coisa: a fila real é menor que a lista.
+>
+> **(C) mesmo produto + mesmo par em dias distintos — 3 linhas:** `5080f872…` 28.44→26.39 em 3 dias e
+> `91cec13b…` 20.25→15.9 em 2 dias (movimento real: o preço voltou e caiu de novo) e `a00c41cc…`
+> 71.99→68.99 com `dias=1` — a mesma ocorrência de (A).
+>
+> **Veredito: REEMISSÃO.**
+
+### D-1 — A linha da aba Alertas é o PRODUTO, não o evento
+
+`agruparAlertasPorProduto(alertas): GrupoAlertas[]` agrupa por `produto_id`: uma linha por produto,
+com o texto do alerta **mais recente** e, quando há mais de um, `· N movimentos` — expansível para
+ver os demais em ordem decrescente de `criado_em`. **A ordem da lista é a do alerta mais recente de
+cada grupo, decrescente** — a mesma ordem em que `fetchPulseAlertas` já devolve as linhas.
+
+O agrupamento é **de exibição**: nenhuma linha de `pulse_alertas` deixa de existir, e a contagem do
+botão "Marcar N como lidos" continua sendo a de **alertas**, não a de grupos, porque é ela que
+descreve o que o clique vai fazer no banco (D-7 e Errata 2 seguem valendo).
+
+Isto **revoga** a consequência "Sem agrupamento por produto na lista" registrada abaixo — e responde
+à objeção dela em vez de ignorá-la. O agrupamento roda **sobre as páginas já carregadas**, não no
+banco: como a posição de um grupo é o seu alerta mais novo, a página seguinte ou acrescenta alertas
+mais antigos a um grupo que já está na tela (posição inalterada) ou abre um grupo novo abaixo de tudo
+o que veio antes. Grupo não se parte, não se duplica e não reordena a cada "Carregar mais".
+Corolário para quem implementa: `N movimentos` conta os alertas **carregados** e cresce conforme as
+páginas chegam — não é um total por produto vindo do banco.
+
+Alerta sem `produto_id` (ficha removida) não é agrupado com os outros: vira grupo de um, com a
+própria chave. Juntar "sem produto" num balde só misturaria produtos diferentes numa linha.
+
+### D-2 — Cada linha diz a idade e, na queda de preço, o quanto caiu
+
+`idadeAlerta(criadoEm)` devolve `há 3 horas`, exibido ao lado do texto; e `-4%` aparece junto do par
+de preços em `preco_caiu`. "Caiu de R$ 49,90 para R$ 47,90" obrigava a conta mental exatamente no
+momento em que a decisão é tomada. O percentual é derivado do payload, não gravado: é aritmética
+sobre dois números que já estão lá (`de` e `para`). Idade e percentual são os do alerta mais recente
+do grupo; os demais mostram os seus quando o grupo é expandido.
+
+### D-3 — O ✓ do grupo marca o grupo inteiro
+
+Marcar lido um produto e ver a mesma linha voltar com o segundo evento é a definição de fila que não
+anda. `marcarAlertasLidosPorIds(ids)` faz um `update … in('id', ids)` — o mesmo grant column-level em
+`lido`, uma ida ao banco. **Não** é um "marcar todos" disfarçado: o escopo é o conjunto de ids
+renderizados naquela linha, e nada além.
+
+**O que o agrupamento NÃO muda** — é aqui que aparece a tentação de "consertar junto":
+
+- **"Marcar N como lidos" pode marcar menos do que N.** A âncora continua sendo o `criado_em` da
+  primeira linha carregada, e existe para proteger da corrida com o coletor, não da paginação
+  (Errata 2, inalterada). O rótulo diverge para menos, e isso é o comportamento correto.
+- **O distintivo da aba conta alertas de ação não lidos**, não grupos — segue `contarPulseAlertas('acao')`.
+- **A primeira coleta de um produto não gera alerta** (`primeiraColeta`, ADR-0119). Um produto que
+  aparece pela primeira vez não abre grupo nenhum.
+
+### D-4 — A reemissão já está corrigida; a causa raiz é dívida conhecida
+
+A reemissão medida em (A) foi decidida e corrigida na **Errata 3**: dedupe de `preco_caiu` por
+produto + par `de`/`para` + dia civil UTC, com índice único e gravação que ignora duplicata, mais a
+limpeza das reemissões já gravadas. O agrupamento desta errata não depende disso — ele resolve a
+leitura dos N movimentos **reais** do mesmo produto, que continuam existindo.
+
+**Dívida conhecida, deliberadamente não paga aqui:** a causa raiz da redetecção segue de pé. Em
+`supabase/functions/pulse-coletar/processar.ts:255-262` o lado `anteriores` do diff qualifica com o
+`visitas_30d` **congelado** na linha gravada, e o lado `atuais` com visitas **buscadas ao vivo**;
+`qualificarOferta` (`supabase/functions/_shared/concorrencia/qualificacao.ts:25`) exclui a oferta
+inteira quando `visitas_30d === 0` (`SEM_VISITAS_30D`), então o mesmo concorrente pode sair do
+"antes" e voltar no "agora" sem que preço nenhum tenha mudado. Não foi corrigido de propósito: a
+régua de relevância é decisão registrada (ADR-0130 e este ADR) e mexer nela exige ADR novo e
+re-validação — trocar a régua para calar um alerta repetido apaga queda real junto. O dedupe trata o
+sintoma; a assimetria continua lá, e quem for pagá-la abre ADR antes.
+
 ## Consequências aceitas
 
 - **O modelo permanece evento com marcar-lido.** A alternativa (condição aberta que se resolve
