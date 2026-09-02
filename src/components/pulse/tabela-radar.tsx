@@ -202,7 +202,9 @@ export function TabelaRadar({
         return (
           <span className={cn('tabular-nums', m.liquido < 0 ? 'text-destructive' : 'text-success')}>
             {fmtBRL(m.liquido)}
-            <span className="ml-1 text-xs font-normal opacity-80">({m.margemPct.toFixed(1)}%)</span>
+            <span className="ml-1 text-xs font-normal opacity-80">
+              ({m.margemPct.toFixed(1)}% s/ venda)
+            </span>
             {/* Mesmo rótulo e mesmo texto do detalhe (dialog-detalhe.tsx) e do reprecificar: um
                 número marcado num lugar e cru no outro, para o mesmo produto, é a contradição que
                 a Errata 12 proíbe. Na lista o preço é sempre o vigente, então o rótulo aparece

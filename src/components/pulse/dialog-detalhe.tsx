@@ -528,8 +528,10 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
                           )}
                         >
                           {fmtBRL(margem.liquido)}
+                          {/* ADR-0150 D-1: o denominador vai no nome. Markup (lucro ÷ custo) e
+                              margem s/ venda (lucro ÷ preço) convivem no Pulse e não se misturam. */}
                           <span className="ml-1 text-sm font-normal opacity-80">
-                            ({margem.margemPct.toFixed(1)}%)
+                            ({margem.margemPct.toFixed(1)}% s/ venda)
                           </span>
                           {margemEstimativa && (
                             <span

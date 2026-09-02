@@ -10,13 +10,17 @@ const detalhe = vi.hoisted(() => ({
   vendedores: [] as PulseVendedor[],
 }));
 
+const contextoMargem = vi.hoisted(() => ({
+  valor: { custo: null as number | null, aliquotaPct: null as number | null },
+}));
+
 vi.mock('@tanstack/react-query', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@tanstack/react-query')>();
   return {
     ...actual,
     useQuery: ({ queryKey }: { queryKey: unknown[] }) => (
       queryKey[1] === 'contexto-margem'
-        ? { data: { custo: null, aliquotaPct: null }, isLoading: false }
+        ? { data: contextoMargem.valor, isLoading: false }
         : { data: detalhe, isLoading: false }
     ),
   };
@@ -88,6 +92,17 @@ function renderDetalhe(produto: PulseProduto = produtoBase) {
   return render(<DialogDetalhe produto={produto} onFechar={vi.fn()} />);
 }
 
+/** Produto com os QUATRO insumos da margem — custo 30, alíquota 8%, comissão 14% + 0 fixo lida
+ *  em R$ 100 (sem "estimativa"), frete 5 — a R$ 100. Sobra: 100 − 14 − 5 − 8 − 30 = 43,00 (43.0%). */
+function renderDetalheComMargem() {
+  contextoMargem.valor = { custo: 30, aliquotaPct: 8 };
+  return renderDetalhe({
+    ...produtoBase, codigo_pai: 'APTAMIL-1', meu_preco: 100,
+    comissao_pct: 14, comissao_fixa: 0, comissao_preco: 100,
+    ptw_custos: { comissao: null, frete: 5 },
+  });
+}
+
 beforeEach(() => {
   detalhe.ofertas = [];
   detalhe.ofertasAtuais = [
@@ -117,6 +132,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  contextoMargem.valor = { custo: null, aliquotaPct: null };
 });
 
 describe('DialogDetalhe — links de ofertas do Mercado Livre', () => {
@@ -385,5 +401,13 @@ describe('DialogDetalhe — o conteúdo pode encolher dentro do grid do dialog',
     const corpo = document.querySelector('[data-slot="dialog-content"] > .flex.flex-col.gap-5');
     expect(corpo).not.toBeNull();
     expect(corpo).toHaveClass('min-w-0');
+  });
+});
+
+// ADR-0150 D-1: `%` sozinho não diz o denominador, e markup e margem s/ venda convivem no Pulse.
+describe('DialogDetalhe — o percentual da sobra diz o denominador', () => {
+  it('mostra "s/ venda" junto do percentual', () => {
+    renderDetalheComMargem();
+    expect(screen.getByText(/43\.0%\s*s\/\s*venda/)).toBeInTheDocument();
   });
 });

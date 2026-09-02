@@ -175,7 +175,7 @@ describe('TabelaRadar — Sobra hoje', () => {
     expect(screen.getByRole('columnheader', { name: 'Sobra hoje' })).toBeInTheDocument();
     expect(screen.getByText(/R\$\s*43,00/)).toBeInTheDocument();
     // `toFixed(1)` devolve "43.0" (ponto) — é o que o detalhe já exibe hoje (dialog-detalhe.tsx:544).
-    expect(screen.getByText(/43\.0%/)).toBeInTheDocument();
+    expect(screen.getByText(/43\.0%\s*s\/\s*venda/)).toBeInTheDocument();
   });
 
   it('sem custo → "—" com o motivo, nunca zero', () => {
