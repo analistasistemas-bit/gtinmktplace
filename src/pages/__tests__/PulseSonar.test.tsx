@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import PulseSonar, { SonarVendas, SonarEanCruzamento } from '../PulseSonar';
-import { fetchSecoes237Sonar, fetchVendasSonar } from '@/lib/sonar';
+import { fetchCruzamentoEan, fetchSecoes237Sonar, fetchVendasSonar } from '@/lib/sonar';
 import type { CruzamentoEan, ItemVendasSonar, PainelVendasSonar, RespostaSecoes237Sonar } from '@/lib/sonar';
 
 // Card "Produto destaque" (SonarVendas): mesma regra de href do item_id da coluna de ações
@@ -139,7 +139,9 @@ async function renderSonarComResposta(resp: PainelVendasSonar, termoDigitado = '
   vi.mocked(fetchVendasSonar).mockResolvedValue(resp);
   const campo = renderSonar();
   await userEvent.type(campo, `${termoDigitado}{Enter}`);
-  await screen.findByRole('heading', { name: /^Nicho:/ }, { timeout: 3000 });
+  // "amostra de N anúncios" está nas duas variantes do cabeçalho (termo e EAN) — o texto do
+  // heading em si diverge por busca (ver describe "cabeçalho do resultado por EAN").
+  await screen.findByText(/amostra de \d+ anúncios/, {}, { timeout: 3000 });
   return campo;
 }
 
@@ -285,6 +287,47 @@ describe('PulseSonar — cabeçalho do resultado', () => {
   it('sem EAN buscado, o botão não aparece — não há o que vigiar por termo', async () => {
     await renderSonarComResposta({ ...comAmostra, termo: 'tecido oxford' });
     expect(screen.queryByRole('button', { name: 'Adicionar ao Radar' })).not.toBeInTheDocument();
+  });
+});
+
+// Pedido do Diego: "Nicho: 4005900183125" não diz nada — quem buscou por EAN buscou um produto,
+// não um nicho. O nome vem de fonte já carregada na tela (sem chamada nova ao serviço externo):
+// 1º o catálogo da própria org (cruzamentoEan.minhas, o mais confiável), 2º o título do primeiro
+// anúncio da amostra (sinalizado como tal), por último só o código.
+describe('PulseSonar — cabeçalho do resultado por EAN', () => {
+  it('nome do catálogo disponível: cabeçalho mostra código e nome, sem rótulo "Nicho"', async () => {
+    vi.mocked(fetchCruzamentoEan).mockResolvedValueOnce({
+      minhas: [{ codigo: '00123', nome: 'Cabo USB-C 1m', preco: 19.9 }],
+      no_radar: null,
+    });
+    await renderSonarComEan('7896004700113');
+    const cabecalho = await screen.findByRole('heading', { name: /7896004700113 — Cabo USB-C 1m/ });
+    expect(cabecalho).toBeInTheDocument();
+    expect(cabecalho).not.toHaveTextContent(/Nicho/);
+    expect(cabecalho).not.toHaveTextContent(/título do anúncio/);
+  });
+
+  it('sem nome do catálogo: cai para o título do primeiro anúncio, marcado como tal', async () => {
+    vi.mocked(fetchCruzamentoEan).mockResolvedValueOnce({ minhas: [], no_radar: null });
+    await renderSonarComEan('7896004700113');
+    // itemBase() usa 'Produto destaque' como título do anúncio quando o teste não sobrescreve.
+    const cabecalho = await screen.findByRole('heading', { name: /7896004700113 — Produto destaque/ });
+    expect(cabecalho).toHaveTextContent(/título do anúncio/);
+  });
+
+  it('sem catálogo e sem título de anúncio: só o código, sem preenchimento inventado', async () => {
+    vi.mocked(fetchCruzamentoEan).mockResolvedValueOnce({ minhas: [], no_radar: null });
+    await renderSonarComResposta(
+      { ...comAmostra, termo: '7896004700113', itens: [{ ...comAmostra.itens![0], titulo: '' }] },
+      '7896004700113',
+    );
+    const cabecalho = await screen.findByRole('heading', { name: '7896004700113' });
+    expect(cabecalho).toBeInTheDocument();
+  });
+
+  it('busca por termo (não EAN): cabeçalho continua "Nicho: {termo}", sem mudança', async () => {
+    await renderSonarComResposta({ ...comAmostra, termo: 'tecido oxford' });
+    expect(await screen.findByRole('heading', { name: 'Nicho: tecido oxford' })).toBeInTheDocument();
   });
 });
 

@@ -427,6 +427,18 @@ export default function PulseSonar() {
     staleTime: 60_000,
   });
 
+  // Cabeçalho por EAN: "Nicho: {número}" não faz sentido para busca por código de barras — troca
+  // pelo nome do produto, sem chamada nova (o cruzamento acima já é local e já está na tela).
+  // Prioridade: nome do catálogo da própria org (o mais confiável) > título do primeiro anúncio
+  // da amostra (é de um anúncio, não do catálogo — sinalizado na tela) > nada, só o código.
+  const nomeProdutoEan = useMemo(() => {
+    if (!eanBuscado) return null;
+    const doCatalogo = cruzamentoEan?.minhas.find((v) => v.nome)?.nome;
+    if (doCatalogo) return { texto: doCatalogo, deAnuncio: false };
+    const doAnuncio = itens[0]?.titulo;
+    return doAnuncio ? { texto: doAnuncio, deAnuncio: true } : null;
+  }, [eanBuscado, cruzamentoEan, itens]);
+
   // Visitas (D3): dispara quando a lista de anúncios chega. Grátis (API oficial) — retry ok.
   const { data: visitas, isFetching: visitasCarregando } = useQuery({
     queryKey: ['pulse', 'sonar-visitas', termoBuscado, itemIds],
@@ -792,8 +804,28 @@ export default function PulseSonar() {
               invisível — e é ela que diz se a próxima busca custa. */}
           <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b pb-3">
             <div className="min-w-0">
-              <h2 className="truncate text-base font-semibold" title={vendas.termo}>
-                Nicho: {vendas.termo}
+              <h2
+                className="truncate text-base font-semibold"
+                title={
+                  eanBuscado
+                    ? `${vendas.termo}${nomeProdutoEan ? ` — ${nomeProdutoEan.texto}${nomeProdutoEan.deAnuncio ? ' (título do anúncio)' : ''}` : ''}`
+                    : `Nicho: ${vendas.termo}`
+                }
+              >
+                {eanBuscado ? (
+                  nomeProdutoEan ? (
+                    <>
+                      {vendas.termo} — {nomeProdutoEan.texto}
+                      {nomeProdutoEan.deAnuncio && (
+                        <span className="font-normal text-muted-foreground"> (título do anúncio)</span>
+                      )}
+                    </>
+                  ) : (
+                    vendas.termo
+                  )
+                ) : (
+                  `Nicho: ${vendas.termo}`
+                )}
               </h2>
               <p className="text-xs text-muted-foreground">
                 amostra de {vendas.itens_analisados} anúncios
