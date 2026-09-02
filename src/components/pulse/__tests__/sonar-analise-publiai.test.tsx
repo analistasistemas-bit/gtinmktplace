@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import type { RespostaSecoes237Sonar, Secoes237Sonar } from '@/lib/sonar';
 import { SonarAnalisePubliAI } from '../sonar-analise-publiai';
@@ -48,8 +48,13 @@ function resposta(over: Partial<Secoes237Sonar> = {}): RespostaSecoes237Sonar {
   };
 }
 
-const render237 = (data: RespostaSecoes237Sonar) =>
-  render(<SonarAnalisePubliAI data={data} carregando={false} erro={null} />);
+// A seção agora começa colapsada (task 19) — abrir antes de checar o corpo, como o operador faria.
+const render237 = (data: RespostaSecoes237Sonar) => {
+  const utils = render(<SonarAnalisePubliAI data={data} carregando={false} erro={null} />);
+  const botao = screen.queryByRole('button', { name: /Quem vende neste nicho/ });
+  if (botao) fireEvent.click(botao);
+  return utils;
+};
 
 describe('SonarAnalisePubliAI — ADR-0146', () => {
   it('mediana zero aparece como número medido, nunca como ausência', () => {

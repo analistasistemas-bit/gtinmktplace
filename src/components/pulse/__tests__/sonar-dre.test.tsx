@@ -32,7 +32,9 @@ function renderDre(over: Partial<Parameters<typeof SonarDre>[0]> = {}) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <SonarDre ancora={ancora} {...over} />
+      {/* aberta=true: estes testes olham o corpo da DRE direto, sem passar pelo "Simular" da
+          tabela que abre a seção na página real. */}
+      <SonarDre ancora={ancora} aberta onAlternar={() => {}} {...over} />
     </QueryClientProvider>,
   );
 }
@@ -223,7 +225,9 @@ describe('SonarDre — Clássico × Premium', () => {
     const user = await preencher();
     await waitFor(() => expect(screen.getAllByText(/R\$\s*12,59/).length).toBeGreaterThan(0));
 
-    await user.click(screen.getByRole('button', { name: /premium/i }));
+    // Âncora regex: o nome do produto de teste ("Aptamil Premium 2") agora vive dentro do botão
+    // de abrir/fechar a seção (subtítulo), então "/premium/i" solto casaria com os dois botões.
+    await user.click(screen.getByRole('button', { name: /^premium/i }));
 
     await waitFor(() => expect(screen.getAllByText(/R\$\s*16,18/).length).toBeGreaterThan(0));
     expect(screen.queryByText(/R\$\s*12,59/)).not.toBeInTheDocument();
@@ -248,7 +252,7 @@ describe('SonarDre — Clássico × Premium', () => {
     await waitFor(() => expect(screen.getAllByText(/R\$\s*12,59/).length).toBeGreaterThan(0));
     const antes = vi.mocked(calcularTarifaML).mock.calls.length;
 
-    await user.click(screen.getByRole('button', { name: /premium/i }));
+    await user.click(screen.getByRole('button', { name: /^premium/i }));
     await waitFor(() => expect(screen.getAllByText(/R\$\s*16,18/).length).toBeGreaterThan(0));
 
     // Só o equilíbrio se move (não há margem-alvo preenchida neste teste).

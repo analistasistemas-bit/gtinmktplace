@@ -23,6 +23,7 @@ import { Switch } from '@/components/ui/switch';
 import { Sparkline } from '@/components/ui/sparkline';
 import { SonarAnalisePubliAI } from '@/components/pulse/sonar-analise-publiai';
 import { SonarDre } from '@/components/pulse/sonar-dre';
+import { SecaoSonar } from '@/components/pulse/secao-sonar';
 import { VereditoSonar } from '@/components/pulse/veredito-sonar';
 import { DialogAdicionar } from '@/components/pulse/dialog-adicionar';
 import {
@@ -105,15 +106,11 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
   // D15: mesma regra do link cru vs. canônico da coluna de ações, aplicada ao destaque.
   const hrefDestaque = destaque ? linkDoAnuncio(destaque.link, destaque.item_id ?? '') : null;
   return (
-    <Card className="mb-4 p-4">
-      <div className="mb-2 flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">Vendas do nicho</span>
-        <Badge variant="outline">estimativa</Badge>
-        <span className="text-xs text-muted-foreground">
-          amostra dos {resp.itens_analisados} anúncios mais relevantes — "+N vendidos" acumulado,
-          piso do nicho e não venda mensal
-        </span>
-      </div>
+    <SecaoSonar
+      titulo="Vendas do nicho"
+      selo={<Badge variant="outline">estimativa</Badge>}
+      subtitulo={`amostra dos ${resp.itens_analisados} anúncios mais relevantes — "+N vendidos" acumulado, piso do nicho e não venda mensal`}
+    >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <KpiCard
           size="compact"
@@ -176,7 +173,7 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
           </div>
         </div>
       )}
-    </Card>
+    </SecaoSonar>
   );
 }
 
@@ -383,6 +380,10 @@ export default function PulseSonar() {
   // Amostra nova, âncora nova: manter a escolha do nicho anterior apontaria para um anúncio que
   // não está mais na tela.
   useEffect(() => setAncoraId(null), [termoBuscado]);
+  // A DRE (task 19) começa fechada — abre quando o operador clica "Simular" numa linha da tabela.
+  // Nicho novo: mesma lógica do reset acima, a DRE aberta apontaria para um contexto que já foi.
+  const [dreAberta, setDreAberta] = useState(false);
+  useEffect(() => setDreAberta(false), [termoBuscado]);
 
   const ancoraDre = useMemo(() => {
     const i = itens.find((x) => chaveDoItem(x) === ancoraId) ?? itens[0];
@@ -632,6 +633,7 @@ export default function PulseSonar() {
               aria-pressed={chaveDoItem(i) === ancoraDre?.id}
               onClick={() => {
                 setAncoraId(chaveDoItem(i));
+                setDreAberta(true);
                 document.getElementById('sonar-dre')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
               title="Usar este anúncio como referência da DRE"
@@ -823,7 +825,12 @@ export default function PulseSonar() {
           {/* Seção 6 (ADR-0148). Âncora padrão: o PRIMEIRO anúncio da amostra — na ordenação
               inicial, o que mais vende no nicho. O botão "Simular" de cada linha troca a âncora
               (ADR-0150 D-2): é o único simulador de margem do Sonar. */}
-          <SonarDre ancora={ancoraDre} precos={precosDoNicho} />
+          <SonarDre
+            ancora={ancoraDre}
+            precos={precosDoNicho}
+            aberta={dreAberta}
+            onAlternar={setDreAberta}
+          />
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <SonarFiltrosPopover filtros={filtros} setFiltros={setFiltros} />

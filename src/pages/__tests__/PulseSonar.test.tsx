@@ -4,8 +4,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import PulseSonar, { SonarVendas, SonarEanCruzamento } from '../PulseSonar';
-import { fetchVendasSonar } from '@/lib/sonar';
-import type { CruzamentoEan, ItemVendasSonar, PainelVendasSonar } from '@/lib/sonar';
+import { fetchSecoes237Sonar, fetchVendasSonar } from '@/lib/sonar';
+import type { CruzamentoEan, ItemVendasSonar, PainelVendasSonar, RespostaSecoes237Sonar } from '@/lib/sonar';
 
 // Card "Produto destaque" (SonarVendas): mesma regra de href do item_id da coluna de ações
 // (D15/ADR-0127), aplicada ao `produto_destaque` do payload — ver task 15/16 (coordenador pediu
@@ -285,5 +285,66 @@ describe('PulseSonar — cabeçalho do resultado', () => {
   it('sem EAN buscado, o botão não aparece — não há o que vigiar por termo', async () => {
     await renderSonarComResposta({ ...comAmostra, termo: 'tecido oxford' });
     expect(screen.queryByRole('button', { name: 'Adicionar ao Radar' })).not.toBeInTheDocument();
+  });
+});
+
+// Task 19: quatro blocos com quatro cabeçalhos diferentes, e a tabela começava a 2.128px do topo
+// em 1440 — a DRE (o argumento de venda mais forte) a 1.685px. Vendas e o veredito continuam
+// sempre abertos (contexto que sustenta a conclusão); DRE e Análise PubliAI abrem fechados.
+//
+// `fetchSecoes237Sonar` vem mockado no topo do arquivo como uma Promise que nunca resolve (as
+// buscas por EAN não olham a Análise PubliAI). Aqui ela importa: sem resolver, a seção nunca sai
+// de "carregando" — que é um Card simples, sem botão — e "Quem vende neste nicho" nunca aparece.
+const secoes237Conectado: RespostaSecoes237Sonar = {
+  conectado: true,
+  secoes237: {
+    '2.9': { estado: 'sem_dado', mensagem: 'o faturamento do nicho não é publicado (ADR-0143)' },
+    '3.2': { estado: 'sem_dado', mensagem: 'amostra insuficiente' },
+    '3.3': {
+      com_estimativa: 0, vendedores_distintos: 0, estabelecidos: 0, proporcao: null,
+      anuncios_na_amostra: 1, anuncios_com_catalogo: 0, proporcao_anuncios: null, rotulo: '',
+    },
+    '3.4': { contagem: 0, total_no_catalogo: 0, rotulo: '' },
+    '3.6': {
+      estabelecidos: 0, crescendo: 0, estaveis: 0, encolhendo: 0, sem_serie: 0,
+      proporcao_crescendo: null, dias_janela: null, base_pequena: false, rotulo: '',
+    },
+    limitacao_3_2: '',
+    '7.4': null,
+  },
+  meta: {
+    vendedores_distintos: 0, sem_seller_id: 0, serie_linhas: 0,
+    anuncios_na_amostra: 1, catalogos_consultados: 0, catalogos_com_falha: 0,
+  },
+};
+
+describe('PulseSonar — os blocos de contexto abrem fechados', () => {
+  beforeEach(() => { vi.mocked(fetchSecoes237Sonar).mockResolvedValue(secoes237Conectado); });
+
+  it('a DRE e a Análise PubliAI começam colapsadas; o veredito e as vendas, não', async () => {
+    await renderSonarComAmostra([itemBase({ titulo: 'Oxford', item_id: 'MLB1', preco: 100, category_id: 'MLB1' })]);
+    expect(screen.getByRole('button', { name: /Dá lucro\?/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(await screen.findByRole('button', { name: /Quem vende neste nicho/ })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('button', { name: /Vendas do nicho/ })).not.toBeInTheDocument();
+  });
+
+  // Restrição: recolher um bloco não pode esconder recusa financeira. A prova de que a DRE nunca
+  // esconde uma recusa em curso está em duas partes: (1) o caso "sem categoria" acima
+  // ("âncora troca mesmo quando a DRE está recusando cotar") passa sem tocar em nada — o cartão de
+  // recusa fica FORA da SecaoSonar, sempre visível, colapsada ou não; (2) aqui, a recusa "por falta
+  // de insumo" (sem custo/origem/pacote) fica dentro do corpo colapsável, mas "Simular" abre a seção
+  // ao trocar a âncora — então o motivo nunca fica preso atrás de um clique extra.
+  it('clicar em "Simular" numa linha abre a DRE, além de trocar a âncora — e a recusa por falta de insumo já aparece', async () => {
+    await renderSonarComAmostra([itemBase({ titulo: 'Oxford', item_id: 'MLB1', preco: 100, category_id: 'MLB1' })]);
+    await userEvent.click(screen.getByRole('button', { name: /Simular/ }));
+    expect(screen.getByRole('button', { name: /Dá lucro\?/ })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText(/informe o custo do produto/i)).toBeInTheDocument();
+  });
+
+  it('a numeração órfã "6." não existe mais', async () => {
+    // `renderSonarComAmostra` devolve o campo de busca, não o resultado de `render` — sem
+    // `container`, a checagem é no `document.body` (mesmo escopo que `screen` usa por baixo).
+    await renderSonarComAmostra([itemBase({ titulo: 'Oxford', item_id: 'MLB1', preco: 100, category_id: 'MLB1' })]);
+    expect(document.body.textContent).not.toMatch(/\b6\.\s*Dá lucro/);
   });
 });
