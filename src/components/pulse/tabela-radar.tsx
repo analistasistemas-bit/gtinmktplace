@@ -151,43 +151,39 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
     },
     {
       key: 'disputa',
-      // ADR-0147: substitui a "Referência do ML" (D-24). Não diz quem leva a venda — o ganhador do
-      // buy-box não vem pela API, e a org sequer disputa (0 de 137 anúncios de catálogo na AVIL).
-      header: 'Análise PubliAI',
-      // `xl` e não `lg`: medido no runtime, esta célula tem largura intrínseca de ~222px e fazia a
-      // tabela estourar o container em 1024–1280 (sem ela a tabela cabe exata em toda largura).
-      // A coluna antiga cabia em `lg` porque era um badge de uma palavra.
+      // ADR-0147: substitui a "Referência do ML" (D-24). "Análise PubliAI" prometia veredito de IA
+      // e entrega três fatos verificáveis — o nome do próprio ADR é o que está na célula.
+      header: 'Disputa do catálogo',
+      // Com a célula de 3 linhas a linha media 76px e só 5 de 13 cabiam acima da dobra em 1440×900
+      // (medido). Badge + tooltip devolve a linha ao ritmo das outras; nada de informação sai da
+      // tela — a posição hipotética passa a viver no `title`, junto do resto da conta.
       className: 'hidden xl:table-cell',
-      // Ordena pela posição hipotética: quem cairia pior sobe primeiro em desc — a fila do dia.
       sortValue: (p) => disputaCatalogo(resumo?.get(p.id), p.meu_preco)?.posicao ?? null,
       cell: (p) => {
         const d = disputaCatalogo(resumo?.get(p.id), p.meu_preco);
         if (!d) {
+          // Texto inalterado: a coluna `menor` já diz "Sem concorrente relevante"; sem o
+          // "no catálogo" as duas células ficam idênticas e o teste da linha 110 acha duas.
           return celulaMercado(
-            <span className="text-muted-foreground">Sem concorrente relevante no catálogo</span>,
+            <span className="text-xs text-muted-foreground">Sem concorrente relevante no catálogo</span>,
           );
         }
+        const faixa = d.menor === d.maior ? fmtBRL(d.menor) : `${fmtBRL(d.menor)} – ${fmtBRL(d.maior)}`;
+        // "ficaria" e não "está": o nosso anúncio não é anúncio de catálogo, então não participa da
+        // disputa que gerou a faixa (ADR-0147 D-5).
+        const ajuda = [
+          `${d.anunciosRelevantes} ${d.anunciosRelevantes === 1 ? 'anúncio relevante disputa' : 'anúncios relevantes disputam'} esta ficha, de ${faixa}.`,
+          d.posicao != null && p.meu_preco != null
+            ? `Com o seu preço, você ficaria em ${d.posicao}º de ${d.totalComNosso}.`
+            : null,
+        ].filter(Boolean).join(' ');
         return celulaMercado(
-          <div className="max-w-[175px] text-xs leading-relaxed">
-            <span>
-              {d.anunciosRelevantes === 1
-                ? '1 anúncio relevante disputa'
-                : `${d.anunciosRelevantes} anúncios relevantes disputam`}
-            </span>
-            {/* Um único anúncio não tem faixa: "R$ 70,19 – R$ 70,19" lê como bug. */}
-            <span className="block tabular-nums text-muted-foreground">
-              {d.menor === d.maior ? fmtBRL(d.menor) : `${fmtBRL(d.menor)} – ${fmtBRL(d.maior)}`}
-            </span>
-            {/* "ficaria" e não "está": o nosso anúncio não é anúncio de catálogo, então ele não
-                participa da disputa que gerou a faixa (ADR-0147 D-5). */}
-            {/* O preço próprio não se repete aqui: ele já é a coluna "Seu preço", na mesma linha,
-                e repeti-lo era o que fazia a célula estourar a tabela abaixo de 1440px. */}
-            {d.posicao != null && p.meu_preco != null && (
-              <span className="block tabular-nums text-muted-foreground">
-                seu preço ficaria em {d.posicao}º de {d.totalComNosso}
-              </span>
-            )}
-          </div>,
+          <span className="inline-flex cursor-help items-center gap-1.5" title={ajuda}>
+            <Badge variant="outline" className="font-normal tabular-nums">
+              {d.anunciosRelevantes} {d.anunciosRelevantes === 1 ? 'disputa' : 'disputam'}
+            </Badge>
+            <span className="text-xs tabular-nums text-muted-foreground">{faixa}</span>
+          </span>,
         );
       },
     },
