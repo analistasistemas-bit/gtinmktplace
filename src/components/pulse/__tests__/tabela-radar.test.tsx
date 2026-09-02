@@ -1,9 +1,10 @@
 import type { ComponentProps } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it, vi } from 'vitest';
 import { TabelaRadar } from '../tabela-radar';
-import type { PulseProduto, PulseResumoOfertas } from '@/lib/pulse';
+import type { ContextoMargem, PulseProduto, PulseResumoOfertas } from '@/lib/pulse';
 
 const produto: PulseProduto = {
   id: 'produto-1', catalog_product_id: 'MLB123456', codigo_pai: 'APTAMIL-1800', titulo: 'Aptamil', gtin: null,
@@ -33,7 +34,8 @@ const renderRadar = (
     <QueryClientProvider client={client}>
       <TabelaRadar
         produtos={produtos} resumo={new Map([[produtos[0].id, r]])} resumoCarregando={false}
-        onAbrirDetalhe={() => undefined} {...extra}
+        contextos={new Map()} onAbrirDetalhe={() => undefined} onReprecificar={() => undefined}
+        {...extra}
       />
     </QueryClientProvider>,
   );
@@ -138,5 +140,83 @@ describe('TabelaRadar — a coluna de ações não sai da tela', () => {
   it('a coluna de ações é fixa à direita', () => {
     renderRadar([produto], resumo);
     expect(screen.getByRole('columnheader', { name: 'Ações' }).className).toContain('sticky');
+  });
+});
+
+// Errata 12 da ADR-0119: a lista abre ordenada por "Sua posição" e mandava reprecificar sem dizer
+// se havia margem para reagir.
+describe('TabelaRadar — Sobra hoje', () => {
+  const comCustos: PulseProduto = {
+    ...produto, meu_preco: 100, comissao_pct: 14, comissao_fixa: 0, comissao_preco: 100,
+    ptw_custos: { comissao: null, frete: 5 },
+  };
+  const ctx = (c: ContextoMargem) => new Map([['APTAMIL-1800', c]]);
+
+  const renderComContexto = (
+    p: PulseProduto,
+    contextos: Map<string, ContextoMargem> | undefined,
+    onReprecificar = () => undefined,
+    onAbrirDetalhe = () => undefined,
+  ) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={client}>
+        <TabelaRadar
+          produtos={[p]} resumo={new Map([[p.id, resumo]])} resumoCarregando={false}
+          contextos={contextos} onAbrirDetalhe={onAbrirDetalhe} onReprecificar={onReprecificar}
+        />
+      </QueryClientProvider>,
+    );
+  };
+
+  it('mostra o líquido no preço vigente e o percentual sobre a venda', () => {
+    // 100 − 14 (comissão) − 5 (frete) − 8 (imposto 8%) − 30 (custo) = 43,00 → 43,0%
+    renderComContexto(comCustos, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.getByRole('columnheader', { name: 'Sobra hoje' })).toBeInTheDocument();
+    expect(screen.getByText(/R\$\s*43,00/)).toBeInTheDocument();
+    // `toFixed(1)` devolve "43.0" (ponto) — é o que o detalhe já exibe hoje (dialog-detalhe.tsx:544).
+    expect(screen.getByText(/43\.0%/)).toBeInTheDocument();
+  });
+
+  it('sem custo → "—" com o motivo, nunca zero', () => {
+    renderComContexto(comCustos, ctx({ custo: null, aliquotaPct: 8 }));
+    expect(screen.getByTitle('Margem indisponível: falta custo do produto')).toHaveTextContent('—');
+    expect(screen.queryByText(/R\$\s*0,00/)).not.toBeInTheDocument();
+  });
+
+  it('sem alíquota → "—" com o motivo, nunca a alíquota padrão', () => {
+    renderComContexto(comCustos, ctx({ custo: 30, aliquotaPct: null }));
+    expect(screen.getByTitle('Margem indisponível: falta alíquota de imposto')).toHaveTextContent('—');
+    expect(screen.queryByText(/R\$\s*(53|43),00/)).not.toBeInTheDocument();
+  });
+
+  it('sem comissão lida → "—" com o motivo', () => {
+    renderComContexto({ ...comCustos, comissao_pct: null }, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.getByTitle('Margem indisponível: falta comissão do Mercado Livre')).toHaveTextContent('—');
+  });
+
+  it('sem frete → "—" com o motivo', () => {
+    renderComContexto({ ...comCustos, ptw_custos: null }, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.getByTitle('Margem indisponível: falta custo de frete do Mercado Livre')).toHaveTextContent('—');
+  });
+
+  it('prejuízo aparece em vermelho', () => {
+    // 100 − 14 − 5 − 8 − 110 = −37,00
+    renderComContexto(comCustos, ctx({ custo: 110, aliquotaPct: 8 }));
+    expect(screen.getByText(/R\$\s*-?37,00/).className).toContain('text-destructive');
+  });
+
+  it('enquanto o contexto carrega não mente com "—": mostra skeleton', () => {
+    const { container } = renderComContexto(comCustos, undefined);
+    expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+  });
+
+  it('a linha tem "Reprecificar", e ele não abre o detalhe por baixo', async () => {
+    const abrir = vi.fn();
+    const reprecificar = vi.fn();
+    renderComContexto(comCustos, ctx({ custo: 30, aliquotaPct: 8 }), reprecificar, abrir);
+    await userEvent.click(screen.getByRole('button', { name: 'Reprecificar Aptamil' }));
+    expect(reprecificar).toHaveBeenCalledWith(comCustos);
+    expect(abrir).not.toHaveBeenCalled();
   });
 });

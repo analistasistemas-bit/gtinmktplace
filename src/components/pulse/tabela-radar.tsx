@@ -10,10 +10,11 @@ import { DataTable, type Column } from '@/components/ui/data-table';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { pausarPulseProduto, type PulseProduto, type PulseResumoOfertas } from '@/lib/pulse';
+import { pausarPulseProduto, type ContextoMargem, type PulseProduto, type PulseResumoOfertas } from '@/lib/pulse';
 import {
   classeTom, disputaCatalogo, motivoSemPrecoProprio, posicaoVsMercado, seloAnuncio,
 } from '@/lib/pulse-formato';
+import { insumoFaltante, margemEstimada } from '@/lib/pulse-margem';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 
@@ -27,12 +28,18 @@ function relativo(iso: string | null): string {
   return `há ${Math.round(diffH / 24)}d`;
 }
 
-export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe }: {
+export function TabelaRadar({
+  produtos, resumo, resumoCarregando, contextos, onAbrirDetalhe, onReprecificar,
+}: {
   produtos: PulseProduto[];
   /** Ofertas por produto — a query vive na página, para KPIs e tabela lerem o mesmo dado. */
   resumo: Map<string, PulseResumoOfertas> | undefined;
   resumoCarregando: boolean;
+  /** Custo + alíquota por `codigo_pai` (ADR-0119 Errata 12 D-3). `undefined` = ainda carregando —
+   *  e aí a célula mostra skeleton, porque um `—` significaria "insumo faltando". */
+  contextos: Map<string, ContextoMargem> | undefined;
   onAbrirDetalhe: (produtoId: string) => void;
+  onReprecificar: (produto: PulseProduto) => void;
 }) {
   const qc = useQueryClient();
 
@@ -51,6 +58,21 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
 
   const menorDe = (p: PulseProduto) => resumo?.get(p.id)?.menorRelevante ?? null;
   const posicaoDe = (p: PulseProduto) => posicaoVsMercado(p.meu_preco, menorDe(p));
+
+  const contextoDe = (p: PulseProduto) => (p.codigo_pai ? contextos?.get(p.codigo_pai) : undefined);
+  /** `null` quando qualquer insumo falta — a mesma resposta que o detalhe dá (regra LOUD). */
+  const sobraDe = (p: PulseProduto) => {
+    if (p.meu_preco == null || p.meu_preco <= 0) return null;
+    const ctx = contextoDe(p);
+    if (insumoFaltante(ctx, p)) return null;
+    return margemEstimada({
+      preco: p.meu_preco,
+      custoProduto: ctx!.custo,
+      comissao: { pct: p.comissao_pct, fixa: p.comissao_fixa },
+      frete: p.ptw_custos?.frete ?? null,
+      aliquotaPct: ctx!.aliquotaPct,
+    });
+  };
 
   const colunas: Column<PulseProduto>[] = [
     {
@@ -143,6 +165,38 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       },
     },
     {
+      key: 'sobra',
+      // A pergunta 3 do how-to ("até onde posso baixar") não tinha resposta na tela onde a decisão
+      // é tomada: a margem só existia depois de 2 cliques e um dialog 7xl (ADR-0119 Errata 12).
+      header: 'Sobra hoje',
+      className: 'hidden text-right lg:table-cell',
+      sortValue: (p) => sobraDe(p)?.liquido ?? null,
+      cell: (p) => {
+        // Contexto ainda carregando: um "—" aqui afirmaria "falta insumo", que é outra coisa.
+        if (p.codigo_pai && contextos === undefined) return <Skeleton className="ml-auto h-4 w-16" />;
+        if (p.meu_preco == null) {
+          return <span className="cursor-help text-muted-foreground" title={motivoSemPrecoProprio(p)}>—</span>;
+        }
+        const falta = insumoFaltante(contextoDe(p), p);
+        if (falta) {
+          return (
+            <span className="cursor-help text-muted-foreground" title={`Margem indisponível: falta ${falta}`}>
+              —
+            </span>
+          );
+        }
+        const m = sobraDe(p)!;
+        // Mesmo limiar do detalhe: dois limiares de "prejuízo" no mesmo módulo é exatamente o
+        // defeito que a Errata 6 nos custou.
+        return (
+          <span className={cn('tabular-nums', m.liquido < 0 ? 'text-destructive' : 'text-success')}>
+            {fmtBRL(m.liquido)}
+            <span className="ml-1 text-xs font-normal opacity-80">({m.margemPct.toFixed(1)}%)</span>
+          </span>
+        );
+      },
+    },
+    {
       key: 'ofertas',
       header: 'Ofertas',
       className: 'hidden text-right md:table-cell',
@@ -196,37 +250,50 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
     {
       key: 'acoes',
       header: <span className="sr-only">Ações</span>,
-      className: 'w-10',
+      className: 'w-44 text-right',
       // Em 820px a tabela estoura o container; sem isto o ⋮ — único acesso a "Pausar no radar" —
       // sai da tela.
       stickyRight: true,
       cell: (p) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
+        <div className="flex items-center justify-end gap-1">
+          {p.codigo_pai && (
             <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Mais ações para ${p.titulo ?? p.catalog_product_id}`}
-              // O clique do menu não pode abrir o detalhe da linha (a linha inteira é clicável).
-              onClick={(e) => e.stopPropagation()}
+              variant="outline"
+              size="sm"
+              aria-label={`Reprecificar ${p.titulo ?? p.catalog_product_id}`}
+              // A linha inteira é clicável: sem isto, reprecificar abriria o detalhe por baixo.
+              onClick={(e) => { e.stopPropagation(); onReprecificar(p); }}
             >
-              <MoreVertical className="h-3.5 w-3.5" />
+              Reprecificar
             </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {p.status === 'pausado' ? (
-              <DropdownMenuItem onSelect={() => pausar.mutate({ id: p.id, pausar: false })}>
-                <Play className="mr-2 h-3.5 w-3.5" />
-                Reativar no radar
-              </DropdownMenuItem>
-            ) : (
-              <DropdownMenuItem onSelect={() => pausar.mutate({ id: p.id, pausar: true })}>
-                <Pause className="mr-2 h-3.5 w-3.5" />
-                Pausar no radar
-              </DropdownMenuItem>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Mais ações para ${p.titulo ?? p.catalog_product_id}`}
+                // O clique do menu não pode abrir o detalhe da linha (a linha inteira é clicável).
+                onClick={(e) => e.stopPropagation()}
+              >
+                <MoreVertical className="h-3.5 w-3.5" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {p.status === 'pausado' ? (
+                <DropdownMenuItem onSelect={() => pausar.mutate({ id: p.id, pausar: false })}>
+                  <Play className="mr-2 h-3.5 w-3.5" />
+                  Reativar no radar
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onSelect={() => pausar.mutate({ id: p.id, pausar: true })}>
+                  <Pause className="mr-2 h-3.5 w-3.5" />
+                  Pausar no radar
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       ),
     },
   ];

@@ -308,23 +308,28 @@ async function fetchFamiliasPorCodigoPai(
   const porPai = new Map<string, FamiliaComVariacoes[]>();
   if (codigosPai.length === 0) return porPai;
   const PAGINA = 1000;
-  // ponytail: `in(...)` com centenas de códigos é uma URL longa; se a lista crescer a ponto de dar
-  // 414, quebrar `codigosPai` em blocos aqui — hoje o Radar não chega perto disso.
-  for (let de = 0; ; de += PAGINA) {
-    const { data, error } = await supabase.from('familias')
-      .select('codigo_pai, origem, variacoes(custo)')
-      .in('codigo_pai', codigosPai)
-      .order('criado_em', { ascending: false })
-      .order('id', { ascending: false })
-      .range(de, de + PAGINA - 1);
-    if (error) throw error;
-    const pagina = (data ?? []) as (FamiliaComVariacoes & { codigo_pai: string })[];
-    for (const f of pagina) {
-      const lista = porPai.get(f.codigo_pai) ?? [];
-      lista.push(f);
-      porPai.set(f.codigo_pai, lista);
+  // O `in(...)` vira querystring: a lista inteira do Radar (229 códigos hoje, e crescendo) numa
+  // requisição só estoura o limite de URL e o servidor devolve erro opaco — não resultado parcial.
+  // Blocos de 200, sequenciais, do mesmo jeito que `fetchPulseVendedoresResumo` já faz.
+  const POR_LOTE = 200;
+  for (let inicio = 0; inicio < codigosPai.length; inicio += POR_LOTE) {
+    const bloco = codigosPai.slice(inicio, inicio + POR_LOTE);
+    for (let de = 0; ; de += PAGINA) {
+      const { data, error } = await supabase.from('familias')
+        .select('codigo_pai, origem, variacoes(custo)')
+        .in('codigo_pai', bloco)
+        .order('criado_em', { ascending: false })
+        .order('id', { ascending: false })
+        .range(de, de + PAGINA - 1);
+      if (error) throw error;
+      const pagina = (data ?? []) as (FamiliaComVariacoes & { codigo_pai: string })[];
+      for (const f of pagina) {
+        const lista = porPai.get(f.codigo_pai) ?? [];
+        lista.push(f);
+        porPai.set(f.codigo_pai, lista);
+      }
+      if (pagina.length < PAGINA) break;
     }
-    if (pagina.length < PAGINA) break;
   }
   return porPai;
 }

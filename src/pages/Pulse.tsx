@@ -30,12 +30,15 @@ import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 import { QK } from '@/lib/queries';
 import {
   fetchPulseProdutos, fetchPulseResumoOfertas, coletarPulseAgora, contarPulseAlertas,
-  type PulseAlerta, type PulseProduto,
+  fetchContextoMargemEmLote, type PulseProduto,
 } from '@/lib/pulse';
 import { cn } from '@/lib/utils';
 import { fmtInt } from '@/lib/formato';
 import { useCountUp } from '@/hooks/use-count-up';
 import PulseSonar from './PulseSonar';
+
+/** Alvo único da reprecificação: a aba Alertas e a linha do Radar alimentam o MESMO dialog. */
+type AlvoReprecificar = { codigoPai: string; precoInicial: number | null; produtoId: string | null };
 
 function coletaMaisRecente(produtos: PulseProduto[]): string | null {
   let maisRecente: string | null = null;
@@ -73,7 +76,7 @@ export default function Pulse() {
 
   const [adicionarAberto, setAdicionarAberto] = useState(false);
   const [detalheId, setDetalheId] = useState<string | null>(null);
-  const [alertaReprecificar, setAlertaReprecificar] = useState<PulseAlerta | null>(null);
+  const [reprecificar, setReprecificar] = useState<AlvoReprecificar | null>(null);
   const [filtros, setFiltros] = useState<FiltrosPulse>(FILTROS_VAZIOS);
 
   const { data: produtos, isLoading, isError, error, refetch } = useQuery({
@@ -100,6 +103,16 @@ export default function Pulse() {
     queryKey: ['pulse', 'ofertas-resumo', ids],
     queryFn: () => fetchPulseResumoOfertas(ids),
     enabled: ids.length > 0,
+  });
+
+  // Uma consulta para a página inteira (ADR-0119 Errata 12 D-3): 229 catálogos seriam 229 idas ao
+  // PostgREST só para desenhar uma coluna.
+  const codigosPai = [...new Set((produtos ?? []).map((p) => p.codigo_pai).filter((c): c is string => !!c))];
+  const { data: contextosMargem } = useQuery({
+    queryKey: ['pulse', 'contexto-margem-lote', codigosPai],
+    queryFn: () => fetchContextoMargemEmLote(codigosPai),
+    enabled: codigosPai.length > 0,
+    staleTime: 60_000,
   });
 
   const menorRelevanteDe = useCallback(
@@ -332,7 +345,11 @@ export default function Pulse() {
           produtos={filtrada}
           resumo={resumoOfertas}
           resumoCarregando={resumoCarregando}
+          contextos={codigosPai.length === 0 ? new Map() : contextosMargem}
           onAbrirDetalhe={setDetalheId}
+          onReprecificar={(p) => setReprecificar({
+            codigoPai: p.codigo_pai!, precoInicial: p.meu_preco, produtoId: p.id,
+          })}
         />
       )}
         </TabsContent>
@@ -344,7 +361,11 @@ export default function Pulse() {
         <TabsContent value="alertas">
           <AbaAlertas
             onVerProduto={setDetalheId}
-            onReprecificar={setAlertaReprecificar}
+            onReprecificar={(a) => setReprecificar({
+              codigoPai: a.pulse_produtos?.codigo_pai ?? '',
+              precoInicial: Number(a.payload.para),
+              produtoId: a.produto_id,
+            })}
             onVerRadar={() => {
               setSearchParams({}, { replace: true });
               setFiltros((f) => ({ ...f, foco: 'mais_caro' }));
@@ -356,10 +377,10 @@ export default function Pulse() {
       <DialogAdicionar aberto={adicionarAberto} onFechar={() => setAdicionarAberto(false)} />
       <DialogDetalhe produto={produtoDetalhe} onFechar={() => setDetalheId(null)} />
       <DialogReprecificar
-        codigoPai={alertaReprecificar?.pulse_produtos?.codigo_pai ?? null}
-        precoInicial={alertaReprecificar ? Number(alertaReprecificar.payload.para) : null}
+        codigoPai={reprecificar?.codigoPai ?? null}
+        precoInicial={reprecificar?.precoInicial ?? null}
         custos={(() => {
-          const p = lista.find((x) => x.id === alertaReprecificar?.produto_id);
+          const p = lista.find((x) => x.id === reprecificar?.produtoId);
           return p
             ? {
                 comissaoPct: p.comissao_pct, comissaoFixa: p.comissao_fixa,
@@ -367,7 +388,7 @@ export default function Pulse() {
               }
             : null;
         })()}
-        onFechar={() => setAlertaReprecificar(null)}
+        onFechar={() => setReprecificar(null)}
       />
     </div>
   );

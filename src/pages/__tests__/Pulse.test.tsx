@@ -19,9 +19,9 @@ vi.mock('@/lib/pulse', async () => {
     fetchPulseProdutos: vi.fn(async () => produtos.lista),
     fetchPulseResumoOfertas: vi.fn(async () => resumos.mapa),
     contarPulseAlertas: vi.fn(async () => 0),
-    // `fetchContextoMargemEmLote` NÃO entra aqui: ela só existe a partir da Task 8, e declarar no
-    // mock uma chave que o módulo real não exporta é o que faz `tsc -b --force` reprovar na Task 21.
-    // A Task 9 a acrescenta a este mock, junto com o uso dela em Pulse.tsx.
+    // A coluna "Sobra hoje" lê o contexto de margem da página inteira: sem mock, o `...real` levaria
+    // a query ao Supabase de verdade (os produtos do teste têm `codigo_pai`, então ela é habilitada).
+    fetchContextoMargemEmLote: vi.fn(async () => new Map()),
   };
 });
 

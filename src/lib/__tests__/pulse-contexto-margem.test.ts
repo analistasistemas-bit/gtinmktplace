@@ -7,6 +7,7 @@ const estado = vi.hoisted(() => ({
   paginas: [] as unknown[][],
   chamadasRange: [] as [number, number][],
   chamadasOrder: [] as unknown[][],
+  chamadasIn: [] as string[][],
   aliquotas: { nacional: 8, importado: 16, confirmada: true },
 }));
 
@@ -15,6 +16,7 @@ vi.mock('@/lib/supabase', () => {
   const metodo = (nome: string) => (...args: unknown[]) => {
     if (nome === 'range') estado.chamadasRange.push(args as [number, number]);
     if (nome === 'order') estado.chamadasOrder.push(args);
+    if (nome === 'in') estado.chamadasIn.push(args[1] as string[]);
     return cadeia;
   };
   for (const n of ['select', 'eq', 'in', 'order', 'limit', 'neq', 'maybeSingle', 'range']) {
@@ -39,6 +41,7 @@ beforeEach(() => {
   estado.paginas = [];
   estado.chamadasRange = [];
   estado.chamadasOrder = [];
+  estado.chamadasIn = [];
   estado.aliquotas = { nacional: 8, importado: 16, confirmada: true };
 });
 
@@ -76,6 +79,25 @@ describe('fetchContextoMargemEmLote', () => {
       ['criado_em', { ascending: false }],
       ['id', { ascending: false }],
     ]);
+  });
+
+  // A lista inteira do Radar vai num `in(...)` só, e `in` é querystring: com centenas de códigos a
+  // URL estoura e o PostgREST devolve erro opaco — não resultado parcial. Blocos de 200.
+  it('fatia a lista em blocos de 200 e junta os mapas parciais', async () => {
+    const codigos = Array.from({ length: 250 }, (_, i) => `P${i}`);
+    estado.paginas = [
+      codigos.slice(0, 200).map((c) => familia(c, 'nacional', [10])),
+      codigos.slice(200).map((c) => familia(c, 'importado', [20])),
+    ];
+    const lote = await fetchContextoMargemEmLote(codigos);
+
+    expect(estado.chamadasIn).toHaveLength(2);
+    expect(estado.chamadasIn[0]).toHaveLength(200);
+    expect(estado.chamadasIn[1]).toHaveLength(50);
+    // Nenhum código some no fatiamento — e o do último bloco não herda o contexto do primeiro.
+    expect(lote.size).toBe(250);
+    expect(lote.get('P0')).toEqual({ custo: 10, aliquotaPct: 8 });
+    expect(lote.get('P249')).toEqual({ custo: 20, aliquotaPct: 16 });
   });
 
   it('alíquota não confirmada nunca vira 8/16 em silêncio', async () => {
