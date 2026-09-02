@@ -6,7 +6,7 @@
 
 **Architecture:** Uma família nova por tamanho de kit (`codigo_pai` próprio gerado por `proximo_codigo_produto()`), vinculada à base por `familias.kit_base_codigo_pai` + `familias.kit_multiplicador`. Nenhum saldo próprio: um resolvedor único (`resolverOrigemEstoque`) redireciona baixa, estorno, publicação e push para o `(org_id, codigo)` da base, com multiplicador. O `variacoes.estoque` do kit fica permanentemente em 0 e é excluído de todo "estoque canônico". Guards no banco impedem que qualquer caminho crie um segundo número dessincronizado (mesma classe do incidente ADR-0129).
 
-**Tech Stack:** Supabase (Postgres + migrations SQL + Edge Functions em Deno/TypeScript), QStash (fila serial `estoque-{orgId}`), React + TypeScript + TanStack Query + shadcn/ui no frontend (`src/`), Vitest (`src/**/__tests__/` e `tests/`), Deno test (`supabase/functions/**/__tests__/`).
+**Tech Stack:** Supabase (Postgres + migrations SQL + Edge Functions em Deno/TypeScript), QStash (fila serial `estoque-{orgId}`), React + TypeScript + TanStack Query + shadcn/ui no frontend (`src/`). **Todo teste roda no Vitest** — inclusive os das edge functions (ver Global Constraints).
 
 **Spec:** `docs/decisions/0151-kit-vinculado-a-partir-de-produto-existente.md` (16 decisões numeradas + Consequências). Leia o ADR inteiro antes da Task 1. Ele é a fonte única do "o quê"; este plano é o "como".
 
@@ -27,11 +27,16 @@ Valores exatos, copiados do ADR-0151 e do código real. Valem para **todas** as 
 - **Título**: `TITULO_MAX = 60` (`supabase/functions/_shared/ai/titulo-montar.ts:4`). O título do kit **tem de** respeitar 60 caracteres.
 - **GTIN**: kit publica **sem GTIN** por padrão. **Nunca** herda o GTIN da base.
 - **Escopo v1**: só família-base com **exatamente 1 variação** (sem cor).
-- **`create or replace function` preserva owner e ACL** enquanto a assinatura não muda. Só mude assinatura se for inevitável — mudar exige repetir a dança `grant estoque_rpc_executor to postgres` → `grant usage, create on schema public` → `alter function ... owner to estoque_rpc_executor` → `revoke create` → `revoke ... cascade` → `revoke execute from public, anon, authenticated` → `grant execute to service_role`. Neste plano **nenhuma assinatura de RPC muda**.
+- **`create or replace function` preserva owner e ACL** enquanto a assinatura não muda. Neste plano **nenhuma assinatura de RPC muda** — mas isso **não** dispensa a dança de role: `create or replace` exige ser **dono** da função, e as três migrations anteriores que tocaram `registrar_entrada`/`ajustar_estoque` terminam com `revoke estoque_rpc_executor from postgres cascade` (`20260804113000:47`, `20260811201026:103`, `20260811203500:49`). Hoje `postgres` **não é membro** desse role, então um `create or replace` cru falha. Toda migration que redefine uma dessas funções abre com `grant estoque_rpc_executor to postgres;` e fecha com `revoke estoque_rpc_executor from postgres cascade;` (Task 5).
+- **`supabase db push` não roda em transação.** Uma migration que falha no meio fica **parcialmente aplicada**. Nas migrations da Task 5, isso significa: se falhar depois do `grant ... to postgres` e antes do `revoke`, o membership fica pendurado. Confira e limpe à mão antes de repetir o push.
 - **Push de estoque com kit: sem exclusão nenhuma** (Decisão 7, revisada). Quando o produto do evento tem kit vinculado, `resolverAlvosPush` recebe `canalOrigem = null` e base + todos os tamanhos recebem o push, **inclusive o anúncio que originou o evento**. Push é absoluto e recalculado do zero, então reempurrar é inofensivo. Não existe coluna, campo de job nem lógica de "anúncio de origem" em lugar nenhum deste plano — foi deliberadamente descartado pelo Diego por ser código a mais para um resultado idêntico. Produto **sem** kit mantém a exclusão por canal de hoje, intocada.
+- **Runner de teste: Vitest, sempre — inclusive nas edge functions.** `vitest.config.ts:19` inclui `./supabase/functions/**/__tests__/**/*.test.ts`. Medido no repo: **217** arquivos de teste importam `from 'vitest'`, **1** usa `Deno.test`, e o CI roda `deno lint` mas **nunca** `deno test` — um teste escrito em `Deno.test` não roda em lugar nenhum e o CI passa verde com ele quebrado. Use `describe`/`it`/`expect` de `'vitest'`, `readFileSync` de `'node:fs'` (nunca `Deno.readTextFile`), e rode com `pnpm vitest run supabase/functions/<caminho>`.
+- **"Kit vivo" tem UMA definição, usada em todo lugar:** família com `kit_multiplicador is not null` **e** `status in ('pronto','publicando','publicado')`. Vale para `listarKitsVivos`, o guard de app de `remover-publicado`, o fan-out de push, os dois triggers da Task 5 e a RPC da Task 9. Não invente uma variante local em nenhuma delas.
+  - `'pronto'` **precisa** estar na lista: `remover-publicado` devolve a família para `status='pronto'` (`processar.ts:167-171`), e um kit que voltou a `pronto` ainda vai publicar assim que alguém mandar — continua sendo uma reivindicação sobre o saldo da base. É mais amplo do que o texto da Decisão 14 ("publicado/publicando"), de propósito.
+  - `'erro'` fica **fora**, e isso é um buraco conhecido: um kit com CREATE falho não bloqueia adicionar cor à base. Se o operador adicionar cor e depois reenviar o kit, a base fica multi-variação e o código das Tasks 3 e 4 loga `kit_com_base_multivariacao` e empurra 0 — falha **LOUD**, nunca saldo errado em silêncio.
+  - **Como o operador solta o bloqueio:** dois passos. `remover-publicado` tira o kit do ML (família volta a `pronto` — ainda bloqueia), depois **`excluir-produto`** (ADR-0113, admin-only, só aceita produto não publicado em canal nenhum) apaga a família de kit — aí o bloqueio some. Verifique esse caminho na Task 5 Step 4.
 - **Enums (verificados em `src/lib/database.types.ts:2479-2493`)**: `familia_status` = `pendente|processando|pronto|publicando|publicado|erro`; `lote_status` = `importando|processando|revisao|publicando|concluido|erro`; `operacao_ml` = `CREATE|UPDATE`. Um rótulo digitado errado num `in (...)` **não dá erro** — só faz a lista nunca casar e a guard virar um no-op que passa em todo teste que não exercite um status real.
 - **Migrations**: só via `supabase migration new` + `supabase db push` (ADR-0043). Validar com `npm run db:check`. Nunca `apply_migration`/painel.
-- **`supabase db push` não roda em transação** — cada statement é independente.
 - **Deploy de Edge Functions não sai no merge.** Mudança em `_shared/**` obriga redeploy de **todas** as funções afetadas (Task 11).
 
 ### Riscos aceitos pelo ADR — não resolver neste plano
@@ -49,7 +54,13 @@ Estão aqui para não serem "consertados" por engano por um executor:
 - `estornar_estoque` resolve a variação pelo `codigo` **do movimento de venda** (`v_codigo`), não pelo `p_codigo` recebido. Por isso o estorno funciona sem nenhuma mudança na RPC.
 - O trigger `validar_variacao_no_tenant` (migration `20260820143736`) **já força** `estoque = 0` no INSERT de variação de lote manual com `operacao = 'CREATE'`. A Decisão 8 ("`variacoes.estoque` do kit nasce em 0") não precisa de código novo.
 - `reconciliar-estoque/index.ts:89-98` enfileira por `codigo_pai` com movimento recente e `canal_origem: null`. Movimento de kit é gravado no `codigo_pai` **da base**. Com o fan-out da Task 3 dentro de `processarSincronizacao`, a reconciliação já alcança base + kits. **`reconciliar-estoque` não muda em nada** (Decisão 13, terceiro bullet) — não "conserte".
-- `forcarSaleFormatKit` (`_shared/categoria/atributos.ts:253`) **não é exportada** hoje.
+- `forcarSaleFormatKit` (`_shared/categoria/atributos.ts:253`) **não é exportada** hoje. E lê `schema[].valores[].nome` — **não** `values[].name`. O tipo real é `AtributoSchema { id, nome, valores: {id, nome}[], ... }` (`_shared/categoria/schema.ts:10-19`); `parseAtributosSchema` traduz o `{id, name}` da API do ML para `{id, nome}` na entrada. Usar `values`/`name` faz a checagem devolver `undefined` sempre — a Task 6 recusaria kit em **toda** categoria, inclusive nas que suportam.
+- **As três RPCs de leitura da tela Estoque foram redefinidas depois da migration que as criou.** A última definição real de cada uma: `produtos_estoque_resumo` → `20260826063450_estoque_resumo_nomes_fiscal_fix.sql:10`; `variacoes_estoque_produto` → `20260816230056_estoque_preco_ml_por_sku.sql:19`; `skus_estoque_org` → `20260814181410_estoque_perf_rpc.sql` (essa sim, a original). Reescrever a partir da migration errada **reverte campos vivos em produção** — é literalmente o incidente que o cabeçalho da `20260826063450` descreve (a migration anterior apagou `nomes` e quebrou a busca por nome de variação para todas as orgs). Ver Task 9.
+- **O trigger `update_lote_counters`** (`20260609132501_lote_transicao_revisao.sql:28-33`) promove o lote de `'processando'` para `'revisao'` assim que nenhuma família está em `pendente`/`processando`. O guard é `l.status = 'processando'`: lote criado em **`'publicando'` nunca é promovido**. É disso que a Task 6 depende para os kits não virarem card de Revisão.
+- **`decidirStatusLote`** (`_shared/lote/finalizar.ts:20-26`) devolve `'revisao'` quando há família em `'pronto'`, e `null` (não mexe) quando há alguma em `'publicando'`. Por isso a Task 6 faz o **claim de todos os kits para `'publicando'` antes de enfileirar qualquer um**: sem isso, o `talvezFinalizarLote` do primeiro kit publicado veria o segundo ainda em `'pronto'` e abriria o lote como `'revisao'`.
+- **`enfileirarPublicacoes`** (`_shared/queue.ts:126-128`) recebe `itens: { job: ProcessFamiliaJob; alvo: AlvoPublicacao }[]` e `userId`. **Não existe** chave `f:`.
+- **Padrão de criação de lote** (`cadastrar-produto/index.ts:192-198`): `insert({ user_id, org_id, status, origem })` **sem número**, depois `rpc('proximo_numero_lote', { p_org })` e `update({ numero_org })`. A coluna é `numero_org`, não `numero`.
+- **`familias.chave_cadastro` é `uuid`**, com unique parcial `(org_id, chave_cadastro) where chave_cadastro is not null`. Uma chave só cobre **uma** família — ver Task 6.
 - **O outbox do ledger não é tocado por esta feature.** `MovimentoPendente`, `lerPushPendente` e `despacharPushPendente` (`_shared/estoque/baixa.ts:216-331`) ficam como estão, e `SincronizarEstoqueJob` (`_shared/queue.ts:189`) não ganha campo nenhum. Uma versão anterior deste plano plumbava um `item_externo_id` por todo esse caminho para sustentar a exclusão fina do push; a Decisão 7 revisada eliminou a necessidade. Se você se pegar acrescentando um campo ali, parou de seguir o plano.
 
 ---
@@ -92,6 +103,24 @@ Estão aqui para não serem "consertados" por engano por um executor:
 **Docs:**
 - `docs/reference/modelo-de-dados.md`, `docs/reference/edge-functions.md`, `docs/TASKS.md`, `obsidian-vault/`.
   (`docs/reference/glossario.md` **já** tem "Kit" e "Kit vinculado" — Decisão 16 está feita, conferir e não duplicar.)
+
+---
+
+## Pré-requisitos de deploy por task
+
+Migration sempre antes de edge function. Mas **verificação em runtime real precisa do código deployado** — e o deploy em massa só acontece na Task 11. As tasks abaixo têm passos que falham (ou, pior, passam por engano) se o pré-requisito não estiver no ar. Deploy incremental: rode `supabase functions deploy <nome>` para as funções listadas antes de executar o passo de verificação daquela task.
+
+| Task | Passo que exige runtime | Precisa deployado antes |
+|---|---|---|
+| 1 | Step 8 (checks no Postgres) | só a migration da Task 1 (`db push`) |
+| 5 | Step 4 (guards no Postgres) | migrations das Tasks 1 e 5 |
+| 6 | Step 9 (kit real + guards com SKU de kit) | migrations 1 e 5, mais `criar-kit-vinculado`, `publish-familia-ml` (Tasks 4 e 6) e `publicar-familias` |
+| 7 | Step 8 (kit publicado no ML com `available_quantity = floor(base/3)`) | **`publish-familia-ml` da Task 4** — sem ele o kit publica com 0 e a verificação reprova por um motivo que não é o seu |
+| 8 | Step 3 (base publica → kits sobem sozinhos; base falha → kits não sobem) | **`publish-familia-ml` com o encadeamento da Task 6 Step 7** e `criar-kit-vinculado` |
+| 9 | Step 4 (tela Estoque) | migration da Task 9 (`db push`); nenhuma edge |
+| 10 | Step 5 | `sync-venda` e `vincular-catalogo` |
+
+A Task 11 continua obrigatória: ela redeploya **tudo** que o diff de `_shared/` alcança, e é o que garante que nenhuma função ficou na versão antiga.
 
 ---
 
@@ -192,11 +221,11 @@ Se `db push` reclamar de projeto não linkado, rode `supabase link` antes (workt
 
 - [ ] **Step 3: Regenerar os tipos do banco**
 
-```bash
-cd "<repo>" && pnpm db:types
-```
+**Não existe** script `pnpm db:types` — o `package.json` só tem `db:check`. O comando real é:
 
-(Se o script não existir com esse nome, ache-o em `package.json` — é o que gera `src/lib/database.types.ts`.)
+```bash
+cd "<repo>" && supabase gen types typescript --linked > src/lib/database.types.ts
+```
 Esperado: `src/lib/database.types.ts` passa a conter `kit_base_codigo_pai`, `kit_multiplicador`, `origem_kit_codigo_pai` e `origem_kit_multiplicador`.
 
 - [ ] **Step 4: Escrever o teste do resolvedor (falhando)**
@@ -204,59 +233,61 @@ Esperado: `src/lib/database.types.ts` passa a conter `kit_base_codigo_pai`, `kit
 Crie `supabase/functions/_shared/estoque/__tests__/kit.test.ts`:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert';
+import { describe, it, expect } from 'vitest';
 import { resolverOrigemEstoque, saldoDoKit } from '../kit.ts';
 
 /** Stub mínimo do supabase-js: só o encadeamento que `resolverOrigemEstoque` usa. */
-function fakeAdmin(linhas: Array<{ codigo_pai: string; kit_base_codigo_pai: string | null; kit_multiplicador: number | null }>) {
+function fakeAdmin(fam: { codigo_pai: string; kit_base_codigo_pai: string | null; kit_multiplicador: number | null } | null) {
   const q = {
     select: () => q,
     eq: () => q,
     order: () => q,
     limit: () => q,
-    maybeSingle: () => Promise.resolve({ data: linhas[0] ?? null, error: null }),
+    maybeSingle: () => Promise.resolve({ data: fam ? { familias: fam } : null, error: null }),
   };
-  // deno-lint-ignore no-explicit-any
-  return { from: () => q } as any;
+  return { from: () => q } as never;
 }
 
-Deno.test('saldoDoKit arredonda para baixo', () => {
-  assertEquals(saldoDoKit(7, 2), 3);
-  assertEquals(saldoDoKit(1, 2), 0);
-  assertEquals(saldoDoKit(0, 6), 0);
-  assertEquals(saldoDoKit(12, 6), 2);
+describe('saldoDoKit', () => {
+  it('arredonda para baixo', () => {
+    expect(saldoDoKit(7, 2)).toBe(3);
+    expect(saldoDoKit(1, 2)).toBe(0);
+    expect(saldoDoKit(0, 6)).toBe(0);
+    expect(saldoDoKit(12, 6)).toBe(2);
+  });
+
+  it('nunca devolve negativo', () => {
+    expect(saldoDoKit(-5, 2)).toBe(0);
+  });
 });
 
-Deno.test('saldoDoKit nunca devolve negativo', () => {
-  assertEquals(saldoDoKit(-5, 2), 0);
-});
+describe('resolverOrigemEstoque', () => {
+  it('SKU comum devolve ele mesmo, multiplicador 1', async () => {
+    const admin = fakeAdmin({ codigo_pai: '00000010', kit_base_codigo_pai: null, kit_multiplicador: null });
+    expect(await resolverOrigemEstoque(admin, 'org-1', '00000011'))
+      .toEqual({ codigoCanonico: '00000011', multiplicador: 1, kitCodigoPai: null });
+  });
 
-Deno.test('resolverOrigemEstoque: SKU comum devolve ele mesmo, multiplicador 1', async () => {
-  const admin = fakeAdmin([{ codigo_pai: '00000010', kit_base_codigo_pai: null, kit_multiplicador: null }]);
-  const r = await resolverOrigemEstoque(admin, 'org-1', '00000011');
-  assertEquals(r, { codigoCanonico: '00000011', multiplicador: 1, kitCodigoPai: null });
-});
+  it('SKU de kit devolve o codigo_pai da base e o multiplicador', async () => {
+    const admin = fakeAdmin({ codigo_pai: '00000020', kit_base_codigo_pai: '00000010', kit_multiplicador: 3 });
+    expect(await resolverOrigemEstoque(admin, 'org-1', '00000021'))
+      .toEqual({ codigoCanonico: '00000010', multiplicador: 3, kitCodigoPai: '00000020' });
+  });
 
-Deno.test('resolverOrigemEstoque: SKU de kit devolve o codigo_pai da base e o multiplicador', async () => {
-  const admin = fakeAdmin([{ codigo_pai: '00000020', kit_base_codigo_pai: '00000010', kit_multiplicador: 3 }]);
-  const r = await resolverOrigemEstoque(admin, 'org-1', '00000021');
-  assertEquals(r, { codigoCanonico: '00000010', multiplicador: 3, kitCodigoPai: '00000020' });
-});
-
-Deno.test('resolverOrigemEstoque: SKU inexistente degrada para o próprio código', async () => {
-  const admin = fakeAdmin([]);
-  const r = await resolverOrigemEstoque(admin, 'org-1', '00009999');
-  assertEquals(r, { codigoCanonico: '00009999', multiplicador: 1, kitCodigoPai: null });
+  it('SKU inexistente degrada para o próprio código', async () => {
+    expect(await resolverOrigemEstoque(fakeAdmin(null), 'org-1', '00009999'))
+      .toEqual({ codigoCanonico: '00009999', multiplicador: 1, kitCodigoPai: null });
+  });
 });
 ```
 
 - [ ] **Step 5: Rodar o teste e confirmar que falha**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net _shared/estoque/__tests__/kit.test.ts
+cd "<repo>" && pnpm vitest run supabase/functions/_shared/estoque/__tests__/kit.test.ts
 ```
 
-Esperado: FALHA com "Module not found" / `../kit.ts` inexistente.
+Esperado: FALHA — não resolve `../kit.ts`.
 
 - [ ] **Step 6: Implementar `_shared/estoque/kit.ts`**
 
@@ -327,9 +358,24 @@ export interface FamiliaKit {
 }
 
 /**
+ * Definição ÚNICA de "kit vivo" no sistema inteiro. Os dois triggers da Task 5 e a RPC da
+ * Task 9 usam exatamente esta mesma lista de status — se mudar aqui, mude nos três.
+ *
+ * `'pronto'` está na lista porque `remover-publicado` devolve a família para `'pronto'`
+ * (`processar.ts:167-171`): um kit tirado do ML ainda vai publicar assim que alguém mandar,
+ * então continua sendo uma reivindicação sobre o saldo da base. Para soltar o bloqueio de
+ * verdade o operador precisa de `excluir-produto` (ADR-0113) depois do `remover-publicado`.
+ *
+ * `'erro'` fica de fora: um kit com CREATE falho não bloqueia adicionar cor à base. Buraco
+ * conhecido e aceito — se o operador adicionar cor e depois reenviar o kit, as Tasks 3 e 4
+ * logam `kit_com_base_multivariacao` e empurram 0, falhando LOUD.
+ */
+export const STATUS_KIT_VIVO = ['pronto', 'publicando', 'publicado'] as const;
+
+/**
  * Famílias de kit vinculadas a uma base — canônica por `codigo_pai` (a mais recente de cada),
  * do jeito que o resto do sistema já resolve produto. Usada pelo fan-out do push (Task 3) e
- * pelas guards de remoção/adição de cor.
+ * pelo guard de app de `remover-publicado` (Task 5).
  */
 export async function listarKitsVivos(
   admin: SupabaseClient, orgId: string, codigoPaiBase: string,
@@ -339,6 +385,7 @@ export async function listarKitsVivos(
     .select('id, codigo_pai, kit_multiplicador, criado_em')
     .eq('org_id', orgId).eq('kit_base_codigo_pai', codigoPaiBase)
     .not('kit_multiplicador', 'is', null)
+    .in('status', STATUS_KIT_VIVO as unknown as string[])
     .order('criado_em', { ascending: false });
   if (error) {
     console.error('listar_kits_vivos_falhou', { orgId, codigoPaiBase, erro: error.message });
@@ -360,30 +407,33 @@ export async function listarKitsVivos(
 - [ ] **Step 7: Rodar o teste e confirmar que passa**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net _shared/estoque/__tests__/kit.test.ts
+cd "<repo>" && pnpm vitest run supabase/functions/_shared/estoque/__tests__/kit.test.ts
 ```
 
 Esperado: PASS, 5 testes.
 
-- [ ] **Step 8: Verificar o resolvedor contra o Postgres real**
+- [ ] **Step 8: Verificar os checks contra o Postgres real**
 
-Mock não basta em caminho de estoque (incidente 2026-08-21, ADR-0129). Rode este SQL read-only pela Management API contra a base de dev/prod e confirme que a consulta do resolvedor devolve o que o teste presume:
+Mock não basta em caminho de estoque (incidente 2026-08-21, ADR-0129). Pela Management API, numa transação com `rollback` — os `update` precisam afetar **linhas de verdade**, senão o check nunca dispara e o passo não testa nada:
 
 ```sql
--- Deve devolver 0 linhas hoje (nenhum kit existe ainda) e NÃO deve dar erro de sintaxe/coluna.
-select v.codigo, f.codigo_pai, f.kit_base_codigo_pai, f.kit_multiplicador
-from public.variacoes v
-join public.familias f on f.id = v.familia_id
-where f.kit_multiplicador is not null
-order by f.criado_em desc
-limit 5;
+begin;
+-- Pegue uma família real qualquer da org de teste.
+select id from public.familias limit 1 \gset
 
--- Confirma que os checks pegam valor fora da faixa.
--- Deve FALHAR com familias_kit_multiplicador_faixa:
--- update public.familias set kit_base_codigo_pai='x', kit_multiplicador=9 where false;
+-- (1) Multiplicador fora de 2..6 → deve FALHAR com familias_kit_multiplicador_faixa.
+update public.familias set kit_base_codigo_pai = '00000010', kit_multiplicador = 9 where id = :'id';
+
+-- (2) Par incompleto → deve FALHAR com familias_kit_par_completo.
+update public.familias set kit_base_codigo_pai = '00000010', kit_multiplicador = null where id = :'id';
+
+-- (3) Par válido → deve PASSAR.
+update public.familias set kit_base_codigo_pai = '00000010', kit_multiplicador = 3 where id = :'id';
+
+rollback;
 ```
 
-Esperado: a primeira consulta roda e devolve 0 linhas.
+Esperado: (1) e (2) levantam exceção nomeando a constraint; (3) reporta `UPDATE 1`. Se (1) ou (2) reportarem `UPDATE 1`, o check não está pegando — pare e conserte a migration.
 
 - [ ] **Step 9: Commit**
 
@@ -421,7 +471,7 @@ A anotação é **puramente de auditoria** (Decisão 6): serve para o operador e
 Crie `supabase/functions/_shared/estoque/__tests__/baixa-kit.test.ts`:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert';
+import { describe, it, expect } from 'vitest';
 import { registrarBaixaVenda, refBaixa } from '../baixa.ts';
 
 interface ChamadaRpc { fn: string; args: Record<string, unknown> }
@@ -480,7 +530,7 @@ function fakeAdmin(opts: {
   } as any;
 }
 
-Deno.test('venda de kit baixa N× no codigo_pai da BASE, não no SKU do kit', async () => {
+it('venda de kit baixa N× no codigo_pai da BASE, não no SKU do kit', async () => {
   const chamadas: ChamadaRpc[] = [];
   const updates: Array<Record<string, unknown>> = [];
   const admin = fakeAdmin({ kits: { '00000021': { base: '00000010', n: 3 } }, chamadas, updates });
@@ -490,16 +540,16 @@ Deno.test('venda de kit baixa N× no codigo_pai da BASE, não no SKU do kit', as
     itens: [{ codigo: '00000021', quantity: 2, ml_item_id: 'MLB-KIT' }],
   });
 
-  assertEquals(chamadas.length, 1);
-  assertEquals(chamadas[0].fn, 'baixar_estoque');
+  expect(chamadas.length).toEqual(1);
+  expect(chamadas[0].fn).toEqual('baixar_estoque');
   // Código canônico da base, quantidade multiplicada.
-  assertEquals(chamadas[0].args.p_codigo, '00000010');
-  assertEquals(chamadas[0].args.p_qtd, 6);
+  expect(chamadas[0].args.p_codigo).toEqual('00000010');
+  expect(chamadas[0].args.p_qtd).toEqual(6);
   // A referência continua no SKU VENDIDO — é o que o estorno procura.
-  assertEquals(chamadas[0].args.p_ref, refBaixa('mercado_livre', 777, '00000021'));
+  expect(chamadas[0].args.p_ref).toEqual(refBaixa('mercado_livre', 777, '00000021'));
 });
 
-Deno.test('venda de kit anota a origem no movimento (auditoria, D-6)', async () => {
+it('venda de kit anota a origem no movimento (auditoria, D-6)', async () => {
   const chamadas: ChamadaRpc[] = [];
   const updates: Array<Record<string, unknown>> = [];
   const admin = fakeAdmin({ kits: { '00000021': { base: '00000010', n: 3 } }, chamadas, updates });
@@ -510,11 +560,11 @@ Deno.test('venda de kit anota a origem no movimento (auditoria, D-6)', async () 
   });
 
   const anotacao = updates.find((u) => 'origem_kit_multiplicador' in u);
-  assertEquals(anotacao?.origem_kit_multiplicador, 3);
-  assertEquals(anotacao?.origem_kit_codigo_pai, 'KIT-00000021');
+  expect(anotacao?.origem_kit_multiplicador).toEqual(3);
+  expect(anotacao?.origem_kit_codigo_pai).toEqual('KIT-00000021');
 });
 
-Deno.test('venda de SKU comum não resolve nada e não anota origem de kit', async () => {
+it('venda de SKU comum não resolve nada e não anota origem de kit', async () => {
   const chamadas: ChamadaRpc[] = [];
   const updates: Array<Record<string, unknown>> = [];
   const admin = fakeAdmin({ kits: {}, chamadas, updates });
@@ -524,18 +574,18 @@ Deno.test('venda de SKU comum não resolve nada e não anota origem de kit', asy
     itens: [{ codigo: '00000011', quantity: 4, ml_item_id: 'MLB-BASE' }],
   });
 
-  assertEquals(chamadas[0].args.p_codigo, '00000011');
-  assertEquals(chamadas[0].args.p_qtd, 4);
+  expect(chamadas[0].args.p_codigo).toEqual('00000011');
+  expect(chamadas[0].args.p_qtd).toEqual(4);
   const anotacao = updates.find((u) => 'origem_kit_multiplicador' in u);
-  assertEquals(anotacao?.origem_kit_multiplicador, null);
-  assertEquals(anotacao?.origem_kit_codigo_pai, null);
+  expect(anotacao?.origem_kit_multiplicador).toEqual(null);
+  expect(anotacao?.origem_kit_codigo_pai).toEqual(null);
 });
 ```
 
 - [ ] **Step 2: Rodar e confirmar falha**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net _shared/estoque/__tests__/baixa-kit.test.ts
+cd "<repo>" && pnpm vitest run supabase/functions/_shared/estoque/__tests__/baixa-kit.test.ts
 ```
 
 Esperado: FALHA — `p_codigo` vem `00000021` (o SKU do kit) e `p_qtd` vem `2`, e nenhum update de anotação é feito.
@@ -655,7 +705,7 @@ Esperado: o diff cobre só `registrarBaixaVenda`, `anotarOrigemDoMovimento` e `R
 - [ ] **Step 5: Rodar os testes e confirmar que passam**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net _shared/estoque/__tests__/
+cd "<repo>" && pnpm vitest run supabase/functions/_shared/estoque/__tests__/
 ```
 
 Esperado: PASS, incluindo `baixa.test.ts` (existente) **sem nenhuma alteração** — nada do outbox mudou, então nenhum fixture dele precisa de campo novo. Se ele quebrar, você mexeu em algo que não devia (ver Step 4).
@@ -696,7 +746,7 @@ Produto **sem** kit continua com o comportamento de hoje, intocado: `canalOrigem
 Crie `supabase/functions/sincronizar-estoque/__tests__/processar-kit.test.ts`:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert';
+import { describe, it, expect } from 'vitest';
 import { processarSincronizacao } from '../processar.ts';
 
 /** Fake do supabase-js cobrindo só as tabelas que `processarSincronizacao` consulta. */
@@ -783,28 +833,28 @@ function depsQueRegistram(chamadas: Array<{ item: string; estoques: unknown }>) 
   } as any;
 }
 
-Deno.test('push da base alcança o anúncio do kit com floor(base/N)', async () => {
+it('push da base alcança o anúncio do kit com floor(base/N)', async () => {
   const chamadas: Array<{ item: string; estoques: unknown }> = [];
   await processarSincronizacao(depsQueRegistram(chamadas), {
     org_id: 'org-1', codigo_pai: '00000010', canal_origem: null,
   });
-  assertEquals(chamadas.length, 2);
-  assertEquals(chamadas.find((c) => c.item === 'MLB-BASE')?.estoques, [{ sku: '00000011', estoque: 7 }]);
+  expect(chamadas.length).toEqual(2);
+  expect(chamadas.find((c) => c.item === 'MLB-BASE')?.estoques).toEqual([{ sku: '00000011', estoque: 7 }]);
   // 7 unidades da base = 2 kits de 3.
-  assertEquals(chamadas.find((c) => c.item === 'MLB-KIT3')?.estoques, [{ sku: '00000021', estoque: 2 }]);
+  expect(chamadas.find((c) => c.item === 'MLB-KIT3')?.estoques).toEqual([{ sku: '00000021', estoque: 2 }]);
 });
 
-Deno.test('com kit vinculado, venda no canal NÃO exclui nada — base e kit recebem push', async () => {
+it('com kit vinculado, venda no canal NÃO exclui nada — base e kit recebem push', async () => {
   // ADR-0151 D-7 (revisada): a exclusão por canal de origem deixa de valer quando há kit.
   // Push absoluto + recálculo do zero = mesmo resultado da exclusão fina, sem coluna nova.
   const chamadas: Array<{ item: string; estoques: unknown }> = [];
   await processarSincronizacao(depsQueRegistram(chamadas), {
     org_id: 'org-1', codigo_pai: '00000010', canal_origem: 'mercado_livre',
   });
-  assertEquals(chamadas.map((c) => c.item).sort(), ['MLB-BASE', 'MLB-KIT3']);
+  expect(chamadas.map((c) => c.item).sort()).toEqual(['MLB-BASE', 'MLB-KIT3']);
 });
 
-Deno.test('produto SEM kit mantém a exclusão por canal de hoje', async () => {
+it('produto SEM kit mantém a exclusão por canal de hoje', async () => {
   const chamadas: Array<{ item: string; estoques: unknown }> = [];
   const semKit = {
     familias: [DADOS.familias[0]],
@@ -815,18 +865,18 @@ Deno.test('produto SEM kit mantém a exclusão por canal de hoje', async () => {
     org_id: 'org-1', codigo_pai: '00000010', canal_origem: 'mercado_livre',
   });
   // O canal da venda já se decrementou sozinho: nada é empurrado de volta.
-  assertEquals(chamadas.length, 0);
+  expect(chamadas.length).toEqual(0);
 });
 
-Deno.test('job com o codigo_pai de um KIT é redirecionado para a base', async () => {
+it('job com o codigo_pai de um KIT é redirecionado para a base', async () => {
   // Nenhum caminho grava o codigo_pai de um kit no ledger, mas se acontecesse, empurrar
   // a coluna crua (`estoque` = 0) zeraria um anúncio vivo no ML.
   const chamadas: Array<{ item: string; estoques: unknown }> = [];
   await processarSincronizacao(depsQueRegistram(chamadas), {
     org_id: 'org-1', codigo_pai: '00000020', canal_origem: null,
   });
-  assertEquals(chamadas.map((c) => c.item).sort(), ['MLB-BASE', 'MLB-KIT3']);
-  assertEquals(chamadas.find((c) => c.item === 'MLB-KIT3')?.estoques, [{ sku: '00000021', estoque: 2 }]);
+  expect(chamadas.map((c) => c.item).sort()).toEqual(['MLB-BASE', 'MLB-KIT3']);
+  expect(chamadas.find((c) => c.item === 'MLB-KIT3')?.estoques).toEqual([{ sku: '00000021', estoque: 2 }]);
 });
 ```
 
@@ -835,7 +885,7 @@ Ajuste `depsQueRegistram(chamadas, dados = DADOS)` para aceitar o conjunto de da
 - [ ] **Step 2: Rodar e confirmar falha**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net sincronizar-estoque/__tests__/processar-kit.test.ts
+cd "<repo>" && pnpm vitest run supabase/functions/sincronizar-estoque/__tests__/processar-kit.test.ts
 ```
 
 Esperado: FALHA — hoje só o anúncio da base é alcançado, e a exclusão por canal pularia os dois.
@@ -1014,7 +1064,7 @@ Esperado: `entrada-estoque` e `ajustar-estoque` passam `canal_origem: null`; `re
 - [ ] **Step 6: Rodar e confirmar que passa**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net sincronizar-estoque/__tests__/
+cd "<repo>" && pnpm vitest run supabase/functions/sincronizar-estoque/__tests__/
 ```
 
 Esperado: PASS, incluindo os testes já existentes de `processar.test.ts`.
@@ -1071,38 +1121,38 @@ function adminComSaldoDaBase(estoqueBase: number) {
   return { from: () => q } as any;
 }
 
-Deno.test('aplicarEstoqueDerivado: família comum passa direto', async () => {
+it('aplicarEstoqueDerivado: família comum passa direto', async () => {
   const vars = [{ codigo: '00000011', estoque: 7 }];
   const r = await aplicarEstoqueDerivado(
     adminComSaldoDaBase(7), 'org-1',
     { kit_base_codigo_pai: null, kit_multiplicador: null }, vars,
   );
-  assertEquals(r, [{ codigo: '00000011', estoque: 7 }]);
+  expect(r).toEqual([{ codigo: '00000011', estoque: 7 }]);
 });
 
-Deno.test('aplicarEstoqueDerivado: kit publica floor(base/N), não a coluna crua', async () => {
+it('aplicarEstoqueDerivado: kit publica floor(base/N), não a coluna crua', async () => {
   const vars = [{ codigo: '00000021', estoque: 0 }];
   const r = await aplicarEstoqueDerivado(
     adminComSaldoDaBase(7), 'org-1',
     { kit_base_codigo_pai: '00000010', kit_multiplicador: 3 }, vars,
   );
-  assertEquals(r, [{ codigo: '00000021', estoque: 2 }]);
+  expect(r).toEqual([{ codigo: '00000021', estoque: 2 }]);
 });
 
-Deno.test('aplicarEstoqueDerivado: base zerada publica kit com 0', async () => {
+it('aplicarEstoqueDerivado: base zerada publica kit com 0', async () => {
   const vars = [{ codigo: '00000021', estoque: 0 }];
   const r = await aplicarEstoqueDerivado(
     adminComSaldoDaBase(0), 'org-1',
     { kit_base_codigo_pai: '00000010', kit_multiplicador: 2 }, vars,
   );
-  assertEquals(r, [{ codigo: '00000021', estoque: 0 }]);
+  expect(r).toEqual([{ codigo: '00000021', estoque: 0 }]);
 });
 ```
 
 - [ ] **Step 2: Rodar e confirmar falha**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net _shared/estoque/__tests__/kit.test.ts
+cd "<repo>" && pnpm vitest run supabase/functions/_shared/estoque/__tests__/kit.test.ts
 ```
 
 Esperado: FALHA com "aplicarEstoqueDerivado is not exported".
@@ -1198,7 +1248,7 @@ Esperado: nenhuma leitura de `.estoque` sobre o array original do select depois 
 - [ ] **Step 6: Rodar os testes**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net _shared/estoque/__tests__/ publish-familia-ml/__tests__/ update-familia-ml/__tests__/
+cd "<repo>" && pnpm vitest run supabase/functions/_shared/estoque/__tests__/ supabase/functions/publish-familia-ml/__tests__/ supabase/functions/update-familia-ml/__tests__/
 ```
 
 Esperado: PASS.
@@ -1246,8 +1296,19 @@ Conteúdo:
 -- criar um SEGUNDO número de estoque dessincronizado — a mesma classe de risco do
 -- incidente do ADR-0129.
 --
--- `create or replace` preserva owner (estoque_rpc_executor) e ACL: a assinatura não muda,
--- então a dança de grants da migration 20260804113000 NÃO se repete aqui.
+-- `create or replace` PRESERVA owner e ACL (a assinatura não muda), mas EXIGE ser o dono da
+-- função. `registrar_entrada` e `ajustar_estoque` pertencem a `estoque_rpc_executor`, e as
+-- três migrations anteriores que as tocaram terminam com `revoke estoque_rpc_executor from
+-- postgres cascade` (20260804113000:47, 20260811201026:103, 20260811203500:49) — hoje
+-- `postgres` NÃO é membro do role. Sem o grant abaixo, o `create or replace` falha.
+--
+-- `db push` não é transacional: se esta migration morrer entre o grant e o revoke, o
+-- membership fica pendurado. Confira com
+--   select 1 from pg_auth_members m join pg_roles r on r.oid = m.roleid
+--    join pg_roles g on g.oid = m.member
+--    where r.rolname = 'estoque_rpc_executor' and g.rolname = 'postgres';
+-- e limpe à mão antes de repetir o push.
+grant estoque_rpc_executor to postgres;
 
 -- ---------------------------------------------------------------------------
 -- D-9: entrada e ajuste recusam SKU de kit vinculado.
@@ -1376,6 +1437,10 @@ begin
 
   return v_novo;
 end $$;
+
+-- Devolve o privilégio elevado assim que as duas redefinições terminam. Mesmo fecho das
+-- migrations 20260804113000:47, 20260811201026:103 e 20260811203500:49.
+revoke estoque_rpc_executor from postgres cascade;
 
 -- ---------------------------------------------------------------------------
 -- D-10: adicionar variação/cor NOVA a uma base com kit vinculado vivo é recusado.
@@ -1552,23 +1617,48 @@ import { listarKitsVivos } from '../_shared/estoque/kit.ts';
 
 Confira que `alvo` inclui `kit_multiplicador`, `org_id` e `codigo_pai` no select (~linha 46-52); acrescente se faltar. Adicione `'kit_vinculado_ativo'` ao union de motivos do tipo de retorno e ao mapeamento de mensagens da UI em `src/lib/excluir.ts`.
 
+**A mensagem tem de nomear os DOIS passos**, senão o operador fica preso: `remover-publicado` devolve a família de kit para `status='pronto'` (`processar.ts:167-171`), e `'pronto'` está em `STATUS_KIT_VIVO` — ou seja, tirar o kit do ML **não** solta o bloqueio. Texto:
+
+> Este produto tem N kit(s) vinculado(s) (2un, 3un). Remova cada kit do marketplace e depois exclua o produto do kit (Estoque → ⋮ → Excluir) antes de remover este.
+
 - [ ] **Step 4: Testar as guards de banco e de app**
 
 Teste de app — acrescente em `supabase/functions/remover-publicado/__tests__/processar.test.ts`:
 
 ```ts
-Deno.test('remover base com kit vinculado ativo é recusado', async () => {
+it('remover base com kit vinculado ativo é recusado', async () => {
   const deps = depsComFamilia({
     id: 'f-base', org_id: 'org-1', codigo_pai: '00000010',
     ml_item_id: 'MLB1', status: 'publicado', kit_multiplicador: null,
   }, { kits: [{ id: 'f-k3', codigo_pai: '00000020', kit_multiplicador: 3 }] });
   const r = await removerPublicado(deps, { familiaId: 'f-base', orgId: 'org-1' });
-  assertEquals(r.ok, false);
-  assertEquals(r.motivo, 'kit_vinculado_ativo');
+  expect(r.ok).toEqual(false);
+  expect(r.motivo).toEqual('kit_vinculado_ativo');
 });
 ```
 
-(Adapte `depsComFamilia` ao helper já existente no arquivo.)
+Acrescente também o teste do caminho de saída, que é o que prova que o operador não fica preso:
+
+```ts
+it('kit em erro NÃO bloqueia — só pronto/publicando/publicado bloqueiam', async () => {
+  const deps = depsComFamilia({
+    id: 'f-base', org_id: 'org-1', codigo_pai: '00000010',
+    ml_item_id: 'MLB1', status: 'publicado', kit_multiplicador: null,
+  }, { kits: [{ id: 'f-k3', codigo_pai: '00000020', kit_multiplicador: 3, status: 'erro' }] });
+  const r = await removerPublicado(deps, { familiaId: 'f-base', orgId: 'org-1' });
+  expect(r.motivo).not.toEqual('kit_vinculado_ativo');
+});
+```
+
+(Adapte `depsComFamilia` ao helper já existente no arquivo; ele precisa filtrar os kits por `STATUS_KIT_VIVO`, igual à consulta real.)
+
+**Verifique o caminho de saída do operador** (item que a Decisão 14 do ADR não nomeia). Abra `supabase/functions/excluir-produto/index.ts` e `processar.ts` e confirme os três pontos:
+
+1. É admin-only e gated por `exigirModulo('estoque')` (ADR-0113) — o mesmo perfil que cria kit.
+2. Ele recusa produto publicado em qualquer canal, então a ordem obrigatória é **`remover-publicado` primeiro, `excluir-produto` depois**.
+3. Ele apaga a família de kit de verdade (não devolve para `pronto`), soltando o bloqueio da Decisão 14 e o da Decisão 10.
+
+Se qualquer um dos três não valer, **pare e reporte** — o bloqueio viraria permanente e isso é mudança de desenho, não decisão do executor.
 
 Teste de banco — SQL read-only, contra dados fabricados numa transação que dá rollback. Rode manualmente e registre a saída:
 
@@ -1583,7 +1673,7 @@ rollback;
 - [ ] **Step 5: Rodar tudo e commitar**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net remover-publicado/__tests__/
+cd "<repo>" && pnpm vitest run supabase/functions/remover-publicado/__tests__/
 cd "<repo>" && pnpm lint
 ```
 
@@ -1608,8 +1698,8 @@ git commit -m "feat(kit): guards de banco contra escrita direta, cor nova e remo
 - Consumes: `exigirModulo` (`_shared/produto/modulo.ts:8`), `derivarCodigos` (`_shared/produto/codigos.ts`), `enfileirarPublicacoes` (`_shared/queue.ts:126`), `lerSchemaAtributos` (`_shared/categoria/schema.ts`), `resolverConexao` + `getValidAccessTokenConexao`, `listarKitsVivos` (Task 1).
 - Produces:
   - `export function aplicarKitNosAtributos(schema: AtributoSchema[], atributos: AtributoML[], n: number): AtributoML[]` (em `_shared/categoria/atributos.ts`; lança `Error & {status:400}` quando a categoria não expõe `SALE_FORMAT=Kit`).
-  - `export interface KitSolicitado { multiplicador: number; titulo: string; descricao: string; preco: number; gtin: string | null; imagemPath: string | null; alturaCm: number; larguraCm: number; comprimentoCm: number; atacado: unknown[] | null }`
-  - `export interface CriarKitInput { familiaBaseId: string; chaveCadastro: string; kits: KitSolicitado[] }`
+  - `export interface KitSolicitado { multiplicador: number; chaveCadastro: string; titulo: string; descricao: string; preco: number; gtin: string | null; imagemPath: string | null; alturaCm: number; larguraCm: number; comprimentoCm: number; atacado: unknown[] | null }` — **`chaveCadastro` é por kit**, um uuid distinto para cada tamanho.
+  - `export interface CriarKitInput { familiaBaseId: string; kits: KitSolicitado[] }`
   - `export async function criarKitsVinculados(deps: CriarKitDeps, input: CriarKitInput): Promise<{ ok: boolean; motivo?: string; mensagem?: string; kits?: Array<{ familiaId: string; codigoPai: string; codigo: string; multiplicador: number }> }>`
 
 ### Contexto obrigatório antes de editar
@@ -1623,7 +1713,8 @@ Aqui o risco é menor (o kit insere **uma** variação por família, não um arr
 
 Outros pontos travados:
 
-- `familias.chave_cadastro` é **obrigatória** em lote `origem='manual'` (trigger `validar_familia_no_tenant`). O front gera um uuid ao abrir o diálogo; a edge grava e o unique parcial `familias_org_chave_cadastro_key` dá idempotência por submissão (ADR-0096 D-9). Reenvio com a mesma chave devolve o resultado original, não cria um segundo kit.
+- **`chave_cadastro` é UMA POR KIT, nunca uma por submissão.** A coluna é `uuid` e o índice é `unique (org_id, chave_cadastro) where chave_cadastro is not null` — uma chave cobre **uma** família. Com um uuid só para a submissão inteira, o operador que pede 2+ tamanhos num clique veria o 2º insert colidir com `23505`, o rollback cancelaria tudo, e **só kit único funcionaria**. Portanto: o diálogo gera um `crypto.randomUUID()` **por tamanho marcado** e envia em `kits[].chaveCadastro`; a edge grava cada um na sua família. Derivar por concatenação (`${chave}:${N}`) **não serve** — a coluna é `uuid` tipada, não texto.
+  A idempotência continua valendo, agora por kit: reenviar a mesma lista de uuids devolve as famílias existentes sem criar nada (ADR-0096 D-9).
 - `codigo_pai` e `codigo` devem casar `^[0-9]{8}$` (trigger). Venham de `proximo_codigo_produto` + `derivarCodigos`, exatamente como `cadastrar-produto/index.ts:150-176`.
 - `variacoes.estoque` do kit **tem de** nascer 0 — o trigger já força; não escreva outro valor.
 - **Não** chame `enfileirarFamilia` / `process-familia` (Decisão 3). A família de kit nasce `status='pronto'`.
@@ -1636,131 +1727,163 @@ Outros pontos travados:
 Crie `supabase/functions/criar-kit-vinculado/__tests__/processar.test.ts`:
 
 ```ts
-import { assertEquals, assertRejects } from 'jsr:@std/assert';
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { criarKitsVinculados } from '../processar.ts';
 import { aplicarKitNosAtributos } from '../../_shared/categoria/atributos.ts';
 
+// ATENÇÃO ao shape: `AtributoSchema` usa `valores: {id, nome}[]` (schema.ts:16), NÃO
+// `values: {id, name}[]` — `parseAtributosSchema` já traduz o JSON da API do ML. Escrever
+// o fixture com `values`/`name` faria o teste passar contra um código igualmente errado.
 const SCHEMA_COM_KIT = [
-  { id: 'SALE_FORMAT', values: [{ id: 'V-UN', name: 'Unidade' }, { id: 'V-KIT', name: 'Kit' }] },
-  { id: 'UNITS_PER_PACK', value_type: 'number' },
+  { id: 'SALE_FORMAT', nome: 'Formato de venda', valueType: 'list',
+    valores: [{ id: 'V-UN', nome: 'Unidade' }, { id: 'V-KIT', nome: 'Kit' }] },
+  { id: 'UNITS_PER_PACK', nome: 'Unidades por kit', valueType: 'number', valores: [] },
 ];
 
-Deno.test('aplicarKitNosAtributos sobrescreve SALE_FORMAT e UNITS_PER_PACK pelo N', () => {
+it('aplicarKitNosAtributos sobrescreve SALE_FORMAT e UNITS_PER_PACK pelo N', () => {
   const r = aplicarKitNosAtributos(
     SCHEMA_COM_KIT as never,
     [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'BRAND', value_name: 'ACME' }],
     3,
   );
-  assertEquals(r.find((a) => a.id === 'SALE_FORMAT')?.value_id, 'V-KIT');
-  assertEquals(r.find((a) => a.id === 'UNITS_PER_PACK')?.value_name, '3');
-  assertEquals(r.find((a) => a.id === 'BRAND')?.value_name, 'ACME');
+  expect(r.find((a) => a.id === 'SALE_FORMAT')?.value_id).toEqual('V-KIT');
+  expect(r.find((a) => a.id === 'UNITS_PER_PACK')?.value_name).toEqual('3');
+  expect(r.find((a) => a.id === 'BRAND')?.value_name).toEqual('ACME');
 });
 
-Deno.test('aplicarKitNosAtributos falha LOUD quando a categoria não expõe SALE_FORMAT=Kit', () => {
+it('aplicarKitNosAtributos falha LOUD quando a categoria não expõe SALE_FORMAT=Kit', () => {
   let status: number | undefined;
   try {
     aplicarKitNosAtributos([{ id: 'BRAND' }] as never, [], 3);
   } catch (e) {
     status = (e as Error & { status?: number }).status;
   }
-  assertEquals(status, 400);
+  expect(status).toEqual(400);
 });
 
-Deno.test('kit deriva custo e peso multiplicados por N', async () => {
+it('kit deriva custo e peso multiplicados por N', async () => {
   const { deps, inserts } = depsFake({ custo: 12.5, peso_gramas: 200 });
   const r = await criarKitsVinculados(deps, {
-    familiaBaseId: 'f-base', chaveCadastro: 'uuid-1',
+    familiaBaseId: 'f-base',
     kits: [kitPadrao(3)],
   });
-  assertEquals(r.ok, true);
+  expect(r.ok).toEqual(true);
   const variacao = inserts.variacoes[0];
-  assertEquals(variacao.custo, 37.5);
-  assertEquals(variacao.peso_gramas, 600);
-  assertEquals(variacao.estoque, 0);
-  assertEquals(variacao.gtin, null);
+  expect(variacao.custo).toEqual(37.5);
+  expect(variacao.peso_gramas).toEqual(600);
+  expect(variacao.estoque).toEqual(0);
+  expect(variacao.gtin).toEqual(null);
 });
 
-Deno.test('kit nasce vinculado à base e pronto, sem passar por process-familia', async () => {
+it('kit nasce vinculado à base e pronto, sem passar por process-familia', async () => {
   const { deps, inserts, enfileirados } = depsFake({ custo: 10, peso_gramas: 100 });
   await criarKitsVinculados(deps, {
-    familiaBaseId: 'f-base', chaveCadastro: 'uuid-2', kits: [kitPadrao(2)],
+    familiaBaseId: 'f-base', kits: [kitPadrao(2)],
   });
   const familia = inserts.familias[0];
-  assertEquals(familia.kit_base_codigo_pai, '00000010');
-  assertEquals(familia.kit_multiplicador, 2);
-  assertEquals(familia.status, 'pronto');
-  assertEquals(familia.operacao, 'CREATE');
-  assertEquals(familia.chave_cadastro, 'uuid-2');
+  expect(familia.kit_base_codigo_pai).toEqual('00000010');
+  expect(familia.kit_multiplicador).toEqual(2);
+  expect(familia.status).toEqual('pronto');
+  expect(familia.operacao).toEqual('CREATE');
+  expect(familia.chave_cadastro).toEqual('uuid-k2');
   // Decisão 3: nada de process-familia.
-  assertEquals(enfileirados.processFamilia, 0);
+  expect(enfileirados.processFamilia).toEqual(0);
 });
 
-Deno.test('base já publicada encadeia publicar-familias na hora', async () => {
+it('base já publicada encadeia publicar-familias na hora', async () => {
   const { deps, enfileirados } = depsFake({ custo: 10, peso_gramas: 100, mlItemId: 'MLB1' });
   await criarKitsVinculados(deps, {
-    familiaBaseId: 'f-base', chaveCadastro: 'uuid-3', kits: [kitPadrao(2)],
+    familiaBaseId: 'f-base', kits: [kitPadrao(2)],
   });
-  assertEquals(enfileirados.publicarFamilias, 1);
+  expect(enfileirados.publicarFamilias).toEqual(1);
 });
 
-Deno.test('base ainda não publicada NÃO encadeia — quem publica é o worker do CREATE da base', async () => {
+it('base ainda não publicada NÃO encadeia — quem publica é o worker do CREATE da base', async () => {
   const { deps, enfileirados } = depsFake({ custo: 10, peso_gramas: 100, mlItemId: null });
   await criarKitsVinculados(deps, {
-    familiaBaseId: 'f-base', chaveCadastro: 'uuid-4', kits: [kitPadrao(2)],
+    familiaBaseId: 'f-base', kits: [kitPadrao(2)],
   });
-  assertEquals(enfileirados.publicarFamilias, 0);
+  expect(enfileirados.publicarFamilias).toEqual(0);
 });
 
-Deno.test('base com mais de uma variação é recusada (escopo v1)', async () => {
+it('base com mais de uma variação é recusada (escopo v1)', async () => {
   const { deps } = depsFake({ custo: 10, peso_gramas: 100, qtdVariacoes: 2 });
   const r = await criarKitsVinculados(deps, {
-    familiaBaseId: 'f-base', chaveCadastro: 'uuid-5', kits: [kitPadrao(2)],
+    familiaBaseId: 'f-base', kits: [kitPadrao(2)],
   });
-  assertEquals(r.ok, false);
-  assertEquals(r.motivo, 'base_multivariacao');
+  expect(r.ok).toEqual(false);
+  expect(r.motivo).toEqual('base_multivariacao');
 });
 
-Deno.test('base sem custo é recusada LOUD (custo alimenta markup, ADR-0055)', async () => {
+it('base sem custo é recusada LOUD (custo alimenta markup, ADR-0055)', async () => {
   const { deps } = depsFake({ custo: null, peso_gramas: 100 });
   const r = await criarKitsVinculados(deps, {
-    familiaBaseId: 'f-base', chaveCadastro: 'uuid-6', kits: [kitPadrao(2)],
+    familiaBaseId: 'f-base', kits: [kitPadrao(2)],
   });
-  assertEquals(r.ok, false);
-  assertEquals(r.motivo, 'base_sem_custo');
+  expect(r.ok).toEqual(false);
+  expect(r.motivo).toEqual('base_sem_custo');
 });
 
-Deno.test('reenvio com a mesma chave_cadastro devolve o kit original sem criar outro', async () => {
-  const { deps, inserts } = depsFake({ custo: 10, peso_gramas: 100, chaveJaUsada: 'uuid-7' });
+it('DOIS tamanhos num clique criam duas famílias com chaves distintas', async () => {
+  // Com uma `chave_cadastro` só para a submissão, o 2º insert colidiria no unique parcial
+  // (23505) e o rollback cancelaria tudo — só kit único funcionaria.
+  const { deps, inserts } = depsFake({ custo: 10, peso_gramas: 100 });
   const r = await criarKitsVinculados(deps, {
-    familiaBaseId: 'f-base', chaveCadastro: 'uuid-7', kits: [kitPadrao(2)],
+    familiaBaseId: 'f-base', kits: [kitPadrao(2), kitPadrao(3)],
   });
-  assertEquals(r.ok, true);
-  assertEquals(inserts.familias.length, 0);
+  expect(r.ok).toEqual(true);
+  expect(inserts.familias.length).toEqual(2);
+  const chaves = inserts.familias.map((f) => f.chave_cadastro);
+  expect(new Set(chaves).size).toEqual(2);
+  expect(inserts.familias.map((f) => f.kit_multiplicador).sort()).toEqual([2, 3]);
 });
 
-Deno.test('multiplicador fora de 2..6 é recusado', async () => {
+it('reenvio das mesmas chaves devolve os kits originais sem criar outros', async () => {
+  const { deps, inserts } = depsFake({
+    custo: 10, peso_gramas: 100, chavesJaUsadas: ['uuid-k2', 'uuid-k3'],
+  });
+  const r = await criarKitsVinculados(deps, {
+    familiaBaseId: 'f-base', kits: [kitPadrao(2), kitPadrao(3)],
+  });
+  expect(r.ok).toEqual(true);
+  expect(inserts.familias.length).toEqual(0);
+  expect(r.kits?.length).toEqual(2);
+});
+
+it('reenvio PARCIAL (1 das 2 chaves já usada) não duplica a que já existe', async () => {
+  const { deps, inserts } = depsFake({ custo: 10, peso_gramas: 100, chavesJaUsadas: ['uuid-k2'] });
+  const r = await criarKitsVinculados(deps, {
+    familiaBaseId: 'f-base', kits: [kitPadrao(2), kitPadrao(3)],
+  });
+  expect(r.ok).toEqual(true);
+  expect(inserts.familias.length).toEqual(1);
+  expect(inserts.familias[0].kit_multiplicador).toEqual(3);
+});
+
+it('multiplicador fora de 2..6 é recusado', async () => {
   const { deps } = depsFake({ custo: 10, peso_gramas: 100 });
   for (const n of [1, 7, 0, -2]) {
     const r = await criarKitsVinculados(deps, {
-      familiaBaseId: 'f-base', chaveCadastro: `uuid-n${n}`, kits: [kitPadrao(n)],
+      familiaBaseId: 'f-base', kits: [kitPadrao(n)],
     });
-    assertEquals(r.ok, false, `N=${n} deveria ser recusado`);
-    assertEquals(r.motivo, 'multiplicador_invalido');
+    expect(r.ok).toEqual(false);
+    expect(r.motivo).toEqual('multiplicador_invalido');
   }
 });
 
-Deno.test('título acima de 60 caracteres é recusado', async () => {
+it('título acima de 60 caracteres é recusado', async () => {
   const { deps } = depsFake({ custo: 10, peso_gramas: 100 });
   const r = await criarKitsVinculados(deps, {
-    familiaBaseId: 'f-base', chaveCadastro: 'uuid-8',
+    familiaBaseId: 'f-base',
     kits: [{ ...kitPadrao(2), titulo: 'x'.repeat(61) }],
   });
-  assertEquals(r.ok, false);
-  assertEquals(r.motivo, 'titulo_longo');
+  expect(r.ok).toEqual(false);
+  expect(r.motivo).toEqual('titulo_longo');
 });
 ```
 
-Implemente `depsFake` e `kitPadrao` no topo do arquivo, espelhando o fake de `adicionar-variacoes-familia/__tests__/processar.test.ts` — leia esse arquivo antes e reuse o formato dele.
+Implemente `depsFake` e `kitPadrao` no topo do arquivo, espelhando o fake de `adicionar-variacoes-familia/__tests__/processar.test.ts` — leia esse arquivo antes e reuse o formato dele. `kitPadrao(n)` devolve um `KitSolicitado` com `chaveCadastro: \`uuid-k${n}\``, para as chaves serem distintas entre tamanhos sem o teste precisar declará-las. `depsFake` aceita `chavesJaUsadas?: string[]` e faz a consulta de idempotência devolver as famílias correspondentes.
 
 - [ ] **Step 2: Escrever o teste de paridade de chaves**
 
@@ -1773,30 +1896,29 @@ No mesmo arquivo:
  * A lista de colunas vem do snapshot de schema versionado, nunca escrita à mão — lista
  * fixa envelheceria junto com o builder que deveria vigiar.
  */
-Deno.test('builders cobrem toda coluna NOT NULL sem default de familias e variacoes', async () => {
-  const types = await Deno.readTextFile(
-    new URL('../../../../src/lib/database.types.ts', import.meta.url),
-  );
+it('builders cobrem toda coluna NOT NULL sem default de familias e variacoes', async () => {
+  // Vitest roda em Node: `readFileSync` + caminho relativo à raiz do repo (o cwd do Vitest).
+  const types = readFileSync('src/lib/database.types.ts', 'utf8');
   const colunasNotNull = (tabela: string) => extrairColunasNotNull(types, tabela);
   const { deps, inserts } = depsFake({ custo: 10, peso_gramas: 100 });
   await criarKitsVinculados(deps, {
-    familiaBaseId: 'f-base', chaveCadastro: 'uuid-parity', kits: [kitPadrao(2)],
+    familiaBaseId: 'f-base', kits: [kitPadrao(2)],
   });
   for (const col of colunasNotNull('familias')) {
-    assertEquals(col in inserts.familias[0], true, `familias.${col} ausente no builder do kit`);
+    expect(col in inserts.familias[0]).toEqual(true);
   }
   for (const col of colunasNotNull('variacoes')) {
-    assertEquals(col in inserts.variacoes[0], true, `variacoes.${col} ausente no builder do kit`);
+    expect(col in inserts.variacoes[0]).toEqual(true);
   }
 });
 ```
 
-Implemente `extrairColunasNotNull(types, tabela)` lendo o bloco `Row:` da tabela em `database.types.ts` e devolvendo as chaves cujo tipo **não** inclui `| null`. Reuse a implementação que já existe em `supabase/functions/adicionar-variacoes-familia/__tests__/processar.test.ts` — leia-a e importe/copie, não reinvente.
+`extrairColunasNotNull(types, tabela)` lê o bloco `Row:` da tabela em `database.types.ts` e devolve as chaves cujo tipo **não** inclui `| null`. **Já existe** em `supabase/functions/adicionar-variacoes-familia/__tests__/processar.test.ts` — leia e reuse; ela já é Node/Vitest (`readFileSync`, `process.cwd()`), então funciona sem adaptação.
 
 - [ ] **Step 3: Rodar e confirmar falha**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net --allow-read criar-kit-vinculado/__tests__/
+cd "<repo>" && pnpm vitest run supabase/functions/criar-kit-vinculado/__tests__/
 ```
 
 Esperado: FALHA — módulos inexistentes.
@@ -1827,8 +1949,11 @@ export function aplicarKitNosAtributos(
 ): AtributoML[] {
   const comKit = forcarSaleFormatKit(schema, atributos);
   const mudou = comKit.find((a) => a.id === 'SALE_FORMAT');
+  // `valores`/`nome` + `normalizar`, exatamente como `forcarSaleFormatKit` faz (atributos.ts:254).
+  // `values`/`name` é o shape da API do ML CRU, que `parseAtributosSchema` já traduziu — usá-lo
+  // aqui devolveria `undefined` sempre e recusaria kit em TODA categoria.
   const kitDisponivel = schema
-    .find((s) => s.id === 'SALE_FORMAT')?.values?.some((v) => v.name === 'Kit');
+    .find((s) => s.id === 'SALE_FORMAT')?.valores.some((v) => normalizar(v.nome) === 'kit');
   if (!kitDisponivel || !mudou) {
     const e = new Error(
       'Esta categoria do ML não oferece o formato de venda "Kit". Não é possível criar kit vinculado aqui.',
@@ -1876,7 +2001,7 @@ const STRIP_VARIACAO_KIT = [
 
 Fluxo de `criarKitsVinculados`:
 
-1. **Idempotência**: `familias.select('id, codigo_pai, kit_multiplicador').eq('org_id', orgId).eq('chave_cadastro', input.chaveCadastro)`. Se houver linha, devolve `{ ok: true, kits: <as existentes> }` sem criar nada.
+1. **Idempotência, por kit**: `familias.select('id, codigo_pai, kit_multiplicador, chave_cadastro').eq('org_id', orgId).in('chave_cadastro', input.kits.map(k => k.chaveCadastro))`. Toda chave já presente sai da lista a criar e entra direto no retorno. Se **todas** já existirem, devolve `{ ok: true, kits: <as existentes> }` sem criar nada — inclusive sem criar lote. Se só algumas existirem (reenvio parcial), cria apenas as que faltam.
 2. **Validar o input**: cada `multiplicador` inteiro em 2..6 (`motivo: 'multiplicador_invalido'`); `titulo.length <= 60` (`'titulo_longo'`); `preco > 0` (`'preco_invalido'`); tamanhos não repetidos entre si nem entre os kits **já existentes** da base (`'kit_duplicado'`).
 3. **Ler a base**: família canônica de `input.familiaBaseId` (`select('*')`) + variações (`select('*')`).
    - `> 1` variação → `{ ok: false, motivo: 'base_multivariacao' }` (Decisão 10).
@@ -1886,9 +2011,25 @@ Fluxo de `criarKitsVinculados`:
    - `categoria_ml_id` null → `{ ok: false, motivo: 'base_sem_categoria' }`.
 4. **Atributos**: token do ML via `resolverConexao` + `getValidAccessTokenConexao`; `lerSchemaAtributos(token, base.categoria_ml_id)`; para cada kit, `aplicarKitNosAtributos(schema, base.atributos_ml, n)`. O `status: 400` que a função lança vira `{ ok: false, motivo: 'categoria_sem_kit', mensagem: e.message }`.
 5. **Códigos**: `proximo_codigo_produto(orgId, kits.length * 2)` → `derivarCodigos` (1 PAI + 1 SKU por kit). Colisão → `p_resync: true` e nova tentativa; colidiu de novo → `{ ok: false, motivo: 'falha_numeracao' }` com status 500 (ADR-0096 D-4.1/D-10).
-6. **Lote dedicado**: `lotes.insert({ org_id, user_id, origem: 'manual', status: 'processando', numero: <proximo_numero_lote> })`. Valores válidos de `lote_status` (verificados): `importando`, `processando`, `revisao`, `publicando`, `concluido`, `erro`. Use `'processando'`, **não** `'revisao'` — `'revisao'` colocaria os kits na fila de Revisão e violaria D-4. Lote dedicado (não o manual aberto) pelo mesmo motivo do desvio 2 do ADR-0129.
+6. **Lote dedicado, nascido em `'publicando'`** — copie o bloco de `cadastrar-produto/index.ts:192-198` literalmente (a coluna é **`numero_org`**, não `numero`, e ela é preenchida num UPDATE depois do insert):
 
-   **Risco residual, registre no ADR (Task 11):** se a base nunca publicar, o lote dos kits fica em `'processando'` para sempre, e o `LoteCard` desabilita a exclusão nesse status (risco residual já documentado no ADR-0094). O caminho de saída para o operador é excluir as **famílias** de kit (elas nunca foram publicadas, então a exclusão é um delete simples) — `talvezFinalizarLote` recalcula do estado vivo e fecha o lote vazio. Não construa uma tela de "cancelar kits pendentes" nesta v1.
+   ```ts
+   const { data: novo, error: loteErr } = await admin.from('lotes')
+     .insert({ user_id: userId, org_id: orgId, status: 'publicando', origem: 'manual' })
+     .select('id').single();
+   if (loteErr || !novo) return { ok: false, motivo: 'falha_lote' };
+   const loteId = novo.id as string;
+   const { data: numeroOrg } = await admin.rpc('proximo_numero_lote', { p_org: orgId });
+   if (numeroOrg != null) await admin.from('lotes').update({ numero_org: numeroOrg }).eq('id', loteId);
+   ```
+
+   **`'publicando'` é o ponto inteiro desta escolha, não um detalhe.** O trigger `update_lote_counters` (`20260609132501:28-33`) promove o lote de `'processando'` para `'revisao'` assim que nenhuma família está em `pendente`/`processando` — e o kit nasce direto em `'pronto'` (Decisão 3: não roda `process-familia`). Com o lote em `'processando'`, o **próprio INSERT da primeira família de kit** dispararia a promoção, e o operador veria um card de Revisão com botão **Publicar** para os kits — podendo publicá-los **antes** da base confirmar, furando a Decisão 2. O guard do trigger é `l.status = 'processando'`, então um lote em `'publicando'` **nunca** é promovido. Mesmo valor inicial que `adicionar-variacoes-familia` já usa (ADR-0129, desvio 2).
+
+   Valores válidos de `lote_status` (verificados): `importando`, `processando`, `revisao`, `publicando`, `concluido`, `erro`.
+
+   **Kits nunca aparecem como card publicável na Revisão** (decisão confirmada pelo Diego). O preview do diálogo (Decisão 4) já **é** a revisão inteira deles, e a publicação sai só pela ação "criar kit" — nunca por um botão Publicar de um lote solto. Os dois mecanismos que garantem isso são o `'publicando'` acima e o claim do passo 10; os dois são obrigatórios, um não substitui o outro.
+
+   **Resíduo conhecido, registre no ADR (Task 11):** o lote técnico **continua visível na tela de Lotes** — `fetchLotes` (`src/lib/queries.ts:85-92`) faz `select('*')` sem filtro de status. Ele aparece como um card em `'publicando'`, e `destinoDoLote` roteia `'publicando'` para `/progresso`, **sem** botão Publicar — o requisito duro está cumprido. Se a base nunca publicar, esse card fica em `'publicando'` indefinidamente. Saída do operador: `excluir-produto` nas famílias de kit (nunca publicadas), e `talvezFinalizarLote` fecha o lote vazio na próxima passagem. Esconder o card por completo exigiria uma coluna nova (`lotes.oculto`) e um filtro em `fetchLotes`: **não faça** nesta v1 — está fora do que foi aprovado e é decisão do Diego.
 7. **Insert das famílias**: uma por kit, montada por `montarFamiliaKit(base, kit, { loteId, codigoPai, chaveCadastro, atributos })` — clone da base com `STRIP_FAMILIA_KIT` + os campos próprios:
    ```ts
    {
@@ -1938,7 +2079,9 @@ Fluxo de `criarKitsVinculados`:
    }
    ```
 9. **Rollback em falha parcial**: se o insert de variação falhar, apague a família e o lote criados nesta chamada — mesmo padrão do `varErr` de `adicionar-variacoes-familia`. Nada remoto aconteceu ainda, então não sobra resíduo.
-10. **Encadeamento**: se `base.ml_item_id` **não for null**, chame `encadearPublicacao(familiaIds)` (o mesmo helper de `adicionar-variacoes-familia/index.ts:35-48`). Se for null, **não** encadeie — quem publica é o Step 7 desta task.
+10. **Encadeamento**: se `base.ml_item_id` **não for null** (caminho Publicados), chame `encadearPublicacao(familiaIds)` — o mesmo helper de `adicionar-variacoes-familia/index.ts:35-48`, que bate em `publicar-familias`. Se for null (caminho Revisão), **não** encadeie: quem publica é o Step 7 desta task, depois que a base confirmar.
+
+    **Nunca chame `enfileirarPublicacoes` direto aqui.** `publicar-familias` faz o claim atômico `status → 'publicando'` antes de enfileirar (`index.ts:48-56`); pular esse caminho deixaria os kits em `'pronto'` durante o CREATE, e o `talvezFinalizarLote` do primeiro kit publicado veria os demais em `'pronto'` e abriria o lote como `'revisao'` (`decidirStatusLote`, `_shared/lote/finalizar.ts:22`) — exatamente o card de Revisão que o passo 6 existe para impedir.
 
 - [ ] **Step 6: Implementar `criar-kit-vinculado/index.ts`**
 
@@ -1982,17 +2125,30 @@ import { enfileirarPublicacoes } from '../_shared/queue.ts';
   // aqui marcaria como `erro` uma família JÁ publicada com sucesso no ML — o mesmo motivo
   // pelo qual `talvezFinalizarLote` não lança (ADR-0094, correção 3).
   try {
-    const { data: kitsPendentes } = await admin.from('familias')
-      .select('id, lote_id')
-      .eq('org_id', familia.org_id).eq('kit_base_codigo_pai', familia.codigo_pai)
+    // CLAIM ATÔMICO ANTES DE ENFILEIRAR — o mesmo de `publicar-familias/index.ts:48-56`.
+    // Dois motivos, os dois obrigatórios:
+    //  (a) `decidirStatusLote` (_shared/lote/finalizar.ts:22) devolve 'revisao' quando há
+    //      família em 'pronto'. Sem o claim, o `talvezFinalizarLote` do PRIMEIRO kit publicado
+    //      veria o segundo ainda em 'pronto' e abriria o lote técnico como card de Revisão,
+    //      com botão Publicar — exatamente o que a Decisão 2 proíbe.
+    //  (b) reentrega do QStash: sem o claim, o mesmo kit é reenfileirado sem proteção. Hoje
+    //      isso é inofensivo só porque `publish-familia-ml:75` pula família com `ml_item_id`
+    //      já setado — não dependa desse acaso.
+    // O `.select()` no fim é o que torna o claim atômico: só volta o que ESTA execução mudou.
+    const { data: reclamados } = await admin.from('familias')
+      .update({ status: 'publicando', erro_mensagem: null })
+      .eq('org_id', familia.org_id)
+      .eq('kit_base_codigo_pai', familia.codigo_pai)
       .not('kit_multiplicador', 'is', null)
-      .eq('status', 'pronto').is('ml_item_id', null);
-    if ((kitsPendentes ?? []).length > 0) {
+      .in('status', ['pronto', 'erro'])
+      .is('ml_item_id', null)
+      .select('id, lote_id');
+
+    if ((reclamados ?? []).length > 0) {
       await enfileirarPublicacoes(
-        (kitsPendentes ?? []).map((k) => ({
-          f: { id: k.id as string, lote_id: k.lote_id as string },
-          alvo: 'publish' as const,
+        (reclamados ?? []).map((k) => ({
           job: { familia_id: k.id as string, lote_id: k.lote_id as string },
+          alvo: 'publish' as const,
         })),
         familia.user_id as string,
       );
@@ -2002,7 +2158,7 @@ import { enfileirarPublicacoes } from '../_shared/queue.ts';
   }
 ```
 
-Confira a assinatura real de `enfileirarPublicacoes` em `_shared/queue.ts:126` e adapte a forma dos itens — não invente campos.
+A assinatura real é `enfileirarPublicacoes(itens: { job: ProcessFamiliaJob; alvo: AlvoPublicacao }[], userId: string)` (`_shared/queue.ts:126-128`) — **não existe** chave `f:`. Confira o shape exato de `ProcessFamiliaJob` no mesmo arquivo antes de montar o objeto; não invente campos.
 
 **Confirme que o reenvio passa por aqui.** A Decisão 2 diz que, se o CREATE da base falhar, "o operador reenvia o lote inteiro depois de corrigir". Esse reenvio precisa reentrar neste worker, senão os kits ficariam `pronto` para sempre sem gatilho. Rastreie o caminho:
 
@@ -2015,7 +2171,7 @@ cd "<repo>" && grep -n "operacao.*CREATE\|status.*erro" supabase/functions/publi
 - [ ] **Step 8: Rodar os testes**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net --allow-read criar-kit-vinculado/__tests__/ publish-familia-ml/__tests__/ _shared/categoria/__tests__/
+cd "<repo>" && pnpm vitest run supabase/functions/criar-kit-vinculado/__tests__/ supabase/functions/publish-familia-ml/__tests__/ supabase/functions/_shared/categoria/__tests__/
 ```
 
 Esperado: PASS.
@@ -2070,7 +2226,7 @@ git commit -m "feat(kit): edge criar-kit-vinculado e sequenciamento após o CREA
     - `export function precoSugeridoDoKit(precoBase: number, n: number, descontoPct?: number): number`
     - `export function descricaoDoKit(descricaoBase: string, n: number): string`
     - `export interface KitFormValues { multiplicador: number; titulo: string; descricao: string; preco: number; gtin: string | null; imagemPath: string | null; alturaCm: number; larguraCm: number; comprimentoCm: number; atacado: unknown[] | null }`
-    - `export async function criarKitVinculado(p: { familiaBaseId: string; chaveCadastro: string; kits: KitFormValues[] }): Promise<{ ok: boolean; motivo?: string; mensagem?: string }>`
+    - `export async function criarKitVinculado(p: { familiaBaseId: string; kits: KitFormValues[] }): Promise<{ ok: boolean; motivo?: string; mensagem?: string }>` — a `chaveCadastro` vive em cada `KitFormValues`, não no topo.
   - `src/components/kit/dialog-criar-kit.tsx`: `export function DialogCriarKit(props: { familiaBaseId: string; base: BaseParaKit; kitsExistentes: number[]; open: boolean; onOpenChange: (v: boolean) => void })`
 - `QK.kitsDoProduto(codigoPai: string)` em `src/lib/queries.ts`.
 
@@ -2172,6 +2328,12 @@ export function descricaoDoKit(descricaoBase: string, n: number): string {
 
 export interface KitFormValues {
   multiplicador: number;
+  /**
+   * Idempotência POR KIT (ADR-0096 D-9). `familias_org_chave_cadastro_key` é unique por
+   * família, então uma chave só para a submissão inteira faria o 2º tamanho colidir (23505)
+   * e o rollback derrubar todos — só kit único funcionaria. Um uuid por tamanho marcado.
+   */
+  chaveCadastro: string;
   titulo: string;
   descricao: string;
   preco: number;
@@ -2184,14 +2346,14 @@ export interface KitFormValues {
 }
 
 export async function criarKitVinculado(p: {
-  familiaBaseId: string; chaveCadastro: string; kits: KitFormValues[];
+  familiaBaseId: string; kits: KitFormValues[];
 }): Promise<{ ok: boolean; motivo?: string; mensagem?: string }> {
   const { data, error } = await supabase.functions.invoke('criar-kit-vinculado', {
     body: {
       familia_base_id: p.familiaBaseId,
-      chave_cadastro: p.chaveCadastro,
       kits: p.kits.map((k) => ({
-        multiplicador: k.multiplicador, titulo: k.titulo, descricao: k.descricao,
+        multiplicador: k.multiplicador, chave_cadastro: k.chaveCadastro,
+        titulo: k.titulo, descricao: k.descricao,
         preco: k.preco, gtin: k.gtin, imagem_path: k.imagemPath,
         altura_cm: k.alturaCm, largura_cm: k.larguraCm, comprimento_cm: k.comprimentoCm,
         atacado: k.atacado,
@@ -2235,7 +2397,7 @@ E o saldo virtual, também somente leitura: `Math.floor(estoqueBase / n)` com a 
 
 - Etapa 1: checkboxes de `TAMANHOS_KIT`, com os tamanhos já existentes desabilitados e rotulados "já criado".
 - Etapa 2: um `PreviewKit` por tamanho marcado.
-- `chaveCadastro` nasce com `crypto.randomUUID()` **ao abrir o diálogo** e só troca após sucesso confirmado — cópia exata do padrão de `src/components/estoque/dialog-entrada.tsx:33-45` e `dialog-cadastro-produto.tsx` (ADR-0096 D-9). É a idempotência da submissão.
+- **Uma `chaveCadastro` por tamanho marcado**, não uma por submissão: ao marcar um tamanho na etapa 1, gere `crypto.randomUUID()` para ele e guarde no estado do formulário; as chaves só trocam após sucesso confirmado. É o mesmo padrão de `src/components/estoque/dialog-entrada.tsx:33-45` (ADR-0096 D-9), aplicado por linha. Uma chave só para a submissão inteira quebraria com 2+ tamanhos (ver `KitFormValues.chaveCadastro`).
 - Botão "Criar kits" desabilitado enquanto qualquer título passar de 60 caracteres, qualquer preço for ≤ 0, ou nenhum tamanho estiver marcado.
 - `onSuccess`: `toast.success`, invalidar `QK.publicados`, `QK.kitsDoProduto(codigoPai)`, `QK.produtosEstoqueResumo` e `['lotes']`, e fechar.
 - Erros da edge por `motivo` viram mensagem específica: `base_multivariacao` → "Kit vinculado só existe para produto sem variação de cor."; `categoria_sem_kit` → a mensagem da edge; `base_sem_custo` → "Cadastre o custo do produto-base antes de criar kits (o custo do kit é derivado dele)."; `kit_duplicado` → "Já existe um kit desse tamanho para este produto."
@@ -2313,13 +2475,18 @@ com tooltip: "Os kits só vão ao ar depois que este produto for publicado com s
 
 - [ ] **Step 3: Verificar em runtime real que os kits não viram card na Revisão**
 
-Rode `pnpm dev`, crie 2 kits a partir de uma família ainda não publicada e confirme por screenshot:
+Pré-requisito: `criar-kit-vinculado` e `publish-familia-ml` (com o encadeamento da Task 6 Step 7) deployados — ver "Pré-requisitos de deploy por task".
+
+Rode `pnpm dev`, crie **2** kits (não 1 — o caminho de 2+ é o que a `chave_cadastro` por kit existe para cobrir) a partir de uma família ainda não publicada e confirme por screenshot:
+
 1. A lista de famílias do lote da base continua com o mesmo número de cards de antes.
 2. O badge "🧩 2 kits aguardando…" aparece no card da base.
-3. Ao publicar a base com sucesso, os 2 kits aparecem publicados na tela Publicados poucos minutos depois, sem nenhuma ação extra.
-4. Forçando falha do CREATE da base (ex.: categoria inválida), os 2 kits **continuam** sem `ml_item_id` e nenhum anúncio de kit aparece no ML.
+3. **Nenhuma tela de Revisão em lugar nenhum mostra card de kit com botão Publicar.** Abra a lista de Lotes: o lote técnico dos kits aparece em `'publicando'` e leva a `/progresso`, nunca a `/revisao`. Este é o critério que o Diego pediu explicitamente — se aparecer um botão Publicar para o kit, o lote nasceu com o status errado (Task 6, passo 6) ou o claim não rodou (Task 6, Step 7).
+4. Ao publicar a base com sucesso, os 2 kits aparecem publicados na tela Publicados poucos minutos depois, sem nenhuma ação extra.
+5. Forçando falha do CREATE da base (ex.: categoria inválida), os 2 kits **continuam** sem `ml_item_id` e nenhum anúncio de kit aparece no ML.
+6. Confirme por SQL que as duas famílias de kit têm `chave_cadastro` **distintas** e que repetir o Salvar no mesmo diálogo não cria um terceiro kit.
 
-O item 4 é o critério de aceite central da Decisão 2 — não o pule.
+Os itens 3 e 5 são os critérios de aceite centrais da Decisão 2 — não os pule.
 
 - [ ] **Step 4: Rodar lint e testes de front**
 
@@ -2349,7 +2516,19 @@ git commit -m "feat(kit): gatilho de kit vinculado na Revisão, publicado só ap
 
 ### Contexto obrigatório antes de editar
 
-Decisão 13: `variacoes.estoque` do kit fica em 0 para sempre e é **excluído explicitamente** de todo ponto que trata essa coluna como saldo real. As três RPCs de leitura vivem na migration `20260814181410_estoque_perf_rpc.sql` — leia-a inteira antes de reescrevê-las e **preserve** os campos que já devolve (a tela e o `dialog-entrada` dependem deles).
+Decisão 13: `variacoes.estoque` do kit fica em 0 para sempre e é **excluído explicitamente** de todo ponto que trata essa coluna como saldo real.
+
+**As três RPCs NÃO vivem todas na mesma migration, e copiar da errada reverte produção.** Cada uma foi redefinida por `create or replace` em momentos diferentes; a base do seu `create or replace` tem de ser a **última definição real** de cada uma:
+
+| RPC | Última definição — copie DESTA |
+|---|---|
+| `produtos_estoque_resumo()` | `20260826063450_estoque_resumo_nomes_fiscal_fix.sql:10` (campos fiscais NCM/CEST/`can_invoice` **e** o array `nomes`) |
+| `variacoes_estoque_produto(text)` | `20260816230056_estoque_preco_ml_por_sku.sql:19` (traz `preco_publicado_ml` e o `ml_item_id` por SKU) |
+| `skus_estoque_org()` | `20260814181410_estoque_perf_rpc.sql` (essa sim, a original — nunca foi redefinida) |
+
+Isto **não é zelo**: o cabeçalho da própria `20260826063450` documenta o incidente de produção em que a migration anterior foi escrita a partir da versão errada de `produtos_estoque_resumo`, o `create or replace` apagou `v.nome`/`nomes`, e a busca por nome de variação na tela Estoque quebrou **para toda org**. Repetir o erro aqui apagaria os campos fiscais e o `nomes` de novo.
+
+Abra a migration certa de cada uma, copie o corpo **inteiro**, e acrescente só o que a Task pede.
 
 A alternativa de espelhar o valor calculado na coluna do kit foi **rejeitada** pelo ADR: recriaria um segundo número que pode dessincronizar da fonte de verdade — o risco do ADR-0129. Não a reintroduza "por performance".
 
@@ -2389,7 +2568,7 @@ Reescreva as três funções por `create or replace` (assinaturas idênticas —
   ), '[]'::jsonb)
 ```
 
-`v` e `f` são os aliases de `variacoes` e `familias` já usados no corpo de `variacoes_estoque_produto` — abra a migration `20260814181410_estoque_perf_rpc.sql` e use os nomes reais; **não** renomeie nada da função existente. Valores válidos de `familia_status` (verificados): `pendente`, `processando`, `pronto`, `publicando`, `publicado`, `erro` — um rótulo digitado errado num `in (...)` não dá erro, só faz a lista nunca casar e a guard virar no-op.
+`v` e `f` são os aliases de `variacoes` e `familias` já usados no corpo de `variacoes_estoque_produto` — abra a migration `20260816230056_estoque_preco_ml_por_sku.sql:19` (a última definição) e use os nomes reais; **não** renomeie nada da função existente. Valores válidos de `familia_status` (verificados): `pendente`, `processando`, `pronto`, `publicando`, `publicado`, `erro` — um rótulo digitado errado num `in (...)` não dá erro, só faz a lista nunca casar e a guard virar no-op.
 
 - [ ] **Step 2: Aplicar e verificar contra o Postgres real**
 
@@ -2487,33 +2666,33 @@ Extraia esse `.map()` para uma função pura em `_shared/notificacoes/estoque-ki
 Crie `supabase/functions/_shared/notificacoes/__tests__/estoque-kit.test.ts`:
 
 ```ts
-import { assertEquals } from 'jsr:@std/assert';
+import { describe, it, expect } from 'vitest';
 import { linhaVendaAcimaSaldo } from '../estoque-kit.ts';
 
-Deno.test('venda de kit acima do saldo nomeia o kit e as duas unidades', () => {
+it('venda de kit acima do saldo nomeia o kit e as duas unidades', () => {
   const linha = linhaVendaAcimaSaldo({
     codigo: '00000021', pedido: 9, anterior: 4, aplicado: 4,
     kitCodigoPai: '00000020', multiplicador: 3,
   });
   // O operador vê 3 kits no pedido do ML e 9 unidades saindo do saldo da base.
-  assertEquals(linha.includes('3 kit(s) de 3 un.'), true);
-  assertEquals(linha.includes('9 un. do produto-base'), true);
-  assertEquals(linha.includes('00000021'), true);
+  expect(linha.includes('3 kit(s) de 3 un.')).toEqual(true);
+  expect(linha.includes('9 un. do produto-base')).toEqual(true);
+  expect(linha.includes('00000021')).toEqual(true);
 });
 
-Deno.test('venda direta acima do saldo mantém exatamente o texto de hoje', () => {
+it('venda direta acima do saldo mantém exatamente o texto de hoje', () => {
   const linha = linhaVendaAcimaSaldo({
     codigo: '00000011', pedido: 9, anterior: 4, aplicado: 4,
     kitCodigoPai: null, multiplicador: 1,
   });
-  assertEquals(linha, '• 00000011 — pedido de 9 un., havia 4, baixou 4');
+  expect(linha).toEqual('• 00000011 — pedido de 9 un., havia 4, baixou 4');
 });
 ```
 
 - [ ] **Step 2: Rodar e confirmar falha, depois implementar**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net _shared/notificacoes/__tests__/estoque-kit.test.ts
+cd "<repo>" && pnpm vitest run supabase/functions/_shared/notificacoes/__tests__/estoque-kit.test.ts
 ```
 
 Esperado: FALHA — `../estoque-kit.ts` não existe.
@@ -2576,17 +2755,17 @@ Adicione `kit_multiplicador` ao select da família nesse worker.
 - [ ] **Step 4: Testar a exclusão**
 
 ```ts
-Deno.test('vincular-catalogo pula família de kit vinculado', async () => {
+it('vincular-catalogo pula família de kit vinculado', async () => {
   const r = await processarVinculacao(depsComFamilia({ kit_multiplicador: 3 }), { familia_id: 'f-k' });
-  assertEquals(r.status, 200);
-  assertEquals(String(r.body.skip).includes('kit vinculado'), true);
+  expect(r.status).toEqual(200);
+  expect(String(r.body.skip).includes('kit vinculado')).toEqual(true);
 });
 ```
 
 - [ ] **Step 5: Rodar tudo e commitar**
 
 ```bash
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net _shared/notificacoes/__tests__/ vincular-catalogo/__tests__/
+cd "<repo>" && pnpm vitest run supabase/functions/_shared/notificacoes/__tests__/ supabase/functions/vincular-catalogo/__tests__/
 cd "<repo>" && pnpm lint
 ```
 
@@ -2657,8 +2836,9 @@ Registre, no formato dos ADRs 0094/0129, os desvios conscientes deste plano em r
 
 1. **Decisão 8 nomeia `_shared/ml/atualizar.ts`**, mas esse arquivo não lê `v.estoque` — `montarVariacoesUpdate` recebe `desejados`. A correção mora nos dois workers (`publish-familia-ml/processar.ts`, `update-familia-ml/processar.ts`), via `aplicarEstoqueDerivado`.
 2. **Decisão 4 diz que o título "herda o slot `quantidade`" do ADR-0099**, mas os slots não são persistidos em `familias` (só `titulo_ml` e `titulo_descartes`) e o montador só roda dentro de `process-familia`, que a Decisão 3 proíbe para o kit. Implementado como composição do sufixo "Kit N Unidades" sobre o `titulo_ml` da base, com corte em fronteira de palavra respeitando `TITULO_MAX=60` e edição pelo operador no preview.
-3. **`chave_cadastro`** não é mencionada no ADR, mas é obrigatória pelo trigger `validar_familia_no_tenant` em lote `origem='manual'` — e vira a idempotência da submissão (ADR-0096 D-9).
-4. **Lote dedicado por submissão**, e não o lote manual aberto, para os kits não virarem card na Revisão da base (D-4) — mesmo desvio 2 do ADR-0129.
+3. **`chave_cadastro`** não é mencionada no ADR, mas é obrigatória pelo trigger `validar_familia_no_tenant` em lote `origem='manual'`. É **uma por kit**, não uma por submissão: o índice é unique por família, então uma chave única faria o 2º tamanho de um clique colidir (23505) e o rollback derrubar todos — só kit único funcionaria.
+4. **Lote dedicado por submissão, nascido em `'publicando'`**, e não o lote manual aberto em `'processando'`. Duas razões: não virar card na Revisão da base (D-4, mesmo desvio 2 do ADR-0129) e, principalmente, **impedir que o kit apareça como card publicável na Revisão**. Como o kit nasce em `'pronto'` (D-3, sem `process-familia`), um lote em `'processando'` seria promovido a `'revisao'` pelo trigger `update_lote_counters` no INSERT da primeira família de kit, e o operador poderia publicar o kit **antes** da base — furando a D-2. O guard do trigger é `l.status = 'processando'`, então `'publicando'` nunca é promovido. Complementado pelo claim `pronto|erro → publicando` antes de cada enfileiramento, sem o qual `decidirStatusLote` reabriria o lote como `'revisao'` ao publicar o primeiro kit. Confirmado pelo Diego: **kits nunca aparecem como card na Revisão**; o preview do diálogo é a revisão inteira deles.
+   *Resíduo aceito:* o lote técnico continua **visível na tela de Lotes** (`fetchLotes` faz `select('*')` sem filtro), como card em `'publicando'` roteado para `/progresso` — sem botão Publicar. Esconder por completo exigiria coluna nova (`lotes.oculto`) e ficou fora da v1.
 5. **`reconciliar-estoque` não mudou**: o fan-out por família dentro de `processarSincronizacao` já alcança base + kits, cumprindo o terceiro bullet da Decisão 13 sem código novo naquele worker.
 6. **A anotação de origem no ledger (`origem_kit_*`) é não-atômica** (UPDATE depois da RPC), para não mudar a assinatura de `baixar_estoque` e ter de refazer a dança de owner/grants do `estoque_rpc_executor`. É só auditoria: nada de push depende dela, então falhar custa uma linha de ledger sem atribuição de kit e um alerta com texto genérico.
 7. **`aplicarKitNosAtributos` falha LOUD (400)** quando a categoria do ML não expõe `SALE_FORMAT=Kit`. O ADR-0071 faz no-op nesse caso; aqui um no-op publicaria N unidades ao preço de uma.
@@ -2685,12 +2865,20 @@ cd "<repo>" && pnpm docs:links
 
 Esperado: os quatro verdes. `tsc -b` **sem** `--force` usa cache incremental e já custou um ciclo de CI; `docs:links` pega link quebrado nos docs desta task.
 
-Rode também as duas árvores de teste — grep ancorado só em `src/` é cego para metade:
+`pnpm vitest run` sem argumento já cobre as **três** árvores incluídas em `vitest.config.ts:17-19` — `tests/`, `src/**/__tests__/` e `supabase/functions/**/__tests__/`. Se quiser rodar só uma fatia durante o desenvolvimento:
 
 ```bash
 cd "<repo>" && pnpm vitest run src/ tests/
-cd "<repo>/supabase/functions" && deno test --allow-env --allow-net --allow-read
+cd "<repo>" && pnpm vitest run supabase/functions
 ```
+
+Mas o gate é o `pnpm vitest run` completo acima — grep ancorado só em `src/` é cego para as outras duas árvores. **Não existe `deno test` neste repo**: o CI roda só `deno lint`, então um teste em `Deno.test` passaria despercebido e verde. Confira que nenhum arquivo novo seu usa `Deno.test`:
+
+```bash
+cd "<repo>" && grep -rn "Deno.test" supabase/functions/ --include=*.test.ts
+```
+
+Esperado: no máximo o único arquivo legado que já existia antes desta feature.
 
 Se algo falhar fora do seu diff, **prove** que é pré-existente rodando o mesmo teste em `origin/main` — não infira do diff. Suspeite de teste com data fixa cruzando janela temporal antes de chamar de flake.
 
