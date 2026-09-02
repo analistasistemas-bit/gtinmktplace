@@ -1,6 +1,6 @@
 // Pulse (ADR-0119): adicionar manualmente um produto de catálogo ao radar (link /p/MLBxxxx ou
 // GTIN). Item avulso de terceiro é impossível de coletar (403 do ML) — a edge já explica.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -11,9 +11,16 @@ import {
 import { QK } from '@/lib/queries';
 import { adicionarPulseManual } from '@/lib/pulse';
 
-export function DialogAdicionar({ aberto, onFechar }: { aberto: boolean; onFechar: () => void }) {
+export function DialogAdicionar({ aberto, onFechar, entradaInicial = '' }: {
+  aberto: boolean;
+  onFechar: () => void;
+  /** Pré-preenche o campo — o Sonar já sabe o GTIN que o operador acabou de prospectar. */
+  entradaInicial?: string;
+}) {
   const qc = useQueryClient();
-  const [entrada, setEntrada] = useState('');
+  const [entrada, setEntrada] = useState(entradaInicial);
+  // Reabrir com outro GTIN precisa trocar o campo; sem isto o valor do primeiro uso gruda.
+  useEffect(() => { if (aberto) setEntrada(entradaInicial); }, [aberto, entradaInicial]);
 
   const mutation = useMutation({
     mutationFn: () => adicionarPulseManual(entrada.trim()),

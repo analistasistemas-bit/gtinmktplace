@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   BadgeCheck, Check, Circle, CircleDollarSign, Clock, ExternalLink, Filter, Globe, Loader2,
-  Package, Receipt, Search, ShoppingCart, Store, Trash2, Trophy, Truck, X, Zap,
+  Package, Plus, Receipt, Search, ShoppingCart, Store, Trash2, Trophy, Truck, X, Zap,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ import { Sparkline } from '@/components/ui/sparkline';
 import { SonarAnalisePubliAI } from '@/components/pulse/sonar-analise-publiai';
 import { SonarDre } from '@/components/pulse/sonar-dre';
 import { VereditoSonar } from '@/components/pulse/veredito-sonar';
+import { DialogAdicionar } from '@/components/pulse/dialog-adicionar';
 import {
   lerBuscasRecentes, limparBuscasRecentes, registrarBusca, tempoRelativo, type BuscaRecente,
 } from '@/lib/sonar-buscas-recentes';
@@ -359,6 +360,7 @@ export default function PulseSonar() {
   const [mostrarProgresso, setMostrarProgresso] = useState(false);
   // Filtros da tabela (D13): 100% client-side, estado local — sem URL/localStorage nesta entrega.
   const [filtros, setFiltros] = useState<FiltrosAnuncios>(FILTROS_ANUNCIOS_VAZIOS);
+  const [adicionarAberto, setAdicionarAberto] = useState(false);
 
   // Query PRIMÁRIA (ADR-0127/D3): a tabela nasce da Apify. retry desligado — cada tentativa
   // sem cache dispara um run pago (US$ 0,10).
@@ -783,6 +785,28 @@ export default function PulseSonar() {
           {/* ADR-0140 D-3: só na consulta por EAN — é o que a busca por termo não tem como
               responder ("eu já vendo isto?" precisa de um GTIN para cruzar). */}
           {eanBuscado && cruzamentoEan && <SonarEanCruzamento cruzamento={cruzamentoEan} />}
+          {/* O resultado não tinha título: por EAN o campo é limpo, e ao rolar 2.128px até a tabela
+              ninguém sabia mais o que estava sendo analisado. A idade do cache também era
+              invisível — e é ela que diz se a próxima busca custa. */}
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-2 border-b pb-3">
+            <div className="min-w-0">
+              <h2 className="truncate text-base font-semibold" title={vendas.termo}>
+                Nicho: {vendas.termo}
+              </h2>
+              <p className="text-xs text-muted-foreground">
+                amostra de {vendas.itens_analisados} anúncios
+                {vendas.gerado_em && ` · coletado ${tempoRelativo(vendas.gerado_em, new Date())}`}
+                {' '}· reabrir este termo não dispara coleta nova (cache de 7 dias); um termo novo, sim
+              </p>
+            </div>
+            {/* ADR-0140 D-3: só com GTIN há o que vigiar — o Radar acompanha ficha de catálogo. */}
+            {eanBuscado && (
+              <Button variant="outline" size="sm" onClick={() => setAdicionarAberto(true)}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                Adicionar ao Radar
+              </Button>
+            )}
+          </div>
           <VereditoSonar
             veredito={calcularVereditoAnuncios(vendas, visitasTotal)}
             contexto={contextoNichoAnuncios(vendas)}
@@ -832,6 +856,12 @@ export default function PulseSonar() {
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
         </div>
       )}
+
+      <DialogAdicionar
+        aberto={adicionarAberto}
+        entradaInicial={eanBuscado ?? ''}
+        onFechar={() => setAdicionarAberto(false)}
+      />
     </div>
   );
 }

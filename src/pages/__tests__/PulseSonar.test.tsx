@@ -134,6 +134,25 @@ async function renderSonarComAmostra(itens: ItemVendasSonar[], termo = 'tecido o
   return campo;
 }
 
+/** Página com a resposta dada (termo, gerado_em, amostra vêm do payload). */
+async function renderSonarComResposta(resp: PainelVendasSonar, termoDigitado = 'tecido oxford') {
+  vi.mocked(fetchVendasSonar).mockResolvedValue(resp);
+  const campo = renderSonar();
+  await userEvent.type(campo, `${termoDigitado}{Enter}`);
+  await screen.findByRole('heading', { name: /^Nicho:/ }, { timeout: 3000 });
+  return campo;
+}
+
+/** Amostra mínima que chega ao ramo de resultado: `itens: []` cai em "amostra vazia" (`PulseSonar.tsx:758`)
+ *  e `respBase(null)` puro (itens_analisados 1, sem `itens`) cai em "cache antigo" — nenhum dos dois
+ *  renderiza o cabeçalho. */
+const comAmostra: PainelVendasSonar = {
+  ...respBase(null), itens: [itemBase({ item_id: 'MLB1', preco: 10, category_id: 'MLBX' })], itens_analisados: 1,
+};
+
+/** Busca por EAN: o campo é limpo após o scan (ADR-0140), então `eanBuscado` só vive no estado. */
+const renderSonarComEan = (ean: string) => renderSonarComResposta({ ...comAmostra, termo: ean }, ean);
+
 /** Título na TABELA — o mesmo texto aparece no pódio do veredito e no `dre-ancora`. */
 const linhaDaTabela = (titulo: string) =>
   screen.getAllByText(titulo).map((el) => el.closest('tr')).find((tr): tr is HTMLTableRowElement => tr != null)!;
@@ -221,5 +240,37 @@ describe('PulseSonar — um simulador só', () => {
     expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Azul');
     // A recusa continua recusando — o que mudou é só de quem ela está falando.
     expect(screen.getByText(/não dá para cotar/)).toBeInTheDocument();
+  });
+});
+
+describe('PulseSonar — cabeçalho do resultado', () => {
+  it('repete o termo buscado, o tamanho da amostra e a idade do cache', async () => {
+    await renderSonarComResposta({
+      ...respBase(null),
+      termo: '7896004700113',
+      gerado_em: new Date(Date.now() - 2 * 86_400_000).toISOString(),
+      itens_analisados: 20,
+      itens: comAmostra.itens,
+    });
+    const cabecalho = await screen.findByRole('heading', { name: /Nicho: 7896004700113/ });
+    expect(cabecalho).toBeInTheDocument();
+    expect(screen.getByText(/amostra de 20/)).toBeInTheDocument();
+    expect(screen.getByText(/há 2 dias/)).toBeInTheDocument();
+  });
+
+  it('o resultado em cache diz que reabrir é grátis e nova busca custa', async () => {
+    await renderSonarComResposta(comAmostra);
+    expect(screen.getByText(/reabrir este termo não dispara coleta nova/i)).toBeInTheDocument();
+  });
+
+  it('oferece "Adicionar ao Radar" com o EAN buscado pré-preenchido', async () => {
+    await renderSonarComEan('7896004700113');
+    await userEvent.click(screen.getByRole('button', { name: 'Adicionar ao Radar' }));
+    expect(await screen.findByDisplayValue('7896004700113')).toBeInTheDocument();
+  });
+
+  it('sem EAN buscado, o botão não aparece — não há o que vigiar por termo', async () => {
+    await renderSonarComResposta({ ...comAmostra, termo: 'tecido oxford' });
+    expect(screen.queryByRole('button', { name: 'Adicionar ao Radar' })).not.toBeInTheDocument();
   });
 });
