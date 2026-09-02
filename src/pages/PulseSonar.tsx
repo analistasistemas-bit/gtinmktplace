@@ -21,7 +21,6 @@ import { DataTable, type Column } from '@/components/ui/data-table';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { Sparkline } from '@/components/ui/sparkline';
-import { DialogMargemSonar, type AnuncioSimulavel } from '@/components/pulse/dialog-margem-sonar';
 import { SonarAnalisePubliAI } from '@/components/pulse/sonar-analise-publiai';
 import { SonarDre } from '@/components/pulse/sonar-dre';
 import { VereditoSonar } from '@/components/pulse/veredito-sonar';
@@ -350,7 +349,6 @@ export default function PulseSonar() {
   // código escaneado é anexado ao 1º ("789…371" + "789…764" = 26 dígitos), o que não casa mais com
   // EAN_RE, passa pelo piso de 3 caracteres e vira uma busca paga em lixo.
   const inputRef = useRef<HTMLInputElement>(null);
-  const [anuncioSimulando, setAnuncioSimulando] = useState<AnuncioSimulavel | null>(null);
   const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(lerBuscasRecentes);
   // Mantém o stepper visível um instante depois da resposta chegar, para mostrar as etapas
   // concluídas antes de trocar pelo resultado.
@@ -372,10 +370,16 @@ export default function PulseSonar() {
     () => (vendas?.configurado ? itensDaAmostra(vendas) : []),
     [vendas],
   );
-  /** Âncora da DRE (ADR-0148 D-8): o primeiro anúncio da amostra. Mesma forma do simulador de
-   *  margem, para não existirem duas ideias de "produto de referência" na mesma tela. */
+  /** Âncora da DRE. Padrão: o primeiro anúncio da amostra (ADR-0148 D-8) — na ordenação inicial, o
+   *  que mais vende. O botão "Simular" da linha troca por outro (ADR-0150 D-2), e o seletor que a
+   *  D-8 deixou para "a fatia seguinte" é exatamente isto. */
+  const [ancoraId, setAncoraId] = useState<string | null>(null);
+  // Amostra nova, âncora nova: manter a escolha do nicho anterior apontaria para um anúncio que
+  // não está mais na tela.
+  useEffect(() => setAncoraId(null), [termoBuscado]);
+
   const ancoraDre = useMemo(() => {
-    const i = itens[0];
+    const i = itens.find((x) => (x.item_id ?? x.titulo) === ancoraId) ?? itens[0];
     if (!i) return null;
     return {
       id: i.item_id ?? i.titulo,
@@ -383,7 +387,7 @@ export default function PulseSonar() {
       category_id: i.category_id ?? null,
       preco_referencia: i.preco,
     };
-  }, [itens]);
+  }, [itens, ancoraId]);
   /** Preços observados do nicho para os cenários da DRE (ADR-0149 D-1). */
   const precosDoNicho = useMemo(() => {
     const validos = itens.map((i) => i.preco).filter((p): p is number => p != null && p > 0);
@@ -616,12 +620,17 @@ export default function PulseSonar() {
         const href = linkDoAnuncio(i.link, i.item_id ?? '');
         return (
           <div className="flex items-center justify-end gap-1.5">
-            <Button variant="outline" size="sm" onClick={() => setAnuncioSimulando({
-              id: i.item_id ?? i.titulo,
-              nome: i.titulo,
-              category_id: i.category_id ?? null,
-              preco_referencia: i.preco,
-            })} title="Simular margem deste anúncio">
+            <Button
+              variant="outline"
+              size="sm"
+              aria-pressed={(i.item_id ?? i.titulo) === (ancoraDre?.id ?? null)}
+              onClick={() => {
+                setAncoraId(i.item_id ?? i.titulo);
+                // jsdom não implementa scrollIntoView — `?.()` porque o elemento existe e o método não.
+                document.getElementById('sonar-dre')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+              }}
+              title="Usar este anúncio como referência da DRE"
+            >
               Simular
             </Button>
             {href && (
@@ -636,7 +645,7 @@ export default function PulseSonar() {
         );
       },
     },
-  ], [visitasPorItem]);
+  ], [visitasPorItem, ancoraDre?.id]);
 
   const elapsedMs = iniciadoEmRef.current ? Date.now() - iniciadoEmRef.current : 0;
 
@@ -784,9 +793,9 @@ export default function PulseSonar() {
             erro={secoes237Erro ? (secoes237ErroObj instanceof Error ? secoes237ErroObj : new Error('Erro desconhecido.')) : null}
             onRetry={() => refetchSecoes237()}
           />
-          {/* Seção 6 (ADR-0148). Âncora: o PRIMEIRO anúncio da amostra — na ordenação padrão, o
-              que mais vende no nicho. A pergunta é "o produto que puxa este nicho dá lucro para
-              mim?". Um seletor de âncora fica para a fatia seguinte. */}
+          {/* Seção 6 (ADR-0148). Âncora padrão: o PRIMEIRO anúncio da amostra — na ordenação
+              inicial, o que mais vende no nicho. O botão "Simular" de cada linha troca a âncora
+              (ADR-0150 D-2): é o único simulador de margem do Sonar. */}
           <SonarDre ancora={ancoraDre} precos={precosDoNicho} />
 
           <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -820,8 +829,6 @@ export default function PulseSonar() {
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
         </div>
       )}
-
-      <DialogMargemSonar ficha={anuncioSimulando} onFechar={() => setAnuncioSimulando(null)} />
     </div>
   );
 }

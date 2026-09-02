@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -98,6 +98,8 @@ vi.mock('@/lib/sonar', async (importOriginal) => ({
   fetchVendasSonar: vi.fn(async () => ({ configurado: false as const })),
   fetchVisitasSonar: vi.fn(async () => ({ conectado: false as const })),
   fetchCruzamentoEan: vi.fn(async () => ({ minhas: [], no_radar: null })),
+  // Pendente para sempre: mantém a Análise PubliAI em "carregando" e evita um `fetch` real.
+  fetchSecoes237Sonar: vi.fn(() => new Promise<never>(() => {})),
 }));
 vi.mock('@/lib/sonar-buscas-recentes', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/lib/sonar-buscas-recentes')>()),
@@ -116,6 +118,22 @@ function renderSonar() {
   );
   return screen.getByLabelText(/Termo de busca ou EAN/i);
 }
+
+/** Página com uma amostra: o mock de `fetchVendasSonar` devolve `itens`, e o termo é digitado como o
+ *  operador faria. Resolve quando a tabela aparece (o stepper segura o resultado por 400 ms). */
+async function renderSonarComAmostra(itens: ItemVendasSonar[], termo = 'tecido oxford') {
+  vi.mocked(fetchVendasSonar).mockResolvedValue({
+    ...respBase(null), termo, itens, itens_analisados: itens.length, itens_com_vendas: itens.length,
+  });
+  const campo = renderSonar();
+  await userEvent.type(campo, `${termo}{Enter}`);
+  await screen.findByRole('table', {}, { timeout: 3000 });
+  return campo;
+}
+
+/** Título na TABELA — o mesmo texto aparece no pódio do veredito e no `dre-ancora`. */
+const linhaDaTabela = (titulo: string) =>
+  screen.getAllByText(titulo).map((el) => el.closest('tr')).find((tr): tr is HTMLTableRowElement => tr != null)!;
 
 describe('PulseSonar — EAN vai para a análise completa, como a busca por descrição', () => {
   beforeEach(() => { vi.mocked(fetchVendasSonar).mockClear(); });
@@ -148,5 +166,38 @@ describe('PulseSonar — EAN vai para a análise completa, como a busca por desc
     await userEvent.type(campo, 'tecido oxford 10 metros{Enter}');
     expect(campo).toHaveValue('tecido oxford 10 metros');
     expect(fetchVendasSonar).toHaveBeenCalledWith('tecido oxford 10 metros');
+  });
+});
+
+// ADR-0150 D-2: o Sonar tinha dois simuladores com bases diferentes respondendo à mesma pergunta.
+describe('PulseSonar — um simulador só', () => {
+  const amostra = () => [
+    itemBase({ titulo: 'Oxford Marrom', item_id: 'MLB1', preco: 100, category_id: 'MLB1234', vendidos: 50 }),
+    itemBase({ titulo: 'Oxford Azul', item_id: 'MLB2', preco: 80, category_id: 'MLB1234', vendidos: 10 }),
+  ];
+
+  it('"Simular" troca a âncora da DRE em vez de abrir um segundo simulador', async () => {
+    await renderSonarComAmostra(amostra());
+
+    // Âncora padrão continua sendo o primeiro da amostra (ADR-0148 D-8).
+    expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Marrom');
+
+    await userEvent.click(within(linhaDaTabela('Oxford Azul')).getByRole('button', { name: /Simular/ }));
+
+    expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Azul');
+    // Nada de dialog: o segundo simulador não existe mais.
+    expect(screen.queryByRole('dialog', { name: 'Simular margem' })).not.toBeInTheDocument();
+  });
+
+  it('buscar outro nicho devolve a âncora ao primeiro anúncio da amostra nova', async () => {
+    const campo = await renderSonarComAmostra(amostra());
+    await userEvent.click(within(linhaDaTabela('Oxford Azul')).getByRole('button', { name: /Simular/ }));
+    expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Azul');
+
+    // Termo novo → `termoBuscado` muda → a escolha anterior apontaria para um anúncio que não está
+    // mais na tela. O mock devolve a mesma amostra para qualquer termo.
+    await userEvent.clear(campo);
+    await userEvent.type(campo, 'outro nicho{Enter}');
+    expect(await screen.findByTestId('dre-ancora', {}, { timeout: 3000 })).toHaveTextContent('Oxford Marrom');
   });
 });
