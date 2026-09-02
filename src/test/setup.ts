@@ -21,3 +21,14 @@ if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
     } as MediaQueryList),
   });
 }
+
+// jsdom não implementa ResizeObserver — Radix (Popover/Select/…) usa `useSize` internamente para
+// medir o trigger, e explode com `ResizeObserver is not defined` assim que um teste abre um deles.
+if (typeof window !== 'undefined' && typeof window.ResizeObserver === 'undefined') {
+  class ResizeObserverPolyfill {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  window.ResizeObserver = ResizeObserverPolyfill as unknown as typeof ResizeObserver;
+}

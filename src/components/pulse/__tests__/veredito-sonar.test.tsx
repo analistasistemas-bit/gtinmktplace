@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { calcularVereditoAnuncios } from '@/lib/veredito-sonar';
 import type { ItemVendasSonar, PainelVendasSonar } from '@/lib/sonar';
@@ -66,8 +67,11 @@ describe('VereditoSonar — Pódio de rivais', () => {
   });
 });
 
-describe('VereditoSonar — aviso de ficha de catálogo (bug real 02/09: link abriu preço diferente)', () => {
-  it('rival com catalog_product_id ganha ícone de aviso ao lado do faturamento', () => {
+describe('VereditoSonar — avisos do pódio (bug real 02/09: link abriu preço diferente)', () => {
+  // Aviso é ícone clicável (popover), não hover: texto completo não cabe inline na linha
+  // (pedido do Diego 02/09) — clicar no ícone é que revela o texto.
+  it('rival com catalog_product_id ganha ícone clicável que revela o aviso de ficha de catálogo', async () => {
+    const user = userEvent.setup();
     const painel = painelSintetico([
       itemV2({
         item_id: 'MLB3923932275', titulo: 'Nestlé Ninho Zero Lactose em pó 700g', vendedor: null,
@@ -76,15 +80,39 @@ describe('VereditoSonar — aviso de ficha de catálogo (bug real 02/09: link ab
     ]);
     const veredito = calcularVereditoAnuncios(painel, null);
     render(<VereditoSonar veredito={veredito} contexto={[]} vendas={painel} visitasPorItem={new Map()} />);
-    expect(screen.getByTitle(/pode ser outro vendedor\/preço/)).toBeInTheDocument();
+    const botao = screen.getByRole('button', { name: /ficha de catálogo/ });
+    expect(screen.queryByText(/pode ser outro vendedor\/preço/)).not.toBeInTheDocument();
+    await user.click(botao);
+    expect(await screen.findByText(/pode ser outro vendedor\/preço/)).toBeInTheDocument();
   });
 
-  it('rival sem catalog_product_id não ganha o aviso', () => {
+  it('rival sem catalog_product_id não ganha o ícone de ficha de catálogo', () => {
     const painel = painelSintetico([
       itemV2({ item_id: 'MLB1', titulo: 'Anúncio Avulso', vendedor: 'LOJA-A', vendidos: 100, preco: 50, catalog_product_id: null }),
     ]);
     const veredito = calcularVereditoAnuncios(painel, null);
     render(<VereditoSonar veredito={veredito} contexto={[]} vendas={painel} visitasPorItem={new Map()} />);
-    expect(screen.queryByTitle(/pode ser outro vendedor\/preço/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /ficha de catálogo/ })).not.toBeInTheDocument();
+  });
+
+  it('rival sem nome de loja (fantasma) ganha ícone clicável que revela o aviso "sem loja identificada"', async () => {
+    const user = userEvent.setup();
+    const painel = painelSintetico([
+      itemV2({ item_id: 'MLB1', titulo: 'Anúncio Fantasma', vendedor: null, vendidos: 100, preco: 50, catalog_product_id: null }),
+    ]);
+    const veredito = calcularVereditoAnuncios(painel, null);
+    render(<VereditoSonar veredito={veredito} contexto={[]} vendas={painel} visitasPorItem={new Map()} />);
+    const botao = screen.getByRole('button', { name: /sem loja identificada/i });
+    await user.click(botao);
+    expect(await screen.findByText(/não trouxe o nome do vendedor/)).toBeInTheDocument();
+  });
+
+  it('rival com loja identificada não ganha o aviso "sem loja"', () => {
+    const painel = painelSintetico([
+      itemV2({ item_id: 'MLB1', titulo: 'Anúncio Avulso', vendedor: 'LOJA-A', vendidos: 100, preco: 50 }),
+    ]);
+    const veredito = calcularVereditoAnuncios(painel, null);
+    render(<VereditoSonar veredito={veredito} contexto={[]} vendas={painel} visitasPorItem={new Map()} />);
+    expect(screen.queryByRole('button', { name: /sem loja identificada/i })).not.toBeInTheDocument();
   });
 });

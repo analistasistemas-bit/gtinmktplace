@@ -4,10 +4,11 @@
 // ADR-0128: título separa Demanda de Entrada; chip de entrada ao lado do badge parcial.
 import { useState } from 'react';
 import {
-  AlertTriangle, ChevronDown, CircleDollarSign, Eye, ExternalLink, Gauge, HelpCircle, Lock, Minus,
-  ShieldAlert, Target, Trophy, TrendingDown, TrendingUp, Unlock,
+  AlertTriangle, ChevronDown, CircleDollarSign, Eye, ExternalLink, Gauge, Ghost, HelpCircle, Lock,
+  Minus, ShieldAlert, Target, Trophy, TrendingDown, TrendingUp, Unlock,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { insightEntrada, rivaisPodioVisitas } from '@/lib/veredito-sonar';
 import type {
@@ -88,6 +89,27 @@ const ICONE_BARREIRA: Record<Barreira, typeof Unlock> = {
   nao_medida: HelpCircle,
 };
 
+/** Ícone pequeno que, ao clicar, mostra o aviso completo num popover — o texto integral não cabe
+ *  inline na linha do pódio (pedido do Diego 02/09). */
+function AvisoPodio({ Icone, texto }: { Icone: typeof AlertTriangle; texto: string }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={texto}
+          className="shrink-0 text-warning hover:text-warning/80 focus-visible:outline-none"
+        >
+          <Icone className="h-3 w-3" aria-hidden />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-64 text-xs" align="start">
+        {texto}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function PodioColuna({ titulo, dica, Icone, itens }: {
   titulo: string;
   dica: string;
@@ -100,6 +122,8 @@ function PodioColuna({ titulo, dica, Icone, itens }: {
     /** Link é ficha de catálogo do ML — preço/vendedor mostrado ao abrir pode ser outro (o ML
      *  troca o vendedor em destaque sem avisar; não dá pra apontar o link pro vendedor exato). */
     avisoCatalogo?: boolean;
+    /** Fantasma: o card de busca não trouxe nome de loja — não dá pra confirmar quem vende. */
+    avisoSemLoja?: boolean;
   }>;
 }) {
   return (
@@ -130,12 +154,16 @@ function PodioColuna({ titulo, dica, Icone, itens }: {
             )}
             <span className="flex items-center gap-1 text-xs font-semibold tabular-nums" title={i.valorDica}>
               {i.avisoCatalogo && (
-                <span
-                  className="shrink-0"
-                  title="Anúncio vinculado a ficha de catálogo: o Mercado Livre mostra ali quem detém a buy-box no momento — pode ser outro vendedor/preço, diferente do medido aqui na amostra."
-                >
-                  <AlertTriangle className="h-3 w-3 text-warning" aria-hidden />
-                </span>
+                <AvisoPodio
+                  Icone={AlertTriangle}
+                  texto="Anúncio vinculado a ficha de catálogo: o Mercado Livre mostra ali quem detém a buy-box no momento — pode ser outro vendedor/preço, diferente do medido aqui na amostra."
+                />
+              )}
+              {i.avisoSemLoja && (
+                <AvisoPodio
+                  Icone={Ghost}
+                  texto="Sem loja identificada: o Mercado Livre não trouxe o nome do vendedor neste anúncio na busca — não dá para confirmar quem vende."
+                />
               )}
               {i.valor}
             </span>
@@ -174,6 +202,7 @@ export function VereditoSonar({
       r.vendidos != null ? `+${fmtInt(r.vendidos)} vendidos` : null,
     ].filter(Boolean).join(' · '),
     avisoCatalogo: r.catalog_product_id != null,
+    avisoSemLoja: r.vendedor == null,
   }));
   const itensVisitas = rivaisVisitas.map((r, idx) => ({
     chave: r.item_id,
