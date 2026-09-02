@@ -163,5 +163,6 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0148 | [DRE, fatia 1: uma cotação real e o guard de proveniência](../../docs/decisions/0148-dre-fatia-1-uma-cotacao-e-o-guard-de-proveniencia.md) — implementa a D-28: comissão e frete deixam de virar zero em silêncio, e fora de `official` a DRE recusa dizendo por quê |
 | 0149 | [DRE, fatia 2: cinco preços e o capital do lote](../../docs/decisions/0149-dre-fatia-2-cinco-precos-e-capital-do-lote.md) — define a D-15, que estava em aberto; cada preço tem cotação própria, e o "ROI" por quantidade é o markup (a quantidade cancela) |
 | 0150 | [Uma base, um rótulo e um simulador de margem em todo o Pulse](../../docs/decisions/0150-margem-um-rotulo-e-um-simulador-no-pulse.md) — implementa o seletor de âncora que a 0148 D-8 deixou pendente; aposenta o segundo simulador do Sonar |
+| 0151 | [Kit vinculado: criar anúncios de kit (N unidades) a partir de um produto existente](../../docs/decisions/0151-kit-vinculado-a-partir-de-produto-existente.md) — design fechado, implementação pendente; estoque 100% derivado da família-base, extensão do módulo Estoque (ADR-0094), restrito a produto sem variação de cor na v1 |
 
 Ver [[Arquitetura Geral]] para os ADRs mais citados no dia a dia.
