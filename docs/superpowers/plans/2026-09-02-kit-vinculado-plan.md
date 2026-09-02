@@ -28,6 +28,7 @@ Valores exatos, copiados do ADR-0151 e do código real. Valem para **todas** as 
 - **GTIN**: kit publica **sem GTIN** por padrão. **Nunca** herda o GTIN da base.
 - **Escopo v1**: só família-base com **exatamente 1 variação** (sem cor).
 - **`create or replace function` preserva owner e ACL** enquanto a assinatura não muda. Só mude assinatura se for inevitável — mudar exige repetir a dança `grant estoque_rpc_executor to postgres` → `grant usage, create on schema public` → `alter function ... owner to estoque_rpc_executor` → `revoke create` → `revoke ... cascade` → `revoke execute from public, anon, authenticated` → `grant execute to service_role`. Neste plano **nenhuma assinatura de RPC muda**.
+- **Enums (verificados em `src/lib/database.types.ts:2479-2493`)**: `familia_status` = `pendente|processando|pronto|publicando|publicado|erro`; `lote_status` = `importando|processando|revisao|publicando|concluido|erro`; `operacao_ml` = `CREATE|UPDATE`. Um rótulo digitado errado num `in (...)` **não dá erro** — só faz a lista nunca casar e a guard virar um no-op que passa em todo teste que não exercite um status real.
 - **Migrations**: só via `supabase migration new` + `supabase db push` (ADR-0043). Validar com `npm run db:check`. Nunca `apply_migration`/painel.
 - **`supabase db push` não roda em transação** — cada statement é independente.
 - **Deploy de Edge Functions não sai no merge.** Mudança em `_shared/**` obriga redeploy de **todas** as funções afetadas (Task 11).
@@ -989,13 +990,25 @@ Substitua os blocos 1 e 2 de `processarSincronizacao` (hoje `processar.ts:146-19
 
   // O saldo do kit é sempre floor(estoque_base / N), calculado ao vivo (ADR-0151 D-6). A
   // coluna `variacoes.estoque` do kit fica em 0 para sempre e NUNCA é lida aqui.
-  const estoqueBaseTotal = Object.values(base.estoquePorSku).reduce((s, q) => s + q, 0);
+  //
+  // A UMA variação da base — nunca a soma das variações. O ledger (`baixar_estoque`) resolve
+  // UMA variação por `(org_id, codigo)` e decrementa AQUELA linha; derivar de uma soma faria
+  // o kit e o ledger falarem de números diferentes no dia em que a trava de "só produto sem
+  // cor" (D-10) for afrouxada. Com mais de uma variação, falha LOUD em vez de inventar um
+  // número plausível.
+  const skusBase = Object.keys(base.estoquePorSku);
+  const estoqueBaseUnico = skusBase.length === 1 ? base.estoquePorSku[skusBase[0]] : null;
+
   for (const kit of await listarKitsVivos(admin, org_id, codigo_pai)) {
+    if (estoqueBaseUnico === null) {
+      console.error('kit_com_base_multivariacao', { org_id, codigo_pai, skus: skusBase.length });
+      continue;   // não empurra saldo inventado para o ML
+    }
     const kitComSaldo = await lerFamiliaComSaldo(admin, org_id, kit.codigo_pai);
     if (!kitComSaldo) continue;
     const derivado: Record<string, number> = {};
     for (const sku of Object.keys(kitComSaldo.estoquePorSku)) {
-      derivado[sku] = saldoDoKit(estoqueBaseTotal, kit.kit_multiplicador);
+      derivado[sku] = saldoDoKit(estoqueBaseUnico, kit.kit_multiplicador);
     }
     const r = await alvosDaFamilia(admin, org_id, kit.codigo_pai, derivado);
     alvos.push(...r.alvos);
@@ -1009,9 +1022,7 @@ Substitua os blocos 1 e 2 de `processarSincronizacao` (hoje `processar.ts:146-19
   }
 ```
 
-Ajuste `ctxAlerta` para usar `base.nome`, `base.permalink`, `base.rotuloPorSku`, `base.estoquePorSku` e o `temAnuncio` acumulado. O resto do arquivo (laço de push, reativação, alerta de zerado) **não muda**.
-
-> A `v1` deste ADR restringe kit a base com **1 variação** (Decisão 10), então `estoqueBaseTotal` é o saldo da única variação. A soma está escrita assim para não quebrar caso a trava seja afrouxada — mas não relaxe a trava sem novo ADR.
+Ajuste `ctxAlerta` para usar `base.nome`, `base.permalink`, `base.rotuloPorSku`, `base.estoquePorSku` e o `temAnuncio` acumulado. O resto do arquivo (laço de push, reativação, alerta de zerado) **não muda** — em particular, `reativarSePausado` (`processar.ts:58`) não muda: ele já recebe `alvo.itemExternoId`, então a reativação por reposição (ADR-0111) passa a alcançar o anúncio de cada kit automaticamente, com `alvo.estoques.some(e => e.estoque > 0)` avaliado sobre o **saldo derivado** do kit. É a Decisão 15 inteira, sem código novo.
 
 - [ ] **Step 5: Atualizar os chamadores que passam `canal_origem`**
 
@@ -1154,7 +1165,14 @@ export async function aplicarEstoqueDerivado<T extends { codigo: string; estoque
   }
   const { data: varsBase } = await admin.from('variacoes')
     .select('estoque').eq('familia_id', famBase.id);
-  const estoqueBase = (varsBase ?? []).reduce((s, v) => s + ((v.estoque as number) ?? 0), 0);
+  // A UMA variação da base — nunca a soma. `baixar_estoque` decrementa UMA linha resolvida
+  // por `(org_id, codigo)`; derivar de uma soma faria o publicado e o ledger falarem de
+  // números diferentes no dia em que a trava de "só produto sem cor" (D-10) for afrouxada.
+  if ((varsBase ?? []).length !== 1) {
+    console.error('kit_com_base_multivariacao', { orgId, base, skus: (varsBase ?? []).length });
+    return variacoes.map((v) => ({ ...v, estoque: 0 }));
+  }
+  const estoqueBase = (varsBase![0].estoque as number) ?? 0;
   const derivado = saldoDoKit(estoqueBase, n);
   return variacoes.map((v) => ({ ...v, estoque: derivado }));
 }
@@ -1383,27 +1401,52 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------------
--- D-10: adicionar variação/cor a uma base com kit vinculado vivo é recusado.
+-- D-10: adicionar variação/cor NOVA a uma base com kit vinculado vivo é recusado.
 --
--- `estoque_base` viraria ambíguo entre variações e o resolvedor (que soma o saldo da
--- família) passaria a derivar o kit de um número que o operador não reconhece.
--- Trigger `before insert` em `variacoes`: dispara só quando a família JÁ tem variação
--- (a primeira variação de qualquer família nova é sempre permitida) e quando o
--- `codigo_pai` daquela família tem pelo menos um kit vinculado.
+-- `estoque_base` viraria ambíguo entre variações: o resolvedor derivaria o kit de um
+-- número que o operador não reconhece.
+--
+-- O predicado é "este `codigo` é NOVO sob este `codigo_pai`", e NÃO "esta família já tem
+-- variação". Duas razões:
+--   1) Reposição por planilha (UPDATE) cria uma família NOVA e reinsere as MESMAS variações
+--      — o saldo do produto com kit tem de continuar podendo subir. Contar linhas da família
+--      nova barraria a partir da segunda variação de um produto que sempre teve duas, e
+--      deixaria passar a cor nova de um produto que só tinha uma.
+--   2) `adicionar-variacoes-familia` insere clones + cores novas num ÚNICO `.insert()`
+--      multi-linha (index.ts:231). Um guard que conta linhas da própria família depende da
+--      ordem dos elementos do array e da visibilidade de linhas da mesma instrução —
+--      comportamento que ninguém deveria precisar raciocinar para entender uma trava.
+--      Perguntar "este código já existe sob este pai?" é imune às duas coisas.
 -- ---------------------------------------------------------------------------
 create or replace function public.bloquear_variacao_extra_com_kit()
 returns trigger language plpgsql security definer set search_path = ''
 as $$
-declare v_pai text; v_org uuid; v_ja integer;
+declare v_pai text; v_org uuid;
 begin
   select f.codigo_pai, f.org_id into v_pai, v_org
   from public.familias f where f.id = new.familia_id;
   if v_pai is null then return new; end if;
 
-  select count(*) into v_ja
-  from public.variacoes v where v.familia_id = new.familia_id;
-  if v_ja = 0 then return new; end if;   -- primeira variação da família: sempre permitida
+  -- SKU que já existe sob este produto = reposição/clone. Sempre permitido.
+  if exists (
+    select 1 from public.variacoes v
+    join public.familias f2 on f2.id = v.familia_id
+    where f2.org_id = v_org and f2.codigo_pai = v_pai
+      and v.codigo = new.codigo and v.familia_id <> new.familia_id
+  ) then
+    return new;
+  end if;
 
+  -- SKU novo: só passa se o produto ainda não tinha NENHUMA variação (produto nascendo)…
+  if not exists (
+    select 1 from public.variacoes v
+    join public.familias f3 on f3.id = v.familia_id
+    where f3.org_id = v_org and f3.codigo_pai = v_pai
+  ) then
+    return new;
+  end if;
+
+  -- …ou se o produto não tem kit vinculado ativo.
   if exists (
     select 1 from public.familias k
     where k.org_id = v_org
@@ -1486,6 +1529,26 @@ where tgname in ('variacoes_bloquear_extra_com_kit','familias_bloquear_remocao_c
 ```
 
 Esperado: 2 linhas.
+
+**Regressão que esta guard NÃO pode causar** — confira explicitamente, porque quebrá-la tiraria do ar a reposição por planilha exatamente dos produtos que têm kit. Numa transação com `rollback`:
+
+```sql
+begin;
+-- Simula o que `ingest-lote` faz num UPDATE de reposição: família NOVA, MESMAS variações.
+-- Substitua <lote>, <org>, <user>, <pai>, <sku> pelos valores de um produto real COM kit vivo.
+insert into public.familias (lote_id, org_id, user_id, codigo_pai, nome_pai, unidade, operacao, status, origem)
+values ('<lote>', '<org>', '<user>', '<pai>', 'teste', 'UN', 'UPDATE', 'pronto', 'nacional')
+returning id \gset
+-- ESTA linha tem de PASSAR (mesmo `codigo` que já existe sob o pai = reposição):
+insert into public.variacoes (familia_id, org_id, user_id, codigo, estoque, preco)
+values (:'id', '<org>', '<user>', '<sku>', 50, 10);
+-- ESTA linha tem de FALHAR com 23514 (código novo sob base com kit vivo):
+insert into public.variacoes (familia_id, org_id, user_id, codigo, estoque, preco)
+values (:'id', '<org>', '<user>', '99999999', 5, 10);
+rollback;
+```
+
+Esperado: o primeiro insert passa, o segundo levanta `23514` com a mensagem do kit. **Se o primeiro falhar, pare** — a reposição por planilha dos produtos com kit estaria quebrada.
 
 - [ ] **Step 3: Guard de app em `remover-publicado`**
 
@@ -1846,7 +1909,9 @@ Fluxo de `criarKitsVinculados`:
    - `categoria_ml_id` null → `{ ok: false, motivo: 'base_sem_categoria' }`.
 4. **Atributos**: token do ML via `resolverConexao` + `getValidAccessTokenConexao`; `lerSchemaAtributos(token, base.categoria_ml_id)`; para cada kit, `aplicarKitNosAtributos(schema, base.atributos_ml, n)`. O `status: 400` que a função lança vira `{ ok: false, motivo: 'categoria_sem_kit', mensagem: e.message }`.
 5. **Códigos**: `proximo_codigo_produto(orgId, kits.length * 2)` → `derivarCodigos` (1 PAI + 1 SKU por kit). Colisão → `p_resync: true` e nova tentativa; colidiu de novo → `{ ok: false, motivo: 'falha_numeracao' }` com status 500 (ADR-0096 D-4.1/D-10).
-6. **Lote dedicado**: `lotes.insert({ org_id, user_id, origem: 'manual', status: 'processando', numero: <proximo_numero_lote> })`. Lote dedicado (não o manual aberto) pelo mesmo motivo do desvio 2 do ADR-0129 e para os kits não aparecerem como card na Revisão da base (D-4).
+6. **Lote dedicado**: `lotes.insert({ org_id, user_id, origem: 'manual', status: 'processando', numero: <proximo_numero_lote> })`. Valores válidos de `lote_status` (verificados): `importando`, `processando`, `revisao`, `publicando`, `concluido`, `erro`. Use `'processando'`, **não** `'revisao'` — `'revisao'` colocaria os kits na fila de Revisão e violaria D-4. Lote dedicado (não o manual aberto) pelo mesmo motivo do desvio 2 do ADR-0129.
+
+   **Risco residual, registre no ADR (Task 11):** se a base nunca publicar, o lote dos kits fica em `'processando'` para sempre, e o `LoteCard` desabilita a exclusão nesse status (risco residual já documentado no ADR-0094). O caminho de saída para o operador é excluir as **famílias** de kit (elas nunca foram publicadas, então a exclusão é um delete simples) — `talvezFinalizarLote` recalcula do estado vivo e fecha o lote vazio. Não construa uma tela de "cancelar kits pendentes" nesta v1.
 7. **Insert das famílias**: uma por kit, montada por `montarFamiliaKit(base, kit, { loteId, codigoPai, chaveCadastro, atributos })` — clone da base com `STRIP_FAMILIA_KIT` + os campos próprios:
    ```ts
    {
@@ -1913,7 +1978,15 @@ Deno.serve
   → 200 { ok, kits } | 400/409/500 { motivo, mensagem }
 ```
 
-Registre em `supabase/config.toml` seguindo o bloco de `adicionar-variacoes-familia` (a função é chamada pelo browser com JWT → `verify_jwt` fica no padrão dela, **não** `false`).
+Registre em `supabase/config.toml`, junto do bloco de `adicionar-variacoes-familia` (linhas 48-49). Conteúdo literal a acrescentar:
+
+```toml
+# ADR-0151: criação de kit vinculado. Chamada pelo APP com o JWT do admin.
+[functions.criar-kit-vinculado]
+verify_jwt = true
+```
+
+`verify_jwt = true` (e **não** `false`): a regra de `verify_jwt=false` do CLAUDE.md vale para workers chamados pelo QStash, não para edges chamadas pelo browser. Esta é chamada pelo browser.
 
 - [ ] **Step 7: Encadear os kits pendentes após o CREATE da base**
 
@@ -1953,6 +2026,14 @@ import { enfileirarPublicacoes } from '../_shared/queue.ts';
 ```
 
 Confira a assinatura real de `enfileirarPublicacoes` em `_shared/queue.ts:126` e adapte a forma dos itens — não invente campos.
+
+**Confirme que o reenvio passa por aqui.** A Decisão 2 diz que, se o CREATE da base falhar, "o operador reenvia o lote inteiro depois de corrigir". Esse reenvio precisa reentrar neste worker, senão os kits ficariam `pronto` para sempre sem gatilho. Rastreie o caminho:
+
+```bash
+cd "<repo>" && grep -n "operacao.*CREATE\|status.*erro" supabase/functions/publicar-familias/index.ts | head
+```
+
+`publicar-familias/index.ts:48-56` faz o claim de CREATE com `status in ('pronto','erro')` — logo, a família em `erro` é reclamada de novo e roteada para `publish-familia-ml`, onde este bloco vive. **Confirme essa leitura** abrindo o arquivo antes de seguir; se por algum motivo o reenvio não reentrar neste worker, o gatilho tem de mudar de lugar (candidato: o próprio `publicar-familias`, depois de confirmar `ml_item_id`) — e isso é uma mudança de desenho que volta para o Diego, não uma decisão do executor.
 
 - [ ] **Step 8: Rodar os testes**
 
@@ -2311,16 +2392,19 @@ Reescreva as três funções por `create or replace` (assinaturas idênticas —
   -- ADR-0151 D-13: o kit não aparece como linha própria; aparece no contexto do
   -- produto-base, com o saldo virtual calculado on-the-fly. Espelhar o valor na coluna
   -- do kit foi REJEITADO: criaria um segundo número dessincronizável (risco do ADR-0129).
+  -- `v.estoque` é o saldo da variação da linha corrente — kit vinculado só existe para
+  -- produto de UMA variação (D-10), então é o saldo da base. NÃO some as variações: o
+  -- ledger decrementa uma linha, e uma soma divergiria dele se a trava fosse afrouxada.
   'kits', coalesce((
     select jsonb_agg(jsonb_build_object(
       'codigo_pai', k.codigo_pai,
       'multiplicador', k.kit_multiplicador,
-      'disponivel', floor(v_estoque_total / k.kit_multiplicador)
+      'disponivel', floor(v.estoque::numeric / k.kit_multiplicador)
     ) order by k.kit_multiplicador)
     from (
       select distinct on (kk.codigo_pai) kk.codigo_pai, kk.kit_multiplicador
       from public.familias kk
-      where kk.org_id = v_org and kk.kit_base_codigo_pai = p_codigo_pai
+      where kk.org_id = f.org_id and kk.kit_base_codigo_pai = p_codigo_pai
         and kk.kit_multiplicador is not null
         and kk.status in ('pronto','publicando','publicado')
       order by kk.codigo_pai, kk.criado_em desc
@@ -2328,7 +2412,7 @@ Reescreva as três funções por `create or replace` (assinaturas idênticas —
   ), '[]'::jsonb)
 ```
 
-onde `v_estoque_total` é a soma de `estoque` das variações da família canônica da base.
+`v` e `f` são os aliases de `variacoes` e `familias` já usados no corpo de `variacoes_estoque_produto` — abra a migration `20260814181410_estoque_perf_rpc.sql` e use os nomes reais; **não** renomeie nada da função existente. Valores válidos de `familia_status` (verificados): `pendente`, `processando`, `pronto`, `publicando`, `publicado`, `erro` — um rótulo digitado errado num `in (...)` não dá erro, só faz a lista nunca casar e a guard virar no-op.
 
 - [ ] **Step 2: Aplicar e verificar contra o Postgres real**
 
