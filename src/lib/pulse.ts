@@ -267,6 +267,14 @@ export async function marcarAlertaLido(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Marca como lidos os alertas de um grupo. O escopo é o conjunto de ids RENDERIZADOS naquela
+ *  linha — nada além (ADR-0133 Errata 4 D-3). Uma ida ao banco; grant é column-level em `lido`. */
+export async function marcarAlertasLidosPorIds(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const { error } = await supabase.from('pulse_alertas').update({ lido: true }).in('id', ids);
+  if (error) throw error;
+}
+
 /** Marca como lidos os não lidos do filtro ativo, até `ateCriadoEm` inclusive. O escopo só admite
  *  colunas locais de `pulse_alertas`: o update do PostgREST não filtra por coluna de recurso
  *  embutido, então um escopo por título de produto ou apagaria o que o operador não viu, ou
