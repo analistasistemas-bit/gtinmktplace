@@ -116,6 +116,34 @@ continuando na tela depois do refetch. É o trade-off aceito do D-7: preferimos 
 apagar em silêncio um alerta que nunca existiu para o operador. Fechar a janela exigiria contar e
 marcar na mesma transação, e com ~12 alertas de ação por dia isso não se paga.
 
+## Errata 3 (2026-09-01, validação na org real) — `preco_caiu` grava uma vez por dia
+
+Nove alertas na tela eram quatro produtos. A medição em produção achou a mesma queda
+(`de=71.99`, `para=68.99`, produto `a00c41cc…`) gravada **duas vezes no mesmo dia** — 00:00:08 e
+18:00:06 UTC — sem nenhuma escrita nova em `pulse_ofertas` entre as duas: o preço não se mexeu.
+
+**Mecanismo.** Dentro de uma mesma execução, o lado `anteriores` do diff qualifica com o
+`visitas_30d` **congelado** na linha gravada e o lado `atuais` com visitas **buscadas ao vivo**.
+Um concorrente com zero visitas congelado cai como `fora_referencia` no "antes" e volta no
+"agora": o mínimo "antes" sobe para o do item parado, o mínimo "agora" é o dele, e a mesma queda
+é redetectada. `pulse_ofertas` absorvia isso por já ser idempotente em `(produto_id, item_id,
+dia)`; `pulse_alertas` não tinha chave nenhuma e cada redetecção virava linha.
+
+**Decisão: tratar o sintoma, não a régua.** A qualificação de relevância é decisão registrada
+(ADR-0130 e este ADR) e mudá-la exige ADR novo e re-validação — trocar a régua para calar um
+alerta repetido é o tipo de conserto que apaga queda real junto. O que muda é a gravação:
+`preco_caiu` passa a ser idempotente por (produto, par `de`/`para`, **dia civil UTC**), em duas
+travas — a leitura `alertasJaGravadosHoje` descarta o repetido antes de gravar, e o índice único
+das colunas geradas `(dedupe_preco_caiu, dedupe_dia_utc)` fecha a corrida entre duas execuções
+simultâneas (`ignoreDuplicates`, não erro).
+
+**Limites explícitos.** A janela é o dia, não "os últimos N alertas": a mesma queda em dias
+diferentes é movimento real (o preço voltou e caiu de novo) e continua alertando — a mesma
+medição achou dois casos assim, em 3 e em 2 dias distintos. Se a leitura de dedupe falhar, o
+coletor **grava assim mesmo**: deixar de alertar por causa de uma consulta que caiu troca ruído
+por silêncio, e é o silêncio que custa dinheiro. E a assimetria de visitas continua lá — o que
+sumiu foi a linha duplicada, não a redetecção.
+
 ## Consequências aceitas
 
 - **O modelo permanece evento com marcar-lido.** A alternativa (condição aberta que se resolve

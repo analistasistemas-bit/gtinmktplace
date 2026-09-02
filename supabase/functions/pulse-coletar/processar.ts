@@ -246,6 +246,67 @@ function ofertaParaDiffRelevante<T extends OfertaColetada>(
   };
 }
 
+/** Chave da queda: produto + par de preços. Number() normaliza "68.99" e 68.99 na mesma chave. */
+export function chaveDedupePrecoCaiu(produtoId: string, de: unknown, para: unknown): string {
+  return `${produtoId}|${Number(de)}|${Number(para)}`;
+}
+
+/**
+ * Início do dia civil **UTC** do instante dado, em ISO. É a janela do dedupe e é o MESMO dia
+ * usado pela coluna gerada `dedupe_preco_caiu` (`(criado_em at time zone 'UTC')::date`).
+ *
+ * UTC de propósito, mesmo com `pulse_ofertas.dia`/`pulse_vendedores.dia` em America/Sao_Paulo:
+ * aqui a janela só precisa ser estável e igual dos dois lados (Deno e Postgres), e o dia local
+ * exigiria `AT TIME ZONE` combinando com o fuso do runtime para não divergir na virada.
+ */
+export function inicioDoDiaUtc(agora: Date = new Date()): string {
+  return `${agora.toISOString().slice(0, 10)}T00:00:00.000Z`;
+}
+
+/**
+ * ADR-0133 Errata 3. O upsert de `pulse_ofertas` (merge, sem `ignoreDuplicates`) fecha a reemissão
+ * dentro de um mesmo diff, mas não segura duas EXECUÇÕES do dia recalculando a mesma queda quando o
+ * estado do dia é regravado. Um segundo alerta idêntico não acrescenta decisão — acrescenta linha,
+ * e foi o que a validação de 2026-09-01 mediu na org real.
+ *
+ * A janela é o DIA UTC de propósito, e não "os últimos N alertas": a mesma queda em dias
+ * diferentes é movimento real (o preço voltou e caiu de novo) e continua gerando alerta.
+ */
+export function filtrarAlertasJaGravados<T extends { tipo: string; payload: Record<string, unknown> }>(
+  produtoId: string,
+  alertas: T[],
+  jaGravadosHoje: Set<string>,
+): T[] {
+  return alertas.filter((a) => (
+    a.tipo !== 'preco_caiu'
+    || !jaGravadosHoje.has(chaveDedupePrecoCaiu(produtoId, a.payload.de, a.payload.para))
+  ));
+}
+
+/** Quedas já gravadas hoje (UTC) para estes produtos, como chaves de `chaveDedupePrecoCaiu`. */
+export async function alertasJaGravadosHoje(
+  admin: SupabaseClient, orgId: string, produtoIds: string[],
+): Promise<Set<string>> {
+  const chaves = new Set<string>();
+  if (produtoIds.length === 0) return chaves;
+  const { data, error } = await admin.from('pulse_alertas')
+    .select('produto_id, payload')
+    .eq('org_id', orgId).eq('tipo', 'preco_caiu')
+    .in('produto_id', produtoIds)
+    .gte('criado_em', inicioDoDiaUtc());
+  // Falha aqui NÃO derruba o alerta: sem a leitura, o comportamento volta a ser o de hoje (grava).
+  // Deixar de alertar por causa de uma consulta que caiu seria trocar ruído por silêncio — e o
+  // índice único de `dedupe_preco_caiu` ainda absorve a duplicata na gravação.
+  if (error) {
+    console.warn('pulse-coletar: dedupe de preco_caiu indisponível, gravando sem filtro:', error.message);
+    return chaves;
+  }
+  for (const linha of (data ?? []) as { produto_id: string; payload: Record<string, unknown> }[]) {
+    chaves.add(chaveDedupePrecoCaiu(linha.produto_id, linha.payload.de, linha.payload.para));
+  }
+  return chaves;
+}
+
 export async function gravarAlertasRelevantes(
   admin: SupabaseClient, orgId: string, pendentes: AlertaPendente[],
 ): Promise<{ total: number; acao: number }> {
@@ -256,6 +317,9 @@ export async function gravarAlertasRelevantes(
   ]);
   const nicknames = new Map<number, string | null>(
     [...perfis.entries()].map(([sellerId, p]) => [sellerId, p.nickname ?? null]),
+  );
+  const jaGravadosHoje = await alertasJaGravadosHoje(
+    admin, orgId, pendentes.map((p) => p.produtoId),
   );
   let total = 0;
   let acao = 0;
@@ -281,21 +345,27 @@ export async function gravarAlertasRelevantes(
       fichaCompleta: pendente.fichaCompleta,
     });
     if (alertas.length === 0) continue;
+    const alertasNovos = filtrarAlertasJaGravados(pendente.produtoId, alertas, jaGravadosHoje);
+    if (alertasNovos.length === 0) continue;
     if (!pendente.estadoGravado) {
       console.warn(
-        `pulse-coletar: ${alertas.length} alerta(s) do produto ${pendente.produtoId} adiados — ofertas não gravadas`,
+        `pulse-coletar: ${alertasNovos.length} alerta(s) do produto ${pendente.produtoId} adiados — ofertas não gravadas`,
       );
       continue;
     }
-    const { error } = await admin.from('pulse_alertas').insert(
-      alertas.map((a) => ({
+    // `ignoreDuplicates` sobre o índice único de `dedupe_preco_caiu`: a leitura acima resolve o
+    // caso normal, o índice é a rede para duas execuções concorrentes (a leitura de uma acontece
+    // antes da gravação da outra). Duplicata absorvida em silêncio, não erro.
+    const { error } = await admin.from('pulse_alertas').upsert(
+      alertasNovos.map((a) => ({
         org_id: orgId, produto_id: pendente.produtoId,
         tipo: a.tipo, payload: a.payload, severidade: a.severidade,
       })),
+      { onConflict: 'dedupe_preco_caiu,dedupe_dia_utc', ignoreDuplicates: true },
     );
     if (!error) {
-      total += alertas.length;
-      acao += alertas.filter((a) => a.severidade === 'acao').length;
+      total += alertasNovos.length;
+      acao += alertasNovos.filter((a) => a.severidade === 'acao').length;
     } else console.warn(`pulse-coletar: alertas do produto ${pendente.produtoId} falharam:`, error.message);
   }
   return { total, acao };

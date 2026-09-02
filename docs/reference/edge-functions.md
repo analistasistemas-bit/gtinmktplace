@@ -72,7 +72,7 @@
 | monitorar-moderados | false | HTTP (JWT manual) ou QStash | sim |
 | notificar-liberacao | false | QStash schedule | sim (1×/dia BRT) |
 | **Pulse (ADR-0119)** ||||
-| pulse-coletar | false | HTTP (JWT manual) ou QStash | sim (upsert por dia) |
+| pulse-coletar | false | HTTP (JWT manual) ou QStash | sim (upsert por dia; `preco_caiu` uma vez por produto/par de preços/dia UTC) |
 | pulse-adicionar | true | HTTP (frontend) | sim (upsert por cpid) |
 | pulse-sonar-vendas | true | HTTP (frontend) | sim (leitura + grava `sonar_snapshots`; cache Redis 7d por termo) |
 | pulse-sonar-visitas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por item) |
@@ -1033,7 +1033,23 @@ falha ao ler `organizations` não libera.
   **e**, no caso em que não sobrou nenhum relevante, a **ficha tem de ter vindo vazia antes da
   qualificação** (`mercadoObservadoVazio`, olhando a lista crua — senão "não consegui qualificar
   ninguém" passaria por "a ficha esvaziou"). Falhando qualquer uma, o alerta nasce `info`; aprovar
-  mandaria subir preço com concorrente vendendo mais barato. Alertas em `pulse_alertas` + 1 notificação agregada por org por execução na categoria `pulse` —
+  mandaria subir preço com concorrente vendendo mais barato.
+  **`preco_caiu` é idempotente dentro do dia** (ADR-0133 Errata 3, migration
+  `20260902011825_pulse_alertas_dedupe_preco_caiu.sql`): a mesma queda (mesmo produto, mesmo par
+  `de`/`para`) grava uma vez só por **dia civil UTC**. Duas travas em série — `alertasJaGravadosHoje`
+  lê os `preco_caiu` do dia e descarta o repetido antes de gravar, e o `upsert` usa
+  `onConflict: 'dedupe_preco_caiu,dedupe_dia_utc'` com `ignoreDuplicates` sobre o índice único das
+  colunas geradas, que fecha a corrida entre duas execuções simultâneas. Se a leitura de dedupe
+  falhar, o coletor **grava assim mesmo** (loga `dedupe de preco_caiu indisponível`): deixar de
+  alertar por causa de uma consulta que caiu trocaria ruído por silêncio, e o índice ainda segura a
+  duplicata. Queda igual em **dias diferentes** continua gerando alerta — é movimento real (o preço
+  voltou e caiu de novo). A janela é UTC de propósito, diferente de `pulse_ofertas.dia` /
+  `pulse_vendedores.dia` (America/Sao_Paulo): o que importa é Deno e Postgres concordarem sobre a
+  mesma janela, e `at time zone 'UTC'` é o que torna a expressão imutável o bastante para coluna
+  gerada. O que isso **não** conserta: a assimetria a montante da qualificação de relevância
+  (`anteriores` usa `visitas_30d` congelado, `atuais` busca ao vivo), que é o que faz a mesma queda
+  ser redetectada sem movimento de preço — mudar a régua é decisão de ADR novo.
+  Alertas em `pulse_alertas` + 1 notificação agregada por org por execução na categoria `pulse` —
   **somente para org com `pulse` em `modulos_habilitados`**. A coleta roda para todas as orgs (o
   histórico acumula desde o dia 1), mas o texto de ação manda abrir a aba Alertas do Pulse e uma
   org sem o módulo não tem esse menu: os operadores da Avil chegaram a receber alertas de um menu
