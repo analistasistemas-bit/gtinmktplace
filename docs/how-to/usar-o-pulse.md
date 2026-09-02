@@ -91,36 +91,42 @@ Abra **Pulse** na barra lateral. A lista mostra uma linha por ficha de catálogo
   É o preço que o comprador vê, já com promoção se houver — e não o que está cadastrado aqui
   dentro. Um `—` não é falha: passe o mouse e a célula diz o motivo (anúncio pausado ou sem
   estoque, sem vínculo de catálogo, ficha manual, ou ainda sem a primeira coleta).
-- **Menor concorrente** — o **menor preço entre os concorrentes** naquela ficha. O seu próprio
-  anúncio **não** entra nessa conta: você não é concorrente de si mesmo.
-- **Sua posição** — quanto você está acima ou abaixo do menor concorrente, em %. É a leitura que
-  decide reprecificar: `+7% mais caro`, `10% mais barato`, `Empatado`.
-- **Ofertas** — quantos vendedores estão ativos na ficha agora (também sem contar você).
-- **Referência do ML** — onde o seu preço está frente ao **preço de referência** que o próprio
-  Mercado Livre calcula para o seu anúncio. Os quatro selos possíveis:
+- **Menor relevante** — o menor preço entre os concorrentes **qualificados** daquela ficha. Não é o
+  menor preço que aparece na página do ML: vendedor com menos de 10 transações, sem visitas nos
+  últimos 30 dias ou com reputação laranja/vermelha fica fora da régua (ADR-0130). Perseguir preço
+  de quem não se sustenta destrói margem. O seu próprio anúncio nunca entra na conta.
+  Quando existem ofertas ativas **abaixo** dessa referência, a célula avisa — elas existem e o
+  comprador as vê, mesmo não entrando na comparação.
+- **7 dias (observado)** — minigráfico do menor preço **observado** na ficha, dia a dia, nos
+  últimos 7 dias. É o menor de **todas** as ofertas ativas, inclusive as que a régua de relevância
+  deixou de fora — não o menor relevante da coluna ao lado; o próprio cabeçalho da coluna avisa
+  isso. Produto com menos de dois dias de movimento ainda não tem gráfico. Só aparece em telas
+  largas.
+- **Sua posição** — quanto você está acima ou abaixo do menor relevante, em %. É a leitura que
+  decide reprecificar: `+7% mais caro`, `10% mais barato`, `Empatado` (diferença abaixo de 0,5%).
+  Amarelo a partir de +0,5%; vermelho só a partir de +15%.
+- **Sobra hoje** — quanto sobra por unidade no seu preço atual, já descontados comissão do Mercado
+  Livre, frete, imposto por origem e custo do produto. Vermelho é prejuízo. Um `—` aqui **nunca** é
+  zero: passe o mouse e a célula diz qual insumo falta (custo, alíquota, comissão ou frete). O Pulse
+  não estima imposto nem custo.
+- **Ofertas** — quantos vendedores estão ativos na ficha agora, **todos**, inclusive os que a régua
+  de relevância deixou de fora. É por isso que este número costuma ser maior que o da coluna
+  **Disputa do catálogo**, ao lado.
+- **Disputa do catálogo** — três fatos sobre a página de catálogo: quantos anúncios **relevantes**
+  disputam, entre que preços, e — no tooltip — em que posição o seu preço **ficaria** se você
+  entrasse lá. "Ficaria", e não "está": o seu anúncio não é anúncio de catálogo, então ele não faz
+  parte da lista que gerou a faixa (ADR-0147). O Pulse **não** diz quem leva a venda: o ganhador do
+  buy-box não é obtenível pela API do ML, e o mais barato não é o ganhador.
+- **Reprecificar** (atalho na linha, a partir de telas médias) — abre o simulador com o preço atual
+  pronto para ajustar, sem passar pelo detalhe. Some junto com a coluna **Sobra hoje** no mesmo
+  ponto de quebra: o atalho nunca aparece sem o número que justifica usá-lo.
+- **⋮** (menu da linha) — pausar ou reativar o produto no radar. Essa coluna fica fixa à direita:
+  quando a tabela rola na horizontal (telas estreitas), ela continua visível em vez de sair da tela
+  ou cobrir as colunas vizinhas.
 
-  | Selo | O que significa |
-  |---|---|
-  | **Abaixo da referência** | Seu preço está abaixo do preço de referência do ML. |
-  | **Na referência** | Seu preço é igual ao preço de referência. |
-  | **Acima da referência** | Seu preço está alto em relação à referência. |
-  | **Acima de todos** | Seu preço está acima da referência **e** acima do maior preço dos concorrentes. |
-
-  Quando a referência do ML vem de uma promoção, o selo mostra o estado dela:
-  **Promoção sugerida**, **Promoção agendada** ou **Promoção ativa**.
-
-  Existe ainda **Referência não aplicável**: o Mercado Livre calculou uma referência para aquele
-  anúncio mas marcou que ela não vale agora. Nesse caso a tela não diz se o seu preço está alto ou
-  baixo, e o detalhe não mostra o valor — porque um número em destaque é lido como alvo de preço, e
-  seria um alvo que o próprio ML não sustenta. É de propósito: o selo é lido como veredito, e
-  "Acima da referência" empurra para baixar preço.
-
-  Dois selos não são posição de preço e sim explicação de por que não há nenhuma:
-  **Sem vínculo de catálogo** (seu anúncio não está atrelado a essa ficha, então o ML não calcula
-  referência — resolva o vínculo pelo fluxo de catálogo) e **Você não vende** (ficha manual,
-  adicionada só para pesquisa).
-
-- **⋮** (menu da linha) — pausar ou reativar o produto no radar.
+> A coluna **Referência do ML** foi removida em 2026-08-29 (ADR-0147, D-24): ela comparava o seu
+> preço contra um universo não comparável — a nossa pomada de 50 ml contra apresentações de 49 g —
+> e induzia decisão errada. A coleta continua, só a exibição saiu.
 
 Clique em qualquer cabeçalho para ordenar por aquela coluna, e em qualquer linha para abrir o
 **detalhe**.
@@ -144,13 +150,7 @@ Três controles, que se acumulam:
 Com qualquer filtro aplicado aparece a contagem ("12 de 222") e o botão **Limpar filtros**.
 O ícone **i** de cada cartão abre a explicação do número sem aplicar o filtro.
 
-> **Cuidado para não confundir duas referências diferentes.** "Menor concorrente" é o piso real da
-> ficha. A "Referência do ML" é um preço que o Mercado Livre calcula a partir de concorrentes
-> internos e externos — **não** é o menor preço da ficha. Por isso um produto pode aparecer como
-> `Abaixo da referência` (o ML acha que você poderia cobrar mais) e ao mesmo tempo `+7% mais caro`
-> que o menor rival. As duas informações são verdadeiras e olham para coisas distintas.
-
-> **Traço `—` em Menor preço e Ofertas** quer dizer que a ficha ainda não teve a primeira coleta.
+> **Traço `—` em Menor relevante e Ofertas** quer dizer que a ficha ainda não teve a primeira coleta.
 > Espere o próximo ciclo ou clique em **Atualizar agora**.
 
 ---
@@ -178,59 +178,72 @@ do produto direto no catálogo do ML.
 
 ## 5. O detalhe do produto
 
-Clicando numa linha do radar, você vê três blocos.
+Clicando numa linha do radar, você vê três blocos, nesta ordem: a decisão (seu preço x mercado, com
+o simulador logo abaixo), o histórico de preço e só depois a lista de concorrentes — a decisão vem
+primeiro, a evidência é o que você rola para conferir.
 
-### Ofertas atuais
+### Sua posição e o simulador (só para produtos que você vende)
 
-A lista de quem está vendendo aquela ficha **agora**. Começa ordenada da mais barata para a mais
-cara, e **todo cabeçalho é clicável para reordenar**:
+Três números lado a lado:
+
+- **Seu preço** — o preço da sua oferta nessa ficha, lido do ML na última coleta.
+- **Menor concorrente relevante** — a oferta relevante mais barata da ficha, sem contar você. Quando
+  existe uma oferta observada mais barata (fora da régua de relevância), aparece embaixo: "Menor
+  oferta observada: R$ X".
+- **Sua posição** — quanto você está acima ou abaixo do menor relevante.
+
+Quando há ofertas ativas abaixo da sua referência, um aviso aparece logo abaixo dos três números —
+o mesmo dado e a mesma régua da seção 3.
+
+Abaixo, o simulador: digite um preço e o Pulse calcula o que **sobra**:
+
+- **Sobra para você** — o que resta no preço simulado, com a decomposição visível ao lado (comissão,
+  frete, imposto, custo) — não escondida num tooltip. Aparece "estimativa" quando a comissão que
+  temos foi lida em outro preço — ela muda por faixa. Ver a seção 6 para a regra completa.
+
+### Menor oferta observada no período
+
+O histórico do menor preço **observado** da ficha (todas as ofertas ativas, últimos 14 pontos), um
+ponto por dia em que **algo mudou**. Dia sem mudança não gera linha — então a lista mostra movimento
+real, não repetição. Com menos de dois dias de movimento, este bloco não aparece.
+
+### Concorrentes
+
+A lista de quem está vendendo aquela ficha **agora**, com um contador no título ("N relevantes de M
+observadas") e dois filtros — **Relevantes** (padrão) e **Todas**. Começa ordenada da mais barata
+para a mais cara, e **todo cabeçalho é clicável para reordenar**:
 
 - **Preço** praticado — o menor vem destacado.
-- **Vendedor** — apelido no ML, selo de reputação e, quando é o caso, "Loja oficial". Ordena
-  alfabeticamente.
+- **Vendedor** — apelido no ML, "Loja oficial" quando é o caso, e um selo de qualificação
+  (**Relevante**, **Em observação** ou **Fora da referência**) com o motivo ao lado quando não é
+  relevante — poucas transações, sem visitas nos últimos 30 dias ou reputação baixa (ADR-0130). O
+  nível de reputação vem num "Ver detalhes da conta" expansível, com transações, avaliações
+  positivas e, quando o ML expõe, reclamações/atrasos/cancelamentos.
 - **Estado** — a UF de onde aquele vendedor envia. Serve para ler o preço com o frete junto: um
   rival em SP chega mais rápido e mais barato no Sudeste do que um do Nordeste, e um concorrente
   R$ 2 mais barato do outro lado do país pode não ser mais barato para o comprador. Aparece "—"
   quando o Mercado Livre não expõe o endereço daquele vendedor.
-- **Vendas na conta** — total de transações da conta no ML inteiro. Ordene por aqui para achar os
-  concorrentes de maior porte. Abaixo, quando já há histórico, aparece *"≈N no período"*: quanto
-  essa conta vendeu desde que o Pulse começou a acompanhá-la.
-- **Anúncio** — tipo (Clássico, Premium) e frete grátis quando houver.
+- **Porte do vendedor** — média mensal dos últimos 12 meses da **loja inteira** daquele vendedor
+  (ADR-0146). O campo que o ML expõe é uma janela móvel de 365 dias, então dividi-lo por 12 dá
+  média mensal de verdade; a versão anterior mostrava o *delta* entre duas leituras e chamava isso
+  de venda, o que estava errado. Abaixo do número aparece a tendência: *vende mais que há 1 ano*,
+  *mesmo ritmo*, *vende menos*.
+- **Visitas 30d** — visitas naquele anúncio do concorrente nos últimos 30 dias, e a fatia que ele
+  representa entre os relevantes. É a única medida **por anúncio** que a API oficial dá. Tráfego não
+  é venda: não leia como fatia de mercado. `—` significa "ainda não medido", nunca zero.
+- **Anúncio** — tipo (Clássico, Premium), frete grátis e o selo **FULL** (Mercado Envios Full)
+  quando houver — FULL muda o prazo de entrega, o que decide a compra quando o preço empata.
+- **Oferta** — botão **Abrir**, que leva direto ao anúncio daquele concorrente no Mercado Livre
+  (nova aba). Sem o link, a célula diz "Indisponível".
 
-> **Leia com atenção:** esses números são do **vendedor inteiro**, não daquele anúncio específico. Um
-> vendedor com 20.000 transações pode ter vendido dez unidades do produto que te interessa. Use como
-> sinal de porte e atividade do concorrente, nunca como "vendas deste produto". A seção 11 explica
-> por que essa é a informação disponível.
+> **Leia com atenção:** Porte do vendedor é do **vendedor inteiro**, não daquele anúncio específico.
+> Um vendedor com 20.000 transações pode ter vendido dez unidades do produto que te interessa. Use
+> como sinal de porte e atividade do concorrente, nunca como "vendas deste produto". Visitas 30d,
+> ao contrário, já é por anúncio. A seção 11 explica por que essa é a informação disponível.
 
-**Para abrir os anúncios no Mercado Livre**, use o link *"Ver ofertas no Mercado Livre"* que fica no
-topo do detalhe, ao lado do EAN: ele abre a ficha do produto no ML, com todas as ofertas lado a
-lado, e dali você entra no anúncio de qualquer concorrente.
-
-Não há link direto por linha da tabela, e não é esquecimento: a API do ML não devolve o endereço do
-anúncio de terceiro (o mesmo motivo que impede mostrar as vendas por anúncio), e o endereço também
-não pode ser montado a partir do código do anúncio — foi testado. Preferimos não ter link a ter um
-link que abre página de erro.
-
-### Menor preço por dia de coleta
-
-O histórico do menor preço da ficha, um ponto por dia em que **algo mudou**. Dia sem mudança não
-gera linha — então a lista mostra movimento real, não repetição.
-
-Esse bloco começa vazio ("Ainda sem histórico suficiente") e vai ganhando corpo com os dias. É o
-valor que só o tempo constrói: depois de duas semanas você enxerga se o mercado está descendo,
-subindo ou parado.
-
-### Sua posição (só para produtos que você vende)
-
-Quatro números lado a lado:
-
-- **Seu preço** — o preço da sua oferta nessa ficha, lido do ML na última coleta.
-- **Menor concorrente** — a oferta mais barata da ficha, sem contar você.
-- **Sua posição** — quanto você está acima ou abaixo desse menor concorrente.
-- **Referência do ML** — o preço de referência que o Mercado Livre calcula para o seu anúncio.
-  Repetindo o aviso da seção 3: **não** é o menor preço da ficha, e pode ficar acima dele.
-
-E abaixo, o simulador.
+**Buscar anúncios no Mercado Livre**, no topo do detalhe ao lado do EAN, abre uma busca do
+Mercado Livre pelo GTIN (ou pelo título, se não houver GTIN) numa nova aba — não é a página oficial
+de catálogo. Para abrir o anúncio de um concorrente específico, use o botão **Abrir** da linha dele.
 
 ---
 
@@ -294,17 +307,26 @@ alertas de Ação não lidos — não o total. Se ele estiver em branco ou zero,
 não há nada pendente que mude decisão de preço agora, mesmo que existam vários alertas informativos
 esperando.
 
+**A linha é o produto, não o evento** (ADR-0133 Errata 4). Vários movimentos do mesmo produto viram
+uma linha só — o texto exibido é do movimento mais recente, com a idade ao lado ("há 3h"). Quando há
+mais de um, um contador "· N movimentos" abre a lista dos demais, cada um com o próprio texto e
+idade. Alerta sem produto (ficha removida do radar) fica sozinho na própria linha.
+
 | Alerta | O que significa | O que costuma valer a pena fazer |
 |---|---|---|
-| **Menor preço de X caiu de R$ A para R$ B** | Alguém abaixou o preço e agora é a oferta mais barata da ficha | Abrir o simulador e ver se cobrir ainda te deixa com margem — muitas vezes não vale |
+| **Menor preço de X caiu de R$ A para R$ B (-N%)** | Alguém abaixou o preço e agora é a oferta mais barata da ficha | Abrir o simulador e ver se cobrir ainda te deixa com margem — muitas vezes não vale |
 | **Novo concorrente em X a R$ B** | Um vendedor que não estava na ficha entrou | Olhar reputação e preço dele no detalhe; loja oficial entrando muda o jogo |
 | **Um concorrente saiu de X** | Um vendedor sumiu da ficha (encerrou ou ficou sem estoque) | Se ele era o mais barato, muitas vezes dá para **subir** o preço |
 
-Cada alerta tem até três botões:
+Cada linha (produto) tem até três botões:
 
 - **Ver produto** — abre o detalhe daquela ficha.
-- **Reprecificar** — só aparece em queda de preço, e só para produto que você vende.
-- **✓** — marca como lido e some da lista.
+- **Reprecificar** — aparece quando o grupo tem uma queda de preço em produto que você vende. Segue
+  a queda **mais recente do grupo**, mesmo que o texto da linha esteja mostrando um movimento mais
+  novo (um concorrente que entrou depois, por exemplo) — a queda não fica escondida atrás de outro
+  evento.
+- **✓** — marca **todos os movimentos daquele produto já carregados na tela** como lidos, não só o
+  mais recente, e a linha some.
 
 O botão **Marcar N como lidos**, no cabeçalho da aba, marca os N não lidos do filtro **ativo** —
 inclusive os que ainda não apareceram na tela, se a lista tiver mais de uma página. O único
@@ -323,6 +345,40 @@ onde se configuram as demais notificações do usuário.
 > **Na primeira coleta de um produto, o Pulse não gera alerta nenhum.** Ele precisa de uma leitura
 > anterior para saber o que mudou — senão o dia 1 viraria uma enxurrada de "novo concorrente" para
 > gente que já estava lá o tempo todo.
+
+---
+
+## 7.1 O Sonar (prospectar um nicho antes de cadastrar)
+
+O Radar vigia o que você **já vende**. O Sonar varre um nicho **antes** do cadastro: digite um termo
+("tecido oxford 10 metros") ou passe o leitor de código de barras num EAN.
+
+O resultado abre com o **cabeçalho do nicho** — o termo buscado, o tamanho da amostra e quando ela
+foi coletada. O resultado fica em cache por 7 dias: reabrir o mesmo termo é grátis e instantâneo;
+um termo novo dispara uma coleta paga, e por isso não existe botão de "atualizar" aqui. Quando a
+busca foi por GTIN/EAN, aparece também o botão **Adicionar ao Radar** — só faz sentido vigiar uma
+ficha, e ficha exige GTIN; buscas por termo livre não têm esse botão.
+
+Abaixo dele, na ordem:
+
+1. **Veredito** — demanda e barreira de entrada em linguagem de comerciante, com o número que
+   sustenta cada um e um "Saiba mais" que abre a pontuação inteira.
+2. **Vendas do nicho** — vendas acumuladas, mercado endereçável e raio-x da amostra. Todos os
+   números são **acumulados da vida dos anúncios**, nunca ritmo mensal. Clique no "i" de cada card.
+3. **Quem vende neste nicho** — porte e tendência dos concorrentes, pela loja inteira deles.
+4. **Dá lucro?** — a DRE. Informe custo, origem e as quatro medidas do pacote, e ela cota **cada um
+   dos cinco preços** no Mercado Livre, separadamente. Sem os quatro campos do pacote ela recusa
+   calcular e diz por quê: cotar com um pacote padrão daria um número oficial sobre uma caixa que
+   não existe.
+5. **A tabela dos 20 anúncios** — o botão **Simular** de cada linha troca a âncora da DRE para
+   aquele anúncio e rola até ela. Não há um segundo simulador: a conta de margem do Pulse é uma só.
+
+Dois vocabulários de percentual, e eles não são intercambiáveis: **Margem s/ venda** é lucro ÷
+preço, **Markup** é lucro ÷ custo.
+
+Os blocos 3 e 4 nascem **recolhidos** (cabeçalho padronizado, clicável, seta indica o estado); o
+bloco 4 (a DRE) abre sozinho quando você clica em **Simular** numa linha da tabela. O bloco 2
+(Vendas do nicho) fica sempre aberto.
 
 ---
 
@@ -373,13 +429,13 @@ conta só esses. Agir no que muda decisão (normalmente queda de preço em produ
 margem folgada), marcar como lido o resto. Passar pelo filtro Informativo é opcional.
 
 **Uma vez por semana (10 minutos).** Ordenar a lista pela coluna **Sua posição** (do mais caro para
-o mais barato) e olhar o topo: são os anúncios onde você está mais acima do menor concorrente.
-Abrir cada um, simular o preço e decidir. O selo **Acima de todos** na coluna Referência do ML
-merece a mesma atenção — é o próprio ML dizendo que você está caro.
+o mais barato) e olhar o topo: são os anúncios onde você está mais acima do menor relevante.
+Abrir cada um, simular o preço e decidir. A coluna **Sobra hoje** diz se há margem para reagir antes
+de abrir o detalhe.
 
 **Antes de entrar num produto novo.** Adicionar a ficha manualmente, esperar de 3 a 7 dias e olhar
-"Menor preço por dia de coleta" e o número de ofertas. Mercado com muitos vendedores e preço caindo
-todo dia é mercado de margem apertada — melhor descobrir isso antes de comprar estoque.
+"Menor oferta observada no período" e o número de ofertas. Mercado com muitos vendedores e preço
+caindo todo dia é mercado de margem apertada — melhor descobrir isso antes de comprar estoque.
 
 ---
 
@@ -416,13 +472,11 @@ Honestidade aqui evita decisão errada:
 |---|---|---|
 | Menu Pulse não aparece | Módulo desligado para a org, ou menu não liberado para o usuário | Ver seção 1 |
 | Radar vazio | Nenhum anúncio publicado com ficha de catálogo ainda | Publique ou adicione um produto manualmente |
-| Coluna Menor concorrente com `—` | Produto ainda não teve a primeira coleta | **Atualizar agora**, ou esperar o ciclo |
+| Coluna **Menor relevante** com `Sem concorrente relevante` | Produto ainda não teve a primeira coleta, ou nenhum concorrente passa na régua de relevância (ADR-0130) | **Atualizar agora**, ou esperar o ciclo |
 | Coluna **Seu preço** com `—` | Sua oferta não está entre as ativas da ficha | Passe o mouse: o motivo aparece. Pausado/sem estoque é normal; sem vínculo tem conserto |
 | **Seu preço** diferente do que você lembra ter cadastrado | A coluna mostra o preço **vigente no ML**, não o cadastrado aqui | O ML é a fonte. Se estiver errado lá, ajuste pela Revisão |
-| Referência do ML sempre `—` | Produto que você não vende (manual), ou anúncio muito novo | Normal em ficha manual: a referência é sobre o **seu** anúncio |
-| Referência do ML diz **Sem vínculo de catálogo** | Seu anúncio não está atrelado a essa ficha (ficha divergente) | Resolva o vínculo pelo fluxo de catálogo — sem ele o ML não calcula referência |
-| "Abaixo da referência" num produto onde você está mais caro que o menor rival | Não é contradição: são duas referências diferentes | Ver o aviso da seção 3 |
-| "Margem indisponível" | Falta custo, alíquota confirmada ou a referência do ML | Ver a tabela da seção 6 |
+| Coluna **Sobra hoje** com `—` | Falta custo, alíquota, comissão ou frete | Passe o mouse: a célula diz qual. Custo e origem vêm da planilha; a alíquota, da configuração da org |
+| "Margem indisponível" | Falta custo, alíquota confirmada, comissão ou frete | Ver a tabela da seção 6 |
 | Adicionar produto recusado | Link de anúncio avulso em vez de ficha de catálogo | Use o link `/p/MLB…` ou o GTIN |
 | Nenhum alerta há dias | Mercado parado, ou produtos ainda na primeira coleta | Normal — alerta só aparece quando algo muda de verdade |
 | Alerta some depois de marcar lido | Comportamento esperado | O painel mostra só não lidos |

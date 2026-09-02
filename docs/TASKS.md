@@ -2,6 +2,32 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## How-to do Pulse alinhado à tela de hoje — 2026-09-02
+
+O guia `docs/how-to/usar-o-pulse.md` descrevia "Menor concorrente" e "Referência do ML" (removida
+pela ADR-0147 D-24) em §3, e "Vendas na conta" (virou **Porte do vendedor**, ADR-0146) em §5. O
+Sonar não era documentado em lugar nenhum. Além dos termos citados no brief, a varredura encontrou
+mais quatro divergências entre doc e tela: a ordem dos blocos do detalhe (a decisão vem antes da
+tabela de concorrentes, não depois), a tabela de concorrentes ganhou uma coluna **Oferta** com link
+por linha (o doc dizia que não existia), o link do topo do detalhe busca no ML — não abre a página
+de catálogo — e uma menção solta a "a referência do ML" na tabela de problemas (§12), que o grep do
+brief não pegava por causa da letra minúscula.
+
+- [x] §3 — colunas do Radar (Menor relevante, sparkline "7 dias (observado)", Sua posição, Sobra
+      hoje, Ofertas, Disputa do catálogo, atalho Reprecificar + ⋮ fixo à direita); remoção do
+      callout de "duas referências".
+- [x] §5 — reordenado (decisão → histórico → concorrentes); Porte do vendedor, Visitas 30d, selo de
+      qualificação e detalhes de conta na coluna Vendedor, selo FULL no Anúncio, coluna Oferta, link
+      de busca corrigido; "Sobra para você" com a conta visível.
+- [x] §7 — alertas com percentual de queda e agrupamento por produto (idade, "· N movimentos",
+      escopo do ✓ e do Reprecificar).
+- [x] §7.1 (nova) — o Sonar: cabeçalho do nicho, Veredito, Vendas do nicho, Quem vende neste nicho,
+      Dá lucro? (5 cenários), tabela dos 20 anúncios com "Simular", blocos recolhíveis.
+- [x] §10 e §12 — referências mortas trocadas por Sobra hoje / Menor relevante.
+- [x] `pnpm docs:links` verde.
+
+---
+
 ## Banner de cores novas recolhível na Revisão — 2026-09-01
 
 Com muitas famílias (ex.: 266 cores novas), o banner "cores novas precisam de foto" ocupava
