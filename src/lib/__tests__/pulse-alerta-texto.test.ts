@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { textoAlerta } from '../pulse-alerta-texto';
+import { idadeAlerta, textoAlerta } from '../pulse-alerta-texto';
 import { fmtBRL } from '../formato';
 import type { PulseAlerta } from '../pulse';
 
@@ -14,7 +14,7 @@ describe('textoAlerta', () => {
   it('preco_caiu: menor preço caiu de X para Y', () => {
     const alerta = base({ tipo: 'preco_caiu', payload: { de: 129.9, para: 99.9 } });
     expect(textoAlerta(alerta)).toBe(
-      `Menor preço de Fone Bluetooth X caiu de ${fmtBRL(129.9)} para ${fmtBRL(99.9)}`,
+      `Menor preço de Fone Bluetooth X caiu de ${fmtBRL(129.9)} para ${fmtBRL(99.9)} (-23%)`,
     );
   });
 
@@ -66,5 +66,39 @@ describe('textoAlerta', () => {
       pulse_produtos: { titulo: 'Produto X', codigo_pai: null, catalog_product_id: 'MLB1' },
     });
     expect(textoAlerta(alerta)).toBe('Mudança no mercado de Produto X');
+  });
+});
+
+// ADR-0133 Errata 4 D-2: "caiu de R$ 49,90 para R$ 47,90" obriga a conta mental exatamente no
+// momento da decisão.
+describe('textoAlerta — o quanto caiu', () => {
+  it('acrescenta o percentual da queda', () => {
+    expect(textoAlerta(base({ tipo: 'preco_caiu', payload: { de: 49.9, para: 47.9 } })))
+      .toBe(`Menor preço de Fone Bluetooth X caiu de ${fmtBRL(49.9)} para ${fmtBRL(47.9)} (-4%)`);
+  });
+
+  it('arredonda para inteiro — casa decimal de percentual não muda decisão aqui', () => {
+    expect(textoAlerta(base({ tipo: 'preco_caiu', payload: { de: 71.99, para: 68.99 } })))
+      .toMatch(/\(-4%\)$/);
+  });
+
+  it('sem os dois preços, não inventa percentual', () => {
+    expect(textoAlerta(base({ tipo: 'preco_caiu', payload: { de: 49.9 } })))
+      .toBe('Menor preço de Fone Bluetooth X caiu');
+  });
+
+  it('"de" zero não vira divisão por zero nem Infinity na tela', () => {
+    expect(textoAlerta(base({ tipo: 'preco_caiu', payload: { de: 0, para: 0 } })))
+      .toBe(`Menor preço de Fone Bluetooth X caiu de ${fmtBRL(0)} para ${fmtBRL(0)}`);
+  });
+});
+
+describe('idadeAlerta', () => {
+  const agora = new Date('2026-09-01T12:00:00.000Z');
+  it('minutos', () => expect(idadeAlerta('2026-09-01T11:40:00.000Z', agora)).toBe('há 20 minutos'));
+  it('horas', () => expect(idadeAlerta('2026-09-01T09:00:00.000Z', agora)).toBe('há cerca de 3 horas'));
+  it('dias', () => expect(idadeAlerta('2026-08-29T12:00:00.000Z', agora)).toBe('há 3 dias'));
+  it('data do futuro (relógio torto) devolve string vazia, não "há -1 dias"', () => {
+    expect(idadeAlerta('2026-09-02T12:00:00.000Z', agora)).toBe('');
   });
 });
