@@ -90,6 +90,14 @@ describe('TabelaRadar — Disputa do catálogo', () => {
     expect(badge.closest('[title]')?.getAttribute('title')).toMatch(/ficaria em 4º de 6/);
   });
 
+  // `title` só é alcançável no hover do mouse: sem foco/rótulo acessível, a explicação some
+  // para quem navega por teclado ou toque.
+  it('a explicação é alcançável por teclado — role e nome acessível, não só title', () => {
+    renderRadar([{ ...produto, meu_preco: 149.99 }], disputado);
+    const gatilho = screen.getByRole('button', { name: /ficaria em 4º de 6/ });
+    expect(gatilho).toHaveAttribute('tabIndex', '0');
+  });
+
   it('a célula ocupa uma linha só — a de três linhas alongava a linha para 76px', () => {
     renderRadar([{ ...produto, meu_preco: 149.99 }], disputado);
     expect(screen.queryByText(/^seu preço ficaria em/)).not.toBeInTheDocument();

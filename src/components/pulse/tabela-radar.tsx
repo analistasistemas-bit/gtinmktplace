@@ -156,7 +156,7 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       header: 'Disputa do catálogo',
       // Com a célula de 3 linhas a linha media 76px e só 5 de 13 cabiam acima da dobra em 1440×900
       // (medido). Badge + tooltip devolve a linha ao ritmo das outras; nada de informação sai da
-      // tela — a posição hipotética passa a viver no `title`, junto do resto da conta.
+      // tela — a posição hipotética passa a viver na explicação do gatilho, junto do resto da conta.
       className: 'hidden xl:table-cell',
       sortValue: (p) => disputaCatalogo(resumo?.get(p.id), p.meu_preco)?.posicao ?? null,
       cell: (p) => {
@@ -178,7 +178,15 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
             : null,
         ].filter(Boolean).join(' ');
         return celulaMercado(
-          <span className="inline-flex cursor-help items-center gap-1.5" title={ajuda}>
+          // role="button" + tabIndex: `title` só é alcançável no hover do mouse — sem foco, o
+          // texto da posição hipotética sumia para quem navega por teclado ou toque.
+          <span
+            className="inline-flex cursor-help items-center gap-1.5"
+            title={ajuda}
+            role="button"
+            tabIndex={0}
+            aria-label={ajuda}
+          >
             <Badge variant="outline" className="font-normal tabular-nums">
               {d.anunciosRelevantes} {d.anunciosRelevantes === 1 ? 'disputa' : 'disputam'}
             </Badge>
