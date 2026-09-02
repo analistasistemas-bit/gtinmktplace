@@ -156,7 +156,7 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
       header: 'Disputa do catálogo',
       // Com a célula de 3 linhas a linha media 76px e só 5 de 13 cabiam acima da dobra em 1440×900
       // (medido). Badge + tooltip devolve a linha ao ritmo das outras; nada de informação sai da
-      // tela — a posição hipotética passa a viver na explicação do gatilho, junto do resto da conta.
+      // tela — a posição hipotética passa a viver no title/sr-only, junto do resto da conta.
       className: 'hidden xl:table-cell',
       sortValue: (p) => disputaCatalogo(resumo?.get(p.id), p.meu_preco)?.posicao ?? null,
       cell: (p) => {
@@ -178,19 +178,17 @@ export function TabelaRadar({ produtos, resumo, resumoCarregando, onAbrirDetalhe
             : null,
         ].filter(Boolean).join(' ');
         return celulaMercado(
-          // role="button" + tabIndex: `title` só é alcançável no hover do mouse — sem foco, o
-          // texto da posição hipotética sumia para quem navega por teclado ou toque.
-          <span
-            className="inline-flex cursor-help items-center gap-1.5"
-            title={ajuda}
-            role="button"
-            tabIndex={0}
-            aria-label={ajuda}
-          >
+          // Coluna `hidden xl:table-cell`: só existe em desktop grande, onde há mouse — o `title`
+          // cobre o hover. `sr-only` (não role/tabIndex) dá a mesma explicação ao leitor de tela
+          // sem criar um controle interativo morto na linha, que já é focável e clicável inteira
+          // (ver data-table.tsx) — Tab não pode parar duas vezes por linha sem o segundo ponto
+          // fazer nada.
+          <span className="inline-flex cursor-help items-center gap-1.5" title={ajuda}>
             <Badge variant="outline" className="font-normal tabular-nums">
               {d.anunciosRelevantes} {d.anunciosRelevantes === 1 ? 'disputa' : 'disputam'}
             </Badge>
             <span className="text-xs tabular-nums text-muted-foreground">{faixa}</span>
+            <span className="sr-only">{ajuda}</span>
           </span>,
         );
       },

@@ -79,7 +79,9 @@ describe('TabelaRadar — Disputa do catálogo', () => {
     expect(screen.getByRole('columnheader', { name: 'Disputa do catálogo' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Análise PubliAI' })).not.toBeInTheDocument();
     expect(screen.getByText('5 disputam')).toBeInTheDocument();
-    expect(screen.getByText(/R\$\s*130,00\s*–\s*R\$\s*209,90/)).toBeInTheDocument();
+    // getAllByText: a faixa também está no texto sr-only (mesma célula, explicação completa
+    // para leitor de tela) — ver teste dedicado abaixo.
+    expect(screen.getAllByText(/R\$\s*130,00\s*–\s*R\$\s*209,90/).length).toBeGreaterThan(0);
     // O preço próprio aparece UMA vez na linha — na coluna "Seu preço".
     expect(screen.getAllByText(/R\$\s*149,99/)).toHaveLength(1);
   });
@@ -90,12 +92,13 @@ describe('TabelaRadar — Disputa do catálogo', () => {
     expect(badge.closest('[title]')?.getAttribute('title')).toMatch(/ficaria em 4º de 6/);
   });
 
-  // `title` só é alcançável no hover do mouse: sem foco/rótulo acessível, a explicação some
-  // para quem navega por teclado ou toque.
-  it('a explicação é alcançável por teclado — role e nome acessível, não só title', () => {
+  // `title` só é alcançável no hover do mouse: sem texto permanente, a explicação some para
+  // leitor de tela (a coluna não recebe foco próprio — a linha inteira já é focável e clicável,
+  // ver data-table.tsx — então o texto vira conteúdo `sr-only`, não um controle novo).
+  it('a explicação está sempre acessível ao leitor de tela, associada à célula da disputa', () => {
     renderRadar([{ ...produto, meu_preco: 149.99 }], disputado);
-    const gatilho = screen.getByRole('button', { name: /ficaria em 4º de 6/ });
-    expect(gatilho).toHaveAttribute('tabIndex', '0');
+    const explicacao = screen.getByText(/ficaria em 4º de 6/, { selector: '.sr-only' });
+    expect(explicacao.closest('[title]')).toHaveTextContent('5 disputam');
   });
 
   it('a célula ocupa uma linha só — a de três linhas alongava a linha para 76px', () => {
