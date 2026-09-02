@@ -16,12 +16,13 @@ const produto: PulseProduto = {
 
 const resumo: PulseResumoOfertas = {
   menorPreco: 36, menorObservado: 36, menorRelevante: 70.19, maiorRelevante: 70.19,
-  nOfertas: 2, nOfertasRelevantes: 1, precosRelevantes: [70.19],
+  nOfertas: 2, nOfertasRelevantes: 1, precosRelevantes: [70.19], abaixoDaReferencia: null,
 };
 
 const disputado: PulseResumoOfertas = {
   menorPreco: 130, menorObservado: 36, menorRelevante: 130, maiorRelevante: 209.9,
   nOfertas: 13, nOfertasRelevantes: 5, precosRelevantes: [130, 139.9, 144.56, 186.9, 209.9],
+  abaixoDaReferencia: null,
 };
 
 const renderRadar = (
@@ -239,5 +240,38 @@ describe('TabelaRadar — Sobra hoje', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Reprecificar Aptamil' }));
     expect(reprecificar).toHaveBeenCalledWith(comCustos);
     expect(abrir).not.toHaveBeenCalled();
+  });
+});
+
+// ADR-0130 D-1/D-6: elas não entram na comparação, mas o comprador as vê na mesma página do
+// catálogo. A lista precisa dizer que estão lá — o dado já é calculado (ofertasAbaixoDaReferencia).
+describe('TabelaRadar — ofertas abaixo da referência', () => {
+  const comAbaixo: PulseResumoOfertas = {
+    ...resumo, menorRelevante: 70.19, abaixoDaReferencia: { contagem: 2, menorPreco: 36 },
+  };
+
+  it('mostra "2 abaixo" ao lado do menor relevante, sem trocar a referência', () => {
+    renderRadar([produto], comAbaixo);
+    // getAllByText: desde a ADR-0147 o mesmo preço também é a faixa da coluna da disputa (ver linha 30).
+    expect(screen.getAllByText(/R\$\s*70,19/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/2 abaixo/)).toBeInTheDocument();
+    // O menor OBSERVADO nunca vira o número da coluna.
+    expect(screen.queryByText(/^R\$\s*36,00$/)).not.toBeInTheDocument();
+  });
+
+  it('o tooltip diz a partir de quanto, e por que elas não contam', () => {
+    renderRadar([produto], comAbaixo);
+    expect(screen.getByText(/2 abaixo/).closest('[title]')?.getAttribute('title'))
+      .toMatch(/R\$\s*36,00.*não entram na comparação/s);
+  });
+
+  it('sem ofertas abaixo, nada é acrescentado à célula', () => {
+    renderRadar([produto], { ...resumo, abaixoDaReferencia: null });
+    expect(screen.queryByText(/abaixo/)).not.toBeInTheDocument();
+  });
+
+  it('uma só oferta usa o singular', () => {
+    renderRadar([produto], { ...comAbaixo, abaixoDaReferencia: { contagem: 1, menorPreco: 36 } });
+    expect(screen.getByText(/1 abaixo/)).toBeInTheDocument();
   });
 });

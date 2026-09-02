@@ -37,7 +37,7 @@ const produto = (over: Partial<PulseProduto> = {}): PulseProduto => ({
 const resumo = (menorRelevante: number | null): PulseResumoOfertas => ({
   menorPreco: menorRelevante, menorObservado: menorRelevante, menorRelevante,
   maiorRelevante: menorRelevante, nOfertas: 1, nOfertasRelevantes: menorRelevante == null ? 0 : 1,
-  precosRelevantes: menorRelevante == null ? [] : [menorRelevante],
+  precosRelevantes: menorRelevante == null ? [] : [menorRelevante], abaixoDaReferencia: null,
 });
 
 export async function renderPulse(lista: PulseProduto[], mapa: Map<string, PulseResumoOfertas>) {

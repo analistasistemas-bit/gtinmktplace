@@ -141,9 +141,21 @@ export function TabelaRadar({
       sortValue: (p) => menorDe(p),
       cell: (p) => {
         const v = menorDe(p);
+        const abaixo = resumo?.get(p.id)?.abaixoDaReferencia ?? null;
         return celulaMercado(
-          <span className={cn('tabular-nums', v == null && 'text-muted-foreground')}>
-            {v != null ? fmtBRL(v) : 'Sem concorrente relevante'}
+          <span className="inline-flex items-baseline gap-1.5">
+            <span className={cn('tabular-nums', v == null && 'text-muted-foreground')}>
+              {v != null ? fmtBRL(v) : 'Sem concorrente relevante'}
+            </span>
+            {/* Não promove a referência: o número da coluna continua sendo o menor RELEVANTE. */}
+            {abaixo && (
+              <span
+                className="cursor-help text-xs text-warning"
+                title={`${abaixo.contagem === 1 ? '1 oferta ativa' : `${abaixo.contagem} ofertas ativas`} a partir de ${fmtBRL(abaixo.menorPreco)}. São vendedores sem histórico suficiente, então não entram na comparação de preço — mas aparecem na mesma página do catálogo que a sua.`}
+              >
+                · {abaixo.contagem} abaixo
+              </span>
+            )}
           </span>,
         );
       },

@@ -2,7 +2,9 @@
 // (adicionar manual, coletar agora) via POST nas edge functions com o token da sessão.
 import { supabase } from './supabase';
 import { fetchAliquotas } from './queries';
-import { custoDaFamilia, estadoAtualOfertas, mercadoPulse, type FamiliaComVariacoes } from './pulse-margem';
+import {
+  custoDaFamilia, estadoAtualOfertas, mercadoPulse, ofertasAbaixoDaReferencia, type FamiliaComVariacoes,
+} from './pulse-margem';
 
 export interface PulseProduto {
   id: string; catalog_product_id: string; codigo_pai: string | null; titulo: string | null; gtin: string | null;
@@ -145,6 +147,9 @@ export interface PulseResumoOfertas {
   nOfertasRelevantes: number;
   /** Preços das ofertas relevantes. A coluna da disputa posiciona o nosso preço entre eles. */
   precosRelevantes: number[];
+  /** Ofertas ATIVAS abaixo do menor relevante. Elas não entram na comparação (ADR-0130), mas o
+   *  comprador as vê na mesma página do catálogo — a lista precisa dizer que existem. */
+  abaixoDaReferencia: { contagem: number; menorPreco: number } | null;
 }
 
 /**
@@ -184,6 +189,7 @@ export async function fetchPulseResumoOfertas(produtoIds: string[]): Promise<Map
   for (const [produtoId, ofertas] of porProduto) {
     const atuais = estadoAtualOfertas(ofertas);
     const mercado = mercadoPulse(atuais, vendedores);
+    const abaixo = ofertasAbaixoDaReferencia(mercado);
     resumo.set(produtoId, {
       menorPreco: mercado.menor_relevante,
       menorObservado: mercado.menor_observado,
@@ -194,6 +200,7 @@ export async function fetchPulseResumoOfertas(produtoIds: string[]): Promise<Map
       precosRelevantes: mercado.ofertas
         .filter((o) => o.qualificacao.status === 'relevante')
         .map((o) => o.preco),
+      abaixoDaReferencia: abaixo ? { contagem: abaixo.contagem, menorPreco: abaixo.menorPreco } : null,
     });
   }
   return resumo;
