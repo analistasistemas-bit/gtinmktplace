@@ -221,7 +221,11 @@ export default function Pulse() {
           <TabsTrigger value="alertas">
             Alertas
             {!!acaoPendente && (
-              <span className="ml-1.5 rounded-full bg-warning px-1.5 text-xs font-medium text-warning-foreground">
+              // animate-pulse: mesmo padrão de destaque já usado no Financeiro e no app de
+              // faturamento (opacidade, sem trocar cor). motion-reduce:animate-none é reforço
+              // explícito — o bloco global em src/index.css já zera a duração da animação sob
+              // prefers-reduced-motion, então isto nunca chega a piscar para quem pediu menos movimento.
+              <span className="ml-1.5 animate-pulse rounded-full bg-warning px-1.5 text-xs font-medium text-warning-foreground motion-reduce:animate-none">
                 {acaoPendente}
               </span>
             )}
@@ -229,6 +233,12 @@ export default function Pulse() {
         </TabsList>
 
         <TabsContent value="radar">
+      <p className="mb-4 text-sm text-muted-foreground">
+        Acompanha os anúncios de catálogo que você já vende, compara o preço com o dos
+        concorrentes e avisa quando o mercado se move — o par do Sonar, que prospecta antes de
+        você cadastrar.
+      </p>
+
       {lista.length > 0 && (
         // Cada card é o atalho para as linhas que ele conta. "No radar" não filtra nada — ele
         // limpa: é o caminho de volta para a lista inteira depois de qualquer recorte.

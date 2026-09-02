@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import Pulse from '../Pulse';
 import type { PulseProduto, PulseResumoOfertas } from '@/lib/pulse';
+import { contarPulseAlertas } from '@/lib/pulse';
 
 vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => ({ data: ['pulse'], isLoading: false }),
@@ -69,5 +70,33 @@ describe('Pulse — tom dos KPIs do Radar', () => {
     // resolver — "No radar" já aparece antes dela carregar, então a asserção precisa esperar
     // o próprio recorte, não só a lista.
     await waitFor(() => expect(screen.getByText('Você é o menor preço')).toHaveClass('text-success'));
+  });
+});
+
+describe('Pulse — texto explicativo da aba Radar', () => {
+  it('explica o que o Radar faz e cita o Sonar como par', async () => {
+    await renderPulse([produto()], new Map([['produto-1', resumo(100)]]));
+    expect(screen.getByText(/o par do Sonar, que prospecta antes de/)).toBeInTheDocument();
+  });
+});
+
+describe('Pulse — contador de alertas pulsa só quando há pendência', () => {
+  it('sem alertas de ação: sem badge nenhum', async () => {
+    vi.mocked(contarPulseAlertas).mockResolvedValueOnce(0);
+    await renderPulse([produto()], new Map([['produto-1', resumo(100)]]));
+    expect(screen.getByRole('tab', { name: 'Alertas' }).querySelector('span')).not.toBeInTheDocument();
+  });
+
+  it('com alertas de ação: badge aparece e pulsa', async () => {
+    vi.mocked(contarPulseAlertas).mockResolvedValueOnce(3);
+    await renderPulse([produto()], new Map([['produto-1', resumo(100)]]));
+    const badge = await waitFor(() => {
+      const el = screen.getByRole('tab', { name: /Alertas/ }).querySelector('span');
+      expect(el).toBeInTheDocument();
+      return el as HTMLElement;
+    });
+    expect(badge).toHaveTextContent('3');
+    expect(badge).toHaveClass('animate-pulse');
+    expect(badge).toHaveClass('motion-reduce:animate-none');
   });
 });
