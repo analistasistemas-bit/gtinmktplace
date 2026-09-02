@@ -464,6 +464,60 @@ Comissão continua em `comissao_pct`/`comissao_fixa`; `ptw_custos` no Pulse guar
 **Escopo:** `supabase/functions/pulse-coletar/processar.ts` (passos 5 e 5b),
 `supabase/functions/_shared/ml/frete.ts` (reutilizado, sem alteração).
 
+## Errata 12 (2026-09-01) — a lista responde "quanto sobra", e o insumo vem em lote
+
+A Errata 6 acertou a comissão e a 11 acertou o frete, mas os dois consertos ficaram presos ao
+**detalhe**: a margem só existe depois de dois cliques e um dialog `7xl`. Na validação em runtime
+(2026-09-01, org com 13 produtos e 450 ofertas) isso apareceu como o defeito de produto mais caro do
+Radar: a lista abre ordenada por "Sua posição" e manda reprecificar **sem saber se o produto tem
+margem para reagir**. A pergunta 3 do how-to — "até onde posso baixar" — não tem resposta na tela
+onde a decisão é tomada.
+
+### D-1 — A coluna "Sobra hoje" mostra o líquido no preço praticado hoje
+
+Uma coluna nova na lista do Radar, `Sobra hoje`, com o líquido por unidade **no `meu_preco` vigente**
+(não num preço simulado — simular continua sendo do detalhe) e o percentual sobre a venda ao lado.
+Vermelho quando o líquido é negativo, com o **mesmo limiar do detalhe** (`liquido < 0`): dois
+limiares de "prejuízo" no mesmo módulo é exatamente o defeito que a Errata 6 nos custou. A conta é
+`margemEstimada()` — a mesma função, sem cópia.
+
+### D-2 — Insumo ausente é `—` com motivo, nunca zero e nunca aproximação
+
+Regra LOUD, sem exceção nova: os **quatro** insumos são obrigatórios — custo do produto, alíquota de
+imposto, comissão do ML e frete. Falta um → `—` com o motivo no tooltip, na mesma redação do detalhe
+("Margem indisponível: falta X"). Para isso, `insumoFaltante`, **hoje duplicada como função privada
+em `dialog-detalhe.tsx` e `dialog-reprecificar.tsx`**, passa a viver em `pulse-margem.ts` e é usada
+pelos três lugares: um `—` na lista e um número no detalhe para o mesmo produto seria uma
+contradição na mesma tela.
+
+### D-3 — O contexto de margem vem em **uma** consulta, não uma por produto
+
+`fetchContextoMargem(codigoPai)` faz uma leitura de `familias` por produto. Com 229 catálogos isso
+seriam 229 idas ao PostgREST só para desenhar uma coluna. Nasce
+`fetchContextoMargemEmLote(codigosPai: string[])`: um `in('codigo_pai', …)` paginado (o PostgREST
+trunca em ~1000 linhas **em silêncio** — o mesmo motivo que já faz `fetchPulseResumoOfertas`
+paginar), com a alíquota lida uma vez.
+
+**A regra de seleção do custo não é reimplementada.** Ela é extraída para `custoDaFamilia()` e
+chamada pelos dois caminhos: família mais recente **que tenha variações** (família recém-criada sem
+variação não pode se passar por fonte de custo), maior `custo` entre as variações dela, e alíquota
+só se `aliquotas.confirmada`. Duas implementações da mesma regra de custo divergem em silêncio, e
+divergência silenciosa em custo é a família de defeito que a memória do projeto registra como mais
+cara (ORIGEM dropada no ingest, 2026-07-14). O caminho unitário passa a ser um **caso** do lote — não
+um irmão dele.
+
+### D-4 — "Reprecificar" sai do detalhe para a linha
+
+O botão que hoje só existe no fundo do dialog aparece também na coluna de ações da lista, abrindo o
+mesmo `DialogReprecificar` com `precoInicial = meu_preco`. Nada muda no que ele faz: grava e leva à
+Revisão, nunca publica (ADR-0005).
+
+### O que esta errata NÃO muda
+
+O `—` continua sendo a resposta certa para a maioria das linhas enquanto custo e alíquota não
+estiverem cadastrados — e isso é informação, não falha: a coluna passa a **denunciar** produto sem
+custo cadastrado, que hoje ninguém vê.
+
 ## Consequências
 
 - O valor do histórico cresce com o tempo de coleta — ligar a coleta cedo é parte da decisão.
