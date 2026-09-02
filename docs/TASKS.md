@@ -15,13 +15,18 @@ momento da coleta; o link, porém, nunca garantiu apontar pro mesmo vendedor/pre
 de catálogo.
 
 - [x] `rivaisPodio` (`veredito-sonar.ts`) propaga `catalog_product_id` no `RivalPodio`.
-- [x] Card do Pódio (`components/pulse/veredito-sonar.tsx`): ícone de aviso ⚠ ao lado do valor de
-      faturamento quando o rival é vinculado a ficha de catálogo, mesmo critério do badge
-      "Catálogo" já usado na tabela do Sonar (`catalog_product_id != null`).
-- [x] Testes: `veredito-sonar.test.ts` (propagação do campo).
+- [x] Card do Pódio (`components/pulse/veredito-sonar.tsx`): ícone clicável (`Popover`, mesmo
+      componente do `SonarFiltrosPopover`) ao lado do valor de faturamento — texto completo não
+      cabe inline na linha (pedido do Diego 02/09), então hover virou clique. Dois avisos
+      independentes: ficha de catálogo (`catalog_product_id != null`, mesmo critério do badge
+      "Catálogo" da tabela do Sonar) e "sem loja identificada" (fantasma, `vendedor == null`).
+- [x] Testes: `veredito-sonar.test.ts` (lib, propagação do campo) e `veredito-sonar.test.tsx`
+      (componente, clique abre o popover com o texto certo — 4 casos).
+- [x] Polyfill de `ResizeObserver` em `src/test/setup.ts` (jsdom não tem; Radix `Popover` quebra
+      sem ele) — gap pré-existente, exposto pelo primeiro teste que abre um Popover.
 - [ ] Doc de referência (`docs/reference/glossario.md` já cobre "Ganhador do buy-box"; não precisa
       de entrada nova — comportamento já documentado, só faltava o aviso na tela).
-- [ ] Validação visual (screenshot) e merge — pendente de revisão do Diego.
+- [ ] Validação visual e merge — pendente de revisão do Diego.
 
 ---
 
