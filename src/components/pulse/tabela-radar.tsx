@@ -14,7 +14,7 @@ import { pausarPulseProduto, type ContextoMargem, type PulseProduto, type PulseR
 import {
   classeTom, disputaCatalogo, motivoSemPrecoProprio, posicaoVsMercado, seloAnuncio,
 } from '@/lib/pulse-formato';
-import { insumoFaltante, margemEstimada } from '@/lib/pulse-margem';
+import { insumoFaltante, margemEhEstimativa, margemEstimada } from '@/lib/pulse-margem';
 import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 
@@ -169,7 +169,9 @@ export function TabelaRadar({
       // A pergunta 3 do how-to ("até onde posso baixar") não tinha resposta na tela onde a decisão
       // é tomada: a margem só existia depois de 2 cliques e um dialog 7xl (ADR-0119 Errata 12).
       header: 'Sobra hoje',
-      className: 'hidden text-right lg:table-cell',
+      // `md:` e não `lg:`: o botão "Reprecificar" da coluna de ações usa o MESMO breakpoint, para
+      // que o atalho de reagir nunca apareça sem o número que justifica reagir.
+      className: 'hidden text-right md:table-cell',
       sortValue: (p) => sobraDe(p)?.liquido ?? null,
       cell: (p) => {
         // Contexto ainda carregando: um "—" aqui afirmaria "falta insumo", que é outra coisa.
@@ -185,13 +187,35 @@ export function TabelaRadar({
             </span>
           );
         }
-        const m = sobraDe(p)!;
+        // Com todos os insumos presentes, `sobraDe` ainda devolve null para preço <= 0 — invariante
+        // dela, mais larga que a da célula. Um `!` aqui derrubava a LINHA inteira, não a célula.
+        const m = sobraDe(p);
+        if (!m) {
+          return (
+            <span className="cursor-help text-muted-foreground" title="Margem indisponível: preço do anúncio inválido">
+              —
+            </span>
+          );
+        }
         // Mesmo limiar do detalhe: dois limiares de "prejuízo" no mesmo módulo é exatamente o
         // defeito que a Errata 6 nos custou.
         return (
           <span className={cn('tabular-nums', m.liquido < 0 ? 'text-destructive' : 'text-success')}>
             {fmtBRL(m.liquido)}
             <span className="ml-1 text-xs font-normal opacity-80">({m.margemPct.toFixed(1)}%)</span>
+            {/* Mesmo rótulo e mesmo texto do detalhe (dialog-detalhe.tsx) e do reprecificar: um
+                número marcado num lugar e cru no outro, para o mesmo produto, é a contradição que
+                a Errata 12 proíbe. Na lista o preço é sempre o vigente, então o rótulo aparece
+                sempre que a comissão foi lida em outra faixa — o estado normal de quem já
+                reprecificou, que é justamente a população que esta coluna serve. */}
+            {margemEhEstimativa(p.meu_preco, p.comissao_preco) && (
+              <span
+                className="ml-1 text-xs font-normal text-muted-foreground"
+                title="A comissão do ML muda por faixa de preço, e a que temos foi lida em outro preço. Neste preço, o número é aproximado."
+              >
+                estimativa
+              </span>
+            )}
           </span>
         );
       },
@@ -250,7 +274,7 @@ export function TabelaRadar({
     {
       key: 'acoes',
       header: <span className="sr-only">Ações</span>,
-      className: 'w-44 text-right',
+      className: 'w-12 text-right md:w-44',
       // Em 820px a tabela estoura o container; sem isto o ⋮ — único acesso a "Pausar no radar" —
       // sai da tela.
       stickyRight: true,
@@ -260,6 +284,10 @@ export function TabelaRadar({
             <Button
               variant="outline"
               size="sm"
+              // Mesmo breakpoint da coluna "Sobra hoje": abaixo dele o número não aparece, e
+              // oferecer o atalho de reagir sem ele devolve inteiro o problema que a coluna
+              // existe para resolver.
+              className="hidden md:inline-flex"
               aria-label={`Reprecificar ${p.titulo ?? p.catalog_product_id}`}
               // A linha inteira é clicável: sem isto, reprecificar abriria o detalhe por baixo.
               onClick={(e) => { e.stopPropagation(); onReprecificar(p); }}

@@ -38,7 +38,7 @@ import { useCountUp } from '@/hooks/use-count-up';
 import PulseSonar from './PulseSonar';
 
 /** Alvo único da reprecificação: a aba Alertas e a linha do Radar alimentam o MESMO dialog. */
-type AlvoReprecificar = { codigoPai: string; precoInicial: number | null; produtoId: string | null };
+type AlvoReprecificar = { codigoPai: string | null; precoInicial: number | null; produtoId: string | null };
 
 function coletaMaisRecente(produtos: PulseProduto[]): string | null {
   let maisRecente: string | null = null;
@@ -108,7 +108,7 @@ export default function Pulse() {
   // Uma consulta para a página inteira (ADR-0119 Errata 12 D-3): 229 catálogos seriam 229 idas ao
   // PostgREST só para desenhar uma coluna.
   const codigosPai = [...new Set((produtos ?? []).map((p) => p.codigo_pai).filter((c): c is string => !!c))];
-  const { data: contextosMargem } = useQuery({
+  const { data: contextosMargem, isError: contextoErro } = useQuery({
     queryKey: ['pulse', 'contexto-margem-lote', codigosPai],
     queryFn: () => fetchContextoMargemEmLote(codigosPai),
     enabled: codigosPai.length > 0,
@@ -345,7 +345,9 @@ export default function Pulse() {
           produtos={filtrada}
           resumo={resumoOfertas}
           resumoCarregando={resumoCarregando}
-          contextos={codigosPai.length === 0 ? new Map() : contextosMargem}
+          // Falha de leitura não pode virar esqueleto eterno: como na query irmã de ofertas, o
+          // carregamento termina e a célula cai no travessão.
+          contextos={codigosPai.length === 0 || contextoErro ? new Map() : contextosMargem}
           onAbrirDetalhe={setDetalheId}
           onReprecificar={(p) => setReprecificar({
             codigoPai: p.codigo_pai!, precoInicial: p.meu_preco, produtoId: p.id,
@@ -362,7 +364,7 @@ export default function Pulse() {
           <AbaAlertas
             onVerProduto={setDetalheId}
             onReprecificar={(a) => setReprecificar({
-              codigoPai: a.pulse_produtos?.codigo_pai ?? '',
+              codigoPai: a.pulse_produtos?.codigo_pai ?? null,
               precoInicial: Number(a.payload.para),
               produtoId: a.produto_id,
             })}

@@ -206,6 +206,27 @@ describe('TabelaRadar — Sobra hoje', () => {
     expect(screen.getByText(/R\$\s*-?37,00/).className).toContain('text-destructive');
   });
 
+  // A comissão do ML muda de faixa com o preço. Um produto já reprecificado tem a comissão lida
+  // em OUTRO preço — a população exata que esta coluna serve —, e o detalhe já marca esse número
+  // como estimativa: cru na lista e marcado no detalhe seria contradição na mesma tela (Errata 12).
+  it('comissão lida em outro preço → o número sai marcado como estimativa', () => {
+    renderComContexto({ ...comCustos, comissao_preco: 250 }, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.getByText('estimativa')).toBeInTheDocument();
+    expect(screen.getByText('estimativa').title).toContain('faixa de preço');
+  });
+
+  it('comissão lida no preço vigente → sem rótulo, o número é exato', () => {
+    renderComContexto(comCustos, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.queryByText('estimativa')).not.toBeInTheDocument();
+  });
+
+  // `sobraDe` também devolve null para preço <= 0 — invariante mais larga que a da célula. Com
+  // `!` isto estourava e derrubava a linha inteira, não só a célula.
+  it('preço zerado devolve "—", não derruba a linha', () => {
+    renderComContexto({ ...comCustos, meu_preco: 0 }, ctx({ custo: 30, aliquotaPct: 8 }));
+    expect(screen.getByTitle('Margem indisponível: preço do anúncio inválido')).toHaveTextContent('—');
+  });
+
   it('enquanto o contexto carrega não mente com "—": mostra skeleton', () => {
     const { container } = renderComContexto(comCustos, undefined);
     expect(container.querySelector('[data-slot="skeleton"]')).not.toBeNull();
