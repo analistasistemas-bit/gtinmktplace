@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import PulseSonar, { SonarVendas, SonarEanCruzamento } from '../PulseSonar';
 import { fetchVendasSonar } from '@/lib/sonar';
 import type { CruzamentoEan, ItemVendasSonar, PainelVendasSonar } from '@/lib/sonar';
@@ -107,6 +107,9 @@ vi.mock('@/lib/sonar-buscas-recentes', async (importOriginal) => ({
   registrarBusca: () => [],
 }));
 
+// jsdom não implementa scrollIntoView, e o botão "Simular" rola até a DRE ao trocar a âncora.
+beforeAll(() => { Element.prototype.scrollIntoView = vi.fn(); });
+
 function renderSonar() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -199,5 +202,24 @@ describe('PulseSonar — um simulador só', () => {
     await userEvent.clear(campo);
     await userEvent.type(campo, 'outro nicho{Enter}');
     expect(await screen.findByTestId('dre-ancora', {}, { timeout: 3000 })).toHaveTextContent('Oxford Marrom');
+  });
+
+  // Caso real: cache pré-ADR-0127 vem sem `category_id`. A DRE recusa cotar (e deve recusar), mas
+  // o operador ainda precisa ver que o clique trocou a âncora — senão "Simular" parece não fazer
+  // nada. O cartão de recusa carrega o mesmo `id`/`data-testid` que o bloco calculado.
+  it('âncora troca mesmo quando a DRE está recusando cotar (amostra sem categoria)', async () => {
+    await renderSonarComAmostra([
+      itemBase({ titulo: 'Oxford Marrom', item_id: 'MLB1', preco: 100, category_id: null, vendidos: 50 }),
+      itemBase({ titulo: 'Oxford Azul', item_id: 'MLB2', preco: 80, category_id: null, vendidos: 10 }),
+    ]);
+
+    expect(screen.getByText(/não dá para cotar/)).toBeInTheDocument();
+    expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Marrom');
+
+    await userEvent.click(within(linhaDaTabela('Oxford Azul')).getByRole('button', { name: /Simular/ }));
+
+    expect(screen.getByTestId('dre-ancora')).toHaveTextContent('Oxford Azul');
+    // A recusa continua recusando — o que mudou é só de quem ela está falando.
+    expect(screen.getByText(/não dá para cotar/)).toBeInTheDocument();
   });
 });

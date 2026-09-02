@@ -180,20 +180,29 @@ export function SonarDre({ ancora, precos }: { ancora: AncoraDre | null; precos?
     })),
   });
 
+  // Os dois cartões de recusa carregam o mesmo `id` do bloco e nomeiam a âncora: sem isso, trocar
+  // de âncora pela tabela não rolaria até aqui (getElementById devolveria null) e não mudaria texto
+  // nenhum na tela. A recusa continua recusando — o que se ganha é o retorno de que ela trocou.
   if (ancora == null || precoAncora == null) {
     return (
-      <Card className="p-4">
+      <Card id="sonar-dre" className="p-4">
         <p className="text-sm text-muted-foreground">
-          Sem anúncio de referência com preço, não há receita para montar a DRE.
+          {ancora != null && (
+            <>
+              <span data-testid="dre-ancora" className="font-medium text-foreground">{ancora.nome}</span>:{' '}
+            </>
+          )}
+          sem anúncio de referência com preço, não há receita para montar a DRE.
         </p>
       </Card>
     );
   }
   if (categoria == null) {
     return (
-      <Card className="p-4">
+      <Card id="sonar-dre" className="p-4">
         <p className="text-sm text-muted-foreground">
-          Este anúncio veio sem categoria do Mercado Livre, e a comissão depende dela — não dá para cotar.
+          <span data-testid="dre-ancora" className="font-medium text-foreground">{ancora.nome}</span> veio sem
+          categoria do Mercado Livre, e a comissão depende dela — não dá para cotar.
         </p>
       </Card>
     );

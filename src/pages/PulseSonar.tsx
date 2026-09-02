@@ -338,6 +338,10 @@ function SonarFiltrosPopover({ filtros, setFiltros }: {
   );
 }
 
+/** Identidade de uma linha da amostra. Mesma chave do `rowKey` da DataTable: `item_id` sozinho é
+ *  nulo em parte dos anúncios, e cair no título deixaria dois homônimos com a mesma identidade. */
+const chaveDoItem = (i: ItemVendasSonar) => i.item_id ?? `pos-${i.posicao ?? 'x'}-${i.titulo}`;
+
 export default function PulseSonar() {
   const [termo, setTermo] = useState('');
   const [termoBuscado, setTermoBuscado] = useState<string | null>(null);
@@ -379,10 +383,10 @@ export default function PulseSonar() {
   useEffect(() => setAncoraId(null), [termoBuscado]);
 
   const ancoraDre = useMemo(() => {
-    const i = itens.find((x) => (x.item_id ?? x.titulo) === ancoraId) ?? itens[0];
+    const i = itens.find((x) => chaveDoItem(x) === ancoraId) ?? itens[0];
     if (!i) return null;
     return {
-      id: i.item_id ?? i.titulo,
+      id: chaveDoItem(i),
       nome: i.titulo,
       category_id: i.category_id ?? null,
       preco_referencia: i.preco,
@@ -621,13 +625,12 @@ export default function PulseSonar() {
         return (
           <div className="flex items-center justify-end gap-1.5">
             <Button
-              variant="outline"
+              variant={chaveDoItem(i) === ancoraDre?.id ? 'default' : 'outline'}
               size="sm"
-              aria-pressed={(i.item_id ?? i.titulo) === (ancoraDre?.id ?? null)}
+              aria-pressed={chaveDoItem(i) === ancoraDre?.id}
               onClick={() => {
-                setAncoraId(i.item_id ?? i.titulo);
-                // jsdom não implementa scrollIntoView — `?.()` porque o elemento existe e o método não.
-                document.getElementById('sonar-dre')?.scrollIntoView?.({ behavior: 'smooth', block: 'start' });
+                setAncoraId(chaveDoItem(i));
+                document.getElementById('sonar-dre')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
               }}
               title="Usar este anúncio como referência da DRE"
             >
@@ -820,7 +823,7 @@ export default function PulseSonar() {
             columns={colunas}
             rows={visiveis}
             defaultSort={{ key: 'vendidos', dir: 'desc' }}
-            rowKey={(i) => i.item_id ?? `pos-${i.posicao ?? 'x'}-${i.titulo}`}
+            rowKey={chaveDoItem}
             empty={<EmptyState icon={Package} title="Nenhum anúncio passa pelos filtros ativos." />}
           />
         </>
