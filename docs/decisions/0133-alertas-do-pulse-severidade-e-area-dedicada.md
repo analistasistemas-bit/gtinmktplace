@@ -194,6 +194,12 @@ o que veio antes. Grupo não se parte, não se duplica e não reordena a cada "C
 Corolário para quem implementa: `N movimentos` conta os alertas **carregados** e cresce conforme as
 páginas chegam — não é um total por produto vindo do banco.
 
+Os botões da linha seguem o grupo, não o evento. `Ver produto` aparece quando o grupo tem
+`produto_id` (é o mesmo para todos os alertas do grupo). `Reprecificar` aparece quando o grupo
+contém **algum** `preco_caiu` com `codigo_pai` — mesmo que o alerta mais recente seja de outro
+tipo — e recebe o `preco_caiu` **mais recente** do grupo, para reprecificar contra o par de preços
+mais fresco. Sem isso, uma queda encoberta por um `novo_concorrente` posterior perderia o botão.
+
 Alerta sem `produto_id` (ficha removida) não é agrupado com os outros: vira grupo de um, com a
 própria chave. Juntar "sem produto" num balde só misturaria produtos diferentes numa linha.
 
