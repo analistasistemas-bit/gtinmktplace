@@ -123,11 +123,11 @@ export function DialogReprecificar({
           ) : margem ? (
             <span className="text-sm">
               Líquido <span className="font-medium tabular-nums">{fmtBRL(margem.liquido)}</span>{' '}
-              <span className="text-muted-foreground tabular-nums">({margem.margemPct.toFixed(1)}%)</span>
+              <span className="text-muted-foreground tabular-nums">({margem.margemPct.toFixed(1)}% s/ venda)</span>
               {margemEstimativa && (
                 <span
                   className="ml-1 text-xs text-muted-foreground"
-                  title="A comissão do Mercado Livre muda por faixa de preço, e a que temos foi lida em outro preço. Neste preço, o número é aproximado."
+                  title="A comissão do ML muda por faixa de preço, e a que temos foi lida em outro preço. Neste preço, o número é aproximado."
                 >
                   estimativa
                 </span>
