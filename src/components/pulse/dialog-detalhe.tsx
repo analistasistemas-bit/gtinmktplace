@@ -19,7 +19,7 @@ import {
 } from '@/lib/pulse';
 import {
   estadoAtualOfertas, mercadoPulse, menorPrecoPorDia, ofertasAbaixoDaReferencia,
-  porteDoVendedor, shareDeVisitas, margemEstimada, margemEhEstimativa,
+  porteDoVendedor, shareDeVisitas, margemEstimada, margemEhEstimativa, insumoFaltante,
 } from '@/lib/pulse-margem';
 import {
   classeTom, motivoSemPrecoProprio, posicaoVsMercado, reputacao, rotuloMotivoQualificacao,
@@ -30,22 +30,6 @@ import { buildPulseSearchUrl } from '@/lib/pulse-url';
 import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 import { cn } from '@/lib/utils';
 import type { QualificacaoOferta } from '../../../supabase/functions/_shared/concorrencia/qualificacao';
-
-/**
- * A comissão TEM que vir de `comissao_pct` (lida no preço praticado). Cair em
- * `ptw_custos.comissao` seria voltar ao defeito da Errata 6: aquele valor é calculado sobre o
- * preço sugerido pelo ML e superestima a sobra em todo anúncio acima da sugestão.
- */
-function insumoFaltante(
-  contexto: { custo: number | null; aliquotaPct: number | null } | undefined,
-  produto: { comissao_pct: number | null; ptw_custos: { frete: number | null } | null } | null,
-): string | null {
-  if (!contexto || contexto.custo == null) return 'custo do produto';
-  if (contexto.aliquotaPct == null) return 'alíquota de imposto';
-  if (produto?.comissao_pct == null) return 'comissão do Mercado Livre';
-  if (produto.ptw_custos?.frete == null) return 'custo de frete do Mercado Livre';
-  return null;
-}
 
 /** Minigráfico do menor preço no tempo. Sem lib: 40 linhas de SVG contra 40 KB de dependência. */
 function Sparkline({ pontos }: { pontos: { dia: string; preco: number }[] }) {

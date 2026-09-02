@@ -2,7 +2,7 @@
 // (adicionar manual, coletar agora) via POST nas edge functions com o token da sessão.
 import { supabase } from './supabase';
 import { fetchAliquotas } from './queries';
-import { estadoAtualOfertas, mercadoPulse } from './pulse-margem';
+import { custoDaFamilia, estadoAtualOfertas, mercadoPulse, type FamiliaComVariacoes } from './pulse-margem';
 
 export interface PulseProduto {
   id: string; catalog_product_id: string; codigo_pai: string | null; titulo: string | null; gtin: string | null;
@@ -293,36 +293,71 @@ export async function marcarAlertasLidos(
   if (error) throw error;
 }
 
-/** Custo do produto + alíquota de imposto, para o simulador de margem. Regra LOUD
- *  (ADR-0055/0086): alíquota só entra confirmada — nunca o default 8/16 em silêncio. */
+export interface ContextoMargem { custo: number | null; aliquotaPct: number | null }
+
+/** Famílias de um conjunto de `codigo_pai`, da mais recente para a mais antiga, paginadas.
+ *  O PostgREST trunca em ~1000 linhas SEM avisar — mesmo motivo de `fetchPulseResumoOfertas`.
+ *
+ *  O desempate por `id` não é enfeite: um lote inteiro entra com o mesmo `criado_em` (default
+ *  `now()`), e sem segundo critério a ordem entre linhas empatadas não é garantida — páginas de
+ *  LIMIT/OFFSET podem repetir ou PULAR linha. Pular justo a família que tem as variações faria a
+ *  coluna "Sobra hoje" mostrar `—` para um produto que tem custo cadastrado. */
+async function fetchFamiliasPorCodigoPai(
+  codigosPai: string[],
+): Promise<Map<string, FamiliaComVariacoes[]>> {
+  const porPai = new Map<string, FamiliaComVariacoes[]>();
+  if (codigosPai.length === 0) return porPai;
+  const PAGINA = 1000;
+  // ponytail: `in(...)` com centenas de códigos é uma URL longa; se a lista crescer a ponto de dar
+  // 414, quebrar `codigosPai` em blocos aqui — hoje o Radar não chega perto disso.
+  for (let de = 0; ; de += PAGINA) {
+    const { data, error } = await supabase.from('familias')
+      .select('codigo_pai, origem, variacoes(custo)')
+      .in('codigo_pai', codigosPai)
+      .order('criado_em', { ascending: false })
+      .order('id', { ascending: false })
+      .range(de, de + PAGINA - 1);
+    if (error) throw error;
+    const pagina = (data ?? []) as (FamiliaComVariacoes & { codigo_pai: string })[];
+    for (const f of pagina) {
+      const lista = porPai.get(f.codigo_pai) ?? [];
+      lista.push(f);
+      porPai.set(f.codigo_pai, lista);
+    }
+    if (pagina.length < PAGINA) break;
+  }
+  return porPai;
+}
+
+/** Custo do produto + alíquota de imposto, para o simulador de margem e para a coluna "Sobra hoje".
+ *  Regra LOUD (ADR-0055/0086): alíquota só entra confirmada — nunca o default 8/16 em silêncio. */
 // Sem `precoAtual`: o preço de venda vigente é o da nossa oferta na ficha (`pulse_produtos.
 // meu_preco`), não o das variações locais — derivá-lo daqui devolvia um valor defasado e o
 // detalhe o preferia ao vivo, propagando o erro para a margem simulada (Errata 4 do ADR-0119).
-export async function fetchContextoMargem(
-  codigoPai: string,
-): Promise<{ custo: number | null; aliquotaPct: number | null }> {
-  const { data: familias, error } = await supabase
-    .from('familias')
-    .select('origem, variacoes(custo)')
-    .eq('codigo_pai', codigoPai)
-    .order('criado_em', { ascending: false })
-    .limit(5);
-  if (error) throw error;
-  // Família mais recente COM variações — uma família recém-criada (ainda sem variações
-  // gravadas) não pode se passar pela fonte de custo (regra LOUD: cai em null, não em 0).
-  const familia = (familias ?? []).find((f) => (f.variacoes ?? []).length > 0);
-  if (!familia) return { custo: null, aliquotaPct: null };
+export async function fetchContextoMargemEmLote(
+  codigosPai: string[],
+): Promise<Map<string, ContextoMargem>> {
+  const contextos = new Map<string, ContextoMargem>();
+  if (codigosPai.length === 0) return contextos;
+  const [porPai, aliquotas] = await Promise.all([
+    fetchFamiliasPorCodigoPai(codigosPai),
+    fetchAliquotas(),
+  ]);
+  for (const codigoPai of codigosPai) {
+    const { custo, origem } = custoDaFamilia(porPai.get(codigoPai) ?? []);
+    const aliquotaPct = !aliquotas.confirmada || origem == null
+      ? null
+      : origem === 'importado' ? aliquotas.importado : aliquotas.nacional;
+    contextos.set(codigoPai, { custo, aliquotaPct });
+  }
+  return contextos;
+}
 
-  const variacoes = (familia.variacoes ?? []) as { custo: number | null }[];
-  const custos = variacoes.map((v) => v.custo).filter((c): c is number => c != null);
-  const custo = custos.length > 0 ? Math.max(...custos) : null;
-
-  const aliquotas = await fetchAliquotas();
-  const aliquotaPct = !aliquotas.confirmada
-    ? null
-    : familia.origem === 'importado' ? aliquotas.importado : aliquotas.nacional;
-
-  return { custo, aliquotaPct };
+/** O caminho por produto é um CASO do lote, não um irmão dele — é isso que garante que a lista e o
+ *  detalhe nunca discordem sobre o custo do mesmo produto (ADR-0119 Errata 12 D-3). */
+export async function fetchContextoMargem(codigoPai: string): Promise<ContextoMargem> {
+  const contextos = await fetchContextoMargemEmLote([codigoPai]);
+  return contextos.get(codigoPai) ?? { custo: null, aliquotaPct: null };
 }
 
 async function postPulse<T>(fn: string, body: unknown): Promise<T> {

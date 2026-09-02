@@ -14,20 +14,8 @@ import {
 import { supabase } from '@/lib/supabase';
 import { updateVariacaoPreco } from '@/lib/queries';
 import { fetchContextoMargem } from '@/lib/pulse';
-import { margemEstimada, margemEhEstimativa } from '@/lib/pulse-margem';
+import { margemEstimada, margemEhEstimativa, insumoFaltante } from '@/lib/pulse-margem';
 import { fmtBRL, parseNumeroPtBr } from '@/lib/formato';
-
-/** Mesma regra do detalhe: comissão só da estrutura lida no preço efetivo (Erratas 6 e 7). */
-function insumoFaltante(
-  contexto: { custo: number | null; aliquotaPct: number | null } | undefined,
-  custos: { comissaoPct: number | null; frete: number | null } | null,
-): string | null {
-  if (!contexto || contexto.custo == null) return 'custo do produto';
-  if (contexto.aliquotaPct == null) return 'alíquota de imposto';
-  if (custos?.comissaoPct == null) return 'comissão do Mercado Livre';
-  if (custos.frete == null) return 'custo de frete do Mercado Livre';
-  return null;
-}
 
 export function DialogReprecificar({
   codigoPai, precoInicial, custos, onFechar,
