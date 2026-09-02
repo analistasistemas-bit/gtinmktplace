@@ -258,6 +258,19 @@ describe('PulseSonar — cabeçalho do resultado', () => {
     expect(screen.getByText(/há 2 dias/)).toBeInTheDocument();
   });
 
+  // Cache antigo (pré-ADR-0125/D2, campo aditivo) grava payloads sem `gerado_em` mesmo o tipo
+  // declarando o campo obrigatório — regra LOUD: sem data real, a guarda tem que OMITIR a idade,
+  // nunca supor "coletado agora". `as unknown as PainelVendasSonar` simula esse payload real, que
+  // o TS não vê chegar da rede.
+  it('sem gerado_em no payload, o cabeçalho sai com termo e amostra e sem qualquer idade', async () => {
+    const { gerado_em: _semGeradoEm, ...semData } = comAmostra;
+    await renderSonarComResposta({ ...semData, termo: 'tecido oxford' } as unknown as PainelVendasSonar);
+    expect(await screen.findByRole('heading', { name: /^Nicho: tecido oxford/ })).toBeInTheDocument();
+    expect(screen.getByText(/amostra de 1/)).toBeInTheDocument();
+    expect(screen.queryByText(/coletado/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/há \d/)).not.toBeInTheDocument();
+  });
+
   it('o resultado em cache diz que reabrir é grátis e nova busca custa', async () => {
     await renderSonarComResposta(comAmostra);
     expect(screen.getByText(/reabrir este termo não dispara coleta nova/i)).toBeInTheDocument();
