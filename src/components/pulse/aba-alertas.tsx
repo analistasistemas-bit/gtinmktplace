@@ -315,11 +315,15 @@ export function AbaAlertas({
                 </div>
                 {aberto && (
                   <ul className="mt-1 ml-1 border-l pl-3 text-xs text-muted-foreground">
-                    {g.demais.map((a) => (
-                      <li key={a.id} className="py-0.5">
-                        {textoAlerta(a)} <span className="opacity-70">· {idadeAlerta(a.criado_em)}</span>
-                      </li>
-                    ))}
+                    {g.demais.map((a) => {
+                      const idadeDemais = idadeAlerta(a.criado_em);
+                      return (
+                        <li key={a.id} className="py-0.5">
+                          {textoAlerta(a)}
+                          {idadeDemais && <span className="opacity-70"> · {idadeDemais}</span>}
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
               </div>

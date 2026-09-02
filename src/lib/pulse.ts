@@ -261,12 +261,6 @@ export async function fetchPulseAlertas(
  *  tamanho da lista, que era o teto de leitura: dizia "20" com 145 não lidos (ADR-0133 D-7). */
 export { contarPulseAlertas } from './pulse-contagem';
 
-/** Marca o alerta como lido — grant é column-level só em `lido` (não pode ir mais nada no update). */
-export async function marcarAlertaLido(id: string): Promise<void> {
-  const { error } = await supabase.from('pulse_alertas').update({ lido: true }).eq('id', id);
-  if (error) throw error;
-}
-
 /** Marca como lidos os alertas de um grupo. O escopo é o conjunto de ids RENDERIZADOS naquela
  *  linha — nada além (ADR-0133 Errata 4 D-3). Uma ida ao banco; grant é column-level em `lido`. */
 export async function marcarAlertasLidosPorIds(ids: string[]): Promise<void> {

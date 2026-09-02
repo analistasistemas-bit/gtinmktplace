@@ -163,6 +163,10 @@ describe('AbaAlertas', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Carregar mais' })).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: 'Carregar mais' }));
     await waitFor(() => expect(verProduto()).toHaveLength(ALERTAS_POR_PAGINA + 1));
+    // A contagem de linhas sozinha parou de discriminar depois do agrupamento: a linha repetida tem
+    // o mesmo `produto_id` da gêmea, então o grupo a absorve e o total de linhas continua igual.
+    // Quem denuncia a duplicata é o grupo aparecer com dois movimentos.
+    expect(screen.queryByText(/movimentos/)).not.toBeInTheDocument();
   });
 
   // I6: a linha sai na hora, não depois de refetchar as páginas carregadas + as duas contagens.
