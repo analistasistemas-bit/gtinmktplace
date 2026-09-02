@@ -49,6 +49,11 @@ export interface RivalPodio {
   preco: number | null;
   faturamento: number;
   href: string | null;
+  /** Anúncio vinculado a ficha de catálogo (mesmo campo do badge "Catálogo" na tabela do Sonar):
+   *  o link do card abre a ficha compartilhada, cujo preço/vendedor em destaque é quem detém a
+   *  buy-box NO MOMENTO — pode divergir do preço medido aqui na amostra (glossário: "Ganhador do
+   *  buy-box"). Usado só para avisar o operador; não há como apontar o link pro vendedor exato. */
+  catalog_product_id: string | null;
 }
 
 export interface Fator {
@@ -637,6 +642,7 @@ export function rivaisPodio(vendas: PainelVendasSonar): RivalPodio[] {
       preco: i.preco,
       faturamento: (i.vendidos as number) * (i.preco as number),
       href: linkDoAnuncio(i.link, i.item_id ?? ''),
+      catalog_product_id: i.catalog_product_id,
     }))
     .filter((r) => r.faturamento > 0)
     .sort((a, b) => b.faturamento - a.faturamento)

@@ -805,4 +805,18 @@ describe('rivaisPodio — href resolvido no lib (ADR-0136)', () => {
     const vendas = painelSintetico([itemV2({ item_id: null, link: null, vendedor: null, vendidos: 9_000, preco: 200 })]);
     expect(rivaisPodio(vendas)[0].href).toBeNull();
   });
+
+  // Bug real 02/09: pódio mostrou R$51,90 (preço medido na amostra) mas o link abriu a ficha de
+  // catálogo do ML mostrando R$63,99 (outro vendedor com a buy-box no momento). Não dá pra
+  // corrigir o link (ML não expõe o vendedor vencedor); a UI usa este campo pra avisar o
+  // operador. `catalog_product_id` é o mesmo sinal do badge "Catálogo" da tabela do Sonar.
+  it('propaga catalog_product_id — sinal para a UI avisar que o preço pode divergir na ficha', () => {
+    const vendas = painelSintetico([itemV2({ item_id: 'MLB1', catalog_product_id: 'MLB14489497' })]);
+    expect(rivaisPodio(vendas)[0].catalog_product_id).toBe('MLB14489497');
+  });
+
+  it('sem catalog_product_id (anúncio avulso, não vinculado a ficha) propaga null', () => {
+    const vendas = painelSintetico([itemV2({ item_id: 'MLB1', catalog_product_id: null })]);
+    expect(rivaisPodio(vendas)[0].catalog_product_id).toBeNull();
+  });
 });

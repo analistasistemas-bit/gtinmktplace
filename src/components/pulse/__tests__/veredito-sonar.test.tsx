@@ -65,3 +65,26 @@ describe('VereditoSonar — Pódio de rivais', () => {
     expect(screen.getByText(/\+50\.000 vendidos/)).toBeInTheDocument();
   });
 });
+
+describe('VereditoSonar — aviso de ficha de catálogo (bug real 02/09: link abriu preço diferente)', () => {
+  it('rival com catalog_product_id ganha ícone de aviso ao lado do faturamento', () => {
+    const painel = painelSintetico([
+      itemV2({
+        item_id: 'MLB3923932275', titulo: 'Nestlé Ninho Zero Lactose em pó 700g', vendedor: null,
+        vendidos: 10_000, preco: 51.9, catalog_product_id: 'MLB14489497',
+      }),
+    ]);
+    const veredito = calcularVereditoAnuncios(painel, null);
+    render(<VereditoSonar veredito={veredito} contexto={[]} vendas={painel} visitasPorItem={new Map()} />);
+    expect(screen.getByTitle(/pode ser outro vendedor\/preço/)).toBeInTheDocument();
+  });
+
+  it('rival sem catalog_product_id não ganha o aviso', () => {
+    const painel = painelSintetico([
+      itemV2({ item_id: 'MLB1', titulo: 'Anúncio Avulso', vendedor: 'LOJA-A', vendidos: 100, preco: 50, catalog_product_id: null }),
+    ]);
+    const veredito = calcularVereditoAnuncios(painel, null);
+    render(<VereditoSonar veredito={veredito} contexto={[]} vendas={painel} visitasPorItem={new Map()} />);
+    expect(screen.queryByTitle(/pode ser outro vendedor\/preço/)).not.toBeInTheDocument();
+  });
+});

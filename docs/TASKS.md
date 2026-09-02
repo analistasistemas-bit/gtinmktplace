@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Aviso de preço divergente no Pódio de rivais do Sonar (ficha de catálogo) — 2026-09-02
+
+Diego reportou: pesquisou "Leite Em Pó Ninho Zero Lactose 700g", o Pódio mostrou o líder por
+faturamento a R$ 51,90 (fantasma, sem loja), mas ao abrir o link (ficha de catálogo `/p/MLB...`)
+o preço lá era R$ 63,99. Investigado via `sonar_snapshots` (Management API): o `item_id` medido
+(`MLB3923932275`) é um anúncio distinto da ficha de catálogo (`MLB14489497`) que o link abre — a
+ficha consolida vários vendedores, e o vendedor específico medido pode não estar mais entre as
+ofertas ativas (o Mercado Livre não expõe o vencedor da buy-box pela API oficial, Spike 049;
+`buyBoxWiner` documentado no glossário). Preço não é dado inventado — é o que a Apify capturou no
+momento da coleta; o link, porém, nunca garantiu apontar pro mesmo vendedor/preço quando o item é
+de catálogo.
+
+- [x] `rivaisPodio` (`veredito-sonar.ts`) propaga `catalog_product_id` no `RivalPodio`.
+- [x] Card do Pódio (`components/pulse/veredito-sonar.tsx`): ícone de aviso ⚠ ao lado do valor de
+      faturamento quando o rival é vinculado a ficha de catálogo, mesmo critério do badge
+      "Catálogo" já usado na tabela do Sonar (`catalog_product_id != null`).
+- [x] Testes: `veredito-sonar.test.ts` (propagação do campo).
+- [ ] Doc de referência (`docs/reference/glossario.md` já cobre "Ganhador do buy-box"; não precisa
+      de entrada nova — comportamento já documentado, só faltava o aviso na tela).
+- [ ] Validação visual (screenshot) e merge — pendente de revisão do Diego.
+
+---
+
 ## Publicar lento: limpeza de cache de foto ao esgotar retry (item.pictures.unavailable) — 2026-09-02
 
 Diego reportou publicação lenta ("2 de 3" travado). Investigação com logs de produção (24h):

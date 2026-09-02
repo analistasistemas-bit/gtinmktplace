@@ -4,8 +4,8 @@
 // ADR-0128: título separa Demanda de Entrada; chip de entrada ao lado do badge parcial.
 import { useState } from 'react';
 import {
-  ChevronDown, CircleDollarSign, Eye, ExternalLink, Gauge, HelpCircle, Lock, Minus, ShieldAlert,
-  Target, Trophy, TrendingDown, TrendingUp, Unlock,
+  AlertTriangle, ChevronDown, CircleDollarSign, Eye, ExternalLink, Gauge, HelpCircle, Lock, Minus,
+  ShieldAlert, Target, Trophy, TrendingDown, TrendingUp, Unlock,
 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
@@ -97,6 +97,9 @@ function PodioColuna({ titulo, dica, Icone, itens }: {
   itens: Array<{
     chave: string; posicao: number; nome: string; href: string | null;
     valor: string; valorDica?: string; meta: string;
+    /** Link é ficha de catálogo do ML — preço/vendedor mostrado ao abrir pode ser outro (o ML
+     *  troca o vendedor em destaque sem avisar; não dá pra apontar o link pro vendedor exato). */
+    avisoCatalogo?: boolean;
   }>;
 }) {
   return (
@@ -125,7 +128,17 @@ function PodioColuna({ titulo, dica, Icone, itens }: {
             ) : (
               <span className="min-w-0 line-clamp-2 text-xs font-medium" title={i.nome}>{i.nome}</span>
             )}
-            <span className="text-xs font-semibold tabular-nums" title={i.valorDica}>{i.valor}</span>
+            <span className="flex items-center gap-1 text-xs font-semibold tabular-nums" title={i.valorDica}>
+              {i.avisoCatalogo && (
+                <span
+                  className="shrink-0"
+                  title="Anúncio vinculado a ficha de catálogo: o Mercado Livre mostra ali quem detém a buy-box no momento — pode ser outro vendedor/preço, diferente do medido aqui na amostra."
+                >
+                  <AlertTriangle className="h-3 w-3 text-warning" aria-hidden />
+                </span>
+              )}
+              {i.valor}
+            </span>
             {i.meta !== '' && (
               <span className="col-start-2 col-span-2 text-[11px] tabular-nums text-muted-foreground">{i.meta}</span>
             )}
@@ -160,6 +173,7 @@ export function VereditoSonar({
       r.preco != null ? fmtBRL(r.preco) : null,
       r.vendidos != null ? `+${fmtInt(r.vendidos)} vendidos` : null,
     ].filter(Boolean).join(' · '),
+    avisoCatalogo: r.catalog_product_id != null,
   }));
   const itensVisitas = rivaisVisitas.map((r, idx) => ({
     chave: r.item_id,
