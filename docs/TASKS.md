@@ -23,8 +23,8 @@ anti-regressão para quando o `picture_id` cacheado está genuinamente morto.
       produção com `codigo: 'DESCONHECIDO'`). `publicar-split-ml` sem `processar.ts` extraído — sem
       teste unitário; coberto por revisão + `deno check`/`deno lint`.
 - [x] Docs: `edge-functions.md`.
-- [ ] Deploy (`supabase functions deploy publish-familia-ml publicar-split-ml`) — pendente de OK do
-      Diego antes de ir pra produção.
+- [x] Deploy (`supabase functions deploy publish-familia-ml publicar-split-ml`) — 2026-09-02
+      17:47 UTC, versões 107/80.
 
 ---
 
