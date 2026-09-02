@@ -28,6 +28,7 @@ Valores exatos, copiados do ADR-0151 e do código real. Valem para **todas** as 
 - **GTIN**: kit publica **sem GTIN** por padrão. **Nunca** herda o GTIN da base.
 - **Escopo v1**: só família-base com **exatamente 1 variação** (sem cor).
 - **`create or replace function` preserva owner e ACL** enquanto a assinatura não muda. Só mude assinatura se for inevitável — mudar exige repetir a dança `grant estoque_rpc_executor to postgres` → `grant usage, create on schema public` → `alter function ... owner to estoque_rpc_executor` → `revoke create` → `revoke ... cascade` → `revoke execute from public, anon, authenticated` → `grant execute to service_role`. Neste plano **nenhuma assinatura de RPC muda**.
+- **Push de estoque com kit: sem exclusão nenhuma** (Decisão 7, revisada). Quando o produto do evento tem kit vinculado, `resolverAlvosPush` recebe `canalOrigem = null` e base + todos os tamanhos recebem o push, **inclusive o anúncio que originou o evento**. Push é absoluto e recalculado do zero, então reempurrar é inofensivo. Não existe coluna, campo de job nem lógica de "anúncio de origem" em lugar nenhum deste plano — foi deliberadamente descartado pelo Diego por ser código a mais para um resultado idêntico. Produto **sem** kit mantém a exclusão por canal de hoje, intocada.
 - **Enums (verificados em `src/lib/database.types.ts:2479-2493`)**: `familia_status` = `pendente|processando|pronto|publicando|publicado|erro`; `lote_status` = `importando|processando|revisao|publicando|concluido|erro`; `operacao_ml` = `CREATE|UPDATE`. Um rótulo digitado errado num `in (...)` **não dá erro** — só faz a lista nunca casar e a guard virar um no-op que passa em todo teste que não exercite um status real.
 - **Migrations**: só via `supabase migration new` + `supabase db push` (ADR-0043). Validar com `npm run db:check`. Nunca `apply_migration`/painel.
 - **`supabase db push` não roda em transação** — cada statement é independente.
@@ -49,14 +50,16 @@ Estão aqui para não serem "consertados" por engano por um executor:
 - O trigger `validar_variacao_no_tenant` (migration `20260820143736`) **já força** `estoque = 0` no INSERT de variação de lote manual com `operacao = 'CREATE'`. A Decisão 8 ("`variacoes.estoque` do kit nasce em 0") não precisa de código novo.
 - `reconciliar-estoque/index.ts:89-98` enfileira por `codigo_pai` com movimento recente e `canal_origem: null`. Movimento de kit é gravado no `codigo_pai` **da base**. Com o fan-out da Task 3 dentro de `processarSincronizacao`, a reconciliação já alcança base + kits. **`reconciliar-estoque` não muda em nada** (Decisão 13, terceiro bullet) — não "conserte".
 - `forcarSaleFormatKit` (`_shared/categoria/atributos.ts:253`) **não é exportada** hoje.
+- **O outbox do ledger não é tocado por esta feature.** `MovimentoPendente`, `lerPushPendente` e `despacharPushPendente` (`_shared/estoque/baixa.ts:216-331`) ficam como estão, e `SincronizarEstoqueJob` (`_shared/queue.ts:189`) não ganha campo nenhum. Uma versão anterior deste plano plumbava um `item_externo_id` por todo esse caminho para sustentar a exclusão fina do push; a Decisão 7 revisada eliminou a necessidade. Se você se pegar acrescentando um campo ali, parou de seguir o plano.
 
 ---
 
 ## File Structure
 
 **Migrations novas (3):**
-- `supabase/migrations/<ts>_kit_vinculado_schema.sql` — colunas de vínculo em `familias`, colunas de auditoria em `estoque_movimentos`, índices.
-- `supabase/migrations/<ts>_kit_vinculado_guards.sql` — guards de escrita direta, de adicionar-cor e de remoção.
+- `supabase/migrations/<ts>_kit_vinculado_schema.sql` (Task 1) — colunas de vínculo em `familias`, colunas de auditoria em `estoque_movimentos`, índices.
+- `supabase/migrations/<ts>_kit_vinculado_guards.sql` (Task 5) — guards de escrita direta, de adicionar-cor e de remoção.
+- `supabase/migrations/<ts>_estoque_rpc_exclui_kit.sql` (Task 9) — as três RPCs de leitura da tela Estoque deixam de listar kit como produto/SKU próprio.
 
 **Backend novo:**
 - `supabase/functions/_shared/estoque/kit.ts` — resolvedor único + derivação de saldo. Módulo pequeno e puro-quando-possível; é a peça que todo o resto consome.
@@ -67,7 +70,6 @@ Estão aqui para não serem "consertados" por engano por um executor:
 
 **Backend modificado:**
 - `_shared/estoque/baixa.ts` — resolve kit antes da RPC; anota o movimento.
-- `_shared/queue.ts` — campo novo em `SincronizarEstoqueJob`.
 - `_shared/categoria/atributos.ts` — exporta `forcarSaleFormatKit` + `aplicarKitNosAtributos`.
 - `sincronizar-estoque/processar.ts` — fan-out por família.
 - `publish-familia-ml/processar.ts` — saldo derivado no CREATE + encadeamento dos kits pendentes.
@@ -120,7 +122,7 @@ Lote dedicado (e não o lote manual aberto) pelo mesmo motivo do desvio 2 do ADR
 - Consumes: nada (primeira task).
 - Produces:
   - `familias.kit_base_codigo_pai text` (nullable), `familias.kit_multiplicador smallint` (nullable, check 2–6).
-  - `estoque_movimentos.origem_kit_codigo_pai text` (nullable), `estoque_movimentos.origem_kit_multiplicador smallint` (nullable), `estoque_movimentos.push_item_externo_id text` (nullable).
+  - `estoque_movimentos.origem_kit_codigo_pai text` (nullable), `estoque_movimentos.origem_kit_multiplicador smallint` (nullable).
   - `export interface OrigemEstoque { codigoCanonico: string; multiplicador: number; kitCodigoPai: string | null }`
   - `export async function resolverOrigemEstoque(admin: SupabaseClient, orgId: string, codigo: string): Promise<OrigemEstoque>`
   - `export function saldoDoKit(estoqueBase: number, multiplicador: number): number`
@@ -171,11 +173,12 @@ alter table public.estoque_movimentos
   add column origem_kit_codigo_pai text,
   add column origem_kit_multiplicador smallint;
 
--- Decisão 7: a exclusão do push deixa de ser por CANAL e passa a ser por ANÚNCIO.
--- Base e kits dividem o mesmo canal (mercado_livre) em anúncios diferentes; excluir o
--- canal inteiro pularia o push de todos eles, não só do que vendeu.
-alter table public.estoque_movimentos
-  add column push_item_externo_id text;
+-- NÃO existe coluna de "anúncio de origem" aqui, de propósito. A Decisão 7 foi revisada
+-- (simplificação escolhida pelo Diego): com kit vinculado, o push simplesmente NÃO aplica
+-- exclusão nenhuma — reempurra base + todos os tamanhos, sempre. Push é ABSOLUTO e o valor
+-- é recalculado do zero, então o resultado é idêntico ao de uma exclusão fina; a diferença
+-- é 1-2 chamadas de API a mais por evento, contra o custo de uma coluna no ledger e de
+-- plumbing por todo o outbox. Não reintroduza a coluna "por eficiência".
 ```
 
 - [ ] **Step 2: Aplicar e validar a migration**
@@ -194,7 +197,7 @@ cd "<repo>" && pnpm db:types
 ```
 
 (Se o script não existir com esse nome, ache-o em `package.json` — é o que gera `src/lib/database.types.ts`.)
-Esperado: `src/lib/database.types.ts` passa a conter `kit_base_codigo_pai`, `kit_multiplicador`, `origem_kit_codigo_pai`, `origem_kit_multiplicador`, `push_item_externo_id`.
+Esperado: `src/lib/database.types.ts` passa a conter `kit_base_codigo_pai`, `kit_multiplicador`, `origem_kit_codigo_pai` e `origem_kit_multiplicador`.
 
 - [ ] **Step 4: Escrever o teste do resolvedor (falhando)**
 
@@ -400,16 +403,18 @@ git commit -m "feat(kit): schema do vínculo kit→base e resolvedor de origem d
 - Test: `supabase/functions/_shared/estoque/__tests__/baixa-kit.test.ts` (novo)
 
 **Interfaces:**
-- Consumes: `resolverOrigemEstoque`, `OrigemEstoque` de `_shared/estoque/kit.ts` (Task 1); as colunas `origem_kit_codigo_pai`, `origem_kit_multiplicador`, `push_item_externo_id` (Task 1).
+- Consumes: `resolverOrigemEstoque`, `OrigemEstoque` de `_shared/estoque/kit.ts` (Task 1); as colunas `origem_kit_codigo_pai` e `origem_kit_multiplicador` (Task 1).
 - Produces:
-  - `MovimentoPendente` ganha `itemExternoId: string | null`.
   - `ResultadoBaixaVenda.vendaAcimaSaldo` ganha `kitCodigoPai: string | null` e `multiplicador: number` em cada entrada.
+  - **`MovimentoPendente`, `lerPushPendente` e `despacharPushPendente` NÃO mudam** — o outbox continua agrupando por `(codigoPai, canalOrigem, reposicao)`. Não acrescente nada de kit ali (Decisão 7 revisada).
 
 ### Contexto obrigatório antes de editar
 
 `refBaixa(canal, orderId, codigo)` continua sendo construída com o **SKU vendido** (o código do kit), e **não** com o da base. Motivo: `estornar_estoque` procura o movimento por `referencia_externa` sozinho e repõe na variação resolvida a partir do `codigo` **gravado no movimento** — não do `p_codigo` que recebe. Se a `ref` mudasse para o código da base, a `ref` da venda e a do estorno divergiriam e o cancelamento nunca acharia a baixa. Com a `ref` no SKU vendido e `p_codigo = base`, o estorno repõe `N ×` na base sem nenhuma mudança na RPC.
 
-A anotação do movimento (`origem_kit_*`, `push_item_externo_id`) é um UPDATE **separado e não-atômico** depois da RPC, feito com `service_role` (que já escreve direto em `estoque_movimentos` — ver `registrarVendaSemSku`). Foi escolhido assim para **não** mudar a assinatura de `baixar_estoque` (mudar assinatura obrigaria repetir toda a dança de owner/grants do `estoque_rpc_executor`). Degradação quando a anotação falha: o push não exclui o anúncio que vendeu e empurra `floor(base/N)` para ele também. Inofensivo — o push é absoluto e o valor empurrado é exatamente o que o ML já tem depois de se auto-decrementar.
+A anotação do movimento (`origem_kit_codigo_pai`, `origem_kit_multiplicador`) é um UPDATE **separado e não-atômico** depois da RPC, feito com `service_role` (que já escreve direto em `estoque_movimentos` — ver `registrarVendaSemSku`). Foi escolhido assim para **não** mudar a assinatura de `baixar_estoque` (mudar assinatura obrigaria repetir toda a dança de owner/grants do `estoque_rpc_executor`).
+
+A anotação é **puramente de auditoria** (Decisão 6): serve para o operador entender, no ledger e no alerta da Task 10, que o débito veio da venda de um kit e não de uma venda direta. **Nada de push depende dela.** Se ela falhar, o único efeito é uma linha de ledger sem atribuição de kit e um alerta com o texto genérico — o saldo e a propagação seguem corretos.
 
 - [ ] **Step 1: Escrever os testes falhando**
 
@@ -494,7 +499,7 @@ Deno.test('venda de kit baixa N× no codigo_pai da BASE, não no SKU do kit', as
   assertEquals(chamadas[0].args.p_ref, refBaixa('mercado_livre', 777, '00000021'));
 });
 
-Deno.test('venda de kit anota origem e anúncio no movimento', async () => {
+Deno.test('venda de kit anota a origem no movimento (auditoria, D-6)', async () => {
   const chamadas: ChamadaRpc[] = [];
   const updates: Array<Record<string, unknown>> = [];
   const admin = fakeAdmin({ kits: { '00000021': { base: '00000010', n: 3 } }, chamadas, updates });
@@ -507,10 +512,9 @@ Deno.test('venda de kit anota origem e anúncio no movimento', async () => {
   const anotacao = updates.find((u) => 'origem_kit_multiplicador' in u);
   assertEquals(anotacao?.origem_kit_multiplicador, 3);
   assertEquals(anotacao?.origem_kit_codigo_pai, 'KIT-00000021');
-  assertEquals(anotacao?.push_item_externo_id, 'MLB-KIT');
 });
 
-Deno.test('venda de SKU comum não muda nada e anota só o anúncio', async () => {
+Deno.test('venda de SKU comum não resolve nada e não anota origem de kit', async () => {
   const chamadas: ChamadaRpc[] = [];
   const updates: Array<Record<string, unknown>> = [];
   const admin = fakeAdmin({ kits: {}, chamadas, updates });
@@ -522,9 +526,9 @@ Deno.test('venda de SKU comum não muda nada e anota só o anúncio', async () =
 
   assertEquals(chamadas[0].args.p_codigo, '00000011');
   assertEquals(chamadas[0].args.p_qtd, 4);
-  const anotacao = updates.find((u) => 'push_item_externo_id' in u);
-  assertEquals(anotacao?.push_item_externo_id, 'MLB-BASE');
+  const anotacao = updates.find((u) => 'origem_kit_multiplicador' in u);
   assertEquals(anotacao?.origem_kit_multiplicador, null);
+  assertEquals(anotacao?.origem_kit_codigo_pai, null);
 });
 ```
 
@@ -550,13 +554,6 @@ Substitua o corpo do `for (const b of baixas)` (hoje em `baixa.ts:105-139`) por:
   // O SKU vendido pode ser de um kit vinculado (ADR-0151 D-6): nesse caso quem tem saldo é a
   // BASE, e cada unidade de venda consome N unidades dela. Sem esta resolução, `baixar_estoque`
   // acha a linha do próprio kit (saldo 0) e aplica delta 0 em silêncio — a base nunca desce.
-  const itemExternoPorCodigo = new Map<string, string | null>();
-  for (const i of p.itens) {
-    if (i.codigo && !itemExternoPorCodigo.has(i.codigo)) {
-      itemExternoPorCodigo.set(i.codigo, i.ml_item_id ?? null);
-    }
-  }
-
   for (const b of baixas) {
     const origem = await resolverOrigemEstoque(admin, p.orgId, b.codigo);
     // A REFERÊNCIA continua no SKU VENDIDO, nunca no da base: `estornar_estoque` procura o
@@ -586,7 +583,6 @@ Substitua o corpo do `for (const b of baixas)` (hoje em `baixa.ts:105-139`) por:
     await anotarOrigemDoMovimento(admin, r.movimento_id ?? null, {
       kitCodigoPai: origem.kitCodigoPai,
       multiplicador: origem.kitCodigoPai ? origem.multiplicador : null,
-      itemExternoId: itemExternoPorCodigo.get(b.codigo) ?? null,
     });
     const classe = classificarBaixaSemSaldo(r, b.quantity * origem.multiplicador);
     if (classe === 'desync') {
@@ -608,45 +604,32 @@ Adicione a função de anotação no mesmo arquivo:
 
 ```ts
 /**
- * Anota, DEPOIS da RPC, de onde veio o débito e qual anúncio o gerou.
+ * Anota, DEPOIS da RPC, que o débito veio da venda de um kit vinculado.
  *
  * Não vai por parâmetro da RPC de propósito: mudar a assinatura de `baixar_estoque` obrigaria
  * repetir a dança de owner/grants do `estoque_rpc_executor` (migration 20260804113000) num
  * caminho que já funciona. O preço é que a anotação NÃO é atômica com a baixa.
  *
- * Se ela falhar: `push_item_externo_id` fica null e o push não exclui o anúncio que vendeu —
- * ele recebe `floor(base/N)`, que é exatamente o que o ML já tem depois de se auto-decrementar.
- * Push absoluto é idempotente, então o efeito é um PUT inútil, não um saldo errado.
+ * É PURAMENTE auditoria (D-6): o ledger e o alerta de venda-acima-do-saldo passam a dizer
+ * "3 kits de 3 = 9 unidades da base" em vez de um 9 sem explicação. Nenhuma decisão de push
+ * depende disto — a Decisão 7 foi simplificada justamente para não haver plumbing de kit no
+ * outbox. Falhar aqui custa uma linha de ledger sem atribuição, nada mais.
  */
 async function anotarOrigemDoMovimento(
   admin: SupabaseClient,
   movimentoId: string | null,
-  p: { kitCodigoPai: string | null; multiplicador: number | null; itemExternoId: string | null },
+  p: { kitCodigoPai: string | null; multiplicador: number | null },
 ): Promise<void> {
   if (!movimentoId) return;
   const { error } = await admin.from('estoque_movimentos').update({
     origem_kit_codigo_pai: p.kitCodigoPai,
     origem_kit_multiplicador: p.multiplicador,
-    push_item_externo_id: p.itemExternoId,
   }).eq('id', movimentoId);
   if (error) console.error('anotar_origem_movimento_falhou', { movimentoId, erro: error.message });
 }
 ```
 
-Amplie os tipos no mesmo arquivo:
-
-```ts
-export interface MovimentoPendente {
-  id: string;
-  codigoPai: string;
-  canalOrigem: string | null;
-  reposicao: boolean;
-  /** ADR-0151 D-7: anúncio que gerou a venda — excluído do push por ANÚNCIO, não por canal. */
-  itemExternoId: string | null;
-}
-```
-
-E em `ResultadoBaixaVenda`:
+Amplie **só** `ResultadoBaixaVenda`:
 
 ```ts
   vendaAcimaSaldo: Array<{
@@ -657,60 +640,17 @@ E em `ResultadoBaixaVenda`:
   }>;
 ```
 
-- [ ] **Step 4: Propagar `itemExternoId` no outbox**
+- [ ] **Step 4: Confirmar que o outbox NÃO precisa mudar**
 
-Em `lerPushPendente` (`baixa.ts:216-238`), inclua a coluna nova no select e no mapeamento:
+`MovimentoPendente`, `lerPushPendente` (`baixa.ts:216-238`) e `despacharPushPendente` (`baixa.ts:285-331`) ficam **exatamente como estão**. A versão original deste plano plumbava um `itemExternoId` por todo esse caminho para sustentar a exclusão fina do push; a Decisão 7 revisada eliminou a necessidade — a decisão de exclusão passou a ser tomada dentro do worker (Task 3), a partir de "esta família tem kit vinculado?", sem nenhum dado extra vindo do ledger.
 
-```ts
-    .select('id, codigo_pai, push_canal_origem, push_item_externo_id, quantidade')
+Confirme que nada foi tocado ali:
+
+```bash
+cd "<repo>" && git diff --stat supabase/functions/_shared/estoque/baixa.ts
 ```
 
-```ts
-  return (data ?? []).map((m) => ({
-    id: m.id as string,
-    codigoPai: m.codigo_pai as string,
-    canalOrigem: (m.push_canal_origem as string | null) ?? null,
-    itemExternoId: (m.push_item_externo_id as string | null) ?? null,
-    reposicao: Number(m.quantidade ?? 0) > 0,
-  }));
-```
-
-Em `despacharPushPendente` (`baixa.ts:285-331`), inclua `itemExternoId` na chave de agrupamento e no job — mesma razão de `canalOrigem` e `reposicao` já estarem lá: movimentos com políticas de propagação diferentes não podem ser agrupados.
-
-```ts
-  const grupos = new Map<string, { codigoPai: string; canalOrigem: string | null; itemExternoId: string | null; reposicao: boolean; ids: string[] }>();
-  for (const p of pendentes) {
-    const chave = JSON.stringify([p.codigoPai, p.canalOrigem, p.itemExternoId, p.reposicao]);
-    if (!grupos.has(chave)) {
-      grupos.set(chave, {
-        codigoPai: p.codigoPai, canalOrigem: p.canalOrigem,
-        itemExternoId: p.itemExternoId, reposicao: p.reposicao, ids: [],
-      });
-    }
-    grupos.get(chave)!.ids.push(p.id);
-  }
-```
-
-e na chamada de `enfileirar`:
-
-```ts
-      await enfileirar(
-        {
-          org_id: orgId, codigo_pai: g.codigoPai, canal_origem: g.canalOrigem,
-          item_externo_origem: g.itemExternoId, reativar: g.reposicao,
-        },
-        orgId,
-      );
-```
-
-Ajuste também a assinatura do parâmetro `enfileirar`:
-
-```ts
-  enfileirar: (job: {
-    org_id: string; codigo_pai: string; canal_origem: string | null;
-    item_externo_origem?: string | null; reativar?: boolean;
-  }, orgId: string) => Promise<string>,
-```
+Esperado: o diff cobre só `registrarBaixaVenda`, `anotarOrigemDoMovimento` e `ResultadoBaixaVenda`. Se aparecer mudança em `lerPushPendente` ou `despacharPushPendente`, reverta essa parte.
 
 - [ ] **Step 5: Rodar os testes e confirmar que passam**
 
@@ -718,7 +658,7 @@ Ajuste também a assinatura do parâmetro `enfileirar`:
 cd "<repo>/supabase/functions" && deno test --allow-env --allow-net _shared/estoque/__tests__/
 ```
 
-Esperado: PASS. Se `baixa.test.ts` (existente) quebrar por causa do campo novo em `MovimentoPendente`, atualize os fixtures dele acrescentando `itemExternoId: null` — não relaxe as asserções.
+Esperado: PASS, incluindo `baixa.test.ts` (existente) **sem nenhuma alteração** — nada do outbox mudou, então nenhum fixture dele precisa de campo novo. Se ele quebrar, você mexeu em algo que não devia (ver Step 4).
 
 - [ ] **Step 6: Commit**
 
@@ -729,22 +669,27 @@ git commit -m "feat(kit): baixa de venda e estorno resolvem o ledger da base (AD
 
 ---
 
-## Task 3: Push de estoque — fan-out por família e exclusão por anúncio
+## Task 3: Push de estoque — fan-out por família, sem exclusão quando há kit
 
 **Files:**
-- Modify: `supabase/functions/_shared/queue.ts:189-201` (interface `SincronizarEstoqueJob`)
 - Modify: `supabase/functions/sincronizar-estoque/processar.ts`
 - Test: `supabase/functions/sincronizar-estoque/__tests__/processar-kit.test.ts` (novo)
 
 **Interfaces:**
-- Consumes: `listarKitsVivos`, `saldoDoKit` de `_shared/estoque/kit.ts` (Task 1); `item_externo_origem` no job, produzido pela Task 2.
-- Produces: `SincronizarEstoqueJob` ganha `item_externo_origem?: string | null`.
+- Consumes: `listarKitsVivos`, `saldoDoKit` de `_shared/estoque/kit.ts` (Task 1).
+- Produces: nenhuma interface nova. **`_shared/queue.ts` não muda** (nenhum campo novo em `SincronizarEstoqueJob`) e **`_shared/estoque/alvos.ts` não muda**.
 
 ### Contexto obrigatório antes de editar
 
-**Não** amplie `estoquePorSku` para conter base + kits e chame `resolverAlvosPush` uma vez só. `alvos.ts:57-58` faz fallback para **todos** os SKUs do mapa quando `variacoes_externas` está vazio — e o anúncio de kit é um item plano de 1 SKU. O resultado seria o anúncio do kit recebendo os SKUs da base e dos outros kits, e vice-versa.
+Duas regras, e as duas importam.
 
-O desenho correto: uma passada de `resolverAlvosPush` **por família** (base, depois cada kit), cada uma com o mapa de SKUs **só daquela família**. `_shared/estoque/alvos.ts` **não muda** — o `canalOrigem` deixa de ser usado para a exclusão e passa a ser sempre `null`; a exclusão vira um filtro por `itemExternoId` aplicado sobre os alvos concatenados.
+**(a) Um `resolverAlvosPush` por família, nunca um mapa único.** Não amplie `estoquePorSku` para conter base + kits e chame `resolverAlvosPush` uma vez só. `alvos.ts:57-58` faz fallback para **todos** os SKUs do mapa quando `variacoes_externas` está vazio — e o anúncio de kit é um item plano de 1 SKU. O resultado seria o anúncio do kit recebendo os SKUs da base e dos outros kits, e vice-versa. O desenho correto é uma passada **por família** (base, depois cada kit), cada uma com o mapa de SKUs só daquela família.
+
+**(b) Com kit vinculado, a exclusão por canal de origem simplesmente não se aplica** (Decisão 7, revisada). Hoje `resolverAlvosPush` recebe `canalOrigem` e pula o canal onde a venda ocorreu — uma otimização que evita devolver ao ML o número que ele já sabe. Base e kits dividem o mesmo canal em anúncios diferentes, então essa exclusão pularia todos eles. A decisão do Diego foi **não** tentar identificar o anúncio de origem: quando a família do evento tem vínculo de kit, passa-se `canalOrigem = null` para todo mundo e reempurra-se tudo. Push é **absoluto** e o valor é recalculado do zero, então o resultado final é idêntico ao de uma exclusão fina — custa 1-2 chamadas de API a mais por evento, e economiza uma coluna no ledger mais plumbing por todo o outbox.
+
+Produto **sem** kit continua com o comportamento de hoje, intocado: `canalOrigem = job.canal_origem`.
+
+**Por que o `codigo_pai` do job é sempre o da base:** `baixar_estoque` recebe `p_codigo` já resolvido para a base (Task 2) e grava `codigo_pai` da base no movimento; entrada e ajuste em SKU de kit são recusados no banco (Task 5); o estorno resolve pelo `codigo` gravado no movimento. Nenhum caminho grava o `codigo_pai` de um kit no ledger. Mesmo assim o worker redireciona defensivamente (Step 4): um job com o `codigo_pai` de um kit empurraria a coluna crua `variacoes.estoque = 0` para um anúncio vivo, e zerar um anúncio no ML por engano não é um risco que vale economizar quatro linhas.
 
 - [ ] **Step 1: Escrever o teste falhando**
 
@@ -849,24 +794,43 @@ Deno.test('push da base alcança o anúncio do kit com floor(base/N)', async () 
   assertEquals(chamadas.find((c) => c.item === 'MLB-KIT3')?.estoques, [{ sku: '00000021', estoque: 2 }]);
 });
 
-Deno.test('exclusão é por ANÚNCIO: venda no kit não pula o anúncio da base', async () => {
+Deno.test('com kit vinculado, venda no canal NÃO exclui nada — base e kit recebem push', async () => {
+  // ADR-0151 D-7 (revisada): a exclusão por canal de origem deixa de valer quando há kit.
+  // Push absoluto + recálculo do zero = mesmo resultado da exclusão fina, sem coluna nova.
   const chamadas: Array<{ item: string; estoques: unknown }> = [];
   await processarSincronizacao(depsQueRegistram(chamadas), {
-    org_id: 'org-1', codigo_pai: '00000010',
-    canal_origem: 'mercado_livre', item_externo_origem: 'MLB-KIT3',
+    org_id: 'org-1', codigo_pai: '00000010', canal_origem: 'mercado_livre',
   });
-  assertEquals(chamadas.map((c) => c.item), ['MLB-BASE']);
+  assertEquals(chamadas.map((c) => c.item).sort(), ['MLB-BASE', 'MLB-KIT3']);
 });
 
-Deno.test('venda na base não pula os anúncios de kit do mesmo canal', async () => {
+Deno.test('produto SEM kit mantém a exclusão por canal de hoje', async () => {
+  const chamadas: Array<{ item: string; estoques: unknown }> = [];
+  const semKit = {
+    familias: [DADOS.familias[0]],
+    variacoes: { 'f-base': DADOS.variacoes['f-base'] },
+    anuncios: [DADOS.anuncios[0]],
+  };
+  await processarSincronizacao(depsQueRegistram(chamadas, semKit), {
+    org_id: 'org-1', codigo_pai: '00000010', canal_origem: 'mercado_livre',
+  });
+  // O canal da venda já se decrementou sozinho: nada é empurrado de volta.
+  assertEquals(chamadas.length, 0);
+});
+
+Deno.test('job com o codigo_pai de um KIT é redirecionado para a base', async () => {
+  // Nenhum caminho grava o codigo_pai de um kit no ledger, mas se acontecesse, empurrar
+  // a coluna crua (`estoque` = 0) zeraria um anúncio vivo no ML.
   const chamadas: Array<{ item: string; estoques: unknown }> = [];
   await processarSincronizacao(depsQueRegistram(chamadas), {
-    org_id: 'org-1', codigo_pai: '00000010',
-    canal_origem: 'mercado_livre', item_externo_origem: 'MLB-BASE',
+    org_id: 'org-1', codigo_pai: '00000020', canal_origem: null,
   });
-  assertEquals(chamadas.map((c) => c.item), ['MLB-KIT3']);
+  assertEquals(chamadas.map((c) => c.item).sort(), ['MLB-BASE', 'MLB-KIT3']);
+  assertEquals(chamadas.find((c) => c.item === 'MLB-KIT3')?.estoques, [{ sku: '00000021', estoque: 2 }]);
 });
 ```
+
+Ajuste `depsQueRegistram(chamadas, dados = DADOS)` para aceitar o conjunto de dados como segundo parâmetro.
 
 - [ ] **Step 2: Rodar e confirmar falha**
 
@@ -878,23 +842,15 @@ Esperado: FALHA — hoje só o anúncio da base é alcançado, e a exclusão por
 
 - [ ] **Step 3: Estender o tipo do job**
 
-Em `supabase/functions/_shared/queue.ts`, na interface `SincronizarEstoqueJob` (linha ~189):
+`supabase/functions/_shared/queue.ts` **não muda**. `SincronizarEstoqueJob` continua com `{ org_id, codigo_pai, canal_origem, reativar? }` exatamente como está hoje (linha ~189). A Decisão 7 revisada não precisa de nenhum dado novo no job: a decisão "excluir ou não o canal de origem" é tomada dentro do worker, a partir de `listarKitsVivos`.
 
-```ts
-export interface SincronizarEstoqueJob {
-  org_id: string;
-  codigo_pai: string;
-  /**
-   * Canal onde o movimento ocorreu. Mantido para compatibilidade com jobs em voo; a
-   * EXCLUSÃO do push passou a ser por anúncio (`item_externo_origem`), não por canal —
-   * base e kits vinculados dividem o mesmo canal em anúncios diferentes (ADR-0151 D-7).
-   */
-  canal_origem: string | null;
-  /** Anúncio que originou o movimento; só ele é excluído do push. */
-  item_externo_origem?: string | null;
-  reativar?: boolean;
-}
+Confirme antes de seguir:
+
+```bash
+cd "<repo>" && git diff --stat supabase/functions/_shared/queue.ts
 ```
+
+Esperado: vazio.
 
 - [ ] **Step 4: Reescrever a montagem de alvos em `sincronizar-estoque/processar.ts`**
 
@@ -945,7 +901,8 @@ async function lerFamiliaComSaldo(
 
 /** Alvos de push de UMA família. `resolverAlvosPush` roda com o mapa só dela. */
 async function alvosDaFamilia(
-  admin: SupabaseClient, orgId: string, codigoPai: string, estoquePorSku: Record<string, number>,
+  admin: SupabaseClient, orgId: string, codigoPai: string,
+  estoquePorSku: Record<string, number>, canalOrigem: string | null,
 ): Promise<{ alvos: AlvoPush[]; temAnuncio: boolean }> {
   const { data: anuncios } = await admin.from('anuncios_externos')
     .select('id, canal, item_externo_id, variacoes_externas')
@@ -956,10 +913,8 @@ async function alvosDaFamilia(
       .select('anuncio_externo_id, sku, item_externo_id, retirado, status')
       .eq('org_id', orgId).in('anuncio_externo_id', idsAnuncio)
     : { data: [] };
-  // `canalOrigem = null` SEMPRE: a exclusão passou a ser por anúncio e é aplicada
-  // depois, sobre os alvos concatenados (ADR-0151 D-7).
   const alvos = resolverAlvosPush(
-    (anuncios ?? []) as never, (itensUP ?? []) as never, estoquePorSku, null,
+    (anuncios ?? []) as never, (itensUP ?? []) as never, estoquePorSku, canalOrigem,
   );
   return { alvos, temAnuncio: (anuncios ?? []).length > 0 };
 }
@@ -968,24 +923,51 @@ async function alvosDaFamilia(
 Substitua os blocos 1 e 2 de `processarSincronizacao` (hoje `processar.ts:146-198`) por:
 
 ```ts
-  const { org_id, codigo_pai, item_externo_origem } = job;
+  const { org_id, codigo_pai, canal_origem } = job;
   const admin = deps.admin;
 
   // 1) Base: família canônica + saldo real das variações.
-  const base = await lerFamiliaComSaldo(admin, org_id, codigo_pai);
+  //
+  // Defensivo: se o job veio com o `codigo_pai` de um KIT, redireciona para a base. Nenhum
+  // caminho grava o `codigo_pai` de um kit no ledger hoje (a baixa resolve para a base, e
+  // entrada/ajuste em SKU de kit são recusados no banco), mas se acontecesse, o kit seria
+  // tratado como produto e o push mandaria a coluna crua `estoque = 0` para um anúncio vivo.
+  let codigoPaiBase = codigo_pai;
+  const { data: familiaDoJob } = await admin.from('familias')
+    .select('kit_base_codigo_pai, kit_multiplicador')
+    .eq('org_id', org_id).eq('codigo_pai', codigo_pai)
+    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+  if (familiaDoJob?.kit_multiplicador != null && familiaDoJob.kit_base_codigo_pai) {
+    console.log('estoque_push_job_de_kit_redirecionado', codigo_pai, '->', familiaDoJob.kit_base_codigo_pai);
+    codigoPaiBase = familiaDoJob.kit_base_codigo_pai as string;
+  }
+
+  const base = await lerFamiliaComSaldo(admin, org_id, codigoPaiBase);
   if (!base) return { status: 200, body: { ok: true, skip: 'produto sem família' } };
   if (Object.keys(base.estoquePorSku).length === 0) {
     return { status: 200, body: { ok: true, skip: 'sem variações' } };
   }
 
-  // 2) Alvos da base + de CADA kit vinculado, um `resolverAlvosPush` por família.
+  const kits = await listarKitsVivos(admin, org_id, codigoPaiBase);
+
+  // ADR-0151 D-7 (revisada) — com kit vinculado, a exclusão por canal de origem NÃO se
+  // aplica: reempurra base + todos os tamanhos, sempre. Base e kits dividem o mesmo canal em
+  // anúncios diferentes, e a exclusão por canal pularia todos eles. Identificar e pular só o
+  // anúncio de origem foi DESCARTADO pelo Diego: o push é ABSOLUTO e recalculado do zero,
+  // então o resultado final é idêntico — custa 1-2 chamadas de API a mais por evento, e
+  // poupa uma coluna no ledger mais plumbing por todo o outbox. Não "otimize" isto de volta.
+  //
+  // Produto sem kit segue com o comportamento de hoje, intocado.
+  const exclusao = kits.length > 0 ? null : canal_origem;
+
+  // 2) Alvos da base + de CADA kit, um `resolverAlvosPush` por família.
   //
   // ATENÇÃO: NÃO junte os SKUs de base e kits num mapa só. Quando `variacoes_externas` é
   // vazio (anúncio de kit é item plano de 1 SKU), `resolverAlvosPush` cai no fallback
   // "manda o produto inteiro" (alvos.ts:57-58) e o anúncio do kit receberia os SKUs da base.
   const { alvos: alvosBase, temAnuncio: baseTemAnuncio } =
-    await alvosDaFamilia(admin, org_id, codigo_pai, base.estoquePorSku);
-  let alvos = [...alvosBase];
+    await alvosDaFamilia(admin, org_id, codigoPaiBase, base.estoquePorSku, exclusao);
+  const alvos = [...alvosBase];
   let temAnuncio = baseTemAnuncio;
 
   // O saldo do kit é sempre floor(estoque_base / N), calculado ao vivo (ADR-0151 D-6). A
@@ -999,9 +981,9 @@ Substitua os blocos 1 e 2 de `processarSincronizacao` (hoje `processar.ts:146-19
   const skusBase = Object.keys(base.estoquePorSku);
   const estoqueBaseUnico = skusBase.length === 1 ? base.estoquePorSku[skusBase[0]] : null;
 
-  for (const kit of await listarKitsVivos(admin, org_id, codigo_pai)) {
+  for (const kit of kits) {
     if (estoqueBaseUnico === null) {
-      console.error('kit_com_base_multivariacao', { org_id, codigo_pai, skus: skusBase.length });
+      console.error('kit_com_base_multivariacao', { org_id, codigoPaiBase, skus: skusBase.length });
       continue;   // não empurra saldo inventado para o ML
     }
     const kitComSaldo = await lerFamiliaComSaldo(admin, org_id, kit.codigo_pai);
@@ -1010,29 +992,24 @@ Substitua os blocos 1 e 2 de `processarSincronizacao` (hoje `processar.ts:146-19
     for (const sku of Object.keys(kitComSaldo.estoquePorSku)) {
       derivado[sku] = saldoDoKit(estoqueBaseUnico, kit.kit_multiplicador);
     }
-    const r = await alvosDaFamilia(admin, org_id, kit.codigo_pai, derivado);
+    // `exclusao` aqui é sempre null (só chegamos neste laço com kits.length > 0).
+    const r = await alvosDaFamilia(admin, org_id, kit.codigo_pai, derivado, exclusao);
     alvos.push(...r.alvos);
     temAnuncio = temAnuncio || r.temAnuncio;
   }
-
-  // Exclusão POR ANÚNCIO (D-7): só o item que gerou a venda já se auto-decrementou. Os
-  // demais anúncios do mesmo canal (a base, e os outros tamanhos de kit) recebem o push.
-  if (item_externo_origem) {
-    alvos = alvos.filter((a) => a.itemExternoId !== item_externo_origem);
-  }
 ```
 
-Ajuste `ctxAlerta` para usar `base.nome`, `base.permalink`, `base.rotuloPorSku`, `base.estoquePorSku` e o `temAnuncio` acumulado. O resto do arquivo (laço de push, reativação, alerta de zerado) **não muda** — em particular, `reativarSePausado` (`processar.ts:58`) não muda: ele já recebe `alvo.itemExternoId`, então a reativação por reposição (ADR-0111) passa a alcançar o anúncio de cada kit automaticamente, com `alvo.estoques.some(e => e.estoque > 0)` avaliado sobre o **saldo derivado** do kit. É a Decisão 15 inteira, sem código novo.
+Ajuste `ctxAlerta` para usar `codigoPaiBase`, `base.nome`, `base.permalink`, `base.rotuloPorSku`, `base.estoquePorSku` e o `temAnuncio` acumulado. O resto do arquivo (laço de push, reativação, alerta de zerado) **não muda** — em particular, `reativarSePausado` (`processar.ts:58`) não muda: ele já recebe `alvo.itemExternoId`, então a reativação por reposição (ADR-0111) passa a alcançar o anúncio de cada kit automaticamente, com `alvo.estoques.some(e => e.estoque > 0)` avaliado sobre o **saldo derivado** do kit. É a Decisão 15 inteira, sem código novo.
 
-- [ ] **Step 5: Atualizar os chamadores que passam `canal_origem`**
+- [ ] **Step 5: Confirmar que nenhum chamador precisa mudar**
 
-Os pontos que enfileiram continuam podendo passar `canal_origem` (o campo segue no tipo), mas **quem quer exclusão precisa passar `item_externo_origem`**. Confira e ajuste:
+Todo mundo continua enfileirando `{ org_id, codigo_pai, canal_origem, reativar? }` como hoje:
 
 ```bash
 cd "<repo>" && grep -rn "enfileirarSincronizacaoEstoque" supabase/functions/ --include=*.ts | grep -v __tests__
 ```
 
-Esperado: `entrada-estoque` e `ajustar-estoque` passam `canal_origem: null` (nenhuma exclusão — correto, não mexer); `reconciliar-estoque:92-94` passa `canal_origem: null` (correto, não mexer); `despacharPushPendente` já foi ajustado na Task 2.
+Esperado: `entrada-estoque` e `ajustar-estoque` passam `canal_origem: null`; `reconciliar-estoque:92-94` passa `canal_origem: null`; `despacharPushPendente` passa o `push_canal_origem` do movimento. **Nenhum deles muda.** A decisão de ignorar a exclusão é tomada só dentro do worker.
 
 - [ ] **Step 6: Rodar e confirmar que passa**
 
@@ -1045,8 +1022,8 @@ Esperado: PASS, incluindo os testes já existentes de `processar.test.ts`.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add supabase/functions/_shared/queue.ts supabase/functions/sincronizar-estoque/
-git commit -m "feat(kit): push de estoque com fan-out por família e exclusão por anúncio (ADR-0151 D-7)"
+git add supabase/functions/sincronizar-estoque/
+git commit -m "feat(kit): push com fan-out por família, sem exclusão de canal quando há kit (ADR-0151 D-7)"
 ```
 
 ---
@@ -2652,8 +2629,9 @@ Na seção `estoque_movimentos`, acrescente às colunas:
 **`origem_kit_codigo_pai`** / **`origem_kit_multiplicador`** (ADR-0151 D-6: auditoria de que o
 débito veio da venda de um kit, não de venda direta — colunas nuláveis, **não** um motivo novo,
 porque motivo novo quebraria `estornar_estoque`, que só repõe `where motivo='venda'`),
-**`push_item_externo_id`** (D-7: o anúncio que originou o movimento; a exclusão do push deixou de
-ser por canal e passou a ser por anúncio, porque base e kits dividem o mesmo canal).
+Não há coluna de "anúncio de origem": a Decisão 7 foi revisada para **não** excluir anúncio nenhum
+quando há kit vinculado (o push é absoluto e recalculado, então reempurrar tudo dá o mesmo
+resultado por 1-2 chamadas de API a mais).
 ```
 
 Na seção Estoque, acrescente às guards:
@@ -2682,8 +2660,10 @@ Registre, no formato dos ADRs 0094/0129, os desvios conscientes deste plano em r
 3. **`chave_cadastro`** não é mencionada no ADR, mas é obrigatória pelo trigger `validar_familia_no_tenant` em lote `origem='manual'` — e vira a idempotência da submissão (ADR-0096 D-9).
 4. **Lote dedicado por submissão**, e não o lote manual aberto, para os kits não virarem card na Revisão da base (D-4) — mesmo desvio 2 do ADR-0129.
 5. **`reconciliar-estoque` não mudou**: o fan-out por família dentro de `processarSincronizacao` já alcança base + kits, cumprindo o terceiro bullet da Decisão 13 sem código novo naquele worker.
-6. **A anotação de origem no ledger é não-atômica** (UPDATE depois da RPC), para não mudar a assinatura de `baixar_estoque` e ter de refazer a dança de owner/grants do `estoque_rpc_executor`. Degradação em falha: o push não exclui o anúncio que vendeu — inofensivo, porque push é absoluto.
+6. **A anotação de origem no ledger (`origem_kit_*`) é não-atômica** (UPDATE depois da RPC), para não mudar a assinatura de `baixar_estoque` e ter de refazer a dança de owner/grants do `estoque_rpc_executor`. É só auditoria: nada de push depende dela, então falhar custa uma linha de ledger sem atribuição de kit e um alerta com texto genérico.
 7. **`aplicarKitNosAtributos` falha LOUD (400)** quando a categoria do ML não expõe `SALE_FORMAT=Kit`. O ADR-0071 faz no-op nesse caso; aqui um no-op publicaria N unidades ao preço de uma.
+8. **A Decisão 7 revisada custou zero linhas fora do worker.** A simplificação (reempurrar tudo em vez de excluir o anúncio de origem) tirou do plano uma coluna no `estoque_movimentos`, um campo em `SincronizarEstoqueJob` e o plumbing correspondente em `lerPushPendente`/`despacharPushPendente`. A decisão vive inteira numa linha de `sincronizar-estoque/processar.ts` (`const exclusao = kits.length > 0 ? null : canal_origem`). Registrado aqui porque a versão anterior deste plano tinha esse plumbing e alguém pode encontrá-la no histórico do git.
+9. **`processarSincronizacao` redireciona job com `codigo_pai` de kit para a base.** Defensivo, não previsto no ADR: nenhum caminho grava o `codigo_pai` de um kit no ledger, mas se acontecesse o push mandaria `variacoes.estoque = 0` (a coluna crua do kit) para um anúncio vivo no ML.
 
 - [ ] **Step 4: Atualizar `docs/TASKS.md` e o obsidian-vault**
 
@@ -2769,7 +2749,7 @@ Tabela de auto-revisão. Cada decisão do ADR aponta para a(s) task(s) que a imp
 | 4 | Revisão em lote sem card por kit; preview editável; custo e peso derivados × N | **6** (derivação e lote dedicado), **7** (preview), **8** (sem card na Revisão) |
 | 5 | GTIN: publica sem, nunca herda o da base | **6** (builder da variação), **7** (campo vazio no preview), **10** (fora do alerta de catálogo) |
 | 6 | Estoque 100% vinculado: baixa e estorno no ledger da base, `× N`; alerta de oversell | **2** (baixa/estorno/anotação), **10** (alerta com atribuição de kit) |
-| 7 | Push exclui por anúncio (`item_externo_id`), não por canal | **2** (coluna + outbox + job), **3** (fan-out e filtro) |
+| 7 | Push sem exclusão nenhuma quando há kit vinculado (base + todos os tamanhos, sempre) | **3** (fan-out por família + `exclusao = kits.length > 0 ? null : canal_origem`). Nada no ledger, no outbox nem no job |
 | 8 | CREATE/UPDATE usam o valor calculado, não a coluna crua | **4** (`aplicarEstoqueDerivado` nos dois workers) |
 | 9 | Escrita direta no SKU do kit bloqueada no banco | **5** (`registrar_entrada` e `ajustar_estoque`), **9** (picker não oferece) |
 | 10 | v1: só produto sem cor + trava contra adicionar cor com kit vivo | **5** (trigger `variacoes_bloquear_extra_com_kit`), **6** (recusa `base_multivariacao`), **7** (botão desabilitado) |
@@ -2787,5 +2767,5 @@ Tabela de auto-revisão. Cada decisão do ADR aponta para a(s) task(s) que a imp
 | Oversell intra-canal (sem reserva prévia) | Global Constraints §1; mitigado só pelo alerta da Task 10 |
 | Pausa silenciosa do ML por falta de catálogo | Global Constraints §2; Task 10 Step 3 (comentário no guard) |
 | Buraco na sequência de `proximo_codigo_produto` | Global Constraints §3; Task 6 Step 5 |
-| Push por evento passa de 1 para até 6 chamadas | Task 3 (serializado pela fila `estoque-{orgId}` existente) |
-| Anotação de origem no ledger não-atômica | Task 2, contexto obrigatório; ADR-0151 seção Implementação item 6 |
+| Push por evento passa de 1 para até 6 chamadas — inclusive para o anúncio que originou o evento, porque a Decisão 7 revisada não exclui nenhum | Task 3 (serializado pela fila `estoque-{orgId}` existente) |
+| Anotação de origem no ledger não-atômica (só auditoria) | Task 2, contexto obrigatório; ADR-0151 seção Implementação item 6 |
