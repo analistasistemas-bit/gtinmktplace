@@ -47,6 +47,8 @@ export function estadoAtualOfertas(ofertas: PulseOferta[]): PulseOferta[] {
     .sort((a, b) => a.preco - b.preco);
 }
 
+type OfertaPorDia = Pick<PulseOferta, 'item_id' | 'preco' | 'ativo' | 'dia'>;
+
 /** Menor preço entre as ofertas ativas de cada dia, em ordem cronológica. */
 /**
  * Menor preço VIGENTE por dia. `pulse_ofertas` é histórico de **mudanças** — o coletor só grava a
@@ -63,10 +65,12 @@ export function estadoAtualOfertas(ofertas: PulseOferta[]): PulseOferta[] {
  * o histórico é limitado a 400 linhas e pode ter perdido a primeira aparição de alguma oferta.
  */
 export function menorPrecoPorDia(
-  ofertas: PulseOferta[],
-  atuais?: PulseOferta[],
+  // Só os campos que a função de fato lê: quem consulta por dia não precisa (nem deve fingir que
+  // tem) a linha inteira de `pulse_ofertas` — a lista lê 6 colunas para não trafegar o resto.
+  ofertas: OfertaPorDia[],
+  atuais?: Pick<PulseOferta, 'preco' | 'ativo'>[],
 ): { dia: string; preco: number }[] {
-  const porDia = new Map<string, PulseOferta[]>();
+  const porDia = new Map<string, OfertaPorDia[]>();
   for (const o of ofertas) {
     const lista = porDia.get(o.dia) ?? [];
     lista.push(o);

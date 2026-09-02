@@ -174,8 +174,10 @@ export function TabelaRadar({
       cell: (p) => {
         if (historico === undefined) return <Skeleton className="h-4 w-16" />;
         const serie = historico.get(p.id);
-        // Série de um ponto só não vira reta: reta afirma estabilidade que não foi medida.
-        if (!serie) return null;
+        // Série de um ponto só não vira reta: reta afirma estabilidade que não foi medida. A lib
+        // já corta em < 2, mas a prop é pública — sem este piso aqui, um ponto só renderizaria o
+        // wrapper `role="img"` nomeando uma faixa que o `Sparkline` (que devolve null) não desenha.
+        if (!serie || serie.length < 2) return null;
         const precos = serie.map((s) => s.preco);
         // `Sparkline` (src/components/ui/sparkline.tsx) recebe `{ data: string; total: number }[]`
         // e NÃO aceita `aria-label` — daí o wrapper com `role="img"`. É o mesmo componente que a

@@ -259,7 +259,10 @@ export async function fetchPulseHistoricoOfertas(
 
   const desde = new Date(Date.now() - DIAS_HISTORICO_LIDOS * 86_400_000).toISOString().slice(0, 10);
   const PAGINA = 1000;
-  const porProduto = new Map<string, PulseOferta[]>();
+  // O tipo é a projeção real do `select` — declarar `PulseOferta` aqui seria afirmar colunas que
+  // nem pedimos ao PostgREST.
+  type LinhaHistorico = Pick<PulseOferta, 'item_id' | 'preco' | 'ativo' | 'dia'> & { produto_id: string };
+  const porProduto = new Map<string, LinhaHistorico[]>();
   for (let de = 0; ; de += PAGINA) {
     const { data, error } = await supabase.from('pulse_ofertas')
       .select('produto_id, item_id, seller_id, preco, ativo, dia')
@@ -275,7 +278,7 @@ export async function fetchPulseHistoricoOfertas(
       .order('dia', { ascending: true })
       .range(de, de + PAGINA - 1);
     if (error) throw error;
-    const pagina = (data ?? []) as (PulseOferta & { produto_id: string })[];
+    const pagina = (data ?? []) as LinhaHistorico[];
     for (const linha of pagina) {
       const lista = porProduto.get(linha.produto_id) ?? [];
       lista.push(linha);

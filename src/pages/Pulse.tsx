@@ -108,7 +108,7 @@ export default function Pulse() {
   // Consulta separada e de baixa prioridade: a série é enfeite decisório, não bloqueia a lista.
   // Desligada até o resumo chegar — a âncora do último ponto vem dele. A chave não depende do
   // resumo: um refetch dele só re-ancora o histórico depois do `staleTime`.
-  const { data: historicoOfertas } = useQuery({
+  const { data: historicoOfertas, isError: historicoErro } = useQuery({
     queryKey: ['pulse', 'historico-ofertas', ids],
     queryFn: () => fetchPulseHistoricoOfertas(
       ids, new Map([...resumoOfertas!].map(([id, r]) => [id, r.menorObservado])),
@@ -360,7 +360,10 @@ export default function Pulse() {
           // Falha de leitura não pode virar esqueleto eterno: como na query irmã de ofertas, o
           // carregamento termina e a célula cai no travessão.
           contextos={codigosPai.length === 0 || contextoErro ? new Map() : contextosMargem}
-          historico={historicoOfertas}
+          // Como na query irmã de contexto de margem: sem isto, uma falha de leitura deixa o valor
+          // `undefined` para sempre e a coluna inteira fica em esqueleto eterno, sem nunca cair no
+          // estado vazio. Em falha, Map vazio = célula vazia, que é a verdade ("não temos série").
+          historico={historicoErro ? new Map() : historicoOfertas}
           onAbrirDetalhe={setDetalheId}
           onReprecificar={(p) => setReprecificar({
             codigoPai: p.codigo_pai!, precoInicial: p.meu_preco, produtoId: p.id,

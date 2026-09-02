@@ -6,6 +6,7 @@ const estado = vi.hoisted(() => ({
   paginas: [] as unknown[][],
   chamadasRange: [] as [number, number][],
   chamadasOrder: [] as unknown[][],
+  desde: null as string | null,
 }));
 
 vi.mock('@/lib/supabase', () => {
@@ -13,12 +14,18 @@ vi.mock('@/lib/supabase', () => {
   const metodo = (nome: string) => (...args: unknown[]) => {
     if (nome === 'range') estado.chamadasRange.push(args as [number, number]);
     if (nome === 'order') estado.chamadasOrder.push(args);
+    // O `gte('dia')` é HONRADO, não só registrado: um mock que ignora o filtro de data deixa
+    // encolher a janela de leitura sem reprovar nada (mutação medida — 30 → 7 dias passava).
+    if (nome === 'gte') estado.desde = args[1] as string;
     return cadeia;
   };
   for (const n of ['select', 'eq', 'in', 'gte', 'order', 'limit', 'range']) cadeia[n] = metodo(n);
   cadeia.then = (resolve: (v: unknown) => void) => {
     const i = estado.chamadasRange.length - 1;
-    return Promise.resolve({ data: estado.paginas[i] ?? [], error: null }).then(resolve);
+    const pagina = (estado.paginas[i] ?? []).filter(
+      (l) => estado.desde == null || (l as { dia: string }).dia >= estado.desde!,
+    );
+    return Promise.resolve({ data: pagina, error: null }).then(resolve);
   };
   return { supabase: { from: () => cadeia } };
 });
@@ -29,15 +36,21 @@ const diaAtras = (n: number) => new Date(Date.now() - n * 86_400_000).toISOStrin
 const linha = (item_id: string, preco: number, dia: string) =>
   ({ produto_id: 'p1', item_id, seller_id: 1, preco, ativo: true, dia });
 
-beforeEach(() => { estado.paginas = []; estado.chamadasRange = []; estado.chamadasOrder = []; });
+beforeEach(() => {
+  estado.paginas = []; estado.chamadasRange = []; estado.chamadasOrder = []; estado.desde = null;
+});
 
 describe('fetchPulseHistoricoOfertas', () => {
   it('lê 30 dias para semear o carry-forward e devolve os 7 últimos pontos', async () => {
     // Oferta que mudou uma vez há 20 dias e nunca mais: precisa continuar sendo o menor de hoje.
     estado.paginas = [[linha('MLB1', 36, diaAtras(20)), linha('MLB2', 79.99, diaAtras(2))], []];
-    const h = await fetchPulseHistoricoOfertas(['p1'], new Map([['p1', 36]]));
-    // O ponto de 2 dias atrás é 36 (carry-forward do de 20 dias), NUNCA 79,99.
-    expect(h.get('p1')!.at(-1)!.preco).toBe(36);
+    // SEM âncora de propósito: a âncora reescreve justamente o último ponto, então afirmar sobre
+    // ele com uma âncora de mesmo valor não distingue arrasto nenhum — medido, as duas mutações
+    // (matar o carry-forward e encolher a janela para 7 dias) passavam. A âncora tem teste próprio.
+    const h = await fetchPulseHistoricoOfertas(['p1']);
+    // 1º ponto: a semente de 20 dias atrás só existe porque a janela lida é de 30 dias.
+    // 2º ponto: 36 é o carry-forward da mesma oferta, NUNCA 79,99 (a única que mudou naquele dia).
+    expect(h.get('p1')!.map((p) => p.preco)).toEqual([36, 36]);
     expect(h.get('p1')!.length).toBeLessThanOrEqual(7);
   });
 
