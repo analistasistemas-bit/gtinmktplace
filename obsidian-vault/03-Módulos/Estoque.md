@@ -106,6 +106,17 @@ Bloco B do E6b (ADR-0094): produto entra **sem planilha**. Edges `cadastrar-prod
 (chip Planilha/Cadastro manual no LoteCard) — `lote_id` é `NOT NULL` e sustenta `process-familia`,
 `finalizarLote` e a unique `(lote_id, codigo_pai)`.
 
+**Entrada em várias cores de uma vez (2026-09-03).** O diálogo tem dois modos, escolhidos pela
+porta de entrada e não pela contagem de SKUs: aberto pelo **card do produto** lista as cores dele
+(RPC por produto) com uma quantidade por cor, como o Ajuste; aberto pelo **botão do topo** segue
+buscando um SKU na org. Quantidade em branco é "não mexi nesta cor", nunca zero; custo e documento
+valem para as cores preenchidas, e custo em branco **preserva** o custo atual de cada uma
+(`registrar_entrada` faz `custo = coalesce(p_custo, custo)`). A edge ganhou o formato
+`itens: [...]` com referência de idempotência por SKU, erro por item e um push por produto.
+Motivo: o picker vinha de `skus_estoque_org`, truncada em ~1000 linhas pelo PostgREST — com 8.491
+SKUs na org, um produto "do meio" da lista simplesmente não aparecia ("Nenhum SKU encontrado").
+Essa limitação **continua valendo para o botão do topo**; nenhum caminho do card depende mais dela.
+
 ## Adicionar variação a produto publicado (ADR-0129)
 
 Menu `⋮` do card → **Adicionar variação** (admin-only, mesmo gate do Ajuste/ADR-0110). Diferente
