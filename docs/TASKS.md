@@ -2,6 +2,44 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Entrada de mercadoria em várias cores de uma vez — 2026-09-03
+
+Relato do Diego, ao tentar repor as cores zeradas: o diálogo de Entrada abriu com o campo SKU
+preenchido com o código PAI e respondeu **"Nenhum SKU encontrado"**. Causa: o picker vem de
+`fetchSkusEstoqueOrg` → RPC `skus_estoque_org`, que o **PostgREST trunca em ~1000 linhas**. A org
+tem 8.491 SKUs e 3.142 deles ordenam (`nome_pai`, `codigo`) antes de "Tecido Helanca" — o produto
+nunca chegava na lista, e como o campo é só um filtro de texto, não havia contorno pela UI.
+
+Pedido: mostrar as cores e dar entrada de uma vez, como o diálogo de Ajuste.
+
+- [x] `DialogEntrada` tem dois modos, escolhidos pela **porta de entrada**, não pela contagem de
+  SKUs: aberto pelo card do produto (`codigoPaiInicial`) lista as cores daquele produto via
+  `fetchVariacoesProduto` (RPC por produto, sem truncamento) com uma quantidade por cor; o botão
+  do topo da página segue no picker de SKU. Produto de uma cor vira uma lista de uma linha, então
+  o ramo `qtdSkus === 1` do `produto-card` saiu.
+- [x] Quantidade em branco = "não mexi nesta cor", nunca zero. Custo e documento valem para todas
+  as cores preenchidas (mesma nota) — rotulado na própria tela. Custo em branco **preserva** o
+  custo atual: `registrar_entrada` faz `custo = coalesce(p_custo, custo)` (conferido na migration
+  `20260903002527`, caminho financeiro do ADR-0055).
+- [x] Edge `entrada-estoque` passa a aceitar `itens: [...]` além do formato de uma cor, com miolo
+  em `processar.ts` + `validar.ts` testáveis sem Deno — espelho do `ajustar-estoque`. Uma
+  referência de idempotência POR SKU (`entrada:<ref>:<codigo>`); a cor única mantém a ref
+  histórica `entrada:<ref>`, senão um retry de submissão antiga somaria o saldo de novo. Erro é
+  por item (o diálogo fica aberto mostrando o que não entrou) e o formato antigo devolve 400 como
+  antes, para não quebrar aba já aberta durante o deploy.
+- [x] Um push por `codigo_pai` tocado, com `reativar: true` e **sem** `skus`: aqui o push do
+  produto inteiro é o desejado — é ele que reconverge o anúncio com o saldo do app. O recorte por
+  SKU continua valendo só para a entrada que nasce junto de uma cor nova (outbox, `skuRestrito`).
+- [x] Testes: `dialog-entrada.test.tsx` (modo lista não toca na lista da org; só as cores
+  preenchidas são enviadas, com o custo aplicado a todas; botão desabilitado sem nada preenchido;
+  picker intacto sem produto) e `entrada-estoque/__tests__/processar.test.ts` (ref por SKU, ref
+  histórica na cor única, SKU repetido recusado, erro por item, tudo-duplicado ainda enfileira,
+  falha de push não perde a entrada).
+
+- [ ] Não corrigido (fora do pedido): o picker do botão do topo continua limitado às ~1000
+  primeiras linhas de `skus_estoque_org`. Nenhum caminho do card depende mais dele, mas buscar um
+  SKU "do meio" da org por ali ainda não acha.
+
 ## Push de estoque da cor nova não arrasta as cores já publicadas — 2026-09-03
 
 Incidente (relato do Diego): depois de adicionar a cor Preta ao `MLB7157545794`, as cores

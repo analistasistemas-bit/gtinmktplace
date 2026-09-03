@@ -85,7 +85,8 @@ function ListaVariacoesEstoque({ variacoes, nomeProduto, precoMl, statusPublicac
 }
 
 export interface AlvoEntrada {
-  /** Só preenchido quando o produto tem UMA variação — com várias, a escolha é do operador. */
+  /** Só o botão do topo da página abre a entrada sem produto; do card vem sempre `codigoPai`,
+   *  e o diálogo lista as cores dele (produto de uma cor vira uma lista de uma linha). */
   sku?: string;
   codigoPai: string;
 }
@@ -209,9 +210,7 @@ export function ProdutoCard({
   // linha já carrega o array completo — não precisa unir entre variações.
   const kits = variacoes?.[0]?.kits ?? [];
 
-  const alvo: AlvoEntrada = produto.qtdSkus === 1 && produto.skuUnico
-    ? { sku: produto.skuUnico, codigoPai: produto.codigoPai }
-    : { codigoPai: produto.codigoPai };
+  const alvo: AlvoEntrada = { codigoPai: produto.codigoPai };
 
   async function handleAjustar() {
     if (!onAjustar) return;

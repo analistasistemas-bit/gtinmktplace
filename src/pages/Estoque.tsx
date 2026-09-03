@@ -232,7 +232,7 @@ export default function Estoque() {
         aberto={entradaAberta}
         onFechar={() => setEntradaAberta(false)}
         skuInicial={alvoEntrada?.sku}
-        filtroInicial={alvoEntrada?.codigoPai}
+        codigoPaiInicial={alvoEntrada?.codigoPai}
       />
       <DialogAjuste
         produto={produtoAjuste}

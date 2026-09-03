@@ -378,6 +378,32 @@ export async function registrarEntrada(p: {
   return { estoque: r.estoque, duplicada: r.duplicada === true, pushOk: r.pushOk !== false };
 }
 
+export interface ResultadoEntradaItem {
+  codigo: string;
+  estoque: number | null;
+  duplicada: boolean;
+  erro?: string;
+}
+
+export interface ResultadoEntradaLote {
+  resultados: ResultadoEntradaItem[];
+  pushOk: boolean;
+}
+
+/** Entrada em VÁRIAS cores do mesmo produto numa submissão. Documento e custo valem para todos
+ *  os itens (mesma nota); a edge deriva uma referência de idempotência por SKU. */
+export async function registrarEntradaLote(p: {
+  itens: Array<{ codigo: string; quantidade: number; custo?: number | null }>;
+  documento?: string | null;
+  /** uuid gerado UMA vez por submissão do formulário — não regenerar no retry. */
+  ref: string;
+}): Promise<ResultadoEntradaLote> {
+  const { data, error } = await supabase.functions.invoke('entrada-estoque', { body: p });
+  if (error) throw await erroDaEdge(error);
+  const r = data as { resultados?: ResultadoEntradaItem[]; pushOk?: boolean };
+  return { resultados: r.resultados ?? [], pushOk: r.pushOk !== false };
+}
+
 export interface ResultadoAjusteItem {
   codigo: string;
   estoque: number | null;

@@ -1,12 +1,18 @@
 // E6b (ADR-0094, D-9/D-10/D-15): entrada de mercadoria. Escrita de estoque só passa por aqui
 // (service_role), nunca do browser direto — o trigger de bloqueio do Bloco A recusa UPDATE
 // direto em variacoes.estoque justamente para o ledger nunca ficar sem o movimento.
+//
+// Aceita uma cor (`codigo`+`quantidade`, o picker global) ou várias de um produto
+// (`itens: [...]`, o diálogo aberto pelo card). O miolo vive em processar.ts, com dependências
+// injetadas para ser testável sem Deno — mesmo arranjo de `ajustar-estoque`.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
+import { validarEntrada } from './validar.ts';
+import { processarEntrada } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -28,64 +34,55 @@ Deno.serve(async (req) => {
   }
 
   let body: {
-    codigo?: string; quantidade?: number; custo?: number | null;
+    codigo?: string; quantidade?: number; custo?: number | null; itens?: unknown;
     documento?: string | null; observacao?: string | null; ref?: string;
   };
   try { body = await req.json(); } catch { return json({ error: 'JSON inválido' }, 400); }
 
-  const codigo = body.codigo?.trim() ?? '';
-  const quantidade = Number(body.quantidade ?? 0);
-  if (!codigo) return json({ error: 'Informe o SKU.' }, 400);
-  if (!Number.isInteger(quantidade) || quantidade <= 0) {
-    return json({ error: 'Quantidade deve ser um inteiro maior que zero.' }, 400);
-  }
-  // Custo alimenta markup e preço (ADR-0055): valor inválido FALHA aqui e de novo na RPC.
-  const custo = body.custo == null ? null : Number(body.custo);
-  if (custo !== null && !(custo > 0)) {
-    return json({ error: 'Custo, quando informado, deve ser maior que zero.' }, 400);
-  }
+  const validacao = validarEntrada(body);
+  if (!validacao.ok) return json({ error: validacao.erro }, 400);
+
   // Idempotência: o cliente gera um uuid por submissão do formulário. Sem isso, duplo clique
   // ou retry de rede soma o saldo 2× e sobrescreve o custo 2× — e isto é caminho financeiro.
   const ref = body.ref?.trim();
   if (!ref) return json({ error: 'Referência de idempotência ausente.' }, 400);
-  const refCompleta = `entrada:${ref}`;
 
-  const { data: estoque, error } = await admin.rpc('registrar_entrada', {
-    p_org: orgId, p_codigo: codigo, p_qtd: quantidade,
-    p_custo: custo, p_doc: body.documento?.trim() || null,
-    p_obs: body.observacao?.trim() || null,
-    p_criado_por: userId, p_ref: refCompleta,
-  });
-  if (error) return json({ error: error.message }, 400);
-  const duplicada = estoque === null;   // a mesma submissão já foi aplicada — não é erro
+  const r = await processarEntrada(
+    {
+      // `async` de propósito: o builder do supabase-js devolve PromiseLike, e o contrato de
+      // DepsEntrada pede Promise (deno check reprova a atribuição direta).
+      rpc: async (nome, args) => {
+        const res = await admin.rpc(nome, args);
+        return { data: res.data, error: res.error };
+      },
+      lerMovimento: async (org, refItem) => {
+        const { data } = await admin.from('estoque_movimentos')
+          .select('codigo_pai, estoque_resultante')
+          .eq('org_id', org).eq('referencia_externa', refItem).maybeSingle();
+        return (data as { codigo_pai: string | null; estoque_resultante: number | null } | null) ?? null;
+      },
+      enfileirar: enfileirarSincronizacaoEstoque,
+    },
+    {
+      orgId, userId, itens: validacao.itens, unico: validacao.unico,
+      documento: body.documento?.trim() || null,
+      observacao: body.observacao?.trim() || null,
+      ref,
+    },
+  );
 
-  // O enfileiramento roda TAMBÉM no caminho duplicado: se a primeira tentativa aplicou a
-  // entrada mas morreu antes de enfileirar, o retry cairia em `duplicada` e o push nunca
-  // aconteceria. Push absoluto é idempotente — re-enfileirar é bem mais barato que perder
-  // a propagação. canal_origem null = push para TODOS os canais publicados (D-10).
-  const { data: mov } = await admin.from('estoque_movimentos')
-    .select('codigo_pai, estoque_resultante')
-    .eq('org_id', orgId).eq('referencia_externa', refCompleta).maybeSingle();
+  await auditarOperacaoSuporte(
+    admin, context, { type: 'variacao', id: validacao.itens.map((i) => i.codigo).join(',') }, 'succeeded',
+  );
 
-  let pushOk = true;
-  if (mov?.codigo_pai) {
-    try {
-      await enfileirarSincronizacaoEstoque(
-        // reativar: entrada de mercadoria é reposição — anúncio pausado com saldo volta ao ar
-        // (ADR-0111). O worker confere o status ao vivo antes de escrever.
-        { org_id: orgId, codigo_pai: mov.codigo_pai as string, canal_origem: null, reativar: true }, orgId,
-      );
-    } catch (e) {
-      // A entrada já foi gravada e é a verdade; o push é recuperável pela reconciliação diária.
-      pushOk = false;
-      console.error('entrada_push_falhou', e);
-    }
+  // Formato antigo preservado inteiro (uma cor): `estoque`/`duplicada` no topo E o 400 quando a
+  // RPC recusa — o cliente antigo trata erro pelo status, não por um campo no corpo. Uma aba já
+  // aberta durante o deploy continua funcionando.
+  if (validacao.unico) {
+    const primeiro = r.resultados[0];
+    if (primeiro?.erro) return json({ error: primeiro.erro }, 400);
+    return json({ estoque: primeiro?.estoque ?? null, duplicada: primeiro?.duplicada === true, pushOk: r.pushOk });
   }
-
-  await auditarOperacaoSuporte(admin, context, { type: 'variacao', id: codigo }, 'succeeded');
-
-  return json({
-    estoque: duplicada ? (mov?.estoque_resultante ?? null) : estoque,
-    duplicada, pushOk,
-  });
+  // Lote: erro é POR ITEM (o operador precisa ver o que não entrou), como no ajuste.
+  return json(r);
 });

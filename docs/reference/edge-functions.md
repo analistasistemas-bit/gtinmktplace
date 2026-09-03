@@ -760,6 +760,15 @@ falha ao ler `organizations` não libera.
   cairia em `duplicada` e o push nunca aconteceria; push absoluto é idempotente, então
   re-enfileirar é mais barato que perder a propagação. `pushOk: false` **não** é erro de entrada:
   o saldo já é verdade e a reconciliação diária recupera o push.
+  **Lote (2026-09-03):** aceita `{ itens: [{codigo, quantidade, custo?}], documento?, ref }` além
+  do formato de uma cor (`{codigo, quantidade, …}`, que segue valendo e continua devolvendo 400 no
+  erro). Miolo em `processar.ts` + `validar.ts`, testáveis sem Deno — espelho do `ajustar-estoque`.
+  **`ref` por item** (`entrada:{ref}:{codigo}`); a cor única mantém a ref histórica
+  `entrada:{ref}`, porque mudar o formato faria um retry de submissão antiga somar o saldo de
+  novo. Erro é por item (o diálogo fica aberto mostrando o que não entrou) e sai **um** push por
+  `codigo_pai` tocado, com `reativar: true` e **sem** `skus` — aqui o push do produto inteiro é o
+  desejado. Custo `null` preserva o custo do SKU (`custo = coalesce(p_custo, custo)`), o que
+  importa no lote: o operador repõe N cores sem redigitar custo.
 - **ajustar-estoque** (ADR-0110) — reduz ou zera saldo. **Admin-only** (`requireUserOrg` devolve
   `isAdmin`; paridade com pausar/reativar, ADR-0060) e restrita ao módulo `estoque`. Body é uma
   **lista**: `{ ajustes: [{codigo, novoSaldo}], observacao?, ref }` — 1 item ajusta uma variação,

@@ -95,11 +95,15 @@ describe('ProdutoCard', () => {
     expect(botao).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('produto monovariação pré-seleciona SKU ao dar entrada', async () => {
+  // O card sempre abre a entrada pelo PRODUTO: o diálogo lista as cores dele (produto de uma cor
+  // vira uma lista de uma linha). Antes ele pré-selecionava o SKU só na monovariação — três
+  // estados para uma regra só, e no multi-cor o diálogo recebia o código PAI como filtro de
+  // texto e não achava nada (relato do Diego 03/09/2026).
+  it('entrada é sempre pelo produto, sem pré-selecionar SKU', async () => {
     const user = userEvent.setup();
     const onDarEntrada = renderCard(produtoMono);
     await user.click(screen.getByRole('button', { name: BOTAO_ENTRADA }));
-    expect(onDarEntrada).toHaveBeenCalledWith({ sku: '00000005', codigoPai: '00000004' });
+    expect(onDarEntrada).toHaveBeenCalledWith({ codigoPai: '00000004' });
   });
 
   // Guarda de regressão do defeito que originou o redesenho: tabela aninhada estoura a largura.
