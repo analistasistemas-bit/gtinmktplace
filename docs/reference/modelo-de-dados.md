@@ -261,6 +261,13 @@ Grupos de colunas:
 - **Auditoria de edição:** `titulo_editado_pelo_operador`, `descricao_editada_pelo_operador`,
   `editado_em`, `observacao_operador`.
 - **Processamento:** `erro_mensagem`, `qstash_message_id`, `variacao_principal_codigo` (ADR-0044).
+- **Kit vinculado (ADR-0151):** `kit_base_codigo_pai text` (nullable) + `kit_multiplicador smallint`
+  (nullable, check 2–6), com `check` de par completo (as duas nulas ou as duas preenchidas) e
+  índice parcial `familias_kit_base_idx (org_id, kit_base_codigo_pai) where kit_multiplicador is
+  not null`. A chave de vínculo é `(org_id, kit_base_codigo_pai)`, **não** `familias.id` — a base
+  ganha linha nova a cada lote de UPDATE e só `codigo_pai` é estável. `kit_multiplicador is not
+  null` é o predicado "esta família é um kit vinculado" em todo o código.
+  *Migration `20260902233018_kit_vinculado_schema.sql`.*
 
 Índices por `(user_id, codigo_pai)`, `(user_id, ml_item_id)`, `(lote_id, status)`, `(org_id)`.
 RLS por organização (`org_id = current_org_id()`, ADR-0027).
@@ -424,6 +431,13 @@ não avisado — a dedup do aviso mora na linha da transição, não no saldo at
 idempotente e o QStash reentrega),
 `criado_por` (FK auth.users), `criado_em`.
 
+**`origem_kit_codigo_pai`** / **`origem_kit_multiplicador`** (ADR-0151 D-6: auditoria de que o
+débito veio da venda de um kit, não de venda direta — colunas nuláveis, **não** um motivo novo,
+porque motivo novo quebraria `estornar_estoque`, que só repõe `where motivo='venda'`),
+Não há coluna de "anúncio de origem": a Decisão 7 foi revisada para **não** excluir anúncio nenhum
+quando há kit vinculado (o push é absoluto e recalculado, então reempurrar tudo dá o mesmo
+resultado por 1-2 chamadas de API a mais).
+
 Índices:
 - **`estoque_movimentos_ref_uniq`** — unique **parcial** `(org_id, referencia_externa) where
   referencia_externa is not null`: idempotência (referência nula não bloqueia nada, então a baixa
@@ -479,6 +493,15 @@ escrever saldo direto; ver a pendência em `docs/TASKS.md`. **Uma RPC de estoque
 `revoke update (estoque)` porque privilégios de coluna são **cumulativos** em Postgres: como
 `authenticated` já tem `UPDATE` na tabela inteira, revogar só a coluna seria inócuo. Toda mudança
 de saldo passa por entrada, baixa, estorno ou **ajuste** (ADR-0110) — nunca por `UPDATE` do app.
+
+**Kit vinculado (ADR-0151, migration `20260903002527_kit_vinculado_guards.sql`):**
+`registrar_entrada` e `ajustar_estoque` recusam LOUD (`23514`) SKU que resolve para família com
+`kit_multiplicador is not null` — o kit não tem saldo próprio (D-9). O trigger
+`variacoes_bloquear_extra_com_kit` recusa INSERT de variação adicional numa família cuja base tem
+kit vinculado ativo (D-10), e `familias_bloquear_remocao_com_kit` recusa apagar a última linha de
+`familias` de uma base com kit vivo (D-14). As RPCs de leitura (`produtos_estoque_resumo`,
+`variacoes_estoque_produto`, `skus_estoque_org`) excluem kits e devolvem, no produto-base, o array
+`kits` com `floor(estoque_base/N)` calculado ao vivo (D-13).
 
 ---
 

@@ -53,6 +53,7 @@
 | ajustar-estoque | **true** | HTTP (frontend, **admin**) | sim (`ref` por item: `ajuste:{ref}:{codigo}`) |
 | excluir-produto | **true** | HTTP (frontend, **admin**) | sim (delete por `codigo_pai`; repetir devolve 404) |
 | adicionar-variacoes-familia | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, D-8) |
+| criar-kit-vinculado | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, 1 por kit) |
 | **Fiscal (ADR-0135)** ||||
 | sincronizar-fiscal-ml | false | QStash worker | sim (upsert POST→409→PUT por SKU) |
 | atualizar-fiscal-familia | true | HTTP (frontend) | sim (upsert dos campos, `familiaId` idempotente) |
@@ -359,6 +360,15 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   (reposição + add/retirar cor) já cobre o caminho UP (`update-familia-ml`, ver abaixo); reconciliador
   de convergência automatizado (`reconciliar-convergencia-up`, schedule QStash) também já cobre —
   "Reenviar" manual continua funcionando como caminho alternativo.
+  **Kit vinculado (ADR-0151 D-8):** antes de montar o anúncio, `aplicarEstoqueDerivado`
+  (`_shared/estoque/kit.ts`) substitui `variacoes.estoque` (sempre 0 por construção) pelo saldo
+  calculado — família comum passa intocada. **Kit vinculado (ADR-0151 D-2):** no sucesso do
+  CREATE, antes de `finalizarLote`, reclama por claim atômico (`status → 'publicando'`, mesmo
+  padrão de `publicar-familias/index.ts`) os kits `'pronto'`/`'erro'` sem `ml_item_id` cujo
+  `kit_base_codigo_pai` é este `codigo_pai`, e os enfileira via `enfileirarPublicacoes` — é este
+  bloco que publica os kits marcados na Revisão quando a base ainda não estava no ar. Best-effort
+  (roda fora do `try` que decide sucesso/erro da própria família): uma falha aqui não reabre uma
+  base já publicada com sucesso como `erro`.
 - **update-familia-ml** *(worker, UPDATE)* — extraído em `index.ts` (thin) + `processar.ts`
   (`processarAtualizacaoFamilia`, testável). **User Products (ADR-0088 Fase 2):** ANTES da lógica
   Legacy, detecta família UP pela presença de linhas em `anuncios_externos_itens` (raiz partição 0) e
@@ -424,6 +434,10 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   Legacy ou UP), dispara sino via `notificarCategoria(..., 'integracao', ...)` **só quando**
   `lotes.origem='manual'` **e** `familias.operacao='UPDATE'` — reposição por planilha continua
   silenciosa como sempre foi. Best-effort (try/catch, não derruba o worker em falha de notificação).
+  **Kit vinculado (ADR-0151 D-8):** logo após ler as variações vivas da família (antes do split
+  cor-casada/cor-nova, que os dois ramos alimentam), `aplicarEstoqueDerivado` substitui o saldo
+  cru pelo calculado — mesma função e mesmo racional do `publish-familia-ml`, família comum
+  intocada.
 - **reconciliar-convergencia-up** *(schedule QStash — ADR-0088, 2026-07-23)* — retoma em background
   raízes User Products travadas em `mudando_composicao=true` (mudança de composição interrompida
   por crash), reusando a mesma mini-saga do `update-familia-ml` (`atualizarFamiliaUP`) por completo.
@@ -532,7 +546,13 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   `resumo.ficha_divergente > 0` e a família tem `catalogo_categoria_sugerida_id`/`_nome` preenchidos
   (calculados antes, no `process-familia` — sem chamada nova, só select a mais), `montarMensagemCatalogoNoMatch`
   (`_shared/notificacoes/telegram.ts`) ganha uma linha citando a categoria sugerida
-  (`CatalogoNoMatchAlerta.categoriaSugerida`). Família de UPDATE (colunas nulas, sugestão não roda no
+  (`CatalogoNoMatchAlerta.categoriaSugerida`). **Kit vinculado (ADR-0151 D-5):**
+  `guardKitVinculado` (`vinculacao.ts`), checado logo após carregar a família e ANTES de resolver
+  conexão/token, devolve `200 { skip: 'kit vinculado — sem catálogo por design' }` para
+  `kit_multiplicador is not null` — kit publica sem GTIN por design, então o catálogo sempre
+  classificaria como divergente; alertar seria ruído garantido a cada publicação de kit. Risco
+  aceito e registrado no ADR: categoria que exige catálogo pode pausar o kit sem aviso.
+  Família de UPDATE (colunas nulas, sugestão não roda no
   UPDATE parcial) → linha omitida, comportamento atual preservado.
 
 ### Remoção / reprocessamento
@@ -561,6 +581,15 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   imediatamente antes de qualquer ação destrutiva (fecha, sem eliminar, a corrida entre o check
   inicial e o delete). Todas as queries agora falham alto em erro (antes, várias liam `{error}` e
   seguiam como se tivesse dado certo).
+  **Kit vinculado (ADR-0151 D-14):** roda ANTES de qualquer mutação (mini-saga UP incluída) — se
+  a família alvo NÃO é kit (`kit_multiplicador == null`), consulta kits vinculados com
+  `kit_base_codigo_pai` = seu `codigo_pai` e status em `STATUS_KIT_VIVO`; achando algum, devolve
+  409 `kit_vinculado_ativo` com a lista de multiplicadores, sem tocar no ML. Consulta fail-closed
+  de propósito (diferente do `listarKitsVivos` do push, que é fail-open) — erro aqui não pode
+  virar "sem kit" e remover a base por baixo de um kit vivo. A guard de banco
+  (`familias_bloquear_remocao_com_kit`) é a última linha; esta é a primeira, com mensagem clara —
+  a mensagem distingue "Corrigir e republicar" (`preservar_familia`, nunca apaga a base) de
+  remoção de verdade (que também exige `excluir-produto`, ADR-0113, para o vínculo sumir de vez).
 - **excluir-lote** — exclui o lote; preserva publicados (ADR-0019); bloqueia se processando/publicando.
   **Guard anti-órfão (2026-08-13):** `publicado_em` sozinho não basta — o UPDATE pode ter criado a
   cor no ML e **não** marcar a família como publicada (guard de `update-familia-ml`: cor nova sem
@@ -628,6 +657,16 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   (`lerPushPendente` marca `reposicao` quando `quantidade > 0`, então entrada e estorno entram e
   venda/ajuste não). O agrupamento de `despacharPushPendente` inclui `reposicao` na chave — sem
   isso a entrada seria despachada com a intenção da venda.
+  **Kit vinculado (ADR-0151 D-6/D-7/D-13):** resolve a família canônica do job e, se o
+  `codigo_pai` é de um kit (defensivo — nenhum caminho grava isso no ledger hoje), redireciona
+  para a base (`processarSincronizacao`). Chama `listarKitsVivos` e faz **um `resolverAlvosPush`
+  por família** (base e cada kit separados — juntar os mapas faria o item plano de 1 SKU do kit
+  cair no fallback "manda o produto inteiro" com os SKUs errados). Saldo do kit é sempre
+  `floor(estoque_base/N)`, calculado ao vivo a partir da **única** variação da base — mais de uma
+  variação na base é `kit_com_base_multivariacao`, log e sem número inventado. **D-7 revisada:**
+  com `kits.length > 0`, a exclusão por `canal_origem` não se aplica (`exclusao = null`) — reempurra
+  base + todos os tamanhos de kit vinculados, sempre, porque push é absoluto e o resultado seria
+  idêntico a excluir só o anúncio de origem; produto sem kit segue com a exclusão de sempre.
 - **reconciliar-estoque** *(schedule QStash)* — rede de segurança do **push**, não do webhook
   (D-12): só re-empurra produtos que **têm movimento no ledger** (outbox pendente, drenado pelo
   mesmo `despacharPushPendente` do `sync-venda`, ou movimento nas últimas 24h já despachado mas cujo
@@ -764,6 +803,37 @@ falha ao ler `organizations` não libera.
   preço propague normalmente. Lote nasce em `status='publicando'` de propósito — **nunca** aparece
   na fila de Revisão; se o encadeamento falhar, rebaixa para `'revisao'` só como rota de
   recuperação visível na tela Lotes.
+- **criar-kit-vinculado** (ADR-0151) — cria kit(s) "N unidades" a partir de uma família-base
+  existente, direto da tela Estoque. **Admin-only** (mesmo gate de `adicionar-variacoes-familia`)
+  e restrita ao módulo `estoque` (`exigirModulo`). Body: `{ familia_base_id, kits: [{
+  multiplicador (2-6), chave_cadastro, titulo, descricao, preco, gtin?, imagem_path?, altura_cm,
+  largura_cm, comprimento_cm, atacado? }] }`. 400 por payload inválido ou por
+  `base_sem_custo`/`base_sem_peso`/`base_sem_categoria`; 409 `base_multivariacao` (D-10: só
+  produto sem cor), `base_e_kit` (kit de kit não existe) ou `kit_duplicado` (multiplicador já
+  vivo na base ou repetido na mesma submissão); 400 `categoria_sem_kit` quando a categoria do ML
+  não expõe `SALE_FORMAT=Kit` (`aplicarKitNosAtributos` falha LOUD — não faz o no-op do
+  ADR-0071, porque aqui um no-op publicaria N unidades ao preço de uma).
+  **Não roda `process-familia`** (D-3): `montarFamiliaKit`/`montarVariacaoKit`
+  (`processar.ts`) clonam a família-base (`STRIP_FAMILIA_KIT`/`STRIP_VARIACAO_KIT`) já em
+  `status='pronto'`, com `custo`/`peso_gramas` × N, `estoque` sempre 0, GTIN nunca herdado
+  (D-5) e atributos com `SALE_FORMAT=Kit`/`UNITS_PER_PACK=N` sobrepostos por
+  `aplicarKitNosAtributos`. `chave_cadastro` é **uma por kit** (não uma por submissão — um
+  índice único por submissão colidiria no 2º tamanho de um clique multi-kit e o rollback
+  derrubaria todos). Reenvio com as mesmas chaves é idempotente: kit já criado não duplica,
+  e se ainda está `'pronto'`/`'erro'` (1ª tentativa morreu antes de encadear) reencadeia em vez
+  de fabricar sucesso — mesmo padrão do `adicionar-variacoes-familia`. Códigos: `1 PAI + 1 SKU`
+  por kit via `proximo_codigo_produto`, com o mesmo resync-e-tenta-de-novo em colisão do
+  `cadastrar-produto` (ADR-0096).
+  **Lote técnico dedicado por submissão, nascido em `status='publicando'`** (nunca o lote manual
+  aberto, e nunca `'processando'`) — impede que o trigger `update_lote_counters` promova o lote a
+  `'revisao'` no INSERT da 1ª família de kit, o que deixaria o kit publicável **antes** da base
+  (fura D-2). Continua visível na tela de Lotes (roteado para `/progresso`, sem botão Publicar).
+  **Encadeia `publicar-familias`** (server-to-server, JWT do chamador, mesmo padrão de
+  `adicionar-variacoes-familia`) só quando a base **já tem `ml_item_id`** (caminho Publicados) —
+  kits criados com a base ainda em Revisão ficam em `'pronto'` sem encadear; é o **CREATE da
+  base** que os reclama depois, via claim atômico `pronto|erro → publicando` em
+  `publish-familia-ml/processar.ts` (sem o claim, `decidirStatusLote` reabriria o lote técnico
+  como `'revisao'` ao publicar o primeiro kit).
 
 ### Fiscal (ADR-0135)
 - **sincronizar-fiscal-ml** *(worker, disparado por `enfileirarSincronizacaoFiscal`)* — empurra
@@ -851,7 +921,12 @@ falha ao ler `organizations` não libera.
   desfechos — `ok` (aplicada ≥ pedida, inclusive última unidade), `parcial` (havia saldo >0 mas
   insuficiente) e `desync` (`estoque_anterior === 0`, ML vendeu com PubliAI já zerado). Parcial
   alerta por pedido (`estoque_sem_saldo`); desync dedupe por SKU/dia
-  (`estoque_desync_ml:{codigo}:{YYYY-MM-DD}`, America/Sao_Paulo) com mensagem explícita de desync. Cancelamento **antes do despacho** (`pedido.status === 'cancelled'` com
+  (`estoque_desync_ml:{codigo}:{YYYY-MM-DD}`, America/Sao_Paulo) com mensagem explícita de desync.
+  **Kit vinculado (ADR-0151 D-6):** a montagem das duas linhas de alerta foi extraída para
+  `linhaVendaAcimaSaldo`/`linhaDesyncMl` (`_shared/notificacoes/estoque-kit.ts`) — quando o SKU
+  vendido resolve para um kit, a linha traduz a quantidade (sempre em unidades da BASE, já ×N) de
+  volta para "N kit(s) de M un.", porque o operador vê no ML o número de kits vendidos, não o de
+  unidades debitadas; texto de venda direta preservado byte a byte. Cancelamento **antes do despacho** (`pedido.status === 'cancelled'` com
   shipment em estado pré-despacho conhecido, ou sem envio) chama `estornarVendaCancelada` (RPC
   `estornar_estoque`, D-7) e despacha o outbox de reposição para **todos** os canais (inclusive o
   ML, que não repõe sozinho); despacho **desconhecido ou já ocorrido** apenas notifica categoria

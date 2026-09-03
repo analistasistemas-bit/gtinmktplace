@@ -2,6 +2,25 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Kit vinculado — criar anúncios de kit (N unidades) a partir de produto existente (ADR-0151) — concluído 2026-09-03
+
+Plano de execução: `docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md` (11 tasks, 16
+decisões do ADR). Épico: schema/resolvedor de estoque derivado (`kit_base_codigo_pai` +
+`kit_multiplicador`), baixa/estorno de venda resolvendo sempre para a base, push de estoque com
+fan-out por família (base + kits), CREATE/UPDATE publicando `floor(estoque_base/N)` (nunca a
+coluna crua), guards de banco (SKU de kit sem escrita direta, cor nova bloqueada com kit vivo,
+remoção da base bloqueada com kit vivo), edge `criar-kit-vinculado`, gatilhos e preview na tela
+Publicados e na Revisão, RPCs de leitura de estoque excluindo kits e exibindo `floor` ao vivo sob
+o produto-base, e alerta de oversell/desync com atribuição de kit.
+
+- [x] Tasks 1–10: schema, resolvedor, baixa/estorno, push, CREATE/UPDATE, guards de banco, edge
+  `criar-kit-vinculado`, UI (Publicados + Revisão + Estoque), catálogo/alerta.
+- [x] Task 11: documentação (`modelo-de-dados.md`, `edge-functions.md`, ADR-0151 seção
+  "Implementação" com 9 desvios registrados) + `pnpm lint`/`pnpm vitest run`/`pnpm exec tsc -b
+  --force`/`pnpm docs:links` verdes.
+- [ ] Deploy das Edge Functions em produção — autorização explícita separada (Step 6 da Task 11,
+  não executado nesta dispatch).
+
 ## Publicar lento: limpeza de cache de foto ao esgotar retry (item.pictures.unavailable) — 2026-09-02
 
 Diego reportou publicação lenta ("2 de 3" travado). Investigação com logs de produção (24h):

@@ -255,7 +255,65 @@ produtos diferentes, sem decisão de avançar).
 - Remover a base ou adicionar cor a ela fica bloqueado enquanto houver kit vinculado ativo —
   muda o comportamento de duas ações que hoje são livres (Decisões 10 e 14).
 
+## Implementação (2026-09-03)
+
+O plano de execução (`docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md`) registrou 9
+desvios conscientes do texto acima — decididos no planejamento, não uma reabertura das decisões
+D-1…D-16:
+
+1. **Decisão 8 nomeia `_shared/ml/atualizar.ts`**, mas esse arquivo não lê `v.estoque` —
+   `montarVariacoesUpdate` recebe `desejados`. A correção mora nos dois workers
+   (`publish-familia-ml/processar.ts`, `update-familia-ml/processar.ts`), via
+   `aplicarEstoqueDerivado`.
+2. **Decisão 4 diz que o título "herda o slot `quantidade`" do ADR-0099**, mas os slots não são
+   persistidos em `familias` (só `titulo_ml` e `titulo_descartes`) e o montador só roda dentro de
+   `process-familia`, que a Decisão 3 proíbe para o kit. Implementado como composição do sufixo
+   "Kit N Unidades" sobre o `titulo_ml` da base, com corte em fronteira de palavra respeitando
+   `TITULO_MAX=60` e edição pelo operador no preview.
+3. **`chave_cadastro`** não é mencionada no ADR, mas é obrigatória pelo trigger
+   `validar_familia_no_tenant` em lote `origem='manual'`. É **uma por kit**, não uma por
+   submissão: o índice é unique por família, então uma chave única faria o 2º tamanho de um
+   clique colidir (23505) e o rollback derrubar todos — só kit único funcionaria.
+4. **Lote dedicado por submissão, nascido em `'publicando'`**, e não o lote manual aberto em
+   `'processando'`. Duas razões: não virar card na Revisão da base (D-4, mesmo desvio 2 do
+   ADR-0129) e, principalmente, **impedir que o kit apareça como card publicável na Revisão**.
+   Como o kit nasce em `'pronto'` (D-3, sem `process-familia`), um lote em `'processando'` seria
+   promovido a `'revisao'` pelo trigger `update_lote_counters` no INSERT da primeira família de
+   kit, e o operador poderia publicar o kit **antes** da base — furando a D-2. O guard do
+   trigger é `l.status = 'processando'`, então `'publicando'` nunca é promovido. Complementado
+   pelo claim `pronto|erro → publicando` antes de cada enfileiramento, sem o qual
+   `decidirStatusLote` reabriria o lote como `'revisao'` ao publicar o primeiro kit. Confirmado
+   pelo Diego: **kits nunca aparecem como card na Revisão**; o preview do diálogo é a revisão
+   inteira deles.
+   *Resíduo aceito:* o lote técnico continua **visível na tela de Lotes** (`fetchLotes` faz
+   `select('*')` sem filtro), como card em `'publicando'` roteado para `/progresso` — sem botão
+   Publicar. Esconder por completo exigiria coluna nova (`lotes.oculto`) e ficou fora da v1.
+5. **`reconciliar-estoque` não mudou**: o fan-out por família dentro de
+   `processarSincronizacao` já alcança base + kits, cumprindo o terceiro bullet da Decisão 13
+   sem código novo naquele worker.
+6. **A anotação de origem no ledger (`origem_kit_*`) é não-atômica** (UPDATE depois da RPC),
+   para não mudar a assinatura de `baixar_estoque` e ter de refazer a dança de owner/grants do
+   `estoque_rpc_executor`. É só auditoria: nada de push depende dela, então falhar custa uma
+   linha de ledger sem atribuição de kit e um alerta com texto genérico.
+7. **`aplicarKitNosAtributos` falha LOUD (400)** quando a categoria do ML não expõe
+   `SALE_FORMAT=Kit`. O ADR-0071 faz no-op nesse caso; aqui um no-op publicaria N unidades ao
+   preço de uma.
+8. **A Decisão 7 revisada custou zero linhas fora do worker.** A simplificação (reempurrar tudo
+   em vez de excluir o anúncio de origem) tirou do plano uma coluna no `estoque_movimentos`, um
+   campo em `SincronizarEstoqueJob` e o plumbing correspondente em
+   `lerPushPendente`/`despacharPushPendente`. A decisão vive inteira numa linha de
+   `sincronizar-estoque/processar.ts` (`const exclusao = kits.length > 0 ? null : canal_origem`).
+   Registrado aqui porque a versão anterior deste plano tinha esse plumbing e alguém pode
+   encontrá-la no histórico do git.
+9. **`processarSincronizacao` redireciona job com `codigo_pai` de kit para a base.** Defensivo,
+   não previsto no ADR: nenhum caminho grava o `codigo_pai` de um kit no ledger, mas se
+   acontecesse o push mandaria `variacoes.estoque = 0` (a coluna crua do kit) para um anúncio
+   vivo no ML.
+
 ## Como reverter
 
-Nenhum código foi implementado ainda (ADR fecha o design, não a execução). Reverter = não
-implementar, ou revisar esta decisão numa nova sessão de grilling antes do plano de execução.
+Implementado (10 tasks do plano de execução, `docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md`).
+Reverter = reverter as migrations (`20260902233018_kit_vinculado_schema.sql`,
+`20260903002527_kit_vinculado_guards.sql`, `20260903030505_estoque_rpc_exclui_kit.sql`) e as
+edges/`_shared` tocadas por essas 10 tasks, ou revisar as decisões numa nova sessão de grilling
+antes de qualquer mudança incremental.

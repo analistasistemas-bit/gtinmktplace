@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-08-26
+atualizado: 2026-09-03
 ---
 
 # Sprint Atual
@@ -10,6 +10,23 @@ Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
 agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
 ## 📍 Passo atual (2026-08-13) — Fase 3 EM PRODUÇÃO
+
+> **📋 ADR-0151: Kit vinculado — criar anúncios de kit (N unidades) a partir de produto
+> existente — IMPLEMENTADO, deploy pendente (2026-09-03).** Extensão do módulo Estoque
+> (ADR-0094): tela Estoque ganha "Criar kit vinculado" (admin-only) que gera família(s) nova(s)
+> — `SALE_FORMAT=Kit`/`UNITS_PER_PACK=N` — com estoque 100% derivado da família-base
+> (`floor(estoque_base/N)`, colunas `kit_base_codigo_pai`/`kit_multiplicador`, nunca uma coluna
+> própria). Kit nunca passa por `process-familia`; nasce direto em `'pronto'` num lote técnico
+> dedicado (`status='publicando'`) que nunca vira card na Revisão — publica só **depois** do
+> CREATE da base confirmar. Baixa/estorno de venda e push cross-canal resolvem sempre para a
+> base; push sem kit vinculado mantém a exclusão de canal de sempre, e com kit reempurra base +
+> todos os tamanhos (simplificação deliberada, D-7 revisada). Guards de banco: SKU de kit sem
+> escrita direta (entrada/ajuste), cor nova bloqueada com kit vivo, remoção da base bloqueada
+> com kit vivo. Restrito na v1 a produto sem variação de cor. 11 tasks do plano de execução
+> (`docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md`) concluídas — `pnpm lint`/`pnpm
+> vitest run`/`pnpm exec tsc -b --force`/`pnpm docs:links` verdes. **Deploy das Edge Functions
+> em produção fica para depois, com autorização explícita separada** (blast radius grande: toca
+> `_shared/estoque/*`). Ver ADR-0151, seção "Implementação".
 
 > **✅ Pulse v1 — radar de concorrência EM PRODUÇÃO (ADR-0119, 2026-08-16, org DSA).** Menu
 > "Pulse" org-gated: coletor server-side dual-mode, adicionar manual por catálogo/GTIN, 4 tabelas
