@@ -2,6 +2,39 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fix: kit publicava a mesma foto duas vezes + UX de publicação direta (ADR-0151) — 2026-09-03
+
+O anúncio do kit `MLB7585283770` foi ao ar com duas fotos idênticas na galeria — dois
+`picture_id` (`710821-MLB115693504042_092026` e `921580-MLB115693394394_092026`) apontando pro
+mesmo arquivo. Causa: `montarFamiliaKit` e `montarVariacaoKit` gravavam o MESMO
+`kit.imagemPath` em `capa_storage_path` e `imagem_path`, e `montar-canonico.ts` sobe os dois em
+chamadas separadas de `conn.subirFoto` sem comparar storage path — dois uploads do mesmo
+arquivo, dois ids. Produto comum não sofre (capa e variação são arquivos diferentes).
+
+- [x] `montarVariacaoKit` (`supabase/functions/criar-kit-vinculado/processar.ts`) não copia mais
+  `kit.imagemPath` pra variação — `imagem_path` nasce `null`. Kit é variação única sem cor
+  (ADR-0151 D-10); `ordenarFotosVariacao` (`_shared/ml/publicar.ts`) já resolve
+  `lider = capa ?? propria`, então `propria=null` faz a galeria virar `[capa, capa2, capa3]`
+  sem duplicar. Conserta CREATE e qualquer UPDATE futuro.
+- [x] `familiaExigeFotoPorVariacao` (`src/lib/publicavel.ts`) passou a considerar
+  `familia.kitBaseCodigoPai` — sem isso, um kit de base com `tipoAviamento` diferente de
+  `'outro'` cairia em falso "Cor sem foto" e ficaria bloqueado na Revisão (a variação nasce sem
+  foto própria de propósito, a capa já é a foto do anúncio). `familiaProdutoSimples` ficou
+  intocada (produto comum não muda).
+- [x] `familiaExigeCor` ganhou a MESMA exceção, pelo mesmo motivo: a variação do kit não tem cor
+  por construção (D-10) e herda o `tipoAviamento` da base, então numa base de aviamento o kit
+  exibia "sem cor definida" — um bloqueio impossível de resolver, já que não há cor a preencher.
+  Na publicação a ausência já vira `COR_UNITARIA` (`_shared/ml/publicar.ts`). Produto comum de
+  aviamento continua exigindo cor (coberto por teste).
+- [x] UX: `DialogCriarKit` deixa explícito ANTES do clique que o kit publica direto (D-2/D-4,
+  não passa pela Revisão) — botão da etapa de preview virou "Criar e publicar" e ganhou o aviso
+  "O kit vai direto para o Mercado Livre — esta tela é a revisão."
+- [x] Testes: `processar.test.ts` (variação nasce com `imagem_path=null`, família recebe a
+  imagem em `capa_storage_path`), `publicavel.test.ts` (kit com capa não exige foto por
+  variação mesmo com `tipoAviamento` != `'outro'`; produto comum continua exigindo),
+  `dialog-criar-kit.test.tsx` (rótulo do botão + aviso na etapa de preview).
+- [x] ADR-0151: item 14 registrando as duas decisões.
+
 ## Feedback pós-criação do kit vinculado: toast leva ao relatório (ADR-0151) — 2026-09-03
 
 Criar um kit no diálogo de Publicados só mostrava "Kit criado" e fechava — sem indicar que a

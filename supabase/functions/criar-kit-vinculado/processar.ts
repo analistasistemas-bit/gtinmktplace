@@ -170,7 +170,12 @@ export function montarVariacaoKit(
     // o operador confirmou no preview.
     preco_editado_pelo_operador: true,
     preco_publicado_ml: null,
-    imagem_path: kit.imagemPath,
+    // NUNCA a mesma imagem da capa (bug MLB7585283770): capa e variação subiam o mesmo
+    // arquivo em uploads separados, o ML devolvia dois picture_id distintos pro mesmo
+    // arquivo e a galeria saía com a foto duplicada. Kit tem variação única sem cor
+    // (ADR-0151 D-10) — `ordenarFotosVariacao` (_shared/ml/publicar.ts) já resolve
+    // `lider = capa ?? propria`, então null aqui faz a variação herdar a capa sem duplicar.
+    imagem_path: null,
     ml_picture_id: null,
     ml_variation_id: null,
     catalog_product_id: null,

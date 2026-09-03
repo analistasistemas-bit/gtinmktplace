@@ -104,7 +104,7 @@ const BASE_COM_FOTO: BaseParaKit = { ...BASE, fotoPath: 'org-1/produtos/foto.jpg
 async function avancarECriar() {
   await userEvent.click(screen.getByLabelText('Kit de 2 unidades'));
   await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
-  await userEvent.click(screen.getByRole('button', { name: 'Criar kits' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Criar e publicar' }));
 }
 
 describe('DialogCriarKit — botão Reenviar (I-1)', () => {
@@ -157,6 +157,26 @@ describe('DialogCriarKit — botão Reenviar (I-1)', () => {
     expect(screen.queryByRole('button', { name: /Reenviar/i })).not.toBeInTheDocument();
     expect(screen.getByText('já criado')).toBeInTheDocument();
     expect(screen.queryByText('falhou ao publicar')).not.toBeInTheDocument();
+  });
+});
+
+// ADR-0151 (item 14): kit não passa pela Revisão (D-2/D-4) — o preview É a revisão e confirmar
+// publica direto. O rótulo e o aviso deixam isso explícito ANTES do clique, pra não repetir a
+// surpresa do operador.
+describe('DialogCriarKit — etapa de preview deixa explícito que publica direto', () => {
+  it('botão de confirmação diz "Criar e publicar" e o aviso de publicação direta aparece', async () => {
+    renderDialog([], BASE_COM_FOTO);
+
+    await userEvent.click(screen.getByLabelText('Kit de 2 unidades'));
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+
+    expect(screen.getByRole('button', { name: 'Criar e publicar' })).toBeInTheDocument();
+    expect(screen.getByText('O kit vai direto para o Mercado Livre — esta tela é a revisão.')).toBeInTheDocument();
+  });
+
+  it('etapa de tamanhos não mostra o aviso de publicação direta', () => {
+    renderDialog([]);
+    expect(screen.queryByText('O kit vai direto para o Mercado Livre — esta tela é a revisão.')).not.toBeInTheDocument();
   });
 });
 

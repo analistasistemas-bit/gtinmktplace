@@ -263,6 +263,12 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
           </div>
         )}
 
+        {etapa === 'preview' && (
+          <p className="text-xs text-muted-foreground">
+            O kit vai direto para o Mercado Livre — esta tela é a revisão.
+          </p>
+        )}
+
         <DialogFooter>
           {etapa === 'tamanhos' ? (
             <>
@@ -277,7 +283,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 Voltar
               </Button>
               <Button disabled={!podeCriar || mutation.isPending} onClick={() => mutation.mutate()}>
-                {mutation.isPending ? 'Criando…' : 'Criar kits'}
+                {mutation.isPending ? 'Criando…' : 'Criar e publicar'}
               </Button>
             </>
           )}

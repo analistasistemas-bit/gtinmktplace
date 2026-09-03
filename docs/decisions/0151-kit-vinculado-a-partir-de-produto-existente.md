@@ -405,6 +405,25 @@ desvio 2 e detalha a Decisão 4:**
     dois lados) e qualquer divergência de `SALE_FORMAT`, inclusive ficha "Unidade" contra nosso
     "Kit" — o único sinal de pack em categoria que não expõe `UNITS_PER_PACK`.
 
+14. **A foto do kit vive só na capa da família — a variação nunca recebe imagem própria.**
+    `montarFamiliaKit` e `montarVariacaoKit` gravavam o mesmo `kit.imagemPath` em
+    `capa_storage_path` E em `imagem_path`; `montar-canonico.ts` sobe os dois em chamadas
+    separadas de `conn.subirFoto`, sem comparar storage path — dois uploads do mesmo arquivo,
+    dois `picture_id`, e o ML mostrava a foto repetida na galeria (achado em produção,
+    `MLB7585283770`). `montarVariacaoKit` passou a gravar `imagem_path: null`;
+    `ordenarFotosVariacao` (`_shared/ml/publicar.ts`) já resolve `lider = capa ?? propria`, então
+    a variação herda a capa sem duplicar. Também na UI: como a variação do kit nunca tem foto
+    própria, `familiaExigeFotoPorVariacao` (`src/lib/publicavel.ts`) passou a reconhecer
+    `kitBaseCodigoPai` — sem isso, um kit de base com `tipoAviamento` != `'outro'`
+    (`familiaProdutoSimples` só cobre `'outro'`) cairia em falso "Cor sem foto" na Revisão.
+    `familiaExigeCor` recebeu a mesma exceção e pelo mesmo motivo: a variação do kit não tem cor
+    por construção (D-10), então numa base de aviamento aparecia um "sem cor definida" que o
+    operador não teria como resolver — não existe cor a preencher. A publicação já trata a
+    ausência mandando `COR_UNITARIA`.
+    E como o kit não passa pela Revisão (D-2/D-4 — o preview do diálogo É a revisão), o botão de
+    confirmação virou "Criar e publicar" com o aviso "O kit vai direto para o Mercado Livre —
+    esta tela é a revisão.", deixando explícito antes do clique.
+
 ## Como reverter
 
 Implementado (10 tasks do plano de execução, `docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md`).

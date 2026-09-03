@@ -205,3 +205,55 @@ describe('produto simples com capa não exige foto por variação', () => {
     expect(familiaPublicavel(f).motivos).toContainEqual(expect.stringContaining('sem foto'));
   });
 });
+
+// Bug MLB7585283770 (ADR-0151, item 14): a variação do kit nasce com imagem_path=null (a capa
+// da família é a foto do anúncio), então `familiaExigeFotoPorVariacao` não pode depender de
+// `familiaProdutoSimples` (que exige tipoAviamento='outro') — o kit herda o aviamento da base
+// e pode ser qualquer valor. Sem o sinal `kitBaseCodigoPai`, o kit ficaria bloqueado na
+// Revisão com falso "Cor sem foto".
+describe('kit vinculado com capa não exige foto por variação (independe de tipoAviamento)', () => {
+  const kitFam = (over: Partial<Familia> = {}) =>
+    mkFam({
+      operacao: 'CREATE', tipoAviamento: 'botao', kitBaseCodigoPai: '00000010',
+      capaStoragePath: 'user/capas/kit.jpg', ...over,
+    });
+
+  test('kit com tipoAviamento != "outro" e capa: publicável mesmo sem foto na variação', () => {
+    const v = mkVar({ cor: 'Única', fotoPath: undefined });
+    expect(familiaPublicavel(kitFam({ variacoes: [v] }))).toEqual({ ok: true, motivos: [] });
+  });
+
+  // Mesma classe do falso "sem foto": a variação do kit NÃO tem cor por construção (D-10), mas
+  // herda o tipoAviamento da base — numa base de aviamento o kit ganhava um "sem cor definida"
+  // impossível de resolver. Na publicação a ausência já vira COR_UNITARIA (_shared/ml/publicar.ts).
+  test('kit sem cor e sem foto na variação continua publicável (não exige cor nem foto)', () => {
+    const v = mkVar({ cor: '', fotoPath: undefined });
+    expect(familiaPublicavel(kitFam({ variacoes: [v] }))).toEqual({ ok: true, motivos: [] });
+  });
+
+  test('familiaExigeCor é false para kit; produto comum de aviamento continua exigindo', () => {
+    expect(familiaExigeCor(kitFam({ variacoes: [mkVar({ cor: '' })] }))).toBe(false);
+    const comum = mkFam({
+      operacao: 'CREATE', tipoAviamento: 'botao', capaStoragePath: 'user/capas/x.jpg',
+      variacoes: [mkVar({ cor: '' })],
+    });
+    expect(familiaExigeCor(comum)).toBe(true);
+  });
+
+  test('familiaExigeFotoPorVariacao é false para kit com capa', () => {
+    expect(familiaExigeFotoPorVariacao(kitFam({ variacoes: [mkVar()] }))).toBe(false);
+  });
+
+  test('kit sem capa: volta a exigir foto por variação', () => {
+    const f = kitFam({ capaStoragePath: null, variacoes: [mkVar({ cor: '', fotoPath: undefined })] });
+    expect(familiaExigeFotoPorVariacao(f)).toBe(true);
+  });
+
+  test('produto comum (sem kitBaseCodigoPai) com tipoAviamento != "outro" continua exigindo foto — não afrouxa', () => {
+    const f = mkFam({
+      operacao: 'CREATE', tipoAviamento: 'botao', capaStoragePath: 'user/capas/x.jpg',
+      variacoes: [mkVar({ cor: '', fotoPath: undefined })],
+    });
+    expect(familiaExigeFotoPorVariacao(f)).toBe(true);
+  });
+});

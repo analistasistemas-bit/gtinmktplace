@@ -38,6 +38,12 @@ function familiaProdutoSimples(familia: Familia): boolean {
 }
 
 export function familiaExigeCor(familia: Familia): boolean {
+  // Mesma exceção da foto abaixo: kit vinculado (ADR-0151 D-10) é variação única SEM cor por
+  // construção, mas herda o `tipoAviamento` da base — numa base de aviamento
+  // `familiaProdutoSimples` é falso e o kit ganhava um "sem cor definida" que nunca vai ser
+  // resolvido (não há cor a preencher). Na publicação a ausência já é tratada: `publicar.ts`
+  // manda COR_UNITARIA quando a variação não tem cor.
+  if (familia.kitBaseCodigoPai) return false;
   return !familiaProdutoSimples(familia);
 }
 
@@ -46,7 +52,12 @@ export function familiaExigeCor(familia: Familia): boolean {
 // então produto simples COM capa já sai com foto — exigir foto na variação seria falso-positivo
 // travando a publicação. Sem capa a exigência continua: aí a foto da variação é a única imagem.
 // Com 2+ cores também continua: cada cor precisa da sua, senão todas exibiriam a mesma imagem.
+// Kit vinculado (ADR-0151) é sempre variação única sem cor, mas `tipoAviamento` nem sempre é
+// 'outro' (herda da base) — `familiaProdutoSimples` não pega esse caso. A foto do kit vive só
+// na capa da família (variação nasce com `imagem_path=null`, bug MLB7585283770), então checar
+// `kitBaseCodigoPai` aqui evita o falso "sem foto" que travaria o kit na Revisão.
 export function familiaExigeFotoPorVariacao(familia: Familia): boolean {
+  if (familia.kitBaseCodigoPai && !!familia.capaStoragePath) return false;
   return !(familiaProdutoSimples(familia) && !!familia.capaStoragePath);
 }
 

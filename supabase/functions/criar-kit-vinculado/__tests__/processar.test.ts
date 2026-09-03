@@ -278,6 +278,20 @@ describe('criarKitsVinculados', () => {
     expect(r.loteId).toEqual('lote-1');
   });
 
+  // Bug MLB7585283770: capa e variação subiam o mesmo arquivo em uploads separados, o ML
+  // devolvia dois picture_id distintos pro mesmo arquivo e a galeria saía com a foto duplicada.
+  // A variação do kit NUNCA recebe imagem própria — `ordenarFotosVariacao` (_shared/ml/
+  // publicar.ts) resolve `lider = capa ?? propria`, então a variação herda a capa sem duplicar.
+  it('variação do kit nasce SEM imagem própria (evita foto duplicada, bug MLB7585283770)', async () => {
+    const { deps, inserts } = depsFake({ custo: 10, peso_gramas: 100 });
+    await criarKitsVinculados(deps, {
+      familiaBaseId: 'f-base', kits: [kitPadrao(2)],
+    });
+    expect(inserts.variacoes[0].imagem_path).toEqual(null);
+    // A família (capa do anúncio) É a que recebe a imagem escolhida no diálogo.
+    expect(inserts.familias[0].capa_storage_path).toEqual('user-1/kit.jpg');
+  });
+
   it('kit nasce vinculado à base e pronto, sem passar por process-familia', async () => {
     const { deps, inserts, enfileirados } = depsFake({ custo: 10, peso_gramas: 100 });
     await criarKitsVinculados(deps, {
