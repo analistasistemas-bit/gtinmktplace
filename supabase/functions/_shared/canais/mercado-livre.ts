@@ -7,7 +7,7 @@ import { lerVendasML } from '../ml/vendas.ts';
 import { montarPayloadItem } from '../ml/publicar.ts';
 import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoUpdate } from '../ml/criar-item.ts';
-import { precisaItemPlano } from '../ml/erro-ml.ts';
+import { precisaItemPlano, precisaGtinDePack } from '../ml/erro-ml.ts';
 import { categoriaExigeFamilyName } from '../categoria/atributos.ts';
 import { buscarItemML, atualizarItemML, atualizarItemPlanoML, atualizarStatusML } from '../ml/atualizar-item.ts';
 import { motivoAnuncioNaoAtualizavel, subStatusMorto } from '../ml/anuncio-atualizavel.ts';
@@ -142,18 +142,36 @@ export const mercadoLivreConnector: ChannelConnector = {
       codigo: v.sku, cor: v.cor, estoque: capCriar.get(v.sku) ?? v.estoque,
       preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
     }));
-    const montar = (formato?: 'plano') => montarPayloadItem(
-      familiaInput, variacoesInput, a.capaFotoId, a.capa2FotoId, a.capa3FotoId,
+    // `comGtinPack`: só o retry do kit usa — reenvia as variações sem código próprio com o GTIN
+    // da unidade-base (ADR-0151 D-5 revisada). Variação que JÁ tem GTIN não é tocada.
+    const montar = (formato?: 'plano', comGtinPack?: boolean) => montarPayloadItem(
+      familiaInput,
+      comGtinPack
+        ? variacoesInput.map((v) => ({ ...v, gtin: v.gtin ?? a.gtinPackFallback ?? null }))
+        : variacoesInput,
+      a.capaFotoId, a.capa2FotoId, a.capa3FotoId,
       a.listingTypeId, a.desconto, a.dimensoes, aceitaEmptyGtin, formato,
     );
     // ADR-0087: as duas tentativas (seed da categoria + retry reativo) ficam dentro de UM
     // único try/catch — se a 2ª falhar (novo erro do ML, ou `montarPayloadItem` lançando na
     // reconstrução por >1 variação, ADR-0084) o catch final sempre devolve ResultadoCanal,
     // nunca deixa uma exceção escapar do conector.
+    // Uma tentativa num formato, com o retry de GTIN embutido (ADR-0151 D-5 revisada): a categoria
+    // que exige GTIN de verdade só se revela na resposta do ML, então reagimos a ela em vez de
+    // manter lista de categorias. Sem `gtinPackFallback` (todo produto que não é kit) nada muda.
+    const tentar = async (formato?: 'plano') => {
+      try {
+        return await criarItemML(token, montar(formato));
+      } catch (e) {
+        if (!a.gtinPackFallback) throw e;
+        if (!precisaGtinDePack((e as { status?: number }).status, (e as { mlCauses?: unknown }).mlCauses)) throw e;
+        return await criarItemML(token, montar(formato, true));
+      }
+    };
     try {
       let r;
       try {
-        r = await criarItemML(token, montar());
+        r = await tentar();
       } catch (e) {
         if (!precisaItemPlano((e as { status?: number }).status, (e as { mlCauses?: unknown }).mlCauses)) throw e;
         if (a.desconto) return descontoIncompativel();
@@ -161,7 +179,7 @@ export const mercadoLivreConnector: ChannelConnector = {
         // recusa como retorno normal (nunca reconstrói N variações num item plano — cada SKU
         // vira seu próprio item pela saga). Retry de 1 cor do ADR-0087 abaixo fica INTOCADO.
         if (a.variacoes.length > 1) return formatoIncompativel(a.categoriaId);
-        r = await criarItemML(token, montar('plano'));
+        r = await tentar('plano');
       }
       // ADR-0084: item plano (categoria que exige family_name) não tem sub-recurso `variations`
       // — o próprio item É a variação única. Sem isso, variacoesExternas ficaria vazio e

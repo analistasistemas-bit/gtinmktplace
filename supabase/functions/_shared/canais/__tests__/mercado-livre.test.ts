@@ -207,6 +207,53 @@ describe('criarAnuncio: retry reativo de item plano (ADR-0087)', () => {
     expect(chamadas).toHaveLength(2);
   });
 
+  // ADR-0151 D-5 (revisada): kit vinculado publica sem GTIN por padrão; em categoria que exige o
+  // código de verdade (alimentos/MLB455708), o ML recusa e nenhum EMPTY_GTIN_REASON resolve —
+  // provado por dry-run (/items/validate, 2026-09-03). O retry reenvia com o GTIN da unidade-base,
+  // que é como o ML modela pack (GTIN da unidade + UNITS_PER_PACK, tag `pack_multiplier`).
+  const causaGtin = [{
+    cause_id: 7810,
+    type: 'error',
+    code: 'item.attribute.missing_conditional_required',
+    message: "The attributes [GTIN] are required for category [MLB455708]. Check the attribute is present in the attributes list or in all variation's attributes_combination or attributes.",
+  }];
+
+  it('kit sem GTIN recusado por GTIN obrigatório → reenvia com o GTIN da unidade-base', async () => {
+    const chamadas = stubItems([
+      { status: 400, body: { message: 'Validation error', cause: causaGtin } },
+      { status: 200, body: { id: 'MLB9', permalink: 'x', variations: [] } },
+    ]);
+    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, { ...anuncioBase, gtinPackFallback: '7891000444764' });
+    expect(res.ok).toBe(true);
+    expect(chamadas).toHaveLength(2);
+    const gtinsDoRetry = chamadas[1].variations[0].attributes;
+    expect(gtinsDoRetry).toContainEqual({ id: 'GTIN', value_name: '7891000444764' });
+  });
+
+  it('recusa por GTIN SEM gtinPackFallback (produto comum) → nenhum retry, erro propagado', async () => {
+    const chamadas = stubItems([
+      { status: 400, body: { message: 'Validation error', cause: causaGtin } },
+    ]);
+    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, anuncioBase);
+    expect(res.ok).toBe(false);
+    expect(chamadas).toHaveLength(1);
+  });
+
+  it('kit com GTIN próprio informado pelo operador não dispara o fallback', async () => {
+    const chamadas = stubItems([
+      { status: 200, body: { id: 'MLB10', permalink: 'x', variations: [] } },
+    ]);
+    const anuncio = {
+      ...anuncioBase,
+      gtinPackFallback: '7891000444764',
+      variacoes: [{ sku: 'A1', cor: 'Único', estoque: 5, preco: 33.5, gtin: '7899999999999', fotoId: null }],
+    };
+    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, anuncio);
+    expect(res.ok).toBe(true);
+    expect(chamadas).toHaveLength(1);
+    expect(chamadas[0].variations[0].attributes).toContainEqual({ id: 'GTIN', value_name: '7899999999999' });
+  });
+
   it('família com >1 variação + assinatura exata → reconstrução lança internamente (ADR-0084), capturado sem 2º POST', async () => {
     const chamadas = stubItems([
       { status: 400, body: { message: 'Validation error', cause: causaExata } },

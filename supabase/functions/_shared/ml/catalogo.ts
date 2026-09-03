@@ -165,13 +165,24 @@ export function fichaEquivalente(ficha: AtributosFicha, esperado: EsperadoProdut
   // (comportamento original — as fitas/linhas do incidente não enviam esses atributos). Isso
   // libera o kit legítimo (nosso Duo Pack 2un × ficha Kit/2un) sem afrouxar o caso do incidente.
   const unidadesNossas = esperado.unitsPerPack ?? 1;
-  if (ficha.unitsPerPack != null && ficha.unitsPerPack > 1 && ficha.unitsPerPack !== unidadesNossas) {
-    return { ok: false, motivo: `ficha_kit_${ficha.unitsPerPack}un_vs_${unidadesNossas}un` };
+  const unidadesFicha = ficha.unitsPerPack ?? 1;
+  // Divergência de contagem em QUALQUER direção. O incidente VD MENTA (2026-06-15) era ficha de
+  // kit × nossa unidade; o espelho apareceu com o kit vinculado que herda o GTIN da unidade
+  // (ADR-0151 D-5 revisada): a ficha achada pelo GTIN é a da unidade avulsa, e vincular o kit de
+  // 2un a ela engana o comprador do mesmo jeito. `null` dos dois lados = 1 unidade, como antes.
+  if (unidadesFicha !== unidadesNossas) {
+    const prefixo = unidadesFicha > 1 ? 'ficha_kit' : 'ficha';
+    return { ok: false, motivo: `${prefixo}_${unidadesFicha}un_vs_${unidadesNossas}un` };
   }
   const fmt = ficha.saleFormat?.trim().toLowerCase();
   const fmtNosso = esperado.saleFormat?.trim().toLowerCase() ?? 'unidade';
-  if (fmt && fmt !== 'unidade' && fmt !== fmtNosso) {
+  // Formato divergente também nos dois sentidos: em categoria que não expõe UNITS_PER_PACK, o
+  // SALE_FORMAT é o único sinal de que o nosso item é pack e a ficha é da unidade.
+  if (fmt && fmt !== fmtNosso) {
     return { ok: false, motivo: `ficha_formato_${fmt}` };
+  }
+  if (!fmt && fmtNosso !== 'unidade') {
+    return { ok: false, motivo: `ficha_sem_formato_vs_${fmtNosso}` };
   }
   const a = ficha.lengthM;
   const b = esperado.lengthM;

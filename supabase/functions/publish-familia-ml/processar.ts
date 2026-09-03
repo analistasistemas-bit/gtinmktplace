@@ -44,6 +44,22 @@ export interface ProcessarDeps {
 }
 export interface ProcessarOpts { tentativas: number }
 
+/** GTIN da unidade que o kit multiplica (ADR-0151 D-5 revisada). Escopo por `org_id` — a mesma
+ *  base pode ter homônimo em outra org, e filtrar só por `codigo_pai` vazaria entre tenants.
+ *  Base sem código real devolve null: o kit segue sem GTIN, como sempre publicou. */
+async function gtinDaUnidadeBase(
+  admin: SupabaseClient, orgId: string, codigoPaiBase: string,
+): Promise<string | null> {
+  const { data } = await admin.from('variacoes')
+    .select('gtin, familias!inner(codigo_pai, org_id)')
+    .eq('familias.org_id', orgId)
+    .eq('familias.codigo_pai', codigoPaiBase)
+    .not('gtin', 'is', null)
+    .limit(1);
+  const linha = (data as Array<{ gtin: string | null }> | null)?.[0];
+  return linha?.gtin ?? null;
+}
+
 /** Erro definitivo de foto cujo picture_id cacheado expirou ou não existe mais no ML. */
 function ehErroDefinitivoFoto(msg: string): boolean {
   return /does not exist/i.test(msg) || /Problema nas fotos/i.test(msg);
@@ -138,6 +154,16 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       admin, familia.org_id as string, familia as never, variacoes,
     );
     const anuncio = await montarAnuncioCanonico(admin, conn, ctx, familia, variacoesParaPublicar, job.listing_type_id);
+
+    // ADR-0151 D-5 (revisada): o kit continua publicando SEM GTIN por padrão. Só se o canal
+    // recusar o item por GTIN obrigatório (alimentos e afins) o conector reenvia com o código da
+    // unidade-base — é assim que o ML modela pack (GTIN da unidade + UNITS_PER_PACK, tag
+    // `pack_multiplier`). Sem esse valor o kit fica preso em 'erro' nessas categorias.
+    if (familia.kit_base_codigo_pai) {
+      anuncio.gtinPackFallback = await gtinDaUnidadeBase(
+        admin, familia.org_id as string, familia.kit_base_codigo_pai as string,
+      );
+    }
 
     // ── ADR-0088: roteamento multi-cor User Products ────────────────────────────────────────
     // Só multi-cor (>1 variação) com categoria conhecida e conexão resolvida entra em jogo — o

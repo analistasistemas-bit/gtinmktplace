@@ -211,6 +211,14 @@ devolve `catalog_product_id.not_modificable` (400) em item ativo com vendas; o o
    Ambos já vêm de graça (`/products/search` e o GET do item que a trava de metragem já faz). Só
    reprova com os dois dados presentes. Validado contra 5 vinculações reais em produção (fitas,
    linhas, novelos): domínio idêntico em todas — nenhuma regressão nas 211 existentes.
+7. **Trava de pack simétrica (2026-09-03, ADR-0151 D-5 revisada):** a trava anti-kit nasceu olhando
+   um lado só — ficha de kit × nossa unidade avulsa (o incidente VD MENTA). Quando o kit vinculado
+   passou a herdar o GTIN da unidade-base para publicar em categoria que exige código, apareceu o
+   caso espelhado: a ficha achada por esse GTIN é a da **unidade**, e vincular o kit de 2un a ela
+   engana o comprador do mesmo jeito. `fichaEquivalente` passou a reprovar divergência de
+   `UNITS_PER_PACK` em **qualquer** direção (ausente = 1 unidade dos dois lados) e divergência de
+   `SALE_FORMAT` inclusive quando a ficha diz "Unidade" — em categoria que não expõe
+   `UNITS_PER_PACK`, o formato é o único sinal de que o nosso item é pack.
 
 **Limite descoberto — a ficha precisa ser do MESMO domínio do anúncio.** O Aquaphor
 (`MLB7330859238`, domínio `MLB-BODY_SKIN_CARE_PRODUCTS`) casa por GTIN com a ficha `MLB25749603`,

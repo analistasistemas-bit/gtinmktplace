@@ -21,6 +21,8 @@ function fakeAdmin(over: {
   modulosHabilitados?: string[];
   // ADR-0151 D-2: kits pendentes que o claim de "encadear após CREATE da base" deveria reclamar.
   kitsReclamados?: Array<{ id: string; lote_id: string }>;
+  /** GTIN da unidade-base que o kit multiplica (consulta `variacoes!inner(familias)`). */
+  gtinBase?: string;
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia ?? { ...FAMILIA_BASE };
@@ -51,7 +53,16 @@ function fakeAdmin(over: {
       update: (payload: Record<string, unknown>) => { rec.op = 'update'; rec.payload = payload; return api; },
       single: async () => ({ data: ler(), error: null }),
       maybeSingle: async () => ({ data: ler(), error: null }),
+      // `aplicarEstoqueDerivado` (kit) e a busca do GTIN da base encadeiam order/limit.
+      order: () => api,
+      limit: () => api,
       then: (resolve: (v: unknown) => unknown) => {
+        // GTIN da unidade-base (ADR-0151 D-5 revisada): select em `variacoes` com join na família
+        // da base — distinguido das variações da própria família pelo filtro do join.
+        if (table === 'variacoes' && 'familias.codigo_pai' in rec.filters) {
+          const g = over.gtinBase ?? null;
+          return Promise.resolve({ data: g ? [{ gtin: g }] : [], error: null }).then(resolve);
+        }
         // Claim do encadeamento de kits: update em `familias` filtrado por `kit_base_codigo_pai`.
         if (table === 'familias' && rec.op === 'update' && 'kit_base_codigo_pai' in rec.filters) {
           return Promise.resolve({ data: kitsReclamados, error: null }).then(resolve);
@@ -136,6 +147,43 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
       ],
       'user-1',
     );
+  });
+
+  // ADR-0151 D-5 (revisada): o kit vai ao canal SEM GTIN, mas carrega o código da unidade-base
+  // como fallback — o conector só o usa se o ML recusar por GTIN obrigatório (dry-run
+  // /items/validate 2026-09-03: em alimentos nenhum EMPTY_GTIN_REASON substitui o GTIN).
+  it('família kit: anúncio leva gtinPackFallback com o GTIN da unidade-base', async () => {
+    fakeConnector.reset();
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, kit_base_codigo_pai: '00000082', kit_multiplicador: 2 },
+      gtinBase: '7891000444764',
+    });
+    const r = await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    const criar = fakeConnector.chamadas.find((c) => c.metodo === 'criarAnuncio');
+    expect((criar?.args as { gtinPackFallback?: string }).gtinPackFallback).toBe('7891000444764');
+    // O GTIN NÃO entra na variação: o payload padrão do kit continua sem código.
+    expect((criar?.args as { variacoes: Array<{ gtin: string | null }> }).variacoes[0].gtin).toBeNull();
+  });
+
+  it('família comum (não-kit): nenhum gtinPackFallback no anúncio', async () => {
+    fakeConnector.reset();
+    const { admin } = fakeAdmin({ gtinBase: '7891000444764' });
+    const r = await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    const criar = fakeConnector.chamadas.find((c) => c.metodo === 'criarAnuncio');
+    expect((criar?.args as { gtinPackFallback?: string }).gtinPackFallback).toBeUndefined();
+  });
+
+  it('kit cuja base não tem GTIN → fallback null (publica sem código, como antes)', async () => {
+    fakeConnector.reset();
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, kit_base_codigo_pai: '00000082', kit_multiplicador: 2 },
+    });
+    const r = await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    const criar = fakeConnector.chamadas.find((c) => c.metodo === 'criarAnuncio');
+    expect((criar?.args as { gtinPackFallback?: string | null }).gtinPackFallback).toBeNull();
   });
 
   it('sem kits pendentes da base → NÃO chama enfileirarPublicacoes (caminho quente intocado)', async () => {

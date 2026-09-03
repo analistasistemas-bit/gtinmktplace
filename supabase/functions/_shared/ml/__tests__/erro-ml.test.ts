@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { humanizarErroML, ehErroRetentavel, classificarErroML, precisaItemPlano } from '../erro-ml';
+import { humanizarErroML, ehErroRetentavel, classificarErroML, precisaItemPlano, precisaGtinDePack } from '../erro-ml';
 
 describe('humanizarErroML', () => {
   it('título acima de 60 → mensagem clara em PT (ignora os warnings de frete)', () => {
@@ -129,4 +129,32 @@ describe('classificarErroML (liveness da integração, ADR-0069)', () => {
   it('400 + invalid_grant (refresh_token revogado, ADR-0012) → permanente-auth', () => { expect(classificarErroML(400, 'invalid_grant')).toBe('permanente-auth'); });
   it('400 + invalid_client (outro erro OAuth2, não é prova de token morto) → transiente', () => { expect(classificarErroML(400, 'invalid_client')).toBe('transiente'); });
   it('401 + invalid_grant → permanente-auth (qualquer uma das duas condições já basta)', () => { expect(classificarErroML(401, 'invalid_grant')).toBe('permanente-auth'); });
+});
+
+// ADR-0151 D-5 (revisada): categorias que exigem GTIN de verdade (ex.: alimentos/MLB455708)
+// recusam o kit sem código — e nenhum EMPTY_GTIN_REASON substitui (dry-run /items/validate
+// 2026-09-03: os 4 motivos falham; GTIN da unidade + UNITS_PER_PACK passa).
+describe('precisaGtinDePack (retry reativo do kit sem GTIN)', () => {
+  const causaGtin = {
+    cause_id: 7810,
+    type: 'error',
+    code: 'item.attribute.missing_conditional_required',
+    message: "The attributes [GTIN] are required for category [MLB455708]. Check the attribute is present in the attributes list or in all variation's attributes_combination or attributes.",
+  };
+  it('400 + causa 7810 citando [GTIN] → true', () => {
+    expect(precisaGtinDePack(400, [causaGtin])).toBe(true);
+  });
+  it('outro atributo obrigatório faltando (não GTIN) → false', () => {
+    expect(precisaGtinDePack(400, [{ ...causaGtin, message: 'The attributes [BRAND] are required for category [MLB1].' }])).toBe(false);
+  });
+  it('warning com o mesmo texto não conta', () => {
+    expect(precisaGtinDePack(400, [{ ...causaGtin, type: 'warning' }])).toBe(false);
+  });
+  it('status != 400 → false', () => {
+    expect(precisaGtinDePack(500, [causaGtin])).toBe(false);
+  });
+  it('sem causas → false', () => {
+    expect(precisaGtinDePack(400, undefined)).toBe(false);
+    expect(precisaGtinDePack(400, [])).toBe(false);
+  });
 });

@@ -241,6 +241,45 @@ describe('fichaEquivalente — trava anti-kit e metragem (incidente VD MENTA)', 
     const r = fichaEquivalente({ id: 'MLB1', saleFormat: null, unitsPerPack: null, lengthM: null }, { lengthM: 10 });
     expect(r.ok).toBe(true);
   });
+
+  // Espelho do incidente (ADR-0151 D-5 revisada): o kit vinculado passou a herdar o GTIN da
+  // unidade quando a categoria exige código (ML modela pack como GTIN da unidade +
+  // UNITS_PER_PACK/`pack_multiplier`). Isso torna o kit elegível a fichas que antes ele nunca
+  // alcançava — e a ficha que o GTIN encontra é a da UNIDADE avulsa. Vincular o kit de 2un a ela
+  // é o incidente VD MENTA ao contrário (comprador vê ficha de 1un e recebe/paga por 2).
+  it('REPROVA nosso kit de 2un contra ficha de 1 unidade', () => {
+    const r = fichaEquivalente(
+      { id: 'MLB1', saleFormat: 'Unidade', unitsPerPack: 1, lengthM: null },
+      { lengthM: null, unitsPerPack: 2, saleFormat: 'Kit' },
+    );
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toMatch(/1un_vs_2un/);
+  });
+
+  it('REPROVA nosso kit de 2un contra ficha sem UNITS_PER_PACK (assume 1un)', () => {
+    const r = fichaEquivalente(
+      { id: 'MLB1', saleFormat: null, unitsPerPack: null, lengthM: null },
+      { lengthM: null, unitsPerPack: 2, saleFormat: 'Kit' },
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it('REPROVA nosso Kit contra ficha Unidade mesmo sem UNITS_PER_PACK dos dois lados', () => {
+    // Categoria que não expõe UNITS_PER_PACK: o único sinal de pack é o SALE_FORMAT.
+    const r = fichaEquivalente(
+      { id: 'MLB1', saleFormat: 'Unidade', unitsPerPack: null, lengthM: null },
+      { lengthM: null, saleFormat: 'Kit' },
+    );
+    expect(r.ok).toBe(false);
+  });
+
+  it('APROVA nosso kit de 2un contra ficha de kit de 2un (pack legítimo)', () => {
+    const r = fichaEquivalente(
+      { id: 'MLB1', saleFormat: 'Kit', unitsPerPack: 2, lengthM: null },
+      { lengthM: null, unitsPerPack: 2, saleFormat: 'Kit' },
+    );
+    expect(r.ok).toBe(true);
+  });
 });
 
 describe('montarBodyOptin', () => {

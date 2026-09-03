@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## GTIN do kit em categoria que exige código + trava de catálogo espelhada (ADR-0151 D-5 revisada) — branch `worktree-fix-kit-gtin-catalogo` — 2026-09-03
+
+O primeiro kit criado em produção (Kit 2 Unidades Leite em Pó Ninho Zero Lactose, `MLB455708`)
+parou em `erro`: a categoria exige GTIN e o kit publica sem código. Dry-run em
+`POST /items/validate` (não cria anúncio) provou que **nenhum** `EMPTY_GTIN_REASON` substitui o
+GTIN ali, e que o GTIN da unidade + `UNITS_PER_PACK=2` passa — que é como o ML modela pack.
+
+- [x] **`precisaGtinDePack`** (`_shared/ml/erro-ml.ts`) — detecta a recusa por GTIN obrigatório
+  (`item.attribute.missing_conditional_required` citando `[GTIN]`), ignorando warnings.
+- [x] **`gtinPackFallback`** no `AnuncioCanonico` (`_shared/canais/contrato.ts`) — GTIN da
+  unidade-base, preenchido só para kit por `publish-familia-ml` (escopo `org_id`).
+- [x] **Retry reativo no conector ML** (`_shared/canais/mercado-livre.ts`) — o payload padrão do
+  kit continua sem GTIN; só reenvia com o código da base se o ML recusar. Vale nos dois formatos
+  (variations e plano/ADR-0087). Produto que não é kit segue idêntico (sem o campo, sem retry).
+- [x] **Trava de catálogo nos dois sentidos** (`_shared/ml/catalogo.ts`, ADR-0021) —
+  `fichaEquivalente` reprovava só ficha-kit × nossa-unidade; agora reprova também nosso-kit ×
+  ficha-unidade (divergência de `UNITS_PER_PACK` em qualquer direção, `null` = 1un, e
+  `SALE_FORMAT` divergente inclusive quando a ficha é "Unidade"). Sem isso, o GTIN herdado
+  reabriria o incidente VD MENTA (2026-06-15) espelhado.
+- [x] Testes: 12 novos (detector, retry no conector, ligação no worker, trava de catálogo).
+  Suíte completa 4582 ✓, lint 0 erros, `tsc -b` ✓.
+- [x] Deploy das edges afetadas + reenvio do kit que estava em `erro`.
+
 ## UX de título e descrição do kit (ADR-0151) — branch `feat/kit-titulo-descricao-ux` — 2026-09-03
 
 Round de UX sobre o preview do `DialogCriarKit`, sem mudança de mecanismo (estoque vinculado,

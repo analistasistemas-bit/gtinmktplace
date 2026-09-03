@@ -125,6 +125,11 @@ export interface AnuncioCanonico {
   desconto: { pct: number } | null;
   dimensoes: DimensoesPacote | null;
   variacoes: VariacaoCanonica[];
+  /** GTIN da unidade-base, só para kit vinculado (ADR-0151 D-5 revisada). NÃO entra no payload
+   *  normal: é o fallback usado apenas se o canal recusar o item por GTIN obrigatório — em
+   *  categorias que exigem o código, o ML modela pack como GTIN da unidade + UNITS_PER_PACK
+   *  (tag `pack_multiplier` no schema). Ausente em produto comum. */
+  gtinPackFallback?: string | null;
 }
 
 /** Status do anúncio no modelo canônico (generaliza StatusParsed de ml/status). */

@@ -75,6 +75,20 @@ export function precisaItemPlano(status: number | null | undefined, mlCauses: un
   return tem369 && tem374;
 }
 
+// ─── Detecção reativa de GTIN obrigatório (ADR-0151 D-5 revisada) ─────────
+
+/** Recusa do ML por GTIN faltando: `item.attribute.missing_conditional_required` citando [GTIN].
+ *  Vale para o kit vinculado, que publica sem GTIN por padrão — em categorias que exigem o código
+ *  de verdade (alimentos, ex. MLB455708) nenhum EMPTY_GTIN_REASON substitui, verificado por
+ *  dry-run em /items/validate (2026-09-03). Reagir aqui evita hard-code de lista de categorias. */
+export function precisaGtinDePack(status: number | null | undefined, mlCauses: unknown): boolean {
+  if (status !== 400) return false;
+  const causas: Causa[] = Array.isArray(mlCauses) ? (mlCauses as Causa[]) : [];
+  return causas
+    .filter((c) => (c?.type ?? 'error') !== 'warning')
+    .some((c) => (c?.code ?? '').includes('missing_conditional_required') && /\[GTIN\]/.test(c?.message ?? ''));
+}
+
 export function humanizarErroML(status: number, json: unknown): string {
   const j = (json ?? {}) as { message?: string; error?: string; cause?: unknown };
   const causes: Causa[] = Array.isArray(j.cause)

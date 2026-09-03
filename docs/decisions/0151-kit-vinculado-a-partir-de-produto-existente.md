@@ -131,6 +131,9 @@ do kit; nunca herda o GTIN da base.
 categorias onde o ML **exige** vínculo de catálogo pra publicar, isso pode levar a uma pausa
 silenciosa pelo próprio ML sem aviso nosso — risco aceito explicitamente, não coberto nesta v1.
 
+> **Revisada em 2026-09-03 — ver "Decisão 5 revisada" no fim deste ADR.** O primeiro kit real
+> (Ninho Zero Lactose, `MLB455708`) não publicou: a categoria exige GTIN e o kit não tem.
+
 ### 6. Estoque 100% vinculado/virtual (decisão central)
 O kit **não tem saldo próprio real**. O saldo é sempre `floor(estoque_base / N)`, recalculado ao
 vivo. Vender **1 unidade de venda do kit** (quantidade do item do pedido × N) debita o ledger da
@@ -365,6 +368,42 @@ desvio 2 e detalha a Decisão 4:**
     remove a linha "Kit com N unidades." herdada da base; (d) **cria** a seção "O QUE VOCÊ
     RECEBE" quando a base não tem uma. Sem essa adaptação, um kit de 3 publicaria descrição
     dizendo "1 unidade"/"1 peça"/"1 caixa" — contradizendo o anúncio.
+
+**Decisão 5 revisada (2026-09-03, branch `worktree-fix-kit-gtin-catalogo`) — GTIN de pack:**
+
+12. **O kit herda o GTIN da unidade-base quando — e só quando — o canal recusar o item por GTIN
+    obrigatório.** O primeiro kit criado em produção (Kit 2 Unidades Leite em Pó Ninho Zero
+    Lactose, categoria `MLB455708`) ficou em `erro` com
+    `item.attribute.missing_conditional_required: The attributes [GTIN] are required for category`.
+    Um dry-run em `POST /items/validate` (não cria anúncio; script `scripts/ops/dryrun-gtin-kit.ts`)
+    testou os 4 caminhos possíveis com o payload real:
+
+    | Payload | Resultado |
+    |---|---|
+    | `EMPTY_GTIN_REASON=17055160` ("não tem código cadastrado") — o que o app enviava | recusado, erro de GTIN |
+    | `EMPTY_GTIN_REASON=17055159` ("é um kit ou pack") | recusado, mesmo erro |
+    | sem nenhum atributo de GTIN | recusado, mesmo erro |
+    | **`GTIN` da unidade-base + `UNITS_PER_PACK=2` + `SALE_FORMAT=Kit`** | **aceito** (sobram só warnings de frete, iguais aos do anúncio-base publicado) |
+
+    Ou seja: **nenhum `EMPTY_GTIN_REASON` substitui o GTIN** nessas categorias — a premissa
+    implícita da Decisão 5 original. O modelo do ML para pack é o GTIN **da unidade** somado a
+    `UNITS_PER_PACK` (o atributo carrega a tag `pack_multiplier` no schema da categoria), que o app
+    já preenchia (ADR-0071/0073). Faltava só o código.
+
+    **Como foi implementado (reativo, não por lista de categorias):** o payload padrão do kit
+    continua **sem** GTIN. O anúncio canônico leva `gtinPackFallback` (GTIN da unidade-base,
+    resolvido com escopo `org_id`) e o conector só o usa se o ML recusar com a assinatura de GTIN
+    obrigatório (`precisaGtinDePack`, `_shared/ml/erro-ml.ts`) — mesmo padrão reativo do ADR-0087.
+    Produto que não é kit nunca tem esse campo e segue idêntico. Base sem GTIN → fallback `null`,
+    e o kit publica sem código como antes.
+
+13. **A trava de equivalência de catálogo passa a valer nos dois sentidos (ADR-0021).** Com GTIN, o
+    kit vira elegível a fichas de catálogo que antes nunca alcançava — e a ficha que o GTIN da
+    unidade encontra é a da **unidade avulsa**. Vincular o kit de 2un a ela é o incidente VD MENTA
+    (2026-06-15) espelhado. `fichaEquivalente` só reprovava quando a **ficha** tinha
+    `UNITS_PER_PACK > 1`; agora reprova qualquer divergência de contagem (`null` = 1 unidade dos
+    dois lados) e qualquer divergência de `SALE_FORMAT`, inclusive ficha "Unidade" contra nosso
+    "Kit" — o único sinal de pack em categoria que não expõe `UNITS_PER_PACK`.
 
 ## Como reverter
 
