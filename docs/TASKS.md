@@ -2,6 +2,37 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Push de estoque da cor nova não arrasta as cores já publicadas — 2026-09-03
+
+Incidente (relato do Diego): depois de adicionar a cor Preta ao `MLB7157545794`, as cores
+Vermelho, Champagne e Marfim sumiram da vitrine do anúncio. Não foram removidas — ficaram com
+`available_quantity = 0`, e o ML esconde variação sem estoque. O estoque delas tinha sido lançado
+**direto no ML**, nunca no app.
+
+Sequência reconstituída: 18:30 entrada de 40 un. da Preta no ledger → 19:22 o
+`reconciliar-estoque` drenou o outbox e enfileirou um push **do produto inteiro** (o job de
+`sincronizar-estoque` só tinha `codigo_pai`) → `resolverAlvosPush` montou `estoques` com TODOS os
+SKUs ancorados no anúncio, com o saldo do app → zerou as três. O UPDATE das 19:30 (que criou a
+Preta) não tocou em nenhuma delas: `preservarPublicadas` funcionou.
+
+Decisão do Diego: no fluxo "Adicionar variação", o push cobre **só o SKU criado**; todas as
+demais cores permanecem no anúncio.
+
+- [x] `SincronizarEstoqueJob` ganhou `skus?: string[]` (ausente = produto inteiro = comportamento
+  de sempre).
+- [x] `lerPushPendente` lê `codigo` + `referencia_externa` e marca `skuRestrito` quando a
+  referência é `addvar:<familia>:<codigo>` — a que `adicionar-variacoes-familia` grava na entrada
+  da cor nova. É o único caso que restringe.
+- [x] `despacharPushPendente` inclui `skuRestrito` na chave de agrupamento (senão a entrada da cor
+  nova voltaria a ser despachada junto de um movimento do produto inteiro) e manda `skus: [sku]`.
+- [x] `processarSincronizacao` filtra o `estoquePorSku` da BASE por `job.skus` antes de resolver os
+  alvos. As cores fora da lista não entram no payload e `montarVariacoesUpdate` preserva nelas o
+  `available_quantity` do canal — ficam intactas, não são removidas. O mapa completo segue valendo
+  para os kits e para o alerta de "produto zerado", que falam do produto inteiro.
+- [x] Testes: `despacho-push.test.ts` (addvar → `skus`; entrada comum → produto inteiro; addvar não
+  agrupa com movimento comum) e `sincronizar-estoque/processar.test.ts` (payload com 1 SKU só; sem
+  `skus` continua com todos).
+
 ## Sinalização da cor que falhou no card do Estoque — 2026-09-03
 
 Relato do Diego, logo depois do botão "Revisar": o header do card diz "Erro na última

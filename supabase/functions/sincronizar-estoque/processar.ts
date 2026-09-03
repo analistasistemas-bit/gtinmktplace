@@ -246,8 +246,15 @@ export async function processarSincronizacao(
   // ATENÇÃO: NÃO junte os SKUs de base e kits num mapa só. Quando `variacoes_externas` é
   // vazio (anúncio de kit é item plano de 1 SKU), `resolverAlvosPush` cai no fallback
   // "manda o produto inteiro" (alvos.ts:57-58) e o anúncio do kit receberia os SKUs da base.
+  // `job.skus` (fluxo "Adicionar variação"): o push cobre só a cor recém-criada. As demais NÃO
+  // entram no mapa, e `montarVariacoesUpdate` mantém para elas o `available_quantity` que já está
+  // no canal — ficam intactas no anúncio, não são removidas. O mapa completo continua valendo
+  // para os kits e para o alerta de "produto zerado", que falam do produto inteiro.
+  const estoqueBaseParaPush = job.skus && job.skus.length > 0
+    ? Object.fromEntries(Object.entries(base.estoquePorSku).filter(([sku]) => job.skus!.includes(sku)))
+    : base.estoquePorSku;
   const { alvos: alvosBase, temAnuncio: baseTemAnuncio } =
-    await alvosDaFamilia(admin, org_id, codigoPaiBase, base.estoquePorSku, exclusao);
+    await alvosDaFamilia(admin, org_id, codigoPaiBase, estoqueBaseParaPush, exclusao);
   // Cada alvo carrega a origem (base ou kit) de quem o gerou — sem isto, o aviso de "voltou ao
   // ar" (ADR-0111) não teria como saber, no laço de push abaixo, se quem reativou foi a base ou
   // um kit específico (AlvoPush não carrega codigo_pai — ver alvos.ts).

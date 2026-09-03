@@ -123,6 +123,45 @@ describe('processarSincronizacao', () => {
     ]);
   });
 
+  // Incidente 03/09/2026: a entrada da cor nova empurrou o produto INTEIRO e zerou no ML três
+  // cores cujo estoque o operador tinha lançado direto lá. Com `skus`, só o SKU novo vai — as
+  // demais nem entram no payload, então `montarVariacoesUpdate` mantém o estoque do canal nelas.
+  it('job com skus: empurra só o SKU pedido, as outras cores ficam fora do payload', async () => {
+    const db: DB = {
+      familia: { id: 'f1' },
+      variacoes: [
+        { codigo: 'PRETO', estoque: 40 },
+        { codigo: 'VERMELHO', estoque: 0 },
+        { codigo: 'MARFIM', estoque: 0 },
+      ],
+      anuncios: [{
+        id: 'x', canal: 'fake', item_externo_id: 'FK1',
+        variacoes_externas: { PRETO: {}, VERMELHO: {}, MARFIM: {} },
+      }],
+      itensUP: [],
+    };
+    const r = await processarSincronizacao(deps(db), { ...JOB, skus: ['PRETO'] });
+    expect(r.status).toBe(200);
+    expect(chamadasDeEstoque()).toEqual([
+      { itemExternoId: 'FK1', estoques: [{ sku: 'PRETO', estoque: 40 }] },
+    ]);
+  });
+
+  it('sem skus, o push continua cobrindo o produto inteiro', async () => {
+    const db: DB = {
+      familia: { id: 'f1' },
+      variacoes: [{ codigo: 'PRETO', estoque: 40 }, { codigo: 'VERMELHO', estoque: 0 }],
+      anuncios: [{
+        id: 'x', canal: 'fake', item_externo_id: 'FK1', variacoes_externas: { PRETO: {}, VERMELHO: {} },
+      }],
+      itensUP: [],
+    };
+    await processarSincronizacao(deps(db), JOB);
+    expect(chamadasDeEstoque()[0]!.estoques).toEqual([
+      { sku: 'PRETO', estoque: 40 }, { sku: 'VERMELHO', estoque: 0 },
+    ]);
+  });
+
   it('venda: o canal de ORIGEM não recebe push, os demais recebem', async () => {
     const db: DB = {
       familia: { id: 'f1' },

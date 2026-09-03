@@ -647,6 +647,16 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   planos user products (ADR-0088). Token por canal via `fabricarTokenPadrao` (hoje só ML; Shopee
   entra no E5). Falha de um canal nunca afeta outro (try/catch por alvo); exceção inesperada é
   tratada como retentável — devolve 500 para o QStash re-tentar (push absoluto é idempotente).
+  **`skus` no job (2026-09-03):** restringe o push a uma lista de SKUs em vez do produto inteiro.
+  Só o fluxo "Adicionar variação" usa — `lerPushPendente` marca `skuRestrito` quando o movimento
+  tem `referencia_externa` `addvar:<familia>:<codigo>`, e `despacharPushPendente` inclui isso na
+  chave de agrupamento e manda `skus: [sku]`. Filtra o `estoquePorSku` da base antes de
+  `resolverAlvosPush`: as cores fora da lista não entram no payload e `montarVariacoesUpdate`
+  preserva nelas o `available_quantity` do canal (ficam intactas, NÃO são removidas). O mapa
+  completo continua valendo para os kits e para o alerta de zerado. Incidente que motivou: a
+  entrada de 40 un. de uma cor recém-criada empurrou o saldo do app para todas as cores do
+  `MLB7157545794` e zerou três cujo estoque tinha sido lançado direto no ML — variação com 0 some
+  da vitrine.
   **Alerta de estoque zerado (ADR-0134):** depois do push — e só quando nenhum alvo ficou
   retentável — o worker varre `estoque_movimentos` por transições `>0 → 0` ainda sem `alertado_em`,
   marca com `UPDATE … WHERE alertado_em IS NULL … RETURNING` (a dedup contra a reentrega do QStash)

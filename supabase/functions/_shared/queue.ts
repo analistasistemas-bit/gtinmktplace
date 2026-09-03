@@ -198,6 +198,15 @@ export interface SincronizarEstoqueJob {
    * recente, e reativar ali traria de volta um anúncio pausado à mão sem ninguém ter reposto nada.
    */
   reativar?: boolean;
+  /**
+   * Restringe o push a estes SKUs em vez do produto inteiro. Só o fluxo "Adicionar variação"
+   * (ADR-0129) usa: a entrada de estoque da cor recém-criada não pode arrastar o saldo das cores
+   * que já estão no anúncio. Incidente 03/09/2026 — a entrada de 40 un. da cor Preta empurrou o
+   * saldo do app para TODAS as cores do MLB7157545794 e zerou Vermelho/Champagne/Marfim, cujo
+   * estoque tinha sido lançado direto no ML (variação com 0 some da vitrine). Ausente = produto
+   * inteiro = comportamento de sempre; as variações fora da lista ficam intocadas no anúncio.
+   */
+  skus?: string[];
 }
 
 /** Fila serial de estoque por org: pushes absolutos precisam chegar em ordem. */

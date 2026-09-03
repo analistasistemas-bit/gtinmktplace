@@ -51,6 +51,13 @@ export interface MovimentoPendente {
   canalOrigem: string | null;
   /** ADR-0111 — o movimento AUMENTA saldo (entrada, estorno). Habilita a reativação do anúncio. */
   reposicao: boolean;
+  /**
+   * SKU ao qual ESTE push deve se limitar, ou null para o produto inteiro (o normal).
+   * Preenchido só na entrada do fluxo "Adicionar variação" (`referencia_externa` `addvar:…`):
+   * o saldo da cor nova não pode arrastar as cores que já estão no anúncio — ver o campo `skus`
+   * de `SincronizarEstoqueJob`.
+   */
+  skuRestrito: string | null;
 }
 
 export interface ResultadoBaixaVenda {
@@ -273,7 +280,7 @@ export async function lerPushPendente(
   admin: SupabaseClient, orgId: string, limite = 200,
 ): Promise<MovimentoPendente[]> {
   const { data, error } = await admin.from('estoque_movimentos')
-    .select('id, codigo_pai, push_canal_origem, quantidade')
+    .select('id, codigo, codigo_pai, push_canal_origem, quantidade, referencia_externa')
     .eq('org_id', orgId)
     .is('push_enfileirado_em', null)
     .neq('codigo_pai', '')
@@ -287,9 +294,12 @@ export async function lerPushPendente(
     id: m.id as string,
     codigoPai: m.codigo_pai as string,
     canalOrigem: (m.push_canal_origem as string | null) ?? null,
-    // Pelo SINAL, não pelo motivo: qualquer movimento que soma saldo é reposição (ADR-0111).
+    // Pelo SINAL, não pelo motivo: qualquer motivo que soma saldo é reposição (ADR-0111).
     // Um motivo novo entra na regra sozinho, sem precisar ser lembrado numa lista.
     reposicao: Number(m.quantidade ?? 0) > 0,
+    // `addvar:<familia>:<codigo>` é a referência que `adicionar-variacoes-familia` grava na
+    // entrada da cor nova. É o único caso em que o push vale só para um SKU.
+    skuRestrito: String(m.referencia_externa ?? '').startsWith('addvar:') ? (m.codigo as string) : null,
   }));
 }
 
@@ -342,7 +352,10 @@ export async function despacharPushPendente(
   admin: SupabaseClient,
   orgId: string,
   pendentes: MovimentoPendente[],
-  enfileirar: (job: { org_id: string; codigo_pai: string; canal_origem: string | null; reativar?: boolean }, orgId: string) => Promise<string>,
+  enfileirar: (
+    job: { org_id: string; codigo_pai: string; canal_origem: string | null; reativar?: boolean; skus?: string[] },
+    orgId: string,
+  ) => Promise<string>,
 ): Promise<ResultadoDespacho> {
   let marcados = 0;
   let falhas = 0;
@@ -350,11 +363,18 @@ export async function despacharPushPendente(
   // `reposicao` entra na chave junto com o canal, pela mesma razão que ele: uma venda e uma
   // entrada do mesmo produto têm políticas OPOSTAS. Agrupá-las faria a entrada ser despachada
   // com a intenção da venda — e o anúncio pausado não voltaria (ADR-0111).
-  const grupos = new Map<string, { codigoPai: string; canalOrigem: string | null; reposicao: boolean; ids: string[] }>();
+  // `skuRestrito` também entra na chave: agrupar a entrada de uma cor nova junto com um
+  // movimento do produto inteiro faria o push voltar a ser do produto inteiro.
+  const grupos = new Map<string, {
+    codigoPai: string; canalOrigem: string | null; reposicao: boolean; skuRestrito: string | null; ids: string[];
+  }>();
   for (const p of pendentes) {
-    const chave = JSON.stringify([p.codigoPai, p.canalOrigem, p.reposicao]);
+    const chave = JSON.stringify([p.codigoPai, p.canalOrigem, p.reposicao, p.skuRestrito]);
     if (!grupos.has(chave)) {
-      grupos.set(chave, { codigoPai: p.codigoPai, canalOrigem: p.canalOrigem, reposicao: p.reposicao, ids: [] });
+      grupos.set(chave, {
+        codigoPai: p.codigoPai, canalOrigem: p.canalOrigem, reposicao: p.reposicao,
+        skuRestrito: p.skuRestrito, ids: [],
+      });
     }
     grupos.get(chave)!.ids.push(p.id);
   }
@@ -362,7 +382,11 @@ export async function despacharPushPendente(
   for (const g of grupos.values()) {
     try {
       await enfileirar(
-        { org_id: orgId, codigo_pai: g.codigoPai, canal_origem: g.canalOrigem, reativar: g.reposicao }, orgId,
+        {
+          org_id: orgId, codigo_pai: g.codigoPai, canal_origem: g.canalOrigem, reativar: g.reposicao,
+          ...(g.skuRestrito ? { skus: [g.skuRestrito] } : {}),
+        },
+        orgId,
       );
       // supabase-js devolve o erro como valor, não lança. Ignorar aqui faria a função
       // aparentar sucesso e reenviar o mesmo push para sempre.
