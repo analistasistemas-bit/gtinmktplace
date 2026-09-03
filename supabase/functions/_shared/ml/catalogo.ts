@@ -181,7 +181,10 @@ export function fichaEquivalente(ficha: AtributosFicha, esperado: EsperadoProdut
   if (fmt && fmt !== fmtNosso) {
     return { ok: false, motivo: `ficha_formato_${fmt}` };
   }
-  if (!fmt && fmtNosso !== 'unidade') {
+  // Ficha sem SALE_FORMAT só reprova quando a contagem também não deu sinal (os dois lados em 1
+  // unidade): com `UNITS_PER_PACK` batendo em >1, a equivalência do pack já está provada e exigir
+  // o formato reprovaria o caso legítimo "nosso Duo Pack 2un × ficha Kit/2un sem SALE_FORMAT".
+  if (!fmt && fmtNosso !== 'unidade' && unidadesNossas === 1) {
     return { ok: false, motivo: `ficha_sem_formato_vs_${fmtNosso}` };
   }
   const a = ficha.lengthM;

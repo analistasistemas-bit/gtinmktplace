@@ -273,6 +273,14 @@ describe('fichaEquivalente — trava anti-kit e metragem (incidente VD MENTA)', 
     expect(r.ok).toBe(false);
   });
 
+  it('APROVA nosso kit de 2un contra ficha de 2un SEM SALE_FORMAT (contagem já provou a equivalência)', () => {
+    const r = fichaEquivalente(
+      { id: 'MLB1', saleFormat: null, unitsPerPack: 2, lengthM: null },
+      { lengthM: null, unitsPerPack: 2, saleFormat: 'Kit' },
+    );
+    expect(r.ok).toBe(true);
+  });
+
   it('APROVA nosso kit de 2un contra ficha de kit de 2un (pack legítimo)', () => {
     const r = fichaEquivalente(
       { id: 'MLB1', saleFormat: 'Kit', unitsPerPack: 2, lengthM: null },

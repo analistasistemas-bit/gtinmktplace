@@ -218,7 +218,18 @@ devolve `catalog_product_id.not_modificable` (400) em item ativo com vendas; o o
    engana o comprador do mesmo jeito. `fichaEquivalente` passou a reprovar divergência de
    `UNITS_PER_PACK` em **qualquer** direção (ausente = 1 unidade dos dois lados) e divergência de
    `SALE_FORMAT` inclusive quando a ficha diz "Unidade" — em categoria que não expõe
-   `UNITS_PER_PACK`, o formato é o único sinal de que o nosso item é pack.
+   `UNITS_PER_PACK`, o formato é o único sinal de que o nosso item é pack. Ficha **sem**
+   `SALE_FORMAT` só reprova quando a contagem também não deu sinal (ambos os lados em 1 unidade):
+   com `UNITS_PER_PACK` batendo em >1 a equivalência já está provada, e exigir o formato reprovaria
+   o pack legítimo.
+
+   **Exposição medida em produção (2026-09-03):** 120 anúncios publicados declaram
+   `UNITS_PER_PACK > 1` (a regex do ADR-0071/0073 preenche isso em produto comum, não só em kit) e
+   118 deles ainda não estão vinculados. Nenhum vínculo existente é desfeito — item já vinculado
+   sai antes na ação `pula` (`estado.catalogListingId`). Para esses 118, o efeito é deixar de
+   vincular quando a ficha é de 1 unidade — que é exatamente o vínculo errado; o custo é perder a
+   competição de catálogo num caso em que o `UNITS_PER_PACK` do nosso item estivesse superestimado,
+   nunca vender pack como unidade.
 
 **Limite descoberto — a ficha precisa ser do MESMO domínio do anúncio.** O Aquaphor
 (`MLB7330859238`, domínio `MLB-BODY_SKIN_CARE_PRODUCTS`) casa por GTIN com a ficha `MLB25749603`,
