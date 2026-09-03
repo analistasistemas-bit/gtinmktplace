@@ -4,14 +4,21 @@ import { supabase } from '@/lib/supabase';
 
 export interface FamiliaStatusRow {
   codigo_pai: string; status: string; operacao: string; criado_em: string; lote_id?: string | null;
+  /** Cores da família que ainda NÃO existem no anúncio do canal (embed filtrado por
+   *  `ml_variation_id is null`). É o que distingue a cor que falhou das que já estão lá. */
+  variacoes?: Array<{ codigo: string; ml_variation_id: string | null }> | null;
 }
 
-/** PostgREST (RLS de org já filtra): familias.select('codigo_pai, status, operacao, criado_em, lote_id')
- *  .neq('status', 'publicado') — ponytail: sem filtro de data até virar problema medido. */
+/** PostgREST (RLS de org já filtra): famílias não publicadas + as cores delas que ainda não têm
+ *  variação no canal. O `.is('variacoes.ml_variation_id', null)` filtra o EMBED (não a família:
+ *  sem `!inner` o pai vem de qualquer jeito) só para não trazer as cores já vinculadas —
+ *  `coresSemVinculoPorProduto` refiltra no cliente, então um embed sem filtro não vira badge
+ *  errado. Ponytail: sem filtro de data até virar problema medido. */
 export async function fetchFamiliasNaoPublicadas(): Promise<FamiliaStatusRow[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('codigo_pai, status, operacao, criado_em, lote_id')
+    .select('codigo_pai, status, operacao, criado_em, lote_id, variacoes(codigo, ml_variation_id)')
+    .is('variacoes.ml_variation_id', null)
     .neq('status', 'publicado');
   if (error) throw error;
   return (data ?? []) as FamiliaStatusRow[];
@@ -58,6 +65,19 @@ export function loteUpdatePorProduto(rows: FamiliaStatusRow[]): Map<string, stri
   const out = new Map<string, string>();
   for (const [codigoPai, r] of updatesMaisRecentes(rows)) {
     if (r.lote_id) out.set(codigoPai, r.lote_id);
+  }
+  return out;
+}
+
+/** Cores da família UPDATE mais recente que ainda não existem no anúncio — as que o card marca
+ *  com a pílula "Erro" quando o update falhou. Antes isso vinha de um marcador em memória posto
+ *  pelo diálogo de "Adicionar variação": sumia no primeiro F5 e o operador ficava sabendo que a
+ *  família falhou, mas não QUAL cor (relato do Diego 2026-09-03). */
+export function coresSemVinculoPorProduto(rows: FamiliaStatusRow[]): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const [codigoPai, r] of updatesMaisRecentes(rows)) {
+    const codigos = (r.variacoes ?? []).filter((v) => v.ml_variation_id == null).map((v) => v.codigo);
+    if (codigos.length > 0) out.set(codigoPai, new Set(codigos));
   }
   return out;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  statusUpdatePorProduto, familiaEmVoo, codigosConcluidosComSucesso, type FamiliaStatusRow,
+  statusUpdatePorProduto, familiaEmVoo, codigosConcluidosComSucesso, coresSemVinculoPorProduto,
+  loteUpdatePorProduto, type FamiliaStatusRow,
 } from '../estoque-update-status';
 
 function row(over: Partial<FamiliaStatusRow> = {}): FamiliaStatusRow {
@@ -100,5 +101,45 @@ describe('codigosConcluidosComSucesso', () => {
     ]);
     const atual = new Map([['00000200', 'atualizando' as const]]);
     expect(codigosConcluidosComSucesso(anterior, atual)).toEqual(['00000100']);
+  });
+});
+
+describe('coresSemVinculoPorProduto', () => {
+  it('devolve só as cores sem ml_variation_id da família UPDATE mais recente', () => {
+    const rows = [row({
+      status: 'erro',
+      variacoes: [
+        { codigo: '26706151', ml_variation_id: null },
+        { codigo: '26706071', ml_variation_id: '205149271041' },
+      ],
+    })];
+    expect(coresSemVinculoPorProduto(rows).get('00000100')).toEqual(new Set(['26706151']));
+  });
+
+  it('refiltra no cliente: embed sem filtro do servidor não marca cor já publicada', () => {
+    const rows = [row({ variacoes: [{ codigo: '26706071', ml_variation_id: '205149271041' }] })];
+    expect(coresSemVinculoPorProduto(rows).has('00000100')).toBe(false);
+  });
+
+  it('família UPDATE mais antiga não sobrepõe a mais recente', () => {
+    const rows = [
+      row({ criado_em: '2026-08-01T00:00:00Z', variacoes: [{ codigo: 'ANTIGA', ml_variation_id: null }] }),
+      row({ criado_em: '2026-09-03T00:00:00Z', variacoes: [{ codigo: 'NOVA', ml_variation_id: null }] }),
+    ];
+    expect(coresSemVinculoPorProduto(rows).get('00000100')).toEqual(new Set(['NOVA']));
+  });
+});
+
+describe('loteUpdatePorProduto', () => {
+  it('devolve o lote da família UPDATE mais recente', () => {
+    const rows = [
+      row({ criado_em: '2026-08-01T00:00:00Z', lote_id: 'lote-antigo' }),
+      row({ criado_em: '2026-09-03T00:00:00Z', lote_id: 'lote-novo' }),
+    ];
+    expect(loteUpdatePorProduto(rows).get('00000100')).toBe('lote-novo');
+  });
+
+  it('CREATE não entra', () => {
+    expect(loteUpdatePorProduto([row({ operacao: 'CREATE', lote_id: 'x' })]).size).toBe(0);
   });
 });

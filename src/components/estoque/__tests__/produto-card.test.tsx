@@ -447,6 +447,45 @@ describe('ProdutoCard', () => {
     expect(screen.queryByText('Revisar')).not.toBeInTheDocument();
   });
 
+  // Relato do Diego (2026-09-03): a família aparecia em erro mas nenhuma cor era apontada — o
+  // marcador em memória some no F5. A pílula agora vem de `coresSemVinculo` (dado persistido).
+  it('statusUpdate="erro" + cor sem vínculo no canal → pílula "Erro" só naquela linha', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([mockVariacoes(1, 5)[0]!, mockVariacoes(1, 6)[0]!]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>
+          <ProdutoCard
+            produto={produto} canais={[]} onDarEntrada={vi.fn()}
+            statusUpdate="erro" coresSemVinculo={new Set(['00000006'])}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+    // Sem depender do marcador em memória: nada foi posto em QK.variacoesRecemAdicionadas.
+    await waitFor(() => expect(screen.getByText('Erro')).toBeInTheDocument());
+    expect(screen.getAllByText('Erro')).toHaveLength(1);
+  });
+
+  it('coresSemVinculo sem statusUpdate=erro não marca nada (família não falhou)', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([mockVariacoes(1, 6)[0]!]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>
+          <ProdutoCard
+            produto={produto} canais={[]} onDarEntrada={vi.fn()}
+            coresSemVinculo={new Set(['00000006'])}
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+    await waitFor(() => expect(screen.getByText('00000006')).toBeInTheDocument());
+    expect(screen.queryByText('Erro')).not.toBeInTheDocument();
+  });
+
   it('sem statusUpdate, nenhum badge de atualização aparece', () => {
     renderCard();
     expect(screen.queryByText('Atualizando…')).not.toBeInTheDocument();

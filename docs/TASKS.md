@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Sinalização da cor que falhou no card do Estoque — 2026-09-03
+
+Relato do Diego, logo depois do botão "Revisar": o header do card diz "Erro na última
+atualização", mas nenhuma linha aponta QUAL cor falhou. A pílula por linha existia (ADR-0129 D-11,
+21/08) e vinha de um marcador em memória posto pelo diálogo de "Adicionar variação"
+(`qc.setQueryData(QK.variacoesRecemAdicionadas)`) — some no primeiro F5, e some sempre que o
+operador volta depois. O dado persistido que distingue a cor é `variacoes.ml_variation_id`:
+`null` = essa cor não existe no anúncio do canal.
+
+- [x] `fetchFamiliasNaoPublicadas` traz `variacoes(codigo, ml_variation_id)` com o embed filtrado
+  por `.is('variacoes.ml_variation_id', null)` — filtra o EMBED, não a família (sem `!inner` o pai
+  vem de qualquer jeito). `coresSemVinculoPorProduto` **refiltra no cliente**, então um embed que
+  volte sem o filtro do servidor não vira pílula errada (coberto por teste).
+- [x] `ProdutoCard` recebe `coresSemVinculo` e a pílula "Erro" sai na linha quando
+  `statusUpdate === 'erro'`. O marcador em memória continua cobrindo "Publicando…"/"Publicado"
+  logo após enviar, que é dado de sessão mesmo.
+- [x] Testes: pílula só na cor sem vínculo (sem nada em `QK.variacoesRecemAdicionadas`), nenhuma
+  pílula quando a família não está em erro, e os dois casos da lib (refiltro no cliente; família
+  UPDATE mais antiga não sobrepõe a mais recente).
+
 ## Botão "Revisar" no card em erro da tela Estoque — 2026-09-03
 
 Relato do Diego: adicionou a cor Preta do `26705341` pela tela Estoque, o UPDATE falhou e o card

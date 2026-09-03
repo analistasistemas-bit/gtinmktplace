@@ -135,7 +135,7 @@ function CelulaSaldo({ saldo }: { saldo: number }) {
 
 export function ProdutoCard({
   produto, canais, onDarEntrada, onAjustar, onExcluir, onAdicionarVariacao, statusUpdate,
-  loteRevisaoId, onPreencherFiscal, fiscalPendente,
+  loteRevisaoId, coresSemVinculo, onPreencherFiscal, fiscalPendente,
 }: {
   produto: ProdutoEstoqueResumo;
   canais: string[];
@@ -150,6 +150,10 @@ export function ProdutoCard({
   /** Lote da mesma família UPDATE do `statusUpdate` — habilita o botão "Revisar" quando deu erro
    *  (o card não tem como corrigir o anúncio; quem corrige e reenvia é a tela de Revisão). */
   loteRevisaoId?: string;
+  /** Cores desta família que ainda não existem no anúncio (lib estoque-update-status.ts). Com
+   *  `statusUpdate='erro'`, são elas que ganham a pílula "Erro" na linha — o header diz que a
+   *  família falhou, isto diz QUAL cor. */
+  coresSemVinculo?: Set<string>;
   /** ADR-0135 D-9: abre o DialogFiscalProduto (T13) para esta família. Só a página passa esta
    *  prop quando a org tem o módulo fiscal — o botão em si só some quando `fiscalPendente` é
    *  false (ou a família não tem `familiaId`, ex.: fixture antigo de teste). */
@@ -180,8 +184,13 @@ export function ProdutoCard({
     staleTime: Infinity,
   });
   const recemAdicionadasSet = useMemo(() => new Set(recemAdicionadas ?? []), [recemAdicionadas]);
-  const statusPublicacao = (codigo: string): StatusPublicacaoLinha =>
-    (recemAdicionadasSet.has(codigo) ? (statusUpdate ?? 'publicado') : undefined);
+  // A pílula da linha tem duas fontes: o marcador em memória do diálogo (cobre 'Publicando…'/
+  // 'Publicado' logo após enviar, some no F5) e — para erro — a cor que de fato não entrou no
+  // anúncio, que é dado persistido e sobrevive a recarregar a página.
+  const statusPublicacao = (codigo: string): StatusPublicacaoLinha => {
+    if (statusUpdate === 'erro' && coresSemVinculo?.has(codigo)) return 'erro';
+    return recemAdicionadasSet.has(codigo) ? (statusUpdate ?? 'publicado') : undefined;
+  };
 
   // Preço vivo do canal, só com o card aberto (a chamada varre todos os anúncios da org). A
   // lista NUNCA espera por ele: enquanto não chega, cada linha mostra o preço local.
