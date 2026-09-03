@@ -478,23 +478,31 @@ describe('criarKitsVinculados', () => {
     // o DEFAULT (o bug do ADR-0129); ausentes = DEFAULT intacto. É por isso que o insert é
     // sempre uma linha por chamada — omitir a chave inteira só é seguro fora de um union.
     const SEM_DEFAULT_NA_LINHA = new Set(['id', 'criado_em', 'atualizado_em']);
-    const colunasNotNull = (tabela: string) =>
-      extrairColunasNotNull(TYPES_RAW, tabela).filter((c) => !SEM_DEFAULT_NA_LINHA.has(c));
+    // `familias.exibir_com_desconto` é o mesmo caso, só que só em `familias`: I-2 tirou a
+    // coluna do STRIP_FAMILIA_KIT pro kit não herdar o "% OFF" da base — é NOT NULL mas tem
+    // `default false` (20260606120614_add_configuracoes_e_desconto.sql:18), então omitir no
+    // INSERT familia faz o kit nascer sem desconto em vez de repetir o valor da base.
+    // `variacoes.exibir_com_desconto` é nullable — o builder de variação a re-adiciona como
+    // `null` explícito (não omite), então não entra nesta exceção.
+    const SEM_DEFAULT_NA_LINHA_FAMILIAS = new Set([...SEM_DEFAULT_NA_LINHA, 'exibir_com_desconto']);
+    const colunasNotNull = (tabela: string, excecoes: Set<string>) =>
+      extrairColunasNotNull(TYPES_RAW, tabela).filter((c) => !excecoes.has(c));
     const { deps, inserts } = depsFake({ custo: 10, peso_gramas: 100 });
     await criarKitsVinculados(deps, {
       familiaBaseId: 'f-base', kits: [kitPadrao(2)],
     });
-    for (const col of colunasNotNull('familias')) {
+    for (const col of colunasNotNull('familias', SEM_DEFAULT_NA_LINHA_FAMILIAS)) {
       expect(col in inserts.familias[0]).toEqual(true);
     }
-    for (const col of colunasNotNull('variacoes')) {
+    for (const col of colunasNotNull('variacoes', SEM_DEFAULT_NA_LINHA)) {
       expect(col in inserts.variacoes[0]).toEqual(true);
     }
-    // Os três ficam mesmo de fora — confirma que a exclusão acima é intencional, não um
-    // esquecimento do builder.
+    // Os três (+ exibir_com_desconto só em familias) ficam mesmo de fora — confirma que a
+    // exclusão acima é intencional, não um esquecimento do builder.
     for (const col of SEM_DEFAULT_NA_LINHA) {
       expect(col in inserts.familias[0]).toEqual(false);
       expect(col in inserts.variacoes[0]).toEqual(false);
     }
+    expect('exibir_com_desconto' in inserts.familias[0]).toEqual(false);
   });
 });

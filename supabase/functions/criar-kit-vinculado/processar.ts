@@ -75,6 +75,12 @@ export const STRIP_FAMILIA_KIT = [
   'capa3_storage_path', 'capa3_ml_picture_id',
   'atacado', 'atacado_status', 'atacado_erro',
   'kit_base_codigo_pai', 'kit_multiplicador',
+  // I-2: promoção visual não confirmada no preview do kit (default false / nullable).
+  'exibir_com_desconto', 'desconto_pct',
+  // M-3: rastros de resultado do anúncio-base, sem sentido pro kit recém-criado.
+  'can_invoice', 'can_invoice_causa', 'can_invoice_em', 'fiscal_sincronizado_em',
+  // M-4: aponta pra um SKU que não existe na família do kit.
+  'variacao_principal_codigo',
 ] as const;
 
 export const STRIP_VARIACAO_KIT = [
