@@ -11,6 +11,7 @@ import { atributosFaltantes, categoriaParaTipo } from '../_shared/categoria/atri
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarAnuncioCanonico } from '../_shared/anuncios/montar-canonico.ts';
+import { aplicarEstoqueDerivado } from '../_shared/estoque/kit.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import { exigirFiscalCompletoSePreciso } from '../_shared/fiscal/gate.ts';
 import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel, decidirRetryTransitorio } from '../_shared/publicacao/retry.ts';
@@ -129,7 +130,12 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       : (familia.categoria_ml_id ? ((familia.atributos_faltantes as string[] | null) ?? []) : ['CATEGORIA']);
     if (faltam.length) throw new Error(`Atributos obrigatórios faltando: ${faltam.join(', ')}`);
 
-    const anuncio = await montarAnuncioCanonico(admin, conn, ctx, familia, variacoes, job.listing_type_id);
+    // ADR-0151 D-8: kit vinculado publica floor(estoque_base/N), nunca `variacoes.estoque`
+    // (que é 0 por construção). Família comum passa intocada.
+    const variacoesParaPublicar = await aplicarEstoqueDerivado(
+      admin, familia.org_id as string, familia as never, variacoes,
+    );
+    const anuncio = await montarAnuncioCanonico(admin, conn, ctx, familia, variacoesParaPublicar, job.listing_type_id);
 
     // ── ADR-0088: roteamento multi-cor User Products ────────────────────────────────────────
     // Só multi-cor (>1 variação) com categoria conhecida e conexão resolvida entra em jogo — o

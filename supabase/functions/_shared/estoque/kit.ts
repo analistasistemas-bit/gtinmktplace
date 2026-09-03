@@ -57,6 +57,50 @@ export async function resolverOrigemEstoque(
   };
 }
 
+/**
+ * ADR-0151 D-8 — a quantidade que vai ao ML.
+ *
+ * `variacoes.estoque` do kit nasce e permanece em 0 (o trigger `validar_variacao_no_tenant`
+ * força isso no INSERT de lote manual com operacao='CREATE'). Publicar a coluna crua faria
+ * cada kit, sem exceção, nascer com "0 em estoque" no ML. O valor correto é
+ * floor(estoque_base / N), calculado no momento do CREATE/UPDATE.
+ *
+ * Família comum é devolvida sem cópia nem consulta extra — o caminho quente não paga nada.
+ */
+export async function aplicarEstoqueDerivado<T extends { codigo: string; estoque: number }>(
+  admin: SupabaseClient,
+  orgId: string,
+  familia: { kit_base_codigo_pai: string | null; kit_multiplicador: number | null },
+  variacoes: T[],
+): Promise<T[]> {
+  const n = familia.kit_multiplicador;
+  const base = familia.kit_base_codigo_pai;
+  if (n == null || !base) return variacoes;
+
+  const { data: famBase } = await admin.from('familias')
+    .select('id').eq('org_id', orgId).eq('codigo_pai', base)
+    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+  if (!famBase) {
+    // Base sumiu — a guard da Task 5 deveria ter impedido. Publicar 0 é o único valor
+    // seguro: publicar a coluna crua daria o mesmo 0, e inventar saldo venderia o que
+    // não existe. LOUD no log para o operador achar.
+    console.error('kit_sem_familia_base', { orgId, base });
+    return variacoes.map((v) => ({ ...v, estoque: 0 }));
+  }
+  const { data: varsBase } = await admin.from('variacoes')
+    .select('estoque').eq('familia_id', famBase.id);
+  // A UMA variação da base — nunca a soma. `baixar_estoque` decrementa UMA linha resolvida
+  // por `(org_id, codigo)`; derivar de uma soma faria o publicado e o ledger falarem de
+  // números diferentes no dia em que a trava de "só produto sem cor" (D-10) for afrouxada.
+  if ((varsBase ?? []).length !== 1) {
+    console.error('kit_com_base_multivariacao', { orgId, base, skus: (varsBase ?? []).length });
+    return variacoes.map((v) => ({ ...v, estoque: 0 }));
+  }
+  const estoqueBase = (varsBase![0].estoque as number) ?? 0;
+  const derivado = saldoDoKit(estoqueBase, n);
+  return variacoes.map((v) => ({ ...v, estoque: derivado }));
+}
+
 export interface FamiliaKit {
   id: string;
   codigo_pai: string;

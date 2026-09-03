@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { resolverOrigemEstoque, saldoDoKit } from '../kit.ts';
+import { aplicarEstoqueDerivado, resolverOrigemEstoque, saldoDoKit } from '../kit.ts';
+
+/** Stub mínimo do supabase-js: só o encadeamento que `aplicarEstoqueDerivado` usa. */
+function adminComSaldoDaBase(estoqueBase: number) {
+  const q = {
+    select: () => q,
+    eq: () => q,
+    order: () => q,
+    limit: () => q,
+    maybeSingle: () => Promise.resolve({ data: { id: 'f-base' }, error: null }),
+    then: (res: (v: unknown) => unknown) =>
+      Promise.resolve({ data: [{ codigo: '00000011', estoque: estoqueBase }], error: null }).then(res),
+  };
+  // deno-lint-ignore no-explicit-any
+  return { from: () => q } as any;
+}
 
 /** Stub mínimo do supabase-js: só o encadeamento que `resolverOrigemEstoque` usa. */
 function fakeAdmin(fam: { codigo_pai: string; kit_base_codigo_pai: string | null; kit_multiplicador: number | null } | null) {
@@ -42,5 +57,34 @@ describe('resolverOrigemEstoque', () => {
   it('SKU inexistente degrada para o próprio código', async () => {
     expect(await resolverOrigemEstoque(fakeAdmin(null), 'org-1', '00009999'))
       .toEqual({ codigoCanonico: '00009999', multiplicador: 1, kitCodigoPai: null });
+  });
+});
+
+describe('aplicarEstoqueDerivado', () => {
+  it('família comum passa direto', async () => {
+    const vars = [{ codigo: '00000011', estoque: 7 }];
+    const r = await aplicarEstoqueDerivado(
+      adminComSaldoDaBase(7), 'org-1',
+      { kit_base_codigo_pai: null, kit_multiplicador: null }, vars,
+    );
+    expect(r).toEqual([{ codigo: '00000011', estoque: 7 }]);
+  });
+
+  it('kit publica floor(base/N), não a coluna crua', async () => {
+    const vars = [{ codigo: '00000021', estoque: 0 }];
+    const r = await aplicarEstoqueDerivado(
+      adminComSaldoDaBase(7), 'org-1',
+      { kit_base_codigo_pai: '00000010', kit_multiplicador: 3 }, vars,
+    );
+    expect(r).toEqual([{ codigo: '00000021', estoque: 2 }]);
+  });
+
+  it('base zerada publica kit com 0', async () => {
+    const vars = [{ codigo: '00000021', estoque: 0 }];
+    const r = await aplicarEstoqueDerivado(
+      adminComSaldoDaBase(0), 'org-1',
+      { kit_base_codigo_pai: '00000010', kit_multiplicador: 2 }, vars,
+    );
+    expect(r).toEqual([{ codigo: '00000021', estoque: 0 }]);
   });
 });

@@ -26,6 +26,7 @@ import {
 } from '../_shared/ml/descobrir-familia-up.ts';
 import type { FetchLike } from '../_shared/ml/buscar-item.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
+import { aplicarEstoqueDerivado } from '../_shared/estoque/kit.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 const CANAL = 'mercado_livre';
@@ -142,15 +143,21 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
 
     // Cores incluídas: casadas (têm ml_variation_id) repõem estoque; novas (sem
     // ml_variation_id) são criadas como variação. Excluídas ficam de fora.
-    const { data: variacoes } = await admin.from('variacoes')
+    const { data: variacoesDoSelect } = await admin.from('variacoes')
       .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm')
       .eq('familia_id', job.familia_id)
       .eq('excluida_da_publicacao', false);
-    if (!variacoes || variacoes.length === 0) {
+    if (!variacoesDoSelect || variacoesDoSelect.length === 0) {
       const err = new Error('Nenhuma cor incluída para atualizar (400)') as Error & { status?: number };
       err.status = 400;
       throw err;
     }
+    // ADR-0151 D-8: kit vinculado atualiza floor(estoque_base/N), nunca `variacoes.estoque`
+    // (que é 0 por construção). Família comum passa intocada. Precisa vir ANTES do split
+    // casadas/novas — os dois ramos (existentes/novas) alimentam `desejados` do ML.
+    const variacoes = await aplicarEstoqueDerivado(
+      admin, familia.org_id as string, familia as never, variacoesDoSelect,
+    );
 
     // ADR-0078 F2 (invariante #1): em "atualizar tudo" o precoFamilia propagaria o 1º preço a
     // TODAS as cores em silêncio se houvesse divergência — LOUD em vez disso. Em "somente
