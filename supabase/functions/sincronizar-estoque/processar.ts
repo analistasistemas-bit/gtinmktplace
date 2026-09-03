@@ -9,7 +9,8 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
-import { resolverAlvosPush } from '../_shared/estoque/alvos.ts';
+import { resolverAlvosPush, type AlvoPush } from '../_shared/estoque/alvos.ts';
+import { listarKitsVivos, saldoDoKit } from '../_shared/estoque/kit.ts';
 import type { SincronizarEstoqueJob } from '../_shared/queue.ts';
 import type { ChannelConnector, ContextoCanal } from '../_shared/canais/contrato.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
@@ -140,18 +141,23 @@ async function alertarEstoqueZerado(
   }
 }
 
-export async function processarSincronizacao(
-  deps: DepsSincronizacao, job: SincronizarEstoqueJob,
-): Promise<RespostaSincronizacao> {
-  const { org_id, codigo_pai, canal_origem } = job;
-  const admin = deps.admin;
+interface FamiliaComSaldo {
+  familiaId: string;
+  codigoPai: string;
+  nome: string | null;
+  permalink: string | null;
+  estoquePorSku: Record<string, number>;
+  rotuloPorSku: Map<string, { nome: string | null; cor: string | null }>;
+}
 
-  // 1) Estoque canônico ATUAL: variações da família mais recente (mesma âncora da baixa).
+/** Família canônica de um `codigo_pai` + o mapa de saldos das variações dela. */
+async function lerFamiliaComSaldo(
+  admin: SupabaseClient, orgId: string, codigoPai: string,
+): Promise<FamiliaComSaldo | null> {
   const { data: familia } = await admin.from('familias')
-    // nome_pai/ml_permalink entram só para o texto do alerta de estoque zerado (ADR-0134).
-    .select('id, nome_pai, ml_permalink').eq('org_id', org_id).eq('codigo_pai', codigo_pai)
+    .select('id, nome_pai, ml_permalink').eq('org_id', orgId).eq('codigo_pai', codigoPai)
     .order('criado_em', { ascending: false }).limit(1).maybeSingle();
-  if (!familia) return { status: 200, body: { ok: true, skip: 'produto sem família' } };
+  if (!familia) return null;
 
   const { data: variacoes } = await admin.from('variacoes')
     .select('codigo, estoque, nome, cor').eq('familia_id', familia.id);
@@ -163,33 +169,121 @@ export async function processarSincronizacao(
       nome: (v.nome as string | null) ?? null, cor: (v.cor as string | null) ?? null,
     });
   }
-  if (Object.keys(estoquePorSku).length === 0) {
-    return { status: 200, body: { ok: true, skip: 'sem variações' } };
-  }
+  return {
+    familiaId: familia.id as string, codigoPai,
+    nome: (familia.nome_pai as string | null) ?? null,
+    permalink: (familia.ml_permalink as string | null) ?? null,
+    estoquePorSku, rotuloPorSku,
+  };
+}
 
-  // 2) Anúncios publicados do produto + itens técnicos UP (ADR-0088).
+/** Alvos de push de UMA família. `resolverAlvosPush` roda com o mapa só dela. */
+async function alvosDaFamilia(
+  admin: SupabaseClient, orgId: string, codigoPai: string,
+  estoquePorSku: Record<string, number>, canalOrigem: string | null,
+): Promise<{ alvos: AlvoPush[]; temAnuncio: boolean }> {
   const { data: anuncios } = await admin.from('anuncios_externos')
     .select('id, canal, item_externo_id, variacoes_externas')
-    .eq('org_id', org_id).eq('codigo_pai', codigo_pai).eq('status', 'publicado');
+    .eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('status', 'publicado');
   const idsAnuncio = (anuncios ?? []).map((a) => a.id as string);
   const { data: itensUP } = idsAnuncio.length > 0
     ? await admin.from('anuncios_externos_itens')
       .select('anuncio_externo_id, sku, item_externo_id, retirado, status')
-      .eq('org_id', org_id).in('anuncio_externo_id', idsAnuncio)
+      .eq('org_id', orgId).in('anuncio_externo_id', idsAnuncio)
     : { data: [] };
-
   const alvos = resolverAlvosPush(
-    (anuncios ?? []) as never, (itensUP ?? []) as never, estoquePorSku, canal_origem,
+    (anuncios ?? []) as never, (itensUP ?? []) as never, estoquePorSku, canalOrigem,
   );
+  return { alvos, temAnuncio: (anuncios ?? []).length > 0 };
+}
+
+export async function processarSincronizacao(
+  deps: DepsSincronizacao, job: SincronizarEstoqueJob,
+): Promise<RespostaSincronizacao> {
+  const { org_id, codigo_pai, canal_origem } = job;
+  const admin = deps.admin;
+
+  // 1) Base: família canônica + saldo real das variações.
+  //
+  // Defensivo: se o job veio com o `codigo_pai` de um KIT, redireciona para a base. Nenhum
+  // caminho grava o `codigo_pai` de um kit no ledger hoje (a baixa resolve para a base, e
+  // entrada/ajuste em SKU de kit são recusados no banco), mas se acontecesse, o kit seria
+  // tratado como produto e o push mandaria a coluna crua `estoque = 0` para um anúncio vivo.
+  let codigoPaiBase = codigo_pai;
+  const { data: familiaDoJob } = await admin.from('familias')
+    .select('kit_base_codigo_pai, kit_multiplicador')
+    .eq('org_id', org_id).eq('codigo_pai', codigo_pai)
+    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+  if (familiaDoJob?.kit_multiplicador != null && familiaDoJob.kit_base_codigo_pai) {
+    console.log('estoque_push_job_de_kit_redirecionado', codigo_pai, '->', familiaDoJob.kit_base_codigo_pai);
+    codigoPaiBase = familiaDoJob.kit_base_codigo_pai as string;
+  }
+
+  const base = await lerFamiliaComSaldo(admin, org_id, codigoPaiBase);
+  if (!base) return { status: 200, body: { ok: true, skip: 'produto sem família' } };
+  if (Object.keys(base.estoquePorSku).length === 0) {
+    return { status: 200, body: { ok: true, skip: 'sem variações' } };
+  }
+
+  const kits = await listarKitsVivos(admin, org_id, codigoPaiBase);
+
+  // ADR-0151 D-7 (revisada) — com kit vinculado, a exclusão por canal de origem NÃO se
+  // aplica: reempurra base + todos os tamanhos, sempre. Base e kits dividem o mesmo canal em
+  // anúncios diferentes, e a exclusão por canal pularia todos eles. Identificar e pular só o
+  // anúncio de origem foi DESCARTADO pelo Diego: o push é ABSOLUTO e recalculado do zero,
+  // então o resultado final é idêntico — custa 1-2 chamadas de API a mais por evento, e
+  // poupa uma coluna no ledger mais plumbing por todo o outbox. Não "otimize" isto de volta.
+  //
+  // Produto sem kit segue com o comportamento de hoje, intocado.
+  const exclusao = kits.length > 0 ? null : canal_origem;
+
+  // 2) Alvos da base + de CADA kit, um `resolverAlvosPush` por família.
+  //
+  // ATENÇÃO: NÃO junte os SKUs de base e kits num mapa só. Quando `variacoes_externas` é
+  // vazio (anúncio de kit é item plano de 1 SKU), `resolverAlvosPush` cai no fallback
+  // "manda o produto inteiro" (alvos.ts:57-58) e o anúncio do kit receberia os SKUs da base.
+  const { alvos: alvosBase, temAnuncio: baseTemAnuncio } =
+    await alvosDaFamilia(admin, org_id, codigoPaiBase, base.estoquePorSku, exclusao);
+  const alvos = [...alvosBase];
+  let temAnuncio = baseTemAnuncio;
+
+  // O saldo do kit é sempre floor(estoque_base / N), calculado ao vivo (ADR-0151 D-6). A
+  // coluna `variacoes.estoque` do kit fica em 0 para sempre e NUNCA é lida aqui.
+  //
+  // A UMA variação da base — nunca a soma das variações. O ledger (`baixar_estoque`) resolve
+  // UMA variação por `(org_id, codigo)` e decrementa AQUELA linha; derivar de uma soma faria
+  // o kit e o ledger falarem de números diferentes no dia em que a trava de "só produto sem
+  // cor" (D-10) for afrouxada. Com mais de uma variação, falha LOUD em vez de inventar um
+  // número plausível.
+  const skusBase = Object.keys(base.estoquePorSku);
+  const estoqueBaseUnico = skusBase.length === 1 ? base.estoquePorSku[skusBase[0]] : null;
+
+  for (const kit of kits) {
+    if (estoqueBaseUnico === null) {
+      console.error('kit_com_base_multivariacao', { org_id, codigoPaiBase, skus: skusBase.length });
+      continue;   // não empurra saldo inventado para o ML
+    }
+    const kitComSaldo = await lerFamiliaComSaldo(admin, org_id, kit.codigo_pai);
+    if (!kitComSaldo) continue;
+    const derivado: Record<string, number> = {};
+    for (const sku of Object.keys(kitComSaldo.estoquePorSku)) {
+      derivado[sku] = saldoDoKit(estoqueBaseUnico, kit.kit_multiplicador);
+    }
+    // `exclusao` aqui é sempre null (só chegamos neste laço com kits.length > 0).
+    const r = await alvosDaFamilia(admin, org_id, kit.codigo_pai, derivado, exclusao);
+    alvos.push(...r.alvos);
+    temAnuncio = temAnuncio || r.temAnuncio;
+  }
+
   const notificar = deps.notificar ?? notificarCategoria;
   const ctxAlerta: ContextoAlerta = {
     orgId: org_id,
-    codigoPai: codigo_pai,
-    produto: (familia.nome_pai as string | null) ?? null,
-    permalink: (familia.ml_permalink as string | null) ?? null,
-    rotuloPorSku,
-    estoquePorSku,
-    temAnuncio: (anuncios ?? []).length > 0,
+    codigoPai: codigoPaiBase,
+    produto: base.nome,
+    permalink: base.permalink,
+    rotuloPorSku: base.rotuloPorSku,
+    estoquePorSku: base.estoquePorSku,
+    temAnuncio,
   };
   if (alvos.length === 0) {
     // Sem canal publicado o saldo não pausa anúncio nenhum: fecha os movimentos sem avisar.
@@ -250,8 +344,8 @@ export async function processarSincronizacao(
   // retentativa o anúncio já está `ativo`, ninguém reativa nada e o aviso se perderia.
   if (reativou) {
     await notificar(admin, org_id, 'estoque', montarMensagemVoltaAoAr({
-      produto: ctxAlerta.produto, codigoPai: codigo_pai, permalink: ctxAlerta.permalink,
-    })).catch((e) => console.error('estoque_alerta_volta_falhou', codigo_pai, String(e)));
+      produto: ctxAlerta.produto, codigoPai: codigoPaiBase, permalink: ctxAlerta.permalink,
+    })).catch((e) => console.error('estoque_alerta_volta_falhou', codigoPaiBase, String(e)));
   }
 
   // Push é absoluto: repetir é seguro, então 500 para o QStash re-tentar.
