@@ -11,19 +11,85 @@ export const TAMANHOS_KIT = [2, 3, 4, 5, 6] as const;
 export const TITULO_MAX_KIT = 60;
 
 /**
- * O sufixo do kit é a informação que NÃO pode se perder — é o que diferencia este anúncio
+ * O prefixo do kit é a informação que NÃO pode se perder — é o que diferencia este anúncio
  * do da base na busca do ML. Quando não cabe, quem encolhe é o título da base, cortado em
  * fronteira de palavra.
  */
 export function tituloDoKit(tituloBase: string, n: number): string {
-  const sufixo = `Kit ${n} Unidades`;
-  const folga = TITULO_MAX_KIT - sufixo.length - 1;
+  const prefixo = `Kit ${n} Unidades`;
+  const folga = TITULO_MAX_KIT - prefixo.length - 1;
   const base = tituloBase.trim();
-  if (base.length <= folga) return `${base} ${sufixo}`;
+  if (base.length <= folga) return `${prefixo} ${base}`;
   const cortado = base.slice(0, folga);
   const ultimoEspaco = cortado.lastIndexOf(' ');
   const limpo = (ultimoEspaco > 0 ? cortado.slice(0, ultimoEspaco) : cortado).trim();
-  return `${limpo} ${sufixo}`;
+  return `${prefixo} ${limpo}`;
+}
+
+function unidadesPt(n: number): string {
+  return n === 1 ? '1 unidade' : `${n} unidades`;
+}
+
+/** Cabeçalhos de seção ADR-0115 — próximo cabeçalho encerra o bloco anterior. */
+const EMOJI_CABECALHO = /^[🧵✅📌🎯❓🎨📦🚚]\s*\S/u;
+
+function ehCabecalhoSecao(linha: string): boolean {
+  const t = linha.trim();
+  if (!t) return false;
+  if (EMOJI_CABECALHO.test(t)) return true;
+  return /^(?:O QUE VOCÊ RECEBE|CONTEÚDO DA EMBALAGEM|FAQ(?:\s|$)|ESPECIFICAÇÕES|PERGUNTAS SOBRE)/i.test(t);
+}
+
+function ehSecaoConteudo(linha: string): boolean {
+  return /^(?:📦\s*)?(?:O QUE VOCÊ RECEBE|CONTEÚDO DA EMBALAGEM)\s*$/i.test(linha.trim());
+}
+
+function adaptarBulletsSecaoConteudo(bloco: string, n: number, titulo: string): { bloco: string; adaptado: boolean } {
+  let adaptado = false;
+  let out = bloco;
+  const unidades = unidadesPt(n);
+
+  for (const [re, repl] of [
+    [/• 1 unidade de /g, `• ${unidades} de `],
+    [/• 1 unidade com /g, `• ${unidades}, cada uma com `],
+    [/• 1 unidade\s*$/gm, `• ${unidades}`],
+    [/• 1 peças?\s*$/gim, `• ${n} peças`],
+    [/• 1 caixa com \d+ unidades/gi, `• ${unidades} de ${titulo}`],
+  ] as const) {
+    const antes = out;
+    out = out.replace(re, repl);
+    if (out !== antes) adaptado = true;
+  }
+
+  return { bloco: out, adaptado };
+}
+
+function adaptarSecoesConteudo(desc: string, n: number, titulo: string): { desc: string; adaptado: boolean } {
+  const linhas = desc.split('\n');
+  let adaptado = false;
+  const resultado: string[] = [];
+  let i = 0;
+
+  while (i < linhas.length) {
+    const linha = linhas[i];
+    if (ehSecaoConteudo(linha)) {
+      resultado.push(linha);
+      i++;
+      const corpo: string[] = [];
+      while (i < linhas.length && !ehCabecalhoSecao(linhas[i])) {
+        corpo.push(linhas[i]);
+        i++;
+      }
+      const { bloco, adaptado: a } = adaptarBulletsSecaoConteudo(corpo.join('\n'), n, titulo);
+      if (a) adaptado = true;
+      if (corpo.length > 0) resultado.push(bloco);
+    } else {
+      resultado.push(linha);
+      i++;
+    }
+  }
+
+  return { desc: resultado.join('\n'), adaptado };
 }
 
 /** Sugestão editável: unitário × N, com desconto opcional em % sobre o total. */
@@ -33,8 +99,45 @@ export function precoSugeridoDoKit(precoBase: number, n: number, descontoPct = 0
   return Number(liquido.toFixed(2));
 }
 
-export function descricaoDoKit(descricaoBase: string, n: number): string {
-  return `${descricaoBase.trimEnd()}\n\nKit com ${n} unidades.`;
+function temSecaoConteudo(desc: string): boolean {
+  return /(?:📦\s*)?(?:O QUE VOCÊ RECEBE|CONTEÚDO DA EMBALAGEM)/i.test(desc);
+}
+
+function secaoOQueVoceRecebe(n: number, tituloBase: string): string {
+  const unidades = unidadesPt(n);
+  return `\n\n📦 O QUE VOCÊ RECEBE\n\n• ${unidades} de ${tituloBase.trim()}`;
+}
+
+export function descricaoDoKit(descricaoBase: string, n: number, tituloBase: string): string {
+  let desc = descricaoBase.trimEnd();
+  const unidades = unidadesPt(n);
+  const kitComUnidades = `Kit com ${unidades}.`;
+  const titulo = tituloBase.trim();
+
+  desc = desc.replace(/\n\nKit com \d+ unidades\.?\s*$/gi, '');
+
+  const conteudo = adaptarSecoesConteudo(desc, n, titulo);
+  desc = conteudo.desc;
+
+  desc = desc.replace(
+    /Qual a unidade de venda\?\s*1 unidade\.?/gi,
+    `Qual a unidade de venda? ${kitComUnidades}`,
+  );
+  desc = desc.replace(
+    /(▪\s*[^\n]*?\?)\s*1 unidade\.?/gi,
+    (match, pergunta: string) => {
+      const p = pergunta.toLowerCase();
+      if (/unidade de venda/.test(p)) return `${pergunta} ${kitComUnidades}`;
+      if (/quantas unidades|quantidade/.test(p)) return `${pergunta} ${unidades}.`;
+      if (/o que vem|o que acompanha/.test(p)) return `${pergunta} ${unidades} de ${titulo}.`;
+      return match;
+    },
+  );
+  if (!temSecaoConteudo(desc)) {
+    desc = `${desc}${secaoOQueVoceRecebe(n, titulo)}`;
+  }
+
+  return desc;
 }
 
 /** Campos da família-base usados para pré-preencher o preview (Decisão 4). */

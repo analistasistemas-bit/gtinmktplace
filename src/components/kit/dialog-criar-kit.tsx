@@ -63,7 +63,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
       setChaves((prev) => (prev[n] ? prev : { ...prev, [n]: crypto.randomUUID() }));
       setValores((prev) => (prev[n]
         ? prev
-        : { ...prev, [n]: valorInicialPreview(base, tituloDoKit(base.titulo, n), descricaoDoKit(base.descricao, n), n) }));
+        : { ...prev, [n]: valorInicialPreview(base, tituloDoKit(base.titulo, n), descricaoDoKit(base.descricao, n, base.titulo), n) }));
     }
   }
 
@@ -183,13 +183,13 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
 
   return (
     <Dialog open={open} onOpenChange={(v) => !mutation.isPending && onOpenChange(v)}>
-      <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+      <DialogContent className="max-h-[85vh] w-full max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle>Criar kit vinculado</DialogTitle>
           <DialogDescription>
             {etapa === 'tamanhos'
               ? 'Escolha os tamanhos de kit para este produto.'
-              : 'Confira e ajuste cada kit antes de criar — é a revisão inteira, não passa por outra tela.'}
+              : `Confira e ajuste ${tamanhosMarcados.length > 1 ? `os ${tamanhosMarcados.length} kits` : 'o kit'} antes de criar — é a revisão inteira, não passa por outra tela.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -230,11 +230,13 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
             })}
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
-            {tamanhosMarcados.map((n) => (
+          <div className="flex flex-col gap-6" role="list" aria-label="Pré-visualização dos kits selecionados">
+            {tamanhosMarcados.map((n, i) => (
               <PreviewKit
                 key={n}
                 n={n}
+                indice={i + 1}
+                total={tamanhosMarcados.length}
                 base={base}
                 value={valores[n]}
                 onChange={(patch) => setValores((prev) => ({ ...prev, [n]: { ...prev[n], ...patch } }))}

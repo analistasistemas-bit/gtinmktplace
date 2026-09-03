@@ -21,7 +21,7 @@ const BASE: BaseParaKit = {
 
 function Wrapper({ n, inicial }: { n: number; inicial: Partial<KitPreviewValue> }) {
   const [value, setValue] = useState<KitPreviewValue>({
-    ...valorInicialPreview(BASE, tituloDoKit(BASE.titulo, n), descricaoDoKit(BASE.descricao, n), n),
+    ...valorInicialPreview(BASE, tituloDoKit(BASE.titulo, n), descricaoDoKit(BASE.descricao, n, BASE.titulo), n),
     ...inicial,
   });
   return (
