@@ -40,6 +40,13 @@ export interface ResultadoCriarKits {
   motivo?: string;
   mensagem?: string;
   kits?: KitCriado[];
+  /**
+   * Resultado do encadeamento de publicação (quando a base já está publicada). `resp.ok`
+   * sozinho é falso positivo — ver `deps.encadearPublicacao`/`adicionar-variacoes-familia/
+   * index.ts:32-35` — então este bool viaja explícito até a resposta HTTP em vez de o
+   * `{ok:true}` externo esconder uma falha de enfileiramento do operador.
+   */
+  publicacaoOk?: boolean;
 }
 
 export interface CriarKitDeps {
@@ -248,7 +255,7 @@ export async function criarKitsVinculados(
   // existentes sem criar nada; um subconjunto novo cria só o que falta.
   const chaves = input.kits.map((k) => k.chaveCadastro);
   const { data: existentesFamilias, error: erroExistentes } = await admin.from('familias')
-    .select('id, codigo_pai, kit_multiplicador, chave_cadastro')
+    .select('id, codigo_pai, kit_multiplicador, chave_cadastro, status')
     .eq('org_id', orgId).in('chave_cadastro', chaves);
   if (erroExistentes) return { ok: false, motivo: 'falha_leitura', mensagem: erroExistentes.message };
 
@@ -269,121 +276,135 @@ export async function criarKitsVinculados(
   const chavesExistentes = new Set((existentesFamilias ?? []).map((f) => f.chave_cadastro as string));
   const kitsFaltando = input.kits.filter((k) => !chavesExistentes.has(k.chaveCadastro));
 
-  if (kitsFaltando.length === 0) {
-    return { ok: true, kits: kitsExistentes };
-  }
-
   // ── Ler a base ──────────────────────────────────────────────────────────────────────────
+  // Carregada mesmo quando TODOS os kits já existem (kitsFaltando vazio): é o `ml_item_id`
+  // dela que decide o encadeamento abaixo, inclusive no reenvio puro (kit existente ainda
+  // 'pronto'/'erro' — mesmo padrão de `adicionar-variacoes-familia/index.ts:84-105`, que
+  // RE-ENCADEIA em vez de devolver sucesso fabricado quando a família idempotente não
+  // terminou de publicar).
   const { data: base } = await admin.from('familias').select('*')
     .eq('id', input.familiaBaseId).eq('org_id', orgId).maybeSingle();
   if (!base) return { ok: false, motivo: 'base_nao_encontrada' };
 
-  const { data: variacoesBase } = await admin.from('variacoes')
-    .select('*').eq('familia_id', base.id as string);
-  if (!variacoesBase || variacoesBase.length === 0) return { ok: false, motivo: 'base_sem_variacao' };
-  // Decisão 10 (escopo v1): kit só a partir de produto sem cor.
-  if (variacoesBase.length > 1) return { ok: false, motivo: 'base_multivariacao' };
-  const baseVar = variacoesBase[0];
-
-  // Kit de kit não existe.
-  if (base.kit_multiplicador != null) return { ok: false, motivo: 'base_e_kit' };
-
-  // Custo alimenta markup (ADR-0055): nunca pode nascer 0 nem null.
-  const custoBase = baseVar.custo == null ? null : Number(baseVar.custo);
-  if (custoBase == null || custoBase <= 0) return { ok: false, motivo: 'base_sem_custo' };
-
-  // Peso alimenta frete (ADR-0018).
-  const pesoBase = baseVar.peso_gramas == null ? null : Number(baseVar.peso_gramas);
-  if (pesoBase == null || pesoBase <= 0) return { ok: false, motivo: 'base_sem_peso' };
-
-  if (!base.categoria_ml_id) return { ok: false, motivo: 'base_sem_categoria' };
-
-  // Tamanhos não repetidos entre os kits desta submissão E os já vivos da base.
-  const kitsVivos = await listarKitsVivos(admin, orgId, base.codigo_pai as string);
-  const multsVivos = new Set(kitsVivos.map((k) => k.kit_multiplicador));
-  if (kitsFaltando.some((k) => multsVivos.has(k.multiplicador))) {
-    return { ok: false, motivo: 'kit_duplicado' };
-  }
-
-  // ── Atributos (força SALE_FORMAT=Kit por categoria, uma vez — schema é o mesmo p/ todos) ──
-  let schema: AtributoSchema[];
-  try {
-    const token = await deps.resolverToken();
-    schema = await deps.lerSchema(token, base.categoria_ml_id as string);
-  } catch (e) {
-    return { ok: false, motivo: 'sem_conexao_ml', mensagem: e instanceof Error ? e.message : String(e) };
-  }
-  const atributosPorMultiplicador = new Map<number, AtributoML[]>();
-  for (const kit of kitsFaltando) {
-    try {
-      atributosPorMultiplicador.set(
-        kit.multiplicador,
-        aplicarKitNosAtributos(schema, (base.atributos_ml as AtributoML[] | null) ?? [], kit.multiplicador),
-      );
-    } catch (e) {
-      const status = (e as Error & { status?: number }).status;
-      if (status === 400) {
-        return { ok: false, motivo: 'categoria_sem_kit', mensagem: (e as Error).message };
-      }
-      throw e;
-    }
-  }
-
-  // ── Códigos (1 PAI + 1 SKU por kit) ────────────────────────────────────────────────────
-  const reserva = await reservarCodigos(admin, orgId, kitsFaltando.length);
-  if ('erro' in reserva) return { ok: false, motivo: 'falha_numeracao', mensagem: reserva.erro };
-  const { pares } = reserva;
-
-  // ── Lote técnico dedicado, nascido em 'publicando' (nunca card de Revisão — ver o brief) ─
-  const { data: loteNovo, error: loteErr } = await admin.from('lotes')
-    .insert({ user_id: deps.userId, org_id: orgId, status: 'publicando', origem: 'manual' })
-    .select('id').single();
-  if (loteErr || !loteNovo) return { ok: false, motivo: 'falha_lote' };
-  const loteId = loteNovo.id as string;
-  const { data: numeroOrg } = await admin.rpc('proximo_numero_lote', { p_org: orgId });
-  if (numeroOrg != null) await admin.from('lotes').update({ numero_org: numeroOrg }).eq('id', loteId);
-
-  // ── Insere UMA família por kit, cada uma em sua própria chamada de .insert() (nunca um
-  //    array misto — é isso que impede o bug de união de chaves do PostgREST, ADR-0129). ────
   const kitsCriados: KitCriado[] = [];
-  let algumKitCriado = false;
-  for (const [i, kit] of kitsFaltando.entries()) {
-    const par = pares[i];
-    const familiaObj = montarFamiliaKit(base as Record<string, unknown>, kit, {
-      loteId, codigoPai: par.codigoPai, atributos: atributosPorMultiplicador.get(kit.multiplicador)!,
-    });
-    const { data: familiaCriada, error: famErr } = await admin.from('familias')
-      .insert(familiaObj).select('id').single();
-    if (famErr || !familiaCriada) {
-      if (!algumKitCriado) await admin.from('lotes').delete().eq('id', loteId);
-      return { ok: false, motivo: 'falha_criar_familia', mensagem: famErr?.message };
-    }
-    const familiaId = familiaCriada.id as string;
 
-    const variacaoObj = montarVariacaoKit(baseVar as Record<string, unknown>, kit, {
-      familiaId, codigo: par.codigo,
-    });
-    const { error: varErr } = await admin.from('variacoes').insert(variacaoObj);
-    if (varErr) {
-      await admin.from('familias').delete().eq('id', familiaId);
-      if (!algumKitCriado) await admin.from('lotes').delete().eq('id', loteId);
-      return { ok: false, motivo: 'falha_criar_variacao', mensagem: varErr.message };
+  if (kitsFaltando.length > 0) {
+    const { data: variacoesBase } = await admin.from('variacoes')
+      .select('*').eq('familia_id', base.id as string);
+    if (!variacoesBase || variacoesBase.length === 0) return { ok: false, motivo: 'base_sem_variacao' };
+    // Decisão 10 (escopo v1): kit só a partir de produto sem cor.
+    if (variacoesBase.length > 1) return { ok: false, motivo: 'base_multivariacao' };
+    const baseVar = variacoesBase[0];
+
+    // Kit de kit não existe.
+    if (base.kit_multiplicador != null) return { ok: false, motivo: 'base_e_kit' };
+
+    // Custo alimenta markup (ADR-0055): nunca pode nascer 0 nem null.
+    const custoBase = baseVar.custo == null ? null : Number(baseVar.custo);
+    if (custoBase == null || custoBase <= 0) return { ok: false, motivo: 'base_sem_custo' };
+
+    // Peso alimenta frete (ADR-0018).
+    const pesoBase = baseVar.peso_gramas == null ? null : Number(baseVar.peso_gramas);
+    if (pesoBase == null || pesoBase <= 0) return { ok: false, motivo: 'base_sem_peso' };
+
+    if (!base.categoria_ml_id) return { ok: false, motivo: 'base_sem_categoria' };
+
+    // Tamanhos não repetidos entre os kits desta submissão E os já vivos da base.
+    const kitsVivos = await listarKitsVivos(admin, orgId, base.codigo_pai as string);
+    const multsVivos = new Set(kitsVivos.map((k) => k.kit_multiplicador));
+    if (kitsFaltando.some((k) => multsVivos.has(k.multiplicador))) {
+      return { ok: false, motivo: 'kit_duplicado' };
     }
 
-    algumKitCriado = true;
-    kitsCriados.push({
-      familiaId, codigoPai: par.codigoPai, codigo: par.codigo, multiplicador: kit.multiplicador,
-    });
+    // ── Atributos (força SALE_FORMAT=Kit por categoria, uma vez — schema é o mesmo p/ todos) ─
+    let schema: AtributoSchema[];
+    try {
+      const token = await deps.resolverToken();
+      schema = await deps.lerSchema(token, base.categoria_ml_id as string);
+    } catch (e) {
+      return { ok: false, motivo: 'sem_conexao_ml', mensagem: e instanceof Error ? e.message : String(e) };
+    }
+    const atributosPorMultiplicador = new Map<number, AtributoML[]>();
+    for (const kit of kitsFaltando) {
+      try {
+        atributosPorMultiplicador.set(
+          kit.multiplicador,
+          aplicarKitNosAtributos(schema, (base.atributos_ml as AtributoML[] | null) ?? [], kit.multiplicador),
+        );
+      } catch (e) {
+        const status = (e as Error & { status?: number }).status;
+        if (status === 400) {
+          return { ok: false, motivo: 'categoria_sem_kit', mensagem: (e as Error).message };
+        }
+        throw e;
+      }
+    }
+
+    // ── Códigos (1 PAI + 1 SKU por kit) ──────────────────────────────────────────────────
+    const reserva = await reservarCodigos(admin, orgId, kitsFaltando.length);
+    if ('erro' in reserva) return { ok: false, motivo: 'falha_numeracao', mensagem: reserva.erro };
+    const { pares } = reserva;
+
+    // ── Lote técnico dedicado, nascido em 'publicando' (nunca card de Revisão) ───────────
+    const { data: loteNovo, error: loteErr } = await admin.from('lotes')
+      .insert({ user_id: deps.userId, org_id: orgId, status: 'publicando', origem: 'manual' })
+      .select('id').single();
+    if (loteErr || !loteNovo) return { ok: false, motivo: 'falha_lote' };
+    const loteId = loteNovo.id as string;
+    const { data: numeroOrg } = await admin.rpc('proximo_numero_lote', { p_org: orgId });
+    if (numeroOrg != null) await admin.from('lotes').update({ numero_org: numeroOrg }).eq('id', loteId);
+
+    // ── Insere UMA família por kit, cada uma em sua própria chamada de .insert() (nunca um
+    //    array misto — é isso que impede o bug de união de chaves do PostgREST, ADR-0129). ──
+    let algumKitCriado = false;
+    for (const [i, kit] of kitsFaltando.entries()) {
+      const par = pares[i];
+      const familiaObj = montarFamiliaKit(base as Record<string, unknown>, kit, {
+        loteId, codigoPai: par.codigoPai, atributos: atributosPorMultiplicador.get(kit.multiplicador)!,
+      });
+      const { data: familiaCriada, error: famErr } = await admin.from('familias')
+        .insert(familiaObj).select('id').single();
+      if (famErr || !familiaCriada) {
+        if (!algumKitCriado) await admin.from('lotes').delete().eq('id', loteId);
+        return { ok: false, motivo: 'falha_criar_familia', mensagem: famErr?.message };
+      }
+      const familiaId = familiaCriada.id as string;
+
+      const variacaoObj = montarVariacaoKit(baseVar as Record<string, unknown>, kit, {
+        familiaId, codigo: par.codigo,
+      });
+      const { error: varErr } = await admin.from('variacoes').insert(variacaoObj);
+      if (varErr) {
+        await admin.from('familias').delete().eq('id', familiaId);
+        if (!algumKitCriado) await admin.from('lotes').delete().eq('id', loteId);
+        return { ok: false, motivo: 'falha_criar_variacao', mensagem: varErr.message };
+      }
+
+      algumKitCriado = true;
+      kitsCriados.push({
+        familiaId, codigoPai: par.codigoPai, codigo: par.codigo, multiplicador: kit.multiplicador,
+      });
+    }
   }
 
   // ── Encadeamento (D-2) ──────────────────────────────────────────────────────────────────
-  // Base já publicada (ml_item_id != null, caminho Publicados): encadeia agora. Base ainda em
-  // Revisão (ml_item_id null): NÃO encadeia — é o CREATE da base que reclama estes kits depois
-  // (publish-familia-ml/processar.ts). Nunca chame enfileirarPublicacoes direto: publicar-familias
-  // faz o claim atômico status → 'publicando' antes de enfileirar.
-  if (base.ml_item_id != null && kitsCriados.length > 0) {
-    await deps.encadearPublicacao(kitsCriados.map((k) => k.familiaId));
+  // Base já publicada (ml_item_id != null, caminho Publicados): encadeia agora — kits recém-
+  // criados NESTA chamada e, no reenvio (total ou parcial), kits já existentes que ainda não
+  // terminaram de publicar ('pronto'/'erro' — 'publicando'/'publicado' ficam de fora, já em
+  // voo ou prontos). Base ainda em Revisão (ml_item_id null): NÃO encadeia — é o CREATE da
+  // base que reclama estes kits depois (publish-familia-ml/processar.ts). Nunca chame
+  // enfileirarPublicacoes direto: publicar-familias faz o claim atômico status →
+  // 'publicando' antes de enfileirar.
+  let publicacaoOk = true;
+  if (base.ml_item_id != null) {
+    const idsPendentesExistentes = (existentesFamilias ?? [])
+      .filter((f) => f.status === 'pronto' || f.status === 'erro')
+      .map((f) => f.id as string);
+    const idsParaEncadear = [...kitsCriados.map((k) => k.familiaId), ...idsPendentesExistentes];
+    if (idsParaEncadear.length > 0) {
+      publicacaoOk = await deps.encadearPublicacao(idsParaEncadear);
+    }
   }
 
-  return { ok: true, kits: [...kitsExistentes, ...kitsCriados] };
+  return { ok: true, kits: [...kitsExistentes, ...kitsCriados], publicacaoOk };
 }

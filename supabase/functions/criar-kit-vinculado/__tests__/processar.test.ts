@@ -190,10 +190,12 @@ function depsFake(opts: {
   qtdVariacoes?: number;
   chavesJaUsadas?: string[];
   categoriaSemKit?: boolean;
+  statusPorChave?: Record<string, string>;
 } = {}) {
   const {
     custo = 10, peso_gramas: pesoGramas = 100, mlItemId = null,
     qtdVariacoes = 1, chavesJaUsadas = [], categoriaSemKit = false,
+    statusPorChave = {},
   } = opts;
 
   const baseFamilia = linhaFamiliaCheia({
@@ -207,14 +209,19 @@ function depsFake(opts: {
   }));
   const existentesFamilias = chavesJaUsadas.map((chave) => {
     const n = Number(chave.replace('uuid-k', ''));
-    return { id: `fam-exist-${n}`, codigo_pai: `9000000${n}`, kit_multiplicador: n, chave_cadastro: chave };
+    return {
+      id: `fam-exist-${n}`, codigo_pai: `9000000${n}`, kit_multiplicador: n, chave_cadastro: chave,
+      // Default 'pronto': a família de kit idempotente que ainda não terminou de publicar
+      // (mesmo default do reenvio parcial no ADR-0129/adicionar-variacoes-familia).
+      status: statusPorChave[chave] ?? 'pronto',
+    };
   });
   const existentesVariacoes = existentesFamilias.map((f) => ({
     familia_id: f.id, codigo: `8000000${f.kit_multiplicador}`,
   }));
 
   const inserts = { familias: [] as Record<string, unknown>[], variacoes: [] as Record<string, unknown>[] };
-  const enfileirados = { processFamilia: 0, publicarFamilias: 0 };
+  const enfileirados = { processFamilia: 0, publicarFamilias: 0, publicarFamiliasIds: [] as string[][] };
   const state = {
     baseFamilia, baseVariacoes, existentesFamilias, existentesVariacoes,
     liveKits: [] as { id: string; codigo_pai: string; kit_multiplicador: number }[],
@@ -242,7 +249,11 @@ function depsFake(opts: {
     userId: 'user-1',
     resolverToken: async () => 'fake-token',
     lerSchema: async () => (categoriaSemKit ? SCHEMA_SEM_KIT : SCHEMA_COM_KIT) as never,
-    encadearPublicacao: async () => { enfileirados.publicarFamilias++; return true; },
+    encadearPublicacao: async (ids: string[]) => {
+      enfileirados.publicarFamilias++;
+      enfileirados.publicarFamiliasIds.push(ids);
+      return true;
+    },
   };
 
   return { deps, inserts, enfileirados };
@@ -365,6 +376,59 @@ describe('criarKitsVinculados', () => {
     expect(r.ok).toEqual(true);
     expect(inserts.familias.length).toEqual(1);
     expect(inserts.familias[0].kit_multiplicador).toEqual(3);
+  });
+
+  // I2 (revisão Opus): reenvio de uma chave que já existe, mas ainda 'pronto' (nunca chegou a
+  // publicar — sem isso o kit ficava preso pra sempre, já que o botão "Reenviar" só pega
+  // família em 'erro'). Mesmo padrão de `adicionar-variacoes-familia/index.ts:84-105`.
+  it('reenvio TOTAL com base publicada re-encadeia kit existente ainda em "pronto"', async () => {
+    const { deps, inserts, enfileirados } = depsFake({
+      custo: 10, peso_gramas: 100, mlItemId: 'MLB1', chavesJaUsadas: ['uuid-k2'],
+    });
+    const r = await criarKitsVinculados(deps, {
+      familiaBaseId: 'f-base', kits: [kitPadrao(2)],
+    });
+    expect(r.ok).toEqual(true);
+    expect(inserts.familias.length).toEqual(0); // nada novo criado
+    expect(enfileirados.publicarFamilias).toEqual(1);
+    expect(enfileirados.publicarFamiliasIds[0]).toEqual(['fam-exist-2']);
+    expect(r.publicacaoOk).toEqual(true);
+  });
+
+  it('reenvio PARCIAL com base publicada encadeia o novo E o existente ainda pendente juntos', async () => {
+    const { deps, inserts, enfileirados } = depsFake({
+      custo: 10, peso_gramas: 100, mlItemId: 'MLB1', chavesJaUsadas: ['uuid-k2'],
+    });
+    const r = await criarKitsVinculados(deps, {
+      familiaBaseId: 'f-base', kits: [kitPadrao(2), kitPadrao(3)],
+    });
+    expect(r.ok).toEqual(true);
+    expect(inserts.familias.length).toEqual(1);
+    const idNovo = inserts.familias[0] && r.kits?.find((k) => k.multiplicador === 3)?.familiaId;
+    expect(enfileirados.publicarFamilias).toEqual(1);
+    expect(enfileirados.publicarFamiliasIds[0]).toEqual(expect.arrayContaining(['fam-exist-2', idNovo]));
+  });
+
+  it('kit existente já "publicado"/"publicando" NÃO é re-encadeado (só pronto/erro)', async () => {
+    const { deps, enfileirados } = depsFake({
+      custo: 10, peso_gramas: 100, mlItemId: 'MLB1', chavesJaUsadas: ['uuid-k2'],
+      statusPorChave: { 'uuid-k2': 'publicado' },
+    });
+    const r = await criarKitsVinculados(deps, {
+      familiaBaseId: 'f-base', kits: [kitPadrao(2)],
+    });
+    expect(r.ok).toEqual(true);
+    expect(enfileirados.publicarFamilias).toEqual(0);
+  });
+
+  it('publicacaoOk reflete falha do encadeamento (não fica escondida atrás de ok:true)', async () => {
+    const { deps } = depsFake({ custo: 10, peso_gramas: 100, mlItemId: 'MLB1' });
+    deps.encadearPublicacao = async () => false;
+    const r = await criarKitsVinculados(deps, {
+      familiaBaseId: 'f-base', kits: [kitPadrao(2)],
+    });
+    expect(r.ok).toEqual(true);
+    expect(r.publicacaoOk).toEqual(false);
   });
 
   it('multiplicador fora de 2..6 é recusado', async () => {
