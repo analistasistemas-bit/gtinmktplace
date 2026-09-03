@@ -21,8 +21,10 @@ const POR_SKU = new Set(['COLOR', 'GTIN', 'EMPTY_GTIN_REASON', 'SELLER_SKU']);
 
 /** Dimensões/peso da embalagem. Ficam de fora da herança: são dado NOSSO, definem frete
  *  (ADR-0018) e o caminho UP não as sincroniza depois da criação — herdar do irmão fixaria no
- *  item novo um peso desatualizado para sempre. Se algum dia o ML provar que elas entram na
- *  identidade da família, a decisão muda aqui, num lugar só. */
+ *  item novo um peso desatualizado para sempre. **Validado em produção (03/09/2026):** com a
+ *  ficha herdada e as dimensões do banco (2200 g × 2330 g dos irmãos), o ML agrupou —
+ *  `MLB7586017842` nasceu no `family_id` 3799502520089361. Dimensão não entra na identidade da
+ *  família. */
 const PREFIXO_PACOTE = 'SELLER_PACKAGE_';
 
 interface AtributoCru {

@@ -40,9 +40,21 @@ reescreve o valor e o nosso payload passa a divergir do que está publicado.
   com `BRAND: value_id 9165622` e `COMPOSITION`, sem a cor do irmão, com as dimensões do banco, e
   que o GET falho cai no comportamento antigo.
 
-- [ ] Pendente no ML (intervenção manual, não dá para automatizar): o item `MLB5184493069` já
-  existe pausado com família própria. Precisa ser **apagado no ML** antes de reenviar o lote —
-  senão a cor nova é readotada com o `family_id` errado. Depois de apagar, "Reenviar" no lote 54.
+- [x] Lote 54 destravado e publicado (03/09/2026 21:30, autorizado pelo Diego). O item órfão
+  `MLB5184493069` (pausado, 0 vendas) foi encerrado e apagado no ML, a linha do SKU `92670615` foi
+  removida de `anuncios_externos_itens` (com ela em `erro` a saga recusa por
+  `filho_em_estado_terminal`) e o worker foi re-enfileirado pelo QStash. Confirmado que
+  `/users/{id}/items/search?sku=` deixa de enxergar o item apagado — sem isso a readoção o traria
+  de volta com o `family_id` errado.
+- [x] **Resultado em produção:** a cor Preta nasceu de novo como `MLB7586017842`, **ativa e com
+  `family_id` 3799502520089361** — o mesmo das outras 9. Diff contra um irmão: só `COLOR` (é o
+  atributo de variação) e `SELLER_PACKAGE_*`. **Isso prova que as dimensões NÃO entram na
+  identidade da família** — a decisão de manter as do banco em vez de herdar do irmão está
+  empiricamente validada, e o frete da cor nova sai correto (2200 g · 43×16×36).
+
+- [ ] Achado lateral, não tratado: os itens de 28/07 estão no ML com dimensões antigas
+  (2330 g · 27×25×17) enquanto o banco diz 2200 g · 43×16×36, e o caminho UP não sincroniza
+  dimensão depois da criação — o frete dessas 9 cores segue calculado pelo valor velho.
 
 ## Entrada de mercadoria em várias cores de uma vez — 2026-09-03
 
