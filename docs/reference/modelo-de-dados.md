@@ -441,14 +441,15 @@ RLS: policy `"estoque_movimentos: select org"` (`for select to authenticated usi
 são checagens independentes; mesmo padrão de `notificacoes`, ADR-0085).
 
 **RPCs de leitura da tela Estoque** (`security definer`, `stable`, escopo `current_org_id()`,
-migration `20260814181410_estoque_perf_rpc.sql`). Concedidas a `authenticated` — substituem o
-select paginado de todas as variações + agrupamento no browser:
+migration `20260814181410_estoque_perf_rpc.sql`; última redefinição `20260903030505_estoque_rpc_exclui_kit.sql`,
+ADR-0151 D-13). Concedidas a `authenticated` — substituem o select paginado de todas as
+variações + agrupamento no browser:
 
 | Função | Papel |
 |---|---|
-| `produtos_estoque_resumo() returns json` | KPIs (`produtos`, `skus`, `unidades`, `skus_sem_estoque`, `valor_em_estoque`, `skus_sem_custo`) + lista slim por `codigo_pai` canônico (`DISTINCT ON … ORDER BY criado_em DESC`, mesma regra de `agruparProdutosComSaldo`). Inclui arrays `gtins`, `codigos`, `cores` para busca client-side. |
-| `variacoes_estoque_produto(p_codigo_pai text) returns setof json` | Variações da família canônica — carregadas ao expandir o card. Devolve também `ml_item_id`, o anúncio que vende AQUELE SKU (precedência: `anuncios_externos_itens` por SKU → partição de `anuncios_externos` que contém o SKU → `familias.ml_item_id`), usado para casar a linha com o preço vivo de `status-publicados`. |
-| `skus_estoque_org() returns setof json` | Lista flat `(codigo, codigo_pai, nome, cor, estoque)` para o picker do DialogEntrada. |
+| `produtos_estoque_resumo() returns json` | KPIs (`produtos`, `skus`, `unidades`, `skus_sem_estoque`, `valor_em_estoque`, `skus_sem_custo`) + lista slim por `codigo_pai` canônico (`DISTINCT ON … ORDER BY criado_em DESC`, mesma regra de `agruparProdutosComSaldo`). Inclui arrays `gtins`, `codigos`, `cores` para busca client-side. Família de kit vinculado (`kit_multiplicador is not null`) nunca é canônica aqui — não conta em nenhum KPI nem aparece na lista slim (D-13). |
+| `variacoes_estoque_produto(p_codigo_pai text) returns setof json` | Variações da família canônica — carregadas ao expandir o card. Devolve também `ml_item_id`, o anúncio que vende AQUELE SKU (precedência: `anuncios_externos_itens` por SKU → partição de `anuncios_externos` que contém o SKU → `familias.ml_item_id`), usado para casar a linha com o preço vivo de `status-publicados`. `p_codigo_pai` de um kit nunca resolve (canônica exclui `kit_multiplicador is not null`) — o kit não é uma linha própria. Cada linha ganha `kits`: array `{codigo_pai, multiplicador, disponivel}` dos kits vinculados ATIVOS (`status in ('pronto','publicando','publicado')`) desta base, com `disponivel = floor(estoque_da_base / multiplicador)` calculado ao vivo — nunca espelhado numa coluna (rejeitado, risco do ADR-0129). |
+| `skus_estoque_org() returns setof json` | Lista flat `(codigo, codigo_pai, nome, cor, estoque)` para o picker do DialogEntrada. Kit vinculado excluído (D-13) — a guard de escrita (D-9) já recusaria a entrada; esconder no picker só evita oferecer o que sempre falha (ADR-0047: a guard de banco continua a linha de defesa real). |
 
 **Funções `security definer` de escrita** (`search_path=''`), revogadas de `public`/`anon`/`authenticated` e
 concedidas só a `service_role` (as RPCs nunca são chamadas pelo browser — sempre via edge com

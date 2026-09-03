@@ -76,6 +76,7 @@ const variacao = (codigo: string, valores: Partial<VariacaoComSaldo> = {}): Vari
   imagemPath: null,
   mlPictureId: null,
   mlItemId: null,
+  kits: [],
   ...valores,
 })
 

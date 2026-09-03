@@ -1,5 +1,9 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { agruparProdutosComSaldo, urlFotoMl } from '../produtos-saldo';
+
+vi.mock('@/lib/supabase', () => ({
+  supabase: { rpc: vi.fn() },
+}));
 
 const linhas = [
   { codigo: 'A1', nome: 'Azul', cor: 'Azul', gtin: '789', estoque: 5, custo: 10, preco: 30,
@@ -197,5 +201,38 @@ describe('mapResumoEstoqueRpc', () => {
     expect(r.produtos[0].tributacaoIcms).toBe('102');
     expect(r.produtos[0].tributacaoIcmsRegime).toBe('simples');
     expect(r.produtos[0].canInvoice).toBe(true);
+  });
+});
+
+describe('fetchVariacoesProduto — kits vinculados (ADR-0151 D-13)', () => {
+  it('mapeia o array kits devolvido pela RPC (saldo virtual, snake→camel)', async () => {
+    const { supabase } = await import('@/lib/supabase');
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [{
+        codigo: '00000085', nome: null, cor: null, gtin: '789', estoque: 6, custo: 50.55, preco: 60.99,
+        peso_gramas: 200, altura_cm: 15.2, largura_cm: 3.2, comprimento_cm: 10,
+        imagem_path: null, ml_picture_id: null, ml_item_id: null,
+        kits: [{ codigo_pai: '99999901', multiplicador: 2, disponivel: 3 }],
+      }],
+      error: null,
+    });
+    const { fetchVariacoesProduto } = await import('../produtos-saldo');
+    const [v] = await fetchVariacoesProduto('00000084');
+    expect(v!.kits).toEqual([{ codigoPai: '99999901', multiplicador: 2, disponivel: 3 }]);
+  });
+
+  it('kits ausente/null na RPC vira array vazio — nunca undefined (evita .length quebrar a UI)', async () => {
+    const { supabase } = await import('@/lib/supabase');
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [{
+        codigo: '00000005', nome: null, cor: null, gtin: null, estoque: 1, custo: null, preco: 0,
+        peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null,
+        imagem_path: null, ml_picture_id: null, ml_item_id: null, kits: null,
+      }],
+      error: null,
+    });
+    const { fetchVariacoesProduto } = await import('../produtos-saldo');
+    const [v] = await fetchVariacoesProduto('00000004');
+    expect(v!.kits).toEqual([]);
   });
 });
