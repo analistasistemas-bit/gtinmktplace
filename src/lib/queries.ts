@@ -114,12 +114,16 @@ export interface KitVinculado {
    *  a publicação deste produto" — `status='pronto' && mlItemId == null` é kit que ainda não
    *  foi ao ar (esperando a base ou aguardando reenvio após falha). */
   mlItemId: string | null;
+  /** M-1: ciclos de UPDATE (ou recriar um tamanho que falhou, já que `listarKitsVivos` exclui
+   *  'erro' do predicado de duplicata) podem deixar mais de uma linha para o mesmo
+   *  multiplicador. `criadoEm` deixa quem consome decidir qual é a atual (a mais recente). */
+  criadoEm: string;
 }
 
 export async function fetchKitsDoProduto(codigoPai: string): Promise<KitVinculado[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, kit_multiplicador, status, ml_permalink, ml_item_id')
+    .select('id, codigo_pai, kit_multiplicador, status, ml_permalink, ml_item_id, criado_em')
     .eq('kit_base_codigo_pai', codigoPai)
     .not('kit_multiplicador', 'is', null)
     .order('kit_multiplicador', { ascending: true });
@@ -131,6 +135,7 @@ export async function fetchKitsDoProduto(codigoPai: string): Promise<KitVinculad
     status: r.status as FamiliaStatus,
     mlPermalink: r.ml_permalink,
     mlItemId: r.ml_item_id,
+    criadoEm: r.criado_em as string,
   }));
 }
 

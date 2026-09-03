@@ -202,10 +202,10 @@ bateria de frente com o fato de existirem **múltiplas linhas de `familias` para
 (deduplica por `codigo_pai` pegando a mais recente) e em `remover-publicado/processar.ts` (mesmo
 comentário: "ciclos de UPDATE deixam várias linhas do mesmo kit"). Um unique index nesses três
 campos rejeitaria a segunda linha e quebraria esse ciclo. Decisão: não criar a migration agora.
-Se o "Reenviar" de um kit em erro (Decisão 4, I-1) for implementado, alinhar o predicado de
-duplicata da edge ao de todos-os-status da UI fecha o caminho de duplicata por API direta — mas só
-depois disso, nunca antes (endurecer a edge sem dar ao operador uma saída pro kit em erro
-reabriria o mesmo beco sem saída do I-1).
+O "Reenviar" de um kit em erro (Decisão 4, I-1) **já foi implementado** neste round —
+`DialogCriarKit` reenvia via `publicarFamilias`. Alinhar o predicado de duplicata da edge
+(`listarKitsVivos`) ao de todos-os-status da UI fecharia o caminho de duplicata por API direta,
+mas fica como **follow-up separado, fora deste round** — não foi feito aqui.
 
 ### 10. Escopo v1: só produto sem variação de cor, e trava contra adicionar depois
 Kit só é oferecido em famílias com **1 variação só** (sem cor) — multi-cor × multi-tamanho-de-kit

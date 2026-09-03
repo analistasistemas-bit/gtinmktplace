@@ -69,6 +69,15 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
 
   const tamanhosMarcados = TAMANHOS_KIT.filter((n) => marcados.has(n));
 
+  // M-1: ciclos de UPDATE (ou recriar um tamanho que falhou) podem deixar mais de uma linha
+  // de `familias` para o mesmo multiplicador — mesma regra de canonicidade de `listarKitsVivos`
+  // (`_shared/estoque/kit.ts`): uma por multiplicador, a mais recente por `criadoEm`.
+  const kitMaisRecentePorTamanho = new Map<number, typeof kitsExistentes[number]>();
+  for (const k of kitsExistentes) {
+    const atual = kitMaisRecentePorTamanho.get(k.multiplicador);
+    if (!atual || k.criadoEm > atual.criadoEm) kitMaisRecentePorTamanho.set(k.multiplicador, k);
+  }
+
   const tituloInvalido = tamanhosMarcados.some((n) => (valores[n]?.titulo.length ?? 0) > TITULO_MAX_KIT);
   const precoInvalido = tamanhosMarcados.some((n) => !((valores[n]?.preco ?? 0) > 0));
   // Sem foto (nem a da base, nem uma nova escolhida) o anúncio vai ao ML sem capa — mesmo
@@ -146,7 +155,16 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   // kit preso em 'erro' sem saída (ver Decisão 4 do ADR-0151).
   const reenviarMutation = useMutation({
     mutationFn: (familiaId: string) => publicarFamilias([familiaId]),
-    onSuccess: () => {
+    onSuccess: (r) => {
+      // Mesmo cuidado do handler de criação acima: `resp.ok` (implícito no fetch não lançar)
+      // não prova que a família foi de fato reclamada — publicar-familias devolve
+      // `enfileiradas: 0` sem erro se o claim (`status in ('pronto','erro')`) não pegar nada.
+      if (r.enfileiradas === 0) {
+        toast.warning('Kit não foi reenviado', {
+          description: 'Nenhuma família foi enfileirada. Verifique o status do kit e tente novamente.',
+        });
+        return;
+      }
       toast.success('Kit reenviado para publicação');
       qc.invalidateQueries({ queryKey: QK.kitsDoProduto(base.codigoPai) });
       qc.invalidateQueries({ queryKey: QK.publicados });
@@ -174,7 +192,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
         {etapa === 'tamanhos' ? (
           <div className="flex flex-col gap-2">
             {TAMANHOS_KIT.map((n) => {
-              const existente = kitsExistentes.find((k) => k.multiplicador === n);
+              const existente = kitMaisRecentePorTamanho.get(n);
               const jaCriado = !!existente;
               const comErro = existente?.status === 'erro';
               return (
