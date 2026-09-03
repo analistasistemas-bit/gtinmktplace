@@ -1,6 +1,6 @@
 # ADR-0151: Kit vinculado — criar anúncios de kit (N unidades) a partir de um produto existente
 
-**Status:** Aceito (design fechado — implementação pendente)
+**Status:** Aceito e implementado (deployado em produção — ver seção "Implementação" abaixo)
 **Data:** 2026-09-02
 **Decisores:** Diego
 **Relacionado:** [ADR-0063](0063-publicacao-kit-preco-categoria-concorrencia.md)/[0071](0071-units-per-pack-forca-sale-format-kit.md)/[0073](0073-cores-conta-como-unidade-no-kit.md) (`SALE_FORMAT=Kit` detectado por regex — mecanismo reaproveitado aqui), [Spike 036](../spikes/036-kits-virtuais-mercado-livre.md) ("Kits Virtuais" do ML — feature diferente, colisão de nome, fora de escopo), [ADR-0094](0094-estoque-unico-cadastro-manual.md) (módulo Estoque — este ADR é uma extensão dele), [ADR-0129](0129-adicionar-variacao-a-familia-publicada.md) (incidente de família virando canônica com saldo 0 — precedente direto da Decisão 10), [ADR-0021](0021-vinculacao-automatica-ao-catalogo-ml.md)/[0036](0036-alerta-catalogo-no-match.md) (catálogo/alerta no-match), [ADR-0111](0111-reativacao-automatica-ao-repor-estoque.md) (reativação por reposição), [ADR-0096](0096-codigo-produto-automatico.md) (`proximo_codigo_produto()`), [ADR-0043](0043-fluxo-canonico-de-migrations.md) (migrations).
@@ -79,18 +79,31 @@ revisado, furando a revisão humana da Decisão 4.
 Marcar os tamanhos + revisar a base + confirmar no preview abaixo **é** a revisão humana exigida
 pela regra inegociável do projeto. Não há uma segunda parada de Revisão por kit gerado.
 
-**Vale para o caminho feliz.** Se o CREATE do kit falhar no ML (moderação, foto morta, categoria
-mudou), `talvezFinalizarLote` (código compartilhado, sem guard de status) promove o lote técnico
-do kit pra `revisao`, e o kit reaparece como card comum na Revisão, com botão Publicar. Isso é
-**intencional, não bug** — mesmo precedente do ADR-0129 (`adicionar-variacoes-familia/index.ts:97,264`,
-D-10: "o lote não passa pela tela Revisão" já convive com o mesmo mecanismo de recuperação em
-falha). Não existe segunda revisão de *conteúdo* nesse card — existe reenvio. Alternativas
-avaliadas e descartadas: travar `talvezFinalizarLote` (mexe em código usado por todo o pipeline,
-deixaria o lote preso em `publicando` com spinner eterno em `/progresso`, sem forma de reenviar) ou
-esconder o lote de todo jeito (exige UI de retry nova, ninguém pediu). Risco residual aceito, junto
-do oversell intra-canal (Decisão 6) — cabe a Task 8/11 verificar que o caminho de recuperação
-funciona de verdade (forçar erro no CREATE de 1 kit, confirmar card na Revisão + Publicar
-republica), não só por inferência.
+**Vale para o caminho feliz, e só quando TODOS os kits da submissão falham.** Se o CREATE do kit
+falhar no ML (moderação, foto morta, categoria mudou) e **nenhum** kit da submissão publicar,
+`talvezFinalizarLote` (código compartilhado, sem guard de status) promove o lote técnico do kit pra
+`revisao`, e o kit reaparece como card comum na Revisão, com botão Publicar. Isso é **intencional,
+não bug** — mesmo precedente do ADR-0129 (`adicionar-variacoes-familia/index.ts:97,264`, D-10: "o
+lote não passa pela tela Revisão" já convive com o mesmo mecanismo de recuperação em falha). Não
+existe segunda revisão de *conteúdo* nesse card — existe reenvio. Alternativas avaliadas e
+descartadas: travar `talvezFinalizarLote` (mexe em código usado por todo o pipeline, deixaria o
+lote preso em `publicando` com spinner eterno em `/progresso`, sem forma de reenviar) ou esconder o
+lote de todo jeito (exige UI de retry nova, ninguém pediu). Risco residual aceito, junto do
+oversell intra-canal (Decisão 6) — cabe a Task 8/11 verificar que o caminho de recuperação funciona
+de verdade (forçar erro no CREATE de 1 kit, confirmar card na Revisão + Publicar republica), não só
+por inferência.
+
+**Falha PARCIAL (revisão final de branch, I-1) é um caminho de recuperação DIFERENTE, não o
+mesmo.** Quando o diálogo cria 2+ tamanhos numa submissão e pelo menos um publica enquanto outro
+falha, `decidirStatusLote` (função compartilhada — ver `_shared/lote/finalizar.ts`) segue o ramo
+`publicado>0` e o lote técnico vira `'concluido'`, não `'revisao'` — não há card na Revisão para
+esse lote. O kit em `'erro'` é recuperado **no próprio `DialogCriarKit`**: para um tamanho já
+existente com `status='erro'`, o diálogo oferece um botão "Reenviar" que chama
+`publicarFamilias([familiaId])` (o mesmo `publicarFamilias` que a Revisão usa), em vez de só
+desabilitar o checkbox. Não confundir os dois: falha total recupera pela Revisão (card + "Reenviar
+N com erro"); falha parcial recupera pelo diálogo de criação de kit (botão "Reenviar" por
+tamanho). `decidirStatusLote` não foi alterada — o comportamento acima é o que ela já fazia; o que
+faltava era a UI de recuperação do lado do lote `'concluido'`.
 
 **Preview editável antes de confirmar**, por kit:
 - **Título**: herda o slot `quantidade` do sistema de montagem de título (ADR-0099) — "Kit com N
@@ -178,6 +191,22 @@ com "0 em estoque" no ML.
 quando o `codigo` resolve pra uma família com `kit_multiplicador is not null`. Esconder na UI
 (ADR-0047) não substitui essa trava — é só navegação.
 
+**Risco aceito, sem migration (M-1, revisão final de branch):** não existe unique constraint em
+`(org_id, kit_base_codigo_pai, kit_multiplicador)`. É tecnicamente alcançável criar dois kits com o
+mesmo multiplicador: a edge recusa duplicata via `listarKitsVivos`, cuja lista de status é
+`['pronto','publicando','publicado']` — `'erro'` fica de fora do predicado, então um kit ×3 que
+falhou no CREATE não impede recriar outro ×3 por chamada direta à edge (a UI bloqueia hoje, porque
+`fetchKitsDoProduto`/`DialogCriarKit` olham todos os status). Mas a constraint como especificada
+bateria de frente com o fato de existirem **múltiplas linhas de `familias` para o mesmo
+`codigo_pai`** de kit (ciclos de UPDATE) — o próprio código já assume isso em `listarKitsVivos`
+(deduplica por `codigo_pai` pegando a mais recente) e em `remover-publicado/processar.ts` (mesmo
+comentário: "ciclos de UPDATE deixam várias linhas do mesmo kit"). Um unique index nesses três
+campos rejeitaria a segunda linha e quebraria esse ciclo. Decisão: não criar a migration agora.
+Se o "Reenviar" de um kit em erro (Decisão 4, I-1) for implementado, alinhar o predicado de
+duplicata da edge ao de todos-os-status da UI fecha o caminho de duplicata por API direta — mas só
+depois disso, nunca antes (endurecer a edge sem dar ao operador uma saída pro kit em erro
+reabriria o mesmo beco sem saída do I-1).
+
 ### 10. Escopo v1: só produto sem variação de cor, e trava contra adicionar depois
 Kit só é oferecido em famílias com **1 variação só** (sem cor) — multi-cor × multi-tamanho-de-kit
 multiplicaria o número de famílias vinculadas por produto dentro de um mecanismo já invasivo.
@@ -213,6 +242,15 @@ Estoque** — a ação de criar kit fica indisponível pra organização sem `'e
 Rejeitada a alternativa de espelhar o valor calculado na própria coluna do kit: recriaria um
 segundo número que pode dessincronizar da fonte de verdade — o mesmo risco do incidente do
 ADR-0129.
+
+**M-2 (revisão final de branch):** o mesmo filtro `kit_multiplicador is null` em
+`produtos_estoque_resumo()` também esconde o kit da tela Calculadora de margem
+(`useCalculadoraML`), que reusa essa RPC. Efeito colateral aceito da v1, não bug: o kit tem
+`custo`/`preco` reais e a margem dele seria calculável — é omissão de feature (kit fora do
+seletor de produto da Calculadora), fora de escopo da v1. Documentado aqui pra não virar a
+"correção errada": tirar o filtro da RPC pra devolver o kit à Calculadora reintroduziria o kit na
+tela Estoque como linha própria com `estoque = 0` — exatamente a violação que este item existe
+pra impedir.
 
 ### 14. Remover a base com kit vinculado ativo é bloqueado
 Remover/despublicar a família-base do marketplace enquanto ela tem pelo menos um kit vinculado
