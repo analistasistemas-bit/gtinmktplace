@@ -4,16 +4,19 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import { QK } from '@/lib/queries';
+import { QK, type KitVinculado } from '@/lib/queries';
 import { supabase } from '@/lib/supabase';
 import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { uploadFile, buildStoragePath } from '@/lib/storage';
+import { publicarFamilias } from '@/lib/publicar';
+import { cn } from '@/lib/utils';
 import {
   TAMANHOS_KIT, TITULO_MAX_KIT, tituloDoKit, descricaoDoKit, criarKitVinculado,
   type BaseParaKit, type KitFormValues,
@@ -29,7 +32,8 @@ const MENSAGEM_POR_MOTIVO: Record<string, string> = {
 export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOpenChange }: {
   familiaBaseId: string;
   base: BaseParaKit;
-  kitsExistentes: number[];
+  /** Todos os status (não só vivos) — precisa do 'erro' pra oferecer "Reenviar" (I-1). */
+  kitsExistentes: KitVinculado[];
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
@@ -135,6 +139,26 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
     },
   });
 
+  // I-1: falha PARCIAL de uma submissão multi-kit deixa o lote técnico em 'concluido' (não
+  // 'revisao'), então o kit em erro não ganha o card/botão "Reenviar N com erro" da Revisão
+  // (esse caminho só existe quando TODOS os kits do lote falham). Reaproveita aqui o mesmo
+  // fluxo que a Revisão usa pra reenviar — publicarFamilias([familiaId]) — pra não deixar o
+  // kit preso em 'erro' sem saída (ver Decisão 4 do ADR-0151).
+  const reenviarMutation = useMutation({
+    mutationFn: (familiaId: string) => publicarFamilias([familiaId]),
+    onSuccess: () => {
+      toast.success('Kit reenviado para publicação');
+      qc.invalidateQueries({ queryKey: QK.kitsDoProduto(base.codigoPai) });
+      qc.invalidateQueries({ queryKey: QK.publicados });
+      qc.invalidateQueries({ queryKey: ['lotes'] });
+    },
+    onError: (err) => {
+      toast.error('Falha ao reenviar kit', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    },
+  });
+
   return (
     <Dialog open={open} onOpenChange={(v) => !mutation.isPending && onOpenChange(v)}>
       <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
@@ -150,7 +174,9 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
         {etapa === 'tamanhos' ? (
           <div className="flex flex-col gap-2">
             {TAMANHOS_KIT.map((n) => {
-              const jaCriado = kitsExistentes.includes(n);
+              const existente = kitsExistentes.find((k) => k.multiplicador === n);
+              const jaCriado = !!existente;
+              const comErro = existente?.status === 'erro';
               return (
                 <div key={n} className="flex items-center gap-2">
                   <Checkbox
@@ -162,8 +188,21 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                   />
                   <label htmlFor={`kit-tamanho-${n}`} className="cursor-pointer select-none text-sm">
                     Kit de {n} unidades
-                    {jaCriado && <span className="ml-2 text-xs text-muted-foreground">já criado</span>}
+                    {jaCriado && !comErro && <span className="ml-2 text-xs text-muted-foreground">já criado</span>}
+                    {comErro && <span className="ml-2 text-xs text-destructive">falhou ao publicar</span>}
                   </label>
+                  {comErro && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="ml-auto h-7"
+                      disabled={reenviarMutation.isPending}
+                      onClick={() => reenviarMutation.mutate(existente!.familiaId)}
+                    >
+                      <RotateCw className={cn('mr-1 h-3 w-3', reenviarMutation.isPending && reenviarMutation.variables === existente!.familiaId && 'animate-spin')} />
+                      Reenviar
+                    </Button>
+                  )}
                 </div>
               );
             })}

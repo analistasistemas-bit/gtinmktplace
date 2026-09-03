@@ -211,7 +211,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
           : familia.status !== 'pronto'
             ? 'A família precisa estar pronta na Revisão antes de criar kits.'
             : undefined;
-  const kitsExistentes = (kitsVinculados ?? []).map((k) => k.multiplicador);
+  const kitsExistentes = kitsVinculados ?? [];
   const corSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {

@@ -1076,7 +1076,7 @@ export default function Publicados() {
         <DialogCriarKit
           familiaBaseId={kitAlvo.familiaId}
           base={baseParaKit(familiaKitAlvo, kitAlvo.precoAtual)}
-          kitsExistentes={(kitsExistentesRows ?? []).map((k) => k.multiplicador)}
+          kitsExistentes={kitsExistentesRows ?? []}
           open
           onOpenChange={(v) => { if (!v) setKitAlvo(null); }}
         />

@@ -393,7 +393,7 @@ export function ProdutoCard({
                   <ul className="mt-1.5 space-y-1 text-sm">
                     {kits.map((k) => (
                       <li key={k.codigoPai}>
-                        🧩 Kit de {k.multiplicador} — {k.disponivel} disponíveis
+                        🧩 Kit de {k.multiplicador} — {k.disponivel} {k.disponivel === 1 ? 'disponível' : 'disponíveis'}
                       </li>
                     ))}
                   </ul>

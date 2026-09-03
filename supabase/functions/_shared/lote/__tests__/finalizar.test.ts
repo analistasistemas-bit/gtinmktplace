@@ -19,7 +19,11 @@ describe('decidirStatusLote', () => {
   it('só erros, nenhum publicado → revisao (operador pode Reenviar)', () => {
     expect(decidirStatusLote({ ...ZEROS, erro: 1 })).toBe('revisao');
   });
-  it('publicado + erro misturados → concluido', () => {
+  // ADR-0151 I-1: documenta o ramo de falha PARCIAL de uma submissão multi-kit (1 publica, 1
+  // erro) — o lote técnico do kit vai para 'concluido' (não 'revisao'), então NÃO ganha o card
+  // "Reenviar N com erro" da Revisão. Comportamento intencional desta função compartilhada, não
+  // mudado por I-1 — a recuperação desse caso é o botão "Reenviar" no DialogCriarKit.
+  it('publicado + erro misturados → concluido (kit: falha parcial cai em /relatorio, não /revisao)', () => {
     expect(decidirStatusLote({ ...ZEROS, publicado: 1, erro: 1 })).toBe('concluido');
   });
   it('nada em curso → concluido', () => {
