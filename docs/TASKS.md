@@ -36,9 +36,16 @@ Pedido: mostrar as cores e dar entrada de uma vez, como o diálogo de Ajuste.
   histórica na cor única, SKU repetido recusado, erro por item, tudo-duplicado ainda enfileira,
   falha de push não perde a entrada).
 
-- [ ] Não corrigido (fora do pedido): o picker do botão do topo continua limitado às ~1000
-  primeiras linhas de `skus_estoque_org`. Nenhum caminho do card depende mais dele, mas buscar um
-  SKU "do meio" da org por ali ainda não acha.
+- [x] Picker do botão do topo paginado (mesmo dia, a pedido do Diego): `fetchSkusEstoqueOrg` usa
+  `buscarTodasPaginasParalelo`. **`max_rows` do projeto é 1000** (confirmado na Management API), e
+  o filtro do picker é client-side — o que não é baixado não existe.
+  **Achado que só apareceu medindo o PostgREST real:** RPC chamada por **POST ignora o header
+  `Range`** que o `.range()` gera — devolveu a lista inteira com `content-range: 0-20/*`, ou seja,
+  a paginação teria virado um no-op silencioso e cada página traria as mesmas 1000 linhas. Por
+  **GET** o Range é respeitado (`Range: 2-4` → 3 itens a partir do terceiro), então a chamada é
+  `supabase.rpc('skus_estoque_org', undefined, { get: true }).range(…)`; a função é `stable`, o
+  que permite o GET. Teste dedicado reproduz o POST devolvendo tudo, para a regressão não voltar
+  em silêncio.
 
 ## Push de estoque da cor nova não arrasta as cores já publicadas — 2026-09-03
 

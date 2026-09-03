@@ -329,13 +329,29 @@ export async function fetchVariacoesProduto(codigoPai: string): Promise<Variacao
   return ((data ?? []) as unknown as LinhaVariacaoRpc[]).map(mapVariacaoRpc);
 }
 
-/** SKUs flat da org — picker do DialogEntrada (carrega ao abrir o diálogo). */
+/**
+ * SKUs flat da org — picker do DialogEntrada (carrega ao abrir o diálogo).
+ *
+ * PAGINAÇÃO OBRIGATÓRIA: `max_rows` do PostgREST deste projeto é **1000** (confirmado na
+ * Management API), e o filtro do picker é client-side — o que não foi baixado não existe. Com
+ * 8.491 SKUs numa org, tudo que ordenava depois das primeiras 1000 linhas respondia "Nenhum SKU
+ * encontrado" (relato do Diego 03/09/2026: 3.142 SKUs vinham antes do produto que ele procurava).
+ *
+ * `{ get: true }` NÃO é detalhe: medido contra o PostgREST real em 03/09/2026, uma RPC chamada
+ * por **POST ignora o header `Range`** que o `.range()` gera (devolveu a lista inteira com
+ * `content-range: 0-20/*`, ou seja, a paginação seria silenciosamente um no-op e cada página
+ * traria as MESMAS 1000 primeiras linhas para sempre). Por GET o Range é respeitado
+ * (`Range: 2-4` → 3 itens a partir do terceiro). A função é `stable`, então o GET é aceito.
+ * A RPC tem `order by` próprio, o que torna as páginas estáveis.
+ */
 export async function fetchSkusEstoqueOrg(): Promise<SkuEstoqueOrg[]> {
-  const { data, error } = await supabase.rpc('skus_estoque_org');
-  if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown as Array<{
+  const data = await buscarTodasPaginasParalelo<{
     codigo: string; codigo_pai: string; nome: string; cor: string | null; estoque: number;
-  }>).map((s) => ({
+  }>((de, ate) => supabase.rpc('skus_estoque_org', undefined, { get: true }).range(de, ate) as unknown as PromiseLike<{
+    data: Array<{ codigo: string; codigo_pai: string; nome: string; cor: string | null; estoque: number }> | null;
+    error: { message: string } | null;
+  }>);
+  return data.map((s) => ({
     codigo: s.codigo,
     codigoPai: s.codigo_pai,
     nome: s.nome,
