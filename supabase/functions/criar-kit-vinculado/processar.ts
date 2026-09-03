@@ -47,6 +47,10 @@ export interface ResultadoCriarKits {
    * `{ok:true}` externo esconder uma falha de enfileiramento do operador.
    */
   publicacaoOk?: boolean;
+  /** Id do lote técnico desta chamada — leva o operador ao relatório (`/relatorio/:loteId`)
+   *  pra acompanhar a publicação. Ausente quando todos os kits pedidos já existiam
+   *  (kitsFaltando vazio: nenhum lote novo nasce). */
+  loteId?: string;
 }
 
 export interface CriarKitDeps {
@@ -298,6 +302,9 @@ export async function criarKitsVinculados(
   if (!base) return { ok: false, motivo: 'base_nao_encontrada' };
 
   const kitsCriados: KitCriado[] = [];
+  // Só existe quando kitsFaltando não é vazio (lote novo nasce dentro do bloco abaixo);
+  // reenvio puro (todos os kits pedidos já existiam) não cria lote e devolve undefined.
+  let loteId: string | undefined;
 
   if (kitsFaltando.length > 0) {
     const { data: variacoesBase } = await admin.from('variacoes')
@@ -361,7 +368,7 @@ export async function criarKitsVinculados(
       .insert({ user_id: deps.userId, org_id: orgId, status: 'publicando', origem: 'manual' })
       .select('id').single();
     if (loteErr || !loteNovo) return { ok: false, motivo: 'falha_lote' };
-    const loteId = loteNovo.id as string;
+    loteId = loteNovo.id as string;
     const { data: numeroOrg } = await admin.rpc('proximo_numero_lote', { p_org: orgId });
     if (numeroOrg != null) await admin.from('lotes').update({ numero_org: numeroOrg }).eq('id', loteId);
 
@@ -417,5 +424,5 @@ export async function criarKitsVinculados(
     }
   }
 
-  return { ok: true, kits: [...kitsExistentes, ...kitsCriados], publicacaoOk };
+  return { ok: true, kits: [...kitsExistentes, ...kitsCriados], publicacaoOk, loteId };
 }

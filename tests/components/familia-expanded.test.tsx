@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { FamiliaExpanded } from '@/components/familia-expanded';
 import type { Familia, Variacao } from '@/lib/tipos-dominio';
 
@@ -13,7 +14,11 @@ function renderWithClient(ui: React.ReactNode) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return {
     qc,
-    ...render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>),
+    ...render(
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>{ui}</QueryClientProvider>
+      </MemoryRouter>,
+    ),
   };
 }
 
@@ -51,9 +56,11 @@ describe('FamiliaExpanded — foto da variação reflete o refetch', () => {
     // Simula o que o refetch faz: mesma família, agora com a foto gravada no banco.
     const comFoto = fam({ variacoes: [cor({ fotoPath: 'user/02719606.jpeg' })] });
     rerender(
-      <QueryClientProvider client={qc}>
-        <FamiliaExpanded familia={comFoto} />
-      </QueryClientProvider>
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>
+          <FamiliaExpanded familia={comFoto} />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
     expect(screen.queryByText(/sem foto/i)).not.toBeInTheDocument();
   });

@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Feedback pós-criação do kit vinculado: toast leva ao relatório (ADR-0151) — 2026-09-03
+
+Criar um kit no diálogo de Publicados só mostrava "Kit criado" e fechava — sem indicar que a
+publicação foi enfileirada nem onde acompanhar. Decisão de produto: o operador continua em
+Publicados (sem navegação automática); o toast ganha um botão "Acompanhar" pro relatório, mesmo
+padrão de `Revisao.tsx` (`toast.success` + `nav('/relatorio/:loteId')`).
+
+- [x] Edge `criar-kit-vinculado`: `ResultadoCriarKits`/`ResultadoCriarKit` ganham `loteId?`
+  (`processar.ts`, `index.ts`, `src/lib/kit.ts`) — o lote técnico já existia, só não era devolvido.
+  Ausente quando o reenvio não cria lote novo (`kitsFaltando` vazio).
+- [x] `DialogCriarKit`: toast de sucesso vira "Kit criado e enviado para publicação" (ou "N kits…"),
+  com `action: { label: 'Acompanhar', onClick: () => navigate('/relatorio/:loteId') }` só quando
+  `loteId` existe. O toast de `publicacaoOk === false` ganha a mesma action.
+- [x] Testes: `processar.test.ts` (asserção de `loteId` no sucesso e `undefined` no reenvio puro),
+  `dialog-criar-kit.test.tsx` (2 novos: action presente/ausente e navegação). 4 arquivos de teste
+  pré-existentes que renderizavam `FamiliaExpanded`/`DialogCriarKit` sem `<Router>` precisaram de
+  `MemoryRouter` (o componente passou a usar `useNavigate`).
+- [x] `pnpm test` 4585 ✓ (1 skip pré-existente), `pnpm lint` 0 erros/20 warnings pré-existentes,
+  `tsc -b --force` ✓, `pnpm docs:links` ✓.
+
 ## GTIN do kit em categoria que exige código + trava de catálogo espelhada (ADR-0151 D-5 revisada) — branch `worktree-fix-kit-gtin-catalogo` — 2026-09-03
 
 O primeiro kit criado em produção (Kit 2 Unidades Leite em Pó Ninho Zero Lactose, `MLB455708`)

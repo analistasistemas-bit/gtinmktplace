@@ -274,6 +274,8 @@ describe('criarKitsVinculados', () => {
     expect(variacao.peso_gramas).toEqual(600);
     expect(variacao.estoque).toEqual(0);
     expect(variacao.gtin).toEqual(null);
+    // Leva o operador ao relatório (`/relatorio/:loteId`) pra acompanhar a publicação.
+    expect(r.loteId).toEqual('lote-1');
   });
 
   it('kit nasce vinculado à base e pronto, sem passar por process-familia', async () => {
@@ -368,6 +370,8 @@ describe('criarKitsVinculados', () => {
     expect(r.ok).toEqual(true);
     expect(inserts.familias.length).toEqual(0);
     expect(r.kits?.length).toEqual(2);
+    // Reenvio puro: nenhum lote novo nasce, então não há pra onde levar no relatório.
+    expect(r.loteId).toBeUndefined();
   });
 
   it('reenvio PARCIAL (1 das 2 chaves já usada) não duplica a que já existe', async () => {

@@ -3,6 +3,7 @@
 // sem passar por process-familia nem por card na Revisão.
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   onOpenChange: (v: boolean) => void;
 }) {
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [etapa, setEtapa] = useState<'tamanhos' | 'preview'>('tamanhos');
   const [marcados, setMarcados] = useState<Set<number>>(new Set());
   const [chaves, setChaves] = useState<Record<number, string>>({});
@@ -125,15 +127,31 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
         });
         return;
       }
+      // Leva ao relatório pra acompanhar a publicação — só quando a edge devolveu o lote
+      // (reenvio puro, com kitsFaltando vazio, não cria lote e não tem pra onde levar).
+      const action = r.loteId
+        ? { label: 'Acompanhar', onClick: () => navigate(`/relatorio/${r.loteId}`) }
+        : undefined;
       // ADR-0151 (Task 6, fix I2): o kit foi criado, mas o encadeamento da publicação é uma
       // etapa separada — `publicacaoOk: false` não pode virar sucesso silencioso.
       if (r.publicacaoOk === false) {
         toast.warning(
           tamanhosMarcados.length > 1 ? 'Kits criados, mas a publicação não foi encadeada' : 'Kit criado, mas a publicação não foi encadeada',
-          { description: 'O cadastro foi salvo. Tente novamente em instantes — a lista de kits vinculados mostra o status atual.' },
+          {
+            description: 'O cadastro foi salvo. Tente novamente em instantes — a lista de kits vinculados mostra o status atual.',
+            ...(action ? { action } : {}),
+          },
         );
       } else {
-        toast.success(tamanhosMarcados.length > 1 ? 'Kits criados' : 'Kit criado');
+        toast.success(
+          tamanhosMarcados.length > 1
+            ? `${tamanhosMarcados.length} kits criados e enviados para publicação`
+            : 'Kit criado e enviado para publicação',
+          {
+            description: 'Acompanhe o andamento no relatório.',
+            ...(action ? { action } : {}),
+          },
+        );
       }
       qc.invalidateQueries({ queryKey: QK.publicados });
       // M-0: prefixo, não a chave por produto — a badge da Revisão consulta pela chave de

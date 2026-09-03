@@ -21,6 +21,33 @@ vi.mock('@/lib/publicar', () => ({
   publicarFamilias: (...args: unknown[]) => publicarFamiliasMock(...args),
 }));
 
+// Toast pós-criação (botão "Acompanhar" → /relatorio/:loteId): mocka só `criarKitVinculado`,
+// mantendo TAMANHOS_KIT/tituloDoKit/descricaoDoKit/precoSugeridoDoKit reais.
+const criarKitVinculadoMock = vi.fn();
+vi.mock('@/lib/kit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/kit')>();
+  return { ...actual, criarKitVinculado: (...args: unknown[]) => criarKitVinculadoMock(...args) };
+});
+
+const navigateMock = vi.fn();
+vi.mock('react-router-dom', () => ({ useNavigate: () => navigateMock }));
+
+// subirFoto (via uploadFile/@/lib/storage) e useImageUrl chamam supabase direto — sem mockar,
+// o teste do fluxo de criação bateria na rede real.
+vi.mock('@/lib/supabase', () => ({
+  supabase: {
+    auth: { getUser: () => Promise.resolve({ data: { user: { id: 'user-1' } } }) },
+    storage: { from: () => ({ createSignedUrl: () => Promise.resolve({ data: { signedUrl: 'https://x.test/foto.jpg' }, error: null }) }) },
+  },
+}));
+vi.mock('@/stores/support-store', () => ({
+  effectiveOrgId: () => 'org-1',
+  useSupportStore: { getState: () => ({ context: null }) },
+}));
+vi.mock('@/hooks/useUploadLote', () => ({
+  storageOwnerForUpload: () => 'owner-1',
+}));
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
@@ -53,14 +80,14 @@ function kit(multiplicador: number, status: KitVinculado['status'], criadoEm: st
   };
 }
 
-function renderDialog(kitsExistentes: KitVinculado[]) {
+function renderDialog(kitsExistentes: KitVinculado[], base: BaseParaKit = BASE) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onOpenChange = vi.fn();
   render(
     <QueryClientProvider client={qc}>
       <DialogCriarKit
         familiaBaseId="familia-base-1"
-        base={BASE}
+        base={base}
         kitsExistentes={kitsExistentes}
         open
         onOpenChange={onOpenChange}
@@ -68,6 +95,16 @@ function renderDialog(kitsExistentes: KitVinculado[]) {
     </QueryClientProvider>,
   );
   return { onOpenChange };
+}
+
+// Foto já salva na base: dispensa escolher arquivo novo, então `podeCriar` fica true sem
+// interagir com CampoFoto (fora do escopo deste teste).
+const BASE_COM_FOTO: BaseParaKit = { ...BASE, fotoPath: 'org-1/produtos/foto.jpg' };
+
+async function avancarECriar() {
+  await userEvent.click(screen.getByLabelText('Kit de 2 unidades'));
+  await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Criar kits' }));
 }
 
 describe('DialogCriarKit — botão Reenviar (I-1)', () => {
@@ -120,5 +157,49 @@ describe('DialogCriarKit — botão Reenviar (I-1)', () => {
     expect(screen.queryByRole('button', { name: /Reenviar/i })).not.toBeInTheDocument();
     expect(screen.getByText('já criado')).toBeInTheDocument();
     expect(screen.queryByText('falhou ao publicar')).not.toBeInTheDocument();
+  });
+});
+
+describe('DialogCriarKit — toast pós-criação com link pro relatório', () => {
+  it('sucesso com loteId: toast tem action "Acompanhar" que navega para o relatório', async () => {
+    criarKitVinculadoMock.mockResolvedValue({
+      ok: true,
+      kits: [{ familiaId: 'fam-novo', codigoPai: '00000020', codigo: '00000021', multiplicador: 2 }],
+      publicacaoOk: true,
+      loteId: 'lote-123',
+    });
+    renderDialog([], BASE_COM_FOTO);
+
+    await avancarECriar();
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(
+      'Kit criado e enviado para publicação',
+      expect.objectContaining({
+        description: 'Acompanhe o andamento no relatório.',
+        action: expect.objectContaining({ label: 'Acompanhar' }),
+      }),
+    ));
+    const opcoes = vi.mocked(toast.success).mock.calls[0][1] as { action?: { onClick: () => void } };
+    opcoes.action!.onClick();
+    expect(navigateMock).toHaveBeenCalledWith('/relatorio/lote-123');
+  });
+
+  it('sucesso sem loteId: toast sem action e nenhuma navegação', async () => {
+    criarKitVinculadoMock.mockResolvedValue({
+      ok: true,
+      kits: [{ familiaId: 'fam-existente', codigoPai: '00000020', codigo: '00000021', multiplicador: 2 }],
+      publicacaoOk: true,
+    });
+    renderDialog([], BASE_COM_FOTO);
+
+    await avancarECriar();
+
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(
+      'Kit criado e enviado para publicação',
+      expect.objectContaining({ description: 'Acompanhe o andamento no relatório.' }),
+    ));
+    const opcoes = vi.mocked(toast.success).mock.calls[0][1] as { action?: unknown };
+    expect(opcoes.action).toBeUndefined();
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });

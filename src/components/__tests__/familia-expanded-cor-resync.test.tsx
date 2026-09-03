@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import type { Familia, Variacao } from '@/lib/tipos-dominio';
 
 // Round 1 do fix-cor-cadastro-manual: a chave de resync do estado local de variacoes
@@ -81,9 +82,11 @@ describe('FamiliaExpanded — resync de corOrigem preserva edição local em and
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     const f1 = familia([variacao({ cor: '', corOrigem: null })]);
     const { rerender } = render(
-      <QueryClientProvider client={qc}>
-        <FamiliaExpanded familia={f1} />
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>
+          <FamiliaExpanded familia={f1} />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
 
     // Operador digita "Invisível" — ainda não salvou (debounce pendente).
@@ -97,9 +100,11 @@ describe('FamiliaExpanded — resync de corOrigem preserva edição local em and
     // ("Invisível"), para o teste pegar um replace que reverteria a digitação.
     const f2 = familia([variacao({ cor: 'Invis', corOrigem: 'manual' })]);
     rerender(
-      <QueryClientProvider client={qc}>
-        <FamiliaExpanded familia={f2} />
-      </QueryClientProvider>,
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>
+          <FamiliaExpanded familia={f2} />
+        </QueryClientProvider>
+      </MemoryRouter>,
     );
 
     // O que estaria na tela com um replace total (bug do round 1): reverteria para

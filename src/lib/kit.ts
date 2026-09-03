@@ -183,6 +183,9 @@ export interface ResultadoCriarKit {
    *  criação: os kits existem, mas o encadeamento falhou e não pode ser escondido atrás de um
    *  `ok: true` genérico — quem chama trata isso na UI. */
   publicacaoOk?: boolean;
+  /** Id do lote técnico desta chamada — leva o operador ao relatório para acompanhar a
+   *  publicação. Ausente quando todos os kits pedidos já existiam (reenvio puro). */
+  loteId?: string;
 }
 
 /** M-0: badge "kits aguardando" da Revisão (BadgeKitsAguardando) — quantos kits, por

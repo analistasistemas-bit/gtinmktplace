@@ -1,6 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import type { Familia, Variacao } from '@/lib/tipos-dominio';
 
 // Lote manual #21 (2026-08-22): o cadastro pela Viabilidade navega para a Revisão ANTES de
@@ -85,9 +86,11 @@ function familia(over: Partial<Familia> = {}): Familia {
 
 function renderCom(qc: QueryClient, f: Familia) {
   return (
-    <QueryClientProvider client={qc}>
-      <FamiliaExpanded familia={f} />
-    </QueryClientProvider>
+    <MemoryRouter>
+      <QueryClientProvider client={qc}>
+        <FamiliaExpanded familia={f} />
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 

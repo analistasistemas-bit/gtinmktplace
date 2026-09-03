@@ -146,5 +146,5 @@ Deno.serve(async (req) => {
   }
 
   await auditarOperacaoSuporte(admin, context, target, 'succeeded');
-  return json({ ok: true, kits: resultado.kits, publicacaoOk: resultado.publicacaoOk });
+  return json({ ok: true, kits: resultado.kits, publicacaoOk: resultado.publicacaoOk, loteId: resultado.loteId });
 });
