@@ -124,6 +124,22 @@ sozinho entre payload Legacy e User Products. Bloqueia (409) se já existe lote 
 família — dois UPDATEs da mesma família em voo é o race condition que o ADR-0104 já trata como
 risco de composição. Edge `adicionar-variacoes-familia`.
 
+**Só a cor nova vai ao ML (2026-09-03).** As cores já publicadas entram no PUT apenas para o ML
+não apagá-las (o PUT de `variations` deleta as omitidas), com o estoque que já está lá — sem COLOR,
+sem preço, sem foto; a cor nova adota o preço vivo do anúncio. O worker deriva isso do lote
+(`origem='manual'`, `_shared/update/fluxo-add-variacao.ts`), o mesmo predicado do sino D-11 —
+derivar do lote e não de um flag no job é o que faz a regra sobreviver ao "Reenviar" da Revisão.
+Motivo: o ML **normaliza o nome da cor** pelo dicionário de COLOR ("Rosa Claro" → "Rosa-claro",
+"Amarelo Canário" → "Amarelo Canario") e a comparação estrita do `montarVariacoesUpdate` lia a
+normalização como renomeio ([ADR-0062](../../docs/decisions/0062-update-cor-existente-e-fotos-comuns.md)); em variação com
+venda o ML derruba o PUT INTEIRO com `You cannot change attribute combinations if the variation
+has bids` — estoque incluído. Update por planilha continua com o comportamento antigo.
+
+**Card em erro tem botão "Revisar" (2026-09-03).** Quando a última atualização do produto falhou,
+o card mostra "Erro na última atualização" e, ao lado, um link para `/revisao/:loteId` do lote
+daquele UPDATE — antes o operador via o erro sem nenhum caminho até a tela que corrige e reenvia.
+Rótulo só a partir de `md` (mesma medida de 375px que motivou o menu `⋮`).
+
 **Migration exigida (o ADR não previa nenhuma):** o guard de `validar_variacao_no_tenant` exigia
 estoque zero no INSERT em lote manual — sem restringi-lo a `familias.operacao='CREATE'`, clonar o
 estoque vivo das irmãs teria **zerado o saldo no ML**. Migration `20260820143736`.
