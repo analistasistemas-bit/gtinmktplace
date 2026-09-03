@@ -75,6 +75,22 @@ export async function carregarFilhosCatalogoUP(
   }));
 }
 
+/**
+ * ADR-0151 D-5: kit vinculado publica sem GTIN por design, então o catálogo SEMPRE o
+ * classifica como divergente (sem_produto/nao_elegivel). Alertar aqui seria ruído garantido,
+ * uma vez por publicação de kit. Risco aceito e registrado no ADR: em categoria onde o ML
+ * EXIGE catálogo, ele pode pausar o kit sem aviso nosso.
+ *
+ * Checado ANTES de qualquer vinculação/alerta (o worker chama isto logo após carregar a
+ * família, antes de resolver conexão/token). `null` = não é kit, segue o fluxo normal.
+ */
+export function guardKitVinculado(
+  familia: { kit_multiplicador: number | null },
+): { status: number; body: { ok: true; skip: string } } | null {
+  if (familia.kit_multiplicador == null) return null;
+  return { status: 200, body: { ok: true, skip: 'kit vinculado — sem catálogo por design' } };
+}
+
 export interface RodarVinculacaoDeps {
   vincularUP?: typeof vincularItensCatalogoUP;
   vincularLegacy?: typeof vincularVariacoesCatalogo;

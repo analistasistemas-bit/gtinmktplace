@@ -3,6 +3,7 @@ import {
   resolverGtinFilho,
   carregarFilhosCatalogoUP,
   rodarVinculacaoCatalogo,
+  guardKitVinculado,
 } from '../vinculacao';
 
 // Fake admin configurável por tabela; cada query é thenable e devolve o dataset da tabela.
@@ -172,5 +173,17 @@ describe('rodarVinculacaoCatalogo — roteamento UP vs Legacy (regressão)', () 
     const admin = fakeAdmin({ anuncios_externos: [], variacoes: [] });
     const r = await rodarVinculacaoCatalogo(admin, 'tok', FAMILIA, 'mercado_livre', { vincularUP: vi.fn(), vincularLegacy: vi.fn() });
     expect(r.tipo).toBe('sem_variacoes');
+  });
+});
+
+describe('guardKitVinculado — ADR-0151 D-5: kit vinculado nunca entra no alerta de catálogo', () => {
+  it('família de kit vinculado é pulada com 200', () => {
+    const r = guardKitVinculado({ kit_multiplicador: 3 });
+    expect(r?.status).toEqual(200);
+    expect(String(r?.body.skip).includes('kit vinculado')).toEqual(true);
+  });
+
+  it('família comum (sem kit) segue o fluxo normal', () => {
+    expect(guardKitVinculado({ kit_multiplicador: null })).toEqual(null);
   });
 });

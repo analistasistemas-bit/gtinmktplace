@@ -64,7 +64,12 @@ export interface ResultadoBaixaVenda {
     multiplicador: number;
   }>;
   /** ML vendeu com PubliAI já em zero. Dedupe por SKU/dia no caller. */
-  desyncMl: Array<{ codigo: string; pedido: number }>;
+  desyncMl: Array<{
+    codigo: string; pedido: number;
+    /** `codigo_pai` do kit quando a venda foi de kit; null em venda direta (ADR-0151). */
+    kitCodigoPai: string | null;
+    multiplicador: number;
+  }>;
   /** RPCs que erraram. Nunca vazio em silêncio: o chamador notifica. */
   falhas: Array<{ codigo: string; mensagem: string }>;
   /** Itens da venda paga que ficaram SEM baixa por não ter SKU resolvido. */
@@ -104,7 +109,7 @@ export async function registrarBaixaVenda(
   }
 
   const vendaAcimaSaldo: ResultadoBaixaVenda['vendaAcimaSaldo'] = [];
-  const desyncMl: Array<{ codigo: string; pedido: number }> = [];
+  const desyncMl: ResultadoBaixaVenda['desyncMl'] = [];
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
   const skuDesconhecido: Array<{ codigo: string; quantidade: number }> = [];
 
@@ -146,7 +151,12 @@ export async function registrarBaixaVenda(
     });
     const classe = classificarBaixaSemSaldo(r, b.quantity * origem.multiplicador);
     if (classe === 'desync') {
-      desyncMl.push({ codigo: b.codigo, pedido: b.quantity });
+      desyncMl.push({
+        codigo: b.codigo,
+        pedido: b.quantity * origem.multiplicador,
+        kitCodigoPai: origem.kitCodigoPai,
+        multiplicador: origem.multiplicador,
+      });
     } else if (classe === 'parcial') {
       vendaAcimaSaldo.push({
         codigo: b.codigo,

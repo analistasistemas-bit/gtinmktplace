@@ -7,6 +7,8 @@ function fakeAdmin(opts: {
   kits: Record<string, { base: string; n: number }>;
   chamadas: ChamadaRpc[];
   updates: Array<Record<string, unknown>>;
+  /** Default 100 (saldo farto — nunca gera vendaAcimaSaldo/desyncMl nos testes que não pedem). */
+  estoqueAnterior?: number;
 }) {
   // eq('org_id', ...) não importa aqui; eq('codigo', ...) é o que decide qual variação está
   // sendo resolvida — é o argumento real, não um `_setCodigo` externo nunca chamado por
@@ -45,10 +47,12 @@ function fakeAdmin(opts: {
     from: (tabela: string) => (tabela === 'variacoes' ? variacaoQuery('') : movimentosQuery),
     rpc: (fn: string, args: Record<string, unknown>) => {
       opts.chamadas.push({ fn, args });
+      const anterior = opts.estoqueAnterior ?? 100;
+      const pedida = args.p_qtd as number;
       return Promise.resolve({
         data: {
           aplicado: true, motivo: 'venda', movimento_id: 'mov-1', codigo_pai: 'PAI-BASE',
-          estoque_anterior: 100, quantidade_pedida: args.p_qtd, quantidade_aplicada: args.p_qtd,
+          estoque_anterior: anterior, quantidade_pedida: pedida, quantidade_aplicada: Math.min(anterior, pedida),
         },
         error: null,
       });
@@ -89,6 +93,25 @@ it('venda de kit anota a origem no movimento (auditoria, D-6)', async () => {
   const anotacao = updates.find((u) => 'origem_kit_multiplicador' in u);
   expect(anotacao?.origem_kit_multiplicador).toEqual(3);
   expect(anotacao?.origem_kit_codigo_pai).toEqual('KIT-00000021');
+});
+
+it('venda de kit com saldo zerado na base gera desyncMl em unidades da base, com atribuição', async () => {
+  const chamadas: ChamadaRpc[] = [];
+  const updates: Array<Record<string, unknown>> = [];
+  const admin = fakeAdmin({
+    kits: { '00000021': { base: '00000010', n: 3 } }, chamadas, updates, estoqueAnterior: 0,
+  });
+
+  const r = await registrarBaixaVenda(admin, {
+    orgId: 'org-1', canal: 'mercado_livre', orderId: 777,
+    itens: [{ codigo: '00000021', quantity: 2, ml_item_id: 'MLB-KIT' }],
+  });
+
+  // 2 kits de 3 = 6 un. da base (não 2, que é o que o ML mostrou no pedido).
+  expect(r.desyncMl).toEqual([
+    { codigo: '00000021', pedido: 6, kitCodigoPai: 'KIT-00000021', multiplicador: 3 },
+  ]);
+  expect(r.vendaAcimaSaldo).toEqual([]);
 });
 
 it('venda de SKU comum não resolve nada e não anota origem de kit', async () => {

@@ -370,6 +370,8 @@ describe('registrarBaixaVenda — saldo insuficiente vs desync ML', () => {
       itens: [{ codigo: '00220809', quantity: 1, ml_item_id: 'MLB7010890734', titulo: 'Linha Azul' }],
     });
     expect(r.vendaAcimaSaldo).toEqual([]);
-    expect(r.desyncMl).toEqual([{ codigo: '00220809', pedido: 1 }]);
+    expect(r.desyncMl).toEqual([
+      { codigo: '00220809', pedido: 1, kitCodigoPai: null, multiplicador: 1 },
+    ]);
   });
 });

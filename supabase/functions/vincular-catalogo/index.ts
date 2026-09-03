@@ -7,7 +7,7 @@ import { decidirResultadoRodadaCatalogo, decidirMotivoAlertaCatalogo, normalizar
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { montarMensagemCatalogoNoMatch } from '../_shared/notificacoes/telegram.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
-import { rodarVinculacaoCatalogo, type FilhoCatalogoUP } from './vinculacao.ts';
+import { rodarVinculacaoCatalogo, guardKitVinculado, type FilhoCatalogoUP } from './vinculacao.ts';
 
 // `alertar` vive só no body do job (spec §1.4): estendido aqui por interseção para não tocar
 // queue.ts — mudar o arquivo compartilhado arrastaria a frota QStash inteira para o redeploy.
@@ -56,13 +56,19 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const { data: familia, error: familiaError } = await admin.from('familias')
-    .select('user_id, org_id, codigo_pai, nome_pai, ml_item_id, ml_permalink, publicado_em, catalogo_categoria_sugerida_id, catalogo_categoria_sugerida_nome').eq('id', job.familia_id).single();
+    .select('user_id, org_id, codigo_pai, nome_pai, ml_item_id, ml_permalink, publicado_em, catalogo_categoria_sugerida_id, catalogo_categoria_sugerida_nome, kit_multiplicador').eq('id', job.familia_id).single();
   // Sem item publicado não há o que vincular (família removida/erro) — encerra sem retry.
   if (!familia?.ml_item_id) {
     // I2 (revisão final de branch): erro real do select (ex.: 42703 se deployado antes da
     // migration das colunas catalogo_categoria_sugerida_*) some no skip silencioso sem isto.
     if (familiaError) console.error(`vincular-catalogo: select de família falhou para ${job.familia_id}:`, familiaError.message);
     return new Response(JSON.stringify({ skip: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  // ADR-0151 D-5 — kit vinculado nunca tem catálogo equivalente por design; ver guardKitVinculado.
+  const guardKit = guardKitVinculado(familia);
+  if (guardKit) {
+    return new Response(JSON.stringify(guardKit.body), { status: guardKit.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 
   try {
