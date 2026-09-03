@@ -23,7 +23,17 @@ GTIN ali, e que o GTIN da unidade + `UNITS_PER_PACK=2` passa — que é como o M
   reabriria o incidente VD MENTA (2026-06-15) espelhado.
 - [x] Testes: 12 novos (detector, retry no conector, ligação no worker, trava de catálogo).
   Suíte completa 4582 ✓, lint 0 erros, `tsc -b` ✓.
-- [x] Deploy das edges afetadas + reenvio do kit que estava em `erro`.
+- [x] Deploy das 37 edges afetadas pelo `_shared` (o caminho de publicação do kit,
+  `publish-familia-ml`, está no ar com o fix do GTIN).
+- [ ] **Redeploy de `process-familia` e `vincular-catalogo`** com o 2º commit (ficha sem
+  `SALE_FORMAT` não reprova pack equivalente). Bloqueado por quebra do upstream em 2026-09-03:
+  `jsr:@supabase/supabase-js@2` resolve para 2.115.0, que exige o npm `@supabase/storage-js@2.115.0`
+  — publicado no JSR mas ainda ausente no npm (último lá: 2.114.0). Deploy falha em
+  `Failed to bundle the function`. Até o upstream normalizar, essas duas rodam a trava do 1º commit
+  (reprova a mais em ficha sem `SALE_FORMAT`) — falha segura: deixa de vincular, nunca vincula
+  errado. Retentar o deploy; se demorar, pinar a versão do `supabase-js` nos imports.
+- [ ] Reenvio do kit que estava em `erro` (família `39cfe494`), pelo botão da Revisão, e conferência
+  de `status`/`ml_item_id` + `catalog_status` (tem que reprovar a ficha da unidade, não vincular).
 
 ## UX de título e descrição do kit (ADR-0151) — branch `feat/kit-titulo-descricao-ux` — 2026-09-03
 
