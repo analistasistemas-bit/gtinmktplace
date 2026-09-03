@@ -66,4 +66,23 @@ describe('PreviewKit', () => {
     expect(input).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByText('Título acima de 60 caracteres.')).toBeInTheDocument();
   });
+
+  it('mostra aviso não-bloqueante quando alguma dimensão está zerada (ADR-0018, M-8)', () => {
+    renderPreview(3, { alturaCm: 0 });
+    expect(screen.getByText(/Dimensões incompletas/)).toBeInTheDocument();
+  });
+
+  it('não mostra aviso quando as dimensões estão completas', () => {
+    renderPreview(3);
+    expect(screen.queryByText(/Dimensões incompletas/)).not.toBeInTheDocument();
+  });
+
+  it('aviso some ao digitar uma altura válida', () => {
+    renderPreview(3, { alturaCm: 0 });
+    expect(screen.getByText(/Dimensões incompletas/)).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Altura do kit 3 (cm)'), { target: { value: '10' } });
+
+    expect(screen.queryByText(/Dimensões incompletas/)).not.toBeInTheDocument();
+  });
 });

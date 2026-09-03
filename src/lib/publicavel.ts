@@ -170,7 +170,7 @@ export function familiaIncompleta(familia: Familia): boolean {
 // (principal, ou 1ª incluída), espelhando a regra da publicação.
 // Piso 0,2cm espelha `dimensoesValidas` do backend (adendo ADR-0018 2026-06-09):
 // descarta o placeholder 0,1cm sem matar dimensões reais finas (ex.: fita 0,7cm).
-const PISO_MEDIDA_CM = 0.2;
+export const PISO_MEDIDA_CM = 0.2;
 export function familiaSemDimensoesValidas(familia: Familia): boolean {
   const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
   if (incluidas.length === 0) return false;

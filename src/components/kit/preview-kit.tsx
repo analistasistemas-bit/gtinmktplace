@@ -9,6 +9,7 @@ import { fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import type { FaixaAtacado } from '@/lib/atacado';
 import { precoSugeridoDoKit, TITULO_MAX_KIT, type BaseParaKit } from '@/lib/kit';
+import { PISO_MEDIDA_CM } from '@/lib/publicavel';
 
 export interface KitPreviewValue {
   titulo: string;
@@ -144,6 +145,11 @@ export function PreviewKit({ n, base, value, onChange }: {
           />
         </div>
       </div>
+      {[value.alturaCm, value.larguraCm, value.comprimentoCm].some((x) => !(x >= PISO_MEDIDA_CM)) && (
+        <div role="status" className="rounded-md border border-warning/30 bg-warning/10 p-2 text-xs text-warning">
+          Dimensões incompletas — o Mercado Livre vai estimar o frete (pode cotar errado).
+        </div>
+      )}
 
       <div className="grid gap-2 sm:grid-cols-3">
         <div className="flex flex-col gap-1">
