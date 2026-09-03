@@ -27,6 +27,7 @@ function fakeAdmin(filas: Record<string, unknown[]>) {
       not: () => obj,
       limit: () => obj,
       in: () => obj,
+      order: () => obj, // listarKitsVivos (guard D-10/D-14) termina em .order()
       maybeSingle: async () => {
         const v = proximo(tabela);
         return ehErro(v) ? { data: null, error: { message: v.__erro } } : { data: v, error: null };
@@ -135,6 +136,7 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, // alvo
         [], // emVoo
+        [], // kits vivos (guard D-14) — nenhum
         [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
@@ -209,6 +211,7 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
         [],
+        [], // kits vivos (guard D-14) — nenhum
         [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
@@ -226,6 +229,7 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
         [],
+        [], // kits vivos (guard D-14) — nenhum
         [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
@@ -260,6 +264,7 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
     const { admin, deletes } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, [],
+        [], // kits vivos (guard D-14) — nenhum
         [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
       ],
       // 1ª leitura (gate inicial): mudando_composicao=false. 2ª leitura (re-check pré-delete): true.
@@ -278,6 +283,7 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
     const { admin, deletes, removidos } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, [],
+        [], // kits vivos (guard D-14) — nenhum
         [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: `${DONO}/capas/x.jpg`, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
       ],
       anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: true }]],
@@ -316,7 +322,7 @@ describe('removerPublicado — fail-closed em erros de query/delete (revisão Co
 
   it('erro ao listar famílias pra excluir → lança (nunca reporta ok sem remover nada)', async () => {
     const { admin } = fakeAdmin({
-      familias: [{ id: 'fam-1', codigo_pai: '000', ml_item_id: 'MLB1', org_id: ORG }, [], ERRO('timeout')],
+      familias: [{ id: 'fam-1', codigo_pai: '000', ml_item_id: 'MLB1', org_id: ORG }, [], [], ERRO('timeout')],
       anuncios_externos: [[]],
     });
     await expect(removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
@@ -327,6 +333,7 @@ describe('removerPublicado — fail-closed em erros de query/delete (revisão Co
     const { admin } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '000', ml_item_id: 'MLB1', org_id: ORG }, [],
+        [], // kits vivos (guard D-14) — nenhum
         [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
       ],
       anuncios_externos: [[]],
@@ -340,6 +347,7 @@ describe('removerPublicado — fail-closed em erros de query/delete (revisão Co
     const { admin } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '000', ml_item_id: 'MLB1', org_id: ORG }, [],
+        [], // kits vivos (guard D-14) — nenhum
         [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
       ],
       anuncios_externos: [[]],
@@ -356,6 +364,7 @@ describe('removerPublicado — família Legacy (regressão: comportamento de hoj
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, // alvo
         [], // emVoo
+        [], // kits vivos (guard D-14) — nenhum
         [{ // paraExcluir
           id: 'fam-1', lote_id: 'lote-1', user_id: DONO,
           capa_storage_path: `${DONO}/capas/x.jpg`, capa2_storage_path: null, capa3_storage_path: null,
@@ -389,6 +398,7 @@ describe('removerPublicado — família Legacy (regressão: comportamento de hoj
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
         [],
+        [], // kits vivos (guard D-14) — nenhum
         [{
           id: 'fam-1', lote_id: 'lote-1', user_id: DONO,
           capa_storage_path: `${DONO}/capas/legitima.jpg`,
@@ -415,6 +425,7 @@ describe('removerPublicado — varredura de movimentos órfãos (ADR-0097)', () 
     familias: [
       { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
       [],
+      [], // kits vivos (guard D-14) — nenhum
       [{
         id: 'fam-1', lote_id: 'lote-1', user_id: DONO,
         capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null,
@@ -497,6 +508,42 @@ describe('removerPublicado — casos já existentes (regressão)', () => {
     const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
     expect(r.tipo).toBe('em_voo');
     expect(deletes).toEqual([]);
+  });
+});
+
+// ADR-0151 D-14: base com kit vinculado ativo não é removível — o kit venderia contra uma base
+// que não existe mais e a venda não teria onde debitar. Guard roda ANTES da mini-saga UP (nunca
+// pausa nada no ML só para descobrir depois que não pode deletar).
+describe('removerPublicado — guard D-14: base com kit vinculado ativo (ADR-0151)', () => {
+  it('remover base com kit vinculado ativo é recusado', async () => {
+    const { admin, deletes } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', codigo_pai: '00000010', ml_item_id: 'MLB1', org_id: ORG, kit_multiplicador: null }, // alvo
+        [], // emVoo
+        [{ id: 'f-k3', codigo_pai: '00000020', kit_multiplicador: 3, criado_em: '2026-01-01' }], // listarKitsVivos
+      ],
+    });
+    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r).toEqual({ tipo: 'kit_vinculado_ativo', kits: [{ codigoPai: '00000020', multiplicador: 3 }] });
+    expect(deletes).toEqual([]); // nada tocado — nem a mini-saga UP chegou a rodar
+  });
+
+  // A DB só devolve kits em STATUS_KIT_VIVO ('pronto'/'publicando'/'publicado') — um kit em
+  // 'erro' nunca aparece na resposta real de `listarKitsVivos` (filtro `.in('status', ...)`,
+  // verificado contra Postgres real no Step 2 da task). Aqui a fila vazia simula exatamente
+  // essa resposta e prova que o código NÃO bloqueia quando não há kit vivo.
+  it('kit em erro NÃO bloqueia — a base segue removível (listarKitsVivos já filtra fora)', async () => {
+    const { admin, deletes } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', codigo_pai: '00000010', ml_item_id: 'MLB1', org_id: ORG, kit_multiplicador: null },
+        [], // emVoo
+        [], // listarKitsVivos — vazio, como a DB devolveria com o único kit em 'erro'
+      ],
+      anuncios_externos: [[]],
+      lotes: [],
+    });
+    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r.tipo).not.toBe('kit_vinculado_ativo');
   });
 });
 
@@ -615,6 +662,7 @@ describe('removerPublicado — integração das portas reais (sem removerComposi
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
         [],
+        [], // kits vivos (guard D-14) — nenhum
         [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
