@@ -2,6 +2,48 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Cor nova em anúncio User Products herda a ficha do irmão — 2026-09-03
+
+Lote 54 (`26705343`, anúncio `MLB4959919693`) parou com **"UPDATE bloqueado: o Mercado Livre
+agrupou a cor nova numa família diferente (family_id divergente)"**.
+
+Reconstituição com GET no ML: a cor Preta (`92670615`) FOI criada — `MLB5184493069`, 40 un. — mas
+com `family_id` **6941552057270415**, contra **3799502520089361** das outras 9 cores. O guard do
+ADR-0088 pausou o item novo e travou o UPDATE de propósito: sem isso ficaria um anúncio órfão
+vendendo à parte. As 9 cores originais seguiram ativas e intactas.
+
+Por que o ML não agrupou (medido nos `user-products` dos dois lados, mesmo `family_name` e mesmo
+domínio):
+
+| Atributo | Cor nova | Irmãos (28/07) |
+|---|---|---|
+| `BRAND` / `MANUFACTURER` | `BUFALO` (texto cru, sem `value_id`) | `Búfalo` + `value_id` 9165622 |
+| `COMPOSITION` | ausente | `100% poliéster` (`value_id` 4904381) |
+| `SELLER_PACKAGE_*` | 2200 g · 43×16×36 (banco) | 2330 g · 27×25×17 |
+
+`familias.atributos_ml` das duas famílias é **idêntico** (`BRAND: BUFALO`, sem COMPOSITION) — o
+que os irmãos têm a mais veio do enriquecimento do próprio ML na criação em lote de 28/07, que
+normalizou a marca pelo dicionário. Mesma classe da normalização de COLOR do lote anterior: o ML
+reescreve o valor e o nosso payload passa a divergir do que está publicado.
+
+- [x] `_shared/user-products/atributos-irmao.ts`: `atributosDeFicha` lê os atributos de um item
+  irmão vivo preservando `value_id`, e `mesclarAtributos` põe a ficha do irmão por cima da da
+  família (o irmão vence — é o valor publicado que decide o agrupamento).
+- [x] `atualizar-familia-up.ts` faz **um** GET memoizado no irmão antes de criar a cor nova. Se o
+  GET falhar, segue com `atributos_ml` — o comportamento anterior — em vez de derrubar o UPDATE.
+- [x] **Não herda** `COLOR`/`GTIN`/`EMPTY_GTIN_REASON` (são por SKU: copiar publicaria a cor nova
+  como a antiga) nem `SELLER_PACKAGE_*` — dimensões são dado nosso, definem frete (ADR-0018) e o
+  caminho UP não as sincroniza depois da criação; herdar fixaria um peso desatualizado para
+  sempre. Se o ML provar que elas entram na identidade da família, a decisão muda num lugar só.
+- [x] Testes: unitários da ficha (preserva `value_id`, nunca copia COLOR/GTIN, ignora dimensões,
+  entrada inválida não quebra) e de integração no `atualizarFamiliaUP` provando que o payload sai
+  com `BRAND: value_id 9165622` e `COMPOSITION`, sem a cor do irmão, com as dimensões do banco, e
+  que o GET falho cai no comportamento antigo.
+
+- [ ] Pendente no ML (intervenção manual, não dá para automatizar): o item `MLB5184493069` já
+  existe pausado com família própria. Precisa ser **apagado no ML** antes de reenviar o lote —
+  senão a cor nova é readotada com o `family_id` errado. Depois de apagar, "Reenviar" no lote 54.
+
 ## Entrada de mercadoria em várias cores de uma vez — 2026-09-03
 
 Relato do Diego, ao tentar repor as cores zeradas: o diálogo de Entrada abriu com o campo SKU

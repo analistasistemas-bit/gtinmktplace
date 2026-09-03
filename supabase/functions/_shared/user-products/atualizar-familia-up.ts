@@ -16,6 +16,7 @@ import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { enfileirarVinculacaoCatalogo } from '../queue.ts';
 import { decidirRetryTransitorio } from '../publicacao/retry.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
+import { atributosDeFicha, mesclarAtributos } from './atributos-irmao.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
 import {
   atualizarComposicao, type PortasComposicao, type FilhoComp, type ConfirmacaoComp, type ResultadoComposicao,
@@ -113,6 +114,30 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   };
 
   const varPorSku = new Map(variacoes.map((v) => [v.codigo, v]));
+
+  // Ficha do irmão (ADR-0088 / incidente do lote 54): a cor nova precisa nascer com os MESMOS
+  // atributos de identidade dos itens que já estão na família, senão o ML abre uma família nova e
+  // o guard de `family_id` divergente trava o UPDATE inteiro. Ver `atributos-irmao.ts` para o que
+  // é copiado e por que dimensões ficam de fora. Um GET por execução, memoizado; se falhar, segue
+  // com `atributos_ml` (o comportamento anterior) em vez de derrubar o UPDATE.
+  let fichaDoIrmao: ReturnType<typeof atributosDeFicha> | null = null;
+  const lerFichaDoIrmao = async (): Promise<ReturnType<typeof atributosDeFicha>> => {
+    if (fichaDoIrmao) return fichaDoIrmao;
+    const irmao = filhos.find((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id);
+    if (!irmao) return (fichaDoIrmao = []);
+    try {
+      const url = `https://api.mercadolibre.com/items/${encodeURIComponent(String(irmao.item_externo_id))}?attributes=attributes`;
+      const resp = await fetchLike(url, { headers: { Authorization: `Bearer ${await ctx.getToken()}` } });
+      if (!resp.ok) throw new Error(`GET item irmão ${resp.status}`);
+      const j = await resp.json() as { attributes?: unknown };
+      fichaDoIrmao = atributosDeFicha(j.attributes);
+    } catch (e) {
+      console.error('ficha_irmao_falhou', String(irmao.item_externo_id), String(e));
+      fichaDoIrmao = [];
+    }
+    return fichaDoIrmao;
+  };
+
   const familiaInput = {
     titulo_ml: familyName, descricao_ml: familia.descricao_ml,
     categoria_ml_id: familia.categoria_ml_id, atributos_ml: familia.atributos_ml,
@@ -131,7 +156,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       comprimento_cm: num(v.comprimento_cm), peso_gramas: num(v.peso_gramas),
     };
     const payload = montarPayloadItem(
-      familiaInput as never,
+      { ...familiaInput, atributos_ml: mesclarAtributos(familia.atributos_ml, await lerFichaDoIrmao()) } as never,
       [{ codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: num(v.preco_publicacao), gtin: v.gtin, ml_picture_id: picId }] as never,
       familia.capa_ml_picture_id, familia.capa2_ml_picture_id, familia.capa3_ml_picture_id,
       undefined, null, dimensoes, aceitaEmptyGtin, 'plano',
