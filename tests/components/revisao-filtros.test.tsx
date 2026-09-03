@@ -217,4 +217,61 @@ describe('filtrarFamilias', () => {
     expect(out).toHaveLength(1);
     expect(out[0].id).toBe('d');
   });
+
+  // ADR-0151 D-4: quando o CREATE de um kit falha (base já publicada), `talvezFinalizarLote`
+  // (código compartilhado, sem guard de status) promove o lote técnico do kit pra 'revisao' e
+  // o kit reaparece como card COMUM na Revisão — comportamento intencional, não bug. Task 8/11
+  // verifica que nada nesta task esconde esse card nem bloqueia o reenvio: nem `filtrarFamilias`
+  // nem `familiaPublicavel` podem tratar `kitBaseCodigoPai` como motivo de exclusão.
+  it('família de kit em recuperação (CREATE falhou) aparece como card normal e é republicável', () => {
+    const varOk = {
+      codigo: '00010001',
+      cor: 'Vermelho',
+      corHex: '#dc2626',
+      corOrigem: 'descricao' as const,
+      corEditadaPeloOperador: false,
+      preco: 1,
+      precoPublicacao: 1,
+      estoque: 10,
+      gtin: null,
+      fotoPath: 'u/l/001.jpeg',
+      excluidaDaPublicacao: false,
+    };
+    const kitRecuperacao: Familia = {
+      id: 'kit-1',
+      loteId: 'lote-tecnico-42',
+      codigoPai: '2003',
+      titulo: 'Linha Completa Kit 2 Unidades',
+      descricao: '',
+      operacao: 'CREATE',
+      estrategiaPreco: 'PROPRIO',
+      estrategiaMotivo: '',
+      concorrencia: 'sem',
+      concorrenciaVendedores: 0,
+      concorrenciaPrecoMin: null,
+      analiseMercado: null,
+      tipoAviamento: 'linha',
+      categoriaMlId: 'MLB270273',
+      precoMin: 1,
+      precoMax: 1,
+      precoAbaixo20pc: false,
+      capaStoragePath: null,
+      variacoes: [varOk],
+      status: 'erro', // publish-familia-ml marcou 'erro' ao falhar o CREATE (D-4)
+      tokensInput: null,
+      tokensOutput: null,
+      custoCentavos: null,
+      tituloEditadoPeloOperador: false,
+      descricaoEditadaPeloOperador: false,
+      variacoesSemCor: 0,
+      concorrenciaCategoriaId: null,
+      kitBaseCodigoPai: '2001', // é um kit — nasceu da criar-kit-vinculado
+      mlItemId: null,
+    } as Familia;
+
+    // Não some da lista.
+    expect(filtrarFamilias([kitRecuperacao], 'todos', '').map((f) => f.id)).toEqual(['kit-1']);
+    // Reenvio (retry após erro) funciona — mesmo mecanismo genérico de qualquer família falha.
+    expect(familiaPublicavel(kitRecuperacao).ok).toBe(true);
+  });
 });

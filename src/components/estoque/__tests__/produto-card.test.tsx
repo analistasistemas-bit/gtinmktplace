@@ -42,6 +42,7 @@ function mockVariacoes(n: number, codigoBase = 1001): VariacaoComSaldo[] {
     imagemPath: null,
     mlPictureId: null,
     mlItemId: null,
+    kits: [],
   }));
 }
 
@@ -477,5 +478,34 @@ describe('ProdutoCard', () => {
     await waitFor(() => expect(screen.getAllByText(/R\$\s?28,99/).length).toBeGreaterThan(0));
     expect(screen.queryByText(/R\$\s?39,90/)).not.toBeInTheDocument();
     expect(screen.queryByText(/local R\$/)).not.toBeInTheDocument();
+  });
+
+  // ADR-0151 D-13: kit vinculado nunca é linha própria — aparece sob o produto-base.
+  describe('kits vinculados', () => {
+    it('produto sem kit não mostra a seção', async () => {
+      fetchVariacoesProdutoMock.mockResolvedValue([mockVariacoes(1)[0]!]);
+      renderCard();
+      await userEvent.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+      await waitFor(() => expect(screen.getByText('00001001')).toBeInTheDocument());
+      expect(screen.queryByText('Kits vinculados')).not.toBeInTheDocument();
+    });
+
+    it('produto com kit mostra "Kit de N — X disponíveis" por kit vinculado', async () => {
+      fetchVariacoesProdutoMock.mockResolvedValue([{
+        ...mockVariacoes(1)[0]!,
+        kits: [
+          { codigoPai: '99999901', multiplicador: 2, disponivel: 3 },
+          { codigoPai: '99999902', multiplicador: 3, disponivel: 2 },
+        ],
+      }]);
+      renderCard();
+      await userEvent.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+
+      expect(await screen.findByText('Kits vinculados')).toBeInTheDocument();
+      expect(screen.getByText(/Kit de 2 — 3 disponíveis/)).toBeInTheDocument();
+      expect(screen.getByText(/Kit de 3 — 2 disponíveis/)).toBeInTheDocument();
+      expect(screen.getByText(/Os kits não têm estoque próprio/)).toBeInTheDocument();
+    });
   });
 });

@@ -1,6 +1,7 @@
 // E6b (ADR-0094): seleção e aplicação da baixa de estoque de uma venda paga.
 // A venda é sagrada — nada aqui pode derrubar o sync-venda; o chamador envolve em try/catch.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { resolverOrigemEstoque } from './kit.ts';
 
 export interface ItemVendaBaixa {
   codigo: string | null;
@@ -56,9 +57,19 @@ export interface ResultadoBaixaVenda {
   /** Movimentos com push ainda não entregue ao QStash (outbox no ledger). */
   pendentesDePush: MovimentoPendente[];
   /** Venda pediu mais do que havia, mas ainda existia saldo (>0). Alerta por pedido. */
-  vendaAcimaSaldo: Array<{ codigo: string; pedido: number; anterior: number; aplicado: number }>;
+  vendaAcimaSaldo: Array<{
+    codigo: string; pedido: number; anterior: number; aplicado: number;
+    /** `codigo_pai` do kit quando a venda foi de kit; null em venda direta (ADR-0151). */
+    kitCodigoPai: string | null;
+    multiplicador: number;
+  }>;
   /** ML vendeu com PubliAI já em zero. Dedupe por SKU/dia no caller. */
-  desyncMl: Array<{ codigo: string; pedido: number }>;
+  desyncMl: Array<{
+    codigo: string; pedido: number;
+    /** `codigo_pai` do kit quando a venda foi de kit; null em venda direta (ADR-0151). */
+    kitCodigoPai: string | null;
+    multiplicador: number;
+  }>;
   /** RPCs que erraram. Nunca vazio em silêncio: o chamador notifica. */
   falhas: Array<{ codigo: string; mensagem: string }>;
   /** Itens da venda paga que ficaram SEM baixa por não ter SKU resolvido. */
@@ -97,17 +108,26 @@ export async function registrarBaixaVenda(
     return { pendentesDePush: [], vendaAcimaSaldo: [], desyncMl: [], falhas: [], semSku, skuDesconhecido: [] };
   }
 
-  const vendaAcimaSaldo: Array<{ codigo: string; pedido: number; anterior: number; aplicado: number }> = [];
-  const desyncMl: Array<{ codigo: string; pedido: number }> = [];
+  const vendaAcimaSaldo: ResultadoBaixaVenda['vendaAcimaSaldo'] = [];
+  const desyncMl: ResultadoBaixaVenda['desyncMl'] = [];
   const falhas: Array<{ codigo: string; mensagem: string }> = [];
   const skuDesconhecido: Array<{ codigo: string; quantidade: number }> = [];
 
+  // O SKU vendido pode ser de um kit vinculado (ADR-0151 D-6): nesse caso quem tem saldo é a
+  // BASE, e cada unidade de venda consome N unidades dela. Sem esta resolução, `baixar_estoque`
+  // acha a linha do próprio kit (saldo 0) e aplica delta 0 em silêncio — a base nunca desce.
   for (const b of baixas) {
+    const origem = await resolverOrigemEstoque(admin, p.orgId, b.codigo);
+    // A REFERÊNCIA continua no SKU VENDIDO, nunca no da base: `estornar_estoque` procura o
+    // movimento só por `referencia_externa` e repõe na variação resolvida a partir do `codigo`
+    // GRAVADO no movimento. Trocar a ref faria venda e estorno nunca se encontrarem.
     const ref = refBaixa(p.canal, p.orderId, b.codigo);
-    // supabase-js NÃO lança em erro de rpc — ignorar `error` faria a baixa sumir em
-    // silêncio. Caminho que alimenta saldo falha LOUD (regra da casa, ADR-0055).
     const { data, error } = await admin.rpc('baixar_estoque', {
-      p_org: p.orgId, p_codigo: b.codigo, p_qtd: b.quantity, p_canal: p.canal, p_ref: ref,
+      p_org: p.orgId,
+      p_codigo: origem.codigoCanonico,
+      p_qtd: b.quantity * origem.multiplicador,
+      p_canal: p.canal,
+      p_ref: ref,
     });
     if (error) {
       console.error('baixar_estoque_falhou', { orderId: p.orderId, codigo: b.codigo, erro: error.message });
@@ -115,7 +135,7 @@ export async function registrarBaixaVenda(
       continue;
     }
     const r = data as {
-      aplicado: boolean; motivo: string; codigo_pai?: string;
+      aplicado: boolean; motivo: string; codigo_pai?: string; movimento_id?: string;
       estoque_anterior?: number; quantidade_pedida?: number; quantidade_aplicada?: number;
     };
     if (!r.aplicado) {
@@ -125,15 +145,26 @@ export async function registrarBaixaVenda(
       if (r.motivo === 'sku_nao_encontrado') skuDesconhecido.push({ codigo: b.codigo, quantidade: b.quantity });
       continue;
     }
-    const classe = classificarBaixaSemSaldo(r, b.quantity);
+    await anotarOrigemDoMovimento(admin, r.movimento_id ?? null, {
+      kitCodigoPai: origem.kitCodigoPai,
+      multiplicador: origem.kitCodigoPai ? origem.multiplicador : null,
+    });
+    const classe = classificarBaixaSemSaldo(r, b.quantity * origem.multiplicador);
     if (classe === 'desync') {
-      desyncMl.push({ codigo: b.codigo, pedido: b.quantity });
+      desyncMl.push({
+        codigo: b.codigo,
+        pedido: b.quantity * origem.multiplicador,
+        kitCodigoPai: origem.kitCodigoPai,
+        multiplicador: origem.multiplicador,
+      });
     } else if (classe === 'parcial') {
       vendaAcimaSaldo.push({
         codigo: b.codigo,
-        pedido: b.quantity,
+        pedido: b.quantity * origem.multiplicador,
         anterior: r.estoque_anterior ?? 0,
         aplicado: r.quantidade_aplicada ?? 0,
+        kitCodigoPai: origem.kitCodigoPai,
+        multiplicador: origem.multiplicador,
       });
     }
   }
@@ -143,6 +174,31 @@ export async function registrarBaixaVenda(
   // commita e o enfileiramento falha — no retry, `aplicado` seria false e o push
   // se perderia para sempre. Aqui ele é reencontrado.
   return { pendentesDePush: await lerPushPendente(admin, p.orgId), vendaAcimaSaldo, desyncMl, falhas, semSku, skuDesconhecido };
+}
+
+/**
+ * Anota, DEPOIS da RPC, que o débito veio da venda de um kit vinculado.
+ *
+ * Não vai por parâmetro da RPC de propósito: mudar a assinatura de `baixar_estoque` obrigaria
+ * repetir a dança de owner/grants do `estoque_rpc_executor` (migration 20260804113000) num
+ * caminho que já funciona. O preço é que a anotação NÃO é atômica com a baixa.
+ *
+ * É PURAMENTE auditoria (D-6): o ledger e o alerta de venda-acima-do-saldo passam a dizer
+ * "3 kits de 3 = 9 unidades da base" em vez de um 9 sem explicação. Nenhuma decisão de push
+ * depende disto — a Decisão 7 foi simplificada justamente para não haver plumbing de kit no
+ * outbox. Falhar aqui custa uma linha de ledger sem atribuição, nada mais.
+ */
+async function anotarOrigemDoMovimento(
+  admin: SupabaseClient,
+  movimentoId: string | null,
+  p: { kitCodigoPai: string | null; multiplicador: number | null },
+): Promise<void> {
+  if (!movimentoId) return;
+  const { error } = await admin.from('estoque_movimentos').update({
+    origem_kit_codigo_pai: p.kitCodigoPai,
+    origem_kit_multiplicador: p.multiplicador,
+  }).eq('id', movimentoId);
+  if (error) console.error('anotar_origem_movimento_falhou', { movimentoId, erro: error.message });
 }
 
 /**

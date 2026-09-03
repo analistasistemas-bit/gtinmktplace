@@ -56,6 +56,24 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
           + 'Nada foi removido — tente de novo em instantes; se persistir, contate o suporte.',
         pendentes: r.pendentes,
       }, 409);
+    case 'kit_vinculado_ativo': {
+      await auditarOperacaoSuporte(admin, context, target, 'denied');
+      const listaKits = r.kits.map((k) => `${k.multiplicador}un`).join(', ');
+      // `preservar_familia=true` é o fluxo de Republicar: NUNCA apaga a base (devolve
+      // status='pronto'). A instrução de "excluir o produto do kit" só faz sentido pra
+      // remoção de verdade — servi-la aqui mandaria o operador apagar algo à toa.
+      const erro = preservar_familia
+        ? `Este produto tem ${r.kits.length} kit(s) vinculado(s) (${listaKits}). `
+          + 'Remova/pause os kits no marketplace antes de republicar este produto.'
+        // Remoção de verdade: `remover-publicado` devolve o kit para 'pronto' (processar.ts,
+        // mini-saga de republicação), que continua em STATUS_KIT_VIVO — tirar o kit do ML
+        // sozinho não solta o bloqueio. O operador precisa também excluir o produto do kit
+        // (excluir-produto, ADR-0113) para o vínculo desaparecer de vez.
+        : `Este produto tem ${r.kits.length} kit(s) vinculado(s) (${listaKits}). `
+          + 'Remova cada kit do marketplace e depois exclua o produto do kit '
+          + '(Estoque → ⋮ → Excluir) antes de remover este.';
+      return json({ erro }, 409);
+    }
     case 'preservada':
       await auditarOperacaoSuporte(admin, context, target, 'succeeded');
       return json({ ok: true, familia_id: r.familiaId, lote_id: r.loteId });

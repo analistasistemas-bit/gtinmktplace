@@ -5,6 +5,7 @@ vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: async 
 vi.mock('../../_shared/queue.ts', () => ({
   enfileirarVinculacaoCatalogo: async () => {},
   enfileirarSincronizacaoFiscal: vi.fn(async () => 'msg-1'),
+  enfileirarPublicacoes: vi.fn(async () => []),
 }));
 vi.mock('../../_shared/anuncios/espelhar.ts', () => ({ espelharAnuncioExterno: async () => {} }));
 
@@ -12,18 +13,21 @@ import { processarFamiliaML, type ProcessarDeps } from '../processar';
 import { fakeConnector } from '../../_shared/canais/fake';
 import type { FormatoRepo, FormatoPublicacaoML } from '../../_shared/ml/formato-publicacao';
 import type { ResultadoUP } from '../../_shared/user-products/publicar-familia-up';
-import { enfileirarSincronizacaoFiscal } from '../../_shared/queue';
+import { enfileirarSincronizacaoFiscal, enfileirarPublicacoes } from '../../_shared/queue';
 
 // ── Fake admin: familias/variacoes/marketplace_connections (o caminho UP é injetado, não toca DB). ──
 function fakeAdmin(over: {
   variacoes?: Record<string, unknown>[]; familia?: Record<string, unknown>; conexao?: Record<string, unknown> | null;
   modulosHabilitados?: string[];
+  // ADR-0151 D-2: kits pendentes que o claim de "encadear após CREATE da base" deveria reclamar.
+  kitsReclamados?: Array<{ id: string; lote_id: string }>;
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia ?? { ...FAMILIA_BASE };
   const variacoes = over.variacoes ?? [{ ...VAR_BASE }];
   const conexao = over.conexao === undefined ? { id: 'conn-1', org_id: 'org-1', canal: 'mercado_livre', conta_externa_id: 'seller-1', expires_at: null } : over.conexao;
   const modulosHabilitados = over.modulosHabilitados ?? [];
+  const kitsReclamados = over.kitsReclamados ?? [];
   function chain(table: string) {
     const rec = { table, op: '', payload: {} as Record<string, unknown>, filters: {} as Record<string, unknown> };
     const ler = () => {
@@ -39,10 +43,19 @@ function fakeAdmin(over: {
     const api: Record<string, unknown> = {
       select: () => { rec.op = rec.op || 'select'; return api; },
       eq: (col: string, val: unknown) => { rec.filters[col] = val; return api; },
+      // ADR-0151: claim do encadeamento pós-CREATE usa .not()/.in()/.is() além de .eq() — só
+      // registram o filtro (não alteram o resultado além do dispatch por tabela abaixo).
+      not: (col: string, op: string, val: unknown) => { rec.filters[col] = { not: op, val }; return api; },
+      in: (col: string, vals: unknown[]) => { rec.filters[col] = vals; return api; },
+      is: (col: string, val: unknown) => { rec.filters[col] = val; return api; },
       update: (payload: Record<string, unknown>) => { rec.op = 'update'; rec.payload = payload; return api; },
       single: async () => ({ data: ler(), error: null }),
       maybeSingle: async () => ({ data: ler(), error: null }),
       then: (resolve: (v: unknown) => unknown) => {
+        // Claim do encadeamento de kits: update em `familias` filtrado por `kit_base_codigo_pai`.
+        if (table === 'familias' && rec.op === 'update' && 'kit_base_codigo_pai' in rec.filters) {
+          return Promise.resolve({ data: kitsReclamados, error: null }).then(resolve);
+        }
         if (rec.op === 'update') writes.push({ table, payload: rec.payload, filters: rec.filters });
         return Promise.resolve({ data: rec.op === 'update' ? null : ler(), error: null }).then(resolve);
       },
@@ -107,6 +120,30 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(1);
     const famUpd = writes.find((w) => w.table === 'familias' && w.payload.status === 'publicado');
     expect(famUpd?.payload.ml_item_id).toBe('FAKE-V1');
+  });
+
+  it('ADR-0151 D-2: CREATE bem-sucedido reclama kits pendentes da mesma base e os enfileira', async () => {
+    vi.mocked(enfileirarPublicacoes).mockClear();
+    const { admin } = fakeAdmin({
+      kitsReclamados: [{ id: 'kit-fam-1', lote_id: 'kit-lote-1' }, { id: 'kit-fam-2', lote_id: 'kit-lote-2' }],
+    });
+    const r = await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarPublicacoes).toHaveBeenCalledWith(
+      [
+        { job: { familia_id: 'kit-fam-1', lote_id: 'kit-lote-1' }, alvo: 'publish' },
+        { job: { familia_id: 'kit-fam-2', lote_id: 'kit-lote-2' }, alvo: 'publish' },
+      ],
+      'user-1',
+    );
+  });
+
+  it('sem kits pendentes da base → NÃO chama enfileirarPublicacoes (caminho quente intocado)', async () => {
+    vi.mocked(enfileirarPublicacoes).mockClear();
+    const { admin } = fakeAdmin();
+    const r = await processarFamiliaML(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(enfileirarPublicacoes).not.toHaveBeenCalled();
   });
 
   it('fix round 2 (I6): Legacy com módulo fiscal ativo e cadastro completo → enfileira o push fiscal', async () => {

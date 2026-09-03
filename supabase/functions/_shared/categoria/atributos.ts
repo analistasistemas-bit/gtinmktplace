@@ -249,11 +249,42 @@ export function preencherNomeObrigatorio(
   return [...atributos, { id: 'NAME', value_name: valor }];
 }
 
+// Era module-private; o kit vinculado precisa forçar o formato SEM passar pela regex de
+// título (ADR-0151 D-3: nunca re-extrair por regex — mesma classe de bug do ADR-0071).
 /** Sobrescreve SALE_FORMAT para o value_id de "Kit" do schema da categoria, se exposto. */
-function forcarSaleFormatKit(schema: AtributoSchema[], atributos: AtributoML[]): AtributoML[] {
+export function forcarSaleFormatKit(schema: AtributoSchema[], atributos: AtributoML[]): AtributoML[] {
   const kit = schema.find((a) => a.id === 'SALE_FORMAT')?.valores.find((v) => normalizar(v.nome) === 'kit');
   if (!kit) return atributos;
   return [...atributos.filter((a) => a.id !== 'SALE_FORMAT'), { id: 'SALE_FORMAT', value_id: kit.id }];
+}
+
+/**
+ * ADR-0151 D-3 — grava no `atributos_ml` do kit o formato de venda e a contagem REAIS,
+ * a partir do `kit_multiplicador`, sem tocar nos demais atributos herdados da base.
+ *
+ * Falha LOUD (400) quando a categoria não expõe `SALE_FORMAT` com valor "Kit": publicar
+ * um kit de N unidades como "Unidade" venderia N unidades ao preço de uma para o ML, e o
+ * ADR-0071 mostra que o ML rejeita a combinação incoerente de qualquer forma.
+ */
+export function aplicarKitNosAtributos(
+  schema: AtributoSchema[], atributos: AtributoML[], n: number,
+): AtributoML[] {
+  const comKit = forcarSaleFormatKit(schema, atributos);
+  const mudou = comKit.find((a) => a.id === 'SALE_FORMAT');
+  // `valores`/`nome` + `normalizar`, exatamente como `forcarSaleFormatKit` faz (atributos.ts:254).
+  // `values`/`name` é o shape da API do ML CRU, que `parseAtributosSchema` já traduziu — usá-lo
+  // aqui devolveria `undefined` sempre e recusaria kit em TODA categoria.
+  const kitDisponivel = schema
+    .find((s) => s.id === 'SALE_FORMAT')?.valores.some((v) => normalizar(v.nome) === 'kit');
+  if (!kitDisponivel || !mudou) {
+    const e = new Error(
+      'Esta categoria do ML não oferece o formato de venda "Kit". Não é possível criar kit vinculado aqui.',
+    ) as Error & { status?: number };
+    e.status = 400;
+    throw e;
+  }
+  const semUpp = comKit.filter((a) => a.id !== 'UNITS_PER_PACK');
+  return [...semUpp, { id: 'UNITS_PER_PACK', value_name: String(n) }];
 }
 
 /** Monta os atributos obrigatórios da categoria a partir do nome (ADR-0009). */

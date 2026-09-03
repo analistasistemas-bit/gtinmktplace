@@ -85,6 +85,7 @@ describe('refSemSku', () => {
 });
 
 describe('registrarBaixaVenda — venda sem SKU', () => {
+  // SKU comum, nunca kit — mesma razão dos fakes abaixo.
   function adminFake(over: {
     insertErro?: { code: string; message: string };
     rpc?: { aplicado: boolean; motivo: string };
@@ -92,19 +93,32 @@ describe('registrarBaixaVenda — venda sem SKU', () => {
     const inserts: Record<string, unknown>[] = [];
     return {
       inserts,
-      from: () => ({
-        insert: (linha: Record<string, unknown>) => {
-          inserts.push(linha);
-          return Promise.resolve({ error: over.insertErro ?? null });
-        },
-        select: () => ({
-          eq: () => ({
-            is: () => ({
-              neq: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }),
+      from: (tabela: string) => {
+        if (tabela === 'variacoes') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {
+          insert: (linha: Record<string, unknown>) => {
+            inserts.push(linha);
+            return Promise.resolve({ error: over.insertErro ?? null });
+          },
+          select: () => ({
+            eq: () => ({
+              is: () => ({
+                neq: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }),
+              }),
             }),
           }),
-        }),
-      }),
+        };
+      },
       // A RPC real sempre devolve jsonb; `aplicado: false` = já baixado antes (idempotência).
       rpc: () => Promise.resolve({
         data: over.rpc ?? { aplicado: false, motivo: 'duplicata' },
@@ -168,18 +182,33 @@ describe('registrarBaixaVenda — venda sem SKU', () => {
 // devolvia `sku_nao_encontrado` e o laço seguia calado. Um SKU que o catálogo não conhece é
 // exatamente o caso em que só o operador pode agir.
 describe('registrarBaixaVenda — SKU desconhecido pelo catálogo', () => {
+  // SKU comum, nunca kit: `variacoes` devolve família sem `kit_base_codigo_pai`, então
+  // `resolverOrigemEstoque` cai no ramo neutro (codigoCanonico = o próprio código, multiplicador 1).
   function adminFake(rpc: { aplicado: boolean; motivo: string }) {
     return {
-      from: () => ({
-        insert: () => Promise.resolve({ error: null }),
-        select: () => ({
-          eq: () => ({
-            is: () => ({
-              neq: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }),
+      from: (tabela: string) => {
+        if (tabela === 'variacoes') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {
+          insert: () => Promise.resolve({ error: null }),
+          select: () => ({
+            eq: () => ({
+              is: () => ({
+                neq: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }),
+              }),
             }),
           }),
-        }),
-      }),
+        };
+      },
       rpc: () => Promise.resolve({ data: rpc, error: null }),
     };
   }
@@ -243,6 +272,7 @@ describe('classificarBaixaSemSaldo', () => {
 });
 
 describe('registrarBaixaVenda — saldo insuficiente vs desync ML', () => {
+  // SKU comum, nunca kit — mesma razão do fake acima.
   function adminFake(rpc: {
     aplicado: boolean;
     motivo: string;
@@ -251,16 +281,29 @@ describe('registrarBaixaVenda — saldo insuficiente vs desync ML', () => {
     quantidade_aplicada?: number;
   }) {
     return {
-      from: () => ({
-        insert: () => Promise.resolve({ error: null }),
-        select: () => ({
-          eq: () => ({
-            is: () => ({
-              neq: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }),
+      from: (tabela: string) => {
+        if (tabela === 'variacoes') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  order: () => ({ limit: () => ({ maybeSingle: () => Promise.resolve({ data: null, error: null }) }) }),
+                }),
+              }),
+            }),
+          };
+        }
+        return {
+          insert: () => Promise.resolve({ error: null }),
+          select: () => ({
+            eq: () => ({
+              is: () => ({
+                neq: () => ({ order: () => ({ limit: () => Promise.resolve({ data: [], error: null }) }) }),
+              }),
             }),
           }),
-        }),
-      }),
+        };
+      },
       rpc: () => Promise.resolve({ data: rpc, error: null }),
     };
   }
@@ -308,7 +351,9 @@ describe('registrarBaixaVenda — saldo insuficiente vs desync ML', () => {
       quantidade_aplicada: 1,
     });
     const r = await registrarBaixaVenda(admin as never, pedido);
-    expect(r.vendaAcimaSaldo).toEqual([{ codigo: '00220809', pedido: 3, anterior: 1, aplicado: 1 }]);
+    expect(r.vendaAcimaSaldo).toEqual([
+      { codigo: '00220809', pedido: 3, anterior: 1, aplicado: 1, kitCodigoPai: null, multiplicador: 1 },
+    ]);
     expect(r.desyncMl).toEqual([]);
   });
 
@@ -325,6 +370,8 @@ describe('registrarBaixaVenda — saldo insuficiente vs desync ML', () => {
       itens: [{ codigo: '00220809', quantity: 1, ml_item_id: 'MLB7010890734', titulo: 'Linha Azul' }],
     });
     expect(r.vendaAcimaSaldo).toEqual([]);
-    expect(r.desyncMl).toEqual([{ codigo: '00220809', pedido: 1 }]);
+    expect(r.desyncMl).toEqual([
+      { codigo: '00220809', pedido: 1, kitCodigoPai: null, multiplicador: 1 },
+    ]);
   });
 });

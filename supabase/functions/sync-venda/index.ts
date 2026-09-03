@@ -17,6 +17,7 @@ import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.
 import { carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemNovaVenda, montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
+import { linhaVendaAcimaSaldo, linhaDesyncMl } from '../_shared/notificacoes/estoque-kit.ts';
 import { enviarMensagemPedido } from '../_shared/ml/mensagem.ts';
 import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
@@ -161,9 +162,7 @@ Deno.serve(async (req) => {
       // Venda pediu mais do que havia, mas ainda existia saldo (>0). Alerta por pedido.
       if (vendaAcimaSaldo.length > 0
         && await reservarNotificacao(admin, orgId, userId, 'estoque_sem_saldo', String(pedido.id))) {
-        const linhas = vendaAcimaSaldo
-          .map((s) => `• ${s.codigo} — pedido de ${s.pedido} un., havia ${s.anterior}, baixou ${s.aplicado}`)
-          .join('\n');
+        const linhas = vendaAcimaSaldo.map(linhaVendaAcimaSaldo).join('\n');
         await notificarCategoria(
           admin, orgId, 'vendas',
           `⚠️ Venda acima do saldo (pedido ${pedido.id})\n\n${linhas}\n\n`
@@ -173,14 +172,14 @@ Deno.serve(async (req) => {
       // ML vendeu com PubliAI já em zero: desync entre marketplace e saldo local. Dedupe por SKU/dia.
       if (desyncMl.length > 0) {
         const dataHoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-        const desyncParaNotificar: Array<{ codigo: string; pedido: number }> = [];
+        const desyncParaNotificar: typeof desyncMl = [];
         for (const item of desyncMl) {
           if (await reservarNotificacao(admin, orgId, userId, 'estoque_desync_ml', `${item.codigo}:${dataHoje}`)) {
             desyncParaNotificar.push(item);
           }
         }
         if (desyncParaNotificar.length > 0) {
-          const linhas = desyncParaNotificar.map((s) => `• ${s.codigo} — pedido de ${s.pedido} un.`).join('\n');
+          const linhas = desyncParaNotificar.map(linhaDesyncMl).join('\n');
           await notificarCategoria(
             admin, orgId, 'vendas',
             `⚠️ ML vendeu com estoque zerado no PubliAI (pedido ${pedido.id})\n\n${linhas}\n\n`

@@ -21,6 +21,7 @@ const useAnuncioCanonicoMock = vi.fn();
 const useFamiliaMock = vi.fn();
 const fetchMovimentosEstoqueMock = vi.fn();
 const useModulosHabilitadosMock = vi.fn();
+const useKitsDoProdutoMock = vi.fn();
 
 vi.mock('@/hooks/usePublicados', () => ({
   usePublicados: () => usePublicadosMock(),
@@ -81,6 +82,11 @@ vi.mock('@/hooks/useResumoFinanceiro', () => ({
 // Expandir item carrega a família via react-query; sem QueryClient no teste, mockamos o hook.
 vi.mock('@/hooks/useFamilia', () => ({
   useFamilia: () => useFamiliaMock(),
+}));
+
+// ADR-0151: kits vinculados existentes (botão "Criar kit" + lista sob o card do produto-base).
+vi.mock('@/hooks/useKitsDoProduto', () => ({
+  useKitsDoProduto: () => useKitsDoProdutoMock(),
 }));
 
 // MovimentosEstoque (dentro do painel expandido) usa useQuery de verdade — só a busca é mockada.
@@ -182,6 +188,7 @@ function mockHooksPadrao() {
   fetchMovimentosEstoqueMock.mockResolvedValue({ itens: [], total: 0 });
   // Default: org sem o módulo fiscal — a coluna "Fiscal" não existe (ver describe dedicado abaixo).
   useModulosHabilitadosMock.mockReturnValue({ data: [] });
+  useKitsDoProdutoMock.mockReturnValue({ data: [] });
 }
 
 describe('Publicados', () => {
@@ -428,6 +435,96 @@ describe('Publicados', () => {
     );
 
     expect(screen.queryByRole('button', { name: 'Tentar catálogo de novo' })).not.toBeInTheDocument();
+  });
+
+  // ADR-0151 D-2/D-10/D-12: gatilho "Criar kit" — desabilitado + tooltip, nunca escondido.
+  describe('botão Criar kit (ADR-0151)', () => {
+    it('habilitado: admin, módulo Estoque, produto sem variação de cor e ainda não é kit', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 1, kitBaseCodigoPai: null })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.getByRole('button', { name: 'Criar kit' })).toBeEnabled();
+    });
+
+    it('desabilitado sem o módulo Estoque', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: [] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 1, kitBaseCodigoPai: null })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      const btn = screen.getByRole('button', { name: 'Criar kit' });
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('title', 'Kit vinculado exige o módulo Estoque habilitado.');
+    });
+
+    it('desabilitado para produto com mais de uma variação (cor)', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2, kitBaseCodigoPai: null })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      const btn = screen.getByRole('button', { name: 'Criar kit' });
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('title', 'Kit vinculado só existe para produto sem variação de cor.');
+    });
+
+    // A edge (`criar-kit-vinculado/processar.ts`) conta TODAS as linhas de `variacoes` da
+    // família, sem filtrar `excluida_da_publicacao` — o gating tem que usar o mesmo sinal
+    // (`qtdVariacoesFamilia`), não `qtdVariacoes` (só as publicadas no ML). Regressão: uma
+    // variação excluída da publicação não pode "esconder" a multi-variação do gating.
+    it('desabilitado quando há variação excluída da publicação (ML mostra 1, família tem 2)', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoes: 1, qtdVariacoesFamilia: 2, kitBaseCodigoPai: null })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      const btn = screen.getByRole('button', { name: 'Criar kit' });
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('title', 'Kit vinculado só existe para produto sem variação de cor.');
+    });
+
+    it('desabilitado quando o próprio anúncio já é um kit vinculado', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 1, kitBaseCodigoPai: '01829149' })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      const btn = screen.getByRole('button', { name: 'Criar kit' });
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('title', 'Este anúncio já é um kit vinculado.');
+    });
   });
 
   // ADR-0135 D-10: badge de prontidão fiscal — só existe pra org com o módulo.

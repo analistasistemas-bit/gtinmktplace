@@ -9,6 +9,7 @@ import { buscarItemUP, type FetchLike } from '../_shared/ml/buscar-item.ts';
 import {
   removerComposicaoUP, type PortasRemocao, type FilhoComp, type ResultadoRemocaoUP,
 } from '../_shared/user-products/remover-composicao.ts';
+import { STATUS_KIT_VIVO } from '../_shared/estoque/kit.ts';
 
 export interface RemoverPublicadoInput {
   familiaId: string;
@@ -36,6 +37,10 @@ export type ResultadoRemocao =
   /** ADR-0088: 1+ filhos não confirmaram pausado no ML nesta tentativa. Nada foi deletado
    *  (raiz e filhas preservadas) — o operador pode clicar "Remover" de novo (idempotente). */
   | { tipo: 'remocao_pendente'; pendentes: string[] }
+  /** ADR-0151 D-14: base com kit vinculado ativo não é removível — a guard de banco
+   *  (trigger `familias_bloquear_remocao_com_kit`) é a última linha; esta é a mensagem
+   *  clara ANTES do DELETE. */
+  | { tipo: 'kit_vinculado_ativo'; kits: { codigoPai: string; multiplicador: number }[] }
   | { tipo: 'preservada'; familiaId: string; loteId: string }
   | { tipo: 'ok'; familiasRemovidas: number; lotesRemovidos: number };
 
@@ -44,7 +49,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   const { familiaId, orgId, canal } = input;
 
   const { data: alvo, error: alvoErr } = await admin.from('familias')
-    .select('id, lote_id, codigo_pai, ml_item_id, org_id')
+    .select('id, lote_id, codigo_pai, ml_item_id, org_id, kit_multiplicador')
     .eq('id', familiaId).eq('org_id', orgId).maybeSingle();
   if (alvoErr) throw new Error(`remover-publicado: consultar família falhou: ${alvoErr.message}`);
   if (!alvo) return { tipo: 'nao_encontrada' };
@@ -56,6 +61,39 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     .select('id').eq('codigo_pai', alvo.codigo_pai).eq('org_id', alvo.org_id).eq('status', 'publicando').limit(1);
   if (emVooErr) throw new Error(`remover-publicado: consultar em_voo falhou: ${emVooErr.message}`);
   if (emVoo && emVoo.length > 0) return { tipo: 'em_voo' };
+
+  // ADR-0151 D-14: base com kit vinculado ativo não é removível — o kit venderia contra
+  // uma base que não existe mais e a venda não teria onde debitar. Roda ANTES de qualquer
+  // mutação (mini-saga UP incluída): a guard de banco é a última linha, esta é a primeira.
+  //
+  // Consulta inline (não `listarKitsVivos` da Task 1) DE PROPÓSITO: aquele helper é fail-open
+  // (loga e devolve `[]` em erro de query) porque o chamador dele no push é a venda, que é
+  // sagrada. Aqui é o oposto — o que vem depois é irreversível (a mini-saga pausa filhos no
+  // ML e depois `storage.remove()` apaga fotos), e toda query irmã desta função já é
+  // fail-closed (`alvoErr`, `emVooErr`, `externosErr`, `filhosErr`, `familiasErr`...). Um erro
+  // transiente aqui virando "sem kit" removeria a base por baixo de um kit vivo — degradar
+  // errado do lado mais caro possível.
+  if (alvo.kit_multiplicador == null) {
+    const { data: kitsRaw, error: kitsErr } = await admin.from('familias')
+      .select('codigo_pai, kit_multiplicador')
+      .eq('org_id', alvo.org_id).eq('kit_base_codigo_pai', alvo.codigo_pai)
+      .not('kit_multiplicador', 'is', null)
+      .in('status', STATUS_KIT_VIVO as unknown as string[]);
+    if (kitsErr) throw new Error(`remover-publicado: consultar kits vinculados falhou: ${kitsErr.message}`);
+    // Um `codigo_pai` por kit (ciclos de UPDATE deixam várias linhas do mesmo kit) — mesma
+    // regra de canonicidade do resto do sistema.
+    const porPai = new Map<string, number>();
+    for (const k of kitsRaw ?? []) {
+      const pai = k.codigo_pai as string;
+      if (!porPai.has(pai)) porPai.set(pai, Number(k.kit_multiplicador));
+    }
+    if (porPai.size > 0) {
+      return {
+        tipo: 'kit_vinculado_ativo',
+        kits: [...porPai].map(([codigoPai, multiplicador]) => ({ codigoPai, multiplicador })),
+      };
+    }
+  }
 
   // Mini-saga de remoção User Products (ADR-0088, "Remoção de família UP — pausar todos os
   // filhos no ML, depois deletar local em cascata"): comportamento NOVO, escopado só a UP — o

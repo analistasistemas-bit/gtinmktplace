@@ -29,6 +29,14 @@ export function urlFotoMl(pictureId: string | null | undefined): string | null {
   return pictureId ? `https://http2.mlstatic.com/D_${pictureId}-V.jpg` : null;
 }
 
+/** Kit vinculado ativo sob este produto-base (ADR-0151 D-13). Saldo virtual calculado ao
+ *  vivo pela RPC — nunca espelhado numa coluna (ADR-0129). */
+export interface KitVinculado {
+  codigoPai: string;
+  multiplicador: number;
+  disponivel: number;
+}
+
 export interface VariacaoComSaldo {
   codigo: string; nome: string | null; cor: string | null; gtin: string | null;
   estoque: number; custo: number | null; preco: number;
@@ -39,6 +47,8 @@ export interface VariacaoComSaldo {
   /** Anúncio do canal que vende ESTE SKU (User Products → partição do split → família).
    *  É a chave para casar a linha com o preço vivo de `status-publicados`. null = sem anúncio. */
   mlItemId: string | null;
+  /** Kits vinculados a este produto-base. Vazio quando não há kit ativo. */
+  kits: KitVinculado[];
 }
 
 /** Linha slim da lista Estoque — sem array de variações (carregadas sob demanda ao expandir). */
@@ -124,6 +134,7 @@ interface LinhaVariacaoRpc {
   imagem_path: string | null;
   ml_picture_id: string | null;
   ml_item_id: string | null;
+  kits: Array<{ codigo_pai: string; multiplicador: number; disponivel: number }> | null;
 }
 
 interface ProdutoResumoRpc {
@@ -175,6 +186,9 @@ function mapVariacaoRpc(l: LinhaVariacaoRpc): VariacaoComSaldo {
     pesoGramas: l.peso_gramas, alturaCm: l.altura_cm, larguraCm: l.largura_cm,
     comprimentoCm: l.comprimento_cm, imagemPath: l.imagem_path, mlPictureId: l.ml_picture_id,
     mlItemId: l.ml_item_id ?? null,
+    kits: (l.kits ?? []).map((k) => ({
+      codigoPai: k.codigo_pai, multiplicador: k.multiplicador, disponivel: k.disponivel,
+    })),
   };
 }
 
@@ -280,6 +294,8 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
       // mostrar o preço do mesmo anúncio — o bug que a RPC evita. Sem ponteiro, a linha cai no
       // preço local, que é sempre verdadeiro sobre si mesmo.
       imagemPath: l.imagem_path, mlPictureId: l.ml_picture_id, mlItemId: null,
+      // ponytail: caminho legado (@deprecated), sem a RPC nova — nunca calcula kit.
+      kits: [],
     });
     p.saldoTotal += l.estoque;
     if (f.variacao_principal_codigo) principalPorPai.set(pai, f.variacao_principal_codigo);

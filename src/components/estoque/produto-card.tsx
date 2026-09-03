@@ -192,6 +192,10 @@ export function ProdutoCard({
   const precoMl = (v: VariacaoComSaldo) =>
     (v.mlItemId ? precoMlPorItem.get(v.mlItemId) ?? null : null);
 
+  // ADR-0151 D-13/D-10: kit vinculado só existe pra produto de UMA variação, então a primeira
+  // linha já carrega o array completo — não precisa unir entre variações.
+  const kits = variacoes?.[0]?.kits ?? [];
+
   const alvo: AlvoEntrada = produto.qtdSkus === 1 && produto.skuUnico
     ? { sku: produto.skuUnico, codigoPai: produto.codigoPai }
     : { codigoPai: produto.codigoPai };
@@ -381,6 +385,23 @@ export function ProdutoCard({
                   );
                 })()}
               </div>
+              {kits.length > 0 && (
+                <div className="mt-3 rounded-lg border bg-muted/30 p-3">
+                  <div className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                    Kits vinculados
+                  </div>
+                  <ul className="mt-1.5 space-y-1 text-sm">
+                    {kits.map((k) => (
+                      <li key={k.codigoPai}>
+                        🧩 Kit de {k.multiplicador} — {k.disponivel} {k.disponivel === 1 ? 'disponível' : 'disponíveis'}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 text-xs text-muted-foreground">
+                    Calculado a partir do saldo deste produto. Os kits não têm estoque próprio.
+                  </p>
+                </div>
+              )}
             </TabsContent>
             <TabsContent value="movimentos">
               <MovimentosEstoque

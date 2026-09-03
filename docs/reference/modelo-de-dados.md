@@ -261,6 +261,13 @@ Grupos de colunas:
 - **Auditoria de edição:** `titulo_editado_pelo_operador`, `descricao_editada_pelo_operador`,
   `editado_em`, `observacao_operador`.
 - **Processamento:** `erro_mensagem`, `qstash_message_id`, `variacao_principal_codigo` (ADR-0044).
+- **Kit vinculado (ADR-0151):** `kit_base_codigo_pai text` (nullable) + `kit_multiplicador smallint`
+  (nullable, check 2–6), com `check` de par completo (as duas nulas ou as duas preenchidas) e
+  índice parcial `familias_kit_base_idx (org_id, kit_base_codigo_pai) where kit_multiplicador is
+  not null`. A chave de vínculo é `(org_id, kit_base_codigo_pai)`, **não** `familias.id` — a base
+  ganha linha nova a cada lote de UPDATE e só `codigo_pai` é estável. `kit_multiplicador is not
+  null` é o predicado "esta família é um kit vinculado" em todo o código.
+  *Migration `20260902233018_kit_vinculado_schema.sql`.*
 
 Índices por `(user_id, codigo_pai)`, `(user_id, ml_item_id)`, `(lote_id, status)`, `(org_id)`.
 RLS por organização (`org_id = current_org_id()`, ADR-0027).
@@ -424,6 +431,13 @@ não avisado — a dedup do aviso mora na linha da transição, não no saldo at
 idempotente e o QStash reentrega),
 `criado_por` (FK auth.users), `criado_em`.
 
+**`origem_kit_codigo_pai`** / **`origem_kit_multiplicador`** (ADR-0151 D-6: auditoria de que o
+débito veio da venda de um kit, não de venda direta — colunas nuláveis, **não** um motivo novo,
+porque motivo novo quebraria `estornar_estoque`, que só repõe `where motivo='venda'`),
+Não há coluna de "anúncio de origem": a Decisão 7 foi revisada para **não** excluir anúncio nenhum
+quando há kit vinculado (o push é absoluto e recalculado, então reempurrar tudo dá o mesmo
+resultado por 1-2 chamadas de API a mais).
+
 Índices:
 - **`estoque_movimentos_ref_uniq`** — unique **parcial** `(org_id, referencia_externa) where
   referencia_externa is not null`: idempotência (referência nula não bloqueia nada, então a baixa
@@ -441,14 +455,15 @@ RLS: policy `"estoque_movimentos: select org"` (`for select to authenticated usi
 são checagens independentes; mesmo padrão de `notificacoes`, ADR-0085).
 
 **RPCs de leitura da tela Estoque** (`security definer`, `stable`, escopo `current_org_id()`,
-migration `20260814181410_estoque_perf_rpc.sql`). Concedidas a `authenticated` — substituem o
-select paginado de todas as variações + agrupamento no browser:
+migration `20260814181410_estoque_perf_rpc.sql`; última redefinição `20260903030505_estoque_rpc_exclui_kit.sql`,
+ADR-0151 D-13). Concedidas a `authenticated` — substituem o select paginado de todas as
+variações + agrupamento no browser:
 
 | Função | Papel |
 |---|---|
-| `produtos_estoque_resumo() returns json` | KPIs (`produtos`, `skus`, `unidades`, `skus_sem_estoque`, `valor_em_estoque`, `skus_sem_custo`) + lista slim por `codigo_pai` canônico (`DISTINCT ON … ORDER BY criado_em DESC`, mesma regra de `agruparProdutosComSaldo`). Inclui arrays `gtins`, `codigos`, `cores` para busca client-side. |
-| `variacoes_estoque_produto(p_codigo_pai text) returns setof json` | Variações da família canônica — carregadas ao expandir o card. Devolve também `ml_item_id`, o anúncio que vende AQUELE SKU (precedência: `anuncios_externos_itens` por SKU → partição de `anuncios_externos` que contém o SKU → `familias.ml_item_id`), usado para casar a linha com o preço vivo de `status-publicados`. |
-| `skus_estoque_org() returns setof json` | Lista flat `(codigo, codigo_pai, nome, cor, estoque)` para o picker do DialogEntrada. |
+| `produtos_estoque_resumo() returns json` | KPIs (`produtos`, `skus`, `unidades`, `skus_sem_estoque`, `valor_em_estoque`, `skus_sem_custo`) + lista slim por `codigo_pai` canônico (`DISTINCT ON … ORDER BY criado_em DESC`, mesma regra de `agruparProdutosComSaldo`). Inclui arrays `gtins`, `codigos`, `cores` para busca client-side. Família de kit vinculado (`kit_multiplicador is not null`) nunca é canônica aqui — não conta em nenhum KPI nem aparece na lista slim (D-13). |
+| `variacoes_estoque_produto(p_codigo_pai text) returns setof json` | Variações da família canônica — carregadas ao expandir o card. Devolve também `ml_item_id`, o anúncio que vende AQUELE SKU (precedência: `anuncios_externos_itens` por SKU → partição de `anuncios_externos` que contém o SKU → `familias.ml_item_id`), usado para casar a linha com o preço vivo de `status-publicados`. `p_codigo_pai` de um kit nunca resolve (canônica exclui `kit_multiplicador is not null`) — o kit não é uma linha própria. Cada linha ganha `kits`: array `{codigo_pai, multiplicador, disponivel}` dos kits vinculados ATIVOS (`status in ('pronto','publicando','publicado')`) desta base, com `disponivel = floor(estoque_da_base / multiplicador)` calculado ao vivo — nunca espelhado numa coluna (rejeitado, risco do ADR-0129). |
+| `skus_estoque_org() returns setof json` | Lista flat `(codigo, codigo_pai, nome, cor, estoque)` para o picker do DialogEntrada. Kit vinculado excluído (D-13) — a guard de escrita (D-9) já recusaria a entrada; esconder no picker só evita oferecer o que sempre falha (ADR-0047: a guard de banco continua a linha de defesa real). |
 
 **Funções `security definer` de escrita** (`search_path=''`), revogadas de `public`/`anon`/`authenticated` e
 concedidas só a `service_role` (as RPCs nunca são chamadas pelo browser — sempre via edge com
@@ -478,6 +493,15 @@ escrever saldo direto; ver a pendência em `docs/TASKS.md`. **Uma RPC de estoque
 `revoke update (estoque)` porque privilégios de coluna são **cumulativos** em Postgres: como
 `authenticated` já tem `UPDATE` na tabela inteira, revogar só a coluna seria inócuo. Toda mudança
 de saldo passa por entrada, baixa, estorno ou **ajuste** (ADR-0110) — nunca por `UPDATE` do app.
+
+**Kit vinculado (ADR-0151, migration `20260903002527_kit_vinculado_guards.sql`):**
+`registrar_entrada` e `ajustar_estoque` recusam LOUD (`23514`) SKU que resolve para família com
+`kit_multiplicador is not null` — o kit não tem saldo próprio (D-9). O trigger
+`variacoes_bloquear_extra_com_kit` recusa INSERT de variação adicional numa família cuja base tem
+kit vinculado ativo (D-10), e `familias_bloquear_remocao_com_kit` recusa apagar a última linha de
+`familias` de uma base com kit vivo (D-14). As RPCs de leitura (`produtos_estoque_resumo`,
+`variacoes_estoque_produto`, `skus_estoque_org`) excluem kits e devolvem, no produto-base, o array
+`kits` com `floor(estoque_base/N)` calculado ao vivo (D-13).
 
 ---
 

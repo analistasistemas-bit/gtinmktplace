@@ -30,11 +30,15 @@ function fakeAdmin(db: DB) {
     // deno-lint-ignore no-explicit-any
     const filtros: Array<(r: any) => boolean> = [];
     let valoresUpdate: Record<string, unknown> | null = null;
+    // `.not()` só existe na query de `listarKitsVivos` (kit.ts) — nenhum teste aqui define
+    // família de kit, então essa busca sempre devolve lista vazia (nenhum kit vinculado).
+    let buscandoKits = false;
 
     function movimentosFiltrados(): MovimentoFake[] {
       return (db.movimentos ?? []).filter((r) => filtros.every((f) => f(r)));
     }
     function ler(): { data: unknown; error: null } {
+      if (tabela === 'familias' && buscandoKits) return { data: [], error: null };
       if (tabela === 'familias') return { data: db.familia, error: null };
       if (tabela === 'variacoes') return { data: db.variacoes, error: null };
       if (tabela === 'anuncios_externos') return { data: db.anuncios, error: null };
@@ -58,6 +62,7 @@ function fakeAdmin(db: DB) {
       is: (c: string, v: unknown) => { filtros.push((r: any) => (r[c] ?? null) === v); return api; },
       // deno-lint-ignore no-explicit-any
       in: (c: string, vs: unknown[]) => { filtros.push((r: any) => vs.includes(r[c])); return api; },
+      not: () => { buscandoKits = true; return api; },
       order: () => api,
       limit: () => api,
       maybeSingle: async () => ler(),
