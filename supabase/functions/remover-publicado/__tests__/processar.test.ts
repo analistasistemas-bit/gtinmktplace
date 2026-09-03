@@ -311,6 +311,21 @@ describe('removerPublicado — fail-closed em erros de query/delete (revisão Co
       .rejects.toThrow(/consultar em_voo falhou/);
   });
 
+  // ADR-0151 D-14: ao contrário de `listarKitsVivos` (fail-open, usado pelo push), esta
+  // consulta é inline e fail-closed — o que vem depois é irreversível (pausa no ML, fotos
+  // apagadas do Storage).
+  it('erro ao consultar kits vinculados → lança (nunca vira "sem kit" em silêncio)', async () => {
+    const { admin } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', codigo_pai: '000', ml_item_id: 'MLB1', org_id: ORG, kit_multiplicador: null },
+        [],
+        ERRO('timeout'),
+      ],
+    });
+    await expect(removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
+      .rejects.toThrow(/consultar kits vinculados falhou/);
+  });
+
   it('erro ao consultar anuncios_externos → lança (nunca vira "sem filhos UP" em silêncio)', async () => {
     const { admin } = fakeAdmin({
       familias: [{ id: 'fam-1', codigo_pai: '000', ml_item_id: 'MLB1', org_id: ORG }, []],
@@ -520,7 +535,7 @@ describe('removerPublicado — guard D-14: base com kit vinculado ativo (ADR-015
       familias: [
         { id: 'fam-1', codigo_pai: '00000010', ml_item_id: 'MLB1', org_id: ORG, kit_multiplicador: null }, // alvo
         [], // emVoo
-        [{ id: 'f-k3', codigo_pai: '00000020', kit_multiplicador: 3, criado_em: '2026-01-01' }], // listarKitsVivos
+        [{ codigo_pai: '00000020', kit_multiplicador: 3 }], // consulta de kits vinculados
       ],
     });
     const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
@@ -529,15 +544,15 @@ describe('removerPublicado — guard D-14: base com kit vinculado ativo (ADR-015
   });
 
   // A DB só devolve kits em STATUS_KIT_VIVO ('pronto'/'publicando'/'publicado') — um kit em
-  // 'erro' nunca aparece na resposta real de `listarKitsVivos` (filtro `.in('status', ...)`,
+  // 'erro' nunca aparece na resposta real desta consulta (filtro `.in('status', ...)`,
   // verificado contra Postgres real no Step 2 da task). Aqui a fila vazia simula exatamente
   // essa resposta e prova que o código NÃO bloqueia quando não há kit vivo.
-  it('kit em erro NÃO bloqueia — a base segue removível (listarKitsVivos já filtra fora)', async () => {
+  it('kit em erro NÃO bloqueia — a base segue removível (a consulta já filtra fora)', async () => {
     const { admin, deletes } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '00000010', ml_item_id: 'MLB1', org_id: ORG, kit_multiplicador: null },
         [], // emVoo
-        [], // listarKitsVivos — vazio, como a DB devolveria com o único kit em 'erro'
+        [], // consulta de kits vinculados — vazia, como a DB devolveria com o único kit em 'erro'
       ],
       anuncios_externos: [[]],
       lotes: [],
