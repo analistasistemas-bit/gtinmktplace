@@ -25,15 +25,14 @@ GTIN ali, e que o GTIN da unidade + `UNITS_PER_PACK=2` passa — que é como o M
   Suíte completa 4582 ✓, lint 0 erros, `tsc -b` ✓.
 - [x] Deploy das 37 edges afetadas pelo `_shared` (o caminho de publicação do kit,
   `publish-familia-ml`, está no ar com o fix do GTIN).
-- [ ] **Redeploy de `process-familia` e `vincular-catalogo`** com o 2º commit (ficha sem
-  `SALE_FORMAT` não reprova pack equivalente). Bloqueado por quebra do upstream em 2026-09-03:
-  `jsr:@supabase/supabase-js@2` resolve para 2.115.0, que exige o npm `@supabase/storage-js@2.115.0`
-  — publicado no JSR mas ainda ausente no npm (último lá: 2.114.0). Deploy falha em
-  `Failed to bundle the function`. Até o upstream normalizar, essas duas rodam a trava do 1º commit
-  (reprova a mais em ficha sem `SALE_FORMAT`) — falha segura: deixa de vincular, nunca vincula
-  errado. Retentar o deploy; se demorar, pinar a versão do `supabase-js` nos imports.
-- [ ] Reenvio do kit que estava em `erro` (família `39cfe494`), pelo botão da Revisão, e conferência
-  de `status`/`ml_item_id` + `catalog_status` (tem que reprovar a ficha da unidade, não vincular).
+- [x] **Redeploy de `process-familia` e `vincular-catalogo`** com o 2º commit (ficha sem
+  `SALE_FORMAT` não reprova pack equivalente). Ficou ~15 min bloqueado por quebra do upstream:
+  `jsr:@supabase/supabase-js@2` passou a resolver 2.115.0, que exige o npm
+  `@supabase/storage-js@2.115.0` ainda não publicado (`Failed to bundle the function`). Normalizou
+  sozinho — se acontecer de novo, é esperar ou pinar a versão do `supabase-js` nos imports.
+- [ ] Republicar o kit (Diego recria em Publicados — ver bloco abaixo) e conferir
+  `status`/`ml_item_id` + `catalog_status`: o esperado é publicar e **reprovar** a ficha da
+  unidade, nunca vincular.
 
 ### Kit não pode ser reprocessado pela IA (ADR-0151) — mesmo dia, achado no reenvio
 
@@ -49,8 +48,9 @@ ADR-0151 já dizia que kit não passa por `process-familia` — faltava a trava.
   tocar em título/descrição) — defesa em profundidade para qualquer outra rota de enfileiramento.
 - [x] **Card da Revisão**: para família kit, "Reenviar" republica (`publicar-familias`) em vez de
   reprocessar — o operador continua com saída, agora a correta.
-- [ ] Recompor título/descrição do kit `39cfe494`, que já foram sobrescritos (o `nome_pai` ainda
-  guarda o título certo).
+- [x] Kit `39cfe494` (título/descrição já sobrescritos) removido junto com seu lote — nunca teve
+  `ml_item_id` nem anúncio externo, então nada foi tocado no ML. Recriar pelo botão "Criar kits"
+  em Publicados devolve a estrutura correta pelo caminho oficial, agora com o fix do GTIN no ar.
 
 ## UX de título e descrição do kit (ADR-0151) — branch `feat/kit-titulo-descricao-ux` — 2026-09-03
 
