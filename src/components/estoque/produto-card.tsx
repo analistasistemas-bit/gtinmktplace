@@ -2,8 +2,8 @@
 // o painel expandido é filho da linha e o min-content de tabela aninhada estourava a largura da
 // página. O alinhamento de colunas vem de CSS Grid com tracks FIXOS — grid não dimensiona track
 // por conteúdo do jeito que a tabela dimensiona, então GTIN/nome longo não empurra nada.
-import { useId, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronRight, ClipboardCheck, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -19,6 +19,10 @@ import { MovimentosEstoque } from '@/components/movimentos-estoque';
 import {
   VariacaoEstoqueLinha, CabecalhoVariacoes, PillSaldo, type StatusPublicacaoLinha,
 } from '@/components/estoque/variacao-estoque-linha';
+import {
+  skusConfirmadosNoMl, promoverConfirmados, esperaEsgotada, temSkuAguardando,
+  type MarcadorSyncMl,
+} from '@/lib/estoque-sync-ml';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { cn } from '@/lib/utils';
@@ -33,11 +37,12 @@ export const VARIACOES_VIRTUAL_THRESHOLD = 50;
 
 export const VARIACAO_ROW_ESTIMATE_PX = 56;
 
-function ListaVariacoesEstoque({ variacoes, nomeProduto, precoMl, statusPublicacao }: {
+function ListaVariacoesEstoque({ variacoes, nomeProduto, precoMl, statusPublicacao, syncMl }: {
   variacoes: VariacaoComSaldo[];
   nomeProduto: string;
   precoMl: (v: VariacaoComSaldo) => number | null;
   statusPublicacao: (codigo: string) => StatusPublicacaoLinha;
+  syncMl: (codigo: string) => 'aguardando' | 'ok' | undefined;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -76,6 +81,7 @@ function ListaVariacoesEstoque({ variacoes, nomeProduto, precoMl, statusPublicac
               variacao={variacoes[virtualRow.index]!}
               precoMl={precoMl(variacoes[virtualRow.index]!)}
               statusPublicacao={statusPublicacao(variacoes[virtualRow.index]!.codigo)}
+              syncMl={syncMl(variacoes[virtualRow.index]!.codigo)}
             />
           </div>
         ))}
@@ -163,6 +169,7 @@ export function ProdutoCard({
    *  é um campo do resumo). Fix round 1 (I1): deixou de vir embutido no `produto`. */
   fiscalPendente?: boolean;
 }) {
+  const qc = useQueryClient();
   const [aberto, setAberto] = useState(false);
   const painelId = useId();
   const { data: capaUrl } = useImageUrl(produto.capaStoragePath);
@@ -193,9 +200,23 @@ export function ProdutoCard({
     return recemAdicionadasSet.has(codigo) ? (statusUpdate ?? 'publicado') : undefined;
   };
 
+  // Badge "atualizando no ML…" (pedido do Diego 03/09/2026): SKUs da última entrada de estoque
+  // deste produto, marcados pelo DialogEntrada. Marcador de sessão, como o de cores novas.
+  const { data: marcadorSync } = useQuery<MarcadorSyncMl | undefined>({
+    queryKey: QK.skusAguardandoMl(produto.codigoPai),
+    queryFn: (): MarcadorSyncMl | undefined => undefined,
+    staleTime: Infinity,
+  });
+  const aguardandoMl = temSkuAguardando(marcadorSync);
+
   // Preço vivo do canal, só com o card aberto (a chamada varre todos os anúncios da org). A
   // lista NUNCA espera por ele: enquanto não chega, cada linha mostra o preço local.
-  const { data: statusPublicados } = useStatusPublicados({ enabled: aberto });
+  // Com push em voo o status vira poll: é a leitura do canal que confirma a badge — "enfileirou"
+  // não prova nada (`sincronizar-estoque` devolve 200 até em falha definitiva).
+  const { data: statusPublicados } = useStatusPublicados({
+    enabled: aberto || aguardandoMl,
+    refetchInterval: aguardandoMl ? 15_000 : false,
+  });
   const precoMlPorItem = useMemo(() => {
     const mapa = new Map<string, number>();
     for (const i of statusPublicados?.itens ?? []) {
@@ -205,6 +226,44 @@ export function ProdutoCard({
   }, [statusPublicados]);
   const precoMl = (v: VariacaoComSaldo) =>
     (v.mlItemId ? precoMlPorItem.get(v.mlItemId) ?? null : null);
+
+  // Confirmação da badge: o saldo do app bateu com o que o canal devolve. Item sem estoque lido
+  // (canal sem credencial, leitura falha) NUNCA confirma — dizer "✓ no ML" sem ter lido o ML
+  // seria pior que não dizer nada. Passado o teto de espera o marcador é descartado inteiro:
+  // em anúncio Legacy o ML devolve a soma do item, e uma divergência antiga em outra cor faria
+  // a conta nunca fechar, deixando a badge acesa mentindo que ainda está atualizando.
+  const estoquePorItem = useMemo(() => {
+    const mapa = new Map<string, number | null>();
+    for (const i of statusPublicados?.itens ?? []) mapa.set(i.ml_item_id, i.estoque);
+    return mapa;
+  }, [statusPublicados]);
+
+  useEffect(() => {
+    if (!marcadorSync) return;
+    if (esperaEsgotada(marcadorSync)) {
+      qc.setQueryData(QK.skusAguardandoMl(produto.codigoPai), undefined);
+      return;
+    }
+    const aguardando = Object.entries(marcadorSync.porSku)
+      .filter(([, e]) => e === 'aguardando').map(([sku]) => sku);
+    if (aguardando.length === 0) return;
+    const confirmados = skusConfirmadosNoMl(
+      aguardando,
+      (variacoes ?? []).map((v) => ({ codigo: v.codigo, estoque: v.estoque, mlItemId: v.mlItemId })),
+      estoquePorItem,
+    );
+    const proximo = promoverConfirmados(marcadorSync, confirmados);
+    if (proximo !== marcadorSync) qc.setQueryData(QK.skusAguardandoMl(produto.codigoPai), proximo);
+  }, [marcadorSync, variacoes, estoquePorItem, qc, produto.codigoPai]);
+
+  // "✓ no ML" é confirmação, não estado: some sozinho depois de alguns segundos.
+  useEffect(() => {
+    if (!marcadorSync || temSkuAguardando(marcadorSync)) return;
+    const t = setTimeout(() => qc.setQueryData(QK.skusAguardandoMl(produto.codigoPai), undefined), 8_000);
+    return () => clearTimeout(t);
+  }, [marcadorSync, qc, produto.codigoPai]);
+
+  const syncMl = (codigo: string) => marcadorSync?.porSku[codigo];
 
   // ADR-0151 D-13/D-10: kit vinculado só existe pra produto de UMA variação, então a primeira
   // linha já carrega o array completo — não precisa unir entre variações.
@@ -394,6 +453,7 @@ export function ProdutoCard({
                             variacao={v}
                             precoMl={precoMl(v)}
                             statusPublicacao={statusPublicacao(v.codigo)}
+                            syncMl={syncMl(v.codigo)}
                           />
                         ))}
                       </div>
@@ -405,6 +465,7 @@ export function ProdutoCard({
                       nomeProduto={produto.nomePai}
                       precoMl={precoMl}
                       statusPublicacao={statusPublicacao}
+                      syncMl={syncMl}
                     />
                   );
                 })()}

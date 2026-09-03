@@ -2,6 +2,30 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Badge "atualizando no ML…" após entrada de estoque — 2026-09-03
+
+Relato do Diego: deu entrada em três cores, foi conferir o anúncio e não viu nada — o push levou
+**11 s** (entrada 23:19:38, itens atualizados no ML 23:19:49–55) e a vitrine do ML levou mais
+alguns minutos para reindexar. Sem sinal na tela, o único jeito de saber era abrir o ML e ficar
+recarregando. Escolha dele entre 3 formatos: badge só nas cores que ele acabou de mexer.
+
+- [x] `src/lib/estoque-sync-ml.ts`: `skusConfirmadosNoMl` compara o saldo do app com o estoque
+  **vivo** do canal (`status-publicados`). A confirmação é a leitura do ML — "push enfileirado"
+  não prova nada (`sincronizar-estoque` devolve 200 até em falha definitiva).
+- [x] Agrupa por anúncio porque é essa a granularidade do dado: em User Products cada cor tem seu
+  item (comparação exata); em Legacy N cores dividem o item e o ML devolve a **soma**.
+- [x] Item sem estoque lido (`null`, canal sem credencial ou leitura falha) **nunca** confirma —
+  dizer "✓ no ML" sem ter lido o ML seria pior que não dizer nada.
+- [x] Teto de espera de 10 min: em Legacy uma divergência antiga em OUTRA cor faria a soma nunca
+  fechar e a badge ficaria acesa para sempre, mentindo que ainda está atualizando.
+- [x] `DialogEntrada` marca os SKUs da submissão (`QK.skusAguardandoMl`, marcador de sessão como o
+  de cores novas); o card liga um poll de 15 s no status vivo **só enquanto há push em voo** e
+  baixa o `staleTime` para 0 nesse período — com o default de 5 min o react-query serviria o
+  cache e a badge nunca confirmaria. "✓ no ML" some sozinho após 8 s.
+- [x] Testes: 12 unitários da lógica (UP × Legacy, `null` não confirma, teto de espera,
+  identidade do marcador) e 2 no card (badge aparece e vira "✓ no ML" quando o canal bate; sem
+  marcador não aparece nada).
+
 ## Cor nova em anúncio User Products herda a ficha do irmão — 2026-09-03
 
 Lote 54 (`26705343`, anúncio `MLB4959919693`) parou com **"UPDATE bloqueado: o Mercado Livre

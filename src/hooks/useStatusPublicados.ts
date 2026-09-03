@@ -4,11 +4,14 @@ import type { ResultadoStatusPublicados } from '@/lib/queries';
 
 /** `enabled` existe para a tela Estoque: lá o status ao vivo só interessa com um card aberto,
  *  e a chamada varre TODOS os anúncios da org (133 na Avil) — cara demais em repouso. */
-export function useStatusPublicados(opts: { enabled?: boolean } = {}) {
+export function useStatusPublicados(opts: { enabled?: boolean; refetchInterval?: number | false } = {}) {
   return useQuery<ResultadoStatusPublicados>({
     queryKey: QK.statusPublicados,
     queryFn: fetchStatusPublicados,
-    staleTime: 5 * 60_000,
+    // `staleTime: 0` enquanto há poll ligado: com o default de 5 min o react-query serviria o
+    // cache e o intervalo nunca iria à rede — a badge "atualizando no ML…" nunca confirmaria.
+    staleTime: opts.refetchInterval ? 0 : 5 * 60_000,
     enabled: opts.enabled ?? true,
+    refetchInterval: opts.refetchInterval ?? false,
   });
 }

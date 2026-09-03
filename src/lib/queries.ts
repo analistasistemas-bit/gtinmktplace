@@ -53,6 +53,9 @@ export const QK = {
   // Marcador client-side (nunca vai à rede, só setQueryData): SKUs da última submissão de
   // "Adicionar variação" p/ este produto — badge por linha (Publicado/Erro/Publicando).
   variacoesRecemAdicionadas: (codigoPai: string) => ['variacoes-recem-adicionadas', codigoPai] as const,
+  // Marcador client-side (nunca vai à rede, só setQueryData): SKUs da última entrada de estoque
+  // deste produto aguardando confirmação do canal — badge "atualizando no ML…" por linha.
+  skusAguardandoMl: (codigoPai: string) => ['skus-aguardando-ml', codigoPai] as const,
   // Prefixo: invalida todas as páginas do produto de uma vez (ex.: após registrar uma entrada).
   movimentosEstoque: (codigoPai: string) => ['movimentos-estoque', codigoPai] as const,
   /** Página concreta. Estende o prefixo acima — invalidar o prefixo alcança todas as páginas. */

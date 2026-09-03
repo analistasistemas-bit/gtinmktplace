@@ -28,6 +28,16 @@ export function PillSaldo({ saldo }: { saldo: number }) {
  *  "Adicionar variação" — `undefined` = não faz parte dela (nenhum badge). */
 export type StatusPublicacaoLinha = 'atualizando' | 'erro' | 'publicado' | undefined;
 
+/** Sincronização do saldo com o canal (pedido do Diego 03/09/2026). Separada da pílula de
+ *  publicação de propósito: uma fala do anúncio, esta fala do estoque. */
+export function PillSyncMl({ estado }: { estado: 'aguardando' | 'ok' | undefined }) {
+  if (!estado) return null;
+  if (estado === 'aguardando') {
+    return <StatusPill tone="warning" title="Saldo enviado ao Mercado Livre — aguardando o canal confirmar.">atualizando no ML…</StatusPill>;
+  }
+  return <StatusPill tone="success" title="O Mercado Livre já devolve este saldo.">✓ no ML</StatusPill>;
+}
+
 export function PillPublicacao({ status }: { status: StatusPublicacaoLinha }) {
   if (!status) return null;
   if (status === 'atualizando') return <StatusPill tone="warning">Publicando…</StatusPill>;
@@ -73,10 +83,11 @@ export function CabecalhoVariacoes() {
  * R$ 28,99 num SKU anunciado a R$ 39,90. O local não some: vira nota, porque é ele que alimenta
  * markup e o próximo push (ADR-0055), e a divergência entre os dois é informação, não ruído.
  */
-export function VariacaoEstoqueLinha({ variacao: v, precoMl, statusPublicacao }: {
+export function VariacaoEstoqueLinha({ variacao: v, precoMl, statusPublicacao, syncMl }: {
   variacao: VariacaoComSaldo;
   precoMl?: number | null;
   statusPublicacao?: StatusPublicacaoLinha;
+  syncMl?: 'aguardando' | 'ok';
 }) {
   const { data: url } = useImageUrl(v.imagemPath);
   // Mesma cadeia do card do produto: Storage primeiro, foto do anúncio no ML depois.
@@ -97,6 +108,7 @@ export function VariacaoEstoqueLinha({ variacao: v, precoMl, statusPublicacao }:
           <span className="truncate font-mono text-xs font-medium">{v.codigo}</span>
           <PillSaldo saldo={v.estoque} />
           <PillPublicacao status={statusPublicacao} />
+          <PillSyncMl estado={syncMl} />
         </div>
         <div className="truncate text-xs text-muted-foreground">{v.cor ?? v.nome ?? '—'}</div>
         {/* Abaixo de lg as colunas somem: custo/preço voltam aqui para não sumir do mobile. */}

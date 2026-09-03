@@ -490,6 +490,47 @@ describe('ProdutoCard', () => {
     expect(screen.queryByText('Erro')).not.toBeInTheDocument();
   });
 
+  // Pedido do Diego (03/09/2026): ele deu entrada em 3 cores, olhou o ML e não viu nada — o push
+  // levou 11s e a vitrine mais alguns minutos. A badge só sai quando o CANAL devolve o mesmo
+  // saldo; "push enfileirado" não prova nada.
+  it('SKU marcado após entrada mostra "atualizando no ML…" e vira "✓ no ML" quando o canal bate', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([
+      { ...mockVariacoes(1, 6)[0]!, estoque: 40, mlItemId: 'MLB-A' },
+    ]);
+    statusItens = [{ ml_item_id: 'MLB-A', preco: null }];   // canal ainda com o saldo antigo
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(QK.skusAguardandoMl(produto.codigoPai), {
+      porSku: { '00000006': 'aguardando' }, desde: new Date().toISOString(),
+    });
+    const { rerender } = render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+    await waitFor(() => expect(screen.getByText('atualizando no ML…')).toBeInTheDocument());
+
+    // O canal passa a devolver 40 — a badge confirma.
+    statusItens = [{ ml_item_id: 'MLB-A', preco: null, estoque: 40 }] as never;
+    qc.setQueryData(QK.statusPublicados, { itens: statusItens });
+    rerender(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByText('✓ no ML')).toBeInTheDocument());
+    expect(screen.queryByText('atualizando no ML…')).not.toBeInTheDocument();
+  });
+
+  it('sem marcador, nenhuma badge de sincronização aparece', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([mockVariacoes(1, 6)[0]!]);
+    renderCard();
+    await userEvent.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+    await waitFor(() => expect(screen.getByText('00000006')).toBeInTheDocument());
+    expect(screen.queryByText('atualizando no ML…')).not.toBeInTheDocument();
+    expect(screen.queryByText('✓ no ML')).not.toBeInTheDocument();
+  });
+
   it('sem statusUpdate, nenhum badge de atualização aparece', () => {
     renderCard();
     expect(screen.queryByText('Atualizando…')).not.toBeInTheDocument();

@@ -21,6 +21,7 @@ import {
   fetchSkusEstoqueOrg, fetchVariacoesProduto, registrarEntrada, registrarEntradaLote,
 } from '@/lib/produtos-saldo';
 import { parseNumeroPtBr } from '@/lib/formato';
+import type { MarcadorSyncMl } from '@/lib/estoque-sync-ml';
 
 interface OpcaoSku {
   codigo: string;
@@ -120,6 +121,18 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
     qc.invalidateQueries({ queryKey: QK.movimentosEstoque(codigoPai) });
   }
 
+  /** Marca as cores que acabaram de receber entrada: o card mostra "atualizando no ML…" nelas até
+   *  o canal devolver o mesmo saldo. Sem isso o operador dá entrada e não tem como saber se o
+   *  push chegou — o que levou o Diego a conferir no ML e achar que não tinha funcionado. */
+  function marcarAguardandoMl(codigoPai: string, skus: string[]) {
+    if (skus.length === 0) return;
+    const marcador: MarcadorSyncMl = {
+      porSku: Object.fromEntries(skus.map((sku) => [sku, 'aguardando' as const])),
+      desde: new Date().toISOString(),
+    };
+    qc.setQueryData(QK.skusAguardandoMl(codigoPai), marcador);
+  }
+
   const mutation = useMutation({
     mutationFn: async () => {
       if (modoLista) {
@@ -144,7 +157,10 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
 
       if (r.lote) {
         const falhos = r.lote.resultados.filter((i) => i.erro);
-        if (codigoPaiInicial) invalidarProduto(codigoPaiInicial);
+        if (codigoPaiInicial) {
+          invalidarProduto(codigoPaiInicial);
+          marcarAguardandoMl(codigoPaiInicial, r.lote.resultados.filter((i) => !i.erro).map((i) => i.codigo));
+        }
         // Item com erro mantém o diálogo aberto: o operador precisa ver o que NÃO entrou antes
         // de assumir que o produto está reposto.
         if (falhos.length > 0) {
@@ -168,7 +184,10 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
       } else {
         toast.success(`✓ Entrada registrada. Saldo de ${codigo}: ${u.estoque}`);
       }
-      if (selecionada) invalidarProduto(selecionada.codigoPai);
+      if (selecionada) {
+        invalidarProduto(selecionada.codigoPai);
+        marcarAguardandoMl(selecionada.codigoPai, [codigo]);
+      }
       onFechar();
     },
     onError: (e: Error) => toast.error(e.message),
