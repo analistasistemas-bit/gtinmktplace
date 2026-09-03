@@ -22,16 +22,16 @@ import { JornadaLote } from '@/components/jornada-lote';
 import { resultadoPublicacao } from '@/lib/jornada';
 import { DropZoneImagensExistente } from '@/components/drop-zone-imagens-existente';
 import { useFamilias } from '@/hooks/useFamilias';
-import { useKitsDoProduto } from '@/hooks/useKitsDoProduto';
 import { useLote } from '@/hooks/useLotes';
 import { useLoteRealtime } from '@/hooks/useLoteRealtime';
 import { uploadImagensLote } from '@/lib/upload-imagens';
-import { QK, fetchConexoes } from '@/lib/queries';
+import { QK, fetchConexoes, fetchKitsDosProdutos } from '@/lib/queries';
 import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao, familiaPrecosDivergentes } from '@/lib/publicavel';
 import { ordenarPorExcecao } from '@/lib/revisao-ordem';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
 import { publicarFamilias, type ListingType } from '@/lib/publicar';
+import { contarKitsAguardandoPorPai } from '@/lib/kit';
 import { canaisOperaveis, canaisEmBreve } from '@/lib/canais';
 import { LogoCanal } from '@/components/canal-badge';
 import { useCanaisHabilitados } from '@/hooks/useCanaisHabilitados';
@@ -75,20 +75,17 @@ export function filtrarFamilias(
 
 /** ADR-0151 D-2: sinaliza no card (sempre visível, sem precisar expandir) que a família tem
  *  kits vinculados esperando este produto publicar. Kit não vira card próprio na Revisão
- *  (Decisão 4) — este badge é o único rastro dele por aqui até a base publicar ou falhar. */
-function BadgeKitsAguardando({ codigoPai }: { codigoPai: string }) {
-  const { data: kits } = useKitsDoProduto(codigoPai, true);
-  // status='pronto' && sem ml_item_id: kit criado mas ainda não foi ao ar — aguardando o CREATE
-  // da base (caminho feliz) ou aguardando reenvio após falha (a família falha vira card próprio
-  // de kit em 'erro', fora deste badge — ver ADR-0151 Decisão 4).
-  const aguardando = (kits ?? []).filter((k) => k.status === 'pronto' && k.mlItemId == null);
-  if (aguardando.length === 0) return null;
+ *  (Decisão 4) — este badge é o único rastro dele por aqui até a base publicar ou falhar.
+ *  M-0: `qtd` vem de uma única query por página (ver `kitsAguardandoPorPai` em Revisao), não
+ *  mais de uma query por família — componente puro, sem fetch próprio. */
+function BadgeKitsAguardando({ qtd }: { qtd: number }) {
+  if (qtd === 0) return null;
   return (
     <div
       className="flex items-center gap-2 border-b bg-info/10 px-4 py-1.5 text-xs text-info"
       title="Os kits só vão ao ar depois que este produto for publicado com sucesso. Se a publicação falhar, nenhum kit é publicado."
     >
-      🧩 {aguardando.length} {aguardando.length === 1 ? 'kit aguardando' : 'kits aguardando'} a publicação deste produto
+      🧩 {qtd} {qtd === 1 ? 'kit aguardando' : 'kits aguardando'} a publicação deste produto
     </div>
   );
 }
@@ -163,6 +160,20 @@ export default function Revisao() {
   );
   const pag = usePaginacao(visiveis);
   const listaRef = useRef<HTMLDivElement>(null);
+
+  // M-0: badge "kits aguardando" por família visível na página — 1 query pra página inteira,
+  // não 1 por família (ver BadgeKitsAguardando).
+  const codigosPagina = useMemo(() => pag.itensPagina.map((f) => f.codigoPai), [pag.itensPagina]);
+  const { data: kitsPagina } = useQuery({
+    queryKey: QK.kitsDaPagina(codigosPagina),
+    queryFn: () => fetchKitsDosProdutos(codigosPagina),
+    enabled: codigosPagina.length > 0,
+    staleTime: 30_000,
+  });
+  const kitsAguardandoPorPai = useMemo(
+    () => contarKitsAguardandoPorPai(kitsPagina ?? []),
+    [kitsPagina],
+  );
 
   const irPara = (p: number) => {
     pag.irPara(p);
@@ -570,7 +581,7 @@ export default function Revisao() {
                   onExpandir={toggleExpansao}
                   onIrParaCritica={irParaCritica}
                 />
-                <BadgeKitsAguardando codigoPai={familia.codigoPai} />
+                <BadgeKitsAguardando qtd={kitsAguardandoPorPai.get(familia.codigoPai) ?? 0} />
                 {/* Radix Collapsible: mede a altura real e mantém o conteúdo montado só
                     durante a animação de saída — mesmo custo de mount de antes quando
                     fechada. Reversível (contrato §6.4); motion-safe = fallback explícito

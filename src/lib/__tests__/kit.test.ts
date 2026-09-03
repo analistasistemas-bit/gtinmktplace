@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest';
-import { tituloDoKit, precoSugeridoDoKit, descricaoDoKit, TITULO_MAX_KIT } from '../kit';
+import { tituloDoKit, precoSugeridoDoKit, descricaoDoKit, TITULO_MAX_KIT, contarKitsAguardandoPorPai } from '../kit';
+import type { KitVinculado } from '../queries';
+
+function criarKit(overrides: Partial<KitVinculado> = {}): KitVinculado {
+  return {
+    familiaId: 'kit-1',
+    codigoPai: 'KIT001',
+    kitBaseCodigoPai: 'PAI1',
+    multiplicador: 3,
+    status: 'pronto',
+    mlPermalink: null,
+    mlItemId: null,
+    criadoEm: '2026-01-01T00:00:00Z',
+    ...overrides,
+  };
+}
 
 describe('tituloDoKit', () => {
   it('acrescenta o tamanho do kit ao título da base', () => {
@@ -37,5 +52,38 @@ describe('descricaoDoKit', () => {
   it('acrescenta a linha do tamanho ao final da descrição da base', () => {
     expect(descricaoDoKit('Fita de boa qualidade.', 4))
       .toBe('Fita de boa qualidade.\n\nKit com 4 unidades.');
+  });
+});
+
+describe('contarKitsAguardandoPorPai', () => {
+  it('conta kit pronto e ainda sem ml_item_id', () => {
+    const mapa = contarKitsAguardandoPorPai([criarKit({ status: 'pronto', mlItemId: null })]);
+    expect(mapa.get('PAI1')).toBe(1);
+  });
+
+  it('não conta kit publicado', () => {
+    const mapa = contarKitsAguardandoPorPai([criarKit({ status: 'publicado', mlItemId: 'ML123' })]);
+    expect(mapa.get('PAI1')).toBeUndefined();
+  });
+
+  it('não conta kit em erro', () => {
+    const mapa = contarKitsAguardandoPorPai([criarKit({ status: 'erro', mlItemId: null })]);
+    expect(mapa.get('PAI1')).toBeUndefined();
+  });
+
+  it('não conta kit pronto mas já com ml_item_id preenchido', () => {
+    const mapa = contarKitsAguardandoPorPai([criarKit({ status: 'pronto', mlItemId: 'ML123' })]);
+    expect(mapa.get('PAI1')).toBeUndefined();
+  });
+
+  it('agrupa corretamente por codigoPai quando há kits de produtos diferentes', () => {
+    const mapa = contarKitsAguardandoPorPai([
+      criarKit({ kitBaseCodigoPai: 'PAI1', status: 'pronto', mlItemId: null }),
+      criarKit({ kitBaseCodigoPai: 'PAI1', status: 'pronto', mlItemId: null, multiplicador: 4 }),
+      criarKit({ kitBaseCodigoPai: 'PAI2', status: 'pronto', mlItemId: null }),
+      criarKit({ kitBaseCodigoPai: 'PAI2', status: 'publicado', mlItemId: 'ML9' }),
+    ]);
+    expect(mapa.get('PAI1')).toBe(2);
+    expect(mapa.get('PAI2')).toBe(1);
   });
 });

@@ -136,7 +136,9 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
         toast.success(tamanhosMarcados.length > 1 ? 'Kits criados' : 'Kit criado');
       }
       qc.invalidateQueries({ queryKey: QK.publicados });
-      qc.invalidateQueries({ queryKey: QK.kitsDoProduto(base.codigoPai) });
+      // M-0: prefixo, não a chave por produto — a badge da Revisão consulta pela chave de
+      // página (['kits-do-produto','pagina',[...]]), que nunca bateria com a chave por produto.
+      qc.invalidateQueries({ queryKey: QK.kitsDoProdutoRaiz });
       qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
       qc.invalidateQueries({ queryKey: ['lotes'] });
       onOpenChange(false);
@@ -166,7 +168,9 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
         return;
       }
       toast.success('Kit reenviado para publicação');
-      qc.invalidateQueries({ queryKey: QK.kitsDoProduto(base.codigoPai) });
+      // M-0: prefixo, não a chave por produto — a badge da Revisão consulta pela chave de
+      // página (['kits-do-produto','pagina',[...]]), que nunca bateria com a chave por produto.
+      qc.invalidateQueries({ queryKey: QK.kitsDoProdutoRaiz });
       qc.invalidateQueries({ queryKey: QK.publicados });
       qc.invalidateQueries({ queryKey: ['lotes'] });
     },

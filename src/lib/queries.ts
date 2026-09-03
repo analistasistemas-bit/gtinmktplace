@@ -46,6 +46,10 @@ export const QK = {
   variacoesEstoque: (codigoPai: string) => ['variacoes-estoque', codigoPai] as const,
   // ADR-0151: kits vinculados existentes de um produto-base, por codigo_pai.
   kitsDoProduto: (codigoPai: string) => ['kits-do-produto', codigoPai] as const,
+  // M-0: 1 query por página da Revisão (badge "kits aguardando"), em vez de 1 por família.
+  kitsDaPagina: (codigosPai: string[]) => ['kits-do-produto', 'pagina', codigosPai] as const,
+  // Prefixo de ambas as chaves acima — invalida a página da Revisão e qualquer produto aberto.
+  kitsDoProdutoRaiz: ['kits-do-produto'] as const,
   // Marcador client-side (nunca vai à rede, só setQueryData): SKUs da última submissão de
   // "Adicionar variação" p/ este produto — badge por linha (Publicado/Erro/Publicando).
   variacoesRecemAdicionadas: (codigoPai: string) => ['variacoes-recem-adicionadas', codigoPai] as const,
@@ -118,6 +122,9 @@ export interface KitVinculado {
    *  'erro' do predicado de duplicata) podem deixar mais de uma linha para o mesmo
    *  multiplicador. `criadoEm` deixa quem consome decidir qual é a atual (a mais recente). */
   criadoEm: string;
+  /** M-0: só preenchido por `fetchKitsDosProdutos` (busca multi-base) — o codigoPai acima é o
+   *  do próprio kit (família-clone), não o da base; quem agrupa por produto-base precisa deste. */
+  kitBaseCodigoPai?: string;
 }
 
 export async function fetchKitsDoProduto(codigoPai: string): Promise<KitVinculado[]> {
@@ -131,6 +138,30 @@ export async function fetchKitsDoProduto(codigoPai: string): Promise<KitVinculad
   return (data ?? []).map((r) => ({
     familiaId: r.id,
     codigoPai: r.codigo_pai,
+    multiplicador: r.kit_multiplicador as number,
+    status: r.status as FamiliaStatus,
+    mlPermalink: r.ml_permalink,
+    mlItemId: r.ml_item_id,
+    criadoEm: r.criado_em as string,
+  }));
+}
+
+/** Mesmo select de `fetchKitsDoProduto`, para N produtos de uma vez (M-0: 1 query por página
+ *  da Revisão, em vez de 1 por família exibida). */
+export async function fetchKitsDosProdutos(codigosPai: string[]): Promise<KitVinculado[]> {
+  if (codigosPai.length === 0) return [];
+  const { data, error } = await supabase
+    .from('familias')
+    .select('id, codigo_pai, kit_base_codigo_pai, kit_multiplicador, status, ml_permalink, ml_item_id, criado_em')
+    .in('kit_base_codigo_pai', codigosPai)
+    .not('kit_multiplicador', 'is', null)
+    .order('kit_multiplicador', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    familiaId: r.id,
+    codigoPai: r.codigo_pai,
+    // M-0: quem agrupa por produto-base precisa deste (codigoPai acima é o do próprio kit).
+    kitBaseCodigoPai: r.kit_base_codigo_pai as string,
     multiplicador: r.kit_multiplicador as number,
     status: r.status as FamiliaStatus,
     mlPermalink: r.ml_permalink,

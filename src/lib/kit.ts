@@ -3,6 +3,7 @@
 // no backend divergindo desta.
 import { supabase } from './supabase';
 import { corpoDoErroDaEdge } from './edge-erro';
+import type { KitVinculado } from './queries';
 
 export const TAMANHOS_KIT = [2, 3, 4, 5, 6] as const;
 
@@ -79,6 +80,19 @@ export interface ResultadoCriarKit {
    *  criação: os kits existem, mas o encadeamento falhou e não pode ser escondido atrás de um
    *  `ok: true` genérico — quem chama trata isso na UI. */
   publicacaoOk?: boolean;
+}
+
+/** M-0: badge "kits aguardando" da Revisão (BadgeKitsAguardando) — quantos kits, por
+ *  produto-base, estão `status='pronto'` mas ainda sem `mlItemId` (criado, esperando a base
+ *  publicar ou o reenvio após falha; ver ADR-0151 Decisão 4). */
+export function contarKitsAguardandoPorPai(kits: KitVinculado[]): Map<string, number> {
+  const porPai = new Map<string, number>();
+  for (const k of kits) {
+    if (k.status !== 'pronto' || k.mlItemId != null) continue;
+    if (!k.kitBaseCodigoPai) continue;
+    porPai.set(k.kitBaseCodigoPai, (porPai.get(k.kitBaseCodigoPai) ?? 0) + 1);
+  }
+  return porPai;
 }
 
 export async function criarKitVinculado(p: {
