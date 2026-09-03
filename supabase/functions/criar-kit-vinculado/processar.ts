@@ -81,6 +81,11 @@ export const STRIP_FAMILIA_KIT = [
   'can_invoice', 'can_invoice_causa', 'can_invoice_em', 'fiscal_sincronizado_em',
   // M-4: aponta pra um SKU que não existe na família do kit.
   'variacao_principal_codigo',
+  // M-5: análise de mercado é do produto-base; o kit nunca roda process-familia (que a
+  // recalcularia), então herdar deixaria o dado permanentemente rotulado como do kit.
+  'analise_mercado', 'concorrencia_categoria_id', 'concorrencia_classe', 'concorrencia_origem',
+  'concorrencia_preco_min', 'concorrencia_vendedores', 'estrategia_preco', 'estrategia_motivo',
+  'preco_reancorado_lider',
 ] as const;
 
 export const STRIP_VARIACAO_KIT = [

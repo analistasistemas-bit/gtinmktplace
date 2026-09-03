@@ -3,7 +3,9 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
-import { criarKitsVinculados, type CriarKitDeps, type KitSolicitado } from '../processar.ts';
+import {
+  criarKitsVinculados, montarFamiliaKit, type CriarKitDeps, type KitSolicitado,
+} from '../processar.ts';
 import { aplicarKitNosAtributos } from '../../_shared/categoria/atributos.ts';
 
 // ATENÇÃO ao shape: `AtributoSchema` usa `valores: {id, nome}[]` (schema.ts:16), NÃO
@@ -461,6 +463,33 @@ describe('criarKitsVinculados', () => {
     expect(r.motivo).toEqual('kit_duplicado');
   });
 
+  // M-5: o kit nunca roda process-familia (D-3), então herdar a análise de mercado da base
+  // deixaria o dado permanentemente rotulado como do kit — enganoso em Viabilidade/Pulse.
+  it('kit nasce sem o contexto de análise de mercado/concorrência da base (M-5)', () => {
+    const base = linhaFamiliaCheia({
+      id: BASE_ID, codigo_pai: '00000010',
+      analise_mercado: { menorPreco: 19.9 },
+      concorrencia_categoria_id: 'MLB999',
+      concorrencia_classe: 'competitivo',
+      concorrencia_origem: 'sonar',
+      concorrencia_preco_min: 19.9,
+      concorrencia_vendedores: 5,
+      estrategia_preco: 'competitivo',
+      estrategia_motivo: 'menor preço do mercado',
+      preco_reancorado_lider: true,
+    });
+    const resultado = montarFamiliaKit(base, kitPadrao(2), {
+      loteId: 'lote-1', codigoPai: '00000020', atributos: [],
+    });
+    for (const col of [
+      'analise_mercado', 'concorrencia_categoria_id', 'concorrencia_classe', 'concorrencia_origem',
+      'concorrencia_preco_min', 'concorrencia_vendedores', 'estrategia_preco', 'estrategia_motivo',
+      'preco_reancorado_lider',
+    ]) {
+      expect(col in resultado).toEqual(false);
+    }
+  });
+
   /**
    * ADR-0129 (correção 2026-08-21): o PostgREST une as chaves das linhas de um insert
    * multi-linha e grava NULL EXPLÍCITO nas que faltam, atropelando o DEFAULT da coluna.
@@ -484,7 +513,17 @@ describe('criarKitsVinculados', () => {
     // INSERT familia faz o kit nascer sem desconto em vez de repetir o valor da base.
     // `variacoes.exibir_com_desconto` é nullable — o builder de variação a re-adiciona como
     // `null` explícito (não omite), então não entra nesta exceção.
-    const SEM_DEFAULT_NA_LINHA_FAMILIAS = new Set([...SEM_DEFAULT_NA_LINHA, 'exibir_com_desconto']);
+    // M-5: 4 das 9 colunas de análise de mercado removidas do STRIP_FAMILIA_KIT são NOT NULL
+    // COM default (concorrencia_vendedores=0, concorrencia_origem='nenhuma',
+    // concorrencia_classe='sem', preco_reancorado_lider=false — migrations
+    // 20260601110042_add_concorrencia_familias.sql e 20260708144126_reancora_lider.sql).
+    // Omitir é seguro (Postgres aplica o default); as outras 5 (analise_mercado,
+    // concorrencia_categoria_id, concorrencia_preco_min, estrategia_preco, estrategia_motivo)
+    // já são nullable e não entram aqui.
+    const SEM_DEFAULT_NA_LINHA_FAMILIAS = new Set([
+      ...SEM_DEFAULT_NA_LINHA, 'exibir_com_desconto',
+      'concorrencia_vendedores', 'concorrencia_origem', 'concorrencia_classe', 'preco_reancorado_lider',
+    ]);
     const colunasNotNull = (tabela: string, excecoes: Set<string>) =>
       extrairColunasNotNull(TYPES_RAW, tabela).filter((c) => !excecoes.has(c));
     const { deps, inserts } = depsFake({ custo: 10, peso_gramas: 100 });
