@@ -18,8 +18,9 @@ o produto-base, e alerta de oversell/desync com atribuição de kit.
 - [x] Task 11: documentação (`modelo-de-dados.md`, `edge-functions.md`, ADR-0151 seção
   "Implementação" com 9 desvios registrados) + `pnpm lint`/`pnpm vitest run`/`pnpm exec tsc -b
   --force`/`pnpm docs:links` verdes.
-- [ ] Deploy das Edge Functions em produção — autorização explícita separada (Step 6 da Task 11,
-  não executado nesta dispatch).
+- [x] Deploy das Edge Functions em produção — Step 6 da Task 11. 19 funções deployadas em
+  2026-09-03 (fechamento do grafo de imports via `deno info`, ver
+  `.superpowers/sdd/2026-09-02-kit-vinculado-plan/task-11-deploy-report.md`).
 
 ## Publicar lento: limpeza de cache de foto ao esgotar retry (item.pictures.unavailable) — 2026-09-02
 

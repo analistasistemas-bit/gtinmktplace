@@ -12,7 +12,7 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 ## 📍 Passo atual (2026-08-13) — Fase 3 EM PRODUÇÃO
 
 > **📋 ADR-0151: Kit vinculado — criar anúncios de kit (N unidades) a partir de produto
-> existente — IMPLEMENTADO, deploy pendente (2026-09-03).** Extensão do módulo Estoque
+> existente — IMPLEMENTADO (19 Edge Functions deployadas em 2026-09-03).** Extensão do módulo Estoque
 > (ADR-0094): tela Estoque ganha "Criar kit vinculado" (admin-only) que gera família(s) nova(s)
 > — `SALE_FORMAT=Kit`/`UNITS_PER_PACK=N` — com estoque 100% derivado da família-base
 > (`floor(estoque_base/N)`, colunas `kit_base_codigo_pai`/`kit_multiplicador`, nunca uma coluna
