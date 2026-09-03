@@ -645,9 +645,11 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   inteira de uma vez. "Tem anúncio" é *existir* anúncio publicado, não *haver alvo neste push*: na
   venda o job carrega o canal onde ela ocorreu e esse canal é excluído dos alvos, então com um só
   canal `alvos` fica vazio justamente quando o anúncio acabou de ser pausado. Reativação
-  bem-sucedida manda o aviso de volta ao ar pela mesma categoria — uma vez por produto (família
-  user products reativa N filhos) e antes do eventual 500, porque na retentativa o anúncio já está
-  ativo e o aviso se perderia.
+  bem-sucedida manda o aviso de volta ao ar pela mesma categoria — uma vez por **família** que
+  reativou (base OU cada kit vinculado, deduplicado por `codigo_pai`; família user products
+  reativa N filhos e ainda sai um aviso só) e antes do eventual 500, porque na retentativa o
+  anúncio já está ativo e o aviso se perderia. Cada alvo de push carrega a origem (base ou qual
+  kit) para o texto citar quem de fato reativou, não sempre a base.
   **Reativação ao repor (ADR-0111):** com `reativar` no job e saldo > 0 no alvo, depois do push OK
   o worker lê o status ao vivo e devolve o anúncio de `pausado` para `ativo`. Lê antes de escrever
   (o job é reentregue): já ativo não recebe PUT. `moderado`/`encerrado`/`inativo`/`indisponivel`

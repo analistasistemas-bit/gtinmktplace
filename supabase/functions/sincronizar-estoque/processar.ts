@@ -141,6 +141,10 @@ async function alertarEstoqueZerado(
   }
 }
 
+/** Identifica de quem (base ou qual kit) um alvo de push veio, só para o aviso de reativação. */
+type Origem = { codigoPai: string; produto: string | null; permalink: string | null };
+type AlvoComOrigem = AlvoPush & { origem: Origem };
+
 interface FamiliaComSaldo {
   familiaId: string;
   codigoPai: string;
@@ -244,7 +248,11 @@ export async function processarSincronizacao(
   // "manda o produto inteiro" (alvos.ts:57-58) e o anúncio do kit receberia os SKUs da base.
   const { alvos: alvosBase, temAnuncio: baseTemAnuncio } =
     await alvosDaFamilia(admin, org_id, codigoPaiBase, base.estoquePorSku, exclusao);
-  const alvos = [...alvosBase];
+  // Cada alvo carrega a origem (base ou kit) de quem o gerou — sem isto, o aviso de "voltou ao
+  // ar" (ADR-0111) não teria como saber, no laço de push abaixo, se quem reativou foi a base ou
+  // um kit específico (AlvoPush não carrega codigo_pai — ver alvos.ts).
+  const origemBase: Origem = { codigoPai: codigoPaiBase, produto: base.nome, permalink: base.permalink };
+  const alvos: AlvoComOrigem[] = alvosBase.map((a) => ({ ...a, origem: origemBase }));
   let temAnuncio = baseTemAnuncio;
 
   // O saldo do kit é sempre floor(estoque_base / N), calculado ao vivo (ADR-0151 D-6). A
@@ -271,7 +279,10 @@ export async function processarSincronizacao(
     }
     // `exclusao` aqui é sempre null (só chegamos neste laço com kits.length > 0).
     const r = await alvosDaFamilia(admin, org_id, kit.codigo_pai, derivado, exclusao);
-    alvos.push(...r.alvos);
+    const origemKit: Origem = {
+      codigoPai: kit.codigo_pai, produto: kitComSaldo.nome, permalink: kitComSaldo.permalink,
+    };
+    alvos.push(...r.alvos.map((a) => ({ ...a, origem: origemKit })));
     temAnuncio = temAnuncio || r.temAnuncio;
   }
 
@@ -293,7 +304,9 @@ export async function processarSincronizacao(
 
   // 3) Push absoluto, um alvo por vez. Falha de um canal nunca afeta outro.
   const retentaveis: string[] = [];
-  let reativou = false;
+  // Chave = codigo_pai de quem reativou (base ou kit) — Map dedupa User Products (N filhos da
+  // MESMA família reativando no mesmo run geram 1 entrada só, ADR-0088).
+  const reativados = new Map<string, Origem>();
   const tokenPorCanal = new Map<string, () => Promise<string>>();
 
   for (const alvo of alvos) {
@@ -329,8 +342,9 @@ export async function processarSincronizacao(
         const reativacao = await reativarSePausado(conn, { getToken }, alvo.canal, alvo.itemExternoId);
         if (reativacao === 'retentavel') retentaveis.push(`${alvo.canal}:${alvo.itemExternoId}:status`);
         // Uma família user products reativa N itens filhos no mesmo run (ADR-0088); o aviso é
-        // sobre o PRODUTO, então sai uma vez só, depois do laço.
-        if (reativacao === 'reativado') reativou = true;
+        // sobre a FAMÍLIA (base ou kit) que reativou, então sai uma vez por família, depois do
+        // laço — não uma vez por alvo, e sempre com o contexto de quem de fato reativou.
+        if (reativacao === 'reativado') reativados.set(alvo.origem.codigoPai, alvo.origem);
       }
     } catch (e) {
       // Exceção inesperada é tratada como RETENTÁVEL: melhor o QStash tentar de novo
@@ -342,10 +356,10 @@ export async function processarSincronizacao(
 
   // A reativação já aconteceu de fato (PUT ok), então o aviso sai antes do eventual 500: na
   // retentativa o anúncio já está `ativo`, ninguém reativa nada e o aviso se perderia.
-  if (reativou) {
+  for (const o of reativados.values()) {
     await notificar(admin, org_id, 'estoque', montarMensagemVoltaAoAr({
-      produto: ctxAlerta.produto, codigoPai: codigoPaiBase, permalink: ctxAlerta.permalink,
-    })).catch((e) => console.error('estoque_alerta_volta_falhou', codigoPaiBase, String(e)));
+      produto: o.produto, codigoPai: o.codigoPai, permalink: o.permalink,
+    })).catch((e) => console.error('estoque_alerta_volta_falhou', o.codigoPai, String(e)));
   }
 
   // Push é absoluto: repetir é seguro, então 500 para o QStash re-tentar.

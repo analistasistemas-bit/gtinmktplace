@@ -135,3 +135,77 @@ it('job com o codigo_pai de um KIT é redirecionado para a base', async () => {
   expect(chamadas.map((c) => c.item).sort()).toEqual(['MLB-BASE', 'MLB-KIT3']);
   expect(chamadas.find((c) => c.item === 'MLB-KIT3')?.estoques).toEqual([{ sku: '00000021', estoque: 2 }]);
 });
+
+// ─── M-0b: o aviso de "voltou ao ar" usa o contexto de quem de fato reativou ────────
+const DADOS_COM_PERMALINK = {
+  familias: [
+    { id: 'f-base', codigo_pai: '00000010', nome_pai: 'Produto', ml_permalink: 'https://ml/base', criado_em: '2026-09-01', kit_base_codigo_pai: null, kit_multiplicador: null },
+    { id: 'f-kit3', codigo_pai: '00000020', nome_pai: 'Kit 3', ml_permalink: 'https://ml/kit3', criado_em: '2026-09-02', kit_base_codigo_pai: '00000010', kit_multiplicador: 3 },
+  ],
+  variacoes: DADOS.variacoes,
+  anuncios: DADOS.anuncios,
+};
+
+/** Como `depsQueRegistram`, mas com `lerStatus`/`atualizarStatus` reais (por item) e `notificar`
+ * injetável — necessário para exercitar a reativação (ADR-0111) por família. */
+function depsComReativacao(
+  chamadas: Array<{ item: string; estoques: unknown }>,
+  pausados: Set<string>,
+  notificar: (...args: unknown[]) => Promise<unknown>,
+  dados = DADOS_COM_PERMALINK,
+) {
+  return {
+    admin: fakeAdmin(dados),
+    resolverConexao: () => Promise.resolve({ id: 'c1' }),
+    getConnector: () => ({
+      capabilities: { atualizarEstoque: true },
+      atualizarEstoque: (_ctx: unknown, item: string, estoques: unknown) => {
+        chamadas.push({ item, estoques });
+        return Promise.resolve({ ok: true });
+      },
+      lerStatus: (_ctx: unknown, ids: string[]) => {
+        const out: Record<string, { status: string }> = {};
+        for (const id of ids) out[id] = { status: pausados.has(id) ? 'pausado' : 'ativo' };
+        return Promise.resolve(out);
+      },
+      atualizarStatus: () => Promise.resolve({ ok: true }),
+    }),
+    fabricarToken: () => () => Promise.resolve('tok'),
+    notificar,
+    // deno-lint-ignore no-explicit-any
+  } as any;
+}
+
+it('reativação vinda do KIT avisa com o contexto do KIT, não da base', async () => {
+  const chamadas: Array<{ item: string; estoques: unknown }> = [];
+  const enviados: Array<{ texto: string }> = [];
+  const notificar = async (_admin: unknown, _org: string, _categoria: string, texto: string) => {
+    enviados.push({ texto });
+  };
+  await processarSincronizacao(
+    depsComReativacao(chamadas, new Set(['MLB-KIT3']), notificar),
+    { org_id: 'org-1', codigo_pai: '00000010', canal_origem: null, reativar: true },
+  );
+  expect(enviados).toHaveLength(1);
+  expect(enviados[0].texto).toContain('Kit 3');
+  expect(enviados[0].texto).toContain('https://ml/kit3');
+  expect(enviados[0].texto).not.toContain('Produto');
+  expect(enviados[0].texto).not.toContain('https://ml/base');
+});
+
+it('base E kit reativando juntos avisam 2 vezes, cada um com seu contexto', async () => {
+  const chamadas: Array<{ item: string; estoques: unknown }> = [];
+  const enviados: Array<{ texto: string }> = [];
+  const notificar = async (_admin: unknown, _org: string, _categoria: string, texto: string) => {
+    enviados.push({ texto });
+  };
+  await processarSincronizacao(
+    depsComReativacao(chamadas, new Set(['MLB-BASE', 'MLB-KIT3']), notificar),
+    { org_id: 'org-1', codigo_pai: '00000010', canal_origem: null, reativar: true },
+  );
+  expect(enviados).toHaveLength(2);
+  // Pareado por mensagem — não só "os dois textos apareceram em algum lugar" — pra pegar
+  // cross-wiring (ex.: nome da base com permalink do kit).
+  expect(enviados.some((e) => e.texto.includes('Produto') && e.texto.includes('https://ml/base'))).toBe(true);
+  expect(enviados.some((e) => e.texto.includes('Kit 3') && e.texto.includes('https://ml/kit3'))).toBe(true);
+});
