@@ -47,6 +47,9 @@ verify_jwt = true
 # ADR-0129: adicionar variação a família publicada, direto da tela Estoque.
 [functions.adicionar-variacoes-familia]
 verify_jwt = true
+# ADR-0151: criação de kit vinculado. Chamada pelo APP com o JWT do admin.
+[functions.criar-kit-vinculado]
+verify_jwt = true
 [functions.entrada-estoque]
 verify_jwt = true
 # ADR-0110: ajuste/zeragem de saldo. Chamada pelo APP com o JWT do admin.

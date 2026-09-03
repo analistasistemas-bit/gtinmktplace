@@ -15,7 +15,9 @@ import { aplicarEstoqueDerivado } from '../_shared/estoque/kit.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import { exigirFiscalCompletoSePreciso } from '../_shared/fiscal/gate.ts';
 import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel, decidirRetryTransitorio } from '../_shared/publicacao/retry.ts';
-import { enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
+import {
+  enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal, enfileirarPublicacoes,
+} from '../_shared/queue.ts';
 import {
   lerFormatoPublicacao, confirmarFormatoPublicacao, formatoRepoSupabase, type FormatoRepo,
 } from '../_shared/ml/formato-publicacao.ts';
@@ -292,6 +294,46 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       ml_permalink: ref.permalink ?? null,
       publicado_em: new Date().toISOString(),
     }, varsEspelho ?? []);
+
+    // ADR-0151 D-2 — sequenciamento: os kits marcados na Revisão só publicam DEPOIS que o
+    // CREATE da base confirmou. Se a base falha, nenhum kit vai ao ar; o operador corrige e
+    // reenvia o lote da base, e este bloco dispara no sucesso.
+    //
+    // Best-effort de propósito: esta chamada roda dentro do `try` do worker, e uma exceção
+    // aqui marcaria como `erro` uma família JÁ publicada com sucesso no ML — o mesmo motivo
+    // pelo qual `talvezFinalizarLote` não lança (ADR-0094, correção 3).
+    try {
+      // CLAIM ATÔMICO ANTES DE ENFILEIRAR — o mesmo de `publicar-familias/index.ts:48-56`.
+      // Dois motivos, os dois obrigatórios:
+      //  (a) `decidirStatusLote` (_shared/lote/finalizar.ts:22) devolve 'revisao' quando há
+      //      família em 'pronto'. Sem o claim, o `talvezFinalizarLote` do PRIMEIRO kit publicado
+      //      veria o segundo ainda em 'pronto' e abriria o lote técnico como card de Revisão,
+      //      com botão Publicar — exatamente o que a Decisão 2 proíbe.
+      //  (b) reentrega do QStash: sem o claim, o mesmo kit é reenfileirado sem proteção. Hoje
+      //      isso é inofensivo só porque `publish-familia-ml:75` pula família com `ml_item_id`
+      //      já setado — não dependa desse acaso.
+      // O `.select()` no fim é o que torna o claim atômico: só volta o que ESTA execução mudou.
+      const { data: reclamados } = await admin.from('familias')
+        .update({ status: 'publicando', erro_mensagem: null })
+        .eq('org_id', familia.org_id)
+        .eq('kit_base_codigo_pai', familia.codigo_pai)
+        .not('kit_multiplicador', 'is', null)
+        .in('status', ['pronto', 'erro'])
+        .is('ml_item_id', null)
+        .select('id, lote_id');
+
+      if ((reclamados ?? []).length > 0) {
+        await enfileirarPublicacoes(
+          (reclamados ?? []).map((k) => ({
+            job: { familia_id: k.id as string, lote_id: k.lote_id as string },
+            alvo: 'publish' as const,
+          })),
+          familia.user_id as string,
+        );
+      }
+    } catch (e) {
+      console.error('kit_encadear_apos_base_falhou', familia.codigo_pai, String(e));
+    }
 
     await finalizarLote(job.lote_id);
     return { tipo: 'ok', itemExternoId: ref.itemExternoId };
