@@ -134,8 +134,9 @@ Mecanismo escolhido (durável, sem polling no browser):
 2. Se a base **já tem** `ml_item_id` (caminho Publicados) → a edge encadeia `publicar-familias` imediatamente (padrão `encadearPublicacao` de `adicionar-variacoes-familia/index.ts:35-48`).
 3. Se a base **não tem** `ml_item_id` (caminho Revisão) → a edge **não** encadeia nada. Quem enfileira é `publish-familia-ml/processar.ts`, no fim de um CREATE bem-sucedido: ele procura famílias de kit `pronto`/`ml_item_id null` cujo `kit_base_codigo_pai` é o `codigo_pai` que acabou de publicar, e as enfileira com `enfileirarPublicacoes` (`_shared/queue.ts:126`) — o worker não precisa de JWT.
 4. Base falhou → os kits ficam `pronto`, sem publicar. O operador corrige e reenvia o lote da base; no sucesso, o passo 3 dispara.
+5. **Kit falhou (base já publicada)** → `talvezFinalizarLote` promove o lote técnico do kit pra `revisao` (comportamento normal do pipeline, sem guard especial) e ele aparece como card comum na Revisão, com botão Publicar — esse card **é** o caminho de reenvio, não uma segunda revisão de conteúdo. Mesmo precedente do ADR-0129 (D-10 + `adicionar-variacoes-familia/index.ts:97,264`). Documentado no ADR-0151, Decisão 4. Task 8/11 verifica esse caminho (forçar erro no CREATE de 1 kit, confirmar card + reenvio funcionando).
 
-Lote dedicado (e não o lote manual aberto) pelo mesmo motivo do desvio 2 do ADR-0129, e porque assim os kits **não aparecem como card na Revisão da base** (Decisão 4: "sem card por kit").
+Lote dedicado (e não o lote manual aberto) pelo mesmo motivo do desvio 2 do ADR-0129, e porque assim os kits **não aparecem como card na Revisão da base no caminho feliz** (Decisão 4: "sem card por kit" — vale enquanto o kit não falhar, ver passo 5).
 
 ---
 

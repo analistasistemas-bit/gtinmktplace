@@ -79,6 +79,19 @@ revisado, furando a revisão humana da Decisão 4.
 Marcar os tamanhos + revisar a base + confirmar no preview abaixo **é** a revisão humana exigida
 pela regra inegociável do projeto. Não há uma segunda parada de Revisão por kit gerado.
 
+**Vale para o caminho feliz.** Se o CREATE do kit falhar no ML (moderação, foto morta, categoria
+mudou), `talvezFinalizarLote` (código compartilhado, sem guard de status) promove o lote técnico
+do kit pra `revisao`, e o kit reaparece como card comum na Revisão, com botão Publicar. Isso é
+**intencional, não bug** — mesmo precedente do ADR-0129 (`adicionar-variacoes-familia/index.ts:97,264`,
+D-10: "o lote não passa pela tela Revisão" já convive com o mesmo mecanismo de recuperação em
+falha). Não existe segunda revisão de *conteúdo* nesse card — existe reenvio. Alternativas
+avaliadas e descartadas: travar `talvezFinalizarLote` (mexe em código usado por todo o pipeline,
+deixaria o lote preso em `publicando` com spinner eterno em `/progresso`, sem forma de reenviar) ou
+esconder o lote de todo jeito (exige UI de retry nova, ninguém pediu). Risco residual aceito, junto
+do oversell intra-canal (Decisão 6) — cabe a Task 8/11 verificar que o caminho de recuperação
+funciona de verdade (forçar erro no CREATE de 1 kit, confirmar card na Revisão + Publicar
+republica), não só por inferência.
+
 **Preview editável antes de confirmar**, por kit:
 - **Título**: herda o slot `quantidade` do sistema de montagem de título (ADR-0099) — "Kit com N
   unidades" entra por esse slot já existente.
