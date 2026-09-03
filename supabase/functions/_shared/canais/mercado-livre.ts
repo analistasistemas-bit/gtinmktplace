@@ -275,7 +275,13 @@ export const mercadoLivreConnector: ChannelConnector = {
       }
       // Cap de estoque (ADR-0048): teto sobre o conjunto enviado (existentes + novas) p/ a soma
       // do anúncio não passar de 99.999. No-op quando cabe. Estoque real intacto no banco.
-      const capUpd = caparEstoque([...a.existentes, ...a.novas].map((v) => ({ sku: v.sku, estoque: v.estoque })));
+      // Com `preservarPublicadas` as existentes ficam com o estoque que já está no ML, então é
+      // ESSE o total que o teto precisa enxergar — usar o do banco daria um cap sobre um número
+      // que nunca vai ao anúncio.
+      const existentesParaCap = a.preservarPublicadas
+        ? atual.variations.map((v) => ({ sku: v.seller_custom_field ?? '', estoque: v.available_quantity }))
+        : a.existentes;
+      const capUpd = caparEstoque([...existentesParaCap, ...a.novas].map((v) => ({ sku: v.sku, estoque: v.estoque })));
       const desejados = a.existentes.map((e) => ({ codigo: e.sku, estoque: capUpd.get(e.sku) ?? e.estoque }));
       // Renomear cor de variação já publicada (ADR-0062): sku → cor desejada no banco.
       const corDesejadaPorCodigo: Record<string, string | null> = {};

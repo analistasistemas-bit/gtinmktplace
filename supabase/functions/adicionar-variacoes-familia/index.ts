@@ -37,11 +37,7 @@ async function encadearPublicacao(authorization: string, familiaId: string): Pro
     const resp = await fetch(`${Deno.env.get('SUPABASE_URL')}/functions/v1/publicar-familias`, {
       method: 'POST',
       headers: { Authorization: authorization, 'Content-Type': 'application/json' },
-      // `preservar_publicadas`: adicionar cor NÃO reprecifica nem repõe estoque das cores que já
-      // estão no anúncio — elas vão no PUT só para o ML não apagá-las. Pedido do Diego
-      // 2026-09-03: um PUT inteiro foi recusado ("...if the variation has bids") porque o app
-      // leu a normalização de cor do ML como renomeio.
-      body: JSON.stringify({ familia_ids: [familiaId], preservar_publicadas: true }),
+      body: JSON.stringify({ familia_ids: [familiaId] }),
     });
     const corpo = await resp.json().catch(() => null) as { enfileiradas?: number } | null;
     return resp.ok && Number(corpo?.enfileiradas ?? 0) > 0;
@@ -259,9 +255,9 @@ Deno.serve(async (req) => {
   // edge de destino faz o próprio requireUserOrg, então autorização não é perdida no repasse).
   // NÃO enviamos somente_estoque_*: adicionar variação é mudança de COMPOSIÇÃO do anúncio, não
   // reposição — o invariante do ADR-0104 §4 ("mudança de composição só roda pelo caminho
-  // 'Atualizar tudo'") exige o caminho completo de UPDATE. Vai `preservar_publicadas: true`:
-  // a composição muda (nasce uma cor), mas as cores JÁ publicadas não são tocadas — nem preço,
-  // nem estoque, nem nome de cor. A cor nova entra no preço vivo do anúncio.
+  // 'Atualizar tudo'") exige o caminho completo de UPDATE. Mesmo assim as cores JÁ publicadas
+  // não são tocadas (nem preço, nem estoque, nem nome de cor): o worker deriva isso do lote
+  // `origem='manual'` (`_shared/update/fluxo-add-variacao.ts`) e só escreve a cor nova.
   const publicacaoOk = await encadearPublicacao(req.headers.get('Authorization')!, familiaId);
   if (!publicacaoOk) {
     // Rota de recuperação: o lote fica visível (e reenviável) na tela Lotes em vez de preso,

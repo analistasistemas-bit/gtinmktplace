@@ -23,7 +23,7 @@ Deno.serve(async (req) => {
 try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
 
-  const { familia_ids, listing_type_id, canais, somente_estoque_global, somente_estoque_overrides, preservar_publicadas } = await req.json().catch(() => ({}));
+  const { familia_ids, listing_type_id, canais, somente_estoque_global, somente_estoque_overrides } = await req.json().catch(() => ({}));
   if (!Array.isArray(familia_ids) || familia_ids.length === 0) {
     return new Response('familia_ids obrigatório', { status: 400, headers: corsHeaders });
   }
@@ -34,9 +34,6 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
   // invertem o global. Sem os campos → default false → comportamento 100% atual (preço propaga).
   const somenteEstoqueGlobal: boolean = somente_estoque_global ?? false;
   const somenteEstoqueOverrides: string[] = somente_estoque_overrides ?? [];
-  // Fluxo "Adicionar variação" (edge adicionar-variacoes-familia): só a cor nova vai ao canal;
-  // as já publicadas entram no payload como no-op. Ausente → false → comportamento atual.
-  const preservarPublicadas: boolean = preservar_publicadas ?? false;
   // Canais a publicar (E6). Default ['mercado_livre'] → chamadas atuais 100% compatíveis.
   const { incluiML, extras: canaisExtras } = separarCanais(canais);
 
@@ -146,8 +143,8 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
           f,
           alvo: (ehS ? 'split' : 'update') as AlvoPublicacao,
           job: ehS
-            ? { familia_id: f.id as string, lote_id: f.lote_id as string, listing_type_id: listingType, somenteEstoque, preservarPublicadas }
-            : { familia_id: f.id as string, lote_id: f.lote_id as string, somenteEstoque, preservarPublicadas },
+            ? { familia_id: f.id as string, lote_id: f.lote_id as string, listing_type_id: listingType, somenteEstoque }
+            : { familia_id: f.id as string, lote_id: f.lote_id as string, somenteEstoque },
         };
       }),
     ];

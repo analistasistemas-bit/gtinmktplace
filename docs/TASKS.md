@@ -42,17 +42,22 @@ Decisão do Diego (2026-09-03, escolhida entre 3 escopos): **só a cor nova vai 
 fluxo "Adicionar variação" da tela Estoque — update por planilha continua repondo estoque/preço
 como hoje.
 
-- [x] `preservar_publicadas` no body de `publicar-familias` → `preservarPublicadas` no job →
-  `AtualizacaoCanonica` (`_shared/canais/contrato.ts`) → `mercadoLivreConnector.atualizarAnuncio`.
-  `adicionar-variacoes-familia` é a única que envia `true`. Ausente = false = comportamento atual.
+- [x] `ehFluxoAddVariacao` (`_shared/update/fluxo-add-variacao.ts`): `lotes.origem = 'manual'`,
+  o mesmo predicado que o sino do ADR-0129 D-11 já usa para identificar o fluxo. `update-familia-ml`
+  e `publicar-split-ml` derivam dele e passam `preservarPublicadas` ao conector. Derivado do LOTE,
+  não de um flag no job, porque o "Reenviar" da Revisão (`reprocessar-familia`) reenfileira só
+  `{familia_id, lote_id}` — um flag no payload se perderia e a família ficaria presa no mesmo erro.
 - [x] No canal (`_shared/canais/mercado-livre.ts`), com a flag as existentes viram no-op puro:
   `{ id, available_quantity }` com o estoque que JÁ está no ML — sem COLOR, sem preço, sem fotos.
   Elas só continuam no payload porque o PUT de `variations` apaga as omitidas. A cor nova adota o
   preço vivo do anúncio (o ML exige preço único entre variações e ninguém está reprecificando).
-- [x] `publicar-split-ml` propaga a mesma flag (família >100 cores cai nesse worker).
+- [x] `publicar-split-ml` deriva o mesmo predicado (família >100 cores cai nesse worker).
+- [x] O teto de estoque (`caparEstoque`, ADR-0048) passa a somar o estoque que está no ML nas
+  existentes quando a flag está ativa — somar o do banco capava um total que não vai ao anúncio.
 - [x] `precoAConfirmar` trata `preservarPublicadas` como `somenteEstoque`: o preço que ficou no
   anúncio é o vivo, não o recalculado.
-- [x] Testes em `_shared/canais/__tests__/mercado-livre.test.ts` reproduzindo o caso real
+- [x] Testes em `update-familia-ml/__tests__/processar.test.ts` (lote manual → `true`; lote de
+  planilha → `false`) e em `_shared/canais/__tests__/mercado-livre.test.ts` reproduzindo o caso real
   (banco `Rosa Claro` × ML `Rosa-claro`, estoque 0 × 40): no-op na publicada, preço vivo na nova,
   e um teste de regressão provando que SEM a flag o caminho antigo (ADR-0062) segue intacto.
 

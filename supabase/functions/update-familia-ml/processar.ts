@@ -4,6 +4,7 @@
 // lógica Legacy de casadas/novas/conn.atualizarAnuncio. O caminho Legacy (incluindo o item-plano de
 // 1 variação do ADR-0084, que NÃO tem linhas filhas) fica EXATAMENTE como antes.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import type { ChannelConnector } from '../_shared/canais/contrato.ts';
@@ -31,7 +32,7 @@ import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 const CANAL = 'mercado_livre';
 
-export interface Job { familia_id: string; lote_id: string; somenteEstoque?: boolean; preservarPublicadas?: boolean; }
+export interface Job { familia_id: string; lote_id: string; somenteEstoque?: boolean; }
 
 export type ResultadoProcessar =
   | { tipo: 'familia_inexistente' }
@@ -274,6 +275,11 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       peso_gramas: repUpd.peso_gramas != null ? Number(repUpd.peso_gramas) : null,
     } : null;
 
+    // Fluxo "Adicionar variação" (ADR-0129): só a cor NOVA vai ao ML — as publicadas entram no
+    // payload como no-op. Derivado do lote (`origem='manual'`), não do job, pra sobreviver ao
+    // "Reenviar" da Revisão, que reenfileira sem payload extra.
+    const preservarPublicadas = await ehFluxoAddVariacao(admin, job.lote_id);
+
     // O conector encapsula o GET estado → montar variações/novas → PUT → refetch → casar
     // (reenviar TODAS as variações: o ML deleta as omitidas; comuns capa2/capa3 aplicadas a
     // todas; foto da cor nova também em item.pictures). Não lança: erro vira ResultadoCanal.
@@ -293,7 +299,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       desconto: desconto ?? null,
       precoFamilia,
       somenteEstoque: job.somenteEstoque,
-      preservarPublicadas: job.preservarPublicadas,
+      preservarPublicadas,
     });
     if (!res.ok) {
       const e = res.erro!;
@@ -435,7 +441,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     // sucesso do PUT; em "somente estoque" confirma o preço vivo (não o recalculado). Chaveia
     // pelos SKUs que o ML confirmou no anúncio (variacoesExternas) — existentes + novas.
     const confirmado = precoAConfirmar({
-      somenteEstoque: !!job.somenteEstoque || !!job.preservarPublicadas,
+      somenteEstoque: !!job.somenteEstoque || preservarPublicadas,
       precoVivo: res.valor!.precoVivo ?? null,
       precoEnviado: precoFamilia,
     });

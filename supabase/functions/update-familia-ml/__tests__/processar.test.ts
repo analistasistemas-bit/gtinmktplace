@@ -495,6 +495,27 @@ describe('mensagemNotificacaoAddVariacao', () => {
   });
 });
 
+describe('preservarPublicadas derivado do lote (fluxo "Adicionar variação")', () => {
+  // Derivado do LOTE de propósito: o "Reenviar" da Revisão reenfileira só {familia_id, lote_id},
+  // então um flag no job se perderia no retry e a família ficaria presa no mesmo erro do ML.
+  const argsDoUpdate = () =>
+    fakeConnector.chamadas.find((c) => c.metodo === 'atualizarAnuncio')?.args as { preservarPublicadas?: boolean };
+
+  it('lote origem=manual → conector recebe preservarPublicadas=true', async () => {
+    const { admin } = fakeAdmin({ lote: { origem: 'manual' } });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(argsDoUpdate().preservarPublicadas).toBe(true);
+  });
+
+  it('lote de planilha (origem != manual) → preservarPublicadas=false, update normal', async () => {
+    const { admin } = fakeAdmin({ lote: { origem: 'planilha' } });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(argsDoUpdate().preservarPublicadas).toBe(false);
+  });
+});
+
 describe('processarAtualizacaoFamilia — sino gated (ADR-0129 D-11)', () => {
   it('lote origem=manual + família operacao=UPDATE + sucesso → dispara notificarCategoria', async () => {
     const { admin } = fakeAdmin({

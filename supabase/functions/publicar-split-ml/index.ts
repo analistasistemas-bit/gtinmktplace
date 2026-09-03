@@ -27,8 +27,9 @@ import { precosDivergentes, precoCentavos } from '../_shared/preco/grupos.ts';
 import { resolverConfigGrupo, agregarAtacadoStatus } from '../_shared/preco/config-grupo.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { mensagemDissolvidoSemRevinculo } from '../_shared/canais/dissolvido-sem-revinculo.ts';
+import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
 
-interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; preservarPublicadas?: boolean; }
+interface Job { familia_id: string; lote_id: string; listing_type_id?: string; somenteEstoque?: boolean; }
 
 const BUCKET = 'imagens';
 const TTL_SIGNED = 60 * 60 * 2; // 2h — ML baixa a foto de forma assíncrona.
@@ -360,7 +361,7 @@ Deno.serve(async (req) => {
           // Sem isso, família >100 cores publicaria preço mesmo com "somente estoque" marcado.
           somenteEstoque: job.somenteEstoque,
           // Mesmo conector do update normal: adicionar cor por esta tela não toca nas publicadas.
-          preservarPublicadas: job.preservarPublicadas,
+          preservarPublicadas: await ehFluxoAddVariacao(admin, job.lote_id),
         });
         if (!res.ok) {
           const e = res.erro!;
