@@ -348,6 +348,24 @@ D-1…D-16:
    acontecesse o push mandaria `variacoes.estoque = 0` (a coluna crua do kit) para um anúncio
    vivo no ML.
 
+**Round de UX (2026-09-03, branch `feat/kit-titulo-descricao-ux`) — substitui parcialmente o
+desvio 2 e detalha a Decisão 4:**
+
+10. **O título do kit é prefixo, não sufixo.** O desvio 2 diz "composição do sufixo
+    `Kit N Unidades`"; a implementação final é `Kit N Unidades <título da base>` — o
+    diferenciador do anúncio fica no início, onde o comprador lê primeiro na busca do ML. O
+    corte em fronteira de palavra e o `TITULO_MAX=60` continuam valendo, e o prefixo nunca é
+    cortado (quem encolhe é o título da base).
+11. **A descrição é adaptada por seção, não só acrescida de uma linha.** `descricaoDoKit`
+    recebe também o `tituloBase` (3 args) e: (a) reescreve os bullets da seção "📦 O QUE VOCÊ
+    RECEBE / CONTEÚDO DA EMBALAGEM" — padrões `• 1 unidade de…`, `• 1 unidade com…`,
+    `• 1 peça`, `• 1 caixa com N unidades` — escopados ao bloco da seção (o próximo cabeçalho
+    ADR-0115 encerra o bloco, então bullets de outras seções não são tocados); (b) corrige o
+    FAQ "Qual a unidade de venda?" e perguntas afins ("quantas unidades", "o que vem"); (c)
+    remove a linha "Kit com N unidades." herdada da base; (d) **cria** a seção "O QUE VOCÊ
+    RECEBE" quando a base não tem uma. Sem essa adaptação, um kit de 3 publicaria descrição
+    dizendo "1 unidade"/"1 peça"/"1 caixa" — contradizendo o anúncio.
+
 ## Como reverter
 
 Implementado (10 tasks do plano de execução, `docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md`).

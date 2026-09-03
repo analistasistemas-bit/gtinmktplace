@@ -2,6 +2,31 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## UX de título e descrição do kit (ADR-0151) — branch `feat/kit-titulo-descricao-ux` — 2026-09-03
+
+Round de UX sobre o preview do `DialogCriarKit`, sem mudança de mecanismo (estoque vinculado,
+guards e push intactos):
+
+- [x] **Título vira prefixo** — `tituloDoKit` (`src/lib/kit.ts`) compõe `Kit N Unidades <título>`
+  em vez de `<título> Kit N Unidades`: o que diferencia o anúncio na busca do ML fica no início,
+  onde o comprador lê primeiro. Corte em fronteira de palavra respeitando `TITULO_MAX_KIT=60`,
+  nunca cortando o prefixo.
+- [x] **Descrição adaptada por seção** — `descricaoDoKit(descricaoBase, n, tituloBase)` (3 args):
+  adapta os bullets da seção "📦 O QUE VOCÊ RECEBE / CONTEÚDO DA EMBALAGEM" (`• 1 unidade de…`,
+  `• 1 unidade com…`, `• 1 peça`, `• 1 caixa com N unidades`), corrige o FAQ "Qual a unidade de
+  venda?" e afins, remove a linha "Kit com N unidades." duplicada e **cria a seção** quando a base
+  não tem uma. Assinatura mudou — o chamador (`dialog-criar-kit.tsx`) passa `base.titulo`.
+- [x] **UX do diálogo** — `DialogContent` mais largo (`sm:max-w-4xl`), cada kit vira um
+  `<section>` com título próprio e contador "i de total" quando há vários, campos em grid
+  `md:grid-cols-2` (título/descrição à esquerda, foto/dimensões/preço à direita), textarea de
+  descrição maior e `role="list"/"listitem"` com `aria-label` por kit.
+- [x] Validação (Fase 5, agente Testes): 28/28 testes verdes (`kit.test.ts` 18, `preview-kit` 6,
+  `dialog-criar-kit` 4), eslint 0 erros nos 5 arquivos, `pnpm build` ok.
+- [x] ADR-0151: notas 10–11 na seção "Implementação" registram o prefixo (substitui o "sufixo"
+  do desvio 2) e a adaptação da descrição com os padrões peça/caixa escopados à seção.
+
+---
+
 ## Kit vinculado — criar anúncios de kit (N unidades) a partir de produto existente (ADR-0151) — concluído 2026-09-03
 
 Plano de execução: `docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md` (11 tasks, 16
