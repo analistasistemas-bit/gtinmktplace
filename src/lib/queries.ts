@@ -44,6 +44,8 @@ export const QK = {
   familiasNaoPublicadas: ['familias-nao-publicadas'] as const,
   canaisPorProduto: ['canais-por-produto'] as const,
   variacoesEstoque: (codigoPai: string) => ['variacoes-estoque', codigoPai] as const,
+  // ADR-0151: kits vinculados existentes de um produto-base, por codigo_pai.
+  kitsDoProduto: (codigoPai: string) => ['kits-do-produto', codigoPai] as const,
   // Marcador client-side (nunca vai à rede, só setQueryData): SKUs da última submissão de
   // "Adicionar variação" p/ este produto — badge por linha (Publicado/Erro/Publicando).
   variacoesRecemAdicionadas: (codigoPai: string) => ['variacoes-recem-adicionadas', codigoPai] as const,
@@ -99,6 +101,32 @@ export async function fetchLote(id: string): Promise<LoteRow | null> {
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+/** Kit vinculado existente de um produto-base (ADR-0151). */
+export interface KitVinculado {
+  familiaId: string;
+  codigoPai: string;
+  multiplicador: number;
+  status: FamiliaStatus;
+  mlPermalink: string | null;
+}
+
+export async function fetchKitsDoProduto(codigoPai: string): Promise<KitVinculado[]> {
+  const { data, error } = await supabase
+    .from('familias')
+    .select('id, codigo_pai, kit_multiplicador, status, ml_permalink')
+    .eq('kit_base_codigo_pai', codigoPai)
+    .not('kit_multiplicador', 'is', null)
+    .order('kit_multiplicador', { ascending: true });
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    familiaId: r.id,
+    codigoPai: r.codigo_pai,
+    multiplicador: r.kit_multiplicador as number,
+    status: r.status as FamiliaStatus,
+    mlPermalink: r.ml_permalink,
+  }));
 }
 
 /** Anúncio (partição) de um produto em anuncios_externos — campos usados pela UI. */
@@ -929,6 +957,7 @@ export function publicadoFromRow(
     publicadoEm: r.publicado_em ?? null,
     catalogRetentavel,
     canInvoice: r.can_invoice ?? null,
+    kitBaseCodigoPai: r.kit_base_codigo_pai ?? null,
   };
 }
 
@@ -998,7 +1027,7 @@ async function carregarItensUpRetentaveisPorCodigo(
 export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
     .not('ml_item_id', 'is', null)
     .order('publicado_em', { ascending: false });
   if (error) throw error;

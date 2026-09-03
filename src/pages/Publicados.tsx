@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -49,6 +49,10 @@ import { resolverJanela, type Periodo } from '@/lib/metricas';
 import { DashboardPublicados } from '@/components/dashboard-publicados';
 import { PainelAnalise } from '@/components/painel-analise';
 import { fetchFamiliaPublicada } from '@/lib/queries';
+import type { Familia } from '@/lib/tipos-dominio';
+import type { BaseParaKit } from '@/lib/kit';
+import { DialogCriarKit } from '@/components/kit/dialog-criar-kit';
+import { useKitsDoProduto } from '@/hooks/useKitsDoProduto';
 import { resumoViabilidade, type ResumoViabilidade } from '@/lib/analise-viabilidade';
 import { BotaoExportar } from '@/components/export/botao-exportar';
 import { buildPublicadosReport } from '@/lib/export/adapters';
@@ -137,6 +141,50 @@ function fmtData(iso: string | null): string {
   return new Date(iso).toLocaleDateString('pt-BR');
 }
 
+// ADR-0151: adapta a família (só usada quando o operador abre "Criar kit") para o formato de
+// pré-preenchimento do preview. Kit vinculado só existe para produto de UMA variação (D-10).
+function baseParaKit(f: Familia, precoAtual: number): BaseParaKit {
+  const v = f.variacoes[0];
+  return {
+    codigoPai: f.codigoPai,
+    titulo: f.titulo,
+    descricao: f.descricao,
+    // `v.preco` é o mínimo LÍQUIDO (linha-variacao-form.tsx:55) — o preço de venda real é o
+    // publicado no anúncio (o mesmo número da coluna "Preço atual"/"Preço publicado" na tela).
+    preco: precoAtual > 0 ? precoAtual : (v?.precoPublicacao ?? v?.preco ?? 0),
+    custo: v?.custo ?? null,
+    pesoGramas: v?.pesoGramas ?? null,
+    alturaCm: v?.alturaCm ?? null,
+    larguraCm: v?.larguraCm ?? null,
+    comprimentoCm: v?.comprimentoCm ?? null,
+    // A edge grava este path tanto em `familias.capa_storage_path` quanto em
+    // `variacoes.imagem_path` do kit — a capa da família é a fonte certa (o publish sobe
+    // dali); a foto da variação é só o fallback quando a família não tem capa própria.
+    fotoPath: f.capaStoragePath ?? v?.fotoPath ?? null,
+    estoque: v?.estoque ?? null,
+  };
+}
+
+/** Lista, sob o card do produto-base, os kits vinculados já criados (ADR-0151). */
+function KitsVinculados({ codigoPai, ativo }: { codigoPai: string; ativo: boolean }) {
+  const { data: kits } = useKitsDoProduto(codigoPai, ativo);
+  if (!kits || kits.length === 0) return null;
+  return (
+    <div className="rounded-md border bg-background px-3 py-2 text-xs">
+      <span className="font-medium">Kits vinculados:</span>{' '}
+      {kits.map((k) => (
+        k.mlPermalink ? (
+          <a key={k.familiaId} href={k.mlPermalink} target="_blank" rel="noreferrer" className="mr-2 underline">
+            Kit {k.multiplicador}
+          </a>
+        ) : (
+          <span key={k.familiaId} className="mr-2">Kit {k.multiplicador} ({k.status})</span>
+        )
+      ))}
+    </div>
+  );
+}
+
 // ============================================================================
 // Linha da tabela
 // ============================================================================
@@ -154,6 +202,8 @@ interface LinhaProps {
   isAdmin: boolean;
   temFiscal: boolean;
   onPreencherFiscal: (familiaId: string) => void;
+  temModuloEstoque: boolean;
+  onCriarKit: (item: PublicadoItem) => void;
 }
 
 const CONTEUDO_ML = (
@@ -181,6 +231,7 @@ function SeloModo({ listingType }: { listingType?: 'classico' | 'premium' | null
 function LinhaTabela({
   item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando,
   onRetentarCatalogo, retentandoCatalogo, isAdmin, temFiscal, onPreencherFiscal,
+  temModuloEstoque, onCriarKit,
 }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   // Chave por anúncio (mlItemId): familiaId é compartilhado entre anúncios split (ADR-0048).
@@ -194,6 +245,20 @@ function LinhaTabela({
     : !podeAlternar
       ? 'Não é possível alternar o status deste anúncio'
       : undefined;
+
+  // ADR-0151 D-2/D-10/D-12: kit vinculado só existe para produto sem variação de cor, com o
+  // módulo Estoque habilitado, e não pode ser criado a partir de um anúncio que já é kit.
+  const ehKitVinculado = !!item.kitBaseCodigoPai;
+  const temVariacaoDeCor = (item.qtdVariacoes ?? 0) > 1;
+  const motivoCriarKitDesabilitado = !isAdmin
+    ? 'Somente administradores podem criar kits.'
+    : !temModuloEstoque
+      ? 'Kit vinculado exige o módulo Estoque habilitado.'
+      : ehKitVinculado
+        ? 'Este anúncio já é um kit vinculado.'
+        : temVariacaoDeCor
+          ? 'Kit vinculado só existe para produto sem variação de cor.'
+          : undefined;
 
   return (
     <>
@@ -263,6 +328,18 @@ function LinhaTabela({
             ) : (
               <span>{CONTEUDO_ML}</span>
             )}
+          </Button>
+
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Criar kit"
+            title={motivoCriarKitDesabilitado ?? 'Criar kit vinculado'}
+            className="h-7 px-2 text-xs"
+            disabled={!isAdmin || !temModuloEstoque || ehKitVinculado || temVariacaoDeCor}
+            onClick={(e) => { e.stopPropagation(); onCriarKit(item); }}
+          >
+            <PackagePlus className="h-3 w-3" />
           </Button>
 
           {item.status === 'pausado' ? (
@@ -408,6 +485,7 @@ function LinhaTabela({
                   {familia.variacoes.map((v) => v.cor || v.codigo).join(' · ')}
                 </div>
               )}
+              {!ehKitVinculado && <KitsVinculados codigoPai={item.codigoPai} ativo={aberto} />}
               <PainelAnalise
                 familia={familia}
                 precoOverride={item.precoAtual ?? item.precoPublicacao}
@@ -492,9 +570,15 @@ export default function Publicados() {
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
   const { data: modulos } = useModulosHabilitados();
   const temFiscal = !!modulos?.includes('fiscal');
+  const temModuloEstoque = !!modulos?.includes('estoque');
   // id da família aberta no DialogFiscalProduto (T13) — null = fechado. Fila vazia: edição
   // single a partir do badge, sem "salvar e próximo" (isso é o fluxo em lote do Estoque).
   const [fiscalAberto, setFiscalAberto] = useState<string | null>(null);
+
+  // Produto-alvo do diálogo "Criar kit" (ADR-0151) — null = fechado. A família completa (com
+  // custo/peso/dimensões/foto/estoque, que PublicadoItem não carrega) é buscada sob demanda.
+  const [kitAlvo, setKitAlvo] = useState<{ familiaId: string; codigoPai: string; precoAtual: number } | null>(null);
+  const { data: familiaKitAlvo } = useFamilia(kitAlvo?.familiaId ?? '', !!kitAlvo);
 
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
@@ -595,6 +679,17 @@ export default function Publicados() {
       onSettled: () => setRetentandoCatalogoId(null),
     });
   };
+
+  const handleCriarKit = (item: PublicadoItem) =>
+    setKitAlvo({
+      familiaId: item.familiaId,
+      codigoPai: item.codigoPai,
+      // Preço de venda real (o mesmo da coluna "Preço atual"/"Preço publicado"), não o mínimo
+      // líquido de `variacoes.preco` — ver baseParaKit.
+      precoAtual: item.precoAtual ?? item.precoPublicacao,
+    });
+
+  const { data: kitsExistentesRows } = useKitsDoProduto(kitAlvo?.codigoPai ?? '', !!kitAlvo);
 
   // Merge status ao vivo (memoizado: só recomputa quando publicados/statusData mudam,
   // não a cada tecla na busca).
@@ -940,6 +1035,8 @@ export default function Publicados() {
                       isAdmin={isAdmin}
                       temFiscal={temFiscal}
                       onPreencherFiscal={setFiscalAberto}
+                      temModuloEstoque={temModuloEstoque}
+                      onCriarKit={handleCriarKit}
                     />
                   ))
                 )}
@@ -969,6 +1066,16 @@ export default function Publicados() {
           onFechar={() => setFiscalAberto(null)}
           onAvancar={setFiscalAberto}
           onSalvo={() => refetchPublicados()}
+        />
+      )}
+
+      {kitAlvo && familiaKitAlvo && (
+        <DialogCriarKit
+          familiaBaseId={kitAlvo.familiaId}
+          base={baseParaKit(familiaKitAlvo, kitAlvo.precoAtual)}
+          kitsExistentes={(kitsExistentesRows ?? []).map((k) => k.multiplicador)}
+          open
+          onOpenChange={(v) => { if (!v) setKitAlvo(null); }}
         />
       )}
     </div>

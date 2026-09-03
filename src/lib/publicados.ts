@@ -44,6 +44,8 @@ export interface PublicadoItem {
   catalogRetentavel?: boolean;
   /** Prontidão de emissão do ML (ADR-0135 D-10) — `familias.can_invoice`. null = ainda não verificado. */
   canInvoice?: boolean | null;
+  /** ADR-0151: codigo_pai do produto-base, quando este anúncio É um kit vinculado. null = não é kit. */
+  kitBaseCodigoPai?: string | null;
 }
 
 /**
