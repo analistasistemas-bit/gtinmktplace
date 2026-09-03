@@ -49,6 +49,55 @@ describe('atualizarAnuncio somenteEstoque', () => {
   });
 });
 
+describe('atualizarAnuncio preservarPublicadas (fluxo "Adicionar variação")', () => {
+  // Caso real do MLB7157545794 (2026-09-03): o ML normaliza o nome da cor pelo dicionário de
+  // COLOR ("Rosa Claro" → "Rosa-claro"), o banco guarda a grafia da planilha, e o app lia isso
+  // como renomeio. Como a variação tinha venda, o ML derrubou o PUT INTEIRO com
+  // "You cannot change attribute combinations if the variation has bids".
+  const getComCorNormalizada = {
+    id: 'MLB1',
+    variations: [{
+      id: 1, seller_custom_field: 'A1', available_quantity: 40, price: 76.9, picture_ids: [],
+      attribute_combinations: [{ id: 'COLOR', value_name: 'Rosa-claro' }],
+    }],
+    pictures: [],
+  };
+  const base: AtualizacaoCanonica = {
+    itemExternoId: 'MLB1',
+    existentes: [{ sku: 'A1', estoque: 0, cor: 'Rosa Claro' }],
+    novas: [{ sku: 'N1', cor: 'Preto', estoque: 40, preco: 80, gtin: null, fotoId: 'P' }],
+    capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
+    marca: null, dimensoes: null, desconto: null, precoFamilia: 80,
+    somenteEstoque: false,
+  };
+
+  it('a publicada vai só como no-op (id + estoque do ML): sem COLOR, sem price, sem estoque do banco', async () => {
+    const getPut = stubFetch(getComCorNormalizada);
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, { ...base, preservarPublicadas: true });
+    expect(res.ok).toBe(true);
+    const existente = getPut().variations.find((v: any) => v.id === 1);
+    expect(existente.attribute_combinations).toBeUndefined();
+    expect(existente.price).toBeUndefined();
+    expect(existente.picture_ids).toBeUndefined();
+    expect(existente.available_quantity).toBe(40);
+  });
+
+  it('a cor nova entra no preço vivo do anúncio, não no preço da família', async () => {
+    const getPut = stubFetch(getComCorNormalizada);
+    await mercadoLivreConnector.atualizarAnuncio(ctxFake, { ...base, preservarPublicadas: true });
+    expect(getPut().variations.find((v: any) => v.seller_custom_field === 'N1').price).toBe(76.9);
+  });
+
+  it('sem a flag, o caminho antigo continua mandando COLOR e preço (ADR-0062 intocado)', async () => {
+    const getPut = stubFetch(getComCorNormalizada);
+    await mercadoLivreConnector.atualizarAnuncio(ctxFake, base);
+    const existente = getPut().variations.find((v: any) => v.id === 1);
+    expect(existente.attribute_combinations).toEqual([{ id: 'COLOR', value_name: 'Rosa Claro' }]);
+    expect(existente.price).toBe(80);
+    expect(existente.available_quantity).toBe(0);
+  });
+});
+
 describe('atualizarAnuncio em item plano (ADR-0084)', () => {
   it('GET sem variations + 1 existente → PUT plano direto no corpo raiz (price/available_quantity), sem variations', async () => {
     let putBody: any = null;

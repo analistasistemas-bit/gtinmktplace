@@ -5,7 +5,7 @@
 import { useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronRight, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Trash2 } from 'lucide-react';
+import { ChevronRight, ClipboardCheck, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -244,7 +244,10 @@ export function ProdutoCard({
         {statusUpdate === 'erro' && loteRevisaoId && (
           <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2">
             <Link to={`/revisao/${loteRevisaoId}`} aria-label={`Revisar atualização de ${produto.nomePai}`}>
-              Revisar
+              <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
+              {/* Mesmo padrão de Entrada/Ajustar: abaixo de md a coluna do produto não comporta
+                  rótulo + nome, e o nome é o que identifica a linha. */}
+              <span className="hidden md:inline">Revisar</span>
             </Link>
           </Button>
         )}

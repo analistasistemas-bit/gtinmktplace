@@ -318,6 +318,14 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   `somente_estoque_overrides` (`string[]` de `familia_id`); a escolha é resolvida por-família por
   `resolverSomenteEstoque(id, global, overrides)` (override inverte o global) e viaja no payload
   do job (idempotência do retry QStash).
+  **`preservar_publicadas` (2026-09-03):** boolean opcional (default false) que viaja no job como
+  `preservarPublicadas` até `mercadoLivreConnector.atualizarAnuncio`. Quando true, as variações
+  JÁ publicadas entram no PUT apenas como no-op (`id` + o `available_quantity` que já está no ML)
+  — sem COLOR, sem preço, sem fotos; só a cor NOVA é escrita, e ela adota o preço vivo do anúncio.
+  Só `adicionar-variacoes-familia` envia. Motivo: o ML normaliza o nome da cor pelo dicionário de
+  COLOR ("Rosa Claro" → "Rosa-claro") e a comparação estrita de `montarVariacoesUpdate` lia isso
+  como renomeio (ADR-0062); em variação com venda, o ML derruba o PUT inteiro com
+  `You cannot change attribute combinations if the variation has bids`.
   **Roteamento split (ADR-0078 F2):** decide entre worker de anúncio único e split (`publicar-split-ml`)
   via `decidirSplit` (`decidir-split.ts`): >100 cores incluídas, OU preços de publicação divergentes
   entre as variações, OU produto já particionado (mais de 1 linha em `anuncios_externos`) — qualquer
@@ -801,8 +809,10 @@ falha ao ler `organizations` não libera.
   parado esperando clique manual na Revisão, violando D-10. A edge faz `fetch` server-to-server
   para `publicar-familias` com o **mesmo JWT** do chamador (a edge de destino roda o próprio
   `requireUserOrg`, autorização não se perde no repasse); NÃO envia `somente_estoque_*` — adicionar
-  variação é mudança de **composição**, não reposição, e o invariante do ADR-0104 §4 exige que o
-  preço propague normalmente. Lote nasce em `status='publicando'` de propósito — **nunca** aparece
+  variação é mudança de **composição**, não reposição, e o invariante do ADR-0104 §4 exige o
+  caminho completo de UPDATE. Envia `preservar_publicadas: true` (2026-09-03, pedido do Diego):
+  a composição muda, mas as cores já publicadas não são tocadas — nem preço, nem estoque, nem
+  nome de cor; a cor nova entra no preço vivo do anúncio. Lote nasce em `status='publicando'` de propósito — **nunca** aparece
   na fila de Revisão; se o encadeamento falhar, rebaixa para `'revisao'` só como rota de
   recuperação visível na tela Lotes.
 - **criar-kit-vinculado** (ADR-0151) — cria kit(s) "N unidades" a partir de uma família-base

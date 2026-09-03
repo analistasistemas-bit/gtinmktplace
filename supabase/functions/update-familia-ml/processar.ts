@@ -31,7 +31,7 @@ import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 
 const CANAL = 'mercado_livre';
 
-export interface Job { familia_id: string; lote_id: string; somenteEstoque?: boolean; }
+export interface Job { familia_id: string; lote_id: string; somenteEstoque?: boolean; preservarPublicadas?: boolean; }
 
 export type ResultadoProcessar =
   | { tipo: 'familia_inexistente' }
@@ -293,6 +293,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       desconto: desconto ?? null,
       precoFamilia,
       somenteEstoque: job.somenteEstoque,
+      preservarPublicadas: job.preservarPublicadas,
     });
     if (!res.ok) {
       const e = res.erro!;
@@ -434,7 +435,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     // sucesso do PUT; em "somente estoque" confirma o preço vivo (não o recalculado). Chaveia
     // pelos SKUs que o ML confirmou no anúncio (variacoesExternas) — existentes + novas.
     const confirmado = precoAConfirmar({
-      somenteEstoque: !!job.somenteEstoque,
+      somenteEstoque: !!job.somenteEstoque || !!job.preservarPublicadas,
       precoVivo: res.valor!.precoVivo ?? null,
       precoEnviado: precoFamilia,
     });

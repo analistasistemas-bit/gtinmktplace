@@ -17,7 +17,7 @@ reenvio vivem na tela de Revisão, mas não havia caminho até o lote.
 - [x] Testes em `produto-card.test.tsx`: o link aponta pro lote certo com `statusUpdate=erro`;
   `atualizando` não mostra o botão mesmo com lote.
 
-### Causa do erro daquele UPDATE (diagnóstico — sem correção nesta entrega)
+### Causa do erro daquele UPDATE
 
 `MLB7157545794` recusou o PUT com `You cannot change attribute combinations if the variation has
 bids`. A cor nova não era o problema: o ML **normaliza o nome da cor** pelo dicionário de COLOR
@@ -36,10 +36,31 @@ consciente" (ADR-0062), mandou `attribute_combinations` nas 4 e o ML derrubou o 
 causa das 2 com venda. A trava do lote #45 não pegou porque só vale em `somenteEstoque`, e
 adicionar cor nova nunca é "somente estoque".
 
-- [ ] Decisão pendente do Diego: comparar cor normalizada (sem acento, case-insensitive,
-  hífen ≈ espaço) antes de enviar COLOR. Mexe em ADR-0062 — não implementado sem aval.
-- [ ] Achado separado: a variação Preto (`26706151`) está sem GTIN. Se a categoria exigir GTIN,
-  ela volta a falhar mesmo depois de resolvido o problema de COLOR.
+### Correção: adicionar cor não toca mais nas cores já publicadas
+
+Decisão do Diego (2026-09-03, escolhida entre 3 escopos): **só a cor nova vai ao ML**, e só no
+fluxo "Adicionar variação" da tela Estoque — update por planilha continua repondo estoque/preço
+como hoje.
+
+- [x] `preservar_publicadas` no body de `publicar-familias` → `preservarPublicadas` no job →
+  `AtualizacaoCanonica` (`_shared/canais/contrato.ts`) → `mercadoLivreConnector.atualizarAnuncio`.
+  `adicionar-variacoes-familia` é a única que envia `true`. Ausente = false = comportamento atual.
+- [x] No canal (`_shared/canais/mercado-livre.ts`), com a flag as existentes viram no-op puro:
+  `{ id, available_quantity }` com o estoque que JÁ está no ML — sem COLOR, sem preço, sem fotos.
+  Elas só continuam no payload porque o PUT de `variations` apaga as omitidas. A cor nova adota o
+  preço vivo do anúncio (o ML exige preço único entre variações e ninguém está reprecificando).
+- [x] `publicar-split-ml` propaga a mesma flag (família >100 cores cai nesse worker).
+- [x] `precoAConfirmar` trata `preservarPublicadas` como `somenteEstoque`: o preço que ficou no
+  anúncio é o vivo, não o recalculado.
+- [x] Testes em `_shared/canais/__tests__/mercado-livre.test.ts` reproduzindo o caso real
+  (banco `Rosa Claro` × ML `Rosa-claro`, estoque 0 × 40): no-op na publicada, preço vivo na nova,
+  e um teste de regressão provando que SEM a flag o caminho antigo (ADR-0062) segue intacto.
+
+- [ ] Achado separado, não tratado: a variação Preto (`26706151`) está sem GTIN. Se a categoria
+  exigir GTIN, ela volta a falhar mesmo com o problema de COLOR resolvido.
+- [ ] Fica aberto (não era o pedido): fora do fluxo "Adicionar variação", a comparação de cor
+  continua estrita — um UPDATE de planilha com cor nova ainda pode reenviar COLOR por
+  normalização do ML. Corrigir isso mexe na premissa do ADR-0062 e não foi decidido.
 
 ## Fix: kit publicava a mesma foto duas vezes + UX de publicação direta (ADR-0151) — 2026-09-03
 

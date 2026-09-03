@@ -289,17 +289,27 @@ export const mercadoLivreConnector: ChannelConnector = {
       // Preço vivo do anúncio (ADR-0078 F1): preço uniforme na F1 → price da 1ª variação viva.
       // Em "somente estoque" NÃO empurra preço por nenhum ramo; a cor nova entra neste preço.
       const precoVivo = atual.variations.find((v) => v.price != null)?.price ?? null;
-      const existentes = montarVariacoesUpdate(
-        atual.variations, desejados,
-        undefined,
-        a.somenteEstoque ? null : (a.desconto ?? undefined), a.somenteEstoque ? null : a.precoFamilia,
-        corDesejadaPorCodigo, a.somenteEstoque,
-      );
+      // `preservarPublicadas` (fluxo "Adicionar variação"): as existentes viram no-op puro —
+      // id + o available_quantity que JÁ está no ML. Elas só vão no payload porque o PUT de
+      // variations apaga as omitidas; nada nelas muda (nem estoque, nem preço, nem COLOR). Sem
+      // isso, qualquer divergência de grafia entre o banco e o dicionário de cores do ML
+      // ("Rosa Claro" × "Rosa-claro") virava um rename e derrubava o PUT INTEIRO quando a
+      // variação tinha venda. A cor nova adota o preço vivo, como em `somenteEstoque` — o ML
+      // exige preço único entre variações e ninguém está reprecificando o anúncio aqui.
+      const existentes = a.preservarPublicadas
+        ? atual.variations.map((v) => ({ id: v.id, available_quantity: v.available_quantity }))
+        : montarVariacoesUpdate(
+          atual.variations, desejados,
+          undefined,
+          a.somenteEstoque ? null : (a.desconto ?? undefined), a.somenteEstoque ? null : a.precoFamilia,
+          corDesejadaPorCodigo, a.somenteEstoque,
+        );
+      const semPreco = a.somenteEstoque || a.preservarPublicadas;
       const novasPut = a.novas.map((v) => montarVariacaoNova(
         { codigo: v.sku, cor: v.cor, estoque: capUpd.get(v.sku) ?? v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId },
         a.capaFotoId, a.capa2FotoId, a.capa3FotoId, a.categoriaId,
-        a.somenteEstoque ? null : (a.desconto ? { pct: a.desconto.pct } : null),
-        a.somenteEstoque ? precoVivo : undefined,
+        semPreco ? null : (a.desconto ? { pct: a.desconto.pct } : null),
+        semPreco ? precoVivo : undefined,
       ));
       // BRAND (do fornecedor) + dimensões/peso (SELLER_PACKAGE_*); só os passados — o ML mescla.
       const atributosItem = [

@@ -169,6 +169,12 @@ export interface AtualizacaoCanonica {
   precoFamilia: number | null;
   /** Modo reposição pura: não empurra preço por nenhum ramo; cor nova entra no preço vivo. ADR-0078 F1. */
   somenteEstoque?: boolean;
+  /** Fluxo "Adicionar variação" (tela Estoque): só a cor NOVA vai ao canal. As já publicadas
+   *  entram no payload apenas para o ML não apagá-las (o PUT de variations deleta as omitidas),
+   *  com o estoque que já está lá — sem cor, sem preço, sem foto. Pedido do Diego 2026-09-03,
+   *  depois de um PUT inteiro ser recusado com "You cannot change attribute combinations if the
+   *  variation has bids" ao adicionar uma cor. */
+  preservarPublicadas?: boolean;
 }
 
 /** Resultado do UPDATE: sku → id externo da variação (casar/persistir + detectar não-vinculadas). */
