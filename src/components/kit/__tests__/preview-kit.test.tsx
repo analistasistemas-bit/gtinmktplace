@@ -85,4 +85,10 @@ describe('PreviewKit', () => {
 
     expect(screen.queryByText(/Dimensões incompletas/)).not.toBeInTheDocument();
   });
+
+  it('rótulos de dimensões e preço reservam min-h uniforme (grid alinhado)', () => {
+    renderPreview(2);
+    expect(screen.getByText('Altura (cm)')).toHaveClass('min-h-10');
+    expect(screen.getByText('Desconto sobre N× unitário (%)')).toHaveClass('min-h-10');
+  });
 });

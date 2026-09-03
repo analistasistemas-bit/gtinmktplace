@@ -11,6 +11,9 @@ import type { FaixaAtacado } from '@/lib/atacado';
 import { precoSugeridoDoKit, TITULO_MAX_KIT, type BaseParaKit } from '@/lib/kit';
 import { PISO_MEDIDA_CM } from '@/lib/publicavel';
 
+/** ui-ux-pro-max: form-labels + content-jumping — reserva 2 linhas p/ rótulos de grid. */
+const LABEL_CAMPO_GRID = 'min-h-10 text-xs leading-snug text-muted-foreground';
+
 export interface KitPreviewValue {
   titulo: string;
   descricao: string;
@@ -142,9 +145,9 @@ export function PreviewKit({ n, indice, total, base, value, onChange }: {
             )}
           </div>
 
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-3 sm:items-end">
             <div className="flex flex-col gap-1">
-              <label htmlFor={id('altura')} className="text-xs text-muted-foreground">Altura (cm)</label>
+              <label htmlFor={id('altura')} className={LABEL_CAMPO_GRID}>Altura (cm)</label>
               <Input
                 id={id('altura')} type="number" aria-label={`Altura do kit ${n} (cm)`}
                 className="h-8 text-sm" value={value.alturaCm}
@@ -152,7 +155,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange }: {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label htmlFor={id('largura')} className="text-xs text-muted-foreground">Largura (cm)</label>
+              <label htmlFor={id('largura')} className={LABEL_CAMPO_GRID}>Largura (cm)</label>
               <Input
                 id={id('largura')} type="number" aria-label={`Largura do kit ${n} (cm)`}
                 className="h-8 text-sm" value={value.larguraCm}
@@ -160,7 +163,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange }: {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label htmlFor={id('comprimento')} className="text-xs text-muted-foreground">Comprimento (cm)</label>
+              <label htmlFor={id('comprimento')} className={LABEL_CAMPO_GRID}>Comprimento (cm)</label>
               <Input
                 id={id('comprimento')} type="number" aria-label={`Comprimento do kit ${n} (cm)`}
                 className="h-8 text-sm" value={value.comprimentoCm}
@@ -174,9 +177,9 @@ export function PreviewKit({ n, indice, total, base, value, onChange }: {
             </div>
           )}
 
-          <div className="grid gap-2 sm:grid-cols-3">
+          <div className="grid gap-2 sm:grid-cols-3 sm:items-end">
             <div className="flex flex-col gap-1">
-              <label htmlFor={id('preco')} className="text-xs text-muted-foreground">Preço</label>
+              <label htmlFor={id('preco')} className={LABEL_CAMPO_GRID}>Preço</label>
               <Input
                 id={id('preco')} type="number" step="0.01" aria-label={`Preço do kit ${n}`}
                 className="h-8 text-sm" value={value.preco}
@@ -185,7 +188,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange }: {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label htmlFor={id('desconto')} className="text-xs text-muted-foreground">Desconto sobre N× unitário (%)</label>
+              <label htmlFor={id('desconto')} className={LABEL_CAMPO_GRID}>Desconto sobre N× unitário (%)</label>
               <Input
                 id={id('desconto')} type="number" min={0} max={99} aria-label={`Desconto do kit ${n} (%)`}
                 className="h-8 text-sm" value={value.descontoPct}
@@ -193,7 +196,7 @@ export function PreviewKit({ n, indice, total, base, value, onChange }: {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label htmlFor={id('gtin')} className="text-xs text-muted-foreground">GTIN (opcional)</label>
+              <label htmlFor={id('gtin')} className={LABEL_CAMPO_GRID}>GTIN (opcional)</label>
               <Input
                 id={id('gtin')} aria-label={`GTIN do kit ${n}`}
                 className="h-8 text-sm" value={value.gtin}
