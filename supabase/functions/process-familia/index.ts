@@ -65,13 +65,24 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo')
+    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
   }
   if (!claimed) {
     return new Response('Already processed', { status: 200, headers: corsHeaders });
+  }
+
+  // Kit vinculado não tem pipeline de IA (ADR-0151): título e descrição nascem compostos a partir
+  // da base (`Kit N Unidades …` + descrição adaptada por seção) no diálogo de criação. Deixar o
+  // kit seguir daqui reescreve os dois como produto comum — foi o que apagou o título do primeiro
+  // kit real (2026-09-03, virou "… 700g 2un"). Devolve a família ao estado publicável sem tocar em
+  // nada: o caminho de recuperação do kit é republicar, nunca reprocessar.
+  if (claimed.kit_multiplicador != null) {
+    console.error('process_familia_recusa_kit', { familiaId: job.familia_id, orgId: claimed.org_id });
+    await admin.from('familias').update({ status: 'pronto' }).eq('id', job.familia_id);
+    return new Response('Kit vinculado não passa por process-familia (ADR-0151)', { status: 200, headers: corsHeaders });
   }
 
   const orgId = claimed.org_id as string;

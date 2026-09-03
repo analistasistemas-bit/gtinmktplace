@@ -35,6 +35,23 @@ GTIN ali, e que o GTIN da unidade + `UNITS_PER_PACK=2` passa — que é como o M
 - [ ] Reenvio do kit que estava em `erro` (família `39cfe494`), pelo botão da Revisão, e conferência
   de `status`/`ml_item_id` + `catalog_status` (tem que reprovar a ficha da unidade, não vincular).
 
+### Kit não pode ser reprocessado pela IA (ADR-0151) — mesmo dia, achado no reenvio
+
+Ao reenviar o kit em erro pela Revisão, o botão "Reenviar" do card chamava `reprocessar-familia`
+(ADR-0030), que reseta a família e re-enfileira `process-familia`. A IA reescreveu o título
+composto do kit (`Kit 2 Unidades Leite em Pó Ninho Zero Lactose 700g` → `Leite em Pó Ninho Zero
+Lactose 700g 2un`) e a descrição adaptada por seção, transformando o kit num produto comum. O
+ADR-0151 já dizia que kit não passa por `process-familia` — faltava a trava.
+
+- [x] **`reprocessar-familia`** exclui kit do alvo (`.is('kit_multiplicador', null)`) — root cause,
+  cobre qualquer caller da edge.
+- [x] **`process-familia`** recusa kit no claim (LOUD no log, devolve a família a `pronto` sem
+  tocar em título/descrição) — defesa em profundidade para qualquer outra rota de enfileiramento.
+- [x] **Card da Revisão**: para família kit, "Reenviar" republica (`publicar-familias`) em vez de
+  reprocessar — o operador continua com saída, agora a correta.
+- [ ] Recompor título/descrição do kit `39cfe494`, que já foram sobrescritos (o `nome_pai` ainda
+  guarda o título certo).
+
 ## UX de título e descrição do kit (ADR-0151) — branch `feat/kit-titulo-descricao-ux` — 2026-09-03
 
 Round de UX sobre o preview do `DialogCriarKit`, sem mudança de mecanismo (estoque vinculado,

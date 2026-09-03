@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, AlertTriangle, RotateCw } from 'lucide-react';
 import { toast } from 'sonner';
+import { publicarFamilias } from '@/lib/publicar';
+import { QK } from '@/lib/queries';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -141,6 +144,27 @@ function AtacadoControle({ familia }: { familia: Familia }) {
 export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onExpandir, onIrParaCritica }: FamiliaRowProps) {
   const { data: capaUrl } = useImageUrl(familia.capaStoragePath ?? familia.fotoCapaPath);
   const reprocessar = useReprocessar(familia.loteId);
+  // ADR-0151: kit em erro se recupera republicando — reprocessar jogaria o kit no process-familia,
+  // que reescreve título e descrição como produto comum (o `Kit N Unidades …` vira "… Nun").
+  const ehKit = !!familia.kitBaseCodigoPai;
+  const qcKit = useQueryClient();
+  const republicarKit = useMutation({
+    mutationFn: (familiaId: string) => publicarFamilias([familiaId]),
+    onSuccess: (r) => {
+      if (r.enfileiradas === 0) {
+        toast.warning('Kit não foi reenviado', {
+          description: 'Nenhuma família foi enfileirada. Verifique o status do kit e tente novamente.',
+        });
+        return;
+      }
+      toast.success('Kit reenviado para publicação');
+      qcKit.invalidateQueries({ queryKey: ['lotes'] });
+      qcKit.invalidateQueries({ queryKey: QK.kitsDoProdutoRaiz });
+    },
+    onError: (e) => toast.error('Falha ao reenviar', {
+      description: e instanceof Error ? e.message : String(e),
+    }),
+  });
   const pub = familiaPublicavel(familia);
   const exigeCor = familiaExigeCor(familia);
   const exigeFoto = familiaExigeFotoPorVariacao(familia);
@@ -250,8 +274,12 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
                 variant="outline"
                 size="sm"
                 className="h-6 px-2 text-xs"
-                disabled={reprocessar.isPending}
-                onClick={() =>
+                disabled={reprocessar.isPending || republicarKit.isPending}
+                onClick={() => {
+                  if (ehKit) {
+                    republicarKit.mutate(familia.id);
+                    return;
+                  }
                   reprocessar.mutate(
                     { familiaId: familia.id },
                     {
@@ -266,11 +294,11 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
                           description: e instanceof Error ? e.message : String(e),
                         }),
                     },
-                  )
-                }
+                  );
+                }}
               >
-                <RotateCw className={cn('mr-1 h-3 w-3', reprocessar.isPending && 'animate-spin')} />
-                {reprocessar.isPending ? 'Reenviando…' : 'Reenviar'}
+                <RotateCw className={cn('mr-1 h-3 w-3', (reprocessar.isPending || republicarKit.isPending) && 'animate-spin')} />
+                {reprocessar.isPending || republicarKit.isPending ? 'Reenviando…' : 'Reenviar'}
               </Button>
             </>
           )}

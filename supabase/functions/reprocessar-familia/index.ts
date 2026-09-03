@@ -43,10 +43,16 @@ Deno.serve(async (req) => {
   const admin = adminClient();
 
   // Famílias-alvo: da org do chamador e em 'erro'. familia_id tem precedência sobre lote_id.
+  // Kit vinculado NUNCA entra (ADR-0151): o título/descrição dele são compostos a partir da base
+  // (`Kit N Unidades …` + descrição adaptada por seção) e não têm pipeline de IA. Reprocessar um
+  // kit joga ele em `process-familia`, que reescreve os dois como se fosse produto comum —
+  // aconteceu com o primeiro kit real em 2026-09-03: o título virou "… 700g 2un". O caminho de
+  // recuperação do kit em erro é republicar (`publicar-familias`), não reprocessar.
   let q = admin
     .from('familias')
     .select('id, lote_id')
     .eq('status', 'erro')
+    .is('kit_multiplicador', null)
     .eq('org_id', orgId);
   q = body.familia_id ? q.eq('id', body.familia_id) : q.eq('lote_id', body.lote_id!);
 
