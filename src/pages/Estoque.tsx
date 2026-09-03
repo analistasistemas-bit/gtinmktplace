@@ -29,7 +29,7 @@ import {
   type ProdutoComSaldo, type ProdutoEstoqueResumo,
 } from '@/lib/produtos-saldo';
 import {
-  fetchFamiliasNaoPublicadas, statusUpdatePorProduto, codigosConcluidosComSucesso,
+  fetchFamiliasNaoPublicadas, statusUpdatePorProduto, loteUpdatePorProduto, codigosConcluidosComSucesso,
   type StatusUpdateProduto,
 } from '@/lib/estoque-update-status';
 import { useProfile } from '@/hooks/useProfile';
@@ -78,6 +78,7 @@ export default function Estoque() {
     refetchInterval: 15_000,
   });
   const statusMap = useMemo(() => statusUpdatePorProduto(famRows ?? []), [famRows]);
+  const loteRevisaoMap = useMemo(() => loteUpdatePorProduto(famRows ?? []), [famRows]);
 
   // useMemo (não literal ?? []): referência estável entre renders — o efeito de conclusão do
   // update (abaixo) depende de `produtos` só pra achar o nome do produto no toast, e um array
@@ -208,6 +209,7 @@ export default function Estoque() {
                 onExcluir={isAdmin ? setProdutoExcluir : undefined}
                 onAdicionarVariacao={isAdmin ? setProdutoAddVariacao : undefined}
                 statusUpdate={statusMap.get(p.codigoPai)}
+                loteRevisaoId={loteRevisaoMap.get(p.codigoPai)}
                 onPreencherFiscal={mostrarFiscal ? (produto) => setFiscalAberto(produto.familiaId ?? null) : undefined}
                 fiscalPendente={mostrarFiscal ? produtoFiscalPendente(p, regimeOrg) : false}
               />

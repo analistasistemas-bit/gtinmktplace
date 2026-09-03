@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { MemoryRouter } from 'react-router-dom';
 import { ProdutoCard, CabecalhoProdutos, GRID_LINHA_PRODUTO, VARIACOES_VIRTUAL_THRESHOLD, VARIACAO_ROW_ESTIMATE_PX } from '../produto-card';
 import { QK } from '@/lib/queries';
 import type { ProdutoEstoqueResumo, VariacaoComSaldo } from '@/lib/produtos-saldo';
@@ -408,6 +409,42 @@ describe('ProdutoCard', () => {
       </QueryClientProvider>,
     );
     expect(screen.getByText('Erro na última atualização')).toBeInTheDocument();
+  });
+
+  it('com statusUpdate=erro e lote, mostra botão "Revisar" apontando para a Revisão do lote', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>
+          <ProdutoCard
+            produto={produto}
+            canais={[]}
+            onDarEntrada={vi.fn()}
+            statusUpdate="erro"
+            loteRevisaoId="lote-1"
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: /Revisar/ })).toHaveAttribute('href', '/revisao/lote-1');
+  });
+
+  it('statusUpdate=atualizando não mostra "Revisar" mesmo com lote', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter>
+        <QueryClientProvider client={qc}>
+          <ProdutoCard
+            produto={produto}
+            canais={[]}
+            onDarEntrada={vi.fn()}
+            statusUpdate="atualizando"
+            loteRevisaoId="lote-1"
+          />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText('Revisar')).not.toBeInTheDocument();
   });
 
   it('sem statusUpdate, nenhum badge de atualização aparece', () => {

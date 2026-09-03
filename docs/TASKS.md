@@ -2,6 +2,45 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Botão "Revisar" no card em erro da tela Estoque — 2026-09-03
+
+Relato do Diego: adicionou a cor Preta do `26705341` pela tela Estoque, o UPDATE falhou e o card
+só mostrava o texto vermelho "Erro na última atualização" — sem nenhuma ação. A correção e o
+reenvio vivem na tela de Revisão, mas não havia caminho até o lote.
+
+- [x] `fetchFamiliasNaoPublicadas` passou a trazer `lote_id`; `loteUpdatePorProduto`
+  (`src/lib/estoque-update-status.ts`) devolve o lote da família UPDATE mais recente por
+  `codigo_pai`, reusando o mesmo `updatesMaisRecentes` do `statusUpdatePorProduto` (extraído).
+- [x] `ProdutoCard` ganhou a prop `loteRevisaoId` e renderiza o botão "Revisar" (link para
+  `/revisao/:loteId`) ao lado do bloco de nome/código, só quando `statusUpdate === 'erro'`.
+  O link fica FORA do `<button>` de expandir (âncora dentro de botão é HTML inválido).
+- [x] Testes em `produto-card.test.tsx`: o link aponta pro lote certo com `statusUpdate=erro`;
+  `atualizando` não mostra o botão mesmo com lote.
+
+### Causa do erro daquele UPDATE (diagnóstico — sem correção nesta entrega)
+
+`MLB7157545794` recusou o PUT com `You cannot change attribute combinations if the variation has
+bids`. A cor nova não era o problema: o ML **normaliza o nome da cor** pelo dicionário de COLOR
+ao publicar, e `montarVariacoesUpdate` (`_shared/ml/atualizar.ts`) compara a cor do banco com a
+do ML por igualdade estrita de string. Divergências reais confirmadas por GET no item:
+
+| SKU | banco | no ML | vendas |
+|---|---|---|---|
+| 24240961 | `Rosa Claro` | `Rosa-claro` | 1 |
+| 26705421 | `Amarelo Canário` | `Amarelo Canario` | 1 |
+| 18761981 | `Rosa Pink` | `Rosa pink` | 0 |
+| 28126221 | `Azul Petróleo` | `Azul-petróleo` | 0 |
+
+Nenhuma tem `cor_editada_pelo_operador`; o app leu a normalização do ML como "renomeio
+consciente" (ADR-0062), mandou `attribute_combinations` nas 4 e o ML derrubou o PUT inteiro por
+causa das 2 com venda. A trava do lote #45 não pegou porque só vale em `somenteEstoque`, e
+adicionar cor nova nunca é "somente estoque".
+
+- [ ] Decisão pendente do Diego: comparar cor normalizada (sem acento, case-insensitive,
+  hífen ≈ espaço) antes de enviar COLOR. Mexe em ADR-0062 — não implementado sem aval.
+- [ ] Achado separado: a variação Preto (`26706151`) está sem GTIN. Se a categoria exigir GTIN,
+  ela volta a falhar mesmo depois de resolvido o problema de COLOR.
+
 ## Fix: kit publicava a mesma foto duas vezes + UX de publicação direta (ADR-0151) — 2026-09-03
 
 O anúncio do kit `MLB7585283770` foi ao ar com duas fotos idênticas na galeria — dois

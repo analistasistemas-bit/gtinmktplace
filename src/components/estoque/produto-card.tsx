@@ -6,6 +6,7 @@ import { useId, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { ChevronRight, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -134,7 +135,7 @@ function CelulaSaldo({ saldo }: { saldo: number }) {
 
 export function ProdutoCard({
   produto, canais, onDarEntrada, onAjustar, onExcluir, onAdicionarVariacao, statusUpdate,
-  onPreencherFiscal, fiscalPendente,
+  loteRevisaoId, onPreencherFiscal, fiscalPendente,
 }: {
   produto: ProdutoEstoqueResumo;
   canais: string[];
@@ -146,6 +147,9 @@ export function ProdutoCard({
   onAdicionarVariacao?: (produto: ProdutoEstoqueResumo) => void;
   /** ADR-0129 D-11: família UPDATE mais recente deste produto (lib estoque-update-status.ts). */
   statusUpdate?: 'atualizando' | 'erro';
+  /** Lote da mesma família UPDATE do `statusUpdate` — habilita o botão "Revisar" quando deu erro
+   *  (o card não tem como corrigir o anúncio; quem corrige e reenvia é a tela de Revisão). */
+  loteRevisaoId?: string;
   /** ADR-0135 D-9: abre o DialogFiscalProduto (T13) para esta família. Só a página passa esta
    *  prop quando a org tem o módulo fiscal — o botão em si só some quando `fiscalPendente` é
    *  false (ou a família não tem `familiaId`, ex.: fixture antigo de teste). */
@@ -212,12 +216,13 @@ export function ProdutoCard({
       aberto && 'bg-muted/40 ring-1 ring-primary/25',
     )}>
       <div className={cn(GRID_LINHA_PRODUTO, 'px-3 py-2')}>
+        <div className="flex min-w-0 items-center gap-2">
         <button
           type="button"
           aria-expanded={aberto}
           aria-controls={painelId}
           onClick={() => setAberto((v) => !v)}
-          className="flex min-w-0 items-center gap-3 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="flex min-w-0 flex-1 items-center gap-3 rounded-md py-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronRight className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', aberto && 'rotate-90')} />
           <FotoCapaFamilia capaUrl={capa} tamanho="small" />
@@ -236,6 +241,14 @@ export function ProdutoCard({
             )}
           </div>
         </button>
+        {statusUpdate === 'erro' && loteRevisaoId && (
+          <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2">
+            <Link to={`/revisao/${loteRevisaoId}`} aria-label={`Revisar atualização de ${produto.nomePai}`}>
+              Revisar
+            </Link>
+          </Button>
+        )}
+        </div>
 
         <div className={cn(CELULA_MD, 'text-right text-sm tabular-nums text-muted-foreground')}>
           {produto.qtdSkus}
