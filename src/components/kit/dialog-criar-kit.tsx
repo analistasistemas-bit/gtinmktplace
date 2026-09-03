@@ -15,7 +15,7 @@ import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { uploadFile, buildStoragePath } from '@/lib/storage';
 import {
-  TAMANHOS_KIT, tituloDoKit, descricaoDoKit, criarKitVinculado,
+  TAMANHOS_KIT, TITULO_MAX_KIT, tituloDoKit, descricaoDoKit, criarKitVinculado,
   type BaseParaKit, type KitFormValues,
 } from '@/lib/kit';
 import { PreviewKit, valorInicialPreview, type KitPreviewValue } from '@/components/kit/preview-kit';
@@ -65,7 +65,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
 
   const tamanhosMarcados = TAMANHOS_KIT.filter((n) => marcados.has(n));
 
-  const tituloInvalido = tamanhosMarcados.some((n) => (valores[n]?.titulo.length ?? 0) > 60);
+  const tituloInvalido = tamanhosMarcados.some((n) => (valores[n]?.titulo.length ?? 0) > TITULO_MAX_KIT);
   const precoInvalido = tamanhosMarcados.some((n) => !((valores[n]?.preco ?? 0) > 0));
   // Sem foto (nem a da base, nem uma nova escolhida) o anúncio vai ao ML sem capa — mesmo
   // requisito de LinhaVariacaoForm.fotoObrigatoria (ADR-0129 D-4).

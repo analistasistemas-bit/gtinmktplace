@@ -442,7 +442,7 @@ describe('Publicados', () => {
     it('habilitado: admin, módulo Estoque, produto sem variação de cor e ainda não é kit', () => {
       useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
       usePublicadosMock.mockReturnValue({
-        data: [itemBase({ qtdVariacoes: 1, kitBaseCodigoPai: null })],
+        data: [itemBase({ qtdVariacoesFamilia: 1, kitBaseCodigoPai: null })],
         isLoading: false,
         error: null,
       });
@@ -457,7 +457,7 @@ describe('Publicados', () => {
     it('desabilitado sem o módulo Estoque', () => {
       useModulosHabilitadosMock.mockReturnValue({ data: [] });
       usePublicadosMock.mockReturnValue({
-        data: [itemBase({ qtdVariacoes: 1, kitBaseCodigoPai: null })],
+        data: [itemBase({ qtdVariacoesFamilia: 1, kitBaseCodigoPai: null })],
         isLoading: false,
         error: null,
       });
@@ -474,7 +474,28 @@ describe('Publicados', () => {
     it('desabilitado para produto com mais de uma variação (cor)', () => {
       useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
       usePublicadosMock.mockReturnValue({
-        data: [itemBase({ qtdVariacoes: 2, kitBaseCodigoPai: null })],
+        data: [itemBase({ qtdVariacoesFamilia: 2, kitBaseCodigoPai: null })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      const btn = screen.getByRole('button', { name: 'Criar kit' });
+      expect(btn).toBeDisabled();
+      expect(btn).toHaveAttribute('title', 'Kit vinculado só existe para produto sem variação de cor.');
+    });
+
+    // A edge (`criar-kit-vinculado/processar.ts`) conta TODAS as linhas de `variacoes` da
+    // família, sem filtrar `excluida_da_publicacao` — o gating tem que usar o mesmo sinal
+    // (`qtdVariacoesFamilia`), não `qtdVariacoes` (só as publicadas no ML). Regressão: uma
+    // variação excluída da publicação não pode "esconder" a multi-variação do gating.
+    it('desabilitado quando há variação excluída da publicação (ML mostra 1, família tem 2)', () => {
+      useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoes: 1, qtdVariacoesFamilia: 2, kitBaseCodigoPai: null })],
         isLoading: false,
         error: null,
       });
@@ -491,7 +512,7 @@ describe('Publicados', () => {
     it('desabilitado quando o próprio anúncio já é um kit vinculado', () => {
       useModulosHabilitadosMock.mockReturnValue({ data: ['estoque'] });
       usePublicadosMock.mockReturnValue({
-        data: [itemBase({ qtdVariacoes: 1, kitBaseCodigoPai: '01829149' })],
+        data: [itemBase({ qtdVariacoesFamilia: 1, kitBaseCodigoPai: '01829149' })],
         isLoading: false,
         error: null,
       });

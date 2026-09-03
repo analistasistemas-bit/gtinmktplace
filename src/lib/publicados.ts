@@ -40,6 +40,10 @@ export interface PublicadoItem {
   valorVendido?: number | null;
   /** Quantidade de variações publicadas neste anúncio (excluídas da publicação não contam). */
   qtdVariacoes?: number;
+  /** ADR-0151: TODAS as linhas de `variacoes` da família (excluídas da publicação incluídas) —
+   *  o mesmo sinal que `criar-kit-vinculado` usa pra `base_multivariacao` (D-10). Não confundir
+   *  com `qtdVariacoes` (só as publicadas no ML): o gating de "Criar kit" precisa do total. */
+  qtdVariacoesFamilia?: number;
   /** Alguma variação/item publicado sem vínculo de catálogo em erro ou não elegível (retentável). */
   catalogRetentavel?: boolean;
   /** Prontidão de emissão do ML (ADR-0135 D-10) — `familias.can_invoice`. null = ainda não verificado. */

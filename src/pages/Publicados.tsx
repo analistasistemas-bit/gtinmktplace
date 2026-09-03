@@ -249,7 +249,10 @@ function LinhaTabela({
   // ADR-0151 D-2/D-10/D-12: kit vinculado só existe para produto sem variação de cor, com o
   // módulo Estoque habilitado, e não pode ser criado a partir de um anúncio que já é kit.
   const ehKitVinculado = !!item.kitBaseCodigoPai;
-  const temVariacaoDeCor = (item.qtdVariacoes ?? 0) > 1;
+  // `qtdVariacoesFamilia` (TODAS as linhas de `variacoes`, sem filtrar excluída_da_publicacao) —
+  // não `qtdVariacoes` (só as publicadas no ML): a edge (`base_multivariacao`) conta a família
+  // inteira, e um gating mais permissivo deixaria o operador passar pelo diálogo à toa.
+  const temVariacaoDeCor = (item.qtdVariacoesFamilia ?? 0) > 1;
   const motivoCriarKitDesabilitado = !isAdmin
     ? 'Somente administradores podem criar kits.'
     : !temModuloEstoque

@@ -958,6 +958,9 @@ export function publicadoFromRow(
     catalogRetentavel,
     canInvoice: r.can_invoice ?? null,
     kitBaseCodigoPai: r.kit_base_codigo_pai ?? null,
+    // ADR-0151: total de linhas de `variacoes` da família, sem filtrar excluída_da_publicacao —
+    // mesma contagem que `criar-kit-vinculado/processar.ts` usa pra recusar base_multivariacao.
+    qtdVariacoesFamilia: (r.variacoes ?? []).length,
   };
 }
 
