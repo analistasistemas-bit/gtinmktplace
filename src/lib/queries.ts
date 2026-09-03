@@ -110,12 +110,16 @@ export interface KitVinculado {
   multiplicador: number;
   status: FamiliaStatus;
   mlPermalink: string | null;
+  /** ADR-0151 D-2: junto com `status`, é o sinal que a Revisão usa para o badge "aguardando
+   *  a publicação deste produto" — `status='pronto' && mlItemId == null` é kit que ainda não
+   *  foi ao ar (esperando a base ou aguardando reenvio após falha). */
+  mlItemId: string | null;
 }
 
 export async function fetchKitsDoProduto(codigoPai: string): Promise<KitVinculado[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, kit_multiplicador, status, ml_permalink')
+    .select('id, codigo_pai, kit_multiplicador, status, ml_permalink, ml_item_id')
     .eq('kit_base_codigo_pai', codigoPai)
     .not('kit_multiplicador', 'is', null)
     .order('kit_multiplicador', { ascending: true });
@@ -126,6 +130,7 @@ export async function fetchKitsDoProduto(codigoPai: string): Promise<KitVinculad
     multiplicador: r.kit_multiplicador as number,
     status: r.status as FamiliaStatus,
     mlPermalink: r.ml_permalink,
+    mlItemId: r.ml_item_id,
   }));
 }
 
@@ -579,6 +584,9 @@ export function familiaFromRow(
     variacoesSemCor: variacoes.filter((v) => !v.cor && v.estoque > 0 && !v.excluidaDaPublicacao).length,
     mlPermalink: r.ml_permalink,
     mlItemId: r.ml_item_id,
+    // ADR-0151 D-2/D-10: preenchido só na família-clone de um kit — dispara o guard
+    // "Este anúncio já é um kit vinculado" do botão Criar kits (mesmo caminho de Publicados).
+    kitBaseCodigoPai: r.kit_base_codigo_pai,
     anuncios: (r.anuncios_externos ?? []).map((a) => ({
       particao: a.particao, permalink: a.permalink, titulo: a.titulo,
     })),

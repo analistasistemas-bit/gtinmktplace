@@ -199,6 +199,10 @@ export interface Familia {
   variacoesSemCor: number;
   mlPermalink: string | null;
   mlItemId: string | null;
+  /** ADR-0151: preenchido só na família-clone de um kit vinculado (`kit_base_codigo_pai` da
+   *  base). Opcional (não `null` explícito) para não quebrar as dezenas de fixtures de teste
+   *  que já montam `Familia` sem este campo — ausente equivale a "não é kit". */
+  kitBaseCodigoPai?: string | null;
   /** Anúncios publicados do produto (split ADR-0048): 1 no caso normal, N quando >100 cores.
    *  Ordenado por partição (0 = principal). Vazio = sem espelho em anuncios_externos. */
   anuncios: { particao: number; permalink: string | null; titulo: string | null }[];

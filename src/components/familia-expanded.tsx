@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Sparkles, Trash2, AlertTriangle, CheckCircle2, ChevronDown } from 'lucide-react';
+import { Camera, Sparkles, Trash2, AlertTriangle, CheckCircle2, ChevronDown, PackagePlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useQueryClient } from '@tanstack/react-query';
@@ -41,8 +41,34 @@ import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { useImageUrl, invalidarImagem } from '@/hooks/useImageUrl';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
+import { useProfile } from '@/hooks/useProfile';
+import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { useKitsDoProduto } from '@/hooks/useKitsDoProduto';
+import { DialogCriarKit } from '@/components/kit/dialog-criar-kit';
+import type { BaseParaKit } from '@/lib/kit';
 import { QK } from '@/lib/queries';
 import type { Familia } from '@/lib/tipos-dominio';
+
+// ADR-0151 D-2/D-4: pré-preenchimento do preview a partir da família ainda em Revisão (sem
+// ml_item_id). Kit vinculado só existe para produto de UMA variação (D-10) — mesmo padrão de
+// `baseParaKit` em Publicados.tsx, mas o preço-base aqui É `precoPublicacao` (não há "preço
+// publicado real" ainda: a família não foi ao ar).
+function baseParaKit(f: Familia): BaseParaKit {
+  const v = f.variacoes[0];
+  return {
+    codigoPai: f.codigoPai,
+    titulo: f.titulo,
+    descricao: f.descricao,
+    preco: v?.precoPublicacao ?? v?.preco ?? 0,
+    custo: v?.custo ?? null,
+    pesoGramas: v?.pesoGramas ?? null,
+    alturaCm: v?.alturaCm ?? null,
+    larguraCm: v?.larguraCm ?? null,
+    comprimentoCm: v?.comprimentoCm ?? null,
+    fotoPath: f.capaStoragePath ?? v?.fotoPath ?? null,
+    estoque: v?.estoque ?? null,
+  };
+}
 
 const FLASH_MS = 2000;
 
@@ -156,6 +182,36 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   // (painel-analise.tsx), para o semáforo por variação não divergir do badge do topo.
   const { data: aliquotas } = useAliquotas();
   const aliquotaPct = familia.origem === 'importado' ? (aliquotas?.importado ?? 16) : (aliquotas?.nacional ?? 8);
+
+  // ADR-0151 D-2: gatilho "Criar kits" na Revisão (pré-publicação) — mesmo diálogo da Task 7
+  // (Publicados). A edge resolve o sequenciamento sozinha: base sem ml_item_id → não encadeia
+  // agora, publish-familia-ml reclama e enfileira os kits assim que o CREATE da base confirmar.
+  const { isAdmin } = useProfile();
+  const { data: modulosHabilitados } = useModulosHabilitados();
+  const temModuloEstoque = !!modulosHabilitados?.includes('estoque');
+  // Badge "N kits aguardando" fica no card sempre visível (Revisao.tsx), não aqui — aqui
+  // só precisamos da lista de tamanhos já criados p/ desabilitar o checkbox no diálogo.
+  const { data: kitsVinculados } = useKitsDoProduto(familia.codigoPai, true);
+  const [kitDialogAberto, setKitDialogAberto] = useState(false);
+  // D-10: kit vinculado só existe pra produto de UMA cor — TODAS as linhas de `variacoes`
+  // contam (sem filtrar excluída_da_publicação), mesmo sinal que a edge usa pra recusar
+  // base_multivariacao (fix 60bebf91).
+  const temVariacaoDeCor = familia.variacoes.length > 1;
+  // D-10/D-4: este card É um kit (caminho de recuperação — kit falho vira card comum na
+  // Revisão, ADR-0151 Decisão 4) — não pode virar base de um kit-de-kit.
+  const ehKitVinculado = !!familia.kitBaseCodigoPai;
+  const motivoCriarKitDesabilitado = !isAdmin
+    ? 'Somente administradores podem criar kits.'
+    : !temModuloEstoque
+      ? 'Kit vinculado exige o módulo Estoque habilitado.'
+      : ehKitVinculado
+        ? 'Este anúncio já é um kit vinculado.'
+        : temVariacaoDeCor
+          ? 'Kit vinculado só existe para produto sem variação de cor.'
+          : familia.status !== 'pronto'
+            ? 'A família precisa estar pronta na Revisão antes de criar kits.'
+            : undefined;
+  const kitsExistentes = (kitsVinculados ?? []).map((k) => k.multiplicador);
   const corSaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
@@ -749,7 +805,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
             rows={5}
           />
 
-          <div className="mt-2">
+          <div className="mt-2 flex flex-wrap gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -767,6 +823,18 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
             >
               <Sparkles className="mr-2 h-4 w-4" />
               {regenerar.isPending ? 'Gerando…' : 'Regenerar descrição'}
+            </Button>
+            {/* ADR-0151 D-2: gatilho de kit vinculado — desabilitado + tooltip por motivo
+                (ADR-0060), nunca escondido. */}
+            <Button
+              variant="outline"
+              size="sm"
+              title={motivoCriarKitDesabilitado ?? 'Criar kit vinculado a partir deste produto'}
+              disabled={!!motivoCriarKitDesabilitado}
+              onClick={() => setKitDialogAberto(true)}
+            >
+              <PackagePlus className="mr-2 h-4 w-4" />
+              Criar kits
             </Button>
           </div>
 
@@ -832,6 +900,14 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <DialogCriarKit
+        familiaBaseId={familia.id}
+        base={baseParaKit(familia)}
+        kitsExistentes={kitsExistentes}
+        open={kitDialogAberto}
+        onOpenChange={setKitDialogAberto}
+      />
     </div>
   );
 }
