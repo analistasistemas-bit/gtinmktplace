@@ -135,6 +135,15 @@ normalização como renomeio ([ADR-0062](../../docs/decisions/0062-update-cor-ex
 venda o ML derruba o PUT INTEIRO com `You cannot change attribute combinations if the variation
 has bids` — estoque incluído. Update por planilha continua com o comportamento antigo.
 
+**O push de estoque da cor nova cobre só ela (2026-09-03).** A entrada de estoque que nasce com a
+cor recém-adicionada enfileira `sincronizar-estoque` com `skus: [SKU novo]`; as demais cores nem
+entram no payload e mantêm no anúncio o `available_quantity` que já está lá. Antes, um movimento
+em UM SKU empurrava o saldo do app para TODOS os SKUs ancorados no anúncio: no `MLB7157545794` isso
+zerou Vermelho, Champagne e Marfim, cujo estoque tinha sido lançado direto no ML — e **variação com
+estoque 0 some da vitrine**, então parecia que as cores tinham sido removidas. Fora desse fluxo o
+push segue cobrindo o produto inteiro: o app é dono do estoque (ADR-0094) e o que for lançado só no
+ML continua sendo sobrescrito.
+
 **Card em erro tem botão "Revisar" (2026-09-03).** Quando a última atualização do produto falhou,
 o card mostra "Erro na última atualização" e, ao lado, um link para `/revisao/:loteId` do lote
 daquele UPDATE — antes o operador via o erro sem nenhum caminho até a tela que corrige e reenvia.
