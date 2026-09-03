@@ -10,6 +10,21 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Cor nova em anúncio User Products caía numa família diferente (2026-09-03)** — lote 54,
+  `MLB4959919693`: a cor Preta foi criada (`MLB5184493069`) mas com `family_id` próprio, e o guard
+  do ADR-0088 pausou o item e travou o UPDATE ("family_id divergente"). **Raiz:** o ML **não
+  agrupa por `family_name`** — compara os atributos de ficha do `user-product`. Divergiam
+  `BRAND`/`MANUFACTURER` (`BUFALO` cru contra `Búfalo` + `value_id` 9165622, normalizado pelo ML na
+  criação em lote de 28/07) e `COMPOSITION` (`100% poliéster`, que o app nunca envia — veio do
+  enriquecimento do próprio ML). Mesma classe da normalização de COLOR: **o ML reescreve o valor
+  publicado e o payload seguinte passa a divergir do que está lá.**
+  **Fix:** `_shared/user-products/atributos-irmao.ts` — a cor nova copia a ficha de um item irmão
+  vivo, `value_id` inclusive. Fora da herança: `COLOR`/`GTIN`/`EMPTY_GTIN_REASON` (por SKU, copiar
+  publicaria a cor nova como a antiga) e `SELLER_PACKAGE_*` (dimensão é dado nosso, define frete
+  pelo ADR-0018, e o caminho UP não a sincroniza depois da criação).
+  **Não automatizável:** item já criado na família errada precisa ser **apagado no ML** antes de
+  reenviar — senão é readotado com o `family_id` errado.
+
 - **Cor vazia, foto de outra cor e código/EAN trocados no Faturamento (2026-08-11)** — três
   sintomas, **uma raiz**: o sistema resolvia "qual variação foi vendida?" pegando a **primeira da
   lista** quando não sabia. (1) *Cor* — o ML só manda `variation_attributes` em venda com variação;
