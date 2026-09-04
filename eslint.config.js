@@ -7,7 +7,7 @@ import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
   // Edge Functions rodam em Deno (runtime/globals diferentes); são lintadas à parte, não aqui.
-  { ignores: ['dist', 'supabase/functions', '.claude'] },
+  { ignores: ['dist', 'supabase/functions', '.claude', '.worktrees', 'ponytail'] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ['**/*.{ts,tsx}'],

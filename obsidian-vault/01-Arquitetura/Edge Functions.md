@@ -1,12 +1,12 @@
 ---
 tags: [arquitetura, backend, edge-functions]
-atualizado: 2026-08-24
+atualizado: 2026-09-03
 ---
 
 # Edge Functions
 
 Espelho resumido de `docs/reference/edge-functions.md` (fonte de verdade — atualize lá
-primeiro). **47 funções** Deno em `supabase/functions/` (contagem de 2026-08-11).
+primeiro). **62 funções** Deno em `supabase/functions/` (contagem de 2026-09-03).
 Ver [[Backend]], [[Segurança]].
 
 ## Como ler `verify_jwt`
@@ -21,13 +21,15 @@ Ver [[Backend]], [[Segurança]].
 |---|---|
 | **OAuth / conexão ML** | ml-oauth-start, ml-oauth-callback, ml-oauth-claim, ml-oauth-disconnect |
 | **Ingest de planilha** | ingest-lote, upload-imagens-lote |
-| **Processamento / publicação** | process-familia, publicar-familias, publish-familia-ml, update-familia-ml, publicar-split-ml, **publicar-anuncio** (worker genérico p/ canais ≠ ML), regenerar-copy-familia, definir-categoria-familia, atributos-familia, vincular-catalogo |
+| **Processamento / publicação** | process-familia, publicar-familias, publish-familia-ml, update-familia-ml, publicar-split-ml, **publicar-anuncio** (worker genérico p/ canais ≠ ML), regenerar-copy-familia, definir-categoria-familia, atributos-familia, vincular-catalogo, retentar-catalogo |
 | **User Products (ADR-0088)** | reconciliar-convergencia-up (`*/15 * * * *`), reconciliar-user-products (backfill de itens planos) |
-| **Remoção / reprocessamento** | remover-publicado, excluir-lote, reprocessar-familia, invalidar-cache-cor |
+| **Remoção / reprocessamento** | remover-publicado, excluir-lote, excluir-produto, reprocessar-familia, invalidar-cache-cor |
 | **Faturamento** | ml-webhook, sync-venda, sync-pergunta, sync-mensagem, sync-devolucao, responder-pergunta, responder-mensagem, sugerir-resposta-pergunta, backfill-faturamento, reconciliar-faturamento |
-| **Estoque** (módulo pago) | cadastrar-produto, entrada-estoque, **ajustar-estoque** (admin-only, ADR-0110) — as três com `verify_jwt=true` e gate de módulo 403; **sincronizar-estoque** e **reconciliar-estoque** (`30 12 * * *`), workers com `verify_jwt=false`. Ver [[Estoque]] |
+| **Estoque & Kits** (módulo pago) | cadastrar-produto, entrada-estoque, **ajustar-estoque** (admin-only, ADR-0110), **criar-kit-vinculado** (ADR-0151), **adicionar-variacoes-familia** (ADR-0129) — `verify_jwt=true` e gate de módulo 403; **sincronizar-estoque** e **reconciliar-estoque** (`30 12 * * *`), workers com `verify_jwt=false`. Ver [[Estoque]] |
+| **Pulse** (módulo inteligência) | pulse-coletar (`verify_jwt=false`), pulse-adicionar, pulse-sonar-vendas, pulse-sonar-visitas, pulse-sonar-ean, pulse-analise-secoes237. Ver [[Pulse]] |
+| **Fiscal** (Faturador ML) | sincronizar-fiscal-ml, atualizar-fiscal-familia, sugerir-ncm |
 | **Monitoramento / alertas** | monitorar-moderados, notificar-liberacao |
-| **Status / métricas / viabilidade** | status-publicados, atualizar-status-publicado, metricas-vendas, analisar-viabilidade, calcular-tarifa-ml |
+| **Status / métricas / viabilidade** | status-publicados, atualizar-status-publicado, metricas-vendas, analisar-viabilidade, calcular-tarifa-ml, tabela-frete-ml, buscar-categorias-ml |
 | **Acesso / usuários** | usuarios, suporte |
 | **Utilitário** | hello |
 

@@ -5,28 +5,34 @@
     "title": "PubliAI — Modelo de Dados Simplificado",
     "subtitle": "AS-IS · entidades centrais (todas com org_id)",
     "output": "diagram.html",
-    "viewBox": [760, 620]
+    "viewBox": [980, 640]
   },
   "components": [
-    { "id": "mkt_conn", "type": "security", "label": "marketplace_connections", "sublabel": "credencial por canal", "pos": [240, 60], "size": [160, 60] },
-    { "id": "organizations", "type": "database", "label": "organizations", "sublabel": "tenant", "pos": [240, 180], "size": [160, 60] },
-    { "id": "profiles", "type": "database", "label": "profiles", "sublabel": "usuário (1 org)", "pos": [480, 180], "size": [160, 60] },
-    { "id": "lotes", "type": "database", "label": "lotes", "sublabel": "upload", "pos": [40, 340], "size": [150, 60] },
-    { "id": "familias", "type": "database", "label": "familias", "sublabel": "1 PAI = 1 anúncio (ML)", "pos": [240, 340], "size": [160, 60] },
-    { "id": "variacoes", "type": "database", "label": "variacoes", "sublabel": "1 SKU/cor", "pos": [480, 340], "size": [160, 60] },
-    { "id": "anuncios_externos", "type": "database", "label": "anuncios_externos", "sublabel": "espelho multicanal", "pos": [235, 460], "size": [170, 60] },
-    { "id": "ml_vendas", "type": "database", "label": "ml_vendas", "sublabel": "1 pedido", "pos": [480, 460], "size": [160, 60] }
+    { "id": "mkt_conn", "type": "security", "label": "marketplace_connections", "sublabel": "credencial por canal", "pos": [400, 60], "size": [180, 60] },
+    { "id": "empresa_fiscal", "type": "database", "label": "empresa_fiscal", "sublabel": "dados fiscais (ADR-0135)", "pos": [120, 180], "size": [180, 60] },
+    { "id": "organizations", "type": "database", "label": "organizations", "sublabel": "tenant", "pos": [400, 180], "size": [180, 60] },
+    { "id": "profiles", "type": "database", "label": "profiles", "sublabel": "usuário (1 org)", "pos": [680, 180], "size": [170, 60] },
+    { "id": "lotes", "type": "database", "label": "lotes", "sublabel": "upload / manual", "pos": [40, 340], "size": [140, 60] },
+    { "id": "familias", "type": "database", "label": "familias", "sublabel": "1 PAI (kits/fiscal)", "pos": [240, 340], "size": [160, 60] },
+    { "id": "variacoes", "type": "database", "label": "variacoes", "sublabel": "1 SKU/cor", "pos": [460, 340], "size": [160, 60] },
+    { "id": "estoque_movimentos", "type": "database", "label": "estoque_movimentos", "sublabel": "ledger imutável", "pos": [680, 340], "size": [180, 60] },
+    { "id": "anuncios_externos", "type": "database", "label": "anuncios_externos", "sublabel": "espelho multicanal", "pos": [235, 480], "size": [170, 60] },
+    { "id": "ml_vendas", "type": "database", "label": "ml_vendas", "sublabel": "1 pedido", "pos": [460, 480], "size": [160, 60] },
+    { "id": "pulse_produtos", "type": "database", "label": "pulse_produtos", "sublabel": "radar concorrência", "pos": [680, 480], "size": [180, 60] }
   ],
   "connections": [
     { "from": "organizations", "to": "mkt_conn", "label": "1:N (por canal)" },
     { "from": "organizations", "to": "profiles", "label": "1:N" },
+    { "from": "organizations", "to": "empresa_fiscal", "label": "1:1", "fromSide": "left", "toSide": "right" },
     { "from": "lotes", "to": "familias", "label": "1:N" },
     { "from": "familias", "to": "variacoes", "label": "1:N" },
+    { "from": "variacoes", "to": "estoque_movimentos", "label": "1:N (ledger)", "labelAt": [650, 316] },
     { "from": "familias", "to": "anuncios_externos", "label": "espelha (por canal)", "variant": "dashed", "labelAt": [320, 414] },
-    { "from": "variacoes", "to": "ml_vendas", "label": "match GTIN", "variant": "dashed", "labelAt": [560, 414] }
+    { "from": "variacoes", "to": "ml_vendas", "label": "match GTIN", "variant": "dashed", "labelAt": [540, 414] },
+    { "from": "organizations", "to": "pulse_produtos", "label": "1:N (radar)", "variant": "dashed", "labelAt": [790, 414] }
   ],
   "cards": [
-    { "dot": "rose", "title": "org_id em tudo", "items": ["As 8 tabelas têm org_id NOT NULL (exceto ml_webhook_eventos)", "RLS: org_id = current_org_id() — ver diagrama 06"] },
-    { "dot": "amber", "title": "Simplificado", "items": ["Não é um ERD completo — omite colunas e tabelas técnicas (ml_credentials deprecada, configuracoes, etc.)"] }
+    { "dot": "rose", "title": "org_id em tudo", "items": ["Todas as tabelas têm org_id NOT NULL com isolamento total via RLS (org_id = current_org_id())", "Escritas em saldo de estoque bloqueadas: somente RPCs dedicadas gravam em estoque_movimentos"] },
+    { "dot": "amber", "title": "Entidades recentes", "items": ["estoque_movimentos: ledger imutável de entradas, vendas, estornos e ajustes", "empresa_fiscal: dados de CNPJ/regime para o Faturador ML", "pulse_produtos: monitoramento contínuo de concorrência e preços"] }
   ]
 }

@@ -9,10 +9,10 @@ Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
 `docs/project-status.md` (retrato curto, atualizado até **2026-08-11**, com a seção "Entregas de
 agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-08-13) — Fase 3 EM PRODUÇÃO
+## 📍 Passo atual (2026-09-03) — EM PRODUÇÃO
 
-> **📋 ADR-0151: Kit vinculado — criar anúncios de kit (N unidades) a partir de produto
-> existente — IMPLEMENTADO (19 Edge Functions deployadas em 2026-09-03).** Extensão do módulo Estoque
+> **✅ ADR-0151: Kit vinculado — criar anúncios de kit (N unidades) a partir de produto
+> existente — EM PRODUÇÃO (19 Edge Functions deployadas em 2026-09-03).** Extensão do módulo Estoque
 > (ADR-0094): tela Estoque ganha "Criar kit vinculado" (admin-only) que gera família(s) nova(s)
 > — `SALE_FORMAT=Kit`/`UNITS_PER_PACK=N` — com estoque 100% derivado da família-base
 > (`floor(estoque_base/N)`, colunas `kit_base_codigo_pai`/`kit_multiplicador`, nunca uma coluna
@@ -23,10 +23,14 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > todos os tamanhos (simplificação deliberada, D-7 revisada). Guards de banco: SKU de kit sem
 > escrita direta (entrada/ajuste), cor nova bloqueada com kit vivo, remoção da base bloqueada
 > com kit vivo. Restrito na v1 a produto sem variação de cor. 11 tasks do plano de execução
-> (`docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md`) concluídas — `pnpm lint`/`pnpm
-> vitest run`/`pnpm exec tsc -b --force`/`pnpm docs:links` verdes. **Deploy das Edge Functions
-> em produção fica para depois, com autorização explícita separada** (blast radius grande: toca
-> `_shared/estoque/*`). Ver ADR-0151, seção "Implementação".
+> (`docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md`) concluídas — 19 Edge Functions deployadas
+> em produção, suíte completa de testes verde e trava de catálogo simétrica nos dois sentidos fechada.
+
+> **✅ Melhorias operacionais de Estoque e Catálogo EM PRODUÇÃO (2026-09-03):**
+> 1. Badge "atualizando no ML…" após entrada de estoque com poll temporário e confirmação ao vivo.
+> 2. Entrada de mercadoria em múltiplas cores simultâneas via card, contornando o teto de 1000 linhas da RPC.
+> 3. Herança de ficha técnica de anúncio irmão no fluxo User Products ao adicionar cor nova (`_shared/user-products/atributos-irmao.ts`).
+> 4. Botão "Revisar" direto no card com erro de catálogo/publicação.
 
 > **✅ Pulse v1 — radar de concorrência EM PRODUÇÃO (ADR-0119, 2026-08-16, org DSA).** Menu
 > "Pulse" org-gated: coletor server-side dual-mode, adicionar manual por catálogo/GTIN, 4 tabelas

@@ -20,11 +20,11 @@
     { "from": "auth", "to": "workers" },
     { "from": "workers", "to": "postgres" },
     { "from": "workers", "to": "mkt_conn" },
-    { "from": "postgres", "to": "audit_log", "label": "1. trilha de auditoria (LGPD)", "variant": "dashed", "labelAt": [660, 294] },
+    { "from": "postgres", "to": "audit_log", "label": "1. trilha de auditoria (LGPD)", "variant": "dashed", "fromSide": "right", "toSide": "right", "labelAt": [830, 294] },
     { "from": "auth", "to": "jwt_hook", "label": "2. org_id no JWT", "variant": "dashed", "labelAt": [115, 134] },
-    { "from": "workers", "to": "worker_unificado", "label": "3. unifica publicação", "variant": "dashed" }
+    { "from": "workers", "to": "worker_unificado", "label": "3. unifica publicação", "variant": "dashed", "fromSide": "bottom", "toSide": "top" }
   ],
   "cards": [
-    { "dot": "cyan", "title": "5 melhorias propostas (máx. 20% do esforço)", "items": ["1. audit_log por org — LGPD, antes de comercializar (E8.6)", "2. custom_access_token_hook — só se medição mostrar gargalo em current_org_id()", "3. Worker único de publicação — unifica ML ao genérico, pós-E5", "4. Drop ml_credentials + RPCs legadas — Task 17, condição de 1 semana estável já cumprida", "5. Incluir canal no select de buscarVendas — quando houver 2º canal com vendas reais"] }
+    { "dot": "cyan", "title": "5 melhorias propostas (máx. 20% do esforço)", "items": ["1. audit_log por org — LGPD, antes de comercializar para terceiros (E8.6)", "2. custom_access_token_hook — só se medição mostrar gargalo em current_org_id()", "3. Worker único de publicação — unifica ML ao genérico, pós-E5", "4. Conector Shopee (épico E5) — preenchimento do ChannelConnector Shopee", "5. Drop definitivo de tabelas/RPCs legadas e inclusão de canal em buscarVendas"] }
   ]
 }

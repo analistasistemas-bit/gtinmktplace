@@ -42,6 +42,7 @@ Este vault referencia esses documentos, não os substitui.
 - [[Dashboard]]
 - [[Produtos]]
 - [[Estoque]] *(módulo pago, ligado por org)*
+- [[Pulse]] *(módulo pago de inteligência de mercado e garimpo, ligado por org)*
 - [[Marketplace]]
 - [[IA]]
 - [[Configurações]]
@@ -51,6 +52,7 @@ Este vault referencia esses documentos, não os substitui.
 - [[Notificações]]
 - [[Billing]]
 - [[Assinaturas]]
+- [[Landing Page]] *(artefato de marketing standalone em `docs/brand/`, não integrado ao app — publicação em produção a confirmar)*
 
 ## Outras seções do vault
 
@@ -63,6 +65,7 @@ Este vault referencia esses documentos, não os substitui.
 ## Estado atual (resumo)
 
 - Marketplace ativo em produção: **Mercado Livre**
-- Épicos validados em produção: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`
-- Próximo épico de produto: `E5` — conector Shopee (ainda não implementado)
+- Épicos validados em produção: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`, `E6b` (Bloco A e B)
+- Módulos avançados em produção: Estoque único cross-canal, Kit Vinculado (ADR-0151), Pulse Radar & Sonar (ADR-0119/ADR-0130/ADR-0140), Cadastro Fiscal (ADR-0135)
+- Próximo épico de produto: `E5` — conector Shopee (worker genérico já pronto)
 - Fonte detalhada e sempre atualizada: `docs/project-status.md`

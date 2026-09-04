@@ -1,42 +1,44 @@
 ---
 tags: [ia, graphify]
-atualizado: 2026-08-24
+atualizado: 2026-09-03
 ---
 
 # Graphify
 
-Ferramenta usada para gerar o grafo de conhecimento do código-fonte. As fontes de verdade de
+Ferramenta usada para gerar o grafo de conhecimento do código-fonte e documentação. As fontes de verdade de
 arquitetura são `docs/` e `docs/decisions/`; o Graphify confirma relações no código. Ver
 [[Arquitetura Geral]], [[Agentes]].
 
-## Como foi usado neste projeto
+## Como é usado neste projeto
 
-- **Escopo de arquitetura:** `src/` + `supabase/` mesclados num único grafo
-  (`graphify extract src`, `graphify extract supabase`, `graphify merge-graphs`,
-  `graphify cluster-only`) — juntos ficam sob o limite de 500 arquivos do graphify, então não
-  precisa escolher um só.
-- **Escopo de docs/ADRs:** rodado separadamente (`docs/` sozinho já passa de 500 arquivos e
-  precisa de subagents de extração semântica para markdown/imagens).
-- **Resultado auditado (2026-08-19):** 3.932 nós e 11.541 links no grafo combinado
-  `src`+`supabase`, depois da poda de 11 relações falsas de produção para testes; 166 comunidades.
+- **Grafo canônico unificado:** `graphify-out/` na raiz cobre o repositório completo (`docs/`, `supabase/`, `src/`, `obsidian-vault/`), com mais de 14 mil nós.
+- **Resultado auditado (2026-09-03):** 14.699 nós, 22.126 arestas e 3.056 comunidades no grafo unificado, após aplicação de poda de 353 arestas falsas.
+- **Poda de arestas impossíveis (`scripts/graphify-podar-falsos.py`):**
+  - Regra A: `src/**` (browser) e `supabase/functions/<função>/**` (Deno) nunca se importam diretamente. Exceção: `supabase/functions/_shared/**` é código isomórfico importado por ambos (nunca podado).
+  - Regra B: Nada de produção importa arquivos de teste.
+  - Regra C: Referências fantasmas onde o identificador não existe no arquivo de origem (ex.: colisões de homônimos).
 
 ## God nodes identificados (mais conectados)
 
-`cn()` (163, merge de className), `fmtBRL()` (40), `Button` (39), `corsHeaders`/`adminClient()`/
+`cn()` (merge de className), `fmtBRL()`, `Button`, `corsHeaders`/`adminClient()`/
 `handleOptions()` (backend), `supabase` client, `round2()`/`fmtInt()`, `Periodo`. Ver [[Frontend]],
 [[Backend]].
 
 ## Onde vive a saída
 
-`graphify-out/` (na raiz, e também `src/graphify-out/`, `supabase/graphify-out/` para os grafos
-parciais) — **gitignorado**, é artefato gerado e regenerável a qualquer momento, não versionado.
+`graphify-out/` na raiz do projeto (o grafo canônico). Arquivos gerados não são versionados na main
+(exceto releases e relatórios congelados quando demandado).
 
-## Regenerar
+## Procedimento Canônico de Atualização
 
 ```bash
-graphify extract src
-graphify extract supabase
-graphify merge-graphs src/graphify-out/graph.json supabase/graphify-out/graph.json --out graphify-out/graph.json
+# 1. Re-extrair arquivos de código modificados sem gastar tokens LLM
+graphify update .
+
+# 2. Podar arestas falsas (obrigatório, conforme GEMINI.md)
+python3 scripts/graphify-podar-falsos.py --aplicar
+
+# 3. Reclusterizar e regenerar GRAPH_REPORT.md
 graphify cluster-only . --no-label
 ```
 

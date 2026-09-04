@@ -8,29 +8,31 @@
     "viewBox": [1000, 568]
   },
   "components": [
-    { "id": "operadores", "type": "external", "label": "Operadores", "sublabel": "usuários da empresa cliente", "pos": [60, 260], "size": [150, 64] },
+    { "id": "operadores", "type": "external", "label": "Operadores", "sublabel": "planilhas, manual, kits, revisão", "pos": [60, 260], "size": [150, 64] },
     { "id": "publiai", "type": "backend", "label": "PubliAI", "sublabel": "SaaS multi-tenant", "pos": [380, 252], "size": [160, 80] },
     { "id": "ml", "type": "external", "label": "Mercado Livre", "sublabel": "marketplace ativo", "pos": [720, 120], "size": [160, 64] },
     { "id": "outros_mkt", "type": "external", "label": "Outros marketplaces", "sublabel": "vitrine \"em breve\"", "pos": [720, 260], "size": [180, 64] },
     { "id": "openrouter", "type": "external", "label": "OpenRouter", "sublabel": "IA — copy e visão", "pos": [380, 60], "size": [160, 60] },
     { "id": "mp", "type": "external", "label": "Mercado Pago", "sublabel": "liberações financeiras", "pos": [720, 400], "size": [160, 60] },
-    { "id": "telegram", "type": "external", "label": "Telegram", "sublabel": "alertas operacionais", "pos": [380, 440], "size": [160, 60] }
+    { "id": "telegram", "type": "external", "label": "Telegram", "sublabel": "alertas operacionais", "pos": [380, 440], "size": [160, 60] },
+    { "id": "apify", "type": "external", "label": "Apify", "sublabel": "scraping Sonar / nicho", "pos": [60, 440], "size": [150, 60] }
   ],
   "boundaries": [
     { "kind": "security-group", "label": "Organização (tenant) — 1 de N empresas clientes", "wraps": ["operadores"] }
   ],
   "connections": [
-    { "from": "operadores", "to": "publiai", "label": "upload planilha/fotos, revisão, aprovação", "variant": "emphasis", "labelAt": [295, 220] },
+    { "from": "operadores", "to": "publiai", "label": "planilha/manual, revisão, estoque", "variant": "emphasis", "labelAt": [295, 220] },
     { "from": "publiai", "to": "ml", "label": "OAuth, publicar, ler status/vendas", "variant": "emphasis" },
     { "from": "ml", "to": "publiai", "label": "webhooks", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [860, 198] },
     { "from": "publiai", "to": "outros_mkt", "label": "vitrine — ainda não conectado", "variant": "dashed" },
     { "from": "publiai", "to": "openrouter", "label": "copy + resolução de cor/atributos" },
     { "from": "publiai", "to": "mp", "label": "leitura de vendas liberadas", "variant": "dashed" },
-    { "from": "publiai", "to": "telegram", "label": "alertas", "variant": "dashed", "labelDy": 24 }
+    { "from": "publiai", "to": "telegram", "label": "alertas", "variant": "dashed", "labelDy": 24 },
+    { "from": "publiai", "to": "apify", "label": "scraping nicho", "variant": "dashed" }
   ],
   "cards": [
-    { "dot": "cyan", "title": "O que é", "items": ["Transforma planilhas de produtos em anúncios publicados em marketplaces", "IA como copywriter + resolução de cor/atributos", "Revisão humana obrigatória antes de publicar"] },
-    { "dot": "amber", "title": "Multi-tenant", "items": ["Cada empresa (organização) só enxerga os próprios dados", "Hoje: 1 organização em produção (Avil) — arquitetura já suporta N"] },
+    { "dot": "cyan", "title": "O que é", "items": ["Transforma planilhas ou cadastro manual em anúncios publicados em marketplaces", "Kits vinculados de N unidades com estoque derivado sem duplicação (ADR-0151)", "Inteligência de mercado e garimpo de oportunidades (Pulse Radar & Sonar)", "Revisão humana obrigatória antes de publicar"] },
+    { "dot": "amber", "title": "Multi-tenant", "items": ["Cada empresa (organização) só enxerga os próprios dados via RLS org_id", "Hoje: 2 organizações em produção (Avil e DSA) — arquitetura suporta N"] },
     { "dot": "violet", "title": "Vitrine \"em breve\"", "items": ["Shopee, Amazon, Magalu e Casas Bahia aparecem no menu, mas sem conector implementado", "Próximo a conectar: Shopee (épico E5)"] }
   ]
 }

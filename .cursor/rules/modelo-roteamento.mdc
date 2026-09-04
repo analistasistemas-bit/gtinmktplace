@@ -1,0 +1,113 @@
+---
+description: Orquestração Grok 4.6 → subagentes Composer/Luna (caminho C obrigatório)
+alwaysApply: true
+---
+
+# Roteamento por subagentes (caminho C)
+
+**Modo padrão:** sessão principal **Grok 4.6 (fast) · high effort** orquestra; **nunca** implementa diff grande direto — delega via Task tool.
+
+## Papéis
+
+| Papel | Modelo (UI) | Slug subagente | Faz |
+|---|---|---|---|
+| **Orquestrador** | Grok 4.6 | — (sessão principal) | Plano, ADR, decisões, revisão, delegar |
+| **Executor** | Composer | `composer-2.5-fast` | Código, testes, migrations, edges, frontend |
+| **Executor rápido** | GPT-5.6 Luna (High) | `gpt-5.6-luna-medium` | Patches pequenos (≤3 arquivos), grep+fix local, call sites, listas, refactor mecânico |
+
+> Luna na UI; subagentes rápidos usam `gpt-5.6-luna-medium` (slug Task API).
+
+## Fluxo obrigatório
+
+1. **Planejar** no Grok (investigar docs/ADR, hipótese, arquivos, ordem).
+2. **Mostrar plano** ao operador antes de delegar (exceto fix trivial já aprovado).
+3. **Delegar** com Task tool + `model` explícito + prompt autocontido (contexto completo — subagente não vê o chat).
+4. **Revisar** diff/resultado do subagente; escalar ou relançar se insuficiente.
+5. **Validar** com o checklist de entrega (abaixo) — espelha o CI; operador aprova merge/publicação.
+
+## Checklist de entrega (executor + orquestrador)
+
+Incidente de referência: perf Estoque 2026-08-14 — executor reportou testes verdes, CI quebrou
+no `pnpm build`; migration quebrou no `db push` (bug SQL). Causa: validação incompleta.
+
+### Executor — obrigatório antes de reportar "pronto"
+
+Rodar **todos** os itens aplicáveis ao escopo (não basta `pnpm test`):
+
+| Passo | Comando / ação | Quando |
+|---|---|---|
+| Testes | `pnpm test -- <escopo>` | sempre |
+| Lint | `pnpm lint` nos arquivos alterados | sempre |
+| **Build** | **`pnpm build`** (`tsc -b` + vite) | sempre — **CI exige; testes sozinhos não bastam** |
+| Migrations | `npm run db:check` | DDL novo/alterado |
+| **Apply migration** | **`supabase db push`** (ou dry-run documentado se sem link) | migration nova — **`db:check` não aplica no remoto** |
+| Tipos Supabase | Atualizar `src/lib/database.types.ts` | RPC/tabela/coluna nova consumida pelo frontend |
+| Edge deploy | `supabase functions deploy <fn>` | edge alterada |
+| Docs | `docs/TASKS.md` + ref. afetada (`modelo-de-dados`, `edge-functions`, …) | entrega relevante |
+
+**Proibido** reportar "CI verde" ou "pronto para merge" sem `pnpm build` passando localmente.
+
+### Orquestrador — obrigatório antes de merge/push na `main`
+
+Não confiar só no relatório do executor. Reproduzir ou conferir:
+
+1. **`pnpm build`** no worktree da branch (mesmo que o executor já tenha rodado).
+2. **Diff da migration** — CTEs batem com colunas referenciadas; `current_org_id()` em RPCs.
+3. **`supabase db push`** quando houver migration (ou confirmar que já foi aplicada com sucesso).
+4. **`database.types.ts`** presente se o frontend chama RPC/tabela nova.
+5. **CI verde** na branch antes do merge (`gh run watch`).
+6. Só então: merge fast-forward → push `main` → cleanup worktree/branch.
+
+Fix pós-executor (tipos, SQL, casts) ≤3 arquivos / ~80 linhas: orquestrador pode aplicar
+direto; acima disso → relançar executor com prompt corrigido.
+
+### Prompt de delegação — incluir sempre
+
+Copiar no Task tool (adaptar escopo):
+
+```
+Validação obrigatória antes de reportar pronto:
+- pnpm test -- <escopo>
+- pnpm lint (arquivos alterados)
+- pnpm build
+- [se migration] npm run db:check + supabase db push
+- [se RPC/tabela nova no front] atualizar src/lib/database.types.ts
+- docs/TASKS.md (+ docs/reference/ se aplicável)
+Não commitar/push se build falhar.
+```
+
+## Quando delegar
+
+| Situação | Subagente | Modelo |
+|---|---|---|
+| Implementar feature/fix | executor | `composer-2.5-fast` |
+| Tarefas paralelas independentes | N executors | `composer-2.5-fast` |
+| Localizar arquivos/call sites | executor rápido | `gpt-5.6-luna-medium` |
+| Patches pequenos (≤3 arquivos) | executor rápido | `gpt-5.6-luna-medium` |
+| Debug difícil / arquitetura | **orquestrador** (não delegar cedo) | Grok 4.6 |
+
+## Proibições do orquestrador
+
+- Não editar >3 arquivos nem >~80 linhas sem delegar antes.
+- Não rebaixar em migrations, RLS, marketplace, financeiro — orquestrador Grok; executor Composer; revisão Grok.
+- Executor rápido **proibido** para migrations, RLS, marketplace, financeiro e conteúdo factual sem fonte (IDs, paths, ADR/docs, números de prod).
+- Tarefa simples que explodir → parar executor, replanejar no Grok.
+
+## Prompts do operador
+
+**Início de tarefa grande:**
+```
+[ORQUESTRAR] <objetivo>. Planeje (docs/ADR primeiro). Não implemente —
+delegue subagentes Composer. Mostre plano antes de executar.
+```
+
+**Aprovar e executar:**
+```
+[Aprovado] Implemente via subagente Composer conforme plano acima.
+Worktree + branch feat/<slug>.
+```
+
+**Só busca:**
+```
+[RÁPIDO] Liste call sites de <símbolo>. Subagente Luna, sem implementar.
+```

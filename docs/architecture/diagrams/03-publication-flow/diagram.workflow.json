@@ -19,13 +19,13 @@
   ],
   "mainPath": ["upload", "ingest", "ia", "revisao", "fanout", "ml_publish"],
   "nodes": [
-    { "id": "upload", "lane": "op", "col": 0, "type": "frontend", "label": "Upload", "sublabel": "planilha + fotos" },
+    { "id": "upload", "lane": "op", "col": 0, "type": "frontend", "label": "Upload", "sublabel": "planilha / manual" },
     { "id": "ingest", "lane": "ingest_lane", "col": 1, "type": "backend", "label": "Ingestão", "sublabel": "ingest-lote" },
-    { "id": "ia", "lane": "ia_lane", "col": 2, "type": "backend", "label": "Enriquecimento", "sublabel": "process-familia", "tag": "QStash worker" },
-    { "id": "revisao", "lane": "op", "col": 3, "type": "frontend", "label": "Revisão humana", "sublabel": "operador aprova", "tag": "obrigatória" },
+    { "id": "ia", "lane": "ia_lane", "col": 2, "type": "backend", "label": "Enriquecimento", "sublabel": "process-familia", "tag": "sugestão catálogo" },
+    { "id": "revisao", "lane": "op", "col": 3, "type": "frontend", "label": "Revisão humana", "sublabel": "aprovação + fiscal", "tag": "obrigatória" },
     { "id": "fanout", "lane": "pub", "col": 4, "type": "backend", "label": "Publicar", "sublabel": "publicar-familias", "tag": "fan-out por canal" },
     { "id": "ml_publish", "lane": "pub", "col": 5, "type": "backend", "label": "Mercado Livre", "sublabel": "publish/update", "tag": "+ catálogo" },
-    { "id": "canal_extra", "lane": "canais", "col": 4, "type": "backend", "label": "Canal extra", "sublabel": "publicar-anuncio", "tag": "worker genérico · opcional" }
+    { "id": "canal_extra", "lane": "canais", "col": 4, "type": "backend", "label": "Canal extra", "sublabel": "publicar-anuncio", "tag": "worker genérico" }
   ],
   "edges": [
     { "from": "upload", "to": "ingest" },
@@ -36,7 +36,7 @@
     { "from": "fanout", "to": "canal_extra", "label": "canal ≠ ML", "variant": "dashed", "fromSide": "bottom", "toSide": "top", "labelAt": [500, 539] }
   ],
   "cards": [
-    { "dot": "rose", "title": "Regras", "items": ["Revisão humana obrigatória — nada é publicado sem aprovação do operador", "Workers idempotentes — claim atômico, seguro para retry do QStash"] },
+    { "dot": "rose", "title": "Regras", "items": ["Revisão humana obrigatória — nada é publicado sem aprovação do operador", "Workers idempotentes — claim atômico, seguro para retry do QStash", "Kits vinculados (ADR-0151) nascem direto em 'pronto' e publicam após a base", "Validação fiscal can_invoice (ADR-0135) garante prontidão para o Faturador ML"] },
     { "dot": "cyan", "title": "Canais extras (E6)", "items": ["Falha em 1 canal nunca afeta o Mercado Livre (isolamento D-E6.2, ADR-0061)", "Hoje só Mercado Livre está ativo; Shopee é o próximo (E5)"] }
   ]
 }

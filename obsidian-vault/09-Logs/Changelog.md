@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-08-24
+atualizado: 2026-09-03
 ---
 
 # Changelog
@@ -8,6 +8,23 @@ atualizado: 2026-08-24
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-09-03
+
+- **ADR-0151: Kit vinculado — criar anúncios de kit (N unidades) a partir de produto existente — EM PRODUÇÃO.** Tela Estoque ganha "Criar kit vinculado" gerando famílias com estoque 100% derivado (`floor(estoque_base/N)`), lote técnico dedicado (`status='publicando'`), baixa de estoque resolvida na base, trava simétrica de catálogo e 19 Edge Functions deployadas.
+- **Badge "atualizando no ML…" após entrada de estoque.** Confirmação viva do estoque no canal com poll de 15s e transição suave para "✓ no ML".
+- **Entrada de mercadoria em várias cores simultâneas.** `DialogEntrada` no card permite abastecer N variações do mesmo produto simultaneamente na mesma nota fiscal, contornando o teto de 1000 linhas da RPC.
+- **Herança de ficha técnica de irmão em User Products.** Ao adicionar cor nova, atributos de normalização do ML são lidos do irmão ativo evitando divergência de `family_id`.
+
+## 2026-08-28
+
+- **ADR-0140: Sonar — busca por EAN unificada com análise completa.** Consulta por código de barras percorre o pipeline completo do Sonar (veredito, insights, pódio, vendas, visitas, DRE) via Apify sem bifurcação grátis/paga.
+- **ADR-0148 / ADR-0149: DRE sob demanda e simulador no Sonar.** Cálculo de lucro e sensibilidade nos cenários comerciais reais com retorno sobre capital imobilizado.
+
+## 2026-08-25
+
+- **ADR-0135: Cadastro fiscal e emissão via Faturador do Mercado Livre.** Cadastro da empresa (`empresa_fiscal`), colunas fiscais em `familias`, validação `can_invoice` e integração de dados fiscais ao publicar no ML.
+- **ADR-0134: Alerta de estoque zerado e de volta ao ar.** Notificação no Telegram e in-app quando o estoque esgota e quando a reposição reativa o anúncio.
 
 ## 2026-08-24
 

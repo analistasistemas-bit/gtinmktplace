@@ -173,3 +173,19 @@ Consulte `docs/decisions/`. Mais relevantes: 0003 (variações por pai), 0004 (c
 # O que nunca fazer
 
 Nunca: inventar dados de produto; publicar sem revisão humana; quebrar idempotência; salvar tokens em texto puro; ignorar RLS; criar estrutura sem ADR; alterar anúncios reais fora do fluxo controlado; usar `familias.custo_centavos` como custo de produto; editar a main direto.
+
+---
+
+# Fable-advisor Trigger
+
+If the user's prompt contains `Fable-advisor` (case-insensitive):
+
+1. This workflow overrides the model-routing rules above for this request only.
+2. Require the main session to use Fable. If not, stop and ask the user to run `/model fable`.
+3. Invoke and follow the installed Fable Advisor orchestration skill as the source of truth; actually use its workflow/agents, do not recreate or approximate it.
+4. Preserve all PubliAI project rules in this CLAUDE.md; only model routing/orchestration is overridden.
+5. Optimize token usage: cheapest appropriate lane/reasoning, minimal delegated context, no redundant/parallel work unless justified.
+6. Never run Codex Adversarial Review unless explicitly requested by the user.
+7. Perform the skill's required verification and final `fable-advisor` review before declaring completion.
+
+Without `Fable-advisor` in the prompt, ignore this section and follow the normal workflow above.

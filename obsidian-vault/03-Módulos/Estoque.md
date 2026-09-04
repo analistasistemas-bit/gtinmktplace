@@ -1,6 +1,6 @@
 ---
 tags: [modulo, estoque]
-atualizado: 2026-08-21
+atualizado: 2026-09-03
 ---
 
 # Estoque
@@ -209,6 +209,36 @@ no caminho — `<table>` dentro de `<TableCell>` forçava scroll horizontal estr
   o preço do mesmo anúncio. `pulse_produtos.meu_preco` não serve de base: só existe onde há ficha
   de catálogo (3 de 7 na DSA, 15 de 133 na Avil — Errata 2 do ADR-0119). Limitação: `/items` devolve o
   preço BASE, sem promoção ativa do vendedor.
+
+## Kit Vinculado — packs de N unidades (ADR-0151)
+
+Extensão do módulo Estoque implementada em 2026-09-03. Permite criar anúncios de kits (packs com 2, 3, 4, 5 ou mais unidades) derivados de um produto existente sem estoque duplicado.
+
+- **Estoque 100% derivado:** O kit não possui saldo próprio em `variacoes.estoque`. Seu saldo disponível é calculado deterministicamente como `floor(estoque_base / multiplicador)`.
+- **Colunas em `familias`:** `kit_base_codigo_pai` aponta para o produto base e `kit_multiplicador` armazena o número de unidades por pack.
+- **Lote técnico dedicado:** O kit nasce direto em status `'pronto'` num lote técnico com `status='publicando'`, publicando automaticamente no ML após a confirmação do produto base, sem passar pela Revisão manual.
+- **Venda e Push:** Baixa de estoque na venda de kit resolve a baixa diretamente na família base multiplicada por N. O push enfileira a atualização da base e de todos os kits derivados.
+- **Trava de integridade:** Bloqueio de inserção direta de estoque no SKU do kit; bloqueio de remoção ou inserção de nova cor na base enquanto houver kit vinculado ativo; trava de catálogo fechada e simétrica.
+- **Deploy:** 19 Edge Functions deployadas cobrindo o blast radius de `_shared/estoque/*`.
+
+## Entrada de mercadoria em múltiplas cores (2026-09-03)
+
+O `DialogEntrada` foi aprimorado para suportar dois modos de operação:
+1. **Pelo card do produto:** Abre com a lista completa de variações daquele produto pai (usando `fetchVariacoesProduto`), permitindo digitar quantidades para múltiplas cores simultaneamente na mesma nota/documento fiscal, contornando o limite de truncamento de 1000 linhas do PostgREST.
+2. **Pelo topo da página:** Mantém o picker de SKU individual para buscas pontuais, agora com paginação paralela.
+3. **Idempotência por SKU:** Cada entrada gera referência única `entrada:<ref>:<codigo>`.
+
+## Adicionar variação a família publicada (ADR-0129)
+
+Ação disponível no menu do card para administradores:
+- Permite adicionar uma nova cor/variação a um produto já publicado no Mercado Livre.
+- Cria um lote dedicado de `UPDATE`, copia atributos da família viva e adiciona a nova variação com foto e estoque inicial no ledger.
+- Executa a atualização diretamente pelo pipeline de publicação sem passar pela tela de Revisão humana (dados são 100% auditados pelo operador).
+
+## Feedback visual e monitoramento
+
+- **Badge "atualizando no ML…":** Ao dar entrada de mercadoria, o card exibe badge temporária monitorando o status vivo no canal até a confirmação da sincronização de estoque, tornando-se "✓ no ML" e sumindo após alguns segundos.
+- **Botão "Revisar" em cards com erro:** Quando um produto apresenta erro de publicação ou catálogo, o card fornece atalho direto para resolver a pendência na tela de Revisão.
 
 ## Regra operacional inegociável
 

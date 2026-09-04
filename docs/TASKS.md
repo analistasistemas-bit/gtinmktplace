@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Varredura Geral e Atualização: Graphify, Obsidian Vault e Archify — 2026-09-03
+
+Varredura de todo o repositório PubliAI sincronizando os 3 pilares de documentação e modelagem:
+
+- [x] **Obsidian Vault (`obsidian-vault/`):** Criada a nota `03-Módulos/Pulse.md` (Radar, Sonar, concorrência qualificada, Apify fallback, simulador de margem); atualizados `00-Home/Home.md`, `00-Home/Visão Geral.md`, `01-Arquitetura/Edge Functions.md` (62 funções ativas catalogadas), `01-Arquitetura/Banco de Dados.md` (tabelas pulse, empresa_fiscal, kit), `03-Módulos/Estoque.md` (Kit Vinculado ADR-0151, entrada multi-cor, ADR-0129), `06-Roadmap/Sprint Atual.md` e `09-Logs/Changelog.md`. Verificado com `pnpm docs:links` (zero links quebrados).
+- [x] **Archify (`docs/architecture/diagrams/`):** Atualizados os diagramas 01 a 08 (Pulse, Apify, kits vinculados, multi-tenant e ledger de estoque). Validados com `archify validate` (v2.11) e `archify check`. Renderizados e exportados com sucesso em `diagram.html`, `diagram.svg` e `diagram.png` para todos os 8 diagramas. Atualizado `docs/architecture/CHANGELOG.md`.
+- [x] **Graphify (`graphify-out/`):** Criado snapshot de backup, executado `graphify update .` (14.699 nós, 22.479 arestas). Aplicada a poda determinística de falsos positivos (`python3 scripts/graphify-podar-falsos.py --aplicar`, 353 arestas podadas mantendo `_shared/`). Reclusterizado com `graphify cluster-only . --no-label` (14.699 nós, 22.126 arestas, 3.056 comunidades). Atualizado `obsidian-vault/07-IA/Graphify.md`.
+- [x] **Qualidade e Verificações:** `pnpm docs:links` e `pnpm lint` passando com sucesso.
+
 ## Badge "atualizando no ML…" após entrada de estoque — 2026-09-03
 
 Relato do Diego: deu entrada em três cores, foi conferir o anúncio e não viu nada — o push levou

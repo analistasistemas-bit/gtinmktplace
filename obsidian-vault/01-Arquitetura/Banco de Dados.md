@@ -1,6 +1,6 @@
 ---
 tags: [arquitetura, banco-de-dados]
-atualizado: 2026-08-24
+atualizado: 2026-09-03
 ---
 
 # Banco de Dados
@@ -25,6 +25,8 @@ erDiagram
     familias ||--o{ variacoes : contem
     familias ||--o{ anuncios_externos : espelha
     organizations ||--o{ marketplace_connections : "1 por canal"
+    organizations ||--o{ pulse_produtos : "rastreia"
+    pulse_produtos ||--o{ pulse_ofertas : "contem snapshots"
     ml_vendas ||--o{ ml_vendas_itens : contem
     ml_vendas ||--o{ ml_devolucoes : "por order_id"
     variacoes }o--o{ ml_vendas_itens : "match GTIN/EAN"
@@ -34,8 +36,8 @@ erDiagram
 
 | Tabela | Papel |
 |---|---|
-| `lotes` | Um upload de planilha + imagens; inicia o pipeline |
-| `familias` | Um PAI = um anúncio; identidade, resultado da IA, estado de publicação |
+| `lotes` | Um upload de planilha + imagens ou lote técnico de kit/manual; inicia o pipeline |
+| `familias` | Um PAI = um anúncio; identidade, resultado da IA, estado de publicação; colunas de kit (`kit_base_codigo_pai`, `kit_multiplicador` - ADR-0151) e fiscais (`ncm`, `cest`, `origem_nfe`, `csosn`, `can_invoice` - ADR-0135) |
 | `variacoes` | Um SKU/cor = uma variação do anúncio |
 | `anuncios_externos` | Espelho multicanal, identidade `(org_id, canal, codigo_pai, particao)` |
 | `marketplace_connections` | Credenciais OAuth por organização e canal (tokens no Vault) |
@@ -48,6 +50,10 @@ erDiagram
 | `estoque_movimentos` | Ledger imutável de estoque (venda, entrada, estorno, ajuste) — ver [[Estoque]] |
 | `venda_item_custo` | Custo congelado por item vendido, insert-once (ADR-0109) |
 | `notificacoes` | Espelho in-app dos alertas do Telegram (ADR-0085) |
+| `pulse_produtos` / `pulse_ofertas` | Radar de concorrência: produtos monitorados e snapshots de ofertas |
+| `pulse_vendedores` / `pulse_alertas` | Sellers qualificados e histórico de alertas de Buy-Box / concorrência |
+| `sonar_snapshots` | Histórico global de buscas no Sonar para comparação temporal de vendas |
+| `empresa_fiscal` | Dados fiscais da organização (CNPJ, IE, regime, endereço) para faturamento ML |
 | `configuracoes` | Settings por organização (desconto, Telegram, alíquotas — ver [[Configurações]]) |
 | `organizations` | Tenant; `canais_habilitados` e `modulos_habilitados` |
 | `profiles` | Espelho de `auth.users` — `is_admin`, `allowed_menus` (ver [[Usuários]]) |
@@ -61,7 +67,8 @@ erDiagram
 | `get_ml_tokens(user_id)` | Lê tokens descriptografados do Vault (só `service_role`) |
 | `is_admin()` / `current_org_id()` | Helpers de RLS/RBAC — ver [[Segurança]] |
 | `telegram_config_status()` | Retorna status sem expor o token |
-| `baixar_estoque` / `estornar_estoque` / `registrar_entrada` / `ajustar_estoque` | Únicas escritas permitidas em `variacoes.estoque` — precisam pertencer ao role `estoque_rpc_executor` (ver [[Estoque]]) |
+| `baixar_estoque` / `estornar_estoque` / `registrar_entrada` / `ajustar_estoque` | Únicas escritas permitidas em `variacoes.estoque` — pertencem ao role `estoque_rpc_executor` (ver [[Estoque]]) |
+| `adotar_familia_migrada_up` | Adoção atômica de anúncios dissolvidos/migrados para User Products pelo ML (ADR-0104/0105) |
 
 ## O que não existe (YAGNI consciente)
 
