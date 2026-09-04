@@ -74,14 +74,15 @@
 
       --maxw:1180px;
       --s1:8px; --s2:16px; --s3:24px; --s4:32px; --s5:48px; --s6:64px; --s7:96px; --s8:128px;
-      --h1:clamp(40px,7.2vw,88px);
+      --h1:clamp(34px,5.4vw,66px);
       --h2:clamp(30px,4.6vw,56px);
       --lead:clamp(16px,1.6vw,19px);
     }
 
     *{box-sizing:border-box;margin:0;padding:0}
     html{scroll-behavior:smooth;background:var(--bg)}
-    body{min-height:100vh;background:var(--bg);color:var(--fg);font-family:'Geist','Geist Variable',-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;font-feature-settings:'ss01','cv01';-webkit-font-smoothing:antialiased;overflow-x:hidden}
+    html{background:var(--bg)}
+body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist','Geist Variable',-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;font-feature-settings:'ss01','cv01';-webkit-font-smoothing:antialiased;overflow-x:hidden}
     a{color:inherit;text-decoration:none}
     button,input,select,textarea{font:inherit}
     button{cursor:pointer}
@@ -104,16 +105,17 @@
     strong{color:var(--fg);font-weight:600}
     .grad{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent}
 
-    .bg{position:fixed;inset:0;z-index:-2;overflow:hidden;contain:strict;background:var(--bg)}
-    .bg::before{content:'';position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px);background-size:64px 64px;-webkit-mask-image:radial-gradient(120vw 90vh at 50vw 0px,#000 20vw,transparent 78vw);mask-image:radial-gradient(120vw 90vh at 50vw 0px,#000 20vw,transparent 78vw)}
-    .bg i{position:absolute;display:block;inline-size:60vw;block-size:60vw;border-radius:9999px;transform:translate3d(0,0,0);will-change:transform;background:radial-gradient(circle,rgba(92,92,235,.16),transparent 68vw);animation:aurora-a 28s ease-in-out infinite alternate}
-    .bg i:first-child{inset:-25vw -12vw auto auto;background:radial-gradient(circle,rgba(145,82,227,.18),transparent 68vw)}
-    .bg i:last-child{inset:auto auto:-30vw -18vw;animation-name:aurora-b;background:radial-gradient(circle,rgba(92,92,235,.15),transparent 68vw)}
+    .bg{position:fixed;inset:0;z-index:-1;overflow:hidden;contain:layout paint;background:transparent}
+    .bg::before{content:'';position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.055) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.055) 1px,transparent 1px);background-size:64px 64px;-webkit-mask-image:radial-gradient(120vw 90vh at 50vw 0px,#000 20vw,transparent 78vw);mask-image:radial-gradient(120vw 90vh at 50vw 0px,#000 20vw,transparent 78vw)}
+    .bg i{position:absolute;display:block;inline-size:min(1100px,90vw);block-size:min(1100px,90vw);border-radius:9999px;transform:translate3d(0,0,0);will-change:transform;background:radial-gradient(circle at center,rgba(92,92,235,.30) 0%,transparent 70%);animation:aurora-a 28s ease-in-out infinite alternate}
+    .bg i:first-child{inset:-18vh auto auto -10vw;background:radial-gradient(circle at center,rgba(145,82,227,.26) 0%,transparent 70%)}
+    .bg i:last-child{inset:-26vh -14vw auto auto;animation-name:aurora-b;background:radial-gradient(circle at center,rgba(92,92,235,.30) 0%,transparent 70%)}
     @keyframes aurora-a{to{transform:translate3d(-4vw,5vw,0) scale(1.08)}}
     @keyframes aurora-b{to{transform:translate3d(7vw,-4vw,0) scale(1.12)}}
     .progress{position:fixed;inset:0 0 auto 0;z-index:30;block-size:2px;background:var(--grad);transform-origin:left;transform:scaleX(0);display:none}
 
     .site-header{position:sticky;top:0;z-index:20;border-bottom:1px solid transparent;background:rgba(8,9,14,.6);backdrop-filter:blur(12px)}
+    .site-header.scrolled{border-bottom-color:var(--line)}
     .nav{min-block-size:72px;display:flex;align-items:center;justify-content:space-between;gap:var(--s3)}
     .logo{display:inline-flex;align-items:center;gap:9px;white-space:nowrap}
     .logo svg{display:block;inline-size:30px;block-size:30px}
@@ -143,9 +145,10 @@
     .shot .bar{min-block-size:30px;display:flex;align-items:center;gap:7px;padding:0 12px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1A1D27,#14171F)}
     .shot .bar i{display:block;inline-size:8px;block-size:8px;border-radius:9999px;background:#3A3E4C}
     .shot .bar .u{margin-inline-start:8px;overflow:hidden;color:var(--dim);background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;white-space:nowrap;text-overflow:ellipsis}
-    .shot img{display:block;inline-size:stretch;max-inline-size:100vw}
-    .shot.hero-shot{inline-size:min(1100px,calc(100vw - 2 * var(--s3)));margin-top:var(--s6);text-align:left;transform:scale(1)}
-    .shot-caption{margin-top:12px;text-align:left}
+    .shot img{display:block;width:100%;height:auto;max-width:100%}
+    .hero-shot-wrap{inline-size:min(1100px,calc(100vw - 2 * var(--s3)));margin-top:var(--s6);text-align:left}
+    .shot.hero-shot{inline-size:100%;transform:scale(1)}
+    .shot-caption{display:block;position:static;margin-block-start:12px;text-align:left}
 
     .grid{display:grid;gap:var(--s3)}
     .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -356,7 +359,7 @@
       .hero .wrap{align-items:flex-start}
       .hero .actions{align-items:stretch;flex-direction:column}
       .hero .tiny{text-align:left}
-      .shot.hero-shot{inline-size:calc(100vw - 2 * var(--s2));margin-top:var(--s5)}
+      .hero-shot-wrap{inline-size:calc(100vw - 2 * var(--s2));margin-top:var(--s5)}
       .g2,.control-cards,.plans,.form-grid,.product-grid,.footer-grid{grid-template-columns:1fr}
       .choice-card{grid-column:auto}
       .cta-panel{padding:var(--s3)}
@@ -394,7 +397,7 @@
 
   <main id="inicio">
     <section class="section hero" aria-labelledby="hero-title">
-      <div class="wrap"><div class="pill rv"><span class="dot"></span>Operação no Mercado Livre · conduzida pela Daludi Innovit Consult</div><h1 id="hero-title" class="rv"><span class="w" style="--i:0">Sua</span> <span class="w" style="--i:1">operação</span> <span class="w" style="--i:2">de</span> <span class="w" style="--i:3">marketplace,</span> <span class="w" style="--i:4">conduzida</span> <span class="w" style="--i:5">por</span> <span class="w" style="--i:6">quem</span> <span class="w" style="--i:7"><span class="grad">mostra</span></span> <span class="w" style="--i:8"><span class="grad">a</span></span> <span class="w" style="--i:9"><span class="grad">conta.</span></span></h1><p class="lead rv">Viabilidade antes de comprar estoque, preço acompanhado todo dia e o líquido de cada venda — na mesma tela que a nossa equipe usa.</p><div class="actions rv"><a class="btn light" href="#cta">Enviar 5 produtos para análise</a><a class="btn ghost" href="#modalidades">Ver as modalidades</a></div><p class="tiny rv">Você contrata a operação, não um software: o PubliAI é a plataforma com que a equipe da Daludi conduz o canal — e a sua janela sobre ele.</p><figure class="shot hero-shot rv"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · dashboard · mês atual</span></div><img src="assets/dashboard.png" width="1600" height="460" loading="eager" fetchpriority="high" alt="Dashboard do PubliAI com os indicadores de uma operação ativa"><figcaption class="tiny shot-caption">Tela real do PubliAI · Dashboard de uma operação ativa no Mercado Livre.</figcaption></figure></div>
+      <div class="wrap"><div class="pill rv"><span class="dot"></span>Operação no Mercado Livre · conduzida pela Daludi Innovit Consult</div><h1 id="hero-title" class="rv"><span class="w" style="--i:0">Sua</span> <span class="w" style="--i:1">operação</span> <span class="w" style="--i:2">de</span> <span class="w" style="--i:3">marketplace,</span> <span class="w" style="--i:4">conduzida</span> <span class="w" style="--i:5">por</span> <span class="w" style="--i:6">quem</span> <span class="w" style="--i:7"><span class="grad">mostra</span></span> <span class="w" style="--i:8"><span class="grad">a</span></span> <span class="w" style="--i:9"><span class="grad">conta.</span></span></h1><p class="lead rv">Viabilidade antes de comprar estoque, preço acompanhado todo dia e o líquido de cada venda — na mesma tela que a nossa equipe usa.</p><div class="actions rv"><a class="btn light" href="#cta">Enviar 5 produtos para análise</a><a class="btn ghost" href="#modalidades">Ver as modalidades</a></div><p class="tiny rv">Você contrata a operação, não um software: o PubliAI é a plataforma com que a equipe da Daludi conduz o canal — e a sua janela sobre ele.</p><figure class="hero-shot-wrap"><div class="shot hero-shot rv"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · dashboard · mês atual</span></div><img src="assets/dashboard.png" width="1600" height="460" loading="eager" fetchpriority="high" alt="Dashboard do PubliAI com os indicadores de uma operação ativa"></div><figcaption class="tiny shot-caption">Tela real do PubliAI · Dashboard de uma operação ativa no Mercado Livre.</figcaption></figure></div>
     </section>
 
     <section class="section" id="problema" aria-labelledby="problema-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">O ponto de partida</div><h2 id="problema-title">O canal digital não se desenvolve sozinho — <span class="grad">ele é operado.</span></h2></div><div class="grid g2"><article class="card rv" style="--i:0"><p>Comprar estoque sem saber se o preço fecha depois da comissão e do frete.</p></article><article class="card rv" style="--i:1"><p>Descobrir que o concorrente baixou o preço quando a venda já parou.</p></article><article class="card rv" style="--i:2"><p>Não saber quanto sobra por unidade no preço que está praticando <strong>hoje</strong>.</p></article><article class="card rv" style="--i:3"><p>Anúncio pausado por estoque zerado — e ninguém percebeu.</p></article></div><div class="card flat rv" style="margin-top:var(--s4)"><div class="chips"><span class="chip">Análise de mercado</span><span class="chip">Concorrência</span><span class="chip">Seleção de produtos</span><span class="chip">Viabilidade</span><span class="chip">Preço</span><span class="chip">Margem</span><span class="chip">Catálogo</span><span class="chip">Imagens</span><span class="chip">Títulos</span><span class="chip">Descrições</span><span class="chip">Atributos</span><span class="chip">Regras do marketplace</span><span class="chip">Publicação</span><span class="chip">Buy Box</span><span class="chip">Mercado Livre Ads</span><span class="chip">Atendimento</span><span class="chip">Estoque</span><span class="chip">Financeiro</span><span class="chip">Otimização</span><span class="chip">Análise de desempenho</span></div></div><p class="sub rv" style="margin-top:var(--s3)">Não é uma lista de tarefas. São <strong>competências diferentes</strong>, que precisam conversar entre si e acontecer <strong>todo mês</strong>, não uma vez.</p></div></section>
@@ -435,6 +438,212 @@ const CONFIG = {
   whatsappMessage: 'Olá! Vim pela página do PubliAI e quero enviar 5 produtos Curva A para análise.',
   contactEmail: 'sac@daludi.com.br'
 };
+  </script>
+  <script>
+    (() => {
+      document.documentElement.classList.replace('no-js', 'js');
+
+      const progress = document.querySelector('.progress');
+      const header = document.querySelector('.site-header');
+      const heroShot = document.querySelector('.hero-shot');
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+      let scrollFramePending = false;
+
+      const scheduleScrollState = () => {
+        if (scrollFramePending) return;
+        scrollFramePending = true;
+        window.requestAnimationFrame(() => {
+          scrollFramePending = false;
+          const maxScroll = document.documentElement.scrollHeight - window.innerHeight;
+          const p = maxScroll > 0 ? window.scrollY / maxScroll : 0;
+          if (progress) progress.style.transform = `scaleX(${p})`;
+          if (header) header.classList.toggle('scrolled', window.scrollY > 8);
+          if (heroShot) {
+            if (window.innerWidth > 900 && !reducedMotion.matches) {
+              const y = Math.min(window.scrollY * 0.12, 80);
+              heroShot.style.transform = `translate3d(0,${-y}px,0)`;
+            } else {
+              heroShot.style.removeProperty('transform');
+            }
+          }
+        });
+      };
+
+      window.addEventListener('scroll', scheduleScrollState, { passive: true });
+      scheduleScrollState();
+
+      const splitHeroTitle = () => {
+        const title = document.getElementById('hero-title');
+        if (!title) return;
+
+        const walker = document.createTreeWalker(title, NodeFilter.SHOW_TEXT, {
+          acceptNode(node) {
+            return node.parentElement.closest('.w')
+              ? NodeFilter.FILTER_REJECT
+              : NodeFilter.FILTER_ACCEPT;
+          }
+        });
+        const textNodes = [];
+        while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+        let wordIndex = title.querySelectorAll('.w').length;
+        textNodes.forEach((textNode) => {
+          const text = textNode.nodeValue;
+          if (!text || !/\S/.test(text)) return;
+
+          const fragment = document.createDocumentFragment();
+          let lastIndex = 0;
+          text.replace(/\S+/g, (word, startIndex) => {
+            if (startIndex > lastIndex) fragment.append(text.slice(lastIndex, startIndex));
+            const span = document.createElement('span');
+            span.className = 'w';
+            span.style.setProperty('--i', wordIndex++);
+            span.textContent = word;
+            fragment.append(span);
+            lastIndex = startIndex + word.length;
+            return word;
+          });
+          if (lastIndex < text.length) fragment.append(text.slice(lastIndex));
+          textNode.parentNode.replaceChild(fragment, textNode);
+        });
+      };
+
+      splitHeroTitle();
+
+      const reveal = (element) => {
+        element.classList.add('in');
+        element.querySelectorAll('.w').forEach((word) => word.classList.add('in'));
+      };
+      const revealElements = [...document.querySelectorAll('.rv')];
+      if ('IntersectionObserver' in window) {
+        const revealObserver = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            reveal(entry.target);
+            revealObserver.unobserve(entry.target);
+          });
+        }, { threshold: 0.15 });
+        revealElements.forEach((element) => revealObserver.observe(element));
+      } else {
+        revealElements.forEach(reveal);
+      }
+
+      const stepItems = [...document.querySelectorAll('.steps li')];
+      const cycleShots = [...document.querySelectorAll('.cycle-shot[data-step]')];
+      const sentinels = [...document.querySelectorAll('.sentinels .s[data-index]')];
+      let activeStep = -1;
+      const activateStep = (index) => {
+        if (index < 0 || index >= stepItems.length || index === activeStep) return;
+        activeStep = index;
+        stepItems.forEach((item, itemIndex) => item.classList.toggle('on', itemIndex === index));
+        cycleShots.forEach((shot) => shot.classList.toggle('on', shot.dataset.step === String(index)));
+      };
+      activateStep(0);
+      if ('IntersectionObserver' in window && sentinels.length) {
+        const sentinelObserver = new IntersectionObserver((entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) activateStep(Number(entry.target.dataset.index));
+          });
+        }, { rootMargin: '-50% 0px -50% 0px' });
+        sentinels.forEach((sentinel) => sentinelObserver.observe(sentinel));
+      }
+
+      const tabButtons = [...document.querySelectorAll('.tab[role="tab"]')];
+      const tabPanels = [...document.querySelectorAll('.tabpanel[data-tab-panel]')];
+      const activateTab = (tab, moveFocus = false) => {
+        if (!tab) return;
+        const activePanelId = tab.getAttribute('aria-controls');
+        tabButtons.forEach((button) => {
+          const active = button === tab;
+          button.setAttribute('aria-selected', String(active));
+          button.tabIndex = active ? 0 : -1;
+        });
+        tabPanels.forEach((panel) => {
+          panel.hidden = panel.id !== activePanelId;
+        });
+        if (moveFocus) tab.focus();
+      };
+      const initialTab = tabButtons.find((tab) => tab.getAttribute('aria-selected') === 'true') || tabButtons[0];
+      activateTab(initialTab);
+      tabButtons.forEach((tab, index) => {
+        tab.addEventListener('click', () => activateTab(tab));
+        tab.addEventListener('keydown', (event) => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+          event.preventDefault();
+          const direction = event.key === 'ArrowRight' ? 1 : -1;
+          const nextIndex = (index + direction + tabButtons.length) % tabButtons.length;
+          activateTab(tabButtons[nextIndex], true);
+        });
+      });
+
+      const form = document.querySelector('form.form');
+      if (form) {
+        const submitButton = form.querySelector('button[type="submit"]');
+        const status = document.createElement('p');
+        status.className = 'form-microcopy form-status';
+        status.setAttribute('role', 'status');
+        status.hidden = true;
+        form.insertAdjacentElement('afterend', status);
+
+        const showStatus = (message) => {
+          status.textContent = message;
+          status.hidden = false;
+        };
+
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          if (!form.reportValidity()) return;
+          const honeypot = form.elements.namedItem('_honey');
+          if (honeypot && honeypot.value) return;
+
+          const dados = Object.fromEntries(new FormData(form));
+          Object.assign(dados, {
+            _subject: 'Novos 5 produtos para análise — landing PubliAI',
+            _captcha: 'false',
+            _template: 'table'
+          });
+
+          const originalLabel = submitButton ? submitButton.textContent : '';
+          if (submitButton) {
+            submitButton.disabled = true;
+            submitButton.textContent = 'Enviando...';
+          }
+
+          try {
+            const response = await fetch(CONFIG.formEndpoint, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Accept: 'application/json'
+              },
+              body: JSON.stringify(dados)
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+            form.hidden = true;
+            showStatus(form.dataset.successMessage);
+            window.dataLayer?.push?.({ event: form.dataset.conversionEvent });
+          } catch (error) {
+            const summary = Object.entries(dados)
+              .filter(([name, value]) => !name.startsWith('_') && String(value).trim() !== '')
+              .map(([name, value]) => {
+                const field = form.elements.namedItem(name);
+                const label = field?.labels?.[0]?.textContent?.trim() || name;
+                return `${label}: ${value}`;
+              })
+              .join('\n');
+            const whatsappText = [CONFIG.whatsappMessage, summary].filter(Boolean).join('\n\n');
+            window.open(`https://wa.me/${CONFIG.whatsappNumber}?text=${encodeURIComponent(whatsappText)}`, '_blank');
+            showStatus('A submissão automática falhou, mas o WhatsApp foi aberto com os dados preenchidos para que seu contato não seja perdido.');
+          } finally {
+            if (submitButton) {
+              submitButton.disabled = false;
+              submitButton.textContent = originalLabel;
+            }
+          }
+        });
+      }
+    })();
   </script>
 </body>
 </html>
