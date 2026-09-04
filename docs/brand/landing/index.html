@@ -1,332 +1,440 @@
 <!doctype html>
-<html lang="pt-BR">
+<html lang="pt-BR" class="no-js">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>PubliAI — Da planilha ao anúncio publicado. Sem trabalho manual.</title>
-  <meta name="description" content="PubliAI automatiza a criação e publicação de anúncios em marketplaces com IA. Da planilha ao anúncio publicado, com revisão humana e escala multicanal." />
-  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PubliAI — Operação de marketplace conduzida por quem mostra a conta</title>
+  <meta name="description" content="Viabilidade antes de comprar estoque, preço acompanhado todo dia e o líquido de cada venda — na mesma tela que a nossa equipe usa.">
+  <meta property="og:title" content="PubliAI — Operação de marketplace conduzida por quem mostra a conta">
+  <meta property="og:description" content="Viabilidade antes de comprar estoque, preço acompanhado todo dia e o líquido de cada venda — na mesma tela que a nossa equipe usa.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="assets/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Service",
+    "name": "Operação de marketplace PubliAI",
+    "description": "Operação de marketplace conduzida pela Daludi Innovit Consult, com viabilidade, preparação, publicação, monitoramento e financeiro.",
+    "provider": {"@type": "Organization", "name": "Daludi Innovit Consult"},
+    "areaServed": {"@type": "Country", "name": "Brasil"},
+    "offers": [
+      {"@type": "Offer", "name": "Modalidade 1 — Gestão Completa Daludi", "description": "Implantação e calibração por R$ 3.000, Sustentação de Infraestrutura por R$ 600 por mês e gestão por 5 por cento do faturamento bruto."},
+      {"@type": "Offer", "name": "Modalidade 2 — Gestão Completa + Inteligência", "description": "Implantação e calibração por R$ 3.000, Sustentação de Infraestrutura incorporada e gestão por 7 por cento do faturamento bruto."}
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {"@type": "Question", "name": "Em quais marketplaces vocês operam hoje?", "acceptedAnswer": {"@type": "Answer", "text": "No Mercado Livre. Outros canais estão no roadmap do PubliAI e não são objeto desta oferta."}},
+      {"@type": "Question", "name": "Preciso ter catálogo grande?", "acceptedAnswer": {"@type": "Answer", "text": "Não. A calibração começa com 5 produtos Curva A; a capacidade incluída é de até 20 novos produtos publicados por mês."}},
+      {"@type": "Question", "name": "Quem publica o anúncio?", "acceptedAnswer": {"@type": "Answer", "text": "A equipe da Daludi prepara, revisa e publica. Nenhuma publicação é confirmada sem uma pessoa aprovar."}},
+      {"@type": "Question", "name": "Vocês mexem no meu preço sem avisar?", "acceptedAnswer": {"@type": "Answer", "text": "Não. A inteligência sinaliza o movimento; a mudança de preço volta para revisão humana antes de ir ao marketplace."}},
+      {"@type": "Question", "name": "O que acontece se o produto não for viável?", "acceptedAnswer": {"@type": "Answer", "text": "A análise diz isso com clareza — concluir que não vale operar também é resultado. Análises inviáveis não consomem o limite (até 10 por mês). Por envolver trabalho executado, implantação e calibração não são reembolsáveis nessa hipótese."}},
+      {"@type": "Question", "name": "Quantos produtos entram por mês?", "acceptedAnswer": {"@type": "Answer", "text": "Até 20 novos produtos publicados por mês, nas duas modalidades, mais até 10 análises de produtos inviáveis."}},
+      {"@type": "Question", "name": "Eu vejo os mesmos dados que a equipe de vocês?", "acceptedAnswer": {"@type": "Answer", "text": "Sim. Você tem acesso próprio ao PubliAI — o mesmo dado, ao mesmo tempo. Comissão, frete e liberação vêm da conta conectada ao Mercado Livre; estimativa aparece rotulada como estimativa."}}
+    ]
+  }
+  </script>
   <style>
-    :root {
-      --bg: #08090E; --bg2: #0B0C13; --card: #14151D; --card2: #1C1E28;
-      --border: #2A2C38; --txt: #F1F1F5; --muted: #9A9BA8;
-      --primary: #5A5CE2; --primary-l: #737CF7; --violet: #9152E3;
-      --grad: linear-gradient(135deg, #5C5CEB, #9152E3);
-      --radius: 14px; --maxw: 1120px;
-      --success: #2BB061;
+    @font-face{font-family:'Geist';src:url('assets/fonts/geist-latin.woff2') format('woff2');font-weight:300 700;font-style:normal;font-display:swap}
+    @font-face{font-family:'Geist';src:url('assets/fonts/geist-latinext.woff2') format('woff2');font-weight:300 700;font-style:normal;font-display:swap}
+
+    :root{
+      --bg:#08090E;
+      --bg-2:#0C0E15;
+      --card:#161923;
+      --card-2:#1C2030;
+      --line:rgba(255,255,255,.09);
+      --line-strong:rgba(255,255,255,.16);
+      --fg:#F1F1F5;
+      --fg-2:#C3C5D2;
+      --muted:#8E90A2;
+      --dim:#63667A;
+
+      --indigo:#5C5CEB;
+      --violet:#9152E3;
+      --indigo-soft:rgba(92,92,235,.16);
+      --violet-soft:rgba(145,82,227,.14);
+      --grad:linear-gradient(135deg,#5C5CEB 0px,#9152E3 100vw);
+      --grad-text:linear-gradient(120deg,#8E8EFF 0px,#C08BFF 100vw);
+
+      --ok:#3FCF8E;
+      --warn:#E8A127;
+      --bad:#F2555A;
+      --info:#4DA3F0;
+      --teal:#08B6AF;
+      --pink:#E74368;
+
+      --r-sm:8px; --r:14px; --r-lg:20px; --r-xl:28px;
+      --glow:0 0 0 1px rgba(92,92,235,.35), 0 18px 60px -18px rgba(92,92,235,.55);
+
+      --maxw:1180px;
+      --s1:8px; --s2:16px; --s3:24px; --s4:32px; --s5:48px; --s6:64px; --s7:96px; --s8:128px;
+      --h1:clamp(40px,7.2vw,88px);
+      --h2:clamp(30px,4.6vw,56px);
+      --lead:clamp(16px,1.6vw,19px);
     }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html { scroll-behavior: smooth; }
-    body {
-      font-family: "Geist", system-ui, sans-serif; background: var(--bg); color: var(--txt);
-      line-height: 1.6; -webkit-font-smoothing: antialiased; overflow-x: hidden;
+
+    *{box-sizing:border-box;margin:0;padding:0}
+    html{scroll-behavior:smooth;background:var(--bg)}
+    body{min-height:100vh;background:var(--bg);color:var(--fg);font-family:'Geist','Geist Variable',-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;font-feature-settings:'ss01','cv01';-webkit-font-smoothing:antialiased;overflow-x:hidden}
+    a{color:inherit;text-decoration:none}
+    button,input,select,textarea{font:inherit}
+    button{cursor:pointer}
+    ul,ol{list-style:none}
+    img{max-inline-size:100vw;height:auto}
+    .wrap{width:min(var(--maxw),calc(100vw - 2 * var(--s3)));margin-inline:auto}
+    .section{position:relative;padding-block:var(--s8);scroll-margin-top:84px}
+    .section > .wrap{position:relative;z-index:1}
+    .section-head{max-inline-size:820px;margin-bottom:var(--s5)}
+    .section-head .lead{margin-top:var(--s3)}
+    .eyebrow{display:flex;align-items:center;gap:10px;margin-bottom:14px;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.16em;text-transform:uppercase}
+    .eyebrow::before{content:'';width:22px;height:2px;border-radius:2px;background:var(--grad)}
+    h1,h2,h3{font-weight:600;letter-spacing:-.03em}
+    h1{font-size:var(--h1);line-height:1.02;max-inline-size:14ch}
+    h2{font-size:var(--h2);line-height:1.08;max-inline-size:20ch}
+    h3{font-size:20px;line-height:1.2}
+    .lead{color:var(--fg-2);font-size:var(--lead);line-height:1.55;max-inline-size:70ch}
+    .sub{color:var(--muted);font-size:14px;line-height:1.55}
+    .tiny{color:var(--dim);font-size:12px;line-height:1.5}
+    strong{color:var(--fg);font-weight:600}
+    .grad{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent}
+
+    .bg{position:fixed;inset:0;z-index:-2;overflow:hidden;contain:strict;background:var(--bg)}
+    .bg::before{content:'';position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,.028) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.028) 1px,transparent 1px);background-size:64px 64px;-webkit-mask-image:radial-gradient(120vw 90vh at 50vw 0px,#000 20vw,transparent 78vw);mask-image:radial-gradient(120vw 90vh at 50vw 0px,#000 20vw,transparent 78vw)}
+    .bg i{position:absolute;display:block;inline-size:60vw;block-size:60vw;border-radius:9999px;transform:translate3d(0,0,0);will-change:transform;background:radial-gradient(circle,rgba(92,92,235,.16),transparent 68vw);animation:aurora-a 28s ease-in-out infinite alternate}
+    .bg i:first-child{inset:-25vw -12vw auto auto;background:radial-gradient(circle,rgba(145,82,227,.18),transparent 68vw)}
+    .bg i:last-child{inset:auto auto:-30vw -18vw;animation-name:aurora-b;background:radial-gradient(circle,rgba(92,92,235,.15),transparent 68vw)}
+    @keyframes aurora-a{to{transform:translate3d(-4vw,5vw,0) scale(1.08)}}
+    @keyframes aurora-b{to{transform:translate3d(7vw,-4vw,0) scale(1.12)}}
+    .progress{position:fixed;inset:0 0 auto 0;z-index:30;block-size:2px;background:var(--grad);transform-origin:left;transform:scaleX(0);display:none}
+
+    .site-header{position:sticky;top:0;z-index:20;border-bottom:1px solid transparent;background:rgba(8,9,14,.6);backdrop-filter:blur(12px)}
+    .nav{min-block-size:72px;display:flex;align-items:center;justify-content:space-between;gap:var(--s3)}
+    .logo{display:inline-flex;align-items:center;gap:9px;white-space:nowrap}
+    .logo svg{display:block;inline-size:30px;block-size:30px}
+    .logo .wm{font-size:22px;font-weight:600;letter-spacing:-.025em;line-height:1}
+    .logo .wm em{font-style:normal;background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent}
+    .nav-links{display:flex;align-items:center;gap:var(--s4);color:var(--fg-2);font-size:13px}
+    .nav-links a:not(.btn){transition:color 180ms ease}
+    .nav-links a:not(.btn):hover{color:var(--fg)}
+
+    .pill{display:inline-flex;align-items:center;gap:8px;padding:8px 13px;border-radius:999px;color:#B9B7FF;background:var(--indigo-soft);border:1px solid rgba(139,132,255,.38);font-size:12px;font-weight:500}
+    .dot{inline-size:6px;block-size:6px;flex:none;border-radius:9999px;background:currentColor}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-block-size:46px;padding:0 20px;border:1px solid transparent;border-radius:999px;font-size:13px;font-weight:600;transition:transform 180ms ease,background 180ms ease,border-color 180ms ease}
+    .btn:hover{transform:translateY(-2px)}
+    .btn.light{background:#F1F1F5;color:#11121A}
+    .btn.light:hover{background:#fff}
+    .btn.ghost{border-color:var(--line-strong);color:var(--fg-2);background:rgba(255,255,255,.025)}
+    .btn.ghost:hover{border-color:rgba(255,255,255,.32);color:var(--fg)}
+    .actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+
+    .hero{padding-block:var(--s8) var(--s7);text-align:center}
+    .hero .wrap{display:flex;flex-direction:column;align-items:center}
+    .hero h1{max-inline-size:15ch;margin-top:var(--s4)}
+    .hero .lead{max-inline-size:68ch;margin-top:var(--s4)}
+    .hero .actions{margin-top:var(--s5)}
+    .hero .tiny{max-inline-size:62ch;margin-top:var(--s3)}
+    .shot{position:relative;overflow:hidden;border:1px solid var(--line-strong);border-radius:var(--r-lg);background:#0F111A;box-shadow:0 30px 70px -30px rgba(0,0,0,.9),0 0 0 1px rgba(255,255,255,.03)}
+    .shot .bar{min-block-size:30px;display:flex;align-items:center;gap:7px;padding:0 12px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1A1D27,#14171F)}
+    .shot .bar i{display:block;inline-size:8px;block-size:8px;border-radius:9999px;background:#3A3E4C}
+    .shot .bar .u{margin-inline-start:8px;overflow:hidden;color:var(--dim);background:rgba(255,255,255,.04);border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;white-space:nowrap;text-overflow:ellipsis}
+    .shot img{display:block;inline-size:stretch;max-inline-size:100vw}
+    .shot.hero-shot{inline-size:min(1100px,calc(100vw - 2 * var(--s3)));margin-top:var(--s6);text-align:left;transform:scale(1)}
+    .shot-caption{margin-top:12px;text-align:left}
+
+    .grid{display:grid;gap:var(--s3)}
+    .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+    .card{padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-lg);background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,.015))}
+    .card.flat{background:rgba(255,255,255,.028)}
+    .card.brand{border-color:rgba(139,132,255,.34);background:linear-gradient(160deg,rgba(92,92,235,.2),rgba(145,82,227,.1) 60vw,rgba(255,255,255,.02))}
+    .card h3{margin-bottom:9px;font-size:17px}
+    .chips{display:flex;flex-wrap:wrap;gap:9px}
+    .chip{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.05);color:var(--fg-2);font-size:12.5px;font-weight:500;white-space:nowrap}
+    .chip.brand{border-color:rgba(139,132,255,.38);background:var(--indigo-soft);color:#B9B7FF}
+    .chip.ok{border-color:rgba(63,207,142,.36);background:rgba(63,207,142,.12);color:#8FE9C2}
+    .chip.warn{border-color:rgba(232,161,39,.36);background:rgba(232,161,39,.12);color:#F0C87E}
+    .chip.bad{border-color:rgba(242,85,90,.36);background:rgba(242,85,90,.12);color:#FF9EA1}
+    .chip.xs{padding:5px 10px;font-size:11px}
+
+    .problem-flow{display:flex;align-items:stretch}
+    .problem-flow .step{flex:1;padding:16px 14px;border:1px solid var(--line);background:rgba(255,255,255,.03);font-size:14px;font-weight:600;line-height:1.25}
+    .problem-flow .step:first-child{border-radius:var(--r) 0 0 var(--r)}
+    .problem-flow .step:last-child{border-radius:0 var(--r) var(--r) 0}
+    .problem-flow .step + .step{border-inline-start:0}
+    .note{padding:16px;border:1px solid var(--line);border-inline-start:3px solid var(--warn);border-radius:0 var(--r) var(--r) 0;background:rgba(232,161,39,.06)}
+    .note.brandy{border-inline-start-color:var(--indigo);background:rgba(92,92,235,.07)}
+    .note .nt{margin-bottom:5px;color:#F0C87E;font-size:12px;font-weight:600;letter-spacing:.03em}
+    .note.brandy .nt{color:#B9B7FF}
+    .note .nb{color:var(--fg-2);font-size:14px;line-height:1.55}
+
+    .cycle-section{height:auto}
+    .pin{display:block}
+    .cycle-copy{margin-bottom:var(--s5)}
+    .steps{display:grid;gap:12px}
+    .steps li{padding:18px 20px;border:1px solid var(--line);border-radius:var(--r-lg);background:rgba(255,255,255,.028)}
+    .steps li.on{border-color:rgba(139,132,255,.38);background:linear-gradient(160deg,rgba(92,92,235,.16),rgba(145,82,227,.06))}
+    .step-kicker{display:block;margin-bottom:6px;color:var(--dim);font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+    .steps h3{margin-bottom:7px;font-size:19px}
+    .steps p{color:var(--fg-2);font-size:14px;line-height:1.55}
+    .cycle-visuals{display:grid;gap:var(--s4)}
+    .cycle-shot{display:block}
+    .cycle-shot .shot-caption{margin-bottom:0}
+    .sentinels{display:none}
+    .cycle-shot .shot{max-inline-size:none}
+
+    .responsibilities{display:grid;grid-template-columns:minmax(0,1fr) 72px minmax(0,1fr);align-items:stretch}
+    .col{padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-lg)}
+    .col.daludi{border-color:rgba(139,132,255,.32);background:linear-gradient(165deg,rgba(92,92,235,.18),rgba(145,82,227,.08) 70vw,transparent)}
+    .col.cliente{background:rgba(255,255,255,.028)}
+    .col .ct{margin-bottom:5px;color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+    .col .cn{margin-bottom:14px;font-size:21px;font-weight:600;letter-spacing:-.02em}
+    .col ul{display:grid;gap:9px}
+    .col li{display:flex;gap:9px;align-items:flex-start;color:var(--fg-2);font-size:13px;line-height:1.4}
+    .col li::before{content:'';inline-size:5px;block-size:5px;flex:none;margin-top:7px;border-radius:9999px;background:var(--indigo)}
+    .col.cliente li::before{background:var(--dim)}
+    .vs{display:grid;place-items:center;color:var(--dim);font-size:12px;font-weight:600;letter-spacing:.12em}
+
+    .control-grid{align-items:start}
+    .control-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .control-cards .card{padding:18px}
+    .illustrative{margin-bottom:12px;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase}
+    .notifications{display:grid;gap:9px}
+    .notif{display:flex;gap:11px;align-items:flex-start;padding:13px;border:1px solid var(--line);border-radius:var(--r);background:rgba(255,255,255,.028)}
+    .notif .nd{align-self:stretch;inline-size:7px;min-block-size:38px;flex:none;border-radius:6px}
+    .notif .nl{margin-bottom:4px;font-size:13px;font-weight:600;line-height:1.25}
+    .notif .nx{color:var(--muted);font-size:12px;line-height:1.45}
+    .notification-footer{margin-top:var(--s3)}
+
+    .tabs{display:grid;gap:var(--s4)}
+    .tablist{display:flex;flex-wrap:wrap;gap:10px}
+    .tab{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.04);color:var(--fg-2);font-size:12px;font-weight:600}
+    .tab[aria-selected="true"]{border-color:rgba(139,132,255,.45);background:var(--indigo-soft);color:#B9B7FF}
+    .tabpanel{display:block}
+    .tabpanel h3{margin-bottom:var(--s2);font-size:21px}
+    .tabpanel .shot{margin-bottom:var(--s2)}
+    .tabpanel p{color:var(--muted);font-size:14px;line-height:1.55}
+
+    .proof-card{padding:var(--s4)}
+    .proof-card h3{margin-bottom:4px}
+    .proof-date{margin-bottom:var(--s4);color:var(--muted);font-size:12px;letter-spacing:.04em}
+    .big{display:block;margin-bottom:8px;color:#B3A3FF;font-size:clamp(34px,4vw,52px);font-weight:600;letter-spacing:-.04em;line-height:1}
+    .stat-list{display:grid;gap:12px}
+    .stat-list li{padding-top:12px;border-top:1px solid var(--line);color:var(--fg-2);font-size:13px;line-height:1.5}
+    .stat-list strong{color:var(--fg)}
+    .promise-note{padding-block:var(--s5);border-inline-start-width:3px}
+    .promise-note h2{margin-bottom:var(--s3);max-inline-size:none;font-size:clamp(28px,4vw,46px)}
+    .promise-note p{max-inline-size:80ch;color:var(--fg-2);font-size:var(--lead);line-height:1.6}
+
+    .phase{padding:var(--s3);border:1px solid var(--line);border-radius:var(--r-lg);background:rgba(255,255,255,.03)}
+    .phase.hot{border-color:rgba(139,132,255,.32);background:linear-gradient(160deg,rgba(92,92,235,.17),rgba(145,82,227,.07))}
+    .phase .ph-h{display:flex;align-items:baseline;gap:10px;margin-bottom:4px}
+    .phase .ph-n{color:var(--muted);font-size:10px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+    .phase .ph-t{font-size:19px;font-weight:600;letter-spacing:-.015em}
+    .phase .ph-d{margin-bottom:14px;color:var(--muted);font-size:13px;line-height:1.4}
+    .phase ol{display:grid;gap:8px;counter-reset:s}
+    .phase li{counter-increment:s;display:flex;gap:10px;align-items:flex-start;color:var(--fg-2);font-size:13px;line-height:1.4}
+    .phase li::before{content:counter(s,decimal-leading-zero);min-inline-size:16px;padding-top:2px;color:var(--dim);font-size:10px;font-weight:600;font-variant-numeric:tabular-nums}
+    .phase.hot li::before{color:#9A97E8}
+
+    .plans{align-items:stretch}
+    .plan{position:relative;display:flex;flex-direction:column;padding:var(--s4);border:1px solid var(--line);border-radius:var(--r-lg);background:rgba(255,255,255,.028)}
+    .plan.rec{border-color:rgba(139,132,255,.42);background:linear-gradient(170deg,rgba(92,92,235,.19),rgba(145,82,227,.08) 65vw,rgba(255,255,255,.02));box-shadow:0 24px 60px -28px rgba(92,92,235,.6)}
+    .plan .tag{position:absolute;inset:-11px auto auto 20px;padding:5px 11px;border-radius:999px;background:var(--grad);box-shadow:0 6px 18px -6px rgba(92,92,235,.9);color:#fff;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+    .plan .pname{color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+    .plan .ptitle{margin:7px 0 5px;font-size:21px;font-weight:600;letter-spacing:-.02em;line-height:1.2}
+    .plan .pfor{min-block-size:42px;color:var(--muted);font-size:13px;line-height:1.45}
+    .plan .prow{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:11px 0;border-top:1px solid var(--line)}
+    .plan .prow .lbl{color:var(--muted);font-size:12px}
+    .plan .prow .val{text-align:right;font-size:14px;font-weight:600}
+    .plan .prow .val.big{margin:0;color:#B3A3FF;font-size:22px}
+    .plan .pnote{margin-top:auto;padding-top:var(--s3);color:var(--dim);font-size:12px;line-height:1.5}
+    .choice-card{display:flex;flex-direction:column;justify-content:center;gap:var(--s3)}
+    .choice-card p + p{padding-top:var(--s3);border-top:1px solid var(--line)}
+    .included{padding:var(--s4)}
+    .included .ct{margin-bottom:12px;color:#B9B7FF;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+    .excluded{align-self:stretch}
+    .table-card{overflow:auto}
+    table{border-collapse:collapse;font-size:13px}
+    th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+    th{color:var(--muted);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+    td{color:var(--fg-2)}
+    tbody tr:last-child td{border-bottom:0}
+
+    .cta-panel{padding:var(--s5);border:1px solid rgba(139,132,255,.34);border-radius:var(--r-xl);background:linear-gradient(160deg,rgba(92,92,235,.16),rgba(145,82,227,.07) 62vw,rgba(255,255,255,.02))}
+    .form{display:grid;gap:var(--s3);margin-top:var(--s5)}
+    .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--s3)}
+    .field{display:grid;gap:7px}
+    .field label,.product legend{color:var(--fg-2);font-size:12px;font-weight:600}
+    .field input,.field select,.field textarea,.product input{min-block-size:46px;padding:11px 13px;border:1px solid var(--line-strong);border-radius:var(--r-sm);outline:0;background:rgba(8,9,14,.58);color:var(--fg);font-size:14px}
+    .field textarea{min-block-size:100px;resize:vertical}
+    .field input:focus,.field select:focus,.field textarea:focus,.product input:focus{border-color:#8E8EFF;box-shadow:0 0 0 3px rgba(92,92,235,.16)}
+    .products{display:grid;gap:12px}
+    .product{display:grid;gap:12px;padding:var(--s3);border:1px solid var(--line);border-radius:var(--r);background:rgba(8,9,14,.28)}
+    .product legend{padding-inline:5px}
+    .product-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+    .products details{display:grid;gap:12px}
+    .products details summary{cursor:pointer;color:var(--fg-2);font-size:13px;font-weight:600}
+    .products details summary::marker{color:#B9B7FF}
+    .form-actions{display:flex;align-items:center;flex-wrap:wrap;gap:12px}
+    .form-actions .btn{border:0}
+    .form-microcopy{max-inline-size:76ch;color:var(--muted);font-size:12px;line-height:1.55}
+    .whatsapp{color:#8FE9C2;font-size:13px;font-weight:600}
+    .whatsapp:hover{text-decoration:underline}
+    .hp{position:absolute;inset-inline-start:-10000px;block-size:1px;inline-size:1px;overflow:hidden}
+
+    .faq{display:grid;gap:10px;max-inline-size:920px}
+    .faq details{border:1px solid var(--line);border-radius:var(--r);background:rgba(255,255,255,.028)}
+    .faq summary{cursor:pointer;padding:18px 20px;color:var(--fg);font-size:15px;font-weight:600;list-style:none}
+    .faq summary::-webkit-details-marker{display:none}
+    .faq summary::after{content:'+';float:right;color:#B9B7FF;font-size:20px;font-weight:400;line-height:1}
+    .faq details[open] summary::after{content:'−'}
+    .faq details p{padding:0 20px 19px;color:var(--muted);font-size:14px;line-height:1.6}
+
+    .site-footer{padding-block:var(--s6) var(--s4);border-top:1px solid var(--line);background:rgba(8,9,14,.55)}
+    .footer-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:var(--s5);align-items:start}
+    .footer-brand .sub{max-inline-size:34ch;margin-top:var(--s3)}
+    .footer-title{margin-bottom:12px;color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase}
+    .footer-links{display:grid;gap:9px;color:var(--fg-2);font-size:13px}
+    .footer-links a:hover{text-decoration:underline}
+    .daludi-mark{display:flex;align-items:center;gap:10px;margin-top:var(--s3);color:var(--fg-2);font-size:13px}
+    .daludi-mark img{inline-size:28px;block-size:30px;object-fit:contain}
+    .copyright{margin-top:var(--s6);padding-top:var(--s3);border-top:1px solid var(--line);color:var(--dim);font-size:12px}
+
+    html.js .progress{display:block}
+    html.js .rv{opacity:0;transform:translateY(24px);filter:blur(8px);transition:opacity 600ms ease,transform 600ms ease,filter 600ms ease;transition-delay:calc(var(--i,0) * 80ms)}
+    html.js .rv.in{opacity:1;transform:none;filter:none}
+    html.js .shot.rv{filter:none}
+    html.js .w{display:inline-block;opacity:0;transform:translateY(14px);transition:opacity 500ms ease,transform 500ms ease;transition-delay:calc(var(--i,0) * 40ms)}
+    html.js .w.in{opacity:1;transform:none}
+    html.js .shot.hero-shot{transform:scale(.96);will-change:transform}
+    html.js .pin{position:sticky;top:0;min-block-size:100svh;display:grid;grid-template-columns:.9fr 1.3fr;align-items:center;gap:var(--s6)}
+    html.js .cycle-section{height:600vh}
+    html.js .cycle-copy{margin-bottom:0}
+    html.js .cycle-visuals{position:relative;min-block-size:70vh}
+    html.js .cycle-shot{position:absolute;inset:0;opacity:0;transform:translateY(18px);transition:opacity 350ms ease,transform 350ms ease;pointer-events:none}
+    html.js .cycle-shot.on{opacity:1;transform:none;pointer-events:auto}
+    html.js .sentinels{display:block;position:absolute;inset:0 auto auto 0;inline-size:1px;pointer-events:none}
+    html.js .sentinels .s{block-size:100vh}
+    html.js .tabpanel[hidden]{display:none}
+
+    @media (max-width:900px){
+      .section{padding-block:var(--s7)}
+      .nav-links a:not(.btn){display:none}
+      .nav-links{gap:0}
+      .g3,.g4,.responsibilities,.control-grid{grid-template-columns:1fr}
+      .responsibilities{gap:var(--s3)}
+      .vs{min-block-size:28px}
+      .control-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .plans{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .choice-card{grid-column:1 / -1;min-block-size:260px}
+      .footer-grid{grid-template-columns:1fr 1fr}
+      .footer-brand{grid-column:1 / -1}
+      html.js .cycle-section{height:auto}
+      html.js .pin{position:static;display:block;min-block-size:0}
+      html.js .cycle-visuals{min-block-size:0}
+      html.js .cycle-shot{position:static;opacity:1;transform:none;pointer-events:auto}
+      html.js .cycle-shot + .cycle-shot{margin-top:var(--s4)}
+      html.js .sentinels{display:none}
     }
-    a { color: inherit; text-decoration: none; }
-    .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
-    .grad-text { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
-    .eyebrow { font-size: 13px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--primary-l); }
-    .btn {
-      display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px;
-      padding: 12px 22px; border-radius: 10px; border: 1px solid transparent; cursor: pointer; transition: all .18s ease;
+
+    @media (max-width:600px){
+      .wrap{width:calc(100vw - 2 * var(--s2))}
+      .section{padding-block:var(--s6)}
+      .nav{min-block-size:64px}
+      .logo svg{inline-size:27px;block-size:27px}
+      .logo .wm{font-size:20px}
+      h1{max-inline-size:calc(100vw - 2 * var(--s2));font-size:40px}
+      h2{max-inline-size:calc(100vw - 2 * var(--s2));font-size:34px}
+      .hero{text-align:left}
+      .hero .wrap{align-items:flex-start}
+      .hero .actions{align-items:stretch;flex-direction:column}
+      .hero .tiny{text-align:left}
+      .shot.hero-shot{inline-size:calc(100vw - 2 * var(--s2));margin-top:var(--s5)}
+      .g2,.control-cards,.plans,.form-grid,.product-grid,.footer-grid{grid-template-columns:1fr}
+      .choice-card{grid-column:auto}
+      .cta-panel{padding:var(--s3)}
+      .form-actions{align-items:stretch;flex-direction:column}
+      .form-actions .btn,.form-actions .whatsapp{text-align:center}
+      .table-card{padding:var(--s2)}
+      table{min-inline-size:620px}
+      .footer-brand{grid-column:auto}
     }
-    .btn-primary { background: var(--grad); color: #fff; box-shadow: 0 8px 24px rgba(90,92,226,.30); }
-    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 10px 30px rgba(90,92,226,.42); }
-    .btn-ghost { border-color: var(--border); color: var(--txt); background: rgba(255,255,255,.02); }
-    .btn-ghost:hover { background: rgba(255,255,255,.06); }
 
-    /* Logo */
-    .logo { display: inline-flex; align-items: center; gap: 10px; font-weight: 600; font-size: 20px; letter-spacing: -.01em; }
-    .logo svg { width: 30px; height: 30px; }
-
-    /* Header */
-    header { position: sticky; top: 0; z-index: 50; backdrop-filter: blur(12px);
-      background: rgba(8,9,14,.72); border-bottom: 1px solid var(--border); }
-    .nav { display: flex; align-items: center; justify-content: space-between; height: 68px; }
-    .nav-links { display: flex; gap: 28px; align-items: center; }
-    .nav-links a:not(.btn) { color: var(--muted); font-size: 14.5px; font-weight: 500; transition: color .15s; }
-    .nav-links a:not(.btn):hover { color: var(--txt); }
-    @media (max-width: 820px) { .nav-links a:not(.btn) { display: none; } }
-
-    /* Hero */
-    .hero { position: relative; padding: 96px 0 72px; text-align: center; }
-    .hero::before { content:""; position:absolute; inset:0; z-index:-1;
-      background: radial-gradient(60% 50% at 50% 0%, rgba(90,92,226,.18), transparent 70%); }
-    .hero h1 { font-size: clamp(36px, 6vw, 64px); font-weight: 700; line-height: 1.05; letter-spacing: -.03em; max-width: 16ch; margin: 0 auto 22px; }
-    .hero p.sub { font-size: clamp(16px, 2.2vw, 20px); color: var(--muted); max-width: 60ch; margin: 0 auto 32px; }
-    .hero-cta { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
-    .hero-note { margin-top: 16px; font-size: 13px; color: var(--muted); }
-    .shot { margin: 56px auto 0; max-width: 940px; border-radius: var(--radius); overflow: hidden;
-      border: 1px solid var(--border); box-shadow: 0 30px 80px -20px rgba(0,0,0,.7); }
-    .shot .bar { display: flex; gap: 7px; padding: 11px 14px; background: #11131b; border-bottom: 1px solid var(--border); }
-    .shot .bar i { width: 11px; height: 11px; border-radius: 50%; background: #2c2f3a; display: block; }
-    .shot img { width: 100%; display: block; }
-
-    /* Trust bar */
-    .trust { padding: 40px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-    .trust p { text-align: center; color: var(--muted); font-size: 13px; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 18px; }
-    .chips { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-    .chip { padding: 8px 18px; border: 1px solid var(--border); border-radius: 999px; color: var(--txt);
-      font-weight: 600; font-size: 14px; background: var(--card); }
-    .chip.soon { color: var(--muted); font-weight: 500; }
-    .chip.soon::after { content:" · em breve"; color: var(--primary-l); font-size: 11px; font-weight: 600; }
-
-    /* Sections */
-    section.block { padding: 88px 0; }
-    .head { text-align: center; max-width: 60ch; margin: 0 auto 56px; }
-    .head h2 { font-size: clamp(28px, 4vw, 40px); font-weight: 700; letter-spacing: -.02em; margin: 14px 0 14px; }
-    .head p { color: var(--muted); font-size: 17px; }
-
-    /* Steps */
-    .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
-    @media (max-width: 900px) { .steps { grid-template-columns: 1fr 1fr; } }
-    @media (max-width: 540px) { .steps { grid-template-columns: 1fr; } }
-    .step { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 26px; }
-    .step .n { width: 38px; height: 38px; border-radius: 10px; background: var(--grad); display: grid; place-items: center;
-      font-weight: 700; color: #fff; margin-bottom: 16px; }
-    .step h3 { font-size: 17px; font-weight: 600; margin-bottom: 8px; }
-    .step p { color: var(--muted); font-size: 14.5px; }
-
-    /* Features */
-    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
-    @media (max-width: 900px) { .features { grid-template-columns: 1fr 1fr; } }
-    @media (max-width: 560px) { .features { grid-template-columns: 1fr; } }
-    .feat { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 28px; transition: border-color .2s, transform .2s; }
-    .feat:hover { border-color: rgba(115,124,247,.5); transform: translateY(-2px); }
-    .feat .ic { width: 44px; height: 44px; border-radius: 11px; background: rgba(90,92,226,.14); border: 1px solid rgba(115,124,247,.3);
-      display: grid; place-items: center; margin-bottom: 16px; }
-    .feat .ic svg { width: 22px; height: 22px; stroke: var(--primary-l); }
-    .feat h3 { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
-    .feat p { color: var(--muted); font-size: 14.5px; }
-
-    /* Multichannel band */
-    .band { background: linear-gradient(135deg, #11101c, #0d0b14); border: 1px solid var(--border); border-radius: 22px;
-      padding: 56px 40px; text-align: center; position: relative; overflow: hidden; }
-    .band::before { content:""; position:absolute; inset:0; background: radial-gradient(50% 80% at 50% 0%, rgba(145,82,227,.18), transparent 70%); }
-    .band h2 { font-size: clamp(26px, 4vw, 38px); font-weight: 700; letter-spacing: -.02em; margin-bottom: 14px; position: relative; }
-    .band p { color: var(--muted); max-width: 56ch; margin: 0 auto 28px; position: relative; }
-
-    /* Pricing */
-    .pricing { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; align-items: stretch; }
-    @media (max-width: 860px) { .pricing { grid-template-columns: 1fr; max-width: 420px; margin: 0 auto; } }
-    .plan { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 30px; display: flex; flex-direction: column; }
-    .plan.featured { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary), 0 20px 50px -20px rgba(90,92,226,.5); }
-    .plan .tag { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--primary-l); margin-bottom: 8px; }
-    .plan .price { font-size: 34px; font-weight: 700; letter-spacing: -.02em; margin: 6px 0 4px; }
-    .plan .price span { font-size: 15px; color: var(--muted); font-weight: 500; }
-    .plan ul { list-style: none; margin: 22px 0; display: flex; flex-direction: column; gap: 11px; flex: 1; }
-    .plan li { font-size: 14.5px; color: var(--txt); display: flex; gap: 10px; align-items: flex-start; }
-    .plan li svg { width: 18px; height: 18px; stroke: var(--success); flex-shrink: 0; margin-top: 2px; }
-    .plan .btn { width: 100%; justify-content: center; }
-
-    /* CTA final */
-    .cta-final { text-align: center; padding: 96px 0; }
-    .cta-final h2 { font-size: clamp(30px, 5vw, 48px); font-weight: 700; letter-spacing: -.02em; margin-bottom: 18px; }
-    .cta-final p { color: var(--muted); font-size: 18px; margin-bottom: 30px; }
-
-    /* Footer */
-    footer { border-top: 1px solid var(--border); padding: 40px 0; }
-    .foot { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
-    .foot p { color: var(--muted); font-size: 13.5px; }
-    .foot .links { display: flex; gap: 22px; }
-    .foot .links a { color: var(--muted); font-size: 13.5px; }
-    .foot .links a:hover { color: var(--txt); }
+    @media (prefers-reduced-motion:reduce){
+      *,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}
+      html.js .rv,html.js .rv.in,html.js .w,html.js .w.in{opacity:1;transform:none;filter:none}
+      html.js .shot.hero-shot{transform:none}
+    }
   </style>
 </head>
 <body>
-  <!-- símbolo reutilizável -->
-  <svg width="0" height="0" style="position:absolute">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stop-color="#5C5CEB" /><stop offset="1" stop-color="#9152E3" />
-      </linearGradient>
-      <symbol id="sym" viewBox="0 0 64 64">
-        <g fill="none" stroke="url(#bg)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17 21H31" /><path d="M11 32H34" /><path d="M17 43H31" /><path d="M37 16 L53 32 L37 48" />
-        </g>
-        <g fill="url(#bg)"><circle cx="7" cy="21" r="3" /><circle cx="4" cy="32" r="3" /><circle cx="7" cy="43" r="3" /></g>
-      </symbol>
-    </defs>
-  </svg>
+  <div class="bg" aria-hidden="true"><i></i><i></i></div>
+  <div class="progress" aria-hidden="true"></div>
 
-  <header>
+  <header class="site-header">
     <div class="wrap nav">
-      <a class="logo" href="#"><svg><use href="#sym" /></svg><span>Publi<span class="grad-text">AI</span></span></a>
-      <nav class="nav-links">
-        <a href="#como">Como funciona</a>
-        <a href="#recursos">Recursos</a>
-        <a href="#planos">Planos</a>
-        <a href="#cta" class="btn btn-primary">Começar agora</a>
-      </nav>
+      <a class="logo" href="#inicio" aria-label="PubliAI, início"><svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><use href="#sym"></use></svg><span class="wm">Publi<em>AI</em></span></a>
+      <nav class="nav-links" aria-label="Navegação principal"><a href="#como">Como funciona</a><a href="#prova">Prova</a><a href="#modalidades">Modalidades</a><a href="#faq">FAQ</a><a class="btn light" href="#cta">Enviar 5 produtos</a></nav>
     </div>
   </header>
 
-  <main>
-    <!-- HERO -->
-    <section class="hero">
-      <div class="wrap">
-        <h1>Da planilha ao anúncio publicado. <span class="grad-text">Sem trabalho manual.</span></h1>
-        <p class="sub">O PubliAI transforma sua planilha de produtos e fotos em anúncios completos e publicados nos marketplaces — com IA que entende o domínio e revisão humana antes de ir ao ar.</p>
-        <div class="hero-cta">
-          <a href="#cta" class="btn btn-primary">Começar agora →</a>
-          <a href="#como" class="btn btn-ghost">Ver como funciona</a>
-        </div>
-        <p class="hero-note">Publique em minutos · Revisão humana · Escala multicanal</p>
-        <div class="shot">
-          <div class="bar"><i></i><i></i><i></i></div>
-          <img src="assets/dashboard.png" alt="Painel do PubliAI com faturamento, lucro e vendas dos anúncios publicados" />
-        </div>
-      </div>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#5C5CEB" /><stop offset="1" stop-color="#9152E3" /></linearGradient>
+      <symbol id="sym" viewBox="0 0 64 64"><g fill="none" stroke="url(#bg)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21H31" /><path d="M11 32H34" /><path d="M17 43H31" /><path d="M37 16 L53 32 L37 48" /></g><g fill="url(#bg)"><circle cx="7" cy="21" r="3" /><circle cx="4" cy="32" r="3" /><circle cx="7" cy="43" r="3" /></g></symbol>
+    </defs>
+  </svg>
+
+  <main id="inicio">
+    <section class="section hero" aria-labelledby="hero-title">
+      <div class="wrap"><div class="pill rv"><span class="dot"></span>Operação no Mercado Livre · conduzida pela Daludi Innovit Consult</div><h1 id="hero-title" class="rv"><span class="w" style="--i:0">Sua</span> <span class="w" style="--i:1">operação</span> <span class="w" style="--i:2">de</span> <span class="w" style="--i:3">marketplace,</span> <span class="w" style="--i:4">conduzida</span> <span class="w" style="--i:5">por</span> <span class="w" style="--i:6">quem</span> <span class="w" style="--i:7"><span class="grad">mostra</span></span> <span class="w" style="--i:8"><span class="grad">a</span></span> <span class="w" style="--i:9"><span class="grad">conta.</span></span></h1><p class="lead rv">Viabilidade antes de comprar estoque, preço acompanhado todo dia e o líquido de cada venda — na mesma tela que a nossa equipe usa.</p><div class="actions rv"><a class="btn light" href="#cta">Enviar 5 produtos para análise</a><a class="btn ghost" href="#modalidades">Ver as modalidades</a></div><p class="tiny rv">Você contrata a operação, não um software: o PubliAI é a plataforma com que a equipe da Daludi conduz o canal — e a sua janela sobre ele.</p><figure class="shot hero-shot rv"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · dashboard · mês atual</span></div><img src="assets/dashboard.png" width="1600" height="460" loading="eager" fetchpriority="high" alt="Dashboard do PubliAI com os indicadores de uma operação ativa"><figcaption class="tiny shot-caption">Tela real do PubliAI · Dashboard de uma operação ativa no Mercado Livre.</figcaption></figure></div>
     </section>
 
-    <!-- TRUST -->
-    <section class="trust">
-      <div class="wrap">
-        <p>Publique nos maiores marketplaces do Brasil</p>
-        <div class="chips">
-          <span class="chip">Mercado Livre</span>
-          <span class="chip soon">Shopee</span>
-          <span class="chip soon">Amazon</span>
-          <span class="chip soon">Magalu</span>
-          <span class="chip soon">Shein</span>
-        </div>
-      </div>
-    </section>
+    <section class="section" id="problema" aria-labelledby="problema-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">O ponto de partida</div><h2 id="problema-title">O canal digital não se desenvolve sozinho — <span class="grad">ele é operado.</span></h2></div><div class="grid g2"><article class="card rv" style="--i:0"><p>Comprar estoque sem saber se o preço fecha depois da comissão e do frete.</p></article><article class="card rv" style="--i:1"><p>Descobrir que o concorrente baixou o preço quando a venda já parou.</p></article><article class="card rv" style="--i:2"><p>Não saber quanto sobra por unidade no preço que está praticando <strong>hoje</strong>.</p></article><article class="card rv" style="--i:3"><p>Anúncio pausado por estoque zerado — e ninguém percebeu.</p></article></div><div class="card flat rv" style="margin-top:var(--s4)"><div class="chips"><span class="chip">Análise de mercado</span><span class="chip">Concorrência</span><span class="chip">Seleção de produtos</span><span class="chip">Viabilidade</span><span class="chip">Preço</span><span class="chip">Margem</span><span class="chip">Catálogo</span><span class="chip">Imagens</span><span class="chip">Títulos</span><span class="chip">Descrições</span><span class="chip">Atributos</span><span class="chip">Regras do marketplace</span><span class="chip">Publicação</span><span class="chip">Buy Box</span><span class="chip">Mercado Livre Ads</span><span class="chip">Atendimento</span><span class="chip">Estoque</span><span class="chip">Financeiro</span><span class="chip">Otimização</span><span class="chip">Análise de desempenho</span></div></div><p class="sub rv" style="margin-top:var(--s3)">Não é uma lista de tarefas. São <strong>competências diferentes</strong>, que precisam conversar entre si e acontecer <strong>todo mês</strong>, não uma vez.</p></div></section>
 
-    <!-- COMO FUNCIONA -->
-    <section class="block" id="como">
-      <div class="wrap">
-        <div class="head">
-          <span class="eyebrow">Como funciona</span>
-          <h2>Quatro passos. Zero cadastro manual.</h2>
-          <p>Você sobe os dados uma vez. O PubliAI cuida do resto, do começo ao anúncio no ar.</p>
-        </div>
-        <div class="steps">
-          <div class="step"><div class="n">1</div><h3>Suba a planilha + fotos</h3><p>Importe seus produtos e imagens de uma vez só. O sistema organiza famílias e variações automaticamente.</p></div>
-          <div class="step"><div class="n">2</div><h3>A IA gera o anúncio</h3><p>Título, descrição, atributos e preço criados pela IA, prontos para cada marketplace.</p></div>
-          <div class="step"><div class="n">3</div><h3>Você revisa</h3><p>Confira e ajuste antes de publicar. Nada vai ao ar sem o seu aval.</p></div>
-          <div class="step"><div class="n">4</div><h3>Publica multicanal</h3><p>Com um clique, seus anúncios são publicados — e acompanhados — em cada canal.</p></div>
-        </div>
-      </div>
-    </section>
+    <section class="section cycle-section" id="como" aria-labelledby="como-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">Como funciona</div><h2 id="como-title">Uma operação que roda em ciclo — <span class="grad">não em projeto.</span></h2><p class="lead">A Daludi Innovit Consult conduz cada etapa; o PubliAI registra e mostra. Nada vai ao ar sem uma pessoa conferir — nem sugestão de IA, nem reprecificação automática.</p></div><div class="pin"><div class="cycle-copy"><ol class="steps"><li class="on rv" style="--i:0"><span class="step-kicker">Etapa 1</span><h3>Viabilidade</h3><p>Comissão, frete e imposto saem do preço antes de qualquer promessa de margem — com as taxas oficiais consultadas na API do Mercado Livre. Decisão antes do estoque, não depois.</p></li><li class="rv" style="--i:1"><span class="step-kicker">Etapa 2</span><h3>Preparação</h3><p>Título, descrição, atributos, fotos e ficha técnica — com a estratégia de preço explicada e o piso que não pode ser rompido.</p></li><li class="rv" style="--i:2"><span class="step-kicker">Etapa 3</span><h3>Revisão humana</h3><p>Nenhuma publicação é confirmada sem uma pessoa aprovar. A IA propõe; a equipe decide.</p></li><li class="rv" style="--i:3"><span class="step-kicker">Etapa 4</span><h3>Publicação</h3><p>Anúncio no ar, com a saúde acompanhada: ativos, com problema, pausados e encalhados.</p></li><li class="rv" style="--i:4"><span class="step-kicker">Etapa 5</span><h3>Monitoramento</h3><p>Seu preço, o menor preço relevante, sua posição e quantas ofertas disputam a mesma página — todo dia. Movimento de concorrente vira tarefa para a equipe, nunca reprecificação automática.</p></li><li class="rv" style="--i:5"><span class="step-kicker">Etapa 6</span><h3>Financeiro</h3><p>Líquido das vendas, comissão e frete separados, estornos — e o que está liberado, a liberar e já sacado. Não é estimativa de margem: é o que a conta conectada mostra.</p></li></ol></div><div class="cycle-visuals"><figure class="cycle-shot rv on" data-step="0"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · viabilidade · calculadora mercado livre</span></div>
+<img src="assets/viabilidade.png" width="1600" height="957" loading="lazy" decoding="async" alt="Calculadora de viabilidade com veredito, margem e composição do custo"></div><figcaption class="tiny shot-caption">Simulação demonstrativa com produto genérico; as taxas de comissão e frete são reais.</figcaption></figure><figure class="cycle-shot rv" data-step="1"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · revisão · análise para publicação</span></div>
+<img src="assets/revisao-analise.png" width="1600" height="312" loading="lazy" decoding="async" alt="Tela de revisão com análise para publicação e estratégia de preço"></div></figure><figure class="cycle-shot rv" data-step="2"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · revisão · você recebe por venda</span></div>
+<img src="assets/revisao-analise.png" width="1600" height="312" loading="lazy" decoding="async" alt="Tela de revisão com valores recebidos por venda e conferência humana"></div></figure><figure class="cycle-shot rv" data-step="3"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · publicados · 30 dias</span></div>
+<img src="assets/publicados-saude.png" width="1600" height="314" loading="lazy" decoding="async" alt="Saúde dos anúncios publicados com títulos de produtos ocultados"></div><figcaption class="tiny shot-caption">Tela real do PubliAI com títulos de produtos ocultados.</figcaption></figure><figure class="cycle-shot rv" data-step="4"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · pulse · radar</span></div>
+<img src="assets/radar.png" width="1600" height="811" loading="lazy" decoding="async" alt="Radar do Pulse com posição de preço frente aos concorrentes e dados ocultados"></div><figcaption class="tiny shot-caption">Tela real do PubliAI com títulos e identificadores de produtos ocultados.</figcaption></figure><figure class="cycle-shot rv" data-step="5"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · financeiro · 30 dias</span></div>
+<img src="assets/financeiro.png" width="1600" height="305" loading="lazy" decoding="async" alt="Painel financeiro com líquido das vendas, taxas, frete, estornos e valores a liberar"></div></figure></div></div><div class="sentinels" aria-hidden="true"><div class="s" data-index="0"></div><div class="s" data-index="1"></div><div class="s" data-index="2"></div><div class="s" data-index="3"></div><div class="s" data-index="4"></div><div class="s" data-index="5"></div></div></div></section>
 
-    <!-- RECURSOS -->
-    <section class="block" id="recursos" style="padding-top:0">
-      <div class="wrap">
-        <div class="head">
-          <span class="eyebrow">Recursos</span>
-          <h2>Sua operação inteira em um só lugar</h2>
-          <p>Não vendemos “IA”. Vendemos controle da operação de marketplace, ponta a ponta.</p>
-        </div>
-        <div class="features">
-          <div class="feat">
-            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3v12m0 0l4-4m-4 4l-4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg></div>
-            <h3>IA de copy especializada</h3><p>Títulos e descrições que respeitam as regras de cada marketplace e a realidade dos seus produtos.</p>
-          </div>
-          <div class="feat">
-            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div>
-            <h3>Publicação multicanal</h3><p>Um catálogo, vários marketplaces. Publique e mantenha tudo sincronizado sem retrabalho.</p>
-          </div>
-          <div class="feat">
-            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg></div>
-            <h3>Revisão humana</h3><p>Controle total: revise e aprove cada anúncio antes da publicação. A IA propõe, você decide.</p>
-          </div>
-          <div class="feat">
-            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M3 3v18h18M7 14l4-4 3 3 5-6"/></svg></div>
-            <h3>Faturamento e vendas</h3><p>Acompanhe pedidos, faturamento e devoluções dos seus canais sem sair da plataforma.</p>
-          </div>
-          <div class="feat">
-            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/></svg></div>
-            <h3>Velocidade real</h3><p>Centenas de anúncios em minutos. O que tomava dias de cadastro vira uma tarefa só.</p>
-          </div>
-          <div class="feat">
-            <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6l8-4z"/></svg></div>
-            <h3>Confiável em produção</h3><p>Workers idempotentes e fluxo controlado: sua operação aguenta escala sem surpresa.</p>
-          </div>
-        </div>
-      </div>
-    </section>
+    <section class="section" id="responsabilidades" aria-labelledby="responsabilidades-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">Divisão de responsabilidades</div><h2 id="responsabilidades-title">A Daludi assume a complexidade digital. Você mantém sua operação física e fiscal.</h2></div><div class="responsibilities rv"><div class="col daludi"><div class="ct">Fica com a Daludi</div><div class="cn">Estratégia e execução digital</div><ul><li>Análise de mercado, de produtos e de concorrência</li><li>Análise de viabilidade e definição de preço</li><li>Acompanhamento de margem</li><li>Preparação dos produtos: títulos, descrições e atributos</li><li>Estruturação e publicação dos anúncios</li><li>Acompanhamento de preços e de concorrentes</li><li>Otimizações e gestão contínua da operação</li><li>Planejamento, criação e gestão das campanhas de Ads</li></ul></div><div class="vs" aria-hidden="true">VS</div><div class="col cliente"><div class="ct">Fica com você</div><div class="cn">Operação física e fiscal</div><ul><li>Estoque físico dos produtos</li><li>Separação dos pedidos</li><li>Embalagem</li><li>Expedição e logística</li><li>Emissão de nota fiscal</li></ul><div style="margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--line)"><div class="ct" style="margin-bottom:6px">Também com você</div><p class="sub">O <strong>investimento financeiro em mídia</strong> das campanhas — definido em conjunto e pago diretamente por você ao marketplace.</p></div></div></div><div class="note brandy rv" style="margin-top:var(--s4)"><div class="nt">Publicidade</div><div class="nb">A <strong>gestão da publicidade</strong> — planejamento, estratégia, criação, acompanhamento e otimização das campanhas de Mercado Livre Ads — <strong>está incluída no serviço</strong>. O <strong>investimento em mídia</strong> é definido em conjunto e custeado por você, e não está incluído no setup, nos percentuais nem na sustentação de infraestrutura.</div></div></div></section>
 
-    <!-- MULTICANAL BAND -->
-    <section class="block" style="padding-top:0">
-      <div class="wrap">
-        <div class="band">
-          <h2>Uma plataforma. Todos os marketplaces. <span class="grad-text">Total controle.</span></h2>
-          <p>Comece no Mercado Livre hoje e escale para novos canais sem aumentar a equipe. O PubliAI cresce junto com a sua operação.</p>
-          <a href="#cta" class="btn btn-primary">Quero escalar minha operação →</a>
-        </div>
-      </div>
-    </section>
+    <section class="section" id="torre" aria-labelledby="torre-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">A tecnologia por trás da operação</div><h2 id="torre-title">Você delega a execução. <span class="grad">Não delega a visibilidade.</span></h2><p class="lead">O PubliAI é a plataforma proprietária com que a equipe da Daludi opera o seu canal — e é também a <strong>sua janela sobre essa operação</strong>: o mesmo dado, ao mesmo tempo, para quem executa e para quem contratou.</p></div><div class="grid g2 control-grid"><div class="control-cards"><article class="card flat rv"><h3>Operação registrada</h3><p class="sub">O que foi analisado, publicado, pausado e otimizado fica visível.</p></article><article class="card flat rv"><h3>Números na origem</h3><p class="sub">Comissão, frete e liberação vêm da conta conectada ao Mercado Livre.</p></article><article class="card flat rv"><h3>Incerteza sinalizada</h3><p class="sub">Estimativa aparece rotulada como estimativa. Dado que falta é dito, não preenchido.</p></article><article class="card flat rv"><h3>Acesso próprio</h3><p class="sub">Você entra na plataforma quando quiser — não depende de um relatório mensal.</p></article></div><div class="rv"><h3 style="margin-bottom:var(--s3)">Você não precisa abrir o sistema para saber o que aconteceu.</h3><p class="illustrative">Exemplos ilustrativos — não são capturas de tela</p><div class="notifications"><article class="notif"><span class="nd" style="background:var(--warn)"></span><div><div class="nl">Estoque</div><div class="nx">Estoque zerado — anúncio pausado no Mercado Livre. Repor o estoque reativa o anúncio automaticamente.</div></div></article><article class="notif"><span class="nd" style="background:var(--bad)"></span><div><div class="nl">Moderação</div><div class="nx">Anúncio com restrição de moderação — a equipe é avisada antes de a venda parar.</div></div></article><article class="notif"><span class="nd" style="background:var(--indigo)"></span><div><div class="nl">Pulse</div><div class="nx">6 atualizações de mercado, nenhuma exige decisão.</div></div></article></div><div class="notification-footer"><div class="chips"><span class="chip xs">Vendas</span><span class="chip xs">Perguntas</span><span class="chip xs">Pós-venda</span><span class="chip xs">Financeiro</span><span class="chip xs">Moderação</span><span class="chip xs">Mensagens</span><span class="chip xs">Integração</span><span class="chip xs">Pulse</span><span class="chip xs">Estoque</span></div><p class="sub" style="margin-top:var(--s3)">O mesmo aviso chega no Telegram e no sino dentro do PubliAI; cada pessoa escolhe as categorias que recebe.</p></div></div></div></div></section>
 
-    <!-- PLANOS -->
-    <section class="block" id="planos" style="padding-top:0">
-      <div class="wrap">
-        <div class="head">
-          <span class="eyebrow">Planos</span>
-          <h2>Escolha o tamanho da sua operação</h2>
-          <p>Valores ilustrativos — ajuste conforme a sua oferta comercial.</p>
-        </div>
-        <div class="pricing">
-          <div class="plan">
-            <div class="tag">Inicial</div>
-            <div class="price">R$ —<span>/mês</span></div>
-            <p style="color:var(--muted);font-size:14px">Para quem está começando a escalar.</p>
-            <ul>
-              <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7"/></svg>1 marketplace</li>
-              <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7"/></svg>Anúncios com IA</li>
-              <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7"/></svg>Revisão humana</li>
-            </ul>
-            <a href="#cta" class="btn btn-ghost">Começar</a>
-          </div>
-          <div class="plan featured">
-            <div class="tag">Pro · mais popular</div>
-            <div class="price">R$ —<span>/mês</span></div>
-            <p style="color:var(--muted);font-size:14px">Para operações em crescimento multicanal.</p>
-            <ul>
-              <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7"/></svg>Múltiplos marketplaces</li>
-              <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7"/></svg>Faturamento e vendas</li>
-              <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7"/></svg>Volume maior de anúncios</li>
-              <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7"/></svg>Suporte prioritário</li>
-            </ul>
-            <a href="#cta" class="btn btn-primary">Começar agora</a>
-          </div>
-          <div class="plan">
-            <div class="tag">Escala</div>
-            <div class="price">Sob consulta</div>
-            <p style="color:var(--muted);font-size:14px">Para grandes operações e necessidades específicas.</p>
-            <ul>
-              <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7"/></svg>Todos os canais</li>
-              <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7"/></svg>Volume ilimitado</li>
-              <li><svg viewBox="0 0 24 24" fill="none"><path d="M5 12l5 5L20 7"/></svg>Onboarding dedicado</li>
-            </ul>
-            <a href="#cta" class="btn btn-ghost">Falar com a gente</a>
-          </div>
-        </div>
-      </div>
-    </section>
+    <section class="section" id="inteligencia" aria-labelledby="inteligencia-title"><div class="wrap"><div class="section-head rv"><div class="pill">Pulse · incluído na Modalidade 2</div><h2 id="inteligencia-title" style="margin-top:var(--s3)">Como acompanho a disputa e encontro novas oportunidades?</h2></div><div class="tabs"><div class="tablist rv" role="tablist" aria-label="Camadas de inteligência"><button class="tab" type="button" role="tab" aria-selected="true" aria-controls="radar-panel" id="radar-tab">Radar · o que você já vende</button><button class="tab" type="button" role="tab" aria-selected="false" aria-controls="sonar-panel" id="sonar-tab">Sonar · o que você ainda não vende</button></div><section class="tabpanel grid g2 rv" role="tabpanel" id="radar-panel" aria-labelledby="radar-tab" data-tab-panel="radar"><div><h3>Radar · o que você já vende</h3><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · pulse · radar</span></div><img src="assets/radar.png" width="1600" height="811" alt="Radar do Pulse com posição de preço frente aos concorrentes"></div></div><p>Monitora automaticamente a disputa dos seus produtos já publicados: seu preço, o menor preço relevante do mercado, sua posição e quantas ofertas disputam a mesma página.</p></section><section class="tabpanel grid g2 rv" role="tabpanel" id="sonar-panel" aria-labelledby="sonar-tab" data-tab-panel="sonar"><div><h3>Sonar · o que você ainda não vende</h3><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · pulse · sonar</span></div><img src="assets/sonar-veredito.png" width="1600" height="471" loading="lazy" decoding="async" alt="Sonar com veredito de nicho, demanda, concorrência e faturamento por concorrente"></div></div><p>Prospecta um nicho <strong>antes</strong> de cadastrar o produto: demanda, concorrência, faturamento por concorrente e a condição de entrada — com o que é estimativa sempre rotulado como estimativa.</p></section></div><div class="note rv" style="margin-top:var(--s4)"><div class="nt">O que a inteligência faz — e o que ela não faz</div><div class="nb">Ela sinaliza movimento de preço e oportunidade para a equipe agir. Ela <strong>não</strong> altera preço sozinha no marketplace (a mudança volta para revisão humana) e <strong>não</strong> promete posição de Buy Box.</div></div><p class="sub rv" style="margin-top:var(--s3)">Na Modalidade 1 a equipe da Daludi usa essa camada por você; na Modalidade 2 você também acessa.</p></div></section>
 
-    <!-- CTA FINAL -->
-    <section class="cta-final" id="cta">
-      <div class="wrap">
-        <h2>Menos tarefas repetitivas. <span class="grad-text">Mais tempo para vender.</span></h2>
-        <p>Comece a publicar seus anúncios com automação e controle hoje mesmo.</p>
-        <a href="#" class="btn btn-primary">Começar agora →</a>
-      </div>
-    </section>
+    <section class="section" id="prova" aria-labelledby="prova-title"><div class="wrap"><div class="section-head rv"><div class="pill">Duas operações reais</div><h2 id="prova-title" style="margin-top:var(--s3)">Números lidos no painel em 02/09/2026.</h2><p class="lead">São operações reais, não projeções — e não são promessa de resultado para o seu caso.</p></div><div class="grid g2"><article class="card proof-card rv"><h3>Operação A · três meses</h3><p class="proof-date">Leitura em 02/09/2026 · período de 04/06 a 02/09/2026</p><span class="big">R$ 115.995,60</span><p class="sub">faturamento bruto · 04/06 a 02/09/2026</p><ul class="stat-list" style="margin-top:var(--s4)"><li><strong>1.724 pedidos</strong> no período de 04/06 a 02/09/2026, lidos em 02/09/2026.</li><li><strong>2.777 unidades</strong> no período de 04/06 a 02/09/2026, lidas em 02/09/2026.</li><li>Primeiro anúncio publicado em 04/06/2026. Junho (a partir de 04/06) R$ 2.621,90 → julho R$ 36.504,43 → agosto R$ 71.429,40.</li><li><strong>Markup (lucro ÷ custo): +37&#37; no primeiro mês · +39&#37; em agosto</strong> — crescer não custou margem.</li></ul></article><article class="card proof-card rv"><h3>Operação B · primeiro mês</h3><p class="proof-date">Leitura em 02/09/2026 · 30 dias até 02/09/2026</p><span class="big">R$ 35.029,99</span><p class="sub">faturamento bruto · 30 dias até 02/09/2026</p><ul class="stat-list" style="margin-top:var(--s4)"><li><strong>519 pedidos</strong> em 30 dias até 02/09/2026, lidos em 02/09/2026.</li><li><strong>584 unidades</strong> em 30 dias até 02/09/2026, lidas em 02/09/2026.</li><li>Ticket médio R$ 67,50 (faturamento ÷ pedidos) em 30 dias até 02/09/2026.</li><li><strong>10 anúncios ativos</strong> em 30 dias até 02/09/2026 — R$ 3.503 por anúncio no ar (faturamento ÷ anúncios ativos).</li><li>Primeiro anúncio publicado em 02/08/2026.</li><li><strong>Markup (lucro ÷ custo): +19&#37; no período.</strong></li></ul></article></div><p class="tiny rv" style="margin-top:var(--s3)">Nenhum cliente é nomeado. Categorias, custos e concorrência diferentes das suas.</p></div></section>
+
+    <section class="section" aria-labelledby="promessas-title"><div class="wrap"><div class="note promise-note rv"><h2 id="promessas-title">Não projetamos o seu faturamento.</h2><p>Não projetamos o seu faturamento: os números acima são de outras operações, com outra categoria, outro custo e outra concorrência. Não prometemos margem, prazo nem posição de disputa. E nada é publicado sem uma pessoa conferir antes.</p></div></div></section>
+
+    <section class="section" id="comecamos" aria-labelledby="comecamos-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">O primeiro passo</div><h2 id="comecamos-title">Implantação + Calibração inicial da operação</h2></div><div class="grid g2"><div class="phase rv"><div class="ph-h"><span class="ph-n">Fase 1</span><span class="ph-t">Implantação</span></div><div class="ph-d">Deixar a operação tecnicamente pronta para vender.</div><ol><li>Abertura e configuração da conta Mercado Livre</li><li>Abertura e configuração do Mercado Pago</li><li>Aquecimento inicial da conta</li><li>Estratégia inicial de publicidade</li></ol></div><div class="phase hot rv"><div class="ph-h"><span class="ph-n">Fase 2</span><span class="ph-t">Calibração inicial</span></div><div class="ph-d">Descobrir <strong>se</strong> e <strong>por quanto</strong> vale vender.</div><ol><li>Seleção e análise dos 5 produtos Curva A indicados por você</li><li>Análise de mercado e de concorrência</li><li>Definição de preço e análise de margem</li><li>Veredito de viabilidade e estruturação da operação</li></ol></div></div><div class="grid g2" style="margin-top:var(--s3)"><article class="card rv"><h3>A regra dos 5 produtos Curva A</h3><p class="sub">Você indica os 5 produtos. Nós analisamos todos. Os que apresentarem condições comerciais adequadas seguem para estratégia e publicação — <strong>a análise não é promessa de publicação</strong>.</p></article><article class="card rv"><h3>Nosso compromisso</h3><p class="sub">Não é colocar produto no ar. É verificar se existe uma <strong>operação comercialmente saudável</strong> antes de publicar — e dizer com clareza quando não existe.</p></article></div><div class="note rv" style="margin-top:var(--s3)"><div class="nt">Condição de reembolso</div><div class="nb">Concluir que um produto <strong>não</strong> é viável também é resultado da análise — evita direcionar estoque e mídia para uma operação desfavorável. Por envolver trabalho efetivamente executado, <strong>o investimento de implantação e calibração não é reembolsável</strong> nessa hipótese.</div></div><div class="note brandy rv" style="margin-top:12px"><div class="nt">Prazo de conclusão</div><div class="nb">A implantação e a calibração inicial são concluídas em até <strong>20 dias corridos</strong>.</div></div></div></section>
+
+    <section class="section" id="modalidades" aria-labelledby="modalidades-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">Qual é a sua situação hoje?</div><h2 id="modalidades-title">Duas modalidades — a mesma operação conduzida pela Daludi, <span class="grad">dois níveis de participação sua.</span></h2></div><div class="grid g3 plans"><article class="plan rec rv"><div class="tag">Recomendado sem equipe interna</div><div class="pname">Modalidade 1</div><div class="ptitle">Gestão Completa Daludi</div><div class="pfor">“Não tenho equipe especializada e quero que a operação seja conduzida por especialistas.”</div><div class="prow"><span class="lbl">Implantação + calibração</span><span class="val big">R$ 3.000</span></div><div class="prow"><span class="lbl">Sustentação de Infraestrutura</span><span class="val">R$ 600/mês</span></div><div class="prow"><span class="lbl">Gestão da operação</span><span class="val">5&#37; do faturamento bruto</span></div><div class="prow"><span class="lbl">Gestão de Ads</span><span class="val">Incluída</span></div><div class="prow"><span class="lbl">Pulse · Radar · Sonar</span><span class="val">Não incluídos</span></div><div class="pnote">Estratégia, publicação, gestão contínua e gestão de Ads pela Daludi. Verba de mídia por sua conta.</div></article><article class="plan rv"><div class="pname">Modalidade 2</div><div class="ptitle">Gestão Completa + Inteligência</div><div class="pfor">“Quero a operação conduzida pela Daludi e também quero participar da busca por oportunidades.”</div><div class="prow"><span class="lbl">Implantação + calibração</span><span class="val big">R$ 3.000</span></div><div class="prow"><span class="lbl">Sustentação de Infraestrutura</span><span class="val">Incorporada</span></div><div class="prow"><span class="lbl">Gestão + inteligência</span><span class="val">7&#37; do faturamento bruto</span></div><div class="prow"><span class="lbl">Gestão de Ads</span><span class="val">Incluída</span></div><div class="prow"><span class="lbl">Pulse · Radar · Sonar</span><span class="val">Incluídos</span></div><div class="pnote">Sem sustentação mensal adicional. Consultas do Sonar: <strong>R$ 1,20 por consulta de produto</strong>.</div></article><article class="card flat choice-card rv"><div><div class="footer-title">Como escolher</div><p class="sub">Nas duas, a operação inteira é conduzida pela Daludi. O que muda é o seu acesso à camada de inteligência de mercado.</p></div><p class="sub"><strong>Modalidade 1</strong> — você quer resultado e acompanhamento, e delega a leitura de mercado para a nossa equipe.</p><p class="sub"><strong>Modalidade 2</strong> — você quer acompanhar a concorrência e pesquisar oportunidades você mesmo, dentro do PubliAI.</p></article></div><p class="tiny rv" style="margin-top:var(--s3)">Percentuais sobre o <strong>faturamento bruto</strong> gerado nos marketplaces administrados · prazo contratual de 24 meses nas duas modalidades · consultas do Sonar na Modalidade 2 a R$ 1,20 por consulta de produto · capacidade de até 20 novos produtos publicados por mês, mais até 10 análises de produtos inviáveis, que não consomem o limite.</p><div class="card brand included rv" style="margin-top:var(--s4)"><div class="ct">Incluído nas duas modalidades</div><div class="chips"><span class="chip brand">Estratégia comercial</span><span class="chip brand">Análise de viabilidade</span><span class="chip brand">Preço e margem</span><span class="chip brand">Preparação dos anúncios</span><span class="chip brand">Publicação</span><span class="chip brand">Revisão humana</span><span class="chip brand">Gestão contínua</span><span class="chip brand">Gestão de Ads</span><span class="chip brand">Plataforma PubliAI</span><span class="chip brand">Até 20 publicações/mês</span></div></div><div class="grid g2" style="margin-top:var(--s3)"><div class="card table-card rv"><table><thead><tr><th>O que muda entre elas</th><th>Gestão Completa</th><th>Gestão + Inteligência</th></tr></thead><tbody><tr><td>Implantação + calibração</td><td>R$ 3.000</td><td>R$ 3.000</td></tr><tr><td>Infraestrutura Mensal</td><td>R$ 600</td><td>Incorporada</td></tr><tr><td>Gestão sobre faturamento bruto</td><td>5&#37;</td><td>7&#37;</td></tr><tr><td>Pulse · Radar · Sonar</td><td>Não incluídos</td><td>Incluídos</td></tr><tr><td>Consulta Sonar</td><td>—</td><td>R$ 1,20</td></tr><tr><td>Prazo contratual</td><td>24 meses</td><td>24 meses</td></tr></tbody></table></div><div class="card flat excluded rv"><h3>O que não está incluído</h3><p class="sub">Verba de mídia · tarifas do marketplace · logística e frete da sua operação · emissão de nota fiscal · consultas do Sonar (cobradas por consulta).</p></div></div></div></section>
+
+    <section class="section" id="cta" aria-labelledby="cta-title"><div class="wrap"><div class="cta-panel rv"><div class="pill">Próximo passo</div><h2 id="cta-title" style="margin-top:var(--s3)">Selecione 5 produtos Curva A. <span class="grad">Nós dizemos se vale operar — e por quanto.</span></h2><p class="lead" style="margin-top:var(--s3)">A calibração inicial responde à pergunta que antecede todo o resto: existe uma operação comercialmente saudável para esses produtos no Mercado Livre hoje?</p><form class="form" method="POST" action="https://formsubmit.co/ajax/sac@daludi.com.br" data-conversion-event="lead_marketplace_5produtos" data-success-message="Recebemos seus produtos. A leitura do seu caso chega por e-mail ou WhatsApp."><input type="hidden" name="_subject" value="Novos 5 produtos para análise — landing PubliAI"><input type="hidden" name="_captcha" value="false"><input type="hidden" name="_template" value="table"><div class="form-grid"><div class="field"><label for="nome">Nome</label><input id="nome" name="nome" autocomplete="name" required></div><div class="field"><label for="email">E-mail</label><input id="email" name="email" type="email" autocomplete="email" required></div><div class="field"><label for="empresa">Empresa</label><input id="empresa" name="empresa" autocomplete="organization" required></div><div class="field"><label for="whatsapp">WhatsApp</label><input id="whatsapp" name="whatsapp" type="tel" autocomplete="tel" required></div><div class="field"><label for="vende">Vende hoje no Mercado Livre?</label><select id="vende" name="vende" required><option value="">Selecione</option><option>Sim</option><option>Não</option><option>Já vendi</option></select></div></div><div class="products"><fieldset class="product"><legend>Produto 1</legend><div class="product-grid"><div class="field"><label for="produto-1">EAN ou descrição</label><input id="produto-1" name="produto_1_descricao" required></div><div class="field"><label for="custo-1">Custo de compra</label><input id="custo-1" name="produto_1_custo" required></div><div class="field"><label for="dimensoes-1">Dimensões e peso aproximados</label><input id="dimensoes-1" name="produto_1_dimensoes_peso" required></div></div></fieldset><details><summary>Produto 2</summary><fieldset class="product"><legend>Produto 2</legend><div class="product-grid"><div class="field"><label for="produto-2">EAN ou descrição</label><input id="produto-2" name="produto_2_descricao"></div><div class="field"><label for="custo-2">Custo de compra</label><input id="custo-2" name="produto_2_custo"></div><div class="field"><label for="dimensoes-2">Dimensões e peso aproximados</label><input id="dimensoes-2" name="produto_2_dimensoes_peso"></div></div></fieldset></details><details><summary>Produto 3</summary><fieldset class="product"><legend>Produto 3</legend><div class="product-grid"><div class="field"><label for="produto-3">EAN ou descrição</label><input id="produto-3" name="produto_3_descricao"></div><div class="field"><label for="custo-3">Custo de compra</label><input id="custo-3" name="produto_3_custo"></div><div class="field"><label for="dimensoes-3">Dimensões e peso aproximados</label><input id="dimensoes-3" name="produto_3_dimensoes_peso"></div></div></fieldset></details><details><summary>Produto 4</summary><fieldset class="product"><legend>Produto 4</legend><div class="product-grid"><div class="field"><label for="produto-4">EAN ou descrição</label><input id="produto-4" name="produto_4_descricao"></div><div class="field"><label for="custo-4">Custo de compra</label><input id="custo-4" name="produto_4_custo"></div><div class="field"><label for="dimensoes-4">Dimensões e peso aproximados</label><input id="dimensoes-4" name="produto_4_dimensoes_peso"></div></div></fieldset></details><details><summary>Produto 5</summary><fieldset class="product"><legend>Produto 5</legend><div class="product-grid"><div class="field"><label for="produto-5">EAN ou descrição</label><input id="produto-5" name="produto_5_descricao"></div><div class="field"><label for="custo-5">Custo de compra</label><input id="custo-5" name="produto_5_custo"></div><div class="field"><label for="dimensoes-5">Dimensões e peso aproximados</label><input id="dimensoes-5" name="produto_5_dimensoes_peso"></div></div></fieldset></details></div><div class="field"><label for="descobrir">O que você mais quer descobrir?</label><textarea id="descobrir" name="o_que_quer_descobrir"></textarea></div><label class="hp">Não preencher<input name="_honey" autocomplete="off" tabindex="-1"></label><p class="form-microcopy">Você recebe a leitura do seu caso: preço de equilíbrio, sobra por unidade e quem já disputa cada ficha. Se a conta não fechar, a gente diz — e você economizou uma decisão cara.</p><div class="form-actions"><button class="btn light" type="submit">Enviar produtos para análise</button><a class="whatsapp" href="https://wa.me/5581983426557?text=Ol%C3%A1%21%20Vim%20pela%20p%C3%A1gina%20do%20PubliAI%20e%20quero%20enviar%205%20produtos%20Curva%20A%20para%20an%C3%A1lise.">Enviar pelo WhatsApp</a></div></form></div></div></section>
+
+    <section class="section" id="faq" aria-labelledby="faq-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">Perguntas frequentes</div><h2 id="faq-title">Antes de enviar seus produtos.</h2></div><div class="faq rv"><details><summary>Em quais marketplaces vocês operam hoje?</summary><p>No Mercado Livre. Outros canais estão no roadmap do PubliAI e não são objeto desta oferta.</p></details><details><summary>Preciso ter catálogo grande?</summary><p>Não. A calibração começa com 5 produtos Curva A; a capacidade incluída é de até 20 novos produtos publicados por mês.</p></details><details><summary>Quem publica o anúncio?</summary><p>A equipe da Daludi prepara, revisa e publica. Nenhuma publicação é confirmada sem uma pessoa aprovar.</p></details><details><summary>Vocês mexem no meu preço sem avisar?</summary><p>Não. A inteligência sinaliza o movimento; a mudança de preço volta para revisão humana antes de ir ao marketplace.</p></details><details><summary>O que acontece se o produto não for viável?</summary><p>A análise diz isso com clareza — concluir que não vale operar também é resultado. Análises inviáveis não consomem o limite (até 10 por mês). Por envolver trabalho executado, implantação e calibração não são reembolsáveis nessa hipótese.</p></details><details><summary>Quantos produtos entram por mês?</summary><p>Até 20 novos produtos publicados por mês, nas duas modalidades, mais até 10 análises de produtos inviáveis.</p></details><details><summary>Eu vejo os mesmos dados que a equipe de vocês?</summary><p>Sim. Você tem acesso próprio ao PubliAI — o mesmo dado, ao mesmo tempo. Comissão, frete e liberação vêm da conta conectada ao Mercado Livre; estimativa aparece rotulada como estimativa.</p></details></div></div></section>
   </main>
 
-  <footer>
-    <div class="wrap foot">
-      <a class="logo" href="#" style="font-size:18px"><svg style="width:26px;height:26px"><use href="#sym" /></svg><span>Publi<span class="grad-text">AI</span></span></a>
-      <div class="links">
-        <a href="#como">Como funciona</a>
-        <a href="#recursos">Recursos</a>
-        <a href="#planos">Planos</a>
-      </div>
-      <p>© 2026 PubliAI · Da planilha ao anúncio publicado.</p>
-    </div>
-  </footer>
+  <footer class="site-footer"><div class="wrap"><div class="footer-grid"><div class="footer-brand"><a class="logo" href="#inicio" aria-label="PubliAI, início"><svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><use href="#sym"></use></svg><span class="wm">Publi<em>AI</em></span></a><p class="sub">Operação conduzida pela <strong>Daludi Innovit Consult</strong>.</p><div class="daludi-mark"><img src="assets/daludi-logo.png" width="200" height="211" alt="Daludi Innovit Consult"><a href="https://daludi.com.br">daludi.com.br</a></div></div><div><div class="footer-title">Navegação</div><nav class="footer-links" aria-label="Navegação do rodapé"><a href="#como">Como funciona</a><a href="#prova">Prova</a><a href="#modalidades">Modalidades</a><a href="#faq">FAQ</a><a href="#cta">Enviar 5 produtos</a></nav></div><div><div class="footer-title">Contato</div><div class="footer-links"><a href="mailto:sac@daludi.com.br">sac@daludi.com.br</a><span>Daludi Innovit Consult</span></div></div></div><p class="copyright">© 2026 PubliAI · Daludi Innovit Consult</p></div></footer>
+
+  <script>
+const CONFIG = {
+  formEndpoint: 'https://formsubmit.co/ajax/sac@daludi.com.br',
+  whatsappNumber: '5581983426557',
+  whatsappMessage: 'Olá! Vim pela página do PubliAI e quero enviar 5 produtos Curva A para análise.',
+  contactEmail: 'sac@daludi.com.br'
+};
+  </script>
 </body>
 </html>
