@@ -365,7 +365,7 @@ body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist'
       :root{--sec-y:56px}
       .nav-links a:not(.btn){display:none}
       .nav-links{gap:0}
-      .g3,.g4,.responsibilities,.control-grid{grid-template-columns:1fr}
+      .g2,.g3,.g4,.responsibilities,.control-grid{grid-template-columns:1fr}
       .responsibilities{gap:var(--s3)}
       .vs{min-block-size:28px}
       .control-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -373,9 +373,11 @@ body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist'
       .choice-card{grid-column:1 / -1;min-block-size:260px}
       .footer-grid{grid-template-columns:1fr 1fr}
       .footer-brand{grid-column:1 / -1}
+      .field input,.field select,.field textarea,.product input{font-size:16px}
+      .products details summary{padding:12px 0}
       html.js .deck{position:static;height:auto}
-      .deck-grid{grid-template-columns:1fr}
-      .deck-copy,.deck-shot{order:0}
+      .deck-grid,.deck--flip .deck-grid{grid-template-columns:minmax(0,1fr)}
+      .deck-copy,.deck-shot,.deck--flip .deck-copy,.deck--flip .deck-shot{order:0}
       .deck-shot .shot{height:auto}
       .deck-shot .shot img{flex:none;height:auto}
     }
@@ -398,6 +400,10 @@ body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist'
       .cta-panel{padding:var(--s3)}
       .form-actions{align-items:stretch;flex-direction:column}
       .form-actions .btn,.form-actions .whatsapp{text-align:center;justify-content:center}
+      .deck-copy{padding:var(--s3)}
+      .deck-caption{position:static;background:none;padding:10px 16px}
+      .gbar-track{gap:12px}
+      .gbar-val{font-size:12px;white-space:normal}
       .table-card{padding:var(--s2)}
       table{min-inline-size:620px}
       .footer-brand{grid-column:auto}
