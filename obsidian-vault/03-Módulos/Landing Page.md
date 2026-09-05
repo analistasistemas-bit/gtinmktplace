@@ -64,10 +64,15 @@ Duas receberam tarja: `radar` (3 títulos **e 3 EANs** — o EAN identifica o pr
 título) e `publicados-saude` (5 títulos em "Top produtos"). Nenhum original sem tarja entrou no
 histórico do git.
 
-## Qualidade medida (2026-09-04)
+## Qualidade medida (2026-09-05)
 
-Lighthouse: **performance 98, acessibilidade 100**, LCP 2,3s, CLS 0,004, TBT 0ms. Zero recursos
-externos. O pin do ciclo foi medido em 7 posições de scroll e em 1366×768.
+Lighthouse: **performance 97, acessibilidade 100, boas práticas 100, SEO 100**, LCP 2,6s,
+CLS 0,003, TBT 0ms. Zero recursos externos. O pin do ciclo foi medido em 7 posições de scroll e em
+1366×768.
+
+Performance era 99 até 2026-09-04. Os 2 pontos foram gastos deliberadamente ao tirar o
+`loading="lazy"` da captura do Sonar (ver Armadilhas): ela passou a carregar no load inicial, o que
+custou 42KB e 0,3s de LCP — e é o que faz a aba Sonar mostrar alguma coisa.
 
 ## Armadilhas conhecidas
 
@@ -80,6 +85,15 @@ externos. O pin do ciclo foi medido em 7 posições de scroll e em 1366×768.
   04/09/2026.
 - Elementos com `z-index` negativo somem atrás do background do `body` — foi o que deixou a aurora
   invisível na primeira montagem.
+- **`loading="lazy"` em imagem dentro de painel `hidden` nunca carrega**, nem quando o painel
+  aparece: o Chrome avalia a elegibilidade uma vez e não reavalia ao sair de `display:none`, e nem
+  rolar a página destrava. Foi o que deixou a captura do Sonar invisível para quem clicava na aba
+  (achado em 2026-09-05, corrigido removendo o atributo). Toda imagem em painel de aba deve nascer
+  sem `loading="lazy"` — a do Radar já era assim, e por isso só o Sonar quebrava.
+- `.tabpanel{display:block}` (regra mais abaixo no CSS) anula `.grid{display:grid}`, de igual
+  especificidade. As classes `grid g2` no markup dos dois painéis de aba estão inertes: o layout de
+  duas colunas nunca vale ali. É intencional manter assim — as capturas são de 1600px de largura e
+  ficam ilegíveis em meia coluna —, mas "consertar" a cascata mudaria o layout das duas abas.
 
 ## Pendências
 
