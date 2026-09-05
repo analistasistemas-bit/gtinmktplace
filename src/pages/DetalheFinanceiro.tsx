@@ -568,11 +568,11 @@ export default function DetalheFinanceiro() {
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
             placeholder="Buscar comprador, nº do pedido, produto, código ou valor"
-            className="ml-2 h-7 w-72 text-xs"
+            className="ml-0 mt-1 h-7 w-full min-w-0 text-xs sm:ml-2 sm:mt-0 sm:w-72"
             aria-label="Buscar pedido"
           />
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
           <span className="text-xs text-muted-foreground">
             {selecionadosVisiveis.length} selecionado(s)
             {/* Σ líquido da seleção, mesma base da coluna "Líquido" (resumoSelecaoSaque) — o

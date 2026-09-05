@@ -15,7 +15,7 @@ export function Topbar({ onOpenMobile }: { onOpenMobile: () => void }) {
         <Button
           variant="ghost"
           size="icon"
-          className="lg:hidden"
+          className="lg:hidden min-h-11 min-w-11"
           onClick={onOpenMobile}
           aria-label="Abrir menu"
         >

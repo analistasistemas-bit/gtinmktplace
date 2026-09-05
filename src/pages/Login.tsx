@@ -51,6 +51,7 @@ export default function Login() {
           onChange={(e) => setEmail(e.target.value)}
           required
           autoComplete="email"
+          className="h-11"
         />
         <Input
           type="password"
@@ -59,14 +60,15 @@ export default function Login() {
           onChange={(e) => setSenha(e.target.value)}
           required
           autoComplete="current-password"
+          className="h-11"
         />
         {erro && <div className="text-xs text-destructive">{erro}</div>}
-        <Button type="submit" disabled={carregando || sucesso}>
+        <Button type="submit" disabled={carregando || sucesso} className="h-11">
           Entrar
         </Button>
       </form>
-      <div className="mt-4 flex justify-end text-xs text-muted-foreground">
-        <Link to="/reset-senha" className="hover:underline">Esqueci a senha</Link>
+      <div className="mt-4 flex justify-end">
+        <Link to="/reset-senha" className="inline-flex min-h-11 items-center text-xs text-muted-foreground hover:underline">Esqueci a senha</Link>
       </div>
     </AuthShell>
   );

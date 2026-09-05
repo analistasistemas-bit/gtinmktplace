@@ -937,61 +937,67 @@ export default function Publicados() {
               placeholder="Buscar por título, código, fornecedor…"
               value={filtro.busca ?? ''}
               onChange={(e) => setFiltro((f) => ({ ...f, busca: e.target.value }))}
-              className="h-8 w-[200px] text-sm"
+              className="h-8 w-full min-w-0 text-sm sm:w-[200px]"
             />
 
-            <Select
-              value={filtro.fornecedor ?? '__todos'}
-              onValueChange={(v) => setFiltro((f) => ({ ...f, fornecedor: v === '__todos' ? null : v }))}
-            >
-              <SelectTrigger className="h-8 w-[160px] text-sm">
-                <SelectValue placeholder="Fornecedor" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__todos">Todos fornecedores</SelectItem>
-                {fornecedores.map((fn) => (
-                  <SelectItem key={fn} value={fn}>{fn}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="w-full sm:w-auto">
+              <Select
+                value={filtro.fornecedor ?? '__todos'}
+                onValueChange={(v) => setFiltro((f) => ({ ...f, fornecedor: v === '__todos' ? null : v }))}
+              >
+                <SelectTrigger className="h-8 w-full min-w-0 text-sm sm:w-[160px]">
+                  <SelectValue placeholder="Fornecedor" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__todos">Todos fornecedores</SelectItem>
+                  {fornecedores.map((fn) => (
+                    <SelectItem key={fn} value={fn}>{fn}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
-            <Select
-              value={filtro.status ?? '__todos'}
-              onValueChange={(v) =>
-                setFiltro((f) => ({ ...f, status: v === '__todos' ? null : (v as StatusPublicado | 'problema') }))
-              }
-            >
-              <SelectTrigger className="h-8 w-[150px] text-sm">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__todos">Todos status</SelectItem>
-                <SelectItem value="ativo">Ativo</SelectItem>
-                <SelectItem value="pausado">Pausado</SelectItem>
-                <SelectItem value="encerrado">Encerrado</SelectItem>
-                <SelectItem value="moderado">Moderado</SelectItem>
-                <SelectItem value="inativo">Inativo</SelectItem>
-                <SelectItem value="indisponivel">Indisponível</SelectItem>
-                <SelectItem value="problema">Com problema</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="w-full sm:w-auto">
+              <Select
+                value={filtro.status ?? '__todos'}
+                onValueChange={(v) =>
+                  setFiltro((f) => ({ ...f, status: v === '__todos' ? null : (v as StatusPublicado | 'problema') }))
+                }
+              >
+                <SelectTrigger className="h-8 w-full min-w-0 text-sm sm:w-[150px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__todos">Todos status</SelectItem>
+                  <SelectItem value="ativo">Ativo</SelectItem>
+                  <SelectItem value="pausado">Pausado</SelectItem>
+                  <SelectItem value="encerrado">Encerrado</SelectItem>
+                  <SelectItem value="moderado">Moderado</SelectItem>
+                  <SelectItem value="inativo">Inativo</SelectItem>
+                  <SelectItem value="indisponivel">Indisponível</SelectItem>
+                  <SelectItem value="problema">Com problema</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-            <Select
-              value={filtro.tipo ?? '__todos'}
-              onValueChange={(v) =>
-                setFiltro((f) => ({ ...f, tipo: v === '__todos' ? null : v }))
-              }
-            >
-              <SelectTrigger className="h-8 w-[180px] text-sm">
-                <SelectValue placeholder="Tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__todos">Todos tipos</SelectItem>
-                {tipos.map((t) => (
-                  <SelectItem key={t} value={t}>{t}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <div className="w-full sm:w-auto">
+              <Select
+                value={filtro.tipo ?? '__todos'}
+                onValueChange={(v) =>
+                  setFiltro((f) => ({ ...f, tipo: v === '__todos' ? null : v }))
+                }
+              >
+                <SelectTrigger className="h-8 w-full min-w-0 text-sm sm:w-[180px]">
+                  <SelectValue placeholder="Tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__todos">Todos tipos</SelectItem>
+                  {tipos.map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <FiltrosAtivos filtro={filtro} onRemover={removerFiltro} onLimpar={limparFiltros} />

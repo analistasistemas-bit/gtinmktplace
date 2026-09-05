@@ -26,9 +26,11 @@ export function LotesEmAndamento({ lotes }: { lotes: Lote[] }) {
             key={lote.id}
             className="flex flex-col gap-3 border border-border p-4 shadow-none ring-0 sm:flex-row sm:items-center sm:justify-between"
           >
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-5">
+            <div className="flex min-w-0 w-full flex-col gap-2 sm:flex-row sm:items-center sm:gap-5">
               <span className="whitespace-nowrap font-semibold">Lote #{lote.numero}</span>
               <JornadaLote
+                compact
+                className="w-full"
                 status={lote.status}
                 resultado={{ publicadas: lote.totalPublicadas, erros: lote.totalErros }}
               />

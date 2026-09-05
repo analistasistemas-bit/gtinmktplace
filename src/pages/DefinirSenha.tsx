@@ -64,9 +64,10 @@ export default function DefinirSenha() {
             required
             minLength={6}
             autoComplete="new-password"
+            className="h-11"
           />
           {erro && <div className="text-xs text-destructive">{erro}</div>}
-          <Button type="submit" disabled={salvando || sucesso} className={sucesso ? 'shadow-brand' : undefined}>
+          <Button type="submit" disabled={salvando || sucesso} className={sucesso ? 'h-11 shadow-brand' : 'h-11'}>
             {sucesso ? (
               <Check aria-label="Sucesso" className="duration-(--motion-duration-state) ease-success animate-in zoom-in-50" />
             ) : salvando ? (

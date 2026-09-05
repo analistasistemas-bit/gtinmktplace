@@ -20,7 +20,16 @@ export function JornadaLote({ status, resultado, compact = false, className }: P
   const { indiceAtual, erro } = jornadaDoLote(status, resultado);
   const iconeSize = compact ? 'h-3 w-3' : 'h-4 w-4';
   return (
-    <ol className={cn('flex items-center overflow-x-auto no-scrollbar py-1 shrink-0 w-full gap-2', className)} aria-label="Progresso do lote">
+    <div className="relative min-w-0 w-full">
+      <ol
+        className={cn(
+          compact
+            ? 'flex w-full shrink-0 items-center gap-2 overflow-x-auto no-scrollbar py-1'
+            : 'grid w-full grid-cols-2 gap-x-3 gap-y-2 py-1 sm:flex sm:items-center sm:gap-2 sm:overflow-x-auto sm:no-scrollbar',
+          className,
+        )}
+        aria-label="Progresso do lote"
+      >
       {ETAPAS_JORNADA.map((etapa, i) => {
         const concluida = i < indiceAtual;
         const atual = i === indiceAtual;
@@ -69,7 +78,7 @@ export function JornadaLote({ status, resultado, compact = false, className }: P
                 aria-hidden="true"
                 className={cn(
                   'h-px shrink-0 transition-colors duration-(--motion-duration-state) ease-reversible',
-                  compact ? 'w-4' : 'mx-2 w-6 sm:mx-3 sm:w-8',
+                  compact ? 'w-4' : 'hidden sm:block sm:mx-3 sm:w-8',
                   concluida ? 'bg-success' : 'bg-border',
                 )}
               />
@@ -77,6 +86,7 @@ export function JornadaLote({ status, resultado, compact = false, className }: P
           </li>
         );
       })}
-    </ol>
+      </ol>
+    </div>
   );
 }

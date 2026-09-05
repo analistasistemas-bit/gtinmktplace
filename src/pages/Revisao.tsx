@@ -466,7 +466,7 @@ export default function Revisao() {
         )}
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 pb-3">
           <Tabs value={filtro} onValueChange={(v) => setFiltro(v as FiltroOp)} className="w-full sm:w-auto">
-            <TabsList>
+            <TabsList className="h-auto min-h-8 w-full flex-wrap justify-start overflow-x-visible overflow-y-visible group-data-horizontal/tabs:h-auto [&_[data-slot=tabs-trigger]]:h-7">
               <TabsTrigger value="todos">
                 Todos <Badge variant="secondary" className="ml-1.5">{counts.todos}</Badge>
               </TabsTrigger>

@@ -77,7 +77,7 @@ export function SeletorPeriodo({ periodo, onPeriodo, mostrarMesAtual = false, ca
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs text-muted-foreground">{rotulo}</span>
-      <div className="flex gap-1">
+      <div className="flex min-w-0 max-w-full flex-wrap gap-1">
         <Button
           size="sm"
           variant={ehHoje ? 'default' : 'outline'}
@@ -118,7 +118,7 @@ export function SeletorPeriodo({ periodo, onPeriodo, mostrarMesAtual = false, ca
       </div>
       {modoCustom && (
         <form
-          className="flex items-center gap-1.5"
+          className="flex min-w-0 max-w-full flex-wrap items-center gap-1.5"
           onSubmit={(e) => { e.preventDefault(); aplicarCustom(); }}
         >
           <label className="text-xs text-muted-foreground" htmlFor="venda-de">De</label>

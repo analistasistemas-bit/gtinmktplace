@@ -56,7 +56,7 @@ export function NotificacoesBell() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative"
+          className="relative min-h-11 min-w-11"
           aria-label={naoLidas > 0 ? `Notificações (${naoLidas} não lidas)` : 'Notificações'}
         >
           <Bell className="h-5 w-5" />

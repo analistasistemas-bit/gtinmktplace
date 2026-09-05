@@ -45,9 +45,10 @@ export default function ResetSenha() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
+            className="h-11"
           />
           {erro && <div className="text-xs text-destructive">{erro}</div>}
-          <Button type="submit" disabled={enviando || sucesso} className={sucesso ? 'shadow-brand' : undefined}>
+          <Button type="submit" disabled={enviando || sucesso} className={sucesso ? 'h-11 shadow-brand' : 'h-11'}>
             {sucesso ? (
               <Check aria-label="Sucesso" className="duration-(--motion-duration-state) ease-success animate-in zoom-in-50" />
             ) : (

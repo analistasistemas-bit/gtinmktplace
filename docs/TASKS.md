@@ -2,6 +2,17 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Mobile UX — wrap, fade e tap targets — 2026-09-05
+
+Auditoria 375×812 / 360×740: cinco ajustes CSS-only (sem mudar lógica de filtros, saque ou jornada).
+
+- [x] `SeletorPeriodo`: `flex-wrap` no grupo de presets e no formulário De/Até/OK.
+- [x] `DetalheFinanceiro`: busca `w-full` no mobile; linha de saque com `flex-wrap`.
+- [x] `JornadaLote`: no mobile, 2 colunas com rótulos completos (sem fade cobrindo "Publicado"); no card de Lotes, `compact` (só círculos).
+- [x] `Revisao`: `TabsList` com wrap — "Avisos" / "Incompletas" / "Preço alterado" não cortam.
+- [x] `Publicados`: filtros (input + selects) full-width abaixo de `sm`.
+- [x] Topbar (menu, tema, sino, avatar) e auth (Login/Reset/Definir senha): tap targets ≥44px (`min-h-11` / `h-11`).
+
 ## Varredura Geral e Atualização: Graphify, Obsidian Vault e Archify — 2026-09-03
 
 Varredura de todo o repositório PubliAI sincronizando os 3 pilares de documentação e modelagem:

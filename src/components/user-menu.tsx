@@ -32,7 +32,7 @@ export function UserMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative rounded-full" aria-label={pendentes > 0 ? `Menu do usuário (${pendentes} aguardando resposta)` : 'Menu do usuário'}>
+        <Button variant="ghost" size="icon" className="relative min-h-11 min-w-11 rounded-full" aria-label={pendentes > 0 ? `Menu do usuário (${pendentes} aguardando resposta)` : 'Menu do usuário'}>
           <Avatar className="h-7 w-7">
             <AvatarFallback className="text-xs">{iniciais(user?.email)}</AvatarFallback>
           </Avatar>
