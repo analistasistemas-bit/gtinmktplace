@@ -157,11 +157,38 @@ pelas da AVIL, que são maiores e mais altas. Acessibilidade, boas práticas e S
   duas colunas nunca vale ali. É intencional manter assim — as capturas são de 1600px de largura e
   ficam ilegíveis em meia coluna —, mas "consertar" a cascata mudaria o layout das duas abas.
 
+## Onde está hospedada (05/09/2026)
+
+Vercel, projeto **`publiai`** na conta `analistaslacks-projects` — produção em
+<https://publiai-alpha.vercel.app>. Site estático puro: sem build, sem framework, sem variável de
+ambiente.
+
+**O repositório NÃO está conectado à Vercel, e isso é deliberado.** Conectar o `gtinmktplace` faria
+a Vercel detectar o `package.json` da raiz e buildar o app inteiro — a landing não faz parte do
+build do frontend. Apontar o Root Directory para esta pasta resolveria isso e criaria um problema
+pior: o `PLANO.md`, versionado ao lado do `index.html`, iria ao ar em `/PLANO.md` com as decisões
+internas da entrega. Daí o `.vercelignore` desta pasta, que libera só `index.html` e `assets/` —
+conferido por deploy de preview em 05/09/2026: `/PLANO.md` → 404, `/` e os assets aninhados → 200.
+
+Para atualizar a página depois de mexer no `index.html` ou nos assets:
+
+```bash
+cd docs/brand/landing && vercel deploy --prod
+```
+
+O `.vercel/` que o CLI cria ao linkar o diretório é gitignored (carrega `projectId`/`orgId`).
+Previews têm Deployment Protection ligada e respondem 302 a `curl` anônimo — para conferir um
+preview use `vercel curl <url>`, que gera o token de bypass.
+
 ## Pendências
 
-- **Domínio onde a página vai ao ar.** `publiai.daludi.com.br` **não serve**: a raiz já é o app
-  PubliAI em produção (verificado em 05/09/2026). Ou outro host, ou uma rota desse mesmo domínio.
-  Trava a `og:image`, a URL canônica e a ativação do formulário.
-- **Reativar o FormSubmit a partir do host definitivo** — a ativação atual vale para
-  `publiai.daludi.com.br`, não para onde a página vai ficar.
+- **Domínio próprio.** `publiai.daludi.com.br` **não serve**: a raiz já é o app PubliAI em produção
+  (verificado em 05/09/2026). Como o projeto agora está na conta que também serve o `daludi.com.br`,
+  dá para apontar outro subdomínio pelo painel. Trava a `og:image` e a URL canônica, que seguem
+  apontando para um endereço inexistente — link compartilhado não renderiza card com imagem.
+- **Reativar o FormSubmit para o host onde a página está.** A ativação é por domínio de origem e a
+  atual vale para `publiai.daludi.com.br`. Enquanto não for refeita, um envio a partir do
+  `publiai-alpha.vercel.app` volta `{"success":"false"}` — a página mostra o erro em vez de fingir
+  sucesso (ver Armadilhas), mas o lead não chega. Já existe host estável para registrar; não
+  depende mais da decisão do domínio.
 - Os dois sites (este e `daludi.com.br`) não se linkam entre si além do rodapé daqui.

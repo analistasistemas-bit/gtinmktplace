@@ -1,0 +1,7 @@
+# Publicamos so a pagina e os assets. Tudo que estiver nesta pasta e nao
+# estiver liberado abaixo iria ao ar em URL adivinhavel — o PLANO.md, por
+# exemplo, viraria /PLANO.md com as decisoes internas da entrega.
+*
+!index.html
+!assets
+!assets/**

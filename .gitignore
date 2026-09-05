@@ -80,3 +80,6 @@ RegistroINPI/
 
 apresentacao/
 publiai_codigofonte.zip
+
+# Link local do projeto na Vercel (contem projectId/orgId, nao se compartilha)
+.vercel/
