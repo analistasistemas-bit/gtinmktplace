@@ -52,6 +52,26 @@ Todas em [[Índice de ADRs|ADR-0152]]. As que mais surpreendem quem chega depois
   número com janela e data de leitura, nenhuma promessa de resultado, e o bloco "o que não
   prometemos" como seção própria e visível.
 
+## De qual organização vem cada captura
+
+Decidido em 2026-09-05, a pedido do Diego: as telas de operação vêm da **org AVIL** (a Operação A da
+seção de prova), porque é a operação com volume. Três capturas foram refeitas lá — `dashboard`
+(90 dias), `publicados-saude` (30 dias) e `financeiro` (30 dias).
+
+Duas exceções, e o motivo de cada uma:
+
+- **Radar e Sonar continuam vindo da org DSA**: a AVIL não tem o módulo Pulse habilitado.
+- **`viabilidade` continua sendo a simulação genérica**: a tela é uma calculadora, não mostra dado
+  de operação nenhuma — não há "versão AVIL" dela.
+
+Duas armadilhas ao recapturar o app:
+
+- **Navegar por `goto` com hash (`#/publicados`) deixa componentes em placeholder cinza** que
+  parecem skeletons mas não são (`.animate-pulse` = 0) e não somem com espera. Capturar **clicando
+  no item do menu** resolve. Perdi três rodadas de captura nisso.
+- **O que rola é o `<main>`** (`overflow-y-auto`), não a janela: `window.scrollTo(0,0)` não volta ao
+  topo, e a captura sai do meio da página.
+
 ## Capturas — o que passou e o que foi barrado
 
 As 9 candidatas foram inspecionadas visualmente, uma a uma. Duas foram **descartadas**:
@@ -64,15 +84,37 @@ Duas receberam tarja: `radar` (3 títulos **e 3 EANs** — o EAN identifica o pr
 título) e `publicados-saude` (5 títulos em "Top produtos"). Nenhum original sem tarja entrou no
 histórico do git.
 
+## Rodada de ajustes de 2026-09-05
+
+Treze pontos de feedback do Diego. Os que mudaram decisão registrada:
+
+- **Modalidades sem hierarquia** ([[Índice de ADRs|ADR-0152]] D4). O título virou "Duas formas de
+  trabalhar com a gente" e os selos passaram a descrever o **cliente**, não o produto: "Você delega
+  a leitura de mercado" / "Você lê o mercado junto com a gente". O selo antigo ("Recomendado sem
+  equipe interna") saía com peso visual só na Modalidade 1 e fazia a 2 ler como plano inferior —
+  quando é a de maior valor. Nenhuma modalidade pode ter destaque maior que a outra.
+- **O scroll-lock fica** (D10 mantida). A referência do Diego (a seção "Start free" de
+  `aiautomationsociety.ai`) usa cards empilhados sem pin; ele preferiu manter o pin e só aumentar as
+  capturas.
+- **Vão entre seções**: `padding` de 128px virou a variável `--sec-y` (88px, 56px no celular). Eram
+  256px de vazio entre duas seções.
+- **Aba nova de Alertas** na seção de inteligência, com alertas de **mercado** (preço, oportunidade,
+  margem) — distintos dos alertas operacionais que já existiam na seção da torre de controle.
+- **Crescimento da Operação A** virou gráfico de barras: junho R$ 2.621,90 → julho R$ 36.504,43
+  (×14) → agosto R$ 71.429,40 (×27). Setembro (2 dias, R$ 5.439,87) fica como nota de rodapé e
+  **não entra no gráfico** — a barra mentiria a comparação.
+- **Peso e dimensões** no formulário foram separados nos mesmos quatro campos da planilha
+  (`PESO_GRAMAS`, `ALTURA_CM`, `LARGURA_CM`, `COMPRIMENTO_CM`).
+
 ## Qualidade medida (2026-09-05)
 
-Lighthouse: **performance 97, acessibilidade 100, boas práticas 100, SEO 100**, LCP 2,6s,
-CLS 0,003, TBT 0ms. Zero recursos externos. O pin do ciclo foi medido em 7 posições de scroll e em
+Lighthouse: **performance 96, acessibilidade 100, boas práticas 100, SEO 100**, LCP 2,7s,
+CLS 0,004, TBT 0ms. Zero recursos externos. O pin do ciclo foi medido em 7 posições de scroll e em
 1366×768.
 
-Performance era 99 até 2026-09-04. Os 2 pontos foram gastos deliberadamente ao tirar o
-`loading="lazy"` da captura do Sonar (ver Armadilhas): ela passou a carregar no load inicial, o que
-custou 42KB e 0,3s de LCP — e é o que faz a aba Sonar mostrar alguma coisa.
+Performance era 99 em 2026-09-04. Os três pontos foram gastos de propósito, um a um: tirar o
+`loading="lazy"` da captura do Sonar (sem isso a aba não mostrava nada) e trocar as três capturas
+pelas da AVIL, que são maiores e mais altas. Acessibilidade, boas práticas e SEO seguem em 100.
 
 ## Armadilhas conhecidas
 
