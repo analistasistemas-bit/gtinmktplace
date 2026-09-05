@@ -48,6 +48,16 @@ VITE_SUPABASE_ANON_KEY=<anon-key-publica>
 pnpm dev          # Vite em http://localhost:5173
 ```
 
+> **Service worker não roda em `pnpm dev`.** `pwa.config.ts` não define `devOptions`, e o
+> `vite-plugin-pwa` só gera/registra o service worker em dev com `devOptions.enabled: true`
+> (default `false`) — então em `pnpm dev` o plugin carrega, mas sem service worker. (Separado
+> disso, `vite.config.ts` nem carrega o plugin quando `VITEST` está setado ou o
+> `npm_lifecycle_event` inclui `storybook`, para o virtual module do plugin não vazar para o
+> vitest/Storybook.) Para testar o PWA de verdade (instalabilidade, offline, atualização) rode o
+> build de produção: `pnpm build && pnpm preview`. Detalhe da configuração e do fluxo de
+> atualização: [deploy-e-migrations.md](deploy-e-migrations.md),
+> [ADR-0153](../decisions/0153-pwa-instalavel-sem-escrita-offline.md).
+
 ## Scripts disponíveis
 
 | Script | O que faz |

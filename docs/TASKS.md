@@ -2,6 +2,41 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## PWA instalável, sem escrita offline (ADR-0153) — 2026-09-05
+
+Branch `worktree-pwa` (não mergeada). Service worker gerado pelo `vite-plugin-pwa`
+(`generateSW`), reusando o `site.webmanifest` já existente. `mutations.networkMode: 'always'`
+consertou uma fila de escrita offline implícita e não intencional que já existia antes do PWA
+(react-query pausava e reenviava `useMutation` sozinho ao reconectar).
+
+- [x] `pwa.config.ts` — `registerType: 'prompt'`, `manifest: false`, `runtimeCaching: []`,
+      `maximumFileSizeToCacheInBytes` calibrado pelos chunks reais do build.
+- [x] `vite.config.ts` — plugin desativado sob vitest/storybook (`VITEST`/`npm_lifecycle_event`).
+- [x] `src/lib/query-client.ts` — `mutations.networkMode: 'always'`: sem rede a mutação falha na
+      hora, com aviso, em vez de ficar pendurada.
+- [x] `src/main.tsx` + `src/stores/pwa-store.ts` + `src/components/atualizacao-disponivel.tsx` —
+      registro do service worker, checagem de atualização a cada 60 min / ao voltar o foco, toast
+      de "Nova versão disponível" (atualização por clique, nunca automática).
+- [x] `src/components/banner-offline.tsx` — faixa "Sem conexão desde HH:MM" no `AppShell`.
+- [x] `src/stores/auth-store.ts` + `src/hooks/useProfile.ts` + `src/components/protected-route.tsx`
+      — erro de rede no `loadProfile` preserva o último perfil e mostra "Sem conexão" em vez de
+      cair em `/sem-acesso`.
+- [x] `src/components/menu-guard.tsx` + `sidebar.tsx` + `viabilidade-linha.tsx` — falha de rede na
+      1ª carga de `useModulosHabilitados` (`modulos === undefined`) não vira "módulo não
+      contratado"; menu/botão continuam visíveis, quem barra de verdade é a edge.
+- [x] `render.yaml` — `Cache-Control: no-cache` em `/sw.js`, `/index.html`, `/` e
+      `/site.webmanifest`.
+- [x] Testes: `tests/pwa-config.test.ts` (runtimeCaching vazio e nenhuma regra casa com URL do
+      Supabase), `src/stores/__tests__/pwa-store.test.ts`,
+      `src/components/__tests__/{atualizacao-disponivel,banner-offline,protected-route}.test.tsx`,
+      `src/lib/__tests__/query-client.test.ts`.
+- [x] Documentação: [deploy-e-migrations.md](how-to/deploy-e-migrations.md),
+      [desenvolvimento-local.md](how-to/desenvolvimento-local.md),
+      [arquitetura.md](explanation/arquitetura.md), [ADR-0153](decisions/0153-pwa-instalavel-sem-escrita-offline.md).
+- [ ] Checklist de runtime real fora do CI (instalabilidade, navegação offline, mutação offline
+      que não executa ao reconectar, cold start offline, fluxo de atualização) — pendente, listado
+      no how-to de deploy.
+
 ## Mobile UX — wrap, fade e tap targets — 2026-09-05
 
 Auditoria 375×812 / 360×740: cinco ajustes CSS-only (sem mudar lógica de filtros, saque ou jornada).

@@ -34,13 +34,18 @@ export function BrandMark() {
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const { profile } = useProfile();
   const context = useSupportStore((state) => state.context);
-  const { data: modulos } = useModulosHabilitados();
+  const { data: modulos, isLoading: modulosLoading } = useModulosHabilitados();
   const { prefetchEstoque } = usePrefetchEstoque();
   const pulseHabilitado = !!modulos?.includes('pulse');
   const allowed = new Set(visibleMenus(profile ?? { is_admin: false, is_active: true, allowed_menus: [] }, !!context));
-  // Módulo desligado (ou ainda carregando) → menu some. Falha fechada: mostrar e sumir
-  // é pior que aparecer um instante depois.
-  for (const m of menusDeModulosDesabilitados(modulos ?? [])) allowed.delete(m);
+  // Módulo desligado (ou ainda carregando) → menu some. Falha fechada durante o carregamento:
+  // mostrar e sumir é pior que aparecer um instante depois. Mas se a RPC falhou na 1ª carga da
+  // sessão, `modulos` fica `undefined` sem estar carregando — aí não dá pra saber se o módulo
+  // está habilitado, e "não sei" não pode virar "sei que não tem" (ADR-0153 D5): pula o filtro e
+  // deixa o menu visível, quem barra de verdade é a edge (ADR-0047).
+  if (modulosLoading || modulos !== undefined) {
+    for (const m of menusDeModulosDesabilitados(modulos ?? [])) allowed.delete(m);
+  }
   // Quem não vê o menu Pulse não paga a query do badge — não é hook, então não afeta a ordem.
   const { data: alertasPulse = 0 } = useQuery({
     queryKey: QK.pulseAlertasContagem('acao'),

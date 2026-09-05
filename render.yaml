@@ -11,6 +11,23 @@ services:
         sync: false
       - key: VITE_SUPABASE_ANON_KEY
         sync: false
+    # ADR-0153 (D4): o navegador limita o cache do script do service worker a 24h; sem este
+    # header, um deploy pode demorar até um dia para chegar em quem já tem o app instalado.
+    headers:
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
+      # HashRouter: o navegador sempre pede "/", nunca "/index.html" — cobre os dois caminhos
+      # possíveis de casamento (antes ou depois do rewrite /* → /index.html).
+      - path: /
+        name: Cache-Control
+        value: no-cache
+      - path: /site.webmanifest
+        name: Cache-Control
+        value: no-cache
     routes:
       - type: rewrite
         source: /*

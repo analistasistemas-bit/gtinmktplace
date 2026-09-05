@@ -152,6 +152,10 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
   const aliquotaPct = item.origem === 'importado' ? (aliquotas?.importado ?? 16) : (aliquotas?.nacional ?? 8);
   const jaCadastrado = item.jaCadastrado === true || cadastradoLocal;
   // Gates da V-4. `jaCadastrado` NÃO é gate de visibilidade — só troca o rótulo/ação.
+  // Aqui, ao contrário do menu-guard e da sidebar, "não sei" esconde o botão (decisão do Diego
+  // em 2026-09-05): oferecer uma ação que a edge vai recusar com 403 (ADR-0047) é pior do que
+  // não oferecer. A diferença para a D5 do ADR-0153 é que nenhuma tela fica inacessível por
+  // causa disso — some um botão de atalho, não o acesso ao módulo.
   const mostraBotao = item.existeNoML && editavel && (modulos ?? []).includes('estoque');
 
   function montarInicial(): CadastroInicial {

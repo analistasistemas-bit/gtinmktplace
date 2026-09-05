@@ -338,6 +338,24 @@ Frete desconhecido nunca vira zero; zero exige confirmação explícita. Sem cat
 o formulário permanece utilizável e avisa que o cálculo não é oficial. Sensibilidades de custo,
 preço e frete e o preço para a margem-alvo são derivados localmente pelo mesmo motor financeiro.
 
+## PWA: instalável, sem escrita offline (ADR-0153)
+
+O frontend é um PWA instalável via `vite-plugin-pwa` (modo `generateSW`), reusando o
+`site.webmanifest` já existente. O service worker faz **só** precache do próprio build (HTML,
+JS, CSS, fontes, ícones) — `runtimeCaching` é vazio e ele **nunca** intercepta chamada
+cross-origin, em especial o Supabase (REST, auth, storage, functions, realtime): resposta
+autenticada carrega dado de um `org_id`, e um cache que não entende RLS pode servir para a conta
+errada.
+
+Consequência: "offline" aqui é **leitura na sessão viva** — o cache em memória do react-query
+enquanto o app está aberto — não persistência em disco. Fechar e reabrir o app sem rede mostra
+"Sem conexão", não os últimos dados. Nenhuma escrita fica pendurada esperando rede
+(`mutations.networkMode: 'always'` em `src/lib/query-client.ts`): sem conexão, uma mutação falha
+na hora, com aviso, em vez de disparar sozinha ao reconectar sobre um estado que já mudou no
+servidor (estoque, preço, moderação). Atualização de versão é por aviso (`registerType: 'prompt'`),
+nunca automática. Detalhe completo, alternativas rejeitadas e regras invioláveis: ADR-0153;
+passo a passo de deploy e validação: [deploy-e-migrations.md](../how-to/deploy-e-migrations.md).
+
 ## Mapa do código
 
 ```

@@ -24,6 +24,9 @@ interface AuthState {
   loading: boolean;
   profile: Profile | null;
   profileLoading: boolean;
+  // Erro de rede ao carregar o perfil (ADR-0153, D5) — diferente de "sem perfil": preserva o
+  // último perfil conhecido em vez de zerar, para a UI não confundir offline com sem permissão.
+  profileOffline: boolean;
   hydrate: () => Promise<void>;
   setSession: (s: Session | null) => void;
   loadProfile: (userId: string, options?: LoadProfileOptions) => Promise<void>;
@@ -37,6 +40,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   loading: true,
   profile: null,
   profileLoading: true,
+  profileOffline: false,
   hydrate: async () => {
     const { data } = await supabase.auth.getSession();
     const user = data.session?.user ?? null;
@@ -55,7 +59,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         // logar na mesma aba (staleness client-side; a RLS do servidor continua protegendo).
         if (previousUserId) queryClient.clear();
         useSupportStore.getState().clear();
-        set({ session, user: null, profile: null, profileLoading: false });
+        set({ session, user: null, profile: null, profileLoading: false, profileOffline: false });
         return;
       }
 
@@ -68,7 +72,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           queryClient.clear();
           useSupportStore.getState().clear();
         }
-        set({ session, user, profile: null });
+        set({ session, user, profile: null, profileOffline: false });
       }
       void get().loadProfile(user.id, { blocking: !sameLoadedUser });
     });
@@ -78,7 +82,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const requestGeneration = ++profileRequestGeneration;
     const blocking = options.blocking ?? true;
     if (blocking) set({ profileLoading: true });
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('profiles')
       .select('id,is_admin,is_active,allowed_menus,nome,org_id,is_super_admin')
       .eq('id', userId)
@@ -87,6 +91,12 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       requestGeneration !== profileRequestGeneration
       || get().user?.id !== userId
     ) return;
-    set({ profile: (data as Profile) ?? null, profileLoading: false });
+    if (error) {
+      // Falha de rede não é "sem perfil" (ADR-0153, D5): preserva o último perfil conhecido e
+      // só marca o estado degradado — zerar aqui derrubaria o operador para /sem-acesso.
+      set({ profileOffline: true, profileLoading: false });
+      return;
+    }
+    set({ profile: (data as Profile) ?? null, profileLoading: false, profileOffline: false });
   },
 }));

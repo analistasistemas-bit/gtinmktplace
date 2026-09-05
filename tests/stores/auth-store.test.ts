@@ -250,3 +250,92 @@ describe('auth-store background profile refresh', () => {
     expect(useAuthStore.getState().profile?.nome).toBe('Mais recente');
   });
 });
+
+// ADR-0153 (D5): offline não é falta de permissão. Erro de rede em loadProfile não pode zerar
+// o perfil nem ser tratado como "sem perfil" — isso é o que hoje manda o operador para /sem-acesso.
+describe('auth-store — erro de rede em loadProfile (ADR-0153 D5)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.setListener(null);
+    useAuthStore.setState({
+      user: null,
+      session: null,
+      loading: true,
+      profile: null,
+      profileLoading: true,
+      profileOffline: false,
+    });
+  });
+
+  it('cold start sem rede: mantém o perfil nulo e marca o estado offline, sem quebrar como "sem perfil"', async () => {
+    const currentSession = session('user-1');
+    mocks.getSession.mockResolvedValueOnce({ data: { session: currentSession } });
+    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: { message: 'Failed to fetch' } });
+
+    await useAuthStore.getState().hydrate();
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().profileLoading).toBe(false);
+    });
+
+    expect(useAuthStore.getState().profile).toBeNull();
+    expect(useAuthStore.getState().profileOffline).toBe(true);
+  });
+
+  it('erro de rede num refresh em background preserva o perfil já carregado', async () => {
+    await registerAuthListener();
+    const currentSession = session('user-1');
+    useAuthStore.setState({
+      user: currentSession.user,
+      session: currentSession,
+      profile: profile('user-1', 'Carregado'),
+      profileLoading: false,
+      profileOffline: false,
+    });
+    mocks.maybeSingle.mockResolvedValueOnce({ data: null, error: { message: 'Failed to fetch' } });
+
+    mocks.listener!('TOKEN_REFRESHED', currentSession);
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().profileOffline).toBe(true);
+    });
+
+    expect(useAuthStore.getState().profile?.nome).toBe('Carregado');
+    expect(useAuthStore.getState().profileLoading).toBe(false);
+  });
+
+  it('uma resposta bem-sucedida depois do erro limpa o estado offline', async () => {
+    await registerAuthListener();
+    const currentSession = session('user-1');
+    useAuthStore.setState({
+      user: currentSession.user,
+      session: currentSession,
+      profile: profile('user-1', 'Carregado'),
+      profileLoading: false,
+      profileOffline: true,
+    });
+    mocks.maybeSingle.mockResolvedValueOnce({ data: profile('user-1', 'Atualizado'), error: null });
+
+    mocks.listener!('TOKEN_REFRESHED', currentSession);
+    await vi.waitFor(() => {
+      expect(useAuthStore.getState().profile?.nome).toBe('Atualizado');
+    });
+
+    expect(useAuthStore.getState().profileOffline).toBe(false);
+  });
+
+  it('logout limpa o estado offline junto com o perfil', async () => {
+    await registerAuthListener();
+    const currentSession = session('user-1');
+    useAuthStore.setState({
+      user: currentSession.user,
+      session: currentSession,
+      profile: profile('user-1', 'Carregado'),
+      profileLoading: false,
+      profileOffline: true,
+    });
+
+    mocks.listener!('SIGNED_OUT', null);
+
+    expect(useAuthStore.getState().profile).toBeNull();
+    expect(useAuthStore.getState().profileOffline).toBe(false);
+  });
+});

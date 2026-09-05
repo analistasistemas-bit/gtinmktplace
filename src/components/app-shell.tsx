@@ -5,6 +5,8 @@ import { Topbar } from '@/components/topbar';
 import { Toaster } from '@/components/ui/sonner';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { SupportBanner } from '@/components/support-banner';
+import { BannerOffline } from '@/components/banner-offline';
+import { AtualizacaoDisponivel } from '@/components/atualizacao-disponivel';
 import { useSupportStore } from '@/stores/support-store';
 
 export function AppShell() {
@@ -17,6 +19,7 @@ export function AppShell() {
       </div>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <BannerOffline />
         <SupportBanner />
         <Topbar onOpenMobile={() => setMobileOpen(true)} />
         <main className="flex-1 overflow-y-auto overflow-x-hidden bg-muted/30">
@@ -39,6 +42,7 @@ export function AppShell() {
       </Sheet>
 
       <Toaster />
+      <AtualizacaoDisponivel />
     </div>
   );
 }

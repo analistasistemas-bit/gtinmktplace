@@ -91,6 +91,49 @@ supabase migration fetch --linked                      # reespelha o histórico 
 
 ---
 
+## Deploy do frontend — service worker (ADR-0153)
+
+Desde o PWA (ADR-0153), o `pnpm build` gera um service worker (`vite-plugin-pwa`, modo
+`generateSW`) além do bundle estático de sempre. Isso muda duas coisas em produção: como o
+navegador recebe uma versão nova e como validar um deploy.
+
+### Fluxo de atualização — nunca automático
+
+`registerType: 'prompt'` (`pwa.config.ts`): quando há build novo, o service worker baixa em
+segundo plano e o app mostra um toast "Nova versão disponível" — só troca quando o usuário clica
+em "Atualizar" (`src/components/atualizacao-disponivel.tsx`). Não existe reload sozinho: recarregar
+no meio de uma revisão de lote, ou servir `service worker novo + página velha`, quebraria os
+chunks de `lazy()`. `main.tsx` também chama `registration.update()` a cada 60 min e sempre que a
+aba volta a ficar visível, para quem deixa o app aberto por dias descobrir a versão nova.
+
+### `Cache-Control: no-cache` no `render.yaml`
+
+O navegador já limita sozinho o cache do script do service worker a 24h; sem um header explícito,
+um deploy pode demorar até um dia para chegar em quem já tem o app instalado. `render.yaml`
+manda `Cache-Control: no-cache` para `/sw.js`, `/index.html`, `/` (o HashRouter sempre pede `/`,
+nunca `/index.html`) e `/site.webmanifest`.
+
+### Kill switch
+
+Um deploy com `selfDestroying: true` em `pwa.config.ts` desregistra o service worker de todos os
+clientes e limpa os caches (opção nativa do `vite-plugin-pwa`, `VitePWAOptions.selfDestroying`,
+default `false`) — usar se o PWA precisar ser desligado de emergência.
+
+### Validação pós-deploy muda
+
+Com service worker, o navegador pode continuar servindo o bundle antigo mesmo com o cache do
+navegador desligado via CDP (Playwright) — o precache do Workbox não é o cache HTTP comum, e
+desligar um não atravessa o outro (ADR-0153, Contexto). Quem for validar um deploy com Playwright
+precisa de um **contexto de navegador novo** (sem service worker já registrado) ou aceitar o
+prompt de atualização na página antes de conferir o resultado.
+
+Checklist de runtime real (fora do CI, verificar manualmente após um deploy que toque o PWA):
+instalabilidade, navegação offline entre telas já visitadas na sessão, mutação offline que falha
+na hora e **não** executa sozinha ao reconectar, cold start offline (mostra "Sem conexão") e o
+fluxo de atualização de versão (toast → clique → recarrega na versão nova).
+
+---
+
 ## Chegar na `main` sem bypassar a proteção
 
 A `main` é protegida e exige os checks **`frontend`** e **`backend-lint`** (`enforce_admins`

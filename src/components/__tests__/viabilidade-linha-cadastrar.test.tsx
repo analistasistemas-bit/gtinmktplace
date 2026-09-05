@@ -21,7 +21,7 @@ vi.mock('@/lib/viabilidade', async (importOriginal) => ({
   analisarComDimensoes: (...a: unknown[]) => analisarComDimensoesMock(...a),
 }));
 
-const modulosMock = vi.fn(() => ({ data: ['estoque'] as string[] }));
+const modulosMock = vi.fn((): { data: string[] | undefined; isLoading?: boolean } => ({ data: ['estoque'] }));
 vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => modulosMock(),
 }));
@@ -112,6 +112,22 @@ describe('ViabilidadeLinha — botão Cadastrar (T6)', () => {
     renderLinha();
     expect(btnCadastrar()).toBeNull();
     expect(btnEntrada()).toBeNull();
+  });
+
+  // Aqui o tratamento de "não sei" é o oposto do menu-guard e da sidebar, por decisão do Diego
+  // (2026-09-05): este é um botão de atalho, não o acesso a uma tela. Oferecer uma ação que a
+  // edge vai recusar com 403 (ADR-0047) é pior do que não oferecer. Nenhuma tela fica
+  // inacessível por causa disso, então a D5 do ADR-0153 continua valendo onde importa.
+  it('esconde o botão quando a RPC de módulos falha na 1ª carga (modulos undefined)', () => {
+    modulosMock.mockReturnValue({ data: undefined, isLoading: false });
+    renderLinha();
+    expect(btnCadastrar()).toBeNull();
+  });
+
+  it('esconde o botão enquanto os módulos ainda estão carregando (modulos undefined, isLoading)', () => {
+    modulosMock.mockReturnValue({ data: undefined, isLoading: true });
+    renderLinha();
+    expect(btnCadastrar()).toBeNull();
   });
 
   it('esconde o botão quando editavel=false (modo planilha)', () => {
