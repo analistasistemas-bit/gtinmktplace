@@ -97,7 +97,21 @@ _Descartado:_ logo da Daludi no header; lockup duplo; omitir a Daludi (voltaria 
 de software, proibido pela decisão comercial de 30/08). Os ativos da marca Daludi em
 `/Users/diego/Desktop/IA/LandingPage_Daludi/imagens_daludi/` ficam disponíveis para o rodapé.
 
-### D10 — Scroll-lock: um pin só, no ciclo da operação
+### D10 — Scroll-lock no ciclo da operação
+
+**Revisada em 2026-09-05:** o pin com lista lateral foi substituído por **empilhamento de cards**.
+São seis `.deck` irmãos com `position:sticky; top:88px` e a mesma altura — cada um gruda no topo e o
+próximo sobe por cima. A mecânica veio da seção "Start free" de `aiautomationsociety.ai`, medida no
+site: é CSS puro, sem biblioteca.
+
+A troca resolveu de uma vez duas queixas que o pin não conseguia atender juntas: a captura de cada
+etapa ficava pequena (limitada pela altura da janela) e a sensação de scroll travado precisava
+continuar existindo. No empilhamento os cards grudam — o efeito permanece — e a captura ocupa a
+coluna inteira. No celular vira lista vertical.
+
+O texto original da decisão, mantido para histórico:
+
+
 
 A seção do ciclo (Viabilidade → Preparação → Revisão humana → Publicação → Monitoramento →
 Financeiro) prende o scroll e troca a captura a cada etapa. No celular degrada para lista vertical.

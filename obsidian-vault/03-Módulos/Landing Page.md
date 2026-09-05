@@ -47,7 +47,10 @@ Todas em [[Índice de ADRs|ADR-0152]]. As que mais surpreendem quem chega depois
 - **A seção "Planos" da versão anterior não existe mais.** Ela vendia o PubliAI como SaaS, o que
   contradiz a decisão comercial de 30/08/2026 (a Daludi não licencia o produto). No lugar entrou a
   tabela das duas Modalidades de serviço.
-- **Só um scroll-lock**, na seção do ciclo. No celular vira lista vertical.
+- **A seção do ciclo empilha cards** (desde 2026-09-05, substituindo o pin com lista lateral). São
+  seis `.deck` irmãos com `position:sticky; top:88px` e a mesma altura: cada um gruda e o próximo
+  sobe por cima. Mecânica copiada da seção "Start free" de `aiautomationsociety.ai`, onde é CSS
+  puro. No celular vira lista vertical (`position:static`).
 - **Padrão de evidência herdado do material comercial**: nenhum percentual sem denominador, todo
   número com janela e data de leitura, nenhuma promessa de resultado, e o bloco "o que não
   prometemos" como seção própria e visível.
@@ -133,6 +136,17 @@ pelas da AVIL, que são maiores e mais altas. Acessibilidade, boas práticas e S
   refeita a partir do host definitivo.
 - Elementos com `z-index` negativo somem atrás do background do `body` — foi o que deixou a aurora
   invisível na primeira montagem.
+- **Num flex container, o `padding-bottom` não estende a área do `position:sticky`** — o que limita
+  um item sticky é o *content box* do pai. Por isso o sexto card do ciclo nunca chegava a grudar: a
+  pilha acabava junto com ele. A folga tem de ser conteúdo de verdade — a página usa
+  `.stack::after` com `block-size:70vh`, zerado no celular.
+- **`object-fit:cover` numa captura de tela corta pelos lados** e decepa justamente os números que a
+  imagem existe para provar. As capturas do ciclo usam `contain`; em troca, a altura do card foi
+  ajustada (`clamp(380px,52vh,460px)`) e a coluna da imagem alargada, senão a captura fica pequena
+  no meio de um vazio.
+- **Cor que passa em contraste sobre o fundo da página pode reprovar dentro de um card.** O eyebrow
+  das etapas usava `--dim` (#63667A): 4,7 sobre o fundo do site, mas só **3,1** sobre `--card`
+  (#161923) — reprovou AA quando os cards apareceram. Trocado por `--muted` (5,6).
 - **`loading="lazy"` em imagem dentro de painel `hidden` nunca carrega**, nem quando o painel
   aparece: o Chrome avalia a elegibilidade uma vez e não reavalia ao sair de `display:none`, e nem
   rolar a página destrava. Foi o que deixou a captura do Sonar invisível para quem clicava na aba
