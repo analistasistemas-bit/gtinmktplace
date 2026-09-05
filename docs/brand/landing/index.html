@@ -82,7 +82,7 @@
     *{box-sizing:border-box;margin:0;padding:0}
     html{scroll-behavior:smooth;background:var(--bg)}
     html{background:var(--bg)}
-body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist','Geist Variable',-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;font-feature-settings:'ss01','cv01';-webkit-font-smoothing:antialiased;overflow-x:hidden}
+body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist','Geist Variable',-apple-system,BlinkMacSystemFont,'Segoe UI',Inter,sans-serif;font-feature-settings:'ss01','cv01';-webkit-font-smoothing:antialiased;overflow-x:clip}
     a{color:inherit;text-decoration:none}
     button,input,select,textarea{font:inherit}
     button{cursor:pointer}
@@ -317,8 +317,10 @@ body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist'
     html.js .w{display:inline-block;opacity:0;transform:translateY(14px);transition:opacity 500ms ease,transform 500ms ease;transition-delay:calc(var(--i,0) * 40ms)}
     html.js .w.in{opacity:1;transform:none}
     html.js .shot.hero-shot{transform:scale(.96);will-change:transform}
-    html.js .pin{position:sticky;top:0;min-block-size:100svh;display:grid;grid-template-columns:.9fr 1.3fr;align-items:center;gap:var(--s6)}
-    html.js .cycle-section{height:600vh}
+    html.js .cycle-section > .wrap{position:relative}
+    html.js .cycle-track{position:relative;height:540vh}
+    html.js .pin{position:sticky;top:var(--header-h,64px);height:calc(100svh - var(--header-h,64px));display:grid;grid-template-columns:.9fr 1.3fr;align-items:center;gap:var(--s6);align-content:center}
+    html.js .cycle-section{height:auto}
     html.js .cycle-copy{margin-bottom:0}
     html.js .cycle-visuals{position:relative;min-block-size:70vh}
     html.js .cycle-shot{position:absolute;inset:0;opacity:0;transform:translateY(18px);transition:opacity 350ms ease,transform 350ms ease;pointer-events:none}
@@ -402,13 +404,13 @@ body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist'
 
     <section class="section" id="problema" aria-labelledby="problema-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">O ponto de partida</div><h2 id="problema-title">O canal digital não se desenvolve sozinho — <span class="grad">ele é operado.</span></h2></div><div class="grid g2"><article class="card rv" style="--i:0"><p>Comprar estoque sem saber se o preço fecha depois da comissão e do frete.</p></article><article class="card rv" style="--i:1"><p>Descobrir que o concorrente baixou o preço quando a venda já parou.</p></article><article class="card rv" style="--i:2"><p>Não saber quanto sobra por unidade no preço que está praticando <strong>hoje</strong>.</p></article><article class="card rv" style="--i:3"><p>Anúncio pausado por estoque zerado — e ninguém percebeu.</p></article></div><div class="card flat rv" style="margin-top:var(--s4)"><div class="chips"><span class="chip">Análise de mercado</span><span class="chip">Concorrência</span><span class="chip">Seleção de produtos</span><span class="chip">Viabilidade</span><span class="chip">Preço</span><span class="chip">Margem</span><span class="chip">Catálogo</span><span class="chip">Imagens</span><span class="chip">Títulos</span><span class="chip">Descrições</span><span class="chip">Atributos</span><span class="chip">Regras do marketplace</span><span class="chip">Publicação</span><span class="chip">Buy Box</span><span class="chip">Mercado Livre Ads</span><span class="chip">Atendimento</span><span class="chip">Estoque</span><span class="chip">Financeiro</span><span class="chip">Otimização</span><span class="chip">Análise de desempenho</span></div></div><p class="sub rv" style="margin-top:var(--s3)">Não é uma lista de tarefas. São <strong>competências diferentes</strong>, que precisam conversar entre si e acontecer <strong>todo mês</strong>, não uma vez.</p></div></section>
 
-    <section class="section cycle-section" id="como" aria-labelledby="como-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">Como funciona</div><h2 id="como-title">Uma operação que roda em ciclo — <span class="grad">não em projeto.</span></h2><p class="lead">A Daludi Innovit Consult conduz cada etapa; o PubliAI registra e mostra. Nada vai ao ar sem uma pessoa conferir — nem sugestão de IA, nem reprecificação automática.</p></div><div class="pin"><div class="cycle-copy"><ol class="steps"><li class="on rv" style="--i:0"><span class="step-kicker">Etapa 1</span><h3>Viabilidade</h3><p>Comissão, frete e imposto saem do preço antes de qualquer promessa de margem — com as taxas oficiais consultadas na API do Mercado Livre. Decisão antes do estoque, não depois.</p></li><li class="rv" style="--i:1"><span class="step-kicker">Etapa 2</span><h3>Preparação</h3><p>Título, descrição, atributos, fotos e ficha técnica — com a estratégia de preço explicada e o piso que não pode ser rompido.</p></li><li class="rv" style="--i:2"><span class="step-kicker">Etapa 3</span><h3>Revisão humana</h3><p>Nenhuma publicação é confirmada sem uma pessoa aprovar. A IA propõe; a equipe decide.</p></li><li class="rv" style="--i:3"><span class="step-kicker">Etapa 4</span><h3>Publicação</h3><p>Anúncio no ar, com a saúde acompanhada: ativos, com problema, pausados e encalhados.</p></li><li class="rv" style="--i:4"><span class="step-kicker">Etapa 5</span><h3>Monitoramento</h3><p>Seu preço, o menor preço relevante, sua posição e quantas ofertas disputam a mesma página — todo dia. Movimento de concorrente vira tarefa para a equipe, nunca reprecificação automática.</p></li><li class="rv" style="--i:5"><span class="step-kicker">Etapa 6</span><h3>Financeiro</h3><p>Líquido das vendas, comissão e frete separados, estornos — e o que está liberado, a liberar e já sacado. Não é estimativa de margem: é o que a conta conectada mostra.</p></li></ol></div><div class="cycle-visuals"><figure class="cycle-shot rv on" data-step="0"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · viabilidade · calculadora mercado livre</span></div>
-<img src="assets/viabilidade.png" width="1600" height="957" loading="lazy" decoding="async" alt="Calculadora de viabilidade com veredito, margem e composição do custo"></div><figcaption class="tiny shot-caption">Simulação demonstrativa com produto genérico; as taxas de comissão e frete são reais.</figcaption></figure><figure class="cycle-shot rv" data-step="1"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · revisão · análise para publicação</span></div>
-<img src="assets/revisao-analise.png" width="1600" height="312" loading="lazy" decoding="async" alt="Tela de revisão com análise para publicação e estratégia de preço"></div></figure><figure class="cycle-shot rv" data-step="2"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · revisão · você recebe por venda</span></div>
-<img src="assets/revisao-analise.png" width="1600" height="312" loading="lazy" decoding="async" alt="Tela de revisão com valores recebidos por venda e conferência humana"></div></figure><figure class="cycle-shot rv" data-step="3"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · publicados · 30 dias</span></div>
-<img src="assets/publicados-saude.png" width="1600" height="314" loading="lazy" decoding="async" alt="Saúde dos anúncios publicados com títulos de produtos ocultados"></div><figcaption class="tiny shot-caption">Tela real do PubliAI com títulos de produtos ocultados.</figcaption></figure><figure class="cycle-shot rv" data-step="4"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · pulse · radar</span></div>
-<img src="assets/radar.png" width="1600" height="811" loading="lazy" decoding="async" alt="Radar do Pulse com posição de preço frente aos concorrentes e dados ocultados"></div><figcaption class="tiny shot-caption">Tela real do PubliAI com títulos e identificadores de produtos ocultados.</figcaption></figure><figure class="cycle-shot rv" data-step="5"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · financeiro · 30 dias</span></div>
-<img src="assets/financeiro.png" width="1600" height="305" loading="lazy" decoding="async" alt="Painel financeiro com líquido das vendas, taxas, frete, estornos e valores a liberar"></div></figure></div></div><div class="sentinels" aria-hidden="true"><div class="s" data-index="0"></div><div class="s" data-index="1"></div><div class="s" data-index="2"></div><div class="s" data-index="3"></div><div class="s" data-index="4"></div><div class="s" data-index="5"></div></div></div></section>
+    <section class="section cycle-section" id="como" aria-labelledby="como-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">Como funciona</div><h2 id="como-title">Uma operação que roda em ciclo — <span class="grad">não em projeto.</span></h2><p class="lead">A Daludi Innovit Consult conduz cada etapa; o PubliAI registra e mostra. Nada vai ao ar sem uma pessoa conferir — nem sugestão de IA, nem reprecificação automática.</p></div><div class="cycle-track"><div class="pin"><div class="cycle-copy"><ol class="steps"><li class="on rv" style="--i:0"><span class="step-kicker">Etapa 1</span><h3>Viabilidade</h3><p>Comissão, frete e imposto saem do preço antes de qualquer promessa de margem — com as taxas oficiais consultadas na API do Mercado Livre. Decisão antes do estoque, não depois.</p></li><li class="rv" style="--i:1"><span class="step-kicker">Etapa 2</span><h3>Preparação</h3><p>Título, descrição, atributos, fotos e ficha técnica — com a estratégia de preço explicada e o piso que não pode ser rompido.</p></li><li class="rv" style="--i:2"><span class="step-kicker">Etapa 3</span><h3>Revisão humana</h3><p>Nenhuma publicação é confirmada sem uma pessoa aprovar. A IA propõe; a equipe decide.</p></li><li class="rv" style="--i:3"><span class="step-kicker">Etapa 4</span><h3>Publicação</h3><p>Anúncio no ar, com a saúde acompanhada: ativos, com problema, pausados e encalhados.</p></li><li class="rv" style="--i:4"><span class="step-kicker">Etapa 5</span><h3>Monitoramento</h3><p>Seu preço, o menor preço relevante, sua posição e quantas ofertas disputam a mesma página — todo dia. Movimento de concorrente vira tarefa para a equipe, nunca reprecificação automática.</p></li><li class="rv" style="--i:5"><span class="step-kicker">Etapa 6</span><h3>Financeiro</h3><p>Líquido das vendas, comissão e frete separados, estornos — e o que está liberado, a liberar e já sacado. Não é estimativa de margem: é o que a conta conectada mostra.</p></li></ol></div><div class="cycle-visuals"><figure class="cycle-shot on" data-step="0"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · viabilidade · calculadora mercado livre</span></div>
+<img src="assets/viabilidade.png" width="1600" height="957" loading="lazy" decoding="async" alt="Calculadora de viabilidade com veredito, margem e composição do custo"></div><figcaption class="tiny shot-caption">Simulação demonstrativa com produto genérico; as taxas de comissão e frete são reais.</figcaption></figure><figure class="cycle-shot" data-step="1"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · revisão · análise para publicação</span></div>
+<img src="assets/revisao-analise.png" width="1600" height="312" loading="lazy" decoding="async" alt="Tela de revisão com análise para publicação e estratégia de preço"></div></figure><figure class="cycle-shot" data-step="2"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · revisão · você recebe por venda</span></div>
+<img src="assets/revisao-analise.png" width="1600" height="312" loading="lazy" decoding="async" alt="Tela de revisão com valores recebidos por venda e conferência humana"></div></figure><figure class="cycle-shot" data-step="3"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · publicados · 30 dias</span></div>
+<img src="assets/publicados-saude.png" width="1600" height="314" loading="lazy" decoding="async" alt="Saúde dos anúncios publicados com títulos de produtos ocultados"></div><figcaption class="tiny shot-caption">Tela real do PubliAI com títulos de produtos ocultados.</figcaption></figure><figure class="cycle-shot" data-step="4"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · pulse · radar</span></div>
+<img src="assets/radar.png" width="1600" height="811" loading="lazy" decoding="async" alt="Radar do Pulse com posição de preço frente aos concorrentes e dados ocultados"></div><figcaption class="tiny shot-caption">Tela real do PubliAI com títulos e identificadores de produtos ocultados.</figcaption></figure><figure class="cycle-shot" data-step="5"><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · financeiro · 30 dias</span></div>
+<img src="assets/financeiro.png" width="1600" height="305" loading="lazy" decoding="async" alt="Painel financeiro com líquido das vendas, taxas, frete, estornos e valores a liberar"></div></figure></div></div></div></div></section>
 
     <section class="section" id="responsabilidades" aria-labelledby="responsabilidades-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">Divisão de responsabilidades</div><h2 id="responsabilidades-title">A Daludi assume a complexidade digital. Você mantém sua operação física e fiscal.</h2></div><div class="responsibilities rv"><div class="col daludi"><div class="ct">Fica com a Daludi</div><div class="cn">Estratégia e execução digital</div><ul><li>Análise de mercado, de produtos e de concorrência</li><li>Análise de viabilidade e definição de preço</li><li>Acompanhamento de margem</li><li>Preparação dos produtos: títulos, descrições e atributos</li><li>Estruturação e publicação dos anúncios</li><li>Acompanhamento de preços e de concorrentes</li><li>Otimizações e gestão contínua da operação</li><li>Planejamento, criação e gestão das campanhas de Ads</li></ul></div><div class="vs" aria-hidden="true">VS</div><div class="col cliente"><div class="ct">Fica com você</div><div class="cn">Operação física e fiscal</div><ul><li>Estoque físico dos produtos</li><li>Separação dos pedidos</li><li>Embalagem</li><li>Expedição e logística</li><li>Emissão de nota fiscal</li></ul><div style="margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--line)"><div class="ct" style="margin-bottom:6px">Também com você</div><p class="sub">O <strong>investimento financeiro em mídia</strong> das campanhas — definido em conjunto e pago diretamente por você ao marketplace.</p></div></div></div><div class="note brandy rv" style="margin-top:var(--s4)"><div class="nt">Publicidade</div><div class="nb">A <strong>gestão da publicidade</strong> — planejamento, estratégia, criação, acompanhamento e otimização das campanhas de Mercado Livre Ads — <strong>está incluída no serviço</strong>. O <strong>investimento em mídia</strong> é definido em conjunto e custeado por você, e não está incluído no setup, nos percentuais nem na sustentação de infraestrutura.</div></div></div></section>
 
@@ -448,6 +450,7 @@ const CONFIG = {
       const heroShot = document.querySelector('.hero-shot');
       const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
       let scrollFramePending = false;
+      let updateCycle = null;
 
       const scheduleScrollState = () => {
         if (scrollFramePending) return;
@@ -466,6 +469,7 @@ const CONFIG = {
               heroShot.style.removeProperty('transform');
             }
           }
+          if (typeof updateCycle === 'function') updateCycle();
         });
       };
 
@@ -530,7 +534,7 @@ const CONFIG = {
 
       const stepItems = [...document.querySelectorAll('.steps li')];
       const cycleShots = [...document.querySelectorAll('.cycle-shot[data-step]')];
-      const sentinels = [...document.querySelectorAll('.sentinels .s[data-index]')];
+      const cycleTrack = document.querySelector('.cycle-track');
       let activeStep = -1;
       const activateStep = (index) => {
         if (index < 0 || index >= stepItems.length || index === activeStep) return;
@@ -539,14 +543,20 @@ const CONFIG = {
         cycleShots.forEach((shot) => shot.classList.toggle('on', shot.dataset.step === String(index)));
       };
       activateStep(0);
-      if ('IntersectionObserver' in window && sentinels.length) {
-        const sentinelObserver = new IntersectionObserver((entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) activateStep(Number(entry.target.dataset.index));
-          });
-        }, { rootMargin: '-50% 0px -50% 0px' });
-        sentinels.forEach((sentinel) => sentinelObserver.observe(sentinel));
-      }
+
+      // O passo ativo vem da posicao do scroll dentro do trilho, nao de sentinelas:
+      // o trilho tem altura fixa e cada passo ocupa uma fatia igual dela.
+      updateCycle = () => {
+        if (!cycleTrack || !stepItems.length) return;
+        if (window.matchMedia('(max-width: 900px)').matches) return;
+        const rect = cycleTrack.getBoundingClientRect();
+        const usable = rect.height - window.innerHeight;
+        if (usable <= 0) return;
+        const progressed = Math.min(Math.max(-rect.top, 0), usable) / usable;
+        const index = Math.min(stepItems.length - 1, Math.floor(progressed * stepItems.length));
+        activateStep(index);
+      };
+      updateCycle();
 
       const tabButtons = [...document.querySelectorAll('.tab[role="tab"]')];
       const tabPanels = [...document.querySelectorAll('.tabpanel[data-tab-panel]')];
