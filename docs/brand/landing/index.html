@@ -72,7 +72,7 @@
       --r-sm:8px; --r:14px; --r-lg:20px; --r-xl:28px;
       --glow:0 0 0 1px rgba(92,92,235,.35), 0 18px 60px -18px rgba(92,92,235,.55);
 
-      --maxw:1180px;
+      --maxw:1180px;--header-h:72px;
       --s1:8px; --s2:16px; --s3:24px; --s4:32px; --s5:48px; --s6:64px; --s7:96px; --s8:128px;
       --h1:clamp(34px,5.4vw,66px);
       --h2:clamp(30px,4.6vw,56px);
@@ -102,6 +102,7 @@ body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist'
     .lead{color:var(--fg-2);font-size:var(--lead);line-height:1.55;max-inline-size:70ch}
     .sub{color:var(--muted);font-size:14px;line-height:1.55}
     .tiny{color:#9A9DB0;font-size:12.5px;line-height:1.5}
+    .wa-link{color:var(--fg);text-decoration:underline;text-underline-offset:3px;font-weight:600}
     strong{color:var(--fg);font-weight:600}
     .grad{background:var(--grad-text);-webkit-background-clip:text;background-clip:text;color:transparent}
 
@@ -189,7 +190,6 @@ body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist'
     .cycle-visuals{display:grid;gap:var(--s4)}
     .cycle-shot{display:block}
     .cycle-shot .shot-caption{margin-bottom:0}
-    .sentinels{display:none}
     .cycle-shot .shot{max-inline-size:none}
 
     .responsibilities{display:grid;grid-template-columns:minmax(0,1fr) 72px minmax(0,1fr);align-items:stretch}
@@ -319,14 +319,16 @@ body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist'
     html.js .shot.hero-shot{transform:scale(.96);will-change:transform}
     html.js .cycle-section > .wrap{position:relative}
     html.js .cycle-track{position:relative;height:540vh}
+    /* Em 1366x768 a lista com as 6 descricoes soma 934px contra 696px de pin e
+       transborda por cima e por baixo. So a etapa ativa mostra a descricao —
+       cabe em qualquer notebook e foca a leitura no passo do momento. */
+    html.js .steps li:not(.on) p{display:none}
+    html.js .steps li{transition:background-color 250ms ease,border-color 250ms ease}
     html.js .pin{position:sticky;top:var(--header-h,64px);height:calc(100svh - var(--header-h,64px));display:grid;grid-template-columns:.9fr 1.3fr;align-items:center;gap:var(--s6);align-content:center}
-    html.js .cycle-section{height:auto}
     html.js .cycle-copy{margin-bottom:0}
     html.js .cycle-visuals{position:relative;min-block-size:70vh}
     html.js .cycle-shot{position:absolute;inset:0;opacity:0;transform:translateY(18px);transition:opacity 350ms ease,transform 350ms ease;pointer-events:none}
     html.js .cycle-shot.on{opacity:1;transform:none;pointer-events:auto}
-    html.js .sentinels{display:block;position:absolute;inset:0 auto auto 0;inline-size:1px;pointer-events:none}
-    html.js .sentinels .s{block-size:100vh}
     html.js .tabpanel[hidden]{display:none}
 
     @media (max-width:900px){
@@ -341,12 +343,10 @@ body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist'
       .choice-card{grid-column:1 / -1;min-block-size:260px}
       .footer-grid{grid-template-columns:1fr 1fr}
       .footer-brand{grid-column:1 / -1}
-      html.js .cycle-section{height:auto}
       html.js .pin{position:static;display:block;min-block-size:0}
       html.js .cycle-visuals{min-block-size:0}
       html.js .cycle-shot{position:static;opacity:1;transform:none;pointer-events:auto}
       html.js .cycle-shot + .cycle-shot{margin-top:var(--s4)}
-      html.js .sentinels{display:none}
     }
 
     @media (max-width:600px){
@@ -414,11 +414,11 @@ body{min-height:100vh;background:transparent;color:var(--fg);font-family:'Geist'
 
     <section class="section" id="responsabilidades" aria-labelledby="responsabilidades-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">Divisão de responsabilidades</div><h2 id="responsabilidades-title">A Daludi assume a complexidade digital. Você mantém sua operação física e fiscal.</h2></div><div class="responsibilities rv"><div class="col daludi"><div class="ct">Fica com a Daludi</div><div class="cn">Estratégia e execução digital</div><ul><li>Análise de mercado, de produtos e de concorrência</li><li>Análise de viabilidade e definição de preço</li><li>Acompanhamento de margem</li><li>Preparação dos produtos: títulos, descrições e atributos</li><li>Estruturação e publicação dos anúncios</li><li>Acompanhamento de preços e de concorrentes</li><li>Otimizações e gestão contínua da operação</li><li>Planejamento, criação e gestão das campanhas de Ads</li></ul></div><div class="vs" aria-hidden="true">VS</div><div class="col cliente"><div class="ct">Fica com você</div><div class="cn">Operação física e fiscal</div><ul><li>Estoque físico dos produtos</li><li>Separação dos pedidos</li><li>Embalagem</li><li>Expedição e logística</li><li>Emissão de nota fiscal</li></ul><div style="margin-top:var(--s4);padding-top:var(--s3);border-top:1px solid var(--line)"><div class="ct" style="margin-bottom:6px">Também com você</div><p class="sub">O <strong>investimento financeiro em mídia</strong> das campanhas — definido em conjunto e pago diretamente por você ao marketplace.</p></div></div></div><div class="note brandy rv" style="margin-top:var(--s4)"><div class="nt">Publicidade</div><div class="nb">A <strong>gestão da publicidade</strong> — planejamento, estratégia, criação, acompanhamento e otimização das campanhas de Mercado Livre Ads — <strong>está incluída no serviço</strong>. O <strong>investimento em mídia</strong> é definido em conjunto e custeado por você, e não está incluído no setup, nos percentuais nem na sustentação de infraestrutura.</div></div></div></section>
 
-    <section class="section" id="torre" aria-labelledby="torre-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">A tecnologia por trás da operação</div><h2 id="torre-title">Você delega a execução. <span class="grad">Não delega a visibilidade.</span></h2><p class="lead">O PubliAI é a plataforma proprietária com que a equipe da Daludi opera o seu canal — e é também a <strong>sua janela sobre essa operação</strong>: o mesmo dado, ao mesmo tempo, para quem executa e para quem contratou.</p></div><div class="grid g2 control-grid"><div class="control-cards"><article class="card flat rv"><h3>Operação registrada</h3><p class="sub">O que foi analisado, publicado, pausado e otimizado fica visível.</p></article><article class="card flat rv"><h3>Números na origem</h3><p class="sub">Comissão, frete e liberação vêm da conta conectada ao Mercado Livre.</p></article><article class="card flat rv"><h3>Incerteza sinalizada</h3><p class="sub">Estimativa aparece rotulada como estimativa. Dado que falta é dito, não preenchido.</p></article><article class="card flat rv"><h3>Acesso próprio</h3><p class="sub">Você entra na plataforma quando quiser — não depende de um relatório mensal.</p></article></div><div class="rv"><h3 style="margin-bottom:var(--s3)">Você não precisa abrir o sistema para saber o que aconteceu.</h3><p class="illustrative">Exemplos ilustrativos — não são capturas de tela</p><div class="notifications"><article class="notif"><span class="nd" style="background:var(--warn)"></span><div><div class="nl">Estoque</div><div class="nx">Estoque zerado — anúncio pausado no Mercado Livre. Repor o estoque reativa o anúncio automaticamente.</div></div></article><article class="notif"><span class="nd" style="background:var(--bad)"></span><div><div class="nl">Moderação</div><div class="nx">Anúncio com restrição de moderação — a equipe é avisada antes de a venda parar.</div></div></article><article class="notif"><span class="nd" style="background:var(--indigo)"></span><div><div class="nl">Pulse</div><div class="nx">6 atualizações de mercado, nenhuma exige decisão.</div></div></article></div><div class="notification-footer"><div class="chips"><span class="chip xs">Vendas</span><span class="chip xs">Perguntas</span><span class="chip xs">Pós-venda</span><span class="chip xs">Financeiro</span><span class="chip xs">Moderação</span><span class="chip xs">Mensagens</span><span class="chip xs">Integração</span><span class="chip xs">Pulse</span><span class="chip xs">Estoque</span></div><p class="sub" style="margin-top:var(--s3)">O mesmo aviso chega no Telegram e no sino dentro do PubliAI; cada pessoa escolhe as categorias que recebe.</p></div></div></div></div></section>
+    <section class="section" id="torre" aria-labelledby="torre-title"><div class="wrap"><div class="section-head rv"><div class="eyebrow">A tecnologia por trás da operação</div><h2 id="torre-title">Você delega a execução. <span class="grad">Não delega a visibilidade.</span></h2><p class="lead">O PubliAI é a plataforma proprietária com que a equipe da Daludi opera o seu canal — e é também a <strong>sua janela sobre essa operação</strong>: o mesmo dado, ao mesmo tempo, para quem executa e para quem contratou.</p></div><div class="grid g2 control-grid"><div class="control-cards"><article class="card flat rv"><h3>Operação registrada</h3><p class="sub">O que foi analisado, publicado, pausado e otimizado fica visível.</p></article><article class="card flat rv"><h3>Números na origem</h3><p class="sub">Comissão, frete e liberação vêm da conta conectada ao Mercado Livre.</p></article><article class="card flat rv"><h3>Incerteza sinalizada</h3><p class="sub">Estimativa aparece rotulada como estimativa. Dado que falta é dito, não preenchido.</p></article><article class="card flat rv"><h3>Acesso próprio</h3><p class="sub">Você entra na plataforma quando quiser — não depende de um relatório mensal.</p></article></div><div class="rv"><h3 style="margin-bottom:var(--s3)">Você não precisa abrir o sistema para saber o que aconteceu.</h3><p class="illustrative">Exemplos ilustrativos — não são capturas de tela</p><div class="notifications"><article class="notif"><span class="nd" style="background:var(--warn)"></span><div><div class="nl">Estoque</div><div class="nx">Estoque zerado — anúncio pausado no Mercado Livre. Repor o estoque reativa o anúncio automaticamente.</div></div></article><article class="notif"><span class="nd" style="background:var(--bad)"></span><div><div class="nl">Moderação</div><div class="nx">Anúncio com restrição de moderação — a equipe é avisada assim que o Mercado Livre sinaliza.</div></div></article><article class="notif"><span class="nd" style="background:var(--indigo)"></span><div><div class="nl">Pulse</div><div class="nx">6 atualizações de mercado, nenhuma exige decisão.</div></div></article></div><div class="notification-footer"><div class="chips"><span class="chip xs">Vendas</span><span class="chip xs">Perguntas</span><span class="chip xs">Pós-venda</span><span class="chip xs">Financeiro</span><span class="chip xs">Moderação</span><span class="chip xs">Mensagens</span><span class="chip xs">Integração</span><span class="chip xs">Pulse</span><span class="chip xs">Estoque</span></div><p class="sub" style="margin-top:var(--s3)">O mesmo aviso chega no Telegram e no sino dentro do PubliAI; cada pessoa escolhe as categorias que recebe.</p></div></div></div></div></section>
 
     <section class="section" id="inteligencia" aria-labelledby="inteligencia-title"><div class="wrap"><div class="section-head rv"><div class="pill">Pulse · incluído na Modalidade 2</div><h2 id="inteligencia-title" style="margin-top:var(--s3)">Como acompanho a disputa e encontro novas oportunidades?</h2></div><div class="tabs"><div class="tablist rv" role="tablist" aria-label="Camadas de inteligência"><button class="tab" type="button" role="tab" aria-selected="true" aria-controls="radar-panel" id="radar-tab">Radar · o que você já vende</button><button class="tab" type="button" role="tab" aria-selected="false" aria-controls="sonar-panel" id="sonar-tab">Sonar · o que você ainda não vende</button></div><section class="tabpanel grid g2 rv" role="tabpanel" id="radar-panel" aria-labelledby="radar-tab" data-tab-panel="radar"><div><h3>Radar · o que você já vende</h3><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · pulse · radar</span></div><img src="assets/radar.webp" width="1600" height="811" alt="Radar do Pulse com posição de preço frente aos concorrentes"></div></div><p>Monitora automaticamente a disputa dos seus produtos já publicados: seu preço, o menor preço relevante do mercado, sua posição e quantas ofertas disputam a mesma página.</p></section><section class="tabpanel grid g2 rv" role="tabpanel" id="sonar-panel" aria-labelledby="sonar-tab" data-tab-panel="sonar"><div><h3>Sonar · o que você ainda não vende</h3><div class="shot"><div class="bar"><i></i><i></i><i></i><span class="u">publiai · pulse · sonar</span></div><img src="assets/sonar-veredito.webp" width="1600" height="471" loading="lazy" decoding="async" alt="Sonar com veredito de nicho, demanda, concorrência e faturamento por concorrente"></div></div><p>Prospecta um nicho <strong>antes</strong> de cadastrar o produto: demanda, concorrência, faturamento por concorrente e a condição de entrada — com o que é estimativa sempre rotulado como estimativa.</p></section></div><div class="note rv" style="margin-top:var(--s4)"><div class="nt">O que a inteligência faz — e o que ela não faz</div><div class="nb">Ela sinaliza movimento de preço e oportunidade para a equipe agir. Ela <strong>não</strong> altera preço sozinha no marketplace (a mudança volta para revisão humana) e <strong>não</strong> promete posição de Buy Box.</div></div><p class="sub rv" style="margin-top:var(--s3)">Na Modalidade 1 a equipe da Daludi usa essa camada por você; na Modalidade 2 você também acessa.</p></div></section>
 
-    <section class="section" id="prova" aria-labelledby="prova-title"><div class="wrap"><div class="section-head rv"><div class="pill">Duas operações reais</div><h2 id="prova-title" style="margin-top:var(--s3)">Números lidos no painel em 02/09/2026.</h2><p class="lead">São operações reais, não projeções — e não são promessa de resultado para o seu caso.</p></div><div class="grid g2"><article class="card proof-card rv"><h3>Operação A · três meses</h3><p class="proof-date">Leitura em 02/09/2026 · período de 04/06 a 02/09/2026</p><span class="big">R$ 115.995,60</span><p class="sub">faturamento bruto · 04/06 a 02/09/2026</p><ul class="stat-list" style="margin-top:var(--s4)"><li><strong>1.724 pedidos</strong> no período de 04/06 a 02/09/2026, lidos em 02/09/2026.</li><li><strong>2.777 unidades</strong> no período de 04/06 a 02/09/2026, lidas em 02/09/2026.</li><li>Primeiro anúncio publicado em 04/06/2026. Junho (a partir de 04/06) R$ 2.621,90 → julho R$ 36.504,43 → agosto R$ 71.429,40.</li><li><strong>Markup (lucro ÷ custo): +37&#37; no primeiro mês · +39&#37; em agosto</strong> — crescer não custou margem.</li></ul></article><article class="card proof-card rv"><h3>Operação B · primeiro mês</h3><p class="proof-date">Leitura em 02/09/2026 · 30 dias até 02/09/2026</p><span class="big">R$ 35.029,99</span><p class="sub">faturamento bruto · 30 dias até 02/09/2026</p><ul class="stat-list" style="margin-top:var(--s4)"><li><strong>519 pedidos</strong> em 30 dias até 02/09/2026, lidos em 02/09/2026.</li><li><strong>584 unidades</strong> em 30 dias até 02/09/2026, lidas em 02/09/2026.</li><li>Ticket médio R$ 67,50 (faturamento ÷ pedidos) em 30 dias até 02/09/2026.</li><li><strong>10 anúncios ativos</strong> em 30 dias até 02/09/2026 — R$ 3.503 por anúncio no ar (faturamento ÷ anúncios ativos).</li><li>Primeiro anúncio publicado em 02/08/2026.</li><li><strong>Markup (lucro ÷ custo): +19&#37; no período.</strong></li></ul></article></div><p class="tiny rv" style="margin-top:var(--s3)">Nenhum cliente é nomeado. Categorias, custos e concorrência diferentes das suas.</p></div></section>
+    <section class="section" id="prova" aria-labelledby="prova-title"><div class="wrap"><div class="section-head rv"><div class="pill">Duas operações reais</div><h2 id="prova-title" style="margin-top:var(--s3)">Números lidos no painel em 02/09/2026.</h2><p class="lead">São operações reais, não projeções — e não são promessa de resultado para o seu caso.</p></div><div class="grid g2"><article class="card proof-card rv"><h3>Operação A · três meses</h3><p class="proof-date">Leitura em 02/09/2026 · período de 04/06 a 02/09/2026</p><span class="big">R$ 115.995,60</span><p class="sub">faturamento bruto · 04/06 a 02/09/2026</p><ul class="stat-list" style="margin-top:var(--s4)"><li><strong>1.724 pedidos</strong> no período de 04/06 a 02/09/2026, lidos em 02/09/2026.</li><li><strong>2.777 unidades</strong> no período de 04/06 a 02/09/2026, lidas em 02/09/2026.</li><li>Primeiro anúncio publicado em 04/06/2026. Junho (a partir de 04/06) R$ 2.621,90 → julho R$ 36.504,43 → agosto R$ 71.429,40 &#8594; setembro (01 a 02/09) R$ 5.439,87.</li><li><strong>Markup (lucro ÷ custo): +37&#37; no primeiro mês · +39&#37; em agosto</strong> — crescer não custou margem.</li></ul></article><article class="card proof-card rv"><h3>Operação B · primeiro mês</h3><p class="proof-date">Leitura em 02/09/2026 · 30 dias até 02/09/2026</p><span class="big">R$ 35.029,99</span><p class="sub">faturamento bruto · 30 dias até 02/09/2026</p><ul class="stat-list" style="margin-top:var(--s4)"><li><strong>519 pedidos</strong> em 30 dias até 02/09/2026, lidos em 02/09/2026.</li><li><strong>584 unidades</strong> em 30 dias até 02/09/2026, lidas em 02/09/2026.</li><li>Ticket médio R$ 67,50 (faturamento ÷ pedidos) em 30 dias até 02/09/2026.</li><li><strong>10 anúncios ativos</strong> em 30 dias até 02/09/2026 — R$ 3.503 por anúncio no ar (faturamento ÷ anúncios ativos).</li><li>Primeiro anúncio publicado em 02/08/2026.</li><li><strong>Markup (lucro ÷ custo): +19&#37; no período.</strong></li></ul></article></div><p class="tiny rv" style="margin-top:var(--s3)">Nenhum cliente é nomeado. Categorias, custos e concorrência diferentes das suas.</p></div></section>
 
     <section class="section" aria-labelledby="promessas-title"><div class="wrap"><div class="note promise-note rv"><h2 id="promessas-title">Não projetamos o seu faturamento.</h2><p>Não projetamos o seu faturamento: os números acima são de outras operações, com outra categoria, outro custo e outra concorrência. Não prometemos margem, prazo nem posição de disputa. E nada é publicado sem uma pessoa conferir antes.</p></div></div></section>
 
@@ -540,7 +540,14 @@ const CONFIG = {
         if (index < 0 || index >= stepItems.length || index === activeStep) return;
         activeStep = index;
         stepItems.forEach((item, itemIndex) => item.classList.toggle('on', itemIndex === index));
-        cycleShots.forEach((shot) => shot.classList.toggle('on', shot.dataset.step === String(index)));
+        cycleShots.forEach((shot) => {
+          const ativa = shot.dataset.step === String(index);
+          shot.classList.toggle('on', ativa);
+          // as 5 invisiveis continuam na arvore de acessibilidade sem isto:
+          // o leitor de tela anunciaria 6 capturas onde se ve uma.
+          if (ativa) shot.removeAttribute('aria-hidden');
+          else shot.setAttribute('aria-hidden', 'true');
+        });
       };
       activateStep(0);
 
@@ -595,8 +602,9 @@ const CONFIG = {
         status.hidden = true;
         form.insertAdjacentElement('afterend', status);
 
-        const showStatus = (message) => {
-          status.textContent = message;
+        const showStatus = (message, comHtml) => {
+          if (comHtml) status.innerHTML = message;
+          else status.textContent = message;
           status.hidden = false;
         };
 
@@ -643,8 +651,11 @@ const CONFIG = {
               })
               .join('\n');
             const whatsappText = [CONFIG.whatsappMessage, summary].filter(Boolean).join('\n\n');
-            window.open(`https://wa.me/${CONFIG.whatsappNumber}?text=${encodeURIComponent(whatsappText)}`, '_blank');
-            showStatus('A submissão automática falhou, mas o WhatsApp foi aberto com os dados preenchidos para que seu contato não seja perdido.');
+            const href = `https://wa.me/${CONFIG.whatsappNumber}?text=${encodeURIComponent(whatsappText)}`;
+            // Nada de window.open aqui: depois de um await o navegador ja perdeu a ativacao
+            // do usuario e bloqueia o popup (Safari sempre, Chrome se o fetch demorar).
+            // Um link que o visitante clica funciona em todo lugar.
+            showStatus('O envio automático falhou. Nada foi perdido: <a class="wa-link" href="' + href + '" target="_blank" rel="noopener">toque aqui para enviar pelo WhatsApp</a> — os dados que você preencheu já vão na mensagem.', true);
           } finally {
             if (submitButton) {
               submitButton.disabled = false;

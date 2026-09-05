@@ -1,50 +1,88 @@
 ---
 tags: [modulo, marketing, brand, standalone]
-atualizado: 2026-09-02
+atualizado: 2026-09-04
 ---
 
 # Landing Page
 
-Artefato de marketing standalone em `docs/brand/`, não integrado ao app principal (`src/`).
+Artefato de marketing standalone em `docs/brand/landing/`, não integrado ao app principal (`src/`).
 Ver [[Marketplace]] para o módulo de produto real (distinto deste artefato de marketing).
 
-**Status:** publicação em produção **a confirmar com o Diego** — não há evidência no repo
-(sem config de deploy/hosting apontando para o caminho) de que esteja hospedada.
+**Status:** reconstruída em 2026-09-04 ([[Índice de ADRs|ADR-0152]]). Não hospedada — o domínio
+ainda é decisão do Diego.
 
 ## O que é
 
-Landing page de conversão do PubliAI — HTML standalone (single-file), CSS inline, sem build
-step, tema dark roxo/violeta com hero + screenshot do dashboard, trust bar multicanal, "como
-funciona" (4 passos), recursos, faixa multicanal e planos (placeholder). Headline: "Da planilha
-ao anúncio publicado. Sem trabalho manual." Público-alvo: vendedores de marketplace.
+Página de conversão do **PubliAI**, tratada como o site próprio do produto. Vende a **operação de
+marketplace conduzida pela Daludi Innovit Consult** — prestação de serviço, nunca licença de
+software. HTML único e autocontido, sem build, tema dark, identidade indigo→violeta e tipografia
+Geist, herdadas do design system real do deck comercial.
+
+Headline: *"Sua operação de marketplace, conduzida por quem mostra a conta."*
+Público: empresa que já vende no Mercado Livre e quer escalar sem montar time interno de canal.
+CTA: *"Enviar 5 produtos para análise"*.
+
+### As 13 seções
+
+Hero → Problema (4 dores) → **Como funciona** (ciclo de 6 etapas com scroll-lock) → Quem faz o quê
+→ Torre de controle → Inteligência (tabs Radar/Sonar) → **Prova** (duas operações reais) → O que não
+prometemos → Como começamos → **Modalidades** (preço publicado) → CTA (formulário dos 5 produtos +
+WhatsApp) → FAQ → Rodapé.
 
 ## Onde vive no código
 
-- `docs/brand/landing/index.html` — página completa, standalone.
-- `docs/brand/landing/assets/dashboard.png` — screenshot do dashboard usado no hero.
-- `docs/brand/landing/assets/favicon.svg`.
-- Não faz parte do build do frontend principal (`src/`) — é um artefato isolado dentro de
-  `docs/brand/`, não uma rota da SPA.
+- `docs/brand/landing/index.html` — a página inteira: HTML, CSS e JS num arquivo só.
+- `docs/brand/landing/PLANO.md` — o plano de implementação, com a checklist de aceite.
+- `docs/brand/landing/assets/` — 8 capturas em WebP, o logo da Daludi e a fonte Geist local.
+- Não faz parte do build do frontend (`src/`) — é artefato isolado, não uma rota da SPA.
 
-## De onde veio
+## Decisões que regem a página
 
-- Spec/briefing original: `docs/brand/briefings-design.md`, seção **"5. LANDING PAGE / SITE
-  (hero + seções)"** — define estrutura (hero, prova social, como funciona, features, diferencial
-  multicanal, depoimentos placeholder, pricing placeholder, CTA final) e pede tema dark base
-  (`#08090E`) com versão light.
-- Implementação: commit `10c34c7d` ("feat(brand): landing page (HTML standalone)"), 28/06/2026.
-- Ajustes posteriores: `1feab5f9` (fix de contraste no botão do header) e `059022a0` (atualização
-  do screenshot do dashboard).
+Todas em [[Índice de ADRs|ADR-0152]]. As que mais surpreendem quem chega depois:
 
-## Status real (não o desejado)
+- **A página é do PubliAI, mas quem vende é a Daludi.** O header traz a marca do produto; a Daludi
+  aparece no ciclo, nas Modalidades e no rodapé como quem conduz. Isso é deliberado: o PubliAI tem
+  site próprio, e `daludi.com.br` (verde-água, vende diagnóstico de IA) é outro site, com outra
+  identidade e outra oferta.
+- **A seção "Planos" da versão anterior não existe mais.** Ela vendia o PubliAI como SaaS, o que
+  contradiz a decisão comercial de 30/08/2026 (a Daludi não licencia o produto). No lugar entrou a
+  tabela das duas Modalidades de serviço.
+- **Só um scroll-lock**, na seção do ciclo. No celular vira lista vertical.
+- **Padrão de evidência herdado do material comercial**: nenhum percentual sem denominador, todo
+  número com janela e data de leitura, nenhuma promessa de resultado, e o bloco "o que não
+  prometemos" como seção própria e visível.
 
-- Existe e está versionada no repo, mas **não há indício de hospedagem/publicação** — nenhum
-  `vercel.json`/`netlify.toml`/config de deploy no repo referencia `docs/brand/landing`.
-- Não integrada ao app principal — é um HTML isolado, não uma página servida pela SPA em `src/`.
-- Confirmar com o Diego se há hosting fora do repo (ex.: domínio próprio, subdomínio) antes de
-  assumir que está no ar.
+## Capturas — o que passou e o que foi barrado
 
----
+As 9 candidatas foram inspecionadas visualmente, uma a uma. Duas foram **descartadas**:
 
-Nota: `docs/brand/` também tem brand book, logo e briefings de outros ativos de marca/marketing
-(ícones, ads, redes sociais) sem nota própria no vault ainda — gap fora do escopo desta nota.
+- `revisao-completa.png` — exibe a foto do produto do cliente.
+- `telegram.png` — expõe o ID do anúncio no Mercado Livre (`MLB-…`), um EAN e a URL de um pedido
+  real. No lugar entraram três cartões em HTML rotulados "Exemplos ilustrativos".
+
+Duas receberam tarja: `radar` (3 títulos **e 3 EANs** — o EAN identifica o produto melhor que o
+título) e `publicados-saude` (5 títulos em "Top produtos"). Nenhum original sem tarja entrou no
+histórico do git.
+
+## Qualidade medida (2026-09-04)
+
+Lighthouse: **performance 98, acessibilidade 100**, LCP 2,3s, CLS 0,004, TBT 0ms. Zero recursos
+externos. O pin do ciclo foi medido em 7 posições de scroll e em 1366×768.
+
+## Armadilhas conhecidas
+
+- **`body{overflow-x:hidden}` desativa `position:sticky`** em todos os descendentes. A página usa
+  `overflow-x:clip`. Trocar de volta quebra o scroll-lock sem aviso.
+- **O formulário exige servidor web.** O FormSubmit recusa requisições sem `Origin` — abrir a
+  página por duplo clique mostra tudo, mas não envia o formulário.
+- **O FormSubmit precisa de ativação**: o primeiro envio não é entregue, só dispara um e-mail com o
+  link de ativação para `sac@daludi.com.br`. Esse primeiro envio já foi queimado com um teste em
+  04/09/2026.
+- Elementos com `z-index` negativo somem atrás do background do `body` — foi o que deixou a aurora
+  invisível na primeira montagem.
+
+## Pendências
+
+- Domínio onde a página vai ao ar (trava a `og:image` e a URL canônica).
+- Clique no link de ativação do FormSubmit, em `sac@daludi.com.br`.
+- Os dois sites (este e `daludi.com.br`) não se linkam entre si além do rodapé daqui.

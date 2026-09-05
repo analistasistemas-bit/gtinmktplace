@@ -1,6 +1,6 @@
 # ADR-0152: Landing page da oferta "Operação de Marketplace" — página da Daludi com identidade visual do PubliAI
 
-**Status:** Aceito (decidido em entrevista com Diego, 2026-09-04) · implementação pendente
+**Status:** Aceito e implementado (2026-09-04) — ver `docs/brand/landing/index.html`
 **Data:** 2026-09-04
 **Decisores:** Diego
 **Relacionado:** `apresentacao/H-Briefing-Site-Acelerador.md` (briefing original da oferta), `apresentacao/C-Mapa-dos-Slides.md` (narrativa dos 18 slides), `apresentacao/E-Mapa-de-Screenshots.md` (allowlist de capturas), `apresentacao/G-Pendencias.md` (P17 logotipo, decisão comercial de 30/08/2026), `obsidian-vault/03-Módulos/Landing Page.md` (estado da landing anterior)
@@ -143,5 +143,6 @@ previa os três pontos de entrada — nenhum deles existe neste formato.
 | 2 | WhatsApp e mensagem pré-preenchida | Diego | ✅ `5581983426557` · "Olá! Vim pela página do PubliAI e quero enviar 5 produtos Curva A para análise." |
 | 3 | E-mail de contato do rodapé (G-Pendencias P18) | Diego | ✅ `sac@daludi.com.br` |
 | 4 | Domínio onde a página vai ao ar | Diego | ⏳ pendente — trava só a `og:image` e a URL canônica |
+| 7 | **O formulário exige servidor web**: o FormSubmit recusa requisições sem `Origin`, então a página aberta por duplo clique mostra tudo mas não envia o formulário | — | registrado |
 | 5 | Autorização das duas operações para uso público (H-Briefing §8.1) | Diego | ✅ confirmada na entrevista de 2026-09-04 |
-| 6 | **Ativação do FormSubmit**: clicar no link que chega em `sac@daludi.com.br` no primeiro envio | Diego | ⏳ ação única, sem ela nenhum lead é entregue |
+| 6 | **Ativação do FormSubmit**: clicar no link enviado a `sac@daludi.com.br` | Diego | ⏳ ação única. O primeiro envio nunca é entregue — só dispara a ativação — e já foi queimado com um teste em 04/09/2026, para que o sacrificado não fosse um lead real |

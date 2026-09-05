@@ -15,7 +15,7 @@ Base: ADR-0152, `apresentacao/H-Briefing-Site-Acelerador.md`, `apresentacao/C-Ma
 | A2 | Ciclo: briefing (Viabilidade→Preparação→Revisão humana→Publicação→Monitoramento→Financeiro) × deck slide 06 | **Briefing** | D10 já fixa esses seis nomes |
 | A3 | §6 "tema claro e escuro" × D8 "escuro apenas" | **D8**; aceite vira "abre bem no escuro + celular" | ADR é posterior ao briefing |
 | A4 | §9 "menu, sitemap, cards linkam" | **Não aplicável**; substituído por link explícito para `daludi.com.br` no rodapé | Página standalone, sem site-mãe |
-| A5 | §6 WebP | **PNG redimensionado** (`sips -Z 1600`) | `sips` não exporta WebP e não há build; o critério é Lighthouse ≥ 90 |
+| A5 | §6 WebP | ~~PNG redimensionado~~ → **WebP** | A premissa estava errada: `cwebp` está instalado. As 8 capturas foram convertidas e o hero caiu de 298 KB para 30 KB, levando o LCP de 5,3s para 2,3s e a performance de 80 para 98 |
 | A6 | "Recompra de 16,8%" | **Omitir** | Denominador não documentado; D12 proíbe % sem denominador |
 | A7 | Imagens/fonte: embutir × `assets/` | **`assets/` ao lado** | Base64 mata `loading="lazy"`, cache e LCP; duplo clique funciona igual |
 | A8 | Tabela comparativa (slide 17) × cards `.plan` (slide 16) | **Cards `.plan`** + chips "incluído nas duas" | Resolve nativamente "tabela larga no celular" |
