@@ -80,9 +80,15 @@ custou 42KB e 0,3s de LCP — e é o que faz a aba Sonar mostrar alguma coisa.
   `overflow-x:clip`. Trocar de volta quebra o scroll-lock sem aviso.
 - **O formulário exige servidor web.** O FormSubmit recusa requisições sem `Origin` — abrir a
   página por duplo clique mostra tudo, mas não envia o formulário.
-- **O FormSubmit precisa de ativação**: o primeiro envio não é entregue, só dispara um e-mail com o
-  link de ativação para `sac@daludi.com.br`. Esse primeiro envio já foi queimado com um teste em
-  04/09/2026.
+- **O FormSubmit recusa com HTTP 200.** Quando o formulário não está ativado para aquele domínio, a
+  resposta é `200 {"success":"false", "message":"This form needs Activation…"}`. O handler checava
+  só `response.ok`, então escondia o formulário e exibia "Recebemos seus produtos" para um envio que
+  nunca foi entregue — o lead sumia em silêncio. Corrigido em 05/09/2026 lendo o campo `success` do
+  corpo; hoje esse caso cai no fallback do WhatsApp, com os dados preservados na tela.
+- **A ativação do FormSubmit é por domínio de origem, não por e-mail.** Diego ativou em 05/09/2026 e
+  o serviço registrou o form em `https://publiai.daludi.com.br/`; um envio a partir de
+  `localhost:8099` continuou sendo recusado. Quando a página for hospedada, a ativação terá de ser
+  refeita a partir do host definitivo.
 - Elementos com `z-index` negativo somem atrás do background do `body` — foi o que deixou a aurora
   invisível na primeira montagem.
 - **`loading="lazy"` em imagem dentro de painel `hidden` nunca carrega**, nem quando o painel
@@ -97,6 +103,9 @@ custou 42KB e 0,3s de LCP — e é o que faz a aba Sonar mostrar alguma coisa.
 
 ## Pendências
 
-- Domínio onde a página vai ao ar (trava a `og:image` e a URL canônica).
-- Clique no link de ativação do FormSubmit, em `sac@daludi.com.br`.
+- **Domínio onde a página vai ao ar.** `publiai.daludi.com.br` **não serve**: a raiz já é o app
+  PubliAI em produção (verificado em 05/09/2026). Ou outro host, ou uma rota desse mesmo domínio.
+  Trava a `og:image`, a URL canônica e a ativação do formulário.
+- **Reativar o FormSubmit a partir do host definitivo** — a ativação atual vale para
+  `publiai.daludi.com.br`, não para onde a página vai ficar.
 - Os dois sites (este e `daludi.com.br`) não se linkam entre si além do rodapé daqui.

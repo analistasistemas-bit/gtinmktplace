@@ -637,6 +637,11 @@ const CONFIG = {
               body: JSON.stringify(dados)
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            // O FormSubmit recusa com HTTP 200 e avisa so no corpo (ex.: formulario nao
+            // ativado para este dominio). Sem esta checagem a pagina diz "recebemos" e o
+            // lead se perde em silencio — foi o que aconteceu no teste de 05/09/2026.
+            const corpo = await response.json().catch(() => ({}));
+            if (String(corpo.success) === 'false') throw new Error(corpo.message || 'envio recusado');
 
             form.hidden = true;
             showStatus(form.dataset.successMessage);
