@@ -394,6 +394,82 @@ CREATE (seed a partir da assinatura reativa confirmada, ADR-0087/0088), **nunca*
 `marketplace_connections` (não tem `org_id` direto); escrita `service_role`-only.
 *Migration `20260722145236_adr88_user_products_itens_e_formato.sql`.*
 
+### `kits_virtuais`
+Anúncio de **combinação** do Mercado Livre: de 2 a 6 produtos **distintos** já publicados,
+referenciados por `user_product_id`, com estoque e preço calculados pelo próprio ML (ADR-0154).
+Estrutura própria **por construção** (D-2): o kit não é `familias` (arrastaria lote, Revisão,
+`process-familia`, UPDATE) e não é `anuncios_externos` (`codigo_pai not null`, e todo leitor
+daquela tabela trata a linha como partição de um produto — o kit cairia no fan-out de push de
+estoque por acidente). *Migration `20260906140450_kits_virtuais_schema.sql`.*
+
+`id`, `org_id` (FK organizations), **`chave_cadastro`** (`text not null` — idempotência do CREATE,
+gerada pelo front ao abrir o diálogo; mesmo **papel** de `familias.chave_cadastro`/ADR-0096, **tipo
+diferente**: lá é `uuid` nullable com índice parcial, aqui é `text not null` em unique total,
+porque o kit só nasce pelo diálogo e não existe caminho de planilha que a deixe vazia),
+`ml_item_id`/`ml_user_product_id`/`ml_permalink` (nulos até o CREATE responder), `titulo`
+(template do operador, D-4 — o ML o expande sozinho com os dados dos componentes), `descricao`
+(gerada por IA uma vez no preview), **`desconto_pct numeric not null check (>= 0 and < 1)`**,
+`foto_storage_path`/`foto_ml_picture_id` (D-5: foto própria obrigatória, subida ao ML no upload do
+diálogo e não no publicar — a propagação é assíncrona, ADR-0033; nuláveis no schema porque a linha
+nasce antes do upload terminar, a obrigatoriedade é gate de publicação), `status`
+(`publicando|publicado|erro|encerrado`), `erro_mensagem`, `criado_por`, `publicado_em`,
+`encerrado_em`, `criado_em`/`atualizado_em` (trigger `moddatetime`).
+
+> ⚠️ **`kits_virtuais.desconto_pct` é FRAÇÃO decimal 0–1 (0.15 = 15%)** — formato verificado
+> contra a doc oficial do ML no [spike 036](../spikes/036-kits-virtuais-mercado-livre.md)
+> (*"`automatic_price.discount` decimal (0–1), idêntico em todos os componentes"*). **NÃO** é a
+> mesma unidade de `configuracoes`/`familias`/`variacoes.desconto_pct`, que são percentuais 0–100
+> (default `15` = 15%). Nome igual, unidade diferente — `comment on column` na migration registra
+> isso; nunca copiar valor de um para o outro sem converter.
+
+Únicos: **`(org_id, chave_cadastro)`**, **`(id, org_id)`** (alvo referenciável da FK composta da
+filha, mesmo padrão de `anuncios_externos_id_org_id_key`) e índice único parcial
+`(org_id, ml_item_id) where ml_item_id is not null`. Índice `(org_id, status)` para a tela
+Publicados. RLS: só-leitura org-scoped no app (`select org`); escrita é `service_role`-only.
+
+**Invariante 2–6 componentes (regra do ML):** trigger `kits_virtuais_validar_componentes`
+(`before insert or update`) conta os componentes e recusa LOUD (`23514`) quando o `status` escrito
+é `'publicado'` e a contagem sai da faixa. A trava fica **aqui e não na tabela de componentes**:
+os componentes são inseridos enquanto o kit ainda está em `publicando`, então um guard na filha
+seria no-op no caminho real, e um constraint trigger deferido não alcança porque a edge grava kit,
+componentes e status em transações separadas (PostgREST). O único instante em que a contagem é
+definitiva é a escrita de `status='publicado'`.
+
+### `kits_virtuais_componentes`
+Os 2 a 6 produtos do kit. *Mesma migration.*
+
+`id`, `kit_id` + `org_id` (FK **composta** `(kit_id, org_id) → kits_virtuais(id, org_id) on delete
+cascade` — a filha herda a org do pai, nunca declara a própria), `ordem` (`smallint`, **0 = componente
+principal**), **`user_product_id`** (`not null` — a identidade real: é o que o ML aceita no nó
+`bundle` e o único id que sobrevive a um UPDATE de lote), `item_externo_id`, `quantidade`
+(`smallint`, check 1–10), `codigo`/`codigo_pai` (**enriquecimento best-effort** do catálogo local,
+D-12: os candidatos vêm de `POST /users/{id}/kits/components/search`, não de query local, e o banco
+sequer guarda `user_product_id` de família legada — podem ficar nulos e **nunca** são a chave),
+`criado_em`. Únicos: `(kit_id, user_product_id)` (o mesmo produto não repete linha — isso é
+`quantidade`) e `(kit_id, ordem)` (só um "principal"). Índices `(org_id, user_product_id)` e
+`(org_id, codigo_pai) where codigo_pai is not null`, que servem o guard de remoção abaixo. RLS:
+só-leitura org-scoped; escrita `service_role`-only.
+
+**Componente de kit publicado não pode ser removido (ADR-0154 D-13):** trigger
+`familias_bloquear_remocao_componente_kit_virtual` (`before delete on familias`) recusa LOUD
+(`23514`) quando a família é componente de um kit com `status='publicado'`. Motivo específico:
+republicar/remover um componente cria um `user_product_id` novo e o kit fica preso ao UP morto —
+kit em `out_of_stock` permanente, sem mensagem de erro nenhuma. Duas diferenças deliberadas em
+relação ao guard irmão `familias_bloquear_remocao_com_kit` (ADR-0151 D-14): (1) **não** tem o
+early-exit `kit_multiplicador is not null`, porque um kit vinculado **é** elegível como componente
+de kit virtual (D-9); (2) o match tem **dois ramos** — por `componentes.codigo_pai` quando
+enriquecido, e por `user_product_id`/`item_externo_id` via `anuncios_externos_itens`, já que
+`familias` não tem coluna `user_product_id` e esse join é o único caminho do produto até o UP.
+Mantido do precedente: só bloqueia quando esta é a **última** linha de `familias` daquele
+`codigo_pai` — cada lote de UPDATE cria uma linha nova e apagar uma delas não desfaz o produto.
+
+> **Limitação conhecida do guard:** um componente cujo produto **não** tenha linha em
+> `anuncios_externos_itens` (família legada pré-ADR-0088) e cujo `componentes.codigo_pai` não
+> tenha sido enriquecido fica fora do alcance dos dois ramos — o DELETE passa e o kit vira órfão.
+> Na prática o ML só devolve como candidato quem é user product nativo, então o caso é estreito,
+> mas é a razão pela qual a guard de app em `remover-publicado` (D-13, primeira camada) não é
+> opcional.
+
 ---
 
 ## Estoque (ADR-0094)
@@ -618,6 +694,14 @@ produção desde 2026-07-15**): dimensão canal preparatória — coluna simples
 `useResumoVendas` no dia em que houver um 2º canal de vendas real. Hoje **não entra no `select`**
 de `buscarVendas` (follow-up deliberado, não bloqueante — ver TASKS.md); as camadas acima mapeiam
 `canal: 'mercado_livre'` por fallback fixo — zero número muda.
+
+**`kit_item_id` text** (nullable, *migration `20260906140450_kits_virtuais_schema.sql`*, ADR-0154
+D-10): item_id do **Kit Virtual** que originou o pedido, lido de `bundle.parent_item`. O ML emite
+**uma order por componente** (ligadas por `pack_id`) e o id do kit **nunca** aparece em
+`order_items[]` — por isso `mapearPedidoParaVenda` casa a venda pelo item do componente e a baixa
+de estoque não precisa de código novo. A coluna só marca a linha com um badge "Kit" na tela: as
+orders **não** são agrupadas e nenhum cálculo financeiro a usa (os preços rateados dos componentes
+já somam o preço do kit). **Sem backfill** — `bundle.parent_item` não está nos `raw` já gravados.
 
 ### `ml_vendas_itens`
 Itens de um pedido. *Mesma migration + `20260623104822` + `20260627095025` (unique).*

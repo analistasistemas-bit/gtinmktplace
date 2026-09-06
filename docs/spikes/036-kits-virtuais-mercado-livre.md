@@ -144,6 +144,32 @@ Confirmações pontuais:
 só entra se esses anúncios forem migrados para User Products (caminho que o ADR-0088 e
 `reconciliar-convergencia-up` já trilham para outra finalidade).
 
+### O CREATE está liberado nas duas contas (sonda de 2026-09-06)
+
+A doc avisa que parceiro não certificado precisa cadastrar o usuário num formulário antes de criar
+kits. Isso era o único bloqueio capaz de matar a feature, e a busca respondendo `200` não provava
+nada sobre o `POST`.
+
+Sonda: `POST /items/kits` com payload **deliberadamente inválido** (1 componente — o ML exige no
+mínimo 2 —, sem `thumbnail` e sem `price`). Um payload que viola regra dura não cria anúncio; serve
+só para revelar se existe um gate de certificação **antes** da validação de campos.
+
+As duas contas responderam igual:
+
+```
+HTTP 400
+{"message":"Validation failed for one or more fields","error":"bad_request",
+ "status":400,"cause":["thumbnail must not be null"]}
+```
+
+`400` de validação, não `403` de certificação — o endpoint está autorizado em AVILBV e em
+$ANALISTA$. Nenhum kit foi criado. A validação é sequencial (parou no `thumbnail` antes de checar a
+contagem de componentes), então a sonda **não** prova o mínimo de 2; prova o que importava.
+
+Continuam em aberto, e só um kit real responde: como o ML expande o `family_name` no `title` (e se
+o resultado pode estourar 60 caracteres), se um kit `closed` ainda conta para a regra de kit
+duplicado, e se `quantity` na order do componente vem em unidades ou em kits.
+
 ### Não confunde com o ADR-0151
 
 O "kit vinculado" que entrou em produção em 2026-09-03 ([ADR-0151](../decisions/0151-kit-vinculado-a-partir-de-produto-existente.md))
