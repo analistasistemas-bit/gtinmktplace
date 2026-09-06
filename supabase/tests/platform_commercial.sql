@@ -1,5 +1,15 @@
 \set ON_ERROR_STOP on
 
+do $$
+begin
+  if current_database() <> 'codex_platform_admin_test_20260906' then
+    raise exception 'platform_commercial.sql only runs in the dedicated test database';
+  end if;
+  if inet_server_addr() is not null and not (inet_server_addr() <<= inet '127.0.0.0/8') then
+    raise exception 'platform_commercial.sql requires a local PostgreSQL server';
+  end if;
+end $$;
+
 drop schema if exists public cascade;
 create schema public;
 grant all on schema public to postgres, supabase_admin;
@@ -32,6 +42,70 @@ insert into public.organizations (id, nome, slug) values
 insert into public.profiles (id, is_super_admin, is_active) values
   ('80000000-0000-0000-0000-000000000001', true, true),
   ('80000000-0000-0000-0000-000000000002', false, true);
+
+do $$
+declare
+  v_input jsonb;
+begin
+  foreach v_input in array array[
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'modality', 2, 'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'centavos ausentes'
+    ),
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'modality', 2, 'monthly_fee_cents', 1.5, 'revenue_bps', 700, 'sonar_unit_cents', 0,
+      'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'centavos decimais'
+    ),
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'modality', 2, 'monthly_fee_cents', 9007199254740992, 'revenue_bps', 700, 'sonar_unit_cents', 0,
+      'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'centavos inseguros'
+    ),
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'modality', 1.5, 'monthly_fee_cents', 0, 'revenue_bps', 700, 'sonar_unit_cents', 0,
+      'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'modalidade decimal'
+    ),
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'modality', 2, 'monthly_fee_cents', 0, 'revenue_bps', 0.5, 'sonar_unit_cents', 0,
+      'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'percentual decimal'
+    ),
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'modality', 2, 'monthly_fee_cents', 0, 'revenue_bps', 0, 'sonar_unit_cents', 0,
+      'setup_fee_cents', 1, 'reason', 'setup sem competência'
+    ),
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'modality', 2, 'monthly_fee_cents', 0, 'revenue_bps', 0, 'sonar_unit_cents', 0,
+      'setup_fee_cents', 1, 'setup_due_month', '2026-13', 'reason', 'setup inválido'
+    )
+  ] loop
+    begin
+      perform public.platform_save_terms('80000000-0000-0000-0000-000000000001', v_input);
+      raise exception 'invalid numeric input was accepted: %', v_input;
+    exception when sqlstate '22023' then null;
+    end;
+  end loop;
+end $$;
+
+do $$
+begin
+  begin
+    insert into public.platform_commercial_terms (
+      org_id, starts_on, modality, monthly_fee_cents, revenue_bps,
+      sonar_unit_cents, setup_fee_cents, setup_due_month, reason, created_by, version
+    ) values (
+      '90000000-0000-0000-0000-000000000001', '2026-10-01', 2, 9007199254740992, 0,
+      0, 0, null, 'centavos inseguros direto', '80000000-0000-0000-0000-000000000001', 1
+    );
+    raise exception 'unsafe direct cents were allowed';
+  exception when check_violation then null;
+  end;
+end $$;
 
 do $$
 begin

@@ -31,4 +31,20 @@ describe('validateTerms', () => {
   it('rejeita vigência que não começa no primeiro dia do mês', () => {
     expect(() => validateTerms({ ...valid, starts_on: '2026-10-15' })).toThrow();
   });
+
+  it('rejeita centavos decimais, ausentes ou fora do inteiro seguro', () => {
+    expect(() => validateTerms({ ...valid, monthly_fee_cents: 1.5 })).toThrow();
+    expect(() => validateTerms({ ...valid, sonar_unit_cents: Number.MAX_SAFE_INTEGER + 1 })).toThrow();
+    expect(() => validateTerms({ ...valid, setup_fee_cents: undefined })).toThrow();
+  });
+
+  it('rejeita modalidade e percentual decimais', () => {
+    expect(() => validateTerms({ ...valid, modality: 1.5 })).toThrow();
+    expect(() => validateTerms({ ...valid, revenue_bps: 0.5 })).toThrow();
+  });
+
+  it('exige competência mensal válida para implantação cobrada', () => {
+    expect(() => validateTerms({ ...valid, setup_fee_cents: 1, setup_due_month: null })).toThrow();
+    expect(() => validateTerms({ ...valid, setup_fee_cents: 1, setup_due_month: '2026-13' })).toThrow();
+  });
 });

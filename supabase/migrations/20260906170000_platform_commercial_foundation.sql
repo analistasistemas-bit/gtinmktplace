@@ -5,10 +5,10 @@ create table public.platform_commercial_terms (
   org_id uuid not null references public.organizations(id) on delete restrict,
   starts_on date not null check (starts_on = date_trunc('month', starts_on)::date),
   modality smallint not null check (modality in (1, 2)),
-  monthly_fee_cents bigint not null check (monthly_fee_cents >= 0),
+  monthly_fee_cents bigint not null check (monthly_fee_cents between 0 and 9007199254740991),
   revenue_bps integer not null check (revenue_bps between 0 and 10000),
-  sonar_unit_cents bigint not null check (sonar_unit_cents >= 0),
-  setup_fee_cents bigint not null check (setup_fee_cents >= 0),
+  sonar_unit_cents bigint not null check (sonar_unit_cents between 0 and 9007199254740991),
+  setup_fee_cents bigint not null check (setup_fee_cents between 0 and 9007199254740991),
   setup_due_month date,
   reason text not null check (length(btrim(reason)) > 0),
   timezone text not null default 'America/Fortaleza' check (timezone = 'America/Fortaleza'),
@@ -84,6 +84,11 @@ declare
   v_setup_fee bigint;
   v_setup_due date;
   v_reason text;
+  v_modality_text text;
+  v_monthly_fee_text text;
+  v_revenue_bps_text text;
+  v_sonar_unit_text text;
+  v_setup_fee_text text;
   v_version integer;
   v_term public.platform_commercial_terms%rowtype;
   v_next_month date := (date_trunc('month', now() at time zone 'America/Fortaleza') + interval '1 month')::date;
@@ -102,20 +107,49 @@ begin
   begin
     v_org_id := (p_input->>'org_id')::uuid;
     v_starts_on := (p_input->>'starts_on')::date;
-    v_modality := (p_input->>'modality')::smallint;
-    v_monthly_fee := (p_input->>'monthly_fee_cents')::bigint;
-    v_revenue_bps := (p_input->>'revenue_bps')::integer;
-    v_sonar_unit := (p_input->>'sonar_unit_cents')::bigint;
-    v_setup_fee := (p_input->>'setup_fee_cents')::bigint;
-    v_reason := btrim(p_input->>'reason');
   exception when others then
     raise exception 'Invalid commercial terms input' using errcode = '22023';
   end;
 
+  v_modality_text := p_input->>'modality';
+  v_monthly_fee_text := p_input->>'monthly_fee_cents';
+  v_revenue_bps_text := p_input->>'revenue_bps';
+  v_sonar_unit_text := p_input->>'sonar_unit_cents';
+  v_setup_fee_text := p_input->>'setup_fee_cents';
+
+  if v_org_id is null or v_starts_on is null
+    or jsonb_typeof(p_input->'modality') is distinct from 'number'
+    or v_modality_text !~ '^(0|[1-9][0-9]*)$'
+    or v_modality_text not in ('1', '2')
+    or jsonb_typeof(p_input->'revenue_bps') is distinct from 'number'
+    or v_revenue_bps_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_revenue_bps_text) > 5
+    or jsonb_typeof(p_input->'monthly_fee_cents') is distinct from 'number'
+    or v_monthly_fee_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_monthly_fee_text) > 16
+    or (length(v_monthly_fee_text) = 16 and v_monthly_fee_text > '9007199254740991')
+    or jsonb_typeof(p_input->'sonar_unit_cents') is distinct from 'number'
+    or v_sonar_unit_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_sonar_unit_text) > 16
+    or (length(v_sonar_unit_text) = 16 and v_sonar_unit_text > '9007199254740991')
+    or jsonb_typeof(p_input->'setup_fee_cents') is distinct from 'number'
+    or v_setup_fee_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_setup_fee_text) > 16
+    or (length(v_setup_fee_text) = 16 and v_setup_fee_text > '9007199254740991')
+    or jsonb_typeof(p_input->'reason') is distinct from 'string' then
+    raise exception 'Invalid commercial terms input' using errcode = '22023';
+  end if;
+
+  v_modality := v_modality_text::smallint;
+  v_monthly_fee := v_monthly_fee_text::bigint;
+  v_revenue_bps := v_revenue_bps_text::integer;
+  v_sonar_unit := v_sonar_unit_text::bigint;
+  v_setup_fee := v_setup_fee_text::bigint;
+  v_reason := btrim(p_input->>'reason');
+
   if v_starts_on <> date_trunc('month', v_starts_on)::date or v_starts_on < v_next_month
-    or v_modality not in (1, 2)
-    or v_monthly_fee < 0 or v_revenue_bps not between 0 and 10000
-    or v_sonar_unit < 0 or v_setup_fee < 0 or v_reason is null or v_reason = '' then
+    or v_revenue_bps not between 0 and 10000
+    or v_reason is null or v_reason = '' then
     raise exception 'Invalid commercial terms input' using errcode = '22023';
   end if;
 
@@ -125,7 +159,8 @@ begin
     end if;
     v_setup_due := null;
   else
-    if (p_input->>'setup_due_month') !~ '^\\d{4}-(0[1-9]|1[0-2])$' then
+    if jsonb_typeof(p_input->'setup_due_month') is distinct from 'string'
+      or (p_input->>'setup_due_month') !~ '^\\d{4}-(0[1-9]|1[0-2])$' then
       raise exception 'setup_due_month must be YYYY-MM' using errcode = '22023';
     end if;
     v_setup_due := ((p_input->>'setup_due_month') || '-01')::date;
