@@ -1,7 +1,7 @@
 # Spike 036 — Kits Virtuais do Mercado Livre (pesquisa para futura feature)
 
 **Status:** spike (pesquisa, não implementação — nenhuma decisão tomada)
-**Data:** 2026-07-24
+**Data:** 2026-07-24 · **contrato de API verificado em 2026-09-06**
 **Relacionado:** [ADR-0088](../decisions/0088-publicacao-user-products-multi-item.md) (user products/item plano), [ADR-0084/0087](../decisions/) (item plano), [ADR-0063](../decisions/0063-publicacao-kit-preco-categoria-concorrencia.md)/[0071](../decisions/0071-units-per-pack-forca-sale-format-kit.md)/[0073](../decisions/0073-cores-conta-como-unidade-no-kit.md) (SALE_FORMAT=Kit — feature diferente, ver colisão de nome abaixo)
 
 ## 1. Gatilho
@@ -28,44 +28,65 @@ kit combina itens distintos — ex.: "Fernet + 2 Cocas".
   descrição e imagem são editáveis
 - Venda de um kit gera **1 pedido por componente**, todos linkados entre si
 
-### Não verificado — fonte única, baixa confiança
+### Contrato da API — verificado contra a doc oficial (2026-09-06)
 
-A doc oficial (`developers.mercadolivre.com.br/pt_br/kits-virtuais`) bloqueou fetch direto (403).
-Consegui o conteúdo só via proxy de leitura (jina.ai) processado por um resumidor — os endpoints
-exatos e o payload JSON abaixo **não foram cross-verificados** e não devem ser tratados como
-contrato final:
+Fonte: `developers.mercadolivre.com.br/pt_br/kits-virtuais` (bloqueia fetch autenticado com 403;
+lida com user-agent de navegador e conferida no HTML cru, não em resumo). Rodapé da própria
+página: **última atualização 30/01/2026**; recurso **em produção desde outubro de 2025**.
 
-```
-POST /users/$SELLER_ID/kits/components/search   — busca componentes elegíveis
-POST /items/kits                                — cria o kit
-GET  /user-products/$USER_PRODUCT_ID             — nó "bundle" se for kit
-GET  /user-products/$USER_PRODUCT_ID/bundles     — kits que contêm esse produto
-PUT  /items/$ITEM_ID                             — edita campos editáveis
-GET/PUT /items/$ITEM_ID/bundle/prices_configuration — sync de desconto automático
-GET  /user-products/$USER_PRODUCT_ID/stock       — estoque calculado
-GET  /orders/$ORDER_ID/bundle                    — detalhe do pedido do kit
-```
+| Operação | Método + path |
+|---|---|
+| Buscar componentes elegíveis | `POST /users/$SELLER_ID/kits/components/search?searchText=&limit=` |
+| Criar kit | `POST /items/kits` |
+| Ver se um UP é kit | `GET /user-products/$USER_PRODUCT_ID` (tag `bundle`, nó `bundle.type = "kit"`) |
+| Kits que contêm um UP | `GET /user-products/$USER_PRODUCT_ID/bundles` |
+| Editar condições de venda | `PUT /items/$ITEM_ID` |
+| Preço de venda vigente | `GET /items/$ITEM_ID/sale_price?context=channel_marketplace` |
+| Ler/gravar desconto automático | `GET`/`PUT /items/$ITEM_ID/bundle/prices_configuration` |
+| Estoque calculado | `GET /user-products/$USER_PRODUCT_ID/stock` |
+| Pedidos irmãos de uma venda de kit | `GET /orders/$ORDER_ID/bundle` |
 
-payload de criação (não verificado):
+Payload de criação (confirmado; o do rascunho anterior estava certo):
+
 ```json
 {
-  "family_name": "Nome do kit",
+  "family_name": "Kit Aventura: 1 Motosserra + 1 Canivete",
   "channels": ["marketplace"],
-  "thumbnail": { "id": "..." },
+  "thumbnail": { "id": "981862-MLA82943132520_032025" },
   "price": 2001,
   "currency_id": "BRL",
   "listing_type_id": "gold_pro",
+  "official_store_id": null,
   "bundle": {
     "type": "kit",
     "components": [
-      { "type": "user_product", "user_product_id": "MLBU...", "quantity": 1, "automatic_price": null }
+      { "type": "user_product", "user_product_id": "MLBU3256534109", "quantity": 1, "automatic_price": null }
     ]
   }
 }
 ```
 
-**Antes de qualquer implementação, confirmar isso contra a doc oficial autenticada (login do
-Diego no dev portal) ou testando direto na API.**
+Regras confirmadas na doc:
+
+- 2 a 6 produtos distintos, no máximo 10 unidades de cada.
+- Só `item_condition = "new"`; kit duplicado (mesmos componentes e quantidades) é recusado.
+- O **primeiro componente da lista é o principal** — dele vêm categoria e `domain_id`.
+- Composição, quantidades, canal, estoque, frete e `domain_id` são **imutáveis** após publicar
+  (`PUT` no nó `bundle` devolve 400 `"Updating the bundle node is not allowed"`). Editáveis:
+  preço (só sem `automatic_price`), título (só antes da 1ª venda), descrição, imagem e
+  `listing_type_id`.
+- Preço automático: `automatic_price.discount` decimal (0–1), **idêntico em todos os
+  componentes**; nesse modo o campo `price` é omitido. Preço vigente só pelo `/sale_price`, que
+  devolve o rateio por componente (`unit_amount`/`total_amount`) — é o que a contabilidade de
+  margem precisaria consumir.
+- Estoque = mínimo de `estoque_componente / quantidade_no_kit`; chegando a 0 o kit é pausado
+  (`sub_status = "out_of_stock"`, comportamento padrão, nada específico de kit).
+- Componentes ganham a tag `kit_component`; o item kit ganha a tag `bundle`.
+- Kit em Full **não tem `inventory_id`**.
+- Uma venda de kit gera **1 order por componente**, ligadas por `pack_id`; cada order traz
+  `bundle.parent_item` apontando para o item kit e a tag `bundle_component`.
+- Parceiro não certificado precisa cadastrar o usuário de teste num formulário do ML antes de
+  conseguir criar kits.
 
 ## 3. Cruzamento com o domínio atual do PubliAI
 
@@ -92,12 +113,24 @@ A doc de User Products (`developers.mercadolivre.com.br/pt_br/user-products`) su
 `item_id ↔ user_product_id` é 1:1 por padrão antes de uma "ativação" — o que indicaria que todo
 item tem um `user_product_id`, mas isso precisa ser confirmado na prática, não assumido.
 
+### Não confunde com o ADR-0151
+
+O "kit vinculado" que entrou em produção em 2026-09-03 ([ADR-0151](../decisions/0151-kit-vinculado-a-partir-de-produto-existente.md))
+é **N unidades do mesmo produto** (`SALE_FORMAT=Kit`/`UNITS_PER_PACK=N`, estoque derivado por
+`floor(estoque_base/N)`) — anúncio novo montado pelo PubliAI, sem nenhum recurso de kit do ML. O
+Kit Virtual é **produtos distintos** agrupados pelo próprio ML, com estoque e pedidos calculados
+do lado dele. São features independentes; uma não implementa a outra.
+
 ## 4. Decisão
 
 Nenhuma. Diego optou por só registrar a pesquisa por ora — retomar com Fase 1 (Define) completa
 quando houver decisão de avançar. Próximos passos possíveis (não iniciados):
 
-1. Validar o contrato real da API (endpoints exatos + `user_product_id` em item não-plano)
+1. **Único bloqueio que resta:** confirmar na prática que os anúncios publicados por
+   `variations[]` (a maioria do catálogo) aparecem como componentes elegíveis — rodar
+   `POST /users/$SELLER_ID/kits/components/search` com `only_eligible` na conta real e ler o campo
+   `reasons` dos produtos recusados. Se só o subconjunto item-plano ([ADR-0088](../decisions/0088-publicacao-user-products-multi-item.md))
+   for elegível, a feature nasce restrita.
 2. Desenhar 2-3 abordagens de arquitetura (nova tela "Kits", fluxo de composição fora do
    pipeline de planilha/família, ponto de integração com `ChannelConnector`/`anuncios_externos`)
 3. Aprovação do design antes de qualquer código
