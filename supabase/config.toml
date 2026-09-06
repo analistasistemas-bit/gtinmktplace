@@ -53,6 +53,15 @@ verify_jwt = true
 # ADR-0154: busca de componentes candidatos a Kit Virtual. Chamada pelo APP com o JWT do admin.
 [functions.buscar-componentes-kit-virtual]
 verify_jwt = true
+# ADR-0154: preview do kit (título, rateio, margem, descrição IA opt-in). Idem, JWT do admin.
+[functions.preview-kit-virtual]
+verify_jwt = true
+# ADR-0154: publica o kit no ML. Idem, JWT do admin — publicação sempre tem operador por trás.
+[functions.criar-kit-virtual]
+verify_jwt = true
+# ADR-0154: encerra o kit no ML (metade do "Refazer", D-8). Idem, JWT do admin.
+[functions.encerrar-kit-virtual]
+verify_jwt = true
 [functions.entrada-estoque]
 verify_jwt = true
 # ADR-0110: ajuste/zeragem de saldo. Chamada pelo APP com o JWT do admin.
