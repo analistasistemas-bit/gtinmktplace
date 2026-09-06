@@ -356,6 +356,35 @@ describe('mapearPedidoParaVenda', () => {
     expect(venda.estorno).toBeNull();
     expect(venda.money_release_date).toBeNull();
   });
+
+  // ADR-0154 D-10: order de componente de Kit Virtual traz `bundle.parent_item.id` — o id do kit
+  // nunca aparece em order_items[].item.id, só aqui. Faturamento intocado: só extrai e devolve.
+  it('order de componente de Kit Virtual: kit_item_id vem de bundle.parent_item.id', () => {
+    const pedido = {
+      ...pedidoBase,
+      order_items: [{
+        ...pedidoBase.order_items[0],
+        bundle: { parent_item: { id: 'MLA666667' }, components: null },
+        tags: ['pack_order', 'bundle_component'],
+      }],
+    };
+    const { venda } = mapearPedidoParaVenda(pedido, { idsPubliai: new Set(), codigoResolver: () => null });
+    expect(venda.kit_item_id).toBe('MLA666667');
+  });
+
+  it('pedido normal sem bundle: kit_item_id é null', () => {
+    const { venda } = mapearPedidoParaVenda(pedidoBase, { idsPubliai: new Set(), codigoResolver: () => null });
+    expect(venda.kit_item_id).toBeNull();
+  });
+
+  it('bundle presente mas sem parent_item: kit_item_id null, sem lançar', () => {
+    const pedido = {
+      ...pedidoBase,
+      order_items: [{ ...pedidoBase.order_items[0], bundle: { parent_item: null, components: null } }],
+    };
+    const { venda } = mapearPedidoParaVenda(pedido, { idsPubliai: new Set(), codigoResolver: () => null });
+    expect(venda.kit_item_id).toBeNull();
+  });
 });
 
 // Incidente 2026-08-11 (org DSA): o anúncio não estava em idsPubliai (catálogo filtrado por

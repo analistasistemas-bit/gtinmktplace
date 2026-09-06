@@ -99,6 +99,9 @@ export interface VendaRow {
   currency: string;
   shipping_id: number | null;
   is_publiai: boolean;
+  /** ADR-0154 D-10: item_id do Kit Virtual (bundle.parent_item.id de um order_item). null =
+   *  venda comum, sem componente de kit. Só um badge; faturamento não usa este campo. */
+  kit_item_id: string | null;
 }
 
 /** Dados do pagamento vindos do Mercado Pago (ADR-0038), por payment id. */
@@ -153,6 +156,10 @@ export interface PedidoML {
     quantity?: number | null;
     unit_price?: number | null;
     sale_fee?: number | null;
+    /** ADR-0154 D-10: presente só em order de componente de Kit Virtual. `parent_item.id` é o
+     *  item_id do kit — nunca aparece em `item.id` de nenhuma order. */
+    bundle?: { parent_item?: { id?: string | null } | null } | null;
+    tags?: string[] | null;
   }> | null;
   payments?: Array<{ id?: number | string | null } | null> | null;
 }
@@ -255,6 +262,9 @@ export function mapearPedidoParaVenda(
   const itensRaw = pedido.order_items ?? [];
   let saleFeeTotal = 0;
   let isPubliai = false;
+  // ADR-0154 D-10: id do Kit Virtual, se a order for de um componente. Não agrupa nem casa SKU —
+  // só extrai o que o ML já manda em bundle.parent_item.
+  const kitItemId = itensRaw.map((oi) => oi?.bundle?.parent_item?.id).find((id) => id != null) ?? null;
 
   const itens: VendaItemRow[] = itensRaw.map((oi) => {
     const mlItemId = oi?.item?.id ?? null;
@@ -351,6 +361,7 @@ export function mapearPedidoParaVenda(
     currency: pedido.currency_id ?? 'BRL',
     shipping_id: num(pedido.shipping?.id ?? null),
     is_publiai: isPubliai,
+    kit_item_id: kitItemId,
   };
 
   return { venda, itens };
