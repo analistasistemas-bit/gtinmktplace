@@ -39,6 +39,12 @@ export interface ComponenteCandidatoKitVirtual {
   origem: 'nacional' | 'importado' | null;
   /** ADR-0154 D-9: não-null quando o próprio candidato é um kit vinculado (ADR-0151). */
   kitMultiplicador: number | null;
+  /** Preço de venda ATUAL no ML, lido pela própria edge (service_role, org-scoped) — null quando
+   *  o candidato não casou com item local. Pré-preenche o campo editável da composição. */
+  precoAtualML: number | null;
+  /** `category_id` do ML, idem. `preview-kit-virtual` exige isto do PRINCIPAL (ordem 0) — sem
+   *  ele, o produto não pode liderar a composição (ver DialogCriarKitVirtual). */
+  categoriaMlId: string | null;
 }
 
 export interface ResultadoBuscarComponentesKitVirtual {
@@ -60,6 +66,8 @@ interface ComponenteWire {
   custo: number | null;
   origem: 'nacional' | 'importado' | null;
   kit_multiplicador: number | null;
+  preco_atual_ml: number | null;
+  categoria_ml_id: string | null;
 }
 
 function componenteFromWire(c: ComponenteWire): ComponenteCandidatoKitVirtual {
@@ -77,6 +85,8 @@ function componenteFromWire(c: ComponenteWire): ComponenteCandidatoKitVirtual {
     custo: c.custo,
     origem: c.origem,
     kitMultiplicador: c.kit_multiplicador,
+    precoAtualML: c.preco_atual_ml,
+    categoriaMlId: c.categoria_ml_id,
   };
 }
 
@@ -269,25 +279,27 @@ export async function criarKitVirtualEdge(input: {
   };
 }
 
-// ─── Catálogo local best-effort, fornecido por quem embute o diálogo (Publicados já carrega
-// preço e categoria de cada família para a própria tabela — ver nota de divergência no plano de
-// entrega) ───────────────────────────────────────────────────────────────────────────────────
+// ─── subir-foto-kit-virtual (ADR-0154 D-5/ADR-0033) ────────────────────────────────────────────
+// Sobe a foto ao ML no momento do upload no diálogo, não no clique de publicar — a propagação é
+// assíncrona e um picture_id recém-criado costuma ser recusado por minutos. `criar-kit-virtual`
+// mantém o upload como fallback (rede de segurança) quando esta chamada falha ou não roda.
 
-export interface CatalogoOrgParaKitVirtual {
-  /** `codigo` (SKU da variação) → preço de venda conhecido pelo app. Só pré-preenche o campo
-   *  editável de "preço atual no ML" da composição; nunca é enviado sem confirmação do
-   *  operador, e a ausência de entrada não bloqueia nada. */
-  precoPorCodigo: Record<string, number>;
-  /** `codigo_pai` → `categoria_ml_id` conhecida pelo app. Decide se o produto pode ser o
-   *  PRINCIPAL do kit (ordem 0): `preview-kit-virtual` exige `categoria_ml_id` e devolve 400
-   *  sem ele — sem entrada aqui, o produto não pode liderar a composição (ver DialogCriarKitVirtual). */
-  categoriaMlIdPorCodigoPai: Record<string, string>;
+export type ResultadoSubirFotoKitVirtual =
+  | { ok: true; pictureId: string }
+  | { ok: false; mensagem: string };
+
+export async function subirFotoKitVirtualEdge(fotoStoragePath: string): Promise<ResultadoSubirFotoKitVirtual> {
+  const { data, error } = await supabase.functions.invoke('subir-foto-kit-virtual', {
+    body: { foto_storage_path: fotoStoragePath },
+  });
+  if (error) {
+    const detalhe = await corpoDoErroDaEdge(error);
+    const mensagem = (detalhe && typeof detalhe.corpo.error === 'string' ? detalhe.corpo.error : undefined) ?? error.message;
+    return { ok: false, mensagem };
+  }
+  const d = data as { picture_id: string };
+  return { ok: true, pictureId: d.picture_id };
 }
-
-export const CATALOGO_ORG_VAZIO: CatalogoOrgParaKitVirtual = {
-  precoPorCodigo: {},
-  categoriaMlIdPorCodigoPai: {},
-};
 
 // ─── Composição em edição no diálogo (estado compartilhado entre a lista e o preview) ────────
 

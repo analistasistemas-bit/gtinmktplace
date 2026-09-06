@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { DialogCriarKitVirtual } from '../DialogCriarKitVirtual';
 import type {
   ComponenteCandidatoKitVirtual, PreviewKitVirtualResultado, ResultadoCriarKitVirtual,
-  ResultadoBuscarComponentesKitVirtual, CatalogoOrgParaKitVirtual,
+  ResultadoBuscarComponentesKitVirtual, ResultadoSubirFotoKitVirtual,
 } from '@/lib/kit-virtual';
 
 vi.mock('sonner', () => ({
@@ -32,6 +32,8 @@ if (typeof URL.revokeObjectURL !== 'function') {
 const buscarComponentesMock = vi.fn<(searchText?: string) => Promise<ResultadoBuscarComponentesKitVirtual>>();
 const previewMock = vi.fn();
 const criarMock = vi.fn<(input: unknown) => Promise<ResultadoCriarKitVirtual>>();
+const subirFotoMlMock = vi.fn<(path: string) => Promise<ResultadoSubirFotoKitVirtual>>()
+  .mockResolvedValue({ ok: true, pictureId: 'PIC-123' });
 vi.mock('@/lib/kit-virtual', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/kit-virtual')>();
   return {
@@ -39,6 +41,7 @@ vi.mock('@/lib/kit-virtual', async (importOriginal) => {
     buscarComponentesKitVirtual: (searchText?: string) => buscarComponentesMock(searchText),
     previewKitVirtual: (input: unknown) => previewMock(input),
     criarKitVirtualEdge: (input: unknown) => criarMock(input),
+    subirFotoKitVirtualEdge: (path: string) => subirFotoMlMock(path),
   };
 });
 
@@ -70,21 +73,23 @@ function candidato(over: Partial<ComponenteCandidatoKitVirtual> = {}): Component
     userProductId: 'UP-A', itemId: 'MLB1', title: 'Motosserra Elétrica', type: 'available',
     thumbnailUrl: null, categoryName: 'Ferramentas', estoque: 20,
     reasons: [], codigo: '00000001', codigoPai: '00000001', custo: 40, origem: 'nacional',
-    kitMultiplicador: null, ...over,
+    kitMultiplicador: null, precoAtualML: 100, categoriaMlId: 'MLB1234', ...over,
   };
 }
 
-const PRODUTO_A = candidato({ userProductId: 'UP-A', title: 'Motosserra Elétrica', codigo: '00000001', codigoPai: '00000001' });
-const PRODUTO_B = candidato({ userProductId: 'UP-B', title: 'Canivete Retrátil', codigo: '00000002', codigoPai: '00000002' });
+const PRODUTO_A = candidato({
+  userProductId: 'UP-A', title: 'Motosserra Elétrica', codigo: '00000001', codigoPai: '00000001',
+  precoAtualML: 100, categoriaMlId: 'MLB1234',
+});
+const PRODUTO_B = candidato({
+  userProductId: 'UP-B', title: 'Canivete Retrátil', codigo: '00000002', codigoPai: '00000002',
+  precoAtualML: 50, categoriaMlId: 'MLB5678',
+});
 const INELEGIVEL = candidato({
   userProductId: 'UP-C', title: 'Linha Várias Cores', type: 'non_available', codigo: null, codigoPai: null,
+  precoAtualML: null, categoriaMlId: null,
   reasons: [{ id: 'COMPONENT_NOT_MIGRATED_TO_UP', message: 'Não está atualizado para a nova experiência de variações' }],
 });
-
-const CATALOGO: CatalogoOrgParaKitVirtual = {
-  precoPorCodigo: { '00000001': 100, '00000002': 50 },
-  categoriaMlIdPorCodigoPai: { '00000001': 'MLB1234', '00000002': 'MLB5678' },
-};
 
 function mockBusca(elegiveis = [PRODUTO_A, PRODUTO_B], inelegiveis = [INELEGIVEL]) {
   buscarComponentesMock.mockResolvedValue({ elegiveis, inelegiveis });
@@ -103,12 +108,12 @@ function mockPreview(resultado: Partial<PreviewKitVirtualResultado> = {}) {
   }));
 }
 
-function renderDialog(catalogoOrg: CatalogoOrgParaKitVirtual = CATALOGO) {
+function renderDialog() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onOpenChange = vi.fn();
   render(
     <QueryClientProvider client={qc}>
-      <DialogCriarKitVirtual open onOpenChange={onOpenChange} catalogoOrg={catalogoOrg} />
+      <DialogCriarKitVirtual open onOpenChange={onOpenChange} />
     </QueryClientProvider>,
   );
   return { onOpenChange };
@@ -294,12 +299,52 @@ describe('DialogCriarKitVirtual — publicar', () => {
   });
 });
 
+describe('DialogCriarKitVirtual — foto sobe ao ML no upload, não no publicar (ADR-0154 D-5/ADR-0033)', () => {
+  it('picture_id do upload viaja para o publicar', async () => {
+    mockBusca();
+    mockPreview();
+    criarMock.mockResolvedValue({
+      ok: true, kitId: 'kit-1', mlItemId: 'MLB1', mlUserProductId: null, mlPermalink: null, jaExistia: false,
+    });
+    renderDialog();
+
+    await selecionarDoisComponentes();
+    await anexarFoto();
+    await waitFor(() => expect(subirFotoMlMock).toHaveBeenCalledWith(expect.stringContaining('kit-virtual-')));
+
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publicar kit' })).not.toBeDisabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Publicar kit' }));
+
+    await waitFor(() => expect(criarMock).toHaveBeenCalledWith(expect.objectContaining({ fotoMlPictureId: 'PIC-123' })));
+  });
+
+  it('falha do upload ao ML não trava o diálogo — publicar segue habilitado, sem picture_id (fallback do publicar cobre)', async () => {
+    subirFotoMlMock.mockResolvedValueOnce({ ok: false, mensagem: 'Falha ao subir foto (400): recusado' });
+    mockBusca();
+    mockPreview();
+    criarMock.mockResolvedValue({
+      ok: true, kitId: 'kit-1', mlItemId: 'MLB1', mlUserProductId: null, mlPermalink: null, jaExistia: false,
+    });
+    renderDialog();
+
+    await selecionarDoisComponentes();
+    await anexarFoto();
+    await waitFor(() => expect(subirFotoMlMock).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publicar kit' })).not.toBeDisabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Publicar kit' }));
+
+    await waitFor(() => expect(criarMock).toHaveBeenCalledWith(expect.objectContaining({ fotoMlPictureId: null })));
+  });
+});
+
 describe('DialogCriarKitVirtual — categoria não resolvida bloqueia só quem lidera', () => {
   it('produto sem categoria conhecida não pode ser principal', async () => {
-    // codigo '00000001' reaproveita o preço conhecido do catálogo (CATALOGO.precoPorCodigo) —
-    // só o codigo_pai é novo, pra isolar exatamente o que este teste cobre: categoria não
-    // resolvida, sem also derrubar `precosValidos`.
-    const semCategoria = candidato({ userProductId: 'UP-D', title: 'Produto Sem Categoria', codigo: '00000001', codigoPai: '00000009' });
+    // categoriaMlId: null isola exatamente o que este teste cobre — precoAtualML continua
+    // preenchido pra não também derrubar `precosValidos`.
+    const semCategoria = candidato({ userProductId: 'UP-D', title: 'Produto Sem Categoria', categoriaMlId: null });
     mockBusca([semCategoria, PRODUTO_B], []);
     renderDialog();
 

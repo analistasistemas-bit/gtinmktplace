@@ -110,7 +110,7 @@ describe('buscarTodosComponentes — paginação', () => {
 describe('enriquecerComponentes', () => {
   it('casa produto local via ponte user_product_id -> item_id -> catálogo', () => {
     const candidatos = [candidato({ userProductId: 'UP-1' })];
-    const bridges: ItemBridge[] = [{ itemId: 'MLB1', userProductId: 'UP-1' }];
+    const bridges: ItemBridge[] = [{ itemId: 'MLB1', userProductId: 'UP-1', precoAtualML: 99.9, categoriaMlId: 'MLB1234' }];
     const catalogo: CatalogoLocalItem[] = [{
       itemId: 'MLB1', codigo: '00000010', codigoPai: '00000001', custo: 12.5, origem: 'nacional', kitMultiplicador: null,
     }];
@@ -118,6 +118,7 @@ describe('enriquecerComponentes', () => {
     expect(r[0]).toMatchObject({
       userProductId: 'UP-1', itemId: 'MLB1', codigo: '00000010', codigoPai: '00000001',
       custo: 12.5, origem: 'nacional', kitMultiplicador: null,
+      precoAtualML: 99.9, categoriaMlId: 'MLB1234',
     });
   });
 
@@ -126,7 +127,19 @@ describe('enriquecerComponentes', () => {
     const r = enriquecerComponentes(candidatos, [], []);
     expect(r[0]).toMatchObject({
       itemId: null, codigo: null, codigoPai: null, custo: null, origem: null, kitMultiplicador: null,
+      precoAtualML: null, categoriaMlId: null,
     });
+  });
+
+  it('ponte casa mas o ML não devolveu price/category_id: os dois vêm null, nunca 0/string vazia', () => {
+    const candidatos = [candidato({ userProductId: 'UP-4' })];
+    const bridges: ItemBridge[] = [{ itemId: 'MLB4', userProductId: 'UP-4', precoAtualML: null, categoriaMlId: null }];
+    const catalogo: CatalogoLocalItem[] = [{
+      itemId: 'MLB4', codigo: '00000040', codigoPai: '00000004', custo: 5, origem: 'nacional', kitMultiplicador: null,
+    }];
+    const r = enriquecerComponentes(candidatos, bridges, catalogo);
+    expect(r[0].precoAtualML).toBeNull();
+    expect(r[0].categoriaMlId).toBeNull();
   });
 
   it('item plano casa mas sem custo local (variação sem custo cadastrado): custo é null, NUNCA 0', () => {
@@ -144,7 +157,7 @@ describe('enriquecerComponentes', () => {
 
   it('anexa kit_multiplicador quando o componente é um kit vinculado (D-9)', () => {
     const candidatos = [candidato({ userProductId: 'UP-KIT' })];
-    const bridges: ItemBridge[] = [{ itemId: 'MLB-KIT', userProductId: 'UP-KIT' }];
+    const bridges: ItemBridge[] = [{ itemId: 'MLB-KIT', userProductId: 'UP-KIT', precoAtualML: 30, categoriaMlId: 'MLB1' }];
     const catalogo: CatalogoLocalItem[] = [{
       itemId: 'MLB-KIT', codigo: '00000030-K3', codigoPai: '00000030', custo: 30, origem: 'nacional', kitMultiplicador: 3,
     }];
@@ -210,10 +223,13 @@ describe('buscarComponentesKitVirtual — orquestração', () => {
     const deps = depsFake({
       candidatos: [candidato({ userProductId: 'UP-1' })],
       itemIdsLocais: ['MLB1'],
-      bridges: [{ itemId: 'MLB1', userProductId: 'UP-1' }],
+      bridges: [{ itemId: 'MLB1', userProductId: 'UP-1', precoAtualML: 149.9, categoriaMlId: 'MLB1234' }],
       catalogo: [{ itemId: 'MLB1', codigo: '001', codigoPai: '000', custo: 9.9, origem: 'nacional', kitMultiplicador: null }],
     });
     const r = await buscarComponentesKitVirtual(deps);
-    expect(r.elegiveis[0]).toMatchObject({ codigo: '001', codigoPai: '000', custo: 9.9, origem: 'nacional' });
+    expect(r.elegiveis[0]).toMatchObject({
+      codigo: '001', codigoPai: '000', custo: 9.9, origem: 'nacional',
+      precoAtualML: 149.9, categoriaMlId: 'MLB1234',
+    });
   });
 });

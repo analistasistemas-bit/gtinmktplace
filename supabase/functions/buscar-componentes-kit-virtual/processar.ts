@@ -23,11 +23,18 @@ export interface PaginaComponentesML {
   searchAfterHash: string | null;
 }
 
-/** Ponte `user_product_id → item_id` de um item local (GET /items?ids=...&attributes=id,user_product_id). */
+/** Ponte `user_product_id → item_id` de um item local (GET /items?ids=...&attributes=id,user_product_id,price,category_id).
+ *  `preco-kit-virtual`/`preview-kit-virtual` exigem preço e categoria por componente — esta é a
+ *  fonte confiável (service_role, org-scoped) para os dois, lida no mesmo multiget que já resolve
+ *  a ponte, então não custa uma chamada extra ao ML. */
 export interface ItemBridge {
   itemId: string;
   /** null quando o item local tem `variations[]` (não migrado para User Products) — não casa nunca. */
   userProductId: string | null;
+  /** Preço de venda ATUAL do item no ML. null quando o ML não devolveu `price` (nunca vira 0). */
+  precoAtualML: number | null;
+  /** `category_id` do item no ML. null quando o ML não devolveu (preview-kit-virtual exige isso do principal). */
+  categoriaMlId: string | null;
 }
 
 export interface CatalogoLocalItem {
@@ -48,6 +55,10 @@ export interface ComponenteEnriquecido extends CandidatoBrutoML {
   custo: number | null;
   origem: 'nacional' | 'importado' | null;
   kitMultiplicador: number | null;
+  /** Vem da ponte (`ItemBridge`), não do catálogo local — null quando o candidato não casou com item local. */
+  precoAtualML: number | null;
+  /** Idem. `preview-kit-virtual` exige isto do principal; sem ele, o front não pode liderar com este componente. */
+  categoriaMlId: string | null;
 }
 
 export interface BuscarComponentesDeps {
@@ -107,14 +118,15 @@ export function enriquecerComponentes(
   bridges: ItemBridge[],
   catalogo: CatalogoLocalItem[],
 ): ComponenteEnriquecido[] {
-  const itemIdPorUserProduct = new Map<string, string>();
+  const bridgePorUserProduct = new Map<string, ItemBridge>();
   for (const b of bridges) {
-    if (b.userProductId) itemIdPorUserProduct.set(b.userProductId, b.itemId);
+    if (b.userProductId) bridgePorUserProduct.set(b.userProductId, b);
   }
   const catalogoPorItemId = new Map(catalogo.map((c) => [c.itemId, c]));
 
   return candidatos.map((c): ComponenteEnriquecido => {
-    const itemId = itemIdPorUserProduct.get(c.userProductId) ?? null;
+    const bridge = bridgePorUserProduct.get(c.userProductId) ?? null;
+    const itemId = bridge?.itemId ?? null;
     const local = itemId ? catalogoPorItemId.get(itemId) ?? null : null;
     return {
       ...c,
@@ -124,6 +136,8 @@ export function enriquecerComponentes(
       custo: local?.custo ?? null,
       origem: local?.origem ?? null,
       kitMultiplicador: local?.kitMultiplicador ?? null,
+      precoAtualML: bridge?.precoAtualML ?? null,
+      categoriaMlId: bridge?.categoriaMlId ?? null,
     };
   });
 }

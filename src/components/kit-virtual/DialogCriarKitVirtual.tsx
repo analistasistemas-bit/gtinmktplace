@@ -20,21 +20,17 @@ import { uploadFile, buildStoragePath } from '@/lib/storage';
 import { round2 } from '@/lib/formato';
 import { QK } from '@/lib/queries';
 import {
-  buscarComponentesKitVirtual, previewKitVirtual, criarKitVirtualEdge,
-  pctParaFracaoDesconto, CATALOGO_ORG_VAZIO,
-  type ComponenteParaPreviewKit, type PreviewKitVirtualResultado, type CatalogoOrgParaKitVirtual,
+  buscarComponentesKitVirtual, previewKitVirtual, criarKitVirtualEdge, subirFotoKitVirtualEdge,
+  pctParaFracaoDesconto,
+  type ComponenteParaPreviewKit, type PreviewKitVirtualResultado,
   type ComponenteSelecionadoKitVirtual, type ComponenteCandidatoKitVirtual,
 } from '@/lib/kit-virtual';
 import { ListaComponentesKitVirtual } from '@/components/kit-virtual/lista-componentes-kit-virtual';
 import { PreviewKitVirtual } from '@/components/kit-virtual/preview-kit-virtual';
 
-export function DialogCriarKitVirtual({ open, onOpenChange, catalogoOrg = CATALOGO_ORG_VAZIO }: {
+export function DialogCriarKitVirtual({ open, onOpenChange }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  /** Preço/categoria conhecidos localmente (Publicados já carrega isso para a própria tabela) —
-   *  ver `CatalogoOrgParaKitVirtual`. Sem isto, nenhum componente pode virar principal (a
-   *  edge de preview exige `categoria_ml_id` e não há outra fonte para ele no front). */
-  catalogoOrg?: CatalogoOrgParaKitVirtual;
 }) {
   const qc = useQueryClient();
   const [etapa, setEtapa] = useState<'selecionar' | 'preview'>('selecionar');
@@ -46,6 +42,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, catalogoOrg = CATALO
 
   const [fotoFile, setFotoFile] = useState<File | null>(null);
   const [fotoStoragePath, setFotoStoragePath] = useState<string | null>(null);
+  const [fotoMlPictureId, setFotoMlPictureId] = useState<string | null>(null);
   const [uploadingFoto, setUploadingFoto] = useState(false);
 
   const [descontoPct, setDescontoPct] = useState(0);
@@ -67,6 +64,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, catalogoOrg = CATALO
     setSelecionados([]);
     setFotoFile(null);
     setFotoStoragePath(null);
+    setFotoMlPictureId(null);
     setUploadingFoto(false);
     setDescontoPct(0);
     setTitulo('');
@@ -87,8 +85,9 @@ export function DialogCriarKitVirtual({ open, onOpenChange, catalogoOrg = CATALO
   function adicionar(c: ComponenteCandidatoKitVirtual) {
     setSelecionados((prev) => {
       if (prev.length >= 6 || prev.some((s) => s.candidato.userProductId === c.userProductId)) return prev;
-      const precoConhecido = c.codigo ? catalogoOrg.precoPorCodigo[c.codigo] : undefined;
-      return [...prev, { candidato: c, quantidade: 1, precoAtualML: precoConhecido ?? 0 }];
+      // Preço vem da própria edge (lido do ML, service_role/org-scoped); sem ele o campo nasce
+      // zerado e editável — nunca um default silencioso (o operador confirma antes de avançar).
+      return [...prev, { candidato: c, quantidade: 1, precoAtualML: c.precoAtualML ?? 0 }];
     });
   }
   function remover(userProductId: string) {
@@ -116,6 +115,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, catalogoOrg = CATALO
   async function handleEscolherFoto(file: File | null) {
     setFotoFile(file);
     setFotoStoragePath(null);
+    setFotoMlPictureId(null);
     if (!file) return;
     setUploadingFoto(true);
     try {
@@ -135,10 +135,25 @@ export function DialogCriarKitVirtual({ open, onOpenChange, catalogoOrg = CATALO
     }
   }
 
+  // ADR-0154 D-5/ADR-0033: sobe a foto ao ML assim que ela assenta no Storage, não no publicar —
+  // a propagação é assíncrona. Best-effort: falha aqui NÃO trava o diálogo, `criar-kit-virtual`
+  // reusa o `foto_storage_path` e faz o upload no publicar (rede de segurança, comportamento
+  // anterior a este gap).
+  useEffect(() => {
+    if (!fotoStoragePath) return;
+    let cancelado = false;
+    subirFotoKitVirtualEdge(fotoStoragePath).then((r) => {
+      if (cancelado) return;
+      if (r.ok) setFotoMlPictureId(r.pictureId);
+      else console.warn('kit_virtual_subir_foto_ml_falhou', r.mensagem);
+    });
+    return () => { cancelado = true; };
+  }, [fotoStoragePath]);
+
   const principal = selecionados[0] ?? null;
-  const categoriaMlIdPrincipal = principal
-    ? (principal.candidato.codigoPai ? catalogoOrg.categoriaMlIdPorCodigoPai[principal.candidato.codigoPai] : undefined) ?? null
-    : null;
+  // categoria_ml_id vem direto do candidato (a própria edge já leu do ML) — sem ele, o produto
+  // não pode liderar a composição, porque preview-kit-virtual exige categoria_ml_id do principal.
+  const categoriaMlIdPrincipal = principal?.candidato.categoriaMlId ?? null;
   const avisoKitVinculado = selecionados.some((s) => s.candidato.kitMultiplicador != null);
 
   const quantidadesValidas = selecionados.every((s) => s.quantidade >= 1 && s.quantidade <= 10);
@@ -209,7 +224,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange, catalogoOrg = CATALO
       titulo,
       descricao: descricao.trim() || null,
       fotoStoragePath,
-      fotoMlPictureId: null,
+      fotoMlPictureId,
       componentes: selecionados.map((s) => ({
         userProductId: s.candidato.userProductId,
         quantidade: s.quantidade,
@@ -277,8 +292,8 @@ export function DialogCriarKitVirtual({ open, onOpenChange, catalogoOrg = CATALO
 
             {principal && !categoriaMlIdPrincipal && (
               <div role="alert" className="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive">
-                &quot;{principal.candidato.title}&quot; não pode ser o principal — a categoria dele não é
-                conhecida pelo catálogo local. Torne outro item principal ou remova este.
+                &quot;{principal.candidato.title}&quot; não pode ser o principal — o Mercado Livre não
+                devolveu a categoria dele. Torne outro item principal ou remova este.
               </div>
             )}
 

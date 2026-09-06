@@ -34,7 +34,7 @@ function candidato(over: Partial<ComponenteCandidatoKitVirtual> = {}): Component
     userProductId: 'UP1', itemId: 'MLB1', title: 'Produto 1', type: 'available',
     thumbnailUrl: null, categoryName: 'Categoria', estoque: 10,
     reasons: [], codigo: '00000001', codigoPai: '00000001', custo: 5, origem: 'nacional',
-    kitMultiplicador: null, ...over,
+    kitMultiplicador: null, precoAtualML: 10, categoriaMlId: 'MLB999', ...over,
   };
 }
 
