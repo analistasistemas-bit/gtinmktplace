@@ -562,6 +562,150 @@ describe('removerPublicado — guard D-14: base com kit vinculado ativo (ADR-015
   });
 });
 
+// ADR-0154 D-13: componente de Kit Virtual publicado não pode ser removido nem republicado —
+// republicar geraria um user_product_id novo e o kit ficaria preso ao UP morto (out_of_stock
+// permanente, sem erro nenhum). Guard de app: roda ANTES de qualquer mutação, comum aos dois
+// ramos (remover e preservarFamilia passam pelo mesmo `return` antes da bifurcação).
+//
+// `kitsVirtuaisPublicadosBloqueando` faz DUAS queries simples (`kits_virtuais` filtrado por
+// status, depois `kits_virtuais_componentes` filtrado por `kit_id in (...)`) — o match por
+// `codigo_pai`/`item_externo_id` roda em JS aqui no processar.ts, não dentro de um `.or()` que
+// o fake só ecoaria. Isso é o que faz estes testes exercitarem de verdade a lógica de match, e
+// não só a fixture: a query 1 (por status) é limitação do fake — o fake não filtra por `.eq()`,
+// então "encerrado"/"erro não bloqueiam" só provam o curto-circuito de `kits.length===0`
+// (o que a query real produziria depois de filtrar por status). Essa parte (o WHERE real)
+// só é verificada contra Postgres de verdade após `db push` — fora de escopo desta task.
+describe('removerPublicado — guard D-13: componente de Kit Virtual publicado (ADR-0154)', () => {
+  const cenarioBase = () => ({
+    familias: [
+      { id: 'fam-1', codigo_pai: '00099999', ml_item_id: 'MLB1', org_id: ORG, kit_multiplicador: null },
+      [], // emVoo
+      [], // kits vinculados (guard D-14) — nenhum
+    ],
+    anuncios_externos: [[]], // Legacy, sem filhos UP — só codigo_pai/ml_item_id entram no match
+  });
+
+  it('remover: componente de kit virtual publicado (match por codigo_pai) é recusado, nada é tocado', async () => {
+    const { admin, deletes, updates } = fakeAdmin({
+      ...cenarioBase(),
+      kits_virtuais: [[{ id: 'kit-1', titulo: 'Kit Verão' }]],
+      kits_virtuais_componentes: [[{ kit_id: 'kit-1', codigo_pai: '00099999', item_externo_id: null }]],
+    });
+    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r).toEqual({ tipo: 'kit_virtual_publicado', kits: ['Kit Verão'] });
+    expect(deletes).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
+  it('republicar (preservarFamilia): componente de kit virtual publicado também é recusado', async () => {
+    const { admin, deletes, updates } = fakeAdmin({
+      ...cenarioBase(),
+      kits_virtuais: [[{ id: 'kit-1', titulo: 'Kit Verão' }]],
+      kits_virtuais_componentes: [[{ kit_id: 'kit-1', codigo_pai: '00099999', item_externo_id: null }]],
+    });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r).toEqual({ tipo: 'kit_virtual_publicado', kits: ['Kit Verão'] });
+    expect(deletes).toEqual([]);
+    expect(updates).toEqual([]);
+  });
+
+  // Prova real do match (não fixture-eco): dois kits publicados na org, só UM tem componente
+  // deste produto — só o título dele volta. Se o código ignorasse o match e devolvesse todo
+  // kit publicado da org, este teste cairia.
+  it('só devolve o(s) kit(s) cujo componente realmente casa — não todo kit publicado da org', async () => {
+    const { admin } = fakeAdmin({
+      ...cenarioBase(),
+      kits_virtuais: [[{ id: 'kit-1', titulo: 'Kit Verão' }, { id: 'kit-2', titulo: 'Kit Sem Relação' }]],
+      kits_virtuais_componentes: [[
+        { kit_id: 'kit-1', codigo_pai: '00099999', item_externo_id: null }, // casa
+        { kit_id: 'kit-2', codigo_pai: '00000001', item_externo_id: 'MLB-outro' }, // não casa
+      ]],
+    });
+    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r).toEqual({ tipo: 'kit_virtual_publicado', kits: ['Kit Verão'] });
+  });
+
+  // A query real (`kits_virtuais` filtrada por `status='publicado'`) é o que exclui um kit
+  // 'encerrado' ou 'erro' da resposta — quando ela devolve vazio, o guard sequer chega a
+  // consultar `kits_virtuais_componentes` (curto-circuito em `kits.length===0`).
+  it('componente de kit encerrado NÃO bloqueia — nenhum kit publicado na org (curto-circuito)', async () => {
+    const { admin, deletes } = fakeAdmin({
+      ...cenarioBase(),
+      familias: [
+        ...cenarioBase().familias,
+        [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [],
+      ],
+      kits_virtuais: [[]], // nenhum kit 'publicado' — o encerrado já saiu na query real
+      anuncios_externos_itens: [[]],
+      lotes: [],
+    });
+    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r.tipo).toBe('ok');
+    expect(deletes.map((d) => d.tabela)).toEqual(['familias', 'anuncios_externos', 'lotes']);
+  });
+
+  it('componente de kit em erro NÃO bloqueia — mesma razão (nenhum kit publicado)', async () => {
+    const { admin, deletes } = fakeAdmin({
+      ...cenarioBase(),
+      familias: [
+        ...cenarioBase().familias,
+        [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [],
+      ],
+      kits_virtuais: [[]],
+      anuncios_externos_itens: [[]],
+      lotes: [],
+    });
+    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r.tipo).toBe('ok');
+  });
+
+  it('família sem nenhuma relação com kit virtual → permite normalmente (fila vazia por omissão)', async () => {
+    const { admin, deletes } = fakeAdmin({
+      ...cenarioBase(),
+      familias: [
+        ...cenarioBase().familias,
+        [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [],
+      ],
+      anuncios_externos_itens: [[]],
+      lotes: [],
+      // kits_virtuais OMITIDO de propósito: fila ausente resolve como [] (nenhum kit publicado).
+    });
+    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r.tipo).toBe('ok');
+    expect(deletes.map((d) => d.tabela)).toEqual(['familias', 'anuncios_externos', 'lotes']);
+  });
+
+  it('família UP com filhos: guard casa por item_externo_id de um filho (não pelo codigo_pai)', async () => {
+    const { admin, deletes } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', codigo_pai: '00099999', ml_item_id: 'MLB1', org_id: ORG, kit_multiplicador: null },
+        [],
+        [],
+      ],
+      anuncios_externos: [[{ id: 'ext-1' }]],
+      anuncios_externos_itens: [[
+        { sku: 'A', item_externo_id: 'MLB1', retirado: false, status: 'ativo' },
+        { sku: 'B', item_externo_id: 'MLB2', retirado: false, status: 'ativo' }, // componente do kit
+      ]],
+      kits_virtuais: [[{ id: 'kit-1', titulo: 'Kit Combo' }]],
+      // codigo_pai DIVERGENTE de propósito: só o item_externo_id (do filho B, não da raiz) casa.
+      kits_virtuais_componentes: [[{ kit_id: 'kit-1', codigo_pai: '00000000', item_externo_id: 'MLB2' }]],
+    });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL },
+    );
+    expect(r).toEqual({ tipo: 'kit_virtual_publicado', kits: ['Kit Combo'] });
+    expect(deletes).toEqual([]); // nem a mini-saga de pausar filhos chegou a rodar
+  });
+});
+
 // Modo republicar em família Legacy (sem filhos UP): a saga não roda, então o PRÓPRIO anúncio
 // raiz precisa ser pausado no ML antes de cortar o vínculo local — senão ele fica ativo e órfão
 // no ML e a republicação (CREATE) gera um duplicado. GET primeiro decide: active → PUT pausar;

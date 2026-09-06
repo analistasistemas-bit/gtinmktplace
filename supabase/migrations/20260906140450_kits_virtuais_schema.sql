@@ -42,6 +42,12 @@ create table if not exists public.kits_virtuais (
   -- percentual idêntico aplicado a todos os componentes.
   desconto_pct numeric not null check (desconto_pct >= 0 and desconto_pct < 1),
 
+  -- Task 7/8: o ML exige `listing_type_id` no payload do POST /items/kits (Clássico/Premium),
+  -- mas o valor só sobrevive se persistido — "Refazer kit" (D-8) reabre o diálogo pré-preenchido
+  -- com os componentes antigos, e sem esta coluna a escolha do operador entre Clássico/Premium
+  -- se perderia a cada refação.
+  listing_type_id text not null default 'gold_pro',
+
   -- D-5: foto própria obrigatória, subida ao ML no upload do diálogo (não no publicar) porque
   -- a propagação de foto no ML é assíncrona (ADR-0033). Nuláveis no schema: a linha nasce
   -- antes do upload terminar; a obrigatoriedade é gate de publicação, não `not null`.
@@ -243,7 +249,11 @@ begin
     from public.kits_virtuais k
     join public.kits_virtuais_componentes c on c.kit_id = k.id
     where k.org_id = old.org_id
-      and k.status = 'publicado'
+      -- `publicando` conta como vivo: entre gravar os componentes e o CREATE do ML voltar,
+      -- apagar a família do componente deixaria o kit preso a um user product morto — o mesmo
+      -- estado que este guard existe para evitar. O guard de kit vinculado (ADR-0151) trata
+      -- `publicando` como vivo pela mesma razão.
+      and k.status in ('publicando', 'publicado')
       and (
         c.codigo_pai = old.codigo_pai
         or exists (

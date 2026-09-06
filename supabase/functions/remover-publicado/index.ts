@@ -74,6 +74,14 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
           + '(Estoque → ⋮ → Excluir) antes de remover este.';
       return json({ erro }, 409);
     }
+    case 'kit_virtual_publicado': {
+      await auditarOperacaoSuporte(admin, context, target, 'denied');
+      const listaKits = r.kits.map((titulo) => `"${titulo}"`).join(', ');
+      return json({
+        erro: `Este produto é componente do Kit Virtual ${listaKits} (publicado). `
+          + 'Encerre o kit no Mercado Livre antes de remover ou republicar este produto.',
+      }, 409);
+    }
     case 'preservada':
       await auditarOperacaoSuporte(admin, context, target, 'succeeded');
       return json({ ok: true, familia_id: r.familiaId, lote_id: r.loteId });

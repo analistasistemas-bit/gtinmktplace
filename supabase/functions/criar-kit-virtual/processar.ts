@@ -91,9 +91,10 @@ interface LinhaKit {
   ml_permalink: string | null;
   foto_storage_path: string | null;
   foto_ml_picture_id: string | null;
+  listing_type_id: string;
 }
 
-const COLUNAS_KIT = 'id, status, ml_item_id, ml_user_product_id, ml_permalink, foto_storage_path, foto_ml_picture_id';
+const COLUNAS_KIT = 'id, status, ml_item_id, ml_user_product_id, ml_permalink, foto_storage_path, foto_ml_picture_id, listing_type_id';
 
 /** Recusas que não custam rede. Rodam ANTES de qualquer escrita ou chamada ao ML. */
 export function validarKitVirtual(input: CriarKitVirtualInput): MotivoCriarKitVirtual | null {
@@ -169,6 +170,7 @@ async function reivindicarKit(
     desconto_pct: desconto,
     foto_storage_path: input.fotoStoragePath,
     foto_ml_picture_id: input.fotoMlPictureId,
+    listing_type_id: input.listingTypeId,
     status: 'publicando',
     criado_por: userId,
   }).select(COLUNAS_KIT).single();
@@ -200,6 +202,7 @@ async function reivindicarKit(
     desconto_pct: desconto,
     foto_storage_path: kit.foto_storage_path ?? input.fotoStoragePath,
     foto_ml_picture_id: kit.foto_ml_picture_id ?? input.fotoMlPictureId,
+    listing_type_id: input.listingTypeId,
     status: 'publicando',
     erro_mensagem: null,
   }).eq('id', kit.id).eq('org_id', orgId).select(COLUNAS_KIT).single();

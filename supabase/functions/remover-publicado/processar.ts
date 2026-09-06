@@ -41,8 +41,55 @@ export type ResultadoRemocao =
    *  (trigger `familias_bloquear_remocao_com_kit`) é a última linha; esta é a mensagem
    *  clara ANTES do DELETE. */
   | { tipo: 'kit_vinculado_ativo'; kits: { codigoPai: string; multiplicador: number }[] }
+  /** ADR-0154 D-13: componente de Kit Virtual publicado não pode ser removido nem
+   *  republicado — republicar cria um `user_product_id` novo e o kit fica preso ao UP
+   *  morto, um `out_of_stock` permanente sem mensagem de erro nenhuma. Guard de app,
+   *  espelha `kit_vinculado_ativo` acima; a trigger `familias_bloquear_remocao_componente_kit_virtual`
+   *  (migration 20260906140450) é a última linha, esta é a mensagem clara ANTES da mutação. */
+  | { tipo: 'kit_virtual_publicado'; kits: string[] }
   | { tipo: 'preservada'; familiaId: string; loteId: string }
   | { tipo: 'ok'; familiasRemovidas: number; lotesRemovidos: number };
+
+/**
+ * ADR-0154 D-13: títulos dos Kits Virtuais PUBLICADOS que usam este produto como componente —
+ * casado por `codigo_pai` (enriquecimento do catálogo local, D-12, pode ser nulo) OU por
+ * `item_externo_id` (o próprio anúncio raiz e/ou seus itens técnicos User Products). Só estas
+ * duas colunas: `familias` não tem `user_product_id` (só a trigger de banco, via join com
+ * `anuncios_externos_itens`, consegue casar por ele — ver comentário da migration).
+ *
+ * Duas queries simples (`.eq`/`.in`, sem embed nem `.or()`) em vez de um join filtrado: o match
+ * por `codigo_pai`/`item_externo_id` roda aqui em JS. Kits são dezenas por org (D-14), a
+ * segunda ida ao banco é barata.
+ */
+async function kitsVirtuaisPublicadosBloqueando(
+  admin: SupabaseClient, orgId: string, codigoPai: string, itemExternoIds: (string | null)[],
+): Promise<string[]> {
+  // `publicando` entra junto com `publicado`: entre gravar os componentes e o CREATE do ML
+  // voltar existe uma janela em que remover o componente produz exatamente o UP morto que a
+  // D-13 evita — o kit nasceria já preso a um user product que não existe mais. Mesmo conjunto
+  // "vivo" do guard de kit vinculado (ADR-0151), que também bloqueia com o CREATE em voo.
+  const { data: kits, error: kitsErr } = await admin.from('kits_virtuais')
+    .select('id, titulo').eq('org_id', orgId).in('status', ['publicando', 'publicado']);
+  if (kitsErr) throw new Error(`remover-publicado: consultar kits virtuais falhou: ${kitsErr.message}`);
+  if (!kits || kits.length === 0) return [];
+
+  const { data: comps, error: compsErr } = await admin.from('kits_virtuais_componentes')
+    .select('kit_id, codigo_pai, item_externo_id')
+    .eq('org_id', orgId).in('kit_id', kits.map((k) => k.id as string));
+  if (compsErr) throw new Error(`remover-publicado: consultar componentes de kit falhou: ${compsErr.message}`);
+
+  const ids = new Set(itemExternoIds.filter((v): v is string => !!v));
+  const tituloPorKit = new Map(kits.map((k) => [k.id as string, k.titulo as string]));
+  const titulos = new Set<string>();
+  for (const c of comps ?? []) {
+    const bate = c.codigo_pai === codigoPai || ids.has(c.item_externo_id as string);
+    if (bate) {
+      const titulo = tituloPorKit.get(c.kit_id as string);
+      if (titulo) titulos.add(titulo);
+    }
+  }
+  return [...titulos];
+}
 
 export async function removerPublicado(deps: RemoverPublicadoDeps, input: RemoverPublicadoInput): Promise<ResultadoRemocao> {
   const { admin } = deps;
@@ -106,6 +153,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   // true ⇔ a mini-saga UP abaixo rodou sobre 1+ filhos (e só chegamos adiante se TODOS
   // confirmaram pausado). false ⇔ Legacy ou UP já esvaziada — ninguém pausou nada no ML.
   let filhosUPPausadosPelaSaga = false;
+  let filhos: FilhoComp[] = [];
   // Guarda (revisão Codex): uma mudança de composição em andamento/travada deixa uma janela real
   // onde um filho `retirado=true` pode já estar ATIVO no ML (crash entre ativar-remoto e
   // marcarAtivo, que só então limpa retirado), ou um filho `criacao_incerta` pode ter um POST real
@@ -125,49 +173,61 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     // sem pausar nada primeiro.
     if (filhosErr) throw new Error(`remover-publicado: consultar filhos UP falhou: ${filhosErr.message}`);
     filhosUPPausadosPelaSaga = (filhosRaw ?? []).length > 0;
-    const filhos: FilhoComp[] = ((filhosRaw ?? []) as Array<Record<string, unknown>>).map((f) => ({
+    filhos = ((filhosRaw ?? []) as Array<Record<string, unknown>>).map((f) => ({
       sku: f.sku as string,
       status: f.status as FilhoComp['status'],
       retirado: !!f.retirado,
       itemExternoId: (f.item_externo_id as string | null) ?? null,
       familyId: null,
     }));
-    if (filhos.length > 0) {
-      // Gate ATRÁS de "tem filhos": família Legacy ou UP já esvaziada (só linhas retirado=true,
-      // filtradas antes de chegar aqui — na verdade filhos.length>0 já inclui essas, a saga que
-      // as ignora) não deveria exigir token vivo pra simplesmente deletar localmente.
-      if (!deps.ctx || !deps.conexao) throw new Error('Organização sem conexão com o Mercado Livre');
-      const { ctx, conexao } = deps;
-      const fetchLike = deps.fetchLike ?? fetch;
-      const portas: PortasRemocao = {
-        pausar: (itemExternoId) => ctx.getToken().then((token) => atualizarStatusML(token, itemExternoId, 'paused')),
-        async confirmar(itemExternoId) {
-          const item = await buscarItemUP(fetchLike, { accessToken: await ctx.getToken() }, itemExternoId);
-          const sellerEsperado = conexao.contaExternaId ?? '';
-          if (!item) return { ok: false, status: null }; // GET falhou → transiente.
-          // Operação destrutiva (revisão Codex): fail-closed na identidade. `seller_id` ausente no
-          // corpo do GET não prova posse — não assume ok só porque não achou divergência explícita.
-          if (item.sellerId == null || item.sellerId !== sellerEsperado) {
-            return { ok: false, status: item.status, inesperado: true }; // identidade não confirmada → terminal.
-          }
-          return { ok: true, status: item.status };
-        },
-        salvarStatus: async (sku, status) => {
-          const { error } = await admin.from('anuncios_externos_itens')
-            .update({ status }).eq('sku', sku).in('anuncio_externo_id', idsExternos);
-          // Propaga — o chamador (a mini-saga, via seu próprio wrapper best-effort) já loga e
-          // segue sem derrubar o TRY-ALL; aqui não podemos silenciar (perderia o único registro
-          // de que este filho ficou pendente).
-          if (error) throw new Error(`salvarStatus (${sku}): ${error.message}`);
-        },
-      };
-      const removerComposicao = deps.removerComposicao ?? removerComposicaoUP;
-      const resultado = await removerComposicao(portas, filhos);
-      if (resultado.tipo === 'incompleto') {
-        return { tipo: 'remocao_pendente', pendentes: resultado.pendentes };
-      }
-      // pronto_para_deletar → segue o fluxo comum de delete abaixo, idêntico ao Legacy.
+  }
+
+  // ADR-0154 D-13: componente de Kit Virtual publicado não pode ser removido nem republicado —
+  // roda ANTES de qualquer mutação (mini-saga UP incluída), nos DOIS ramos (a checagem é comum
+  // aos dois: `preservarFamilia` e remoção de verdade passam pelo mesmo `return` abaixo).
+  const kitsVirtuaisBloqueando = await kitsVirtuaisPublicadosBloqueando(
+    admin, alvo.org_id as string, alvo.codigo_pai as string,
+    [alvo.ml_item_id as string, ...filhos.map((f) => f.itemExternoId)],
+  );
+  if (kitsVirtuaisBloqueando.length > 0) {
+    return { tipo: 'kit_virtual_publicado', kits: kitsVirtuaisBloqueando };
+  }
+
+  if (filhos.length > 0) {
+    // Gate ATRÁS de "tem filhos": família Legacy ou UP já esvaziada (só linhas retirado=true,
+    // filtradas antes de chegar aqui — na verdade filhos.length>0 já inclui essas, a saga que
+    // as ignora) não deveria exigir token vivo pra simplesmente deletar localmente.
+    if (!deps.ctx || !deps.conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+    const { ctx, conexao } = deps;
+    const fetchLike = deps.fetchLike ?? fetch;
+    const portas: PortasRemocao = {
+      pausar: (itemExternoId) => ctx.getToken().then((token) => atualizarStatusML(token, itemExternoId, 'paused')),
+      async confirmar(itemExternoId) {
+        const item = await buscarItemUP(fetchLike, { accessToken: await ctx.getToken() }, itemExternoId);
+        const sellerEsperado = conexao.contaExternaId ?? '';
+        if (!item) return { ok: false, status: null }; // GET falhou → transiente.
+        // Operação destrutiva (revisão Codex): fail-closed na identidade. `seller_id` ausente no
+        // corpo do GET não prova posse — não assume ok só porque não achou divergência explícita.
+        if (item.sellerId == null || item.sellerId !== sellerEsperado) {
+          return { ok: false, status: item.status, inesperado: true }; // identidade não confirmada → terminal.
+        }
+        return { ok: true, status: item.status };
+      },
+      salvarStatus: async (sku, status) => {
+        const { error } = await admin.from('anuncios_externos_itens')
+          .update({ status }).eq('sku', sku).in('anuncio_externo_id', idsExternos);
+        // Propaga — o chamador (a mini-saga, via seu próprio wrapper best-effort) já loga e
+        // segue sem derrubar o TRY-ALL; aqui não podemos silenciar (perderia o único registro
+        // de que este filho ficou pendente).
+        if (error) throw new Error(`salvarStatus (${sku}): ${error.message}`);
+      },
+    };
+    const removerComposicao = deps.removerComposicao ?? removerComposicaoUP;
+    const resultado = await removerComposicao(portas, filhos);
+    if (resultado.tipo === 'incompleto') {
+      return { tipo: 'remocao_pendente', pendentes: resultado.pendentes };
     }
+    // pronto_para_deletar → segue o fluxo comum de delete abaixo, idêntico ao Legacy.
   }
 
   if (input.preservarFamilia) {

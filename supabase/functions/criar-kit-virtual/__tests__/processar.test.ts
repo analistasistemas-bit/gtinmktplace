@@ -365,4 +365,33 @@ describe('criarKitVirtual', () => {
     expect(r).toMatchObject({ ok: true, mlItemId: 'MLB999' });
     expect(st.kits[0].status).toEqual('publicado');
   });
+
+  // Task 8 (Parte B): `listing_type_id` não tinha coluna — "Refazer kit" (D-8) reabre o
+  // diálogo pré-preenchido e perderia a escolha do operador entre Clássico/Premium.
+  it('grava o listing_type_id recebido no request na linha do kit', async () => {
+    const st = novoEstado();
+    const r = await criarKitVirtual(deps(st), inputPadrao({ listingTypeId: 'gold_special' }));
+    expect(r.ok).toBe(true);
+    expect(st.kits[0].listing_type_id).toEqual('gold_special');
+  });
+
+  // O default fica na migration (`not null default 'gold_pro'`) E em index.ts (aplicado ANTES
+  // de chamar `criarKitVirtual` quando o body não traz `listing_type_id`) — aqui provamos que
+  // processar.ts grava fielmente o que recebeu, sem hardcode nem sobrescrita.
+  it('sem listing_type_id explícito no payload: persiste o default já resolvido pelo caller (gold_pro)', async () => {
+    const st = novoEstado();
+    const r = await criarKitVirtual(deps(st), inputPadrao()); // inputPadrao já traz 'gold_pro'
+    expect(r.ok).toBe(true);
+    expect(st.kits[0].listing_type_id).toEqual('gold_pro');
+  });
+
+  it('reaproveita linha órfã: também atualiza o listing_type_id com o valor mais recente do diálogo', async () => {
+    const st = novoEstado([{ id: 'kit-orfao', status: 'erro', erro_mensagem: 'antes deu ruim', foto_ml_picture_id: 'PIC-1', listing_type_id: 'gold_pro' }]);
+    st.componentes.push({ kit_id: 'kit-orfao', org_id: ORG, ordem: 0, user_product_id: 'MLBU1' });
+
+    const r = await criarKitVirtual(deps(st), inputPadrao({ listingTypeId: 'gold_premium' }));
+
+    expect(r).toMatchObject({ ok: true, kitId: 'kit-orfao' });
+    expect(st.kits[0].listing_type_id).toEqual('gold_premium');
+  });
 });
