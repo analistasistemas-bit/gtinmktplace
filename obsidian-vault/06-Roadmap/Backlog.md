@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, backlog]
-atualizado: 2026-07-12
+atualizado: 2026-09-05
 ---
 
 # Backlog
@@ -62,3 +62,40 @@ com 2 canais depende dele. Planos em `docs/superpowers/plans/2026-07-02-*`.
 - ❌ Tabela "de-para" fornecedor → cor
 - ❌ Estratégias de preço configuráveis por lote
 - ❌ Dashboard analítico
+
+## Notificação push no celular (Web Push) — levantado em 2026-09-05
+
+📋 **Desejável, não urgente.** Levantado depois que o app virou PWA instalável (ADR-0153) — a
+instalação é o pré-requisito que faltava: a Apple só permite Web Push em PWA adicionado à tela de
+início (iOS 16.4+). Hoje o sino do app (ADR-0085) só atualiza com o app aberto; com o app fechado,
+nada chega ao celular pelo PubliAI.
+
+**Por que é menor do que parece:** `notificarCategoria()` em `_shared/notificacoes/` já roteia
+todo alerta para dois canais (Telegram e sino in-app), com assinatura por pessoa e 9 categorias.
+Push entra como **terceiro canal no mesmo ponto** — nenhuma das edge functions que hoje notificam
+precisa mudar.
+
+**O que falta:** tabela de inscrições por aparelho com RLS · UI de ativação nas Configurações (a
+permissão do iOS só pode ser pedida a partir de um toque) · handler `push` no service worker ·
+envio com VAPID a partir do Deno · limpeza das inscrições mortas (aparelho que desinstalou
+responde 410) · ligar no roteador.
+
+**A pedra no caminho:** o service worker de hoje é gerado automaticamente (`generateSW`), sem
+código nosso — foi decisão explícita do ADR-0153. Receber push obriga a migrar para `injectManifest`
+e escrever o arquivo à mão, mexendo na parte mais nova do sistema e exigindo revalidar o que já
+está em produção. É o maior risco do item, maior que o envio em si.
+
+**Custo estimado:** 2 a 3 sessões, com o risco concentrado no service worker e na criptografia do
+envio em Deno (funciona no teste e falha num aparelho específico é o modo de falha típico).
+
+**A pergunta que decide:** o Telegram já toca o celular hoje. Push nativo acrescenta o ícone do
+PubliAI, o badge e não depender de bot configurado — conveniência, não capacidade nova. Vale
+quando o Telegram incomodar, ou quando um operador precisar receber alertas sem configurar nada.
+
+**Decisões pendentes quando/se entrar:** (1) a notificação mostra o conteúdo ("Nova venda:
+R$ 230") ou só avisa? — o texto passa pelos servidores da Apple e do Google; (2) quais das 9
+categorias furam a tela — sugestão de partida: só `vendas`, `moderacao` e `integracao`, o resto
+fica no sino; (3) push convive com o Telegram (recomendado) ou substitui.
+
+Diego optou em 2026-09-05 por registrar aqui em vez de abrir ADR e planejar. Ver [[Sprint Atual]]
+e `docs/decisions/0153-pwa-instalavel-sem-escrita-offline.md`.
