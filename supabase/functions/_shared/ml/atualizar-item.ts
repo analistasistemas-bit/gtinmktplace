@@ -135,7 +135,9 @@ export async function atualizarItemML(
 }
 
 // Pausa/reativa o anúncio (ADR-0060). PUT parcial: só o campo status, preserva o resto.
-export async function atualizarStatusML(accessToken: string, itemId: string, status: 'active' | 'paused'): Promise<void> {
+// `closed` entrou pelo ADR-0154 D-8 (encerrar Kit Virtual) — é TERMINAL no ML, não reversível;
+// use só onde encerrar é a intenção declarada, nunca como "pausar mais forte".
+export async function atualizarStatusML(accessToken: string, itemId: string, status: 'active' | 'paused' | 'closed'): Promise<void> {
   const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
