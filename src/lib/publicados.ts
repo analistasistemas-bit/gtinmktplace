@@ -50,6 +50,14 @@ export interface PublicadoItem {
   canInvoice?: boolean | null;
   /** ADR-0151: codigo_pai do produto-base, quando este anúncio É um kit vinculado. null = não é kit. */
   kitBaseCodigoPai?: string | null;
+  /** ADR-0154: true quando esta linha é um Kit Virtual (produtos distintos agrupados pelo ML),
+   *  não um produto. `familiaId`/`codigoPai` são sentinelas sem significado — nunca usar como
+   *  chave de agrupamento (repPorCodigo/ehKitVinculado); a tela renderiza este item numa linha
+   *  própria, sem Pausar/Reativar/Remover (Publicados.tsx, ADR-0154 D-2/D-14). */
+  ehKitVirtual?: boolean;
+  /** ADR-0154: `kits_virtuais.id` — necessário para "Refazer kit" (encerrar-kit-virtual). Só
+   *  presente quando `ehKitVirtual` é true. */
+  kitVirtualId?: string;
 }
 
 /**

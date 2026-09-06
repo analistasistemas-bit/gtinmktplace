@@ -38,6 +38,7 @@ function pedido(chave: string, faturavel = true): Pedido {
     sacado_por: null,
     faturavel,
     tem_devolucao: !faturavel,
+    ehKit: false,
     itens: [],
     is_publiai: true,
   };

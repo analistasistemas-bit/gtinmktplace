@@ -140,6 +140,15 @@ describe('AbaVendas — visão por pedido', () => {
     expect(screen.getByText('comprador.b')).toBeInTheDocument();
   });
 
+  // ADR-0154 D-10: badge "Kit" só sinaliza a linha — não agrupa nem altera cálculo nenhum.
+  it('badge "Kit" aparece na linha com kit_item_id e some sem ele', () => {
+    mockVendas = [VENDA1, { ...VENDA1, id: 'v-kit', order_id: 1004, kit_item_id: 'MLB-KIT1' }];
+    renderAba();
+    expect(screen.getByText('Kit')).toBeInTheDocument();
+    // VENDA1 (sem kit_item_id) segue sem o badge — mas o comprador aparece 2× (1 por linha).
+    expect(screen.getAllByText('comprador.a')).toHaveLength(2);
+  });
+
   it('detalhe do produto (código PA01) aparece SÓ ao expandir a linha do pedido', () => {
     renderAba();
     // Antes de expandir: código do produto não deve estar no DOM

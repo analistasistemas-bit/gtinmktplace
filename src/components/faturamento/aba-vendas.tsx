@@ -131,6 +131,8 @@ function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVi
         <TableCell>
           <span className="flex items-center gap-1">
             <StatusPill tone={p.is_publiai ? 'info' : 'neutral'}>{p.is_publiai ? 'PubliAI' : 'Fora'}</StatusPill>
+            {/* ADR-0154 D-10: só um badge — orders não são agrupadas, nenhum cálculo muda. */}
+            {p.ehKit && <StatusPill tone="info"><Package className="h-3 w-3" />Kit</StatusPill>}
             {p.tem_devolucao && <StatusPill tone="danger"><RotateCcw className="h-3 w-3" />Devolução</StatusPill>}
             {isNovo && (
               <span className="inline-flex animate-pulse items-center rounded-full bg-success/15 px-1.5 py-0.5 text-[10px] font-semibold text-success ring-1 ring-inset ring-success/30">

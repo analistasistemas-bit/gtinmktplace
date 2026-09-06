@@ -22,6 +22,7 @@ const useFamiliaMock = vi.fn();
 const fetchMovimentosEstoqueMock = vi.fn();
 const useModulosHabilitadosMock = vi.fn();
 const useKitsDoProdutoMock = vi.fn();
+const useEncerrarKitVirtualMock = vi.fn();
 
 vi.mock('@/hooks/usePublicados', () => ({
   usePublicados: () => usePublicadosMock(),
@@ -71,8 +72,9 @@ vi.mock('@/hooks/useRetentarCatalogo', () => ({
   useRetentarCatalogo: () => useRetentarCatalogoMock(),
 }));
 
+const useProfileMock = vi.fn();
 vi.mock('@/hooks/useProfile', () => ({
-  useProfile: () => ({ isAdmin: true }),
+  useProfile: () => useProfileMock(),
 }));
 
 vi.mock('@/hooks/useResumoFinanceiro', () => ({
@@ -87,6 +89,18 @@ vi.mock('@/hooks/useFamilia', () => ({
 // ADR-0151: kits vinculados existentes (botão "Criar kit" + lista sob o card do produto-base).
 vi.mock('@/hooks/useKitsDoProduto', () => ({
   useKitsDoProduto: () => useKitsDoProdutoMock(),
+}));
+
+// ADR-0154: mutation de "Refazer kit" (encerrar-kit-virtual).
+vi.mock('@/hooks/useEncerrarKitVirtual', () => ({
+  useEncerrarKitVirtual: () => useEncerrarKitVirtualMock(),
+}));
+
+// O diálogo real usa vários hooks/queries próprios, fora do escopo deste teste de página — um
+// stub que expõe `open`/`onOpenChange` basta para provar que o botão/ação certos o abrem.
+vi.mock('@/components/kit-virtual/DialogCriarKitVirtual', () => ({
+  DialogCriarKitVirtual: ({ open }: { open: boolean; onOpenChange: (v: boolean) => void }) =>
+    open ? <div data-testid="dialog-criar-kit-virtual" /> : null,
 }));
 
 // MovimentosEstoque (dentro do painel expandido) usa useQuery de verdade — só a busca é mockada.
@@ -189,6 +203,8 @@ function mockHooksPadrao() {
   // Default: org sem o módulo fiscal — a coluna "Fiscal" não existe (ver describe dedicado abaixo).
   useModulosHabilitadosMock.mockReturnValue({ data: [] });
   useKitsDoProdutoMock.mockReturnValue({ data: [] });
+  useProfileMock.mockReturnValue({ isAdmin: true });
+  useEncerrarKitVirtualMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
 }
 
 describe('Publicados', () => {
@@ -615,6 +631,122 @@ describe('Publicados', () => {
         </MemoryRouter>,
       );
       expect(screen.getByText('Sem cadastro fiscal — vincular a produto')).toBeInTheDocument();
+    });
+  });
+
+  // ADR-0154: kit virtual na tela Publicados — linha própria, sem os botões de produto.
+  describe('Kit Virtual (ADR-0154)', () => {
+    function kitItemBase(over: Partial<PublicadoItem> = {}): PublicadoItem {
+      return {
+        familiaId: '',
+        codigoPai: 'kit-virtual:k1',
+        titulo: 'Kit Aventura: 1 Motosserra + 1 Canivete',
+        fornecedor: null,
+        tipo: null,
+        categoria: null,
+        precoPublicacao: 0,
+        descricao: null,
+        mlItemId: 'MLB-KIT1',
+        mlPermalink: 'https://example.com/kit1',
+        publicadoEm: '2026-09-06T00:00:00.000Z',
+        status: 'ativo',
+        estoque: 4,
+        precoAtual: 199.9,
+        motivo: null,
+        ehKitVirtual: true,
+        kitVirtualId: 'k1',
+        ...over,
+      };
+    }
+
+    it('renderiza badge, título, link do ML e "Refazer kit" — sem Pausar/Reativar/Remover/Republicar', () => {
+      usePublicadosMock.mockReturnValue({ data: [kitItemBase()], isLoading: false, error: null });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.getByText('Kit Virtual')).toBeInTheDocument();
+      expect(screen.getByText('Kit Aventura: 1 Motosserra + 1 Canivete')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /ML/ })).toHaveAttribute('href', 'https://example.com/kit1');
+      expect(screen.getByRole('button', { name: 'Refazer kit' })).toBeInTheDocument();
+
+      expect(screen.queryByRole('button', { name: 'Pausar' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Reativar' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Remover' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Corrigir e republicar' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Criar kit' })).not.toBeInTheDocument();
+    });
+
+    it('produtos comuns continuam idênticos quando misturados com um kit (armadilha do codigoPai)', () => {
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase(), kitItemBase()],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      // Produto normal: continua com todos os botões de sempre (Pausar/Republicar/Remover) e
+      // sem nada herdado do kit (fornecedor/codigoPai não colidem).
+      expect(screen.getByText('COLA LIQUIDA SILICONE 250ML')).toBeInTheDocument();
+      expect(screen.getByText('01829149')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Pausar' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Remover' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Corrigir e republicar' })).toBeInTheDocument();
+      // Kit: linha própria, badge presente.
+      expect(screen.getByText('Kit Virtual')).toBeInTheDocument();
+    });
+
+    it('botão "Criar kit virtual" visível só para admin', () => {
+      const comAdmin = render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.getByRole('button', { name: 'Criar kit virtual' })).toBeInTheDocument();
+      comAdmin.unmount();
+
+      useProfileMock.mockReturnValue({ isAdmin: false });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByRole('button', { name: 'Criar kit virtual' })).not.toBeInTheDocument();
+    });
+
+    it('clicar em "Criar kit virtual" abre o diálogo', () => {
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByTestId('dialog-criar-kit-virtual')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Criar kit virtual' }));
+      expect(screen.getByTestId('dialog-criar-kit-virtual')).toBeInTheDocument();
+    });
+
+    it('"Refazer kit": confirma no alert dialog, chama a mutation com o kitId e reabre o diálogo ao suceder', () => {
+      const mutate = vi.fn((_kitId: string, opts?: { onSuccess?: (r: unknown) => void }) => {
+        opts?.onSuccess?.({ ok: true, kitId: 'k1', jaEncerrado: false });
+      });
+      useEncerrarKitVirtualMock.mockReturnValue({ mutate, isPending: false });
+      usePublicadosMock.mockReturnValue({ data: [kitItemBase()], isLoading: false, error: null });
+
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Refazer kit' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Encerrar e refazer' }));
+
+      expect(mutate).toHaveBeenCalledWith('k1', expect.any(Object));
+      expect(screen.getByTestId('dialog-criar-kit-virtual')).toBeInTheDocument();
     });
   });
 });

@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -67,7 +67,9 @@ import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { usePrepararRepublicacao, useRemoverPublicado } from '@/hooks/useRemoverPublicado';
 import { usePausarReativarPublicado } from '@/hooks/usePausarReativarPublicado';
 import { useRetentarCatalogo } from '@/hooks/useRetentarCatalogo';
+import { useEncerrarKitVirtual } from '@/hooks/useEncerrarKitVirtual';
 import { useProfile } from '@/hooks/useProfile';
+import { DialogCriarKitVirtual } from '@/components/kit-virtual/DialogCriarKitVirtual';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
 import { FiltrosAtivos, type ChaveFiltro } from '@/components/filtros-ativos';
@@ -509,6 +511,107 @@ function LinhaTabela({
 }
 
 // ============================================================================
+// Linha de Kit Virtual (ADR-0154)
+// ============================================================================
+
+// Kit Virtual não é produto: sem família, sem análise, sem Pausar/Reativar/Remover/Republicar
+// (D-2/D-14 — a doc do ML não lista `status` como editável em kit, e isso não foi testado).
+// Componente próprio em vez de ramificar LinhaTabela: evita que `familiaId`/`codigoPai`
+// sentinelas cheguem a useFamilia/KitsVinculados/MovimentosEstoque ou aos diálogos de
+// remover/republicar, que são inteiramente `familias`-shaped.
+interface LinhaKitVirtualProps {
+  item: PublicadoItem;
+  isAdmin: boolean;
+  temFiscal: boolean;
+  onRefazer: (kitId: string) => void;
+  refazendo: boolean;
+}
+
+function LinhaKitVirtual({ item, isAdmin, temFiscal, onRefazer, refazendo }: LinhaKitVirtualProps) {
+  return (
+    <TableRow>
+      <TableCell className="whitespace-normal sticky left-0 z-10 bg-background sm:static sm:z-auto sm:bg-transparent">
+        <div className="max-w-[260px]">
+          <StatusPill tone="info" className="mb-1 w-fit">
+            <Package className="h-3 w-3" />
+            Kit Virtual
+          </StatusPill>
+          <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
+        </div>
+      </TableCell>
+      <TableCell className="text-sm tabular-nums">—</TableCell>
+      <TableCell className="text-sm tabular-nums">{item.estoque != null ? item.estoque : '—'}</TableCell>
+      <TableCell className="text-sm tabular-nums">
+        {item.precoAtual != null ? fmtBRL(item.precoAtual) : '—'}
+      </TableCell>
+      <TableCell className="text-sm tabular-nums">
+        {item.unidadesVendidas != null ? item.unidadesVendidas : '—'}
+      </TableCell>
+      <TableCell className="text-sm tabular-nums">
+        {item.valorVendido != null && item.valorVendido > 0 ? fmtBRL(item.valorVendido) : '—'}
+      </TableCell>
+      <TableCell>
+        <BadgeStatus status={item.status ?? 'indisponivel'} motivo={item.motivo} />
+      </TableCell>
+      {temFiscal && (
+        <TableCell>
+          <span className="text-xs text-muted-foreground" title="Kit Virtual não tem cadastro fiscal próprio — cada componente mantém o seu.">—</span>
+        </TableCell>
+      )}
+      <TableCell className="text-sm">{fmtData(item.publicadoEm)}</TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <Button
+            asChild
+            variant="ghost"
+            size="sm"
+            disabled={!item.mlPermalink}
+            className="h-7 px-2 text-xs"
+          >
+            {item.mlPermalink ? (
+              <a href={item.mlPermalink} target="_blank" rel="noreferrer">{CONTEUDO_ML}</a>
+            ) : (
+              <span>{CONTEUDO_ML}</span>
+            )}
+          </Button>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="Refazer kit"
+                title={!isAdmin ? 'Somente administradores podem refazer o kit' : 'Refazer kit'}
+                className="h-7 px-2 text-xs"
+                disabled={!isAdmin || refazendo}
+              >
+                <RotateCcw className="h-3 w-3" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Refazer kit?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  A composição de um Kit Virtual é imutável no Mercado Livre (ADR-0154). O kit
+                  atual será encerrado por lá e o diálogo de criação abre em seguida para você
+                  montar o novo kit.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => onRefazer(item.kitVirtualId!)}>
+                  Encerrar e refazer
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
+// ============================================================================
 // Cabeçalho ordenável
 // ============================================================================
 
@@ -569,6 +672,7 @@ export default function Publicados() {
   const { mutate: prepararRepublicar, isPending: preparandoRepublicar } = usePrepararRepublicacao();
   const { mutate: pausarReativar, isPending: pausandoOuReativando, error: erroPausar } = usePausarReativarPublicado();
   const { mutate: retentarCatalogoMut, isPending: retentandoCatalogo } = useRetentarCatalogo();
+  const { mutate: refazerKitMut, isPending: refazendoKit } = useEncerrarKitVirtual();
   const { isAdmin } = useProfile();
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
   const { data: modulos } = useModulosHabilitados();
@@ -582,6 +686,12 @@ export default function Publicados() {
   // custo/peso/dimensões/foto/estoque, que PublicadoItem não carrega) é buscada sob demanda.
   const [kitAlvo, setKitAlvo] = useState<{ familiaId: string; codigoPai: string; precoAtual: number } | null>(null);
   const { data: familiaKitAlvo } = useFamilia(kitAlvo?.familiaId ?? '', !!kitAlvo);
+
+  // Diálogo de criação de Kit Virtual (ADR-0154) — aberto pelo botão da página ou por "Refazer
+  // kit" (encerra o kit atual e reabre este mesmo diálogo, em branco: D-8 pede pré-preenchimento
+  // com os componentes antigos, mas a assinatura do diálogo não recebe estado inicial).
+  const [criarKitVirtualAberto, setCriarKitVirtualAberto] = useState(false);
+  const [refazendoKitId, setRefazendoKitId] = useState<string | null>(null);
 
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
@@ -680,6 +790,26 @@ export default function Publicados() {
           description: err instanceof Error ? err.message : String(err),
         }),
       onSettled: () => setRetentandoCatalogoId(null),
+    });
+  };
+
+  // ADR-0154 D-8: encerra o kit no ML e reabre o diálogo de criação em branco.
+  const handleRefazerKit = (kitId: string) => {
+    setRefazendoKitId(kitId);
+    refazerKitMut(kitId, {
+      onSuccess: (r) => {
+        if (!r.ok) {
+          toast.error('Falha ao encerrar kit', { description: r.mensagem ?? r.motivo ?? 'Motivo não informado.' });
+          return;
+        }
+        toast.success('Kit encerrado — monte o novo kit no diálogo');
+        setCriarKitVirtualAberto(true);
+      },
+      onError: (err) =>
+        toast.error('Falha ao encerrar kit', {
+          description: err instanceof Error ? err.message : String(err),
+        }),
+      onSettled: () => setRefazendoKitId(null),
     });
   };
 
@@ -819,6 +949,12 @@ export default function Publicados() {
           <div className="flex items-center gap-2">
             {publicados.length > 0 && (
               <BotaoExportar temExpansao temKpis montarReport={montarRelatorio} />
+            )}
+            {isAdmin && (
+              <Button variant="outline" size="sm" onClick={() => setCriarKitVirtualAberto(true)}>
+                <Boxes className="mr-1.5 h-4 w-4" />
+                Criar kit virtual
+              </Button>
             )}
             <Button
               variant="outline"
@@ -1028,25 +1164,36 @@ export default function Publicados() {
                   </TableRow>
                 ) : (
                   pag.itensPagina.map((item) => (
-                    <LinhaTabela
-                      // 1 linha = 1 anúncio. familiaId repete entre anúncios split (ADR-0048),
-                      // e key duplicada deixa linhas fantasmas no DOM ao filtrar.
-                      key={item.mlItemId}
-                      item={item}
-                      onRemover={handleRemover}
-                      removendo={removendo && removendoId === item.familiaId}
-                      onRepublicar={handleRepublicar}
-                      republicando={preparandoRepublicar && republicandoId === item.familiaId}
-                      onPausarReativar={handlePausarReativar}
-                      pausando={pausandoOuReativando && pausandoId === item.mlItemId}
-                      onRetentarCatalogo={handleRetentarCatalogo}
-                      retentandoCatalogo={retentandoCatalogo && retentandoCatalogoId === item.familiaId}
-                      isAdmin={isAdmin}
-                      temFiscal={temFiscal}
-                      onPreencherFiscal={setFiscalAberto}
-                      temModuloEstoque={temModuloEstoque}
-                      onCriarKit={handleCriarKit}
-                    />
+                    item.ehKitVirtual ? (
+                      <LinhaKitVirtual
+                        key={item.mlItemId}
+                        item={item}
+                        isAdmin={isAdmin}
+                        temFiscal={temFiscal}
+                        onRefazer={handleRefazerKit}
+                        refazendo={refazendoKit && refazendoKitId === item.kitVirtualId}
+                      />
+                    ) : (
+                      <LinhaTabela
+                        // 1 linha = 1 anúncio. familiaId repete entre anúncios split (ADR-0048),
+                        // e key duplicada deixa linhas fantasmas no DOM ao filtrar.
+                        key={item.mlItemId}
+                        item={item}
+                        onRemover={handleRemover}
+                        removendo={removendo && removendoId === item.familiaId}
+                        onRepublicar={handleRepublicar}
+                        republicando={preparandoRepublicar && republicandoId === item.familiaId}
+                        onPausarReativar={handlePausarReativar}
+                        pausando={pausandoOuReativando && pausandoId === item.mlItemId}
+                        onRetentarCatalogo={handleRetentarCatalogo}
+                        retentandoCatalogo={retentandoCatalogo && retentandoCatalogoId === item.familiaId}
+                        isAdmin={isAdmin}
+                        temFiscal={temFiscal}
+                        onPreencherFiscal={setFiscalAberto}
+                        temModuloEstoque={temModuloEstoque}
+                        onCriarKit={handleCriarKit}
+                      />
+                    )
                   ))
                 )}
               </TableBody>
@@ -1087,6 +1234,8 @@ export default function Publicados() {
           onOpenChange={(v) => { if (!v) setKitAlvo(null); }}
         />
       )}
+
+      <DialogCriarKitVirtual open={criarKitVirtualAberto} onOpenChange={setCriarKitVirtualAberto} />
     </div>
   );
 }

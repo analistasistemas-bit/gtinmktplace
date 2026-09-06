@@ -30,7 +30,7 @@ function pedido(overrides: Partial<Pedido>): Pedido {
     unidades: 1, bruto: 50, brutoFaturavel: 50, frete: null, liquido: 40, money_release_date: null,
     temMembrosSemDataLiberacao: false, sacado_em: null, sacado_por: null, estorno: 0,
     custo: null, imposto: 0, markup: null, comissao: 5, rastreio: null, is_publiai: false,
-    tem_devolucao: false, itens: [],
+    tem_devolucao: false, ehKit: false, itens: [],
     ...overrides,
   };
 }

@@ -90,6 +90,9 @@ export interface Pedido {
   rastreio: string | null;
   is_publiai: boolean;
   tem_devolucao: boolean;
+  /** ADR-0154 D-10: algum membro do pedido tem `ml_vendas.kit_item_id` — badge "Kit" na linha.
+   *  Não agrupa/altera nenhum cálculo (faturamento intocado, D-10). */
+  ehKit: boolean;
   itens: ItemPedido[];
 }
 
@@ -220,6 +223,7 @@ export function agruparPorPedido(
       cidade: primeiro.cidade ?? null,
       is_publiai: membros.some((v) => v.is_publiai),
       tem_devolucao: membros.some((v) => v.tem_devolucao),
+      ehKit: membros.some((v) => v.kit_item_id != null),
       itens,
     });
   }

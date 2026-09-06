@@ -1136,7 +1136,35 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
       ),
     });
   }
-  return [...comContagem, ...extras];
+
+  // ADR-0154 D-2: Kit Virtual — 3ª fonte, tabela própria (não é `familias` nem
+  // `anuncios_externos`). Adicionado DEPOIS de repPorCodigo/comContagem/extras acima estarem
+  // fechados: um kit não tem codigo_pai/familiaId real, e `codigoPai` aqui é só sentinela —
+  // nunca pode alcançar `repPorCodigo` (chave de agrupamento dos produtos) nem o loop de split.
+  // A tela reconhece a linha por `ehKitVirtual`, nunca por codigoPai/familiaId.
+  const { data: kitsVirtuais } = await supabase
+    .from('kits_virtuais')
+    .select('id, titulo, ml_item_id, ml_permalink, publicado_em')
+    .eq('status', 'publicado')
+    .not('ml_item_id', 'is', null);
+  const kits: PublicadoItem[] = (kitsVirtuais ?? []).map((k) => ({
+    familiaId: '',
+    codigoPai: `kit-virtual:${k.id}`,
+    gtin: null,
+    titulo: k.titulo,
+    fornecedor: null,
+    tipo: null,
+    categoria: null,
+    precoPublicacao: 0,
+    descricao: null,
+    mlItemId: k.ml_item_id as string,
+    mlPermalink: k.ml_permalink ?? null,
+    publicadoEm: k.publicado_em ?? null,
+    ehKitVirtual: true,
+    kitVirtualId: k.id,
+  }));
+
+  return [...comContagem, ...extras, ...kits];
 }
 
 export interface StatusPublicadoItem {

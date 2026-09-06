@@ -66,6 +66,9 @@ export interface Venda {
   tracking_number: string | null;
   is_publiai: boolean;
   tem_devolucao: boolean;
+  /** ADR-0154 D-10: item_id do Kit Virtual (lido de `bundle.parent_item`). Só marca a linha com
+   *  um badge — as orders NÃO são agrupadas e nenhum cálculo financeiro usa este campo. */
+  kit_item_id?: string | null;
   itens: VendaItem[];
   /** Canal de origem da venda (hoje sempre 'mercado_livre'). Coluna ml_vendas.canal ainda não
    *  entra no select (migration da Task 4 pode não estar em produção) — fallback aplicado após
@@ -108,7 +111,7 @@ export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'
   const vendas = await buscarTodasPaginas<Venda>((de, ate) => {
     let q = supabase
       .from('ml_vendas')
-      .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai), custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)')
+      .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, kit_item_id, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai), custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)')
       .gte('date_closed', janela.desde)
       .lte('date_closed', janela.ate)
       .order('date_closed', { ascending: false })

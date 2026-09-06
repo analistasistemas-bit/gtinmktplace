@@ -723,6 +723,127 @@ export type Database = {
           },
         ]
       }
+      kits_virtuais: {
+        Row: {
+          atualizado_em: string
+          chave_cadastro: string
+          criado_em: string
+          criado_por: string | null
+          descricao: string | null
+          desconto_pct: number
+          encerrado_em: string | null
+          erro_mensagem: string | null
+          foto_ml_picture_id: string | null
+          foto_storage_path: string | null
+          id: string
+          listing_type_id: string
+          ml_item_id: string | null
+          ml_permalink: string | null
+          ml_user_product_id: string | null
+          org_id: string
+          publicado_em: string | null
+          status: string
+          titulo: string
+        }
+        Insert: {
+          atualizado_em?: string
+          chave_cadastro: string
+          criado_em?: string
+          criado_por?: string | null
+          descricao?: string | null
+          desconto_pct: number
+          encerrado_em?: string | null
+          erro_mensagem?: string | null
+          foto_ml_picture_id?: string | null
+          foto_storage_path?: string | null
+          id?: string
+          listing_type_id?: string
+          ml_item_id?: string | null
+          ml_permalink?: string | null
+          ml_user_product_id?: string | null
+          org_id: string
+          publicado_em?: string | null
+          status: string
+          titulo: string
+        }
+        Update: {
+          atualizado_em?: string
+          chave_cadastro?: string
+          criado_em?: string
+          criado_por?: string | null
+          descricao?: string | null
+          desconto_pct?: number
+          encerrado_em?: string | null
+          erro_mensagem?: string | null
+          foto_ml_picture_id?: string | null
+          foto_storage_path?: string | null
+          id?: string
+          listing_type_id?: string
+          ml_item_id?: string | null
+          ml_permalink?: string | null
+          ml_user_product_id?: string | null
+          org_id?: string
+          publicado_em?: string | null
+          status?: string
+          titulo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kits_virtuais_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kits_virtuais_componentes: {
+        Row: {
+          codigo: string | null
+          codigo_pai: string | null
+          criado_em: string
+          id: string
+          item_externo_id: string | null
+          kit_id: string
+          ordem: number
+          org_id: string
+          quantidade: number
+          user_product_id: string
+        }
+        Insert: {
+          codigo?: string | null
+          codigo_pai?: string | null
+          criado_em?: string
+          id?: string
+          item_externo_id?: string | null
+          kit_id: string
+          ordem: number
+          org_id: string
+          quantidade: number
+          user_product_id: string
+        }
+        Update: {
+          codigo?: string | null
+          codigo_pai?: string | null
+          criado_em?: string
+          id?: string
+          item_externo_id?: string | null
+          kit_id?: string
+          ordem?: number
+          org_id?: string
+          quantidade?: number
+          user_product_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kits_virtuais_componentes_kit_fk"
+            columns: ["kit_id", "org_id"]
+            isOneToOne: false
+            referencedRelation: "kits_virtuais"
+            referencedColumns: ["id", "org_id"]
+          },
+        ]
+      }
       lotes: {
         Row: {
           anomalias_planilha: Json
@@ -1223,6 +1344,7 @@ export type Database = {
           frete_vendedor: number | null
           id: string
           is_publiai: boolean
+          kit_item_id: string | null
           liberacao_notificada_em: string | null
           liquido: number | null
           money_release_date: string | null
@@ -1261,6 +1383,7 @@ export type Database = {
           frete_vendedor?: number | null
           id?: string
           is_publiai?: boolean
+          kit_item_id?: string | null
           liberacao_notificada_em?: string | null
           liquido?: number | null
           money_release_date?: string | null
@@ -1299,6 +1422,7 @@ export type Database = {
           frete_vendedor?: number | null
           id?: string
           is_publiai?: boolean
+          kit_item_id?: string | null
           liberacao_notificada_em?: string | null
           liquido?: number | null
           money_release_date?: string | null

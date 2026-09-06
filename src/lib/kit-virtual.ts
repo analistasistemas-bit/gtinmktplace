@@ -301,6 +301,28 @@ export async function subirFotoKitVirtualEdge(fotoStoragePath: string): Promise<
   return { ok: true, pictureId: d.picture_id };
 }
 
+// ─── encerrar-kit-virtual (ADR-0154 D-8) ───────────────────────────────────────────────────────
+// "Refazer kit": a composição é imutável no ML, então trocar um componente é encerrar o kit
+// atual e reabrir o diálogo para criar outro (Publicados.tsx).
+
+export type ResultadoEncerrarKitVirtual =
+  | { ok: true; kitId: string; jaEncerrado: boolean }
+  | { ok: false; motivo?: string; mensagem?: string };
+
+export async function encerrarKitVirtualEdge(kitId: string): Promise<ResultadoEncerrarKitVirtual> {
+  const { data, error } = await supabase.functions.invoke('encerrar-kit-virtual', {
+    body: { kit_id: kitId },
+  });
+  if (error) {
+    const detalhe = await corpoDoErroDaEdge(error);
+    const motivo = detalhe && typeof detalhe.corpo.motivo === 'string' ? detalhe.corpo.motivo : undefined;
+    const mensagem = (detalhe && typeof detalhe.corpo.error === 'string' ? detalhe.corpo.error : undefined) ?? error.message;
+    return { ok: false, motivo, mensagem };
+  }
+  const d = data as { kit_id: string; ja_encerrado: boolean };
+  return { ok: true, kitId: d.kit_id, jaEncerrado: d.ja_encerrado };
+}
+
 // ─── Composição em edição no diálogo (estado compartilhado entre a lista e o preview) ────────
 
 export interface ComponenteSelecionadoKitVirtual {

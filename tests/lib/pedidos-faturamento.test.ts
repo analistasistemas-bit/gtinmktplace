@@ -49,6 +49,16 @@ describe('agruparPorPedido', () => {
     expect(pedidos[0].chave).toBe('7');
   });
 
+  // ADR-0154 D-10: badge "Kit" — só sinaliza a linha, nunca agrupa nem altera valor nenhum.
+  it('ehKit=true quando algum membro tem kit_item_id; false sem ele', () => {
+    const comKit = agruparPorPedido([venda({ id: 'a', order_id: 1, pack_id: null, kit_item_id: 'MLB-KIT1' })]);
+    expect(comKit[0].ehKit).toBe(true);
+    expect(comKit[0].liquido).toBe(9); // faturamento intocado — mesmo cálculo de sempre
+
+    const semKit = agruparPorPedido([venda({ id: 'b', order_id: 2, pack_id: null, kit_item_id: null })]);
+    expect(semKit[0].ehKit).toBe(false);
+  });
+
   it('markup do pedido e por produto usando custo (rateio do líquido por valor)', () => {
     const custo: CustoResolver = (it) => (it.id === 'i1' ? 5 : 10); // custo unitário
     const vendas = [venda({
