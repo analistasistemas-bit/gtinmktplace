@@ -13,6 +13,14 @@ services:
         sync: false
     # ADR-0153 (D4): o navegador limita o cache do script do service worker a 24h; sem este
     # header, um deploy pode demorar até um dia para chegar em quem já tem o app instalado.
+    #
+    # ATENÇÃO: este bloco NÃO está valendo hoje. O serviço foi criado pelo dashboard, não pelo
+    # Blueprint, e nesse caso o Render ignora `headers` em silêncio — conferido em produção em
+    # 05/09/2026: o sw.js volta com `public, max-age=0, s-maxage=300`. Na prática não faz falta,
+    # porque `max-age=0` já obriga o navegador a revalidar o sw.js a cada carregamento (o teto de
+    # 24h nunca chega a valer) e o s-maxage limita a propagação a 5 minutos, não a um dia.
+    # Fica aqui como intenção registrada e rede de segurança caso o serviço seja recriado pelo
+    # Blueprint. Para saber o header real, use o curl do docs/how-to/deploy-e-migrations.md.
     headers:
       - path: /sw.js
         name: Cache-Control

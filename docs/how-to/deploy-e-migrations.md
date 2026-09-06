@@ -133,17 +133,32 @@ na hora e **não** executa sozinha ao reconectar, cold start offline com **sess�
 (mostra "Sem conexão"; com o token já expirado o app vai para a tela de Login — ver ADR-0153,
 "Consequências") e o fluxo de atualização de versão (toast → clique → recarrega na versão nova).
 
-Confirmar também que os headers do `render.yaml` estão de fato valendo — eles só se aplicam se o
-serviço estiver vinculado ao Blueprint; se ele foi criado pelo dashboard, o bloco `headers` é
-ignorado em silêncio:
+**O bloco `headers` do `render.yaml` não está valendo — e não precisa.** Conferido em produção
+em 2026-09-05, depois do primeiro deploy do PWA:
 
-```bash
-curl -sI https://<app>/sw.js | grep -i cache-control   # esperado: no-cache
+```
+$ curl -sI https://ean2marketplace-frontend.onrender.com/sw.js | grep -i cache-control
+cache-control: public, max-age=0, s-maxage=300
 ```
 
-Se não vier `no-cache`, configurar o header pelo dashboard do Render. A consequência de ficar sem
-ele não é quebra: é o navegador podendo segurar o service worker por até 24 h antes de ver o
-deploy novo.
+O serviço foi criado pelo dashboard, não pelo Blueprint, então o bloco `headers` é ignorado em
+silêncio. Mas o padrão do Render já resolve o problema que o bloco existia para resolver:
+`max-age=0` obriga o navegador a revalidar o `sw.js` a cada carregamento — o teto de 24 h do
+navegador nunca chega a valer. O `s-maxage=300` é cache de CDN: um deploy leva **até 5 minutos**
+para alcançar todo mundo, não 24 h.
+
+Ou seja: o bloco no `render.yaml` está lá como intenção documentada e como rede de segurança se
+o serviço um dia for recriado pelo Blueprint. Não confie nele para saber o header real — confira
+com o `curl` acima.
+
+Um detalhe conhecido do mesmo teste: o Render serve o `site.webmanifest` como
+`binary/octet-stream` em vez de `application/manifest+json`. O Chrome aceita assim mesmo
+(instalabilidade confirmada em produção), então não foi mexido. Se algum navegador recusar a
+instalação no futuro, é o primeiro suspeito.
+
+Primeira visita: o service worker leva alguns segundos baixando os ~147 arquivos do precache. Só
+depois disso o app abre offline. Ao validar, espere o registro ficar `activated` antes de cortar a
+rede — cortar antes deixa o precache pela metade e o app não abre.
 
 ---
 
