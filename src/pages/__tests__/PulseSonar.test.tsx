@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -6,6 +6,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import PulseSonar, { SonarVendas, SonarEanCruzamento } from '../PulseSonar';
 import { fetchCruzamentoEan, fetchSecoes237Sonar, fetchVendasSonar } from '@/lib/sonar';
 import type { CruzamentoEan, ItemVendasSonar, PainelVendasSonar, RespostaSecoes237Sonar } from '@/lib/sonar';
+import { useAuthStore } from '@/stores/auth-store';
+import { useSupportStore } from '@/stores/support-store';
 
 // Card "Produto destaque" (SonarVendas): mesma regra de href do item_id da coluna de ações
 // (D15/ADR-0127), aplicada ao `produto_destaque` do payload — ver task 15/16 (coordenador pediu
@@ -26,6 +28,7 @@ function respBase(destaque: ItemVendasSonar | null): PainelVendasSonar {
     itens_analisados: 1, itens_com_vendas: 1, vendas_totais: 10, valor_mercado: 1000,
     produto_destaque: destaque, palavras_chave_titulos: [],
     raio_x: { total_anuncios: null, ticket_medio: null, lojas_oficiais: 0, full: 0, frete_gratis: 0, internacionais: 0 },
+    busca_id: 'search-1', resultado_id: 'result-1', consumo: null,
   };
 }
 
@@ -111,6 +114,11 @@ vi.mock('@/lib/sonar-buscas-recentes', async (importOriginal) => ({
 beforeAll(() => { Element.prototype.scrollIntoView = vi.fn(); });
 
 function renderSonar() {
+  useAuthStore.setState({
+    user: { id: 'user-1' } as never,
+    profile: { id: 'user-1', is_admin: false, is_active: true, allowed_menus: ['pulse'], nome: 'User', org_id: 'org-1', is_super_admin: false },
+  });
+  useSupportStore.setState({ context: null });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <MemoryRouter>
@@ -166,7 +174,7 @@ describe('PulseSonar — EAN vai para a análise completa, como a busca por desc
     const campo = renderSonar();
     await userEvent.type(campo, '7891113175371{Enter}');
     // O pipeline pago da busca por termo, com o EAN como termo — não a edge de catálogo.
-    expect(fetchVendasSonar).toHaveBeenCalledWith('7891113175371');
+    expect(fetchVendasSonar).toHaveBeenCalledWith('7891113175371', expect.any(String), null);
     expect(screen.queryByText(/Consultar grátis/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Como consultar o EAN/i)).not.toBeInTheDocument();
   });
@@ -182,14 +190,43 @@ describe('PulseSonar — EAN vai para a análise completa, como a busca por desc
     // 2º scan viraria "78911131753717891000444764" — 26 dígitos, não casa com EAN_RE, passa pelo
     // piso de 3 caracteres e queima um run pago em lixo.
     await userEvent.type(campo, '7891000444764{Enter}');
-    expect(fetchVendasSonar).toHaveBeenLastCalledWith('7891000444764');
+    expect(fetchVendasSonar).toHaveBeenLastCalledWith('7891000444764', expect.any(String), null);
   });
 
   it('termo digitado continua no campo: quem digita quer ver e editar o que buscou', async () => {
     const campo = renderSonar();
     await userEvent.type(campo, 'tecido oxford 10 metros{Enter}');
     expect(campo).toHaveValue('tecido oxford 10 metros');
-    expect(fetchVendasSonar).toHaveBeenCalledWith('tecido oxford 10 metros');
+    expect(fetchVendasSonar).toHaveBeenCalledWith('tecido oxford 10 metros', expect.any(String), null);
+  });
+});
+
+describe('PulseSonar — intenção e escopo comercial', () => {
+  beforeEach(() => {
+    vi.mocked(fetchVendasSonar).mockClear();
+    vi.mocked(fetchVendasSonar).mockResolvedValue({ configurado: false });
+  });
+
+  it('mantém request_id ao verificar uma resposta pendente', async () => {
+    vi.mocked(fetchVendasSonar).mockResolvedValue({ configurado: false, pendente: true, busca_id: 's1', resultado_id: 'r1' });
+    const campo = renderSonar();
+    await userEvent.type(campo, 'cafeteira{Enter}');
+    const verificar = await screen.findByRole('button', { name: 'Verificar resultado' }, { timeout: 3000 });
+    const requestId = vi.mocked(fetchVendasSonar).mock.calls[0][1];
+    await userEvent.click(verificar);
+    await waitFor(() => expect(fetchVendasSonar).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(fetchVendasSonar).mock.calls[1][1]).toBe(requestId);
+  });
+
+  it('não reaplica a intenção antiga ao trocar o contexto de organização', async () => {
+    const campo = renderSonar();
+    await userEvent.type(campo, 'cafeteira{Enter}');
+    await waitFor(() => expect(fetchVendasSonar).toHaveBeenCalledTimes(1));
+    act(() => useSupportStore.setState({
+      context: { requestId: 'support-2', orgId: 'org-2', orgName: 'Outra', scope: 'read', expiresAt: '2030-01-01T00:00:00Z' },
+    }));
+    await waitFor(() => expect(screen.getByText('O que o Sonar faz')).toBeInTheDocument());
+    expect(fetchVendasSonar).toHaveBeenCalledTimes(1);
   });
 });
 

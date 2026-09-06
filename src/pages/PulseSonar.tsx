@@ -40,6 +40,8 @@ import {
   aplicarFiltrosAnuncios, temFiltroAnunciosAtivo, FILTROS_ANUNCIOS_VAZIOS, type FiltrosAnuncios,
 } from '@/lib/sonar-filtros';
 import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
+import { useAuthStore } from '@/stores/auth-store';
+import { useSupportStore } from '@/stores/support-store';
 
 // Detecta EAN/GTIN no campo de busca — espelho de supabase/functions/_shared/pulse/entrada.ts
 // (regex Deno não é importável no bundle Vite). Desde o ADR-0140 não decide MAIS o caminho da
@@ -341,8 +343,19 @@ function SonarFiltrosPopover({ filtros, setFiltros }: {
 const chaveDoItem = (i: ItemVendasSonar) => i.item_id ?? `pos-${i.posicao ?? 'x'}-${i.titulo}`;
 
 export default function PulseSonar() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const profileOrgId = useAuthStore((state) => state.profile?.org_id ?? null);
+  const support = useSupportStore((state) => state.context);
+  const sonarScope = useMemo(() => {
+    const orgId = support?.orgId ?? profileOrgId;
+    return userId && orgId ? { orgId, actorId: userId, supportRequestId: support?.requestId ?? null } : null;
+  }, [userId, profileOrgId, support]);
+  const scopeKey = sonarScope ? `${sonarScope.orgId}:${sonarScope.actorId}:${sonarScope.supportRequestId ?? 'cliente'}` : 'sem-escopo';
   const [termo, setTermo] = useState('');
   const [termoBuscado, setTermoBuscado] = useState<string | null>(null);
+  const [requestId, setRequestId] = useState<string | null>(null);
+  const [resultadoReaberto, setResultadoReaberto] = useState<string | null>(null);
+  const [intentScope, setIntentScope] = useState<string | null>(null);
   const [, forcarRender] = useState(0);
   const iniciadoEmRef = useRef(0);
   // Limpeza + refoco do campo depois de um scan (ADR-0140; antes disso o gatilho era a escolha
@@ -351,7 +364,14 @@ export default function PulseSonar() {
   // código escaneado é anexado ao 1º ("789…371" + "789…764" = 26 dígitos), o que não casa mais com
   // EAN_RE, passa pelo piso de 3 caracteres e vira uma busca paga em lixo.
   const inputRef = useRef<HTMLInputElement>(null);
-  const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>(lerBuscasRecentes);
+  const [buscasRecentes, setBuscasRecentes] = useState<BuscaRecente[]>([]);
+  useEffect(() => {
+    setBuscasRecentes(lerBuscasRecentes(sonarScope));
+    setTermoBuscado(null);
+    setRequestId(null);
+    setResultadoReaberto(null);
+    setIntentScope(null);
+  }, [scopeKey]);
   // Mantém o stepper visível um instante depois da resposta chegar, para mostrar as etapas
   // concluídas antes de trocar pelo resultado.
   const [mostrarProgresso, setMostrarProgresso] = useState(false);
@@ -362,12 +382,18 @@ export default function PulseSonar() {
   // Query PRIMÁRIA (ADR-0127/D3): a tabela nasce da Apify. retry desligado — cada tentativa
   // sem cache dispara um run pago (US$ 0,10).
   const { data: vendas, isFetching, isError, error, refetch } = useQuery({
-    queryKey: ['pulse', 'sonar-vendas', termoBuscado],
-    queryFn: () => fetchVendasSonar(termoBuscado!),
-    enabled: !!termoBuscado,
+    queryKey: ['pulse', 'sonar-vendas', scopeKey, termoBuscado, requestId, resultadoReaberto],
+    queryFn: () => fetchVendasSonar(termoBuscado!, requestId!, resultadoReaberto),
+    enabled: !!termoBuscado && !!requestId && !!sonarScope && intentScope === scopeKey,
     staleTime: Infinity,
     retry: false,
   });
+
+  useEffect(() => {
+    if (sonarScope && intentScope === scopeKey && termoBuscado && vendas?.configurado && vendas.resultado_id) {
+      setBuscasRecentes(registrarBusca(sonarScope, termoBuscado, vendas.resultado_id));
+    }
+  }, [sonarScope, scopeKey, intentScope, termoBuscado, vendas]);
 
   const itens = useMemo(
     () => (vendas?.configurado ? itensDaAmostra(vendas) : []),
@@ -421,7 +447,7 @@ export default function PulseSonar() {
   );
   // Leitura local (RLS), sem ML. Falha aqui não derruba o resultado — o bloco some e o resto fica.
   const { data: cruzamentoEan } = useQuery({
-    queryKey: ['pulse', 'sonar-ean-cruzamento', eanBuscado, catalogIdsAmostra],
+    queryKey: ['pulse', 'sonar-ean-cruzamento', scopeKey, eanBuscado, catalogIdsAmostra],
     queryFn: () => fetchCruzamentoEan(eanBuscado!, catalogIdsAmostra),
     enabled: !!eanBuscado && itens.length > 0,
     staleTime: 60_000,
@@ -441,9 +467,9 @@ export default function PulseSonar() {
 
   // Visitas (D3): dispara quando a lista de anúncios chega. Grátis (API oficial) — retry ok.
   const { data: visitas, isFetching: visitasCarregando } = useQuery({
-    queryKey: ['pulse', 'sonar-visitas', termoBuscado, itemIds],
-    queryFn: () => fetchVisitasSonar(itemIds),
-    enabled: itemIds.length > 0,
+    queryKey: ['pulse', 'sonar-visitas', scopeKey, vendas?.busca_id, vendas?.resultado_id, itemIds],
+    queryFn: () => fetchVisitasSonar(itemIds, vendas!.busca_id!, vendas!.resultado_id!),
+    enabled: !!vendas?.configurado && itemIds.length > 0,
     staleTime: Infinity,
     retry: 1,
   });
@@ -456,8 +482,8 @@ export default function PulseSonar() {
     error: secoes237ErroObj,
     refetch: refetchSecoes237,
   } = useQuery({
-    queryKey: ['pulse', 'sonar-secoes237', termoBuscado, itemIds],
-    queryFn: () => fetchSecoes237Sonar(itens),
+    queryKey: ['pulse', 'sonar-secoes237', scopeKey, vendas?.busca_id, vendas?.resultado_id, itemIds],
+    queryFn: () => fetchSecoes237Sonar(vendas!.busca_id!, vendas!.resultado_id!),
     enabled: !!vendas?.configurado && itens.length > 0,
     staleTime: Infinity,
     retry: 1,
@@ -502,13 +528,15 @@ export default function PulseSonar() {
   // ML por código de barras já devolve só os anúncios daquele produto (medido: 20 de 24 anúncios
   // para o EAN do ADR-0136, contra 1 pelo lookup de catálogo). Sem escolha grátis/paga: toda
   // consulta é a mesma, e o custo é o mesmo da busca por termo.
-  const garimpar = (t: string) => {
+  const garimpar = (t: string, resultadoId: string | null = null) => {
     const ehEan = EAN_RE.test(t);
     // Termo digitado continua no campo (comportamento de sempre — a tela de resultado não repete o
     // termo em lugar nenhum). EAN sai: quem escaneia não digitou, e o campo cheio quebra o próximo
     // scan. Ver o comentário do `inputRef`.
     setTermo(ehEan ? '' : t);
-    setBuscasRecentes(registrarBusca(t));
+    setRequestId(crypto.randomUUID());
+    setResultadoReaberto(resultadoId);
+    setIntentScope(scopeKey);
     setTermoBuscado(t);
     if (ehEan) inputRef.current?.focus();
   };
@@ -708,7 +736,7 @@ export default function PulseSonar() {
               <button
                 type="button"
                 className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                onClick={() => { limparBuscasRecentes(); setBuscasRecentes([]); }}
+                onClick={() => { limparBuscasRecentes(sonarScope); setBuscasRecentes([]); }}
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden />
                 Limpar tudo
@@ -720,7 +748,7 @@ export default function PulseSonar() {
                   key={b.termo}
                   type="button"
                   className="flex items-center gap-2 rounded-md border px-3 py-2 text-left text-sm hover:bg-accent"
-                  onClick={() => garimpar(b.termo)}
+                  onClick={() => garimpar(b.termo, b.resultado_id)}
                 >
                   <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden />
                   <span className="min-w-0 flex-1 truncate">{b.termo}</span>
@@ -744,6 +772,13 @@ export default function PulseSonar() {
         )
       ) : mostrarProgresso ? (
         <SonarProgresso passos={passosProgresso(elapsedMs, !carregando)} />
+      ) : vendas && !vendas.configurado && vendas.pendente ? (
+        <div role="status" className="rounded-lg border p-4 text-sm text-muted-foreground">
+          <p>Outra coleta já está preparando este resultado. Esta consulta ainda não gerou cobrança.</p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={() => refetch()}>
+            Verificar resultado
+          </Button>
+        </div>
       ) : vendas && !vendas.configurado ? (
         // D16 modo 1: sem APIFY_TOKEN → estado vazio explícito, nada de tabela fantasma.
         <EmptyState
@@ -796,6 +831,15 @@ export default function PulseSonar() {
         </div>
       ) : vendas?.configurado ? (
         <>
+          {vendas.consumo && (
+            <p className="mb-3 text-xs text-muted-foreground">
+              {vendas.consumo.classificacao === 'cliente'
+                ? `Consulta registrada: ${fmtBRL(vendas.consumo.total_centavos / 100)}.`
+                : vendas.consumo.classificacao === 'reabertura'
+                  ? 'Resultado reaberto sem nova cobrança.'
+                  : 'Consulta isenta.'}
+            </p>
+          )}
           {/* ADR-0140 D-3: só na consulta por EAN — é o que a busca por termo não tem como
               responder ("eu já vendo isto?" precisa de um GTIN para cruzar). */}
           {eanBuscado && cruzamentoEan && <SonarEanCruzamento cruzamento={cruzamentoEan} />}

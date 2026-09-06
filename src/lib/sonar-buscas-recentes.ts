@@ -1,28 +1,27 @@
-// Buscas recentes do Sonar (pedido do Diego 18/08, referência Hunter Spy): histórico local por
-// navegador (localStorage) — sem tabela, sem RLS, sem sync entre dispositivos de propósito.
-// ponytail: se um dia precisar seguir o usuário entre máquinas, vira coluna em configuracoes.
-// Clicar numa busca re-dispara o garimpo normal: termo dentro do cache (painel 24h / vendas 7d)
-// volta em ~2s sem custo; fora dele paga como qualquer busca nova.
-
 export interface BuscaRecente {
   termo: string;
-  em: string; // ISO
+  em: string;
+  resultado_id: string;
 }
 
-const CHAVE = 'sonar:buscas-recentes';
+export interface EscopoSonar {
+  orgId: string;
+  actorId: string;
+  supportRequestId: string | null;
+}
+
 const MAXIMO = 10;
+const normalizar = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+const chave = (scope: EscopoSonar) =>
+  `sonar:buscas-recentes:${scope.orgId}:${scope.actorId}:${scope.supportRequestId ?? 'cliente'}`;
 
-const normalizar = (t: string) => t.trim().toLowerCase().replace(/\s+/g, ' ');
-
-/** Pura: insere no topo, deduplicando pelo termo normalizado (re-busca só sobe a existente). */
-export function inserirBusca(lista: BuscaRecente[], termo: string, em: string): BuscaRecente[] {
-  const t = termo.trim();
-  if (t.length < 3) return lista;
-  const semRepetida = lista.filter((b) => normalizar(b.termo) !== normalizar(t));
-  return [{ termo: t, em }, ...semRepetida].slice(0, MAXIMO);
+export function inserirBusca(lista: BuscaRecente[], termo: string, em: string, resultadoId: string): BuscaRecente[] {
+  const value = termo.trim();
+  if (value.length < 3 || !resultadoId) return lista;
+  const semRepetida = lista.filter((busca) => busca.resultado_id !== resultadoId && normalizar(busca.termo) !== normalizar(value));
+  return [{ termo: value, em, resultado_id: resultadoId }, ...semRepetida].slice(0, MAXIMO);
 }
 
-/** Pura: "agora há pouco" / "há 23 minutos" / "há cerca de 17 horas" / "há 2 dias". */
 export function tempoRelativo(iso: string, agora: Date): string {
   const ms = agora.getTime() - new Date(iso).getTime();
   if (!Number.isFinite(ms) || ms < 0) return '';
@@ -35,26 +34,23 @@ export function tempoRelativo(iso: string, agora: Date): string {
   return `há ${dias} dia${dias === 1 ? '' : 's'}`;
 }
 
-// --- Wrappers de localStorage (não testados; a lógica está nas puras acima) ---------------------
-
-export function lerBuscasRecentes(): BuscaRecente[] {
+export function lerBuscasRecentes(scope: EscopoSonar | null): BuscaRecente[] {
+  if (!scope) return [];
   try {
-    const raw = localStorage.getItem(CHAVE);
+    const raw = localStorage.getItem(chave(scope));
     const lista = raw ? JSON.parse(raw) : [];
-    return Array.isArray(lista)
-      ? lista.filter((b): b is BuscaRecente => typeof b?.termo === 'string' && typeof b?.em === 'string')
-      : [];
-  } catch {
-    return [];
-  }
+    return Array.isArray(lista) ? lista.filter((busca): busca is BuscaRecente =>
+      typeof busca?.termo === 'string' && typeof busca?.em === 'string' && typeof busca?.resultado_id === 'string') : [];
+  } catch { return []; }
 }
 
-export function registrarBusca(termo: string): BuscaRecente[] {
-  const lista = inserirBusca(lerBuscasRecentes(), termo, new Date().toISOString());
-  try { localStorage.setItem(CHAVE, JSON.stringify(lista)); } catch { /* storage cheio/bloqueado */ }
+export function registrarBusca(scope: EscopoSonar, termo: string, resultadoId: string): BuscaRecente[] {
+  const lista = inserirBusca(lerBuscasRecentes(scope), termo, new Date().toISOString(), resultadoId);
+  try { localStorage.setItem(chave(scope), JSON.stringify(lista)); } catch { /* armazenamento indisponível */ }
   return lista;
 }
 
-export function limparBuscasRecentes(): void {
-  try { localStorage.removeItem(CHAVE); } catch { /* idem */ }
+export function limparBuscasRecentes(scope: EscopoSonar | null): void {
+  if (!scope) return;
+  try { localStorage.removeItem(chave(scope)); } catch { /* armazenamento indisponível */ }
 }

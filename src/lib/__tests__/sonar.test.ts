@@ -150,11 +150,6 @@ describe('formatarMedianaVendasMesSecoes237 — ADR-0142/0143', () => {
 });
 
 describe('fetchSecoes237Sonar — POST pulse-analise-secoes237', () => {
-  const item = { titulo: 'Prod', preco: 99, vendidos: 10, link: null, imagem: null, vendedor: 'Loja',
-    seller_id: 123, frete_gratis: true, loja_oficial: false, internacional: false, full: true,
-    item_id: 'MLB999', catalog_product_id: null, avaliacao_nota: 4.5, avaliacao_qtd: 20, posicao: 1,
-    patrocinado: false, selo: null, preco_anterior: null, desconto_pct: null, flex: null };
-
   beforeEach(() => {
     vi.spyOn(supabase.auth, 'getSession').mockResolvedValue({
       data: { session: { access_token: 'tok-test' } },
@@ -166,21 +161,21 @@ describe('fetchSecoes237Sonar — POST pulse-analise-secoes237', () => {
     vi.restoreAllMocks();
   });
 
-  it('monta URL, auth e body { itens } corretamente', async () => {
+  it('monta URL, auth e correlação durável corretamente', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({ secoes237: {}, meta: { vendedores_distintos: 1, sem_seller_id: 0, serie_linhas: 0 } }),
     }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await fetchSecoes237Sonar([item]);
+    await fetchSecoes237Sonar('search-1', 'result-1');
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/functions/v1/pulse-analise-secoes237'),
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ Authorization: 'Bearer tok-test' }),
-        body: JSON.stringify({ itens: [item] }),
+        body: JSON.stringify({ busca_id: 'search-1', resultado_id: 'result-1' }),
       }),
     );
   });

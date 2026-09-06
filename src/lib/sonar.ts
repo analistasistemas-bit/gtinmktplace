@@ -62,19 +62,36 @@ export interface PainelVendasSonar {
   itens?: ItemVendasSonar[];
   /** Espelho de sonar-vendas.ts; opcional porque cache v4 pré-ADR-0127 não tem. */
   historico_gravado?: boolean;
+  busca_id: string;
+  resultado_id: string;
+  consumo: SonarConsumption | null;
+}
+
+export interface SonarConsumption {
+  classificacao: 'cliente' | 'reabertura' | 'daludi' | 'isento';
+  entrega_id: string | null;
+  unidades: 0 | 1;
+  total_centavos: number;
 }
 
 /** `configurado: false` = APIFY_TOKEN ausente no backend — indisponível, não erro (ADR-0122 §5). */
-export type RespostaVendasSonar = { configurado: false } | PainelVendasSonar;
+export type RespostaVendasSonar =
+  | { configurado: false; pendente?: false; busca_id?: string; resultado_id?: string }
+  | { configurado: false; pendente: true; busca_id: string; resultado_id: string }
+  | PainelVendasSonar;
 
 /** POST /functions/v1/pulse-sonar-vendas { termo } → RespostaVendasSonar. */
-export async function fetchVendasSonar(termo: string): Promise<RespostaVendasSonar> {
+export async function fetchVendasSonar(
+  termo: string,
+  requestId: string,
+  resultadoId: string | null = null,
+): Promise<RespostaVendasSonar> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
   const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pulse-sonar-vendas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ termo }),
+    body: JSON.stringify(resultadoId ? { resultado_id: resultadoId, request_id: requestId } : { termo, request_id: requestId }),
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
@@ -91,13 +108,13 @@ export type RespostaVisitasSonar =
   | { conectado: false }
   | { conectado: true; por_item: Record<string, VisitasAnuncio | null> };
 
-export async function fetchVisitasSonar(itemIds: string[]): Promise<RespostaVisitasSonar> {
+export async function fetchVisitasSonar(itemIds: string[], buscaId: string, resultadoId: string): Promise<RespostaVisitasSonar> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
   const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pulse-sonar-visitas`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ item_ids: itemIds.map((id) => id.trim()) }),
+    body: JSON.stringify({ busca_id: buscaId, resultado_id: resultadoId, item_ids: itemIds.map((id) => id.trim()) }),
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
@@ -328,13 +345,13 @@ export type RespostaSecoes237Sonar =
   | { conectado: true; secoes237: Secoes237Sonar; meta: MetaSecoes237Sonar };
 
 /** POST /functions/v1/pulse-analise-secoes237 { itens } → RespostaSecoes237Sonar. */
-export async function fetchSecoes237Sonar(itens: ItemVendasSonar[]): Promise<RespostaSecoes237Sonar> {
+export async function fetchSecoes237Sonar(buscaId: string, resultadoId: string): Promise<RespostaSecoes237Sonar> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
   const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/pulse-analise-secoes237`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ itens }),
+    body: JSON.stringify({ busca_id: buscaId, resultado_id: resultadoId }),
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);

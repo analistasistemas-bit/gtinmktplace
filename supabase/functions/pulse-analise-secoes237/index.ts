@@ -27,28 +27,33 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  let orgId: string;
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
   try {
-    ({ orgId } = await requireUserOrg(req, { access: 'read' }));
+    context = await requireUserOrg(req, { access: 'read' });
   } catch (resp) {
     if (resp instanceof Response) return resp;
     throw resp;
   }
+  const { orgId } = context;
 
   const db = adminClient();
   if (!(await exigirModulo(db, orgId, 'pulse'))) {
     return json({ erro: 'Módulo Pulse não habilitado para esta organização.' }, 403);
   }
 
-  let body: { itens?: ItemVendas[] };
+  let body: { busca_id?: string; resultado_id?: string };
   try {
     body = await req.json();
   } catch {
     return json({ erro: 'JSON inválido' }, 400);
   }
 
-  if (!Array.isArray(body.itens)) return json({ erro: 'itens obrigatório (array)' }, 400);
-  const itens = body.itens;
+  const { data: payload, error: payloadError } = await db.rpc('platform_sonar_get_payload', {
+    p_actor: context.userId, p_org_id: orgId, p_support_request: context.support?.requestId ?? null,
+    p_search_id: body.busca_id, p_result_id: body.resultado_id,
+  });
+  if (payloadError || !payload || !Array.isArray(payload.itens)) return json({ erro: 'Correlação Sonar inválida' }, 403);
+  const itens = payload.itens as ItemVendas[];
 
   // Sem conexão do ML não há ponte para o vendedor: ausência explícita com 200, mesmo padrão da
   // pulse-sonar-visitas — a tela vive e diz o motivo (ADR-0143, critério 6).
@@ -77,6 +82,13 @@ Deno.serve(async (req) => {
     sellerIdsCatalogo: doCatalogo.sellerIds,
     serie,
   });
+
+  const { error: auditError } = await db.rpc('platform_sonar_log_event', {
+    p_actor: context.userId, p_org_id: orgId, p_support_request: context.support?.requestId ?? null,
+    p_search_id: body.busca_id, p_result_id: body.resultado_id, p_stage: 'analise_secoes237',
+    p_outcome: doCatalogo.catalogos_com_falha > 0 ? 'partial' : 'ready', p_reason: null,
+  });
+  if (auditError) return json({ erro: 'Falha ao registrar complemento Sonar' }, 503);
 
   return json({
     conectado: true,

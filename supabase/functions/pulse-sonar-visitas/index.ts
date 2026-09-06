@@ -36,19 +36,27 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  let orgId: string;
-  try { ({ orgId } = await requireUserOrg(req, { access: 'read' })); }
+  let context: Awaited<ReturnType<typeof requireUserOrg>>;
+  try { context = await requireUserOrg(req, { access: 'read' }); }
   catch (resp) { if (resp instanceof Response) return resp; throw resp; }
+  const { orgId } = context;
 
   const admin = adminClient();
   if (!(await exigirModulo(admin, orgId, 'pulse'))) {
     return json({ erro: 'Módulo Pulse não habilitado para esta organização.' }, 403);
   }
 
-  let body: { item_ids?: unknown };
+  let body: { busca_id?: string; resultado_id?: string; item_ids?: unknown };
   try { body = await req.json(); } catch { return json({ erro: 'JSON inválido' }, 400); }
+  const { data: payload, error: payloadError } = await admin.rpc('platform_sonar_get_payload', {
+    p_actor: context.userId, p_org_id: orgId, p_support_request: context.support?.requestId ?? null,
+    p_search_id: body.busca_id, p_result_id: body.resultado_id,
+  });
+  if (payloadError || !payload || !Array.isArray(payload.itens)) return json({ erro: 'Correlação Sonar inválida' }, 403);
+  const permitidos = new Set(payload.itens.map((item: { item_id?: unknown }) => item.item_id).filter((id: unknown): id is string => typeof id === 'string'));
   const itemIds = validarItemIds(body.item_ids);
   if (itemIds == null) return json({ erro: 'item_ids obrigatório (1 a 20 strings)' }, 400);
+  if (itemIds.some((id) => !permitidos.has(id))) return json({ erro: 'item_id fora da amostra persistida' }, 400);
 
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
   // Sem conexão ML → indisponível explícito com 200 (mesmo padrão do configurado:false da
@@ -62,5 +70,11 @@ Deno.serve(async (req) => {
     const settled = await Promise.allSettled(lote.map((id) => visitasDoItem(id, token)));
     settled.forEach((s, j) => { porItem[lote[j]] = s.status === 'fulfilled' ? s.value : null; });
   }
+  const { error: auditError } = await admin.rpc('platform_sonar_log_event', {
+    p_actor: context.userId, p_org_id: orgId, p_support_request: context.support?.requestId ?? null,
+    p_search_id: body.busca_id, p_result_id: body.resultado_id, p_stage: 'visitas',
+    p_outcome: Object.values(porItem).some((value) => value == null) ? 'partial' : 'ready', p_reason: null,
+  });
+  if (auditError) return json({ erro: 'Falha ao registrar complemento Sonar' }, 503);
   return json({ conectado: true, por_item: porItem });
 });

@@ -1,82 +1,139 @@
-// Sonar — vendas estimadas via Apify (ADR-0122). Separada da pulse-sonar de propósito: o run
-// da Apify pode levar minutos e a falha dele degrada só este bloco, nunca o painel oficial.
-// Só leitura; cache global 24h (dado público, mesma regra do ADR-0120 §3).
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { redisGet, redisSet } from '../_shared/redis/client.ts';
 import { apifyConfigurado, buscarAnunciosML } from '../_shared/apify/client.ts';
 import { adminClient } from '../_shared/supabase.ts';
+import { normalizeSonarQuery, sonarQueryType } from '../_shared/pulse/sonar-metering.ts';
 import { montarPainelVendas, parseItensApify, parseTotalAnuncios, linhasSnapshot, type ItemVendas } from '../_shared/pulse/sonar-vendas.ts';
 
-// 7 dias, não 24h: "+N vendidos" é acumulado desde a criação do anúncio e arredondado em faixas
-// (100 / 500 / 1k / …), então praticamente não muda de um dia para o outro — o TTL curto só
-// pagava o mesmo dado de novo. Cada run custa ~US$ 0,10, então repetição é o desperdício caro.
 const CACHE_TTL_S = 7 * 24 * 60 * 60;
-const normalizarTermo = (t: string) => t.trim().toLowerCase().replace(/\s+/g, ' ');
+const SCHEMA_VERSION = 4;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }
 
-// Histórico (ADR-0127/D7): grava SÓ em cache-miss — 1 snapshot por termo por ciclo de TTL, por
-// construção. Falha de insert não derruba a resposta (o dado Apify já foi pago), mas nunca é
-// silenciosa: log + historico_gravado:false na resposta.
 async function gravarSnapshots(termo: string, geradoEm: string, itens: ItemVendas[]): Promise<boolean> {
   const linhas = linhasSnapshot(termo, geradoEm, itens);
   if (linhas.length === 0) return false;
   try {
-    const { error } = await adminClient()
-      .from('sonar_snapshots')
+    const { error } = await adminClient().from('sonar_snapshots')
       .upsert(linhas, { onConflict: 'termo,item_id,gerado_em', ignoreDuplicates: true });
     if (error) {
       console.error(`[sonar-snapshots] insert falhou para "${termo}": ${error.message}`);
       return false;
     }
     return true;
-  } catch (e) {
-    console.error(`[sonar-snapshots] insert lançou para "${termo}":`, e instanceof Error ? e.message : e);
+  } catch (error) {
+    console.error('[sonar-snapshots] insert lançou:', error instanceof Error ? error.message : error);
     return false;
   }
+}
+
+type Context = Awaited<ReturnType<typeof requireUserOrg>>;
+type Ledger = { acao: 'collect' | 'pending' | 'ready' | 'failed'; busca_id: string; resultado_id: string; lease_token?: string; payload?: Record<string, unknown>; consumo?: Record<string, unknown> };
+
+function rpcArgs(context: Context) {
+  return { p_actor: context.userId, p_org_id: context.orgId, p_support_request: context.support?.requestId ?? null };
+}
+
+async function ledgerRpc(name: string, args: Record<string, unknown>): Promise<Ledger> {
+  const { data, error } = await adminClient().rpc(name, args);
+  if (error || !data) throw new Error(error?.message ?? `ledger ${name} indisponível`);
+  return data as Ledger;
+}
+
+function resposta(ledger: Ledger, historicoGravado = false): Response {
+  return json({ ...(ledger.payload ?? {}), busca_id: ledger.busca_id, resultado_id: ledger.resultado_id,
+    consumo: ledger.consumo ?? null, historico_gravado: historicoGravado });
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
 
-  try { await requireUserOrg(req, { access: 'read' }); }
-  catch (resp) { if (resp instanceof Response) return resp; throw resp; }
+  let context: Context;
+  try { context = await requireUserOrg(req, { access: 'read' }); }
+  catch (response) { if (response instanceof Response) return response; throw response; }
 
-  let body: { termo?: string };
+  let body: { termo?: string; request_id?: string; resultado_id?: string };
   try { body = await req.json(); } catch { return json({ erro: 'JSON inválido' }, 400); }
-  const normalizado = normalizarTermo(body.termo ?? '');
-  if (normalizado.length < 3) return json({ erro: 'termo obrigatório (mínimo 3 caracteres)' }, 400);
+  if (!UUID.test(body.request_id ?? '')) return json({ erro: 'request_id UUID obrigatório' }, 400);
+  if (body.resultado_id != null && !UUID.test(body.resultado_id)) return json({ erro: 'resultado_id inválido' }, 400);
+  const normalizado = normalizeSonarQuery(body.termo ?? '');
+  if (!body.resultado_id && normalizado.length < 3) return json({ erro: 'termo obrigatório (mínimo 3 caracteres)' }, 400);
+  const queryType = sonarQueryType(normalizado);
 
-  // Sem token → indisponível explícito, com 200: ausência de configuração não é erro de busca
-  // e não pode virar toast destrutivo no front (ADR-0122 §5).
-  if (!apifyConfigurado()) return json({ configurado: false });
+  let begin: Ledger;
+  try {
+    begin = await ledgerRpc('platform_sonar_begin', {
+      ...rpcArgs(context), p_request_id: body.request_id, p_query: normalizado, p_query_type: queryType,
+      p_schema_version: SCHEMA_VERSION, p_reopen_result: body.resultado_id ?? null,
+    });
+  } catch (error) {
+    return json({ erro: error instanceof Error ? error.message : 'Ledger Sonar indisponível' }, 409);
+  }
 
-  // A versão da chave identifica corte E shape (v1=48 anúncios, v2=20, v3=6 — aposentada,
-  // v4=20 com raio_x). Bump para v4 e não reuso da v3: a v3 guarda painéis do corte de 6.
-  // ADR-0125/D2: `por_anuncio` (T1) entrou como campo ADITIVO no shape v4 — não exige bump.
-  // Entrada v4 cacheada ANTES desta entrega simplesmente não tem o índice; a UI mostra "—" até
-  // o TTL (≤7d) expirar sozinho. Bump só para mudança incompatível ou de corte (regra daqui pra frente).
-  // ADR-0127: itens/category_id aditivos (sem bump); historico_gravado NUNCA entra no objeto cacheado (D7).
+  if (begin.acao === 'pending') {
+    return json({ pendente: true, busca_id: begin.busca_id, resultado_id: begin.resultado_id }, 202);
+  }
+  if (begin.acao === 'failed') {
+    return json({ erro: 'A consulta anterior falhou. Envie uma nova busca para tentar novamente.',
+      busca_id: begin.busca_id, resultado_id: begin.resultado_id }, 502);
+  }
+  if (begin.acao === 'ready') {
+    try {
+      const resolved = await ledgerRpc('platform_sonar_resolve_result', { ...rpcArgs(context), p_search_id: begin.busca_id });
+      return resposta(resolved);
+    } catch (error) {
+      return json({ erro: error instanceof Error ? error.message : 'Falha ao registrar entrega' }, 503);
+    }
+  }
+
+  const complete = async (payload: Record<string, unknown> | null, failure: string | null): Promise<Ledger> =>
+    ledgerRpc('platform_sonar_complete', { ...rpcArgs(context), p_search_id: begin.busca_id,
+      p_lease_token: begin.lease_token, p_payload: payload, p_failure_reason: failure });
+
+  if (!apifyConfigurado()) {
+    try { await complete(null, 'fornecedor_nao_configurado'); } catch { /* ledger already refused delivery */ }
+    return json({ configurado: false, busca_id: begin.busca_id, resultado_id: begin.resultado_id });
+  }
+
   const chave = `sonar:vendas:v4:MLB:${normalizado}`;
   const cacheado = await redisGet(chave).catch(() => null);
-  // D7: historico_gravado fica FORA do objeto cacheado — em hit vale false (não gravou AGORA).
-  if (cacheado) return json({ ...JSON.parse(cacheado), historico_gravado: false });
+  if (cacheado) {
+    try {
+      const payload = JSON.parse(cacheado) as Record<string, unknown>;
+      const itensCache = Array.isArray(payload.itens) ? payload.itens : Object.values((payload.por_anuncio as Record<string, unknown> | undefined) ?? {});
+      if (itensCache.length === 0) {
+        await complete(null, 'resultado_vazio');
+        return json({ erro: 'A consulta não encontrou anúncios disponíveis.' }, 422);
+      }
+      return resposta(await complete(payload, null));
+    } catch (error) {
+      return json({ erro: error instanceof Error ? error.message : 'Falha ao publicar cache' }, 503);
+    }
+  }
 
   const itens = await buscarAnunciosML(normalizado);
-  // null = falha/timeout do run — não cachear (cache global 24h travaria o termo com erro
-  // transitório para todo mundo, mesmo racional da pulse-sonar).
-  if (itens === null) return json({ erro: 'Consulta de vendas falhou ou demorou demais. Tente de novo em instantes.' }, 502);
+  if (itens === null) {
+    try { await complete(null, 'fornecedor_indisponivel'); } catch { /* retorno continua indisponível */ }
+    return json({ erro: 'Consulta de vendas falhou ou demorou demais. Tente de novo em instantes.' }, 502);
+  }
 
   const parseados = parseItensApify(itens);
-  const resposta = {
-    configurado: true as const,
-    ...montarPainelVendas(normalizado, parseados, parseTotalAnuncios(itens)),
-  };
-  const historicoGravado = await gravarSnapshots(resposta.termo, resposta.gerado_em, parseados);
-  await redisSet(chave, JSON.stringify(resposta), CACHE_TTL_S).catch(() => {});
-  return json({ ...resposta, historico_gravado: historicoGravado });
+  if (parseados.length === 0) {
+    try { await complete(null, 'resultado_vazio'); } catch { /* entrega continua recusada */ }
+    return json({ erro: 'A consulta não encontrou anúncios disponíveis.' }, 422);
+  }
+  const payload = { configurado: true as const,
+    ...montarPainelVendas(normalizado, parseados, parseTotalAnuncios(itens)) };
+  let completed: Ledger;
+  try { completed = await complete(payload, null); }
+  catch (error) { return json({ erro: error instanceof Error ? error.message : 'Falha ao publicar resultado' }, 503); }
+
+  const historicoGravado = await gravarSnapshots(payload.termo, payload.gerado_em, parseados);
+  await redisSet(chave, JSON.stringify(payload), CACHE_TTL_S).catch(() => {});
+  return resposta(completed, historicoGravado);
 });
