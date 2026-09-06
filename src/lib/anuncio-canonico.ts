@@ -12,90 +12,15 @@
 // Este mapa resolve o MLB de catálogo ou irmão no MLB do anúncio dono, para as vendas acumularem no
 // produto original.
 import { supabase } from './supabase';
-import { normGtin } from './gtin';
 import { buscarTodasPaginas } from './paginacao-supabase';
-
-export interface MapaCanonico {
-  /** MLB do anúncio de catálogo → MLB do anúncio dono (vínculo explícito). */
-  listings: Record<string, string>;
-  /** GTIN normalizado → MLB do anúncio dono. Só GTIN que aponta para UM anúncio (ver abaixo). */
-  gtins?: Record<string, string>;
-  /** MLBs que o app já lista como anúncio próprio — nunca redirecionados por GTIN. */
-  conhecidos?: Set<string>;
-}
-
-/** Chave de comparação de GTIN: sem zeros à esquerda (`normGtin`) e sem espaço de digitação.
- *  Os dois lados do mapa (cadastro e venda) passam por aqui, senão um espaço no cadastro impede o
- *  match sem nenhum sinal. Vazio/nulo → null (nunca vira chave). */
-const chaveGtin = (g: string | null | undefined) => {
-  const s = (g ?? '').trim();
-  return s === '' ? null : normGtin(s);
-};
-
-/** Resolve o anúncio dono de um MLB. Sem mapa (ou sem match) devolve o próprio id.
- *  `ean` é o GTIN da linha da venda: informá-lo habilita o fallback de anúncio irmão. Quem só quer
- *  a fusão de catálogo (foto, cor) omite e mantém o comportamento anterior. */
-export function canonizarItem(mlItemId: string, mapa?: MapaCanonico, ean?: string | null): string {
-  if (!mapa) return mlItemId;
-  const dono = mapa.listings[mlItemId];
-  if (dono) return dono;
-  // Anúncio que o app lista é dono de si mesmo — GTIN nunca reatribui venda entre anúncios válidos.
-  if (mapa.conhecidos?.has(mlItemId)) return mlItemId;
-  const gtin = chaveGtin(ean);
-  return (gtin ? mapa.gtins?.[gtin] : undefined) ?? mlItemId;
-}
-
-type LinhaFamilia = { ml_item_id: string | null } | { ml_item_id: string | null }[] | null;
-type LinhaVariacao = { catalog_listing_id: string | null; familias: LinhaFamilia };
-type LinhaItemUP = { catalog_listing_id: string | null; item_externo_id: string | null };
-type LinhaGtin = { gtin: string | null; familias: LinhaFamilia };
-
-const donoDe = (f: LinhaFamilia) => (Array.isArray(f) ? f[0] : f)?.ml_item_id ?? null;
-
-/** Monta o mapa a partir das linhas já lidas (puro, testável).
- *  - Catálogo, modelo legado: `variacoes.catalog_listing_id` → `familias.ml_item_id`.
- *  - Catálogo, User Products (ADR-0088): `anuncios_externos_itens.catalog_listing_id` →
- *    `item_externo_id` (o próprio item filho É o anúncio dono do seu listing).
- *  - Irmão legado: `variacoes.gtin` → `familias.ml_item_id`.
- *  Entrada que apontaria para si mesma ou para um dono nulo é descartada.
- *
- *  GTIN que aponta para MAIS DE UM anúncio é descartado por inteiro: é exatamente a assinatura de
- *  kit x unidade (ADR-0071) e split por faixa de preço (ADR-0078/0048), anúncios legitimamente
- *  distintos que compartilham produto. Fundi-los seria pior que não atribuir (ADR-0045). */
-export function montarMapaCanonico(
-  variacoes: LinhaVariacao[],
-  itensUP: LinhaItemUP[],
-  gtins: LinhaGtin[] = [],
-  anunciosConhecidos: (string | null)[] = [],
-): MapaCanonico {
-  const listings: Record<string, string> = {};
-  const por = (listing: string | null, dono: string | null | undefined) => {
-    if (!listing || !dono || listing === dono) return;
-    listings[listing] = dono;
-  };
-  for (const v of variacoes) por(v.catalog_listing_id, donoDe(v.familias));
-  for (const i of itensUP) por(i.catalog_listing_id, i.item_externo_id);
-
-  const donosPorGtin = new Map<string, Set<string>>();
-  for (const g of gtins) {
-    const dono = donoDe(g.familias);
-    const chave = chaveGtin(g.gtin);
-    if (!chave || !dono) continue;
-    const s = donosPorGtin.get(chave) ?? new Set<string>();
-    s.add(dono);
-    donosPorGtin.set(chave, s);
-  }
-  const mapaGtins: Record<string, string> = {};
-  for (const [gtin, donos] of donosPorGtin) {
-    if (donos.size === 1) mapaGtins[gtin] = [...donos][0];
-  }
-
-  return {
-    listings,
-    gtins: mapaGtins,
-    conhecidos: new Set(anunciosConhecidos.filter((x): x is string => !!x)),
-  };
-}
+import {
+  montarMapaCanonico,
+  type LinhaGtin,
+  type LinhaItemUP,
+  type LinhaVariacao,
+  type MapaCanonico,
+} from '../../supabase/functions/_shared/platform-admin/sales-canonical';
+export { canonizarItem, montarMapaCanonico, type MapaCanonico } from '../../supabase/functions/_shared/platform-admin/sales-canonical';
 
 type Pagina<T> = PromiseLike<{ data: T[] | null; error: { message: string } | null }>;
 
