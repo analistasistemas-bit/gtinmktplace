@@ -96,6 +96,18 @@ usar a capa de um componente num anúncio de combinação induz o comprador a er
 de foto no ML é assíncrona (ADR-0033) e leva minutos até o `picture_id` ser aceito num `POST`. Subir
 no clique faria todo primeiro CREATE falhar.
 
+**Correção 2026-09-06 (primeiro kit real publicado, `MLB5194780911`):** o payload de CREATE do
+Spike 036 estava incompleto em dois pontos, só visíveis contra a API de produção:
+
+- `thumbnail` precisa de `secure_url` além do `id` — buscado sempre via `GET /pictures/{id}`
+  (`variations[0].secure_url`), nunca reaproveitado do retorno do upload, porque o caminho normal
+  (foto sobe minutos antes, acima) não tem esse retorno disponível no momento do publish.
+- `listing_type_id` não pode ser um valor fixo (o rascunho usava `gold_pro` cego): tem que vir do
+  listing type real dos componentes (`GET /items?ids=...&attributes=id,listing_type_id`), e
+  componentes com listing type divergente entre si são recusados **antes** de chamar o ML.
+
+Ver `_shared/ml/kit-virtual.ts` e `_shared/ml/fotos.ts`; contrato atualizado no Spike 036.
+
 ### 6. Margem exibida, nunca bloqueante — e nunca um zero silencioso
 
 O preview mostra preço do kit, rateio, custo, imposto, líquido e margem, e **não impede** publicar,

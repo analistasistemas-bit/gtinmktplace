@@ -40,7 +40,11 @@ export interface CriarKitVirtualInput {
   descricao: string | null;
   fotoStoragePath: string | null;
   fotoMlPictureId: string | null;
-  listingTypeId: string;
+  /** `null` = o diálogo não escolheu (caminho normal); derivado dos componentes antes de
+   *  qualquer escrita — ver `resolverListingTypeKit`. Só vem preenchido explicitamente no
+   *  fluxo de Refazer (reusa o listing_type_id do kit antigo). NUNCA um default fixo (bug real
+   *  2026-09-06: `gold_pro` cego não bate com o listing type publicado dos componentes). */
+  listingTypeId: string | null;
   componentes: ComponenteKitVirtual[];
 }
 
@@ -51,6 +55,10 @@ export interface CriarKitVirtualDeps {
   /** URL assinada da foto no storage; `null` quando o path não resolve. */
   urlAssinadaFoto: (path: string) => Promise<string | null>;
   subirFoto: (sourceUrl: string) => Promise<string>;
+  /** `GET /pictures/{id}` → `secure_url` (bug real 2026-09-06, ver `_shared/ml/fotos.ts`). */
+  buscarSecureUrlFoto: (pictureId: string) => Promise<string>;
+  /** `item_id → listing_type_id`, multiget do ML (bug real 2026-09-06, ver `_shared/ml/kit-virtual.ts`). */
+  buscarListingTypeComponentes: (itemIds: string[]) => Promise<Map<string, string>>;
   criarKitML: (payload: PayloadKitVirtual) => Promise<RespostaKitML>;
   garantirDescricao: (itemId: string, texto: string) => Promise<void>;
 }
@@ -63,6 +71,9 @@ export type MotivoCriarKitVirtual =
   | 'quantidade_invalida'
   | 'desconto_invalido'
   | 'desconto_divergente'
+  | 'listing_type_divergente'
+  | 'listing_type_indisponivel'
+  | 'falha_listing_type'
   | 'foto_obrigatoria'
   | 'falha_leitura'
   | 'falha_criar_kit'
@@ -119,16 +130,48 @@ export function validarKitVirtual(input: CriarKitVirtualInput): MotivoCriarKitVi
   return null;
 }
 
+export type ResolverListingTypeResultado =
+  | { listingTypeId: string }
+  | { erro: 'listing_type_divergente' | 'listing_type_indisponivel' };
+
+/**
+ * Deriva o `listing_type_id` do kit a partir dos componentes reais — bug real 2026-09-06: um
+ * default fixo (`gold_pro`) não bate com o listing type publicado dos componentes e o ML recusa
+ * o kit inteiro (`listing_type_mismatch`). `listingTypeIdExplicito` vem do request (fluxo de
+ * Refazer, D-8) e tem precedência — pura, sem rede. `listingTypesPorItem` já veio resolvida
+ * (multiget `_shared/ml/kit-virtual.ts:buscarListingTypeItensML`) para os componentes que têm
+ * `itemExternoId` (D-12: enriquecimento local best-effort, pode faltar em alguns).
+ */
+export function resolverListingTypeKit(
+  componentes: ComponenteKitVirtual[],
+  listingTypeIdExplicito: string | null,
+  listingTypesPorItem: Map<string, string>,
+): ResolverListingTypeResultado {
+  if (listingTypeIdExplicito) return { listingTypeId: listingTypeIdExplicito };
+
+  const encontrados = new Set<string>();
+  for (const c of componentes) {
+    if (!c.itemExternoId) continue;
+    const lt = listingTypesPorItem.get(c.itemExternoId);
+    if (lt) encontrados.add(lt);
+  }
+  if (encontrados.size > 1) return { erro: 'listing_type_divergente' };
+  if (encontrados.size === 0) return { erro: 'listing_type_indisponivel' };
+  return { listingTypeId: [...encontrados][0] };
+}
+
 export function montarPayloadKitVirtual(
   input: CriarKitVirtualInput,
   pictureId: string,
+  secureUrl: string,
+  listingTypeId: string,
 ): PayloadKitVirtual {
   return {
     family_name: input.titulo,
     channels: ['marketplace'],
-    thumbnail: { id: pictureId },
+    thumbnail: { id: pictureId, secure_url: secureUrl },
     currency_id: 'BRL',
-    listing_type_id: input.listingTypeId,
+    listing_type_id: listingTypeId,
     official_store_id: null,
     bundle: {
       type: 'kit',
@@ -157,7 +200,7 @@ export function montarPayloadKitVirtual(
  * diálogo, então o fluxo de foto cria/preenche `foto_ml_picture_id` antes do publicar.
  */
 async function reivindicarKit(
-  deps: CriarKitVirtualDeps, input: CriarKitVirtualInput,
+  deps: CriarKitVirtualDeps, input: CriarKitVirtualInput, listingTypeId: string,
 ): Promise<{ kit: LinhaKit } | { erro: MotivoCriarKitVirtual; mensagem?: string }> {
   const { admin, orgId, userId } = deps;
   const desconto = input.componentes[0].descontoPct;
@@ -170,7 +213,7 @@ async function reivindicarKit(
     desconto_pct: desconto,
     foto_storage_path: input.fotoStoragePath,
     foto_ml_picture_id: input.fotoMlPictureId,
-    listing_type_id: input.listingTypeId,
+    listing_type_id: listingTypeId,
     status: 'publicando',
     criado_por: userId,
   }).select(COLUNAS_KIT).single();
@@ -202,7 +245,7 @@ async function reivindicarKit(
     desconto_pct: desconto,
     foto_storage_path: kit.foto_storage_path ?? input.fotoStoragePath,
     foto_ml_picture_id: kit.foto_ml_picture_id ?? input.fotoMlPictureId,
-    listing_type_id: input.listingTypeId,
+    listing_type_id: listingTypeId,
     status: 'publicando',
     erro_mensagem: null,
   }).eq('id', kit.id).eq('org_id', orgId).select(COLUNAS_KIT).single();
@@ -227,8 +270,42 @@ export async function criarKitVirtual(
 
   const { admin, orgId } = deps;
 
+  // ── 0. listing_type_id ANTES de qualquer escrita — a linha do kit já nasce com ele ────
+  // (reivindicarKit) e um default cego (`gold_pro`) é exatamente o bug real 2026-09-06. Roda
+  // mesmo num reenvio idempotente que vai bater em `kit.ml_item_id` daqui a pouco (custo: 1
+  // multiget extra num resend — aceitável; NÃO mover pra depois, é o que garante que a linha já
+  // nasça com o listing_type_id certo).
+  let listingTypeId: string;
+  if (input.listingTypeId) {
+    listingTypeId = input.listingTypeId;
+  } else {
+    const itemIds = [...new Set(
+      input.componentes.map((c) => c.itemExternoId).filter((id): id is string => !!id),
+    )];
+    let listingTypesPorItem: Map<string, string>;
+    try {
+      listingTypesPorItem = itemIds.length
+        ? await deps.buscarListingTypeComponentes(itemIds)
+        : new Map<string, string>();
+    } catch (e) {
+      // Falha de LEITURA (rede/timeout/5xx do ML) é diferente de "nenhum componente resolveu":
+      // não pode virar `listing_type_indisponivel` (400, "os dados não bateram") — é transiente,
+      // 502, igual `falha_foto`.
+      const msg = `Falha ao consultar o listing type dos componentes no Mercado Livre: ${e instanceof Error ? e.message : String(e)}`;
+      return { ok: false, motivo: 'falha_listing_type', mensagem: msg };
+    }
+    const resolvido = resolverListingTypeKit(input.componentes, null, listingTypesPorItem);
+    if ('erro' in resolvido) {
+      const mensagem = resolvido.erro === 'listing_type_divergente'
+        ? 'Os componentes têm listing type (Clássico/Premium) diferentes entre si — o Mercado Livre não aceita um kit misto.'
+        : 'Não foi possível determinar o listing type (Clássico/Premium) dos componentes.';
+      return { ok: false, motivo: resolvido.erro, mensagem };
+    }
+    listingTypeId = resolvido.listingTypeId;
+  }
+
   // ── 1. Linha do kit (idempotência atômica) ────────────────────────────────────────────
-  const reivindicado = await reivindicarKit(deps, input);
+  const reivindicado = await reivindicarKit(deps, input, listingTypeId);
   if ('erro' in reivindicado) return { ok: false, motivo: reivindicado.erro, mensagem: reivindicado.mensagem };
   const kit = reivindicado.kit;
 
@@ -290,10 +367,22 @@ export async function criarKitVirtual(
       .eq('id', kit.id).eq('org_id', orgId);
   }
 
+  // `thumbnail.secure_url` (bug real 2026-09-06): buscado SEMPRE aqui, nunca reaproveitado do
+  // retorno do upload — o caminho normal (D-5) é o picture_id já ter sido salvo minutos antes,
+  // sem nenhum upload nesta chamada.
+  let secureUrl: string;
+  try {
+    secureUrl = await deps.buscarSecureUrlFoto(pictureId);
+  } catch (e) {
+    const msg = `Falha ao obter a URL da foto no Mercado Livre: ${e instanceof Error ? e.message : String(e)}`;
+    await marcarErro(deps, kit.id, msg);
+    return { ok: false, motivo: 'falha_foto', mensagem: msg, kitId: kit.id };
+  }
+
   // ── 4. CREATE no ML ───────────────────────────────────────────────────────────────────
   let resposta: RespostaKitML;
   try {
-    resposta = await deps.criarKitML(montarPayloadKitVirtual(input, pictureId));
+    resposta = await deps.criarKitML(montarPayloadKitVirtual(input, pictureId, secureUrl, listingTypeId));
   } catch (e) {
     // `criarKitVirtualML` já humaniza a recusa do ML (`humanizarErroML`).
     const msg = e instanceof Error ? e.message : String(e);

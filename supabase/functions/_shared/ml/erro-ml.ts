@@ -11,6 +11,15 @@ interface Causa {
   type?: string;
 }
 
+// Bug real 2026-09-06 (Kit Virtual): `cause` às vezes vem como array de STRINGS puras
+// (`["thumbnail.secureUrl must not be null"]`), não só de objetos `{code,message,type}` — o
+// código assumia sempre objeto, então `c.message`/`c.code` davam `undefined` numa string e o
+// erro real virava "erro não especificado" (o diagnóstico do ML se perdia). Normaliza os dois
+// formatos aqui, num único ponto, antes de qualquer heurística.
+function normalizarCausa(c: string | Causa): Causa {
+  return typeof c === 'string' ? { message: c } : c;
+}
+
 function humanizarCausa(c: Causa): string {
   const code = (c.code ?? '').toLowerCase();
   const det = c.message ? ` (${c.message})` : '';
@@ -91,11 +100,12 @@ export function precisaGtinDePack(status: number | null | undefined, mlCauses: u
 
 export function humanizarErroML(status: number, json: unknown): string {
   const j = (json ?? {}) as { message?: string; error?: string; cause?: unknown };
-  const causes: Causa[] = Array.isArray(j.cause)
-    ? (j.cause as Causa[])
+  const causesBrutas: (string | Causa)[] = Array.isArray(j.cause)
+    ? (j.cause as (string | Causa)[])
     : j.cause
-      ? [j.cause as Causa]
+      ? [j.cause as string | Causa]
       : [];
+  const causes: Causa[] = causesBrutas.map(normalizarCausa);
   // Só o que bloqueia a publicação (ignora warnings, ex.: frete grátis).
   const bloqueantes = causes.filter((c) => (c?.type ?? 'error') !== 'warning');
   const usar = bloqueantes.length ? bloqueantes : causes;

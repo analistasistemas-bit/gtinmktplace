@@ -19,7 +19,10 @@ export interface ComponentePayloadML {
 export interface PayloadKitVirtual {
   family_name: string;
   channels: string[];
-  thumbnail: { id: string };
+  /** `secure_url` é OBRIGATÓRIO na prática (bug real 2026-09-06): a doc oficial mostra o `id`
+   *  sozinho, mas o ML recusa com "thumbnail.secureUrl must not be null" sem ele — ver
+   *  `buscarSecureUrlFotoML` em `_shared/ml/fotos.ts`. */
+  thumbnail: { id: string; secure_url: string };
   currency_id: string;
   listing_type_id: string;
   official_store_id: number | null;
@@ -63,6 +66,44 @@ export async function criarKitVirtualML(
     permalink: typeof j.permalink === 'string' ? j.permalink : null,
     titulo: typeof j.title === 'string' ? j.title : null,
   };
+}
+
+// Bug real 2026-09-06: um `listing_type_id` fixo (`gold_pro`) no CREATE não bate com o listing
+// type real dos componentes e o ML recusa o kit inteiro (`listing_type_mismatch`). O listing type
+// tem que vir dos componentes — mesmo padrão de multiget de `buscar-componentes-kit-virtual`
+// (`GET /items?ids=...&attributes=...`), só que com `listing_type_id` em vez de
+// `user_product_id,price,category_id`. Lotes de 20 (limite do ML).
+//
+// AO CONTRÁRIO de `lerPrecoKitML`/`lerEstoqueKitML` (enriquecimento de exibição, tolerado nulo),
+// esta chamada GATE o publish — `criarKitVirtual` decide publicar ou não com base no resultado.
+// Por isso LANÇA em falha de rede/timeout/status ou shape inesperados (mesmo padrão de
+// `subirFotoML`/`buscarSecureUrlFotoML`): se engolisse a falha e devolvesse mapa vazio, um 429/5xx
+// transitório do ML viraria indistinguível de "nenhum componente tem listing type resolvido" e
+// bloquearia o publish com o motivo errado. Só o item individual que o ML recusar dentro de uma
+// resposta OK (`code !== 200`) fica de fora do mapa — isso é sinal incompleto, não falha de leitura.
+export async function buscarListingTypeItensML(
+  accessToken: string, itemIds: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (let i = 0; i < itemIds.length; i += 20) {
+    const bloco = itemIds.slice(i, i + 20);
+    const resp = await fetch(
+      `https://api.mercadolibre.com/items?ids=${bloco.join(',')}&attributes=id,listing_type_id`,
+      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15_000) },
+    );
+    if (!resp.ok) {
+      throw new Error(`Falha ao consultar o listing type dos componentes (${resp.status}): ${await resp.text()}`);
+    }
+    const arr = await resp.json().catch(() => null);
+    if (!Array.isArray(arr)) {
+      throw new Error('O Mercado Livre devolveu uma resposta inesperada ao consultar o listing type dos componentes.');
+    }
+    for (const entry of arr as { code?: number; body?: { id?: string; listing_type_id?: string } }[]) {
+      if (entry?.code !== 200 || !entry.body?.id || !entry.body?.listing_type_id) continue;
+      out.set(entry.body.id, entry.body.listing_type_id);
+    }
+  }
+  return out;
 }
 
 // D-14 (status-publicados): preço e estoque de um kit NÃO vêm do `GET /items` em lote que a

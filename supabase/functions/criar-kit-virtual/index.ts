@@ -10,9 +10,9 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { subirFotoML } from '../_shared/ml/fotos.ts';
+import { subirFotoML, buscarSecureUrlFotoML } from '../_shared/ml/fotos.ts';
 import { garantirDescricaoML } from '../_shared/ml/criar-item.ts';
-import { criarKitVirtualML } from '../_shared/ml/kit-virtual.ts';
+import { criarKitVirtualML, buscarListingTypeItensML } from '../_shared/ml/kit-virtual.ts';
 import {
   criarKitVirtual, type ComponenteKitVirtual, type CriarKitVirtualInput, type MotivoCriarKitVirtual,
 } from './processar.ts';
@@ -32,6 +32,9 @@ const STATUS_POR_MOTIVO: Record<MotivoCriarKitVirtual, number> = {
   quantidade_invalida: 400,
   desconto_invalido: 400,
   desconto_divergente: 400,
+  listing_type_divergente: 400,
+  listing_type_indisponivel: 400,
+  falha_listing_type: 502,
   foto_obrigatoria: 400,
   falha_leitura: 500,
   falha_criar_kit: 500,
@@ -94,9 +97,11 @@ Deno.serve(async (req) => {
     descricao: typeof body.descricao === 'string' ? body.descricao : null,
     fotoStoragePath: typeof body.foto_storage_path === 'string' ? body.foto_storage_path : null,
     fotoMlPictureId: typeof body.foto_ml_picture_id === 'string' ? body.foto_ml_picture_id : null,
+    // `null` = a edge deriva do listing type real dos componentes (bug real 2026-09-06: um
+    // default fixo aqui não bate com o listing type publicado e o ML recusa o kit inteiro).
     listingTypeId: typeof body.listing_type_id === 'string' && body.listing_type_id
       ? body.listing_type_id
-      : 'gold_pro',
+      : null,
     componentes: componentes as ComponenteKitVirtual[],
   };
 
@@ -120,6 +125,8 @@ Deno.serve(async (req) => {
       return data?.signedUrl ?? null;
     },
     subirFoto: (sourceUrl) => subirFotoML(token, sourceUrl),
+    buscarSecureUrlFoto: (pictureId) => buscarSecureUrlFotoML(token, pictureId),
+    buscarListingTypeComponentes: (itemIds) => buscarListingTypeItensML(token, itemIds),
     criarKitML: (payload) => criarKitVirtualML(token, payload),
     garantirDescricao: (itemId, texto) => garantirDescricaoML(token, itemId, texto),
   }, input);

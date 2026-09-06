@@ -66,6 +66,16 @@ Payload de criação (confirmado; o do rascunho anterior estava certo):
 }
 ```
 
+**Correção 2026-09-06 (CREATE real, `MLB5194780911`):** o payload acima é o que a doc oficial
+mostra, mas ele não passa na prática — dois campos precisam de mais do que a doc diz:
+
+- `thumbnail` precisa de `secure_url` além do `id` (`GET /pictures/{id}` → `variations[0].secure_url`,
+  não existe `secure_url` na raiz da resposta). Sem ele: `400 {"cause":["thumbnail.secureUrl must
+  not be null"]}`.
+- `listing_type_id` não pode ser um valor fixo (`gold_pro` no exemplo) — tem que bater com o
+  listing type real dos componentes, ou o ML recusa com `400 {"cause":[{"cause_id":3202,
+  "code":"listing_type_mismatch", ...}]}`. Ver `_shared/ml/kit-virtual.ts:buscarListingTypeItensML`.
+
 Regras confirmadas na doc:
 
 - 2 a 6 produtos distintos, no máximo 10 unidades de cada.

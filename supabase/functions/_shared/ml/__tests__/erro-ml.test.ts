@@ -36,6 +36,34 @@ describe('humanizarErroML', () => {
     const json = { message: 'Validation error', cause: [{ type: 'warning', code: 'shipping.x', message: 'w' }] };
     expect(humanizarErroML(400, json).length).toBeGreaterThan(0);
   });
+
+  // Bug real 2026-09-06 (Kit Virtual): `cause` às vezes vem como array de STRINGS puras, não só
+  // de objetos `{code,message,type}` — o diagnóstico do ML se perdia e virava "erro não
+  // especificado" (código assumia sempre objeto: `c.message`/`c.code` numa string são undefined).
+  it('cause como array de STRINGS (ex.: thumbnail.secureUrl) → propaga o texto do ML, não "erro não especificado"', () => {
+    const json = { message: 'Validation failed for one or more fields', error: 'bad_request', cause: ['thumbnail.secureUrl must not be null'] };
+    const msg = humanizarErroML(400, json);
+    expect(msg).toContain('thumbnail.secureUrl must not be null');
+    expect(msg).not.toContain('erro não especificado');
+  });
+
+  it('cause misturando strings e objetos → os dois formatos viram mensagem legível', () => {
+    const json = {
+      message: 'Validation error',
+      cause: [
+        'thumbnail.secureUrl must not be null',
+        { type: 'error', code: 'item.title.length.invalid', message: 'Category does not support titles greater than 60 characters' },
+      ],
+    };
+    const msg = humanizarErroML(400, json);
+    expect(msg).toContain('thumbnail.secureUrl must not be null');
+    expect(msg).toContain('60');
+  });
+
+  it('ML sem message nenhuma no topo e sem cause → cai no fallback genérico (não inventa texto)', () => {
+    expect(humanizarErroML(500, {})).toEqual('O Mercado Livre recusou (erro 500).');
+    expect(humanizarErroML(500, null)).toEqual('O Mercado Livre recusou (erro 500).');
+  });
 });
 
 describe('ehErroRetentavel (erro transiente que o ML pede para reenviar)', () => {

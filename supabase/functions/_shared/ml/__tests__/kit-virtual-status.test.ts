@@ -2,7 +2,7 @@
 // e estoque (`/user-products/{id}/stock`). Nenhuma lança: status-publicados/processar.ts conta
 // com isso para tolerar falha individual sem derrubar a resposta inteira.
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { lerPrecoKitML, lerEstoqueKitML } from '../kit-virtual';
+import { lerPrecoKitML, lerEstoqueKitML, buscarListingTypeItensML } from '../kit-virtual';
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -91,5 +91,55 @@ describe('lerEstoqueKitML', () => {
   it('devolve null quando a rede falha', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network down'); }));
     expect(await lerEstoqueKitML('tok', 'MLBU-KIT1')).toBeNull();
+  });
+});
+
+// Bug real 2026-09-06: `listing_type_id` fixo (`gold_pro`) não bate com o dos componentes e o ML
+// recusa o kit inteiro (`listing_type_mismatch`). Mesmo padrão de multiget que
+// `buscar-componentes-kit-virtual` já usa (`GET /items?ids=...&attributes=...`).
+describe('buscarListingTypeItensML', () => {
+  it('mapeia item_id → listing_type_id a partir do multiget', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      expect(url).toBe('https://api.mercadolibre.com/items?ids=MLB1,MLB2&attributes=id,listing_type_id');
+      return resp([
+        { code: 200, body: { id: 'MLB1', listing_type_id: 'gold_special' } },
+        { code: 200, body: { id: 'MLB2', listing_type_id: 'gold_pro' } },
+      ]);
+    }));
+    const mapa = await buscarListingTypeItensML('tok', ['MLB1', 'MLB2']);
+    expect(mapa).toEqual(new Map([['MLB1', 'gold_special'], ['MLB2', 'gold_pro']]));
+  });
+
+  it('item que o ML não devolveu (code !== 200) fica de fora do mapa', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp([
+      { code: 200, body: { id: 'MLB1', listing_type_id: 'gold_special' } },
+      { code: 404, body: null },
+    ])));
+    const mapa = await buscarListingTypeItensML('tok', ['MLB1', 'MLB2']);
+    expect(mapa).toEqual(new Map([['MLB1', 'gold_special']]));
+  });
+
+  it('lote de mais de 20 ids: pagina em blocos de 20', async () => {
+    const chamadas: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => { chamadas.push(url); return resp([]); }));
+    const ids = Array.from({ length: 25 }, (_, i) => `MLB${i}`);
+    await buscarListingTypeItensML('tok', ids);
+    expect(chamadas).toHaveLength(2);
+    expect(chamadas[0]).toContain(ids.slice(0, 20).join(','));
+    expect(chamadas[1]).toContain(ids.slice(20).join(','));
+  });
+
+  // Diferente de `lerPrecoKitML`/`lerEstoqueKitML` (enriquecimento de exibição, tolera null):
+  // esta chamada GATE o publish em `criarKitVirtual`, então LANÇA em falha — nunca devolve mapa
+  // vazio pra um 5xx/timeout, senão um blip transiente vira "nenhum componente tem listing type"
+  // (400) em vez do 502 que é.
+  it('resposta de erro HTTP do ML → lança (não devolve mapa vazio silencioso)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp({}, 500)));
+    await expect(buscarListingTypeItensML('tok', ['MLB1'])).rejects.toThrow(/500/);
+  });
+
+  it('rede falha (timeout/exceção) → lança', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network down'); }));
+    await expect(buscarListingTypeItensML('tok', ['MLB1'])).rejects.toThrow('network down');
   });
 });

@@ -3,7 +3,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
-  criarKitVirtual, montarPayloadKitVirtual, validarKitVirtual,
+  criarKitVirtual, montarPayloadKitVirtual, validarKitVirtual, resolverListingTypeKit,
   type ComponenteKitVirtual, type CriarKitVirtualDeps, type CriarKitVirtualInput,
 } from '../processar.ts';
 import { criarKitVirtualML } from '../../_shared/ml/kit-virtual.ts';
@@ -155,6 +155,8 @@ function deps(st: EstadoFake, over: Partial<CriarKitVirtualDeps> = {}): CriarKit
     userId: 'user-1',
     urlAssinadaFoto: async (path) => `https://signed/${path}`,
     subirFoto: async () => 'PIC-NOVA',
+    buscarSecureUrlFoto: async (pictureId) => `https://secure/${pictureId}`,
+    buscarListingTypeComponentes: async () => new Map<string, string>(),
     criarKitML: async () => ({ id: 'MLB999', userProductId: 'MLBU999', permalink: 'https://ml/kit', titulo: 'Kit expandido' }),
     garantirDescricao: async () => {},
     ...over,
@@ -168,6 +170,8 @@ describe('montarPayloadKitVirtual', () => {
     const p = montarPayloadKitVirtual(
       inputPadrao({ componentes: [comp('MLBU1'), comp('MLBU2', { quantidade: 3 }), comp('MLBU3')] }),
       'PIC-1',
+      'https://secure/PIC-1',
+      'gold_pro',
     );
     expect(p.bundle.components).toHaveLength(3);
     for (const c of p.bundle.components) {
@@ -181,7 +185,8 @@ describe('montarPayloadKitVirtual', () => {
     expect(p).toMatchObject({
       family_name: 'Kit 2 itens: A + B',
       channels: ['marketplace'],
-      thumbnail: { id: 'PIC-1' },
+      // Bug real 2026-09-06: `secure_url` é obrigatório, `id` sozinho o ML recusa.
+      thumbnail: { id: 'PIC-1', secure_url: 'https://secure/PIC-1' },
       currency_id: 'BRL',
       listing_type_id: 'gold_pro',
       official_store_id: null,
@@ -190,7 +195,9 @@ describe('montarPayloadKitVirtual', () => {
   });
 
   it('preserva a ordem do input — o primeiro componente é o principal', () => {
-    const p = montarPayloadKitVirtual(inputPadrao({ componentes: [comp('MLBU9'), comp('MLBU1')] }), 'PIC-1');
+    const p = montarPayloadKitVirtual(
+      inputPadrao({ componentes: [comp('MLBU9'), comp('MLBU1')] }), 'PIC-1', 'https://secure/PIC-1', 'gold_pro',
+    );
     expect(p.bundle.components.map((c) => c.user_product_id)).toEqual(['MLBU9', 'MLBU1']);
   });
 });
@@ -229,6 +236,41 @@ describe('validarKitVirtual', () => {
 
   it('aceita a composição válida', () => {
     expect(validarKitVirtual(inputPadrao())).toBeNull();
+  });
+});
+
+// ── resolverListingTypeKit (bug real 2026-09-06: default gold_pro não bate com o componente) ──
+
+describe('resolverListingTypeKit', () => {
+  it('explícito tem precedência, mesmo com mapa divergente', () => {
+    const mapa = new Map([['MLB1', 'gold_special'], ['MLB2', 'gold_pro']]);
+    expect(resolverListingTypeKit([comp('MLBU1'), comp('MLBU2')], 'gold_pro', mapa))
+      .toEqual({ listingTypeId: 'gold_pro' });
+  });
+
+  it('deriva o único listing type encontrado entre os componentes', () => {
+    const mapa = new Map([['MLB-MLBU1', 'gold_special'], ['MLB-MLBU2', 'gold_special']]);
+    expect(resolverListingTypeKit([comp('MLBU1'), comp('MLBU2')], null, mapa))
+      .toEqual({ listingTypeId: 'gold_special' });
+  });
+
+  it('componentes com listing type diferentes → erro ANTES de qualquer chamada ao ML', () => {
+    const mapa = new Map([['MLB-MLBU1', 'gold_special'], ['MLB-MLBU2', 'gold_pro']]);
+    expect(resolverListingTypeKit([comp('MLBU1'), comp('MLBU2')], null, mapa))
+      .toEqual({ erro: 'listing_type_divergente' });
+  });
+
+  it('nenhum componente resolvido (sem itemExternoId ou sem match no mapa) → erro, nunca um default silencioso', () => {
+    expect(resolverListingTypeKit([comp('MLBU1', { itemExternoId: null }), comp('MLBU2', { itemExternoId: null })], null, new Map()))
+      .toEqual({ erro: 'listing_type_indisponivel' });
+    expect(resolverListingTypeKit([comp('MLBU1'), comp('MLBU2')], null, new Map()))
+      .toEqual({ erro: 'listing_type_indisponivel' });
+  });
+
+  it('sinal parcial (só alguns componentes têm itemExternoId/match) usa o que resolveu', () => {
+    const mapa = new Map([['MLB-MLBU1', 'gold_special']]);
+    expect(resolverListingTypeKit([comp('MLBU1'), comp('MLBU2', { itemExternoId: null })], null, mapa))
+      .toEqual({ listingTypeId: 'gold_special' });
   });
 });
 
@@ -312,8 +354,33 @@ describe('criarKitVirtual', () => {
       inputPadrao({ fotoMlPictureId: null }),
     );
     expect(subirSemPic).toHaveBeenCalledWith('https://signed/org-1/kit.jpg');
-    expect(criarKitML.mock.calls[0][0].thumbnail).toEqual({ id: 'PIC-NOVA' });
+    // `secure_url` vem de `buscarSecureUrlFoto`, buscado sempre — nunca reaproveitado do upload.
+    expect(criarKitML.mock.calls[0][0].thumbnail).toEqual({ id: 'PIC-NOVA', secure_url: 'https://secure/PIC-NOVA' });
     expect(stSemPic.kits[0].foto_ml_picture_id).toEqual('PIC-NOVA');
+  });
+
+  it('secure_url também é buscado quando o picture_id JÁ estava salvo (upload anterior, D-5) — sem upload nesta chamada', async () => {
+    const st = novoEstado();
+    const buscarSecureUrlFoto = vi.fn(async (pictureId: string) => `https://secure/${pictureId}`);
+    const subirFoto = vi.fn(async () => 'NUNCA-CHAMADO');
+    const criarKitML = vi.fn(async () => ({ id: 'MLB999', userProductId: 'MLBU999', permalink: 'https://ml/kit', titulo: 'Kit' }));
+    await criarKitVirtual(deps(st, { buscarSecureUrlFoto, subirFoto, criarKitML }), inputPadrao({ fotoMlPictureId: 'PIC-1' }));
+
+    expect(subirFoto).not.toHaveBeenCalled();
+    expect(buscarSecureUrlFoto).toHaveBeenCalledWith('PIC-1');
+    expect(criarKitML.mock.calls[0][0].thumbnail).toEqual({ id: 'PIC-1', secure_url: 'https://secure/PIC-1' });
+  });
+
+  it('falha ao buscar secure_url da foto: recusa como falha_foto, sem chamar o ML', async () => {
+    const st = novoEstado();
+    const criarKitML = vi.fn();
+    const r = await criarKitVirtual(
+      deps(st, { buscarSecureUrlFoto: async () => { throw new Error('ML fora do ar'); }, criarKitML }),
+      inputPadrao(),
+    );
+    expect(r).toMatchObject({ ok: false, motivo: 'falha_foto' });
+    expect(criarKitML).not.toHaveBeenCalled();
+    expect(st.kits[0].status).toEqual('erro');
   });
 
   it('sem picture_id e sem foto no storage: recusa (foto própria é obrigatória, D-5)', async () => {
@@ -375,14 +442,71 @@ describe('criarKitVirtual', () => {
     expect(st.kits[0].listing_type_id).toEqual('gold_special');
   });
 
-  // O default fica na migration (`not null default 'gold_pro'`) E em index.ts (aplicado ANTES
-  // de chamar `criarKitVirtual` quando o body não traz `listing_type_id`) — aqui provamos que
-  // processar.ts grava fielmente o que recebeu, sem hardcode nem sobrescrita.
-  it('sem listing_type_id explícito no payload: persiste o default já resolvido pelo caller (gold_pro)', async () => {
+  // Quando o request traz `listingTypeId` explícito (fluxo de Refazer, D-8), ele tem
+  // precedência: `criarKitVirtual` grava fielmente o que recebeu, sem chamar o ML pra derivar.
+  it('listing_type_id explícito no payload: respeitado sem consultar o ML', async () => {
     const st = novoEstado();
-    const r = await criarKitVirtual(deps(st), inputPadrao()); // inputPadrao já traz 'gold_pro'
+    const buscarListingTypeComponentes = vi.fn();
+    const r = await criarKitVirtual(deps(st, { buscarListingTypeComponentes }), inputPadrao()); // inputPadrao já traz 'gold_pro'
     expect(r.ok).toBe(true);
     expect(st.kits[0].listing_type_id).toEqual('gold_pro');
+    expect(buscarListingTypeComponentes).not.toHaveBeenCalled();
+  });
+
+  // Bug real 2026-09-06: `gold_pro` fixo não bate com o listing type publicado dos componentes
+  // e o ML recusa o kit inteiro (`listing_type_mismatch`). O listing type vem dos componentes.
+  it('sem listing_type_id explícito: deriva do listing type real dos componentes', async () => {
+    const st = novoEstado();
+    const buscarListingTypeComponentes = vi.fn(async () => new Map([
+      ['MLB-MLBU1', 'gold_special'], ['MLB-MLBU2', 'gold_special'],
+    ]));
+    const r = await criarKitVirtual(
+      deps(st, { buscarListingTypeComponentes }),
+      inputPadrao({ listingTypeId: null }),
+    );
+    expect(r.ok).toBe(true);
+    expect(st.kits[0].listing_type_id).toEqual('gold_special');
+    expect(buscarListingTypeComponentes).toHaveBeenCalledWith(['MLB-MLBU1', 'MLB-MLBU2']);
+  });
+
+  it('componentes com listing type divergente entre si: recusa ANTES de chamar o ML', async () => {
+    const st = novoEstado();
+    const criarKitML = vi.fn();
+    const buscarListingTypeComponentes = vi.fn(async () => new Map([
+      ['MLB-MLBU1', 'gold_special'], ['MLB-MLBU2', 'gold_pro'],
+    ]));
+    const r = await criarKitVirtual(
+      deps(st, { buscarListingTypeComponentes, criarKitML }),
+      inputPadrao({ listingTypeId: null }),
+    );
+    expect(r).toMatchObject({ ok: false, motivo: 'listing_type_divergente' });
+    expect(criarKitML).not.toHaveBeenCalled();
+    expect(st.ops).toEqual([]);
+  });
+
+  it('falha ao CONSULTAR o listing type dos componentes (rede/5xx): recusa como falha_listing_type (502), não como listing_type_indisponivel (400)', async () => {
+    const st = novoEstado();
+    const criarKitML = vi.fn();
+    const buscarListingTypeComponentes = vi.fn(async () => { throw new Error('ML timeout'); });
+    const r = await criarKitVirtual(
+      deps(st, { buscarListingTypeComponentes, criarKitML }),
+      inputPadrao({ listingTypeId: null }),
+    );
+    expect(r).toMatchObject({ ok: false, motivo: 'falha_listing_type' });
+    expect(criarKitML).not.toHaveBeenCalled();
+    expect(st.ops).toEqual([]);
+  });
+
+  it('nenhum componente com listing type resolvido: recusa (não defaulta silenciosamente)', async () => {
+    const st = novoEstado();
+    const criarKitML = vi.fn();
+    const r = await criarKitVirtual(
+      deps(st, { criarKitML }), // buscarListingTypeComponentes default devolve Map vazio
+      inputPadrao({ listingTypeId: null, componentes: [comp('MLBU1', { itemExternoId: null }), comp('MLBU2', { itemExternoId: null })] }),
+    );
+    expect(r).toMatchObject({ ok: false, motivo: 'listing_type_indisponivel' });
+    expect(criarKitML).not.toHaveBeenCalled();
+    expect(st.ops).toEqual([]);
   });
 
   it('reaproveita linha órfã: também atualiza o listing_type_id com o valor mais recente do diálogo', async () => {
