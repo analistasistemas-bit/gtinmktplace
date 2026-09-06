@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-09-05
+atualizado: 2026-09-06
 ---
 
 # Sprint Atual
@@ -39,6 +39,25 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > produção, não só em preview: service worker ativo, precache sem Supabase, instalabilidade
 > confirmada e app abrindo offline. Web Push ficou registrado no [[Backlog]] — não entrou no
 > escopo.
+
+> **📋 ADR-0154: Kits Virtuais do Mercado Livre — codado e testado na branch
+> `worktree-spike-036-kits-virtuais-verificado` (2026-09-06), NÃO mergeado, NADA aplicado nem
+> deployado.** Recurso do ML (produção desde out/2025) que agrupa 2 a 6 produtos **distintos** já
+> publicados (`user_product_id`), estoque e preço calculados pelo próprio ML — terceiro sentido de
+> "kit" no domínio, sem relação com **Kit** (`SALE_FORMAT`) nem com **Kit vinculado** (ADR-0151).
+> Entidade própria (`kits_virtuais`/`kits_virtuais_componentes`), fora do pipeline de produto por
+> construção. Cinco Edge Functions novas (busca de componentes, preview com margem/rateio, criar,
+> encerrar, subir foto) + guard em `remover-publicado` e enriquecimento em `status-publicados`.
+> Elegibilidade medida nas duas contas reais, só leitura (2026-09-06): Avil 79 de 147 anúncios no
+> modelo certo (138 UPs elegíveis), DSA 24 de 24 (14 elegíveis) — decide o item ser user product
+> nativo, sem `variations[]`. Sonda de escrita (`POST /items/kits` inválido) devolveu `400` de
+> validação nas duas contas, não `403` de certificação — endpoint autorizado, nenhum kit criado de
+> verdade. Suíte da branch: 494 arquivos/4835 testes verdes. **Nada disto está em produção:**
+> `db push` e `supabase functions deploy` não rodaram, `database.types.ts` foi transcrito à mão
+> (falta regenerar), o guard de `remover-publicado` só foi testado contra fake em memória, e três
+> incógnitas de tarifa (Decisão 15) só a primeira venda real resolve. Ver
+> [ADR-0154](../../docs/decisions/0154-kits-virtuais-mercado-livre.md) e
+> [Spike 036](../../docs/spikes/036-kits-virtuais-mercado-livre.md).
 
 ## 📍 Passo anterior (2026-09-03) — EM PRODUÇÃO
 

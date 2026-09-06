@@ -54,6 +54,12 @@
 | excluir-produto | **true** | HTTP (frontend, **admin**) | sim (delete por `codigo_pai`; repetir devolve 404) |
 | adicionar-variacoes-familia | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, D-8) |
 | criar-kit-vinculado | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, 1 por kit) |
+| **Kit Virtual (ADR-0154)** ||||
+| buscar-componentes-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (leitura) |
+| preview-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (leitura + IA opt-in) |
+| criar-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`) |
+| encerrar-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (kit já `closed` responde sucesso) |
+| subir-foto-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (upload puro, sem escrita em banco) |
 | **Fiscal (ADR-0135)** ||||
 | sincronizar-fiscal-ml | false | QStash worker | sim (upsert POST→409→PUT por SKU) |
 | atualizar-fiscal-familia | true | HTTP (frontend) | sim (upsert dos campos, `familiaId` idempotente) |
@@ -868,6 +874,100 @@ falha ao ler `organizations` não libera.
   base** que os reclama depois, via claim atômico `pronto|erro → publicando` em
   `publish-familia-ml/processar.ts` (sem o claim, `decidirStatusLote` reabriria o lote técnico
   como `'revisao'` ao publicar o primeiro kit).
+
+### Kit Virtual (ADR-0154)
+
+> **Deployadas em 2026-09-06**, todas em `v1`, junto de 19 funções afetadas pelos `_shared`
+> alterados (`faturamento/venda.ts`, `ml/atualizar-item.ts`) — dependentes mapeados por
+> `deno info`, não por grep. `status-publicados` foi para v56, `remover-publicado` para v50 e
+> `sync-venda` para v80. A migration `20260906140450_kits_virtuais_schema.sql` foi aplicada no
+> mesmo dia e os guards conferidos contra Postgres real.
+
+Entidade própria (`kits_virtuais`/`kits_virtuais_componentes`), fora do pipeline de produto — o
+kit não é `familias` nem `anuncios_externos` (D-2 do ADR). As cinco edges são **admin-only**
+(mesmo gate `!isAdmin && support?.scope !== 'full'` → 403 de `criar-kit-vinculado`/ADR-0060) e
+`requireUserOrg`; nenhuma delas roda `process-familia` nem toca o pipeline de publicação de
+produto.
+
+- **buscar-componentes-kit-virtual** (D-12) — lista candidatos a componente. Read-only e
+  idempotente. Body `{ search_text? }`. Busca `POST /users/$SELLER_ID/kits/components/search` no
+  ML (paginado por `search_after_hash`), enriquece cada `user_product_id` retornado com
+  `price`/`category_id` (multiget `GET /items?ids=...&attributes=id,user_product_id,price,
+  category_id`, em lotes de 20) e cruza com o catálogo local por dois caminhos: família legacy
+  single-item (`familias.ml_item_id`) ou item plano do ADR-0088
+  (`anuncios_externos_itens.item_externo_id`) — só atribui `codigo`/`custo` quando a família tem
+  exatamente 1 variação (best-effort, D-12). Resposta `{ ok: true, elegiveis: [...],
+  inelegiveis: [...] }`, cada item com `user_product_id, item_id, title, type, thumbnail_url,
+  category_name, estoque, reasons, codigo, codigo_pai, custo, origem, kit_multiplicador,
+  preco_atual_ml, categoria_ml_id`. Inelegíveis aparecem **com o motivo** do ML
+  (`COMPONENT_NOT_MIGRATED_TO_UP`, `OUT_OF_STOCK_ERROR`, `LOGISTIC_TYPE_MISMATCH` etc.) — nunca
+  escondidos (D-12). 409 `sem_conexao_ml` sem credencial.
+- **preview-kit-virtual** (D-4/6/7/15) — monta título (template, sem IA — o ML expande sozinho,
+  D-4), rateio proporcional do preço por componente, margem (união discriminada `{ok:true,...}`
+  ou `{ok:false, faltando:[...]}`, nunca um `0%`/`—` silencioso, D-6) e, sob pedido
+  (`gerar_descricao: true`), descrição por IA reusando `gerarCopy`/`posProcessarDescricao` da
+  esteira de copy do app (D-4). Read-only. Body `{ componentes: [{user_product_id, quantidade,
+  preco_atual_ml, titulo, ordem, custo?, origem?, kit_multiplicador?}] (2-6, um com ordem 0),
+  desconto_pct (0 ≤ x < 1), categoria_ml_id, gerar_descricao?, frete? }`. Imposto por origem
+  (8%/16%, ADR-0055) incide sobre a **parcela rateada** de cada componente, não sobre o kit
+  inteiro (D-7); sem `configuracoes.aliquotas_confirmadas_em` a margem sai `faltando` — mesma
+  trava LOUD do `process-familia`. Resposta `{ ok: true, titulo, desconto_pct, descricao,
+  descricao_gerada_por_ia, aviso_kit_vinculado, margem_estimativa, margem }` — `margem` rotulada
+  como **estimativa** (D-15: três incógnitas de tarifa só a primeira venda real resolve).
+- **criar-kit-virtual** — publica o kit no ML. Idempotente por `chave_cadastro`. Body
+  `{ chave_cadastro, titulo, descricao?, foto_storage_path?, foto_ml_picture_id?,
+  listing_type_id? (default 'gold_pro'), componentes: [{user_product_id, quantidade,
+  desconto_pct, item_externo_id?, codigo?, codigo_pai?}] }`. Sobe a foto (fallback quando
+  `subir-foto-kit-virtual` não rodou antes ou falhou) e chama `POST /items/kits`. 400 por
+  payload inválido (`chave_invalida`, `titulo_invalido`, `componentes_invalidos`,
+  `componente_duplicado`, `quantidade_invalida`, `desconto_invalido`, `desconto_divergente`,
+  `foto_obrigatoria` — D-5, kit não publica sem foto própria) ou `ml_recusou`; 500/502 em falha
+  de leitura/escrita local, criação do kit, criação dos componentes ou upload de foto. Sucesso:
+  `{ ok: true, kit_id, ml_item_id, ml_user_product_id, ml_permalink, ja_existia }`. **A revisão
+  humana exigida pelo projeto é o preview do próprio diálogo** — não existe card na tela Revisão
+  para kit (Decisão "Herdadas por precedente" do ADR).
+- **encerrar-kit-virtual** (D-8) — encerra o kit no ML (`PUT status: 'closed'`, via
+  `buscarItemML`/`atualizarStatusML`, o padrão GET-primeiro — **não** reusa `remover-publicado`,
+  que é inteiramente `familias`-shaped). Idempotente: kit já `closed` responde sucesso
+  (`ja_encerrado: true`). Body `{ kit_id }`. Token resolvido preguiçosamente — kit que nunca
+  chegou ao ML (`publicando`/`erro` sem item) encerra sem tocar na rede. É a metade "encerrar" do
+  fluxo "Refazer" (encerrar + reabrir o diálogo pré-preenchido com os componentes antigos, D-8) —
+  a composição do kit é imutável no ML (`PUT` no nó `bundle` devolve 400), então trocar um
+  componente é encerrar e recriar. 404 `nao_encontrado`, 502 `ml_recusou`.
+- **subir-foto-kit-virtual** (D-5/ADR-0033) — sobe a foto do kit ao ML no momento do **upload no
+  diálogo**, não no clique de publicar: a propagação de foto no ML é assíncrona e um
+  `picture_id` recém-criado costuma ser recusado por minutos num `POST /items/kits` feito logo
+  em seguida. Sem escrita em banco — o diálogo guarda o `picture_id` devolvido e manda em
+  `criar-kit-virtual`, que mantém o upload como fallback se esta chamada falhar. Body
+  `{ foto_storage_path }`. Resposta `{ ok: true, picture_id }`. 400 `path_invalido`, 500
+  `falha_url_assinada`, 502 `falha_upload_ml`.
+
+**Mudança em `status-publicados` (D-14):** ganhou uma 4ª fonte de ids (`kits_virtuais` com
+`status='publicado'`) e a função foi extraída para `processar.ts`
+(`montarStatusPublicados`, deps injetadas, mesmo motivo dos outros `processar.ts` — testável sem
+bater na rede real). Kit é sempre canal `mercado_livre`. Depois do `GET /items` em lote, cada id
+de kit é enriquecido **em lugar** com duas chamadas extras — `GET /items/{id}/sale_price` (preço)
+e `GET /user-products/{id}/stock` (estoque) — porque preço/estoque de kit não vêm do `GET /items`
+comum. Falha de UM kit não derruba os outros nem o resto da resposta (isolada por `Promise.all` +
+try/catch, só loga um warning). Cada item de kit ganha `kitVirtual: true` e `kitId` — o frontend
+usa para o badge e para **não** oferecer Pausar/Reativar (fora da v1, D-14: a doc do ML não lista
+`status` como campo editável de kit).
+
+**Mudança em `remover-publicado` (D-13):** novo guard, checado ANTES de qualquer mutação
+(mini-saga UP incluída), nos dois ramos (`preservar_familia` e remoção de verdade). Casa o
+produto-alvo contra `kits_virtuais_componentes` de kits com status `publicando` **ou**
+`publicado` (o `publicando` cobre a janela entre gravar os componentes e o CREATE do ML voltar)
+por dois caminhos — `codigo_pai` (quando o enriquecimento de D-12 preencheu) ou
+`item_externo_id` (anúncio raiz e/ou itens técnicos User Products) — porque `familias` não tem
+coluna `user_product_id`. Achando kit(s) bloqueando, devolve 409 `kit_virtual_publicado` com a
+lista de títulos, sem tocar no ML nem no banco: *"Este produto é componente do Kit Virtual "X"
+(publicado). Encerre o kit no Mercado Livre antes de remover ou republicar este produto."*
+Espelha o guard irmão `kit_vinculado_ativo` (ADR-0151 D-14); a trigger de banco
+`familias_bloquear_remocao_componente_kit_virtual` (migration
+`20260906140450_kits_virtuais_schema.sql`) é a última linha, este é a mensagem clara antes da
+mutação. **Pendência de verificação:** a query (`.eq('status', ...).in(...)`) só foi exercitada
+contra um fake em memória nos testes desta branch, que não filtra por `status` de verdade — falta
+um smoke test contra Postgres real antes do primeiro deploy.
 
 ### Fiscal (ADR-0135)
 - **sincronizar-fiscal-ml** *(worker, disparado por `enfileirarSincronizacaoFiscal`)* — empurra

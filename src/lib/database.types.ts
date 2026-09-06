@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       anuncios_externos: {
@@ -729,8 +704,8 @@ export type Database = {
           chave_cadastro: string
           criado_em: string
           criado_por: string | null
-          descricao: string | null
           desconto_pct: number
+          descricao: string | null
           encerrado_em: string | null
           erro_mensagem: string | null
           foto_ml_picture_id: string | null
@@ -750,8 +725,8 @@ export type Database = {
           chave_cadastro: string
           criado_em?: string
           criado_por?: string | null
-          descricao?: string | null
           desconto_pct: number
+          descricao?: string | null
           encerrado_em?: string | null
           erro_mensagem?: string | null
           foto_ml_picture_id?: string | null
@@ -771,8 +746,8 @@ export type Database = {
           chave_cadastro?: string
           criado_em?: string
           criado_por?: string | null
-          descricao?: string | null
           desconto_pct?: number
+          descricao?: string | null
           encerrado_em?: string | null
           erro_mensagem?: string | null
           foto_ml_picture_id?: string | null
@@ -2793,9 +2768,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {
       canal_externo: ["mercado_livre"],

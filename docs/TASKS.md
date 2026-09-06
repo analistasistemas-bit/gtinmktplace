@@ -2,6 +2,54 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Kit Virtual do Mercado Livre (ADR-0154) — branch `worktree-spike-036-kits-virtuais-verificado`, não mergeada — 2026-09-06
+
+ADR **Proposto**, feature codada e testada na branch, **nada aplicado nem deployado** — `db push`
+e `supabase functions deploy` não rodaram. Entidade própria (`kits_virtuais`/
+`kits_virtuais_componentes`), fora do pipeline de produto (D-2 do ADR): agrupa 2 a 6 produtos
+distintos já publicados (`user_product_id`), estoque e preço calculados pelo próprio ML. Spike 036
+mediu a elegibilidade nas duas contas reais (2026-09-06): Avil 79 de 147 anúncios no modelo certo
+(138 UPs elegíveis no buscador), DSA 24 de 24 (14 elegíveis) — o que decide é o item ser user
+product nativo, sem `variations[]`. Sonda de escrita (`POST /items/kits` com payload inválido)
+devolveu `400 bad_request` de validação nas duas contas, não `403` de certificação — o endpoint
+está autorizado, nenhum kit foi criado de verdade.
+
+- [x] Schema: `kits_virtuais`/`kits_virtuais_componentes` (migration
+  `20260906140450_kits_virtuais_schema.sql`), `ml_vendas.kit_item_id`, cálculo de margem/rateio
+  proporcional (`_shared/kit-virtual/margem.ts`).
+- [x] Edge `buscar-componentes-kit-virtual` — lista candidatos via
+  `POST /users/{id}/kits/components/search`, enriquecida com catálogo local; inelegíveis aparecem
+  com o motivo do ML.
+- [x] Edge `preview-kit-virtual` — título por template, rateio, margem (união discriminada,
+  nunca `0%`/`—` silencioso), descrição por IA opt-in.
+- [x] Edge `criar-kit-virtual` — publica no ML, idempotente por `chave_cadastro`, foto obrigatória.
+- [x] Edge `encerrar-kit-virtual` + `subir-foto-kit-virtual`.
+- [x] Guard de banco (`familias_bloquear_remocao_componente_kit_virtual`) + guard de app em
+  `remover-publicado` (D-13): componente de kit publicado não pode ser removido nem republicado.
+- [x] `status-publicados` (D-14): 4ª fonte de ids (`kits_virtuais`), enriquecida com
+  `/sale_price` e `/user-products/{id}/stock`; badge "Kit" em Publicados, sem Pausar/Reativar.
+- [x] UI: `DialogCriarKitVirtual`, lista de componentes, preview, kit na tela Publicados, badge
+  "Kit" na tela Vendas (`ml_vendas.kit_item_id`), "Refazer kit" reabre o diálogo pré-preenchido
+  (encerra no ML + recria, a composição é imutável).
+- [x] Suíte da branch: 494 arquivos / 4835 testes verdes.
+- [x] `db push` aplicado em produção (2026-09-06). Guards conferidos contra Postgres real num
+  bloco que se desfaz sozinho: trigger barra kit com 1 componente e aceita com 2, `quantidade`
+  fora de 1..10 recusada, `unique(kit, user_product)` recusada.
+- [x] Deploy das 5 funções novas + 19 afetadas pelos `_shared` alterados (24 no total,
+  dependentes mapeados por `deno info`). Versões conferidas pós-deploy.
+- [x] `src/lib/database.types.ts` regerado com `supabase gen types` contra o banco real, no
+  lugar da transcrição manual. Suíte segue em 494/4835.
+- [x] Guards de banco exercitados contra Postgres real (ver acima). Falta ainda o smoke test do
+  guard de app de `remover-publicado` com um kit publicado de verdade — o fake em memória dos
+  testes não filtra por `status`.
+- [ ] O parsing de `GET /items/{id}/sale_price` está conferido contra a doc oficial do ML, mas
+  nunca contra a resposta real de um kit (nenhum kit foi criado).
+- [ ] Três incógnitas de tarifa (Decisão 15 do ADR: parcela fixa por order ou por kit, categoria
+  usada por order, avaliação de frete grátis) só a primeira venda real resolve.
+- [ ] Risco de certificação (seção "Risco aberto" do ADR): a sonda só provou `400` de validação,
+  não um CREATE completo — um kit de verdade ainda pode revelar um gate de certificação depois da
+  validação de campos.
+
 ## PWA instalável, sem escrita offline (ADR-0153) — 2026-09-05
 
 Branch `worktree-pwa` (não mergeada). Service worker gerado pelo `vite-plugin-pwa`
