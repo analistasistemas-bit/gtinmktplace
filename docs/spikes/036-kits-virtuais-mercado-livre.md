@@ -98,20 +98,51 @@ mesmo produto (ex.: "24 lápis de cor" = 1 SKU, `UNITS_PER_PACK=24`). O recurso 
 **produtos distintos** em um anúncio novo — não tem nada a ver com `UNITS_PER_PACK`. Para não
 confundir os dois no código/docs, nomear o recurso novo como **"Kit Virtual"** ou **"Combo"**.
 
-### A pergunta que decide o tamanho da feature (em aberto)
+### Elegibilidade medida nas duas contas reais (2026-09-06)
 
-O ML referencia componentes de um kit por `user_product_id`. Hoje o PubliAI só grava
-`user_product_id` para o subconjunto **item plano** (`anuncios_externos_itens`, ADR-0088 —
-categorias que forçam item plano por causa de múltiplas cores). O caminho normal de publicação
-(`variations[]`, a maioria dos anúncios do PubliAI) **não tem essa coluna** em `anuncios_externos`.
+A pergunta que estava em aberto — "os anúncios do PubliAI servem como componente?" — foi
+respondida contra a API de produção, só com chamadas de leitura
+(`POST /users/$SELLER_ID/kits/components/search`, `GET /items`, `GET /user-products/...`).
+Nenhum kit foi criado.
 
-Não verificado: se `GET /items/{item_id}` do ML devolve `user_product_id` para **qualquer** item
-(inclusive os publicados via `variations[]`), o PubliAI pode buscar sob demanda e a feature cobre
-todo o catálogo. Se só existir para item plano (ou só após alguma ativação de
-"user_product_seller"), a feature nasceria restrita ao subconjunto item-plano — escopo bem menor.
-A doc de User Products (`developers.mercadolivre.com.br/pt_br/user-products`) sugere que a relação
-`item_id ↔ user_product_id` é 1:1 por padrão antes de uma "ativação" — o que indicaria que todo
-item tem um `user_product_id`, mas isso precisa ser confirmado na prática, não assumido.
+**O que decide a elegibilidade é o item no ML ser um user product nativo — ou seja, NÃO ter
+`variations[]`.** Não é o modelo do banco: `anuncios_externos.variacoes_externas` existir não diz
+nada, o que vale é o item publicado.
+
+| Conta | Anúncios publicados | User product nativo (podem ser componente) | Com `variations[]` (fora) |
+|---|---|---|---|
+| AVILBV (org Avil) | 147 | **79** | 68 |
+| $ANALISTA$ (org DSA) | 24 | **24** | 0 |
+
+Na busca de componentes (que enumera por UP, não por anúncio):
+
+- **Avil:** 138 UPs elegíveis. Os inelegíveis vêm todos do mesmo anúncio multi-cor
+  ("Linha Para Costura … Várias Cores", 100 variações no ML) com o motivo
+  `COMPONENT_NOT_MIGRATED_TO_UP` — *"Não está atualizado para a nova experiência de variações e
+  não pode ser vendido em kit"*. Os itens planos do [ADR-0088](../decisions/0088-publicacao-user-products-multi-item.md)
+  são elegíveis (75 dos 138 casam com `anuncios_externos_itens`).
+- **DSA:** 24 UPs no buscador, **14 elegíveis**. Aqui a recusa não é estrutural — é operacional:
+  8 × `OUT_OF_STOCK_ERROR` (anúncios pausados sem estoque), 1 × `IS_KIT_ARTISANAL` (o anúncio já
+  é um kit), 1 × `LOGISTIC_TYPE_MISMATCH` (forma de entrega ainda não liberada para kit).
+
+Confirmações pontuais:
+
+- `GET /items/MLB6914358210` (anúncio multi-cor): `variations` com 100 entradas, **item sem
+  `user_product_id`** — cada variação tem o seu, e todos vêm marcados como não migrados.
+- `GET /items/MLB4796544265` (produto de variação única) e `MLB4959730161` (item plano ADR-0088):
+  `variations: []`, tag `user_product_listing`, `user_product_id` no próprio item → elegíveis.
+- Um kit vinculado do [ADR-0151](../decisions/0151-kit-vinculado-a-partir-de-produto-existente.md)
+  ("Kit 2un Centrum") aparece **elegível** como componente; outro ("Kit 2 Unidades Leite Ninho")
+  caiu por `LOGISTIC_TYPE_MISMATCH`. Ou seja, kit vinculado pode entrar num Kit Virtual, mas não é
+  garantido — depende da logística do anúncio.
+- Nenhuma ativação especial foi necessária: as duas contas já respondem `200` no buscador de
+  componentes. A nota da doc sobre cadastrar usuário de teste vale para *parceiro não certificado*
+  criando kit, não para a busca.
+
+**Consequência para o escopo:** a feature é viável hoje sem migração nenhuma — cobre 100% da DSA e
+54% dos anúncios da Avil. O que fica de fora é o bloco multi-cor publicado por `variations[]`, que
+só entra se esses anúncios forem migrados para User Products (caminho que o ADR-0088 e
+`reconciliar-convergencia-up` já trilham para outra finalidade).
 
 ### Não confunde com o ADR-0151
 
@@ -126,11 +157,10 @@ do lado dele. São features independentes; uma não implementa a outra.
 Nenhuma. Diego optou por só registrar a pesquisa por ora — retomar com Fase 1 (Define) completa
 quando houver decisão de avançar. Próximos passos possíveis (não iniciados):
 
-1. **Único bloqueio que resta:** confirmar na prática que os anúncios publicados por
-   `variations[]` (a maioria do catálogo) aparecem como componentes elegíveis — rodar
-   `POST /users/$SELLER_ID/kits/components/search` com `only_eligible` na conta real e ler o campo
-   `reasons` dos produtos recusados. Se só o subconjunto item-plano ([ADR-0088](../decisions/0088-publicacao-user-products-multi-item.md))
-   for elegível, a feature nasce restrita.
-2. Desenhar 2-3 abordagens de arquitetura (nova tela "Kits", fluxo de composição fora do
+1. ~~Confirmar a elegibilidade dos anúncios reais~~ — **feito em 2026-09-06**, ver §3.
+   Não há bloqueio técnico: 79 anúncios da Avil e os 24 da DSA já servem como componente.
+2. Decidir o escopo da v1 à luz do número acima (só o subconjunto UP-nativo, ou esperar a
+   migração do bloco multi-cor).
+3. Desenhar 2-3 abordagens de arquitetura (nova tela "Kits", fluxo de composição fora do
    pipeline de planilha/família, ponto de integração com `ChannelConnector`/`anuncios_externos`)
-3. Aprovação do design antes de qualquer código
+4. Aprovação do design antes de qualquer código
