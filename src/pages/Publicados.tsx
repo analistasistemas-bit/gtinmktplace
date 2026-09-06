@@ -68,6 +68,9 @@ import { usePrepararRepublicacao, useRemoverPublicado } from '@/hooks/useRemover
 import { usePausarReativarPublicado } from '@/hooks/usePausarReativarPublicado';
 import { useRetentarCatalogo } from '@/hooks/useRetentarCatalogo';
 import { useEncerrarKitVirtual } from '@/hooks/useEncerrarKitVirtual';
+import {
+  carregarKitVirtualParaRefazer, prefillAposEncerrarKitVirtual, type KitVirtualParaRefazer,
+} from '@/lib/kit-virtual';
 import { useProfile } from '@/hooks/useProfile';
 import { DialogCriarKitVirtual } from '@/components/kit-virtual/DialogCriarKitVirtual';
 import { paginar } from '@/lib/paginacao';
@@ -687,11 +690,12 @@ export default function Publicados() {
   const [kitAlvo, setKitAlvo] = useState<{ familiaId: string; codigoPai: string; precoAtual: number } | null>(null);
   const { data: familiaKitAlvo } = useFamilia(kitAlvo?.familiaId ?? '', !!kitAlvo);
 
-  // Diálogo de criação de Kit Virtual (ADR-0154) — aberto pelo botão da página ou por "Refazer
-  // kit" (encerra o kit atual e reabre este mesmo diálogo, em branco: D-8 pede pré-preenchimento
-  // com os componentes antigos, mas a assinatura do diálogo não recebe estado inicial).
+  // Diálogo de criação de Kit Virtual (ADR-0154) — aberto pelo botão da página (refazerDeKit
+  // null, diálogo em branco) ou por "Refazer kit" (encerra o kit atual e reabre este mesmo
+  // diálogo pré-preenchido com os componentes/título/descrição/desconto/foto antigos, D-8).
   const [criarKitVirtualAberto, setCriarKitVirtualAberto] = useState(false);
   const [refazendoKitId, setRefazendoKitId] = useState<string | null>(null);
+  const [refazerDeKit, setRefazerDeKit] = useState<KitVirtualParaRefazer | null>(null);
 
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
@@ -793,16 +797,35 @@ export default function Publicados() {
     });
   };
 
-  // ADR-0154 D-8: encerra o kit no ML e reabre o diálogo de criação em branco.
+  // ADR-0154 D-8: encerra o kit no ML e reabre o diálogo de criação PRÉ-PREENCHIDO com os
+  // componentes/título/descrição/desconto/foto do kit antigo — nunca chama
+  // `carregarKitVirtualParaRefazer` antes do encerrar ter sucesso (prefillAposEncerrarKitVirtual
+  // garante essa ordem: kit velho encerrado no ML antes de o novo poder ser publicado).
   const handleRefazerKit = (kitId: string) => {
     setRefazendoKitId(kitId);
     refazerKitMut(kitId, {
-      onSuccess: (r) => {
+      onSuccess: async (r) => {
         if (!r.ok) {
           toast.error('Falha ao encerrar kit', { description: r.mensagem ?? r.motivo ?? 'Motivo não informado.' });
           return;
         }
-        toast.success('Kit encerrado — monte o novo kit no diálogo');
+        const prefill = await prefillAposEncerrarKitVirtual(kitId, r, carregarKitVirtualParaRefazer);
+        if (prefill?.dadosParaPrefill) {
+          const total = prefill.dadosParaPrefill.componentes.length + prefill.componentesNaoRecuperados;
+          if (prefill.componentesNaoRecuperados > 0) {
+            toast.warning(
+              `Kit encerrado — recuperamos ${prefill.dadosParaPrefill.componentes.length} de ${total} componentes antigos`,
+              { description: 'Confira a composição antes de publicar.' },
+            );
+          } else {
+            toast.success('Kit encerrado — kit anterior carregado, ajuste e publique');
+          }
+        } else {
+          toast.warning('Kit encerrado — não foi possível recuperar o kit anterior, monte do zero', {
+            description: prefill?.mensagemCarregarFalhou,
+          });
+        }
+        setRefazerDeKit(prefill?.dadosParaPrefill ?? null);
         setCriarKitVirtualAberto(true);
       },
       onError: (err) =>
@@ -1235,7 +1258,11 @@ export default function Publicados() {
         />
       )}
 
-      <DialogCriarKitVirtual open={criarKitVirtualAberto} onOpenChange={setCriarKitVirtualAberto} />
+      <DialogCriarKitVirtual
+        open={criarKitVirtualAberto}
+        onOpenChange={(v) => { setCriarKitVirtualAberto(v); if (!v) setRefazerDeKit(null); }}
+        refazerDe={refazerDeKit ?? undefined}
+      />
     </div>
   );
 }

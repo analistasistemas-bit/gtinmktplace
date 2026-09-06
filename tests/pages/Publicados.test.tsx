@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Publicados from '@/pages/Publicados';
@@ -95,6 +95,18 @@ vi.mock('@/hooks/useKitsDoProduto', () => ({
 vi.mock('@/hooks/useEncerrarKitVirtual', () => ({
   useEncerrarKitVirtual: () => useEncerrarKitVirtualMock(),
 }));
+
+// ADR-0154 D-8: `carregarKitVirtualParaRefazer` consulta o supabase de verdade (fora do escopo
+// deste teste de página) — mockada; `prefillAposEncerrarKitVirtual` fica REAL (é a peça que
+// garante a ordem "só carrega depois do encerrar ter sucesso", o que este arquivo testa).
+const carregarKitVirtualParaRefazerMock = vi.fn();
+vi.mock('@/lib/kit-virtual', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/kit-virtual')>();
+  return {
+    ...actual,
+    carregarKitVirtualParaRefazer: (kitId: string) => carregarKitVirtualParaRefazerMock(kitId),
+  };
+});
 
 // O diálogo real usa vários hooks/queries próprios, fora do escopo deste teste de página — um
 // stub que expõe `open`/`onOpenChange` basta para provar que o botão/ação certos o abrem.
@@ -205,6 +217,8 @@ function mockHooksPadrao() {
   useKitsDoProdutoMock.mockReturnValue({ data: [] });
   useProfileMock.mockReturnValue({ isAdmin: true });
   useEncerrarKitVirtualMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+  carregarKitVirtualParaRefazerMock.mockClear();
+  carregarKitVirtualParaRefazerMock.mockResolvedValue({ ok: false, motivo: 'sem_componentes_suficientes' });
 }
 
 describe('Publicados', () => {
@@ -729,7 +743,7 @@ describe('Publicados', () => {
       expect(screen.getByTestId('dialog-criar-kit-virtual')).toBeInTheDocument();
     });
 
-    it('"Refazer kit": confirma no alert dialog, chama a mutation com o kitId e reabre o diálogo ao suceder', () => {
+    it('"Refazer kit": confirma no alert dialog, chama a mutation com o kitId e reabre o diálogo ao suceder', async () => {
       const mutate = vi.fn((_kitId: string, opts?: { onSuccess?: (r: unknown) => void }) => {
         opts?.onSuccess?.({ ok: true, kitId: 'k1', jaEncerrado: false });
       });
@@ -746,7 +760,31 @@ describe('Publicados', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Encerrar e refazer' }));
 
       expect(mutate).toHaveBeenCalledWith('k1', expect.any(Object));
-      expect(screen.getByTestId('dialog-criar-kit-virtual')).toBeInTheDocument();
+      // O diálogo só reabre DEPOIS do carregamento do prefill (prefillAposEncerrarKitVirtual
+      // aguarda `carregarKitVirtualParaRefazer` — ADR-0154 "cuide da ordem").
+      expect(carregarKitVirtualParaRefazerMock).toHaveBeenCalledWith('k1');
+      await waitFor(() => expect(screen.getByTestId('dialog-criar-kit-virtual')).toBeInTheDocument());
+    });
+
+    it('"Refazer kit": encerrar SEM sucesso nunca chama carregarKitVirtualParaRefazer nem reabre o diálogo', async () => {
+      const mutate = vi.fn((_kitId: string, opts?: { onSuccess?: (r: unknown) => void }) => {
+        opts?.onSuccess?.({ ok: false, motivo: 'ml_recusou', mensagem: 'ML recusou' });
+      });
+      useEncerrarKitVirtualMock.mockReturnValue({ mutate, isPending: false });
+      usePublicadosMock.mockReturnValue({ data: [kitItemBase()], isLoading: false, error: null });
+
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Refazer kit' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Encerrar e refazer' }));
+
+      expect(mutate).toHaveBeenCalledWith('k1', expect.any(Object));
+      expect(carregarKitVirtualParaRefazerMock).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('dialog-criar-kit-virtual')).not.toBeInTheDocument();
     });
   });
 });

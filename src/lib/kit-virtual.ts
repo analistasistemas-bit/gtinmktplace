@@ -231,6 +231,10 @@ export async function criarKitVirtualEdge(input: {
   descricao: string | null;
   fotoStoragePath: string | null;
   fotoMlPictureId: string | null;
+  /** Clássico/Premium. Omitido = a edge default para 'gold_pro' (criar-kit-virtual/index.ts).
+   *  Só chega preenchido no fluxo de Refazer (ADR-0154 D-8/migration Task 7-8), que reusa o
+   *  `listing_type_id` do kit antigo — o diálogo não tem um seletor para escolher isto do zero. */
+  listingTypeId?: string;
   componentes: ComponenteParaCriarKitVirtual[];
 }): Promise<ResultadoCriarKitVirtual> {
   const { data, error } = await supabase.functions.invoke('criar-kit-virtual', {
@@ -240,6 +244,7 @@ export async function criarKitVirtualEdge(input: {
       descricao: input.descricao,
       foto_storage_path: input.fotoStoragePath,
       foto_ml_picture_id: input.fotoMlPictureId,
+      listing_type_id: input.listingTypeId,
       componentes: input.componentes.map((c) => ({
         user_product_id: c.userProductId,
         quantidade: c.quantidade,
@@ -351,4 +356,115 @@ export function descreverFaltandoMargemKit(
     return `${LABEL_CAMPO_FALTANTE[campo]} em ${nome}`;
   });
   return `margem indisponível: falta ${partes.join(', ')}`;
+}
+
+// ─── Refazer kit: carrega o kit encerrado para pré-preencher o diálogo (ADR-0154 D-8) ────────
+// "Refazer kit" (Publicados.tsx) encerra o kit no ML e reabre o diálogo já carregado com os
+// componentes/título/descrição/desconto/listing type/foto do kit antigo — a alternativa
+// rejeitada era reabrir em branco (ver Decisão 8 do ADR e a discussão que a precedeu).
+
+export interface KitVirtualParaRefazer {
+  componentes: ComponenteSelecionadoKitVirtual[];
+  titulo: string;
+  descricao: string | null;
+  /** Percentual 0-99 (escala da tela) — já convertido da fração 0-1 armazenada no banco. */
+  descontoPct: number;
+  listingTypeId: string;
+  fotoStoragePath: string | null;
+  fotoMlPictureId: string | null;
+}
+
+export type ResultadoCarregarKitVirtualParaRefazer =
+  | { ok: true; dados: KitVirtualParaRefazer; componentesNaoRecuperados: number }
+  | { ok: false; motivo: 'nao_encontrado' | 'sem_componentes_suficientes' | 'falha_leitura'; mensagem?: string };
+
+/**
+ * Busca o kit encerrado (`kits_virtuais` + `kits_virtuais_componentes`, select org-scoped por
+ * RLS — encerrar só faz `update status`, nunca apaga a linha) e casa cada componente armazenado
+ * com o candidato ATUAL do buscador do ML (`buscarComponentesKitVirtual` sem filtro de texto
+ * devolve TODO o catálogo de componentes da org, D-12) para recuperar preço, categoria, custo e
+ * origem — nenhum desses campos é persistido em `kits_virtuais_componentes` (só
+ * user_product_id/quantidade/codigo/codigo_pai sobrevivem).
+ *
+ * Um componente que não aparece mais no buscador (produto removido/pausado entre a criação do
+ * kit velho e o refazer) é descartado do pré-preenchimento — não há como reconstruir
+ * título/categoria/preço dele sem essa chamada — e contado em `componentesNaoRecuperados`, para
+ * o chamador avisar o operador em vez de entregar uma composição incompleta em silêncio.
+ * `ok:false` (kit sumiu, ou sobrou menos de 2 componentes reconstruíveis) é o sinal para o
+ * chamador cair no diálogo em branco — o mesmo comportamento de antes desta função existir.
+ */
+export async function carregarKitVirtualParaRefazer(kitId: string): Promise<ResultadoCarregarKitVirtualParaRefazer> {
+  const [kitResp, componentesResp] = await Promise.all([
+    supabase.from('kits_virtuais')
+      .select('titulo, descricao, desconto_pct, listing_type_id, foto_storage_path, foto_ml_picture_id')
+      .eq('id', kitId).maybeSingle(),
+    supabase.from('kits_virtuais_componentes')
+      .select('user_product_id, quantidade')
+      .eq('kit_id', kitId).order('ordem', { ascending: true }),
+  ]);
+  if (kitResp.error) return { ok: false, motivo: 'falha_leitura', mensagem: kitResp.error.message };
+  if (componentesResp.error) return { ok: false, motivo: 'falha_leitura', mensagem: componentesResp.error.message };
+  if (!kitResp.data) return { ok: false, motivo: 'nao_encontrado' };
+
+  const componentesArmazenados = (componentesResp.data ?? []) as { user_product_id: string; quantidade: number }[];
+  if (componentesArmazenados.length === 0) return { ok: false, motivo: 'sem_componentes_suficientes' };
+
+  const { elegiveis, inelegiveis } = await buscarComponentesKitVirtual();
+  const candidatoPorUserProduct = new Map([...elegiveis, ...inelegiveis].map((c) => [c.userProductId, c]));
+
+  const componentes: ComponenteSelecionadoKitVirtual[] = [];
+  let componentesNaoRecuperados = 0;
+  for (const c of componentesArmazenados) {
+    const candidato = candidatoPorUserProduct.get(c.user_product_id);
+    if (!candidato) {
+      componentesNaoRecuperados++;
+      console.warn('kit_virtual_refazer_componente_nao_encontrado', { kitId, userProductId: c.user_product_id });
+      continue;
+    }
+    // Mesmo fallback de `adicionar()` no diálogo: preço nunca chega null (bloquearia
+    // precosValidos sem explicação) — 0 ainda bloqueia, mas de forma editável pelo operador.
+    componentes.push({ candidato, quantidade: c.quantidade, precoAtualML: candidato.precoAtualML ?? 0 });
+  }
+  if (componentes.length < 2) return { ok: false, motivo: 'sem_componentes_suficientes' };
+
+  const kit = kitResp.data as {
+    titulo: string; descricao: string | null; desconto_pct: number;
+    listing_type_id: string; foto_storage_path: string | null; foto_ml_picture_id: string | null;
+  };
+  return {
+    ok: true,
+    componentesNaoRecuperados,
+    dados: {
+      componentes,
+      titulo: kit.titulo,
+      descricao: kit.descricao,
+      descontoPct: fracaoParaPctDesconto(kit.desconto_pct),
+      listingTypeId: kit.listing_type_id,
+      fotoStoragePath: kit.foto_storage_path,
+      fotoMlPictureId: kit.foto_ml_picture_id,
+    },
+  };
+}
+
+/**
+ * Decide o pré-preenchimento do diálogo de Refazer a partir do resultado JÁ RESOLVIDO do
+ * encerrar-kit-virtual (ADR-0154, regra "cuide da ordem": o kit velho precisa estar encerrado
+ * antes do novo ser publicado, senão o ML pode recusar por composição duplicada). Recebe o
+ * resultado pronto em vez de chamar `encerrarKitVirtualEdge` de novo — quem encerra é a mutation
+ * de `useEncerrarKitVirtual` (ela já invalida as queries de Publicados no sucesso); esta função
+ * só decide o que vem DEPOIS, e nunca chama `carregarParaRefazer` quando `resultadoEncerrar` não
+ * é sucesso — sem isso, o operador reabriria o diálogo pré-preenchido com um kit que ainda está
+ * no ar no ML.
+ */
+export async function prefillAposEncerrarKitVirtual(
+  kitId: string,
+  resultadoEncerrar: ResultadoEncerrarKitVirtual,
+  carregarParaRefazer: (kitId: string) => Promise<ResultadoCarregarKitVirtualParaRefazer>,
+): Promise<{ dadosParaPrefill: KitVirtualParaRefazer | null; componentesNaoRecuperados: number; mensagemCarregarFalhou?: string } | null> {
+  if (!resultadoEncerrar.ok) return null;
+  const carregado = await carregarParaRefazer(kitId);
+  if (!carregado.ok) {
+    return { dadosParaPrefill: null, componentesNaoRecuperados: 0, mensagemCarregarFalhou: carregado.mensagem ?? carregado.motivo };
+  }
+  return { dadosParaPrefill: carregado.dados, componentesNaoRecuperados: carregado.componentesNaoRecuperados };
 }

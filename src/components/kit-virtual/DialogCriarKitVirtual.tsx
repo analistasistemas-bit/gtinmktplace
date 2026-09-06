@@ -24,13 +24,19 @@ import {
   pctParaFracaoDesconto,
   type ComponenteParaPreviewKit, type PreviewKitVirtualResultado,
   type ComponenteSelecionadoKitVirtual, type ComponenteCandidatoKitVirtual,
+  type KitVirtualParaRefazer,
 } from '@/lib/kit-virtual';
 import { ListaComponentesKitVirtual } from '@/components/kit-virtual/lista-componentes-kit-virtual';
 import { PreviewKitVirtual } from '@/components/kit-virtual/preview-kit-virtual';
 
-export function DialogCriarKitVirtual({ open, onOpenChange }: {
+export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
+  /** ADR-0154 D-8: presente só no fluxo de "Refazer kit" (Publicados.tsx) — o diálogo abre já
+   *  com a composição/título/descrição/desconto/listing type/foto do kit encerrado, em vez de
+   *  em branco (a alternativa que o Decisão 8 registra como rejeitada). Ausente = comportamento
+   *  de sempre, sem mudança nenhuma. */
+  refazerDe?: KitVirtualParaRefazer;
 }) {
   const qc = useQueryClient();
   const [etapa, setEtapa] = useState<'selecionar' | 'preview'>('selecionar');
@@ -50,29 +56,55 @@ export function DialogCriarKitVirtual({ open, onOpenChange }: {
   const [descricao, setDescricao] = useState('');
   const [descricaoGeradaPorIA, setDescricaoGeradaPorIA] = useState(false);
   const [previewResultado, setPreviewResultado] = useState<PreviewKitVirtualResultado | null>(null);
+  // ADR-0154 D-8/migration Task 7-8: sem seletor próprio no diálogo hoje — só existe pra
+  // sobreviver a um Refazer, reusando o listing_type_id do kit antigo. undefined = a edge
+  // default para 'gold_pro' (criarKitVirtualEdge), igual ao comportamento de sempre.
+  const [listingTypeId, setListingTypeId] = useState<string | undefined>(undefined);
 
   const tituloInicializadoRef = useRef(false);
   const primeiraPreviewFeitaRef = useRef(false);
 
   // Reset ao abrir — mesmo padrão de dialog-criar-kit.tsx: chave nova por sessão de diálogo.
+  // `refazerDe` (ADR-0154 D-8) troca o branco de sempre pela composição/título/descrição/
+  // desconto/listing type/foto do kit que acabou de ser encerrado — ausente, nada muda.
   useEffect(() => {
     if (!open) return;
     setEtapa('selecionar');
     setChaveCadastro(crypto.randomUUID());
     setSearchText('');
     setSearchTextAplicado('');
-    setSelecionados([]);
-    setFotoFile(null);
-    setFotoStoragePath(null);
-    setFotoMlPictureId(null);
     setUploadingFoto(false);
-    setDescontoPct(0);
-    setTitulo('');
-    setDescricao('');
-    setDescricaoGeradaPorIA(false);
     setPreviewResultado(null);
-    tituloInicializadoRef.current = false;
     primeiraPreviewFeitaRef.current = false;
+
+    if (refazerDe) {
+      setSelecionados(refazerDe.componentes);
+      setFotoFile(null);
+      setFotoStoragePath(refazerDe.fotoStoragePath);
+      setFotoMlPictureId(refazerDe.fotoMlPictureId);
+      setDescontoPct(refazerDe.descontoPct);
+      setTitulo(refazerDe.titulo);
+      setDescricao(refazerDe.descricao ?? '');
+      setDescricaoGeradaPorIA(!!refazerDe.descricao);
+      setListingTypeId(refazerDe.listingTypeId);
+      // Título reusado não pode ser sobrescrito pelo 1º preview automático (que reenvia o MESMO
+      // template pra uma composição que ainda não mudou) — mesma trava de uma edição manual.
+      tituloInicializadoRef.current = true;
+    } else {
+      setSelecionados([]);
+      setFotoFile(null);
+      setFotoStoragePath(null);
+      setFotoMlPictureId(null);
+      setDescontoPct(0);
+      setTitulo('');
+      setDescricao('');
+      setDescricaoGeradaPorIA(false);
+      setListingTypeId(undefined);
+      tituloInicializadoRef.current = false;
+    }
+    // refazerDe só é lido nesta abertura (chave nova de diálogo); incluí-lo nas deps re-rodaria
+    // o reset a cada render do pai que passe um objeto inline novo, apagando edição em curso.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const buscaQuery = useQuery({
@@ -139,8 +171,15 @@ export function DialogCriarKitVirtual({ open, onOpenChange }: {
   // a propagação é assíncrona. Best-effort: falha aqui NÃO trava o diálogo, `criar-kit-virtual`
   // reusa o `foto_storage_path` e faz o upload no publicar (rede de segurança, comportamento
   // anterior a este gap).
+  //
+  // `fotoMlPictureId` truthy já bloqueia: cobre o Refazer (ADR-0154 regra 3) — o
+  // `fotoStoragePath` reusado do kit antigo chega prefilled JUNTO com o `fotoMlPictureId`
+  // antigo (mesmo commit, ver reset acima), e reenviar a mesma imagem de novo ao ML trocaria um
+  // `picture_id` já propagado por um novo que precisa esperar a propagação de novo — exatamente
+  // o atraso que reusar o antigo existe para evitar. Upload genuíno sempre zera
+  // `fotoMlPictureId` antes (`handleEscolherFoto`), então o caminho normal não é afetado.
   useEffect(() => {
-    if (!fotoStoragePath) return;
+    if (!fotoStoragePath || fotoMlPictureId) return;
     let cancelado = false;
     subirFotoKitVirtualEdge(fotoStoragePath).then((r) => {
       if (cancelado) return;
@@ -148,7 +187,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange }: {
       else console.warn('kit_virtual_subir_foto_ml_falhou', r.mensagem);
     });
     return () => { cancelado = true; };
-  }, [fotoStoragePath]);
+  }, [fotoStoragePath, fotoMlPictureId]);
 
   const principal = selecionados[0] ?? null;
   // categoria_ml_id vem direto do candidato (a própria edge já leu do ML) — sem ele, o produto
@@ -225,6 +264,7 @@ export function DialogCriarKitVirtual({ open, onOpenChange }: {
       descricao: descricao.trim() || null,
       fotoStoragePath,
       fotoMlPictureId,
+      listingTypeId,
       componentes: selecionados.map((s) => ({
         userProductId: s.candidato.userProductId,
         quantidade: s.quantidade,

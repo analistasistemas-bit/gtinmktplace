@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import { DialogCriarKitVirtual } from '../DialogCriarKitVirtual';
 import type {
   ComponenteCandidatoKitVirtual, PreviewKitVirtualResultado, ResultadoCriarKitVirtual,
-  ResultadoBuscarComponentesKitVirtual, ResultadoSubirFotoKitVirtual,
+  ResultadoBuscarComponentesKitVirtual, ResultadoSubirFotoKitVirtual, KitVirtualParaRefazer,
 } from '@/lib/kit-virtual';
 
 vi.mock('sonner', () => ({
@@ -108,12 +108,12 @@ function mockPreview(resultado: Partial<PreviewKitVirtualResultado> = {}) {
   }));
 }
 
-function renderDialog() {
+function renderDialog(refazerDe?: KitVirtualParaRefazer) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const onOpenChange = vi.fn();
   render(
     <QueryClientProvider client={qc}>
-      <DialogCriarKitVirtual open onOpenChange={onOpenChange} />
+      <DialogCriarKitVirtual open onOpenChange={onOpenChange} refazerDe={refazerDe} />
     </QueryClientProvider>,
   );
   return { onOpenChange };
@@ -337,6 +337,76 @@ describe('DialogCriarKitVirtual — foto sobe ao ML no upload, não no publicar 
     await userEvent.click(screen.getByRole('button', { name: 'Publicar kit' }));
 
     await waitFor(() => expect(criarMock).toHaveBeenCalledWith(expect.objectContaining({ fotoMlPictureId: null })));
+  });
+});
+
+describe('DialogCriarKitVirtual — refazerDe pré-preenche (ADR-0154 D-8)', () => {
+  function refazerDeExemplo(): KitVirtualParaRefazer {
+    return {
+      componentes: [
+        { candidato: PRODUTO_A, quantidade: 2, precoAtualML: 100 },
+        { candidato: PRODUTO_B, quantidade: 1, precoAtualML: 50 },
+      ],
+      titulo: 'Kit Aventura: 1 Motosserra + 1 Canivete',
+      descricao: 'Descrição antiga do kit.',
+      descontoPct: 15,
+      listingTypeId: 'gold_special',
+      fotoStoragePath: 'org-1/kit-virtual-antigo/foto.jpg',
+      fotoMlPictureId: 'PIC-ANTIGO',
+    };
+  }
+
+  it('abre já com a composição, foto reusada e "Avançar" habilitado, sem precisar buscar/re-anexar nada', async () => {
+    mockBusca();
+    mockPreview();
+    renderDialog(refazerDeExemplo());
+
+    expect(await screen.findByText('Composição (2/6)')).toBeInTheDocument();
+    expect(screen.getByText('Motosserra Elétrica')).toBeInTheDocument();
+    expect(screen.getByText('Canivete Retrátil')).toBeInTheDocument();
+    expect(screen.getByLabelText('Quantidade de Motosserra Elétrica')).toHaveValue(2);
+    expect(screen.getByText('✓ enviada')).toBeInTheDocument(); // foto do kit antigo, sem upload novo
+    expect(screen.getByRole('button', { name: 'Avançar' })).not.toBeDisabled();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Avançar' }));
+
+    expect(await screen.findByLabelText('Título do kit')).toHaveValue('Kit Aventura: 1 Motosserra + 1 Canivete');
+    expect(screen.getByLabelText('Descrição do kit')).toHaveValue('Descrição antiga do kit.');
+    expect(screen.getByLabelText('Desconto do kit (%)')).toHaveValue(15);
+    // Foto já reusada — "Publicar kit" não fica preso esperando um novo upload.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publicar kit' })).not.toBeDisabled());
+  });
+
+  it('publicar reusa fotoMlPictureId/fotoStoragePath/listingTypeId do kit antigo, sem subir foto de novo', async () => {
+    mockBusca();
+    mockPreview();
+    criarMock.mockResolvedValue({
+      ok: true, kitId: 'kit-2', mlItemId: 'MLB2', mlUserProductId: null, mlPermalink: null, jaExistia: false,
+    });
+    renderDialog(refazerDeExemplo());
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Avançar' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Publicar kit' })).not.toBeDisabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Publicar kit' }));
+
+    await waitFor(() => expect(criarMock).toHaveBeenCalledWith(expect.objectContaining({
+      fotoMlPictureId: 'PIC-ANTIGO',
+      fotoStoragePath: 'org-1/kit-virtual-antigo/foto.jpg',
+      listingTypeId: 'gold_special',
+    })));
+    expect(subirFotoMlMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('DialogCriarKitVirtual — sem refazerDe, o diálogo continua em branco', () => {
+  it('sem a prop: sem composição pré-selecionada, sem foto, "Avançar" desabilitado', async () => {
+    mockBusca();
+    renderDialog(); // refazerDe ausente — mesmo comportamento de sempre
+
+    await screen.findByText('Motosserra Elétrica'); // busca resolveu
+    expect(screen.queryByText(/^Composição \(/)).not.toBeInTheDocument();
+    expect(screen.queryByText('✓ enviada')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Avançar' })).toBeDisabled();
   });
 });
 
