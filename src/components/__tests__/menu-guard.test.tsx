@@ -44,6 +44,9 @@ describe('MenuGuard — módulos undefined na 1ª carga (ADR-0153 D5)', () => {
     renderEm('/estoque');
     expect(screen.queryByText('SEM ACESSO')).toBeNull();
     expect(screen.queryByText('ESTOQUE')).toBeNull();
+    // Sem esta linha o teste passaria também se o guard renderizasse nada: "não mandou para
+    // /sem-acesso" não é o mesmo que "explicou ao operador o que aconteceu".
+    expect(screen.getByText('Módulos indisponíveis')).toBeTruthy();
   });
 
   it('RPC falhou (modulos undefined): rota sem módulo (Dashboard) continua funcionando', () => {

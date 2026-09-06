@@ -3,6 +3,7 @@ import { Building2 } from 'lucide-react';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { UserMenu } from '@/components/user-menu';
 import { Toaster } from '@/components/ui/sonner';
+import { AtualizacaoDisponivel } from '@/components/atualizacao-disponivel';
 
 // Layout do painel de plataforma (super-admin), deliberadamente distinto da operação de uma
 // empresa: sem a sidebar de operação e com header escuro/âmbar, para deixar claro que você
@@ -24,6 +25,9 @@ export function AdminShell() {
         <Outlet />
       </main>
       <Toaster />
+      {/* O super-admin fica horas em /admin, fora do AppShell — sem isto nunca veria o aviso
+          de versão nova (ADR-0153 D4). */}
+      <AtualizacaoDisponivel />
     </div>
   );
 }

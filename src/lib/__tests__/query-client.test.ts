@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MutationObserver, onlineManager } from '@tanstack/react-query';
+import { MutationObserver, QueryClient, onlineManager } from '@tanstack/react-query';
 import { queryClient } from '../query-client';
 
 // ADR-0153 (D2): nenhuma escrita offline. Sem rede, a mutation tem que falhar na hora — não
@@ -35,25 +35,48 @@ describe('queryClient — mutations.networkMode', () => {
 
   // A garantia de domínio do ADR-0153: publicar, pausar, reprecificar e movimentar estoque agem
   // sobre estado que muda no servidor sem o operador. Reexecutar ao reconectar seria aplicar uma
-  // decisão tomada minutos antes, sobre um mercado que já mudou. Este caso é a trava contra
-  // alguém remover o networkMode: 'always' no futuro sem perceber o que está reabrindo.
-  it('ao reconectar, a mutation que falhou offline não é reexecutada', async () => {
-    let chamadas = 0;
-    const observer = new MutationObserver(queryClient, {
+  // decisão tomada minutos antes, sobre um mercado que já mudou.
+  //
+  // O contraste com um client de controle em 'online' é o que dá valor a este caso: sem ele, a
+  // asserção depois do setOnline(true) seria inerte (uma mutation em 'error' com retry 0 nunca
+  // é reexecutada sob nenhum networkMode). Com o controle, o teste mostra os dois comportamentos
+  // lado a lado — e falha se alguém reverter a configuração.
+  it('ao reconectar: a nossa não reexecuta; a configuração antiga executaria', async () => {
+    const controle = new QueryClient({ defaultOptions: { mutations: { networkMode: 'online' } } });
+    // mount() é o que assina o onlineManager e faz o client retomar as mutations pausadas ao
+    // reconectar. Sem isso o controle ficaria mudo e o teste passaria sem provar nada.
+    controle.mount();
+    let chamadasNossas = 0;
+    let chamadasControle = 0;
+
+    const nossa = new MutationObserver(queryClient, {
       mutationFn: async () => {
-        chamadas++;
+        chamadasNossas++;
         throw new Error('falha simulada');
+      },
+    });
+    const antiga = new MutationObserver(controle, {
+      mutationFn: async () => {
+        chamadasControle++;
+        return 'ok';
       },
     });
 
     onlineManager.setOnline(false);
-    observer.mutate().catch(() => {});
-    await vi.waitFor(() => expect(chamadas).toBe(1), { timeout: 300, interval: 20 });
+    nossa.mutate().catch(() => {});
+    antiga.mutate().catch(() => {});
+
+    // Sem rede: a nossa já rodou e falhou; a antiga não encostou no servidor — ficou pausada.
+    await vi.waitFor(() => expect(chamadasNossas).toBe(1), { timeout: 300, interval: 20 });
+    expect(chamadasControle).toBe(0);
 
     onlineManager.setOnline(true);
-    await new Promise((r) => setTimeout(r, 150));
 
-    expect(chamadas).toBe(1);
-    expect(observer.getCurrentResult().status).toBe('error');
+    // Com a rede de volta: a antiga dispara sozinha — exatamente o que o ADR proíbe.
+    await vi.waitFor(() => expect(chamadasControle).toBe(1), { timeout: 500, interval: 20 });
+    expect(chamadasNossas).toBe(1);
+    expect(nossa.getCurrentResult().status).toBe('error');
+
+    controle.unmount();
   });
 });

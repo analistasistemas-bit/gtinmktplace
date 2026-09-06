@@ -129,8 +129,21 @@ prompt de atualização na página antes de conferir o resultado.
 
 Checklist de runtime real (fora do CI, verificar manualmente após um deploy que toque o PWA):
 instalabilidade, navegação offline entre telas já visitadas na sessão, mutação offline que falha
-na hora e **não** executa sozinha ao reconectar, cold start offline (mostra "Sem conexão") e o
-fluxo de atualização de versão (toast → clique → recarrega na versão nova).
+na hora e **não** executa sozinha ao reconectar, cold start offline com **sessão ainda válida**
+(mostra "Sem conexão"; com o token já expirado o app vai para a tela de Login — ver ADR-0153,
+"Consequências") e o fluxo de atualização de versão (toast → clique → recarrega na versão nova).
+
+Confirmar também que os headers do `render.yaml` estão de fato valendo — eles só se aplicam se o
+serviço estiver vinculado ao Blueprint; se ele foi criado pelo dashboard, o bloco `headers` é
+ignorado em silêncio:
+
+```bash
+curl -sI https://<app>/sw.js | grep -i cache-control   # esperado: no-cache
+```
+
+Se não vier `no-cache`, configurar o header pelo dashboard do Render. A consequência de ficar sem
+ele não é quebra: é o navegador podendo segurar o service worker por até 24 h antes de ver o
+deploy novo.
 
 ---
 

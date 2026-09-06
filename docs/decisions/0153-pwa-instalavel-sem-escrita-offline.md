@@ -147,8 +147,16 @@ resolve.
 ## Consequências
 
 - O app fica instalável no Android/Chrome e ganha ícone próprio, tela cheia e splash.
-- Offline: o app abre e navega, mostrando o que já foi carregado **na sessão atual**. Cold start
-  sem rede mostra "Sem conexão".
+- Offline: o app abre e navega, mostrando o que já foi carregado **na sessão atual**.
+- Cold start sem rede: o app **abre** (o precache entrega o shell inteiro), mas o que aparece
+  depende do token. Com sessão ainda válida, cai na tela "Sem conexão". Com o token expirado —
+  que é o caso comum ao reabrir um app instalado, porque o JWT dura 1h — o `getSession()` do
+  supabase-js falha ao renovar sem rede e devolve sessão nula, e o app vai para a tela de
+  **Login**. Não é regressão (hoje já é assim), mas também não é o ideal: distinguir "token
+  expirado sem rede" de "não está logado" fica como trabalho seguinte.
+- Queries continuam com o `networkMode` padrão. Uma tela **não visitada** aberta offline não dá
+  erro: a query fica pausada, e a tela mostra seu estado vazio ("nenhum lote") em vez de "sem
+  conexão". A faixa de aviso global mitiga, mas não resolve por tela — também é trabalho seguinte.
 - Toda ação de escrita fica indisponível offline, com aviso imediato — inclusive as que hoje
   ficariam pausadas e disparariam sozinhas.
 - A validação pós-deploy muda: o service worker serve o bundle antigo mesmo com o cache do
