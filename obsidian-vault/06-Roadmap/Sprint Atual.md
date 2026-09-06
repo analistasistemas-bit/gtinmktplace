@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-09-03
+atualizado: 2026-09-05
 ---
 
 # Sprint Atual
@@ -9,7 +9,38 @@ Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
 `docs/project-status.md` (retrato curto, atualizado até **2026-08-11**, com a seção "Entregas de
 agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-09-03) — EM PRODUÇÃO
+## 📍 Passo atual (2026-09-05) — EM PRODUÇÃO
+
+> **✅ ADR-0153: PubliAI virou PWA instalável — EM PRODUÇÃO (2026-09-05).** O manifest e os
+> ícones já existiam; faltava o service worker inteiro, sem o qual o Chrome não oferece instalar
+> e não há nada offline. Agora o app instala no Android e no iPhone (Safari → Adicionar à Tela de
+> Início) e **abre sem conexão**, servindo o shell do precache (147 arquivos).
+>
+> O que o service worker **nunca** faz: interceptar cross-origin. `runtimeCaching` vazio, nenhuma
+> resposta do Supabase em cache — resposta autenticada carrega dado de um `org_id`, e um cache que
+> não entende RLS poderia servir para a conta errada. Há teste travando contra alguém adicionar
+> isso depois.
+>
+> **O achado que mudou o trabalho:** `query-client.ts` não definia `networkMode`, e o padrão do
+> react-query v5 **pausa** a mutation sem rede e a **dispara sozinha ao reconectar**. São 47
+> mutations em 18 arquivos, incluindo pausar/reativar anúncio, reprecificar e movimentar estoque.
+> Num app instalado no celular isso deixaria de ser hipótese: executar minutos depois uma decisão
+> comercial tomada sobre um mercado que já mudou. Corrigido (`networkMode: 'always'`) antes de
+> qualquer service worker — era risco que já existia, sem relação com PWA.
+>
+> Offline vale para a **sessão viva**: nenhum dado de organização é gravado no aparelho (decisão
+> do Diego). Atualização de versão passa por aviso, nunca automática, para não recarregar no meio
+> de uma revisão de lote. E offline deixou de virar falta de permissão: sem rede o app mostra
+> "Sem conexão" em vez de "Sem acesso", e a falha ao carregar os módulos não esconde mais os
+> menus pagos como se a org não os tivesse contratado.
+>
+> Revisado pelo Fable sem bloqueios; 6 correções aplicadas depois da revisão, entre elas um aviso
+> que faltava em ações que mexem em preço e um teste que passava sem provar nada. Validado em
+> produção, não só em preview: service worker ativo, precache sem Supabase, instalabilidade
+> confirmada e app abrindo offline. Web Push ficou registrado no [[Backlog]] — não entrou no
+> escopo.
+
+## 📍 Passo anterior (2026-09-03) — EM PRODUÇÃO
 
 > **✅ ADR-0151: Kit vinculado — criar anúncios de kit (N unidades) a partir de produto
 > existente — EM PRODUÇÃO (19 Edge Functions deployadas em 2026-09-03).** Extensão do módulo Estoque

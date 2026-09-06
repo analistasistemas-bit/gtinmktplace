@@ -33,9 +33,25 @@ consertou uma fila de escrita offline implícita e não intencional que já exis
 - [x] Documentação: [deploy-e-migrations.md](how-to/deploy-e-migrations.md),
       [desenvolvimento-local.md](how-to/desenvolvimento-local.md),
       [arquitetura.md](explanation/arquitetura.md), [ADR-0153](decisions/0153-pwa-instalavel-sem-escrita-offline.md).
-- [ ] Checklist de runtime real fora do CI (instalabilidade, navegação offline, mutação offline
-      que não executa ao reconectar, cold start offline, fluxo de atualização) — pendente, listado
-      no how-to de deploy.
+- [x] Checklist de runtime real fora do CI — feito em 2026-09-05, contra a **produção**
+      (`app.publiai.daludi.com.br` e `ean2marketplace-frontend.onrender.com`), não só contra o
+      preview local: service worker ativo e controlando, 147 arquivos em precache com **0 do
+      Supabase**, manifest aceito pelo navegador (perguntado ao Chrome via CDP, zero erros),
+      ícones 192/512 servidos como PNG, app abrindo offline com a tela completa, versão nova
+      entrando em espera sem se aplicar sozinha, zero erro de console. Instalação confirmada pelo
+      Diego no iPhone (Safari → Adicionar à Tela de Início).
+- [x] Conferência dos headers pós-deploy: o bloco `headers` do `render.yaml` **não está valendo**
+      (serviço criado pelo dashboard, não pelo Blueprint) — mas o padrão do Render
+      (`public, max-age=0, s-maxage=300`) já cobre, porque `max-age=0` obriga revalidação do
+      `sw.js` a cada carregamento. Nada a configurar no dashboard. Registrado no how-to e num
+      aviso dentro do próprio `render.yaml`.
+- [ ] **Graphify não atualizado nesta entrega.** O grafo (`graphify-out/`, gitignored, 228 MB) não
+      inclui os arquivos novos do PWA (`pwa.config.ts`, `src/stores/pwa-store.ts`,
+      `src/components/banner-offline.tsx`, `src/components/atualizacao-disponivel.tsx`) nem a
+      mudança no nó central `src/lib/query-client.ts`. Regenerar custa caro para 4 arquivos novos
+      numa base de ~10 mil nós; fica para o próximo update grande do grafo.
+- [ ] Notificação push (Web Push) — levantada e **fora do escopo desta entrega**; registrada em
+      `obsidian-vault/06-Roadmap/Backlog.md` com custo, riscos e as decisões pendentes.
 
 ## Mobile UX — wrap, fade e tap targets — 2026-09-05
 
