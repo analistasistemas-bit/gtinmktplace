@@ -22,6 +22,11 @@ export interface MapasFoto {
   /** ml_item_id → capa da família. Último fallback: o cadastro de produto avulso grava a foto
    *  só em `familias.capa_storage_path`, e a variação fica sem `imagem_path`. */
   porItemCapa: Map<string, string>;
+  /** GTIN normalizado → capa da família. Último recurso p/ venda de MLB que o app não conhece
+   *  (anúncio criado direto no ML) mas com o GTIN de um produto avulso. */
+  porGtinCapa: Map<string, string>;
+  /** Código/SKU normalizado → capa da família. Idem, pela SKU. */
+  porCodigoCapa: Map<string, string>;
 }
 
 /** Grava `chave → foto`, mas ANULA a chave (`null`) quando duas fotos diferentes disputam —
@@ -32,6 +37,9 @@ function definir(mapa: Map<string, string | null>, chave: string, path: string) 
   if (atual === null) return;
   if (atual !== path) mapa.set(chave, null);
 }
+
+const semAmbiguos = (m: Map<string, string | null>) =>
+  new Map([...m].filter((p): p is [string, string] => p[1] != null));
 
 /** Lê o imagem_path das variações do usuário (RLS) e monta os mapas de resolução.
  *  Pagina (`.range`) para não truncar no teto padrão (~1000 linhas) do PostgREST. */
@@ -46,8 +54,7 @@ export async function buscarFotos(): Promise<MapasFoto> {
       .range(de, ate)),
     buscarTodasPaginas<Record<string, unknown>>((de, ate) => supabase
       .from('familias')
-      .select('ml_item_id, capa_storage_path')
-      .not('ml_item_id', 'is', null)
+      .select('ml_item_id, capa_storage_path, variacoes(codigo, gtin)')
       .not('capa_storage_path', 'is', null)
       .range(de, ate)),
     // Filhos User Products (ADR-0088): 1 item ML por cor. Sem eles, a venda de um filho cujo
@@ -72,12 +79,22 @@ export function montarMapasFoto(
   const porGtin = new Map<string, string>();
   const porCodigo = new Map<string, string>();
   const porItemCapa = new Map<string, string>();
+  const porGtinCapa = new Map<string, string | null>();
+  const porCodigoCapa = new Map<string, string | null>();
   const fotoPorSku = new Map<string, string | null>();
 
   for (const f of capas) {
     const itemId = f.ml_item_id as string | null;
     const capa = f.capa_storage_path as string | null;
-    if (itemId && capa && !porItemCapa.has(String(itemId))) porItemCapa.set(String(itemId), capa);
+    if (!capa) continue;
+    if (itemId && !porItemCapa.has(String(itemId))) porItemCapa.set(String(itemId), capa);
+    // Produto avulso grava a foto só na capa, e a venda pode chegar por um MLB que o app não
+    // conhece (anúncio criado direto no ML) — só o código/GTIN da variação liga os dois.
+    const vars = (f.variacoes ?? []) as { codigo: string | null; gtin: string | null }[];
+    for (const v of vars) {
+      if (v.gtin) definir(porGtinCapa, normGtin(v.gtin), capa);
+      if (v.codigo) definir(porCodigoCapa, normGtin(v.codigo), capa);
+    }
   }
 
   for (const v of data) {
@@ -110,8 +127,10 @@ export function montarMapasFoto(
 
   return {
     porVariacao,
-    porItem: new Map([...porItem].filter((p): p is [string, string] => p[1] != null)),
+    porItem: semAmbiguos(porItem),
     porGtin, porCodigo, porItemCapa,
+    porGtinCapa: semAmbiguos(porGtinCapa),
+    porCodigoCapa: semAmbiguos(porCodigoCapa),
   };
 }
 
@@ -142,6 +161,16 @@ export function montarFotoResolver(m: MapasFoto | undefined, canonico?: MapaCano
     // por cor (mostraria a capa genérica no lugar da foto da cor vendida).
     if (itemId) {
       const x = m.porItemCapa.get(itemId);
+      if (x != null) return x;
+    }
+    // MLB desconhecido (anúncio criado fora do app) vendendo um produto avulso: a capa pelo
+    // GTIN/código. Depois de tudo, porque a capa é genérica.
+    if (item.ean) {
+      const x = m.porGtinCapa.get(normGtin(item.ean));
+      if (x != null) return x;
+    }
+    if (item.codigo) {
+      const x = m.porCodigoCapa.get(normGtin(item.codigo));
       if (x != null) return x;
     }
     return null;

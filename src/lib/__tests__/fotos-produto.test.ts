@@ -65,6 +65,37 @@ describe('resolver de foto do produto', () => {
     expect(foto).toBe('fotos/unica.png');
   });
 
+  // Caso real (org DSA, 2026-09-06): produto avulso tem foto só em `familias.capa_storage_path`,
+  // e a venda chega por um MLB criado direto no ML (Sérum MLB7580506496, Kit Centrum MLB7391084566)
+  // que o app não conhece — mas com a SKU exata da variação. Caía em null: código/GTIN só
+  // indexavam variação com foto própria, e a capa só era alcançável pelo MLB da família.
+  it('MLB desconhecido vendendo a SKU de um produto avulso: capa da família pelo código', () => {
+    const m = montarMapasFoto([], [
+      { ml_item_id: 'MLB5126938517', capa_storage_path: 'fotos/capa-serum.png', variacoes: [{ codigo: '00000057', gtin: null }] },
+    ]);
+    expect(montarFotoResolver(m)(item({ ml_item_id: 'MLB7580506496', codigo: '00000057' }))).toBe('fotos/capa-serum.png');
+  });
+
+  it('MLB desconhecido vendendo o GTIN de um produto avulso: capa da família pelo GTIN', () => {
+    const m = montarMapasFoto([], [
+      { ml_item_id: 'MLB1', capa_storage_path: 'fotos/capa.png', variacoes: [{ codigo: 'X', gtin: '07891000444764' }] },
+    ]);
+    expect(montarFotoResolver(m)(item({ ml_item_id: 'MLBoutro', ean: '7891000444764' }))).toBe('fotos/capa.png');
+  });
+
+  it('capa por código/GTIN é o último recurso e anula quando duas famílias disputam', () => {
+    const capas = [
+      { ml_item_id: 'MLB1', capa_storage_path: 'fotos/capa1.png', variacoes: [{ codigo: 'A', gtin: '1' }] },
+      { ml_item_id: 'MLB2', capa_storage_path: 'fotos/capa2.png', variacoes: [{ codigo: 'A', gtin: '1' }] },
+    ];
+    const m = montarMapasFoto([variacao('A', 'fotos/propria.png', 'MLB1', { gtin: '1' })], capas);
+    // Foto própria da variação vence a capa.
+    expect(montarFotoResolver(m)(item({ ml_item_id: 'MLBx', codigo: 'A' }))).toBe('fotos/propria.png');
+    // Sem foto própria e com duas capas disputando o mesmo código/GTIN: null, não um chute.
+    const m2 = montarMapasFoto([], capas);
+    expect(montarFotoResolver(m2)(item({ ml_item_id: 'MLBx', codigo: 'A', ean: '1' }))).toBeNull();
+  });
+
   it('sem mapas devolve null', () => {
     expect(montarFotoResolver(undefined)(item({ ml_item_id: 'MLB1' }))).toBeNull();
   });

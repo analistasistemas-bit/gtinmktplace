@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Faturamento: venda sem foto na org DSA — branch `Bug-fotos-faturamento` — 2026-09-06
+
+Duas vendas por MLB criado direto no ML (Sérum `MLB7580506496`, Kit Centrum `MLB7391084566`,
+17 vendas somadas) apareciam sem miniatura no Faturamento. Causa: produto avulso guarda a foto
+só em `familias.capa_storage_path`, e os fallbacks por código/GTIN de `fotos-produto.ts` só
+indexavam variação com `imagem_path` próprio — a capa só era alcançável pelo MLB da família, que
+o app não conhecia. Fix: `porGtinCapa`/`porCodigoCapa` (capa da família pela SKU/GTIN da
+variação, anulando disputa entre famílias), consultados por último. Reproduzido e validado com
+o resolver puro sobre os dados reais da DSA (19 de 19 itens vendidos desde 20/08 com foto).
+
+- [x] Teste RED→GREEN em `src/lib/__tests__/fotos-produto.test.ts` (3 casos).
+- [x] Embed `familias → variacoes(codigo, gtin)` validado no PostgREST real com RLS da org.
+
 ## Kit Virtual do Mercado Livre (ADR-0154) — branch `worktree-spike-036-kits-virtuais-verificado`, não mergeada — 2026-09-06
 
 ADR **Proposto**, feature codada e testada na branch, **nada aplicado nem deployado** — `db push`
