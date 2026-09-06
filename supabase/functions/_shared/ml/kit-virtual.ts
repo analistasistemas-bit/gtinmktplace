@@ -182,8 +182,11 @@ export async function lerEstoqueKitML(accessToken: string, userProductId: string
     );
     if (!resp.ok) { console.warn(`lerEstoqueKitML ML ${resp.status} (${userProductId})`); return null; }
     const json = await resp.json().catch(() => null) as Record<string, unknown> | null;
-    const locations = Array.isArray(json?.locations) ? json.locations : [];
-    return locations.reduce((acc: number, l) => {
+    // `locations` ausente/não-array é uma LEITURA que falhou, não estoque zero (D-6: um valor
+    // financeiro/operacional ausente nunca vira um número plausível). `[]` continua sendo 0 —
+    // isso é um zero medido.
+    if (!Array.isArray(json?.locations)) { console.warn(`lerEstoqueKitML sem locations (${userProductId})`); return null; }
+    return json.locations.reduce((acc: number, l) => {
       const q = (l as Record<string, unknown>).quantity;
       return acc + (typeof q === 'number' ? q : 0);
     }, 0);

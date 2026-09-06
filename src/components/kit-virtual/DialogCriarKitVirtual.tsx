@@ -33,9 +33,10 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   /** ADR-0154 D-8: presente só no fluxo de "Refazer kit" (Publicados.tsx) — o diálogo abre já
-   *  com a composição/título/descrição/desconto/listing type/foto do kit encerrado, em vez de
-   *  em branco (a alternativa que o Decisão 8 registra como rejeitada). Ausente = comportamento
-   *  de sempre, sem mudança nenhuma. */
+   *  com a composição/título/descrição/desconto/foto do kit encerrado, em vez de em branco (a
+   *  alternativa que o Decisão 8 registra como rejeitada). Ausente = comportamento de sempre,
+   *  sem mudança nenhuma. O listing type NÃO é pré-preenchido: a edge o deriva dos componentes
+   *  a cada CREATE, senão trocar um componente no Refazer volta a dar `listing_type_mismatch`. */
   refazerDe?: KitVirtualParaRefazer;
 }) {
   const qc = useQueryClient();
@@ -56,17 +57,13 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
   const [descricao, setDescricao] = useState('');
   const [descricaoGeradaPorIA, setDescricaoGeradaPorIA] = useState(false);
   const [previewResultado, setPreviewResultado] = useState<PreviewKitVirtualResultado | null>(null);
-  // ADR-0154 D-8/migration Task 7-8: sem seletor próprio no diálogo hoje — só existe pra
-  // sobreviver a um Refazer, reusando o listing_type_id do kit antigo. undefined = a edge
-  // default para 'gold_pro' (criarKitVirtualEdge), igual ao comportamento de sempre.
-  const [listingTypeId, setListingTypeId] = useState<string | undefined>(undefined);
 
   const tituloInicializadoRef = useRef(false);
   const primeiraPreviewFeitaRef = useRef(false);
 
   // Reset ao abrir — mesmo padrão de dialog-criar-kit.tsx: chave nova por sessão de diálogo.
   // `refazerDe` (ADR-0154 D-8) troca o branco de sempre pela composição/título/descrição/
-  // desconto/listing type/foto do kit que acabou de ser encerrado — ausente, nada muda.
+  // desconto/foto do kit que acabou de ser encerrado — ausente, nada muda.
   useEffect(() => {
     if (!open) return;
     setEtapa('selecionar');
@@ -86,7 +83,6 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       setTitulo(refazerDe.titulo);
       setDescricao(refazerDe.descricao ?? '');
       setDescricaoGeradaPorIA(!!refazerDe.descricao);
-      setListingTypeId(refazerDe.listingTypeId);
       // Título reusado não pode ser sobrescrito pelo 1º preview automático (que reenvia o MESMO
       // template pra uma composição que ainda não mudou) — mesma trava de uma edição manual.
       tituloInicializadoRef.current = true;
@@ -99,7 +95,6 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       setTitulo('');
       setDescricao('');
       setDescricaoGeradaPorIA(false);
-      setListingTypeId(undefined);
       tituloInicializadoRef.current = false;
     }
     // refazerDe só é lido nesta abertura (chave nova de diálogo); incluí-lo nas deps re-rodaria
@@ -264,7 +259,6 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
       descricao: descricao.trim() || null,
       fotoStoragePath,
       fotoMlPictureId,
-      listingTypeId,
       componentes: selecionados.map((s) => ({
         userProductId: s.candidato.userProductId,
         quantidade: s.quantidade,

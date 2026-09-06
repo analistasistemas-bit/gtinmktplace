@@ -92,6 +92,25 @@ describe('lerEstoqueKitML', () => {
     vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('network down'); }));
     expect(await lerEstoqueKitML('tok', 'MLBU-KIT1')).toBeNull();
   });
+
+  // D-6: "não consegui ler" e "está zerado" são informações DIFERENTES. Um 200 sem `locations`
+  // (ou com `locations` de outro tipo) não pode virar o zero plausível que a tela exibiria como
+  // estoque real.
+  it('200 sem array de locations devolve null, nunca 0', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp({})));
+    expect(await lerEstoqueKitML('tok', 'MLBU-KIT1')).toBeNull();
+
+    vi.stubGlobal('fetch', vi.fn(async () => resp({ locations: null })));
+    expect(await lerEstoqueKitML('tok', 'MLBU-KIT1')).toBeNull();
+
+    vi.stubGlobal('fetch', vi.fn(async () => resp({ locations: { quantity: 3 } })));
+    expect(await lerEstoqueKitML('tok', 'MLBU-KIT1')).toBeNull();
+  });
+
+  it('locations vazio continua sendo 0 — esse zero foi MEDIDO', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp({ locations: [] })));
+    expect(await lerEstoqueKitML('tok', 'MLBU-KIT1')).toBe(0);
+  });
 });
 
 // Bug real 2026-09-06: `listing_type_id` fixo (`gold_pro`) não bate com o dos componentes e o ML

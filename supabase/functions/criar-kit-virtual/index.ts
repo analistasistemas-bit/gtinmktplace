@@ -37,6 +37,8 @@ const STATUS_POR_MOTIVO: Record<MotivoCriarKitVirtual, number> = {
   falha_listing_type: 502,
   foto_obrigatoria: 400,
   falha_leitura: 500,
+  // Outra chamada está no meio do CREATE desta mesma chave — conflito, não erro do operador.
+  em_andamento: 409,
   falha_criar_kit: 500,
   falha_componentes: 500,
   falha_foto: 502,
@@ -97,11 +99,9 @@ Deno.serve(async (req) => {
     descricao: typeof body.descricao === 'string' ? body.descricao : null,
     fotoStoragePath: typeof body.foto_storage_path === 'string' ? body.foto_storage_path : null,
     fotoMlPictureId: typeof body.foto_ml_picture_id === 'string' ? body.foto_ml_picture_id : null,
-    // `null` = a edge deriva do listing type real dos componentes (bug real 2026-09-06: um
-    // default fixo aqui não bate com o listing type publicado e o ML recusa o kit inteiro).
-    listingTypeId: typeof body.listing_type_id === 'string' && body.listing_type_id
-      ? body.listing_type_id
-      : null,
+    // `listing_type_id` NÃO é entrada: a edge sempre deriva do listing type real dos componentes
+    // desta submissão (bug real 2026-09-06 — um valor fixo, ou o do kit antigo num Refazer, não
+    // bate com o listing type publicado e o ML recusa o kit inteiro com `listing_type_mismatch`).
     componentes: componentes as ComponenteKitVirtual[],
   };
 

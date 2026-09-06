@@ -231,10 +231,10 @@ export async function criarKitVirtualEdge(input: {
   descricao: string | null;
   fotoStoragePath: string | null;
   fotoMlPictureId: string | null;
-  /** Clássico/Premium. Omitido = a edge default para 'gold_pro' (criar-kit-virtual/index.ts).
-   *  Só chega preenchido no fluxo de Refazer (ADR-0154 D-8/migration Task 7-8), que reusa o
-   *  `listing_type_id` do kit antigo — o diálogo não tem um seletor para escolher isto do zero. */
-  listingTypeId?: string;
+  // `listing_type_id` NÃO é entrada do CREATE: a edge sempre deriva do listing type real dos
+  // componentes desta submissão. Reusar o do kit antigo num Refazer (ADR-0154 D-8) reintroduz o
+  // `listing_type_mismatch` de 2026-09-06 assim que o componente trocado divergir — e o Refazer
+  // existe justamente para trocar componente.
   componentes: ComponenteParaCriarKitVirtual[];
 }): Promise<ResultadoCriarKitVirtual> {
   const { data, error } = await supabase.functions.invoke('criar-kit-virtual', {
@@ -244,7 +244,6 @@ export async function criarKitVirtualEdge(input: {
       descricao: input.descricao,
       foto_storage_path: input.fotoStoragePath,
       foto_ml_picture_id: input.fotoMlPictureId,
-      listing_type_id: input.listingTypeId,
       componentes: input.componentes.map((c) => ({
         user_product_id: c.userProductId,
         quantidade: c.quantidade,
@@ -360,8 +359,9 @@ export function descreverFaltandoMargemKit(
 
 // ─── Refazer kit: carrega o kit encerrado para pré-preencher o diálogo (ADR-0154 D-8) ────────
 // "Refazer kit" (Publicados.tsx) encerra o kit no ML e reabre o diálogo já carregado com os
-// componentes/título/descrição/desconto/listing type/foto do kit antigo — a alternativa
-// rejeitada era reabrir em branco (ver Decisão 8 do ADR e a discussão que a precedeu).
+// componentes/título/descrição/desconto/foto do kit antigo — a alternativa rejeitada era
+// reabrir em branco (ver Decisão 8 do ADR e a discussão que a precedeu). O `listing_type_id`
+// NÃO viaja no prefill: a edge o deriva dos componentes a cada CREATE.
 
 export interface KitVirtualParaRefazer {
   componentes: ComponenteSelecionadoKitVirtual[];
@@ -369,7 +369,6 @@ export interface KitVirtualParaRefazer {
   descricao: string | null;
   /** Percentual 0-99 (escala da tela) — já convertido da fração 0-1 armazenada no banco. */
   descontoPct: number;
-  listingTypeId: string;
   fotoStoragePath: string | null;
   fotoMlPictureId: string | null;
 }
@@ -396,7 +395,7 @@ export type ResultadoCarregarKitVirtualParaRefazer =
 export async function carregarKitVirtualParaRefazer(kitId: string): Promise<ResultadoCarregarKitVirtualParaRefazer> {
   const [kitResp, componentesResp] = await Promise.all([
     supabase.from('kits_virtuais')
-      .select('titulo, descricao, desconto_pct, listing_type_id, foto_storage_path, foto_ml_picture_id')
+      .select('titulo, descricao, desconto_pct, foto_storage_path, foto_ml_picture_id')
       .eq('id', kitId).maybeSingle(),
     supabase.from('kits_virtuais_componentes')
       .select('user_product_id, quantidade')
@@ -429,7 +428,7 @@ export async function carregarKitVirtualParaRefazer(kitId: string): Promise<Resu
 
   const kit = kitResp.data as {
     titulo: string; descricao: string | null; desconto_pct: number;
-    listing_type_id: string; foto_storage_path: string | null; foto_ml_picture_id: string | null;
+    foto_storage_path: string | null; foto_ml_picture_id: string | null;
   };
   return {
     ok: true,
@@ -439,7 +438,6 @@ export async function carregarKitVirtualParaRefazer(kitId: string): Promise<Resu
       titulo: kit.titulo,
       descricao: kit.descricao,
       descontoPct: fracaoParaPctDesconto(kit.desconto_pct),
-      listingTypeId: kit.listing_type_id,
       fotoStoragePath: kit.foto_storage_path,
       fotoMlPictureId: kit.foto_ml_picture_id,
     },

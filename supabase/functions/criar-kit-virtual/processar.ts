@@ -40,11 +40,6 @@ export interface CriarKitVirtualInput {
   descricao: string | null;
   fotoStoragePath: string | null;
   fotoMlPictureId: string | null;
-  /** `null` = o diálogo não escolheu (caminho normal); derivado dos componentes antes de
-   *  qualquer escrita — ver `resolverListingTypeKit`. Só vem preenchido explicitamente no
-   *  fluxo de Refazer (reusa o listing_type_id do kit antigo). NUNCA um default fixo (bug real
-   *  2026-09-06: `gold_pro` cego não bate com o listing type publicado dos componentes). */
-  listingTypeId: string | null;
   componentes: ComponenteKitVirtual[];
 }
 
@@ -76,6 +71,7 @@ export type MotivoCriarKitVirtual =
   | 'falha_listing_type'
   | 'foto_obrigatoria'
   | 'falha_leitura'
+  | 'em_andamento'
   | 'falha_criar_kit'
   | 'falha_componentes'
   | 'falha_foto'
@@ -103,9 +99,24 @@ interface LinhaKit {
   foto_storage_path: string | null;
   foto_ml_picture_id: string | null;
   listing_type_id: string;
+  atualizado_em: string;
 }
 
-const COLUNAS_KIT = 'id, status, ml_item_id, ml_user_product_id, ml_permalink, foto_storage_path, foto_ml_picture_id, listing_type_id';
+const COLUNAS_KIT = 'id, status, ml_item_id, ml_user_product_id, ml_permalink, foto_storage_path, foto_ml_picture_id, listing_type_id, atualizado_em';
+
+/**
+ * Lease de `status='publicando'`: acima disso a linha é considerada abandonada (a Edge Function
+ * não sobrevive a 3 minutos), abaixo disso presume-se que existe OUTRA chamada no meio do
+ * `POST /items/kits` — reaproveitar a linha dela publicaria um segundo kit no ML.
+ */
+const LEASE_PUBLICANDO_MS = 3 * 60 * 1000;
+
+function leaseVencido(atualizadoEm: string | null): boolean {
+  const t = atualizadoEm ? Date.parse(atualizadoEm) : NaN;
+  // Timestamp ilegível não pode virar uma trava permanente: sem lease legível, trata como vencido.
+  if (Number.isNaN(t)) return true;
+  return Date.now() - t > LEASE_PUBLICANDO_MS;
+}
 
 /** Recusas que não custam rede. Rodam ANTES de qualquer escrita ou chamada ao ML. */
 export function validarKitVirtual(input: CriarKitVirtualInput): MotivoCriarKitVirtual | null {
@@ -137,18 +148,17 @@ export type ResolverListingTypeResultado =
 /**
  * Deriva o `listing_type_id` do kit a partir dos componentes reais — bug real 2026-09-06: um
  * default fixo (`gold_pro`) não bate com o listing type publicado dos componentes e o ML recusa
- * o kit inteiro (`listing_type_mismatch`). `listingTypeIdExplicito` vem do request (fluxo de
- * Refazer, D-8) e tem precedência — pura, sem rede. `listingTypesPorItem` já veio resolvida
- * (multiget `_shared/ml/kit-virtual.ts:buscarListingTypeItensML`) para os componentes que têm
+ * o kit inteiro (`listing_type_mismatch`). SEMPRE derivado, nunca recebido pronto: o Refazer
+ * (D-8) existe justamente para trocar componente, e reusar o listing type do kit antigo
+ * reintroduziria o mesmo `listing_type_mismatch` assim que o componente novo divergisse.
+ * `listingTypesPorItem` já veio resolvida (multiget
+ * `_shared/ml/kit-virtual.ts:buscarListingTypeItensML`) para os componentes que têm
  * `itemExternoId` (D-12: enriquecimento local best-effort, pode faltar em alguns).
  */
 export function resolverListingTypeKit(
   componentes: ComponenteKitVirtual[],
-  listingTypeIdExplicito: string | null,
   listingTypesPorItem: Map<string, string>,
 ): ResolverListingTypeResultado {
-  if (listingTypeIdExplicito) return { listingTypeId: listingTypeIdExplicito };
-
   const encontrados = new Set<string>();
   for (const c of componentes) {
     if (!c.itemExternoId) continue;
@@ -196,8 +206,9 @@ export function montarPayloadKitVirtual(
  * podem produzir UM insert; a perdedora cai no 23505 e relê a linha da vencedora. Um
  * `select` antes do `insert` deixaria a janela aberta e criaria dois kits no ML.
  *
- * A linha pode JÁ existir sem ter passado por aqui: D-5 manda subir a foto no upload do
- * diálogo, então o fluxo de foto cria/preenche `foto_ml_picture_id` antes do publicar.
+ * Perder o 23505 NÃO autoriza reaproveitar a linha: a vencedora pode estar entre o insert e o
+ * `POST /items/kits`, com `ml_item_id` ainda null. Só se reaproveita uma linha claramente
+ * abandonada (`erro`, ou `publicando` com o lease vencido) — ver `LEASE_PUBLICANDO_MS`.
  */
 async function reivindicarKit(
   deps: CriarKitVirtualDeps, input: CriarKitVirtualInput, listingTypeId: string,
@@ -231,14 +242,25 @@ async function reivindicarKit(
   if (!existente) return { erro: 'falha_criar_kit', mensagem: 'chave em uso, mas o kit não foi encontrado' };
 
   const kit = existente as LinhaKit;
-  // Já publicado/encerrado: devolvido como está, sem tocar em ML nem em componentes.
+  // Já foi ao ML (publicado/encerrado, ou `publicando` que não conseguiu gravar o status):
+  // devolvido como está, sem tocar em ML nem em componentes.
   if (kit.ml_item_id) return { kit };
 
-  // Linha órfã (`publicando` de uma tentativa que morreu, `erro` de um CREATE recusado, ou o
-  // placeholder criado pelo upload da foto): reaproveitada. Os campos do diálogo são
-  // reescritos — este payload é a intenção mais recente do operador —, mas as colunas de foto
-  // só recebem valor quando ainda estão vazias: o picture_id já propagado no ML (D-5/ADR-0033)
-  // é o ativo mais caro da linha e nunca é sobrescrito por um payload que veio sem ele.
+  // Concorrência real: a vencedora do 23505 ainda está no meio do CREATE. Reaproveitar a linha
+  // dela faria um SEGUNDO `POST /items/kits` (kit órfão no ML) e o delete-then-insert de
+  // componentes abaixo apagaria os dela, derrubando o passo 6 no trigger de 2..6.
+  if (kit.status === 'publicando' && !leaseVencido(kit.atualizado_em)) {
+    return {
+      erro: 'em_andamento',
+      mensagem: 'Esse kit já está sendo publicado — aguarde alguns segundos e confira em Publicados.',
+    };
+  }
+
+  // Linha abandonada (`erro` de um CREATE recusado, ou `publicando` com o lease vencido):
+  // reaproveitada. Os campos do diálogo são reescritos — este payload é a intenção mais recente
+  // do operador —, mas as colunas de foto só recebem valor quando ainda estão vazias: o
+  // picture_id já propagado no ML (D-5/ADR-0033) é o ativo mais caro da linha e nunca é
+  // sobrescrito por um payload que veio sem ele.
   const { data: atualizado, error: erroUpdate } = await admin.from('kits_virtuais').update({
     titulo: input.titulo,
     descricao: input.descricao,
@@ -248,9 +270,33 @@ async function reivindicarKit(
     listing_type_id: listingTypeId,
     status: 'publicando',
     erro_mensagem: null,
+    // Renova o lease explicitamente: o `moddatetime` do Postgres já faria isso, mas o lease é
+    // mecanismo deste código e não pode depender de um trigger que alguém possa remover.
+    atualizado_em: new Date().toISOString(),
   }).eq('id', kit.id).eq('org_id', orgId).select(COLUNAS_KIT).single();
   if (erroUpdate || !atualizado) return { erro: 'falha_criar_kit', mensagem: erroUpdate?.message };
   return { kit: atualizado as LinhaKit };
+}
+
+/**
+ * Passo 6 isolado porque roda em DOIS caminhos: o CREATE normal e a RECUPERAÇÃO de uma linha que
+ * já tem `ml_item_id` mas não chegou a `publicado` (o UPDATE anterior falhou). Sem a recuperação
+ * o anúncio fica vivo no ML e invisível na tela Publicados — que só lista `publicado` —, sem
+ * Encerrar nem Refazer alcançáveis e com os componentes travados pelos guards.
+ */
+async function transicionarParaPublicado(
+  deps: CriarKitVirtualDeps, kitId: string,
+  ml: { id: string; userProductId: string | null; permalink: string | null },
+): Promise<string | null> {
+  const { error } = await deps.admin.from('kits_virtuais').update({
+    status: 'publicado',
+    ml_item_id: ml.id,
+    ml_user_product_id: ml.userProductId,
+    ml_permalink: ml.permalink,
+    publicado_em: new Date().toISOString(),
+    erro_mensagem: null,
+  }).eq('id', kitId).eq('org_id', deps.orgId);
+  return error?.message ?? null;
 }
 
 async function marcarErro(
@@ -271,38 +317,35 @@ export async function criarKitVirtual(
   const { admin, orgId } = deps;
 
   // ── 0. listing_type_id ANTES de qualquer escrita — a linha do kit já nasce com ele ────
-  // (reivindicarKit) e um default cego (`gold_pro`) é exatamente o bug real 2026-09-06. Roda
+  // (reivindicarKit) e um default cego (`gold_pro`) é exatamente o bug real 2026-09-06. SEMPRE
+  // derivado dos componentes desta submissão, inclusive no Refazer: reusar o listing type do kit
+  // antigo reintroduz o `listing_type_mismatch` assim que o componente trocado divergir. Roda
   // mesmo num reenvio idempotente que vai bater em `kit.ml_item_id` daqui a pouco (custo: 1
   // multiget extra num resend — aceitável; NÃO mover pra depois, é o que garante que a linha já
   // nasça com o listing_type_id certo).
-  let listingTypeId: string;
-  if (input.listingTypeId) {
-    listingTypeId = input.listingTypeId;
-  } else {
-    const itemIds = [...new Set(
-      input.componentes.map((c) => c.itemExternoId).filter((id): id is string => !!id),
-    )];
-    let listingTypesPorItem: Map<string, string>;
-    try {
-      listingTypesPorItem = itemIds.length
-        ? await deps.buscarListingTypeComponentes(itemIds)
-        : new Map<string, string>();
-    } catch (e) {
-      // Falha de LEITURA (rede/timeout/5xx do ML) é diferente de "nenhum componente resolveu":
-      // não pode virar `listing_type_indisponivel` (400, "os dados não bateram") — é transiente,
-      // 502, igual `falha_foto`.
-      const msg = `Falha ao consultar o listing type dos componentes no Mercado Livre: ${e instanceof Error ? e.message : String(e)}`;
-      return { ok: false, motivo: 'falha_listing_type', mensagem: msg };
-    }
-    const resolvido = resolverListingTypeKit(input.componentes, null, listingTypesPorItem);
-    if ('erro' in resolvido) {
-      const mensagem = resolvido.erro === 'listing_type_divergente'
-        ? 'Os componentes têm listing type (Clássico/Premium) diferentes entre si — o Mercado Livre não aceita um kit misto.'
-        : 'Não foi possível determinar o listing type (Clássico/Premium) dos componentes.';
-      return { ok: false, motivo: resolvido.erro, mensagem };
-    }
-    listingTypeId = resolvido.listingTypeId;
+  const itemIds = [...new Set(
+    input.componentes.map((c) => c.itemExternoId).filter((id): id is string => !!id),
+  )];
+  let listingTypesPorItem: Map<string, string>;
+  try {
+    listingTypesPorItem = itemIds.length
+      ? await deps.buscarListingTypeComponentes(itemIds)
+      : new Map<string, string>();
+  } catch (e) {
+    // Falha de LEITURA (rede/timeout/5xx do ML) é diferente de "nenhum componente resolveu":
+    // não pode virar `listing_type_indisponivel` (400, "os dados não bateram") — é transiente,
+    // 502, igual `falha_foto`.
+    const msg = `Falha ao consultar o listing type dos componentes no Mercado Livre: ${e instanceof Error ? e.message : String(e)}`;
+    return { ok: false, motivo: 'falha_listing_type', mensagem: msg };
   }
+  const resolvido = resolverListingTypeKit(input.componentes, listingTypesPorItem);
+  if ('erro' in resolvido) {
+    const mensagem = resolvido.erro === 'listing_type_divergente'
+      ? 'Os componentes têm listing type (Clássico/Premium) diferentes entre si — o Mercado Livre não aceita um kit misto.'
+      : 'Não foi possível determinar o listing type (Clássico/Premium) dos componentes.';
+    return { ok: false, motivo: resolvido.erro, mensagem };
+  }
+  const listingTypeId = resolvido.listingTypeId;
 
   // ── 1. Linha do kit (idempotência atômica) ────────────────────────────────────────────
   const reivindicado = await reivindicarKit(deps, input, listingTypeId);
@@ -311,6 +354,20 @@ export async function criarKitVirtual(
 
   // Reenvio da mesma chave num kit que já foi ao ML: devolve a MESMA linha, sem segundo POST.
   if (kit.ml_item_id) {
+    // ...mas `publicando`/`erro` COM `ml_item_id` é um anúncio vivo no ML que o passo 6 não
+    // conseguiu marcar como publicado — sem refazer a transição aqui ele nunca aparece em
+    // Publicados. `encerrado` fica de fora de propósito: ressuscitar um kit fechado de
+    // propósito seria pior que o defeito. Falhar de novo devolve `ok:false`, nunca um sucesso
+    // que esconde um anúncio invisível.
+    if (kit.status === 'publicando' || kit.status === 'erro') {
+      const erro = await transicionarParaPublicado(deps, kit.id, {
+        id: kit.ml_item_id, userProductId: kit.ml_user_product_id, permalink: kit.ml_permalink,
+      });
+      if (erro) {
+        console.error('criar_kit_virtual_recuperar_publicado_falhou', { kitId: kit.id, itemId: kit.ml_item_id, erro });
+        return { ok: false, motivo: 'falha_publicar', mensagem: erro, kitId: kit.id };
+      }
+    }
     return {
       ok: true,
       kitId: kit.id,
@@ -326,7 +383,12 @@ export async function criarKitVirtual(
   // impede o 23505 da unique (kit_id, user_product_id). Seguro porque o kit não está publicado.
   const { error: erroDelete } = await admin.from('kits_virtuais_componentes')
     .delete().eq('kit_id', kit.id).eq('org_id', orgId);
-  if (erroDelete) return { ok: false, motivo: 'falha_componentes', mensagem: erroDelete.message, kitId: kit.id };
+  if (erroDelete) {
+    // `marcarErro` aqui não é cosmético: sem ele a linha ficaria em `publicando` e o lease de
+    // `reivindicarKit` recusaria a próxima tentativa do operador com 409 por até 3 minutos.
+    await marcarErro(deps, kit.id, erroDelete.message);
+    return { ok: false, motivo: 'falha_componentes', mensagem: erroDelete.message, kitId: kit.id };
+  }
 
   // Todos os objetos com o MESMO conjunto de chaves — o INSERT em lote do PostgREST une as
   // chaves das linhas e ignora o DEFAULT das colunas ausentes em alguma delas (ADR-0129).
@@ -342,7 +404,10 @@ export async function criarKitVirtual(
       codigo_pai: c.codigoPai,
     })),
   );
-  if (erroComp) return { ok: false, motivo: 'falha_componentes', mensagem: erroComp.message, kitId: kit.id };
+  if (erroComp) {
+    await marcarErro(deps, kit.id, erroComp.message);
+    return { ok: false, motivo: 'falha_componentes', mensagem: erroComp.message, kitId: kit.id };
+  }
 
   // ── 3. Foto (D-5): o caminho normal é o picture_id JÁ existir ─────────────────────────
   // Subir aqui é o último recurso — a propagação da foto no ML é assíncrona (ADR-0033) e um
@@ -402,21 +467,22 @@ export async function criarKitVirtual(
   }
 
   // ── 6. status='publicado' POR ÚLTIMO (o trigger conta os componentes aqui) ────────────
-  const { error: erroPublicar } = await admin.from('kits_virtuais').update({
-    status: 'publicado',
-    ml_item_id: resposta.id,
-    ml_user_product_id: resposta.userProductId,
-    ml_permalink: resposta.permalink,
-    publicado_em: new Date().toISOString(),
-    erro_mensagem: null,
-  }).eq('id', kit.id).eq('org_id', orgId);
+  const erroPublicar = await transicionarParaPublicado(deps, kit.id, resposta);
   if (erroPublicar) {
-    // O kit EXISTE no ML: não some com o id, senão vira anúncio órfão sem rastro local.
-    console.error('criar_kit_virtual_publicar_falhou', { kitId: kit.id, itemId: resposta.id, erro: erroPublicar.message });
+    // O kit EXISTE no ML: não some com os ids, senão vira anúncio órfão sem rastro local — e
+    // `ml_user_product_id` entra junto porque é dele que `status-publicados` lê o estoque do
+    // kit. A linha fica em `publicando` COM `ml_item_id`, que é exatamente o estado que o
+    // reenvio (bloco de recuperação acima) sabe consertar.
+    console.error('criar_kit_virtual_publicar_falhou', { kitId: kit.id, itemId: resposta.id, erro: erroPublicar });
     await admin.from('kits_virtuais')
-      .update({ ml_item_id: resposta.id, ml_permalink: resposta.permalink, erro_mensagem: erroPublicar.message })
+      .update({
+        ml_item_id: resposta.id,
+        ml_user_product_id: resposta.userProductId,
+        ml_permalink: resposta.permalink,
+        erro_mensagem: erroPublicar,
+      })
       .eq('id', kit.id).eq('org_id', orgId);
-    return { ok: false, motivo: 'falha_publicar', mensagem: erroPublicar.message, kitId: kit.id };
+    return { ok: false, motivo: 'falha_publicar', mensagem: erroPublicar, kitId: kit.id };
   }
 
   return {

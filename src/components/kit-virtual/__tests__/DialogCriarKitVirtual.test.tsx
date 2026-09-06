@@ -350,7 +350,6 @@ describe('DialogCriarKitVirtual — refazerDe pré-preenche (ADR-0154 D-8)', () 
       titulo: 'Kit Aventura: 1 Motosserra + 1 Canivete',
       descricao: 'Descrição antiga do kit.',
       descontoPct: 15,
-      listingTypeId: 'gold_special',
       fotoStoragePath: 'org-1/kit-virtual-antigo/foto.jpg',
       fotoMlPictureId: 'PIC-ANTIGO',
     };
@@ -377,7 +376,10 @@ describe('DialogCriarKitVirtual — refazerDe pré-preenche (ADR-0154 D-8)', () 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Publicar kit' })).not.toBeDisabled());
   });
 
-  it('publicar reusa fotoMlPictureId/fotoStoragePath/listingTypeId do kit antigo, sem subir foto de novo', async () => {
+  // Defeito A da revisão final: o Refazer NÃO pode mandar o `listing_type_id` do kit antigo —
+  // ele existe para TROCAR componente, e um componente novo de outro tipo faria o ML recusar
+  // com o mesmo `listing_type_mismatch` de 2026-09-06. A edge deriva; o diálogo não opina.
+  it('publicar reusa a foto do kit antigo, mas NÃO manda listingTypeId (a edge deriva dos componentes)', async () => {
     mockBusca();
     mockPreview();
     criarMock.mockResolvedValue({
@@ -392,8 +394,8 @@ describe('DialogCriarKitVirtual — refazerDe pré-preenche (ADR-0154 D-8)', () 
     await waitFor(() => expect(criarMock).toHaveBeenCalledWith(expect.objectContaining({
       fotoMlPictureId: 'PIC-ANTIGO',
       fotoStoragePath: 'org-1/kit-virtual-antigo/foto.jpg',
-      listingTypeId: 'gold_special',
     })));
+    expect(criarMock.mock.calls[0][0]).not.toHaveProperty('listingTypeId');
     expect(subirFotoMlMock).not.toHaveBeenCalled();
   });
 });

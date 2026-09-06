@@ -84,7 +84,6 @@ describe('carregarKitVirtualParaRefazer', () => {
     expect(r.dados.titulo).toBe('Kit Aventura: 1 Motosserra + 1 Canivete');
     expect(r.dados.descricao).toBe('Descrição antiga.');
     expect(r.dados.descontoPct).toBe(15);
-    expect(r.dados.listingTypeId).toBe('gold_special');
     expect(r.dados.fotoStoragePath).toBe('org-1/kit-virtual-antigo/foto.jpg');
     expect(r.dados.fotoMlPictureId).toBe('PIC-ANTIGO');
     expect(r.dados.componentes).toHaveLength(2);
@@ -157,7 +156,7 @@ describe('prefillAposEncerrarKitVirtual', () => {
     ok: true, componentesNaoRecuperados: 0,
     dados: {
       componentes: [], titulo: 'Kit', descricao: null, descontoPct: 10,
-      listingTypeId: 'gold_special', fotoStoragePath: 'x', fotoMlPictureId: 'y',
+      fotoStoragePath: 'x', fotoMlPictureId: 'y',
     },
   };
 
