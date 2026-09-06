@@ -53,14 +53,25 @@ describe('gerarTituloKit — template determinístico (Decisão 4)', () => {
     expect(titulo.length).toBeLessThanOrEqual(LIMITE_TITULO_KIT);
   });
 
-  it('guard de tamanho: trunca com reticência quando excede LIMITE_TITULO_KIT', () => {
+  // Medido no kit real MLB5194783047 (2026-09-06): o ML NÃO expande o family_name — devolve o
+  // título como veio, só capitalizado. Logo o que for truncado aqui é o que fica no anúncio, e
+  // cortar no meio de uma palavra é defeito publicado (o primeiro kit saiu "... - Me", de "Melu").
+  it('guard de tamanho: trunca na última palavra inteira, sem cortar palavra ao meio', () => {
     const componentes = [
       { ordem: 0, titulo: 'Motosserra Elétrica Profissional 2200w 16 Polegadas Gasolina', quantidade: 1 },
       { ordem: 1, titulo: 'Canivete Retrátil Multifuncional Aço Inox Premium', quantidade: 2 },
     ];
     const titulo = gerarTituloKit(componentes);
-    expect(titulo.length).toBe(LIMITE_TITULO_KIT);
-    expect(titulo.endsWith('…')).toBe(true);
+    expect(titulo.length).toBeLessThanOrEqual(LIMITE_TITULO_KIT);
+    // nenhuma palavra partida: o título truncado é prefixo do template por palavras inteiras
+    const completo = 'Kit 2 itens: 1 Motosserra Elétrica Profissional 2200w 16 Polegadas Gasolina + 2 Canivete Retrátil Multifuncional Aço Inox Premium';
+    expect(completo.startsWith(titulo)).toBe(true);
+    expect(completo[titulo.length] === ' ' || completo.length === titulo.length).toBe(true);
+    expect(titulo.endsWith('…')).toBe(false);
+  });
+
+  it('usa o teto real do ML (60), não a folga antiga de 40', () => {
+    expect(LIMITE_TITULO_KIT).toBe(60);
   });
 
   it('não trunca quando o template cabe dentro do limite', () => {

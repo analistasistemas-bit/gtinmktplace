@@ -1,6 +1,6 @@
 # ADR-0154: Kits Virtuais do Mercado Livre — anúncio de combinação fora do pipeline de produto
 
-**Status:** Proposto
+**Status:** Aceito — validado em produção com kit real em 2026-09-06 (ver "Validação em produção")
 **Data:** 2026-09-06
 **Decisores:** Diego
 **Relacionado:** [Spike 036](../spikes/036-kits-virtuais-mercado-livre.md) (contrato de API verificado + medição de elegibilidade nas duas contas), [ADR-0151](0151-kit-vinculado-a-partir-de-produto-existente.md) (kit vinculado — precedente de admin-only, preview-como-revisão e guards de banco), [ADR-0088](0088-publicacao-user-products-multi-item.md) (user products / item plano), [ADR-0055](0055-imposto-por-origem-nacional-importado.md)/[ADR-0107](0107-origem-obrigatoria-na-planilha.md) (imposto por origem e trava LOUD), [ADR-0033](0033-retry-interno-foto-em-processamento.md) (propagação assíncrona de foto), [ADR-0060](0060-pausar-reativar-anuncio-ml.md) (ação de anúncio restrita a admin), [ADR-0024](0024-camada-de-abstracao-de-canais.md)/[ADR-0025](0025-modelo-de-dados-multicanal.md)/[ADR-0077](0077-registry-hibrido-menus-multicanal.md) (canais e UI multicanal), [ADR-0043](0043-fluxo-canonico-de-migrations.md) (migrations).
@@ -232,6 +232,50 @@ venda.
   consciente do operador, em troca de anúncio honesto.
 - Margem não bloqueante (Decisão 6) permite publicar no prejuízo por engano de digitação. Mitigado
   só pela exibição correta e pelo rótulo de estimativa.
+
+## Validação em produção (2026-09-06)
+
+O fluxo foi executado ponta a ponta pela UI, contra a conta real da org DSA, e **dois kits de
+teste foram publicados e encerrados** (`MLB5194780911`, `MLB5194783047`). O que a publicação real
+mostrou, e que nenhum teste com mock mostraria:
+
+**Três bugs corrigidos:**
+
+1. **`thumbnail` exige `secure_url`.** Enviar só `{ id }` — a forma que a doc oficial mostra num
+   dos exemplos — é recusado com `thumbnail.secureUrl must not be null`. O `secure_url` vem de
+   `GET /pictures/{id}` em `variations[0]`.
+2. **`listing_type_id` não pode ser um default fixo.** Com `gold_pro` o ML recusa o kit inteiro
+   (`listing_type_mismatch`, cause 3202): o tipo do kit tem que bater com o dos componentes. Agora
+   é derivado deles, e componentes divergentes são recusados antes de tocar o ML.
+3. **O erro do ML se perdia.** `humanizarErroML` assumia `cause[]` de objetos; o ML também manda
+   strings puras, e o resultado era um "erro não especificado" na tela enquanto o ML havia dito
+   exatamente o que faltava.
+
+**Incógnitas do ADR fechadas pela medição:**
+
+| Pergunta | Resposta medida |
+|---|---|
+| O ML expande o `family_name` no `title`? | **Não.** `title` == `family_name`, só capitalizado. Ver Decisão 4 revisada abaixo. |
+| Kit `closed` conta como kit duplicado? | **Não.** A mesma composição foi republicada depois de encerrada, sem recusa — "Refazer" pode encerrar e recriar, não precisa pausar. |
+| O parsing do `/sale_price` está certo? | **Sim**, na forma corrigida: `bundle.components[]` com `component_price`/`quantity`/`unit_amount`/`total_amount`, e `bundle.total_components_amount`. |
+| A fórmula de estoque confere? | **Sim.** Componentes com 12 e 6 unidades → kit com **6**. |
+| O rateio é linear? | **Sim.** 19,00 → 18,05 e 24,99 → 23,74 com 5% de desconto. |
+| O preview acerta o preço final? | **Sim.** Preview R$ 41,79, ML R$ 41,79. |
+| Componentes ganham marca? | **Sim**, tag `kit_component`. |
+| `GET /items` de um kit traz o nó `bundle`? | **Não** — veio `null`; o nó vive no user product (`tags: ['bundle']`, `bundle.type: 'kit'`), ao contrário do que a doc sugere. |
+
+### Decisão 4, revisada: o teto do título é 60, não 40
+
+O template reservava 1/3 do teto do ML para a expansão automática descrita na doc. **Essa expansão
+não existe** — medido no kit real. A folga não protegia de nada e produzia defeito publicado: o
+primeiro kit saiu com o título *"Kit 2 Itens: 1 Gel De Sobrancelhas - Me"*, cortado no meio de
+"Melu". O limite passou para 60 (o teto real do ML) e o corte agora respeita palavra inteira.
+
+A escolha de **não** usar IA no título (Decisão 4) foi feita com a justificativa de que o ML
+reescreveria o texto de qualquer jeito. Essa justificativa caiu; a decisão continua de pé por
+custo e por controle da intenção comercial, mas agora é uma escolha de custo, não uma consequência
+técnica — se a qualidade do título de kit se mostrar um problema de conversão, revisitar é
+legítimo.
 
 ## Risco aberto que precede a implementação
 

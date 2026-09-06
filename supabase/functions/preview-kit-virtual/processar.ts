@@ -61,23 +61,31 @@ export interface PreviewKitResultado {
 }
 
 /**
- * Teto do template de título (Decisão 4). O ML expande o `family_name` enviado com dados reais
- * dos componentes — o exemplo oficial da doc troca *"1 Motosserra"* por
- * *"1 Motosserra Elétrica 2200w 16 Pol"*, uma expansão que a v1 não tem como prever (é um dos
- * riscos abertos do ADR: "se o título expandido pelo ML pode estourar 60 caracteres"). Este
- * template já usa o título REAL de cada componente (não um rótulo curto), então a única folga
- * possível é o que sobrar do teto de título do ML (`TITULO_MAX = 60`, `_shared/ai/titulo-montar.ts`).
- * Escolhido 40 — 2/3 do teto — como margem para o que o ML ainda possa acrescentar (atributo que
- * o texto enviado não menciona, ex. medida/cor) sem dado real de quanto isso soma.
+ * Teto do template de título (Decisão 4) = o teto real do ML (`TITULO_MAX = 60`,
+ * `_shared/ai/titulo-montar.ts`).
+ *
+ * Era 40, reservando 1/3 para a expansão que o exemplo da doc oficial sugere (ela troca
+ * *"1 Motosserra"* por *"1 Motosserra Elétrica 2200w 16 Pol"*). **Medido no kit real
+ * `MLB5194783047` em 2026-09-06: essa expansão não acontece** — o ML devolveu `title` idêntico ao
+ * `family_name` enviado, só capitalizado. A folga não protegia de nada e custava caro: o anúncio
+ * publicado saiu como *"Kit 2 Itens: 1 Gel De Sobrancelhas - Me"*, cortado no meio de "Melu".
  */
-export const LIMITE_TITULO_KIT = 40;
+export const LIMITE_TITULO_KIT = 60;
 
-/** Template determinístico, sem IA (Decisão 4): `Kit N itens: <título A> + <título B>`. */
+/**
+ * Template determinístico, sem IA (Decisão 4): `Kit N itens: <título A> + <título B>`.
+ * Trunca na última palavra inteira que cabe — cortar no meio de uma palavra vai direto para o
+ * anúncio, já que o ML não reescreve o que recebe.
+ */
 export function gerarTituloKit(componentes: Pick<ComponenteEntrada, 'ordem' | 'titulo' | 'quantidade'>[]): string {
   const ordenados = [...componentes].sort((a, b) => a.ordem - b.ordem);
   const titulo = `Kit ${ordenados.length} itens: ${ordenados.map((c) => `${c.quantidade} ${c.titulo}`).join(' + ')}`;
   if (titulo.length <= LIMITE_TITULO_KIT) return titulo;
-  return `${titulo.slice(0, LIMITE_TITULO_KIT - 1)}…`;
+  const corte = titulo.slice(0, LIMITE_TITULO_KIT);
+  const ultimoEspaco = corte.lastIndexOf(' ');
+  // Só recua até o espaço se isso não jogar fora metade do título (palavra gigante no fim).
+  const base = ultimoEspaco > LIMITE_TITULO_KIT * 0.6 ? corte.slice(0, ultimoEspaco) : corte;
+  return base.replace(/[\s\-+]+$/, '');
 }
 
 function paraComponenteKit(c: ComponenteEntrada): ComponenteKit {
