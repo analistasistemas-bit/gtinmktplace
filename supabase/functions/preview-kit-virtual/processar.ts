@@ -85,7 +85,10 @@ export function gerarTituloKit(componentes: Pick<ComponenteEntrada, 'ordem' | 't
   const ultimoEspaco = corte.lastIndexOf(' ');
   // Só recua até o espaço se isso não jogar fora metade do título (palavra gigante no fim).
   const base = ultimoEspaco > LIMITE_TITULO_KIT * 0.6 ? corte.slice(0, ultimoEspaco) : corte;
-  return base.replace(/[\s\-+]+$/, '');
+  // Tira o começo órfão do próximo componente: o separador e a quantidade que ficaram sem
+  // produto nenhum depois ("... 200ml + 1"). Medido no preview real — o corte por palavra
+  // resolve a palavra partida mas deixa esse resto pendurado, e ele vai para o anúncio.
+  return base.replace(/\s*\+\s*\d*\s*$/, '').replace(/[\s\-+]+$/, '');
 }
 
 function paraComponenteKit(c: ComponenteEntrada): ComponenteKit {

@@ -74,6 +74,18 @@ describe('gerarTituloKit — template determinístico (Decisão 4)', () => {
     expect(LIMITE_TITULO_KIT).toBe(60);
   });
 
+  // Visto no preview real: cortar por palavra resolvia a palavra partida mas deixava o começo
+  // órfão do próximo componente pendurado — "...We'be 200ml + 1" —, e isso ia para o anúncio.
+  it('não deixa separador nem quantidade órfã do componente seguinte', () => {
+    const titulo = gerarTituloKit([
+      { ordem: 0, titulo: "Body Splash Liberty White We'be 200ml", quantidade: 1 },
+      { ordem: 1, titulo: 'Hidratante Corporal E Facial Better Me Para Pele Pitaya 150g', quantidade: 1 },
+    ]);
+    expect(titulo).toBe("Kit 2 itens: 1 Body Splash Liberty White We'be 200ml");
+    expect(/[+\-\s]$/.test(titulo)).toBe(false);
+    expect(/\+\s*\d*$/.test(titulo)).toBe(false);
+  });
+
   it('não trunca quando o template cabe dentro do limite', () => {
     const titulo = gerarTituloKit([{ ordem: 0, titulo: 'A', quantidade: 1 }, { ordem: 1, titulo: 'B', quantidade: 1 }]);
     expect(titulo.length).toBeLessThanOrEqual(LIMITE_TITULO_KIT);
