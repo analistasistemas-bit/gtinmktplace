@@ -40,9 +40,9 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > confirmada e app abrindo offline. Web Push ficou registrado no [[Backlog]] — não entrou no
 > escopo.
 
-> **📋 ADR-0154: Kits Virtuais do Mercado Livre — codado e testado na branch
-> `worktree-spike-036-kits-virtuais-verificado` (2026-09-06), NÃO mergeado, NADA aplicado nem
-> deployado.** Recurso do ML (produção desde out/2025) que agrupa 2 a 6 produtos **distintos** já
+> **✅ ADR-0154: Kits Virtuais do Mercado Livre — EM PRODUÇÃO (2026-09-06),** mergeado na `main`
+> (`a3439b8c`, CI verde), schema aplicado, 42 Edge Functions deployadas e validado publicando kits
+> reais. Recurso do ML (produção desde out/2025) que agrupa 2 a 6 produtos **distintos** já
 > publicados (`user_product_id`), estoque e preço calculados pelo próprio ML — terceiro sentido de
 > "kit" no domínio, sem relação com **Kit** (`SALE_FORMAT`) nem com **Kit vinculado** (ADR-0151).
 > Entidade própria (`kits_virtuais`/`kits_virtuais_componentes`), fora do pipeline de produto por
@@ -52,10 +52,15 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > modelo certo (138 UPs elegíveis), DSA 24 de 24 (14 elegíveis) — decide o item ser user product
 > nativo, sem `variations[]`. Sonda de escrita (`POST /items/kits` inválido) devolveu `400` de
 > validação nas duas contas, não `403` de certificação — endpoint autorizado, nenhum kit criado de
-> verdade. Suíte da branch: 494 arquivos/4835 testes verdes. **Nada disto está em produção:**
-> `db push` e `supabase functions deploy` não rodaram, `database.types.ts` foi transcrito à mão
-> (falta regenerar), o guard de `remover-publicado` só foi testado contra fake em memória, e três
-> incógnitas de tarifa (Decisão 15) só a primeira venda real resolve. Ver
+> verdade. Depois disso **três kits reais foram publicados e encerrados** (`MLB5194780911`,
+> `MLB5194783047`, `MLB5194848525`): o preview previu R$ 41,79 e o ML cobrou R$ 41,79, o estoque
+> calculado bateu (`min(12,6) = 6`) e a idempotência do CREATE foi confirmada em produção. A
+> publicação real revelou quatro defeitos invisíveis para teste com mock (`thumbnail` exige
+> `secure_url`; `listing_type_id` tem que vir dos componentes; `cause[]` do ML também vem como
+> string; o ML **não** expande o `family_name`) e a revisão final achou outros quatro — todos
+> corrigidos antes do merge. Suíte final: 495 arquivos/4865 testes verdes. **Fica aberto** só o que
+> depende de uma venda: as três incógnitas de tarifa da Decisão 15; até lá a margem é exibida como
+> estimativa. Ver
 > [ADR-0154](../../docs/decisions/0154-kits-virtuais-mercado-livre.md) e
 > [Spike 036](../../docs/spikes/036-kits-virtuais-mercado-livre.md).
 

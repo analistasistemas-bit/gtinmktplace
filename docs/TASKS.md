@@ -42,13 +42,29 @@ está autorizado, nenhum kit foi criado de verdade.
 - [x] Guards de banco exercitados contra Postgres real (ver acima). Falta ainda o smoke test do
   guard de app de `remover-publicado` com um kit publicado de verdade — o fake em memória dos
   testes não filtra por `status`.
-- [ ] O parsing de `GET /items/{id}/sale_price` está conferido contra a doc oficial do ML, mas
-  nunca contra a resposta real de um kit (nenhum kit foi criado).
+- [x] Parsing de `GET /items/{id}/sale_price` confirmado contra a resposta real de um kit
+  (`MLB5194783047`): rateio em `bundle.components[]`, total em `bundle.total_components_amount`.
 - [ ] Três incógnitas de tarifa (Decisão 15 do ADR: parcela fixa por order ou por kit, categoria
   usada por order, avaliação de frete grátis) só a primeira venda real resolve.
-- [ ] Risco de certificação (seção "Risco aberto" do ADR): a sonda só provou `400` de validação,
-  não um CREATE completo — um kit de verdade ainda pode revelar um gate de certificação depois da
-  validação de campos.
+- [x] Risco de certificação descartado: três kits reais foram criados e encerrados nas contas
+  (`MLB5194780911`, `MLB5194783047`, `MLB5194848525`). Não há gate nenhum.
+- [x] Publicação real ponta a ponta pela UI, com preview batendo o preço final na casa do centavo
+  (R$ 41,79), estoque calculado correto (`min(12,6) = 6`), idempotência do CREATE confirmada em
+  produção (2ª chamada devolveu o mesmo `ml_item_id`) e `encerrar` idempotente.
+- [x] Quatro defeitos que só a publicação real revelou, corrigidos: `thumbnail` exige `secure_url`;
+  `listing_type_id` tem que vir dos componentes; `cause[]` do ML também vem como string (o erro
+  virava "erro não especificado"); o ML **não** expande o `family_name` (título ia truncado ao
+  meio da palavra para o anúncio).
+- [x] Quatro defeitos da revisão final (Fable), corrigidos: Refazer reintroduzia o
+  `listing_type_mismatch`; UPDATE falho deixava kit vivo no ML e invisível no app; idempotência
+  não resistia a concorrência (dois POSTs); `lerEstoqueKitML` devolvia `0` quando não conseguia ler.
+- [ ] **Graphify não atualizado nesta entrega — tentado e abortado de propósito.** O grafo acumula
+  865 arquivos alterados desde o último build (dívida de várias entregas, não só desta: `.maestri/`,
+  `.cursor/`, diagramas). O AST incremental rodou e capturou 77 nós da feature, mas o `build_merge`
+  resultante daria **13.953 nós contra os 14.699 atuais**: re-extrair só AST apaga o enriquecimento
+  semântico que os arquivos de código já tinham. Abortado antes de gravar, `graph.json` intacto e
+  manifest **não** salvo — a dívida segue visível no próximo `--update`. Fechar exige o pipeline
+  completo, com extração semântica dos 194 documentos alterados.
 
 ## PWA instalável, sem escrita offline (ADR-0153) — 2026-09-05
 
