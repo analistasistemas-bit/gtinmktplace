@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-09-03
+atualizado: 2026-09-07
 ---
 
 # Changelog
@@ -8,6 +8,33 @@ atualizado: 2026-09-03
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-09-07
+
+- **ADR-0158: Central de organizações corrigida e redesenhada — EM PRODUÇÃO.** A carteira `/admin`
+  passou a mostrar número certo, a carregar com uma chamada só e a usar o design system do app.
+- **O bloqueio "condição comercial ausente" era código morto.** `platform_resolve_terms` é função SQL
+  escalar e devolvia uma linha toda `NULL` sem contrato, então o `if not found` do preview nunca
+  disparava. Avil tinha 7 bloqueios em agosto e DSA 4, invisíveis; o fechamento sem contrato agora
+  recusa com erro de negócio (422).
+- **Não existia UI para cadastrar condição comercial.** `CommercialTermsForm` estava escrito e
+  testado, mas nunca era renderizado — por isso modalidade e previsão diziam "Indisponível" para
+  sempre. Passou a viver na aba Cobrança.
+- **"Pendências" contava a coisa errada:** buscas Sonar em voo (tabela vazia, sempre 0) em vez dos
+  bloqueios do demonstrativo.
+- **Markup deixou de se ler como prejuízo.** A fórmula sempre esteve certa; a central exibia `0,43x`
+  enquanto o resto do app usa `+43%`. E a alíquota parou de ser presumida em silêncio: sem
+  `aliquotas_confirmadas_em`, o markup sai `—` com aviso (ADR-0055).
+- **Carga: 46 idas ao banco e ~11 MB de JSON viraram uma chamada.** A leitura de `ml_vendas` deixou de
+  trazer `raw` (4,1 MB por organização) e a RPC `platform_org_cost_catalog` substituiu 9 páginas
+  sequenciais de `variacoes`. Agregada em `jsonb` porque acima de 1000 linhas o PostgREST truncaria
+  em silêncio uma função `returns table`.
+- **A palavra "Indisponível" saiu da central.** Ausência esperada é `—`, ausência acionável é pill com
+  botão, e falha é faixa de erro — antes as três eram a mesma palavra.
+- **Rota `pulse-sonar-ean` removida.** Órfã desde o ADR-0140 D-1 e única do Sonar fora do ledger de
+  cobrança. A escotilha do D-4 deixou de valer quando a UI dela foi apagada.
+- **DSA deixou de ser organização de teste**, flag herdada da implantação do acesso de suporte que a
+  tirava da carteira e da cobrança.
 
 ## 2026-09-03
 
