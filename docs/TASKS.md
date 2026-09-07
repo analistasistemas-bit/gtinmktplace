@@ -58,10 +58,18 @@ rota User Products mandava só `{available_quantity, price}` — atributo só en
   `SALE_FORMAT='Unidade'`, `UNITS_PER_PACK='1'`, todos `active`, preço e estoque intactos:
   `MLB5197880969` `MLB5197880975` `MLB5197880997` `MLB5197881015` `MLB5198027831` `MLB7245326808`
   `MLB7245326842` `MLB7245327116` `MLB7245350072`.
-- [ ] **Legacy segue descoberto.** `02829916` (ANNE 65 CORES) é Legacy — 21 variações num item só,
-  zero linhas em `anuncios_externos_itens` — então o ADR-0157 não a alcança e ela continua com
-  `Kit / 65`. Some-se a isso o preço: o app calcula R$ 12,55 contra os R$ 19,00 no ar, e
-  "Atualizar tudo" derrubaria o preço. Precisa de decisão própria.
+- [x] **Legacy fica descoberto, por decisão.** `02829916` (ANNE 65 CORES, `MLB7168603538`) é
+  Legacy — 21 variações num item só, zero linhas em `anuncios_externos_itens` — então o ADR-0157
+  não a alcança. Diego optou (2026-09-07) por corrigir o `Kit / 65` direto no ML em vez de estender
+  o ADR ao caminho Legacy. A linha de UPDATE dela voltou a `publicado`: deixá-la `pronto` na
+  Revisão era armadilha, porque publicar derrubaria o preço no ar (R$ 19,00) para os R$ 12,55 que
+  o app calcula. `atributos_ml` fica com `Unidade / 1`, que é o valor certo para uma republicação.
+- [ ] **Se um dia propagar atributo no Legacy, medir antes.** Amostra de 07/09/2026 (17 das 152
+  famílias Legacy): 4 divergem e **todas por formatação** — `WIDTH "7 mm"` no ML contra `"0.7 cm"`
+  no banco. Ligar sem normalizar `number_unit` faria ~1/4 da base mandar PUT sem ganho. Nas UP
+  (12 conferidas), 2 divergem no `MODEL` com diferença real de conteúdo: o ADR-0157 reescreve o
+  MODEL dessas no próximo UPDATE de rotina. A saída conservadora para os dois casos é uma
+  allowlist (`SALE_FORMAT`, `UNITS_PER_PACK`) em vez da ficha inteira — não implementada.
 
 ## "TAM 8 CORES" publicava como Kit de 8 unidades — ADR-0156 — 2026-09-07
 
