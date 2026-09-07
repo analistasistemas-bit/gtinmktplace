@@ -346,7 +346,9 @@ export default function Organizacoes() {
       },
     },
     {
-      key: 'pulse', header: 'Consultas Pulse', className: 'w-[7rem] text-right tabular-nums hidden lg:table-cell',
+      // "Sonar", não "Pulse": é o termo que a Cobrança e o demonstrativo exportado usam para a
+      // mesma métrica, e o cliente lê esse nome na fatura.
+      key: 'pulse', header: 'Consultas Sonar', className: 'w-[7rem] text-right tabular-nums hidden lg:table-cell',
       cell: (o) => o.billable_units == null
         ? '—'
         : <span className={o.billable_units === 0 ? 'text-muted-foreground' : undefined}>{fmtInt(o.billable_units)}</span>,
@@ -539,7 +541,9 @@ export default function Organizacoes() {
         defaultSort={{ key: 'gross', dir: 'desc' }}
         onSortChange={onSortChange}
         empty={
-          search.trim() ? (
+          // Em erro a faixa destrutiva acima já explica o vazio: repetir "nenhuma organização"
+          // faria a falha parecer ausência de dado, que é a confusão que esta tela veio corrigir.
+          wallet.isError ? null : search.trim() ? (
             <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
               Nenhuma organização para “{search.trim()}”
             </div>
