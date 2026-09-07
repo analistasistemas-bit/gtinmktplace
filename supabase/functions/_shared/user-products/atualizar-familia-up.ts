@@ -120,23 +120,28 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   // o guard de `family_id` divergente trava o UPDATE inteiro. Ver `atributos-irmao.ts` para o que
   // é copiado e por que dimensões ficam de fora. Um GET por execução, memoizado; se falhar, segue
   // com `atributos_ml` (o comportamento anterior) em vez de derrubar o UPDATE.
-  let fichaDoIrmao: ReturnType<typeof atributosDeFicha> | null = null;
-  const lerFichaDoIrmao = async (): Promise<ReturnType<typeof atributosDeFicha>> => {
-    if (fichaDoIrmao) return fichaDoIrmao;
+  // Ficha CRUA (com `value_id`), memoizada: um único GET serve os dois consumidores — a herança
+  // de identidade da cor nova (`atributosDeFicha`) e o diff de atributos da reposição (ADR-0157).
+  // `undefined` = ainda não lida; `null` = leitura falhou ou não há irmão de quem ler.
+  let fichaCrua: unknown | undefined;
+  const lerFichaCrua = async (): Promise<unknown> => {
+    if (fichaCrua !== undefined) return fichaCrua;
     const irmao = filhos.find((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id);
-    if (!irmao) return (fichaDoIrmao = []);
+    if (!irmao) return (fichaCrua = null);
     try {
       const url = `https://api.mercadolibre.com/items/${encodeURIComponent(String(irmao.item_externo_id))}?attributes=attributes`;
       const resp = await fetchLike(url, { headers: { Authorization: `Bearer ${await ctx.getToken()}` } });
       if (!resp.ok) throw new Error(`GET item irmão ${resp.status}`);
       const j = await resp.json() as { attributes?: unknown };
-      fichaDoIrmao = atributosDeFicha(j.attributes);
+      fichaCrua = j.attributes ?? null;
     } catch (e) {
       console.error('ficha_irmao_falhou', String(irmao.item_externo_id), String(e));
-      fichaDoIrmao = [];
+      fichaCrua = null;
     }
-    return fichaDoIrmao;
+    return fichaCrua;
   };
+  const lerFichaDoIrmao = async (): Promise<ReturnType<typeof atributosDeFicha>> =>
+    atributosDeFicha(await lerFichaCrua());
 
   const familiaInput = {
     titulo_ml: familyName, descricao_ml: familia.descricao_ml,
@@ -238,6 +243,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     ativar: (itemExternoId) => ctx.getToken().then((t) => atualizarStatusML(t, itemExternoId, 'active')),
     pausar: (itemExternoId) => ctx.getToken().then((t) => atualizarStatusML(t, itemExternoId, 'paused')),
     repor: (itemExternoId, patch) => ctx.getToken().then((t) => atualizarItemPlanoML(t, itemExternoId, patch)),
+    lerFichaPublicada: lerFichaCrua,
   };
 
   // ── efeitos pós-composição (Fix 5) ──────────────────────────────────────────────────────────
@@ -381,6 +387,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   try {
     resultado = await executarSaga(portas, {
       skusDesejados, estoquePorSku, precoFamilia, somenteEstoque, familyIdEsperado,
+      atributosFamilia: familia.atributos_ml,
     });
   } catch (e) {
     // Fix 1: exceção não tratada com a composição já iniciada — limpa a flag (best-effort, nunca

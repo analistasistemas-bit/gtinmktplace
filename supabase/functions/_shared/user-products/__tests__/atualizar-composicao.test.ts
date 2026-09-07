@@ -20,6 +20,8 @@ function fakeMundo(opts: {
   criarFamilyIdPorSku?: Record<string, string>; // family_id por sku (grouping entre cores novas)
   confirmarFalhaNoItem?: string;     // GET de confirmação devolve ok:false p/ este itemId (crash)
   inesperadoNoItem?: string;         // GET confirma mas é o item ERRADO (seller/family divergente) → terminal
+  fichaPublicada?: unknown;          // ADR-0157: ficha crua que o GET do irmão devolve
+  fichaFalha?: boolean;              // ADR-0157: leitura da ficha lança
 } = {}) {
   const db = new Map<string, FilhoComp>();
   for (const r of opts.seed ?? []) db.set(r.sku, { ...r });
@@ -36,6 +38,7 @@ function fakeMundo(opts: {
     criarPlano: [] as string[], ativar: [] as string[], pausar: [] as string[],
     repor: [] as Array<{ id: string; patch: Record<string, unknown> }>,
     iniciarComposicao: [] as string[][], limparComposicao: 0,
+    lerFichaPublicada: 0,
   };
   let raizSkusEsperados: string[] | null = null;
   let raizMudandoComposicao = false;
@@ -81,6 +84,11 @@ function fakeMundo(opts: {
     ativar: (itemExternoId) => { chamadas.ativar.push(itemExternoId); const it = remoto.get(itemExternoId); if (it) it.status = 'active'; return Promise.resolve(); },
     pausar: (itemExternoId) => { chamadas.pausar.push(itemExternoId); const it = remoto.get(itemExternoId); if (it) it.status = 'paused'; return Promise.resolve(); },
     repor: (itemExternoId, patch) => { chamadas.repor.push({ id: itemExternoId, patch }); return Promise.resolve(); },
+    lerFichaPublicada: () => {
+      chamadas.lerFichaPublicada += 1;
+      if (opts.fichaFalha) return Promise.reject(new Error('GET item irmão 500'));
+      return Promise.resolve(opts.fichaPublicada ?? null);
+    },
   };
 
   return {
@@ -402,5 +410,61 @@ describe('atualizarComposicao — grouping sem referência viva (familyIdEsperad
       skusDesejados: ['B', 'C'], estoquePorSku: { B: 1, C: 1 }, familyIdEsperado: null,
     }));
     expect(r.tipo).toBe('concluido');
+  });
+});
+
+// ── ADR-0157: atributos divergentes viajam no PUT da reposição ──────────────────────────────
+describe('atualizarComposicao — atributos na reposição (ADR-0157)', () => {
+  const NO_ML = [
+    { id: 'BRAND', value_id: '9165622', value_name: 'Búfalo' },
+    { id: 'UNITS_PER_PACK', value_id: null, value_name: '8' },
+    { id: 'SALE_FORMAT', value_id: '1359392', value_name: 'Kit' },
+  ];
+  const CORRIGIDO = [
+    { id: 'BRAND', value_name: 'BUFALO' },
+    { id: 'UNITS_PER_PACK', value_name: '1' },
+    { id: 'SALE_FORMAT', value_id: '1359391' },
+  ];
+
+  it('manda o delta em todos os filhos, com UMA leitura de ficha', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')], fichaPublicada: NO_ML });
+    await atualizarComposicao(w.portas, entrada({ atributosFamilia: CORRIGIDO }));
+    const attrs = [{ id: 'UNITS_PER_PACK', value_name: '1' }, { id: 'SALE_FORMAT', value_id: '1359391' }];
+    expect(w.chamadas.repor).toEqual([
+      { id: 'MLB1', patch: { available_quantity: 10, price: 29.9, attributes: attrs } },
+      { id: 'MLB2', patch: { available_quantity: 20, price: 29.9, attributes: attrs } },
+    ]);
+    // Um GET por família, não por cor: numa família de 101 cores isso seriam 101 chamadas.
+    expect(w.chamadas.lerFichaPublicada).toBe(1);
+  });
+
+  it('ficha já conferindo → PUT sem attributes (nenhuma regressão no update comum)', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1')], fichaPublicada: NO_ML });
+    await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A'], atributosFamilia: [{ id: 'SALE_FORMAT', value_id: '1359392' }],
+    }));
+    expect(w.chamadas.repor).toEqual([{ id: 'MLB1', patch: { available_quantity: 10, price: 29.9 } }]);
+  });
+
+  it('somenteEstoque não toca atributo nem paga o GET', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1')], fichaPublicada: NO_ML });
+    await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A'], somenteEstoque: true, atributosFamilia: CORRIGIDO,
+    }));
+    expect(w.chamadas.repor).toEqual([{ id: 'MLB1', patch: { available_quantity: 10 } }]);
+    expect(w.chamadas.lerFichaPublicada).toBe(0);
+  });
+
+  it('leitura da ficha falha → repõe sem attributes, nunca reescreve ficha às cegas', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1')], fichaFalha: true });
+    await atualizarComposicao(w.portas, entrada({ skusDesejados: ['A'], atributosFamilia: CORRIGIDO }));
+    expect(w.chamadas.repor).toEqual([{ id: 'MLB1', patch: { available_quantity: 10, price: 29.9 } }]);
+  });
+
+  it('família sem atributos_ml segue igual ao comportamento anterior', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1')], fichaPublicada: NO_ML });
+    await atualizarComposicao(w.portas, entrada({ skusDesejados: ['A'] }));
+    expect(w.chamadas.repor).toEqual([{ id: 'MLB1', patch: { available_quantity: 10, price: 29.9 } }]);
+    expect(w.chamadas.lerFichaPublicada).toBe(0);
   });
 });

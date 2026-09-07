@@ -17,6 +17,8 @@
 
 import type { StatusFilho } from './publicar-grupo.ts';
 import type { BuscaSku } from '../ml/buscar-item.ts';
+import type { AtributoItem } from '../canais/contrato.ts';
+import { atributosDivergentes } from './atributos-divergentes.ts';
 
 export type { StatusFilho };
 
@@ -66,7 +68,15 @@ export interface PortasComposicao {
   confirmar(itemExternoId: string): Promise<ConfirmacaoComp>;
   ativar(itemExternoId: string): Promise<void>;
   pausar(itemExternoId: string): Promise<void>;
-  repor(itemExternoId: string, patch: { available_quantity: number; price?: number }): Promise<void>;
+  repor(
+    itemExternoId: string,
+    patch: { available_quantity: number; price?: number; attributes?: AtributoItem[] },
+  ): Promise<void>;
+  /** Ficha CRUA (com `value_id`) de um filho já publicado, para o diff de atributos do
+   *  ADR-0157. Uma leitura por família — os filhos compartilham `atributos_ml`, então o
+   *  delta calculado sobre um deles vale para todos. null = não deu para ler; nesse caso
+   *  nenhum atributo vai no PUT (nunca reescrever ficha às cegas). */
+  lerFichaPublicada(): Promise<unknown>;
 }
 
 export interface EntradaComposicao {
@@ -74,6 +84,9 @@ export interface EntradaComposicao {
   estoquePorSku: Record<string, number>;
   precoFamilia: number | null;
   somenteEstoque: boolean;
+  /** `familias.atributos_ml`. ADR-0157: o que diverge da ficha publicada entra no PUT da
+   *  reposição. Em `somenteEstoque` nada de atributo sai daqui (o modo preserva o anúncio). */
+  atributosFamilia?: unknown;
   /** family_id das cores existentes (validação da cor nova). null → sem validação (sem cor viva). */
   familyIdEsperado: string | null;
 }
@@ -92,17 +105,45 @@ export type ResultadoComposicao =
   | { tipo: 'erro'; codigo: 'estado_remoto_inesperado' }
   | { tipo: 'erro'; codigo: 'filho_em_estado_terminal'; sku: string; status: StatusFilho };
 
+/**
+ * ADR-0157 — atributos a reenviar na reposição, calculados UMA vez por família.
+ *
+ * Os filhos de uma família UP saem todos do mesmo `atributos_ml`, então o delta medido contra a
+ * ficha de um deles vale para os demais; mandar a um filho que já confere é inócuo (PUT
+ * idempotente) e evita um GET por cor — numa família de 101 cores isso seriam 101 chamadas.
+ *
+ * Falha de leitura devolve lista vazia: sem saber o que está publicado, não se reescreve ficha.
+ */
+async function atributosDaReposicao(
+  portas: PortasComposicao, entrada: EntradaComposicao,
+): Promise<AtributoItem[]> {
+  if (entrada.somenteEstoque || entrada.atributosFamilia == null) return [];
+  let publicada: unknown;
+  try {
+    publicada = await portas.lerFichaPublicada();
+  } catch {
+    return [];
+  }
+  if (publicada == null) return [];
+  return atributosDivergentes(entrada.atributosFamilia, publicada);
+}
+
 async function reposicao(portas: PortasComposicao, entrada: EntradaComposicao, desejados: Set<string>): Promise<void> {
   // Reposição de estoque/preço em TODOS os filhos que ficam ativos e não-retirados (os
   // recém-pausados/retirados já saem por retirado=true). ADR: {available_quantity, ...(somenteEstoque?{}:{price})}.
   const filhos = await portas.listar();
-  for (const f of filhos) {
-    if (f.retirado || !f.itemExternoId || !desejados.has(f.sku)) continue;
+  const alvos = filhos.filter((f) => !f.retirado && f.itemExternoId && desejados.has(f.sku));
+  if (alvos.length === 0) return;
+  // Só paga o GET da ficha quando há filho para repor (ADR-0157).
+  const attrs = await atributosDaReposicao(portas, entrada);
+  for (const f of alvos) {
     const estoque = entrada.estoquePorSku[f.sku] ?? 0;
-    const patch = entrada.somenteEstoque || entrada.precoFamilia == null
-      ? { available_quantity: estoque }
-      : { available_quantity: estoque, price: entrada.precoFamilia };
-    await portas.repor(f.itemExternoId, patch);
+    const patch: { available_quantity: number; price?: number; attributes?: AtributoItem[] } =
+      entrada.somenteEstoque || entrada.precoFamilia == null
+        ? { available_quantity: estoque }
+        : { available_quantity: estoque, price: entrada.precoFamilia };
+    if (attrs.length > 0) patch.attributes = attrs;
+    await portas.repor(f.itemExternoId!, patch);
   }
 }
 

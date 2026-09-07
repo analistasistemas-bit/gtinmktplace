@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## UPDATE de User Products não propagava atributos — ADR-0157 — 2026-09-07
+
+Sequela do ADR-0156: com `atributos_ml` já corrigido no banco e o UPDATE publicado sem erro
+(status `publicado`, QStash 200), os 9 anúncios seguiram com `SALE_FORMAT=Kit`. A reposição da
+rota User Products mandava só `{available_quantity, price}` — atributo só entrava ao CRIAR o item
+(`atualizar-familia-up.ts`, `criarPlano`). No Legacy o buraco é o mesmo por outra via:
+`AtualizacaoCanonica` não tem campo de atributos.
+
+- [x] `atributosDivergentes()` manda só o DELTA contra a ficha real do ML; o ML vence onde tem
+  `value_id` e nós só temos texto (senão o `BRAND: "BUFALO"` do banco reescreveria a identidade da
+  família a cada UPDATE — ADR-0088, lote 54). Nada divergindo → PUT sem `attributes`, igual a antes.
+- [x] Uma leitura de ficha por família (reaproveita o GET memoizado do irmão), não uma por cor.
+- [x] `somenteEstoque` não manda atributo nem paga o GET; falha de leitura repõe sem `attributes`.
+- [x] 9 testes da função pura (fixture da ficha real de `MLB5197880975`) + 5 da saga com fakes.
+- [ ] Republicar as 3 lantejoulas e conferir por `GET /items/{id}` — status `publicado` não prova.
+- [ ] **Legacy segue descoberto.** `02829916` (ANNE 65 CORES) só se corrige republicando, ou com
+  uma decisão própria para o caminho Legacy (blast radius: todo UPDATE de família Legacy).
+
 ## "TAM 8 CORES" publicava como Kit de 8 unidades — ADR-0156 — 2026-09-07
 
 O anúncio `MLB5197880975` (`02994968 — LANTEJOULAS HOLOGRAFICA TAM 8 CORES C/50MT`, rolo unitário de
