@@ -79,6 +79,19 @@ está autorizado, nenhum kit foi criado de verdade.
   manifest **não** salvo — a dívida segue visível no próximo `--update`. Fechar exige o pipeline
   completo, com extração semântica dos 194 documentos alterados.
 
+## Central de organizações — T1–T7 na branch, não em produção — 2026-09-06
+
+- [x] T1–T7 implementadas em `codex/admin-control-20260906`: condições comerciais, métricas
+  compartilhadas, consumo Sonar durável, fechamento auditável, cliente/exportação e as cinco áreas
+  da central.
+- [x] Evidências locais e guia do operador registrados em
+  [central-organizacoes-verificacao.md](superpowers/plans/2026-09-06-central-organizacoes-verificacao.md)
+  e [central-organizacoes.md](how-to/central-organizacoes.md).
+- [ ] Corrigir a baseline TypeScript, obter `pnpm build` verde e concluir a validação visual
+  autenticada em 390/1440 antes de merge.
+- [ ] Aplicar migrations, publicar Edge Functions e promover o frontend somente em uma entrega de
+  produção autorizada. Nada desta central foi promovido nesta tarefa.
+
 ## PWA instalável, sem escrita offline (ADR-0153) — 2026-09-05
 
 Branch `worktree-pwa` (não mergeada). Service worker gerado pelo `vite-plugin-pwa`

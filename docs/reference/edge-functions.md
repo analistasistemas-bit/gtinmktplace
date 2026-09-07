@@ -94,10 +94,17 @@
 | buscar-categorias-ml | true | HTTP (frontend) | sim (leitura) |
 | calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h) |
 | **Acesso / usuários** ||||
+| platform-admin | true | HTTP (frontend, super-admin ativo) | leituras; fechamento idempotente por org/competência |
 | usuarios | true | HTTP (frontend, admin) | sim (upsert/idempotente) |
 | suporte | true | HTTP (frontend) | transições condicionais; início/renovação atômicos na RPC |
 | **Utilitário** ||||
 | hello | false | HTTP (smoke test) | sim |
+
+`platform-admin` concentra carteira, métricas, condições, prévia/fechamento, demonstrativos,
+conciliação, consumo Pulse e auditoria da central. A função autentica novamente no servidor e usa
+o cliente `service_role` apenas para chamar repositórios/RPCs escopados pela organização; consultar
+a central não cria uma sessão de suporte. Ver o
+[guia de operação](../how-to/central-organizacoes.md) e o [ADR-0154](../decisions/0154-central-organizacoes-cobranca-auditavel.md).
 
 
 ## Schedules do QStash (cron + body)

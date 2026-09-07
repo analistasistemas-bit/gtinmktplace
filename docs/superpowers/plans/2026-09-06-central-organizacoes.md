@@ -413,14 +413,32 @@ Antes de fechar, mostrar composição completa e confirmação concreta do demon
 
 **Arquivos:** testes/arquivos afetados pelas correções; criar `docs/how-to/central-organizacoes.md` e `docs/superpowers/plans/2026-09-06-central-organizacoes-verificacao.md`; atualizar este checklist conforme evidências. Não ampliar escopo.
 
-- [ ] Sol revisa diff completo contra spec/ADR e todas as integrações. Encaminhar achados a Terra/Luna com arquivos e testes afetados; não aceitar claims de atomicidade baseados só em mock. Verificar que código de produção usa as funções testadas.
-- [ ] Preparar ambiente local: reutilizar dependências disponíveis ou instalar via pnpm; `.env.local` no worktree antes de Vite, sem imprimir valores. Banco de teste dedicado com fixtures A/B, cliente, equipe Daludi, admin inativo e contratos negociados. Nunca `db reset` ou comandos contra banco existente/produção sem autorização apropriada.
-- [ ] Rodar conjunto focado de todos os testes novos e regressões do resumo/custo/Sonar/Organizacoes/suporte; executar `rtk pnpm exec tsc -b --pretty false`, lint dos arquivos alterados e `rtk proxy deno check` das edges alteradas. Executar testes SQL e concorrência local, registrando o comando, ambiente e resultado. Se runtime local faltar, tentar o mecanismo autorizado; declarar precisamente qualquer validação que não foi possível, sem marcar como passou.
+- [x] Sol revisa diff completo contra spec/ADR e todas as integrações. Encaminhar achados a Terra/Luna com arquivos e testes afetados; não aceitar claims de atomicidade baseados só em mock. Verificar que código de produção usa as funções testadas.
+- [x] Preparar ambiente local: reutilizar dependências disponíveis ou instalar via pnpm; `.env.local` no worktree antes de Vite, sem imprimir valores. Banco de teste dedicado com fixtures A/B, cliente, equipe Daludi, admin inativo e contratos negociados. Nunca `db reset` ou comandos contra banco existente/produção sem autorização apropriada.
+- [x] Rodar conjunto focado de todos os testes novos e regressões do resumo/custo/Sonar/Organizacoes/suporte; executar `rtk pnpm exec tsc -b --pretty false`, lint dos arquivos alterados e `rtk proxy deno check` das edges alteradas. Executar testes SQL e concorrência local, registrando o comando, ambiente e resultado. Se runtime local faltar, tentar o mecanismo autorizado; declarar precisamente qualquer validação que não foi possível, sem marcar como passou.
 - [ ] Exercitar fluxo completo: selecionar A, conferir bruto/markup, salvar modal2 com infraestrutura, cliente faz consulta/reabertura, Daludi faz consulta auditada, verificar B intacta, conferir e fechar mês elegível, repetir fechamento, renegociar e comprovar snapshot/export antigo igual. Inspecionar 390px/1440px, teclado e console. Documentar regras e limitações de histórico/custos.
-- [ ] Sol consolida resultado, verificações e pendências reais. Manter worktree e arquivos entregues; não fazer merge/push/deploy nem aplicar migrations de produção por inferência. Se apenas promoção a produção faltar, entregar implementação local validada e informar essa etapa explicitamente.
+- [x] Sol consolida resultado, verificações e pendências reais. Manter worktree e arquivos entregues; não fazer merge/push/deploy nem aplicar migrations de produção por inferência. Se apenas promoção a produção faltar, entregar implementação local validada e informar essa etapa explicitamente.
 
 ## Registro de execução
 
 Estado inicial: desenho aprovado; plano elaborado por Astra. Nenhuma tarefa de implementação foi iniciada na criação deste documento.
 
 Sol atualiza por tarefa: estado, executor, arquivos, commits, comandos/testes e resultado de revisão. Toda decisão que alterar contrato ou critério de aceite deve constar neste registro com motivo e impacto. Não apagar evidências ao encerrar.
+
+| Tarefa | Estado na branch | Commit(s) |
+|---|---|---|
+| T1 — fundação, contratos e segurança | concluída e validada localmente | `7fa6d44..f6d88f1` |
+| T2 — resultados compartilhados | concluída e validada localmente | `ea280d67` |
+| T3 — Sonar durável e consumo | concluída e validada localmente | `d5ddbe44` |
+| T4 — fechamento e backend central | concluída e validada em PostgreSQL local | `ab115b86` |
+| T5 — cliente, hooks e exportação | concluída e validada localmente | `fdd14f42` |
+| T6 — carteira e detalhe | concluída; visual autenticado ainda pendente | `50cb696e` |
+| T7 — condições, cobrança e configurações | concluída e validada localmente | `7d608f36` |
+| T8 — integração, evidências e documentação | concluída com blockers registrados | este commit de documentação |
+
+Registro T8: 17 suites/125 testes, Deno, trio SQL real, concorrência e ESLint passaram.
+`tsc -b`/build seguem vermelhos na baseline Sonar/faturamento; `db:check` não encontrou projeto
+linkado. O Vite iniciou, mas o navegador isolado foi redirecionado para login em 390/1440, portanto
+o fluxo visual autenticado e teclado não foram marcados como aprovados. Evidência completa em
+[2026-09-06-central-organizacoes-verificacao.md](2026-09-06-central-organizacoes-verificacao.md).
+Não houve merge, push, deploy ou migration de produção.

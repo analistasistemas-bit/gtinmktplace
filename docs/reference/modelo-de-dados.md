@@ -66,6 +66,27 @@ action `set_tipo_pessoa_org`). Constraint **no banco**, não só na UI —
 exige nada (a obrigatoriedade nasce no ato de ligar o módulo, ver [Fiscal](#fiscal-adr-0135)
 abaixo).
 
+### Central de organizações e cobrança auditável (ADR-0154)
+
+As migrations `20260906170000_platform_commercial_foundation.sql`,
+`20260906170100_platform_sonar_metering.sql` e `20260906170200_platform_billing.sql` acrescentam:
+
+- `platform_commercial_terms` e `platform_audit_events`: condições versionadas por organização e
+  trilha administrativa/comercial;
+- `platform_sonar_results`, `platform_sonar_searches`, `platform_sonar_events` e
+  `platform_sonar_deliveries`: resultado público versionado, intenção, eventos e primeira entrega
+  comercial por organização/resultado;
+- `platform_billing_statements`, `platform_billing_sale_facts` e
+  `platform_revenue_reconciliations`: snapshot mensal imutável, fontes reconhecidas e conciliações
+  de devolução.
+
+Todas têm RLS ativa e não liberam DML direto ao navegador. As escritas passam por RPCs
+`security definer` chamadas pela Edge Function `platform-admin` ou pelo fluxo Sonar autenticado.
+Condições e demonstrativos preservam competência em `America/Fortaleza`; fechamento é único por
+`(org_id, month)` e não é recalculado por uma renegociação posterior. A exclusão de organização
+permanece desabilitada enquanto a limpeza sequencial não puder preservar esse histórico
+atomicamente. Ver o [guia da central](../how-to/central-organizacoes.md).
+
 ### `marketplace_connections`
 **Substitui `ml_credentials`** como fonte da credencial de canal — a conexão é da **organização**,
 não do usuário (fecha a pendência do ADR-0047 "membros não publicam"). *Migration
