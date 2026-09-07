@@ -13,17 +13,10 @@ import {
   type Page,
   type PulseUsage,
   type RevenueReconciliationInput,
+  type Wallet,
 } from '@/lib/platform-admin';
 
-export type PlatformOverview = {
-  gross_cents: number | null;
-  forecast_cents: number | null;
-  org_count: number;
-  pending_count: number | null;
-  warnings: string[];
-};
-
-export type PlatformOrganizationsParams = {
+export type PlatformWalletParams = {
   month: Month;
   search?: string;
   include_test?: boolean;
@@ -69,10 +62,8 @@ function key(
 }
 
 export const platformAdminKeys = {
-  overview: (userId: UserId, month: Month, includeTest: boolean) =>
-    key(userId, 'overview', null, month, { include_test: includeTest }),
-  organizations: (userId: UserId, params: PlatformOrganizationsParams) =>
-    key(userId, 'list', null, params.month, filters({
+  wallet: (userId: UserId, params: PlatformWalletParams) =>
+    key(userId, 'wallet', null, params.month, filters({
       search: params.search,
       include_test: params.include_test,
       page: params.page,
@@ -108,20 +99,11 @@ function requireUser(userId: UserId): void {
   if (!userId) throw new Error('Usuário não autenticado');
 }
 
-export function usePlatformOverview(month: Month, includeTest: boolean) {
+export function usePlatformWallet(params: PlatformWalletParams) {
   const userId = useAuthStore((state) => state.user?.id ?? null);
-  return useQuery<PlatformOverview>({
-    queryKey: platformAdminKeys.overview(userId, month, includeTest),
-    queryFn: () => callPlatformAdmin('overview', { month, include_test: includeTest }),
-    enabled: Boolean(userId && month),
-  });
-}
-
-export function usePlatformOrganizations(params: PlatformOrganizationsParams) {
-  const userId = useAuthStore((state) => state.user?.id ?? null);
-  return useQuery<Page<OrgSummary>>({
-    queryKey: platformAdminKeys.organizations(userId, params),
-    queryFn: () => callPlatformAdmin('list', { ...params }),
+  return useQuery<Wallet>({
+    queryKey: platformAdminKeys.wallet(userId, params),
+    queryFn: () => callPlatformAdmin('wallet', { ...params }),
     enabled: Boolean(userId && params.month),
   });
 }
@@ -196,8 +178,7 @@ async function invalidateBilling(
   month: Month,
 ): Promise<void> {
   await Promise.all([
-    queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'overview', null, month] }),
-    queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'list', null, month] }),
+    queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'wallet', null, month] }),
     queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'preview', orgId, month] }),
     queryClient.invalidateQueries({ queryKey: ['platform-admin', userId, 'statements', orgId] }),
   ]);

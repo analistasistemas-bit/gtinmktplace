@@ -15,12 +15,12 @@ describe('callPlatformAdmin', () => {
   });
 
   it('invoca a action com os parâmetros e devolve o DTO', async () => {
-    const response = { gross_cents: 123_00 };
+    const response = { totals: { gross_cents: 123_00 } };
     invoke.mockResolvedValue({ data: response, error: null });
 
-    await expect(callPlatformAdmin('overview', { month: '2026-08' })).resolves.toBe(response);
+    await expect(callPlatformAdmin('wallet', { month: '2026-08' })).resolves.toBe(response);
     expect(invoke).toHaveBeenCalledWith('platform-admin', {
-      body: { action: 'overview', month: '2026-08' },
+      body: { action: 'wallet', month: '2026-08' },
     });
   });
 
@@ -38,8 +38,7 @@ describe('callPlatformAdmin', () => {
       },
     });
 
-    const error = await callPlatformAdmin('metrics', {
-      org_id: '00000000-0000-4000-8000-000000000001',
+    const error = await callPlatformAdmin('wallet', {
       month: '2026-08',
     }).catch((caught) => caught);
 
@@ -56,7 +55,7 @@ describe('callPlatformAdmin', () => {
       error: null,
     });
 
-    await expect(callPlatformAdmin('list', { month: '2026-08' })).rejects.toMatchObject({
+    await expect(callPlatformAdmin('wallet', { month: '2026-08' })).rejects.toMatchObject({
       message: 'Acesso negado',
       code: 'forbidden',
     });
@@ -78,5 +77,20 @@ describe('platformAdminKeys', () => {
       {},
     ]);
     expect(new Set([JSON.stringify(august), JSON.stringify(september), JSON.stringify(otherOrg)]).size).toBe(3);
+  });
+
+  it('monta a key da carteira com os filtros e isola por termo de busca', () => {
+    const base = platformAdminKeys.wallet('user-1', { month: '2026-08', include_test: false, page: 1, page_size: 10, sort: 'name' });
+    const searched = platformAdminKeys.wallet('user-1', { month: '2026-08', search: 'avil', include_test: false, page: 1, page_size: 10, sort: 'name' });
+
+    expect(base).toEqual([
+      'platform-admin',
+      'user-1',
+      'wallet',
+      null,
+      '2026-08',
+      { include_test: false, page: 1, page_size: 10, sort: 'name' },
+    ]);
+    expect(JSON.stringify(base)).not.toBe(JSON.stringify(searched));
   });
 });

@@ -36,6 +36,9 @@ interface DataTableProps<T> {
   defaultSort?: { key: string; dir: SortDir };
   onRowClick?: (row: T) => void;
   rowClassName?: (row: T) => string | undefined;
+  /** Opcional: avisa quando o cabeçalho muda a ordenação (a tabela sempre reordena a página
+   *  localmente; quem também pagina/ordena no servidor usa isto para acompanhar). */
+  onSortChange?: (key: string, dir: SortDir) => void;
 }
 
 /** Nulos sempre no fim, independentemente da direção — "sem dado" não é o menor valor. */
@@ -60,6 +63,7 @@ export function DataTable<T>({
   defaultSort,
   onRowClick,
   rowClassName,
+  onSortChange,
 }: DataTableProps<T>) {
   const [sort, setSort] = useState<{ key: string; dir: SortDir } | null>(defaultSort ?? null);
 
@@ -71,7 +75,9 @@ export function DataTable<T>({
   }, [rows, columns, sort]);
 
   const alternar = (key: string) => {
-    setSort((s) => (s?.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+    const next: { key: string; dir: SortDir } = sort?.key === key ? { key, dir: sort.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' };
+    setSort(next);
+    onSortChange?.(next.key, next.dir);
   };
 
   // `w-full` faz a tabela CABER comprimindo colunas em vez de estourar; com uma coluna fixa e

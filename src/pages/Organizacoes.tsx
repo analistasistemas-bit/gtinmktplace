@@ -1,28 +1,34 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import {
+  Search, AlertTriangle, ArrowUp, ArrowDown, ArrowRight, Building2, Receipt,
+  Wallet as WalletIcon, MoreHorizontal,
+} from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { PageHeader } from '@/components/ui/page-header';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
-import { usePlatformOrganizations, usePlatformOverview } from '@/hooks/usePlatformAdmin';
-import type { OrgSummary } from '@/lib/platform-admin';
-import { fmtBRL } from '@/lib/formato';
-import { LISTA_CANAIS } from '@/lib/canais';
-import { MODULOS } from '@/lib/modulos';
-import { cancelSupport, listSupportRequests, requestSupport, type SupportRequest, type SupportScope } from '@/lib/suporte';
+import { KpiCard, KpiInfoButton } from '@/components/ui/kpi-card';
+import { StatusPill } from '@/components/ui/status-pill';
+import { EmptyState } from '@/components/ui/empty-state';
+import { DataTable, type Column } from '@/components/ui/data-table';
+import { Pagination } from '@/components/ui/pagination';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { usePlatformWallet } from '@/hooks/usePlatformAdmin';
+import type { OrgSummary, WalletTotals } from '@/lib/platform-admin';
+import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
+import { cn } from '@/lib/utils';
+import { cancelSupport, listSupportRequests, type SupportRequest } from '@/lib/suporte';
 import { useSupportStore } from '@/stores/support-store';
-
-interface OrgRow extends OrgSummary {
-  canais_habilitados: string[];
-  modulos_habilitados: string[];
-  tipo_pessoa: 'pf' | 'pj' | null;
-}
+import { SupportRequestDialog } from '@/components/platform-admin/support-request-dialog';
 
 const PAGE_SIZE = 10;
 
@@ -35,23 +41,25 @@ function currentMonth(now = new Date()): string {
   return `${parts.find((part) => part.type === 'year')?.value}-${parts.find((part) => part.type === 'month')?.value}`;
 }
 
-const unavailable = 'Indisponível';
-const money = (cents: number | null | undefined) => cents == null ? unavailable : fmtBRL(cents / 100);
-const number = (value: number | null | undefined) => value == null ? unavailable : value.toLocaleString('pt-BR');
-
-function coverage(org: OrgSummary) {
-  const metrics = org.metrics;
-  if (!metrics || metrics.total_orders === 0) return unavailable;
-  return `${metrics.cost_covered_orders}/${metrics.total_orders} (${Math.round((metrics.cost_covered_orders / metrics.total_orders) * 100)}%)`;
+function fmtHora(iso: string): string {
+  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
-function evolution(org: OrgSummary) {
-  const metrics = org.metrics;
-  if (!metrics?.previous || metrics.previous.gross_cents === 0) return unavailable;
-  const change = ((metrics.gross_cents - metrics.previous.gross_cents) / metrics.previous.gross_cents) * 100;
-  return `${change >= 0 ? '+' : ''}${change.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+/** Estado de uma solicitação de suporte em relação às ações disponíveis na linha/menu. */
+function supportFlags(request?: SupportRequest) {
+  const canStart = request?.status === 'approved'
+    && Boolean(request.approval_expires_at)
+    && new Date(request.approval_expires_at!).getTime() > Date.now();
+  const canRenew = request?.status === 'active'
+    && Boolean(request.expires_at)
+    && new Date(request.expires_at!).getTime() > Date.now()
+    && new Date(request.expires_at!).getTime() - Date.now() <= 15 * 60_000;
+  const canRequest = !request || !['pending', 'active'].includes(request.status);
+  return { canStart, canRenew, canRequest };
 }
 
+// callUsuarios é a mesma edge que create_org (NovaOrgDialog, mantido como está pela T8) usava antes
+// do redesign — segue necessária mesmo com Excluir/Canais/Módulos removidos daqui.
 async function callUsuarios(body: Record<string, unknown>) {
   const { data, error } = await supabase.functions.invoke('usuarios', { body });
   if (error) {
@@ -72,25 +80,87 @@ async function callUsuarios(body: Record<string, unknown>) {
   return data;
 }
 
+/** Card de destaque do topo (Faturamento bruto da carteira). Mesma estrutura de HeroVenda
+ *  (Dashboard.tsx), mas não-linkável: é um agregado da carteira, não o drill-down de uma org. */
+function HeroCarteira({ totals, orgs, loading, className }: {
+  totals?: WalletTotals;
+  orgs: OrgSummary[];
+  loading: boolean;
+  className?: string;
+}) {
+  if (loading) {
+    return (
+      <div className={cn('h-full rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm', className)}>
+        <div className="mb-1 flex items-center gap-1.5 text-xs text-info">
+          <Receipt className="h-4 w-4 shrink-0" /> Faturamento bruto
+        </div>
+        <Skeleton className="h-9 w-40" />
+      </div>
+    );
+  }
+
+  const comPrevio = orgs.length > 0 && orgs.every((o) => (o.metrics?.previous?.gross_cents ?? 0) > 0);
+  let delta: { texto: string; up: boolean } | null = null;
+  if (comPrevio) {
+    const prevSum = orgs.reduce((soma, o) => soma + o.metrics!.previous!.gross_cents, 0);
+    const curSum = orgs.reduce((soma, o) => soma + (o.metrics?.gross_cents ?? 0), 0);
+    const pct = ((curSum - prevSum) / prevSum) * 100;
+    delta = { texto: `${pct >= 0 ? '+' : ''}${pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`, up: pct >= 0 };
+  }
+
+  return (
+    <div className={cn('h-full rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-4 shadow-sm', className)}>
+      <div className="mb-1 flex items-center gap-1.5 text-xs text-info">
+        <Receipt className="h-4 w-4 shrink-0" /> Faturamento bruto
+        <KpiInfoButton infoKey="Faturamento bruto da carteira" />
+      </div>
+      <div className="text-3xl font-bold tabular-nums">
+        {totals?.gross_cents != null ? fmtBRL(totals.gross_cents / 100) : '—'}
+      </div>
+      {delta && (
+        <div className={cn('mt-0.5 flex items-center gap-1 text-xs', delta.up ? 'text-success' : 'text-destructive')}>
+          {delta.up ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+          {delta.texto}
+          <span className="text-muted-foreground">vs. mesmo período do mês anterior</span>
+        </div>
+      )}
+      <div className="mt-1 text-xs text-muted-foreground">
+        {fmtInt(totals?.org_count ?? 0)} organizações · {totals?.orders != null ? fmtInt(totals.orders) : '—'} pedidos
+      </div>
+    </div>
+  );
+}
+
+type ItemAtencao = {
+  chave: string;
+  mensagem: string;
+  acao?: { rotulo: string; ariaLabel?: string; to?: string; onClick?: () => void };
+};
+
 export default function Organizacoes() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const startSupport = useSupportStore((state) => state.start);
   const month = searchParams.get('mes') ?? currentMonth();
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [includeTest, setIncludeTest] = useState(false);
-  const [sort, setSort] = useState<'name' | 'slug' | 'gross_desc'>('name');
+  const [sort, setSort] = useState<'name' | 'slug' | 'gross_desc'>('gross_desc');
   const [page, setPage] = useState(1);
+  const [somentePendencias, setSomentePendencias] = useState(false);
   const [novaOpen, setNovaOpen] = useState(false);
-  const [delOrg, setDelOrg] = useState<OrgRow | null>(null);
-  const [canaisOrg, setCanaisOrg] = useState<OrgRow | null>(null);
-  const [modulosOrg, setModulosOrg] = useState<OrgRow | null>(null);
-  const [supportOrg, setSupportOrg] = useState<OrgRow | null>(null);
+  const [supportOrg, setSupportOrg] = useState<OrgSummary | null>(null);
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
 
-  const overview = usePlatformOverview(month, includeTest);
-  const organizations = usePlatformOrganizations({
+  // Debounce: só copia searchInput para search (o que entra na queryKey) 300ms após a última tecla,
+  // senão cada tecla refaz o ciclo inteiro no servidor.
+  useEffect(() => {
+    const timer = setTimeout(() => { setSearch(searchInput); setPage(1); }, 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  const wallet = usePlatformWallet({
     month,
     search: search.trim() || undefined,
     include_test: includeTest,
@@ -98,29 +168,37 @@ export default function Organizacoes() {
     page,
     page_size: PAGE_SIZE,
   });
-  const orgs = (organizations.data?.rows ?? []).filter((org) => includeTest || !org.is_test) as OrgRow[];
-  const totalPages = Math.max(1, Math.ceil((organizations.data?.total ?? 0) / PAGE_SIZE));
+  const totals = wallet.data?.totals;
+  const orgs = useMemo(
+    () => (wallet.data?.rows ?? []).filter((org) => includeTest || !org.is_test),
+    [wallet.data, includeTest],
+  );
+  const orgsVisiveis = useMemo(
+    () => somentePendencias ? orgs.filter((o) => (o.pending_count ?? 0) > 0 || o.modality == null) : orgs,
+    [orgs, somentePendencias],
+  );
+  const sortLabel = sort === 'gross_desc' ? 'faturamento' : sort === 'slug' ? 'slug' : 'nome';
 
   const support = useQuery<SupportRequest[]>({
     queryKey: ['support-requests'],
     queryFn: async () => {
       const requests: SupportRequest[] = [];
-      let page = 1;
+      let p = 1;
       for (;;) {
-        const result = await listSupportRequests({ page, pageSize: 50, status: 'actionable' });
+        const result = await listSupportRequests({ page: p, pageSize: 50, status: 'actionable' });
         requests.push(...result.requests);
         if (requests.length >= result.total || result.requests.length === 0) break;
-        page += 1;
+        p += 1;
       }
       return requests;
     },
   });
-  const supportByOrg = (support.data ?? []).reduce<Map<string, SupportRequest>>((requests, request) => {
+  const supportByOrg = useMemo(() => (support.data ?? []).reduce<Map<string, SupportRequest>>((requests, request) => {
     if (!requests.has(request.org_id)) requests.set(request.org_id, request);
     return requests;
-  }, new Map());
+  }, new Map()), [support.data]);
 
-  async function enterOperation(request: SupportRequest) {
+  const enterOperation = useCallback(async (request: SupportRequest) => {
     try {
       await startSupport(request.id);
       navigate('/');
@@ -128,7 +206,7 @@ export default function Organizacoes() {
       toast.error(error instanceof Error ? error.message : 'Não foi possível iniciar o suporte.');
       await qc.invalidateQueries({ queryKey: ['support-requests'] });
     }
-  }
+  }, [startSupport, navigate, qc]);
 
   async function cancelRequest(request: SupportRequest) {
     setCancellingRequestId(request.id);
@@ -143,112 +221,348 @@ export default function Organizacoes() {
     }
   }
 
+  // Achados da T3 (2026-09-07): warnings da carteira (ex.: prévia/métricas indisponíveis para
+  // parte da carteira) precisam de um lugar visível — senão "a prévia falhou" fica idêntico a "org
+  // sem contrato". Entram na mesma faixa das pendências acionáveis, só sem botão de ação.
+  const itensAtencao = useMemo<ItemAtencao[]>(() => {
+    const itens: ItemAtencao[] = [];
+    for (const org of orgs) {
+      if (org.modality == null) {
+        itens.push({
+          chave: `terms-${org.id}`,
+          mensagem: `${org.nome} sem condições comerciais`,
+          acao: {
+            rotulo: 'Cadastrar', ariaLabel: `Cadastrar condições comerciais — ${org.nome}`,
+            to: `/admin/organizacoes/${org.id}?mes=${month}&aba=cobranca`,
+          },
+        });
+      } else if ((org.pending_count ?? 0) > 0) {
+        const n = org.pending_count!;
+        itens.push({
+          chave: `pending-${org.id}`,
+          mensagem: `${org.nome}: ${n} ${n === 1 ? 'pendência' : 'pendências'} de cobrança`,
+          acao: {
+            rotulo: 'Ver', ariaLabel: `Ver pendências de cobrança — ${org.nome}`,
+            to: `/admin/organizacoes/${org.id}?mes=${month}&aba=cobranca`,
+          },
+        });
+      }
+      const request = supportByOrg.get(org.id);
+      const { canStart } = supportFlags(request);
+      if (canStart && request) {
+        itens.push({
+          chave: `access-${org.id}`,
+          mensagem: `Acesso a ${org.nome} aprovado — expira ${fmtHora(request.approval_expires_at!)}`,
+          // aria-label distingue esta instância da mesma ação já visível na linha da tabela — dois
+          // botões "Entrar na operação" com o mesmo nome acessível na página confundem leitor de tela.
+          acao: { rotulo: 'Entrar na operação', ariaLabel: `Entrar na operação — ${org.nome}`, onClick: () => enterOperation(request) },
+        });
+      }
+    }
+    for (const warning of totals?.warnings ?? []) {
+      itens.push({ chave: `warning-${warning}`, mensagem: warning });
+    }
+    return itens;
+  }, [orgs, totals?.warnings, month, supportByOrg, enterOperation]);
+
+  // Só nome/faturamento acompanham o servidor (T6: sort só aceita 'name'|'slug'|'gross_desc');
+  // as demais colunas ordenam a página localmente e não mexem no `sort` do servidor.
+  function onSortChange(key: string) {
+    if (key === 'nome') { setSort('name'); setPage(1); } else if (key === 'gross') { setSort('gross_desc'); setPage(1); }
+  }
+
+  const colunas: Column<OrgSummary>[] = [
+    {
+      key: 'nome', header: 'Organização', className: 'min-w-[14rem]',
+      sortValue: (o) => o.nome,
+      cell: (o) => {
+        const request = supportByOrg.get(o.id);
+        return (
+          <div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Link
+                to={`/admin/organizacoes/${o.id}?mes=${month}`}
+                className="font-medium hover:underline"
+                aria-label={`Ver organização ${o.nome}`}
+                onClick={(e) => e.stopPropagation()}
+              >
+                {o.nome}
+              </Link>
+              {o.is_test && <Badge variant="outline">Teste</Badge>}
+              {request?.status === 'active' && <StatusPill tone="info">Acesso ativo</StatusPill>}
+              {request?.status === 'pending' && <StatusPill tone="neutral">Aguardando aprovação</StatusPill>}
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span>{o.slug}</span>
+              {o.modality != null ? <span>· Modalidade {o.modality}</span> : <StatusPill tone="warning">Sem condições</StatusPill>}
+            </div>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'gross', header: 'Faturamento', className: 'w-[9.5rem] text-right tabular-nums',
+      sortValue: (o) => o.metrics?.gross_cents ?? null,
+      cell: (o) => {
+        if (!o.metrics) return <span title="Métricas indisponíveis">—</span>;
+        const prev = o.metrics.previous;
+        const pct = prev && prev.gross_cents > 0
+          ? ((o.metrics.gross_cents - prev.gross_cents) / prev.gross_cents) * 100
+          : null;
+        return (
+          <div>
+            <div className="font-semibold">{fmtBRL(o.metrics.gross_cents / 100)}</div>
+            {pct != null && (
+              <div className={cn('flex items-center justify-end gap-0.5 text-xs', pct >= 0 ? 'text-success' : 'text-destructive')}>
+                {pct >= 0 ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />}
+                {pct >= 0 ? '+' : ''}{pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%
+              </div>
+            )}
+          </div>
+        );
+      },
+    },
+    {
+      key: 'markup', header: 'Markup', className: 'w-[6rem] text-right tabular-nums hidden md:table-cell',
+      cell: (o) => {
+        const m = o.metrics?.markup;
+        if (m == null) return <span title="Sem custo ou alíquota confirmada">—</span>;
+        return <span className={m >= 0 ? 'text-success' : 'text-destructive'}>{fmtMarkup(m)}</span>;
+      },
+    },
+    {
+      key: 'coverage', header: 'Cobertura', className: 'w-[7rem] text-right tabular-nums hidden lg:table-cell',
+      cell: (o) => {
+        if (!o.metrics) return <span title="Métricas indisponíveis">—</span>;
+        const { cost_covered_orders, total_orders } = o.metrics;
+        if (total_orders === 0) return <span title="Sem pedidos no mês">—</span>;
+        const pct = Math.round((cost_covered_orders / total_orders) * 100);
+        return (
+          <div>
+            <span className={pct < 70 ? 'text-destructive' : pct < 95 ? 'text-warning' : undefined}>{pct}%</span>
+            <div className="text-xs text-muted-foreground">{total_orders} ped.</div>
+          </div>
+        );
+      },
+    },
+    {
+      key: 'pulse', header: 'Consultas Pulse', className: 'w-[7rem] text-right tabular-nums hidden lg:table-cell',
+      cell: (o) => o.billable_units == null
+        ? '—'
+        : <span className={o.billable_units === 0 ? 'text-muted-foreground' : undefined}>{fmtInt(o.billable_units)}</span>,
+    },
+    {
+      key: 'forecast', header: 'Previsão', className: 'w-[8.5rem] text-right tabular-nums',
+      cell: (o) => {
+        if (o.forecast_cents == null) {
+          const title = o.modality == null ? 'Sem condições comerciais' : 'Bloqueada por pendências';
+          return <span title={title}>—</span>;
+        }
+        return <span className="font-medium">{fmtBRL(o.forecast_cents / 100)}</span>;
+      },
+    },
+    {
+      key: 'pending', header: 'Pendências', className: 'w-[6rem] text-right',
+      cell: (o) => {
+        if (o.pending_count == null) return <span title="Prévia indisponível">—</span>;
+        if (o.pending_count === 0) return '—';
+        return <StatusPill tone="warning">{o.pending_count}</StatusPill>;
+      },
+    },
+    {
+      key: 'acoes', header: <span className="sr-only">Ações</span>, className: 'w-[3rem]', stickyRight: true,
+      cell: (o) => {
+        const request = supportByOrg.get(o.id);
+        const { canStart, canRenew, canRequest } = supportFlags(request);
+        // Sem wrapper com onClick (jsx-a11y proíbe handler de clique em <div> não-interativa): cada
+        // elemento clicável para a própria propagação, mesmo padrão de Publicados.tsx.
+        return (
+          <div className="flex items-center justify-end gap-1.5">
+            {canStart && <Button size="sm" onClick={(e) => { e.stopPropagation(); enterOperation(request!); }}>Entrar na operação</Button>}
+            {!canStart && canRenew && <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); setSupportOrg(o); }}>Solicitar renovação</Button>}
+            {request?.status === 'pending' && (
+              <Button variant="ghost" size="sm" disabled={cancellingRequestId === request.id} onClick={(e) => { e.stopPropagation(); cancelRequest(request); }}>
+                {cancellingRequestId === request.id ? 'Cancelando…' : 'Cancelar solicitação'}
+              </Button>
+            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Ações" onClick={(e) => e.stopPropagation()}>
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+                <DropdownMenuItem asChild>
+                  <Link to={`/admin/organizacoes/${o.id}?mes=${month}`}>Ver organização</Link>
+                </DropdownMenuItem>
+                {canRequest && (
+                  <DropdownMenuItem onSelect={() => setSupportOrg(o)}>Solicitar acesso</DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <Link to={`/admin/organizacoes/${o.id}?mes=${month}&aba=configuracoes`}>Configurações</Link>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      },
+    },
+  ];
+
   return (
     <div className="mx-auto max-w-7xl p-4 lg:p-6">
       <PageHeader
         title="Organizações"
         subtitle="Carteira financeira e operacional da plataforma."
-        actions={<Button onClick={() => setNovaOpen(true)}>Nova empresa</Button>}
+        actions={
+          <>
+            <label className="flex items-center gap-2 text-sm" htmlFor="wallet-month">
+              <span>Mês</span>
+              <Input
+                id="wallet-month"
+                type="month"
+                aria-label="Mês da carteira"
+                value={month}
+                onChange={(event) => setSearchParams((previous) => {
+                  const next = new URLSearchParams(previous);
+                  next.set('mes', event.target.value);
+                  return next;
+                })}
+              />
+            </label>
+            <Button onClick={() => setNovaOpen(true)}>Nova empresa</Button>
+          </>
+        }
       />
 
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[
-          ['Faturamento bruto', money(overview.data?.gross_cents)],
-          ['Previsão', money(overview.data?.forecast_cents)],
-          ['Organizações', overview.data ? number(overview.data.org_count) : unavailable],
-          ['Pendências', number(overview.data?.pending_count)],
-        ].map(([label, value]) => (
-          <Card key={label}>
-            <CardContent className="p-4">
-              <p className="text-xs font-medium text-muted-foreground">{label}</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums">{overview.isLoading ? 'Carregando…' : value}</p>
-            </CardContent>
-          </Card>
-        ))}
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <HeroCarteira totals={totals} orgs={orgs} loading={wallet.isLoading} className="col-span-2 sm:col-span-3 lg:col-span-2" />
+        <KpiCard
+          label="Previsão de cobrança" icon={WalletIcon} infoKey="Previsão de cobrança"
+          loading={wallet.isLoading}
+          value={totals?.forecast_cents != null ? fmtBRL(totals.forecast_cents / 100) : '—'}
+          hint={totals && totals.orgs_without_terms > 0 ? `${totals.orgs_without_terms} sem condições — fora do total` : undefined}
+        />
+        <KpiCard
+          label="Pendências" icon={AlertTriangle} infoKey="Pendências da carteira"
+          loading={wallet.isLoading}
+          value={totals?.pending_count != null ? fmtInt(totals.pending_count) : '—'}
+          tom={(totals?.pending_count ?? 0) > 0 ? 'warning' : undefined}
+          valueClassName={(totals?.pending_count ?? 0) > 0 ? 'text-warning' : undefined}
+          onClick={() => setSomentePendencias((v) => !v)}
+          ativo={somentePendencias}
+        />
+        <KpiCard
+          label="Organizações" icon={Building2} infoKey="Organizações da carteira" className="col-span-2 sm:col-span-1"
+          loading={wallet.isLoading}
+          value={fmtInt(totals?.org_count ?? 0)}
+        />
       </div>
-      {overview.data?.warnings.map((warning) => (
-        <p key={warning} className="mt-2 text-sm text-muted-foreground">{warning}</p>
-      ))}
 
-      <Card className="mt-4">
-        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[minmax(16rem,1fr)_auto_auto_auto]">
-          <Input
-            aria-label="Buscar organizações"
-            placeholder="Buscar por nome ou slug"
-            value={search}
-            onChange={(event) => { setSearch(event.target.value); setPage(1); }}
-          />
-          <label className="flex items-center gap-2 text-sm" htmlFor="include-test-organizations">
-            <Checkbox
-              id="include-test-organizations"
-              checked={includeTest}
-              onCheckedChange={(checked) => { setIncludeTest(checked === true); setPage(1); }}
-            />
-            Incluir testes
-          </label>
-          <select
-            aria-label="Ordenar organizações"
-            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
-            value={sort}
-            onChange={(event) => { setSort(event.target.value as typeof sort); setPage(1); }}
-          >
-            <option value="name">Nome</option>
-            <option value="slug">Slug</option>
-            <option value="gross_desc">Maior faturamento</option>
-          </select>
-          <label className="flex items-center gap-2 text-sm" htmlFor="wallet-month">
-            <span>Mês</span>
-            <Input
-              id="wallet-month"
-              type="month"
-              aria-label="Mês da carteira"
-              value={month}
-              onChange={(event) => setSearchParams((previous) => {
-                const next = new URLSearchParams(previous);
-                next.set('mes', event.target.value);
-                return next;
-              })}
-            />
-          </label>
-        </CardContent>
-      </Card>
-
-      {(overview.isError || organizations.isError) && (
-        <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
-          Não foi possível carregar a carteira. Tente novamente.
-        </p>
+      {wallet.data && itensAtencao.length > 0 && (
+        <div className="mb-4">
+          <h2 className="mb-2 text-sm font-medium text-muted-foreground">Precisa da sua atenção</h2>
+          <div className="flex flex-col gap-2">
+            {itensAtencao.map((item) => (
+              <div key={item.chave} className="flex items-center justify-between gap-3 rounded-xl border border-warning/40 bg-warning/5 px-4 py-3">
+                <span className="flex items-center gap-2 text-sm">
+                  <AlertTriangle className="h-4 w-4 shrink-0 text-warning" />
+                  {item.mensagem}
+                </span>
+                {item.acao && (
+                  item.acao.to ? (
+                    <Button asChild size="sm" variant="outline">
+                      <Link to={item.acao.to} aria-label={item.acao.ariaLabel}>
+                        {item.acao.rotulo} <ArrowRight className="ml-1 h-4 w-4" />
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button size="sm" aria-label={item.acao.ariaLabel} onClick={item.acao.onClick}>
+                      {item.acao.rotulo}
+                    </Button>
+                  )
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
-      <div className="mt-4 space-y-3" aria-label="Carteira de organizações">
-        <div className="hidden grid-cols-[minmax(12rem,1.5fr)_repeat(8,minmax(5rem,1fr))_auto] gap-3 px-4 text-xs font-medium text-muted-foreground lg:grid">
-          <span>Organização</span><span>Modalidade</span><span>Faturamento</span><span>Evolução</span>
-          <span>Markup</span><span>Cobertura</span><span>Pulse</span><span>Previsão</span><span>Pendências</span><span>Ações</span>
-        </div>
-        {organizations.isLoading ? (
-          <Card><CardContent className="p-4 text-sm text-muted-foreground">Carregando organizações…</CardContent></Card>
-        ) : orgs.length === 0 && !organizations.isError ? (
-          <Card><CardContent className="p-4 text-sm text-muted-foreground">Nenhuma organização encontrada.</CardContent></Card>
-        ) : orgs.map((org) => (
-          <OrganizationRow
-            key={org.id}
-            org={org}
-            month={month}
-            request={supportByOrg.get(org.id)}
-            cancellingRequestId={cancellingRequestId}
-            onCancel={cancelRequest}
-            onEnter={enterOperation}
-            onSupport={setSupportOrg}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-sm">
+          <Search aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            className="pl-8"
+            placeholder="Buscar por nome ou slug"
+            aria-label="Buscar organizações"
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
           />
-        ))}
-      </div>
-
-      <div className="mt-4 flex items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">Página {page} de {totalPages}</p>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Anterior</Button>
-          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>Próxima</Button>
         </div>
+        <div role="group" aria-label="Filtrar organizações" className="flex items-center gap-0.5 rounded-lg border bg-muted/40 p-0.5">
+          <Button size="sm" className="h-7" variant={!somentePendencias ? 'secondary' : 'ghost'} aria-pressed={!somentePendencias} onClick={() => setSomentePendencias(false)}>
+            Todas
+          </Button>
+          <Button size="sm" className="h-7" variant={somentePendencias ? 'secondary' : 'ghost'} aria-pressed={somentePendencias} onClick={() => setSomentePendencias(true)}>
+            Com pendências
+          </Button>
+        </div>
+        <label className="ml-auto flex items-center gap-2 text-sm" htmlFor="include-test-organizations">
+          <Checkbox
+            id="include-test-organizations"
+            checked={includeTest}
+            onCheckedChange={(checked) => { setIncludeTest(checked === true); setPage(1); }}
+          />
+          Incluir testes
+        </label>
       </div>
+      <p className="mb-2 text-xs text-muted-foreground">
+        {wallet.data?.total ?? 0} organizações · ordenadas por {sortLabel}
+      </p>
+
+      {wallet.isError && (
+        <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
+          Não foi possível carregar a carteira.{' '}
+          <Button variant="outline" size="sm" onClick={() => wallet.refetch()}>Tentar novamente</Button>
+        </div>
+      )}
+
+      <DataTable<OrgSummary>
+        className="bg-card"
+        columns={colunas}
+        rows={orgsVisiveis}
+        rowKey={(o) => o.id}
+        loading={wallet.isLoading}
+        skeletonRows={3}
+        onRowClick={(o) => navigate(`/admin/organizacoes/${o.id}?mes=${month}`)}
+        defaultSort={{ key: 'gross', dir: 'desc' }}
+        onSortChange={onSortChange}
+        empty={
+          search.trim() ? (
+            <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+              Nenhuma organização para “{search.trim()}”
+            </div>
+          ) : (
+            <EmptyState icon={Building2} title="Nenhuma organização encontrada" />
+          )
+        }
+      />
+
+      {wallet.data && wallet.data.total > PAGE_SIZE && (
+        <Pagination
+          paginaAtual={page}
+          totalPaginas={Math.max(1, Math.ceil(wallet.data.total / PAGE_SIZE))}
+          inicio={(page - 1) * PAGE_SIZE + 1}
+          fim={Math.min(page * PAGE_SIZE, wallet.data.total)}
+          total={wallet.data.total}
+          tamanho={PAGE_SIZE}
+          onIrPara={setPage}
+          onTamanho={() => undefined}
+          rotuloItem="organizações"
+          tamanhos={[PAGE_SIZE]}
+        />
+      )}
 
       <NovaOrgDialog
         open={novaOpen}
@@ -257,21 +571,6 @@ export default function Organizacoes() {
           qc.invalidateQueries({ queryKey: ['organizacoes'] }),
           qc.invalidateQueries({ queryKey: ['platform-admin'] }),
         ])}
-      />
-      <ExcluirOrgDialog
-        org={delOrg}
-        onClose={() => setDelOrg(null)}
-        onDeleted={() => qc.invalidateQueries({ queryKey: ['organizacoes'] })}
-      />
-      <CanaisOrgDialog
-        org={canaisOrg}
-        onClose={() => setCanaisOrg(null)}
-        onSaved={() => qc.invalidateQueries({ queryKey: ['organizacoes'] })}
-      />
-      <ModulosOrgDialog
-        org={modulosOrg}
-        onClose={() => setModulosOrg(null)}
-        onSaved={() => qc.invalidateQueries({ queryKey: ['organizacoes'] })}
       />
       <SupportRequestDialog
         org={supportOrg}
@@ -283,195 +582,6 @@ export default function Organizacoes() {
       />
       {support.isError && <p className="mt-2 text-sm text-destructive" role="alert">Não foi possível carregar o estado das solicitações.</p>}
     </div>
-  );
-}
-
-function OrganizationRow({ org, month, request, cancellingRequestId, onCancel, onEnter, onSupport }: {
-  org: OrgRow;
-  month: string;
-  request?: SupportRequest;
-  cancellingRequestId: string | null;
-  onCancel: (request: SupportRequest) => Promise<void>;
-  onEnter: (request: SupportRequest) => Promise<void>;
-  onSupport: (org: OrgRow) => void;
-}) {
-  const canStart = request?.status === 'approved'
-    && Boolean(request.approval_expires_at)
-    && new Date(request.approval_expires_at!).getTime() > Date.now();
-  const canRenew = request?.status === 'active'
-    && Boolean(request.expires_at)
-    && new Date(request.expires_at!).getTime() > Date.now()
-    && new Date(request.expires_at!).getTime() - Date.now() <= 15 * 60_000;
-  const actions = (
-    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
-      {request && <span className="text-xs text-muted-foreground">{supportStatus(request.status)} · {scopeLabel(request.scope)}</span>}
-      {request?.status === 'pending' && (
-        <Button variant="ghost" size="sm" disabled={cancellingRequestId === request.id} onClick={() => onCancel(request)}>
-          {cancellingRequestId === request.id ? 'Cancelando…' : 'Cancelar solicitação'}
-        </Button>
-      )}
-      {canStart ? (
-        <Button size="sm" onClick={() => onEnter(request)}>Entrar na operação</Button>
-      ) : canRenew ? (
-        <Button variant="outline" size="sm" onClick={() => onSupport(org)}>Solicitar renovação</Button>
-      ) : !request || !['pending', 'active'].includes(request.status) ? (
-        <Button variant="outline" size="sm" onClick={() => onSupport(org)}>Solicitar acesso</Button>
-      ) : null}
-      <Button asChild variant="ghost" size="sm">
-        <Link to={`/admin/organizacoes/${org.id}?mes=${month}`}>Ver organização {org.nome}</Link>
-      </Button>
-    </div>
-  );
-
-  const metricValues = [
-    ['Modalidade', org.modality == null ? unavailable : `Modalidade ${org.modality}`],
-    ['Faturamento', money(org.metrics?.gross_cents)],
-    ['Evolução', evolution(org)],
-    ['Markup da organização', org.metrics?.markup == null ? unavailable : `${org.metrics.markup.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}x`],
-    ['Cobertura', coverage(org)],
-    ['Pulse', number(org.billable_units)],
-    ['Previsão', money(org.forecast_cents)],
-    ['Pendências da organização', number(org.pending_count)],
-  ];
-
-  return (
-    <Card>
-      <CardContent className="p-4">
-        <div className="grid gap-4 lg:grid-cols-[minmax(12rem,1.5fr)_repeat(8,minmax(5rem,1fr))_auto] lg:items-center lg:gap-3">
-          <div>
-            <div className="flex items-center gap-2 font-medium">{org.nome}{org.is_test && <Badge variant="outline">Teste</Badge>}</div>
-            <p className="text-xs text-muted-foreground">{org.slug}</p>
-          </div>
-          {metricValues.map(([label, value]) => (
-            <div key={label} className="flex justify-between gap-3 text-sm lg:block">
-              <span className="text-muted-foreground lg:sr-only">{label}</span>
-              <span className="tabular-nums">{value}</span>
-            </div>
-          ))}
-          <div className="pt-2 lg:pt-0">{actions}</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-const supportStatus = (status: SupportRequest['status']) => ({
-  pending: 'Aguardando aprovação', approved: 'Aprovada', active: 'Acesso ativo', rejected: 'Rejeitada',
-  cancelled: 'Cancelada', expired: 'Expirada', revoked: 'Revogada', ended: 'Encerrada',
-})[status];
-
-const scopeLabel = (scope: SupportScope) => scope === 'read' ? 'Somente leitura' : 'Acesso total';
-
-function SupportRequestDialog({ org, onClose, onRequested }: {
-  org: OrgRow | null;
-  onClose: () => void;
-  onRequested: () => Promise<void>;
-}) {
-  const [reason, setReason] = useState('');
-  const [scope, setScope] = useState<SupportScope>('read');
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => { setReason(''); setScope('read'); setError(null); }, [org?.id]);
-
-  async function submit() {
-    if (!org) return;
-    if (!reason.trim()) {
-      setError('Informe o motivo do acesso.');
-      return;
-    }
-    setSaving(true);
-    setError(null);
-    try {
-      await requestSupport({ orgId: org.id, scope, reason: reason.trim() });
-      toast.success('Solicitação enviada para os administradores da organização.');
-      await onRequested();
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Não foi possível enviar a solicitação.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <Dialog open={!!org} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Solicitar acesso a {org?.nome}</DialogTitle><DialogDescription>O acesso só começa após aprovação de um administrador da organização.</DialogDescription></DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Escopo do acesso</p>
-            <label className="flex items-center gap-2 text-sm" htmlFor="support-scope-read">
-              <input id="support-scope-read" name="support-scope" type="radio" value="read" checked={scope === 'read'} onChange={() => setScope('read')} />
-              Somente leitura
-            </label>
-            <label className="flex items-center gap-2 text-sm" htmlFor="support-scope-full">
-              <input id="support-scope-full" name="support-scope" type="radio" value="full" checked={scope === 'full'} onChange={() => setScope('full')} />
-              Acesso total
-            </label>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium" htmlFor="support-reason">Motivo do acesso</label>
-            <textarea id="support-reason" className="min-h-24 w-full rounded-md border bg-background p-2 text-sm" value={reason} onChange={(event) => setReason(event.target.value)} required />
-          </div>
-          {error && <p className="text-sm text-destructive" role="alert" aria-live="polite">{error}</p>}
-          <p className="text-xs text-muted-foreground">A solicitação expira em 24 horas. Após aprovada, ela deve ser iniciada em até 1 hora.</p>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancelar</Button>
-          <Button onClick={submit} disabled={saving}>{saving ? 'Enviando…' : 'Enviar solicitação'}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function ExcluirOrgDialog({ org, onClose, onDeleted }: {
-  org: OrgRow | null;
-  onClose: () => void;
-  onDeleted: () => void;
-}) {
-  const [confirmSlug, setConfirmSlug] = useState('');
-  const [excluindo, setExcluindo] = useState(false);
-  useEffect(() => { setConfirmSlug(''); }, [org?.id]);
-
-  async function excluir() {
-    if (!org) return;
-    setExcluindo(true);
-    try {
-      await callUsuarios({ action: 'delete_org', org_id: org.id });
-      toast.success('✓ Empresa excluída');
-      onClose();
-      onDeleted();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao excluir empresa');
-    } finally {
-      setExcluindo(false);
-    }
-  }
-
-  return (
-    <Dialog open={!!org} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Excluir {org?.nome}</DialogTitle></DialogHeader>
-        <div className="flex flex-col gap-3 text-sm">
-          <p className="text-muted-foreground">
-            Isto apaga <strong>todos os dados</strong> da empresa (lotes, anúncios, vendas, usuários)
-            e <strong>não pode ser desfeito</strong>. Anúncios já publicados no marketplace <strong>não</strong> são
-            removidos de lá — só os registros locais.
-          </p>
-          <p className="text-muted-foreground">
-            Para confirmar, digite o slug <code className="rounded bg-muted px-1 text-foreground">{org?.slug}</code>:
-          </p>
-          <Input value={confirmSlug} onChange={(e) => setConfirmSlug(e.target.value)} placeholder={org?.slug} />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={excluindo}>Cancelar</Button>
-          <Button variant="destructive" onClick={excluir} disabled={confirmSlug !== org?.slug || excluindo}>
-            {excluindo ? 'Excluindo…' : 'Excluir empresa'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -524,130 +634,6 @@ function NovaOrgDialog({ open, onOpenChange, onCreated }: {
           <Button onClick={criar} disabled={!nome || !slug || !adminEmail || enviando}>
             {enviando ? 'Criando…' : 'Criar empresa'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// E6b (D-13): módulos pagos por org. Espelha CanaisOrgDialog, com uma diferença
-// proposital — não existe módulo obrigatório, lista vazia é o default de toda org.
-function ModulosOrgDialog({ org, onClose, onSaved }: {
-  org: OrgRow | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [modulos, setModulos] = useState<Set<string>>(new Set());
-  const [salvando, setSalvando] = useState(false);
-  useEffect(() => {
-    if (org) setModulos(new Set(org.modulos_habilitados ?? []));
-  }, [org]);
-
-  async function salvar() {
-    if (!org) return;
-    setSalvando(true);
-    try {
-      await callUsuarios({ action: 'set_modulos_org', org_id: org.id, modulos: [...modulos] });
-      toast.success('✓ Módulos atualizados');
-      onClose();
-      onSaved();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao salvar módulos');
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  return (
-    <Dialog open={!!org} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Módulos de {org?.nome}</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          Módulos pagos desta empresa. Desligar esconde o menu e faz as edges do módulo
-          recusarem chamadas dessa empresa — o dado já gravado não é apagado.
-        </p>
-        <div className="flex flex-col gap-2">
-          {MODULOS.map((m) => (
-            <label key={m.id} className="flex items-start gap-2 text-sm">
-              <Checkbox
-                className="mt-0.5"
-                checked={modulos.has(m.id)}
-                onCheckedChange={(v) => setModulos((prev) => {
-                  const novo = new Set(prev);
-                  if (v === true) novo.add(m.id); else novo.delete(m.id);
-                  return novo;
-                })}
-              />
-              <span>
-                {m.nome}
-                <span className="block text-xs text-muted-foreground">{m.descricao}</span>
-              </span>
-            </label>
-          ))}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={salvando}>Cancelar</Button>
-          <Button onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function CanaisOrgDialog({ org, onClose, onSaved }: {
-  org: OrgRow | null;
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [canais, setCanais] = useState<Set<string>>(new Set(['mercado_livre']));
-  const [salvando, setSalvando] = useState(false);
-  useEffect(() => {
-    if (org) setCanais(new Set(org.canais_habilitados ?? ['mercado_livre']));
-  }, [org]);
-
-  async function salvar() {
-    if (!org) return;
-    setSalvando(true);
-    try {
-      await callUsuarios({ action: 'set_canais_org', org_id: org.id, canais: [...canais] });
-      toast.success('✓ Canais atualizados');
-      onClose();
-      onSaved();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao salvar canais');
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  return (
-    <Dialog open={!!org} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent>
-        <DialogHeader><DialogTitle>Canais de {org?.nome}</DialogTitle></DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          Canais que esta empresa enxerga como conectáveis. Canal "em breve" no produto continua
-          em breve mesmo habilitado aqui — isto controla o rollout quando o canal for lançado.
-        </p>
-        <div className="flex flex-col gap-2">
-          {LISTA_CANAIS.map((c) => (
-            <label key={c.id} className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={canais.has(c.id)}
-                disabled={c.id === 'mercado_livre'}
-                onCheckedChange={(v) => setCanais((prev) => {
-                  const novo = new Set(prev);
-                  if (v === true) novo.add(c.id); else novo.delete(c.id);
-                  return novo;
-                })}
-              />
-              {c.nome}
-              {c.id === 'mercado_livre' && <span className="text-xs text-muted-foreground">(sempre ativo)</span>}
-            </label>
-          ))}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={salvando}>Cancelar</Button>
-          <Button onClick={salvar} disabled={salvando}>{salvando ? 'Salvando…' : 'Salvar'}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
