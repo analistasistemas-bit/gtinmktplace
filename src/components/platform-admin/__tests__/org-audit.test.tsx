@@ -112,4 +112,43 @@ describe('OrgAudit', () => {
 
     expect(mocks.useAudit).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'admin', page: 1 }));
   });
+
+  it('traduz o resultado técnico e nunca mostra o valor cru em inglês na pill', () => {
+    mocks.useAudit.mockReturnValue({
+      data: makePage([makeRow({ result: 'succeeded' })]),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<OrgAudit orgId="org-a" month="2026-09" />);
+
+    expect(screen.getByText('Sucesso (suporte)')).toBeInTheDocument();
+    expect(screen.queryByText('succeeded')).not.toBeInTheDocument();
+  });
+
+  it('filtro de resultado é um select com opções reais, não texto livre em inglês', async () => {
+    const user = userEvent.setup();
+    mocks.useAudit.mockReturnValue({ data: makePage([makeRow()]), isLoading: false, isError: false, refetch: vi.fn() });
+
+    render(<OrgAudit orgId="org-a" month="2026-09" />);
+
+    expect(screen.queryByPlaceholderText('Ex.: success')).not.toBeInTheDocument();
+    screen.getByRole('combobox', { name: 'Resultado' }).focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('option', { name: 'Sucesso (suporte)' });
+    await user.keyboard('{ArrowDown}{Enter}');
+
+    expect(mocks.useAudit).toHaveBeenLastCalledWith(expect.objectContaining({ result: 'success', page: 1 }));
+  });
+
+  it('filtro de Responsável deixa claro que exige o UUID, não o nome', () => {
+    mocks.useAudit.mockReturnValue({ data: makePage([makeRow()]), isLoading: false, isError: false, refetch: vi.fn() });
+
+    render(<OrgAudit orgId="org-a" month="2026-09" />);
+
+    const input = screen.getByRole('textbox', { name: 'Responsável' });
+    expect(input).toHaveAttribute('placeholder', 'UUID do responsável');
+    expect(input.getAttribute('title')).toMatch(/UUID/);
+  });
 });

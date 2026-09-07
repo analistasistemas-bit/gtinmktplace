@@ -194,6 +194,35 @@ describe('Organizacoes', () => {
     expect(await screen.findByText('2')).toBeInTheDocument();
   });
 
+  it('nenhuma org com condição comercial: Previsão de cobrança vira — (nunca R$ 0,00)', async () => {
+    const org = makeOrg({ id: 'sem-termos', nome: 'SemTermos', modality: null, forecast_cents: null, pending_count: null });
+    usePlatformWallet.mockReturnValue(makeWallet([org], {
+      data: {
+        rows: [org], total: 1, page: 1, page_size: 10,
+        totals: makeTotals({ forecast_cents: 0, orgs_without_terms: 1, org_count: 1 }),
+      },
+    }));
+    renderPage();
+
+    expect(await screen.findByTitle('Nenhuma organização tem condição comercial vigente — sem base para prever')).toBeInTheDocument();
+    expect(screen.queryByText('R$ 0,00')).not.toBeInTheDocument();
+  });
+
+  it('orgs com condição comercial somando zero: Previsão de cobrança continua R$ 0,00', async () => {
+    const org = makeOrg({ forecast_cents: 0 });
+    usePlatformWallet.mockReturnValue(makeWallet([org], {
+      data: {
+        rows: [org], total: 1, page: 1, page_size: 10,
+        totals: makeTotals({ forecast_cents: 0, orgs_without_terms: 0, org_count: 1 }),
+      },
+    }));
+    renderPage();
+
+    // "R$ 0,00" aparece tanto no KPI quanto na coluna "Previsão" da linha — ambos legítimos aqui.
+    expect((await screen.findAllByText('R$ 0,00')).length).toBeGreaterThan(0);
+    expect(screen.queryByTitle('Nenhuma organização tem condição comercial vigente — sem base para prever')).not.toBeInTheDocument();
+  });
+
   it('debounca a busca: digitar várias teclas não dispara uma chamada por caractere', () => {
     vi.useFakeTimers();
     renderPage();

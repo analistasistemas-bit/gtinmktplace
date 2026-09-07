@@ -13,12 +13,31 @@ import type { AuditRow } from '@/lib/platform-admin';
 
 const PAGE_SIZE = 20;
 const CATEGORIA_TODAS = '__todas';
+const RESULTADO_TODOS = '__todos';
 
 const CATEGORIAS: Record<AuditRow['category'], string> = {
   admin: 'Administração',
   billing: 'Cobrança',
   pulse: 'Pulse',
   support: 'Suporte',
+};
+
+/**
+ * `result` é texto livre gravado por origens diferentes (platform_audit_events, eventos do
+ * Sonar, eventos de suporte) — sem CHECK no banco, e o filtro compara igualdade exata (ver
+ * `repository.ts`). Esta lista cobre os valores reais em uso hoje, traduzidos; se uma ação nova
+ * passar a gravar outro valor, ele fica invisível no filtro até alguém adicionar aqui (não há
+ * como listar dinamicamente sem uma consulta extra ao backend, fora do escopo desta correção).
+ */
+const RESULTADOS: Record<string, string> = {
+  success: 'Sucesso (admin/cobrança)',
+  succeeded: 'Sucesso (suporte)',
+  failure: 'Falha (admin)',
+  failed: 'Falha (suporte)',
+  denied: 'Negado (suporte)',
+  intent: 'Iniciado (admin)',
+  ready: 'Concluído (Sonar)',
+  partial: 'Parcial (Sonar)',
 };
 
 function resultTone(result: string): 'success' | 'danger' | 'neutral' {
@@ -47,8 +66,11 @@ export function OrgAudit({ orgId, month }: { orgId: string; month: string }) {
     { key: 'at', header: 'Data', cell: (row) => new Date(row.at).toLocaleString('pt-BR') },
     { key: 'category', header: 'Categoria', cell: (row) => <StatusPill tone="neutral">{CATEGORIAS[row.category]}</StatusPill> },
     { key: 'action', header: 'Ação', cell: (row) => <code className="text-xs">{row.action}</code> },
-    { key: 'actor', header: 'Responsável', cell: (row) => row.actor_name ?? 'Sistema' },
-    { key: 'result', header: 'Resultado', cell: (row) => <StatusPill tone={resultTone(row.result)}>{row.result}</StatusPill> },
+    {
+      key: 'actor', header: 'Responsável',
+      cell: (row) => <span title={row.actor_id ? `UUID: ${row.actor_id}` : undefined}>{row.actor_name ?? 'Sistema'}</span>,
+    },
+    { key: 'result', header: 'Resultado', cell: (row) => <StatusPill tone={resultTone(row.result)}>{RESULTADOS[row.result] ?? row.result}</StatusPill> },
     { key: 'target', header: 'Alvo', cell: (row) => row.target ?? '—' },
     {
       key: 'details',
@@ -100,15 +122,23 @@ export function OrgAudit({ orgId, month }: { orgId: string; month: string }) {
           aria-label="Responsável"
           value={actorId}
           onChange={(event) => { setActorId(event.target.value); setPage(1); }}
-          placeholder="ID do usuário"
+          placeholder="UUID do responsável"
+          title="Filtra pelo UUID exato do responsável — passe o mouse sobre o nome na coluna Responsável para ver o dele."
         />
-        <Input
-          className="h-8 w-48"
-          aria-label="Resultado"
-          value={result}
-          onChange={(event) => { setResult(event.target.value); setPage(1); }}
-          placeholder="Ex.: success"
-        />
+        <Select
+          value={result || RESULTADO_TODOS}
+          onValueChange={(value) => { setResult(value === RESULTADO_TODOS ? '' : value); setPage(1); }}
+        >
+          <SelectTrigger aria-label="Resultado" className="h-8 w-[11rem]">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={RESULTADO_TODOS}>Todos</SelectItem>
+            {Object.entries(RESULTADOS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>{label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {query.isError && (

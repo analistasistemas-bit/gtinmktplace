@@ -443,7 +443,11 @@ export default function Organizacoes() {
         <KpiCard
           label="Previsão de cobrança" icon={WalletIcon} infoKey="Previsão de cobrança"
           loading={wallet.isLoading}
-          value={totals?.forecast_cents != null ? fmtBRL(totals.forecast_cents / 100) : '—'}
+          value={
+            totals && totals.org_count > 0 && totals.orgs_without_terms >= totals.org_count
+              ? <span title="Nenhuma organização tem condição comercial vigente — sem base para prever">—</span>
+              : totals?.forecast_cents != null ? fmtBRL(totals.forecast_cents / 100) : '—'
+          }
           hint={totals && totals.orgs_without_terms > 0 ? `${totals.orgs_without_terms} sem condições — fora do total` : undefined}
         />
         <KpiCard

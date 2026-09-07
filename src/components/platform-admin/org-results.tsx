@@ -6,7 +6,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { KpiCard, type DeltaTrend } from '@/components/ui/kpi-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { usePlatformMetrics } from '@/hooks/usePlatformAdmin';
-import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
+import { fmtBRL, fmtInt, fmtMarkup, fmtMilhar } from '@/lib/formato';
 
 const money = (cents: number | null | undefined) => cents == null ? '—' : fmtBRL(cents / 100);
 
@@ -97,8 +97,8 @@ export function OrgResults({ orgId, month }: { orgId: string; month: string }) {
                     <YAxis
                       tick={{ fontSize: 11 }}
                       stroke="var(--muted-foreground)"
-                      tickFormatter={(value) => money(Number(value))}
-                      width={72}
+                      tickFormatter={(value) => fmtMilhar(Number(value) / 100)}
+                      width={48}
                     />
                     <Tooltip formatter={(value) => [money(Number(value)), 'Faturamento']} />
                     <Line type="monotone" dataKey="gross_cents" stroke="var(--primary)" strokeWidth={2} dot={false} />

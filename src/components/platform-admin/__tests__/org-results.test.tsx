@@ -2,6 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrgResults } from '../org-results';
 import type { OrgMetrics } from '@/lib/platform-admin';
+import { fmtMilhar } from '@/lib/formato';
 
 const mocks = vi.hoisted(() => ({ useMetrics: vi.fn(), refetch: vi.fn() }));
 
@@ -88,5 +89,22 @@ describe('OrgResults', () => {
     render(<OrgResults orgId="org-a" month="2026-08" />);
     expect(screen.getByText('Configuração tributária não confirmada')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  // Recharts não desenha eixos em jsdom (ResponsiveContainer fica em 0x0, sem ResizeObserver
+  // real) — não dá para inspecionar o SVG do eixo aqui. O que se verifica: o gráfico renderiza
+  // sem quebrar com um valor largo (80 mil reais, o caso que cortava "R$" em produção), e a
+  // fórmula exata usada no `tickFormatter` (fmtMilhar em reais, não fmtBRL em centavos) produz um
+  // rótulo curto que nunca começa com "R$" — `fmtMilhar` já tem cobertura própria em
+  // `formato.test.ts` para os valores-limite (mil/milhão).
+  it('gráfico renderiza com valor largo (80 mil) sem quebrar, e o eixo usa formato compacto', () => {
+    mocks.useMetrics.mockReturnValue({
+      data: makeMetrics({ series: [{ month: '2026-08', gross_cents: 8_000_000, markup: 0.44 }] }),
+      isLoading: false, isError: false, refetch: mocks.refetch,
+    });
+    render(<OrgResults orgId="org-a" month="2026-08" />);
+    expect(screen.getByRole('img', { name: 'Faturamento bruto dos últimos seis meses' })).toBeInTheDocument();
+    expect(fmtMilhar(8_000_000 / 100)).toBe('80 mil');
+    expect(fmtMilhar(8_000_000 / 100).startsWith('R$')).toBe(false);
   });
 });
