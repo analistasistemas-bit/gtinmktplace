@@ -80,6 +80,7 @@ describe('CommercialTermsForm', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-zero" current={current} onSaved={vi.fn()} />);
 
+    await user.click(screen.getByText('Renegociar'));
     expect(screen.queryByLabelText('Início da vigência')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Motivo'), 'ajuste futuro');
     await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
@@ -94,6 +95,7 @@ describe('CommercialTermsForm', () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-zero" current={current} onSaved={vi.fn()} />);
 
+    await user.click(screen.getByText('Renegociar'));
     const monthly = screen.getByLabelText('Infraestrutura mensal');
     await user.clear(monthly);
     await user.type(monthly, '0');
@@ -136,6 +138,20 @@ describe('CommercialTermsForm', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('no máximo duas casas decimais');
     expect(mocks.save).not.toHaveBeenCalled();
+  });
+
+  it('com condição vigente, o card abre recolhido com o resumo e "Renegociar"', () => {
+    render(<CommercialTermsForm orgId="org-zero" current={current} onSaved={vi.fn()} />);
+
+    expect(screen.getByText('Renegociar')).toBeInTheDocument();
+    expect(screen.getByText('Modalidade 1 · 0,00% sobre receita · desde 2026-09-01')).toBeInTheDocument();
+  });
+
+  it('sem condição vigente (primeiro contrato), o card abre aberto', () => {
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    expect(screen.queryByText('Renegociar')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Motivo')).toBeVisible();
   });
 
   it('mostra histórico vigente, futuro e anterior', () => {

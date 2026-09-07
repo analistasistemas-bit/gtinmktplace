@@ -1,6 +1,33 @@
 import { supabase } from '@/lib/supabase';
+import type { CommercialTerms } from '../../supabase/functions/_shared/platform-admin/types';
 
 export * from '../../supabase/functions/_shared/platform-admin/types';
+
+function fortalezaDateParts(now = new Date()): { year: number; month: number; day: number } {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Fortaleza',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+  return { year: value('year'), month: value('month'), day: value('day') };
+}
+
+export function todayInFortaleza(now = new Date()): string {
+  const { year, month, day } = fortalezaDateParts(now);
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+/** Condição vigente hoje (não confundir com a condição resolvida para o mês da prévia, que pode
+ *  ser passado). Usada por `org-billing.tsx` (decide se o card de condições abre recolhido) e por
+ *  `commercial-terms-form.tsx` (classifica o histórico como Vigente/Anterior). */
+export function effectiveTerm(rows: CommercialTerms[], today: string): CommercialTerms | null {
+  return rows
+    .filter((row) => row.starts_on <= today)
+    .sort((a, b) => b.starts_on.localeCompare(a.starts_on) || b.version - a.version)[0] ?? null;
+}
 
 export type PlatformAdminError = Error & { code?: string };
 

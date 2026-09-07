@@ -1,21 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Skeleton } from '@/components/ui/skeleton';
 import { LISTA_CANAIS } from '@/lib/canais';
 import { MODULOS } from '@/lib/modulos';
 import { supabase } from '@/lib/supabase';
-import {
-  cancelSupport,
-  listSupportRequests,
-  requestSupport,
-  type SupportRequest,
-  type SupportScope,
-} from '@/lib/suporte';
-import { useSupportStore } from '@/stores/support-store';
 
 type OrgRow = {
   id: string;
@@ -45,28 +38,17 @@ async function callUsuarios(body: Record<string, unknown>) {
   return data;
 }
 
-const supportStatus = (status: SupportRequest['status']) => ({
-  pending: 'Aguardando aprovação',
-  approved: 'Aprovada',
-  active: 'Acesso ativo',
-  rejected: 'Rejeitada',
-  cancelled: 'Cancelada',
-  expired: 'Expirada',
-  revoked: 'Revogada',
-  ended: 'Encerrada',
-})[status];
-
+// Sucesso e erro nunca dividem o mesmo slot: cada card guarda o próprio estado, "✓ Salvo" some
+// sozinho em 3s, erro fica preso no card que falhou até a próxima tentativa.
 export function OrgSettings({ orgId }: { orgId: string }) {
   const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const startSupport = useSupportStore((state) => state.start);
   const [channels, setChannels] = useState<Set<string>>(new Set(['mercado_livre']));
   const [modules, setModules] = useState<Set<string>>(new Set());
   const [personType, setPersonType] = useState<'pf' | 'pj'>('pf');
-  const [scope, setScope] = useState<SupportScope>('read');
-  const [reason, setReason] = useState('');
   const [saving, setSaving] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [savedKey, setSavedKey] = useState<string | null>(null);
+  const [error, setError] = useState<{ key: string; message: string } | null>(null);
+  const savedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const organizations = useQuery({
     queryKey: ['organizacoes'],
@@ -77,13 +59,6 @@ export function OrgSettings({ orgId }: { orgId: string }) {
   });
   const org = organizations.data?.find((item) => item.id === orgId) ?? null;
 
-  const support = useQuery({
-    queryKey: ['support-requests', orgId],
-    queryFn: () => listSupportRequests({ orgId, page: 1, pageSize: 50, status: 'actionable' }),
-    enabled: Boolean(orgId),
-  });
-  const request = support.data?.requests[0] ?? null;
-
   useEffect(() => {
     if (!org) return;
     setChannels(new Set(org.canais_habilitados ?? ['mercado_livre']));
@@ -91,93 +66,87 @@ export function OrgSettings({ orgId }: { orgId: string }) {
     setPersonType(org.tipo_pessoa ?? 'pf');
   }, [org]);
 
-  async function run(key: string, action: () => Promise<unknown>, success: string) {
+  useEffect(() => () => { if (savedTimer.current) clearTimeout(savedTimer.current); }, []);
+
+  async function run(key: string, action: () => Promise<unknown>, successMessage: string) {
     setSaving(key);
     setError(null);
     try {
       await action();
       await queryClient.invalidateQueries({ queryKey: ['organizacoes'] });
-      setError(success);
+      toast.success(`✓ ${successMessage}`);
+      setSavedKey(key);
+      if (savedTimer.current) clearTimeout(savedTimer.current);
+      savedTimer.current = setTimeout(() => setSavedKey(null), 3000);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Não foi possível salvar a configuração.');
+      setError({ key, message: caught instanceof Error ? caught.message : 'Não foi possível salvar a configuração.' });
     } finally {
       setSaving(null);
     }
   }
 
-  async function sendSupportRequest() {
-    if (!reason.trim()) {
-      setError('Informe o motivo do acesso.');
-      return;
-    }
-    await run(
-      'support',
-      () => requestSupport({ orgId, scope, reason: reason.trim() }),
-      'Solicitação de suporte enviada.',
+  function cardFooter(key: string) {
+    return (
+      <div className="flex items-center gap-3">
+        {savedKey === key && <span role="status" className="text-xs text-success">✓ Salvo</span>}
+      </div>
     );
-    setReason('');
-    await queryClient.invalidateQueries({ queryKey: ['support-requests', orgId] });
-  }
-
-  async function cancelRequest() {
-    if (!request) return;
-    await run('support', () => cancelSupport(request.id), 'Solicitação cancelada.');
-    await queryClient.invalidateQueries({ queryKey: ['support-requests', orgId] });
-  }
-
-  async function enterOperation() {
-    if (!request) return;
-    setSaving('support');
-    setError(null);
-    try {
-      await startSupport(request.id);
-      navigate('/');
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Não foi possível iniciar o suporte.');
-      await queryClient.invalidateQueries({ queryKey: ['support-requests', orgId] });
-    } finally {
-      setSaving(null);
-    }
   }
 
   if (organizations.isLoading) {
-    return <p className="text-sm text-muted-foreground">Carregando configurações…</p>;
+    return (
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Skeleton className="h-48 rounded-lg" />
+        <Skeleton className="h-48 rounded-lg" />
+        <Skeleton className="h-48 rounded-lg" />
+      </div>
+    );
+  }
+  if (organizations.isError) {
+    return (
+      <div className="rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
+        Não foi possível carregar as configurações.{' '}
+        <Button variant="outline" size="sm" onClick={() => organizations.refetch()}>Tentar novamente</Button>
+      </div>
+    );
   }
   if (!org) {
     return <p className="text-sm text-destructive" role="alert">Organização não encontrada.</p>;
   }
-
-  const canStart = request?.status === 'approved'
-    && Boolean(request.approval_expires_at)
-    && new Date(request.approval_expires_at!).getTime() > Date.now();
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <Card>
         <CardHeader><CardTitle>Cadastro</CardTitle></CardHeader>
         <CardContent className="space-y-4">
-          <label className="block space-y-1 text-sm">
-            <span className="font-medium">Tipo de pessoa</span>
-            <select
-              aria-label="Tipo de pessoa"
-              className="h-9 w-full rounded-md border border-input bg-transparent px-3"
-              value={personType}
-              onChange={(event) => setPersonType(event.target.value as 'pf' | 'pj')}
+          <div className="space-y-1 text-sm">
+            <span id="org-person-type-label" className="font-medium">Tipo de pessoa</span>
+            <Select value={personType} onValueChange={(value) => setPersonType(value as 'pf' | 'pj')}>
+              <SelectTrigger aria-labelledby="org-person-type-label" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pf">Pessoa física</SelectItem>
+                <SelectItem value="pj">Pessoa jurídica</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {error?.key === 'person' && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error.message}</p>
+          )}
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => run(
+                'person',
+                () => callUsuarios({ action: 'set_tipo_pessoa_org', org_id: orgId, tipo_pessoa: personType }),
+                'Tipo de pessoa atualizado.',
+              )}
+              disabled={saving === 'person'}
             >
-              <option value="pf">Pessoa física</option>
-              <option value="pj">Pessoa jurídica</option>
-            </select>
-          </label>
-          <Button
-            onClick={() => run(
-              'person',
-              () => callUsuarios({ action: 'set_tipo_pessoa_org', org_id: orgId, tipo_pessoa: personType }),
-              'Tipo de pessoa atualizado.',
-            )}
-            disabled={saving === 'person'}
-          >
-            Salvar cadastro
-          </Button>
+              Salvar cadastro
+            </Button>
+            {cardFooter('person')}
+          </div>
         </CardContent>
       </Card>
 
@@ -200,16 +169,22 @@ export function OrgSettings({ orgId }: { orgId: string }) {
               </label>
             ))}
           </div>
-          <Button
-            onClick={() => run(
-              'channels',
-              () => callUsuarios({ action: 'set_canais_org', org_id: orgId, canais: [...channels] }),
-              'Canais atualizados.',
-            )}
-            disabled={saving === 'channels'}
-          >
-            Salvar canais
-          </Button>
+          {error?.key === 'channels' && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error.message}</p>
+          )}
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => run(
+                'channels',
+                () => callUsuarios({ action: 'set_canais_org', org_id: orgId, canais: [...channels] }),
+                'Canais atualizados.',
+              )}
+              disabled={saving === 'channels'}
+            >
+              Salvar canais
+            </Button>
+            {cardFooter('channels')}
+          </div>
         </CardContent>
       </Card>
 
@@ -231,54 +206,24 @@ export function OrgSettings({ orgId }: { orgId: string }) {
               </label>
             ))}
           </div>
-          <Button
-            onClick={() => run(
-              'modules',
-              () => callUsuarios({ action: 'set_modulos_org', org_id: orgId, modulos: [...modules] }),
-              'Módulos atualizados.',
-            )}
-            disabled={saving === 'modules'}
-          >
-            Salvar módulos
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader><CardTitle>Suporte operacional</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
-          {request && <p className="text-sm">{supportStatus(request.status)} · {request.scope === 'read' ? 'Somente leitura' : 'Acesso total'}</p>}
-          {request?.status === 'pending' ? (
-            <Button variant="outline" onClick={cancelRequest} disabled={saving === 'support'}>
-              Cancelar solicitação
+          {error?.key === 'modules' && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error.message}</p>
+          )}
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => run(
+                'modules',
+                () => callUsuarios({ action: 'set_modulos_org', org_id: orgId, modulos: [...modules] }),
+                'Módulos atualizados.',
+              )}
+              disabled={saving === 'modules'}
+            >
+              Salvar módulos
             </Button>
-          ) : canStart ? (
-            <Button onClick={enterOperation} disabled={saving === 'support'}>Entrar na operação</Button>
-          ) : !request || !['pending', 'active'].includes(request.status) ? (
-            <>
-              <label className="block space-y-1 text-sm">
-                <span className="font-medium">Escopo do acesso</span>
-                <select
-                  aria-label="Escopo do acesso"
-                  className="h-9 w-full rounded-md border border-input bg-transparent px-3"
-                  value={scope}
-                  onChange={(event) => setScope(event.target.value as SupportScope)}
-                >
-                  <option value="read">Somente leitura</option>
-                  <option value="full">Acesso total</option>
-                </select>
-              </label>
-              <label className="block space-y-1 text-sm" htmlFor="support-reason">
-                <span className="font-medium">Motivo do acesso</span>
-                <Input id="support-reason" aria-label="Motivo do acesso" value={reason} onChange={(event) => setReason(event.target.value)} />
-              </label>
-              <Button onClick={sendSupportRequest} disabled={saving === 'support'}>Solicitar acesso</Button>
-            </>
-          ) : null}
+            {cardFooter('modules')}
+          </div>
         </CardContent>
       </Card>
-
-      {error && <p role="status" className="text-sm lg:col-span-2">{error}</p>}
     </div>
   );
 }

@@ -7,23 +7,33 @@ import type { BillingPreview, BillingStatement, CommercialTerms } from '@/lib/pl
 const mocks = vi.hoisted(() => ({
   close: vi.fn(),
   reconcile: vi.fn(),
+  save: vi.fn(),
   refetch: vi.fn(),
   usePreview: vi.fn(),
   useStatements: vi.fn(),
+  useTerms: vi.fn(),
   report: null as unknown,
 }));
 
 vi.mock('@/hooks/usePlatformAdmin', () => ({
   usePlatformPreview: mocks.usePreview,
   usePlatformStatements: mocks.useStatements,
+  usePlatformTerms: mocks.useTerms,
   useClosePlatformStatement: () => ({ mutateAsync: mocks.close, isPending: false }),
   useReconcilePlatformRevenue: () => ({ mutateAsync: mocks.reconcile, isPending: false }),
+  useSavePlatformTerms: () => ({ mutateAsync: mocks.save, isPending: false }),
 }));
 
 vi.mock('@/components/export/botao-exportar', () => ({
   BotaoExportar: ({ montarReport }: { montarReport: (config: object) => unknown }) => (
     <button onClick={() => { mocks.report = montarReport({ formato: 'pdf' }); }}>Exportar snapshot</button>
   ),
+}));
+
+const toastSuccess = vi.fn();
+const toastError = vi.fn();
+vi.mock('sonner', () => ({
+  toast: { success: (...a: unknown[]) => toastSuccess(...a), error: (...a: unknown[]) => toastError(...a) },
 }));
 
 const terms: CommercialTerms = {
@@ -86,8 +96,11 @@ beforeEach(() => {
   vi.setSystemTime(new Date('2026-09-06T15:00:00Z'));
   mocks.close.mockReset().mockResolvedValue(makeStatement());
   mocks.reconcile.mockReset().mockResolvedValue({ id: 'reconciliation-1' });
+  mocks.save.mockReset().mockResolvedValue(terms);
   mocks.refetch.mockReset().mockResolvedValue({ data: makePreview() });
   mocks.report = null;
+  toastSuccess.mockReset();
+  toastError.mockReset();
   mocks.usePreview.mockReturnValue({
     data: makePreview(),
     isLoading: false,
@@ -97,6 +110,12 @@ beforeEach(() => {
   mocks.useStatements.mockReturnValue({
     data: { rows: [makeStatement()], total: 1, page: 1, page_size: 20 },
     isLoading: false,
+  });
+  mocks.useTerms.mockReturnValue({
+    data: { rows: [terms] },
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
   });
 });
 
@@ -131,7 +150,7 @@ describe('OrgBilling', () => {
 
     await waitFor(() => expect(mocks.refetch).toHaveBeenCalledTimes(1));
     expect(screen.queryByText('Confirmar fechamento de 2026-08')).not.toBeInTheDocument();
-    expect(screen.getByText(/Revise os novos valores/)).toBeInTheDocument();
+    expect(toastError).toHaveBeenCalledWith('A prévia mudou. Revise os novos valores e confirme novamente.');
     expect(mocks.close).toHaveBeenCalledTimes(1);
   });
 
@@ -191,5 +210,30 @@ describe('OrgBilling', () => {
 
     expect(screen.getByRole('button', { name: 'Fechar demonstrativo' })).toBeDisabled();
     expect(screen.getAllByText('Crédito a favor da organização').length).toBeGreaterThan(0);
+  });
+
+  it('sem condições comerciais: formulário aberto, pill de aviso e bloqueio listado', () => {
+    mocks.useTerms.mockReturnValue({ data: { rows: [] }, isLoading: false, isError: false, refetch: vi.fn() });
+    mocks.usePreview.mockReturnValue({
+      data: makePreview({
+        terms: null,
+        blockers: [{ code: 'commercial_terms_required', message: 'Condição comercial ausente' }],
+      }),
+      isLoading: false,
+      refetch: mocks.refetch,
+    });
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+
+    expect(screen.getByText('Sem condições comerciais')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Salvar condições' })).toBeInTheDocument();
+    expect(screen.getByText('Condição comercial ausente')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fechar demonstrativo' })).toBeDisabled();
+  });
+
+  it('pronta para fechar: condições vigentes, sem bloqueios e mês encerrado', () => {
+    render(<OrgBilling orgId="org-a" month="2026-08" />);
+
+    expect(screen.getByText('Pronta para fechar')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Fechar demonstrativo' })).toBeEnabled();
   });
 });

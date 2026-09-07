@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { usePlatformTerms, useSavePlatformTerms } from '@/hooks/usePlatformAdmin';
-import type { CommercialTerms } from '@/lib/platform-admin';
+import { effectiveTerm, todayInFortaleza, type CommercialTerms } from '@/lib/platform-admin';
 
 type Props = {
   orgId: string;
@@ -79,10 +80,12 @@ function historyStatus(
   today: string,
 ): 'Vigente' | 'Futura' | 'Anterior' {
   if (term.starts_on > today) return 'Futura';
-  const effective = rows
-    .filter((row) => row.starts_on <= today)
-    .sort((a, b) => b.starts_on.localeCompare(a.starts_on) || b.version - a.version)[0];
+  const effective = effectiveTerm(rows, today);
   return effective?.id === term.id ? 'Vigente' : 'Anterior';
+}
+
+function toneForStatus(status: 'Vigente' | 'Futura' | 'Anterior'): StatusTone {
+  return status === 'Vigente' ? 'success' : status === 'Futura' ? 'info' : 'neutral';
 }
 
 export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
@@ -91,10 +94,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
   const isFirstContract = current === null;
   const [startsOn, setStartsOn] = useState(nextMonth);
   const effectiveStartsOn = isFirstContract ? startsOn : nextMonth;
-  const today = useMemo(() => {
-    const { year, month, day } = fortalezaDateParts();
-    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  }, []);
+  const today = useMemo(() => todayInFortaleza(), []);
   const [form, setForm] = useState<FormState>(() => initialState(current, effectiveStartsOn));
   const [error, setError] = useState<string | null>(null);
   const revenueTouched = useRef(false);
@@ -151,10 +151,24 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader>
-          <CardTitle>Condições comerciais</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <details open={isFirstContract}>
+          <summary className="cursor-pointer list-none">
+            <CardHeader>
+              <CardTitle>Condições comerciais</CardTitle>
+              {!isFirstContract && current && (
+                <CardDescription>
+                  Modalidade {current.modality} · {formatScaled(current.revenue_bps, 2)}% sobre receita
+                  {' '}· desde {current.starts_on}
+                </CardDescription>
+              )}
+              {!isFirstContract && (
+                <CardAction>
+                  <span className="text-sm font-medium text-primary">Renegociar</span>
+                </CardAction>
+              )}
+            </CardHeader>
+          </summary>
+          <CardContent>
           <form className="grid gap-4 md:grid-cols-2" onSubmit={submit}>
             <label className="space-y-1 text-sm">
               <span className="font-medium">Modalidade</span>
@@ -272,7 +286,8 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
               </Button>
             </div>
           </form>
-        </CardContent>
+          </CardContent>
+        </details>
       </Card>
 
       <Card>
@@ -285,10 +300,12 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
           ) : (
             <ul className="space-y-2">
               {history.map((term) => (
-                <li key={term.id} className="flex flex-wrap justify-between gap-2 rounded-md border p-3 text-sm">
-                  <span>
-                    <strong>{historyStatus(term, history, today)}</strong> · modalidade {term.modality}
-                    {' · '}{formatScaled(term.revenue_bps, 2)}%
+                <li key={term.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3 text-sm">
+                  <span className="flex items-center gap-2">
+                    <StatusPill tone={toneForStatus(historyStatus(term, history, today))}>
+                      {historyStatus(term, history, today)}
+                    </StatusPill>
+                    modalidade {term.modality} · {formatScaled(term.revenue_bps, 2)}%
                   </span>
                   <span className="text-muted-foreground">
                     desde {term.starts_on} · versão {term.version}
