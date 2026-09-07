@@ -11,6 +11,17 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-09-07
 
+- **Primeiras condições comerciais cadastradas na plataforma.** Avil na modalidade 2 (7% sobre
+  receita) e DSA na modalidade 1 (R$ 600 de mensalidade + 5%), ambas com Sonar a R$ 1,20 por
+  consulta e implantação de R$ 3.000 em 10/2026, vigentes a partir de 2026-10-01. Setembro não é
+  faturável para nenhuma das duas: vigência retroativa é proibida (ADR-0155).
+- **O primeiro uso real achou três defeitos que os testes não pegaram.** (1) Era impossível salvar
+  condição com implantação maior que zero — escape duplo na regex de `setup_due_month` fazia o
+  Postgres exigir uma barra literal, e o ramo só é alcançado com taxa > 0, que nenhum teste
+  cobria. (2) O teste SQL de fechamento estava morto desde a manhã, abortando porque `ml_vendas`
+  passou a ser criada em dois arquivos encadeados com formatos diferentes — cobertura falsa sobre
+  código de cobrança. (3) Condição com vigência futura era exibida como condição ausente, com
+  botão "Cadastrar" para algo que já estava cadastrado.
 - **ADR-0158: Central de organizações corrigida e redesenhada — EM PRODUÇÃO.** A carteira `/admin`
   passou a mostrar número certo, a carregar com uma chamada só e a usar o design system do app.
 - **O bloqueio "condição comercial ausente" era código morto.** `platform_resolve_terms` é função SQL

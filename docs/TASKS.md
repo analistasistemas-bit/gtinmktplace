@@ -2,6 +2,46 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Central de organizações — validação com dados reais e o que ela revelou — 2026-09-07
+
+A central foi validada em produção com a sessão do dono, e o primeiro uso real achou o que teste
+e validação visual não acharam. As duas organizações estão contratadas desde então: Avil na
+modalidade 2 (7% sobre receita) e DSA na modalidade 1 (R$ 600 de mensalidade + 5%), ambas com
+Sonar a R$ 1,20 por consulta, implantação de R$ 3.000 em 10/2026 e vigência a partir de
+2026-10-01. **Setembro não é faturável para nenhuma das duas** — vigência retroativa é proibida
+pelo ADR-0155, e outubro é o primeiro mês com cobrança.
+
+- [x] **Era impossível cadastrar condição com implantação > 0.** A validação de `setup_due_month`
+  em `platform_save_terms` usava a classe de dígito com escape duplo; com
+  `standard_conforming_strings` on, a engine de regex passa a exigir uma barra literal no texto e
+  nenhum mês casava. O ramo só é alcançado com taxa > 0 e **todos** os testes usavam taxa 0 — por
+  isso passou por testes, CI e validação visual. Corrigido em
+  `20260907210746_corrigir_regex_setup_due_month.sql`, com o caso que faltava coberto em
+  `supabase/tests/platform_commercial.sql`.
+- [x] **O teste SQL de fechamento estava morto.** `platform_billing.sql` abortava na primeira
+  linha com "relation ml_vendas already exists": a tabela passou a ser criada em dois arquivos
+  encadeados (billing → sonar → commercial) com formatos diferentes, 3 colunas contra 9.
+  Confirmado rodando a `main` pura. Cobertura falsa sobre código de cobrança; as duas definições
+  viraram uma só.
+- [x] **Condição futura era exibida como condição ausente.** Cadastrada a vigência de outubro, a
+  carteira de setembro seguia dizendo "sem condições comerciais" com botão Cadastrar. O dado
+  estava certo (em setembro não há condição vigente); a tela é que confundia "não existe" com
+  "não se aplica a este mês". `OrgSummary.next_terms_starts_on` leva a próxima vigência ao
+  frontend em **uma** consulta para a carteira inteira, sem regredir o orçamento de round-trips.
+- [x] **Regra de contagem definida pelo dono:** faixa, coluna e KPI contam o mesmo
+  `pending_count`. O bloqueio de setembro é real — o mês não fecha — e continua visível; o que
+  muda é a mensagem ("2026-09 não fecha — condição comercial começa em 2026-10", com ação Ver e
+  sem Cadastrar, já que não há o que cadastrar). Há teste travando a divergência entre os três.
+- [x] **Auditoria com a cor certa:** só `success` virava verde, e o suporte grava `succeeded` —
+  os 11 eventos reais da Avil apareciam cinza. Entraram também `billable`, `exempt` e `collect`,
+  que o Sonar já grava e faltavam no dicionário.
+- [x] **A carteira parou de afirmar "0 organizações"** durante o carregamento e no erro, em dois
+  lugares (a contagem acima da tabela e o hero).
+
+Fora desta rodada: `platform_audit_events` puxa o mês inteiro das três fontes para memória e
+pagina em JS. Com 11 linhas é irrelevante; gatilho para revisar é o primeiro mês com mais de
+~5 mil eventos do Sonar numa organização.
+
 ## Central de organizações — carteira agregada, pendências corretas e alíquota explícita (ADR-0158) — 2026-09-07
 
 A auditoria de 2026-09-07 da central `/admin` achou dois bugs de dado e um problema de volume:
