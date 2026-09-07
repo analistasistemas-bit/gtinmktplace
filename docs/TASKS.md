@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## "TAM 8 CORES" publicava como Kit de 8 unidades — ADR-0156 — 2026-09-07
+
+O anúncio `MLB5197880975` (`02994968 — LANTEJOULAS HOLOGRAFICA TAM 8 CORES C/50MT`, rolo unitário de
+50 m) saiu com "Formato de venda: Kit / Unidades por kit: 8". Republicar não corrigia: `RE_UNIDADES`
+é determinística sobre o mesmo `nome_pai`, então cada reprocessamento reproduzia o mesmo `8`. O "8"
+do título é o tamanho da lantejoula — o mesmo que virou `DIAMETER 8 mm`, correto — e `CORES`
+descrevia as variações disponíveis, não uma caixa fechada.
+
+- [x] `RE_UNIDADES` exige `C/` ou `COM` antes do número quando o token é `cores` (ADR-0156). Os
+  kits do ADR-0073 (`C/12 CORES`, `COM 12 CORES`) seguem contando.
+- [x] Testes cobrindo os quatro falsos positivos reais do banco e os kits legítimos.
+- [x] ADR-0156 escrito; ADR-0073 marcado como refinado; índice de ADRs do vault atualizado.
+- [ ] Deploy das edge functions que importam `_shared/categoria/atributos.ts`.
+- [ ] Reprocessar + UPDATE das famílias afetadas (`02994968`, `02994828`, `02994771`, `02829916`).
+
 ## DSA deixa de ser organização de teste — 2026-09-07
 
 A DSA (`diego-souza`) estava com `is_test = true` desde `20260725224000_support_access.sql`, quando
