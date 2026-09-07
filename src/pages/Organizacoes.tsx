@@ -1,32 +1,55 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { PageHeader } from '@/components/ui/page-header';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { usePlatformOrganizations, usePlatformOverview } from '@/hooks/usePlatformAdmin';
+import type { OrgSummary } from '@/lib/platform-admin';
+import { fmtBRL } from '@/lib/formato';
 import { LISTA_CANAIS } from '@/lib/canais';
 import { MODULOS } from '@/lib/modulos';
-import { CanalBadge } from '@/components/canal-badge';
 import { cancelSupport, listSupportRequests, requestSupport, type SupportRequest, type SupportScope } from '@/lib/suporte';
 import { useSupportStore } from '@/stores/support-store';
 
-interface OrgRow {
-  id: string;
-  nome: string;
-  slug: string;
-  membros: number;
-  criado_em: string;
+interface OrgRow extends OrgSummary {
   canais_habilitados: string[];
   modulos_habilitados: string[];
-  is_test: boolean;
   tipo_pessoa: 'pf' | 'pj' | null;
+}
+
+const PAGE_SIZE = 10;
+
+function currentMonth(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Fortaleza',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(now);
+  return `${parts.find((part) => part.type === 'year')?.value}-${parts.find((part) => part.type === 'month')?.value}`;
+}
+
+const unavailable = 'Indisponível';
+const money = (cents: number | null | undefined) => cents == null ? unavailable : fmtBRL(cents / 100);
+const number = (value: number | null | undefined) => value == null ? unavailable : value.toLocaleString('pt-BR');
+
+function coverage(org: OrgSummary) {
+  const metrics = org.metrics;
+  if (!metrics || metrics.total_orders === 0) return unavailable;
+  return `${metrics.cost_covered_orders}/${metrics.total_orders} (${Math.round((metrics.cost_covered_orders / metrics.total_orders) * 100)}%)`;
+}
+
+function evolution(org: OrgSummary) {
+  const metrics = org.metrics;
+  if (!metrics?.previous || metrics.previous.gross_cents === 0) return unavailable;
+  const change = ((metrics.gross_cents - metrics.previous.gross_cents) / metrics.previous.gross_cents) * 100;
+  return `${change >= 0 ? '+' : ''}${change.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
 }
 
 async function callUsuarios(body: Record<string, unknown>) {
@@ -52,7 +75,13 @@ async function callUsuarios(body: Record<string, unknown>) {
 export default function Organizacoes() {
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const startSupport = useSupportStore((state) => state.start);
+  const month = searchParams.get('mes') ?? currentMonth();
+  const [search, setSearch] = useState('');
+  const [includeTest, setIncludeTest] = useState(false);
+  const [sort, setSort] = useState<'name' | 'slug' | 'gross_desc'>('name');
+  const [page, setPage] = useState(1);
   const [novaOpen, setNovaOpen] = useState(false);
   const [delOrg, setDelOrg] = useState<OrgRow | null>(null);
   const [canaisOrg, setCanaisOrg] = useState<OrgRow | null>(null);
@@ -60,13 +89,17 @@ export default function Organizacoes() {
   const [supportOrg, setSupportOrg] = useState<OrgRow | null>(null);
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
 
-  const { data: orgs = [], isLoading } = useQuery({
-    queryKey: ['organizacoes'],
-    queryFn: async (): Promise<OrgRow[]> => {
-      const data = await callUsuarios({ action: 'list_orgs' });
-      return (data?.orgs ?? []) as OrgRow[];
-    },
+  const overview = usePlatformOverview(month, includeTest);
+  const organizations = usePlatformOrganizations({
+    month,
+    search: search.trim() || undefined,
+    include_test: includeTest,
+    sort,
+    page,
+    page_size: PAGE_SIZE,
   });
+  const orgs = (organizations.data?.rows ?? []).filter((org) => includeTest || !org.is_test) as OrgRow[];
+  const totalPages = Math.max(1, Math.ceil((organizations.data?.total ?? 0) / PAGE_SIZE));
 
   const support = useQuery<SupportRequest[]>({
     queryKey: ['support-requests'],
@@ -97,16 +130,6 @@ export default function Organizacoes() {
     }
   }
 
-  async function handleTipoPessoa(org: OrgRow, tipo: 'pf' | 'pj') {
-    try {
-      await callUsuarios({ action: 'set_tipo_pessoa_org', org_id: org.id, tipo_pessoa: tipo });
-      toast.success('✓ Tipo de pessoa atualizado');
-      await qc.invalidateQueries({ queryKey: ['organizacoes'] });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Falha ao atualizar tipo de pessoa');
-    }
-  }
-
   async function cancelRequest(request: SupportRequest) {
     setCancellingRequestId(request.id);
     try {
@@ -124,89 +147,116 @@ export default function Organizacoes() {
     <div className="mx-auto max-w-7xl p-4 lg:p-6">
       <PageHeader
         title="Organizações"
-        subtitle="Empresas que usam o PubliAI (visão exclusiva de super-admin)."
+        subtitle="Carteira financeira e operacional da plataforma."
         actions={<Button onClick={() => setNovaOpen(true)}>Nova empresa</Button>}
       />
 
-      <Card className="mt-4 overflow-hidden">
-        <Table className="md:min-w-[72rem]">
-          <TableHeader>
-            <TableRow>
-              <TableHead>Empresa</TableHead>
-              <TableHead className="hidden md:table-cell">Slug</TableHead>
-              <TableHead className="hidden md:table-cell">Membros</TableHead>
-              <TableHead className="hidden md:table-cell">Tipo</TableHead>
-              <TableHead className="hidden md:table-cell">Canais</TableHead>
-              <TableHead className="hidden md:table-cell">Criada em</TableHead>
-              <TableHead className="text-right">Ações</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow><TableCell colSpan={7} className="text-sm text-muted-foreground">Carregando…</TableCell></TableRow>
-            ) : orgs.map((o) => {
-              const request = supportByOrg.get(o.id);
-              const canStart = request?.status === 'approved'
-                && !!request.approval_expires_at
-                && new Date(request.approval_expires_at).getTime() > Date.now();
-              const canRenew = request?.status === 'active'
-                && !!request.expires_at
-                && new Date(request.expires_at).getTime() > Date.now()
-                && new Date(request.expires_at).getTime() - Date.now() <= 15 * 60_000;
-              return (
-              <TableRow key={o.id}>
-                <TableCell className="font-medium">
-                  <div className="flex items-center gap-2">{o.nome}{o.is_test && <Badge variant="outline">Teste</Badge>}</div>
-                </TableCell>
-                <TableCell className="hidden text-muted-foreground md:table-cell">{o.slug}</TableCell>
-                <TableCell className="hidden md:table-cell">{o.membros}</TableCell>
-                <TableCell className="hidden md:table-cell">
-                  <select
-                    aria-label={`Tipo de pessoa de ${o.nome}`}
-                    className="h-8 rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                    value={o.tipo_pessoa ?? 'pf'}
-                    onChange={(e) => handleTipoPessoa(o, e.target.value as 'pf' | 'pj')}
-                  >
-                    <option value="pf">Pessoa física</option>
-                    <option value="pj">Pessoa jurídica</option>
-                  </select>
-                </TableCell>
-                <TableCell className="hidden md:table-cell">
-                  <div className="flex flex-wrap gap-1">
-                    {(o.canais_habilitados ?? ['mercado_livre']).map((c) => <CanalBadge key={c} canal={c} />)}
-                  </div>
-                </TableCell>
-                <TableCell className="hidden md:table-cell">{new Date(o.criado_em).toLocaleDateString('pt-BR')}</TableCell>
-                <TableCell className="w-full whitespace-normal md:min-w-[32rem]">
-                  <div className="flex flex-wrap items-center justify-end gap-2">
-                    <Button variant="ghost" size="sm" onClick={() => setCanaisOrg(o)}>Canais</Button>
-                    <Button variant="ghost" size="sm" onClick={() => setModulosOrg(o)}>Módulos</Button>
-                    {request && <span className="text-xs text-muted-foreground">{supportStatus(request.status)} · {scopeLabel(request.scope)}</span>}
-                    {request?.status === 'pending' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={cancellingRequestId === request.id}
-                        onClick={() => cancelRequest(request)}
-                      >
-                        {cancellingRequestId === request.id ? 'Cancelando…' : 'Cancelar solicitação'}
-                      </Button>
-                    )}
-                    {canStart ? <Button size="sm" onClick={() => enterOperation(request)}>Entrar na operação</Button> : canRenew ? <Button variant="outline" size="sm" onClick={() => setSupportOrg(o)}>Solicitar renovação</Button> : !request || !['pending', 'active'].includes(request.status) ? <Button variant="outline" size="sm" onClick={() => setSupportOrg(o)}>Solicitar acesso</Button> : null}
-                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setDelOrg(o)}>Excluir</Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          ['Faturamento bruto', money(overview.data?.gross_cents)],
+          ['Previsão', money(overview.data?.forecast_cents)],
+          ['Organizações', overview.data ? number(overview.data.org_count) : unavailable],
+          ['Pendências', number(overview.data?.pending_count)],
+        ].map(([label, value]) => (
+          <Card key={label}>
+            <CardContent className="p-4">
+              <p className="text-xs font-medium text-muted-foreground">{label}</p>
+              <p className="mt-1 text-lg font-semibold tabular-nums">{overview.isLoading ? 'Carregando…' : value}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      {overview.data?.warnings.map((warning) => (
+        <p key={warning} className="mt-2 text-sm text-muted-foreground">{warning}</p>
+      ))}
+
+      <Card className="mt-4">
+        <CardContent className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-[minmax(16rem,1fr)_auto_auto_auto]">
+          <Input
+            aria-label="Buscar organizações"
+            placeholder="Buscar por nome ou slug"
+            value={search}
+            onChange={(event) => { setSearch(event.target.value); setPage(1); }}
+          />
+          <label className="flex items-center gap-2 text-sm" htmlFor="include-test-organizations">
+            <Checkbox
+              id="include-test-organizations"
+              checked={includeTest}
+              onCheckedChange={(checked) => { setIncludeTest(checked === true); setPage(1); }}
+            />
+            Incluir testes
+          </label>
+          <select
+            aria-label="Ordenar organizações"
+            className="h-9 rounded-md border border-input bg-background px-3 text-sm"
+            value={sort}
+            onChange={(event) => { setSort(event.target.value as typeof sort); setPage(1); }}
+          >
+            <option value="name">Nome</option>
+            <option value="slug">Slug</option>
+            <option value="gross_desc">Maior faturamento</option>
+          </select>
+          <label className="flex items-center gap-2 text-sm" htmlFor="wallet-month">
+            <span>Mês</span>
+            <Input
+              id="wallet-month"
+              type="month"
+              aria-label="Mês da carteira"
+              value={month}
+              onChange={(event) => setSearchParams((previous) => {
+                const next = new URLSearchParams(previous);
+                next.set('mes', event.target.value);
+                return next;
+              })}
+            />
+          </label>
+        </CardContent>
       </Card>
+
+      {(overview.isError || organizations.isError) && (
+        <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
+          Não foi possível carregar a carteira. Tente novamente.
+        </p>
+      )}
+
+      <div className="mt-4 space-y-3" aria-label="Carteira de organizações">
+        <div className="hidden grid-cols-[minmax(12rem,1.5fr)_repeat(8,minmax(5rem,1fr))_auto] gap-3 px-4 text-xs font-medium text-muted-foreground lg:grid">
+          <span>Organização</span><span>Modalidade</span><span>Faturamento</span><span>Evolução</span>
+          <span>Markup</span><span>Cobertura</span><span>Pulse</span><span>Previsão</span><span>Pendências</span><span>Ações</span>
+        </div>
+        {organizations.isLoading ? (
+          <Card><CardContent className="p-4 text-sm text-muted-foreground">Carregando organizações…</CardContent></Card>
+        ) : orgs.length === 0 && !organizations.isError ? (
+          <Card><CardContent className="p-4 text-sm text-muted-foreground">Nenhuma organização encontrada.</CardContent></Card>
+        ) : orgs.map((org) => (
+          <OrganizationRow
+            key={org.id}
+            org={org}
+            month={month}
+            request={supportByOrg.get(org.id)}
+            cancellingRequestId={cancellingRequestId}
+            onCancel={cancelRequest}
+            onEnter={enterOperation}
+            onSupport={setSupportOrg}
+          />
+        ))}
+      </div>
+
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">Página {page} de {totalPages}</p>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>Anterior</Button>
+          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>Próxima</Button>
+        </div>
+      </div>
 
       <NovaOrgDialog
         open={novaOpen}
         onOpenChange={setNovaOpen}
-        onCreated={() => qc.invalidateQueries({ queryKey: ['organizacoes'] })}
+        onCreated={() => Promise.all([
+          qc.invalidateQueries({ queryKey: ['organizacoes'] }),
+          qc.invalidateQueries({ queryKey: ['platform-admin'] }),
+        ])}
       />
       <ExcluirOrgDialog
         org={delOrg}
@@ -233,6 +283,75 @@ export default function Organizacoes() {
       />
       {support.isError && <p className="mt-2 text-sm text-destructive" role="alert">Não foi possível carregar o estado das solicitações.</p>}
     </div>
+  );
+}
+
+function OrganizationRow({ org, month, request, cancellingRequestId, onCancel, onEnter, onSupport }: {
+  org: OrgRow;
+  month: string;
+  request?: SupportRequest;
+  cancellingRequestId: string | null;
+  onCancel: (request: SupportRequest) => Promise<void>;
+  onEnter: (request: SupportRequest) => Promise<void>;
+  onSupport: (org: OrgRow) => void;
+}) {
+  const canStart = request?.status === 'approved'
+    && Boolean(request.approval_expires_at)
+    && new Date(request.approval_expires_at!).getTime() > Date.now();
+  const canRenew = request?.status === 'active'
+    && Boolean(request.expires_at)
+    && new Date(request.expires_at!).getTime() > Date.now()
+    && new Date(request.expires_at!).getTime() - Date.now() <= 15 * 60_000;
+  const actions = (
+    <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+      {request && <span className="text-xs text-muted-foreground">{supportStatus(request.status)} · {scopeLabel(request.scope)}</span>}
+      {request?.status === 'pending' && (
+        <Button variant="ghost" size="sm" disabled={cancellingRequestId === request.id} onClick={() => onCancel(request)}>
+          {cancellingRequestId === request.id ? 'Cancelando…' : 'Cancelar solicitação'}
+        </Button>
+      )}
+      {canStart ? (
+        <Button size="sm" onClick={() => onEnter(request)}>Entrar na operação</Button>
+      ) : canRenew ? (
+        <Button variant="outline" size="sm" onClick={() => onSupport(org)}>Solicitar renovação</Button>
+      ) : !request || !['pending', 'active'].includes(request.status) ? (
+        <Button variant="outline" size="sm" onClick={() => onSupport(org)}>Solicitar acesso</Button>
+      ) : null}
+      <Button asChild variant="ghost" size="sm">
+        <Link to={`/admin/organizacoes/${org.id}?mes=${month}`}>Ver organização {org.nome}</Link>
+      </Button>
+    </div>
+  );
+
+  const metricValues = [
+    ['Modalidade', org.modality == null ? unavailable : `Modalidade ${org.modality}`],
+    ['Faturamento', money(org.metrics?.gross_cents)],
+    ['Evolução', evolution(org)],
+    ['Markup da organização', org.metrics?.markup == null ? unavailable : `${org.metrics.markup.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}x`],
+    ['Cobertura', coverage(org)],
+    ['Pulse', number(org.billable_units)],
+    ['Previsão', money(org.forecast_cents)],
+    ['Pendências da organização', number(org.pending_count)],
+  ];
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="grid gap-4 lg:grid-cols-[minmax(12rem,1.5fr)_repeat(8,minmax(5rem,1fr))_auto] lg:items-center lg:gap-3">
+          <div>
+            <div className="flex items-center gap-2 font-medium">{org.nome}{org.is_test && <Badge variant="outline">Teste</Badge>}</div>
+            <p className="text-xs text-muted-foreground">{org.slug}</p>
+          </div>
+          {metricValues.map(([label, value]) => (
+            <div key={label} className="flex justify-between gap-3 text-sm lg:block">
+              <span className="text-muted-foreground lg:sr-only">{label}</span>
+              <span className="tabular-nums">{value}</span>
+            </div>
+          ))}
+          <div className="pt-2 lg:pt-0">{actions}</div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

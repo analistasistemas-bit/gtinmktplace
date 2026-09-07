@@ -12,6 +12,7 @@ const Login = lazy(() => import('@/pages/Login'));
 const DefinirSenha = lazy(() => import('@/pages/DefinirSenha'));
 const ResetSenha = lazy(() => import('@/pages/ResetSenha'));
 const Organizacoes = lazy(() => import('@/pages/Organizacoes'));
+const OrganizacaoDetalhe = lazy(() => import('@/pages/OrganizacaoDetalhe'));
 const SupportRequests = lazy(() => import('@/pages/SupportRequests'));
 const SemAcesso = lazy(() => import('@/pages/SemAcesso'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
@@ -76,6 +77,7 @@ export function AppRoutes() {
         <Route element={<SuperAdminRoute />}>
           <Route element={<AdminShell />}>
             <Route path="/admin" element={<Organizacoes />} />
+            <Route path="/admin/organizacoes/:orgId" element={<OrganizacaoDetalhe />} />
           </Route>
         </Route>
       </Route>
