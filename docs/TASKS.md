@@ -14,8 +14,22 @@ descrevia as variações disponíveis, não uma caixa fechada.
   kits do ADR-0073 (`C/12 CORES`, `COM 12 CORES`) seguem contando.
 - [x] Testes cobrindo os quatro falsos positivos reais do banco e os kits legítimos.
 - [x] ADR-0156 escrito; ADR-0073 marcado como refinado; índice de ADRs do vault atualizado.
-- [ ] Deploy das edge functions que importam `_shared/categoria/atributos.ts`.
-- [ ] Reprocessar + UPDATE das famílias afetadas (`02994968`, `02994828`, `02994771`, `02829916`).
+- [x] Deploy das 18 edge functions que importam `_shared/categoria/atributos.ts` (fecho transitivo).
+- [x] `20260907112504_corrigir_kit_falso_adr0156.sql` corrige `atributos_ml` das 9 famílias dos 4
+  códigos (`UNITS_PER_PACK`→1, `SALE_FORMAT`→`1359391` Unidade) e reaponta a linha de UPDATE do
+  `02994968` para `MLB5197880975` — o `MLB7245338658` foi substituído quando o lote #39
+  republicou. **Aplicada via Management API**, não por `db push`: o push estava travado por duas
+  migrations remotas de outra branch (`20260907102428`, `20260907103422`). A migration é
+  idempotente, então o push futuro roda como no-op.
+- [x] `02829916` (ANNE 65 CORES) não tinha UPDATE pendente; a última linha UPDATE voltou de
+  `publicado` para `pronto` e reapareceu na Revisão. A tela Publicados filtra por `ml_item_id not
+  null`, não por status, então o anúncio segue visível lá.
+- [ ] **Diego:** Revisão → aba UPDATE → publicar os 4 (`02994968`, `02994828`, `02994771`,
+  `02829916`). Só isso propaga o atributo corrigido ao ML.
+- [ ] **Colisão de numeração:** outro trabalho em andamento (carteira/cobrança da central, commit
+  `571fb3c3`, migrations `platform_terms_contract_fix` e `platform_org_cost_catalog` já aplicadas)
+  também numerou seu ADR como **0156**. Decidir quem renumera — este 0156 já está na `main`
+  (`7d3d0954`), o outro ainda não.
 
 ## DSA deixa de ser organização de teste — 2026-09-07
 
