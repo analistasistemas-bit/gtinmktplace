@@ -66,7 +66,7 @@ action `set_tipo_pessoa_org`). Constraint **no banco**, não só na UI —
 exige nada (a obrigatoriedade nasce no ato de ligar o módulo, ver [Fiscal](#fiscal-adr-0135)
 abaixo).
 
-### Central de organizações e cobrança auditável (ADR-0154)
+### Central de organizações e cobrança auditável (ADR-0155)
 
 As migrations `20260906170000_platform_commercial_foundation.sql`,
 `20260906170100_platform_sonar_metering.sql` e `20260906170200_platform_billing.sql` acrescentam:

@@ -1,4 +1,4 @@
-# ADR-0154: Central integrada com consumo e fechamento auditáveis
+# ADR-0155: Central integrada com consumo e fechamento auditáveis
 
 **Status:** Aceito no desenho da central, 2026-09-06. Implementação acompanhada pelo [plano](../superpowers/plans/2026-09-06-central-organizacoes.md).
 

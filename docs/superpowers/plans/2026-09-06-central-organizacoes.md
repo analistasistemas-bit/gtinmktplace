@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 18, TypeScript, TanStack Query, componentes locais/Tailwind, Recharts, Supabase Edge Functions/Deno, PostgreSQL, Vitest/Testing Library e exportadores existentes. Sem nova dependência de produção.
 
-**Spec:** [Desenho aprovado](../specs/2026-09-06-central-organizacoes-design.md), [descoberta](../specs/2026-09-06-central-organizacoes-discovery.md), [ADR-0154](../../decisions/0154-central-organizacoes-cobranca-auditavel.md).
+**Spec:** [Desenho aprovado](../specs/2026-09-06-central-organizacoes-design.md), [descoberta](../specs/2026-09-06-central-organizacoes-discovery.md), [ADR-0155](../../decisions/0155-central-organizacoes-cobranca-auditavel.md).
 
 ## Global Constraints
 

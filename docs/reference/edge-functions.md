@@ -104,7 +104,7 @@
 conciliação, consumo Pulse e auditoria da central. A função autentica novamente no servidor e usa
 o cliente `service_role` apenas para chamar repositórios/RPCs escopados pela organização; consultar
 a central não cria uma sessão de suporte. Ver o
-[guia de operação](../how-to/central-organizacoes.md) e o [ADR-0154](../decisions/0154-central-organizacoes-cobranca-auditavel.md).
+[guia de operação](../how-to/central-organizacoes.md) e o [ADR-0155](../decisions/0155-central-organizacoes-cobranca-auditavel.md).
 
 
 ## Schedules do QStash (cron + body)
