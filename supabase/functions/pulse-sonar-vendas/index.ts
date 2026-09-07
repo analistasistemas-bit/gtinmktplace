@@ -91,7 +91,7 @@ Deno.serve(async (req) => {
     }
   }
 
-  const complete = async (payload: Record<string, unknown> | null, failure: string | null): Promise<Ledger> =>
+  const complete = (payload: Record<string, unknown> | null, failure: string | null): Promise<Ledger> =>
     ledgerRpc('platform_sonar_complete', { ...rpcArgs(context), p_search_id: begin.busca_id,
       p_lease_token: begin.lease_token, p_payload: payload, p_failure_reason: failure });
 

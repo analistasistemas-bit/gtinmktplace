@@ -2,7 +2,41 @@ import { readOrgMetrics } from './metrics-repository.ts';
 import type { AuditRow, BillingPreview, BillingStatement, CommercialTerms, OrgSummary, Page, PulseUsage, PulseUsageRow } from './types.ts';
 
 type DbResult = { data: unknown; error: { message: string } | null; count?: number | null };
-type Db = { from(table: string): any; rpc(name: string, args: Record<string, unknown>): PromiseLike<DbResult> };
+type DbQuery = PromiseLike<DbResult> & {
+  select(columns: string, options?: { count?: 'exact'; head?: boolean }): DbQuery;
+  eq(column: string, value: unknown): DbQuery;
+  order(column: string, options?: { ascending: boolean }): DbQuery;
+  range(from: number, to: number): DbQuery;
+  maybeSingle(): DbQuery;
+  single(): DbQuery;
+  in(column: string, values: unknown[]): DbQuery;
+  gte(column: string, value: unknown): DbQuery;
+  lt(column: string, value: unknown): DbQuery;
+  like(column: string, value: string): DbQuery;
+  limit(n: number): DbQuery;
+};
+type Db = { from(table: string): DbQuery; rpc(name: string, args: Record<string, unknown>): PromiseLike<DbResult> };
+
+type OrgRow = { id: string; nome: string; slug: string; is_test: boolean };
+type StatementRow = { id: string; snapshot: BillingStatement; closed_at: string; closed_by: string };
+type SearchRow = {
+  id: string; actor_id: string; created_at: string; normalized_query: string; query_type: string;
+  origin: string; state: string; result_id: string | null;
+};
+type DeliveryRow = { id: string; search_id: string; units: number; total_cents: number; reason: string | null };
+type DeliveryTotals = { units: number; total_cents: number };
+type PlatformAuditRow = {
+  id: string; org_id: string; actor_id: string; occurred_at: string; category: string;
+  action: string; result: string; target: string | null; reason: string | null; details: Record<string, unknown> | null;
+};
+type SonarAuditRow = {
+  id: string; org_id: string; actor_id: string; occurred_at: string; stage: string;
+  outcome: string; reason: string | null; search_id: string | null; result_id: string | null;
+};
+type SupportAuditRow = {
+  id: string; org_id: string; actor_id: string; created_at: string; event: string;
+  result: string; target_type: string | null; target_id: string | null; support_request_id: string | null;
+};
 
 function fail(error: { message: string } | null): void { if (error) throw new Error(error.message); }
 function monthDate(month: string): string { return `${month}-01`; }
@@ -43,7 +77,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       forecast_cents: validPreview?.total_cents ?? null, billable_units: validPreview?.sonar_units ?? null,
       daludi_searches: daludi, pending_count: pending };
   };
-  const loadOrganizations = async (includeTest: boolean) => allRows<{ id: string; nome: string; slug: string; is_test: boolean }>((from, to) => {
+  const loadOrganizations = (includeTest: boolean) => allRows<OrgRow>((from, to) => {
     let query = db.from('organizations').select('id,nome,slug,is_test').order('id');
     if (!includeTest) query = query.eq('is_test', false); return query.range(from, to);
   });
@@ -54,7 +88,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     },
     async organization(actorId: string, orgId: string, month: string): Promise<OrgSummary | null> {
       const { data, error } = await db.from('organizations').select('id,nome,slug,is_test').eq('id', orgId).maybeSingle(); fail(error);
-      return data ? enrichOne(actorId, data as { id: string; nome: string; slug: string; is_test: boolean }, month) : null;
+      return data ? enrichOne(actorId, data as OrgRow, month) : null;
     },
     async list(actorId: string, input: { month: string; search?: string; include_test?: boolean; page: number; page_size: number; sort: string }): Promise<Page<OrgSummary>> {
       const needle = input.search?.trim().toLocaleLowerCase('pt-BR');
@@ -82,34 +116,34 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     reconcile: (actorId: string, input: Record<string, unknown>) => rpc<{ id: string }>('platform_reconcile_revenue', { p_actor: actorId, p_input: input }),
     async statements(_actorId: string, orgId: string, page: number, pageSize: number): Promise<Page<BillingStatement>> {
       const from = (page - 1) * pageSize; const { data, error, count } = await db.from('platform_billing_statements').select('id,snapshot,closed_at,closed_by', { count: 'exact' }).eq('org_id', orgId).order('month', { ascending: false }).range(from, from + pageSize - 1); fail(error);
-      return { rows: ((data ?? []) as any[]).map((row) => ({ ...row.snapshot, id: row.id, closed_at: row.closed_at, closed_by: row.closed_by })), total: count ?? 0, page, page_size: pageSize };
+      return { rows: ((data ?? []) as StatementRow[]).map((row) => ({ ...row.snapshot, id: row.id, closed_at: row.closed_at, closed_by: row.closed_by })), total: count ?? 0, page, page_size: pageSize };
     },
     async statement(_actorId: string, orgId: string, statementId: string): Promise<BillingStatement> {
-      const { data, error } = await db.from('platform_billing_statements').select('id,snapshot,closed_at,closed_by').eq('org_id', orgId).eq('id', statementId).single(); fail(error); const row = data as any;
+      const { data, error } = await db.from('platform_billing_statements').select('id,snapshot,closed_at,closed_by').eq('org_id', orgId).eq('id', statementId).single(); fail(error); const row = data as StatementRow;
       return { ...row.snapshot, id: row.id, closed_at: row.closed_at, closed_by: row.closed_by };
     },
     async pulseUsage(_actorId: string, orgId: string, month: string, page: number, pageSize: number): Promise<PulseUsage> {
       const [start, end] = monthBounds(month); const from = (page - 1) * pageSize;
       const { data, error, count } = await db.from('platform_sonar_searches').select('id,actor_id,created_at,normalized_query,query_type,origin,state,result_id', { count: 'exact' }).eq('org_id', orgId).gte('created_at', start).lt('created_at', end).order('created_at', { ascending: false }).order('id', { ascending: false }).range(from, from + pageSize - 1); fail(error);
-      const searches = (data ?? []) as any[]; const ids = searches.map((row) => row.id); let deliveries: any[] = [];
-      if (ids.length) { const deliveryResult = await db.from('platform_sonar_deliveries').select('id,search_id,units,total_cents,reason').eq('org_id', orgId).in('search_id', ids); fail(deliveryResult.error); deliveries = deliveryResult.data ?? []; }
+      const searches = (data ?? []) as SearchRow[]; const ids = searches.map((row) => row.id); let deliveries: DeliveryRow[] = [];
+      if (ids.length) { const deliveryResult = await db.from('platform_sonar_deliveries').select('id,search_id,units,total_cents,reason').eq('org_id', orgId).in('search_id', ids); fail(deliveryResult.error); deliveries = (deliveryResult.data ?? []) as DeliveryRow[]; }
       const bySearch = new Map(deliveries.map((row) => [row.search_id, row]));
       const rows: PulseUsageRow[] = searches.map((row) => { const delivery = bySearch.get(row.id); return { id: row.id, org_id: orgId, actor_id: row.actor_id, actor_name: null, at: row.created_at, query: row.normalized_query, query_type: row.query_type, origin: row.origin, result: row.state, exempt_reason: row.origin === 'daludi' ? 'daludi' : delivery?.reason ?? null, units: delivery?.units ?? 0, total_cents: delivery?.total_cents ?? 0, result_id: row.result_id }; });
       const [allDeliveries, daludi, failures, reopens, first] = await Promise.all([
-        allRows<any>((a, b) => db.from('platform_sonar_deliveries').select('units,total_cents').eq('org_id', orgId).eq('month', monthDate(month)).range(a, b)),
+        allRows<DeliveryTotals>((a, b) => db.from('platform_sonar_deliveries').select('units,total_cents').eq('org_id', orgId).eq('month', monthDate(month)).range(a, b)),
         exactCount(db.from('platform_sonar_searches').select('id', { count: 'exact', head: true }).eq('org_id', orgId).eq('origin', 'daludi').gte('created_at', start).lt('created_at', end)),
         exactCount(db.from('platform_sonar_searches').select('id', { count: 'exact', head: true }).eq('org_id', orgId).eq('state', 'failed').gte('created_at', start).lt('created_at', end)),
         exactCount(db.from('platform_sonar_searches').select('id', { count: 'exact', head: true }).eq('org_id', orgId).like('intent_key', 'reopen:%').gte('created_at', start).lt('created_at', end)),
         db.from('platform_sonar_searches').select('created_at').eq('org_id', orgId).order('created_at', { ascending: true }).limit(1),
       ]); fail(first.error);
-      return { rows, total: count ?? 0, page, page_size: pageSize, client_units: allDeliveries.reduce((sum, row) => sum + Number(row.units), 0), client_cents: allDeliveries.reduce((sum, row) => sum + Number(row.total_cents), 0), daludi_searches: daludi ?? 0, failures: failures ?? 0, reopens: reopens ?? 0, measured_cost_cents: null, tracked_since: ((first.data as any[])?.[0]?.created_at ?? null) };
+      return { rows, total: count ?? 0, page, page_size: pageSize, client_units: allDeliveries.reduce((sum, row) => sum + Number(row.units), 0), client_cents: allDeliveries.reduce((sum, row) => sum + Number(row.total_cents), 0), daludi_searches: daludi ?? 0, failures: failures ?? 0, reopens: reopens ?? 0, measured_cost_cents: null, tracked_since: ((first.data as { created_at: string }[] | null)?.[0]?.created_at ?? null) };
     },
     async audit(_actorId: string, orgId: string, month: string, filters: { category?: string; actor_id?: string; result?: string }, page: number, pageSize: number): Promise<Page<AuditRow>> {
       const [start, end] = monthBounds(month);
       const [platform, sonar, support] = await Promise.all([
-        allRows<any>((a, b) => db.from('platform_audit_events').select('id,org_id,actor_id,occurred_at,category,action,result,target,reason,details').eq('org_id', orgId).gte('occurred_at', start).lt('occurred_at', end).range(a, b)),
-        allRows<any>((a, b) => db.from('platform_sonar_events').select('id,org_id,actor_id,occurred_at,stage,outcome,reason,search_id,result_id').eq('org_id', orgId).gte('occurred_at', start).lt('occurred_at', end).range(a, b)),
-        allRows<any>((a, b) => db.from('support_audit_events').select('id,org_id,actor_id,created_at,event,result,target_type,target_id,support_request_id').eq('org_id', orgId).gte('created_at', start).lt('created_at', end).range(a, b)),
+        allRows<PlatformAuditRow>((a, b) => db.from('platform_audit_events').select('id,org_id,actor_id,occurred_at,category,action,result,target,reason,details').eq('org_id', orgId).gte('occurred_at', start).lt('occurred_at', end).range(a, b)),
+        allRows<SonarAuditRow>((a, b) => db.from('platform_sonar_events').select('id,org_id,actor_id,occurred_at,stage,outcome,reason,search_id,result_id').eq('org_id', orgId).gte('occurred_at', start).lt('occurred_at', end).range(a, b)),
+        allRows<SupportAuditRow>((a, b) => db.from('support_audit_events').select('id,org_id,actor_id,created_at,event,result,target_type,target_id,support_request_id').eq('org_id', orgId).gte('created_at', start).lt('created_at', end).range(a, b)),
       ]);
       const rows: AuditRow[] = [
         ...platform.map((row) => ({ id: row.id, org_id: row.org_id, actor_id: row.actor_id, actor_name: null, at: row.occurred_at, category: row.category, action: row.action, result: row.result, target: row.target, reason: row.reason, details: row.details ?? {} })),
