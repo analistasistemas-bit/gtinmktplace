@@ -169,13 +169,22 @@ A `main` é protegida e exige os checks **`frontend`** e **`backend-lint`** (`en
 é: **o commit chega na main já com o CI verde**.
 
 ```bash
-git push -u origin <sua-branch>          # CI roda NA BRANCH (ci.yml dispara em '**')
+pnpm preflight:static                    # ~1min30 — evita gastar uma rodada de CI com erro bobo
+                                         # (`pnpm preflight` inclui a suíte; ver desenvolvimento-local.md)
+git push -u origin <sua-branch>          # CI roda NA BRANCH (ci.yml dispara em toda branch menos main)
 gh run list --branch <sua-branch> --limit 1   # esperar completed|success
-git push origin HEAD:main                # fast-forward do MESMO SHA → passa sem bypass
+git push origin HEAD:main                # fast-forward do MESMO SHA → passa sem bypass, e sem novo run
 ```
 
 Empurrar direto para a main antes do CI terminar agora é **rejeitado** (`protected branch hook
 declined`), não mais "bypassado". Isso é intencional.
+
+> **Desde 07/09/2026 o fast-forward da main não dispara CI.** Status check é por SHA, não por ref:
+> o commit que vira tip da main é o mesmo que já ficou verde na branch, então o run da main
+> re-testava um SHA aprovado — eram ~50% de todos os runs e ~2min20 de espera extra por entrega.
+> O efeito colateral a conhecer: um commit que chegue na main **sem** ter passado por uma branch
+> (edição pela UI do GitHub, ou merge commit real em vez de fast-forward) nasce com SHA novo e sem
+> check nenhum, e a proteção **barra** o push. Saída: `gh workflow run ci.yml --ref <ref>`.
 
 > **Histórico do problema.** Até 2026-07-29 o `ci.yml` só rodava em `push: [main]` e
 > `pull_request`. Num push direto os checks nunca haviam rodado naquele SHA, então a proteção era

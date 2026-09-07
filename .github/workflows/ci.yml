@@ -1,15 +1,26 @@
 name: CI
-# Roda em TODA branch, não só na main. Isto não é preferência: a proteção da `main` exige os
+# Roda em toda branch MENOS a `main`. Isto não é preferência: a proteção da `main` exige os
 # checks `frontend` e `backend-lint`, e um push direto só pode satisfazê-los se eles já tiverem
 # rodado NAQUELE commit antes. Enquanto o CI só rodava na main, a proteção era impossível de
 # satisfazer por push direto e todo push saía com "Bypassed rule violations".
 #
 # Fluxo que isto habilita (sem exigir PR): push na branch → CI verde no SHA →
 # fast-forward da main com o MESMO SHA → o push passa porque os checks já estão verdes.
+#
+# Por que a `main` está FORA do gatilho: status check é por SHA, não por ref. No fast-forward o
+# commit que vira tip da main é o MESMO que já foi testado na branch, então rodar de novo na main
+# re-testa um SHA verde e nunca deu resultado diferente. Eram ~50% de todos os runs (medido em
+# 07/09/2026: 173 de 500 runs) e ~2min20 de espera extra em cada atualização.
+#
+# Consequência a conhecer: um commit que chegue na main SEM ter passado por uma branch (edição
+# pela UI do GitHub, ou merge commit real em vez de fast-forward) nasce com SHA novo e sem check
+# nenhum — a proteção BARRA o push. Isso é fail-safe (barra, não deixa passar), e a saída é rodar
+# este workflow na mão pelo `workflow_dispatch` abaixo, na ref desejada.
 on:
   push:
-    branches: ['**']
+    branches-ignore: [main]
   pull_request:
+  workflow_dispatch:
 
 # Push rápido em sequência cancela o run anterior da mesma ref — economiza minuto de Actions.
 # Nunca cancela o run de um SHA que já virou tip da main (aquele já terminou).

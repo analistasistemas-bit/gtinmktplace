@@ -76,18 +76,42 @@ pnpm dev          # Vite em http://localhost:5173
 | `pnpm gateway:start` | Sobe o Gateway já compilado (exige `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `ORIGENS_PERMITIDAS`) |
 | `pnpm lint:functions` | `deno lint` nas edge functions |
 | `pnpm check:functions` | `deno check` (type check) nas edge functions |
+| `pnpm preflight:static` | **Portão rápido (~30s com cache quente)** — tudo que o CI checa menos os testes; pega lint, tipo e link quebrado |
+| `pnpm preflight` | **Portão completo (~3min40)** — `preflight:static` + a suíte inteira |
 
 ## Portão de qualidade antes de commitar
 
 O CI roda `pnpm lint` → `pnpm docs:links` → `pnpm test` → `pnpm build` (job `frontend`) e `deno lint` → `deno check`
 (job `backend-lint`). Desde 2026-07-23 os dois jobs são **required status checks** no `main`
-(branch protection) — PR com qualquer um vermelho não mergeia (só admin em bypass manual). Rode
-localmente antes de commitar:
+(branch protection) — PR com qualquer um vermelho não mergeia (só admin em bypass manual).
+
+Rode o portão local antes de commitar. São dois níveis, e a escolha é por tempo:
 
 ```bash
-pnpm lint && pnpm docs:links && pnpm test && pnpm build
-pnpm lint:functions && pnpm check:functions
+pnpm preflight:static   # ~30s (1min30 na 1ª vez) — tudo menos os testes
+pnpm preflight          # ~3min40 — o anterior + a suíte inteira
 ```
+
+Ambos seguem a ordem do mais barato para o mais caro e param no primeiro erro:
+`docs:links → lint:functions → check:functions → lint → tsc -b --force → vite build` (+ `test` no completo).
+
+Eles existem porque o gargalo do ciclo de entrega nunca foi a duração de um run de CI (~2min20), e
+sim a **quantidade de idas e vindas**: em 07/09/2026 havia branches com 10 e 6 runs seguidos, cada
+rodada custando outra espera para descobrir um erro que a máquina local aponta em segundos.
+
+**Por que dois níveis, e não só o completo.** Medido em 07/09/2026 nesta máquina, o completo leva
+3min37 — *mais* que os 2min20 de um run de CI, porque o CI divide a suíte em 3 shards paralelos e
+aqui ela roda inteira. Como portão universal ele sairia mais caro que o problema que resolve. Os
+seis passos estáticos custam **27s** com o cache do Vite quente (~1min30 na primeira execução do
+worktree) e cobrem a classe de erro que mais gasta rodada — lint, tipo, link quebrado. A suíte
+completa vale a pena quando o diff mexe em lógica testada.
+
+Dois detalhes que separam estes comandos do `pnpm build` cru:
+
+- **`tsc -b --force`, não `tsc -b`.** O build incremental reaproveita o `.tsbuildinfo` local e pode
+  passar aqui e falhar no CI, que sempre parte de um checkout limpo.
+- **Inclui os passos do `backend-lint`.** `deno lint`/`deno check` reprovam o merge igual ao
+  `frontend`, e ficavam de fora quando o portão era rodado à mão.
 
 > `pnpm test` pode sair com código 1 se faltar `.env.test` (dummy). Confira o exit code, não só
 > as asserções.
