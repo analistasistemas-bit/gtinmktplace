@@ -26,7 +26,7 @@ Ver [[Backend]], [[Segurança]].
 | **Remoção / reprocessamento** | remover-publicado, excluir-lote, excluir-produto, reprocessar-familia, invalidar-cache-cor |
 | **Faturamento** | ml-webhook, sync-venda, sync-pergunta, sync-mensagem, sync-devolucao, responder-pergunta, responder-mensagem, sugerir-resposta-pergunta, backfill-faturamento, reconciliar-faturamento |
 | **Estoque & Kits** (módulo pago) | cadastrar-produto, entrada-estoque, **ajustar-estoque** (admin-only, ADR-0110), **criar-kit-vinculado** (ADR-0151), **adicionar-variacoes-familia** (ADR-0129) — `verify_jwt=true` e gate de módulo 403; **sincronizar-estoque** e **reconciliar-estoque** (`30 12 * * *`), workers com `verify_jwt=false`. Ver [[Estoque]] |
-| **Pulse** (módulo inteligência) | pulse-coletar (`verify_jwt=false`), pulse-adicionar, pulse-sonar-vendas, pulse-sonar-visitas, pulse-sonar-ean, pulse-analise-secoes237. Ver [[Pulse]] |
+| **Pulse** (módulo inteligência) | pulse-coletar (`verify_jwt=false`), pulse-adicionar, pulse-sonar-vendas, pulse-sonar-visitas, pulse-analise-secoes237. Ver [[Pulse]] |
 | **Fiscal** (Faturador ML) | sincronizar-fiscal-ml, atualizar-fiscal-familia, sugerir-ncm |
 | **Monitoramento / alertas** | monitorar-moderados, notificar-liberacao |
 | **Status / métricas / viabilidade** | status-publicados, atualizar-status-publicado, metricas-vendas, analisar-viabilidade, calcular-tarifa-ml, tabela-frete-ml, buscar-categorias-ml |

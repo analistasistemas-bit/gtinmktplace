@@ -150,10 +150,6 @@ verify_jwt = true
 # ADR-0127 (Sonar por anúncio): visitas 30d por item — chamada pelo APP com o JWT do usuário.
 [functions.pulse-sonar-visitas]
 verify_jwt = true
-# ADR-0127 Errata 1 (Sonar busca por EAN): lookup de catálogo + vendas opcionais via Apify —
-# chamada pelo APP com o JWT do usuário.
-[functions.pulse-sonar-ean]
-verify_jwt = true
 # ADR-0142: monta seções 2/3/7 do relatório Análise PubliAI a partir da amostra Sonar + pulse_vendedores.
 [functions.pulse-analise-secoes237]
 verify_jwt = true

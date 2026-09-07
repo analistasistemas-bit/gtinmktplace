@@ -83,7 +83,6 @@
 | pulse-adicionar | true | HTTP (frontend) | sim (upsert por cpid) |
 | pulse-sonar-vendas | true | HTTP (frontend) | sim (leitura + grava `sonar_snapshots`; cache Redis 7d por termo) |
 | pulse-sonar-visitas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por item) |
-| pulse-sonar-ean | true | HTTP — **sem chamador desde ADR-0140 D-4** | sim (leitura; cache Redis 24h lookup + 7d vendas Apify) |
 | pulse-analise-secoes237 | true | HTTP (frontend) | sim (leitura; demanda do nicho por vendedor, ponte pelo catálogo) |
 | **Status / métricas / viabilidade** ||||
 | status-publicados | true | HTTP (frontend) | sim (leitura) |
@@ -1382,30 +1381,6 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `{conectado:true, por_item: Record<item_id, {total, por_dia} | null>}`. Checa
   `exigirModulo(admin, orgId, 'pulse')` logo após `requireUserOrg` (achado F8,
   CLAUDE-SECURITY-20260822-113640 — faltava, org sem o módulo consumia a API do ML de graça).
-- **pulse-sonar-ean** (ADR-0127 Errata 1, `verify_jwt=true`) — **deployada e sem chamador desde o
-  [ADR-0140](../decisions/0140-sonar-ean-analise-completa-pela-busca.md) D-4 (2026-08-28):** o app
-  manda o EAN para `pulse-sonar-vendas` como termo qualquer, então esta rota não é usada pela UI e
-  **não passa pelo ledger de unidades faturáveis** (remoção é follow-up aberto em `TASKS.md`).
-  Descrição do que ela faz enquanto existir — busca por EAN/GTIN: diferente da busca por termo
-  (nicho), é restrita a **1 produto específico**. Recebe `{ean, com_vendas}`; `ean` valida com a mesma regex de
-  `_shared/pulse/entrada.ts` (`/^\d{8,14}$/`), 400 se não bater. `exigirModulo(admin, orgId,
-  'pulse')` logo após `requireUserOrg`, mesmo padrão das outras rotas do Sonar. Sem conexão ML da
-  org → `{conectado:false}` 200. Lookup oficial de catálogo (`/products/search?
-  product_identifier={ean}` → `/products/{id}` + `/products/{id}/items`, mesmo endpoint de
-  `_shared/ml/concorrencia.ts` mas para 1 EAN) é **grátis**, cache `sonar:ean:v1:{ean}` TTL 24h
-  (inclui tombstone `product_id:null` quando o EAN não tem ficha — resposta válida
-  `{conectado:true, catalogado:false}` 200, não erro). Se `com_vendas:true`: sem `APIFY_TOKEN*`
-  configurado ou run falho → `vendas_indisponivel:true` (degrada, NÃO derruba a resposta — o
-  lookup grátis já é válido por si só, diferente do 502 da `pulse-sonar-vendas`); com sucesso,
-  `buscarAnunciosML(ean)` (mesmo cliente Apify da vendas por termo), cache
-  `sonar:ean-vendas:v1:{ean}` TTL 7d. **Interseção por `item_id`:** `montarOfertasEan`
-  (`_shared/pulse/sonar-ean.ts`) só aceita `vendidos` da Apify para os `item_id` que a lookup
-  OFICIAL confirmou pertencerem ao produto — a busca Apify é por termo livre e pode trazer
-  anúncios de produtos vizinhos, mesmo usando o EAN como palavra-chave; item Apify fora da lista é
-  descartado, item oficial sem match na amostra fica com `vendidos:null` (limite de amostra, não
-  falha). Resposta 200 catalogada: `{conectado:true, catalogado:true, ean, product_id,
-  nome_produto, descricao_catalogo, com_vendas, vendas_indisponivel?, ofertas: [{item_id,
-  seller_id, preco, frete_gratis, full, vendidos}], gerado_em}`.
 - **pulse-analise-secoes237** (ADR-0142 + **ADR-0143**, `verify_jwt=true`, chamada pelo app com o
   JWT do usuário) — monta o payload dos campos 2.9, 3.2, 3.3, 3.4 e 7.4 do relatório Análise
   PubliAI a partir da amostra Sonar já paga. Recebe `{itens: ItemVendas[]}` (mesmo shape da

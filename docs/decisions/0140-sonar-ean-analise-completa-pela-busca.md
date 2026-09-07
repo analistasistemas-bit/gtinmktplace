@@ -126,6 +126,13 @@ deployada sem chamador não custa nada nem quebra nada, e mantém o caminho ofic
 distância caso a cobertura pela busca decepcione em algum EAN. Remoção fica como follow-up
 explícito, não como limpeza silenciosa.
 
+> **Adendo — 2026-09-07:** escotilha encerrada. A remoção se justifica porque a UI que chamava
+> `pulse-sonar-ean` (`fetchSonarPorEan` e os componentes `SonarEan*`) já não existe — foi apagada
+> em `50aea9d1`, antes mesmo desta função. Sem UI, "reviver a um commit de distância" já custava o
+> mesmo com ou sem a edge deployada: o código segue no git (criado em `5942e159`, desligado em
+> `50aea9d1`). Reviver, se um dia fizer sentido: `git revert 50aea9d1` (traz edge e UI juntas) +
+> `supabase functions deploy pulse-sonar-ean`.
+
 ## Refutações registradas (não tentar de novo)
 
 - **Manter o lookup oficial de catálogo como "consulta grátis" ao lado da análise completa.** É a

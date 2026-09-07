@@ -65,14 +65,10 @@ chama `fetchVendasSonar` (`src/pages/PulseSonar.tsx:531-541`, `src/lib/sonar.ts:
   presumido (regra de não-retroatividade do ADR-0155).
 - [x] `how-to/central-organizacoes.md` corrigido: a aba Pulse descreve o comportamento real (uma
   busca concluída = uma unidade, por termo **ou** EAN) e a limitação falsa saiu da lista.
-- [ ] **Decisão de Diego (não é código):** a edge `pulse-sonar-ean` segue deployada, alcançável com
-  JWT de usuário e fora do ledger — nenhum cliente a chama, mas com `com_vendas: true` ela gastaria
-  crédito Apify sem medição. Ou removê-la (`supabase functions delete pulse-sonar-ean` + apagar o
-  fonte e `supabase/config.toml:155`), ou manter a escotilha do ADR-0140 D-4 e aceitar a superfície.
-  Instrumentá-la exigiria migration no SQL financeiro: o guard de `platform_sonar_complete` só
-  aceita payload com `itens`/`por_anuncio` e a resposta do EAN é `ofertas`; e o cache durável por
-  `normalized_query`+`schema_version` devolveria a versão sem vendas para um pedido `com_vendas`.
-  Ver também o follow-up de remoção já aberto na seção do ADR-0140.
+- [x] **Decisão de Diego:** removida em 2026-09-07 — a edge `pulse-sonar-ean` foi apagada
+  (fonte, testes e bloco em `supabase/config.toml`; deploy da remoção fica para depois do merge).
+  A UI que a chamava já tinha sido apagada em `50aea9d1`, então mantê-la só como escotilha não
+  media nada e custava o mesmo para reviver com ou sem deploy. Ver adendo do ADR-0140 D-4.
 
 ## UPDATE de User Products não propagava atributos — ADR-0157 — 2026-09-07
 
@@ -1172,8 +1168,9 @@ Próximos passos, em ordem de ataque:
 - [x] Regressão do leitor de código de barras corrigida (D-3.1): a limpeza/refoco do campo vivia nos
   handlers removidos. Sem ela o 2º scan concatenava no 1º (26 dígitos) e virava busca paga em lixo.
   `garimpar()` limpa e refoca só quando o buscado é EAN; teste de página com checagem RED.
-- [ ] Follow-up: a edge `pulse-sonar-ean` e `_shared/pulse/sonar-ean.ts` continuam deployadas sem
-  chamador (ADR-0140 D-4). Remover quando a cobertura pela busca estiver confirmada em uso.
+- [x] Follow-up: a edge `pulse-sonar-ean` e `_shared/pulse/sonar-ean.ts` foram removidas em
+  2026-09-07 — a cobertura pela busca (ADR-0140 D-1) já estava confirmada em uso e a UI que
+  chamava a rota antiga já tinha sido apagada.
 
 ## Fundo de partículas nas telas de auth (ADR-0139) — 2026-08-28
 

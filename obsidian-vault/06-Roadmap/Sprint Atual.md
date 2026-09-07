@@ -160,7 +160,7 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > ~US$ 0,10, com o mesmo cache de 7 dias. Sobrevive da view antiga só o cruzamento com o catálogo
 > da org, agora com regra nova: `minhas` (GTIN exato) segue afirmando ausência, mas o **Radar só é
 > afirmado no positivo**, porque os `catalog_product_id` passaram a vir da amostra e vieram em 7 de
-> 20 anúncios. A edge `pulse-sonar-ean` fica deployada sem chamador (follow-up de remoção).
+> 20 anúncios. A edge `pulse-sonar-ean` foi removida em 2026-09-07 — escotilha do ADR-0140 D-4 encerrada.
 
 > **⚠️ Superado pelo ADR-0140 (acima) — Sonar — busca por EAN/GTIN (ADR-0127 Errata 1, 2026-08-22).** Além da
 > busca por termo (nicho), o Sonar aceita EAN/GTIN, restrito a **1 produto específico**. Lookup

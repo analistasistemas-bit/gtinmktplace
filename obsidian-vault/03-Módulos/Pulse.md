@@ -71,5 +71,4 @@ Para contornar limitações da API oficial do Mercado Livre (que restringe a vis
 - `pulse-adicionar` (`verify_jwt=true`): Adiciona produtos ao radar da organização.
 - `pulse-sonar-vendas` (`verify_jwt=true`): Consulta dados de vendas e nicho via Apify.
 - `pulse-sonar-visitas` (`verify_jwt=true`): Coleta visitas de anúncios via API oficial.
-- `pulse-sonar-ean` (`verify_jwt=true`): Lookup complementar de catálogo por EAN.
 - `pulse-analise-secoes237` (`verify_jwt=true`): Geração de seções analíticas e DRE para o Sonar.
