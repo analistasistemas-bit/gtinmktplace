@@ -1,6 +1,6 @@
 # ADR-0157: UPDATE de família User Products propaga os atributos que divergem do ML
 
-**Status:** Aceito
+**Status:** Aceito — em produção desde 2026-09-07
 **Data:** 2026-09-07
 **Decisores:** Diego
 
@@ -79,3 +79,10 @@ está publicado, não se reescreve ficha.
 
 Remover `attributes` do patch em `reposicao()` (`atualizar-composicao.ts`) e a porta
 `lerFichaPublicada`. `atributos-divergentes.ts` fica órfão e pode ser apagado.
+
+## Validação em produção (2026-09-07)
+
+Deployado e exercitado no caso real do ADR-0156: as 3 famílias de lantejoula republicadas pela
+Revisão, com `atributos_ml` já corrigido no banco. `GET /items/{id}` nos 9 anúncios confirmou
+`SALE_FORMAT='Unidade'` e `UNITS_PER_PACK='1'`, com preço, estoque e status `active` intactos —
+a rodada anterior, antes desta decisão, tinha deixado os mesmos 9 em `Kit / 8`.

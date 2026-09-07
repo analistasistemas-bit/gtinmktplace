@@ -16,9 +16,15 @@ rota User Products mandava só `{available_quantity, price}` — atributo só en
 - [x] Uma leitura de ficha por família (reaproveita o GET memoizado do irmão), não uma por cor.
 - [x] `somenteEstoque` não manda atributo nem paga o GET; falha de leitura repõe sem `attributes`.
 - [x] 9 testes da função pura (fixture da ficha real de `MLB5197880975`) + 5 da saga com fakes.
-- [ ] Republicar as 3 lantejoulas e conferir por `GET /items/{id}` — status `publicado` não prova.
-- [ ] **Legacy segue descoberto.** `02829916` (ANNE 65 CORES) só se corrige republicando, ou com
-  uma decisão própria para o caminho Legacy (blast radius: todo UPDATE de família Legacy).
+- [x] Deploy de `update-familia-ml`, `reconciliar-convergencia-up` e `remover-publicado`, e as 3
+  lantejoulas republicadas pela Revisão. **Conferido por `GET /items/{id}`** nos 9 anúncios —
+  `SALE_FORMAT='Unidade'`, `UNITS_PER_PACK='1'`, todos `active`, preço e estoque intactos:
+  `MLB5197880969` `MLB5197880975` `MLB5197880997` `MLB5197881015` `MLB5198027831` `MLB7245326808`
+  `MLB7245326842` `MLB7245327116` `MLB7245350072`.
+- [ ] **Legacy segue descoberto.** `02829916` (ANNE 65 CORES) é Legacy — 21 variações num item só,
+  zero linhas em `anuncios_externos_itens` — então o ADR-0157 não a alcança e ela continua com
+  `Kit / 65`. Some-se a isso o preço: o app calcula R$ 12,55 contra os R$ 19,00 no ar, e
+  "Atualizar tudo" derrubaria o preço. Precisa de decisão própria.
 
 ## "TAM 8 CORES" publicava como Kit de 8 unidades — ADR-0156 — 2026-09-07
 
