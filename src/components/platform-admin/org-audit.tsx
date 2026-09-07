@@ -33,16 +33,25 @@ const RESULTADOS: Record<string, string> = {
   success: 'Sucesso (admin/cobrança)',
   succeeded: 'Sucesso (suporte)',
   failure: 'Falha (admin)',
-  failed: 'Falha (suporte)',
+  failed: 'Falha (suporte/Sonar)',
   denied: 'Negado (suporte)',
   intent: 'Iniciado (admin)',
   ready: 'Concluído (Sonar)',
   partial: 'Parcial (Sonar)',
+  // O Sonar já grava estes três hoje (`platform_sonar_events.outcome`, migration
+  // 20260906170100): `billable` é a entrega que vale unidade, `exempt` a isenta (Daludi ou
+  // reabertura) e `collect` o início da coleta. Faltavam aqui, então eram infiltráveis.
+  billable: 'Faturável (Sonar)',
+  exempt: 'Isento (Sonar)',
+  collect: 'Coleta (Sonar)',
 };
 
+// As três fontes usam vocabulário próprio para a mesma ideia: o admin grava `success`/`failure`,
+// o suporte `succeeded`/`failed` (enum) e o Sonar `ready`/`failed`. Tratar só `success` como verde
+// pintava de cinza todo evento de suporte bem-sucedido — que hoje é a totalidade da auditoria real.
 function resultTone(result: string): 'success' | 'danger' | 'neutral' {
-  if (result === 'success') return 'success';
-  if (['failed', 'error', 'denied'].includes(result)) return 'danger';
+  if (['success', 'succeeded', 'ready'].includes(result)) return 'success';
+  if (['failure', 'failed', 'denied'].includes(result)) return 'danger';
   return 'neutral';
 }
 

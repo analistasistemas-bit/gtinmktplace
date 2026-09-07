@@ -127,6 +127,50 @@ describe('OrgAudit', () => {
     expect(screen.queryByText('succeeded')).not.toBeInTheDocument();
   });
 
+  // Antes desta correção só `success` era verde: os eventos de suporte (`succeeded`), que hoje são
+  // a totalidade da auditoria real em produção, saíam cinza como se fossem indefinidos.
+  it.each([
+    ['succeeded', 'Sucesso (suporte)', 'success'],
+    ['ready', 'Concluído (Sonar)', 'success'],
+    ['failure', 'Falha (admin)', 'danger'],
+    ['failed', 'Falha (suporte/Sonar)', 'danger'],
+    ['denied', 'Negado (suporte)', 'danger'],
+  ])('pinta %s como %s com o tom certo', (result, rotulo, tom) => {
+    mocks.useAudit.mockReturnValue({
+      data: makePage([makeRow({ result })]),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<OrgAudit orgId="org-a" month="2026-09" />);
+
+    const pill = screen.getByText(rotulo);
+    const classes = pill.className;
+    if (tom === 'success') expect(classes).toContain('success');
+    if (tom === 'danger') expect(classes).toMatch(/danger|destructive/);
+  });
+
+  // Valores que o Sonar já grava hoje (`platform_sonar_events.outcome`) e que faltavam no
+  // dicionário — sem eles a linha mostrava o termo cru e o filtro não alcançava o evento.
+  it.each([
+    ['billable', 'Faturável (Sonar)'],
+    ['exempt', 'Isento (Sonar)'],
+    ['collect', 'Coleta (Sonar)'],
+  ])('traduz o resultado %s do Sonar', (result, rotulo) => {
+    mocks.useAudit.mockReturnValue({
+      data: makePage([makeRow({ result })]),
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+
+    render(<OrgAudit orgId="org-a" month="2026-09" />);
+
+    expect(screen.getByText(rotulo)).toBeInTheDocument();
+    expect(screen.queryByText(result)).not.toBeInTheDocument();
+  });
+
   it('filtro de resultado é um select com opções reais, não texto livre em inglês', async () => {
     const user = userEvent.setup();
     mocks.useAudit.mockReturnValue({ data: makePage([makeRow()]), isLoading: false, isError: false, refetch: vi.fn() });

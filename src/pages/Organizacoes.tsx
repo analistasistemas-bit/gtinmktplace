@@ -124,9 +124,13 @@ function HeroCarteira({ totals, orgs, loading, className }: {
           <span className="text-muted-foreground">vs. mesmo período do mês anterior</span>
         </div>
       )}
-      <div className="mt-1 text-xs text-muted-foreground">
-        {fmtInt(totals?.org_count ?? 0)} organizações · {totals?.orders != null ? fmtInt(totals.orders) : '—'} pedidos
-      </div>
+      {/* Sem totais (erro), o `?? 0` afirmava "0 organizações" dentro do hero — o mesmo defeito da
+          contagem acima da tabela, num lugar de mais destaque. Sem dado, a linha não aparece. */}
+      {totals && (
+        <div className="mt-1 text-xs text-muted-foreground">
+          {fmtInt(totals.org_count)} organizações · {totals.orders != null ? fmtInt(totals.orders) : '—'} pedidos
+        </div>
+      )}
     </div>
   );
 }
@@ -523,9 +527,13 @@ export default function Organizacoes() {
           Incluir testes
         </label>
       </div>
-      <p className="mb-2 text-xs text-muted-foreground">
-        {wallet.data?.total ?? 0} organizações · ordenadas por {sortLabel}
-      </p>
+      {/* Só com dado: `?? 0` afirmava "0 organizações" enquanto carregava e, pior, logo acima da
+          faixa de erro — número falso onde o resto da tela usa skeleton. */}
+      {wallet.data && (
+        <p className="mb-2 text-xs text-muted-foreground">
+          {wallet.data.total} organizações · ordenadas por {sortLabel}
+        </p>
+      )}
 
       {wallet.isError && (
         <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">

@@ -194,6 +194,20 @@ describe('Organizacoes', () => {
     expect(await screen.findByText('2')).toBeInTheDocument();
   });
 
+  // A contagem usava `?? 0` e afirmava "0 organizações" enquanto carregava — e também no erro,
+  // logo acima da faixa vermelha, onde soa como "a carteira está vazia" em vez de "falhou".
+  it.each([
+    ['carregando', { data: undefined, isLoading: true }],
+    ['em erro', { data: undefined, isLoading: false, isError: true }],
+  ])('não afirma contagem de organizações quando está %s', (_estado, override) => {
+    usePlatformWallet.mockReturnValue({ refetch: vi.fn(), isError: false, ...override });
+
+    renderPage();
+
+    expect(screen.queryByText(/organizações · ordenadas por/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^0 organizações/)).not.toBeInTheDocument();
+  });
+
   it('nenhuma org com condição comercial: Previsão de cobrança vira — (nunca R$ 0,00)', async () => {
     const org = makeOrg({ id: 'sem-termos', nome: 'SemTermos', modality: null, forecast_cents: null, pending_count: null });
     usePlatformWallet.mockReturnValue(makeWallet([org], {
