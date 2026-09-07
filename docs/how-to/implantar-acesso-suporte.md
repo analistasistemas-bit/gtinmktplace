@@ -8,7 +8,7 @@
 
 - `diego@daludi.com.br` é super-admin da plataforma, sem organização.
 - `analistasistemas@gmail.com` continua na Avil, sem super-admin.
-- `analistasistemas@icloud.com` administra a organização permanente de testes.
+- `analistasistemas@icloud.com` administra a DSA.
 - Todo acesso da Daludi, inclusive somente leitura, depende de aprovação do cliente.
 - Solicitações, decisões, sessões e ações ficam auditadas por 1 ano.
 
@@ -18,7 +18,7 @@
 - Supabase CLI autenticado e projeto de produção corretamente vinculado.
 - Backup recente e janela de implantação definida.
 - Usuário `diego@daludi.com.br` criado e com e-mail confirmado no Supabase Auth.
-- IDs da Avil e da organização de testes conferidos no banco.
+- IDs da Avil e da DSA conferidos no banco.
 - Domínio remetente validado no Resend.
 
 ## 1. Validar antes da publicação
@@ -62,10 +62,9 @@ confirme no banco que nenhuma identidade viola o estado final:
 
 1. Vincule `analistasistemas@gmail.com` à Avil com `is_admin = true` e
    `is_super_admin = false`.
-2. Vincule `analistasistemas@icloud.com` à DSA de testes (`slug = 'diego-souza'`, ID previamente
+2. Vincule `analistasistemas@icloud.com` à DSA (`slug = 'diego-souza'`, ID previamente
    conferido) com `is_admin = true` e `is_super_admin = false`.
-3. Marque a DSA (`diego-souza`, ID previamente conferido) como `is_test = true`.
-4. Configure `diego@daludi.com.br` com `org_id = null`, `is_admin = false` e
+3. Configure `diego@daludi.com.br` com `org_id = null`, `is_admin = false` e
    `is_super_admin = true`.
 
 Corrija a migração de identidades antes de continuar. A migration final valida
@@ -100,14 +99,14 @@ Confirme que a versão da função mudou e que `verify_jwt` continua conforme
 
 Sem fazer novas mutações, confira novamente por ID e e-mail que `diego@daludi.com.br` não tem
 `org_id` e é o super-admin, que `analistasistemas@gmail.com` é admin da Avil sem super-admin e
-que `analistasistemas@icloud.com` é admin da DSA de testes (`diego-souza`, ID previamente
+que `analistasistemas@icloud.com` é admin da DSA (`diego-souza`, ID previamente
 conferido) sem super-admin. A restrição `profiles_identity_xor` impede que um super-admin também
 pertença a uma organização.
 
 ## 7. Teste de fumaça
 
 1. Entrar como `diego@daludi.com.br`.
-2. Na tela **Organizações**, solicitar acesso somente leitura à organização de testes.
+2. Na tela **Organizações**, solicitar acesso somente leitura à DSA.
 3. Entrar como `analistasistemas@icloud.com`, abrir **Solicitações de suporte** e aprovar.
 4. Voltar ao super-admin, iniciar a sessão e confirmar o banner, organização e horário final.
 5. Confirmar que o modo leitura bloqueia escrita.

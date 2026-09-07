@@ -2,6 +2,19 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## DSA deixa de ser organização de teste — 2026-09-07
+
+A DSA (`diego-souza`) estava com `is_test = true` desde `20260725224000_support_access.sql`, quando
+servia de sandbox do acesso de suporte. Com a Central de Organizações (ADR-0155) a flag passou a ter
+efeito comercial: a carteira e os totais filtram `is_test` por padrão, então a DSA sumia da central e
+ficava fora da cobrança. Ela é uma organização cliente como qualquer outra.
+
+- [x] `20260907094241_dsa_org_produtiva.sql` zera a flag, com trava LOUD que derruba o push se a org
+  continuar marcada como teste. Aplicada no remoto; `npm run db:check` alinhado.
+- [x] `docs/how-to/implantar-acesso-suporte.md` não trata mais a DSA como organização de testes.
+- [x] Fixture de `Organizacoes.test.tsx` usa uma org `sandbox` genérica — a cobertura do filtro
+  `is_test` continua, sem usar a DSA como exemplo.
+
 ## Faturamento: venda sem foto na org DSA — branch `Bug-fotos-faturamento` — 2026-09-06
 
 Duas vendas por MLB criado direto no ML (Sérum `MLB7580506496`, Kit Centrum `MLB7391084566`,

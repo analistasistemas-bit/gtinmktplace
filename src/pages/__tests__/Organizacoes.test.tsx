@@ -91,7 +91,7 @@ function renderPage(initialEntry = '/admin?mes=2026-09') {
 describe('Organizacoes', () => {
   it('solicita acesso somente leitura com motivo e identifica tenant de teste', async () => {
     usePlatformOrganizations.mockReturnValue({
-      data: { rows: [makeOrg({ id: 'dsa', nome: 'DSA', slug: 'diego-souza', is_test: true })], total: 1, page: 1, page_size: 10 },
+      data: { rows: [makeOrg({ id: 'sandbox', nome: 'Sandbox', slug: 'sandbox', is_test: true })], total: 1, page: 1, page_size: 10 },
       isLoading: false,
       isError: false,
     });
@@ -106,7 +106,7 @@ describe('Organizacoes', () => {
     await user.click(screen.getByRole('button', { name: 'Enviar solicitação' }));
 
     await waitFor(() => expect(requestSupport).toHaveBeenCalledWith({
-      orgId: 'dsa', scope: 'read', reason: 'Verificar falha de integração',
+      orgId: 'sandbox', scope: 'read', reason: 'Verificar falha de integração',
     }));
   });
 
