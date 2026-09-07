@@ -137,6 +137,8 @@ verify_jwt = true
 verify_jwt = true
 [functions.usuarios]
 verify_jwt = true
+[functions.platform-admin]
+verify_jwt = true
 [functions.suporte]
 verify_jwt = true
 # ADR-0119 (Pulse): "Adicionar produto" — chamada pelo APP com o JWT do usuário.

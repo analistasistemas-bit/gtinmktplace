@@ -35,6 +35,25 @@ Deno.serve(async (req) => {
   const orgId = me.org_id as string;
   const sanitizeMenus = (m: unknown) => (Array.isArray(m) ? m.filter((x) => MENU_KEYS.includes(x)) : []);
   const appUrl = Deno.env.get('APP_URL') ?? '';
+  const auditPlatformAction = async (
+    targetOrgId: string,
+    auditedAction: string,
+    result: 'intent' | 'success' | 'failure',
+    details: Record<string, unknown> = {},
+  ): Promise<string | null> => {
+    const { error } = await db.from('platform_audit_events').insert({
+      org_id: targetOrgId,
+      actor_id: caller.id,
+      category: 'admin',
+      action: auditedAction,
+      result,
+      target: targetOrgId,
+      details,
+    });
+    return error?.message ?? null;
+  };
+  const auditWriteError = (result: 'intent' | 'success' | 'failure', error: string) =>
+    json({ error: `Falha ao registrar auditoria (${result}): ${error}` }, 500);
 
   switch (action) {
     case 'invite': {
@@ -133,6 +152,8 @@ Deno.serve(async (req) => {
         const dup = /duplicate|unique/i.test(orgErr.message);
         return json({ error: dup ? 'Já existe uma empresa com esse slug.' : orgErr.message }, dup ? 409 : 400);
       }
+      const intentAuditError = await auditPlatformAction(org.id, action, 'intent', { nome, slug });
+      if (intentAuditError) return auditWriteError('intent', intentAuditError);
 
       // Convida o primeiro admin da org nova; o trigger cria o profile com a org.
       const { data: inv, error: invErr } = await db.auth.admin.inviteUserByEmail(adminEmail, {
@@ -140,13 +161,21 @@ Deno.serve(async (req) => {
         redirectTo: `${appUrl}/#/definir-senha`,
       });
       if (invErr) {
-        await db.from('organizations').delete().eq('id', org.id); // rollback: org sem admin não serve
+        const resultAuditError = await auditPlatformAction(org.id, action, 'failure', { stage: 'invite_admin' });
+        if (resultAuditError) return auditWriteError('failure', resultAuditError);
         const dup = /already.*registered/i.test(invErr.message);
-        return json({ error: dup ? 'Esse e-mail já tem cadastro em outra empresa.' : invErr.message }, dup ? 409 : 400);
+        return json({ error: dup ? 'Empresa criada, mas esse e-mail já tem cadastro em outra empresa.' : `Empresa criada, mas o convite falhou: ${invErr.message}` }, dup ? 409 : 400);
       }
       if (inv.user?.id) {
-        await db.from('profiles').update({ is_admin: true, org_id: org.id, updated_at: new Date().toISOString() }).eq('id', inv.user.id);
+        const { error: profileError } = await db.from('profiles').update({ is_admin: true, org_id: org.id, updated_at: new Date().toISOString() }).eq('id', inv.user.id);
+        if (profileError) {
+          const resultAuditError = await auditPlatformAction(org.id, action, 'failure', { stage: 'promote_admin' });
+          if (resultAuditError) return auditWriteError('failure', resultAuditError);
+          return json({ error: `Empresa e convite criados, mas a promoção do administrador falhou: ${profileError.message}` }, 500);
+        }
       }
+      const resultAuditError = await auditPlatformAction(org.id, action, 'success', { admin_user_id: inv.user?.id ?? null });
+      if (resultAuditError) return auditWriteError('success', resultAuditError);
       return json({ ok: true, org_id: org.id });
     }
     case 'set_canais_org': {
@@ -162,9 +191,13 @@ Deno.serve(async (req) => {
       if (!canaisUnicos.includes('mercado_livre')) {
         return json({ error: 'mercado_livre não pode ser desabilitado' }, 400);
       }
+      const intentAuditError = await auditPlatformAction(alvo, action, 'intent', { canais: canaisUnicos });
+      if (intentAuditError) return auditWriteError('intent', intentAuditError);
       const { error } = await db.from('organizations')
         .update({ canais_habilitados: canaisUnicos, atualizado_em: new Date().toISOString() })
         .eq('id', alvo);
+      const resultAuditError = await auditPlatformAction(alvo, action, error ? 'failure' : 'success', { canais: canaisUnicos });
+      if (resultAuditError) return auditWriteError(error ? 'failure' : 'success', resultAuditError);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
     }
@@ -197,9 +230,14 @@ Deno.serve(async (req) => {
       }
       // Diferente de set_canais_org: NÃO há módulo obrigatório. Lista vazia é estado
       // válido (org sem nenhum módulo) e é o default de toda org.
+      const modulosUnicos = [...new Set(modulos)];
+      const intentAuditError = await auditPlatformAction(alvo, action, 'intent', { modulos: modulosUnicos });
+      if (intentAuditError) return auditWriteError('intent', intentAuditError);
       const { error } = await db.from('organizations')
-        .update({ modulos_habilitados: [...new Set(modulos)], atualizado_em: new Date().toISOString() })
+        .update({ modulos_habilitados: modulosUnicos, atualizado_em: new Date().toISOString() })
         .eq('id', alvo);
+      const resultAuditError = await auditPlatformAction(alvo, action, error ? 'failure' : 'success', { modulos: modulosUnicos });
+      if (resultAuditError) return auditWriteError(error ? 'failure' : 'success', resultAuditError);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
     }
@@ -218,8 +256,12 @@ Deno.serve(async (req) => {
           return json({ error: 'Desligue o módulo fiscal antes de voltar a organização para pessoa física.' }, 400);
         }
       }
+      const intentAuditError = await auditPlatformAction(alvo, action, 'intent', { tipo_pessoa: tipo });
+      if (intentAuditError) return auditWriteError('intent', intentAuditError);
       const { error } = await db.from('organizations')
         .update({ tipo_pessoa: tipo, atualizado_em: new Date().toISOString() }).eq('id', alvo);
+      const resultAuditError = await auditPlatformAction(alvo, action, error ? 'failure' : 'success', { tipo_pessoa: tipo });
+      if (resultAuditError) return auditWriteError(error ? 'failure' : 'success', resultAuditError);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
     }
@@ -232,27 +274,19 @@ Deno.serve(async (req) => {
 
       const { data: alvoOrg } = await db.from('organizations').select('id').eq('id', alvo).single();
       if (!alvoOrg) return json({ error: 'Empresa não encontrada.' }, 404);
-
-      const { data: membros } = await db.from('profiles').select('id').eq('org_id', alvo);
-
-      // Dados por org: org_id → organizations é NO ACTION, então deleta explícito.
-      // 'lotes' cascateia familias→variacoes; 'ml_vendas' cascateia ml_vendas_itens.
-      // Vault: o secret da conexão não é removido aqui (órfão inofensivo). Os anúncios
-      // no marketplace NÃO são despublicados — isto apaga só os registros locais da org.
-      const tabelas = ['lotes', 'ml_vendas', 'anuncios_externos', 'ml_perguntas', 'ml_devolucoes',
-        'ml_moderacao', 'ml_webhook_eventos', 'ml_credentials', 'configuracoes', 'marketplace_connections'];
-      for (const t of tabelas) {
-        const { error } = await db.from(t).delete().eq('org_id', alvo);
-        // tolera tabela já removida (ex.: ml_credentials após cleanup do E7)
-        if (error && !/does not exist|could not find the table|42P01/i.test(error.message)) {
-          return json({ error: `Falha ao limpar ${t}: ${error.message}` }, 500);
-        }
+      const historyTables = ['platform_commercial_terms', 'platform_billing_statements', 'platform_billing_sale_facts',
+        'platform_revenue_reconciliations', 'platform_audit_events', 'platform_sonar_searches',
+        'platform_sonar_deliveries', 'platform_sonar_events'];
+      for (const table of historyTables) {
+        const { count, error } = await db.from(table).select('id', { count: 'exact', head: true }).eq('org_id', alvo);
+        if (error) return json({ error: `Não foi possível verificar o histórico em ${table}: ${error.message}` }, 500);
+        if ((count ?? 0) > 0) return json({ error: `Exclusão recusada: a organização possui histórico em ${table}.` }, 409);
       }
-      await db.from('profiles').delete().eq('org_id', alvo);
-      for (const m of membros ?? []) await db.auth.admin.deleteUser(m.id as string);
-      const { error: eOrg } = await db.from('organizations').delete().eq('id', alvo);
-      if (eOrg) return json({ error: eOrg.message }, 500);
-      return json({ ok: true });
+      const intentAuditError = await auditPlatformAction(alvo, action, 'intent', { mode: 'disabled_non_atomic_flow' });
+      if (intentAuditError) return auditWriteError('intent', intentAuditError);
+      const resultAuditError = await auditPlatformAction(alvo, action, 'failure', { reason: 'sequential_delete_is_not_atomic' });
+      if (resultAuditError) return auditWriteError('failure', resultAuditError);
+      return json({ error: 'Exclusão desabilitada: o fluxo atual não garante remoção atômica sem apagar parcialmente a organização.' }, 409);
     }
     default:
       return json({ error: 'ação inválida' }, 400);

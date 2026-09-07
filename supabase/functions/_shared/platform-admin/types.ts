@@ -54,8 +54,26 @@ export type BillingPreview = {
   lines: BillingLine[];
   total_cents: Cents;
   credit_cents: Cents;
+  credit_balance_cents: Cents;
+  adjustments: Array<{ origin_statement_id: string; amount_cents: Cents }>;
+  sources: Array<{
+    sale_id: string;
+    source_updated_at: string;
+    gross_cents: Cents;
+    refunded_product_cents: Cents;
+    recognized_base_cents: Cents;
+  }>;
   revision: string;
-  blockers: Array<{ code: string; message: string; sale_id?: string }>;
+  blockers: Array<{
+    code: string;
+    message: string;
+    sale_id?: string;
+    order_ref?: string | null;
+    source_updated_at?: string;
+    gross_cents?: Cents;
+    status?: string;
+    refunded_product_cents?: Cents | null;
+  }>;
 };
 
 export type BillingStatement = BillingPreview & {
@@ -90,9 +108,9 @@ export type OrgSummary = {
   modality: 1 | 2 | null;
   metrics: OrgMetrics | null;
   forecast_cents: Cents | null;
-  billable_units: number;
-  daludi_searches: number;
-  pending_count: number;
+  billable_units: number | null;
+  daludi_searches: number | null;
+  pending_count: number | null;
 };
 
 export type Page<T> = { rows: T[]; total: number; page: number; page_size: number };
