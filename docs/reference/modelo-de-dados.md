@@ -91,6 +91,20 @@ Condições e demonstrativos preservam competência em `America/Fortaleza`; fech
 permanece desabilitada enquanto a limpeza sequencial não puder preservar esse histórico
 atomicamente. Ver o [guia da central](../how-to/central-organizacoes.md).
 
+A migration `20260907102428_platform_terms_contract_fix.sql` (ADR-0156 §1) recria
+`platform_billing_preview`/`platform_billing_close`: `platform_resolve_terms` é escalar e devolvia
+uma linha toda `NULL` quando a organização não tem condição comercial, então o antigo `if not found`
+nunca disparava o blocker `commercial_terms_required`; a detecção passa a ser `v_terms.id is null`, e
+`platform_billing_close` recusa fechar sem condição comercial antes de qualquer `insert`.
+
+A migration `20260907103422_platform_org_cost_catalog.sql` (ADR-0156 §5) cria
+`platform_org_cost_catalog(p_org uuid, p_since timestamptz)`, que devolve como um único `jsonb`
+(agregado com `jsonb_agg` — não `returns table`, porque o `max_rows` do PostgREST truncaria em
+silêncio catálogos acima de 1000 linhas) as variações da organização, com `familias.ml_item_id` e
+`familias.origem` embutidos, cujas chaves de resolução (`ml_variation_id`, `ml_item_id`, `gtin`,
+`codigo`) casam com algum item vendido desde `p_since`. `security definer`, `search_path=''`,
+execução restrita a `service_role`. Usada por `readOrgMetrics` no lugar de ler `variacoes` inteira.
+
 ### `marketplace_connections`
 **Substitui `ml_credentials`** como fonte da credencial de canal — a conexão é da **organização**,
 não do usuário (fecha a pendência do ADR-0047 "membros não publicam"). *Migration

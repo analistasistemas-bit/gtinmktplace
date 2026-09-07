@@ -82,6 +82,10 @@ export type BillingStatement = BillingPreview & {
   closed_by: string;
 };
 
+/** `error` = falha de leitura (não sabemos o dado real); `warning` = ausência esperada e
+ *  acionável (o dado é conhecido: falta cadastro). As duas nunca compartilham cor na UI. */
+export type MetricsWarning = { code: string; severity: 'error' | 'warning'; message: string };
+
 export type OrgMetrics = {
   org_id: string;
   month: Month;
@@ -97,7 +101,7 @@ export type OrgMetrics = {
   updated_at: string | null;
   previous: { gross_cents: Cents; orders: number; markup: number | null } | null;
   series: Array<{ month: Month; gross_cents: Cents; markup: number | null }>;
-  warnings: string[];
+  warnings: MetricsWarning[];
 };
 
 export type OrgSummary = {

@@ -4,10 +4,11 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
-const { usePlatformOrganization, usePlatformPreview, start, requestSupport, cancelSupport, listSupportRequests } = vi.hoisted(() => ({
+const { usePlatformOrganization, usePlatformPreview, start, end, requestSupport, cancelSupport, listSupportRequests } = vi.hoisted(() => ({
   usePlatformOrganization: vi.fn(),
   usePlatformPreview: vi.fn(),
   start: vi.fn(),
+  end: vi.fn(),
   requestSupport: vi.fn(),
   cancelSupport: vi.fn(),
   listSupportRequests: vi.fn(),
@@ -16,7 +17,7 @@ const { usePlatformOrganization, usePlatformPreview, start, requestSupport, canc
 vi.mock('@/hooks/usePlatformAdmin', () => ({ usePlatformOrganization, usePlatformPreview }));
 vi.mock('@/lib/suporte', () => ({ requestSupport, cancelSupport, listSupportRequests }));
 vi.mock('@/stores/support-store', () => ({
-  useSupportStore: (selector: (state: { start: typeof start }) => unknown) => selector({ start }),
+  useSupportStore: (selector: (state: { start: typeof start; end: typeof end }) => unknown) => selector({ start, end }),
 }));
 vi.mock('@/components/platform-admin/org-results', () => ({
   OrgResults: ({ orgId, month }: { orgId: string; month: string }) => <p>Resultados {orgId} {month}</p>,
@@ -205,5 +206,20 @@ describe('OrganizacaoDetalhe', () => {
     const cancelButton = await screen.findByRole('button', { name: 'Cancelar solicitação' });
     await user.click(cancelButton);
     await waitFor(() => expect(cancelSupport).toHaveBeenCalledWith('request-2'));
+  });
+
+  it('mostra a sessão de suporte ativa no cabeçalho e permite encerrá-la', async () => {
+    const user = userEvent.setup();
+    end.mockResolvedValue(undefined);
+    listSupportRequests.mockResolvedValue({
+      requests: [{ id: 'request-3', org_id: 'org-avil', status: 'active', scope: 'read', expires_at: '2026-08-15T18:30:00Z' }],
+      total: 1, page: 1, pageSize: 50,
+    });
+    renderPage();
+
+    expect(await screen.findByText(/Acesso ativo/)).toBeInTheDocument();
+    const endButton = screen.getByRole('button', { name: 'Encerrar suporte' });
+    await user.click(endButton);
+    await waitFor(() => expect(end).toHaveBeenCalledWith('request-3'));
   });
 });

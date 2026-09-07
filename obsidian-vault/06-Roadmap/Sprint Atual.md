@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-09-06
+atualizado: 2026-09-07
 ---
 
 # Sprint Atual
@@ -63,6 +63,15 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > estimativa. Ver
 > [ADR-0154](../../docs/decisions/0154-kits-virtuais-mercado-livre.md) e
 > [Spike 036](../../docs/spikes/036-kits-virtuais-mercado-livre.md).
+
+> **✅ ADR-0156: Central de organizações — carteira agregada, pendências corretas e alíquota
+> explícita — EM PRODUÇÃO (2026-09-07).** Corrige dois bugs de dado achados na auditoria da central
+> `/admin` (`platform_resolve_terms` mentia sobre condição comercial ausente; "Pendências" contava
+> busca Sonar em voo, não bloqueio de cobrança), junta `overview`+`list` numa ação `wallet` só e
+> troca a leitura de `variacoes` inteira por uma RPC que devolve só o custo dos itens vendidos; o
+> formulário de condições comerciais passou a existir na interface, na aba Cobrança. Ver
+> [ADR-0156](../../docs/decisions/0156-central-carteira-agregada-e-pendencias.md) e o
+> [guia de operação](../../docs/how-to/central-organizacoes.md).
 
 ## 📍 Passo anterior (2026-09-03) — EM PRODUÇÃO
 

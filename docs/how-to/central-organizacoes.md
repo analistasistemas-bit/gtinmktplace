@@ -1,7 +1,7 @@
 # Operar a Central de Organizações
 
-> Estado em 2026-09-06: implementação validada na branch
-> `codex/admin-control-20260906`, ainda não promovida para produção.
+> Em produção desde 2026-09-07. Regras de negócio: [ADR-0155](../decisions/0155-central-organizacoes-cobranca-auditavel.md)
+> e [ADR-0156](../decisions/0156-central-carteira-agregada-e-pendencias.md).
 
 ## Pré-requisitos
 
@@ -14,28 +14,40 @@
 ## Consultar a carteira
 
 1. Abra `/admin`.
-2. Pesquise, ordene ou inclua organizações de teste quando necessário. Elas ficam fora dos totais
-   comerciais por padrão.
-3. Confira faturamento bruto, evolução, markup, cobertura de custos, consumo Sonar, previsão e
-   pendências.
-4. Abra **Ver organização** para acessar o detalhe sem trocar a organização ativa da operação.
+2. Pesquise por nome/slug, filtre **Com pendências** ou inclua organizações de teste quando
+   necessário. Testes ficam fora dos totais comerciais por padrão.
+3. No topo, confira os agregados da carteira: faturamento bruto, previsão de cobrança, pendências e
+   número de organizações. Na tabela, cada organização mostra faturamento, markup, cobertura de
+   custos, consultas Pulse, previsão e pendências.
+4. Quando houver algo a resolver, a faixa **Precisa da sua atenção** lista organizações sem condição
+   comercial, organizações com pendência de cobrança e acessos de suporte aprovados aguardando
+   entrada — cada item já leva direto para a ação.
+5. Abra **Ver organização** para acessar o detalhe sem trocar a organização ativa da operação.
+
+**Pendência** é bloqueio do demonstrativo do mês selecionado: condição comercial ausente, devolução
+sem conciliação ou venda alterada após o fechamento. Uma busca Sonar em andamento não conta como
+pendência.
 
 O markup nunca deve ser interpretado como margem nem como base de cobrança. Ele segue a fórmula
-operacional `(líquido após impostos − custo) ÷ custo`. Quando custos ou configuração tributária
-não estão disponíveis, a central mostra o indicador como indisponível, em vez de assumir zero.
+operacional `(líquido após impostos − custo) ÷ custo`, exibido como percentual (por exemplo `+43%`).
+Quando faltam custos, ou a organização ainda não confirmou a própria alíquota tributária na tela
+Configurações do app do cliente, a central mostra `—` no lugar do número, em vez de presumir um
+valor (nunca 8 %/16 % por padrão).
 
 ## Usar as cinco áreas do detalhe
 
 1. **Resultados:** bruto, pedidos, ticket, markup com cobertura, comparação equivalente e série de
-   seis meses. Contagens operacionais sem fonte confiável permanecem indisponíveis.
+   seis meses. Contagens operacionais (anúncios ativos, publicações) não são exibidas nesta versão —
+   ver Limitações.
 2. **Pulse:** unidades faturáveis do cliente, consultas Daludi isentas, falhas e reaberturas. Uma
-   busca Sonar concluída por termo ou EAN vale uma unidade; retry, complemento e reabertura da mesma
-   versão não geram outra unidade.
-3. **Cobrança:** prévia da competência, composição, conciliações, fechamento e demonstrativos
-   fechados exportáveis.
+   busca Sonar concluída por termo vale uma unidade; retry, complemento e reabertura da mesma versão
+   não geram outra unidade. Busca por EAN ainda não entra nessa contagem (decisão pendente). Custo
+   medido do fornecedor não é exibido nesta versão, por falta de medição confiável.
+3. **Cobrança:** cadastro e renegociação das condições comerciais, prévia da competência,
+   composição, conciliações, fechamento e demonstrativos fechados exportáveis.
 4. **Auditoria:** eventos administrativos, comerciais, Pulse e suporte, filtrados sem expor
    credenciais ou payloads completos de fornecedores.
-5. **Configurações:** cadastro, modalidade, canais, módulos e condições comerciais negociadas.
+5. **Configurações:** cadastro (tipo de pessoa), canais e módulos habilitados para a organização.
 
 ## Entender bruto e base de cobrança
 
@@ -51,10 +63,13 @@ não estão disponíveis, a central mostra o indicador como indisponível, em ve
 
 ## Cadastrar ou renegociar condições
 
-1. Em **Configurações**, confira modalidade, infraestrutura mensal, percentual sobre a base bruta,
-   preço por consulta e eventual implantação.
-2. Informe a vigência e um motivo verificável.
-3. Salve e confira a nova versão no histórico.
+1. Em **Cobrança**, abra o card **Condições comerciais** (aberto por padrão no primeiro contrato;
+   colapsado, com a condição vigente resumida, quando já existe uma) e confira modalidade,
+   infraestrutura mensal, percentual sobre a base bruta, preço por consulta Sonar e eventual
+   implantação.
+2. Informe a vigência (só no primeiro contrato — renegociação sempre vale a partir do próximo mês) e
+   um motivo verificável.
+3. Salve e confira a nova versão no card **Histórico de condições**, logo abaixo.
 
 Valores zero são válidos. A modalidade 2 também pode ter infraestrutura mensal. No **primeiro
 cadastro**, a vigência pode começar neste mês ou no próximo, sem cobrança retroativa; nas
@@ -73,6 +88,11 @@ conservam a condição e os valores originais.
    organização/competência.
 6. Exporte o demonstrativo fechado para a cobrança manual.
 
+Sem condição comercial vigente, ou com pendências em aberto, o botão **Fechar demonstrativo** fica
+desabilitado e mostra o motivo (por exemplo "Sem condições comerciais" ou "Bloqueada · N
+pendências"); o servidor também recusa o fechamento sem condição comercial, mesmo que o botão seja
+acionado por fora do fluxo normal.
+
 Fatos tardios entram como ajustes rastreáveis em período posterior e usam a condição original.
 Créditos são transportados; um total negativo deve ser tratado como crédito, não como pagamento.
 
@@ -88,9 +108,12 @@ de suporte e respeite o escopo, a aprovação e a validade existentes.
   é um demonstrativo para cobrança manual.
 - Não há cobrança retroativa: consumo anterior à instrumentação ou ocorrido sem contrato permanece
   sem preço presumido.
-- Markup fica indisponível quando não há cobertura de custos confiável.
-- Custos internos do fornecedor aparecem apenas quando existe medição verificável.
+- Markup aparece como `—` quando não há cobertura de custos confiável ou a organização não confirmou
+  a própria alíquota tributária.
+- Contagens operacionais (anúncios ativos, publicações) e custo medido do fornecedor não são
+  exibidos nesta versão: nunca foram implementados e exigem definir a fonte de dados.
+- Busca Sonar por EAN ainda não entra na contagem de unidades faturáveis (só a busca por termo
+  conta); decisão de negócio pendente.
 - `delete_org` está desabilitado: a limpeza sequencial existente não garante exclusão atômica nem
   preservação segura de todo o histórico comercial.
 - Locks compartilhados usados no fechamento podem atrasar brevemente operações de outros tenants.
-- Migrações, Edge Functions e interface desta entrega ainda não foram promovidas para produção.

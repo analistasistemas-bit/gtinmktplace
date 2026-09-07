@@ -36,6 +36,10 @@ function isTab(value: string | null): value is Tab {
   return tabs.includes(value as Tab);
 }
 
+function fmtHora(iso: string): string {
+  return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+}
+
 // Mesma conta de `humanPercent` em `org-billing.tsx` — não exportada de lá (aba de outro agente).
 function humanPercent(bps: number | null | undefined): string {
   if (bps == null) return 'Não definido';
@@ -54,6 +58,7 @@ export default function OrganizacaoDetalhe() {
   const org = organization.data;
   const preview = usePlatformPreview(orgId, month);
   const startSupport = useSupportStore((state) => state.start);
+  const endSupport = useSupportStore((state) => state.end);
 
   const support = useQuery({
     queryKey: ['support-requests', orgId],
@@ -93,6 +98,20 @@ export default function OrganizacaoDetalhe() {
     }
   }
 
+  async function endActiveSupport() {
+    if (!request) return;
+    setSupportBusy(true);
+    try {
+      await endSupport(request.id);
+      toast.success('Sessão de suporte encerrada.');
+      await refreshSupport();
+    } catch (caught) {
+      toast.error(caught instanceof Error ? caught.message : 'Não foi possível encerrar a sessão de suporte.');
+    } finally {
+      setSupportBusy(false);
+    }
+  }
+
   async function enterOperation() {
     if (!request) return;
     setSupportBusy(true);
@@ -117,7 +136,11 @@ export default function OrganizacaoDetalhe() {
     </label>
   );
 
-  const supportButton = request?.status === 'pending' ? (
+  const supportButton = request?.status === 'active' ? (
+    <Button variant="outline" onClick={endActiveSupport} disabled={supportBusy}>
+      {supportBusy ? 'Encerrando…' : 'Encerrar suporte'}
+    </Button>
+  ) : request?.status === 'pending' ? (
     <Button variant="outline" onClick={cancelRequest} disabled={supportBusy}>
       {supportBusy ? 'Cancelando…' : 'Cancelar solicitação'}
     </Button>
@@ -186,6 +209,11 @@ export default function OrganizacaoDetalhe() {
           />
           <div className="flex flex-wrap items-center gap-2">
             {org.is_test && <Badge variant="outline">Ambiente de teste</Badge>}
+            {request?.status === 'active' && (
+              <StatusPill tone="info" title={request.expires_at ? `Expira às ${fmtHora(request.expires_at)}` : undefined}>
+                Acesso ativo{request.expires_at ? ` · expira às ${fmtHora(request.expires_at)}` : ''}
+              </StatusPill>
+            )}
             {subtitleNode}
           </div>
         </div>

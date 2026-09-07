@@ -1,4 +1,4 @@
-import type { OrgMetrics } from './types.ts';
+import type { MetricsWarning, OrgMetrics } from './types.ts';
 import { calcularResumo, type ResumoVendas } from './sales-summary.ts';
 import { montarAliquotaResolver, montarCustoResolver, montarMapasCusto, montarPesoResolver } from './sales-costs.ts';
 import { comCustoCongelado, type CustoCongeladoRow, type Venda, type VendaItem } from './sales-types.ts';
@@ -162,10 +162,23 @@ export async function readOrgMetrics(db: MetricsDb, orgId: string, month: string
     maps, rates, now, costsAvailable, configAvailable,
   );
 
-  const warnings: string[] = [];
-  if (!costsAvailable) warnings.push(`Custos indisponíveis: ${catalogResult.error?.message ?? 'catálogo em formato inesperado'}`);
-  if (configResult.error) warnings.push(`Configuração tributária indisponível: ${configResult.error.message}`);
-  else if (!configAvailable) warnings.push('Configuração tributária não confirmada');
+  // Falha de leitura (não sabemos o custo/alíquota real) é `error`; ausência esperada e acionável
+  // (organização sem confirmar a alíquota) é `warning` — a UI não pode misturar as duas na mesma cor.
+  const warnings: MetricsWarning[] = [];
+  if (!costsAvailable) {
+    warnings.push({
+      code: 'cost_catalog_read_failed', severity: 'error',
+      message: `Falha ao carregar os custos: ${catalogResult.error?.message ?? 'catálogo em formato inesperado'}`,
+    });
+  }
+  if (configResult.error) {
+    warnings.push({
+      code: 'tax_config_read_failed', severity: 'error',
+      message: `Falha ao carregar a configuração tributária: ${configResult.error.message}`,
+    });
+  } else if (!configAvailable) {
+    warnings.push({ code: 'tax_config_unconfirmed', severity: 'warning', message: 'Configuração tributária não confirmada' });
+  }
   const updated = rangeSales(sales, startOf(month), selectedEnd).map((sale) => sale.atualizado_em).filter(Boolean).sort().at(-1) ?? null;
 
   return {

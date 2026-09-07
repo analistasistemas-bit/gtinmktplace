@@ -144,9 +144,17 @@ export function OrgResults({ orgId, month }: { orgId: string; month: string }) {
         </Card>
       </div>
 
-      {metrics && metrics.warnings.length > 0 && (
+      {metrics && metrics.warnings.some((warning) => warning.severity === 'error') && (
+        <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <div className="space-y-1">
+            {metrics.warnings.filter((warning) => warning.severity === 'error').map((warning) => <p key={warning.code}>{warning.message}</p>)}
+          </div>
+          <Button variant="outline" size="sm" onClick={() => query.refetch()}>Tentar novamente</Button>
+        </div>
+      )}
+      {metrics && metrics.warnings.some((warning) => warning.severity === 'warning') && (
         <div className="rounded-md border border-warning/40 bg-warning/5 px-4 py-3 text-sm">
-          {metrics.warnings.map((warning) => <p key={warning}>{warning}</p>)}
+          {metrics.warnings.filter((warning) => warning.severity === 'warning').map((warning) => <p key={warning.code}>{warning.message}</p>)}
         </div>
       )}
     </div>

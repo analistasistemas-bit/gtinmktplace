@@ -68,4 +68,25 @@ describe('OrgResults', () => {
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument();
   });
+
+  it('aviso de falha (severity error) vai na faixa destrutiva com Tentar novamente', () => {
+    mocks.useMetrics.mockReturnValue({
+      data: makeMetrics({ warnings: [{ code: 'cost_catalog_read_failed', severity: 'error', message: 'Falha ao carregar os custos: timeout' }] }),
+      isLoading: false, isError: false, refetch: mocks.refetch,
+    });
+    render(<OrgResults orgId="org-a" month="2026-08" />);
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Falha ao carregar os custos: timeout');
+    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument();
+  });
+
+  it('ausência acionável (severity warning) vai na faixa de aviso, sem Tentar novamente', () => {
+    mocks.useMetrics.mockReturnValue({
+      data: makeMetrics({ warnings: [{ code: 'tax_config_unconfirmed', severity: 'warning', message: 'Configuração tributária não confirmada' }] }),
+      isLoading: false, isError: false, refetch: mocks.refetch,
+    });
+    render(<OrgResults orgId="org-a" month="2026-08" />);
+    expect(screen.getByText('Configuração tributária não confirmada')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
 });

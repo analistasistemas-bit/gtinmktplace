@@ -151,7 +151,7 @@ describe('readOrgMetrics', () => {
       const db = dbFor(base({ ml_vendas: { rows: [sale('sale-1', '2026-10-02T12:00:00-03:00')] }, configuracoes }));
       const metrics = await readOrgMetrics(db, 'org-a', '2026-10', new Date('2026-10-15T12:00:00-03:00'));
       expect(metrics.markup).toBeNull();
-      expect(metrics.warnings).toContain('Configuração tributária não confirmada');
+      expect(metrics.warnings).toContainEqual({ code: 'tax_config_unconfirmed', severity: 'warning', message: 'Configuração tributária não confirmada' });
     }
   });
 
@@ -169,7 +169,10 @@ describe('readOrgMetrics', () => {
       }));
       const metrics = await readOrgMetrics(db, 'org-a', '2026-10', new Date('2026-10-15T12:00:00-03:00'));
       expect(metrics.markup).toBeNull();
-      expect(metrics.warnings.join(' ')).toMatch(/indisponíveis|indisponível/);
+      // Falha de leitura é `error` (não ausência esperada) e nunca usa a palavra "indisponível"
+      // (ADR-0156/central-cockpit: essa palavra some da central).
+      expect(metrics.warnings.every((warning) => warning.severity === 'error')).toBe(true);
+      expect(metrics.warnings.map((warning) => warning.message).join(' ')).not.toMatch(/indisponível/i);
     }
   });
 
@@ -178,6 +181,7 @@ describe('readOrgMetrics', () => {
     const db = { from: inner.from, rpc: () => Promise.resolve({ data: null, error: null }) };
     const metrics = await readOrgMetrics(db, 'org-a', '2026-10', new Date('2026-10-15T12:00:00-03:00'));
     expect(metrics.markup).toBeNull();
-    expect(metrics.warnings.join(' ')).toMatch(/Custos indisponíveis/);
+    expect(metrics.warnings).toContainEqual(expect.objectContaining({ code: 'cost_catalog_read_failed', severity: 'error' }));
+    expect(metrics.warnings.map((warning) => warning.message).join(' ')).toMatch(/Falha ao carregar os custos/);
   });
 });

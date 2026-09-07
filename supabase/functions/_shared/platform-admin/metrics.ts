@@ -6,6 +6,7 @@ export function metricsFromSummary(orgId: string, month: string, summary: { brut
     ticket_cents: Math.round(summary.ticket * 100), markup: summary.markup,
     cost_covered_orders: summary.vendasComCusto, total_orders: summary.totalVendas,
     active_ads: null, publications: null, pending_operations: null, updated_at: null,
-    previous: null, series: [], warnings: ['Métricas operacionais indisponíveis'],
+    previous: null, series: [],
+    warnings: [{ code: 'metrics_unavailable', severity: 'error', message: 'Métricas operacionais indisponíveis' }],
   };
 }

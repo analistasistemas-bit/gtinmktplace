@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { usePlatformTerms, useSavePlatformTerms } from '@/hooks/usePlatformAdmin';
 import { effectiveTerm, todayInFortaleza, type CommercialTerms } from '@/lib/platform-admin';
@@ -151,7 +152,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
   return (
     <div className="space-y-4">
       <Card>
-        <details open={isFirstContract}>
+        <details open={isFirstContract} className="flex flex-col gap-4">
           <summary className="cursor-pointer list-none">
             <CardHeader>
               <CardTitle>Condições comerciais</CardTitle>
@@ -294,7 +295,10 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
         <CardHeader><CardTitle>Histórico de condições</CardTitle></CardHeader>
         <CardContent>
           {terms.isLoading ? (
-            <p className="text-sm text-muted-foreground">Carregando histórico…</p>
+            <div className="space-y-2">
+              <Skeleton className="h-14 rounded-lg" />
+              <Skeleton className="h-14 rounded-lg" />
+            </div>
           ) : history.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhuma condição registrada.</p>
           ) : (

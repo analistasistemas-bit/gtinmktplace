@@ -2,6 +2,44 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Central de organizações — carteira agregada, pendências corretas e alíquota explícita (ADR-0156) — 2026-09-07
+
+A auditoria de 2026-09-07 da central `/admin` achou dois bugs de dado e um problema de volume:
+`platform_resolve_terms` é função SQL escalar e devolvia uma linha toda `NULL` quando a organização
+não tinha condição comercial, então o `if not found` do código antigo nunca disparava — o blocker
+`commercial_terms_required` era código morto e a prévia saía com `total_cents` `NULL` em vez de
+bloqueada. "Pendências" contava buscas Sonar em voo (`state = 'pending'`), nunca os bloqueios do
+demonstrativo que o ADR-0155 define como pendência — numa tabela que sempre esteve vazia (sempre 0).
+E cada render da carteira disparava duas ações (`overview` + `list`), lendo `variacoes` inteira
+(8 537 linhas na Avil) só para resolver custo dos itens vendidos.
+
+- [x] `platform_billing_preview`/`platform_billing_close` corrigidos (`v_terms.id is null`, não
+  `FOUND`); fechamento sem condição comercial recusa com erro de negócio
+  (`commercial_terms_required`, HTTP 422). Provado em produção após o `db push`: Avil 2026-09 → 1
+  bloqueio, `total_cents 0` (era `NULL`); Avil 2026-08 → 7 bloqueios; DSA 2026-08 → 4.
+- [x] "Pendências" passa a ser `blockers.length` da prévia (condição ausente, devolução sem
+  conciliação, venda alterada após o fechamento) — não mais busca Sonar em voo.
+- [x] Ação `wallet` substitui `overview` + `list`: 1 chamada só, com totais agregados e a página
+  juntos. `readOrgMetrics` na Avil saiu de 13 para 5 round-trips; a leitura de `ml_vendas` deixou de
+  trazer `raw` (4,1 MB por organização).
+- [x] RPC `platform_org_cost_catalog` devolve só as variações que casam com item vendido — 6 284 de
+  8 537 na Avil, em ~115 ms —, agregada em `jsonb` porque acima de 1 000 linhas o PostgREST
+  truncaria em silêncio uma função `returns table`.
+- [x] Alíquota nunca presumida: sem `aliquotas_confirmadas_em` na organização, o markup sai `null`
+  em vez de presumir 8 %/16 %. As duas organizações já tinham a data confirmada — nenhum número
+  atual mudou; só a formatação (`+43%`, via `fmtMarkup`, como o resto do app).
+- [x] `Organizacoes.tsx` e as 5 abas de `OrganizacaoDetalhe.tsx` redesenhadas no design system do
+  app (`KpiCard`, `DataTable`, `StatusPill`, `EmptyState`); o formulário de condições comerciais
+  passou a existir de fato na interface, na aba **Cobrança** (antes não existia em lugar nenhum).
+- [x] Migrations `20260907102428_platform_terms_contract_fix.sql` e
+  `20260907103422_platform_org_cost_catalog.sql` aplicadas; `platform-admin` redeployada.
+- [x] ADR-0156 escrito; docs atualizados (`how-to/central-organizacoes.md`,
+  `reference/edge-functions.md`, `reference/modelo-de-dados.md`).
+
+Fora desta entrega, por decisão do ADR-0156: contagens operacionais e custo medido do fornecedor
+(nunca implementados, feature nova) e a busca Sonar por EAN fora do ledger de unidades faturáveis
+(decisão comercial pendente — falta abrir issue `ready-for-human` para Diego decidir).
+
 ## DSA deixa de ser organização de teste — 2026-09-07
 
 A DSA (`diego-souza`) estava com `is_test = true` desde `20260725224000_support_access.sql`, quando
@@ -94,6 +132,9 @@ está autorizado, nenhum kit foi criado de verdade.
 
 ## Central de organizações — T1–T7 na branch, não em produção — 2026-09-06
 
+> Promovida para produção em 2026-09-07, junto da correção de dados do ADR-0156 — ver a entrada
+> "Central de organizações — carteira agregada..." no topo deste arquivo.
+
 - [x] T1–T7 implementadas em `codex/admin-control-20260906`: condições comerciais, métricas
   compartilhadas, consumo Sonar durável, fechamento auditável, cliente/exportação e as cinco áreas
   da central.
@@ -102,8 +143,8 @@ está autorizado, nenhum kit foi criado de verdade.
   e [central-organizacoes.md](how-to/central-organizacoes.md).
 - [ ] Corrigir a baseline TypeScript, obter `pnpm build` verde e concluir a validação visual
   autenticada em 390/1440 antes de merge.
-- [ ] Aplicar migrations, publicar Edge Functions e promover o frontend somente em uma entrega de
-  produção autorizada. Nada desta central foi promovido nesta tarefa.
+- [x] Migrations aplicadas e Edge Functions publicadas em 2026-09-07 (junto do ADR-0156); frontend
+  segue para produção no mesmo merge — ver a entrada acima.
 
 ## PWA instalável, sem escrita offline (ADR-0153) — 2026-09-05
 
