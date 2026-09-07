@@ -107,9 +107,9 @@ a central não cria uma sessão de suporte. Ações: `wallet` (carteira paginada
 em 1 chamada — substitui as antigas `overview`/`list`), `organization`, `metrics`, `terms`,
 `save_terms`, `preview`, `close`, `statements`, `statement`, `reconcile_revenue`, `pulse_usage`,
 `audit`. `close` sem condição comercial vigente devolve `422` com `code: 'commercial_terms_required'`
-(ADR-0156 §1). Ver o [guia de operação](../how-to/central-organizacoes.md), o
+(ADR-0158 §1). Ver o [guia de operação](../how-to/central-organizacoes.md), o
 [ADR-0155](../decisions/0155-central-organizacoes-cobranca-auditavel.md) e o
-[ADR-0156](../decisions/0156-central-carteira-agregada-e-pendencias.md).
+[ADR-0158](../decisions/0158-central-carteira-agregada-e-pendencias.md).
 
 
 ## Schedules do QStash (cron + body)

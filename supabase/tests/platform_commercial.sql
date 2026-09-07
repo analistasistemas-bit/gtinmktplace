@@ -297,7 +297,7 @@ begin
   end if;
 end $$;
 
--- ADR-0156 §5: catalogo de custo por RPC (platform_org_cost_catalog).
+-- ADR-0158 §5: catalogo de custo por RPC (platform_org_cost_catalog).
 -- Fixtures minimas de catalogo/vendas. Os tipos abaixo sao os reais de producao, conferidos em
 -- information_schema.columns em 2026-09-07: variacoes.ml_variation_id text, ml_vendas_itens.
 -- variation_id bigint, familias.origem enum public.origem_produto, custo/peso_gramas numeric.

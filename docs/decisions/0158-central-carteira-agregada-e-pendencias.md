@@ -1,4 +1,4 @@
-# ADR-0156: Carteira agregada, pendências de cobrança e alíquota explícita na central
+# ADR-0158: Carteira agregada, pendências de cobrança e alíquota explícita na central
 
 **Status:** Aceito, 2026-09-07. Complementa o [ADR-0155](0155-central-organizacoes-cobranca-auditavel.md); implementação no [plano](../superpowers/plans/2026-09-07-central-cockpit.md).
 

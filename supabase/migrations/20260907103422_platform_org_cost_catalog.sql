@@ -1,4 +1,4 @@
--- ADR-0156 §5: catalogo de custo da central por RPC.
+-- ADR-0158 §5: catalogo de custo da central por RPC.
 --
 -- Antes, `readOrgMetrics` lia `variacoes` inteira da organizacao (Avil: 8 537 linhas em 9 paginas)
 -- so para resolver custo/peso/origem dos itens VENDIDOS no periodo. Esta funcao devolve apenas as
@@ -95,4 +95,4 @@ revoke all on function public.platform_org_cost_catalog(uuid, timestamptz) from 
 grant execute on function public.platform_org_cost_catalog(uuid, timestamptz) to service_role;
 
 comment on function public.platform_org_cost_catalog(uuid, timestamptz) is
-  'ADR-0156 §5: variacoes (+ familias.ml_item_id/origem) da organizacao que casam com itens vendidos desde p_since, como array jsonb. Somente service_role.';
+  'ADR-0158 §5: variacoes (+ familias.ml_item_id/origem) da organizacao que casam com itens vendidos desde p_since, como array jsonb. Somente service_role.';

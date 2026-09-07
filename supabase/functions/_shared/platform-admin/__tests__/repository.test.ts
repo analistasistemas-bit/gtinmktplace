@@ -69,7 +69,7 @@ describe('createPlatformAdminRepository', () => {
     const repository = createPlatformAdminRepository(db as never, () => new Date('2026-09-06T12:00:00Z'));
     const wallet = await repository.wallet('actor', { month: '2026-08', page: 1, page_size: 1, sort: 'gross_desc' });
     expect(wallet).toMatchObject({ total: 2, page: 1, page_size: 1, rows: [{ id: 'org-b', metrics: { gross_cents: 30_000 } }] });
-    // Pendência é bloqueio da prévia (ADR-0156 §2): sem contrato → 1; consumo é contável sem contrato.
+    // Pendência é bloqueio da prévia (ADR-0158 §2): sem contrato → 1; consumo é contável sem contrato.
     expect(wallet.rows[0]).toMatchObject({ modality: null, forecast_cents: null, billable_units: 2, pending_count: 1 });
     expect(wallet.totals).toEqual({
       gross_cents: 40_000, forecast_cents: 10, orgs_without_terms: 1, org_count: 2,

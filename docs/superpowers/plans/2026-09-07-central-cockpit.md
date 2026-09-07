@@ -2,14 +2,14 @@
 
 > **Para agentes:** REQUIRED SUB-SKILL: `superpowers:subagent-driven-development`, uma tarefa por
 > subagente, revisão em 2 estágios. O implementador NÃO decide estética nem regra de negócio: tudo o
-> que precisa está aqui, no [ADR-0156](../../decisions/0156-central-carteira-agregada-e-pendencias.md)
+> que precisa está aqui, no [ADR-0158](../../decisions/0158-central-carteira-agregada-e-pendencias.md)
 > e nos arquivos-régua citados. Dúvida = parar e perguntar, não inventar.
 
 **Goal:** a carteira e o detalhe de `/admin` mostram números certos (contrato, pendências, markup em
 `+43%`), carregam com 1 chamada e ≤ 15 round-trips, e usam o design system do app (KpiCard,
 DataTable, StatusPill, EmptyState, Pagination, Select, DropdownMenu, Tabs pill).
 
-**Base:** auditoria técnica + auditoria de design de 2026-09-07 (resumidas no ADR-0156 e nas tarefas).
+**Base:** auditoria técnica + auditoria de design de 2026-09-07 (resumidas no ADR-0158 e nas tarefas).
 Worktree: `/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/central-cockpit-20260907`,
 branch a partir da `main`. Prefixar shell com `rtk`. Nunca editar a `main` direto.
 
@@ -67,11 +67,11 @@ chamar RPCs `SECURITY DEFINER` que exigem `service_role`:
 
 ## Fase 0 — Decisão (feita)
 
-- [x] ADR-0156 escrito em `docs/decisions/0156-central-carteira-agregada-e-pendencias.md`.
-- [ ] **T0 (haiku, mecânico):** adicionar a linha do 0156 em
+- [x] ADR-0158 escrito em `docs/decisions/0158-central-carteira-agregada-e-pendencias.md`.
+- [ ] **T0 (haiku, mecânico):** adicionar a linha do 0158 em
   `obsidian-vault/04-Decisões/Índice de ADRs.md`, logo após a linha do 0155, copiando o formato exato
   dessa linha (mesma célula de link relativo, só trocando o nome do arquivo para
-  `0156-central-carteira-agregada-e-pendencias.md`). Título do link: "Carteira agregada, pendências
+  `0158-central-carteira-agregada-e-pendencias.md`). Título do link: "Carteira agregada, pendências
   de cobrança e alíquota explícita na central". Texto após o travessão: "ação `wallet` única,
   pendência = bloqueio da prévia, catálogo de custo por RPC, alíquota nunca presumida; corrige o
   contrato de `platform_resolve_terms`." Aceite: `pnpm docs:links` verde.
@@ -138,7 +138,7 @@ Fazer:
    `db.rpc('platform_org_cost_catalog', { p_org: orgId, p_since: startOf(seriesMonths[0]) })`. O tipo
    `MetricsDb` ganha `rpc(name, args): Promise<Page>`. Adaptar `montarMapasCusto` sem mudar
    `sales-costs.ts`: mapear cada linha para `{ ...row, familias: { ml_item_id: row.ml_item_id, origem: row.origem } }`.
-4. Alíquota (ADR-0156 §6): `configAvailable` passa a ser `!configResult.error && config != null &&
+4. Alíquota (ADR-0158 §6): `configAvailable` passa a ser `!configResult.error && config != null &&
    config.aliquotas_confirmadas_em != null` (adicionar a coluna ao `select` da l.110). Sem isso:
    `markup = null` e warning `Configuração tributária não confirmada`. Remover os defaults `: 8` / `: 16`
    das l.120-121 — com config confirmada as colunas são `not null`; se vierem null, `configAvailable=false`.
@@ -526,7 +526,7 @@ com blocker; `wallet` medido no navegador (Network: 1 chamada `platform-admin` p
 - **`readOrgMetrics` alíquota (T2)**: conferido em 2026-09-07 — as duas orgs têm
   `aliquotas_confirmadas_em` preenchido (Avil 2026-07-21, DSA 2026-08-27), então o markup atual não
   muda. Uma 3ª org sem confirmação verá `—` até salvar Configurações no app — comportamento decidido
-  (ADR-0156 §6). Reconferir antes do deploy: `select org_id, aliquotas_confirmadas_em from configuracoes`.
+  (ADR-0158 §6). Reconferir antes do deploy: `select org_id, aliquotas_confirmadas_em from configuracoes`.
 - **Coluna de nome em `profiles` (T4)**: é `nome` (conferido em produção); usar essa.
 - **RPC de catálogo (T2)**: cobre só chaves que casam com itens vendidos; item sem nenhuma chave
   continua sem custo (igual a hoje). Diferença possível de markup em relação ao app só se o app
@@ -549,6 +549,6 @@ com blocker; `wallet` medido no navegador (Network: 1 chamada `platform-admin` p
   ADR-0077) e medição do fornecedor. A UI deixa de prometê-los (T10/T11 mostram `—`/removem).
 - **Busca Sonar por EAN fora do ledger** (`pulse-sonar-ean` não chama `platform_sonar_begin`): decisão
   comercial (ADR-0155 diz que EAN vale 1 unidade). Abrir issue `ready-for-human` para Diego decidir.
-- **Cache de métricas no edge**: rejeitado no ADR-0156; reavaliar com medição após T5.
+- **Cache de métricas no edge**: rejeitado no ADR-0158; reavaliar com medição após T5.
 - **Exclusão de organização** (`delete_org` desabilitado): fora, conforme how-to.
 - **Gateway/Pix/envio de cobrança**: fora (ADR-0155).

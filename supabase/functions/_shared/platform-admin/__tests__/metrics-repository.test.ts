@@ -170,7 +170,7 @@ describe('readOrgMetrics', () => {
       const metrics = await readOrgMetrics(db, 'org-a', '2026-10', new Date('2026-10-15T12:00:00-03:00'));
       expect(metrics.markup).toBeNull();
       // Falha de leitura é `error` (não ausência esperada) e nunca usa a palavra "indisponível"
-      // (ADR-0156/central-cockpit: essa palavra some da central).
+      // (ADR-0158/central-cockpit: essa palavra some da central).
       expect(metrics.warnings.every((warning) => warning.severity === 'error')).toBe(true);
       expect(metrics.warnings.map((warning) => warning.message).join(' ')).not.toMatch(/indisponível/i);
     }

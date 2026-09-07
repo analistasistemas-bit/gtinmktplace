@@ -1,4 +1,4 @@
--- ADR-0156 §1: platform_resolve_terms e uma funcao SQL escalar; quando a organizacao
+-- ADR-0158 §1: platform_resolve_terms e uma funcao SQL escalar; quando a organizacao
 -- nao tem condicao comercial ela devolve UMA LINHA toda NULL, entao FOUND e verdadeiro
 -- e o blocker commercial_terms_required nunca entrava na previa (total_cents saia NULL).
 -- Aqui as duas funcoes sao recriadas identicas as de 20260906170200_platform_billing.sql,
@@ -37,7 +37,7 @@ begin
   if not found then raise exception 'organization not found' using errcode='23503'; end if;
   select * into v_terms from public.platform_resolve_terms(p_org,p_month);
   -- platform_resolve_terms devolve uma linha toda NULL quando nao ha condicao:
-  -- FOUND e sempre verdadeiro; a ausencia so aparece em v_terms.id (ADR-0156 §1).
+  -- FOUND e sempre verdadeiro; a ausencia so aparece em v_terms.id (ADR-0158 §1).
   if v_terms.id is null then
     v_blockers:=v_blockers||jsonb_build_array(jsonb_build_object('code','commercial_terms_required','message','Condição comercial ausente'));
   else

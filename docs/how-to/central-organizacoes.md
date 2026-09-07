@@ -1,7 +1,7 @@
 # Operar a Central de Organizações
 
 > Em produção desde 2026-09-07. Regras de negócio: [ADR-0155](../decisions/0155-central-organizacoes-cobranca-auditavel.md)
-> e [ADR-0156](../decisions/0156-central-carteira-agregada-e-pendencias.md).
+> e [ADR-0158](../decisions/0158-central-carteira-agregada-e-pendencias.md).
 
 ## Pré-requisitos
 

@@ -2,7 +2,7 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Central de organizações — carteira agregada, pendências corretas e alíquota explícita (ADR-0156) — 2026-09-07
+## Central de organizações — carteira agregada, pendências corretas e alíquota explícita (ADR-0158) — 2026-09-07
 
 A auditoria de 2026-09-07 da central `/admin` achou dois bugs de dado e um problema de volume:
 `platform_resolve_terms` é função SQL escalar e devolvia uma linha toda `NULL` quando a organização
@@ -33,10 +33,10 @@ E cada render da carteira disparava duas ações (`overview` + `list`), lendo `v
   passou a existir de fato na interface, na aba **Cobrança** (antes não existia em lugar nenhum).
 - [x] Migrations `20260907102428_platform_terms_contract_fix.sql` e
   `20260907103422_platform_org_cost_catalog.sql` aplicadas; `platform-admin` redeployada.
-- [x] ADR-0156 escrito; docs atualizados (`how-to/central-organizacoes.md`,
+- [x] ADR-0158 escrito; docs atualizados (`how-to/central-organizacoes.md`,
   `reference/edge-functions.md`, `reference/modelo-de-dados.md`).
 
-Fora desta entrega, por decisão do ADR-0156: contagens operacionais e custo medido do fornecedor
+Fora desta entrega, por decisão do ADR-0158: contagens operacionais e custo medido do fornecedor
 (nunca implementados, feature nova) e a busca Sonar por EAN fora do ledger de unidades faturáveis
 (decisão comercial pendente — falta abrir issue `ready-for-human` para Diego decidir).
 
@@ -132,7 +132,7 @@ está autorizado, nenhum kit foi criado de verdade.
 
 ## Central de organizações — T1–T7 na branch, não em produção — 2026-09-06
 
-> Promovida para produção em 2026-09-07, junto da correção de dados do ADR-0156 — ver a entrada
+> Promovida para produção em 2026-09-07, junto da correção de dados do ADR-0158 — ver a entrada
 > "Central de organizações — carteira agregada..." no topo deste arquivo.
 
 - [x] T1–T7 implementadas em `codex/admin-control-20260906`: condições comerciais, métricas
@@ -143,7 +143,7 @@ está autorizado, nenhum kit foi criado de verdade.
   e [central-organizacoes.md](how-to/central-organizacoes.md).
 - [ ] Corrigir a baseline TypeScript, obter `pnpm build` verde e concluir a validação visual
   autenticada em 390/1440 antes de merge.
-- [x] Migrations aplicadas e Edge Functions publicadas em 2026-09-07 (junto do ADR-0156); frontend
+- [x] Migrations aplicadas e Edge Functions publicadas em 2026-09-07 (junto do ADR-0158); frontend
   segue para produção no mesmo merge — ver a entrada acima.
 
 ## PWA instalável, sem escrita offline (ADR-0153) — 2026-09-05

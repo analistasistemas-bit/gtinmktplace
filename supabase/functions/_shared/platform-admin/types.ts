@@ -111,12 +111,12 @@ export type OrgSummary = {
   is_test: boolean;
   modality: 1 | 2 | null;
   metrics: OrgMetrics | null;
-  /** Só com condição comercial vigente e sem bloqueio (ADR-0156 §3). */
+  /** Só com condição comercial vigente e sem bloqueio (ADR-0158 §3). */
   forecast_cents: Cents | null;
-  /** Consumo Sonar do mês; contável mesmo sem contrato (ADR-0156 §3). */
+  /** Consumo Sonar do mês; contável mesmo sem contrato (ADR-0158 §3). */
   billable_units: number | null;
   daludi_searches: number | null;
-  /** Bloqueios da prévia do mês (ADR-0156 §2), não buscas Sonar em voo. `null` = prévia indisponível. */
+  /** Bloqueios da prévia do mês (ADR-0158 §2), não buscas Sonar em voo. `null` = prévia indisponível. */
   pending_count: number | null;
 };
 

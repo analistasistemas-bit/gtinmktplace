@@ -337,7 +337,7 @@ begin
     raise exception 'current month closed'; exception when invalid_parameter_value then null; end;
 end $$;
 
--- Mês sem condição comercial: a prévia bloqueia e o fechamento recusa (ADR-0156 §1).
+-- Mês sem condição comercial: a prévia bloqueia e o fechamento recusa (ADR-0158 §1).
 do $$
 declare v_month date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
 declare v_preview jsonb;

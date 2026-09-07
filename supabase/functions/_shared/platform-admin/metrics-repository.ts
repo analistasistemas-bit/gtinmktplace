@@ -24,7 +24,7 @@ const BRT_OFFSET = '-03:00';
 
 /** Mesma lista de colunas de `buscarVendas` (`src/lib/faturamento.ts`), mais `org_id` — que
  *  `normalizeSales` usa para descartar linha de outra organização e NÃO está na lista do app.
- *  `select('*')` traria `ml_vendas.raw` (~4 MB por render da carteira) que ninguém lê (ADR-0156 §4). */
+ *  `select('*')` traria `ml_vendas.raw` (~4 MB por render da carteira) que ninguém lê (ADR-0158 §4). */
 const SALES_COLUMNS = 'id, org_id, order_id, pack_id, status, status_detail, date_closed, date_created, '
   + 'comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, '
   + 'frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, '
@@ -118,7 +118,7 @@ export async function readOrgMetrics(db: MetricsDb, orgId: string, month: string
   if (salesResult.error) throw new Error(salesResult.error.message);
   const sales = normalizeSales(salesResult.rows, orgId);
 
-  // ADR-0156 §5: a RPC devolve só as variações que casam com item vendido na janela da série, em UM
+  // ADR-0158 §5: a RPC devolve só as variações que casam com item vendido na janela da série, em UM
   // round-trip (era `variacoes` inteira, 9 páginas na Avil). Escalar jsonb de propósito: `returns
   // table` por POST seria truncado no `max_rows=1000` do PostgREST sem erro nenhum e o markup sairia
   // errado em silêncio.
@@ -135,7 +135,7 @@ export async function readOrgMetrics(db: MetricsDb, orgId: string, month: string
       .map((row) => ({ ...row, familias: { ml_item_id: row.ml_item_id, origem: row.origem } })),
   );
 
-  // ADR-0156 §6: alíquota nunca é presumida. Sem linha em `configuracoes`, sem
+  // ADR-0158 §6: alíquota nunca é presumida. Sem linha em `configuracoes`, sem
   // `aliquotas_confirmadas_em` ou sem as alíquotas, o markup sai `null` com aviso — jamais 8/16 %
   // por padrão (ADR-0055).
   const config = configResult.error ? null : configResult.rows.find((row) => row.org_id === orgId) ?? null;

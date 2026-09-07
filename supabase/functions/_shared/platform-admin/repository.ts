@@ -72,7 +72,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       rpc<BillingPreview>('platform_billing_preview', { p_actor: actorId, p_org: org.id, p_month: monthDate(month) }).then((value) => ({ value })).catch(() => ({ value: null })),
       exactCount(db.from('platform_sonar_searches').select('id', { count: 'exact', head: true }).eq('org_id', org.id).eq('origin', 'daludi').gte('created_at', monthBounds(month)[0]).lt('created_at', monthBounds(month)[1])),
     ]);
-    // ADR-0156 §2/§3: pendência é bloqueio da prévia (não busca Sonar em voo); consumo é contável sem
+    // ADR-0158 §2/§3: pendência é bloqueio da prévia (não busca Sonar em voo); consumo é contável sem
     // contrato; previsão só entra com condição vigente E sem bloqueio.
     const preview = previewResult.value;
     return { ...org, modality: preview?.terms?.modality ?? null, metrics: metricsResult.value,
@@ -107,7 +107,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       const { data, error } = await db.from('organizations').select('id,nome,slug,is_test').eq('id', orgId).maybeSingle(); fail(error);
       return data ? enrichOne(actorId, data as OrgRow, month) : null;
     },
-    // ADR-0156 §3: uma ação por render — enriquece cada organização UMA vez e devolve totais da
+    // ADR-0158 §3: uma ação por render — enriquece cada organização UMA vez e devolve totais da
     // carteira inteira (antes de paginar) junto com a página.
     async wallet(actorId: string, input: { month: string; search?: string; include_test?: boolean; page: number; page_size: number; sort: string }): Promise<Wallet> {
       const needle = input.search?.trim().toLocaleLowerCase('pt-BR');
