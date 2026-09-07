@@ -1,7 +1,10 @@
 \set ON_ERROR_STOP on
 \ir platform_sonar.sql
 
-create table public.ml_vendas (
+-- `if not exists`: platform_commercial.sql, encadeado acima via platform_sonar.sql, ja cria esta
+-- tabela com o superset das colunas. Sem isto o arquivo aborta em "relation already exists" e o
+-- teste de fechamento inteiro deixa de rodar.
+create table if not exists public.ml_vendas (
   id uuid primary key,
   org_id uuid not null references public.organizations(id),
   order_id bigint,

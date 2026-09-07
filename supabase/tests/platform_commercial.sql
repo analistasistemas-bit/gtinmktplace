@@ -320,10 +320,20 @@ create table public.variacoes (
   codigo text,
   atualizado_em timestamptz
 );
-create table public.ml_vendas (
+-- Superset das colunas que platform_billing.sql tambem precisa: os dois arquivos criavam
+-- `ml_vendas` com formatos diferentes, e como o billing encadeia sonar -> commercial, a segunda
+-- criacao abortava com "relation already exists" -- o teste de billing parou de rodar por inteiro.
+-- Aqui fica a definicao completa e la vira `if not exists`, entao qualquer ordem funciona.
+create table if not exists public.ml_vendas (
   id uuid primary key,
   org_id uuid not null,
-  date_closed timestamptz
+  order_id bigint,
+  date_closed timestamptz,
+  total_amount numeric,
+  status text,
+  atualizado_em timestamptz,
+  tem_devolucao boolean not null default false,
+  estorno numeric not null default 0
 );
 create table public.ml_vendas_itens (
   id uuid primary key,
@@ -337,6 +347,55 @@ create table public.ml_vendas_itens (
 -- Migrations novas que tocam o catalogo de custo entram ABAIXO, em ordem de timestamp.
 -- Fora de ordem (ou ausentes) o teste roda contra a versao antiga da funcao e passa em falso.
 \ir ../migrations/20260907103422_platform_org_cost_catalog.sql
+\ir ../migrations/20260907210746_corrigir_regex_setup_due_month.sql
+
+-- Implantacao > 0: o unico caminho que valida `setup_due_month`. Todos os casos acima usam
+-- `setup_fee_cents = 0`, e foi por isso que a regex quebrada (escape duplo, que exigia barra
+-- literal) passou pelos testes e so apareceu quando o dono cadastrou a primeira condicao real.
+-- Org propria: as outras ja tem contrato nos casos acima, e um contrato existente muda a regra de
+-- vigencia (renegociacao so vale a partir do proximo mes), o que mascararia o que este teste prova.
+insert into public.organizations (id, nome, slug) values
+  ('90000000-0000-0000-0000-000000000091', 'Org Implantacao', 'org-implantacao');
+
+do $$
+declare
+  v_current date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+  v_mes text := to_char(v_current, 'YYYY-MM');
+  v_term jsonb;
+  v_erro text;
+begin
+  v_term := public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000091',
+      'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 0,
+      'revenue_bps', 700, 'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+      'setup_due_month', v_mes, 'reason', 'implantacao com mes valido'
+    )
+  );
+  if v_term->>'setup_due_month' is null then
+    raise exception 'implantacao valida foi recusada ou nao gravou setup_due_month: %', v_term;
+  end if;
+
+  -- E o formato errado continua sendo recusado, com a mensagem de negocio.
+  begin
+    perform public.platform_save_terms(
+      '80000000-0000-0000-0000-000000000001',
+      jsonb_build_object(
+        'org_id', '90000000-0000-0000-0000-000000000091',
+        'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 0,
+        'revenue_bps', 700, 'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+        'setup_due_month', '2026-10-01', 'reason', 'mes com dia nao e YYYY-MM'
+      )
+    );
+    raise exception 'setup_due_month com dia deveria ter sido recusado';
+  exception when sqlstate '22023' then
+    get stacked diagnostics v_erro = message_text;
+    if v_erro not like '%setup_due_month must be YYYY-MM%' then
+      raise exception 'mensagem inesperada para mes invalido: %', v_erro;
+    end if;
+  end;
+end $$;
 
 insert into public.familias (id, org_id, ml_item_id, origem) values
   ('a0000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000001', 'MLA1', 'nacional'),
