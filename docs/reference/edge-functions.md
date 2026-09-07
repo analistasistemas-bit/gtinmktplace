@@ -83,7 +83,7 @@
 | pulse-adicionar | true | HTTP (frontend) | sim (upsert por cpid) |
 | pulse-sonar-vendas | true | HTTP (frontend) | sim (leitura + grava `sonar_snapshots`; cache Redis 7d por termo) |
 | pulse-sonar-visitas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por item) |
-| pulse-sonar-ean | true | HTTP (frontend) | sim (leitura; cache Redis 24h lookup + 7d vendas Apify) |
+| pulse-sonar-ean | true | HTTP — **sem chamador desde ADR-0140 D-4** | sim (leitura; cache Redis 24h lookup + 7d vendas Apify) |
 | pulse-analise-secoes237 | true | HTTP (frontend) | sim (leitura; demanda do nicho por vendedor, ponte pelo catálogo) |
 | **Status / métricas / viabilidade** ||||
 | status-publicados | true | HTTP (frontend) | sim (leitura) |
@@ -1382,9 +1382,12 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `{conectado:true, por_item: Record<item_id, {total, por_dia} | null>}`. Checa
   `exigirModulo(admin, orgId, 'pulse')` logo após `requireUserOrg` (achado F8,
   CLAUDE-SECURITY-20260822-113640 — faltava, org sem o módulo consumia a API do ML de graça).
-- **pulse-sonar-ean** (ADR-0127 Errata 1, `verify_jwt=true`, chamada pelo app com o JWT do
-  usuário) — busca por EAN/GTIN: diferente da busca por termo (nicho), é restrita a **1 produto
-  específico**. Recebe `{ean, com_vendas}`; `ean` valida com a mesma regex de
+- **pulse-sonar-ean** (ADR-0127 Errata 1, `verify_jwt=true`) — **deployada e sem chamador desde o
+  [ADR-0140](../decisions/0140-sonar-ean-analise-completa-pela-busca.md) D-4 (2026-08-28):** o app
+  manda o EAN para `pulse-sonar-vendas` como termo qualquer, então esta rota não é usada pela UI e
+  **não passa pelo ledger de unidades faturáveis** (remoção é follow-up aberto em `TASKS.md`).
+  Descrição do que ela faz enquanto existir — busca por EAN/GTIN: diferente da busca por termo
+  (nicho), é restrita a **1 produto específico**. Recebe `{ean, com_vendas}`; `ean` valida com a mesma regex de
   `_shared/pulse/entrada.ts` (`/^\d{8,14}$/`), 400 se não bater. `exigirModulo(admin, orgId,
   'pulse')` logo após `requireUserOrg`, mesmo padrão das outras rotas do Sonar. Sem conexão ML da
   org → `{conectado:false}` 200. Lookup oficial de catálogo (`/products/search?

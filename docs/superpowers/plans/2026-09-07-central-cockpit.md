@@ -547,8 +547,10 @@ com blocker; `wallet` medido no navegador (Network: 1 chamada `platform-admin` p
 - **Contagens operacionais** (anúncios ativos, publicações, pendências de operação) e **custo medido
   do fornecedor**: nunca foram implementados; são feature nova que exige definir a fonte (registro
   ADR-0077) e medição do fornecedor. A UI deixa de prometê-los (T10/T11 mostram `—`/removem).
-- **Busca Sonar por EAN fora do ledger** (`pulse-sonar-ean` não chama `platform_sonar_begin`): decisão
-  comercial (ADR-0155 diz que EAN vale 1 unidade). Abrir issue `ready-for-human` para Diego decidir.
+- ~~**Busca Sonar por EAN fora do ledger** (`pulse-sonar-ean` não chama `platform_sonar_begin`):
+  decisão comercial (ADR-0155 diz que EAN vale 1 unidade).~~ **Achado refutado em 2026-09-07:** o
+  EAN não passa pela `pulse-sonar-ean` desde o ADR-0140 D-1 — ele percorre `pulse-sonar-vendas` e é
+  medido com `query_type = 'ean'`. Ver a seção correspondente em [TASKS.md](../../TASKS.md).
 - **Cache de métricas no edge**: rejeitado no ADR-0158; reavaliar com medição após T5.
 - **Exclusão de organização** (`delete_org` desabilitado): fora, conforme how-to.
 - **Gateway/Pix/envio de cobrança**: fora (ADR-0155).

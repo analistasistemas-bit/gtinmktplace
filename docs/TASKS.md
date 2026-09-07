@@ -37,8 +37,43 @@ E cada render da carteira disparava duas ações (`overview` + `list`), lendo `v
   `reference/edge-functions.md`, `reference/modelo-de-dados.md`).
 
 Fora desta entrega, por decisão do ADR-0158: contagens operacionais e custo medido do fornecedor
-(nunca implementados, feature nova) e a busca Sonar por EAN fora do ledger de unidades faturáveis
-(decisão comercial pendente — falta abrir issue `ready-for-human` para Diego decidir).
+(nunca implementados, feature nova). ~~E a busca Sonar por EAN fora do ledger de unidades
+faturáveis.~~ **Achado errado da auditoria — ver a seção abaixo (2026-09-07): a busca por EAN já é
+medida.**
+
+## Busca por EAN no ledger do Sonar: achado da auditoria refutado — 2026-09-07
+
+A auditoria do ADR-0158 registrou que a busca por EAN ficaria fora do ledger de unidades faturáveis
+do ADR-0155, porque só `pulse-sonar-vendas` chama `platform_sonar_begin`/`platform_sonar_complete`
+e a edge `pulse-sonar-ean` não toca no ledger. A conclusão não se sustenta: desde o
+[ADR-0140](decisions/0140-sonar-ean-analise-completa-pela-busca.md) (D-1/D-4, 2026-08-28) o EAN
+**não usa mais** a `pulse-sonar-ean` — `garimpar()` trata o código de barras como termo qualquer e
+chama `fetchVendasSonar` (`src/pages/PulseSonar.tsx:531-541`, `src/lib/sonar.ts:84`), que é
+`pulse-sonar-vendas`, que **mede**. `sonarQueryType()`
+(`supabase/functions/_shared/pulse/sonar-metering.ts:15`, chamada em
+`supabase/functions/pulse-sonar-vendas/index.ts:66`) classifica a chave e grava
+`query_type = 'ean'` no ledger; `platform_billing_preview` conta
+`platform_sonar_deliveries.units = 1` sem nenhum filtro por tipo
+(`supabase/migrations/20260906170200_platform_billing.sql:179-180`).
+
+- [x] Verificado por dado de produção: `sonar_snapshots` (gravada só por `pulse-sonar-vendas`) tem
+  **5 EANs distintos** buscados entre 28/08 e 03/09 — `7891113175371`, `7894900531305`,
+  `7897154296761`, `7897154294330`, `4005900183125` —, prova de que o EAN percorre a função medida.
+- [x] Nenhuma fatura muda: as quatro tabelas do ledger (`platform_sonar_searches`, `_results`,
+  `_deliveries`, `_events`) estão **com 0 linhas**; a instrumentação subiu em 06/09 e não houve
+  busca desde então. Os 5 EANs de agosto/setembro são anteriores à medição e continuam sem preço
+  presumido (regra de não-retroatividade do ADR-0155).
+- [x] `how-to/central-organizacoes.md` corrigido: a aba Pulse descreve o comportamento real (uma
+  busca concluída = uma unidade, por termo **ou** EAN) e a limitação falsa saiu da lista.
+- [ ] **Decisão de Diego (não é código):** a edge `pulse-sonar-ean` segue deployada, alcançável com
+  JWT de usuário e fora do ledger — nenhum cliente a chama, mas com `com_vendas: true` ela gastaria
+  crédito Apify sem medição. Ou removê-la (`supabase functions delete pulse-sonar-ean` + apagar o
+  fonte e `supabase/config.toml:155`), ou manter a escotilha do ADR-0140 D-4 e aceitar a superfície.
+  Instrumentá-la exigiria migration no SQL financeiro: o guard de `platform_sonar_complete` só
+  aceita payload com `itens`/`por_anuncio` e a resposta do EAN é `ofertas`; e o cache durável por
+  `normalized_query`+`schema_version` devolveria a versão sem vendas para um pedido `com_vendas`.
+  Ver também o follow-up de remoção já aberto na seção do ADR-0140.
+
 ## UPDATE de User Products não propagava atributos — ADR-0157 — 2026-09-07
 
 Sequela do ADR-0156: com `atributos_ml` já corrigido no banco e o UPDATE publicado sem erro

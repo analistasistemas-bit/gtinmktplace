@@ -40,9 +40,12 @@ valor (nunca 8 %/16 % por padrão).
    seis meses. Contagens operacionais (anúncios ativos, publicações) não são exibidas nesta versão —
    ver Limitações.
 2. **Pulse:** unidades faturáveis do cliente, consultas Daludi isentas, falhas e reaberturas. Uma
-   busca Sonar concluída por termo vale uma unidade; retry, complemento e reabertura da mesma versão
-   não geram outra unidade. Busca por EAN ainda não entra nessa contagem (decisão pendente). Custo
-   medido do fornecedor não é exibido nesta versão, por falta de medição confiável.
+   busca Sonar concluída vale uma unidade **tanto por termo quanto por EAN** — desde o
+   [ADR-0140](../decisions/0140-sonar-ean-analise-completa-pela-busca.md) o código de barras deixou
+   de ter caminho próprio e percorre o mesmo pipeline da busca por descrição, entrando no ledger
+   com `query_type = 'ean'`; a coluna do tipo aparece na lista de consultas. Retry, complemento
+   (visitas, análise de seções) e reabertura da mesma versão não geram outra unidade. Custo medido
+   do fornecedor não é exibido nesta versão, por falta de medição confiável.
 3. **Cobrança:** cadastro e renegociação das condições comerciais, prévia da competência,
    composição, conciliações, fechamento e demonstrativos fechados exportáveis.
 4. **Auditoria:** eventos administrativos, comerciais, Pulse e suporte, filtrados sem expor
@@ -112,8 +115,6 @@ de suporte e respeite o escopo, a aprovação e a validade existentes.
   a própria alíquota tributária.
 - Contagens operacionais (anúncios ativos, publicações) e custo medido do fornecedor não são
   exibidos nesta versão: nunca foram implementados e exigem definir a fonte de dados.
-- Busca Sonar por EAN ainda não entra na contagem de unidades faturáveis (só a busca por termo
-  conta); decisão de negócio pendente.
 - `delete_org` está desabilitado: a limpeza sequencial existente não garante exclusão atômica nem
   preservação segura de todo o histórico comercial.
 - Locks compartilhados usados no fechamento podem atrasar brevemente operações de outros tenants.
