@@ -6,7 +6,7 @@ import { createPlatformAdminRepository } from '../_shared/platform-admin/reposit
 
 const handler = createPlatformAdminHandler({
   authenticate: requirePlatformAdmin,
-  repository: createPlatformAdminRepository(adminClient()),
+  repository: createPlatformAdminRepository(adminClient() as never),
   corsHeaders,
 });
 

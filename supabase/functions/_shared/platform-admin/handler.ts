@@ -3,7 +3,8 @@ import { validateTerms } from './validation.ts';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
 const ACTIONS = new Set(['list','organization','overview','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','audit']);
-type Repository = Record<string, (...args: unknown[]) => Promise<unknown>>;
+// deno-lint-ignore no-explicit-any
+type Repository = Record<string, (...args: any[]) => Promise<unknown>>;
 type Dependencies = { authenticate(req: Request): Promise<{ userId: string }>; repository: Repository; corsHeaders?: Record<string, string> };
 
 function json(body: unknown, status: number, headers: Record<string, string>): Response {

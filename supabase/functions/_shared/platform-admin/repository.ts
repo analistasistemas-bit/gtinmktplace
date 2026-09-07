@@ -15,7 +15,8 @@ type DbQuery = PromiseLike<DbResult> & {
   like(column: string, value: string): DbQuery;
   limit(n: number): DbQuery;
 };
-type Db = { from(table: string): DbQuery; rpc(name: string, args: Record<string, unknown>): PromiseLike<DbResult> };
+type DbTable = { select(columns: string, options?: { count?: 'exact'; head?: boolean }): DbQuery };
+type Db = { from(table: string): DbTable; rpc(name: string, args: Record<string, unknown>): PromiseLike<DbResult> };
 
 type OrgRow = { id: string; nome: string; slug: string; is_test: boolean };
 type StatementRow = { id: string; snapshot: BillingStatement; closed_at: string; closed_by: string };
@@ -128,7 +129,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       const searches = (data ?? []) as SearchRow[]; const ids = searches.map((row) => row.id); let deliveries: DeliveryRow[] = [];
       if (ids.length) { const deliveryResult = await db.from('platform_sonar_deliveries').select('id,search_id,units,total_cents,reason').eq('org_id', orgId).in('search_id', ids); fail(deliveryResult.error); deliveries = (deliveryResult.data ?? []) as DeliveryRow[]; }
       const bySearch = new Map(deliveries.map((row) => [row.search_id, row]));
-      const rows: PulseUsageRow[] = searches.map((row) => { const delivery = bySearch.get(row.id); return { id: row.id, org_id: orgId, actor_id: row.actor_id, actor_name: null, at: row.created_at, query: row.normalized_query, query_type: row.query_type, origin: row.origin, result: row.state, exempt_reason: row.origin === 'daludi' ? 'daludi' : delivery?.reason ?? null, units: delivery?.units ?? 0, total_cents: delivery?.total_cents ?? 0, result_id: row.result_id }; });
+      const rows: PulseUsageRow[] = searches.map((row) => { const delivery = bySearch.get(row.id); return { id: row.id, org_id: orgId, actor_id: row.actor_id, actor_name: null, at: row.created_at, query: row.normalized_query, query_type: row.query_type === 'ean' ? 'ean' : 'termo', origin: row.origin === 'daludi' ? 'daludi' : 'cliente', result: row.state, exempt_reason: row.origin === 'daludi' ? 'daludi' : delivery?.reason ?? null, units: delivery?.units ?? 0, total_cents: delivery?.total_cents ?? 0, result_id: row.result_id }; });
       const [allDeliveries, daludi, failures, reopens, first] = await Promise.all([
         allRows<DeliveryTotals>((a, b) => db.from('platform_sonar_deliveries').select('units,total_cents').eq('org_id', orgId).eq('month', monthDate(month)).range(a, b)),
         exactCount(db.from('platform_sonar_searches').select('id', { count: 'exact', head: true }).eq('org_id', orgId).eq('origin', 'daludi').gte('created_at', start).lt('created_at', end)),
@@ -146,7 +147,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
         allRows<SupportAuditRow>((a, b) => db.from('support_audit_events').select('id,org_id,actor_id,created_at,event,result,target_type,target_id,support_request_id').eq('org_id', orgId).gte('created_at', start).lt('created_at', end).range(a, b)),
       ]);
       const rows: AuditRow[] = [
-        ...platform.map((row) => ({ id: row.id, org_id: row.org_id, actor_id: row.actor_id, actor_name: null, at: row.occurred_at, category: row.category, action: row.action, result: row.result, target: row.target, reason: row.reason, details: row.details ?? {} })),
+        ...platform.map((row) => ({ id: row.id, org_id: row.org_id, actor_id: row.actor_id, actor_name: null, at: row.occurred_at, category: (row.category === 'billing' || row.category === 'pulse' || row.category === 'support' ? row.category : 'admin') as AuditRow['category'], action: row.action, result: row.result, target: row.target, reason: row.reason, details: row.details ?? {} })),
         ...sonar.map((row) => ({ id: row.id, org_id: row.org_id, actor_id: row.actor_id, actor_name: null, at: row.occurred_at, category: 'pulse' as const, action: row.stage, result: row.outcome, target: row.search_id, reason: row.reason, details: { result_id: row.result_id } })),
         ...support.map((row) => ({ id: row.id, org_id: row.org_id, actor_id: row.actor_id, actor_name: null, at: row.created_at, category: 'support' as const, action: String(row.event), result: String(row.result), target: row.target_id ?? row.support_request_id, reason: null, details: { target_type: row.target_type } })),
       ].filter((row) => (!filters.category || row.category === filters.category) && (!filters.actor_id || row.actor_id === filters.actor_id) && (!filters.result || row.result === filters.result));
