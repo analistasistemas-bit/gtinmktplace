@@ -118,6 +118,12 @@ export type OrgSummary = {
   daludi_searches: number | null;
   /** Bloqueios da prévia do mês (ADR-0158 §2), não buscas Sonar em voo. `null` = prévia indisponível. */
   pending_count: number | null;
+  /** Início da próxima vigência (`YYYY-MM-01`) quando o mês exibido NÃO tem condição vigente e a
+   *  organização já tem contrato para um mês futuro (ADR-0155: renegociação vale do mês seguinte).
+   *  `null` quando há condição vigente, quando não existe contrato nenhum ou quando a prévia falhou —
+   *  "não sei" nunca vira "começa em". Opcional de propósito: a Edge Function precisa ir ao ar antes
+   *  do frontend, e no intervalo a resposta antiga não traz o campo. */
+  next_terms_starts_on?: string | null;
 };
 
 export type Page<T> = { rows: T[]; total: number; page: number; page_size: number };
@@ -126,6 +132,10 @@ export type WalletTotals = {
   gross_cents: Cents | null;
   forecast_cents: Cents | null;
   orgs_without_terms: number;
+  /** Subconjunto de `orgs_without_terms` que já tem contrato com vigência futura: fora do total da
+   *  previsão pelo mesmo motivo, mas sem ação pendente. Opcional pelo mesmo motivo de
+   *  `next_terms_starts_on`: a resposta anterior ao deploy não traz o campo. */
+  orgs_future_terms?: number;
   org_count: number;
   pending_count: number | null;
   orders: number | null;

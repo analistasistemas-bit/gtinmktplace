@@ -106,7 +106,11 @@ a central não cria uma sessão de suporte. Ações: `wallet` (carteira paginada
 em 1 chamada — substitui as antigas `overview`/`list`), `organization`, `metrics`, `terms`,
 `save_terms`, `preview`, `close`, `statements`, `statement`, `reconcile_revenue`, `pulse_usage`,
 `audit`. `close` sem condição comercial vigente devolve `422` com `code: 'commercial_terms_required'`
-(ADR-0158 §1). Ver o [guia de operação](../how-to/central-organizacoes.md), o
+(ADR-0158 §1). Cada organização de `wallet`/`organization` traz `next_terms_starts_on`: o início da
+próxima vigência (`AAAA-MM-01`) quando o mês pedido não tem condição vigente mas já existe contrato
+para um mês futuro (ADR-0155) — `null` quando há condição vigente, quando não existe contrato ou
+quando a prévia falhou. `wallet.totals` traz o recorte `orgs_future_terms`. **Deploy antes do
+frontend**: a tela usa esse campo para não acusar ausência de contrato. Ver o [guia de operação](../how-to/central-organizacoes.md), o
 [ADR-0155](../decisions/0155-central-organizacoes-cobranca-auditavel.md) e o
 [ADR-0158](../decisions/0158-central-carteira-agregada-e-pendencias.md).
 

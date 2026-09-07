@@ -20,8 +20,13 @@
    número de organizações. Na tabela, cada organização mostra faturamento, markup, cobertura de
    custos, consultas Pulse, previsão e pendências.
 4. Quando houver algo a resolver, a faixa **Precisa da sua atenção** lista organizações sem condição
-   comercial, organizações com pendência de cobrança e acessos de suporte aprovados aguardando
-   entrada — cada item já leva direto para a ação.
+   comercial nenhuma, organizações com pendência de cobrança e acessos de suporte aprovados
+   aguardando entrada — cada item já leva direto para a ação. Organização cujo contrato já está
+   cadastrado mas só entra em vigor num mês futuro continua na faixa com a explicação certa
+   ("AAAA-MM não fecha — condição comercial começa em AAAA-MM") e uma ação **Ver**, nunca
+   "Cadastrar": vigência retroativa é proibida. Na tabela a linha mostra "Vigência em AAAA-MM" e a
+   previsão do mês exibido continua `—`. A contagem de pendências é a mesma na faixa, na coluna e
+   no KPI.
 5. Abra **Ver organização** para acessar o detalhe sem trocar a organização ativa da operação.
 
 **Pendência** é bloqueio do demonstrativo do mês selecionado: condição comercial ausente, devolução

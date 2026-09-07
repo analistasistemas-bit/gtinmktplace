@@ -168,6 +168,14 @@ export default function OrganizacaoDetalhe() {
           {org.slug} · Modalidade {terms.modality} · {humanPercent(terms.revenue_bps)} sobre receita
         </p>
       );
+    } else if (org.next_terms_starts_on) {
+      // ADR-0155: contrato já cadastrado, vigência só no mês seguinte. Informativo, não acionável —
+      // o dono não tem nada a fazer aqui, então não há botão "Cadastrar".
+      subtitleNode = (
+        <div className="flex flex-wrap items-center gap-2">
+          <StatusPill tone="info">Condição comercial começa em {org.next_terms_starts_on.slice(0, 7)}</StatusPill>
+        </div>
+      );
     } else {
       const cobrancaParams = new URLSearchParams(searchParams);
       cobrancaParams.set('aba', 'cobranca');

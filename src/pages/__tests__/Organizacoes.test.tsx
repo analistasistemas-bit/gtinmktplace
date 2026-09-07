@@ -49,6 +49,7 @@ const makeOrg = (overrides: Record<string, unknown> = {}) => ({
   billable_units: 8,
   daludi_searches: 2,
   pending_count: 1,
+  next_terms_starts_on: null,
   ...overrides,
 });
 
@@ -56,6 +57,7 @@ const makeTotals = (overrides: Record<string, unknown> = {}) => ({
   gross_cents: 150_000,
   forecast_cents: 200_000,
   orgs_without_terms: 0,
+  orgs_future_terms: 0,
   org_count: 1,
   pending_count: 1,
   orders: 5,
@@ -185,6 +187,51 @@ describe('Organizacoes', () => {
     expect(screen.getByText('Precisa da sua atenção')).toBeInTheDocument();
     expect(screen.getByText('SemTermos sem condições comerciais')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Cadastrar/i })).toBeInTheDocument();
+  });
+
+  const carteiraComVigenciaFutura = (pendingCount: number) => ({
+    data: {
+      rows: [makeOrg({
+        id: 'futuro', nome: 'Avil', slug: 'avil', modality: null, forecast_cents: null,
+        pending_count: pendingCount, next_terms_starts_on: '2026-10-01',
+      })],
+      total: 1, page: 1, page_size: 10,
+      totals: makeTotals({ org_count: 1, orgs_without_terms: 1, orgs_future_terms: 1, forecast_cents: 0, pending_count: pendingCount }),
+    },
+    isLoading: false, isError: false, refetch: vi.fn(),
+  });
+
+  // ADR-0155: contrato cadastrado hoje pode valer só do mês seguinte. Afirmar "sem condições
+  // comerciais" em setembro faz parecer que o cadastro não foi salvo — o mês não fecha porque a
+  // condição começa depois, não porque ninguém cadastrou.
+  it('org com vigência futura continua na faixa, mas explica por que o mês não fecha', async () => {
+    usePlatformWallet.mockReturnValue(carteiraComVigenciaFutura(1));
+    renderPage();
+
+    expect(await screen.findByText('Vigência em 2026-10')).toBeInTheDocument();
+    expect(screen.getByText('Precisa da sua atenção')).toBeInTheDocument();
+    expect(screen.getByText('Avil: 2026-09 não fecha — condição comercial começa em 2026-10')).toBeInTheDocument();
+    expect(screen.queryByText('Sem condições')).not.toBeInTheDocument();
+    expect(screen.queryByText('Avil sem condições comerciais')).not.toBeInTheDocument();
+    // Não há o que cadastrar: vigência retroativa é proibida.
+    expect(screen.queryByRole('link', { name: /Cadastrar/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Ver condições comerciais — Avil' })).toBeInTheDocument();
+    // Previsão continua `—` no mês exibido, mas o title diz por quê.
+    expect(screen.getByTitle('Condição comercial começa em 2026-10')).toBeInTheDocument();
+    // O hint do KPI não pode chamar isso de "sem condições".
+    expect(screen.getByText('1 com vigência futura — fora do total')).toBeInTheDocument();
+  });
+
+  // O defeito que a decisão do dono evita: a faixa não pode contar diferente do KPI e da coluna.
+  it('faixa, coluna e KPI contam o mesmo pending_count na org com vigência futura', async () => {
+    usePlatformWallet.mockReturnValue(carteiraComVigenciaFutura(2));
+    renderPage();
+
+    // "2" aparece exatamente duas vezes: pílula da coluna Pendências e valor do KPI Pendências.
+    expect(await screen.findAllByText('2')).toHaveLength(2);
+    // A faixa explica o bloqueio da vigência sem inventar uma contagem menor.
+    expect(screen.getByText('Avil: 2026-09 não fecha — condição comercial começa em 2026-10')).toBeInTheDocument();
+    expect(screen.queryByText(/pendência de cobrança/)).not.toBeInTheDocument();
   });
 
   it('organização com pendências mostra a pílula com a contagem', async () => {

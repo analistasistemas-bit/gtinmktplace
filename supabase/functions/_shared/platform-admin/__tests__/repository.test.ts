@@ -32,6 +32,7 @@ function fakeDb(tables: Tables, previews: Record<string, Row | Error> = {}) {
         select(_columns?: string, options?: { count?: string; head?: boolean }) { countRequested = options?.count === 'exact'; head = options?.head === true; return query; },
         eq(column: string, value: unknown) { calls.push({ table, op: 'eq', column, value }); filters.push((row) => row[column] === value); return query; },
         gte(column: string, value: unknown) { filters.push((row) => String(row[column] ?? '') >= String(value)); return query; },
+        gt(column: string, value: unknown) { calls.push({ table, op: 'gt', column, value }); filters.push((row) => String(row[column] ?? '') > String(value)); return query; },
         lt(column: string, value: unknown) { filters.push((row) => String(row[column] ?? '') < String(value)); return query; },
         in(column: string, values: unknown[]) { calls.push({ table, op: 'in', column, value: values }); filters.push((row) => values.includes(row[column])); return query; },
         like(column: string, pattern: string) { const prefix = pattern.endsWith('%') ? pattern.slice(0, -1) : pattern; filters.push((row) => String(row[column] ?? '').startsWith(prefix)); return query; },
@@ -72,13 +73,61 @@ describe('createPlatformAdminRepository', () => {
     // Pendência é bloqueio da prévia (ADR-0158 §2): sem contrato → 1; consumo é contável sem contrato.
     expect(wallet.rows[0]).toMatchObject({ modality: null, forecast_cents: null, billable_units: 2, pending_count: 1 });
     expect(wallet.totals).toEqual({
-      gross_cents: 40_000, forecast_cents: 10, orgs_without_terms: 1, org_count: 2,
+      gross_cents: 40_000, forecast_cents: 10, orgs_without_terms: 1, orgs_future_terms: 0, org_count: 2,
       pending_count: 1, orders: 2, warnings: [],
     });
     // A contagem de buscas Sonar em voo deixou de ser pendência. O `toContainEqual` positivo prova
     // que a forma registrada em `calls` é essa — sem ele, o negativo passaria de graça.
     expect(db.calls).toContainEqual({ table: 'platform_sonar_searches', op: 'eq', column: 'origin', value: 'daludi' });
     expect(db.calls).not.toContainEqual({ table: 'platform_sonar_searches', op: 'eq', column: 'state', value: 'pending' });
+  });
+
+  // ADR-0155: contrato cadastrado hoje pode valer só do mês seguinte. A carteira precisa separar
+  // "não existe condição" de "a condição começa depois do mês exibido" — o backend é quem carrega
+  // essa informação (o frontend não tem como saber).
+  it('distinguishes no terms, future terms, and current terms for the displayed month', async () => {
+    const organizations = [
+      { id: 'org-sem', nome: 'SemNada', slug: 'sem-nada', is_test: false },
+      { id: 'org-futuro', nome: 'Futuro', slug: 'futuro', is_test: false },
+      { id: 'org-vigente', nome: 'Vigente', slug: 'vigente', is_test: false },
+    ];
+    const terms = [
+      // Duas vigências futuras: vale a MENOR (a que começa antes).
+      { org_id: 'org-futuro', starts_on: '2026-11-01' },
+      { org_id: 'org-futuro', starts_on: '2026-10-01' },
+      // Vigente no mês exibido não é "próxima vigência", e a de 2026-12 não pode vazar por cima dela.
+      { org_id: 'org-vigente', starts_on: '2026-09-01' },
+      { org_id: 'org-vigente', starts_on: '2026-12-01' },
+    ];
+    const db = fakeDb(
+      { organizations: { rows: organizations }, platform_commercial_terms: { rows: terms }, ml_vendas: {}, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} },
+      {
+        'org-sem': preview(0, [{ code: 'commercial_terms_required' }], null),
+        'org-futuro': preview(0, [{ code: 'commercial_terms_required' }], null),
+        'org-vigente': preview(500),
+      },
+    );
+    const wallet = await createPlatformAdminRepository(db as never).wallet('actor', { month: '2026-09', page: 1, page_size: 10, sort: 'slug' });
+    const bySlug = new Map(wallet.rows.map((row) => [row.slug, row]));
+    expect(bySlug.get('sem-nada')).toMatchObject({ modality: null, next_terms_starts_on: null });
+    expect(bySlug.get('futuro')).toMatchObject({ modality: null, next_terms_starts_on: '2026-10-01' });
+    expect(bySlug.get('vigente')).toMatchObject({ modality: 2, next_terms_starts_on: null });
+    expect(wallet.totals).toMatchObject({ orgs_without_terms: 2, orgs_future_terms: 1 });
+    // Orçamento do ADR-0158 §3: a carteira lê as condições UMA vez para todas as organizações.
+    expect(db.calls.filter((call) => call.table === 'platform_commercial_terms' && call.op === 'gt')).toEqual([
+      { table: 'platform_commercial_terms', op: 'gt', column: 'starts_on', value: '2026-09-01' },
+    ]);
+  });
+
+  it('never claims a future term when the preview failed', async () => {
+    const db = fakeDb(
+      { organizations: { rows: [{ id: 'org-futuro', nome: 'Futuro', slug: 'futuro', is_test: false }] },
+        platform_commercial_terms: { rows: [{ org_id: 'org-futuro', starts_on: '2026-10-01' }] },
+        ml_vendas: {}, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} },
+      { 'org-futuro': new Error('preview unavailable') },
+    );
+    const wallet = await createPlatformAdminRepository(db as never).wallet('actor', { month: '2026-09', page: 1, page_size: 10, sort: 'name' });
+    expect(wallet.rows[0]).toMatchObject({ pending_count: null, next_terms_starts_on: null });
   });
 
   it('loads and enriches one organization by id', async () => {
@@ -89,8 +138,18 @@ describe('createPlatformAdminRepository', () => {
       id: 'org-a',
       metrics: { gross_cents: 10_000 },
       forecast_cents: 10,
+      next_terms_starts_on: null,
     });
     await expect(repository.organization('actor', 'missing', '2026-08')).resolves.toBeNull();
+
+    // Mesma distinção na tela de detalhe: sem vigente no mês, mas com contrato para outubro.
+    const comFuturo = fakeDb(
+      { organizations: { rows: organizations }, platform_commercial_terms: { rows: [{ org_id: 'org-a', starts_on: '2026-10-01' }] },
+        ml_vendas: {}, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} },
+      { 'org-a': preview(0, [{ code: 'commercial_terms_required' }], null) },
+    );
+    await expect(createPlatformAdminRepository(comFuturo as never).organization('actor', 'org-a', '2026-09'))
+      .resolves.toMatchObject({ modality: null, next_terms_starts_on: '2026-10-01' });
   });
 
   it('keeps metric and preview failures unknown and warns instead of emitting silent zeroes', async () => {

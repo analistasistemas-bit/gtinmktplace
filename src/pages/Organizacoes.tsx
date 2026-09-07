@@ -45,6 +45,22 @@ function fmtHora(iso: string): string {
   return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Mês de início da vigência no mesmo formato que a central já usa para mês (`2026-10`). */
+function mesDaVigencia(startsOn: string): string {
+  return startsOn.slice(0, 7);
+}
+
+/** "N sem condições" mistura quem não cadastrou nada com quem já tem contrato para um mês futuro. */
+function hintPrevisao(totals: WalletTotals | undefined): string | undefined {
+  if (!totals) return undefined;
+  const futuras = totals.orgs_future_terms ?? 0;
+  const semNenhuma = totals.orgs_without_terms - futuras;
+  const partes: string[] = [];
+  if (semNenhuma > 0) partes.push(`${semNenhuma} sem condições`);
+  if (futuras > 0) partes.push(`${futuras} com vigência futura`);
+  return partes.length ? `${partes.join(' e ')} — fora do total` : undefined;
+}
+
 /** Estado de uma solicitação de suporte em relação às ações disponíveis na linha/menu. */
 function supportFlags(request?: SupportRequest) {
   const canStart = request?.status === 'approved'
@@ -231,12 +247,26 @@ export default function Organizacoes() {
   const itensAtencao = useMemo<ItemAtencao[]>(() => {
     const itens: ItemAtencao[] = [];
     for (const org of orgs) {
-      if (org.modality == null) {
+      // ADR-0155: com vigência futura o mês exibido não fecha, mas não há o que cadastrar (vigência
+      // retroativa é proibida) — a faixa explica em vez de mandar cadastrar. A contagem NÃO é
+      // descontada: faixa, coluna e KPI contam o mesmo `pending_count`.
+      // `next_terms_starts_on` pode chegar `undefined` enquanto a Edge Function anterior está no ar.
+      const vigenciaFutura = org.modality == null ? org.next_terms_starts_on || null : null;
+      if (org.modality == null && !vigenciaFutura) {
         itens.push({
           chave: `terms-${org.id}`,
           mensagem: `${org.nome} sem condições comerciais`,
           acao: {
             rotulo: 'Cadastrar', ariaLabel: `Cadastrar condições comerciais — ${org.nome}`,
+            to: `/admin/organizacoes/${org.id}?mes=${month}&aba=cobranca`,
+          },
+        });
+      } else if (vigenciaFutura) {
+        itens.push({
+          chave: `vigencia-${org.id}`,
+          mensagem: `${org.nome}: ${month} não fecha — condição comercial começa em ${mesDaVigencia(vigenciaFutura)}`,
+          acao: {
+            rotulo: 'Ver', ariaLabel: `Ver condições comerciais — ${org.nome}`,
             to: `/admin/organizacoes/${org.id}?mes=${month}&aba=cobranca`,
           },
         });
@@ -298,7 +328,11 @@ export default function Organizacoes() {
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span>{o.slug}</span>
-              {o.modality != null ? <span>· Modalidade {o.modality}</span> : <StatusPill tone="warning">Sem condições</StatusPill>}
+              {o.modality != null
+                ? <span>· Modalidade {o.modality}</span>
+                : o.next_terms_starts_on
+                  ? <StatusPill tone="info">Vigência em {mesDaVigencia(o.next_terms_starts_on)}</StatusPill>
+                  : <StatusPill tone="warning">Sem condições</StatusPill>}
             </div>
           </div>
         );
@@ -361,7 +395,11 @@ export default function Organizacoes() {
       key: 'forecast', header: 'Previsão', className: 'w-[8.5rem] text-right tabular-nums',
       cell: (o) => {
         if (o.forecast_cents == null) {
-          const title = o.modality == null ? 'Sem condições comerciais' : 'Bloqueada por pendências';
+          const title = o.modality != null
+            ? 'Bloqueada por pendências'
+            : o.next_terms_starts_on
+              ? `Condição comercial começa em ${mesDaVigencia(o.next_terms_starts_on)}`
+              : 'Sem condições comerciais';
           return <span title={title}>—</span>;
         }
         return <span className="font-medium">{fmtBRL(o.forecast_cents / 100)}</span>;
@@ -452,7 +490,7 @@ export default function Organizacoes() {
               ? <span title="Nenhuma organização tem condição comercial vigente — sem base para prever">—</span>
               : totals?.forecast_cents != null ? fmtBRL(totals.forecast_cents / 100) : '—'
           }
-          hint={totals && totals.orgs_without_terms > 0 ? `${totals.orgs_without_terms} sem condições — fora do total` : undefined}
+          hint={hintPrevisao(totals)}
         />
         <KpiCard
           label="Pendências" icon={AlertTriangle} infoKey="Pendências da carteira"

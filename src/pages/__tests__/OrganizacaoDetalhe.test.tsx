@@ -84,6 +84,7 @@ beforeEach(() => {
       billable_units: null,
       daludi_searches: null,
       pending_count: null,
+      next_terms_starts_on: null,
     },
     isLoading: false,
     isError: false,
@@ -144,6 +145,24 @@ describe('OrganizacaoDetalhe', () => {
 
     expect(screen.getByText('Sem condições comerciais')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Cadastrar em Cobrança' })).toBeInTheDocument();
+  });
+
+  // ADR-0155: contrato com vigência futura não é pendência — informa, não cobra ação.
+  it('informa a vigência futura em vez de acusar ausência de contrato', () => {
+    usePlatformPreview.mockReturnValue({ data: makePreview({ terms: null }), isLoading: false, isError: false });
+    usePlatformOrganization.mockReturnValue({
+      data: {
+        id: 'org-avil', nome: 'Avil', slug: 'avil', is_test: true, modality: null, metrics: null,
+        forecast_cents: null, billable_units: null, daludi_searches: null, pending_count: 1,
+        next_terms_starts_on: '2026-10-01',
+      },
+      isLoading: false, isError: false, refetch: vi.fn(),
+    });
+    renderPage();
+
+    expect(screen.getByText('Condição comercial começa em 2026-10')).toBeInTheDocument();
+    expect(screen.queryByText('Sem condições comerciais')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Cadastrar em Cobrança' })).not.toBeInTheDocument();
   });
 
   it('distingue falha ao carregar a prévia de organização sem contrato', async () => {

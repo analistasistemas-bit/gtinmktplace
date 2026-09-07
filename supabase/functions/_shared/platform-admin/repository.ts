@@ -11,6 +11,7 @@ type DbQuery = PromiseLike<DbResult> & {
   single(): DbQuery;
   in(column: string, values: unknown[]): DbQuery;
   gte(column: string, value: unknown): DbQuery;
+  gt(column: string, value: unknown): DbQuery;
   lt(column: string, value: unknown): DbQuery;
   like(column: string, value: string): DbQuery;
   limit(n: number): DbQuery;
@@ -66,7 +67,20 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
   const rpc = async <T>(name: string, args: Record<string, unknown>): Promise<T> => {
     const { data, error } = await db.rpc(name, args); fail(error); return data as T;
   };
-  const enrichOne = async (actorId: string, org: { id: string; nome: string; slug: string; is_test: boolean }, month: string): Promise<OrgSummary> => {
+  // ADR-0155: a renegociação vale a partir do mês seguinte e o primeiro contrato pode começar no
+  // mês que vem, então "sem condição vigente no mês exibido" não é o mesmo que "sem contrato".
+  // Uma leitura para a carteira inteira: o orçamento do ADR-0158 §3 não comporta uma ida por
+  // organização. `starts_on` é sempre o dia 1 (check constraint), logo `> mês exibido` = futura.
+  const nextTermsStarts = async (orgIds: string[], month: string): Promise<Map<string, string>> => {
+    const starts = new Map<string, string>();
+    if (!orgIds.length) return starts;
+    const rows = await allRows<{ org_id: string; starts_on: string }>((from, to) => db
+      .from('platform_commercial_terms').select('org_id,starts_on').in('org_id', orgIds)
+      .gt('starts_on', monthDate(month)).order('starts_on', { ascending: true }).range(from, to));
+    for (const row of rows) if (!starts.has(row.org_id)) starts.set(row.org_id, row.starts_on);
+    return starts;
+  };
+  const enrichOne = async (actorId: string, org: { id: string; nome: string; slug: string; is_test: boolean }, month: string, nextStartsOn: string | null): Promise<OrgSummary> => {
     const [metricsResult, previewResult, daludi] = await Promise.all([
       readOrgMetrics(db as never, org.id, month, now()).then((value) => ({ value })).catch(() => ({ value: null })),
       rpc<BillingPreview>('platform_billing_preview', { p_actor: actorId, p_org: org.id, p_month: monthDate(month) }).then((value) => ({ value })).catch(() => ({ value: null })),
@@ -78,7 +92,10 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     return { ...org, modality: preview?.terms?.modality ?? null, metrics: metricsResult.value,
       forecast_cents: preview && preview.terms && preview.blockers.length === 0 ? preview.total_cents : null,
       billable_units: preview?.sonar_units ?? null,
-      daludi_searches: daludi, pending_count: preview ? preview.blockers.length : null };
+      daludi_searches: daludi,
+      // Só afirma vigência futura quando a prévia respondeu e provou que não há condição vigente.
+      next_terms_starts_on: preview && !preview.terms ? nextStartsOn : null,
+      pending_count: preview ? preview.blockers.length : null };
   };
   // Nome de quem agiu vem de `profiles.nome` (coluna conferida em produção), uma leitura por página.
   // ponytail: falha na leitura mantém `actor_name` null — nome é rótulo, não pode derrubar a tela.
@@ -105,14 +122,17 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     },
     async organization(actorId: string, orgId: string, month: string): Promise<OrgSummary | null> {
       const { data, error } = await db.from('organizations').select('id,nome,slug,is_test').eq('id', orgId).maybeSingle(); fail(error);
-      return data ? enrichOne(actorId, data as OrgRow, month) : null;
+      if (!data) return null;
+      const starts = await nextTermsStarts([orgId], month);
+      return enrichOne(actorId, data as OrgRow, month, starts.get(orgId) ?? null);
     },
     // ADR-0158 §3: uma ação por render — enriquece cada organização UMA vez e devolve totais da
     // carteira inteira (antes de paginar) junto com a página.
     async wallet(actorId: string, input: { month: string; search?: string; include_test?: boolean; page: number; page_size: number; sort: string }): Promise<Wallet> {
       const needle = input.search?.trim().toLocaleLowerCase('pt-BR');
       const organizations = (await loadOrganizations(!!input.include_test)).filter((org) => !needle || org.nome.toLocaleLowerCase('pt-BR').includes(needle) || org.slug.toLocaleLowerCase('pt-BR').includes(needle));
-      const summaries = await mapLimit(organizations, 4, (org) => enrichOne(actorId, org, input.month));
+      const nextStarts = await nextTermsStarts(organizations.map((org) => org.id), input.month);
+      const summaries = await mapLimit(organizations, 4, (org) => enrichOne(actorId, org, input.month, nextStarts.get(org.id) ?? null));
       summaries.sort(input.sort === 'gross_desc'
         ? (a, b) => (b.metrics?.gross_cents ?? -1) - (a.metrics?.gross_cents ?? -1) || a.nome.localeCompare(b.nome)
         : input.sort === 'slug' ? (a, b) => a.slug.localeCompare(b.slug) : (a, b) => a.nome.localeCompare(b.nome));
@@ -127,6 +147,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
         gross_cents: completeMetrics ? summaries.reduce((sum, row) => sum + (row.metrics?.gross_cents ?? 0), 0) : null,
         forecast_cents: summaries.reduce((sum, row) => sum + (row.forecast_cents ?? 0), 0),
         orgs_without_terms: summaries.filter((row) => row.modality === null).length,
+        orgs_future_terms: summaries.filter((row) => row.next_terms_starts_on !== null).length,
         org_count: summaries.length,
         pending_count: completePreviews ? summaries.reduce((sum, row) => sum + (row.pending_count ?? 0), 0) : null,
         orders: completeMetrics ? summaries.reduce((sum, row) => sum + (row.metrics?.orders ?? 0), 0) : null,
