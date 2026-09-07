@@ -56,6 +56,11 @@ function nextMonthStart(now = new Date()): string {
   return `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
 }
 
+function currentMonthStart(now = new Date()): string {
+  const { year, month } = fortalezaDateParts(now);
+  return `${year}-${String(month).padStart(2, '0')}-01`;
+}
+
 function initialState(current: CommercialTerms | null, startsOn: string): FormState {
   return {
     modality: String(current?.modality ?? 1) as '1' | '2',
@@ -81,22 +86,27 @@ function historyStatus(
 }
 
 export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
-  const startsOn = useMemo(() => nextMonthStart(), []);
+  const nextMonth = useMemo(() => nextMonthStart(), []);
+  const currentMonth = useMemo(() => currentMonthStart(), []);
+  const isFirstContract = current === null;
+  const [startsOn, setStartsOn] = useState(nextMonth);
+  const effectiveStartsOn = isFirstContract ? startsOn : nextMonth;
   const today = useMemo(() => {
     const { year, month, day } = fortalezaDateParts();
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   }, []);
-  const [form, setForm] = useState<FormState>(() => initialState(current, startsOn));
+  const [form, setForm] = useState<FormState>(() => initialState(current, effectiveStartsOn));
   const [error, setError] = useState<string | null>(null);
   const revenueTouched = useRef(false);
   const terms = usePlatformTerms(orgId);
   const save = useSavePlatformTerms();
 
   useEffect(() => {
-    setForm(initialState(current, startsOn));
+    setStartsOn(nextMonth);
+    setForm(initialState(current, nextMonth));
     revenueTouched.current = false;
     setError(null);
-  }, [current, orgId, startsOn]);
+  }, [current, orgId, nextMonth]);
 
   const set = (field: keyof FormState, value: string) =>
     setForm((previous) => ({ ...previous, [field]: value }));
@@ -120,7 +130,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
     try {
       await save.mutateAsync({
         org_id: orgId,
-        starts_on: startsOn,
+        starts_on: effectiveStartsOn,
         modality: Number(form.modality) as 1 | 2,
         monthly_fee_cents: monthly!,
         revenue_bps: revenue!,
@@ -229,8 +239,31 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                 onChange={(event) => set('reason', event.target.value)}
               />
             </label>
+            {isFirstContract ? (
+              <label className="space-y-1 text-sm md:col-span-2">
+                <span className="font-medium">Início da vigência</span>
+                <select
+                  aria-label="Início da vigência"
+                  className="h-9 w-full rounded-md border border-input bg-transparent px-3"
+                  value={startsOn}
+                  onChange={(event) => setStartsOn(event.target.value)}
+                >
+                  <option value={nextMonth}>Próximo mês ({nextMonth})</option>
+                  <option value={currentMonth}>Este mês ({currentMonth})</option>
+                </select>
+              </label>
+            ) : null}
             <p className="text-sm text-muted-foreground md:col-span-2">
-              Vigência: <strong>{startsOn}</strong> (primeiro dia do próximo mês em America/Fortaleza).
+              {isFirstContract ? (
+                <>
+                  Primeiro contrato pode iniciar neste mês, sem cobrança retroativa. Padrão: próximo mês.
+                  {' '}Vigência selecionada: <strong>{effectiveStartsOn}</strong>.
+                </>
+              ) : (
+                <>
+                  Renegociação vale a partir do próximo mês (<strong>{effectiveStartsOn}</strong>).
+                </>
+              )}
             </p>
             {error && <p className="text-sm text-destructive md:col-span-2" role="alert">{error}</p>}
             <div className="md:col-span-2">

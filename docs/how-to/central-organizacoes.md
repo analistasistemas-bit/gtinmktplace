@@ -42,7 +42,10 @@ não estão disponíveis, a central mostra o indicador como indisponível, em ve
 - **Faturamento bruto** é o indicador de vendas antes das taxas.
 - **Base de cobrança** desconta cancelamentos e devoluções elegíveis sem deduzir a mesma venda duas
   vezes.
-- Reembolso parcial sem valor de produtos conciliado gera uma pendência e impede o fechamento.
+- Reembolso parcial, ou venda `paid` com devolução (`tem_devolucao`) ou estorno positivo sem valor
+  de produtos conciliado, gera uma pendência e impede o fechamento.
+- Conciliações vigentes casam a revisão comercial da venda (`status` + bruto em centavos), não só o
+  carimbo `atualizado_em`; um novo sync ML que só atualiza o timestamp não invalida a conciliação.
 - O percentual Daludi é aplicado no servidor sobre a base conciliada. O navegador não calcula nem
   edita o total autoritativo.
 
@@ -53,9 +56,10 @@ não estão disponíveis, a central mostra o indicador como indisponível, em ve
 2. Informe a vigência e um motivo verificável.
 3. Salve e confira a nova versão no histórico.
 
-Valores zero são válidos. A modalidade 2 também pode ter infraestrutura mensal. A primeira
-condição tem início explícito e não cria cobrança retroativa; renegociações passam a valer no
-próximo mês. Demonstrativos já fechados conservam a condição e os valores originais.
+Valores zero são válidos. A modalidade 2 também pode ter infraestrutura mensal. No **primeiro
+cadastro**, a vigência pode começar neste mês ou no próximo, sem cobrança retroativa; nas
+**renegociações**, a nova condição passa a valer no próximo mês. Demonstrativos já fechados
+conservam a condição e os valores originais.
 
 ## Conciliar e fechar uma competência
 

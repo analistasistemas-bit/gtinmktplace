@@ -103,7 +103,9 @@ declare
   v_setup_fee_text text;
   v_version integer;
   v_term public.platform_commercial_terms%rowtype;
-  v_next_month date := (date_trunc('month', now() at time zone 'America/Fortaleza') + interval '1 month')::date;
+  v_current_month date;
+  v_next_month date;
+  v_min_starts date;
 begin
   if not exists (
     select 1 from public.profiles p
@@ -159,7 +161,7 @@ begin
   v_setup_fee := v_setup_fee_text::bigint;
   v_reason := btrim(p_input->>'reason');
 
-  if v_starts_on <> date_trunc('month', v_starts_on)::date or v_starts_on < v_next_month
+  if v_starts_on <> date_trunc('month', v_starts_on)::date
     or v_revenue_bps not between 0 and 10000
     or v_reason is null or v_reason = '' then
     raise exception 'Invalid commercial terms input' using errcode = '22023';
@@ -184,6 +186,18 @@ begin
   perform 1 from public.organizations o where o.id = v_org_id for update;
   if not found then
     raise exception 'Organization not found' using errcode = '23503';
+  end if;
+
+  v_current_month := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+  v_next_month := (v_current_month + interval '1 month')::date;
+  v_min_starts := case
+    when exists (select 1 from public.platform_commercial_terms t where t.org_id = v_org_id)
+    then v_next_month
+    else v_current_month
+  end;
+
+  if v_starts_on < v_min_starts then
+    raise exception 'Invalid commercial terms input' using errcode = '22023';
   end if;
 
   select coalesce(max(t.version), 0) + 1 into v_version

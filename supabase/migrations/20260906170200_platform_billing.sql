@@ -36,6 +36,8 @@ create table public.platform_revenue_reconciliations (
   org_id uuid not null references public.organizations(id) on delete restrict,
   sale_id uuid not null,
   source_updated_at timestamptz not null,
+  source_status text not null,
+  source_gross_cents bigint not null check (source_gross_cents>=0),
   refunded_product_cents bigint not null check (refunded_product_cents>=0),
   reason text not null check (length(btrim(reason))>0),
   created_at timestamptz not null default now(),
@@ -72,6 +74,26 @@ begin
     raise exception 'active platform admin required' using errcode='42501';
   end if;
 end;
+$$;
+
+create function public.platform_sale_needs_refund_reconciliation(
+  p_status text, p_tem_devolucao boolean, p_estorno numeric
+) returns boolean
+language sql immutable set search_path='' as $$
+  select p_status = 'partially_refunded'
+    or (p_status = 'paid' and (coalesce(p_tem_devolucao, false) or coalesce(p_estorno, 0) > 0));
+$$;
+
+create function public.platform_matching_reconciliation(
+  p_org uuid, p_sale uuid, p_status text, p_gross bigint
+) returns public.platform_revenue_reconciliations
+language sql stable set search_path='' as $$
+  select r.*
+  from public.platform_revenue_reconciliations r
+  where r.org_id=p_org and r.sale_id=p_sale
+    and r.source_status=p_status and r.source_gross_cents=p_gross
+  order by r.created_at desc, r.id desc
+  limit 1;
 $$;
 
 create function public.platform_billing_preview(p_actor uuid,p_org uuid,p_month date) returns jsonb
@@ -123,7 +145,9 @@ begin
       case when s.status='refunded' then round(s.total_amount*100)::bigint
         else least(coalesce(r.refunded_product_cents,0),round(s.total_amount*100)::bigint) end refund_cents
     from public.ml_vendas s
-    left join public.platform_revenue_reconciliations r on r.org_id=s.org_id and r.sale_id=s.id and r.source_updated_at=s.atualizado_em
+    left join public.platform_matching_reconciliation(
+      s.org_id, s.id, s.status, round(s.total_amount*100)::bigint
+    ) r on true
     where s.org_id=p_org and s.date_closed>=v_start and s.date_closed<v_end
       and s.status in ('paid','partially_refunded','refunded')
   )
@@ -141,8 +165,12 @@ begin
     'status',s.status,'refunded_product_cents',r.refunded_product_cents
   ) order by s.id),'[]'::jsonb) into v_blockers
   from public.ml_vendas s
-  left join public.platform_revenue_reconciliations r on r.org_id=s.org_id and r.sale_id=s.id and r.source_updated_at=s.atualizado_em
-  where s.org_id=p_org and s.status='partially_refunded' and r.id is null
+  left join public.platform_matching_reconciliation(
+    s.org_id, s.id, s.status, round(s.total_amount*100)::bigint
+  ) r on true
+  where s.org_id=p_org
+    and public.platform_sale_needs_refund_reconciliation(s.status, s.tem_devolucao, s.estorno)
+    and r.id is null
     and (s.date_closed>=v_start and s.date_closed<v_end
       or exists(select 1 from public.platform_billing_sale_facts f where f.org_id=p_org and f.sale_id=s.id));
 
@@ -153,19 +181,24 @@ begin
 
   select v_blockers||coalesce(jsonb_agg(jsonb_build_object(
     'code',case when s.id is null then 'billing_source_missing'
-      when s.status='partially_refunded' then 'refund_reconciliation_required' else 'billing_source_changed' end,
+      when public.platform_sale_needs_refund_reconciliation(s.status, s.tem_devolucao, s.estorno) and r.id is null
+        then 'refund_reconciliation_required' else 'billing_source_changed' end,
     'message',case when s.id is null then 'Venda original não está mais disponível'
-      when s.status='partially_refunded' then 'Devolução tardia exige conciliação' else 'Venda original foi alterada após o fechamento' end,
+      when public.platform_sale_needs_refund_reconciliation(s.status, s.tem_devolucao, s.estorno) and r.id is null
+        then 'Devolução tardia exige conciliação' else 'Venda original foi alterada após o fechamento' end,
     'sale_id',f.sale_id,'order_ref',s.order_id::text,'source_updated_at',s.atualizado_em,
     'gross_cents',case when s.id is null then f.gross_cents else round(s.total_amount*100)::bigint end,
     'status',s.status,'refunded_product_cents',r.refunded_product_cents
   ) order by f.sale_id),'[]'::jsonb) into v_blockers
   from public.platform_billing_sale_facts f
   left join public.ml_vendas s on s.org_id=f.org_id and s.id=f.sale_id
-  left join public.platform_revenue_reconciliations r on r.org_id=s.org_id and r.sale_id=s.id and r.source_updated_at=s.atualizado_em
+  left join public.platform_matching_reconciliation(
+    s.org_id, s.id, s.status, round(s.total_amount*100)::bigint
+  ) r on true
   where f.org_id=p_org and (s.id is null
-    or (s.status='partially_refunded' and r.id is null)
-    or (s.status not in ('partially_refunded','refunded','cancelled')
+    or (public.platform_sale_needs_refund_reconciliation(s.status, s.tem_devolucao, s.estorno) and r.id is null)
+    or (not public.platform_sale_needs_refund_reconciliation(s.status, s.tem_devolucao, s.estorno)
+      and s.status not in ('refunded','cancelled')
       and (s.status is distinct from f.status or round(s.total_amount*100)::bigint<>f.gross_cents)));
 
   with origin as (
@@ -177,7 +210,9 @@ begin
     from public.platform_billing_statements st
     join public.platform_billing_sale_facts f on f.statement_id=st.id
     left join public.ml_vendas s on s.org_id=f.org_id and s.id=f.sale_id
-    left join public.platform_revenue_reconciliations r on r.org_id=s.org_id and r.sale_id=s.id and r.source_updated_at=s.atualizado_em
+    left join public.platform_matching_reconciliation(
+      s.org_id, s.id, s.status, round(s.total_amount*100)::bigint
+    ) r on true
     where st.org_id=p_org and st.month<p_month
     group by st.id,st.fee_cents,st.revenue_bps
   ), credited as (
@@ -264,7 +299,7 @@ $$;
 create function public.platform_reconcile_revenue(p_actor uuid,p_input jsonb) returns jsonb
 language plpgsql security definer set search_path='' as $$
 declare v_org uuid; v_sale uuid; v_source timestamptz; v_refund bigint; v_reason text;
-declare v_row public.platform_revenue_reconciliations%rowtype; v_gross bigint;
+declare v_row public.platform_revenue_reconciliations%rowtype; v_gross bigint; v_status text;
 declare v_refund_text text;
 begin
   perform public.platform_assert_admin_actor(p_actor);
@@ -280,14 +315,14 @@ begin
     raise exception 'invalid reconciliation input' using errcode='22023';
   end if;
   v_refund:=v_refund_text::bigint;
-  select round(total_amount*100)::bigint into v_gross from public.ml_vendas
+  select status,round(total_amount*100)::bigint into v_status,v_gross from public.ml_vendas
     where id=v_sale and org_id=v_org and atualizado_em=v_source
       and (status in ('partially_refunded','refunded','cancelled') or coalesce(tem_devolucao,false) or coalesce(estorno,0)>0) for update;
   if not found or v_refund>v_gross or length(coalesce(v_reason,''))=0 then
     raise exception 'invalid or stale reconciliation' using errcode='22023';
   end if;
-  insert into public.platform_revenue_reconciliations(org_id,sale_id,source_updated_at,refunded_product_cents,reason,created_by)
-    values(v_org,v_sale,v_source,v_refund,v_reason,p_actor)
+  insert into public.platform_revenue_reconciliations(org_id,sale_id,source_updated_at,source_status,source_gross_cents,refunded_product_cents,reason,created_by)
+    values(v_org,v_sale,v_source,v_status,v_gross,v_refund,v_reason,p_actor)
     on conflict(org_id,sale_id,source_updated_at) do nothing returning * into v_row;
   if not found then
     select * into v_row from public.platform_revenue_reconciliations where org_id=v_org and sale_id=v_sale and source_updated_at=v_source;
@@ -302,6 +337,8 @@ $$;
 
 revoke all on function public.platform_billing_append_only() from public,anon,authenticated;
 revoke all on function public.platform_assert_admin_actor(uuid) from public,anon,authenticated;
+revoke all on function public.platform_sale_needs_refund_reconciliation(text,boolean,numeric) from public,anon,authenticated;
+revoke all on function public.platform_matching_reconciliation(uuid,uuid,text,bigint) from public,anon,authenticated;
 revoke all on function public.platform_billing_preview(uuid,uuid,date) from public,anon,authenticated;
 revoke all on function public.platform_billing_close(uuid,uuid,date,text) from public,anon,authenticated;
 revoke all on function public.platform_reconcile_revenue(uuid,jsonb) from public,anon,authenticated;

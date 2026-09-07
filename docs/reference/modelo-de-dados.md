@@ -81,7 +81,11 @@ As migrations `20260906170000_platform_commercial_foundation.sql`,
   de devolução.
 
 Todas têm RLS ativa e não liberam DML direto ao navegador. As escritas passam por RPCs
-`security definer` chamadas pela Edge Function `platform-admin` ou pelo fluxo Sonar autenticado.
+`security definer` chamadas pela Edge Function `platform-admin` ou pelo fluxo Sonar autenticado,
+incluindo `platform_billing_preview`, `platform_billing_close`, `platform_reconcile_revenue` e os
+helpers imutáveis `platform_sale_needs_refund_reconciliation` (sinaliza vendas `partially_refunded` ou
+`paid` com indício de devolução/estorno que exigem conciliação antes do fechamento) e
+`platform_matching_reconciliation` (localiza a conciliação vigente por identidade comercial da venda).
 Condições e demonstrativos preservam competência em `America/Fortaleza`; fechamento é único por
 `(org_id, month)` e não é recalculado por uma renegociação posterior. A exclusão de organização
 permanece desabilitada enquanto a limpeza sequencial não puder preservar esse histórico

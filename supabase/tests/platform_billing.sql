@@ -22,7 +22,9 @@ insert into public.organizations(id,nome,slug) values
   ('90000000-0000-0000-0000-000000000005','Org Late','org-late'),
   ('90000000-0000-0000-0000-000000000006','Org Rounding','org-rounding'),
   ('90000000-0000-0000-0000-000000000007','Org Source Guard','org-source-guard'),
-  ('90000000-0000-0000-0000-000000000008','Org Cancelled','org-cancelled');
+  ('90000000-0000-0000-0000-000000000008','Org Cancelled','org-cancelled'),
+  ('90000000-0000-0000-0000-000000000009','Org Paid Evidence','org-paid-evidence'),
+  ('90000000-0000-0000-0000-000000000010','Org Late Paid Evidence','org-late-paid-evidence');
 
 insert into public.platform_commercial_terms(
   org_id,starts_on,modality,monthly_fee_cents,revenue_bps,sonar_unit_cents,
@@ -33,16 +35,21 @@ insert into public.platform_commercial_terms(
   ('90000000-0000-0000-0000-000000000005',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'late fixture','80000000-0000-0000-0000-000000000001',1),
   ('90000000-0000-0000-0000-000000000006',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,5000,0,0,null,'rounding fixture','80000000-0000-0000-0000-000000000001',1),
   ('90000000-0000-0000-0000-000000000007',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'source guard fixture','80000000-0000-0000-0000-000000000001',1),
-  ('90000000-0000-0000-0000-000000000008',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'cancelled fixture','80000000-0000-0000-0000-000000000001',1);
+  ('90000000-0000-0000-0000-000000000008',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'cancelled fixture','80000000-0000-0000-0000-000000000001',1),
+  ('90000000-0000-0000-0000-000000000009',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'paid evidence fixture','80000000-0000-0000-0000-000000000001',1),
+  ('90000000-0000-0000-0000-000000000010',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'late paid evidence fixture','80000000-0000-0000-0000-000000000001',1);
 
-insert into public.ml_vendas(id,org_id,order_id,date_closed,total_amount,status,atualizado_em) values
-  ('50000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000003',300001,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',9000,'paid','2026-07-02T12:00:00Z'),
-  ('50000000-0000-0000-0000-000000000002','90000000-0000-0000-0000-000000000003',300002,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '2 days',1000,'refunded','2026-07-03T12:00:00Z'),
-  ('50000000-0000-0000-0000-000000000003','90000000-0000-0000-0000-000000000004',400003,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',100,'partially_refunded','2026-07-02T12:00:00Z'),
-  ('50000000-0000-0000-0000-000000000004','90000000-0000-0000-0000-000000000005',500004,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',9000,'paid','2026-07-02T12:00:00Z'),
-  ('50000000-0000-0000-0000-000000000005','90000000-0000-0000-0000-000000000006',600005,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',0.03,'paid','2026-07-02T12:00:00Z'),
-  ('50000000-0000-0000-0000-000000000006','90000000-0000-0000-0000-000000000007',700006,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',100,'paid','2026-07-02T12:00:00Z'),
-  ('50000000-0000-0000-0000-000000000007','90000000-0000-0000-0000-000000000008',800007,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',100,'paid','2026-07-02T12:00:00Z');
+insert into public.ml_vendas(id,org_id,order_id,date_closed,total_amount,status,atualizado_em,tem_devolucao,estorno) values
+  ('50000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000003',300001,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',9000,'paid','2026-07-02T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000002','90000000-0000-0000-0000-000000000003',300002,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '2 days',1000,'refunded','2026-07-03T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000003','90000000-0000-0000-0000-000000000004',400003,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',100,'partially_refunded','2026-07-02T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000004','90000000-0000-0000-0000-000000000005',500004,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',9000,'paid','2026-07-02T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000005','90000000-0000-0000-0000-000000000006',600005,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',0.03,'paid','2026-07-02T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000006','90000000-0000-0000-0000-000000000007',700006,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',100,'paid','2026-07-02T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000007','90000000-0000-0000-0000-000000000008',800007,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',100,'paid','2026-07-02T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000008','90000000-0000-0000-0000-000000000009',900008,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',100,'paid','2026-07-02T12:00:00Z',false,12.50),
+  ('50000000-0000-0000-0000-000000000009','90000000-0000-0000-0000-000000000009',900009,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '2 days',50,'paid','2026-07-03T12:00:00Z',true,0),
+  ('50000000-0000-0000-0000-000000000010','90000000-0000-0000-0000-000000000010',100010,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',200,'paid','2026-07-02T12:00:00Z',false,0);
 
 do $$
 declare i integer; v_result uuid; v_search uuid;
@@ -223,6 +230,96 @@ begin
   perform public.platform_reconcile_revenue('80000000-0000-0000-0000-000000000001',jsonb_build_object('org_id','90000000-0000-0000-0000-000000000006','sale_id','50000000-0000-0000-0000-000000000005','source_updated_at','2026-09-02T12:00:00Z','refunded_product_cents',3,'reason','three cents'));
   v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000006',date_trunc('month',now() at time zone 'America/Fortaleza')::date);
   if v_preview#>>'{adjustments,0,amount_cents}'<>'1' then raise exception 'third incremental credit must be 1: %',v_preview; end if;
+end $$;
+
+do $$
+declare v_month date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
+declare v_preview jsonb;
+begin
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000009',v_month);
+  if not (v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000008"}]') then
+    raise exception 'paid with estorno was not blocked: %',v_preview;
+  end if;
+  if not (v_preview->'blockers' @> '[{"sale_id":"50000000-0000-0000-0000-000000000008","order_ref":"900008","source_updated_at":"2026-07-02T12:00:00+00:00","gross_cents":10000,"status":"paid","refunded_product_cents":null}]') then
+    raise exception 'paid estorno blocker missing candidate fields: %',v_preview;
+  end if;
+  if (v_preview->>'gross_cents')::bigint<>15000 then raise exception 'paid evidence gross must include both sales: %',v_preview; end if;
+  begin
+    perform public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000009',v_month,v_preview->>'revision');
+    raise exception 'paid estorno close was accepted';
+  exception when check_violation then null;
+  end;
+  perform public.platform_reconcile_revenue('80000000-0000-0000-0000-000000000001',jsonb_build_object(
+    'org_id','90000000-0000-0000-0000-000000000009','sale_id','50000000-0000-0000-0000-000000000008',
+    'source_updated_at','2026-07-02T12:00:00Z','refunded_product_cents',8000,'reason','product only'));
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000009',v_month);
+  if (v_preview->>'refund_cents')::bigint<>8000 or (v_preview->>'base_cents')::bigint<>7000 then
+    raise exception 'reconciled product amount not reflected in base: %',v_preview;
+  end if;
+  if v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000008"}]' then
+    raise exception 'paid estorno blocker remained after reconciliation: %',v_preview;
+  end if;
+  if not (v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000009"}]') then
+    raise exception 'paid with tem_devolucao was not blocked: %',v_preview;
+  end if;
+  perform public.platform_reconcile_revenue('80000000-0000-0000-0000-000000000001',jsonb_build_object(
+    'org_id','90000000-0000-0000-0000-000000000009','sale_id','50000000-0000-0000-0000-000000000009',
+    'source_updated_at','2026-07-03T12:00:00Z','refunded_product_cents',0,'reason','mediation only'));
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000009',v_month);
+  if jsonb_array_length(v_preview->'blockers')<>0 then raise exception 'tem_devolucao zero reconciliation still blocked: %',v_preview; end if;
+  if (v_preview->>'base_cents')::bigint<>7000
+    or (select (elem->>'recognized_base_cents')::bigint from jsonb_array_elements(v_preview->'sources') elem
+        where elem->>'sale_id'='50000000-0000-0000-0000-000000000009')<>5000 then
+    raise exception 'tem_devolucao zero reconciliation must keep sale gross in base: %',v_preview;
+  end if;
+end $$;
+
+do $$
+declare v_month date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
+declare v_preview jsonb;
+begin
+  update public.ml_vendas set atualizado_em='2026-08-01T12:00:00Z'
+    where id='50000000-0000-0000-0000-000000000008';
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000009',v_month);
+  if (v_preview->>'refund_cents')::bigint<>8000 or (v_preview->>'base_cents')::bigint<>7000 then
+    raise exception 'timestamp-only bump changed billing totals: %',v_preview;
+  end if;
+  if v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000008"}]'
+    or v_preview->'blockers' @> '[{"code":"billing_source_changed","sale_id":"50000000-0000-0000-0000-000000000008"}]' then
+    raise exception 'timestamp-only bump re-blocked reconciled sale: %',v_preview;
+  end if;
+  perform public.platform_reconcile_revenue('80000000-0000-0000-0000-000000000001',jsonb_build_object(
+    'org_id','90000000-0000-0000-0000-000000000009','sale_id','50000000-0000-0000-0000-000000000008',
+    'source_updated_at','2026-08-01T12:00:00Z','refunded_product_cents',8000,'reason','product only'));
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000009',v_month);
+  if (v_preview->>'refund_cents')::bigint<>8000 or (v_preview->>'base_cents')::bigint<>7000
+    or jsonb_array_length(v_preview->'blockers')<>0 then
+    raise exception 'idempotent reconcile after timestamp bump failed: %',v_preview;
+  end if;
+  update public.ml_vendas set total_amount=110,atualizado_em='2026-08-02T12:00:00Z'
+    where id='50000000-0000-0000-0000-000000000008';
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000009',v_month);
+  if not (v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000008"}]') then
+    raise exception 'gross change after reconciliation was not blocked: %',v_preview;
+  end if;
+end $$;
+
+do $$
+declare v_origin date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
+declare v_next date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '1 month')::date;
+declare v_preview jsonb;
+begin
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000010',v_origin);
+  perform public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000010',v_origin,v_preview->>'revision');
+  update public.ml_vendas set tem_devolucao=true,estorno=15,atualizado_em='2026-08-03T12:00:00Z'
+    where id='50000000-0000-0000-0000-000000000010';
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000010',v_next);
+  if not (v_preview->'blockers' @> '[{"code":"refund_reconciliation_required","sale_id":"50000000-0000-0000-0000-000000000010"}]') then
+    raise exception 'late paid evidence was not blocked: %',v_preview;
+  end if;
+  if v_preview->'blockers' @> '[{"code":"billing_source_changed","sale_id":"50000000-0000-0000-0000-000000000010"}]' then
+    raise exception 'late paid evidence was classified as source changed: %',v_preview;
+  end if;
 end $$;
 
 do $$

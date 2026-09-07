@@ -38,48 +38,76 @@ end $$;
 
 insert into public.organizations (id, nome, slug) values
   ('90000000-0000-0000-0000-000000000001', 'Org A', 'org-a'),
-  ('90000000-0000-0000-0000-000000000002', 'Org B', 'org-b');
+  ('90000000-0000-0000-0000-000000000002', 'Org B', 'org-b'),
+  ('90000000-0000-0000-0000-000000000011', 'Org C', 'org-c'),
+  ('90000000-0000-0000-0000-000000000012', 'Org D', 'org-d');
 insert into public.profiles (id, is_super_admin, is_active) values
   ('80000000-0000-0000-0000-000000000001', true, true),
   ('80000000-0000-0000-0000-000000000002', false, true);
 
 do $$
 declare
+  v_current date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+  v_next date := (v_current + interval '1 month')::date;
   v_input jsonb;
 begin
+  perform public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000011',
+      'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 60000,
+      'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'primeiro contrato mês corrente'
+    )
+  );
+
+  begin
+    perform public.platform_save_terms(
+      '80000000-0000-0000-0000-000000000001',
+      jsonb_build_object(
+        'org_id', '90000000-0000-0000-0000-000000000012',
+        'starts_on', (v_current - interval '1 month')::date, 'modality', 2, 'monthly_fee_cents', 60000,
+        'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
+        'setup_due_month', null, 'reason', 'primeiro contrato retroativo'
+      )
+    );
+    raise exception 'first contract in past month was accepted';
+  exception when sqlstate '22023' then null;
+  end;
+
   foreach v_input in array array[
     jsonb_build_object(
-      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', v_next,
       'modality', 2, 'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
       'setup_due_month', null, 'reason', 'centavos ausentes'
     ),
     jsonb_build_object(
-      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', v_next,
       'modality', 2, 'monthly_fee_cents', 1.5, 'revenue_bps', 700, 'sonar_unit_cents', 0,
       'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'centavos decimais'
     ),
     jsonb_build_object(
-      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', v_next,
       'modality', 2, 'monthly_fee_cents', 9007199254740992, 'revenue_bps', 700, 'sonar_unit_cents', 0,
       'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'centavos inseguros'
     ),
     jsonb_build_object(
-      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', v_next,
       'modality', 1.5, 'monthly_fee_cents', 0, 'revenue_bps', 700, 'sonar_unit_cents', 0,
       'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'modalidade decimal'
     ),
     jsonb_build_object(
-      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', v_next,
       'modality', 2, 'monthly_fee_cents', 0, 'revenue_bps', 0.5, 'sonar_unit_cents', 0,
       'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'percentual decimal'
     ),
     jsonb_build_object(
-      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', v_next,
       'modality', 2, 'monthly_fee_cents', 0, 'revenue_bps', 0, 'sonar_unit_cents', 0,
       'setup_fee_cents', 1, 'reason', 'setup sem competência'
     ),
     jsonb_build_object(
-      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
+      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', v_next,
       'modality', 2, 'monthly_fee_cents', 0, 'revenue_bps', 0, 'sonar_unit_cents', 0,
       'setup_fee_cents', 1, 'setup_due_month', '2026-13', 'reason', 'setup inválido'
     )
@@ -93,13 +121,15 @@ begin
 end $$;
 
 do $$
+declare
+  v_next date := (date_trunc('month', now() at time zone 'America/Fortaleza') + interval '1 month')::date;
 begin
   begin
     insert into public.platform_commercial_terms (
       org_id, starts_on, modality, monthly_fee_cents, revenue_bps,
       sonar_unit_cents, setup_fee_cents, setup_due_month, reason, created_by, version
     ) values (
-      '90000000-0000-0000-0000-000000000001', '2026-10-01', 2, 9007199254740992, 0,
+      '90000000-0000-0000-0000-000000000001', v_next, 2, 9007199254740992, 0,
       0, 0, null, 'centavos inseguros direto', '80000000-0000-0000-0000-000000000001', 1
     );
     raise exception 'unsafe direct cents were allowed';
@@ -108,6 +138,8 @@ begin
 end $$;
 
 do $$
+declare
+  v_next date := (date_trunc('month', now() at time zone 'America/Fortaleza') + interval '1 month')::date;
 begin
   perform set_config('role', 'authenticated', true);
   begin
@@ -115,7 +147,7 @@ begin
       org_id, starts_on, modality, monthly_fee_cents, revenue_bps,
       sonar_unit_cents, setup_fee_cents, setup_due_month, reason, created_by, version
     ) values (
-      '90000000-0000-0000-0000-000000000001', '2026-10-01', 2, 0, 0, 0, 0, null,
+      '90000000-0000-0000-0000-000000000001', v_next, 2, 0, 0, 0, 0, null,
       'browser write', '80000000-0000-0000-0000-000000000001', 1
     );
     raise exception 'authenticated direct DML was allowed';
@@ -125,6 +157,8 @@ begin
 end $$;
 
 do $$
+declare
+  v_next date := (date_trunc('month', now() at time zone 'America/Fortaleza') + interval '1 month')::date;
 begin
   perform set_config('role', 'service_role', true);
   begin
@@ -132,7 +166,7 @@ begin
       '80000000-0000-0000-0000-000000000002',
       jsonb_build_object(
         'org_id', '90000000-0000-0000-0000-000000000001',
-        'starts_on', '2026-10-01', 'modality', 2, 'monthly_fee_cents', 60000,
+        'starts_on', v_next, 'modality', 2, 'monthly_fee_cents', 60000,
         'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
         'setup_due_month', null, 'reason', 'actor comum'
       )
@@ -143,40 +177,63 @@ begin
   perform set_config('role', 'none', true);
 end $$;
 
-select public.platform_save_terms(
-  '80000000-0000-0000-0000-000000000001',
-  jsonb_build_object(
-    'org_id', '90000000-0000-0000-0000-000000000001',
-    'starts_on', '2026-10-01', 'modality', 2, 'monthly_fee_cents', 60000,
-    'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
-    'setup_due_month', null, 'reason', 'primeira proposta'
-  )
-);
-select public.platform_save_terms(
-  '80000000-0000-0000-0000-000000000001',
-  jsonb_build_object(
-    'org_id', '90000000-0000-0000-0000-000000000002',
-    'starts_on', '2026-10-01', 'modality', 1, 'monthly_fee_cents', 0,
-    'revenue_bps', 0, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
-    'setup_due_month', null, 'reason', 'zero é válido'
-  )
-);
-select public.platform_save_terms(
-  '80000000-0000-0000-0000-000000000001',
-  jsonb_build_object(
-    'org_id', '90000000-0000-0000-0000-000000000001',
-    'starts_on', '2026-10-01', 'modality', 2, 'monthly_fee_cents', 70000,
-    'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
-    'setup_due_month', null, 'reason', 'renegociação'
-  )
-);
+do $$
+declare
+  v_current date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+  v_next date := (v_current + interval '1 month')::date;
+begin
+  perform public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000001',
+      'starts_on', v_next, 'modality', 2, 'monthly_fee_cents', 60000,
+      'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'primeira proposta'
+    )
+  );
+
+  begin
+    perform public.platform_save_terms(
+      '80000000-0000-0000-0000-000000000001',
+      jsonb_build_object(
+        'org_id', '90000000-0000-0000-0000-000000000001',
+        'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 65000,
+        'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
+        'setup_due_month', null, 'reason', 'renegociação mês corrente'
+      )
+    );
+    raise exception 'renegotiation in current month was accepted';
+  exception when sqlstate '22023' then null;
+  end;
+
+  perform public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000002',
+      'starts_on', v_next, 'modality', 1, 'monthly_fee_cents', 0,
+      'revenue_bps', 0, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'zero é válido'
+    )
+  );
+  perform public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000001',
+      'starts_on', v_next, 'modality', 2, 'monthly_fee_cents', 70000,
+      'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'renegociação'
+    )
+  );
+end $$;
 
 do $$
+declare
+  v_next date := (date_trunc('month', now() at time zone 'America/Fortaleza') + interval '1 month')::date;
 begin
   if (select count(*) from public.platform_commercial_terms where org_id = '90000000-0000-0000-0000-000000000001') <> 2 then
     raise exception 'history was not preserved';
   end if;
-  if (select version from public.platform_commercial_terms where org_id = '90000000-0000-0000-0000-000000000001' and starts_on = '2026-10-01' order by version desc limit 1) <> 2 then
+  if (select version from public.platform_commercial_terms where org_id = '90000000-0000-0000-0000-000000000001' and starts_on = v_next order by version desc limit 1) <> 2 then
     raise exception 'latest version did not win';
   end if;
   begin
@@ -187,36 +244,52 @@ begin
   end;
 end $$;
 
-select dblink_connect('terms_1', format('dbname=%L user=supabase_admin', current_database()));
-select dblink_connect('terms_2', format('dbname=%L user=supabase_admin', current_database()));
-select dblink_send_query('terms_1', $$
-  select public.platform_save_terms(
-    '80000000-0000-0000-0000-000000000001',
-    jsonb_build_object(
-      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
-      'modality', 2, 'monthly_fee_cents', 71000, 'revenue_bps', 700,
-      'sonar_unit_cents', 0, 'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'concorrência um'
+do $$
+declare
+  v_next date := (date_trunc('month', now() at time zone 'America/Fortaleza') + interval '1 month')::date;
+  v_query_one text;
+  v_query_two text;
+begin
+  v_query_one := format($q$
+    select public.platform_save_terms(
+      '80000000-0000-0000-0000-000000000001',
+      jsonb_build_object(
+        'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', %L,
+        'modality', 2, 'monthly_fee_cents', 71000, 'revenue_bps', 700,
+        'sonar_unit_cents', 0, 'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'concorrência um'
+      )
     )
-  )
-$$);
-select dblink_send_query('terms_2', $$
-  select public.platform_save_terms(
-    '80000000-0000-0000-0000-000000000001',
-    jsonb_build_object(
-      'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', '2026-10-01',
-      'modality', 2, 'monthly_fee_cents', 72000, 'revenue_bps', 700,
-      'sonar_unit_cents', 0, 'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'concorrência dois'
+  $q$, v_next);
+  v_query_two := format($q$
+    select public.platform_save_terms(
+      '80000000-0000-0000-0000-000000000001',
+      jsonb_build_object(
+        'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', %L,
+        'modality', 2, 'monthly_fee_cents', 72000, 'revenue_bps', 700,
+        'sonar_unit_cents', 0, 'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'concorrência dois'
+      )
     )
-  )
-$$);
-select * from dblink_get_result('terms_1') as result(payload jsonb);
-select * from dblink_get_result('terms_2') as result(payload jsonb);
-select dblink_disconnect('terms_1');
-select dblink_disconnect('terms_2');
+  $q$, v_next);
+
+  perform dblink_connect('terms_1', format('dbname=%L user=supabase_admin', current_database()));
+  perform dblink_connect('terms_2', format('dbname=%L user=supabase_admin', current_database()));
+  perform dblink_send_query('terms_1', v_query_one);
+  perform dblink_send_query('terms_2', v_query_two);
+  perform (
+    select 1 from dblink_get_result('terms_1') as result(payload jsonb) limit 1
+  );
+  perform (
+    select 1 from dblink_get_result('terms_2') as result(payload jsonb) limit 1
+  );
+  perform dblink_disconnect('terms_1');
+  perform dblink_disconnect('terms_2');
+end $$;
 
 do $$
+declare
+  v_next date := (date_trunc('month', now() at time zone 'America/Fortaleza') + interval '1 month')::date;
 begin
-  if (select count(distinct version) from public.platform_commercial_terms where org_id = '90000000-0000-0000-0000-000000000001' and starts_on = '2026-10-01') <> 4 then
+  if (select count(distinct version) from public.platform_commercial_terms where org_id = '90000000-0000-0000-0000-000000000001' and starts_on = v_next) <> 4 then
     raise exception 'concurrent renegotiations did not append distinct versions';
   end if;
   if (select count(*) from public.platform_audit_events where org_id = '90000000-0000-0000-0000-000000000001' and action = 'platform_terms_saved') <> 4 then

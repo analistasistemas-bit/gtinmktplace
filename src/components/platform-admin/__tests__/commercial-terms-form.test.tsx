@@ -62,6 +62,34 @@ describe('CommercialTermsForm', () => {
     }));
   });
 
+  it('permite primeiro contrato iniciando no mês corrente', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText('Início da vigência'), '2026-09-01');
+    await user.type(screen.getByLabelText('Motivo'), 'início imediato');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      org_id: 'org-a',
+      starts_on: '2026-09-01',
+    }));
+  });
+
+  it('renegociação envia apenas o próximo mês, sem opção de mês corrente', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-zero" current={current} onSaved={vi.fn()} />);
+
+    expect(screen.queryByLabelText('Início da vigência')).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText('Motivo'), 'ajuste futuro');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      org_id: 'org-zero',
+      starts_on: '2026-10-01',
+    }));
+  });
+
   it('preserva zeros e os valores digitados ao trocar modalidade', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-zero" current={current} onSaved={vi.fn()} />);
