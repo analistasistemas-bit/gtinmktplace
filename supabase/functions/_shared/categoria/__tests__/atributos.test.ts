@@ -185,6 +185,21 @@ describe('extrairUnitsPerPack (quantidade no nome/descrição)', () => {
   it('extrai de "C/12 CORES" (kit de lápis/giz por cor — lote #33)', () => {
     expect(extrairUnitsPerPack('LAPIS DE COR PEQ TRACOS C/12 CORES')).toBe(12);
   });
+  it('extrai de "COM 12 CORES" na descrição (mesma caixa, texto por extenso)', () => {
+    expect(extrairUnitsPerPack('LAPIS DE COR JUMBO', 'O LÁPIS DE COR JUMBO TRAÇOS COM 12 CORES É IDEAL')).toBe(12);
+  });
+  // ADR-0156 — "N CORES" sem marcador de continência descreve as variações disponíveis, não uma
+  // caixa fechada. Sem esta guarda, "TAM 8 CORES" publicava Formato de venda=Kit / 8 unidades.
+  it('ignora "N CORES" sem C//COM: o número é o tamanho (lote #39)', () => {
+    expect(extrairUnitsPerPack('LANTEJOULAS HOLOGRAFICA TAM 8 CORES C/50MT')).toBe(null);
+    expect(extrairUnitsPerPack('LANTEJOULAS TAM 6 CORES C/50MTS')).toBe(null);
+  });
+  it('ignora "N CORES" quando N é código de cor da linha', () => {
+    expect(extrairUnitsPerPack('ANNE 65 CORES')).toBe(null);
+  });
+  it('"C/100UND CORES" continua contando pelo token de unidade', () => {
+    expect(extrairUnitsPerPack('POM POM 14MM C/100UND CORES')).toBe(100);
+  });
 });
 
 describe('preencherUnitsPerPack (gate por schema)', () => {

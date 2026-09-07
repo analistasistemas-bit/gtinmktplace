@@ -177,18 +177,22 @@ export function atributosFaltantesGenerico(temAtributos: AtributoML[], schema: A
 
 // "Unidades por kit" (UNITS_PER_PACK) é atributo NUMÉRICO (sem closed-set), então o
 // preenchimento por IA (que só cobre values[]) nunca o resolve. Extraímos a quantidade do
-// nome/descrição. Exige um token de unidade após o número (und/un/unidades/peças/pçs/cores) para
-// não pegar "100% FERRO" nem medidas ("10 mm", "50 metros"). "cores" cobre kits de lápis/giz/
-// canetinha onde cada cor é uma unidade física da caixa (ex.: "C/12 CORES" — lote #33/ADR-0073).
-// Texto já normalizado (sem acento/ç).
-const RE_UNIDADES = /(\d{1,4})\s*(unidades?|unid|und|un|pecas?|pcs|cores)\b/;
+// nome/descrição. Exige um token de unidade após o número (und/un/unidades/peças/pçs) para
+// não pegar "100% FERRO" nem medidas ("10 mm", "50 metros"). Texto já normalizado (sem acento/ç).
+//
+// "cores" (ADR-0073: kits de lápis/giz/canetinha, uma unidade física por cor) só conta quando
+// precedido de "C/" ou "COM" — o marcador de continência que separa a caixa fechada
+// ("C/12 CORES") do tamanho seguido da palavra solta ("LANTEJOULAS TAM 8 CORES C/50MT", onde
+// CORES descreve as variações disponíveis e o 8 é o diâmetro). Risco previsto e aceito no
+// ADR-0073, materializado no lote #39 (ADR-0156).
+const RE_UNIDADES = /(?:(\d{1,4})\s*(?:unidades?|unid|und|un|pecas?|pcs)|(?:c\/|com)\s*(\d{1,4})\s*cores)\b/;
 
 /** Extrai a quantidade por pacote do nome (1ª escolha) ou descrição. null se não houver clara. */
 export function extrairUnitsPerPack(nome: string, descricao?: string): number | null {
   for (const texto of [nome, descricao]) {
     const m = normalizar(texto ?? '').match(RE_UNIDADES);
     if (m) {
-      const n = parseInt(m[1], 10);
+      const n = parseInt(m[1] ?? m[2], 10);
       if (Number.isFinite(n) && n > 0) return n;
     }
   }

@@ -1,5 +1,6 @@
 import type { MLVariacaoAtual, VariacaoUpdate, VariacaoNovaPut } from './atualizar.ts';
 import { humanizarErroML } from './erro-ml.ts';
+import type { AtributoItem } from '../canais/contrato.ts';
 
 export interface ItemMLAtual {
   id: string;
@@ -93,7 +94,9 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
 export async function atualizarItemPlanoML(
   accessToken: string,
   itemId: string,
-  patch: { price?: number; available_quantity: number },
+  // `attributes` só aparece quando há divergência a corrigir (ADR-0157) — o PUT de reposição
+  // comum segue exatamente como era.
+  patch: { price?: number; available_quantity: number; attributes?: readonly AtributoItem[] },
 ): Promise<void> {
   const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
     method: 'PUT',

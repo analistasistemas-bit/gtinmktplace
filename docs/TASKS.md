@@ -39,6 +39,57 @@ E cada render da carteira disparava duas ações (`overview` + `list`), lendo `v
 Fora desta entrega, por decisão do ADR-0158: contagens operacionais e custo medido do fornecedor
 (nunca implementados, feature nova) e a busca Sonar por EAN fora do ledger de unidades faturáveis
 (decisão comercial pendente — falta abrir issue `ready-for-human` para Diego decidir).
+## UPDATE de User Products não propagava atributos — ADR-0157 — 2026-09-07
+
+Sequela do ADR-0156: com `atributos_ml` já corrigido no banco e o UPDATE publicado sem erro
+(status `publicado`, QStash 200), os 9 anúncios seguiram com `SALE_FORMAT=Kit`. A reposição da
+rota User Products mandava só `{available_quantity, price}` — atributo só entrava ao CRIAR o item
+(`atualizar-familia-up.ts`, `criarPlano`). No Legacy o buraco é o mesmo por outra via:
+`AtualizacaoCanonica` não tem campo de atributos.
+
+- [x] `atributosDivergentes()` manda só o DELTA contra a ficha real do ML; o ML vence onde tem
+  `value_id` e nós só temos texto (senão o `BRAND: "BUFALO"` do banco reescreveria a identidade da
+  família a cada UPDATE — ADR-0088, lote 54). Nada divergindo → PUT sem `attributes`, igual a antes.
+- [x] Uma leitura de ficha por família (reaproveita o GET memoizado do irmão), não uma por cor.
+- [x] `somenteEstoque` não manda atributo nem paga o GET; falha de leitura repõe sem `attributes`.
+- [x] 9 testes da função pura (fixture da ficha real de `MLB5197880975`) + 5 da saga com fakes.
+- [x] Deploy de `update-familia-ml`, `reconciliar-convergencia-up` e `remover-publicado`, e as 3
+  lantejoulas republicadas pela Revisão. **Conferido por `GET /items/{id}`** nos 9 anúncios —
+  `SALE_FORMAT='Unidade'`, `UNITS_PER_PACK='1'`, todos `active`, preço e estoque intactos:
+  `MLB5197880969` `MLB5197880975` `MLB5197880997` `MLB5197881015` `MLB5198027831` `MLB7245326808`
+  `MLB7245326842` `MLB7245327116` `MLB7245350072`.
+- [ ] **Legacy segue descoberto.** `02829916` (ANNE 65 CORES) é Legacy — 21 variações num item só,
+  zero linhas em `anuncios_externos_itens` — então o ADR-0157 não a alcança e ela continua com
+  `Kit / 65`. Some-se a isso o preço: o app calcula R$ 12,55 contra os R$ 19,00 no ar, e
+  "Atualizar tudo" derrubaria o preço. Precisa de decisão própria.
+
+## "TAM 8 CORES" publicava como Kit de 8 unidades — ADR-0156 — 2026-09-07
+
+O anúncio `MLB5197880975` (`02994968 — LANTEJOULAS HOLOGRAFICA TAM 8 CORES C/50MT`, rolo unitário de
+50 m) saiu com "Formato de venda: Kit / Unidades por kit: 8". Republicar não corrigia: `RE_UNIDADES`
+é determinística sobre o mesmo `nome_pai`, então cada reprocessamento reproduzia o mesmo `8`. O "8"
+do título é o tamanho da lantejoula — o mesmo que virou `DIAMETER 8 mm`, correto — e `CORES`
+descrevia as variações disponíveis, não uma caixa fechada.
+
+- [x] `RE_UNIDADES` exige `C/` ou `COM` antes do número quando o token é `cores` (ADR-0156). Os
+  kits do ADR-0073 (`C/12 CORES`, `COM 12 CORES`) seguem contando.
+- [x] Testes cobrindo os quatro falsos positivos reais do banco e os kits legítimos.
+- [x] ADR-0156 escrito; ADR-0073 marcado como refinado; índice de ADRs do vault atualizado.
+- [x] Deploy das 18 edge functions que importam `_shared/categoria/atributos.ts` (fecho transitivo).
+- [x] `20260907112504_corrigir_kit_falso_adr0156.sql` corrige `atributos_ml` das 9 famílias dos 4
+  códigos (`UNITS_PER_PACK`→1, `SALE_FORMAT`→`1359391` Unidade) e reaponta a linha de UPDATE do
+  `02994968` para `MLB5197880975` — o `MLB7245338658` foi substituído quando o lote #39
+  republicou. **Aplicada via Management API**, não por `db push`: o push estava travado por duas
+  migrations remotas de outra branch (`20260907102428`, `20260907103422`). A migration é
+  idempotente, então o push futuro roda como no-op.
+- [x] `02829916` (ANNE 65 CORES) não tinha UPDATE pendente; a última linha UPDATE voltou de
+  `publicado` para `pronto` e reapareceu na Revisão. A tela Publicados filtra por `ml_item_id not
+  null`, não por status, então o anúncio segue visível lá.
+- [ ] **Diego:** Revisão → aba UPDATE → publicar os 4 (`02994968`, `02994828`, `02994771`,
+  `02829916`). Só isso propaga o atributo corrigido ao ML.
+- [x] **Colisão de numeração resolvida:** a carteira/cobrança da central também tinha numerado seu
+  ADR como 0156. Como este 0156 já estava na `main` (`7d3d0954`), quem renumerou foi o outro, que
+  virou **ADR-0158** — referências atualizadas em docs, plano, índice do vault, migrations e código.
 
 ## DSA deixa de ser organização de teste — 2026-09-07
 

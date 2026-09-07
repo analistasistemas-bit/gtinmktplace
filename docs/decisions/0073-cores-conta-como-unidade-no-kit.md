@@ -1,6 +1,6 @@
 # ADR-0073: "N CORES" no título conta como quantidade de UNITS_PER_PACK
 
-**Status:** Aceito
+**Status:** Aceito — refinado pelo [ADR-0156](0156-cores-so-conta-com-marcador-de-continencia.md)
 **Data:** 2026-07-13
 **Decisores:** Diego
 
@@ -41,3 +41,10 @@ não reverter a heurística geral.
 ## Como reverter
 
 Remover `|cores` da regex `RE_UNIDADES`.
+
+## Refinamento (2026-09-07)
+
+O caso divergente previsto em "Risco aceito" apareceu no lote #39
+(`LANTEJOULAS HOLOGRAFICA TAM 8 CORES C/50MT` → Kit de 8 unidades num rolo unitário). O
+[ADR-0156](0156-cores-so-conta-com-marcador-de-continencia.md) passou a exigir `C/` ou `COM`
+antes do número para `cores` contar. Os kits deste ADR (`C/12 CORES`) seguem funcionando.
