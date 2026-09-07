@@ -6,6 +6,7 @@ import { ProtectedRoute } from '@/components/protected-route';
 import { SuperAdminRoute } from '@/components/super-admin-route';
 import { MenuGuard } from '@/components/menu-guard';
 import { SupportRoute } from '@/components/support-route';
+import { InstallPromptBanner } from '@/components/install-prompt-banner';
 
 // Páginas carregadas sob demanda (code-splitting): tira recharts/jspdf/xlsx do bundle inicial.
 const Login = lazy(() => import('@/pages/Login'));
@@ -92,6 +93,7 @@ function App() {
   return (
     <HashRouter>
       <AppRoutes />
+      <InstallPromptBanner />
     </HashRouter>
   );
 }
