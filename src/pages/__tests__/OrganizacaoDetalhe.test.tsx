@@ -4,12 +4,12 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 
-const { usePlatformOrganizations, start } = vi.hoisted(() => ({
-  usePlatformOrganizations: vi.fn(),
+const { usePlatformOrganization, start } = vi.hoisted(() => ({
+  usePlatformOrganization: vi.fn(),
   start: vi.fn(),
 }));
 
-vi.mock('@/hooks/usePlatformAdmin', () => ({ usePlatformOrganizations }));
+vi.mock('@/hooks/usePlatformAdmin', () => ({ usePlatformOrganization }));
 vi.mock('@/stores/support-store', () => ({
   useSupportStore: (selector: (state: { start: typeof start }) => unknown) => selector({ start }),
 }));
@@ -50,23 +50,18 @@ function renderPage(initialEntry = '/admin/organizacoes/org-avil?mes=2026-08') {
 }
 
 beforeEach(() => {
-  usePlatformOrganizations.mockReturnValue({
+  usePlatformOrganization.mockReturnValue({
     data: {
-      rows: [{
-        id: 'org-avil',
-        nome: 'Avil',
-        slug: 'avil',
-        is_test: true,
-        modality: 1,
-        metrics: null,
-        forecast_cents: null,
-        billable_units: null,
-        daludi_searches: null,
-        pending_count: null,
-      }],
-      total: 1,
-      page: 1,
-      page_size: 100,
+      id: 'org-avil',
+      nome: 'Avil',
+      slug: 'avil',
+      is_test: true,
+      modality: 1,
+      metrics: null,
+      forecast_cents: null,
+      billable_units: null,
+      daludi_searches: null,
+      pending_count: null,
     },
     isLoading: false,
     isError: false,
@@ -88,6 +83,7 @@ describe('OrganizacaoDetalhe', () => {
     expect(screen.getByText('Ambiente de teste')).toBeInTheDocument();
     expect(screen.getByLabelText('Mês da organização')).toHaveValue('2026-08');
     expect(screen.getByText('Resultados org-avil 2026-08')).toBeInTheDocument();
+    expect(usePlatformOrganization).toHaveBeenCalledWith('org-avil', '2026-08');
     expect(start).not.toHaveBeenCalled();
   });
 
@@ -104,7 +100,7 @@ describe('OrganizacaoDetalhe', () => {
   });
 
   it('expõe falha de carregamento em vez de um detalhe vazio', () => {
-    usePlatformOrganizations.mockReturnValue({
+    usePlatformOrganization.mockReturnValue({
       data: undefined,
       isLoading: false,
       isError: true,

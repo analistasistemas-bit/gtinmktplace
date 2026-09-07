@@ -10,7 +10,7 @@ function request(body: Record<string, unknown>, method = 'POST') {
 }
 
 function harness(overrides: { authenticate?: (req: Request) => Promise<{ userId: string }>; exists?: boolean } = {}) {
-  const methods = ['list','overview','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','audit'] as const;
+  const methods = ['list','organization','overview','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','audit'] as const;
   const repository: Record<string, ReturnType<typeof vi.fn>> = { organizationExists: vi.fn().mockResolvedValue(overrides.exists ?? true) };
   for (const method of methods) repository[method] = vi.fn().mockResolvedValue({ method });
   return {
@@ -58,6 +58,7 @@ describe('createPlatformAdminHandler', () => {
 
   it.each([
     ['list', 'list', { month: '2026-08', page: 2, page_size: 10, sort: 'slug' }, [ACTOR, { month: '2026-08', search: undefined, include_test: false, page: 2, page_size: 10, sort: 'slug' }]],
+    ['organization', 'organization', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['overview', 'overview', { month: '2026-08', include_test: true }, [ACTOR, '2026-08', true]],
     ['metrics', 'metrics', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['terms', 'terms', { org_id: ORG }, [ACTOR, ORG]],
@@ -74,7 +75,15 @@ describe('createPlatformAdminHandler', () => {
     const response = await handler(request({ action, ...input }));
     expect(response.status, JSON.stringify(await payload(response.clone()))).toBe(200);
     expect(repository[method]).toHaveBeenCalledWith(...args);
-    if (action === 'list' || action === 'overview') expect(repository.organizationExists).not.toHaveBeenCalled();
+    if (action === 'list' || action === 'organization' || action === 'overview') expect(repository.organizationExists).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 when the requested organization is missing', async () => {
+    const { handler, repository } = harness();
+    repository.organization.mockResolvedValue(null);
+    const response = await handler(request({ action: 'organization', org_id: ORG, month: '2026-08' }));
+    expect(response.status).toBe(404);
+    expect(await payload(response)).toMatchObject({ code: 'organization_not_found' });
   });
 
   it('maps revision conflicts to 409', async () => {

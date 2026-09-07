@@ -62,9 +62,9 @@ export interface PainelVendasSonar {
   itens?: ItemVendasSonar[];
   /** Espelho de sonar-vendas.ts; opcional porque cache v4 pré-ADR-0127 não tem. */
   historico_gravado?: boolean;
-  busca_id: string;
-  resultado_id: string;
-  consumo: SonarConsumption | null;
+  busca_id?: string;
+  resultado_id?: string;
+  consumo?: SonarConsumption | null;
 }
 
 export interface SonarConsumption {

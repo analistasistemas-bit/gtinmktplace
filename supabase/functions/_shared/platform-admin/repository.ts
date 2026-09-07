@@ -52,6 +52,10 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     async organizationExists(orgId: string): Promise<boolean> {
       const { data, error } = await db.from('organizations').select('id').eq('id', orgId).maybeSingle(); fail(error); return !!data;
     },
+    async organization(actorId: string, orgId: string, month: string): Promise<OrgSummary | null> {
+      const { data, error } = await db.from('organizations').select('id,nome,slug,is_test').eq('id', orgId).maybeSingle(); fail(error);
+      return data ? enrichOne(actorId, data as { id: string; nome: string; slug: string; is_test: boolean }, month) : null;
+    },
     async list(actorId: string, input: { month: string; search?: string; include_test?: boolean; page: number; page_size: number; sort: string }): Promise<Page<OrgSummary>> {
       const needle = input.search?.trim().toLocaleLowerCase('pt-BR');
       const organizations = (await loadOrganizations(!!input.include_test)).filter((org) => !needle || org.nome.toLocaleLowerCase('pt-BR').includes(needle) || org.slug.toLocaleLowerCase('pt-BR').includes(needle));

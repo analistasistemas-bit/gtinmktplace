@@ -106,7 +106,7 @@ language plpgsql stable security definer set search_path = ''
 as $$
 declare v_profile public.profiles%rowtype;
 begin
-  if coalesce(current_setting('request.jwt.claim.role', true), '') <> 'service_role' then
+  if public.platform_jwt_role() is distinct from 'service_role' then
     raise exception 'service_role required' using errcode = '42501';
   end if;
   select * into v_profile from public.profiles where id = p_actor and is_active;

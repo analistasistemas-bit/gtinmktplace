@@ -34,7 +34,7 @@ insert into public.platform_commercial_terms(
 
 do $$
 begin
-  perform set_config('request.jwt.claim.role','authenticated',true);
+  perform set_config('request.jwt.claims','{"role":"authenticated"}',true);
   begin
     perform public.platform_sonar_begin(
       '80000000-0000-0000-0000-000000000002','90000000-0000-0000-0000-000000000001',null,
@@ -44,7 +44,7 @@ begin
   end;
 end $$;
 
-select set_config('request.jwt.claim.role','service_role',false);
+select set_config('request.jwt.claims','{"role":"service_role"}',false);
 
 do $$
 declare v_begin jsonb; v_retry jsonb; v_done jsonb; v_reopen jsonb; v_other jsonb; v_v2 jsonb;
@@ -230,8 +230,8 @@ end $$;
 
 select dblink_connect('reclaim_1', format('dbname=%L user=supabase_admin', current_database()));
 select dblink_connect('reclaim_2', format('dbname=%L user=supabase_admin', current_database()));
-select dblink_exec('reclaim_1', $$set request.jwt.claim.role='service_role'$$);
-select dblink_exec('reclaim_2', $$set request.jwt.claim.role='service_role'$$);
+select dblink_exec('reclaim_1', $$set request.jwt.claims='{"role":"service_role"}'$$);
+select dblink_exec('reclaim_2', $$set request.jwt.claims='{"role":"service_role"}'$$);
 create temporary table sonar_reclaim(payload jsonb);
 select dblink_send_query('reclaim_1', $$select public.platform_sonar_begin(
   '80000000-0000-0000-0000-000000000002','90000000-0000-0000-0000-000000000001',null,
@@ -257,8 +257,8 @@ end $$;
 
 select dblink_connect('sonar_1', format('dbname=%L user=supabase_admin', current_database()));
 select dblink_connect('sonar_2', format('dbname=%L user=supabase_admin', current_database()));
-select dblink_exec('sonar_1', $$set request.jwt.claim.role='service_role'$$);
-select dblink_exec('sonar_2', $$set request.jwt.claim.role='service_role'$$);
+select dblink_exec('sonar_1', $$set request.jwt.claims='{"role":"service_role"}'$$);
+select dblink_exec('sonar_2', $$set request.jwt.claims='{"role":"service_role"}'$$);
 create temporary table sonar_concurrent(payload jsonb);
 select dblink_send_query('sonar_1', $$select public.platform_sonar_begin(
   '80000000-0000-0000-0000-000000000002','90000000-0000-0000-0000-000000000001',null,

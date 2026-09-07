@@ -136,7 +136,7 @@ export function agruparPorPedido(
     const liquido = round2(membros.reduce((s, v) => s + liquidoMembro(v), 0));
     const freteMax = Math.max(0, ...membros.map((v) => v.frete_vendedor ?? 0));
     const frete = freteMax > 0 ? round2(freteMax) : null;
-    const comissao = round2(membros.reduce((s, v) => s + v.sale_fee_total, 0));
+    const comissao = round2(membros.reduce((s, v) => s + (v.sale_fee_total ?? 0), 0));
 
     const itensFlat = membros.flatMap((v) => {
       const faturavel = ehFaturavel(v.status);

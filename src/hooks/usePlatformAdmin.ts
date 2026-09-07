@@ -79,6 +79,8 @@ export const platformAdminKeys = {
       page_size: params.page_size,
       sort: params.sort,
     })),
+  organization: (userId: UserId, orgId: string, month: Month) =>
+    key(userId, 'organization', orgId, month, {}),
   metrics: (userId: UserId, orgId: string, month: Month) =>
     key(userId, 'metrics', orgId, month, {}),
   terms: (userId: UserId, orgId: string) =>
@@ -121,6 +123,15 @@ export function usePlatformOrganizations(params: PlatformOrganizationsParams) {
     queryKey: platformAdminKeys.organizations(userId, params),
     queryFn: () => callPlatformAdmin('list', { ...params }),
     enabled: Boolean(userId && params.month),
+  });
+}
+
+export function usePlatformOrganization(orgId: string, month: Month) {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  return useQuery<OrgSummary>({
+    queryKey: platformAdminKeys.organization(userId, orgId, month),
+    queryFn: () => callPlatformAdmin('organization', { org_id: orgId, month }),
+    enabled: Boolean(userId && orgId && month),
   });
 }
 

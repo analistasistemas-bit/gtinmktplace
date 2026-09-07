@@ -2,7 +2,7 @@ import { validateTerms } from './validation.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const ACTIONS = new Set(['list','overview','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','audit']);
+const ACTIONS = new Set(['list','organization','overview','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','audit']);
 type Repository = Record<string, (...args: any[]) => Promise<unknown>>;
 type Dependencies = { authenticate(req: Request): Promise<{ userId: string }>; repository: Repository; corsHeaders?: Record<string, string> };
 
@@ -25,14 +25,19 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
     try {
       const { userId } = await deps.authenticate(req); const body = await req.json().catch(() => { throw new TypeError('JSON inválido'); }) as Record<string, unknown>;
       const action = requiredString(body.action, 'action'); if (!ACTIONS.has(action)) throw new TypeError('action inválida');
-      const orgActions = new Set(['metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','audit']);
+      const orgActions = new Set(['organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','audit']);
       const orgId = orgActions.has(action) ? uuid(body.org_id, 'org_id') : null;
-      if (orgId && !(await deps.repository.organizationExists(orgId))) return json({ error: 'Organização não encontrada', code: 'organization_not_found' }, 404, headers);
+      if (orgId && action !== 'organization' && !(await deps.repository.organizationExists(orgId))) return json({ error: 'Organização não encontrada', code: 'organization_not_found' }, 404, headers);
       let result: unknown;
       switch (action) {
         case 'list': {
           const sort = body.sort === undefined ? 'name' : requiredString(body.sort, 'sort'); if (!['name','slug','gross_desc'].includes(sort)) throw new TypeError('sort inválido');
           result = await deps.repository.list(userId, { month: month(body.month), search: typeof body.search === 'string' ? body.search.trim() : undefined, include_test: body.include_test === true, page: page(body.page), page_size: pageSize(body.page_size), sort }); break;
+        }
+        case 'organization': {
+          result = await deps.repository.organization(userId, orgId, month(body.month));
+          if (!result) return json({ error: 'Organização não encontrada', code: 'organization_not_found' }, 404, headers);
+          break;
         }
         case 'overview': result = await deps.repository.overview(userId, month(body.month), body.include_test === true); break;
         case 'metrics': result = await deps.repository.metrics(userId, orgId, month(body.month)); break;

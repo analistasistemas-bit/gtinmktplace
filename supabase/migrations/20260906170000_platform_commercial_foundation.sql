@@ -1,5 +1,17 @@
 create extension if not exists pgcrypto;
 
+create function public.platform_jwt_role()
+returns text
+language sql
+stable
+set search_path = ''
+as $$
+  select coalesce(
+    nullif(current_setting('request.jwt.claim.role', true), ''),
+    nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'
+  )
+$$;
+
 create table public.platform_commercial_terms (
   id uuid primary key default gen_random_uuid(),
   org_id uuid not null references public.organizations(id) on delete restrict,

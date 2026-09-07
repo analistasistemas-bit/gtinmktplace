@@ -70,6 +70,18 @@ describe('createPlatformAdminRepository', () => {
     expect(overview).toMatchObject({ org_count: 2, gross_cents: 40_000, forecast_cents: 40 });
   });
 
+  it('loads and enriches one organization by id', async () => {
+    const organizations = [{ id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false }];
+    const db = fakeDb({ organizations: { rows: organizations }, ml_vendas: { rows: [sale('sale-1', 'org-a', 100)] }, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} }, { 'org-a': preview(10) });
+    const repository = createPlatformAdminRepository(db as never, () => new Date('2026-09-06T12:00:00Z'));
+    await expect(repository.organization('actor', 'org-a', '2026-08')).resolves.toMatchObject({
+      id: 'org-a',
+      metrics: { gross_cents: 10_000 },
+      forecast_cents: 10,
+    });
+    await expect(repository.organization('actor', 'missing', '2026-08')).resolves.toBeNull();
+  });
+
   it('keeps metric and preview failures unknown and warns instead of emitting silent zeroes', async () => {
     const organizations = [{ id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false }];
     const db = fakeDb({ organizations: { rows: organizations }, ml_vendas: { error: 'metrics unavailable' }, platform_sonar_searches: {} }, { 'org-a': new Error('preview unavailable') });

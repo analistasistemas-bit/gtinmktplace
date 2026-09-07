@@ -24,6 +24,7 @@ create table public.platform_billing_sale_facts (
   org_id uuid not null references public.organizations(id) on delete restrict,
   sale_id uuid not null,
   source_updated_at timestamptz not null,
+  status text not null,
   gross_cents bigint not null check (gross_cents>=0),
   refunded_product_cents bigint not null check (refunded_product_cents between 0 and gross_cents),
   recognized_base_cents bigint not null check (recognized_base_cents>=0),
@@ -66,7 +67,7 @@ create trigger platform_reconciliations_immutable before update or delete on pub
 create function public.platform_assert_admin_actor(p_actor uuid) returns void
 language plpgsql stable security definer set search_path='' as $$
 begin
-  if coalesce(current_setting('request.jwt.claim.role',true),'')<>'service_role'
+  if public.platform_jwt_role() is distinct from 'service_role'
     or not exists(select 1 from public.profiles p where p.id=p_actor and p.is_active and p.is_super_admin) then
     raise exception 'active platform admin required' using errcode='42501';
   end if;
@@ -118,7 +119,7 @@ begin
   v_end := v_start+interval '1 month';
 
   with current_sales as (
-    select s.id,s.atualizado_em,round(s.total_amount*100)::bigint gross_cents,
+    select s.id,s.atualizado_em,s.status,round(s.total_amount*100)::bigint gross_cents,
       case when s.status='refunded' then round(s.total_amount*100)::bigint
         else least(coalesce(r.refunded_product_cents,0),round(s.total_amount*100)::bigint) end refund_cents
     from public.ml_vendas s
@@ -127,7 +128,7 @@ begin
       and s.status in ('paid','partially_refunded','refunded')
   )
   select coalesce(jsonb_agg(jsonb_build_object(
-      'sale_id',s.id,'source_updated_at',s.atualizado_em,'gross_cents',s.gross_cents,
+      'sale_id',s.id,'source_updated_at',s.atualizado_em,'status',s.status,'gross_cents',s.gross_cents,
       'refunded_product_cents',s.refund_cents,
       'recognized_base_cents',greatest(s.gross_cents-s.refund_cents,0)
     ) order by s.id),'[]'::jsonb),coalesce(sum(s.gross_cents),0),coalesce(sum(s.refund_cents),0)
@@ -165,7 +166,7 @@ begin
   where f.org_id=p_org and (s.id is null
     or (s.status='partially_refunded' and r.id is null)
     or (s.status not in ('partially_refunded','refunded','cancelled')
-      and (s.atualizado_em<>f.source_updated_at or round(s.total_amount*100)::bigint<>f.gross_cents)));
+      and (s.status is distinct from f.status or round(s.total_amount*100)::bigint<>f.gross_cents)));
 
   with origin as (
     select st.id,st.fee_cents,st.revenue_bps,
@@ -250,9 +251,9 @@ begin
     (v_preview->>'gross_cents')::bigint,(v_preview->>'refund_cents')::bigint,(v_preview->>'base_cents')::bigint,
     (v_preview->>'fee_cents')::bigint,(v_preview->>'sonar_cents')::bigint,(v_preview->>'credit_cents')::bigint,
     (v_preview->>'total_cents')::bigint,v_preview->>'revision',v_preview,p_actor) returning * into v_statement;
-  insert into public.platform_billing_sale_facts(statement_id,org_id,sale_id,source_updated_at,gross_cents,refunded_product_cents,recognized_base_cents)
+  insert into public.platform_billing_sale_facts(statement_id,org_id,sale_id,source_updated_at,status,gross_cents,refunded_product_cents,recognized_base_cents)
     select v_statement.id,p_org,(row->>'sale_id')::uuid,(row->>'source_updated_at')::timestamptz,
-      (row->>'gross_cents')::bigint,(row->>'refunded_product_cents')::bigint,(row->>'recognized_base_cents')::bigint
+      row->>'status',(row->>'gross_cents')::bigint,(row->>'refunded_product_cents')::bigint,(row->>'recognized_base_cents')::bigint
     from jsonb_array_elements(v_preview->'sources') row;
   insert into public.platform_audit_events(org_id,actor_id,category,action,result,target,details)
     values(p_org,p_actor,'billing','billing_closed','success',v_statement.id::text,jsonb_build_object('month',p_month,'revision',v_statement.revision));

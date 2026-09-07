@@ -14,7 +14,7 @@ create table public.ml_vendas (
 );
 
 \ir ../migrations/20260906170200_platform_billing.sql
-select set_config('request.jwt.claim.role','service_role',false);
+select set_config('request.jwt.claims','{"role":"service_role"}',false);
 
 insert into public.organizations(id,nome,slug) values
   ('90000000-0000-0000-0000-000000000003','Org Billing','org-billing'),
@@ -112,6 +112,11 @@ declare v_preview jsonb;
 begin
   v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000007',v_origin);
   perform public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000007',v_origin,v_preview->>'revision');
+  update public.ml_vendas set atualizado_em='2026-08-01T12:00:00Z' where id='50000000-0000-0000-0000-000000000006';
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000007',v_next);
+  if v_preview->'blockers' @> '[{"code":"billing_source_changed","sale_id":"50000000-0000-0000-0000-000000000006"}]' then
+    raise exception 'timestamp-only source update was blocked: %',v_preview;
+  end if;
   update public.ml_vendas set total_amount=101,atualizado_em='2026-08-02T12:00:00Z' where id='50000000-0000-0000-0000-000000000006';
   v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000007',v_next);
   if not (v_preview->'blockers' @> '[{"code":"billing_source_changed","sale_id":"50000000-0000-0000-0000-000000000006","order_ref":"700006","source_updated_at":"2026-08-02T12:00:00+00:00","gross_cents":10100,"status":"paid","refunded_product_cents":null}]') then
@@ -146,8 +151,8 @@ end $$;
 create temporary table billing_concurrent(payload jsonb);
 select dblink_connect('billing_1',format('dbname=%L user=supabase_admin',current_database()));
 select dblink_connect('billing_2',format('dbname=%L user=supabase_admin',current_database()));
-select dblink_exec('billing_1',$$set request.jwt.claim.role='service_role'$$);
-select dblink_exec('billing_2',$$set request.jwt.claim.role='service_role'$$);
+select dblink_exec('billing_1',$$set request.jwt.claims='{"role":"service_role"}'$$);
+select dblink_exec('billing_2',$$set request.jwt.claims='{"role":"service_role"}'$$);
 do $$
 declare v_month date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
 declare v_revision text;
@@ -224,7 +229,7 @@ do $$
 declare v_month date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
 declare v_preview jsonb;
 begin
-  perform set_config('request.jwt.claim.role','service_role',true);
+  perform set_config('request.jwt.claims','{"role":"service_role"}',true);
   begin perform public.platform_billing_preview('80000000-0000-0000-0000-000000000002','90000000-0000-0000-0000-000000000003',v_month);
     raise exception 'inactive/non-admin actor accepted'; exception when insufficient_privilege then null; end;
   begin perform public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000004',date_trunc('month',now() at time zone 'America/Fortaleza')::date,'x');

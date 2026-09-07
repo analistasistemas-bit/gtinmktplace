@@ -9,7 +9,7 @@ import { OrgBilling } from '@/components/platform-admin/org-billing';
 import { OrgPulse } from '@/components/platform-admin/org-pulse';
 import { OrgResults } from '@/components/platform-admin/org-results';
 import { OrgSettings } from '@/components/platform-admin/org-settings';
-import { usePlatformOrganizations } from '@/hooks/usePlatformAdmin';
+import { usePlatformOrganization } from '@/hooks/usePlatformAdmin';
 
 const tabs = ['resultados', 'pulse', 'cobranca', 'auditoria', 'configuracoes'] as const;
 type Tab = typeof tabs[number];
@@ -33,14 +33,8 @@ export default function OrganizacaoDetalhe() {
   const month = searchParams.get('mes') ?? currentMonth();
   const requestedTab = searchParams.get('aba');
   const tab: Tab = isTab(requestedTab) ? requestedTab : 'resultados';
-  const organizations = usePlatformOrganizations({
-    month,
-    include_test: true,
-    page: 1,
-    page_size: 100,
-    sort: 'name',
-  });
-  const org = organizations.data?.rows.find((item) => item.id === orgId);
+  const organization = usePlatformOrganization(orgId, month);
+  const org = organization.data;
 
   function updateSearch(key: 'mes' | 'aba', value: string) {
     setSearchParams((previous) => {
@@ -58,9 +52,9 @@ export default function OrganizacaoDetalhe() {
 
       <div className="flex flex-col gap-4 border-b pb-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          {organizations.isLoading ? (
+          {organization.isLoading ? (
             <p className="text-sm text-muted-foreground">Carregando organização…</p>
-          ) : organizations.isError || !org ? (
+          ) : organization.isError || !org ? (
             <h1 className="text-2xl font-semibold tracking-tight">Organização indisponível</h1>
           ) : (
             <>
@@ -78,12 +72,12 @@ export default function OrganizacaoDetalhe() {
         </label>
       </div>
 
-      {organizations.isError && (
+      {organization.isError && (
         <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive" role="alert">
           Não foi possível carregar os dados da organização.
         </p>
       )}
-      {organizations.isStale && organizations.data && (
+      {organization.isStale && organization.data && (
         <p className="mt-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm" role="status">
           O cadastro da organização pode estar desatualizado.
         </p>
