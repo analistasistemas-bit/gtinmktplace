@@ -2,7 +2,7 @@ import { validateTerms } from './validation.ts';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
-const ACTIONS = new Set(['list','organization','overview','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','audit']);
+const ACTIONS = new Set(['wallet','organization','metrics','terms','save_terms','preview','close','statements','statement','reconcile_revenue','pulse_usage','audit']);
 // deno-lint-ignore no-explicit-any
 type Repository = Record<string, (...args: any[]) => Promise<unknown>>;
 type Dependencies = { authenticate(req: Request): Promise<{ userId: string }>; repository: Repository; corsHeaders?: Record<string, string> };
@@ -31,16 +31,15 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
       if (orgId && action !== 'organization' && !(await deps.repository.organizationExists(orgId))) return json({ error: 'Organização não encontrada', code: 'organization_not_found' }, 404, headers);
       let result: unknown;
       switch (action) {
-        case 'list': {
+        case 'wallet': {
           const sort = body.sort === undefined ? 'name' : requiredString(body.sort, 'sort'); if (!['name','slug','gross_desc'].includes(sort)) throw new TypeError('sort inválido');
-          result = await deps.repository.list(userId, { month: month(body.month), search: typeof body.search === 'string' ? body.search.trim() : undefined, include_test: body.include_test === true, page: page(body.page), page_size: pageSize(body.page_size), sort }); break;
+          result = await deps.repository.wallet(userId, { month: month(body.month), search: typeof body.search === 'string' ? body.search.trim() : undefined, include_test: body.include_test === true, page: page(body.page), page_size: pageSize(body.page_size), sort }); break;
         }
         case 'organization': {
           result = await deps.repository.organization(userId, orgId, month(body.month));
           if (!result) return json({ error: 'Organização não encontrada', code: 'organization_not_found' }, 404, headers);
           break;
         }
-        case 'overview': result = await deps.repository.overview(userId, month(body.month), body.include_test === true); break;
         case 'metrics': result = await deps.repository.metrics(userId, orgId, month(body.month)); break;
         case 'terms': result = await deps.repository.terms(userId, orgId); break;
         case 'save_terms': result = await deps.repository.saveTerms(userId, validateTerms(body)); break;
@@ -56,8 +55,10 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
     } catch (error) {
       if (error instanceof Response) return error;
       const message = error instanceof Error ? error.message : 'Erro interno';
-      const status = error instanceof TypeError ? 400 : /forbidden|required/i.test(message) ? 403 : /revision conflict/i.test(message) ? 409 : 500;
-      return json({ error: message, code: status === 400 ? 'invalid_input' : status === 403 ? 'forbidden' : status === 409 ? 'conflict' : 'internal_error' }, status, headers);
+      // 'commercial terms required' vem antes de /forbidden|required/, que o capturaria como 403.
+      const status = error instanceof TypeError ? 400 : /commercial terms required/i.test(message) ? 422 : /forbidden|required/i.test(message) ? 403 : /revision conflict/i.test(message) ? 409 : 500;
+      const code = status === 400 ? 'invalid_input' : status === 403 ? 'forbidden' : status === 409 ? 'conflict' : status === 422 ? 'commercial_terms_required' : 'internal_error';
+      return json({ error: message, code }, status, headers);
     }
   };
 }

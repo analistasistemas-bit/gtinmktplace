@@ -103,6 +103,16 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
   'Valor em estoque':
     'Soma de custo × saldo de cada SKU com estoque, usando o último custo informado na entrada. SKUs com estoque e sem custo cadastrado ficam de fora do total e são avisados abaixo do valor.',
 
+  // ── Carteira (Central) ────────────────────────────────────────────────
+  'Faturamento bruto da carteira':
+    'Soma do faturamento bruto de todas as organizações no mês selecionado (vendas pagas e reembolsadas, antes de taxas; canceladas fora). Mês-calendário em America/Fortaleza.',
+  'Previsão de cobrança':
+    'Total previsto dos demonstrativos do mês, somando só organizações com condição comercial vigente e sem bloqueio. Organizações sem contrato ficam fora do total.',
+  'Pendências da carteira':
+    'Bloqueios que impedem fechar o demonstrativo: condição comercial ausente, devolução sem conciliação ou venda alterada após fechamento.',
+  'Organizações da carteira':
+    'Organizações ativas na plataforma. Ambientes de teste ficam ocultos por padrão e fora dos totais.',
+
   // Pulse (ADR-0119)
   'No radar':
     'Quantas fichas de catálogo o Pulse acompanha hoje: as dos seus anúncios publicados (entram sozinhas) mais as que você adicionou à mão. Produto pausado no radar não conta.',

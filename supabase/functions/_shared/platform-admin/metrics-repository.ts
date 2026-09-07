@@ -13,10 +13,25 @@ type Query = {
   order(column: string, options: { ascending: boolean }): Query;
   range(from: number, to: number): Promise<Page>;
 };
-export type MetricsDb = { from(table: string): Query };
+type RpcResult = { data: unknown; error: DbError };
+export type MetricsDb = {
+  from(table: string): Query;
+  rpc(name: string, args: Record<string, unknown>): Promise<RpcResult>;
+};
 
 const PAGE_SIZE = 1000;
 const BRT_OFFSET = '-03:00';
+
+/** Mesma lista de colunas de `buscarVendas` (`src/lib/faturamento.ts`), mais `org_id` — que
+ *  `normalizeSales` usa para descartar linha de outra organização e NÃO está na lista do app.
+ *  `select('*')` traria `ml_vendas.raw` (~4 MB por render da carteira) que ninguém lê (ADR-0156 §4). */
+const SALES_COLUMNS = 'id, org_id, order_id, pack_id, status, status_detail, date_closed, date_created, '
+  + 'comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, '
+  + 'frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, '
+  + 'shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, '
+  + 'tem_devolucao, kit_item_id, '
+  + 'itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai), '
+  + 'custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)';
 
 function addMonths(month: string, delta: number): string {
   const [year, number] = month.split('-').map(Number);
@@ -97,33 +112,43 @@ export async function readOrgMetrics(db: MetricsDb, orgId: string, month: string
   const seriesMonths = Array.from({ length: 6 }, (_, index) => addMonths(month, index - 5));
   const selectedEnd = month === currentMonth(now) ? now.toISOString() : startOf(addMonths(month, 1));
   const salesResult = await readPages(() => db.from('ml_vendas')
-    .select('*,itens:ml_vendas_itens(*),custos:venda_item_custo(*)')
+    .select(SALES_COLUMNS)
     .eq('org_id', orgId).gte('date_closed', startOf(seriesMonths[0])).lt('date_closed', startOf(addMonths(month, 1)))
     .order('date_closed', { ascending: true }).order('id', { ascending: true }));
   if (salesResult.error) throw new Error(salesResult.error.message);
   const sales = normalizeSales(salesResult.rows, orgId);
 
-  const costsResult = await readPages(() => db.from('variacoes')
-    .select('id,org_id,custo,peso_gramas,ml_variation_id,gtin,codigo,atualizado_em,familias(ml_item_id,origem,org_id)')
-    .eq('org_id', orgId).order('id', { ascending: true }));
+  // ADR-0156 §5: a RPC devolve só as variações que casam com item vendido na janela da série, em UM
+  // round-trip (era `variacoes` inteira, 9 páginas na Avil). Escalar jsonb de propósito: `returns
+  // table` por POST seria truncado no `max_rows=1000` do PostgREST sem erro nenhum e o markup sairia
+  // errado em silêncio.
+  const catalogResult = await db.rpc('platform_org_cost_catalog', { p_org: orgId, p_since: startOf(seriesMonths[0]) });
   const configResult = await readPages(() => db.from('configuracoes')
-    .select('org_id,aliquota_nacional_pct,aliquota_importado_pct,uf_empresa,aliquota_interna_pct')
+    .select('org_id,aliquota_nacional_pct,aliquota_importado_pct,uf_empresa,aliquota_interna_pct,aliquotas_confirmadas_em')
     .eq('org_id', orgId).order('org_id', { ascending: true }));
 
-  const costRows = costsResult.rows.filter((row) => sameOrg(row, orgId)).filter((row) => {
-    const family = Array.isArray(row.familias) ? row.familias[0] : row.familias;
-    return !family || typeof family !== 'object' || (family as Record<string, unknown>).org_id == null || (family as Record<string, unknown>).org_id === orgId;
-  });
-  const maps = costsResult.error ? undefined : montarMapasCusto(costRows);
+  // Payload que não é array é falha, nunca catálogo vazio: catálogo vazio zera o markup em silêncio.
+  const catalogRows = Array.isArray(catalogResult.data) ? catalogResult.data as Record<string, unknown>[] : null;
+  const costsAvailable = !catalogResult.error && catalogRows != null;
+  const maps = catalogRows == null || catalogResult.error ? undefined : montarMapasCusto(
+    catalogRows.filter((row) => sameOrg(row, orgId))
+      .map((row) => ({ ...row, familias: { ml_item_id: row.ml_item_id, origem: row.origem } })),
+  );
+
+  // ADR-0156 §6: alíquota nunca é presumida. Sem linha em `configuracoes`, sem
+  // `aliquotas_confirmadas_em` ou sem as alíquotas, o markup sai `null` com aviso — jamais 8/16 %
+  // por padrão (ADR-0055).
   const config = configResult.error ? null : configResult.rows.find((row) => row.org_id === orgId) ?? null;
-  const rates = configResult.error ? null : {
-    nacional: config?.aliquota_nacional_pct != null ? Number(config.aliquota_nacional_pct) : 8,
-    importado: config?.aliquota_importado_pct != null ? Number(config.aliquota_importado_pct) : 16,
-    ufEmpresa: typeof config?.uf_empresa === 'string' ? config.uf_empresa : null,
-    internaPct: config?.aliquota_interna_pct != null ? Number(config.aliquota_interna_pct) : null,
-  };
-  const costsAvailable = !costsResult.error;
-  const configAvailable = !configResult.error;
+  const configAvailable = !configResult.error && config != null && config.aliquotas_confirmadas_em != null
+    && config.aliquota_nacional_pct != null && config.aliquota_importado_pct != null;
+  const rates = configAvailable && config != null
+    ? {
+      nacional: Number(config.aliquota_nacional_pct),
+      importado: Number(config.aliquota_importado_pct),
+      ufEmpresa: typeof config.uf_empresa === 'string' ? config.uf_empresa : null,
+      internaPct: config.aliquota_interna_pct != null ? Number(config.aliquota_interna_pct) : null,
+    }
+    : null;
 
   const selected = summarize(rangeSales(sales, startOf(month), selectedEnd), maps, rates, now, costsAvailable, configAvailable);
   const previousMonth = addMonths(month, -1);
@@ -137,9 +162,10 @@ export async function readOrgMetrics(db: MetricsDb, orgId: string, month: string
     maps, rates, now, costsAvailable, configAvailable,
   );
 
-  const warnings = ['Métricas operacionais indisponíveis'];
-  if (!costsAvailable) warnings.push(`Custos indisponíveis: ${costsResult.error!.message}`);
-  if (!configAvailable) warnings.push(`Configuração tributária indisponível: ${configResult.error!.message}`);
+  const warnings: string[] = [];
+  if (!costsAvailable) warnings.push(`Custos indisponíveis: ${catalogResult.error?.message ?? 'catálogo em formato inesperado'}`);
+  if (configResult.error) warnings.push(`Configuração tributária indisponível: ${configResult.error.message}`);
+  else if (!configAvailable) warnings.push('Configuração tributária não confirmada');
   const updated = rangeSales(sales, startOf(month), selectedEnd).map((sale) => sale.atualizado_em).filter(Boolean).sort().at(-1) ?? null;
 
   return {

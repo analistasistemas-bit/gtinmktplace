@@ -296,3 +296,127 @@ begin
     raise exception 'audit event missing';
   end if;
 end $$;
+
+-- ADR-0156 §5: catalogo de custo por RPC (platform_org_cost_catalog).
+-- Fixtures minimas de catalogo/vendas. Os tipos abaixo sao os reais de producao, conferidos em
+-- information_schema.columns em 2026-09-07: variacoes.ml_variation_id text, ml_vendas_itens.
+-- variation_id bigint, familias.origem enum public.origem_produto, custo/peso_gramas numeric.
+create type public.origem_produto as enum ('nacional', 'importado');
+
+create table public.familias (
+  id uuid primary key,
+  org_id uuid not null,
+  ml_item_id text,
+  origem public.origem_produto
+);
+create table public.variacoes (
+  id uuid primary key,
+  org_id uuid not null,
+  familia_id uuid not null references public.familias(id),
+  custo numeric,
+  peso_gramas numeric,
+  ml_variation_id text,
+  gtin text,
+  codigo text,
+  atualizado_em timestamptz
+);
+create table public.ml_vendas (
+  id uuid primary key,
+  org_id uuid not null,
+  date_closed timestamptz
+);
+create table public.ml_vendas_itens (
+  id uuid primary key,
+  venda_id uuid not null references public.ml_vendas(id),
+  ml_item_id text,
+  variation_id bigint,
+  ean text,
+  codigo text
+);
+
+-- Migrations novas que tocam o catalogo de custo entram ABAIXO, em ordem de timestamp.
+-- Fora de ordem (ou ausentes) o teste roda contra a versao antiga da funcao e passa em falso.
+\ir ../migrations/20260907103422_platform_org_cost_catalog.sql
+
+insert into public.familias (id, org_id, ml_item_id, origem) values
+  ('a0000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000001', 'MLA1', 'nacional'),
+  ('a0000000-0000-0000-0000-000000000002', '90000000-0000-0000-0000-000000000001', 'MLA2', 'importado'),
+  ('a0000000-0000-0000-0000-000000000003', '90000000-0000-0000-0000-000000000002', 'MLB1', 'nacional'),
+  ('a0000000-0000-0000-0000-000000000004', '90000000-0000-0000-0000-000000000001', 'MLA4', 'nacional');
+
+insert into public.variacoes (id, org_id, familia_id, custo, peso_gramas, ml_variation_id, gtin, codigo, atualizado_em) values
+  ('b0000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000001', 10.50, 100, '111', 'EANA1', 'SKUA1', '2026-08-01T00:00:00Z'),
+  ('b0000000-0000-0000-0000-000000000002', '90000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000002', 20.00, 200, '222', 'EANA2', 'SKUA2', '2026-08-01T00:00:00Z'),
+  ('b0000000-0000-0000-0000-000000000003', '90000000-0000-0000-0000-000000000002', 'a0000000-0000-0000-0000-000000000003', 30.00, 300, '333', 'EANB1', 'SKUB1', '2026-08-01T00:00:00Z'),
+  -- GTIN com zero a esquerda: so casa com o ean da venda depois da normalizacao `normGtin`.
+  ('b0000000-0000-0000-0000-000000000004', '90000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000004', 40.00, 400, '444', '0999', 'SKUA4', '2026-08-01T00:00:00Z');
+
+insert into public.ml_vendas (id, org_id, date_closed) values
+  ('c0000000-0000-0000-0000-000000000001', '90000000-0000-0000-0000-000000000001', '2026-08-10T12:00:00Z'),
+  ('c0000000-0000-0000-0000-000000000002', '90000000-0000-0000-0000-000000000002', '2026-08-10T12:00:00Z'),
+  ('c0000000-0000-0000-0000-000000000003', '90000000-0000-0000-0000-000000000001', '2026-01-10T12:00:00Z'),
+  ('c0000000-0000-0000-0000-000000000004', '90000000-0000-0000-0000-000000000001', '2026-08-11T12:00:00Z');
+
+insert into public.ml_vendas_itens (id, venda_id, ml_item_id, variation_id, ean, codigo) values
+  ('d0000000-0000-0000-0000-000000000001', 'c0000000-0000-0000-0000-000000000001', 'MLA1', 111, null, null),
+  ('d0000000-0000-0000-0000-000000000002', 'c0000000-0000-0000-0000-000000000002', 'MLB1', 333, null, null),
+  ('d0000000-0000-0000-0000-000000000003', 'c0000000-0000-0000-0000-000000000003', 'MLA2', 222, 'EANA2', 'SKUA2'),
+  -- Nenhuma chave casa cru: ml_item_id/variation_id/codigo sao outros e o ean so bate sem o zero.
+  ('d0000000-0000-0000-0000-000000000004', 'c0000000-0000-0000-0000-000000000004', 'MLA4X', 4440, '999', 'ZZZ');
+
+do $$
+declare
+  v_since timestamptz := '2026-04-01T00:00:00-03:00';
+  v_a jsonb;
+  v_b jsonb;
+begin
+  v_a := public.platform_org_cost_catalog('90000000-0000-0000-0000-000000000001', v_since);
+  v_b := public.platform_org_cost_catalog('90000000-0000-0000-0000-000000000002', v_since);
+
+  -- So variacao vendida no periodo entra: a b...0002 so aparece em venda de janeiro (< p_since).
+  -- A b...0004 entra apenas pela normalizacao do GTIN ('0999' da variacao x '999' do ean da venda),
+  -- que e a mesma que `normGtin` aplica em `sales-costs.ts`. Comparacao crua a deixaria de fora e o
+  -- item venderia sem custo, com markup errado e sem erro nenhum.
+  if jsonb_array_length(v_a) <> 2 then
+    raise exception 'catalog for org A returned % rows, expected the two sold variations', jsonb_array_length(v_a);
+  end if;
+  if v_a->0->>'id' <> 'b0000000-0000-0000-0000-000000000001'
+     or v_a->1->>'id' <> 'b0000000-0000-0000-0000-000000000004' then
+    raise exception 'catalog for org A returned the wrong variations: %', v_a;
+  end if;
+  if v_a->0->>'ml_item_id' <> 'MLA1' or v_a->0->>'origem' <> 'nacional' then
+    raise exception 'catalog did not embed familias.ml_item_id/origem: %', v_a->0;
+  end if;
+  if (v_a->0->>'custo')::numeric <> 10.50 or (v_a->0->>'peso_gramas')::numeric <> 100 then
+    raise exception 'catalog lost custo/peso: %', v_a->0;
+  end if;
+  if v_a->0->>'ml_variation_id' <> '111' or v_a->0->>'gtin' <> 'EANA1' or v_a->0->>'codigo' <> 'SKUA1' then
+    raise exception 'catalog lost resolution keys: %', v_a->0;
+  end if;
+  if v_a->0->>'atualizado_em' is null then
+    raise exception 'catalog lost atualizado_em (tie-break do ADR-0108)';
+  end if;
+
+  -- Organizacao B nunca ve variacao de A e vice-versa.
+  if jsonb_array_length(v_b) <> 1 or v_b->0->>'id' <> 'b0000000-0000-0000-0000-000000000003' then
+    raise exception 'catalog leaked across organizations: %', v_b;
+  end if;
+
+  -- Organizacao sem venda no periodo devolve array vazio (nunca null).
+  if public.platform_org_cost_catalog('90000000-0000-0000-0000-000000000011', v_since) <> '[]'::jsonb then
+    raise exception 'catalog without sales did not return an empty array';
+  end if;
+end $$;
+
+do $$
+declare
+  v_ignored jsonb;
+begin
+  perform set_config('role', 'authenticated', true);
+  begin
+    v_ignored := public.platform_org_cost_catalog('90000000-0000-0000-0000-000000000001', '2026-04-01T00:00:00-03:00');
+    raise exception 'authenticated was allowed to read the cost catalog';
+  exception when insufficient_privilege then null;
+  end;
+  perform set_config('role', 'none', true);
+end $$;

@@ -33,7 +33,7 @@ function fakeDb(tables: Tables, previews: Record<string, Row | Error> = {}) {
         eq(column: string, value: unknown) { calls.push({ table, op: 'eq', column, value }); filters.push((row) => row[column] === value); return query; },
         gte(column: string, value: unknown) { filters.push((row) => String(row[column] ?? '') >= String(value)); return query; },
         lt(column: string, value: unknown) { filters.push((row) => String(row[column] ?? '') < String(value)); return query; },
-        in(column: string, values: unknown[]) { filters.push((row) => values.includes(row[column])); return query; },
+        in(column: string, values: unknown[]) { calls.push({ table, op: 'in', column, value: values }); filters.push((row) => values.includes(row[column])); return query; },
         like(column: string, pattern: string) { const prefix = pattern.endsWith('%') ? pattern.slice(0, -1) : pattern; filters.push((row) => String(row[column] ?? '').startsWith(prefix)); return query; },
         order(column: string, options?: { ascending?: boolean }) { orders.push({ column, ascending: options?.ascending !== false }); return query; },
         async range(from: number, to: number) { calls.push({ table, op: 'range', value: [from, to] }); return execute(from, to); },
@@ -54,20 +54,31 @@ function sale(id: string, orgId: string, amount: number): Row {
     currency: 'BRL', is_publiai: true, tem_devolucao: false, itens: [], custos: [] };
 }
 
-const preview = (total: number, blockers: Row[] = []): Row => ({ total_cents: total, sonar_units: 2, blockers, terms: { modality: 2 } });
+const preview = (total: number, blockers: Row[] = [], terms: Row | null = { modality: 2 }): Row => ({ total_cents: total, sonar_units: 2, blockers, terms });
 
 describe('createPlatformAdminRepository', () => {
-  it('sorts and paginates after loading the entire wallet, while overview totals the entire wallet', async () => {
+  it('totals the whole wallet before paginating and leaves organizations without terms out of the forecast', async () => {
     const organizations = [
       { id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false },
       { id: 'org-b', nome: 'Beta', slug: 'beta', is_test: false },
     ];
-    const db = fakeDb({ organizations: { rows: organizations }, ml_vendas: { rows: [sale('sale-1', 'org-a', 100), sale('sale-2', 'org-b', 300)] }, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} }, { 'org-a': preview(10), 'org-b': preview(30) });
+    const db = fakeDb(
+      { organizations: { rows: organizations }, ml_vendas: { rows: [sale('sale-1', 'org-a', 100), sale('sale-2', 'org-b', 300)] }, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} },
+      { 'org-a': preview(10), 'org-b': preview(0, [{ code: 'commercial_terms_required' }], null) },
+    );
     const repository = createPlatformAdminRepository(db as never, () => new Date('2026-09-06T12:00:00Z'));
-    const page = await repository.list('actor', { month: '2026-08', page: 1, page_size: 1, sort: 'gross_desc' });
-    expect(page).toMatchObject({ total: 2, rows: [{ id: 'org-b', metrics: { gross_cents: 30_000 } }] });
-    const overview = await repository.overview('actor', '2026-08', false);
-    expect(overview).toMatchObject({ org_count: 2, gross_cents: 40_000, forecast_cents: 40 });
+    const wallet = await repository.wallet('actor', { month: '2026-08', page: 1, page_size: 1, sort: 'gross_desc' });
+    expect(wallet).toMatchObject({ total: 2, page: 1, page_size: 1, rows: [{ id: 'org-b', metrics: { gross_cents: 30_000 } }] });
+    // Pendência é bloqueio da prévia (ADR-0156 §2): sem contrato → 1; consumo é contável sem contrato.
+    expect(wallet.rows[0]).toMatchObject({ modality: null, forecast_cents: null, billable_units: 2, pending_count: 1 });
+    expect(wallet.totals).toEqual({
+      gross_cents: 40_000, forecast_cents: 10, orgs_without_terms: 1, org_count: 2,
+      pending_count: 1, orders: 2, warnings: [],
+    });
+    // A contagem de buscas Sonar em voo deixou de ser pendência. O `toContainEqual` positivo prova
+    // que a forma registrada em `calls` é essa — sem ele, o negativo passaria de graça.
+    expect(db.calls).toContainEqual({ table: 'platform_sonar_searches', op: 'eq', column: 'origin', value: 'daludi' });
+    expect(db.calls).not.toContainEqual({ table: 'platform_sonar_searches', op: 'eq', column: 'state', value: 'pending' });
   });
 
   it('loads and enriches one organization by id', async () => {
@@ -86,12 +97,17 @@ describe('createPlatformAdminRepository', () => {
     const organizations = [{ id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false }];
     const db = fakeDb({ organizations: { rows: organizations }, ml_vendas: { error: 'metrics unavailable' }, platform_sonar_searches: {} }, { 'org-a': new Error('preview unavailable') });
     const repository = createPlatformAdminRepository(db as never);
-    const overview = await repository.overview('actor', '2026-08', false);
-    expect(overview).toMatchObject({ gross_cents: null, forecast_cents: null, warnings: ['Métricas indisponíveis para parte da carteira'] });
+    const wallet = await repository.wallet('actor', { month: '2026-08', page: 1, page_size: 20, sort: 'name' });
+    expect(wallet.totals).toMatchObject({
+      gross_cents: null, orders: null, pending_count: null, forecast_cents: 0,
+      warnings: ['Métricas indisponíveis para parte da carteira', 'Prévia indisponível para parte da carteira'],
+    });
 
     const blocked = fakeDb({ organizations: { rows: organizations }, ml_vendas: {}, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} }, { 'org-a': preview(999, [{ code: 'refund_reconciliation_required' }]) });
-    const row = (await createPlatformAdminRepository(blocked as never).list('actor', { month: '2026-08', page: 1, page_size: 20, sort: 'name' })).rows[0];
-    expect(row.forecast_cents).toBeNull();
+    const blockedWallet = await createPlatformAdminRepository(blocked as never).wallet('actor', { month: '2026-08', page: 1, page_size: 20, sort: 'name' });
+    // Com contrato mas bloqueada: fica fora da previsão e conta 1 pendência.
+    expect(blockedWallet.rows[0]).toMatchObject({ forecast_cents: null, pending_count: 1, modality: 2 });
+    expect(blockedWallet.totals).toMatchObject({ forecast_cents: 0, orgs_without_terms: 0, pending_count: 1 });
   });
 
   it('maps delivery amounts by search_id and counts month-wide Daludi, failures, and reopen intents', async () => {
@@ -112,6 +128,38 @@ describe('createPlatformAdminRepository', () => {
       expect.objectContaining({ id: 'search-daludi', exempt_reason: 'daludi', units: 0, total_cents: 0 }),
     ]);
     expect(usage).toMatchObject({ total: 4, client_units: 2, client_cents: 240, daludi_searches: 1, failures: 1, reopens: 1 });
+  });
+
+  it('resolves actor names for the page in one read and keeps them null when profiles fails', async () => {
+    const searches = [
+      { id: 's1', org_id: 'org-a', actor_id: 'actor-1', created_at: '2026-08-04T12:00:00-03:00', normalized_query: 'a', query_type: 'termo', origin: 'cliente', state: 'completed', result_id: null, intent_key: 'k1' },
+      { id: 's2', org_id: 'org-a', actor_id: 'actor-2', created_at: '2026-08-03T12:00:00-03:00', normalized_query: 'b', query_type: 'termo', origin: 'cliente', state: 'completed', result_id: null, intent_key: 'k2' },
+    ];
+    const profiles = { rows: [{ id: 'actor-1', nome: 'Diego' }, { id: 'actor-2', nome: 'Ana' }, { id: 'actor-3', nome: 'Fora da pagina' }] };
+    const db = fakeDb({ platform_sonar_searches: { rows: searches }, platform_sonar_deliveries: {}, profiles });
+    const usage = await createPlatformAdminRepository(db as never).pulseUsage('actor', 'org-a', '2026-08', 1, 10);
+    expect(usage.rows.map((row) => row.actor_name)).toEqual(['Diego', 'Ana']);
+    // Uma unica leitura de profiles, so com os atores da pagina.
+    expect(db.calls.filter((call) => call.table === 'profiles')).toEqual([{ table: 'profiles', op: 'in', column: 'id', value: ['actor-1', 'actor-2'] }]);
+
+    const broken = fakeDb({ platform_sonar_searches: { rows: searches }, platform_sonar_deliveries: {}, profiles: { error: 'profiles unavailable' } });
+    const degraded = await createPlatformAdminRepository(broken as never).pulseUsage('actor', 'org-a', '2026-08', 1, 10);
+    expect(degraded.rows.map((row) => row.actor_name)).toEqual([null, null]);
+    expect(degraded).toMatchObject({ total: 2, rows: [{ id: 's1' }, { id: 's2' }] });
+
+    const at = '2026-08-05T12:00:00-03:00';
+    const auditTables = (nomes: Tables['profiles']) => ({
+      platform_audit_events: { rows: [{ id: 'c', org_id: 'org-a', actor_id: 'actor-1', occurred_at: at, category: 'billing', action: 'closed', result: 'success', target: null, reason: null, details: {} }] },
+      support_audit_events: { rows: [{ id: 'a', org_id: 'org-a', actor_id: null, created_at: at, event: 'view', result: 'success', target_type: null, target_id: null, support_request_id: 's' }] },
+      profiles: nomes,
+    });
+    const audit = await createPlatformAdminRepository(fakeDb(auditTables({ rows: [{ id: 'actor-1', nome: 'Diego' }] })) as never).audit('actor', 'org-a', '2026-08', {}, 1, 10);
+    expect(audit.rows).toEqual([
+      expect.objectContaining({ id: 'c', actor_name: 'Diego' }),
+      expect.objectContaining({ id: 'a', actor_id: null, actor_name: null }),
+    ]);
+    const auditFailed = await createPlatformAdminRepository(fakeDb(auditTables({ error: 'profiles unavailable' })) as never).audit('actor', 'org-a', '2026-08', {}, 1, 10);
+    expect(auditFailed).toMatchObject({ total: 2, rows: [{ id: 'c', actor_name: null }, { id: 'a', actor_name: null }] });
   });
 
   it('sanitizes and merges audit sources before stable filtering and pagination', async () => {

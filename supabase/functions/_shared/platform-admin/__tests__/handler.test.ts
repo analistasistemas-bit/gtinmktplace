@@ -10,7 +10,7 @@ function request(body: Record<string, unknown>, method = 'POST') {
 }
 
 function harness(overrides: { authenticate?: (req: Request) => Promise<{ userId: string }>; exists?: boolean } = {}) {
-  const methods = ['list','organization','overview','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','audit'] as const;
+  const methods = ['wallet','organization','metrics','terms','saveTerms','preview','close','statements','statement','reconcile','pulseUsage','audit'] as const;
   const repository: Record<string, ReturnType<typeof vi.fn>> = { organizationExists: vi.fn().mockResolvedValue(overrides.exists ?? true) };
   for (const method of methods) repository[method] = vi.fn().mockResolvedValue({ method });
   return {
@@ -35,12 +35,12 @@ describe('createPlatformAdminHandler', () => {
   it('returns authentication Responses unchanged and rejects non-admin actors', async () => {
     const unauthorized = new Response(JSON.stringify({ error: 'jwt inválido' }), { status: 401, headers: { 'X-Auth': 'failed' } });
     const invalidJwt = harness({ authenticate: async () => { throw unauthorized; } });
-    const response = await invalidJwt.handler(request({ action: 'overview', month: '2026-08' }));
+    const response = await invalidJwt.handler(request({ action: 'wallet', month: '2026-08' }));
     expect(response).toBe(unauthorized);
     expect(response.headers.get('X-Auth')).toBe('failed');
 
     const nonAdmin = harness({ authenticate: async () => { throw new Error('platform admin required'); } });
-    expect((await nonAdmin.handler(request({ action: 'overview', month: '2026-08' }))).status).toBe(403);
+    expect((await nonAdmin.handler(request({ action: 'wallet', month: '2026-08' }))).status).toBe(403);
   });
 
   it('rejects unknown actions, unknown organizations, and invalid bounded inputs', async () => {
@@ -50,16 +50,17 @@ describe('createPlatformAdminHandler', () => {
     for (const body of [
       { action: 'metrics', org_id: 'bad', month: '2026-08' },
       { action: 'metrics', org_id: ORG, month: '2026-13' },
-      { action: 'list', month: '2026-08', page: 0 },
-      { action: 'list', month: '2026-08', page_size: 51 },
-      { action: 'list', month: '2026-08', sort: 'unknown' },
+      { action: 'wallet', month: '2026-08', page: 0 },
+      { action: 'wallet', month: '2026-08', page_size: 51 },
+      { action: 'wallet', month: '2026-08', sort: 'unknown' },
+      { action: 'overview', month: '2026-08' },
+      { action: 'list', month: '2026-08' },
     ]) expect((await handler(request(body))).status).toBe(400);
   });
 
   it.each([
-    ['list', 'list', { month: '2026-08', page: 2, page_size: 10, sort: 'slug' }, [ACTOR, { month: '2026-08', search: undefined, include_test: false, page: 2, page_size: 10, sort: 'slug' }]],
+    ['wallet', 'wallet', { month: '2026-08', page: 2, page_size: 10, sort: 'slug' }, [ACTOR, { month: '2026-08', search: undefined, include_test: false, page: 2, page_size: 10, sort: 'slug' }]],
     ['organization', 'organization', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
-    ['overview', 'overview', { month: '2026-08', include_test: true }, [ACTOR, '2026-08', true]],
     ['metrics', 'metrics', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['terms', 'terms', { org_id: ORG }, [ACTOR, ORG]],
     ['save_terms', 'saveTerms', { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 10, revenue_bps: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }, [ACTOR, { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 10, revenue_bps: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }]],
@@ -75,7 +76,7 @@ describe('createPlatformAdminHandler', () => {
     const response = await handler(request({ action, ...input }));
     expect(response.status, JSON.stringify(await payload(response.clone()))).toBe(200);
     expect(repository[method]).toHaveBeenCalledWith(...args);
-    if (action === 'list' || action === 'organization' || action === 'overview') expect(repository.organizationExists).not.toHaveBeenCalled();
+    if (action === 'wallet' || action === 'organization') expect(repository.organizationExists).not.toHaveBeenCalled();
   });
 
   it('returns 404 when the requested organization is missing', async () => {
@@ -90,5 +91,13 @@ describe('createPlatformAdminHandler', () => {
     const { handler, repository } = harness();
     repository.close.mockRejectedValue(new Error('billing revision conflict'));
     expect((await handler(request({ action: 'close', org_id: ORG, month: '2026-08', expected_revision: 'old' }))).status).toBe(409);
+  });
+
+  it('maps a close without commercial terms to 422', async () => {
+    const { handler, repository } = harness();
+    repository.close.mockRejectedValue(new Error('commercial terms required'));
+    const response = await handler(request({ action: 'close', org_id: ORG, month: '2026-08', expected_revision: 'rev' }));
+    expect(response.status).toBe(422);
+    expect(await payload(response)).toMatchObject({ code: 'commercial_terms_required' });
   });
 });

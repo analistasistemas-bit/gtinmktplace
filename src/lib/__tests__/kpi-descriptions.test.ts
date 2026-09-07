@@ -51,6 +51,11 @@ const ALL_EXPECTED_KEYS = [
   'Unidades em estoque',
   'SKUs sem estoque',
   'Valor em estoque',
+  // Carteira (Central)
+  'Faturamento bruto da carteira',
+  'Previsão de cobrança',
+  'Pendências da carteira',
+  'Organizações da carteira',
   // Pulse
   'No radar',
   'Mais caro que o mercado',

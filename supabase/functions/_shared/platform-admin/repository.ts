@@ -1,5 +1,5 @@
 import { readOrgMetrics } from './metrics-repository.ts';
-import type { AuditRow, BillingPreview, BillingStatement, CommercialTerms, OrgSummary, Page, PulseUsage, PulseUsageRow } from './types.ts';
+import type { AuditRow, BillingPreview, BillingStatement, CommercialTerms, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
 
 type DbResult = { data: unknown; error: { message: string } | null; count?: number | null };
 type DbQuery = PromiseLike<DbResult> & {
@@ -27,7 +27,7 @@ type SearchRow = {
 type DeliveryRow = { id: string; search_id: string; units: number; total_cents: number; reason: string | null };
 type DeliveryTotals = { units: number; total_cents: number };
 type PlatformAuditRow = {
-  id: string; org_id: string; actor_id: string; occurred_at: string; category: string;
+  id: string; org_id: string; actor_id: string | null; occurred_at: string; category: string;
   action: string; result: string; target: string | null; reason: string | null; details: Record<string, unknown> | null;
 };
 type SonarAuditRow = {
@@ -35,7 +35,7 @@ type SonarAuditRow = {
   outcome: string; reason: string | null; search_id: string | null; result_id: string | null;
 };
 type SupportAuditRow = {
-  id: string; org_id: string; actor_id: string; created_at: string; event: string;
+  id: string; org_id: string; actor_id: string | null; created_at: string; event: string;
   result: string; target_type: string | null; target_id: string | null; support_request_id: string | null;
 };
 
@@ -67,16 +67,32 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     const { data, error } = await db.rpc(name, args); fail(error); return data as T;
   };
   const enrichOne = async (actorId: string, org: { id: string; nome: string; slug: string; is_test: boolean }, month: string): Promise<OrgSummary> => {
-    const [metricsResult, previewResult, pending, daludi] = await Promise.all([
+    const [metricsResult, previewResult, daludi] = await Promise.all([
       readOrgMetrics(db as never, org.id, month, now()).then((value) => ({ value })).catch(() => ({ value: null })),
       rpc<BillingPreview>('platform_billing_preview', { p_actor: actorId, p_org: org.id, p_month: monthDate(month) }).then((value) => ({ value })).catch(() => ({ value: null })),
-      exactCount(db.from('platform_sonar_searches').select('id', { count: 'exact', head: true }).eq('org_id', org.id).eq('state', 'pending')),
       exactCount(db.from('platform_sonar_searches').select('id', { count: 'exact', head: true }).eq('org_id', org.id).eq('origin', 'daludi').gte('created_at', monthBounds(month)[0]).lt('created_at', monthBounds(month)[1])),
     ]);
-    const preview = previewResult.value; const validPreview = preview && preview.blockers.length === 0 ? preview : null;
+    // ADR-0156 §2/§3: pendência é bloqueio da prévia (não busca Sonar em voo); consumo é contável sem
+    // contrato; previsão só entra com condição vigente E sem bloqueio.
+    const preview = previewResult.value;
     return { ...org, modality: preview?.terms?.modality ?? null, metrics: metricsResult.value,
-      forecast_cents: validPreview?.total_cents ?? null, billable_units: validPreview?.sonar_units ?? null,
-      daludi_searches: daludi, pending_count: pending };
+      forecast_cents: preview && preview.terms && preview.blockers.length === 0 ? preview.total_cents : null,
+      billable_units: preview?.sonar_units ?? null,
+      daludi_searches: daludi, pending_count: preview ? preview.blockers.length : null };
+  };
+  // Nome de quem agiu vem de `profiles.nome` (coluna conferida em produção), uma leitura por página.
+  // ponytail: falha na leitura mantém `actor_name` null — nome é rótulo, não pode derrubar a tela.
+  const fillActorNames = async (rows: { actor_id: string | null; actor_name: string | null }[]): Promise<void> => {
+    const ids = [...new Set(rows.map((row) => row.actor_id).filter((id): id is string => !!id))];
+    if (!ids.length) return;
+    try {
+      const { data, error } = await db.from('profiles').select('id,nome').in('id', ids);
+      if (error) return;
+      const byId = new Map(((data ?? []) as { id: string; nome: string | null }[]).map((row) => [row.id, row.nome]));
+      for (const row of rows) row.actor_name = (row.actor_id && byId.get(row.actor_id)) || null;
+    } catch {
+      return;
+    }
   };
   const loadOrganizations = (includeTest: boolean) => allRows<OrgRow>((from, to) => {
     let query = db.from('organizations').select('id,nome,slug,is_test').order('id');
@@ -91,23 +107,33 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       const { data, error } = await db.from('organizations').select('id,nome,slug,is_test').eq('id', orgId).maybeSingle(); fail(error);
       return data ? enrichOne(actorId, data as OrgRow, month) : null;
     },
-    async list(actorId: string, input: { month: string; search?: string; include_test?: boolean; page: number; page_size: number; sort: string }): Promise<Page<OrgSummary>> {
+    // ADR-0156 §3: uma ação por render — enriquece cada organização UMA vez e devolve totais da
+    // carteira inteira (antes de paginar) junto com a página.
+    async wallet(actorId: string, input: { month: string; search?: string; include_test?: boolean; page: number; page_size: number; sort: string }): Promise<Wallet> {
       const needle = input.search?.trim().toLocaleLowerCase('pt-BR');
       const organizations = (await loadOrganizations(!!input.include_test)).filter((org) => !needle || org.nome.toLocaleLowerCase('pt-BR').includes(needle) || org.slug.toLocaleLowerCase('pt-BR').includes(needle));
       const summaries = await mapLimit(organizations, 4, (org) => enrichOne(actorId, org, input.month));
       summaries.sort(input.sort === 'gross_desc'
         ? (a, b) => (b.metrics?.gross_cents ?? -1) - (a.metrics?.gross_cents ?? -1) || a.nome.localeCompare(b.nome)
         : input.sort === 'slug' ? (a, b) => a.slug.localeCompare(b.slug) : (a, b) => a.nome.localeCompare(b.nome));
+      const completeMetrics = summaries.every((row) => row.metrics);
+      const completePreviews = summaries.every((row) => row.pending_count !== null);
+      const warnings: string[] = [];
+      if (!completeMetrics) warnings.push('Métricas indisponíveis para parte da carteira');
+      // `pending_count === null` só vem de prévia que falhou: a previsão sai incompleta sem que
+      // `orgs_without_terms` distinga isso de "sem contrato".
+      if (!completePreviews) warnings.push('Prévia indisponível para parte da carteira');
+      const totals: WalletTotals = {
+        gross_cents: completeMetrics ? summaries.reduce((sum, row) => sum + (row.metrics?.gross_cents ?? 0), 0) : null,
+        forecast_cents: summaries.reduce((sum, row) => sum + (row.forecast_cents ?? 0), 0),
+        orgs_without_terms: summaries.filter((row) => row.modality === null).length,
+        org_count: summaries.length,
+        pending_count: completePreviews ? summaries.reduce((sum, row) => sum + (row.pending_count ?? 0), 0) : null,
+        orders: completeMetrics ? summaries.reduce((sum, row) => sum + (row.metrics?.orders ?? 0), 0) : null,
+        warnings,
+      };
       const from = (input.page - 1) * input.page_size;
-      return { rows: summaries.slice(from, from + input.page_size), total: summaries.length, page: input.page, page_size: input.page_size };
-    },
-    async overview(actorId: string, month: string, includeTest: boolean) {
-      const organizations = await loadOrganizations(includeTest); const summaries = await mapLimit(organizations, 4, (org) => enrichOne(actorId, org, month));
-      const completeMetrics = summaries.every((row) => row.metrics); const completeForecast = summaries.every((row) => row.forecast_cents !== null);
-      return { gross_cents: completeMetrics ? summaries.reduce((sum, row) => sum + (row.metrics?.gross_cents ?? 0), 0) : null,
-        forecast_cents: completeForecast ? summaries.reduce((sum, row) => sum + (row.forecast_cents ?? 0), 0) : null,
-        org_count: summaries.length, pending_count: summaries.some((row) => row.pending_count === null) ? null : summaries.reduce((sum, row) => sum + (row.pending_count ?? 0), 0),
-        warnings: completeMetrics ? [] : ['Métricas indisponíveis para parte da carteira'] };
+      return { rows: summaries.slice(from, from + input.page_size), total: summaries.length, page: input.page, page_size: input.page_size, totals };
     },
     metrics: (_actorId: string, orgId: string, month: string) => readOrgMetrics(db as never, orgId, month, now()),
     async terms(_actorId: string, orgId: string) { const { data, error } = await db.from('platform_commercial_terms').select('*').eq('org_id', orgId).order('starts_on', { ascending: false }).order('version', { ascending: false }); fail(error); return { rows: data ?? [] }; },
@@ -136,6 +162,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
         exactCount(db.from('platform_sonar_searches').select('id', { count: 'exact', head: true }).eq('org_id', orgId).eq('state', 'failed').gte('created_at', start).lt('created_at', end)),
         exactCount(db.from('platform_sonar_searches').select('id', { count: 'exact', head: true }).eq('org_id', orgId).like('intent_key', 'reopen:%').gte('created_at', start).lt('created_at', end)),
         db.from('platform_sonar_searches').select('created_at').eq('org_id', orgId).order('created_at', { ascending: true }).limit(1),
+        fillActorNames(rows),
       ]); fail(first.error);
       return { rows, total: count ?? 0, page, page_size: pageSize, client_units: allDeliveries.reduce((sum, row) => sum + Number(row.units), 0), client_cents: allDeliveries.reduce((sum, row) => sum + Number(row.total_cents), 0), daludi_searches: daludi ?? 0, failures: failures ?? 0, reopens: reopens ?? 0, measured_cost_cents: null, tracked_since: ((first.data as { created_at: string }[] | null)?.[0]?.created_at ?? null) };
     },
@@ -152,7 +179,8 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
         ...support.map((row) => ({ id: row.id, org_id: row.org_id, actor_id: row.actor_id, actor_name: null, at: row.created_at, category: 'support' as const, action: String(row.event), result: String(row.result), target: row.target_id ?? row.support_request_id, reason: null, details: { target_type: row.target_type } })),
       ].filter((row) => (!filters.category || row.category === filters.category) && (!filters.actor_id || row.actor_id === filters.actor_id) && (!filters.result || row.result === filters.result));
       rows.sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id)); const from = (page - 1) * pageSize;
-      return { rows: rows.slice(from, from + pageSize), total: rows.length, page, page_size: pageSize };
+      const pageRows = rows.slice(from, from + pageSize); await fillActorNames(pageRows);
+      return { rows: pageRows, total: rows.length, page, page_size: pageSize };
     },
   };
 }

@@ -107,13 +107,28 @@ export type OrgSummary = {
   is_test: boolean;
   modality: 1 | 2 | null;
   metrics: OrgMetrics | null;
+  /** Só com condição comercial vigente e sem bloqueio (ADR-0156 §3). */
   forecast_cents: Cents | null;
+  /** Consumo Sonar do mês; contável mesmo sem contrato (ADR-0156 §3). */
   billable_units: number | null;
   daludi_searches: number | null;
+  /** Bloqueios da prévia do mês (ADR-0156 §2), não buscas Sonar em voo. `null` = prévia indisponível. */
   pending_count: number | null;
 };
 
 export type Page<T> = { rows: T[]; total: number; page: number; page_size: number };
+
+export type WalletTotals = {
+  gross_cents: Cents | null;
+  forecast_cents: Cents | null;
+  orgs_without_terms: number;
+  org_count: number;
+  pending_count: number | null;
+  orders: number | null;
+  warnings: string[];
+};
+
+export type Wallet = Page<OrgSummary> & { totals: WalletTotals };
 
 export type AuditRow = {
   id: string;

@@ -14,6 +14,9 @@ create table public.ml_vendas (
 );
 
 \ir ../migrations/20260906170200_platform_billing.sql
+-- Migrations novas que tocam billing entram ABAIXO, em ordem de timestamp.
+-- Fora de ordem (ou ausentes) o teste roda contra a versao antiga das funcoes e passa em falso.
+\ir ../migrations/20260907102428_platform_terms_contract_fix.sql
 select set_config('request.jwt.claims','{"role":"service_role"}',false);
 
 insert into public.organizations(id,nome,slug) values
@@ -24,7 +27,8 @@ insert into public.organizations(id,nome,slug) values
   ('90000000-0000-0000-0000-000000000007','Org Source Guard','org-source-guard'),
   ('90000000-0000-0000-0000-000000000008','Org Cancelled','org-cancelled'),
   ('90000000-0000-0000-0000-000000000009','Org Paid Evidence','org-paid-evidence'),
-  ('90000000-0000-0000-0000-000000000010','Org Late Paid Evidence','org-late-paid-evidence');
+  ('90000000-0000-0000-0000-000000000010','Org Late Paid Evidence','org-late-paid-evidence'),
+  ('90000000-0000-0000-0000-000000000013','Org No Terms','org-no-terms');
 
 insert into public.platform_commercial_terms(
   org_id,starts_on,modality,monthly_fee_cents,revenue_bps,sonar_unit_cents,
@@ -331,4 +335,32 @@ begin
     raise exception 'inactive/non-admin actor accepted'; exception when insufficient_privilege then null; end;
   begin perform public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000004',date_trunc('month',now() at time zone 'America/Fortaleza')::date,'x');
     raise exception 'current month closed'; exception when invalid_parameter_value then null; end;
+end $$;
+
+-- Mês sem condição comercial: a prévia bloqueia e o fechamento recusa (ADR-0156 §1).
+do $$
+declare v_month date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
+declare v_preview jsonb;
+begin
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000013',v_month);
+  if not (v_preview->'blockers' @> '[{"code":"commercial_terms_required"}]') then
+    raise exception 'month without commercial terms was not blocked: %',v_preview;
+  end if;
+  if jsonb_typeof(v_preview->'terms')<>'null' then
+    raise exception 'preview without terms must expose terms as json null: %',v_preview;
+  end if;
+  if v_preview->>'total_cents' is null or (v_preview->>'total_cents')::bigint<>0 then
+    raise exception 'preview without terms must total zero, not null: %',v_preview;
+  end if;
+  begin
+    perform public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000013',v_month,v_preview->>'revision');
+    raise exception 'close without commercial terms was accepted';
+  exception when check_violation then
+    if sqlerrm<>'commercial terms required' then
+      raise exception 'close without terms raised the wrong error: %',sqlerrm;
+    end if;
+  end;
+  if exists(select 1 from public.platform_billing_statements where org_id='90000000-0000-0000-0000-000000000013') then
+    raise exception 'close without terms persisted a statement';
+  end if;
 end $$;
