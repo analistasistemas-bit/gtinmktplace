@@ -10,7 +10,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
-import { buscarItemML, corDaVariacaoML } from '../_shared/ml/atualizar-item.ts';
+import { buscarItemML } from '../_shared/ml/atualizar-item.ts';
 import { validarElegibilidadeUPtin, dispararUPtin, type VariacaoSnapshot } from '../_shared/ml/migracao-pxv.ts';
 import { enfileirarAcompanhamentoMigracaoPxv } from '../_shared/queue.ts';
 import { dispararMigracaoPxv, type PortasDisparo } from './processar.ts';
@@ -103,9 +103,11 @@ Deno.serve(async (req) => {
       const item = await buscarItemML(await getToken(), mlItemId);
       return item.variations.map((v): VariacaoSnapshot => ({
         id: String(v.id),
-        sku: v.seller_custom_field,
-        // `buscarItemML` já resolve COLOR; mantém a mesma leitura do resto do app.
-        cor: v.cor ?? corDaVariacaoML(null),
+        // `?? null`: o ML não exige `seller_custom_field`, e `undefined` no snapshot viraria uma
+        // chave que o casamento não sabe distinguir de "ausente".
+        sku: v.seller_custom_field ?? null,
+        // `buscarItemML` já resolve COLOR — mesma leitura do resto do app.
+        cor: v.cor ?? null,
       }));
     },
 
