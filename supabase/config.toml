@@ -109,6 +109,14 @@ verify_jwt = true
 verify_jwt = true
 [functions.atualizar-status-publicado]
 verify_jwt = true
+# ADR-0161: disparo da migração "preço por variação". Chamado pelo browser com JWT do usuário e
+# gate admin dentro da função.
+[functions.migrar-preco-por-variacao]
+verify_jwt = true
+# ADR-0161: worker de acompanhamento, chamado pelo QStash — verify_jwt = false e assinatura HMAC
+# verificada dentro da função, como os demais workers.
+[functions.acompanhar-migracao-pxv]
+verify_jwt = false
 [functions.definir-categoria-familia]
 verify_jwt = true
 [functions.analisar-viabilidade]

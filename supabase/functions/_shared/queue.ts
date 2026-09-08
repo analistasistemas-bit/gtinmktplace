@@ -260,6 +260,41 @@ export async function enfileirarVinculacaoCatalogo(
   return messageId;
 }
 
+/**
+ * ADR-0161 — acompanhamento da migração "preço por variação" (UPtin).
+ *
+ * O job carrega `{org_id, codigo_pai}`, **nunca `familia_id`**: o estado mora na raiz
+ * `anuncios_externos` (partição 0), única por `(org_id, canal, codigo_pai, particao)`, enquanto
+ * `familia_id` é ambíguo — há uma linha por lote de ingest, e cada consumidor escolhe uma diferente.
+ *
+ * `tentativa` é o número da rodada, base do claim atômico do worker: sem ele, um 500 faz o QStash
+ * retentar enquanto a rodada anterior já se re-enfileirou, e duas cadeias paralelas chegam ao
+ * desfecho — adotando e notificando em dobro.
+ *
+ * `retries = 0` de propósito: quem controla a repetição é o próprio worker, que se re-enfileira com
+ * backoff e orçamento próprio. Deixar o QStash retentar sozinho criaria a segunda cadeia.
+ */
+export interface AcompanharMigracaoPxvJob {
+  org_id: string;
+  codigo_pai: string;
+  tentativa: number;
+}
+
+export async function enfileirarAcompanhamentoMigracaoPxv(
+  job: AcompanharMigracaoPxvJob,
+  delaySeconds: number,
+): Promise<string> {
+  const url = Deno.env.get('SUPABASE_URL')!;
+  const target = `${url}/functions/v1/acompanhar-migracao-pxv`;
+  const { messageId } = await qstashClient().publishJSON({
+    url: target,
+    body: job satisfies AcompanharMigracaoPxvJob,
+    delay: delaySeconds,
+    retries: 0,
+  });
+  return messageId;
+}
+
 export async function verificarAssinatura(req: Request, body: string): Promise<boolean> {
   const sig = req.headers.get('upstash-signature');
   if (!sig) return false;

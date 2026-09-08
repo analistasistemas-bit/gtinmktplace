@@ -9,7 +9,15 @@
 // lida via scraper). Tudo que a doc NÃO diz está marcado abaixo — nenhuma dessas lacunas pode
 // virar suposição silenciosa no código que as consome.
 
-import type { FetchLike } from './buscar-item.ts';
+/**
+ * `FetchLike` próprio: o de `buscar-item.ts` cobre só GET (aceita apenas `headers`) e devolve um
+ * objeto sem `text()`. Aqui há um POST e há resposta de erro que só existe como texto — o corpo do
+ * 404 da rota, por exemplo, é o que vai dizer ao operador que o endereço pode exigir outro site.
+ */
+export type FetchLikeML = (
+  url: string,
+  init?: { method?: string; headers?: Record<string, string>; body?: string },
+) => Promise<{ ok: boolean; status: number; json(): Promise<unknown>; text(): Promise<string> }>;
 
 const API = 'https://api.mercadolibre.com';
 
@@ -56,7 +64,7 @@ function erro(status: number, corpo: unknown): Error {
  * ser multivariante. Não confiamos nessa lista — perguntamos ao ML, que é quem decide.
  */
 export async function validarElegibilidadeUPtin(
-  fetchLike: FetchLike,
+  fetchLike: FetchLikeML,
   accessToken: string,
   itemId: string,
 ): Promise<ElegibilidadeUPtin> {
@@ -89,7 +97,7 @@ export async function validarElegibilidadeUPtin(
  * `lerStatusUPtin` para descobrir se a migração começou mesmo assim.
  */
 export async function dispararUPtin(
-  fetchLike: FetchLike,
+  fetchLike: FetchLikeML,
   accessToken: string,
   itemId: string,
   site = 'MLB',
@@ -123,7 +131,7 @@ export async function dispararUPtin(
  * orçamento finito.
  */
 export async function lerStatusUPtin(
-  fetchLike: FetchLike,
+  fetchLike: FetchLikeML,
   accessToken: string,
   itemId: string,
 ): Promise<StatusUPtin> {
