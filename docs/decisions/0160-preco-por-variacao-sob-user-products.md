@@ -208,7 +208,11 @@ um retry esgotado deixar o banco refletindo exatamente os PUTs que subiram. Em `
    operador republica) e um push de estoque daquele instante é perdido — o saldo volta na próxima
    movimentação ou na reconciliação horária. A mensagem do guard pede para aguardar e publicar de
    novo, em vez de prometer que o app resolve sozinho.
-8. **CREATE não consulta o cache de formato** para decidir split: `ehUP` é estrutural (itens já
+8. **Desconto ligado depois do CREATE é ignorado em silêncio no UP.** O CREATE recusa desconto em
+   User Products (`DESCONTO_INCOMPATIVEL`), mas a Revisão permite ligar `familias.exibir_com_desconto`
+   depois, e o UPDATE UP não lê esse campo — não monta `original_price`. O preço de venda continua
+   certo; o que não acontece é o selo "% OFF". Pré-existente, não introduzido aqui.
+9. **CREATE não consulta o cache de formato** para decidir split: `ehUP` é estrutural (itens já
    existem), e família **nova** não tem itens. Uma família nova com preços divergentes em categoria
    já conhecida como User Products vai para o split e falha com `FORMATO_INCOMPATIVEL`. Mesmo
    comportamento de antes desta entrega; não regride, mas I2 vale só para famílias já publicadas.

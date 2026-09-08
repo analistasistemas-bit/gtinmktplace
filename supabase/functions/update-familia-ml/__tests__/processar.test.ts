@@ -152,6 +152,9 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
     const deps = baseDeps(admin);
     const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
     expect(r.tipo).toBe('erro');
+    // A mensagem importa: sem este assert, qualquer erro (rede, fixture) satisfaria o teste e a
+    // remoção do guard passaria despercebida.
+    expect((r as { mensagem: string }).mensagem).toMatch(/preços divergentes/i);
     expect(fakeConnector.chamadas.filter((c) => c.metodo === 'atualizarAnuncio')).toHaveLength(0);
   });
 

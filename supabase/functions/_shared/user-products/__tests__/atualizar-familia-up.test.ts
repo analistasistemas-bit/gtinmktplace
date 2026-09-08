@@ -170,7 +170,7 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     const { admin } = fakeAdmin([{ sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' }]);
     await atualizarFamiliaUP(args({
       admin, conn: conn as never,
-      familia: { ...FAMILIA, atacado: [{ quantidade: 3, preco: 8 }] } as never,
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 8 }] } as never,
       executarSaga: async () => ({ tipo: 'concluido', criadas: ['B'] }),
     }));
     expect(conn.chamadas).toContainEqual({ metodo: 'garantirDescricao', itemExternoId: 'MLB1', texto: 'Desc da família\n\n🎨 CORES DISPONÍVEIS\n\n- Azul' });
@@ -402,7 +402,7 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     ]);
     await atualizarFamiliaUP(args({
       admin, conn: conn as never,
-      familia: { ...FAMILIA, atacado: [{ quantidade: 3, preco: 8 }] } as never,
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 8 }] } as never,
       variacoes: [
         { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null },
         { codigo: 'B', cor: 'Rosa', estoque: 1, preco_publicacao: 25, gtin: null, imagem_path: null, ml_picture_id: null },
@@ -424,7 +424,7 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     ]);
     await atualizarFamiliaUP(args({
       admin, conn: conn as never,
-      familia: { ...FAMILIA, atacado: [{ quantidade: 3, preco: 8 }] } as never,
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 8 }] } as never,
       variacoes: [
         { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null },
         { codigo: 'B', cor: 'Rosa', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null },
@@ -445,7 +445,7 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     ]);
     await atualizarFamiliaUP(args({
       admin, conn: conn as never,
-      familia: { ...FAMILIA, atacado: [{ quantidade: 3, preco: 8 }] } as never,
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 3, desconto_pct: 8 }] } as never,
       variacoes: [
         { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null,
           atacado: [{ min_unidades: 10, desconto_pct: 20 }] },

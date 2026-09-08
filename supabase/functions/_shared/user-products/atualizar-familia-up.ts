@@ -467,9 +467,13 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
           // família-level — dinheiro diferente do configurado, sem nenhum sinal.
           //
           // Sai daqui quando o atacado passar a ser por variação (fora do escopo desta entrega).
-          const m = `Atacado não aplicado: as cores ${configPorCor.join(', ')} têm configuração `
-            + 'própria de desconto/atacado, e neste anúncio o atacado do Mercado Livre é único por '
-            + 'família. Deixe a configuração igual para todas as cores, ou desligue o atacado.';
+          // A saída é UMA só: desligar o atacado da família. Sob User Products a UI não renderiza o
+          // editor de config por faixa (`familia-row.tsx`), então "deixe a configuração igual para
+          // todas as cores" mandaria o operador a uma tela que não existe.
+          const m = `Atacado não aplicado: as cores ${configPorCor.join(', ')} têm configuração de `
+            + 'atacado própria, diferente da configuração da família, e neste anúncio o preço de '
+            + 'atacado do Mercado Livre é único por família. Desligue o atacado desta família para '
+            + 'que a configuração por cor deixe de valer.';
           await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
         } else if (aplicandoFaixas && precosDistintos.size > 1) {
           // ADR-0160 (I5). O PxQ é por ITEM na API do ML e o valor é ABSOLUTO (ADR-0041): com

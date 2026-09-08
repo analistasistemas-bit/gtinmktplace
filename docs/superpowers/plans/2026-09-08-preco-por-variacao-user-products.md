@@ -301,17 +301,27 @@ recebe preços distintos:
 
 1. Publicar uma família de teste com 2 cores **no mesmo preço**.
 2. Migrar pelo painel do ML ("Oferecer preço por variação") e esperar concluir.
-3. Publicar uma vez como **"somente estoque"** — é o que faz o app adotar a migração (a família passa
+3. **Checagem que decide se o resto funciona automaticamente:** `GET /items/{id-do-item-original}` e
+   conferir se `variations[]` ainda traz `seller_custom_field` e o atributo COLOR de cada cor.
+   - **Se vier povoado:** siga para o passo 4 — a adoção automática consegue casar as cores.
+   - **Se vier vazio:** a descoberta por título (ADR-0105) não tem como casar SKU→cor, e a adoção
+     automática vai falhar com "0 de N cores localizadas". Não é bug desta entrega; o caminho passa a
+     ser a adoção manual do ADR-0104. Me avise antes de seguir.
+
+   Motivo da checagem: na dissolução espontânea o ML deixava as `variations` no item encerrado, mas a
+   doc do UPtin diz que "`variations[]` deixa de existir" sem esclarecer se vale também para o
+   original. Não dá para provar sem migrar um anúncio de verdade.
+4. Publicar uma vez como **"somente estoque"** — é o que faz o app adotar a migração (a família passa
    a ter itens em `anuncios_externos_itens`). Conferir na tela Publicados que o produto continua lá.
-4. Agora sim: dar **preços diferentes** às duas cores na Revisão e publicar com **"Atualizar tudo"**.
+5. Agora sim: dar **preços diferentes** às duas cores na Revisão e publicar com **"Atualizar tudo"**.
    Conferir por `GET /items/{id}` de cada filho que **cada item ficou com o SEU preço**.
-5. "Somente estoque" de novo → nenhum preço muda no ML.
-6. Movimentar estoque de uma cor → só ela muda.
-7. Publicados mostra a faixa (`R$ x – R$ y`), não um preço só.
-8. Se conseguir pegar a janela: rodar um UPDATE **durante** a migração → o app recusa (I9) e não
+6. "Somente estoque" de novo → nenhum preço muda no ML.
+7. Movimentar estoque de uma cor → só ela muda.
+8. Publicados mostra a faixa (`R$ x – R$ y`), não um preço só.
+9. Se conseguir pegar a janela: rodar um UPDATE **durante** a migração → o app recusa (I9) e não
    publica nada.
 
-Se o passo 4 for tentado **antes** do 3, o app recusa com a mensagem que ensina exatamente o passo 3
+Se o passo 5 for tentado **antes** do 4, o app recusa com a mensagem que ensina exatamente o passo 4
 — é o comportamento esperado, não um erro.
 
 ---
