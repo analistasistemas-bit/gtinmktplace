@@ -6,7 +6,7 @@
 
 import { corsHeaders } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { verificarAssinatura, enfileirarAcompanhamentoMigracaoPxv, enfileirarSincronizacaoEstoque, type AcompanharMigracaoPxvJob } from '../_shared/queue.ts';
+import { verificarAssinatura, enfileirarAcompanhamentoMigracaoPxv, enfileirarSincronizacaoEstoque, enfileirarVinculacaoCatalogo, type AcompanharMigracaoPxvJob } from '../_shared/queue.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerStatusUPtin, type VariacaoSnapshot } from '../_shared/ml/migracao-pxv.ts';
@@ -14,7 +14,9 @@ import { corDaVariacaoML } from '../_shared/ml/atualizar-item.ts';
 import { criarPortasRevinculo } from '../_shared/user-products/portas-supabase.ts';
 import { adotarFamiliaMigrada } from '../_shared/user-products/adotar-familia-migrada.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
-import { acompanharMigracaoPxv, type PortasAcompanhamento } from './processar.ts';
+import {
+  acompanharMigracaoPxv, DELAY_ATIVANDO_S, MAX_TENTATIVAS, type PortasAcompanhamento,
+} from './processar.ts';
 
 const CANAL = 'mercado_livre';
 const API = 'https://api.mercadolibre.com';
@@ -94,7 +96,10 @@ Deno.serve(async (req) => {
       const token = await getToken();
       const url = `${API}/items?ids=${itemIds.join(',')}&attributes=id,attributes`;
       const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!resp.ok) return out;
+      // Lança em vez de devolver mapa vazio: um 5xx transitório do ML viraria "nenhuma cor lida" →
+      // casamento falho → `erro` definitivo, com a migração já concluída do outro lado. O catch do
+      // worker trata como transitório e reagenda dentro do orçamento.
+      if (!resp.ok) throw new Error(`multiget de cores falhou (${resp.status})`);
       const json = await resp.json() as Array<{ code?: number; body?: { id?: string; attributes?: unknown } }>;
       for (const linha of json ?? []) {
         if (linha?.code !== 200 || !linha.body?.id) continue;
@@ -128,6 +133,13 @@ Deno.serve(async (req) => {
       const familyName = resp.ok
         ? ((await resp.json() as { family_name?: string }).family_name ?? '')
         : '';
+      // Nome vazio NÃO adota. A RPC grava `titulo` na raiz, e é dele que o próximo UPDATE UP tira o
+      // `family_name` — adotar com `''` deixaria a família com um nome que o ML não reconhece, e o
+      // erro só apareceria na próxima publicação. O caminho do ADR-0105 aborta pelo mesmo motivo.
+      // Transitório: retentar é o certo.
+      if (!familyName) {
+        return { ok: false, retryavel: true, mensagem: 'Não foi possível ler o nome da família nos anúncios novos.' };
+      }
 
       const portasAdocao = criarPortasRevinculo({
         admin, getToken, orgId,
@@ -179,12 +191,31 @@ Deno.serve(async (req) => {
       return saldos;
     },
 
-    empurrarEstoque: async () => {
-      // O push é por `codigo_pai` (saldo absoluto de todas as cores). Os SKUs suspeitos já ficaram
-      // de fora da decisão do chamador; aqui o job cobre o produto, como em qualquer reposição.
+    empurrarEstoque: async (skus) => {
+      // `skus` é ESSENCIAL, não decorativo: sem ele o push cobriria o produto inteiro e arrastaria
+      // junto os SKUs que o chamador classificou como suspeitos — restaurando unidades já vendidas
+      // e anulando a trava anti-oversell. É o mesmo campo criado pelo incidente de 03/09/2026, em
+      // que a entrada de 40 un. de uma cor empurrou o saldo do app para todas as cores do anúncio.
+      if (skus.length === 0) return;
       await enfileirarSincronizacaoEstoque(
-        { org_id: orgId, codigo_pai: codigoPai, canal_origem: null }, orgId,
+        { org_id: orgId, codigo_pai: codigoPai, canal_origem: null, skus }, orgId,
       );
+    },
+
+    reporEfeitosDaMigracao: async () => {
+      const fam = await familiaRepresentante();
+      if (!fam) return;
+      // Catálogo: o listing do anúncio antigo (MLB próprio, ADR-0021) morreu com ele. Best-effort —
+      // falhar aqui não desfaz uma migração que já concluiu.
+      try { await enfileirarVinculacaoCatalogo(fam.id as string); }
+      catch (e) { console.error(`catálogo pós-migração (${codigoPai}):`, (e as Error).message); }
+      // Atacado: `aplicado` só seria verdade se o ML tivesse copiado o PxQ aos clones — não
+      // documentado. Zerar faz a próxima publicação reaplicar, em vez de o app afirmar que há preço
+      // de atacado no ar sem ninguém ter verificado.
+      const { error } = await admin.from('familias')
+        .update({ atacado_status: null, atacado_erro: null })
+        .eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('atacado_status', 'aplicado');
+      if (error) console.error(`reset de atacado pós-migração (${codigoPai}):`, error.message);
     },
 
     reenfileirar: async (proxima, delayS) => {
@@ -215,12 +246,28 @@ Deno.serve(async (req) => {
     const r = await acompanharMigracaoPxv(portas, tentativa);
     return new Response(JSON.stringify(r), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {
-    // Nunca 500: o QStash retentaria e criaria uma segunda cadeia sobre o mesmo episódio. O claim
-    // por tentativa já barra a duplicata, mas a rodada seguinte é responsabilidade do worker.
-    const motivo = `Falha ao acompanhar a migração: ${(e as Error).message}`;
-    console.error(motivo);
+    // Falha inesperada (5xx do ML, refresh de token, rede) é TRANSITÓRIA por padrão. Encerrar o
+    // episódio em `erro` aqui seria o pior desfecho: o ML segue migrando e encerra o item original,
+    // o app nunca adota, e a única saída vira a descoberta por título — exatamente o caminho que
+    // este ADR existe para evitar. Reagenda enquanto houver orçamento.
+    const detalhe = (e as Error).message;
+    console.error(`acompanhar-migracao-pxv (${codigoPai}): ${detalhe}`);
+    if (tentativa < MAX_TENTATIVAS) {
+      try {
+        await enfileirarAcompanhamentoMigracaoPxv(
+          { org_id: orgId, codigo_pai: codigoPai, tentativa: tentativa + 1 }, DELAY_ATIVANDO_S,
+        );
+        return new Response(JSON.stringify({ tipo: 'aguardando' }), { headers: corsHeaders });
+      } catch (e2) {
+        // Nem reagendar deu: aí sim o episódio precisa de gente.
+        console.error(`reenfileirar falhou (${codigoPai}):`, (e2 as Error).message);
+      }
+    }
+    const motivo = `Falha ao acompanhar a migração: ${detalhe}`;
     await portas.marcarErro(motivo);
     await portas.notificar(motivo);
+    // Nunca 500: o claim por tentativa já protege contra duplicata, mas devolver erro faria o
+    // QStash reentregar um episódio que acabou de ser encerrado.
     return new Response(JSON.stringify({ tipo: 'erro' }), { headers: corsHeaders });
   }
 });

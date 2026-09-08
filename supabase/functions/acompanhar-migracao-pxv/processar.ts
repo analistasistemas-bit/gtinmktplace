@@ -47,6 +47,16 @@ export interface PortasAcompanhamento {
   /** Saldo local e vivo por SKU, para a trava anti-oversell. */
   lerSaldos(itemPorSku: Map<string, string>): Promise<Array<{ sku: string; local: number; vivo: number }>>;
   empurrarEstoque(skus: string[]): Promise<void>;
+  /**
+   * J9 — efeitos que a migração invalida.
+   *
+   * O vínculo de catálogo do anúncio antigo morre com ele (o listing de catálogo é um MLB próprio,
+   * ADR-0021), então precisa ser refeito sobre os anúncios novos. E `atacado_status='aplicado'` só
+   * continuaria verdadeiro se o ML copiasse o PxQ para os clones — o que não é documentado; deixar
+   * "aplicado" faria o app afirmar que há preço de atacado no ar sem ninguém ter verificado.
+   * Zerando, a próxima publicação reaplica.
+   */
+  reporEfeitosDaMigracao(): Promise<void>;
   reenfileirar(tentativa: number, delayS: number): Promise<void>;
   concluir(): Promise<void>;
   marcarErro(motivo: string): Promise<void>;
@@ -129,6 +139,9 @@ export async function acompanharMigracaoPxv(
   const seguros = saldos.filter((s) => s.local <= s.vivo).map((s) => s.sku);
   const suspeitos = saldos.filter((s) => s.local > s.vivo);
   if (seguros.length > 0) await portas.empurrarEstoque(seguros);
+
+  // Catálogo e atacado do anúncio antigo não sobrevivem à migração (J9).
+  await portas.reporEfeitosDaMigracao();
 
   await portas.concluir();
 

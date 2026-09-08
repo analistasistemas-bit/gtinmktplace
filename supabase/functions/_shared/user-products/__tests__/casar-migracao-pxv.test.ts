@@ -111,9 +111,13 @@ describe('casarNovosItens — recusa em vez de adivinhar', () => {
   });
 
   // O CASO QUE MOTIVA ESTE MÓDULO. A descoberta por título do ADR-0105 encontraria uma família irmã
-  // do mesmo vendedor — mesmo título, mesmas cores — validaria `family_id` único e casaria 1:1 com o
-  // PRODUTO ERRADO. Aqui não há degrau por título: sem `new_items` utilizáveis, falha.
-  it('não tenta adivinhar por título: sem ids do ML utilizáveis, falha', () => {
+  // do mesmo vendedor — mesmo título, mesmas cores —, validaria `family_id` único e casaria 1:1 com
+  // o PRODUTO ERRADO.
+  //
+  // A garantia aqui é ESTRUTURAL, não uma heurística: esta função só recebe `new_items` do
+  // `migration_live_listing` DESTE item, e não existe nenhum caminho que aceite resultado de busca
+  // por texto. Os dois testes abaixo cobrem os dois lados dessa garantia.
+  it('ids que não vieram deste item não casam — falha em vez de adotar', () => {
     const novosDeOutroProduto: NovoItemML[] = [
       { itemId: 'MLB-IRMAO-A', variationId: 'x1', cor: 'Turquesa' },
       { itemId: 'MLB-IRMAO-B', variationId: 'x2', cor: 'Coral' },
@@ -122,5 +126,19 @@ describe('casarNovosItens — recusa em vez de adivinhar', () => {
     expect(r.tipo).toBe('falha');
     // E o motivo aponta o caminho seguro, em que a decisão volta a ser do operador.
     expect((r as { motivo: string }).motivo).toMatch(/Publique uma atualização/i);
+  });
+
+  // O outro lado: com as MESMAS cores do snapshot, o casamento por cor fecha — e isso é CORRETO,
+  // porque os `new_item_id` vieram do `migration_live_listing` deste item. O perigo da família irmã
+  // não está em casar por cor; está em obter os ids por busca de título. Este teste documenta que a
+  // segurança vem da PROCEDÊNCIA dos ids, não da comparação de cor.
+  it('mesmas cores casam quando os ids são desta migração (a procedência é a garantia)', () => {
+    const novosDestaMigracao: NovoItemML[] = [
+      { itemId: 'MLB-A', variationId: 'x1', cor: 'Azul' },
+      { itemId: 'MLB-B', variationId: 'x2', cor: 'Rosa' },
+    ];
+    const r = casarNovosItens(SNAP, novosDestaMigracao, LOCAIS);
+    expect(r.tipo).toBe('ok');
+    expect((r as { degrau: string }).degrau).toBe('cor');
   });
 });

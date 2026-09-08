@@ -271,8 +271,11 @@ export async function enfileirarVinculacaoCatalogo(
  * retentar enquanto a rodada anterior já se re-enfileirou, e duas cadeias paralelas chegam ao
  * desfecho — adotando e notificando em dobro.
  *
- * `retries = 0` de propósito: quem controla a repetição é o próprio worker, que se re-enfileira com
- * backoff e orçamento próprio. Deixar o QStash retentar sozinho criaria a segunda cadeia.
+ * `retries = 3`: o claim por `tentativa` já torna a repetição segura (uma entrega duplicada perde o
+ * claim e encerra em silêncio), então deixar o QStash retentar é barato — e necessário. Com
+ * `retries: 0`, uma única falha de ENTREGA (cold start da edge, 503, timeout de rede) matava a
+ * cadeia inteira sem qualquer sinal: o episódio ficava `em_andamento` para sempre, com o produto
+ * congelado pelos guards (não publica, não pausa, não remove) e nenhum sweeper para destravar.
  */
 export interface AcompanharMigracaoPxvJob {
   org_id: string;
@@ -290,7 +293,7 @@ export async function enfileirarAcompanhamentoMigracaoPxv(
     url: target,
     body: job satisfies AcompanharMigracaoPxvJob,
     delay: delaySeconds,
-    retries: 0,
+    retries: 3,
   });
   return messageId;
 }

@@ -22,7 +22,7 @@ function fakeMundo(over: Partial<{
   const chamadas = {
     reenfileirou: [] as Array<{ tentativa: number; delay: number }>,
     concluiu: 0, erros: [] as string[], notificacoes: [] as string[],
-    empurrou: [] as string[][], adotou: 0, leuCores: 0,
+    empurrou: [] as string[][], adotou: 0, leuCores: 0, reposEfeitos: 0,
   };
   const portas: PortasAcompanhamento = {
     carregarEstado: () => Promise.resolve(
@@ -44,6 +44,7 @@ function fakeMundo(over: Partial<{
       { sku: '00000001', local: 5, vivo: 5 }, { sku: '00000002', local: 3, vivo: 3 },
     ]),
     empurrarEstoque: (skus) => { chamadas.empurrou.push(skus); return Promise.resolve(); },
+    reporEfeitosDaMigracao: () => { chamadas.reposEfeitos += 1; return Promise.resolve(); },
     reenfileirar: (tentativa, delay) => { chamadas.reenfileirou.push({ tentativa, delay }); return Promise.resolve(); },
     concluir: () => { chamadas.concluiu += 1; return Promise.resolve(); },
     marcarErro: (m) => { chamadas.erros.push(m); return Promise.resolve(); },
@@ -175,6 +176,31 @@ describe('acompanharMigracaoPxv — trava anti-oversell no push de estoque', () 
     const r = await acompanharMigracaoPxv(w.portas, 2);
     expect(r.tipo).toBe('concluido');
     expect(w.chamadas.empurrou).toEqual([]);
+  });
+
+  // Leitura do saldo vivo que falha entra como `vivo: -1` — tratada como SUSPEITA, não como
+  // permissão. Silêncio do ML não pode autorizar a restauração de unidades vendidas.
+  it('sem leitura do saldo vivo, não empurra', async () => {
+    const w = fakeMundo({ saldos: [{ sku: '00000001', local: 0, vivo: -1 }] });
+    await acompanharMigracaoPxv(w.portas, 2);
+    expect(w.chamadas.empurrou).toEqual([]);
+  });
+});
+
+// J9 — o vínculo de catálogo do anúncio antigo morre com ele, e `atacado_status='aplicado'` só
+// continuaria verdadeiro se o ML tivesse copiado o PxQ aos clones (não documentado). Sem isto o app
+// afirmaria que há preço de atacado no ar sem ninguém ter verificado.
+describe('acompanharMigracaoPxv — efeitos pós-migração (J9)', () => {
+  it('conclusão repõe catálogo e zera o atacado', async () => {
+    const w = fakeMundo();
+    await acompanharMigracaoPxv(w.portas, 2);
+    expect(w.chamadas.reposEfeitos).toBe(1);
+  });
+
+  it('não repõe efeitos quando a adoção falhou', async () => {
+    const w = fakeMundo({ adocao: { ok: false, mensagem: 'boom' } });
+    await acompanharMigracaoPxv(w.portas, MAX_TENTATIVAS);
+    expect(w.chamadas.reposEfeitos).toBe(0);
   });
 });
 

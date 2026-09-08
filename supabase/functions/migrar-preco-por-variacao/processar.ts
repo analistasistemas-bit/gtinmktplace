@@ -90,6 +90,17 @@ export async function dispararMigracaoPxv(
   if (raiz.migracaoStatus === 'solicitada' || raiz.migracaoStatus === 'em_andamento') {
     return { tipo: 'recusado', motivo: 'Já existe uma migração em andamento para este produto.' };
   }
+  // `erro`: a migração anterior parou. NÃO é "em andamento" — recusar com aquela mensagem mandaria
+  // o operador esperar por algo que não vai acontecer. Também não se redispara automaticamente: se
+  // o ML já migrou (o original estará encerrado), um segundo POST é comportamento indocumentado.
+  // A saída é o UPDATE, que adota pelo caminho do ADR-0105.
+  if (raiz.migracaoStatus === 'erro') {
+    return {
+      tipo: 'recusado',
+      motivo: 'A migração anterior deste produto terminou em erro. Publique uma atualização para o '
+        + 'app reconciliar com o Mercado Livre antes de tentar de novo.',
+    };
+  }
 
   // Estado local incoerente: a raiz aponta para um anúncio diferente do da família (ou do que o
   // ingest usaria). Migrar em cima disso adotaria no lugar errado.
