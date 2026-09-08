@@ -1,4 +1,4 @@
-import { readOrgMetrics } from './metrics-repository.ts';
+import { loadMetricsCache, readOrgMetrics, type MetricsCache } from './metrics-repository.ts';
 import type { AuditRow, BillingPreview, BillingStatement, CommercialTerms, OrgSummary, Page, PulseUsage, PulseUsageRow, Wallet, WalletTotals } from './types.ts';
 
 type DbResult = { data: unknown; error: { message: string } | null; count?: number | null };
@@ -83,9 +83,9 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     for (const row of rows) if (!starts.has(row.org_id)) starts.set(row.org_id, row.starts_on);
     return starts;
   };
-  const enrichOne = async (actorId: string, org: { id: string; nome: string; slug: string; is_test: boolean }, month: string, nextStartsOn: string | null): Promise<OrgSummary> => {
+  const enrichOne = async (actorId: string, org: { id: string; nome: string; slug: string; is_test: boolean }, month: string, nextStartsOn: string | null, cache?: MetricsCache): Promise<OrgSummary> => {
     const [metricsResult, previewResult, daludi] = await Promise.all([
-      readOrgMetrics(db as never, org.id, month, now()).then((value) => ({ value })).catch(() => ({ value: null })),
+      readOrgMetrics(db as never, org.id, month, now(), cache).then((value) => ({ value })).catch(() => ({ value: null })),
       rpc<BillingPreview>('platform_billing_preview', { p_actor: actorId, p_org: org.id, p_month: monthDate(month) }).then((value) => ({ value })).catch(() => ({ value: null })),
       exactCount(db.from('platform_sonar_searches').select('id', { count: 'exact', head: true }).eq('org_id', org.id).eq('origin', 'daludi').gte('created_at', monthBounds(month)[0]).lt('created_at', monthBounds(month)[1])),
     ]);
@@ -135,7 +135,11 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       const needle = input.search?.trim().toLocaleLowerCase('pt-BR');
       const organizations = (await loadOrganizations(!!input.include_test)).filter((org) => !needle || org.nome.toLocaleLowerCase('pt-BR').includes(needle) || org.slug.toLocaleLowerCase('pt-BR').includes(needle));
       const nextStarts = await nextTermsStarts(organizations.map((org) => org.id), input.month);
-      const summaries = await mapLimit(organizations, 4, (org) => enrichOne(actorId, org, input.month, nextStarts.get(org.id) ?? null));
+      // Perf FASE 3.3: UMA leitura do cache de meses fechados para a carteira INTEIRA (nunca por
+      // org) — `readOrgMetrics` só valida o que já veio pronto aqui, em vez de repetir a validação
+      // por organização.
+      const cache = await loadMetricsCache(db as never, organizations.map((org) => org.id), input.month, now());
+      const summaries = await mapLimit(organizations, 4, (org) => enrichOne(actorId, org, input.month, nextStarts.get(org.id) ?? null, cache));
       summaries.sort(input.sort === 'gross_desc'
         ? (a, b) => (b.metrics?.gross_cents ?? -1) - (a.metrics?.gross_cents ?? -1) || a.nome.localeCompare(b.nome)
         : input.sort === 'slug' ? (a, b) => a.slug.localeCompare(b.slug) : (a, b) => a.nome.localeCompare(b.nome));

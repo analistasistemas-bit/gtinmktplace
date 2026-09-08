@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readOrgMetrics } from '../metrics-repository.ts';
+import { materializeMonth, materializeRecentMonths, readOrgMetrics } from '../metrics-repository.ts';
 
 type Row = Record<string, unknown>;
 type TableData = Record<string, { rows?: Row[]; error?: string }>;
@@ -38,12 +38,23 @@ function dbFor(tables: TableData) {
           filters.push((row) => String(row[column] ?? '') < String(value));
           return query;
         },
+        in(column: string, values: unknown[]) {
+          calls.push({ table, op: 'in', column, value: values });
+          filters.push((row) => values.includes(row[column]));
+          return query;
+        },
         order: () => query,
         async range(from: number, to: number) {
           calls.push({ table, op: 'range', value: [from, to] });
           const source = tables[table] ?? {};
           if (source.error) return { data: null, error: { message: source.error } };
           return { data: (source.rows ?? []).filter((row) => filters.every((filter) => filter(row))).slice(from, to + 1), error: null };
+        },
+        // Perf FASE 3: upsert do cache (`platform_org_month_metrics`) — best-effort nos testes,
+        // só registra a chamada; nenhum teste depende de reler a linha gravada.
+        async upsert(row: Row) {
+          calls.push({ table, op: 'upsert', value: row });
+          return { error: null };
         },
       };
       return query;
@@ -124,12 +135,20 @@ describe('readOrgMetrics', () => {
     );
   });
 
-  it('lê o catálogo de custo pela RPC, com p_since no primeiro mês da série', async () => {
+  // Perf FASE 3: cache vazio (nenhuma linha em platform_org_month_metrics) → o par ao vivo
+  // (mês corrente + anterior) lê o catálogo com p_since do início do mês anterior, e cada um dos
+  // quatro meses mais antigos da série materializa avulso, com p_since do seu próprio início — nunca
+  // mais uma janela única de 6 meses (a materialização por mês prova que a redução de escopo do
+  // catálogo, feita em `computeMonth`, não depende de ver a série inteira de uma vez).
+  it('lê o catálogo de custo pela RPC por mês (par ao vivo + materialização avulsa), nunca variacoes', async () => {
     const db = dbFor(base({ ml_vendas: { rows: [sale('sale-1', '2026-10-02T12:00:00-03:00')] } }));
     await readOrgMetrics(db, 'org-a', '2026-10', new Date('2026-10-15T12:00:00-03:00'));
-    expect(db.calls.filter((call) => call.op === 'rpc')).toEqual([
-      { table: 'platform_org_cost_catalog', op: 'rpc', value: { p_org: 'org-a', p_since: '2026-05-01T00:00:00-03:00' } },
-    ]);
+    const catalogCalls = db.calls.filter((call) => call.op === 'rpc' && call.table === 'platform_org_cost_catalog');
+    expect(new Set(catalogCalls.map((call) => (call.value as { p_since: string }).p_since))).toEqual(new Set([
+      '2026-09-01T00:00:00-03:00', // par ao vivo (mês anterior real, 2026-09)
+      '2026-08-01T00:00:00-03:00', '2026-07-01T00:00:00-03:00',
+      '2026-06-01T00:00:00-03:00', '2026-05-01T00:00:00-03:00', // materialização avulsa
+    ]));
     expect(db.calls.some((call) => call.table === 'variacoes')).toBe(false);
   });
 
@@ -204,5 +223,120 @@ describe('readOrgMetrics', () => {
     expect(metrics.markup).toBeNull();
     expect(metrics.warnings).toContainEqual(expect.objectContaining({ code: 'cost_catalog_read_failed', severity: 'error' }));
     expect(metrics.warnings.map((warning) => warning.message).join(' ')).toMatch(/Falha ao carregar os custos/);
+  });
+});
+
+// Perf FASE 3.3: read-through de `platform_org_month_metrics`. Mês exibido 2026-06, agora em
+// 2026-10-15 — fechado e diferente do mês anterior real (2026-09), então é elegível a cache.
+describe('cache de meses fechados (FASE 3)', () => {
+  // Carimbo da config padrão do módulo (nacional 8, importado 16, UF CE, interna 8) — mesmo formato
+  // que `taxConfigStamp` grava (`JSON.stringify([nacional, importado, ufEmpresa, internaPct])`).
+  const stamp = '[8,16,"CE",8]';
+  const now = new Date('2026-10-15T12:00:00-03:00');
+  const junSale = sale('sale-jun', '2026-06-10T12:00:00-03:00'); // bruto R$ 100 → 10 000 centavos ao vivo
+
+  const cachedRow = (patch: Row = {}): Row => ({
+    org_id: 'org-a', month: '2026-06-01', gross_cents: 555_500, orders: 7, ticket_cents: 79_357,
+    markup: 0.5, cost_covered_orders: 7, total_orders: 7, updated_at: '2026-06-10T12:00:00-03:00',
+    source_count: 1, source_max_updated_at: '2026-06-10T12:00:00-03:00', tax_config_stamp: stamp, ...patch,
+  });
+  const validationRow = (patch: Row = {}): Row => ({
+    org_id: 'org-a', month: '2026-06-01', source_count: 1, source_max_updated_at: '2026-06-10T12:00:00-03:00', ...patch,
+  });
+
+  it('reaproveita uma linha válida (count e atualizado_em batem) em vez de recalcular ao vivo', async () => {
+    const db = dbFor(base({
+      ml_vendas: { rows: [junSale] },
+      platform_org_month_metrics: { rows: [cachedRow()] },
+      platform_org_month_validation: { rows: [validationRow()] },
+    }));
+    const metrics = await readOrgMetrics(db, 'org-a', '2026-06', now);
+    // 555 500 ≠ 10 000 (o que a única venda real de junho daria ao vivo) — prova que veio do cache.
+    expect(metrics.gross_cents).toBe(555_500);
+    expect(metrics.orders).toBe(7);
+  });
+
+  it('invalida por count diferente da validação e recalcula ao vivo', async () => {
+    const db = dbFor(base({
+      ml_vendas: { rows: [junSale] },
+      platform_org_month_metrics: { rows: [cachedRow()] },
+      platform_org_month_validation: { rows: [validationRow({ source_count: 2 })] },
+    }));
+    const metrics = await readOrgMetrics(db, 'org-a', '2026-06', now);
+    expect(metrics.gross_cents).toBe(10_000);
+  });
+
+  it('invalida por atualizado_em mais novo na validação e recalcula ao vivo', async () => {
+    const db = dbFor(base({
+      ml_vendas: { rows: [junSale] },
+      platform_org_month_metrics: { rows: [cachedRow()] },
+      platform_org_month_validation: { rows: [validationRow({ source_max_updated_at: '2026-06-11T00:00:00-03:00' })] },
+    }));
+    const metrics = await readOrgMetrics(db, 'org-a', '2026-06', now);
+    expect(metrics.gross_cents).toBe(10_000);
+  });
+
+  it('invalida quando a configuração tributária mudou (tax_config_stamp) e recalcula ao vivo', async () => {
+    const db = dbFor(base({
+      ml_vendas: { rows: [junSale] },
+      platform_org_month_metrics: { rows: [cachedRow({ tax_config_stamp: '[10,16,"CE",8]' })] },
+      platform_org_month_validation: { rows: [validationRow()] },
+    }));
+    const metrics = await readOrgMetrics(db, 'org-a', '2026-06', now);
+    expect(metrics.gross_cents).toBe(10_000);
+  });
+
+  it('nunca grava o mês corrente nem o mês anterior real, mesmo sendo "fechados" no sentido do write gate', async () => {
+    const db = dbFor(base({ ml_vendas: { rows: [sale('sale-1', '2026-10-05T12:00:00-03:00')] } }));
+    await readOrgMetrics(db, 'org-a', '2026-10', now);
+    const upserts = db.calls.filter((call) => call.op === 'upsert' && call.table === 'platform_org_month_metrics');
+    const months = upserts.map((call) => (call.value as Row).month);
+    expect(months).not.toContain('2026-10-01'); // mês corrente
+    expect(months).not.toContain('2026-09-01'); // mês anterior real (sempre ao vivo na leitura)
+  });
+});
+
+describe('materializeMonth (paridade com readOrgMetrics, FASE 3.2)', () => {
+  it('produz os mesmos campos que readOrgMetrics calcula ao vivo para o mesmo mês fechado', async () => {
+    const now = new Date('2026-10-15T12:00:00-03:00');
+    const rows = [sale('sale-1', '2026-06-10T12:00:00-03:00'), sale('sale-2', '2026-06-20T12:00:00-03:00')];
+    // Cache vazio nas duas chamadas (sem platform_org_month_metrics): readOrgMetrics cai no cálculo
+    // ao vivo, e é ESSE número que precisa bater com materializeMonth — o mesmo `computeMonth` por
+    // baixo dos dois é o que garante a paridade "por construção" do plano (3.2).
+    const live = await readOrgMetrics(dbFor(base({ ml_vendas: { rows } })), 'org-a', '2026-06', now);
+    const materialized = await materializeMonth(dbFor(base({ ml_vendas: { rows } })), 'org-a', '2026-06', now);
+    expect(materialized).toMatchObject({
+      org_id: 'org-a', month: '2026-06',
+      gross_cents: live.gross_cents, orders: live.orders, ticket_cents: live.ticket_cents,
+      markup: live.markup, cost_covered_orders: live.cost_covered_orders, total_orders: live.total_orders,
+      updated_at: live.updated_at,
+    });
+    expect(materialized.costs_ok).toBe(true);
+    expect(materialized.config_ok).toBe(true);
+  });
+});
+
+// Perf FASE 3.4: job `materializar-metricas` — mesma validação do read-through, aplicada aos
+// últimos 6 meses fechados (agora = 2026-10-15 → 2026-04..2026-09, incluindo o mês anterior real).
+describe('materializeRecentMonths (job de pré-aquecimento, FASE 3.4)', () => {
+  it('materializa o que está ausente/inválido e pula o que já está válido', async () => {
+    const now = new Date('2026-10-15T12:00:00-03:00');
+    const stamp = '[8,16,"CE",8]';
+    const db = dbFor(base({
+      ml_vendas: { rows: [sale('sale-1', '2026-07-10T12:00:00-03:00')] },
+      // 2026-08 já tem linha válida (bate com a validação) — não deve materializar de novo.
+      platform_org_month_metrics: { rows: [{
+        org_id: 'org-a', month: '2026-08-01', gross_cents: 1, orders: 0, ticket_cents: 0, markup: null,
+        cost_covered_orders: 0, total_orders: 0, updated_at: null, source_count: 0, source_max_updated_at: null,
+        tax_config_stamp: stamp,
+      }] },
+      platform_org_month_validation: { rows: [{ org_id: 'org-a', month: '2026-08-01', source_count: 0, source_max_updated_at: null }] },
+    }));
+    const result = await materializeRecentMonths(db, 'org-a', now);
+    expect(result.materialized).toEqual(expect.arrayContaining(['2026-09', '2026-07', '2026-06', '2026-05', '2026-04']));
+    expect(result.materialized).not.toContain('2026-08');
+    expect(result.skipped).toEqual([]);
+    const julUpsert = db.calls.find((call) => call.op === 'upsert' && (call.value as Row).month === '2026-07-01');
+    expect(julUpsert).toMatchObject({ value: { gross_cents: 10_000 } });
   });
 });

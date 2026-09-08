@@ -94,6 +94,7 @@
 | calcular-tarifa-ml | false | HTTP (JWT manual) | sim (cache 6h) |
 | **Acesso / usuários** ||||
 | platform-admin | true | HTTP (frontend, super-admin ativo) | leituras; fechamento idempotente por org/competência |
+| materializar-metricas | false | QStash schedule | sim (upsert por org/mês) |
 | usuarios | true | HTTP (frontend, admin) | sim (upsert/idempotente) |
 | suporte | true | HTTP (frontend) | transições condicionais; início/renovação atômicos na RPC |
 | **Utilitário** ||||
@@ -111,8 +112,18 @@ próxima vigência (`AAAA-MM-01`) quando o mês pedido não tem condição vigen
 para um mês futuro (ADR-0155) — `null` quando há condição vigente, quando não existe contrato ou
 quando a prévia falhou. `wallet.totals` traz o recorte `orgs_future_terms`. **Deploy antes do
 frontend**: a tela usa esse campo para não acusar ausência de contrato. Ver o [guia de operação](../how-to/central-organizacoes.md), o
-[ADR-0155](../decisions/0155-central-organizacoes-cobranca-auditavel.md) e o
-[ADR-0158](../decisions/0158-central-carteira-agregada-e-pendencias.md).
+[ADR-0155](../decisions/0155-central-organizacoes-cobranca-auditavel.md), o
+[ADR-0158](../decisions/0158-central-carteira-agregada-e-pendencias.md) e o
+[ADR-0159](../decisions/0159-central-cache-mensal-materializado.md) (Fase 3 do plano de
+performance: `platform_org_month_metrics` cacheia meses fechados; `readOrgMetrics`
+(`_shared/platform-admin/metrics-repository.ts`) faz o read-through/invalidação sozinho — o job
+abaixo só pré-aquece).
+
+`materializar-metricas` pré-aquece `platform_org_month_metrics` para todas as organizações: para
+cada uma, materializa (`materializeRecentMonths`) os últimos 6 meses fechados que estiverem ausentes
+ou com a validação `(count, atualizado_em, tax_config_stamp)` invalidada. Sem este schedule o
+sistema continua correto — o read-through de `readOrgMetrics` materializa sob demanda no primeiro
+acesso — ele só evita que esse primeiro acesso pague o cálculo completo.
 
 
 ## Schedules do QStash (cron + body)
@@ -128,6 +139,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
 | `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
 | `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
+| `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |
 | `pulse-coletar` (tier completo) | `0 9 * * *` | `{"tier":"completo"}` | 2 |
 | `pulse-coletar` (tier quente) | `0 */6 * * *` | `{"tier":"quente"}` | 2 |
 

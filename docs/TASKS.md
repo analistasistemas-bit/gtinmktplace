@@ -2,7 +2,42 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Central de organizações — validação com dados reais e o que ela revelou — 2026-09-07
+## Performance da central de organizações — Fase 3, tabela consolidada de meses fechados — 2026-09-08
+
+Plano completo em [2026-09-07-perf-central-organizacoes.md](superpowers/plans/2026-09-07-perf-central-organizacoes.md).
+Fases 1 (região/CORS/paralelismo) e 2 (colunas mínimas, leitura por mês, catálogo sem duplicata) já
+em produção; esta é a Fase 3 — o gatilho de reavaliação do ADR-0158 ("cache se passar de 3 s com 10
+orgs") já havia sido acionado com 2 orgs (4,3–6,5 s medidos).
+
+- [x] **`platform_org_month_metrics`** (migration `20260908030002_platform_org_month_metrics.sql`) —
+  cache reconstituível de `OrgMetrics` por mês fechado (chave `(org_id, month)` em BRT), RLS
+  habilitada, sem policy (só `service_role`, padrão de `20260906170200_platform_billing.sql`). RPC
+  `platform_org_month_validation(p_org, p_since)` valida em lote (`count`, `max(atualizado_em)`) por
+  `(org_id, mês)` — uma query para a carteira inteira (`p_org` nulo) ou por organização.
+- [x] **`materializeMonth`/`computeMonth`** (`_shared/platform-admin/metrics-repository.ts`) — núcleo
+  único de cálculo de um mês, usado pelo read-through (`resolveMonth`), pelo job
+  (`materializeRecentMonths`) e exposto isolado para o teste de paridade — mesma função, paridade
+  por construção (plano 3.2).
+- [x] **Read-through em `readOrgMetrics`** — mês corrente e mês anterior real sempre ao vivo (nunca
+  lidos do cache, mesmo que validem); os demais meses da série de 6 usam a linha materializada
+  quando `(source_count, source_max_updated_at, tax_config_stamp)` batem, senão recalculam e
+  regravam (só quando custo e config vieram íntegros — uma falha transitória nunca "congela"
+  `markup: null`). `loadMetricsCache` faz UMA leitura de cache + UMA validação para a carteira
+  inteira (`repository.ts` `wallet`), não por organização.
+- [x] **Edge `materializar-metricas`** (`verify_jwt=false`, assinatura QStash) — pré-aquecimento
+  diário (schedule fora do repo, ver `docs/reference/edge-functions.md`); sem ela o sistema continua
+  correto, o read-through materializa sob demanda.
+- [x] **ADR-0159** — tabela é cache, não demonstrativo; invalidação sem trigger; deriva de catálogo
+  aceita e medida (0,1 % em 6 meses); gatilho do ADR-0158 registrado como acionado.
+- [x] 17 testes novos/ajustados em `metrics-repository.test.ts` cobrindo: cache válido reaproveitado,
+  invalidação por count, por `atualizado_em`, por config tributária, mês corrente nunca gravado,
+  paridade `materializeMonth`×`readOrgMetrics`, e o job de pré-aquecimento.
+- [ ] Suíte SQL (`supabase/tests/platform_commercial.sql`) contra Postgres real não estendida para a
+  Fase 3 nesta entrega — cobertura ficou nos testes de unidade (fake db) acima; container de teste
+  (`codex-platform-admin-test-20260906`) só tem o schema mínimo de `platform_commercial_foundation`,
+  sem `ml_vendas`/`variacoes` que a validação em lote depende.
+- [ ] `supabase db push` e `supabase functions deploy materializar-metricas` pendentes de revisão do
+  orquestrador antes de subir (regra do projeto: não aplicado nesta sessão).
 
 A central foi validada em produção com a sessão do dono, e o primeiro uso real achou o que teste
 e validação visual não acharam. As duas organizações estão contratadas desde então: Avil na

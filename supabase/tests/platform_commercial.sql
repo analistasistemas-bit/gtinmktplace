@@ -349,6 +349,7 @@ create table public.ml_vendas_itens (
 \ir ../migrations/20260907103422_platform_org_cost_catalog.sql
 \ir ../migrations/20260907210746_corrigir_regex_setup_due_month.sql
 \ir ../migrations/20260908022934_platform_org_cost_catalog_distinct.sql
+\ir ../migrations/20260908030002_platform_org_month_metrics.sql
 
 -- Implantacao > 0: o unico caminho que valida `setup_due_month`. Todos os casos acima usam
 -- `setup_fee_cents = 0`, e foi por isso que a regex quebrada (escape duplo, que exigia barra
@@ -531,4 +532,108 @@ begin
   exception when insufficient_privilege then null;
   end;
   perform set_config('role', 'none', true);
+end $$;
+
+-- Perf FASE 3 (ADR-0159): platform_org_month_metrics + platform_org_month_validation.
+do $$
+begin
+  begin
+    insert into public.platform_org_month_metrics (
+      org_id, month, gross_cents, orders, ticket_cents, cost_covered_orders, total_orders,
+      source_count, tax_config_stamp
+    ) values (
+      '90000000-0000-0000-0000-000000000001', '2026-08-15', 100, 1, 100, 1, 1, 1, 'unconfirmed'
+    );
+    raise exception 'month que nao e o primeiro dia deveria ter sido recusado pelo check';
+  exception when check_violation then null;
+  end;
+
+  insert into public.platform_org_month_metrics (
+    org_id, month, gross_cents, orders, ticket_cents, cost_covered_orders, total_orders,
+    source_count, tax_config_stamp
+  ) values (
+    '90000000-0000-0000-0000-000000000001', '2026-08-01', 100, 1, 100, 1, 1, 3, 'unconfirmed'
+  );
+
+  begin
+    insert into public.platform_org_month_metrics (
+      org_id, month, gross_cents, orders, ticket_cents, cost_covered_orders, total_orders,
+      source_count, tax_config_stamp
+    ) values (
+      '90000000-0000-0000-0000-000000000001', '2026-08-01', 999, 9, 999, 9, 9, 9, 'outro'
+    );
+    raise exception 'chave primaria (org_id, month) duplicada deveria ter sido recusada';
+  exception when unique_violation then null;
+  end;
+end $$;
+
+-- Sem policy: so service_role. authenticated/anon ficam de fora tanto da tabela quanto da funcao
+-- de validacao (mesmo padrao do platform_org_cost_catalog, acima).
+do $$
+begin
+  perform set_config('role', 'authenticated', true);
+  begin
+    perform 1 from public.platform_org_month_metrics limit 1;
+    raise exception 'authenticated conseguiu ler platform_org_month_metrics';
+  exception when insufficient_privilege then null;
+  end;
+  begin
+    perform * from public.platform_org_month_validation(null, '2026-01-01T00:00:00-03:00');
+    raise exception 'authenticated conseguiu chamar platform_org_month_validation';
+  exception when insufficient_privilege then null;
+  end;
+  perform set_config('role', 'none', true);
+end $$;
+
+-- Validação em lote: agrupa por (org_id, mês fechado em BRT) desde p_since, sem trigger --
+-- reaproveita as vendas já cadastradas para o catálogo de custo acima (org A: c1/c4 em
+-- 2026-08, c3 em 2026-01; mais c5, do bloco DISTINCT ON, também em 2026-08 -- 3 no total;
+-- org B: c2 em 2026-08).
+do $$
+declare
+  v_all jsonb;
+  v_count_aug_a int;
+  v_count_aug_b int;
+  v_count_jan_a int;
+  v_max timestamptz;
+begin
+  select jsonb_agg(to_jsonb(t)) into v_all
+    from public.platform_org_month_validation(null, '2026-01-01T00:00:00-03:00') t;
+
+  select (x->>'source_count')::int into v_count_aug_a from jsonb_array_elements(v_all) x
+    where x->>'org_id' = '90000000-0000-0000-0000-000000000001' and x->>'month' = '2026-08-01';
+  select (x->>'source_count')::int into v_count_jan_a from jsonb_array_elements(v_all) x
+    where x->>'org_id' = '90000000-0000-0000-0000-000000000001' and x->>'month' = '2026-01-01';
+  select (x->>'source_count')::int into v_count_aug_b from jsonb_array_elements(v_all) x
+    where x->>'org_id' = '90000000-0000-0000-0000-000000000002' and x->>'month' = '2026-08-01';
+
+  if v_count_aug_a <> 3 then
+    raise exception 'org A deveria ter 3 vendas em agosto/2026 (c1, c4, c5), veio %', v_count_aug_a;
+  end if;
+  if v_count_jan_a <> 1 then
+    raise exception 'org A deveria ter 1 venda em janeiro/2026 (c3), veio %', v_count_jan_a;
+  end if;
+  if v_count_aug_b <> 1 then
+    raise exception 'org B deveria ter 1 venda em agosto/2026 (c2), veio %', v_count_aug_b;
+  end if;
+
+  -- p_org filtra para uma única organização (usado pela leitura avulsa de organization()/metrics()
+  -- -- a carteira inteira, em `wallet()`, chama com p_org nulo, acima).
+  if exists (
+    select 1 from public.platform_org_month_validation('90000000-0000-0000-0000-000000000001', '2026-01-01T00:00:00-03:00')
+    where org_id = '90000000-0000-0000-0000-000000000002'
+  ) then
+    raise exception 'p_org vazou linha de outra organização';
+  end if;
+
+  -- atualizado_em é o watermark de invalidação (ADR-0159 §3): tocar uma venda de um mês fechado
+  -- precisa aparecer como max(atualizado_em) do balde certo (2026-08, BRT) na próxima validação.
+  update public.ml_vendas set atualizado_em = '2026-08-20T10:00:00-03:00'
+    where id = 'c0000000-0000-0000-0000-000000000001';
+  select source_max_updated_at into v_max from public.platform_org_month_validation(
+    '90000000-0000-0000-0000-000000000001', '2026-01-01T00:00:00-03:00'
+  ) where month = '2026-08-01';
+  if v_max <> '2026-08-20T10:00:00-03:00'::timestamptz then
+    raise exception 'source_max_updated_at não refletiu o atualizado_em mais novo: %', v_max;
+  end if;
 end $$;

@@ -8,10 +8,12 @@ type Page = { data: Record<string, unknown>[] | null; error: DbError };
 type Query = {
   select(columns: string): Query;
   eq(column: string, value: unknown): Query;
+  in(column: string, values: unknown[]): Query;
   gte(column: string, value: unknown): Query;
   lt(column: string, value: unknown): Query;
   order(column: string, options: { ascending: boolean }): Query;
   range(from: number, to: number): Promise<Page>;
+  upsert(row: Record<string, unknown>, options?: { onConflict: string }): Promise<{ error: DbError }>;
 };
 type RpcResult = { data: unknown; error: DbError };
 export type MetricsDb = {
@@ -21,6 +23,10 @@ export type MetricsDb = {
 
 const PAGE_SIZE = 1000;
 const BRT_OFFSET = '-03:00';
+const CACHE_TABLE = 'platform_org_month_metrics';
+const VALIDATION_RPC = 'platform_org_month_validation';
+const CACHE_COLUMNS = 'org_id,month,gross_cents,orders,ticket_cents,markup,cost_covered_orders,total_orders,'
+  + 'updated_at,source_count,source_max_updated_at,tax_config_stamp';
 
 /** Perf FASE 2.1: lista mínima que `readOrgMetrics`/`calcularResumo` de fato leem — não a de
  *  `buscarVendas` (`src/lib/faturamento.ts`), que alimenta telas com mais colunas (Publicados,
@@ -56,6 +62,23 @@ function currentMonth(now: Date): string {
   return `${value.year}-${value.month}`;
 }
 
+/** Perf FASE 3.3: mês fechado (regra de gravação, 3.1) é `value < currentMonth`. Elegível para
+ *  LEITURA do cache é mais estrito: exclui também o mês imediatamente anterior ao real — medido em
+ *  produção que 486 vendas de meses fechados foram tocadas em setembro (devolução/estorno tardios),
+ *  e é justo esse mês que ainda recebe a maior parte das correções. Continua podendo ser GRAVADO
+ *  (write gate, `isClosed`) para já chegar pronto quando deixar de ser "anterior". */
+function isClosed(value: string, now: Date): boolean {
+  return value < currentMonth(now);
+}
+function isCacheEligible(value: string, now: Date): boolean {
+  return isClosed(value, now) && value !== addMonths(currentMonth(now), -1);
+}
+
+/** `YYYY-MM-DD` (coluna `date`) ou `YYYY-MM` → sempre `YYYY-MM`. */
+function monthKey(value: unknown): string {
+  return String(value).slice(0, 7);
+}
+
 async function readPages(build: () => Query): Promise<{ rows: Record<string, unknown>[]; error: DbError }> {
   const rows: Record<string, unknown>[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
@@ -70,17 +93,11 @@ async function readPages(build: () => Query): Promise<{ rows: Record<string, unk
 /** Perf FASE 2.2: uma leitura por mês-calendário, em paralelo, em vez de um único `range` sequencial
  *  sobre a janela inteira. NÃO é count + offsets paralelos (proposta rejeitada na revisão): sem
  *  snapshot comum, venda inserida no meio deslocaria offsets e duplicaria/perderia linha, alterando
- *  número financeiro. Cada mês é uma faixa `gte/lt` fechada e independente de offset — o maior mês
- *  em produção tem 1 135 vendas, só ele paginaria além da primeira página. O limite superior de cada
- *  mês é sempre o calendário cheio (`startOf(mês seguinte)`), igual ao de hoje — o corte por `now`
- *  do mês corrente (`selectedEnd`) continua acontecendo depois, em memória, via `rangeSales`. As
- *  linhas voltam concatenadas na ordem cronológica dos meses (`seriesMonths`), igual à ordem de uma
- *  leitura única — os meses particionam a janela em intervalos disjuntos, então o conjunto e a ordem
- *  são idênticos aos de antes, só o número de round-trips muda. */
+ *  número financeiro. Cada mês é uma faixa `gte/lt` fechada e independente de offset. */
 async function readSalesByMonth(
-  db: MetricsDb, orgId: string, seriesMonths: string[],
+  db: MetricsDb, orgId: string, months: string[],
 ): Promise<{ rows: Record<string, unknown>[]; error: DbError }> {
-  const perMonth = await Promise.all(seriesMonths.map((monthValue) => readPages(() => db.from('ml_vendas')
+  const perMonth = await Promise.all(months.map((monthValue) => readPages(() => db.from('ml_vendas')
     .select(SALES_COLUMNS)
     .eq('org_id', orgId).gte('date_closed', startOf(monthValue)).lt('date_closed', startOf(addMonths(monthValue, 1)))
     .order('date_closed', { ascending: true }).order('id', { ascending: true }))));
@@ -117,9 +134,10 @@ function rangeSales(sales: Venda[], start: string, end: string): Venda[] {
   });
 }
 
+type Rates = { nacional: number; importado: number; ufEmpresa: string | null; internaPct: number | null };
+
 function summarize(
-  sales: Venda[], maps: ReturnType<typeof montarMapasCusto> | undefined,
-  rates: { nacional: number; importado: number; ufEmpresa: string | null; internaPct: number | null } | null,
+  sales: Venda[], maps: ReturnType<typeof montarMapasCusto> | undefined, rates: Rates | null,
   now: Date, costsAvailable: boolean, configAvailable: boolean,
 ): ResumoVendas {
   const summary = calcularResumo(
@@ -132,30 +150,64 @@ function summarize(
 
 function cents(value: number): number { return Math.round(value * 100); }
 
-export async function readOrgMetrics(db: MetricsDb, orgId: string, month: string, now: Date): Promise<OrgMetrics> {
-  if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('month inválido');
-  if (!orgId) throw new Error('org_id inválido');
+// ---------------------------------------------------------------------------------------------
+// Perf FASE 3 (ADR-0159): configuração tributária é lida UMA vez por chamada (não muda por mês) e
+// reaproveitada tanto pelos meses ao vivo quanto por `materializeMonth`/`resolveMonth` abaixo.
+// ---------------------------------------------------------------------------------------------
+type ConfigState = { configAvailable: boolean; rates: Rates | null; configErrored: boolean; errorMessage: string | null };
 
-  const seriesMonths = Array.from({ length: 6 }, (_, index) => addMonths(month, index - 5));
-  const selectedEnd = month === currentMonth(now) ? now.toISOString() : startOf(addMonths(month, 1));
+async function loadConfigState(db: MetricsDb, orgId: string): Promise<ConfigState> {
+  const configResult = await readPages(() => db.from('configuracoes')
+    .select('org_id,aliquota_nacional_pct,aliquota_importado_pct,uf_empresa,aliquota_interna_pct,aliquotas_confirmadas_em')
+    .eq('org_id', orgId).order('org_id', { ascending: true }));
+  // ADR-0158 §6: alíquota nunca é presumida. Sem linha em `configuracoes`, sem
+  // `aliquotas_confirmadas_em` ou sem as alíquotas, o markup sai `null` — jamais 8/16 % (ADR-0055).
+  const config = configResult.error ? null : configResult.rows.find((row) => row.org_id === orgId) ?? null;
+  const configAvailable = !configResult.error && config != null && config.aliquotas_confirmadas_em != null
+    && config.aliquota_nacional_pct != null && config.aliquota_importado_pct != null;
+  const rates: Rates | null = configAvailable && config != null
+    ? {
+      nacional: Number(config.aliquota_nacional_pct), importado: Number(config.aliquota_importado_pct),
+      ufEmpresa: typeof config.uf_empresa === 'string' ? config.uf_empresa : null,
+      internaPct: config.aliquota_interna_pct != null ? Number(config.aliquota_interna_pct) : null,
+    }
+    : null;
+  return { configAvailable, rates, configErrored: !!configResult.error, errorMessage: configResult.error?.message ?? null };
+}
 
-  // As três leituras são independentes entre si (nenhuma consome o resultado da outra — `maps` e
-  // `rates`, abaixo, só são montados depois que as três terminam), então rodam em paralelo
-  // (perf FASE 1.3). ADR-0158 §5: a RPC devolve só as variações que casam com item vendido na
-  // janela da série, em UM round-trip (era `variacoes` inteira, 9 páginas na Avil). Escalar jsonb
-  // de propósito: `returns table` por POST seria truncado no `max_rows=1000` do PostgREST sem erro
-  // nenhum e o markup sairia errado em silêncio.
-  const [salesResult, catalogResult, configResult] = await Promise.all([
-    readSalesByMonth(db, orgId, seriesMonths),
-    db.rpc('platform_org_cost_catalog', { p_org: orgId, p_since: startOf(seriesMonths[0]) }),
-    readPages(() => db.from('configuracoes')
-      .select('org_id,aliquota_nacional_pct,aliquota_importado_pct,uf_empresa,aliquota_interna_pct,aliquotas_confirmadas_em')
-      .eq('org_id', orgId).order('org_id', { ascending: true })),
-  ]);
+/** Assinatura da config usada no cálculo — grava na linha (`tax_config_stamp`) e invalida o cache
+ *  se mudar. `'unconfirmed'` cobre tanto "sem confirmação" quanto "leitura falhou": nos dois casos
+ *  o cálculo ao vivo também produz `markup: null`, então servir uma linha antiga com esse carimbo
+ *  nunca diverge do que o cálculo ao vivo daria hoje. */
+function taxConfigStamp(configState: ConfigState): string {
+  if (!configState.configAvailable || !configState.rates) return 'unconfirmed';
+  const r = configState.rates;
+  return JSON.stringify([r.nacional, r.importado, r.ufEmpresa, r.internaPct]);
+}
+
+type MonthComputed = {
+  gross_cents: number; orders: number; ticket_cents: number; markup: number | null;
+  cost_covered_orders: number; total_orders: number; updated_at: string | null;
+  source_count: number; source_max_updated_at: string | null;
+  costsAvailable: boolean; catalogErrorMessage: string | null;
+};
+
+/** Núcleo único de cálculo de um mês (ou fração de mês, via `end`): busca as vendas de
+ *  `[startOf(month), end)`, o catálogo de custo (`p_since = startOf(month)` — ver prova em
+ *  `platform_org_cost_catalog`: o `IN` do catálogo é por chave, não por linha, então restringir a
+ *  janela ao próprio mês nunca troca o vencedor de uma chave referenciada por uma venda desse mês)
+ *  e resume com `calcularResumo`. `materializeMonth`, o job e o read-through convergem aqui — é
+ *  isso que garante paridade por construção (perf FASE 3.2). */
+async function computeMonth(
+  db: MetricsDb, orgId: string, month: string, now: Date, end: string, configState: ConfigState,
+): Promise<MonthComputed> {
+  const salesResult = await readPages(() => db.from('ml_vendas').select(SALES_COLUMNS)
+    .eq('org_id', orgId).gte('date_closed', startOf(month)).lt('date_closed', end)
+    .order('date_closed', { ascending: true }).order('id', { ascending: true }));
   if (salesResult.error) throw new Error(salesResult.error.message);
   const sales = normalizeSales(salesResult.rows, orgId);
 
-  // Payload que não é array é falha, nunca catálogo vazio: catálogo vazio zera o markup em silêncio.
+  const catalogResult = await db.rpc('platform_org_cost_catalog', { p_org: orgId, p_since: startOf(month) });
   const catalogRows = Array.isArray(catalogResult.data) ? catalogResult.data as Record<string, unknown>[] : null;
   const costsAvailable = !catalogResult.error && catalogRows != null;
   const maps = catalogRows == null || catalogResult.error ? undefined : montarMapasCusto(
@@ -163,63 +215,309 @@ export async function readOrgMetrics(db: MetricsDb, orgId: string, month: string
       .map((row) => ({ ...row, familias: { ml_item_id: row.ml_item_id, origem: row.origem } })),
   );
 
-  // ADR-0158 §6: alíquota nunca é presumida. Sem linha em `configuracoes`, sem
-  // `aliquotas_confirmadas_em` ou sem as alíquotas, o markup sai `null` com aviso — jamais 8/16 %
-  // por padrão (ADR-0055).
-  const config = configResult.error ? null : configResult.rows.find((row) => row.org_id === orgId) ?? null;
-  const configAvailable = !configResult.error && config != null && config.aliquotas_confirmadas_em != null
-    && config.aliquota_nacional_pct != null && config.aliquota_importado_pct != null;
-  const rates = configAvailable && config != null
-    ? {
-      nacional: Number(config.aliquota_nacional_pct),
-      importado: Number(config.aliquota_importado_pct),
-      ufEmpresa: typeof config.uf_empresa === 'string' ? config.uf_empresa : null,
-      internaPct: config.aliquota_interna_pct != null ? Number(config.aliquota_interna_pct) : null,
-    }
-    : null;
-
-  const selected = summarize(rangeSales(sales, startOf(month), selectedEnd), maps, rates, now, costsAvailable, configAvailable);
-  const previousMonth = addMonths(month, -1);
-  const elapsed = Date.parse(selectedEnd) - Date.parse(startOf(month));
-  const previousFullEnd = Date.parse(startOf(month));
-  const previousEndMs = month === currentMonth(now)
-    ? Math.min(Date.parse(startOf(previousMonth)) + elapsed, previousFullEnd)
-    : previousFullEnd;
-  const previous = summarize(
-    rangeSales(sales, startOf(previousMonth), new Date(previousEndMs).toISOString()),
-    maps, rates, now, costsAvailable, configAvailable,
-  );
-
-  // Falha de leitura (não sabemos o custo/alíquota real) é `error`; ausência esperada e acionável
-  // (organização sem confirmar a alíquota) é `warning` — a UI não pode misturar as duas na mesma cor.
-  const warnings: MetricsWarning[] = [];
-  if (!costsAvailable) {
-    warnings.push({
-      code: 'cost_catalog_read_failed', severity: 'error',
-      message: `Falha ao carregar os custos: ${catalogResult.error?.message ?? 'catálogo em formato inesperado'}`,
-    });
-  }
-  if (configResult.error) {
-    warnings.push({
-      code: 'tax_config_read_failed', severity: 'error',
-      message: `Falha ao carregar a configuração tributária: ${configResult.error.message}`,
-    });
-  } else if (!configAvailable) {
-    warnings.push({ code: 'tax_config_unconfirmed', severity: 'warning', message: 'Configuração tributária não confirmada' });
-  }
-  const updated = rangeSales(sales, startOf(month), selectedEnd).map((sale) => sale.atualizado_em).filter(Boolean).sort().at(-1) ?? null;
+  const summary = summarize(sales, maps, configState.rates, now, costsAvailable, configState.configAvailable);
+  const updated = sales.map((sale) => sale.atualizado_em).filter(Boolean).sort().at(-1) ?? null;
 
   return {
-    org_id: orgId, month, gross_cents: cents(selected.bruto), orders: selected.pedidos,
-    ticket_cents: cents(selected.ticket), markup: selected.markup,
-    cost_covered_orders: selected.vendasComCusto, total_orders: selected.totalVendas,
-    active_ads: null, publications: null, pending_operations: null, updated_at: updated,
-    previous: { gross_cents: cents(previous.bruto), orders: previous.pedidos, markup: previous.markup },
-    series: seriesMonths.map((value) => {
-      const end = value === month ? selectedEnd : startOf(addMonths(value, 1));
-      const summary = summarize(rangeSales(sales, startOf(value), end), maps, rates, now, costsAvailable, configAvailable);
-      return { month: value, gross_cents: cents(summary.bruto), markup: summary.markup };
-    }),
+    gross_cents: cents(summary.bruto), orders: summary.pedidos, ticket_cents: cents(summary.ticket),
+    markup: summary.markup, cost_covered_orders: summary.vendasComCusto, total_orders: summary.totalVendas,
+    updated_at: updated, source_count: sales.length, source_max_updated_at: updated,
+    costsAvailable,
+    catalogErrorMessage: catalogResult.error?.message ?? (catalogRows == null ? 'catálogo em formato inesperado' : null),
+  };
+}
+
+export type MaterializedMonth = {
+  org_id: string; month: string; gross_cents: number; orders: number; ticket_cents: number;
+  markup: number | null; cost_covered_orders: number; total_orders: number; updated_at: string | null;
+  source_count: number; source_max_updated_at: string | null; tax_config_stamp: string;
+  /** Íntegro o bastante p/ persistir (nunca grava um mês calculado sob falha — ver `resolveMonth`). */
+  costs_ok: boolean; config_ok: boolean;
+};
+
+/** Perf FASE 3.2: `readOrgMetrics` restrito a UM mês fechado — mesmo `computeMonth` que alimenta o
+ *  read-through (`resolveMonth`), então o job (`materializar-metricas`) e a leitura ao vivo nunca
+ *  podem divergir por implementação duplicada. Usado standalone pelo job e testado contra
+ *  `readOrgMetrics` (paridade, com cache vazio) no teste de unidade. */
+export async function materializeMonth(db: MetricsDb, orgId: string, month: string, now: Date): Promise<MaterializedMonth> {
+  const configState = await loadConfigState(db, orgId);
+  const computed = await computeMonth(db, orgId, month, now, startOf(addMonths(month, 1)), configState);
+  return {
+    org_id: orgId, month, gross_cents: computed.gross_cents, orders: computed.orders,
+    ticket_cents: computed.ticket_cents, markup: computed.markup, cost_covered_orders: computed.cost_covered_orders,
+    total_orders: computed.total_orders, updated_at: computed.updated_at, source_count: computed.source_count,
+    source_max_updated_at: computed.source_max_updated_at, tax_config_stamp: taxConfigStamp(configState),
+    costs_ok: computed.costsAvailable, config_ok: !configState.configErrored,
+  };
+}
+
+type CachedMonthRow = {
+  gross_cents: number; orders: number; ticket_cents: number; markup: number | null;
+  cost_covered_orders: number; total_orders: number; updated_at: string | null;
+  source_count: number; source_max_updated_at: string | null; tax_config_stamp: string;
+};
+type MonthValidation = { count: number; maxUpdatedAt: string | null };
+
+/** Cache carregado para um conjunto de organizações + mês exibido — ver `loadMetricsCache`. */
+export type MetricsCache = { cachedRows: Map<string, CachedMonthRow>; validation: Map<string, MonthValidation> };
+const EMPTY_CACHE: MetricsCache = { cachedRows: new Map(), validation: new Map() };
+const cacheKey = (orgId: string, month: string) => `${orgId}|${month}`;
+
+/** PostgREST devolve `numeric`/`bigint` como string — sem essa coerção um hit de cache muda o TIPO
+ *  do campo (ex.: `markup: "0.44"`) e o diff campo a campo da trava de aceite quebra sozinho. */
+function toCachedRow(row: Record<string, unknown>): CachedMonthRow {
+  return {
+    gross_cents: Number(row.gross_cents), orders: Number(row.orders), ticket_cents: Number(row.ticket_cents),
+    markup: row.markup == null ? null : Number(row.markup),
+    cost_covered_orders: Number(row.cost_covered_orders), total_orders: Number(row.total_orders),
+    updated_at: row.updated_at == null ? null : String(row.updated_at),
+    source_count: Number(row.source_count),
+    source_max_updated_at: row.source_max_updated_at == null ? null : String(row.source_max_updated_at),
+    tax_config_stamp: String(row.tax_config_stamp),
+  };
+}
+
+/** Perf FASE 3.3: UMA leitura da tabela materializada + (só se houver linha candidata) UMA
+ *  validação por RPC, para a CARTEIRA INTEIRA (`orgIds` de mais de uma organização, `p_org: null` —
+ *  nunca por org). Sem linha candidata, a validação nem roda: nada a validar, tudo cai no cálculo
+ *  ao vivo, sem round-trip extra (é o caso de hoje, cache frio — mantém os testes antigos intactos).
+ *  Nunca lança: qualquer falha devolve cache vazio e tudo vira ao vivo (nunca zero silencioso). */
+export async function loadMetricsCache(db: MetricsDb, orgIds: string[], month: string, now: Date): Promise<MetricsCache> {
+  if (!orgIds.length) return EMPTY_CACHE;
+  const seriesMonths = Array.from({ length: 6 }, (_, index) => addMonths(month, index - 5));
+  const eligible = seriesMonths.filter((value) => isCacheEligible(value, now));
+  if (!eligible.length) return EMPTY_CACHE;
+  try {
+    // A coluna `month` é `date` (`YYYY-MM-DD`) — postgres não aceita `YYYY-MM` como literal de data,
+    // então o filtro precisa do dia (`-01`); as chaves internas do cache continuam em `YYYY-MM`
+    // (`monthKey`, abaixo), formato de todo o resto deste arquivo.
+    const cached = await readPages(() => db.from(CACHE_TABLE).select(CACHE_COLUMNS)
+      .in('org_id', orgIds).in('month', eligible.map((value) => `${value}-01`)));
+    if (cached.error || cached.rows.length === 0) return EMPTY_CACHE;
+    const cachedRows = new Map<string, CachedMonthRow>();
+    for (const row of cached.rows) cachedRows.set(cacheKey(String(row.org_id), monthKey(row.month)), toCachedRow(row));
+
+    const validationResult = await db.rpc(VALIDATION_RPC, {
+      p_org: orgIds.length === 1 ? orgIds[0] : null, p_since: startOf(seriesMonths[0]),
+    });
+    if (validationResult.error || !Array.isArray(validationResult.data)) return { cachedRows, validation: new Map() };
+    const validation = new Map<string, MonthValidation>();
+    for (const row of validationResult.data as Record<string, unknown>[]) {
+      validation.set(cacheKey(String(row.org_id), monthKey(row.month)), {
+        count: Number(row.source_count),
+        maxUpdatedAt: row.source_max_updated_at == null ? null : String(row.source_max_updated_at),
+      });
+    }
+    return { cachedRows, validation };
+  } catch {
+    return EMPTY_CACHE;
+  }
+}
+
+type ResolvedMonth = {
+  gross_cents: number; orders: number; ticket_cents: number; markup: number | null;
+  cost_covered_orders: number; total_orders: number; updated_at: string | null;
+  costsAvailable: boolean; catalogErrorMessage: string | null;
+};
+
+async function upsertMonth(
+  db: MetricsDb, orgId: string, month: string, computed: MonthComputed, stamp: string, now: Date,
+): Promise<void> {
+  await db.from(CACHE_TABLE).upsert({
+    org_id: orgId, month: `${month}-01`, gross_cents: computed.gross_cents, orders: computed.orders,
+    ticket_cents: computed.ticket_cents, markup: computed.markup, cost_covered_orders: computed.cost_covered_orders,
+    total_orders: computed.total_orders, updated_at: computed.updated_at, source_count: computed.source_count,
+    source_max_updated_at: computed.source_max_updated_at, tax_config_stamp: stamp, computed_at: now.toISOString(),
+  }, { onConflict: 'org_id,month' });
+}
+
+/** Perf FASE 3.3: resolve UM mês fechado — cache válido → usa; ausente ou inválido →
+ *  `computeMonth` (mesmo núcleo de `materializeMonth`) + upsert. Gravar só quando custo E config
+ *  vieram íntegros: uma falha transitória de catálogo geraria `markup: null` "congelado" para
+ *  sempre num mês que nunca mais recalcula sozinho (config-inconfirmada já se autocorrige pelo
+ *  carimbo, catálogo não tem carimbo equivalente). Nunca lança: erro no upsert é best-effort. */
+async function resolveMonth(
+  db: MetricsDb, orgId: string, value: string, now: Date, cache: MetricsCache, configState: ConfigState,
+): Promise<ResolvedMonth> {
+  if (isCacheEligible(value, now)) {
+    const key = cacheKey(orgId, value);
+    const cached = cache.cachedRows.get(key);
+    const validation = cache.validation.get(key);
+    if (cached && validation && cached.source_count === validation.count
+      && cached.source_max_updated_at === validation.maxUpdatedAt
+      && cached.tax_config_stamp === taxConfigStamp(configState)) {
+      return {
+        gross_cents: cached.gross_cents, orders: cached.orders, ticket_cents: cached.ticket_cents,
+        markup: cached.markup, cost_covered_orders: cached.cost_covered_orders, total_orders: cached.total_orders,
+        updated_at: cached.updated_at, costsAvailable: true, catalogErrorMessage: null,
+      };
+    }
+  }
+  const computed = await computeMonth(db, orgId, value, now, startOf(addMonths(value, 1)), configState);
+  if (isClosed(value, now) && computed.costsAvailable && !configState.configErrored) {
+    try {
+      await upsertMonth(db, orgId, value, computed, taxConfigStamp(configState), now);
+    } catch { /* best-effort: o valor ao vivo já está correto, só o pré-aquecimento falhou */ }
+  }
+  return computed;
+}
+
+/** Perf FASE 3.4: pré-aquecimento (job `materializar-metricas`, QStash diário). Materializa, para
+ *  UMA organização, os últimos 6 meses fechados que estiverem ausentes ou inválidos — inclui o mês
+ *  anterior real (write gate = `isClosed`, mais amplo que a leitura), para já chegar pronto quando
+ *  ele deixar de ser "anterior". Sem o job o sistema continua correto (o read-through materializa
+ *  na hora); ele só evita que o primeiro operador a abrir o mês pague o cálculo ao vivo. Nunca
+ *  lança: falha de leitura do cache vira "materializar tudo de novo", falha de materialização de UM
+ *  mês vira "pular esse mês e seguir os outros". */
+export async function materializeRecentMonths(
+  db: MetricsDb, orgId: string, now: Date,
+): Promise<{ materialized: string[]; skipped: string[] }> {
+  const cur = currentMonth(now);
+  const months = Array.from({ length: 6 }, (_, index) => addMonths(cur, -(index + 1)));
+  const configState = await loadConfigState(db, orgId);
+  const stamp = taxConfigStamp(configState);
+
+  const cachedRows = new Map<string, CachedMonthRow>();
+  const validation = new Map<string, MonthValidation>();
+  try {
+    const cached = await readPages(() => db.from(CACHE_TABLE).select(CACHE_COLUMNS)
+      .eq('org_id', orgId).in('month', months.map((value) => `${value}-01`)));
+    if (!cached.error) for (const row of cached.rows) cachedRows.set(monthKey(row.month), toCachedRow(row));
+    if (cachedRows.size > 0) {
+      const validationResult = await db.rpc(VALIDATION_RPC, { p_org: orgId, p_since: startOf(months[months.length - 1]) });
+      if (!validationResult.error && Array.isArray(validationResult.data)) {
+        for (const row of validationResult.data as Record<string, unknown>[]) {
+          validation.set(monthKey(row.month), {
+            count: Number(row.source_count),
+            maxUpdatedAt: row.source_max_updated_at == null ? null : String(row.source_max_updated_at),
+          });
+        }
+      }
+    }
+  } catch { /* cache ilegível: trata como tudo ausente, materializa de novo — nunca falha o job */ }
+
+  const materialized: string[] = [];
+  const skipped: string[] = [];
+  await Promise.all(months.map(async (value) => {
+    const cached = cachedRows.get(value);
+    const check = validation.get(value);
+    const valid = !!cached && !!check && cached.source_count === check.count
+      && cached.source_max_updated_at === check.maxUpdatedAt && cached.tax_config_stamp === stamp;
+    if (valid) return;
+    try {
+      const computed = await computeMonth(db, orgId, value, now, startOf(addMonths(value, 1)), configState);
+      if (computed.costsAvailable && !configState.configErrored) {
+        await upsertMonth(db, orgId, value, computed, stamp, now);
+        materialized.push(value);
+      } else {
+        skipped.push(value);
+      }
+    } catch {
+      skipped.push(value);
+    }
+  }));
+  return { materialized, skipped };
+}
+
+export async function readOrgMetrics(
+  db: MetricsDb, orgId: string, month: string, now: Date, cache?: MetricsCache,
+): Promise<OrgMetrics> {
+  if (!/^[0-9]{4}-(0[1-9]|1[0-2])$/.test(month)) throw new Error('month inválido');
+  if (!orgId) throw new Error('org_id inválido');
+
+  const seriesMonths = Array.from({ length: 6 }, (_, index) => addMonths(month, index - 5));
+  const isCurrent = month === currentMonth(now);
+  const previousMonth = addMonths(month, -1);
+  const selectedEnd = isCurrent ? now.toISOString() : startOf(addMonths(month, 1));
+
+  const [configState, effectiveCache] = await Promise.all([
+    loadConfigState(db, orgId),
+    cache ?? loadMetricsCache(db, [orgId], month, now),
+  ]);
+
+  let selected: ResolvedMonth;
+  let previous: ResolvedMonth;
+  // Mapa dos 6 meses da série já resolvidos (evita recomputar `month`/`previousMonth`).
+  const seriesByMonth = new Map<string, ResolvedMonth>();
+
+  if (isCurrent) {
+    // Perf FASE 3.3: mês corrente e mês anterior real são SEMPRE ao vivo — nunca lidos do cache,
+    // mesmo que uma linha exista e valide (a leitura simplesmente não tenta: `isCacheEligible`
+    // exclui os dois). `previousMonth` é buscado UMA vez (mês cheio) e fatiado de duas formas: para
+    // `.previous` (parcial, mesmo tempo decorrido do mês corrente) e para a última posição "cheia"
+    // da série — herda a estrutura do código anterior à FASE 3, só com a janela de busca reduzida a
+    // estes 2 meses (os outros 4 resolvem por `resolveMonth`, abaixo).
+    const salesResult = await readSalesByMonth(db, orgId, [previousMonth, month]);
+    if (salesResult.error) throw new Error(salesResult.error.message);
+    const sales = normalizeSales(salesResult.rows, orgId);
+    const catalogResult = await db.rpc('platform_org_cost_catalog', { p_org: orgId, p_since: startOf(previousMonth) });
+    const catalogRows = Array.isArray(catalogResult.data) ? catalogResult.data as Record<string, unknown>[] : null;
+    const costsAvailable = !catalogResult.error && catalogRows != null;
+    const maps = catalogRows == null || catalogResult.error ? undefined : montarMapasCusto(
+      catalogRows.filter((row) => sameOrg(row, orgId))
+        .map((row) => ({ ...row, familias: { ml_item_id: row.ml_item_id, origem: row.origem } })),
+    );
+    const catalogErrorMessage = catalogResult.error?.message ?? (catalogRows == null ? 'catálogo em formato inesperado' : null);
+
+    const toResolved = (rows: Venda[]): ResolvedMonth => {
+      const summary = summarize(rows, maps, configState.rates, now, costsAvailable, configState.configAvailable);
+      const updated = rows.map((sale) => sale.atualizado_em).filter(Boolean).sort().at(-1) ?? null;
+      return {
+        gross_cents: cents(summary.bruto), orders: summary.pedidos, ticket_cents: cents(summary.ticket),
+        markup: summary.markup, cost_covered_orders: summary.vendasComCusto, total_orders: summary.totalVendas,
+        updated_at: updated, costsAvailable, catalogErrorMessage,
+      };
+    };
+
+    selected = toResolved(rangeSales(sales, startOf(month), selectedEnd));
+    const elapsed = Date.parse(selectedEnd) - Date.parse(startOf(month));
+    const previousFullEnd = Date.parse(startOf(month));
+    const previousEndMs = Math.min(Date.parse(startOf(previousMonth)) + elapsed, previousFullEnd);
+    previous = toResolved(rangeSales(sales, startOf(previousMonth), new Date(previousEndMs).toISOString()));
+    seriesByMonth.set(month, selected);
+    seriesByMonth.set(previousMonth, toResolved(rangeSales(sales, startOf(previousMonth), startOf(month))));
+  } else {
+    // Mês exibido é um mês fechado normal: `month` e `previousMonth` passam pelo mesmo resolvedor
+    // de cache/materialização que qualquer outro ponto da série (nenhum dos dois precisa de
+    // fatiamento parcial fora do caso "mês corrente" acima).
+    [selected, previous] = await Promise.all([
+      resolveMonth(db, orgId, month, now, effectiveCache, configState),
+      resolveMonth(db, orgId, previousMonth, now, effectiveCache, configState),
+    ]);
+    seriesByMonth.set(month, selected);
+    seriesByMonth.set(previousMonth, previous);
+  }
+
+  const seriesResolved = await Promise.all(seriesMonths.map((value) =>
+    seriesByMonth.get(value) ?? resolveMonth(db, orgId, value, now, effectiveCache, configState)));
+
+  // Falha de leitura (não sabemos o custo/alíquota real) é `error`; ausência esperada e acionável
+  // (organização sem confirmar a alíquota) é `warning` — a UI não pode misturar as duas na mesma
+  // cor. Derivadas do mês EXIBIDO (`selected`): um cache hit não tentou ler catálogo nesta chamada,
+  // logo não há o que reportar como falha — `warnings` continua sendo do leitor, nunca da tabela.
+  const warnings: MetricsWarning[] = [];
+  if (!selected.costsAvailable) {
+    warnings.push({
+      code: 'cost_catalog_read_failed', severity: 'error',
+      message: `Falha ao carregar os custos: ${selected.catalogErrorMessage ?? 'catálogo em formato inesperado'}`,
+    });
+  }
+  if (configState.configErrored) {
+    warnings.push({
+      code: 'tax_config_read_failed', severity: 'error',
+      message: `Falha ao carregar a configuração tributária: ${configState.errorMessage}`,
+    });
+  } else if (!configState.configAvailable) {
+    warnings.push({ code: 'tax_config_unconfirmed', severity: 'warning', message: 'Configuração tributária não confirmada' });
+  }
+
+  return {
+    org_id: orgId, month, gross_cents: selected.gross_cents, orders: selected.orders,
+    ticket_cents: selected.ticket_cents, markup: selected.markup,
+    cost_covered_orders: selected.cost_covered_orders, total_orders: selected.total_orders,
+    active_ads: null, publications: null, pending_operations: null, updated_at: selected.updated_at,
+    previous: { gross_cents: previous.gross_cents, orders: previous.orders, markup: previous.markup },
+    series: seriesMonths.map((value, index) => ({ month: value, gross_cents: seriesResolved[index].gross_cents, markup: seriesResolved[index].markup })),
     warnings,
   };
 }
