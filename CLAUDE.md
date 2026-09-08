@@ -95,6 +95,7 @@ Prioridade MCP: supabase-mcp-server, upstash, render, shadcn, context7.
 
 - Quando Diego pedir merge ("atualizar", "merge na main", "manda pra main"), **o agente executa o merge e o push na `main`** — em qualquer modo de execução, inclusive background job, cloud agent ou subagente. Nunca responder "clique no botão Merge no GitHub" nem "rode numa sessão não-background".
 - Pré-requisito único do merge: **CI verde** (`frontend`, `backend-lint`). A `main` não exige PR nem review — só esses checks (`enforce_admins: true`). Caminho: branch → push → CI verde → merge fast-forward. Nunca `--admin` sobre check vermelho, nunca force-push.
+- **Deploy obrigatório de Edge Functions e Migrations:** Ao sugerir ou executar merge, **SEMPRE verificar se houve alteração em `supabase/functions/**` (ou `_shared/`) ou `supabase/migrations/**`**. O CI do GitHub Actions apenas valida código e testes — **NÃO faz deploy no Supabase**. Se houve alteração em backend, executar obrigatoriamente o deploy das Edge Functions afetadas (`supabase functions deploy <funcoes>`) e/ou migrations (`supabase db push`), confirmando a nova versão ativa. Nunca considere ou sugira conclusão sem o deploy em produção.
 - **Abrir PR é decisão do agente** (regra antiga de "nunca abrir PR sem pedido" revogada em 2026-08-05): usar PR quando for o melhor caminho, merge direto quando for mais simples. PR aberto vai até o merge — não substitui o merge nem fica órfão.
 - Após o merge: deletar a branch e remover a worktree.
 
