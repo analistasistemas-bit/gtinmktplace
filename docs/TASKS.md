@@ -21,10 +21,12 @@ Origem: o ML ofereceu "Oferecer preço por variação" no anúncio Tecido Oxford
   UP; Publicados mostra faixa min–max e rotula `(1ª cor)` o preço ao vivo.
 - [x] **F6 — documentação** — ADR-0160; notas de correção em 0078/0016/0041; `edge-functions.md`;
   índice de ADRs do vault.
-- [ ] **Validação real (Diego)** — família de teste com 2 cores e preços diferentes → migrar pelo
-  painel → "Atualizar tudo" e conferir por `GET /items/{id}` que cada item ficou com o SEU preço →
-  "Somente estoque" e conferir que nada mudou → movimentar estoque de 1 cor → conferir a faixa em
-  Publicados. **Não usar o Oxford 10m** (decisão de 08/09).
+- [ ] **Validação real (Diego)** — a ordem importa (anúncio Legacy não aceita 2 preços): publicar
+  família de teste com 2 cores **no mesmo preço** → migrar pelo painel do ML → publicar uma vez como
+  **"somente estoque"** (é o que faz o app adotar a migração) → só então dar preços diferentes e
+  publicar com "Atualizar tudo" → conferir por `GET /items/{id}` que cada item ficou com o SEU preço
+  → "Somente estoque" e conferir que nada mudou → movimentar estoque de 1 cor → conferir a faixa em
+  Publicados. Roteiro completo no plano. **Não usar o Oxford 10m** (decisão de 08/09).
 - [ ] **Deploy** — `supabase functions deploy` das funções afetadas no merge (o CI não deploya).
 
 ## Incidente — venda de kit vinculado não baixava estoque (ADR-0151) — 2026-09-08

@@ -120,6 +120,69 @@ describe('processarAtualizacaoFamilia — roteamento UP vs Legacy', () => {
     expect(finalizou).toBe(true);
   });
 
+  // ADR-0160 (I1/I2) — a trava de preço uniforme saiu de antes do roteamento e foi para dentro do
+  // ramo Legacy. Estes dois testes vivem no WORKER de propósito: os testes de unidade do guard
+  // continuariam verdes se alguém devolvesse a chamada para antes do roteamento, e o efeito seria
+  // exatamente o bug que esta entrega corrige — família User Products barrada por um preço
+  // divergente que ela tem todo direito de ter.
+  it('I2: família UP com preços DIVERGENTES atravessa o worker (não é barrada pelo guard Legacy)', async () => {
+    const divergentes = [
+      { ...VAR_CASADA, ml_variation_id: null },
+      { ...VAR_CASADA, codigo: 'V2', ml_variation_id: null, preco_publicacao: 45.5 },
+    ];
+    const { admin } = fakeAdmin({
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1' }],
+      variacoes: divergentes,
+    });
+    const upArgs: Array<Record<string, unknown>> = [];
+    const deps = baseDeps(admin, {
+      atualizarUP: async (a): Promise<ResultadoAtualizarUP> => { upArgs.push(a as never); return { estado: 'ok', adicionadas: 0 }; },
+    });
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(upArgs).toHaveLength(1);
+    expect(r.tipo).toBe('ok');
+  });
+
+  it('I1: família LEGACY com preços divergentes continua sendo barrada (400), sem chamar o ML', async () => {
+    const divergentes = [
+      { ...VAR_CASADA },
+      { ...VAR_CASADA, codigo: 'V2', ml_variation_id: 'MLV2', preco_publicacao: 45.5 },
+    ];
+    const { admin } = fakeAdmin({ raizUP: null, itensUP: [], variacoes: divergentes });
+    const deps = baseDeps(admin);
+    const r = await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('erro');
+    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'atualizarAnuncio')).toHaveLength(0);
+  });
+
+  // ADR-0160 (I10) — `preservarPublicadas` subiu para antes do roteamento. Sem este assert,
+  // devolvê-lo para depois do `return rodarUP` (o bug B4) passaria despercebido: o teste de unidade
+  // da saga continuaria verde porque recebe o parâmetro diretamente.
+  it('I10: fluxo "adicionar variação" propaga preservarPublicadas para a rota UP', async () => {
+    const { admin } = fakeAdmin({
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1' }],
+      lote: { origem: 'manual' },
+    });
+    const upArgs: Array<Record<string, unknown>> = [];
+    const deps = baseDeps(admin, {
+      atualizarUP: async (a): Promise<ResultadoAtualizarUP> => { upArgs.push(a as never); return { estado: 'ok', adicionadas: 1 }; },
+    });
+    await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(upArgs[0].preservarPublicadas).toBe(true);
+  });
+
+  it('lote normal (não-manual) não liga preservarPublicadas na rota UP', async () => {
+    const { admin } = fakeAdmin({
+      raizUP: { id: 'root-1', titulo: 'T', criado_em: null }, itensUP: [{ id: 'it-1' }],
+    });
+    const upArgs: Array<Record<string, unknown>> = [];
+    const deps = baseDeps(admin, {
+      atualizarUP: async (a): Promise<ResultadoAtualizarUP> => { upArgs.push(a as never); return { estado: 'ok', adicionadas: 0 }; },
+    });
+    await processarAtualizacaoFamilia(deps, JOB, { tentativas: 0 });
+    expect(upArgs[0].preservarPublicadas).toBe(false);
+  });
+
   it('fix round 1: rota UP com módulo fiscal ativo e cadastro completo → enfileira o push fiscal', async () => {
     const { admin } = fakeAdmin({
       familia: FAMILIA_FISCAL_OK, modulosHabilitados: ['fiscal'],

@@ -118,11 +118,29 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   );
   const precoRaw = variacoes.find((v) => v.preco_publicacao != null)?.preco_publicacao;
   const precoFamilia = precoRaw != null ? Number(precoRaw) : null;
-  // I7: cores com config PRÓPRIA de desconto/atacado (ADR-0078 F2 grava por variação quando os
+  // I7: cores cujo ATACADO difere do da família (ADR-0078 F2 grava config por variação quando os
   // preços divergem). O caminho UP só sabe aplicar a config família-level — honrar metade seria
-  // publicar dinheiro diferente do configurado. `null` = herda a família e não conta.
+  // publicar dinheiro diferente do configurado.
+  //
+  // Divergência é valor DIFERENTE, não "coluna preenchida". `ConfigGruposPreco` grava `[]` explícito
+  // ao desmarcar o atacado e `exibir_com_desconto: false` ao desmarcar o desconto — ambos não-nulos
+  // (null ali significaria "herdar", que dispara LOUD no publish do split). Com um teste de
+  // `!= null`, qualquer família que um dia passou por aquele editor ficaria com o atacado recusado
+  // PARA SEMPRE ao migrar para UP — e sem saída, porque a UI esconde o editor de faixas sob UP.
+  //
+  // Só `atacado` entra: sob User Products o ML não aceita desconto apenas visual (o CREATE recusa
+  // com DESCONTO_INCOMPATIVEL), então `exibir_com_desconto`/`desconto_pct` por cor não têm efeito
+  // neste caminho e não podem bloquear o PxQ.
+  const faixasCanonicas = (v: unknown): string => {
+    if (!Array.isArray(v)) return '';
+    return [...v as Array<{ min_unidades?: number; desconto_pct?: number }>]
+      .map((f) => `${Number(f?.min_unidades ?? 0)}:${Number(f?.desconto_pct ?? 0)}`)
+      .sort()
+      .join('|');
+  };
+  const atacadoDaFamilia = faixasCanonicas(familia.atacado);
   const configPorCor = variacoes
-    .filter((v) => v.exibir_com_desconto != null || v.desconto_pct != null || v.atacado != null)
+    .filter((v) => v.atacado != null && faixasCanonicas(v.atacado) !== atacadoDaFamilia)
     .map((v) => v.codigo);
 
   // family_id esperado: das cores vivas (não-retiradas) já confirmadas — valida a cor nova.
@@ -436,7 +454,12 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
         if (aplicandoFaixas && precoFamilia == null) {
           const m = 'Atacado sem preço-base: sem preço novo nem preço vivo conhecido';
           await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
-        } else if (configPorCor.length > 0) {
+        } else if (aplicandoFaixas && configPorCor.length > 0) {
+          // `aplicandoFaixas &&` é essencial: sem ele, uma família com `atacado_status='aplicado'` e
+          // faixas REMOVIDAS (o operador desligou o atacado) caía aqui e nunca chegava ao ramo que
+          // LIMPA o PxQ no ML. Resultado: o app diria "erro" e o Mercado Livre seguiria vendendo no
+          // atacado — dinheiro vivo divergindo do que o operador configurou. Desligar tem que
+          // limpar, mesmo havendo config por cor.
           // ADR-0160 (I7) — a Revisão grava config de desconto/atacado POR VARIAÇÃO
           // (`variacoes.exibir_com_desconto` / `desconto_pct` / `atacado`, ADR-0078 F2) quando os
           // preços divergem, mas o caminho UP lê só `familia.atacado`. Sem esta trava o operador

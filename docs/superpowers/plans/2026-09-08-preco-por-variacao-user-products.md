@@ -294,13 +294,25 @@ couber, sai como pendência escrita no ADR.
 6. Segunda revisão do Fable sobre o diff completo, antes de propor merge.
 
 **Validação real (Diego executa — não no Oxford):**
-1. Família de teste com 2 cores e preços diferentes.
-2. Migrar pelo painel ("Oferecer preço por variação").
-3. "Atualizar tudo" no app → `GET /items/{id}` de cada filho mostra **o preço daquele filho**.
-4. "Somente estoque" → nenhum preço muda.
-5. Movimentar estoque de uma cor → só ela muda no ML.
-6. Publicados mostra faixa, não um preço só.
-7. Rodar um UPDATE **durante** a migração → o app recusa (I9), não publica.
+
+A ordem importa. Um anúncio Legacy **não pode** ter duas cores com preços diferentes — é a restrição
+que o split existe para contornar. Então a família de teste nasce **uniforme**, migra, e só depois
+recebe preços distintos:
+
+1. Publicar uma família de teste com 2 cores **no mesmo preço**.
+2. Migrar pelo painel do ML ("Oferecer preço por variação") e esperar concluir.
+3. Publicar uma vez como **"somente estoque"** — é o que faz o app adotar a migração (a família passa
+   a ter itens em `anuncios_externos_itens`). Conferir na tela Publicados que o produto continua lá.
+4. Agora sim: dar **preços diferentes** às duas cores na Revisão e publicar com **"Atualizar tudo"**.
+   Conferir por `GET /items/{id}` de cada filho que **cada item ficou com o SEU preço**.
+5. "Somente estoque" de novo → nenhum preço muda no ML.
+6. Movimentar estoque de uma cor → só ela muda.
+7. Publicados mostra a faixa (`R$ x – R$ y`), não um preço só.
+8. Se conseguir pegar a janela: rodar um UPDATE **durante** a migração → o app recusa (I9) e não
+   publica nada.
+
+Se o passo 4 for tentado **antes** do 3, o app recusa com a mensagem que ensina exatamente o passo 3
+— é o comportamento esperado, não um erro.
 
 ---
 

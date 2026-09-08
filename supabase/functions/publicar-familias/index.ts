@@ -135,7 +135,7 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
       }
       for (const r of itensUP ?? []) paisUP.add(r.codigo_pai as string);
     }
-    const ehSplit = (familiaId: string) => {
+    const ehSplit = (familiaId: string, somenteEstoque = false) => {
       const precos = precosPorFamilia.get(familiaId) ?? [];
       const pai = paiPorFamilia.get(familiaId) ?? '';
       return decidirSplit({
@@ -143,6 +143,7 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
         precosCentavos: precos,
         qtdParticoes: particoesPorPai.get(pai) ?? 0,
         ehUP: paisUP.has(pai),
+        somenteEstoque,
       });
     };
 
@@ -158,7 +159,7 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
       ...(updates ?? []).map((f) => {
         // ADR-0078 F1: propaga a escolha "somente estoque" resolvida por família (global±override).
         const somenteEstoque = resolverSomenteEstoque(f.id, somenteEstoqueGlobal, somenteEstoqueOverrides);
-        const ehS = ehSplit(f.id);
+        const ehS = ehSplit(f.id, somenteEstoque);
         return {
           f,
           alvo: (ehS ? 'split' : 'update') as AlvoPublicacao,

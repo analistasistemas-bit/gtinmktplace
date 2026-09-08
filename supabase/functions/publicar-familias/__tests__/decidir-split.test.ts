@@ -47,3 +47,31 @@ describe('decidirSplit — família User Products (ADR-0160)', () => {
     expect(decidirSplit({ qtdCores: 2, precosCentavos: [1000, 1200], qtdParticoes: 0, ehUP: false })).toBe(true);
   });
 });
+
+// ADR-0160 — "somente estoque" não envia preço nenhum (ADR-0078 F2 #3), então divergência de preço
+// no banco não é motivo para dividir anúncio.
+//
+// Sem isto, a saída que o guard de preço uniforme ENSINA ("publique uma vez como somente estoque
+// para o app adotar a migração") era inalcançável: uma família migrada pelo ML, ainda não adotada e
+// já com preços divergentes, ia para o split antes de alguém olhar `somenteEstoque` — e o split
+// worker não adota família migrada, manda refazer a publicação. O operador seguiria uma instrução
+// que não funciona.
+describe('decidirSplit — somente estoque (ADR-0160)', () => {
+  it('divergência + somenteEstoque → NÃO divide', () => {
+    expect(decidirSplit({ qtdCores: 2, precosCentavos: [1000, 1200], qtdParticoes: 0, somenteEstoque: true })).toBe(false);
+  });
+
+  it('sem somenteEstoque a divergência continua dividindo', () => {
+    expect(decidirSplit({ qtdCores: 2, precosCentavos: [1000, 1200], qtdParticoes: 0, somenteEstoque: false })).toBe(true);
+  });
+
+  // Família já particionada segue no split worker mesmo em somente estoque: só ele conhece as N
+  // partições e sabe repor estoque em cada uma.
+  it('já particionada divide mesmo em somenteEstoque', () => {
+    expect(decidirSplit({ qtdCores: 3, precosCentavos: [1000, 1000, 1000], qtdParticoes: 2, somenteEstoque: true })).toBe(true);
+  });
+
+  it('>100 cores divide mesmo em somenteEstoque', () => {
+    expect(decidirSplit({ qtdCores: 101, precosCentavos: Array(101).fill(1000), qtdParticoes: 0, somenteEstoque: true })).toBe(true);
+  });
+});

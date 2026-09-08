@@ -435,6 +435,85 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     expect(conn.chamadas).toContainEqual({ metodo: 'aplicarAtacado', itemExternoId: 'MLB2' });
   });
 
+  // ADR-0160 (I7) — config de atacado por cor não pode ser ignorada no caminho UP, que aplica só a
+  // config família-level. Publicar o valor da família calando a config por cor é dinheiro diferente
+  // do que o operador configurou, com resposta 200.
+  it('I7: cor com atacado DIFERENTE do da família → não aplica PxQ, grava erro', async () => {
+    const conn = fakeConn({ atacado: true });
+    const { admin, writes } = fakeAdmin([
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+    ]);
+    await atualizarFamiliaUP(args({
+      admin, conn: conn as never,
+      familia: { ...FAMILIA, atacado: [{ quantidade: 3, preco: 8 }] } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null,
+          atacado: [{ min_unidades: 10, desconto_pct: 20 }] },
+      ] as never,
+      executarSaga: async () => ({ tipo: 'concluido', criadas: [] }),
+    }));
+    expect(conn.chamadas.filter((c: { metodo: string }) => c.metodo === 'aplicarAtacado')).toEqual([]);
+    expect(writes.find((w) => w.table === 'familias' && w.payload.atacado_status === 'erro')).toBeDefined();
+  });
+
+  // `ConfigGruposPreco` grava `[]` explícito ao desmarcar o atacado — não-nulo de propósito (null
+  // significaria "herdar" e dispararia LOUD no publish do split). Se a trava olhasse "coluna
+  // preenchida", toda família que passou por aquele editor ficaria com o atacado recusado PARA
+  // SEMPRE ao migrar para UP, sem saída: a UI esconde o editor de faixas sob UP.
+  it('cor com atacado IGUAL ao da família não dispara I7', async () => {
+    const conn = fakeConn({ atacado: true });
+    const { admin } = fakeAdmin([
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+    ]);
+    await atualizarFamiliaUP(args({
+      admin, conn: conn as never,
+      familia: { ...FAMILIA, atacado: [{ min_unidades: 5, desconto_pct: 5 }] } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null,
+          atacado: [{ min_unidades: 5, desconto_pct: 5 }] },
+      ] as never,
+      executarSaga: async () => ({ tipo: 'concluido', criadas: [] }),
+    }));
+    expect(conn.chamadas).toContainEqual({ metodo: 'aplicarAtacado', itemExternoId: 'MLB1' });
+  });
+
+  it('atacado vazio na cor e na família não dispara I7', async () => {
+    const conn = fakeConn({ atacado: true });
+    const { admin } = fakeAdmin([
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+    ]);
+    await atualizarFamiliaUP(args({
+      admin, conn: conn as never,
+      familia: { ...FAMILIA, atacado: [], atacado_status: 'aplicado' } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null,
+          atacado: [] },
+      ] as never,
+      executarSaga: async () => ({ tipo: 'concluido', criadas: [] }),
+    }));
+    // Chega ao ramo de limpeza (faixas vazias) em vez de parar no I7.
+    expect(conn.chamadas).toContainEqual({ metodo: 'aplicarAtacado', itemExternoId: 'MLB1' });
+  });
+
+  // O I7 não pode impedir DESLIGAR o atacado: faixas removidas + já aplicado tem que LIMPAR o PxQ
+  // no ML. Parar aqui deixaria o Mercado Livre vendendo no atacado enquanto o app diz "erro".
+  it('faixas removidas + config por cor → ainda LIMPA o PxQ no ML', async () => {
+    const conn = fakeConn({ atacado: true });
+    const { admin } = fakeAdmin([
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+    ]);
+    await atualizarFamiliaUP(args({
+      admin, conn: conn as never,
+      familia: { ...FAMILIA, atacado: [], atacado_status: 'aplicado' } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null,
+          atacado: [{ min_unidades: 10, desconto_pct: 20 }] },
+      ] as never,
+      executarSaga: async () => ({ tipo: 'concluido', criadas: [] }),
+    }));
+    expect(conn.chamadas).toContainEqual({ metodo: 'aplicarAtacado', itemExternoId: 'MLB1' });
+  });
+
   it('faixas removidas + atacado_status=aplicado → limpa o PxQ (mesmo comportamento do Legacy)', async () => {
     const conn = fakeConn({ atacado: true });
     const { admin, writes } = fakeAdmin([{ sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' }]);

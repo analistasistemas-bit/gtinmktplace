@@ -169,7 +169,14 @@ export interface AtualizacaoCanonica {
   dimensoes: DimensoesPacote | null;
   /** Desconto ativo → price+original_price por código. */
   desconto: { pct: number; precoPorCodigo: Record<string, number | null> } | null;
-  /** Preço de publicação da família, propagado a TODAS as variações (adendo ADR-0016). */
+  /**
+   * Preço ÚNICO do anúncio Legacy (ou da partição, no split), propagado a TODAS as variações
+   * (adendo ADR-0016) — um item do ML com `variations[]` exige preço uniforme.
+   *
+   * ADR-0160: **não** é o caminho de preço do modelo User Products. Lá cada cor é um item próprio e
+   * `atualizarFamiliaUP` chama `atualizarItemPlanoML` direto, com `precoPorSku` — sem passar por
+   * este contrato. Não preencher este campo esperando comportamento por variação.
+   */
   precoFamilia: number | null;
   /** Modo reposição pura: não empurra preço por nenhum ramo; cor nova entra no preço vivo. ADR-0078 F1. */
   somenteEstoque?: boolean;

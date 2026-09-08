@@ -81,11 +81,19 @@ nesta entrega, como pré-requisito:
 formas, deliberadamente distintas:
 
 - **número** → empurra este preço neste item;
-- **`null`** → preserva o preço vivo do item (usado pelo reconciliador de convergência e pelo fluxo
-  "adicionar variação");
+- **`null`** → preserva o preço vivo do item. É o que o fluxo "adicionar variação" usa nas cores já
+  publicadas, e o que uma variação sem `preco_publicacao` produz;
 - **chave ausente** em "atualizar tudo" → lacuna de dado, **falha alto**, checada para todos os
   alvos **antes do primeiro PUT** (validar dentro do laço deixaria metade da família num preço e
-  metade noutro, sem transação que desfaça).
+  metade noutro, sem transação que desfaça). Na prática o adapter cria chave para toda variação, com
+  `null` quando não há preço; a trava protege o caminho de `skusDesejadosOverride`, em que o
+  conjunto de alvos não vem de `variacoes`.
+
+O **reconciliador de convergência** (`reconciliar-convergencia-up`) chama `atualizarFamiliaUP` com
+`somenteEstoque: false` e sem `preservarPublicadas`: ele empurra o `preco_publicacao` do banco para
+todas as cores. É o preço desejado, não um preço de outra cor — mas, se o episódio travado nasceu de
+"adicionar variação", a convergência repreça as irmãs, que é o B4 que I10 fecha no caminho normal.
+Registrado como dívida (abaixo), não resolvido aqui.
 
 `Number()` explícito ao montar o mapa: `numeric` do Postgres chega como string pelo supabase-js, e o
 PUT sairia com `"price":"29.90"`.
@@ -157,7 +165,7 @@ um retry esgotado deixar o banco refletindo exatamente os PUTs que subiram. Em `
 | I3 | `somenteEstoque` nunca envia preço, nos dois caminhos |
 | I4 | `preco_publicado_ml` de um SKU reflete o preço daquele SKU, gravado após o PUT dele |
 | I5 | Atacado ativo + preços divergentes → LOUD, nada enviado |
-| I6 | Cor sem preço em "atualizar tudo" → LOUD antes de qualquer PUT |
+| I6 | SKU alvo **ausente** do mapa em "atualizar tudo" → LOUD antes de qualquer PUT (preço `null` preserva, não bloqueia) |
 | I7 | Config por cor não-nula em família UP → LOUD, nunca ignorada |
 | I8 | Em `somenteEstoque`, `preco_publicado_ml` não muda |
 | I9 | Item com `variations_migration_pending` não recebe PUT; clone em migração não é adotado |
@@ -191,6 +199,19 @@ um retry esgotado deixar o banco refletindo exatamente os PUTs que subiram. Em `
 3. **`precoAtual` por filho** em Publicados e no Estoque.
 4. **`dialog-reprecificar`** ainda recusa família com preços divergentes; sob UP o fluxo funciona via
    edição por variação + "Atualizar tudo", então basta corrigir a mensagem.
+5. **Reconciliador de convergência** não recebe `preservarPublicadas` nem preço `null` por SKU: uma
+   convergência de episódio nascido em "adicionar variação" repreça as irmãs.
+6. **Cor nova sem `preco_publicacao`** vai ao POST com `price: 0` (`_shared/ml/publicar.ts`),
+   dependendo de o ML recusar. Pré-existente, compartilhado com o Legacy.
+7. **Orçamento de retry na janela do UPtin.** O QStash dá ~10×30s ao UPDATE e ~3×10s ao push de
+   estoque; a migração é assíncrona e pode passar disso. Se passar, a família fica em erro (o
+   operador republica) e um push de estoque daquele instante é perdido — o saldo volta na próxima
+   movimentação ou na reconciliação horária. A mensagem do guard pede para aguardar e publicar de
+   novo, em vez de prometer que o app resolve sozinho.
+8. **CREATE não consulta o cache de formato** para decidir split: `ehUP` é estrutural (itens já
+   existem), e família **nova** não tem itens. Uma família nova com preços divergentes em categoria
+   já conhecida como User Products vai para o split e falha com `FORMATO_INCOMPATIVEL`. Mesmo
+   comportamento de antes desta entrega; não regride, mas I2 vale só para famílias já publicadas.
 
 ## Alternativas consideradas
 

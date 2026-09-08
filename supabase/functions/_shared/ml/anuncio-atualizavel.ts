@@ -51,9 +51,13 @@ export interface EstadoTagsML {
 export function migracaoEmAndamento(item: EstadoTagsML): string | null {
   const tags = (item.tags ?? []).filter((t): t is string => typeof t === 'string');
   if (!tags.includes(TAG_MIGRACAO_EM_ANDAMENTO)) return null;
+  // A mensagem não promete que o app resolve sozinho: o orçamento de retry do QStash é finito
+  // (UPDATE ~10×30s; push de estoque ~3×10s) e a migração é assíncrona, sem prazo garantido. Se o
+  // orçamento acabar antes, a família fica em erro e quem republica é o operador.
   return 'Anúncio em migração para preço por variação (User Products) no Mercado Livre. '
     + 'Atualizar agora seria perdido: o ML está clonando as variações e publicaria os valores '
-    + 'anteriores. A migração termina sozinha — o app tenta de novo.';
+    + 'anteriores. Nada foi enviado. Aguarde a migração terminar (costuma levar alguns minutos) e '
+    + 'publique de novo.';
 }
 
 /**
