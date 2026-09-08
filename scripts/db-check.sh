@@ -9,6 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 [ -f .env.local ] && export "$(grep -E '^SUPABASE_ACCESS_TOKEN=' .env.local || true)"
+[ -n "${DSH_SHELL:-}" ] && export HOME=/tmp
 
 out=$(supabase migration list --linked 2>&1)
 # Linha divergente = só um dos lados (local|remote) tem versão.
