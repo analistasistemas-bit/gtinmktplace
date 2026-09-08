@@ -16,6 +16,7 @@
     "preflight": "pnpm preflight:static && pnpm test",
     "preflight:static": "pnpm docs:links && pnpm lint:functions && pnpm check:functions && pnpm lint && tsc -b --force && vite build",
     "db:check": "bash scripts/db-check.sh",
+    "supabase": "bash scripts/supabase.sh",
     "docs:links": "node scripts/checar-links-docs.mjs",
     "lint:functions": "deno lint --config supabase/functions/deno.json",
     "check:functions": "deno check --config supabase/functions/deno.json $(git ls-files 'supabase/functions/**/*.ts' | grep -v __tests__)"
