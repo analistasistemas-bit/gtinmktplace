@@ -66,9 +66,16 @@ export interface PublicadoItem {
   /** ADR-0154: `kits_virtuais.id` — necessário para "Refazer kit" (encerrar-kit-virtual). Só
    *  presente quando `ehKitVirtual` é true. */
   kitVirtualId?: string;
-  /** Migração para preço por variação (migrar-preco-por-variacao) em andamento no ML — trava
-   *  Migrar/Pausar/Reativar/Remover desta linha. Ainda não preenchido pelo backend; undefined = false. */
+  /** ADR-0161: migração para preço por variação em andamento no ML — trava
+   *  Migrar/Pausar/Reativar/Remover desta linha. Durante a migração o ML recusa qualquer alteração
+   *  no anúncio. `undefined` = false. */
   migracaoEmAndamento?: boolean;
+  /** ADR-0161 (J10): o produto está publicado como VÁRIOS anúncios (split por faixa de preço,
+   *  ADR-0048/0078) e por isso não pode migrar. A rotina de adoção zera o vínculo de todas as cores
+   *  da família, inclusive das que vivem na partição que continua ativa — o UPDATE seguinte as
+   *  trataria como novas e duplicaria variações num anúncio real. A edge function também recusa;
+   *  aqui o botão simplesmente não aparece, para não oferecer o que vai ser negado. */
+  produtoDividido?: boolean;
 }
 
 /**

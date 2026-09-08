@@ -9,7 +9,30 @@ Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
 `docs/project-status.md` (retrato curto, atualizado até **2026-08-11**, com a seção "Entregas de
 agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-09-08) — EM PRODUÇÃO, validação pendente
+## 📍 Passo atual (2026-09-08) — PRONTO, aguardando merge e validação
+
+> **✅ ADR-0161: botão "Migrar para preço por variação" no PubliAI.** Revoga a §4 do [[ADR-0160]] no
+> mesmo dia: ao ver o roteiro de validação, que alternava entre o painel do ML e o app, Diego recusou
+> o fluxo partido em dois sistemas.
+>
+> Além de resolver a ergonomia, disparar pelo app **melhora a confiabilidade**: o app fotografa
+> `variations[]` **antes** da migração, e é esse snapshot que permite casar cor → anúncio novo usando
+> só ids que o ML atribuiu àquele item. Sem ele, o caminho seria a descoberta por título do ADR-0105,
+> que casaria com uma **família irmã** de mesmo título e mesmas cores e adotaria os anúncios do
+> produto errado — com 200 e nenhum sinal.
+>
+> Doze recusas antes de qualquer escrita no ML (produto de outra org, dividido, kit virtual,
+> publicando, inelegível, cores duplicadas, clique duplo…), claims atômicos no disparo e por rodada
+> do worker, orçamento finito (a API do ML não tem estado de falha nem webhook), e **trava
+> anti-oversell**: o estoque só é empurrado onde o saldo local não passa do vivo.
+>
+> **Limitações aceitas pelo Diego:** famílias divididas em vários anúncios e produtos em Kit Virtual
+> ficam de fora; o selo "% OFF" some após migrar. A perda de reconhecimento das vendas antigas foi
+> **corrigida**, não aceita.
+>
+> **Falta:** merge, deploy das funções novas e a validação em produto de teste.
+
+## Passo anterior (2026-09-08) — EM PRODUÇÃO, validação pendente
 
 > **✅ ADR-0160: Preço por variação sob User Products — EM PRODUÇÃO (2026-09-08),** `336a7aeb`,
 > 42 Edge Functions deployadas, sem migration. **Validação em anúncio real ainda pendente.**

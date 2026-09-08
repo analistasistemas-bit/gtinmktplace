@@ -5,6 +5,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { removerPublicado } from './processar.ts';
+import { motivoMigracaoPxvEmCurso } from '../_shared/user-products/guard-migracao-pxv.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -33,6 +34,19 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
       ? getValidAccessTokenConexao(conexao)
       : Promise.reject(new Error('Organização sem conexão com o Mercado Livre')),
   };
+
+  // ADR-0161 (J13): remover durante a migração "preço por variação" apagaria o vínculo local
+  // enquanto o ML ainda está criando os anúncios novos — o worker perderia a referência do que
+  // adotar, e o produto ficaria vivo no ML sem nenhum registro no app.
+  const { data: famMig } = await admin.from('familias')
+    .select('codigo_pai').eq('id', familia_id).eq('org_id', orgId).maybeSingle();
+  if (famMig?.codigo_pai) {
+    const motivoMigracao = await motivoMigracaoPxvEmCurso(admin, orgId, famMig.codigo_pai as string);
+    if (motivoMigracao) {
+      await auditarOperacaoSuporte(admin, context, { type: 'familia', id: familia_id as string }, 'denied');
+      return json({ erro: motivoMigracao }, 400);
+    }
+  }
 
   const r = await removerPublicado(
     { admin, ctx, conexao: conexao ?? undefined },

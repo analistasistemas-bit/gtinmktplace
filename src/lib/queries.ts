@@ -179,6 +179,8 @@ export type AnuncioExternoLite = {
   particao: number;
   permalink: string | null;
   titulo: string | null;
+  /** ADR-0161: episódio de migração "preço por variação" em curso (`solicitada`/`em_andamento`). */
+  migracao_pxv_status: string | null;
 };
 
 // Split (ADR-0048): um produto pode ter N anúncios (partições) em anuncios_externos;
@@ -189,7 +191,7 @@ async function fetchAnunciosPorCodigoPai(codigosPai: string[]): Promise<Map<stri
   if (codigosPai.length === 0) return porCodigo;
   const { data: anuncios } = await supabase
     .from('anuncios_externos')
-    .select('codigo_pai, particao, permalink, titulo')
+    .select('codigo_pai, particao, permalink, titulo, migracao_pxv_status')
     .eq('canal', 'mercado_livre')
     .in('codigo_pai', codigosPai);
   for (const a of (anuncios ?? []) as AnuncioExternoLite[]) {
@@ -1088,10 +1090,25 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const rows = (data ?? []) as Array<FamiliaRow & { variacoes: VariacaoPub[] }>;
   const codigosPai = [...new Set(rows.map((r) => r.codigo_pai))];
   const itensUpPorCodigo = await carregarItensUpRetentaveisPorCodigo(codigosPai);
+  // ADR-0161: quais produtos estão migrando para preço por variação. Durante a migração o ML recusa
+  // qualquer alteração no anúncio, então a tela desabilita migrar/pausar/reativar/remover — as edge
+  // functions também recusam (J13), mas deixar o botão clicável só entregaria um erro evitável.
+  const anunciosPorPai = await fetchAnunciosPorCodigoPai(codigosPai);
+  const paisMigrando = new Set(
+    [...anunciosPorPai.entries()]
+      .filter(([, lista]) => lista.some(
+        (a) => a.migracao_pxv_status === 'solicitada' || a.migracao_pxv_status === 'em_andamento',
+      ))
+      .map(([codigoPai]) => codigoPai),
+  );
 
   // 1 linha por anúncio (ml_item_id) — várias famílias compartilham o mesmo após ciclos de UPDATE.
   const principais = dedupePublicados(
-    rows.map((r) => publicadoFromRow(r, itensUpPorCodigo.get(r.codigo_pai))),
+    rows.map((r) => ({
+      ...publicadoFromRow(r, itensUpPorCodigo.get(r.codigo_pai)),
+      migracaoEmAndamento: paisMigrando.has(r.codigo_pai),
+      produtoDividido: (anunciosPorPai.get(r.codigo_pai) ?? []).length > 1,
+    })),
   );
 
   // Split (ADR-0048): anúncios de partições >0 vivem só em anuncios_externos (familias.ml_item_id

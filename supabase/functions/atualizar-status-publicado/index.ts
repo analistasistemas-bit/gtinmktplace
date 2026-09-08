@@ -5,6 +5,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
+import { motivoMigracaoPxvPorItem } from '../_shared/user-products/guard-migracao-pxv.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -33,6 +34,16 @@ Deno.serve(async (req) => {
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
   if (!conexao) {
     return new Response(JSON.stringify({ erro: 'Conecte sua conta ML nas Configurações.' }),
+      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  }
+
+  // ADR-0161 (J13): pausar/reativar durante a migração "preço por variação". O ML recusa alterações
+  // no item em migração, e o encerramento que ele faz no fim pode colidir com um `paused` nosso —
+  // deixando o anúncio num estado que ninguém pediu.
+  const motivoMigracao = await motivoMigracaoPxvPorItem(admin, orgId, ml_item_id);
+  if (motivoMigracao) {
+    await auditarOperacaoSuporte(admin, context, { type: 'item', id: ml_item_id }, 'denied');
+    return new Response(JSON.stringify({ erro: motivoMigracao }),
       { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 

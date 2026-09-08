@@ -29,6 +29,7 @@ import type { FetchLike } from '../_shared/ml/buscar-item.ts';
 import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { aplicarEstoqueDerivado } from '../_shared/estoque/kit.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { motivoMigracaoPxvEmCurso } from '../_shared/user-products/guard-migracao-pxv.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -138,6 +139,21 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
 
     if (!familia.ml_item_id) {
       const err = new Error('Família UPDATE sem ml_item_id herdado (400)') as Error & { status?: number };
+      err.status = 400;
+      throw err;
+    }
+
+    // ADR-0161 (J8): migração "preço por variação" em curso → recusa DEFINITIVA, antes do GET.
+    //
+    // O guard remoto do ADR-0160 (`MIGRACAO_EM_ANDAMENTO`) é retentável de propósito: ele descobre a
+    // migração pela tag do ML e a espera terminar. Mas quando o próprio app disparou a migração, ele
+    // já sabe — e deixar o job seguir queimaria ~10 tentativas de 30 s na fila serial da org, para
+    // terminar em `erro` com as fotos das cores novas zeradas pelo catch.
+    const motivoMigracao = await motivoMigracaoPxvEmCurso(
+      admin, familia.org_id as string, familia.codigo_pai as string,
+    );
+    if (motivoMigracao) {
+      const err = new Error(`${motivoMigracao} (400)`) as Error & { status?: number };
       err.status = 400;
       throw err;
     }

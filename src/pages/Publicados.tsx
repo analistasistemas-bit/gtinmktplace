@@ -376,7 +376,10 @@ function LinhaTabela({
             <PackagePlus className="h-3 w-3" />
           </Button>
 
-          {isAdmin && temVariacaoDeCor && podeAlternar && (
+          {/* `!item.produtoDividido` (ADR-0161 J10): produto publicado como vários anúncios não pode
+              migrar — a adoção zeraria o vínculo das cores que vivem nas outras partições. A edge
+              function recusa de qualquer forma; esconder evita oferecer o que será negado. */}
+          {isAdmin && temVariacaoDeCor && podeAlternar && !item.produtoDividido && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button

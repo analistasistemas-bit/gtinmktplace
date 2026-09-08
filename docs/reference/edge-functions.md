@@ -1453,6 +1453,32 @@ um smoke test contra Postgres real antes do primeiro deploy.
   via `ChannelConnector.atualizarStatus` (PUT parcial `status`). Gate `requireAdmin` (não só
   `requireUser`) — primeira ação de escrita restrita a admin do projeto (ADR-0060). **E6 (ADR-0061):**
   canal opcional (default `'mercado_livre'`). Token da operação, mesmo padrão do `status-publicados`.
+  **ADR-0161 (J13):** recusa (400) enquanto o produto estiver migrando para preço por variação — o
+  ML rejeita alterações durante a migração, e o encerramento que ele faz no fim pode colidir com um
+  `paused` nosso.
+- **migrar-preco-por-variacao** *(ADR-0161, `verify_jwt=true`)* — dispara no ML a migração **UPtin**
+  do anúncio (`{familia_id}`): o item original é ENCERRADO e cada cor vira um anúncio próprio.
+  **Irreversível.** Admin-only (gate do ADR-0060) e com verificação de que a família é da org do
+  chamador — o molde `atualizar-status-publicado` não faz essa checagem, e o buraco não foi herdado.
+  Doze recusas **antes** de qualquer escrita no ML, cada uma com teste provando que o ML não foi
+  tocado: produto de outra org, não publicado, **dividido em N anúncios** (a adoção zeraria o vínculo
+  das cores das outras partições), sem raiz de partição 0, já migrando, raiz/família mais nova
+  incoerentes, família publicando, **componente de kit virtual**, inelegível pelo ML, snapshot vazio,
+  **duas variações com a mesma cor**, e perda do claim atômico. Grava estado + **snapshot de
+  `variations[]`** na raiz ANTES do POST; falha no POST **não** limpa o estado (a idempotência do
+  endpoint não é documentada, então "falhou" não prova "não começou") e o acompanhamento é
+  enfileirado assim mesmo.
+- **acompanhar-migracao-pxv** *(ADR-0161, worker QStash, `verify_jwt=false`)* — consulta
+  `migration_live_listing` até `activation_completed`, casa cor→anúncio novo, adota e recompõe o
+  estado. Backoff de 15 min enquanto o ML cria os filhos e 1 min depois de `migration_completed`
+  (encurta a janela em que o clone está no ar e o app ainda não o reconhece), com teto de ~6 h — a
+  API não tem estado de falha nem webhook de conclusão, então travada é indistinguível de lenta.
+  Casamento em cascata: `new_items[].variation_id` → snapshot → SKU; falhando, COLOR dos
+  `new_item_id`. **Não há degrau por título** — `?q=` casaria com uma família irmã de mesmo título e
+  mesmas cores e adotaria o produto errado. Pós-adoção: catálogo reenfileirado, `atacado_status`
+  resetado e push de estoque **só nos SKUs em que `saldo_local ≤ vivo`** (empurrar acima disso
+  restauraria unidades já vendidas). Responde sempre 200: o worker controla a própria repetição, e
+  deixar o QStash retentar criaria uma segunda cadeia sobre o mesmo episódio.
 - **metricas-vendas** — agrega vendas do período por anúncio gerenciado (mapa GTIN→item).
   Mesmo escopo de operação e credencial ML compartilhada do `status-publicados` (ADR-0056).
 - **analisar-viabilidade** — concorrência + comissões + margem antes de cadastrar (ADR-0014/0015);

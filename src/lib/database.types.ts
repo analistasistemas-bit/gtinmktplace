@@ -27,6 +27,12 @@ export type Database = {
           id: string
           item_externo_id: string | null
           metadados_canal: Json
+          migracao_pxv_erro: string | null
+          migracao_pxv_snapshot: Json | null
+          migracao_pxv_solicitada_em: string | null
+          migracao_pxv_status: string | null
+          migracao_pxv_tentativa: number
+          ml_item_id_anterior: string | null
           mudando_composicao: boolean
           mudando_composicao_familia_id: string | null
           org_id: string
@@ -54,6 +60,12 @@ export type Database = {
           id?: string
           item_externo_id?: string | null
           metadados_canal?: Json
+          migracao_pxv_erro?: string | null
+          migracao_pxv_snapshot?: Json | null
+          migracao_pxv_solicitada_em?: string | null
+          migracao_pxv_status?: string | null
+          migracao_pxv_tentativa?: number
+          ml_item_id_anterior?: string | null
           mudando_composicao?: boolean
           mudando_composicao_familia_id?: string | null
           org_id: string
@@ -81,6 +93,12 @@ export type Database = {
           id?: string
           item_externo_id?: string | null
           metadados_canal?: Json
+          migracao_pxv_erro?: string | null
+          migracao_pxv_snapshot?: Json | null
+          migracao_pxv_solicitada_em?: string | null
+          migracao_pxv_status?: string | null
+          migracao_pxv_tentativa?: number
+          ml_item_id_anterior?: string | null
           mudando_composicao?: boolean
           mudando_composicao_familia_id?: string | null
           org_id?: string

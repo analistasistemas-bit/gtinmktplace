@@ -7,6 +7,7 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { excluirProduto } from './processar.ts';
+import { motivoMigracaoPxvEmCurso } from '../_shared/user-products/guard-migracao-pxv.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -33,6 +34,16 @@ Deno.serve(async (req) => {
   try { body = await req.json(); } catch { return json({ erro: 'JSON inválido' }, 400); }
   const codigoPai = body.codigo_pai?.trim();
   if (!codigoPai) return json({ erro: 'codigo_pai obrigatório' }, 400);
+
+  // ADR-0161 (J13): apagar o produto no meio da migração deixaria os anúncios novos vivos no ML sem
+  // nenhum registro local — o worker perderia a referência e ninguém saberia que aqueles anúncios
+  // são desta org. O guard de "produto publicado" abaixo não cobre isso: durante a migração o
+  // vínculo local ainda existe, mas está em trânsito.
+  const motivoMigracao = await motivoMigracaoPxvEmCurso(admin, orgId, codigoPai);
+  if (motivoMigracao) {
+    await auditarOperacaoSuporte(admin, context, { type: 'produto', id: codigoPai }, 'denied');
+    return json({ erro: motivoMigracao }, 400);
+  }
 
   const r = await excluirProduto(admin, { codigoPai, orgId });
   // `produto`, não `familia`: o alvo é o codigo_pai (D-4), e as outras portas gravam um UUID de

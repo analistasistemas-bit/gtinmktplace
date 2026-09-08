@@ -2,6 +2,34 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Botão "Migrar para preço por variação" (ADR-0161) — 2026-09-08
+
+Plano em [2026-09-08-botao-migrar-preco-por-variacao.md](superpowers/plans/2026-09-08-botao-migrar-preco-por-variacao.md).
+Origem: ao ver o roteiro de validação do ADR-0160, que alternava entre o painel do ML e o app, Diego
+recusou — "não faz sentido estar fazendo isso em dois lugares". **Revoga a §4 do ADR-0160.**
+
+- [x] **F0 — migration** aplicada (`db:check` limpo): estado na RAIZ `anuncios_externos`, com
+  snapshot e `ml_item_id_anterior`.
+- [x] **F1 — cliente ML**: validar elegibilidade, disparar, acompanhar. Fail-closed sem
+  `is_valid: true`; 404 do disparo explica que a rota pode exigir outro site (a doc só publica `MLM`).
+- [x] **F2 — disparo**: 12 recusas antes de qualquer escrita, cada uma com teste provando que o ML
+  não foi tocado; claim atômico; falha no POST não limpa o estado.
+- [x] **F3 — worker**: casamento em cascata sem busca por título, adoção, trava anti-oversell no
+  push de estoque, orçamento finito.
+- [x] **F3b — faturamento**: venda de anúncio encerrado continua sendo do PubliAI.
+- [x] **F4 — frontend**: botão admin-only, diálogo com as consequências, bloqueio de
+  migrar/pausar/reativar/remover durante a migração, botão oculto em produto dividido.
+- [x] **Guards (J8/J13)**: `update-familia-ml`, `atualizar-status-publicado`, `remover-publicado` e
+  `excluir-produto` recusam durante a migração.
+- [x] **F5 — documentação**: ADR-0161, nota de revogação no 0160, `edge-functions.md`,
+  `modelo-de-dados.md`.
+- [ ] **Validação real (Diego)** — produto de teste com 2 cores, poucas vendas, **não dividido e fora
+  de kit virtual**: clicar em "Migrar para preço por variação" → confirmar → acompanhar o sino → ao
+  concluir, conferir os 2 anúncios novos no ML e que o produto segue gerenciável no app → dar preços
+  diferentes e publicar com "Atualizar tudo". **Nada no painel do ML.**
+- [ ] **Deploy** — functions novas (`migrar-preco-por-variacao`, `acompanhar-migracao-pxv`) e as
+  afetadas pelos guards; migration já aplicada.
+
 ## Preço por variação sob User Products (ADR-0160) — 2026-09-08
 
 Plano em [2026-09-08-preco-por-variacao-user-products.md](superpowers/plans/2026-09-08-preco-por-variacao-user-products.md).

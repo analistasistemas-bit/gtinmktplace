@@ -844,6 +844,24 @@ describe('Publicados', () => {
       expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
     });
 
+    // ADR-0161 (J10): produto publicado como VÁRIOS anúncios (split por faixa de preço) não pode
+    // migrar — a adoção zeraria o vínculo das cores que vivem nas outras partições, e o UPDATE
+    // seguinte duplicaria variações num anúncio real. A edge function recusa; a tela nem oferece.
+    it('não aparece em produto dividido em vários anúncios', () => {
+      comStatusAoVivo('MLB1', 'ativo');
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2, produtoDividido: true })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
+    });
+
     it.each(['encerrado', 'moderado'] as const)('não aparece com status %s', (status) => {
       // Sem entrada em statusData p/ este ml_item_id o merge cai em 'indisponivel' de qualquer
       // forma — o que já cobre o gating. Não precisa de comStatusAoVivo aqui.

@@ -390,6 +390,26 @@ transitório de mudança de composição em andamento). Nova constraint **`uniqu
 da FK composta da tabela filha abaixo. *Migration
 `20260722145236_adr88_user_products_itens_e_formato.sql`.*
 
+**Migração "preço por variação" (ADR-0161, 2026-09-08):** **`migracao_pxv_status`**
+(`solicitada`|`em_andamento`|`erro`, nulável — `NULL` inclusive DEPOIS de concluída: é marcador
+transitório, não histórico), **`migracao_pxv_erro`**, **`migracao_pxv_solicitada_em`**,
+**`migracao_pxv_tentativa`** (`int not null default 0`, base do claim atômico por rodada do worker),
+**`migracao_pxv_snapshot`** (`jsonb` — `variations[]` do item ANTES do disparo, como
+`[{id, seller_custom_field, cor}]`) e **`ml_item_id_anterior`** (`text`).
+
+Estas colunas moram na **raiz**, e não em `familias`, porque há N linhas em `familias` por
+`codigo_pai` (uma por lote) e cada consumidor escolhe uma diferente: a tela Publicados usa a **mais
+antiga**, `ingest-lote` e `sincronizar-estoque` usam a **mais nova** — estado gravado na família do
+botão seria invisível para metade do sistema. Colunas próprias em vez de reusar `estado_desejado`,
+cujo CHECK (`ativando`/`pausando`) e semântica pertencem ao ADR-0088.
+
+**`migracao_pxv_snapshot` e `ml_item_id_anterior` NÃO são limpos ao concluir:** o faturamento os usa
+para reconhecer pedidos do anúncio encerrado (`fundirAnunciosMigrados` soma o id anterior a
+`idsPubliai` e resolve o produto por `"{anterior}:{variation_id}"`). Sem isso, um pedido antigo
+reprocessado viraria venda de fora, sem código e sem custo. Índice parcial
+`anuncios_externos_migracao_pxv_ativa_idx (org_id, migracao_pxv_status) where status is not null`.
+*Migration `20260908185250_adr161_migracao_pxv_estado.sql`.*
+
 **Reconciliador de convergência (ADR-0088, 2026-07-23):** **`reconciliacao_tentativas`**
 (`int not null default 0`, incrementada 1x por passada do reconciliador sobre a raiz via claim
 atômico, zerada ao convergir), **`mudando_composicao_familia_id`** (`uuid references familias(id)

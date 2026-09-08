@@ -39,9 +39,9 @@ describe('familiaResumoFromRow', () => {
 
   it('anuncios: ordena por particao crescente e não muta a entrada', () => {
     const entrada = [
-      { codigo_pai: 'P1', particao: 2, permalink: 'p2', titulo: 't2' },
-      { codigo_pai: 'P1', particao: 0, permalink: 'p0', titulo: 't0' },
-      { codigo_pai: 'P1', particao: 1, permalink: 'p1', titulo: 't1' },
+      { codigo_pai: 'P1', particao: 2, permalink: 'p2', titulo: 't2', migracao_pxv_status: null },
+      { codigo_pai: 'P1', particao: 0, permalink: 'p0', titulo: 't0', migracao_pxv_status: null },
+      { codigo_pai: 'P1', particao: 1, permalink: 'p1', titulo: 't1', migracao_pxv_status: null },
     ];
     const entradaCopia = [...entrada];
     const r = familiaResumoFromRow(baseRow, entrada);
