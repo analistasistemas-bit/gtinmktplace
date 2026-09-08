@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-09-07
+atualizado: 2026-09-08
 ---
 
 # Sprint Atual
@@ -9,7 +9,30 @@ Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
 `docs/project-status.md` (retrato curto, atualizado até **2026-08-11**, com a seção "Entregas de
 agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-09-05) — EM PRODUÇÃO
+## 📍 Passo atual (2026-09-08) — EM PRODUÇÃO, validação pendente
+
+> **✅ ADR-0160: Preço por variação sob User Products — EM PRODUÇÃO (2026-09-08),** `336a7aeb`,
+> 42 Edge Functions deployadas, sem migration. **Validação em anúncio real ainda pendente.**
+>
+> O Mercado Livre ofereceu "Oferecer preço por variação" no Tecido Oxford Liso 10m. O recurso **é** a
+> migração **UPtin** para User Products: o item original é encerrado, cada cor vira um MLB próprio,
+> `variations[]` deixa de existir. Isso corrige a premissa central do [[ADR-0078]] — preço único
+> entre variações é regra do modelo **Legacy**, não do ML inteiro. O split por faixa continua sendo a
+> resposta certa para Legacy; família User Products publica preços diferentes direto.
+>
+> O app já publicava em User Products (ADR-0088), mas achatava todos os preços no primeiro preço da
+> família. Agora cada item recebe o seu (`precoPorSku`).
+>
+> **Três bugs pré-existentes fecharam junto** — sem eles, destravar o preço publicaria valor errado
+> com HTTP 200: escrita durante a janela de migração; atacado não reaplicado quando só o preço muda;
+> `preco_publicado_ml` nunca gravado no UPDATE UP (badge "preço alterado" preso aceso).
+>
+> **Validação (Diego), na ordem:** família de teste com 2 cores **no mesmo preço** → migrar pelo
+> painel → conferir `GET /items/{original}` (se `variations[]` vier vazio, a adoção automática não
+> casa as cores) → publicar como **"somente estoque"** para adotar → só então preços diferentes com
+> "Atualizar tudo". **O Oxford 10m ficou fora**, por decisão do operador.
+
+## Passo anterior (2026-09-05) — EM PRODUÇÃO
 
 > **✅ ADR-0153: PubliAI virou PWA instalável — EM PRODUÇÃO (2026-09-05).** O manifest e os
 > ícones já existiam; faltava o service worker inteiro, sem o qual o Chrome não oferece instalar

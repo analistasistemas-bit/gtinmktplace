@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-09-07
+atualizado: 2026-09-08
 ---
 
 # Changelog
@@ -8,6 +8,26 @@ atualizado: 2026-09-07
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-09-08
+
+- **Preço por variação sob User Products (ADR-0160) — em produção** (`336a7aeb`, 42 Edge Functions
+  deployadas, sem migration). O ML ofereceu "Oferecer preço por variação" no Tecido Oxford Liso 10m;
+  a investigação mostrou que o recurso **é** a migração UPtin para User Products — o anúncio original
+  é encerrado e cada cor vira um MLB próprio. Corrige a premissa do [[ADR-0078]]: preço único entre
+  variações é regra do modelo **Legacy**, não do Mercado Livre inteiro.
+- **Três bugs pré-existentes fechados junto**, porque destravar o preço sem eles publicaria valor
+  errado com HTTP 200: escrita durante a janela de migração (PUT aceito e descartado, banco dizendo
+  "confirmado" enquanto a vitrine sobe com o preço antigo); atacado não reaplicado em reprice puro
+  (PxQ sobre preço velho); e `preco_publicado_ml` nunca gravado no UPDATE de família UP, deixando o
+  badge "preço alterado" aceso para sempre.
+- **A revisão independente pegou dois bugs de dinheiro introduzidos na própria entrega:** a trava
+  nova de atacado impedia *desligar* o atacado (PxQ seguia vivo no ML enquanto o app marcava "erro")
+  e disparava com `[]`/`false` que a própria interface grava — travaria o atacado permanentemente em
+  qualquer família que passou pelo editor de config por faixa.
+- **Pendente:** validação em anúncio real. O Oxford 10m ficou de fora por decisão do operador; o
+  roteiro exige família de teste nascendo com preço uniforme, migração pelo painel, adoção via
+  "somente estoque" e só então preços diferentes.
 
 ## 2026-09-07
 
