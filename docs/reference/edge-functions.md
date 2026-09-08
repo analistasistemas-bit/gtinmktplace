@@ -1118,6 +1118,16 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `ResultadoBaixaVenda.skuDesconhecido` e o `sync-venda` alerta em `vendas`
   (`reservarNotificacao('estoque_sku_desconhecido', pedido)`). Origem típica: a variação foi
   apagada do PubliAI enquanto seguia viva no anúncio (ver o guard anti-órfão de `excluir-lote`).
+  **Kit vinculado baixando no `codigo_pai` (2026-09-08):** o alerta acima disparou para um kit
+  (`00000089`, pedido `2000018341864344`), mas o SKU existia — quem não existia era o código
+  procurado. `resolverOrigemEstoque` devolvia `codigoCanonico = kit_base_codigo_pai`, o `codigo_pai`
+  da família base, enquanto `baixar_estoque` resolve SKU por `variacoes.codigo`; como os dois
+  espaços de código são disjuntos (0 de 8.561 variações têm `codigo = codigo_pai`), **nenhuma**
+  venda de kit vinculado baixava estoque. O resolvedor passa a buscar a família base por
+  `codigo_pai` e devolver o `codigo` da sua única variação, e origem de kit que não resolve (erro de
+  leitura, base ausente, base com mais de uma variação) vira `falhas` — nunca degrada para "SKU
+  comum", porque degradar baixava no SKU do kit (saldo 0), gravava movimento de `quantidade = 0` e
+  queimava a referência de idempotência em silêncio.
   Liveness da integração (ADR-0069): erro no token ou no fetch do recurso é classificado via
   `classificarErroML` — 401/403 (`permanente-auth`) grava `marketplace_connections.auth_alerta_em`
   e alerta `notificarCategoria(..., 'integracao', ...)` só na 1ª falha (200, sem retry); 404
