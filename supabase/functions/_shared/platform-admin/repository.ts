@@ -40,6 +40,9 @@ type SupportAuditRow = {
   result: string; target_type: string | null; target_id: string | null; support_request_id: string | null;
 };
 
+// Perf FASE 2.4: limiar de "cabe tudo" da carteira (repository.ts `wallet`).
+const WALLET_ALL_ROWS_MAX = 200;
+
 function fail(error: { message: string } | null): void { if (error) throw new Error(error.message); }
 function monthDate(month: string): string { return `${month}-01`; }
 function monthBounds(month: string): [string, string] {
@@ -153,8 +156,13 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
         orders: completeMetrics ? summaries.reduce((sum, row) => sum + (row.metrics?.orders ?? 0), 0) : null,
         warnings,
       };
+      // Perf FASE 2.4: o servidor já enriqueceu TODAS as organizações acima (precisa, para os
+      // totais) — cabendo na carteira inteira (≤ 200), devolver tudo custa ~1 KB a mais por org e
+      // deixa o cliente ordenar/paginar sem nova ida ao servidor. Acima disso, mantém o corte de
+      // página de sempre — sem isso, 30 orgs de ~30 KB cada estourariam o payload à toa.
       const from = (input.page - 1) * input.page_size;
-      return { rows: summaries.slice(from, from + input.page_size), total: summaries.length, page: input.page, page_size: input.page_size, totals };
+      const rows = summaries.length <= WALLET_ALL_ROWS_MAX ? summaries : summaries.slice(from, from + input.page_size);
+      return { rows, total: summaries.length, page: input.page, page_size: input.page_size, totals };
     },
     metrics: (_actorId: string, orgId: string, month: string) => readOrgMetrics(db as never, orgId, month, now()),
     async terms(_actorId: string, orgId: string) { const { data, error } = await db.from('platform_commercial_terms').select('*').eq('org_id', orgId).order('starts_on', { ascending: false }).order('version', { ascending: false }); fail(error); return { rows: data ?? [] }; },

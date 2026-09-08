@@ -172,6 +172,12 @@ export default function Organizacoes() {
   const [novaOpen, setNovaOpen] = useState(false);
   const [supportOrg, setSupportOrg] = useState<OrgSummary | null>(null);
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
+  // Perf FASE 2.4: quando a carteira cabe inteira na resposta (repository.ts devolve todas as
+  // linhas quando total ≤ 200), travamos sort/page de rede no valor da 1ª leitura — trocar página
+  // ou coluna daí em diante só reordena/pagina o array já carregado, sem nova consulta. Acima do
+  // limiar o servidor volta a fatiar (repository.ts) e este estado permanece null: sort/page seguem
+  // ao vivo, comportamento de sempre.
+  const [travado, setTravado] = useState<{ sort: 'name' | 'slug' | 'gross_desc'; page: number } | null>(null);
 
   // Debounce: só copia searchInput para search (o que entra na queryKey) 300ms após a última tecla,
   // senão cada tecla refaz o ciclo inteiro no servidor.
@@ -180,18 +186,42 @@ export default function Organizacoes() {
     return () => clearTimeout(timer);
   }, [searchInput]);
 
+  // Filtro novo (mês/busca/teste) muda o total da carteira filtrada — reavalia se ainda cabe tudo.
+  useEffect(() => { setTravado(null); }, [month, search, includeTest]);
+
+  const netSort = travado?.sort ?? sort;
+  const netPage = travado?.page ?? page;
   const wallet = usePlatformWallet({
     month,
     search: search.trim() || undefined,
     include_test: includeTest,
-    sort,
-    page,
+    sort: netSort,
+    page: netPage,
     page_size: PAGE_SIZE,
   });
+  // `rows.length === total` só é verdade quando o servidor devolveu a carteira inteira (repository.ts
+  // `wallet`) — acima de 200 organizações ele sempre fatia, então nunca bate.
+  const walletCompleta = !!wallet.data && wallet.data.rows.length === wallet.data.total;
+  useEffect(() => {
+    // `keepPreviousData` (FASE 1.5) mantém o dado do filtro anterior visível durante a troca — não
+    // travar com base nesse total, que ainda não é o do filtro atual.
+    if (wallet.isPlaceholderData || !wallet.data) return;
+    setTravado((prev) => (walletCompleta ? prev ?? { sort: netSort, page: netPage } : null));
+  }, [wallet.data, wallet.isPlaceholderData, walletCompleta, netSort, netPage]);
+
   const totals = wallet.data?.totals;
+  const pageRows = useMemo(() => {
+    const rows = wallet.data?.rows ?? [];
+    if (!walletCompleta) return rows;
+    // Mesmo comparador do servidor (repository.ts `wallet`) — sort/page aqui são só locais.
+    const comparar = sort === 'gross_desc'
+      ? (a: OrgSummary, b: OrgSummary) => (b.metrics?.gross_cents ?? -1) - (a.metrics?.gross_cents ?? -1) || a.nome.localeCompare(b.nome)
+      : sort === 'slug' ? (a: OrgSummary, b: OrgSummary) => a.slug.localeCompare(b.slug) : (a: OrgSummary, b: OrgSummary) => a.nome.localeCompare(b.nome);
+    return [...rows].sort(comparar).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  }, [wallet.data, walletCompleta, sort, page]);
   const orgs = useMemo(
-    () => (wallet.data?.rows ?? []).filter((org) => includeTest || !org.is_test),
-    [wallet.data, includeTest],
+    () => pageRows.filter((org) => includeTest || !org.is_test),
+    [pageRows, includeTest],
   );
   const orgsVisiveis = useMemo(
     () => somentePendencias ? orgs.filter((o) => (o.pending_count ?? 0) > 0 || o.modality == null) : orgs,

@@ -22,15 +22,20 @@ export type MetricsDb = {
 const PAGE_SIZE = 1000;
 const BRT_OFFSET = '-03:00';
 
-/** Mesma lista de colunas de `buscarVendas` (`src/lib/faturamento.ts`), mais `org_id` — que
- *  `normalizeSales` usa para descartar linha de outra organização e NÃO está na lista do app.
- *  `select('*')` traria `ml_vendas.raw` (~4 MB por render da carteira) que ninguém lê (ADR-0158 §4). */
-const SALES_COLUMNS = 'id, org_id, order_id, pack_id, status, status_detail, date_closed, date_created, '
-  + 'comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, '
-  + 'frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, '
-  + 'shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, '
-  + 'tem_devolucao, kit_item_id, '
-  + 'itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai), '
+/** Perf FASE 2.1: lista mínima que `readOrgMetrics`/`calcularResumo` de fato leem — não a de
+ *  `buscarVendas` (`src/lib/faturamento.ts`), que alimenta telas com mais colunas (Publicados,
+ *  Faturamento, Financeiro). `org_id` é obrigatório: `normalizeSales` descarta toda linha sem ele
+ *  (`normalizeSales`, abaixo). `custos:venda_item_custo(...)` é obrigatório: sem ele o custo
+ *  congelado (ADR-0109) some e o markup histórico muda. `select('*')` traria `ml_vendas.raw`
+ *  (~4 MB por render da carteira) que ninguém lê (ADR-0158 §4).
+ *  Cortado (conferido em `sales-summary.ts`/`sales-costs.ts`: nenhum leitor usa): status_detail,
+ *  comprador_nick/nome/id, cidade, paid_amount, money_release_date, sacado_em, sacado_por, currency,
+ *  shipping_status/substatus/logistic, tracking_number, is_publiai, tem_devolucao, kit_item_id da
+ *  venda; id, titulo, cor, sale_fee, is_publiai do item (`titulo` alimenta `descricaoVenda`, mas o
+ *  resultado vai para `summary.vendas`, que este arquivo descarta). */
+const SALES_COLUMNS = 'id, org_id, order_id, pack_id, status, date_closed, date_created, uf, total_amount, '
+  + 'sale_fee_total, frete_vendedor, liquido, estorno, atualizado_em, shipping_id, '
+  + 'itens:ml_vendas_itens(ml_item_id, variation_id, codigo, ean, quantity, unit_price), '
   + 'custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)';
 
 function addMonths(month: string, delta: number): string {
@@ -60,6 +65,28 @@ async function readPages(build: () => Query): Promise<{ rows: Record<string, unk
     rows.push(...values);
     if (values.length < PAGE_SIZE) return { rows, error: null };
   }
+}
+
+/** Perf FASE 2.2: uma leitura por mês-calendário, em paralelo, em vez de um único `range` sequencial
+ *  sobre a janela inteira. NÃO é count + offsets paralelos (proposta rejeitada na revisão): sem
+ *  snapshot comum, venda inserida no meio deslocaria offsets e duplicaria/perderia linha, alterando
+ *  número financeiro. Cada mês é uma faixa `gte/lt` fechada e independente de offset — o maior mês
+ *  em produção tem 1 135 vendas, só ele paginaria além da primeira página. O limite superior de cada
+ *  mês é sempre o calendário cheio (`startOf(mês seguinte)`), igual ao de hoje — o corte por `now`
+ *  do mês corrente (`selectedEnd`) continua acontecendo depois, em memória, via `rangeSales`. As
+ *  linhas voltam concatenadas na ordem cronológica dos meses (`seriesMonths`), igual à ordem de uma
+ *  leitura única — os meses particionam a janela em intervalos disjuntos, então o conjunto e a ordem
+ *  são idênticos aos de antes, só o número de round-trips muda. */
+async function readSalesByMonth(
+  db: MetricsDb, orgId: string, seriesMonths: string[],
+): Promise<{ rows: Record<string, unknown>[]; error: DbError }> {
+  const perMonth = await Promise.all(seriesMonths.map((monthValue) => readPages(() => db.from('ml_vendas')
+    .select(SALES_COLUMNS)
+    .eq('org_id', orgId).gte('date_closed', startOf(monthValue)).lt('date_closed', startOf(addMonths(monthValue, 1)))
+    .order('date_closed', { ascending: true }).order('id', { ascending: true }))));
+  const failed = perMonth.find((page) => page.error);
+  if (failed) return { rows: [], error: failed.error };
+  return { rows: perMonth.flatMap((page) => page.rows), error: null };
 }
 
 function sameOrg(row: Record<string, unknown>, orgId: string): boolean {
@@ -119,10 +146,7 @@ export async function readOrgMetrics(db: MetricsDb, orgId: string, month: string
   // de propósito: `returns table` por POST seria truncado no `max_rows=1000` do PostgREST sem erro
   // nenhum e o markup sairia errado em silêncio.
   const [salesResult, catalogResult, configResult] = await Promise.all([
-    readPages(() => db.from('ml_vendas')
-      .select(SALES_COLUMNS)
-      .eq('org_id', orgId).gte('date_closed', startOf(seriesMonths[0])).lt('date_closed', startOf(addMonths(month, 1)))
-      .order('date_closed', { ascending: true }).order('id', { ascending: true })),
+    readSalesByMonth(db, orgId, seriesMonths),
     db.rpc('platform_org_cost_catalog', { p_org: orgId, p_since: startOf(seriesMonths[0]) }),
     readPages(() => db.from('configuracoes')
       .select('org_id,aliquota_nacional_pct,aliquota_importado_pct,uf_empresa,aliquota_interna_pct,aliquotas_confirmadas_em')

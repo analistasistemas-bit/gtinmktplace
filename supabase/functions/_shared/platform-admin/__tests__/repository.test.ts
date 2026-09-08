@@ -69,7 +69,12 @@ describe('createPlatformAdminRepository', () => {
     );
     const repository = createPlatformAdminRepository(db as never, () => new Date('2026-09-06T12:00:00Z'));
     const wallet = await repository.wallet('actor', { month: '2026-08', page: 1, page_size: 1, sort: 'gross_desc' });
-    expect(wallet).toMatchObject({ total: 2, page: 1, page_size: 1, rows: [{ id: 'org-b', metrics: { gross_cents: 30_000 } }] });
+    // Perf FASE 2.4: com 2 organizações (≤ 200), a carteira devolve todas as linhas mesmo com
+    // page_size: 1 — o corte de página só se aplica acima do limiar (teste dedicado abaixo).
+    expect(wallet).toMatchObject({
+      total: 2, page: 1, page_size: 1,
+      rows: [{ id: 'org-b', metrics: { gross_cents: 30_000 } }, { id: 'org-a', metrics: { gross_cents: 10_000 } }],
+    });
     // Pendência é bloqueio da prévia (ADR-0158 §2): sem contrato → 1; consumo é contável sem contrato.
     expect(wallet.rows[0]).toMatchObject({ modality: null, forecast_cents: null, billable_units: 2, pending_count: 1 });
     expect(wallet.totals).toEqual({
@@ -167,6 +172,21 @@ describe('createPlatformAdminRepository', () => {
     // Com contrato mas bloqueada: fica fora da previsão e conta 1 pendência.
     expect(blockedWallet.rows[0]).toMatchObject({ forecast_cents: null, pending_count: 1, modality: 2 });
     expect(blockedWallet.totals).toMatchObject({ forecast_cents: 0, orgs_without_terms: 0, pending_count: 1 });
+  });
+
+  // Perf FASE 2.4: "devolver tudo" só vale até 200 organizações — acima disso o comportamento de
+  // sempre (corte de página no servidor) tem que continuar intacto.
+  it('keeps server-side pagination once the wallet has more than 200 organizations', async () => {
+    const organizations = Array.from({ length: 201 }, (_, n) => {
+      const label = String(n).padStart(3, '0');
+      return { id: `org-${label}`, nome: `Org ${label}`, slug: `org-${label}`, is_test: false };
+    });
+    const db = fakeDb({ organizations: { rows: organizations }, ml_vendas: {}, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} });
+    const wallet = await createPlatformAdminRepository(db as never).wallet('actor', { month: '2026-08', page: 2, page_size: 50, sort: 'name' });
+    expect(wallet.total).toBe(201);
+    expect(wallet.rows).toHaveLength(50);
+    expect(wallet.rows[0]).toMatchObject({ id: 'org-050' });
+    expect(wallet.rows.at(-1)).toMatchObject({ id: 'org-099' });
   });
 
   it('maps delivery amounts by search_id and counts month-wide Daludi, failures, and reopen intents', async () => {

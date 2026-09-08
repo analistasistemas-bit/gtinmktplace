@@ -348,6 +348,7 @@ create table public.ml_vendas_itens (
 -- Fora de ordem (ou ausentes) o teste roda contra a versao antiga da funcao e passa em falso.
 \ir ../migrations/20260907103422_platform_org_cost_catalog.sql
 \ir ../migrations/20260907210746_corrigir_regex_setup_due_month.sql
+\ir ../migrations/20260908022934_platform_org_cost_catalog_distinct.sql
 
 -- Implantacao > 0: o unico caminho que valida `setup_due_month`. Todos os casos acima usam
 -- `setup_fee_cents = 0`, e foi por isso que a regex quebrada (escape duplo, que exigia barra
@@ -464,6 +465,58 @@ begin
   -- Organizacao sem venda no periodo devolve array vazio (nunca null).
   if public.platform_org_cost_catalog('90000000-0000-0000-0000-000000000011', v_since) <> '[]'::jsonb then
     raise exception 'catalog without sales did not return an empty array';
+  end if;
+end $$;
+
+-- Perf FASE 2.3: DISTINCT ON por (kind, key), nao por linha -- reimportacao duplica a MESMA chave
+-- de resolucao (variacao/anuncio) em varias linhas, e uma delas pode vencer numa chave e perder em
+-- outra (sales-costs.ts:24-32 -- quatro mapas independentes).
+insert into public.familias (id, org_id, ml_item_id, origem) values
+  ('a0000000-0000-0000-0000-000000000005', '90000000-0000-0000-0000-000000000001', 'MLA5', 'nacional');
+
+insert into public.variacoes (id, org_id, familia_id, custo, peso_gramas, ml_variation_id, gtin, codigo, atualizado_em) values
+  -- v5 e v6 empatam em atualizado_em na chave de variacao/anuncio compartilhada ('555'/'MLA5'): o
+  -- id menor vence -- mesmo resultado do `>` estrito de `upsertRecente` processando em `order by id`.
+  ('b0000000-0000-0000-0000-000000000005', '90000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000005', 100, 50, '555', 'EANA5', 'SKUA5', '2026-08-01T00:00:00Z'),
+  ('b0000000-0000-0000-0000-000000000006', '90000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000005', 200, 60, '555', 'EANA6', 'SKUA6', '2026-08-01T00:00:00Z'),
+  -- v7: atualizado_em nulo nunca vence uma linha com data, mesmo so perdendo nas chaves
+  -- compartilhadas (nao tem gtin/codigo proprios para vencer em outro lugar).
+  ('b0000000-0000-0000-0000-000000000007', '90000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000005', 999, 70, '555', null, null, null),
+  -- v8: a linha mais recente de todas, mas custo <= 0 -- `montarMapasCusto` descarta a linha INTEIRA
+  -- antes de disputar a chave (sales-costs.ts:58). Sem o filtro `custo > 0` dentro de `chaves`, v8
+  -- venceria a chave '555' e ela ficaria SEM NENHUM custo no payload (o TypeScript teria usado v5,
+  -- que sumiria) -- o markup mudaria em silencio, o que a trava de aceite do plano proibe.
+  ('b0000000-0000-0000-0000-000000000008', '90000000-0000-0000-0000-000000000001', 'a0000000-0000-0000-0000-000000000005', 0, 80, '555', null, null, '2026-09-01T00:00:00Z');
+
+insert into public.ml_vendas (id, org_id, date_closed) values
+  ('c0000000-0000-0000-0000-000000000005', '90000000-0000-0000-0000-000000000001', '2026-08-15T12:00:00Z');
+insert into public.ml_vendas_itens (id, venda_id, ml_item_id, variation_id, ean, codigo) values
+  ('d0000000-0000-0000-0000-000000000005', 'c0000000-0000-0000-0000-000000000005', 'MLA5', 555, null, null);
+
+do $$
+declare
+  v_since timestamptz := '2026-04-01T00:00:00-03:00';
+  v_a jsonb;
+  v_ids text[];
+begin
+  v_a := public.platform_org_cost_catalog('90000000-0000-0000-0000-000000000001', v_since);
+  select array_agg(x->>'id') into v_ids from jsonb_array_elements(v_a) x;
+
+  -- v6 perde a chave de variacao/anuncio para v5 (empate de atualizado_em, id menor vence) mas
+  -- ainda vence a PROPRIA chave de gtin/codigo -- e a uniao dos vencedores por (kind, key), nunca
+  -- "vencedor unico por linha", que tem que sobreviver.
+  if not (v_ids @> array['b0000000-0000-0000-0000-000000000005', 'b0000000-0000-0000-0000-000000000006']) then
+    raise exception 'distinct-on catalog dropped a row that wins its own gtin/codigo key: %', v_a;
+  end if;
+  -- v7 (atualizado_em nulo) e v8 (custo <= 0) nunca vencem nenhuma chave e ficam de fora.
+  if v_ids && array['b0000000-0000-0000-0000-000000000007', 'b0000000-0000-0000-0000-000000000008'] then
+    raise exception 'a row that should never win a key leaked into the catalog: %', v_a;
+  end if;
+
+  -- Tie-break de verdade: entre v5 e v6 na chave compartilhada, quem o app usa e o custo de v5
+  -- (100, id menor) -- nao o de v6 (200).
+  if (select x->>'custo' from jsonb_array_elements(v_a) x where x->>'id' = 'b0000000-0000-0000-0000-000000000005') <> '100' then
+    raise exception 'tie-break on atualizado_em did not keep the lower id: %', v_a;
   end if;
 end $$;
 

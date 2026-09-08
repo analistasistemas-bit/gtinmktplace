@@ -87,7 +87,14 @@ describe('readOrgMetrics', () => {
       { table: 'ml_vendas', op: 'eq', column: 'org_id', value: 'org-a' },
       { table: 'configuracoes', op: 'eq', column: 'org_id', value: 'org-a' },
     ]));
-    expect(db.calls.filter((call) => call.table === 'ml_vendas' && call.op === 'range')).toHaveLength(2);
+    // Perf FASE 2.2: uma leitura por mês-calendário (6), em paralelo — outubro (as 1001 vendas)
+    // pagina uma segunda vez, os outros cinco meses (vazios) fazem 1 `range` cada = 7 no total.
+    const ranges = db.calls.filter((call) => call.table === 'ml_vendas' && call.op === 'range');
+    expect(ranges).toHaveLength(7);
+    // Seis meses-calendário distintos, não uma janela única — um bare count de 7 passaria também
+    // com uma partição errada (ex.: 7 páginas da janela inteira, sem virar leitura por mês).
+    const gtes = db.calls.filter((call) => call.table === 'ml_vendas' && call.op === 'gte').map((call) => call.value);
+    expect(new Set(gtes).size).toBe(6);
   });
 
   it('lê ml_vendas por lista explícita de colunas, sem * e sem raw, mantendo org_id', async () => {
@@ -101,6 +108,20 @@ describe('readOrgMetrics', () => {
     expect(columns.split(/[,(]/).map((part) => part.trim())).toContain('org_id');
     expect(columns).toContain('itens:ml_vendas_itens(');
     expect(columns).toContain('custos:venda_item_custo(');
+  });
+
+  // Perf FASE 2.1: lista definitiva do plano — nem um campo a mais (payload), nem um a menos
+  // (`org_id`/`custos` zerariam a carteira ou o custo congelado; ver comentário de `SALES_COLUMNS`).
+  it('projeta exatamente a lista mínima de colunas de ml_vendas', async () => {
+    const db = dbFor(base({ ml_vendas: { rows: [sale('sale-1', '2026-10-02T12:00:00-03:00')] } }));
+    await readOrgMetrics(db, 'org-a', '2026-10', new Date('2026-10-15T12:00:00-03:00'));
+    const columns = db.calls.find((call) => call.table === 'ml_vendas' && call.op === 'select')?.value as string;
+    expect(columns).toBe(
+      'id, org_id, order_id, pack_id, status, date_closed, date_created, uf, total_amount, '
+      + 'sale_fee_total, frete_vendedor, liquido, estorno, atualizado_em, shipping_id, '
+      + 'itens:ml_vendas_itens(ml_item_id, variation_id, codigo, ean, quantity, unit_price), '
+      + 'custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)',
+    );
   });
 
   it('lê o catálogo de custo pela RPC, com p_since no primeiro mês da série', async () => {
