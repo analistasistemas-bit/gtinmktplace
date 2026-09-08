@@ -11,6 +11,21 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-09-08
 
+- **Botão "Migrar para preço por variação" (ADR-0161) — em produção** (`4ba64bdd`, migration
+  aplicada, 10 Edge Functions deployadas). **Revoga a §4 do ADR-0160 no mesmo dia:** o operador
+  recusou o fluxo partido entre o painel do ML e o app. Agora o clique dispara, acompanha, adota,
+  repõe estoque e avisa pelo sino — sem voltar ao Mercado Livre.
+- **O botão ficou mais confiável que a migração manual:** o app fotografa `variations[]` antes de
+  migrar, e é esse snapshot que evita casar com uma **família irmã** de mesmo título e mesmas cores
+  e adotar os anúncios do produto errado.
+- **A revisão final pegou três defeitos que nenhum teste apanharia:** a trava anti-oversell estava
+  **inerte** (recebia a lista de SKUs seguros e empurrava o produto inteiro, restaurando unidades já
+  vendidas); um transitório de rede encerrava a migração em erro definitivo enquanto o ML seguia em
+  frente; e o J9 (catálogo + atacado) estava escrito no ADR e ausente no código.
+- **Limitações aceitas:** famílias divididas e produtos em Kit Virtual não migram pelo botão; o selo
+  "% OFF" some; a métrica de vendas da tela recomeça do zero. **Pendente:** validação em anúncio
+  real, e bloquear a criação de Kit Virtual com componente em migração.
+
 - **Preço por variação sob User Products (ADR-0160) — em produção** (`336a7aeb`, 42 Edge Functions
   deployadas, sem migration). O ML ofereceu "Oferecer preço por variação" no Tecido Oxford Liso 10m;
   a investigação mostrou que o recurso **é** a migração UPtin para User Products — o anúncio original
