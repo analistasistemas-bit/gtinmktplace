@@ -72,6 +72,18 @@ export interface PortasComposicao {
     itemExternoId: string,
     patch: { available_quantity: number; price?: number; attributes?: AtributoItem[] },
   ): Promise<void>;
+  /**
+   * ADR-0160 (I4) — grava `variacoes.preco_publicado_ml` do SKU, logo APÓS o PUT daquele item.
+   *
+   * O UPDATE de família UP nunca escrevia esta coluna (o worker retorna em `rodarUP` antes do bloco
+   * que a grava no caminho Legacy), então o badge "preço alterado" ficava aceso para sempre depois
+   * do primeiro reprice — comparava o preço novo com o preço confirmado no CREATE.
+   *
+   * Gravar por item, e não em bloco no fim, importa para o retry: se a saga esgotar as tentativas
+   * com 3 de 9 PUTs feitos, o banco reflete exatamente os 3 que subiram. Em bloco, o banco ficaria
+   * 100% desatualizado com o ML 33% novo.
+   */
+  confirmarPreco(sku: string, preco: number): Promise<void>;
   /** Ficha CRUA (com `value_id`) de um filho já publicado, para o diff de atributos do
    *  ADR-0157. Uma leitura por família — os filhos compartilham `atributos_ml`, então o
    *  delta calculado sobre um deles vale para todos. null = não deu para ler; nesse caso
@@ -82,7 +94,21 @@ export interface PortasComposicao {
 export interface EntradaComposicao {
   skusDesejados: string[];
   estoquePorSku: Record<string, number>;
-  precoFamilia: number | null;
+  /**
+   * ADR-0160 — preço por SKU, simétrico a `estoquePorSku`. Substituiu o escalar `precoFamilia`.
+   *
+   * Sob User Products cada cor é um item ML próprio, então preço uniforme nunca foi exigência do
+   * canal aqui — era herança do modelo Legacy (um item, N variações, preço único). O escalar
+   * achatava em silêncio qualquer preço diferenciado.
+   *
+   * Semântica das três formas, deliberadamente distintas:
+   * - número  → empurra este preço neste item;
+   * - `null`  → preserva o preço vivo do item (o reconciliador de convergência repõe estoque sem
+   *             tocar em preço);
+   * - chave AUSENTE em `!somenteEstoque` → lacuna de dado, falha alto (I6). Cair para
+   *             "não envia" transformaria preço faltando num no-op mudo.
+   */
+  precoPorSku: Record<string, number | null>;
   somenteEstoque: boolean;
   /** `familias.atributos_ml`. ADR-0157: o que diverge da ficha publicada entra no PUT da
    *  reposição. Em `somenteEstoque` nada de atributo sai daqui (o modo preserva o anúncio). */
@@ -136,14 +162,36 @@ async function reposicao(portas: PortasComposicao, entrada: EntradaComposicao, d
   if (alvos.length === 0) return;
   // Só paga o GET da ficha quando há filho para repor (ADR-0157).
   const attrs = await atributosDaReposicao(portas, entrada);
+  // I6 — checa TODOS os alvos antes de qualquer PUT. Validar dentro do laço deixaria os primeiros
+  // itens já escritos quando o SKU sem preço aparecesse: metade da família num preço novo, metade
+  // no antigo, sem transação que desfaça.
+  if (!entrada.somenteEstoque) {
+    const semPreco = alvos.filter((f) => !(f.sku in entrada.precoPorSku)).map((f) => f.sku);
+    if (semPreco.length > 0) {
+      const e = new Error(
+        `Sem preço de publicação para ${semPreco.join(', ')} — "atualizar tudo" empurra preço e não `
+        + 'há o que empurrar nessas cores. Nada foi enviado ao Mercado Livre. Defina o preço na '
+        + 'Revisão, ou publique como "somente estoque". (400)',
+      ) as Error & { status?: number };
+      e.status = 400;
+      throw e;
+    }
+  }
   for (const f of alvos) {
     const estoque = entrada.estoquePorSku[f.sku] ?? 0;
+    // `numeric` do Postgres chega como string pelo supabase-js: sem Number() o PUT sairia com
+    // `"price":"29.90"`.
+    const precoBruto = entrada.precoPorSku[f.sku];
+    const preco = precoBruto == null ? null : Number(precoBruto);
     const patch: { available_quantity: number; price?: number; attributes?: AtributoItem[] } =
-      entrada.somenteEstoque || entrada.precoFamilia == null
+      entrada.somenteEstoque || preco == null
         ? { available_quantity: estoque }
-        : { available_quantity: estoque, price: entrada.precoFamilia };
+        : { available_quantity: estoque, price: preco };
     if (attrs.length > 0) patch.attributes = attrs;
     await portas.repor(f.itemExternoId!, patch);
+    // I4/I8: só confirma o que ACABOU de subir. Em `somenteEstoque` (preço ausente do patch) o
+    // valor anterior continua sendo a verdade — nada a regravar, e nenhum GET extra para descobrir.
+    if (patch.price != null) await portas.confirmarPreco(f.sku, patch.price);
   }
 }
 

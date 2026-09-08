@@ -82,6 +82,21 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   const skusDesejados = args.skusDesejadosOverride ?? variacoes.map((v) => v.codigo);
   const estoquePorSku: Record<string, number> = {};
   for (const v of variacoes) estoquePorSku[v.codigo] = v.estoque;
+  // ADR-0160: preço POR SKU. Antes daqui saía `variacoes.find(v => v.preco_publicacao != null)` —
+  // o primeiro preço não-nulo virava "o preço da família" e era empurrado a todos os itens irmãos,
+  // achatando qualquer diferenciação. Sob User Products cada cor é um item ML próprio: preço
+  // uniforme nunca foi exigência do canal neste caminho.
+  const precoPorSku: Record<string, number | null> = {};
+  for (const v of variacoes) {
+    precoPorSku[v.codigo] = v.preco_publicacao != null ? Number(v.preco_publicacao) : null;
+  }
+  // Base do atacado (PxQ) e do LOUD de divergência. O PxQ é por ITEM na API do ML, e nesta entrega
+  // desconto/atacado seguem família-level (decisão de escopo): com preços divergentes não há base
+  // única legítima, então o caminho falha alto em vez de escolher uma cor arbitrária.
+  const precosDistintos = new Set(
+    variacoes.map((v) => (v.preco_publicacao != null ? Math.round(Number(v.preco_publicacao) * 100) : null))
+      .filter((c): c is number => c != null),
+  );
   const precoRaw = variacoes.find((v) => v.preco_publicacao != null)?.preco_publicacao;
   const precoFamilia = precoRaw != null ? Number(precoRaw) : null;
 
@@ -243,6 +258,16 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     ativar: (itemExternoId) => ctx.getToken().then((t) => atualizarStatusML(t, itemExternoId, 'active')),
     pausar: (itemExternoId) => ctx.getToken().then((t) => atualizarStatusML(t, itemExternoId, 'paused')),
     repor: (itemExternoId, patch) => ctx.getToken().then((t) => atualizarItemPlanoML(t, itemExternoId, patch)),
+    // ADR-0160 (I4): confirma o preço DAQUELE sku assim que o PUT dele passa. Base do badge
+    // "preço alterado" (ADR-0078 F1), que no caminho UP nunca era alimentado.
+    confirmarPreco: async (sku, preco) => {
+      const { error } = await admin.from('variacoes')
+        .update({ preco_publicado_ml: preco })
+        .eq('familia_id', familia.id).eq('codigo', sku);
+      // Não derruba a saga: o preço JÁ está no ML e desfazer não é opção. O badge fica desatualizado
+      // até a próxima publicação — barato perto de abortar uma atualização que já surtiu efeito.
+      if (error) console.error(`confirmarPreco UP (${familia.id}/${sku}):`, error.message);
+    },
     lerFichaPublicada: lerFichaCrua,
   };
 
@@ -368,6 +393,19 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
         if (aplicandoFaixas && precoFamilia == null) {
           const m = 'Atacado sem preço-base: sem preço novo nem preço vivo conhecido';
           await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
+        } else if (aplicandoFaixas && precosDistintos.size > 1) {
+          // ADR-0160 (I5). O PxQ é por ITEM na API do ML e o valor é ABSOLUTO (ADR-0041): com
+          // preços diferentes entre as cores não existe base única legítima. Usar `precoFamilia`
+          // (a primeira cor) daria a todos os itens um preço B2B calculado sobre outra cor —
+          // desconto de atacado errado, em dinheiro, sem ninguém perceber. Nada financeiro pode
+          // defaultar em silêncio (ADR-0055): registra erro e não aplica.
+          //
+          // Sai desta trava quando o atacado passar a ser por variação (fora do escopo desta
+          // entrega, por decisão de 2026-09-08): aí a base é o preço do próprio item.
+          const m = 'Atacado não aplicado: as cores têm preços diferentes e o preço de atacado do '
+            + 'Mercado Livre é único por anúncio. Deixe o preço uniforme, ou desligue o atacado '
+            + 'nesta família.';
+          await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
         } else {
           let ok = true;
           for (const id of finais) {
@@ -386,7 +424,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   let resultado: ResultadoComposicao;
   try {
     resultado = await executarSaga(portas, {
-      skusDesejados, estoquePorSku, precoFamilia, somenteEstoque, familyIdEsperado,
+      skusDesejados, estoquePorSku, precoPorSku, somenteEstoque, familyIdEsperado,
       atributosFamilia: familia.atributos_ml,
     });
   } catch (e) {

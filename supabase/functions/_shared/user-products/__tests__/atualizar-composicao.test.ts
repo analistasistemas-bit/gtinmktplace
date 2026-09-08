@@ -37,6 +37,7 @@ function fakeMundo(opts: {
   const chamadas = {
     criarPlano: [] as string[], ativar: [] as string[], pausar: [] as string[],
     repor: [] as Array<{ id: string; patch: Record<string, unknown> }>,
+    confirmarPreco: [] as Array<{ sku: string; preco: number }>,
     iniciarComposicao: [] as string[][], limparComposicao: 0,
     lerFichaPublicada: 0,
   };
@@ -84,6 +85,7 @@ function fakeMundo(opts: {
     ativar: (itemExternoId) => { chamadas.ativar.push(itemExternoId); const it = remoto.get(itemExternoId); if (it) it.status = 'active'; return Promise.resolve(); },
     pausar: (itemExternoId) => { chamadas.pausar.push(itemExternoId); const it = remoto.get(itemExternoId); if (it) it.status = 'paused'; return Promise.resolve(); },
     repor: (itemExternoId, patch) => { chamadas.repor.push({ id: itemExternoId, patch }); return Promise.resolve(); },
+    confirmarPreco: (sku, preco) => { chamadas.confirmarPreco.push({ sku, preco }); return Promise.resolve(); },
     lerFichaPublicada: () => {
       chamadas.lerFichaPublicada += 1;
       if (opts.fichaFalha) return Promise.reject(new Error('GET item irmão 500'));
@@ -106,7 +108,7 @@ function entrada(over: Partial<EntradaComposicao> = {}): EntradaComposicao {
   return {
     skusDesejados: ['A', 'B'],
     estoquePorSku: { A: 10, B: 20 },
-    precoFamilia: 29.9,
+    precoPorSku: { A: 29.9, B: 29.9 },
     somenteEstoque: false,
     familyIdEsperado: 'FAM-1',
     ...over,
@@ -131,6 +133,98 @@ describe('atualizarComposicao — reposição pura (sem mudança de composição
     const w = fakeMundo({ seed: [filho('A', 'MLB1')] });
     await atualizarComposicao(w.portas, entrada({ skusDesejados: ['A'], estoquePorSku: { A: 7 }, somenteEstoque: true }));
     expect(w.chamadas.repor).toEqual([{ id: 'MLB1', patch: { available_quantity: 7 } }]);
+  });
+});
+
+// ADR-0160 (I2) — preço POR VARIAÇÃO no modelo User Products.
+//
+// Sob UP cada cor é um item ML separado, com preço próprio: é exatamente o que o ML vende como
+// "preço por variação". O colapso para um escalar (`precoFamilia` = 1º preço não-nulo da família)
+// era herança do modelo Legacy, onde as variações dividem um item só e o preço precisa ser
+// uniforme. Aqui ele não tinha razão técnica nenhuma — e achatava silenciosamente qualquer preço
+// diferenciado que o operador definisse.
+describe('atualizarComposicao — preço por variação (ADR-0160 I2)', () => {
+  it('cada item recebe o preço do SEU sku', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    await atualizarComposicao(w.portas, entrada({ precoPorSku: { A: 19.9, B: 34.5 } }));
+    expect(w.chamadas.repor).toEqual([
+      { id: 'MLB1', patch: { available_quantity: 10, price: 19.9 } },
+      { id: 'MLB2', patch: { available_quantity: 20, price: 34.5 } },
+    ]);
+  });
+
+  // O preço vem do banco como numeric, e o supabase-js entrega numeric como STRING. Sem Number()
+  // o PUT sai com `"price":"29.90"`. O ML aceita ou recusa conforme o campo, e nenhum mock pega —
+  // é a mesma classe de falha do ADR-0129, que passou nos testes e quebrou em produção.
+  it('preço em string (numeric do Postgres) vira número no patch', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1')] });
+    await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A'], estoquePorSku: { A: 3 },
+      precoPorSku: { A: '29.90' as unknown as number },
+    }));
+    expect(w.chamadas.repor).toEqual([{ id: 'MLB1', patch: { available_quantity: 3, price: 29.9 } }]);
+  });
+
+  // I3 continua valendo por cima de tudo: em "somente estoque" nenhum preço sai, mesmo divergente.
+  it('somenteEstoque não envia preço nem com preços divergentes', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    await atualizarComposicao(w.portas, entrada({ precoPorSku: { A: 19.9, B: 34.5 }, somenteEstoque: true }));
+    expect(w.chamadas.repor).toEqual([
+      { id: 'MLB1', patch: { available_quantity: 10 } },
+      { id: 'MLB2', patch: { available_quantity: 20 } },
+    ]);
+  });
+
+  // Null explícito = "não empurre preço neste SKU" (o reconciliador de convergência usa isso para
+  // repor estoque sem tocar em preço). É diferente de ausência da chave, que é I6: SKU desejado
+  // sem preço nenhum em "atualizar tudo" é lacuna de dado e tem que falhar alto.
+  it('preço null preserva o preço vivo daquele item', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    await atualizarComposicao(w.portas, entrada({ precoPorSku: { A: 19.9, B: null } }));
+    expect(w.chamadas.repor).toEqual([
+      { id: 'MLB1', patch: { available_quantity: 10, price: 19.9 } },
+      { id: 'MLB2', patch: { available_quantity: 20 } },
+    ]);
+  });
+
+  // I4 — o badge "preço alterado" (ADR-0078 F1) compara `preco_publicacao` com `preco_publicado_ml`.
+  // No caminho UP essa coluna nunca era escrita no UPDATE (o worker retorna em `rodarUP` antes do
+  // bloco que a grava no Legacy), então o badge de família migrada ficava aceso para sempre depois
+  // do primeiro reprice: comparava o preço novo contra o confirmado lá no CREATE.
+  it('I4: confirma preco_publicado_ml por sku, com o preço que subiu naquele item', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    await atualizarComposicao(w.portas, entrada({ precoPorSku: { A: 19.9, B: 34.5 } }));
+    expect(w.chamadas.confirmarPreco).toEqual([
+      { sku: 'A', preco: 19.9 },
+      { sku: 'B', preco: 34.5 },
+    ]);
+  });
+
+  // I8 — em "somente estoque" nenhum preço sobe, então nada a confirmar: o valor gravado antes
+  // continua verdadeiro. Regravar exigiria um GET a mais para descobrir o preço vivo, e gravar o
+  // preço NOVO (que não foi enviado) apagaria o badge que deveria continuar aceso.
+  it('I8: somenteEstoque não confirma preço nenhum', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1')] });
+    await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A'], estoquePorSku: { A: 7 }, somenteEstoque: true,
+    }));
+    expect(w.chamadas.confirmarPreco).toEqual([]);
+  });
+
+  // Retry: a confirmação segue o PUT item a item. Se a saga morre no meio, o banco reflete
+  // exatamente os itens que subiram — nunca "banco velho, ML novo".
+  it('confirma só os itens cujo PUT já passou (ordem PUT → confirma)', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    await atualizarComposicao(w.portas, entrada({ precoPorSku: { A: 19.9, B: null } }));
+    // B preserva o preço vivo → não subiu preço → não confirma.
+    expect(w.chamadas.confirmarPreco).toEqual([{ sku: 'A', preco: 19.9 }]);
+  });
+
+  it('I6: sku desejado sem preço em "atualizar tudo" falha alto, sem PUT nenhum', async () => {
+    const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
+    await expect(atualizarComposicao(w.portas, entrada({ precoPorSku: { A: 19.9 } })))
+      .rejects.toThrow(/preço/i);
+    expect(w.chamadas.repor).toEqual([]);
   });
 });
 
@@ -261,7 +355,9 @@ describe('atualizarComposicao — retirar cor', () => {
 describe('atualizarComposicao — mistura (1 adicionada + 1 retirada na mesma chamada)', () => {
   it('ambas processadas; skus_esperados final reflete só o conjunto novo', async () => {
     const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('B', 'MLB2')] });
-    const r = await atualizarComposicao(w.portas, entrada({ skusDesejados: ['A', 'C'], estoquePorSku: { A: 1, C: 1 } }));
+    const r = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A', 'C'], estoquePorSku: { A: 1, C: 1 }, precoPorSku: { A: 29.9, C: 29.9 },
+    }));
     expect(r.tipo).toBe('concluido');
     expect(w.chamadas.iniciarComposicao).toEqual([['A', 'C']]);
     expect(w.chamadas.criarPlano).toEqual(['C']);      // C adicionada
@@ -382,7 +478,10 @@ describe('atualizarComposicao — estado remoto inesperado na confirmação', ()
 describe('atualizarComposicao — concluido reporta cores criadas', () => {
   it('cor nova criada aparece em criadas; readd NÃO', async () => {
     const w = fakeMundo({ seed: [filho('A', 'MLB1'), filho('C', 'MLB3', { status: 'pausado', retirado: true })] });
-    const r = await atualizarComposicao(w.portas, entrada({ skusDesejados: ['A', 'B', 'C'], estoquePorSku: { A: 1, B: 1, C: 1 } }));
+    const r = await atualizarComposicao(w.portas, entrada({
+      skusDesejados: ['A', 'B', 'C'], estoquePorSku: { A: 1, B: 1, C: 1 },
+      precoPorSku: { A: 29.9, B: 29.9, C: 29.9 },
+    }));
     expect(r).toEqual({ tipo: 'concluido', criadas: ['B'] });   // B nova; C readd (não conta)
   });
 
@@ -404,10 +503,13 @@ describe('atualizarComposicao — grouping sem referência viva (familyIdEsperad
     expect(w.raiz().mudandoComposicao).toBe(false);
   });
 
+  // ADR-0160: a cor criada entra na reposição logo depois de ativada, então precisa do próprio
+  // preço no mapa — antes ela herdava o escalar da família por tabela.
   it('duas cores novas com o MESMO family_id → concluido', async () => {
     const w = fakeMundo({ criarFamilyIdPorSku: { B: 'FAM-9', C: 'FAM-9' } });
     const r = await atualizarComposicao(w.portas, entrada({
-      skusDesejados: ['B', 'C'], estoquePorSku: { B: 1, C: 1 }, familyIdEsperado: null,
+      skusDesejados: ['B', 'C'], estoquePorSku: { B: 1, C: 1 },
+      precoPorSku: { B: 29.9, C: 29.9 }, familyIdEsperado: null,
     }));
     expect(r.tipo).toBe('concluido');
   });
