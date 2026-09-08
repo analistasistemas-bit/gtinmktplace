@@ -254,8 +254,18 @@ Deno.serve(async (req) => {
     console.error(`acompanhar-migracao-pxv (${codigoPai}): ${detalhe}`);
     if (tentativa < MAX_TENTATIVAS) {
       try {
+        // A próxima rodada sai da tentativa GRAVADA, não de `tentativa + 1`. Se o throw aconteceu
+        // ANTES do claim (ex.: `carregarEstado` falhou), o banco continua em `n-1`: enfileirar
+        // `n+1` faria a rodada seguinte procurar `tentativa = n`, perder o claim e morrer em
+        // silêncio — sem erro, sem sino, com o episódio `em_andamento` para sempre.
+        const { data: raizAtual, error: erroLeitura } = await admin.from('anuncios_externos')
+          .select('migracao_pxv_tentativa')
+          .eq('org_id', orgId).eq('canal', CANAL).eq('codigo_pai', codigoPai).eq('particao', 0)
+          .maybeSingle();
+        if (erroLeitura || !raizAtual) throw new Error(erroLeitura?.message ?? 'raiz não encontrada');
+        const gravada = (raizAtual.migracao_pxv_tentativa as number | null) ?? 0;
         await enfileirarAcompanhamentoMigracaoPxv(
-          { org_id: orgId, codigo_pai: codigoPai, tentativa: tentativa + 1 }, DELAY_ATIVANDO_S,
+          { org_id: orgId, codigo_pai: codigoPai, tentativa: gravada + 1 }, DELAY_ATIVANDO_S,
         );
         return new Response(JSON.stringify({ tipo: 'aguardando' }), { headers: corsHeaders });
       } catch (e2) {

@@ -41,12 +41,12 @@ export function fundirAnunciosMigrados(
       : [];
     for (const v of snap) {
       const id = v?.id != null ? String(v.id) : null;
-      // SKU vai CRU, sem `normalizarCodigo` — apesar da simetria aparente com o casamento da
-      // adoção. Lá se COMPARA snapshot com banco, e normalizar aproxima os dois. Aqui o valor é
-      // GRAVADO como o código do produto que a venda resolve, e os mapas vizinhos deste módulo
-      // (`eanPorCodigo`, `codPorItem`, em `io.ts`) são todos populados com `variacoes.codigo` cru.
-      // `normalizarCodigo` faz `padStart(8, '0')`, então normalizar aqui produziria `000000V1` para
-      // um código `V1` — um código que não existe em lugar nenhum, e que nenhum lookup encontraria.
+      // SKU vai CRU, sem `normalizarCodigo`. Aqui o valor é GRAVADO como o código do produto que a
+      // venda resolve, e os mapas vizinhos deste módulo (`eanPorCodigo`, `codPorItem`, em `io.ts`)
+      // são populados com `variacoes.codigo` — a mesma string que o snapshot carrega, porque o
+      // ingest já normaliza `CODIGO` na entrada (`_shared/parser.ts`) e o CREATE grava
+      // `seller_custom_field = v.codigo` (`_shared/ml/publicar.ts`). Normalizar aqui seria no-op em
+      // produção; cru evita uma transformação a mais sobre um valor que já vem canônico.
       const sku = typeof v?.sku === 'string' && v.sku !== '' ? v.sku : null;
       if (!id || !sku) continue;
       const chave = `${anterior}:${id}`;

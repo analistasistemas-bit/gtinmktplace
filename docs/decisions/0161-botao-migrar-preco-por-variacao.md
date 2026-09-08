@@ -145,6 +145,23 @@ reprocessado viraria venda de fora, sem código e sem custo — a mesma classe d
 - **`/sites/MLB/` é inferência.** A doc só publica o endpoint com `/sites/MLM/`. Se estiver errado, o
   primeiro clique falha com mensagem que diz exatamente isso.
 
+## Dívidas declaradas (revisão final, 2026-09-08)
+
+1. **Pontos de escrita sem guard de migração.** `sincronizar-estoque`, atacado, catálogo e
+   `adicionar-variacoes-familia` podem escrever durante a janela. Consequências limitadas: um PUT de
+   saldo rejeitado ou descartado é corrigido pelo push pós-adoção (`local ≤ vivo` cobre o caso
+   legítimo), e uma variação criada no meio fica fora do snapshot, não é adotada, e o próximo UPDATE
+   a cria como item novo.
+2. **Criar Kit Virtual com componente em migração** é o único desses que deixaria artefato com
+   dinheiro no ar — um kit ativo apontando para um `user_product_id` que vai morrer. O disparo já
+   recusa produto que **é** componente de kit existente; falta a recíproca:
+   `criar-kit-virtual` chamar `motivoMigracaoPxvPorItem` por componente. **Follow-up.**
+3. **Timeout da edge entre o claim e o reenfileiramento** mata a cadeia (o retry do QStash perde o
+   claim). A rodada de adoção faz N GETs + multiget + RPC e deve ficar bem abaixo do limite;
+   residual aceito, sem sweeper.
+4. **A UI não exibe o estado `erro`** da migração. O clique devolve a mensagem certa (recusa
+   explicando que a saída é publicar uma atualização), mas a linha não mostra o estado.
+
 ## Alternativas consideradas
 
 - **Manter a §4 do ADR-0160** (migrar no painel). Rejeitada pelo operador: fluxo partido em dois
