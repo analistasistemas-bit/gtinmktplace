@@ -1,5 +1,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mensagemErroEnvioML, pedidoCancelado, resolverMetaPack, responderMensagemPedido, upsertMensagens } from '../mensagens-io';
+import {
+  CODIGO_PEDIDO_CANCELADO,
+  ERRO_PEDIDO_CANCELADO,
+  marcarConversaCancelada,
+  mensagemErroEnvioML,
+  pedidoCancelado,
+  resolverMetaPack,
+  responderMensagemPedido,
+  upsertMensagens,
+} from '../mensagens-io';
 import type { MensagemML } from '../mensagem-mapper';
 
 const SELLER_ID = 999;
@@ -49,6 +58,60 @@ function criarAdminMeta(data: unknown, error: { message: string } | null = null)
   return {
     admin: { from } as unknown as Parameters<typeof resolverMetaPack>[0],
     select,
+  };
+}
+
+function criarAdminMarcarCancelada(options?: {
+  mensagensError?: { message: string } | null;
+  venda?: { order_id: string | number } | null;
+  vendaError?: { message: string } | null;
+}) {
+  const mensagensBuilder: {
+    eq: ReturnType<typeof vi.fn>;
+    then: PromiseLike<{ error: { message: string } | null }>['then'];
+  } = {
+    eq: vi.fn(),
+    then: (onfulfilled, onrejected) =>
+      Promise.resolve({ error: options?.mensagensError ?? null }).then(onfulfilled, onrejected),
+  };
+  mensagensBuilder.eq.mockReturnValue(mensagensBuilder);
+  const mensagensUpdate = vi.fn().mockReturnValue(mensagensBuilder);
+
+  const maybeSingle = vi.fn().mockResolvedValue({ data: options?.venda ?? null, error: null });
+  const limit = vi.fn().mockReturnValue({ maybeSingle });
+  const or = vi.fn().mockReturnValue({ limit });
+  const selectEq = vi.fn().mockReturnValue({ or });
+  const vendasSelect = vi.fn().mockReturnValue({ eq: selectEq });
+
+  const vendasUpdateBuilder: {
+    eq: ReturnType<typeof vi.fn>;
+    then: PromiseLike<{ error: { message: string } | null }>['then'];
+  } = {
+    eq: vi.fn(),
+    then: (onfulfilled, onrejected) =>
+      Promise.resolve({ error: options?.vendaError ?? null }).then(onfulfilled, onrejected),
+  };
+  vendasUpdateBuilder.eq.mockReturnValue(vendasUpdateBuilder);
+  const vendasUpdate = vi.fn().mockReturnValue(vendasUpdateBuilder);
+
+  const from = vi.fn((table: string) => {
+    if (table === 'ml_mensagens') return { update: mensagensUpdate };
+    if (table === 'ml_vendas') return { select: vendasSelect, update: vendasUpdate };
+    throw new Error(`Tabela inesperada: ${table}`);
+  });
+
+  return {
+    admin: { from } as unknown as Parameters<typeof marcarConversaCancelada>[0],
+    from,
+    mensagensUpdate,
+    mensagensBuilder,
+    vendasSelect,
+    selectEq,
+    or,
+    limit,
+    maybeSingle,
+    vendasUpdate,
+    vendasUpdateBuilder,
   };
 }
 
@@ -188,5 +251,87 @@ describe('regras de envio pós-venda', () => {
       '{"code":"forbidden","message":"blocked_by_cancelled_order"}',
     )).toBe('Não é possível responder porque o pedido foi cancelado.');
     expect(mensagemErroEnvioML(429, 'Too many requests')).toMatch(/ML \/messages 429/);
+  });
+});
+
+describe('constantes de pedido cancelado', () => {
+  it('possuem os valores esperados para mensagem e código', () => {
+    expect(ERRO_PEDIDO_CANCELADO).toBe('Não é possível responder porque o pedido foi cancelado.');
+    expect(CODIGO_PEDIDO_CANCELADO).toBe('pedido_cancelado');
+  });
+});
+
+describe('marcarConversaCancelada', () => {
+  it('atualiza ml_mensagens com order_status: cancelled filtrando por org_id e pack_id', async () => {
+    const {
+      admin,
+      from,
+      mensagensUpdate,
+      mensagensBuilder,
+      vendasSelect,
+      selectEq,
+      or,
+      limit,
+      maybeSingle,
+      vendasUpdate,
+      vendasUpdateBuilder,
+    } = criarAdminMarcarCancelada({
+      venda: { order_id: 'order-999' },
+    });
+
+    await marcarConversaCancelada(admin, 'org-42', 98765);
+
+    expect(from).toHaveBeenCalledWith('ml_mensagens');
+    expect(mensagensUpdate).toHaveBeenCalledWith({ order_status: 'cancelled' });
+    expect(mensagensBuilder.eq).toHaveBeenNthCalledWith(1, 'org_id', 'org-42');
+    expect(mensagensBuilder.eq).toHaveBeenNthCalledWith(2, 'pack_id', '98765');
+
+    expect(from).toHaveBeenCalledWith('ml_vendas');
+    expect(vendasSelect).toHaveBeenCalledWith('order_id');
+    expect(selectEq).toHaveBeenCalledWith('org_id', 'org-42');
+    expect(or).toHaveBeenCalledWith('pack_id.eq.98765,order_id.eq.98765');
+    expect(limit).toHaveBeenCalledWith(1);
+    expect(maybeSingle).toHaveBeenCalled();
+
+    expect(vendasUpdate).toHaveBeenCalledWith({ status: 'cancelled' });
+    expect(vendasUpdateBuilder.eq).toHaveBeenNthCalledWith(1, 'org_id', 'org-42');
+    expect(vendasUpdateBuilder.eq).toHaveBeenNthCalledWith(2, 'order_id', 'order-999');
+  });
+
+  it('inclui user_id no filtro de ml_vendas se fornecido', async () => {
+    const { admin, vendasUpdateBuilder } = criarAdminMarcarCancelada({
+      venda: { order_id: 'order-123' },
+    });
+
+    await marcarConversaCancelada(admin, 'org-1', 'pack-1', 'user-abc');
+
+    expect(vendasUpdateBuilder.eq).toHaveBeenCalledWith('user_id', 'user-abc');
+  });
+
+  it('não tenta atualizar ml_vendas quando não há venda associada ao pack', async () => {
+    const { admin, vendasUpdate } = criarAdminMarcarCancelada({ venda: null });
+
+    await marcarConversaCancelada(admin, 'org-1', 'pack-1');
+
+    expect(vendasUpdate).not.toHaveBeenCalled();
+  });
+
+  it('propaga erro caso o update de ml_mensagens falhe', async () => {
+    const { admin } = criarAdminMarcarCancelada({
+      mensagensError: { message: 'falha de conexao' },
+    });
+
+    await expect(marcarConversaCancelada(admin, 'org-1', 'pack-1'))
+      .rejects.toThrow('marcar conversa cancelada: falha de conexao');
+  });
+
+  it('propaga erro caso o update de ml_vendas falhe', async () => {
+    const { admin } = criarAdminMarcarCancelada({
+      venda: { order_id: 'order-123' },
+      vendaError: { message: 'erro ao atualizar venda' },
+    });
+
+    await expect(marcarConversaCancelada(admin, 'org-1', 'pack-1'))
+      .rejects.toThrow('marcar venda cancelada: erro ao atualizar venda');
   });
 });

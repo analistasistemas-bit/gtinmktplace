@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Sparkles, Send, MessagesSquare, ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListaMensagens } from '@/hooks/useMensagens';
-import { responderMensagem, sugerirRespostaMensagem, type Conversa } from '@/lib/mensagens';
+import { responderMensagem, sugerirRespostaMensagem, ehPedidoCancelado, type Conversa } from '@/lib/mensagens';
 import { fmtDataCurta, urlAnuncioML } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,9 +17,10 @@ function CardConversa({ c }: { c: Conversa }) {
   const [texto, setTexto] = useState('');
   const [sugerindo, setSugerindo] = useState(false);
   const [enviando, setEnviando] = useState(false);
+  const [canceladaLocal, setCanceladaLocal] = useState(false);
 
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
-  const cancelada = c.order_status === 'cancelled';
+  const cancelada = c.order_status === 'cancelled' || canceladaLocal;
   const cliente = c.comprador_nome?.trim() || c.comprador_nick?.trim() || 'Comprador';
 
   async function sugerir() {
@@ -44,7 +45,14 @@ function CardConversa({ c }: { c: Conversa }) {
       await qc.invalidateQueries({ queryKey: ['mensagens'] });
       await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
     } catch (e) {
-      toast.error(`Falha ao enviar: ${(e as Error).message}`);
+      if (ehPedidoCancelado(e)) {
+        setCanceladaLocal(true);
+        toast.info('Este pedido foi cancelado no Mercado Livre. Mensagens desativadas.');
+        await qc.invalidateQueries({ queryKey: ['mensagens'] });
+        await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
+      } else {
+        toast.error(`Falha ao enviar: ${(e as Error).message}`);
+      }
     } finally { setEnviando(false); }
   }
 

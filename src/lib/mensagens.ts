@@ -91,10 +91,20 @@ async function postEdge<T>(fn: string, body: unknown): Promise<T> {
     body: JSON.stringify(body),
   });
   const json = await resp.json().catch(() => null);
-  if (!resp.ok || json?.ok === false) throw new Error(json?.erro ?? `Falha (${resp.status})`);
+  if (!resp.ok || json?.ok === false) {
+    const err = new Error(json?.erro ?? `Falha (${resp.status})`);
+    if (json?.codigo) (err as Error & { codigo?: string }).codigo = json.codigo;
+    throw err;
+  }
   if (json == null) throw new Error('Resposta inválida do servidor');
   return json as T;
 }
+
+export const ehPedidoCancelado = (e: unknown): boolean =>
+  e instanceof Error && (
+    (e as Error & { codigo?: string }).codigo === 'pedido_cancelado' ||
+    e.message.includes('pedido foi cancelado')
+  );
 
 export function responderMensagem(pack_id: string, text: string): Promise<{ ok: true }> {
   return postEdge('responder-mensagem', { pack_id, text });

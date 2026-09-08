@@ -1152,9 +1152,11 @@ um smoke test contra Postgres real antes do primeiro deploy.
   (reabre para a próxima mensagem da mesma conversa — plan 035).
 - **responder-pergunta** — envia resposta do operador ao ML (≤2000 chars) e atualiza o registro.
 - **responder-mensagem** — envia mensagem pós-venda ao comprador (≤350 chars, limite do ML),
-  re-busca o pack e marca as recebidas como lidas. Reusa `sugerir-resposta-pergunta` para a
-  sugestão de IA (ADR-0067). `pack_id` validado (`/^\d+$/`) antes de entrar na query `.or()`
-  de `resolverMetaPack` (plan 037).
+  re-busca o pack e marca as recebidas como lidas. Se o pedido for cancelado (detectado localmente ou
+  rejeitado pelo ML com 403 `blocked_by_cancelled_order`), persiste `order_status = 'cancelled'` em
+  `ml_mensagens` (e `ml_vendas`) e responde HTTP 409 estruturado (`codigo: 'pedido_cancelado'`). Reusa
+  `sugerir-resposta-pergunta` para a sugestão de IA (ADR-0067). `pack_id` validado (`/^\d+$/`) antes de
+  entrar na query `.or()` de `resolverMetaPack` (plan 037).
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).

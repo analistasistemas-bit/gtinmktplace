@@ -1,8 +1,27 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { toast } from 'sonner';
 import { AbaMensagens } from '../aba-mensagens';
+
+const responderMensagemMock = vi.fn();
+
+vi.mock('@/lib/mensagens', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/mensagens')>();
+  return {
+    ...actual,
+    responderMensagem: (...args: unknown[]) => responderMensagemMock(...args),
+  };
+});
+
+vi.mock('sonner', () => ({
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+  },
+}));
 
 // pack-1 é a única conversa cancelada (não aguardando) — mantém os dados originais do teste
 // para não quebrar as asserções específicas dela (nick, item_id, href). pack-2..13 (12) ficam
@@ -42,11 +61,20 @@ vi.mock('@/hooks/useMensagens', () => ({
   useListaMensagens: () => ({ data: CONVERSAS, isFetching: false }),
 }));
 
-function renderAba() {
-  render(<QueryClientProvider client={new QueryClient()}><AbaMensagens /></QueryClientProvider>);
+function renderAba(queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+  const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+  const result = render(
+    <QueryClientProvider client={queryClient}>
+      <AbaMensagens />
+    </QueryClientProvider>
+  );
+  return { ...result, queryClient, invalidateSpy };
 }
 
 describe('AbaMensagens', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
   it('abre na aba Aguardando; a conversa cancelada (não aguardando) fica fora até trocar para Todas', async () => {
     renderAba();
     expect(screen.queryByText(/MARIA_01/)).not.toBeInTheDocument();
@@ -98,5 +126,49 @@ describe('AbaMensagens', () => {
 
     expect(screen.queryByText('Nenhuma conversa aguardando resposta.')).not.toBeInTheDocument();
     expect(screen.getByText('Produto 2')).toBeInTheDocument();
+  });
+
+  it('quando responderMensagem falha com erro de pedido cancelado: exibe toast.info, marca cancelada localmente e invalida queries', async () => {
+    const erro = Object.assign(new Error('Pedido cancelado no Mercado Livre'), { codigo: 'pedido_cancelado' });
+    responderMensagemMock.mockRejectedValueOnce(erro);
+
+    const { invalidateSpy } = renderAba();
+    const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+    const textarea = within(card).getByPlaceholderText(/escreva ao comprador/i);
+
+    await userEvent.type(textarea, 'Mensagem de teste');
+    const responderBtn = within(card).getByRole('button', { name: /responder/i });
+    expect(responderBtn).not.toBeDisabled();
+
+    await userEvent.click(responderBtn);
+
+    expect(responderMensagemMock).toHaveBeenCalledWith('pack-2', 'Mensagem de teste');
+    expect(toast.info).toHaveBeenCalledWith('Este pedido foi cancelado no Mercado Livre. Mensagens desativadas.');
+    expect(within(card).getByText('Pedido cancelado')).toBeInTheDocument();
+    expect(textarea).toBeDisabled();
+    expect(responderBtn).toBeDisabled();
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagens'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
+  });
+
+  it('quando responderMensagem falha com erro genérico: exibe toast.error e não desabilita campos nem marca cancelada', async () => {
+    responderMensagemMock.mockRejectedValueOnce(new Error('Falha de conexão com a API'));
+
+    const { invalidateSpy } = renderAba();
+    const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+    const textarea = within(card).getByPlaceholderText(/escreva ao comprador/i);
+
+    await userEvent.type(textarea, 'Outra mensagem');
+    const responderBtn = within(card).getByRole('button', { name: /responder/i });
+    expect(responderBtn).not.toBeDisabled();
+
+    await userEvent.click(responderBtn);
+
+    expect(responderMensagemMock).toHaveBeenCalledWith('pack-2', 'Outra mensagem');
+    expect(toast.error).toHaveBeenCalledWith('Falha ao enviar: Falha de conexão com a API');
+    expect(within(card).queryByText('Pedido cancelado')).not.toBeInTheDocument();
+    expect(textarea).not.toBeDisabled();
+    expect(responderBtn).not.toBeDisabled();
+    expect(invalidateSpy).not.toHaveBeenCalled();
   });
 });

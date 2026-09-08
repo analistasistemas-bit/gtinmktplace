@@ -14,11 +14,14 @@ export interface MetaPack {
   orderStatus: string | null;
 }
 
+export const ERRO_PEDIDO_CANCELADO = 'Não é possível responder porque o pedido foi cancelado.';
+export const CODIGO_PEDIDO_CANCELADO = 'pedido_cancelado';
+
 export const pedidoCancelado = (status: string | null | undefined): boolean => status === 'cancelled';
 
 export function mensagemErroEnvioML(status: number, corpo: string): string {
   if (status === 403 && corpo.includes('blocked_by_cancelled_order')) {
-    return 'Não é possível responder porque o pedido foi cancelado.';
+    return ERRO_PEDIDO_CANCELADO;
   }
   return `ML /messages ${status}: ${corpo.slice(0, 200)}`;
 }
@@ -168,4 +171,24 @@ export async function listarPacksDeVendas(admin: SupabaseClient, userId: string,
     });
   }
   return out;
+}
+
+export async function marcarConversaCancelada(
+  admin: SupabaseClient, orgId: string, packId: string | number, userId?: string | null,
+): Promise<void> {
+  const { error } = await admin.from('ml_mensagens')
+    .update({ order_status: 'cancelled' })
+    .eq('org_id', orgId).eq('pack_id', String(packId));
+  if (error) throw new Error(`marcar conversa cancelada: ${error.message}`);
+
+  const { data: venda } = await admin.from('ml_vendas')
+    .select('order_id').eq('org_id', orgId)
+    .or(`pack_id.eq.${packId},order_id.eq.${packId}`).limit(1).maybeSingle();
+  if (venda?.order_id != null) {
+    const upd = admin.from('ml_vendas').update({ status: 'cancelled' })
+      .eq('org_id', orgId).eq('order_id', venda.order_id);
+    if (userId) upd.eq('user_id', userId);
+    const { error: vendaErr } = await upd;
+    if (vendaErr) throw new Error(`marcar venda cancelada: ${vendaErr.message}`);
+  }
 }

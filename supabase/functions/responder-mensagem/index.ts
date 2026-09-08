@@ -6,13 +6,24 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao } from '../_shared/canais/conexao.ts';
-import { buscarMensagensPack, pedidoCancelado, upsertMensagens, resolverMetaPack, responderMensagemPedido, resolverCompradorId } from '../_shared/faturamento/mensagens-io.ts';
+import {
+  buscarMensagensPack,
+  pedidoCancelado,
+  upsertMensagens,
+  resolverMetaPack,
+  responderMensagemPedido,
+  resolverCompradorId,
+  marcarConversaCancelada,
+  ERRO_PEDIDO_CANCELADO,
+  CODIGO_PEDIDO_CANCELADO,
+} from '../_shared/faturamento/mensagens-io.ts';
 
 interface Body { pack_id?: string; text?: string }
 
-const erro = (msg: string, status: number) => new Response(JSON.stringify({ ok: false, erro: msg }), {
-  status, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-});
+const erro = (msg: string, status: number, codigo?: string) => new Response(
+  JSON.stringify({ ok: false, erro: msg, ...(codigo ? { codigo } : {}) }),
+  { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+);
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -42,7 +53,10 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
 
   const meta = await resolverMetaPack(admin, dono ?? context.userId, packId);
   if (pedidoCancelado(meta.orderStatus)) {
-    return erro('Não é possível responder porque o pedido foi cancelado.', 409);
+    await marcarConversaCancelada(admin, orgId, packId, dono).catch((e) =>
+      console.error('[responder-mensagem] falha ao marcar conversa cancelada:', e)
+    );
+    return erro(ERRO_PEDIDO_CANCELADO, 409, CODIGO_PEDIDO_CANCELADO);
   }
 
   let token: string;
@@ -55,8 +69,15 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
   try {
     await responderMensagemPedido(token, packId, sellerId, buyerId, text);
   } catch (e) {
+    const msg = (e as Error).message;
+    if (msg === ERRO_PEDIDO_CANCELADO) {
+      await marcarConversaCancelada(admin, orgId, packId, dono).catch((e) =>
+        console.error('[responder-mensagem] falha ao marcar conversa cancelada:', e)
+      );
+      return erro(ERRO_PEDIDO_CANCELADO, 409, CODIGO_PEDIDO_CANCELADO);
+    }
     await auditarOperacaoSuporte(admin, context, { type: 'pack', id: packId }, 'failed');
-    return erro((e as Error).message, 502);
+    return erro(msg, 502);
   }
 
   // Re-busca o pack (captura a mensagem enviada) e marca as recebidas como lidas (limpa o badge).
