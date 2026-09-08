@@ -6,6 +6,7 @@ import { ehVendaDaConta, mapearPedidoParaVenda, normGtin, extrairGeo, extrairRec
 import { round2 } from '../dinheiro.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
 import { fundirItensUP } from './catalogo-up.ts';
+import { fundirAnunciosMigrados } from './anuncios-migrados.ts';
 import { montarMapasCustoVigente, resolverCustoVigente, type LinhaCusto, type ItemParaCusto } from './custo-vigente.ts';
 import { chunk } from './utils.ts';
 
@@ -145,6 +146,32 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
     fundirItensUP(
       { idsPubliai, codPorItem, eanPorItem, infoPorGtin },
       itensUP.map((i) => ({ itemExternoId: i.item_externo_id as string, sku: i.sku, gtin: eanPorCodigo.get(i.sku) ?? null })),
+    );
+
+    // ADR-0161 — anúncios ENCERRADOS pela migração "preço por variação".
+    //
+    // A migração re-aponta `familias.ml_item_id` para os anúncios novos, e o id antigo sumiria
+    // deste conjunto. Um pedido feito ANTES da migração, se for reprocessado depois (reconciliação,
+    // backfill, webhook atrasado), deixaria de ser reconhecido como venda do PubliAI: sem código,
+    // sem custo, fora dos números do app — e disparando o alerta de "venda de SKU fora do
+    // catálogo". É a mesma classe de falha que, em 2026-08-11, fez 12 unidades venderem sem baixar
+    // estoque.
+    //
+    // O snapshot resolve também o código: `variations[]` do item ANTES da migração dá
+    // `variation_id → sku`, então o pedido antigo continua resolvendo por variação mesmo que o ML
+    // não tenha enviado o `seller_custom_field` no pedido.
+    const migrados = await paginarTudo<{ ml_item_id_anterior: string | null; migracao_pxv_snapshot: unknown }>(
+      (de, ate) => admin.from('anuncios_externos')
+        .select('ml_item_id_anterior, migracao_pxv_snapshot')
+        .eq('org_id', orgId).not('ml_item_id_anterior', 'is', null).range(de, ate),
+    );
+    fundirAnunciosMigrados(
+      { idsPubliai, codPorVar, eanPorVar },
+      migrados.map((m) => ({
+        mlItemIdAnterior: m.ml_item_id_anterior as string | null,
+        snapshot: m.migracao_pxv_snapshot,
+      })),
+      (sku) => eanPorCodigo.get(sku) ?? null,
     );
   }
 

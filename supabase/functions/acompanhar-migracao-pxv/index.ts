@@ -35,7 +35,8 @@ Deno.serve(async (req) => {
   }
   const getToken = () => getValidAccessTokenConexao(conexao);
 
-  const raizFiltro = () => admin.from('anuncios_externos')
+  const atualizarRaiz = (patch: Record<string, unknown>) => admin.from('anuncios_externos')
+    .update(patch)
     .eq('org_id', orgId).eq('canal', CANAL).eq('codigo_pai', codigoPai).eq('particao', 0);
 
   // A família representante do pai: a mais nova COM `ml_item_id` é a que o ingest usaria, e é a que
@@ -195,13 +196,13 @@ Deno.serve(async (req) => {
     // Estado transitório volta a `null` — mas o snapshot e o `ml_item_id_anterior` FICAM: o
     // faturamento os usa para reconhecer pedidos antigos do anúncio encerrado.
     concluir: async () => {
-      await raizFiltro().update({
+      await atualizarRaiz({
         migracao_pxv_status: null, migracao_pxv_erro: null, migracao_pxv_tentativa: 0,
       });
     },
 
     marcarErro: async (motivo) => {
-      await raizFiltro().update({ migracao_pxv_status: 'erro', migracao_pxv_erro: motivo });
+      await atualizarRaiz({ migracao_pxv_status: 'erro', migracao_pxv_erro: motivo });
     },
 
     notificar: async (texto) => {
