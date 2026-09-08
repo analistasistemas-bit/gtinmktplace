@@ -24,10 +24,33 @@ describe('buscarItemBackfill (GET completo pro reconciliador de backfill)', () =
     expect(urlVista).toContain('seller_custom_field');
     expect(urlVista).toContain('variations');
     expect(urlVista).toContain('seller_id');
+    // ADR-0160: `tags` entra na mesma leitura — é o que distingue um clone do UPtin ainda em
+    // criação (`variations_migration_pending`, nasce paused) de um irmão UP definitivo.
+    expect(urlVista).toContain('tags');
     expect(r).toEqual({
       status: 'active', familyId: 'FAM1', familyName: 'Cor', userProductId: 'UP1',
       permalink: 'https://ml/MLB1', sku: '00123', temVariacoes: false, sellerId: '999',
+      emMigracao: false,
     });
+  });
+
+  // ADR-0160 (I9): a tag é lida do item, não inferida do status — um clone em criação está
+  // `paused`, estado idêntico ao de uma cor legitimamente pausada pelo operador.
+  it('tag variations_migration_pending → emMigracao true', async () => {
+    const f: FetchLike = () => resp({
+      id: 'MLB1', status: 'paused', variations: [],
+      tags: ['variations_migration_pending', 'variations_migration_uptin'],
+    });
+    const r = await buscarItemBackfill(f, { accessToken: 'tok' }, 'MLB1');
+    expect(r!.emMigracao).toBe(true);
+  });
+
+  it('clone já ativado (só uptin) → emMigracao false', async () => {
+    const f: FetchLike = () => resp({
+      id: 'MLB1', status: 'active', variations: [], tags: ['variations_migration_uptin'],
+    });
+    const r = await buscarItemBackfill(f, { accessToken: 'tok' }, 'MLB1');
+    expect(r!.emMigracao).toBe(false);
   });
 
   it('seller_id normalizado com String() (o ML pode devolver número)', async () => {

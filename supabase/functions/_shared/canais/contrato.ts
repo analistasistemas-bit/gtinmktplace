@@ -54,6 +54,10 @@ export type ErroCanalCodigo =
   // User Products (item plano + family_name) e ela tem mais de uma cor. Não é erro do ML nem do
   // operador: a orquestração adota os itens irmãos por SKU e roteia para a saga UP.
   | 'MIGRADO_PARA_UP'
+  // ADR-0160: o UPtin ("preço por variação") está EM ANDAMENTO neste item. Distinto de
+  // MIGRADO_PARA_UP, que é o estado final já observável: aqui o ML ainda está clonando as
+  // variações e qualquer PUT volta 200 e é descartado. Retentável — a migração termina sozinha.
+  | 'MIGRACAO_EM_ANDAMENTO'
   | 'DESCONTO_INCOMPATIVEL';
 
 export interface ErroCanal {

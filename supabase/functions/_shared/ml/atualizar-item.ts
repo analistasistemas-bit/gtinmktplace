@@ -27,6 +27,9 @@ export interface ItemMLAtual {
   // âncora de busca que sobra (`?q=`), e a categoria filtra os candidatos.
   titulo: string | null;
   categoriaId: string | null;
+  // ADR-0160: tags do item. `variations_migration_pending` prova que o UPtin ("preço por variação")
+  // está em andamento — PUT nessa janela é aceito com 200 e perdido. Ver `anuncio-atualizavel.ts`.
+  tags: string[];
 }
 
 function erroML(status: number, json: unknown): Error {
@@ -51,7 +54,7 @@ export function corDaVariacaoML(attributeCombinations: unknown): string | null {
 export async function buscarItemML(accessToken: string, itemId: string): Promise<ItemMLAtual> {
   const url = `https://api.mercadolibre.com/items/${itemId}`
     + '?attributes=id,variations,pictures,price,available_quantity,status,sub_status'
-    + ',family_id,family_name,seller_id,title,category_id';
+    + ',family_id,family_name,seller_id,title,category_id,tags';
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const json = await resp.json();
   if (!resp.ok) throw erroML(resp.status, json);
@@ -84,6 +87,9 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
     sellerId: json.seller_id != null ? String(json.seller_id) : null,
     titulo: (json.title as string | null | undefined) ?? null,
     categoriaId: (json.category_id as string | null | undefined) ?? null,
+    tags: Array.isArray(json.tags)
+      ? (json.tags as unknown[]).filter((t): t is string => typeof t === 'string')
+      : [],
   };
 }
 

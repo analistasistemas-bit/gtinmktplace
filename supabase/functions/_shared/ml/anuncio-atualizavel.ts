@@ -24,6 +24,38 @@ export interface EstadoAnuncioML {
   subStatus?: string[] | null;
 }
 
+/** Tag que o ML põe nos dois lados enquanto o UPtin está em andamento (cai ao concluir). */
+const TAG_MIGRACAO_EM_ANDAMENTO = 'variations_migration_pending';
+
+export interface EstadoTagsML {
+  tags?: string[] | null;
+}
+
+/**
+ * ADR-0160 (I9): item no meio da migração "preço por variação" (UPtin) — ou `null`.
+ *
+ * O UPtin é assíncrono. Enquanto roda, o item ORIGINAL segue `active` (tags
+ * `variations_migration_pending` + `variations_migration_source`) e o ML clona cada variação num
+ * item novo (`paused`, `_pending` + `_uptin`). Ao concluir, `_pending` cai dos dois lados, os
+ * clones são ativados e o original é encerrado.
+ *
+ * Um PUT nessa janela é aceito com 200 e PERDIDO: os clones foram criados a partir do estado
+ * anterior. O app gravaria `preco_publicado_ml` como confirmado enquanto a vitrine sobe com o preço
+ * velho — divergência silenciosa, sem badge, sem erro. Por isso o guard é retentável, não terminal:
+ * a migração termina sozinha em minutos e o job seguinte passa.
+ *
+ * Só `_pending` conta. `_uptin` marca o clone e `_source` marca o original encerrado — nenhuma das
+ * duas tem queda documentada, e barrar por elas tornaria item migrado (ou dissolvido, ADR-0105)
+ * permanentemente inatualizável.
+ */
+export function migracaoEmAndamento(item: EstadoTagsML): string | null {
+  const tags = (item.tags ?? []).filter((t): t is string => typeof t === 'string');
+  if (!tags.includes(TAG_MIGRACAO_EM_ANDAMENTO)) return null;
+  return 'Anúncio em migração para preço por variação (User Products) no Mercado Livre. '
+    + 'Atualizar agora seria perdido: o ML está clonando as variações e publicaria os valores '
+    + 'anteriores. A migração termina sozinha — o app tenta de novo.';
+}
+
 /**
  * ADR-0105: sub_status que prova anúncio REMOVIDO/bloqueado (não migrado), ou `null`.
  *

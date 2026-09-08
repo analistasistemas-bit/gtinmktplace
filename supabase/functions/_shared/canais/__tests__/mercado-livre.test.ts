@@ -21,6 +21,60 @@ function stubFetch(getBody: unknown) {
   return () => putBody;
 }
 
+// ADR-0160 (I9) — a janela do UPtin, no nível que importa: o conector não pode chegar ao PUT.
+//
+// Durante a migração "preço por variação" o item original continua `active` E com `variations`
+// povoado — ou seja, nenhum outro guard daqui percebe. Sem esta trava o PUT sai pelo ramo Legacy,
+// o ML responde 200 e descarta: os clones das variações já tinham sido criados a partir do estado
+// anterior. O app gravaria o preço como confirmado enquanto a vitrine sobe com o valor velho.
+describe('UPtin em andamento bloqueia escrita (ADR-0160 I9)', () => {
+  const getEmMigracao = {
+    id: 'MLB1',
+    status: 'active',
+    sub_status: [],
+    tags: ['variations_migration_pending', 'variations_migration_source'],
+    variations: [{ id: 1, seller_custom_field: 'A1', available_quantity: 9, price: 25, picture_ids: [], attribute_combinations: [{ id: 'COLOR', value_name: 'Azul' }] }],
+    pictures: [],
+  };
+  const atualizComPreco: AtualizacaoCanonica = {
+    itemExternoId: 'MLB1',
+    existentes: [{ sku: 'A1', estoque: 9, cor: 'Azul' }],
+    novas: [],
+    capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
+    marca: null, dimensoes: null, desconto: null, precoFamilia: 99,
+    somenteEstoque: false,
+  };
+
+  it('atualizarAnuncio recusa sem gastar o PUT, e o erro é RETENTÁVEL', async () => {
+    const getPut = stubFetch(getEmMigracao);
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualizComPreco);
+    expect(res.ok).toBe(false);
+    expect(res.erro!.codigo).toBe('MIGRACAO_EM_ANDAMENTO');
+    // Retentável: a migração termina sozinha em minutos. Marcar terminal obrigaria o operador a
+    // republicar à mão algo que se resolve esperando.
+    expect(res.erro!.retentavel).toBe(true);
+    expect(getPut()).toBeNull();
+  });
+
+  it('atualizarEstoque recusa sem gastar o PUT — é o caminho que roda sem ninguém olhando', async () => {
+    const getPut = stubFetch(getEmMigracao);
+    const res = await mercadoLivreConnector.atualizarEstoque(ctxFake, 'MLB1', [{ sku: 'A1', estoque: 3 }]);
+    expect(res.ok).toBe(false);
+    expect(res.erro!.codigo).toBe('MIGRACAO_EM_ANDAMENTO');
+    expect(res.erro!.retentavel).toBe(true);
+    expect(getPut()).toBeNull();
+  });
+
+  // Regressão inversa: item migrado e JÁ concluído (a tag `pending` caiu) volta a ser atualizável.
+  // Sem este caso, um guard largo demais congelaria todo anúncio que passou pelo UPtin.
+  it('migração concluída (sem pending) NÃO bloqueia', async () => {
+    const getPut = stubFetch({ ...getEmMigracao, tags: ['variations_migration_uptin'] });
+    const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualizComPreco);
+    expect(res.ok).toBe(true);
+    expect(getPut()).not.toBeNull();
+  });
+});
+
 describe('atualizarAnuncio somenteEstoque', () => {
   const baseGet = {
     id: 'MLB1',

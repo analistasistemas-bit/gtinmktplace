@@ -28,6 +28,8 @@ export interface IrmaoRemoto {
   sellerId: string | null;
   /** true = tem variations reais → Legacy, não é irmão UP válido. */
   temVariacoes: boolean;
+  /** ADR-0160: clone ainda sendo criado pelo UPtin (`variations_migration_pending`). */
+  emMigracao?: boolean;
 }
 
 export interface FilhoAdotado {
@@ -80,6 +82,7 @@ export async function adotarFamiliaMigrada(
   const naoEncontrados: string[] = [];
   const ambiguos: string[] = [];
   const rejeitados: string[] = [];
+  const emMigracao: string[] = [];
   const familyIds = new Set<string>();
 
   for (const sku of skus) {
@@ -100,6 +103,12 @@ export async function adotarFamiliaMigrada(
       rejeitados.push(sku);
       continue;
     }
+    // ADR-0160 (I9): clone ainda em criação pelo UPtin. Ele nasce `paused` e o ML só o ativa ao
+    // concluir a migração — `mapearStatus` aceitaria 'paused' e gravaria o filho como `pausado`
+    // para sempre, já que `listar()` lê o banco e nunca mais o ML. A família ficaria presa,
+    // exigindo edição manual de `anuncios_externos_itens`. Adiar é a resposta certa: a migração
+    // termina sozinha e a próxima passada adota o conjunto no estado final.
+    if (item.emMigracao) { emMigracao.push(sku); continue; }
     const status = mapearStatus(item.status);
     if (!status) { rejeitados.push(sku); continue; }
 
@@ -118,6 +127,18 @@ export async function adotarFamiliaMigrada(
   // INTEIRA. Adotar parcialmente gravaria `skus_esperados` menor que a realidade — a agregação do
   // ADR-0088 daria `ativo` sobre um conjunto incompleto e a família viraria `publicado` com cores
   // fora do controle do PubliAI. É a classe de falso-sucesso que a igualdade de conjunto combate.
+  // ADR-0160: migração em andamento tem mensagem PRÓPRIA e precede a genérica. "Não localizadas de
+  // forma inequívoca" mandaria o operador conferir cores no painel — trabalho inútil: não há nada
+  // a corrigir, só a esperar. Mensagem errada aqui custa uma investigação manual à toa.
+  if (emMigracao.length > 0) {
+    return {
+      tipo: 'incompleta',
+      mensagem: 'O Mercado Livre está migrando esta família para preço por variação (User Products): '
+        + `${emMigracao.length} de ${skus.length} cores ainda estão sendo criadas `
+        + `(${emMigracao.join(', ')}). Nada foi alterado. A migração termina sozinha — publique de novo depois.`,
+    };
+  }
+
   if (filhos.length !== skus.length) {
     const partes = [
       `Migração para User Products detectada no Mercado Livre (family_name "${familyNameObservado}")`,

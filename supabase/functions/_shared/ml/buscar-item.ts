@@ -146,6 +146,9 @@ export interface ItemBackfill {
   /** Revisão Codex: o GET de item é público — sem checar seller_id contra a conexão, um
    *  ml_item_id local corrompido/antigo importaria item de OUTRO vendedor pra esta org. */
   sellerId: string | null;
+  /** ADR-0160: clone ainda em criação pelo UPtin (`variations_migration_pending`). Nasce `paused`
+   *  e o ML o ativa ao concluir — adotá-lo agora congelaria `pausado` no banco para sempre. */
+  emMigracao: boolean;
 }
 
 /** GET /items/{id} completo pro reconciliador de backfill (só leitura, nenhum POST/PUT).
@@ -156,12 +159,13 @@ export async function buscarItemBackfill(
   itemId: string,
 ): Promise<ItemBackfill | null> {
   const url = `${API}/items/${encodeURIComponent(itemId)}`
-    + `?attributes=id,status,family_id,family_name,user_product_id,permalink,seller_custom_field,variations,seller_id`;
+    + `?attributes=id,status,family_id,family_name,user_product_id,permalink,seller_custom_field,variations,seller_id,tags`;
   const resp = await fetchLike(url, { headers: { Authorization: `Bearer ${crit.accessToken}` } });
   if (!resp.ok) return null;
   const j = (await resp.json()) as {
     status?: string; family_id?: string; family_name?: string; user_product_id?: string;
     permalink?: string; seller_custom_field?: string; variations?: unknown[]; seller_id?: string | number;
+    tags?: unknown[];
   };
   return {
     status: j.status ?? null,
@@ -172,5 +176,6 @@ export async function buscarItemBackfill(
     sku: j.seller_custom_field ?? null,
     temVariacoes: Array.isArray(j.variations) && j.variations.length > 0,
     sellerId: j.seller_id != null ? String(j.seller_id) : null,
+    emMigracao: Array.isArray(j.tags) && j.tags.includes('variations_migration_pending'),
   };
 }

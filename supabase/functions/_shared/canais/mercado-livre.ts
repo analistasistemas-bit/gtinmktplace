@@ -10,7 +10,7 @@ import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoU
 import { precisaItemPlano, precisaGtinDePack } from '../ml/erro-ml.ts';
 import { categoriaExigeFamilyName } from '../categoria/atributos.ts';
 import { buscarItemML, atualizarItemML, atualizarItemPlanoML, atualizarStatusML } from '../ml/atualizar-item.ts';
-import { motivoAnuncioNaoAtualizavel, subStatusMorto } from '../ml/anuncio-atualizavel.ts';
+import { migracaoEmAndamento, motivoAnuncioNaoAtualizavel, subStatusMorto } from '../ml/anuncio-atualizavel.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
 import { montarAtributosPacote } from '../ml/pacote.ts';
 import { parseStatusML, type ItemMLStatus } from '../ml/status.ts';
@@ -211,6 +211,13 @@ export const mercadoLivreConnector: ChannelConnector = {
     try {
       // GET estado real → reenviar TODAS as variações (o ML deleta as omitidas).
       const atual = await buscarItemML(token, a.itemExternoId);
+      // ADR-0160 (I9): UPtin em andamento. Tem que vir ANTES de qualquer decisão de rota — o item
+      // ainda está `active` com `variations` povoado, então nada mais aqui percebe a migração, e o
+      // PUT sairia pelo ramo Legacy, voltaria 200 e seria descartado pelo ML.
+      const motivoMigracao = migracaoEmAndamento(atual);
+      if (motivoMigracao) {
+        return { ok: false, erro: { codigo: 'MIGRACAO_EM_ANDAMENTO', mensagemOperador: motivoMigracao, retentavel: true, status: 409 } };
+      }
       // Anúncio morto (closed/inactive/deleted) recusa qualquer PUT — e o erro cru do ML
       // ("variations is not modifiable... Revise os atributos da categoria") aponta o operador
       // para o lugar errado. Falha alto com a causa certa, antes de gastar a escrita. Lote #45.
@@ -358,6 +365,18 @@ export const mercadoLivreConnector: ChannelConnector = {
       // família que o ML dissolveu) escrevia num item `closed` e devolvia o erro cru do ML. Mesmo
       // guard do UPDATE, mesma causa certa. O re-vínculo automático NÃO mora aqui: uma passada de
       // UPDATE adota a família e daí em diante este caminho roteia pelos filhos UP.
+
+      // ADR-0160 (I9): mesma janela do UPtin do UPDATE. O push de estoque é o caminho MAIS provável
+      // de cair aqui — roda sozinho, sem operador olhando, e um saldo escrito durante a clonagem é
+      // descartado com 200. Retentável: o worker tenta de novo depois da migração.
+      const motivoMigracao = migracaoEmAndamento(atual);
+      if (motivoMigracao) {
+        return {
+          ok: false,
+          erro: { codigo: 'MIGRACAO_EM_ANDAMENTO', mensagemOperador: motivoMigracao, retentavel: true, status: 409 },
+        };
+      }
+
       const motivoMorto = motivoAnuncioNaoAtualizavel(atual);
       if (motivoMorto) {
         return {

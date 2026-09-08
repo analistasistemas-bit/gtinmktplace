@@ -48,6 +48,49 @@ function entrada(over: Partial<EntradaAdocao> = {}): EntradaAdocao {
 const achou = (id: string): BuscaSku => ({ tipo: 'um', itemExternoId: id });
 const TRES_OK = { A: achou('MLB-A'), B: achou('MLB-B'), C: achou('MLB-C') };
 
+// ADR-0160 (I9) — não adotar clone que o UPtin ainda está criando.
+//
+// O clone nasce `paused` e o ML só o ativa quando a migração inteira conclui. Como `mapearStatus`
+// aceita 'paused', sem esta trava o filho entraria no banco como `pausado` — e `listar()` lê o
+// banco, nunca mais o ML. Quando o ML ativasse o item, o PubliAI continuaria achando que está
+// pausado, e `atualizarComposicao` devolveria `filho_em_estado_terminal`: família presa, só
+// destravável editando `anuncios_externos_itens` na mão.
+describe('adotarFamiliaMigrada — UPtin em andamento (ADR-0160 I9)', () => {
+  it('clone em migração adia a adoção inteira, com mensagem própria', async () => {
+    const w = fakeMundo({
+      busca: TRES_OK,
+      remoto: {
+        'MLB-A': irmao(),
+        'MLB-B': irmao({ status: 'paused', emMigracao: true }),
+        'MLB-C': irmao(),
+      },
+    });
+    const r = await adotarFamiliaMigrada(w.portas, entrada());
+    expect(r.tipo).toBe('incompleta');
+    // Mensagem de ESPERA, não de conferência: mandar o operador "conferir as cores no painel"
+    // seria trabalho inútil — não há nada errado a corrigir.
+    expect((r as { mensagem: string }).mensagem).toMatch(/migrando/i);
+    expect((r as { mensagem: string }).mensagem).toMatch(/\bB\b/);
+    expect((r as { mensagem: string }).mensagem).not.toMatch(/inequívoca/i);
+    // Tudo-ou-nada continua valendo: nada é gravado.
+    expect(w.adocoes).toHaveLength(0);
+  });
+
+  it('migração concluída (emMigracao false/ausente) adota normalmente', async () => {
+    const w = fakeMundo({
+      busca: TRES_OK,
+      remoto: {
+        'MLB-A': irmao({ emMigracao: false }),
+        'MLB-B': irmao({ status: 'paused' }),
+        'MLB-C': irmao(),
+      },
+    });
+    const r = await adotarFamiliaMigrada(w.portas, entrada());
+    expect(r.tipo).toBe('adotada');
+    expect(w.adocoes).toHaveLength(1);
+  });
+});
+
 describe('adotarFamiliaMigrada — adoção feliz', () => {
   it('N SKUs resolvem para N irmãos sob 1 family_id → adota o conjunto inteiro', async () => {
     const w = fakeMundo({ busca: TRES_OK });
