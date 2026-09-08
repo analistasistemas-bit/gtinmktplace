@@ -1,14 +1,11 @@
+import type { UseQueryResult } from '@tanstack/react-query';
 import { cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrgResults } from '../org-results';
-import type { OrgMetrics } from '@/lib/platform-admin';
+import type { OrgMetrics, OrgSummary } from '@/lib/platform-admin';
 import { fmtMilhar } from '@/lib/formato';
 
-const mocks = vi.hoisted(() => ({ useMetrics: vi.fn(), refetch: vi.fn() }));
-
-vi.mock('@/hooks/usePlatformAdmin', () => ({
-  usePlatformMetrics: mocks.useMetrics,
-}));
+const refetch = vi.fn();
 
 function makeMetrics(overrides: Partial<OrgMetrics> = {}): OrgMetrics {
   return {
@@ -31,9 +28,26 @@ function makeMetrics(overrides: Partial<OrgMetrics> = {}): OrgMetrics {
   };
 }
 
+// `OrgResults` recebe o mesmo `usePlatformOrganization` da página de detalhe (item 1.4 do plano de
+// performance) — não chama mais a action `metrics` isoladamente.
+function makeOrganization(
+  metrics: OrgMetrics | null,
+  overrides: Partial<Pick<UseQueryResult<OrgSummary>, 'isLoading' | 'isError'>> = {},
+): UseQueryResult<OrgSummary> {
+  return {
+    data: {
+      id: 'org-a', nome: 'Org A', slug: 'org-a', is_test: false, modality: 1,
+      metrics, forecast_cents: null, billable_units: null, daludi_searches: null, pending_count: null,
+    },
+    isLoading: false,
+    isError: false,
+    refetch,
+    ...overrides,
+  } as unknown as UseQueryResult<OrgSummary>;
+}
+
 beforeEach(() => {
-  mocks.refetch.mockReset();
-  mocks.useMetrics.mockReturnValue({ data: makeMetrics(), isLoading: false, isError: false, refetch: mocks.refetch });
+  refetch.mockReset();
 });
 
 afterEach(() => {
@@ -42,51 +56,41 @@ afterEach(() => {
 
 describe('OrgResults', () => {
   it('markup 0.44 vira +44% com cor de sucesso', () => {
-    render(<OrgResults orgId="org-a" month="2026-08" />);
+    render(<OrgResults organization={makeOrganization(makeMetrics())} />);
     expect(screen.getByText('+44%')).toBeInTheDocument();
   });
 
   it('markup null vira — com o motivo, nunca um número inventado', () => {
-    mocks.useMetrics.mockReturnValue({
-      data: makeMetrics({ markup: null }),
-      isLoading: false,
-      isError: false,
-      refetch: mocks.refetch,
-    });
-    render(<OrgResults orgId="org-a" month="2026-08" />);
+    render(<OrgResults organization={makeOrganization(makeMetrics({ markup: null }))} />);
     expect(screen.getByText('—')).toBeInTheDocument();
     expect(screen.getByText('Sem custo ou alíquota confirmada')).toBeInTheDocument();
   });
 
   it('nunca mostra a palavra Indisponível', () => {
-    render(<OrgResults orgId="org-a" month="2026-08" />);
+    render(<OrgResults organization={makeOrganization(makeMetrics())} />);
     expect(screen.queryByText(/Indisponível/)).not.toBeInTheDocument();
   });
 
   it('erro sem dado mostra faixa de erro com Tentar novamente', () => {
-    mocks.useMetrics.mockReturnValue({ data: undefined, isLoading: false, isError: true, refetch: mocks.refetch });
-    render(<OrgResults orgId="org-a" month="2026-08" />);
+    const organization = {
+      data: undefined, isLoading: false, isError: true, refetch,
+    } as unknown as UseQueryResult<OrgSummary>;
+    render(<OrgResults organization={organization} />);
     expect(screen.getByRole('alert')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument();
   });
 
   it('aviso de falha (severity error) vai na faixa destrutiva com Tentar novamente', () => {
-    mocks.useMetrics.mockReturnValue({
-      data: makeMetrics({ warnings: [{ code: 'cost_catalog_read_failed', severity: 'error', message: 'Falha ao carregar os custos: timeout' }] }),
-      isLoading: false, isError: false, refetch: mocks.refetch,
-    });
-    render(<OrgResults orgId="org-a" month="2026-08" />);
+    const metrics = makeMetrics({ warnings: [{ code: 'cost_catalog_read_failed', severity: 'error', message: 'Falha ao carregar os custos: timeout' }] });
+    render(<OrgResults organization={makeOrganization(metrics)} />);
     const alert = screen.getByRole('alert');
     expect(alert).toHaveTextContent('Falha ao carregar os custos: timeout');
     expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument();
   });
 
   it('ausência acionável (severity warning) vai na faixa de aviso, sem Tentar novamente', () => {
-    mocks.useMetrics.mockReturnValue({
-      data: makeMetrics({ warnings: [{ code: 'tax_config_unconfirmed', severity: 'warning', message: 'Configuração tributária não confirmada' }] }),
-      isLoading: false, isError: false, refetch: mocks.refetch,
-    });
-    render(<OrgResults orgId="org-a" month="2026-08" />);
+    const metrics = makeMetrics({ warnings: [{ code: 'tax_config_unconfirmed', severity: 'warning', message: 'Configuração tributária não confirmada' }] });
+    render(<OrgResults organization={makeOrganization(metrics)} />);
     expect(screen.getByText('Configuração tributária não confirmada')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
@@ -98,11 +102,8 @@ describe('OrgResults', () => {
   // rótulo curto que nunca começa com "R$" — `fmtMilhar` já tem cobertura própria em
   // `formato.test.ts` para os valores-limite (mil/milhão).
   it('gráfico renderiza com valor largo (80 mil) sem quebrar, e o eixo usa formato compacto', () => {
-    mocks.useMetrics.mockReturnValue({
-      data: makeMetrics({ series: [{ month: '2026-08', gross_cents: 8_000_000, markup: 0.44 }] }),
-      isLoading: false, isError: false, refetch: mocks.refetch,
-    });
-    render(<OrgResults orgId="org-a" month="2026-08" />);
+    const metrics = makeMetrics({ series: [{ month: '2026-08', gross_cents: 8_000_000, markup: 0.44 }] });
+    render(<OrgResults organization={makeOrganization(metrics)} />);
     expect(screen.getByRole('img', { name: 'Faturamento bruto dos últimos seis meses' })).toBeInTheDocument();
     expect(fmtMilhar(8_000_000 / 100)).toBe('80 mil');
     expect(fmtMilhar(8_000_000 / 100).startsWith('R$')).toBe(false);

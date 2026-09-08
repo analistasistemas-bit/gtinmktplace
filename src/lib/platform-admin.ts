@@ -1,3 +1,4 @@
+import { FunctionRegion } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
 import type { CommercialTerms } from '../../supabase/functions/_shared/platform-admin/types';
 
@@ -47,8 +48,11 @@ export async function callPlatformAdmin<T>(
   action: string,
   params: Record<string, unknown>,
 ): Promise<T> {
+  // Postgres roda em us-east-1; sem `region` a função executa em sa-east-1 (perto do operador, longe
+  // do banco) e paga ~120-150ms de latência cross-region em cada round-trip (perf FASE 1.1).
   const { data, error } = await supabase.functions.invoke('platform-admin', {
     body: { action, ...params },
+    region: FunctionRegion.UsEast1,
   });
 
   if (error) {

@@ -251,7 +251,7 @@ export default function OrganizacaoDetalhe() {
           <TabsTrigger value="auditoria"><ScrollText className="h-4 w-4" />Auditoria</TabsTrigger>
           <TabsTrigger value="configuracoes"><Settings2 className="h-4 w-4" />Configurações</TabsTrigger>
         </TabsList>
-        <TabsContent value="resultados" className="pt-4"><OrgResults orgId={orgId} month={month} /></TabsContent>
+        <TabsContent value="resultados" className="pt-4"><OrgResults organization={organization} /></TabsContent>
         <TabsContent value="pulse" className="pt-4"><OrgPulse orgId={orgId} month={month} /></TabsContent>
         <TabsContent value="cobranca" className="pt-4"><OrgBilling orgId={orgId} month={month} /></TabsContent>
         <TabsContent value="auditoria" className="pt-4"><OrgAudit orgId={orgId} month={month} /></TabsContent>

@@ -1,3 +1,4 @@
+import type { UseQueryResult } from '@tanstack/react-query';
 import { LineChart as LineChartIcon, Receipt, ShoppingBag, Tag, TrendingUp } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '@/components/ui/button';
@@ -5,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { EmptyState } from '@/components/ui/empty-state';
 import { KpiCard, type DeltaTrend } from '@/components/ui/kpi-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { usePlatformMetrics } from '@/hooks/usePlatformAdmin';
+import type { OrgSummary } from '@/lib/platform-admin';
 import { fmtBRL, fmtInt, fmtMarkup, fmtMilhar } from '@/lib/formato';
 
 const money = (cents: number | null | undefined) => cents == null ? '—' : fmtBRL(cents / 100);
@@ -16,19 +17,21 @@ function deltaPct(current: number, previous: number): string | undefined {
   return `${pct >= 0 ? '+' : ''}${pct.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 }
 
-export function OrgResults({ orgId, month }: { orgId: string; month: string }) {
-  const query = usePlatformMetrics(orgId, month);
-  const metrics = query.data;
+// `organization` é o mesmo `usePlatformOrganization` já carregado pela página de detalhe — a
+// ação `organization` calcula `OrgMetrics` internamente (`enrichOne` → `readOrgMetrics`), então
+// reaproveitar `organization.metrics` evita um segundo round-trip idêntico (ação `metrics`).
+export function OrgResults({ organization }: { organization: UseQueryResult<OrgSummary> }) {
+  const metrics = organization.data?.metrics ?? null;
   // react-query v5: `isLoading` é `isPending && isFetching` — uma query ainda `enabled: false`
   // (ex.: usuário não resolvido num refresh direto na URL do detalhe) fica com isLoading=false e
   // data=undefined, o que confundiria "sem dado" com "ainda não carregou".
-  const loading = query.isLoading || (!metrics && !query.isError);
+  const loading = organization.isLoading || (!organization.data && !organization.isError);
 
-  if (query.isError && !metrics) {
+  if (organization.isError && !metrics) {
     return (
       <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
         <span>Não foi possível carregar os resultados da organização.</span>
-        <Button variant="outline" size="sm" onClick={() => query.refetch()}>Tentar novamente</Button>
+        <Button variant="outline" size="sm" onClick={() => organization.refetch()}>Tentar novamente</Button>
       </div>
     );
   }
@@ -46,10 +49,10 @@ export function OrgResults({ orgId, month }: { orgId: string; month: string }) {
 
   return (
     <div className="space-y-4">
-      {query.isError && metrics && (
+      {organization.isError && metrics && (
         <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
           <span>A atualização dos resultados falhou; os últimos dados disponíveis permanecem na tela.</span>
-          <Button variant="outline" size="sm" onClick={() => query.refetch()}>Tentar novamente</Button>
+          <Button variant="outline" size="sm" onClick={() => organization.refetch()}>Tentar novamente</Button>
         </div>
       )}
 
@@ -149,7 +152,7 @@ export function OrgResults({ orgId, month }: { orgId: string; month: string }) {
           <div className="space-y-1">
             {metrics.warnings.filter((warning) => warning.severity === 'error').map((warning) => <p key={warning.code}>{warning.message}</p>)}
           </div>
-          <Button variant="outline" size="sm" onClick={() => query.refetch()}>Tentar novamente</Button>
+          <Button variant="outline" size="sm" onClick={() => organization.refetch()}>Tentar novamente</Button>
         </div>
       )}
       {metrics && metrics.warnings.some((warning) => warning.severity === 'warning') && (

@@ -111,21 +111,25 @@ export async function readOrgMetrics(db: MetricsDb, orgId: string, month: string
 
   const seriesMonths = Array.from({ length: 6 }, (_, index) => addMonths(month, index - 5));
   const selectedEnd = month === currentMonth(now) ? now.toISOString() : startOf(addMonths(month, 1));
-  const salesResult = await readPages(() => db.from('ml_vendas')
-    .select(SALES_COLUMNS)
-    .eq('org_id', orgId).gte('date_closed', startOf(seriesMonths[0])).lt('date_closed', startOf(addMonths(month, 1)))
-    .order('date_closed', { ascending: true }).order('id', { ascending: true }));
+
+  // As três leituras são independentes entre si (nenhuma consome o resultado da outra — `maps` e
+  // `rates`, abaixo, só são montados depois que as três terminam), então rodam em paralelo
+  // (perf FASE 1.3). ADR-0158 §5: a RPC devolve só as variações que casam com item vendido na
+  // janela da série, em UM round-trip (era `variacoes` inteira, 9 páginas na Avil). Escalar jsonb
+  // de propósito: `returns table` por POST seria truncado no `max_rows=1000` do PostgREST sem erro
+  // nenhum e o markup sairia errado em silêncio.
+  const [salesResult, catalogResult, configResult] = await Promise.all([
+    readPages(() => db.from('ml_vendas')
+      .select(SALES_COLUMNS)
+      .eq('org_id', orgId).gte('date_closed', startOf(seriesMonths[0])).lt('date_closed', startOf(addMonths(month, 1)))
+      .order('date_closed', { ascending: true }).order('id', { ascending: true })),
+    db.rpc('platform_org_cost_catalog', { p_org: orgId, p_since: startOf(seriesMonths[0]) }),
+    readPages(() => db.from('configuracoes')
+      .select('org_id,aliquota_nacional_pct,aliquota_importado_pct,uf_empresa,aliquota_interna_pct,aliquotas_confirmadas_em')
+      .eq('org_id', orgId).order('org_id', { ascending: true })),
+  ]);
   if (salesResult.error) throw new Error(salesResult.error.message);
   const sales = normalizeSales(salesResult.rows, orgId);
-
-  // ADR-0158 §5: a RPC devolve só as variações que casam com item vendido na janela da série, em UM
-  // round-trip (era `variacoes` inteira, 9 páginas na Avil). Escalar jsonb de propósito: `returns
-  // table` por POST seria truncado no `max_rows=1000` do PostgREST sem erro nenhum e o markup sairia
-  // errado em silêncio.
-  const catalogResult = await db.rpc('platform_org_cost_catalog', { p_org: orgId, p_since: startOf(seriesMonths[0]) });
-  const configResult = await readPages(() => db.from('configuracoes')
-    .select('org_id,aliquota_nacional_pct,aliquota_importado_pct,uf_empresa,aliquota_interna_pct,aliquotas_confirmadas_em')
-    .eq('org_id', orgId).order('org_id', { ascending: true }));
 
   // Payload que não é array é falha, nunca catálogo vazio: catálogo vazio zera o markup em silêncio.
   const catalogRows = Array.isArray(catalogResult.data) ? catalogResult.data as Record<string, unknown>[] : null;

@@ -20,7 +20,7 @@ vi.mock('@/stores/support-store', () => ({
   useSupportStore: (selector: (state: { start: typeof start; end: typeof end }) => unknown) => selector({ start, end }),
 }));
 vi.mock('@/components/platform-admin/org-results', () => ({
-  OrgResults: ({ orgId, month }: { orgId: string; month: string }) => <p>Resultados {orgId} {month}</p>,
+  OrgResults: ({ organization }: { organization: { data?: { id: string } } }) => <p>Resultados {organization.data?.id}</p>,
 }));
 vi.mock('@/components/platform-admin/org-pulse', () => ({
   OrgPulse: ({ orgId, month }: { orgId: string; month: string }) => <p>Pulse {orgId} {month}</p>,
@@ -107,7 +107,7 @@ describe('OrganizacaoDetalhe', () => {
     expect(screen.getByText('Ambiente de teste')).toBeInTheDocument();
     expect(screen.getByText(/avil · Modalidade 1 · 5% sobre receita/)).toBeInTheDocument();
     expect(screen.getByLabelText('Mês da organização')).toHaveValue('2026-08');
-    expect(screen.getByText('Resultados org-avil 2026-08')).toBeInTheDocument();
+    expect(screen.getByText('Resultados org-avil')).toBeInTheDocument();
     expect(usePlatformOrganization).toHaveBeenCalledWith('org-avil', '2026-08');
     await waitFor(() => expect(listSupportRequests).toHaveBeenCalledWith({ orgId: 'org-avil', page: 1, pageSize: 50, status: 'actionable' }));
     expect(start).not.toHaveBeenCalled();

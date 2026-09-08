@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
 import {
   callPlatformAdmin,
@@ -99,12 +99,19 @@ function requireUser(userId: UserId): void {
   if (!userId) throw new Error('Usuário não autenticado');
 }
 
+// Perf FASE 1.5: 5 min em vez dos 30 s globais (`query-client.ts`) — só para os hooks de
+// platform-admin. O dado muda por ação humana (fechamento, condição comercial, reconciliação),
+// não por segundo, e cada uma dessas ações já invalida a query afetada (`invalidateBilling`).
+const PLATFORM_ADMIN_STALE_TIME = 5 * 60_000;
+
 export function usePlatformWallet(params: PlatformWalletParams) {
   const userId = useAuthStore((state) => state.user?.id ?? null);
   return useQuery<Wallet>({
     queryKey: platformAdminKeys.wallet(userId, params),
     queryFn: () => callPlatformAdmin('wallet', { ...params }),
     enabled: Boolean(userId && params.month),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
+    placeholderData: keepPreviousData,
   });
 }
 
@@ -114,6 +121,7 @@ export function usePlatformOrganization(orgId: string, month: Month) {
     queryKey: platformAdminKeys.organization(userId, orgId, month),
     queryFn: () => callPlatformAdmin('organization', { org_id: orgId, month }),
     enabled: Boolean(userId && orgId && month),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
   });
 }
 
@@ -123,6 +131,7 @@ export function usePlatformMetrics(orgId: string, month: Month) {
     queryKey: platformAdminKeys.metrics(userId, orgId, month),
     queryFn: () => callPlatformAdmin('metrics', { org_id: orgId, month }),
     enabled: Boolean(userId && orgId && month),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
   });
 }
 
@@ -132,6 +141,7 @@ export function usePlatformTerms(orgId: string) {
     queryKey: platformAdminKeys.terms(userId, orgId),
     queryFn: () => callPlatformAdmin('terms', { org_id: orgId }),
     enabled: Boolean(userId && orgId),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
   });
 }
 
@@ -141,6 +151,7 @@ export function usePlatformPreview(orgId: string, month: Month) {
     queryKey: platformAdminKeys.preview(userId, orgId, month),
     queryFn: () => callPlatformAdmin('preview', { org_id: orgId, month }),
     enabled: Boolean(userId && orgId && month),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
   });
 }
 
@@ -150,6 +161,7 @@ export function usePlatformStatements(orgId: string) {
     queryKey: platformAdminKeys.statements(userId, orgId),
     queryFn: () => callPlatformAdmin('statements', { org_id: orgId }),
     enabled: Boolean(userId && orgId),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
   });
 }
 
@@ -159,6 +171,7 @@ export function usePlatformPulseUsage(params: PlatformPulseUsageParams) {
     queryKey: platformAdminKeys.pulseUsage(userId, params),
     queryFn: () => callPlatformAdmin('pulse_usage', { ...params }),
     enabled: Boolean(userId && params.org_id && params.month),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
   });
 }
 
@@ -168,6 +181,7 @@ export function usePlatformAudit(params: PlatformAuditParams) {
     queryKey: platformAdminKeys.audit(userId, params),
     queryFn: () => callPlatformAdmin('audit', { ...params }),
     enabled: Boolean(userId && params.org_id && params.month),
+    staleTime: PLATFORM_ADMIN_STALE_TIME,
   });
 }
 

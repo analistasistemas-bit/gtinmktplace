@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { FunctionRegion } from '@supabase/supabase-js';
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 
@@ -21,6 +22,7 @@ describe('callPlatformAdmin', () => {
     await expect(callPlatformAdmin('wallet', { month: '2026-08' })).resolves.toBe(response);
     expect(invoke).toHaveBeenCalledWith('platform-admin', {
       body: { action: 'wallet', month: '2026-08' },
+      region: FunctionRegion.UsEast1,
     });
   });
 
