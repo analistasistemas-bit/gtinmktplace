@@ -2,6 +2,31 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Preço por variação sob User Products (ADR-0160) — 2026-09-08
+
+Plano em [2026-09-08-preco-por-variacao-user-products.md](superpowers/plans/2026-09-08-preco-por-variacao-user-products.md).
+Origem: o ML ofereceu "Oferecer preço por variação" no anúncio Tecido Oxford Liso 10m
+(MLB4831319319). Descoberto na investigação: o recurso **é** a migração UPtin para User Products.
+
+- [x] **F1 — trava da janela de migração (I9)** — `tags` no GET; `atualizarAnuncio`/`atualizarEstoque`
+  recusam item com `variations_migration_pending` (409 retentável); adoção adia clone em criação.
+- [x] **F2 — núcleo** — `precoPorSku` substitui `precoFamilia` em `EntradaComposicao`;
+  `confirmarPreco` grava `preco_publicado_ml` por SKU no UPDATE UP (coluna que nunca era escrita
+  nesse caminho); `Number()` no preço; I5 (atacado + divergência → LOUD) e I6 (cor sem preço → LOUD
+  antes do 1º PUT).
+- [x] **F3 — roteamento** — guard de preço uniforme move para o ramo Legacy, antes do PUT, com
+  mensagem acionável; `decidirSplit` ganha `ehUP`; atacado UP volta a reaplicar em reprice puro;
+  I7 (config por cor em UP → LOUD); guard em `publicar-anuncio`.
+- [x] **F4 — frontend** — copy do diálogo de preço sob UP; `ConfigGruposPreco` escondido em família
+  UP; Publicados mostra faixa min–max e rotula `(1ª cor)` o preço ao vivo.
+- [x] **F6 — documentação** — ADR-0160; notas de correção em 0078/0016/0041; `edge-functions.md`;
+  índice de ADRs do vault.
+- [ ] **Validação real (Diego)** — família de teste com 2 cores e preços diferentes → migrar pelo
+  painel → "Atualizar tudo" e conferir por `GET /items/{id}` que cada item ficou com o SEU preço →
+  "Somente estoque" e conferir que nada mudou → movimentar estoque de 1 cor → conferir a faixa em
+  Publicados. **Não usar o Oxford 10m** (decisão de 08/09).
+- [ ] **Deploy** — `supabase functions deploy` das funções afetadas no merge (o CI não deploya).
+
 ## Incidente — venda de kit vinculado não baixava estoque (ADR-0151) — 2026-09-08
 
 Plano e diagnóstico em [2026-09-08-fix-baixa-estoque-kit-vinculado.md](superpowers/plans/2026-09-08-fix-baixa-estoque-kit-vinculado.md).

@@ -117,12 +117,32 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
         particoesPorPai.set(p.codigo_pai, (particoesPorPai.get(p.codigo_pai) ?? 0) + 1);
       }
     }
+    // ADR-0160: quais pais já vivem no modelo User Products (têm itens técnicos por SKU). Sob UP
+    // cada cor é um item ML próprio, então preço divergente NÃO exige dividir o anúncio.
+    // Sinal estrutural, não o cache de formato por categoria: o cache diria "esta categoria é UP"
+    // mesmo para uma família Legacy que o ML ainda não migrou — e aí o worker Legacy a barraria.
+    const paisUP = new Set<string>();
+    if (todas.length > 0) {
+      const { data: itensUP, error: errItensUP } = await admin.from('anuncios_externos')
+        .select('codigo_pai, anuncios_externos_itens!inner(id)')
+        .eq('org_id', orgId).eq('canal', 'mercado_livre')
+        .in('codigo_pai', [...new Set(paiPorFamilia.values())]);
+      // Fail-closed: sem saber quem é UP, tratar todos como Legacy manteria o comportamento
+      // anterior (split), que é conservador — mas silenciosamente. Erro de query é erro.
+      if (errItensUP) {
+        await auditarOperacaoSuporte(admin, context, target, 'failed');
+        return new Response(`Erro ao carregar itens User Products: ${errItensUP.message}`, { status: 500, headers: corsHeaders });
+      }
+      for (const r of itensUP ?? []) paisUP.add(r.codigo_pai as string);
+    }
     const ehSplit = (familiaId: string) => {
       const precos = precosPorFamilia.get(familiaId) ?? [];
+      const pai = paiPorFamilia.get(familiaId) ?? '';
       return decidirSplit({
         qtdCores: precos.length,
         precosCentavos: precos,
-        qtdParticoes: particoesPorPai.get(paiPorFamilia.get(familiaId) ?? '') ?? 0,
+        qtdParticoes: particoesPorPai.get(pai) ?? 0,
+        ehUP: paisUP.has(pai),
       });
     };
 

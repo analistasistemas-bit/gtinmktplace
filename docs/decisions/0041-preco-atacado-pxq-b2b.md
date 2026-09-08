@@ -56,6 +56,12 @@ O operador pensa em "% de desconto"; o ML guarda `amount` absoluto. A conversão
 (uniforme entre as cores — 32/32 famílias multi-cor hoje), então o PxQ aplica no **nível do
 anúncio** com um preço único.
 
+> **ADR-0160 (2026-09-08):** com preço por variação (User Products) a base única deixa de existir —
+> aplicar o preço de uma cor às demais daria um valor B2B calculado sobre outra cor. Enquanto o PxQ
+> for família-level, o caminho UP **recusa** (LOUD, `atacado_status='erro'`) quando os preços
+> divergem ou quando há config de atacado por cor, em vez de escolher uma base arbitrária. Atacado
+> por variação é tecnicamente possível sob UP (cada cor é um item) e está registrado como dívida.
+
 ### 4. Modelo de dados — reusar e formalizar o scaffolding
 
 - `familias.atacado` (jsonb): `[{ "min_unidades": N, "desconto_pct": P }]`, máx 5, crescente.

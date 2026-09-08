@@ -998,6 +998,9 @@ export function publicadoFromRow(
     tipo: r.tipo_aviamento ?? null,
     categoria: r.categoria_nome ?? null,
     precoPublicacao: precos.length ? Math.min(...precos) : 0,
+    // ADR-0160: o par min/max descreve a família com preço por variação. O menor sozinho dizia
+    // "R$ 19,90" num produto cuja cor mais cara custa R$ 34,50.
+    precoPublicacaoMax: precos.length ? Math.max(...precos) : 0,
     descricao: r.descricao_ml ?? null,
     mlItemId: r.ml_item_id!,
     mlPermalink: r.ml_permalink ?? null,
@@ -1156,6 +1159,8 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
     tipo: null,
     categoria: null,
     precoPublicacao: 0,
+    // Kit virtual é um bundle: um item do ML, um preço — nunca uma faixa (ADR-0160).
+    precoPublicacaoMax: 0,
     descricao: null,
     mlItemId: k.ml_item_id as string,
     mlPermalink: k.ml_permalink ?? null,

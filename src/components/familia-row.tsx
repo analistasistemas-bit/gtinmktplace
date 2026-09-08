@@ -16,6 +16,7 @@ import { temAlteracaoPreco } from '@/lib/preco-alterado';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { ConfigGruposPreco } from '@/components/config-grupos-preco';
+import { familiaEhUP } from '@/lib/grupos-preco';
 import { cn } from '@/lib/utils';
 import { fmtBRLSemSimbolo } from '@/lib/formato';
 import type { Familia } from '@/lib/tipos-dominio';
@@ -431,7 +432,12 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
       </span>
     </div>
       <div className="px-4 pb-2 pl-8 sm:pl-[100px] space-y-4">
-        {familiaPrecosDivergentes(familia) ? (
+        {/* ADR-0160: a config por FAIXA de preço só faz sentido no modelo Legacy, em que cada faixa
+            vira um anúncio separado e pode ter seu próprio desconto/atacado. Numa família User
+            Products não há faixas — cada cor já é um anúncio — e o backend aplica só a config
+            família-level, recusando (LOUD) se achar config por cor. Renderizar o editor por faixa
+            aqui convidaria o operador a configurar algo que a publicação depois recusa. */}
+        {familiaPrecosDivergentes(familia) && !familiaEhUP(familia) ? (
           <ConfigGruposPreco familia={familia} />
         ) : (
           <>

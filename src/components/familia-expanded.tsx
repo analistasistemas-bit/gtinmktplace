@@ -36,7 +36,7 @@ import { subirCapaFamilia, removerCapaFamilia, subirCapa2Familia, removerCapa2Fa
 import { setVariacaoExcluida } from '@/lib/publicar';
 import { criticasVariacao, familiaExigeCor, familiaExigeFotoPorVariacao } from '@/lib/publicavel';
 import { variacoesParaRevisao, agruparRevisaoUpdate } from '@/lib/revisao-variacoes';
-import { alvosAplicarPreco, exigeDivisaoUpdate } from '@/lib/grupos-preco';
+import { alvosAplicarPreco, exigeDivisaoUpdate, familiaEhUP } from '@/lib/grupos-preco';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { useImageUrl, invalidarImagem } from '@/hooks/useImageUrl';
@@ -872,6 +872,13 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
                   cores (um anúncio, preço único). "Não" vai EXIGIR dividir um anúncio já publicado —
                   a publicação desse produto vai <strong>falhar de propósito</strong> até resolver
                   (remover e republicar perde histórico, ou marque "somente estoque" pra adiar).</>
+                ) : familiaEhUP(familia) ? (
+                  // ADR-0160: família User Products — cada cor já é um anúncio próprio no ML, com
+                  // preço próprio. Prometer "anúncios separados" aqui descreveria o modelo Legacy e
+                  // assustaria o operador com uma divisão que não vai acontecer.
+                  <>Novo preço: <strong>{fmtBRL(promptPreco.preco)}</strong>. "Sim" iguala todas as
+                  cores. "Não" mantém preços diferentes — este produto usa preço por variação no
+                  Mercado Livre, então cada cor pode ter o seu, sem dividir nada.</>
                 ) : (
                   <>Novo preço: <strong>{fmtBRL(promptPreco.preco)}</strong>. "Sim" iguala todas as
                   cores (um anúncio, preço único). "Não" mantém preços diferentes — as faixas serão

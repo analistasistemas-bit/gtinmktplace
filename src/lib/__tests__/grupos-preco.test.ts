@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { gruposDePreco, alvosAplicarPreco, exigeDivisaoUpdate, configGrupoPendente } from '../grupos-preco';
+import { gruposDePreco, alvosAplicarPreco, exigeDivisaoUpdate, configGrupoPendente, familiaEhUP } from '../grupos-preco';
 import type { Variacao } from '../tipos-dominio';
 
 const v = (codigo: string, over: Partial<Variacao> = {}): Variacao => ({
@@ -124,5 +124,25 @@ describe('configGrupoPendente', () => {
   });
   it('família sem nada ativo → nunca pendente', () => {
     expect(configGrupoPendente({ exibirComDesconto: false, atacado: null }, grupo([v('A')]))).toBe(false);
+  });
+});
+
+// ADR-0160 — detectar família que já vive no modelo User Products, onde cada cor é um item ML
+// próprio e pode ter preço próprio. Decide a copy do diálogo de preço e se o editor de config por
+// faixa aparece.
+describe('familiaEhUP', () => {
+  it('nenhuma variação casada com item UP → Legacy', () => {
+    expect(familiaEhUP({ variacoes: [v('A'), v('B')] })).toBe(false);
+  });
+
+  it('qualquer variação casada com item UP → família UP', () => {
+    expect(familiaEhUP({ variacoes: [v('A', { jaCasadaUP: true }), v('B')] })).toBe(true);
+  });
+
+  // O sinal é estrutural (item técnico existe para o SKU), não o formato da categoria: uma
+  // categoria User Products cuja família ainda NÃO foi migrada continua Legacy para todos os
+  // efeitos — e é o worker Legacy que vai publicá-la.
+  it('família sem variação nenhuma → Legacy (nada a supor)', () => {
+    expect(familiaEhUP({ variacoes: [] })).toBe(false);
   });
 });

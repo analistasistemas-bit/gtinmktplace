@@ -6,6 +6,20 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export interface GrupoPreco { preco: number; variacoes: Variacao[]; }
 
+/**
+ * ADR-0160 — a família já vive no modelo User Products, em que cada cor é um item ML próprio e
+ * pode ter preço próprio ("preço por variação", como o ML chama).
+ *
+ * Sinal: `jaCasadaUP`, que vem de `anuncios_externos_itens` (existe item técnico para o SKU). É
+ * estrutural e sobre ESTA família — diferente de `formatoPublicacaoMl`, que diz apenas "esta
+ * CATEGORIA é User Products". Usar o de categoria classificaria como UP uma família Legacy que o
+ * ML ainda não migrou: a UI diria "não precisa dividir" e o backend Legacy recusaria a publicação
+ * com preços divergentes, contradizendo o que a tela acabou de prometer.
+ */
+export function familiaEhUP(familia: Pick<Familia, 'variacoes'>): boolean {
+  return familia.variacoes.some((v) => v.jaCasadaUP);
+}
+
 /** Grupos de preço (faixas) das cores incluídas, do menor para o maior preço. */
 export function gruposDePreco(familia: Pick<Familia, 'variacoes'>): GrupoPreco[] {
   const incluidas = familia.variacoes.filter((x) => !x.excluidaDaPublicacao);

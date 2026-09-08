@@ -52,7 +52,13 @@ describe('garantirPrecoUniforme', () => {
       throw new Error('deveria ter lançado');
     } catch (e) {
       expect((e as Error).message).toContain('UPDATE');
-      expect((e as Error).message).toContain('split');
+      // ADR-0160: a mensagem deixou de citar só o split ("publicar-split-ml", jargão interno) e
+      // passou a ensinar as três saídas reais. A primeira é a que mudou: uma família que o ML já
+      // migrou para preço por variação só precisa ser ADOTADA — mandar dividir o anúncio ali
+      // custaria ao operador deletar e recriar variações à toa.
+      expect((e as Error).message).toMatch(/somente estoque/i);
+      expect((e as Error).message).toMatch(/preço por variação/i);
+      expect((e as Error).message).toMatch(/faixa de preço/i);
       expect((e as Error & { status?: number }).status).toBe(400);
     }
   });

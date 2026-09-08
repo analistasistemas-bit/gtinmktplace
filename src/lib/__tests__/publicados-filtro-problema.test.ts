@@ -3,7 +3,7 @@ import { filtrarPublicados, type PublicadoItem, type StatusPublicado } from '../
 
 const item = (status: StatusPublicado | undefined): PublicadoItem => ({
   familiaId: status ?? 'sem-status', codigoPai: 'P1', gtin: null, titulo: 't',
-  fornecedor: null, tipo: null, categoria: null, precoPublicacao: 10,
+  fornecedor: null, tipo: null, categoria: null, precoPublicacao: 10, precoPublicacaoMax: 10,
   descricao: null, mlItemId: 'M1', mlPermalink: null, publicadoEm: null, status,
 });
 

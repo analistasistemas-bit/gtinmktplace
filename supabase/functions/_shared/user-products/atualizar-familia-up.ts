@@ -31,6 +31,11 @@ export interface VariacaoUP {
   imagem_path: string | null; ml_picture_id: string | null;
   altura_cm?: number | string | null; largura_cm?: number | string | null;
   comprimento_cm?: number | string | null; peso_gramas?: number | string | null;
+  /** ADR-0078 F2 — config POR VARIAÇÃO (null = herda a família). ADR-0160 (I7): o caminho UP não
+   *  sabe aplicá-las por cor, então a presença delas recusa o atacado em vez de ignorá-las. */
+  exibir_com_desconto?: boolean | null;
+  desconto_pct?: number | string | null;
+  atacado?: unknown;
 }
 
 export interface RaizUP { id: string; titulo: string | null; criado_em?: string | null }
@@ -49,6 +54,20 @@ export interface AtualizarFamiliaUPArgs {
   raiz: RaizUP;
   variacoes: VariacaoUP[];
   somenteEstoque: boolean;
+  /**
+   * ADR-0160 (I10) — fluxo "Adicionar variação" (ADR-0129): só a cor NOVA vai ao ML; as cores já
+   * publicadas ficam intocadas.
+   *
+   * Distinto de `somenteEstoque`, e por isso um parâmetro separado: `somenteEstoque` também proíbe
+   * mudar a composição (ADR-0104 §4), enquanto aqui adicionar cor é justamente o objetivo — o que
+   * se preserva é o PREÇO (e os atributos) das irmãs.
+   *
+   * Sem isto, o caminho UP rodava com `somenteEstoque=false` e a reposição empurrava preço a todas
+   * as cores vivas. Como o lote manual nasce por cópia e o `process-familia` recalcula
+   * `preco_publicacao` das não-pinadas, um preço nunca revisado ia parar nas irmãs — num fluxo que
+   * promete mexer só na cor nova.
+   */
+  preservarPublicadas?: boolean;
   /** Nº de tentativas do QStash (orçamento de retry do desfecho `incompleto`, Fix 4b). */
   tentativas: number;
   /** Reconciliador de convergência: converge pro `skus_esperados` JÁ GRAVADO na raiz (o snapshot
@@ -99,6 +118,12 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   );
   const precoRaw = variacoes.find((v) => v.preco_publicacao != null)?.preco_publicacao;
   const precoFamilia = precoRaw != null ? Number(precoRaw) : null;
+  // I7: cores com config PRÓPRIA de desconto/atacado (ADR-0078 F2 grava por variação quando os
+  // preços divergem). O caminho UP só sabe aplicar a config família-level — honrar metade seria
+  // publicar dinheiro diferente do configurado. `null` = herda a família e não conta.
+  const configPorCor = variacoes
+    .filter((v) => v.exibir_com_desconto != null || v.desconto_pct != null || v.atacado != null)
+    .map((v) => v.codigo);
 
   // family_id esperado: das cores vivas (não-retiradas) já confirmadas — valida a cor nova.
   const { data: filhosRaw } = await admin.from(ITENS)
@@ -107,6 +132,13 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   const familyIdEsperado = (filhos.find((f) => !f.retirado && f.family_id != null)?.family_id as string | null) ?? null;
   const jaAtivos = new Set(filhos.filter((f) => !f.retirado && f.status === 'ativo' && f.item_externo_id).map((f) => f.sku as string));
   const adicionadas = skusDesejados.filter((sku) => !jaAtivos.has(sku)).length;
+
+  // ADR-0160 (I10): no fluxo "Adicionar variação", as cores JÁ ativas viram no-op de preço — `null`
+  // preserva o preço vivo de cada item. A cor nova mantém o seu, que é o ponto do fluxo. Só as
+  // ativas: uma cor readicionada (retirada voltando) precisa do preço para reentrar precificada.
+  if (args.preservarPublicadas) {
+    for (const sku of jaAtivos) precoPorSku[sku] = null;
+  }
 
   // aceitaEmptyGtin: lido do schema da categoria (como o CREATE/publish faz) p/ a cor nova.
   let aceitaEmptyGtin: boolean | undefined;
@@ -281,7 +313,15 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       try { await enfileirarVinculacaoCatalogo(familia.id); }
       catch (e) { console.error(`enfileirar catálogo UP (update) falhou (${familia.id}):`, e); }
     }
-    if (!houveMudanca) return; // sem_mudanca (reposição pura) → nada de descrição/atacado.
+    // ADR-0160: o gate deixou de ser só `houveMudanca`.
+    //
+    // Antes, um "Atualizar tudo" que mudasse APENAS o preço devolvia `sem_mudanca` (a composição
+    // não mexeu) e saía por aqui — o preço novo subia em cada item e o PxQ continuava calculado
+    // sobre o preço ANTIGO. Preço de atacado defasado é dinheiro errado, silencioso, e o caminho
+    // Legacy nunca teve esse buraco (reaplica em todo update).
+    //
+    // A descrição continua presa a `houveMudanca`: ela só muda quando a lista de cores muda.
+    if (!houveMudanca && somenteEstoque) return;
 
     const alertarFalhaLoud = async (msg: string): Promise<void> => {
       try { await notificarCategoria(admin, familia.org_id, 'integracao', msg); }
@@ -334,7 +374,10 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     // ponytail: sem lock contra 2 composições concorrentes na mesma família — a saga inteira já
     // aceita last-writer-wins nesse cenário raro (operador-driven); o Reconciliador de convergência
     // (mudando_composicao/estado_desejado) NÃO cobre conteúdo de descrição — só esta coluna cobre.
-    if (conn.capabilities.descricaoSeparada && familia.descricao_ml) {
+    // ADR-0160: `houveMudanca` aqui, e não no topo da função. A seção "CORES DISPONÍVEIS" só muda
+    // quando a lista de cores muda — um reprice puro (que agora chega até aqui, para reaplicar o
+    // PxQ) não tem descrição nova a empurrar, e um push por item à toa custa N chamadas.
+    if (houveMudanca && conn.capabilities.descricaoSeparada && familia.descricao_ml) {
       const cores = [...new Set(
         variacoes.map((v) => v.cor).filter((c): c is string => !ehCorIndefinida(c)),
       )];
@@ -393,6 +436,18 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
         if (aplicandoFaixas && precoFamilia == null) {
           const m = 'Atacado sem preço-base: sem preço novo nem preço vivo conhecido';
           await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
+        } else if (configPorCor.length > 0) {
+          // ADR-0160 (I7) — a Revisão grava config de desconto/atacado POR VARIAÇÃO
+          // (`variacoes.exibir_com_desconto` / `desconto_pct` / `atacado`, ADR-0078 F2) quando os
+          // preços divergem, mas o caminho UP lê só `familia.atacado`. Sem esta trava o operador
+          // configuraria atacado por faixa, o app publicaria com 200 e subiria o valor
+          // família-level — dinheiro diferente do configurado, sem nenhum sinal.
+          //
+          // Sai daqui quando o atacado passar a ser por variação (fora do escopo desta entrega).
+          const m = `Atacado não aplicado: as cores ${configPorCor.join(', ')} têm configuração `
+            + 'própria de desconto/atacado, e neste anúncio o atacado do Mercado Livre é único por '
+            + 'família. Deixe a configuração igual para todas as cores, ou desligue o atacado.';
+          await admin.from('familias').update({ atacado_status: 'erro', atacado_erro: m }).eq('id', familia.id);
         } else if (aplicandoFaixas && precosDistintos.size > 1) {
           // ADR-0160 (I5). O PxQ é por ITEM na API do ML e o valor é ABSOLUTO (ADR-0041): com
           // preços diferentes entre as cores não existe base única legítima. Usar `precoFamilia`
@@ -425,7 +480,10 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   try {
     resultado = await executarSaga(portas, {
       skusDesejados, estoquePorSku, precoPorSku, somenteEstoque, familyIdEsperado,
-      atributosFamilia: familia.atributos_ml,
+      // I10: "adicionar variação" também não reescreve a ficha das irmãs (ADR-0157 manda os
+      // atributos divergentes na reposição). Preservar preço e reescrever atributos seria meia
+      // promessa — o fluxo diz que só a cor nova é tocada.
+      atributosFamilia: args.preservarPublicadas ? undefined : familia.atributos_ml,
     });
   } catch (e) {
     // Fix 1: exceção não tratada com a composição já iniciada — limpa a flag (best-effort, nunca

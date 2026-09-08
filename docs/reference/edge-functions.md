@@ -366,6 +366,10 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   via `decidirSplit` (`decidir-split.ts`): >100 cores incluídas, OU preços de publicação divergentes
   entre as variações, OU produto já particionado (mais de 1 linha em `anuncios_externos`) — qualquer
   um dos três roteia pro split.
+  **ADR-0160:** o gatilho de preços divergentes vale só para família **Legacy**. Família User
+  Products (tem linha em `anuncios_externos_itens`, sinalizada por `ehUP`) publica preços diferentes
+  direto, sem dividir — lá cada cor já é um item ML próprio. Os outros dois gatilhos valem nos dois
+  modelos.
 - **publish-familia-ml** *(worker, CREATE)* — sobe fotos, cria o item no ML, aplica atacado
   (PxQ), espelha em `anuncios_externos` e enfileira o vínculo de catálogo com delay. Reusa
   `picture_id` em retry (idempotência). Retry de foto: ADR-0033. **Cache efêmero (2026-09-01,
@@ -377,9 +381,13 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   sobe fotos frescas em vez de martelar o mesmo `picture_id` morto (mesmo comportamento que UPDATE
   já tinha no catch; `publicar-split-ml` ganhou o mesmo tratamento, escopado às cores sem
   `ml_variation_id` — partições já publicadas não perdem o id).
-  **Preço uniforme (ADR-0078 F2):** `garantirPrecoUniforme` recusa (400 LOUD, nada enviado) quando
-  as variações têm preços de publicação divergentes — sinal de roteamento errado; a família deveria
-  ter ido para o split por faixa de preço (`publicar-split-ml`).
+  **Preço uniforme (ADR-0078 F2 / ADR-0160):** `garantirPrecoUniforme` recusa (400 LOUD, nada
+  enviado) quando as variações têm preços divergentes — mas agora **só no ramo Legacy**, imediatamente
+  antes do POST. Categoria User Products conhecida no cache roteia para a saga UP antes do guard, e
+  lá preços diferentes são o recurso, não erro. Limitação conhecida: numa categoria cujo formato
+  ainda não está no cache, o formato só se revela quando o POST Legacy falha — uma família divergente
+  em categoria nunca publicada é barrada e a mensagem ensina a saída (publicar uniforme uma vez
+  semeia o cache).
   **Item plano (ADR-0084/ADR-0087):** categorias que exigem `family_name` não aceitam o array
   `variations` — `montarPayloadItem` monta um item plano (`price`/`available_quantity` no corpo raiz,
   sem `title`/`original_price`) quando há exatamente 1 variação; falha alto com >1. `MLB271227` (Zíperes)
@@ -471,9 +479,18 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   o conector já faz); sem preço vivo válido → falha LOUD (`status 400`, definitiva, sem retry).
   `variacoes.preco_publicado_ml` é gravado por SKU no sucesso do update (base do badge "preço
   alterado"); em "somente estoque" grava o preço vivo (não o recalculado).
-  **Preço uniforme (ADR-0078 F2):** fora de "somente estoque", `garantirPrecoUniforme` aplica o
-  mesmo guard do CREATE antes de qualquer envio (400 LOUD em preços divergentes); em "somente
-  estoque" o guard é pulado (nenhum preço seria enviado de qualquer forma).
+  **Preço uniforme (ADR-0078 F2 / ADR-0160):** fora de "somente estoque", `garantirPrecoUniforme`
+  aplica o mesmo guard do CREATE (400 LOUD em preços divergentes) — **dentro do ramo Legacy**,
+  imediatamente antes de `conn.atualizarAnuncio`, não mais antes do roteamento. Família User Products
+  passa direto e usa `precoPorSku` (um preço por item). Em "somente estoque" o guard é pulado
+  (nenhum preço seria enviado de qualquer forma).
+  **Migração UPtin em andamento (ADR-0160 I9):** `atualizarAnuncio` e `atualizarEstoque` recusam com
+  `MIGRACAO_EM_ANDAMENTO` (409, **retentável**) quando o item tem a tag
+  `variations_migration_pending` — durante a migração o ML aceita o PUT com 200 e o descarta, porque
+  os itens-clone já foram criados a partir do estado anterior.
+  **preco_publicado_ml no caminho UP (ADR-0160 I4):** gravado por SKU logo após o PUT de cada item
+  (porta `confirmarPreco`). Antes essa coluna nunca era escrita na rota UP, e o badge "preço
+  alterado" ficava aceso para sempre depois do primeiro reprice.
   **Notificação de "adicionar variação" (ADR-0129 D-11):** no desfecho final (sucesso ou erro,
   Legacy ou UP), dispara sino via `notificarCategoria(..., 'integracao', ...)` **só quando**
   `lotes.origem='manual'` **e** `familias.operacao='UPDATE'` — reposição por planilha continua

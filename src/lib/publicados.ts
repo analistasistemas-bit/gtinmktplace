@@ -22,6 +22,14 @@ export interface PublicadoItem {
   /** Categoria-folha real do ML resolvida pela IA/preditor (ex.: "Alfinetes de Segurança"). */
   categoria: string | null;
   precoPublicacao: number;
+  /**
+   * ADR-0160 — maior preço entre as cores incluídas. Igual a `precoPublicacao` quando uniforme.
+   *
+   * `precoPublicacao` é o MENOR preço, e sozinho ele mente numa família com preço por variação:
+   * a tela anunciava "R$ 19,90" para um produto cuja cor mais cara sai por R$ 34,50. Com os dois
+   * campos a coluna mostra a faixa, e a ordenação segue pelo menor (comportamento anterior).
+   */
+  precoPublicacaoMax: number;
   descricao: string | null;
   mlItemId: string;
   mlPermalink: string | null;

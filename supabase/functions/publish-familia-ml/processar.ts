@@ -132,10 +132,12 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
     if (!variacoes || variacoes.length === 0) throw new Error('Sem cores incluídas para publicar');
 
-    // ADR-0078 F2 (invariante #1): este worker publica preço único. Divergência aqui = bug de
-    // roteamento (deveria ter ido ao split) → LOUD, nada é enviado ao ML. Roda SEMPRE — inclusive
-    // no caminho UP (o gate financeiro nunca pode ser pulado pelo atalho de cache).
-    garantirPrecoUniforme(variacoes, 'CREATE');
+    // ADR-0160: a trava de preço uniforme desceu para imediatamente antes do POST Legacy.
+    //
+    // Ela rodava aqui, antes de `lerFormatoPublicacao`, e por isso barrava também as categorias
+    // User Products — onde cada cor vira um item ML próprio e preços diferentes são o recurso
+    // oferecido pelo ML, não um bug de roteamento. O gate financeiro continua inteiro: nenhum
+    // caminho Legacy publica preço divergente.
 
     // ADR-0135 D-7: fiscal completo antes de QUALQUER escrita no ML (org com módulo).
     const fiscalAtivo = await exigirFiscalCompletoSePreciso(admin, familia);
@@ -211,6 +213,16 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       }
       return await rotaSagaUP();
     }
+
+    // ADR-0160 — ramo LEGACY: um item, N variações, preço único exigido pelo ML. Divergência aqui
+    // tem que virar split por faixa (publicar-split-ml), nunca colapso silencioso.
+    //
+    // Limitação conhecida e deliberada: numa categoria cujo formato ainda não está no cache, o
+    // formato só se revela quando este POST falha com a assinatura UP — ou seja, uma família
+    // divergente em categoria nunca publicada é barrada aqui e não chega a descobrir que seria UP.
+    // Sondar exigiria criar um anúncio real (o ML não tem sandbox). A mensagem do guard ensina a
+    // saída: publicar uniforme uma vez semeia o cache, e a partir daí a categoria roteia para UP.
+    garantirPrecoUniforme(variacoes, 'CREATE');
 
     const res = await conn.criarAnuncio(ctx, anuncio);
     if (!res.ok) {

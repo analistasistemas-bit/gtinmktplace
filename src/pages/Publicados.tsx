@@ -292,12 +292,31 @@ function LinhaTabela({
           </div>
         </div>
       </TableCell>
-      <TableCell className="text-sm tabular-nums">{item.precoPublicacao > 0 ? fmtBRL(item.precoPublicacao) : '—'}</TableCell>
+      {/* ADR-0160: com preço por variação a família tem uma FAIXA, não um número. Mostrar só o
+          menor anunciava "R$ 19,90" para um produto cuja cor mais cara sai por R$ 34,50. */}
+      <TableCell className="text-sm tabular-nums">
+        {item.precoPublicacao > 0
+          ? (item.precoPublicacaoMax > item.precoPublicacao
+            ? `${fmtBRL(item.precoPublicacao)} – ${fmtBRL(item.precoPublicacaoMax)}`
+            : fmtBRL(item.precoPublicacao))
+          : '—'}
+      </TableCell>
       <TableCell className="text-sm tabular-nums">
         {item.estoque != null ? item.estoque : '—'}
       </TableCell>
+      {/* `precoAtual` vem do ML por `ml_item_id`, que numa família User Products aponta para UM
+          filho (ADR-0088 §5) — é o preço daquela cor, não da família. Enquanto a leitura ao vivo
+          não cobrir todos os filhos, o rótulo diz de quem é o número em vez de fingir que é o
+          preço do produto inteiro. */}
       <TableCell className="text-sm tabular-nums">
-        {item.precoAtual != null ? fmtBRL(item.precoAtual) : '—'}
+        {item.precoAtual != null
+          ? (
+            <span title={item.precoPublicacaoMax > item.precoPublicacao ? 'Preço ao vivo da cor principal do anúncio' : undefined}>
+              {fmtBRL(item.precoAtual)}
+              {item.precoPublicacaoMax > item.precoPublicacao && <span className="ml-1 text-xs text-muted-foreground">(1ª cor)</span>}
+            </span>
+          )
+          : '—'}
       </TableCell>
       <TableCell className="text-sm tabular-nums">
         {item.unidadesVendidas != null ? item.unidadesVendidas : '—'}

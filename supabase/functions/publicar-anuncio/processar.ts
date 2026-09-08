@@ -17,6 +17,7 @@ import {
 } from '../_shared/anuncios/montar-canonico.ts';
 import { mesclarVariacoesExternas, type VariacaoExterna } from '../_shared/anuncios/espelhar.ts';
 import { classificarErroCanal } from '../_shared/canais/mapeamento.ts';
+import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import type { AtualizacaoCanonica, ErroCanal, VariacaoCanonica } from '../_shared/canais/contrato.ts';
 
 export type ResultadoProcessarJob =
@@ -90,6 +91,12 @@ function montarAtualizacao(
       });
     }
   }
+  // ADR-0160: este worker colapsa o preço da família num escalar (`precoFamilia`) e, ao contrário
+  // de publish/update-familia-ml, NUNCA teve o guard de preço uniforme — divergência viraria preço
+  // errado em silêncio. Hoje ele é código morto para o Mercado Livre (o canal roteia por
+  // publish/update-familia-ml; ver o cabeçalho deste arquivo e `CanalId` em canais/contrato.ts),
+  // mas o guard entra antes que um canal futuro herde o buraco.
+  garantirPrecoUniforme(variacoes as Array<{ codigo: string; preco_publicacao: number | string | null }>, 'PUBLICAR-ANUNCIO');
   const precoRaw = variacoes.find((v) => v.preco_publicacao != null)?.preco_publicacao;
   return {
     itemExternoId,

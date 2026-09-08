@@ -1,6 +1,15 @@
 # ADR-0078 — Preço por variação, split por faixa de preço e controle de preço no UPDATE
 
-**Status:** Aceito — implementado (F1+F2) — 2026-07-17
+**Status:** Aceito — implementado (F1+F2) — 2026-07-17 — **premissa parcialmente corrigida pelo
+[ADR-0160](0160-preco-por-variacao-sob-user-products.md) (2026-09-08)**
+
+> **Correção de premissa (ADR-0160).** O item 2 do Contexto abaixo — *"preço uniforme entre variações
+> de um mesmo anúncio"* — vale para o modelo **Legacy** (um item, N variações), não para o Mercado
+> Livre inteiro. Sob **User Products** cada cor é um item próprio e pode ter preço próprio; é isso
+> que o ML vende como "preço por variação" (migração UPtin). Consequência prática: **o split por
+> faixa continua sendo a resposta certa para famílias Legacy**, e deixou de ser aplicado a famílias
+> User Products, que publicam preços divergentes direto. Todo o resto deste ADR segue valendo,
+> inclusive o controle "Atualizar tudo × Somente estoque" e a config por faixa no caminho Legacy.
 **Decisores:** Diego
 **Relacionado:** ADR-0016 (UPDATE reposição de estoque + adendo preço propaga), ADR-0017 (selo de desconto % OFF estacionado), ADR-0041 (preço de atacado PxQ B2B), ADR-0048 (split de produto em N anúncios), ADR-0064 (concorrência agregada por variação), ADR-0076 (gross-up itera frete por variação)
 **Spec:** `docs/superpowers/specs/2026-07-15-preco-por-variacao-split-design.md`

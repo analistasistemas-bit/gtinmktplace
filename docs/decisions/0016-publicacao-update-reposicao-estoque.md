@@ -181,6 +181,11 @@ R$ 12,00). Ao incluir 64 cores novas a R$ 12,50, o worker reenviava a variação
 **sem `price`** (preservando o preço antigo) e as novas a R$ 12,50 → o ML exige **preço
 único entre variações** e rejeitava com `Found different prices in variations`.
 
+> **Escopo desta exigência (ADR-0160, 2026-09-08):** "preço único entre variações" é regra do modelo
+> **Legacy** — um item do ML com array `variations[]`, que é o caso deste lote. Sob **User Products**
+> cada cor é um item separado e tem preço próprio, então `precoFamilia` não se aplica lá: o caminho
+> UP usa `precoPorSku`. Esta decisão segue íntegra para anúncios Legacy.
+
 **Decisão (pedido do operador):** no UPDATE, sempre que o preço de publicação da família
 mudar (incluir cor nova **ou** reposição de estoque), o novo preço é **propagado para todas
 as variações** do anúncio. `montarVariacoesUpdate` ganha o parâmetro `precoFamilia` (preço

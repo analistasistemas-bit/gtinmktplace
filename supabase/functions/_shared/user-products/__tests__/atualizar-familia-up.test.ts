@@ -343,6 +343,50 @@ describe('atualizarFamiliaUP — Fix 5: efeitos pós-composição', () => {
     expect((r as { mensagem: string }).mensagem).toMatch(/compensacao_pendente/);
   });
 
+  // ADR-0160 (I10) — "Adicionar variação" (ADR-0129) não pode repreçar as cores já publicadas.
+  //
+  // `preservarPublicadas` era calculado DEPOIS do `return rodarUP` no worker e nunca chegava aqui:
+  // a saga rodava com somenteEstoque=false e a reposição empurrava preço a todas as cores vivas.
+  // Como o lote manual nasce por cópia e o `process-familia` recalcula `preco_publicacao` das
+  // variações não-pinadas, um preço que ninguém revisou ia parar nas irmãs — num fluxo cuja
+  // promessa é tocar só a cor nova.
+  it('I10: preservarPublicadas anula o preço das cores ativas e mantém o da cor nova', async () => {
+    let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
+    const { admin } = fakeAdmin([
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+    ]);
+    await atualizarFamiliaUP(args({
+      admin,
+      preservarPublicadas: true,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null },
+        { codigo: 'NOVA', cor: 'Rosa', estoque: 2, preco_publicacao: 31, gtin: null, imagem_path: null, ml_picture_id: null },
+      ] as never,
+      executarSaga: async (_p, e) => { entradaVista = e; return { tipo: 'concluido', criadas: ['NOVA'] }; },
+    }));
+    // A já publicada → null = preserva o preço vivo do item no ML.
+    expect(entradaVista!.precoPorSku.A).toBeNull();
+    // A cor nova entra com o preço dela — é o ponto do fluxo.
+    expect(entradaVista!.precoPorSku.NOVA).toBe(31);
+    // E a ficha das irmãs não é reescrita (ADR-0157 manda atributos na reposição).
+    expect(entradaVista!.atributosFamilia).toBeUndefined();
+  });
+
+  it('sem preservarPublicadas o UPDATE comum segue empurrando preço em todas', async () => {
+    let entradaVista: Parameters<typeof atualizarComposicao>[1] | null = null;
+    const { admin } = fakeAdmin([
+      { sku: 'A', status: 'ativo', retirado: false, item_externo_id: 'MLB1', family_id: 'F' },
+    ]);
+    await atualizarFamiliaUP(args({
+      admin,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: null },
+      ] as never,
+      executarSaga: async (_p, e) => { entradaVista = e; return { tipo: 'concluido', criadas: [] }; },
+    }));
+    expect(entradaVista!.precoPorSku.A).toBe(10);
+  });
+
   // ADR-0160 (I5) — atacado com preços divergentes é dinheiro errado, em silêncio.
   //
   // O PxQ do ML é por ITEM e o valor é ABSOLUTO (ADR-0041). Com preços diferentes entre as cores

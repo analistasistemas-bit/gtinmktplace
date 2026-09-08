@@ -145,7 +145,10 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     // Cores incluídas: casadas (têm ml_variation_id) repõem estoque; novas (sem
     // ml_variation_id) são criadas como variação. Excluídas ficam de fora.
     const { data: variacoesDoSelect } = await admin.from('variacoes')
-      .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm')
+      // ADR-0160: `exibir_com_desconto`/`desconto_pct`/`atacado` por variação entram no select —
+      // o caminho UP precisa DETECTAR config por cor para recusar (I7), já que aplica só a
+      // config família-level. Sem lê-las, a divergência passaria despercebida.
+      .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, exibir_com_desconto, desconto_pct, atacado')
       .eq('familia_id', job.familia_id)
       .eq('excluida_da_publicacao', false);
     if (!variacoesDoSelect || variacoesDoSelect.length === 0) {
@@ -160,10 +163,21 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       admin, familia.org_id as string, familia as never, variacoesDoSelect,
     );
 
-    // ADR-0078 F2 (invariante #1): em "atualizar tudo" o precoFamilia propagaria o 1º preço a
-    // TODAS as cores em silêncio se houvesse divergência — LOUD em vez disso. Em "somente
-    // estoque" nenhum preço é empurrado (invariante #3), então divergência recalculada é inócua.
-    if (!job.somenteEstoque) garantirPrecoUniforme(variacoes, 'UPDATE');
+    // ADR-0160: a trava de preço uniforme NÃO mora mais aqui.
+    //
+    // Ela protegia o colapso do `precoFamilia` (ADR-0078 F2 #1), que é real — mas só existe no
+    // caminho LEGACY, onde as N cores dividem um item só e o ML exige preço único. Rodando antes
+    // do roteamento, ela barrava também as famílias User Products, em que cada cor é um item
+    // próprio com preço próprio: exatamente o que o ML vende como "preço por variação". Agora ela
+    // roda dentro do ramo Legacy, imediatamente antes do PUT.
+    //
+    // Fluxo "Adicionar variação" (ADR-0129): só a cor NOVA vai ao ML; as publicadas entram como
+    // no-op. Derivado do lote (`origem='manual'`), não do job, para sobreviver ao "Reenviar" da
+    // Revisão, que reenfileira sem payload extra. Subiu para ANTES do roteamento (ADR-0160 I10):
+    // era calculado depois do `return rodarUP` e nunca alcançava o caminho UP, onde a saga rodava
+    // com somenteEstoque=false e empurrava preço a TODAS as cores vivas — repreçando as irmãs num
+    // fluxo que promete tocar só a cor nova.
+    const preservarPublicadas = await ehFluxoAddVariacao(admin, job.lote_id);
 
     // ── ADR-0088 Fase 2: roteamento User Products ────────────────────────────────────────────
     // Família UP tem N itens técnicos em `anuncios_externos_itens` (todas as `variacoes` com
@@ -184,7 +198,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       if (!conexao) throw new Error('Organização sem conexão com o Mercado Livre');
       const r = await atualizarUP({
         admin, conn, ctx, conexao, familia, raiz: raiz as never, variacoes: variacoes as never,
-        somenteEstoque: !!job.somenteEstoque, tentativas,
+        somenteEstoque: !!job.somenteEstoque, preservarPublicadas, tentativas,
       });
       if (r.estado === 'retry') return { tipo: 'retry', mensagem: r.mensagem };
       await finalizarLote(job.lote_id);
@@ -275,10 +289,14 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       peso_gramas: repUpd.peso_gramas != null ? Number(repUpd.peso_gramas) : null,
     } : null;
 
-    // Fluxo "Adicionar variação" (ADR-0129): só a cor NOVA vai ao ML — as publicadas entram no
-    // payload como no-op. Derivado do lote (`origem='manual'`), não do job, pra sobreviver ao
-    // "Reenviar" da Revisão, que reenfileira sem payload extra.
-    const preservarPublicadas = await ehFluxoAddVariacao(admin, job.lote_id);
+    // ADR-0160 — a trava de preço uniforme, agora no lugar certo: ramo LEGACY, imediatamente antes
+    // do PUT. Aqui as N cores dividem UM item do ML, `precoFamilia` é propagado a todas
+    // (`montarVariacoesUpdate`) e o canal recusa variações com preços diferentes
+    // ("Found different prices in variations"). A divergência tem que virar split por faixa.
+    //
+    // Em "somente estoque" nenhum preço é empurrado (ADR-0078 F2 #3), então divergência recalculada
+    // é inócua e não bloqueia — invariante preservado do desenho anterior.
+    if (!job.somenteEstoque) garantirPrecoUniforme(variacoes, 'UPDATE');
 
     // O conector encapsula o GET estado → montar variações/novas → PUT → refetch → casar
     // (reenviar TODAS as variações: o ML deleta as omitidas; comuns capa2/capa3 aplicadas a
