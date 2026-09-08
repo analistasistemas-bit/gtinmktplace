@@ -217,7 +217,8 @@ Extensão do módulo Estoque implementada em 2026-09-03. Permite criar anúncios
 - **Estoque 100% derivado:** O kit não possui saldo próprio em `variacoes.estoque`. Seu saldo disponível é calculado deterministicamente como `floor(estoque_base / multiplicador)`.
 - **Colunas em `familias`:** `kit_base_codigo_pai` aponta para o produto base e `kit_multiplicador` armazena o número de unidades por pack.
 - **Lote técnico dedicado:** O kit nasce direto em status `'pronto'` num lote técnico com `status='publicando'`, publicando automaticamente no ML após a confirmação do produto base, sem passar pela Revisão manual.
-- **Venda e Push:** Baixa de estoque na venda de kit resolve a baixa diretamente na família base multiplicada por N. O push enfileira a atualização da base e de todos os kits derivados.
+- **Venda e Push:** Baixa de estoque na venda de kit resolve a baixa na **variação** da família base (o `codigo_pai` identifica a família, não a linha de `variacoes` que tem saldo), multiplicada por N. O push enfileira a atualização da base e de todos os kits derivados.
+- **Incidente 2026-09-08:** a v1 do resolvedor devolvia o `codigo_pai` da base direto como SKU canônico, e como `baixar_estoque` resolve por `variacoes.codigo`, nenhuma venda de kit baixava estoque — o alerta "Venda de SKU fora do catálogo" foi o que denunciou (pedido `2000018341864344`). Desde o fix, origem de kit que não resolve vira falha alertada em vez de baixar 0 em silêncio.
 - **Trava de integridade:** Bloqueio de inserção direta de estoque no SKU do kit; bloqueio de remoção ou inserção de nova cor na base enquanto houver kit vinculado ativo; trava de catálogo fechada e simétrica.
 - **Deploy:** 19 Edge Functions deployadas cobrindo o blast radius de `_shared/estoque/*`.
 

@@ -2,6 +2,33 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Incidente — venda de kit vinculado não baixava estoque (ADR-0151) — 2026-09-08
+
+Plano e diagnóstico em [2026-09-08-fix-baixa-estoque-kit-vinculado.md](superpowers/plans/2026-09-08-fix-baixa-estoque-kit-vinculado.md).
+Descoberto pelo alerta "Venda de SKU fora do catálogo" no pedido `2000018341864344` (kit `00000089`,
+3 un. × 2), às 07:45 de 08/09.
+
+- [x] **Causa** — `resolverOrigemEstoque` devolvia `codigoCanonico = kit_base_codigo_pai` (o
+  `codigo_pai` da família base), mas `baixar_estoque` resolve SKU por `variacoes.codigo`. Os dois
+  espaços de código são disjuntos (0 de 8.561 variações têm `codigo = codigo_pai`), então **toda**
+  venda de kit vinculado devolvia `sku_nao_encontrado` e o saldo da base nunca descia. O
+  multiplicador funcionava; só o mapeamento pai→variação estava errado.
+- [x] **Fix** — o resolvedor passa a resolver a família base por `codigo_pai` e devolver o `codigo`
+  da sua única variação. Origem não resolvida (erro de leitura, base ausente, base multivariação)
+  vira falha alertada em vez de degradar para "SKU comum" — degradar baixava no SKU do kit (saldo 0),
+  gravava movimento de quantidade 0 e queimava a referência de idempotência em silêncio.
+- [x] **Testes** — o stub de `kit.test.ts` devolvia a mesma resposta para qualquer tabela e por isso
+  o assert petrificava o bug. Substituído por stub que distingue `variacoes` de `familias`, com
+  `codigo_pai ≠ codigo`.
+- [x] **Deploy** — 6 Edge Functions que embutem `_shared/estoque/kit.ts` (`sync-venda`,
+  `sincronizar-estoque`, `criar-kit-vinculado`, `publish-familia-ml`, `update-familia-ml`,
+  `remover-publicado`).
+- [x] **Remediação** — `ajustar_estoque` foi descartado: o movimento fantasma tem
+  `motivo='venda_sku_nao_encontrado'` e `estornar_estoque` só lê `motivo='venda'`, então um
+  cancelamento futuro devolveria "reposto" sem repor nada e sem avisar. Em vez disso a referência do
+  fantasma foi liberada (sufixo `#bug-adr0151`, linha preservada para auditoria) e o pedido foi
+  reprocessado pela fila: movimento `00000083 / -6`, saldo 14 → 8, push despachado.
+
 ## Performance da central de organizações — Fase 3, tabela consolidada de meses fechados — 2026-09-08
 
 Plano completo em [2026-09-07-perf-central-organizacoes.md](superpowers/plans/2026-09-07-perf-central-organizacoes.md).
