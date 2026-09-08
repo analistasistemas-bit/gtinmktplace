@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -66,6 +66,7 @@ import { useStatusPublicados } from '@/hooks/useStatusPublicados';
 import { useResumoVendas } from '@/hooks/useResumoVendas';
 import { usePrepararRepublicacao, useRemoverPublicado } from '@/hooks/useRemoverPublicado';
 import { usePausarReativarPublicado } from '@/hooks/usePausarReativarPublicado';
+import { useMigrarPrecoPorVariacao } from '@/hooks/useMigrarPrecoPorVariacao';
 import { useRetentarCatalogo } from '@/hooks/useRetentarCatalogo';
 import { useEncerrarKitVirtual } from '@/hooks/useEncerrarKitVirtual';
 import {
@@ -209,6 +210,8 @@ interface LinhaProps {
   onPreencherFiscal: (familiaId: string) => void;
   temModuloEstoque: boolean;
   onCriarKit: (item: PublicadoItem) => void;
+  onMigrarPrecoPorVariacao: (familiaId: string) => void;
+  migrando: boolean;
 }
 
 const CONTEUDO_ML = (
@@ -236,7 +239,7 @@ function SeloModo({ listingType }: { listingType?: 'classico' | 'premium' | null
 function LinhaTabela({
   item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando,
   onRetentarCatalogo, retentandoCatalogo, isAdmin, temFiscal, onPreencherFiscal,
-  temModuloEstoque, onCriarKit,
+  temModuloEstoque, onCriarKit, onMigrarPrecoPorVariacao, migrando,
 }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   // Chave por anúncio (mlItemId): familiaId é compartilhado entre anúncios split (ADR-0048).
@@ -267,6 +270,10 @@ function LinhaTabela({
         : temVariacaoDeCor
           ? 'Kit vinculado só existe para produto sem variação de cor.'
           : undefined;
+
+  // Migração ML "preço por variação" (irreversível): só faz sentido pra quem tem mais de uma
+  // cor e está ativo/pausado — status já encerrado/moderado não tem o que migrar.
+  const migracaoAtiva = migrando || !!item.migracaoEmAndamento;
 
   return (
     <>
@@ -369,6 +376,43 @@ function LinhaTabela({
             <PackagePlus className="h-3 w-3" />
           </Button>
 
+          {isAdmin && temVariacaoDeCor && podeAlternar && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-label="Migrar para preço por variação"
+                  title={migracaoAtiva ? 'Migração em andamento' : 'Migrar para preço por variação'}
+                  className="h-7 px-2 text-xs"
+                  disabled={migracaoAtiva}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <Split className="h-3 w-3" />
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Migrar para preço por variação?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta ação não pode ser desfeita. O anúncio atual será encerrado no Mercado
+                    Livre e cada cor vira um anúncio novo. Os pedidos já feitos continuam no
+                    anúncio encerrado, e o histórico de vendas deste produto nesta tela
+                    recomeça. O selo &quot;% OFF&quot; deixa de aparecer nos anúncios novos.
+                    O app avisa pelo sino quando a migração terminar — não clique de novo
+                    enquanto isso.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => onMigrarPrecoPorVariacao(item.familiaId)}>
+                    Migrar anúncio
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+
           {item.status === 'pausado' ? (
             <Button
               variant="ghost"
@@ -376,7 +420,7 @@ function LinhaTabela({
               aria-label="Reativar"
               title={motivoDesabilitado ?? 'Reativar'}
               className="h-7 px-2 text-xs"
-              disabled={!isAdmin || !podeAlternar || pausando}
+              disabled={!isAdmin || !podeAlternar || pausando || migracaoAtiva}
               onClick={(e) => { e.stopPropagation(); onPausarReativar(item.mlItemId, 'ativo'); }}
             >
               <Play className="h-3 w-3" />
@@ -390,7 +434,7 @@ function LinhaTabela({
                   aria-label="Pausar"
                   title={motivoDesabilitado ?? 'Pausar'}
                   className="h-7 px-2 text-xs"
-                  disabled={!isAdmin || !podeAlternar || pausando}
+                  disabled={!isAdmin || !podeAlternar || pausando || migracaoAtiva}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <Pause className="h-3 w-3" />
@@ -468,7 +512,7 @@ function LinhaTabela({
                 aria-label="Remover"
                 title="Remover"
                 className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                disabled={removendo}
+                disabled={removendo || migracaoAtiva}
                 onClick={(e) => e.stopPropagation()}
               >
                 <Trash2 className="h-3 w-3" />
@@ -694,6 +738,7 @@ export default function Publicados() {
   const { mutate: prepararRepublicar, isPending: preparandoRepublicar } = usePrepararRepublicacao();
   const { mutate: pausarReativar, isPending: pausandoOuReativando, error: erroPausar } = usePausarReativarPublicado();
   const { mutate: retentarCatalogoMut, isPending: retentandoCatalogo } = useRetentarCatalogo();
+  const { mutate: migrarPrecoPorVariacaoMut, isPending: migrando } = useMigrarPrecoPorVariacao();
   const { mutate: refazerKitMut, isPending: refazendoKit } = useEncerrarKitVirtual();
   const { isAdmin } = useProfile();
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
@@ -733,6 +778,7 @@ export default function Publicados() {
   const [republicandoId, setRepublicandoId] = useState<string | null>(null);
   const [pausandoId, setPausandoId] = useState<string | null>(null);
   const [retentandoCatalogoId, setRetentandoCatalogoId] = useState<string | null>(null);
+  const [migrandoId, setMigrandoId] = useState<string | null>(null);
 
   const aplicar = useCallback(
     (mudanca: (atual: EstadoPublicados) => Partial<EstadoPublicados>) => {
@@ -813,6 +859,21 @@ export default function Publicados() {
           description: err instanceof Error ? err.message : String(err),
         }),
       onSettled: () => setRetentandoCatalogoId(null),
+    });
+  };
+
+  // Migração "preço por variação" é irreversível no ML — erro 400 (recusa com motivo) ou 502
+  // (pode ter começado) chegam ambos como err.message (chamarEdge lê json.erro em qualquer
+  // status não-2xx), e o texto de ambos já é feito pra ir direto pro operador.
+  const handleMigrarPrecoPorVariacao = (familiaId: string) => {
+    setMigrandoId(familiaId);
+    migrarPrecoPorVariacaoMut(familiaId, {
+      onSuccess: () => toast.success('Migração pedida ao Mercado Livre. Você será avisado quando terminar.'),
+      onError: (err) =>
+        toast.error('Falha ao migrar', {
+          description: err instanceof Error ? err.message : String(err),
+        }),
+      onSettled: () => setMigrandoId(null),
     });
   };
 
@@ -1234,6 +1295,8 @@ export default function Publicados() {
                         onPreencherFiscal={setFiscalAberto}
                         temModuloEstoque={temModuloEstoque}
                         onCriarKit={handleCriarKit}
+                        onMigrarPrecoPorVariacao={handleMigrarPrecoPorVariacao}
+                        migrando={migrando && migrandoId === item.familiaId}
                       />
                     )
                   ))

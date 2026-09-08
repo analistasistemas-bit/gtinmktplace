@@ -42,3 +42,6 @@ export const excluirProduto = (codigoPai: string) =>
 
 export const pausarReativarPublicado = (mlItemId: string, status: 'ativo' | 'pausado') =>
   chamarEdge<{ ok: true }>('atualizar-status-publicado', { ml_item_id: mlItemId, status });
+
+export const migrarPrecoPorVariacao = (familiaId: string) =>
+  chamarEdge<{ ok: true }>('migrar-preco-por-variacao', { familia_id: familiaId });

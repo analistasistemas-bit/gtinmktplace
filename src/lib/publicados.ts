@@ -66,6 +66,9 @@ export interface PublicadoItem {
   /** ADR-0154: `kits_virtuais.id` — necessário para "Refazer kit" (encerrar-kit-virtual). Só
    *  presente quando `ehKitVirtual` é true. */
   kitVirtualId?: string;
+  /** Migração para preço por variação (migrar-preco-por-variacao) em andamento no ML — trava
+   *  Migrar/Pausar/Reativar/Remover desta linha. Ainda não preenchido pelo backend; undefined = false. */
+  migracaoEmAndamento?: boolean;
 }
 
 /**

@@ -12,6 +12,7 @@ const useStatusPublicadosMock = vi.fn();
 const useRemoverPublicadoMock = vi.fn();
 const usePrepararRepublicacaoMock = vi.fn();
 const usePausarReativarPublicadoMock = vi.fn();
+const useMigrarPrecoPorVariacaoMock = vi.fn();
 const useRetentarCatalogoMock = vi.fn();
 const useResumoFinanceiroMock = vi.fn();
 const useVendasMock = vi.fn();
@@ -66,6 +67,10 @@ vi.mock('@/hooks/useRemoverPublicado', () => ({
 
 vi.mock('@/hooks/usePausarReativarPublicado', () => ({
   usePausarReativarPublicado: () => usePausarReativarPublicadoMock(),
+}));
+
+vi.mock('@/hooks/useMigrarPrecoPorVariacao', () => ({
+  useMigrarPrecoPorVariacao: () => useMigrarPrecoPorVariacaoMock(),
 }));
 
 vi.mock('@/hooks/useRetentarCatalogo', () => ({
@@ -185,6 +190,11 @@ function mockHooksPadrao() {
     error: null,
   });
   usePausarReativarPublicadoMock.mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+    error: null,
+  });
+  useMigrarPrecoPorVariacaoMock.mockReturnValue({
     mutate: vi.fn(),
     isPending: false,
     error: null,
@@ -785,6 +795,180 @@ describe('Publicados', () => {
       expect(mutate).toHaveBeenCalledWith('k1', expect.any(Object));
       expect(carregarKitVirtualParaRefazerMock).not.toHaveBeenCalled();
       expect(screen.queryByTestId('dialog-criar-kit-virtual')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('botão Migrar para preço por variação', () => {
+    const BOTAO = 'Migrar para preço por variação';
+
+    // O status exibido na linha vem do merge com o status ao vivo (useStatusPublicados), não de
+    // `item.status` puro — sem uma entrada casando por ml_item_id o merge força 'indisponivel'
+    // (Publicados.tsx ~L947), o que esconderia o botão em qualquer teste que precise de
+    // ativo/pausado. `itemBase().status` continua útil só para os testes de status "recusado".
+    function comStatusAoVivo(mlItemId: string, status: 'ativo' | 'pausado') {
+      useStatusPublicadosMock.mockReturnValue({
+        data: { itens: [{ ml_item_id: mlItemId, status, motivo: null, estoque: 87, preco: 24.1 }] },
+        isFetching: false,
+        refetch: vi.fn(),
+      });
+    }
+
+    it('não aparece para não-admin', () => {
+      useProfileMock.mockReturnValue({ isAdmin: false });
+      comStatusAoVivo('MLB1', 'ativo');
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2 })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
+    });
+
+    it('não aparece com uma variação só', () => {
+      comStatusAoVivo('MLB1', 'ativo');
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 1 })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
+    });
+
+    it.each(['encerrado', 'moderado'] as const)('não aparece com status %s', (status) => {
+      // Sem entrada em statusData p/ este ml_item_id o merge cai em 'indisponivel' de qualquer
+      // forma — o que já cobre o gating. Não precisa de comStatusAoVivo aqui.
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2, status })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.queryByRole('button', { name: BOTAO })).not.toBeInTheDocument();
+    });
+
+    it('aparece para admin com mais de uma variação e status ativo/pausado', () => {
+      comStatusAoVivo('MLB1', 'ativo');
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2 })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.getByRole('button', { name: BOTAO })).toBeEnabled();
+    });
+
+    it('migracaoEmAndamento desabilita Migrar, Pausar e Remover', () => {
+      comStatusAoVivo('MLB1', 'ativo');
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2, migracaoEmAndamento: true })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      const btnMigrar = screen.getByRole('button', { name: BOTAO });
+      expect(btnMigrar).toBeDisabled();
+      expect(btnMigrar).toHaveAttribute('title', 'Migração em andamento');
+      expect(screen.getByRole('button', { name: 'Pausar' })).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Remover' })).toBeDisabled();
+    });
+
+    it('migracaoEmAndamento desabilita Reativar (status pausado)', () => {
+      comStatusAoVivo('MLB1', 'pausado');
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2, migracaoEmAndamento: true })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+      expect(screen.getByRole('button', { name: 'Reativar' })).toBeDisabled();
+    });
+
+    it('confirmar chama a mutation com o familia_id certo', () => {
+      const mutate = vi.fn();
+      useMigrarPrecoPorVariacaoMock.mockReturnValue({ mutate, isPending: false, error: null });
+      comStatusAoVivo('MLB1', 'ativo');
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2, familiaId: 'f-migrar' })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: BOTAO }));
+      fireEvent.click(screen.getByRole('button', { name: 'Migrar anúncio' }));
+
+      expect(mutate).toHaveBeenCalledWith('f-migrar', expect.any(Object));
+    });
+
+    it('cancelar não chama a mutation', () => {
+      const mutate = vi.fn();
+      useMigrarPrecoPorVariacaoMock.mockReturnValue({ mutate, isPending: false, error: null });
+      comStatusAoVivo('MLB1', 'ativo');
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2 })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: BOTAO }));
+      fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+      expect(mutate).not.toHaveBeenCalled();
+    });
+
+    it('o texto do diálogo avisa que não pode ser desfeito e que os pedidos ficam no anúncio antigo', () => {
+      comStatusAoVivo('MLB1', 'ativo');
+      usePublicadosMock.mockReturnValue({
+        data: [itemBase({ qtdVariacoesFamilia: 2 })],
+        isLoading: false,
+        error: null,
+      });
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: BOTAO }));
+
+      expect(screen.getByText(/não pode ser desfeita/i)).toBeInTheDocument();
+      expect(screen.getByText(/pedidos já feitos continuam no anúncio encerrado/i)).toBeInTheDocument();
+      expect(screen.getByText(/% OFF/)).toBeInTheDocument();
     });
   });
 });

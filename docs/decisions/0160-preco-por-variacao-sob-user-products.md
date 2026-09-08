@@ -119,6 +119,13 @@ worker Legacy então a barraria com preço divergente, contradizendo o que a UI 
 
 ### 4. A migração é disparada pelo operador, no painel do ML
 
+> **REVOGADA no mesmo dia pelo [ADR-0161](0161-botao-migrar-preco-por-variacao.md).** Ao ver o
+> roteiro de validação, que exigia alternar entre o painel do ML e o app, Diego recusou o fluxo
+> partido em dois sistemas. O app passou a ter o botão, com confirmação explícita — tão deliberada
+> quanto o clique no painel. Além disso, disparar pelo app permite **fotografar `variations[]` antes
+> da migração**, e é esse snapshot que impede o casamento errado com uma família irmã de mesmo título
+> e mesmas cores. O texto abaixo fica como registro da decisão original.
+
 O app **não** chama `POST /sites/MLB/items/user_product_listings` e **não** ganha botão de migração.
 Ele detecta e adota, pelo caminho do ADR-0104. Motivo: a migração é irreversível (o item original é
 encerrado e as ordens antigas ficam nele) e a decisão é comercial, não técnica.
