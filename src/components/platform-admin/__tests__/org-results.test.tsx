@@ -80,6 +80,12 @@ describe('OrgResults', () => {
     expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument();
   });
 
+  it('organization carregou mas metrics falhou dentro de enrichOne (fail-open, isError falso) mostra a mesma faixa de erro', () => {
+    render(<OrgResults organization={makeOrganization(null)} />);
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Tentar novamente' })).toBeInTheDocument();
+  });
+
   it('aviso de falha (severity error) vai na faixa destrutiva com Tentar novamente', () => {
     const metrics = makeMetrics({ warnings: [{ code: 'cost_catalog_read_failed', severity: 'error', message: 'Falha ao carregar os custos: timeout' }] });
     render(<OrgResults organization={makeOrganization(metrics)} />);

@@ -26,8 +26,13 @@ export function OrgResults({ organization }: { organization: UseQueryResult<OrgS
   // (ex.: usuário não resolvido num refresh direto na URL do detalhe) fica com isLoading=false e
   // data=undefined, o que confundiria "sem dado" com "ainda não carregou".
   const loading = organization.isLoading || (!organization.data && !organization.isError);
+  // `organization` pode carregar com sucesso e `metrics` ainda vir null: `enrichOne` calcula
+  // `OrgMetrics` internamente (`readOrgMetrics`) e absorve a falha em `metrics: null` sem lançar
+  // (fail-open), então `organization.isError` fica falso — sem este caso a falha vira `—` silencioso
+  // nos cards em vez da faixa de erro/retry.
+  const metricsFailed = Boolean(organization.data) && !metrics;
 
-  if (organization.isError && !metrics) {
+  if ((organization.isError && !metrics) || metricsFailed) {
     return (
       <div role="alert" className="flex flex-wrap items-center gap-3 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
         <span>Não foi possível carregar os resultados da organização.</span>

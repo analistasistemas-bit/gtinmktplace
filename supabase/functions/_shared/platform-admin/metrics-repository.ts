@@ -263,8 +263,8 @@ export type MetricsCache = { cachedRows: Map<string, CachedMonthRow>; validation
 const EMPTY_CACHE: MetricsCache = { cachedRows: new Map(), validation: new Map() };
 const cacheKey = (orgId: string, month: string) => `${orgId}|${month}`;
 
-/** PostgREST devolve `numeric`/`bigint` como string — sem essa coerção um hit de cache muda o TIPO
- *  do campo (ex.: `markup: "0.44"`) e o diff campo a campo da trava de aceite quebra sozinho. */
+/** PostgREST devolve `numeric`/`bigint` como número JSON, não como string — o `Number()` aqui é
+ *  defensivo (inofensivo se o valor já vier numérico), não uma correção de tipo necessária. */
 function toCachedRow(row: Record<string, unknown>): CachedMonthRow {
   return {
     gross_cents: Number(row.gross_cents), orders: Number(row.orders), ticket_cents: Number(row.ticket_cents),
@@ -292,7 +292,8 @@ export async function loadMetricsCache(db: MetricsDb, orgIds: string[], month: s
     // então o filtro precisa do dia (`-01`); as chaves internas do cache continuam em `YYYY-MM`
     // (`monthKey`, abaixo), formato de todo o resto deste arquivo.
     const cached = await readPages(() => db.from(CACHE_TABLE).select(CACHE_COLUMNS)
-      .in('org_id', orgIds).in('month', eligible.map((value) => `${value}-01`)));
+      .in('org_id', orgIds).in('month', eligible.map((value) => `${value}-01`))
+      .order('org_id', { ascending: true }).order('month', { ascending: true }));
     if (cached.error || cached.rows.length === 0) return EMPTY_CACHE;
     const cachedRows = new Map<string, CachedMonthRow>();
     for (const row of cached.rows) cachedRows.set(cacheKey(String(row.org_id), monthKey(row.month)), toCachedRow(row));
@@ -307,6 +308,14 @@ export async function loadMetricsCache(db: MetricsDb, orgIds: string[], month: s
         count: Number(row.source_count),
         maxUpdatedAt: row.source_max_updated_at == null ? null : String(row.source_max_updated_at),
       });
+    }
+    // A RPC agrupa por venda existente: um mês sem nenhuma venda não gera grupo. Com a RPC OK, a
+    // ausência de grupo é "0 vendas", não "não sei" — senão um mês de 0 vendas nunca bate o cache.
+    for (const orgId of orgIds) {
+      for (const value of eligible) {
+        const key = cacheKey(orgId, value);
+        if (!validation.has(key)) validation.set(key, { count: 0, maxUpdatedAt: null });
+      }
     }
     return { cachedRows, validation };
   } catch {
@@ -391,6 +400,10 @@ export async function materializeRecentMonths(
             count: Number(row.source_count),
             maxUpdatedAt: row.source_max_updated_at == null ? null : String(row.source_max_updated_at),
           });
+        }
+        // RPC OK: mês sem grupo = 0 vendas, não "não sei" (mesmo raciocínio de `loadMetricsCache`).
+        for (const value of months) {
+          if (!validation.has(value)) validation.set(value, { count: 0, maxUpdatedAt: null });
         }
       }
     }

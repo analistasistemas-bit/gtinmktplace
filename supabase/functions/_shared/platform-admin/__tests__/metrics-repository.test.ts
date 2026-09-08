@@ -324,13 +324,15 @@ describe('materializeRecentMonths (job de pré-aquecimento, FASE 3.4)', () => {
     const stamp = '[8,16,"CE",8]';
     const db = dbFor(base({
       ml_vendas: { rows: [sale('sale-1', '2026-07-10T12:00:00-03:00')] },
-      // 2026-08 já tem linha válida (bate com a validação) — não deve materializar de novo.
+      // 2026-08 já tem linha válida de um mês sem vendas — não deve materializar de novo. A RPC real
+      // agrupa por venda existente: um mês de 0 vendas nunca gera linha (por isso nenhuma linha para
+      // 2026-08 abaixo) — ausência de grupo com a RPC OK é "0 vendas", não "não sei" (fix aplicado).
       platform_org_month_metrics: { rows: [{
         org_id: 'org-a', month: '2026-08-01', gross_cents: 1, orders: 0, ticket_cents: 0, markup: null,
         cost_covered_orders: 0, total_orders: 0, updated_at: null, source_count: 0, source_max_updated_at: null,
         tax_config_stamp: stamp,
       }] },
-      platform_org_month_validation: { rows: [{ org_id: 'org-a', month: '2026-08-01', source_count: 0, source_max_updated_at: null }] },
+      platform_org_month_validation: { rows: [] },
     }));
     const result = await materializeRecentMonths(db, 'org-a', now);
     expect(result.materialized).toEqual(expect.arrayContaining(['2026-09', '2026-07', '2026-06', '2026-05', '2026-04']));

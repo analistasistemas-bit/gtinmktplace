@@ -8,7 +8,6 @@ import {
   type CommercialTerms,
   type CommercialTermsInput,
   type Month,
-  type OrgMetrics,
   type OrgSummary,
   type Page,
   type PulseUsage,
@@ -72,8 +71,6 @@ export const platformAdminKeys = {
     })),
   organization: (userId: UserId, orgId: string, month: Month) =>
     key(userId, 'organization', orgId, month, {}),
-  metrics: (userId: UserId, orgId: string, month: Month) =>
-    key(userId, 'metrics', orgId, month, {}),
   terms: (userId: UserId, orgId: string) =>
     key(userId, 'terms', orgId, null, {}),
   preview: (userId: UserId, orgId: string, month: Month) =>
@@ -120,16 +117,6 @@ export function usePlatformOrganization(orgId: string, month: Month) {
   return useQuery<OrgSummary>({
     queryKey: platformAdminKeys.organization(userId, orgId, month),
     queryFn: () => callPlatformAdmin('organization', { org_id: orgId, month }),
-    enabled: Boolean(userId && orgId && month),
-    staleTime: PLATFORM_ADMIN_STALE_TIME,
-  });
-}
-
-export function usePlatformMetrics(orgId: string, month: Month) {
-  const userId = useAuthStore((state) => state.user?.id ?? null);
-  return useQuery<OrgMetrics>({
-    queryKey: platformAdminKeys.metrics(userId, orgId, month),
-    queryFn: () => callPlatformAdmin('metrics', { org_id: orgId, month }),
     enabled: Boolean(userId && orgId && month),
     staleTime: PLATFORM_ADMIN_STALE_TIME,
   });

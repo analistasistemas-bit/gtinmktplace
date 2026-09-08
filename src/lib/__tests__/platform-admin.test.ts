@@ -66,14 +66,14 @@ describe('callPlatformAdmin', () => {
 
 describe('platformAdminKeys', () => {
   it('isola o cache por usuário, action, organização e período', () => {
-    const august = platformAdminKeys.metrics('user-1', 'org-1', '2026-08');
-    const september = platformAdminKeys.metrics('user-1', 'org-1', '2026-09');
-    const otherOrg = platformAdminKeys.metrics('user-1', 'org-2', '2026-08');
+    const august = platformAdminKeys.organization('user-1', 'org-1', '2026-08');
+    const september = platformAdminKeys.organization('user-1', 'org-1', '2026-09');
+    const otherOrg = platformAdminKeys.organization('user-1', 'org-2', '2026-08');
 
     expect(august).toEqual([
       'platform-admin',
       'user-1',
-      'metrics',
+      'organization',
       'org-1',
       '2026-08',
       {},

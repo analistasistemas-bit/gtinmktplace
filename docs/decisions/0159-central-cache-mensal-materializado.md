@@ -57,10 +57,16 @@ corte.
    `(count, atualizado_em)` já cobre INSERT/UPDATE/DELETE de vendas sem acoplar a ingestão a mais uma
    escrita síncrona, e o único caso não coberto (item 4) é raro e mensurado.
 
-4. **Deriva de catálogo aceita e medida.** Alterar `variacoes` depois da materialização só afeta
-   itens **sem** custo congelado (ADR-0109) — medido em produção: **3 itens em 2 855 vendas dos
-   últimos 6 meses (0,1 %)**. Não justifica trigger em `variacoes`; o caso raro tem saída manual (uma
-   ação "recalcular mês" no admin), fora do escopo desta primeira versão.
+4. **Deriva de catálogo aceita e medida — só para `custo`, não para o catálogo inteiro.** Alterar
+   `variacoes.custo` depois da materialização só afeta itens **sem** custo congelado (ADR-0109) —
+   medido em produção: **3 itens em 2 855 vendas dos últimos 6 meses (0,1 %)**. `peso_gramas` (entra
+   no rateio de frete de pack → líquido → markup) e `familias.origem` (define a alíquota 8 %/16 %)
+   também vêm do catálogo e **não têm congelamento equivalente**: alterá-los depois da materialização
+   muda o markup que o cálculo ao vivo daria, sem invalidar a linha (nenhum dos dois entra na chave
+   de invalidação do item 3). É a mesma classe de deriva aceita acima, sem medição própria porque
+   `peso_gramas`/`origem` mudam com a mesma raridade que `custo`. Não justifica trigger em
+   `variacoes`/`familias`; o caso raro tem saída manual — hoje, apagar a linha correspondente de
+   `platform_org_month_metrics` por SQL (não existe ação "recalcular mês" no admin).
 
 5. **Mês corrente e mês anterior real são sempre ao vivo, nunca lidos do cache** — mesmo que uma
    linha exista e valide. O mês anterior real é, na prática, o que mais recebe correção tardia (item

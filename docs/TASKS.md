@@ -5,9 +5,10 @@
 ## Performance da central de organizações — Fase 3, tabela consolidada de meses fechados — 2026-09-08
 
 Plano completo em [2026-09-07-perf-central-organizacoes.md](superpowers/plans/2026-09-07-perf-central-organizacoes.md).
-Fases 1 (região/CORS/paralelismo) e 2 (colunas mínimas, leitura por mês, catálogo sem duplicata) já
-em produção; esta é a Fase 3 — o gatilho de reavaliação do ADR-0158 ("cache se passar de 3 s com 10
-orgs") já havia sido acionado com 2 orgs (4,3–6,5 s medidos).
+Fases 1 (região/CORS/paralelismo), 2 (colunas mínimas, leitura por mês, catálogo sem duplicata) e 3
+(tabela consolidada abaixo) estão implementadas na branch `worktree-perf-super-admin`, ainda **não
+publicadas** — o gatilho de reavaliação do ADR-0158 ("cache se passar de 3 s com 10 orgs") já havia
+sido acionado com 2 orgs (4,3–6,5 s medidos).
 
 - [x] **`platform_org_month_metrics`** (migration `20260908030002_platform_org_month_metrics.sql`) —
   cache reconstituível de `OrgMetrics` por mês fechado (chave `(org_id, month)` em BRT), RLS
@@ -32,12 +33,22 @@ orgs") já havia sido acionado com 2 orgs (4,3–6,5 s medidos).
 - [x] 17 testes novos/ajustados em `metrics-repository.test.ts` cobrindo: cache válido reaproveitado,
   invalidação por count, por `atualizado_em`, por config tributária, mês corrente nunca gravado,
   paridade `materializeMonth`×`readOrgMetrics`, e o job de pré-aquecimento.
-- [ ] Suíte SQL (`supabase/tests/platform_commercial.sql`) contra Postgres real não estendida para a
-  Fase 3 nesta entrega — cobertura ficou nos testes de unidade (fake db) acima; container de teste
-  (`codex-platform-admin-test-20260906`) só tem o schema mínimo de `platform_commercial_foundation`,
-  sem `ml_vendas`/`variacoes` que a validação em lote depende.
-- [ ] `supabase db push` e `supabase functions deploy materializar-metricas` pendentes de revisão do
-  orquestrador antes de subir (regra do projeto: não aplicado nesta sessão).
+- [x] Suíte SQL (`supabase/tests/platform_commercial.sql`) estendida para a Fase 3 e rodada em
+  Postgres real (container `codex-platform-admin-test-20260906`, Postgres 17.6): DISTINCT ON
+  (empate, nulo, custo 0, vencedor por chave) e a Fase 3 (check de `month`, PK, `authenticated`
+  bloqueado na tabela e na RPC, validação por balde BRT, `p_org`, watermark) — `EXIT 0`.
+- [ ] **Publicação pendente — ordem obrigatória (revisão final, §7); merge ANTES do deploy das
+  functions derruba a Central inteira** (o front novo manda o header `x-region` numa versão de
+  `platform-admin` que ainda não sabe respondê-lo no preflight):
+  1. `supabase link` (worktree novo não vem linkado) → `supabase db push` das 2 migrations desta
+     entrega → `npm run db:check`.
+  2. `supabase functions deploy` de **`platform-admin`** (OBRIGATÓRIA — é quem recebe o header
+     `x-region`; sem ela o preflight de CORS falha e todas as ações da Central caem), de
+     `materializar-metricas` (nova) e, pela regra do projeto para mudança em `_shared/`, das demais
+     funções que importam `_shared/cors.ts`. Conferir a versão de cada função pós-deploy.
+  3. Só então o merge fast-forward + push na `main` — push na `main` já é o deploy do front.
+  4. Pós-deploy: conferir `x_sb_edge_region = us-east-1`, ausência de `OPTIONS` repetido e o p95 da
+     `wallet`.
 
 A central foi validada em produção com a sessão do dono, e o primeiro uso real achou o que teste
 e validação visual não acharam. As duas organizações estão contratadas desde então: Avil na
