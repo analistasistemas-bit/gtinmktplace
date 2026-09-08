@@ -8,12 +8,16 @@
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
 export interface OrigemEstoque {
-  /** SKU cujo saldo é a verdade. Para kit, é o `codigo_pai` da base. */
+  /** SKU cujo saldo é a verdade. Para kit, é o `codigo` da única variação da família base. */
   codigoCanonico: string;
   /** Quantas unidades da base uma unidade de venda deste SKU consome. 1 para SKU comum. */
   multiplicador: number;
   /** `codigo_pai` da família de kit, quando o SKU é de kit. `null` para SKU comum. */
   kitCodigoPai: string | null;
+  /** Preenchido quando a origem NÃO pôde ser resolvida com segurança. Quem chama deve tratar
+   *  como falha alertada, nunca baixar: baixar no SKU do kit (saldo 0) grava um movimento de
+   *  quantidade 0 e queima a referência de idempotência para sempre. */
+  erro?: string;
 }
 
 /** Saldo virtual do kit. Nunca negativo — o resto do sistema não aguenta negativo (D-8). */
@@ -27,9 +31,10 @@ export function saldoDoKit(estoqueBase: number, multiplicador: number): number {
  * migration 20260729084329). Usar outra ordenação faria o resolvedor e o ledger discordarem
  * sobre qual família é canônica, e o saldo divergiria sem nenhum erro visível.
  *
- * Falha de leitura degrada para "SKU comum": pior é abortar a baixa de uma venda (a venda é
- * sagrada). O efeito de degradar é a baixa cair no próprio SKU do kit, que tem saldo 0 —
- * visível no ledger como `quantidade = 0`, não como saldo errado na base.
+ * Falha de resolução NUNCA degrada para "SKU comum" quando pode ser kit: baixar no próprio SKU
+ * do kit (saldo 0) grava um movimento de `quantidade = 0` e queima a referência de idempotência
+ * para sempre, sem alertar ninguém — o modo de falha do incidente ADR-0151 de 2026-09-08. Por
+ * isso todo caminho que não consegue confirmar a origem devolve `erro` em vez de neutro.
  */
 export async function resolverOrigemEstoque(
   admin: SupabaseClient, orgId: string, codigo: string,
@@ -44,14 +49,39 @@ export async function resolverOrigemEstoque(
     .maybeSingle();
   if (error) {
     console.error('resolver_origem_estoque_falhou', { orgId, codigo, erro: error.message });
-    return neutro;
+    // Sem esta consulta não dá para saber se `codigo` é kit. Degradar para neutro aqui baixaria
+    // no SKU do kit (saldo 0) se for kit — o mesmo modo de falha que este fix existe para evitar.
+    return { ...neutro, erro: `falha ao resolver origem de estoque: ${error.message}` };
   }
   // deno-lint-ignore no-explicit-any
   const f = (data as any)?.familias;
   const fam = Array.isArray(f) ? f[0] : f;
   if (!fam || fam.kit_multiplicador == null || !fam.kit_base_codigo_pai) return neutro;
+
+  const base = fam.kit_base_codigo_pai as string;
+  const { data: famBase, error: errFamBase } = await admin
+    .from('familias')
+    .select('id').eq('org_id', orgId).eq('codigo_pai', base)
+    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+  if (errFamBase || !famBase) {
+    console.error('kit_sem_familia_base', { orgId, base });
+    return { ...neutro, erro: `kit ${codigo}: família base ${base} não encontrada` };
+  }
+
+  const { data: varsBase, error: errVarsBase } = await admin
+    .from('variacoes')
+    .select('codigo').eq('familia_id', famBase.id);
+  if (errVarsBase) {
+    return { ...neutro, erro: `kit ${codigo}: falha ao ler variações da base ${base}: ${errVarsBase.message}` };
+  }
+  const skus = varsBase ?? [];
+  if (skus.length !== 1) {
+    console.error('kit_com_base_multivariacao', { orgId, base, skus: skus.length });
+    return { ...neutro, erro: `kit ${codigo}: base ${base} tem ${skus.length} variações, esperado 1` };
+  }
+
   return {
-    codigoCanonico: fam.kit_base_codigo_pai as string,
+    codigoCanonico: skus[0].codigo as string,
     multiplicador: Number(fam.kit_multiplicador),
     kitCodigoPai: fam.codigo_pai as string,
   };

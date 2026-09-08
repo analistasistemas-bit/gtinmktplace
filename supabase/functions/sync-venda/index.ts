@@ -222,7 +222,9 @@ Deno.serve(async (req) => {
         await notificarCategoria(
           admin, orgId, 'vendas',
           `🚨 Falha ao baixar estoque do pedido ${pedido.id}\n\n${linhas}\n\n`
-          + 'O saldo NÃO foi decrementado desses SKUs. Ajuste manualmente na tela de Estoque.',
+          + 'O saldo NÃO foi decrementado desses SKUs. Se a causa for corrigida, a baixa é '
+          + 'reaplicada automaticamente no próximo evento deste pedido — confira o saldo antes '
+          + 'de ajustar manualmente em Estoque, para não descontar duas vezes.',
         );
       }
     } catch (e) {

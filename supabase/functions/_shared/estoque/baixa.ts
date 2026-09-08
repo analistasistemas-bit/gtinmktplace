@@ -125,6 +125,13 @@ export async function registrarBaixaVenda(
   // acha a linha do próprio kit (saldo 0) e aplica delta 0 em silêncio — a base nunca desce.
   for (const b of baixas) {
     const origem = await resolverOrigemEstoque(admin, p.orgId, b.codigo);
+    // Origem não resolvida NÃO baixa: baixar no SKU do kit (saldo 0) grava movimento de
+    // quantidade 0 e queima a referência de idempotência para sempre — o modo de falha do
+    // incidente de 2026-09-08. Sem movimento, o próximo webhook do pedido retenta.
+    if (origem.erro) {
+      falhas.push({ codigo: b.codigo, mensagem: origem.erro });
+      continue;
+    }
     // A REFERÊNCIA continua no SKU VENDIDO, nunca no da base: `estornar_estoque` procura o
     // movimento só por `referencia_externa` e repõe na variação resolvida a partir do `codigo`
     // GRAVADO no movimento. Trocar a ref faria venda e estorno nunca se encontrarem.

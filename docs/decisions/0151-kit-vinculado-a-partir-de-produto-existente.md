@@ -47,9 +47,17 @@ sem `codigo_pai` mudar. `kit_multiplicador is not null` é o predicado que ident
 
 **Resolvedor único, reusado em todo lugar (baixa, estorno, push, CREATE/UPDATE):**
 `resolverOrigemEstoque(org_id, codigo)` — se `codigo` pertence a família com `kit_multiplicador`
-preenchido, devolve `{ codigoCanonico: kit_base_codigo_pai, multiplicador }`; senão devolve
+preenchido, devolve `{ codigoCanonico, multiplicador }` onde `codigoCanonico` é o `codigo` da
+**única variação** da família base (`kit_base_codigo_pai` só identifica a família, não a linha de
+`variacoes` que tem saldo — os dois espaços de código são disjuntos); senão devolve
 `{ codigoCanonico: codigo, multiplicador: 1 }`. Todo site que hoje lê/escreve
 `variacoes.estoque` por `codigo` (listados nas decisões 6 e 10) passa a resolver por aqui primeiro.
+
+> **Nota (2026-09-08):** a versão original desta decisão devolvia `codigoCanonico =
+> kit_base_codigo_pai` (o `codigo_pai` da base) direto, sem resolver a variação. Isso causou o
+> incidente do pedido `2000018341864344` (kit `00000089`): `baixar_estoque` resolve SKU por
+> `variacoes.codigo`, e `codigo_pai` nunca bate com esse campo, então nenhuma venda de kit
+> vinculado baixava estoque. Corrigido para resolver a variação da base em vez do `codigo_pai`.
 
 ### 2. Dois pontos de entrada, mesma derivação
 - **Na criação** (tela Revisão, produto ainda não publicado): operador marca os tamanhos de kit
