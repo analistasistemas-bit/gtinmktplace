@@ -12,6 +12,9 @@ import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
+import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
+import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
+import { ehCategoriaMlValida } from '../_shared/categoria/schema.ts';
 import { criarKitsVinculados, type CriarKitInput, type KitSolicitado } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
@@ -20,6 +23,7 @@ function json(body: unknown, status = 200): Response {
 
 const STATUS_POR_MOTIVO: Record<string, number> = {
   multiplicador_invalido: 400,
+  atributos_faltantes: 400,
   titulo_longo: 400,
   preco_invalido: 400,
   kit_duplicado: 400,
@@ -104,7 +108,7 @@ Deno.serve(async (req) => {
     return json({ error: 'Módulo de estoque não habilitado para esta organização.' }, 403);
   }
 
-  let body: { familia_base_id?: unknown; kits?: unknown };
+  let body: { familia_base_id?: unknown; kits?: unknown; categoria_override?: unknown };
   try { body = await req.json(); } catch { return json({ error: 'JSON inválido' }, 400); }
 
   if (typeof body.familia_base_id !== 'string' || !body.familia_base_id) {
@@ -118,12 +122,37 @@ Deno.serve(async (req) => {
     return json({ error: 'Kit inválido no payload.' }, 400);
   }
 
+  let categoriaOverride: CriarKitInput['categoriaOverride'] = null;
+  if (body.categoria_override != null) {
+    const co = body.categoria_override as Record<string, unknown>;
+    if (typeof co.categoria_ml_id !== 'string' || !co.categoria_ml_id
+      || typeof co.categoria_nome !== 'string' || !co.categoria_nome) {
+      return json({ error: 'categoria_override inválido — categoria_ml_id e categoria_nome são obrigatórios.' }, 400);
+    }
+    // Mesma validação de definir-categoria-familia/index.ts:50 (achado da revisão do Fable):
+    // sem isto, um categoria_ml_id malformado (ex.: contendo '../') vira uma chamada HTTP
+    // autenticada com o token do vendedor pra uma URL arbitrária dentro de lerSchemaAtributos, e
+    // sem validar cedo o erro real fica escondido atrás de "categoria não oferece Kit".
+    if (!ehCategoriaMlValida(co.categoria_ml_id)) {
+      return json({ error: 'categoria_override.categoria_ml_id inválido (formato esperado: MLB seguido de dígitos).' }, 400);
+    }
+    categoriaOverride = { categoriaMlId: co.categoria_ml_id, categoriaNome: co.categoria_nome };
+  }
+
   const input: CriarKitInput = {
     familiaBaseId: body.familia_base_id,
     kits: kitsParseados as KitSolicitado[],
+    categoriaOverride,
   };
   const target = { type: 'familia', id: input.familiaBaseId };
 
+  let marcaPadrao: string | undefined;
+  if (categoriaOverride) {
+    const { data: orgRow } = await admin.from('organizations').select('marca_padrao').eq('id', orgId).maybeSingle();
+    marcaPadrao = (orgRow?.marca_padrao as string | null) ?? undefined;
+  }
+
+  const modeloTexto = categoriaOverride ? await resolverModeloTexto(admin, orgId) : undefined;
   const resultado = await criarKitsVinculados({
     admin,
     orgId,
@@ -135,6 +164,8 @@ Deno.serve(async (req) => {
     },
     lerSchema: lerSchemaAtributos,
     encadearPublicacao: (familiaIds) => encadearPublicacao(req.headers.get('Authorization')!, familiaIds),
+    llm: (entradaIA, alvos) => desempatarAtributosLLM(entradaIA, alvos, modeloTexto),
+    marcaPadrao,
   }, input);
 
   if (!resultado.ok) {
