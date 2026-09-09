@@ -308,7 +308,7 @@ caminho sem override; não confundir os dois números.
 Run: `cd supabase/functions && deno test --allow-none criar-kit-vinculado/__tests__/processar.test.ts 2>&1 | head -60`
 (ou, se o projeto rodar esses testes via vitest: `pnpm vitest run supabase/functions/criar-kit-vinculado/__tests__/processar.test.ts`)
 Expected: FAIL — `categoriaOverride` não existe em `CriarKitInput`, `depsFake` não aceita os campos
-novos (erro de tipo/compilação), ou os 4 testes novos falham porque o código de produção ainda não
+novos (erro de tipo/compilação), ou os 7 testes novos falham porque o código de produção ainda não
 lê `categoriaOverride`.
 
 - [ ] **Step 3: Implementar em `processar.ts`**
@@ -397,13 +397,20 @@ por:
       return { ok: false, motivo: 'sem_conexao_ml', mensagem: e instanceof Error ? e.message : String(e) };
     }
     let atributosBase: AtributoML[];
-    let tipoAviamentoKit: string;
-    let faltantesKit: string[];
+    // tipoAviamentoKit/faltantesKit só existem — e só são LIDOS (mais abaixo, ao montar
+    // familiaObj) — no ramo COM override. Declarados aqui fora só pra ficarem visíveis depois do
+    // if/else; o gate de faltantes mora DENTRO do else (Fable, 2ª revisão: gate fora do if/else
+    // rodaria também no caminho padrão — QUALQUER família fake dos testes pré-existentes tem
+    // `atributos_faltantes` preenchido pela string genérica que `linhaFamiliaCheia` usa pra toda
+    // coluna sem override explícito, e essa string não tem `.join` — `TypeError` em todo teste
+    // que não passa `categoriaOverride`, e regressão real: hoje uma base com
+    // `atributos_faltantes` não vazio ainda cria o kit, só trava depois no publish).
+    let tipoAviamentoKit: string | undefined;
+    let faltantesKit: string[] | undefined;
     if (!input.categoriaOverride) {
-      // Caminho intocado: mesma categoria/atributos/tipo/faltantes da base, como hoje.
+      // Caminho intocado: mesma categoria/atributos da base, como hoje. tipo_aviamento/
+      // atributos_faltantes da base seguem herdados por montarFamiliaKit (clone), sem tocar aqui.
       atributosBase = (base.atributos_ml as AtributoML[] | null) ?? [];
-      tipoAviamentoKit = (base.tipo_aviamento as string | null) ?? 'outro';
-      faltantesKit = (base.atributos_faltantes as string[] | null) ?? [];
     } else {
       const tipo = tipoParaCategoria(categoriaAlvo);
       tipoAviamentoKit = tipo;
@@ -434,11 +441,19 @@ por:
       // categorias) do produto-base valem na categoria nova também, se ela os declarar e a
       // resolução acima ainda não os tiver preenchido. Nem montarAtributosML nem
       // resolverAtributosGenericos preenchem number/number_unit (exceto THICKNESS) — sem isto
-      // NET_WEIGHT nunca chegaria a aplicarKitNosAtributos pra ser escalado por N.
-      const idsSchemaNovo = new Set(schema.map((s) => s.id));
+      // NET_WEIGHT nunca chegaria a aplicarKitNosAtributos pra ser escalado por N. Exclui também
+      // `list`/`boolean` no schema NOVO (sugestão da revisão Fable): o mesmo id pode ser texto
+      // livre numa categoria e lista fechada na outra — herdar o texto cru pra um `value_id`
+      // esperado publicaria errado sem nenhum erro visível.
+      const schemaPorId = new Map(schema.map((s) => [s.id, s]));
       const idsJaResolvidos = new Set(atributosBase.map((a) => a.id));
       const portaveis = ((base.atributos_ml as AtributoML[] | null) ?? [])
-        .filter((a) => a.value_name != null && !a.value_id && idsSchemaNovo.has(a.id) && !idsJaResolvidos.has(a.id));
+        .filter((a) => {
+          const alvo = schemaPorId.get(a.id);
+          return a.value_name != null && !a.value_id && alvo != null
+            && alvo.valueType !== 'list' && alvo.valueType !== 'boolean'
+            && !idsJaResolvidos.has(a.id);
+        });
       atributosBase = [...atributosBase, ...portaveis];
       // Recalcula faltantes DEPOIS da portabilidade (não usa resolvido.faltantes direto — ele foi
       // calculado ANTES dos atributos portáveis entrarem, listaria falso-faltante em atributo que
@@ -446,15 +461,16 @@ por:
       // (tipo !== 'outro') nunca teve checagem de faltantes, mesma limitação pré-existente do
       // caminho de definir-categoria-familia — não é regressão introduzida aqui.
       faltantesKit = tipo !== 'outro' ? [] : atributosFaltantesGenerico(atributosBase, schema);
-    }
-    // Gate LOUD antes de criar qualquer linha (Fable): kit não passa por Revisão (D-3/D-4,
-    // ADR-0151) — se a categoria nova exige atributo que não foi resolvido, falha aqui ou nunca
-    // mais. Mesma regra de ouro do ADR-0051 (não publica às cegas).
-    if (faltantesKit.length > 0) {
-      return {
-        ok: false, motivo: 'atributos_faltantes',
-        mensagem: `A categoria escolhida exige atributos que não foram resolvidos: ${faltantesKit.join(', ')}.`,
-      };
+      // Gate LOUD antes de criar qualquer linha (Fable): kit não passa por Revisão (D-3/D-4,
+      // ADR-0151) — se a categoria nova exige atributo que não foi resolvido, falha aqui ou nunca
+      // mais. Mesma regra de ouro do ADR-0051 (não publica às cegas). SÓ roda aqui dentro do
+      // ramo com override — no caminho padrão nada disso é calculado nem checado.
+      if (faltantesKit.length > 0) {
+        return {
+          ok: false, motivo: 'atributos_faltantes',
+          mensagem: `A categoria escolhida exige atributos que não foram resolvidos: ${faltantesKit.join(', ')}.`,
+        };
+      }
     }
     const atributosPorMultiplicador = new Map<number, AtributoML[]>();
     for (const kit of kitsFaltando) {
