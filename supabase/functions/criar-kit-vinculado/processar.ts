@@ -4,7 +4,12 @@
 // da base, já em `status='pronto'`. Se rodasse depois, título/preço/atributos poderiam
 // divergir do preview que o operador confirmou, furando a revisão humana (D-4).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { aplicarKitNosAtributos, type AtributoML } from '../_shared/categoria/atributos.ts';
+import {
+  aplicarKitNosAtributos, tipoParaCategoria, montarAtributosML, atributosFaltantesGenerico,
+  FALTANTE_ATRIBUTOS_NAO_VALIDADOS, type AtributoML,
+} from '../_shared/categoria/atributos.ts';
+import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
+import type { InputAtributos, AtributoAlvo } from '../_shared/ai/atributos-llm-core.ts';
 import type { AtributoSchema } from '../_shared/categoria/schema.ts';
 import { derivarCodigos, codigosJaUsados } from '../_shared/produto/codigos.ts';
 import { listarKitsVivos } from '../_shared/estoque/kit.ts';
@@ -26,6 +31,8 @@ export interface KitSolicitado {
 export interface CriarKitInput {
   familiaBaseId: string;
   kits: KitSolicitado[];
+  /** Categoria do ML diferente da base, escolhida pelo operador. null/ausente → herda da base. */
+  categoriaOverride?: { categoriaMlId: string; categoriaNome: string } | null;
 }
 
 export interface KitCriado {
@@ -67,6 +74,10 @@ export interface CriarKitDeps {
    * Publicados) — ver Step 10 do brief: nunca chame `enfileirarPublicacoes` direto daqui.
    */
   encadearPublicacao: (familiaIds: string[]) => Promise<boolean>;
+  /** Só usado quando categoriaOverride cai numa categoria genérica (tipoParaCategoria === 'outro'). */
+  llm?: (input: InputAtributos, alvos: AtributoAlvo[]) => Promise<Record<string, string>>;
+  /** Marca padrão da org, para atributos BRAND/MANUFACTURER sem marca própria. */
+  marcaPadrao?: string;
 }
 
 // O que NÃO se copia da base: identidade, lifecycle, rastros de execução e resultado.
@@ -340,21 +351,112 @@ export async function criarKitsVinculados(
     }
 
     // ── Atributos (força SALE_FORMAT=Kit por categoria, uma vez — schema é o mesmo p/ todos) ─
+    // Com categoriaOverride: schema e atributos-base são resolvidos pela categoria NOVA, não pela
+    // da base — mesma lógica de definir-categoria-familia (curada p/ tipo de aviamento conhecido,
+    // genérica+IA p/ categoria "outro"), aplicada aqui ANTES de aplicarKitNosAtributos.
+    const categoriaAlvo = input.categoriaOverride?.categoriaMlId ?? (base.categoria_ml_id as string);
     let schema: AtributoSchema[];
+    let token: string;
     try {
-      const token = await deps.resolverToken();
-      schema = await deps.lerSchema(token, base.categoria_ml_id as string);
+      token = await deps.resolverToken();
+      schema = await deps.lerSchema(token, categoriaAlvo);
     } catch (e) {
       return { ok: false, motivo: 'sem_conexao_ml', mensagem: e instanceof Error ? e.message : String(e) };
+    }
+    let atributosBase: AtributoML[];
+    // tipoAviamentoKit/faltantesKit só existem — e só são LIDOS (mais abaixo, ao montar
+    // familiaObj) — no ramo COM override. Declarados aqui fora só pra ficarem visíveis depois do
+    // if/else; o gate de faltantes mora DENTRO do else (Fable, 2ª revisão: gate fora do if/else
+    // rodaria também no caminho padrão — QUALQUER família fake dos testes pré-existentes tem
+    // `atributos_faltantes` preenchido pela string genérica que `linhaFamiliaCheia` usa pra toda
+    // coluna sem override explícito, e essa string não tem `.join` — `TypeError` em todo teste
+    // que não passa `categoriaOverride`, e regressão real: hoje uma base com
+    // `atributos_faltantes` não vazio ainda cria o kit, só trava depois no publish).
+    let tipoAviamentoKit: string | undefined;
+    let faltantesKit: string[] | undefined;
+    if (!input.categoriaOverride) {
+      // Caminho intocado: mesma categoria/atributos da base, como hoje. tipo_aviamento/
+      // atributos_faltantes da base seguem herdados por montarFamiliaKit (clone), sem tocar aqui.
+      atributosBase = (base.atributos_ml as AtributoML[] | null) ?? [];
+    } else {
+      const tipo = tipoParaCategoria(categoriaAlvo);
+      tipoAviamentoKit = tipo;
+      // Sentinela de falha do LLM (Fable, 3ª revisão): resolverAtributosGenericos engole erro
+      // interno (rede/parse) e devolve `{atributosMl:[], faltantes:[FALTANTE_ATRIBUTOS_NAO_VALIDADOS]}`
+      // — sem preservar esse sinal, o recálculo de faltantes abaixo (que ignora
+      // resolvido.faltantes de propósito, ver comentário mais adiante) apagaria a única prova de
+      // que a IA nem chegou a rodar, e um schema sem obrigatórios além do que a portabilidade
+      // cobre publicaria com ficha vazia e nenhum erro.
+      let faltantesSentinela: string[] | null = null;
+      if (tipo !== 'outro') {
+        atributosBase = montarAtributosML(
+          tipo, base.nome_pai as string, (base.fornecedor as string | null) ?? undefined,
+          (base.descricao_pai as string | null) ?? undefined, deps.marcaPadrao,
+        );
+      } else {
+        const llm = deps.llm ?? (() => Promise.resolve({} as Record<string, string>));
+        // `lerSchema` devolve o schema JÁ lido acima (evita 2º fetch de rede pra mesma
+        // categoria — achado da revisão do Fable: um 2º fetch falho/vazio faria
+        // resolverAtributosGenericos travar em "schema vazio" mesmo com o 1º fetch ok).
+        const resolvido = await resolverAtributosGenericos(
+          categoriaAlvo,
+          {
+            nome: base.nome_pai as string,
+            descricao: (base.descricao_pai as string | null) ?? undefined,
+            fornecedor: (base.fornecedor as string | null) ?? undefined,
+          },
+          { lerSchema: () => Promise.resolve(schema), llm },
+          deps.marcaPadrao,
+        );
+        atributosBase = resolvido.atributosMl;
+        if (resolvido.faltantes.includes(FALTANTE_ATRIBUTOS_NAO_VALIDADOS)) {
+          faltantesSentinela = resolvido.faltantes;
+        }
+      }
+      // Portabilidade de atributos textuais (Fable, revisão do plano): NET_WEIGHT e outros
+      // atributos `value_name` (nunca `value_id` — valores de lista não são portáveis entre
+      // categorias) do produto-base valem na categoria nova também, se ela os declarar e a
+      // resolução acima ainda não os tiver preenchido. Nem montarAtributosML nem
+      // resolverAtributosGenericos preenchem number/number_unit (exceto THICKNESS) — sem isto
+      // NET_WEIGHT nunca chegaria a aplicarKitNosAtributos pra ser escalado por N. Exclui também
+      // `list`/`boolean` no schema NOVO (sugestão da revisão Fable): o mesmo id pode ser texto
+      // livre numa categoria e lista fechada na outra — herdar o texto cru pra um `value_id`
+      // esperado publicaria errado sem nenhum erro visível.
+      const schemaPorId = new Map(schema.map((s) => [s.id, s]));
+      const idsJaResolvidos = new Set(atributosBase.map((a) => a.id));
+      const portaveis = ((base.atributos_ml as AtributoML[] | null) ?? [])
+        .filter((a) => {
+          const alvo = schemaPorId.get(a.id);
+          return a.value_name != null && !a.value_id && alvo != null
+            && alvo.valueType !== 'list' && alvo.valueType !== 'boolean'
+            && !idsJaResolvidos.has(a.id);
+        });
+      atributosBase = [...atributosBase, ...portaveis];
+      // Recalcula faltantes DEPOIS da portabilidade (não usa resolvido.faltantes direto — ele foi
+      // calculado ANTES dos atributos portáveis entrarem, listaria falso-faltante em atributo que
+      // a portabilidade acabou de preencher) — EXCETO quando é a sentinela de falha da IA, que
+      // preserva-se sempre (ver comentário acima). Recálculo só se aplica à categoria genérica:
+      // curada (tipo !== 'outro') nunca teve checagem de faltantes, mesma limitação pré-existente
+      // do caminho de definir-categoria-familia — não é regressão introduzida aqui.
+      faltantesKit = faltantesSentinela
+        ?? (tipo !== 'outro' ? [] : atributosFaltantesGenerico(atributosBase, schema));
+      // Gate LOUD antes de criar qualquer linha (Fable): kit não passa por Revisão (D-3/D-4,
+      // ADR-0151) — se a categoria nova exige atributo que não foi resolvido, falha aqui ou nunca
+      // mais. Mesma regra de ouro do ADR-0051 (não publica às cegas). SÓ roda aqui dentro do
+      // ramo com override — no caminho padrão nada disso é calculado nem checado.
+      if (faltantesKit.length > 0) {
+        return {
+          ok: false, motivo: 'atributos_faltantes',
+          mensagem: `A categoria escolhida exige atributos que não foram resolvidos: ${faltantesKit.join(', ')}.`,
+        };
+      }
     }
     const atributosPorMultiplicador = new Map<number, AtributoML[]>();
     for (const kit of kitsFaltando) {
       try {
         atributosPorMultiplicador.set(
           kit.multiplicador,
-          aplicarKitNosAtributos(
-            schema, (base.atributos_ml as AtributoML[] | null) ?? [], kit.multiplicador, pesoBase,
-          ),
+          aplicarKitNosAtributos(schema, atributosBase, kit.multiplicador, pesoBase),
         );
       } catch (e) {
         const status = (e as Error & { status?: number }).status;
@@ -387,6 +489,16 @@ export async function criarKitsVinculados(
       const familiaObj = montarFamiliaKit(base as Record<string, unknown>, kit, {
         loteId, codigoPai: par.codigoPai, atributos: atributosPorMultiplicador.get(kit.multiplicador)!,
       });
+      if (input.categoriaOverride) {
+        familiaObj.categoria_ml_id = input.categoriaOverride.categoriaMlId;
+        familiaObj.categoria_nome = input.categoriaOverride.categoriaNome;
+        // Gate de publicação (publish-familia-ml/processar.ts:147-151) lê estes dois campos pra
+        // decidir se pode publicar — sem sobrescrever aqui, o kit herdaria os da BASE (categoria
+        // antiga, atributos_faltantes=[] porque a base já publicou) e o gate passaria assim mesmo,
+        // mesmo com a categoria nova exigindo algo não resolvido (bloqueante da revisão Fable).
+        familiaObj.tipo_aviamento = tipoAviamentoKit;
+        familiaObj.atributos_faltantes = faltantesKit;
+      }
       const { data: familiaCriada, error: famErr } = await admin.from('familias')
         .insert(familiaObj).select('id').single();
       if (famErr || !familiaCriada) {

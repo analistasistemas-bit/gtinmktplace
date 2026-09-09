@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
-  criarKitsVinculados, montarFamiliaKit, type CriarKitDeps, type KitSolicitado,
+  criarKitsVinculados, montarFamiliaKit, type CriarKitDeps, type CriarKitInput, type KitSolicitado,
 } from '../processar.ts';
 import { aplicarKitNosAtributos } from '../../_shared/categoria/atributos.ts';
 
@@ -19,6 +19,46 @@ const SCHEMA_COM_KIT = [
   { id: 'UNITS_PER_PACK', nome: 'Unidades por kit', valueType: 'number', valores: [] },
 ];
 const SCHEMA_SEM_KIT = [{ id: 'BRAND', nome: 'Marca', valueType: 'string', valores: [] }];
+
+// Schemas de categoria de override usados nos testes de categoriaOverride. **Atenção de forma**
+// (achado da revisão do Fable + verificação própria): `AtributoSchema` real
+// (`_shared/categoria/schema.ts:10-19`) tem `required`, `conditionalRequired`, `allowedUnits`,
+// `tags` além de `id`/`nome`/`valueType`/`valores` — os `SCHEMA_COM_KIT`/`SCHEMA_SEM_KIT` acima
+// NÃO têm esses campos porque só eram usados direto com `aplicarKitNosAtributos`, que não olha
+// `tags`/`required`. Os schemas abaixo declaram TODOS os campos, em todo item — não reaproveitar
+// SCHEMA_SEM_KIT/SCHEMA_COM_KIT (que ficam intocados) em nenhum teste novo, porque são usados
+// também por `resolverAtributosGenericos` → `atributosFaltantesGenerico`, que acessa
+// `a.tags.some(...)` (TypeError sem os campos completos, engolido pelo try/catch e mascarando
+// o teste).
+const CAMPOS_SCHEMA_PADRAO = { required: false, conditionalRequired: false, allowedUnits: [], tags: [] };
+
+const SCHEMA_OVERRIDE_COM_KIT = [
+  {
+    ...CAMPOS_SCHEMA_PADRAO, id: 'SALE_FORMAT', nome: 'Formato de venda', valueType: 'list',
+    valores: [{ id: 'V-UN', nome: 'Unidade' }, { id: 'V-KIT', nome: 'Kit' }],
+  },
+  { ...CAMPOS_SCHEMA_PADRAO, id: 'UNITS_PER_PACK', nome: 'Unidades por kit', valueType: 'number', valores: [] },
+  { ...CAMPOS_SCHEMA_PADRAO, id: 'BRAND', nome: 'Marca', valueType: 'string', valores: [] },
+];
+// Mesmo schema, mas também declara NET_WEIGHT — usado no teste de herança/escala do atributo.
+const SCHEMA_OVERRIDE_COM_KIT_E_NET_WEIGHT = [
+  ...SCHEMA_OVERRIDE_COM_KIT,
+  { ...CAMPOS_SCHEMA_PADRAO, id: 'NET_WEIGHT', nome: 'Peso líquido', valueType: 'number_unit', valores: [] },
+];
+// Categoria genérica sem "Kit" no schema — usada só nos testes novos (não reaproveita
+// SCHEMA_SEM_KIT do topo do arquivo, que os testes pré-existentes de aplicarKitNosAtributos usam).
+const SCHEMA_OVERRIDE_SEM_KIT = [
+  { ...CAMPOS_SCHEMA_PADRAO, id: 'BRAND', nome: 'Marca', valueType: 'string', valores: [] },
+];
+// Categoria genérica com "Kit" MAIS um atributo obrigatório que a resolução por IA (mockada pra
+// devolver {} nos testes) nunca preenche — dispara o gate de atributos_faltantes.
+const SCHEMA_OVERRIDE_COM_KIT_E_OBRIGATORIO_NAO_RESOLVIDO = [
+  ...SCHEMA_OVERRIDE_COM_KIT,
+  {
+    ...CAMPOS_SCHEMA_PADRAO, id: 'MODEL_OBRIGATORIO', nome: 'Modelo obrigatório', valueType: 'list',
+    required: true, valores: [{ id: 'V1', nome: 'Opção 1' }],
+  },
+];
 
 describe('aplicarKitNosAtributos', () => {
   it('sobrescreve SALE_FORMAT e UNITS_PER_PACK pelo N', () => {
@@ -227,16 +267,22 @@ function depsFake(opts: {
   chavesJaUsadas?: string[];
   categoriaSemKit?: boolean;
   statusPorChave?: Record<string, string>;
+  schemaPorCategoria?: Record<string, unknown>;
+  llm?: (input: unknown, alvos: unknown) => Promise<Record<string, string>>;
+  marcaPadrao?: string;
 } = {}) {
   const {
     custo = 10, peso_gramas: pesoGramas = 100, mlItemId = null,
     qtdVariacoes = 1, chavesJaUsadas = [], categoriaSemKit = false,
-    statusPorChave = {},
+    statusPorChave = {}, schemaPorCategoria = {},
+    llm = async () => ({}),
+    marcaPadrao = undefined,
   } = opts;
 
   const baseFamilia = linhaFamiliaCheia({
     id: BASE_ID, org_id: 'org-1', user_id: 'user-1', codigo_pai: '00000010',
-    categoria_ml_id: 'MLB123', atributos_ml: [{ id: 'SALE_FORMAT', value_id: 'V-UN' }],
+    categoria_ml_id: 'MLB123',
+    atributos_ml: [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'NET_WEIGHT', value_name: '700 g' }],
     kit_base_codigo_pai: null, kit_multiplicador: null, ml_item_id: mlItemId,
   });
   const baseVariacoes = Array.from({ length: qtdVariacoes }, (_, i) => linhaVariacaoCheia({
@@ -284,12 +330,16 @@ function depsFake(opts: {
     orgId: 'org-1',
     userId: 'user-1',
     resolverToken: async () => 'fake-token',
-    lerSchema: async () => (categoriaSemKit ? SCHEMA_SEM_KIT : SCHEMA_COM_KIT) as never,
+    lerSchema: async (_token: string, categoriaId: string) =>
+      (schemaPorCategoria[categoriaId]
+        ?? (categoriaSemKit ? SCHEMA_SEM_KIT : SCHEMA_COM_KIT)) as never,
     encadearPublicacao: async (ids: string[]) => {
       enfileirados.publicarFamilias++;
       enfileirados.publicarFamiliasIds.push(ids);
       return true;
     },
+    llm: llm as never,
+    marcaPadrao,
   };
 
   return { deps, inserts, enfileirados };
@@ -595,5 +645,107 @@ describe('criarKitsVinculados', () => {
       expect(col in inserts.variacoes[0]).toEqual(false);
     }
     expect('exibir_com_desconto' in inserts.familias[0]).toEqual(false);
+  });
+
+  it('com categoriaOverride: resolve schema/atributos da categoria NOVA, não da base (categoria genérica)', async () => {
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_COM_KIT },
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Categoria Override' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(true);
+    expect(inserts.familias[0].categoria_ml_id).toBe('MLB-OVERRIDE');
+    expect(inserts.familias[0].categoria_nome).toBe('Categoria Override');
+    const atributos = inserts.familias[0].atributos_ml as { id: string; value_id?: string }[];
+    expect(atributos.find((a) => a.id === 'SALE_FORMAT')?.value_id).toBe('V-KIT');
+  });
+
+  it('com categoriaOverride numa categoria curada (aviamento conhecido): usa montarAtributosML, não IA', async () => {
+    const llmMock = vi.fn(async () => ({}));
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB270272': SCHEMA_OVERRIDE_COM_KIT },
+      llm: llmMock,
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB270272', categoriaNome: 'Botões' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(true);
+    expect(llmMock).not.toHaveBeenCalled();
+    const atributos = inserts.familias[0].atributos_ml as { id: string }[];
+    expect(atributos.some((a) => a.id === 'BRAND')).toBe(true);
+  });
+
+  it('sem categoriaOverride: continua usando a categoria e os atributos da base (comportamento intocado)', async () => {
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_COM_KIT },
+    });
+    const input: CriarKitInput = { familiaBaseId: BASE_ID, kits: [kitPadrao(2)] };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(true);
+    expect(inserts.familias[0].categoria_ml_id).toBe('MLB123');
+  });
+
+  it('categoriaOverride numa categoria sem "Kit" → recusa alto (categoria_sem_kit), igual ao caminho sem override', async () => {
+    const { deps } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_COM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_SEM_KIT },
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Sem Kit' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe('categoria_sem_kit');
+  });
+
+  it('categoriaOverride numa categoria que também declara NET_WEIGHT: herda da base e escala por N (Fable, bug MLB7585283770 de novo)', async () => {
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_COM_KIT_E_NET_WEIGHT },
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Categoria com peso líquido' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(true);
+    const atributos = inserts.familias[0].atributos_ml as { id: string; value_name?: string }[];
+    // base tinha NET_WEIGHT '700 g' (peso de 1 unidade); kit de multiplicador 2 escala pra 1400 g —
+    // mesma fórmula pesoBase × N já usada e testada pro caminho sem override.
+    expect(atributos.find((a) => a.id === 'NET_WEIGHT')?.value_name).toBe('200 g');
+  });
+
+  it('categoriaOverride numa categoria SEM NET_WEIGHT no schema: não inventa o atributo (guard existente continua valendo)', async () => {
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_COM_KIT },
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Categoria sem peso líquido' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(true);
+    const atributos = inserts.familias[0].atributos_ml as { id: string }[];
+    expect(atributos.some((a) => a.id === 'NET_WEIGHT')).toBe(false);
+  });
+
+  it('categoriaOverride com atributo obrigatório não resolvido: recusa alto ANTES de criar qualquer linha (gate Fable — kit não tem Revisão pra pegar isso depois)', async () => {
+    const llmMock = vi.fn(async () => ({}));
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_COM_KIT_E_OBRIGATORIO_NAO_RESOLVIDO },
+      llm: llmMock,
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Categoria com obrigatório' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe('atributos_faltantes');
+    expect(inserts.familias).toHaveLength(0);
   });
 });
