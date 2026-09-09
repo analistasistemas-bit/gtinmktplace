@@ -120,11 +120,11 @@ faltava era a UI de recuperação do lado do lote `'concluido'`.
 - **Foto**: pré-preenchida com a foto da base, **trocável por kit** (ex.: foto das N unidades
   juntas).
 - **Dimensões** (altura/largura/comprimento): pré-preenchidas com **altura × N**, largura/
-  comprimento iguais à base (revertido no item 15 — o padrão anterior era igual à base nos 3
-  eixos, mas o operador não editava e o anúncio saía com a caixa do tamanho de 1 unidade;
-  multiplicar os 3 eixos foi cogitado e descartado por multiplicar o VOLUME por N³, não N —
-  superestima o frete cubado do ML), e **editáveis**, porque dimensão errada cota frete errado
-  pro comprador (ADR-0018).
+  comprimento iguais à base — revertido no item 15: a versão original desta decisão era base×1
+  nos 3 eixos (o operador não editava e o anúncio saía do tamanho de 1 unidade); a versão
+  intermediária tentou base×N nos 3 eixos e multiplicava o VOLUME por N³, não N, superestimando
+  o frete cubado do ML; a versão final (esta) é altura×N. Seguem **editáveis**, porque dimensão
+  errada cota frete errado pro comprador (ADR-0018).
 - **Preço**: sugestão = unitário × N (com desconto opcional), editável.
 - **Atacado**: vazio por padrão (não herda as faixas da base), editável.
 
