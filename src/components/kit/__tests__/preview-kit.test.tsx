@@ -43,6 +43,16 @@ function renderPreview(n: number, inicial: Partial<KitPreviewValue> = {}) {
   );
 }
 
+describe('valorInicialPreview', () => {
+  it('pré-preenche dimensões = base × N (Diego, 2026-09-08: bug MLB7585283770 — caixa de N '
+    + 'unidades ficou do tamanho de 1)', () => {
+    const v = valorInicialPreview(BASE, 'Kit', 'desc', 3);
+    expect(v.alturaCm).toBe(30); // 10 × 3
+    expect(v.larguraCm).toBe(24); // 8 × 3
+    expect(v.comprimentoCm).toBe(9); // 3 × 3
+  });
+});
+
 describe('PreviewKit', () => {
   it('mostra custo e peso derivados = base × N, somente leitura (Decisão 4)', () => {
     renderPreview(3);

@@ -38,10 +38,12 @@ export function valorInicialPreview(base: BaseParaKit, titulo: string, descricao
     gtin: '',
     imagemPath: base.fotoPath,
     fotoFile: null,
-    // Não multiplica por N — empacotar N unidades não é N× linear (ADR-0018).
-    alturaCm: base.alturaCm ?? 0,
-    larguraCm: base.larguraCm ?? 0,
-    comprimentoCm: base.comprimentoCm ?? 0,
+    // base × N (Diego, 2026-09-08, ADR-0151 D-4 revisada): bug MLB7585283770 — caixa de kit
+    // saiu do tamanho de 1 unidade porque o padrão anterior não multiplicava e o operador não
+    // reparou/editou. Segue editável para o caso real não ser N× linear.
+    alturaCm: (base.alturaCm ?? 0) * n,
+    larguraCm: (base.larguraCm ?? 0) * n,
+    comprimentoCm: (base.comprimentoCm ?? 0) * n,
     atacado: [],
   };
 }

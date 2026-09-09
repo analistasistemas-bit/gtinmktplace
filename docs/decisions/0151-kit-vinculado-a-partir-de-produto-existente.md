@@ -119,9 +119,10 @@ faltava era a UI de recuperação do lado do lote `'concluido'`.
 - **Descrição**: base + linha indicando quantidade do kit.
 - **Foto**: pré-preenchida com a foto da base, **trocável por kit** (ex.: foto das N unidades
   juntas).
-- **Dimensões** (altura/largura/comprimento): pré-preenchidas iguais à da base — empacotar N
-  unidades numa caixa não é estritamente N× linear —, mas **editáveis**, porque dimensão errada
-  cota frete errado pro comprador (ADR-0018).
+- **Dimensões** (altura/largura/comprimento): pré-preenchidas **base × N** (revertido no item 15
+  — o padrão anterior era igual à base, mas o operador não editava e o anúncio saía com a caixa
+  do tamanho de 1 unidade), e **editáveis**, porque dimensão errada cota frete errado pro
+  comprador (ADR-0018).
 - **Preço**: sugestão = unitário × N (com desconto opcional), editável.
 - **Atacado**: vazio por padrão (não herda as faixas da base), editável.
 
@@ -431,6 +432,23 @@ desvio 2 e detalha a Decisão 4:**
     E como o kit não passa pela Revisão (D-2/D-4 — o preview do diálogo É a revisão), o botão de
     confirmação virou "Criar e publicar" com o aviso "O kit vai direto para o Mercado Livre —
     esta tela é a revisão.", deixando explícito antes do clique.
+
+15. **Dimensão e `NET_WEIGHT` do kit saíam do tamanho de 1 unidade (achado em produção,
+    `MLB7585283770`, 2026-09-08).** Dois desvios distintos no mesmo anúncio:
+    - `NET_WEIGHT` ("Peso líquido" na ficha "Formato de venda" do ML) é atributo de categoria
+      separado de `SELLER_PACKAGE_WEIGHT` (frete, ADR-0018) — `aplicarKitNosAtributos`
+      (`_shared/categoria/atributos.ts`) nunca o tocava, herdando cru o valor da base.
+      Corrigido: recalcula `pesoBaseGramas × N` quando a base já tinha o atributo (nunca o
+      inventa numa categoria que não o usa). `update-familia-ml` passou a reenviar esse valor
+      (`pesoLiquidoGramas` no contrato `AtualizacaoCanonica`) para famílias com
+      `kit_multiplicador`, corrigindo o anúncio já publicado pelo fluxo normal de UPDATE.
+    - **Decisão 4 revertida:** o padrão de dimensão (altura/largura/comprimento) parava de
+      propósito em base×1 ("empacotar N unidades não é N× linear"), esperando o operador editar
+      manualmente antes de confirmar. Na prática o operador não editou, e o padrão errado 100%
+      das vezes valia mais o custo (frete subestimado, recusa no Mercado Envios) do que a
+      correção física do "N× não é exatamente linear". Diego decidiu: pré-preencher com
+      base×N (`valorInicialPreview`, `src/components/kit/preview-kit.tsx`) — segue editável para
+      o caso real divergir.
 
 ## Como reverter
 
