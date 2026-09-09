@@ -891,7 +891,11 @@ falha ao ler `organizations` não libera.
   existente, direto da tela Estoque. **Admin-only** (mesmo gate de `adicionar-variacoes-familia`)
   e restrita ao módulo `estoque` (`exigirModulo`). Body: `{ familia_base_id, kits: [{
   multiplicador (2-6), chave_cadastro, titulo, descricao, preco, gtin?, imagem_path?, altura_cm,
-  largura_cm, comprimento_cm, atacado? }] }`. 400 por payload inválido ou por
+  largura_cm, comprimento_cm, atacado? }], categoria_override?: { categoria_ml_id, categoria_nome } }`.
+  `categoria_override` é opcional: null/ausente herda a categoria da base (comportamento
+  original, intocado); presente, o kit publica numa categoria do ML diferente da unidade avulsa
+  (item 16, motivado por conflito de logística Mercado Envios entre a categoria da base e a do
+  kit). 400 por payload inválido ou por
   `base_sem_custo`/`base_sem_peso`/`base_sem_categoria`; 409 `base_multivariacao` (D-10: só
   produto sem cor), `base_e_kit` (kit de kit não existe) ou `kit_duplicado` (multiplicador já
   vivo na base ou repetido na mesma submissão); 400 `categoria_sem_kit` quando a categoria do ML

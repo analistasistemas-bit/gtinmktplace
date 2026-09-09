@@ -483,6 +483,42 @@ desvio 2 e detalha a Decisão 4:**
       `reference_ml_kit_nao_reprocessa`) — desproporcional para uma correção pontual de
       dimensão/peso.
 
+16. **Categoria do kit pode ser diferente da base, escolhida opcionalmente na criação
+    (`categoria_override`, design `docs/superpowers/specs/2026-09-09-kit-vinculado-categoria-propria-design.md`).**
+    Motivado por caso real: "Leite Em Pó Ninho Zero Lactose Sachê 700g" está publicado em
+    Mercearia > Infusões > Leite em Pó; o "Kit 2 Unidades" herdou essa categoria (Decisão 4
+    original) e, ao publicar, o Mercado Livre exigiu logística "Self service" (Mercado Envios
+    Flex), incompatível com a conta do Diego. Concorrentes com o mesmo tipo de kit multi-unidade
+    publicam em Bebês > Alimentos para Bebês > Leite Infantil, categoria onde a logística bate
+    com contas padrão — a categoria certa pro KIT diverge da categoria certa pra UNIDADE, algo
+    que o desenho original não permitia expressar. Um botão "Trocar categoria" no diálogo de
+    criação (`dialog-criar-kit.tsx`), fechado por padrão (sem clicar, comportamento intocado:
+    categoria 100% herdada da base). Uma categoria só por submissão, compartilhada entre todos os
+    tamanhos pedidos junto — nunca por tamanho. Estado local ao diálogo, nunca persistido:
+    reabrir depois volta a sugerir a categoria da base (decisão explícita do Diego — mais simples
+    que manter estado extra certo). Com override, `criarKitsVinculados` troca a FONTE do
+    schema/atributos-base (lê a categoria nova, resolve pelo mesmo branch curado/genérico+IA que
+    `definir-categoria-familia` usa pra produto normal) mas não muda a lógica de kit em si —
+    `aplicarKitNosAtributos` continua por cima, sem alteração. `atributos_faltantes` é
+    recalculado para a categoria nova (nunca herdado da base — a base, já publicada na categoria
+    antiga, tem `atributos_faltantes=[]`, e sem recalcular o gate de publicação passaria mesmo
+    com a categoria nova exigindo algo não resolvido) e vira hard-block síncrono na criação
+    (400, `motivo: 'atributos_faltantes'`, nenhuma família chega a nascer) — diferente de um
+    produto normal, que segue pra Revisão com o faltante sinalizado sem bloquear: o kit nunca
+    passa por Revisão (D-3/D-4 — o preview do diálogo de criação É a revisão única), então não há
+    uma etapa posterior pra pegar isso depois. Atributos textuais (`value_name`, nunca
+    `value_id` — valores de lista não são portáveis entre categorias) que a base já tinha e a
+    categoria nova também declara são herdados quando a resolução da categoria nova não os
+    preencheu (cobre `NET_WEIGHT`, que nem o caminho curado nem o genérico+IA preenchem sozinhos —
+    ver item 15).
+    **Um kit já publicado com a categoria errada não é editável em produção**: trocar a categoria
+    de um anúncio ativo é proibido (CLAUDE.md do projeto, "O que nunca fazer"; incidente real de
+    2026-08-06 em que uma troca de categoria num anúncio publicado disparou re-moderação do ML e
+    cancelou um anúncio não relacionado por propriedade intelectual, "Aquaphor"). O procedimento
+    correto é remover o kit publicado (ação "Remover" da tela Publicados,
+    `src/pages/Publicados.tsx`, que apaga tanto o anúncio no ML quanto a família local) e recriar
+    com o `categoria_override` correto — nunca editar a categoria do kit já vivo.
+
 ## Como reverter
 
 Implementado (10 tasks do plano de execução, `docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md`).

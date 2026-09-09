@@ -11,10 +11,9 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { lerSchemaAtributos } from '../_shared/categoria/schema.ts';
+import { lerSchemaAtributos, ehCategoriaMlValida } from '../_shared/categoria/schema.ts';
 import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
-import { ehCategoriaMlValida } from '../_shared/categoria/schema.ts';
 import { criarKitsVinculados, type CriarKitInput, type KitSolicitado } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {

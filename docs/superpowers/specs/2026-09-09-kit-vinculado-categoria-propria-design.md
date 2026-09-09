@@ -87,9 +87,15 @@ Ponto de mudança único, em `criar-kit-vinculado/processar.ts` (por volta de on
 
 **Erro:** categoria nova sem `SALE_FORMAT=Kit` → mesmo erro 400 (`categoria_sem_kit`) de hoje, sem
 mudança de mensagem — o operador vê o mesmo aviso e escolhe outra categoria ou remove o override.
-Falha ao resolver atributos genéricos (schema/IA) → mesmo padrão de `resolverAtributosGenericos`
-hoje (retorna `atributosMl: []` + `faltantes`, nunca lança) — o kit nasce com atributos faltantes
-sinalizados, igual a um produto normal nessa mesma situação; não é um caso novo a tratar.
+Falha ao resolver atributos genéricos (schema/IA) → **hard-block, não o comportamento de um
+produto normal**: `atributosFaltantesGenerico` roda sobre os `faltantes` que
+`resolverAtributosGenericos` devolveu (schema da categoria nova, `SALE_FORMAT` excluído — é
+forçado por `aplicarKitNosAtributos` um passo depois) ANTES de criar qualquer linha; se listar
+algo, a criação do kit é recusada com 400 (`motivo: 'atributos_faltantes'`), nenhuma família nasce.
+Um produto normal segue pra Revisão com `atributos_faltantes` sinalizado e sem bloquear a
+criação — mas o kit nunca passa por Revisão (D-3/D-4, ADR-0151: o preview do diálogo de criação É
+a revisão), então esperar até lá pra pegar o faltante não existe; falha aqui, na criação, ou nunca
+mais.
 
 ### 4. Dados
 

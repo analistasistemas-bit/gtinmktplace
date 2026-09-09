@@ -59,6 +59,18 @@ const SCHEMA_OVERRIDE_COM_KIT_E_OBRIGATORIO_NAO_RESOLVIDO = [
     required: true, valores: [{ id: 'V1', nome: 'Opção 1' }],
   },
 ];
+// SALE_FORMAT marcado como `required` na categoria nova (achado da revisão final: uma categoria
+// como "Leite Infantil" plausivelmente amarra SALE_FORMAT a UNITS_PER_PACK como
+// conditionalRequired/required). Isto NUNCA deveria bloquear a criação do kit — o gate de
+// faltantes roda ANTES de aplicarKitNosAtributos forçar SALE_FORMAT="Kit" um passo depois.
+const SCHEMA_OVERRIDE_SALE_FORMAT_OBRIGATORIO = [
+  {
+    ...CAMPOS_SCHEMA_PADRAO, id: 'SALE_FORMAT', nome: 'Formato de venda', valueType: 'list',
+    required: true, valores: [{ id: 'V-UN', nome: 'Unidade' }, { id: 'V-KIT', nome: 'Kit' }],
+  },
+  { ...CAMPOS_SCHEMA_PADRAO, id: 'UNITS_PER_PACK', nome: 'Unidades por kit', valueType: 'number', valores: [] },
+  { ...CAMPOS_SCHEMA_PADRAO, id: 'BRAND', nome: 'Marca', valueType: 'string', valores: [] },
+];
 
 describe('aplicarKitNosAtributos', () => {
   it('sobrescreve SALE_FORMAT e UNITS_PER_PACK pelo N', () => {
@@ -747,5 +759,21 @@ describe('criarKitsVinculados', () => {
     expect(r.ok).toBe(false);
     expect(r.motivo).toBe('atributos_faltantes');
     expect(inserts.familias).toHaveLength(0);
+  });
+
+  it('categoriaOverride com SALE_FORMAT required no schema novo: não é falso-faltante (aplicarKitNosAtributos força o valor um passo depois)', async () => {
+    const llmMock = vi.fn(async () => ({}));
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_SALE_FORMAT_OBRIGATORIO },
+      llm: llmMock,
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Leite Infantil' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(true);
+    const atributos = inserts.familias[0].atributos_ml as { id: string; value_id?: string }[];
+    expect(atributos.find((a) => a.id === 'SALE_FORMAT')?.value_id).toBe('V-KIT');
   });
 });

@@ -438,8 +438,15 @@ export async function criarKitsVinculados(
       // preserva-se sempre (ver comentário acima). Recálculo só se aplica à categoria genérica:
       // curada (tipo !== 'outro') nunca teve checagem de faltantes, mesma limitação pré-existente
       // do caminho de definir-categoria-familia — não é regressão introduzida aqui.
+      // Exclui SALE_FORMAT do schema usado aqui (Fable, revisão final): mesmo que a categoria
+      // marque SALE_FORMAT como required/conditionalRequired, aplicarKitNosAtributos (abaixo,
+      // dentro do loop por kit) sempre o força para "Kit" — correto por construção, com seu
+      // próprio erro dedicado (categoria_sem_kit) se a categoria não oferecer o valor. Sem esta
+      // exclusão, uma categoria como "Leite Infantil" (SALE_FORMAT ligado a UNITS_PER_PACK)
+      // bloquearia a criação do kit por um faltante que o passo seguinte já resolveria.
+      const schemaParaFaltantes = schema.filter((s) => s.id !== 'SALE_FORMAT');
       faltantesKit = faltantesSentinela
-        ?? (tipo !== 'outro' ? [] : atributosFaltantesGenerico(atributosBase, schema));
+        ?? (tipo !== 'outro' ? [] : atributosFaltantesGenerico(atributosBase, schemaParaFaltantes));
       // Gate LOUD antes de criar qualquer linha (Fable): kit não passa por Revisão (D-3/D-4,
       // ADR-0151) — se a categoria nova exige atributo que não foi resolvido, falha aqui ou nunca
       // mais. Mesma regra de ouro do ADR-0051 (não publica às cegas). SÓ roda aqui dentro do
