@@ -8,9 +8,15 @@ categoria do Mercado Livre diferente da categoria do produto-base.
 **Architecture:** Sem override, nada muda (categoria continua herdada da base). Com override, o
 backend resolve schema + atributos-base para a categoria NOVA (mesma lógica curada/genérica+IA que
 `definir-categoria-familia` já usa para produtos normais, chamada diretamente — sem extrair função
-compartilhada, por ser só um if/else pequeno e não valer o acoplamento entre os dois arquivos) e só
-então aplica `aplicarKitNosAtributos` por cima, como hoje. `montarFamiliaKit` grava a categoria do
-override em vez de clonar da base.
+compartilhada, por ser só um if/else pequeno e não valer o acoplamento entre os dois arquivos),
+herda da base os atributos textuais (`value_name`) que a categoria nova também declara e a
+resolução não preencheu (cobre `NET_WEIGHT`, que nem o caminho curado nem o genérico+IA preenchem
+sozinhos), recalcula `atributos_faltantes`/`tipo_aviamento` pra essa categoria nova (o gate de
+publicação lê esses dois campos, e sem recalculá-los o kit herdaria os da base — categoria antiga
+— e publicaria às cegas) e só então aplica `aplicarKitNosAtributos` por cima, como hoje.
+`montarFamiliaKit` grava a categoria do override em vez de clonar da base. 3 achados desta lista
+(herança de `NET_WEIGHT`, gate de faltantes, `tipo_aviamento`) vieram da revisão do Fable sobre
+uma primeira versão deste plano que não os cobria — ver o aviso no início da Task 1.
 
 **Tech Stack:** Deno Edge Functions (Supabase), TypeScript, React + Vitest/Testing Library no
 front.
@@ -21,7 +27,7 @@ front.
 
 - Roteamento de modelos do CLAUDE.md do projeto: nenhuma tarefa deste plano desce para o modelo
   mais barato — todas tocam o payload de publicação em marketplace (ADR-0151), e a regra do
-  CLAUDE.md é "nunca rebaixar modelo em... publicação em marketplace". Todas as 4 tarefas rodam no
+  CLAUDE.md é "nunca rebaixar modelo em... publicação em marketplace". Todas as 3 tarefas rodam no
   modelo padrão (sonnet).
 - Sem migration — `familias.categoria_ml_id`/`categoria_nome` já existem.
 - Sem mudança de comportamento no caminho padrão (sem override) — todo teste existente que já
@@ -39,17 +45,43 @@ front.
   (resolução de schema/atributos), `:386-389` (aplicação do override em `familiaObj`)
 - Test: `supabase/functions/criar-kit-vinculado/__tests__/processar.test.ts`
 
+**Contexto crítico desta task (achado na revisão do Fable, verificado no código real antes de
+escrever este plano):**
+
+1. **Gate de publicação lê `familia.tipo_aviamento`/`familia.atributos_faltantes` — nenhum dos
+   dois está em `STRIP_FAMILIA_KIT`.** `publish-familia-ml/processar.ts:147-151` decide se pode
+   publicar assim: `categoriaParaTipo(tipoAviamento) != null ? atributosFaltantes(...) :
+   (categoria_ml_id ? atributos_faltantes : ['CATEGORIA'])`. Sem tocar esses dois campos no kit
+   com override, `montarFamiliaKit` clona os da BASE (que refletem a categoria ANTIGA, já
+   publicada, `atributos_faltantes=[]`) — o gate passaria mesmo se a categoria nova exigisse
+   atributos que não foram resolvidos. Kit não tem Revisão pra pegar isso depois (D-3/D-4,
+   ADR-0151) — tem que travar aqui, na criação, ou nunca mais.
+2. **`resolverAtributosGenericos` não preenche `NET_WEIGHT` (nem nenhum atributo `number`/
+   `number_unit`, exceto `THICKNESS` via `preencherMedidasObvias`).** Confirmado lendo
+   `_shared/ai/atributos-llm-core.ts:114-117` e o pipeline de `resolverAtributosGenericos`
+   (`preencherAtributosClosedSet` → `preencherUnitsPerPack` → `preencherNomeObrigatorio`, nenhum
+   dos três cobre `NET_WEIGHT`). Sem correção, o caminho genérico (o que o caso real do Diego usa —
+   "Leite Infantil" não é aviamento, cai em `tipo === 'outro'`) publicaria o kit **sem** `NET_WEIGHT`
+   — reintroduz o mesmo bug (MLB7585283770) que motivou a sessão anterior, só que por ausência em
+   vez de valor errado. Correção: depois de resolver `atributosBase` (curado ou genérico), herdar
+   da base qualquer atributo `value_name` (nunca `value_id` — valores de lista/closed-set não são
+   portáveis entre categorias) cujo `id` já existe no schema da categoria NOVA e ainda não foi
+   resolvido. `aplicarKitNosAtributos` já sabe escalar `NET_WEIGHT` quando ele está presente — só
+   precisava chegar até ali.
+
 **Interfaces:**
-- Consumes: `tipoParaCategoria`, `montarAtributosML` (`_shared/categoria/atributos.ts`, já
-  exportadas); `resolverAtributosGenericos` (`_shared/categoria/resolver-atributos-genericos.ts`,
-  assinatura `(categoriaMlId: string, input: {nome, descricao?, fornecedor?}, deps: {lerSchema:
-  (id: string) => Promise<AtributoSchema[]>, llm: (input, alvos) => Promise<Record<string,
-  string>>}, marcaPadrao?: string) => Promise<{atributosMl: AtributoML[], faltantes: string[]}>`);
-  `InputAtributos`, `AtributoAlvo` (`_shared/ai/atributos-llm-core.ts`, tipos).
+- Consumes: `tipoParaCategoria`, `montarAtributosML`, `atributosFaltantesGenerico`
+  (`_shared/categoria/atributos.ts`, já exportadas); `resolverAtributosGenericos`
+  (`_shared/categoria/resolver-atributos-genericos.ts`, assinatura `(categoriaMlId: string, input:
+  {nome, descricao?, fornecedor?}, deps: {lerSchema: (id: string) => Promise<AtributoSchema[]>,
+  llm: (input, alvos) => Promise<Record<string, string>>}, marcaPadrao?: string) =>
+  Promise<{atributosMl: AtributoML[], faltantes: string[]}>`); `InputAtributos`, `AtributoAlvo`
+  (`_shared/ai/atributos-llm-core.ts`, tipos).
 - Produces: `CriarKitInput.categoriaOverride?: { categoriaMlId: string; categoriaNome: string } |
   null` (novo campo, consumido pela Task 2 ao montar o input a partir do body HTTP);
   `CriarKitDeps.llm?` e `CriarKitDeps.marcaPadrao?` (novos campos opcionais, consumidos pela Task 2
-  ao montar os deps reais).
+  ao montar os deps reais); novo `motivo` de erro `'atributos_faltantes'` (consumido pela Task 2 em
+  `STATUS_POR_MOTIVO`).
 
 - [ ] **Step 1: Escrever os testes que falham**
 
@@ -103,18 +135,59 @@ muda.) Trocar a definição de `deps` (hoje linhas 281-291) por:
   };
 ```
 
-Adicionar, no topo do arquivo (perto de `SCHEMA_SEM_KIT`), o schema da categoria de override usada
-nos testes novos:
+Adicionar, no topo do arquivo (perto de `SCHEMA_SEM_KIT`), os schemas de categoria de override
+usados nos testes novos. **Atenção de forma (achado da revisão do Fable + verificação própria):**
+`AtributoSchema` real (`_shared/categoria/schema.ts:10-19`) tem `required`, `conditionalRequired`,
+`allowedUnits`, `tags` além de `id`/`nome`/`valueType`/`valores` — os `SCHEMA_COM_KIT`/
+`SCHEMA_SEM_KIT` pré-existentes no arquivo NÃO têm esses campos porque só eram usados direto com
+`aplicarKitNosAtributos`, que não olha `tags`/`required`. Os schemas novos aqui SÃO usados também
+por `resolverAtributosGenericos` → `atributosFaltantesGenerico`, que acessa `a.tags.some(...)` —
+sem os campos completos, isso lança `TypeError` em runtime (engolido pelo try/catch de
+`resolverAtributosGenericos`, mascarando o teste). Por isso os schemas abaixo declaram TODOS os
+campos, em todo item — não reaproveitar `SCHEMA_SEM_KIT`/`SCHEMA_COM_KIT` (que ficam como estão,
+intocados, só para os testes pré-existentes de `aplicarKitNosAtributos`) em nenhum teste novo.
 
 ```ts
+const CAMPOS_SCHEMA_PADRAO = { required: false, conditionalRequired: false, allowedUnits: [], tags: [] };
+
 const SCHEMA_OVERRIDE_COM_KIT = [
   {
-    id: 'SALE_FORMAT', nome: 'Formato de venda', valueType: 'list',
+    ...CAMPOS_SCHEMA_PADRAO, id: 'SALE_FORMAT', nome: 'Formato de venda', valueType: 'list',
     valores: [{ id: 'V-UN', nome: 'Unidade' }, { id: 'V-KIT', nome: 'Kit' }],
   },
-  { id: 'UNITS_PER_PACK', nome: 'Unidades por kit', valueType: 'number', valores: [] },
-  { id: 'BRAND', nome: 'Marca', valueType: 'string', valores: [] },
+  { ...CAMPOS_SCHEMA_PADRAO, id: 'UNITS_PER_PACK', nome: 'Unidades por kit', valueType: 'number', valores: [] },
+  { ...CAMPOS_SCHEMA_PADRAO, id: 'BRAND', nome: 'Marca', valueType: 'string', valores: [] },
 ];
+// Mesmo schema, mas também declara NET_WEIGHT — usado no teste de herança/escala do atributo.
+const SCHEMA_OVERRIDE_COM_KIT_E_NET_WEIGHT = [
+  ...SCHEMA_OVERRIDE_COM_KIT,
+  { ...CAMPOS_SCHEMA_PADRAO, id: 'NET_WEIGHT', nome: 'Peso líquido', valueType: 'number_unit', valores: [] },
+];
+// Categoria genérica sem "Kit" no schema — usada só nos testes novos (não reaproveita
+// SCHEMA_SEM_KIT do topo do arquivo, que os testes pré-existentes de aplicarKitNosAtributos usam).
+const SCHEMA_OVERRIDE_SEM_KIT = [
+  { ...CAMPOS_SCHEMA_PADRAO, id: 'BRAND', nome: 'Marca', valueType: 'string', valores: [] },
+];
+// Categoria genérica com "Kit" MAIS um atributo obrigatório que a resolução por IA (mockada pra
+// devolver {} nos testes) nunca preenche — dispara o gate de atributos_faltantes.
+const SCHEMA_OVERRIDE_COM_KIT_E_OBRIGATORIO_NAO_RESOLVIDO = [
+  ...SCHEMA_OVERRIDE_COM_KIT,
+  {
+    ...CAMPOS_SCHEMA_PADRAO, id: 'MODEL_OBRIGATORIO', nome: 'Modelo obrigatório', valueType: 'list',
+    required: true, valores: [{ id: 'V1', nome: 'Opção 1' }],
+  },
+];
+```
+
+`depsFake` também precisa que a família-base fake já tenha `NET_WEIGHT` em `atributos_ml` pro
+teste de herança. A linha real hoje (dentro da construção de `baseFamilia`) é:
+```ts
+    categoria_ml_id: 'MLB123', atributos_ml: [{ id: 'SALE_FORMAT', value_id: 'V-UN' }],
+```
+Trocar por (adiciona `NET_WEIGHT`, sem remover o que já existia):
+```ts
+    categoria_ml_id: 'MLB123',
+    atributos_ml: [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'NET_WEIGHT', value_name: '700 g' }],
 ```
 
 Adicionar este bloco de testes ao final do `describe('criarKitsVinculados', ...)`:
@@ -165,7 +238,7 @@ Adicionar este bloco de testes ao final do `describe('criarKitsVinculados', ...)
 
   it('categoriaOverride numa categoria sem "Kit" → recusa alto (categoria_sem_kit), igual ao caminho sem override', async () => {
     const { deps } = depsFake({
-      schemaPorCategoria: { 'MLB123': SCHEMA_COM_KIT, 'MLB-OVERRIDE': SCHEMA_SEM_KIT },
+      schemaPorCategoria: { 'MLB123': SCHEMA_COM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_SEM_KIT },
     });
     const input: CriarKitInput = {
       familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
@@ -175,7 +248,60 @@ Adicionar este bloco de testes ao final do `describe('criarKitsVinculados', ...)
     expect(r.ok).toBe(false);
     expect(r.motivo).toBe('categoria_sem_kit');
   });
+
+  it('categoriaOverride numa categoria que também declara NET_WEIGHT: herda da base e escala por N (Fable, bug MLB7585283770 de novo)', async () => {
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_COM_KIT_E_NET_WEIGHT },
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Categoria com peso líquido' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(true);
+    const atributos = inserts.familias[0].atributos_ml as { id: string; value_name?: string }[];
+    // base tinha NET_WEIGHT '700 g' (peso de 1 unidade); kit de multiplicador 2 escala pra 1400 g —
+    // mesma fórmula pesoBase × N já usada e testada pro caminho sem override.
+    expect(atributos.find((a) => a.id === 'NET_WEIGHT')?.value_name).toBe('200 g');
+  });
+
+  it('categoriaOverride numa categoria SEM NET_WEIGHT no schema: não inventa o atributo (guard existente continua valendo)', async () => {
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_COM_KIT },
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Categoria sem peso líquido' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(true);
+    const atributos = inserts.familias[0].atributos_ml as { id: string }[];
+    expect(atributos.some((a) => a.id === 'NET_WEIGHT')).toBe(false);
+  });
+
+  it('categoriaOverride com atributo obrigatório não resolvido: recusa alto ANTES de criar qualquer linha (gate Fable — kit não tem Revisão pra pegar isso depois)', async () => {
+    const llmMock = vi.fn(async () => ({}));
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_COM_KIT_E_OBRIGATORIO_NAO_RESOLVIDO },
+      llm: llmMock,
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Categoria com obrigatório' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe('atributos_faltantes');
+    expect(inserts.familias).toHaveLength(0);
+  });
 ```
+
+Nota sobre o teste de herança de NET_WEIGHT: `peso_gramas` da variação-base no `depsFake` padrão é
+`100` (default de `opts.peso_gramas`), então `pesoBase` (lido de `variacoes.peso_gramas`, não de
+`atributos_ml.NET_WEIGHT`) é `100`; multiplicador 2 → `200 g`. O `NET_WEIGHT: '700 g'` que este
+Step adicionou em `atributos_ml` da base só serve pra marcar QUE o atributo existe (o guard
+"herda se a base tinha" olha presença, não valor) — o VALOR final vem de `pesoBase × n`, igual ao
+caminho sem override; não confundir os dois números.
 
 - [ ] **Step 2: Rodar os testes novos e confirmar que falham**
 
@@ -191,7 +317,10 @@ Adicionar aos imports do topo do arquivo (a lista atual começa com `import type
 ...`):
 
 ```ts
-import { aplicarKitNosAtributos, tipoParaCategoria, montarAtributosML, type AtributoML } from '../_shared/categoria/atributos.ts';
+import {
+  aplicarKitNosAtributos, tipoParaCategoria, montarAtributosML, atributosFaltantesGenerico,
+  type AtributoML,
+} from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import type { InputAtributos, AtributoAlvo } from '../_shared/ai/atributos-llm-core.ts';
 ```
@@ -268,10 +397,16 @@ por:
       return { ok: false, motivo: 'sem_conexao_ml', mensagem: e instanceof Error ? e.message : String(e) };
     }
     let atributosBase: AtributoML[];
+    let tipoAviamentoKit: string;
+    let faltantesKit: string[];
     if (!input.categoriaOverride) {
+      // Caminho intocado: mesma categoria/atributos/tipo/faltantes da base, como hoje.
       atributosBase = (base.atributos_ml as AtributoML[] | null) ?? [];
+      tipoAviamentoKit = (base.tipo_aviamento as string | null) ?? 'outro';
+      faltantesKit = (base.atributos_faltantes as string[] | null) ?? [];
     } else {
       const tipo = tipoParaCategoria(categoriaAlvo);
+      tipoAviamentoKit = tipo;
       if (tipo !== 'outro') {
         atributosBase = montarAtributosML(
           tipo, base.nome_pai as string, (base.fornecedor as string | null) ?? undefined,
@@ -279,6 +414,9 @@ por:
         );
       } else {
         const llm = deps.llm ?? (() => Promise.resolve({} as Record<string, string>));
+        // `lerSchema` devolve o schema JÁ lido acima (evita 2º fetch de rede pra mesma
+        // categoria — achado da revisão do Fable: um 2º fetch falho/vazio faria
+        // resolverAtributosGenericos travar em "schema vazio" mesmo com o 1º fetch ok).
         const resolvido = await resolverAtributosGenericos(
           categoriaAlvo,
           {
@@ -286,11 +424,37 @@ por:
             descricao: (base.descricao_pai as string | null) ?? undefined,
             fornecedor: (base.fornecedor as string | null) ?? undefined,
           },
-          { lerSchema: (id) => deps.lerSchema(token, id), llm },
+          { lerSchema: () => Promise.resolve(schema), llm },
           deps.marcaPadrao,
         );
         atributosBase = resolvido.atributosMl;
       }
+      // Portabilidade de atributos textuais (Fable, revisão do plano): NET_WEIGHT e outros
+      // atributos `value_name` (nunca `value_id` — valores de lista não são portáveis entre
+      // categorias) do produto-base valem na categoria nova também, se ela os declarar e a
+      // resolução acima ainda não os tiver preenchido. Nem montarAtributosML nem
+      // resolverAtributosGenericos preenchem number/number_unit (exceto THICKNESS) — sem isto
+      // NET_WEIGHT nunca chegaria a aplicarKitNosAtributos pra ser escalado por N.
+      const idsSchemaNovo = new Set(schema.map((s) => s.id));
+      const idsJaResolvidos = new Set(atributosBase.map((a) => a.id));
+      const portaveis = ((base.atributos_ml as AtributoML[] | null) ?? [])
+        .filter((a) => a.value_name != null && !a.value_id && idsSchemaNovo.has(a.id) && !idsJaResolvidos.has(a.id));
+      atributosBase = [...atributosBase, ...portaveis];
+      // Recalcula faltantes DEPOIS da portabilidade (não usa resolvido.faltantes direto — ele foi
+      // calculado ANTES dos atributos portáveis entrarem, listaria falso-faltante em atributo que
+      // a portabilidade acabou de preencher). Só se aplica à categoria genérica: curada
+      // (tipo !== 'outro') nunca teve checagem de faltantes, mesma limitação pré-existente do
+      // caminho de definir-categoria-familia — não é regressão introduzida aqui.
+      faltantesKit = tipo !== 'outro' ? [] : atributosFaltantesGenerico(atributosBase, schema);
+    }
+    // Gate LOUD antes de criar qualquer linha (Fable): kit não passa por Revisão (D-3/D-4,
+    // ADR-0151) — se a categoria nova exige atributo que não foi resolvido, falha aqui ou nunca
+    // mais. Mesma regra de ouro do ADR-0051 (não publica às cegas).
+    if (faltantesKit.length > 0) {
+      return {
+        ok: false, motivo: 'atributos_faltantes',
+        mensagem: `A categoria escolhida exige atributos que não foram resolvidos: ${faltantesKit.join(', ')}.`,
+      };
     }
     const atributosPorMultiplicador = new Map<number, AtributoML[]>();
     for (const kit of kitsFaltando) {
@@ -321,13 +485,19 @@ Adicionar imediatamente depois:
       if (input.categoriaOverride) {
         familiaObj.categoria_ml_id = input.categoriaOverride.categoriaMlId;
         familiaObj.categoria_nome = input.categoriaOverride.categoriaNome;
+        // Gate de publicação (publish-familia-ml/processar.ts:147-151) lê estes dois campos pra
+        // decidir se pode publicar — sem sobrescrever aqui, o kit herdaria os da BASE (categoria
+        // antiga, atributos_faltantes=[] porque a base já publicou) e o gate passaria assim mesmo,
+        // mesmo com a categoria nova exigindo algo não resolvido (bloqueante da revisão Fable).
+        familiaObj.tipo_aviamento = tipoAviamentoKit;
+        familiaObj.atributos_faltantes = faltantesKit;
       }
 ```
 
 - [ ] **Step 4: Rodar os testes e confirmar que passam**
 
 Run: `pnpm vitest run supabase/functions/criar-kit-vinculado/__tests__/processar.test.ts`
-Expected: PASS — todos os testes, incluindo os 4 novos e todos os pré-existentes (nenhuma
+Expected: PASS — todos os testes, incluindo os 7 novos e todos os pré-existentes (nenhuma
 asserção pré-existente deveria ter mudado).
 
 - [ ] **Step 5: Typecheck**
@@ -365,7 +535,12 @@ Adicionar aos imports do topo:
 ```ts
 import { desempatarAtributosLLM } from '../_shared/ai/atributos-llm.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
+import { ehCategoriaMlValida } from '../_shared/categoria/schema.ts';
 ```
+
+Adicionar `atributos_faltantes: 400,` ao mapa `STATUS_POR_MOTIVO` (hoje começa com
+`multiplicador_invalido: 400,` — acrescentar a chave nova em qualquer linha do objeto, mesmo
+padrão das outras entradas 400 já existentes).
 
 No corpo de `Deno.serve`, o parsing do body hoje é:
 ```ts
@@ -386,6 +561,13 @@ Depois de montar `kitsParseados` e antes de `const input: CriarKitInput = {...}`
     if (typeof co.categoria_ml_id !== 'string' || !co.categoria_ml_id
       || typeof co.categoria_nome !== 'string' || !co.categoria_nome) {
       return json({ error: 'categoria_override inválido — categoria_ml_id e categoria_nome são obrigatórios.' }, 400);
+    }
+    // Mesma validação de definir-categoria-familia/index.ts:50 (achado da revisão do Fable):
+    // sem isto, um categoria_ml_id malformado (ex.: contendo '../') vira uma chamada HTTP
+    // autenticada com o token do vendedor pra uma URL arbitrária dentro de lerSchemaAtributos, e
+    // sem validar cedo o erro real fica escondido atrás de "categoria não oferece Kit".
+    if (!ehCategoriaMlValida(co.categoria_ml_id)) {
+      return json({ error: 'categoria_override.categoria_ml_id inválido (formato esperado: MLB seguido de dígitos).' }, 400);
     }
     categoriaOverride = { categoriaMlId: co.categoria_ml_id, categoriaNome: co.categoria_nome };
   }
@@ -472,20 +654,29 @@ git commit -m "feat(kit): index.ts parseia categoria_override e liga IA/marcaPad
 
 ---
 
-### Task 3: Frontend — `criarKitVinculado` aceita `categoriaOverride`
+### Task 3: Frontend — `criarKitVinculado` + UI "Trocar categoria" no diálogo de criar kit
+
+(Dobra o que seria uma Task 3 separada pro wrapper `criarKitVinculado` — Fable, revisão do plano:
+6 linhas, único consumidor é esta mesma UI, mesmo commit, não vale uma task/modelo à parte.)
 
 **Files:**
 - Modify: `src/lib/kit.ts:204-216` (função `criarKitVinculado`)
+- Modify: `src/components/kit/dialog-criar-kit.tsx`
+- Test: `src/components/kit/__tests__/dialog-criar-kit.test.tsx`
 
 **Interfaces:**
-- Consumes: nada novo (só estende a assinatura existente).
-- Produces: `criarKitVinculado(p: { familiaBaseId, kits, categoriaOverride? })` — consumido pela
-  Task 4.
+- Consumes: `buscarCategoriaML(familiaId: string, query: string) => Promise<{candidatos:
+  CategoriaCandidata[], sugestaoConcorrente: CategoriaCandidata | null}>` (`src/lib/queries.ts:545`,
+  já existe); `CategoriaCandidata` (`src/lib/tipos-dominio.ts:146-150` — só `categoriaId`,
+  `categoriaNome`, `domainName`; **não tem `domainId`**, achado da revisão do Fable — não incluir
+  esse campo nas fixtures de teste).
+- Produces: nada consumido por outra task — ponta de UI.
 
-- [ ] **Step 1: Implementar (sem teste próprio — a Task 4 cobre via `dialog-criar-kit.test.tsx`,
-  que já mocka `criarKitVinculado` e verifica o payload; ver Global Constraints)**
+- [ ] **Step 1: Implementar `criarKitVinculado` em `src/lib/kit.ts` (sem teste próprio — o Step 5
+  cobre via `dialog-criar-kit.test.tsx`, que já mocka `criarKitVinculado` e vai verificar o
+  payload)**
 
-Trocar a assinatura de `criarKitVinculado` (hoje):
+Trocar a assinatura de `criarKitVinculado` (hoje, linhas 204-216):
 ```ts
 export async function criarKitVinculado(p: {
   familiaBaseId: string; kits: KitFormValues[];
@@ -528,35 +719,7 @@ export async function criarKitVinculado(p: {
 
 (o resto da função, tratamento de `error`/`data`, não muda)
 
-- [ ] **Step 2: Typecheck**
-
-Run: `pnpm tsc -b --force`
-Expected: sem erros novos.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/lib/kit.ts
-git commit -m "feat(kit): criarKitVinculado aceita categoriaOverride opcional"
-```
-
----
-
-### Task 4: Frontend — UI "Trocar categoria" no diálogo de criar kit
-
-**Files:**
-- Modify: `src/components/kit/dialog-criar-kit.tsx`
-- Test: `src/components/kit/__tests__/dialog-criar-kit.test.tsx`
-
-**Interfaces:**
-- Consumes: `criarKitVinculado({ familiaBaseId, kits, categoriaOverride })` (Task 3);
-  `buscarCategoriaML(familiaId: string, query: string) => Promise<{candidatos:
-  CategoriaCandidata[], sugestaoConcorrente: CategoriaCandidata | null}>` (`src/lib/queries.ts:545`,
-  já existe); `CategoriaCandidata` (`src/lib/tipos-dominio.ts`, campos `categoriaId`,
-  `categoriaNome`, já existe).
-- Produces: nada consumido por outra task — ponta de UI.
-
-- [ ] **Step 1: Escrever os testes que falham**
+- [ ] **Step 2: Escrever os testes que falham**
 
 Abrir `src/components/kit/__tests__/dialog-criar-kit.test.tsx`. `dialog-criar-kit.tsx` já importa
 `QK` e `KitVinculado` de `@/lib/queries` (linha 14) — o mock precisa preservar esses exports reais,
@@ -585,7 +748,7 @@ do escopo deste teste.
 describe('Trocar categoria', () => {
   it('botão "Trocar categoria" abre a busca; escolher uma categoria mostra o chip e entra no payload', async () => {
     buscarCategoriaMLMock.mockResolvedValue({
-      candidatos: [{ categoriaId: 'MLB999', categoriaNome: 'Leite Infantil', domainId: '', domainName: '' }],
+      candidatos: [{ categoriaId: 'MLB999', categoriaNome: 'Leite Infantil', domainName: '' }],
       sugestaoConcorrente: null,
     });
     criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true, loteId: null });
@@ -609,7 +772,7 @@ describe('Trocar categoria', () => {
 
   it('"×" no chip remove o override — volta a herdar a categoria da base', async () => {
     buscarCategoriaMLMock.mockResolvedValue({
-      candidatos: [{ categoriaId: 'MLB999', categoriaNome: 'Leite Infantil', domainId: '', domainName: '' }],
+      candidatos: [{ categoriaId: 'MLB999', categoriaNome: 'Leite Infantil', domainName: '' }],
       sugestaoConcorrente: null,
     });
     renderDialog([], BASE_COM_FOTO);
@@ -626,12 +789,12 @@ describe('Trocar categoria', () => {
 });
 ```
 
-- [ ] **Step 2: Rodar os testes novos e confirmar que falham**
+- [ ] **Step 3: Rodar os testes novos e confirmar que falham**
 
 Run: `pnpm vitest run src/components/kit/__tests__/dialog-criar-kit.test.tsx`
 Expected: FAIL — botão "Trocar categoria" não existe ainda.
 
-- [ ] **Step 3: Implementar em `dialog-criar-kit.tsx`**
+- [ ] **Step 4: Implementar em `dialog-criar-kit.tsx`**
 
 Adicionar aos imports:
 ```ts
@@ -666,8 +829,11 @@ Adicionar a função de busca (perto de outras funções auxiliares do component
   }
 ```
 
-Adicionar o bloco de UI (na etapa `tamanhos`, antes da lista de tamanhos marcáveis — um único
-bloco pra toda a submissão, não por tamanho):
+Adicionar o bloco de UI **fora do ternário `{etapa === 'tamanhos' ? (...) : (...)}`** — entre o
+`</DialogHeader>` e esse ternário — pra aparecer nas duas etapas, não só em `tamanhos` (achado da
+revisão do Fable: "kit não passa pela Revisão, o preview do diálogo É a revisão" — se o controle
+de categoria só existisse na etapa de escolher tamanho, ficaria invisível bem na etapa que
+efetivamente revisa antes de publicar). Um único bloco pra toda a submissão, não por tamanho:
 ```tsx
       <div className="flex flex-col gap-1.5">
         {categoriaOverride ? (
@@ -731,26 +897,26 @@ onde o diálogo já reseta `etapa`/`marcados`/`chaves`/`valores` ao fechar (mesm
 handler de reset existente — ler o componente pra achar o ponto exato, não criar um segundo
 mecanismo de reset em paralelo).
 
-- [ ] **Step 4: Rodar os testes e confirmar que passam**
+- [ ] **Step 5: Rodar os testes e confirmar que passam**
 
 Run: `pnpm vitest run src/components/kit/__tests__/dialog-criar-kit.test.tsx`
 Expected: PASS — todos os testes, novos e pré-existentes.
 
-- [ ] **Step 5: Typecheck e lint**
+- [ ] **Step 6: Typecheck e lint**
 
 Run: `pnpm tsc -b --force && pnpm lint`
 Expected: sem erros novos.
 
-- [ ] **Step 6: QA visual manual**
+- [ ] **Step 7: QA visual manual**
 
 Rodar `pnpm dev`, abrir a tela Publicados, clicar em "Criar kit" de qualquer produto-base, clicar
 em "Trocar categoria", buscar uma categoria real (ex.: "leite infantil"), escolher uma, confirmar
 que o chip aparece e que o "×" volta ao estado herdado. Print antes/depois se houver dúvida visual.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add src/components/kit/dialog-criar-kit.tsx src/components/kit/__tests__/dialog-criar-kit.test.tsx
+git add src/lib/kit.ts src/components/kit/dialog-criar-kit.tsx src/components/kit/__tests__/dialog-criar-kit.test.tsx
 git commit -m "feat(kit): UI Trocar categoria no dialogo de criar kit"
 ```
 
