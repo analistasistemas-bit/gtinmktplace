@@ -319,7 +319,7 @@ Adicionar aos imports do topo do arquivo (a lista atual começa com `import type
 ```ts
 import {
   aplicarKitNosAtributos, tipoParaCategoria, montarAtributosML, atributosFaltantesGenerico,
-  type AtributoML,
+  FALTANTE_ATRIBUTOS_NAO_VALIDADOS, type AtributoML,
 } from '../_shared/categoria/atributos.ts';
 import { resolverAtributosGenericos } from '../_shared/categoria/resolver-atributos-genericos.ts';
 import type { InputAtributos, AtributoAlvo } from '../_shared/ai/atributos-llm-core.ts';
@@ -414,6 +414,13 @@ por:
     } else {
       const tipo = tipoParaCategoria(categoriaAlvo);
       tipoAviamentoKit = tipo;
+      // Sentinela de falha do LLM (Fable, 3ª revisão): resolverAtributosGenericos engole erro
+      // interno (rede/parse) e devolve `{atributosMl:[], faltantes:[FALTANTE_ATRIBUTOS_NAO_VALIDADOS]}`
+      // — sem preservar esse sinal, o recálculo de faltantes abaixo (que ignora
+      // resolvido.faltantes de propósito, ver comentário mais adiante) apagaria a única prova de
+      // que a IA nem chegou a rodar, e um schema sem obrigatórios além do que a portabilidade
+      // cobre publicaria com ficha vazia e nenhum erro.
+      let faltantesSentinela: string[] | null = null;
       if (tipo !== 'outro') {
         atributosBase = montarAtributosML(
           tipo, base.nome_pai as string, (base.fornecedor as string | null) ?? undefined,
@@ -435,6 +442,9 @@ por:
           deps.marcaPadrao,
         );
         atributosBase = resolvido.atributosMl;
+        if (resolvido.faltantes.includes(FALTANTE_ATRIBUTOS_NAO_VALIDADOS)) {
+          faltantesSentinela = resolvido.faltantes;
+        }
       }
       // Portabilidade de atributos textuais (Fable, revisão do plano): NET_WEIGHT e outros
       // atributos `value_name` (nunca `value_id` — valores de lista não são portáveis entre
@@ -457,10 +467,12 @@ por:
       atributosBase = [...atributosBase, ...portaveis];
       // Recalcula faltantes DEPOIS da portabilidade (não usa resolvido.faltantes direto — ele foi
       // calculado ANTES dos atributos portáveis entrarem, listaria falso-faltante em atributo que
-      // a portabilidade acabou de preencher). Só se aplica à categoria genérica: curada
-      // (tipo !== 'outro') nunca teve checagem de faltantes, mesma limitação pré-existente do
-      // caminho de definir-categoria-familia — não é regressão introduzida aqui.
-      faltantesKit = tipo !== 'outro' ? [] : atributosFaltantesGenerico(atributosBase, schema);
+      // a portabilidade acabou de preencher) — EXCETO quando é a sentinela de falha da IA, que
+      // preserva-se sempre (ver comentário acima). Recálculo só se aplica à categoria genérica:
+      // curada (tipo !== 'outro') nunca teve checagem de faltantes, mesma limitação pré-existente
+      // do caminho de definir-categoria-familia — não é regressão introduzida aqui.
+      faltantesKit = faltantesSentinela
+        ?? (tipo !== 'outro' ? [] : atributosFaltantesGenerico(atributosBase, schema));
       // Gate LOUD antes de criar qualquer linha (Fable): kit não passa por Revisão (D-3/D-4,
       // ADR-0151) — se a categoria nova exige atributo que não foi resolvido, falha aqui ou nunca
       // mais. Mesma regra de ouro do ADR-0051 (não publica às cegas). SÓ roda aqui dentro do
