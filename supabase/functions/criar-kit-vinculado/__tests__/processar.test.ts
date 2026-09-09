@@ -282,6 +282,7 @@ function depsFake(opts: {
   schemaPorCategoria?: Record<string, unknown>;
   llm?: (input: unknown, alvos: unknown) => Promise<Record<string, string>>;
   marcaPadrao?: string;
+  atributosMlBase?: { id: string; value_id?: string; value_name?: string }[];
 } = {}) {
   const {
     custo = 10, peso_gramas: pesoGramas = 100, mlItemId = null,
@@ -289,12 +290,13 @@ function depsFake(opts: {
     statusPorChave = {}, schemaPorCategoria = {},
     llm = async () => ({}),
     marcaPadrao = undefined,
+    atributosMlBase = [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'NET_WEIGHT', value_name: '700 g' }],
   } = opts;
 
   const baseFamilia = linhaFamiliaCheia({
     id: BASE_ID, org_id: 'org-1', user_id: 'user-1', codigo_pai: '00000010',
     categoria_ml_id: 'MLB123',
-    atributos_ml: [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'NET_WEIGHT', value_name: '700 g' }],
+    atributos_ml: atributosMlBase,
     kit_base_codigo_pai: null, kit_multiplicador: null, ml_item_id: mlItemId,
   });
   const baseVariacoes = Array.from({ length: qtdVariacoes }, (_, i) => linhaVariacaoCheia({
@@ -729,6 +731,26 @@ describe('criarKitsVinculados', () => {
     // base tinha NET_WEIGHT '700 g' (peso de 1 unidade); kit de multiplicador 2 escala pra 1400 g —
     // mesma fórmula pesoBase × N já usada e testada pro caminho sem override.
     expect(atributos.find((a) => a.id === 'NET_WEIGHT')?.value_name).toBe('200 g');
+  });
+
+  it('categoriaOverride: BRAND já confirmado na base vence o default genérico derivado do fornecedor (Fable, 2ª ressalva da revisão final)', async () => {
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': SCHEMA_OVERRIDE_COM_KIT },
+      atributosMlBase: [
+        { id: 'SALE_FORMAT', value_id: 'V-UN' },
+        { id: 'BRAND', value_name: 'Nestlé' }, // confirmado manualmente, diferente do fornecedor genérico
+      ],
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Categoria com BRAND' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(true);
+    const atributos = inserts.familias[0].atributos_ml as { id: string; value_name?: string }[];
+    // Sem a correção, resolverAtributosGenericos preencheria BRAND com o fornecedor genérico
+    // ('valor-fornecedor', default do fixture) por cima do que a base já tinha confirmado.
+    expect(atributos.find((a) => a.id === 'BRAND')?.value_name).toBe('Nestlé');
   });
 
   it('categoriaOverride numa categoria SEM NET_WEIGHT no schema: não inventa o atributo (guard existente continua valendo)', async () => {

@@ -415,23 +415,28 @@ export async function criarKitsVinculados(
       }
       // Portabilidade de atributos textuais (Fable, revisão do plano): NET_WEIGHT e outros
       // atributos `value_name` (nunca `value_id` — valores de lista não são portáveis entre
-      // categorias) do produto-base valem na categoria nova também, se ela os declarar e a
-      // resolução acima ainda não os tiver preenchido. Nem montarAtributosML nem
-      // resolverAtributosGenericos preenchem number/number_unit (exceto THICKNESS) — sem isto
-      // NET_WEIGHT nunca chegaria a aplicarKitNosAtributos pra ser escalado por N. Exclui também
-      // `list`/`boolean` no schema NOVO (sugestão da revisão Fable): o mesmo id pode ser texto
-      // livre numa categoria e lista fechada na outra — herdar o texto cru pra um `value_id`
-      // esperado publicaria errado sem nenhum erro visível.
+      // categorias) do produto-base valem na categoria nova também, se ela os declarar. Nem
+      // montarAtributosML nem resolverAtributosGenericos preenchem number/number_unit (exceto
+      // THICKNESS) — sem isto NET_WEIGHT nunca chegaria a aplicarKitNosAtributos pra ser escalado
+      // por N. Exclui `list`/`boolean` no schema NOVO (sugestão da revisão Fable): o mesmo id pode
+      // ser texto livre numa categoria e lista fechada na outra — herdar o texto cru pra um
+      // `value_id` esperado publicaria errado sem nenhum erro visível.
+      //
+      // Precedência (2ª sugestão da revisão Fable): o valor da base VENCE o recém-derivado pra
+      // atributos elegíveis, mesmo quando já resolvido — BRAND/MANUFACTURER/MODEL/NAME que
+      // `montarAtributosBase`/`montarAtributosML` preenchem são um default genérico a partir de
+      // fornecedor/nome; o que já está em `base.atributos_ml` reflete o que foi de fato confirmado
+      // (inclusive edição manual do operador na Revisão da base), então é a fonte mais confiável
+      // pra portar quando o id é o mesmo na categoria nova.
       const schemaPorId = new Map(schema.map((s) => [s.id, s]));
-      const idsJaResolvidos = new Set(atributosBase.map((a) => a.id));
       const portaveis = ((base.atributos_ml as AtributoML[] | null) ?? [])
         .filter((a) => {
           const alvo = schemaPorId.get(a.id);
           return a.value_name != null && !a.value_id && alvo != null
-            && alvo.valueType !== 'list' && alvo.valueType !== 'boolean'
-            && !idsJaResolvidos.has(a.id);
+            && alvo.valueType !== 'list' && alvo.valueType !== 'boolean';
         });
-      atributosBase = [...atributosBase, ...portaveis];
+      const idsPortaveis = new Set(portaveis.map((a) => a.id));
+      atributosBase = [...atributosBase.filter((a) => !idsPortaveis.has(a.id)), ...portaveis];
       // Recalcula faltantes DEPOIS da portabilidade (não usa resolvido.faltantes direto — ele foi
       // calculado ANTES dos atributos portáveis entrarem, listaria falso-faltante em atributo que
       // a portabilidade acabou de preencher) — EXCETO quando é a sentinela de falha da IA, que
