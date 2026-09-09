@@ -352,7 +352,9 @@ export async function criarKitsVinculados(
       try {
         atributosPorMultiplicador.set(
           kit.multiplicador,
-          aplicarKitNosAtributos(schema, (base.atributos_ml as AtributoML[] | null) ?? [], kit.multiplicador),
+          aplicarKitNosAtributos(
+            schema, (base.atributos_ml as AtributoML[] | null) ?? [], kit.multiplicador, pesoBase,
+          ),
         );
       } catch (e) {
         const status = (e as Error & { status?: number }).status;

@@ -304,6 +304,13 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       comprimento_cm: repUpd.comprimento_cm != null ? Number(repUpd.comprimento_cm) : null,
       peso_gramas: repUpd.peso_gramas != null ? Number(repUpd.peso_gramas) : null,
     } : null;
+    // Kit vinculado (ADR-0151, bug MLB7585283770): NET_WEIGHT é atributo de categoria
+    // diferente de SELLER_PACKAGE_WEIGHT acima — sem isto ficaria desatualizado mesmo com o
+    // frete já corrigido. `peso_gramas` do kit já É base×N (`montarVariacaoKit`), então basta
+    // reenviar o valor que já está certo — nada de multiplicar de novo aqui.
+    const pesoLiquidoKitGramas = familia.kit_multiplicador != null && dimensoesUpd?.peso_gramas != null
+      ? dimensoesUpd.peso_gramas
+      : null;
 
     // ADR-0160 — a trava de preço uniforme, agora no lugar certo: ramo LEGACY, imediatamente antes
     // do PUT. Aqui as N cores dividem UM item do ML, `precoFamilia` é propagado a todas
@@ -330,6 +337,7 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       categoriaId: familia.categoria_ml_id as string | null,
       marca,
       dimensoes: dimensoesUpd,
+      pesoLiquidoGramas: pesoLiquidoKitGramas,
       desconto: desconto ?? null,
       precoFamilia,
       somenteEstoque: job.somenteEstoque,

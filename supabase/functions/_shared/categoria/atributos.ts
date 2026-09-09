@@ -1,5 +1,6 @@
 import type { TipoAviamento } from './detectar.ts';
 import type { AtributoSchema } from './schema.ts';
+import { fmt } from '../ml/pacote.ts';
 
 export interface AtributoML {
   id: string;
@@ -269,9 +270,16 @@ export function forcarSaleFormatKit(schema: AtributoSchema[], atributos: Atribut
  * Falha LOUD (400) quando a categoria não expõe `SALE_FORMAT` com valor "Kit": publicar
  * um kit de N unidades como "Unidade" venderia N unidades ao preço de uma para o ML, e o
  * ADR-0071 mostra que o ML rejeita a combinação incoerente de qualquer forma.
+ *
+ * Bug real (MLB7585283770, achado por Diego 2026-09-08): `NET_WEIGHT` ("Peso líquido" na
+ * ficha "Formato de venda") é um atributo de categoria DIFERENTE de `SELLER_PACKAGE_WEIGHT`
+ * (frete, ADR-0018) — ficava para trás, herdado da base sem multiplicar. Quando
+ * `pesoBaseGramas` é passado e a base tinha `NET_WEIGHT`, recalcula como `pesoBaseGramas × n`
+ * em vez de carregar o valor da base. Sem o parâmetro (compat com chamadas antigas) ou sem o
+ * atributo na base, não mexe — nunca inventa `NET_WEIGHT` numa categoria que não o usa.
  */
 export function aplicarKitNosAtributos(
-  schema: AtributoSchema[], atributos: AtributoML[], n: number,
+  schema: AtributoSchema[], atributos: AtributoML[], n: number, pesoBaseGramas?: number,
 ): AtributoML[] {
   const comKit = forcarSaleFormatKit(schema, atributos);
   const mudou = comKit.find((a) => a.id === 'SALE_FORMAT');
@@ -288,7 +296,13 @@ export function aplicarKitNosAtributos(
     throw e;
   }
   const semUpp = comKit.filter((a) => a.id !== 'UNITS_PER_PACK');
-  return [...semUpp, { id: 'UNITS_PER_PACK', value_name: String(n) }];
+  const comUpp = [...semUpp, { id: 'UNITS_PER_PACK', value_name: String(n) }];
+  const tinhaNetWeight = comUpp.some((a) => a.id === 'NET_WEIGHT');
+  if (pesoBaseGramas == null || !tinhaNetWeight) return comUpp;
+  return [
+    ...comUpp.filter((a) => a.id !== 'NET_WEIGHT'),
+    { id: 'NET_WEIGHT', value_name: `${fmt(pesoBaseGramas * n)} g` },
+  ];
 }
 
 /** Monta os atributos obrigatórios da categoria a partir do nome (ADR-0009). */

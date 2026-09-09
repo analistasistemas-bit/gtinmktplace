@@ -582,6 +582,32 @@ describe('preservarPublicadas derivado do lote (fluxo "Adicionar variação")', 
   });
 });
 
+describe('pesoLiquidoGramas do kit vinculado no UPDATE (ADR-0151, bug MLB7585283770)', () => {
+  // NET_WEIGHT ("Peso líquido") é atributo de categoria diferente de SELLER_PACKAGE_WEIGHT
+  // (frete) — sem isto, corrigir peso_gramas no banco não bastava pra chegar no anúncio já
+  // publicado: o UPDATE só reenviava BRAND + dimensões/peso do pacote, nunca o array geral de
+  // atributos.
+  const argsDoUpdate = () =>
+    fakeConnector.chamadas.find((c) => c.metodo === 'atualizarAnuncio')?.args as { pesoLiquidoGramas?: number | null };
+
+  it('família com kit_multiplicador → reenvia pesoLiquidoGramas = peso_gramas da variação (já é base×N)', async () => {
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, kit_multiplicador: 2 },
+      variacoes: [{ ...VAR_CASADA, peso_gramas: 1400 }],
+    });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(argsDoUpdate().pesoLiquidoGramas).toBe(1400);
+  });
+
+  it('família SEM kit_multiplicador (produto normal) → pesoLiquidoGramas null, não mexe em NET_WEIGHT', async () => {
+    const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, kit_multiplicador: null } });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(argsDoUpdate().pesoLiquidoGramas).toBeNull();
+  });
+});
+
 describe('processarAtualizacaoFamilia — sino gated (ADR-0129 D-11)', () => {
   it('lote origem=manual + família operacao=UPDATE + sucesso → dispara notificarCategoria', async () => {
     const { admin } = fakeAdmin({

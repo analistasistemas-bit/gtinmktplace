@@ -186,6 +186,14 @@ export interface AtualizacaoCanonica {
    *  depois de um PUT inteiro ser recusado com "You cannot change attribute combinations if the
    *  variation has bids" ao adicionar uma cor. */
   preservarPublicadas?: boolean;
+  /**
+   * Kit vinculado (ADR-0151): peso líquido total do kit em gramas, para sincronizar `NET_WEIGHT`
+   * ("Peso líquido" na ficha "Formato de venda") junto com o frete. null/ausente → não envia
+   * (preserva o atual). Bug real MLB7585283770 (2026-09-08): esse atributo é diferente de
+   * `SELLER_PACKAGE_WEIGHT` (frete, `dimensoes` acima) — ficava desatualizado mesmo com o
+   * frete correto.
+   */
+  pesoLiquidoGramas?: number | null;
 }
 
 /** Resultado do UPDATE: sku → id externo da variação (casar/persistir + detectar não-vinculadas). */

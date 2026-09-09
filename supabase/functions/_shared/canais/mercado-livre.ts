@@ -12,7 +12,7 @@ import { categoriaExigeFamilyName } from '../categoria/atributos.ts';
 import { buscarItemML, atualizarItemML, atualizarItemPlanoML, atualizarStatusML } from '../ml/atualizar-item.ts';
 import { migracaoEmAndamento, motivoAnuncioNaoAtualizavel, subStatusMorto } from '../ml/anuncio-atualizavel.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
-import { montarAtributosPacote } from '../ml/pacote.ts';
+import { montarAtributosPacote, fmt } from '../ml/pacote.ts';
 import { parseStatusML, type ItemMLStatus } from '../ml/status.ts';
 import { subirFotoML } from '../ml/fotos.ts';
 import { aplicarPxQ, type FaixaAtacado } from '../ml/atacado.ts';
@@ -324,10 +324,12 @@ export const mercadoLivreConnector: ChannelConnector = {
         semPreco ? null : (a.desconto ? { pct: a.desconto.pct } : null),
         semPreco ? precoVivo : undefined,
       ));
-      // BRAND (do fornecedor) + dimensões/peso (SELLER_PACKAGE_*); só os passados — o ML mescla.
+      // BRAND (do fornecedor) + dimensões/peso (SELLER_PACKAGE_*) + peso líquido do kit
+      // vinculado (NET_WEIGHT, ADR-0151); só os passados — o ML mescla.
       const atributosItem = [
         ...(a.marca ? [{ id: 'BRAND', value_name: a.marca }] : []),
         ...(a.dimensoes ? montarAtributosPacote(a.dimensoes) : []),
+        ...(a.pesoLiquidoGramas ? [{ id: 'NET_WEIGHT', value_name: `${fmt(a.pesoLiquidoGramas)} g` }] : []),
       ];
       // Só reenvia item.pictures ao criar variação nova (a foto dela precisa estar no item).
       const novasPicIds = novasPut.flatMap((v) => v.picture_ids);

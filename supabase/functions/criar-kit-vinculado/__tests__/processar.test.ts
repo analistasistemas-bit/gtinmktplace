@@ -41,6 +41,40 @@ describe('aplicarKitNosAtributos', () => {
     }
     expect(status).toEqual(400);
   });
+
+  // Bug real (MLB7585283770, achado por Diego 2026-09-08): NET_WEIGHT ("Peso líquido" na
+  // ficha "Formato de venda" do ML) é herdado sem multiplicar pelo N — kit de 2 unidades de
+  // um produto de 700g publicava com "Peso líquido: 700 g" em vez de 1400 g, igual a um único
+  // sachê. `SELLER_PACKAGE_WEIGHT` (frete) já dobrava certo; NET_WEIGHT ficava para trás porque
+  // é um atributo de categoria diferente, que `aplicarKitNosAtributos` não tocava.
+  it('multiplica NET_WEIGHT pelo N quando presente e o peso-base é passado (bug MLB7585283770)', () => {
+    const r = aplicarKitNosAtributos(
+      SCHEMA_COM_KIT as never,
+      [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'NET_WEIGHT', value_name: '700 g' }],
+      2,
+      700,
+    );
+    expect(r.find((a) => a.id === 'NET_WEIGHT')?.value_name).toEqual('1400 g');
+  });
+
+  it('não inventa NET_WEIGHT quando a base não tinha o atributo', () => {
+    const r = aplicarKitNosAtributos(
+      SCHEMA_COM_KIT as never,
+      [{ id: 'SALE_FORMAT', value_id: 'V-UN' }],
+      2,
+      700,
+    );
+    expect(r.find((a) => a.id === 'NET_WEIGHT')).toBeUndefined();
+  });
+
+  it('sem pesoBaseGramas, deixa NET_WEIGHT como veio da base (compat com chamadas antigas)', () => {
+    const r = aplicarKitNosAtributos(
+      SCHEMA_COM_KIT as never,
+      [{ id: 'SALE_FORMAT', value_id: 'V-UN' }, { id: 'NET_WEIGHT', value_name: '700 g' }],
+      2,
+    );
+    expect(r.find((a) => a.id === 'NET_WEIGHT')?.value_name).toEqual('700 g');
+  });
 });
 
 // ── Colunas reais de `familias`/`variacoes`, lidas do snapshot de schema versionado

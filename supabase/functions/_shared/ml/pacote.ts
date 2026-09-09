@@ -25,7 +25,7 @@ export function dimensoesValidas(d: DimensoesPacote): boolean {
 }
 
 // Remove zeros decimais supérfluos: 18.00 → "18"; 7.5 → "7.5".
-function fmt(n: number): string {
+export function fmt(n: number): string {
   return String(Math.round(n * 100) / 100);
 }
 
