@@ -38,12 +38,15 @@ export function valorInicialPreview(base: BaseParaKit, titulo: string, descricao
     gtin: '',
     imagemPath: base.fotoPath,
     fotoFile: null,
-    // base × N (Diego, 2026-09-08, ADR-0151 D-4 revisada): bug MLB7585283770 — caixa de kit
-    // saiu do tamanho de 1 unidade porque o padrão anterior não multiplicava e o operador não
-    // reparou/editou. Segue editável para o caso real não ser N× linear.
+    // ADR-0151 D-4 revisada (Diego, 2026-09-08, bug MLB7585283770): caixa de kit saiu do
+    // tamanho de 1 unidade porque o padrão anterior não multiplicava nada e o operador não
+    // reparou/editou. Multiplicar as 3 dimensões multiplicaria o VOLUME por N³ (cubagem do ML,
+    // `calcularPesoUtilizado`), superestimando o frete — achado na revisão Fable. Só a altura
+    // (eixo do empilhamento) escala por N; largura/comprimento seguem a base. Aproximação —
+    // segue editável para quando o empacotamento real for diferente.
     alturaCm: (base.alturaCm ?? 0) * n,
-    larguraCm: (base.larguraCm ?? 0) * n,
-    comprimentoCm: (base.comprimentoCm ?? 0) * n,
+    larguraCm: base.larguraCm ?? 0,
+    comprimentoCm: base.comprimentoCm ?? 0,
     atacado: [],
   };
 }

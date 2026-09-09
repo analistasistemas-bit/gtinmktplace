@@ -277,6 +277,9 @@ export function forcarSaleFormatKit(schema: AtributoSchema[], atributos: Atribut
  * `pesoBaseGramas` é passado e a base tinha `NET_WEIGHT`, recalcula como `pesoBaseGramas × n`
  * em vez de carregar o valor da base. Sem o parâmetro (compat com chamadas antigas) ou sem o
  * atributo na base, não mexe — nunca inventa `NET_WEIGHT` numa categoria que não o usa.
+ * Aproximação aceita: `pesoBaseGramas` é o peso de PACOTE (`variacoes.peso_gramas`), não
+ * necessariamente o conteúdo líquido declarado pela IA em `NET_WEIGHT` — só rótulo informativo
+ * na ficha, não usado no cálculo de frete (ADR-0018).
  */
 export function aplicarKitNosAtributos(
   schema: AtributoSchema[], atributos: AtributoML[], n: number, pesoBaseGramas?: number,

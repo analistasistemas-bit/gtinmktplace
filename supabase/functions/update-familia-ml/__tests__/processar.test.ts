@@ -590,9 +590,9 @@ describe('pesoLiquidoGramas do kit vinculado no UPDATE (ADR-0151, bug MLB7585283
   const argsDoUpdate = () =>
     fakeConnector.chamadas.find((c) => c.metodo === 'atualizarAnuncio')?.args as { pesoLiquidoGramas?: number | null };
 
-  it('família com kit_multiplicador → reenvia pesoLiquidoGramas = peso_gramas da variação (já é base×N)', async () => {
+  it('família com kit_multiplicador e NET_WEIGHT herdado da base → reenvia = peso_gramas da variação (já é base×N)', async () => {
     const { admin } = fakeAdmin({
-      familia: { ...FAMILIA_BASE, kit_multiplicador: 2 },
+      familia: { ...FAMILIA_BASE, kit_multiplicador: 2, atributos_ml: [{ id: 'NET_WEIGHT', value_name: '700 g' }] },
       variacoes: [{ ...VAR_CASADA, peso_gramas: 1400 }],
     });
     const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
@@ -602,6 +602,16 @@ describe('pesoLiquidoGramas do kit vinculado no UPDATE (ADR-0151, bug MLB7585283
 
   it('família SEM kit_multiplicador (produto normal) → pesoLiquidoGramas null, não mexe em NET_WEIGHT', async () => {
     const { admin } = fakeAdmin({ familia: { ...FAMILIA_BASE, kit_multiplicador: null } });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r.tipo).toBe('ok');
+    expect(argsDoUpdate().pesoLiquidoGramas).toBeNull();
+  });
+
+  it('kit numa categoria sem NET_WEIGHT (base nunca teve o atributo) → não inventa no UPDATE', async () => {
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, kit_multiplicador: 2, atributos_ml: [] },
+      variacoes: [{ ...VAR_CASADA, peso_gramas: 1400 }],
+    });
     const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
     expect(r.tipo).toBe('ok');
     expect(argsDoUpdate().pesoLiquidoGramas).toBeNull();

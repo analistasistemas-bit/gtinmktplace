@@ -119,10 +119,12 @@ faltava era a UI de recuperação do lado do lote `'concluido'`.
 - **Descrição**: base + linha indicando quantidade do kit.
 - **Foto**: pré-preenchida com a foto da base, **trocável por kit** (ex.: foto das N unidades
   juntas).
-- **Dimensões** (altura/largura/comprimento): pré-preenchidas **base × N** (revertido no item 15
-  — o padrão anterior era igual à base, mas o operador não editava e o anúncio saía com a caixa
-  do tamanho de 1 unidade), e **editáveis**, porque dimensão errada cota frete errado pro
-  comprador (ADR-0018).
+- **Dimensões** (altura/largura/comprimento): pré-preenchidas com **altura × N**, largura/
+  comprimento iguais à base (revertido no item 15 — o padrão anterior era igual à base nos 3
+  eixos, mas o operador não editava e o anúncio saía com a caixa do tamanho de 1 unidade;
+  multiplicar os 3 eixos foi cogitado e descartado por multiplicar o VOLUME por N³, não N —
+  superestima o frete cubado do ML), e **editáveis**, porque dimensão errada cota frete errado
+  pro comprador (ADR-0018).
 - **Preço**: sugestão = unitário × N (com desconto opcional), editável.
 - **Atacado**: vazio por padrão (não herda as faixas da base), editável.
 
@@ -439,16 +441,47 @@ desvio 2 e detalha a Decisão 4:**
       separado de `SELLER_PACKAGE_WEIGHT` (frete, ADR-0018) — `aplicarKitNosAtributos`
       (`_shared/categoria/atributos.ts`) nunca o tocava, herdando cru o valor da base.
       Corrigido: recalcula `pesoBaseGramas × N` quando a base já tinha o atributo (nunca o
-      inventa numa categoria que não o usa). `update-familia-ml` passou a reenviar esse valor
+      inventa numa categoria que não o usa — mesmo guard replicado em `update-familia-ml`,
+      lendo `familia.atributos_ml`). `update-familia-ml` passou a reenviar esse valor
       (`pesoLiquidoGramas` no contrato `AtualizacaoCanonica`) para famílias com
-      `kit_multiplicador`, corrigindo o anúncio já publicado pelo fluxo normal de UPDATE.
-    - **Decisão 4 revertida:** o padrão de dimensão (altura/largura/comprimento) parava de
-      propósito em base×1 ("empacotar N unidades não é N× linear"), esperando o operador editar
-      manualmente antes de confirmar. Na prática o operador não editou, e o padrão errado 100%
-      das vezes valia mais o custo (frete subestimado, recusa no Mercado Envios) do que a
-      correção física do "N× não é exatamente linear". Diego decidiu: pré-preencher com
-      base×N (`valorInicialPreview`, `src/components/kit/preview-kit.tsx`) — segue editável para
-      o caso real divergir.
+      `kit_multiplicador`, na TEORIA corrigindo o anúncio já publicado pelo fluxo normal de
+      UPDATE — mas ver a ressalva de item plano abaixo, que impede isso na prática para
+      `MLB7585283770`.
+    - **Decisão 4 revertida, com correção na correção:** o padrão de dimensão
+      (altura/largura/comprimento) parava de propósito em base×1 ("empacotar N unidades não é
+      N× linear"), esperando o operador editar manualmente antes de confirmar. Na prática o
+      operador não editou, e o padrão errado 100% das vezes valia mais o custo (frete
+      subestimado, recusa no Mercado Envios) do que a correção física do "N× não é exatamente
+      linear". Diego decidiu multiplicar por N — primeira implementação multiplicou os 3 eixos,
+      que a revisão Fable rejeitou: isso multiplica o VOLUME por N³ (`calcularPesoUtilizado`,
+      `src/lib/calculadora-ml.ts`, mesma fórmula de cubagem do ML), trocando frete subestimado
+      por frete superestimado — no ×2 do incidente real (15×13×13→30×26×26) o peso cubado ia de
+      0,42 kg pra 3,38 kg; no ×6 dava 91 kg, inviável no Mercado Envios. Versão final: só a
+      **altura** (eixo do empilhamento) escala por N, largura/comprimento seguem a base
+      (`valorInicialPreview`, `src/components/kit/preview-kit.tsx`) — aproximação, segue
+      editável para o caso real divergir.
+    - **Ressalva descoberta na revisão (não corrigida neste round — gap pré-existente, fora de
+      escopo):** `MLB7585283770` publicou como **item plano** (categoria de aviamento que exige
+      `family_name`, ADR-0084) — `variacoes.ml_variation_id == ml_item_id` é o sinal disso
+      (`_shared/canais/mercado-livre.ts:185-187`). No UPDATE, item plano cai no ramo
+      `atualizarItemPlanoML` (linha ~262), que só reenvia `available_quantity`/`price` — nunca
+      atributos, nunca `SELLER_PACKAGE_*`/`NET_WEIGHT`. Ou seja: este fix corrige kits **novos**
+      e qualquer kit publicado com `variations[]` (a maioria), mas **não alcança
+      `MLB7585283770`** pelo fluxo normal de UPDATE — nem depois de deployado. Duas saídas, sem
+      fluxo controlado pronto pra nenhuma: (a) Diego edita a dimensão direto no painel do ML
+      (ação do vendedor na própria conta, fora do escopo da trava "nunca editar fora do fluxo
+      controlado", que é sobre o app/agente escrever na API); (b) estender
+      `atualizarItemPlanoML` pra reenviar atributos também — tarefa própria, não deste PR, e de
+      risco parecido ao incidente do Aquaphor (`feedback_nunca_editar_anuncio_publicado`): esta
+      classe de item usa `family_name` pra auto-gerar o título, então empurrar atributos aqui
+      merece investigação isolada antes de implementar.
+    - **Gap relacionado, também fora de escopo:** nenhum fluxo do app hoje enfileira
+      `update-familia-ml` automaticamente para uma família de kit já `'publicado'` — nem
+      `publicar-familias` (exige `status in ('pronto','erro')`), nem nenhuma ação de edição na
+      tela Publicados. "Corrigir e republicar" existe mas pausa o anúncio e manda pra Revisão
+      inteira (risco de reprocessamento de IA apagar título/descrição do kit,
+      `reference_ml_kit_nao_reprocessa`) — desproporcional para uma correção pontual de
+      dimensão/peso.
 
 ## Como reverter
 

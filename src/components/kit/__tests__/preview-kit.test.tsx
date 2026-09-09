@@ -44,12 +44,13 @@ function renderPreview(n: number, inicial: Partial<KitPreviewValue> = {}) {
 }
 
 describe('valorInicialPreview', () => {
-  it('pré-preenche dimensões = base × N (Diego, 2026-09-08: bug MLB7585283770 — caixa de N '
-    + 'unidades ficou do tamanho de 1)', () => {
+  it('pré-preenche só a altura × N — largura/comprimento seguem a base (Diego, 2026-09-08: bug '
+    + 'MLB7585283770; multiplicar as 3 dimensões multiplicaria o volume por N³, não por N — '
+    + 'revisão Fable)', () => {
     const v = valorInicialPreview(BASE, 'Kit', 'desc', 3);
-    expect(v.alturaCm).toBe(30); // 10 × 3
-    expect(v.larguraCm).toBe(24); // 8 × 3
-    expect(v.comprimentoCm).toBe(9); // 3 × 3
+    expect(v.alturaCm).toBe(30); // 10 × 3 — eixo do empilhamento
+    expect(v.larguraCm).toBe(8); // igual à base
+    expect(v.comprimentoCm).toBe(3); // igual à base
   });
 });
 
