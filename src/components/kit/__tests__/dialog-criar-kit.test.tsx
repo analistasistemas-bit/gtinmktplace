@@ -32,6 +32,12 @@ vi.mock('@/lib/kit', async (importOriginal) => {
 const navigateMock = vi.fn();
 vi.mock('react-router-dom', () => ({ useNavigate: () => navigateMock }));
 
+const buscarCategoriaMLMock = vi.fn();
+vi.mock('@/lib/queries', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/queries')>();
+  return { ...actual, buscarCategoriaML: (...args: unknown[]) => buscarCategoriaMLMock(...args) };
+});
+
 // subirFoto (via uploadFile/@/lib/storage) e useImageUrl chamam supabase direto — sem mockar,
 // o teste do fluxo de criação bateria na rede real.
 vi.mock('@/lib/supabase', () => ({
@@ -221,5 +227,48 @@ describe('DialogCriarKit — toast pós-criação com link pro relatório', () =
     const opcoes = vi.mocked(toast.success).mock.calls[0][1] as { action?: unknown };
     expect(opcoes.action).toBeUndefined();
     expect(navigateMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('Trocar categoria', () => {
+  it('botão "Trocar categoria" abre a busca; escolher uma categoria mostra o chip e entra no payload', async () => {
+    buscarCategoriaMLMock.mockResolvedValue({
+      candidatos: [{ categoriaId: 'MLB999', categoriaNome: 'Leite Infantil', domainName: '' }],
+      sugestaoConcorrente: null,
+    });
+    criarKitVinculadoMock.mockResolvedValue({ ok: true, kits: [], publicacaoOk: true, loteId: null });
+    renderDialog([], BASE_COM_FOTO);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Trocar categoria' }));
+    await userEvent.type(screen.getByPlaceholderText(/buscar categoria/i), 'leite infantil');
+    await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
+    await waitFor(() => expect(screen.getByText('Leite Infantil')).toBeInTheDocument());
+    await userEvent.click(screen.getByText('Leite Infantil'));
+
+    expect(screen.getByText(/Categoria: Leite Infantil/)).toBeInTheDocument();
+    expect(buscarCategoriaMLMock).toHaveBeenCalledWith('familia-base-1', 'leite infantil');
+
+    await avancarECriar();
+
+    await waitFor(() => expect(criarKitVinculadoMock).toHaveBeenCalled());
+    const chamada = criarKitVinculadoMock.mock.calls[0][0] as { categoriaOverride?: unknown };
+    expect(chamada.categoriaOverride).toEqual({ categoriaMlId: 'MLB999', categoriaNome: 'Leite Infantil' });
+  });
+
+  it('"×" no chip remove o override — volta a herdar a categoria da base', async () => {
+    buscarCategoriaMLMock.mockResolvedValue({
+      candidatos: [{ categoriaId: 'MLB999', categoriaNome: 'Leite Infantil', domainName: '' }],
+      sugestaoConcorrente: null,
+    });
+    renderDialog([], BASE_COM_FOTO);
+    await userEvent.click(screen.getByRole('button', { name: 'Trocar categoria' }));
+    await userEvent.type(screen.getByPlaceholderText(/buscar categoria/i), 'leite');
+    await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
+    await waitFor(() => screen.getByText('Leite Infantil'));
+    await userEvent.click(screen.getByText('Leite Infantil'));
+    expect(screen.getByText(/Categoria: Leite Infantil/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remover categoria escolhida' }));
+    expect(screen.queryByText(/Categoria: Leite Infantil/)).not.toBeInTheDocument();
   });
 });

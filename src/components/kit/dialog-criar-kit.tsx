@@ -8,10 +8,12 @@ import { toast } from 'sonner';
 import { RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
-import { QK, type KitVinculado } from '@/lib/queries';
+import { QK, buscarCategoriaML, type KitVinculado } from '@/lib/queries';
+import type { CategoriaCandidata } from '@/lib/tipos-dominio';
 import { supabase } from '@/lib/supabase';
 import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
@@ -44,6 +46,11 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
   const [marcados, setMarcados] = useState<Set<number>>(new Set());
   const [chaves, setChaves] = useState<Record<number, string>>({});
   const [valores, setValores] = useState<Record<number, KitPreviewValue>>({});
+  const [categoriaOverride, setCategoriaOverride] = useState<{ categoriaMlId: string; categoriaNome: string } | null>(null);
+  const [buscaCategoriaAberta, setBuscaCategoriaAberta] = useState(false);
+  const [queryCategoria, setQueryCategoria] = useState('');
+  const [candidatosCategoria, setCandidatosCategoria] = useState<CategoriaCandidata[]>([]);
+  const [buscandoCategoria, setBuscandoCategoria] = useState(false);
 
   // Reset ao abrir: chaves e valores novos por sessão de diálogo (as chaves só trocam
   // depois de sucesso confirmado, nunca durante a edição).
@@ -53,7 +60,24 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
     setMarcados(new Set());
     setChaves({});
     setValores({});
+    setCategoriaOverride(null);
+    setBuscaCategoriaAberta(false);
+    setQueryCategoria('');
+    setCandidatosCategoria([]);
   }, [open]);
+
+  async function buscarCategoria() {
+    if (!queryCategoria.trim()) return;
+    setBuscandoCategoria(true);
+    try {
+      const r = await buscarCategoriaML(familiaBaseId, queryCategoria);
+      setCandidatosCategoria(r.candidatos);
+    } catch (e) {
+      toast.error('Erro ao buscar categoria', { description: (e as Error).message });
+    } finally {
+      setBuscandoCategoria(false);
+    }
+  }
 
   function alternarTamanho(n: number, marcar: boolean) {
     setMarcados((prev) => {
@@ -118,7 +142,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
         };
       }));
 
-      return criarKitVinculado({ familiaBaseId, kits });
+      return criarKitVinculado({ familiaBaseId, kits, categoriaOverride });
     },
     onSuccess: (r) => {
       if (!r.ok) {
@@ -210,6 +234,53 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
               : `Confira e ajuste ${tamanhosMarcados.length > 1 ? `os ${tamanhosMarcados.length} kits` : 'o kit'} antes de criar — é a revisão inteira, não passa por outra tela.`}
           </DialogDescription>
         </DialogHeader>
+
+        <div className="flex flex-col gap-1.5">
+          {categoriaOverride ? (
+            <div className="flex items-center gap-1.5 text-xs">
+              <span>Categoria: {categoriaOverride.categoriaNome}</span>
+              <Button
+                type="button" variant="ghost" size="sm" className="h-5 px-1"
+                aria-label="Remover categoria escolhida"
+                onClick={() => { setCategoriaOverride(null); setCandidatosCategoria([]); setQueryCategoria(''); }}
+              >
+                ×
+              </Button>
+            </div>
+          ) : !buscaCategoriaAberta ? (
+            <Button type="button" variant="outline" size="sm" className="h-7 w-fit text-xs" onClick={() => setBuscaCategoriaAberta(true)}>
+              Trocar categoria
+            </Button>
+          ) : (
+            <div className="flex flex-col gap-1.5">
+              <div className="flex gap-1">
+                <Input
+                  className="h-8 text-xs"
+                  placeholder="Buscar categoria (ex.: leite infantil)"
+                  value={queryCategoria}
+                  onChange={(e) => setQueryCategoria(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && buscarCategoria()}
+                />
+                <Button type="button" size="sm" className="h-8 px-2" onClick={buscarCategoria} disabled={buscandoCategoria}>
+                  Buscar
+                </Button>
+              </div>
+              {candidatosCategoria.map((c) => (
+                <button
+                  key={c.categoriaId}
+                  type="button"
+                  onClick={() => {
+                    setCategoriaOverride({ categoriaMlId: c.categoriaId, categoriaNome: c.categoriaNome });
+                    setBuscaCategoriaAberta(false);
+                  }}
+                  className="rounded-md border p-1.5 text-left text-xs hover:bg-accent"
+                >
+                  {c.categoriaNome}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {etapa === 'tamanhos' ? (
           <div className="flex flex-col gap-2">

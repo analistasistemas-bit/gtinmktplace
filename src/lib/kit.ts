@@ -203,6 +203,7 @@ export function contarKitsAguardandoPorPai(kits: KitVinculado[]): Map<string, nu
 
 export async function criarKitVinculado(p: {
   familiaBaseId: string; kits: KitFormValues[];
+  categoriaOverride?: { categoriaMlId: string; categoriaNome: string } | null;
 }): Promise<ResultadoCriarKit> {
   const { data, error } = await supabase.functions.invoke('criar-kit-vinculado', {
     body: {
@@ -214,6 +215,9 @@ export async function criarKitVinculado(p: {
         altura_cm: k.alturaCm, largura_cm: k.larguraCm, comprimento_cm: k.comprimentoCm,
         atacado: k.atacado,
       })),
+      categoria_override: p.categoriaOverride
+        ? { categoria_ml_id: p.categoriaOverride.categoriaMlId, categoria_nome: p.categoriaOverride.categoriaNome }
+        : null,
     },
   });
   if (error) {
