@@ -1177,7 +1177,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
   rejeitado pelo ML com 403 `blocked_by_cancelled_order`), persiste `order_status = 'cancelled'` em
   `ml_mensagens` (e `ml_vendas`) e responde HTTP 409 estruturado (`codigo: 'pedido_cancelado'`). Reusa
   `sugerir-resposta-pergunta` para a sugestão de IA (ADR-0067). `pack_id` validado (`/^\d+$/`) antes de
-  entrar na query `.or()` de `resolverMetaPack` (plan 037).
+  entrar na query `.or()` de `resolverMetaPack` (plan 037). Se o ML rejeitar com 403
+  `blocked_by_mediation` (reclamação em mediação bloqueia o chat pós-venda), devolve 502 com a
+  orientação de responder dentro da reclamação — o app não tem acesso ao canal de mediação.
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
