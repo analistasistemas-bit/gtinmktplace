@@ -17,6 +17,8 @@ const BASE: BaseParaKit = {
   comprimentoCm: 3,
   fotoPath: null, // sem network no teste: useImageUrl(null) fica `enabled: false`
   estoque: 30,
+  categoriaMlId: 'MLB1000',
+  categoriaNome: 'Fitas Adesivas',
 };
 
 function Wrapper({ n, inicial }: { n: number; inicial: Partial<KitPreviewValue> }) {

@@ -153,6 +153,9 @@ export interface BaseParaKit {
   comprimentoCm: number | null;
   fotoPath: string | null;
   estoque: number | null;
+  /** Categoria em que o produto-base está hoje — é a que o kit herda quando não há override. */
+  categoriaMlId: string | null;
+  categoriaNome: string | null;
 }
 
 export interface KitFormValues {

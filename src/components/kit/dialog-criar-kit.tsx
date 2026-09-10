@@ -13,6 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { QK, buscarCategoriaML, type KitVinculado } from '@/lib/queries';
+import { caminhoCategoriaML } from '@/lib/caminho-categoria-ml';
 import type { CategoriaCandidata } from '@/lib/tipos-dominio';
 import { supabase } from '@/lib/supabase';
 import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
@@ -31,6 +32,33 @@ const MENSAGEM_POR_MOTIVO: Record<string, string> = {
   base_sem_custo: 'Cadastre o custo do produto-base antes de criar kits (o custo do kit é derivado dele).',
   kit_duplicado: 'Já existe um kit desse tamanho para este produto.',
 };
+
+/**
+ * Categoria com o caminho inteiro do ML (`Bebês › Alimentação › Leite em Pó`). O caminho chega
+ * por rede e é decoração: enquanto não chega — ou se falhar — mostra só o nome da categoria,
+ * que já veio do banco/da busca. A folha fica em nó próprio para continuar clicável/legível.
+ */
+function CaminhoCategoria({ categoriaId, nome }: { categoriaId: string | null; nome: string | null }) {
+  const [caminho, setCaminho] = useState<string[]>([]);
+
+  useEffect(() => {
+    setCaminho([]);
+    if (!categoriaId) return;
+    let vivo = true;
+    void caminhoCategoriaML(categoriaId).then((c) => { if (vivo) setCaminho(c); });
+    return () => { vivo = false; };
+  }, [categoriaId]);
+
+  if (!categoriaId && !nome) return <span className="text-muted-foreground">ainda não definida</span>;
+  const ancestrais = caminho.slice(0, -1);
+  const folha = caminho.at(-1) ?? nome ?? '';
+  return (
+    <span>
+      {ancestrais.length > 0 && <span className="text-muted-foreground">{ancestrais.join(' › ')} › </span>}
+      <span className="font-medium">{folha}</span>
+    </span>
+  );
+}
 
 export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOpenChange }: {
   familiaBaseId: string;
@@ -236,9 +264,22 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
         </DialogHeader>
 
         <div className="flex flex-col gap-1.5">
+          {/* Categoria de origem sempre visível: é ela que o kit herda quando não há override
+              (achado do Diego, 10/09/2026 — sem isso a troca é às cegas). */}
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+            <span className="text-muted-foreground">Categoria do produto:</span>
+            <CaminhoCategoria categoriaId={base.categoriaMlId} nome={base.categoriaNome} />
+            {!categoriaOverride && !buscaCategoriaAberta && (
+              <Button type="button" variant="outline" size="sm" className="ml-auto h-7 text-xs" onClick={() => setBuscaCategoriaAberta(true)}>
+                Trocar categoria
+              </Button>
+            )}
+          </div>
+
           {categoriaOverride ? (
             <div className="flex items-center gap-1.5 text-xs">
-              <span>Categoria: {categoriaOverride.categoriaNome}</span>
+              <span className="text-muted-foreground">Categoria do kit:</span>
+              <CaminhoCategoria categoriaId={categoriaOverride.categoriaMlId} nome={categoriaOverride.categoriaNome} />
               <Button
                 type="button" variant="ghost" size="sm" className="h-5 px-1"
                 aria-label="Remover categoria escolhida"
@@ -247,11 +288,7 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                 ×
               </Button>
             </div>
-          ) : !buscaCategoriaAberta ? (
-            <Button type="button" variant="outline" size="sm" className="h-7 w-fit text-xs" onClick={() => setBuscaCategoriaAberta(true)}>
-              Trocar categoria
-            </Button>
-          ) : (
+          ) : buscaCategoriaAberta ? (
             <div className="flex flex-col gap-1.5">
               <div className="flex gap-1">
                 <Input
@@ -275,11 +312,11 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                   }}
                   className="rounded-md border p-1.5 text-left text-xs hover:bg-accent"
                 >
-                  {c.categoriaNome}
+                  <CaminhoCategoria categoriaId={c.categoriaId} nome={c.categoriaNome} />
                 </button>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
 
         {etapa === 'tamanhos' ? (

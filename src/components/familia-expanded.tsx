@@ -67,6 +67,8 @@ function baseParaKit(f: Familia): BaseParaKit {
     comprimentoCm: v?.comprimentoCm ?? null,
     fotoPath: f.capaStoragePath ?? v?.fotoPath ?? null,
     estoque: v?.estoque ?? null,
+    categoriaMlId: f.categoriaMlId,
+    categoriaNome: f.categoriaNome,
   };
 }
 

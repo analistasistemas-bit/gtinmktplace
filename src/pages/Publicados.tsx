@@ -168,6 +168,8 @@ function baseParaKit(f: Familia, precoAtual: number): BaseParaKit {
     // dali); a foto da variação é só o fallback quando a família não tem capa própria.
     fotoPath: f.capaStoragePath ?? v?.fotoPath ?? null,
     estoque: v?.estoque ?? null,
+    categoriaMlId: f.categoriaMlId,
+    categoriaNome: f.categoriaNome,
   };
 }
 

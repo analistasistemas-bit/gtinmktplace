@@ -38,6 +38,13 @@ vi.mock('@/lib/queries', async (importOriginal) => {
   return { ...actual, buscarCategoriaML: (...args: unknown[]) => buscarCategoriaMLMock(...args) };
 });
 
+// O caminho completo da categoria vem de um GET público na API do ML — sem mock, cada render
+// tentaria rede real (verde na máquina do dev, vermelho no CI sem egresso).
+const caminhoCategoriaMLMock = vi.fn(async (_id: string) => [] as string[]);
+vi.mock('@/lib/caminho-categoria-ml', () => ({
+  caminhoCategoriaML: (id: string) => caminhoCategoriaMLMock(id),
+}));
+
 // subirFoto (via uploadFile/@/lib/storage) e useImageUrl chamam supabase direto — sem mockar,
 // o teste do fluxo de criação bateria na rede real.
 vi.mock('@/lib/supabase', () => ({
@@ -71,6 +78,8 @@ const BASE: BaseParaKit = {
   comprimentoCm: 3,
   fotoPath: null,
   estoque: 30,
+  categoriaMlId: 'MLB1000',
+  categoriaNome: 'Fitas Adesivas',
 };
 
 function kit(multiplicador: number, status: KitVinculado['status'], criadoEm: string, overrides: Partial<KitVinculado> = {}): KitVinculado {
@@ -245,7 +254,8 @@ describe('Trocar categoria', () => {
     await waitFor(() => expect(screen.getByText('Leite Infantil')).toBeInTheDocument());
     await userEvent.click(screen.getByText('Leite Infantil'));
 
-    expect(screen.getByText(/Categoria: Leite Infantil/)).toBeInTheDocument();
+    expect(screen.getByText('Categoria do kit:')).toBeInTheDocument();
+    expect(screen.getByText('Leite Infantil')).toBeInTheDocument();
     expect(buscarCategoriaMLMock).toHaveBeenCalledWith('familia-base-1', 'leite infantil');
 
     await avancarECriar();
@@ -266,9 +276,42 @@ describe('Trocar categoria', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
     await waitFor(() => screen.getByText('Leite Infantil'));
     await userEvent.click(screen.getByText('Leite Infantil'));
-    expect(screen.getByText(/Categoria: Leite Infantil/)).toBeInTheDocument();
+    expect(screen.getByText('Categoria do kit:')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Remover categoria escolhida' }));
-    expect(screen.queryByText(/Categoria: Leite Infantil/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Categoria do kit:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Leite Infantil')).not.toBeInTheDocument();
+  });
+
+  it('mostra o caminho completo da categoria da base e o de cada candidato da busca', async () => {
+    caminhoCategoriaMLMock.mockImplementation(async (id: string) => (
+      id === 'MLB1000'
+        ? ['Casa, Móveis e Decoração', 'Materiais de Escritório', 'Fitas Adesivas']
+        : ['Alimentos e Bebidas', 'Mercearia', 'Leite Infantil']
+    ));
+    buscarCategoriaMLMock.mockResolvedValue({
+      candidatos: [{ categoriaId: 'MLB999', categoriaNome: 'Leite Infantil', domainName: '' }],
+      sugestaoConcorrente: null,
+    });
+    renderDialog([], BASE_COM_FOTO);
+
+    // Cenário 1: a categoria em que o produto-base está hoje, com o caminho inteiro.
+    expect(screen.getByText('Categoria do produto:')).toBeInTheDocument();
+    await waitFor(() => expect(
+      screen.getByText(/Casa, Móveis e Decoração › Materiais de Escritório/),
+    ).toBeInTheDocument());
+
+    // Cenário 2: cada resultado da busca também com o caminho inteiro.
+    await userEvent.click(screen.getByRole('button', { name: 'Trocar categoria' }));
+    await userEvent.type(screen.getByPlaceholderText(/buscar categoria/i), 'leite infantil');
+    await userEvent.click(screen.getByRole('button', { name: 'Buscar' }));
+    await waitFor(() => expect(
+      screen.getByText(/Alimentos e Bebidas › Mercearia/),
+    ).toBeInTheDocument());
+  });
+
+  it('sem categoria definida na base, avisa em vez de mostrar linha vazia', async () => {
+    renderDialog([], { ...BASE_COM_FOTO, categoriaMlId: null, categoriaNome: null });
+    expect(screen.getByText('ainda não definida')).toBeInTheDocument();
   });
 });
