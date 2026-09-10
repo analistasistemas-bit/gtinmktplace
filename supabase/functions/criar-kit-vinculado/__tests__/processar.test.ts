@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, it, expect, vi } from 'vitest';
 import {
-  criarKitsVinculados, montarFamiliaKit, type CriarKitDeps, type CriarKitInput, type KitSolicitado,
+  criarKitsVinculados, montarFamiliaKit, mensagemFaltantes,
+  type CriarKitDeps, type CriarKitInput, type KitSolicitado,
 } from '../processar.ts';
 import { aplicarKitNosAtributos } from '../../_shared/categoria/atributos.ts';
 
@@ -781,6 +782,32 @@ describe('criarKitsVinculados', () => {
     expect(r.ok).toBe(false);
     expect(r.motivo).toBe('atributos_faltantes');
     expect(inserts.familias).toHaveLength(0);
+    // A mensagem é a ÚNICA orientação que o operador recebe: o diálogo do kit não tem o editor
+    // "Complete para publicar" da Revisão (ADR-0151 D-3/D-4). Precisa dizer qual atributo, quais
+    // valores a categoria aceita e o que fazer — sem isso o operador só sabe que "falhou".
+    expect(r.mensagem).toContain('Modelo obrigatório');
+    expect(r.mensagem).toContain('Opção 1');
+    expect(r.mensagem).toContain('título ou na descrição do produto-base');
+  });
+
+  it('falha ao validar (schema/IA indisponível) não vira "falta o atributo X" — a mensagem manda tentar de novo', async () => {
+    // Sentinela FALTANTE_ATRIBUTOS_NAO_VALIDADOS: schema vazio faz resolverAtributosGenericos
+    // engolir o erro e devolver o marcador. Dizer "exige atributos que o título não informa" aqui
+    // mandaria o operador editar o produto por um problema de rede — o produto não tem culpa.
+    const { deps, inserts } = depsFake({
+      schemaPorCategoria: { 'MLB123': SCHEMA_SEM_KIT, 'MLB-OVERRIDE': [] },
+      llm: vi.fn(async () => ({})),
+    });
+    const input: CriarKitInput = {
+      familiaBaseId: BASE_ID, kits: [kitPadrao(2)],
+      categoriaOverride: { categoriaMlId: 'MLB-OVERRIDE', categoriaNome: 'Categoria sem schema' },
+    };
+    const r = await criarKitsVinculados(deps, input);
+    expect(r.ok).toBe(false);
+    expect(r.motivo).toBe('atributos_faltantes');
+    expect(r.mensagem).toContain('Tente criar o kit de novo');
+    expect(r.mensagem).not.toContain('título ou na descrição');
+    expect(inserts.familias).toHaveLength(0);
   });
 
   it('categoriaOverride com SALE_FORMAT required no schema novo: não é falso-faltante (aplicarKitNosAtributos força o valor um passo depois)', async () => {
@@ -797,5 +824,35 @@ describe('criarKitsVinculados', () => {
     expect(r.ok).toBe(true);
     const atributos = inserts.familias[0].atributos_ml as { id: string; value_id?: string }[];
     expect(atributos.find((a) => a.id === 'SALE_FORMAT')?.value_id).toBe('V-KIT');
+  });
+});
+
+describe('mensagemFaltantes', () => {
+  const attr = (id: string, nome: string, valores: { id: string; nome: string }[] = []) => ({
+    id, nome, valueType: 'string', valores, allowedUnits: [], tags: [],
+    required: true, conditionalRequired: false,
+  });
+
+  it('anexa os valores aceitos quando a categoria os declara', () => {
+    const m = mensagemFaltantes(['Formato da fórmula infantil'], [
+      attr('BABY_FORMULA_FORMAT', 'Formato da fórmula infantil', [
+        { id: '1358247', nome: 'Em pó' }, { id: '1358248', nome: 'Líquida' },
+      ]),
+    ]);
+    expect(m).toContain('Formato da fórmula infantil (Em pó, Líquida)');
+  });
+
+  it('atributo sem lista de valores aparece só pelo nome, sem parênteses vazio', () => {
+    const m = mensagemFaltantes(['Peso líquido'], [attr('NET_WEIGHT', 'Peso líquido')]);
+    expect(m).toContain('Peso líquido.');
+    expect(m).not.toContain('()');
+  });
+
+  it('lista longa é cortada — a mensagem cabe num toast, não é o catálogo da categoria', () => {
+    const valores = Array.from({ length: 20 }, (_, i) => ({ id: String(i), nome: `Opção ${i}` }));
+    const m = mensagemFaltantes(['Sabor'], [attr('FLAVOR', 'Sabor', valores)]);
+    expect(m).toContain('Opção 5');
+    expect(m).not.toContain('Opção 6');
+    expect(m).toContain('…');
   });
 });

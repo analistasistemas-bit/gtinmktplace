@@ -254,6 +254,29 @@ async function reservarCodigos(
   return { pares };
 }
 
+/**
+ * Erro do gate de faltantes com o que o operador precisa para agir: além do nome do atributo, os
+ * valores que a categoria aceita (quando são poucos e conhecidos) e a saída — o kit não tem tela de
+ * "Complete para publicar" como a Revisão (ADR-0151 D-3/D-4), então a mensagem é a única orientação.
+ * Casa o nome vindo de `atributosFaltantesGenerico` (que devolve `a.nome`, não o id) com o schema;
+ * ponytail: em empate de nome pega o primeiro — só afeta quais exemplos são exibidos.
+ */
+export function mensagemFaltantes(faltantes: string[], schema: AtributoSchema[]): string {
+  const MAX_EXEMPLOS = 6;
+  const porNome = new Map<string, AtributoSchema>();
+  for (const s of schema) if (!porNome.has(s.nome)) porNome.set(s.nome, s);
+
+  const detalhe = faltantes.map((nome) => {
+    const valores = porNome.get(nome)?.valores ?? [];
+    if (valores.length === 0) return nome;
+    const exemplos = valores.slice(0, MAX_EXEMPLOS).map((v) => v.nome).join(', ');
+    return `${nome} (${exemplos}${valores.length > MAX_EXEMPLOS ? ', …' : ''})`;
+  }).join('; ');
+
+  return `A categoria escolhida exige atributos que o título e a descrição do produto-base não informam: ${detalhe}. `
+    + 'Inclua essa informação no título ou na descrição do produto-base e tente de novo, ou escolha outra categoria.';
+}
+
 export async function criarKitsVinculados(
   deps: CriarKitDeps, input: CriarKitInput,
 ): Promise<ResultadoCriarKits> {
@@ -459,7 +482,9 @@ export async function criarKitsVinculados(
       if (faltantesKit.length > 0) {
         return {
           ok: false, motivo: 'atributos_faltantes',
-          mensagem: `A categoria escolhida exige atributos que não foram resolvidos: ${faltantesKit.join(', ')}.`,
+          mensagem: faltantesSentinela
+            ? 'Não foi possível validar os atributos desta categoria agora — a consulta ao Mercado Livre ou à IA falhou. Tente criar o kit de novo em instantes.'
+            : mensagemFaltantes(faltantesKit, schema),
         };
       }
     }
