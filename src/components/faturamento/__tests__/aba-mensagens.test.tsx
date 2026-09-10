@@ -188,4 +188,16 @@ describe('AbaMensagens', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagens'] });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
   });
+
+  it('Dispensar que nao alcanca nenhuma linha avisa em vez de dizer que dispensou', async () => {
+    // A RPC filtra por user_id; a sessao de suporte enxerga a conversa por org_id e recebe 0.
+    dispensarConversaMock.mockResolvedValueOnce(0);
+
+    renderAba();
+    const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+    await userEvent.click(within(card).getByRole('button', { name: /dispensar/i }));
+
+    expect(toast.info).toHaveBeenCalledWith('Nenhuma mensagem para dispensar nesta conversa.');
+    expect(toast.success).not.toHaveBeenCalled();
+  });
 });
