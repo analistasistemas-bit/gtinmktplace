@@ -806,3 +806,37 @@ Decisões:
   foi parcial em vez de fingir cobertura.
 - **A função não age.** Encerrar ou re-vincular um órfão é decisão do operador, feita no ML: o app não
   mexe em anúncio que não conhece.
+
+### Correção (2026-09-10, mesmo dia) — a varredura acusava anúncio de CATÁLOGO como órfão
+
+Erro meu, pego pelo Diego ("esses anúncios são de catálogo"). A primeira versão da varredura subtraía
+4 fontes de id e reportou 13 "anúncios fantasmas" na conta DSA — 10 eram anúncios de CATÁLOGO
+saudáveis, registrados em `variacoes.catalog_listing_id` com status `vinculado`, um deles com 20
+vendas. A proposta que tirei disso (encerrar os duplicados) teria matado anúncio legítimo que vende.
+
+O ML cria, a partir do anúncio do app, um item PRÓPRIO para competir na ficha — com MLB próprio e
+herdando o mesmo `seller_custom_field`. Ou seja: nem o id nem o código distinguem catálogo de
+fantasma. Só `catalog_listing` (no item) e as colunas de vínculo (no banco).
+
+Fontes que faltavam (levantadas na revisão do Fable, verificadas em migration + código):
+
+| Fonte | Por quê |
+|---|---|
+| `variacoes.catalog_listing_id` | anúncio de catálogo Legacy (ADR-0021) |
+| `anuncios_externos_itens.catalog_listing_id` | anúncio de catálogo User Products (ADR-0088 F2) |
+| `anuncios_externos.ml_item_id_anterior` | item pré-migração PxV (ADR-0161) — fica ativo se a migração parar em `_pending` |
+
+`catalog_product_id` continua FORA: é id de FICHA, não de anúncio.
+
+O resultado agora é classificado no servidor, porque a lista crua é ruído: `perdido_do_app` (código do
+app e não é catálogo — o caso acionável), `catalogo_sem_vinculo` (é catálogo, o app não guardou o
+vínculo: NÃO encerrar), `externo` (nunca foi do PubliAI: só contagem, oculto). Pausado com código do
+app ganha marca à parte — é o resultado esperado de "Remover", não pendência.
+
+Medição depois do fix, contas reais: DSA saiu de 26 desconhecidos para 10 (1 perdido de verdade, 0
+vendas); Avil, de 313 para 25 (nenhum perdido).
+
+Premissa errada que sustentava o alarme, registrada para não se repetir: a varredura prova "id fora do
+conjunto conhecido" e nada além disso. Ela NÃO prova venda fora de controle nem estoque errado — a
+conciliação de venda é outra cadeia (catálogo + fallback por GTIN). E a função é só-leitura: propor
+encerrar anúncio a partir dela foi erro de julgamento, não de código.

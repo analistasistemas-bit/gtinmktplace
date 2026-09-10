@@ -9,7 +9,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { listarIdsDoSeller, detalharItens } from '../_shared/ml/varrer-itens.ts';
+import { listarIdsDoSeller, detalharItens, classificar } from '../_shared/ml/varrer-itens.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
@@ -47,6 +47,28 @@ async function idsConhecidos(admin: ReturnType<typeof adminClient>, orgId: strin
   const kits = await paginarTudo<{ ml_item_id: string | null }>((de, ate) =>
     admin.from('kits_virtuais').select('ml_item_id').eq('org_id', orgId).not('ml_item_id', 'is', null).range(de, ate));
   for (const l of kits) add(l.ml_item_id);
+
+  // ANÚNCIO DE CATÁLOGO (ADR-0021 / ADR-0088 F2). O ML cria um item PRÓPRIO, com MLB próprio, a
+  // partir do anúncio do app — herdando inclusive o `seller_custom_field`. Sem estas duas fontes a
+  // varredura acusa como "órfão" todo anúncio de catálogo saudável da conta: foi o falso alarme de
+  // 2026-09-10, em que 10 de 13 "fantasmas" eram catálogo `vinculado`. `catalog_product_id` NÃO
+  // entra: é id de FICHA, não de anúncio.
+  const catalogoLegacy = await paginarTudo<{ catalog_listing_id: string | null }>((de, ate) =>
+    admin.from('variacoes').select('catalog_listing_id, familias!inner(org_id)')
+      .eq('familias.org_id', orgId).not('catalog_listing_id', 'is', null).range(de, ate));
+  for (const l of catalogoLegacy) add(l.catalog_listing_id);
+
+  const catalogoUP = await paginarTudo<{ catalog_listing_id: string | null }>((de, ate) =>
+    admin.from('anuncios_externos_itens').select('catalog_listing_id').eq('org_id', orgId)
+      .not('catalog_listing_id', 'is', null).range(de, ate));
+  for (const l of catalogoUP) add(l.catalog_listing_id);
+
+  // Migração para preço por variação (ADR-0161): o item antigo normalmente vira `closed`, mas uma
+  // migração parada em `_pending` deixa ele ATIVO — e ele é conhecido, não órfão.
+  const anteriores = await paginarTudo<{ ml_item_id_anterior: string | null }>((de, ate) =>
+    admin.from('anuncios_externos').select('ml_item_id_anterior').eq('org_id', orgId)
+      .not('ml_item_id_anterior', 'is', null).range(de, ate));
+  for (const l of anteriores) add(l.ml_item_id_anterior);
 
   return conhecidos;
 }
@@ -87,6 +109,11 @@ Deno.serve(async (req) => {
       orfaos: detalhes.map((i) => ({
         ml_item_id: i.id, titulo: i.titulo, status: i.status,
         permalink: i.permalink, estoque: i.estoque, sku: i.sku,
+        classe: classificar(i),
+        // Pausado com código do app é, quase sempre, resultado ESPERADO de "Remover" — que pausa no
+        // ML e zera o vínculo de propósito (remover-publicado). Marcar aqui evita que a tela
+        // apresente como pendência algo que o próprio operador mandou fazer.
+        provavel_remocao_pelo_app: i.status === 'paused' && classificar(i) === 'perdido_do_app',
       })),
       total_no_ml: todos.length,
       truncado,
