@@ -17,11 +17,18 @@ export interface MetaPack {
 export const ERRO_PEDIDO_CANCELADO = 'Não é possível responder porque o pedido foi cancelado.';
 export const CODIGO_PEDIDO_CANCELADO = 'pedido_cancelado';
 
+// O ML bloqueia o chat pós-venda enquanto há reclamação em mediação; a resposta só sai por lá.
+export const ERRO_EM_MEDIACAO =
+  'o pedido está em mediação no Mercado Livre. Responda dentro da reclamação, no próprio ML.';
+
 export const pedidoCancelado = (status: string | null | undefined): boolean => status === 'cancelled';
 
 export function mensagemErroEnvioML(status: number, corpo: string): string {
   if (status === 403 && corpo.includes('blocked_by_cancelled_order')) {
     return ERRO_PEDIDO_CANCELADO;
+  }
+  if (status === 403 && corpo.includes('blocked_by_mediation')) {
+    return ERRO_EM_MEDIACAO;
   }
   return `ML /messages ${status}: ${corpo.slice(0, 200)}`;
 }

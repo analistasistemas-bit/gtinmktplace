@@ -4,6 +4,7 @@ import {
   ERRO_PEDIDO_CANCELADO,
   marcarConversaCancelada,
   mensagemErroEnvioML,
+  ERRO_EM_MEDIACAO,
   pedidoCancelado,
   resolverMetaPack,
   responderMensagemPedido,
@@ -250,6 +251,10 @@ describe('regras de envio pós-venda', () => {
       403,
       '{"code":"forbidden","message":"blocked_by_cancelled_order"}',
     )).toBe('Não é possível responder porque o pedido foi cancelado.');
+    expect(mensagemErroEnvioML(
+      403,
+      '{"status_code":403,"code":"forbidden","message":"blocked_by_mediation","stacktrace":null}',
+    )).toBe(ERRO_EM_MEDIACAO);
     expect(mensagemErroEnvioML(429, 'Too many requests')).toMatch(/ML \/messages 429/);
   });
 });
