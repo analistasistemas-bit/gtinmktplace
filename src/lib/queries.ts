@@ -1204,16 +1204,20 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
 async function fetchPublicacoesIncompletas(codigosPublicados: Set<string>): Promise<PublicadoItem[]> {
   const { data: raizes, error } = await supabase
     .from('anuncios_externos')
-    .select('codigo_pai, item_externo_id, permalink, titulo, publicado_em, anuncios_externos_itens(sku, item_externo_id, permalink)')
+    .select('codigo_pai, permalink, titulo, publicado_em, anuncios_externos_itens(sku, item_externo_id, permalink)')
     .eq('canal', 'mercado_livre');
   if (error) throw error;
 
-  // id do anúncio: o da raiz (Legacy na janela `criacao_incerta`) ou, em UP, o do filho de MENOR sku
-  // — determinístico de propósito: `mlItemId` é a key da linha, e escolher "o primeiro que vier"
-  // faria a linha trocar de identidade entre carregamentos (achado da revisão do Fable).
+  // SÓ filhos User Products (achado da revisão do Fable): `remover-publicado` aceita família sem
+  // `ml_item_id` exatamente quando existe filho com `item_externo_id`. Uma linha montada a partir de
+  // raiz Legacy sem filhos ganharia um "Remover" que o backend recusa com 400 — prometer ação que
+  // não funciona é pior que não mostrar a linha.
+  //
+  // O id é o do filho de MENOR sku, determinístico de propósito: `mlItemId` é a key da linha, e
+  // "o primeiro que vier" faria a linha trocar de identidade entre carregamentos.
   const remotoPorCodigo = new Map<string, { id: string; permalink: string | null; titulo: string | null; publicadoEm: string | null }>();
   for (const r of (raizes ?? []) as Array<{
-    codigo_pai: string; item_externo_id: string | null; permalink: string | null;
+    codigo_pai: string; permalink: string | null;
     titulo: string | null; publicado_em: string | null;
     anuncios_externos_itens?: Array<{ sku: string; item_externo_id: string | null; permalink: string | null }>;
   }>) {
@@ -1221,12 +1225,10 @@ async function fetchPublicacoesIncompletas(codigosPublicados: Set<string>): Prom
     const filhos = (r.anuncios_externos_itens ?? [])
       .filter((f): f is { sku: string; item_externo_id: string; permalink: string | null } => !!f.item_externo_id)
       .sort((a, b) => a.sku.localeCompare(b.sku));
-    const escolhido = r.item_externo_id
-      ? { id: r.item_externo_id, permalink: r.permalink }
-      : filhos[0] ? { id: filhos[0].item_externo_id, permalink: filhos[0].permalink } : null;
-    if (!escolhido) continue;
+    if (filhos.length === 0) continue;
     remotoPorCodigo.set(r.codigo_pai, {
-      id: escolhido.id, permalink: escolhido.permalink, titulo: r.titulo, publicadoEm: r.publicado_em,
+      id: filhos[0].item_externo_id, permalink: filhos[0].permalink ?? r.permalink,
+      titulo: r.titulo, publicadoEm: r.publicado_em,
     });
   }
   if (remotoPorCodigo.size === 0) return [];
@@ -1235,7 +1237,11 @@ async function fetchPublicacoesIncompletas(codigosPublicados: Set<string>): Prom
     .from('familias')
     .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
     .in('codigo_pai', [...remotoPorCodigo.keys()])
-    .is('ml_item_id', null);
+    .is('ml_item_id', null)
+    // Publicação EM VOO não é incidente (achado da revisão do Fable): na saga UP os filhos ganham
+    // `item_externo_id` antes de `familias.ml_item_id`, e essa janela dura minutos. Sem este filtro
+    // todo produto sendo publicado agora apareceria em vermelho como pendência.
+    .neq('status', 'publicando');
   if (famErr) throw famErr;
 
   const porCodigo = new Map<string, FamiliaRow & { variacoes: VariacaoPub[] }>();

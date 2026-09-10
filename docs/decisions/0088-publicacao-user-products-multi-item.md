@@ -773,9 +773,14 @@ Três decisões que valem registro:
   (`status-publicados` já une os ids dos filhos) e o link leva ao anúncio certo.
 - **Só "Remover" é oferecido.** Republicar daqui é justamente o que duplica; pausar/reativar, migrar
   para preço por variação, catálogo e fiscal pressupõem publicação concluída.
-- **Guard contra falso-vermelho** (revisão do Fable): só entra o `codigo_pai` que NÃO tem nenhuma
-  família publicada. Uma linha sem `ml_item_id` ao lado de uma publicada é ciclo de UPDATE normal —
-  sem isso, todo lote em publicação apareceria como incidente.
+- **Dois guards contra falso-vermelho** (revisão do Fable): só entra o `codigo_pai` que NÃO tem
+  nenhuma família publicada (uma linha sem `ml_item_id` ao lado de uma publicada é ciclo de UPDATE
+  normal), e famílias em `status = publicando` ficam de fora — na saga UP os filhos ganham
+  `item_externo_id` ANTES de `familias.ml_item_id`, e sem esse filtro todo produto sendo publicado
+  agora piscaria vermelho por minutos.
+- **Só filhos User Products.** A linha nasce de `anuncios_externos_itens`, nunca de raiz Legacy sem
+  filhos: `remover-publicado` aceita família sem `ml_item_id` exatamente quando existe filho com
+  id, então uma linha Legacy ganharia um "Remover" que o backend recusa com 400.
 
 ### Adendo (2026-09-10) — varredura de anúncios órfãos
 

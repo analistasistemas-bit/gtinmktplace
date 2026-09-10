@@ -10,32 +10,44 @@ import { requireUserOrg } from '../_shared/auth.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { listarIdsDoSeller, detalharItens } from '../_shared/ml/varrer-itens.ts';
+import { paginarTudo } from '../_shared/pagina.ts';
 
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
   status,
   headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 });
 
-/** Todos os ids de anúncio que o PubliAI conhece nesta org, das 4 fontes que os guardam. */
+/**
+ * Todos os ids de anúncio que o PubliAI conhece nesta org, das 4 fontes que os guardam.
+ *
+ * PAGINADO, e isso é o ponto: o PostgREST corta em ~1000 linhas SEM avisar, e tanto `familias`
+ * (uma linha por ciclo de UPDATE) quanto `anuncios_externos_itens` (uma por SKU) passam disso numa
+ * org madura. A linha 1001 viraria "id desconhecido" e o anúncio legítimo apareceria como órfão —
+ * fail-OPEN travestido de fail-closed (achado da revisão do Fable). `paginarTudo` também lança em
+ * erro de página, então uma fonte incompleta derruba a varredura em vez de inventar órfão.
+ */
 async function idsConhecidos(admin: ReturnType<typeof adminClient>, orgId: string): Promise<Set<string>> {
   const conhecidos = new Set<string>();
   const add = (v: unknown) => { if (typeof v === 'string' && v) conhecidos.add(v); };
 
-  const [familias, externos, itens, kits] = await Promise.all([
-    admin.from('familias').select('ml_item_id').eq('org_id', orgId).not('ml_item_id', 'is', null),
-    admin.from('anuncios_externos').select('item_externo_id').eq('org_id', orgId).not('item_externo_id', 'is', null),
-    admin.from('anuncios_externos_itens').select('item_externo_id').eq('org_id', orgId).not('item_externo_id', 'is', null),
-    admin.from('kits_virtuais').select('ml_item_id').eq('org_id', orgId).not('ml_item_id', 'is', null),
-  ]);
-  // Fail-closed: uma fonte que falhou tornaria seus anúncios "desconhecidos" e o operador veria
-  // dezenas de falsos órfãos — pior que não responder.
-  for (const [nome, r] of [['familias', familias], ['anuncios_externos', externos],
-    ['anuncios_externos_itens', itens], ['kits_virtuais', kits]] as const) {
-    if (r.error) throw new Error(`varredura: consultar ${nome} falhou: ${r.error.message}`);
-    for (const linha of (r.data ?? []) as Array<Record<string, unknown>>) {
-      add(linha.ml_item_id ?? linha.item_externo_id);
-    }
-  }
+  // Escritas uma a uma (e não num laço sobre nomes de tabela) porque `select` com string dinâmica
+  // apaga a inferência do supabase-js e o tipo do retorno vira `GenericStringError[]`.
+  const familias = await paginarTudo<{ ml_item_id: string | null }>((de, ate) =>
+    admin.from('familias').select('ml_item_id').eq('org_id', orgId).not('ml_item_id', 'is', null).range(de, ate));
+  for (const l of familias) add(l.ml_item_id);
+
+  const externos = await paginarTudo<{ item_externo_id: string | null }>((de, ate) =>
+    admin.from('anuncios_externos').select('item_externo_id').eq('org_id', orgId).not('item_externo_id', 'is', null).range(de, ate));
+  for (const l of externos) add(l.item_externo_id);
+
+  const itens = await paginarTudo<{ item_externo_id: string | null }>((de, ate) =>
+    admin.from('anuncios_externos_itens').select('item_externo_id').eq('org_id', orgId).not('item_externo_id', 'is', null).range(de, ate));
+  for (const l of itens) add(l.item_externo_id);
+
+  const kits = await paginarTudo<{ ml_item_id: string | null }>((de, ate) =>
+    admin.from('kits_virtuais').select('ml_item_id').eq('org_id', orgId).not('ml_item_id', 'is', null).range(de, ate));
+  for (const l of kits) add(l.ml_item_id);
+
   return conhecidos;
 }
 
