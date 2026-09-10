@@ -91,4 +91,23 @@ describe('carregarCatalogo — anúncio de catálogo (ADR-0021)', () => {
     const cat = await carregarCatalogo(admin as never, USER);
     expect(cat.codigoResolver('MLB7389260688', null)).toBe('00000029');
   });
+  // Caminho User Products (ADR-0088 §2): o listing de catálogo do filho mora em
+  // `anuncios_externos_itens.catalog_listing_id` — `variacoes.catalog_listing_id` NÃO é escrito
+  // para família UP. Prova a ponta io.ts (select + propagação p/ fundirItensUP), não só a função
+  // pura. Caso real medido na org Avil em 2026-09-10.
+  it('filho User Products: reconhece o MLB de catálogo vindo de anuncios_externos_itens', async () => {
+    const admin = criarAdminFake({
+      familias: [FAMILIA],
+      variacoes: [
+        { familia_id: 'fam-1', codigo: '00220566', gtin: '7894659007830', ml_variation_id: null, catalog_listing_id: null, custo: 10, atualizado_em: null },
+      ],
+      anuncios_externos_itens: [
+        { item_externo_id: 'MLB7580019100', sku: '00220566', catalog_listing_id: 'MLB5179297735' },
+      ],
+    });
+    const cat = await carregarCatalogo(admin as never, USER);
+    expect(cat.idsPubliai.has('MLB5179297735')).toBe(true);
+    expect(cat.codigoResolver('MLB5179297735', null)).toBe('00220566');
+    expect(cat.eanResolver('MLB5179297735', null)).toBe('7894659007830');
+  });
 });

@@ -2,6 +2,28 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Catálogo do filho User Products no faturamento + item plano no Kit Virtual — 2026-09-10
+
+Origem: Diego pediu para verificar a suspeita de que `_shared/faturamento/io.ts` tratava o
+`catalog_listing_id` de variações Legacy mas não o dos itens filhos User Products.
+
+- [x] **Achado 1 (confirmado):** `carregarCatalogo` não lia
+      `anuncios_externos_itens.catalog_listing_id`. Venda no anúncio de catálogo de um filho UP
+      ficava com `is_publiai = false`, sem código e sem custo congelado. `variacoes.catalog_listing_id`
+      nunca é escrito para família UP, então o bloco ADR-0021 existente não cobria o caso.
+      Impacto retroativo medido: **zero** (2 listings na org Avil, nenhuma venda neles).
+- [x] **Achado 2 (reformulado):** a hipótese inicial — `vinculacao.ts` perdendo o GTIN por
+      `variacao_id` nulo — **não procedia**: `resolverGtinFilho` já tem fallback por SKU. O bug real
+      estava em `buscar-componentes-kit-virtual`, que resolvia custo/origem/kit_multiplicador só por
+      `variacao_id` (NULL em 156/156 linhas). Corrigido resolvendo por `(codigo_pai, sku)`.
+- [x] Testes: +3 em `catalogo-up.test.ts`, +1 e2e em `catalogo-anuncio-catalogo.test.ts`,
+      +10 em `buscar-componentes-kit-virtual/__tests__/processar.test.ts` (inclui o caso do
+      incidente de código duplicado com `atualizado_em` idêntico).
+- [x] Deploy das 8 funções afetadas (lista derivada por `deno info`, ADR-0088 §1).
+
+Não fazer: popular `anuncios_externos_itens.variacao_id`. O ADR-0088 ("Ancoragem") define o SKU como
+identidade estável e a variação como instável entre re-ingests — a coluna é nullable de propósito.
+
 ## Botão "Migrar para preço por variação" (ADR-0161) — 2026-09-08
 
 Plano em [2026-09-08-botao-migrar-preco-por-variacao.md](superpowers/plans/2026-09-08-botao-migrar-preco-por-variacao.md).

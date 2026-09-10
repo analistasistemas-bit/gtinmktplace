@@ -139,13 +139,21 @@ export async function carregarCatalogo(admin: SupabaseClient, userId: string): P
   // venda de uma cor 2..N não é reconhecida como PubliAI (fica de fora de idsPubliai/codPorItem).
   // Escopo por org_id direto (não pelo user_id da raiz anuncios_externos, que a saga UP não seta).
   if (orgId) {
-    const itensUP = await paginarTudo<{ item_externo_id: string | null; sku: string }>(
+    const itensUP = await paginarTudo<{ item_externo_id: string | null; sku: string; catalog_listing_id: string | null }>(
       (de, ate) => admin.from('anuncios_externos_itens')
-        .select('item_externo_id, sku').eq('org_id', orgId).not('item_externo_id', 'is', null).range(de, ate),
+        // catalog_listing_id: o MLB do anúncio de catálogo do filho (ADR-0021 no caminho UP). É a
+        // única fonte dele — `variacoes.catalog_listing_id` não é escrito para família UP —, então
+        // sem esta coluna a venda de catálogo do filho só seria reconhecida pelo fallback de GTIN
+        // (venda.ts §2), que depende de um GET best-effort no ML.
+        .select('item_externo_id, sku, catalog_listing_id')
+        .eq('org_id', orgId).not('item_externo_id', 'is', null).range(de, ate),
     );
     fundirItensUP(
       { idsPubliai, codPorItem, eanPorItem, infoPorGtin },
-      itensUP.map((i) => ({ itemExternoId: i.item_externo_id as string, sku: i.sku, gtin: eanPorCodigo.get(i.sku) ?? null })),
+      itensUP.map((i) => ({
+        itemExternoId: i.item_externo_id as string, sku: i.sku,
+        gtin: eanPorCodigo.get(i.sku) ?? null, catalogListingId: i.catalog_listing_id,
+      })),
     );
 
     // ADR-0161 — anúncios ENCERRADOS pela migração "preço por variação".

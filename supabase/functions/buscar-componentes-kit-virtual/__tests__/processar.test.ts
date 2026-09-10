@@ -1,7 +1,8 @@
 // ADR-0154 Decisão 12. Vitest (não Deno test) — runner que o CI/vitest.config.ts executam.
 import { describe, it, expect, vi } from 'vitest';
 import {
-  buscarComponentesKitVirtual, buscarTodosComponentes, enriquecerComponentes, parsePaginaML,
+  buscarComponentesKitVirtual, buscarTodosComponentes, enriquecerComponentes,
+  chaveVariacao, escolherVariacaoPorCodigo, parsePaginaML,
   type BuscarComponentesDeps, type CandidatoBrutoML, type CatalogoLocalItem, type ItemBridge,
   type PaginaComponentesML,
 } from '../processar.ts';
@@ -231,5 +232,87 @@ describe('buscarComponentesKitVirtual — orquestração', () => {
       codigo: '001', codigoPai: '000', custo: 9.9, origem: 'nacional',
       precoAtualML: 149.9, categoriaMlId: 'MLB1234',
     });
+  });
+});
+
+// O item plano UP é ancorado pelo SKU (ADR-0088 "Ancoragem"): `variacao_id` é nullable e estava
+// NULL em 156/156 linhas em produção (medido 2026-09-10), então resolver por ela deixava todo
+// componente UP sem custo/origem/kit_multiplicador na tela de montagem do kit. Mas o SKU sozinho
+// não identifica: 136 dos 156 SKUs têm variação duplicada (re-ingest, ADR-0108) — quem desambigua
+// é o `codigo_pai` do anúncio vendido.
+describe('escolherVariacaoPorCodigo', () => {
+  const linha = (
+    codigo: string, custo: number | null, codigo_pai: string, atualizado_em: string | null,
+    origem: 'nacional' | 'importado' | null = 'nacional', kit_multiplicador: number | null = null,
+  ) => ({ codigo, custo, atualizado_em, familias: { codigo_pai, origem, kit_multiplicador } });
+
+  it('resolve a variação pelo par (codigo_pai, sku)', () => {
+    const m = escolherVariacaoPorCodigo([linha('00220566', 12.5, 'PAI1', '2026-09-01T00:00:00Z')]);
+    expect(m.get(chaveVariacao('PAI1', '00220566'))).toEqual({ custo: 12.5, origem: 'nacional', kitMultiplicador: null });
+  });
+
+  // O incidente registrado em docs/reference/edge-functions.md: o código `26705421` existe em duas
+  // famílias com GTINs diferentes e `atualizado_em` IDÊNTICO — desempatar por data caiu na família
+  // errada. Escopar por codigo_pai remove a escolha arbitrária em vez de mascará-la.
+  it('mesmo código em duas famílias com data IDÊNTICA: cada codigo_pai fica com a sua', () => {
+    const m = escolherVariacaoPorCodigo([
+      linha('26705421', 9.9, 'PAI_A', '2026-01-10T00:00:00Z', 'nacional'),
+      linha('26705421', 14.2, 'PAI_B', '2026-01-10T00:00:00Z', 'importado'),
+    ]);
+    expect(m.get(chaveVariacao('PAI_A', '26705421'))).toMatchObject({ custo: 9.9, origem: 'nacional' });
+    expect(m.get(chaveVariacao('PAI_B', '26705421'))).toMatchObject({ custo: 14.2, origem: 'importado' });
+  });
+
+  // Dentro do MESMO codigo_pai a duplicata é re-ingest do mesmo produto — aí o ADR-0108 vale.
+  it('re-ingest do mesmo produto: vence a mais recente, com custo e origem da MESMA linha', () => {
+    const m = escolherVariacaoPorCodigo([
+      linha('X', 9.9, 'PAI1', '2026-01-10T00:00:00Z', 'nacional'),
+      linha('X', 14.2, 'PAI1', '2026-08-30T00:00:00Z', 'importado'),
+      linha('X', 11.0, 'PAI1', '2026-04-02T00:00:00Z', 'nacional'),
+    ]);
+    expect(m.get(chaveVariacao('PAI1', 'X'))).toMatchObject({ custo: 14.2, origem: 'importado' });
+  });
+
+  it('ordem do banco não importa: a mais recente vence mesmo vindo primeiro', () => {
+    const m = escolherVariacaoPorCodigo([
+      linha('X', 14.2, 'PAI1', '2026-08-30T00:00:00Z'),
+      linha('X', 9.9, 'PAI1', '2026-01-10T00:00:00Z'),
+    ]);
+    expect(m.get(chaveVariacao('PAI1', 'X'))?.custo).toBe(14.2);
+  });
+
+  it('sem atualizado_em perde de qualquer data (e não vira NaN no comparador)', () => {
+    const m = escolherVariacaoPorCodigo([
+      linha('X', 9.9, 'PAI1', null),
+      linha('X', 14.2, 'PAI1', '2026-01-10T00:00:00Z'),
+    ]);
+    expect(m.get(chaveVariacao('PAI1', 'X'))?.custo).toBe(14.2);
+  });
+
+  it('todas sem data: mantém a primeira, sem escolher no acaso', () => {
+    const m = escolherVariacaoPorCodigo([linha('X', 9.9, 'PAI1', null), linha('X', 14.2, 'PAI1', null)]);
+    expect(m.get(chaveVariacao('PAI1', 'X'))?.custo).toBe(9.9);
+  });
+
+  it('custo null é preservado (o front trata como campo faltante, não como zero)', () => {
+    const m = escolherVariacaoPorCodigo([linha('X', null, 'PAI1', '2026-08-30T00:00:00Z')]);
+    expect(m.get(chaveVariacao('PAI1', 'X'))?.custo).toBeNull();
+  });
+
+  // O supabase-js devolve o embed como objeto OU array conforme a cardinalidade inferida.
+  it('aceita a família embutida como array (shape alternativo do supabase-js)', () => {
+    const m = escolherVariacaoPorCodigo([
+      { codigo: 'X', custo: 7.5, atualizado_em: null, familias: [{ codigo_pai: 'PAI1', origem: 'importado', kit_multiplicador: 3 }] },
+    ]);
+    expect(m.get(chaveVariacao('PAI1', 'X'))).toEqual({ custo: 7.5, origem: 'importado', kitMultiplicador: 3 });
+  });
+
+  it('linha sem família não entra no mapa (não há como escopar o código)', () => {
+    const m = escolherVariacaoPorCodigo([{ codigo: 'X', custo: 7.5, atualizado_em: null, familias: null }]);
+    expect(m.size).toBe(0);
+  });
+
+  it('lista vazia → mapa vazio', () => {
+    expect(escolherVariacaoPorCodigo([]).size).toBe(0);
   });
 });

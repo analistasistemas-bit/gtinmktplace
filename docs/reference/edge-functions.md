@@ -938,6 +938,18 @@ kit não é `familias` nem `anuncios_externos` (D-2 do ADR). As cinco edges são
 `requireUserOrg`; nenhuma delas roda `process-familia` nem toca o pipeline de publicação de
 produto.
 
+> **Item plano UP é resolvido por `(codigo_pai, sku)`** (2026-09-10). O enriquecimento local
+> (`buscarCatalogoLocal`, caminho B) resolvia custo/origem/kit_multiplicador por
+> `anuncios_externos_itens.variacao_id` — coluna nullable que o ADR-0088 ("Ancoragem") descreve como
+> ponteiro best-effort e que estava **NULL em 156/156 linhas** em produção. Todo componente que
+> fosse filho UP saía com `custo`, `origem` e `kitMultiplicador` nulos, e o operador redigitava dado
+> que o banco já tinha. Passou a resolver pelo SKU, escopado pelo `codigo_pai` do anúncio: o SKU
+> sozinho não identifica (136 dos 156 têm variação duplicada por re-ingest, ADR-0108). Dentro do
+> mesmo `codigo_pai` a duplicata é re-ingest do mesmo produto e vence `atualizado_em` mais recente,
+> com custo e origem saindo da MESMA linha. Medido em 2026-09-10: a chave resolve 100% dos 156
+> filhos (0 sem match), `origem` nunca diverge entre duplicatas, e não há caso de custo divergente
+> com `atualizado_em` empatado — o desempate é determinístico hoje.
+
 - **buscar-componentes-kit-virtual** (D-12) — lista candidatos a componente. Read-only e
   idempotente. Body `{ search_text? }`. Busca `POST /users/$SELLER_ID/kits/components/search` no
   ML (paginado por `search_after_hash`), enriquece cada `user_product_id` retornado com
@@ -1761,6 +1773,25 @@ sem EAN, e corretamente — o anúncio de catálogo é nosso, criado pelo `vincu
 
 Vale só para syncs **futuros**: linhas de `ml_vendas` já gravadas mantêm o código persistido até
 serem re-sincronizadas.
+
+### Caminho User Products (2026-09-10)
+
+Em família **User Products** o listing de catálogo NÃO fica em `variacoes.catalog_listing_id`:
+`vincular-catalogo/vinculacao.ts` roteia para `vincularItensCatalogoUP`, que persiste só em
+`anuncios_externos_itens.catalog_listing_id`. O bloco acima, que lê `variacoes`, portanto não
+alcançava o filho UP — a venda no anúncio de catálogo dele caía fora de `idsPubliai`
+(`is_publiai = false`), sem código e sem custo congelado, e ainda dispararia o alerta de "venda de
+SKU fora do catálogo".
+
+`carregarCatalogo` passou a selecionar `catalog_listing_id` dos itens filhos e `fundirItensUP`
+registra esse MLB em `idsPubliai`/`codPorItem`/`eanPorItem`. O `add`/`set` do listing fica **antes**
+do guard de GTIN: filho sem GTIN é justamente quem o fallback de `venda.ts` §2 não alcança.
+
+Impacto medido em 2026-09-10 (org Avil): 2 dos 156 filhos UP têm `catalog_listing_id`
+(`MLB5179297735`, `MLB5179285193`), ambos `vinculado`, com **zero vendas históricas**. A org DSA não
+tem filhos UP. Correção de robustez, não de dado existente — antes, o reconhecimento dependia do
+fallback de GTIN, que faz um GET best-effort no ML e devolve mapa vazio quando a chamada falha
+(`_shared/ml/vendas.ts`).
 
 ## Histórico — filho User Products herdava código/EAN de outra cor (corrigida)
 

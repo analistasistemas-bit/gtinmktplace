@@ -11,8 +11,9 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mlGet } from '../_shared/ml/http.ts';
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import {
-  buscarComponentesKitVirtual, parsePaginaML,
+  buscarComponentesKitVirtual, chaveVariacao, escolherVariacaoPorCodigo, parsePaginaML,
   type BuscarComponentesDeps, type CatalogoLocalItem, type ComponenteEnriquecido, type ItemBridge,
+  type LinhaVariacaoPorCodigo,
 } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
@@ -124,43 +125,42 @@ async function buscarCatalogoLocal(admin: SupabaseClient, orgId: string, itemIds
 
   // Caminho B: item plano (ADR-0088).
   const { data: itens } = await admin.from('anuncios_externos_itens')
-    .select('item_externo_id, sku, anuncio_externo_id, variacao_id')
+    .select('item_externo_id, sku, anuncio_externo_id')
     .eq('org_id', orgId).in('item_externo_id', itemIds) as {
-      data: { item_externo_id: string; sku: string; anuncio_externo_id: string; variacao_id: string | null }[] | null;
+      data: { item_externo_id: string; sku: string; anuncio_externo_id: string }[] | null;
     };
   const anuncioIds = [...new Set((itens ?? []).map((i) => i.anuncio_externo_id))];
-  const variacaoIds = [...new Set((itens ?? []).map((i) => i.variacao_id).filter((v): v is string => !!v))];
+  // Ancorado pelo SKU, não por `variacao_id` (ADR-0088 "Ancoragem"; a coluna é nullable e está
+  // NULL em 100% das linhas em produção). Ver `escolherVariacaoPorCodigo` para o desempate.
+  const skus = [...new Set((itens ?? []).map((i) => i.sku))];
   const { data: anuncios } = anuncioIds.length
     ? await admin.from('anuncios_externos').select('id, codigo_pai').eq('org_id', orgId).in('id', anuncioIds) as {
       data: { id: string; codigo_pai: string }[] | null;
     }
     : { data: [] };
-  const { data: variacoesItem } = variacaoIds.length
-    ? await admin.from('variacoes').select('id, custo, familia_id').eq('org_id', orgId).in('id', variacaoIds) as {
-      data: { id: string; custo: number | null; familia_id: string }[] | null;
-    }
+  // Embed da família na mesma query: origem/kit_multiplicador têm de sair da MESMA linha escolhida
+  // (origem define a alíquota, ADR-0055), e o `codigo_pai` é o que desambigua o SKU duplicado.
+  // Teto: PostgREST corta em 1000 linhas — ~156 skus × até 3 duplicatas hoje. Se a org crescer,
+  // paginar com `.range()` (mesma exposição da consulta de famílias acima).
+  const { data: variacoesItem } = skus.length
+    ? await admin.from('variacoes')
+      .select('codigo, custo, atualizado_em, familias!inner(codigo_pai, origem, kit_multiplicador)')
+      .eq('org_id', orgId).in('codigo', skus) as { data: LinhaVariacaoPorCodigo[] | null }
     : { data: [] };
-  const familiaIdsItem = [...new Set((variacoesItem ?? []).map((v) => v.familia_id))];
-  const { data: familiasItem } = familiaIdsItem.length
-    ? await admin.from('familias').select('id, origem, kit_multiplicador').eq('org_id', orgId).in('id', familiaIdsItem) as {
-      data: { id: string; origem: 'nacional' | 'importado'; kit_multiplicador: number | null }[] | null;
-    }
-    : { data: [] };
+  const variacaoPorChave = escolherVariacaoPorCodigo(variacoesItem ?? []);
 
   const codigoPaiPorAnuncio = new Map((anuncios ?? []).map((a) => [a.id, a.codigo_pai]));
-  const variacaoPorId = new Map((variacoesItem ?? []).map((v) => [v.id, v]));
-  const familiaPorId = new Map((familiasItem ?? []).map((f) => [f.id, f]));
 
   for (const it of itens ?? []) {
-    const variacao = it.variacao_id ? variacaoPorId.get(it.variacao_id) : undefined;
-    const familia = variacao ? familiaPorId.get(variacao.familia_id) : undefined;
+    const codigoPai = codigoPaiPorAnuncio.get(it.anuncio_externo_id) ?? null;
+    const variacao = codigoPai ? variacaoPorChave.get(chaveVariacao(codigoPai, it.sku)) : undefined;
     catalogo.push({
       itemId: it.item_externo_id,
       codigo: it.sku,
-      codigoPai: codigoPaiPorAnuncio.get(it.anuncio_externo_id) ?? null,
+      codigoPai,
       custo: variacao?.custo ?? null,
-      origem: familia?.origem ?? null,
-      kitMultiplicador: familia?.kit_multiplicador ?? null,
+      origem: variacao?.origem ?? null,
+      kitMultiplicador: variacao?.kitMultiplicador ?? null,
     });
   }
 

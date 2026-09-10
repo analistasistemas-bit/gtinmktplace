@@ -32,6 +32,13 @@ vendido. Duas correções recentes definem o comportamento atual:
 - **O MLB do anúncio de catálogo entra no catálogo** (2026-08-11, ADR-0021). O vínculo de catálogo
   cria um anúncio **separado** (`variacoes.catalog_listing_id`); antes só `familias.ml_item_id` era
   conhecido, e a venda do anúncio de catálogo dependia do fallback de GTIN.
+- **Filho User Products também tem catálogo próprio** (2026-09-10). Em família UP o listing NÃO fica
+  em `variacoes.catalog_listing_id` e sim em `anuncios_externos_itens.catalog_listing_id` — a
+  vinculação roteia para `vincularItensCatalogoUP`, que só escreve na tabela dos filhos. Enquanto
+  `carregarCatalogo` não lia essa coluna, a venda no catálogo de um filho UP ficava
+  `is_publiai = false`, sem código e sem custo. Impacto retroativo medido: zero (2 listings na org
+  Avil, nenhuma venda). É robustez: antes o reconhecimento dependia do fallback de GTIN, que faz um
+  GET best-effort no ML.
 - **Último recurso:** o SKU que o ML manda em `seller_custom_field` resolve o código — **sem**
   promover o item a `is_publiai` (o vendedor pode preencher esse campo em qualquer anúncio dele).
 - Venda paga sem SKU resolvido não é mais descartada em silêncio: vira movimento informativo no

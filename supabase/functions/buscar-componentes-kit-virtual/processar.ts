@@ -112,6 +112,80 @@ export async function buscarTodosComponentes(
   return produtos;
 }
 
+/** Família embutida na linha de `variacoes` (o supabase-js devolve objeto ou array conforme o embed). */
+export interface FamiliaDaVariacao {
+  codigo_pai: string;
+  origem: 'nacional' | 'importado' | null;
+  kit_multiplicador: number | null;
+}
+
+/** Linha crua de `variacoes` + família, para enriquecer um item plano UP. */
+export interface LinhaVariacaoPorCodigo {
+  codigo: string;
+  custo: number | null;
+  atualizado_em: string | null;
+  familias: FamiliaDaVariacao | FamiliaDaVariacao[] | null;
+}
+
+/** Variação já resolvida para um item plano, com os campos que o kit consome. */
+export interface VariacaoResolvida {
+  custo: number | null;
+  origem: 'nacional' | 'importado' | null;
+  kitMultiplicador: number | null;
+}
+
+/** Chave de resolução do item plano UP: o par (produto, SKU), nunca o SKU sozinho. */
+export function chaveVariacao(codigoPai: string, codigo: string): string {
+  return `${codigoPai}\u0000${codigo}`;
+}
+
+const instante = (v: string | null) => (v ? Date.parse(v) : -Infinity);
+const familiaDe = (f: LinhaVariacaoPorCodigo['familias']) => (Array.isArray(f) ? f[0] : f) ?? null;
+
+/**
+ * `(codigo_pai, codigo)` → variação vigente. Pura.
+ *
+ * O item plano UP é ancorado pelo SKU, não por `variacao_id`: o ADR-0088 ("Ancoragem",
+ * `unique (anuncio_externo_id, sku)`) diz que o SKU é a identidade estável e que `variacao_id`
+ * muda a cada re-ingest — por isso a coluna é nullable e, medido em 2026-09-10, está NULL em
+ * 156/156 linhas em produção. Resolver por ela deixava todo componente UP sem custo, origem e
+ * kit_multiplicador na tela de montagem do kit.
+ *
+ * Mas o SKU sozinho NÃO identifica: 136 dos 156 SKUs de filho UP têm mais de uma variação com o
+ * mesmo código (re-ingest, ADR-0108). A desambiguação é o `codigo_pai` do anúncio vendido — o
+ * mesmo par que o RPC de estoque usa para achar a família canônica. Desempatar só por
+ * `atualizado_em` seria repetir o erro registrado em `docs/reference/edge-functions.md`: o código
+ * `26705421` existe em duas famílias com `atualizado_em` IDÊNTICO, e a escolha caiu na errada,
+ * gravando o GTIN de outro produto.
+ *
+ * Dentro do mesmo `codigo_pai` a duplicata é re-ingest do MESMO produto, e aí o desempate do
+ * ADR-0108 é legítimo: vence `atualizado_em` mais recente; ausente perde de qualquer data; empate
+ * mantém a primeira. Custo e origem saem SEMPRE da mesma linha escolhida — origem define a
+ * alíquota (8%/16%, ADR-0055) e não pode vir de uma linha e o custo de outra.
+ */
+export function escolherVariacaoPorCodigo(
+  rows: LinhaVariacaoPorCodigo[],
+): Map<string, VariacaoResolvida> {
+  const vencedora = new Map<string, LinhaVariacaoPorCodigo>();
+  for (const r of rows) {
+    const fam = familiaDe(r.familias);
+    if (!fam?.codigo_pai) continue; // sem família não há como escopar — não entra no mapa
+    const chave = chaveVariacao(fam.codigo_pai, r.codigo);
+    const atual = vencedora.get(chave);
+    if (!atual || instante(r.atualizado_em) > instante(atual.atualizado_em)) vencedora.set(chave, r);
+  }
+  const resolvida = new Map<string, VariacaoResolvida>();
+  for (const [chave, r] of vencedora) {
+    const fam = familiaDe(r.familias);
+    resolvida.set(chave, {
+      custo: r.custo,
+      origem: fam?.origem ?? null,
+      kitMultiplicador: fam?.kit_multiplicador ?? null,
+    });
+  }
+  return resolvida;
+}
+
 /** Enriquece cada candidato com o catálogo local, via a ponte user_product_id → item_id. */
 export function enriquecerComponentes(
   candidatos: CandidatoBrutoML[],

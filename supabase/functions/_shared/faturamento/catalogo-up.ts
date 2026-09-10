@@ -18,6 +18,13 @@ export interface ItemUP {
   /** = variacoes.codigo (mesma âncora estável do item filho, ADR-0088 "Ancoragem"). */
   sku: string;
   gtin: string | null;
+  /** ADR-0021 no caminho UP: MLB do anúncio de catálogo deste filho
+   *  (`anuncios_externos_itens.catalog_listing_id`). Obrigatório de propósito — há um único
+   *  chamador (io.ts) e o TS quebra a build de quem esquecer, em vez de a venda de catálogo
+   *  nascer sem reconhecimento. `variacoes.catalog_listing_id` NUNCA é escrito para família UP
+   *  (vincular-catalogo/vinculacao.ts roteia para `vincularItensCatalogoUP`, que persiste só em
+   *  `anuncios_externos_itens`), então o bloco equivalente de io.ts não cobre este caso. */
+  catalogListingId: string | null;
 }
 
 /** Item plano UP nunca tem variation_id (cada item É a variação) — por isso os filhos entram só
@@ -36,8 +43,18 @@ export function fundirItensUP(base: CatalogoBase, itensUP: ItemUP[]): void {
   for (const item of itensUP) {
     base.idsPubliai.add(item.itemExternoId);
     base.codPorItem.set(item.itemExternoId, item.sku);
+    // Vincular ao catálogo cria um anúncio SEPARADO, com MLB próprio, e ele é NOSSO: entra em
+    // idsPubliai como qualquer outro. Fica ANTES do `continue` abaixo de propósito — filho sem
+    // GTIN ainda precisa ser reconhecido pelo MLB de catálogo (é justamente quem o fallback de
+    // GTIN de venda.ts §2 não alcança). É 1:1 com o filho (item UP não tem variação), então `set`
+    // direto, sem a ambiguidade de "primeira variação da família" que io.ts precisa tratar.
+    if (item.catalogListingId) {
+      base.idsPubliai.add(item.catalogListingId);
+      base.codPorItem.set(item.catalogListingId, item.sku);
+    }
     if (!item.gtin) continue;
     base.eanPorItem.set(item.itemExternoId, item.gtin);
+    if (item.catalogListingId) base.eanPorItem.set(item.catalogListingId, item.gtin);
     // infoPorGtin continua first-wins: a chave é o próprio GTIN, então uma entrada existente já é
     // deste mesmo produto — sobrescrever não corrigiria nada.
     const chave = normGtin(item.gtin);
