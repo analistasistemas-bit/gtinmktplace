@@ -696,3 +696,46 @@ Critérios de aceite originais (derivados do Final Review Checklist do plano), m
 - **Legacy**: nenhuma mudança observável.
 - **Deploy**: todas as functions do blast radius recalculado confirmadas com versão +1; nenhuma feature
   não relacionada sobrescrita (lição do ADR-0087).
+
+## Adendo (2026-09-10) — exclusão apagava família UP com anúncio VIVO no ML
+
+Incidente real (org DSA, kit do Ninho). Sequência:
+
+1. 09/09 17:17 — o app publicou o kit de 2 unidades como User Products: `MLB5210027027`, SKU
+   `00000099`, categoria herdada da base (`MLB455708`). A saga **não** terminou em `ativo`.
+2. Diego excluiu o produto/lote pelo PubliAI. Tudo o que o app sabia sumiu: família, variação, lote e
+   `anuncios_externos` (os filhos foram junto pelo `ON DELETE CASCADE`).
+3. O anúncio **continuou ativo no ML**, com 25 unidades e fora do controle do app — venda nele não
+   baixaria estoque, mesma classe do incidente de 11/08.
+4. 10/09 18:04 — o operador criou o kit de novo (agora com categoria trocada, `MLB7619984662`). Nada
+   avisou de duplicidade: a trava de kit duplicado consulta o banco, e no banco não havia mais nada.
+
+Causa: **as duas travas de exclusão são cegas para User Products**, e por construção deste ADR.
+
+| Trava | Sinal que usava | Por que é null em UP |
+|---|---|---|
+| `excluir-produto` | `anuncios_externos.item_externo_id`, ou status `publicado` | §4/§5: a raiz guarda `item_externo_id = null`; os ids vivem nos filhos |
+| `excluir-lote` (`particionarExclusao`) | `familias.publicado_em` e o guard anti-órfão por `ml_variation_id` | `ml_variation_id` é null em UP — cada item É a variação |
+
+Ou seja: família UP que não conclui a saga não tem NENHUM dos sinais que as travas procuram, mesmo
+com o anúncio criado no ML. `anuncios_externos_itens` — a única tabela que conhece esses ids —
+não era consultada por nenhuma das duas.
+
+Decisão: as duas travas passam a olhar `anuncios_externos_itens.item_externo_id`.
+
+- `excluir-produto`: o `select` embute os filhos; qualquer filho com id → `publicado` (recusa, e o
+  operador é mandado ao "Remover", que pausa no ML antes de desvincular).
+- `excluir-lote`: `particionarExclusao` ganha `codigosComItemRemoto` (conjunto de `codigo_pai` com
+  filho vivo) e preserva essas famílias. Ausente = consulta falhou → **trava fechado**, igual a
+  `vinculosVivosFora`: preservar demais é reversível, órfão vivo no ML só aparece numa venda que não
+  baixa estoque. `FamiliaExclusao` ganhou `codigo_pai` para fazer essa ligação.
+
+Verificação: o embed `anuncios_externos → anuncios_externos_itens` foi exercitado contra o PostgREST
+real (HTTP 200 nas duas consultas) — a FK é composta (`anuncio_externo_id, org_id`) e única, então
+não há ambiguidade de relacionamento. Mock não pegaria erro de embed (lição de 21/08).
+
+Limpeza do incidente: `MLB5210027027` foi encerrado no ML sob autorização explícita do operador
+(0 vendas — o script aborta se houver alguma). O kit correto em produção é `MLB7619984662`.
+
+Fica em aberto, de propósito: nada varre anúncios já órfãos de antes deste fix. Se houver outros,
+só aparecem por conferência manual na conta do ML.

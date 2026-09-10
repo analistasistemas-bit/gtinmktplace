@@ -22,6 +22,7 @@ describe('particionarExclusao', () => {
   it('separa publicadas (preservadas) das não publicadas (paraExcluir)', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [fam('a', null, ['u/1.jpg']), fam('b', '2026-06-04T00:00:00Z', ['u/2.jpg'])],
       planilhaPath: 'u/l/plan.xlsx', imagensPaths: ['u/1.jpg', 'u/2.jpg', 'u/l/plan.xlsx'],
     });
@@ -33,6 +34,7 @@ describe('particionarExclusao', () => {
   it('UPDATE que herdou ml_item_id mas nunca publicou (publicado_em null) é excluível', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [fam('a', null, ['u/1.jpg'], null, null, 'MLB1')], // ml_item_id herdado, publicado_em null
       planilhaPath: 'u/l/plan.xlsx', imagensPaths: ['u/1.jpg'],
     });
@@ -45,6 +47,7 @@ describe('particionarExclusao', () => {
   it('pathsRemover NÃO inclui arquivos referenciados por publicadas sobreviventes', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [fam('a', null, ['u/1.jpg']), fam('b', '2026-06-04T00:00:00Z', ['u/2.jpg'], 'u/capa-b.jpg')],
       planilhaPath: 'u/l/plan.xlsx', imagensPaths: ['u/1.jpg', 'u/2.jpg', 'u/capa-b.jpg'],
     });
@@ -57,6 +60,7 @@ describe('particionarExclusao', () => {
   it('0 publicadas → loteVazio true e remove tudo (planilha + imagens)', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [fam('a', null, ['u/1.jpg'])],
       planilhaPath: 'u/l/plan.xlsx', imagensPaths: ['u/1.jpg'],
     });
@@ -67,6 +71,7 @@ describe('particionarExclusao', () => {
   it('capa3 de publicada é preservada; capa3 de excluída entra em pathsRemover', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [
         fam('a', null, ['u/1.jpg'], 'u/capa-a.jpg', 'u/capa2-a.jpg', null, 'u/capa3-a.jpg'),
         fam('b', '2026-06-04T00:00:00Z', ['u/2.jpg'], 'u/capa-b.jpg', 'u/capa2-b.jpg', 'MLB1', 'u/capa3-b.jpg'),
@@ -81,6 +86,7 @@ describe('particionarExclusao', () => {
   it('dedup de paths e ignora nulos', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [fam('a', null, ['u/1.jpg', null, 'u/1.jpg'])],
       planilhaPath: null, imagensPaths: ['u/1.jpg'],
     });
@@ -94,6 +100,7 @@ describe('particionarExclusao', () => {
   it('descarta path cujo primeiro segmento não é o dono do lote', () => {
     const r = particionarExclusao({
       donoUserId: 'dono',
+      codigosComItemRemoto: new Set(),
       familias: [fam('a', null, ['dono/1.jpg'])],
       planilhaPath: 'dono/l/plan.xlsx',
       imagensPaths: ['dono/1.jpg', 'vitima/capas/CAPA_00000042.jpg'],
@@ -106,6 +113,7 @@ describe('particionarExclusao', () => {
   it('guard também cobre paths vindos das famílias, não só imagens_paths', () => {
     const r = particionarExclusao({
       donoUserId: 'dono',
+      codigosComItemRemoto: new Set(),
       familias: [fam('a', null, ['vitima/2.jpg'], 'vitima/capa.jpg')],
       planilhaPath: null, imagensPaths: null,
     });
@@ -133,6 +141,7 @@ describe('particionarExclusao — guard anti-órfão de vínculo com o ML', () =
   it('preserva a família não publicada cujo vínculo no ML ficaria sem dono', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [comVinculos('a', null, 'MLB1', ['203375281741'])],
       planilhaPath: null, imagensPaths: null,
       vinculosVivosFora: new Set(),
@@ -144,6 +153,7 @@ describe('particionarExclusao — guard anti-órfão de vínculo com o ML', () =
   it('exclui quando outra família viva FORA do lote já representa o mesmo vínculo', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [comVinculos('a', null, 'MLB1', ['203313876609'])],
       planilhaPath: null, imagensPaths: null,
       vinculosVivosFora: new Set(['MLB1|203313876609']),
@@ -154,6 +164,7 @@ describe('particionarExclusao — guard anti-órfão de vínculo com o ML', () =
   it('vínculo coberto por uma publicada do próprio lote não impede a exclusão', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [
         comVinculos('a', null, 'MLB1', ['203313876609']),
         comVinculos('b', '2026-07-06T00:00:00Z', 'MLB1', ['203313876609']),
@@ -168,6 +179,7 @@ describe('particionarExclusao — guard anti-órfão de vínculo com o ML', () =
   it('variação sem ml_variation_id não segura a exclusão (nada existe no ML)', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [comVinculos('a', null, 'MLB1', [null, null])],
       planilhaPath: null, imagensPaths: null,
       vinculosVivosFora: new Set(),
@@ -178,6 +190,7 @@ describe('particionarExclusao — guard anti-órfão de vínculo com o ML', () =
   it('família preservada pelo guard tem os arquivos preservados também', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [comVinculos('a', null, 'MLB1', ['203375281741'])],
       planilhaPath: 'u/l/plan.xlsx', imagensPaths: ['u/a-203375281741.jpg'],
       vinculosVivosFora: new Set(),
@@ -192,6 +205,7 @@ describe('particionarExclusao — guard anti-órfão de vínculo com o ML', () =
   it('sem o conjunto de vínculos, a família com vínculo vivo é preservada', () => {
     const r = particionarExclusao({
       donoUserId: 'u',
+      codigosComItemRemoto: new Set(),
       familias: [comVinculos('a', null, 'MLB1', ['203375281741'])],
       planilhaPath: null, imagensPaths: null,
     });
@@ -219,5 +233,61 @@ describe('filtrarPathsDeDonos', () => {
 
   it('conjunto de donos vazio remove tudo (fail-closed)', () => {
     expect(filtrarPathsDeDonos(['user-a/x.jpg'], new Set())).toEqual([]);
+  });
+});
+
+// Incidente 2026-09-10 (kit do Ninho, MLB5210027027): família User Products cuja saga não terminou
+// em `ativo` era apagada com o anúncio VIVO no ML. Em UP os dois sinais que este guard usava são
+// null POR CONSTRUÇÃO — `ml_variation_id` (cada item É a variação) e o `item_externo_id` da raiz —
+// então nada segurava a exclusão. Quem sabe do anúncio é `anuncios_externos_itens`, e é isso que
+// `codigosComItemRemoto` carrega.
+describe('particionarExclusao — guard anti-órfão de item remoto (User Products)', () => {
+  const famUP = (id: string, codigoPai: string): FamiliaExclusao => ({
+    id, ml_item_id: null, publicado_em: null, codigo_pai: codigoPai,
+    capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null,
+    variacoes: [{ imagem_path: null, ml_variation_id: null }], // UP: sempre null
+  });
+
+  it('preserva a família UP que tem item vivo no ML, mesmo sem publicado_em e sem ml_variation_id', () => {
+    const r = particionarExclusao({
+      donoUserId: 'u',
+      familias: [famUP('kit', '00000098')],
+      planilhaPath: null, imagensPaths: null,
+      codigosComItemRemoto: new Set(['00000098']),
+    });
+    expect(r.paraExcluir).toEqual([]);
+    expect(r.preservadas.map((f) => f.id)).toEqual(['kit']);
+  });
+
+  it('família UP sem item remoto continua excluível (não trava exclusão legítima)', () => {
+    const r = particionarExclusao({
+      donoUserId: 'u',
+      familias: [famUP('rascunho', '00000098')],
+      planilhaPath: null, imagensPaths: null,
+      codigosComItemRemoto: new Set(),
+    });
+    expect(r.paraExcluir.map((f) => f.id)).toEqual(['rascunho']);
+    expect(r.loteVazio).toBe(true);
+  });
+
+  it('sem o conjunto (consulta falhou) preserva — mesmo fail-closed de vinculosVivosFora', () => {
+    const r = particionarExclusao({
+      donoUserId: 'u',
+      familias: [famUP('kit', '00000098')],
+      planilhaPath: null, imagensPaths: null,
+    });
+    expect(r.paraExcluir).toEqual([]);
+    expect(r.preservadas.map((f) => f.id)).toEqual(['kit']);
+  });
+
+  it('só o codigo_pai com item remoto é preservado; os irmãos do lote saem', () => {
+    const r = particionarExclusao({
+      donoUserId: 'u',
+      familias: [famUP('kit', '00000098'), famUP('outro', '00000105')],
+      planilhaPath: null, imagensPaths: null,
+      codigosComItemRemoto: new Set(['00000098']),
+    });
+    expect(r.paraExcluir.map((f) => f.id)).toEqual(['outro']);
+    expect(r.preservadas.map((f) => f.id)).toEqual(['kit']);
   });
 });

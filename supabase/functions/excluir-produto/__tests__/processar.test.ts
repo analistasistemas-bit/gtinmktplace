@@ -118,6 +118,37 @@ describe('excluirProduto — só produto não publicado (ADR-0113 D-1)', () => {
     expect(deletes).toEqual([]);
   });
 
+  it('recusa quando o item vive só nos FILHOS (User Products): raiz sem id e status não-publicado', async () => {
+    // Incidente 2026-09-10 (kit do Ninho, MLB5210027027): em UP a raiz guarda item_externo_id null
+    // por construção (ADR-0088 §4/§5) e a saga que não termina em `ativo` deixa o status fora de
+    // 'publicado'. Antes deste guard a família era apagada e o anúncio seguia VIVO no ML — some do
+    // app, continua vendendo, e a venda não baixa estoque.
+    const { admin, deletes, removidos } = fakeAdmin({
+      familias: [[], []],
+      anuncios_externos: [[{
+        status: 'erro', item_externo_id: null,
+        anuncios_externos_itens: [{ item_externo_id: 'MLB5210027027' }],
+      }]],
+    });
+    const r = await excluirProduto(admin, { codigoPai: CODIGO, orgId: ORG });
+    expect(r).toEqual({ tipo: 'publicado' });
+    expect(deletes).toEqual([]);
+    expect(removidos).toEqual([]);
+  });
+
+  it('filhos sem item_externo_id não travam a exclusão (saga abortou antes de criar no ML)', async () => {
+    const { admin, deletes } = fakeAdmin({
+      familias: [[], [], [familiaCompleta('fam-1', 'lote-9')], []],
+      anuncios_externos: [[{
+        status: 'erro', item_externo_id: null,
+        anuncios_externos_itens: [{ item_externo_id: null }],
+      }]],
+    });
+    const r = await excluirProduto(admin, { codigoPai: CODIGO, orgId: ORG });
+    expect(r.tipo).toEqual('ok');
+    expect(deletes.map((d) => d.tabela)).toEqual(['familias', 'lotes']);
+  });
+
   it('publish que falhou de vez (erro sem item_externo_id) continua deletável', async () => {
     // Recusar por linha nua deixaria o produto indeletável pelas DUAS portas: 409 aqui e 400
     // `nao_publicada` em remover-publicado. E é justamente o produto que mais se quer apagar.

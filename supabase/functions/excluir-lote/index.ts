@@ -16,6 +16,33 @@ const BLOQUEADOS = ['processando', 'publicando'];
  * falha: o guard trava fechado e preserva, em vez de apagar a última linha que representa
  * uma variação viva no ML.
  */
+/**
+ * `codigo_pai`s do lote que têm item VIVO no ML segundo `anuncios_externos_itens` (os filhos User
+ * Products). Incidente 2026-09-10: em UP nem a raiz de `anuncios_externos` (item_externo_id null)
+ * nem `variacoes.ml_variation_id` (null por construção) provam a existência do anúncio — só os
+ * filhos. `undefined` = consulta falhou; quem chama trava fechado e preserva.
+ */
+async function lerCodigosComItemRemoto(
+  admin: SupabaseClient,
+  orgId: string,
+  familiasDoLote: Array<{ codigo_pai?: string | null }>,
+): Promise<ReadonlySet<string> | undefined> {
+  const codigos = [...new Set(familiasDoLote.map((f) => f.codigo_pai).filter((c): c is string => !!c))];
+  if (codigos.length === 0) return new Set();
+  const { data, error } = await admin.from('anuncios_externos')
+    .select('codigo_pai, anuncios_externos_itens(item_externo_id)')
+    .eq('org_id', orgId).in('codigo_pai', codigos);
+  if (error) {
+    console.warn('excluir-lote: itens remotos indisponíveis (preserva por precaução):', error.message);
+    return undefined;
+  }
+  const comItem = new Set<string>();
+  for (const raiz of (data ?? []) as Array<{ codigo_pai: string; anuncios_externos_itens?: Array<{ item_externo_id: string | null }> }>) {
+    if ((raiz.anuncios_externos_itens ?? []).some((i) => !!i.item_externo_id)) comItem.add(raiz.codigo_pai);
+  }
+  return comItem;
+}
+
 async function lerVinculosVivosFora(
   admin: SupabaseClient,
   orgId: string,
@@ -62,7 +89,7 @@ Deno.serve(async (req) => {
   }
 
   const { data: familias } = await admin.from('familias')
-    .select('id, ml_item_id, publicado_em, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path, ml_variation_id)')
+    .select('id, codigo_pai, ml_item_id, publicado_em, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path, ml_variation_id)')
     .eq('lote_id', lote_id);
 
   const part = particionarExclusao({
@@ -72,6 +99,7 @@ Deno.serve(async (req) => {
     // as colunas de path são escritas pelo cliente, e este delete roda com service_role.
     donoUserId: lote.user_id,
     vinculosVivosFora: await lerVinculosVivosFora(admin, user.orgId, lote_id, familias ?? []),
+    codigosComItemRemoto: await lerCodigosComItemRemoto(admin, user.orgId, familias ?? []),
   });
 
   if (part.pathsRemover.length > 0) {

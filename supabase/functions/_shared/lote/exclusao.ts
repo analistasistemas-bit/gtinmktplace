@@ -11,6 +11,12 @@ export interface FamiliaExclusao {
   capa2_storage_path: string | null;
   capa3_storage_path: string | null;
   variacoes: VariacaoExclusao[];
+  /**
+   * `codigo_pai` — chave que liga a família à raiz de `anuncios_externos` e, por ela, aos filhos
+   * de `anuncios_externos_itens`. É por aqui que o guard enxerga item remoto de família User
+   * Products (incidente 2026-09-10, ver `temItemRemoto`).
+   */
+  codigo_pai?: string | null;
 }
 export interface EntradaExclusao {
   familias: FamiliaExclusao[];
@@ -26,6 +32,15 @@ export interface EntradaExclusao {
    * Ausente = desconhecido, e o guard anti-órfão trava fechado (ver `particionarExclusao`).
    */
   vinculosVivosFora?: ReadonlySet<string>;
+  /**
+   * `codigo_pai`s que TÊM item vivo no ML segundo `anuncios_externos_itens` (os filhos User
+   * Products). Incidente 2026-09-10 (kit do Ninho, MLB5210027027): em UP a raiz de
+   * `anuncios_externos` guarda `item_externo_id = null` e `variacoes.ml_variation_id` também é
+   * null — os dois sinais que este guard usava —, então uma família cuja saga não terminou em
+   * `ativo` era apagada com o anúncio VIVO no ML: some do app, continua vendendo, e a venda não
+   * baixa estoque. Ausente = não foi possível consultar → trava fechado, como `vinculosVivosFora`.
+   */
+  codigosComItemRemoto?: ReadonlySet<string>;
 }
 export interface ResultadoExclusao {
   paraExcluir: FamiliaExclusao[];
@@ -119,8 +134,17 @@ export function particionarExclusao(e: EntradaExclusao): ResultadoExclusao {
   const criaOrfa = (f: FamiliaExclusao) =>
     vinculosDaFamilia(f).some((k) => !conhece || !cobertos.has(k));
 
-  const preservadas = [...publicadas, ...naoPublicadas.filter(criaOrfa)];
-  const paraExcluir = naoPublicadas.filter((f) => !criaOrfa(f));
+  // Guard anti-órfão para User Products (incidente 2026-09-10): `vinculosDaFamilia` é sempre
+  // VAZIA em UP — `ml_variation_id` é null por construção (cada item É a variação, ADR-0088) —,
+  // então `criaOrfa` nunca protegia essas famílias. Quem sabe da existência do item remoto é
+  // `anuncios_externos_itens`, e é ele que `codigosComItemRemoto` traz. Sem o conjunto (consulta
+  // falhou), trava fechado: preserva, pelo mesmo motivo de `vinculosVivosFora` — preservar demais
+  // é reversível, órfão vivo no ML só aparece numa venda que não baixa estoque.
+  const temItemRemoto = (f: FamiliaExclusao) =>
+    e.codigosComItemRemoto === undefined || (f.codigo_pai != null && e.codigosComItemRemoto.has(f.codigo_pai));
+
+  const preservadas = [...publicadas, ...naoPublicadas.filter((f) => criaOrfa(f) || temItemRemoto(f))];
+  const paraExcluir = naoPublicadas.filter((f) => !criaOrfa(f) && !temItemRemoto(f));
   const pathsPreservar = [...new Set(preservadas.flatMap(pathsDaFamilia))];
   const preservarSet = new Set(pathsPreservar);
   const candidatos = [

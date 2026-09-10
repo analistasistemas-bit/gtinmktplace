@@ -56,12 +56,24 @@ export async function excluirProduto(
   // falhou é justamente o produto que mais se quer apagar.
   //
   // A trava é a evidência de item remoto (`item_externo_id`) ou de publicação ainda viva.
+  // Os filhos (`anuncios_externos_itens`) entram na mesma consulta porque em User Products é só
+  // neles que o id do anúncio existe: a raiz guarda `item_externo_id = null` por construção
+  // (ADR-0088 §4/§5). Sem olhar aqui, uma família UP cuja saga não terminou em `ativo` — raiz
+  // ainda não `publicado` — passava por esta trava e era apagada com o anúncio VIVO no ML
+  // (incidente 2026-09-10, kit do Ninho MLB5210027027: sumiu do app e seguiu vendendo, sem baixar
+  // estoque, até ser encerrado à mão).
   const { data: externos, error: externosErr } = await admin.from('anuncios_externos')
-    .select('status, item_externo_id').eq('org_id', orgId).eq('codigo_pai', codigoPai);
+    .select('status, item_externo_id, anuncios_externos_itens(item_externo_id)')
+    .eq('org_id', orgId).eq('codigo_pai', codigoPai);
   if (externosErr) throw new Error(`excluir-produto: consultar anuncios_externos falhou: ${externosErr.message}`);
-  const linhas = (externos ?? []) as { status: string | null; item_externo_id: string | null }[];
+  const linhas = (externos ?? []) as {
+    status: string | null;
+    item_externo_id: string | null;
+    anuncios_externos_itens?: { item_externo_id: string | null }[];
+  }[];
   // `publicado` sem id é estado inconsistente: fail-closed, trata como item remoto.
-  if (linhas.some((e) => e.item_externo_id != null || e.status === 'publicado')) return { tipo: 'publicado' };
+  if (linhas.some((e) => e.item_externo_id != null || e.status === 'publicado'
+    || (e.anuncios_externos_itens ?? []).some((i) => i.item_externo_id != null))) return { tipo: 'publicado' };
   // `pendente`/`publicando`: o worker do fan-out ainda pode criar o anúncio depois do delete.
   if (linhas.some((e) => e.status === 'pendente' || e.status === 'publicando')) return { tipo: 'em_voo' };
 
