@@ -264,6 +264,11 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     // 404/410 → item já sumiu, seguro seguir. Erro transiente (GET ou PUT) aborta ANTES de
     // qualquer mutação local — fail-closed, o operador clica de novo (idempotente).
     if (!filhosUPPausadosPelaSaga) {
+      // Invariante implícita (revisão do Fable, 2026-09-10): chegar aqui sem `ml_item_id` só seria
+      // possível se o gate lá em cima tivesse aceitado a família por um filho vivo e, 150 linhas
+      // depois, `filhos` viesse vazia — os dois leem o MESMO canal e codigo_pai, então não pode.
+      // Explícito porque o próximo passo pausaria `null` no ML como se fosse um id.
+      if (!alvo.ml_item_id) throw new Error('remover-publicado: família sem ml_item_id e sem filhos UP — inconsistência');
       if (!deps.ctx) throw new Error('Organização sem conexão com o Mercado Livre');
       const token = await deps.ctx.getToken();
       let statusItem: string | null = null;
