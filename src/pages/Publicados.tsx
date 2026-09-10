@@ -590,6 +590,96 @@ function LinhaTabela({
 // Componente próprio em vez de ramificar LinhaTabela: evita que `familiaId`/`codigoPai`
 // sentinelas cheguem a useFamilia/KitsVinculados/MovimentosEstoque ou aos diálogos de
 // remover/republicar, que são inteiramente `familias`-shaped.
+interface LinhaIncompletaProps {
+  item: PublicadoItem;
+  temFiscal: boolean;
+  onRemover: (familiaId: string) => void;
+  removendo: boolean;
+}
+
+/**
+ * Publicação incompleta: o anúncio EXISTE no ML, mas o app não concluiu a publicação (incidente
+ * 2026-09-10, adendo do ADR-0088). Linha própria, em vermelho, porque é pendência a resolver — não um
+ * anúncio saudável. Só "Remover" (que pausa no ML antes de desvincular): republicar daqui criaria um
+ * anúncio DUPLICADO, já que a adoção do item existente pela saga UP só vale por ~1h, e as demais ações
+ * (pausar, migrar preço por variação, catálogo, fiscal) pressupõem publicação concluída.
+ */
+function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompletaProps) {
+  return (
+    <TableRow className="bg-destructive/5 hover:bg-destructive/10">
+      <TableCell className="whitespace-normal sticky left-0 z-10 bg-background sm:static sm:z-auto sm:bg-transparent">
+        <div className="max-w-[260px]">
+          <StatusPill tone="danger" className="mb-1 w-fit">
+            <AlertTriangle className="h-3 w-3" />
+            Publicação incompleta
+          </StatusPill>
+          <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
+          <p className="mt-0.5 text-xs text-destructive">
+            O anúncio está no Mercado Livre, mas o app não concluiu a publicação — remova para pausá-lo lá e refazer.
+          </p>
+        </div>
+      </TableCell>
+      <TableCell className="text-sm tabular-nums">{fmtBRL(item.precoPublicacao)}</TableCell>
+      <TableCell className="text-sm tabular-nums">{item.estoque != null ? item.estoque : '—'}</TableCell>
+      <TableCell className="text-sm tabular-nums">
+        {item.precoAtual != null ? fmtBRL(item.precoAtual) : '—'}
+      </TableCell>
+      <TableCell className="text-sm tabular-nums">
+        {item.unidadesVendidas != null ? item.unidadesVendidas : '—'}
+      </TableCell>
+      <TableCell className="text-sm tabular-nums">
+        {item.valorVendido != null && item.valorVendido > 0 ? fmtBRL(item.valorVendido) : '—'}
+      </TableCell>
+      <TableCell>
+        <BadgeStatus status={item.status ?? 'indisponivel'} motivo={item.motivo} />
+      </TableCell>
+      {temFiscal && <TableCell><span className="text-xs text-muted-foreground">—</span></TableCell>}
+      <TableCell className="text-sm">{fmtData(item.publicadoEm)}</TableCell>
+      <TableCell>
+        <div className="flex items-center gap-1">
+          <Button asChild variant="ghost" size="sm" disabled={!item.mlPermalink} className="h-7 px-2 text-xs">
+            {item.mlPermalink ? (
+              <a href={item.mlPermalink} target="_blank" rel="noreferrer">{CONTEUDO_ML}</a>
+            ) : (
+              <span>{CONTEUDO_ML}</span>
+            )}
+          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                aria-label="Remover publicação incompleta"
+                title="Pausa o anúncio no Mercado Livre e desfaz o vínculo"
+                disabled={removendo}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Remover esta publicação incompleta?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  O anúncio <code className="rounded bg-muted px-1">{item.mlItemId}</code> será
+                  <strong> pausado no Mercado Livre</strong> e o vínculo local desfeito. O produto
+                  volta para a Revisão e você publica de novo — sem duplicar o anúncio.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={() => onRemover(item.familiaId)}>
+                  Pausar no ML e remover
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
+}
+
 interface LinhaKitVirtualProps {
   item: PublicadoItem;
   isAdmin: boolean;
@@ -971,6 +1061,12 @@ export default function Publicados() {
     () => doCanal.filter((i) => i.status === 'moderado').length,
     [doCanal],
   );
+  // Publicação incompleta conta sobre `doCanal` (mesma base do banner de moderados): o filtro de
+  // canal já se aplica, e o contador tem que bater com o que a lista mostra ao clicar.
+  const totalIncompletos = useMemo(
+    () => doCanal.filter((i) => i.publicacaoIncompleta).length,
+    [doCanal],
+  );
 
   const itensExibidos = useMemo(
     () => ordenarPublicados(filtrarPublicados(doCanal, filtro), ord),
@@ -1090,6 +1186,28 @@ export default function Publicados() {
         <div className="mb-4 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-warning motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
           Conecte sua conta ML nas Configurações para ver o status ao vivo.
         </div>
+      )}
+
+      {/* Publicação incompleta (incidente 2026-09-10): anúncio vivo no ML que o app não concluiu.
+          Vermelho e acima do banner de moderados — é risco de venda sem baixa de estoque, não aviso. */}
+      {totalIncompletos > 0 && (
+        <button
+          type="button"
+          onClick={() => setFiltro((f) => ({ ...f, somenteIncompletos: !f.somenteIncompletos }))}
+          aria-pressed={!!filtro.somenteIncompletos}
+          className={cn(
+            'mb-4 flex w-full items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-3 text-left text-sm text-destructive transition-colors hover:bg-destructive/20 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter',
+            filtro.somenteIncompletos && 'ring-2 ring-destructive/50',
+          )}
+        >
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>
+            {totalIncompletos === 1
+              ? '1 publicação incompleta — o anúncio existe no Mercado Livre, mas o app não concluiu. Clique para ver.'
+              : `${totalIncompletos} publicações incompletas — os anúncios existem no Mercado Livre, mas o app não concluiu. Clique para ver.`}
+          </span>
+          {filtro.somenteIncompletos && <span className="font-medium">• filtrando</span>}
+        </button>
       )}
 
       {/* Banner de anúncios moderados pelo ML — clicável, filtra a lista por "Moderado" */}
@@ -1272,7 +1390,15 @@ export default function Publicados() {
                   </TableRow>
                 ) : (
                   pag.itensPagina.map((item) => (
-                    item.ehKitVirtual ? (
+                    item.publicacaoIncompleta ? (
+                      <LinhaIncompleta
+                        key={item.mlItemId}
+                        item={item}
+                        temFiscal={temFiscal}
+                        onRemover={handleRemover}
+                        removendo={removendo && removendoId === item.familiaId}
+                      />
+                    ) : item.ehKitVirtual ? (
                       <LinhaKitVirtual
                         key={item.mlItemId}
                         item={item}

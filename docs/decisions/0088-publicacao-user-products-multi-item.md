@@ -753,3 +753,26 @@ com `item_externo_id` (mesma fonte do guard). Dois pontos do fluxo assumiam o ca
 foram ajustados junto: a lista passada a `kitsVirtuaisPublicadosBloqueando` filtra nulos, e a
 seleção das famílias a excluir (`ml_item_id not null`) inclui a própria família alvo — sem isso ela
 sobreviveria à remoção apontando para um anúncio recém-pausado.
+
+### Adendo (2026-09-10) — a publicação incompleta ganha lugar na tela
+
+O guard acima impede apagar a família com anúncio vivo, mas ela continuava invisível: `fetchPublicados`
+exige `ml_item_id`, que em UP só é gravado quando a saga chega a `ativo`. O operador não tinha como
+ver nem resolver — e republicar do zero duplica o anúncio, porque a adoção do item existente pela saga
+só vale dentro da janela `desdeMs` (~1h).
+
+Agora `fetchPublicados` traz também as famílias sem `ml_item_id` cujo `codigo_pai` tem item vivo em
+`anuncios_externos` (raiz Legacy na janela `criacao_incerta`) ou em `anuncios_externos_itens`
+(filhos UP), marcadas com `publicacaoIncompleta`. A tela pinta a linha de vermelho, mostra um banner
+clicável com o total e um filtro dedicado (`somenteIncompletos`, também na URL).
+
+Três decisões que valem registro:
+
+- **`mlItemId` recebe o id REAL do anúncio** (raiz, ou o filho de MENOR sku — determinístico, porque
+  esse campo é a key da linha). Assim o status ao vivo funciona sem mudança de backend
+  (`status-publicados` já une os ids dos filhos) e o link leva ao anúncio certo.
+- **Só "Remover" é oferecido.** Republicar daqui é justamente o que duplica; pausar/reativar, migrar
+  para preço por variação, catálogo e fiscal pressupõem publicação concluída.
+- **Guard contra falso-vermelho** (revisão do Fable): só entra o `codigo_pai` que NÃO tem nenhuma
+  família publicada. Uma linha sem `ml_item_id` ao lado de uma publicada é ciclo de UPDATE normal —
+  sem isso, todo lote em publicação apareceria como incidente.

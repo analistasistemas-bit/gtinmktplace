@@ -63,6 +63,14 @@ export interface PublicadoItem {
    *  chave de agrupamento (repPorCodigo/ehKitVinculado); a tela renderiza este item numa linha
    *  própria, sem Pausar/Reativar/Remover (Publicados.tsx, ADR-0154 D-2/D-14). */
   ehKitVirtual?: boolean;
+  /**
+   * O anúncio EXISTE no ML mas a publicação não concluiu — `familias.ml_item_id` vazio com item vivo
+   * lá fora (incidente 2026-09-10, adendo do ADR-0088). Sem esta linha o produto sumia da tela e
+   * seguia vendendo sem baixar estoque. A tela pinta em vermelho e oferece só "Remover": republicar
+   * daqui duplicaria o anúncio (a adoção da saga UP só vale por ~1h), e as demais ações pressupõem
+   * publicação concluída.
+   */
+  publicacaoIncompleta?: boolean;
   /** ADR-0154: `kits_virtuais.id` — necessário para "Refazer kit" (encerrar-kit-virtual). Só
    *  presente quando `ehKitVirtual` é true. */
   kitVirtualId?: string;
@@ -153,6 +161,8 @@ export interface FiltroPublicados {
   busca?: string;
   /** Só "encalhados": anúncios ativos sem nenhuma venda no período (candidatos a revisão). */
   somenteEncalhados?: boolean;
+  /** Só publicações incompletas (anúncio vivo no ML sem publicação concluída) — o chip vermelho. */
+  somenteIncompletos?: boolean;
 }
 
 /** Anúncio encalhado: ativo e sem nenhuma venda no período. */
@@ -178,6 +188,7 @@ export function filtrarPublicados(
     else if (f.status && i.status !== f.status) return false;
     if (f.tipo && rotuloTipo(i) !== f.tipo) return false;
     if (f.somenteEncalhados && !ehEncalhado(i)) return false;
+    if (f.somenteIncompletos && !i.publicacaoIncompleta) return false;
 
     if (termosBusca.length > 0) {
       const textoBuscavel = [

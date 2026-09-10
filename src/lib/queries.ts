@@ -1186,7 +1186,74 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
     kitVirtualId: k.id,
   }));
 
-  return [...comContagem, ...extras, ...kits];
+  const incompletas = await fetchPublicacoesIncompletas(new Set(rows.map((r) => r.codigo_pai)));
+
+  return [...comContagem, ...extras, ...kits, ...incompletas];
+}
+
+/**
+ * Produtos cujo anúncio EXISTE no ML mas cuja publicação não concluiu — o estado que deixou o kit do
+ * Ninho invisível no app enquanto vendia lá fora (incidente 2026-09-10, adendo do ADR-0088). Sem esta
+ * consulta eles não aparecem em lugar nenhum: `fetchPublicados` exige `ml_item_id`, que em User
+ * Products só é gravado quando a saga chega a `ativo`.
+ *
+ * `codigosPublicados` é o guard contra falso-alarme (revisão do Fable): um `codigo_pai` que TEM
+ * família publicada está num ciclo de UPDATE normal — a linha sem `ml_item_id` ali é rotina, não
+ * incidente. Só entra aqui quem não tem nenhuma família publicada.
+ */
+async function fetchPublicacoesIncompletas(codigosPublicados: Set<string>): Promise<PublicadoItem[]> {
+  const { data: raizes, error } = await supabase
+    .from('anuncios_externos')
+    .select('codigo_pai, item_externo_id, permalink, titulo, publicado_em, anuncios_externos_itens(sku, item_externo_id, permalink)')
+    .eq('canal', 'mercado_livre');
+  if (error) throw error;
+
+  // id do anúncio: o da raiz (Legacy na janela `criacao_incerta`) ou, em UP, o do filho de MENOR sku
+  // — determinístico de propósito: `mlItemId` é a key da linha, e escolher "o primeiro que vier"
+  // faria a linha trocar de identidade entre carregamentos (achado da revisão do Fable).
+  const remotoPorCodigo = new Map<string, { id: string; permalink: string | null; titulo: string | null; publicadoEm: string | null }>();
+  for (const r of (raizes ?? []) as Array<{
+    codigo_pai: string; item_externo_id: string | null; permalink: string | null;
+    titulo: string | null; publicado_em: string | null;
+    anuncios_externos_itens?: Array<{ sku: string; item_externo_id: string | null; permalink: string | null }>;
+  }>) {
+    if (codigosPublicados.has(r.codigo_pai) || remotoPorCodigo.has(r.codigo_pai)) continue;
+    const filhos = (r.anuncios_externos_itens ?? [])
+      .filter((f): f is { sku: string; item_externo_id: string; permalink: string | null } => !!f.item_externo_id)
+      .sort((a, b) => a.sku.localeCompare(b.sku));
+    const escolhido = r.item_externo_id
+      ? { id: r.item_externo_id, permalink: r.permalink }
+      : filhos[0] ? { id: filhos[0].item_externo_id, permalink: filhos[0].permalink } : null;
+    if (!escolhido) continue;
+    remotoPorCodigo.set(r.codigo_pai, {
+      id: escolhido.id, permalink: escolhido.permalink, titulo: r.titulo, publicadoEm: r.publicado_em,
+    });
+  }
+  if (remotoPorCodigo.size === 0) return [];
+
+  const { data: familias, error: famErr } = await supabase
+    .from('familias')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
+    .in('codigo_pai', [...remotoPorCodigo.keys()])
+    .is('ml_item_id', null);
+  if (famErr) throw famErr;
+
+  const porCodigo = new Map<string, FamiliaRow & { variacoes: VariacaoPub[] }>();
+  for (const f of (familias ?? []) as Array<FamiliaRow & { variacoes: VariacaoPub[] }>) {
+    if (!porCodigo.has(f.codigo_pai)) porCodigo.set(f.codigo_pai, f);
+  }
+
+  return [...porCodigo.entries()].map(([codigoPai, familia]) => {
+    const remoto = remotoPorCodigo.get(codigoPai)!;
+    return {
+      ...publicadoFromRow(familia, undefined),
+      mlItemId: remoto.id,
+      mlPermalink: remoto.permalink,
+      titulo: familia.titulo_ml ?? familia.nome_pai ?? remoto.titulo ?? codigoPai,
+      publicadoEm: remoto.publicadoEm,
+      publicacaoIncompleta: true,
+    };
+  });
 }
 
 export interface StatusPublicadoItem {
