@@ -315,3 +315,40 @@ describe('Trocar categoria', () => {
     expect(screen.getByText('ainda não definida')).toBeInTheDocument();
   });
 });
+
+// Pedido do Diego (2026-09-10): "Criando…" no botão não deixa claro que ALGO está acontecendo —
+// a publicação leva vários segundos num diálogo grande e parece travado. O diálogo inteiro ganha a
+// aura do GlowEffect ("card mode") enquanto a criação está em voo, e a perde ao terminar.
+describe('DialogCriarKit — sinal de que está processando', () => {
+  function dialogo() {
+    return document.querySelector('[data-slot="dialog-content"]')!;
+  }
+
+  it('a aura só existe enquanto a criação está em voo, e o diálogo fica aria-busy', async () => {
+    let concluir!: (v: unknown) => void;
+    criarKitVinculadoMock.mockReturnValue(new Promise((res) => { concluir = res; }));
+    renderDialog([], BASE_COM_FOTO);
+
+    expect(dialogo()).not.toHaveClass('glow-effect-sombra');
+    expect(dialogo()).toHaveAttribute('aria-busy', 'false');
+
+    await avancarECriar();
+
+    await waitFor(() => expect(dialogo()).toHaveClass('glow-effect-sombra'));
+    expect(dialogo()).toHaveAttribute('aria-busy', 'true');
+
+    concluir({ ok: true, kits: [], publicacaoOk: true, loteId: null });
+    await waitFor(() => expect(criarKitVinculadoMock).toHaveBeenCalled());
+  });
+
+  it('falha na criação tira a aura — o diálogo não fica brilhando para sempre', async () => {
+    criarKitVinculadoMock.mockRejectedValue(new Error('boom'));
+    renderDialog([], BASE_COM_FOTO);
+
+    await avancarECriar();
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(dialogo()).not.toHaveClass('glow-effect-sombra');
+    expect(dialogo()).toHaveAttribute('aria-busy', 'false');
+  });
+});

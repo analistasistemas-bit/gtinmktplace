@@ -56,3 +56,44 @@
 @media (forced-colors: active) {
   .glow-effect__aura { display: none; }
 }
+
+/* "Card mode" (referência: motion-primitives GlowEffect) para container que TEM overflow próprio —
+   o diálogo de kit rola por dentro. A aura por elemento (`.glow-effect__aura`, absoluta com inset
+   negativo) seria clipada pelo `overflow-y-auto` do pai; `box-shadow` é desenhado fora da borda e o
+   overflow do próprio elemento não o corta. Mesmas cores do resto (--chart-1/2/3), sem elemento
+   extra e sem mexer no scroll. Uso: classe direto no elemento que deve brilhar enquanto processa. */
+.glow-effect-sombra {
+  animation: glow-effect-sombra-shift 3s linear infinite;
+}
+
+@keyframes glow-effect-sombra-shift {
+  0% {
+    box-shadow: 0 0 20px 1px var(--chart-1),
+                0 0 56px 10px color-mix(in oklab, var(--chart-1) 40%, transparent);
+  }
+  33% {
+    box-shadow: 0 0 20px 1px var(--chart-2),
+                0 0 56px 10px color-mix(in oklab, var(--chart-2) 40%, transparent);
+  }
+  66% {
+    box-shadow: 0 0 20px 1px var(--chart-3),
+                0 0 56px 10px color-mix(in oklab, var(--chart-3) 40%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 20px 1px var(--chart-1),
+                0 0 56px 10px color-mix(in oklab, var(--chart-1) 40%, transparent);
+  }
+}
+
+/* Sem movimento, mas o brilho fica: é ele que diz "ainda processando". */
+@media (prefers-reduced-motion: reduce) {
+  .glow-effect-sombra {
+    animation: none;
+    box-shadow: 0 0 20px 1px var(--chart-1),
+                0 0 56px 10px color-mix(in oklab, var(--chart-1) 40%, transparent);
+  }
+}
+
+@media (forced-colors: active) {
+  .glow-effect-sombra { animation: none; box-shadow: none; }
+}

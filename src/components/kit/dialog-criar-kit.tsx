@@ -21,6 +21,9 @@ import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { uploadFile, buildStoragePath } from '@/lib/storage';
 import { publicarFamilias } from '@/lib/publicar';
 import { cn } from '@/lib/utils';
+// A classe `glow-effect-sombra` mora no CSS do GlowEffect, que hoje só chega ao bundle pelo
+// componente (sidebar/overlay de login). Importar aqui deixa o diálogo independente disso.
+import '@/components/ui/glow-effect.css';
 import {
   TAMANHOS_KIT, TITULO_MAX_KIT, tituloDoKit, descricaoDoKit, criarKitVinculado,
   type BaseParaKit, type KitFormValues,
@@ -242,7 +245,17 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
 
   return (
     <Dialog open={open} onOpenChange={(v) => !mutation.isPending && onOpenChange(v)}>
-      <DialogContent className="max-h-[85vh] w-full max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-4xl">
+      {/* Enquanto cria, o diálogo inteiro ganha a aura ("card mode" do GlowEffect): o botão vira
+          "Criando…", mas texto sozinho num diálogo grande não diz que ALGO está acontecendo agora —
+          a publicação leva vários segundos e o operador não sabe se travou. `aria-busy` dá o mesmo
+          recado a quem não vê a aura. */}
+      <DialogContent
+        aria-busy={mutation.isPending}
+        className={cn(
+          'max-h-[85vh] w-full max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-4xl',
+          mutation.isPending && 'glow-effect-sombra',
+        )}
+      >
         <DialogHeader>
           <DialogTitle>Criar kit vinculado</DialogTitle>
           <DialogDescription>
