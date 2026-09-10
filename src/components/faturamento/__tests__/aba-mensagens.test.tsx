@@ -6,12 +6,14 @@ import { toast } from 'sonner';
 import { AbaMensagens } from '../aba-mensagens';
 
 const responderMensagemMock = vi.fn();
+const dispensarConversaMock = vi.fn();
 
 vi.mock('@/lib/mensagens', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/mensagens')>();
   return {
     ...actual,
     responderMensagem: (...args: unknown[]) => responderMensagemMock(...args),
+    dispensarConversa: (...args: unknown[]) => dispensarConversaMock(...args),
   };
 });
 
@@ -36,7 +38,7 @@ function conversaBase(id: number, aguardando: boolean) {
     mensagens: [{
       id: `message-${id}`, pack_id: packId, order_id: `order-${id}`, message_id: `m${id}`, direcao: 'recebida', texto: 'Olá',
       item_titulo: `Produto ${id}`, item_id: `MLB${id}`, comprador_nome: null, comprador_nick: `NICK_${id}`,
-      order_status: 'paid', data_ml: '2026-07-10T10:00:00Z',
+      order_status: 'paid', data_ml: '2026-07-10T10:00:00Z', lida: !aguardando,
     }],
   };
 }
@@ -47,7 +49,7 @@ const PACK_1_CANCELADA = {
   mensagens: [{
     id: 'message-1', pack_id: 'pack-1', order_id: 'order-1', message_id: 'm1', direcao: 'recebida', texto: 'Olá',
     item_titulo: 'Produto X', item_id: 'MLB123', comprador_nome: null, comprador_nick: 'MARIA_01',
-    order_status: 'cancelled', data_ml: '2026-07-10T10:00:00Z',
+    order_status: 'cancelled', data_ml: '2026-07-10T10:00:00Z', lida: false,
   }],
 };
 
@@ -170,5 +172,20 @@ describe('AbaMensagens', () => {
     expect(textarea).not.toBeDisabled();
     expect(responderBtn).not.toBeDisabled();
     expect(invalidateSpy).not.toHaveBeenCalled();
+  });
+
+  it('clicar em Dispensar chama dispensarConversa com o pack_id e mostra toast de sucesso', async () => {
+    dispensarConversaMock.mockResolvedValueOnce(1);
+
+    const { invalidateSpy } = renderAba();
+    const card = screen.getByText('Produto 2').closest('div.rounded-lg') as HTMLElement;
+    const dispensarBtn = within(card).getByRole('button', { name: /dispensar/i });
+
+    await userEvent.click(dispensarBtn);
+
+    expect(dispensarConversaMock).toHaveBeenCalledWith('pack-2');
+    expect(toast.success).toHaveBeenCalledWith('Conversa dispensada.');
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagens'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['mensagensAguardando'] });
   });
 });

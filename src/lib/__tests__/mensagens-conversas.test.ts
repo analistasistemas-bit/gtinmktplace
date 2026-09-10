@@ -44,6 +44,7 @@ const msg = (over: Partial<Mensagem>): Mensagem => ({
   // `??` trataria um `null` explícito como "não informado" e cairia no default — usa 'in' para
   // permitir que o teste do caso `data_ml: null` passe null de propósito.
   data_ml: 'data_ml' in over ? (over.data_ml as string | null) : '2026-07-10T10:00:00Z',
+  lida: over.lida ?? false,
 });
 
 describe('buscarConversas', () => {
@@ -58,6 +59,24 @@ describe('buscarConversas', () => {
     const conversas = await buscarConversas();
     expect(conversas).toHaveLength(1);
     expect(conversas[0].aguardando).toBe(true);
+  });
+
+  it('última recebida com lida: true → aguardando: false (dispensada)', async () => {
+    mockLimit.mockResolvedValueOnce({
+      data: [msg({ direcao: 'recebida', lida: true })],
+      error: null,
+    });
+    const [conversa] = await buscarConversas();
+    expect(conversa.aguardando).toBe(false);
+  });
+
+  it('última recebida com lida: false → aguardando: true', async () => {
+    mockLimit.mockResolvedValueOnce({
+      data: [msg({ direcao: 'recebida', lida: false })],
+      error: null,
+    });
+    const [conversa] = await buscarConversas();
+    expect(conversa.aguardando).toBe(true);
   });
 
   it('pack respondido (última é enviada) → aguardando: false', async () => {
