@@ -54,6 +54,7 @@
 | excluir-produto | **true** | HTTP (frontend, **admin**) | sim (delete por `codigo_pai`; repetir devolve 404) |
 | adicionar-variacoes-familia | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, D-8) |
 | criar-kit-vinculado | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, 1 por kit) |
+| varrer-anuncios-orfaos | **true** | HTTP (frontend, **admin**) | sim (só leitura: ML + banco, nada escrito) |
 | **Kit Virtual (ADR-0154)** ||||
 | buscar-componentes-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (leitura) |
 | preview-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (leitura + IA opt-in) |
@@ -1609,6 +1610,22 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `UPSTASH_REDIS_REST_URL`/`_TOKEN`, `PUBLIAI_PUBLIC_URL`. Lista em `.env.example`.
 
 ---
+
+## Varredura de anúncios órfãos (`varrer-anuncios-orfaos`)
+
+Nasceu do incidente 2026-09-10 (adendo do ADR-0088): um anúncio criado pelo app perdeu o vínculo no
+banco e seguiu ativo e vendendo, sem nada no PubliAI que o representasse.
+
+Compara os anúncios `active` e `paused` da conta no ML com os ids que o app conhece — `familias`,
+`anuncios_externos`, `anuncios_externos_itens` e `kits_virtuais` — e devolve a diferença.
+
+- **Só leitura**: nenhuma escrita no ML nem no banco. Encerrar um órfão é decisão do operador.
+- **Sob demanda** (botão na tela Publicados), nunca em cron: ~1 chamada por 100 anúncios, mais o
+  multiget dos desconhecidos.
+- **Fail-closed**: erro em qualquer uma das 4 consultas de ids derruba a chamada. Responder com uma
+  fonte a menos transformaria anúncios legítimos em falsos órfãos.
+- **Truncado**: acima de 1000 anúncios o `offset` do `items/search` para de andar (a saída seria
+  `search_type=scan`); a resposta marca `truncado` e a tela avisa que a varredura foi parcial.
 
 ## Histórico — `reconciliar-faturamento` sem schedule QStash desde a criação (corrigida)
 

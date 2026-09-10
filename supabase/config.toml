@@ -173,3 +173,7 @@ verify_jwt = true
 # ADR-0135: sugestão de NCM por IA — só sugere, nunca grava; chamada pelo APP com JWT.
 [functions.sugerir-ncm]
 verify_jwt = true
+# Incidente 2026-09-10: varredura que compara a conta do ML com o banco e lista anúncios que o app
+# não conhece. Só leitura, chamada pelo APP com o JWT do operador.
+[functions.varrer-anuncios-orfaos]
+verify_jwt = true

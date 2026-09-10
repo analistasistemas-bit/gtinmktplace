@@ -74,6 +74,7 @@ import {
 } from '@/lib/kit-virtual';
 import { useProfile } from '@/hooks/useProfile';
 import { DialogCriarKitVirtual } from '@/components/kit-virtual/DialogCriarKitVirtual';
+import { AnunciosOrfaos } from '@/components/anuncios-orfaos';
 import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
 import { FiltrosAtivos, type ChaveFiltro } from '@/components/filtros-ativos';
@@ -1230,6 +1231,11 @@ export default function Publicados() {
           {filtro.status === 'moderado' && <span className="font-medium">• filtrando</span>}
         </button>
       )}
+
+      {/* Anúncios fora do app (incidente 2026-09-10): confere a conta do ML contra o banco. Sob
+          demanda — é ele que acha os órfãos anteriores ao guard de exclusão. Admin só: a varredura
+          gasta chamadas de API e a leitura é da conta inteira, não de um produto. */}
+      {isAdmin && <AnunciosOrfaos />}
 
       {/* Catálogo em risco (spec 2026-08-12): variações publicadas sem ficha — ML pode pausar */}
       <CatalogoEmRisco itens={itensRisco} />

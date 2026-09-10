@@ -776,3 +776,28 @@ Três decisões que valem registro:
 - **Guard contra falso-vermelho** (revisão do Fable): só entra o `codigo_pai` que NÃO tem nenhuma
   família publicada. Uma linha sem `ml_item_id` ao lado de uma publicada é ciclo de UPDATE normal —
   sem isso, todo lote em publicação apareceria como incidente.
+
+### Adendo (2026-09-10) — varredura de anúncios órfãos
+
+A visibilidade acima só alcança quem ainda tem linha no banco. Os anúncios que perderam o vínculo
+ANTES do guard — como o MLB5210027027 — não têm nada no PubliAI que os represente: só existem no ML.
+
+`varrer-anuncios-orfaos` (nova, `verify_jwt = true`, SOMENTE LEITURA) lista os anúncios `active` e
+`paused` da conta e subtrai tudo que o app conhece: `familias.ml_item_id`,
+`anuncios_externos.item_externo_id`, `anuncios_externos_itens.item_externo_id` e
+`kits_virtuais.ml_item_id`. O que sobra é órfão. A tela Publicados ganha o card "Anúncios fora do
+PubliAI" (admin), com botão "Verificar agora".
+
+Decisões:
+
+- **Sob demanda, não em cron nem no carregamento da tela.** Cada varredura é ~1 chamada por 100
+  anúncios mais o multiget dos desconhecidos; rodar sozinho gastaria cota à toa.
+- **Só `active`/`paused`.** Encerrado não vende, e listar histórico estouraria o teto de 1000 do
+  `items/search` em conta antiga.
+- **Fail-closed na leitura do banco**: se qualquer uma das 4 fontes de ids falhar, a função ERRA em
+  vez de responder — com uma fonte a menos, dezenas de anúncios legítimos apareceriam como órfãos.
+- **Truncado é dito em voz alta.** Acima de 1000 anúncios o `offset` do ML para de andar (a saída
+  seria `search_type=scan`); enquanto nenhuma conta real passar disso, a tela avisa que a varredura
+  foi parcial em vez de fingir cobertura.
+- **A função não age.** Encerrar ou re-vincular um órfão é decisão do operador, feita no ML: o app não
+  mexe em anúncio que não conhece.
