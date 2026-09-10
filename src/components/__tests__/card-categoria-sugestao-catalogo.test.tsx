@@ -16,6 +16,8 @@ vi.mock('@/hooks/useFamiliaMutations', () => ({
 vi.mock('@/lib/queries', () => ({
   buscarCategoriaML: vi.fn(async () => ({ candidatos: [], sugestaoConcorrente: null })),
 }));
+// O caminho da categoria é um GET público na API do ML — sem mock, cada render tentaria rede real.
+vi.mock('@/lib/caminho-categoria-ml', () => ({ caminhoCategoriaML: async () => [] as string[] }));
 
 const base = {
   id: 'f1', loteId: 'l1',

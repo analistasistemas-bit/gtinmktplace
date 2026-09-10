@@ -13,7 +13,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 import { QK, buscarCategoriaML, type KitVinculado } from '@/lib/queries';
-import { caminhoCategoriaML } from '@/lib/caminho-categoria-ml';
+import { useCaminhoCategoria } from '@/hooks/useCaminhoCategoria';
 import type { CategoriaCandidata } from '@/lib/tipos-dominio';
 import { supabase } from '@/lib/supabase';
 import { effectiveOrgId, useSupportStore } from '@/stores/support-store';
@@ -39,19 +39,8 @@ const MENSAGEM_POR_MOTIVO: Record<string, string> = {
  * que já veio do banco/da busca. A folha fica em nó próprio para continuar clicável/legível.
  */
 function CaminhoCategoria({ categoriaId, nome }: { categoriaId: string | null; nome: string | null }) {
-  const [caminho, setCaminho] = useState<string[]>([]);
-
-  useEffect(() => {
-    setCaminho([]);
-    if (!categoriaId) return;
-    let vivo = true;
-    void caminhoCategoriaML(categoriaId).then((c) => { if (vivo) setCaminho(c); });
-    return () => { vivo = false; };
-  }, [categoriaId]);
-
+  const { ancestrais, folha } = useCaminhoCategoria(categoriaId, nome);
   if (!categoriaId && !nome) return <span className="text-muted-foreground">ainda não definida</span>;
-  const ancestrais = caminho.slice(0, -1);
-  const folha = caminho.at(-1) ?? nome ?? '';
   return (
     <span>
       {ancestrais.length > 0 && <span className="text-muted-foreground">{ancestrais.join(' › ')} › </span>}

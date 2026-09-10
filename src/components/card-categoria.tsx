@@ -7,12 +7,35 @@ import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useDefinirCategoriaLivre } from '@/hooks/useFamiliaMutations';
 import { buscarCategoriaML } from '@/lib/queries';
+import { useCaminhoCategoria } from '@/hooks/useCaminhoCategoria';
 import { CATEGORIAS_MANUAIS } from '@/lib/categoria';
 import { EditorAtributosFaltantes } from '@/components/editor-atributos-faltantes';
 import type { Familia, TipoAviamento, CategoriaCandidata } from '@/lib/tipos-dominio';
 
 function nomeCategoriaAmigavel(tipo: TipoAviamento | null): string {
   return CATEGORIAS_MANUAIS.find((c) => c.tipo === tipo)?.rotulo ?? '—';
+}
+
+/**
+ * Categoria com o ramo inteiro do ML acima do nome (achado do Diego, 10/09/2026: "Leite",
+ * "Leite" e "Leite em Pó" na mesma lista de resultados são indistinguíveis sem o caminho).
+ * Empilhado, não inline como no diálogo de kit — este card tem 200px fixos. O caminho vem por
+ * rede: enquanto não chega, ou se falhar, sobra o nome sozinho, que é o que já se via antes.
+ */
+function CaminhoCategoria({ categoriaId, nome, className }: {
+  categoriaId: string | null;
+  nome: string | null;
+  className?: string;
+}) {
+  const { ancestrais, folha } = useCaminhoCategoria(categoriaId, nome);
+  return (
+    <>
+      {ancestrais.length > 0 && (
+        <span className="block text-[11px] font-normal leading-tight text-muted-foreground">{ancestrais.join(' › ')} ›</span>
+      )}
+      <span className={className}>{folha}</span>
+    </>
+  );
 }
 
 // Sugestão pela ficha de catálogo (spec 2026-08-22): diferente do card do concorrente, os dados
@@ -136,7 +159,10 @@ function BuscaCategoria({ familia }: { familia: Familia }) {
               {aplicando(c.categoriaId) ? (
                 <span className="inline-flex items-center gap-1"><Loader2 className="h-3 w-3 animate-spin" /> Aplicando…</span>
               ) : (
-                <>{c.categoriaNome} <span className="text-muted-foreground">({c.categoriaId})</span></>
+                <>
+                  <CaminhoCategoria categoriaId={c.categoriaId} nome={c.categoriaNome} />
+                  {' '}<span className="text-muted-foreground">({c.categoriaId})</span>
+                </>
               )}
             </button>
           ))}
@@ -181,7 +207,10 @@ export function CardCategoria({ familia }: { familia: Familia }) {
       ) : (
         <>
           <p className="text-sm font-medium">
-            {familia.categoriaNome ?? nomeCategoriaAmigavel(familia.tipoAviamento)}
+            <CaminhoCategoria
+              categoriaId={familia.categoriaMlId}
+              nome={familia.categoriaNome ?? nomeCategoriaAmigavel(familia.tipoAviamento)}
+            />
           </p>
           <p className="text-xs text-muted-foreground">{familia.categoriaMlId}</p>
           <SugestaoCatalogo familia={familia} />
