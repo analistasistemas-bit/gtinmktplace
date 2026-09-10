@@ -241,6 +241,30 @@ describe('montarPromptAtributos', () => {
     expect(p.toLowerCase()).toMatch(/copie|extraia/);
     expect(p.toLowerCase()).toMatch(/n[aã]o.*invent/);
   });
+  // Incidente 2026-09-10 (kit do Ninho em "Leite Infantil"): BABY_FORMULA_FORMAT é obrigatório,
+  // `value_type=string` (texto-livre pelo ADR-0052) e traz sugestões "Em pó"/"Líquida". Sem elas no
+  // prompt, a IA não tinha pista do que copiar e omitia — mesmo com "Em Pó" no título — e o gate do
+  // kit recusava a criação. As sugestões vão só como TEXTO: emitir `id = nome` como no closed-set
+  // faria a IA responder o código, que `validarTextoLivre` rejeita (não consta no texto do produto).
+  it('texto-livre com sugestões: mostra os nomes das opções e NUNCA os códigos', () => {
+    const schema = [A({
+      id: 'BABY_FORMULA_FORMAT', nome: 'Formato da fórmula infantil', required: true,
+      valores: [{ id: '1358247', nome: 'Em pó' }, { id: '1358248', nome: 'Líquida' }],
+    })];
+    const p = montarPromptAtributos({ nome: 'Leite Em Pó Ninho Zero Lactose Sachê 700g' }, atributosAlvo(schema, []));
+    expect(p).toContain('Em pó');
+    expect(p).toContain('Líquida');
+    expect(p).not.toContain('1358247');
+    expect(p).not.toContain('1358248');
+    // A regra de ouro continua no prompt: sugestão não dispensa lastro no texto.
+    expect(p.toLowerCase()).toMatch(/copie|extraia/);
+    expect(p.toLowerCase()).toMatch(/n[aã]o.*invent/);
+  });
+  it('texto-livre sem sugestões: segue com a instrução de copiar, sem lista', () => {
+    const alvos = atributosAlvo([A({ id: 'LINE', nome: 'Linha', required: true })], []);
+    const p = montarPromptAtributos({ nome: 'Barbante Anne' }, alvos);
+    expect(p).toContain('- LINE (Linha): copie exatamente do título/descrição');
+  });
   it('reforça para não reciclar o mesmo número em atributos diferentes quando há alvo numérico', () => {
     const p = montarPromptAtributos({ nome: 'Fita', descricao: 'rolo 25m veludo' }, atributosAlvo(SCHEMA, base));
     expect(p.toLowerCase()).toContain('não reutilize o mesmo número');

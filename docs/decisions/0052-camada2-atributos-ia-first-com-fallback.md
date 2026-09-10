@@ -133,3 +133,39 @@ em `_shared/categoria/faltantes-editaveis.ts` (editor "Complete para publicar") 
 tinha recebido o fix — `MATERIAL` continuava aparecendo como `Select` fechado (Alpaca/Ouro/Prata/Vidro),
 sem opção de digitar "100% Poliéster". Mesma correção aplicada: `value_type=string` → sempre `texto`,
 checado antes de `valores.length`.
+
+### Adendo (2026-09-10) — texto-livre com sugestões: as opções passam a aparecer no prompt
+
+Incidente: criar kit vinculado do "Leite Em Pó Ninho Zero Lactose Sachê 700g" trocando a categoria para
+"Bebês › Alimentos para Bebês › Leite Infantil" (`MLB269341`) falhou com *"A categoria escolhida exige
+atributos que não foram resolvidos: Formato da fórmula infantil"* — o gate LOUD do kit
+(`criar-kit-vinculado/processar.ts`, ADR-0151: kit não passa pela Revisão, então falha ali ou publica
+cego) fez o que devia.
+
+Causa (reproduzida contra o schema real do ML e o modelo real, não inferida): `BABY_FORMULA_FORMAT` é
+`required`, `value_type=string` e traz `values` "Em pó" / "Líquida". Pela correção de 2026-07-10 acima,
+`value_type=string` é sempre texto-livre — correto e mantido —, mas `montarPromptAtributos` emitia para
+esse alvo apenas *"copie exatamente do título/descrição; se não constar lá, omita"*, **sem mostrar as
+sugestões**. Para um atributo cujo nome não diz o que copiar ("Formato da fórmula infantil"), a IA não
+tem pista e omite, mesmo com "Em Pó" no próprio título. O levantamento de 2026-08-07 (adendo acima)
+concluiu que "nenhum obrigatório de texto fica sem preenchimento automático" a partir de 8 categorias
+amostradas; este é o contraexemplo que faltava.
+
+Decisão: alvo de **texto-livre que tenha `valores`** passa a listá-los no prompt, **só pelo nome** e com
+instrução explícita de responder o texto, nunca o código. Emitir `id = nome` (formato do closed-set)
+seria pior que não mudar nada: a IA responderia `"1358247"` e `validarTextoLivre` rejeitaria — o número
+não consta no texto do produto —, trocando uma falha visível por uma silenciosa (achado da revisão do
+Fable ao plano).
+
+O que **não** muda: `validarRespostaAtributos` fica intacta. A regra de ouro continua exigindo que o
+valor conste literalmente no nome/descrição, então uma sugestão escolhida sem lastro no texto continua
+rejeitada. A mudança dá pista à IA; não afrouxa a aceitação.
+
+Prova (2026-09-10, `openai/gpt-4.1-mini`, temperature 0, produto do incidente): antes, a IA devolvia
+`LINE`, `PACKAGING_TYPE`, `UNIT_WEIGHT`, `SALE_FORMAT`, `CONTAINS_LACTOSE` e omitia o formato; depois,
+devolve `BABY_FORMULA_FORMAT: "Em pó"`, que passa na regra de ouro. Rodando `resolverAtributosGenericos`
+inteiro, o gate do kit sai de `["Formato da fórmula infantil"]` para `[]`.
+
+Dívida nomeada (adiada de propósito): quando a informação **não** está no título nem na descrição, o kit
+continua sem saída — o diálogo de criar kit não tem o editor "Complete para publicar" que a Revisão tem
+(ADR-0151 D-3/D-4). Saída de hoje: corrigir o título da base, ou escolher outra categoria.

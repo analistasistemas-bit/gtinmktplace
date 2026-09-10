@@ -294,6 +294,16 @@ export function montarPromptAtributos(input: InputAtributos, alvos: AtributoAlvo
     const sufixoMultivalor = a.multivalued
       ? ' Se houver mais de um valor possível, informe só o mais relevante (não junte vários separados por vírgula).'
       : '';
+    // Texto-livre COM sugestões da categoria (adendo 2026-09-10): sem mostrá-las, um obrigatório
+    // como BABY_FORMULA_FORMAT ("Formato da fórmula infantil": Em pó | Líquida) fica sem pista do
+    // que copiar e a IA omite — mesmo com "Em Pó" no título. Só os NOMES, nunca `id = nome` como
+    // no closed-set: a IA responderia o código e `validarTextoLivre` o rejeitaria (o número não
+    // consta no texto do produto), trocando a falha visível por uma silenciosa. A regra de ouro
+    // segue valendo — a sugestão só é aceita se aparecer no título/descrição.
+    if (a.valores.length > 0) {
+      const sugestoes = a.valores.slice(0, 60).map((v) => v.nome).join('; ');
+      return `- ${a.id} (${a.nome}): se o título/descrição indicar, responda com o TEXTO de uma destas (nunca o código): ${sugestoes}. Se nenhuma servir, copie exatamente do título/descrição; se não constar lá, omita (não invente).${sufixoMultivalor}`;
+    }
     return `- ${a.id} (${a.nome}): copie exatamente do título/descrição; se não constar lá, omita (não invente).${sufixoMultivalor}`;
   }).join('\n');
   const temNumerico = alvos.some((a) => a.tipo === 'numero');
