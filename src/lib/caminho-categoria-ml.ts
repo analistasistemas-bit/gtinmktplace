@@ -17,7 +17,10 @@ export function caminhoCategoriaML(categoriaId: string): Promise<string[]> {
   if (emCache) return emCache;
 
   const promessa = fetch(`https://api.mercadolibre.com/categories/${categoriaId}`, {
-    signal: AbortSignal.timeout(10_000),
+    // `?.` proposital: em navegador sem AbortSignal.timeout (Safari/iOS < 16, ainda vivo em PWA
+    // instalada) a chamada lançaria SÍNCRONO, fora do .catch — e uma decoração de UI derrubaria o
+    // diálogo inteiro no error boundary. `fetch` aceita `signal: undefined`.
+    signal: AbortSignal.timeout?.(10_000),
   })
     .then((r) => (r.ok ? r.json() : null))
     .then((json) => {
