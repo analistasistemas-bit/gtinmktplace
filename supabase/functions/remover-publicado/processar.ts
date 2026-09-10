@@ -100,8 +100,23 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     .eq('id', familiaId).eq('org_id', orgId).maybeSingle();
   if (alvoErr) throw new Error(`remover-publicado: consultar família falhou: ${alvoErr.message}`);
   if (!alvo) return { tipo: 'nao_encontrada' };
-  // Invariante ADR-0019: este escape hatch só remove famílias PUBLICADAS.
-  if (!alvo.ml_item_id) return { tipo: 'nao_publicada' };
+  // Invariante ADR-0019: este escape hatch só remove famílias PUBLICADAS. Em User Products,
+  // porém, `familias.ml_item_id` só é gravado quando a saga chega a `ativo`
+  // (publicar-familia-up.ts) — uma saga que parou no meio deixa filhos VIVOS no ML sem esse
+  // campo. Desde o guard de 2026-09-10 essa família também não pode ser excluída (o item remoto
+  // recusa), então exigir `ml_item_id` aqui a deixaria presa nas duas portas: nem removível nem
+  // excluível, com anúncio vivo lá fora — o oposto do que o guard existe para evitar. Filho com
+  // `item_externo_id` é a mesma prova de publicação que o guard usa, e a mini-saga abaixo já
+  // opera por `idsExternos`, não por `ml_item_id`.
+  if (!alvo.ml_item_id) {
+    const { data: raizes, error: raizesErr } = await admin.from('anuncios_externos')
+      .select('anuncios_externos_itens(item_externo_id)')
+      .eq('org_id', alvo.org_id).eq('canal', canal).eq('codigo_pai', alvo.codigo_pai);
+    if (raizesErr) throw new Error(`remover-publicado: consultar itens remotos falhou: ${raizesErr.message}`);
+    const temFilhoVivo = ((raizes ?? []) as Array<{ anuncios_externos_itens?: Array<{ item_externo_id: string | null }> }>)
+      .some((r) => (r.anuncios_externos_itens ?? []).some((i) => !!i.item_externo_id));
+    if (!temFilhoVivo) return { tipo: 'nao_publicada' };
+  }
 
   // Guarda: bloqueia se há família do mesmo codigo_pai em 'publicando' (UPDATE em voo depende do ml_item_id).
   const { data: emVoo, error: emVooErr } = await admin.from('familias')
@@ -187,7 +202,9 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   // aos dois: `preservarFamilia` e remoção de verdade passam pelo mesmo `return` abaixo).
   const kitsVirtuaisBloqueando = await kitsVirtuaisPublicadosBloqueando(
     admin, alvo.org_id as string, alvo.codigo_pai as string,
-    [alvo.ml_item_id as string, ...filhos.map((f) => f.itemExternoId)],
+    // `ml_item_id` pode ser null aqui desde 2026-09-10 (UP com saga interrompida): só os filhos
+    // provam a publicação. Filtra para não passar null adiante como se fosse id de item.
+    [alvo.ml_item_id as string | null, ...filhos.map((f) => f.itemExternoId)].filter((id): id is string => !!id),
   );
   if (kitsVirtuaisBloqueando.length > 0) {
     return { tipo: 'kit_virtual_publicado', kits: kitsVirtuaisBloqueando };
@@ -298,6 +315,17 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
   // Fail-closed (revisão Codex): erro aqui virando `alvos=[]` reportaria `ok` sem remover nada.
   if (familiasErr) throw new Error(`remover-publicado: listar famílias pra excluir falhou: ${familiasErr.message}`);
   const alvos = familias ?? [];
+
+  // A família UP com saga interrompida (2026-09-10) não tem `ml_item_id` — só os filhos provam a
+  // publicação —, então o filtro acima não a traz. Sem isto ela ficaria no banco depois da
+  // remoção, apontando para um anúncio que esta função acabou de pausar.
+  if (!alvos.some((f: { id: string }) => f.id === alvo.id)) {
+    const { data: propria, error: propriaErr } = await admin.from('familias')
+      .select('id, lote_id, user_id, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path)')
+      .eq('id', alvo.id).eq('org_id', orgId).maybeSingle();
+    if (propriaErr) throw new Error(`remover-publicado: reler família alvo falhou: ${propriaErr.message}`);
+    if (propria) alvos.push(propria);
+  }
 
   // Re-checagem TOCTOU (revisão Codex): entre o gate de mudando_composicao lá em cima e aqui, o
   // loop de pausar-todos os filhos levou tempo real (N chamadas HTTP) — uma NOVA composição pode

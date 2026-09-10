@@ -40,7 +40,7 @@ export interface EntradaExclusao {
    * `ativo` era apagada com o anúncio VIVO no ML: some do app, continua vendendo, e a venda não
    * baixa estoque. Ausente = não foi possível consultar → trava fechado, como `vinculosVivosFora`.
    */
-  codigosComItemRemoto?: ReadonlySet<string>;
+  codigosComItemRemoto: ReadonlySet<string> | undefined;
 }
 export interface ResultadoExclusao {
   paraExcluir: FamiliaExclusao[];

@@ -739,3 +739,17 @@ Limpeza do incidente: `MLB5210027027` foi encerrado no ML sob autorização expl
 
 Fica em aberto, de propósito: nada varre anúncios já órfãos de antes deste fix. Se houver outros,
 só aparecem por conferência manual na conta do ML.
+
+### Correção do mesmo dia (2026-09-10) — o guard criava um beco sem saída em `remover-publicado`
+
+Achado na revisão do Fable: `familias.ml_item_id` só é gravado quando a saga UP chega a `ativo`, e
+`remover-publicado` recusava com `nao_publicada` sem esse campo. Com o guard acima recusando a
+exclusão pelo item remoto, a família UP de saga interrompida ficaria presa nas DUAS portas — nem
+removível nem excluível — com o anúncio vivo no ML. É exatamente o estado que `excluir-produto` já
+alertava evitar.
+
+Correção: quando falta `ml_item_id`, `remover-publicado` aceita como prova de publicação um filho
+com `item_externo_id` (mesma fonte do guard). Dois pontos do fluxo assumiam o campo preenchido e
+foram ajustados junto: a lista passada a `kitsVirtuaisPublicadosBloqueando` filtra nulos, e a
+seleção das famílias a excluir (`ml_item_id not null`) inclui a própria família alvo — sem isso ela
+sobreviveria à remoção apontando para um anúncio recém-pausado.

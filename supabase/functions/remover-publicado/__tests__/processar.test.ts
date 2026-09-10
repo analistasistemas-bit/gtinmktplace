@@ -884,3 +884,49 @@ describe('removerPublicado — integração das portas reais (sem removerComposi
     expect(chamadas).toBeGreaterThan(2); // ambos os filhos foram tentados (não parou no 1º)
   });
 });
+
+// Incidente 2026-09-10 (kit do Ninho): em UP `familias.ml_item_id` só é gravado quando a saga chega
+// a `ativo`; uma saga interrompida deixa filhos VIVOS no ML sem esse campo. Desde o guard do mesmo
+// dia, essa família também não pode ser EXCLUÍDA (o item remoto recusa) — se aqui ela continuasse
+// caindo em `nao_publicada`, ficaria presa nas duas portas, com anúncio vivo lá fora.
+describe('removerPublicado — família UP sem ml_item_id mas com filho vivo no ML', () => {
+  it('não responde "nao_publicada": o filho com item_externo_id é a prova de publicação', async () => {
+    const { admin, deletes } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', codigo_pai: '00000098', ml_item_id: null, org_id: ORG }, // alvo, saga interrompida
+        [], // emVoo
+        [], // kits vivos (guard D-14)
+        [], // paraExcluir por ml_item_id → vazia (é justamente o buraco)
+        [{ // releitura da própria família alvo
+          id: 'fam-1', lote_id: 'lote-1', user_id: DONO,
+          capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null,
+          variacoes: [{ imagem_path: null }],
+        }],
+        [], // resto do lote → lote vazio
+      ],
+      // 1ª leitura: prova de filho vivo (o guard novo). Depois o fluxo normal de UP.
+      anuncios_externos: [
+        [{ anuncios_externos_itens: [{ item_externo_id: 'MLB5210027027' }] }],
+        [{ id: 'ext-1', mudando_composicao: false }],
+        [{ mudando_composicao: false }],
+      ],
+      anuncios_externos_itens: [[]], // sem filhos ativos p/ pausar: cai no caminho já coberto
+      lotes: [],
+    });
+
+    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+
+    expect(r.tipo).not.toBe('nao_publicada');
+    expect(deletes.map((d) => d.tabela)).toContain('familias');
+  });
+
+  it('sem ml_item_id E sem filho vivo continua "nao_publicada" (nada existe no ML)', async () => {
+    const { admin, deletes } = fakeAdmin({
+      familias: [{ id: 'fam-1', codigo_pai: '00000098', ml_item_id: null, org_id: ORG }],
+      anuncios_externos: [[{ anuncios_externos_itens: [{ item_externo_id: null }] }]],
+    });
+    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r.tipo).toBe('nao_publicada');
+    expect(deletes).toEqual([]);
+  });
+});
