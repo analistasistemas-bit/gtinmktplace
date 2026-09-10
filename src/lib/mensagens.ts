@@ -13,6 +13,7 @@ export interface Mensagem {
   comprador_nick: string | null;
   order_status: string | null;
   data_ml: string | null;
+  lida: boolean;
 }
 
 /** Uma conversa = todas as mensagens de um pack, em ordem cronológica. */
@@ -25,7 +26,7 @@ export interface Conversa {
   comprador_nick: string | null;
   order_status: string | null;
   mensagens: Mensagem[];
-  /** Aguardando resposta = última mensagem do comprador em pedido não cancelado. ADR-0067. */
+  /** Aguardando resposta = última mensagem do comprador, não lida, em pedido não cancelado. ADR-0067. */
   aguardando: boolean;
   ultima: string | null;
 }
@@ -34,7 +35,7 @@ export interface Conversa {
 export async function buscarConversas(): Promise<Conversa[]> {
   const { data, error } = await supabase
     .from('ml_mensagens')
-    .select('id, pack_id, order_id, message_id, direcao, texto, item_titulo, item_id, comprador_nome, comprador_nick, order_status, data_ml')
+    .select('id, pack_id, order_id, message_id, direcao, texto, item_titulo, item_id, comprador_nome, comprador_nick, order_status, data_ml, lida')
     // 1000 últimas mensagens; paginação real se a aba crescer. Ordena desc (mais recentes
     // primeiro) para o .limit() pegar as certas, depois reverte para a ordem cronológica
     // ascendente que o resto da função espera. nullsFirst: false → nulls ficam no FIM do desc,
@@ -75,7 +76,7 @@ export async function buscarConversas(): Promise<Conversa[]> {
   const conversas = [...porPack.values()];
   for (const c of conversas) {
     const ultima = c.mensagens[c.mensagens.length - 1];
-    c.aguardando = c.order_status !== 'cancelled' && ultima?.direcao === 'recebida';
+    c.aguardando = c.order_status !== 'cancelled' && ultima?.direcao === 'recebida' && ultima?.lida === false;
   }
   // Aguardando no topo; depois mais recentes.
   return conversas.sort((a, b) =>
@@ -113,4 +114,12 @@ export function responderMensagem(pack_id: string, text: string): Promise<{ ok: 
 /** Sugestão de IA — reusa a mesma função de perguntas (texto do comprador + título do item). */
 export function sugerirRespostaMensagem(texto: string, item_titulo: string | null): Promise<{ ok: true; sugestao: string }> {
   return postEdge('sugerir-resposta-pergunta', { pergunta: texto, item_titulo });
+}
+
+/** Dispensa a conversa: marca as recebidas como lidas, tirando-a de "Aguardando". Reabre sozinha
+ *  se o comprador mandar mensagem nova. Retorna quantas linhas foram marcadas. */
+export async function dispensarConversa(pack_id: string): Promise<number> {
+  const { data, error } = await supabase.rpc('marcar_mensagens_lidas', { p_pack_id: pack_id });
+  if (error) throw new Error(error.message);
+  return (data as number) ?? 0;
 }

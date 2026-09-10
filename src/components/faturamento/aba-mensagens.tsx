@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Sparkles, Send, MessagesSquare, ExternalLink } from 'lucide-react';
+import { Sparkles, Send, MessagesSquare, ExternalLink, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useListaMensagens } from '@/hooks/useMensagens';
-import { responderMensagem, sugerirRespostaMensagem, ehPedidoCancelado, type Conversa } from '@/lib/mensagens';
+import { responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, type Conversa } from '@/lib/mensagens';
 import { fmtDataCurta, urlAnuncioML } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -18,6 +18,7 @@ function CardConversa({ c }: { c: Conversa }) {
   const [sugerindo, setSugerindo] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [canceladaLocal, setCanceladaLocal] = useState(false);
+  const [dispensando, setDispensando] = useState(false);
 
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
   const cancelada = c.order_status === 'cancelled' || canceladaLocal;
@@ -54,6 +55,21 @@ function CardConversa({ c }: { c: Conversa }) {
         toast.error(`Falha ao enviar: ${(e as Error).message}`);
       }
     } finally { setEnviando(false); }
+  }
+
+  async function dispensar() {
+    setDispensando(true);
+    try {
+      // 0 linhas = a RPC não alcançou o pack (ela filtra por user_id; a sessão de suporte enxerga
+      // a conversa por org_id). Sem isso o toast diria "dispensada" para um no-op.
+      const n = await dispensarConversa(c.pack_id);
+      if (n === 0) toast.info('Nenhuma mensagem para dispensar nesta conversa.');
+      else toast.success('Conversa dispensada.');
+      await qc.invalidateQueries({ queryKey: ['mensagens'] });
+      await qc.invalidateQueries({ queryKey: ['mensagensAguardando'] });
+    } catch (e) {
+      toast.error(`Falha ao dispensar: ${(e as Error).message}`);
+    } finally { setDispensando(false); }
   }
 
   return (
@@ -105,10 +121,24 @@ function CardConversa({ c }: { c: Conversa }) {
           disabled={cancelada}
         />
         <div className="flex items-center justify-between gap-2">
-          <Button variant="outline" size="sm" onClick={sugerir} disabled={cancelada || sugerindo || !ultimaRecebida}>
-            <Sparkles className={cn('mr-1.5 h-4 w-4', sugerindo && 'animate-pulse')} />
-            {sugerindo ? 'Gerando…' : 'Sugerir resposta (IA)'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={sugerir} disabled={cancelada || sugerindo || !ultimaRecebida}>
+              <Sparkles className={cn('mr-1.5 h-4 w-4', sugerindo && 'animate-pulse')} />
+              {sugerindo ? 'Gerando…' : 'Sugerir resposta (IA)'}
+            </Button>
+            {c.aguardando && !cancelada && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={dispensar}
+                disabled={dispensando}
+                title="Tira a conversa de Aguardando; volta se o comprador escrever de novo."
+              >
+                <Check className="mr-1.5 h-4 w-4" />
+                {dispensando ? 'Dispensando…' : 'Dispensar'}
+              </Button>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <span className="text-[10px] text-muted-foreground">{texto.length}/350</span>
             <Button size="sm" onClick={responder} disabled={cancelada || enviando || !texto.trim()}>
