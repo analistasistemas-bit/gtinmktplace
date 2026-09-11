@@ -1260,9 +1260,12 @@ export default function Publicados() {
         >
           <RefreshCw className="h-4 w-4 shrink-0" />
           <span>
+            {/* O texto muda para não-admin: o botão ↻ da linha fica desabilitado para ele, então
+                prometer "tente de novo" seria frustração desenhada. Saber que existe algo a pedir
+                continua valendo — por isso o banner aparece para todos. */}
             {totalSemCatalogo === 1
-              ? '1 anúncio sem vínculo de catálogo — dá para tentar de novo (botão ↻ na linha). Clique para ver.'
-              : `${totalSemCatalogo} anúncios sem vínculo de catálogo — dá para tentar de novo (botão ↻ na linha). Clique para ver.`}
+              ? `1 anúncio sem vínculo de catálogo — ${isAdmin ? 'dá para tentar de novo (botão ↻ na linha)' : 'peça a um administrador para tentar de novo'}. Clique para ver.`
+              : `${totalSemCatalogo} anúncios sem vínculo de catálogo — ${isAdmin ? 'dá para tentar de novo (botão ↻ na linha)' : 'peça a um administrador para tentar de novo'}. Clique para ver.`}
           </span>
           {filtro.somenteSemCatalogo && <span className="font-medium">• filtrando</span>}
         </button>
