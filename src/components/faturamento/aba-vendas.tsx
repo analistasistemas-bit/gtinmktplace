@@ -257,6 +257,8 @@ export function AbaVendas() {
     // `sincronizarFaturamento` fatia a janela sozinho — o backfill não aguenta 30/90 dias de uma vez.
     // Resolve de novo em vez de usar a `janela` memoizada: o memo congelou o `ate` na última troca
     // de período, e quem clica Sincronizar quer justamente os pedidos que entraram DEPOIS disso.
+    // (O `refetch` abaixo ainda lê pela janela memoizada, então um pedido fechado após a troca de
+    // período é gravado mas só aparece ao retrocar o período — limitação pré-existente da tela.)
     const janela = resolverJanela(periodo);
     const id = toast.loading('Sincronizando…');
     try {

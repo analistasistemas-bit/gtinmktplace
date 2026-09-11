@@ -118,20 +118,23 @@ export interface ResultadoSincronia {
 }
 
 /**
- * Dispara o backfill (botão "Sincronizar") para o próprio usuário, na janela que a tela está
- * exibindo — sem janela, cai no default de 7 dias do servidor.
+ * Dispara o backfill (botão "Sincronizar") para o próprio usuário, na janela que a tela exibe.
+ *
+ * Processa da fatia mais RECENTE para a mais antiga: se o usuário fechar a aba no meio de uma
+ * janela longa (90 dias ≈ 13 chamadas), o que já foi sincronizado é a parte que ele queria ver.
  *
  * Uma fatia que falha NÃO aborta as outras: cada chamada do backfill é independente e idempotente
- * (upsert por pedido), então o certo é seguir e contar a falha. Abortar no meio deixaria o pedaço
- * mais recente sincronizado e o mais antigo não, sem o usuário saber qual.
+ * (`upsertVenda` faz upsert por `user_id,order_id`; saque e devolução não são sobrescritos), então
+ * o certo é seguir e contar a falha — reclicar refaz tudo. Abortar no meio deixaria metade da
+ * janela sincronizada sem o usuário saber qual metade.
  */
 export async function sincronizarFaturamento(
-  janela?: Janela,
+  janela: Janela,
   aoProgredir?: (concluidas: number, total: number) => void,
 ): Promise<ResultadoSincronia> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
-  const fatias = janela ? fatiarJanela(janela) : [null];
+  const fatias = fatiarJanela(janela).reverse();
   let sincronizados = 0;
   let falhas = 0;
   for (const [i, fatia] of fatias.entries()) {
@@ -140,13 +143,14 @@ export async function sincronizarFaturamento(
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/backfill-faturamento`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify(fatia ?? { dias: DIAS_POR_FATIA }),
+        body: JSON.stringify(fatia),
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok || json == null) throw new Error(json?.erro ?? `Falha (${resp.status})`);
       sincronizados += (json as { sincronizados?: number }).sincronizados ?? 0;
     } catch (e) {
-      // Fatia única (o caso do schedule/sem janela): não há o que salvar, propaga como antes.
+      // Janela de uma fatia só: não há nada parcial a preservar, então o erro sobe para o toast
+      // em vez de virar um "0 pedidos" que parece sucesso.
       if (fatias.length === 1) throw e;
       falhas += 1;
     }

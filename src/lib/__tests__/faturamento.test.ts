@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { calcularKpis, fatiarJanela, marcaDagua, mesclarVendas, type Venda } from '../faturamento';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+
+// `sincronizarFaturamento` só precisa do access_token da sessão; o resto do client não é tocado.
+vi.mock('../supabase', () => ({
+  supabase: { auth: { getSession: async () => ({ data: { session: { access_token: 'tok' } } }) } },
+}));
+
+import { calcularKpis, fatiarJanela, marcaDagua, mesclarVendas, sincronizarFaturamento, type Venda } from '../faturamento';
 
 const venda = (over: Partial<Venda>): Venda => ({
   id: 'x', order_id: 1, pack_id: null, status: 'paid', status_detail: null,
@@ -140,5 +146,44 @@ describe('fatiarJanela', () => {
 
   it('respeita um tamanho de fatia customizado', () => {
     expect(fatiarJanela({ desde: dia('01'), ate: dia('07') }, 2)).toHaveLength(3);
+  });
+});
+
+describe('sincronizarFaturamento', () => {
+  const janela30 = { desde: '2026-08-01T00:00:00.000Z', ate: '2026-08-31T00:00:00.000Z' }; // 5 fatias
+  const janela1 = { desde: '2026-08-01T00:00:00.000Z', ate: '2026-08-03T00:00:00.000Z' }; // 1 fatia
+
+  const respostaOk = (n: number) => ({ ok: true, json: async () => ({ sincronizados: n }) });
+  const resposta500 = { ok: false, status: 500, json: async () => ({ erro: 'timeout' }) };
+
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('uma fatia que falha não aborta as outras e não perde o que as demais trouxeram', async () => {
+    let chamada = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => (++chamada === 2 ? resposta500 : respostaOk(3))));
+    const r = await sincronizarFaturamento(janela30);
+    expect(r).toEqual({ sincronizados: 12, falhas: 1, total: 5 }); // 4 fatias × 3
+  });
+
+  it('janela de uma fatia só propaga o erro — senão o toast diria "0 pedidos" como se fosse sucesso', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resposta500));
+    await expect(sincronizarFaturamento(janela1)).rejects.toThrow('timeout');
+  });
+
+  it('processa da fatia mais recente para a mais antiga', async () => {
+    const enviados: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body: string }) => {
+      enviados.push(JSON.parse(init.body).desde);
+      return respostaOk(0);
+    }));
+    await sincronizarFaturamento(janela30);
+    expect(enviados).toEqual([...enviados].sort().reverse());
+  });
+
+  it('reporta progresso concluído ao fim', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => respostaOk(1)));
+    const progresso: [number, number][] = [];
+    await sincronizarFaturamento(janela30, (f, t) => progresso.push([f, t]));
+    expect(progresso[progresso.length - 1]).toEqual([5, 5]);
   });
 });
