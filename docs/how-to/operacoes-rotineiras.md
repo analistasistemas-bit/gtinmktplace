@@ -344,6 +344,12 @@ O card "Catálogo em risco" na tela Publicados deve encolher junto. Logs:
   fixo cresce sozinho; 7 é o único tamanho com margem medida, por ser o do schedule horário.
   Fatia que falha **não** aborta as outras — o toast avisa quantas falharam e basta sincronizar de
   novo (o upsert por pedido é idempotente).
+  **Falha parcial dentro de um 200:** se o ML recusar a leitura das vendas (429, token morto) ou o
+  upsert recusar pedidos, a função responde 200 com `conexoesComFalha`/`pedidosComFalha` no corpo e
+  o toast avisa *"N não puderam ser lidos do Mercado Livre"*. Antes isso virava
+  *"Sincronizado: 0 pedido(s)"* — indistinguível de um período sem vendas, e o operador não tinha
+  como saber que faltava dado. O status continua 200 de propósito: os pedidos que entraram valem, e
+  um 5xx faria o cliente descartar a fatia inteira.
 - **Reconciliação periódica**: `reconciliar-faturamento` roda por schedule do QStash (1h) e cobre
   webhooks perdidos (~72h). **Achado 2026-07-24:** esse schedule não existia de fato desde a
   criação da função (2026-06-22) — corrigido, ver

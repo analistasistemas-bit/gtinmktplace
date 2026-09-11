@@ -51,12 +51,29 @@ function janela(body: Body): { desde: string; ate: string } {
   return { desde: desde.toISOString(), ate: ate.toISOString() };
 }
 
-async function processarConexao(admin: ReturnType<typeof adminClient>, cx: ConexaoComDono, intervalo: { desde: string; ate: string }): Promise<number> {
+/**
+ * Resultado de uma conexão. `sincronizados: 0` sozinho é ambíguo — pode ser "não havia pedidos" ou
+ * "não consegui ler os pedidos" —, e a resposta 200 fazia o botão Sincronizar dizer sucesso nos
+ * dois casos. Um 429 do ML no meio de uma janela longa some sem deixar rastro na tela.
+ */
+interface ResultadoConexao {
+  sincronizados: number;
+  /** Não deu para ler as vendas desta conexão (token morto, 429/5xx do ML): tudo ficou para trás. */
+  leituraFalhou: boolean;
+  /** Pedidos lidos que o upsert recusou, um a um. */
+  pedidosComFalha: number;
+}
+const SEM_NADA: ResultadoConexao = { sincronizados: 0, leituraFalhou: false, pedidosComFalha: 0 };
+const LEITURA_FALHOU: ResultadoConexao = { sincronizados: 0, leituraFalhou: true, pedidosComFalha: 0 };
+
+async function processarConexao(admin: ReturnType<typeof adminClient>, cx: ConexaoComDono, intervalo: { desde: string; ate: string }): Promise<ResultadoConexao> {
   const orgId = cx.orgId;
   const userId = cx.criadoPor; // proxy legado: tabelas/funções ainda por user_id (carregarCatalogo, perguntas, telegram)
-  if (!userId) return 0;
+  // Conexão sem dono é estado estrutural, não falha transitória: sinalizar aqui acenderia o alerta
+  // em toda execução sem nada para o operador fazer a respeito.
+  if (!userId) return SEM_NADA;
   let token: string;
-  try { token = await getValidAccessTokenConexao(cx); } catch { return 0; }
+  try { token = await getValidAccessTokenConexao(cx); } catch { return LEITURA_FALHOU; }
 
   // 1. Perguntas (sem alerta no backfill — só importa o estado atual).
   //    Títulos primeiro, deduplicados por item: várias perguntas caem no mesmo anúncio.
@@ -112,7 +129,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   let pedidos;
   try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch (e) {
     console.warn(`backfill: erro lendo pedidos da org ${orgId}: ${(e as Error).message}`);
-    return 0;
+    return LEITURA_FALHOU;
   }
   const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
   const [liquidoPorPayment, gtinPorItem] = await Promise.all([
@@ -126,6 +143,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   }
 
   let n = 0;
+  let pedidosComFalha = 0;
   const lotes = chunk(pedidos, PARALELAS);
   for (const lote of lotes) {
     await Promise.all(lote.map(async (pedido) => {
@@ -141,6 +159,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
         });
         n++;
       } catch (e) {
+        pedidosComFalha++;
         console.warn(`backfill: erro upsert pedido ${pedido.id}: ${(e as Error).message}`);
       }
     }));
@@ -167,7 +186,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
     }
   }
 
-  return n;
+  return { sincronizados: n, leituraFalhou: false, pedidosComFalha };
 }
 
 Deno.serve(async (req) => {
@@ -209,11 +228,17 @@ try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'w
 
   let total = 0;
   let falhou = false;
+  let conexoesComFalha = 0;
+  let pedidosComFalha = 0;
   for (const row of (conexoesRaw ?? []) as ConexaoRow[]) {
     try {
-      total += await processarConexao(admin, mapCx(row), intervalo);
+      const r = await processarConexao(admin, mapCx(row), intervalo);
+      total += r.sincronizados;
+      pedidosComFalha += r.pedidosComFalha;
+      if (r.leituraFalhou) { falhou = true; conexoesComFalha++; }
     } catch (e) {
       falhou = true;
+      conexoesComFalha++;
       console.error(`backfill-faturamento: falhou para org ${row.org_id}:`, e instanceof Error ? e.message : e);
     }
   }
@@ -222,7 +247,13 @@ try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'w
     await auditarOperacaoSuporte(admin, context, { type: 'org', id: scopedOrgId }, falhou ? 'failed' : 'succeeded');
   }
 
-  return new Response(JSON.stringify({ ok: true, sincronizados: total }), {
+  // Status 200 mesmo com falha parcial: a execução aconteceu e o que foi gravado vale. Um 5xx faria
+  // o cliente descartar a fatia inteira e perder a contagem dos pedidos que entraram. Quem precisa
+  // saber é o operador, então a falha vai no CORPO — antes morria só no log, e "0 pedidos" por 429
+  // do ML era indistinguível de "não havia pedidos no período".
+  return new Response(JSON.stringify({
+    ok: !falhou, sincronizados: total, conexoesComFalha, pedidosComFalha,
+  }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 });

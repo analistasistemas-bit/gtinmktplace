@@ -162,7 +162,7 @@ describe('sincronizarFaturamento', () => {
     let chamada = 0;
     vi.stubGlobal('fetch', vi.fn(async () => (++chamada === 2 ? resposta500 : respostaOk(3))));
     const r = await sincronizarFaturamento(janela30);
-    expect(r).toEqual({ sincronizados: 12, falhas: 1, total: 5 }); // 4 fatias × 3
+    expect(r).toEqual({ sincronizados: 12, falhas: 1, total: 5, incompletas: 0 }); // 4 fatias × 3
   });
 
   it('janela de uma fatia só propaga o erro — senão o toast diria "0 pedidos" como se fosse sucesso', async () => {
@@ -178,6 +178,33 @@ describe('sincronizarFaturamento', () => {
     }));
     await sincronizarFaturamento(janela30);
     expect(enviados).toEqual([...enviados].sort().reverse());
+  });
+
+  it('soma as falhas que a função relata DENTRO de um 200 — 429 do ML não pode passar por sucesso', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ sincronizados: 0, conexoesComFalha: 1, pedidosComFalha: 2 }),
+    })));
+    const r = await sincronizarFaturamento(janela30);
+    expect(r.sincronizados).toBe(0);
+    expect(r.falhas).toBe(0); // nenhuma fatia caiu por HTTP
+    expect(r.incompletas).toBe(15); // 5 fatias × (1 conexão + 2 pedidos)
+  });
+
+  it('período genuinamente vazio continua sendo sucesso limpo', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ sincronizados: 0, conexoesComFalha: 0, pedidosComFalha: 0 }),
+    })));
+    const r = await sincronizarFaturamento(janela30);
+    expect(r).toEqual({ sincronizados: 0, falhas: 0, total: 5, incompletas: 0 });
+  });
+
+  it('resposta antiga sem os campos novos não vira falso alarme', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ sincronizados: 4 }) })));
+    const r = await sincronizarFaturamento(janela30);
+    expect(r.incompletas).toBe(0);
+    expect(r.sincronizados).toBe(20);
   });
 
   it('reporta progresso concluído ao fim', async () => {

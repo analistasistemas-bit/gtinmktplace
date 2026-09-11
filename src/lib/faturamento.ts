@@ -115,6 +115,12 @@ export interface ResultadoSincronia {
   /** Fatias que a edge function recusou (timeout, 5xx). O resto da janela já foi gravado. */
   falhas: number;
   total: number;
+  /**
+   * Falhas que a função relatou DENTRO de uma resposta 200: conexões cujas vendas não puderam ser
+   * lidas (token morto, 429 do ML) e pedidos que o upsert recusou. Sem isso, um 429 no meio da
+   * janela aparecia como "Sincronizado: 0 pedido(s)" — igualzinho a um período sem vendas.
+   */
+  incompletas: number;
 }
 
 /**
@@ -137,6 +143,7 @@ export async function sincronizarFaturamento(
   const fatias = fatiarJanela(janela).reverse();
   let sincronizados = 0;
   let falhas = 0;
+  let incompletas = 0;
   for (const [i, fatia] of fatias.entries()) {
     aoProgredir?.(i, fatias.length);
     try {
@@ -147,7 +154,9 @@ export async function sincronizarFaturamento(
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok || json == null) throw new Error(json?.erro ?? `Falha (${resp.status})`);
-      sincronizados += (json as { sincronizados?: number }).sincronizados ?? 0;
+      const r = json as { sincronizados?: number; conexoesComFalha?: number; pedidosComFalha?: number };
+      sincronizados += r.sincronizados ?? 0;
+      incompletas += (r.conexoesComFalha ?? 0) + (r.pedidosComFalha ?? 0);
     } catch (e) {
       // Janela de uma fatia só: não há nada parcial a preservar, então o erro sobe para o toast
       // em vez de virar um "0 pedidos" que parece sucesso.
@@ -156,7 +165,7 @@ export async function sincronizarFaturamento(
     }
   }
   aoProgredir?.(fatias.length, fatias.length);
-  return { sincronizados, falhas, total: fatias.length };
+  return { sincronizados, falhas, total: fatias.length, incompletas };
 }
 
 export async function registrarSaque(ids: string[]): Promise<number> {

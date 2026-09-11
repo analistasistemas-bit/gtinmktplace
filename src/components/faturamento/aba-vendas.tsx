@@ -266,7 +266,10 @@ export function AbaVendas() {
         if (total > 1) toast.loading(`Sincronizando… ${feitas}/${total}`, { id });
       });
       const msg = `Sincronizado: ${r.sincronizados} pedido(s).`;
+      // `incompletas` vem do corpo de respostas 200 (429 do ML, token morto, upsert recusado).
+      // Sem ele, "0 pedidos" por falha era idêntico a "0 pedidos" por período vazio.
       if (r.falhas > 0) toast.warning(`${msg} ${r.falhas} de ${r.total} trecho(s) falharam — sincronize de novo.`, { id });
+      else if (r.incompletas > 0) toast.warning(`${msg} ${r.incompletas} não puderam ser lidos do Mercado Livre — sincronize de novo.`, { id });
       else toast.success(msg, { id });
       await refetch();
     } catch (e) {
