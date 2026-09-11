@@ -121,6 +121,12 @@ export interface ResultadoSincronia {
    * janela aparecia como "Sincronizado: 0 pedido(s)" — igualzinho a um período sem vendas.
    */
   incompletas: number;
+  /**
+   * A leitura do Mercado Pago falhou em alguma fatia: as vendas entraram, mas sem valor líquido.
+   * Separado de `incompletas` de propósito — é dinheiro, e a reconciliação só volta a 72h, então
+   * passado esse prazo ninguém preenche sozinho. Merece frase própria no toast.
+   */
+  semLiquido: number;
 }
 
 /**
@@ -144,6 +150,7 @@ export async function sincronizarFaturamento(
   let sincronizados = 0;
   let falhas = 0;
   let incompletas = 0;
+  let semLiquido = 0;
   for (const [i, fatia] of fatias.entries()) {
     aoProgredir?.(i, fatias.length);
     try {
@@ -159,9 +166,12 @@ export async function sincronizarFaturamento(
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok || json == null) throw new Error(json?.erro ?? `Falha (${resp.status})`);
-      const r = json as { sincronizados?: number; conexoesComFalha?: number; pedidosComFalha?: number };
+      const r = json as {
+        sincronizados?: number; conexoesComFalha?: number; pedidosComFalha?: number; conexoesSemMP?: number;
+      };
       sincronizados += r.sincronizados ?? 0;
       incompletas += (r.conexoesComFalha ?? 0) + (r.pedidosComFalha ?? 0);
+      semLiquido += r.conexoesSemMP ?? 0;
     } catch (e) {
       // Janela de uma fatia só: não há nada parcial a preservar, então o erro sobe para o toast
       // em vez de virar um "0 pedidos" que parece sucesso.
@@ -170,7 +180,7 @@ export async function sincronizarFaturamento(
     }
   }
   aoProgredir?.(fatias.length, fatias.length);
-  return { sincronizados, falhas, total: fatias.length, incompletas };
+  return { sincronizados, falhas, total: fatias.length, incompletas, semLiquido };
 }
 
 export async function registrarSaque(ids: string[]): Promise<number> {

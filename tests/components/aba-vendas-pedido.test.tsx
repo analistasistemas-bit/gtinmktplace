@@ -12,7 +12,7 @@ import type { Venda } from '@/lib/faturamento';
 vi.mock('@/lib/supabase', () => ({ supabase: { auth: { getSession: vi.fn() } } }));
 vi.mock('@/lib/faturamento', async (importActual) => {
   const real = await importActual<typeof import('@/lib/faturamento')>();
-  return { ...real, sincronizarFaturamento: vi.fn().mockResolvedValue({ sincronizados: 0, falhas: 0, total: 1, incompletas: 0 }) };
+  return { ...real, sincronizarFaturamento: vi.fn().mockResolvedValue({ sincronizados: 0, falhas: 0, total: 1, incompletas: 0, semLiquido: 0 }) };
 });
 
 // ── fixture: 2 pedidos (1 normal + 1 pack de 2 vendas com mesmo pack_id) ──

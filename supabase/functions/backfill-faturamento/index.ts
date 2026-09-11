@@ -62,9 +62,17 @@ interface ResultadoConexao {
   leituraFalhou: boolean;
   /** Pedidos lidos que o upsert recusou, um a um. */
   pedidosComFalha: number;
+  /**
+   * A leitura do Mercado Pago falhou: as vendas foram gravadas, mas SEM `liquido` nem
+   * `money_release_date`. `preservarDadosMP` impede que o mapa vazio apague o que já havia, então
+   * venda antiga não perde nada — o buraco é na venda NOVA, que nasce sem o valor líquido. E a
+   * reconciliação horária só volta a 72h: passado esse prazo, nada mais preenche sozinho. Como é
+   * dinheiro, precisa aparecer na tela em vez de morrer no console.
+   */
+  mpFalhou: boolean;
 }
-const SEM_NADA: ResultadoConexao = { sincronizados: 0, leituraFalhou: false, pedidosComFalha: 0 };
-const LEITURA_FALHOU: ResultadoConexao = { sincronizados: 0, leituraFalhou: true, pedidosComFalha: 0 };
+const SEM_NADA: ResultadoConexao = { sincronizados: 0, leituraFalhou: false, pedidosComFalha: 0, mpFalhou: false };
+const LEITURA_FALHOU: ResultadoConexao = { sincronizados: 0, leituraFalhou: true, pedidosComFalha: 0, mpFalhou: false };
 
 /**
  * `soVendas` pula os passos 1, 2 e 4 (perguntas, claims, mensagens).
@@ -201,7 +209,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
     }
   }
 
-  return { sincronizados: n, leituraFalhou: false, pedidosComFalha };
+  return { sincronizados: n, leituraFalhou: false, pedidosComFalha, mpFalhou: liquidoPorPayment === null };
 }
 
 Deno.serve(async (req) => {
@@ -245,11 +253,13 @@ try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'w
   let falhou = false;
   let conexoesComFalha = 0;
   let pedidosComFalha = 0;
+  let conexoesSemMP = 0;
   for (const row of (conexoesRaw ?? []) as ConexaoRow[]) {
     try {
       const r = await processarConexao(admin, mapCx(row), intervalo, payload.soVendas === true);
       total += r.sincronizados;
       pedidosComFalha += r.pedidosComFalha;
+      if (r.mpFalhou) { falhou = true; conexoesSemMP++; }
       if (r.leituraFalhou) { falhou = true; conexoesComFalha++; }
     } catch (e) {
       falhou = true;
@@ -267,7 +277,7 @@ try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'w
   // saber é o operador, então a falha vai no CORPO — antes morria só no log, e "0 pedidos" por 429
   // do ML era indistinguível de "não havia pedidos no período".
   return new Response(JSON.stringify({
-    ok: !falhou, sincronizados: total, conexoesComFalha, pedidosComFalha,
+    ok: !falhou, sincronizados: total, conexoesComFalha, pedidosComFalha, conexoesSemMP,
   }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });

@@ -273,6 +273,10 @@ export function AbaVendas() {
       // pode valer centenas de pedidos. "3" seria lido como 3 pedidos — número com unidade errada
       // engana mais do que não ter número.
       else if (r.incompletas > 0) toast.warning(`${msg} Leitura incompleta no Mercado Livre — sincronize de novo.`, { id });
+      // Aviso próprio, e não um "incompleto" genérico: as vendas ENTRARAM, só sem o valor líquido.
+      // A reconciliação horária só volta a 72h, então passado esse prazo ninguém preenche sozinho —
+      // sincronizar de novo hoje é o que resolve.
+      else if (r.semLiquido > 0) toast.warning(`${msg} Sem os valores líquidos do Mercado Pago — sincronize de novo hoje mesmo.`, { id });
       else toast.success(msg, { id });
       await refetch();
     } catch (e) {

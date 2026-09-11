@@ -1196,7 +1196,14 @@ um smoke test contra Postgres real antes do primeiro deploy.
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo).
-  **Resposta** (desde 2026-09-11): `{ ok, sincronizados, conexoesComFalha, pedidosComFalha }`.
+  **Resposta** (desde 2026-09-11): `{ ok, sincronizados, conexoesComFalha, pedidosComFalha, conexoesSemMP }`.
+  `conexoesSemMP` conta conexões em que `carregarLiquidoMP` devolveu `null` — as vendas foram
+  gravadas **sem `liquido`/`money_release_date`**. `preservarDadosMP` impede que o mapa vazio apague
+  o que já existia, então venda antiga não perde nada; o buraco é na venda nova. Como o
+  `reconciliar-faturamento` só cobre 72h, passado esse prazo nada preenche sozinho — por isso a tela
+  recebe um aviso próprio ("Sem os valores líquidos do Mercado Pago"), separado do aviso genérico de
+  leitura incompleta. Medido em 2026-09-11: 0 vendas pagas sem líquido nas duas orgs (2.356 + 621),
+  ou seja, o caminho nunca se materializou — o campo é prevenção, não remediação.
   `ok` reflete o resultado real (era `true` fixo). `conexoesComFalha` conta conexões cujas vendas
   não puderam ser lidas (token morto, 429/5xx do ML) e `pedidosComFalha` conta pedidos que o upsert
   recusou — antes os três caminhos devolviam `0` calados e a tela mostrava "Sincronizado: 0
