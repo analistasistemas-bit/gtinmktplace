@@ -350,6 +350,10 @@ O card "Catálogo em risco" na tela Publicados deve encolher junto. Logs:
   *"Sincronizado: 0 pedido(s)"* — indistinguível de um período sem vendas, e o operador não tinha
   como saber que faltava dado. O status continua 200 de propósito: os pedidos que entraram valem, e
   um 5xx faria o cliente descartar a fatia inteira.
+  **Atenção ao escopo:** o Sincronizar age na organização ATIVA do usuário (`scopedOrgId`). Numa
+  conta com mais de uma org, clicar estando na org errada sincroniza a outra — troque de org antes.
+  **Custo:** só a primeira fatia busca perguntas/reclamações/mensagens (`soVendas` nas demais);
+  sem isso, uma conta de ~450 vendas/mês estourava o tempo na fatia de 7 dias.
 - **Reconciliação periódica**: `reconciliar-faturamento` roda por schedule do QStash (1h) e cobre
   webhooks perdidos (~72h). **Achado 2026-07-24:** esse schedule não existia de fato desde a
   criação da função (2026-06-22) — corrigido, ver

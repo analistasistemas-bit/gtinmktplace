@@ -150,7 +150,12 @@ export async function sincronizarFaturamento(
       const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/backfill-faturamento`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-        body: JSON.stringify(fatia),
+        // Só a PRIMEIRA fatia paga os passos acessórios (perguntas, reclamações, mensagens).
+        // Eles releem o histórico inteiro do vendedor, sem filtro de data, então repetir por fatia
+        // dá o mesmo estado final e queima ~80s do orçamento de cada chamada — era o que fazia a
+        // fatia estourar em conta grande. Como processamos do mais recente para o trás, quem paga
+        // é a fatia que o operador mais quer ver atualizada.
+        body: JSON.stringify(i === 0 ? fatia : { ...fatia, soVendas: true }),
       });
       const json = await resp.json().catch(() => null);
       if (!resp.ok || json == null) throw new Error(json?.erro ?? `Falha (${resp.status})`);

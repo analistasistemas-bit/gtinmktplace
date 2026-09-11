@@ -24,7 +24,7 @@ import { buscarMensagensPack, upsertMensagens, listarPacksDeVendas } from '../_s
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
 import { chunk } from '../_shared/faturamento/utils.ts';
 
-interface Body { dias?: number; desde?: string; ate?: string }
+interface Body { dias?: number; desde?: string; ate?: string; soVendas?: boolean }
 
 // Requisições ao ML em paralelo por lote. Era 5 só no laço de pedidos; perguntas, claims e
 // mensagens rodavam uma a uma e estouravam o tempo da edge function (504 de hora em hora,
@@ -66,7 +66,20 @@ interface ResultadoConexao {
 const SEM_NADA: ResultadoConexao = { sincronizados: 0, leituraFalhou: false, pedidosComFalha: 0 };
 const LEITURA_FALHOU: ResultadoConexao = { sincronizados: 0, leituraFalhou: true, pedidosComFalha: 0 };
 
-async function processarConexao(admin: ReturnType<typeof adminClient>, cx: ConexaoComDono, intervalo: { desde: string; ate: string }): Promise<ResultadoConexao> {
+/**
+ * `soVendas` pula os passos 1, 2 e 4 (perguntas, claims, mensagens).
+ *
+ * Eles são o custo FIXO da execução — ~80s que não dependem de `dias`, porque
+ * `buscarPerguntasSeller`/`buscarClaimsSeller` releem o histórico INTEIRO do vendedor, sem filtro
+ * de data, e `listarPacksDeVendas` varre os packs conhecidos. Quando a tela fatia uma janela longa
+ * em N chamadas, repetir isso N vezes produz exatamente o mesmo estado final e consome o orçamento
+ * que as vendas precisavam: numa conta de ~450 vendas/mês, era o que fazia a fatia de 7 dias
+ * estourar os ~150s. A tela manda `soVendas` em todas as fatias MENOS a primeira, então o estado
+ * acessório continua atualizado uma vez por sincronização.
+ *
+ * O schedule do QStash não manda a flag: lá é uma execução só, e ela precisa fazer tudo.
+ */
+async function processarConexao(admin: ReturnType<typeof adminClient>, cx: ConexaoComDono, intervalo: { desde: string; ate: string }, soVendas = false): Promise<ResultadoConexao> {
   const orgId = cx.orgId;
   const userId = cx.criadoPor; // proxy legado: tabelas/funções ainda por user_id (carregarCatalogo, perguntas, telegram)
   // Conexão sem dono é estado estrutural, não falha transitória: sinalizar aqui acenderia o alerta
@@ -75,6 +88,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   let token: string;
   try { token = await getValidAccessTokenConexao(cx); } catch { return LEITURA_FALHOU; }
 
+  if (!soVendas) {
   // 1. Perguntas (sem alerta no backfill — só importa o estado atual).
   //    Títulos primeiro, deduplicados por item: várias perguntas caem no mesmo anúncio.
   try {
@@ -124,6 +138,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   } catch (e) {
     console.warn(`backfill: erro lendo claims de ${userId}: ${(e as Error).message}`);
   }
+  } // fim do bloco `!soVendas` (passos 1 e 2)
 
   // 3. Vendas
   let pedidos;
@@ -167,7 +182,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
 
   // 4. Mensagens pós-venda (ADR-0067). Sem alerta no backfill — só popula o estado atual.
   //    Roda após as vendas para ter os packs em ml_vendas. 1 GET por pack.
-  if (cx.contaExternaId) {
+  if (!soVendas && cx.contaExternaId) {
     try {
       const packs = await listarPacksDeVendas(admin, userId);
       const contaExternaId = cx.contaExternaId;
@@ -220,7 +235,7 @@ try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'w
   } catch { /* vazio */ }
   const intervalo = janela(payload);
   // A janela efetiva vai para o log: sem isso, cair no default é indistinguível de ter sido pedido.
-  console.log(`backfill: janela efetiva ${intervalo.desde}..${intervalo.ate} (dias=${payload.dias ?? 'DEFAULT 90'})`);
+  console.log(`backfill: janela efetiva ${intervalo.desde}..${intervalo.ate} (dias=${payload.dias ?? 'DEFAULT 90'}${payload.soVendas === true ? ', soVendas' : ''})`);
 
   let query = admin.from('marketplace_connections').select('id, org_id, canal, conta_externa_id, expires_at, criado_por').eq('canal', 'mercado_livre');
   if (scopedOrgId) query = query.eq('org_id', scopedOrgId);
@@ -232,7 +247,7 @@ try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'w
   let pedidosComFalha = 0;
   for (const row of (conexoesRaw ?? []) as ConexaoRow[]) {
     try {
-      const r = await processarConexao(admin, mapCx(row), intervalo);
+      const r = await processarConexao(admin, mapCx(row), intervalo, payload.soVendas === true);
       total += r.sincronizados;
       pedidosComFalha += r.pedidosComFalha;
       if (r.leituraFalhou) { falhou = true; conexoesComFalha++; }

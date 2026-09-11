@@ -207,6 +207,29 @@ describe('sincronizarFaturamento', () => {
     expect(r.sincronizados).toBe(20);
   });
 
+  it('só a primeira fatia paga perguntas/reclamações/mensagens — as demais vão com soVendas', async () => {
+    const corpos: { soVendas?: boolean }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body: string }) => {
+      corpos.push(JSON.parse(init.body));
+      return respostaOk(0);
+    }));
+    await sincronizarFaturamento(janela30);
+    expect(corpos).toHaveLength(5);
+    expect(corpos[0].soVendas).toBeUndefined();
+    expect(corpos.slice(1).every((c) => c.soVendas === true)).toBe(true);
+  });
+
+  it('janela de fatia única continua fazendo tudo — não existe "demais fatias" para poupar', async () => {
+    const corpos: { soVendas?: boolean }[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: { body: string }) => {
+      corpos.push(JSON.parse(init.body));
+      return respostaOk(1);
+    }));
+    await sincronizarFaturamento(janela1);
+    expect(corpos).toEqual([expect.objectContaining({ desde: expect.any(String) })]);
+    expect(corpos[0].soVendas).toBeUndefined();
+  });
+
   it('reporta progresso concluído ao fim', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => respostaOk(1)));
     const progresso: [number, number][] = [];

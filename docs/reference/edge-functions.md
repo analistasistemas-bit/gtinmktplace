@@ -1195,7 +1195,23 @@ um smoke test contra Postgres real antes do primeiro deploy.
   orientação de responder dentro da reclamação — o app não tem acesso ao canal de mediação.
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
-  ou todos os usuários (QStash). Não busca shipment (frete fica nulo). Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
+  ou todos os usuários (QStash). Não busca shipment (frete fica nulo).
+  **Resposta** (desde 2026-09-11): `{ ok, sincronizados, conexoesComFalha, pedidosComFalha }`.
+  `ok` reflete o resultado real (era `true` fixo). `conexoesComFalha` conta conexões cujas vendas
+  não puderam ser lidas (token morto, 429/5xx do ML) e `pedidosComFalha` conta pedidos que o upsert
+  recusou — antes os três caminhos devolviam `0` calados e a tela mostrava "Sincronizado: 0
+  pedido(s)", indistinguível de um período sem vendas. O status HTTP segue **200** de propósito:
+  os pedidos gravados valem, e um 5xx faria o cliente descartar a fatia inteira. Conexão sem
+  `criado_por` não conta como falha (estado estrutural do legado, não erro transitório).
+  O botão Sincronizar fatia a janela em blocos de 7 dias e soma esses campos — ver
+  `fatiarJanela` em `src/lib/faturamento.ts`.
+  **`soVendas: true`** (body, desde 2026-09-11) pula os passos 1, 2 e 4 (perguntas, claims,
+  mensagens). Eles são o custo fixo de ~80s que **não depende de `dias`** — releem o histórico
+  inteiro do vendedor, sem filtro de data —, então repeti-los em cada fatia dá o mesmo estado final
+  e consome o orçamento das vendas. A tela manda a flag em todas as fatias **menos a primeira**, que
+  é a mais recente (o laço vai do presente para trás): o estado acessório segue atualizado uma vez
+  por sincronização. O schedule do QStash **não** manda a flag — lá é execução única e precisa
+  fazer tudo. Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
   ⚠️ **Não tem a guarda de orçamento que o `reconciliar-faturamento` ganhou em 31/07** — por isso
   ainda é o worker de faturamento que estoura. Medido no schedule (`dias:7`, todas as orgs, só
   ciclos sem retry): mediana **70s em 27/07 → 81s em 03/08**, ~+1,6s/dia, com **5 falhas** no

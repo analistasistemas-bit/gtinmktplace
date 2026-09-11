@@ -269,7 +269,10 @@ export function AbaVendas() {
       // `incompletas` vem do corpo de respostas 200 (429 do ML, token morto, upsert recusado).
       // Sem ele, "0 pedidos" por falha era idêntico a "0 pedidos" por período vazio.
       if (r.falhas > 0) toast.warning(`${msg} ${r.falhas} de ${r.total} trecho(s) falharam — sincronize de novo.`, { id });
-      else if (r.incompletas > 0) toast.warning(`${msg} ${r.incompletas} não puderam ser lidos do Mercado Livre — sincronize de novo.`, { id });
+      // Sem número de propósito: `incompletas` mistura conexões e pedidos, e uma conexão perdida
+      // pode valer centenas de pedidos. "3" seria lido como 3 pedidos — número com unidade errada
+      // engana mais do que não ter número.
+      else if (r.incompletas > 0) toast.warning(`${msg} Leitura incompleta no Mercado Livre — sincronize de novo.`, { id });
       else toast.success(msg, { id });
       await refetch();
     } catch (e) {
