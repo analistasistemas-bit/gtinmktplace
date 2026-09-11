@@ -331,10 +331,16 @@ duas cópias do helper (`src/lib/` e `_shared/ml/`, Deno/Vite split). Sem migrat
 
 **`retentar-catalogo` passa a publicar com `alertar: false`.** Com `sem_produto` retentável, cada
 clique sem ficha nova finaliza a rodada na hora e `deveAlertarCatalogoNoMatch` dispararia um
-Telegram "no-match" no canal da org — um por clique. Quem clicou está na tela e vê o resultado
-ali; o alerta passivo só faria ruído proporcional à tentativa. Publicação direta no QStash pelo
-mesmo motivo já registrado em `vincular-catalogo`: `queue.ts` não conhece o campo, e ensiná-lo
-forçaria redeploy de 24 funções em vez de 2.
+Telegram "no-match" no canal da org — um por clique. O alerta passivo existe para o que ninguém
+pediu, não para o que o operador acabou de mandar fazer. Publicação direta no QStash pelo mesmo
+motivo já registrado em `vincular-catalogo`: `queue.ts` não conhece o campo, e ensiná-lo forçaria
+redeploy de 24 funções em vez de 2.
+
+Como o operador vê o resultado, então: **recarregando a tela de Publicados**. Não há refetch
+automático — `usePublicados` não tem `refetchInterval`, e o botão "Atualizar" chama
+`refetchStatus`/`refetchMetricas`, não essa query; a invalidação do `onSuccess` acontece na hora,
+60s antes de o worker rodar. O toast passou a dizer isso explicitamente. Polling foi descartado de
+propósito: custo permanente para um caso raro e manual.
 
 **`ficha_divergente` fica de fora — por escopo, não por risco.** Registrado aqui para ninguém
 re-derivar o argumento errado: retentar **não** burla a trava de equivalência. O worker rebusca a

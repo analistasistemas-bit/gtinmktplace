@@ -3,7 +3,7 @@
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { adminClient } from '../_shared/supabase.ts';
-import { qstashClient } from '../_shared/queue.ts';
+import { qstashClient, type VincularCatalogoJob } from '../_shared/queue.ts';
 import { familiaTemCatalogoRetentavel } from '../_shared/ml/catalogo-retentavel.ts';
 
 interface Body { familia_id?: string; }
@@ -99,12 +99,15 @@ Deno.serve(async (req) => {
   try {
     // `alertar: false`, e não `enfileirarVinculacaoCatalogo`: com `sem_produto` retentável, cada
     // clique sem ficha nova finaliza a rodada na hora e dispararia um Telegram "no-match" no canal
-    // da org. Quem clicou está olhando a tela e vê o resultado ali — o alerta passivo viraria ruído
-    // proporcional aos cliques. Publicação direta pelo mesmo motivo de `vincular-catalogo`:
-    // `queue.ts` não conhece o campo, e mexer nele forçaria redeploy de 24 funções em vez de 2.
+    // da org — um por clique. A retentativa é manual e pontual; o alerta passivo existe para o que
+    // ninguém pediu, não para o que o operador acabou de mandar fazer. Ele confere o resultado
+    // RECARREGANDO a tela de Publicados (não há refetch automático — `usePublicados` não tem
+    // polling e o botão Atualizar não refaz essa query).
+    // Publicação direta pelo mesmo motivo de `vincular-catalogo`: `queue.ts` não conhece o campo, e
+    // mexer nele forçaria redeploy de 24 funções em vez de 2.
     await qstashClient().publishJSON({
       url: `${Deno.env.get('SUPABASE_URL')!}/functions/v1/vincular-catalogo`,
-      body: { familia_id: familiaId, tentativa: 1, alertar: false },
+      body: { familia_id: familiaId, tentativa: 1, alertar: false } satisfies VincularCatalogoJob & { alertar: boolean },
       delay: 60,
       retries: 5,
     });

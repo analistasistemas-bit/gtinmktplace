@@ -1,10 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import {
+  STATUS_CATALOGO_RETENTAVEL,
   variacaoCatalogoRetentavel,
   familiaTemCatalogoRetentavel,
   catalogStatusRetentavelEmEspelho,
   itemExternoCatalogoRetentavel,
 } from '../catalogo-retentavel';
+import { STATUS_CATALOGO_RETENTAVEL as STATUS_DENO } from '../../../supabase/functions/_shared/ml/catalogo-retentavel';
+
+// O helper existe em duas cópias (Deno/Vite split) mantidas em sync À MÃO. Este é o único ponto do
+// repo que falha se alguém mexer numa e esquecer a outra — divergência aqui significa o botão ↻
+// aceitando um estado no servidor e recusando na tela (ou o contrário), sem erro visível.
+describe('cópias Deno/Vite em sync', () => {
+  it('a lista de status retentáveis é idêntica nos dois arquivos', () => {
+    expect([...STATUS_DENO]).toEqual([...STATUS_CATALOGO_RETENTAVEL]);
+  });
+});
 
 describe('variacaoCatalogoRetentavel', () => {
   it('erro sem listing → true', () => {

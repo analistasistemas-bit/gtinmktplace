@@ -949,7 +949,13 @@ export default function Publicados() {
   const handleRetentarCatalogo = (familiaId: string) => {
     setRetentandoCatalogoId(familiaId);
     retentarCatalogoMut(familiaId, {
-      onSuccess: () => toast.success('Vínculo de catálogo re-enfileirado — resultado em ~1 minuto'),
+      // "recarregue" não é gentileza: a invalidação do react-query acontece AGORA e o worker só roda
+      // 60s depois, então a tela não reflete o resultado sozinha (sem polling, e o botão Atualizar
+      // não refaz esta query). Sem essa frase o operador fica sem retorno nenhum — a retentativa
+      // manual também não manda Telegram, de propósito.
+      onSuccess: () => toast.success('Vínculo de catálogo re-enfileirado', {
+        description: 'Resultado em ~1 minuto — recarregue a tela para ver.',
+      }),
       onError: (err) =>
         toast.error('Falha ao retentar catálogo', {
           description: err instanceof Error ? err.message : String(err),
