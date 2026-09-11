@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularKpis, marcaDagua, mesclarVendas, type Venda } from '../faturamento';
+import { calcularKpis, fatiarJanela, marcaDagua, mesclarVendas, type Venda } from '../faturamento';
 
 const venda = (over: Partial<Venda>): Venda => ({
   id: 'x', order_id: 1, pack_id: null, status: 'paid', status_detail: null,
@@ -111,5 +111,34 @@ describe('mesclarVendas', () => {
     const delta = [venda({ id: 'a', status: 'cancelled' })];
     const out = mesclarVendas(atuais, delta);
     expect(out.map((v) => v.id).sort()).toEqual(['a', 'b']);
+  });
+});
+
+describe('fatiarJanela', () => {
+  const dia = (d: string) => `2026-08-${d}T00:00:00.000Z`;
+
+  it('devolve uma fatia só quando a janela cabe no limite', () => {
+    expect(fatiarJanela({ desde: dia('01'), ate: dia('05') })).toEqual([{ desde: dia('01'), ate: dia('05') }]);
+  });
+
+  it('quebra 30 dias em fatias de 7 sem furo nem sobreposição', () => {
+    const fatias = fatiarJanela({ desde: dia('01'), ate: dia('31') });
+    expect(fatias).toHaveLength(5); // 7+7+7+7+2
+    expect(fatias[0].desde).toBe(dia('01'));
+    for (let i = 1; i < fatias.length; i++) expect(fatias[i].desde).toBe(fatias[i - 1].ate);
+  });
+
+  it('nunca ultrapassa o `ate` pedido — senão traria pedidos fora do período exibido', () => {
+    const fatias = fatiarJanela({ desde: dia('01'), ate: dia('31') });
+    expect(fatias[fatias.length - 1].ate).toBe(dia('31'));
+  });
+
+  it('janela degenerada (desde >= ate) ainda rende uma fatia, não um no-op silencioso', () => {
+    const j = { desde: dia('10'), ate: dia('10') };
+    expect(fatiarJanela(j)).toEqual([j]);
+  });
+
+  it('respeita um tamanho de fatia customizado', () => {
+    expect(fatiarJanela({ desde: dia('01'), ate: dia('07') }, 2)).toHaveLength(3);
   });
 });

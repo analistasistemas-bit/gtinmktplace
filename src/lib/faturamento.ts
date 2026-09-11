@@ -85,18 +85,74 @@ export function mesclarVendas(atuais: Venda[], delta: Venda[]): Venda[] {
  * Correção de raiz: guarda de orçamento + retomabilidade no backfill, como em
  * `reconciliar-faturamento` (ver `backfill-faturamento/index.ts:8-12`).
  */
-export async function sincronizarFaturamento(dias = 7): Promise<{ sincronizados: number }> {
+export const DIAS_POR_FATIA = 7;
+
+/**
+ * Quebra a janela em fatias de no máximo `dias`, da mais ANTIGA para a mais recente.
+ *
+ * Uma chamada só com a janela inteira não serve: a edge function morre em ~150s e o custo cresce
+ * ~2,7s por dia de janela sobre um fixo que já passa de 100s. 7 dias é o único tamanho rodando em
+ * produção de hora em hora (schedule do QStash), então é o único com margem medida — não aumente
+ * sem medir de novo, o fixo sobe sozinho (70s em 27/07 → 81s em 03/08).
+ *
+ * Limites: `desde` inclusive, `ate` exclusive em cada corte interno, e a última fatia termina
+ * exatamente no `ate` pedido (nunca depois — o backfill traria pedidos fora do que o usuário viu).
+ */
+export function fatiarJanela({ desde, ate }: Janela, dias = DIAS_POR_FATIA): Janela[] {
+  const fim = Date.parse(ate);
+  const passo = dias * 24 * 60 * 60 * 1000;
+  const fatias: Janela[] = [];
+  for (let ini = Date.parse(desde); ini < fim; ini += passo) {
+    fatias.push({ desde: new Date(ini).toISOString(), ate: new Date(Math.min(ini + passo, fim)).toISOString() });
+  }
+  // Janela degenerada (desde >= ate, ex.: "Hoje" no primeiro segundo do dia): uma fatia, senão o
+  // botão viraria no-op silencioso.
+  return fatias.length > 0 ? fatias : [{ desde, ate }];
+}
+
+export interface ResultadoSincronia {
+  sincronizados: number;
+  /** Fatias que a edge function recusou (timeout, 5xx). O resto da janela já foi gravado. */
+  falhas: number;
+  total: number;
+}
+
+/**
+ * Dispara o backfill (botão "Sincronizar") para o próprio usuário, na janela que a tela está
+ * exibindo — sem janela, cai no default de 7 dias do servidor.
+ *
+ * Uma fatia que falha NÃO aborta as outras: cada chamada do backfill é independente e idempotente
+ * (upsert por pedido), então o certo é seguir e contar a falha. Abortar no meio deixaria o pedaço
+ * mais recente sincronizado e o mais antigo não, sem o usuário saber qual.
+ */
+export async function sincronizarFaturamento(
+  janela?: Janela,
+  aoProgredir?: (concluidas: number, total: number) => void,
+): Promise<ResultadoSincronia> {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session) throw new Error('Sem sessão');
-  const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/backfill-faturamento`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
-    body: JSON.stringify({ dias }),
-  });
-  const json = await resp.json().catch(() => null);
-  if (!resp.ok) throw new Error(json?.erro ?? `Falha (${resp.status})`);
-  if (json == null) throw new Error('Resposta inválida do servidor');
-  return json as { sincronizados: number };
+  const fatias = janela ? fatiarJanela(janela) : [null];
+  let sincronizados = 0;
+  let falhas = 0;
+  for (const [i, fatia] of fatias.entries()) {
+    aoProgredir?.(i, fatias.length);
+    try {
+      const resp = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/backfill-faturamento`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify(fatia ?? { dias: DIAS_POR_FATIA }),
+      });
+      const json = await resp.json().catch(() => null);
+      if (!resp.ok || json == null) throw new Error(json?.erro ?? `Falha (${resp.status})`);
+      sincronizados += (json as { sincronizados?: number }).sincronizados ?? 0;
+    } catch (e) {
+      // Fatia única (o caso do schedule/sem janela): não há o que salvar, propaga como antes.
+      if (fatias.length === 1) throw e;
+      falhas += 1;
+    }
+  }
+  aoProgredir?.(fatias.length, fatias.length);
+  return { sincronizados, falhas, total: fatias.length };
 }
 
 export async function registrarSaque(ids: string[]): Promise<number> {

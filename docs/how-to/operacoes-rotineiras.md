@@ -337,6 +337,13 @@ O card "Catálogo em risco" na tela Publicados deve encolher junto. Logs:
 
 - **Backfill retroativo** (um período): tela de Faturamento dispara `backfill-faturamento` com
   o JWT do usuário. Não traz frete (shipment).
+  O botão **Sincronizar** usa o período que os botões acima da tabela estão exibindo (Hoje, 7/30/90
+  dias, Mês atual ou intervalo livre) — antes era 7 dias fixo, então uma venda classificada errado
+  há mais tempo nunca era reprocessada pela tela. A janela é fatiada em blocos de 7 dias
+  (`fatiarJanela`, `src/lib/faturamento.ts`), porque a edge function morre em ~150s e o custo
+  fixo cresce sozinho; 7 é o único tamanho com margem medida, por ser o do schedule horário.
+  Fatia que falha **não** aborta as outras — o toast avisa quantas falharam e basta sincronizar de
+  novo (o upsert por pedido é idempotente).
 - **Reconciliação periódica**: `reconciliar-faturamento` roda por schedule do QStash (1h) e cobre
   webhooks perdidos (~72h). **Achado 2026-07-24:** esse schedule não existia de fato desde a
   criação da função (2026-06-22) — corrigido, ver

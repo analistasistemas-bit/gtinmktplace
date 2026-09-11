@@ -251,15 +251,24 @@ export function AbaVendas() {
 
   async function sincronizar() {
     setSincronizando(true);
+    // A janela é a MESMA que a tela está exibindo: o usuário escolhe o período nos botões acima e
+    // o Sincronizar segue essa escolha. Antes era 7 dias fixo, então uma venda de 20 dias atrás
+    // classificada errado nunca era reprocessada pela tela (só por console).
+    // `sincronizarFaturamento` fatia a janela sozinho — o backfill não aguenta 30/90 dias de uma vez.
+    // Resolve de novo em vez de usar a `janela` memoizada: o memo congelou o `ate` na última troca
+    // de período, e quem clica Sincronizar quer justamente os pedidos que entraram DEPOIS disso.
+    const janela = resolverJanela(periodo);
+    const id = toast.loading('Sincronizando…');
     try {
-      // Sem argumento de propósito: a janela é o default de `sincronizarFaturamento` (7 dias,
-      // igual ao schedule do QStash). Passar o número aqui já deixou o botão em 30 dias enquanto
-      // o default dizia 7 — a janela tem uma fonte só.
-      const r = await sincronizarFaturamento();
-      toast.success(`Sincronizado: ${r.sincronizados} pedido(s).`);
+      const r = await sincronizarFaturamento(janela, (feitas, total) => {
+        if (total > 1) toast.loading(`Sincronizando… ${feitas}/${total}`, { id });
+      });
+      const msg = `Sincronizado: ${r.sincronizados} pedido(s).`;
+      if (r.falhas > 0) toast.warning(`${msg} ${r.falhas} de ${r.total} trecho(s) falharam — sincronize de novo.`, { id });
+      else toast.success(msg, { id });
       await refetch();
     } catch (e) {
-      toast.error(`Falha ao sincronizar: ${(e as Error).message}`);
+      toast.error(`Falha ao sincronizar: ${(e as Error).message}`, { id });
     } finally {
       setSincronizando(false);
     }
