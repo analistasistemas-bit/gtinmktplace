@@ -52,7 +52,8 @@ export interface PublicadoItem {
    *  o mesmo sinal que `criar-kit-vinculado` usa pra `base_multivariacao` (D-10). Não confundir
    *  com `qtdVariacoes` (só as publicadas no ML): o gating de "Criar kit" precisa do total. */
   qtdVariacoesFamilia?: number;
-  /** Alguma variação/item publicado sem vínculo de catálogo em erro ou não elegível (retentável). */
+  /** Alguma variação/item publicado sem vínculo de catálogo num estado que o botão ↻ reavalia:
+   *  `erro`, `nao_elegivel`, `sem_produto` ou `pendente` (ver STATUS_CATALOGO_RETENTAVEL). */
   catalogRetentavel?: boolean;
   /** Prontidão de emissão do ML (ADR-0135 D-10) — `familias.can_invoice`. null = ainda não verificado. */
   canInvoice?: boolean | null;

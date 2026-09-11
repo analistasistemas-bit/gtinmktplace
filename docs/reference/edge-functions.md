@@ -675,7 +675,17 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
 - **reprocessar-familia** — reseta `erro→pendente` e re-enfileira (guard idempotente, ADR-0030).
 - **retentar-catalogo** *(HTTP, JWT manual — ADR-0021, 2026-08-14)* — re-enfileira
   `vincular-catalogo` (delay 60s) para família `publicado` com variação Legacy ou item UP em
-  `erro`/`nao_elegivel` sem `catalog_listing_id`. Não altera estado no banco.
+  `erro`/`nao_elegivel`/`sem_produto`/`pendente` sem `catalog_listing_id`. Não altera estado no banco.
+  `sem_produto` e `pendente` entraram em **2026-09-11**: sem eles a lista tornava terminais os dois
+  estados mais transitórios que existem — o ML libera o opt-in mas a ficha ainda não existe
+  (`sem_produto`), ou ainda está computando a elegibilidade (`pendente`). Caso que motivou: o
+  Centrum da org DSA ficou preso em `sem_produto` de 12/08 a 11/09 **com o par dono↔catálogo já
+  ativo no ML**, e só saiu por SQL manual. `ficha_divergente` segue fora por escopo — incluí-lo
+  seria seguro (o worker rebusca a ficha e reroda `fichaEquivalente` antes de qualquer POST, então
+  a trava do ADR-0021 continua valendo), mas é outra classe de problema.
+  Publica com **`alertar: false`** (direto no QStash, não via `enfileirarVinculacaoCatalogo`): com
+  `sem_produto` retentável, cada clique sem ficha nova finalizaria a rodada na hora e dispararia um
+  Telegram "no-match" por clique. Quem clicou está na tela e vê o resultado ali.
 - **reconciliar-user-products** *(HTTP, admin — ADR-0088, 2026-07-23)* — backfill: importa pro
   modelo User Products itens planos já existentes no ML publicados antes do ADR-0088
   (ADR-0084/0087), que hoje não têm linha em `anuncios_externos_itens`. 2 RPCs

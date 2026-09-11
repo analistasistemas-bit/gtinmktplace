@@ -27,8 +27,14 @@ a re-subir as imagens em vez de reutilizar ids mortos no ML.
 
 ## Retentar vínculo de catálogo
 
-Quando uma variação publicada ficou em `catalog_status` **erro** ou **nao_elegivel** (sem
-`catalog_listing_id`), o operador pode re-enfileirar o worker de opt-in:
+Quando uma variação publicada ficou em `catalog_status` **erro**, **nao_elegivel**, **sem_produto**
+ou **pendente** (sem `catalog_listing_id`), o operador pode re-enfileirar o worker de opt-in:
+
+> `sem_produto` e `pendente` passaram a valer aqui em **2026-09-11**. Antes ficavam de fora, o que
+> os tornava terminais justamente por serem os mais transitórios: em `sem_produto` o ML já libera o
+> opt-in e só falta a ficha existir; em `pendente` ele ainda está calculando. O Centrum da org DSA
+> ficou preso um mês em `sem_produto` **com o vínculo já ativo no ML**, e a saída foi SQL manual.
+> Se você vê um produto que deveria estar no catálogo e não está, o ↻ agora cobre esses casos.
 
 **Pela UI:** tela **Publicados** → linha com catálogo retentável → botão **Tentar catálogo de
 novo** (ícone ↻, só admin). Resultado esperado em ~1 minuto.

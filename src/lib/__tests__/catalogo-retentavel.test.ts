@@ -31,9 +31,36 @@ describe('variacaoCatalogoRetentavel', () => {
     })).toBe(false);
   });
 
-  it('pendente → false', () => {
+  // Desde 2026-09-11: `pendente` (ML ainda computando) e `sem_produto` (ML libera o opt-in, mas a
+  // ficha não foi achada) são retentáveis. Ficarem de fora os tornava terminais — o Centrum passou
+  // um mês em `sem_produto` com o vínculo já ativo no ML, e só saiu dali por SQL.
+  it('pendente → true (ML ainda computando a elegibilidade)', () => {
     expect(variacaoCatalogoRetentavel({
       catalog_status: 'pendente',
+      catalog_listing_id: null,
+      ml_variation_id: 'v1',
+    })).toBe(true);
+  });
+
+  it('sem_produto → true (a ficha pode nascer a qualquer momento)', () => {
+    expect(variacaoCatalogoRetentavel({
+      catalog_status: 'sem_produto',
+      catalog_listing_id: null,
+      ml_variation_id: 'v1',
+    })).toBe(true);
+  });
+
+  it('sem_produto JÁ vinculado → false (listing id manda, não o status)', () => {
+    expect(variacaoCatalogoRetentavel({
+      catalog_status: 'sem_produto',
+      catalog_listing_id: 'MLB7391084566',
+      ml_variation_id: 'v1',
+    })).toBe(false);
+  });
+
+  it('ficha_divergente → false (fica fora por escopo; trava do ADR-0021)', () => {
+    expect(variacaoCatalogoRetentavel({
+      catalog_status: 'ficha_divergente',
       catalog_listing_id: null,
       ml_variation_id: 'v1',
     })).toBe(false);
@@ -84,15 +111,21 @@ describe('familiaTemCatalogoRetentavel', () => {
 
   it('só UP retentável → true', () => {
     expect(familiaTemCatalogoRetentavel(
-      [{ catalog_status: 'pendente', catalog_listing_id: null, ml_variation_id: 'a' }],
+      [{ catalog_status: 'vinculado', catalog_listing_id: 'MLB9', ml_variation_id: 'a' }],
       [{ item_externo_id: 'MLB1', catalog_listing_id: null, catalog_status: 'nao_elegivel' }],
     )).toBe(true);
   });
 
   it('nenhum retentável → false', () => {
     expect(familiaTemCatalogoRetentavel([
-      { catalog_status: 'pendente', catalog_listing_id: null, ml_variation_id: 'a' },
+      { catalog_status: 'ficha_divergente', catalog_listing_id: null, ml_variation_id: 'a' },
     ])).toBe(false);
+  });
+
+  it('família toda em sem_produto → true (era o caso do Centrum, antes invisível)', () => {
+    expect(familiaTemCatalogoRetentavel([
+      { catalog_status: 'sem_produto', catalog_listing_id: null, ml_variation_id: 'MLB5042154755' },
+    ])).toBe(true);
   });
 });
 
@@ -122,9 +155,21 @@ describe('catalogStatusRetentavelEmEspelho', () => {
     })).toBe(false);
   });
 
-  it('espelho só pendente → false', () => {
+  it('espelho só pendente → true (transitório, não terminal)', () => {
     expect(catalogStatusRetentavelEmEspelho({
       SKU1: { catalog_status: 'pendente', variation_id: 'v1', catalog_listing_id: null },
+    })).toBe(true);
+  });
+
+  it('espelho em sem_produto → true', () => {
+    expect(catalogStatusRetentavelEmEspelho({
+      '00000033': { catalog_status: 'sem_produto', variation_id: 'MLB5042154755', catalog_listing_id: null },
+    })).toBe(true);
+  });
+
+  it('espelho em ficha_divergente → false (fora do escopo do botão)', () => {
+    expect(catalogStatusRetentavelEmEspelho({
+      SKU1: { catalog_status: 'ficha_divergente', variation_id: 'v1', catalog_listing_id: null },
     })).toBe(false);
   });
 

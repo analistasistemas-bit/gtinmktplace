@@ -299,3 +299,53 @@ continuam `resumo.erro++` / `catalog_status: 'erro'`. Reusa o backoff existente 
 gravadas em `erro` (lote #16) **não** reprocessam sozinhas — exigem re-enfileirar
 `vincular-catalogo`. Catch genérico das orquestrações continua `resumo.erro` (só classifica o
 retorno de `optinCatalogo`).
+
+---
+
+## Adendo (2026-09-11) — `sem_produto` e `pendente` viram retentáveis
+
+**Sintoma medido.** 17 variações publicadas presas em estados que o app nunca reconsultava: 13 na
+org Avil, 4 na DSA. O caso que revelou: o Centrum da DSA (`00000033`) entrou em `sem_produto` em
+12/08 e assim ficou até 11/09 — **enquanto o par dono↔catálogo já existia e vendia no ML** (24
+vendas). O app não sabia: `catalog_listing_id` nulo e as vendas classificadas como "fora do
+PubliAI". A saída foi `UPDATE` manual.
+
+**Causa.** `STATUS_CATALOGO_RETENTAVEL = ['erro', 'nao_elegivel']`. Quem não está na lista não
+habilita o botão ↻ (`retentar-catalogo` devolve 409), então o estado vira terminal na prática. A
+lista deixava de fora justamente os dois estados mais transitórios:
+
+| Estado | Significado | Era retentável? |
+|---|---|---|
+| `nao_elegivel` | ML **recusou** explicitamente | sim |
+| `erro` | falha técnica do opt-in | sim |
+| `sem_produto` | ML **libera** o opt-in (`podeTentarOptin`), mas `/products/search` por GTIN veio vazio | **não** |
+| `pendente` | ML ainda **computando** a elegibilidade | **não** |
+
+`sem_produto` depende de a ficha existir no catálogo do ML — condição que muda sozinha, a qualquer
+momento, sem nada acontecer do nosso lado. `pendente` é reagendado pelo worker, mas após 5 rodadas
+`decidirResultadoRodadaCatalogo` finaliza "como está" e não há caminho de volta pela UI.
+
+**Decisão.** `STATUS_CATALOGO_RETENTAVEL = ['erro', 'nao_elegivel', 'sem_produto', 'pendente']`, nas
+duas cópias do helper (`src/lib/` e `_shared/ml/`, Deno/Vite split). Sem migration — o enum de
+`catalog_status` não muda; só muda quem o botão aceita.
+
+**`retentar-catalogo` passa a publicar com `alertar: false`.** Com `sem_produto` retentável, cada
+clique sem ficha nova finaliza a rodada na hora e `deveAlertarCatalogoNoMatch` dispararia um
+Telegram "no-match" no canal da org — um por clique. Quem clicou está na tela e vê o resultado
+ali; o alerta passivo só faria ruído proporcional à tentativa. Publicação direta no QStash pelo
+mesmo motivo já registrado em `vincular-catalogo`: `queue.ts` não conhece o campo, e ensiná-lo
+forçaria redeploy de 24 funções em vez de 2.
+
+**`ficha_divergente` fica de fora — por escopo, não por risco.** Registrado aqui para ninguém
+re-derivar o argumento errado: retentar **não** burla a trava de equivalência. O worker rebusca a
+ficha e reroda `fichaEquivalente` antes de qualquer POST (`catalogo.ts`), então um clique só
+vincularia se a ficha (ou o nosso item) tivesse mudado e agora passasse — exatamente o caso em que
+o operador corrigiu `UNITS_PER_PACK`/`SALE_FORMAT`. Incluí-lo é seguro; apenas não é a classe de
+problema que este adendo mede.
+
+**O que isto NÃO resolve.** É o botão, não o resgate. As 17 linhas presas continuam presas até
+alguém clicar, família por família, e o ↻ só aparece para quem abre a tela de Publicados — o card
+"Catálogo em risco" filtra apenas `catalog_forewarning`, então o Centrum era invisível lá. O
+conserto da classe é uma varredura periódica que re-enfileire `vincular-catalogo` (com
+`alertar: false`) para linhas publicadas em `sem_produto`/`pendente`. Isso é decisão nova, com
+custo próprio (N famílias × 2-3 GETs por rodada), e fica para um ADR separado.
