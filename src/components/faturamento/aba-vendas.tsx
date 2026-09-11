@@ -273,10 +273,11 @@ export function AbaVendas() {
       // pode valer centenas de pedidos. "3" seria lido como 3 pedidos — número com unidade errada
       // engana mais do que não ter número.
       else if (r.incompletas > 0) toast.warning(`${msg} Leitura incompleta no Mercado Livre — sincronize de novo.`, { id });
-      // Aviso próprio, e não um "incompleto" genérico: as vendas ENTRARAM, só sem o valor líquido.
-      // A reconciliação horária só volta a 72h, então passado esse prazo ninguém preenche sozinho —
-      // sincronizar de novo hoje é o que resolve.
-      else if (r.semLiquido > 0) toast.warning(`${msg} Sem os valores líquidos do Mercado Pago — sincronize de novo hoje mesmo.`, { id });
+      // Informativo, não erro: as vendas entraram e o valor líquido também (ele vem do ML, não do
+      // MP). O que fica pendente é a data de liberação, e `reconciliarLiberacoes` roda de hora em
+      // hora sobre o mapa de 120 dias do MP — ou seja, se cura sozinha. O aviso existe só para o
+      // operador não estranhar uma data vazia na tabela.
+      else if (r.semDadosMP > 0) toast.info(`${msg} Mercado Pago não respondeu: datas de liberação ficam pendentes até a próxima reconciliação.`, { id });
       else toast.success(msg, { id });
       await refetch();
     } catch (e) {

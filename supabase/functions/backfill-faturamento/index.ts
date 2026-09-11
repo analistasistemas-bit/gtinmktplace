@@ -63,11 +63,13 @@ interface ResultadoConexao {
   /** Pedidos lidos que o upsert recusou, um a um. */
   pedidosComFalha: number;
   /**
-   * A leitura do Mercado Pago falhou: as vendas foram gravadas, mas SEM `liquido` nem
-   * `money_release_date`. `preservarDadosMP` impede que o mapa vazio apague o que já havia, então
-   * venda antiga não perde nada — o buraco é na venda NOVA, que nasce sem o valor líquido. E a
-   * reconciliação horária só volta a 72h: passado esse prazo, nada mais preenche sozinho. Como é
-   * dinheiro, precisa aparecer na tela em vez de morrer no console.
+   * A leitura do Mercado Pago falhou. O que fica pendente é `money_release_date` e `estorno` — NÃO
+   * o `liquido`, que é calculado com dados do próprio ML (`calcularLiquido`, ADR-0042) e entra
+   * normalmente. `preservarDadosMP` (`novo ?? anterior`) impede que o mapa vazio apague o que já
+   * havia, então venda antiga não perde nada; a venda nova nasce sem a data de liberação.
+   * Não é perda permanente: `reconciliarLiberacoes` roda de hora em hora sobre o mapa de 120 dias
+   * do MP, fora da janela de 72h das vendas. Por isso isto é INFORMATIVO — aparece na tela para o
+   * operador não estranhar uma data vazia, e não como erro que exija ação imediata.
    */
   mpFalhou: boolean;
 }
@@ -259,7 +261,10 @@ try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'w
       const r = await processarConexao(admin, mapCx(row), intervalo, payload.soVendas === true);
       total += r.sincronizados;
       pedidosComFalha += r.pedidosComFalha;
-      if (r.mpFalhou) { falhou = true; conexoesSemMP++; }
+      // NÃO seta `falhou`: as vendas entraram e a reconciliação horária cobre a data de liberação
+      // dentro de 120 dias. Marcar a operação como `failed` na auditoria mandaria o suporte atrás
+      // de um incidente que não houve.
+      if (r.mpFalhou) conexoesSemMP++;
       if (r.leituraFalhou) { falhou = true; conexoesComFalha++; }
     } catch (e) {
       falhou = true;

@@ -1197,13 +1197,18 @@ um smoke test contra Postgres real antes do primeiro deploy.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
   ou todos os usuários (QStash). Não busca shipment (frete fica nulo).
   **Resposta** (desde 2026-09-11): `{ ok, sincronizados, conexoesComFalha, pedidosComFalha, conexoesSemMP }`.
-  `conexoesSemMP` conta conexões em que `carregarLiquidoMP` devolveu `null` — as vendas foram
-  gravadas **sem `liquido`/`money_release_date`**. `preservarDadosMP` impede que o mapa vazio apague
-  o que já existia, então venda antiga não perde nada; o buraco é na venda nova. Como o
-  `reconciliar-faturamento` só cobre 72h, passado esse prazo nada preenche sozinho — por isso a tela
-  recebe um aviso próprio ("Sem os valores líquidos do Mercado Pago"), separado do aviso genérico de
-  leitura incompleta. Medido em 2026-09-11: 0 vendas pagas sem líquido nas duas orgs (2.356 + 621),
-  ou seja, o caminho nunca se materializou — o campo é prevenção, não remediação.
+  `conexoesSemMP` conta conexões em que `carregarLiquidoMP` devolveu `null`. O que fica pendente é
+  **`money_release_date` e `estorno`** — **não** o `liquido`, que sai de `calcularLiquido` com dados
+  do próprio ML (ADR-0042) e entra normalmente. `preservarDadosMP` (`novo ?? anterior`) impede que o
+  mapa vazio apague o que já existia, então venda antiga não perde nada; a venda nova nasce sem a
+  data de liberação. **Não é perda permanente:** `reconciliarLiberacoes` roda de hora em hora sobre
+  o mapa de **120 dias** do MP, fora da janela de 72h das vendas — a autocura é de 120 dias. Por
+  isso o aviso na tela é `toast.info` (informativo), separado do aviso de leitura incompleta, e
+  `conexoesSemMP` **não** marca a operação como `failed` na auditoria.
+  Medido em 2026-09-11: 4 vendas pagas sem `money_release_date` nas duas orgs somadas (2.356 + 621),
+  todas de 2019/2024 e de anúncios fora do PubliAI — o caminho praticamente não se materializa. Este
+  campo é prevenção, não remediação. (A medição óbvia, `liquido is null`, dá 0 por construção e não
+  responde nada: esse campo nunca dependeu do MP.)
   `ok` reflete o resultado real (era `true` fixo). `conexoesComFalha` conta conexões cujas vendas
   não puderam ser lidas (token morto, 429/5xx do ML) e `pedidosComFalha` conta pedidos que o upsert
   recusou — antes os três caminhos devolviam `0` calados e a tela mostrava "Sincronizado: 0

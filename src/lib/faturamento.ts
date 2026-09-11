@@ -122,11 +122,14 @@ export interface ResultadoSincronia {
    */
   incompletas: number;
   /**
-   * A leitura do Mercado Pago falhou em alguma fatia: as vendas entraram, mas sem valor líquido.
-   * Separado de `incompletas` de propósito — é dinheiro, e a reconciliação só volta a 72h, então
-   * passado esse prazo ninguém preenche sozinho. Merece frase própria no toast.
+   * A leitura do Mercado Pago falhou em alguma fatia: as vendas entraram, mas a DATA DE LIBERAÇÃO
+   * (e o estorno) ficou pendente. O valor líquido NÃO depende do MP — sai de `calcularLiquido` com
+   * dados do ML (ADR-0042) e entra normalmente.
+   * Separado de `incompletas` porque a situação é outra: ali a venda não entrou e falta
+   * ressincronizar; aqui entrou e a reconciliação horária termina o serviço sozinha (mapa de 120
+   * dias do MP). É informativo, para o operador não estranhar uma data vazia.
    */
-  semLiquido: number;
+  semDadosMP: number;
 }
 
 /**
@@ -150,7 +153,7 @@ export async function sincronizarFaturamento(
   let sincronizados = 0;
   let falhas = 0;
   let incompletas = 0;
-  let semLiquido = 0;
+  let semDadosMP = 0;
   for (const [i, fatia] of fatias.entries()) {
     aoProgredir?.(i, fatias.length);
     try {
@@ -171,7 +174,7 @@ export async function sincronizarFaturamento(
       };
       sincronizados += r.sincronizados ?? 0;
       incompletas += (r.conexoesComFalha ?? 0) + (r.pedidosComFalha ?? 0);
-      semLiquido += r.conexoesSemMP ?? 0;
+      semDadosMP += r.conexoesSemMP ?? 0;
     } catch (e) {
       // Janela de uma fatia só: não há nada parcial a preservar, então o erro sobe para o toast
       // em vez de virar um "0 pedidos" que parece sucesso.
@@ -180,7 +183,7 @@ export async function sincronizarFaturamento(
     }
   }
   aoProgredir?.(fatias.length, fatias.length);
-  return { sincronizados, falhas, total: fatias.length, incompletas, semLiquido };
+  return { sincronizados, falhas, total: fatias.length, incompletas, semDadosMP };
 }
 
 export async function registrarSaque(ids: string[]): Promise<number> {

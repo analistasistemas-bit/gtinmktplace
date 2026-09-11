@@ -162,7 +162,7 @@ describe('sincronizarFaturamento', () => {
     let chamada = 0;
     vi.stubGlobal('fetch', vi.fn(async () => (++chamada === 2 ? resposta500 : respostaOk(3))));
     const r = await sincronizarFaturamento(janela30);
-    expect(r).toEqual({ sincronizados: 12, falhas: 1, total: 5, incompletas: 0, semLiquido: 0 }); // 4 fatias × 3
+    expect(r).toEqual({ sincronizados: 12, falhas: 1, total: 5, incompletas: 0, semDadosMP: 0 }); // 4 fatias × 3
   });
 
   it('janela de uma fatia só propaga o erro — senão o toast diria "0 pedidos" como se fosse sucesso', async () => {
@@ -197,10 +197,10 @@ describe('sincronizarFaturamento', () => {
       json: async () => ({ sincronizados: 0, conexoesComFalha: 0, pedidosComFalha: 0, conexoesSemMP: 0 }),
     })));
     const r = await sincronizarFaturamento(janela30);
-    expect(r).toEqual({ sincronizados: 0, falhas: 0, total: 5, incompletas: 0, semLiquido: 0 });
+    expect(r).toEqual({ sincronizados: 0, falhas: 0, total: 5, incompletas: 0, semDadosMP: 0 });
   });
 
-  it('MP fora do ar conta em semLiquido, não em incompletas — a venda entrou, o valor não', async () => {
+  it('MP fora do ar conta em semDadosMP, não em incompletas — a venda entrou, falta a data de liberação', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({
       ok: true,
       json: async () => ({ sincronizados: 9, conexoesComFalha: 0, pedidosComFalha: 0, conexoesSemMP: 1 }),
@@ -208,7 +208,7 @@ describe('sincronizarFaturamento', () => {
     const r = await sincronizarFaturamento(janela30);
     expect(r.sincronizados).toBe(45);
     expect(r.incompletas).toBe(0);
-    expect(r.semLiquido).toBe(5);
+    expect(r.semDadosMP).toBe(5);
   });
 
   it('resposta antiga sem os campos novos não vira falso alarme', async () => {
