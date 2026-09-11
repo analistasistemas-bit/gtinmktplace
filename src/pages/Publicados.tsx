@@ -1075,6 +1075,11 @@ export default function Publicados() {
     [doCanal],
   );
 
+  const totalSemCatalogo = useMemo(
+    () => doCanal.filter((i) => i.catalogRetentavel).length,
+    [doCanal],
+  );
+
   const itensExibidos = useMemo(
     () => ordenarPublicados(filtrarPublicados(doCanal, filtro), ord),
     [doCanal, filtro, ord],
@@ -1235,6 +1240,31 @@ export default function Publicados() {
               : `${totalModerados} anúncios moderados pelo Mercado Livre — clique para ver.`}
           </span>
           {filtro.status === 'moderado' && <span className="font-medium">• filtrando</span>}
+        </button>
+      )}
+
+      {/* Catálogo pendente (ADR-0021, adendo 2026-09-11): os que exibem o botão ↻ na linha. Tom
+          `info`, abaixo dos outros dois: não é risco de venda perdida nem moderação — é vínculo que
+          dá para tentar de novo. Sem este atalho o botão só era achado varrendo a lista linha a
+          linha, e foi assim que o Centrum ficou um mês em `sem_produto` com o catálogo já ativo no
+          ML. Aparece para todos; o botão em si continua restrito a admin. */}
+      {totalSemCatalogo > 0 && (
+        <button
+          type="button"
+          onClick={() => setFiltro((f) => ({ ...f, somenteSemCatalogo: !f.somenteSemCatalogo }))}
+          aria-pressed={!!filtro.somenteSemCatalogo}
+          className={cn(
+            'mb-4 flex w-full items-center gap-2 rounded-md border border-info/30 bg-info/10 px-4 py-3 text-left text-sm text-info transition-colors hover:bg-info/20 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter',
+            filtro.somenteSemCatalogo && 'ring-2 ring-info/50',
+          )}
+        >
+          <RefreshCw className="h-4 w-4 shrink-0" />
+          <span>
+            {totalSemCatalogo === 1
+              ? '1 anúncio sem vínculo de catálogo — dá para tentar de novo (botão ↻ na linha). Clique para ver.'
+              : `${totalSemCatalogo} anúncios sem vínculo de catálogo — dá para tentar de novo (botão ↻ na linha). Clique para ver.`}
+          </span>
+          {filtro.somenteSemCatalogo && <span className="font-medium">• filtrando</span>}
         </button>
       )}
 

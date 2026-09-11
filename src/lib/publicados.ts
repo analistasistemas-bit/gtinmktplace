@@ -164,6 +164,10 @@ export interface FiltroPublicados {
   somenteEncalhados?: boolean;
   /** Só publicações incompletas (anúncio vivo no ML sem publicação concluída) — o chip vermelho. */
   somenteIncompletos?: boolean;
+  /** Só os que têm vínculo de catálogo pendente e retentável — os que exibem o botão ↻.
+   *  Sem este filtro, achar o botão exigia varrer a lista linha a linha: foi assim que o Centrum
+   *  passou um mês em `sem_produto` com o catálogo já ativo no ML sem ninguém notar. */
+  somenteSemCatalogo?: boolean;
 }
 
 /** Anúncio encalhado: ativo e sem nenhuma venda no período. */
@@ -190,6 +194,7 @@ export function filtrarPublicados(
     if (f.tipo && rotuloTipo(i) !== f.tipo) return false;
     if (f.somenteEncalhados && !ehEncalhado(i)) return false;
     if (f.somenteIncompletos && !i.publicacaoIncompleta) return false;
+    if (f.somenteSemCatalogo && !i.catalogRetentavel) return false;
 
     if (termosBusca.length > 0) {
       const textoBuscavel = [
