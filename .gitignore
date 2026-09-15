@@ -54,6 +54,9 @@ Thumbs.db
 # Serena MCP (config local da ferramenta)
 .serena/
 
+# Saída local de sessões de agente (screenshots, capturas de tela)
+Claude outputs/
+
 # Ferramentas adicionais de IA/Agentes
 .agent/
 .agents/
@@ -83,3 +86,6 @@ publiai_codigofonte.zip
 
 # Link local do projeto na Vercel (contem projectId/orgId, nao se compartilha)
 .vercel/
+
+# PNG de origem dos assets da landing — o que vai para o repo é o .webp otimizado
+docs/brand/landing/assets/*.png
