@@ -1,6 +1,6 @@
 ---
 tags: [bugs, resolvidos]
-atualizado: 2026-08-24
+atualizado: 2026-09-15
 ---
 
 # Problemas Resolvidos
@@ -9,6 +9,30 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 [[Incidentes]] (com contexto completo de ADR), [[Bugs Conhecidos]] (o que falta).
 
 ## Correções recentes (commits mais recentes na `main`)
+
+- **Link da venda caía na lista de vendas do ML — rota `/vendas/pacote/` morreu (2026-09-15)** —
+  Diego clicou no atalho ↗ de uma conversa em Faturamento → Mensagens e foi parar na vitrine do
+  produto; ao corrigir para o detalhe da venda, o link passou a cair em `vendas/omni/lista`, a
+  lista de vendas. **Raiz:** `https://www.mercadolivre.com.br/vendas/pacote/{id}/detalhe` foi
+  **descontinuada** pelo ML e devolve **301 → `/vendas/lista`** para qualquer id — real ou
+  inventado. A rota viva é `/vendas/{id}/detalhe`, e ela **unificou: aceita `pack_id` e
+  `order_id`** (confirmado logado nos dois ids, mesma venda). Preferir o pack: por order o ML abre
+  só aquele pedido, e o pacote pode ter outros.
+  **Alcance maior que o sintoma:** a rota morta estava em **três** superfícies, e as duas antigas
+  já vinham falhando calado — a aba **Vendas** (`detalhe-pedido-itens.tsx`, todo pedido com pack) e
+  o alerta de **nova venda no Telegram** (`_shared/notificacoes/telegram.ts`, idem). O fix novo
+  (aba Mensagens) só tornou o problema visível.
+  **Fix:** helper único `urlVendaML()` em `src/lib/ml-status.ts`, espelhado no `telegram.ts` (Deno
+  não importa de `src/`); as três passam o pack quando existe — `p.chave` já é
+  `pack_id ?? order_id`, e em pedido solo o `pack_id` gravado **é** o `order_id`. Redeploy das 8
+  functions que importam `telegram.ts`.
+  **Por que nenhum teste pegou:** o teste do Telegram **afirmava a rota de pacote como correta**
+  (`expect(msg).toContain('/vendas/pacote/456/detalhe')`) e o ramo do pack na aba Vendas não tinha
+  asserção de href nenhuma. Teste que fixa a URL errada esconde o bug em vez de pegá-lo.
+  **Método reaproveitável para qualquer link de marketplace:** `curl -s -o /dev/null -w
+  "%{http_code} -> %{redirect_url}"` com **um id real e um id inventado**. Rota viva atrás de login
+  dá **302 para o login preservando o destino** em `go=`; rota aposentada dá **301 descartando o
+  id**. A assimetria prova a rota morta sem precisar de sessão logada.
 
 - **Cor nova em anúncio User Products caía numa família diferente (2026-09-03)** — lote 54,
   `MLB4959919693`: a cor Preta foi criada (`MLB5184493069`) mas com `family_id` próprio, e o guard
