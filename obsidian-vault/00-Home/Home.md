@@ -60,6 +60,7 @@ Este vault referencia esses documentos, não os substitui.
 - `05-Bugs/` — bugs conhecidos e incidentes
 - `06-Roadmap/` — backlog e próximos passos
 - `07-IA/` — como os agentes de IA (Claude, Graphify, Serena) operam neste projeto
+- `08-Agentes Externos/` — agentes que operam a conta de marketplace pela API, fora do PubliAI — ver [[Agentes Externos]]
 - `09-Logs/` — changelog e deploys
 
 ## Estado atual (resumo)

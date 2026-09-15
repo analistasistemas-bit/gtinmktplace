@@ -9,6 +9,9 @@ Como assistentes de IA operam no PubliAI — meta-documentação sobre o process
 features de IA do produto (isso é [[IA]] em `03-Módulos`). Ver [[Claude]], [[Graphify]],
 [[Serena]].
 
+Agentes que operam a **conta do marketplace** pela API, fora do repositório e fora do app, são
+outra coisa: [[Agentes Externos]] (`08-Agentes Externos/`).
+
 ## Quem trabalha no repositório
 
 - **Claude Code** — agente principal, opera via `CLAUDE.md` na raiz do repo
