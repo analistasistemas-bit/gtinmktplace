@@ -33,6 +33,11 @@ Consequências aceitas:
 2. O app tem escrita na área de Publicação, o que no ML significa também publicar, excluir,
    pausar e alterar estoque e preço — **não há como restringir por operação no portal**.
 3. A fronteira "não publicar / não mexer em estoque" existe apenas como regra no prompt.
+4. **O PUT de fotos reenvia `available_quantity` lido no GET** — isso *é* uma escrita de
+   estoque. Venda paga entre o GET e o PUT do agente é sobrescrita com o saldo antigo, e nada
+   reconcilia depois: só o próximo movimento de estoque corrige. Dentro do PubliAI essa mesma
+   janela é serializada pela fila `estoque-{orgId}`; o agente externo está fora desse lock. Por
+   isso a rotina de revisão em [[#Pendências]] não é opcional.
 
 Freios reais disponíveis, já que a trava técnica não existe:
 
@@ -77,6 +82,8 @@ Ao montar PUT /items com variations, incluir TODAS as variações do item
   sobrescreveria qualquer ajuste feito pelo agente.
 - **Rate limit é parcialmente por vendedor.** Varredura agressiva do agente pode gerar 429 no
   PubliAI também.
+- **Foto do agente existe só no ML.** Uma republicação (CREATE após Remover, kit, migração
+  Legacy→User Products) parte do banco do PubliAI e perde as fotos adicionadas por fora.
 
 ## Incidentes da implantação
 

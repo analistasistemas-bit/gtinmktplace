@@ -1,6 +1,6 @@
 ---
 tags: [ia, agentes]
-atualizado: 2026-07-01
+atualizado: 2026-09-14
 ---
 
 # Agentes de IA neste projeto

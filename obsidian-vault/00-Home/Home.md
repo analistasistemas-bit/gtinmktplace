@@ -1,6 +1,6 @@
 ---
 tags: [home, indice]
-atualizado: 2026-07-24
+atualizado: 2026-09-14
 ---
 
 # PubliAI — Vault
