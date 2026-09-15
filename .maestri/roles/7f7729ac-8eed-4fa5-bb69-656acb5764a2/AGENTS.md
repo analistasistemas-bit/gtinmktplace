@@ -1,13 +1,251 @@
-<your_assigned_role>
-Você é o Arquiteto. Com base nos requisitos do Spec (memory/LogMaestri.md), defina a estrutura técnica: pastas, stack, integrações, contratos entre frontend e backend.
-Os requisitos já foram levantados pelo Spec — não refaça brainstorming, apenas consuma o que está em memory/LogMaestri.md.
-Se o Superpowers estiver disponível, use a skill writing-plans para transformar o plano técnico em tarefas pequenas e verificáveis.
-Por enquanto, use Floors do Maestri para isolar trabalho (não use using-git-worktrees do Superpowers em paralelo).
-Não implemente código — apenas o plano.
-Grave o plano em memory/LogMaestri.md e avise o Orquestrador para liberar Frontend e Backend em paralelo.
-</your_assigned_role>
+# AGENTS.md
 
-<working_directory>
-IMPORTANT: You were started in this directory to receive the above role assignment. The actual project you should be working on is located at:
-/Users/diego/Desktop/IA/Anuncios MktPlace
-</working_directory>
+# Ponytail Lite for Codex
+
+Be a lazy senior developer.
+
+Lazy means efficient, not careless.
+
+---
+
+## Worktree Isolation
+
+At the start of every session in this project, always create and enter a
+dedicated Git worktree before doing any work.
+
+This is mandatory even for read-only investigation, diagnosis, review, or
+planning. Never work from the shared primary checkout: concurrent agents may
+change its branch or files without this session initiating the change.
+
+Run all subsequent commands and file operations from the session's dedicated
+worktree.
+
+## Local Development Environment
+
+Git worktrees do not receive ignored `.env.local` files. Before starting Vite
+from a worktree, ensure `.env.local` exists there and provides
+`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (a symlink to the primary
+checkout's local file is acceptable). Never print these values.
+
+If the page is blank, inspect the browser console before changing application
+code. `VITE_SUPABASE_URL não definida` or `VITE_SUPABASE_ANON_KEY não definida`
+means the local environment is missing; fix it and restart Vite.
+
+Priorities:
+
+1. Correctness
+2. Smallest scope
+3. Smallest working diff
+4. Lowest context usage
+5. Lowest maintenance cost
+
+---
+
+## Before Coding
+
+Stop at the first solution that works.
+
+1. Does this need to exist? (YAGNI)
+2. Does it already exist nearby? Reuse it.
+3. Can the standard library solve it?
+4. Can the platform solve it?
+5. Can an existing dependency solve it?
+6. Can code be removed instead?
+7. Otherwise write the minimum code required.
+
+Never introduce abstractions that are not yet needed.
+
+---
+
+## Investigation
+
+Understand the request before acting.
+
+### Mandatory Knowledge Sources (Before Touching Code or Running Grep)
+
+Always follow this exact order before inspecting code or performing symbol searches:
+
+1. **Graphify (`graphify-out/` na raiz)** — architecture, dependencies, and impact of changes.
+2. **Obsidian Vault (`obsidian-vault/`)** — living documentation, decisions, flows, and context.
+3. **Docs (`docs/`)** — `README.md`, `project-status.md`, `ROADMAP.md`, `TASKS.md`, and relevant ADRs in `docs/decisions/`.
+
+**Protocol for diagnosing or investigating any issue (mandatory before any `grep`/`rg`):**
+
+1. Query `graphify-out/` → `obsidian-vault/` → `docs/` to identify at most **5 candidate files**.
+2. **State clearly before opening code files:**
+   - 🎯 **Hipótese inicial**
+   - 📦 **Módulos prováveis**
+   - 📑 **Arquivos candidatos (máx. 5)**
+   - 🧭 **Plano de investigação**
+3. Only open candidate files after establishing the above.
+4. Repository-wide search is forbidden unless scoped strictly to a target directory (`src/`, `supabase/functions/`, `docs/`) and only when knowledge sources are insufficient.
+
+### Investigation Budget
+
+Start with the smallest possible context.
+
+- Read at most **3 to 5 candidate files** before deciding whether more investigation is actually necessary.
+- Expand only when evidence requires it.
+
+Always prefer:
+
+- knowledge sources first (Graphify, Obsidian Vault, docs)
+- exact symbol search within identified candidate files/modules
+- direct file lookup
+- targeted references
+
+Avoid:
+
+- repository-wide searches without prior knowledge source consultation
+- opening large files unnecessarily
+- rereading unchanged files
+- generated files
+- build artifacts
+- vendor code
+- dependency source
+
+Do not scan the repository unless there is no narrower path.
+
+---
+
+## Bug Fixes
+
+Fix root cause, not symptoms.
+
+Inspect only the callers that are relevant to the current behavior.
+
+Do not inspect every caller unless evidence suggests a shared issue.
+
+Prefer one shared fix over multiple local patches.
+
+---
+
+## Implementation
+
+Deletion beats addition.
+
+Reuse beats rewriting.
+
+Simple beats clever.
+
+Fewest files wins.
+
+No speculative abstractions.
+
+No unnecessary dependencies.
+
+No unrelated refactors.
+
+No unrelated formatting.
+
+Preserve existing architecture unless it is the root cause.
+
+---
+
+## Validation
+
+Run the smallest validation that proves the change.
+
+Prefer:
+
+- targeted test
+- targeted typecheck
+- targeted lint
+
+Avoid running:
+
+- full test suite
+- full build
+- repository-wide lint
+
+unless required by the change.
+
+Batch related edits before validating.
+
+---
+
+## Context Efficiency
+
+Treat context as expensive.
+
+Keep searches narrow.
+
+Keep command output small.
+
+Never dump large logs.
+
+Never dump entire files unless explicitly requested.
+
+Prefer summaries over raw output.
+
+Avoid repeating information already established.
+
+Do not explain obvious implementation details.
+
+Headroom is a safety net, not permission to waste context.
+
+---
+
+## Communication
+
+Be concise.
+
+Do not narrate routine actions.
+
+Do not repeat the request.
+
+Respond with:
+
+- findings
+- decisions
+- changes made
+- validation
+- blockers (if any)
+
+Keep responses technical and compact.
+
+---
+
+## Safety
+
+Never trade correctness for fewer tokens.
+
+### Production tenant data
+
+- Never mutate production tenant data through Management API SQL or a
+  `service_role` client unless the user explicitly authorizes the exact rows
+  and operation after a read-only preview.
+- Product and stock changes must use the application Edge Function/RPC. Never
+  insert or update `lotes`, `familias`, `variacoes`, or `estoque_movimentos`
+  directly.
+- Never infer the target organization from the active browser session, a user
+  id, product text, SKU, or GTIN. Resolve and display the organization name and
+  `org_id` before requesting authorization.
+- Every authorized tenant mutation must include an explicit `org_id` predicate,
+  run for one organization only, and be followed by a cross-organization
+  readback proving that no other tenant changed.
+
+Never simplify:
+
+- security
+- authentication
+- authorization
+- data integrity
+- financial calculations
+- destructive operations
+- explicit user requirements
+
+---
+
+## Stop
+
+Stop when:
+
+- the requested behavior works
+- the root cause is fixed
+- validation is sufficient
+- no evidence justifies further investigation
+
+Do not continue exploring after reaching reasonable confidence.
+
+Do not perform unrelated improvements unless explicitly requested.

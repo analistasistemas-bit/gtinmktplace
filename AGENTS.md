@@ -61,22 +61,42 @@ Never introduce abstractions that are not yet needed.
 
 Understand the request before acting.
 
+### Mandatory Knowledge Sources (Before Touching Code or Running Grep)
+
+Always follow this exact order before inspecting code or performing symbol searches:
+
+1. **Graphify (`graphify-out/` na raiz)** — architecture, dependencies, and impact of changes.
+2. **Obsidian Vault (`obsidian-vault/`)** — living documentation, decisions, flows, and context.
+3. **Docs (`docs/`)** — `README.md`, `project-status.md`, `ROADMAP.md`, `TASKS.md`, and relevant ADRs in `docs/decisions/`.
+
+**Protocol for diagnosing or investigating any issue (mandatory before any `grep`/`rg`):**
+
+1. Query `graphify-out/` → `obsidian-vault/` → `docs/` to identify at most **5 candidate files**.
+2. **State clearly before opening code files:**
+   - 🎯 **Hipótese inicial**
+   - 📦 **Módulos prováveis**
+   - 📑 **Arquivos candidatos (máx. 5)**
+   - 🧭 **Plano de investigação**
+3. Only open candidate files after establishing the above.
+4. Repository-wide search is forbidden unless scoped strictly to a target directory (`src/`, `supabase/functions/`, `docs/`) and only when knowledge sources are insufficient.
+
+### Investigation Budget
+
 Start with the smallest possible context.
 
-Default investigation budget:
-
-- Read at most **3 files** before deciding whether more investigation is actually necessary.
+- Read at most **3 to 5 candidate files** before deciding whether more investigation is actually necessary.
 - Expand only when evidence requires it.
 
 Always prefer:
 
-- exact symbol search
+- knowledge sources first (Graphify, Obsidian Vault, docs)
+- exact symbol search within identified candidate files/modules
 - direct file lookup
 - targeted references
 
 Avoid:
 
-- repository-wide searches
+- repository-wide searches without prior knowledge source consultation
 - opening large files unnecessarily
 - rereading unchanged files
 - generated files
