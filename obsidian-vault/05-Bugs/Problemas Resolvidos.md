@@ -23,9 +23,12 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
   o alerta de **nova venda no Telegram** (`_shared/notificacoes/telegram.ts`, idem). O fix novo
   (aba Mensagens) só tornou o problema visível.
   **Fix:** helper único `urlVendaML()` em `src/lib/ml-status.ts`, espelhado no `telegram.ts` (Deno
-  não importa de `src/`); as três passam o pack quando existe — `p.chave` já é
-  `pack_id ?? order_id`, e em pedido solo o `pack_id` gravado **é** o `order_id`. Redeploy das 8
-  functions que importam `telegram.ts`.
+  não importa de `src/`); as três passam o pack quando existe. Atenção à diferença entre as
+  tabelas: **`ml_vendas` grava `pack_id = null`** em pedido solo (`_shared/faturamento/venda.ts`),
+  e o `?? order_id` é fallback **em código** (`p.chave` em `pedidos-faturamento.ts`,
+  `v.pack_id ?? v.order_id` no alerta); já em **`ml_mensagens` o `pack_id` gravado é o próprio
+  `order_id`** quando não há pacote (`listarPacksDeVendas`), por isso a aba Mensagens passa
+  `c.pack_id` direto. Redeploy das 8 functions que importam `telegram.ts`.
   **Por que nenhum teste pegou:** o teste do Telegram **afirmava a rota de pacote como correta**
   (`expect(msg).toContain('/vendas/pacote/456/detalhe')`) e o ramo do pack na aba Vendas não tinha
   asserção de href nenhuma. Teste que fixa a URL errada esconde o bug em vez de pegá-lo.
