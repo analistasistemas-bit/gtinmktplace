@@ -4,7 +4,7 @@ import { Sparkles, Send, MessagesSquare, ExternalLink, Check } from 'lucide-reac
 import { cn } from '@/lib/utils';
 import { useListaMensagens } from '@/hooks/useMensagens';
 import { responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, type Conversa } from '@/lib/mensagens';
-import { fmtDataCurta, urlAnuncioML } from '@/lib/ml-status';
+import { fmtDataCurta, urlConversaML } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -23,6 +23,7 @@ function CardConversa({ c }: { c: Conversa }) {
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
   const cancelada = c.order_status === 'cancelled' || canceladaLocal;
   const cliente = c.comprador_nome?.trim() || c.comprador_nick?.trim() || 'Comprador';
+  const urlConversa = urlConversaML(c.pack_id, c.order_id);
 
   async function sugerir() {
     if (!ultimaRecebida) return;
@@ -78,17 +79,16 @@ function CardConversa({ c }: { c: Conversa }) {
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">
             <span className="truncate">{c.item_titulo ?? (c.order_id ? `Pedido ${c.order_id}` : c.pack_id)}</span>
-            {c.item_id && (
-              <a
-                href={urlAnuncioML(c.item_id)}
-                target="_blank"
-                rel="noreferrer"
-                aria-label="Abrir anúncio no Mercado Livre"
-                className="ml-1 inline-block text-info hover:underline"
-              >
-                <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
+            <a
+              href={urlConversa}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Abrir conversa no Mercado Livre"
+              title="Abrir a conversa na página da venda no Mercado Livre"
+              className="ml-1 inline-block text-info hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+            </a>
             <span> · {fmtDataCurta(c.ultima)}</span>
           </div>
         </div>

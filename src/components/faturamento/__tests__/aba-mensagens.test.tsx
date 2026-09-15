@@ -86,8 +86,8 @@ describe('AbaMensagens', () => {
 
     expect(screen.getByText(/MARIA_01/)).toBeInTheDocument();
     const card = screen.getByText('Pedido cancelado').closest('div.rounded-lg') as HTMLElement;
-    expect(within(card).getByRole('link', { name: 'Abrir anúncio no Mercado Livre' }))
-      .toHaveAttribute('href', 'https://produto.mercadolivre.com.br/MLB-123');
+    expect(within(card).getByRole('link', { name: 'Abrir conversa no Mercado Livre' }))
+      .toHaveAttribute('href', 'https://www.mercadolivre.com.br/vendas/pacote/pack-1/detalhe');
     expect(within(card).getByRole('textbox')).toBeDisabled();
     expect(within(card).getByRole('button', { name: /sugerir resposta/i })).toBeDisabled();
     expect(within(card).getByRole('button', { name: /responder/i })).toBeDisabled();

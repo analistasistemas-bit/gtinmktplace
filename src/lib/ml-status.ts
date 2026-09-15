@@ -67,3 +67,17 @@ export function urlAnuncioML(mlItemId: string): string {
  * (`/questions/{id}` v4 não tem esse campo), então o atalho abre a lista logada.
  */
 export const URL_PERGUNTAS_ML = 'https://www.mercadolivre.com.br/perguntas/vendedor';
+
+/**
+ * Página da venda no ML, onde fica o histórico de mensagens do pedido. A API não expõe permalink
+ * por conversa, e o detalhe da venda é a tela que o vendedor usa para responder.
+ *
+ * Pedido solo: o sync grava o próprio `order_id` como `pack_id` (ver `listarPacksDeVendas`), então
+ * `pack_id === order_id` abre por order. Qualquer outro caso é pack de verdade — ou order
+ * desconhecido, e aí o pacote é o único identificador que temos.
+ */
+export function urlConversaML(packId: string, orderId: string | null): string {
+  return orderId != null && String(orderId) === packId
+    ? `https://www.mercadolivre.com.br/vendas/${orderId}/detalhe`
+    : `https://www.mercadolivre.com.br/vendas/pacote/${packId}/detalhe`;
+}
