@@ -84,11 +84,14 @@ export interface NovaVendaAlerta {
 const fmtBRL = (n: number, moeda: string) =>
   moeda === 'BRL' ? `R$ ${n.toFixed(2).replace('.', ',')}` : `${moeda} ${n.toFixed(2)}`;
 
-/** Mesmo padrão de link usado em detalhe-pedido-itens.tsx: pedido com pack usa a URL de pacote. */
-function urlVendaML(orderId: number, packId?: number | null): string {
-  return packId
-    ? `https://www.mercadolivre.com.br/vendas/pacote/${packId}/detalhe`
-    : `https://www.mercadolivre.com.br/vendas/${orderId}/detalhe`;
+/**
+ * Detalhe da venda no ML, sempre por order — inclusive quando o pedido tem pack. A rota
+ * `/vendas/pacote/{id}/detalhe` foi descontinuada e devolve 301 para `/vendas/lista` (medido em
+ * 15/09/2026, com id real e inventado), então o alerta caía na lista em vez da venda.
+ * Espelha `urlVendaML` de `src/lib/ml-status.ts` — duplicado de propósito: runtimes separados.
+ */
+function urlVendaML(orderId: number): string {
+  return `https://www.mercadolivre.com.br/vendas/${orderId}/detalhe`;
 }
 
 export function montarMensagemNovaVenda(v: NovaVendaAlerta): string {
@@ -100,7 +103,7 @@ export function montarMensagemNovaVenda(v: NovaVendaAlerta): string {
     `💰 Nova venda${comprador} — ${fmtBRL(v.total, v.moeda)}`,
     itens,
     `Pedido ${v.order_id}`,
-    urlVendaML(v.order_id, v.pack_id),
+    urlVendaML(v.order_id),
   ].filter(Boolean).join('\n');
 }
 

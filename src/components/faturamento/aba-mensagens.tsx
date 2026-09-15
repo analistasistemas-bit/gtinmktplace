@@ -4,7 +4,7 @@ import { Sparkles, Send, MessagesSquare, ExternalLink, Check } from 'lucide-reac
 import { cn } from '@/lib/utils';
 import { useListaMensagens } from '@/hooks/useMensagens';
 import { responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, type Conversa } from '@/lib/mensagens';
-import { fmtDataCurta, urlConversaML } from '@/lib/ml-status';
+import { fmtDataCurta, urlVendaML } from '@/lib/ml-status';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -23,7 +23,9 @@ function CardConversa({ c }: { c: Conversa }) {
   const ultimaRecebida = [...c.mensagens].reverse().find((m) => m.direcao === 'recebida');
   const cancelada = c.order_status === 'cancelled' || canceladaLocal;
   const cliente = c.comprador_nome?.trim() || c.comprador_nick?.trim() || 'Comprador';
-  const urlConversa = urlConversaML(c.pack_id, c.order_id);
+  // Sem order_id resolvido (webhook da mensagem chegou antes do sync da venda) o pack_id é o único
+  // id que temos; em pedido solo ele JÁ é o order_id, e nos demais o ML resolve depois do login.
+  const urlConversa = urlVendaML(c.order_id ?? c.pack_id);
 
   async function sugerir() {
     if (!ultimaRecebida) return;

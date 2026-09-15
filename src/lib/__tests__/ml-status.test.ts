@@ -1,19 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { urlConversaML } from '@/lib/ml-status';
+import { urlVendaML } from '@/lib/ml-status';
 
-describe('urlConversaML', () => {
-  it('pedido solo (pack_id === order_id) abre o detalhe por order', () => {
-    expect(urlConversaML('2000012345', '2000012345'))
-      .toBe('https://www.mercadolivre.com.br/vendas/2000012345/detalhe');
+describe('urlVendaML', () => {
+  it('abre o detalhe da venda por order_id', () => {
+    expect(urlVendaML('2000018464287084'))
+      .toBe('https://www.mercadolivre.com.br/vendas/2000018464287084/detalhe');
   });
 
-  it('pack de verdade abre o detalhe do pacote', () => {
-    expect(urlConversaML('900099', '2000012345'))
-      .toBe('https://www.mercadolivre.com.br/vendas/pacote/900099/detalhe');
-  });
-
-  it('sem order_id resolvido, cai no pacote', () => {
-    expect(urlConversaML('900099', null))
-      .toBe('https://www.mercadolivre.com.br/vendas/pacote/900099/detalhe');
+  // Regressão: `/vendas/pacote/{id}/detalhe` devolve 301 para `/vendas/lista` no ML (medido em
+  // 15/09/2026 com id real e com id inventado). Pack também tem que abrir pela rota de order.
+  it('nunca usa a rota de pacote, que o ML descontinuou', () => {
+    expect(urlVendaML('900099')).not.toContain('/vendas/pacote/');
   });
 });

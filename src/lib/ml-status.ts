@@ -69,15 +69,14 @@ export function urlAnuncioML(mlItemId: string): string {
 export const URL_PERGUNTAS_ML = 'https://www.mercadolivre.com.br/perguntas/vendedor';
 
 /**
- * Página da venda no ML, onde fica o histórico de mensagens do pedido. A API não expõe permalink
- * por conversa, e o detalhe da venda é a tela que o vendedor usa para responder.
+ * Detalhe da venda no ML — a tela que mostra o pedido e o histórico de mensagens com o comprador.
  *
- * Pedido solo: o sync grava o próprio `order_id` como `pack_id` (ver `listarPacksDeVendas`), então
- * `pack_id === order_id` abre por order. Qualquer outro caso é pack de verdade — ou order
- * desconhecido, e aí o pacote é o único identificador que temos.
+ * Só existe uma rota viva, e ela é por **order_id**. Medido em 15/09/2026, sem login:
+ * `/vendas/pacote/{id}/detalhe` devolve **301 para `/vendas/lista`** com qualquer id, real ou
+ * inventado — a rota de pacote foi descontinuada e joga o vendedor na lista de vendas. Já
+ * `/vendas/{id}/detalhe` devolve 302 para o login preservando o destino, ou seja, continua válida.
+ * Não reintroduza `/vendas/pacote/` a partir de código antigo: ele está quebrado, não deprecado.
  */
-export function urlConversaML(packId: string, orderId: string | null): string {
-  return orderId != null && String(orderId) === packId
-    ? `https://www.mercadolivre.com.br/vendas/${orderId}/detalhe`
-    : `https://www.mercadolivre.com.br/vendas/pacote/${packId}/detalhe`;
+export function urlVendaML(orderId: string | number): string {
+  return `https://www.mercadolivre.com.br/vendas/${orderId}/detalhe`;
 }

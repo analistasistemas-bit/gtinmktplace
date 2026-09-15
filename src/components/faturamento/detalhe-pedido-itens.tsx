@@ -1,6 +1,7 @@
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMarkup } from '@/lib/formato';
+import { urlVendaML } from '@/lib/ml-status';
 import type { Pedido } from '@/lib/pedidos-faturamento';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { ThumbProduto } from './pilha-thumbs';
@@ -19,9 +20,9 @@ const PCT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
  * dois casos usa `it.markup`, que continua calculado líquido de imposto.
  */
 export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido: Pedido; liquidoBruto?: boolean }) {
-  const urlVenda = p.isPack
-    ? `https://www.mercadolivre.com.br/vendas/pacote/${p.chave}/detalhe`
-    : `https://www.mercadolivre.com.br/vendas/${p.orderIds[0]}/detalhe`;
+  // Sempre por order, inclusive em pack: a rota `/vendas/pacote/…` foi descontinuada pelo ML e
+  // devolve 301 para a lista de vendas (ver `urlVendaML`). O pack abre pelo seu primeiro pedido.
+  const urlVenda = urlVendaML(p.orderIds[0]);
   // Alíquota exibida vem de `it.aliquotaPct` (o valor cru do resolver — 8/16, ADR-0055), NUNCA
   // reconstruída de `imposto ÷ valor`: o imposto é arredondado a centavos e a divisão de volta erra
   // a alíquota (R$ 44,55 a 8% → 7,99%). Média ponderada pelo valor cobre pedido com origens mistas.
