@@ -20,9 +20,9 @@ const PCT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
  * dois casos usa `it.markup`, que continua calculado líquido de imposto.
  */
 export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido: Pedido; liquidoBruto?: boolean }) {
-  // Sempre por order, inclusive em pack: a rota `/vendas/pacote/…` foi descontinuada pelo ML e
-  // devolve 301 para a lista de vendas (ver `urlVendaML`). O pack abre pelo seu primeiro pedido.
-  const urlVenda = urlVendaML(p.orderIds[0]);
+  // `chave` já é `pack_id ?? order_id`, e a rota aceita os dois (ver `urlVendaML`). A rota antiga
+  // `/vendas/pacote/…` foi descontinuada pelo ML e devolvia 301 para a lista de vendas.
+  const urlVenda = urlVendaML(p.chave);
   // Alíquota exibida vem de `it.aliquotaPct` (o valor cru do resolver — 8/16, ADR-0055), NUNCA
   // reconstruída de `imposto ÷ valor`: o imposto é arredondado a centavos e a divisão de volta erra
   // a alíquota (R$ 44,55 a 8% → 7,99%). Média ponderada pelo valor cobre pedido com origens mistas.

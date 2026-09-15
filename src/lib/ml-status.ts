@@ -71,12 +71,14 @@ export const URL_PERGUNTAS_ML = 'https://www.mercadolivre.com.br/perguntas/vende
 /**
  * Detalhe da venda no ML — a tela que mostra o pedido e o histórico de mensagens com o comprador.
  *
- * Só existe uma rota viva, e ela é por **order_id**. Medido em 15/09/2026, sem login:
- * `/vendas/pacote/{id}/detalhe` devolve **301 para `/vendas/lista`** com qualquer id, real ou
- * inventado — a rota de pacote foi descontinuada e joga o vendedor na lista de vendas. Já
- * `/vendas/{id}/detalhe` devolve 302 para o login preservando o destino, ou seja, continua válida.
- * Não reintroduza `/vendas/pacote/` a partir de código antigo: ele está quebrado, não deprecado.
+ * Só existe uma rota viva, e ela unificou: `/vendas/{id}/detalhe` aceita **tanto pack_id quanto
+ * order_id** (Diego confirmou logado, 15/09/2026, abrindo a mesma venda pelos dois ids). Prefira o
+ * pack quando houver — o order abre só aquele pedido, e o pacote pode ter outros.
+ *
+ * `/vendas/pacote/{id}/detalhe` está **morta**: devolve 301 para `/vendas/lista` com qualquer id,
+ * real ou inventado (medido sem login na mesma data), jogando o vendedor na lista de vendas. Não a
+ * reintroduza a partir de código antigo — ela está quebrada, não deprecada.
  */
-export function urlVendaML(orderId: string | number): string {
-  return `https://www.mercadolivre.com.br/vendas/${orderId}/detalhe`;
+export function urlVendaML(packOuOrderId: string | number): string {
+  return `https://www.mercadolivre.com.br/vendas/${packOuOrderId}/detalhe`;
 }

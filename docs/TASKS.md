@@ -10,11 +10,14 @@ Ao corrigir para o detalhe da venda, o link passou a cair na **lista** de vendas
 - [x] **Causa medida (15/09, sem login):** `https://www.mercadolivre.com.br/vendas/pacote/{id}/detalhe`
   devolve **301 → `/vendas/lista`** para qualquer id, real ou inventado — a rota de pacote foi
   descontinuada. `/vendas/{id}/detalhe` devolve 302 para o login preservando o destino, ou seja,
-  segue válida. **Só a rota por order funciona.**
+  segue válida.
+- [x] **Rota unificada (Diego confirmou logado, 15/09):** `/vendas/{id}/detalhe` aceita **pack_id e
+  order_id**. Usar o pack quando existir — o order abre só aquele pedido, e o pacote pode ter
+  outros. `chave` em `pedidos-faturamento.ts` já é `pack_id ?? order_id`.
 - [x] Três superfícies usavam a rota morta e caíam na lista: a aba Vendas
   (`detalhe-pedido-itens.tsx`, todo pedido com pack), o alerta de nova venda no Telegram
   (`_shared/notificacoes/telegram.ts`, idem) e o atalho novo da aba Mensagens.
-- [x] Todas passam a usar `urlVendaML(orderId)`; pack abre pelo seu primeiro pedido. O helper do
+- [x] Todas passam a usar `urlVendaML(packOuOrderId)`, com o pack quando houver. O helper do
   Deno é duplicado de propósito (runtimes separados).
 - [x] Teste de regressão nas três: `ml-status.test.ts`, `detalhe-pedido-itens.test.tsx` (o ramo do
   pack não tinha asserção de href — era exatamente onde o bug morava) e `telegram.test.ts`, que

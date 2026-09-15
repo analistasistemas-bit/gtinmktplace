@@ -45,11 +45,11 @@ describe('montarMensagemNovaVenda (link ML)', () => {
     const msg = montarMensagemNovaVenda({ ...base, order_id: 123 });
     expect(msg).toContain('https://www.mercadolivre.com.br/vendas/123/detalhe');
   });
-  // A rota de pacote devolve 301 para /vendas/lista no ML (medido em 15/09/2026), então o alerta
-  // de venda com pack também tem que linkar por order — senão cai na lista de vendas.
-  it('linka por order mesmo quando há pack_id', () => {
+  // `/vendas/pacote/{id}/detalhe` devolve 301 para /vendas/lista no ML (medido em 15/09/2026), e
+  // `/vendas/{id}/detalhe` aceita pack ou order. Com pack, linkar o pack abre o pacote inteiro.
+  it('linka o pack pela rota de venda quando há pack_id', () => {
     const msg = montarMensagemNovaVenda({ ...base, order_id: 123, pack_id: 456 });
-    expect(msg).toContain('https://www.mercadolivre.com.br/vendas/123/detalhe');
+    expect(msg).toContain('https://www.mercadolivre.com.br/vendas/456/detalhe');
     expect(msg).not.toContain('/vendas/pacote/');
   });
 });

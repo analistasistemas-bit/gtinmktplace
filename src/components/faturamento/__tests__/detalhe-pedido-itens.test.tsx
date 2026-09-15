@@ -37,11 +37,11 @@ function pedido(overrides: Partial<Pedido>): Pedido {
 
 describe('DetalhePedidoItens', () => {
   // Regressão: o pack linkava para `/vendas/pacote/{chave}/detalhe`, rota que o ML descontinuou —
-  // devolve 301 para `/vendas/lista` (medido em 15/09/2026). Pack abre pelo seu primeiro pedido.
-  it('linka a venda por order, inclusive em pack', () => {
+  // devolve 301 para `/vendas/lista` (medido em 15/09/2026). A rota viva aceita pack e order.
+  it('linka o pack pela rota de venda, não pela rota de pacote', () => {
     renderComProvider(pedido({ chave: '900099', isPack: true, orderIds: [123] }));
     const link = screen.getByRole('link', { name: /mercado livre/i });
-    expect(link).toHaveAttribute('href', 'https://www.mercadolivre.com.br/vendas/123/detalhe');
+    expect(link).toHaveAttribute('href', 'https://www.mercadolivre.com.br/vendas/900099/detalhe');
   });
 
   it('mostra a alíquota entre parênteses ao lado do imposto', () => {
