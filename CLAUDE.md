@@ -40,19 +40,7 @@ Protocolo de investigação (antes de qualquer `grep`/`rg`):
 2. Busca global só se as fontes acima não bastarem, e sempre com escopo (`src/`, `supabase/functions/`, `docs/`). Proibido `grep -R` / `rg termo .` sem escopo.
 3. Ao investigar problema, responder primeiro com: hipótese inicial, módulos prováveis, arquivos candidatos, plano de investigação.
 
-Após mudança estrutural relevante, atualizar o Graphify. O grafo canônico é `graphify-out/` na
-**raiz** (~10 mil nós, cobre `docs/`, `supabase/`, `src/`, `obsidian-vault/`); cópia em qualquer
-outro diretório é resíduo, não usar. `.graphifyignore` já exclui o SheetJS vendorizado.
-
-Todo update termina com **`python3 scripts/graphify-podar-falsos.py --aplicar`** e a
-reclusterização. O extrator casa chamadas por nome, sem escopo, e inventa arestas entre `src/` e
-`supabase/functions/<função>/**` (Deno puro, runtimes que nunca se importam) e de produção para
-arquivos de teste — elas aparecem como achado em "Surprising Connections".
-`supabase/functions/_shared/**` é a exceção: código isomórfico, importado de verdade pelos dois
-runtimes (ex.: `src/lib/pulse-margem.ts` executa `resumirMercadoQualificado()` de
-`_shared/concorrencia/qualificacao.ts`), então tem área própria e **nunca** é podado — não
-"conserte" isso. O script reverifica as duas premissas antes de apagar e aborta se alguma deixar
-de valer.
+Após mudança estrutural relevante, atualizar o Graphify (ver skill `graphify-update-maintenance` para o procedimento de poda de falsos positivos e a exceção de `_shared/`).
 
 ---
 
@@ -125,32 +113,6 @@ Campos obrigatórios: `CODIGO, PAI, NOME, UNIDADE, GTIN, CUSTO, PRECO, ESTOQUE, 
 
 ---
 
-# Documentação (manutenção + conclusão)
-
-Dois papéis: `docs/` (técnica oficial, Diátaxis) e `obsidian-vault/` (base viva).
-
-Regra de conclusão de qualquer alteração relevante:
-
-1. Consultar Graphify → implementar → **`pnpm lint` + `pnpm test` passando** → verificar `docs/` → atualizar `obsidian-vault/` se houver impacto arquitetural/funcional — **no mesmo commit da entrega**.
-2. Atualizar `TASKS.md` quando concluir trabalho relevante.
-3. Informar explicitamente: documentação atualizada **ou** conferida sem necessidade de alterações.
-
-| Mudou... | Atualize |
-|----------|----------|
-| supabase/functions/**, supabase/config.toml | docs/reference/edge-functions.md |
-| supabase/migrations/** | docs/reference/modelo-de-dados.md |
-| termos de domínio | docs/reference/glossario.md |
-| arquitetura, fluxos, integrações | docs/explanation/arquitetura.md + diagrams |
-| scripts, setup | docs/how-to/desenvolvimento-local.md |
-| deploy ou migrations | docs/how-to/deploy-e-migrations.md |
-| procedimentos operacionais | docs/how-to/operacoes-rotineiras.md |
-| nova decisão arquitetural | docs/decisions/ **e** obsidian-vault/04-Decisões/Índice de ADRs.md |
-| fluxo do operador | docs/tutorials/ |
-| docs/ROADMAP.md ou novo doc de roadmap estratégico | obsidian-vault/06-Roadmap/ |
-| épico concluído/mudou (project-status.md) | obsidian-vault/06-Roadmap/Sprint Atual.md |
-
----
-
 # Stack
 
 - Infra: QStash, Redis | IA: OpenRouter (modelos OpenAI)
@@ -174,19 +136,3 @@ Consulte `docs/decisions/`. Mais relevantes: 0003 (variações por pai), 0004 (c
 # O que nunca fazer
 
 Nunca: inventar dados de produto; publicar sem revisão humana; quebrar idempotência; salvar tokens em texto puro; ignorar RLS; criar estrutura sem ADR; alterar anúncios reais fora do fluxo controlado; usar `familias.custo_centavos` como custo de produto; editar a main direto.
-
----
-
-# Fable-advisor Trigger
-
-If the user's prompt contains `Fable-advisor` (case-insensitive):
-
-1. This workflow overrides the model-routing rules above for this request only.
-2. Require the main session to use Fable. If not, stop and ask the user to run `/model fable`.
-3. Invoke and follow the installed Fable Advisor orchestration skill as the source of truth; actually use its workflow/agents, do not recreate or approximate it.
-4. Preserve all PubliAI project rules in this CLAUDE.md; only model routing/orchestration is overridden.
-5. Optimize token usage: cheapest appropriate lane/reasoning, minimal delegated context, no redundant/parallel work unless justified.
-6. Never run Codex Adversarial Review unless explicitly requested by the user.
-7. Perform the skill's required verification and final `fable-advisor` review before declaring completion.
-
-Without `Fable-advisor` in the prompt, ignore this section and follow the normal workflow above.
