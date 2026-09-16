@@ -211,6 +211,26 @@ describe('ProdutoCard', () => {
     expect(GRID_LINHA_PRODUTO).toContain('grid-cols-[minmax(0,1fr)_3.25rem_5.5rem]');
   });
 
+  // Atalho pedido pelo Diego — leva direto ao anúncio no Mercado Livre a partir do card, sem
+  // precisar abrir a tela Publicados. Ícone só (sem rótulo): ver comentário em produto-card.tsx.
+  it('mostra o atalho "ML" apontando para o anúncio quando o produto está publicado', () => {
+    const publicado = { ...produto, mlItemId: 'MLB123456789' };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={publicado} canais={[]} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    const link = screen.getByRole('link', { name: /Ver Protetor Solar no Mercado Livre/ });
+    expect(link).toHaveAttribute('href', 'https://produto.mercadolivre.com.br/MLB-123456789');
+    expect(link).toHaveAttribute('target', '_blank');
+  });
+
+  it('não mostra o atalho "ML" quando o produto ainda não foi publicado', () => {
+    renderCard(); // fixture padrão tem mlItemId: null
+    expect(screen.queryByRole('link', { name: /no Mercado Livre/ })).not.toBeInTheDocument();
+  });
+
   it('produto publicado tem o item de excluir desabilitado', async () => {
     const publicado = { ...produto, mlItemId: 'MLB123' };
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

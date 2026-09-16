@@ -5,7 +5,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { ChevronRight, ClipboardCheck, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Trash2 } from 'lucide-react';
+import { ChevronRight, ClipboardCheck, ExternalLink, MoreVertical, PackageMinus, PackagePlus, Plus, Receipt, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,6 +25,7 @@ import {
 } from '@/lib/estoque-sync-ml';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { useStatusPublicados } from '@/hooks/useStatusPublicados';
+import { urlAnuncioML } from '@/lib/ml-status';
 import { cn } from '@/lib/utils';
 import { QK } from '@/lib/queries';
 import {
@@ -105,8 +106,11 @@ export interface AlvoEntrada {
  * Ordem no DOM: produto · SKUs · saldo · situação · canais · ação.
  * Abaixo de `md` as células 2/4/5 ficam `hidden`, sobrando exatamente 3 itens para 3 tracks.
  */
+// Última track (ação) em 21rem, não mais 19rem: o atalho "ML" (ícone-only, shrink-0) somado ao
+// menu "⋮" deixava só ~230px pros 3 botões com texto (Entrada/Ajustar/Fiscal) — truncavam pra
+// "Entr…"/"Ajus…" mesmo com espaço de sobra na tela (medido via playwright-cli, harness real).
 export const GRID_LINHA_PRODUTO =
-  'grid items-center gap-x-2 grid-cols-[minmax(0,1fr)_3.25rem_5.5rem] md:gap-x-3 md:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem_8rem_8rem_19rem]';
+  'grid items-center gap-x-2 grid-cols-[minmax(0,1fr)_3.25rem_5.5rem] md:gap-x-3 md:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem_8rem_8rem_21rem]';
 
 const CELULA_MD = 'hidden md:block';
 
@@ -374,6 +378,27 @@ export function ProdutoCard({
             >
               <Receipt className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden truncate md:inline">Fiscal</span>
+            </Button>
+          )}
+          {produto.mlItemId && (
+            // Ícone só (sem rótulo "ML"): esta linha já reparte um track fixo de 19rem entre
+            // Entrada/Ajustar/Fiscal (com texto) — um 5º botão com texto force-trunca os outros
+            // quatro para "E…"/"Aj…"/"Fi…" (medido via playwright-cli no harness real). Shrink-0
+            // tira este botão da divisão flex-1, então os demais mantêm o rótulo por inteiro.
+            <Button
+              asChild
+              variant="outline"
+              size="sm"
+              className="h-9 w-9 shrink-0 px-0 md:h-7 md:w-7"
+            >
+              <a
+                href={urlAnuncioML(produto.mlItemId)}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Ver ${produto.nomePai} no Mercado Livre`}
+              >
+                <ExternalLink className="h-3.5 w-3.5 shrink-0" />
+              </a>
             </Button>
           )}
           {(onExcluir || onAdicionarVariacao) && (
