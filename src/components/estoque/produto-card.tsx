@@ -381,9 +381,9 @@ export function ProdutoCard({
             </Button>
           )}
           {produto.mlItemId && (
-            // Ícone só (sem rótulo "ML"): esta linha já reparte um track fixo de 19rem entre
-            // Entrada/Ajustar/Fiscal (com texto) — um 5º botão com texto force-trunca os outros
-            // quatro para "E…"/"Aj…"/"Fi…" (medido via playwright-cli no harness real). Shrink-0
+            // Ícone só (sem rótulo "ML"): mesmo com o track de ação alargado pra 21rem (comentário
+            // em GRID_LINHA_PRODUTO acima), um 5º botão com texto force-trunca Entrada/Ajustar/
+            // Fiscal pra "E…"/"Aj…"/"Fi…" (medido via playwright-cli no harness real). Shrink-0
             // tira este botão da divisão flex-1, então os demais mantêm o rótulo por inteiro.
             <Button
               asChild
@@ -396,6 +396,7 @@ export function ProdutoCard({
                 target="_blank"
                 rel="noreferrer"
                 aria-label={`Ver ${produto.nomePai} no Mercado Livre`}
+                title="Ver anúncio no Mercado Livre"
               >
                 <ExternalLink className="h-3.5 w-3.5 shrink-0" />
               </a>
