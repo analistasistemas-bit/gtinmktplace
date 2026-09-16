@@ -14,8 +14,3 @@ export function calcularSemaforo(
   if (custo != null && custo > 0 && liquido < custo) return 'vermelho';
   return 'amarelo';
 }
-
-/** Acima de ~R$ 19 o ML dá frete grátis por conta do vendedor (custo não exposto pela API). */
-export function freteSobConta(preco: number): boolean {
-  return preco > 19;
-}

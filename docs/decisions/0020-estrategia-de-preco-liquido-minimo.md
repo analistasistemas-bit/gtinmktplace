@@ -41,6 +41,9 @@ semáforo, que recalcula o líquido real no preço final.
 Frete grátis acima de ~R$ 19 (custo não exposto pela API) entra como **badge separado**
 ("frete por sua conta"), sem alterar a cor.
 
+**Errata:** o líquido do semáforo desconta o frete do vendedor, portanto o frete altera a
+cor (estado registrado na ADR-0050).
+
 ## Escopo e guardas
 
 - Só CREATE (UPDATE preserva preço — ADR-0016).

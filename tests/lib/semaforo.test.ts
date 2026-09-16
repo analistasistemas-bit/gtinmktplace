@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularSemaforo, freteSobConta } from '@/lib/semaforo';
+import { calcularSemaforo } from '@/lib/semaforo';
 
 describe('calcularSemaforo', () => {
   it('líquido ≥ piso → verde', () => {
@@ -18,9 +18,4 @@ describe('calcularSemaforo', () => {
   it('líquido null → indisponível', () => {
     expect(calcularSemaforo(null, 20, 10)).toBe('indisponivel');
   });
-});
-
-describe('freteSobConta', () => {
-  it('acima de R$ 19 → true', () => { expect(freteSobConta(19.05)).toBe(true); });
-  it('19 ou menos → false', () => { expect(freteSobConta(19)).toBe(false); });
 });

@@ -2,7 +2,8 @@ import { CircleCheck, CircleAlert, CircleX, CircleHelp, Truck } from 'lucide-rea
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { useTarifaML } from '@/hooks/useTarifaML';
 import type { DimensoesFrete } from '@/lib/tarifa';
-import { calcularSemaforo, freteSobConta, type Semaforo } from '@/lib/semaforo';
+import { calcularSemaforo, type Semaforo } from '@/lib/semaforo';
+import { fmtBRL } from '@/lib/formato';
 
 const CFG: Record<Semaforo, { tone: StatusTone; label: string; Icon: typeof CircleCheck }> = {
   verde: { tone: 'success', label: 'Vale a pena', Icon: CircleCheck },
@@ -34,6 +35,7 @@ export function SemaforoPreco({
 }) {
   const { data, isLoading } = useTarifaML(preco, categoriaMlId, dimensoes, aliquotaPct);
   const liquido = data ? data.classico.recebe : null;
+  const frete = data?.frete ?? 0;
   const sem: Semaforo = isLoading ? 'indisponivel' : calcularSemaforo(liquido, piso, custo);
   const cfg = CFG[sem];
   const Icon = cfg.Icon;
@@ -43,8 +45,8 @@ export function SemaforoPreco({
         <Icon className="mr-1 h-3 w-3" />
         {cfg.label}
       </StatusPill>
-      {freteSobConta(preco) && (
-        <StatusPill tone="neutral" title="Acima de R$ 19 o Mercado Livre dá frete grátis ao comprador por sua conta">
+      {frete > 0 && (
+        <StatusPill tone="neutral" title={`O Mercado Livre dá frete grátis ao comprador por sua conta neste preço: −${fmtBRL(frete)} já descontados do líquido (estimado; varia por região)`}>
           <Truck className="mr-1 h-3 w-3" />
           frete por sua conta
         </StatusPill>
