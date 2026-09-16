@@ -314,6 +314,8 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
                     podeRemover={linhas.length > 1}
                     tentouSalvar={tentouSalvar}
                     fotoObrigatoria
+                    nomeObrigatorio
+                    estoqueInicialObrigatorio
                     onMudar={(patch) => setLinhas((prev) => prev.map((x) => (
                       x.clientId === l.clientId ? { ...x, ...patch } : x
                     )))}
@@ -338,7 +340,7 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
           >
             <Plus className="mr-1 h-3.5 w-3.5" /> Adicionar variação
           </Button>
-          <span className="text-xs text-muted-foreground">* obrigatório · foto obrigatória em toda linha</span>
+          <span className="text-xs text-muted-foreground">* obrigatório</span>
         </div>
 
         <DialogFooter>

@@ -128,7 +128,41 @@ afterEach(() => {
 
 const BOTAO_SALVAR = () => screen.getByRole('button', { name: 'Salvar' });
 
+/** Confere se o <label> do campo mostra o rótulo seguido do "*" vermelho. Não dá pra usar
+ *  `getByText('X *')` puro: `getNodeText` do testing-library só olha os nós de texto DIRETOS
+ *  do elemento, e o "*" mora num `<span>` filho — então comparamos `textContent` (recursivo)
+ *  do próprio <label> em vez do texto que o matcher recebe. Restrito a `LABEL` porque, sem
+ *  prefixo/sufixo (ex.: Estoque inicial), a div-pai tem o MESMO textContent do label — sem essa
+ *  restrição a query acha 2 elementos e lança. Também não dá pra usar `getByLabelText`: o
+ *  `aria-label` não leva o "*" (só o texto visível, linha-variacao-form.tsx). */
+function labelMostraObrigatorio(texto: string): boolean {
+  return !!screen.queryByText((_, el) => el?.tagName === 'LABEL' && el.textContent === `${texto} *`);
+}
+
+/** Mesma ideia, pro rótulo "Foto" — não é um <label> (o campo de arquivo não é um <input> nativo
+ *  rotulável por ele), é um <span>; restringe pela âncora ("Foto" como texto direto) em vez do
+ *  textContent completo, senão bateria também no texto "Escolher foto" do dropzone. */
+function fotoMostraObrigatorio(): boolean {
+  return screen.getByText('Foto', { exact: true }).textContent === 'Foto *';
+}
+
 describe('DialogAdicionarVariacao', () => {
+  // Achado do Diego (16/09/2026): campos que o submit trava (nome/estoque inicial/foto, D-4 do
+  // ADR-0129) não mostravam o "*" vermelho — só Preço mostrava, herdado do cadastro (ADR-0094),
+  // onde nome/estoque são opcionais. Os dois formulários compartilham LinhaVariacaoForm, então
+  // a obrigatoriedade tem que ser passada explicitamente por tela, não vir hard-coded no campo.
+  it('marca nome, estoque inicial e foto com "*" vermelho (obrigatórios só nesta tela)', async () => {
+    renderDialog();
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    expect(labelMostraObrigatorio('Cor / nome')).toBe(true);
+    expect(labelMostraObrigatorio('Estoque inicial')).toBe(true);
+    expect(labelMostraObrigatorio('Preço mínimo (líquido)')).toBe(true);
+    expect(fotoMostraObrigatorio()).toBe(true);
+    // GTIN, Custo e as dimensões continuam opcionais — não podem ganhar "*" por engano.
+    expect(labelMostraObrigatorio('GTIN')).toBe(false);
+    expect(labelMostraObrigatorio('Custo')).toBe(false);
+  });
+
   it('botão travado sem foto em alguma linha', async () => {
     const user = userEvent.setup();
     renderDialog();

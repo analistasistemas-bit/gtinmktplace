@@ -64,7 +64,10 @@ const LOGISTICA = [
   { campo: 'comprimentoCm', rotulo: 'Comprimento', sufixo: 'cm' },
 ] as const;
 
-export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, fotoObrigatoria, onMudar, onRemover }: {
+export function LinhaVariacaoForm({
+  linha, indice, podeRemover, tentouSalvar, fotoObrigatoria, nomeObrigatorio, estoqueInicialObrigatorio,
+  onMudar, onRemover,
+}: {
   linha: LinhaVariacao;
   indice: number;
   podeRemover: boolean;
@@ -75,11 +78,22 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, fo
   /** ADR-0129: dialog "Adicionar variação" não publica cor sem foto (D-4) — default `undefined`
    *  preserva o comportamento de hoje (foto opcional) byte a byte para o cadastro (ADR-0094). */
   fotoObrigatoria?: boolean;
+  /** ADR-0129 D-4/desvio 5: nome (cor) e estoque inicial > 0 só são obrigatórios em "Adicionar
+   *  variação" — no cadastro (ADR-0094) os dois continuam opcionais. Sem isto o `*` vermelho
+   *  cadastro/adicionar-variação divergiriam do que cada tela de fato trava no submit (achado
+   *  do Diego: "tem campos obrigatórios pro ML e não aparece o * vermelho, ex.: estoque"). */
+  nomeObrigatorio?: boolean;
+  estoqueInicialObrigatorio?: boolean;
   onMudar: (patch: Partial<LinhaVariacao>) => void;
   onRemover: () => void;
 }) {
   const n = indice + 1;
   const id = (campo: string) => `var-${linha.clientId}-${campo}`;
+  const camposObrigatorios = new Set<keyof LinhaVariacao>([
+    'preco',
+    ...(nomeObrigatorio ? (['nome'] as const) : []),
+    ...(estoqueInicialObrigatorio ? (['estoqueInicial'] as const) : []),
+  ]);
 
   // Campo tocado (perdeu foco ao menos uma vez). Sem isto, `erroCampo` mostrava a mensagem no
   // formulário virgem, antes de qualquer interação — a spec (§5.4) só quer o erro depois do
@@ -97,7 +111,7 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, fo
       <div key={campo} className="flex flex-col gap-1">
         <label htmlFor={id(campo)} className="text-xs text-muted-foreground">
           {rotulo}
-          {campo === 'preco' && <span className="text-destructive"> *</span>}
+          {camposObrigatorios.has(campo) && <span className="text-destructive"> *</span>}
         </label>
         <div className="relative">
           {unidade?.prefixo && (
@@ -166,7 +180,10 @@ export function LinhaVariacaoForm({ linha, indice, podeRemover, tentouSalvar, fo
       </div>
 
       <div className="flex flex-col gap-1">
-        <span className="text-xs text-muted-foreground">Foto</span>
+        <span className="text-xs text-muted-foreground">
+          Foto
+          {fotoObrigatoria && <span className="text-destructive"> *</span>}
+        </span>
         <CampoFoto
           id={id('foto')}
           ariaLabel={`Foto da variação ${n}`}
