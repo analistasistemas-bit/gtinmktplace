@@ -1,7 +1,11 @@
-# Publicamos so a pagina e os assets. Tudo que estiver nesta pasta e nao
-# estiver liberado abaixo iria ao ar em URL adivinhavel — o PLANO.md, por
-# exemplo, viraria /PLANO.md com as decisoes internas da entrega.
-*
-!index.html
-!assets
-!assets/**
+# O Root Directory do projeto Vercel ja e docs/brand/landing, entao so o
+# conteudo desta pasta vai ao ar. Aqui ficam apenas os arquivos que NAO devem
+# ser publicados — o PLANO.md, por exemplo, viraria /PLANO.md com as decisoes
+# internas da entrega.
+#
+# NAO usar "*" com excecoes: no deploy via integracao Git a Vercel avalia este
+# arquivo contra a RAIZ do repositorio, e "*" apaga o repo inteiro (incidente
+# de 15/09/2026 — a landing ficou 404 por build sem output).
+PLANO.md
+.DS_Store
+.omc
