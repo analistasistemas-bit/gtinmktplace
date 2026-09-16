@@ -19,7 +19,7 @@ class FakeConnector implements ChannelConnector {
   readonly id = 'fake' as ChannelConnector['id'];
   readonly capabilities = {
     variacoes: true, descricaoSeparada: false, catalogo: false,
-    desconto: false, atacado: false, dimensoesPacote: true,
+    atacado: false, dimensoesPacote: true,
     atualizarEstoque: true,
   };
 

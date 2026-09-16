@@ -36,7 +36,6 @@ function fakeAdmin(over: {
       if (table === 'familias') return familia;
       if (table === 'variacoes') return variacoes;
       if (table === 'marketplace_connections') return conexao;
-      if (table === 'configuracoes') return { desconto_pct: 15 };
       if (table === 'organizations') return { modulos_habilitados: modulosHabilitados };
       if (table === 'empresa_fiscal') return { regime_tributario: 'simples' };
       if (table === 'lotes' || table === 'anuncios_externos') return null;
@@ -82,7 +81,6 @@ const FAMILIA_BASE = {
   atributos_faltantes: [], tipo_aviamento: 'outro', ml_item_id: null, atacado: null,
   capa_storage_path: null, capa_ml_picture_id: 'CAPA', capa2_storage_path: null, capa2_ml_picture_id: null,
   capa3_storage_path: null, capa3_ml_picture_id: null, variacao_principal_codigo: null,
-  exibir_com_desconto: false, desconto_pct: null,
 };
 const VAR_BASE = { id: 'v1', codigo: 'V1', cor: 'Azul', estoque: 5, preco_publicacao: 29.9, gtin: null, imagem_path: null, ml_picture_id: 'PIC1', altura_cm: 1, largura_cm: 1, comprimento_cm: 1, peso_gramas: 100 };
 function multiCor() {
@@ -258,36 +256,6 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     const r = await processarFamiliaML(deps, JOB, { tentativas: 0 });
     expect(r.tipo).toBe('ok');
     expect(enfileirarSincronizacaoFiscal).not.toHaveBeenCalled();
-  });
-
-  it('multi-cor, cache user_products e desconto ativo → erro definitivo sem POST nem saga', async () => {
-    const { admin, writes } = fakeAdmin({
-      variacoes: multiCor(),
-      familia: { ...FAMILIA_BASE, exibir_com_desconto: true },
-    });
-    const { repo } = fakeFormatoRepo('user_products');
-    let upChamado = false;
-    let loteFinalizado = 0;
-    const r = await processarFamiliaML(baseDeps(admin, {
-      formatoRepo: repo,
-      publicarUP: async () => { upChamado = true; return { estado: 'ativo', itemExternoId: 'MLB-AZUL', permalink: null }; },
-      finalizarLote: async () => { loteFinalizado++; },
-    }), JOB, { tentativas: 0 });
-
-    expect(r).toEqual({
-      tipo: 'erro',
-      mensagem: 'User Products não aceita desconto apenas visual; desmarque a opção de desconto para publicar.',
-    });
-    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(0);
-    expect(upChamado).toBe(false);
-    expect(writes).toContainEqual(expect.objectContaining({
-      table: 'familias',
-      payload: {
-        status: 'erro',
-        erro_mensagem: 'User Products não aceita desconto apenas visual; desmarque a opção de desconto para publicar.',
-      },
-    }));
-    expect(loteFinalizado).toBe(1);
   });
 
   it('saga compensacao_pendente → NÃO publicado (erro de retomada, familia já marcada dentro do publicarUP)', async () => {
@@ -493,27 +461,5 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(r).toEqual({ tipo: 'retry', mensagem: 'item.pictures.unavailable' });
     expect(writes.filter((w) => w.payload.ml_picture_id === null)).toHaveLength(0);
     expect(writes.filter((w) => w.payload.capa_ml_picture_id === null)).toHaveLength(0);
-  });
-
-  it('DESCONTO_INCOMPATIVEL → confirma cache UP, marca erro e não retenta', async () => {
-    const { admin, writes } = fakeAdmin({
-      familia: { ...FAMILIA_BASE, categoria_ml_id: 'MLB271227', exibir_com_desconto: true },
-    });
-    fakeConnector.falharProximo('DESCONTO_INCOMPATIVEL', false);
-    const { repo, salvos } = fakeFormatoRepo();
-    let loteFinalizado = 0;
-    const r = await processarFamiliaML(baseDeps(admin, {
-      formatoRepo: repo,
-      finalizarLote: async () => { loteFinalizado++; },
-    }), JOB, { tentativas: 3 });
-
-    expect(r).toEqual({ tipo: 'erro', mensagem: 'fake:DESCONTO_INCOMPATIVEL' });
-    expect(salvos.map((s) => s.formato)).toEqual(['user_products']);
-    expect(writes).toContainEqual(expect.objectContaining({
-      table: 'familias',
-      payload: { status: 'erro', erro_mensagem: 'fake:DESCONTO_INCOMPATIVEL' },
-    }));
-    expect(loteFinalizado).toBe(1);
-    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(1);
   });
 });

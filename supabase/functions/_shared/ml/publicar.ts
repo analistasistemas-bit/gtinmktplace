@@ -1,7 +1,6 @@
 import {
   EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason, categoriaExigeFamilyName,
 } from '../categoria/atributos.ts';
-import { calcularPrecoDe } from '../preco/desconto.ts';
 import { montarAtributosPacote, type DimensoesPacote } from './pacote.ts';
 
 // E6 (ADR-0061): o tipo é dono no contrato; importado p/ uso local e re-exportado p/ compat.
@@ -12,7 +11,6 @@ export interface VariacaoItem {
   attribute_combinations: AtributoItem[];
   available_quantity: number;
   price: number;
-  original_price?: number;
   picture_ids: string[];
   attributes?: AtributoItem[];
   seller_custom_field?: string;
@@ -23,7 +21,6 @@ export interface PayloadItem {
   category_id: string;
   price?: number;
   available_quantity?: number;
-  original_price?: number;
   seller_custom_field?: string;
   currency_id: string;
   buying_mode: string;
@@ -125,7 +122,6 @@ export function montarPayloadItem(
   capa2PictureId: string | null,
   capa3PictureId: string | null,
   listingTypeId: string = LISTING_TYPE_PADRAO,
-  desconto?: { pct: number } | null,
   dimensoes?: DimensoesPacote | null,
   aceitaEmptyGtinOverride?: boolean,
   formato?: 'plano',
@@ -198,10 +194,6 @@ export function montarPayloadItem(
       picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, capa3PictureId, v.ml_picture_id),
       seller_custom_field: v.codigo,
     };
-    if (desconto) {
-      const de = calcularPrecoDe(variation.price, desconto.pct);
-      if (de !== null) variation.original_price = de;
-    }
     if (gtinAusente(v.gtin)) {
       // Sem código real (nulo ou interno 3000*): declara o motivo. GTIN é conditional_required,
       // então em categorias sem EMPTY_GTIN_REASON (ex.: botão) o atributo é simplesmente omitido.

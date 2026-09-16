@@ -123,3 +123,9 @@ incluídas na publicação. O clique nesses controles bloqueados mostra um toast
 motivo. Desativar (desmarcar) continua permitido mesmo com preços divergentes — só a ativação
 é bloqueada. A limitação de escopo (faixa por-variação) permanece a mesma da decisão original;
 o que muda é que o app agora recusa o caso em vez de aplicar um valor incorreto sem avisar.
+
+## Errata (2026-09-16)
+
+"Exibir com desconto" e "Ativar desconto no lote", citados acima como ações irmãs do atacado, saíram
+do produto — ver ADR-0162. O bloqueio por `familiaPrecosDivergentes` e tudo mais deste ADR segue valendo
+só para "Preço de atacado"/"Atacado no lote".

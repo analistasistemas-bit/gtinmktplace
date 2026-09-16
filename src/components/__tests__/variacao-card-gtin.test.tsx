@@ -20,7 +20,7 @@ const variacao: Variacao = {
   corEditadaPeloOperador: false, preco: 78.9, precoPublicacao: null, precoPublicadoMl: null,
   estoque: 10, gtin: '48251671', excluidaDaPublicacao: false, mlVariationId: null,
   estoqueAnterior: null, custo: 40, pesoGramas: 100, alturaCm: 1, larguraCm: 1, comprimentoCm: 1,
-  exibirComDesconto: null, descontoPct: null, atacado: null,
+  atacado: null,
 };
 
 function renderCard(props: Partial<React.ComponentProps<typeof VariacaoCard>> = {}) {

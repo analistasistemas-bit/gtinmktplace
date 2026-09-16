@@ -39,8 +39,6 @@ const FAMILIA: FamiliaParaMontar = {
   capa3_storage_path: 'capas/00001-3.jpg',
   capa3_ml_picture_id: null,
   variacao_principal_codigo: 'V2',
-  exibir_com_desconto: false,
-  desconto_pct: null,
 };
 
 // familia real traz cores excluídas junto — a query do caller (publish-familia-ml /
@@ -66,30 +64,6 @@ describe('montarAnuncioCanonico', () => {
     expect(anuncio.atributos).toEqual([{ id: 'BRAND', value_name: 'Avil' }]);
     expect(anuncio.variacoes).toHaveLength(2);
     expect(anuncio.variacoes.map((v) => v.sku).sort()).toEqual(['V1', 'V2']);
-  });
-
-  it('lê o desconto por org_id da família (org-scoped), nunca por user_id', async () => {
-    // Regressão ADR-0086: a config é 1 linha por org; ler por user_id fazia membros sem linha
-    // própria caírem no default. Garante que o filtro do read de configuracoes usa org_id.
-    const eqConfig: Array<[string, unknown]> = [];
-    const admin: any = {
-      storage: { from: () => ({ createSignedUrl: async (p: string) => ({ data: { signedUrl: `https://signed/${p}` }, error: null }) }) },
-      from: (tabela: string) => {
-        const chain: any = {
-          select: () => chain,
-          eq: (col: string, val: unknown) => { if (tabela === 'configuracoes') eqConfig.push([col, val]); return chain; },
-          update: () => chain,
-          maybeSingle: async () => ({ data: tabela === 'configuracoes' ? { desconto_pct: 20 } : null }),
-          then: (r: any) => Promise.resolve({ data: null, error: null }).then(r),
-        };
-        return chain;
-      },
-    };
-    const familia = { ...FAMILIA, org_id: 'org-XYZ', exibir_com_desconto: true };
-    const incluidas = TODAS_VARIACOES.filter((v) => !v.excluida_da_publicacao);
-    await montarAnuncioCanonico(admin, fakeConnector, { getToken: async () => 'token' }, familia, incluidas);
-    expect(eqConfig).toContainEqual(['org_id', 'org-XYZ']);
-    expect(eqConfig.some(([col]) => col === 'user_id')).toBe(false);
   });
 
   it('sobe capa/capa2/capa3 na ordem 1/2/3 (picture_ids sequenciais do conector)', async () => {

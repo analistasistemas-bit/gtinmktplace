@@ -38,8 +38,6 @@ function variacao(over: Partial<Variacao> = {}): Variacao {
     alturaCm: 10,
     larguraCm: 10,
     comprimentoCm: 10,
-    exibirComDesconto: false,
-    descontoPct: null,
     atacado: null,
     ...over,
   };

@@ -11,7 +11,6 @@ import { verificarAssinatura, enfileirarVinculacaoCatalogo } from '../_shared/qu
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { ordenarVariacoesPrincipal } from '../_shared/ml/publicar.ts';
-import { pctEfetivo } from '../_shared/preco/desconto.ts';
 import { atributosFaltantes, categoriaParaTipo } from '../_shared/categoria/atributos.ts';
 import type { TipoAviamento } from '../_shared/categoria/detectar.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
@@ -111,12 +110,6 @@ Deno.serve(async (req) => {
       err.status = 400;
       throw err;
     }
-
-    // ADR-0078 F2: o % global vale para QUALQUER grupo com desconto (a família pode estar
-    // desligada e um grupo ligado). Busca única, barata.
-    const { data: cfgGlobal } = await admin.from('configuracoes')
-      .select('desconto_pct').eq('org_id', familia.org_id).maybeSingle();
-    const descontoPctGlobal = cfgGlobal?.desconto_pct != null ? Number(cfgGlobal.desconto_pct) : 15;
 
     const signed = async (path: string): Promise<string> => {
       const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, TTL_SIGNED);
@@ -232,9 +225,6 @@ Deno.serve(async (req) => {
       const precoGrupo = precoGrupoCent != null ? precoGrupoCent / 100 : null;
       // Config financeira POR GRUPO (invariante #2: LOUD se herdaria config ativa em divergência).
       const cfgGrupo = resolverConfigGrupo(familia, coresP, divergente);
-      const pctGrupo = cfgGrupo.exibirComDesconto
-        ? pctEfetivo(cfgGrupo.descontoPct, descontoPctGlobal)
-        : null;
       // Partição 0 herda o ml_item_id já publicado da família quando um produto que era de 1
       // anúncio passa a split (anuncios_externos pode não ter a linha ainda) — evita recriar e
       // abandonar o anúncio existente.
@@ -268,7 +258,6 @@ Deno.serve(async (req) => {
           capa2FotoId: capa2PictureId,
           capa3FotoId: capa3PictureId,
           listingTypeId: job.listing_type_id,
-          desconto: pctGrupo != null ? { pct: pctGrupo } : null,
           dimensoes: dimensoesDe(ordenadas[0]),
           variacoes: ordenadas.map((v) => ({
             sku: v.codigo, cor: v.cor, estoque: v.estoque,
@@ -337,11 +326,6 @@ Deno.serve(async (req) => {
         const casadas = coresP.filter((v) => v.ml_variation_id);
         const novas = coresP.filter((v) => !v.ml_variation_id);
         const repUpd = coresP.find((v) => v.codigo === familia.variacao_principal_codigo) ?? coresP[0];
-        const desconto = pctGrupo != null ? {
-          pct: pctGrupo,
-          precoPorCodigo: Object.fromEntries(coresP.map((v) =>
-            [v.codigo, v.preco_publicacao != null ? Number(v.preco_publicacao) : null])),
-        } : null;
         const res = await conn.atualizarAnuncio(ctx, {
           itemExternoId,
           existentes: casadas.map((v) => ({ sku: v.codigo, estoque: v.estoque, cor: v.cor })),
@@ -355,9 +339,8 @@ Deno.serve(async (req) => {
           categoriaId: familia.categoria_ml_id,
           marca,
           dimensoes: dimensoesDe(repUpd),
-          desconto,
           precoFamilia: precoGrupo,
-          // ADR-0078 F1: mesmo conector do update normal — o flag suprime desconto/precoFamilia.
+          // ADR-0078 F1: mesmo conector do update normal — o flag suprime precoFamilia.
           // Sem isso, família >100 cores publicaria preço mesmo com "somente estoque" marcado.
           somenteEstoque: job.somenteEstoque,
           // Mesmo conector do update normal: adicionar cor por esta tela não toca nas publicadas.

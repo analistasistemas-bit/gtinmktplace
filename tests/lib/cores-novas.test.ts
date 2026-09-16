@@ -60,8 +60,6 @@ function familia(over: Partial<Familia>): Familia {
     mlItemId: 'MLB1',
     mudancaEstrutural: null,
     erroMensagem: null,
-    exibirComDesconto: false,
-    descontoPct: null,
     concorrenciaCategoriaId: null,
     ...over,
   };

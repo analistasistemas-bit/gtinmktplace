@@ -144,7 +144,11 @@ export function clonarFamilia(
 // (`variacoes_set_updated_at`, 20260527125643) é `before update`, então num INSERT ele não roda
 // e o clone gravaria o timestamp CONGELADO da variação antiga numa linha recém-criada. Faltava
 // aqui desde a 1ª versão (2026-08-20); ver o comentário de montarVariacaoNova.
-export const STRIP_VARIACAO = ['id', 'criado_em', 'atualizado_em', 'familia_id'] as const;
+// `exibir_com_desconto`/`desconto_pct`: desconto visual removido por completo (ADR-0162) — as
+// colunas ficam órfãs no banco e nenhum builder as toca mais, aqui ou em `montarVariacaoNova`.
+export const STRIP_VARIACAO = [
+  'id', 'criado_em', 'atualizado_em', 'familia_id', 'exibir_com_desconto', 'desconto_pct',
+] as const;
 
 /**
  * Clona linha de variacoes removendo STRIP_VARIACAO e aplicando { familia_id, user_id,
@@ -235,16 +239,14 @@ export function montarVariacaoNova(
     catalog_erro: null,
     // preco_publicado_ml é observação do que o ML confirmou — a cor ainda não foi publicada.
     preco_publicado_ml: null,
-    // null NÃO é "sem desconto": nestas três colunas null significa HERDAR o nível família
-    // (`resolverConfigGrupo`, _shared/preco/config-grupo.ts:52-55 — `v.x ?? famX`). Copiar o
+    // null NÃO é "sem atacado": nesta coluna null significa HERDAR o nível família
+    // (`resolverConfigGrupo`, _shared/preco/config-grupo.ts — `v.atacado ?? famFaixas`). Copiar o
     // valor explícito de uma irmã é que seria o override, e um override diferente do resto da
     // faixa de preço faz `resolverConfigGrupo` falhar LOUD (400, ADR-0055). Herdando, a cor
     // nova entra com a MESMA config comercial da família, que é o que o operador espera ao
     // adicionar uma cor. Nota: se a irmã da faixa em que a cor nova cai tiver override próprio
     // divergente do família-level, o UPDATE recusa alto com "reconfigure a faixa na Revisão" —
     // comportamento desenhado do ADR-0078 F2, não regressão desta feature.
-    exibir_com_desconto: null,
-    desconto_pct: null,
     atacado: null,
   };
 }

@@ -22,8 +22,6 @@ const v = (codigo: string, over: Partial<Variacao> = {}): Variacao => ({
   alturaCm: null,
   larguraCm: null,
   comprimentoCm: null,
-  exibirComDesconto: null,
-  descontoPct: null,
   atacado: null,
   ...over,
 });
@@ -107,23 +105,22 @@ describe('exigeDivisaoUpdate', () => {
 
 describe('configGrupoPendente', () => {
   const grupo = (vars: Variacao[]) => ({ preco: 10, variacoes: vars });
-  it('família com desconto ativo + variação sem confirmação explícita → pendente', () => {
-    expect(configGrupoPendente({ exibirComDesconto: true, atacado: null }, grupo([v('A')]))).toBe(true);
-  });
-  it('família com atacado ativo + variação sem atacado explícito → pendente', () => {
+  // Guard isolado (pós-remoção do desconto visual, ADR-0162): atacado ativo sozinho, sem
+  // nenhum resquício de desconto, ainda tem que disparar a pendência exatamente como antes.
+  it('atacado ativo + variação sem override → pendência dispara sozinha', () => {
     expect(configGrupoPendente(
-      { exibirComDesconto: false, atacado: [{ min_unidades: 5, desconto_pct: 5 }] },
+      { atacado: [{ min_unidades: 5, desconto_pct: 5 }] },
       grupo([v('A')]),
     )).toBe(true);
   });
-  it('tudo confirmado explicitamente (mesmo que desligado) → não pendente', () => {
+  it('atacado confirmado explicitamente (mesmo que desligado) → não pendente', () => {
     expect(configGrupoPendente(
-      { exibirComDesconto: true, atacado: [{ min_unidades: 5, desconto_pct: 5 }] },
-      grupo([v('A', { exibirComDesconto: false, atacado: [] })]),
+      { atacado: [{ min_unidades: 5, desconto_pct: 5 }] },
+      grupo([v('A', { atacado: [] })]),
     )).toBe(false);
   });
-  it('família sem nada ativo → nunca pendente', () => {
-    expect(configGrupoPendente({ exibirComDesconto: false, atacado: null }, grupo([v('A')]))).toBe(false);
+  it('família sem atacado ativo → nunca pendente', () => {
+    expect(configGrupoPendente({ atacado: null }, grupo([v('A')]))).toBe(false);
   });
 });
 

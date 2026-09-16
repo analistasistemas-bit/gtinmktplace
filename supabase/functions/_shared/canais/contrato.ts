@@ -36,7 +36,6 @@ export interface Capabilities {
   variacoes: boolean;        // suporta variações sob 1 anúncio
   descricaoSeparada: boolean; // descrição é recurso à parte (ML=true)
   catalogo: boolean;          // opt-in de catálogo/buybox (ML=true)
-  desconto: boolean;
   atacado: boolean;          // preço por quantidade (PxQ B2B)
   dimensoesPacote: boolean;
   atualizarEstoque: boolean; // push barato de estoque, sem o pipeline de UPDATE completo
@@ -57,8 +56,7 @@ export type ErroCanalCodigo =
   // ADR-0160: o UPtin ("preço por variação") está EM ANDAMENTO neste item. Distinto de
   // MIGRADO_PARA_UP, que é o estado final já observável: aqui o ML ainda está clonando as
   // variações e qualquer PUT volta 200 e é descartado. Retentável — a migração termina sozinha.
-  | 'MIGRACAO_EM_ANDAMENTO'
-  | 'DESCONTO_INCOMPATIVEL';
+  | 'MIGRACAO_EM_ANDAMENTO';
 
 export interface ErroCanal {
   codigo: ErroCanalCodigo;
@@ -126,7 +124,6 @@ export interface AnuncioCanonico {
   capa2FotoId: string | null;
   capa3FotoId: string | null;
   listingTypeId?: string;
-  desconto: { pct: number } | null;
   dimensoes: DimensoesPacote | null;
   variacoes: VariacaoCanonica[];
   /** GTIN da unidade-base, só para kit vinculado (ADR-0151 D-5 revisada). NÃO entra no payload
@@ -167,8 +164,6 @@ export interface AtualizacaoCanonica {
   /** BRAND a sincronizar (do fornecedor). null → não envia (preserva o atual). */
   marca: string | null;
   dimensoes: DimensoesPacote | null;
-  /** Desconto ativo → price+original_price por código. */
-  desconto: { pct: number; precoPorCodigo: Record<string, number | null> } | null;
   /**
    * Preço ÚNICO do anúncio Legacy (ou da partição, no split), propagado a TODAS as variações
    * (adendo ADR-0016) — um item do ML com `variations[]` exige preço uniforme.

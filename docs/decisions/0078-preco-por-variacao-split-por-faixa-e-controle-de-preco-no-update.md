@@ -78,4 +78,11 @@ Invariante que ordena as fases: **nunca existe preço divergente publicado sem s
 1. **Fase 1 — Controle de preço no UPDATE (sem split, sem divergência):** `preco_publicado_ml` + badge + filtro + escolha global/override + "só estoque" completo. Entrega valor isolada, zero risco de split.
 2. **Fase 2 — Preço por variação + agrupamento + split por faixa + config por grupo (juntos):** para de colapsar, prompt "aplicar às demais?", agrupamento na Revisão, publicação N-anúncios por preço, atacado/de→para por grupo (por partição), LOUD no UPDATE. Divergência e split entram **atomicamente** — divergência-sem-split nunca chega a produção. (Pode ser fatiada no plano, respeitando o invariante.)
 
+## Errata (2026-09-16)
+
+A seção 3 (config de desconto + atacado por grupo) descrevia as duas configs como irmãs por faixa de
+preço. O desconto ("% OFF" visual) saiu do produto — ver ADR-0162. Tudo que a seção 3 diz sobre
+**atacado** por grupo/partição continua valendo; a parte de `exibir_com_desconto`/`desconto_pct` está
+desatualizada.
+
 Detalhe de implementação, modelo de dados e casos de teste no spec.

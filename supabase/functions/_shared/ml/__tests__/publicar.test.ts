@@ -110,9 +110,8 @@ describe('montarPayloadItem', () => {
     expect(p.seller_custom_field).toBe('00000101');
     expect(p.variations).toBeUndefined();
     expect(p.attributes).toEqual(expect.arrayContaining([{ id: 'COLOR', value_name: 'Azul' }]));
-    // Validado via API real: a ML rejeita title/original_price no item plano com family_name.
+    // Validado via API real: a ML rejeita title no item plano com family_name.
     expect(p.title).toBeUndefined();
-    expect(p.original_price).toBeUndefined();
   });
   it('categoria Zíperes (MLB271227) com >1 variação ainda não tem suporte — falha LOUD em vez de publicar errado', () => {
     const cursor = { ...familia, categoria_ml_id: 'MLB271227' };
@@ -123,7 +122,7 @@ describe('montarPayloadItem', () => {
     expect(p.family_name).toBeUndefined();
   });
   it('ADR-0087: formato="plano" força item plano numa categoria FORA do Set (retry reativo)', () => {
-    const p = montarPayloadItem(familia, [variacoes[0]], capaPictureId, null, null, undefined, null, null, undefined, 'plano');
+    const p = montarPayloadItem(familia, [variacoes[0]], capaPictureId, null, null, undefined, null, undefined, 'plano');
     expect(p.family_name).toBe('Linha XIK 120 Várias Cores');
     expect(p.price).toBe(9.9);
     expect(p.variations).toBeUndefined();
@@ -137,7 +136,6 @@ describe('montarPayloadItem', () => {
       null,
       null,
       undefined,
-      null,
       null,
       undefined,
       'plano',
@@ -201,7 +199,7 @@ describe('montarPayloadItem com 3a foto (CAPA3)', () => {
 
 describe('montarPayloadItem com dimensões (ADR-0018)', () => {
   it('mescla os SELLER_PACKAGE_* nos attributes quando válidas', () => {
-    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, null, undefined, null, {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, null, undefined, {
       altura_cm: 18, largura_cm: 7, comprimento_cm: 7, peso_gramas: 150,
     });
     const ids = p.attributes.map((a) => a.id);
@@ -212,7 +210,7 @@ describe('montarPayloadItem com dimensões (ADR-0018)', () => {
   });
 
   it('não adiciona pacote quando dimensões inválidas (placeholder 0,1cm)', () => {
-    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, null, undefined, null, {
+    const p = montarPayloadItem(familia, variacoes, capaPictureId, null, null, undefined, {
       altura_cm: 0.1, largura_cm: 0.1, comprimento_cm: 0.1, peso_gramas: 100,
     });
     expect(p.attributes.some((a) => a.id.startsWith('SELLER_PACKAGE'))).toBe(false);
@@ -221,22 +219,6 @@ describe('montarPayloadItem com dimensões (ADR-0018)', () => {
   it('não adiciona pacote quando dimensões ausentes (undefined)', () => {
     const p = montarPayloadItem(familia, variacoes, capaPictureId);
     expect(p.attributes.some((a) => a.id.startsWith('SELLER_PACKAGE'))).toBe(false);
-  });
-});
-
-describe('montarPayloadItem com desconto', () => {
-  const fam = { titulo_ml: 'T', descricao_ml: null, categoria_ml_id: 'MLB255054', atributos_ml: [] };
-  const vars = [{ codigo: '1', cor: 'Azul', estoque: 5, preco_publicacao: 12.29, gtin: null, ml_picture_id: null }];
-
-  it('com desconto: adiciona original_price inflado por variação', () => {
-    const payload = montarPayloadItem(fam, vars, null, null, null, 'gold_special', { pct: 15 });
-    expect(payload.variations[0].price).toBe(12.29);
-    expect(payload.variations[0].original_price).toBe(14.46);
-  });
-
-  it('sem desconto (param ausente): não inclui original_price', () => {
-    const payload = montarPayloadItem(fam, vars, null, null, null, 'gold_special');
-    expect(payload.variations[0].original_price).toBeUndefined();
   });
 });
 
@@ -264,7 +246,7 @@ describe('montarPayloadItem aceitaEmptyGtin override (E4 — categoria prevista)
   const semGtin = [{ codigo: '900A', cor: 'Preto', estoque: 5, preco_publicacao: 99, gtin: null, ml_picture_id: 'P1' }];
 
   it('override=true → variação sem GTIN recebe EMPTY_GTIN_REASON', () => {
-    const p = montarPayloadItem(prevista, semGtin, 'CAPA', null, null, 'gold_special', null, null, true);
+    const p = montarPayloadItem(prevista, semGtin, 'CAPA', null, null, 'gold_special', null, true);
     expect(p.variations[0].attributes).toEqual([{ id: 'EMPTY_GTIN_REASON', value_id: '17055160' }]);
   });
   it('override ausente (undefined) e fora do Set hard-coded → não envia EMPTY_GTIN_REASON', () => {
@@ -273,7 +255,7 @@ describe('montarPayloadItem aceitaEmptyGtin override (E4 — categoria prevista)
     expect(ids).not.toContain('EMPTY_GTIN_REASON');
   });
   it('override=false → não envia (categoria não expõe o atributo)', () => {
-    const p = montarPayloadItem(prevista, semGtin, 'CAPA', null, null, 'gold_special', null, null, false);
+    const p = montarPayloadItem(prevista, semGtin, 'CAPA', null, null, 'gold_special', null, false);
     const ids = (p.variations[0].attributes ?? []).map((a) => a.id);
     expect(ids).not.toContain('EMPTY_GTIN_REASON');
   });

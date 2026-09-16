@@ -23,7 +23,6 @@ const FAMILIA_BASE = {
   ml_item_id: 'MLB-EXISTENTE', ml_permalink: 'https://ml/x', status: 'publicando', atacado: null, atacado_status: null,
   fornecedor: null, capa_ml_picture_id: 'CAPA', capa2_ml_picture_id: null, capa2_storage_path: null,
   capa3_ml_picture_id: null, capa3_storage_path: null, variacao_principal_codigo: null,
-  exibir_com_desconto: false, desconto_pct: null,
 };
 // Casada (ml_variation_id) → reposição pura Legacy: novas=[], sem CREATE de variação.
 const VAR_CASADA = { codigo: 'V1', cor: 'Azul', estoque: 5, preco_publicacao: 29.9, gtin: null, imagem_path: null, ml_picture_id: 'PIC1', ml_variation_id: 'MLV1', altura_cm: 1, largura_cm: 1, comprimento_cm: 1, peso_gramas: 100 };
@@ -63,7 +62,6 @@ function fakeAdmin(over: {
       if (table === 'familias') return familia;
       if (table === 'variacoes') return variacoes;
       if (table === 'marketplace_connections') return conexao;
-      if (table === 'configuracoes') return { desconto_pct: 15 };
       if (table === 'organizations') return { modulos_habilitados: modulosHabilitados };
       if (table === 'empresa_fiscal') return { regime_tributario: 'simples' };
       if (table === 'anuncios_externos') return raizUP;

@@ -110,7 +110,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     precoPorSku[v.codigo] = v.preco_publicacao != null ? Number(v.preco_publicacao) : null;
   }
   // Base do atacado (PxQ) e do LOUD de divergência. O PxQ é por ITEM na API do ML, e nesta entrega
-  // desconto/atacado seguem família-level (decisão de escopo): com preços divergentes não há base
+  // o atacado segue família-level (decisão de escopo): com preços divergentes não há base
   // única legítima, então o caminho falha alto em vez de escolher uma cor arbitrária.
   const precosDistintos = new Set(
     variacoes.map((v) => (v.preco_publicacao != null ? Math.round(Number(v.preco_publicacao) * 100) : null))
@@ -123,14 +123,10 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   // publicar dinheiro diferente do configurado.
   //
   // Divergência é valor DIFERENTE, não "coluna preenchida". `ConfigGruposPreco` grava `[]` explícito
-  // ao desmarcar o atacado e `exibir_com_desconto: false` ao desmarcar o desconto — ambos não-nulos
-  // (null ali significaria "herdar", que dispara LOUD no publish do split). Com um teste de
-  // `!= null`, qualquer família que um dia passou por aquele editor ficaria com o atacado recusado
-  // PARA SEMPRE ao migrar para UP — e sem saída, porque a UI esconde o editor de faixas sob UP.
-  //
-  // Só `atacado` entra: sob User Products o ML não aceita desconto apenas visual (o CREATE recusa
-  // com DESCONTO_INCOMPATIVEL), então `exibir_com_desconto`/`desconto_pct` por cor não têm efeito
-  // neste caminho e não podem bloquear o PxQ.
+  // ao desmarcar o atacado (null ali significaria "herdar", que dispara LOUD no publish do split).
+  // Com um teste de `!= null`, qualquer família que um dia passou por aquele editor ficaria com o
+  // atacado recusado PARA SEMPRE ao migrar para UP — e sem saída, porque a UI esconde o editor de
+  // faixas sob UP.
   const faixasCanonicas = (v: unknown): string => {
     if (!Array.isArray(v)) return '';
     return [...v as Array<{ min_unidades?: number; desconto_pct?: number }>]
@@ -229,7 +225,7 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       { ...familiaInput, atributos_ml: mesclarAtributos(familia.atributos_ml, await lerFichaDoIrmao()) } as never,
       [{ codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: num(v.preco_publicacao), gtin: v.gtin, ml_picture_id: picId }] as never,
       familia.capa_ml_picture_id, familia.capa2_ml_picture_id, familia.capa3_ml_picture_id,
-      undefined, null, dimensoes, aceitaEmptyGtin, 'plano',
+      undefined, dimensoes, aceitaEmptyGtin, 'plano',
     );
     const r = await criarItemML(await ctx.getToken(), payload);
     return { itemExternoId: r.id, permalink: r.permalink };
@@ -460,9 +456,9 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
           // LIMPA o PxQ no ML. Resultado: o app diria "erro" e o Mercado Livre seguiria vendendo no
           // atacado — dinheiro vivo divergindo do que o operador configurou. Desligar tem que
           // limpar, mesmo havendo config por cor.
-          // ADR-0160 (I7) — a Revisão grava config de desconto/atacado POR VARIAÇÃO
-          // (`variacoes.exibir_com_desconto` / `desconto_pct` / `atacado`, ADR-0078 F2) quando os
-          // preços divergem, mas o caminho UP lê só `familia.atacado`. Sem esta trava o operador
+          // ADR-0160 (I7) — a Revisão grava config de atacado POR VARIAÇÃO (`variacoes.atacado`,
+          // ADR-0078 F2) quando os preços divergem, mas o caminho UP lê só `familia.atacado`.
+          // Sem esta trava o operador
           // configuraria atacado por faixa, o app publicaria com 200 e subiria o valor
           // família-level — dinheiro diferente do configurado, sem nenhum sinal.
           //

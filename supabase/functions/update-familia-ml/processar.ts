@@ -9,7 +9,6 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import type { ChannelConnector } from '../_shared/canais/contrato.ts';
 import { enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal } from '../_shared/queue.ts';
-import { pctEfetivo } from '../_shared/preco/desconto.ts';
 import type { FaixaAtacado } from '../_shared/ml/atacado.ts';
 import { espelharAnuncioExterno } from '../_shared/anuncios/espelhar.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
@@ -161,10 +160,10 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
     // Cores incluídas: casadas (têm ml_variation_id) repõem estoque; novas (sem
     // ml_variation_id) são criadas como variação. Excluídas ficam de fora.
     const { data: variacoesDoSelect } = await admin.from('variacoes')
-      // ADR-0160: `exibir_com_desconto`/`desconto_pct`/`atacado` por variação entram no select —
-      // o caminho UP precisa DETECTAR config por cor para recusar (I7), já que aplica só a
-      // config família-level. Sem lê-las, a divergência passaria despercebida.
-      .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, exibir_com_desconto, desconto_pct, atacado')
+      // ADR-0160: `atacado` por variação entra no select — o caminho UP precisa DETECTAR config
+      // por cor para recusar (I7), já que aplica só a config família-level. Sem lê-la, a
+      // divergência passaria despercebida.
+      .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, atacado')
       .eq('familia_id', job.familia_id)
       .eq('excluida_da_publicacao', false);
     if (!variacoesDoSelect || variacoesDoSelect.length === 0) {
@@ -237,17 +236,6 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       if (itensUP && itensUP.length > 0) {
         return await rodarUP(raizUP as { id: string; titulo: string | null });
       }
-    }
-
-    let desconto: { pct: number; precoPorCodigo: Record<string, number | null> } | null = null;
-    if (familia.exibir_com_desconto) {
-      const { data: cfg } = await admin.from('configuracoes')
-        .select('desconto_pct').eq('org_id', familia.org_id).maybeSingle();
-      const global = cfg?.desconto_pct != null ? Number(cfg.desconto_pct) : 15;
-      const fam = familia.desconto_pct != null ? Number(familia.desconto_pct) : null;
-      const precoPorCodigo: Record<string, number | null> = {};
-      for (const v of variacoes) precoPorCodigo[v.codigo] = v.preco_publicacao != null ? Number(v.preco_publicacao) : null;
-      desconto = { pct: pctEfetivo(fam, global), precoPorCodigo };
     }
 
     const casadas = variacoes.filter((v) => v.ml_variation_id);
@@ -344,7 +332,6 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       marca,
       dimensoes: dimensoesUpd,
       pesoLiquidoGramas: pesoLiquidoKitGramas,
-      desconto: desconto ?? null,
       precoFamilia,
       somenteEstoque: job.somenteEstoque,
       preservarPublicadas,

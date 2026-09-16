@@ -1,45 +1,35 @@
 import { describe, it, expect } from 'vitest';
 import { resolverConfigGrupo, agregarAtacadoStatus } from '../config-grupo';
 
-const fam = (over = {}) => ({ exibir_com_desconto: false, desconto_pct: null, atacado: null, ...over });
-const v = (codigo: string, over = {}) =>
-  ({ codigo, exibir_com_desconto: null, desconto_pct: null, atacado: null, ...over });
+const fam = (over = {}) => ({ atacado: null, ...over });
+const v = (codigo: string, over = {}) => ({ codigo, atacado: null, ...over });
 const faixas = [{ min_unidades: 5, desconto_pct: 5 }];
 
 describe('resolverConfigGrupo', () => {
   it('uniforme: herda o família-level intacto (caracterização — comportamento de hoje)', () => {
-    const cfg = resolverConfigGrupo(
-      fam({ exibir_com_desconto: true, desconto_pct: '20', atacado: faixas }),
-      [v('A'), v('B')],
-      false,
-    );
-    expect(cfg).toEqual({ exibirComDesconto: true, descontoPct: 20, faixasAtacado: faixas });
+    const cfg = resolverConfigGrupo(fam({ atacado: faixas }), [v('A'), v('B')], false);
+    expect(cfg).toEqual({ faixasAtacado: faixas });
   });
 
   it('uniforme sem nada ativo: tudo desligado', () => {
-    expect(resolverConfigGrupo(fam(), [v('A')], false))
-      .toEqual({ exibirComDesconto: false, descontoPct: null, faixasAtacado: [] });
+    expect(resolverConfigGrupo(fam(), [v('A')], false)).toEqual({ faixasAtacado: [] });
   });
 
   it('divergente com config explícita e idêntica no grupo: usa a do grupo', () => {
     const cfg = resolverConfigGrupo(
-      fam({ exibir_com_desconto: true, desconto_pct: 15 }),
-      [
-        v('A', { exibir_com_desconto: true, desconto_pct: 10, atacado: faixas }),
-        v('B', { exibir_com_desconto: true, desconto_pct: 10, atacado: faixas }),
-      ],
+      fam(),
+      [v('A', { atacado: faixas }), v('B', { atacado: faixas })],
       true,
     );
-    expect(cfg).toEqual({ exibirComDesconto: true, descontoPct: 10, faixasAtacado: faixas });
+    expect(cfg).toEqual({ faixasAtacado: faixas });
   });
 
-  it('divergente + desconto família ativo + variação sem confirmação explícita → LOUD 400', () => {
+  // Guard isolado (pós-remoção do desconto visual, ADR-0162): atacado ativo sozinho, sem
+  // nenhum resquício de desconto nas fixtures, ainda tem que disparar o LOUD exatamente como
+  // antes — prova que a separação do guard combinado não quebrou a metade que sobrou.
+  it('atacado ativo + variação sem override → LOUD 400 dispara sozinho', () => {
     try {
-      resolverConfigGrupo(
-        fam({ exibir_com_desconto: true, desconto_pct: 15 }),
-        [v('A', { exibir_com_desconto: true, desconto_pct: 15 }), v('B')],
-        true,
-      );
+      resolverConfigGrupo(fam({ atacado: faixas }), [v('A')], true);
       throw new Error('deveria ter lançado');
     } catch (e) {
       expect((e as Error & { status?: number }).status).toBe(400);
@@ -47,22 +37,12 @@ describe('resolverConfigGrupo', () => {
     }
   });
 
-  it('divergente + atacado família ativo + variação sem atacado explícito → LOUD 400', () => {
-    expect(() => resolverConfigGrupo(fam({ atacado: faixas }), [v('A')], true))
-      .toThrowError(/faixa/i);
-  });
-
   it('divergente + família sem nada ativo + sem explícito → desligado, SEM LOUD (nada financeiro em jogo)', () => {
-    expect(resolverConfigGrupo(fam(), [v('A'), v('B')], true))
-      .toEqual({ exibirComDesconto: false, descontoPct: null, faixasAtacado: [] });
+    expect(resolverConfigGrupo(fam(), [v('A'), v('B')], true)).toEqual({ faixasAtacado: [] });
   });
 
   it('atacado explícito [] = explicitamente sem atacado → não é pendência', () => {
-    const cfg = resolverConfigGrupo(
-      fam({ atacado: faixas }),
-      [v('A', { exibir_com_desconto: false, atacado: [] })],
-      true,
-    );
+    const cfg = resolverConfigGrupo(fam({ atacado: faixas }), [v('A', { atacado: [] })], true);
     expect(cfg.faixasAtacado).toEqual([]);
   });
 
@@ -70,8 +50,8 @@ describe('resolverConfigGrupo', () => {
     expect(() => resolverConfigGrupo(
       fam(),
       [
-        v('A', { exibir_com_desconto: true, desconto_pct: 10, atacado: [] }),
-        v('B', { exibir_com_desconto: false, desconto_pct: null, atacado: [] }),
+        v('A', { atacado: [{ min_unidades: 5, desconto_pct: 10 }] }),
+        v('B', { atacado: [] }),
       ],
       true,
     )).toThrowError(/divergente/i);

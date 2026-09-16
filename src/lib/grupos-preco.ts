@@ -67,17 +67,14 @@ export function exigeDivisaoUpdate(familia: Pick<Familia, 'operacao' | 'variacoe
   return [...novosPorFaixa.values()].some((novos) => novos.size > 1);
 }
 
-/** Espelho do LOUD do backend (resolverConfigGrupo): família divergente com desconto/atacado
+/** Espelho do LOUD do backend (resolverConfigGrupo): família divergente com atacado
  *  ativo no família-level e grupo sem confirmação explícita → o publish vai falhar. O selo
  *  "configurar faixa" aponta isso ANTES de publicar. */
 export function configGrupoPendente(
-  familia: Pick<Familia, 'exibirComDesconto' | 'atacado'>,
+  familia: Pick<Familia, 'atacado'>,
   grupo: GrupoPreco,
 ): boolean {
-  const famDesconto = familia.exibirComDesconto;
   const famAtacado = (familia.atacado ?? []).length > 0;
-  if (!famDesconto && !famAtacado) return false;
-  return grupo.variacoes.some(
-    (x) => (famDesconto && x.exibirComDesconto == null) || (famAtacado && x.atacado == null),
-  );
+  if (!famAtacado) return false;
+  return grupo.variacoes.some((x) => x.atacado == null);
 }

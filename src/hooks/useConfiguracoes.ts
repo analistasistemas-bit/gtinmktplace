@@ -1,6 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  fetchDescontoPct, upsertDescontoPct,
   fetchDescontoConcorrenciaPct, upsertDescontoConcorrenciaPct,
   fetchAliquotas, upsertAliquotas,
   fetchReancoraLiderAtiva, upsertReancoraLiderAtiva,
@@ -10,17 +9,6 @@ import {
   fetchModeloImagem, upsertModeloImagem,
   fetchEmpresaFiscal, upsertEmpresaFiscal, type EmpresaFiscalRow,
 } from '@/lib/queries';
-
-export function useDescontoPct() {
-  return useQuery({ queryKey: ['configuracoes', 'desconto_pct'], queryFn: fetchDescontoPct });
-}
-export function useSalvarDescontoPct() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (pct: number) => upsertDescontoPct(pct),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'desconto_pct'] }),
-  });
-}
 
 export function useDescontoConcorrenciaPct() {
   return useQuery({ queryKey: ['configuracoes', 'desconto_concorrencia_pct'], queryFn: fetchDescontoConcorrenciaPct });

@@ -22,8 +22,6 @@ function criarVariacao(overrides: Partial<Variacao> = {}): Variacao {
     alturaCm: null,
     larguraCm: null,
     comprimentoCm: null,
-    exibirComDesconto: null,
-    descontoPct: null,
     atacado: null,
     ...overrides,
   };
@@ -75,8 +73,6 @@ function criarFamilia(overrides: Partial<Familia> = {}): Familia {
     anuncios: [],
     mudancaEstrutural: null,
     erroMensagem: null,
-    exibirComDesconto: false,
-    descontoPct: null,
     atacado: null,
     atacadoStatus: null,
     atacadoErro: null,

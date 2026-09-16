@@ -199,8 +199,6 @@ export function montarVariacaoKit(
     cor_editada_pelo_operador: false,
     excluida_da_publicacao: false,
     atacado: null,
-    exibir_com_desconto: null,
-    desconto_pct: null,
   };
 }
 

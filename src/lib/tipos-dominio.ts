@@ -121,9 +121,6 @@ export interface Variacao {
   alturaCm: number | null;
   larguraCm: number | null;
   comprimentoCm: number | null;
-  /** Config por faixa (ADR-0078 F2). null = herda o família-level. */
-  exibirComDesconto: boolean | null;
-  descontoPct: number | null;
   /** null = herda; [] = explicitamente sem atacado (≠ null!). */
   atacado: FaixaAtacado[] | null;
 }
@@ -208,8 +205,6 @@ export interface Familia {
   anuncios: { particao: number; permalink: string | null; titulo: string | null }[];
   mudancaEstrutural: MudancaEstrutural | null;
   erroMensagem: string | null;
-  exibirComDesconto: boolean;
-  descontoPct: number | null;
   atacado: FaixaAtacado[] | null;
   atacadoStatus: string | null;
   atacadoErro: string | null;

@@ -41,7 +41,7 @@ describe('UPtin em andamento bloqueia escrita (ADR-0160 I9)', () => {
     existentes: [{ sku: 'A1', estoque: 9, cor: 'Azul' }],
     novas: [],
     capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
-    marca: null, dimensoes: null, desconto: null, precoFamilia: 99,
+    marca: null, dimensoes: null, precoFamilia: 99,
     somenteEstoque: false,
   };
 
@@ -86,7 +86,7 @@ describe('atualizarAnuncio somenteEstoque', () => {
     existentes: [{ sku: 'A1', estoque: 9, cor: 'Azul' }],
     novas: [{ sku: 'N1', cor: 'Rosa', estoque: 4, preco: 30, gtin: null, fotoId: 'P' }],
     capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
-    marca: null, dimensoes: null, desconto: null, precoFamilia: null,
+    marca: null, dimensoes: null, precoFamilia: null,
     somenteEstoque: true,
   };
 
@@ -121,7 +121,7 @@ describe('atualizarAnuncio preservarPublicadas (fluxo "Adicionar variação")', 
     existentes: [{ sku: 'A1', estoque: 0, cor: 'Rosa Claro' }],
     novas: [{ sku: 'N1', cor: 'Preto', estoque: 40, preco: 80, gtin: null, fotoId: 'P' }],
     capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
-    marca: null, dimensoes: null, desconto: null, precoFamilia: 80,
+    marca: null, dimensoes: null, precoFamilia: 80,
     somenteEstoque: false,
   };
 
@@ -167,7 +167,7 @@ describe('atualizarAnuncio em item plano (ADR-0084)', () => {
       existentes: [{ sku: 'A1', estoque: 15, cor: 'Prata' }],
       novas: [],
       capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
-      marca: null, dimensoes: null, desconto: null, precoFamilia: 130,
+      marca: null, dimensoes: null, precoFamilia: 130,
       somenteEstoque: false,
     };
     const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
@@ -187,7 +187,7 @@ describe('atualizarAnuncio em item plano (ADR-0084)', () => {
       existentes: [{ sku: 'A1', estoque: 20, cor: 'Prata' }],
       novas: [],
       capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
-      marca: null, dimensoes: null, desconto: null, precoFamilia: 130,
+      marca: null, dimensoes: null, precoFamilia: 130,
       somenteEstoque: true,
     };
     await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
@@ -204,7 +204,7 @@ describe('atualizarAnuncio em item plano (ADR-0084)', () => {
       existentes: [{ sku: 'A1', estoque: 10, cor: 'Prata' }],
       novas: [{ sku: 'N1', cor: 'Rosa', estoque: 4, preco: 30, gtin: null, fotoId: 'P' }],
       capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: null,
-      marca: null, dimensoes: null, desconto: null, precoFamilia: null,
+      marca: null, dimensoes: null, precoFamilia: null,
       somenteEstoque: false,
     };
     const res = await mercadoLivreConnector.atualizarAnuncio(ctxFake, atualiz);
@@ -220,7 +220,7 @@ describe('criarAnuncio: retry reativo de item plano (ADR-0087)', () => {
     categoriaId: 'MLB999999', // fora do Set (categoria nunca vista antes, tipo "kit agulha")
     atributos: [],
     capaFotoId: null, capa2FotoId: null, capa3FotoId: null,
-    desconto: null, dimensoes: null,
+    dimensoes: null,
     variacoes: [{ sku: 'A1', cor: 'Único', estoque: 5, preco: 33.5, gtin: null, fotoId: null }],
   };
   const causaExata = [
@@ -255,16 +255,6 @@ describe('criarAnuncio: retry reativo de item plano (ADR-0087)', () => {
     expect(chamadas[0].variations).toBeUndefined();
   });
 
-  it('categoria já no Set + desconto → DESCONTO_INCOMPATIVEL sem POST', async () => {
-    const chamadas = stubItems([]);
-    const anuncio = { ...anuncioBase, categoriaId: 'MLB271227', desconto: { pct: 15 } };
-    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, anuncio);
-    expect(res.ok).toBe(false);
-    expect(res.erro?.codigo).toBe('DESCONTO_INCOMPATIVEL');
-    expect(res.erro?.mensagemOperador).toContain('desmarque');
-    expect(chamadas).toHaveLength(0);
-  });
-
   it('categoria fora do Set: 1º POST rejeitado com assinatura exata → 2º POST em formato plano → sucesso', async () => {
     const chamadas = stubItems([
       { status: 400, body: { message: 'Validation error', cause: causaExata } },
@@ -278,16 +268,6 @@ describe('criarAnuncio: retry reativo de item plano (ADR-0087)', () => {
     expect(chamadas[0].family_name).toBeUndefined();
     expect(chamadas[1].family_name).toBe('Kit Agulha Crochê');
     expect(chamadas[1].variations).toBeUndefined();
-  });
-
-  it('categoria nova + desconto: assinatura 369+374 → DESCONTO_INCOMPATIVEL sem 2º POST plano', async () => {
-    const chamadas = stubItems([
-      { status: 400, body: { message: 'Validation error', cause: causaExata } },
-    ]);
-    const res = await mercadoLivreConnector.criarAnuncio(ctxFake, { ...anuncioBase, desconto: { pct: 15 } });
-    expect(res.ok).toBe(false);
-    expect(res.erro?.codigo).toBe('DESCONTO_INCOMPATIVEL');
-    expect(chamadas).toHaveLength(1);
   });
 
   it('1º POST rejeitado SEM a assinatura exata → nenhum retry, erro original propagado', async () => {
@@ -386,7 +366,7 @@ describe('criarAnuncio: FORMATO_INCOMPATIVEL para família multi-cor em categori
     categoriaId: 'MLB999999',
     atributos: [],
     capaFotoId: null, capa2FotoId: null, capa3FotoId: null,
-    desconto: null, dimensoes: null,
+    dimensoes: null,
     variacoes: tresVariacoes,
   };
   const causaExata = [
@@ -455,7 +435,7 @@ describe('atualizarAnuncio: família migrada pelo ML para User Products (ADR-010
   const base = {
     itemExternoId: 'MLB1',
     capaFotoId: null, capa2FotoId: null, capa3FotoId: null, categoriaId: 'MLB419782',
-    marca: null, dimensoes: null, desconto: null, precoFamilia: 130, somenteEstoque: false,
+    marca: null, dimensoes: null, precoFamilia: 130, somenteEstoque: false,
   };
 
   it('multi-cor → MIGRADO_PARA_UP com o observado no GET; NENHUM PUT emitido', async () => {

@@ -1,6 +1,5 @@
 import { gtinAusente, ordenarFotosVariacao } from './publicar.ts';
 import { EMPTY_GTIN_REASON_SEM_CODIGO, categoriaAceitaEmptyGtinReason } from '../categoria/atributos.ts';
-import { calcularPrecoDe } from '../preco/desconto.ts';
 
 export interface AtributoVar { id: string; value_name?: string; value_id?: string; }
 export interface CorNovaInput {
@@ -15,7 +14,6 @@ export interface VariacaoNovaPut {
   attribute_combinations: AtributoVar[];
   available_quantity: number;
   price: number;
-  original_price?: number;
   picture_ids: string[];
   attributes?: AtributoVar[];
   seller_custom_field: string;
@@ -29,7 +27,6 @@ export function montarVariacaoNova(
   capa2PictureId: string | null,
   capa3PictureId: string | null,
   categoriaMlId: string | null,
-  desconto?: { pct: number } | null,
   precoVivoAnuncio?: number | null, // quando definido (modo somente estoque), a cor nova entra neste preco
 ): VariacaoNovaPut {
   const emSomenteEstoque = precoVivoAnuncio !== undefined;
@@ -50,10 +47,6 @@ export function montarVariacaoNova(
     picture_ids: ordenarFotosVariacao(capaPictureId, capa2PictureId, capa3PictureId, v.ml_picture_id),
     seller_custom_field: v.codigo,
   };
-  if (desconto) {
-    const de = calcularPrecoDe(variation.price, desconto.pct);
-    if (de !== null) variation.original_price = de;
-  }
   if (gtinAusente(v.gtin)) {
     if (categoriaAceitaEmptyGtinReason(categoriaMlId)) {
       variation.attributes = [{ id: 'EMPTY_GTIN_REASON', value_id: EMPTY_GTIN_REASON_SEM_CODIGO }];
@@ -75,18 +68,16 @@ export interface MLVariacaoAtual {
   price?: number | null;
 }
 export interface EstoqueDesejado { codigo: string; estoque: number; }
-export interface VariacaoUpdate { id: string | number; available_quantity: number; picture_ids?: string[]; price?: number; original_price?: number; attribute_combinations?: AtributoVar[]; }
+export interface VariacaoUpdate { id: string | number; available_quantity: number; picture_ids?: string[]; price?: number; attribute_combinations?: AtributoVar[]; }
 
 // Reenvia TODAS as variações atuais do anúncio (o ML deleta as omitidas). Por
 // padrão só available_quantity — sem price, para o ML preservar o preço de venda
 // (reposição pura de estoque, ADR-0016).
-// Quando desconto está ativo, envia price + original_price para ativar o selo.
 // `precoFamilia` (adendo ADR-0016): preço de publicação atual da família. Quando
 // informado, é propagado para TODA variação existente — o ML exige preço único
 // entre variações, então incluir cor nova a um preço diferente obriga reprecificar
 // o anúncio inteiro; e o operador quer que a alteração de preço alcance a família
-// já publicada. Idempotente quando o preço não mudou. O desconto, se ativo, tem
-// precedência (já define price/original_price por código).
+// já publicada. Idempotente quando o preço não mudou.
 // `corDesejadaPorCodigo` (bug lote #24/#25): renomear a cor de uma variação já publicada.
 // Só inclui COLOR quando a cor desejada é não-vazia E difere da que está no ML (idempotente;
 // não toca variação cuja cor não mudou). Atenção: o ML pode recusar troca de COLOR em variação
@@ -101,7 +92,6 @@ export function montarVariacoesUpdate(
   atuais: MLVariacaoAtual[],
   desejados: EstoqueDesejado[],
   picsPorCodigo?: Record<string, string[]>,
-  desconto?: { pct: number; precoPorCodigo: Record<string, number | null> } | null,
   precoFamilia?: number | null,
   corDesejadaPorCodigo?: Record<string, string | null>,
   somenteEstoque?: boolean,
@@ -117,13 +107,6 @@ export function montarVariacoesUpdate(
     }
     const pics = picsPorCodigo?.[codigo];
     if (pics && pics.length > 0) base.picture_ids = [...new Set(pics)];
-    if (!somenteEstoque && desconto) {
-      const preco = desconto.precoPorCodigo[codigo];
-      if (preco != null) {
-        const de = calcularPrecoDe(preco, desconto.pct);
-        if (de !== null) { base.price = preco; base.original_price = de; }
-      }
-    }
     if (!somenteEstoque && precoFamilia != null && base.price == null) base.price = precoFamilia;
     return base;
   });

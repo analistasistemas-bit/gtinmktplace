@@ -86,24 +86,12 @@ function dissolvidoParaUP(
   };
 }
 
-function descontoIncompativel(): ResultadoCanal<RefAnuncio> {
-  return {
-    ok: false,
-    erro: {
-      codigo: 'DESCONTO_INCOMPATIVEL',
-      mensagemOperador: 'User Products não aceita desconto apenas visual; desmarque a opção de desconto para publicar.',
-      retentavel: false,
-    },
-  };
-}
-
 export const mercadoLivreConnector: ChannelConnector = {
   id: 'mercado_livre',
   capabilities: {
     variacoes: true,
     descricaoSeparada: true,
     catalogo: true,
-    desconto: true,
     atacado: true,
     dimensoesPacote: true,
     atualizarEstoque: true,
@@ -119,9 +107,6 @@ export const mercadoLivreConnector: ChannelConnector = {
     // Recusa ANTES de qualquer rede — precisa vir antes de getToken/lerSchemaAtributos: nessa
     // categoria montar() lançaria síncrono (ml/publicar.ts) e um POST seria desperdiçado. O caso
     // de 1 cor NÃO entra aqui — segue pelo caminho normal (item plano direto, ADR-0084/0087).
-    if (a.desconto && categoriaExigeFamilyName(a.categoriaId)) {
-      return descontoIncompativel();
-    }
     if (a.variacoes.length > 1 && categoriaExigeFamilyName(a.categoriaId)) {
       return formatoIncompativel(a.categoriaId);
     }
@@ -150,7 +135,7 @@ export const mercadoLivreConnector: ChannelConnector = {
         ? variacoesInput.map((v) => ({ ...v, gtin: v.gtin ?? a.gtinPackFallback ?? null }))
         : variacoesInput,
       a.capaFotoId, a.capa2FotoId, a.capa3FotoId,
-      a.listingTypeId, a.desconto, a.dimensoes, aceitaEmptyGtin, formato,
+      a.listingTypeId, a.dimensoes, aceitaEmptyGtin, formato,
     );
     // ADR-0087: as duas tentativas (seed da categoria + retry reativo) ficam dentro de UM
     // único try/catch — se a 2ª falhar (novo erro do ML, ou `montarPayloadItem` lançando na
@@ -174,7 +159,6 @@ export const mercadoLivreConnector: ChannelConnector = {
         r = await tentar();
       } catch (e) {
         if (!precisaItemPlano((e as { status?: number }).status, (e as { mlCauses?: unknown }).mlCauses)) throw e;
-        if (a.desconto) return descontoIncompativel();
         // ADR-0088 branch (b): assinatura UP exata (369+374) numa categoria nova + >1 cor →
         // recusa como retorno normal (nunca reconstrói N variações num item plano — cada SKU
         // vira seu próprio item pela saga). Retry de 1 cor do ADR-0087 abaixo fica INTOCADO.
@@ -265,9 +249,7 @@ export const mercadoLivreConnector: ChannelConnector = {
           ?? existente.estoque;
         const precoDesejado = a.somenteEstoque
           ? undefined
-          : (a.desconto?.precoPorCodigo[existente.sku] ?? a.precoFamilia ?? undefined);
-        // original_price nunca é enviado: a ML rejeita esse campo em item plano (mesma
-        // validação real que bloqueou no CREATE, ADR-0084) — desconto não é suportado aqui.
+          : (a.precoFamilia ?? undefined);
         await atualizarItemPlanoML(token, a.itemExternoId, {
           available_quantity: estoqueDesejado,
           ...(precoDesejado != null ? { price: precoDesejado } : {}),
@@ -314,14 +296,13 @@ export const mercadoLivreConnector: ChannelConnector = {
         : montarVariacoesUpdate(
           atual.variations, desejados,
           undefined,
-          a.somenteEstoque ? null : (a.desconto ?? undefined), a.somenteEstoque ? null : a.precoFamilia,
+          a.somenteEstoque ? null : a.precoFamilia,
           corDesejadaPorCodigo, a.somenteEstoque,
         );
       const semPreco = a.somenteEstoque || a.preservarPublicadas;
       const novasPut = a.novas.map((v) => montarVariacaoNova(
         { codigo: v.sku, cor: v.cor, estoque: capUpd.get(v.sku) ?? v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId },
         a.capaFotoId, a.capa2FotoId, a.capa3FotoId, a.categoriaId,
-        semPreco ? null : (a.desconto ? { pct: a.desconto.pct } : null),
         semPreco ? precoVivo : undefined,
       ));
       // BRAND (do fornecedor) + dimensões/peso (SELLER_PACKAGE_*) + peso líquido do kit
@@ -408,7 +389,7 @@ export const mercadoLivreConnector: ChannelConnector = {
 
       // Item com variações: reenvia TODAS (o ML deleta as omitidas), só available_quantity.
       const desejados = estoques.map((e) => ({ codigo: e.sku, estoque: e.estoque }));
-      const variations = montarVariacoesUpdate(atual.variations, desejados, undefined, null, null, undefined, true);
+      const variations = montarVariacoesUpdate(atual.variations, desejados, undefined, null, undefined, true);
       await atualizarItemML(token, itemExternoId, variations);
       return { ok: true };
     } catch (e) {

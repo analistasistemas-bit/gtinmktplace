@@ -5,13 +5,10 @@ import { toast } from 'sonner';
 import { publicarFamilias } from '@/lib/publicar';
 import { QK } from '@/lib/queries';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
 import { useImageUrl } from '@/hooks/useImageUrl';
-import { useDescontoPct } from '@/hooks/useConfiguracoes';
-import { useUpdateExibirDesconto, useUpdateDescontoPctFamilia, useReprocessar, useUpdateFamiliaAtacado } from '@/hooks/useFamiliaMutations';
-import { calcularPrecoDe, pctEfetivo, podeAlterarDescontoVisual } from '@/lib/desconto';
+import { useReprocessar, useUpdateFamiliaAtacado } from '@/hooks/useFamiliaMutations';
 import { temAlteracaoPreco } from '@/lib/preco-alterado';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { AtacadoEditor } from '@/components/atacado-editor';
@@ -38,60 +35,6 @@ interface FamiliaRowProps {
   onSelecionar: (id: string, valor: boolean) => void;
   onExpandir: (id: string) => void;
   onIrParaCritica?: (familiaId: string, codigo: string) => void;
-}
-
-function DescontoControle({ familia }: { familia: Familia }) {
-  const { data: globalPct } = useDescontoPct();
-  const updExibir = useUpdateExibirDesconto(familia.loteId);
-  const updPct = useUpdateDescontoPctFamilia(familia.loteId);
-  const pct = pctEfetivo(familia.descontoPct, globalPct ?? 15);
-  const podeAlterar = podeAlterarDescontoVisual(familia.formatoPublicacaoMl, familia.exibirComDesconto);
-  // Preço de venda real (mesma fonte do card "Você recebe", painel-analise): menor
-  // preço de PUBLICAÇÃO das cores incluídas — não o preço da planilha. Reage à edição.
-  const incluidas = familia.variacoes.filter((v) => !v.excluidaDaPublicacao);
-  const baseVariacoes = incluidas.length > 0 ? incluidas : familia.variacoes;
-  const precosVenda = baseVariacoes.map((v) => v.precoPublicacao ?? v.preco);
-  const precoVenda = precosVenda.length > 0 ? Math.min(...precosVenda) : 0;
-  const de = calcularPrecoDe(precoVenda, pct);
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-xs">
-      <Checkbox
-        aria-label="Exibir com desconto"
-        checked={familia.exibirComDesconto}
-        disabled={!podeAlterar}
-        onCheckedChange={(v) => {
-          updExibir.mutate({ familiaId: familia.id, exibir: !!v });
-        }}
-      />
-      <span>Exibir com desconto</span>
-      {familia.formatoPublicacaoMl === 'user_products' && (
-        <span className="text-muted-foreground">
-          O ML não permite desconto apenas visual em User Products.
-        </span>
-      )}
-      {familia.exibirComDesconto && (
-        <>
-          <Input
-            type="number"
-            min={0}
-            max={99}
-            className="w-14"
-            defaultValue={familia.descontoPct ?? globalPct ?? 15}
-            onBlur={(e) => {
-              const n = Number(e.target.value);
-              updPct.mutate({ familiaId: familia.id, pct: Number.isFinite(n) ? n : null });
-            }}
-          />
-          <span>%</span>
-          {de != null && (
-            <span className="text-muted-foreground">
-              <s>R$ {fmtBRLSemSimbolo(de)}</s> · R$ {fmtBRLSemSimbolo(precoVenda)} · {pct}% OFF
-            </span>
-          )}
-        </>
-      )}
-    </div>
-  );
 }
 
 function AtacadoControle({ familia }: { familia: Familia }) {
@@ -433,17 +376,14 @@ export function FamiliaRow({ familia, selecionada, expandida, onSelecionar, onEx
     </div>
       <div className="px-4 pb-2 pl-8 sm:pl-[100px] space-y-4">
         {/* ADR-0160: a config por FAIXA de preço só faz sentido no modelo Legacy, em que cada faixa
-            vira um anúncio separado e pode ter seu próprio desconto/atacado. Numa família User
+            vira um anúncio separado e pode ter seu próprio atacado. Numa família User
             Products não há faixas — cada cor já é um anúncio — e o backend aplica só a config
             família-level, recusando (LOUD) se achar config por cor. Renderizar o editor por faixa
             aqui convidaria o operador a configurar algo que a publicação depois recusa. */}
         {familiaPrecosDivergentes(familia) && !familiaEhUP(familia) ? (
           <ConfigGruposPreco familia={familia} />
         ) : (
-          <>
-            <DescontoControle familia={familia} />
-            <AtacadoControle familia={familia} />
-          </>
+          <AtacadoControle familia={familia} />
         )}
       </div>
     </div>

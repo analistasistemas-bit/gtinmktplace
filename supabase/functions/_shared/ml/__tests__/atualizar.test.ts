@@ -69,25 +69,11 @@ describe('montarVariacoesUpdate', () => {
     expect(r[1]).toEqual({ id: 2, available_quantity: 8, picture_ids: ['CAPA', 'CAPA2'] });
   });
 
-  it('UPDATE com desconto: variação existente recebe price + original_price', () => {
-    const atuais = [{ id: 'A', seller_custom_field: '1', available_quantity: 3 }];
-    const desejados = [{ codigo: '1', estoque: 9 }];
-    const precos = { '1': 12.29 };
-    const out = montarVariacoesUpdate(atuais, desejados, undefined, { pct: 15, precoPorCodigo: precos });
-    expect(out[0]).toMatchObject({ id: 'A', available_quantity: 9, price: 12.29, original_price: 14.46 });
-  });
-
-  it('UPDATE sem desconto: variação existente NÃO recebe price/original_price', () => {
-    const atuais = [{ id: 'A', seller_custom_field: '1', available_quantity: 3 }];
-    const out = montarVariacoesUpdate(atuais, [{ codigo: '1', estoque: 9 }]);
-    expect(out[0]).toEqual({ id: 'A', available_quantity: 9 });
-  });
-
   // ADR-0016 adendo: ao mudar o preço de publicação da família (ex.: ao incluir
   // cores novas a um preço diferente), o ML exige preço único entre variações.
   // O preço da família é propagado para TODAS as variações existentes do anúncio.
   it('com precoFamilia: toda variação existente recebe price = precoFamilia', () => {
-    const r = montarVariacoesUpdate(atuais, [{ codigo: '00000101', estoque: 12 }], undefined, undefined, 12.5);
+    const r = montarVariacoesUpdate(atuais, [{ codigo: '00000101', estoque: 12 }], undefined, 12.5);
     expect(r[0]).toMatchObject({ id: 'V1', available_quantity: 12, price: 12.5 });
     expect(r[1]).toMatchObject({ id: 'V2', available_quantity: 8, price: 12.5 });
   });
@@ -95,14 +81,8 @@ describe('montarVariacoesUpdate', () => {
   it('precoFamilia preenche o price até de variação existente fora do lote (cor publicada excluída)', () => {
     // V2 não está nos desejados (excluída da seleção), mas o ML não aceita ela num
     // preço diferente das novas → recebe o preço da família mesmo assim.
-    const r = montarVariacoesUpdate(atuais, [{ codigo: '00000101', estoque: 12 }], undefined, undefined, 12.5);
+    const r = montarVariacoesUpdate(atuais, [{ codigo: '00000101', estoque: 12 }], undefined, 12.5);
     expect(r.find((v) => v.id === 'V2')).toMatchObject({ price: 12.5 });
-  });
-
-  it('desconto tem precedência: precoFamilia não sobrescreve o price do desconto', () => {
-    const a = [{ id: 'A', seller_custom_field: '1', available_quantity: 3 }];
-    const out = montarVariacoesUpdate(a, [{ codigo: '1', estoque: 9 }], undefined, { pct: 15, precoPorCodigo: { '1': 12.29 } }, 99);
-    expect(out[0]).toMatchObject({ price: 12.29, original_price: 14.46 });
   });
 
   // Bug lote #24/#25: renomear a cor de uma variação JÁ publicada não ia ao ML porque
@@ -112,25 +92,25 @@ describe('montarVariacoesUpdate', () => {
     { id: 'V2', seller_custom_field: '03083284', available_quantity: 5, cor: 'Outra' },
   ];
   it('envia COLOR na variação existente quando a cor mudou (Rosa → Rosa Pink)', () => {
-    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, undefined, null, {
+    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, null, {
       '02710013': 'Rosa Pink',
     });
     expect(r.find((v) => v.id === 'V1')?.attribute_combinations).toEqual([{ id: 'COLOR', value_name: 'Rosa Pink' }]);
   });
   it('NÃO envia COLOR quando a cor desejada é igual à do ML (idempotente)', () => {
-    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, undefined, null, {
+    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, null, {
       '02710013': 'Rosa',
     });
     expect(r.find((v) => v.id === 'V1')).not.toHaveProperty('attribute_combinations');
   });
   it('NÃO envia COLOR de variação cujo código não está no mapa de cor desejada', () => {
-    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, undefined, null, {
+    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, null, {
       '02710013': 'Rosa Pink',
     });
     expect(r.find((v) => v.id === 'V2')).not.toHaveProperty('attribute_combinations');
   });
   it('cor desejada vazia/nula não vira COLOR (não zera a cor no ML)', () => {
-    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, undefined, null, {
+    const r = montarVariacoesUpdate(atuaisCor, [{ codigo: '02710013', estoque: 5 }], undefined, null, {
       '02710013': '',
     });
     expect(r.find((v) => v.id === 'V1')).not.toHaveProperty('attribute_combinations');
@@ -142,7 +122,7 @@ describe('montarVariacoesUpdate', () => {
   // derrubou a atualização inteira, estoque incluído.
   it('somenteEstoque NÃO envia COLOR mesmo com a cor divergente (o ML recusa em variação com vendas)', () => {
     const r = montarVariacoesUpdate(
-      atuaisCor, [{ codigo: '02710013', estoque: 7 }], undefined, undefined, null,
+      atuaisCor, [{ codigo: '02710013', estoque: 7 }], undefined, null,
       { '02710013': 'Rosa Pink' }, true /* somenteEstoque */,
     );
     const v1 = r.find((v) => v.id === 'V1')!;
@@ -152,25 +132,23 @@ describe('montarVariacoesUpdate', () => {
 
   it('sem somenteEstoque o rename de cor segue funcionando (ADR-0062 intacto)', () => {
     const r = montarVariacoesUpdate(
-      atuaisCor, [{ codigo: '02710013', estoque: 7 }], undefined, undefined, null,
+      atuaisCor, [{ codigo: '02710013', estoque: 7 }], undefined, null,
       { '02710013': 'Rosa Pink' }, false,
     );
     expect(r.find((v) => v.id === 'V1')?.attribute_combinations).toEqual([{ id: 'COLOR', value_name: 'Rosa Pink' }]);
   });
 
-  it('somenteEstoque suprime price e original_price mesmo com desconto e precoFamilia', () => {
+  it('somenteEstoque suprime price mesmo com precoFamilia', () => {
     const atuais = [{ id: 1, seller_custom_field: 'A1', available_quantity: 5, cor: 'Azul' }];
     const desejados = [{ codigo: 'A1', estoque: 9 }];
-    const desconto = { pct: 15, precoPorCodigo: { A1: 20 } };
-    const out = montarVariacoesUpdate(atuais, desejados, undefined, desconto, 20, undefined, true /* somenteEstoque */);
+    const out = montarVariacoesUpdate(atuais, desejados, undefined, 20, undefined, true /* somenteEstoque */);
     expect(out[0].available_quantity).toBe(9);
     expect(out[0].price).toBeUndefined();
-    expect(out[0].original_price).toBeUndefined();
   });
 
   it('sem somenteEstoque mantem o comportamento atual (empurra precoFamilia)', () => {
     const atuais = [{ id: 1, seller_custom_field: 'A1', available_quantity: 5, cor: 'Azul' }];
-    const out = montarVariacoesUpdate(atuais, [{ codigo: 'A1', estoque: 9 }], undefined, null, 20);
+    const out = montarVariacoesUpdate(atuais, [{ codigo: 'A1', estoque: 9 }], undefined, 20);
     expect(out[0].price).toBe(20);
   });
 });
@@ -236,27 +214,20 @@ describe('montarVariacaoNova', () => {
     expect(r.picture_ids).toEqual(['PN', 'CAPA2', 'CAPA3']);
   });
 
-  it('montarVariacaoNova com desconto adiciona original_price', () => {
-    const v = { codigo: '2', cor: 'Rosa', estoque: 4, preco_publicacao: 12.29, gtin: null, ml_picture_id: null };
-    const out = montarVariacaoNova(v, null, null, null, 'MLB255054', { pct: 15 });
-    expect(out.price).toBe(12.29);
-    expect(out.original_price).toBe(14.46);
-  });
-
   it('cor nova em somenteEstoque adota o preco vivo do anuncio', () => {
     const v = { codigo: 'N1', cor: 'Rosa', estoque: 4, preco_publicacao: 30, gtin: null, ml_picture_id: 'P' };
-    const out = montarVariacaoNova(v, 'CAPA', null, null, 'MLB123', null, 25 /* precoVivo */);
+    const out = montarVariacaoNova(v, 'CAPA', null, null, 'MLB123', 25 /* precoVivo */);
     expect(out.price).toBe(25); // preco vivo, nao o 30 recalculado
   });
 
   it('cor nova em somenteEstoque sem preco vivo lanca LOUD', () => {
     const v = { codigo: 'N1', cor: 'Rosa', estoque: 4, preco_publicacao: 30, gtin: null, ml_picture_id: 'P' };
-    expect(() => montarVariacaoNova(v, 'CAPA', null, null, 'MLB123', null, null)).toThrow(/preço vivo/);
+    expect(() => montarVariacaoNova(v, 'CAPA', null, null, 'MLB123', null)).toThrow(/preço vivo/);
   });
 
   it('cor nova em somenteEstoque sem preco vivo lanca LOUD com status 400', () => {
     const v = { codigo: 'N1', cor: 'Rosa', estoque: 4, preco_publicacao: 30, gtin: null, ml_picture_id: 'P' };
-    try { montarVariacaoNova(v, 'CAPA', null, null, 'MLB123', null, null); throw new Error('nao lancou'); }
+    try { montarVariacaoNova(v, 'CAPA', null, null, 'MLB123', null); throw new Error('nao lancou'); }
     catch (e) { expect((e as { status?: number }).status).toBe(400); expect(String(e)).toMatch(/preço vivo/); }
   });
 });

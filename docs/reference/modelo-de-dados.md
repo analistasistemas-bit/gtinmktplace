@@ -144,8 +144,9 @@ ao inserir a org (+ backfill das existentes). `user_id` é só **auditoria da ú
 FK `ON DELETE SET NULL`); FK `org_id` é `ON DELETE CASCADE`. Guarda: alíquotas de imposto
 (`aliquota_nacional_pct`/`aliquota_importado_pct`, default 8/16), `aliquotas_confirmadas_em` (flag do
 LOUD — sem ela o `process-familia` bloqueia a publicação em vez de aplicar 8/16 em silêncio, ADR-0055
-refinado; "salvar as alíquotas em Configurações = confirmar"), `desconto_pct`/`desconto_concorrencia_pct`,
-`ai_model_texto`/`ai_model_imagem` (ADR-0074) e `telegram_*`.
+refinado; "salvar as alíquotas em Configurações = confirmar"), `desconto_concorrencia_pct`,
+`ai_model_texto`/`ai_model_imagem` (ADR-0074) e `telegram_*`. `desconto_pct` ficou órfã (ADR-0162 —
+desconto visual descartado).
 RLS: leitura por membro da org, escrita só admin. Leituras no backend sempre por `org_id`.
 
 ## Acesso e usuários (ADR-0047 + ADR-0027)
@@ -284,9 +285,9 @@ Grupos de colunas:
   produção decide com base nela).
 - **Concorrência/mercado:** `analise_mercado jsonb`, `concorrencia_*`.
 - **Preço:** `estrategia_preco`, `estrategia_motivo`, `custo_centavos` (ADR-0020/0042),
-  `exibir_com_desconto`, `desconto_pct`, `preco_reancorado_lider` (bool, default false,
-  migration `20260708144126`, ADR-0065 — flag família-level: o preço foi reancorado no piso
-  dos MercadoLíderes por estar dando prejuízo).
+  `preco_reancorado_lider` (bool, default false, migration `20260708144126`, ADR-0065 — flag
+  família-level: o preço foi reancorado no piso dos MercadoLíderes por estar dando prejuízo).
+  `exibir_com_desconto`/`desconto_pct` ficaram órfãs (ADR-0162 — desconto visual descartado).
 - **Atacado (ADR-0041):** `atacado jsonb`, `atacado_status`, `atacado_erro`.
 - **Descrição UP (ADR-0088, 2026-07-23):** `descricao_status`/`descricao_erro` (mesmo padrão de
   `atacado_status`/`atacado_erro`) — resultado durável do push da seção "🎨 CORES DISPONÍVEIS" pra
@@ -322,10 +323,11 @@ Grupos:
   `preco_editado_pelo_operador`, `custo`, **`preco_publicado_ml`** (numeric, nullable, ADR-0078):
   preço de venda efetivamente confirmado no ML para o SKU no último publish/update bem-sucedido;
   base do badge "preço alterado" na Revisão; `NULL` = nunca publicado.
-- **Config por faixa (ADR-0078 F2):** `exibir_com_desconto` (bool, null), `desconto_pct` (numeric, null),
-  `atacado` (jsonb `FaixaAtacado[]`, null). NULL = herda o família-level (uniforme, comportamento clássico);
-  explícito = config da faixa de preço da variação ([] = explicitamente sem atacado). Grupo de preço
-  divergente herdando config família-level ATIVA sem confirmação → publish falha LOUD (ADR-0055).
+- **Config por faixa (ADR-0078 F2):** `atacado` (jsonb `FaixaAtacado[]`, null). NULL = herda o
+  família-level (uniforme, comportamento clássico); explícito = config da faixa de preço da variação
+  ([] = explicitamente sem atacado). Grupo de preço divergente herdando config família-level ATIVA sem
+  confirmação → publish falha LOUD (ADR-0055). `exibir_com_desconto`/`desconto_pct` desta tabela
+  ficaram órfãs (ADR-0162 — desconto visual descartado).
   *Migration `20260717131407_preco_por_variacao_config_grupo.sql`.*
 - **Dimensões:** `peso_gramas`, `altura_cm`, `largura_cm`, `comprimento_cm`.
 - **Cor (ADR-0004/0029):** `cor`, `cor_hex`, `cor_origem`, `cor_editada_pelo_operador`.
@@ -853,7 +855,7 @@ Settings por **organização** desde o E7 (era por usuário). *Migrations `20260
 `20260622121259` (ADR-0017/0035/0040) + `20260703113001` (ADR-0055) + `20260704120000`
 (ADR-0059) + `20260705174455_e7_config_org.sql` (ADR-0027).*
 `user_id` (PK, legado), `org_id` (FK organizations, `NOT NULL`, **único** — 1 configuração por
-org), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`, `telegram_bot_token` (sensível —
+org), `telegram_ativo`, `telegram_chat_id`, `telegram_bot_token` (sensível —
 nunca retornado; lido via RPC `telegram_config_status()` que só informa `tem_token boolean`;
 até a migration `20260822131053_revoke_telegram_bot_token_select.sql` o grant table-wide de
 SELECT em `authenticated` (`20260725224000_support_access.sql`) tornava a RLS por linha

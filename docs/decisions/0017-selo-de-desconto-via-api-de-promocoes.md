@@ -38,3 +38,9 @@ Mantém-se a infraestrutura já construída, **dormente**:
 
 - **`original_price` no item:** descontinuado/ignorado. Descartado (validado).
 - **Histórico de preço real** (subir o preço e baixar para o ML mostrar a queda): perde margem ou é operacionalmente estranho, e provavelmente também sujeito a reputação/regras. Descartado por ora.
+
+## Errata (2026-09-16)
+
+A infra "dormente" descrita aqui nunca ficou de fato dormente (`original_price` seguiu sendo enviado
+por variação) e o ML não permite desconto apenas visual em User Products. Diego decidiu descartar a
+feature de vez em vez de mantê-la estacionada — ver ADR-0162.

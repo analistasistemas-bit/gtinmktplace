@@ -36,7 +36,7 @@ import { canaisOperaveis, canaisEmBreve } from '@/lib/canais';
 import { LogoCanal } from '@/components/canal-badge';
 import { useCanaisHabilitados } from '@/hooks/useCanaisHabilitados';
 import { avisosCapabilities } from '@/lib/capabilities-canal';
-import { useToggleDescontoLote, useReprocessar, useSetAtacadoLote } from '@/hooks/useFamiliaMutations';
+import { useReprocessar, useSetAtacadoLote } from '@/hooks/useFamiliaMutations';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { cn } from '@/lib/utils';
@@ -134,14 +134,12 @@ export default function Revisao() {
   // Variação-alvo ao clicar no selo de pendência do pai: expande + rola até ela.
   const [focoCritica, setFocoCritica] = useState<{ familiaId: string; codigo: string } | null>(null);
   const qc = useQueryClient();
-  const toggleLote = useToggleDescontoLote(loteId ?? '');
   const setAtacadoLote = useSetAtacadoLote(loteId ?? '');
   const [atacadoAberto, setAtacadoAberto] = useState(false);
   const [faixasLote, setFaixasLote] = useState<FaixaAtacado[]>([{ min_unidades: 5, desconto_pct: 5 }]);
   const erroFaixasLote = validarFaixas(faixasLote);
   const reprocessarLote = useReprocessar(loteId ?? '');
-  const todasComDesconto = familias.length > 0 && familias.every((f) => f.exibirComDesconto);
-  // Ações em lote aplicam desconto/atacado às famílias do lote sem olhar preço por
+  // Ações em lote aplicam atacado às famílias do lote sem olhar preço por
   // cor (UPDATE ... WHERE lote_id, cego). Se alguma família tem cores com preços
   // diferentes, ela herdaria o mesmo bug do controle individual (ver familiaPrecosDivergentes)
   // — bloqueia a ativação em lote nesse caso.
@@ -405,34 +403,6 @@ export default function Revisao() {
                 <Button
                   variant="outline"
                   size="sm"
-                  className={!todasComDesconto && familiasDivergentes.length > 0 ? 'opacity-50' : undefined}
-                  title={
-                    !todasComDesconto && familiasDivergentes.length > 0
-                      ? `${familiasDivergentes.length} família(s) do lote têm cores com preços diferentes: clique para saber por quê`
-                      : undefined
-                  }
-                  onClick={() => {
-                    const familiasUserProducts = familias.filter((f) => f.formatoPublicacaoMl === 'user_products');
-                    if (!todasComDesconto && familiasUserProducts.length > 0) {
-                      toast.error('Não é possível ativar desconto no lote', {
-                        description: `${familiasUserProducts.length} família(s) são User Products (ex.: ${familiasUserProducts[0].titulo}). O Mercado Livre não permite desconto apenas visual nesse formato.`,
-                      });
-                      return;
-                    }
-                    if (!todasComDesconto && familiasDivergentes.length > 0) {
-                      toast.error('Não é possível ativar desconto no lote', {
-                        description: `${familiasDivergentes.length} família(s) têm cores com preços diferentes (ex.: ${familiasDivergentes[0].titulo}). O desconto usa um único preço-base por família, o que ficaria incorreto nas cores mais caras dessas famílias. Configure desconto/atacado POR FAIXA dentro de cada família divergente (a ação em lote é cega ao preço por cor).`,
-                      });
-                      return;
-                    }
-                    toggleLote.mutate(!todasComDesconto);
-                  }}
-                >
-                  {todasComDesconto ? 'Desativar desconto no lote' : 'Ativar desconto no lote'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
                   className={familiasDivergentes.length > 0 ? 'opacity-50' : undefined}
                   title={
                     familiasDivergentes.length > 0
@@ -442,7 +412,7 @@ export default function Revisao() {
                   onClick={() => {
                     if (familiasDivergentes.length > 0) {
                       toast.error('Não é possível ativar atacado no lote', {
-                        description: `${familiasDivergentes.length} família(s) têm cores com preços diferentes (ex.: ${familiasDivergentes[0].titulo}). O atacado usa um único preço-base por família, o que ficaria incorreto nas cores mais caras dessas famílias. Configure desconto/atacado POR FAIXA dentro de cada família divergente (a ação em lote é cega ao preço por cor).`,
+                        description: `${familiasDivergentes.length} família(s) têm cores com preços diferentes (ex.: ${familiasDivergentes[0].titulo}). O atacado usa um único preço-base por família, o que ficaria incorreto nas cores mais caras dessas famílias. Configure atacado POR FAIXA dentro de cada família divergente (a ação em lote é cega ao preço por cor).`,
                       });
                       return;
                     }

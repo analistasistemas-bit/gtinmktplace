@@ -207,6 +207,12 @@ lote `origem='manual'` órfão ou preso em `publicando` nos últimos 3 dias. A `
 idempotência também não fica envenenada (nada foi gravado), então repetir o Salvar no mesmo
 diálogo funciona. Único efeito cosmético: buracos na sequência de `proximo_numero_lote`.
 
+## Errata (2026-09-16)
+
+A semântica de `null` = "herdar da família" descrita acima para `exibir_com_desconto`/`desconto_pct`
+vale só historicamente: o desconto saiu do produto (ADR-0162). O código parou de gravar/ler essas duas
+colunas; a mesma semântica de herança por `null` segue valendo para `atacado`.
+
 Lacuna residual conhecida: `database.types.ts` não tem check de regeneração no CI, então o teste
 pega "coluna nova + types regenerados + builder esquecido", mas não "coluna nova e types nunca
 regenerados". Fechar isso exigiria consultar o schema vivo no CI.

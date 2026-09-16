@@ -624,12 +624,11 @@ describe('criarKitsVinculados', () => {
     // o DEFAULT (o bug do ADR-0129); ausentes = DEFAULT intacto. É por isso que o insert é
     // sempre uma linha por chamada — omitir a chave inteira só é seguro fora de um union.
     const SEM_DEFAULT_NA_LINHA = new Set(['id', 'criado_em', 'atualizado_em']);
-    // `familias.exibir_com_desconto` é o mesmo caso, só que só em `familias`: I-2 tirou a
-    // coluna do STRIP_FAMILIA_KIT pro kit não herdar o "% OFF" da base — é NOT NULL mas tem
-    // `default false` (20260606120614_add_configuracoes_e_desconto.sql:18), então omitir no
-    // INSERT familia faz o kit nascer sem desconto em vez de repetir o valor da base.
-    // `variacoes.exibir_com_desconto` é nullable — o builder de variação a re-adiciona como
-    // `null` explícito (não omite), então não entra nesta exceção.
+    // `familias.exibir_com_desconto` é o mesmo caso, só que só em `familias`: é NOT NULL mas
+    // tem `default false`, então omitir no INSERT familia deixa o DEFAULT decidir (a feature
+    // de desconto visual foi removida por completo, ADR-0162 — a coluna fica órfã no banco).
+    // `variacoes.exibir_com_desconto` é nullable e também não entra mais no INSERT (nem
+    // omitida do STRIP nem re-adicionada pelo builder), então não entra nesta exceção.
     // M-5: 4 das 9 colunas de análise de mercado removidas do STRIP_FAMILIA_KIT são NOT NULL
     // COM default (concorrencia_vendedores=0, concorrencia_origem='nenhuma',
     // concorrencia_classe='sem', preco_reancorado_lider=false — migrations

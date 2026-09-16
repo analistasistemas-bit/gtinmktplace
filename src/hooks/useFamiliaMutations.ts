@@ -6,12 +6,8 @@ import {
   updateFamiliaTitulo,
   updateFamiliaDescricao,
   updateVariacaoPrincipal,
-  updateFamiliaExibirDesconto,
-  updateFamiliaDescontoPct,
-  toggleDescontoLote,
   updateFamiliaAtacado,
   setAtacadoLote,
-  setDescontoGrupo,
   setAtacadoGrupo,
   salvarAtributoFamilia,
   QK,
@@ -107,37 +103,11 @@ export function useUpdateVariacaoPrincipal(loteId: string) {
   });
 }
 
-export function useUpdateExibirDesconto(loteId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ familiaId, exibir }: { familiaId: string; exibir: boolean }) =>
-      updateFamiliaExibirDesconto(familiaId, exibir),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
-  });
-}
-
-export function useUpdateDescontoPctFamilia(loteId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ familiaId, pct }: { familiaId: string; pct: number | null }) =>
-      updateFamiliaDescontoPct(familiaId, pct),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
-  });
-}
-
 export function useDefinirCategoriaLivre(loteId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ familiaId, categoriaMlId, categoriaNome }: { familiaId: string; categoriaMlId: string; categoriaNome: string }) =>
       definirCategoriaLivre(familiaId, categoriaMlId, categoriaNome),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
-  });
-}
-
-export function useToggleDescontoLote(loteId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (exibir: boolean) => toggleDescontoLote(loteId, exibir),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }
@@ -155,15 +125,6 @@ export function useSetAtacadoLote(loteId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (faixas: FaixaAtacado[]) => setAtacadoLote(loteId, faixas),
-    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
-  });
-}
-
-export function useSetDescontoGrupo(loteId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ variacaoIds, exibir, pct }: { variacaoIds: string[]; exibir: boolean; pct: number | null }) =>
-      setDescontoGrupo(variacaoIds, exibir, pct),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }

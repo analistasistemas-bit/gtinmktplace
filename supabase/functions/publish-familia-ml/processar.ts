@@ -205,12 +205,6 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       ? await lerFormatoPublicacao(formatoRepo, conexao!.id, categoria!)
       : null;
     if (formatoConhecido === 'user_products') {
-      if (anuncio.desconto) {
-        const msg = 'User Products não aceita desconto apenas visual; desmarque a opção de desconto para publicar.';
-        await admin.from('familias').update({ status: 'erro', erro_mensagem: msg }).eq('id', job.familia_id);
-        await finalizarLote(job.lote_id);
-        return { tipo: 'erro', mensagem: msg };
-      }
       return await rotaSagaUP();
     }
 
@@ -235,11 +229,6 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       if (e.codigo === 'FORMATO_INCOMPATIVEL' && podeUP) {
         await confirmarFormatoPublicacao(formatoRepo, conexao!.id, categoria!, 'user_products');
         return await rotaSagaUP();
-      }
-      if (e.codigo === 'DESCONTO_INCOMPATIVEL') {
-        if (conexao && categoria) {
-          await confirmarFormatoPublicacao(formatoRepo, conexao.id, categoria, 'user_products');
-        }
       }
       // item.pictures.unavailable: a foto recém-subida ainda propaga no ML (~2,5 min, medido no
       // lote #31). Enquanto durar o retry, NÃO re-subimos nem limpamos o picture_id — reusamos o

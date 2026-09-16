@@ -1,11 +1,10 @@
 // E6 (ADR-0061 / Task 5): builder compartilhado do AnuncioCanonico. Extração pura do bloco
-// que vivia inline em publish-familia-ml (fotos idempotentes, atributos/dimensões/desconto,
+// que vivia inline em publish-familia-ml (fotos idempotentes, atributos/dimensões,
 // variações) — nenhuma linha de lógica muda, só o endereço. O worker ML e o worker genérico
 // `publicar-anuncio` (Task 6) compartilham esta função.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { AnuncioCanonico, AtributoItem, ChannelConnector, ContextoCanal } from '../canais/contrato.ts';
 import { ordenarVariacoesPrincipal } from '../ml/publicar.ts';
-import { pctEfetivo } from '../preco/desconto.ts';
 
 const BUCKET = 'imagens';
 const TTL_SIGNED = 60 * 60 * 2; // 2h — o canal baixa a foto de forma assíncrona (gap §569)
@@ -25,8 +24,6 @@ export interface FamiliaParaMontar {
   capa3_storage_path: string | null;
   capa3_ml_picture_id: string | null;
   variacao_principal_codigo: string | null;
-  exibir_com_desconto: boolean | null;
-  desconto_pct: number | string | null;
 }
 
 export interface VariacaoParaMontar {
@@ -46,9 +43,8 @@ export interface VariacaoParaMontar {
 
 /**
  * Monta o AnuncioCanonico (CREATE) a partir da família/variações: sobe fotos idempotentes
- * (reaproveita capa_ml_picture_id/ml_picture_id já persistidos), resolve o desconto efetivo
- * (config do usuário x override da família), calcula dimensões da variação representativa e
- * monta o array de variações canônicas ordenado pela principal.
+ * (reaproveita capa_ml_picture_id/ml_picture_id já persistidos), calcula dimensões da
+ * variação representativa e monta o array de variações canônicas ordenado pela principal.
  * `listingTypeId` era fechado sobre `job.listing_type_id` no publish-familia-ml original —
  * vira parâmetro explícito aqui (única mudança de forma exigida pela extração).
  */
@@ -60,15 +56,6 @@ export async function montarAnuncioCanonico(
   variacoes: VariacaoParaMontar[],
   listingTypeId?: string,
 ): Promise<AnuncioCanonico> {
-  let desconto: { pct: number } | null = null;
-  if (familia.exibir_com_desconto) {
-    const { data: cfg } = await admin.from('configuracoes')
-      .select('desconto_pct').eq('org_id', familia.org_id).maybeSingle();
-    const global = cfg?.desconto_pct != null ? Number(cfg.desconto_pct) : 15;
-    const fam = familia.desconto_pct != null ? Number(familia.desconto_pct) : null;
-    desconto = { pct: pctEfetivo(fam, global) };
-  }
-
   const signed = async (path: string): Promise<string> => {
     const { data, error } = await admin.storage.from(BUCKET).createSignedUrl(path, TTL_SIGNED);
     if (error || !data) throw new Error(`Signed URL falhou para ${path}`);
@@ -123,7 +110,6 @@ export async function montarAnuncioCanonico(
     capa2FotoId: capa2PictureId,
     capa3FotoId: capa3PictureId,
     listingTypeId,
-    desconto,
     dimensoes,
     variacoes: ordenadas.map((v) => ({
       sku: v.codigo, cor: v.cor, estoque: v.estoque,

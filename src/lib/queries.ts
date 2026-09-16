@@ -385,8 +385,6 @@ export function variacaoFromRow(r: VariacaoRow, skusAtivosUP?: Set<string>): Var
     alturaCm: r.altura_cm != null ? Number(r.altura_cm) : null,
     larguraCm: r.largura_cm != null ? Number(r.largura_cm) : null,
     comprimentoCm: r.comprimento_cm != null ? Number(r.comprimento_cm) : null,
-    exibirComDesconto: r.exibir_com_desconto,
-    descontoPct: r.desconto_pct != null ? Number(r.desconto_pct) : null,
     atacado: Array.isArray(r.atacado) ? (r.atacado as unknown as FaixaAtacado[]) : null,
   };
 }
@@ -633,8 +631,6 @@ export function familiaFromRow(
     })),
     mudancaEstrutural: parseMudancaEstrutural(r.mudanca_estrutural),
     erroMensagem: r.erro_mensagem,
-    exibirComDesconto: r.exibir_com_desconto,
-    descontoPct: r.desconto_pct != null ? Number(r.desconto_pct) : null,
     atacado: Array.isArray(r.atacado) ? (r.atacado as unknown as FaixaAtacado[]) : null,
     atacadoStatus: r.atacado_status ?? null,
     atacadoErro: r.atacado_erro ?? null,
@@ -647,23 +643,6 @@ export function formatoPublicacaoMlFromRow(
   r: { formato_publicacao_ml?: 'user_products' | null },
 ): Familia['formatoPublicacaoMl'] {
   return r.formato_publicacao_ml ?? null;
-}
-
-export async function fetchDescontoPct(): Promise<number> {
-  const orgId = effectiveOrgId();
-  if (!orgId) return 15;
-  const { data } = await supabase.from('configuracoes')
-    .select('desconto_pct').eq('org_id', orgId).maybeSingle();
-  return data?.desconto_pct != null ? Number(data.desconto_pct) : 15;
-}
-
-export async function upsertDescontoPct(pct: number): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  const orgId = effectiveOrgId();
-  if (!user || !orgId) throw new Error('sem sessão');
-  const { error } = await supabase.from('configuracoes')
-    .upsert({ org_id: orgId, user_id: user.id, desconto_pct: pct, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
-  if (error) throw error;
 }
 
 /** Normaliza o par (UF da empresa, alíquota interna) do ADR-0112. Os dois preenchidos ou os dois
@@ -834,12 +813,6 @@ export async function upsertModeloImagem(slug: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function updateFamiliaExibirDesconto(familiaId: string, exibir: boolean): Promise<void> {
-  const { error } = await supabase.from('familias')
-    .update({ exibir_com_desconto: exibir }).eq('id', familiaId);
-  if (error) throw error;
-}
-
 // ── Alertas no Telegram (configuração na tela Configurações) ──────────────────
 
 export interface TelegramConfig {
@@ -905,18 +878,6 @@ export function verificarModeradosAgora(): Promise<{ ok: boolean; novos?: number
   return invocarMonitorarModerados({});
 }
 
-export async function updateFamiliaDescontoPct(familiaId: string, pct: number | null): Promise<void> {
-  const { error } = await supabase.from('familias')
-    .update({ desconto_pct: pct }).eq('id', familiaId);
-  if (error) throw error;
-}
-
-export async function toggleDescontoLote(loteId: string, exibir: boolean): Promise<void> {
-  const { error } = await supabase.from('familias')
-    .update({ exibir_com_desconto: exibir }).eq('lote_id', loteId);
-  if (error) throw error;
-}
-
 export async function updateFamiliaAtacado(familiaId: string, faixas: FaixaAtacado[]): Promise<void> {
   const atacado = faixas.length > 0 ? (faixas as unknown as Database['public']['Tables']['familias']['Update']['atacado']) : null;
   const { error } = await supabase.from('familias')
@@ -934,17 +895,8 @@ export async function setAtacadoLote(loteId: string, faixas: FaixaAtacado[]): Pr
 }
 
 // ADR-0078 F2: config POR FAIXA de preço — grava em TODAS as variações do grupo (a config
-// viaja na variação; repreçar nunca a órfã). Desativar desconto = false explícito; desativar
-// atacado = [] explícito (null significaria "herda a família" e pode virar LOUD no publish).
-export async function setDescontoGrupo(
-  variacaoIds: string[], exibir: boolean, pct: number | null,
-): Promise<void> {
-  const { error } = await supabase.from('variacoes')
-    .update({ exibir_com_desconto: exibir, desconto_pct: pct })
-    .in('id', variacaoIds);
-  if (error) throw error;
-}
-
+// viaja na variação; repreçar nunca a órfã). Desativar atacado = [] explícito (null
+// significaria "herda a família" e pode virar LOUD no publish).
 export async function setAtacadoGrupo(variacaoIds: string[], faixas: FaixaAtacado[]): Promise<void> {
   const { error } = await supabase.from('variacoes')
     .update({ atacado: faixas as unknown as Database['public']['Tables']['variacoes']['Update']['atacado'] })

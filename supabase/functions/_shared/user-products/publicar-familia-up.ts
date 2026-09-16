@@ -86,7 +86,7 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
       familiaInput,
       [{ codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId }],
       anuncio.capaFotoId, anuncio.capa2FotoId, anuncio.capa3FotoId,
-      anuncio.listingTypeId, anuncio.desconto, anuncio.dimensoes, args.aceitaEmptyGtin, 'plano',
+      anuncio.listingTypeId, anuncio.dimensoes, args.aceitaEmptyGtin, 'plano',
     );
   };
 

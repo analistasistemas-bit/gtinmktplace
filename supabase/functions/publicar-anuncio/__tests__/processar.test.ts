@@ -78,7 +78,7 @@ const FAMILIA_BASE = {
   titulo_ml: 'Produto Teste', descricao_ml: 'Descrição', categoria_ml_id: 'MLB1',
   atributos_ml: [], capa_storage_path: null, capa_ml_picture_id: 'CAPA-1',
   capa2_storage_path: null, capa2_ml_picture_id: null, capa3_storage_path: null, capa3_ml_picture_id: null,
-  variacao_principal_codigo: null, exibir_com_desconto: false, desconto_pct: null,
+  variacao_principal_codigo: null,
 };
 
 const VARIACOES_BASE = [

@@ -235,3 +235,10 @@ um retry esgotado deixar o banco refletindo exatamente os PUTs que subiram. Em `
   de preço convivendo, nenhum consumidor no UP, e quebra do conector fake.
 - **Sondar o formato com `POST /items/validate`** antes de barrar CREATE divergente em categoria
   desconhecida. Adiada: a doc não traz exemplo de validação com payload UP.
+
+## Errata (2026-09-16)
+
+O desconto ("% OFF" visual) saiu do produto (ADR-0162) — a dívida #8 acima ("desconto ligado depois do
+CREATE é ignorado em silêncio no UP") deixa de existir, porque não existe mais desconto pra ignorar. A
+seção 6 e as invariantes I5/I7 sobre `variacoes.atacado`/preços divergentes seguem valendo só para
+atacado; a menção a `exibir_com_desconto` nelas está desatualizada.

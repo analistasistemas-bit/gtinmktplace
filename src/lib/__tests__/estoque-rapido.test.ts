@@ -8,7 +8,7 @@ function mkVar(over: Partial<Variacao> = {}): Variacao {
     preco: 40, precoPublicacao: 40, precoPublicadoMl: null, estoque: 5, gtin: null,
     fotoPath: 'foto/001.jpg', excluidaDaPublicacao: false, mlVariationId: 'V1',
     estoqueAnterior: null, custo: null, pesoGramas: null, alturaCm: null, larguraCm: null,
-    comprimentoCm: null, exibirComDesconto: null, descontoPct: null, atacado: null,
+    comprimentoCm: null, atacado: null,
     ...over,
   } as Variacao;
 }

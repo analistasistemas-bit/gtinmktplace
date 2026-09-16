@@ -55,7 +55,7 @@ function variacao(over: Partial<Variacao> = {}): Variacao {
     preco: 10, precoPublicacao: 10, precoPublicadoMl: null, estoque: 5, gtin: null,
     excluidaDaPublicacao: false, mlVariationId: null, estoqueAnterior: null, custo: null,
     pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null,
-    exibirComDesconto: null, descontoPct: null, atacado: null,
+    atacado: null,
     ...over,
   };
 }
@@ -73,7 +73,7 @@ function familia(variacoes: Variacao[]): Familia {
     status: 'pendente', tokensInput: null, tokensOutput: null, custoCentavos: null,
     tituloEditadoPeloOperador: false, descricaoEditadaPeloOperador: false, variacoesSemCor: 0,
     mlPermalink: null, mlItemId: null, anuncios: [], mudancaEstrutural: null, erroMensagem: null,
-    exibirComDesconto: false, descontoPct: null, atacado: null, atacadoStatus: null, atacadoErro: null,
+    atacado: null, atacadoStatus: null, atacadoErro: null,
   };
 }
 

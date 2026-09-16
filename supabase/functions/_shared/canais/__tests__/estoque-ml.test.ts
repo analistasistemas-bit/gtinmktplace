@@ -11,7 +11,7 @@ describe('push de estoque: montagem das variações', () => {
   ];
 
   it('reenvia TODAS as variações — o ML deleta as omitidas', () => {
-    const r = montarVariacoesUpdate(atuais, [{ codigo: 'A1', estoque: 2 }], undefined, null, null, undefined, true);
+    const r = montarVariacoesUpdate(atuais, [{ codigo: 'A1', estoque: 2 }], undefined, null, undefined, true);
     expect(r).toHaveLength(3);
     expect(r.map((v) => v.id)).toEqual([1, 2, 3]);
   });
@@ -20,18 +20,17 @@ describe('push de estoque: montagem das variações', () => {
     const r = montarVariacoesUpdate(
       atuais,
       [{ codigo: 'A1', estoque: 2 }, { codigo: 'A3', estoque: 0 }],
-      undefined, null, null, undefined, true,
+      undefined, null, undefined, true,
     );
     expect(r.find((v) => v.id === 1)!.available_quantity).toBe(2);
     expect(r.find((v) => v.id === 2)!.available_quantity).toBe(7);
     expect(r.find((v) => v.id === 3)!.available_quantity).toBe(0);
   });
 
-  it('nunca envia price nem original_price em push de estoque', () => {
-    const r = montarVariacoesUpdate(atuais, [{ codigo: 'A1', estoque: 2 }], undefined, null, null, undefined, true);
+  it('nunca envia price em push de estoque', () => {
+    const r = montarVariacoesUpdate(atuais, [{ codigo: 'A1', estoque: 2 }], undefined, null, undefined, true);
     for (const v of r) {
       expect(v.price).toBeUndefined();
-      expect(v.original_price).toBeUndefined();
     }
   });
 });

@@ -1,23 +1,17 @@
-// ADR-0078 F2: config de desconto/atacado POR FAIXA de preço. A config viaja na variação
-// (colunas variacoes.exibir_com_desconto/desconto_pct/atacado); NULL = herda o família-level.
+// ADR-0078 F2: config de atacado POR FAIXA de preço. A config viaja na variação
+// (coluna variacoes.atacado); NULL = herda o família-level.
 // Divergência de preço + herança de config ATIVA sem confirmação explícita = LOUD (ADR-0055:
 // nada financeiro defaulta em silêncio).
 import type { FaixaAtacado } from '../canais/contrato.ts';
 
 export interface ConfigFamiliaNivel {
-  exibir_com_desconto: boolean | null;
-  desconto_pct: number | string | null;
   atacado: unknown;
 }
 export interface ConfigVariacaoNivel {
   codigo: string;
-  exibir_com_desconto: boolean | null;
-  desconto_pct: number | string | null;
   atacado: unknown;
 }
 export interface ConfigGrupo {
-  exibirComDesconto: boolean;
-  descontoPct: number | null;
   faixasAtacado: FaixaAtacado[];
 }
 
@@ -38,37 +32,30 @@ export function resolverConfigGrupo(
   variacoesDoGrupo: ConfigVariacaoNivel[],
   familiaDivergente: boolean,
 ): ConfigGrupo {
-  const famExibir = familia.exibir_com_desconto ?? false;
-  const famPct = familia.desconto_pct != null ? Number(familia.desconto_pct) : null;
   const famFaixas = comoFaixas(familia.atacado) ?? [];
 
   const efetivos = variacoesDoGrupo.map((v) => {
-    const explicitoDesconto = v.exibir_com_desconto != null;
     const explicitoAtacado = comoFaixas(v.atacado) != null;
     return {
       codigo: v.codigo,
-      explicitoDesconto,
       explicitoAtacado,
-      exibir: v.exibir_com_desconto ?? famExibir,
-      pct: explicitoDesconto ? (v.desconto_pct != null ? Number(v.desconto_pct) : null) : famPct,
       faixas: comoFaixas(v.atacado) ?? famFaixas,
     };
   });
 
-  const chaves = new Set(efetivos.map((e) => `${e.exibir}:${e.pct}:${chaveFaixas(e.faixas)}`));
+  const chaves = new Set(efetivos.map((e) => chaveFaixas(e.faixas)));
   if (chaves.size > 1) {
     loud(
-      `Config de desconto/atacado divergente dentro da mesma faixa de preço ` +
+      `Config de atacado divergente dentro da mesma faixa de preço ` +
       `(${efetivos.map((e) => e.codigo).join(', ')}) — reconfigure a faixa na Revisão (400)`,
     );
   }
 
   if (familiaDivergente) {
-    const herdaDescontoAtivo = famExibir && efetivos.some((e) => !e.explicitoDesconto);
     const herdaAtacadoAtivo = famFaixas.length > 0 && efetivos.some((e) => !e.explicitoAtacado);
-    if (herdaDescontoAtivo || herdaAtacadoAtivo) {
+    if (herdaAtacadoAtivo) {
       loud(
-        'Família com preços divergentes: confirme desconto/atacado POR FAIXA na Revisão antes de ' +
+        'Família com preços divergentes: confirme atacado POR FAIXA na Revisão antes de ' +
         'publicar — a config família-level não se aplica a faixas em silêncio (ADR-0055) (400)',
       );
     }
@@ -76,8 +63,6 @@ export function resolverConfigGrupo(
 
   const cfg = efetivos[0];
   return {
-    exibirComDesconto: cfg?.exibir ?? false,
-    descontoPct: cfg?.pct ?? null,
     faixasAtacado: cfg?.faixas ?? [],
   };
 }

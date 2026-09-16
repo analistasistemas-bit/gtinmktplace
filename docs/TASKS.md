@@ -2,6 +2,35 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Desconto visual (selo "% OFF") descartado — 2026-09-16
+
+Origem: Diego pediu para retirar o toggle "Exibir com desconto" da Revisão — o Mercado Livre não
+permite desconto apenas visual em User Products. Decisão registrada em
+[ADR-0162](decisions/0162-desconto-visual-descartado.md).
+
+- [x] **Mapeamento de escopo** — a feature tocava frontend (toggle por família/faixa/lote + card em
+  Configurações), 8 edge functions, a camada de abstração multicanal (`capabilities.desconto`,
+  `DESCONTO_INCOMPATIVEL`) e 5 colunas em `configuracoes`/`familias`/`variacoes`. 68 famílias já
+  publicadas (Legacy) tinham o campo ativo.
+- [x] **Decisão de schema:** colunas ficam órfãs no banco, sem migration de DROP (mesmo padrão de
+  "infra dormente" que o próprio ADR-0017 já tinha adotado).
+- [x] **Decisão sobre os 68 anúncios Legacy publicados:** aceitos como estão, sem ação de limpeza —
+  não foi possível confirmar se o selo de fato aparece nesse caminho (API pública do ML bloqueada
+  por política nesta consulta); o próprio ADR-0017 já achava que o ML descarta o campo.
+- [x] **Remoção de código** — deletados `src/lib/desconto.ts` e
+  `supabase/functions/_shared/preco/desconto.ts`; removido envio de `original_price` no CREATE/UPDATE
+  (`_shared/ml/publicar.ts`/`atualizar.ts`); removida a capability `desconto`/erro
+  `DESCONTO_INCOMPATIVEL` da abstração multicanal; UI (toggle por família/faixa/lote + card "Desconto
+  de marketing" em Configurações) removida. `atacado`/PxQ (ADR-0041), que compartilhava código em
+  `resolverConfigGrupo`/`configGrupoPendente`, ficou 100% intacto — teste novo cobrindo "atacado ativo
+  sem override dispara LOUD sozinho" adicionado como blindagem.
+- [x] **Erratas** em ADR-0017, ADR-0041, ADR-0078, ADR-0129, ADR-0160 + `docs/reference/modelo-de-dados.md`
+  + `docs/project-status.md`.
+- [x] **Validação:** suíte de atacado isolada sem regressão (69 testes, baseline 71 menos os 2 testes
+  de desconto removidos); suíte completa sem falha nova além do ambiente pré-existente
+  (`localStorage` undefined em `pwa-install`/`useImageUrl`/etc., não relacionado); `pnpm lint` e
+  `pnpm preflight:static` verdes.
+
 ## Landing page: versão comercial oficializada e 404 em produção — 2026-09-15
 
 Origem: Diego abriu <https://publiai.daludi.com.br> e recebeu **404 NOT_FOUND** da Vercel, poucas

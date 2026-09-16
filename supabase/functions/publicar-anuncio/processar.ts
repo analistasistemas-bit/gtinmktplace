@@ -108,7 +108,6 @@ function montarAtualizacao(
     categoriaId: familia.categoria_ml_id,
     marca: null,
     dimensoes: null,
-    desconto: null,
     precoFamilia: precoRaw != null ? Number(precoRaw) : null,
   };
 }
