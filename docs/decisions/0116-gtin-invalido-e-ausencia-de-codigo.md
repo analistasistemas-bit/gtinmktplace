@@ -1,5 +1,11 @@
 # ADR-0116 — GTIN com dígito verificador errado é ausência de código, não dado a publicar
 
+> **Colisão de numeração.** Existe outro ADR com o número 0116, decidido no mesmo dia
+> (12/08/2026): [Visibilidade do que o pipeline de título descarta](0116-visibilidade-dos-descartes-do-titulo.md).
+> Distinguir pelo slug — nenhum dos dois é renumerado, porque o número do outro está gravado numa
+> migration já aplicada e em código. Este ADR é citado em `src/lib/queries.ts` e em
+> `docs/reference/edge-functions.md`.
+
 **Status:** Aceito
 **Data:** 2026-08-12
 **Decisores:** Diego

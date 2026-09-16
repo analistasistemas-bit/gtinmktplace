@@ -162,6 +162,68 @@ rede — cortar antes deixa o precache pela metade e o app não abre.
 
 ---
 
+## Deploy da landing page (Vercel)
+
+A landing de marketing (`docs/brand/landing/`) **não faz parte do build do app**. Ela é um site
+estático servido pela Vercel, projeto `publiai` na conta `analistaslacks-projects`, em
+<https://publiai.daludi.com.br>. O app é outro endereço e outro provedor:
+<https://app.publiai.daludi.com.br> (Render).
+
+**Desde 15/09/2026 o deploy é automático pela integração GitHub**, com **Root Directory
+`docs/brand/landing`** e branch `main`. Consequência prática: **todo push na `main` redeploya a
+landing**, inclusive um commit que só toca `docs/`. Não há passo manual — e também não dá para
+publicar a página sem publicar o merge.
+
+Para publicar fora da `main` (rascunho, validação), o CLI continua valendo:
+
+```bash
+cd docs/brand/landing && vercel deploy --prod
+```
+
+### Armadilha: `.vercelignore` no Root Directory é avaliado contra a RAIZ do repo
+
+No deploy via integração Git, a Vercel aplica o `.vercelignore` do Root Directory **contra a raiz do
+repositório clonado**, não contra a pasta. Um arquivo que começa com `*` e libera exceções
+(`!index.html`, `!assets`) **apaga o repositório inteiro**: as exceções só resgatariam
+`/index.html` e `/assets` na raiz, que não existem, e o gitignore não re-inclui filho de diretório
+já excluído.
+
+Foi o que tirou a landing do ar em 15/09/2026: 2204 arquivos removidos, build sem output, `404
+NOT_FOUND` — **com o deploy marcado `Ready`**. O mesmo arquivo vinha funcionando havia 10 dias,
+porque até então o deploy era feito pelo CLI de dentro da pasta, onde o escopo é outro.
+
+Use só padrões **sem âncora**, que casam em qualquer profundidade e valem nos dois modos:
+
+```
+PLANO.md
+.DS_Store
+.omc
+```
+
+### Como depurar um deploy "Ready" que não serve a página
+
+`Ready` **não prova** página no ar. Os logs de build dizem o que aconteceu:
+
+```bash
+vercel inspect --logs <url-do-deploy>
+```
+
+Dois sinais fecham o diagnóstico:
+
+- `Removed N ignored files defined in .vercelignore` com **caminhos da raiz** (`/.env.test`,
+  `/.git/config`) — escopo errado do ignore;
+- `WARNING! Build output contains no "functions", "static", or "services" directory` — não sobrou
+  nada para servir.
+
+Depois de publicar, confira o que foi ao ar e o que **não** deveria ter ido:
+
+```bash
+curl -sI https://publiai.daludi.com.br/          # 200, content-type text/html
+curl -sI https://publiai.daludi.com.br/PLANO.md  # 404 — o plano interno não pode vazar
+```
+
+---
+
 ## Chegar na `main` sem bypassar a proteção
 
 A `main` é protegida e exige os checks **`frontend`** e **`backend-lint`** (`enforce_admins`

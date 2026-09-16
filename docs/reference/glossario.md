@@ -43,6 +43,8 @@
 | **Reprocessar** | Re-enfileirar uma família travada em `erro` resetando o status para `pendente` (ADR-0030, função `reprocessar-familia`). |
 | **Pausar / Reativar** | Alterna a visibilidade de um anúncio já publicado no marketplace (`ativo` ⇄ `pausado`) sem afetar o vínculo local de UPDATE nem os dados do produto. Ação restrita a admin, feita via `ChannelConnector.atualizarStatus` (ADR-0060). Distinto de "Remover" (que só apaga o vínculo local; o anúncio no ML continua ativo). |
 | **Publicável / viabilidade** | Conjunto de checagens (foto, cor, preço, categoria) que liberam ou bloqueiam a publicação. Fonte única em `src/lib/publicavel.ts`. |
+| **Anúncio órfão** | Anúncio `ativo` ou `pausado` na conta do marketplace que **nenhuma linha do banco representa** — o app não sabe que ele existe. Detectado sob demanda por `varrer-anuncios-orfaos` (só leitura). Vem classificado em três: `perdido_do_app` (tem o `seller_custom_field` do app mas perdeu o vínculo — o fantasma de verdade), `catalogo_sem_vinculo` (anúncio de catálogo cujo vínculo não está registrado) e `externo` (criado fora do PubliAI). **Anúncio de catálogo saudável não é órfão** (ADR-0021/ADR-0088 F2). Nasceu do incidente de 2026-09-10, em que um anúncio criado pelo app seguiu ativo e vendendo depois de perder a linha no banco. |
+| **Publicação incompleta** | Família cujo anúncio existe no canal mas cuja publicação não terminou — parte dos itens ficou sem vínculo gravado. Passava por "publicada"; desde 2026-09-10 aparece em **vermelho** na tela Publicados, com filtro próprio. Distinto de "órfão": aqui o app conhece a família, o que falta é o vínculo completo. |
 
 ## Estoque
 

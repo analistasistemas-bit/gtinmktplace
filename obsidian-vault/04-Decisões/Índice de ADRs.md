@@ -127,6 +127,7 @@ consequências) fica sempre no arquivo `docs/decisions/NNNN-titulo.md` linkado. 
 | 0113 | [Exclusão de produto pelo Estoque: só o que não está publicado](../../docs/decisions/0113-exclusao-de-produto-no-estoque.md) |
 | 0114 | [Emissão de NF-e modelo 55 (superado parcialmente pelo 0135)](../../docs/decisions/0114-emissao-de-nf-e-modelo-55.md) |
 | 0115 | [O eixo de variação nem sempre é cor](../../docs/decisions/0115-eixo-de-variacao-nao-e-sempre-cor.md) |
+| 0116 | ⚠️ **Colisão de numeração (12/08/2026): existem dois ADR-0116.** Distinguir pelo slug. **Não renumerar** — o número está gravado na migration `20260812182613_adr116_titulo_descartes.sql` (já aplicada) e em ~8 pontos de código e teste; renumerar transformaria citação válida em ponteiro errado |
 | 0116 | [Visibilidade do que o pipeline de título descarta](../../docs/decisions/0116-visibilidade-dos-descartes-do-titulo.md) |
 | 0116 | [GTIN com dígito verificador errado é ausência de código (e o campo virou editável na Revisão)](../../docs/decisions/0116-gtin-invalido-e-ausencia-de-codigo.md) |
 | 0117 | [Menu Financeiro controla liberação e saque; compra não é venda](../../docs/decisions/0117-financeiro-controle-de-liberacao-e-saque.md) |

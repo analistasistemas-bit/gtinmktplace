@@ -10,6 +10,30 @@ Bugs corrigidos e fechados. Fonte: histórico de commits e `docs/project-history
 
 ## Correções recentes (commits mais recentes na `main`)
 
+- **Landing page fora do ar (404) — `.vercelignore` com `*` apagou o repositório inteiro no deploy
+  via Git (2026-09-15)** — `https://publiai.daludi.com.br` passou a responder **404 NOT_FOUND** da
+  Vercel, com o deploy marcado **Ready**. O commit de conteúdo do mesmo dia (`72d5781a`,
+  "oficializa nova versão comercial") era inocente. **Raiz:** o projeto Vercel `publiai` deixou de
+  ser publicado pelo CLI e passou a usar a **integração GitHub** (link criado em 15/09 ~13:17,
+  Root Directory `docs/brand/landing`). No modo Git a Vercel avalia o `.vercelignore` do Root
+  Directory **contra a raiz do repositório clonado**, não contra a pasta — e o arquivo começava com
+  `*`. As exceções `!index.html` / `!assets` só resgatariam `/index.html` e `/assets` na raiz, que
+  não existem, e o gitignore **não re-inclui filho de diretório já excluído**. Resultado: 2204
+  arquivos removidos (todo o repo, incluindo `docs/brand/landing/index.html`), build sem output,
+  404. **Como se prova:** `vercel inspect --logs <url>` — as linhas `Removed 2204 ignored files` com
+  caminhos da **raiz** (`/.env.test`, `/.git/config`) denunciam o escopo errado, e o
+  `WARNING! Build output contains no "functions", "static", or "services" directory` fecha o caso.
+  **Deploy "Ready" não prova página no ar.** **Fix:** `.vercelignore` só com padrões **sem âncora**
+  (`PLANO.md`, `.DS_Store`, `.omc`), que casam em qualquer profundidade e valem nos dois modos de
+  deploy; nunca `*` com exceções. Provado no preview antes do merge: `Removed 1 ignored files —
+  /docs/brand/landing/PLANO.md`, sem o warning. Verificado em produção após o merge: `/` → 200
+  (70 023 bytes, o `index.html` da versão comercial), `/assets/dashboard.webp` → 200, `/PLANO.md` →
+  404 (a intenção original de não publicar o plano segue valendo). **Por que nenhum teste pegou:**
+  não há teste — o gatilho não está no repositório, e sim numa mudança de configuração feita no
+  painel da Vercel. O mesmo arquivo funcionava havia 10 dias. **Efeito colateral da integração:**
+  todo push na `main` agora redeploya a landing, inclusive commits que só tocam `docs/`. Ver
+  [[Landing Page]].
+
 - **Link da venda caía na lista de vendas do ML — rota `/vendas/pacote/` morreu (2026-09-15)** —
   Diego clicou no atalho ↗ de uma conversa em Faturamento → Mensagens e foi parar na vitrine do
   produto; ao corrigir para o detalhe da venda, o link passou a cair em `vendas/omni/lista`, a

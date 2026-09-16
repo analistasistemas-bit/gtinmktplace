@@ -1,6 +1,6 @@
 ---
 tags: [modulo, marketing, brand, standalone]
-atualizado: 2026-09-04
+atualizado: 2026-09-15
 ---
 
 # Landing Page
@@ -8,8 +8,9 @@ atualizado: 2026-09-04
 Artefato de marketing standalone em `docs/brand/landing/`, não integrado ao app principal (`src/`).
 Ver [[Marketplace]] para o módulo de produto real (distinto deste artefato de marketing).
 
-**Status:** reconstruída em 2026-09-04 ([[Índice de ADRs|ADR-0152]]). Não hospedada — o domínio
-ainda é decisão do Diego.
+**Status:** reconstruída em 2026-09-04 ([[Índice de ADRs|ADR-0152]]), versão comercial oficializada
+em 2026-09-15. **No ar em <https://publiai.daludi.com.br>** desde 2026-09-15 — o domínio deixou de
+ser pendência.
 
 ## O que é
 
@@ -157,20 +158,37 @@ pelas da AVIL, que são maiores e mais altas. Acessibilidade, boas práticas e S
   duas colunas nunca vale ali. É intencional manter assim — as capturas são de 1600px de largura e
   ficam ilegíveis em meia coluna —, mas "consertar" a cascata mudaria o layout das duas abas.
 
-## Onde está hospedada (05/09/2026)
+## Onde está hospedada (15/09/2026)
 
 Vercel, projeto **`publiai`** na conta `analistaslacks-projects` — produção em
-<https://publiai-alpha.vercel.app>. Site estático puro: sem build, sem framework, sem variável de
-ambiente.
+<https://publiai.daludi.com.br> (aliases: `publiai-alpha.vercel.app`,
+`publiai-analistaslacks-projects.vercel.app`). Site estático puro: sem build, sem framework, sem
+variável de ambiente.
 
-**O repositório NÃO está conectado à Vercel, e isso é deliberado.** Conectar o `gtinmktplace` faria
-a Vercel detectar o `package.json` da raiz e buildar o app inteiro — a landing não faz parte do
-build do frontend. Apontar o Root Directory para esta pasta resolveria isso e criaria um problema
-pior: o `PLANO.md`, versionado ao lado do `index.html`, iria ao ar em `/PLANO.md` com as decisões
-internas da entrega. Daí o `.vercelignore` desta pasta, que libera só `index.html` e `assets/` —
-conferido por deploy de preview em 05/09/2026: `/PLANO.md` → 404, `/` e os assets aninhados → 200.
+O **app** PubliAI é outro endereço, em outro provedor: <https://app.publiai.daludi.com.br>
+(Render). Landing e app não disputam host — a landing ficou com a raiz `publiai.daludi.com.br`, o
+app com o subdomínio `app.`.
 
-Para atualizar a página depois de mexer no `index.html` ou nos assets:
+**O repositório ESTÁ conectado à Vercel desde 15/09/2026** — integração GitHub, branch `main`,
+**Root Directory `docs/brand/landing`**. Isso reverteu a decisão anterior de publicar só pelo CLI.
+O Root Directory é o que impede a Vercel de buildar o app inteiro a partir do `package.json` da
+raiz; o `PLANO.md` continua fora do ar por causa do `.vercelignore` desta pasta (verificado em
+produção em 15/09: `/PLANO.md` → 404).
+
+**Consequência a ter em mente:** todo push na `main` agora redeploya a landing, inclusive commits
+que só tocam `docs/`. Não é mais preciso rodar nada à mão — e também não dá mais para segurar a
+publicação da página sem segurar o merge.
+
+> [!danger] Nunca use `*` no `.vercelignore` desta pasta
+> No deploy via integração Git a Vercel avalia este `.vercelignore` **contra a raiz do
+> repositório**, não contra a pasta. Um `*` com exceções (`!index.html`, `!assets`) ignora o repo
+> inteiro: as exceções só resgatariam caminhos da raiz, e gitignore não re-inclui filho de
+> diretório já excluído. Foi o que tirou a landing do ar em 15/09/2026 (404, build sem output) —
+> ver [[Problemas Resolvidos]]. Use só padrões **sem âncora** (`PLANO.md`), que casam em qualquer
+> profundidade e funcionam nos dois modos de deploy.
+
+O deploy manual pelo CLI ainda funciona e continua sendo a saída para publicar sem passar pela
+`main`:
 
 ```bash
 cd docs/brand/landing && vercel deploy --prod
@@ -178,17 +196,20 @@ cd docs/brand/landing && vercel deploy --prod
 
 O `.vercel/` que o CLI cria ao linkar o diretório é gitignored (carrega `projectId`/`orgId`).
 Previews têm Deployment Protection ligada e respondem 302 a `curl` anônimo — para conferir um
-preview use `vercel curl <url>`, que gera o token de bypass.
+preview use `vercel curl <url>`, que gera o token de bypass. Para depurar um deploy que subiu
+"Ready" mas não serve a página, `vercel inspect --logs <url>` mostra quantos arquivos o
+`.vercelignore` removeu e se o build gerou output.
 
 ## Pendências
 
-- **Domínio próprio.** `publiai.daludi.com.br` **não serve**: a raiz já é o app PubliAI em produção
-  (verificado em 05/09/2026). Como o projeto agora está na conta que também serve o `daludi.com.br`,
-  dá para apontar outro subdomínio pelo painel. Trava a `og:image` e a URL canônica, que seguem
-  apontando para um endereço inexistente — link compartilhado não renderiza card com imagem.
-- **Reativar o FormSubmit para o host onde a página está.** A ativação é por domínio de origem e a
-  atual vale para `publiai.daludi.com.br`. Enquanto não for refeita, um envio a partir do
-  `publiai-alpha.vercel.app` volta `{"success":"false"}` — a página mostra o erro em vez de fingir
-  sucesso (ver Armadilhas), mas o lead não chega. Já existe host estável para registrar; não
-  depende mais da decisão do domínio.
+- ✅ **Domínio próprio — resolvido em 15/09/2026.** A landing está em
+  <https://publiai.daludi.com.br>; o app foi para <https://app.publiai.daludi.com.br> (Render), e a
+  premissa antiga ("a raiz já é o app", medida em 05/09/2026) deixou de valer. `og:image` e URL
+  canônica destravadas.
+- ⚠️ **FormSubmit: não confirmado.** A ativação de 05/09/2026 foi registrada justamente para
+  `https://publiai.daludi.com.br/` — o host onde a landing acabou ficando —, então a reativação
+  provavelmente não é mais necessária. Mas **nenhum envio real foi feito desde a publicação**, e
+  isso só se prova enviando. Ação: um envio de teste rotulado a partir da página no ar; a resposta
+  AJAX distingue sucesso da mensagem "needs Activation". Até lá o formulário é **não verificado** —
+  se estiver quebrado, o lead não chega e ninguém fica sabendo.
 - Os dois sites (este e `daludi.com.br`) não se linkam entre si além do rodapé daqui.

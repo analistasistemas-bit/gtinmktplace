@@ -1,15 +1,64 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-09-08
+atualizado: 2026-09-15
 ---
 
 # Sprint Atual
 
 Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
-`docs/project-status.md` (retrato curto, atualizado até **2026-08-11**, com a seção "Entregas de
-agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
+`docs/project-status.md` (retrato curto, atualizado até **2026-09-15**, com a seção "Entregas de
+setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-09-08) — PRONTO, aguardando merge e validação
+## 📍 Passo atual (2026-09-15) — EM PRODUÇÃO
+
+> **Semana de 09 a 15/09: 51 commits, nenhum ADR novo.** Foram extensões e correções dentro de
+> decisões já aceitas — os adendos em 0021, 0052, 0088 e 0151 foram escritos junto com o código.
+> Detalhe por entrega em `docs/project-status.md` (seção "09 a 15/09/2026 — entregas sem ADR novo")
+> e `docs/TASKS.md`.
+>
+> **✅ Varredura de anúncios órfãos** (adendo do ADR-0088). Edge nova `varrer-anuncios-orfaos`, só
+> leitura e sob demanda, confronta os anúncios vivos da conta no ML com **7 fontes** de id do banco.
+> Nasceu do incidente de 10/09: anúncio criado pelo app perdeu a linha no banco e seguiu **ativo e
+> vendendo**, invisível ao sistema. O primeiro uso real deu falso alarme — **10 dos 13 "fantasmas"
+> eram anúncios de catálogo saudáveis** —, porque o ML cria para o catálogo um item próprio que
+> herda o `seller_custom_field` do app. Corrigido no mesmo dia com as 3 fontes que faltavam. Ver
+> [[Marketplace]].
+>
+> **✅ Publicados: publicação incompleta e filtro de catálogo.** Família com anúncio vivo no ML mas
+> sem vínculo completo passava por publicada; agora aparece em vermelho, com filtro próprio, ao
+> lado do filtro "sem vínculo de catálogo".
+>
+> **✅ Catálogo: `sem_produto` e `pendente` deixam de ser terminais** (adendo do ADR-0021) — o ML
+> pode passar a ter a ficha depois, então o retentar volta a alcançá-los.
+>
+> **✅ Faturamento: Sincronizar segue o período da tela, fatiado em 7 dias**, com só a 1ª fatia
+> pagando perguntas/claims/mensagens. Junto, três casos em que **falha passava por sucesso na
+> tela** (ML, Mercado Pago, e uma premissa errada sobre o próprio MP). Ver [[Faturamento]].
+>
+> **✅ Mensagens: botão Dispensar** (migration `20260910124702`) tira a conversa de "Aguardando"
+> sem resposta enviada — caminho para packs que o ML bloqueia (403 `blocked_by_mediation`, agora
+> traduzido em vez de erro cru).
+>
+> **✅ Kit vinculado com categoria própria** (extensão do ADR-0151): `categoriaOverride` resolve os
+> atributos pela categoria nova e não pela da base, com caminho completo da categoria visível no
+> seletor e na Revisão.
+>
+> **✅ A rota `/vendas/pacote/` do ML morreu.** Devolve 301 para a lista com **qualquer** id, real
+> ou inventado. Estava em **três** superfícies (aba Vendas, alerta do Telegram e o atalho novo de
+> Mensagens) e as duas antigas já falhavam calado. A rota viva é `/vendas/{id}/detalhe`, que aceita
+> `pack_id` e `order_id`. O teste do Telegram **afirmava a rota errada como correta** — por isso
+> nunca pegou nada.
+>
+> **✅ Landing page no ar em domínio próprio** (<https://publiai.daludi.com.br>), versão comercial
+> oficializada. **Encerra a pendência nº 4 do ADR-0152.** Antes disso ela passou horas fora do ar
+> (404) porque o `.vercelignore` com `*` apagou o repositório inteiro quando o projeto mudou para
+> deploy pela integração GitHub — ver [[Problemas Resolvidos]] e [[Landing Page]].
+>
+> **⚠️ Pendente:** o FormSubmit da landing **não foi verificado** desde a publicação. A ativação
+> aponta para o host certo, mas isso só se prova enviando — até lá, lead pode não chegar em
+> silêncio.
+
+## Passo anterior (2026-09-08) — EM PRODUÇÃO (`4ba64bdd`), validação em anúncio real pendente
 
 > **✅ ADR-0161: botão "Migrar para preço por variação" no PubliAI.** Revoga a §4 do [[ADR-0160]] no
 > mesmo dia: ao ver o roteiro de validação, que alternava entre o painel do ML e o app, Diego recusou
@@ -30,7 +79,8 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > ficam de fora; o selo "% OFF" some após migrar. A perda de reconhecimento das vendas antigas foi
 > **corrigida**, não aceita.
 >
-> **Falta:** merge, deploy das funções novas e a validação em produto de teste.
+> **Mergeado e deployado** (migration `20260908185250`, 10 Edge Functions). **Falta** só a
+> validação em anúncio real.
 
 ## Passo anterior (2026-09-08) — EM PRODUÇÃO, validação pendente
 
@@ -284,8 +334,10 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > só duplicidade semântica de número. Rebase + renumeração em todo o código/docs antes do merge.
 > **Pendente:** validação E2E ao vivo (cor nova aparecendo de fato no anúncio publicado no ML).
 
-> **📋 ADR-0135: Cadastro fiscal e Faturador do Mercado Livre (2026-08-25/26) — 15 tasks
-> concluídas na branch `worktree-fiscal-cadastro-nfe`, aguardando CI verde + merge do Diego.**
+> **✅ ADR-0135: Cadastro fiscal e Faturador do Mercado Livre (2026-08-25/26) — EM PRODUÇÃO.**
+> Mergeado e deployado: as 3 edges do épico estão `ACTIVE` (`sincronizar-fiscal-ml` v4,
+> `atualizar-fiscal-familia` v2, `sugerir-ncm` v2 — deploy em 2026-09-08, conferido por
+> `supabase functions list` em 15/09/2026).
 > Supersede parcialmente o ADR-0114: o PubliAI **não transmite NF-e** — o Faturador grátis do
 > próprio ML emite —, e passa a cadastrar empresa (`empresa_fiscal`, card "Empresa" em
 > `/configuracoes`) e produto (NCM/CEST/origem fiscal/CSOSN por família), empurrar por SKU via a
@@ -293,9 +345,8 @@ agosto de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > semáforo em Publicados. `organizations.tipo_pessoa` com constraint no banco impede PF de ligar
 > o módulo `fiscal`. Dialog de cadastro em 3 etapas + fila "fiscal pendente" em `/estoque`; NCM
 > sugerido por IA, só grava com confirmação ativa. V1 Simples Nacional apenas. Ver [[Fiscal]].
-> **Deploy das 3 edges novas + 6 afetadas por `_shared/fiscal` fica para depois do merge**
-> (checklist em `docs/how-to/deploy-e-migrations.md`); as 3 migrations do schema já rodaram em
-> produção (aditivo).
+> **Deploy feito em 2026-09-08** (checklist em `docs/how-to/deploy-e-migrations.md`); as 3
+> migrations do schema já haviam rodado em produção (aditivo).
 
 ## 📍 Fase 1 (2026-08-13) — detecção
 

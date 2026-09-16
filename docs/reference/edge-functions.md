@@ -1666,13 +1666,37 @@ um smoke test contra Postgres real antes do primeiro deploy.
 Nasceu do incidente 2026-09-10 (adendo do ADR-0088): um anúncio criado pelo app perdeu o vínculo no
 banco e seguiu ativo e vendendo, sem nada no PubliAI que o representasse.
 
-Compara os anúncios `active` e `paused` da conta no ML com os ids que o app conhece — `familias`,
-`anuncios_externos`, `anuncios_externos_itens` e `kits_virtuais` — e devolve a diferença.
+Compara os anúncios `active` e `paused` da conta no ML com os ids que o app conhece e devolve a
+diferença. São **7 fontes de id**, não 4: `familias.ml_item_id`,
+`anuncios_externos.item_externo_id`, `anuncios_externos_itens.item_externo_id`,
+`kits_virtuais.ml_item_id`, mais três acrescentadas no mesmo dia pelo fix de falso positivo —
+`variacoes.catalog_listing_id` e `anuncios_externos_itens.catalog_listing_id` (ADR-0021/ADR-0088 F2:
+o anúncio de **catálogo** é um item próprio, com MLB próprio, criado pelo ML a partir do anúncio do
+app, e herda até o `seller_custom_field`) e `anuncios_externos.ml_item_id_anterior` (ADR-0161: numa
+migração de preço por variação parada em `_pending` o item antigo continua **ativo**, e ele é
+conhecido). `catalog_product_id` **não** entra: é id de ficha, não de anúncio.
+
+O resultado vem **classificado pelo servidor** em três classes, para a tela não tratar tudo como
+fantasma:
+
+| Classe | O que é |
+|---|---|
+| `perdido_do_app` | tem `seller_custom_field` do app, mas nenhuma linha no banco — o fantasma de verdade |
+| `catalogo_sem_vinculo` | anúncio de catálogo do app cujo vínculo não está registrado |
+| `externo` | criado fora do PubliAI (painel do ML, outro app) |
+
+Cada órfão também vem com `provavel_remocao_pelo_app` (pausado + `perdido_do_app`): é o resultado
+**esperado** de "Remover", que pausa no ML e zera o vínculo de propósito — apresentar isso como
+pendência seria cobrar do operador algo que ele mesmo mandou fazer.
+
+> As 3 fontes de catálogo/migração nasceram do falso alarme de **2026-09-10**: na primeira
+> varredura, **10 dos 13 "fantasmas" eram anúncios de catálogo saudáveis**. Remover qualquer uma
+> delas ressuscita o falso positivo.
 
 - **Só leitura**: nenhuma escrita no ML nem no banco. Encerrar um órfão é decisão do operador.
 - **Sob demanda** (botão na tela Publicados), nunca em cron: ~1 chamada por 100 anúncios, mais o
   multiget dos desconhecidos.
-- **Fail-closed**: erro em qualquer uma das 4 consultas de ids derruba a chamada. Responder com uma
+- **Fail-closed**: erro em qualquer uma das 7 consultas de ids derruba a chamada. Responder com uma
   fonte a menos transformaria anúncios legítimos em falsos órfãos.
 - **Truncado**: acima de 1000 anúncios o `offset` do `items/search` para de andar (a saída seria
   `search_type=scan`); a resposta marca `truncado` e a tela avisa que a varredura foi parcial.

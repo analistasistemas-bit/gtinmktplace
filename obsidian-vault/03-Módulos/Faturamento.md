@@ -1,6 +1,6 @@
 ---
 tags: [modulo, faturamento]
-atualizado: 2026-08-24
+atualizado: 2026-09-15
 ---
 
 # Faturamento
@@ -17,6 +17,25 @@ Ver [[Financeiro]], [[Estoque]], [[Notificações]], [[Índice de ADRs]].
 - `upsertDevolucao` resolve `order_id` via `shipping_id` em devoluções do tipo `shipment`.
 - Perguntas e Mensagens com abas de status e **busca paginada** (2026-08-08); a paginação é
   clampada e o erro tratado nas duas abas.
+- **Dispensar conversa** (2026-09-10, migration `20260910124702`): tira a conversa de "Aguardando"
+  **sem resposta enviada**, marcando `lida` e tirando-a do badge. É o caminho para pack que o ML
+  bloqueia — mediação devolve **403 `blocked_by_mediation`**, hoje traduzido em vez de erro cru.
+  Avisa quando a RPC não alcança o pack, em vez de fingir sucesso.
+- **Atalho ↗ da conversa abre a conversa no ML**, não a página do produto (2026-09-15) — e usa a
+  rota viva `/vendas/{id}/detalhe`, já que `/vendas/pacote/` foi descontinuada. Atenção à diferença
+  entre as tabelas: `ml_vendas` grava `pack_id = null` em pedido solo, enquanto em `ml_mensagens` o
+  `pack_id` gravado é o próprio `order_id`. Ver [[Problemas Resolvidos]].
+
+## Sincronizar e backfill
+
+- **Sincronizar segue o período da tela, fatiado em 7 dias** (2026-09-11). Antes a sincronia
+  ignorava o seletor de período. Só a **1ª fatia** paga perguntas/claims/mensagens; as demais
+  trazem só vendas (`soVendas`), cortando chamadas redundantes a cada janela.
+- **Falha parou de passar por sucesso na tela** — três casos corrigidos no mesmo dia: a falha do
+  **ML**, que aparecia como sucesso; a do **Mercado Pago**, que simplesmente sumia (o líquido ganhou
+  aviso próprio); e uma premissa errada sobre o próprio Mercado Pago. Backfill que falha e se
+  apresenta como concluído é pior que backfill que falha: o operador segue achando que o número
+  fechou. Detalhe operacional em `docs/how-to/operacoes-rotineiras.md`.
 
 Fonte: `docs/decisions/0037-modulo-faturamento-webhooks-ml.md`.
 

@@ -1,5 +1,13 @@
 # ADR-0116 — Visibilidade do que o pipeline de título descarta
 
+> **Colisão de numeração.** Existe outro ADR com o número 0116, decidido no mesmo dia
+> (12/08/2026): [GTIN com dígito verificador errado é ausência de código](0116-gtin-invalido-e-ausencia-de-codigo.md).
+> Distinguir pelo slug. Nenhum dos dois é renumerado: este número está gravado na migration
+> `20260812182613_adr116_titulo_descartes.sql`, já aplicada, e em pontos de código e teste
+> (`process-familia/index.ts`, `_shared/ai/titulo-pos.ts`, `titulo-montar.ts`,
+> `titulo-diagnostico.test.ts`). Quando um commit ou comentário cita "ADR-0116" sem o slug, é
+> quase sempre **este**.
+
 **Status:** Aceito
 **Data:** 2026-08-12
 **Decisores:** Diego

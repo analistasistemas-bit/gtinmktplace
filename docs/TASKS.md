@@ -2,6 +2,43 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Landing page: versão comercial oficializada e 404 em produção — 2026-09-15
+
+Origem: Diego abriu <https://publiai.daludi.com.br> e recebeu **404 NOT_FOUND** da Vercel, poucas
+horas depois de publicar a nova versão comercial da página.
+
+- [x] **Versão comercial oficializada** (`72d5781a`) — `docs/brand/landing/index.html`, 33
+  inserções / 78 remoções. Só copy; nenhuma mudança estrutural.
+- [x] **Causa do 404 medida nos logs do build** (`vercel inspect --logs`): `Found .vercelignore` →
+  `Removed 2204 ignored files` listando caminhos da **raiz** do repo (`/.env.test`,
+  `/.git/config`) → `WARNING! Build output contains no "functions", "static", or "services"
+  directory`. 2178 arquivos versionados + os do `.git` = os 2204. O `index.html` da landing foi
+  removido junto, e o deploy ficou marcado **`Ready`** servindo nada.
+- [x] **Raiz:** o projeto Vercel `publiai` deixou de publicar pelo CLI e passou a usar a
+  **integração GitHub** (link criado em 15/09 ~13:17, Root Directory `docs/brand/landing`). Nesse
+  modo a Vercel avalia o `.vercelignore` do Root Directory **contra a raiz do repositório
+  clonado** — e o arquivo começava com `*`. As exceções `!index.html` / `!assets` só resgatariam
+  caminhos da raiz, que não existem, e gitignore **não re-inclui filho de diretório já excluído**.
+  O commit de conteúdo do mesmo dia era inocente.
+- [x] **Fix** (`ac1d6dcc`): `.vercelignore` só com padrões **sem âncora** (`PLANO.md`, `.DS_Store`,
+  `.omc`), que casam em qualquer profundidade e valem tanto no deploy por CLI quanto por Git.
+- [x] **Provado no preview antes do merge:** `Removed 1 ignored files — /docs/brand/landing/PLANO.md`,
+  sem o warning de output vazio.
+- [x] **Verificado em produção depois do merge:** `/` → 200 (70 023 bytes, o `index.html` da versão
+  comercial), `/assets/dashboard.webp` → 200, `/PLANO.md` → **404** (a intenção original de não
+  publicar o plano interno segue valendo).
+- [x] **Domínio próprio resolvido** — encerra a pendência nº 4 do [ADR-0152](decisions/0152-landing-operacao-marketplace.md):
+  a landing ficou em `publiai.daludi.com.br` e o app em `app.publiai.daludi.com.br` (Render).
+- [ ] **FormSubmit não verificado** — a ativação de 05/09 foi registrada para
+  `https://publiai.daludi.com.br/`, exatamente o host onde a landing ficou, então a reativação
+  provavelmente é desnecessária. Mas nenhum envio real foi feito desde a publicação: **1 envio de
+  teste rotulado** decide. Até lá, lead pode não chegar em silêncio.
+- [x] Docs: `docs/how-to/deploy-e-migrations.md` ganhou a seção "Deploy da landing page (Vercel)"
+  com a armadilha do `.vercelignore` e o roteiro de depuração de deploy `Ready` que não serve nada.
+
+**Efeito colateral da integração GitHub:** todo push na `main` agora redeploya a landing, inclusive
+commit que só toca `docs/`.
+
 ## Rota `/vendas/pacote/` do ML morreu: link de venda e de conversa — 2026-09-15
 
 Origem: Diego clicou no atalho ↗ da aba Mensagens e caiu na vitrine do produto, não na conversa.
@@ -22,6 +59,19 @@ Ao corrigir para o detalhe da venda, o link passou a cair na **lista** de vendas
 - [x] Teste de regressão nas três: `ml-status.test.ts`, `detalhe-pedido-itens.test.tsx` (o ramo do
   pack não tinha asserção de href — era exatamente onde o bug morava) e `telegram.test.ts`, que
   **afirmava** a rota de pacote como correta.
+
+## Faturamento: Sincronizar fatiado em 7 dias e falhas que passavam por sucesso — 2026-09-11
+
+- [x] **Sincronizar segue o período da tela, fatiado em 7 dias** (`1ff97670`) — antes a sincronia
+  ignorava o seletor de período. Ressalvas do Fable no seletor aplicadas em `9698ff5e`.
+- [x] **Só a 1ª fatia paga perguntas/claims/mensagens** (`9fedbfe0`) — as demais fatias trazem só
+  vendas (`soVendas`), cortando chamadas redundantes a cada janela de 7 dias.
+- [x] **Falha do ML parou de passar por sucesso na tela** (`28bce9f9`).
+- [x] **Falha do Mercado Pago parou de sumir** (`1017b04d`) — o líquido passou a ter aviso próprio,
+  em vez de a falha desaparecer sem sinal.
+- [x] **Premissa errada sobre o Mercado Pago corrigida** (`5a31be5d`).
+- [x] Docs: `docs/reference/edge-functions.md` (seção `backfill-faturamento`) e
+  `docs/how-to/operacoes-rotineiras.md` já cobrem `fatiarJanela`, `soVendas` e os três avisos.
 
 ## Catálogo do filho User Products no faturamento + item plano no Kit Virtual — 2026-09-10
 
@@ -6167,7 +6217,7 @@ Espaço para observações, decisões pendentes pequenas, ideias durante a imple
 - [x] **Diálogo de kit avisa que está processando com a aura do GlowEffect** (2026-09-10) — pedido do Diego: o botão virava "Criando…" e nada mais se mexia, num diálogo grande e numa operação de vários segundos — parecia travado. Agora o diálogo inteiro ganha a aura ("card mode" do motion-primitives) enquanto a criação está em voo, e `aria-busy` dá o mesmo recado a quem não vê a aura. Reaproveita o `GlowEffect` que já existia (sidebar e overlay de login) — mas por `box-shadow` numa classe nova (`.glow-effect-sombra`), porque a aura por elemento seria clipada pelo `overflow-y-auto` do diálogo. Mesmas cores (--chart-1/2/3), mesmos guards de `prefers-reduced-motion` e `forced-colors`. 2 testes novos (aura só em voo; some na falha) e prova visual por screenshot. Só frontend.
 - [x] **Exclusão apagava família User Products com anúncio vivo no ML** (2026-09-10, [adendo ao ADR-0088](decisions/0088-publicacao-user-products-multi-item.md)) — incidente do kit do Ninho: o app publicou MLB5210027027 em 09/09, a saga UP não terminou em `ativo`, Diego excluiu pelo PubliAI e o anúncio ficou VIVO no ML (25 un., fora do controle, venda não baixaria estoque); no dia seguinte o kit foi criado de novo e virou anúncio duplicado. Causa: as duas travas de exclusão são cegas para UP — a raiz de `anuncios_externos` tem `item_externo_id` null e `variacoes.ml_variation_id` também, por construção (ADR-0088 §4/§5), e ninguém consultava `anuncios_externos_itens`. Agora consultam: `excluir-produto` recusa se qualquer filho tem id; `particionarExclusao` ganhou `codigosComItemRemoto` e preserva essas famílias (ausente = trava fechado, igual a `vinculosVivosFora`). Embed validado contra o PostgREST real. MLB5210027027 encerrado no ML sob autorização do operador. 6 testes novos.
 - [x] **Publicação incompleta aparece em Publicados, em vermelho e com filtro** (2026-09-10, [adendo ao ADR-0088](decisions/0088-publicacao-user-products-multi-item.md)) — fecha a lacuna do guard de exclusão: a família com anúncio vivo no ML e publicação não concluída era invisível na tela (a query exige `ml_item_id`, que em UP só é gravado quando a saga conclui), então o operador não tinha como resolver. Agora ela aparece com `mlItemId` = id real do anúncio (raiz, ou filho de menor sku — key determinística), badge e linha vermelhas, banner clicável com o total e filtro `somenteIncompletos` (também na URL). Só oferece "Remover": republicar duplicaria, porque a adoção da saga UP só vale ~1h. Guard contra falso-vermelho: `codigo_pai` com família publicada é ciclo de UPDATE, não incidente. 4 testes novos; suíte 5234 verde. Só frontend.
-- [x] **Varredura de anúncios órfãos (`varrer-anuncios-orfaos`)** (2026-09-10, [adendo ao ADR-0088](decisions/0088-publicacao-user-products-multi-item.md)) — a segunda metade do incidente: anúncios que perderam o vínculo ANTES do guard não têm linha no banco e não apareciam em lugar nenhum. Edge nova (só leitura) lista os `active`/`paused` da conta e subtrai as 4 fontes de ids conhecidos (familias, anuncios_externos, anuncios_externos_itens, kits_virtuais); o que sobra vai para o card "Anúncios fora do PubliAI" na tela Publicados, sob demanda e admin-only. Fail-closed: fonte de ids que falha derruba a varredura em vez de inventar órfão. Avisa quando a conta passa do teto de 1000 do search. 6 testes novos; suíte 5240 verde.
-- [x] **Fix: varredura de órfãos acusava anúncio de catálogo** (2026-09-10, mesmo dia, [adendo ao ADR-0088](decisions/0088-publicacao-user-products-multi-item.md)) — a primeira versão subtraía 4 fontes de id e reportou 13 "fantasmas" na conta DSA, dos quais 10 eram anúncios de CATÁLOGO vinculados (um com 20 vendas); a ação que propus a partir disso teria encerrado anúncio legítimo. Faltavam `variacoes.catalog_listing_id`, `anuncios_externos_itens.catalog_listing_id` e `anuncios_externos.ml_item_id_anterior`. O resultado passa a ser classificado no servidor (perdido_do_app / catalogo_sem_vinculo / externo, mais a marca de "provável remoção pelo app" nos pausados) e a tela agrupa em vez de listar cru. Depois do fix: DSA 26→10 desconhecidos (1 perdido real), Avil 313→25 (nenhum). 4 testes novos de classificação.
+- [x] **Varredura de anúncios órfãos (`varrer-anuncios-orfaos`)** (2026-09-10, [adendo ao ADR-0088](decisions/0088-publicacao-user-products-multi-item.md)) — a segunda metade do incidente: anúncios que perderam o vínculo ANTES do guard não têm linha no banco e não apareciam em lugar nenhum. Edge nova (só leitura) lista os `active`/`paused` da conta e subtrai as fontes de ids conhecidos; o que sobra vai para o card "Anúncios fora do PubliAI" na tela Publicados, sob demanda e admin-only. Fail-closed: fonte de ids que falha derruba a varredura em vez de inventar órfão. Avisa quando a conta passa do teto de 1000 do search. 6 testes novos; suíte 5240 verde. **Nasceu com 4 fontes (familias, anuncios_externos, anuncios_externos_itens, kits_virtuais) e isso se mostrou insuficiente no mesmo dia** — ver o item seguinte.
+- [x] **Fix: varredura de órfãos acusava anúncio de catálogo** (2026-09-10, mesmo dia, `1114a6ca` + `2a7dfc5b`, [adendo ao ADR-0088](decisions/0088-publicacao-user-products-multi-item.md)) — a primeira versão subtraía 4 fontes de id e reportou 13 "fantasmas" na conta DSA, dos quais 10 eram anúncios de CATÁLOGO vinculados (um com 20 vendas); a ação que propus a partir disso teria encerrado anúncio legítimo. Faltavam `variacoes.catalog_listing_id`, `anuncios_externos_itens.catalog_listing_id` e `anuncios_externos.ml_item_id_anterior`. O resultado passa a ser classificado no servidor (perdido_do_app / catalogo_sem_vinculo / externo, mais a marca de "provável remoção pelo app" nos pausados) e a tela agrupa em vez de listar cru. Depois do fix: DSA 26→10 desconhecidos (1 perdido real), Avil 313→25 (nenhum). 4 testes novos de classificação. **São 7 fontes de id hoje** — `catalog_product_id` não entra, é id de ficha e não de anúncio.
 - [x] **`sem_produto` e `pendente` deixam de ser estados terminais de catálogo** (2026-09-11, [adendo ao ADR-0021](decisions/0021-vinculacao-automatica-ao-catalogo-ml.md)) — `STATUS_CATALOGO_RETENTAVEL` tinha só `[erro, nao_elegivel]`, e quem não está na lista não habilita o botão ↻ (409 no `retentar-catalogo`): a lista tornava terminais justamente os dois estados mais transitórios. `sem_produto` = o ML LIBERA o opt-in e só falta a ficha existir; `pendente` = ele ainda está computando. Medido: 17 variações publicadas presas (13 Avil, 4 DSA). O caso que revelou foi o Centrum da DSA, preso de 12/08 a 11/09 **com o par dono↔catálogo já ativo e vendendo no ML** (24 vendas classificadas como "fora do PubliAI"); saiu por UPDATE manual. `retentar-catalogo` passa a publicar com `alertar: false` — com `sem_produto` retentável, cada clique sem ficha nova dispararia um Telegram "no-match". `ficha_divergente` fica de fora por escopo, não por risco (o worker rebusca a ficha e reroda `fichaEquivalente` antes de qualquer POST — registrado no ADR para ninguém re-derivar errado). Guarda de sincronia entre as duas cópias do helper (Deno/Vite). Sem migration. Deploy: `retentar-catalogo` v6. Suíte 5280 verde.
 - [x] **Filtro "sem vínculo de catálogo" na tela Publicados** (2026-09-11, mesmo dia) — o botão ↻ existia na linha mas nada dizia ONDE: achá-lo exigia varrer a lista inteira, e foi assim que o Centrum passou um mês invisível. Chip clicável com a contagem, no padrão do "publicação incompleta" (`somenteSemCatalogo`, também na URL via `?semcatalogo=1`). Tom `info` e posição abaixo dos outros dois de propósito: incompleta e moderado são risco (venda sem baixa, anúncio derrubado), catálogo pendente é oportunidade — três banners iguais viram papel de parede. Visível para não-admin com texto próprio ("peça a um administrador"), já que o ↻ é admin-only. Chip e botão leem o MESMO campo, então a contagem casa exatamente com as linhas que mostram o botão. 6 testes novos; suíte 5286 verde. Só frontend.
