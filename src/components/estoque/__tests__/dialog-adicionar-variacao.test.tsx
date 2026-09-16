@@ -305,9 +305,6 @@ describe('DialogAdicionarVariacao', () => {
     expect(qc.getQueryData(QK.variacoesRecemAdicionadas(produto.codigoPai))).toEqual(['00000123']);
   });
 
-  // "200 não prova canal atualizado" — mesmo racional do push de estoque no ML
-  // (reference_estoque_push_ml): publicacaoOk=false e falhasEstoque não podem virar sucesso
-  // silencioso só porque a chamada HTTP não deu erro.
   // Mesmo efeito de "processando" do dialog-criar-kit.tsx (ADR-0079/glow-effect-sombra): o
   // diálogo precisa avisar visualmente que o UPDATE está em voo, não só o texto do botão.
   it('aplica o efeito glow-effect-sombra e aria-busy enquanto salva', async () => {
@@ -333,6 +330,9 @@ describe('DialogAdicionarVariacao', () => {
     expect(dialog).not.toHaveClass('glow-effect-sombra');
   });
 
+  // "200 não prova canal atualizado" — mesmo racional do push de estoque no ML
+  // (reference_estoque_push_ml): publicacaoOk=false e falhasEstoque não podem virar sucesso
+  // silencioso só porque a chamada HTTP não deu erro.
   it('publicacaoOk=false e falhasEstoque avisam por toast, mas ainda fecham o diálogo', async () => {
     invokeMock.mockResolvedValue({
       data: {
