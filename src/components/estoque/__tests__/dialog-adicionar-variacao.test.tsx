@@ -308,6 +308,31 @@ describe('DialogAdicionarVariacao', () => {
   // "200 não prova canal atualizado" — mesmo racional do push de estoque no ML
   // (reference_estoque_push_ml): publicacaoOk=false e falhasEstoque não podem virar sucesso
   // silencioso só porque a chamada HTTP não deu erro.
+  // Mesmo efeito de "processando" do dialog-criar-kit.tsx (ADR-0079/glow-effect-sombra): o
+  // diálogo precisa avisar visualmente que o UPDATE está em voo, não só o texto do botão.
+  it('aplica o efeito glow-effect-sombra e aria-busy enquanto salva', async () => {
+    let resolverInvoke: (v: unknown) => void;
+    invokeMock.mockReturnValue(new Promise((resolve) => { resolverInvoke = resolve; }));
+    const user = userEvent.setup();
+    renderDialog();
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    await preencherLinha(user, 1, { codigo: '00000006' });
+    await waitFor(() => expect(BOTAO_SALVAR()).not.toBeDisabled());
+
+    await user.click(BOTAO_SALVAR());
+
+    const dialog = screen.getByRole('dialog');
+    await waitFor(() => expect(dialog).toHaveAttribute('aria-busy', 'true'));
+    expect(dialog).toHaveClass('glow-effect-sombra');
+
+    resolverInvoke!({
+      data: { loteId: 'lote-1', familiaId: 'fam-nova-1', publicacaoOk: true, falhasEstoque: [] },
+      error: null,
+    });
+    await waitFor(() => expect(dialog).toHaveAttribute('aria-busy', 'false'));
+    expect(dialog).not.toHaveClass('glow-effect-sombra');
+  });
+
   it('publicacaoOk=false e falhasEstoque avisam por toast, mas ainda fecham o diálogo', async () => {
     invokeMock.mockResolvedValue({
       data: {
