@@ -144,7 +144,11 @@ das decisões D-1…D-11:
    **Qual irmã (2026-09-17):** a de **menor código**. A query não ordena a lista embutida de
    `variacoes`, e sem `order by` a ordem do Postgres pode mudar sozinha (vacuum, plano novo) —
    a cor nova nasceria com o custo/preço de uma irmã diferente a cada vez. A escolha é fixada
-   no cliente, mesma regra do prefill da calculadora ML (`escolherVariacao`).
+   no cliente, mesma regra do prefill da calculadora ML (`escolherVariacao`). Entre as irmãs,
+   só entram as que estão **no anúncio**: cor `excluida_da_publicacao` ficou de fora por estar
+   incompleta (sem foto ou estoque 0, ADR-0016) e é onde mora custo/preço nunca revisado.
+   Família sem nenhuma publicada cai na de menor código — prefill aproximado é melhor que
+   campo vazio.
 
 ## Correção pós-produção (2026-08-21) — insert heterogêneo de `variacoes`
 

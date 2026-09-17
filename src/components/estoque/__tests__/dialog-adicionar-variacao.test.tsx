@@ -108,7 +108,10 @@ beforeEach(() => {
   // Família canônica com uma irmã de referência (peso/dimensões pro prefill, D-6).
   familiaPrefillDataMock.mockReturnValue([{
     id: 'fam-canonica-1',
-    variacoes: [{ codigo: '00000005', peso_gramas: 100, altura_cm: 5, largura_cm: 5, comprimento_cm: 5 }],
+    variacoes: [{
+      codigo: '00000005', peso_gramas: 100, altura_cm: 5, largura_cm: 5, comprimento_cm: 5,
+      excluida_da_publicacao: false,
+    }],
   }]);
   // jsdom não implementa URL.createObjectURL/revokeObjectURL — CampoFoto chama isso sempre que
   // uma linha tem `arquivo` (mesmo mock de dialog-cadastro-produto.test.tsx).
@@ -263,7 +266,7 @@ describe('DialogAdicionarVariacao', () => {
       id: 'fam-canonica-1',
       variacoes: [{
         codigo: '00000005', peso_gramas: 100, altura_cm: 5, largura_cm: 5, comprimento_cm: 5,
-        custo: 12.5, preco: 29.9,
+        custo: 12.5, preco: 29.9, excluida_da_publicacao: false,
       }],
     }]);
     invokeMock.mockResolvedValue({
@@ -305,11 +308,11 @@ describe('DialogAdicionarVariacao', () => {
         // Devolvidas fora de ordem de propósito: é o que o Postgres pode fazer sem `order by`.
         {
           codigo: '00000009', peso_gramas: 900, altura_cm: 9, largura_cm: 9, comprimento_cm: 9,
-          custo: 99.9, preco: 199.9,
+          custo: 99.9, preco: 199.9, excluida_da_publicacao: false,
         },
         {
           codigo: '00000005', peso_gramas: 100, altura_cm: 5, largura_cm: 5, comprimento_cm: 5,
-          custo: 12.5, preco: 29.9,
+          custo: 12.5, preco: 29.9, excluida_da_publicacao: false,
         },
       ],
     }]);
@@ -319,6 +322,52 @@ describe('DialogAdicionarVariacao', () => {
       screen.getByLabelText('Custo da variação 1'),
     ).toHaveValue('12.5'));
     expect(screen.getByLabelText('Preço mínimo (líquido) da variação 1')).toHaveValue('29.9');
+    expect(screen.getByLabelText('Peso (g) da variação 1')).toHaveValue('100');
+  });
+
+  // Cor `excluida_da_publicacao` ficou de fora do anúncio por estar incompleta (sem foto ou
+  // estoque 0, ADR-0016) — é onde mora custo/preço que ninguém revisou. A cor nova não deve
+  // herdar dela enquanto houver uma irmã de verdade no anúncio.
+  it('ignora a irmã excluída da publicação, mesmo sendo a de menor código', async () => {
+    familiaPrefillDataMock.mockReturnValue([{
+      id: 'fam-canonica-1',
+      variacoes: [
+        {
+          codigo: '00000005', peso_gramas: 900, altura_cm: 9, largura_cm: 9, comprimento_cm: 9,
+          custo: 99.9, preco: 199.9, excluida_da_publicacao: true,
+        },
+        {
+          codigo: '00000007', peso_gramas: 100, altura_cm: 5, largura_cm: 5, comprimento_cm: 5,
+          custo: 12.5, preco: 29.9, excluida_da_publicacao: false,
+        },
+      ],
+    }]);
+    renderDialog();
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByLabelText('Custo da variação 1')).toHaveValue('12.5'));
+    expect(screen.getByLabelText('Preço mínimo (líquido) da variação 1')).toHaveValue('29.9');
+    expect(screen.getByLabelText('Peso (g) da variação 1')).toHaveValue('100');
+  });
+
+  // Família recém-cadastrada pode não ter NENHUMA cor no anúncio ainda. Prefill aproximado
+  // continua melhor que campo vazio: cai na de menor código.
+  it('sem nenhuma irmã publicada, cai na de menor código', async () => {
+    familiaPrefillDataMock.mockReturnValue([{
+      id: 'fam-canonica-1',
+      variacoes: [
+        {
+          codigo: '00000009', peso_gramas: 900, altura_cm: 9, largura_cm: 9, comprimento_cm: 9,
+          custo: 99.9, preco: 199.9, excluida_da_publicacao: true,
+        },
+        {
+          codigo: '00000005', peso_gramas: 100, altura_cm: 5, largura_cm: 5, comprimento_cm: 5,
+          custo: 12.5, preco: 29.9, excluida_da_publicacao: true,
+        },
+      ],
+    }]);
+    renderDialog();
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByLabelText('Custo da variação 1')).toHaveValue('12.5'));
     expect(screen.getByLabelText('Peso (g) da variação 1')).toHaveValue('100');
   });
 

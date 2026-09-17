@@ -33,6 +33,7 @@ type LinhaAddVariacao = LinhaVariacao & { codigo: string };
 
 interface IrmaReferencia {
   codigo: string;
+  excluida_da_publicacao: boolean;
   peso_gramas: number | null; altura_cm: number | null; largura_cm: number | null; comprimento_cm: number | null;
   custo: number | null; preco: number | null;
 }
@@ -51,7 +52,7 @@ interface FamiliaCanonicaPrefill {
 async function fetchFamiliaCanonicaPrefill(codigoPai: string): Promise<FamiliaCanonicaPrefill | null> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, variacoes(codigo, peso_gramas, altura_cm, largura_cm, comprimento_cm, custo, preco)')
+    .select('id, variacoes(codigo, peso_gramas, altura_cm, largura_cm, comprimento_cm, custo, preco, excluida_da_publicacao)')
     .eq('codigo_pai', codigoPai)
     .order('criado_em', { ascending: false })
     .limit(1);
@@ -125,10 +126,15 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
   // A consulta acima não pede ordem das variações, e sem `order by` o Postgres devolve as
   // linhas na ordem que lhe for conveniente — que muda sozinha com vacuum, edição de linha ou
   // plano novo. Como daqui saem custo e preço da cor nova, a referência não pode ser "a que
-  // vier primeiro": é sempre a de MENOR CÓDIGO. `sort` não clona os itens, então a identidade
-  // de `irmaRef` continua estável entre renders (ela é dependência do efeito abaixo).
-  const irmaRef = [...(prefill?.variacoes ?? [])]
-    .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR'))[0] ?? null;
+  // vier primeiro": é a de MENOR CÓDIGO entre as que estão NO ANÚNCIO. Cor
+  // `excluida_da_publicacao` ficou de fora por estar incompleta (sem foto ou estoque 0,
+  // ADR-0016) — é justamente onde mora custo/preço que ninguém revisou. Família sem nenhuma
+  // publicada (recém-cadastrada) cai na menor código: prefill aproximado é melhor que campo
+  // vazio. `sort`/`find` não clonam os itens, então a identidade de `irmaRef` continua estável
+  // entre renders (ela é dependência do efeito abaixo).
+  const irmasPorCodigo = [...(prefill?.variacoes ?? [])]
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR'));
+  const irmaRef = irmasPorCodigo.find((v) => !v.excluida_da_publicacao) ?? irmasPorCodigo[0] ?? null;
 
   // Mesma QK da tela Estoque (Task 5/6): cache compartilhado — o banner de "família em voo"
   // abaixo é um pré-check de UI (D-8); a edge revalida de qualquer forma antes de gravar.
