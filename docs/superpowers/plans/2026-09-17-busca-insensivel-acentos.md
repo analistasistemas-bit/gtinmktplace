@@ -27,7 +27,7 @@
 **Interfaces:**
 - Produces: `normalizarParaBusca(s: string | null | undefined): string`
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 Criar `src/lib/__tests__/texto.test.ts`:
 ```typescript
@@ -61,12 +61,12 @@ describe('normalizarParaBusca', () => {
 });
 ```
 
-- [ ] **Step 2: Executar o teste para verificar que falha**
+- [x] **Step 2: Executar o teste para verificar que falha**
 
 Run: `pnpm vitest run src/lib/__tests__/texto.test.ts`
 Expected: FAIL ("Cannot find module '../texto'")
 
-- [ ] **Step 3: Escrever implementação mínima**
+- [x] **Step 3: Escrever implementação mínima**
 
 Criar `src/lib/texto.ts`:
 ```typescript
@@ -83,12 +83,12 @@ export function normalizarParaBusca(s: string | null | undefined): string {
 }
 ```
 
-- [ ] **Step 4: Executar o teste para verificar que passa**
+- [x] **Step 4: Executar o teste para verificar que passa**
 
 Run: `pnpm vitest run src/lib/__tests__/texto.test.ts`
 Expected: PASS (4 tests passed)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/texto.ts src/lib/__tests__/texto.test.ts
@@ -107,7 +107,7 @@ git commit -m "feat(busca): cria utilitario canonico normalizarParaBusca"
 - Consumes: `normalizarParaBusca` de `src/lib/texto`
 - Produces: `filtrarPublicados(itens: PublicadoItem[], f: FiltroPublicados): PublicadoItem[]` com busca insensível a acentos
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 Criar `src/lib/__tests__/publicados-busca-acento.test.ts`:
 ```typescript
@@ -161,12 +161,12 @@ describe('filtrarPublicados — busca com acentos', () => {
 });
 ```
 
-- [ ] **Step 2: Executar o teste para verificar que falha**
+- [x] **Step 2: Executar o teste para verificar que falha**
 
 Run: `pnpm vitest run src/lib/__tests__/publicados-busca-acento.test.ts`
 Expected: FAIL (0 of 1 items returned for "poliester")
 
-- [ ] **Step 3: Implementar normalização em `src/lib/publicados.ts`**
+- [x] **Step 3: Implementar normalização em `src/lib/publicados.ts`**
 
 Em `src/lib/publicados.ts`:
 Importar `normalizarParaBusca` de `./texto`.
@@ -210,17 +210,17 @@ export function filtrarPublicados(
 }
 ```
 
-- [ ] **Step 4: Executar o teste para verificar que passa**
+- [x] **Step 4: Executar o teste para verificar que passa**
 
 Run: `pnpm vitest run src/lib/__tests__/publicados-busca-acento.test.ts`
 Expected: PASS (4 tests passed)
 
-- [ ] **Step 5: Executar testes existentes de publicados para garantir sem regressão**
+- [x] **Step 5: Executar testes existentes de publicados para garantir sem regressão**
 
 Run: `pnpm vitest run src/lib/__tests__/publicados-filtro-problema.test.ts`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/lib/publicados.ts src/lib/__tests__/publicados-busca-acento.test.ts
@@ -239,7 +239,7 @@ git commit -m "feat(publicados): torna busca de anuncios insensivel a acentos"
 - Consumes: `normalizarParaBusca` de `src/lib/texto`
 - Produces: `filtrarFamilias(familias: Familia[], filtro: FiltroOp, busca: string, soComCoresNovas?: boolean): Familia[]`
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 Criar `src/pages/__tests__/Revisao.busca.test.tsx`:
 ```typescript
@@ -287,12 +287,12 @@ describe('filtrarFamilias — busca com acentos', () => {
 });
 ```
 
-- [ ] **Step 2: Executar o teste para verificar que falha**
+- [x] **Step 2: Executar o teste para verificar que falha**
 
 Run: `pnpm vitest run src/pages/__tests__/Revisao.busca.test.tsx`
 Expected: FAIL ("algodao" não encontra "Algodão")
 
-- [ ] **Step 3: Implementar em `src/pages/Revisao.tsx`**
+- [x] **Step 3: Implementar em `src/pages/Revisao.tsx`**
 
 Importar `normalizarParaBusca` de `@/lib/texto`.
 Atualizar `filtrarFamilias`:
@@ -326,17 +326,17 @@ export function filtrarFamilias(
 }
 ```
 
-- [ ] **Step 4: Executar o teste para verificar que passa**
+- [x] **Step 4: Executar o teste para verificar que passa**
 
 Run: `pnpm vitest run src/pages/__tests__/Revisao.busca.test.tsx`
 Expected: PASS
 
-- [ ] **Step 5: Executar testes de Revisao para garantir sem regressão**
+- [x] **Step 5: Executar testes de Revisao para garantir sem regressão**
 
 Run: `pnpm vitest run src/pages/__tests__/Revisao.test.tsx`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/pages/Revisao.tsx src/pages/__tests__/Revisao.busca.test.tsx
@@ -355,7 +355,7 @@ git commit -m "feat(revisao): torna busca de familias em revisao insensivel a ac
 - Consumes: `normalizarParaBusca` de `src/lib/texto`
 - Produces: `pedidoCasaBusca(p: Pedido, query: string): boolean`
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 Criar `src/lib/__tests__/pedidos-faturamento-busca.test.ts`:
 ```typescript
@@ -440,12 +440,12 @@ describe('pedidoCasaBusca — busca com acentos', () => {
 });
 ```
 
-- [ ] **Step 2: Executar o teste para verificar que falha**
+- [x] **Step 2: Executar o teste para verificar que falha**
 
 Run: `pnpm vitest run src/lib/__tests__/pedidos-faturamento-busca.test.ts`
 Expected: FAIL ("joao" returns false)
 
-- [ ] **Step 3: Implementar em `src/lib/pedidos-faturamento.ts`**
+- [x] **Step 3: Implementar em `src/lib/pedidos-faturamento.ts`**
 
 Importar `normalizarParaBusca` de `./texto`.
 Modificar `pedidoCasaBusca`:
@@ -465,17 +465,17 @@ export function pedidoCasaBusca(p: Pedido, query: string): boolean {
 }
 ```
 
-- [ ] **Step 4: Executar o teste para verificar que passa**
+- [x] **Step 4: Executar o teste para verificar que passa**
 
 Run: `pnpm vitest run src/lib/__tests__/pedidos-faturamento-busca.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Executar testes de faturamento para garantir sem regressão**
+- [x] **Step 5: Executar testes de faturamento para garantir sem regressão**
 
 Run: `pnpm vitest run src/lib/__tests__/faturamento.test.ts` (ou testes correlatos)
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/lib/pedidos-faturamento.ts src/lib/__tests__/pedidos-faturamento-busca.test.ts
@@ -494,7 +494,7 @@ git commit -m "feat(faturamento): torna busca de pedidos e vendas insensivel a a
 - Consumes: `normalizarParaBusca` de `src/lib/texto`
 - Produces: `linhaVendaCasaBusca(l: LinhaVenda, busca: string): boolean`
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 Criar `src/lib/__tests__/detalhe-vendas-busca.test.ts`:
 ```typescript
@@ -534,12 +534,12 @@ describe('linhaVendaCasaBusca', () => {
 });
 ```
 
-- [ ] **Step 2: Executar o teste para verificar que falha**
+- [x] **Step 2: Executar o teste para verificar que falha**
 
 Run: `pnpm vitest run src/lib/__tests__/detalhe-vendas-busca.test.ts`
 Expected: FAIL (função não definida)
 
-- [ ] **Step 3: Implementar `linhaVendaCasaBusca` em `src/lib/detalhe-vendas.ts` e plugar em `DetalheVendas.tsx`**
+- [x] **Step 3: Implementar `linhaVendaCasaBusca` em `src/lib/detalhe-vendas.ts` e plugar em `DetalheVendas.tsx`**
 
 Em `src/lib/detalhe-vendas.ts`:
 ```typescript
@@ -569,12 +569,12 @@ const linhas = useMemo(() => {
   // ...
 ```
 
-- [ ] **Step 4: Executar o teste para verificar que passa**
+- [x] **Step 4: Executar o teste para verificar que passa**
 
 Run: `pnpm vitest run src/lib/__tests__/detalhe-vendas-busca.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/detalhe-vendas.ts src/pages/DetalheVendas.tsx src/lib/__tests__/detalhe-vendas-busca.test.ts
@@ -593,7 +593,7 @@ git commit -m "feat(vendas): torna busca de detalhe de vendas insensivel a acent
 - Consumes: `normalizarParaBusca` de `src/lib/texto`
 - Produces: `filtrarProdutos` com `casaBusca` insensível a acento
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 Criar `src/lib/__tests__/pulse-filtros-busca.test.ts`:
 ```typescript
@@ -628,12 +628,12 @@ describe('Pulse radar — busca com acentos', () => {
 });
 ```
 
-- [ ] **Step 2: Executar o teste para verificar que falha**
+- [x] **Step 2: Executar o teste para verificar que falha**
 
 Run: `pnpm vitest run src/lib/__tests__/pulse-filtros-busca.test.ts`
 Expected: FAIL ("algodao" não encontra "Algodão")
 
-- [ ] **Step 3: Implementar em `src/lib/pulse-filtros.ts`**
+- [x] **Step 3: Implementar em `src/lib/pulse-filtros.ts`**
 
 Importar `normalizarParaBusca` de `./texto`.
 Modificar `casaBusca`:
@@ -647,17 +647,17 @@ function casaBusca(p: PulseProduto, termo: string): boolean {
 }
 ```
 
-- [ ] **Step 4: Executar o teste para verificar que passa**
+- [x] **Step 4: Executar o teste para verificar que passa**
 
 Run: `pnpm vitest run src/lib/__tests__/pulse-filtros-busca.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Executar testes existentes do pulse-filtros**
+- [x] **Step 5: Executar testes existentes do pulse-filtros**
 
 Run: `pnpm vitest run src/lib/__tests__/pulse-filtros.test.ts`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add src/lib/pulse-filtros.ts src/lib/__tests__/pulse-filtros-busca.test.ts
@@ -677,7 +677,7 @@ git commit -m "feat(pulse): torna busca no radar insensivel a acentos"
 - Consumes: `normalizarParaBusca` de `src/lib/texto`
 - Produces: `filtrarOpcoesSku(opcoes: OpcaoSku[], busca: string, limite?: number): OpcaoSku[]`
 
-- [ ] **Step 1: Escrever o teste que falha**
+- [x] **Step 1: Escrever o teste que falha**
 
 Criar `src/lib/__tests__/produto-entrada-busca.test.ts`:
 ```typescript
@@ -710,12 +710,12 @@ describe('filtrarOpcoesSku', () => {
 });
 ```
 
-- [ ] **Step 2: Executar o teste para verificar que falha**
+- [x] **Step 2: Executar o teste para verificar que falha**
 
 Run: `pnpm vitest run src/lib/__tests__/produto-entrada-busca.test.ts`
 Expected: FAIL (função não definida)
 
-- [ ] **Step 3: Implementar em `src/lib/produto-entrada.ts` e plugar em `dialog-entrada.tsx`**
+- [x] **Step 3: Implementar em `src/lib/produto-entrada.ts` e plugar em `dialog-entrada.tsx`**
 
 Criar/exportar em `src/lib/produto-entrada.ts`:
 ```typescript
@@ -740,12 +740,12 @@ export function filtrarOpcoesSku(opcoes: OpcaoSku[], busca: string, limite = 50)
 
 Atualizar `src/components/estoque/dialog-entrada.tsx` para usar `filtrarOpcoesSku`.
 
-- [ ] **Step 4: Executar o teste para verificar que passa**
+- [x] **Step 4: Executar o teste para verificar que passa**
 
 Run: `pnpm vitest run src/lib/__tests__/produto-entrada-busca.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src/lib/produto-entrada.ts src/components/estoque/dialog-entrada.tsx src/lib/__tests__/produto-entrada-busca.test.ts
@@ -764,19 +764,19 @@ git commit -m "feat(estoque): torna busca de skus no dialogo de entrada insensiv
 - Consumes: `normalizarParaBusca` de `src/lib/texto`
 - Produces: `filtrarProdutos` usando o utilitário canônico
 
-- [ ] **Step 1: Substituir normalizador inline por `normalizarParaBusca` em `produtos-saldo-filtro.ts`**
+- [x] **Step 1: Substituir normalizador inline por `normalizarParaBusca` em `produtos-saldo-filtro.ts`**
 
 Em `src/lib/produtos-saldo-filtro.ts`:
 Substituir:
 `const normalizar = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();`
 por importação de `normalizarParaBusca` de `./texto`.
 
-- [ ] **Step 2: Executar a suíte de testes de produtos-saldo-filtro**
+- [x] **Step 2: Executar a suíte de testes de produtos-saldo-filtro**
 
 Run: `pnpm vitest run src/lib/__tests__/produtos-saldo-filtro.test.ts`
 Expected: PASS (25 tests passed)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add src/lib/produtos-saldo-filtro.ts
@@ -793,7 +793,7 @@ git commit -m "refactor(estoque): padroniza normalizacao de busca com normalizar
 **Interfaces:**
 - Produces: Filtro de organizações na carteira insensível a acentos
 
-- [ ] **Step 1: Aplicar normalização em `repository.ts`**
+- [x] **Step 1: Aplicar normalização em `repository.ts`**
 
 No método `wallet`:
 ```typescript
@@ -806,11 +806,11 @@ const organizations = (await loadOrganizations(!!input.include_test)).filter(
 );
 ```
 
-- [ ] **Step 2: Executar lint / deno check no backend**
+- [x] **Step 2: Executar lint / deno check no backend**
 
 Run: `npm run lint` ou deno check se configurado.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add supabase/functions/_shared/platform-admin/repository.ts
@@ -824,12 +824,12 @@ git commit -m "feat(platform-admin): torna busca de organizacoes insensivel a ac
 **Files:**
 - Test: Executar todos os testes criados e modificados
 
-- [ ] **Step 1: Executar todos os testes das áreas alteradas**
+- [x] **Step 1: Executar todos os testes das áreas alteradas**
 
 Run: `pnpm vitest run src/lib/__tests__/texto.test.ts src/lib/__tests__/publicados-busca-acento.test.ts src/pages/__tests__/Revisao.busca.test.tsx src/lib/__tests__/pedidos-faturamento-busca.test.ts src/lib/__tests__/detalhe-vendas-busca.test.ts src/lib/__tests__/pulse-filtros-busca.test.ts src/lib/__tests__/produto-entrada-busca.test.ts src/lib/__tests__/produtos-saldo-filtro.test.ts`
 Expected: ALL PASS
 
-- [ ] **Step 2: Typecheck do TypeScript**
+- [x] **Step 2: Typecheck do TypeScript**
 
 Run: `pnpm exec tsc --noEmit`
 Expected: 0 errors
