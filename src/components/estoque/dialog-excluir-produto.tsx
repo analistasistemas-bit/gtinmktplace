@@ -44,9 +44,7 @@ export function DialogExcluirProduto({ produto, aberto, onFechar }: {
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
       {/* sm: obrigatorio: ver nota em dialog-cadastro-produto.tsx. */}
-      <DialogContent
-        className="sm:max-w-lg"
-      >
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Excluir produto</DialogTitle>
           <DialogDescription>

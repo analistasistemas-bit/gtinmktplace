@@ -160,9 +160,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
 
   return (
     <Dialog open={familiaId != null} onOpenChange={(o) => { if (!o) onFechar(); }}>
-      <DialogContent
-        className="max-h-[90vh] sm:max-w-lg overflow-y-auto"
-      >
+      <DialogContent className="max-h-[90vh] sm:max-w-lg overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Dados fiscais{familia ? ` — ${familia.nomePai}` : ''}</DialogTitle>
           <DialogDescription>

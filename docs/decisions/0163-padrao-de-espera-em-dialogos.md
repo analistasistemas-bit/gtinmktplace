@@ -45,8 +45,9 @@ botão já tinha spinner ou texto de estado suficiente. O par glow+barra só exi
 
 O par glow+barra só se aplica quando as **duas** condições valem ao mesmo tempo:
 
-1. **A operação fala com Mercado Livre, storage, fila (QStash) ou IA** — segundos reais de espera
-   por resposta externa, não uma chamada local de UPDATE/DELETE simples.
+1. **A operação fala com Mercado Livre, storage, fila (QStash) ou IA, ou monta relatório
+   paginado** — segundos reais de espera por resposta externa ou por paginação real de dados, não
+   uma chamada local de UPDATE/DELETE simples.
 2. **O modal permanece de pé durante a espera.**
 
 Faltando qualquer uma, a ação usa spinner no ícone ou texto de estado no próprio botão
@@ -54,17 +55,18 @@ Faltando qualquer uma, a ação usa spinner no ícone ou texto de estado no pró
 
 ### Grupo B — o modal segura aberto até a resposta
 
-Os 6 `AlertDialog` de `Publicados` e o modal de saque de `DetalheFinanceiro` eram **não controlados**:
-o clique no botão de ação fechava o modal na hora (comportamento padrão do
-`AlertDialogAction`/Radix), e o operador via a tabela sem saber se algo estava correndo. A decisão
-foi tornar esses diálogos controlados (`open`/`onOpenChange` em estado próprio), `preventDefault` no
-clique, e só fechar em `finally` — sucesso ou erro.
+Os 6 `AlertDialog` de `Publicados` eram **não controlados**: o clique no botão de ação fechava o
+modal na hora (comportamento padrão do `AlertDialogAction`/Radix), e o operador via a tabela sem
+saber se algo estava correndo. A decisão foi tornar esses diálogos controlados (`open`/`onOpenChange`
+em estado próprio), `preventDefault` no clique, e só fechar em `finally` — sucesso ou erro.
 
 **Isto é mudança de comportamento em telas de produção, não só visual:** o clique em "Pausar",
-"Migrar", "Remover do sistema", "Remover publicação incompleta", "Refazer kit" e "Registrar/Desfazer
-saque" deixa de fechar o diálogo na hora — ele agora fica aberto, com o botão de confirmar e o
-"Cancelar" desabilitados, até o Mercado Livre (ou a RPC) responder. Quem clica passa a esperar
-olhando para o modal em vez de já ver o resultado ou continuar navegando.
+"Migrar", "Remover do sistema", "Remover publicação incompleta" e "Refazer kit" deixa de fechar o
+diálogo na hora — ele agora fica aberto, com o botão de confirmar e o "Cancelar" desabilitados, até
+o Mercado Livre responder. Quem clica passa a esperar olhando para o modal em vez de já ver o
+resultado ou continuar navegando. (O modal de saque de `DetalheFinanceiro` também virou controlado
+nesta linha, mas saiu no segundo recorte abaixo — o saque é uma RPC local, ~100ms, sem fala com o
+Mercado Livre, e não precisava do comportamento "segura aberto".)
 
 ### Critério do que conta como "destrutivo"
 
@@ -124,18 +126,46 @@ reprovou por "enfeitado" e determinou a saída de 16, aplicando o critério de a
   layout) — e os cinco já tinham spinner no ícone ou texto de estado ("Cancelando…",
   "Atualizando…") suficiente. O modo "fora de modal" saiu do padrão inteiro, não só desses 5 pontos.
 
-**Ficam 20 pontos:** `dialog-cadastro-produto`, `dialog-adicionar-variacao`, `dialog-criar-kit`
+**Ficaram 20 pontos nesta primeira passada** (revisados no segundo recorte abaixo, que chega a 18):
+`dialog-cadastro-produto`, `dialog-adicionar-variacao`, `dialog-criar-kit` (modal principal),
+`DialogCriarKitVirtual`, `Revisao` (modal "Publicar no Mercado Livre"), os 6 `AlertDialog` de
+`Publicados`, o modal de saque de `DetalheFinanceiro`, `dialog-entrada`, `dialog-ajuste`,
+`pulse/dialog-adicionar`, `pulse/dialog-reprecificar`, `export/botao-exportar`, e as 3 confirmações
+de foto em `familia-expanded.tsx`.
+
+## Segundo recorte de sobriedade (2026-09-17, segunda passada)
+
+A segunda revisão (Fable) encontrou mais 2 pontos fora do critério de aplicação, apesar de
+aparentarem espera real:
+
+- **Modal de saque (`DetalheFinanceiro.tsx`):** é uma RPC local
+  (`registrar_saque_ml_vendas`, `src/lib/faturamento.ts:191`), não fala com o Mercado Livre. Resolve
+  em ~100ms — o glow virava uma piscada. Revertido inteiro: o modal volta a fechar no clique
+  (`processandoSaque`, `mutateAsync` e o `try`/`finally` da Task 7 saem, junto com o teste de
+  timing). Deixa de fazer parte do Grupo B.
+- **Reprecificar (`pulse/dialog-reprecificar.tsx`):** 2 `SELECT`s e um laço local de
+  `updateVariacaoPreco`, zero Mercado Livre. Remove `processando`/`rotuloProcessando` do
+  `DialogContent`; o botão já dizia "Gravando…".
+
+O critério de aplicação (item 1, acima) ganhou uma cláusula que faltava: **"ou monta relatório
+paginado"** — sem ela, `export/botao-exportar` (fetch paginado + montagem de arquivo, sem fala com
+ML/storage/fila/IA) ficaria fora da própria regra que o mantém na lista.
+
+**Ficam 18 pontos:** `dialog-cadastro-produto`, `dialog-adicionar-variacao`, `dialog-criar-kit`
 (modal principal), `DialogCriarKitVirtual`, `Revisao` (modal "Publicar no Mercado Livre"), os 6
-`AlertDialog` de `Publicados`, o modal de saque de `DetalheFinanceiro`, `dialog-entrada`,
-`dialog-ajuste`, `pulse/dialog-adicionar`, `pulse/dialog-reprecificar`, `export/botao-exportar`, e as
-3 confirmações de foto em `familia-expanded.tsx`.
+`AlertDialog` de `Publicados`, `dialog-entrada`, `dialog-ajuste`, `pulse/dialog-adicionar`,
+`export/botao-exportar`, e as 3 confirmações de foto em `familia-expanded.tsx`.
+
+O Grupo B (modal que segura aberto até a resposta) fica com **6 modais**, todos em
+`Publicados.tsx`.
 
 ## Consequências
 
-- Um único componente e um único par de props cobre 20 pontos (lista acima) — sem modo "fora de
+- Um único componente e um único par de props cobre 18 pontos (lista acima) — sem modo "fora de
   modal". `ProgressoIndeterminado` só é renderizado dentro de `DialogContent`/`AlertDialogContent`.
-- Mudança de comportamento perceptível em produção: os 6 modais de `Publicados` e o de saque não
-  fecham mais no clique — fecham só depois da resposta.
+- Mudança de comportamento perceptível em produção: os 6 modais de `Publicados` não fecham mais no
+  clique — fecham só depois da resposta. O modal de saque de `DetalheFinanceiro` voltou ao
+  comportamento original (fecha no clique) no segundo recorte.
 - Nenhum payload, parâmetro ou condição de disparo de mutation mudou — a mudança é só de quando o
   modal fecha e o que ele mostra enquanto isso não acontece.
 - Follow-up fora desta entrega: "Regenerar descrição" (IA, 5-15s) passaria no critério de aplicação
@@ -144,5 +174,5 @@ reprovou por "enfeitado" e determinou a saída de 16, aplicando o critério de a
 ## Como reverter
 
 Remover as props `processando`/`rotuloProcessando`/`destrutivo` dos call sites e voltar os 6 modais
-de `Publicados` + o de saque a `AlertDialog`/`Dialog` não controlados (tirar `open`/`onOpenChange`,
-`preventDefault` e o `finally`). O componente `ProgressoIndeterminado` pode ficar dormente sem uso.
+de `Publicados` a `AlertDialog` não controlados (tirar `open`/`onOpenChange`, `preventDefault` e o
+`finally`). O componente `ProgressoIndeterminado` pode ficar dormente sem uso.

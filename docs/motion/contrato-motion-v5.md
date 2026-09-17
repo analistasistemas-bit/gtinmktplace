@@ -295,8 +295,9 @@ o conteúdo e o tempo de cada um são diferentes. Isso não muda.
 (`ProgressoIndeterminado`, `src/components/ui/progresso-indeterminado.tsx`) só quando as DUAS
 condições valem ao mesmo tempo:**
 
-1. **A operação fala com Mercado Livre, storage, fila (QStash) ou IA** — segundos reais de espera
-   por uma resposta externa, não uma chamada local de UPDATE/DELETE simples.
+1. **A operação fala com Mercado Livre, storage, fila (QStash) ou IA, ou monta relatório
+   paginado** — segundos reais de espera por uma resposta externa ou por paginação real de dados,
+   não uma chamada local de UPDATE/DELETE simples.
 2. **O modal permanece de pé durante a espera** (o par existe para segurar a atenção num diálogo
    que continua aberto; não existe versão "fora de modal" — foi removida por enfeitar sem
    necessidade, ver ADR-0163).
