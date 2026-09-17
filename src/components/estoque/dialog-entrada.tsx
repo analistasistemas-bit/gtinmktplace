@@ -22,13 +22,11 @@ import {
 } from '@/lib/produtos-saldo';
 import { parseNumeroPtBr } from '@/lib/formato';
 import type { MarcadorSyncMl } from '@/lib/estoque-sync-ml';
-
-interface OpcaoSku {
-  codigo: string;
-  rotulo: string;
-  codigoPai: string;
-  estoque: number;
-}
+import {
+  filtrarOpcoesSku,
+  montarOpcoesSku,
+  type OpcaoSku,
+} from '@/lib/dialog-entrada-busca';
 
 function rotuloVariacao(v: { codigo: string; cor: string | null; nome: string | null }): string {
   const complemento = v.cor ?? v.nome;
@@ -79,18 +77,8 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
     setDocumento('');
   }, [aberto, skuInicial, codigoPaiInicial]);
 
-  const opcoes = useMemo<OpcaoSku[]>(() => {
-    const todas = skus.map((s) => ({
-      codigo: s.codigo,
-      rotulo: `${s.codigo} · ${s.nome}${s.cor ? ` (${s.cor})` : ''}`,
-      codigoPai: s.codigoPai,
-      estoque: s.estoque,
-    }));
-    const termo = busca.trim().toLowerCase();
-    if (!termo) return todas.slice(0, 50);
-    return todas.filter((o) => o.rotulo.toLowerCase().includes(termo)
-      || o.codigoPai.toLowerCase().includes(termo)).slice(0, 50);
-  }, [skus, busca]);
+  const todasOpcoes = useMemo(() => montarOpcoesSku(skus), [skus]);
+  const opcoes = useMemo(() => filtrarOpcoesSku(todasOpcoes, busca, 50), [todasOpcoes, busca]);
 
   const selecionada = useMemo(
     () => skus.find((s) => s.codigo === codigo),
