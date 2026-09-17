@@ -395,7 +395,9 @@ const casos: Caso[] = [
   },
 ];
 
-describe.each(casos)('$nome — segura aberto e dispara uma vez', ({ nome, abrir, confirmar, montarItem, mockPendente }) => {
+// `$nome` no título é resolvido pelo próprio vitest a partir do objeto do caso — não precisa
+// (nem pode) ser desestruturado aqui, senão o lint acusa variável não usada.
+describe.each(casos)('$nome — segura aberto e dispara uma vez', ({ abrir, confirmar, montarItem, mockPendente }) => {
   it('dispara uma única vez e fecha ao concluir', async () => {
     montarItem?.();
     let concluir!: () => void;
