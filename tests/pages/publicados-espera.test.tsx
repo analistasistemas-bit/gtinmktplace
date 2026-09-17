@@ -265,14 +265,35 @@ describe('Publicados — confirmação segura aberta durante a operação', () =
   it('handler que rejeita também fecha o modal — nunca fica preso', async () => {
     // Task 5 faz o handler engolir o erro, mas o fechamento não pode DEPENDER disso: é um
     // invariante que mora em outro arquivo. O `finally` do onClick é quem garante.
-    const mutateAsync = vi.fn(() => Promise.reject(new Error('ML fora do ar')));
+    //
+    // Controlamos a rejeição manualmente (em vez de usar Promise.reject direto) porque o ponto
+    // que discrimina a arquitetura nova da antiga é o estado ENQUANTO a promise está pendente: no
+    // Radix, `AlertDialogAction` fecha o diálogo sincronamente no clique a menos que o `onClick`
+    // dê `preventDefault`. Sem isso (código antigo), o clique já fecharia o modal na hora —
+    // "fechar depois de rejeitar" seria verdade por acidente, não pelo `finally`. Por isso a
+    // asserção central daqui é o `alertdialog`/`progressbar` AINDA presentes antes de rejeitar.
+    let rejeitar!: (err: Error) => void;
+    const mutateAsync = vi.fn(() => new Promise<void>((_res, rej) => { rejeitar = rej; }));
     usePausarReativarPublicadoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false, error: null });
 
-    renderPublicados();
+    const { rerender } = renderPublicados();
 
     await userEvent.click(screen.getByRole('button', { name: 'Pausar' }));
     await userEvent.click(screen.getByRole('button', { name: /^Pausar$/ }));
 
+    usePausarReativarPublicadoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: true, error: null });
+    rerender(
+      <MemoryRouter>
+        <Publicados />
+      </MemoryRouter>,
+    );
+
+    // No código antigo (sem preventDefault) o clique já fechou o modal — este `getByRole` não
+    // acharia nada e o teste falharia aqui, antes mesmo de chegar na rejeição.
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAccessibleName('Pausando anúncio');
+
+    rejeitar(new Error('ML fora do ar'));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
@@ -294,7 +315,15 @@ describe('Publicados — confirmação segura aberta durante a operação', () =
         <Publicados />
       </MemoryRouter>,
     );
-    await userEvent.click(screen.getByRole('button', { name: /^Pausar$/ }));
+
+    // No código antigo o primeiro clique já fecharia o modal (sem preventDefault) — o `getByRole`
+    // abaixo não acharia o `alertdialog` e o teste falharia aqui, antes de sequer chegar ao
+    // segundo clique. É essa presença + o `disabled` que provam que o segundo clique não tem
+    // como disparar de novo, não só a contagem final de chamadas.
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    const confirmarPendente = screen.getByRole('button', { name: /^Pausar$/ });
+    expect(confirmarPendente).toBeDisabled();
+    await userEvent.click(confirmarPendente);
 
     expect(mutateAsync).toHaveBeenCalledTimes(1);
   });
