@@ -3,6 +3,7 @@
 // Duplicar a condição no card e na lista é como um KPI passa a mostrar 12 e a lista devolver 9.
 import type { PulseProduto } from './pulse';
 import { posicaoVsMercado } from './pulse-formato';
+import { normalizarParaBusca } from './texto';
 
 /** Recorte ativado ao clicar num KPI. `null` = sem recorte. */
 export type FocoPulse = 'mais_caro' | 'menor_preco' | 'sem_vinculo';
@@ -28,11 +29,11 @@ export function temFiltroAtivo(f: FiltrosPulse): boolean {
 }
 
 function casaBusca(p: PulseProduto, termo: string): boolean {
-  const t = termo.trim().toLowerCase();
+  const t = normalizarParaBusca(termo);
   if (!t) return true;
-  return (p.titulo ?? '').toLowerCase().includes(t)
+  return normalizarParaBusca(p.titulo).includes(t)
     || (p.gtin ?? '').includes(t)
-    || (p.codigo_pai ?? '').includes(t);
+    || normalizarParaBusca(p.codigo_pai).includes(t);
 }
 
 function casaFoco(p: PulseProduto, foco: FocoPulse, menorRelevante: number | null): boolean {

@@ -35,6 +35,14 @@ describe('filtrarProdutos — busca', () => {
   it('busca só de espaços não filtra nada', () => {
     expect(filtrarProdutos(lista, filtros({ busca: '   ' }), menorFixo(null))).toHaveLength(2);
   });
+
+  it('acha produto com acento buscando sem acento e vice-versa', () => {
+    const listaAcentos = [
+      produto({ id: 'c', titulo: 'Sabão em Barra', gtin: '333', codigo_pai: '000030' }),
+    ];
+    expect(filtrarProdutos(listaAcentos, filtros({ busca: 'sabao' }), menorFixo(null)).map((p) => p.id)).toEqual(['c']);
+    expect(filtrarProdutos(listaAcentos, filtros({ busca: 'Sabão' }), menorFixo(null)).map((p) => p.id)).toEqual(['c']);
+  });
 });
 
 describe('filtrarProdutos — situação do anúncio no ML', () => {
