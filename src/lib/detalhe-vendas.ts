@@ -2,6 +2,7 @@ import type { Venda } from './faturamento';
 import { ehFaturavel, ratearLiquidoPorFrete, impostoDoItem, type CustoResolver, type PesoResolver, type AliquotaResolver } from './resumo-vendas';
 import { canonizarItem, type MapaCanonico } from './anuncio-canonico';
 import { round2 } from './formato';
+import { normalizarParaBusca } from './texto';
 
 export interface LinhaVenda {
   id: string;
@@ -21,6 +22,20 @@ export interface LinhaVenda {
   markup: number | null;
   /** Lucro do produto no período: Σ líquido − Σ imposto − Σ custo (ADR-0055). null = sem custo. */
   lucro: number | null;
+}
+
+/**
+ * Predicado de busca para linha de detalhe de vendas.
+ * Casa título, código ou EAN de forma insensível a maiúsculas e acentos em português.
+ */
+export function linhaVendaCasaBusca(l: LinhaVenda, busca: string): boolean {
+  const q = normalizarParaBusca(busca);
+  if (!q) return true;
+  return (
+    normalizarParaBusca(l.titulo).includes(q) ||
+    normalizarParaBusca(l.codigo).includes(q) ||
+    normalizarParaBusca(l.ean).includes(q)
+  );
 }
 /** Taxas do ML/fisco de um produto ou seção: soma + breakdown p/ o tooltip. */
 export interface Taxas {

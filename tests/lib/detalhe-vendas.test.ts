@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { montarDetalheVendas } from '@/lib/detalhe-vendas';
+import { montarDetalheVendas, linhaVendaCasaBusca } from '@/lib/detalhe-vendas';
 import { calcularResumo } from '@/lib/resumo-vendas';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import type { Venda, VendaItem } from '@/lib/faturamento';
@@ -255,5 +255,41 @@ describe('montarDetalheVendas — markup e lucro por produto', () => {
     const mb = r.app.linhas.find((l) => l.id === 'MB')!;
     expect(ma.markup).toBeCloseTo(6);
     expect(mb.markup).toBeCloseTo(6);
+  });
+});
+
+describe('linhaVendaCasaBusca', () => {
+  const linhaMock = {
+    chave: 'ch-1',
+    codigo: 'COD-10',
+    ean: '7891000',
+    titulo: 'Camisa Algodão Egípcio Estampada',
+    unidades: 2,
+    valor: 200,
+    pctTotal: 10,
+    taxas: { total: 30, comissao: 20, frete: 0, imposto: 10 },
+    custo: 50,
+    markup: 1.5,
+    lucro: 120,
+    mlItemIds: ['MLB123'],
+  };
+
+  it('acha produto por título com acento pesquisando sem acento', () => {
+    expect(linhaVendaCasaBusca(linhaMock, 'algodao')).toBe(true);
+    expect(linhaVendaCasaBusca(linhaMock, 'egipcio')).toBe(true);
+  });
+
+  it('acha produto por título sem acento pesquisando com acento', () => {
+    expect(linhaVendaCasaBusca(linhaMock, 'Algodão')).toBe(true);
+    expect(linhaVendaCasaBusca(linhaMock, 'Egípcio')).toBe(true);
+  });
+
+  it('acha por código ou EAN', () => {
+    expect(linhaVendaCasaBusca(linhaMock, 'cod-10')).toBe(true);
+    expect(linhaVendaCasaBusca(linhaMock, '7891000')).toBe(true);
+  });
+
+  it('retorna true para busca vazia', () => {
+    expect(linhaVendaCasaBusca(linhaMock, '')).toBe(true);
   });
 });

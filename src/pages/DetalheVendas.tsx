@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { periodoFromParams, resolverJanela, periodoToParams, type Periodo } from '@/lib/metricas';
-import { montarDetalheVendas, type LinhaVenda, type SecaoVendas, type Taxas } from '@/lib/detalhe-vendas';
+import { montarDetalheVendas, linhaVendaCasaBusca, type LinhaVenda, type SecaoVendas, type Taxas } from '@/lib/detalhe-vendas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
@@ -124,12 +124,8 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
 
   const linhas = useMemo(() => {
     let base = secao.linhas;
-    const q = busca.trim().toLowerCase();
-    if (q) {
-      base = base.filter((l) =>
-        l.titulo.toLowerCase().includes(q)
-        || (l.codigo ?? '').toLowerCase().includes(q)
-        || (l.ean ?? '').toLowerCase().includes(q));
+    if (busca.trim()) {
+      base = base.filter((l) => linhaVendaCasaBusca(l, busca));
     }
     if (!sort) return base;
     const val = (l: LinhaVenda): string | number | null => {
