@@ -67,6 +67,19 @@ describe('DialogEntrada — modo lista (aberto pelo card do produto)', () => {
     expect(screen.queryByText('Nenhum SKU encontrado.')).toBeNull();
   });
 
+  // A RPC devolve por código; a lista é lida pelo nome da cor.
+  it('ordena as cores alfabeticamente, não por código', async () => {
+    renderDialog({ codigoPaiInicial: '26705341' });
+    await screen.findByText(/18760901 · Vermelho/);
+    const rotulos = screen.getAllByLabelText(/^Quantidade para /)
+      .map((el) => el.getAttribute('aria-label'));
+    expect(rotulos).toEqual([
+      'Quantidade para 26706071 · Branco',
+      'Quantidade para 24232511 · Champagne',
+      'Quantidade para 18760901 · Vermelho',
+    ]);
+  });
+
   it('envia só as cores preenchidas, com o custo aplicado a todas elas', async () => {
     renderDialog({ codigoPaiInicial: '26705341' });
     await screen.findByText(/18760901 · Vermelho/);
@@ -79,9 +92,10 @@ describe('DialogEntrada — modo lista (aberto pelo card do produto)', () => {
     await userEvent.click(screen.getByRole('button', { name: /Registrar entrada \(2\)/ }));
 
     await waitFor(() => expect(registrarEntradaLoteMock).toHaveBeenCalledTimes(1));
+    // Ordem do payload segue a da tela (alfabética por cor); a edge trata item a item.
     expect(registrarEntradaLoteMock.mock.calls[0]![0].itens).toEqual([
-      { codigo: '18760901', quantidade: 40, custo: 32.84 },
       { codigo: '24232511', quantidade: 25, custo: 32.84 },
+      { codigo: '18760901', quantidade: 40, custo: 32.84 },
     ]);
   });
 
