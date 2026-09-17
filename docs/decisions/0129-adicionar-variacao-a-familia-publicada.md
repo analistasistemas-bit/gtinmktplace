@@ -141,6 +141,10 @@ das decisões D-1…D-11:
    pré-preenchidos da mesma variação irmã, editáveis — mesmo racional do D-6 original: cor
    diferente do mesmo produto quase nunca muda custo nem preço mínimo. Reaproveita a mesma query
    de prefill (`fetchFamiliaCanonicaPrefill`); nenhuma chamada nova.
+   **Qual irmã (2026-09-17):** a de **menor código**. A query não ordena a lista embutida de
+   `variacoes`, e sem `order by` a ordem do Postgres pode mudar sozinha (vacuum, plano novo) —
+   a cor nova nasceria com o custo/preço de uma irmã diferente a cada vez. A escolha é fixada
+   no cliente, mesma regra do prefill da calculadora ML (`escolherVariacao`).
 
 ## Correção pós-produção (2026-08-21) — insert heterogêneo de `variacoes`
 
