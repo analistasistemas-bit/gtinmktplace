@@ -2,6 +2,7 @@
 // que decide o que o operador vê, e precisa ser testável sem render.
 import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 import { fiscalIncompleto } from '@/lib/fiscal';
+import { normalizarParaBusca } from './texto';
 
 export type FiltroEstoque = 'todos' | 'sem-estoque' | 'nao-publicado' | 'fiscal-pendente';
 export type OrdemEstoque = 'nome' | 'saldo-asc' | 'recente';
@@ -18,8 +19,6 @@ export interface OpcoesFiltro {
    *  à toa por falta de dado. */
   regimeOrg?: 'simples' | 'normal';
 }
-
-const normalizar = (s: string) => s.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
 
 /**
  * Publicado = tem `ml_item_id` (fonte canônica, a mesma de `fetchPublicados`) OU aparece no
@@ -67,11 +66,11 @@ export function canaisEfetivos(p: ProdutoEstoqueResumo, canais: Map<string, stri
 
 function casaTermo(p: ProdutoEstoqueResumo, termo: string): boolean {
   const alvos = [p.nomePai, p.codigoPai, p.fornecedor ?? '', ...p.gtins, ...p.codigos, ...p.cores, ...p.nomes];
-  return alvos.some((a) => normalizar(a).includes(termo));
+  return alvos.some((a) => normalizarParaBusca(a).includes(termo));
 }
 
 export function filtrarProdutos(produtos: ProdutoEstoqueResumo[], opts: OpcoesFiltro): ProdutoEstoqueResumo[] {
-  const termo = normalizar(opts.termo.trim());
+  const termo = normalizarParaBusca(opts.termo);
 
   const lista = produtos.filter((p) => {
     if (termo && !casaTermo(p, termo)) return false;
