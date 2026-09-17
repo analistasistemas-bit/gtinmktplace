@@ -14,6 +14,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
+import { ProgressoIndeterminado } from '@/components/ui/progresso-indeterminado';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { KpiInfoButton } from '@/components/ui/kpi-card';
 import {
@@ -522,10 +523,13 @@ export default function DetalheFinanceiro() {
                 })
               }
             />
-            <Button variant="outline" size="sm" onClick={() => vendasQ.refetch()} disabled={isFetching}>
-              <RefreshCw className={cn('mr-1.5 h-4 w-4', isFetching && 'animate-spin')} />
-              {isFetching ? 'Atualizando…' : 'Atualizar'}
-            </Button>
+            <div className="flex flex-col items-end gap-1">
+              <Button variant="outline" size="sm" onClick={() => vendasQ.refetch()} disabled={isFetching}>
+                <RefreshCw className={cn('mr-1.5 h-4 w-4', isFetching && 'animate-spin')} />
+                {isFetching ? 'Atualizando…' : 'Atualizar'}
+              </Button>
+              {isFetching && <ProgressoIndeterminado label="Atualizando vendas" className="w-full" />}
+            </div>
             <Button asChild variant="ghost" size="sm">
               <Link to="/financeiro"><ArrowLeft className="mr-1.5 h-4 w-4" />Voltar</Link>
             </Button>
@@ -591,6 +595,7 @@ export default function DetalheFinanceiro() {
             disabled={selecionadosVisiveis.length === 0 || mutationRegistrar.isPending || mutationDesfazer.isPending}>
             <RotateCcw className="mr-1.5 h-4 w-4" />Desfazer saque
           </Button>
+          {processandoSaque && <ProgressoIndeterminado label="Processando saque" className="mt-1" />}
         </div>
       </div>
 

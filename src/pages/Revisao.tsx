@@ -12,6 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PageHeader } from '@/components/ui/page-header';
+import { ProgressoIndeterminado } from '@/components/ui/progresso-indeterminado';
 import { Pagination } from '@/components/ui/pagination';
 import { usePaginacao } from '@/hooks/usePaginacao';
 import { useSessionState } from '@/hooks/useSessionState';
@@ -392,6 +393,9 @@ export default function Revisao() {
                     Reenviar {qtdErros} com erro
                   </Button>
                 )}
+                {reprocessarLote.isPending && (
+                  <ProgressoIndeterminado label="Reenviando famílias com erro" className="mt-1" />
+                )}
                 {temPublicacao && (
                   <Button
                     variant="outline"
@@ -634,7 +638,7 @@ export default function Revisao() {
         </DialogContent>
       </Dialog>
       <Dialog open={confirmando} onOpenChange={setConfirmando}>
-        <DialogContent processando={publicando}>
+        <DialogContent processando={publicando} rotuloProcessando="Enfileirando publicação">
           <DialogHeader>
             <DialogTitle>Publicar no Mercado Livre</DialogTitle>
           </DialogHeader>

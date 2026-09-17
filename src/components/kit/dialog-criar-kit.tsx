@@ -26,6 +26,7 @@ import {
   type BaseParaKit, type KitFormValues,
 } from '@/lib/kit';
 import { PreviewKit, valorInicialPreview, type KitPreviewValue } from '@/components/kit/preview-kit';
+import { ProgressoIndeterminado } from '@/components/ui/progresso-indeterminado';
 
 const MENSAGEM_POR_MOTIVO: Record<string, string> = {
   base_multivariacao: 'Kit vinculado só existe para produto sem variação de cor.',
@@ -333,16 +334,21 @@ export function DialogCriarKit({ familiaBaseId, base, kitsExistentes, open, onOp
                     {comErro && <span className="ml-2 text-xs text-destructive">falhou ao publicar</span>}
                   </label>
                   {comErro && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="ml-auto h-7"
-                      disabled={reenviarMutation.isPending}
-                      onClick={() => reenviarMutation.mutate(existente!.familiaId)}
-                    >
-                      <RotateCw className={cn('mr-1 h-3 w-3', reenviarMutation.isPending && reenviarMutation.variables === existente!.familiaId && 'animate-spin')} />
-                      Reenviar
-                    </Button>
+                    <div className="ml-auto flex flex-col items-end gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7"
+                        disabled={reenviarMutation.isPending}
+                        onClick={() => reenviarMutation.mutate(existente!.familiaId)}
+                      >
+                        <RotateCw className={cn('mr-1 h-3 w-3', reenviarMutation.isPending && reenviarMutation.variables === existente!.familiaId && 'animate-spin')} />
+                        Reenviar
+                      </Button>
+                      {reenviarMutation.isPending && reenviarMutation.variables === existente!.familiaId && (
+                        <ProgressoIndeterminado label="Reenviando fotos" className="w-full" />
+                      )}
+                    </div>
                   )}
                 </div>
               );
