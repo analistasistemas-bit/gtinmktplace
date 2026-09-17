@@ -286,6 +286,19 @@ Nunca um padrão universal de carregamento.
 
 **Proibição de progresso falso (regra 6 do contrato):** nunca simular percentual com timer, avançar etapas via `setTimeout` sem evento real, indicar conclusão antes da resposta, ou mostrar progresso determinístico para operação indeterminada.
 
+**Emenda (ADR-0163, 2026-09-17) — "nunca um padrão universal de carregamento" continua valendo só
+para carregar conteúdo.** Esta seção trata de **carregamento de conteúdo**: skeleton por fluxo,
+etapas reais quando existem, cada caso com sua própria forma porque o conteúdo e o tempo de cada um
+são diferentes. Isso não muda.
+
+**Ação disparada pelo operador é outro problema.** Quando o clique é do operador (confirmar em
+diálogo, botão de ação fora de modal) e a espera é pela resposta de uma Edge Function/RPC/API do
+Mercado Livre, o sinal é sempre `ProgressoIndeterminado`
+(`src/components/ui/progresso-indeterminado.tsx`): glow + barra em modal para ação normal; só a
+barra, sem glow, em ação destrutiva (ver §10) e em botão fora de modal. Ver ADR-0163 para o critério
+completo, a decisão do Grupo B (modal segura aberto até a resposta) e por que o `onOpenChange` não é
+guardado.
+
 ---
 
 ## 10. FEEDBACK DE AÇÃO
@@ -296,6 +309,11 @@ Padrões consistentes para: salvar, publicar, sincronizar, importar, excluir, co
 - **Erro:** cor + ícone + mensagem clara + entrada suave + foco quando apropriado + semântica acessível.
 - **Shake:** só quando ação direta do usuário falha imediatamente, extremamente sutil, uma única vez, sem comprometer leitura. **Nunca** em erros automáticos, tabelas extensas, alertas persistentes, erros em lote ou mensagens sem interação direta.
 - **Exclusão/destrutivas:** nunca lúdicas — sem bounce, overshoot, comemoração ou delay desnecessário.
+
+**Regra (ADR-0163):** ação destrutiva durante o processamento recebe a prop `destrutivo` no
+diálogo, que suprime o glow e deixa só a barra — nunca o glow, que é efeito comemorativo, incompatível
+com o item anterior. Destrutivo é definido pelo efeito real (encerra ou remove algo na listagem do
+Mercado Livre, ou remove dado do sistema), não pela palavra do botão.
 
 ---
 
