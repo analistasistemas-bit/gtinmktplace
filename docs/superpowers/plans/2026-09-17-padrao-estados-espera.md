@@ -41,7 +41,7 @@
 | `src/components/ui/dialog.tsx` | Props `processando`/`destrutivo` no `DialogContent`; import do `glow-effect.css` passa a morar aqui |
 | `src/components/ui/alert-dialog.tsx` | Mesmas props no `AlertDialogContent` |
 
-**Modificados (aplicação):** 18 modais do Grupo A, 7 do Grupo B, 3 do Grupo C, 9 botões do Grupo D — listados por tarefa.
+**Modificados (aplicação):** 18 modais do Grupo A, 7 do Grupo B, 3 do Grupo C, 7 botões do Grupo D — listados por tarefa.
 
 ---
 
@@ -250,7 +250,7 @@ function DialogContent({
         {processando && (
           <ProgressoIndeterminado
             label={rotuloProcessando}
-            className="absolute inset-x-0 top-0 z-10 w-auto rounded-t-xl rounded-b-none"
+            className="absolute inset-x-0 top-0 z-10 rounded-t-xl rounded-b-none"
           />
         )}
         {children}
@@ -322,7 +322,7 @@ function AlertDialogContent({
         {processando && (
           <ProgressoIndeterminado
             label={rotuloProcessando}
-            className="absolute inset-x-0 top-0 z-10 w-auto rounded-t-xl rounded-b-none"
+            className="absolute inset-x-0 top-0 z-10 rounded-t-xl rounded-b-none"
           />
         )}
         {children}
@@ -483,7 +483,7 @@ Expected: sem falha nova.
 
 ```bash
 git add -A
-git commit -m "feat(ui): sinal de processamento nos 17 diálogos do grupo A"
+git commit -m "feat(ui): sinal de processamento nos 18 diálogos do grupo A"
 ```
 
 ---
@@ -541,7 +541,7 @@ Um por vez, preservando toast de sucesso, toast de erro (com `description`) e o 
 
 - [ ] **Step 2: Atualizar os 6 tipos de prop do card**
 
-No bloco de tipos que começa em `src/pages/Publicados.tsx:205`, trocar o retorno de `void` para `Promise<void>` nas 6 props: `onPausarReativar`, `onRemover`, `onRepublicar`, `onMigrarPrecoPorVariacao`, `onRefazer` e a de remover publicação incompleta.
+No bloco `LinhaProps`, a partir de `src/pages/Publicados.tsx:201`, trocar o retorno de `void` para `Promise<void>` nas 6 props: `onPausarReativar`, `onRemover`, `onRepublicar`, `onMigrarPrecoPorVariacao`, `onRefazer` e a de remover publicação incompleta.
 
 - [ ] **Step 3: Typecheck**
 
@@ -555,7 +555,9 @@ Expected: sem erro novo. Se aparecer "Promise returned is not awaited" em algum 
 Três mudanças no arquivo:
 
 1. **Mocks:** acrescentar `mutateAsync: vi.fn().mockResolvedValue(undefined)` ao lado de cada `mutate` nos objetos devolvidos pelos hooks mockados.
-2. **Asserções:** as que hoje fazem `expect(mutate).toHaveBeenCalledWith(id, expect.any(Object))` (l.461, 772, 795, 948, 969) passam a `expect(mutateAsync).toHaveBeenCalledWith(id)` — o segundo argumento era o objeto de callbacks, que deixou de existir.
+2. **Asserções:** as que hoje fazem `expect(mutate).toHaveBeenCalledWith(id, expect.any(Object))` nas l.772, 795, 948 e 969 passam a `expect(mutateAsync).toHaveBeenCalledWith(id)` — o segundo argumento era o objeto de callbacks, que deixou de existir.
+
+   **A l.461 NÃO muda:** é `useRetentarCatalogoMock`, e `handleRetentarCatalogo` não está entre os 6 handlers convertidos — continua usando `mutate`. Trocar ali quebra um teste que estava passando.
 3. **Testes de "Refazer kit" (l.756-798):** hoje simulam o resultado chamando `opts.onSuccess({ ok: … })` na implementação do mock. Passam a `mockResolvedValue({ ok: … })`.
 
 Estes ajustes são consequência direta da mudança de API, não acomodação de teste quebrado: o que é verificado (a ação foi disparada com o id certo, o toast certo apareceu) continua idêntico.
@@ -568,7 +570,7 @@ Expected: PASS. Os toasts foram preservados na conversão dos handlers; se algum
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/pages/Publicados.tsx
+git add src/pages/Publicados.tsx tests/pages/Publicados.test.tsx
 git commit -m "refactor(publicados): handlers assíncronos para o modal poder esperar a resposta"
 ```
 
@@ -665,9 +667,13 @@ O estado vive no componente do card (o mesmo que já recebe `pausando` por prop)
 
 - [ ] **Step 1: Escrever os testes que falham**
 
-Create: `src/pages/__tests__/publicados-espera.test.tsx`
+Create: `tests/pages/publicados-espera.test.tsx` — **na árvore `tests/`**, ao lado de `tests/pages/Publicados.test.tsx`, que é onde vive o teste desta página.
 
-Três testes, usando o modal "Pausar" como caso representativo do mecanismo (os outros cinco são a mesma transformação e são cobertos por typecheck + validação visual):
+**Como montar (importante):** `LinhaTabela` (l.242), `LinhaIncompleta` (l.608) e `LinhaKitVirtual` (l.692) **não são exportados** — o único export de `src/pages/Publicados.tsx` é o default `Publicados` (l.818). Não exporte os cards só para testar. Siga o padrão que `tests/pages/Publicados.test.tsx` já usa: renderizar `<Publicados />` inteiro com os hooks mockados. A pendência se simula devolvendo `isPending: true` no mock do hook e fazendo `rerender`; a promise controlável vem do `mutateAsync` mockado.
+
+Leia `tests/pages/Publicados.test.tsx` antes de escrever — as fixtures de item, o wrapper de QueryClient e os mocks de hook já existem lá e devem ser reaproveitados. Dois casos têm pré-requisito de fixture: **Migrar** exige `qtdVariacoesFamilia: 2`, status ativo e admin; **Refazer kit** exige um item de `kitItemBase()` (ver l.756 do arquivo existente).
+
+Três testes usando o modal "Pausar" como caso detalhado do mecanismo:
 
 ```tsx
 import { describe, expect, it, vi } from 'vitest';
@@ -731,20 +737,27 @@ describe('Publicados — confirmação segura aberta durante a operação', () =
 // Os outros cinco modais são a mesma transformação. Em vez de cinco cópias do teste acima, uma
 // tabela: o que precisa ser garantido em ação de Mercado Livre é que ela dispare UMA vez e que
 // o modal não fique preso.
+//
+// Os rótulos abaixo são os textos REAIS dos botões de confirmação — vários não repetem o nome
+// da ação ("Corrigir e republicar" confirma com "Pausar e voltar à Revisão"). Conferir no
+// arquivo antes de escrever: um regex que não casa passa como falso negativo silencioso.
 describe.each([
-  { nome: 'Migrar para preço por variação', abrir: /migrar/i, confirmar: /^Migrar$/, prop: 'onMigrarPrecoPorVariacao', pendencia: 'migrando' },
-  { nome: 'Corrigir e republicar', abrir: /republicar/i, confirmar: /^Republicar$/, prop: 'onRepublicar', pendencia: 'republicando' },
-  { nome: 'Remover do sistema', abrir: /remover/i, confirmar: /^Remover$/, prop: 'onRemover', pendencia: 'removendo' },
-  { nome: 'Refazer kit', abrir: /refazer/i, confirmar: /^Refazer$/, prop: 'onRefazer', pendencia: 'refazendo' },
-])('$nome — segura aberto e dispara uma vez', ({ abrir, confirmar, prop, pendencia }) => {
+  { nome: 'Migrar para preço por variação', confirmar: 'Migrar anúncio', hook: 'useMigrarPrecoPorVariacao' },
+  { nome: 'Corrigir e republicar', confirmar: 'Pausar e voltar à Revisão', hook: 'useRepublicarPublicado' },
+  { nome: 'Remover do sistema', confirmar: 'Remover', hook: 'useRemoverPublicado' },
+  { nome: 'Remover publicação incompleta', confirmar: 'Pausar no ML e remover', hook: 'useRemoverPublicado' },
+  { nome: 'Refazer kit', confirmar: 'Encerrar e refazer', hook: 'useEncerrarKitVirtual' },
+])('$nome — segura aberto e dispara uma vez', ({ nome, confirmar }) => {
   it('dispara uma única vez e fecha ao concluir', async () => {
+    // Montagem: renderizar <Publicados /> com o hook correspondente mockado devolvendo
+    // { mutateAsync, isPending }. Ver o topo de tests/pages/Publicados.test.tsx.
     let concluir!: () => void;
     const acao = vi.fn(() => new Promise<void>((res) => { concluir = () => res(); }));
-    const { rerender } = renderCard({ [prop]: acao, [pendencia]: false });
+    const { rerender } = renderPublicadosCom({ acao, pendente: false, caso: nome });
 
-    await userEvent.click(screen.getByRole('button', { name: abrir }));
+    await userEvent.click(await abrirConfirmacao(nome));
     await userEvent.click(screen.getByRole('button', { name: confirmar }));
-    rerender(cardCom({ [prop]: acao, [pendencia]: true }));
+    rerender(publicadosCom({ acao, pendente: true, caso: nome }));
 
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     expect(acao).toHaveBeenCalledTimes(1);
@@ -764,12 +777,12 @@ Expected: FAIL — o modal fecha no clique, não há `progressbar`.
 
 - [ ] **Step 3: Aplicar a transformação nos 6 modais**
 
-Um por vez, seguindo a tabela. Cada um: estado novo, `open`/`onOpenChange` guardado pelo estado de pendência, `processando` (+ `destrutivo` nos dois de remover), `AlertDialogCancel` desabilitado, `onClick` com `preventDefault` + `await` + fechar.
+Um por vez, seguindo a tabela. Cada um: estado novo, `open`/`onOpenChange` **sem guard**, `processando` (+ `destrutivo` nos quatro marcados na tabela), `AlertDialogCancel` desabilitado, `onClick` com `preventDefault` + `try`/`finally`.
 
 - [ ] **Step 4: Rodar os testes**
 
 Run: `pnpm test publicados-espera`
-Expected: PASS, 3 testes.
+Expected: PASS, 8 testes (3 do "Pausar" + 5 da tabela).
 
 - [ ] **Step 5: Suíte inteira**
 
@@ -853,7 +866,7 @@ git commit -m "feat(financeiro): confirmação de saque espera a resposta antes 
 
 **Files:**
 - Modify: `src/components/familia-expanded.tsx:419+` (handlers `lidarRemoverCapa*`), `:671`, `:716`, `:755` (os 3 AlertDialog)
-- Test: `src/components/__tests__/familia-expanded-remover-foto.test.tsx` (criar)
+- Test: `tests/components/familia-expanded-remover-foto.test.tsx` (criar) — **árvore `tests/`**, ao lado de `tests/components/familia-expanded.test.tsx`, cujo helper de montagem deve ser reaproveitado
 
 **Interfaces:**
 - Consumes: props da Task 2.
@@ -862,29 +875,39 @@ Estes 3 modais chamam um handler `async` sem rastrear pendência e sem desabilit
 
 - [ ] **Step 1: Escrever o teste que falha**
 
+**Não existe prop `onRemoverCapa`.** O componente importa `removerCapaFamilia` de `@/lib/upload-imagens` (`familia-expanded.tsx:35`) e chama direto (l.422). O teste mocka o módulo. Além disso, o `AlertDialog` de capa só renderiza se `familia.capaStoragePath` for truthy (l.663) — a fixture precisa preenchê-lo.
+
 ```tsx
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+vi.mock('@/lib/upload-imagens', async (orig) => ({
+  ...(await orig<typeof import('@/lib/upload-imagens')>()),
+  removerCapaFamilia: vi.fn(),
+}));
+import { removerCapaFamilia } from '@/lib/upload-imagens';
 
 // Sem estado de pendência, o botão continuava clicável durante a remoção e disparava duas vezes.
 describe('FamiliaExpanded — remover capa', () => {
   it('clique duplo remove uma única vez e o modal mostra o progresso', async () => {
-    const remover = vi.fn(() => new Promise<void>(() => {}));
-    renderFamiliaExpanded({ onRemoverCapa: remover });
+    vi.mocked(removerCapaFamilia).mockImplementation(() => new Promise<void>(() => {}));
+    // Helper de montagem de tests/components/familia-expanded.test.tsx, com a fixture
+    // trazendo `capaStoragePath` preenchido — sem ele o AlertDialog nem renderiza.
+    renderFamiliaExpanded({ familia: { ...familiaBase, capaStoragePath: 'org/familia/capa.jpg' } });
 
     await userEvent.click(screen.getByRole('button', { name: /remover capa/i }));
     const confirmar = screen.getByRole('button', { name: /^Remover$/ });
     await userEvent.click(confirmar);
     await userEvent.click(confirmar);
 
-    expect(remover).toHaveBeenCalledTimes(1);
+    expect(removerCapaFamilia).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(screen.getByRole('progressbar')).toBeInTheDocument());
   });
 });
 ```
 
-Adaptar o helper de montagem ao que já existir nos testes deste componente.
+Conferir o rótulo real dos botões (de abrir e de confirmar) em `familia-expanded.tsx` antes de escrever os regexes — os textos acima são suposições e um regex que não casa vira falso negativo silencioso.
 
 - [ ] **Step 2: Rodar e confirmar a falha**
 
@@ -1027,7 +1050,7 @@ Alvos mínimos:
 3. **Modal do Grupo B** (pausar anúncio): segura aberto durante a operação e fecha sozinho.
 4. **Refazer kit**: caso único em que um modal fecha e outro abre no mesmo commit — conferir que não fica overlay órfão nem foco perdido.
 5. **Tema claro e escuro**: a aura usa `--chart-1/2/3` e a barra usa `--primary`; conferir que os dois aparecem nos dois temas.
-6. **Canto arredondado da barra**: `rounded-t-xl` numa barra de 6px clampa o raio — conferir que o canto acompanha o do modal sem degrau visível.
+6. **Canto arredondado da barra**: `rounded-t-xl` numa barra de 6px é clampado para raio 6, enquanto o content tem raio 12 — o fundo `--muted` da barra pode sobrar alguns pixels fora do canto arredondado, visível contra o overlay. Se aparecer, o conserto barato é `inset-x-3 rounded-full` (a barra vira uma pílula recuada, dentro dos cantos). **Não** resolver com `overflow-hidden` no content: isso clipa o glow, que é `box-shadow` desenhado fora da borda.
 
 - [ ] **Step 4: Revisão do Fable sobre o diff completo**
 

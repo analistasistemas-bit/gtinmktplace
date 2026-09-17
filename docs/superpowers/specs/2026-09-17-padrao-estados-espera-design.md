@@ -102,16 +102,19 @@ Casos que exigem atenção pontual:
 
 ### Grupo B — 7 modais que hoje desmontam antes da operação terminar
 
-6 em `Publicados.tsx`, 1 em `DetalheFinanceiro.tsx`. São `AlertDialog` não controlados: o `AlertDialogAction` do Radix fecha o modal no clique, e o estado de pendência vive na linha da tabela. Aplicar o efeito neles sem mudar nada seria código morto.
+6 em `Publicados.tsx`, 1 em `DetalheFinanceiro.tsx` — e os dois casos têm causas diferentes.
+
+Os 6 de `Publicados` são `AlertDialog` **não controlados**: o `AlertDialogAction` do Radix fecha o modal no clique, e o estado de pendência vive na linha da tabela. O de `DetalheFinanceiro` é um `Dialog` comum com `Button` comum — nada fecha automaticamente ali; o próprio `onClick` chama `mutate` e `setConfirmarSaque(null)` na mesma função. Aplicar o efeito em qualquer um deles sem mudar nada seria código morto.
 
 **Mudança de comportamento (decisão do Diego, 2026-09-17):** esses modais passam a ficar abertos até a operação resolver.
 
 Mecânica:
 
-1. `open` controlado por estado no componente pai (hoje é `AlertDialogTrigger` sem controle);
-2. `event.preventDefault()` no `onClick` do `AlertDialogAction`, que impede o fechamento automático do Radix;
-3. fechamento em `onSettled` — **sucesso e erro**, para que uma falha nunca deixe o modal preso;
-4. `AlertDialogCancel` desabilitado enquanto `processando`, para não fechar no meio.
+1. `open` controlado por estado no componente que renderiza o modal (no caso do `DetalheFinanceiro` já é, via `confirmarSaque`);
+2. nos 6 `AlertDialog`, `event.preventDefault()` no `onClick` do `AlertDialogAction`, que impede o fechamento automático do Radix. No `Dialog` de saque isso não se aplica — basta mover o fechamento;
+3. handlers passam a `mutateAsync`, e o fechamento vai para um `finally` no `onClick` — **sucesso e erro**, para que uma falha nunca deixe o modal preso. O `finally` no ponto de uso, em vez de confiar que o handler engole o erro, evita depender de um invariante que mora em outro arquivo;
+4. botão de cancelar desabilitado enquanto `processando`, como sinal visual;
+5. **`onOpenChange` não é guardado.** Impedir o fechamento em voo parece o certo, mas `chamarEdge` não tem timeout: uma requisição pendurada trancaria o operador sob o overlay sem ESC, sem clique fora e sem Cancelar. Fechar o modal não cancela a mutation — a linha da tabela mantém a pendência e o toast chega igual.
 
 Estas são as confirmações de **Pausar, Corrigir e republicar, Remover do sistema, Remover publicação incompleta, Migrar para preço por variação e Refazer kit** — todas ações reais no Mercado Livre. Nenhuma chamada de mutation é tocada; só o ciclo de vida do modal que as dispara. Ainda assim é o trecho de maior risco da entrega e o que precisa do escrutínio mais duro na revisão.
 
@@ -166,7 +169,7 @@ Atenção às duas árvores de teste do repo (`src/**/__tests__/` e `tests/`): a
 ## 7. Validação
 
 - `pnpm preflight:static` antes do push (portão real de CI deste projeto);
-- validação visual com Playwright em sessão isolada, com screenshot real — snapshot de acessibilidade não pega bug de layout CSS. Alvos mínimos: um modal que rola (cadastro de produto, para provar o `sticky`), um destrutivo (para provar a ausência do glow) e um do Grupo B (para provar que segura aberto e fecha sozinho);
+- validação visual com Playwright em sessão isolada, com screenshot real — snapshot de acessibilidade não pega bug de layout CSS. Alvos mínimos: um modal que rola (cadastro de produto, para provar que não há salto de layout), um destrutivo (para provar a ausência do glow) e um do Grupo B (para provar que segura aberto e fecha sozinho);
 - revisão do Fable sobre o plano de implementação e sobre o diff final, antes do merge.
 
 ## 8. Documentação
@@ -192,7 +195,7 @@ Fase 1 é pré-requisito de todas. 2, 3, 4 e 5 são independentes entre si.
 | Risco | Mitigação |
 |---|---|
 | Grupo B muda o comportamento de 7 confirmações em telas de produção do ML | Nenhuma mutation tocada; `onSettled` garante fechamento também no erro; teste por caso; revisão do Fable; validação em runtime |
-| `sticky` se comportar diferente em modal que rola vs. modal fixo | Screenshot real nos dois layouts, não só teste de unidade |
+| Barra `absolute` cobrir ou desalinhar em algum modal | Screenshot real nos dois layouts, não só teste de unidade |
 | Glow pesar em modal grande com muitas linhas | É `box-shadow` animado, sem repaint de conteúdo; já roda hoje no cadastro de kit, que é dos maiores |
 | Emenda ao contrato de motion contradizer o §9 | A emenda separa explicitamente "carregar conteúdo" de "ação do operador" |
 | Regressão em teste de data fixa ou em arquivo fora do diff | Provar "pré-existente" rodando em `origin/main`, nunca inferindo do diff |
