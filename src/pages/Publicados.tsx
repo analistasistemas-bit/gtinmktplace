@@ -278,6 +278,13 @@ function LinhaTabela({
   // cor e está ativo/pausado — status já encerrado/moderado não tem o que migrar.
   const migracaoAtiva = migrando || !!item.migracaoEmAndamento;
 
+  // Confirmações controladas: o modal segura aberto mostrando o sinal até a resposta chegar
+  // (em vez de fechar no clique e devolver o operador à tabela sem saber o que aconteceu).
+  const [migrarAberto, setMigrarAberto] = useState(false);
+  const [pausarAberto, setPausarAberto] = useState(false);
+  const [republicarAberto, setRepublicarAberto] = useState(false);
+  const [removerAberto, setRemoverAberto] = useState(false);
+
   return (
     <>
     <TableRow
@@ -383,7 +390,7 @@ function LinhaTabela({
               migrar — a adoção zeraria o vínculo das cores que vivem nas outras partições. A edge
               function recusa de qualquer forma; esconder evita oferecer o que será negado. */}
           {isAdmin && temVariacaoDeCor && podeAlternar && !item.produtoDividido && (
-            <AlertDialog>
+            <AlertDialog open={migrarAberto} onOpenChange={setMigrarAberto}>
               <AlertDialogTrigger asChild>
                 <Button
                   variant="ghost"
@@ -397,7 +404,7 @@ function LinhaTabela({
                   <Split className="h-3 w-3" />
                 </Button>
               </AlertDialogTrigger>
-              <AlertDialogContent>
+              <AlertDialogContent processando={migrando} destrutivo rotuloProcessando="Migrando anúncio">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Migrar para preço por variação?</AlertDialogTitle>
                   <AlertDialogDescription>
@@ -410,8 +417,21 @@ function LinhaTabela({
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => onMigrarPrecoPorVariacao(item.familiaId)}>
+                  <AlertDialogCancel disabled={migrando}>Cancelar</AlertDialogCancel>
+                  {/* preventDefault impede o Radix de fechar no clique: o modal precisa continuar
+                      de pé mostrando o sinal até a resposta do Mercado Livre chegar. O `finally`
+                      garante o fechamento mesmo se o handler rejeitar. */}
+                  <AlertDialogAction
+                    disabled={migrando}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      try {
+                        await onMigrarPrecoPorVariacao(item.familiaId);
+                      } finally {
+                        setMigrarAberto(false);
+                      }
+                    }}
+                  >
                     Migrar anúncio
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -432,7 +452,7 @@ function LinhaTabela({
               <Play className="h-3 w-3" />
             </Button>
           ) : (
-            <AlertDialog>
+            <AlertDialog open={pausarAberto} onOpenChange={setPausarAberto}>
               <AlertDialogTrigger asChild>
                 <Button
                   variant="ghost"
@@ -446,7 +466,7 @@ function LinhaTabela({
                   <Pause className="h-3 w-3" />
                 </Button>
               </AlertDialogTrigger>
-              <AlertDialogContent>
+              <AlertDialogContent processando={pausando} rotuloProcessando="Pausando anúncio">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Pausar anúncio?</AlertDialogTitle>
                   <AlertDialogDescription>
@@ -456,8 +476,21 @@ function LinhaTabela({
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction onClick={() => onPausarReativar(item.mlItemId, 'pausado')}>
+                  <AlertDialogCancel disabled={pausando}>Cancelar</AlertDialogCancel>
+                  {/* preventDefault impede o Radix de fechar no clique: o modal precisa continuar
+                      de pé mostrando o sinal até a resposta do Mercado Livre chegar. O `finally`
+                      garante o fechamento mesmo se o handler rejeitar. */}
+                  <AlertDialogAction
+                    disabled={pausando}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      try {
+                        await onPausarReativar(item.mlItemId, 'pausado');
+                      } finally {
+                        setPausarAberto(false);
+                      }
+                    }}
+                  >
                     Pausar
                   </AlertDialogAction>
                 </AlertDialogFooter>
@@ -479,7 +512,7 @@ function LinhaTabela({
             </Button>
           )}
 
-          <AlertDialog>
+          <AlertDialog open={republicarAberto} onOpenChange={setRepublicarAberto}>
             <AlertDialogTrigger asChild>
               <Button
                 variant="ghost"
@@ -493,7 +526,7 @@ function LinhaTabela({
                 <RotateCcw className="h-3 w-3" />
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent>
+            <AlertDialogContent processando={republicando} rotuloProcessando="Republicando anúncio">
               <AlertDialogHeader>
                 <AlertDialogTitle>Corrigir e republicar?</AlertDialogTitle>
                 <AlertDialogDescription>
@@ -502,15 +535,28 @@ function LinhaTabela({
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={() => onRepublicar(item.familiaId)}>
+                <AlertDialogCancel disabled={republicando}>Cancelar</AlertDialogCancel>
+                {/* preventDefault impede o Radix de fechar no clique: o modal precisa continuar
+                    de pé mostrando o sinal até a resposta do Mercado Livre chegar. O `finally`
+                    garante o fechamento mesmo se o handler rejeitar. */}
+                <AlertDialogAction
+                  disabled={republicando}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    try {
+                      await onRepublicar(item.familiaId);
+                    } finally {
+                      setRepublicarAberto(false);
+                    }
+                  }}
+                >
                   Pausar e voltar à Revisão
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
 
-          <AlertDialog>
+          <AlertDialog open={removerAberto} onOpenChange={setRemoverAberto}>
             <AlertDialogTrigger asChild>
               <Button
                 variant="ghost"
@@ -524,7 +570,7 @@ function LinhaTabela({
                 <Trash2 className="h-3 w-3" />
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent>
+            <AlertDialogContent processando={removendo} destrutivo rotuloProcessando="Removendo anúncio">
               <AlertDialogHeader>
                 <AlertDialogTitle>Remover do sistema?</AlertDialogTitle>
                 <AlertDialogDescription>
@@ -534,10 +580,21 @@ function LinhaTabela({
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogCancel disabled={removendo}>Cancelar</AlertDialogCancel>
+                {/* preventDefault impede o Radix de fechar no clique: o modal precisa continuar
+                    de pé mostrando o sinal até a resposta do Mercado Livre chegar. O `finally`
+                    garante o fechamento mesmo se o handler rejeitar. */}
                 <AlertDialogAction
                   className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  onClick={() => onRemover(item.familiaId)}
+                  disabled={removendo}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    try {
+                      await onRemover(item.familiaId);
+                    } finally {
+                      setRemoverAberto(false);
+                    }
+                  }}
                 >
                   Remover
                 </AlertDialogAction>
@@ -606,6 +663,8 @@ interface LinhaIncompletaProps {
  * (pausar, migrar preço por variação, catálogo, fiscal) pressupõem publicação concluída.
  */
 function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompletaProps) {
+  // Confirmação controlada: segura aberta mostrando o sinal até a resposta do ML chegar.
+  const [removerAberto, setRemoverAberto] = useState(false);
   return (
     <TableRow className="bg-destructive/5 hover:bg-destructive/10">
       <TableCell className="whitespace-normal sticky left-0 z-10 bg-background sm:static sm:z-auto sm:bg-transparent">
@@ -645,7 +704,7 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
               <span>{CONTEUDO_ML}</span>
             )}
           </Button>
-          <AlertDialog>
+          <AlertDialog open={removerAberto} onOpenChange={setRemoverAberto}>
             <AlertDialogTrigger asChild>
               <Button
                 variant="ghost"
@@ -658,7 +717,7 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
                 <Trash2 className="h-3 w-3" />
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent>
+            <AlertDialogContent processando={removendo} destrutivo rotuloProcessando="Removendo publicação">
               <AlertDialogHeader>
                 <AlertDialogTitle>Remover esta publicação incompleta?</AlertDialogTitle>
                 <AlertDialogDescription>
@@ -668,8 +727,21 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={() => onRemover(item.familiaId)}>
+                <AlertDialogCancel disabled={removendo}>Cancelar</AlertDialogCancel>
+                {/* preventDefault impede o Radix de fechar no clique: o modal precisa continuar
+                    de pé mostrando o sinal até a resposta do Mercado Livre chegar. O `finally`
+                    garante o fechamento mesmo se o handler rejeitar. */}
+                <AlertDialogAction
+                  disabled={removendo}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    try {
+                      await onRemover(item.familiaId);
+                    } finally {
+                      setRemoverAberto(false);
+                    }
+                  }}
+                >
                   Pausar no ML e remover
                 </AlertDialogAction>
               </AlertDialogFooter>
@@ -690,6 +762,8 @@ interface LinhaKitVirtualProps {
 }
 
 function LinhaKitVirtual({ item, isAdmin, temFiscal, onRefazer, refazendo }: LinhaKitVirtualProps) {
+  // Confirmação controlada: segura aberta mostrando o sinal até a resposta do ML chegar.
+  const [refazerAberto, setRefazerAberto] = useState(false);
   return (
     <TableRow>
       <TableCell className="whitespace-normal sticky left-0 z-10 bg-background sm:static sm:z-auto sm:bg-transparent">
@@ -737,7 +811,7 @@ function LinhaKitVirtual({ item, isAdmin, temFiscal, onRefazer, refazendo }: Lin
             )}
           </Button>
 
-          <AlertDialog>
+          <AlertDialog open={refazerAberto} onOpenChange={setRefazerAberto}>
             <AlertDialogTrigger asChild>
               <Button
                 variant="ghost"
@@ -750,7 +824,7 @@ function LinhaKitVirtual({ item, isAdmin, temFiscal, onRefazer, refazendo }: Lin
                 <RotateCcw className="h-3 w-3" />
               </Button>
             </AlertDialogTrigger>
-            <AlertDialogContent>
+            <AlertDialogContent processando={refazendo} destrutivo rotuloProcessando="Refazendo kit">
               <AlertDialogHeader>
                 <AlertDialogTitle>Refazer kit?</AlertDialogTitle>
                 <AlertDialogDescription>
@@ -760,8 +834,21 @@ function LinhaKitVirtual({ item, isAdmin, temFiscal, onRefazer, refazendo }: Lin
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={() => onRefazer(item.kitVirtualId!)}>
+                <AlertDialogCancel disabled={refazendo}>Cancelar</AlertDialogCancel>
+                {/* preventDefault impede o Radix de fechar no clique: o modal precisa continuar
+                    de pé mostrando o sinal até a resposta do Mercado Livre chegar. O `finally`
+                    garante o fechamento mesmo se o handler rejeitar. */}
+                <AlertDialogAction
+                  disabled={refazendo}
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    try {
+                      await onRefazer(item.kitVirtualId!);
+                    } finally {
+                      setRefazerAberto(false);
+                    }
+                  }}
+                >
                   Encerrar e refazer
                 </AlertDialogAction>
               </AlertDialogFooter>
