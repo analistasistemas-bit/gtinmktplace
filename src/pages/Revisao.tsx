@@ -43,6 +43,7 @@ import { cn } from '@/lib/utils';
 import { temAlteracaoPreco } from '@/lib/preco-alterado';
 import { exigeDivisaoUpdate } from '@/lib/grupos-preco';
 import type { Familia } from '@/lib/tipos-dominio';
+import { normalizarParaBusca } from '@/lib/texto';
 
 type FiltroOp = 'todos' | 'CREATE' | 'UPDATE' | 'avisos' | 'incompletas' | 'preco_alterado';
 
@@ -52,7 +53,7 @@ export function filtrarFamilias(
   busca: string,
   soComCoresNovas = false,
 ): Familia[] {
-  const buscaLower = busca.trim().toLowerCase();
+  const buscaNorm = normalizarParaBusca(busca);
   return familias.filter((f) => {
     if (filtro === 'CREATE' && f.operacao !== 'CREATE') return false;
     if (filtro === 'UPDATE' && f.operacao !== 'UPDATE') return false;
@@ -60,14 +61,15 @@ export function filtrarFamilias(
     if (filtro === 'incompletas' && !familiaIncompleta(f)) return false;
     if (filtro === 'preco_alterado' && !(f.operacao === 'UPDATE' && temAlteracaoPreco(f))) return false;
     if (soComCoresNovas && coresNovasComEstoque(f).length === 0) return false;
-    if (!buscaLower) return true;
+    if (!buscaNorm) return true;
     return (
-      f.titulo.toLowerCase().includes(buscaLower) ||
-      f.codigoPai.includes(buscaLower) ||
+      normalizarParaBusca(f.titulo).includes(buscaNorm) ||
+      normalizarParaBusca(f.codigoPai).includes(buscaNorm) ||
       f.variacoes.some(
         (v) =>
-          v.codigo.toLowerCase().includes(buscaLower) ||
-          (v.gtin ?? '').toLowerCase().includes(buscaLower),
+          normalizarParaBusca(v.codigo).includes(buscaNorm) ||
+          normalizarParaBusca(v.cor).includes(buscaNorm) ||
+          normalizarParaBusca(v.gtin).includes(buscaNorm),
       )
     );
   });
