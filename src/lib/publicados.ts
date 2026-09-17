@@ -1,4 +1,5 @@
 import type { TipoAviamento } from './tipos-dominio';
+import { normalizarParaBusca } from './texto';
 
 export type StatusPublicado =
   | 'ativo'
@@ -184,7 +185,7 @@ export function filtrarPublicados(
   itens: PublicadoItem[],
   f: FiltroPublicados,
 ): PublicadoItem[] {
-  const queryStr = (f.busca ?? '').trim().toLowerCase();
+  const queryStr = normalizarParaBusca(f.busca);
   const termosBusca = queryStr ? queryStr.split(/\s+/) : [];
 
   return itens.filter((i) => {
@@ -197,14 +198,14 @@ export function filtrarPublicados(
     if (f.somenteSemCatalogo && !i.catalogRetentavel) return false;
 
     if (termosBusca.length > 0) {
-      const textoBuscavel = [
+      const textoBuscavel = normalizarParaBusca([
         i.titulo,
         i.codigoPai,
         i.fornecedor ?? '',
         rotuloTipo(i),
         i.gtin ?? '',
         ...(i.identificadores ?? []),
-      ].join(' ').toLowerCase();
+      ].join(' '));
 
       // O texto buscável do item precisa conter TODOS os termos (ordem não importa)
       const matchBusca = termosBusca.every((termo) => textoBuscavel.includes(termo));
