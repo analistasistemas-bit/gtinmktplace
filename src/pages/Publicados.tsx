@@ -997,7 +997,20 @@ export default function Publicados() {
         toast.error('Falha ao encerrar kit', { description: r.mensagem ?? r.motivo ?? 'Motivo não informado.' });
         return;
       }
-      const prefill = await prefillAposEncerrarKitVirtual(kitId, r, carregarKitVirtualParaRefazer);
+      // O kit JÁ foi encerrado no ML neste ponto (r.ok true) — uma falha daqui em diante é só na
+      // releitura dos componentes antigos, não desfaz o encerramento. Catch próprio para não
+      // reaproveitar a mensagem "Falha ao encerrar kit" (que diria o oposto do que aconteceu).
+      let prefill: Awaited<ReturnType<typeof prefillAposEncerrarKitVirtual>>;
+      try {
+        prefill = await prefillAposEncerrarKitVirtual(kitId, r, carregarKitVirtualParaRefazer);
+      } catch (err) {
+        toast.warning('Kit encerrado no Mercado Livre — falha ao carregar os dados para refazer, monte do zero', {
+          description: err instanceof Error ? err.message : String(err),
+        });
+        setRefazerDeKit(null);
+        setCriarKitVirtualAberto(true);
+        return;
+      }
       if (prefill?.dadosParaPrefill) {
         const total = prefill.dadosParaPrefill.componentes.length + prefill.componentesNaoRecuperados;
         if (prefill.componentesNaoRecuperados > 0) {

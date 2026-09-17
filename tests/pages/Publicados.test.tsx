@@ -800,6 +800,31 @@ describe('Publicados', () => {
       expect(carregarKitVirtualParaRefazerMock).not.toHaveBeenCalled();
       expect(screen.queryByTestId('dialog-criar-kit-virtual')).not.toBeInTheDocument();
     });
+
+    // Fix round 1 (revisão da Task 5): encerrar tem sucesso no ML, mas a releitura dos
+    // componentes antigos (carregarKitVirtualParaRefazer, dentro de prefillAposEncerrarKitVirtual)
+    // lança. O kit já foi encerrado — o diálogo ainda reabre (em branco, para montar do zero), e
+    // o handler não pode rejeitar (Task 6 depende disso).
+    it('"Refazer kit": encerrar com sucesso mas falha ao carregar prefill reabre o diálogo em branco sem rejeitar', async () => {
+      const mutateAsync = vi.fn().mockResolvedValue({ ok: true, kitId: 'k1', jaEncerrado: false });
+      useEncerrarKitVirtualMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false });
+      usePublicadosMock.mockReturnValue({ data: [kitItemBase()], isLoading: false, error: null });
+      carregarKitVirtualParaRefazerMock.mockRejectedValueOnce(new Error('falha de rede'));
+
+      render(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'Refazer kit' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Encerrar e refazer' }));
+
+      await waitFor(() => expect(carregarKitVirtualParaRefazerMock).toHaveBeenCalledWith('k1'));
+      // Mesmo com a releitura falhando, o kit foi encerrado no ML — o diálogo reabre (em branco)
+      // em vez de deixar o operador travado, e nenhuma exceção escapa do handler.
+      await waitFor(() => expect(screen.getByTestId('dialog-criar-kit-virtual')).toBeInTheDocument());
+    });
   });
 
   describe('botão Migrar para preço por variação', () => {
