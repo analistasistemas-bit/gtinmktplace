@@ -4,6 +4,7 @@ import { buscarTodasPaginas, buscarTodasPaginasParalelo } from '@/lib/paginacao-
 import type { ResumoEstoque } from '@/lib/produtos-saldo-resumo';
 import { buildStoragePath, uploadFile } from '@/lib/storage';
 import { erroDaEdge, corpoDoErroDaEdge } from '@/lib/edge-erro';
+import { compararCor } from '@/lib/cor';
 import type { ProdutoEntrada } from '@/lib/produto-entrada';
 
 export interface LinhaVariacaoCrua {
@@ -322,11 +323,19 @@ export async function fetchProdutosEstoqueResumo(): Promise<ResumoEstoqueRpc> {
   return mapResumoEstoqueRpc(data as unknown as ResumoRpcRaw);
 }
 
-/** Variações de um produto — só da família canônica. Carregadas ao expandir o card. */
+/**
+ * Variações de um produto — só da família canônica. Carregadas ao expandir o card.
+ *
+ * Ordem ALFABÉTICA POR COR, não a da RPC (`order by v.codigo`): quem lê a lista lê o nome
+ * da cor, e card, ajuste e entrada de mercadoria mostram a MESMA lista — ordens diferentes
+ * entre elas é convite a digitar quantidade na cor errada. Ordenar aqui, e não em cada
+ * componente, é o que mantém as três iguais. Empate de cor cai na ordem da RPC (código),
+ * porque `sort` é estável.
+ */
 export async function fetchVariacoesProduto(codigoPai: string): Promise<VariacaoComSaldo[]> {
   const { data, error } = await supabase.rpc('variacoes_estoque_produto', { p_codigo_pai: codigoPai });
   if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown as LinhaVariacaoRpc[]).map(mapVariacaoRpc);
+  return ((data ?? []) as unknown as LinhaVariacaoRpc[]).map(mapVariacaoRpc).sort(compararCor);
 }
 
 /**

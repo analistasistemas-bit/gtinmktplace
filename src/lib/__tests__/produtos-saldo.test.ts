@@ -204,6 +204,41 @@ describe('mapResumoEstoqueRpc', () => {
   });
 });
 
+describe('fetchVariacoesProduto — ordem da lista', () => {
+  // Relato do Diego (17/09/2026): as cores da entrada de mercadoria saíam fora de ordem
+  // alfabética. A RPC ordena por `codigo`; quem lê a lista lê o nome da cor, e card, ajuste
+  // e entrada partem desta mesma função — ordenar aqui é o que mantém as três iguais.
+  it('ordena por cor (acento/caixa-insensível, numérico natural) e cai no código sem cor', async () => {
+    const linha = (codigo: string, cor: string | null) => ({
+      codigo, nome: 'Tecido Helanca', cor, gtin: null, estoque: 0, custo: null, preco: 0,
+      peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null,
+      imagem_path: null, ml_picture_id: null, ml_item_id: null, kits: null,
+    });
+    const { supabase } = await import('@/lib/supabase');
+    (supabase.rpc as ReturnType<typeof vi.fn>).mockResolvedValue({
+      data: [
+        linha('18760901', 'Vermelho'),
+        linha('24232511', 'Champagne'),
+        linha('26706071', 'Branco'),
+        linha('11111111', 'ágata 10'),
+        linha('99999999', 'Ágata 2'),
+        linha('00000001', null),
+      ],
+      error: null,
+    });
+    const { fetchVariacoesProduto } = await import('../produtos-saldo');
+    const r = await fetchVariacoesProduto('26705341');
+    expect(r.map((v) => v.codigo)).toEqual([
+      '00000001', // sem cor: ordena pelo código
+      '99999999', // Ágata 2 antes de ágata 10 (numérico natural, caixa/acento ignorados)
+      '11111111',
+      '26706071', // Branco
+      '24232511', // Champagne
+      '18760901', // Vermelho
+    ]);
+  });
+});
+
 describe('fetchVariacoesProduto — kits vinculados (ADR-0151 D-13)', () => {
   it('mapeia o array kits devolvido pela RPC (saldo virtual, snake→camel)', async () => {
     const { supabase } = await import('@/lib/supabase');

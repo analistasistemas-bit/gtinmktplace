@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { compararCor, variacoesParaRevisao, coresNovasComEstoque, agruparRevisaoUpdate, coresSemFotoExcluidas } from '../../src/lib/revisao-variacoes';
+import { compararCor } from '../../src/lib/cor';
+import { variacoesParaRevisao, coresNovasComEstoque, agruparRevisaoUpdate, coresSemFotoExcluidas } from '../../src/lib/revisao-variacoes';
 import type { Familia, Variacao } from '../../src/lib/tipos-dominio';
 
 function v(over: Partial<Variacao>): Variacao {

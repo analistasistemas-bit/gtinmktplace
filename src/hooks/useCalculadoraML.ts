@@ -166,12 +166,16 @@ function escolherVariacao(
   produto: ProdutoCalculadoraML,
   variacoes: VariacaoComSaldo[],
 ): VariacaoComSaldo | undefined {
+  // `fetchVariacoesProduto` devolve em ordem alfabética de cor (o card e a entrada leem a
+  // lista pelo nome da cor). O prefill NÃO pode depender dessa ordem: quem alimenta preço e
+  // dimensões da cotação continua sendo a de menor código, como antes da ordenação por cor.
+  const porCodigo = [...variacoes].sort((a, b) => a.codigo.localeCompare(b.codigo))
   return (
     (produto.skuUnico
-      ? variacoes.find((variacao) => variacao.codigo === produto.skuUnico)
+      ? porCodigo.find((variacao) => variacao.codigo === produto.skuUnico)
       : undefined) ??
-    variacoes.find(variacaoTemDadosUsaveis) ??
-    variacoes[0]
+    porCodigo.find(variacaoTemDadosUsaveis) ??
+    porCodigo[0]
   )
 }
 

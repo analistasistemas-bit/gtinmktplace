@@ -19,14 +19,12 @@ function variacao(codigo: string, cor: string | null, estoque: number): Variacao
   };
 }
 
+// Já em ordem alfabética de cor: é assim que `fetchVariacoesProduto` entrega (a ordenação
+// é dela, testada em lib/__tests__/produtos-saldo.test.ts). O diálogo só preserva a ordem.
 const fetchVariacoesProdutoMock = vi.fn(() => Promise.resolve([
-  variacao('18760901', 'Vermelho', 0),
-  variacao('24232511', 'Champagne', 0),
   variacao('26706071', 'Branco', 2996),
-  // Cobrem as opções do comparador: acento, caixa, sufixo numérico natural e cor ausente.
-  variacao('11111111', 'ágata 10', 0),
-  variacao('99999999', 'Ágata 2', 0),
-  variacao('00000001', null, 0),
+  variacao('24232511', 'Champagne', 0),
+  variacao('18760901', 'Vermelho', 0),
 ]));
 interface ItemEnviado { codigo: string; quantidade: number; custo: number | null }
 const registrarEntradaLoteMock = vi.fn(
@@ -71,16 +69,13 @@ describe('DialogEntrada — modo lista (aberto pelo card do produto)', () => {
     expect(screen.queryByText('Nenhum SKU encontrado.')).toBeNull();
   });
 
-  // A RPC devolve por código; a lista é lida pelo nome da cor.
-  it('ordena as cores alfabeticamente, não por código', async () => {
+  // O diálogo não reordena: exibe na ordem em que `fetchVariacoesProduto` entrega.
+  it('preserva a ordem da fonte (alfabética por cor), sem reordenar por código', async () => {
     renderDialog({ codigoPaiInicial: '26705341' });
     await screen.findByText(/18760901 · Vermelho/);
     const rotulos = screen.getAllByLabelText(/^Quantidade para /)
       .map((el) => el.getAttribute('aria-label'));
     expect(rotulos).toEqual([
-      'Quantidade para 00000001 · Tecido Helanca', // sem cor: ordena pelo código
-      'Quantidade para 99999999 · Ágata 2',
-      'Quantidade para 11111111 · ágata 10',
       'Quantidade para 26706071 · Branco',
       'Quantidade para 24232511 · Champagne',
       'Quantidade para 18760901 · Vermelho',
