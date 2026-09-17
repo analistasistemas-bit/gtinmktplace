@@ -25,7 +25,6 @@ import type { MarcadorSyncMl } from '@/lib/estoque-sync-ml';
 import {
   filtrarOpcoesSku,
   montarOpcoesSku,
-  type OpcaoSku,
 } from '@/lib/dialog-entrada-busca';
 
 function rotuloVariacao(v: { codigo: string; cor: string | null; nome: string | null }): string {
