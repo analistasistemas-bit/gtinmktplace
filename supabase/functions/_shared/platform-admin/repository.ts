@@ -132,8 +132,9 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     // ADR-0158 §3: uma ação por render — enriquece cada organização UMA vez e devolve totais da
     // carteira inteira (antes de paginar) junto com a página.
     async wallet(actorId: string, input: { month: string; search?: string; include_test?: boolean; page: number; page_size: number; sort: string }): Promise<Wallet> {
-      const needle = input.search?.trim().toLocaleLowerCase('pt-BR');
-      const organizations = (await loadOrganizations(!!input.include_test)).filter((org) => !needle || org.nome.toLocaleLowerCase('pt-BR').includes(needle) || org.slug.toLocaleLowerCase('pt-BR').includes(needle));
+      const normalizar = (s: string | null | undefined) => (s ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR').trim();
+      const needle = normalizar(input.search);
+      const organizations = (await loadOrganizations(!!input.include_test)).filter((org) => !needle || normalizar(org.nome).includes(needle) || normalizar(org.slug).includes(needle));
       const nextStarts = await nextTermsStarts(organizations.map((org) => org.id), input.month);
       // Perf FASE 3.3: UMA leitura do cache de meses fechados para a carteira INTEIRA (nunca por
       // org) — `readOrgMetrics` só valida o que já veio pronto aqui, em vez de repetir a validação

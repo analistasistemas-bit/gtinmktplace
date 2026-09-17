@@ -255,4 +255,33 @@ describe('createPlatformAdminRepository', () => {
     const pulse = await repository.audit('actor', 'org-a', '2026-08', { category: 'pulse', actor_id: 'actor', result: 'success' }, 1, 20);
     expect(pulse.rows).toEqual([expect.objectContaining({ id: 'b', category: 'pulse', target: 'search', details: { result_id: 'result' } })]);
   });
+
+  it('filtra a carteira de organizações de forma insensível a acentos e maiúsculas', async () => {
+    const organizations = [
+      { id: 'org-1', nome: 'AVIL Confecções', slug: 'empresa-um', is_test: false },
+      { id: 'org-2', nome: 'Padaria do Pão de Açúcar', slug: 'empresa-dois', is_test: false },
+      { id: 'org-3', nome: 'Outro Negócio', slug: 'empresa-tres', is_test: false },
+    ];
+    const db = fakeDb(
+      { organizations: { rows: organizations }, ml_vendas: {}, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} },
+      { 'org-1': preview(100), 'org-2': preview(200), 'org-3': preview(300) },
+    );
+    const repository = createPlatformAdminRepository(db as never);
+
+    // Busca sem acento "confeccoes" encontra "AVIL Confecções"
+    const r1 = await repository.wallet('actor', { month: '2026-08', page: 1, page_size: 10, sort: 'name', search: 'confeccoes' });
+    expect(r1.rows).toHaveLength(1);
+    expect(r1.rows[0].id).toBe('org-1');
+
+    // Busca sem acento "acucar" encontra "Padaria do Pão de Açúcar"
+    const r2 = await repository.wallet('actor', { month: '2026-08', page: 1, page_size: 10, sort: 'name', search: 'acucar' });
+    expect(r2.rows).toHaveLength(1);
+    expect(r2.rows[0].id).toBe('org-2');
+
+    // Busca com acento "AÇÚCAR" encontra "Padaria do Pão de Açúcar"
+    const r3 = await repository.wallet('actor', { month: '2026-08', page: 1, page_size: 10, sort: 'name', search: 'AÇÚCAR' });
+    expect(r3.rows).toHaveLength(1);
+    expect(r3.rows[0].id).toBe('org-2');
+  });
 });
+
