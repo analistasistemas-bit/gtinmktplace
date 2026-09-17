@@ -17,7 +17,6 @@ import { Badge } from '@/components/ui/badge';
 import { KpiCard, KpiInfoButton } from '@/components/ui/kpi-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { EmptyState } from '@/components/ui/empty-state';
-import { ProgressoIndeterminado } from '@/components/ui/progresso-indeterminado';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { Pagination } from '@/components/ui/pagination';
 import {
@@ -456,14 +455,9 @@ export default function Organizacoes() {
             {canStart && <Button size="sm" onClick={(e) => { e.stopPropagation(); enterOperation(request!); }}>Entrar na operação</Button>}
             {!canStart && canRenew && <Button variant="outline" size="sm" onClick={(e) => { e.stopPropagation(); setSupportOrg(o); }}>Solicitar renovação</Button>}
             {request?.status === 'pending' && (
-              <div className="flex flex-col items-end gap-1">
-                <Button variant="ghost" size="sm" disabled={cancellingRequestId === request.id} onClick={(e) => { e.stopPropagation(); cancelRequest(request); }}>
-                  {cancellingRequestId === request.id ? 'Cancelando…' : 'Cancelar solicitação'}
-                </Button>
-                {cancellingRequestId === request.id && (
-                  <ProgressoIndeterminado label="Cancelando solicitação" className="w-full" />
-                )}
-              </div>
+              <Button variant="ghost" size="sm" disabled={cancellingRequestId === request.id} onClick={(e) => { e.stopPropagation(); cancelRequest(request); }}>
+                {cancellingRequestId === request.id ? 'Cancelando…' : 'Cancelar solicitação'}
+              </Button>
             )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -711,7 +705,7 @@ function NovaOrgDialog({ open, onOpenChange, onCreated }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent processando={enviando} rotuloProcessando="Criando empresa">
+      <DialogContent>
         <DialogHeader><DialogTitle>Nova empresa</DialogTitle></DialogHeader>
         <div className="flex flex-col gap-3">
           <Input placeholder="Nome da empresa" value={nome} onChange={(e) => setNome(e.target.value)} />

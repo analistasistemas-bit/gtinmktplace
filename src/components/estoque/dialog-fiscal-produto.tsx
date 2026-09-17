@@ -161,8 +161,6 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
   return (
     <Dialog open={familiaId != null} onOpenChange={(o) => { if (!o) onFechar(); }}>
       <DialogContent
-        processando={!!salvando}
-        rotuloProcessando="Salvando dados fiscais"
         className="max-h-[90vh] sm:max-w-lg overflow-y-auto"
       >
         <DialogHeader>

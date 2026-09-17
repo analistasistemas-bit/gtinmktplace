@@ -45,9 +45,6 @@ export function DialogExcluirProduto({ produto, aberto, onFechar }: {
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
       {/* sm: obrigatorio: ver nota em dialog-cadastro-produto.tsx. */}
       <DialogContent
-        processando={mutation.isPending}
-        destrutivo
-        rotuloProcessando="Excluindo produto"
         className="sm:max-w-lg"
       >
         <DialogHeader>
