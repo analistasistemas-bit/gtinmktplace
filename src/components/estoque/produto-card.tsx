@@ -269,9 +269,11 @@ export function ProdutoCard({
 
   const syncMl = (codigo: string) => marcadorSync?.porSku[codigo];
 
-  // ADR-0151 D-13/D-10: kit vinculado só existe pra produto de UMA variação, então a primeira
-  // linha já carrega o array completo — não precisa unir entre variações.
-  const kits = variacoes?.[0]?.kits ?? [];
+  // ADR-0151 D-13/D-10: kit vinculado só existe pra produto de UMA variação, então uma linha
+  // já carrega o array completo — não precisa unir entre variações. Busca pela linha que tem
+  // kits em vez de assumir a primeira: `disponivel` é calculado por variação na RPC, e a
+  // lista vem ordenada por cor (não por código), então posição aqui não significa nada.
+  const kits = variacoes?.find((v) => v.kits.length > 0)?.kits ?? [];
 
   const alvo: AlvoEntrada = { codigoPai: produto.codigoPai };
 

@@ -328,6 +328,26 @@ describe('useCalculadoraML', () => {
     })
   })
 
+  // `fetchVariacoesProduto` entrega em ordem alfabética de COR (o card e a entrada de
+  // mercadoria leem a lista pelo nome da cor). O prefill alimenta custo, preço e dimensões
+  // da cotação: não pode seguir a ordem de exibição, senão a margem calculada muda quando
+  // alguém renomeia uma cor. Continua sendo a de menor código.
+  it('ignores the display order (by colour) and prefills from the lowest code', async () => {
+    fetchVariacoesMock.mockResolvedValue([
+      variacao('SKU-2', { cor: 'Amarelo', custo: 31, preco: 51, pesoGramas: 1500, alturaCm: 15, larguraCm: 16, comprimentoCm: 17 }),
+      variacao('SKU-1', { cor: 'Vermelho', custo: 11, preco: 21, pesoGramas: 500, alturaCm: 5, larguraCm: 6, comprimentoCm: 7 }),
+    ])
+    const { result } = renderHook(() => useCalculadoraML(), { wrapper })
+
+    await act(async () => { await result.current.selecionarProduto({ ...produtoResumo, skuUnico: null }) })
+
+    expect(result.current.entrada).toMatchObject({
+      custoProduto: 11,
+      precoVenda: 21,
+      dimensoes: { alturaCm: 5, larguraCm: 6, comprimentoCm: 7, pesoKg: 0.5 },
+    })
+  })
+
   it('only confirms projected-price validation when the returned tariff reaches the selected target margin', async () => {
     calcularTarifaMock
       .mockResolvedValueOnce(tarifaOficial())
