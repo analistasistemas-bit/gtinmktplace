@@ -181,21 +181,25 @@ function mockHooksPadrao() {
   });
   useRemoverPublicadoMock.mockReturnValue({
     mutate: vi.fn(),
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
     error: null,
   });
   usePrepararRepublicacaoMock.mockReturnValue({
     mutate: vi.fn(),
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
     error: null,
   });
   usePausarReativarPublicadoMock.mockReturnValue({
     mutate: vi.fn(),
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
     error: null,
   });
   useMigrarPrecoPorVariacaoMock.mockReturnValue({
     mutate: vi.fn(),
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
     error: null,
   });
@@ -226,7 +230,11 @@ function mockHooksPadrao() {
   useModulosHabilitadosMock.mockReturnValue({ data: [] });
   useKitsDoProdutoMock.mockReturnValue({ data: [] });
   useProfileMock.mockReturnValue({ isAdmin: true });
-  useEncerrarKitVirtualMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+  useEncerrarKitVirtualMock.mockReturnValue({
+    mutate: vi.fn(),
+    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    isPending: false,
+  });
   carregarKitVirtualParaRefazerMock.mockClear();
   carregarKitVirtualParaRefazerMock.mockResolvedValue({ ok: false, motivo: 'sem_componentes_suficientes' });
 }
@@ -754,10 +762,8 @@ describe('Publicados', () => {
     });
 
     it('"Refazer kit": confirma no alert dialog, chama a mutation com o kitId e reabre o diálogo ao suceder', async () => {
-      const mutate = vi.fn((_kitId: string, opts?: { onSuccess?: (r: unknown) => void }) => {
-        opts?.onSuccess?.({ ok: true, kitId: 'k1', jaEncerrado: false });
-      });
-      useEncerrarKitVirtualMock.mockReturnValue({ mutate, isPending: false });
+      const mutateAsync = vi.fn().mockResolvedValue({ ok: true, kitId: 'k1', jaEncerrado: false });
+      useEncerrarKitVirtualMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false });
       usePublicadosMock.mockReturnValue({ data: [kitItemBase()], isLoading: false, error: null });
 
       render(
@@ -769,18 +775,16 @@ describe('Publicados', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Refazer kit' }));
       fireEvent.click(screen.getByRole('button', { name: 'Encerrar e refazer' }));
 
-      expect(mutate).toHaveBeenCalledWith('k1', expect.any(Object));
+      expect(mutateAsync).toHaveBeenCalledWith('k1');
       // O diálogo só reabre DEPOIS do carregamento do prefill (prefillAposEncerrarKitVirtual
       // aguarda `carregarKitVirtualParaRefazer` — ADR-0154 "cuide da ordem").
-      expect(carregarKitVirtualParaRefazerMock).toHaveBeenCalledWith('k1');
+      await waitFor(() => expect(carregarKitVirtualParaRefazerMock).toHaveBeenCalledWith('k1'));
       await waitFor(() => expect(screen.getByTestId('dialog-criar-kit-virtual')).toBeInTheDocument());
     });
 
     it('"Refazer kit": encerrar SEM sucesso nunca chama carregarKitVirtualParaRefazer nem reabre o diálogo', async () => {
-      const mutate = vi.fn((_kitId: string, opts?: { onSuccess?: (r: unknown) => void }) => {
-        opts?.onSuccess?.({ ok: false, motivo: 'ml_recusou', mensagem: 'ML recusou' });
-      });
-      useEncerrarKitVirtualMock.mockReturnValue({ mutate, isPending: false });
+      const mutateAsync = vi.fn().mockResolvedValue({ ok: false, motivo: 'ml_recusou', mensagem: 'ML recusou' });
+      useEncerrarKitVirtualMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false });
       usePublicadosMock.mockReturnValue({ data: [kitItemBase()], isLoading: false, error: null });
 
       render(
@@ -792,7 +796,7 @@ describe('Publicados', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Refazer kit' }));
       fireEvent.click(screen.getByRole('button', { name: 'Encerrar e refazer' }));
 
-      expect(mutate).toHaveBeenCalledWith('k1', expect.any(Object));
+      await waitFor(() => expect(mutateAsync).toHaveBeenCalledWith('k1'));
       expect(carregarKitVirtualParaRefazerMock).not.toHaveBeenCalled();
       expect(screen.queryByTestId('dialog-criar-kit-virtual')).not.toBeInTheDocument();
     });
@@ -928,8 +932,8 @@ describe('Publicados', () => {
     });
 
     it('confirmar chama a mutation com o familia_id certo', () => {
-      const mutate = vi.fn();
-      useMigrarPrecoPorVariacaoMock.mockReturnValue({ mutate, isPending: false, error: null });
+      const mutateAsync = vi.fn().mockResolvedValue(undefined);
+      useMigrarPrecoPorVariacaoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false, error: null });
       comStatusAoVivo('MLB1', 'ativo');
       usePublicadosMock.mockReturnValue({
         data: [itemBase({ qtdVariacoesFamilia: 2, familiaId: 'f-migrar' })],
@@ -945,12 +949,12 @@ describe('Publicados', () => {
       fireEvent.click(screen.getByRole('button', { name: BOTAO }));
       fireEvent.click(screen.getByRole('button', { name: 'Migrar anúncio' }));
 
-      expect(mutate).toHaveBeenCalledWith('f-migrar', expect.any(Object));
+      expect(mutateAsync).toHaveBeenCalledWith('f-migrar');
     });
 
     it('cancelar não chama a mutation', () => {
-      const mutate = vi.fn();
-      useMigrarPrecoPorVariacaoMock.mockReturnValue({ mutate, isPending: false, error: null });
+      const mutateAsync = vi.fn().mockResolvedValue(undefined);
+      useMigrarPrecoPorVariacaoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false, error: null });
       comStatusAoVivo('MLB1', 'ativo');
       usePublicadosMock.mockReturnValue({
         data: [itemBase({ qtdVariacoesFamilia: 2 })],
@@ -966,7 +970,7 @@ describe('Publicados', () => {
       fireEvent.click(screen.getByRole('button', { name: BOTAO }));
       fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
 
-      expect(mutate).not.toHaveBeenCalled();
+      expect(mutateAsync).not.toHaveBeenCalled();
     });
 
     it('o texto do diálogo avisa que não pode ser desfeito e que os pedidos ficam no anúncio antigo', () => {

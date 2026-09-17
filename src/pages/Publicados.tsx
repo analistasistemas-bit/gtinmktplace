@@ -200,11 +200,11 @@ function KitsVinculados({ codigoPai, ativo }: { codigoPai: string; ativo: boolea
 
 interface LinhaProps {
   item: PublicadoItem;
-  onRemover: (familiaId: string) => void;
+  onRemover: (familiaId: string) => Promise<void>;
   removendo: boolean;
-  onRepublicar: (familiaId: string) => void;
+  onRepublicar: (familiaId: string) => Promise<void>;
   republicando: boolean;
-  onPausarReativar: (mlItemId: string, novoStatus: 'ativo' | 'pausado') => void;
+  onPausarReativar: (mlItemId: string, novoStatus: 'ativo' | 'pausado') => Promise<void>;
   pausando: boolean;
   onRetentarCatalogo: (familiaId: string) => void;
   retentandoCatalogo: boolean;
@@ -213,7 +213,7 @@ interface LinhaProps {
   onPreencherFiscal: (familiaId: string) => void;
   temModuloEstoque: boolean;
   onCriarKit: (item: PublicadoItem) => void;
-  onMigrarPrecoPorVariacao: (familiaId: string) => void;
+  onMigrarPrecoPorVariacao: (familiaId: string) => Promise<void>;
   migrando: boolean;
 }
 
@@ -594,7 +594,7 @@ function LinhaTabela({
 interface LinhaIncompletaProps {
   item: PublicadoItem;
   temFiscal: boolean;
-  onRemover: (familiaId: string) => void;
+  onRemover: (familiaId: string) => Promise<void>;
   removendo: boolean;
 }
 
@@ -685,7 +685,7 @@ interface LinhaKitVirtualProps {
   item: PublicadoItem;
   isAdmin: boolean;
   temFiscal: boolean;
-  onRefazer: (kitId: string) => void;
+  onRefazer: (kitId: string) => Promise<void>;
   refazendo: boolean;
 }
 
@@ -830,12 +830,12 @@ export default function Publicados() {
     () => filtrarCatalogForewarning(agruparCatalogoRisco(familiasRisco ?? []), comForewarning),
     [familiasRisco, comForewarning],
   );
-  const { mutate: remover, isPending: removendo, error: erroRemover } = useRemoverPublicado();
-  const { mutate: prepararRepublicar, isPending: preparandoRepublicar } = usePrepararRepublicacao();
-  const { mutate: pausarReativar, isPending: pausandoOuReativando, error: erroPausar } = usePausarReativarPublicado();
+  const { mutateAsync: removerAsync, isPending: removendo, error: erroRemover } = useRemoverPublicado();
+  const { mutateAsync: prepararRepublicarAsync, isPending: preparandoRepublicar } = usePrepararRepublicacao();
+  const { mutateAsync: pausarReativarAsync, isPending: pausandoOuReativando, error: erroPausar } = usePausarReativarPublicado();
   const { mutate: retentarCatalogoMut, isPending: retentandoCatalogo } = useRetentarCatalogo();
-  const { mutate: migrarPrecoPorVariacaoMut, isPending: migrando } = useMigrarPrecoPorVariacao();
-  const { mutate: refazerKitMut, isPending: refazendoKit } = useEncerrarKitVirtual();
+  const { mutateAsync: migrarPrecoPorVariacaoMutAsync, isPending: migrando } = useMigrarPrecoPorVariacao();
+  const { mutateAsync: refazerKitMutAsync, isPending: refazendoKit } = useEncerrarKitVirtual();
   const { isAdmin } = useProfile();
   const { canal: canalAtivo, setCanal, habilitados } = useCanalAtivo();
   const { data: modulos } = useModulosHabilitados();
@@ -906,44 +906,48 @@ export default function Publicados() {
     }));
 
   // Desabilita só a linha em remoção (não todas).
-  const handleRemover = (familiaId: string) => {
+  const handleRemover = async (familiaId: string) => {
     setRemovendoId(familiaId);
-    remover(familiaId, {
-      onSuccess: () => toast.success('Removido do sistema'),
-      onError: (err) =>
-        toast.error('Falha ao remover', {
-          description: err instanceof Error ? err.message : String(err),
-        }),
-      onSettled: () => setRemovendoId(null),
-    });
+    try {
+      await removerAsync(familiaId);
+      toast.success('Removido do sistema');
+    } catch (err) {
+      toast.error('Falha ao remover', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setRemovendoId(null);
+    }
   };
 
-  const handleRepublicar = (familiaId: string) => {
+  const handleRepublicar = async (familiaId: string) => {
     setRepublicandoId(familiaId);
-    prepararRepublicar(familiaId, {
-      onSuccess: ({ lote_id }) => {
-        toast.success('Itens pausados; família pronta para republicar');
-        navigate(`/revisao/${lote_id}`);
-      },
-      onError: (err) =>
-        toast.error('Falha ao preparar republicação', {
-          description: err instanceof Error ? err.message : String(err),
-        }),
-      onSettled: () => setRepublicandoId(null),
-    });
+    try {
+      const { lote_id } = await prepararRepublicarAsync(familiaId);
+      toast.success('Itens pausados; família pronta para republicar');
+      navigate(`/revisao/${lote_id}`);
+    } catch (err) {
+      toast.error('Falha ao preparar republicação', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setRepublicandoId(null);
+    }
   };
 
   // Desabilita só a linha em pausa/reativação (não todas).
-  const handlePausarReativar = (mlItemId: string, novoStatus: 'ativo' | 'pausado') => {
+  const handlePausarReativar = async (mlItemId: string, novoStatus: 'ativo' | 'pausado') => {
     setPausandoId(mlItemId);
-    pausarReativar({ mlItemId, status: novoStatus }, {
-      onSuccess: () => toast.success(novoStatus === 'pausado' ? 'Anúncio pausado' : 'Anúncio reativado'),
-      onError: (err) =>
-        toast.error(novoStatus === 'pausado' ? 'Falha ao pausar' : 'Falha ao reativar', {
-          description: err instanceof Error ? err.message : String(err),
-        }),
-      onSettled: () => setPausandoId(null),
-    });
+    try {
+      await pausarReativarAsync({ mlItemId, status: novoStatus });
+      toast.success(novoStatus === 'pausado' ? 'Anúncio pausado' : 'Anúncio reativado');
+    } catch (err) {
+      toast.error(novoStatus === 'pausado' ? 'Falha ao pausar' : 'Falha ao reativar', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setPausandoId(null);
+    }
   };
 
   const handleRetentarCatalogo = (familiaId: string) => {
@@ -967,55 +971,57 @@ export default function Publicados() {
   // Migração "preço por variação" é irreversível no ML — erro 400 (recusa com motivo) ou 502
   // (pode ter começado) chegam ambos como err.message (chamarEdge lê json.erro em qualquer
   // status não-2xx), e o texto de ambos já é feito pra ir direto pro operador.
-  const handleMigrarPrecoPorVariacao = (familiaId: string) => {
+  const handleMigrarPrecoPorVariacao = async (familiaId: string) => {
     setMigrandoId(familiaId);
-    migrarPrecoPorVariacaoMut(familiaId, {
-      onSuccess: () => toast.success('Migração pedida ao Mercado Livre. Você será avisado quando terminar.'),
-      onError: (err) =>
-        toast.error('Falha ao migrar', {
-          description: err instanceof Error ? err.message : String(err),
-        }),
-      onSettled: () => setMigrandoId(null),
-    });
+    try {
+      await migrarPrecoPorVariacaoMutAsync(familiaId);
+      toast.success('Migração pedida ao Mercado Livre. Você será avisado quando terminar.');
+    } catch (err) {
+      toast.error('Falha ao migrar', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setMigrandoId(null);
+    }
   };
 
   // ADR-0154 D-8: encerra o kit no ML e reabre o diálogo de criação PRÉ-PREENCHIDO com os
   // componentes/título/descrição/desconto/foto do kit antigo — nunca chama
   // `carregarKitVirtualParaRefazer` antes do encerrar ter sucesso (prefillAposEncerrarKitVirtual
   // garante essa ordem: kit velho encerrado no ML antes de o novo poder ser publicado).
-  const handleRefazerKit = (kitId: string) => {
+  const handleRefazerKit = async (kitId: string) => {
     setRefazendoKitId(kitId);
-    refazerKitMut(kitId, {
-      onSuccess: async (r) => {
-        if (!r.ok) {
-          toast.error('Falha ao encerrar kit', { description: r.mensagem ?? r.motivo ?? 'Motivo não informado.' });
-          return;
-        }
-        const prefill = await prefillAposEncerrarKitVirtual(kitId, r, carregarKitVirtualParaRefazer);
-        if (prefill?.dadosParaPrefill) {
-          const total = prefill.dadosParaPrefill.componentes.length + prefill.componentesNaoRecuperados;
-          if (prefill.componentesNaoRecuperados > 0) {
-            toast.warning(
-              `Kit encerrado — recuperamos ${prefill.dadosParaPrefill.componentes.length} de ${total} componentes antigos`,
-              { description: 'Confira a composição antes de publicar.' },
-            );
-          } else {
-            toast.success('Kit encerrado — kit anterior carregado, ajuste e publique');
-          }
+    try {
+      const r = await refazerKitMutAsync(kitId);
+      if (!r.ok) {
+        toast.error('Falha ao encerrar kit', { description: r.mensagem ?? r.motivo ?? 'Motivo não informado.' });
+        return;
+      }
+      const prefill = await prefillAposEncerrarKitVirtual(kitId, r, carregarKitVirtualParaRefazer);
+      if (prefill?.dadosParaPrefill) {
+        const total = prefill.dadosParaPrefill.componentes.length + prefill.componentesNaoRecuperados;
+        if (prefill.componentesNaoRecuperados > 0) {
+          toast.warning(
+            `Kit encerrado — recuperamos ${prefill.dadosParaPrefill.componentes.length} de ${total} componentes antigos`,
+            { description: 'Confira a composição antes de publicar.' },
+          );
         } else {
-          toast.warning('Kit encerrado — não foi possível recuperar o kit anterior, monte do zero', {
-            description: prefill?.mensagemCarregarFalhou,
-          });
+          toast.success('Kit encerrado — kit anterior carregado, ajuste e publique');
         }
-        setRefazerDeKit(prefill?.dadosParaPrefill ?? null);
-        setCriarKitVirtualAberto(true);
-      },
-      onError: (err) =>
-        toast.error('Falha ao encerrar kit', {
-          description: err instanceof Error ? err.message : String(err),
-        }),
-      onSettled: () => setRefazendoKitId(null),
-    });
+      } else {
+        toast.warning('Kit encerrado — não foi possível recuperar o kit anterior, monte do zero', {
+          description: prefill?.mensagemCarregarFalhou,
+        });
+      }
+      setRefazerDeKit(prefill?.dadosParaPrefill ?? null);
+      setCriarKitVirtualAberto(true);
+    } catch (err) {
+      toast.error('Falha ao encerrar kit', {
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setRefazendoKitId(null);
+    }
   };
 
   const handleCriarKit = (item: PublicadoItem) =>
