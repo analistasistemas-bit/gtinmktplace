@@ -1,6 +1,6 @@
 # ADR-0163 — Padrão único de sinal de espera para ação disparada pelo operador
 
-**Status:** Aceito
+**Status:** Aceito, com recorte de sobriedade em 2026-09-17
 **Decisor:** Diego, 2026-09-17
 **Relacionado:** ADR-0079 (fonte única de tokens de motion), `docs/motion/contrato-motion-v5.md` §9 e §10
 
@@ -30,11 +30,27 @@ consumido por `DialogContent`/`AlertDialogContent` via as props `processando`/`r
 - **Ação normal em modal (Grupo A/B):** glow no container do diálogo + barra indeterminada no topo.
   O glow é o sinal primário (inequívoco mesmo com a barra pouco visível em tema escuro); a barra
   carrega o `role="progressbar"`/`aria-label` para leitor de tela.
-- **Ação destrutiva em modal (Grupo C) e ação disparada fora de modal (Grupo D):** só a barra, sem
-  glow. Justificativa dupla: (a) glow é comemorativo por natureza — apagado-com-brilho contradiz
-  §10 ("exclusão/destrutivas: nunca lúdicas — sem bounce, overshoot, comemoração"); (b) fora de
-  modal o glow é efeito de container de diálogo — num botão de toolbar avulso ele fica deslocado,
-  sem uma superfície que o justifique.
+- **Ação destrutiva em modal (Grupo C):** só a barra, sem glow. Justificativa: glow é comemorativo
+  por natureza — apagado-com-brilho contradiz §10 ("exclusão/destrutivas: nunca lúdicas — sem
+  bounce, overshoot, comemoração").
+
+**Não existe modo "fora de modal".** A primeira versão desta decisão previa um terceiro modo — só a
+barra, em botão solto fora de qualquer diálogo — aplicado em 5 pontos (Task 9). O recorte de
+2026-09-17 (ver seção abaixo) removeu esse modo inteiro: em 2 dos 5 pontos a barra ficava embaixo do
+overlay de outro modal (morta) ou quebrava linha num `flex-wrap` (salto de layout), e nos outros 3 o
+botão já tinha spinner ou texto de estado suficiente. O par glow+barra só existe dentro de
+`DialogContent`/`AlertDialogContent`.
+
+### Critério de aplicação (regra final, pós-recorte)
+
+O par glow+barra só se aplica quando as **duas** condições valem ao mesmo tempo:
+
+1. **A operação fala com Mercado Livre, storage, fila (QStash) ou IA** — segundos reais de espera
+   por resposta externa, não uma chamada local de UPDATE/DELETE simples.
+2. **O modal permanece de pé durante a espera.**
+
+Faltando qualquer uma, a ação usa spinner no ícone ou texto de estado no próprio botão
+("Salvando…", "Excluindo…") — o que essas telas já tinham antes desta entrega.
 
 ### Grupo B — o modal segura aberto até a resposta
 
@@ -53,15 +69,18 @@ olhando para o modal em vez de já ver o resultado ou continuar navegando.
 ### Critério do que conta como "destrutivo"
 
 **O efeito real na listagem do Mercado Livre decide, não a palavra do botão.** Sob esse critério,
-cinco ações contam como destrutivas mesmo quando o rótulo não usa a palavra "excluir": excluir
-produto, remover do sistema, remover publicação incompleta, migrar para preço por variação e refazer
-kit. "Migrar" e "Refazer kit" entram porque as duas encerram um item no Mercado Livre de forma
-irreversível — a migração fecha o anúncio original (ordens antigas ficam presas nele) e o refazer
-encerra o kit vigente — ainda que nenhuma das duas diga "excluir" no texto do botão. "Corrigir e
-republicar", por comparação, fica de fora: pausa e reenvia, não encerra nada em definitivo.
+quatro ações de `Publicados.tsx` contam como destrutivas mesmo quando o rótulo não usa a palavra
+"excluir": remover do sistema, remover publicação incompleta, migrar para preço por variação e
+refazer kit. "Migrar" e "Refazer kit" entram porque as duas encerram um item no Mercado Livre de
+forma irreversível — a migração fecha o anúncio original (ordens antigas ficam presas nele) e o
+refazer encerra o kit vigente — ainda que nenhuma das duas diga "excluir" no texto do botão.
+"Corrigir e republicar" e "Pausar/Reativar", por comparação, ficam de fora: não encerram nada em
+definitivo. (`dialog-excluir-produto.tsx` também era destrutivo sob este critério, mas saiu no
+recorte de sobriedade — é uma exclusão local de uma linha do catálogo, sem fala com o Mercado
+Livre, e falha a condição 1 do critério de aplicação acima.)
 
 As 3 confirmações de remoção de foto (`familia-expanded.tsx`) também usam `destrutivo`, mas por um
-motivo mais simples — é remoção de um arquivo do storage — e não entram nessa lista de cinco porque
+motivo mais simples — é remoção de um arquivo do storage — e não entram nessa lista de quatro porque
 o efeito não é sobre a listagem publicada no Mercado Livre.
 
 ### `onOpenChange` não é guardado
@@ -83,16 +102,44 @@ trabalho. O modal já é a superfície que o operador está olhando no momento d
 é mais direto do que mandar o olhar de volta para uma linha que pode nem estar visível atrás do
 próprio modal.
 
+## Recorte de sobriedade (2026-09-17)
+
+A entrega original chegou a 21 modais + 5 botões soltos (26 pontos). A revisão final (Fable)
+reprovou por "enfeitado" e determinou a saída de 16, aplicando o critério de aplicação acima. Saíram:
+
+- **9 modais de espera curta local** (Grupo 3 do escrutínio): `dialog-fiscal-produto`,
+  `dialog-excluir-produto`, `org-billing`, `revenue-reconciliation`, `support-request-dialog`,
+  `Organizacoes` (Nova empresa), `Usuarios` (convidar, notificações Telegram, editar menus). Nenhum
+  fala com Mercado Livre/storage/fila/IA — são UPDATE/INSERT locais de um clique.
+- **1 achado de código morto:** `SupportRequests.tsx` — o `AlertDialogAction` não fazia
+  `preventDefault`, o Radix fechava o modal no clique, e `processando={saving}` nunca chegava a ser
+  visto. A entrega original contou esse ponto como aplicado sem notar que era inerte.
+- **1 classificação errada:** o modal "Preço de atacado no lote inteiro" em `Revisao.tsx` foi tratado
+  como espera de laço (Grupo 2), mas `setAtacadoLote` é um único UPDATE
+  (`src/lib/queries.ts:889`), não itera família por família.
+- **5 botões fora de modal** (Grupo D, Task 9): `DetalheFinanceiro` (saque e Atualizar),
+  `Revisao` (reenviar com erro), `Organizacoes` (cancelar solicitação), `dialog-criar-kit`
+  (Reenviar). Dois causavam defeito visível — a barra do saque ficava atrás do overlay do próprio
+  modal (morta) e a de `Revisao`/`DetalheFinanceiro` quebrava linha num `flex-wrap` (salto de
+  layout) — e os cinco já tinham spinner no ícone ou texto de estado ("Cancelando…",
+  "Atualizando…") suficiente. O modo "fora de modal" saiu do padrão inteiro, não só desses 5 pontos.
+
+**Ficam 20 pontos:** `dialog-cadastro-produto`, `dialog-adicionar-variacao`, `dialog-criar-kit`
+(modal principal), `DialogCriarKitVirtual`, `Revisao` (modal "Publicar no Mercado Livre"), os 6
+`AlertDialog` de `Publicados`, o modal de saque de `DetalheFinanceiro`, `dialog-entrada`,
+`dialog-ajuste`, `pulse/dialog-adicionar`, `pulse/dialog-reprecificar`, `export/botao-exportar`, e as
+3 confirmações de foto em `familia-expanded.tsx`.
+
 ## Consequências
 
-- Um único componente e um único par de props cobre 21 modais + 6 confirmações de `Publicados` + o
-  saque + 3 remoções de foto + 5 pontos fora de modal (Task 9) — 2 pontos fora de modal
-  (`Publicados.tsx` e `familia-expanded.tsx`) ficaram de fora desta entrega por restrição de escopo,
-  registrados como pendência conhecida.
+- Um único componente e um único par de props cobre 20 pontos (lista acima) — sem modo "fora de
+  modal". `ProgressoIndeterminado` só é renderizado dentro de `DialogContent`/`AlertDialogContent`.
 - Mudança de comportamento perceptível em produção: os 6 modais de `Publicados` e o de saque não
   fecham mais no clique — fecham só depois da resposta.
 - Nenhum payload, parâmetro ou condição de disparo de mutation mudou — a mudança é só de quando o
   modal fecha e o que ele mostra enquanto isso não acontece.
+- Follow-up fora desta entrega: "Regenerar descrição" (IA, 5-15s) passaria no critério de aplicação
+  mas hoje só mostra o texto "Gerando…" sem ícone girando — fix de uma linha, não faz parte deste ADR.
 
 ## Como reverter
 

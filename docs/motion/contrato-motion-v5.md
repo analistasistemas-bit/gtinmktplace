@@ -286,18 +286,26 @@ Nunca um padrão universal de carregamento.
 
 **Proibição de progresso falso (regra 6 do contrato):** nunca simular percentual com timer, avançar etapas via `setTimeout` sem evento real, indicar conclusão antes da resposta, ou mostrar progresso determinístico para operação indeterminada.
 
-**Emenda (ADR-0163, 2026-09-17) — "nunca um padrão universal de carregamento" continua valendo só
-para carregar conteúdo.** Esta seção trata de **carregamento de conteúdo**: skeleton por fluxo,
-etapas reais quando existem, cada caso com sua própria forma porque o conteúdo e o tempo de cada um
-são diferentes. Isso não muda.
+**Emenda (ADR-0163, revisada 2026-09-17 após reprovação de sobriedade) — "nunca um padrão universal
+de carregamento" continua valendo, sem exceção.** Esta seção trata de **carregamento de
+conteúdo**: skeleton por fluxo, etapas reais quando existem, cada caso com sua própria forma porque
+o conteúdo e o tempo de cada um são diferentes. Isso não muda.
 
-**Ação disparada pelo operador é outro problema.** Quando o clique é do operador (confirmar em
-diálogo, botão de ação fora de modal) e a espera é pela resposta de uma Edge Function/RPC/API do
-Mercado Livre, o sinal é sempre `ProgressoIndeterminado`
-(`src/components/ui/progresso-indeterminado.tsx`): glow + barra em modal para ação normal; só a
-barra, sem glow, em ação destrutiva (ver §10) e em botão fora de modal. Ver ADR-0163 para o critério
-completo, a decisão do Grupo B (modal segura aberto até a resposta) e por que o `onOpenChange` não é
-guardado.
+**Ação disparada pelo operador dentro de um modal de confirmação usa o par glow+barra
+(`ProgressoIndeterminado`, `src/components/ui/progresso-indeterminado.tsx`) só quando as DUAS
+condições valem ao mesmo tempo:**
+
+1. **A operação fala com Mercado Livre, storage, fila (QStash) ou IA** — segundos reais de espera
+   por uma resposta externa, não uma chamada local de UPDATE/DELETE simples.
+2. **O modal permanece de pé durante a espera** (o par existe para segurar a atenção num diálogo
+   que continua aberto; não existe versão "fora de modal" — foi removida por enfeitar sem
+   necessidade, ver ADR-0163).
+
+Falhando qualquer uma das duas, a ação usa spinner no ícone ou texto de estado no próprio botão
+("Salvando…", "Excluindo…"), como o restante desta seção já determinava. Glow + barra em ação
+destrutiva (ver §10) segue sem glow, só a barra. Ver ADR-0163 para a lista de pontos que ficaram, o
+critério completo, a decisão do Grupo B (modal segura aberto até a resposta) e por que o
+`onOpenChange` não é guardado.
 
 ---
 
