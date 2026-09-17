@@ -244,6 +244,19 @@ describe('pedidoCasaBusca', () => {
     expect(pedidoCasaBusca(p, 'FC-001')).toBe(true);
   });
 
+  it('casa comprador e produto com acento buscando sem acento e vice-versa', () => {
+    const pedidoAcento = agruparPorPedido([venda({
+      order_id: 43, comprador_nome: 'João da Conceição',
+      itens: [item({ titulo: 'Botão de Pressão Inox' })],
+    })])[0];
+    expect(pedidoCasaBusca(pedidoAcento, 'joao')).toBe(true);
+    expect(pedidoCasaBusca(pedidoAcento, 'conceicao')).toBe(true);
+    expect(pedidoCasaBusca(pedidoAcento, 'botao')).toBe(true);
+    expect(pedidoCasaBusca(pedidoAcento, 'pressao')).toBe(true);
+    expect(pedidoCasaBusca(pedidoAcento, 'João')).toBe(true);
+    expect(pedidoCasaBusca(pedidoAcento, 'Pressão')).toBe(true);
+  });
+
   it('casa por número do pedido', () => {
     expect(pedidoCasaBusca(p, '42')).toBe(true);
   });

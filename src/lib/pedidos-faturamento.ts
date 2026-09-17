@@ -9,6 +9,7 @@ import { calcularMarkup } from './markup';
 import { labelStatusEnvio } from './ml-status';
 import { statusLiberacao } from './status-liberacao';
 import { round2, fmtBRLSemSimbolo } from './formato';
+import { normalizarParaBusca } from './texto';
 
 export interface ItemPedido {
   id: string;
@@ -407,7 +408,7 @@ export function nomeExibicaoComprador(p: Pick<Pedido, 'comprador_nome' | 'compra
 
 /** Busca livre (aba Vendas): casa comprador, produto (título/código), nº do pedido e valores. */
 export function pedidoCasaBusca(p: Pedido, query: string): boolean {
-  const q = query.trim().toLowerCase();
+  const q = normalizarParaBusca(query);
   if (!q) return true;
   const campos = [
     nomeExibicaoComprador(p),
@@ -417,5 +418,5 @@ export function pedidoCasaBusca(p: Pedido, query: string): boolean {
     fmtBRLSemSimbolo(p.liquido),
     ...p.itens.flatMap((it) => [it.titulo, it.codigo, it.ean]),
   ];
-  return campos.some((c) => c?.toLowerCase().includes(q));
+  return campos.some((c) => normalizarParaBusca(c).includes(q));
 }
