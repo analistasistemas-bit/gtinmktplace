@@ -177,6 +177,12 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
   const { data: capa3Url } = useImageUrl(familia.capa3StoragePath);
   const inputCapa3Ref = useRef<HTMLInputElement>(null);
   const [trocandoCapa3, setTrocandoCapa3] = useState(false);
+  // Pendência de remoção de foto por slot — sem isso, clicar duas vezes no "Remover" disparava
+  // duas remoções (nenhum estado travava o botão nem o AlertDialog fechava só depois da resposta).
+  const [removendoFoto, setRemovendoFoto] = useState<'capa' | 'capa2' | 'capa3' | null>(null);
+  const [removerCapaAberto, setRemoverCapaAberto] = useState(false);
+  const [removerCapa2Aberto, setRemoverCapa2Aberto] = useState(false);
+  const [removerCapa3Aberto, setRemoverCapa3Aberto] = useState(false);
   const updatePrincipal = useUpdateVariacaoPrincipal(familia.loteId);
   const exigeCor = familiaExigeCor(familia);
   const exigeFoto = familiaExigeFotoPorVariacao(familia);
@@ -418,6 +424,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
 
   async function lidarRemoverCapa() {
     if (!familia.capaStoragePath) return;
+    setRemovendoFoto('capa');
     try {
       await removerCapaFamilia(familia.id, familia.capaStoragePath);
       invalidarImagem(qc, familia.capaStoragePath);
@@ -425,6 +432,8 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
       toast.success('Foto-capa removida');
     } catch (err) {
       toast.error('Erro ao remover capa', { description: (err as Error).message });
+    } finally {
+      setRemovendoFoto(null);
     }
   }
 
@@ -447,6 +456,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
 
   async function lidarRemoverCapa2() {
     if (!familia.capa2StoragePath) return;
+    setRemovendoFoto('capa2');
     try {
       await removerCapa2Familia(familia.id, familia.capa2StoragePath);
       invalidarImagem(qc, familia.capa2StoragePath);
@@ -454,6 +464,8 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
       toast.success('2ª foto removida');
     } catch (err) {
       toast.error('Erro ao remover 2ª foto', { description: (err as Error).message });
+    } finally {
+      setRemovendoFoto(null);
     }
   }
 
@@ -476,6 +488,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
 
   async function lidarRemoverCapa3() {
     if (!familia.capa3StoragePath) return;
+    setRemovendoFoto('capa3');
     try {
       await removerCapa3Familia(familia.id, familia.capa3StoragePath);
       invalidarImagem(qc, familia.capa3StoragePath);
@@ -483,6 +496,8 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
       toast.success('3ª foto removida');
     } catch (err) {
       toast.error('Erro ao remover 3ª foto', { description: (err as Error).message });
+    } finally {
+      setRemovendoFoto(null);
     }
   }
 
@@ -661,14 +676,18 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
                   {familia.capaStoragePath ? 'Trocar foto' : 'Subir capa'}
                 </Button>
                 {familia.capaStoragePath && (
-                  <AlertDialog>
+                  <AlertDialog open={removerCapaAberto} onOpenChange={setRemoverCapaAberto}>
                     <AlertDialogTrigger asChild>
                       <Button variant="ghost" size="sm">
                         <Trash2 className="mr-1.5 h-4 w-4" />
                         Remover
                       </Button>
                     </AlertDialogTrigger>
-                    <AlertDialogContent>
+                    <AlertDialogContent
+                      processando={removendoFoto === 'capa'}
+                      destrutivo
+                      rotuloProcessando="Removendo foto-capa"
+                    >
                       <AlertDialogHeader>
                         <AlertDialogTitle>Remover a foto-capa?</AlertDialogTitle>
                         <AlertDialogDescription>
@@ -676,9 +695,20 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogCancel disabled={removendoFoto === 'capa'}>Cancelar</AlertDialogCancel>
+                        {/* preventDefault impede o Radix de fechar no clique: o modal precisa continuar
+                            de pé mostrando o sinal até a remoção terminar. O `finally` garante o
+                            fechamento mesmo se o handler rejeitar. */}
                         <AlertDialogAction
-                          onClick={lidarRemoverCapa}
+                          disabled={removendoFoto === 'capa'}
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              await lidarRemoverCapa();
+                            } finally {
+                              setRemoverCapaAberto(false);
+                            }
+                          }}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
                           Remover
@@ -707,13 +737,17 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
                   {familia.capa2StoragePath ? 'Trocar 2ª foto' : 'Subir 2ª foto'}
                 </Button>
                 {familia.capa2StoragePath && (
-                  <AlertDialog>
+                  <AlertDialog open={removerCapa2Aberto} onOpenChange={setRemoverCapa2Aberto}>
                     <AlertDialogTrigger asChild>
                       <Button variant="ghost" size="sm">
                         <Trash2 className="mr-1.5 h-4 w-4" /> Remover
                       </Button>
                     </AlertDialogTrigger>
-                    <AlertDialogContent>
+                    <AlertDialogContent
+                      processando={removendoFoto === 'capa2'}
+                      destrutivo
+                      rotuloProcessando="Removendo 2ª foto"
+                    >
                       <AlertDialogHeader>
                         <AlertDialogTitle>Remover a 2ª foto?</AlertDialogTitle>
                         <AlertDialogDescription>
@@ -721,9 +755,17 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogCancel disabled={removendoFoto === 'capa2'}>Cancelar</AlertDialogCancel>
                         <AlertDialogAction
-                          onClick={lidarRemoverCapa2}
+                          disabled={removendoFoto === 'capa2'}
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              await lidarRemoverCapa2();
+                            } finally {
+                              setRemoverCapa2Aberto(false);
+                            }
+                          }}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
                           Remover
@@ -746,13 +788,17 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
                   {familia.capa3StoragePath ? 'Trocar 3ª foto' : 'Subir 3ª foto'}
                 </Button>
                 {familia.capa3StoragePath && (
-                  <AlertDialog>
+                  <AlertDialog open={removerCapa3Aberto} onOpenChange={setRemoverCapa3Aberto}>
                     <AlertDialogTrigger asChild>
                       <Button variant="ghost" size="sm">
                         <Trash2 className="mr-1.5 h-4 w-4" /> Remover
                       </Button>
                     </AlertDialogTrigger>
-                    <AlertDialogContent>
+                    <AlertDialogContent
+                      processando={removendoFoto === 'capa3'}
+                      destrutivo
+                      rotuloProcessando="Removendo 3ª foto"
+                    >
                       <AlertDialogHeader>
                         <AlertDialogTitle>Remover a 3ª foto?</AlertDialogTitle>
                         <AlertDialogDescription>
@@ -760,9 +806,17 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                        <AlertDialogCancel disabled={removendoFoto === 'capa3'}>Cancelar</AlertDialogCancel>
                         <AlertDialogAction
-                          onClick={lidarRemoverCapa3}
+                          disabled={removendoFoto === 'capa3'}
+                          onClick={async (e) => {
+                            e.preventDefault();
+                            try {
+                              await lidarRemoverCapa3();
+                            } finally {
+                              setRemoverCapa3Aberto(false);
+                            }
+                          }}
                           className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                         >
                           Remover
