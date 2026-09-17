@@ -1003,7 +1003,7 @@ export default function Publicados() {
         description: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      setRemovendoId(null);
+      setRemovendoId((s) => (s === familiaId ? null : s));
     }
   };
 
@@ -1018,7 +1018,7 @@ export default function Publicados() {
         description: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      setRepublicandoId(null);
+      setRepublicandoId((s) => (s === familiaId ? null : s));
     }
   };
 
@@ -1033,7 +1033,7 @@ export default function Publicados() {
         description: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      setPausandoId(null);
+      setPausandoId((s) => (s === mlItemId ? null : s));
     }
   };
 
@@ -1068,7 +1068,7 @@ export default function Publicados() {
         description: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      setMigrandoId(null);
+      setMigrandoId((s) => (s === familiaId ? null : s));
     }
   };
 
@@ -1120,7 +1120,7 @@ export default function Publicados() {
         description: err instanceof Error ? err.message : String(err),
       });
     } finally {
-      setRefazendoKitId(null);
+      setRefazendoKitId((s) => (s === kitId ? null : s));
     }
   };
 

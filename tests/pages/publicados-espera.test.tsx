@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import Publicados from '@/pages/Publicados';
@@ -326,6 +326,79 @@ describe('Publicados — confirmação segura aberta durante a operação', () =
     await userEvent.click(confirmarPendente);
 
     expect(mutateAsync).toHaveBeenCalledTimes(1);
+  });
+});
+
+// `pausandoId` é um único slot para TODAS as linhas (diferente de `removendoFoto` em
+// familia-expanded, mas a mesma forma de bug): ESC fecha o modal de A com a operação em voo, B
+// abre porque a pendência dele é calculada por `pausandoId === item.mlItemId` (ainda null), e
+// se o `finally` de A limpar o slot incondicionalmente, o de B some por baixo — sem barra, sem
+// disabled — pronto para clique duplo (dispara pausar/reativar de novo no Mercado Livre).
+describe('Publicados — race entre linhas concorrentes', () => {
+  it('A resolvendo depois de B abrir não apaga o progresso de B', async () => {
+    usePublicadosMock.mockReturnValue({
+      data: [
+        itemBase({ mlItemId: 'MLB1', familiaId: 'f1' }),
+        itemBase({ mlItemId: 'MLB2', familiaId: 'f2', codigoPai: '01829150', titulo: 'OUTRO PRODUTO' }),
+      ],
+      isLoading: false,
+      error: null,
+    });
+    useStatusPublicadosMock.mockReturnValue({
+      data: {
+        itens: [
+          { ml_item_id: 'MLB1', status: 'ativo', motivo: null, estoque: 87, preco: 24.1 },
+          { ml_item_id: 'MLB2', status: 'ativo', motivo: null, estoque: 87, preco: 24.1 },
+        ],
+      },
+      isFetching: false,
+      refetch: vi.fn(),
+    });
+
+    let resolverA!: () => void;
+    const mutateAsync = vi.fn((args: { mlItemId: string; status: string }) => {
+      if (args.mlItemId === 'MLB1') {
+        return new Promise<void>((res) => { resolverA = res; });
+      }
+      return new Promise<void>(() => {}); // B nunca resolve neste teste.
+    });
+    usePausarReativarPublicadoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: false, error: null });
+
+    const { rerender } = renderPublicados();
+    const rerenderPendente = () => {
+      usePausarReativarPublicadoMock.mockReturnValue({ mutate: vi.fn(), mutateAsync, isPending: true, error: null });
+      rerender(
+        <MemoryRouter>
+          <Publicados />
+        </MemoryRouter>,
+      );
+    };
+
+    // 1. Abre e confirma "Pausar" na linha A — fica em voo.
+    await userEvent.click(screen.getAllByRole('button', { name: 'Pausar' })[0]);
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^Pausar$/ }));
+    rerenderPendente();
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    // 2. ESC fecha o modal de A — permitido por desenho, a operação de A continua em voo.
+    await userEvent.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    // 3. Abre e confirma "Pausar" na linha B — o gatilho está habilitado porque a pendência é por
+    // linha (pausandoId ainda aponta para A, então `pausando` de B é false).
+    await userEvent.click(screen.getAllByRole('button', { name: 'Pausar' })[1]);
+    await userEvent.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^Pausar$/ }));
+    rerenderPendente();
+    await waitFor(() => expect(within(screen.getByRole('alertdialog')).getByRole('progressbar')).toBeInTheDocument());
+    expect(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^Pausar$/ })).toBeDisabled();
+
+    // 4. A resolve agora — seu `finally` não pode apagar o slot de B.
+    resolverA();
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
+
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(within(screen.getByRole('alertdialog')).getByRole('progressbar')).toBeInTheDocument();
+    expect(within(screen.getByRole('alertdialog')).getByRole('button', { name: /^Pausar$/ })).toBeDisabled();
   });
 });
 
