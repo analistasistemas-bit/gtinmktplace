@@ -32,8 +32,7 @@ rótulo e descrição à esquerda, controle à direita, divisor entre linhas.
 
 A tela escreve em **duas tabelas com policies diferentes**, então há dois predicados
 (`src/components/configuracoes/permissoes.ts`). **Leitura não é gateada** — o `SELECT` das duas
-é liberado a qualquer membro da org, de propósito: quem precifica precisa ver a alíquota e o
-desconto vigentes.
+é liberado a qualquer membro da org, de propósito: quem precifica precisa ver a alíquota vigente.
 
 | Predicado | Tabela | Regra RLS replicada |
 |---|---|---|
@@ -73,7 +72,6 @@ ser gravado a cada blur, e `config-telegram.test.tsx` trava esse contrato.
 - **Conexão Mercado Livre** — **não** se configura mais aqui: mora em `/canais` (ADR-0077). A
   seção Geral só tem o atalho. Status via `useMlConnection` (lê `ml_credentials`); conectar/
   desconectar via `iniciarConexaoML`/`desconectarML` (`src/lib/ml-oauth.ts`). Ver [[Segurança]].
-- **Desconto de marketing** — `desconto_pct` por org (`useDescontoPct`, `useSalvarDescontoPct`).
 - **Telegram** — `ConfigTelegram` (componente): ativa/configura alertas
   (`useTelegramConfig`, `useSalvarTelegramConfig`, `useEnviarTesteTelegram`,
   `useVerificarModeradosAgora`). Token nunca retornado pela API — só `tem_token boolean`.
@@ -114,11 +112,12 @@ ser gravado a cada blur, e `config-telegram.test.tsx` trava esse contrato.
 ## Tabela `configuracoes`
 
 `org_id` (FK `organizations`, `NOT NULL`, **único** — 1 linha por org), `user_id` (legado,
-auditoria de quem editou), `desconto_pct`, `telegram_ativo`, `telegram_chat_id`,
+auditoria de quem editou), `telegram_ativo`, `telegram_chat_id`,
 `telegram_bot_token` (sensível), `aliquota_nacional_pct`, `aliquota_importado_pct`,
 `aliquotas_confirmadas_em`, `uf_empresa`, `aliquota_interna_pct`, `desconto_concorrencia_pct`,
 `reancora_lider_ativa`, `mostrar_lucro_dashboard`. Não há mais coluna de token do Mercado Pago —
-a conta MP é lida com o token da conexão `mercado_livre` (ADR-0093).
+a conta MP é lida com o token da conexão `mercado_livre` (ADR-0093). `desconto_pct` ficou órfã
+(desconto de marketing descartado, ADR-0162).
 
 `uf_empresa`/`aliquota_interna_pct` têm CHECK de coerência (os dois ou nenhum), formato de UF e
 faixa 0–100. Por serem nullable, a migration do ADR-0112 **não desconfirma** nenhuma org.

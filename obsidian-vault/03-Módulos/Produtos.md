@@ -26,7 +26,7 @@ do ledger (entrada, venda, estorno, ajuste), nunca por escrita direta.
 | Componente | Papel |
 |---|---|
 | `familia-expanded.tsx` | Card expandido de família na Revisão — edição de título/descrição/cor/preço |
-| `familia-row.tsx` | Linha de família em lista, com controles de atacado/desconto |
+| `familia-row.tsx` | Linha de família em lista, com controles de atacado (desconto removido, ADR-0162) |
 | `variacao-card.tsx` | Card de uma variação (cor, foto, estoque, status) |
 | `foto-capa-familia.tsx`, `botao-trocar-foto.tsx` | Gestão de foto de capa |
 | `card-categoria.tsx` | Seletor/exibição de categoria |

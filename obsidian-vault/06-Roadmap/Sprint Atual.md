@@ -76,8 +76,8 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > anti-oversell**: o estoque só é empurrado onde o saldo local não passa do vivo.
 >
 > **Limitações aceitas pelo Diego:** famílias divididas em vários anúncios e produtos em Kit Virtual
-> ficam de fora; o selo "% OFF" some após migrar. A perda de reconhecimento das vendas antigas foi
-> **corrigida**, não aceita.
+> ficam de fora; o selo "% OFF" some após migrar (limitação agora moot — o desconto visual saiu do
+> produto de vez, ADR-0162). A perda de reconhecimento das vendas antigas foi **corrigida**, não aceita.
 >
 > **Mergeado e deployado** (migration `20260908185250`, 10 Edge Functions). **Falta** só a
 > validação em anúncio real.

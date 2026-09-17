@@ -64,8 +64,8 @@ Doc prática para consulta: `src/motion/README.md`.
 - `src/hooks/` — 24 hooks de dados (ex.: `useFamilia`, `useFamiliaMutations`, `useLotes`,
   `useLoteRealtime`, `useVendas`, `useResumoVendas`, `useTarifaML`, `useConfiguracoes`).
 - `src/lib/` — lógica de domínio pura (ex.: `formato.ts`, `queries.ts`, `atacado.ts`,
-  `desconto.ts`, `analise-viabilidade.ts`, `faturamento.ts`, `financeiro.ts`, `database.types.ts`
-  — tipos gerados do schema).
+  `analise-viabilidade.ts`, `faturamento.ts`, `financeiro.ts`, `database.types.ts`
+  — tipos gerados do schema). `desconto.ts` foi deletado (ADR-0162).
 - `src/components/ui/` — primitivos shadcn/ui (button, dialog, badge, avatar, card, dropdown…).
 
 ## Hubs do grafo (god nodes em `src/`)

@@ -54,7 +54,7 @@ erDiagram
 | `pulse_vendedores` / `pulse_alertas` | Sellers qualificados e histórico de alertas de Buy-Box / concorrência |
 | `sonar_snapshots` | Histórico global de buscas no Sonar para comparação temporal de vendas |
 | `empresa_fiscal` | Dados fiscais da organização (CNPJ, IE, regime, endereço) para faturamento ML |
-| `configuracoes` | Settings por organização (desconto, Telegram, alíquotas — ver [[Configurações]]) |
+| `configuracoes` | Settings por organização (Telegram, alíquotas — ver [[Configurações]]; `desconto_pct` órfã, ADR-0162) |
 | `organizations` | Tenant; `canais_habilitados` e `modulos_habilitados` |
 | `profiles` | Espelho de `auth.users` — `is_admin`, `allowed_menus` (ver [[Usuários]]) |
 
