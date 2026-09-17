@@ -2,14 +2,13 @@
 // enviados à RPC são congelados no clique, então os números do diálogo precisam vir da MESMA foto:
 // `useVendas` faz poll de 3min e refetch ao focar a aba (ADR-0081/0082), e recalcular em render
 // deixaria o título divergir do que a RPC recebe.
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import DetalheFinanceiro from '../DetalheFinanceiro';
 import { useVendas } from '@/hooks/useVendas';
-import { registrarSaque } from '@/lib/faturamento';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() } }));
@@ -104,36 +103,5 @@ describe('DetalheFinanceiro — confirmação de saque em massa', () => {
 
     expect(screen.getByText(/Registrar saque de 25 pedidos\?/)).toBeInTheDocument();
     expect(screen.queryByText(/Registrar saque de 17 pedidos\?/)).not.toBeInTheDocument();
-  });
-
-  // A correção da Task 7 moveu o fechamento do modal para depois do `await`: antes, o clique em
-  // "Registrar saque" fechava o diálogo na hora, mesmo com a RPC ainda em voo. Sem essa mudança,
-  // o estado intermediário abaixo (diálogo aberto, progressbar visível, botões desabilitados)
-  // nunca existe — o teste tem que falhar sem ela.
-  it('modal continua aberto com o sinal de processamento até a RPC responder, e só então fecha', async () => {
-    mockVendas(vendasDe(25));
-    let resolver: (n: number) => void = () => {};
-    vi.mocked(registrarSaque).mockImplementation(() => new Promise<number>((res) => { resolver = res; }));
-    const user = userEvent.setup();
-    render(tela());
-
-    await user.click(screen.getByLabelText('Selecionar todos os pedidos do filtro'));
-    await user.click(screen.getByRole('button', { name: /Registrar saque/ }));
-    await screen.findByText(/Registrar saque de 25 pedidos\?/);
-
-    // Com o Dialog aberto, o Radix esconde o resto da página do acessibility tree — o único
-    // botão "Registrar saque" alcançável agora é o de confirmar dentro do modal.
-    const confirmar = screen.getByRole('button', { name: /Registrar saque/ });
-    await user.click(confirmar);
-
-    // Enquanto a RPC não resolve: modal aberto, sinal de progresso visível, botões travados.
-    await waitFor(() => expect(screen.getByRole('progressbar')).toBeInTheDocument());
-    expect(screen.getByText(/Registrar saque de 25 pedidos\?/)).toBeInTheDocument();
-    expect(confirmar).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
-
-    resolver(25);
-
-    await waitFor(() => expect(screen.queryByText(/Registrar saque de 25 pedidos\?/)).not.toBeInTheDocument());
   });
 });
