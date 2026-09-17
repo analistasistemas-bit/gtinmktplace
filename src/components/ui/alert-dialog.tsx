@@ -3,6 +3,7 @@ import { AlertDialog as AlertDialogPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { ProgressoIndeterminado } from "@/components/ui/progresso-indeterminado"
 
 function AlertDialog({
   ...props
@@ -48,10 +49,20 @@ AlertDialogOverlay.displayName = "AlertDialogOverlay"
 
 function AlertDialogContent({
   className,
+  children,
   size = "default",
+  processando = false,
+  destrutivo = false,
+  rotuloProcessando = "Processando",
   ...props
 }: React.ComponentProps<typeof AlertDialogPrimitive.Content> & {
   size?: "default" | "sm"
+  /** Liga o sinal de "está rodando": aura, barra indeterminada e aria-busy. */
+  processando?: boolean
+  /** Ação destrutiva: mantém a barra, suprime a aura (contrato de motion §10). */
+  destrutivo?: boolean
+  /** O que está acontecendo, para quem usa leitor de tela: "Pausando anúncio". */
+  rotuloProcessando?: string
 }) {
   return (
     <AlertDialogPortal>
@@ -59,12 +70,22 @@ function AlertDialogContent({
       <AlertDialogPrimitive.Content
         data-slot="alert-dialog-content"
         data-size={size}
+        aria-busy={processando}
         className={cn(
           "group/alert-dialog-content fixed top-1/2 left-1/2 z-50 grid w-full -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-popover-foreground ring-1 ring-foreground/10 duration-(--motion-duration-instant) outline-none data-[size=default]:max-w-xs data-[size=sm]:max-w-xs data-[size=default]:sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          processando && !destrutivo && "glow-effect-sombra",
           className
         )}
         {...props}
-      />
+      >
+        {processando && (
+          <ProgressoIndeterminado
+            label={rotuloProcessando}
+            className="absolute inset-x-0 top-0 z-10 rounded-t-xl rounded-b-none"
+          />
+        )}
+        {children}
+      </AlertDialogPrimitive.Content>
     </AlertDialogPortal>
   )
 }

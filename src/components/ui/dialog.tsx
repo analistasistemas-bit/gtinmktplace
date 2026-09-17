@@ -4,6 +4,11 @@ import { Dialog as DialogPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
+import { ProgressoIndeterminado } from "@/components/ui/progresso-indeterminado"
+// A classe `glow-effect-sombra` mora no CSS do GlowEffect, que sem este import só chegaria ao
+// bundle pelo componente (sidebar/overlay de login). Importando aqui, todo diálogo do sistema
+// ganha a aura sem que cada tela precise lembrar de importar o CSS.
+import "@/components/ui/glow-effect.css"
 
 function Dialog({
   ...props
@@ -54,21 +59,38 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  processando = false,
+  destrutivo = false,
+  rotuloProcessando = "Processando",
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
+  /** Liga o sinal de "está rodando": aura, barra indeterminada e aria-busy. */
+  processando?: boolean
+  /** Ação destrutiva: mantém a barra, suprime a aura (contrato de motion §10). */
+  destrutivo?: boolean
+  /** O que está acontecendo, para quem usa leitor de tela: "Salvando produto". */
+  rotuloProcessando?: string
 }) {
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        aria-busy={processando}
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-(--motion-duration-instant) outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          processando && !destrutivo && "glow-effect-sombra",
           className
         )}
         {...props}
       >
+        {processando && (
+          <ProgressoIndeterminado
+            label={rotuloProcessando}
+            className="absolute inset-x-0 top-0 z-10 rounded-t-xl rounded-b-none"
+          />
+        )}
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close data-slot="dialog-close" asChild>
