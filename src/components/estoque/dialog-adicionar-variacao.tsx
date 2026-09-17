@@ -24,10 +24,6 @@ import {
   LinhaVariacaoForm, novaLinha, parseNum, erroCampo, type LinhaVariacao,
 } from '@/components/estoque/linha-variacao-form';
 import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
-import { cn } from '@/lib/utils';
-// Mesmo efeito de "processando" do dialog-criar-kit.tsx (ADR-0079/glow-effect-sombra) — importado
-// direto aqui porque o CSS só chega ao bundle pelo componente que o usa.
-import '@/components/ui/glow-effect.css';
 
 type LinhaAddVariacao = LinhaVariacao & { codigo: string };
 
@@ -275,8 +271,9 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
           é `sm:max-w-sm`, e sobrescrever sem o mesmo prefixo não vence a cascata do
           tailwind-merge (a regra `sm:` do Dialog venceria em qualquer desktop). */}
       <DialogContent
-        aria-busy={salvando}
-        className={cn('max-h-[90vh] sm:max-w-3xl overflow-y-auto', salvando && 'glow-effect-sombra')}
+        processando={salvando}
+        rotuloProcessando="Enviando variações ao Mercado Livre"
+        className="max-h-[90vh] sm:max-w-3xl overflow-y-auto"
       >
         <DialogHeader>
           <DialogTitle>Adicionar variação</DialogTitle>
