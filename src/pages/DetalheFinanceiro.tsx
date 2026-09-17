@@ -497,6 +497,8 @@ export default function DetalheFinanceiro() {
 
   const markupTotal = totaisFiltrados.markup;
 
+  const processandoSaque = mutationRegistrar.isPending || mutationDesfazer.isPending;
+
   return (
     <div className="p-4 sm:p-6">
       <Breadcrumbs items={[{ label: 'Financeiro', to: '/financeiro' }, { label: 'Detalhe do líquido' }]} />
@@ -677,7 +679,11 @@ export default function DetalheFinanceiro() {
       )}
 
       <Dialog open={confirmarSaque != null} onOpenChange={(o) => !o && setConfirmarSaque(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent
+          className="sm:max-w-md"
+          processando={processandoSaque}
+          rotuloProcessando={confirmarSaque?.acao === 'desfazer' ? 'Desfazendo saque' : 'Registrando saque'}
+        >
           <DialogHeader>
             <DialogTitle>
               {confirmarSaque?.acao === 'desfazer' ? 'Desfazer' : 'Registrar'} saque de{' '}
@@ -690,12 +696,20 @@ export default function DetalheFinanceiro() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmarSaque(null)}>Cancelar</Button>
+            <Button variant="outline" disabled={processandoSaque} onClick={() => setConfirmarSaque(null)}>Cancelar</Button>
             <Button
-              onClick={() => {
-                if (confirmarSaque?.acao === 'desfazer') mutationDesfazer.mutate(confirmarSaque.vars);
-                else if (confirmarSaque) mutationRegistrar.mutate(confirmarSaque.vars);
-                setConfirmarSaque(null);
+              disabled={processandoSaque}
+              onClick={async () => {
+                if (!confirmarSaque) return;
+                try {
+                  if (confirmarSaque.acao === 'desfazer') await mutationDesfazer.mutateAsync(confirmarSaque.vars);
+                  else await mutationRegistrar.mutateAsync(confirmarSaque.vars);
+                } catch {
+                  // O toast de erro já vem do onError do próprio hook; aqui só evitamos a unhandled
+                  // rejection e deixamos o finally fechar o modal.
+                } finally {
+                  setConfirmarSaque(null);
+                }
               }}
             >
               {confirmarSaque?.acao === 'desfazer'
