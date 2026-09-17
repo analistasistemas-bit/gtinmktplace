@@ -44,6 +44,8 @@ Um vocabulário visual único e previsível para espera de processamento, aplica
 
 A exceção destrutiva vem do contrato de motion §10 ("ações destrutivas nunca lúdicas — sem bounce, overshoot, comemoração"). O glow cicla três cores de gráfico e lê como celebração; num "Excluir produto" isso é ruído semântico. A barra sozinha informa sem comemorar — que é exatamente o que `lote-card.tsx:132` (excluir lote) já faz hoje. A exceção alinha o resto do sistema com essa escolha; não inventa uma.
 
+**O que conta como destrutivo** é o efeito no Mercado Livre, não a palavra no botão. São cinco: "Excluir produto", "Remover do sistema", "Remover publicação incompleta", "Migrar para preço por variação" (fecha o anúncio original em definitivo) e "Refazer kit" (encerra o kit no ML). "Corrigir e republicar" fica de fora — pausa e reenvia, sem encerrar nada.
+
 ### 3.2 Interface
 
 A mecânica mora no componente base, não copiada em cada tela:
@@ -70,9 +72,11 @@ Cinco linhas em `src/components/ui/progresso-indeterminado.tsx`. Existe para que
 
 ### 3.3 Posição da barra no modal
 
-Primeiro filho do grid do content, com `sticky top-0` e margens negativas para encostar nas bordas arredondadas.
+`absolute inset-x-0 top-0`, encostada no topo do content.
 
-`sticky` resolve os dois layouts com o mesmo código: em modal que rola (`max-h-[90vh] overflow-y-auto`, caso de `dialog-cadastro-produto` e `dialog-adicionar-variacao`) a barra gruda no topo da área visível; em modal sem scroll ela se comporta como estática. Sem branch, sem prop de layout.
+A alternativa natural — barra como primeiro filho do grid, com `sticky` para grudar ao rolar — foi descartada na revisão: o content é `grid gap-4`, então a barra ocuparia um track próprio e o `gap` empurraria todo o conteúdo 16px para baixo no instante em que o sinal liga. Salto de layout no clique é exatamente o que o contrato de motion §9 proíbe, e margem negativa não resolve (gap é espaço entre tracks, não margem).
+
+`absolute` não cria track. O custo é perder o "gruda ao rolar" nos três modais com `overflow-y-auto`; nesses, o glow é box-shadow do container e continua visível durante a rolagem, então o recado não se perde.
 
 A barra tem 6px de altura (`src/index.css:219`) e o botão de fechar começa em 8px (`dialog.tsx`, `absolute top-2 right-2`) — não colidem.
 
@@ -115,11 +119,14 @@ Estas são as confirmações de **Pausar, Corrigir e republicar, Remover do sist
 
 Os `AlertDialog` de remover capa/2ª/3ª foto em `familia-expanded.tsx` (linhas 671, 716, 755) chamam um handler `async` sem rastrear pendência e sem desabilitar o botão — hoje é possível clicar duas vezes. Aqui o padrão visual vem depois de criar o estado que falta; é correção de comportamento, não cosmética.
 
-### Grupo D — 9 botões de espera fora de modal
+### Grupo D — 7 dos 9 botões de espera fora de modal
 
-`ProgressoIndeterminado` junto ao botão. Inclui os "Atualizar" de `Publicados` e `DetalheFinanceiro`, "Reenviar N com erro", "Registrar/Desfazer saque", "Regenerar descrição" (IA), "Entrar na operação" e "Cancelar solicitação".
+`ProgressoIndeterminado` junto ao botão. Inclui os "Atualizar" de `Publicados` e `DetalheFinanceiro`, "Reenviar N com erro", "Registrar/Desfazer saque", "Regenerar descrição" (IA), "Cancelar solicitação" e "Reenviar" do kit.
 
-`Organizacoes.tsx:322/455` ("Entrar na operação") não tem estado de pendência nenhum — precisa criar, como no Grupo C.
+Dois dos nove ficam de fora, com motivo:
+
+- `Organizacoes.tsx:322/455` ("Entrar na operação") não tem estado de pendência nenhum **e** navega para outra tela ao concluir — criar o estado ali é trabalho de comportamento com ganho visual duvidoso, já que a tela troca.
+- `variacao-card.tsx:73` (troca de foto) já usa `StatusInline`, que informa mais do que uma barra genérica. Substituir seria piorar.
 
 ### Fora de escopo
 

@@ -4,9 +4,9 @@
 
 **Goal:** Dar ao operador um sinal visual único e previsível de "está processando, aguarde" em todas as 37 janelas e botões do PubliAI onde ele hoje clica e espera sem retorno.
 
-**Architecture:** A mecânica dos dois efeitos que já existem (`.glow-effect-sombra` e `.track-indeterminate`) vai para uma prop `processando` em `DialogContent`/`AlertDialogContent`, em vez de ser copiada em cada tela. Ação destrutiva e botão fora de modal recebem só a barra. Sete confirmações que hoje desmontam antes da operação terminar passam a ficar abertas até resolver, via handler `async` e `preventDefault` no `AlertDialogAction`.
+**Architecture:** A mecânica dos dois efeitos que já existem (`.glow-effect-sombra` e `.track-indeterminate`) vai para uma prop `processando` em `DialogContent`/`AlertDialogContent`, em vez de ser copiada em cada tela. Ação destrutiva e botão fora de modal recebem só a barra. Sete confirmações que hoje desmontam antes da operação terminar passam a ficar abertas até resolver: as seis de `Publicados` via `preventDefault` no `AlertDialogAction`, e a de `DetalheFinanceiro` — que é `Dialog` comum, sem fechamento automático — apenas movendo o fechamento para depois do `await`.
 
-**Tech Stack:** React 19, TypeScript, Radix UI (`radix-ui` pacote único), Tailwind v4, TanStack Query, Vitest + Testing Library.
+**Tech Stack:** React 18.3.1, TypeScript, Radix UI (`radix-ui` pacote único, `react-dialog`/`react-alert-dialog` 1.1.15), Tailwind v4, TanStack Query, Vitest + Testing Library.
 
 **Spec:** [`docs/superpowers/specs/2026-09-17-padrao-estados-espera-design.md`](../specs/2026-09-17-padrao-estados-espera-design.md)
 **Inventário:** [`docs/superpowers/specs/2026-09-17-inventario-estados-espera.md`](../specs/2026-09-17-inventario-estados-espera.md)
@@ -108,7 +108,11 @@ git commit -m "feat(ui): componente da barra de progresso indeterminado"
   - `AlertDialogContent` ganha exatamente as mesmas três props
   - Contrato: `processando` liga `aria-busy`, a barra, e o glow; `destrutivo` suprime **só** o glow; `rotuloProcessando` alimenta o `aria-label` da barra e tem default `"Processando"`.
 
-**Por que a barra é `sticky top-0`:** alguns modais rolam (`max-h-[90vh] overflow-y-auto`, caso de `dialog-cadastro-produto` e `dialog-adicionar-variacao`) e outros não. Com `sticky`, a barra gruda no topo da área visível no primeiro caso e se comporta como estática no segundo — mesmo código, sem prop de layout. As margens negativas (`-mx-4 -mt-4`) cancelam o `p-4` do content para a barra encostar nas bordas. A barra tem 6px e o botão de fechar começa em 8px (`top-2`): não colidem.
+**Por que a barra é `absolute`, e não `sticky`:** o content é um `grid gap-4`. Uma barra como filho do grid ocupa um track próprio, e o `gap-4` continua valendo entre esse track e o primeiro filho real — ao ligar `processando`, todo o conteúdo desceria 16px e o modal recentraria. É salto de layout no exato instante do clique, que o contrato de motion §9 proíbe. Margem negativa não resolve: `gap` é espaço entre tracks, não margem colapsável.
+
+`absolute inset-x-0 top-0` não cria track, então não há gap e não há salto. O content é `fixed`, logo serve de containing block. O custo é perder o "gruda ao rolar" nos três modais com `overflow-y-auto` — aceitável, porque nesses o glow (box-shadow do container) continua visível o tempo todo e já carrega o recado.
+
+A barra tem 6px e o botão de fechar começa em 8px (`top-2`): não colidem.
 
 - [ ] **Step 1: Escrever o teste que falha**
 
@@ -246,7 +250,7 @@ function DialogContent({
         {processando && (
           <ProgressoIndeterminado
             label={rotuloProcessando}
-            className="sticky top-0 z-10 -mx-4 -mt-4 w-auto rounded-t-xl rounded-b-none"
+            className="absolute inset-x-0 top-0 z-10 w-auto rounded-t-xl rounded-b-none"
           />
         )}
         {children}
@@ -318,7 +322,7 @@ function AlertDialogContent({
         {processando && (
           <ProgressoIndeterminado
             label={rotuloProcessando}
-            className="sticky top-0 z-10 -mx-4 -mt-4 w-auto rounded-t-xl rounded-b-none"
+            className="absolute inset-x-0 top-0 z-10 w-auto rounded-t-xl rounded-b-none"
           />
         )}
         {children}
@@ -342,7 +346,13 @@ Expected: PASS, 6 testes.
 Run: `pnpm test`
 Expected: nenhuma falha nova. Se algo falhar, confirmar se já falhava em `origin/main` **rodando lá**, não inferindo do diff.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Provar por screenshot ANTES de espalhar**
+
+A posição da barra é a parte mais frágil do desenho, e a partir da Task 4 ela estará em 37 lugares. Subir a app (copiar `.env.local` antes, senão abre branca), abrir um modal com `processando` ligado e tirar screenshot real em dois casos: um modal curto e um que rola (`dialog-adicionar-variacao`). Conferir: nenhum salto de conteúdo ao ligar, a barra encosta nas bordas, o canto arredondado acompanha o modal, e o botão de fechar continua clicável.
+
+Se houver salto, pare aqui — não siga para a Task 3. O custo de corrigir depois é 37 arquivos.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add src/components/ui/dialog.tsx src/components/ui/alert-dialog.tsx src/components/ui/__tests__/dialog-processando.test.tsx
@@ -481,7 +491,8 @@ git commit -m "feat(ui): sinal de processamento nos 17 diálogos do grupo A"
 ## Task 5: Grupo B — handlers de Publicados viram `async`
 
 **Files:**
-- Modify: `src/pages/Publicados.tsx` — os 6 handlers (`handlePausarReativar` l.937 e os equivalentes de migrar, republicar, remover, remover incompleta e refazer kit) e os 6 tipos de prop do card (bloco de tipos que começa em l.205)
+- Modify: `src/pages/Publicados.tsx` — os 6 handlers (`handlePausarReativar` l.937 e os equivalentes de migrar, republicar, remover, remover incompleta e refazer kit) e os tipos de prop do card (`LinhaProps`, a partir de l.201; a prop do kit virtual é `refazendo`, l.689, não `refazendoKit` — esse é o `isPending` do hook na página, l.838)
+- Modify: **`tests/pages/Publicados.test.tsx`** — os mocks dos hooks e as asserções. **Este arquivo está na árvore `tests/`, não em `src/pages/__tests__/`** (que não tem teste desta página).
 
 **Interfaces:**
 - Produces: os 6 handlers passam de `(…) => void` para `(…) => Promise<void>`. Os tipos das props do card mudam junto. A Task 6 depende desta assinatura.
@@ -537,10 +548,22 @@ No bloco de tipos que começa em `src/pages/Publicados.tsx:205`, trocar o retorn
 Run: `pnpm exec tsc --noEmit -p tsconfig.json`
 Expected: sem erro novo. Se aparecer "Promise returned is not awaited" em algum `onClick`, é o ponto que a Task 6 vai converter — anotar e seguir.
 
+- [ ] **Step 3.5: Migrar os mocks de `tests/pages/Publicados.test.tsx`**
+
+**Sem este passo a suíte fica vermelha.** Os mocks dos hooks devolvem hoje só `{ mutate: vi.fn() }` (l.182-206, 760, 783, 953). Com o código chamando `mutateAsync`, o mock devolve `undefined`, a chamada lança `TypeError`, o `catch` do handler engole o erro e o teste vê um toast de erro em vez do de sucesso — falha silenciosa e difícil de ler.
+
+Três mudanças no arquivo:
+
+1. **Mocks:** acrescentar `mutateAsync: vi.fn().mockResolvedValue(undefined)` ao lado de cada `mutate` nos objetos devolvidos pelos hooks mockados.
+2. **Asserções:** as que hoje fazem `expect(mutate).toHaveBeenCalledWith(id, expect.any(Object))` (l.461, 772, 795, 948, 969) passam a `expect(mutateAsync).toHaveBeenCalledWith(id)` — o segundo argumento era o objeto de callbacks, que deixou de existir.
+3. **Testes de "Refazer kit" (l.756-798):** hoje simulam o resultado chamando `opts.onSuccess({ ok: … })` na implementação do mock. Passam a `mockResolvedValue({ ok: … })`.
+
+Estes ajustes são consequência direta da mudança de API, não acomodação de teste quebrado: o que é verificado (a ação foi disparada com o id certo, o toast certo apareceu) continua idêntico.
+
 - [ ] **Step 4: Rodar os testes de Publicados**
 
-Run: `pnpm test Publicados`
-Expected: sem falha nova. Os testes existentes esperam os mesmos toasts, que foram preservados.
+Run: `pnpm test tests/pages/Publicados.test.tsx`
+Expected: PASS. Os toasts foram preservados na conversão dos handlers; se algum teste esperar toast de erro onde deveria haver sucesso, é sinal de que faltou `mutateAsync` em algum mock.
 
 - [ ] **Step 5: Commit**
 
@@ -587,7 +610,7 @@ git commit -m "refactor(publicados): handlers assíncronos para o modal poder es
 </AlertDialog>
 
 // depois
-<AlertDialog open={pausarAberto} onOpenChange={(o) => { if (!pausando) setPausarAberto(o); }}>
+<AlertDialog open={pausarAberto} onOpenChange={setPausarAberto}>
   <AlertDialogTrigger asChild>
     <Button … disabled={!isAdmin || !podeAlternar || pausando || migracaoAtiva}>
       <Pause className="h-3 w-3" />
@@ -601,14 +624,17 @@ git commit -m "refactor(publicados): handlers assíncronos para o modal poder es
     <AlertDialogFooter>
       <AlertDialogCancel disabled={pausando}>Cancelar</AlertDialogCancel>
       {/* preventDefault impede o Radix de fechar no clique: o modal precisa continuar de pé
-          mostrando o sinal até a resposta do Mercado Livre chegar. O handler nunca rejeita
-          (Task 5), então este await sempre resolve e o modal nunca fica preso. */}
+          mostrando o sinal até a resposta do Mercado Livre chegar. O `finally` garante o
+          fechamento mesmo se o handler rejeitar — modal preso aberto é pior que fechar cedo. */}
       <AlertDialogAction
         disabled={pausando}
         onClick={async (e) => {
           e.preventDefault();
-          await onPausarReativar(item.mlItemId, 'pausado');
-          setPausarAberto(false);
+          try {
+            await onPausarReativar(item.mlItemId, 'pausado');
+          } finally {
+            setPausarAberto(false);
+          }
         }}
       >
         Pausar
@@ -620,14 +646,22 @@ git commit -m "refactor(publicados): handlers assíncronos para o modal poder es
 
 O estado vive no componente do card (o mesmo que já recebe `pausando` por prop), declarado junto aos outros `useState` dele.
 
+**Duas escolhas que merecem atenção do revisor:**
+
+1. **`onOpenChange` não é guardado.** A versão anterior deste plano trazia `if (!pausando) setPausarAberto(o)`, para impedir o fechamento em voo. Foi retirado: `chamarEdge` não tem timeout, e uma requisição pendurada deixaria o operador preso sob o overlay sem ESC, sem clique fora e com o Cancelar desabilitado. Fechar o modal não cancela a mutation — a linha da tabela continua com o estado de pendência e o toast chega do mesmo jeito. O `Cancelar` desabilitado permanece, como sinal visual de que a ação está correndo.
+
+2. **`try/finally` em vez de confiar no handler.** Task 5 faz os handlers engolirem o erro, então na prática eles não rejeitam. Mas isso é um invariante que vive em outro arquivo e que um refactor futuro quebra em silêncio. O `finally` torna o fechamento independente disso.
+
 | Modal | Estado novo | Estado de pendência já existente | `rotuloProcessando` | `destrutivo` |
 |---|---|---|---|---|
-| Migrar para preço por variação (~l.400) | `migrarAberto` | `migrando` | `"Migrando anúncio"` | não |
+| Migrar para preço por variação (~l.400) | `migrarAberto` | `migrando` | `"Migrando anúncio"` | **sim** |
 | Pausar anúncio (~l.449) | `pausarAberto` | `pausando` | `"Pausando anúncio"` | não |
 | Corrigir e republicar (~l.496) | `republicarAberto` | `republicando` | `"Republicando anúncio"` | não |
 | Remover do sistema (~l.527) | `removerAberto` | `removendo` | `"Removendo anúncio"` | **sim** |
 | Remover publicação incompleta (~l.661) | `removerIncompletaAberto` | `removendo` | `"Removendo publicação"` | **sim** |
-| Refazer kit (~l.753) | `refazerAberto` | `refazendoKit` | `"Refazendo kit"` | não |
+| Refazer kit (~l.753) | `refazerAberto` | `refazendo` (prop, l.689) | `"Refazendo kit"` | **sim** |
+
+**Por que "Migrar" e "Refazer kit" entram como destrutivas:** as duas encerram um item no Mercado Livre de forma irreversível — a migração fecha o anúncio original (as ordens antigas ficam nele) e o refazer encerra o kit. Pela regra que o Diego fixou (destrutiva recebe só a barra), elas pertencem a esse grupo, ainda que o rótulo do botão não diga "excluir". "Corrigir e republicar" fica de fora: pausa e reenvia, não encerra nada em definitivo.
 
 - [ ] **Step 1: Escrever os testes que falham**
 
@@ -665,9 +699,10 @@ describe('Publicados — confirmação segura aberta durante a operação', () =
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
-  it('falha também fecha o modal — nunca fica preso', async () => {
-    // O handler engole o erro e mostra toast (Task 5), então a promise resolve mesmo na falha.
-    const onPausarReativar = vi.fn(() => Promise.resolve());
+  it('handler que rejeita também fecha o modal — nunca fica preso', async () => {
+    // Task 5 faz o handler engolir o erro, mas o fechamento não pode DEPENDER disso: é um
+    // invariante que mora em outro arquivo. O `finally` do onClick é quem garante.
+    const onPausarReativar = vi.fn(() => Promise.reject(new Error('ML fora do ar')));
     renderCard({ onPausarReativar, pausando: false });
 
     await userEvent.click(screen.getByRole('button', { name: 'Pausar' }));
@@ -678,14 +713,44 @@ describe('Publicados — confirmação segura aberta durante a operação', () =
 
   it('a ação é disparada uma única vez, mesmo com clique duplo', async () => {
     const onPausarReativar = vi.fn(() => new Promise<void>(() => {}));
-    renderCard({ onPausarReativar, pausando: false });
+    const { rerender } = renderCard({ onPausarReativar, pausando: false });
 
     await userEvent.click(screen.getByRole('button', { name: 'Pausar' }));
     const confirmar = screen.getByRole('button', { name: /^Pausar$/ });
     await userEvent.click(confirmar);
-    await userEvent.click(confirmar);
+
+    // A trava do segundo clique é o `disabled={pausando}`, e `pausando` vem do pai — sem este
+    // rerender o botão continua habilitado e o teste reprovaria uma implementação correta.
+    rerender(cardCom({ onPausarReativar, pausando: true }));
+    await userEvent.click(screen.getByRole('button', { name: /^Pausar$/ }));
 
     expect(onPausarReativar).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Os outros cinco modais são a mesma transformação. Em vez de cinco cópias do teste acima, uma
+// tabela: o que precisa ser garantido em ação de Mercado Livre é que ela dispare UMA vez e que
+// o modal não fique preso.
+describe.each([
+  { nome: 'Migrar para preço por variação', abrir: /migrar/i, confirmar: /^Migrar$/, prop: 'onMigrarPrecoPorVariacao', pendencia: 'migrando' },
+  { nome: 'Corrigir e republicar', abrir: /republicar/i, confirmar: /^Republicar$/, prop: 'onRepublicar', pendencia: 'republicando' },
+  { nome: 'Remover do sistema', abrir: /remover/i, confirmar: /^Remover$/, prop: 'onRemover', pendencia: 'removendo' },
+  { nome: 'Refazer kit', abrir: /refazer/i, confirmar: /^Refazer$/, prop: 'onRefazer', pendencia: 'refazendo' },
+])('$nome — segura aberto e dispara uma vez', ({ abrir, confirmar, prop, pendencia }) => {
+  it('dispara uma única vez e fecha ao concluir', async () => {
+    let concluir!: () => void;
+    const acao = vi.fn(() => new Promise<void>((res) => { concluir = () => res(); }));
+    const { rerender } = renderCard({ [prop]: acao, [pendencia]: false });
+
+    await userEvent.click(screen.getByRole('button', { name: abrir }));
+    await userEvent.click(screen.getByRole('button', { name: confirmar }));
+    rerender(cardCom({ [prop]: acao, [pendencia]: true }));
+
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(acao).toHaveBeenCalledTimes(1);
+
+    concluir();
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 });
 ```
@@ -728,35 +793,52 @@ git commit -m "feat(publicados): confirmação segura aberta até o Mercado Livr
 **Interfaces:**
 - Consumes: props da Task 2.
 
-O handler hoje chama `mutation.mutate(...)` e `setConfirmarSaque(null)` na mesma função — o modal fecha antes da resposta. O `open` já é controlado (`confirmarSaque`), então aqui não é preciso criar estado: basta parar de fechar no clique e passar a fechar depois do `await`.
+**Este modal é um `Dialog` comum com `Button` comum — não é `AlertDialog`.** Não existe `AlertDialogAction` aqui, e portanto não existe fechamento automático do Radix para impedir: `preventDefault` seria inócuo. O `open` já é controlado por `confirmarSaque != null`, e o botão chama `mutate` e `setConfirmarSaque(null)` na mesma função (l.694-700). A correção é só mover o fechamento para depois do `await`.
 
-- [ ] **Step 1: Tornar o handler assíncrono**
-
-Converter para `mutateAsync` com `try/catch/finally`, preservando os toasts existentes, e **remover** o `setConfirmarSaque(null)` de dentro dele.
-
-- [ ] **Step 2: Fechar depois do await, no `onClick` do Action**
+- [ ] **Step 1: Converter o `onClick` do botão de confirmar**
 
 ```tsx
-<AlertDialogAction
-  disabled={processandoSaque}
-  onClick={async (e) => {
-    e.preventDefault();
-    await confirmarSaqueAgora();
+// antes (l.694-700)
+<Button
+  onClick={() => {
+    if (confirmarSaque?.acao === 'desfazer') mutationDesfazer.mutate(confirmarSaque.vars);
+    else if (confirmarSaque) mutationRegistrar.mutate(confirmarSaque.vars);
     setConfirmarSaque(null);
+  }}
+>
+
+// depois
+<Button
+  disabled={processandoSaque}
+  onClick={async () => {
+    if (!confirmarSaque) return;
+    try {
+      if (confirmarSaque.acao === 'desfazer') await mutationDesfazer.mutateAsync(confirmarSaque.vars);
+      else await mutationRegistrar.mutateAsync(confirmarSaque.vars);
+    } catch {
+      // O toast de erro já vem do onError do próprio hook; aqui só evitamos a unhandled
+      // rejection e deixamos o finally fechar o modal.
+    } finally {
+      setConfirmarSaque(null);
+    }
   }}
 >
 ```
 
-Onde `processandoSaque` é `mutationRegistrar.isPending || mutationDesfazer.isPending` (os dois já existem no arquivo).
+Declarar `const processandoSaque = mutationRegistrar.isPending || mutationDesfazer.isPending;` junto às outras derivações do componente. Os dois hooks já existem no arquivo.
 
-- [ ] **Step 3: Aplicar o sinal e travar o cancelar**
+- [ ] **Step 2: Aplicar o sinal e travar o cancelar**
 
-`<AlertDialogContent processando={processandoSaque} rotuloProcessando="Registrando saque">`, `AlertDialogCancel` com `disabled={processandoSaque}`, e `onOpenChange` guardado para não fechar em voo.
+No `DialogContent` (l.680): `processando={processandoSaque}` e `rotuloProcessando={confirmarSaque?.acao === 'desfazer' ? 'Desfazendo saque' : 'Registrando saque'}`.
 
-- [ ] **Step 4: Typecheck e testes**
+No botão "Cancelar" (l.693): `disabled={processandoSaque}`.
+
+O `onOpenChange` (l.679) fica **como está**, sem guard — mesmo motivo da Task 6: fechar não cancela a mutation, e travar o overlay sem saída é pior que fechar cedo.
+
+- [ ] **Step 3: Typecheck e testes**
 
 Run: `pnpm exec tsc --noEmit -p tsconfig.json && pnpm test DetalheFinanceiro`
-Expected: sem falha nova.
+Expected: sem falha nova. Existe `src/pages/__tests__/DetalheFinanceiro.confirmacao.test.tsx` — se ele mockar os hooks só com `mutate`, aplicar o mesmo ajuste de mock descrito no Step 3.5 da Task 5.
 
 - [ ] **Step 5: Commit**
 
@@ -817,7 +899,20 @@ Cada handler `lidarRemoverCapa*` passa a: setar o slot no começo, `try/finally`
 
 - [ ] **Step 4: Controlar os 3 modais**
 
-Mesma transformação da Task 6: `open` controlado, `preventDefault` no Action, `processando={removendoFoto === 'capa'}` **com `destrutivo`** (é remoção), `Cancel` desabilitado, fechar depois do `await`.
+Mesma transformação da Task 6: `open` controlado, `preventDefault` no `AlertDialogAction`, `processando={removendoFoto === 'capa'}` **com `destrutivo`** (é remoção), `Cancel` desabilitado, e fechamento em `try/finally` — não confiar no handler não rejeitar:
+
+```tsx
+onClick={async (e) => {
+  e.preventDefault();
+  try {
+    await lidarRemoverCapa();
+  } finally {
+    setRemoverCapaAberto(false);
+  }
+}}
+```
+
+`onOpenChange` sem guard, pelo mesmo motivo da Task 6.
 
 - [ ] **Step 5: Rodar os testes**
 
@@ -927,10 +1022,12 @@ Copiar `.env.local` (gitignored) do checkout principal antes de subir, senão a 
 Usar a skill `playwright-cli`. Sessão isolada, **nunca** disputar o Chrome do Diego via CDP. Screenshot real em cada alvo — snapshot de acessibilidade não pega bug de layout CSS.
 
 Alvos mínimos:
-1. **Modal que rola** (cadastro de produto): a barra gruda no topo ao rolar? O `sticky` é a parte mais frágil do desenho.
+1. **Modal que rola** (cadastro de produto): nenhum salto de conteúdo ao ligar o sinal, e a barra encostada no topo.
 2. **Modal destrutivo** (excluir produto): barra presente, aura **ausente**.
 3. **Modal do Grupo B** (pausar anúncio): segura aberto durante a operação e fecha sozinho.
-4. **Tema claro e escuro**: a aura usa `--chart-1/2/3` e a barra usa `--primary`; conferir que os dois aparecem nos dois temas.
+4. **Refazer kit**: caso único em que um modal fecha e outro abre no mesmo commit — conferir que não fica overlay órfão nem foco perdido.
+5. **Tema claro e escuro**: a aura usa `--chart-1/2/3` e a barra usa `--primary`; conferir que os dois aparecem nos dois temas.
+6. **Canto arredondado da barra**: `rounded-t-xl` numa barra de 6px clampa o raio — conferir que o canto acompanha o do modal sem degrau visível.
 
 - [ ] **Step 4: Revisão do Fable sobre o diff completo**
 
@@ -948,4 +1045,5 @@ Nenhum arquivo em `supabase/functions/**` ou `supabase/migrations/**` foi tocado
 
 - `Organizacoes.tsx:322/455` ("Entrar na operação") segue sem estado de pendência — ver Task 9.
 - `variacao-card.tsx` mantém `StatusInline` na troca de foto, de propósito.
-- Os 5 modais restantes do Grupo B (fora o "Pausar") não têm teste dedicado: são a mesma transformação, cobertos por typecheck e pela validação visual. Se a revisão do Fable considerar insuficiente para ações de ML, escrever os 5.
+- **"Refazer kit" desmonta um modal e monta outro no mesmo commit.** O handler chama `setCriarKitVirtualAberto(true)` enquanto o card chama `setRefazerAberto(false)` — com `mutateAsync` os dois caem no mesmo batch do React. Deve funcionar (efeitos de unmount correm antes dos de mount), mas é o único caso do Grupo B com dois modais Radix em transição simultânea. Cobrir explicitamente na validação visual (Task 11) e conferir o teste existente em `tests/pages/Publicados.test.tsx:776`.
+- `Revisao.tsx:791` aparece no inventário como "canônico já correto" e a Task 4 o substitui pela prop. É migração, não regressão — o texto explicativo ao lado da barra é preservado.
