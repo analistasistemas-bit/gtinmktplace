@@ -202,7 +202,6 @@ export function filtrarPublicados(
         i.titulo,
         i.codigoPai,
         i.fornecedor ?? '',
-        rotuloTipo(i),
         i.gtin ?? '',
         ...(i.identificadores ?? []),
       ].join(' '));
