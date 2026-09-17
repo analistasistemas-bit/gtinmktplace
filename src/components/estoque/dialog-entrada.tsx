@@ -101,9 +101,10 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
   const custoInvalido = custoNum !== null && !(custoNum > 0);
 
   // Modo lista: só as linhas preenchidas entram. Vazio = "não mexi nesta cor", não zero.
-  // A RPC devolve por código; a lista é lida pelo nome da cor, então ordena por ele.
+  // A RPC devolve por código; a lista é lida pelo nome da cor, então ordena por ele —
+  // mesmas regras do `compararCor` da Revisão (case/acento-insensível, "Azul 2" < "Azul 10").
   const linhas = useMemo(() => [...variacoes].sort((a, b) => (
-    (a.cor ?? a.nome ?? a.codigo).localeCompare(b.cor ?? b.nome ?? b.codigo, 'pt-BR', { numeric: true })
+    (a.cor || a.codigo).localeCompare(b.cor || b.codigo, 'pt-BR', { sensitivity: 'base', numeric: true })
     || a.codigo.localeCompare(b.codigo)
   )).map((v) => {
     const bruto = quantidades[v.codigo] ?? '';
