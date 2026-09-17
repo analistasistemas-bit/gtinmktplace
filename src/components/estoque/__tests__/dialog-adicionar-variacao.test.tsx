@@ -295,6 +295,33 @@ describe('DialogAdicionarVariacao', () => {
     expect(variacoes[0]).toMatchObject({ custo: 12.5, preco: 29.9 });
   });
 
+  // A consulta do prefill não pede ordem das variações: sem `order by` a ordem que o
+  // PostgREST devolve pode mudar sozinha (vacuum, edição de linha, plano novo) e a cor nova
+  // nasceria com o custo/preço de uma irmã diferente a cada vez. A escolha é por menor código.
+  it('escolhe a irmã de MENOR CÓDIGO, não a primeira que o PostgREST devolver', async () => {
+    familiaPrefillDataMock.mockReturnValue([{
+      id: 'fam-canonica-1',
+      variacoes: [
+        // Devolvidas fora de ordem de propósito: é o que o Postgres pode fazer sem `order by`.
+        {
+          codigo: '00000009', peso_gramas: 900, altura_cm: 9, largura_cm: 9, comprimento_cm: 9,
+          custo: 99.9, preco: 199.9,
+        },
+        {
+          codigo: '00000005', peso_gramas: 100, altura_cm: 5, largura_cm: 5, comprimento_cm: 5,
+          custo: 12.5, preco: 29.9,
+        },
+      ],
+    }]);
+    renderDialog();
+    await waitFor(() => expect(familiaPrefillDataMock).toHaveBeenCalled());
+    await waitFor(() => expect(
+      screen.getByLabelText('Custo da variação 1'),
+    ).toHaveValue('12.5'));
+    expect(screen.getByLabelText('Preço mínimo (líquido) da variação 1')).toHaveValue('29.9');
+    expect(screen.getByLabelText('Peso (g) da variação 1')).toHaveValue('100');
+  });
+
   // Achado 2026-08-21: a contagem do card (QK.produtosEstoqueResumo) já era invalidada, mas a
   // lista EXPANDIDA de variações (QK.variacoesEstoque, query separada — produto-card.tsx) não —
   // o operador via "(11)" no cabeçalho e só 8 linhas na tabela, sem nenhuma indicação de que

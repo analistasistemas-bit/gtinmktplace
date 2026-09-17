@@ -32,6 +32,7 @@ import '@/components/ui/glow-effect.css';
 type LinhaAddVariacao = LinhaVariacao & { codigo: string };
 
 interface IrmaReferencia {
+  codigo: string;
   peso_gramas: number | null; altura_cm: number | null; largura_cm: number | null; comprimento_cm: number | null;
   custo: number | null; preco: number | null;
 }
@@ -121,7 +122,13 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
     queryFn: () => fetchFamiliaCanonicaPrefill(produto!.codigoPai),
     enabled: aberto && !!produto,
   });
-  const irmaRef = prefill?.variacoes[0] ?? null;
+  // A consulta acima não pede ordem das variações, e sem `order by` o Postgres devolve as
+  // linhas na ordem que lhe for conveniente — que muda sozinha com vacuum, edição de linha ou
+  // plano novo. Como daqui saem custo e preço da cor nova, a referência não pode ser "a que
+  // vier primeiro": é sempre a de MENOR CÓDIGO. `sort` não clona os itens, então a identidade
+  // de `irmaRef` continua estável entre renders (ela é dependência do efeito abaixo).
+  const irmaRef = [...(prefill?.variacoes ?? [])]
+    .sort((a, b) => a.codigo.localeCompare(b.codigo, 'pt-BR'))[0] ?? null;
 
   // Mesma QK da tela Estoque (Task 5/6): cache compartilhado — o banner de "família em voo"
   // abaixo é um pré-check de UI (D-8); a edge revalida de qualquer forma antes de gravar.
