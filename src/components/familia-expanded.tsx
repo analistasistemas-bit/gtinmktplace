@@ -433,7 +433,10 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     } catch (err) {
       toast.error('Erro ao remover capa', { description: (err as Error).message });
     } finally {
-      setRemovendoFoto(null);
+      // Só limpa o próprio slot: se o operador fechou este modal (Esc) e já iniciou outra
+      // remoção antes desta promise resolver, o `null` incondicional apagaria o progresso
+      // da remoção alheia e reabriria a janela do clique duplo que esta task fecha.
+      setRemovendoFoto((s) => (s === 'capa' ? null : s));
     }
   }
 
@@ -465,7 +468,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     } catch (err) {
       toast.error('Erro ao remover 2ª foto', { description: (err as Error).message });
     } finally {
-      setRemovendoFoto(null);
+      setRemovendoFoto((s) => (s === 'capa2' ? null : s));
     }
   }
 
@@ -497,7 +500,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     } catch (err) {
       toast.error('Erro ao remover 3ª foto', { description: (err as Error).message });
     } finally {
-      setRemovendoFoto(null);
+      setRemovendoFoto((s) => (s === 'capa3' ? null : s));
     }
   }
 
