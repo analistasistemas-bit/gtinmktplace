@@ -45,4 +45,23 @@ describe('filtrarPublicados — busca com acentos', () => {
     const r = filtrarPublicados(lista, { busca: 'botao sao' });
     expect(r).toHaveLength(1);
   });
+
+  it('não traz produto cuja categoria contém o termo mas o título/código/fornecedor não', () => {
+    const colaLiquida = item({
+      titulo: 'COLA LIQUIDA SILICONE 100ML | ALTA ADERÊNCIA | SECAGEM LIMPA',
+      codigoPai: '03025195',
+      fornecedor: 'BUFALO',
+      categoria: 'Bastãoes de Cola',
+    });
+    const colaBastao = item({
+      titulo: 'COLA EM BASTÃO 11MM GROSSA 1KG | ADESÃO FIRME',
+      codigoPai: '02841045',
+      fornecedor: 'BUFALO',
+      categoria: 'Bastãoes de Cola',
+    });
+
+    const resultado = filtrarPublicados([colaLiquida, colaBastao], { busca: 'bastao' });
+    expect(resultado).toHaveLength(1);
+    expect(resultado[0].codigoPai).toBe('02841045');
+  });
 });
