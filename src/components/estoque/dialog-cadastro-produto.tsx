@@ -402,7 +402,11 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
           grupos diferentes) e o dialog renderiza com 384px em qualquer desktop.
           3xl: as variacoes agora sao cards empilhados (nao uma tabela larga com scroll
           horizontal), entao a largura so precisa acomodar um card por vez. */}
-      <DialogContent className="max-h-[90vh] sm:max-w-3xl overflow-y-auto">
+      <DialogContent
+        processando={ocupado}
+        rotuloProcessando="Cadastrando produto e enviando fotos"
+        className="max-h-[90vh] sm:max-w-3xl overflow-y-auto"
+      >
         <DialogHeader>
           {/* Item 6 da auditoria: o dialog tem 2 etapas e nada indicava isso. Com o módulo
               fiscal ativo (ADR-0135 D-9) vira 3: dados+variações, fiscal, fotos. */}

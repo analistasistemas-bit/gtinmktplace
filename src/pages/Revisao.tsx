@@ -608,7 +608,7 @@ export default function Revisao() {
         </div>
       )}
       <Dialog open={atacadoAberto} onOpenChange={setAtacadoAberto}>
-        <DialogContent>
+        <DialogContent processando={setAtacadoLote.isPending} rotuloProcessando="Aplicando atacado ao lote">
           <DialogHeader>
             <DialogTitle>Preço de atacado no lote inteiro</DialogTitle>
           </DialogHeader>
@@ -634,7 +634,7 @@ export default function Revisao() {
         </DialogContent>
       </Dialog>
       <Dialog open={confirmando} onOpenChange={setConfirmando}>
-        <DialogContent>
+        <DialogContent processando={publicando}>
           <DialogHeader>
             <DialogTitle>Publicar no Mercado Livre</DialogTitle>
           </DialogHeader>
@@ -788,7 +788,6 @@ export default function Revisao() {
           })()}
           {publicando && (
             <div role="status" className="mt-1 space-y-2 motion-safe:animate-in fade-in-0 duration-(--motion-duration-state) ease-enter">
-              <div className="track-indeterminate" role="progressbar" aria-label="Enfileirando publicação" />
               <p className="text-xs text-muted-foreground">
                 Enfileirando famílias e enviando fotos ao Mercado Livre…
               </p>

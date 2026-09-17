@@ -41,7 +41,7 @@ export function SupportRequestDialog({ org, onClose, onRequested }: {
 
   return (
     <Dialog open={!!org} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      <DialogContent processando={saving} rotuloProcessando="Enviando solicitação">
         <DialogHeader><DialogTitle>Solicitar acesso a {org?.nome}</DialogTitle><DialogDescription>O acesso só começa após aprovação de um administrador da organização.</DialogDescription></DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">

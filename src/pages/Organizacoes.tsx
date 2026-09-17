@@ -705,7 +705,7 @@ function NovaOrgDialog({ open, onOpenChange, onCreated }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent processando={enviando} rotuloProcessando="Criando empresa">
         <DialogHeader><DialogTitle>Nova empresa</DialogTitle></DialogHeader>
         <div className="flex flex-col gap-3">
           <Input placeholder="Nome da empresa" value={nome} onChange={(e) => setNome(e.target.value)} />

@@ -246,7 +246,7 @@ function InviteDialog({ open, onOpenChange, onSubmit }: {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent processando={enviando} rotuloProcessando="Enviando convite">
         <DialogHeader><DialogTitle>Convidar usuário</DialogTitle></DialogHeader>
         <div className="flex flex-col gap-3">
           <Input type="email" placeholder="email@empresa.com" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -319,7 +319,7 @@ function NotificacoesDialog({ user, onClose, onSubmit }: {
 
   return (
     <Dialog open={!!user} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent>
+      <DialogContent processando={salvando} rotuloProcessando="Salvando notificações">
         <DialogHeader><DialogTitle>Notificações Telegram — {user?.nome || user?.email}</DialogTitle></DialogHeader>
         <div className="flex flex-col gap-3">
           <div>
@@ -401,7 +401,7 @@ function EditMenusDialog({ user, onClose, onSubmit }: {
 
   return (
     <Dialog open={!!user} onOpenChange={(o) => { if (!o) onClose(); }}>
-      <DialogContent>
+      <DialogContent processando={salvando} rotuloProcessando="Salvando menus">
         <DialogHeader><DialogTitle>Editar menus — {user?.nome || user?.email}</DialogTitle></DialogHeader>
         <div className="flex flex-col gap-3">
           <Input placeholder="Nome" value={nome} onChange={(e) => setNome(e.target.value)} />

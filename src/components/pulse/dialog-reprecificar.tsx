@@ -99,7 +99,11 @@ export function DialogReprecificar({
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent
+        processando={confirmar.isPending}
+        rotuloProcessando="Gravando novos preços"
+        className="sm:max-w-md"
+      >
         <DialogHeader>
           <DialogTitle>Reprecificar</DialogTitle>
           <DialogDescription>

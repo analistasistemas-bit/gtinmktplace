@@ -69,7 +69,7 @@ export function RevenueReconciliation({ orgId, month, candidate, onClose, onDone
 
   return (
     <Dialog open={candidate !== null} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
+      <DialogContent processando={reconcile.isPending} rotuloProcessando="Salvando conciliação">
         <DialogHeader>
           <DialogTitle>Conciliar devolução</DialogTitle>
           <DialogDescription>

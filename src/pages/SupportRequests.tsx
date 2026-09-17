@@ -163,7 +163,7 @@ export default function SupportRequests() {
       </Section>
 
       <AlertDialog open={!!pendingAction} onOpenChange={(open) => !open && setPendingAction(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent processando={saving} rotuloProcessando="Processando solicitação">
           <AlertDialogHeader>
             <AlertDialogTitle>{pendingAction?.type === 'approved' ? 'Aprovar solicitação?' : pendingAction?.type === 'rejected' ? 'Rejeitar solicitação?' : 'Revogar acesso?'}</AlertDialogTitle>
             <AlertDialogDescription>Esta decisão é registrada no histórico e passa a valer imediatamente.</AlertDialogDescription>

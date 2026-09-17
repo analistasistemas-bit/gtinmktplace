@@ -183,7 +183,11 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        processando={mutation.isPending}
+        rotuloProcessando="Registrando entrada"
+        className="sm:max-w-lg"
+      >
         <DialogHeader>
           <DialogTitle>Dar entrada de mercadoria</DialogTitle>
           <DialogDescription>

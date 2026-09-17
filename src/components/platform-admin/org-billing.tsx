@@ -257,7 +257,7 @@ export function OrgBilling({ orgId, month }: Props) {
       </Card>
 
       <Dialog open={confirming} onOpenChange={setConfirming}>
-        <DialogContent>
+        <DialogContent processando={close.isPending} rotuloProcessando="Fechando demonstrativo">
           <DialogHeader>
             <DialogTitle>Confirmar fechamento de {month}</DialogTitle>
             <DialogDescription>

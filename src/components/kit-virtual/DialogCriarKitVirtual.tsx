@@ -289,7 +289,11 @@ export function DialogCriarKitVirtual({ open, onOpenChange, refazerDe }: {
 
   return (
     <Dialog open={open} onOpenChange={(v) => !criarMutation.isPending && onOpenChange(v)}>
-      <DialogContent className="max-h-[85vh] w-full max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-4xl">
+      <DialogContent
+        processando={criarMutation.isPending}
+        rotuloProcessando="Publicando kit virtual"
+        className="max-h-[85vh] w-full max-w-[calc(100vw-2rem)] overflow-y-auto sm:max-w-4xl"
+      >
         <DialogHeader>
           <DialogTitle>Criar Kit Virtual</DialogTitle>
           <DialogDescription>

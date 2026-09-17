@@ -122,7 +122,11 @@ export function BotaoExportar({
       </DropdownMenu>
 
       <Dialog open={formato != null} onOpenChange={(o) => !o && setFormato(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent
+          processando={gerando}
+          rotuloProcessando="Gerando arquivo"
+          className="sm:max-w-md"
+        >
           <DialogHeader>
             <DialogTitle>Opções de exportação{formato ? ` · ${ROTULO_FORMATO[formato]}` : ''}</DialogTitle>
             <DialogDescription>Exporta os dados conforme os filtros aplicados na tela.</DialogDescription>

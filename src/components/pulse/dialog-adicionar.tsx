@@ -35,7 +35,11 @@ export function DialogAdicionar({ aberto, onFechar, entradaInicial = '' }: {
 
   return (
     <Dialog open={aberto} onOpenChange={(o) => !o && onFechar()}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent
+        processando={mutation.isPending}
+        rotuloProcessando="Buscando produto no Mercado Livre"
+        className="sm:max-w-lg"
+      >
         <DialogHeader>
           <DialogTitle>Adicionar produto ao radar</DialogTitle>
           <DialogDescription>
