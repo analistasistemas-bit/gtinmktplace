@@ -89,3 +89,8 @@ publiai_codigofonte.zip
 
 # PNG de origem dos assets da landing — o que vai para o repo é o .webp otimizado
 docs/brand/landing/assets/*.png
+
+# Painel gerado do RoadmapMaestri (scripts/maestri-fase.sh / maestri-painel.sh) — evita
+# que um `git add -A` de outro agente trackeie state/roadmap gerados
+memory/maestri-state.json
+memory/RoadmapMaestri.md
