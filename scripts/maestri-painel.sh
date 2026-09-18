@@ -30,8 +30,12 @@ if ! jq empty <<<"$CURRENT" >/dev/null 2>&1; then
   echo "erro: state JSON inválido: $STATE" >&2
   exit 3
 fi
-if ! jq -e '(.fases != null) and (.schema_version != null)' <<<"$CURRENT" >/dev/null 2>&1; then
-  echo "erro: state sem .fases/.schema_version: $STATE" >&2
+if ! jq -e '
+  (.schema_version != null)
+  and (.fases != null)
+  and ((["0","1","2","3a","3b","4","5","6","7"] - (.fases | keys)) | length == 0)
+' <<<"$CURRENT" >/dev/null 2>&1; then
+  echo "erro: state sem .schema_version ou com .fases incompleto (faltam chaves das 9 fases): $STATE" >&2
   exit 3
 fi
 
@@ -126,9 +130,17 @@ fi
 
 # escape só no que vai para o canvas — o arquivo em disco fica intacto (note write decodifica \n e \t)
 CONTENT_ESCAPED="$(sed 's/\\/\\\\/g' "$ROADMAP")"
-NOTE_OUTPUT="$(maestri note write "roadmapmaestri-time-de-age" "$CONTENT_ESCAPED" 2>&1)" || true
+set +e
+NOTE_OUTPUT="$(maestri note write "roadmapmaestri-time-de-age" "$CONTENT_ESCAPED" 2>&1)"
+NOTE_EXIT=$?
+set -e
+
+# "No connection" é o único caminho tratado como SKIP (E3/CA-15); qualquer OUTRA falha do
+# note write precisa aparecer no stderr — engolir tudo esconde do Diego que o canvas não sincronizou
 if grep -qi "no connection" <<<"$NOTE_OUTPUT"; then
   echo "aviso: canvas sincroniza pelo Orquestrador (nota roadmapmaestri-time-de-age não conectada neste terminal)" >&2
+elif [[ $NOTE_EXIT -ne 0 ]]; then
+  echo "erro: falha ao sincronizar o canvas (roadmapmaestri-time-de-age): $NOTE_OUTPUT" >&2
 fi
 
 exit 0

@@ -45,9 +45,18 @@ fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --tarefa)   TAREFA_SET=true;   TAREFA="${2:-}";   shift 2 ;;
-    --aguarda)  AGUARDA_SET=true;  AGUARDA="${2:-}";  shift 2 ;;
-    --entrega)  ENTREGA_SET=true;  ENTREGA="${2:-}";  shift 2 ;;
+    --tarefa|--aguarda|--entrega)
+      if [[ $# -lt 2 ]]; then
+        echo "erro: flag $1 exige um valor" >&2
+        exit 2
+      fi
+      case "$1" in
+        --tarefa)  TAREFA_SET=true;  TAREFA="$2" ;;
+        --aguarda) AGUARDA_SET=true; AGUARDA="$2" ;;
+        --entrega) ENTREGA_SET=true; ENTREGA="$2" ;;
+      esac
+      shift 2
+      ;;
     --fim)      FIM=true; shift ;;
     *)
       echo "erro: argumento desconhecido: $1" >&2
@@ -116,8 +125,12 @@ if [[ -f "$STATE" ]]; then
     echo "erro: state JSON inválido: $STATE" >&2
     exit 3
   fi
-  if ! jq -e '(.fases != null) and (.schema_version != null)' <<<"$CURRENT" >/dev/null 2>&1; then
-    echo "erro: state sem .fases/.schema_version: $STATE" >&2
+  if ! jq -e '
+    (.schema_version != null)
+    and (.fases != null)
+    and ((["0","1","2","3a","3b","4","5","6","7"] - (.fases | keys)) | length == 0)
+  ' <<<"$CURRENT" >/dev/null 2>&1; then
+    echo "erro: state sem .schema_version ou com .fases incompleto (faltam chaves das 9 fases): $STATE" >&2
     exit 3
   fi
 else
@@ -167,17 +180,19 @@ NEW="$(jq \
     }]
   ' <<<"$CURRENT")"
 
-if ! jq empty <<<"$NEW" >/dev/null 2>&1; then
-  echo "erro interno: jq produziu JSON inválido (sem escrita)" >&2
-  exit 3
-fi
-
 # escrita atômica: mktemp no MESMO diretório do destino (E4) — mv entre volumes não é atômico
 STATE_DIR="$(dirname "$STATE")"
 mkdir -p "$STATE_DIR"
 TMP_STATE="$(mktemp "$STATE_DIR/.maestri-state.XXXXXX")"
 trap 'rm -f "$TMP_STATE"' EXIT
 printf '%s' "$NEW" > "$TMP_STATE"
+
+# jq empty valida o TEMP (D3, em letra) — é o arquivo que vai ser instalado, não a variável de shell
+if ! jq empty "$TMP_STATE" >/dev/null 2>&1; then
+  echo "erro interno: jq produziu JSON inválido no temp (sem escrita)" >&2
+  exit 3
+fi
+
 mv "$TMP_STATE" "$STATE"
 trap - EXIT
 

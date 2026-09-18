@@ -91,6 +91,9 @@ publiai_codigofonte.zip
 docs/brand/landing/assets/*.png
 
 # Painel gerado do RoadmapMaestri (scripts/maestri-fase.sh / maestri-painel.sh) — evita
-# que um `git add -A` de outro agente trackeie state/roadmap gerados
+# que um `git add -A` de outro agente trackeie state/roadmap gerados, incluindo os
+# temporários do mktemp (um SIGKILL entre mktemp e mv não roda o trap EXIT)
 memory/maestri-state.json
 memory/RoadmapMaestri.md
+memory/.maestri-state.*
+memory/.roadmap.*
