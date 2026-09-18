@@ -6,7 +6,7 @@ de 2026-09-18, "PAINEL GERADO") para o design completo e os critérios de aceite
 ## Assinatura
 
 ```
-scripts/maestri-fase.sh <fase> "<Agente>" ["nota"] [--tarefa T] [--aguarda A] [--entrega E] [--fim]
+scripts/maestri-fase.sh <fase> "<Agente>" ["nota"] [--tarefa T] [--aguarda A] [--entrega E] [--fim] [--encerrar]
 ```
 
 - `<fase>` — uma das 9: `0 1 2 3a 3b 4 5 6 7`.
@@ -22,6 +22,14 @@ scripts/maestri-fase.sh <fase> "<Agente>" ["nota"] [--tarefa T] [--aguarda A] [-
   próxima chamada sem `--fim`, já na fase seguinte.
 - **`--aguarda ""`** (string vazia): limpa a pendência com Diego (`aguarda_diego = null`).
   `--aguarda "texto"` grava a pendência.
+- **`--encerrar`**: marca a **tarefa** (não a fase) como concluída — zera `fase_atual`,
+  `responsavel` e `desde`, e seta `tarefa_encerrada = true`; não toca em `.fases[]`. O painel passa
+  a mostrar `COM QUEM: — (tarefa encerrada)` e `PRÓXIMO: —` em vez de congelar na última fase
+  aberta. Resolve o cabeçalho que, terminada a tarefa, continuava mostrando o último agente e a
+  próxima fase para sempre — só limpava quando a tarefa seguinte abria a Fase 1.
+  `tarefa_encerrada` volta a `false` automaticamente quando qualquer fase é aberta ou reentrada.
+  Combinado com `--fim` na mesma chamada (a forma natural do Release no fim do fluxo), fecha a
+  fase primeiro (grava `.fases[N].fim`, preserva `inicio`/`rodadas`) e só depois encerra a tarefa.
 
 ## O que é gerado — nunca editar à mão
 
