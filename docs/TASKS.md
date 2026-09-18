@@ -6,8 +6,8 @@
 
 Origem: o `RoadmapMaestri.md`/nota do canvas era editado à mão pelo Orquestrador — defasava e a
 Fase 0 nunca fechava. Fluxo completo Consultor Sênior → Spec (REQ-01..17) → Arquiteto (D1..D7) →
-Fable (revisão do plano) → Orquestrador (emendas E1..E9) → Backend (2 rounds) → Reviewer (2
-rounds) → Testes/Verificador (VERDE). Ver detalhe em `memory/LogMaestri.md`. Uso: ver
+Fable (revisão do plano) → Orquestrador (emendas E1..E9) → Backend (5 rounds) → Reviewer (3
+rounds). Ver detalhe em `memory/LogMaestri.md`. Uso: ver
 [docs/how-to/maestri-painel.md](how-to/maestri-painel.md).
 
 - [x] **`scripts/maestri-fase.sh`** — única porta de escrita do state (`memory/maestri-state.json`)
@@ -27,10 +27,18 @@ rounds) → Testes/Verificador (VERDE). Ver detalhe em `memory/LogMaestri.md`. U
 - [x] **`.gitignore`** — `memory/maestri-state.json`, `memory/RoadmapMaestri.md` e seus temporários
   (`memory/.maestri-state.*`, `memory/.roadmap.*`); protege contra um `git add -A` de outro agente
   trackear o state.
-- [x] **Validação (Fase 5, VERDE)** — CA-09a (nota do canvas não é renomeada), CA-14 (âncora de
-  worktree), CA-15 (canal do canvas sem conexão vira aviso, não falha), CA-13 (cabeçalho do
-  `LogMaestri.md` corrigido pelo Orquestrador — REQ-14), teste do 🔴 `AGUARDA VOCÊ` (aparece/some
-  por completo), conferência 1:1 do painel real contra o layout do plano.
+- [ ] **Validação (Fase 5)** — rodou VERDE uma vez (CA-09a, CA-14, CA-15, CA-13, teste do 🔴
+  `AGUARDA VOCÊ`, conferência 1:1 do painel contra o layout do plano), mas **esse VERDE é anterior
+  ao lock, à âncora pelo diretório do script e ao fix de `ACAO`** — valida código que não é mais o
+  que vai ser mergeado. A Fase 5 será refeita sobre o HEAD atual antes do merge.
+- [x] **Gate pré-merge (Astra) bloqueou e gerou 3 commits de correção**, todos após o `f0677af7`
+  de Docs: `287001c6` (`ACAO` lido da variável, não relido do disco — fecha uma race de
+  concorrência), `9820330b` (âncora `git rev-parse --git-common-dir` resolvida pelo diretório do
+  script, não pelo cwd — fecha o cenário de rodar o script a partir de outro repositório) e
+  `93716700` (**lock por `mkdir`** sobre o span leitura→gravação — emendas **E11.1** do Arquiteto,
+  que alterou o REQ-04, e **E11.2**, que inverteu o CA-06 de "proibir lock" para "exigir lock";
+  ver [docs/how-to/maestri-painel.md](how-to/maestri-painel.md) para o comportamento do lock e o
+  novo `exit 6`).
 - [x] **Fora desta entrega, pendente pós-merge (lane do Orquestrador):** edição dos 8 prompts de
   agente via `maestri role edit` (Bloco 3, REQ-12/13, Maestro-only) e CA-12 (propagação do prompt
   a terminal já em execução).

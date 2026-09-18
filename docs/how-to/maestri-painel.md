@@ -34,6 +34,25 @@ scripts/maestri-fase.sh <fase> "<Agente>" ["nota"] [--tarefa T] [--aguarda A] [-
 `maestri-fase.sh` chama `maestri-painel.sh` automaticamente ao final de cada chamada
 (auto-refresh) — não é preciso rodar os dois.
 
+## Lock — por que existe e como se comporta
+
+`maestri-fase.sh` serializa leitura→gravação com um lock por `mkdir` (`memory/.maestri-state.lock`,
+atômico por POSIX; `flock(1)` não existe no macOS). Sem ele, duas chamadas simultâneas liam o
+mesmo state e a última a gravar apagava em silêncio o que a outra tinha acabado de escrever — por
+exemplo, uma pendência `--aguarda` recém-gravada.
+
+Comportamento verificado do lock:
+
+- **Órfão recente** (dono morreu há pouco): a chamada espera até 10s tentando adquirir e, se não
+  conseguir, sai com `exit 6` — ainda não é velho o suficiente para ser considerado órfão.
+- **Órfão com mais de 60s e dono morto**: é quebrado automaticamente (nunca via `kill`, só
+  `rm -rf` + 1 nova tentativa) e a chamada segue normalmente.
+- **Lock com PID reciclado vivo** (o processo que aparenta segurar o lock existe, mas não é o
+  dono real): a chamada sai `6` e a própria mensagem de erro traz o comando de resgate
+  (`rm -rf "<caminho-do-lock>"`) para o operador liberar manualmente.
+- Há uma janela de **0 a ~30 segundos depois de um `kill` no processo dono** em que qualquer
+  chamada nova queima os 10s de espera e sai `6`; passada essa janela, o lock se recupera sozinho.
+
 ## Variáveis de teste — nunca em produção
 
 - `MAESTRI_STATE=<caminho>` — substitui `memory/maestri-state.json`.
@@ -48,3 +67,5 @@ Usar as três ao testar em scratch para não sujar o log/state reais.
 - `3` — state corrompido ou com schema incompleto (faltam chaves das 9 fases).
 - `4` — âncora de repositório não resolvida (`git rev-parse` falhou e nenhuma env var de teste foi
   definida).
+- `6` — não obteve o lock dentro do teto de espera (10s). É o único modo de falha que pode travar
+  o time — ver a seção "Lock" acima para os cenários e o comando de recuperação.
