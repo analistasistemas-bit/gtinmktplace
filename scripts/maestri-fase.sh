@@ -222,15 +222,12 @@ NEW="$(jq \
      elif $orig_inicio == null then "abriu"
      else "reentrou"
      end) as $acao
-  | (if $encerrar then
-      .fase_atual = null
-      | .responsavel = null
-      | .desde = null
-      | .tarefa_encerrada = true
-    elif $fim then
+  | (if $fim then
       .fases[$fase].inicio = (if $orig_inicio == null then $ts else $orig_inicio end)
       | .fases[$fase].rodadas = (if $orig_inicio == null then 1 else .fases[$fase].rodadas end)
       | .fases[$fase].fim = $ts
+    elif $encerrar then
+      .
     else
       .fases[$fase].inicio = (if $orig_inicio == null then $ts else $orig_inicio end)
       | .fases[$fase].rodadas = ((.fases[$fase].rodadas // 0) + 1)
@@ -240,6 +237,15 @@ NEW="$(jq \
       | .desde = $ts
       | .tarefa_encerrada = false
     end)
+  # $fim sempre roda primeiro (acima): --fim --encerrar na mesma chamada tem que fechar a fase
+  # E DEPOIS zerar o cabeçalho — um único "if $encerrar elif $fim" já descartou o --fim em
+  # silêncio aqui (achado do Reviewer, fase 3b reaberta 2026-09-18). Não colapsar de volta.
+  | (if $encerrar then
+      .fase_atual = null
+      | .responsavel = null
+      | .desde = null
+      | .tarefa_encerrada = true
+    else . end)
   | (if $tarefa_set then .tarefa = $tarefa else . end)
   | (if $aguarda_set then .aguarda_diego = (if ($aguarda | length) == 0 then null else $aguarda end) else . end)
   | (if $entrega_set then .entrega = $entrega else . end)

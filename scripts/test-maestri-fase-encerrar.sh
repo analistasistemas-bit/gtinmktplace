@@ -38,4 +38,16 @@ jq -e '.fases["3b"].fim != null' "$MAESTRI_STATE" >/dev/null || fail "--encerrar
 grep -q '^\*\*COM QUEM:\*\* Reviewer' "$ROADMAP" || fail "nova fase não voltou a mostrar o responsável"
 jq -e '.tarefa_encerrada == false' "$MAESTRI_STATE" >/dev/null || fail "tarefa_encerrada não voltou a false ao abrir nova fase"
 
+# 5. --fim --encerrar NA MESMA CHAMADA não pode descartar o --fim (achado do Reviewer, fase 3b
+#    reaberta 2026-09-18: um "if $encerrar elif $fim" fazia .fases[7].fim ficar null com exit 0).
+#    É a chamada mais natural do fluxo — Release fecha a fase e a tarefa acaba junto.
+"$SCRIPT_DIR/maestri-fase.sh" 7 "Release / Github" "fecha a fase e encerra a tarefa junto" --fim --encerrar >/dev/null
+
+jq -e '.fases["7"].fim != null' "$MAESTRI_STATE" >/dev/null \
+  || fail "--fim --encerrar juntos descartaram o fechamento da fase (.fases[7].fim ficou null)"
+jq -e '.fase_atual == null and .responsavel == null and .desde == null and .tarefa_encerrada == true' \
+  "$MAESTRI_STATE" >/dev/null || fail "--fim --encerrar juntos não encerraram a tarefa"
+grep -q '^\*\*COM QUEM:\*\* — (tarefa encerrada)$' "$ROADMAP" \
+  || fail "painel não refletiu 'tarefa encerrada' após --fim --encerrar juntos"
+
 echo "OK: --encerrar funciona"
