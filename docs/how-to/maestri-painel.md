@@ -41,17 +41,20 @@ atômico por POSIX; `flock(1)` não existe no macOS). Sem ele, duas chamadas sim
 mesmo state e a última a gravar apagava em silêncio o que a outra tinha acabado de escrever — por
 exemplo, uma pendência `--aguarda` recém-gravada.
 
-Comportamento verificado do lock:
+Comportamento verificado do lock (E12):
 
-- **Órfão recente** (dono morreu há pouco): a chamada espera até 10s tentando adquirir e, se não
-  conseguir, sai com `exit 6` — ainda não é velho o suficiente para ser considerado órfão.
-- **Órfão com mais de 30s e dono morto**: é quebrado automaticamente (nunca via `kill`, só
-  `rm -rf` + 1 nova tentativa) e a chamada segue normalmente.
-- **Lock com PID reciclado vivo** (o processo que aparenta segurar o lock existe, mas não é o
-  dono real): a chamada sai `6` e a própria mensagem de erro traz o comando de resgate
-  (`rm -rf "<caminho-do-lock>"`) para o operador liberar manualmente.
-- Há uma janela de **0 a ~30 segundos depois de um `kill` no processo dono** em que qualquer
-  chamada nova queima os 10s de espera e sai `6`; passada essa janela, o lock se recupera sozinho.
+- **Lock ocupado por outro agente**: a chamada espera em passos de 0,1s até 10s tentando adquirir.
+  Se o dono liberar dentro do teto, a chamada segue normalmente.
+- **Sinal (`INT`/`TERM`) no processo dono**: aborta a execução (`exit 130`/`143`) em vez de só
+  liberar o lock e continuar — nenhuma escrita acontece depois do sinal.
+- **Sem quebra automática de lock preso.** Se o teto de 10s estourar, a chamada sai `6` e a própria
+  mensagem de erro traz o comando de resgate manual (`rm -rf "<caminho-do-lock>"`) — o operador
+  confirma que nenhum agente está rodando antes de rodá-lo. Não há recuperação automática por
+  idade: um verificador que checa "órfão → apaga → adquire" não é atômico e dois verificadores
+  concorrentes podiam apagar o lock novo um do outro, admitindo dois escritores ao mesmo tempo —
+  exatamente o defeito que o lock existe para impedir. Lock preso só acontece com `SIGKILL`/queda
+  de energia durante a janela de leitura→gravação (~30-50ms); é raro e a recuperação manual é o
+  preço aceito para não reabrir essa corrida.
 
 ## Variáveis de teste — nunca em produção
 

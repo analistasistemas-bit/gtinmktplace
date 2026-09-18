@@ -114,17 +114,24 @@ cleanup() {
   [[ -n "$LOCK" ]] && rm -rf "$LOCK"
   return "$rc"
 }
-# handler ÚNICO, registrado ANTES da aquisição — nunca "trap - EXIT" depois disso: isso apagaria
-# a liberação do lock inteira, não só a do temp (é o bug que o CA-15b existe para pegar).
-trap cleanup EXIT INT TERM
+# handler de EXIT faz a limpeza; INT/TERM são tratados à parte (E12) — em bash um handler de
+# sinal que apenas retorna NÃO encerra o processo, ele segue escrevendo sem lock. Por isso aqui
+# INT/TERM só abortam (idioma padrão: exit 130/143), e o EXIT que isso dispara roda o cleanup
+# uma única vez. Nunca "trap - EXIT" depois disso: apagaria a liberação do lock inteira, não só
+# a do temp (é o bug que o CA-15b existe para pegar).
+trap cleanup EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 LOCK_PATH="$STATE_DIR/.maestri-state.lock"
 LOCK_TIMEOUT=10
 LOCK_STEP=0.1
-LOCK_STALE_AGE=30
 
+# Sem quebra automática de órfão (E12): "checar órfão → rm -rf → mkdir" não é atômico — dois
+# recuperadores concorrentes podiam apagar o lock novo um do outro e admitir dois escritores,
+# reabrindo o achado 1 por outra porta. Lock preso vira exit 6 + resgate manual (mensagem abaixo).
 acquire_lock() {
-  local start held_pid mtime now age
+  local start held_pid now
   start="$(date +%s)"
   while true; do
     if mkdir "$LOCK_PATH" 2>/dev/null; then
@@ -133,22 +140,9 @@ acquire_lock() {
       return 0
     fi
 
-    held_pid="$(cat "$LOCK_PATH/pid" 2>/dev/null)" || held_pid=""
-    mtime="$(stat -f %m "$LOCK_PATH" 2>/dev/null)" || mtime=0
     now="$(date +%s)"
-    age=$(( now - mtime ))
-
-    # órfão: mais velho que o teto E o dono não está vivo — nunca kill, só rm -rf + 1 retentativa
-    if [[ "$age" -gt "$LOCK_STALE_AGE" ]] && { [[ -z "$held_pid" ]] || ! kill -0 "$held_pid" 2>/dev/null; }; then
-      rm -rf "$LOCK_PATH"
-      if mkdir "$LOCK_PATH" 2>/dev/null; then
-        echo "$$" > "$LOCK_PATH/pid"
-        LOCK="$LOCK_PATH"
-        return 0
-      fi
-    fi
-
     if (( now - start >= LOCK_TIMEOUT )); then
+      held_pid="$(cat "$LOCK_PATH/pid" 2>/dev/null)" || held_pid=""
       echo "erro: lock não adquirido em ${LOCK_TIMEOUT}s: $LOCK_PATH" >&2
       echo "  (detentor pid ${held_pid:-desconhecido}). Nenhuma escrita feita." >&2
       echo "  Se nenhum agente estiver rodando, libere com:  rm -rf \"$LOCK_PATH\"" >&2
