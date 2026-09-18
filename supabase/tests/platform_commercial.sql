@@ -400,6 +400,40 @@ begin
   end;
 end $$;
 
+-- ADR-0164: renegociar DEPOIS do mes da implantacao nao pode ser recusado. A org 91 tem
+-- setup_due_month = mes corrente; a renegociacao grava starts_on = proximo mes, e herdar o mes
+-- antigo violaria platform_commercial_terms_setup_once (setup_due_month >= starts_on). A taxa nao
+-- se perde: platform_resolve_terms filtra starts_on <= p_on e o mes da implantacao continua
+-- resolvendo para o termo anterior.
+do $$
+declare
+  v_current date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+  v_next date := (v_current + interval '1 month')::date;
+  v_term jsonb;
+  v_resolvido public.platform_commercial_terms%rowtype;
+begin
+  v_term := public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000091',
+      'starts_on', v_next, 'modality', 2, 'monthly_fee_cents', 0,
+      'revenue_bps', 600, 'sonar_unit_cents', 120, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'renegociacao depois da implantacao'
+    )
+  );
+
+  if (v_term->>'setup_fee_cents')::bigint <> 0 or v_term->>'setup_due_month' is not null then
+    raise exception 'ADR-0164: versao posterior ao mes da implantacao nao deveria herdar a taxa: %', v_term;
+  end if;
+
+  -- E o mes da implantacao continua cobrando, resolvendo para o termo anterior.
+  select * into v_resolvido from public.platform_resolve_terms('90000000-0000-0000-0000-000000000091', v_current);
+  if v_resolvido.setup_fee_cents <> 300000 or v_resolvido.setup_due_month <> v_current then
+    raise exception 'ADR-0164: mes da implantacao perdeu a taxa: setup %, mes %',
+      v_resolvido.setup_fee_cents, v_resolvido.setup_due_month;
+  end if;
+end $$;
+
 -- ADR-0164: renegociar antes do mes da implantacao nao pode apagar a taxa. A renegociacao grava
 -- setup 0 (a trava recusa reaplicar), cai no mesmo starts_on do contrato original, vira a linha que
 -- platform_resolve_terms devolve -- e platform_billing_preview le a implantacao so dessa linha.
@@ -412,6 +446,7 @@ declare
   v_next date := (date_trunc('month', now() at time zone 'America/Fortaleza') + interval '1 month')::date;
   v_mes text := to_char(v_next, 'YYYY-MM');
   v_term jsonb;
+  v_erro text;
   v_resolvido public.platform_commercial_terms%rowtype;
 begin
   perform public.platform_save_terms(
@@ -464,7 +499,11 @@ begin
       )
     );
     raise exception 'ADR-0164: reaplicar implantacao deveria ter sido recusado';
-  exception when sqlstate '22023' then null;
+  exception when sqlstate '22023' then
+    get stacked diagnostics v_erro = message_text;
+    if v_erro not like '%Setup fee cannot be reapplied on renegotiation%' then
+      raise exception 'ADR-0164: mensagem inesperada ao reaplicar implantacao: %', v_erro;
+    end if;
   end;
 end $$;
 

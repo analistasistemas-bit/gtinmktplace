@@ -33,8 +33,8 @@ exatamente um termo cada, `starts_on = setup_due_month = 2026-10-01`, `setup_fee
 Renegociar qualquer uma delas ainda em setembro (quando `próximo mês` = 2026-10-01) apagaria a
 implantação de outubro — R$ 9.000 no total.
 
-A janela em que o defeito morde é estreita: a partir de 2026-10-01 a renegociação passa a gravar
-`2026-11-01`, o termo de outubro deixa de ser sobrescrito e a taxa é cobrada normalmente. Mas o
+A janela em que o defeito morde é estreita: a partir de 2026-10-01 a renegociação passaria a gravar
+`2026-11-01`, o termo de outubro deixaria de ser sobrescrito e a taxa seria cobrada normalmente. Mas o
 padrão se repete a cada cliente novo — contrato fechado num mês, implantação devida no mês seguinte,
 ajuste de percentual antes de começar — e nada no sistema avisa.
 
@@ -47,6 +47,13 @@ Em `platform_save_terms`, quando a organização já tem termo (isto é, quando 
 renegociação), os campos `setup_fee_cents` e `setup_due_month` deixam de vir do input e passam a ser
 **herdados do termo mais recente da organização** — o mesmo critério de `platform_resolve_terms`
 (`starts_on desc, version desc`).
+
+**A herança para no mês da implantação.** Se a versão nova começa depois do `setup_due_month`
+herdado, ela grava `0`/`null` em vez de herdar. Não é escolha de estilo: a constraint
+`platform_commercial_terms_setup_once` exige `setup_due_month >= starts_on`, e herdar um mês já
+vencido faria o `insert` falhar com `23514` — toda renegociação posterior ao mês da implantação
+viraria impossível. Nada se perde: `platform_resolve_terms` filtra `starts_on <= p_on`, então o mês
+da implantação continua resolvendo para o termo que a carrega.
 
 A trava `Setup fee cannot be reapplied on renegotiation` **continua igual**, e continua avaliando o
 input. O front (`commercial-terms-form.tsx`) segue enviando `0`/`null` em renegociação, com os campos
@@ -74,12 +81,19 @@ falharia em silêncio, que é o que a regra de trava LOUD do projeto proíbe.
 - Toda versão nova de um contrato carrega a implantação da anterior. O histórico passa a repetir
   `setup_fee_cents`/`setup_due_month` em todas as versões de um mesmo contrato — é intencional, é o
   que faz `platform_resolve_terms` continuar achando a taxa.
-- Copiar a taxa mesmo depois de ela ter sido cobrada é inócuo: o preview exige
-  `setup_due_month = p_month` **e** nenhum demonstrativo fechado com linha `setup`.
+- A versão só herda enquanto `setup_due_month >= starts_on`. Depois disso grava `0`/`null`, e o mês
+  da implantação segue cobrando pelo termo anterior. Cobrança dupla continua impossível por dois
+  caminhos independentes: o preview exige `setup_due_month = p_month` **e** nenhum demonstrativo
+  fechado com linha `setup`.
 - Não existe mais caminho pelo app para **cancelar** uma implantação lançada errada. Já não existia:
-  a tabela é append-only (trigger `platform_commercial_terms_immutable`) e a trava recusa reaplicar.
-  Correção de implantação errada continua sendo operação manual, fora do app, com ADR próprio.
+  a tabela é append-only (trigger `platform_commercial_terms_no_mutation`, função
+  `platform_commercial_terms_immutable`) e a trava recusa reaplicar. Correção de implantação errada
+  continua sendo operação manual, fora do app, com ADR próprio.
 - Primeiro contrato não muda em nada: sem termo anterior, não há o que herdar.
+- **Sem backfill.** A herança só age em gravações novas. Em 2026-09-18 cada organização tinha
+  exatamente uma versão, então não há contrato já achatado para recuperar. Se um dia existir uma
+  versão antiga com `setup 0` gravada por renegociação anterior a este ADR, ela passa a ser a fonte
+  da herança e a taxa não volta sozinha — nesse caso a correção é manual.
 
 ## Como reverter
 

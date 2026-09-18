@@ -160,6 +160,15 @@ begin
     order by t.starts_on desc, t.version desc
     limit 1;
     v_setup_fee := coalesce(v_setup_fee, 0);
+
+    -- A versao nova comeca depois do mes da implantacao: herdar violaria
+    -- platform_commercial_terms_setup_once (setup_due_month >= starts_on) e recusaria toda
+    -- renegociacao a partir dali. Nao perde a taxa: platform_resolve_terms filtra
+    -- starts_on <= p_on, entao o mes da implantacao continua resolvendo para o termo anterior.
+    if v_setup_due < v_starts_on then
+      v_setup_fee := 0;
+      v_setup_due := null;
+    end if;
   end if;
 
   insert into public.platform_commercial_terms (
