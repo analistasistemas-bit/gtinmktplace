@@ -45,7 +45,7 @@ Comportamento verificado do lock:
 
 - **Órfão recente** (dono morreu há pouco): a chamada espera até 10s tentando adquirir e, se não
   conseguir, sai com `exit 6` — ainda não é velho o suficiente para ser considerado órfão.
-- **Órfão com mais de 60s e dono morto**: é quebrado automaticamente (nunca via `kill`, só
+- **Órfão com mais de 30s e dono morto**: é quebrado automaticamente (nunca via `kill`, só
   `rm -rf` + 1 nova tentativa) e a chamada segue normalmente.
 - **Lock com PID reciclado vivo** (o processo que aparenta segurar o lock existe, mas não é o
   dono real): a chamada sai `6` e a própria mensagem de erro traz o comando de resgate
