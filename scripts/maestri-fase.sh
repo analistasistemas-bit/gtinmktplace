@@ -196,7 +196,7 @@ fi
 mv "$TMP_STATE" "$STATE"
 trap - EXIT
 
-ACAO="$(jq -r '.eventos[-1].acao' "$STATE")"
+ACAO="$(jq -r '.eventos[-1].acao' <<<"$NEW")"
 NOTA_LOG="${NOTA:-—}"
 
 LOG_DIR="$(dirname "$LOG")"
