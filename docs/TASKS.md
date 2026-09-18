@@ -2,6 +2,46 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Time Maestri — gate de consultor, roteamento de modelo e failover — 2026-09-18
+
+Origem: pós-merge da E12 (lock/traps do painel gerado), 3 ajustes operacionais nos prompts do
+time de 9 agentes (8 + Orquestrador) e recrutamento de um consultor de reserva. Detalhe completo
+em `memory/LogMaestri.md` (entradas "novo integrante: Consultor Grok Backup" e "TESTE DE
+FAILOVER"). Uso: ver
+[docs/how-to/maestri-painel.md](how-to/maestri-painel.md#time-e-failover).
+
+- [x] **9 prompts de role editados** (`.maestri/roles/<uuid>/CLAUDE.md`, versionados):
+  - **Guarda de existência do script** nos 9 roles — testar `scripts/maestri-fase.sh` contra a
+    RAIZ do projeto (working directory), nunca o `cwd` do role nem um script homônimo de outro
+    repositório do disco.
+  - **Gate pré-merge**: Astra sozinho, não Astra+Fable em paralelo (Astra achou os 2 únicos bugs
+    reais da entrega anterior; Fable passa a entrar só em revisão de plano e arbitragem de
+    remédio quando o Astra bloqueia).
+  - **Escolha de modelo do Spec**: Sonnet quando o design já chega aprovado (só transcrever
+    requisitos), Opus quando o Diego chega com ideia crua.
+  - **Escalação do Backend**: concorrência, lock, sinais (trap/SIGTERM), atomicidade de escrita,
+    migrations, RLS ou código financeiro exigem Opus — para e pede reabertura se não estiver nele;
+    não reabre se já estiver em Opus (evita laço).
+  - **"Número vem do código"** adicionado a Docs e Testes/Verificador: toda constante citada em
+    doc/relatório é lida do código, nunca copiada de relatório de outro agente ou do prompt
+    recebido.
+- [x] **Novo integrante: Consultor Grok Backup** — `cursor-agent --model cursor-grok-4.6-high`,
+  preset Shell (não há preset Cursor nativo no `maestri preset list`). Terceira família de modelo
+  no time (Claude, GPT, agora xAI). Só assume quando um titular (Astra ou Fable) falha por
+  indisponibilidade — nunca corre em paralelo como terceira opinião.
+- [x] **Teste de failover executado** (falha real e reversível: `kill -STOP` no processo do
+  Astra) — **PASSOU**, com 3 ajustes aplicados a partir do veredito do backup:
+  1. Guarda de existência do script endurecida (o próprio teste revelou o buraco: teste relativo
+     ao `cwd` dava falso negativo e podia achar o script de outro repositório).
+  2. Laço de escalação do Backend corrigido — "pare e peça Opus" disparava mesmo já estando em
+     Opus.
+  3. Definição de "agir sobre um veredito" fechada no prompt do Orquestrador (texto ao Diego
+     citando o veredito, ou escrita em log/fase a partir dele) + carimbo obrigatório
+     `[veredito do BACKUP]`/`[veredito do TITULAR]` em todo reporte.
+- [x] **Achado operacional registrado**: `SIGCONT` sozinho não restaura agente de terminal
+  suspenso (recebe `SIGTTIN` em foreground) — restauração exige `Ctrl-C` + `fg`. Ver aviso em
+  destaque em [docs/how-to/maestri-painel.md](how-to/maestri-painel.md#time-e-failover).
+
 ## Painel gerado do RoadmapMaestri (time de agentes Maestri) — 2026-09-18
 
 Origem: o `RoadmapMaestri.md`/nota do canvas era editado à mão pelo Orquestrador — defasava e a

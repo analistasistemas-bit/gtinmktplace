@@ -72,3 +72,66 @@ Usar as três ao testar em scratch para não sujar o log/state reais.
   definida).
 - `6` — não obteve o lock dentro do teto de espera (10s). É o único modo de falha que pode travar
   o time — ver a seção "Lock" acima para os cenários e o comando de recuperação.
+
+## Time e failover
+
+### `maestri-fase.sh` é chamado pelos 9 roles
+
+Os 8 agentes (Spec, Arquiteto, Frontend, Backend, Reviewer, Testes / Verificador, Docs,
+Release / Github) e o Orquestrador têm, no próprio prompt (`.maestri/roles/<uuid>/CLAUDE.md`), a
+instrução de rodar `scripts/maestri-fase.sh` ao abrir/fechar uma fase. Essa instrução testa a
+existência do script **na RAIZ do projeto informada como working directory** — nunca no
+diretório de role (`.maestri/roles/<uuid>/`), e nunca um script de mesmo nome achado em outro
+repositório do disco.
+
+Por quê: o `cwd` de um role não é a raiz do projeto, então um teste relativo ao `cwd` (rodado de
+dentro do diretório de role) dá falso negativo mesmo dentro do próprio PubliAI. E se o agente
+buscar o script pelo nome em outro lugar do disco, pode achar o `maestri-fase.sh` de outro
+repositório e rodá-lo com o `cwd` errado — gravando fase/log no `memory/` do projeto errado, em
+silêncio.
+
+### Protocolo de failover de consultor
+
+Consultor de reserva do time: **Consultor Grok Backup** (`cursor-agent --model
+cursor-grok-4.6-high`, preset Shell — não existe preset Cursor nativo no `maestri preset list`).
+Terceira família de modelo (Claude, GPT/Astra, agora xAI/Grok). Só assume quando um titular
+(Astra ou Fable) falha por indisponibilidade — nunca corre em paralelo como uma terceira opinião.
+
+1. **Diagnosticar por evidência, nunca por saída vazia.** Confirmar a falha do titular com
+   `ps` (processo morto ou parado) — saída vazia ao ler o terminal costuma ser sintoma de como
+   você está lendo, não de agente morto. Achado concreto: `cut -c` descarta em silêncio linhas
+   com acento UTF-8 (`Illegal byte sequence`) — leia com `head`/`tail` puro ou redirecione para
+   arquivo, nunca por `cut`.
+2. **Repassar ao backup o prompt IDÊNTICO** que o titular recebeu, precedido de um cabeçalho
+   `[FAILOVER]` explicando por que o titular caiu — nunca um resumo do que o titular teria
+   respondido.
+3. **"Agir" sobre um veredito tem definição fechada:** é mandar qualquer texto ao Diego citando
+   esse veredito, ou escrever em log/fase a partir dele. Antes disso, se o titular voltar, o
+   titular prevalece e o veredito do backup é descartado. Depois disso, o titular atrasado entra
+   como adendo declarado — nunca reescrevendo em silêncio o que já foi dito.
+4. **Carimbar a origem em todo reporte:** `[veredito do BACKUP]` ou `[veredito do TITULAR]`. O
+   Diego nunca deve precisar adivinhar quem respondeu.
+5. **O backup recusa** qualquer pedido sem o cabeçalho `[FAILOVER]` enquanto `ps` mostrar o
+   titular vivo — dois consultores respondendo o mesmo gate em paralelo é o modo de falha a
+   evitar, não redundância desejada. Esta regra vive no prompt do role `Consultor Sênior`
+   (`.maestri/roles/<uuid>/CLAUDE.md`, compartilhado por titular e backup) — não só no prompt do
+   Orquestrador —, então o próprio backup a aplica sem depender do Orquestrador para arbitrar.
+
+### ⚠️ `SIGCONT` sozinho não restaura um agente de terminal suspenso
+
+Depois de `kill -STOP` num agente rodando em terminal interativo (ex.: `codex`), `kill -CONT`
+**não** o devolve ao trabalho. O processo volta a estado parado (`T`) imediatamente: quando o job
+parou, o shell retomou o controle do terminal; o `kill -CONT` devolve o agente como grupo de
+**background**, ele tenta ler o tty, leva `SIGTTIN` (sinal que atinge leitura de tty em
+background, não em foreground) e volta a `T`. A restauração correta é **`Ctrl-C`**
+(fecha o prompt de continuação que o texto vazado deixa aberto) **e depois `fg`**. Quem repetir
+um teste de failover precisa saber disto antes de suspender o agente — parar é trivial, restaurar
+não é.
+
+### O que é versionado e o que não é
+
+- `memory/RoadmapMaestri.md` e `memory/maestri-state.json` — **gitignored** (ver seção "O que é
+  gerado" acima).
+- `.maestri/roles/*` (10 diretórios versionados: os 9 do fluxo + `Consultor Sênior`) e
+  `memory/LogMaestri.md` — **versionados**; mudança de regra de gate, roteamento de modelo ou
+  escalação passa por commit normal, revisável em diff.
