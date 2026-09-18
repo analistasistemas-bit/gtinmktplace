@@ -135,7 +135,6 @@ describe('OrgBilling', () => {
     render(<OrgBilling orgId="org-a" month="2026-09" />);
 
     expect(screen.getByText('Renegociar')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Inicio da vigencia')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Início da vigência')).not.toBeInTheDocument();
   });
 

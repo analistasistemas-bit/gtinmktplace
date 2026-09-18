@@ -91,6 +91,15 @@ describe('CommercialTermsForm', () => {
     }));
   });
 
+  it('contrato futuro prefila o formulario e o resumo diz "a partir de"', () => {
+    const futuro = { ...current, starts_on: '2026-10-01', revenue_bps: 500, setup_fee_cents: 300_000, setup_due_month: '2026-10-01' };
+    render(<CommercialTermsForm orgId="org-zero" current={futuro} onSaved={vi.fn()} />);
+
+    expect(screen.getByText('Modalidade 1 · 5,00% sobre receita · a partir de 2026-10-01')).toBeInTheDocument();
+    expect(screen.getByLabelText('Implantação')).toHaveValue('3000,00');
+    expect(screen.getByLabelText('Implantação')).toBeDisabled();
+  });
+
   it('renegociacao nao reenvia a taxa de implantacao', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const comSetup = { ...current, setup_fee_cents: 300_000, setup_due_month: '2026-10-01' };

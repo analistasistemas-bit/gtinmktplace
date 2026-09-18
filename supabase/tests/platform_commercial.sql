@@ -350,6 +350,7 @@ create table public.ml_vendas_itens (
 \ir ../migrations/20260907210746_corrigir_regex_setup_due_month.sql
 \ir ../migrations/20260908022934_platform_org_cost_catalog_distinct.sql
 \ir ../migrations/20260908030002_platform_org_month_metrics.sql
+\ir ../migrations/20260918000000_adr164_implantacao_sobrevive_renegociacao.sql
 
 -- Implantacao > 0: o unico caminho que valida `setup_due_month`. Todos os casos acima usam
 -- `setup_fee_cents = 0`, e foi por isso que a regex quebrada (escape duplo, que exigia barra
@@ -396,6 +397,74 @@ begin
     if v_erro not like '%setup_due_month must be YYYY-MM%' then
       raise exception 'mensagem inesperada para mes invalido: %', v_erro;
     end if;
+  end;
+end $$;
+
+-- ADR-0164: renegociar antes do mes da implantacao nao pode apagar a taxa. A renegociacao grava
+-- setup 0 (a trava recusa reaplicar), cai no mesmo starts_on do contrato original, vira a linha que
+-- platform_resolve_terms devolve -- e platform_billing_preview le a implantacao so dessa linha.
+-- Org propria: as outras ja tem historico e contaminariam a versao esperada.
+insert into public.organizations (id, nome, slug) values
+  ('90000000-0000-0000-0000-000000000092', 'Org Heranca', 'org-heranca');
+
+do $$
+declare
+  v_next date := (date_trunc('month', now() at time zone 'America/Fortaleza') + interval '1 month')::date;
+  v_mes text := to_char(v_next, 'YYYY-MM');
+  v_term jsonb;
+  v_resolvido public.platform_commercial_terms%rowtype;
+begin
+  perform public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000092',
+      'starts_on', v_next, 'modality', 1, 'monthly_fee_cents', 60000,
+      'revenue_bps', 500, 'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+      'setup_due_month', v_mes, 'reason', 'primeiro contrato com implantacao'
+    )
+  );
+
+  -- Renegociacao: o front manda 0/null porque a trava recusa reaplicar a taxa.
+  v_term := public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000092',
+      'starts_on', v_next, 'modality', 1, 'monthly_fee_cents', 60000,
+      'revenue_bps', 400, 'sonar_unit_cents', 120, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'ajuste de percentual antes de comecar'
+    )
+  );
+
+  if (v_term->>'version')::int <> 2 then
+    raise exception 'renegociacao no mesmo starts_on deveria gerar version 2: %', v_term;
+  end if;
+  if (v_term->>'setup_fee_cents')::bigint <> 300000 then
+    raise exception 'ADR-0164: a implantacao nao foi herdada na renegociacao: %', v_term;
+  end if;
+  if (v_term->>'setup_due_month')::date <> v_next then
+    raise exception 'ADR-0164: setup_due_month nao foi herdado: %', v_term;
+  end if;
+
+  -- O que a cobranca enxerga: platform_resolve_terms devolve a v2, e ela tem que carregar a taxa.
+  select * into v_resolvido from public.platform_resolve_terms('90000000-0000-0000-0000-000000000092', v_next);
+  if v_resolvido.version <> 2 or v_resolvido.setup_fee_cents <> 300000 or v_resolvido.setup_due_month <> v_next then
+    raise exception 'ADR-0164: termo resolvido perdeu a implantacao: versao %, setup %, mes %',
+      v_resolvido.version, v_resolvido.setup_fee_cents, v_resolvido.setup_due_month;
+  end if;
+
+  -- A trava continua de pe: input com setup > 0 em renegociacao segue recusado.
+  begin
+    perform public.platform_save_terms(
+      '80000000-0000-0000-0000-000000000001',
+      jsonb_build_object(
+        'org_id', '90000000-0000-0000-0000-000000000092',
+        'starts_on', v_next, 'modality', 1, 'monthly_fee_cents', 60000,
+        'revenue_bps', 400, 'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+        'setup_due_month', v_mes, 'reason', 'tentativa de reaplicar implantacao'
+      )
+    );
+    raise exception 'ADR-0164: reaplicar implantacao deveria ter sido recusado';
+  exception when sqlstate '22023' then null;
   end;
 end $$;
 

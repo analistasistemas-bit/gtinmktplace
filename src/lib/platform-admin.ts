@@ -21,18 +21,19 @@ export function todayInFortaleza(now = new Date()): string {
   return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-/** Condição vigente hoje (não confundir com a condição resolvida para o mês da prévia, que pode
- *  ser passado). Usada por `org-billing.tsx` (decide se o card de condições abre recolhido) e por
- *  `commercial-terms-form.tsx` (classifica o histórico como Vigente/Anterior). */
-export function effectiveTerm(rows: CommercialTerms[], today: string): CommercialTerms | null {
-  return rows
-    .filter((row) => row.starts_on <= today)
-    .sort((a, b) => b.starts_on.localeCompare(a.starts_on) || b.version - a.version)[0] ?? null;
-}
-
+/** Condição mais recente, inclusive a que ainda vai começar. É o que `org-billing.tsx` precisa
+ *  para decidir se já existe contrato: o RPC recusa implantação quando existe QUALQUER termo, sem
+ *  filtro de data, então a tela tem que enxergar o mesmo conjunto que o banco. */
 export function latestTerm(rows: CommercialTerms[]): CommercialTerms | null {
   return [...rows]
     .sort((a, b) => b.starts_on.localeCompare(a.starts_on) || b.version - a.version)[0] ?? null;
+}
+
+/** Condição vigente hoje (não confundir com a condição resolvida para o mês da prévia, que pode
+ *  ser passado). Usada por `commercial-terms-form.tsx` para classificar o histórico como
+ *  Vigente/Futura/Anterior. */
+export function effectiveTerm(rows: CommercialTerms[], today: string): CommercialTerms | null {
+  return latestTerm(rows.filter((row) => row.starts_on <= today));
 }
 
 export type PlatformAdminError = Error & { code?: string };
