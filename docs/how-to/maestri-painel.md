@@ -31,6 +31,21 @@ scripts/maestri-fase.sh <fase> "<Agente>" ["nota"] [--tarefa T] [--aguarda A] [-
   Combinado com `--fim` na mesma chamada (a forma natural do Release no fim do fluxo), fecha a
   fase primeiro (grava `.fases[N].fim`, preserva `inicio`/`rodadas`) e só depois encerra a tarefa.
 
+### Fase 0 — Setup/time
+
+Única fase que o **próprio Orquestrador abre E fecha** (nas demais, abrir é do Orquestrador e
+fechar é do agente da fase). Registra: conferir por `maestri list` que os agentes necessários
+estão conectados, e fixar o modo de trabalho (Completo ou Hotfix) — dito pelo Diego, nunca
+assumido pelo agente. Rodar antes de delegar a primeira fase de qualquer tarefa:
+
+```
+scripts/maestri-fase.sh 0 "Orquestrador" "<o que foi checado>"
+scripts/maestri-fase.sh 0 "Orquestrador" "<o que foi checado>" --fim
+```
+
+Pular a Fase 0 deixa ela `⏳` para sempre no painel — foi o que aconteceu em todas as tarefas até
+18/09/2026, porque nada neste doc explicava para que ela servia.
+
 ## O que é gerado — nunca editar à mão
 
 - `memory/RoadmapMaestri.md` — regenerado por `scripts/maestri-painel.sh` a partir só de
