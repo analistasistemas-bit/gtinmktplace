@@ -73,6 +73,7 @@ def fmtts:
 | ($root.tarefa // null) as $tarefa
 | ($root.entrega // null) as $entrega
 | ($root.aguarda_diego // "") as $ag
+| ($root.tarefa_encerrada // false) as $encerrada
 | ["0","1","2","3a","3b","4","5","6","7"] as $ordem
 | ($ordem | index($fa)) as $idx
 | (if $fa == "7" then null
@@ -86,7 +87,7 @@ def fmtts:
 | [
     "**TAREFA:** " + ($tarefa // "—"),
     "**FASE:** " + ($fa // "—") + " de 7" + (if $fa != null then " — " + $root.fases[$fa].nome else "" end),
-    "**COM QUEM:** " + ($resp // "—")
+    "**COM QUEM:** " + (if $resp == null and $encerrada then "— (tarefa encerrada)" else ($resp // "—") end)
       + (if $desde != null then " — desde " + ($desde | fmtts) + (if $duration != "" then " (" + $duration + ")" else "" end) else "" end),
     (if ($ag | length) > 0 then "🔴 **AGUARDA VOCÊ:** " + $ag else empty end),
     "**PRÓXIMO:** " + $proximo,

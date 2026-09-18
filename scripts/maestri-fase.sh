@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# maestri-fase.sh <fase> <agente> [nota] [--tarefa T] [--aguarda A] [--entrega E] [--fim]
+# maestri-fase.sh <fase> <agente> [nota] [--tarefa T] [--aguarda A] [--entrega E] [--fim] [--encerrar]
 # Única porta de escrita do state/log do painel RoadmapMaestri. Contrato: memory/LogMaestri.md,
 # entrada "Orquestrador — contrato consolidado, Fase 3b liberada" (2026-09-18).
+# --encerrar: marca a TAREFA (não a fase) como concluída — zera fase_atual/responsavel/desde
+# no state para o cabeçalho do painel parar de apontar pra sempre ao último agente/fase
+# (achado "cabeçalho eterno", 2026-09-18). Não mexe em .fases[] nem no --fim: são independentes.
 set -euo pipefail
 
 usage() {
-  echo "uso: maestri-fase.sh <fase> <agente> [nota] [--tarefa T] [--aguarda A] [--entrega E] [--fim]" >&2
+  echo "uso: maestri-fase.sh <fase> <agente> [nota] [--tarefa T] [--aguarda A] [--entrega E] [--fim] [--encerrar]" >&2
 }
 
 if [[ $# -lt 2 ]]; then
@@ -38,6 +41,7 @@ TAREFA_SET=false; TAREFA=""
 AGUARDA_SET=false; AGUARDA=""
 ENTREGA_SET=false; ENTREGA=""
 FIM=false
+ENCERRAR=false
 
 if [[ $# -gt 0 && "$1" != --* ]]; then
   NOTA="$1"; shift
@@ -58,6 +62,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --fim)      FIM=true; shift ;;
+    --encerrar) ENCERRAR=true; shift ;;
     *)
       echo "erro: argumento desconhecido: $1" >&2
       exit 2
@@ -163,6 +168,7 @@ BOOTSTRAP='{
   "desde": null,
   "aguarda_diego": null,
   "entrega": null,
+  "tarefa_encerrada": false,
   "fases": {
     "0":  { "nome": "Setup/time",           "inicio": null, "fim": null, "rodadas": 0 },
     "1":  { "nome": "Spec",                 "inicio": null, "fim": null, "rodadas": 0 },
@@ -205,16 +211,23 @@ NEW="$(jq \
   --arg ts "$TS" \
   --arg nota "$NOTA" \
   --argjson fim "$FIM" \
+  --argjson encerrar "$ENCERRAR" \
   --argjson tarefa_set "$TAREFA_SET" --arg tarefa "$TAREFA" \
   --argjson aguarda_set "$AGUARDA_SET" --arg aguarda "$AGUARDA" \
   --argjson entrega_set "$ENTREGA_SET" --arg entrega "$ENTREGA" \
   '
   .fases[$fase].inicio as $orig_inicio
-  | (if $fim then "fechou"
+  | (if $encerrar then "encerrou"
+     elif $fim then "fechou"
      elif $orig_inicio == null then "abriu"
      else "reentrou"
      end) as $acao
-  | (if $fim then
+  | (if $encerrar then
+      .fase_atual = null
+      | .responsavel = null
+      | .desde = null
+      | .tarefa_encerrada = true
+    elif $fim then
       .fases[$fase].inicio = (if $orig_inicio == null then $ts else $orig_inicio end)
       | .fases[$fase].rodadas = (if $orig_inicio == null then 1 else .fases[$fase].rodadas end)
       | .fases[$fase].fim = $ts
@@ -225,6 +238,7 @@ NEW="$(jq \
       | .fase_atual = $fase
       | .responsavel = $agente
       | .desde = $ts
+      | .tarefa_encerrada = false
     end)
   | (if $tarefa_set then .tarefa = $tarefa else . end)
   | (if $aguarda_set then .aguarda_diego = (if ($aguarda | length) == 0 then null else $aguarda end) else . end)
