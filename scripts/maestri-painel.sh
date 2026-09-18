@@ -25,6 +25,11 @@ if [[ ! -f "$STATE" ]]; then
   exit 3
 fi
 
+# ponytail: sem lock aqui — painel concorrente pode publicar snapshot vencido
+# (achado 2 do gate de 2026-09-18, aceito). Teto: RoadmapMaestri.md/nota podem
+# ficar um ciclo atrás; auto-corrige na próxima chamada de maestri-fase.sh.
+# Upgrade: adquirir o mesmo lock sobre :28→:121 (read→mv do roadmap) se o
+# atraso passar a ser observado na prática.
 CURRENT="$(cat "$STATE")"
 if ! jq empty <<<"$CURRENT" >/dev/null 2>&1; then
   echo "erro: state JSON inválido: $STATE" >&2

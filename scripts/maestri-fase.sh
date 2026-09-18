@@ -97,6 +97,70 @@ else
   LOG="$MAIN/memory/LogMaestri.md"
 fi
 
+STATE_DIR="$(dirname "$STATE")"
+mkdir -p "$STATE_DIR"
+
+# Lock (E11.1/E11.2): mkdir é atômico por POSIX e não é dependência nova (mkdir -p já era usado
+# aqui). flock(1) não existe no macOS. Span protegido: desta aquisição até o mv do state — nunca
+# através do log ou do maestri-painel.sh (achado 2, ver comentário ponytail em maestri-painel.sh).
+LOCK=""
+TMP_STATE=""
+
+cleanup() {
+  # preserva o exit code que disparou o trap — sem isto, o último comando aqui dentro
+  # (um "[[ ]] && ..." falso quando LOCK/TMP_STATE já estão vazios) vira o exit code do script
+  local rc=$?
+  [[ -n "$TMP_STATE" ]] && rm -f "$TMP_STATE"
+  [[ -n "$LOCK" ]] && rm -rf "$LOCK"
+  return "$rc"
+}
+# handler ÚNICO, registrado ANTES da aquisição — nunca "trap - EXIT" depois disso: isso apagaria
+# a liberação do lock inteira, não só a do temp (é o bug que o CA-15b existe para pegar).
+trap cleanup EXIT INT TERM
+
+LOCK_PATH="$STATE_DIR/.maestri-state.lock"
+LOCK_TIMEOUT=10
+LOCK_STEP=0.1
+LOCK_STALE_AGE=30
+
+acquire_lock() {
+  local start held_pid mtime now age
+  start="$(date +%s)"
+  while true; do
+    if mkdir "$LOCK_PATH" 2>/dev/null; then
+      echo "$$" > "$LOCK_PATH/pid"
+      LOCK="$LOCK_PATH"
+      return 0
+    fi
+
+    held_pid="$(cat "$LOCK_PATH/pid" 2>/dev/null)" || held_pid=""
+    mtime="$(stat -f %m "$LOCK_PATH" 2>/dev/null)" || mtime=0
+    now="$(date +%s)"
+    age=$(( now - mtime ))
+
+    # órfão: mais velho que o teto E o dono não está vivo — nunca kill, só rm -rf + 1 retentativa
+    if [[ "$age" -gt "$LOCK_STALE_AGE" ]] && { [[ -z "$held_pid" ]] || ! kill -0 "$held_pid" 2>/dev/null; }; then
+      rm -rf "$LOCK_PATH"
+      if mkdir "$LOCK_PATH" 2>/dev/null; then
+        echo "$$" > "$LOCK_PATH/pid"
+        LOCK="$LOCK_PATH"
+        return 0
+      fi
+    fi
+
+    if (( now - start >= LOCK_TIMEOUT )); then
+      echo "erro: lock não adquirido em ${LOCK_TIMEOUT}s: $LOCK_PATH" >&2
+      echo "  (detentor pid ${held_pid:-desconhecido}). Nenhuma escrita feita." >&2
+      echo "  Se nenhum agente estiver rodando, libere com:  rm -rf \"$LOCK_PATH\"" >&2
+      return 1
+    fi
+
+    sleep "$LOCK_STEP"
+  done
+}
+
+acquire_lock || exit 6
+
 BOOTSTRAP='{
   "schema_version": 1,
   "tarefa": null,
@@ -181,10 +245,7 @@ NEW="$(jq \
   ' <<<"$CURRENT")"
 
 # escrita atômica: mktemp no MESMO diretório do destino (E4) — mv entre volumes não é atômico
-STATE_DIR="$(dirname "$STATE")"
-mkdir -p "$STATE_DIR"
 TMP_STATE="$(mktemp "$STATE_DIR/.maestri-state.XXXXXX")"
-trap 'rm -f "$TMP_STATE"' EXIT
 printf '%s' "$NEW" > "$TMP_STATE"
 
 # jq empty valida o TEMP (D3, em letra) — é o arquivo que vai ser instalado, não a variável de shell
@@ -194,7 +255,14 @@ if ! jq empty "$TMP_STATE" >/dev/null 2>&1; then
 fi
 
 mv "$TMP_STATE" "$STATE"
-trap - EXIT
+TMP_STATE=""
+
+# libera o lock aqui, não no fim do script (E11.1 seção 3/5): o span protegido termina no mv;
+# segurar o lock através do log/painel bloquearia outro agente pela duração do note write (D1).
+# O trap `cleanup` continua registrado (nunca "trap - EXIT") — isto é uma liberação explícita,
+# não uma desativação do handler.
+rm -rf "$LOCK"
+LOCK=""
 
 ACAO="$(jq -r '.eventos[-1].acao' <<<"$NEW")"
 NOTA_LOG="${NOTA:-—}"
