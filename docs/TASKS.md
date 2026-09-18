@@ -2,6 +2,39 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Painel gerado do RoadmapMaestri (time de agentes Maestri) — 2026-09-18
+
+Origem: o `RoadmapMaestri.md`/nota do canvas era editado à mão pelo Orquestrador — defasava e a
+Fase 0 nunca fechava. Fluxo completo Consultor Sênior → Spec (REQ-01..17) → Arquiteto (D1..D7) →
+Fable (revisão do plano) → Orquestrador (emendas E1..E9) → Backend (2 rounds) → Reviewer (2
+rounds) → Testes/Verificador (VERDE). Ver detalhe em `memory/LogMaestri.md`. Uso: ver
+[docs/how-to/maestri-painel.md](how-to/maestri-painel.md).
+
+- [x] **`scripts/maestri-fase.sh`** — única porta de escrita do state (`memory/maestri-state.json`)
+  e do log (`memory/LogMaestri.md`, append). Grava uma linha de log em formato fixo por chamada.
+  Allowlist de 9 fases (`0 1 2 3a 3b 4 5 6 7`) e 9 agentes (os 8 do time + `Orquestrador`); sem
+  `--fim` abre/reentra a fase (incrementa `rodadas`); com `--fim` fecha sem mudar `fase_atual`;
+  `--aguarda ""` limpa a pendência com Diego.
+- [x] **`scripts/maestri-painel.sh`** — regenera `memory/RoadmapMaestri.md` a partir só do state
+  (nunca lê o log) e sincroniza a nota do canvas `roadmapmaestri-time-de-age`.
+- [x] **Auto-refresh acoplado** — `maestri-fase.sh` chama `maestri-painel.sh` ao final de toda
+  chamada; falha do painel (ex.: canvas fora do ar) nunca propaga exit code — state/log já
+  gravados antes.
+- [x] **Escrita ancorada no checkout principal** — âncora via
+  `git rev-parse --path-format=absolute --git-common-dir`; provado (CA-14) que rodar de dentro de
+  um worktree isolado não gera diff em `memory/` ali, e o state/log do checkout principal recebem
+  o evento.
+- [x] **`.gitignore`** — `memory/maestri-state.json`, `memory/RoadmapMaestri.md` e seus temporários
+  (`memory/.maestri-state.*`, `memory/.roadmap.*`); protege contra um `git add -A` de outro agente
+  trackear o state.
+- [x] **Validação (Fase 5, VERDE)** — CA-09a (nota do canvas não é renomeada), CA-14 (âncora de
+  worktree), CA-15 (canal do canvas sem conexão vira aviso, não falha), CA-13 (cabeçalho do
+  `LogMaestri.md` corrigido pelo Orquestrador — REQ-14), teste do 🔴 `AGUARDA VOCÊ` (aparece/some
+  por completo), conferência 1:1 do painel real contra o layout do plano.
+- [x] **Fora desta entrega, pendente pós-merge (lane do Orquestrador):** edição dos 8 prompts de
+  agente via `maestri role edit` (Bloco 3, REQ-12/13, Maestro-only) e CA-12 (propagação do prompt
+  a terminal já em execução).
+
 ## Desconto visual (selo "% OFF") descartado — 2026-09-16
 
 Origem: Diego pediu para retirar o toggle "Exibir com desconto" da Revisão — o Mercado Livre não
