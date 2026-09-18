@@ -8,12 +8,15 @@ import { ViabilidadeLinha } from '@/components/viabilidade-linha';
 import { TabelaFreteViabilidade } from '@/components/tabela-frete-viabilidade';
 import { CalculadoraML } from '@/components/calculadora-ml/calculadora-ml';
 import { useAnaliseViabilidade } from '@/hooks/useAnaliseViabilidade';
+import { useMlConnection } from '@/hooks/useMlConnection';
 import type { ItemAnalisado } from '@/lib/viabilidade';
 
 const COLS = ['Produto', 'Menor relevante', 'Vendedores', 'Seu mínimo', 'Líquido se igualar', 'Viabilidade'];
 type ModoViabilidade = 'analise' | 'calculadora';
 
-function Tabela({ itens, editavel }: { itens: ItemAnalisado[]; editavel: boolean }) {
+function Tabela({ itens, editavel, mlConectado }: {
+  itens: ItemAnalisado[]; editavel: boolean; mlConectado?: boolean;
+}) {
   if (itens.length === 0) return null;
   return (
     <div className="overflow-x-auto">
@@ -24,7 +27,9 @@ function Tabela({ itens, editavel }: { itens: ItemAnalisado[]; editavel: boolean
           </tr>
         </thead>
         <tbody>
-          {itens.map((it) => <ViabilidadeLinha key={it.gtin} item={it} editavel={editavel} />)}
+          {itens.map((it) => (
+            <ViabilidadeLinha key={it.gtin} item={it} editavel={editavel} mlConectado={mlConectado} />
+          ))}
         </tbody>
       </table>
     </div>
@@ -33,6 +38,12 @@ function Tabela({ itens, editavel }: { itens: ItemAnalisado[]; editavel: boolean
 
 export default function Viabilidade() {
   const analise = useAnaliseViabilidade();
+  const { data: conexaoML } = useMlConnection();
+  // Sem conta ML a edge não consegue perfil/visitas dos vendedores: toda oferta cai em "dados
+  // insuficientes" e o mercado relevante vem 0 (ADR-0130 D-2/D-6, que proíbe cair para o
+  // observado). O resultado é legítimo, mas a tela atribuía a culpa ao mercado — este aviso
+  // nomeia a causa real (incidente 2026-09-18: mesmo EAN, "26 de 57" numa org e "0 de 57" noutra).
+  const semConexaoML = conexaoML?.conectado === false;
   const [modo, setModo] = useState<ModoViabilidade>('analise');
   const [gtins, setGtins] = useState('');
   const [bip, setBip] = useState('');
@@ -81,6 +92,17 @@ export default function Viabilidade() {
           Ofertas sem atividade comercial suficiente ficam no mercado observado e não entram nos cálculos.
         </p>
       </div>
+
+      {semConexaoML && (
+        <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
+          <p className="font-medium">Análise de concorrência indisponível</p>
+          <p>
+            Esta organização não tem uma conta do Mercado Livre conectada. Sem ela não dá para medir
+            a atividade comercial dos vendedores, então nenhuma oferta entra no mercado relevante e
+            os cálculos ficam em branco. Conecte em Canais e refaça a análise.
+          </p>
+        </div>
+      )}
 
       {analise.data?.me2Habilitado === false && (
         <div className="rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-warning">
@@ -165,7 +187,7 @@ export default function Viabilidade() {
                   {analise.data!.ignorados} linha(s) ignorada(s) (sem GTIN/preço/custo).
                 </p>
               )}
-              <Tabela itens={itens} editavel={analise.variables?.tipo === 'gtins'} />
+              <Tabela itens={itens} editavel={analise.variables?.tipo === 'gtins'} mlConectado={conexaoML?.conectado} />
               </div>
               {categoriaMlId && analise.data?.me2Habilitado === true && !analise.isPending && (
                 <TabelaFreteViabilidade

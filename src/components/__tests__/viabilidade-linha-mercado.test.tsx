@@ -51,10 +51,10 @@ const COM_RELEVANTE = {
   frete: 8,
 } as unknown as ItemAnalisado;
 
-function renderLinha(item: ItemAnalisado) {
+function renderLinha(item: ItemAnalisado, mlConectado?: boolean) {
   return render(
     <MemoryRouter>
-      <table><tbody><ViabilidadeLinha item={item} editavel={false} /></tbody></table>
+      <table><tbody><ViabilidadeLinha item={item} editavel={false} mlConectado={mlConectado} /></tbody></table>
     </MemoryRouter>,
   );
 }
@@ -96,5 +96,28 @@ describe('ViabilidadeLinha — mercado relevante', () => {
     expect(() => renderLinha(legado)).not.toThrow();
     expect(screen.getByText('0 de —')).toBeInTheDocument();
     expect(screen.getByText('Sem concorrente relevante')).toBeInTheDocument();
+  });
+  // Sem conta ML conectada o zero relevante é consequência da conexão que falta, não do
+  // mercado — a célula não pode afirmar que não existe concorrente relevante (incidente
+  // 2026-09-18). O aviso da causa fica no topo da página.
+  it('não afirma "sem concorrente relevante" quando a org não tem conta ML', () => {
+    renderLinha(SEM_RELEVANTE, false);
+
+    expect(screen.queryByText('Sem concorrente relevante')).toBeNull();
+    expect(screen.getByTitle(/conta do Mercado Livre/i)).toBeInTheDocument();
+
+    // O detalhe expandido repete o mesmo texto: deixar só a célula honesta faria a linha
+    // mudar de versão a um clique de distância.
+    fireEvent.click(screen.getByText('Aptamil Premium 1'));
+    expect(screen.queryByText('Sem concorrente relevante')).toBeNull();
+    expect(screen.getAllByTitle(/conta do Mercado Livre/i)).toHaveLength(2);
+  });
+
+  it('mantém o texto de mercado quando a conta ML está conectada', () => {
+    renderLinha(SEM_RELEVANTE, true);
+
+    expect(screen.getByText('Sem concorrente relevante')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Aptamil Premium 1'));
+    expect(screen.getAllByText('Sem concorrente relevante')).toHaveLength(2);
   });
 });

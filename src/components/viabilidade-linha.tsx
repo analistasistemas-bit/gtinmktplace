@@ -131,7 +131,11 @@ function numParaInput(n: number | null | undefined): string {
   return n != null ? String(n).replace('.', ',') : '';
 }
 
-export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAnalisado; editavel: boolean }) {
+export function ViabilidadeLinha({ item: itemInicial, editavel, mlConectado }: {
+  // `mlConectado` indefinido = estado ainda desconhecido: mantém o texto de mercado, que é o
+  // comportamento de sempre. Só o `false` explícito troca a mensagem.
+  item: ItemAnalisado; editavel: boolean; mlConectado?: boolean;
+}) {
   const [aberto, setAberto] = useState(false);
   const [override, setOverride] = useState<ItemAnalisado | null>(null);
   const item = override ?? itemInicial;
@@ -157,6 +161,13 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
   // não oferecer. A diferença para a D5 do ADR-0153 é que nenhuma tela fica inacessível por
   // causa disso — some um botão de atalho, não o acesso ao módulo.
   const mostraBotao = item.existeNoML && editavel && (modulos ?? []).includes('estoque');
+
+  // Sem conta ML o zero relevante vem da conexão que falta, não do mercado — afirmar "sem
+  // concorrente relevante" seria mentir sobre a causa. Um nó só, usado na célula E no detalhe:
+  // separá-los deixaria a linha fechada honesta e a expandida ainda culpando o mercado.
+  const semRelevante = mlConectado === false
+    ? <span title="Conecte uma conta do Mercado Livre em Canais para medir a concorrência.">—</span>
+    : 'Sem concorrente relevante';
 
   function montarInicial(): CadastroInicial {
     const d = dimensoesInformadas;
@@ -224,7 +235,7 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
             </span>
           </span>
         </td>
-        <td className="px-3 py-2">{menorRelevante != null ? fmtBRL(menorRelevante) : 'Sem concorrente relevante'}</td>
+        <td className="px-3 py-2">{menorRelevante != null ? fmtBRL(menorRelevante) : semRelevante}</td>
         <td className="px-3 py-2">
           {mercado ? `${mercado.vendedores} de ${mercado.observado?.vendedores ?? '—'}` : '—'}
         </td>
@@ -275,7 +286,7 @@ export function ViabilidadeLinha({ item: itemInicial, editavel }: { item: ItemAn
                   {' '}{mercado.freteGratis} c/ frete grátis · {mercado.full} FULL
                 </span>
               ) : (
-                <span className="text-muted-foreground">Sem concorrente relevante</span>
+                <span className="text-muted-foreground">{semRelevante}</span>
               )}
               {mercado?.observado?.menor != null && mercado.observado.menor !== menorRelevante && (
                 <span className="text-muted-foreground">Menor observado: {fmtBRL(mercado.observado.menor)}</span>
