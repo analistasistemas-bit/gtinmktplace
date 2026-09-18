@@ -3200,3 +3200,5 @@ conferido: os 9 do fluxo + `Consultor Sênior`), não 9.
 Sem código tocado, sem commit. Avisando o Orquestrador.
 - [2026-09-18T11:51:25-03:00] Fase 6 — Docs — fechou — ajustes 2-5 aplicados
 - [2026-09-18T11:51:25-03:00] Fase 7 — Release / Github — reentrou — commitar config do time + doc do failover
+- [2026-09-18T11:57:53-03:00] Fase 7 — Release / Github — fechou — merge fd7e5371, working tree limpo
+- [2026-09-18T11:59:29-03:00] Fase 7 — Release / Github — fechou — merge fd7e5371 na main, CI verde, sem deploy (nenhum diff em functions/migrations)
