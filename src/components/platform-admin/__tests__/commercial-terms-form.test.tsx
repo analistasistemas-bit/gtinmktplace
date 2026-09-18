@@ -91,6 +91,22 @@ describe('CommercialTermsForm', () => {
     }));
   });
 
+  it('renegociacao nao reenvia a taxa de implantacao', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const comSetup = { ...current, setup_fee_cents: 300_000, setup_due_month: '2026-10-01' };
+    render(<CommercialTermsForm orgId="org-zero" current={comSetup} onSaved={vi.fn()} />);
+
+    await user.click(screen.getByText('Renegociar'));
+    expect(screen.getByLabelText('Implantação')).toBeDisabled();
+    await user.type(screen.getByLabelText('Motivo'), 'ajuste de percentual');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      setup_fee_cents: 0,
+      setup_due_month: null,
+    }));
+  });
+
   it('preserva zeros e os valores digitados ao trocar modalidade', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-zero" current={current} onSaved={vi.fn()} />);

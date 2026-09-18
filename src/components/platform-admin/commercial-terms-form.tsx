@@ -136,8 +136,8 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
         monthly_fee_cents: monthly!,
         revenue_bps: revenue!,
         sonar_unit_cents: sonar!,
-        setup_fee_cents: setup!,
-        setup_due_month: form.setupDueMonth || null,
+        setup_fee_cents: isFirstContract ? setup! : 0,
+        setup_due_month: isFirstContract ? form.setupDueMonth || null : null,
         reason: form.reason.trim(),
       });
       set('reason', '');
@@ -159,7 +159,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
               {!isFirstContract && current && (
                 <CardDescription>
                   Modalidade {current.modality} · {formatScaled(current.revenue_bps, 2)}% sobre receita
-                  {' '}· desde {current.starts_on}
+                  {' '}· {current.starts_on > today ? 'a partir de' : 'desde'} {current.starts_on}
                 </CardDescription>
               )}
               {!isFirstContract && (
@@ -231,6 +231,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                 id="terms-setup"
                 aria-label="Implantação"
                 inputMode="decimal"
+                disabled={!isFirstContract}
                 value={form.setup}
                 onChange={(event) => set('setup', event.target.value)}
               />
@@ -241,6 +242,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                 id="terms-setup-month"
                 aria-label="Mês da implantação"
                 type="month"
+                disabled={!isFirstContract}
                 value={form.setupDueMonth}
                 onChange={(event) => set('setupDueMonth', event.target.value)}
               />
@@ -277,6 +279,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
               ) : (
                 <>
                   Renegociação vale a partir do próximo mês (<strong>{effectiveStartsOn}</strong>).
+                  {' '}A implantação já contratada não é cobrada de novo.
                 </>
               )}
             </p>

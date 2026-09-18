@@ -18,7 +18,7 @@ import {
 } from '@/hooks/usePlatformAdmin';
 import { buildBillingReport } from '@/lib/export/platform-billing';
 import { fmtBRL } from '@/lib/formato';
-import { effectiveTerm, todayInFortaleza, type BillingLine, type BillingPreview, type PlatformAdminError } from '@/lib/platform-admin';
+import { latestTerm, type BillingLine, type BillingPreview, type PlatformAdminError } from '@/lib/platform-admin';
 
 type Props = { orgId: string; month: string };
 
@@ -108,12 +108,11 @@ export function OrgBilling({ orgId, month }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [candidate, setCandidate] = useState<ReconciliationCandidate | null>(null);
   const completedMonth = useMemo(() => month < currentFortalezaMonth(), [month]);
-  const today = useMemo(() => todayInFortaleza(), []);
   const preview = previewQuery.data;
   const canClose = Boolean(preview?.terms && preview.blockers.length === 0 && completedMonth);
   const current = useMemo(
-    () => effectiveTerm(termsQuery.data?.rows ?? [], today),
-    [termsQuery.data, today],
+    () => latestTerm(termsQuery.data?.rows ?? []),
+    [termsQuery.data],
   );
 
   async function confirmClose() {

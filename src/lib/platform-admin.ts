@@ -30,6 +30,11 @@ export function effectiveTerm(rows: CommercialTerms[], today: string): Commercia
     .sort((a, b) => b.starts_on.localeCompare(a.starts_on) || b.version - a.version)[0] ?? null;
 }
 
+export function latestTerm(rows: CommercialTerms[]): CommercialTerms | null {
+  return [...rows]
+    .sort((a, b) => b.starts_on.localeCompare(a.starts_on) || b.version - a.version)[0] ?? null;
+}
+
 export type PlatformAdminError = Error & { code?: string };
 
 type ErrorPayload = {

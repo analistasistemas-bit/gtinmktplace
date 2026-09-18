@@ -125,6 +125,20 @@ afterEach(() => {
 });
 
 describe('OrgBilling', () => {
+  it('contrato futuro ainda nao vigente nao reabre como primeiro contrato', () => {
+    mocks.useTerms.mockReturnValue({
+      data: { rows: [{ ...terms, starts_on: '2026-10-01' }] },
+      isLoading: false,
+      isError: false,
+      refetch: vi.fn(),
+    });
+    render(<OrgBilling orgId="org-a" month="2026-09" />);
+
+    expect(screen.getByText('Renegociar')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Inicio da vigencia')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Início da vigência')).not.toBeInTheDocument();
+  });
+
   it('fecha com revisão e organização selecionadas após confirmação', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<OrgBilling orgId="org-a" month="2026-08" />);
