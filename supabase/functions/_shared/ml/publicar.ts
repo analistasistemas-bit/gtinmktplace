@@ -191,6 +191,15 @@ export function montarPayloadItem(
     };
   }
 
+  // Ramo variations (não-plano): title vai cru no payload — mesmo risco do ramo plano acima
+  // (família sem titulo_ml manda title vazio e a ML só recusa na resposta, escondendo a causa real).
+  if (!familia.titulo_ml?.trim()) {
+    throw new Error(
+      `Família sem título gerado (titulo_ml nulo) — não é possível publicar (title vazio) na `
+      + `categoria ${familia.categoria_ml_id ?? '?'}. Reprocesse a família antes de publicar.`,
+    );
+  }
+
   const variations: VariacaoItem[] = variacoes.map((v) => {
     const cor = v.cor?.trim() || (variacaoUnica ? COR_UNITARIA : '');
     // A capa entra como 1ª foto de cada cor: com variações, o ML exibe a galeria

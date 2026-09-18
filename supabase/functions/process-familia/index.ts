@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
     .update({ status: 'processando' })
     .eq('id', job.familia_id)
     .eq('status', 'pendente')
-    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador')
+    .select('id, user_id, org_id, nome_pai, descricao_pai, lote_id, operacao, fornecedor, origem, unidade, categoria_ml_id, atributos_ml, atributos_faltantes, atributos_editados_pelo_operador, variacao_principal_codigo, kit_multiplicador, titulo_ml')
     .maybeSingle();
   if (claimErr) {
     return new Response(`Claim: ${claimErr.message}`, { status: 500, headers: corsHeaders });
@@ -206,6 +206,16 @@ Deno.serve(async (req) => {
     // anterior; aqui só precisávamos resolver a cor das cores novas (feito nos passos 3-4).
     // Não roda copy/concorrência/categoria/mercado. Marca pronto e encerra.
     if (claimed.operacao === 'UPDATE') {
+      // A herança acima ASSUME que o anúncio anterior tinha titulo_ml válido (ingest-lote copia
+      // `ant.titulo_ml`) — se o anterior TAMBÉM tinha nulo, marcar 'pronto' propagaria o vazio
+      // pra sempre. Falha LOUD em vez de silenciar.
+      if (!claimed.titulo_ml?.trim()) {
+        await admin.from('familias').update({
+          status: 'erro',
+          erro_mensagem: 'Família herdou título vazio do anúncio anterior — edite o título desta família e reprocesse.',
+        }).eq('id', job.familia_id);
+        return new Response('UPDATE parcial sem titulo_ml herdado — marcado erro', { status: 200, headers: corsHeaders });
+      }
       await admin.from('familias').update({ status: 'pronto' }).eq('id', job.familia_id);
       return new Response('OK (update parcial)', { status: 200, headers: corsHeaders });
     }
