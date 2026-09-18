@@ -117,6 +117,10 @@ describe('montarPayloadItem', () => {
     const cursor = { ...familia, categoria_ml_id: 'MLB271227' };
     expect(() => montarPayloadItem(cursor, variacoes, capaPictureId)).toThrow(/múltiplas cores/);
   });
+  it('item plano com titulo_ml nulo falha LOUD em vez de mandar family_name vazio ao ML', () => {
+    const cursor = { ...familia, categoria_ml_id: 'MLB271227', titulo_ml: null };
+    expect(() => montarPayloadItem(cursor, [variacoes[0]], capaPictureId)).toThrow(/titulo_ml nulo/);
+  });
   it('categoria sem essa exigência (linha, MLB270273) não envia family_name', () => {
     const p = montarPayloadItem(familia, variacoes, capaPictureId);
     expect(p.family_name).toBeUndefined();

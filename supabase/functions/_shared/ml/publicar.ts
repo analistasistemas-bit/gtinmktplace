@@ -165,6 +165,14 @@ export function montarPayloadItem(
     }
     const atributosPacoteFlat = dimensoes ? montarAtributosPacote(dimensoes) : [];
     const precoFlat = v.preco_publicacao ?? 0;
+    // Item plano manda family_name no lugar de title — sem titulo_ml a ML só recusa na
+    // resposta ("Family Name cannot be blank"), escondendo a causa real (título nunca gerado).
+    if (!familia.titulo_ml?.trim()) {
+      throw new Error(
+        `Família sem título gerado (titulo_ml nulo) — não é possível publicar como item plano `
+        + `(family_name) na categoria ${familia.categoria_ml_id ?? '?'}. Reprocesse a família antes de publicar.`,
+      );
+    }
     // Validado via API real: com family_name, a ML rejeita `title` (auto-gerado a partir de
     // atributos/family_name, doc oficial) e `original_price` ("The fields [original_price, title]
     // are invalid for requested call") — nenhum dos dois entra no payload plano.
