@@ -6,7 +6,7 @@ set -euo pipefail
 
 resolve_main() {
   local gcd
-  gcd="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  gcd="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
   dirname "$gcd"
 }
 

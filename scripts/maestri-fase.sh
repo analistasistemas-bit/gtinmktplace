@@ -76,7 +76,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Resolução de caminhos (D5): env var > $MAIN/memory/... > exit 4. Nenhum fallback além destes.
 resolve_main() {
   local gcd
-  gcd="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
+  gcd="$(git -C "$SCRIPT_DIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 1
   dirname "$gcd"
 }
 
