@@ -208,8 +208,65 @@ renegociação real) e, para Daludi Shop/DSA, `sonar_unit_cents = 0` (corrigindo
 
 ## Fora de escopo
 
-- `_shared/platform-admin/billing.ts` (`composeBillingPreview`, `revenueFee`): confirmado como código
-  morto (nenhum import de produção, só o próprio teste). Não é tocado por este design; decisão de
-  remover fica para o Diego, separada desta entrega.
 - Trava de monotonia entre as 4 faixas (decisão 8: não implementar).
 - Recalcular faixa de mês já fechado em devolução tardia (decisão 7: não implementar).
+
+## Revisão do Fable (2026-09-18) — aprovado com ressalvas, incorporadas abaixo
+
+Veredito: design fiel ao schema real e correto na lógica de faixa/CHECK/`applied_bps`. Quatro ajustes
+obrigatórios antes de implementar:
+
+**1. Duas migrations, não uma — a cadeia de testes `\ir` exige.** `platform_commercial.sql` aplica
+`.../20260918000000_adr164_implantacao_sobrevive_renegociacao.sql` por último (schema +
+`platform_save_terms`); `platform_billing.sql` aplica depois `.../20260907102428_platform_terms_contract_fix.sql`
+(`platform_billing_preview`/`close`). Uma migration só não dá pra encaixar nos dois pontos. Split:
+
+- **Migration 1 — `platform_commercial_terms_tiers`**: schema (`revenue_bps_t1..t4`, backfill,
+  `drop column revenue_bps`, os dois `CHECK`s) + `create or replace function platform_save_terms`
+  **reemitida a partir do corpo de `20260918000000` (com o bloco de herança do ADR-0164), não do
+  `20260907210746`** — reemitir da versão errada perderia a herança da implantação. `\ir`'da em
+  `supabase/tests/platform_commercial.sql` logo após a linha do `20260918000000`.
+- **Migration 2 — `platform_billing_tiers`**: `platform_terms_tier`/`platform_terms_tier_bps`,
+  `create or replace function platform_billing_preview` e `platform_billing_close` com `applied_bps`/
+  `applied_tier`. `\ir`'da em `supabase/tests/platform_billing.sql` logo após a linha do
+  `20260907102428`.
+
+**Fixture quebrada por isso**: `supabase/tests/platform_sonar.sql:24-31` insere 2 termos direto na
+tabela (bypassando a RPC) com `modality=1, sonar_unit_cents=125` e `275` — o novo `CHECK` de forma
+rejeita as duas. Ajustar para `modality=2` (já têm `monthly_fee_cents=0`, então já satisfazem o
+`CHECK` de modalidade 2) e trocar a coluna `revenue_bps` do insert pelas 4 novas colunas.
+
+**2. `_shared/platform-admin/billing.ts` não pode ficar intocado — sai nesta entrega.** O CI roda
+`deno check` fora de `__tests__/`; `billing.ts:26` lê `terms.revenue_bps`, que deixa de existir no
+tipo `CommercialTerms`. Reimplementar a faixa em TypeScript recriaria uma segunda fonte dos cortes —
+exatamente o que este design evita. Como é código morto confirmado (nenhum importador de produção),
+apagar `billing.ts` e `__tests__/billing.test.ts` faz parte desta entrega, não é decisão em aberto.
+
+**3. Backfill do Sonar precisa ser LOUD sobre o dado medido, não só sobre `NULL`.** Trocar
+`where modality = 1` (corrige qualquer linha que exista no dia do deploy) por
+`where modality = 1 and sonar_unit_cents <> 0` (a violação específica medida), capturar
+`get diagnostics v_corrigidas = row_count` logo após o `update`, e `raise exception` se
+`v_corrigidas <> 2` — o número medido em produção vira a asserção, não uma suposição. Inserir uma
+linha em `platform_audit_events` (`category='admin'`, `action='platform_terms_sonar_corrected'`,
+`actor_id=null`, `reason` citando este ADR) para cada organização corrigida — a tabela existe
+justamente para isso ser rastreável, não só o comentário da migration.
+
+**4. `begin;`/`commit;` explícitos** envolvendo todo o bloco de backfill (desabilitar trigger →
+updates → asserções → reabilitar trigger) na Migration 1 — a mitigação inteira depende da transação
+ser atômica; o projeto já teve incidente de `db push` sem transação.
+
+**Não bloqueante, incorporado por ser trivial**: `applied_tier` ganha derivação própria —
+`platform_terms_tier(p_base_cents bigint) returns smallint` (só os 3 cortes, cliff), e
+`platform_terms_tier_bps` passa a chamá-la internamente — um único lugar com 10.000.000/30.000.000/
+50.000.000 em vez de duas cópias do `CASE`.
+
+**Ordem de deploy** (a edge function e a RPC mudam de contrato juntas):
+`supabase db push` (as 2 migrations, nessa ordem) → `supabase functions deploy platform-admin materializar-metricas`
+(as duas importam `_shared/platform-admin/`) → merge do front. Na janela entre o `db push` e o
+deploy das functions, a edge antiga ainda manda `revenue_bps` — a RPC nova rejeita (erro alto e
+claro, não silencioso; janela é curta e aceitável).
+
+**Chamada tomada para esta entrega** (não era pedido original, mas é corolário direto da mesma trava
+de modalidade): a linha `sonar` do preview/fechamento passa a não aparecer quando
+`terms.sonar_unit_cents = 0` — mesmo padrão condicional que `setup`/`credits` já usam — em vez de
+mostrar "Consultas Sonar N × R$0,00" pra organizações modalidade 1.

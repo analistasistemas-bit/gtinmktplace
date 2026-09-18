@@ -65,7 +65,13 @@ em TypeScript para ganhar uma flexibilidade que não foi pedida.
   já fechado nunca é recalculada.
 - Sem trava de monotonia entre as 4 faixas — o intervalo 0–10000 de cada uma já barra erro grosseiro.
 - `_shared/platform-admin/billing.ts` (`composeBillingPreview`) é código morto identificado durante o
-  desenho, sem caminho de produção; não é tocado por esta decisão.
+  desenho, sem caminho de produção — **removido nesta entrega** (revisão do Fable: manter o tipo
+  `CommercialTerms` compatível com ele exigiria uma segunda cópia da lógica de faixa em TypeScript,
+  que o CI de `deno check` reprovaria de qualquer forma assim que `revenue_bps` sair do tipo).
+- Implementação em 2 migrations, não 1 (revisão do Fable): a cadeia de testes `\ir` em
+  `supabase/tests/platform_commercial.sql`/`platform_billing.sql` aplica o schema/`save_terms` e o
+  `preview`/`close` em pontos diferentes da sequência de migrations existentes — ver
+  [design](../superpowers/specs/2026-09-18-condicoes-comerciais-faixas-design.md#revisão-do-fable-2026-09-18--aprovado-com-ressalvas-incorporadas-abaixo).
 
 ## Como reverter
 
