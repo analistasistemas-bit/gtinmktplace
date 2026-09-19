@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Alterar o comportamento do cadastro de condições comerciais para que o primeiro contrato inicie por padrão no mês corrente (em vez de no próximo mês) e corrigir cirurgicamente a vigência das 3 organizações existentes (Avil, DSA, Daludi Shop) para 2026-09.
+**Goal:** Alterar o comportamento do cadastro de condições comerciais para que o primeiro contrato inicie por padrão no mês corrente (em vez de no próximo mês) e corrigir cirurgicamente a vigência das 3 organizações existentes (Avil, DSA, Daludi Shop) para 2026-09 com máxima segurança multi-tenant.
 
-**Architecture:** Uma migration SQL pontual e restrita aos slugs alvo (`avil`, `diego-souza`, `daludishop`) desabilita temporariamente o trigger de imutabilidade, atualiza os termos de `2026-10-01` para `2026-09-01` (com materialização em tabela temporária, auditoria detalhada de `starts_on` e `setup_due_month` e asserção LOUD pós-condição validando exatamente 3 linhas atualizadas e ausência de resíduos), e o componente React `CommercialTermsForm` passa a inicializar com o mês corrente, aplicando clamping automático no `setupDueMonth` ao alternar opções de vigência.
+**Architecture:** Uma migration SQL com pré-condições incondicionais e validação individual de contrato inaugural por tenant (`version = 1`, `starts_on = '2026-10-01'`, `count = 1`) desabilita temporariamente o trigger de imutabilidade, atualiza cirurgicamente cada termo para `2026-09-01` materializando em tabela temporária, gera auditorias completas em `platform_audit_events` e executa asserções LOUD (3 linhas no total, 1 linha por slug e 0 resíduos). No frontend, o componente `CommercialTermsForm` calcula competências dinamicamente, sincroniza em foco e no submit contra viradas de mês, aplica clamping no `setupDueMonth` e conecta explicitamente `setup_due_month: effectiveSetupDue` no payload de salvamento. O processo em produção inclui um gate operacional de preview e autorização humana explícita conforme as regras do `AGENTS.md`.
 
 **Tech Stack:** Supabase PostgreSQL (PL-pgSQL), React, TypeScript, Vitest, Testing Library.
 
@@ -14,10 +14,62 @@
 
 - Banco de dados: Supabase PostgreSQL (confirmado pelo operador).
 - Apenas o primeiro contrato (`current === null`) inicia por padrão no mês corrente; renegociações continuam valendo a partir do próximo mês (`v_next_month`).
-- A migration SQL deve filtrar estritamente pelos slugs das 3 organizações afetadas (`avil`, `diego-souza`, `daludishop`), nunca fazer UPDATE indiscriminado por data.
-- Clamping obrigatório no frontend: se o usuário selecionar "Próximo mês", `setupDueMonth` deve acompanhar e nunca anteceder `startsOn`.
+- A migration SQL deve validar incondicionalmente a presença das 3 organizações alvo (`avil`, `diego-souza`, `daludishop`), falhar se qualquer uma faltar (abortando mutações parciais) e provar que cada uma possui apenas 1 termo inaugural.
+- Clamping obrigatório no frontend: `setupDueMonth` nunca pode anteceder `startsOn`, tanto na interação do usuário quanto na sanitização defensiva do `submit`, sendo passado explicitamente a `save.mutateAsync`.
+- Proteção contra virada de competência: `currentMonth` e `nextMonth` não podem ficar congelados em `useMemo(..., [])` sem sincronização se a tela permanecer aberta na virada do mês.
 - O trigger `platform_commercial_terms_no_mutation` deve ser reabilitado na mesma transação.
 - Proibido deploy automático via insforge; esperar comando do usuário.
+- Gate de segurança para dados reais multi-tenant (AGENTS.md): preview somente-leitura e autorização humana de Diego antes de qualquer mutação em produção, seguido de readback comprovando integridade e isolamento dos demais tenants.
+
+---
+
+### Task 0: Gate Operacional de Segurança Multi-Tenant em Produção (AGENTS.md)
+
+**Files:**
+- N/A (Operação controlada via CLI / psql / Supabase)
+
+**Interfaces:**
+- Produces: Relatório de preview somente-leitura dos contratos das 3 organizações e checksum de isolamento dos demais tenants antes e depois da migração.
+
+- [ ] **Step 1: Consulta de Preview Somente-Leitura em Produção**
+
+Antes de aplicar a migration em produção, executar a consulta somente-leitura dos alvos:
+```sql
+select
+  o.slug,
+  o.nome,
+  o.id as org_id,
+  t.id as term_id,
+  t.version,
+  t.starts_on as starts_on_atual,
+  t.setup_due_month as setup_due_atual,
+  t.created_at
+from public.organizations o
+join public.platform_commercial_terms t on t.org_id = o.id
+where o.slug in ('avil', 'diego-souza', 'daludishop')
+order by o.slug;
+```
+
+E capturar a prova de isolamento dos demais tenants (contagem e checksum):
+```sql
+select
+  count(*) as total_outros_termos,
+  coalesce(sum(hashtext(t.id::text || t.starts_on::text || t.version::text || coalesce(t.setup_due_month::text, ''))), 0) as checksum_outros
+from public.platform_commercial_terms t
+where t.org_id not in (
+  select id from public.organizations where slug in ('avil', 'diego-souza', 'daludishop')
+);
+```
+
+- [ ] **Step 2: Gate de Autorização Humana Explícita**
+
+Apresentar a tabela com os nomes, `org_id`, `term_id`, versões e valores atuais ao operador (Diego). Solicitar autorização explícita antes de qualquer comando de mutação em produção (`supabase db push`).
+
+- [ ] **Step 3: Readback de Produção Pós-Execução**
+
+Após a execução da migration em produção:
+1. Confirmar que as 3 organizações exibem `starts_on = '2026-09-01'` e `setup_due_month = '2026-09-01'`.
+2. Reexecutar a consulta de checksum dos demais tenants e provar que `total_outros_termos` e `checksum_outros` permanecem rigorosamente idênticos aos valores do Step 1, comprovando que nenhum outro tenant sofreu qualquer impacto.
 
 ---
 
@@ -30,7 +82,7 @@
 **Interfaces:**
 - Produces: Linhas de `platform_commercial_terms` das organizações `avil`, `diego-souza` e `daludishop` com `starts_on = '2026-09-01'` e `setup_due_month = '2026-09-01'`, eventos em `platform_audit_events`.
 
-- [ ] **Step 1: Criar o arquivo de migration**
+- [ ] **Step 1: Criar o arquivo de migration com pré-condições incondicionais e validação de contrato inaugural**
 
 Criar `supabase/migrations/20260919130000_platform_terms_vigencia_setembro.sql`:
 
@@ -44,25 +96,121 @@ begin;
 
 alter table public.platform_commercial_terms disable trigger platform_commercial_terms_no_mutation;
 
-create temporary table _migracao_termos_corrigidos on commit drop as
-with target_orgs as (
-  select id, slug from public.organizations where slug in ('avil', 'diego-souza', 'daludishop')
-),
-corrigidos as (
-  update public.platform_commercial_terms t
-  set starts_on = '2026-09-01',
-      setup_due_month = case when t.setup_due_month = '2026-10-01' then '2026-09-01'::date else t.setup_due_month end
-  from target_orgs o
-  where t.org_id = o.id
-    and t.starts_on = '2026-10-01'
-  returning t.id, t.org_id, o.slug,
-            '2026-10-01'::date as starts_on_anterior,
-            t.starts_on as starts_on_atual,
-            (case when t.setup_due_month = '2026-09-01' then '2026-10-01'::date else t.setup_due_month end) as setup_due_anterior,
-            t.setup_due_month as setup_due_atual
-)
-select * from corrigidos;
+create temporary table _migracao_termos_corrigidos (
+  id uuid primary key,
+  org_id uuid not null,
+  slug text not null,
+  starts_on_anterior date not null,
+  starts_on_atual date not null,
+  setup_due_anterior date,
+  setup_due_atual date
+) on commit drop;
 
+do $$
+declare
+  v_expected_orgs integer;
+  v_target_slug text;
+  v_org_id uuid;
+  v_term_count integer;
+  v_term public.platform_commercial_terms%rowtype;
+  v_corrigido record;
+  v_slug_count integer;
+begin
+  -- 1. Checagem incondicional de existência das organizações
+  select count(*) into v_expected_orgs
+  from public.organizations
+  where slug in ('avil', 'diego-souza', 'daludishop');
+
+  -- Em ambiente limpo sem seeds de produção (ex.: suíte de testes isolada ou CI novo):
+  if v_expected_orgs = 0 then
+    return;
+  end if;
+
+  -- Se encontrou pelo menos uma, EXIGE obrigatoriamente que as 3 existam
+  if v_expected_orgs <> 3 then
+    raise exception 'Pré-condição violada: esperava exatamente 3 organizações (avil, diego-souza, daludishop) ou nenhuma (ambiente limpo), mas encontrou %', v_expected_orgs
+      using errcode = '23514';
+  end if;
+
+  -- 2. Para cada organização alvo, validar individualmente e atualizar cirurgicamente
+  for v_target_slug in select unnest(array['avil', 'diego-souza', 'daludishop']) loop
+    select id into strict v_org_id
+    from public.organizations
+    where slug = v_target_slug;
+
+    -- Validar que possui exatamente 1 termo no histórico total (contrato inaugural)
+    select count(*) into strict v_term_count
+    from public.platform_commercial_terms
+    where org_id = v_org_id;
+
+    if v_term_count <> 1 then
+      raise exception 'Organização % possui % termos comerciais no histórico, esperava exatamente 1 (primeiro contrato inaugural)', v_target_slug, v_term_count
+        using errcode = '23514';
+    end if;
+
+    -- Obter o termo inaugural
+    select * into strict v_term
+    from public.platform_commercial_terms
+    where org_id = v_org_id;
+
+    -- Validar que é versão 1 e estava com vigência em 2026-10-01
+    if v_term.version <> 1 or v_term.starts_on <> '2026-10-01'::date then
+      raise exception 'Termo da organização % não é o contrato inaugural esperado de 2026-10-01 (versão %, starts_on %)', v_target_slug, v_term.version, v_term.starts_on
+        using errcode = '23514';
+    end if;
+
+    -- Atualizar especificamente esse termo único
+    update public.platform_commercial_terms
+    set starts_on = '2026-09-01',
+        setup_due_month = case when setup_due_month = '2026-10-01' then '2026-09-01'::date else setup_due_month end
+    where id = v_term.id and org_id = v_org_id
+    returning id, org_id, starts_on, setup_due_month
+    into v_corrigido;
+
+    insert into _migracao_termos_corrigidos (
+      id, org_id, slug, starts_on_anterior, starts_on_atual, setup_due_anterior, setup_due_atual
+    ) values (
+      v_corrigido.id,
+      v_corrigido.org_id,
+      v_target_slug,
+      v_term.starts_on,
+      v_corrigido.starts_on,
+      v_term.setup_due_month,
+      v_corrigido.setup_due_month
+    );
+  end loop;
+
+  -- 3. Asserção LOUD: exatamente 3 linhas atualizadas no total
+  if (select count(*) from _migracao_termos_corrigidos) <> 3 then
+    raise exception 'Esperava exatamente 3 linhas em _migracao_termos_corrigidos, mas obteve %', (select count(*) from _migracao_termos_corrigidos)
+      using errcode = '23514';
+  end if;
+
+  -- 4. Asserção LOUD: exatamente 1 linha por organização
+  for v_target_slug in select unnest(array['avil', 'diego-souza', 'daludishop']) loop
+    select count(*) into v_slug_count
+    from _migracao_termos_corrigidos
+    where slug = v_target_slug;
+
+    if v_slug_count <> 1 then
+      raise exception 'Esperava exatamente 1 linha corrigida para a organização %, mas obteve %', v_target_slug, v_slug_count
+        using errcode = '23514';
+    end if;
+  end loop;
+
+  -- 5. Asserção LOUD: nenhum termo restante em 2026-10 para as organizações alvo
+  if exists (
+    select 1
+    from public.platform_commercial_terms t
+    join public.organizations o on o.id = t.org_id
+    where o.slug in ('avil', 'diego-souza', 'daludishop')
+      and t.starts_on = '2026-10-01'
+  ) then
+    raise exception 'Restaram termos em 2026-10 para as organizações alvo' using errcode = '23514';
+  end if;
+end $$;
+
+-- 6. Auditoria completa para cada termo modificado
 insert into public.platform_audit_events (org_id, actor_id, category, action, result, target, reason, details)
 select org_id, null, 'admin', 'platform_terms_vigencia_corrigida', 'success', id::text,
   'Ajuste de vigencia inicial: primeiro contrato inicia no mes do cadastro (2026-09)',
@@ -77,41 +225,12 @@ from _migracao_termos_corrigidos;
 
 alter table public.platform_commercial_terms enable trigger platform_commercial_terms_no_mutation;
 
--- Asserção LOUD pós-condição: valida que exatamente 3 linhas foram atualizadas se as 3 orgs existirem
-do $$
-declare
-  v_expected_orgs integer;
-  v_rows_updated integer;
-begin
-  select count(*) into v_expected_orgs
-  from public.organizations
-  where slug in ('avil', 'diego-souza', 'daludishop');
-
-  select count(*) into v_rows_updated from _migracao_termos_corrigidos;
-
-  if v_expected_orgs = 3 then
-    if v_rows_updated <> 3 then
-      raise exception 'Esperava exatamente 3 linhas atualizadas em _migracao_termos_corrigidos, mas obteve %', v_rows_updated using errcode = '23514';
-    end if;
-
-    if exists (
-      select 1
-      from public.platform_commercial_terms t
-      join public.organizations o on o.id = t.org_id
-      where o.slug in ('avil', 'diego-souza', 'daludishop')
-        and t.starts_on = '2026-10-01'
-    ) then
-      raise exception 'Restaram termos em 2026-10 para as organizacoes alvo' using errcode = '23514';
-    end if;
-  end if;
-end $$;
-
 commit;
 ```
 
 - [ ] **Step 2: Adicionar fixtures e asserções completas de readback ao final da suite SQL**
 
-Ao final de `supabase/tests/platform_commercial.sql` (após a migration `20260918010000_platform_commercial_terms_tiers.sql`, garantindo compatibilidade com o schema de faixas):
+Ao final de `supabase/tests/platform_commercial.sql`:
 
 ```sql
 -- Fixtures para validar migration 20260919130000_platform_terms_vigencia_setembro.sql:
@@ -237,20 +356,23 @@ git commit -m "fix(db): migration cirurgica de ajuste de vigencia inicial dos te
 
 ---
 
-### Task 2: Atualização do Formulário `CommercialTermsForm` no Frontend com Clamping
+### Task 2: Atualização do Formulário `CommercialTermsForm` no Frontend com Clamping, Sanitização e Sincronização Dinâmica
 
 **Files:**
-- Modify: `src/components/platform-admin/commercial-terms-form.tsx:100-118,325-348`
+- Modify: `src/components/platform-admin/commercial-terms-form.tsx`
 - Test / Modify: `src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`
 
 **Interfaces:**
 - Consumes: `currentMonthStart()`, `nextMonthStart()`
-- Produces: `startsOn` padrão sendo `currentMonthStart()`, clamping automático de `setupDueMonth` quando `startsOn` avança para o próximo mês.
+- Produces: `startsOn` padrão sendo `currentMonthStart()`, clamping automático de `setupDueMonth` quando `startsOn` avança para o próximo mês, sanitização rigorosa no `submit` com mapeamento explícito de `setup_due_month: effectiveSetupDue`, e prevenção contra formulário estagnado na virada do mês.
 
 - [ ] **Step 1: Atualizar testes de unidade no frontend**
 
 Em `src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`:
-Substituir o teste existente `salva modalidade 2, infraestrutura e vigência no próximo mês` (linha 50, que esperava `starts_on: '2026-10-01'` por padrão) por `salva primeiro contrato iniciando no mês corrente por padrão com setup_due_month correspondente`, e adicionar o teste de clamping ao selecionar explicitamente o próximo mês:
+1. Substituir o teste existente `salva modalidade 2, infraestrutura e vigência no próximo mês` (linha 50, que esperava `starts_on: '2026-10-01'` por padrão) por `salva primeiro contrato iniciando no mês corrente por padrão com setup_due_month correspondente`.
+2. Adicionar teste de clamping ao selecionar explicitamente o próximo mês.
+3. Adicionar teste de sanitização no submit contra input manual defasado de mês de implantação.
+4. Adicionar teste defensivo de virada de mês com formulário aberto.
 
 ```tsx
   it('salva primeiro contrato iniciando no mês corrente por padrão com setup_due_month correspondente', async () => {
@@ -287,30 +409,91 @@ Substituir o teste existente `salva modalidade 2, infraestrutura e vigência no 
       setup_due_month: '2026-10',
     }));
   });
+
+  it('sanitiza setup_due_month no submit para nunca anteceder starts_on mesmo se o input for alterado manualmente', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    // Seleciona vigencia para o proximo mes (2026-10-01)
+    await user.selectOptions(screen.getByLabelText('Início da vigência'), '2026-10-01');
+
+    // Simula alteracao manual no campo Mes da implantacao de volta para 2026-09
+    const setupInput = screen.getByLabelText('Mês da implantação');
+    await user.clear(setupInput);
+    await user.type(setupInput, '2026-09');
+
+    await user.type(screen.getByLabelText('Motivo'), 'teste sanitizacao');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    // Comprova que o payload final submetido aplicou o clamping para 2026-10
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      org_id: 'org-a',
+      starts_on: '2026-10-01',
+      setup_due_month: '2026-10',
+    }));
+  });
+
+  it('rejeita vigência obsoleta e alerta se a virada do mês ocorrer com o formulário aberto', async () => {
+    vi.setSystemTime(new Date('2026-09-30T23:59:00Z'));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    // Simula passagem do tempo para o mes seguinte (outubro) enquanto a tela estava aberta
+    vi.setSystemTime(new Date('2026-10-01T00:01:00Z'));
+
+    await user.type(screen.getByLabelText('Motivo'), 'contrato no limite do mes');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    // Salvar nao deve ter sido executado com dados passados
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(screen.getByText(/A competência do mês virou/)).toBeInTheDocument();
+  });
 ```
 
 - [ ] **Step 2: Rodar teste para confirmar falha**
 
 Run: `pnpm test src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`
-Expected: FAIL (código atual ainda redefine com `nextMonth`).
+Expected: FAIL.
 
 - [ ] **Step 3: Implementar em `commercial-terms-form.tsx`**
 
-1. Inicializar `startsOn` com `currentMonth`:
+1. Estado dinâmico e sincronização em tempo real:
    ```typescript
-   const [startsOn, setStartsOn] = useState(currentMonth);
-   const effectiveStartsOn = isFirstContract ? startsOn : nextMonth;
-   ```
-2. No `useEffect`, redefinir também usando `currentMonth` em vez de `nextMonth`:
-   ```typescript
+   const isFirstContract = current === null;
+   const [startsOn, setStartsOn] = useState(() => currentMonthStart());
+   const effectiveStartsOn = isFirstContract ? startsOn : nextMonthStart();
+   const today = useMemo(() => todayInFortaleza(), []);
+   const [form, setForm] = useState<FormState>(() => initialState(current, effectiveStartsOn));
+   const [error, setError] = useState<string | null>(null);
+   const revenueTouched = useRef(false);
+
    useEffect(() => {
-     setStartsOn(currentMonth);
-     setForm(initialState(current, currentMonth));
+     const month = currentMonthStart();
+     setStartsOn(month);
+     setForm(initialState(current, month));
      revenueTouched.current = false;
      setError(null);
-   }, [current, orgId, currentMonth]);
+   }, [current, orgId]);
+
+   useEffect(() => {
+     function syncOnFocus() {
+       const nowMonth = currentMonthStart();
+       if (isFirstContract && startsOn < nowMonth) {
+         setStartsOn(nowMonth);
+         setForm((previous) => ({
+           ...previous,
+           setupDueMonth: previous.setupDueMonth && previous.setupDueMonth < nowMonth.slice(0, 7)
+             ? nowMonth.slice(0, 7)
+             : previous.setupDueMonth,
+         }));
+       }
+     }
+     window.addEventListener('focus', syncOnFocus);
+     return () => window.removeEventListener('focus', syncOnFocus);
+   }, [isFirstContract, startsOn]);
    ```
-3. No `onChange` do select de vigência, aplicar clamping no `setupDueMonth`:
+
+2. No `onChange` do select de vigência, aplicar clamping no `setupDueMonth`:
    ```typescript
    onChange={(event) => {
      const newStartsOn = event.target.value;
@@ -324,18 +507,55 @@ Expected: FAIL (código atual ainda redefine com `nextMonth`).
      });
    }}
    ```
-4. No `submit`, sanitizar `setup_due_month`:
+
+3. No `submit`, verificar virada de competência e conectar explicitamente `setup_due_month: effectiveSetupDue`:
    ```typescript
+   const nowCurrentMonth = currentMonthStart();
+   if (isFirstContract && startsOn < nowCurrentMonth) {
+     setStartsOn(nowCurrentMonth);
+     setForm((previous) => ({
+       ...previous,
+       setupDueMonth: previous.setupDueMonth && previous.setupDueMonth < nowCurrentMonth.slice(0, 7)
+         ? nowCurrentMonth.slice(0, 7)
+         : previous.setupDueMonth,
+     }));
+     setError('A competência do mês virou enquanto o formulário estava aberto. A vigência foi ajustada para o mês atual. Revise e confirme o salvamento.');
+     return;
+   }
+
    const effectiveSetupDue = isFirstContract
      ? (form.setupDueMonth && form.setupDueMonth < effectiveStartsOn.slice(0, 7)
          ? effectiveStartsOn.slice(0, 7)
          : form.setupDueMonth || null)
      : null;
+
+   await save.mutateAsync({
+     org_id: orgId,
+     starts_on: effectiveStartsOn,
+     modality: Number(form.modality) as 1 | 2,
+     monthly_fee_cents: form.modality === '2' ? 0 : monthly!,
+     revenue_bps_t1: revenueT1!,
+     revenue_bps_t2: revenueT2!,
+     revenue_bps_t3: revenueT3!,
+     revenue_bps_t4: revenueT4!,
+     sonar_unit_cents: form.modality === '1' ? 0 : sonar!,
+     setup_fee_cents: isFirstContract ? setup! : 0,
+     setup_due_month: effectiveSetupDue,
+     reason: form.reason.trim(),
+   });
    ```
-5. Atualizar opções do `<select>` para exibir `currentMonth` em primeiro lugar e atualizar o texto explicativo:
+
+4. Atualizar opções do `<select>` para exibir `currentMonthStart()` em primeiro lugar e atualizar o texto explicativo:
    ```tsx
-   <option value={currentMonth}>Este mês ({currentMonth})</option>
-   <option value={nextMonth}>Próximo mês ({nextMonth})</option>
+   <select
+     aria-label="Início da vigência"
+     className="h-9 w-full rounded-md border border-input bg-transparent px-3"
+     value={startsOn}
+     onChange={...}
+   >
+     <option value={currentMonthStart()}>Este mês ({currentMonthStart()})</option>
+     <option value={nextMonthStart()}>Próximo mês ({nextMonthStart()})</option>
+   </select>
    ```
 
 - [ ] **Step 4: Rodar testes do frontend para confirmar aprovação**
