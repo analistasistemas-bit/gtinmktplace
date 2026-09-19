@@ -15,7 +15,7 @@ describe('nomeChart (ADR-0167 — achado real de produção)', () => {
   });
 
   it('troca underscore por espaço, preservando legibilidade', () => {
-    expect(nomeChart('JACKETS_AND_COATS', 'masculino', ['P', 'M'])).toBe('PubliAI Jackets And Coats masculino P-M');
+    expect(nomeChart('JACKETS_AND_COATS', 'masculino', ['P', 'M'])).toBe('PubliAI Guia Jackets And Coats masculino P-M');
   });
 
   it('nunca passa de 60 caracteres (limite real confirmado)', () => {

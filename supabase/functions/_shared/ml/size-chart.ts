@@ -45,7 +45,7 @@ export function domainIdSemPrefixo(catalogDomain: string | null | undefined): st
 export function nomeChart(domainId: string, genero: Genero, tamanhos: readonly string[]): string {
   const dominioLegivel = domainId.replace(/_/g, ' ')
     .toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-  return `PubliAI ${dominioLegivel} ${genero} ${tamanhos.join('-')}`.slice(0, 60);
+  return `PubliAI Guia ${dominioLegivel} ${genero} ${tamanhos.join('-')}`.slice(0, 60);
 }
 
 interface LinhaAtributo { id: string; values: Array<{ id?: string; name: string }>; }
