@@ -223,7 +223,12 @@ begin
 end $$;
 ```
 
-- [ ] **Step 3: Commit da Task 1**
+- [ ] **Step 3: Executar a suite SQL para validar fixtures e readback**
+
+Run: `psql -U supabase_admin -d codex_platform_admin_test_20260906 -v ON_ERROR_STOP=1 -f supabase/tests/platform_commercial.sql`
+Expected: 0 erros, script finaliza com sucesso.
+
+- [ ] **Step 4: Commit da Task 1**
 
 ```bash
 git add supabase/migrations/20260919130000_platform_terms_vigencia_setembro.sql supabase/tests/platform_commercial.sql
@@ -242,11 +247,10 @@ git commit -m "fix(db): migration cirurgica de ajuste de vigencia inicial dos te
 - Consumes: `currentMonthStart()`, `nextMonthStart()`
 - Produces: `startsOn` padrão sendo `currentMonthStart()`, clamping automático de `setupDueMonth` quando `startsOn` avança para o próximo mês.
 
-- [ ] **Step 1: Escrever testes cobrindo padrão e clamping de `setup_due_month`**
+- [ ] **Step 1: Atualizar testes de unidade no frontend**
 
 Em `src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`:
-1. Testar que no primeiro contrato sem interação na vigência, `starts_on` é `2026-09-01` e `setup_due_month` é `2026-09`.
-2. Testar que ao selecionar "Próximo mês" (`2026-10-01`), `setup_due_month` é automaticamente ajustado para `2026-10` (não viola `setup_due_month >= starts_on`).
+Substituir o teste existente `salva modalidade 2, infraestrutura e vigência no próximo mês` (linha 50, que esperava `starts_on: '2026-10-01'` por padrão) por `salva primeiro contrato iniciando no mês corrente por padrão com setup_due_month correspondente`, e adicionar o teste de clamping ao selecionar explicitamente o próximo mês:
 
 ```tsx
   it('salva primeiro contrato iniciando no mês corrente por padrão com setup_due_month correspondente', async () => {
@@ -288,12 +292,25 @@ Em `src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`:
 - [ ] **Step 2: Rodar teste para confirmar falha**
 
 Run: `pnpm test src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`
-Expected: FAIL.
+Expected: FAIL (código atual ainda redefine com `nextMonth`).
 
 - [ ] **Step 3: Implementar em `commercial-terms-form.tsx`**
 
-1. Inicializar `startsOn` com `currentMonth`.
-2. No `onChange` do select de vigência:
+1. Inicializar `startsOn` com `currentMonth`:
+   ```typescript
+   const [startsOn, setStartsOn] = useState(currentMonth);
+   const effectiveStartsOn = isFirstContract ? startsOn : nextMonth;
+   ```
+2. No `useEffect`, redefinir também usando `currentMonth` em vez de `nextMonth`:
+   ```typescript
+   useEffect(() => {
+     setStartsOn(currentMonth);
+     setForm(initialState(current, currentMonth));
+     revenueTouched.current = false;
+     setError(null);
+   }, [current, orgId, currentMonth]);
+   ```
+3. No `onChange` do select de vigência, aplicar clamping no `setupDueMonth`:
    ```typescript
    onChange={(event) => {
      const newStartsOn = event.target.value;
@@ -307,7 +324,7 @@ Expected: FAIL.
      });
    }}
    ```
-3. No `submit`:
+4. No `submit`, sanitizar `setup_due_month`:
    ```typescript
    const effectiveSetupDue = isFirstContract
      ? (form.setupDueMonth && form.setupDueMonth < effectiveStartsOn.slice(0, 7)
@@ -315,7 +332,11 @@ Expected: FAIL.
          : form.setupDueMonth || null)
      : null;
    ```
-4. Atualizar opções do `<select>` para exibir `currentMonth` em primeiro lugar e atualizar o texto explicativo.
+5. Atualizar opções do `<select>` para exibir `currentMonth` em primeiro lugar e atualizar o texto explicativo:
+   ```tsx
+   <option value={currentMonth}>Este mês ({currentMonth})</option>
+   <option value={nextMonth}>Próximo mês ({nextMonth})</option>
+   ```
 
 - [ ] **Step 4: Rodar testes do frontend para confirmar aprovação**
 
@@ -352,11 +373,16 @@ Expected: 0 warnings, 0 erros.
 Run: `pnpm test src/components/platform-admin`
 Expected: Todos passando.
 
-- [ ] **Step 4: Registrar decisão e exceção documental**
+- [ ] **Step 4: Executar a suite SQL completa**
+
+Run: `psql -U supabase_admin -d codex_platform_admin_test_20260906 -v ON_ERROR_STOP=1 -f supabase/tests/platform_commercial.sql`
+Expected: 0 erros, todos os testes e assertions passando.
+
+- [ ] **Step 5: Registrar decisão e exceção documental**
 
 Em `obsidian-vault/09-Logs/Changelog.md` e `docs/project-status.md`, registrar a entrada de 2026-09-19 documentando a exceção autorizada e o ajuste das três organizações (Avil, DSA, Daludi Shop) para vigência em 2026-09-01, permitindo a apuração e fechamento da competência de setembro.
 
-- [ ] **Step 5: Commit da Task 3**
+- [ ] **Step 6: Commit da Task 3**
 
 ```bash
 git add obsidian-vault/09-Logs/Changelog.md docs/project-status.md
