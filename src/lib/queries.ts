@@ -833,22 +833,36 @@ export async function fetchTelegramConfig(): Promise<TelegramConfig> {
   };
 }
 
-/** Salva chat_id e ativo; só grava o token quando informado (campo deixado vazio = mantém). */
+/**
+ * Salva chat_id e ativo; só grava o token quando informado (campo deixado vazio = mantém).
+ *
+ * O token vai num `update` separado, nunca no `upsert` (ON CONFLICT DO UPDATE): desde que
+ * `telegram_bot_token` perdeu o grant de SELECT (achado de segurança F5, migration
+ * 20260822131053), o Postgres passou a exigir SELECT na coluna pra resolver o `EXCLUDED.col`
+ * do ON CONFLICT — um `update().eq('org_id', …)` só lê org_id (que continua com SELECT) e
+ * escreve a coluna (UPDATE continua concedido), então não esbarra nisso.
+ */
 export async function salvarTelegramConfig(input: { chatId: string; ativo: boolean; botToken?: string }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('sem sessão');
   const orgId = effectiveOrgId();
   if (!orgId) throw new Error('sem organização');
-  const tokenLimpo = input.botToken?.trim();
   const { error } = await supabase.from('configuracoes').upsert({
     org_id: orgId,
     user_id: user.id,
     telegram_chat_id: input.chatId || null,
     telegram_ativo: input.ativo,
     atualizado_em: new Date().toISOString(),
-    ...(tokenLimpo ? { telegram_bot_token: tokenLimpo } : {}),
   }, { onConflict: 'org_id' });
   if (error) throw error;
+
+  const tokenLimpo = input.botToken?.trim();
+  if (tokenLimpo) {
+    const { error: erroToken } = await supabase.from('configuracoes')
+      .update({ telegram_bot_token: tokenLimpo, atualizado_em: new Date().toISOString() })
+      .eq('org_id', orgId);
+    if (erroToken) throw erroToken;
+  }
 }
 
 async function invocarMonitorarModerados(payload: Record<string, unknown>): Promise<{ ok: boolean; novos?: number; erro?: string }> {
