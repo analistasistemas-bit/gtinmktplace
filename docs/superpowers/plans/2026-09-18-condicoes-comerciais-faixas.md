@@ -733,7 +733,7 @@ Crie `supabase/migrations/20260918010100_platform_billing_tiers.sql`:
 -- 0165 zera esse campo para toda organizacao modalidade 1, e mostrar "Consultas Sonar 0 x R$0,00"
 -- seria ruido.
 
-create function public.platform_terms_tier(p_base_cents bigint) returns smallint
+create or replace function public.platform_terms_tier(p_base_cents bigint) returns smallint
 language sql immutable set search_path = '' as $$
   select case
     when p_base_cents <= 10000000 then 1::smallint
@@ -743,7 +743,7 @@ language sql immutable set search_path = '' as $$
   end
 $$;
 
-create function public.platform_terms_tier_bps(
+create or replace function public.platform_terms_tier_bps(
   p_base_cents bigint, p_t1 integer, p_t2 integer, p_t3 integer, p_t4 integer
 ) returns integer
 language sql immutable set search_path = '' as $$
@@ -1112,6 +1112,58 @@ begin
 
   if public.platform_terms_tier_bps(30000001, 500, 400, 350, 300) <> 350 then
     raise exception 'platform_terms_tier_bps nao aplicou a faixa 3 corretamente';
+  end if;
+end $$;
+```
+
+**Achado Important da revisão**: toda fixture de billing acima usa `t1=t2=t3=t4` (mesmo percentual
+em todas as faixas) com a base sempre caindo na faixa 1 — uma implementação que aplicasse o `gross`
+em vez da `base`, ou o `t1` isolado em vez da faixa escolhida, passaria essa suíte inteira em verde.
+Adicione a organização abaixo (faixas DISTINTAS, base caindo deliberadamente na faixa 3), que
+discrimina isso de verdade — o revisor validou estes números rodando contra Postgres real antes de
+propor o teste:
+
+```sql
+insert into public.organizations(id,nome,slug) values
+  ('90000000-0000-0000-0000-000000000015','Org Tier Frozen','org-tier-frozen');
+insert into public.platform_commercial_terms(
+  org_id,starts_on,modality,monthly_fee_cents,
+  revenue_bps_t1,revenue_bps_t2,revenue_bps_t3,revenue_bps_t4,sonar_unit_cents,
+  setup_fee_cents,setup_due_month,reason,created_by,version
+) values
+  ('90000000-0000-0000-0000-000000000015',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,400,350,300,0,0,null,'tier fixture','80000000-0000-0000-0000-000000000001',1);
+insert into public.ml_vendas(id,org_id,order_id,date_closed,total_amount,status,atualizado_em,tem_devolucao,estorno) values
+  ('50000000-0000-0000-0000-000000000015','90000000-0000-0000-0000-000000000015',300020,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',400000,'paid','2026-07-02T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000016','90000000-0000-0000-0000-000000000015',300021,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '2 days',350000,'refunded','2026-07-03T12:00:00Z',false,0);
+
+do $$
+declare v_origin date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
+declare v_next date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '1 month')::date;
+declare v_preview jsonb; v_closed jsonb;
+begin
+  -- gross 75.000.000 (400k pago + 350k devolvido), refund 35.000.000 (o devolvido), base 40.000.000
+  -- -- cai na faixa 3 (350 bps), diferente de t1 (500): discrimina faixa real vs t1/media/gross.
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000015',v_origin);
+  if (v_preview->>'gross_cents')::bigint<>75000000 or (v_preview->>'refund_cents')::bigint<>35000000
+    or (v_preview->>'base_cents')::bigint<>40000000 or (v_preview->>'applied_tier')::int<>3
+    or (v_preview->>'applied_bps')::int<>350 or (v_preview->>'fee_cents')::bigint<>1400000 then
+    raise exception 'faixa nao discriminada corretamente (esperava tier 3, 350bps, fee 1400000): %',v_preview;
+  end if;
+  v_closed:=public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000015',v_origin,v_preview->>'revision');
+  if (select revenue_bps from public.platform_billing_statements where id=(v_closed->>'id')::uuid)<>350 then
+    raise exception 'close nao gravou a faixa 3 (350bps) aplicada';
+  end if;
+
+  -- Devolucao tardia empurra a base revisada pra 5.000.000 (faixa 1, 500bps HOJE) -- o credito
+  -- tem que usar a aliquota CONGELADA do fechamento (350), atravessando a fronteira de faixa.
+  update public.ml_vendas set status='partially_refunded',atualizado_em='2026-08-04T12:00:00Z',tem_devolucao=true
+    where id='50000000-0000-0000-0000-000000000015';
+  perform public.platform_reconcile_revenue('80000000-0000-0000-0000-000000000001',jsonb_build_object(
+    'org_id','90000000-0000-0000-0000-000000000015','sale_id','50000000-0000-0000-0000-000000000015',
+    'source_updated_at','2026-08-04T12:00:00Z','refunded_product_cents',35000000,'reason','devolucao tardia atravessando faixa'));
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000015',v_next);
+  if v_preview#>>'{adjustments,0,amount_cents}'<>'1225000' or (v_preview->>'credit_balance_cents')::bigint<>1225000 then
+    raise exception 'credito de devolucao tardia nao usou a aliquota congelada (esperava 1225000): %',v_preview;
   end if;
 end $$;
 ```
