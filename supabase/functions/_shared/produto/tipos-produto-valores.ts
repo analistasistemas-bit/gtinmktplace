@@ -13,8 +13,11 @@ export type TipoProduto = 'roupa' | 'calcado';
 /** Ordem canônica: toda saída saneada respeita esta ordem, não a do payload. */
 export const TIPOS_PRODUTO_VALIDOS = ['roupa', 'calcado'] as const;
 
-/** Conjunto fechado decidido no grilling de 2026-09-18. */
-export const TAMANHOS_ROUPA = ['P', 'M', 'G', 'GG', 'Tamanho Único'] as const;
+/** Conjunto fechado decidido no grilling de 2026-09-18. "Tamanho Único" saiu em 2026-09-19:
+ *  o Spike 051 §12 confirmou, com 3 chamadas reais, que o ML não tem guia de tamanhos para esse
+ *  valor nos domínios de vestuário suportados — publicar com ele falha sempre. Sair daqui é sair
+ *  da whitelist que a edge `cadastrar-produto` valida, não só da tela. */
+export const TAMANHOS_ROUPA = ['P', 'M', 'G', 'GG'] as const;
 
 /** Numeração adulta brasileira + os pares de meio-número que o ML usa. A seção 10 do spike 051
  *  confirma a lista contra a categoria real; ajustar é editar UMA linha, aqui.

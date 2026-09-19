@@ -38,7 +38,8 @@ describe('tamanhosValidosParaTipos', () => {
   });
 
   it('roupa e calcado nao se misturam', () => {
-    expect(tamanhosValidosParaTipos(['roupa'])).toContain('Tamanho Único');
+    expect(tamanhosValidosParaTipos(['roupa'])).not.toContain('Tamanho Único');
+    expect(tamanhosValidosParaTipos(['roupa'])).toContain('GG');
     expect(tamanhosValidosParaTipos(['roupa'])).not.toContain('37/38');
     expect(tamanhosValidosParaTipos(['calcado'])).toContain('37/38');
     expect(tamanhosValidosParaTipos(['calcado'])).not.toContain('P');

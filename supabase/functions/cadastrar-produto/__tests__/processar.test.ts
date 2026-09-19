@@ -353,9 +353,15 @@ describe('validarTamanhosDaEntrada (ADR-0166 / R7)', () => {
   });
 
   it('org de roupa aceita os tamanhos de roupa', () => {
-    for (const t of ['P', 'M', 'G', 'GG', 'Tamanho Único']) {
+    for (const t of ['P', 'M', 'G', 'GG']) {
       expect(validarTamanhosDaEntrada(comTamanho(t), ['roupa'])).toEqual([]);
     }
+  });
+
+  it('org de roupa RECUSA "Tamanho Único" — saiu da lista canônica (Spike 051 §12)', () => {
+    const erros = validarTamanhosDaEntrada(comTamanho('Tamanho Único'), ['roupa']);
+    expect(erros).toHaveLength(1);
+    expect(erros[0].campo).toBe('variacoes[0].tamanho');
   });
 
   it('org de roupa RECUSA numeracao de calcado', () => {

@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { parseNumeroPtBr } from '@/lib/formato';
-import type { GrupoTamanho } from '@/lib/tamanhos';
 import { cn } from '@/lib/utils';
 
 export interface LinhaVariacao {
@@ -69,7 +68,7 @@ const LOGISTICA = [
 
 export function LinhaVariacaoForm({
   linha, indice, podeRemover, tentouSalvar, fotoObrigatoria, nomeObrigatorio, estoqueInicialObrigatorio,
-  gruposTamanho, onMudar, onRemover,
+  onMudar, onRemover,
 }: {
   linha: LinhaVariacao;
   indice: number;
@@ -87,10 +86,6 @@ export function LinhaVariacaoForm({
    *  do Diego: "tem campos obrigatórios pro ML e não aparece o * vermelho, ex.: estoque"). */
   nomeObrigatorio?: boolean;
   estoqueInicialObrigatorio?: boolean;
-  /** ADR-0166: grupos de tamanho oferecidos pela org (`opcoesDeTamanho`). `undefined` ou vazio =
-   *  org sem tipo de produto habilitado: o campo não é renderizado e a linha fica idêntica à de
-   *  hoje. Não usar `[]` como "ainda carregando" — ver useTiposProdutoHabilitados. */
-  gruposTamanho?: GrupoTamanho[];
   onMudar: (patch: Partial<LinhaVariacao>) => void;
   onRemover: () => void;
 }) {
@@ -165,32 +160,8 @@ export function LinhaVariacaoForm({
         </Button>
       </div>
 
-      <div className={cn('grid gap-2', gruposTamanho?.length ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
+      <div className="grid gap-2 sm:grid-cols-2">
         {campoTexto('nome', 'Cor / nome')}
-        {!!gruposTamanho?.length && (
-          <div className="flex flex-col gap-1">
-            {/* Nome acessível igual ao rótulo visível (WCAG 2.5.3): aria-label vence o
-                htmlFor na precedência ARIA, então os dois têm que dizer a mesma coisa —
-                senão quem usa controle por voz ("clicar em Numeração") não acha o campo. */}
-            <label htmlFor={id('tamanho')} className="text-xs text-muted-foreground">
-              {gruposTamanho.length === 1 ? gruposTamanho[0].grupo : 'Tamanho / Numeração'}
-            </label>
-            <select
-              id={id('tamanho')}
-              aria-label={`${gruposTamanho.length === 1 ? gruposTamanho[0].grupo : 'Tamanho / Numeração'} da variação ${n}`}
-              className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-              value={linha.tamanho}
-              onChange={(e) => onMudar({ tamanho: e.target.value })}
-            >
-              <option value="">Sem tamanho</option>
-              {gruposTamanho.map((g) => (
-                <optgroup key={g.grupo} label={g.grupo}>
-                  {g.valores.map((v) => <option key={v} value={v}>{v}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-        )}
         {campoTexto('gtin', 'GTIN')}
       </div>
 

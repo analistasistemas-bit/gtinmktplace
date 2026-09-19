@@ -29,53 +29,11 @@ export function opcoesDeTamanho(tipos: readonly string[]): GrupoTamanho[] {
   return grupos;
 }
 
-/** Teto de linhas geradas de uma vez. `proximo_codigo_produto` reserva `variacoes.length + 1`
- *  códigos de oito dígitos (D-5 do ADR-0094) e o cartesiano estoura rápido; além disso o ML tem
- *  limite de variações por anúncio. Falha LOUD e acionável em vez de truncar em silêncio ou
- *  deixar o operador descobrir na edge. */
+/** Teto de linhas geradas de uma vez numa grade (`totalDaGrade`). `proximo_codigo_produto`
+ *  reserva `variacoes.length + 1` códigos de oito dígitos (D-5 do ADR-0094) e o cartesiano
+ *  estoura rápido; além disso o ML tem limite de variações por anúncio. Falha LOUD e acionável
+ *  em vez de truncar em silêncio ou deixar o operador descobrir na edge. */
 export const LIMITE_VARIACOES_GERADAS = 60;
-
-export interface Combinacao { cor: string; tamanho: string | null }
-
-function limparLista(valores: string[]): string[] {
-  const vistos = new Set<string>();
-  const saida: string[] = [];
-  for (const bruto of valores) {
-    const v = bruto.trim();
-    if (!v || vistos.has(v)) continue;
-    vistos.add(v);
-    saida.push(v);
-  }
-  return saida;
-}
-
-/** Contagem do cartesiano após a MESMA dedup+trim que `gerarCombinacoes` aplica. Existe para a
- *  prévia do `GeradorVariacoes` (componente) não divergir do resultado real — achado da Task 11:
- *  contar `cores.length` cru mostraria "3 variações" para "Azul, Azul, Preto" onde o resultado
- *  de fato é 2. */
-export function contarCombinacoes(cores: string[], tamanhos: string[]): number {
-  const c = limparLista(cores);
-  const t = limparLista(tamanhos);
-  return Math.max(c.length, 1) * Math.max(t.length, 1);
-}
-
-/** Produto cartesiano cor × tamanho. Cor é o eixo externo para as linhas saírem agrupadas por
- *  cor na tabela — é como o operador confere a foto, que é por cor. */
-export function gerarCombinacoes(cores: string[], tamanhos: string[]): Combinacao[] {
-  const c = limparLista(cores);
-  const t = limparLista(tamanhos);
-  const total = contarCombinacoes(cores, tamanhos);
-  if (c.length === 0 && t.length === 0) return [];
-  if (total > LIMITE_VARIACOES_GERADAS) {
-    throw new Error(
-      `Essa combinação geraria ${total} variações, acima do limite de ${LIMITE_VARIACOES_GERADAS} `
-      + 'por cadastro. Cadastre em dois produtos ou reduza as cores/tamanhos.',
-    );
-  }
-  if (t.length === 0) return c.map((cor) => ({ cor, tamanho: null }));
-  if (c.length === 0) return t.map((tamanho) => ({ cor: '', tamanho }));
-  return c.flatMap((cor) => t.map((tamanho) => ({ cor, tamanho })));
-}
 
 /** `false` = a numeração cadastra normal, mas hoje NÃO tem guia de tamanhos possível no ML para
  *  esse gênero (pares de meio-número; 45/46 no feminino). Serve ao aviso inline do cadastro em

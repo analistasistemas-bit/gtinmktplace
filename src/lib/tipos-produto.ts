@@ -26,7 +26,7 @@ export interface TipoProdutoUI {
 const ROTULOS: Record<TipoProdutoId, Omit<TipoProdutoUI, 'id'>> = {
   roupa: {
     nome: 'Roupa',
-    descricao: 'O cadastro ganha Tamanho (P, M, G, GG, Tamanho Único) como segundo eixo, além da cor.',
+    descricao: 'O cadastro ganha Tamanho (P, M, G, GG) como segundo eixo, além da cor.',
   },
   calcado: {
     nome: 'Calçado',
