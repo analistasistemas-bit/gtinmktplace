@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { estoqueInicialDiverge, variacoesDivergem } from '../processar.ts';
+import {
+  entradaTamanhoEfetiva, estoqueInicialDiverge, validarTamanhosDaEntrada, variacoesDivergem,
+} from '../processar.ts';
 
 const gravada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
 const enviada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
@@ -242,5 +244,90 @@ describe('estoqueInicialDiverge', () => {
       codigos,
       [{ codigo: '00000003', quantidade: 7 }],
     )).toBe(true);
+  });
+});
+
+describe('entradaTamanhoEfetiva (ADR-0166)', () => {
+  const base = {
+    nomePai: 'Camiseta', origem: 'nacional' as const,
+    chaveCadastro: '11111111-1111-4111-8111-111111111111',
+    genero: 'masculino' as const,
+    variacoes: [{ nome: 'Azul', tamanho: 'P', preco: 50 }],
+  };
+
+  it('org SEM tipo habilitado tem genero e tamanho descartados', () => {
+    const r = entradaTamanhoEfetiva(base, []);
+    expect(r.genero).toBeUndefined();
+    expect(r.variacoes[0].tamanho).toBeUndefined();
+  });
+
+  it('org sem tipo mantem todo o resto intacto', () => {
+    const r = entradaTamanhoEfetiva(base, []);
+    expect(r.nomePai).toBe('Camiseta');
+    expect(r.variacoes[0].nome).toBe('Azul');
+    expect(r.variacoes[0].preco).toBe(50);
+  });
+
+  it('org COM roupa habilitado preserva genero e tamanho', () => {
+    const r = entradaTamanhoEfetiva(base, ['roupa']);
+    expect(r.genero).toBe('masculino');
+    expect(r.variacoes[0].tamanho).toBe('P');
+  });
+
+  it('org com calcado tambem preserva — os tipos sao combinaveis, o gate e por presenca', () => {
+    const r = entradaTamanhoEfetiva(base, ['calcado']);
+    expect(r.variacoes[0].tamanho).toBe('P');
+  });
+
+  it('nao muta a entrada original', () => {
+    const entrada = { ...base, variacoes: [{ ...base.variacoes[0] }] };
+    entradaTamanhoEfetiva(entrada, []);
+    expect(entrada.genero).toBe('masculino');
+    expect(entrada.variacoes[0].tamanho).toBe('P');
+  });
+});
+
+// R7 da revisao do Fable: ate aqui SO A UI restringia o valor de tamanho. Uma chamada HTTP
+// direta (ou um front desatualizado) gravava 'XG' numa org de roupa, e esse valor virava uma
+// linha de tabela de medidas no ML — dado de marketplace inventado, que e proibido.
+describe('validarTamanhosDaEntrada (ADR-0166 / R7)', () => {
+  const comTamanho = (tamanho: string) => ({
+    nomePai: 'Camiseta', origem: 'nacional' as const,
+    chaveCadastro: '11111111-1111-4111-8111-111111111111',
+    genero: 'masculino' as const,
+    variacoes: [{ nome: 'Azul', tamanho, preco: 50 }],
+  });
+
+  it('org de roupa aceita os tamanhos de roupa', () => {
+    for (const t of ['P', 'M', 'G', 'GG', 'Tamanho Único']) {
+      expect(validarTamanhosDaEntrada(comTamanho(t), ['roupa'])).toEqual([]);
+    }
+  });
+
+  it('org de roupa RECUSA numeracao de calcado', () => {
+    const erros = validarTamanhosDaEntrada(comTamanho('42'), ['roupa']);
+    expect(erros).toHaveLength(1);
+    expect(erros[0].campo).toBe('variacoes[0].tamanho');
+    expect(erros[0].mensagem).toMatch(/42/);
+  });
+
+  it('org de calcado aceita numeracao e recusa P', () => {
+    expect(validarTamanhosDaEntrada(comTamanho('42'), ['calcado'])).toEqual([]);
+    expect(validarTamanhosDaEntrada(comTamanho('P'), ['calcado'])).toHaveLength(1);
+  });
+
+  it('org com os DOIS tipos aceita as duas listas', () => {
+    expect(validarTamanhosDaEntrada(comTamanho('P'), ['roupa', 'calcado'])).toEqual([]);
+    expect(validarTamanhosDaEntrada(comTamanho('42'), ['roupa', 'calcado'])).toEqual([]);
+  });
+
+  it('valor inventado e recusado com o valor na mensagem, nunca corrigido', () => {
+    expect(validarTamanhosDaEntrada(comTamanho('XGG'), ['roupa'])[0].mensagem).toMatch(/XGG/);
+  });
+
+  it('variacao sem tamanho nao produz erro nenhum — INV-1', () => {
+    const sem = { ...comTamanho('P'), variacoes: [{ nome: 'Azul', preco: 50 }] };
+    expect(validarTamanhosDaEntrada(sem, ['roupa'])).toEqual([]);
+    expect(validarTamanhosDaEntrada(sem, [])).toEqual([]);
   });
 });

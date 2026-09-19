@@ -3,8 +3,9 @@
 // estoque na variação errada — valor financeiro não se assume, falha alto. Contagem NÃO basta:
 // reordenar duas linhas, ou excluir uma e adicionar outra, mantém a contagem.
 import { centavosExatos } from '../_shared/dinheiro.ts';
-import type { VariacaoEntrada, ProdutoEntrada } from '../_shared/produto/validar.ts';
+import type { VariacaoEntrada, ProdutoEntrada, ErroValidacao } from '../_shared/produto/validar.ts';
 import { camposFiscaisFaltantes } from '../_shared/fiscal/validar.ts';
+import { tamanhosValidosParaTipos } from '../_shared/produto/tipos-produto-valores.ts';
 
 /** Org sem módulo fiscal nunca deve gravar fiscal — `montarLinhasProduto` grava a coluna pela
  *  mera PRESENÇA de `fiscal`, então um payload com o campo (engano, ou chamada HTTP direta) tem
@@ -13,6 +14,51 @@ export function fiscalEfetivo(
   p: ProdutoEntrada, moduloFiscalAtivo: boolean,
 ): ProdutoEntrada['fiscal'] {
   return moduloFiscalAtivo ? p.fiscal : undefined;
+}
+
+/** ADR-0166. Mesmo motivo de `fiscalEfetivo`: `montarLinhasProduto` grava as colunas pela mera
+ *  PRESENÇA do campo, então um payload com `genero`/`tamanho` vindo de uma org SEM tipo de
+ *  produto habilitado (engano do front, ou chamada HTTP direta) tem que ser descartado ANTES de
+ *  chegar lá. Sem isto a org grava um eixo de variação que não contratou, e esse eixo chega ao
+ *  payload do Mercado Livre.
+ *
+ *  Não muta a entrada — devolve cópia rasa com as variações também copiadas. */
+export function entradaTamanhoEfetiva(
+  p: ProdutoEntrada, tipos: readonly string[],
+): ProdutoEntrada {
+  if (tipos.length > 0) return p;
+  return {
+    ...p,
+    genero: undefined,
+    variacoes: p.variacoes.map((v) => ({ ...v, tamanho: undefined })),
+  };
+}
+
+/** R7 (revisão do Fable): o valor de `tamanho` tem que pertencer à lista do TIPO da org. Antes
+ *  disto só a UI restringia — uma chamada HTTP direta gravava 'XG' numa org de roupa, e esse
+ *  valor viraria uma linha da tabela de medidas no ML (dado de marketplace inventado, proibido
+ *  pelo CLAUDE.md).
+ *
+ *  Roda DEPOIS de `entradaTamanhoEfetiva`: para org sem tipo habilitado o campo já chegou aqui
+ *  zerado, então esta função é um no-op para ela (INV-1). A lista vem da fonte única
+ *  (`_shared/produto/tipos-produto-valores.ts`), a mesma que o frontend usa — não há segunda
+ *  cópia para divergir. */
+export function validarTamanhosDaEntrada(
+  p: ProdutoEntrada, tipos: readonly string[],
+): ErroValidacao[] {
+  const validos = tamanhosValidosParaTipos(tipos);
+  const erros: ErroValidacao[] = [];
+  p.variacoes?.forEach((v, i) => {
+    const t = v.tamanho?.trim();
+    if (!t) return;
+    if (!validos.includes(t)) {
+      erros.push({
+        campo: `variacoes[${i}].tamanho`,
+        mensagem: `Tamanho "${t}" não pertence à lista do tipo de produto desta organização.`,
+      });
+    }
+  });
+  return erros;
 }
 
 /** Org com módulo fiscal exige entrada fiscal completa; sem módulo, ignora (spec §5). */

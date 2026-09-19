@@ -19,7 +19,11 @@ import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { validarProdutoNovo, montarLinhasProduto, type ProdutoEntrada } from '../_shared/produto/validar.ts';
 import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, codigosJaUsados, derivarCodigos } from '../_shared/produto/codigos.ts';
-import { estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, fiscalEfetivo } from './processar.ts';
+import {
+  estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, fiscalEfetivo,
+  entradaTamanhoEfetiva, validarTamanhosDaEntrada,
+} from './processar.ts';
+import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -60,6 +64,20 @@ Deno.serve(async (req) => {
   // cliente HTTP direto) nunca deve chegar em `montarLinhasProduto`, que grava a coluna só pela
   // PRESENÇA de `fiscal`.
   produto.fiscal = fiscalEfetivo(produto, moduloFiscal);
+
+  // ADR-0166: gênero/tamanho só existem para org com tipo de produto habilitado. Diferente do
+  // gate de módulo (que devolve 403), aqui o payload é SANEADO em vez de recusado: o campo é
+  // aditivo e o cadastro sem ele é um cadastro válido — recusar transformaria um front
+  // desatualizado num cadastro impossível. `tiposProdutoDaOrg` LANÇA em erro de leitura (nunca
+  // devolve [] silencioso), e o throw sobe como 500 — o operador retenta.
+  const tiposProduto = await tiposProdutoDaOrg(admin, orgId);
+  produto = entradaTamanhoEfetiva(produto, tiposProduto);
+
+  // R7: valor de tamanho fora da lista do tipo da org é 400 explícito, na MESMA forma dos erros
+  // de `validarProdutoNovo` (o handler já sabe responder `{ erros }` com 400). Nunca corrigir
+  // para o valor "mais parecido": isso é inventar dado de produto.
+  const errosTamanho = validarTamanhosDaEntrada(produto, tiposProduto);
+  if (errosTamanho.length > 0) return json({ erros: errosTamanho }, 400);
 
   const erros = validarProdutoNovo(produto);
   if (erros.length > 0) return json({ erros }, 400);
