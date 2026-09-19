@@ -1324,6 +1324,41 @@ export type Database = {
           },
         ]
       }
+      ml_size_charts: {
+        Row: {
+          chart_id: string
+          connection_id: string
+          criado_em: string
+          domain_id: string
+          genero: string
+          linhas: Json
+        }
+        Insert: {
+          chart_id: string
+          connection_id: string
+          criado_em?: string
+          domain_id: string
+          genero: string
+          linhas: Json
+        }
+        Update: {
+          chart_id?: string
+          connection_id?: string
+          criado_em?: string
+          domain_id?: string
+          genero?: string
+          linhas?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_size_charts_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "marketplace_connections"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_vendas: {
         Row: {
           atualizado_em: string
@@ -3661,3 +3696,5 @@ export const Constants = {
     },
   },
 } as const
+A new version of Supabase CLI is available: v2.117.0 (currently installed v2.101.0)
+We recommend updating regularly for new features and bug fixes: https://supabase.com/docs/guides/cli/getting-started#updating-the-supabase-cli
