@@ -10,6 +10,12 @@ describe('TAMANHOS_ROUPA', () => {
   });
 });
 
+describe('NUMERACOES_CALCADO', () => {
+  it('vem da fonte unica com os pares de meio-numero do padrao ML', () => {
+    expect(NUMERACOES_CALCADO).toContain('39/40');
+  });
+});
+
 describe('opcoesDeTamanho', () => {
   it('org sem tipo nao oferece nenhum grupo — o campo Tamanho nem aparece', () => {
     expect(opcoesDeTamanho([])).toEqual([]);
