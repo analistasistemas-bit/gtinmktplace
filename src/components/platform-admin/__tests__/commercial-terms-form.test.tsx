@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CommercialTermsForm } from '../commercial-terms-form';
@@ -47,7 +47,7 @@ afterEach(() => {
 });
 
 describe('CommercialTermsForm', () => {
-  it('salva modalidade 2, infraestrutura e vigência no próximo mês', async () => {
+  it('salva primeiro contrato iniciando no mês corrente por padrão com setup_due_month correspondente', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
@@ -62,8 +62,88 @@ describe('CommercialTermsForm', () => {
       modality: 2,
       monthly_fee_cents: 0,
       sonar_unit_cents: 60_000,
-      starts_on: '2026-10-01',
+      starts_on: '2026-09-01',
+      setup_due_month: '2026-09',
     }));
+  });
+
+  it('ao selecionar próximo mês, ajusta setup_due_month para não anteceder a vigência', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText('Início da vigência'), '2026-10-01');
+    await user.type(screen.getByLabelText('Motivo'), 'início futuro');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      org_id: 'org-a',
+      starts_on: '2026-10-01',
+      setup_due_month: '2026-10',
+    }));
+  });
+
+  it('sanitiza setup_due_month no submit para nunca anteceder starts_on mesmo se o input for alterado manualmente', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    // Seleciona vigencia para o proximo mes (2026-10-01)
+    await user.selectOptions(screen.getByLabelText('Início da vigência'), '2026-10-01');
+
+    // Simula alteracao manual no campo Mes da implantacao de volta para 2026-09
+    const setupInput = screen.getByLabelText('Mês da implantação');
+    await user.clear(setupInput);
+    await user.type(setupInput, '2026-09');
+
+    await user.type(screen.getByLabelText('Motivo'), 'teste sanitizacao');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    // Comprova que o payload final submetido aplicou o clamping para 2026-10
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      org_id: 'org-a',
+      starts_on: '2026-10-01',
+      setup_due_month: '2026-10',
+    }));
+  });
+
+  it('atualiza vigência, ajusta setup_due_month e alerta ao focar na janela se a virada do mês em Fortaleza ocorrer com formulário aberto', async () => {
+    // 2026-10-01T02:59:00Z corresponde a 2026-09-30 23:59:00 em America/Fortaleza
+    vi.setSystemTime(new Date('2026-10-01T02:59:00Z'));
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    expect(screen.getByLabelText('Início da vigência')).toHaveValue('2026-09-01');
+    expect(screen.getByLabelText('Mês da implantação')).toHaveValue('2026-09');
+
+    // 2026-10-01T03:01:00Z corresponde a 2026-10-01 00:01:00 em America/Fortaleza (virou o mês!)
+    vi.setSystemTime(new Date('2026-10-01T03:01:00Z'));
+
+    await act(async () => {
+      window.dispatchEvent(new Event('focus'));
+    });
+
+    expect(screen.getByLabelText('Início da vigência')).toHaveValue('2026-10-01');
+    expect(screen.getByLabelText('Mês da implantação')).toHaveValue('2026-10');
+    expect(screen.getByText(/A competência do mês virou/)).toBeInTheDocument();
+  });
+
+  it('rejeita vigência obsoleta, atualiza estado para novo mês e alerta se a virada do mês em Fortaleza ocorrer antes do submit', async () => {
+    vi.setSystemTime(new Date('2026-10-01T02:59:00Z'));
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    expect(screen.getByLabelText('Início da vigência')).toHaveValue('2026-09-01');
+    expect(screen.getByLabelText('Mês da implantação')).toHaveValue('2026-09');
+
+    // Simula passagem do tempo para o mês seguinte em Fortaleza
+    vi.setSystemTime(new Date('2026-10-01T03:01:00Z'));
+
+    await user.type(screen.getByLabelText('Motivo'), 'contrato no limite do mes');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    // Salvar não deve ter sido executado com dados passados
+    expect(mocks.save).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Início da vigência')).toHaveValue('2026-10-01');
+    expect(screen.getByLabelText('Mês da implantação')).toHaveValue('2026-10');
+    expect(screen.getByText(/A competência do mês virou/)).toBeInTheDocument();
   });
 
   it('permite primeiro contrato iniciando no mês corrente', async () => {
