@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-09-15
+**Ultima atualizacao:** 2026-09-19
 
 ## Snapshot
 
@@ -461,6 +461,18 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   Ver [ADR-0165](decisions/0165-faixas-regressivas-por-organizacao.md), o
   [design](superpowers/specs/2026-09-18-condicoes-comerciais-faixas-design.md) e o
   [plano de 11 tarefas](superpowers/plans/2026-09-18-condicoes-comerciais-faixas.md).
+- **Vigência imediata de condições comerciais no mês de cadastro (2026-09-19):** no menu de
+  organizações (`/admin`), a condição comercial cadastrada nascia com vigência fixada para o 1º dia
+  do mês seguinte (`currentMonthStart() + 1 mês`), impedindo fechamento e prévia da competência
+  corrente (`2026-09`). O formulário (`commercial-terms-form.tsx`) foi ajustado para definir como
+  padrão o início no mês corrente (`currentMonthStart()`), mantendo `setup_due_month` clampado para não
+  ficar anterior à vigência e adicionando tratamento robusto para virada de mês (fuso `America/Fortaleza`,
+  UTC-3). No banco de dados, migration cirúrgica e segura (`20260919130000_platform_terms_vigencia_setembro.sql`)
+  ajustou a vigência das 3 organizações inaugurais (`avil`, `diego-souza`, `daludishop`) de
+  `2026-10-01` para `2026-09-01`, com pré-condições estritas de não-mutação se o cenário não for o
+  esperado, asserções de contagem exata e registro em `platform_audit_events`. Ver
+  [design](superpowers/specs/2026-09-19-condicoes-comerciais-vigencia-cadastro-design.md) e
+  [plano](superpowers/plans/2026-09-19-condicoes-comerciais-vigencia-cadastro.md).
 
 ## Trilho de UX/design (2026-06-21, em producao)
 
