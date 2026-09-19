@@ -44,6 +44,8 @@ export interface VariacaoGravada {
   altura_cm?: number | string | null;
   largura_cm?: number | string | null;
   comprimento_cm?: number | string | null;
+  /** ADR-0166. Coluna `text` nullable — vem crua do PostgREST. */
+  tamanho?: string | null;
 }
 
 /**
@@ -74,7 +76,7 @@ function custosDivergem(a: number | string | null | undefined, b: number | strin
  * que é a razão de existir da feature.
  *
  * Compara TODAS as colunas que `montarLinhasProduto` grava e têm contrapartida armazenada —
- * `nome, gtin, preco, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm`. Uma lista
+ * `nome, gtin, tamanho, preco, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm`. Uma lista
  * curada (só nome/gtin/preço) deixaria passar a troca de posição entre duas linhas que diferem
  * apenas em peso ou custo, e aí o estoque inicial de uma entraria no SKU da outra.
  * `estoqueInicial` fica de fora DESTA função — sua contrapartida não é `variacoes.estoque` (que
@@ -88,7 +90,7 @@ function custosDivergem(a: number | string | null | undefined, b: number | strin
  * do preço, não por identidade estrita.
  */
 export function variacoesDivergem(
-  enviadas: Pick<VariacaoEntrada, 'nome' | 'gtin' | 'preco' | 'custo' | 'pesoGramas' | 'alturaCm' | 'larguraCm' | 'comprimentoCm'>[],
+  enviadas: Pick<VariacaoEntrada, 'nome' | 'gtin' | 'preco' | 'custo' | 'pesoGramas' | 'alturaCm' | 'larguraCm' | 'comprimentoCm' | 'tamanho'>[],
   gravadas: VariacaoGravada[],
 ): boolean {
   if (enviadas.length !== gravadas.length) return true;
@@ -96,6 +98,11 @@ export function variacoesDivergem(
     const g = gravadas[i];
     return (v.nome?.trim() || null) !== (g.nome ?? null)
       || (v.gtin?.trim() || null) !== (g.gtin ?? null)
+      // ADR-0166: MESMA normalização da gravação (`trim() || null`, montarLinhasProduto). Sem
+      // esta linha, trocar só o tamanho entre duas tentativas com a mesma chave passaria pelo
+      // guard, e `estoqueInicialDiverge` (que casa por índice) conferiria o estoque contra um SKU
+      // cujo tamanho já não é o do formulário — silencioso, e alimenta markup e preço.
+      || (v.tamanho?.trim() || null) !== (g.tamanho ?? null)
       || centavosExatos(v.preco) !== centavosExatos(g.preco ?? null)
       || custosDivergem(v.custo, g.custo)
       || centavosExatos(v.pesoGramas ?? null) !== centavosExatos(g.peso_gramas ?? null)

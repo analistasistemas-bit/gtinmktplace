@@ -119,6 +119,62 @@ describe('variacoesDivergem', () => {
   });
 });
 
+describe('variacoesDivergem — tamanho (ADR-0166)', () => {
+  const gravada = {
+    nome: 'Azul', gtin: null, preco: '50.00', custo: null,
+    peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null,
+    tamanho: 'P',
+  };
+
+  it('trocar SO o tamanho entre as tentativas DIVERGE', () => {
+    expect(variacoesDivergem(
+      [{ nome: 'Azul', gtin: null, preco: 50, custo: null, tamanho: 'M' }],
+      [gravada],
+    )).toBe(true);
+  });
+
+  it('mesmo tamanho nao diverge — o retry legitimo continua passando', () => {
+    expect(variacoesDivergem(
+      [{ nome: 'Azul', gtin: null, preco: 50, custo: null, tamanho: 'P' }],
+      [gravada],
+    )).toBe(false);
+  });
+
+  it('tamanho com espaco extra nao diverge (mesma normalizacao da gravacao)', () => {
+    expect(variacoesDivergem(
+      [{ nome: 'Azul', gtin: null, preco: 50, custo: null, tamanho: '  P  ' }],
+      [gravada],
+    )).toBe(false);
+  });
+
+  it('remover o tamanho DIVERGE (P gravado, vazio enviado)', () => {
+    expect(variacoesDivergem(
+      [{ nome: 'Azul', gtin: null, preco: 50, custo: null, tamanho: '' }],
+      [gravada],
+    )).toBe(true);
+  });
+
+  it('os dois lados sem tamanho nao divergem — o caso de toda org sem tipo habilitado', () => {
+    expect(variacoesDivergem(
+      [{ nome: 'Azul', gtin: null, preco: 50, custo: null }],
+      [{ ...gravada, tamanho: null }],
+    )).toBe(false);
+  });
+
+  // Reordenar duas linhas que so diferem no tamanho: sem esta cobertura, a contagem bate, todas
+  // as outras colunas batem, e o estoque inicial entra no SKU errado em silencio.
+  it('reordenar duas linhas que so diferem no tamanho DIVERGE', () => {
+    const gravadas = [{ ...gravada, tamanho: 'P' }, { ...gravada, tamanho: 'M' }];
+    expect(variacoesDivergem(
+      [
+        { nome: 'Azul', gtin: null, preco: 50, custo: null, tamanho: 'M' },
+        { nome: 'Azul', gtin: null, preco: 50, custo: null, tamanho: 'P' },
+      ],
+      gravadas,
+    )).toBe(true);
+  });
+});
+
 describe('estoqueInicialDiverge', () => {
   const codigos = ['00000002', '00000003'];
 

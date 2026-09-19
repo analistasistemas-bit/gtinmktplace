@@ -95,7 +95,7 @@ Deno.serve(async (req) => {
     // `produto.variacoes[i]` por índice. Ver o comentário do laço — sem esta ordenação o
     // estoque inicial entra no SKU errado.
     const { data: vars } = await admin.from('variacoes')
-      .select('id, codigo, nome, gtin, preco, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm')
+      .select('id, codigo, nome, gtin, tamanho, preco, custo, peso_gramas, altura_cm, largura_cm, comprimento_cm')
       .eq('familia_id', jaCadastrado.id).order('codigo');
     // Família e variações são dois inserts, dois commits: existe uma janela em que a família
     // já existe com zero variações. Sem este guard o operador chegaria à tela de fotos com
