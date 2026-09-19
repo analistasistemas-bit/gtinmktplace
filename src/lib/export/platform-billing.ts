@@ -16,7 +16,7 @@ function buildSnapshotBlocks(statement: BillingStatement): BlocoResumo[] {
         { label: 'Base de cobrança', valor: fmtBRL(statement.base_cents / 100) },
         {
           label: 'Percentual sobre receita',
-          valor: formatPercent(terms?.revenue_bps ?? null),
+          valor: formatPercent(statement.applied_bps ?? null),
         },
         { label: 'Consultas Sonar', valor: String(statement.sonar_units) },
         {

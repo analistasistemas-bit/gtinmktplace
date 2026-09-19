@@ -13,8 +13,11 @@ const statement: BillingStatement = {
     org_id: 'org-1',
     starts_on: '2026-08-01',
     modality: 2,
-    monthly_fee_cents: 50_000,
-    revenue_bps: 500,
+    monthly_fee_cents: 0,
+    revenue_bps_t1: 500,
+    revenue_bps_t2: 400,
+    revenue_bps_t3: 350,
+    revenue_bps_t4: 300,
     sonar_unit_cents: 120,
     setup_fee_cents: 0,
     setup_due_month: null,
@@ -28,6 +31,8 @@ const statement: BillingStatement = {
   refund_cents: 100_000,
   base_cents: 900_000,
   fee_cents: 45_000,
+  applied_bps: 500,
+  applied_tier: 1,
   sonar_units: 100,
   sonar_cents: 12_000,
   lines: [
@@ -121,8 +126,8 @@ describe('buildBillingReport', () => {
 
   it('permanece idêntico quando condições atuais mudam fora do snapshot', () => {
     const before = buildBillingReport(statement);
-    const currentTerms: CommercialTerms = { ...statement.terms!, revenue_bps: 900, sonar_unit_cents: 250 };
-    currentTerms.revenue_bps = 1_000;
+    const currentTerms: CommercialTerms = { ...statement.terms!, revenue_bps_t1: 900, sonar_unit_cents: 250 };
+    currentTerms.revenue_bps_t1 = 1_000;
 
     expect(buildBillingReport(statement)).toEqual(before);
   });
