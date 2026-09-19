@@ -1,3 +1,12 @@
+// ADR-0166 — TAMANHO/NUMERAÇÃO NÃO ENTRA POR AQUI (feature futura, deliberada).
+// O eixo de variação por tamanho (roupa) / numeração (calçado) é gravado APENAS pelo cadastro
+// manual (`cadastrar-produto`, ADR-0094). A planilha não tem coluna TAMANHO e não deve ganhar
+// uma nesta entrega: a org piloto do segmento não tem ERP nem opera por planilha, então a
+// coluna seria especulação. Quando aparecer cliente de roupa/calçado que opere por planilha,
+// a decisão a tomar é como uma linha de planilha expressa o par cor × tamanho (duas colunas?
+// sufixo no NOME?) — e isso é decisão de produto, não de código.
+// Consequência hoje: família vinda de planilha nasce com `variacoes.tamanho = null` e
+// `familias.genero = null`, que é exatamente o caminho de quem não tem tipo habilitado.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
