@@ -6,104 +6,117 @@ import { TAMANHOS_ROUPA } from '@/lib/tamanhos';
 
 const GRUPOS = [{ grupo: 'Tamanho', valores: TAMANHOS_ROUPA }];
 
-describe('GeradorVariacoes (ADR-0166)', () => {
-  it('gera o cartesiano das cores populares marcadas pelos tamanhos marcados', async () => {
-    const user = userEvent.setup();
-    const onGerar = vi.fn();
-    render(<GeradorVariacoes gruposTamanho={GRUPOS} onGerar={onGerar} />);
+function renderGerador(props: Partial<React.ComponentProps<typeof GeradorVariacoes>> = {}) {
+  const onMudarCores = vi.fn();
+  const onMudarTamanhos = vi.fn();
+  render(
+    <GeradorVariacoes
+      gruposTamanho={GRUPOS}
+      cores={props.cores ?? new Set()}
+      tamanhos={props.tamanhos ?? new Set()}
+      coresBloqueadas={props.coresBloqueadas ?? new Set()}
+      tamanhosBloqueados={props.tamanhosBloqueados ?? new Set()}
+      bloquearNovaCor={props.bloquearNovaCor ?? false}
+      avisoTamanho={props.avisoTamanho ?? (() => null)}
+      desabilitado={props.desabilitado ?? false}
+      onMudarCores={props.onMudarCores ?? onMudarCores}
+      onMudarTamanhos={props.onMudarTamanhos ?? onMudarTamanhos}
+    />,
+  );
+  return { onMudarCores, onMudarTamanhos };
+}
 
+describe('GeradorVariacoes (controlado — a seleção já é a ação)', () => {
+  it('não existe mais botão "Gerar variações": marcar já reporta a seleção nova', async () => {
+    const user = userEvent.setup();
+    const { onMudarCores } = renderGerador({ cores: new Set(['Preto']) });
+    expect(screen.queryByRole('button', { name: 'Gerar variações' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('checkbox', { name: 'Azul Marinho' }));
+    expect(onMudarCores).toHaveBeenCalledWith(new Set(['Preto', 'Azul Marinho']));
+  });
+
+  it('desmarcar reporta a seleção SEM aquela cor — o pai decide se confirma', async () => {
+    const user = userEvent.setup();
+    const { onMudarCores } = renderGerador({ cores: new Set(['Preto', 'Azul Marinho']) });
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
-    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    expect(onMudarCores).toHaveBeenCalledWith(new Set(['Azul Marinho']));
+  });
+
+  it('é controlado: o checkbox reflete a prop, não um estado interno', async () => {
+    const user = userEvent.setup();
+    renderGerador({ cores: new Set(['Preto']), onMudarCores: vi.fn() });
+    expect(screen.getByRole('checkbox', { name: 'Preto' })).toBeChecked();
+    await user.click(screen.getByRole('checkbox', { name: 'Azul Marinho' }));
+    // O pai não aplicou a mudança, então a UI não pode se mexer sozinha.
+    expect(screen.getByRole('checkbox', { name: 'Azul Marinho' })).not.toBeChecked();
+  });
+
+  it('marcar tamanho reporta a seleção nova de tamanhos', async () => {
+    const user = userEvent.setup();
+    const { onMudarTamanhos } = renderGerador({ tamanhos: new Set(['P']) });
     await user.click(screen.getByRole('checkbox', { name: 'M' }));
-    await user.click(screen.getByRole('button', { name: 'Gerar variações' }));
-
-    expect(onGerar).toHaveBeenCalledWith([
-      { cor: 'Azul Marinho', tamanho: 'P' }, { cor: 'Azul Marinho', tamanho: 'M' },
-      { cor: 'Preto', tamanho: 'P' }, { cor: 'Preto', tamanho: 'M' },
-    ]);
+    expect(onMudarTamanhos).toHaveBeenCalledWith(new Set(['P', 'M']));
   });
 
-  it('mostra a contagem ANTES de gerar, para o operador nao ser surpreendido', async () => {
+  it('cor fora da lista entra via "Adicionar cor" e aparece como badge removível', async () => {
     const user = userEvent.setup();
-    render(<GeradorVariacoes gruposTamanho={GRUPOS} onGerar={vi.fn()} />);
-    await user.click(screen.getByRole('checkbox', { name: 'Azul Marinho' }));
-    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
-    await user.click(screen.getByRole('checkbox', { name: 'Branco' }));
-    await user.click(screen.getByRole('checkbox', { name: 'P' }));
-    expect(screen.getByText(/3 variações/)).toBeInTheDocument();
-  });
-
-  it('botao travado enquanto nao ha cor nem tamanho', () => {
-    render(<GeradorVariacoes gruposTamanho={GRUPOS} onGerar={vi.fn()} />);
-    expect(screen.getByRole('button', { name: 'Gerar variações' })).toBeDisabled();
-  });
-
-  it('acima do limite mostra o erro e NAO chama onGerar', async () => {
-    const user = userEvent.setup();
-    const onGerar = vi.fn();
-    render(<GeradorVariacoes gruposTamanho={GRUPOS} onGerar={onGerar} />);
-    for (let i = 0; i < 13; i += 1) {
-      await user.type(screen.getByLabelText('Nova cor'), `Cor${i}`);
-      await user.click(screen.getByRole('button', { name: 'Adicionar cor' }));
-    }
-    for (const t of TAMANHOS_ROUPA) await user.click(screen.getByRole('checkbox', { name: t }));
-    await user.click(screen.getByRole('button', { name: 'Gerar variações' }));
-    expect(onGerar).not.toHaveBeenCalled();
-    expect(screen.getByRole('alert')).toHaveTextContent(/limite de 60/i);
-  });
-
-  // Achado do review da Task 11: a previa de contagem tinha que usar a MESMA dedup que
-  // gerarCombinacoes usa de verdade, senao previa e resultado divergem.
-  it('previa de contagem ja considera dedup (nao mostra numero que gerarCombinacoes nao entrega)', async () => {
-    const user = userEvent.setup();
-    render(<GeradorVariacoes gruposTamanho={GRUPOS} onGerar={vi.fn()} />);
-    await user.click(screen.getByRole('checkbox', { name: 'Azul Marinho' }));
-    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
-    await user.click(screen.getByRole('checkbox', { name: 'P' }));
-    // 2 cores unicas (Azul Marinho, Preto) x 1 tamanho = 2.
-    expect(screen.getByText(/2 variações/)).toBeInTheDocument();
-  });
-
-  // Pedido do Diego (2026-09-19): digitar cor por cor numa lista separada por vírgula era fácil
-  // de errar (typo mescla duas cores). Cores populares viram checkbox; cor fora da lista precisa
-  // de uma ação explícita de "Adicionar", uma de cada vez.
-  it('cor fora da lista de populares entra via "Adicionar cor" e aparece como badge removível', async () => {
-    const user = userEvent.setup();
-    const onGerar = vi.fn();
-    render(<GeradorVariacoes gruposTamanho={GRUPOS} onGerar={onGerar} />);
-
-    await user.type(screen.getByLabelText('Nova cor'), 'Verde Oliva');
+    const { onMudarCores } = renderGerador();
+    await user.type(screen.getByLabelText('Nova cor'), 'Verde Musgo');
     await user.click(screen.getByRole('button', { name: 'Adicionar cor' }));
-    expect(screen.getByText('Verde Oliva')).toBeInTheDocument();
-
-    await user.click(screen.getByRole('checkbox', { name: 'P' }));
-    await user.click(screen.getByRole('button', { name: 'Gerar variações' }));
-    expect(onGerar).toHaveBeenCalledWith([{ cor: 'Verde Oliva', tamanho: 'P' }]);
+    expect(onMudarCores).toHaveBeenCalledWith(new Set(['Verde Musgo']));
   });
 
   it('Enter no campo "Nova cor" adiciona sem precisar clicar no botão', async () => {
     const user = userEvent.setup();
-    render(<GeradorVariacoes gruposTamanho={GRUPOS} onGerar={vi.fn()} />);
-    await user.type(screen.getByLabelText('Nova cor'), 'Verde Oliva{enter}');
-    expect(screen.getByText('Verde Oliva')).toBeInTheDocument();
-    // Campo limpa depois de adicionar, pronto pra próxima.
-    expect(screen.getByLabelText('Nova cor')).toHaveValue('');
+    const { onMudarCores } = renderGerador();
+    await user.type(screen.getByLabelText('Nova cor'), 'Verde Musgo{Enter}');
+    expect(onMudarCores).toHaveBeenCalledWith(new Set(['Verde Musgo']));
   });
 
-  it('remove uma cor personalizada adicionada por engano', async () => {
+  it('cor personalizada já selecionada aparece como badge com botão de remover', async () => {
     const user = userEvent.setup();
-    render(<GeradorVariacoes gruposTamanho={GRUPOS} onGerar={vi.fn()} />);
-    await user.type(screen.getByLabelText('Nova cor'), 'Verde Oliva{enter}');
-    await user.click(screen.getByRole('button', { name: 'Remover cor Verde Oliva' }));
-    expect(screen.queryByText('Verde Oliva')).not.toBeInTheDocument();
+    const { onMudarCores } = renderGerador({ cores: new Set(['Verde Musgo']) });
+    await user.click(screen.getByRole('button', { name: 'Remover cor Verde Musgo' }));
+    expect(onMudarCores).toHaveBeenCalledWith(new Set());
   });
 
-  it('nao deixa adicionar cor duplicada (mesmo nome ja marcado ou ja adicionado)', async () => {
+  it('digitar o nome de uma cor popular marca o checkbox em vez de criar um badge duplicado', async () => {
     const user = userEvent.setup();
-    render(<GeradorVariacoes gruposTamanho={GRUPOS} onGerar={vi.fn()} />);
-    await user.type(screen.getByLabelText('Nova cor'), 'Preto{enter}');
-    // "Preto" já é uma cor popular (checkbox) — não deveria virar um badge duplicado.
-    expect(screen.queryByText('Preto', { selector: 'span' })).not.toBeInTheDocument();
+    const { onMudarCores } = renderGerador();
+    await user.type(screen.getByLabelText('Nova cor'), 'Preto{Enter}');
+    expect(onMudarCores).toHaveBeenCalledWith(new Set(['Preto']));
+    expect(screen.queryByRole('button', { name: 'Remover cor Preto' })).not.toBeInTheDocument();
+  });
+
+  // Limite: o clique que estouraria 60 nem acontece — nada de aceitar e falhar depois de gerar.
+  it('cor bloqueada pelo limite fica desabilitada e explica o motivo', () => {
+    renderGerador({ coresBloqueadas: new Set(['Amarelo']) });
+    const chip = screen.getByRole('checkbox', { name: 'Amarelo' });
+    expect(chip).toBeDisabled();
+    expect(chip).toHaveAccessibleDescription(/limite de 60/i);
+  });
+
+  it('tamanho bloqueado pelo limite também fica desabilitado', () => {
+    renderGerador({ tamanhosBloqueados: new Set(['GG']) });
+    expect(screen.getByRole('checkbox', { name: 'GG' })).toBeDisabled();
+  });
+
+  it('sem espaço para mais nenhuma cor, "Adicionar cor" trava mesmo com texto digitado', async () => {
+    const user = userEvent.setup();
+    renderGerador({ bloquearNovaCor: true });
+    await user.type(screen.getByLabelText('Nova cor'), 'Verde Musgo');
+    expect(screen.getByRole('button', { name: 'Adicionar cor' })).toBeDisabled();
+  });
+
+  it('aviso inline por tamanho aparece junto ao checkbox', () => {
+    renderGerador({ avisoTamanho: (v) => (v === 'GG' ? 'cadastrável, mas hoje não publica no Mercado Livre' : null) });
+    expect(screen.getByText(/não publica no Mercado Livre/)).toBeInTheDocument();
+  });
+
+  it('desabilitado (durante o salvamento) congela toda a seleção', () => {
+    renderGerador({ desabilitado: true });
+    expect(screen.getByRole('checkbox', { name: 'Preto' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'P' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Adicionar cor' })).toBeDisabled();
   });
 });

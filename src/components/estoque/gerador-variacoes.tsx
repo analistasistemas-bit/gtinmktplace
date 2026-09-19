@@ -1,94 +1,102 @@
-// ADR-0166: o operador marca as cores UMA vez e os tamanhos UMA vez; o botão monta o produto
-// cartesiano como linhas editáveis. Sem isto, cadastrar 4 cores × 5 tamanhos seria preencher 20
-// cards à mão — o que o operador faz hoje é justamente por isso que a org piloto não cadastrava
-// roupa no app.
+// ADR-0166 + spec 2026-09-19: o operador marca as cores UMA vez e os tamanhos UMA vez. Desde a
+// tela de grade o componente é CONTROLADO e não tem mais botão "Gerar": a seleção já é a ação
+// (cor e tamanho são cliques discretos, não um textarea onde fazia sentido esperar o operador
+// terminar de digitar). Quem reconcilia as linhas é o dialog, via `reconciliarGrade`.
 //
-// Cor é por CLIQUE, não por texto livre (pedido do Diego, 2026-09-19): uma lista separada por
-// vírgula era fácil de digitar errado (typo mescla "Azul Preto" numa cor só, sem o operador
-// perceber antes de gerar). CORES_POPULARES cobre o caso comum; "Adicionar cor" é a válvula de
-// escape pro resto, uma cor de cada vez — o próprio ato de clicar "Adicionar" é a checagem que a
-// vírgula não dava.
-//
-// O componente NÃO decide nada sobre a org: quem manda os grupos de tamanho é o diálogo, a
-// partir de `opcoesDeTamanho(tiposHabilitados)`. Lista vazia de grupos = o bloco nem é renderizado.
+// Cor é por CLIQUE, não por texto livre: uma lista separada por vírgula era fácil de digitar
+// errado (typo mescla "Azul Preto" numa cor só). CORES_POPULARES cobre o caso comum;
+// "Adicionar cor" é a válvula de escape, uma cor de cada vez.
 import { useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { contarCombinacoes, gerarCombinacoes, type Combinacao, type GrupoTamanho } from '@/lib/tamanhos';
+import type { GrupoTamanho } from '@/lib/tamanhos';
 
-const CORES_POPULARES = [
+// Exportada: o dialog de grade precisa da mesma lista para calcular quais chips estourariam o
+// limite. Redigitá-la lá seria duas fontes divergindo na primeira cor nova. Exportar um não-
+// componente daqui é aceito pelo lint — `react-refresh/only-export-components` roda com
+// `allowConstantExport: true` (eslint.config.js:26-29) e isto é um `const`.
+export const CORES_POPULARES = [
   'Preto', 'Branco', 'Cinza', 'Azul Marinho', 'Azul Royal', 'Vermelho',
   'Verde Bandeira', 'Amarelo', 'Rosa', 'Roxo', 'Marrom', 'Bege',
 ] as const;
 
-export function GeradorVariacoes({ gruposTamanho, onGerar }: {
-  gruposTamanho: GrupoTamanho[];
-  /** Chamado só quando a geração é válida. O diálogo é quem substitui as linhas. */
-  onGerar: (combinacoes: Combinacao[]) => void;
-}) {
-  const [coresPopulares, setCoresPopulares] = useState<Set<string>>(new Set());
-  const [coresPersonalizadas, setCoresPersonalizadas] = useState<string[]>([]);
-  const [novaCor, setNovaCor] = useState('');
-  const [tamanhos, setTamanhos] = useState<Set<string>>(new Set());
-  const [erro, setErro] = useState<string | null>(null);
+const MOTIVO_LIMITE = 'Marcar isto passaria do limite de 60 variações por cadastro.';
 
-  const listaCores = [...coresPopulares, ...coresPersonalizadas];
-  const listaTamanhos = [...tamanhos];
-  // Prévia da contagem: o operador vê o número ANTES de clicar, em vez de descobrir 40 cards.
-  // Usa a mesma dedup de `gerarCombinacoes` (via `contarCombinacoes`).
-  const total = contarCombinacoes(listaCores, listaTamanhos);
-  const vazio = listaCores.length === 0 && listaTamanhos.length === 0;
+function alternar(atual: ReadonlySet<string>, valor: string, marcar: boolean): Set<string> {
+  const next = new Set(atual);
+  if (marcar) next.add(valor); else next.delete(valor);
+  return next;
+}
+
+export function GeradorVariacoes({
+  gruposTamanho, cores, tamanhos, coresBloqueadas, tamanhosBloqueados, bloquearNovaCor,
+  avisoTamanho, desabilitado, onMudarCores, onMudarTamanhos,
+}: {
+  gruposTamanho: GrupoTamanho[];
+  cores: ReadonlySet<string>;
+  tamanhos: ReadonlySet<string>;
+  /** Cores AINDA NÃO marcadas cuja marcação estouraria LIMITE_VARIACOES_GERADAS. Calculadas
+   *  pelo dialog (só ele conhece as exclusões manuais) com `totalDaGrade`. */
+  coresBloqueadas: ReadonlySet<string>;
+  tamanhosBloqueados: ReadonlySet<string>;
+  /** true quando nem uma cor a mais caberia no limite — trava "Adicionar cor". */
+  bloquearNovaCor: boolean;
+  /** Aviso inline por valor de tamanho (ex.: numeração sem guia no ML). `null` = sem aviso. */
+  avisoTamanho: (valor: string) => string | null;
+  /** true durante `salvando`: congela a seleção (o casamento posicional exige a lista congelada). */
+  desabilitado: boolean;
+  onMudarCores: (cores: Set<string>) => void;
+  onMudarTamanhos: (tamanhos: Set<string>) => void;
+}) {
+  const [novaCor, setNovaCor] = useState('');
+  // Derivado da prop, não um segundo estado: cor personalizada é toda cor selecionada que não
+  // está na lista de populares. Dois estados divergiriam na primeira reconciliação.
+  const personalizadas = [...cores].filter((c) => !(CORES_POPULARES as readonly string[]).includes(c));
 
   function adicionarCorPersonalizada() {
     const cor = novaCor.trim();
     if (!cor) return;
-    // Digitou o nome de uma cor que já é popular? Marca o checkbox em vez de duplicar como
-    // badge — o operador não precisa saber que "Preto" já tinha um atalho.
-    if ((CORES_POPULARES as readonly string[]).includes(cor)) {
-      setCoresPopulares((prev) => new Set(prev).add(cor));
-    } else if (!coresPersonalizadas.includes(cor)) {
-      setCoresPersonalizadas((prev) => [...prev, cor]);
-    }
-    setErro(null);
+    // Cor popular digitada à mão apenas marca o checkbox — sem badge duplicado.
+    onMudarCores(alternar(cores, cor, true));
     setNovaCor('');
   }
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-dashed p-3">
-      <span className="text-sm font-medium">Gerar variações</span>
+      <span className="text-sm font-medium">Cores e tamanhos</span>
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-muted-foreground">Cores</span>
         <div className="flex flex-wrap gap-x-4 gap-y-2">
-          {CORES_POPULARES.map((cor) => (
-            <label key={cor} className="flex items-center gap-1.5 text-sm">
-              <Checkbox
-                aria-label={cor}
-                checked={coresPopulares.has(cor)}
-                onCheckedChange={(checked) => {
-                  setErro(null);
-                  setCoresPopulares((prev) => {
-                    const next = new Set(prev);
-                    if (checked === true) next.add(cor); else next.delete(cor);
-                    return next;
-                  });
-                }}
-              />
-              {cor}
-            </label>
-          ))}
+          {CORES_POPULARES.map((cor) => {
+            const bloqueada = coresBloqueadas.has(cor) && !cores.has(cor);
+            return (
+              <label key={cor} className="flex items-center gap-1.5 text-sm">
+                <Checkbox
+                  aria-label={cor}
+                  aria-describedby={bloqueada ? 'gerador-motivo-limite' : undefined}
+                  title={bloqueada ? MOTIVO_LIMITE : undefined}
+                  checked={cores.has(cor)}
+                  disabled={desabilitado || bloqueada}
+                  onCheckedChange={(checked) => onMudarCores(alternar(cores, cor, checked === true))}
+                />
+                {cor}
+              </label>
+            );
+          })}
         </div>
-        {coresPersonalizadas.length > 0 && (
+        {personalizadas.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
-            {coresPersonalizadas.map((cor) => (
+            {personalizadas.map((cor) => (
               <Badge key={cor} variant="secondary">
                 {cor}
                 <button
                   type="button"
                   aria-label={`Remover cor ${cor}`}
-                  onClick={() => setCoresPersonalizadas((prev) => prev.filter((c) => c !== cor))}
+                  disabled={desabilitado}
+                  onClick={() => onMudarCores(alternar(cores, cor, false))}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -101,6 +109,7 @@ export function GeradorVariacoes({ gruposTamanho, onGerar }: {
             aria-label="Nova cor"
             placeholder="Cor fora da lista"
             value={novaCor}
+            disabled={desabilitado}
             onChange={(e) => setNovaCor(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') { e.preventDefault(); adicionarCorPersonalizada(); }
@@ -109,65 +118,46 @@ export function GeradorVariacoes({ gruposTamanho, onGerar }: {
           />
           <Button
             type="button" variant="outline" size="sm"
-            disabled={!novaCor.trim()}
+            title={bloquearNovaCor ? MOTIVO_LIMITE : undefined}
+            disabled={desabilitado || bloquearNovaCor || !novaCor.trim()}
             onClick={adicionarCorPersonalizada}
           >
             <Plus className="h-3.5 w-3.5" /> Adicionar cor
           </Button>
         </div>
-        <span className="text-xs text-muted-foreground">
-          Produto sem cor? Deixe tudo desmarcado e marque só os tamanhos.
-        </span>
       </div>
       {gruposTamanho.map((g) => (
         <div key={g.grupo} className="flex flex-col gap-1.5">
           <span className="text-xs text-muted-foreground">{g.grupo}</span>
           <div className="flex flex-wrap gap-x-4 gap-y-2">
-            {g.valores.map((v) => (
-              <label key={v} className="flex items-center gap-1.5 text-sm">
-                <Checkbox
-                  aria-label={v}
-                  checked={tamanhos.has(v)}
-                  onCheckedChange={(checked) => {
-                    setErro(null);
-                    setTamanhos((prev) => {
-                      const next = new Set(prev);
-                      if (checked === true) next.add(v); else next.delete(v);
-                      return next;
-                    });
-                  }}
-                />
-                {v}
-              </label>
-            ))}
+            {g.valores.map((v) => {
+              const bloqueado = tamanhosBloqueados.has(v) && !tamanhos.has(v);
+              const aviso = avisoTamanho(v);
+              return (
+                <label key={v} className="flex flex-col gap-0.5 text-sm">
+                  <span className="flex items-center gap-1.5">
+                    <Checkbox
+                      aria-label={v}
+                      aria-describedby={bloqueado ? 'gerador-motivo-limite' : undefined}
+                      title={bloqueado ? MOTIVO_LIMITE : undefined}
+                      checked={tamanhos.has(v)}
+                      disabled={desabilitado || bloqueado}
+                      onCheckedChange={(checked) => onMudarTamanhos(alternar(tamanhos, v, checked === true))}
+                    />
+                    {v}
+                  </span>
+                  {aviso && <span className="text-xs text-amber-600 dark:text-amber-500">{aviso}</span>}
+                </label>
+              );
+            })}
           </div>
         </div>
       ))}
-      {erro && (
-        <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">
-          {erro}
-        </p>
-      )}
-      <div className="flex items-center gap-3">
-        <Button
-          type="button" variant="outline" size="sm" disabled={vazio}
-          onClick={() => {
-            try {
-              onGerar(gerarCombinacoes(listaCores, listaTamanhos));
-              setErro(null);
-            } catch (e) {
-              // Erro do limite (LIMITE_VARIACOES_GERADAS): mensagem acionável, e NADA é gerado.
-              setErro(e instanceof Error ? e.message : 'Não foi possível gerar as variações.');
-            }
-          }}
-        >
-          Gerar variações
-        </Button>
-        {!vazio && <span className="text-xs text-muted-foreground">{total} variações</span>}
-      </div>
+      {/* Um só alvo de `aria-describedby` para todos os chips bloqueados — o motivo é o mesmo. */}
+      <span id="gerador-motivo-limite" className="sr-only">{MOTIVO_LIMITE}</span>
       <span className="text-xs text-muted-foreground">
-        Gerar substitui as variações abaixo. Depois é só ajustar preço, estoque, GTIN e foto de
-        cada linha — ou remover as combinações que você não tem.
+        Cada cor marcada vira uma linha por tamanho marcado. Desmarcar tira só as linhas daquela
+        seleção; remover uma linha na mão mantém a grade parcial.
       </span>
     </div>
   );
