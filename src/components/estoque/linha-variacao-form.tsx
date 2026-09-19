@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { parseNumeroPtBr } from '@/lib/formato';
+import type { GrupoTamanho } from '@/lib/tamanhos';
 import { cn } from '@/lib/utils';
 
 export interface LinhaVariacao {
@@ -14,6 +15,8 @@ export interface LinhaVariacao {
    *  casamento com o id do banco é posicional, a foto acabaria gravada no SKU errado. */
   clientId: string;
   nome: string; gtin: string;
+  /** ADR-0166: tamanho (roupa) / numeração (calçado). String vazia = sem eixo de tamanho. */
+  tamanho: string;
   preco: string; custo: string; estoqueInicial: string;
   pesoGramas: string; alturaCm: string; larguraCm: string; comprimentoCm: string;
   foto: File | null;
@@ -22,7 +25,7 @@ export interface LinhaVariacao {
 export function novaLinha(): LinhaVariacao {
   return {
     clientId: crypto.randomUUID(),
-    nome: '', gtin: '', preco: '', custo: '', estoqueInicial: '',
+    nome: '', gtin: '', tamanho: '', preco: '', custo: '', estoqueInicial: '',
     pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '', foto: null,
   };
 }
@@ -31,7 +34,7 @@ export function novaLinha(): LinhaVariacao {
 export const parseNum = parseNumeroPtBr;
 
 export function erroCampo(campo: keyof LinhaVariacao, valor: string): string | null {
-  if (campo === 'nome' || campo === 'gtin') return null;
+  if (campo === 'nome' || campo === 'gtin' || campo === 'tamanho') return null;
   const n = parseNum(valor);
   if (Number.isNaN(n)) return 'Valor inválido.';
   if (campo === 'preco' && (n == null || n <= 0)) return 'Preço mínimo (líquido) é obrigatório e deve ser maior que zero.';
@@ -66,7 +69,7 @@ const LOGISTICA = [
 
 export function LinhaVariacaoForm({
   linha, indice, podeRemover, tentouSalvar, fotoObrigatoria, nomeObrigatorio, estoqueInicialObrigatorio,
-  onMudar, onRemover,
+  gruposTamanho, onMudar, onRemover,
 }: {
   linha: LinhaVariacao;
   indice: number;
@@ -84,6 +87,10 @@ export function LinhaVariacaoForm({
    *  do Diego: "tem campos obrigatórios pro ML e não aparece o * vermelho, ex.: estoque"). */
   nomeObrigatorio?: boolean;
   estoqueInicialObrigatorio?: boolean;
+  /** ADR-0166: grupos de tamanho oferecidos pela org (`opcoesDeTamanho`). `undefined` ou vazio =
+   *  org sem tipo de produto habilitado: o campo não é renderizado e a linha fica idêntica à de
+   *  hoje. Não usar `[]` como "ainda carregando" — ver useTiposProdutoHabilitados. */
+  gruposTamanho?: GrupoTamanho[];
   onMudar: (patch: Partial<LinhaVariacao>) => void;
   onRemover: () => void;
 }) {
@@ -158,8 +165,29 @@ export function LinhaVariacaoForm({
         </Button>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className={cn('grid gap-2', gruposTamanho?.length ? 'sm:grid-cols-3' : 'sm:grid-cols-2')}>
         {campoTexto('nome', 'Cor / nome')}
+        {!!gruposTamanho?.length && (
+          <div className="flex flex-col gap-1">
+            <label htmlFor={id('tamanho')} className="text-xs text-muted-foreground">
+              {gruposTamanho.length === 1 ? gruposTamanho[0].grupo : 'Tamanho / Numeração'}
+            </label>
+            <select
+              id={id('tamanho')}
+              aria-label={`Tamanho da variação ${n}`}
+              className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+              value={linha.tamanho}
+              onChange={(e) => onMudar({ tamanho: e.target.value })}
+            >
+              <option value="">—</option>
+              {gruposTamanho.map((g) => (
+                <optgroup key={g.grupo} label={g.grupo}>
+                  {g.valores.map((v) => <option key={v} value={v}>{v}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        )}
         {campoTexto('gtin', 'GTIN')}
       </div>
 
