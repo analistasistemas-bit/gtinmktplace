@@ -1783,62 +1783,77 @@ Troque o bloco de `terms-revenue` (um único `label`/`Input`) por 4 labels/input
             </label>
 ```
 
-por:
+por (os 4 campos entram AGRUPADOS num único item do grid pai, com `md:col-span-2` — sem isso o
+formulário passa a ter um número ímpar de itens de 1 coluna antes do `Motivo` e sobra uma célula
+vazia em telas `md+`; o agrupamento visual também deixa claro que são 4 pontos da MESMA escala, não
+4 campos soltos que por acaso têm nomes parecidos — achado da revisão, relevante porque esta tela é
+usada num painel admin premium):
 
 ```tsx
-            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t1">
-              <span className="font-medium">Percentual até R$100 mil</span>
-              <Input
-                id="terms-revenue-t1"
-                aria-label="Percentual até R$100 mil"
-                inputMode="decimal"
-                value={form.revenueT1}
-                onChange={(event) => {
-                  revenueTouched.current = true;
-                  set('revenueT1', event.target.value);
-                }}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t2">
-              <span className="font-medium">Percentual R$100–300 mil</span>
-              <Input
-                id="terms-revenue-t2"
-                aria-label="Percentual R$100–300 mil"
-                inputMode="decimal"
-                value={form.revenueT2}
-                onChange={(event) => {
-                  revenueTouched.current = true;
-                  set('revenueT2', event.target.value);
-                }}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t3">
-              <span className="font-medium">Percentual R$300–500 mil</span>
-              <Input
-                id="terms-revenue-t3"
-                aria-label="Percentual R$300–500 mil"
-                inputMode="decimal"
-                value={form.revenueT3}
-                onChange={(event) => {
-                  revenueTouched.current = true;
-                  set('revenueT3', event.target.value);
-                }}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t4">
-              <span className="font-medium">Percentual acima de R$500 mil</span>
-              <Input
-                id="terms-revenue-t4"
-                aria-label="Percentual acima de R$500 mil"
-                inputMode="decimal"
-                value={form.revenueT4}
-                onChange={(event) => {
-                  revenueTouched.current = true;
-                  set('revenueT4', event.target.value);
-                }}
-              />
-            </label>
+            <div className="space-y-2 md:col-span-2">
+              <span className="text-sm font-medium">Percentual por faixa de faturamento</span>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t1">
+                  <span className="text-xs text-muted-foreground">até R$100 mil</span>
+                  <Input
+                    id="terms-revenue-t1"
+                    aria-label="Percentual até R$100 mil"
+                    inputMode="decimal"
+                    value={form.revenueT1}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT1', event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t2">
+                  <span className="text-xs text-muted-foreground">R$100–300 mil</span>
+                  <Input
+                    id="terms-revenue-t2"
+                    aria-label="Percentual R$100–300 mil"
+                    inputMode="decimal"
+                    value={form.revenueT2}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT2', event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t3">
+                  <span className="text-xs text-muted-foreground">R$300–500 mil</span>
+                  <Input
+                    id="terms-revenue-t3"
+                    aria-label="Percentual R$300–500 mil"
+                    inputMode="decimal"
+                    value={form.revenueT3}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT3', event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t4">
+                  <span className="text-xs text-muted-foreground">acima de R$500 mil</span>
+                  <Input
+                    id="terms-revenue-t4"
+                    aria-label="Percentual acima de R$500 mil"
+                    inputMode="decimal"
+                    value={form.revenueT4}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT4', event.target.value);
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
 ```
+
+(os 4 `aria-label` ficam idênticos aos que já existiam — nenhum teste que usa `getByLabelText`
+precisa mudar por causa deste agrupamento; só o texto VISÍVEL dentro de cada `label` encurtou, já
+que o `aria-label` carrega a descrição completa. Com o wrapper, a contagem de itens de 1 coluna
+antes do `Motivo` volta a ser par: Modalidade, Infraestrutura, [4 faixas = 1 item], Sonar,
+Implantação, Mês da implantação = 6, igual a antes desta task.)
 
 Troque o bloco `terms-sonar` — adicione `disabled`:
 
@@ -2038,6 +2053,41 @@ Adicione dois testes novos ao final do `describe`, antes do `});` final:
     expect(screen.getByLabelText('Sonar por consulta')).not.toBeDisabled();
     expect(screen.getByLabelText('Infraestrutura mensal')).toBeDisabled();
     expect(screen.getByLabelText('Infraestrutura mensal')).toHaveValue('0,00');
+  });
+```
+
+**Achado Important da revisão**: o teste acima só confere o valor EXIBIDO no campo travado, nunca
+o que é de fato ENVIADO no `submit` quando o usuário digitou um valor diferente de zero antes de
+trocar de modalidade (o critério de aceite nº4 do brief). Sem isso, um refactor que removesse a
+ternária de força-zero do `submit` passaria despercebido pela suíte. Adicione mais dois testes,
+logo após o de cima:
+
+```ts
+  it('envia monthly_fee_cents zerado mesmo se o usuário digitou algo antes de trocar para modalidade 2', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    await user.clear(screen.getByLabelText('Infraestrutura mensal'));
+    await user.type(screen.getByLabelText('Infraestrutura mensal'), '999,00');
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await user.type(screen.getByLabelText('Motivo'), 'trava no envio');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ monthly_fee_cents: 0 }));
+  });
+
+  it('envia sonar_unit_cents zerado mesmo se o usuário digitou algo antes de trocar para modalidade 1', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await user.clear(screen.getByLabelText('Sonar por consulta'));
+    await user.type(screen.getByLabelText('Sonar por consulta'), '888,00');
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '1');
+    await user.type(screen.getByLabelText('Motivo'), 'trava no envio');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ sonar_unit_cents: 0 }));
   });
 ```
 
