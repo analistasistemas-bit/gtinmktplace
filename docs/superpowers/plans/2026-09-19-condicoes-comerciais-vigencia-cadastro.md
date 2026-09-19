@@ -109,10 +109,10 @@ end $$;
 commit;
 ```
 
-- [ ] **Step 2: Adicionar fixtures e asserções completas de readback na suite SQL**
+- [ ] **Step 2: Adicionar fixtures e asserções completas de readback ao final da suite SQL**
 
-Em `supabase/tests/platform_commercial.sql`:
-Adicionar bloco de teste antes e depois do `\ir` da migration:
+Ao final de `supabase/tests/platform_commercial.sql` (após a migration `20260918010000_platform_commercial_terms_tiers.sql`, garantindo compatibilidade com o schema de faixas):
+
 ```sql
 -- Fixtures para validar migration 20260919130000_platform_terms_vigencia_setembro.sql:
 insert into public.organizations (id, nome, slug) values
@@ -122,7 +122,6 @@ insert into public.organizations (id, nome, slug) values
   ('90000000-0000-0000-0000-000000000054', 'Controle Teste', 'org-controle')
 on conflict (slug) do nothing;
 
--- Inserir termos para as 4 com starts_on = '2026-10-01' e setup_due_month = '2026-10-01':
 insert into public.platform_commercial_terms (
   id, org_id, starts_on, modality, monthly_fee_cents,
   revenue_bps_t1, revenue_bps_t2, revenue_bps_t3, revenue_bps_t4,
@@ -142,52 +141,75 @@ do $$
 declare
   v_rec record;
   v_ctrl public.platform_commercial_terms%rowtype;
-  v_audits integer;
+  v_slug text;
+  v_found_count integer;
 begin
-  -- 1. Validar alvos: starts_on e setup_due_month = 2026-09-01
-  for v_rec in
-    select o.slug, t.starts_on, t.setup_due_month
+  -- 1. Validar alvos: starts_on e setup_due_month = 2026-09-01 via IS DISTINCT FROM
+  for v_slug in select unnest(array['avil', 'diego-souza', 'daludishop'])
+  loop
+    select o.slug, t.id, t.starts_on, t.setup_due_month
+    into strict v_rec
     from public.platform_commercial_terms t
     join public.organizations o on o.id = t.org_id
-    where o.slug in ('avil', 'diego-souza', 'daludishop')
-  loop
-    if v_rec.starts_on <> '2026-09-01'::date or v_rec.setup_due_month <> '2026-09-01'::date then
+    where o.slug = v_slug;
+
+    if v_rec.starts_on is distinct from '2026-09-01'::date
+       or v_rec.setup_due_month is distinct from '2026-09-01'::date then
       raise exception 'Falha no readback do alvo %: starts_on=%, setup_due_month=%',
         v_rec.slug, v_rec.starts_on, v_rec.setup_due_month;
     end if;
+
+    -- Validar evento de auditoria correlacionado individual para este slug
+    select e.* into strict v_rec
+    from public.platform_audit_events e
+    join public.organizations o on o.id = e.org_id
+    where o.slug = v_slug and e.action = 'platform_terms_vigencia_corrigida';
+
+    if v_rec.category is distinct from 'admin'
+       or v_rec.actor_id is not null
+       or v_rec.result is distinct from 'success'
+       or v_rec.target is distinct from (select id::text from public.platform_commercial_terms where org_id = v_rec.org_id)
+       or v_rec.reason is distinct from 'Ajuste de vigencia inicial: primeiro contrato inicia no mes do cadastro (2026-09)'
+       or (v_rec.details->>'org_slug') is distinct from v_slug
+       or (v_rec.details->>'starts_on_anterior') is distinct from '2026-10-01'
+       or (v_rec.details->>'starts_on_atual') is distinct from '2026-09-01'
+       or (v_rec.details->>'setup_due_month_anterior') is distinct from '2026-10-01'
+       or (v_rec.details->>'setup_due_month_atual') is distinct from '2026-09-01' then
+      raise exception 'Auditoria incompleta ou invalida para %: %', v_slug, v_rec;
+    end if;
   end loop;
 
-  -- 2. Validar controle: permaneceu 2026-10-01 e inalterado
-  select t.* into v_ctrl
+  -- 2. Validar controle: permaneceu 2026-10-01 e inalterado via SELECT INTO STRICT
+  select t.* into strict v_ctrl
   from public.platform_commercial_terms t
   join public.organizations o on o.id = t.org_id
   where o.slug = 'org-controle';
 
-  if v_ctrl.starts_on <> '2026-10-01'::date or v_ctrl.setup_due_month <> '2026-10-01'::date then
+  if v_ctrl.starts_on is distinct from '2026-10-01'::date
+     or v_ctrl.setup_due_month is distinct from '2026-10-01'::date
+     or v_ctrl.modality is distinct from 2
+     or v_ctrl.monthly_fee_cents is distinct from 0
+     or v_ctrl.sonar_unit_cents is distinct from 120
+     or v_ctrl.setup_fee_cents is distinct from 300000 then
     raise exception 'Tenant controle foi alterado indevidamente: %', v_ctrl;
   end if;
 
-  -- 3. Validar auditoria detalhada para cada um dos 3 slugs
-  for v_rec in
-    select e.details->>'org_slug' as slug, e.category, e.action, e.result, e.details
+  if exists (
+    select 1
     from public.platform_audit_events e
-    where e.action = 'platform_terms_vigencia_corrigida'
-  loop
-    if v_rec.category <> 'admin' or v_rec.result <> 'success'
-       or (v_rec.details->>'starts_on_anterior') <> '2026-10-01'
-       or (v_rec.details->>'starts_on_atual') <> '2026-09-01'
-       or (v_rec.details->>'setup_due_month_anterior') <> '2026-10-01'
-       or (v_rec.details->>'setup_due_month_atual') <> '2026-09-01' then
-      raise exception 'Auditoria incompleta ou invalida: %', v_rec;
-    end if;
-  end loop;
+    join public.organizations o on o.id = e.org_id
+    where o.slug = 'org-controle'
+  ) then
+    raise exception 'Tenant controle recebeu auditoria indevida';
+  end if;
 
-  select count(*) into v_audits
-  from public.platform_audit_events e
-  where e.action = 'platform_terms_vigencia_corrigida';
+  -- 3. Validar total de auditorias
+  select count(*) into strict v_found_count
+  from public.platform_audit_events
+  where action = 'platform_terms_vigencia_corrigida';
 
-  if v_audits <> 3 then
-    raise exception 'Esperava 3 eventos de auditoria, encontrou %', v_audits;
+  if v_found_count is distinct from 3 then
+    raise exception 'Esperava exatamente 3 auditorias, encontrou %', v_found_count;
   end if;
 
   -- 4. Validar trigger de imutabilidade ativo
