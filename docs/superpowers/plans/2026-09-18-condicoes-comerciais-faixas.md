@@ -404,12 +404,42 @@ Não toque na chamada "renegociação mês corrente" (a que espera a exceção `
 month was accepted'`) — ela já é rejeitada antes de persistir, por outro motivo, então não precisa
 satisfazer o novo `CHECK`.
 
-- [ ] **Step 3: Encaixar a migration na cadeia de testes `platform_commercial.sql`**
+- [ ] **Step 3: Encaixar a migration na cadeia de testes `platform_commercial.sql`, com uma fixture que exercita o backfill do Sonar de verdade**
+
+A rodada de correção do Step 2 (achado C1) removeu a asserção de contagem, e o Step 2 (achado C2)
+tirou toda organização pré-existente com `modality=2 e monthly_fee>0` — mas nenhuma fixture do
+arquivo tem hoje `modality=1 e sonar_unit_cents<>0` ANTES do `\ir` desta migration. Sem isso, o
+`UPDATE ... where modality = 1 and sonar_unit_cents <> 0` do backfill (Step 1) sempre casa **zero**
+linhas na suíte local — o teste passa mesmo que o `UPDATE` esteja quebrado, exatamente a classe de
+bug já registrada no projeto ("ramo só alcançado com valor > 0, todo teste usava 0"). Corrija isso
+criando uma organização com o defeito medido em produção, usando a API pública (RPC) ANTES da
+migration existir — é exatamente como o dado real de Daludi Shop/DSA foi parar lá.
 
 Em `supabase/tests/platform_commercial.sql:353`, logo após a linha
 `\ir ../migrations/20260918000000_adr164_implantacao_sobrevive_renegociacao.sql`, adicione:
 
 ```sql
+-- ADR-0165: fixture com o defeito real medido em producao (modalidade 1 cobrando Sonar do
+-- cliente), criada ANTES desta migration existir, pra provar que o backfill corrige de verdade
+-- (nao so que a suite nao quebra quando zero linhas violam).
+insert into public.organizations (id, nome, slug) values
+  ('90000000-0000-0000-0000-000000000094', 'Org Sonar Legado', 'org-sonar-legado');
+
+do $$
+declare
+  v_current date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+begin
+  perform public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000094',
+      'starts_on', v_current, 'modality', 1, 'monthly_fee_cents', 60000,
+      'revenue_bps', 500, 'sonar_unit_cents', 120, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'fixture pre-ADR-0165: modalidade 1 com sonar cobrado'
+    )
+  );
+end $$;
+
 \ir ../migrations/20260918010000_platform_commercial_terms_tiers.sql
 ```
 
@@ -622,6 +652,28 @@ begin
     raise exception 'trigger de imutabilidade deveria continuar ativo apos a migration';
   exception when check_violation then null;
   end;
+end $$;
+
+-- ADR-0165: prova que o backfill de fato CORRIGE o Sonar de modalidade 1 pre-existente (nao so
+-- que a suite nao quebra quando zero linhas violam). Org '...094' foi criada no Step 3, ANTES do
+-- \ir desta migration, exatamente com o defeito medido em producao.
+do $$
+declare
+  v_row public.platform_commercial_terms%rowtype;
+begin
+  select * into v_row from public.platform_commercial_terms
+  where org_id = '90000000-0000-0000-0000-000000000094'
+  order by starts_on desc, version desc limit 1;
+  if v_row.sonar_unit_cents <> 0 then
+    raise exception 'backfill nao zerou o sonar de modalidade 1 pre-existente: %', v_row;
+  end if;
+  if not exists (
+    select 1 from public.platform_audit_events
+    where org_id = '90000000-0000-0000-0000-000000000094'
+      and action = 'platform_terms_sonar_corrected'
+  ) then
+    raise exception 'correcao do sonar nao gerou evento de auditoria para a organizacao';
+  end if;
 end $$;
 ```
 
