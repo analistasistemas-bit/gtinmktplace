@@ -1,7 +1,7 @@
 # Especificação de Design — Vigência Imediata no Cadastro de Condições Comerciais
 
 **Data:** 2026-09-19  
-**Status:** Aprovado para planejamento (Revisado pós-Adversarial Codex R7 — Blindagem Multi-tenant e Fuso Horário)  
+**Status:** Aprovado para planejamento (Revisado pós-Adversarial Codex R8 — Blindagem Multi-tenant e Fuso Horário)  
 **Autor:** Diego / Antigravity  
 **Contexto:** Menu Organizações (`/admin`) e Detalhe da Organização (`/admin/organizacoes/:id`)
 
@@ -36,7 +36,7 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
    - O mês padrão da taxa de implantação (`setupDueMonth`) no estado inicial deve ser o mês corrente (`startsOn.slice(0, 7)`).
    - **Clamping de vigência e implantação:** Caso o operador selecione explicitamente "Próximo mês" (`startsOn` avançando para `AAAA-MM+1`), o campo `setupDueMonth` deve ser automaticamente ajustado caso seja menor que `startsOn.slice(0, 7)`, garantindo que nunca seja enviado um payload que viole a constraint `setup_due_month >= starts_on` (tanto no `onChange` quanto na sanitização do `submit`).
    - **Conexão estrita no payload:** O valor sanitizado `effectiveSetupDue` deve ser explicitamente mapeado no objeto enviado a `save.mutateAsync({ setup_due_month: effectiveSetupDue, ... })`.
-   - **Proteção contra virada de competência em America/Fortaleza:** `currentMonth` e `nextMonth` são calculados dinamicamente no fuso de Fortaleza (`America/Fortaleza`, UTC-3). Se a tela permanecer aberta durante a virada do mês (às 00:00 de Fortaleza = 03:00 UTC), tanto ao recuperar o foco da janela (`focus`) quanto no clique de submissão (`submit`), o formulário deve impedir o envio com competência passada, atualizar para o novo mês corrente, ajustar `setupDueMonth` e exibir aviso ao operador: `"A competência do mês virou enquanto o formulário estava aberto. A vigência foi ajustada para o mês atual. Revise e confirme o salvamento."`
+   - **Proteção contra virada de competência em America/Fortaleza:** `currentMonth` e `nextMonth` são calculados dinamicamente no fuso de Fortaleza (`America/Fortaleza`, UTC-3). Se a tela permanecer aberta durante a virada do mês (às 00:00 de Fortaleza = 03:00 UTC), tanto ao recuperar o foco da janela (`focus`) quanto no clique de submissão (`submit`), o formulário deve impedir o envio com competência passada, atualizar `startsOn` para o novo mês corrente, ajustar `setupDueMonth` para a nova competência e exibir aviso ao operador: `"A competência do mês virou enquanto o formulário estava aberto. A vigência foi ajustada para o mês atual. Revise e confirme o salvamento."`
 
 2. **Renegociações futuras mantidas:**
    - A regra de renegociação permanece inalterada: contratos posteriores para organizações que já possuem termo comercial continuam valendo a partir do próximo mês (`effectiveStartsOn = nextMonthStart()`), preservando a estabilidade da competência em andamento.
@@ -71,10 +71,11 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
 
    function syncMonthRollover(nowMonth: string) {
      setStartsOn(nowMonth);
+     const minSetupMonth = nowMonth.slice(0, 7);
      setForm((previous) => ({
        ...previous,
-       setupDueMonth: previous.setupDueMonth && previous.setupDueMonth < nowMonth.slice(0, 7)
-         ? nowMonth.slice(0, 7)
+       setupDueMonth: previous.setupDueMonth && previous.setupDueMonth < minSetupMonth
+         ? minSetupMonth
          : previous.setupDueMonth,
      }));
      setError('A competência do mês virou enquanto o formulário estava aberto. A vigência foi ajustada para o mês atual. Revise e confirme o salvamento.');
@@ -174,7 +175,10 @@ Arquivo: `supabase/migrations/20260919130000_platform_terms_vigencia_setembro.sq
 -- devido ao valor padrão do formulário anterior. Esta migration ajusta especificamente
 -- as três organizações para 2026-09-01 para habilitar previsão e fechamento de 2026-09.
 
-do $$
+create or replace function pg_temp.executar_migracao_vigencia_setembro()
+returns void
+language plpgsql
+as $$
 declare
   v_expected_orgs integer;
   v_target_slug text;
@@ -306,7 +310,11 @@ begin
 
   -- 8. Reabilitar o trigger incondicionalmente
   alter table public.platform_commercial_terms enable trigger platform_commercial_terms_no_mutation;
-end $$;
+end;
+$$;
+
+select pg_temp.executar_migracao_vigencia_setembro();
+drop function if exists pg_temp.executar_migracao_vigencia_setembro();
 ```
 
 ---
@@ -317,15 +325,16 @@ end $$;
    - Substituição do teste padrão existente para esperar `starts_on = '2026-09-01'` e `setup_due_month = '2026-09'`.
    - Teste de clamping na seleção de vigência futura.
    - Teste de sanitização no submit contra input manual de mês de implantação defasado.
-   - Teste defensivo de virada de mês com formulário aberto atravessando o fuso de Fortaleza (`02:59Z → 03:01Z`), testando o evento de foco na janela.
-   - Teste defensivo de virada de mês atravessando `02:59Z → 03:01Z` no evento de submit.
+   - Teste defensivo de virada de mês no fuso de Fortaleza (`02:59Z → 03:01Z`) via `window.dispatchEvent` envolvido em `act()`, validando `startsOn = '2026-10-01'`, `setupDueMonth = '2026-10'` e mensagem de alerta.
+   - Teste defensivo de virada de mês no `submit` cruzando `02:59Z → 03:01Z`, comprovando que bloqueia o salvamento e atualiza `startsOn = '2026-10-01'` e `setupDueMonth = '2026-10'` na UI com alerta.
 2. **Typecheck e Lint:**
    - Executar `npx tsc -b --force`.
    - Executar `pnpm eslint src/components/platform-admin/commercial-terms-form.tsx src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`.
 3. **Suite SQL (`supabase/tests/platform_commercial.sql`):**
-   - Teste de 0 organizações (no-op absoluto).
-   - Teste de 1 e 2 organizações (abort com sqlstate 23514).
-   - Teste de 3 organizações + tenant controle com asserções completas de readback.
+   - Teste de 0 organizações (no-op comprovado via contagem antes e depois em tabela temporária).
+   - Teste de 1 organização (executa `pg_temp.executar_migracao_vigencia_setembro()` e valida que lança `23514`).
+   - Teste de 2 organizações (executa `pg_temp.executar_migracao_vigencia_setembro()` e valida que lança `23514`).
+   - Teste de 3 organizações + tenant controle com asserções completas de readback e teste de trigger imutável sem falsos positivos.
    - Executar via `psql -U supabase_admin -d codex_platform_admin_test_20260906 -v ON_ERROR_STOP=1 -f supabase/tests/platform_commercial.sql`.
 4. **Gate Operacional de Produção (AGENTS.md):**
    - Preview somente-leitura dos 3 contratos reais + digest MD5 de isolamento dos demais tenants nas tabelas `platform_commercial_terms` e `platform_audit_events`.
