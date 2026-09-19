@@ -54,6 +54,12 @@ granularidade definida, foto por cor sem regra de atualização) e 2 melhorias d
 abaixo já incorporam essas decisões — o texto não separa mais "achado da Astra" de "decisão
 original", é uma spec só, já corrigida.
 
+Em seguida, uma terceira revisão (Fable, leitura independente sem ter visto o brainstorming)
+encontrou que "reaproveita `LinhaVariacaoForm`" e "reaproveita `subirLoteDeFotos`" eram otimistas
+demais — boa parte da lógica do dialog atual é closure interna, não importável como está — e propôs
+um desenho interno mais simples pra herança e pra reconciliação da grade. Também já incorporado
+abaixo.
+
 ## Decisão
 
 **Duas telas fisicamente separadas + herança de campo único com destrava por linha + foto por cor.**
@@ -68,7 +74,22 @@ ADR-0166 (remove `temEixoTamanho`, `gruposTamanho`, o campo Gênero e o import d
 
 ### 2. Tela nova — `src/components/estoque/dialog-cadastro-grade.tsx`
 
-Componente novo, não uma variante condicional do dialog atual.
+Componente novo, não uma variante condicional do dialog atual — mas **não reescrito do zero**.
+
+**Extração obrigatória antes de construir o dialog novo (achado do Fable):** ~500 das 860 linhas de
+`dialog-cadastro-produto.tsx` (upload de fotos em lote com retry — `subirLoteDeFotos`/`subirFoto`,
+etapa 2 de fotos, estado de `fotosEnviadas`/`trocando`/`confirmarFechar`, tratamento de 409 —
+`resultadoAmbiguo`/`divergencia`, `chaveCadastro`, e o efeito de sugestão de NCM) são **closures
+internas do componente**, não algo importável como está. "Reaproveita" só é verdade depois de extrair
+essas partes pra um hook `useCadastroProduto()` + componente `EtapaFotos` compartilhados — usados
+pelos DOIS dialogs (o atual e o novo). Sem essa extração, o dialog novo duplicaria ~500 linhas.
+`dialog-cadastro-produto.test.tsx` (900 linhas) já cobre esse comportamento e serve de rede de
+segurança pro refactor.
+
+`LinhaVariacaoForm` continua sendo o formulário do cadastro normal e do "Adicionar variação"
+(ADR-0129) — cor/tamanho travados, modo compacto e cadeado por campo (herança) são um layout
+diferente o suficiente pra merecer um componente próprio, **`LinhaGradeForm`**, reaproveitando o tipo
+`LinhaVariacao` e os helpers `erroCampo`/`parseNum` (não o JSX de `LinhaVariacaoForm`).
 
 **Passo 0 (só se a org tem os 2 tipos habilitados):** escolher Roupa ou Calçado — decide se o eixo
 de grade vem de `TAMANHOS_ROUPA` ou `NUMERACOES_CALCADO` (via `opcoesDeTamanho([tipoEscolhido])`).
@@ -90,11 +111,12 @@ Org com só 1 tipo pula direto pro passo 1.
 
 **Passo 2 — seleção de cor/tamanho, reaproveitando `GeradorVariacoes`:**
 Chips clicáveis de cor (populares + "Adicionar cor", já existente) e checkboxes de tamanho/numeração
-(já existente). Mudança de contrato: em vez de um botão "Gerar variações" que SUBSTITUI tudo,
-`GeradorVariacoes` passa a **emitir o diff** a cada clique — marcar uma cor/tamanho a mais adiciona
-só as linhas novas; desmarcar remove só as linhas daquela combinação. Sem botão "Gerar" — a seleção
-já É a ação (decisão explícita pra evitar um clique extra sem propósito, já que cor/tamanho são
-cliques discretos, não mais um textarea onde fazia sentido esperar o operador terminar de digitar).
+(já existente), só reportando a seleção pro dialog. Mudança de comportamento: em vez de um botão
+"Gerar variações" que SUBSTITUI tudo, o dialog **reconcilia a grade a cada clique** (ver "Desenho
+interno" abaixo) — marcar uma cor/tamanho a mais adiciona só as linhas novas; desmarcar remove só as
+linhas daquela combinação. Sem botão "Gerar" — a seleção já É a ação (decisão explícita pra evitar um
+clique extra sem propósito, já que cor/tamanho são cliques discretos, não mais um textarea onde fazia
+sentido esperar o operador terminar de digitar).
 
 **Regras de identidade, travadas nesta tela (achado da revisão Astra — o componente de hoje permite
 o oposto, e isso quebraria o diff):**
@@ -105,27 +127,40 @@ o oposto, e isso quebraria o diff):**
   (preço, custo, estoque, GTIN, dimensão, foto) é editável por linha. Editar cor/tamanho dentro da
   linha desalinharia a chave que o diff usa pra saber o que já existe; se o operador errou a
   combinação, remove a linha (ver abaixo) e ajusta os chips.
-- **Remover uma linha manualmente é permanente até nova ação explícita**: marcar o mesmo
-  cor/tamanho nos chips de novo NÃO recria sozinha uma linha que o operador removeu — o diff só
-  adiciona o que nunca existiu ou o que foi desmarcado-e-remarcado deliberadamente. Isso permite
-  grade parcial (ex.: Preto/P, Preto/M, Azul/M, sem Azul/P) sem a UI insistir em recompletar o
-  cartesiano.
+- **Remover uma linha manualmente é permanente ENQUANTO os dois eixos daquela combinação
+  continuarem marcados** — marcar o mesmo cor/tamanho de novo, com AMBOS já marcados antes e depois,
+  não recria sozinha a linha que o operador removeu. Isso permite grade parcial (ex.: Preto/P,
+  Preto/M, Azul/M, sem Azul/P) sem a UI insistir em recompletar o cartesiano. **Mas desmarcar um eixo
+  inteiro (a cor ou o tamanho) e remarcar depois LIMPA essa memória de exclusão** pra aquele eixo —
+  desmarcar "Azul" já é a ação de "não quero Azul", remarcar já é "quero Azul de novo, por completo";
+  manter uma exclusão de célula viva através desse ciclo seria confuso, não uma continuidade real da
+  mesma decisão (achado do Fable).
 - **Desmarcar uma cor/tamanho que já tem linha(s) com dado preenchido** (GTIN, estoque, ou foto
   destravada individualmente) **pede confirmação** (`AlertDialog`, mesmo padrão já usado no projeto,
   ex. "Remover" do Publicados) antes de apagar; linha ainda vazia/intacta remove direto, sem
   confirmação.
-- **Limite de 60** (`LIMITE_VARIACOES_GERADAS`) é validado contra o **total resultante** a cada
-  clique — o chip que faria o total estourar fica desabilitado (com tooltip explicando o motivo),
-  em vez de aceitar o clique e falhar depois de gerar.
+- **Limite de 60** (`LIMITE_VARIACOES_GERADAS`) é validado contra o **cartesiano menos as exclusões
+  manuais** a cada clique — o chip que faria esse total estourar fica desabilitado (com tooltip
+  explicando o motivo), em vez de aceitar o clique e falhar depois de gerar.
+
+**Desenho interno (achado do Fable — mais simples que emitir eventos a cada clique):** o dialog é
+dono do estado bruto — `cores: Set<string>`, `tamanhos: Set<string>`, `removidas: Set<Chave>` (as
+exclusões manuais) — e uma função pura `reconciliarGrade(cores, tamanhos, removidas, linhasAtuais)`
+devolve `{ novas: Combinacao[], remover: Chave[] }` a cada mudança de seleção. `GeradorVariacoes`
+continua sendo só a UI de chips/checkboxes; a reconciliação (incluindo a regra acima de limpar
+`removidas` ao desmarcar um eixo inteiro) fica isolada numa função testável sem precisar montar o
+componente.
 
 Interface aproximada (a forma exata fecha na implementação/TDD):
 
 ```ts
 GeradorVariacoes({
   gruposTamanho: GrupoTamanho[],
-  onAdicionar: (novas: Combinacao[]) => void,
-  onRemover: (chaves: Array<{ cor: string; tamanho: string }>) => void,
+  cores: Set<string>, tamanhos: Set<string>,
+  onMudarCores: (cores: Set<string>) => void,
+  onMudarTamanhos: (tamanhos: Set<string>) => void,
 })
+// dialog: useEffect/memo chama reconciliarGrade() a cada mudança de cores/tamanhos/removidas
 ```
 
 **Passo 3 — a grade em si (lista, não matriz):** uma linha por combinação, no mesmo componente
@@ -137,25 +172,31 @@ expandem quando a linha tem alguma exceção. Evita repetir visualmente 6 campos
 **Herança é por CAMPO, não pela linha inteira.** Cada um dos 6 campos (Preço, Custo, Peso, Altura,
 Largura, Comprimento) tem seu próprio estado herdado/destravado por linha — destravar só o Preço não
 desvincula Custo ou Dimensão daquela mesma linha. Cada campo destravado ganha um botão **"Voltar a
-herdar"** que descarta o valor próprio e volta a seguir o cabeçalho. Mudar um valor no cabeçalho
-DEPOIS de gerar linhas só se propaga pros campos **ainda não destravados** — um campo destravado
-nunca é sobrescrito por uma mudança posterior no cabeçalho (evita perder edição do operador). Se o
-cabeçalho ficar vazio/inválido (só possível pro Preço, os únicos 5 restantes são opcionais), a linha
-nova simplesmente nasce sem herança nesse campo — equivalente a como o formulário se comporta hoje,
-não é um estado quebrado. GTIN e Estoque continuam por linha, sem herança — não existe "GTIN único"
-nem "estoque único" pra um produto com várias combinações.
+herdar"**.
 
-**Foto por cor, não por linha:** um campo de upload por cor selecionada (não por combinação). Ao
-gerar as linhas de uma cor, cada linha nasce com `foto` pré-preenchida com o arquivo daquela cor —
-reaproveita o mecanismo de upload por linha que já existe (`subirLoteDeFotos`, campo `foto` de
-`LinhaVariacao`) sem nenhuma mudança de contrato ali; o que muda é só COMO a UI inicializa esse campo
-(automaticamente a partir do estado por-cor, em vez de pedir uma foto por linha). **Trocar a foto de
-uma cor depois de já ter gerado linhas propaga pra todas as linhas daquela cor que ainda não tiveram
-a foto destravada/trocada individualmente** — mesmo princípio de herança por campo que preço/custo/
-dimensão usam. Cada linha ainda guarda sua própria foto no banco (mesmo arquivo enviado uma vez por
-SKU que compartilha a cor) — aceito como trade-off simples; não há necessidade de deduplicar
-armazenamento pra fotos de produto. Reenvio de foto que falhou no upload em lote reaproveita o upload
-manual avulso por variação que o dialog atual já tem — nada novo a construir aqui.
+**Desenho interno (achado do Fable — resolver na leitura, não propagar na escrita):** a linha guarda
+só os **overrides** que o operador de fato editou (`Partial<CamposHerdaveis>`), nunca uma cópia do
+valor herdado. O valor efetivo de cada campo é sempre calculado por uma função pura,
+`resolverLinha(cabecalho, fotoPorCor, linha)`, usada consistentemente por `montarPayload`,
+`podeSalvar` e `subirLoteDeFotos`. Com isso, mudar o cabeçalho já "propaga" sozinho pra qualquer
+campo sem override — não existe um evento de propagação pra disparar nem um bug de esquecer de
+disparar; e "Voltar a herdar" é só apagar a chave do override. Se o cabeçalho ficar vazio/inválido
+(só possível pro Preço, os únicos 5 restantes são opcionais), a linha sem override nesse campo
+simplesmente resolve pra vazio — equivalente a como o formulário se comporta hoje, não é um estado
+quebrado. GTIN e Estoque continuam por linha, sem herança — não existe "GTIN único" nem "estoque
+único" pra um produto com várias combinações.
+
+**Foto por cor, não por linha:** um campo de upload por cor selecionada (não por combinação), estado
+`fotoPorCor: Record<string, File>` no dialog — o mesmo `resolverLinha(cabecalho, fotoPorCor, linha)`
+da herança de preço resolve a foto efetiva de cada linha (override individual, se o operador destravou
+aquela linha, senão a foto da cor). Na hora de enviar, `subirLoteDeFotos` recebe a foto já resolvida
+por linha — sem nenhuma mudança de contrato nesse mecanismo, só a UI resolvendo o valor antes de
+chamar. Cada linha ainda guarda sua própria foto no banco (mesmo arquivo enviado uma vez por SKU que
+compartilha a cor) — aceito como trade-off simples; não há necessidade de deduplicar armazenamento
+pra fotos de produto (confirmado sem risco de publicação: roupa/calçado publica via User Products, 1
+item por SKU, sem a restrição "mesma foto pra toda a família" que `variations[]` legado teria).
+Reenvio de foto que falhou no upload em lote reaproveita o upload manual avulso por variação que o
+dialog atual já tem — nada novo a construir aqui.
 
 **Numeração de calçado sabidamente não publicável no ML** (pares como `"33/34"`, ou feminino
 `45`/`46` — já documentados em `tipos-produto-valores.ts` como fora de `COMPRIMENTO_PE_CM`) ganha um
@@ -163,7 +204,9 @@ aviso inline junto ao checkbox no passo 2, tipo "cadastrável, mas hoje não pub
 sem bloquear a seleção (o cadastro em si pode servir só pra controle de estoque, nem toda linha
 precisa ir pro ML). Mesmo espírito da remoção do Tamanho Único, mas sem remover a opção da lista
 porque aqui, ao contrário do Tamanho Único, a numeração existe de verdade fisicamente — só falta o
-ML aceitar.
+ML aceitar. **O aviso depende do Gênero do cabeçalho** (45/46 só ficam fora da tabela pra feminino —
+`COMPRIMENTO_PE_CM.feminino` para em 44, `COMPRIMENTO_PE_CM.masculino` vai até 48) — recalcula sempre
+que o Gênero muda, não é uma lista estática por numeração.
 
 **Resumo antes de salvar:** logo acima do botão "Cadastrar", uma linha de texto resume quantidade de
 SKUs, unidades totais (soma de estoque), quantas linhas ainda estão sem foto — pra conferência rápida
@@ -202,13 +245,29 @@ sumir do frontend) — por design já é seguro: uma aba antiga aberta no navega
 cadastro anterior com `'Tamanho Único'` salvo, é rejeitado pela edge com erro claro, não falha
 silenciosa (mesma trava que já protege contra qualquer valor fora da lista hoje).
 
+### 6. Órfãos a limpar (achado do Fable)
+
+Depois do revert de `dialog-cadastro-produto.tsx` e da remoção do Tamanho Único, ficam órfãos:
+- `gruposTamanho` como prop de `LinhaVariacaoForm` (só existia pro caminho de grade, que sai dali).
+- `linha-variacao-tamanho.test.tsx` (testa exatamente esse prop).
+- Descrição de `tipos-produto.ts:29` que cita "Tamanho Único" — atualizar o texto.
+- Conferir/ajustar: `tamanhos.test.ts:9,75,81`, `tipo-produto.test.ts:41`, `processar.test.ts:356`,
+  `dialog-cadastro-produto.test.tsx:906` (todos citam Tamanho Único ou o layout antigo do dialog).
+- **Checar por SQL (read-only) se existe alguma `variacoes.tamanho = 'Tamanho Único'` já gravada**
+  (o próprio Diego testou o cadastro antes de pedir a remoção) — vira dado morto sem problema, não
+  precisa de migration nem limpeza, só é bom saber que existe antes de estranhar no banco depois.
+- **ADR-0166 ganha uma nota de amendment**: o eixo Gênero/Tamanho/Cor sai do dialog de cadastro
+  normal e vira uma tela própria — decisão original (`temEixoTamanho` condicional no mesmo dialog)
+  revisada por este design.
+
 ## Abordagens consideradas
 
 1. **Esta (recomendada).** Lista + geração automática (já existente, comprovada pelo padrão de
    mercado) + herança de campo único com destrava por linha + foto por cor. Reaproveita
-   `GeradorVariacoes`, `LinhaVariacaoForm`, `cadastrarProduto`, `subirLoteDeFotos` quase sem mudança
-   de contrato — o grosso do trabalho é UI nova (`dialog-cadastro-grade.tsx`) e um ajuste de diff em
-   `GeradorVariacoes`.
+   `cadastrarProduto`/`subirLoteDeFotos` (edge/mecanismo de upload sem mudança de contrato) e os
+   helpers de `LinhaVariacaoForm` (`erroCampo`, `parseNum`) — mas exige extrair um hook
+   `useCadastroProduto()` + `EtapaFotos` compartilhados (achado do Fable) pra não duplicar a lógica
+   de upload/retry/409 do dialog atual, e um `LinhaGradeForm` próprio pro layout de linha da grade.
 2. **Matriz visual (planilha real, tamanho×coluna, cor×linha, célula=quantidade).** Era a sugestão
    inicial do Diego. Rejeitada depois da pesquisa: nenhum concorrente pesquisado usa esse padrão pra
    CADASTRO (existe em estoque/reposição); seria UI inteiramente nova, sem precedente validado, maior
@@ -252,26 +311,27 @@ pra não serem confundidos com lacuna nova:
 
 - `TAMANHOS_ROUPA` sem `'Tamanho Único'`; nenhum teste existente depende desse valor (checar
   `grep -rn "Tamanho Único"` antes de remover, pra achar qualquer teste que precise de ajuste).
-- `dialog-cadastro-produto.tsx`: sem Gênero/Tamanho/`GeradorVariacoes` pra nenhuma org, mesmo com
+- `reconciliarGrade(cores, tamanhos, removidas, linhasAtuais)` (função pura, testável isolada):
+  marcar cor/tamanho a mais devolve só as combinações que ainda não existiam em `novas`; desmarcar
+  devolve as combinações daquela seleção em `remover`; combinação já existente marcada de novo não
+  duplica; combinação removida manualmente NÃO reaparece em `novas` enquanto os dois eixos
+  continuarem marcados; desmarcar um eixo inteiro e remarcar LIMPA a exclusão daquele eixo em
+  `removidas` (a combinação volta); cor sem tamanho (ou vice-versa) não gera nada; total
+  (cartesiano − removidas) acima de 60 marca o próximo clique como bloqueado.
+- `resolverLinha(cabecalho, fotoPorCor, linha)` (função pura): sem override, resolve pro valor do
+  cabeçalho/foto da cor; com override, resolve pro valor próprio da linha; cabeçalho mudando depois
+  não afeta campo com override; "Voltar a herdar" limpa o override e volta a resolver do cabeçalho.
+- `useCadastroProduto()` (hook extraído): mesmo comportamento de hoje pros dois dialogs — upload em
+  lote com retry, tratamento de 409 (`ProdutoJaExisteError`/`CadastroResultadoAmbiguoError`),
+  `chaveCadastro` estável entre tentativas; cobertura via os testes já existentes de
+  `dialog-cadastro-produto.test.tsx`, migrados pro hook sem perder nenhum caso.
+- `dialog-cadastro-produto.tsx` (revertido): sem Gênero/Tamanho/grade pra nenhuma org, mesmo com
   `roupa`/`calcado` habilitado — comportamento agora é sempre igual ao de uma org sem nenhum tipo.
-- `GeradorVariacoes` (contrato novo): marcar uma cor/tamanho a mais chama `onAdicionar` só com as
-  combinações que ainda não existiam; desmarcar chama `onRemover` só com as combinações daquela
-  seleção; combinação já existente marcada de novo não duplica; combinação removida manualmente NÃO
-  reaparece sozinha ao remarcar o mesmo cor/tamanho; cor sem tamanho (ou vice-versa) não gera nada;
-  chip que estouraria o limite de 60 fica desabilitado.
-- `dialog-cadastro-grade.tsx` (novo):
-  - linha nova nasce com os 6 campos herdados do cabeçalho (preço/custo/peso/altura/largura/
-    comprimento), cada um com seu próprio estado herdado/destravado;
-  - destravar só um campo não destrava os outros da mesma linha; "Voltar a herdar" volta a seguir o
-    cabeçalho;
-  - mudar o cabeçalho depois de gerar linhas não sobrescreve campo já destravado;
-  - linha nova de uma cor já com foto escolhida nasce com aquela foto; trocar a foto da cor depois
-    propaga pras linhas que não destravaram foto individualmente;
-  - desmarcar cor/tamanho com linha vazia remove direto; com linha preenchida (GTIN/estoque/foto
-    destravada) pede confirmação primeiro;
+- `dialog-cadastro-grade.tsx` (novo, orquestra os testes acima em conjunto):
   - org com só 1 tipo habilitado pula o passo 0; org com os 2 tipos vê a escolha Roupa/Calçado;
     trocar o tipo depois de já ter linhas reseta a seleção (com confirmação se havia dado);
   - com o módulo fiscal ativo, o passo fiscal aparece e é obrigatório, igual ao dialog atual;
+  - aviso de numeração não publicável aparece/some ao trocar o Gênero do cabeçalho;
   - controles de adicionar/remover/destravar linha ficam desabilitados durante `salvando=true`.
 - Fluxo completo (`processar.test.ts` da edge `cadastrar-produto`, se necessário): payload final
   enviado pela tela de grade é campo a campo idêntico ao que a edge já aceita hoje — nenhuma mudança
