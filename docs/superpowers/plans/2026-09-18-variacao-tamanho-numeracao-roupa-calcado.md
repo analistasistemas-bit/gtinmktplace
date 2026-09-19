@@ -14,6 +14,8 @@
 
 ## Histórico de revisão
 
+2026-09-19 — **Renumeração de ADR (execução da Task 5).** `origin/main` já publicou ADR-0165 (faixas regressivas de cobrança, branch `cobranca-faixas-modalidade`, já mergeada) — colisão real, o mesmo risco já sinalizado no grilling. Todo o documento foi deslocado: o que era ADR-0165 (tipo de produto por org) virou **ADR-0166**, e o que era ADR-0166 (guia de tamanhos via API) virou **ADR-0167**. A migration da Task 5 já foi aplicada em produção com o número corrigido (`20260919105517_adr166_tipos_produto_por_org.sql`, commit `bd154e38`); o worktree também precisou de merge de `origin/main` (29 commits, sem conflito) para `db:check` ficar verde antes do push. Tasks 2 e 3 (ADRs) ainda não foram escritas — vão nascer já com os números corretos.
+
 2026-09-18 — Revisão do Fable (aprovado com ressalvas): 7 achados aplicados — ver correções nas Fases 2, 3, 4, 5 e 6.
 
 Os rótulos **R1-R7** abaixo identificam os **achados** e aparecem no corpo do plano, em comentário de código, junto de cada correção. Não confundir com **F1-F8** da tabela "Revisão do Fable — checklist consolidado" no fim do documento, que são os **checkpoints** de revisão.
@@ -211,7 +213,7 @@ Cada afirmação leva `CONFIRMADO` (com o comando + trecho da resposta) ou `NÃO
 ### Task 2: ADR do tipo de produto por organização
 
 **Files:**
-- Create: `docs/decisions/0165-tipo-de-produto-por-organizacao.md`
+- Create: `docs/decisions/0166-tipo-de-produto-por-organizacao.md`
 - Modify: `docs/decisions/README.md` (entrada no índice)
 
 **Interfaces:**
@@ -225,11 +227,11 @@ Cada afirmação leva `CONFIRMADO` (com o comando + trecho da resposta) ou `NÃO
 ls docs/decisions/ | sort | tail -3
 ```
 
-Esperado: `0164-implantacao-sobrevive-a-renegociacao.md` é o último. Use `0165`. Se `git fetch` revelou um `0165` em outra branch, use o próximo livre e ajuste todas as citações deste plano de uma vez.
+Esperado: `0164-implantacao-sobrevive-a-renegociacao.md` é o último. Use `0166`. Se `git fetch` revelou um `0166` em outra branch, use o próximo livre e ajuste todas as citações deste plano de uma vez.
 
 - [ ] **Step 2: Escrever o ADR**
 
-Formato exato de `docs/decisions/0164-implantacao-sobrevive-a-renegociacao.md`: `# ADR-0165 — <título>`, depois `**Status:** Aceito`, `**Decisor:** Diego, 2026-09-18`, `**Relacionado:**` com links, e as seções `## Contexto`, `## Decisão`, `## Consequências`.
+Formato exato de `docs/decisions/0164-implantacao-sobrevive-a-renegociacao.md`: `# ADR-0166 — <título>`, depois `**Status:** Aceito`, `**Decisor:** Diego, 2026-09-18`, `**Relacionado:**` com links, e as seções `## Contexto`, `## Decisão`, `## Consequências`.
 
 Conteúdo mínimo que o ADR precisa registrar:
 
@@ -242,7 +244,7 @@ Conteúdo mínimo que o ADR precisa registrar:
 
 - [ ] **Step 3: Indexar**
 
-Abra `docs/decisions/README.md`, localize a última linha da tabela/lista de ADRs e acrescente a entrada de 0165 no mesmo formato das vizinhas (não invente formato — copie o da linha do 0164).
+Abra `docs/decisions/README.md`, localize a última linha da tabela/lista de ADRs e acrescente a entrada de 0166 no mesmo formato das vizinhas (não invente formato — copie o da linha do 0164).
 
 - [ ] **Step 4: Verificar os links do doc**
 
@@ -252,8 +254,8 @@ Expected: PASS, sem link quebrado.
 - [ ] **Step 5: Commit**
 
 ```bash
-/usr/bin/git add docs/decisions/0165-tipo-de-produto-por-organizacao.md docs/decisions/README.md
-/usr/bin/git commit -m "docs(adr): ADR-0165 tipo de produto por organizacao (roupa/calcado combinaveis)"
+/usr/bin/git add docs/decisions/0166-tipo-de-produto-por-organizacao.md docs/decisions/README.md
+/usr/bin/git commit -m "docs(adr): ADR-0166 tipo de produto por organizacao (roupa/calcado combinaveis)"
 ```
 
 ---
@@ -261,7 +263,7 @@ Expected: PASS, sem link quebrado.
 ### Task 3: ADR do guia de tamanhos gerenciado via API
 
 **Files:**
-- Create: `docs/decisions/0166-guia-de-tamanhos-gerenciado-via-api.md`
+- Create: `docs/decisions/0167-guia-de-tamanhos-gerenciado-via-api.md`
 - Modify: `docs/decisions/README.md`
 
 **Interfaces:**
@@ -291,8 +293,8 @@ Mesmo formato do Task 2. Conteúdo mínimo:
 
 ```bash
 pnpm docs:links
-/usr/bin/git add docs/decisions/0166-guia-de-tamanhos-gerenciado-via-api.md docs/decisions/README.md
-/usr/bin/git commit -m "docs(adr): ADR-0166 guia de tamanhos do ML gerenciado via API"
+/usr/bin/git add docs/decisions/0167-guia-de-tamanhos-gerenciado-via-api.md docs/decisions/README.md
+/usr/bin/git commit -m "docs(adr): ADR-0167 guia de tamanhos do ML gerenciado via API"
 ```
 
 ---
@@ -303,7 +305,7 @@ pnpm docs:links
 - Modify: `supabase/functions/ingest-lote/index.ts` (só um bloco de comentário no topo)
 
 **Interfaces:**
-- Consumes: ADR-0165 (Task 2).
+- Consumes: ADR-0166 (Task 2).
 - Produces: nada em runtime.
 
 - [ ] **Step 1: Localizar o topo do arquivo**
@@ -313,7 +315,7 @@ Run: `head -20 supabase/functions/ingest-lote/index.ts`
 - [ ] **Step 2: Inserir o comentário logo abaixo do bloco de comentários existente do topo**
 
 ```ts
-// ADR-0165 — TAMANHO/NUMERAÇÃO NÃO ENTRA POR AQUI (feature futura, deliberada).
+// ADR-0166 — TAMANHO/NUMERAÇÃO NÃO ENTRA POR AQUI (feature futura, deliberada).
 // O eixo de variação por tamanho (roupa) / numeração (calçado) é gravado APENAS pelo cadastro
 // manual (`cadastrar-produto`, ADR-0094). A planilha não tem coluna TAMANHO e não deve ganhar
 // uma nesta entrega: a org piloto do segmento não tem ERP nem opera por planilha, então a
@@ -333,7 +335,7 @@ Expected: PASS.
 
 ```bash
 /usr/bin/git add supabase/functions/ingest-lote/index.ts
-/usr/bin/git commit -m "docs(ingest): registra tamanho por planilha como feature futura (ADR-0165)"
+/usr/bin/git commit -m "docs(ingest): registra tamanho por planilha como feature futura (ADR-0166)"
 ```
 
 ---
@@ -343,8 +345,8 @@ Expected: PASS.
 > Antes de tocar em qualquer schema, o agente revisor **Fable** (`fable-advisor`) revisa, nesta ordem:
 >
 > 1. `docs/spikes/051-guia-tamanhos-ml-api.md` — em especial: a resposta da pergunta nº 1 (Legacy `variations[]` vs User Products) e se cada afirmação tem rótulo `CONFIRMADO`/`NÃO CONFIRMADO` com o comando que a produziu.
-> 2. `docs/decisions/0165-*.md` — a decisão de coluna separada e o invariante INV-1 estão escritos de forma que sobrevivem a quem ler só o ADR?
-> 3. `docs/decisions/0166-*.md` — a granularidade da tabela foi decidida com o número do spike, ou com preferência estética?
+> 2. `docs/decisions/0166-*.md` — a decisão de coluna separada e o invariante INV-1 estão escritos de forma que sobrevivem a quem ler só o ADR?
+> 3. `docs/decisions/0167-*.md` — a granularidade da tabela foi decidida com o número do spike, ou com preferência estética?
 >
 > **Pergunta explícita ao Fable:** "Alguma decisão deste ADR está baseada em resumo de busca em vez de resposta real da API?"
 >
@@ -375,7 +377,7 @@ Objetivo da fase: a org passa a ter tipos de produto habilitáveis pelo super-ad
 - Modify: `src/lib/database.types.ts` (regerado, não editado à mão)
 
 **Interfaces:**
-- Consumes: ADR-0165 (Task 2).
+- Consumes: ADR-0166 (Task 2).
 - Produces: coluna `public.organizations.tipos_produto_habilitados text[] not null default '{}'` e função `public.tipos_produto_da_org() returns text[]`.
 
 - [ ] **Step 1: Linkar o projeto (worktree novo nunca vem linkado)**
@@ -400,7 +402,7 @@ Expected: imprime o caminho do arquivo criado, no formato `supabase/migrations/2
 Conteúdo **completo** do arquivo (sem acentos nos comentários, seguindo a convenção das migrations existentes do projeto):
 
 ```sql
--- ADR-0165: tipo de produto (roupa / calcado) por organizacao.
+-- ADR-0166: tipo de produto (roupa / calcado) por organizacao.
 --
 -- Coluna SEPARADA de modulos_habilitados de proposito. Modulo e acesso pago a uma tela inteira
 -- (Estoque/Pulse/Fiscal, ADR-0047) e entra na regua de cobranca do ADR-0155. Tipo de produto nao
@@ -419,7 +421,7 @@ alter table public.organizations
   add column if not exists tipos_produto_habilitados text[] not null default '{}';
 
 comment on column public.organizations.tipos_produto_habilitados is
-  'ADR-0165: tipos de produto habilitados (roupa/calcado), combinaveis. Vazio = comportamento padrao (so cor como eixo de variacao).';
+  'ADR-0166: tipos de produto habilitados (roupa/calcado), combinaveis. Vazio = comportamento padrao (so cor como eixo de variacao).';
 
 -- Leitura pelo frontend. Copia EXATA da forma de modulos_habilitados_da_org
 -- (20260729124711_e6b_origem_lote_e_modulos.sql): security definer + stable + search_path vazio,
@@ -460,7 +462,7 @@ Expected: três ocorrências no bloco `organizations` (Row: `string[]`, Insert: 
 
 ```bash
 /usr/bin/git add supabase/migrations/ src/lib/database.types.ts
-/usr/bin/git commit -m "feat(org): coluna tipos_produto_habilitados + RPC de leitura (ADR-0165)"
+/usr/bin/git commit -m "feat(org): coluna tipos_produto_habilitados + RPC de leitura (ADR-0166)"
 ```
 
 ---
@@ -485,7 +487,7 @@ Expected: três ocorrências no bloco `organizations` (Row: `string[]`, Insert: 
 Crie `supabase/functions/_shared/produto/tipos-produto-valores.ts`:
 
 ```ts
-// ADR-0165: FONTE ÚNICA dos valores canônicos de tipo de produto e de tamanho/numeração.
+// ADR-0166: FONTE ÚNICA dos valores canônicos de tipo de produto e de tamanho/numeração.
 //
 // ATENÇÃO: este arquivo NÃO pode ganhar nenhum import — nem `import type` de `jsr:`. Ele é
 // importado tanto pelo Deno (edges) quanto pelo Vite (`src/lib/tipos-produto.ts`,
@@ -591,7 +593,7 @@ Expected: FAIL — `Failed to resolve import "../tipo-produto.ts"`.
 Crie `supabase/functions/_shared/produto/tipo-produto.ts`:
 
 ```ts
-// ADR-0165: tipo de produto (roupa/calcado) por organizacao. Espelha a forma de
+// ADR-0166: tipo de produto (roupa/calcado) por organizacao. Espelha a forma de
 // `_shared/produto/modulo.ts`, mas NAO e modulo: modulo libera tela paga (ADR-0047), tipo de
 // produto muda a estrutura do cadastro (o SKU passa a ser cor x tamanho).
 //
@@ -635,7 +637,7 @@ Expected: PASS, 7 testes.
 
 ```bash
 /usr/bin/git add supabase/functions/_shared/produto/tipo-produto.ts supabase/functions/_shared/produto/__tests__/tipo-produto.test.ts
-/usr/bin/git commit -m "feat(produto): gate de tipo de produto por org (ADR-0165)"
+/usr/bin/git commit -m "feat(produto): gate de tipo de produto por org (ADR-0166)"
 ```
 
 ---
@@ -685,7 +687,7 @@ Expected: FAIL — `Failed to resolve import "@/lib/tipos-produto"`.
 Crie `src/lib/tipos-produto.ts`:
 
 ```ts
-// ADR-0165: tipo de produto habilitado por organizacao (roupa / calcado), COMBINAVEL.
+// ADR-0166: tipo de produto habilitado por organizacao (roupa / calcado), COMBINAVEL.
 // Espelha o formato de src/lib/modulos.ts, mas e um conceito separado e por isso vive em arquivo
 // e em card proprios: modulo e funcionalidade PAGA que liga uma tela (ADR-0047 / ADR-0155);
 // tipo de produto nao e cobrado e muda a ESTRUTURA do cadastro (o SKU vira cor x tamanho).
@@ -735,7 +737,7 @@ Expected: PASS, 3 testes.
 
 ```bash
 /usr/bin/git add src/lib/tipos-produto.ts src/lib/__tests__/tipos-produto.test.ts
-/usr/bin/git commit -m "feat(org): registry de tipos de produto no frontend (ADR-0165)"
+/usr/bin/git commit -m "feat(org): registry de tipos de produto no frontend (ADR-0166)"
 ```
 
 ---
@@ -797,7 +799,7 @@ Expected: FAIL — `Failed to resolve import "../tipos-produto.ts"`.
 Crie `supabase/functions/usuarios/tipos-produto.ts`:
 
 ```ts
-// ADR-0165: saneamento do payload de `set_tipos_produto_org`. Extraido do handler porque o
+// ADR-0166: saneamento do payload de `set_tipos_produto_org`. Extraido do handler porque o
 // handler inteiro nao e testavel (mesma limitacao ja documentada em cadastrar-produto/processar.ts).
 //
 // R7 da revisao do Fable: a whitelist NAO e redigitada aqui — vem da fonte unica. Uma lista
@@ -855,7 +857,7 @@ import { sanearTiposProduto } from './tipos-produto.ts';
       if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
       const alvo = String(body.org_id ?? '');
       if (!alvo) return json({ error: 'org_id obrigatório' }, 400);
-      // ADR-0165. Diferente de set_canais_org: NAO ha tipo obrigatorio — lista vazia e o estado
+      // ADR-0166. Diferente de set_canais_org: NAO ha tipo obrigatorio — lista vazia e o estado
       // padrao de toda org e significa "so cor como eixo de variacao", o comportamento de hoje.
       const tipos = sanearTiposProduto(body.tipos);
       const intentAuditError = await auditPlatformAction(alvo, action, 'intent', { tipos });
@@ -879,7 +881,7 @@ Expected: PASS nos dois.
 
 ```bash
 /usr/bin/git add supabase/functions/usuarios/
-/usr/bin/git commit -m "feat(usuarios): action set_tipos_produto_org com auditoria (ADR-0165)"
+/usr/bin/git commit -m "feat(usuarios): action set_tipos_produto_org com auditoria (ADR-0166)"
 ```
 
 ---
@@ -923,7 +925,7 @@ function renderizar() {
   );
 }
 
-describe('OrgSettings — card Tipo de produto (ADR-0165)', () => {
+describe('OrgSettings — card Tipo de produto (ADR-0166)', () => {
   beforeEach(() => {
     vi.spyOn(supabase.functions, 'invoke').mockImplementation(async (_fn, opts) => {
       const body = (opts as { body: Record<string, unknown> }).body;
@@ -986,7 +988,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import { QK } from '@/lib/queries';
 
-/** ADR-0165: tipos de produto (roupa/calcado) habilitados para a org, ligados pelo super-admin.
+/** ADR-0166: tipos de produto (roupa/calcado) habilitados para a org, ligados pelo super-admin.
  *
  *  SEM retry, igual a useModulosHabilitados: `data === undefined` significa "nao sei", NAO
  *  "a org nao tem tipo". Quem consome precisa distinguir os dois — tratar falha de rede como
@@ -1035,7 +1037,7 @@ import { TIPOS_PRODUTO } from '@/lib/tipos-produto';
 (e) Depois do `<Card>` de Módulos e **antes** do fechamento da `<div className="grid gap-4 lg:grid-cols-2">`, insira o card novo:
 
 ```tsx
-      {/* ADR-0165: card SEPARADO do de Módulos de propósito. Módulo é funcionalidade paga que
+      {/* ADR-0166: card SEPARADO do de Módulos de propósito. Módulo é funcionalidade paga que
           liga uma tela (ADR-0047) e entra na régua de cobrança (ADR-0155); tipo de produto não é
           cobrado e muda a estrutura do cadastro. Mesma caixinha, grupo diferente. */}
       <Card>
@@ -1100,7 +1102,7 @@ Expected: PASS, incluindo os testes pré-existentes de `org-settings`.
 
 ```bash
 /usr/bin/git add src/hooks/useTiposProdutoHabilitados.ts src/lib/queries.ts src/components/platform-admin/
-/usr/bin/git commit -m "feat(admin): card de tipo de produto separado dos modulos (ADR-0165)"
+/usr/bin/git commit -m "feat(admin): card de tipo de produto separado dos modulos (ADR-0166)"
 ```
 
 ---
@@ -1134,7 +1136,7 @@ Esta fase cria **só** as colunas que o operador preenche. As colunas de víncul
 - Modify: `src/lib/database.types.ts` (regerado)
 
 **Interfaces:**
-- Consumes: ADR-0165 (Task 2).
+- Consumes: ADR-0166 (Task 2).
 - Produces: `public.familias.genero text null` (CHECK em `'masculino'|'feminino'|'unissex'`) e `public.variacoes.tamanho text null`.
 
 - [ ] **Step 1: Criar o arquivo**
@@ -1151,7 +1153,7 @@ Expected: imprime o caminho do arquivo criado. Anote-o.
 Conteúdo completo do arquivo:
 
 ```sql
--- ADR-0165: genero da familia e tamanho/numeracao da variacao.
+-- ADR-0166: genero da familia e tamanho/numeracao da variacao.
 --
 -- Guardamos o VALOR DO OPERADOR ('masculino', 'P', '42'), nunca o value_id do ML. O id do ML e
 -- detalhe do canal, muda por categoria e e resolvido na publicacao — mesmo padrao ja usado para
@@ -1179,13 +1181,13 @@ alter table public.familias
   check (genero is null or genero in ('masculino', 'feminino', 'unissex'));
 
 comment on column public.familias.genero is
-  'ADR-0165: genero da peca (masculino/feminino/unissex). NULL = nao informado (org sem tipo de produto habilitado). O ML exige que o genero do anuncio bata com o da tabela de medidas.';
+  'ADR-0166: genero da peca (masculino/feminino/unissex). NULL = nao informado (org sem tipo de produto habilitado). O ML exige que o genero do anuncio bata com o da tabela de medidas.';
 
 alter table public.variacoes
   add column if not exists tamanho text;
 
 comment on column public.variacoes.tamanho is
-  'ADR-0165: tamanho (roupa: P/M/G/GG/Tamanho Unico) ou numeracao (calcado). NULL = variacao sem eixo de tamanho, o caso de toda org sem tipo de produto habilitado. Nunca guarda value_id do ML.';
+  'ADR-0166: tamanho (roupa: P/M/G/GG/Tamanho Unico) ou numeracao (calcado). NULL = variacao sem eixo de tamanho, o caso de toda org sem tipo de produto habilitado. Nunca guarda value_id do ML.';
 ```
 
 - [ ] **Step 3: Aplicar e validar**
@@ -1248,7 +1250,7 @@ Expected: PASS (~27s).
 
 ```bash
 /usr/bin/git add supabase/migrations/ src/lib/database.types.ts
-/usr/bin/git commit -m "feat(schema): familias.genero e variacoes.tamanho (ADR-0165)"
+/usr/bin/git commit -m "feat(schema): familias.genero e variacoes.tamanho (ADR-0166)"
 ```
 
 ---
@@ -1381,7 +1383,7 @@ Expected: FAIL — `Failed to resolve import "@/lib/tamanhos"`.
 Crie `src/lib/tamanhos.ts`:
 
 ```ts
-// ADR-0165: listas fixas de Tamanho (roupa) e Numeração (calçado), e o produto cartesiano
+// ADR-0166: listas fixas de Tamanho (roupa) e Numeração (calçado), e o produto cartesiano
 // cor × tamanho que alimenta o botão "Gerar variações" do cadastro manual.
 //
 // São listas de PICK, nunca texto livre: o ML normaliza valor de atributo (o mesmo que já
@@ -1459,7 +1461,7 @@ Expected: PASS, 12 testes.
 
 ```bash
 /usr/bin/git add src/lib/tamanhos.ts src/lib/__tests__/tamanhos.test.ts
-/usr/bin/git commit -m "feat(cadastro): listas de tamanho/numeracao e produto cartesiano (ADR-0165)"
+/usr/bin/git commit -m "feat(cadastro): listas de tamanho/numeracao e produto cartesiano (ADR-0166)"
 ```
 
 ---
@@ -1611,7 +1613,7 @@ Expected: FAIL — o primeiro erro é de tipo (`genero` não existe em `ProdutoE
 Em `VariacaoEntrada`, acrescente depois de `nome`:
 
 ```ts
-  /** ADR-0165: tamanho (roupa) ou numeração (calçado). Ausente/null = variação sem esse eixo,
+  /** ADR-0166: tamanho (roupa) ou numeração (calçado). Ausente/null = variação sem esse eixo,
    *  que é o caso de toda org sem tipo de produto habilitado. */
   tamanho?: string | null;
 ```
@@ -1619,7 +1621,7 @@ Em `VariacaoEntrada`, acrescente depois de `nome`:
 Em `ProdutoEntrada`, acrescente depois de `origem`:
 
 ```ts
-  /** ADR-0165: gênero da peça. Ausente/null = não informado. O ML exige que o gênero do anúncio
+  /** ADR-0166: gênero da peça. Ausente/null = não informado. O ML exige que o gênero do anúncio
    *  bata com o da tabela de medidas, então valor inválido FALHA em vez de virar default. */
   genero?: 'masculino' | 'feminino' | 'unissex' | null;
 ```
@@ -1629,7 +1631,7 @@ Em `ProdutoEntrada`, acrescente depois de `origem`:
 Logo abaixo do bloco que valida `origem` (o comentário "TRAVA LOUD DO IMPOSTO POR ORIGEM"), acrescente:
 
 ```ts
-  // ADR-0165. Ausente é válido (org sem tipo habilitado). Presente e fora da lista FALHA: o ML
+  // ADR-0166. Ausente é válido (org sem tipo habilitado). Presente e fora da lista FALHA: o ML
   // recusa a publicação inteira quando o gênero do anúncio não bate com o da tabela de medidas,
   // e "corrigir para unissex" seria afirmar sobre o produto um dado que ninguém informou.
   const GENEROS_VALIDOS = ['masculino', 'feminino', 'unissex'];
@@ -1641,7 +1643,7 @@ Logo abaixo do bloco que valida `origem` (o comentário "TRAVA LOUD DO IMPOSTO P
   }
 
   // R3 (revisão do Fable): gênero é OBRIGATÓRIO quando alguma variação tem tamanho. O ML exige
-  // que o gênero do anúncio bata com o da tabela de medidas (ADR-0166) — sem ele a publicação
+  // que o gênero do anúncio bata com o da tabela de medidas (ADR-0167) — sem ele a publicação
   // falha LOUD e, antes desta trava, não havia tela nenhuma para informar o dado depois: o
   // produto nascia impublicável. A recusa acontece aqui, no cadastro, que é onde o operador
   // ainda está com a tela aberta e consegue corrigir.
@@ -1663,7 +1665,7 @@ Logo abaixo do bloco que valida `origem` (o comentário "TRAVA LOUD DO IMPOSTO P
 E, **depois** do `forEach` que valida cada variação (antes do `return erros`), acrescente a trava de SKU duplicado:
 
 ```ts
-  // ADR-0165: com dois eixos, o par (cor, tamanho) é a identidade do SKU. Duas linhas com o mesmo
+  // ADR-0166: com dois eixos, o par (cor, tamanho) é a identidade do SKU. Duas linhas com o mesmo
   // par são dois SKUs indistinguíveis — o ML recusa a variação duplicada e, pior, o casamento
   // POSICIONAL de foto e de estoque inicial (cadastrar-produto/index.ts) passaria a depender de
   // qual das duas o operador quis. Sem tamanho em nenhuma das duas, nada muda: cores repetidas
@@ -1690,7 +1692,7 @@ E, **depois** do `forEach` que valida cada variação (antes do `return erros`),
 No objeto `familia`, logo depois da linha `origem: p.origem,`:
 
 ```ts
-    // ADR-0165: explícito, e null quando não informado — a coluna é nullable sem default e null
+    // ADR-0166: explícito, e null quando não informado — a coluna é nullable sem default e null
     // é o estado de toda família de org sem tipo de produto habilitado.
     genero: p.genero ?? null,
 ```
@@ -1698,7 +1700,7 @@ No objeto `familia`, logo depois da linha `origem: p.origem,`:
 No objeto devolvido dentro do `map` de `variacoes`, logo depois de `gtin:`:
 
 ```ts
-      // ADR-0165: tamanho (roupa) / numeração (calçado). Mesma normalização de nome/gtin —
+      // ADR-0166: tamanho (roupa) / numeração (calçado). Mesma normalização de nome/gtin —
       // `trim() || null` — para nunca gravar string vazia, que viraria um valor de atributo
       // vazio no payload do ML.
       tamanho: v.tamanho?.trim() || null,
@@ -1722,7 +1724,7 @@ Expected: PASS — nenhum teste antigo pode ter quebrado.
 
 ```bash
 /usr/bin/git add supabase/functions/_shared/produto/ src/lib/produto-entrada.ts
-/usr/bin/git commit -m "feat(cadastro): genero na familia e tamanho na variacao no contrato de entrada (ADR-0165)"
+/usr/bin/git commit -m "feat(cadastro): genero na familia e tamanho na variacao no contrato de entrada (ADR-0166)"
 ```
 
 ---
@@ -1744,7 +1746,7 @@ Expected: PASS — nenhum teste antigo pode ter quebrado.
 Acrescente ao final de `supabase/functions/cadastrar-produto/__tests__/processar.test.ts`, dentro de um `describe` novo:
 
 ```ts
-describe('variacoesDivergem — tamanho (ADR-0165)', () => {
+describe('variacoesDivergem — tamanho (ADR-0166)', () => {
   const gravada = {
     nome: 'Azul', gtin: null, preco: '50.00', custo: null,
     peso_gramas: null, altura_cm: null, largura_cm: null, comprimento_cm: null,
@@ -1803,7 +1805,7 @@ describe('variacoesDivergem — tamanho (ADR-0165)', () => {
 
 - [ ] **Step 2: Rodar o teste e ver falhar**
 
-Run: `pnpm test supabase/functions/cadastrar-produto/__tests__/processar.test.ts -t "tamanho (ADR-0165)"`
+Run: `pnpm test supabase/functions/cadastrar-produto/__tests__/processar.test.ts -t "tamanho (ADR-0166)"`
 Expected: FAIL — "trocar SO o tamanho entre as tentativas DIVERGE" recebe `false`, esperava `true`.
 
 - [ ] **Step 3: Estender `VariacaoGravada`**
@@ -1811,7 +1813,7 @@ Expected: FAIL — "trocar SO o tamanho entre as tentativas DIVERGE" recebe `fal
 Em `supabase/functions/cadastrar-produto/processar.ts`, na interface `VariacaoGravada`, acrescente:
 
 ```ts
-  /** ADR-0165. Coluna `text` nullable — vem crua do PostgREST. */
+  /** ADR-0166. Coluna `text` nullable — vem crua do PostgREST. */
   tamanho?: string | null;
 ```
 
@@ -1829,7 +1831,7 @@ export function variacoesDivergem(
 E acrescente a comparação na cadeia de `||`, logo depois da linha de `gtin`:
 
 ```ts
-      // ADR-0165: MESMA normalização da gravação (`trim() || null`, montarLinhasProduto). Sem
+      // ADR-0166: MESMA normalização da gravação (`trim() || null`, montarLinhasProduto). Sem
       // esta linha, trocar só o tamanho entre duas tentativas com a mesma chave passaria pelo
       // guard, e `estoqueInicialDiverge` (que casa por índice) conferiria o estoque contra um SKU
       // cujo tamanho já não é o do formulário — silencioso, e alimenta markup e preço.
@@ -1867,7 +1869,7 @@ Expected: PASS.
 
 ```bash
 /usr/bin/git add supabase/functions/cadastrar-produto/
-/usr/bin/git commit -m "fix(cadastro): guard de retry idempotente compara tamanho (ADR-0165)"
+/usr/bin/git commit -m "fix(cadastro): guard de retry idempotente compara tamanho (ADR-0166)"
 ```
 
 ---
@@ -1909,7 +1911,7 @@ function renderizar(gruposTamanho?: { grupo: string; valores: readonly string[] 
   return { onMudar };
 }
 
-describe('LinhaVariacaoForm — Tamanho (ADR-0165)', () => {
+describe('LinhaVariacaoForm — Tamanho (ADR-0166)', () => {
   it('sem grupos, o campo Tamanho NAO existe — tela byte a byte igual a de hoje', () => {
     renderizar();
     expect(screen.queryByLabelText(/Tamanho da variação 1/)).not.toBeInTheDocument();
@@ -1954,7 +1956,7 @@ Em `src/components/estoque/linha-variacao-form.tsx`:
 Na interface `LinhaVariacao`, acrescente depois de `nome: string; gtin: string;`:
 
 ```ts
-  /** ADR-0165: tamanho (roupa) / numeração (calçado). String vazia = sem eixo de tamanho. */
+  /** ADR-0166: tamanho (roupa) / numeração (calçado). String vazia = sem eixo de tamanho. */
   tamanho: string;
 ```
 
@@ -1981,7 +1983,7 @@ import type { GrupoTamanho } from '@/lib/tamanhos';
 Na lista de props desestruturadas, acrescente `gruposTamanho`, e na assinatura de tipos:
 
 ```ts
-  /** ADR-0165: grupos de tamanho oferecidos pela org (`opcoesDeTamanho`). `undefined` ou vazio =
+  /** ADR-0166: grupos de tamanho oferecidos pela org (`opcoesDeTamanho`). `undefined` ou vazio =
    *  org sem tipo de produto habilitado: o campo não é renderizado e a linha fica idêntica à de
    *  hoje. Não usar `[]` como "ainda carregando" — ver useTiposProdutoHabilitados. */
   gruposTamanho?: GrupoTamanho[];
@@ -2031,7 +2033,7 @@ Expected: PASS, sem regressão.
 
 ```bash
 /usr/bin/git add src/components/estoque/linha-variacao-form.tsx src/components/estoque/__tests__/linha-variacao-tamanho.test.tsx
-/usr/bin/git commit -m "feat(cadastro): campo de tamanho na linha de variacao (ADR-0165)"
+/usr/bin/git commit -m "feat(cadastro): campo de tamanho na linha de variacao (ADR-0166)"
 ```
 
 ---
@@ -2061,7 +2063,7 @@ import { TAMANHOS_ROUPA } from '@/lib/tamanhos';
 
 const GRUPOS = [{ grupo: 'Tamanho', valores: TAMANHOS_ROUPA }];
 
-describe('GeradorVariacoes (ADR-0165)', () => {
+describe('GeradorVariacoes (ADR-0166)', () => {
   it('gera o cartesiano das cores digitadas pelos tamanhos marcados', async () => {
     const user = userEvent.setup();
     const onGerar = vi.fn();
@@ -2126,7 +2128,7 @@ Expected: FAIL — `Failed to resolve import "@/components/estoque/gerador-varia
 Crie `src/components/estoque/gerador-variacoes.tsx`:
 
 ```tsx
-// ADR-0165: o operador digita a lista de cores UMA vez e marca os tamanhos UMA vez; o botão
+// ADR-0166: o operador digita a lista de cores UMA vez e marca os tamanhos UMA vez; o botão
 // monta o produto cartesiano como linhas editáveis. Sem isto, cadastrar 4 cores × 5 tamanhos
 // seria preencher 20 cards à mão — o que o operador faz hoje é justamente por isso que a org
 // piloto não cadastrava roupa no app.
@@ -2249,7 +2251,7 @@ import { GeradorVariacoes } from '@/components/estoque/gerador-variacoes';
 (b) Logo abaixo de `const fiscalAtivo = …`:
 
 ```ts
-  // ADR-0165. `data === undefined` é "não sei" (falha de rede), não "org sem tipo": nos dois
+  // ADR-0166. `data === undefined` é "não sei" (falha de rede), não "org sem tipo": nos dois
   // casos a tela fica igual à de hoje, que é o lado seguro — nunca oferecemos um eixo de
   // variação que a org talvez não tenha.
   const { data: tiposProduto } = useTiposProdutoHabilitados();
@@ -2260,7 +2262,7 @@ import { GeradorVariacoes } from '@/components/estoque/gerador-variacoes';
 (c) Estado novo, junto dos outros `useState`:
 
 ```ts
-  // ADR-0165: só existe com tipo de produto habilitado.
+  // ADR-0166: só existe com tipo de produto habilitado.
   //
   // R3 (revisão do Fable): COM TRAVA DE SUBMIT quando alguma linha tem tamanho. A versão
   // anterior deste plano deixava o gênero opcional aqui e obrigatório na publicação, sem
@@ -2289,7 +2291,7 @@ function montarPayload(
 No `map` de `variacoes`, acrescente depois de `nome`:
 
 ```ts
-    // ADR-0165: string vazia vira null — a edge normaliza de novo, mas mandar '' faria o guard
+    // ADR-0166: string vazia vira null — a edge normaliza de novo, mas mandar '' faria o guard
     // de retry comparar '' contra null e divergir num retry legítimo.
     tamanho: l.tamanho.trim() || null,
 ```
@@ -2369,13 +2371,13 @@ E no objeto devolvido, depois de `origem: pai.origem,`:
 (hoje na linha ~241), acrescente o derivado e a condição:
 
 ```ts
-  // ADR-0165 / R3: gênero é obrigatório QUANDO alguma linha tem tamanho — não quando a org tem
+  // ADR-0166 / R3: gênero é obrigatório QUANDO alguma linha tem tamanho — não quando a org tem
   // o tipo habilitado. Uma org de roupa também cadastra produto sem tamanho (embalagem, brinde),
   // e travar por tipo habilitado impediria esse cadastro. O gate acompanha o DADO, não a org.
   const algumaLinhaComTamanho = linhas.some((l) => l.tamanho.trim() !== '');
 
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
-    // Sem gênero, a publicação falharia LOUD em `prepararSizeChart` (ADR-0166) e não haveria
+    // Sem gênero, a publicação falharia LOUD em `prepararSizeChart` (ADR-0167) e não haveria
     // tela para completar o dado depois. Trava aqui, igual a `origem`.
     && (!algumaLinhaComTamanho || !!genero)
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
@@ -2391,7 +2393,7 @@ vi.mock('@/hooks/useTiposProdutoHabilitados', () => ({
   useTiposProdutoHabilitados: () => ({ data: ['roupa'] }),
 }));
 
-describe('DialogCadastroProduto — gênero obrigatório com tamanho (ADR-0165 / R3)', () => {
+describe('DialogCadastroProduto — gênero obrigatório com tamanho (ADR-0166 / R3)', () => {
   it('linha COM tamanho e sem gênero mantém o botão de salvar travado', async () => {
     const user = userEvent.setup();
     renderDialogCom();
@@ -2432,7 +2434,7 @@ Expected: PASS. Os testes pré-existentes do diálogo rodam sem o hook mockado �
 
 ```bash
 /usr/bin/git add src/components/estoque/
-/usr/bin/git commit -m "feat(cadastro): gerador de variacoes cor x tamanho e campo genero (ADR-0165)"
+/usr/bin/git commit -m "feat(cadastro): gerador de variacoes cor x tamanho e campo genero (ADR-0166)"
 ```
 
 ---
@@ -2457,7 +2459,7 @@ Expected: PASS. Os testes pré-existentes do diálogo rodam sem o hook mockado �
 Acrescente a `supabase/functions/cadastrar-produto/__tests__/processar.test.ts`:
 
 ```ts
-describe('entradaTamanhoEfetiva (ADR-0165)', () => {
+describe('entradaTamanhoEfetiva (ADR-0166)', () => {
   const base = {
     nomePai: 'Camiseta', origem: 'nacional' as const,
     chaveCadastro: '11111111-1111-4111-8111-111111111111',
@@ -2500,7 +2502,7 @@ describe('entradaTamanhoEfetiva (ADR-0165)', () => {
 // R7 da revisao do Fable: ate aqui SO A UI restringia o valor de tamanho. Uma chamada HTTP
 // direta (ou um front desatualizado) gravava 'XG' numa org de roupa, e esse valor virava uma
 // linha de tabela de medidas no ML — dado de marketplace inventado, que e proibido.
-describe('validarTamanhosDaEntrada (ADR-0165 / R7)', () => {
+describe('validarTamanhosDaEntrada (ADR-0166 / R7)', () => {
   const comTamanho = (tamanho: string) => ({
     nomePai: 'Camiseta', origem: 'nacional' as const,
     chaveCadastro: '11111111-1111-4111-8111-111111111111',
@@ -2555,7 +2557,7 @@ Expected: FAIL — `entradaTamanhoEfetiva is not a function`.
 Em `supabase/functions/cadastrar-produto/processar.ts`, logo abaixo de `fiscalEfetivo`:
 
 ```ts
-/** ADR-0165. Mesmo motivo de `fiscalEfetivo`: `montarLinhasProduto` grava as colunas pela mera
+/** ADR-0166. Mesmo motivo de `fiscalEfetivo`: `montarLinhasProduto` grava as colunas pela mera
  *  PRESENÇA do campo, então um payload com `genero`/`tamanho` vindo de uma org SEM tipo de
  *  produto habilitado (engano do front, ou chamada HTTP direta) tem que ser descartado ANTES de
  *  chegar lá. Sem isto a org grava um eixo de variação que não contratou, e esse eixo chega ao
@@ -2628,7 +2630,7 @@ import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
 (c) Logo **depois** da linha `produto.fiscal = fiscalEfetivo(produto, moduloFiscal);` e **antes** de `const erros = validarProdutoNovo(produto);`:
 
 ```ts
-  // ADR-0165: gênero/tamanho só existem para org com tipo de produto habilitado. Diferente do
+  // ADR-0166: gênero/tamanho só existem para org com tipo de produto habilitado. Diferente do
   // gate de módulo (que devolve 403), aqui o payload é SANEADO em vez de recusado: o campo é
   // aditivo e o cadastro sem ele é um cadastro válido — recusar transformaria um front
   // desatualizado num cadastro impossível. `tiposProdutoDaOrg` LANÇA em erro de leitura (nunca
@@ -2656,7 +2658,7 @@ Expected: PASS.
 
 ```bash
 /usr/bin/git add supabase/functions/cadastrar-produto/
-/usr/bin/git commit -m "feat(cadastro): edge descarta genero/tamanho de org sem tipo habilitado (ADR-0165)"
+/usr/bin/git commit -m "feat(cadastro): edge descarta genero/tamanho de org sem tipo habilitado (ADR-0166)"
 ```
 
 ---
@@ -2709,7 +2711,7 @@ Em `supabase/functions/adicionar-variacoes-familia/processar.ts`, dentro de `mon
 logo depois de `cor_origem: 'manual',`:
 
 ```ts
-    // ADR-0165: a linha nova NASCE sem eixo de tamanho. Presente explicitamente (não omitido)
+    // ADR-0166: a linha nova NASCE sem eixo de tamanho. Presente explicitamente (não omitido)
     // porque `clonarVariacao` copia de `select('*')` e leva `tamanho` junto: chave presente num
     // objeto e ausente no outro faz o PostgREST montar a UNIÃO e gravar NULL explícito no lado
     // que não a tem — foi exatamente o bug de 2026-08-21 descrito acima. O valor null aqui é o
@@ -2728,7 +2730,7 @@ em `validarEntrada` (que só enxerga o body) e sim no handler, junto dos outros 
 pré-condição, logo depois da leitura de `variacoesVivas`:
 
 ```ts
-  // ADR-0165 / R4: adicionar cor a família COM tamanho está fora do escopo do v1.
+  // ADR-0166 / R4: adicionar cor a família COM tamanho está fora do escopo do v1.
   //
   // O diálogo deste fluxo não oferece o campo Tamanho, então a cor nova nasceria sem
   // SIZE_GRID_ROW_ID dentro de um anúncio que tem — o ML recusa o PUT INTEIRO e derruba o
@@ -2747,7 +2749,7 @@ Teste (no estilo dos que já existem na suíte da edge; se não houver teste de 
 regra extraindo-a como função pura `familiaTemTamanho(variacoes)` em `processar.ts` e teste-a):
 
 ```ts
-describe('familiaTemTamanho (ADR-0165 / R4)', () => {
+describe('familiaTemTamanho (ADR-0166 / R4)', () => {
   it('familia sem tamanho nenhum libera o fluxo', () => {
     expect(familiaTemTamanho([{ tamanho: null }, { tamanho: '  ' }])).toBe(false);
   });
@@ -2767,7 +2769,7 @@ describe('familiaTemTamanho (ADR-0165 / R4)', () => {
 Em `src/components/estoque/dialog-adicionar-variacao.tsx`, no comentário de topo do componente:
 
 ```tsx
-// ADR-0165 / R4: este fluxo NÃO oferece o campo Tamanho de propósito (v1). A edge
+// ADR-0166 / R4: este fluxo NÃO oferece o campo Tamanho de propósito (v1). A edge
 // `adicionar-variacoes-familia` recusa com 400 a família que tem tamanho, e o erro aparece aqui
 // pelo caminho de erro que já existe. Meia-feature (campo sem resolver a tabela de medidas nem o
 // SIZE_GRID_ROW_ID da cor nova) publicaria um anúncio quebrado — por isso recusa, não remendo.
@@ -2779,7 +2781,7 @@ Em `src/components/estoque/dialog-adicionar-variacao.tsx`, no comentário de top
 pnpm test supabase/functions/adicionar-variacoes-familia
 pnpm check:functions
 /usr/bin/git add supabase/functions/adicionar-variacoes-familia/ src/components/estoque/dialog-adicionar-variacao.tsx
-/usr/bin/git commit -m "fix(addvar): recusa adicionar cor a familia com tamanho e mantem paridade de chaves (ADR-0165)"
+/usr/bin/git commit -m "fix(addvar): recusa adicionar cor a familia com tamanho e mantem paridade de chaves (ADR-0166)"
 ```
 
 ---
@@ -2804,7 +2806,7 @@ pnpm check:functions
 > Nenhuma tarefa desta fase pode ser iniciada enquanto:
 >
 > 1. `docs/spikes/051-guia-tamanhos-ml-api.md` não existir **e** tiver as seções 2, 3, 4, 5 e 8 marcadas `CONFIRMADO` com o comando e a resposta que as produziram; **e**
-> 2. `docs/decisions/0166-guia-de-tamanhos-gerenciado-via-api.md` não estiver escrito; **e**
+> 2. `docs/decisions/0167-guia-de-tamanhos-gerenciado-via-api.md` não estiver escrito; **e**
 > 3. o **Checkpoint Fable do fim da Fase 0** não tiver parecer favorável.
 >
 > Motivo, medido: em 2026-09-18 as 10 URLs da documentação oficial do ML sobre size charts devolveram **HTTP 403**. Os únicos dados disponíveis são resumos de busca, contraditórios entre si (os `value_id` de gênero que apareceram não foram confirmados em nenhuma fonte primária). **Nenhum corpo JSON desta fase pode ser escrito por dedução.** Toda constante, todo path e todo id de atributo é copiado literalmente do spike.
@@ -2818,13 +2820,13 @@ pnpm check:functions
 - Modify: `src/lib/database.types.ts` (regerado)
 
 **Interfaces:**
-- Consumes: spike 051 seção 4 (onde os ids entram no item) e seção 9 (a tabela pertence à conta ML) → ADR-0166.
-- Produces: colunas de vínculo. **Os nomes exatos e a tabela de destino saem do ADR-0166** — as duas formas possíveis, e o critério de escolha, estão no Step 1.
+- Consumes: spike 051 seção 4 (onde os ids entram no item) e seção 9 (a tabela pertence à conta ML) → ADR-0167.
+- Produces: colunas de vínculo. **Os nomes exatos e a tabela de destino saem do ADR-0167** — as duas formas possíveis, e o critério de escolha, estão no Step 1.
 
-- [ ] **Step 1: Ler o ADR-0166 e travar a forma**
+- [ ] **Step 1: Ler o ADR-0167 e travar a forma**
 
 ```bash
-grep -n "Decisão 2" -A 12 docs/decisions/0166-guia-de-tamanhos-gerenciado-via-api.md
+grep -n "Decisão 2" -A 12 docs/decisions/0167-guia-de-tamanhos-gerenciado-via-api.md
 ```
 
 O ADR decidiu uma destas duas formas (e só uma):
@@ -2840,7 +2842,7 @@ O ADR decidiu uma destas duas formas (e só uma):
   (Task 19): a unique passa a arbitrar a corrida no ponto certo, antes da escrita externa.
 - **Forma B — a tabela é por família.** Então `familias.size_chart_id text null` e `variacoes.size_chart_row_id text null`, sem tabela nova.
 
-Se o ADR-0166 não deixa claro qual das duas, **pare e volte ao Task 3** — esta migration não é o lugar de decidir.
+Se o ADR-0167 não deixa claro qual das duas, **pare e volte ao Task 3** — esta migration não é o lugar de decidir.
 
 - [ ] **Step 2: Criar e escrever a migration**
 
@@ -2848,7 +2850,7 @@ Se o ADR-0166 não deixa claro qual das duas, **pare e volte ao Task 3** — est
 supabase migration new adr166_size_chart_vinculo
 ```
 
-O corpo segue o padrão das migrations do projeto: cabeçalho de comentário sem acentos explicando o porquê e citando o ADR-0166 e o spike 051; `add column if not exists`; `comment on column`. Na **Forma A**, a tabela nova precisa de `chart_id` nulável, da unique que arbitra a corrida e da RLS:
+O corpo segue o padrão das migrations do projeto: cabeçalho de comentário sem acentos explicando o porquê e citando o ADR-0167 e o spike 051; `add column if not exists`; `comment on column`. Na **Forma A**, a tabela nova precisa de `chart_id` nulável, da unique que arbitra a corrida e da RLS:
 
 ```sql
 -- chart_id NULL = linha RESERVADA: alguem ganhou a corrida e esta chamando a API do ML agora.
@@ -2868,7 +2870,7 @@ create table if not exists public.ml_size_charts (
 );
 
 comment on column public.ml_size_charts.chart_id is
-  'ADR-0166: id da tabela de medidas no ML. NULL = linha reservada, criacao em andamento (R5).';
+  'ADR-0167: id da tabela de medidas no ML. NULL = linha reservada, criacao em andamento (R5).';
 
 alter table public.ml_size_charts enable row level security;
 
@@ -2905,7 +2907,7 @@ Expected: uma policy, com `current_org_id()` na expressão.
 
 ```bash
 /usr/bin/git add supabase/migrations/ src/lib/database.types.ts
-/usr/bin/git commit -m "feat(schema): vinculo com a tabela de medidas do ML (ADR-0166)"
+/usr/bin/git commit -m "feat(schema): vinculo com a tabela de medidas do ML (ADR-0167)"
 ```
 
 ---
@@ -2984,7 +2986,7 @@ Expected: FAIL — `Failed to resolve import "../size-chart.ts"`.
 
 Estrutura obrigatória (o miolo de cada função vem do spike; o que está fixado aqui é a forma):
 
-- Cabeçalho de comentário citando `docs/spikes/051-guia-tamanhos-ml-api.md` e o ADR-0166, e a frase: *"todo path e todo campo deste arquivo foi copiado do spike; nada foi deduzido"*.
+- Cabeçalho de comentário citando `docs/spikes/051-guia-tamanhos-ml-api.md` e o ADR-0167, e a frase: *"todo path e todo campo deste arquivo foi copiado do spike; nada foi deduzido"*.
 - `erroML(status, json)` — reusar `humanizarErroML` de `./erro-ml.ts`, exatamente como `atualizar-item.ts` faz, e anexar `.status` ao `Error` (sem isso o `decidirRetryPorErro` trata 400 como retentável e a fila retenta cinco minutos um erro definitivo).
 - `montarCorpoChart` puro (sem `fetch`), para ser testável sem rede.
 - `criarChart`/`buscarChart` usando `fetch` com `Authorization: Bearer`.
@@ -2999,7 +3001,7 @@ Expected: PASS.
 
 ```bash
 /usr/bin/git add supabase/functions/_shared/ml/size-chart.ts supabase/functions/_shared/ml/__tests__/size-chart.test.ts
-/usr/bin/git commit -m "feat(ml): cliente da API de tabelas de medidas (ADR-0166, spike 051)"
+/usr/bin/git commit -m "feat(ml): cliente da API de tabelas de medidas (ADR-0167, spike 051)"
 ```
 
 ---
@@ -3198,9 +3200,9 @@ O miolo acima é injetável para ser testável. O adaptador que amarra as quatro
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { criarChart, buscarChart } from './size-chart.ts';
 
-/** Liga `resolverSizeChart` ao banco e à API real. Na **Forma A** do ADR-0166 o vínculo vive em
+/** Liga `resolverSizeChart` ao banco e à API real. Na **Forma A** do ADR-0167 o vínculo vive em
  *  `ml_size_charts (org_id, conta_externa_id, dominio, genero, chart_id)`; na **Forma B**, em
- *  `familias.size_chart_id`. Use a que o ADR-0166 fixou — o `select`/`upsert` abaixo é o da
+ *  `familias.size_chart_id`. Use a que o ADR-0167 fixou — o `select`/`upsert` abaixo é o da
  *  Forma A e precisa ser trocado se a decisão foi a B. */
 export function resolverComSupabase(admin: SupabaseClient, token: string) {
   return (args: Parameters<typeof resolverSizeChart>[1]) => resolverSizeChart({
@@ -3266,7 +3268,7 @@ Expected: PASS. Se a Task 17 escolheu a **Forma B**, o TypeScript acusa `ml_size
 
 ```bash
 /usr/bin/git add supabase/functions/_shared/ml/resolver-size-chart.ts supabase/functions/_shared/ml/__tests__/resolver-size-chart.test.ts
-/usr/bin/git commit -m "feat(ml): resolucao idempotente da tabela de medidas (ADR-0166)"
+/usr/bin/git commit -m "feat(ml): resolucao idempotente da tabela de medidas (ADR-0167)"
 ```
 
 ---
@@ -3359,7 +3361,7 @@ const VARIACAO_BASE: VariacaoParaMontar = {
   /* ← cópia literal */ tamanho: null, size_chart_row_id: null,
 } as VariacaoParaMontar;
 
-describe('montarAnuncioCanonico — tamanho (ADR-0165)', () => {
+describe('montarAnuncioCanonico — tamanho (ADR-0166)', () => {
   beforeEach(() => fakeConnector.reset());
 
   it('variacao sem tamanho produz tamanho e sizeGridRowId nulos', async () => {
@@ -3391,11 +3393,11 @@ Expected: FAIL — `tamanho` é `undefined`, esperava `null`.
 Em `supabase/functions/_shared/canais/contrato.ts`, em `VariacaoCanonica`:
 
 ```ts
-  /** ADR-0165: tamanho (roupa) / numeração (calçado). `null` = a variação não tem esse eixo —
+  /** ADR-0166: tamanho (roupa) / numeração (calçado). `null` = a variação não tem esse eixo —
    *  o caso de toda org sem tipo de produto habilitado. Alimenta a descrição e o eixo de
    *  variação; NÃO é o que vai no atributo do ML (isso é `sizeGridRowId`). */
   tamanho: string | null;
-  /** ADR-0166: linha da tabela de medidas do ML que corresponde a este tamanho
+  /** ADR-0167: linha da tabela de medidas do ML que corresponde a este tamanho
    *  (`SIZE_GRID_ROW_ID`). `null` quando não há tamanho ou o domínio não exige tabela. */
   sizeGridRowId: string | null;
 ```
@@ -3403,7 +3405,7 @@ Em `supabase/functions/_shared/canais/contrato.ts`, em `VariacaoCanonica`:
 E em `AnuncioCanonico`, depois de `variacoes`:
 
 ```ts
-  /** ADR-0166: tabela de medidas do anúncio (`SIZE_GRID_ID`). `null` = anúncio sem tabela, que é
+  /** ADR-0167: tabela de medidas do anúncio (`SIZE_GRID_ID`). `null` = anúncio sem tabela, que é
    *  o caso de tudo que é publicado hoje. */
   sizeGridId: string | null;
 ```
@@ -3419,7 +3421,7 @@ Em cada um dos cinco pontos, o objeto de variação ganha as duas chaves. `monta
 ```ts
       sku: v.codigo, cor: v.cor, estoque: v.estoque,
       preco: v.preco_publicacao as number | null, gtin: v.gtin, fotoId: v.ml_picture_id,
-      // ADR-0165/0166. `?? null` explícito: a coluna é nullable e `undefined` no payload
+      // ADR-0166/0167. `?? null` explícito: a coluna é nullable e `undefined` no payload
       // produziria `attribute_combinations` com valor ausente em vez de atributo omitido.
       tamanho: (v.tamanho as string | null) ?? null,
       sizeGridRowId: (v.size_chart_row_id as string | null) ?? null,
@@ -3446,7 +3448,7 @@ Expected: PASS nos dois. O TypeScript vai acusar qualquer um dos cinco sítios e
 
 ```bash
 /usr/bin/git add supabase/functions/
-/usr/bin/git commit -m "feat(canais): tamanho e size grid no contrato canonico (ADR-0165/0166)"
+/usr/bin/git commit -m "feat(canais): tamanho e size grid no contrato canonico (ADR-0166/0167)"
 ```
 
 ---
@@ -3482,7 +3484,7 @@ describe('montarPayloadItem — sem tamanho (INV-1)', () => {
   });
 });
 
-describe('montarPayloadItem — com tamanho (ADR-0166)', () => {
+describe('montarPayloadItem — com tamanho (ADR-0167)', () => {
   it('ramo variations emite COLOR + SIZE_GRID_ROW_ID por variacao', () => {
     const p = montarPayloadItem(
       FAMILIA,
@@ -3538,7 +3540,7 @@ Expected: FAIL — o primeiro caso ("sem tamanho") passa; os de tamanho falham.
 Em `publicar.ts`, na interface `VariacaoInput`:
 
 ```ts
-  /** ADR-0165/0166. `tamanho` é o valor do operador (só para decidir se há eixo);
+  /** ADR-0166/0167. `tamanho` é o valor do operador (só para decidir se há eixo);
    *  `sizeGridRowId` é o que o ML recebe. */
   tamanho: string | null;
   sizeGridRowId: string | null;
@@ -3548,7 +3550,7 @@ E acrescente o parâmetro final a `montarPayloadItem`, **depois** de `formato` (
 
 ```ts
   formato?: 'plano',
-  /** ADR-0166: `SIZE_GRID_ID` do anúncio. Obrigatório quando alguma variação tem tamanho. */
+  /** ADR-0167: `SIZE_GRID_ID` do anúncio. Obrigatório quando alguma variação tem tamanho. */
   sizeGridId?: string | null,
 ```
 
@@ -3557,7 +3559,7 @@ E acrescente o parâmetro final a `montarPayloadItem`, **depois** de `formato` (
 Logo no início da função, depois do cálculo de `variacaoUnica`:
 
 ```ts
-  // ADR-0166: publicar um SKU de vestuário sem a linha da tabela de medidas é publicá-lo no
+  // ADR-0167: publicar um SKU de vestuário sem a linha da tabela de medidas é publicá-lo no
   // tamanho errado (o ML não aceita SIZE como texto solto nos domínios que exigem chart). Falha
   // LOUD antes do POST em vez de mandar um payload que o ML aceita pela metade.
   const temTamanho = variacoes.some((v) => v.tamanho != null && v.tamanho !== '');
@@ -3565,14 +3567,14 @@ Logo no início da função, depois do cálculo de `variacaoUnica`:
     if (!sizeGridId) {
       throw new Error(
         'Família com tamanho e sem tabela de medidas (SIZE_GRID_ID) — não é possível publicar. '
-        + 'Resolva a tabela antes de montar o payload (ADR-0166).',
+        + 'Resolva a tabela antes de montar o payload (ADR-0167).',
       );
     }
     const semLinha = variacoes.filter((v) => v.tamanho && !v.sizeGridRowId).map((v) => v.codigo);
     if (semLinha.length > 0) {
       throw new Error(
         `Variações sem linha na tabela de medidas (SIZE_GRID_ROW_ID): ${semLinha.join(', ')} — `
-        + 'não é possível publicar sem elas (ADR-0166).',
+        + 'não é possível publicar sem elas (ADR-0167).',
       );
     }
   }
@@ -3632,7 +3634,7 @@ Faça o mesmo em `_shared/user-products/publicar-familia-up.ts:85` e `_shared/us
 ```bash
 pnpm check:functions
 /usr/bin/git add supabase/functions/
-/usr/bin/git commit -m "feat(ml): payload com COLOR + SIZE_GRID no CREATE (ADR-0166)"
+/usr/bin/git commit -m "feat(ml): payload com COLOR + SIZE_GRID no CREATE (ADR-0167)"
 ```
 
 ---
@@ -3706,7 +3708,7 @@ const NOVA = {
   gtin: null, ml_picture_id: 'p9', sizeGridRowId: null as string | null,
 };
 
-describe('montarVariacaoNova — tamanho (ADR-0166)', () => {
+describe('montarVariacaoNova — tamanho (ADR-0167)', () => {
   it('sem sizeGridRowId sai identica a de hoje: so COLOR', () => {
     expect(montarVariacaoNova(NOVA, null, null, null, 'MLB1430').attribute_combinations)
       .toEqual([{ id: 'COLOR', value_name: 'Verde' }]);
@@ -3762,7 +3764,7 @@ describe('temSizeGridNaVariacaoML (R2b)', () => {
 //
 // O SINAL É `atuaisNoML[].temSizeGrid`, lido do ML. A versão anterior lia `existentes[].tamanho`,
 // que em produção é SEMPRE null (ingest-lote nunca herda tamanho) — guard que nunca dispara.
-describe('motivoRenameBloqueado (ADR-0165 / R2b)', () => {
+describe('motivoRenameBloqueado (ADR-0166 / R2b)', () => {
   const existentes = (cor: string | null = 'Azul') => [{ sku: '00000002', estoque: 9, cor }];
   const noML = (temSizeGrid: boolean, cor = 'Azul') => [
     { id: 1, seller_custom_field: '00000002', available_quantity: 5, cor, temSizeGrid },
@@ -3845,7 +3847,7 @@ existem.
 Em `atualizar.ts`, na interface `CorNovaInput`:
 
 ```ts
-  /** ADR-0166: linha da tabela de medidas. Só existe em cor nova de família com tamanho. */
+  /** ADR-0167: linha da tabela de medidas. Só existe em cor nova de família com tamanho. */
   sizeGridRowId?: string | null;
 ```
 
@@ -3853,7 +3855,7 @@ Em `montarVariacaoNova`, substitua a montagem de `attribute_combinations`:
 
 ```ts
   const combinacoes: AtributoVar[] = [{ id: 'COLOR', value_name: v.cor ?? '' }];
-  // ADR-0166: só na variação NOVA. Reenviar atributo em variação existente derruba o PUT inteiro
+  // ADR-0167: só na variação NOVA. Reenviar atributo em variação existente derruba o PUT inteiro
   // quando ela tem vendas ("You cannot change attribute combinations if the variation has bids",
   // lote #45 / ADR-0062) — e derrubar o PUT derruba o estoque junto. `montarVariacoesUpdate`
   // continua sem tocar em size grid, de propósito e para sempre.
@@ -3868,7 +3870,7 @@ Em `montarVariacaoNova`, substitua a montagem de `attribute_combinations`:
 mesmo tipo de leitura, acrescente o helper irmão:
 
 ```ts
-// R2b (ADR-0165): a variação foi publicada com eixo de tamanho? `SIZE_GRID_ROW_ID` nas
+// R2b (ADR-0166): a variação foi publicada com eixo de tamanho? `SIZE_GRID_ROW_ID` nas
 // attribute_combinations é a prova — e a ÚNICA fonte confiável disso no UPDATE. O banco local
 // NÃO serve: nenhum produtor de lote UPDATE do v1 carrega `tamanho` nas variações
 // (ingest-lote herda só ml_variation_id/cor/foto/preço; adicionar-variacoes-familia está
@@ -3894,7 +3896,7 @@ fixture do repositório monta essa interface como `{ id, seller_custom_field, av
 cor }`, e exigir o campo quebraria a compilação da suíte inteira sem ganho nenhum.
 
 ```ts
-  /** R2b (ADR-0165): variação publicada com SIZE_GRID_ROW_ID (eixo de tamanho)? Preenchido por
+  /** R2b (ADR-0166): variação publicada com SIZE_GRID_ROW_ID (eixo de tamanho)? Preenchido por
    *  `buscarItemML`. Ausente em fixture antigo = tratado como `false`. */
   temSizeGrid?: boolean;
 ```
@@ -3903,7 +3905,7 @@ cor }`, e exigir o campo quebraria a compilação da suíte inteira sem ganho ne
 conector (o conector só as consulta):
 
 ```ts
-/** R2b (ADR-0165): em anúncio COM eixo de tamanho, renomear a cor de uma variação já publicada
+/** R2b (ADR-0166): em anúncio COM eixo de tamanho, renomear a cor de uma variação já publicada
  *  está fora do escopo do v1.
  *
  *  Por quê: `montarVariacoesUpdate` SUBSTITUI `attribute_combinations` por `[COLOR]` quando a cor
@@ -3954,7 +3956,7 @@ export function motivoRenameBloqueado(
     + `atualize de novo — o Mercado Livre recusa a alteração parcial de atributos nessas variações.`;
 }
 
-/** R2c (ADR-0166): variação NOVA sem linha da tabela de medidas num anúncio que TEM eixo de
+/** R2c (ADR-0167): variação NOVA sem linha da tabela de medidas num anúncio que TEM eixo de
  *  tamanho. Caminho real: re-ingest de planilha (fora do escopo v1, sem coluna de tamanho) com um
  *  CÓDIGO que a planilha não tinha antes — a cor nova entraria com `attribute_combinations` só
  *  com COLOR enquanto as irmãs têm COLOR + SIZE_GRID_ROW_ID, e o ML devolveria erro cru de API.
@@ -3971,7 +3973,7 @@ export function motivoVariacaoNovaSemTamanho(
   if (sem.length === 0) return null;
   return `Variação nova em produto com tamanho/numeração precisa ter o tamanho definido antes de `
     + `atualizar o anúncio (variações ${sem.join(', ')}). Cadastre o tamanho dessas variações no `
-    + `produto e atualize de novo — planilha ainda não traz tamanho (ADR-0165).`;
+    + `produto e atualize de novo — planilha ainda não traz tamanho (ADR-0166).`;
 }
 ```
 
@@ -3997,7 +3999,7 @@ Step não compila.
 (c) Substitua a montagem de `corDesejadaPorCodigo` (linhas ~275-277) por:
 
 ```ts
-      // R2b (ADR-0165): este anúncio tem eixo de tamanho? O sinal vem do PRÓPRIO ML — a variação
+      // R2b (ADR-0166): este anúncio tem eixo de tamanho? O sinal vem do PRÓPRIO ML — a variação
       // publicada carrega SIZE_GRID_ROW_ID nas attribute_combinations, e `buscarItemML` marca
       // isso em `temSizeGrid`. NÃO existe sinal equivalente no banco: nenhum produtor de lote
       // UPDATE do v1 propaga `tamanho` (ingest-lote herda só ml_variation_id/cor/foto/preço;
@@ -4149,7 +4151,7 @@ E o contra-caso, que prova o INV-1: anúncio **sem** size grid + cor nova sem `s
 pnpm test supabase/functions
 pnpm check:functions
 /usr/bin/git add supabase/functions/
-/usr/bin/git commit -m "feat(ml): tamanho em cor nova no UPDATE, nunca em variacao existente (ADR-0166)
+/usr/bin/git commit -m "feat(ml): tamanho em cor nova no UPDATE, nunca em variacao existente (ADR-0167)
 
 Rename de cor e variacao nova sem tamanho recusados em anuncio com SIZE_GRID_ROW_ID,
 decidindo pelo estado real do item no ML (temSizeGrid), nao por coluna do banco."
@@ -4191,7 +4193,7 @@ import { describe, expect, it, vi } from 'vitest';
 // Importe a função de orquestração real que o Step 2 revelar.
 import { prepararSizeChart } from '../size-chart-wiring.ts';
 
-describe('prepararSizeChart (ADR-0166)', () => {
+describe('prepararSizeChart (ADR-0167)', () => {
   it('familia SEM tamanho nao chama o resolvedor e devolve nulos — INV-1', async () => {
     const resolver = vi.fn();
     const r = await prepararSizeChart(
@@ -4263,7 +4265,7 @@ Expected: FAIL — módulo inexistente.
 Crie `supabase/functions/_shared/ml/size-chart-wiring.ts` (miolo puro, testável sem rede — mesmo padrão de `cadastrar-produto/processar.ts`):
 
 ```ts
-// ADR-0166: prepara a tabela de medidas ANTES de montar o AnuncioCanonico. Puro e com o
+// ADR-0167: prepara a tabela de medidas ANTES de montar o AnuncioCanonico. Puro e com o
 // resolvedor injetado para ser testável sem Supabase nem rede.
 //
 // INV-1: família sem nenhum tamanho nem toca no resolvedor e devolve nulos — o caminho de toda
@@ -4306,7 +4308,7 @@ export async function prepararSizeChart(
     const e = new Error(
       'Família com tamanho e sem gênero informado — o Mercado Livre exige que o gênero do anúncio '
       + 'bata com o da tabela de medidas. Corrija o gênero no cadastro do produto e publique de '
-      + 'novo (ADR-0166).',
+      + 'novo (ADR-0167).',
     ) as Error & { status?: number };
     e.status = 400;
     throw e;
@@ -4319,7 +4321,7 @@ export async function prepararSizeChart(
     const e = new Error(
       'Família com tamanho e organização sem conta do Mercado Livre resolvida — a tabela de '
       + 'medidas pertence à conta que a criou. Reconecte o Mercado Livre e publique de novo '
-      + '(ADR-0166).',
+      + '(ADR-0167).',
     ) as Error & { status?: number };
     e.status = 400;
     throw e;
@@ -4354,7 +4356,7 @@ Em `supabase/functions/publish-familia-ml/processar.ts`, **imediatamente antes**
 chama `montarAnuncioCanonico` (hoje `:158`, logo depois de `aplicarEstoqueDerivado`):
 
 ```ts
-  // ADR-0166: resolve a tabela de medidas antes de montar o canônico. `sizeGridId` nulo e
+  // ADR-0167: resolve a tabela de medidas antes de montar o canônico. `sizeGridId` nulo e
   // `rowIdPorTamanho` vazio é o caminho de toda família sem tamanho — nenhuma chamada extra
   // de banco nem de rede para quem não tem tipo de produto habilitado (INV-1).
   //
@@ -4393,7 +4395,7 @@ posicionalmente):
 
 ```ts
   listingTypeId?: string,
-  /** ADR-0166: tabela de medidas já resolvida pelo worker. Ausente = anúncio sem tabela, que é
+  /** ADR-0167: tabela de medidas já resolvida pelo worker. Ausente = anúncio sem tabela, que é
    *  o caso de tudo que é publicado hoje e de todo canal ≠ ML. */
   sizeChart?: { sizeGridId: string | null; rowIdPorTamanho: Record<string, string> },
 ```
@@ -4448,7 +4450,7 @@ Depois de resolver, grave `variacoes.size_chart_row_id` para cada variação —
 ```bash
 pnpm check:functions && pnpm test supabase/functions
 /usr/bin/git add supabase/functions/
-/usr/bin/git commit -m "feat(ml): resolve a tabela de medidas antes de publicar (ADR-0166)"
+/usr/bin/git commit -m "feat(ml): resolve a tabela de medidas antes de publicar (ADR-0167)"
 ```
 
 ---
@@ -4505,7 +4507,7 @@ Esta fase **não assume** que nada quebrou — ela prova. Cada teste aqui existe
 - [ ] **Step 1: Escrever o teste (este nasce VERDE de propósito — é um teste de regressão, não de feature)**
 
 ```ts
-// INV-1 (ADR-0165): org sem tipo de produto habilitado tem comportamento byte a byte igual ao de
+// INV-1 (ADR-0166): org sem tipo de produto habilitado tem comportamento byte a byte igual ao de
 // antes desta entrega. Este arquivo é a prova, não a afirmação. Se algum destes falhar, a
 // condicional de tamanho vazou para o caminho padrão e o defeito já está em produção.
 import { describe, expect, it } from 'vitest';
@@ -4583,7 +4585,7 @@ Expected: PASS, 6 testes. **Se algum falhar, pare** — é um defeito real intro
 
 ```bash
 /usr/bin/git add supabase/functions/_shared/ml/__tests__/publicar-sem-tamanho.test.ts
-/usr/bin/git commit -m "test(ml): prova o INV-1 no payload de CREATE e UPDATE (ADR-0165)"
+/usr/bin/git commit -m "test(ml): prova o INV-1 no payload de CREATE e UPDATE (ADR-0166)"
 ```
 
 ---
@@ -4617,7 +4619,7 @@ import { describe, expect, it } from 'vitest';
 // Importe o que o Step 1 revelou.
 import { clonarVariacao } from '../processar.ts';
 
-describe('Kit vinculado x variação por tamanho (ADR-0151 escopo v1 / ADR-0165)', () => {
+describe('Kit vinculado x variação por tamanho (ADR-0151 escopo v1 / ADR-0166)', () => {
   // A trava vive em processar.ts:350 — `variacoesBase.length > 1` → 'base_multivariacao'.
   // Uma família cor × tamanho tem sempre > 1 variação, logo o kit continua recusado. Este teste
   // exercita a função de clone (que é testável sem Supabase) e a trava fica coberta pelo teste
@@ -4637,7 +4639,7 @@ describe('Kit vinculado x variação por tamanho (ADR-0151 escopo v1 / ADR-0165)
 Se `clonarVariacao` **não** zera `tamanho`, essa é uma **correção obrigatória**, não um ajuste de teste: acrescente `tamanho: null` ao objeto que ela devolve, junto de `cor: null` / `cor_hex: null` / `cor_origem: null` (linhas 196-199), com o comentário:
 
 ```ts
-    // ADR-0165: kit é unidade única sem eixo de tamanho. Herdar o tamanho da base publicaria o
+    // ADR-0166: kit é unidade única sem eixo de tamanho. Herdar o tamanho da base publicaria o
     // kit como "Kit 3 unidades tamanho P", que não é o que o kit é.
     tamanho: null,
 ```
@@ -4747,7 +4749,7 @@ O agente revisor **Fable** (`fable-advisor`) é chamado nos pontos abaixo. Cada 
 
 | # | Quando | O que ele recebe | Bloqueia? |
 |---|---|---|---|
-| **F1** | Fim da **Fase 0**, antes de tocar em schema | `docs/spikes/051-*.md` + os dois ADRs (0165, 0166) | **Sim** |
+| **F1** | Fim da **Fase 0**, antes de tocar em schema | `docs/spikes/051-*.md` + os dois ADRs (0166, 0167) | **Sim** |
 | **F2** | **Plano completo**, antes de começar a Fase 1 | Este documento inteiro | **Sim** |
 | **F3** | Fim da **Fase 1** (migration `organizations`) | Diff completo da Fase 1 | **Sim** |
 | **F4** | Fim da **Fase 2** (migration `familias`/`variacoes`) | Diff da migration + `database.types.ts` | **Sim** |
