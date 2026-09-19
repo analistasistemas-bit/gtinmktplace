@@ -1558,7 +1558,12 @@ describe('tamanho', () => {
   });
 
   it('mesma cor com tamanhos diferentes e o caso NORMAL da feature', () => {
+    // Nota (achado do code-quality review da Task 12, 2026-09-19): o caso original deste teste
+    // não tinha `genero`, o que colide com a regra R3 (gênero obrigatório quando alguma variação
+    // tem tamanho) — o `toEqual([])` seria inalcançável. `genero: 'unissex'` preserva a intenção
+    // do caso (exercitar a trava de SKU duplicado, não a de gênero) sem sacrificar cobertura.
     expect(validarProdutoNovo(base({
+      genero: 'unissex',
       variacoes: [{ nome: 'Azul', tamanho: 'P', preco: 50 }, { nome: 'Azul', tamanho: 'M', preco: 50 }],
     }))).toEqual([]);
   });
