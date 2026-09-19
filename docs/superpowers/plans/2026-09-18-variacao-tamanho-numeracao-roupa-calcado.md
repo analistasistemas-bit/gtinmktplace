@@ -373,7 +373,7 @@ Objetivo da fase: a org passa a ter tipos de produto habilitáveis pelo super-ad
 ### Task 5: Migration — coluna `tipos_produto_habilitados` + RPC de leitura
 
 **Files:**
-- Create: `supabase/migrations/<timestamp>_adr165_tipos_produto_por_org.sql`
+- Create: `supabase/migrations/<timestamp>_adr166_tipos_produto_por_org.sql`
 - Modify: `src/lib/database.types.ts` (regerado, não editado à mão)
 
 **Interfaces:**
@@ -392,10 +392,10 @@ Expected: `Finished supabase link.` Se pedir a senha do banco, use a que já est
 - [ ] **Step 2: Criar o arquivo de migration**
 
 ```bash
-supabase migration new adr165_tipos_produto_por_org
+supabase migration new adr166_tipos_produto_por_org
 ```
 
-Expected: imprime o caminho do arquivo criado, no formato `supabase/migrations/2026MMDDHHMMSS_adr165_tipos_produto_por_org.sql`. **Anote esse caminho** — os passos seguintes escrevem nele.
+Expected: imprime o caminho do arquivo criado, no formato `supabase/migrations/2026MMDDHHMMSS_adr166_tipos_produto_por_org.sql`. **Anote esse caminho** — os passos seguintes escrevem nele.
 
 - [ ] **Step 3: Escrever o SQL**
 
@@ -1132,7 +1132,7 @@ Esta fase cria **só** as colunas que o operador preenche. As colunas de víncul
 ### Task 10: Migration — `familias.genero` e `variacoes.tamanho`
 
 **Files:**
-- Create: `supabase/migrations/<timestamp>_adr165_genero_e_tamanho.sql`
+- Create: `supabase/migrations/<timestamp>_adr166_genero_e_tamanho.sql`
 - Modify: `src/lib/database.types.ts` (regerado)
 
 **Interfaces:**
@@ -1143,7 +1143,7 @@ Esta fase cria **só** as colunas que o operador preenche. As colunas de víncul
 
 ```bash
 cd "/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/roupas-sapatos-grilling"
-supabase migration new adr165_genero_e_tamanho
+supabase migration new adr166_genero_e_tamanho
 ```
 
 Expected: imprime o caminho do arquivo criado. Anote-o.
@@ -2816,7 +2816,7 @@ pnpm check:functions
 ### Task 17: Migration — vínculo com a tabela de medidas
 
 **Files:**
-- Create: `supabase/migrations/<timestamp>_adr166_size_chart_vinculo.sql`
+- Create: `supabase/migrations/<timestamp>_adr167_size_chart_vinculo.sql`
 - Modify: `src/lib/database.types.ts` (regerado)
 
 **Interfaces:**
@@ -2847,7 +2847,7 @@ Se o ADR-0167 não deixa claro qual das duas, **pare e volte ao Task 3** — est
 - [ ] **Step 2: Criar e escrever a migration**
 
 ```bash
-supabase migration new adr166_size_chart_vinculo
+supabase migration new adr167_size_chart_vinculo
 ```
 
 O corpo segue o padrão das migrations do projeto: cabeçalho de comentário sem acentos explicando o porquê e citando o ADR-0167 e o spike 051; `add column if not exists`; `comment on column`. Na **Forma A**, a tabela nova precisa de `chart_id` nulável, da unique que arbitra a corrida e da RLS:
