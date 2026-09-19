@@ -425,6 +425,43 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   o que **encerra a pendência nº 4 do ADR-0152**. Efeito novo: todo push na `main` redeploya a
   landing, inclusive commit que só toca `docs/`.
 
+- **ADR-0165: percentual de gestão por faixa regressiva de faturamento, por organização
+  (2026-09-19) — EM PRODUÇÃO.** Diego apontou que a tela de condições comerciais (aba **Cobrança**,
+  ADR-0158) não batia com o que o site público promete: a página anuncia percentual regressivo por
+  faixa de faturamento mensal (até 100K/100–300K/300–500K/+500K) nas duas modalidades, mas o sistema
+  só gravava um `revenue_bps` único por contrato, sem faixa, e nada impedia uma organização de ter
+  campos que a modalidade dela não deveria cobrar. Medido em produção antes de mexer: Daludi Shop e
+  DSA (modalidade 1) tinham Sonar cobrado do cliente (`sonar_unit_cents=120`), que a modalidade 1
+  não deveria cobrar — Avil (modalidade 2) já estava correta. `platform_commercial_terms.revenue_bps`
+  virou 4 colunas fixas (`revenue_bps_t1..t4`, cortes de faixa fixos e iguais pra todo mundo, só o
+  percentual dentro de cada faixa é negociável por organização); a faixa aplicada é escolhida
+  automaticamente todo mês pelo faturamento líquido do mês (mesma base que já calculava o percentual
+  antes deste ADR — não é base nova), sem confirmação humana. Modalidade passou a restringir campos
+  por `CHECK` de banco **e** validação na RPC/TypeScript: modalidade 1 nunca cobra Sonar do cliente,
+  modalidade 2 nunca tem infraestrutura separada — violação rejeita com erro, nunca normaliza em
+  silêncio. A migration corrigiu Daludi Shop/DSA no mesmo movimento (zerou o Sonar). Duas migrations
+  (schema+`platform_save_terms`, depois `platform_terms_tier`/`preview`/`close` com
+  `applied_bps`/`applied_tier`), a trava de imutabilidade da tabela foi desabilitada só durante o
+  backfill (dentro de uma transação, com asserção LOUD antes de reabilitar) — precedente já aberto
+  pelo ADR-0164. **A revisão final de branch (depois das 11 tarefas prontas) achou um bug real, não
+  hipotético, e reproduziu com um probe**: o backfill zera o termo retroativamente, mas
+  `platform_sonar_deliveries` é append-only — entregas já registradas mantinham o valor cobrado, e a
+  condição de visibilidade da linha "Consultas Sonar" no preview escondia a linha enquanto o total
+  continuava somando o valor (demonstrativo que não fecha). Corrigido antes do merge (a condição
+  passou a considerar `v_sonar>0` também), com teste de regressão e reverificação por 80 combinações
+  de organização×mês provando `soma(linhas) = total`. `_shared/platform-admin/billing.ts`
+  (implementação paralela do cálculo de fee em TypeScript, sem nenhum importador de produção) foi
+  removido — reimplementar a faixa em TS teria criado uma segunda fonte dos cortes. **Validado em
+  produção em 2026-09-19**: as 4 queries de medição bateram exatamente com o previsto antes do
+  `db push` (2 organizações corrigidas, 0 nas outras 3 checagens); migrations aplicadas, Edge
+  Functions `platform-admin`/`materializar-metricas` redeployadas (versões 6/2, confirmadas por
+  `supabase functions list`), merge fast-forward na `main`. Divergência entre faturamento bruto (o
+  que a página pública descreve) e líquido (a base real do corte de faixa, sempre a favor da Daludi)
+  documentada no ADR como continuação de comportamento pré-existente, não regressão desta entrega.
+  Ver [ADR-0165](decisions/0165-faixas-regressivas-por-organizacao.md), o
+  [design](superpowers/specs/2026-09-18-condicoes-comerciais-faixas-design.md) e o
+  [plano de 11 tarefas](superpowers/plans/2026-09-18-condicoes-comerciais-faixas.md).
+
 ## Trilho de UX/design (2026-06-21, em producao)
 
 Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem tocar backend/lifecycle. Detalhe em `TASKS.md`.
