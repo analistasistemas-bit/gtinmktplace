@@ -20,6 +20,7 @@ create table if not exists public.ml_vendas (
 -- Migrations novas que tocam billing entram ABAIXO, em ordem de timestamp.
 -- Fora de ordem (ou ausentes) o teste roda contra a versao antiga das funcoes e passa em falso.
 \ir ../migrations/20260907102428_platform_terms_contract_fix.sql
+\ir ../migrations/20260918010100_platform_billing_tiers.sql
 select set_config('request.jwt.claims','{"role":"service_role"}',false);
 
 insert into public.organizations(id,nome,slug) values
@@ -34,17 +35,18 @@ insert into public.organizations(id,nome,slug) values
   ('90000000-0000-0000-0000-000000000013','Org No Terms','org-no-terms');
 
 insert into public.platform_commercial_terms(
-  org_id,starts_on,modality,monthly_fee_cents,revenue_bps,sonar_unit_cents,
+  org_id,starts_on,modality,monthly_fee_cents,
+  revenue_bps_t1,revenue_bps_t2,revenue_bps_t3,revenue_bps_t4,sonar_unit_cents,
   setup_fee_cents,setup_due_month,reason,created_by,version
 ) values
-  ('90000000-0000-0000-0000-000000000003',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,60000,500,120,0,null,'billing fixture','80000000-0000-0000-0000-000000000001',1),
-  ('90000000-0000-0000-0000-000000000004',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,100,(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,'partial fixture','80000000-0000-0000-0000-000000000001',1),
-  ('90000000-0000-0000-0000-000000000005',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'late fixture','80000000-0000-0000-0000-000000000001',1),
-  ('90000000-0000-0000-0000-000000000006',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,5000,0,0,null,'rounding fixture','80000000-0000-0000-0000-000000000001',1),
-  ('90000000-0000-0000-0000-000000000007',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'source guard fixture','80000000-0000-0000-0000-000000000001',1),
-  ('90000000-0000-0000-0000-000000000008',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'cancelled fixture','80000000-0000-0000-0000-000000000001',1),
-  ('90000000-0000-0000-0000-000000000009',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'paid evidence fixture','80000000-0000-0000-0000-000000000001',1),
-  ('90000000-0000-0000-0000-000000000010',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,0,0,null,'late paid evidence fixture','80000000-0000-0000-0000-000000000001',1);
+  ('90000000-0000-0000-0000-000000000003',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,1,60000,500,500,500,500,0,0,null,'billing fixture','80000000-0000-0000-0000-000000000001',1),
+  ('90000000-0000-0000-0000-000000000004',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,500,500,500,0,100,(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,'partial fixture','80000000-0000-0000-0000-000000000001',1),
+  ('90000000-0000-0000-0000-000000000005',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,500,500,500,0,0,null,'late fixture','80000000-0000-0000-0000-000000000001',1),
+  ('90000000-0000-0000-0000-000000000006',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,5000,5000,5000,5000,0,0,null,'rounding fixture','80000000-0000-0000-0000-000000000001',1),
+  ('90000000-0000-0000-0000-000000000007',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,500,500,500,0,0,null,'source guard fixture','80000000-0000-0000-0000-000000000001',1),
+  ('90000000-0000-0000-0000-000000000008',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,500,500,500,0,0,null,'cancelled fixture','80000000-0000-0000-0000-000000000001',1),
+  ('90000000-0000-0000-0000-000000000009',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,500,500,500,0,0,null,'paid evidence fixture','80000000-0000-0000-0000-000000000001',1),
+  ('90000000-0000-0000-0000-000000000010',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,500,500,500,0,0,null,'late paid evidence fixture','80000000-0000-0000-0000-000000000001',1);
 
 insert into public.ml_vendas(id,org_id,order_id,date_closed,total_amount,status,atualizado_em,tem_devolucao,estorno) values
   ('50000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000003',300001,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',9000,'paid','2026-07-02T12:00:00Z',false,0),
@@ -59,30 +61,21 @@ insert into public.ml_vendas(id,org_id,order_id,date_closed,total_amount,status,
   ('50000000-0000-0000-0000-000000000010','90000000-0000-0000-0000-000000000010',100010,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',200,'paid','2026-07-02T12:00:00Z',false,0);
 
 do $$
-declare i integer; v_result uuid; v_search uuid;
-begin
-  for i in 1..10 loop
-    insert into public.platform_sonar_results(normalized_query,query_type,schema_version,generation,payload,state,valid_until)
-      values('billing-'||i,'termo',1,1,jsonb_build_object('itens',jsonb_build_array(jsonb_build_object('id',i))),'ready',now()+interval '1 day') returning id into v_result;
-    insert into public.platform_sonar_searches(org_id,actor_id,request_id,intent_key,normalized_query,query_type,result_id,state,origin,completed_at)
-      values('90000000-0000-0000-0000-000000000003','80000000-0000-0000-0000-000000000001',gen_random_uuid(),'billing-'||i,'billing-'||i,'termo',v_result,'completed','cliente',now()) returning id into v_search;
-    insert into public.platform_sonar_deliveries(org_id,result_id,search_id,actor_id,terms_id,month,unit_cents,units,total_cents)
-      values('90000000-0000-0000-0000-000000000003',v_result,v_search,'80000000-0000-0000-0000-000000000001',
-        (select id from public.platform_resolve_terms('90000000-0000-0000-0000-000000000003',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date)),
-        (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,120,1,120);
-  end loop;
-end $$;
-
-do $$
 declare v_month date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
 declare v_preview jsonb; v_closed jsonb;
 begin
   v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000003',v_month);
   if (v_preview->>'gross_cents')::bigint<>1000000 or (v_preview->>'refund_cents')::bigint<>100000
     or (v_preview->>'base_cents')::bigint<>900000 or (v_preview->>'fee_cents')::bigint<>45000
-    or (v_preview->>'sonar_units')::integer<>10 or (v_preview->>'sonar_cents')::bigint<>1200
-    or (v_preview->>'total_cents')::bigint<>106200 or jsonb_array_length(v_preview->'blockers')<>0 then
+    or (v_preview->>'sonar_units')::integer<>0 or (v_preview->>'sonar_cents')::bigint<>0
+    or (v_preview->>'total_cents')::bigint<>105000 or jsonb_array_length(v_preview->'blockers')<>0 then
     raise exception 'numeric fixture failed: %',v_preview;
+  end if;
+  if (v_preview->>'applied_bps') is null then
+    raise exception 'preview deveria expor applied_bps quando ha condicao comercial: %', v_preview;
+  end if;
+  if (v_preview->>'applied_tier') is null then
+    raise exception 'preview deveria expor applied_tier quando ha condicao comercial: %', v_preview;
   end if;
   if v_preview#>>'{lines,1,unit_cents}' is not null then raise exception 'bps exposed as cents'; end if;
   begin
@@ -91,11 +84,56 @@ begin
   exception when serialization_failure then null;
   end;
   v_closed:=public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000003',v_month,v_preview->>'revision');
-  if (v_closed->>'total_cents')::bigint<>106200 then raise exception 'close changed preview'; end if;
+  if (v_closed->>'total_cents')::bigint<>105000 then raise exception 'close changed preview'; end if;
+  if (select revenue_bps from public.platform_billing_statements where id = (v_closed->>'id')::uuid)
+      <> (v_preview->>'applied_bps')::integer then
+    raise exception 'close deveria gravar applied_bps em statements.revenue_bps';
+  end if;
   begin update public.platform_billing_statements set total_cents=0 where id=(v_closed->>'id')::uuid;
     raise exception 'statement update allowed'; exception when check_violation then null; end;
   begin delete from public.platform_billing_sale_facts where statement_id=(v_closed->>'id')::uuid;
     raise exception 'fact delete allowed'; exception when check_violation then null; end;
+end $$;
+
+insert into public.organizations(id,nome,slug) values
+  ('90000000-0000-0000-0000-000000000014','Org Billing Sonar','org-billing-sonar');
+insert into public.platform_commercial_terms(
+  org_id,starts_on,modality,monthly_fee_cents,
+  revenue_bps_t1,revenue_bps_t2,revenue_bps_t3,revenue_bps_t4,sonar_unit_cents,
+  setup_fee_cents,setup_due_month,reason,created_by,version
+) values
+  ('90000000-0000-0000-0000-000000000014',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,500,500,500,120,0,null,'billing sonar fixture','80000000-0000-0000-0000-000000000001',1);
+insert into public.ml_vendas(id,org_id,order_id,date_closed,total_amount,status,atualizado_em,tem_devolucao,estorno) values
+  ('50000000-0000-0000-0000-000000000014','90000000-0000-0000-0000-000000000014',300014,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',9000,'paid','2026-07-02T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000015','90000000-0000-0000-0000-000000000014',300015,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '2 days',1000,'refunded','2026-07-03T12:00:00Z',false,0);
+
+do $$
+declare i integer; v_result uuid; v_search uuid;
+begin
+  for i in 1..10 loop
+    insert into public.platform_sonar_results(normalized_query,query_type,schema_version,generation,payload,state,valid_until)
+      values('billing-sonar-'||i,'termo',1,1,jsonb_build_object('itens',jsonb_build_array(jsonb_build_object('id',i))),'ready',now()+interval '1 day') returning id into v_result;
+    insert into public.platform_sonar_searches(org_id,actor_id,request_id,intent_key,normalized_query,query_type,result_id,state,origin,completed_at)
+      values('90000000-0000-0000-0000-000000000014','80000000-0000-0000-0000-000000000001',gen_random_uuid(),'billing-sonar-'||i,'billing-sonar-'||i,'termo',v_result,'completed','cliente',now()) returning id into v_search;
+    insert into public.platform_sonar_deliveries(org_id,result_id,search_id,actor_id,terms_id,month,unit_cents,units,total_cents)
+      values('90000000-0000-0000-0000-000000000014',v_result,v_search,'80000000-0000-0000-0000-000000000001',
+        (select id from public.platform_resolve_terms('90000000-0000-0000-0000-000000000014',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date)),
+        (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,120,1,120);
+  end loop;
+end $$;
+
+do $$
+declare v_month date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
+declare v_preview jsonb; v_closed jsonb;
+begin
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000014',v_month);
+  if (v_preview->>'fee_cents')::bigint<>45000 or (v_preview->>'sonar_units')::integer<>10
+    or (v_preview->>'sonar_cents')::bigint<>1200 or (v_preview->>'total_cents')::bigint<>46200
+    or jsonb_array_length(v_preview->'blockers')<>0 then
+    raise exception 'org modalidade 2 com sonar: numeric fixture failed: %',v_preview;
+  end if;
+  v_closed:=public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000014',v_month,v_preview->>'revision');
+  if (v_closed->>'total_cents')::bigint<>46200 then raise exception 'close changed preview (org sonar)'; end if;
 end $$;
 
 do $$
@@ -190,8 +228,8 @@ begin
     or (select count(*) from public.platform_billing_statements where org_id='90000000-0000-0000-0000-000000000004')<>1 then
     raise exception 'concurrent close was not idempotent: %',(select jsonb_agg(payload) from billing_concurrent);
   end if;
-  insert into public.platform_commercial_terms(org_id,starts_on,modality,monthly_fee_cents,revenue_bps,sonar_unit_cents,setup_fee_cents,setup_due_month,reason,created_by,version)
-    values('90000000-0000-0000-0000-000000000004',v_next,2,0,500,0,100,v_next,'setup must remain unique','80000000-0000-0000-0000-000000000001',1);
+  insert into public.platform_commercial_terms(org_id,starts_on,modality,monthly_fee_cents,revenue_bps_t1,revenue_bps_t2,revenue_bps_t3,revenue_bps_t4,sonar_unit_cents,setup_fee_cents,setup_due_month,reason,created_by,version)
+    values('90000000-0000-0000-0000-000000000004',v_next,2,0,500,500,500,500,0,100,v_next,'setup must remain unique','80000000-0000-0000-0000-000000000001',1);
   v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000004',v_next);
   if (select count(*) from jsonb_array_elements(v_preview->'lines') line where line->>'key'='setup')<>0 then
     raise exception 'setup repeated after terms version';
@@ -205,8 +243,8 @@ declare v_preview jsonb;
 begin
   v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000005',v_origin);
   perform public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000005',v_origin,v_preview->>'revision');
-  insert into public.platform_commercial_terms(org_id,starts_on,modality,monthly_fee_cents,revenue_bps,sonar_unit_cents,setup_fee_cents,setup_due_month,reason,created_by,version)
-    values('90000000-0000-0000-0000-000000000005',v_next,2,0,700,0,0,null,'new rate','80000000-0000-0000-0000-000000000001',1);
+  insert into public.platform_commercial_terms(org_id,starts_on,modality,monthly_fee_cents,revenue_bps_t1,revenue_bps_t2,revenue_bps_t3,revenue_bps_t4,sonar_unit_cents,setup_fee_cents,setup_due_month,reason,created_by,version)
+    values('90000000-0000-0000-0000-000000000005',v_next,2,0,700,700,700,700,0,0,null,'new rate','80000000-0000-0000-0000-000000000001',1);
   update public.ml_vendas set status='partially_refunded',atualizado_em='2026-08-03T12:00:00Z',tem_devolucao=true where id='50000000-0000-0000-0000-000000000004';
   perform public.platform_reconcile_revenue('80000000-0000-0000-0000-000000000001',jsonb_build_object(
     'org_id','90000000-0000-0000-0000-000000000005','sale_id','50000000-0000-0000-0000-000000000004',
@@ -365,5 +403,23 @@ begin
   end;
   if exists(select 1 from public.platform_billing_statements where org_id='90000000-0000-0000-0000-000000000013') then
     raise exception 'close without terms persisted a statement';
+  end if;
+end $$;
+
+-- ADR-0165: platform_terms_tier escolhe a faixa certa nos pontos de borda dos cortes fixos
+-- (10.000.000 / 30.000.000 / 50.000.000 centavos).
+do $$
+begin
+  if public.platform_terms_tier(0) <> 1 then raise exception 'esperava faixa 1 para base 0'; end if;
+  if public.platform_terms_tier(10000000) <> 1 then raise exception 'esperava faixa 1 no corte de 100K'; end if;
+  if public.platform_terms_tier(10000001) <> 2 then raise exception 'esperava faixa 2 logo acima de 100K'; end if;
+  if public.platform_terms_tier(30000000) <> 2 then raise exception 'esperava faixa 2 no corte de 300K'; end if;
+  if public.platform_terms_tier(30000001) <> 3 then raise exception 'esperava faixa 3 logo acima de 300K'; end if;
+  if public.platform_terms_tier(50000000) <> 3 then raise exception 'esperava faixa 3 no corte de 500K'; end if;
+  if public.platform_terms_tier(50000001) <> 4 then raise exception 'esperava faixa 4 logo acima de 500K'; end if;
+  if public.platform_terms_tier(999999999) <> 4 then raise exception 'esperava faixa 4 bem acima do ultimo corte'; end if;
+
+  if public.platform_terms_tier_bps(30000001, 500, 400, 350, 300) <> 350 then
+    raise exception 'platform_terms_tier_bps nao aplicou a faixa 3 corretamente';
   end if;
 end $$;
