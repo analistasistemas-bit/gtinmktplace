@@ -55,7 +55,7 @@ begin
     '80000000-0000-0000-0000-000000000001',
     jsonb_build_object(
       'org_id', '90000000-0000-0000-0000-000000000011',
-      'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 60000,
+      'starts_on', v_current, 'modality', 1, 'monthly_fee_cents', 60000,
       'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
       'setup_due_month', null, 'reason', 'primeiro contrato mês corrente'
     )
@@ -186,7 +186,7 @@ begin
     '80000000-0000-0000-0000-000000000001',
     jsonb_build_object(
       'org_id', '90000000-0000-0000-0000-000000000001',
-      'starts_on', v_next, 'modality', 2, 'monthly_fee_cents', 60000,
+      'starts_on', v_next, 'modality', 1, 'monthly_fee_cents', 60000,
       'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
       'setup_due_month', null, 'reason', 'primeira proposta'
     )
@@ -219,7 +219,7 @@ begin
     '80000000-0000-0000-0000-000000000001',
     jsonb_build_object(
       'org_id', '90000000-0000-0000-0000-000000000001',
-      'starts_on', v_next, 'modality', 2, 'monthly_fee_cents', 70000,
+      'starts_on', v_next, 'modality', 1, 'monthly_fee_cents', 70000,
       'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
       'setup_due_month', null, 'reason', 'renegociação'
     )
@@ -255,7 +255,7 @@ begin
       '80000000-0000-0000-0000-000000000001',
       jsonb_build_object(
         'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', %L,
-        'modality', 2, 'monthly_fee_cents', 71000, 'revenue_bps', 700,
+        'modality', 1, 'monthly_fee_cents', 71000, 'revenue_bps', 700,
         'sonar_unit_cents', 0, 'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'concorrência um'
       )
     )
@@ -265,7 +265,7 @@ begin
       '80000000-0000-0000-0000-000000000001',
       jsonb_build_object(
         'org_id', '90000000-0000-0000-0000-000000000001', 'starts_on', %L,
-        'modality', 2, 'monthly_fee_cents', 72000, 'revenue_bps', 700,
+        'modality', 1, 'monthly_fee_cents', 72000, 'revenue_bps', 700,
         'sonar_unit_cents', 0, 'setup_fee_cents', 0, 'setup_due_month', null, 'reason', 'concorrência dois'
       )
     )
@@ -801,6 +801,25 @@ begin
   end;
 end $$;
 
+-- A trava de modalidade tambem protege quem grava direto na tabela, contornando a RPC (e o que
+-- platform_sonar.sql e platform_billing.sql fazem em algumas fixtures).
+do $$
+begin
+  begin
+    insert into public.platform_commercial_terms (
+      org_id, starts_on, modality, monthly_fee_cents,
+      revenue_bps_t1, revenue_bps_t2, revenue_bps_t3, revenue_bps_t4,
+      sonar_unit_cents, setup_fee_cents, setup_due_month, reason, created_by, version
+    ) values (
+      '90000000-0000-0000-0000-000000000093', date_trunc('month', now() at time zone 'America/Fortaleza')::date,
+      1, 0, 500, 400, 350, 300, 120, 0, null, 'insert direto tentando furar a trava',
+      '80000000-0000-0000-0000-000000000001', 99
+    );
+    raise exception 'insert direto com modalidade 1 e sonar deveria ter sido recusado pelo CHECK';
+  exception when check_violation then null;
+  end;
+end $$;
+
 -- Combinação correta: grava as 4 faixas.
 do $$
 declare
@@ -822,19 +841,32 @@ begin
   end if;
 end $$;
 
--- ADR-0165: as 3 organizacoes de producao saem do backfill com as 4 faixas iguais ao revenue_bps
--- antigo, e Daludi Shop/DSA saem com sonar_unit_cents = 0. Este teste roda contra as orgs A/B/C
--- criadas no topo deste arquivo (nao as de producao), entao so confere a FORMA do backfill: uma
--- organizacao criada antes desta migration, com revenue_bps antigo, sai com t1..t4 iguais entre si.
+-- ADR-0165: prova o CAMINHO DE BACKFILL de verdade — org '...011' ("Org C") tem seu unico termo
+-- gravado no TOPO deste arquivo, com o antigo 'revenue_bps' = 700, MUITO ANTES do \ir desta
+-- migration. E a organizacao certa pra provar o backfill porque nao foi tocada por nenhuma chamada
+-- posterior a platform_save_terms (ao contrario de orgs criadas depois do \ir, que ja gravam as 4
+-- faixas diretamente via RPC e passariam neste teste mesmo que o backfill nunca tivesse rodado).
 do $$
 declare
   v_row public.platform_commercial_terms%rowtype;
 begin
   select * into v_row from public.platform_commercial_terms
-  where org_id = '90000000-0000-0000-0000-000000000091'
+  where org_id = '90000000-0000-0000-0000-000000000011'
   order by starts_on desc, version desc limit 1;
-  if v_row.revenue_bps_t1 is null or v_row.revenue_bps_t1 <> v_row.revenue_bps_t2
-    or v_row.revenue_bps_t2 <> v_row.revenue_bps_t3 or v_row.revenue_bps_t3 <> v_row.revenue_bps_t4 then
-    raise exception 'backfill nao preservou o percentual antigo igual nas 4 faixas: %', v_row;
+  if v_row.revenue_bps_t1 is distinct from 700 or v_row.revenue_bps_t2 is distinct from 700
+    or v_row.revenue_bps_t3 is distinct from 700 or v_row.revenue_bps_t4 is distinct from 700 then
+    raise exception 'backfill nao preservou o revenue_bps antigo (700) nas 4 faixas: %', v_row;
   end if;
+end $$;
+
+-- O trigger de imutabilidade precisa continuar ativo depois que a migration o reabilita — a
+-- mitigacao inteira do risco de desabilita-lo durante o backfill depende disso.
+do $$
+begin
+  begin
+    update public.platform_commercial_terms set monthly_fee_cents = 1
+      where org_id = '90000000-0000-0000-0000-000000000011';
+    raise exception 'trigger de imutabilidade deveria continuar ativo apos a migration';
+  exception when check_violation then null;
+  end;
 end $$;

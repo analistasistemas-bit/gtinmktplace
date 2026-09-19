@@ -13,9 +13,7 @@
 --
 -- O trigger platform_commercial_terms_no_mutation bloqueia qualquer UPDATE incondicionalmente. E
 -- desabilitado so durante os dois UPDATEs de backfill, dentro desta transacao, e reabilitado antes
--- do commit -- com asserção LOUD (raise exception) se o backfill ficar incompleto ou se o numero de
--- organizacoes corrigidas nao bater com o medido, para nunca silenciar uma divergencia entre o dado
--- real e o que esta migration espera.
+-- do commit.
 
 begin;
 
@@ -31,27 +29,21 @@ update public.platform_commercial_terms
   set revenue_bps_t1 = revenue_bps, revenue_bps_t2 = revenue_bps,
       revenue_bps_t3 = revenue_bps, revenue_bps_t4 = revenue_bps;
 
-do $$
-declare
-  v_corrigidas integer;
-begin
-  with corrigidos as (
-    update public.platform_commercial_terms
-      set sonar_unit_cents = 0
-      where modality = 1 and sonar_unit_cents <> 0
-      returning id, org_id
-  )
-  insert into public.platform_audit_events (org_id, actor_id, category, action, result, target, reason, details)
-  select org_id, null, 'admin', 'platform_terms_sonar_corrected', 'success', id::text,
-    'ADR-0165: modalidade 1 nao cobra Sonar do cliente', jsonb_build_object('sonar_unit_cents_after', 0)
-  from corrigidos;
-
-  get diagnostics v_corrigidas = row_count;
-  if v_corrigidas <> 2 then
-    raise exception 'esperava corrigir 2 organizacoes modalidade 1 com Sonar cobrado, corrigiu %', v_corrigidas
-      using errcode = '23514';
-  end if;
-end $$;
+-- Sem asserção de contagem fixa (ex.: "exatamente 2"): essa migration roda tanto em producao
+-- (onde hoje 2 linhas violam) quanto do zero em toda suite de teste local via `\ir` -- um numero
+-- hardcoded so seria verdade num dos dois mundos. A rede LOUD real e o CHECK de modalidade logo
+-- abaixo: se sobrar qualquer linha violando a regra depois deste UPDATE, o proprio `ALTER TABLE ...
+-- ADD CONSTRAINT` (sem `NOT VALID`) falha ao validar as linhas existentes.
+with corrigidos as (
+  update public.platform_commercial_terms
+    set sonar_unit_cents = 0
+    where modality = 1 and sonar_unit_cents <> 0
+    returning id, org_id
+)
+insert into public.platform_audit_events (org_id, actor_id, category, action, result, target, reason, details)
+select org_id, null, 'admin', 'platform_terms_sonar_corrected', 'success', id::text,
+  'ADR-0165: modalidade 1 nao cobra Sonar do cliente', jsonb_build_object('sonar_unit_cents_after', 0)
+from corrigidos;
 
 alter table public.platform_commercial_terms enable trigger platform_commercial_terms_no_mutation;
 
@@ -242,6 +234,14 @@ begin
     raise exception 'Setup fee cannot be reapplied on renegotiation' using errcode = '22023';
   end if;
 
+  -- ADR-0164: a implantacao e obrigacao do contrato, nao da versao. platform_resolve_terms devolve
+  -- so a linha mais nova do mes e platform_billing_preview le setup_fee_cents apenas dela -- entao
+  -- uma renegociacao gravada com setup zerado no mesmo starts_on apagava a taxa da cobranca em
+  -- silencio. Herdar do termo mais recente mantem a taxa viva sem afrouxar a trava acima (que
+  -- continua avaliando o input) e sem risco de cobranca dupla (o preview exige
+  -- setup_due_month = p_month e nenhum demonstrativo fechado com linha 'setup').
+  -- So em renegociacao: `select into` sem linha grava NULL nas variaveis, e no primeiro contrato
+  -- isso apagaria a implantacao que o operador acabou de informar.
   if exists (select 1 from public.platform_commercial_terms t where t.org_id = v_org_id) then
     select t.setup_fee_cents, t.setup_due_month into v_setup_fee, v_setup_due
     from public.platform_commercial_terms t
@@ -250,6 +250,10 @@ begin
     limit 1;
     v_setup_fee := coalesce(v_setup_fee, 0);
 
+    -- A versao nova comeca depois do mes da implantacao: herdar violaria
+    -- platform_commercial_terms_setup_once (setup_due_month >= starts_on) e recusaria toda
+    -- renegociacao a partir dali. Nao perde a taxa: platform_resolve_terms filtra
+    -- starts_on <= p_on, entao o mes da implantacao continua resolvendo para o termo anterior.
     if v_setup_due < v_starts_on then
       v_setup_fee := 0;
       v_setup_due := null;
