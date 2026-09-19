@@ -1,7 +1,7 @@
 # Especificação de Design — Vigência Imediata no Cadastro de Condições Comerciais
 
 **Data:** 2026-09-19  
-**Status:** Aprovado para planejamento (Revisado pós-Adversarial Codex R6 — Blindagem Multi-tenant e Operacional)  
+**Status:** Aprovado para planejamento (Revisado pós-Adversarial Codex R7 — Blindagem Multi-tenant e Fuso Horário)  
 **Autor:** Diego / Antigravity  
 **Contexto:** Menu Organizações (`/admin`) e Detalhe da Organização (`/admin/organizacoes/:id`)
 
@@ -36,22 +36,22 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
    - O mês padrão da taxa de implantação (`setupDueMonth`) no estado inicial deve ser o mês corrente (`startsOn.slice(0, 7)`).
    - **Clamping de vigência e implantação:** Caso o operador selecione explicitamente "Próximo mês" (`startsOn` avançando para `AAAA-MM+1`), o campo `setupDueMonth` deve ser automaticamente ajustado caso seja menor que `startsOn.slice(0, 7)`, garantindo que nunca seja enviado um payload que viole a constraint `setup_due_month >= starts_on` (tanto no `onChange` quanto na sanitização do `submit`).
    - **Conexão estrita no payload:** O valor sanitizado `effectiveSetupDue` deve ser explicitamente mapeado no objeto enviado a `save.mutateAsync({ setup_due_month: effectiveSetupDue, ... })`.
-   - **Proteção contra virada de competência com tela aberta:** `currentMonth` e `nextMonth` não devem ficar congelados em `useMemo(..., [])` sem sincronização. Ao recuperar foco ou no momento do clique em submeter, se `isFirstContract` e `startsOn` anteceder o mês corrente em tempo real (`currentMonthStart()`), o formulário deve impedir o envio com competência passada, atualizar para o mês corrente e alertar o operador.
+   - **Proteção contra virada de competência em America/Fortaleza:** `currentMonth` e `nextMonth` são calculados dinamicamente no fuso de Fortaleza (`America/Fortaleza`, UTC-3). Se a tela permanecer aberta durante a virada do mês (às 00:00 de Fortaleza = 03:00 UTC), tanto ao recuperar o foco da janela (`focus`) quanto no clique de submissão (`submit`), o formulário deve impedir o envio com competência passada, atualizar para o novo mês corrente, ajustar `setupDueMonth` e exibir aviso ao operador: `"A competência do mês virou enquanto o formulário estava aberto. A vigência foi ajustada para o mês atual. Revise e confirme o salvamento."`
 
 2. **Renegociações futuras mantidas:**
-   - A regra de renegociação permanece inalterada: contratos posteriores para organizações que já possuem termo comercial continuam valendo a partir do próximo mês (`effectiveStartsOn = nextMonth`), preservando a estabilidade da competência em andamento.
+   - A regra de renegociação permanece inalterada: contratos posteriores para organizações que já possuem termo comercial continuam valendo a partir do próximo mês (`effectiveStartsOn = nextMonthStart()`), preservando a estabilidade da competência em andamento.
 
 3. **Correção cirúrgica e segura dos dados existentes (Backend / Supabase PostgreSQL):**
    - Criar migration para atualizar estritamente as três organizações alvo (**Avil** `slug='avil'`, **DSA** `slug='diego-souza'` e **Daludi Shop** `slug='daludishop'`).
-   - **Pré-condição incondicional:** A migration deve validar a existência das 3 organizações de forma atômica e incondicional antes de qualquer mutação. Se encontrar entre 1 e 2 das 3 organizações, deve abortar imediatamente com erro (nunca executar parcialmente). Se encontrar 0 organizações (ambiente de testes/CI limpo sem as fixtures), encerra como no-op seguro.
+   - **Pré-condição incondicional antes de qualquer DDL:** A validação das 3 organizações deve rodar antes de qualquer mutação, lock ou `ALTER TABLE ... DISABLE TRIGGER`. Se encontrar 0 organizações (ambiente de testes/CI limpo sem seeds), faz no-op absoluto com `return;` sem tocar no trigger nem na tabela. Se encontrar entre 1 e 2 organizações, aborta imediatamente com exceção `23514`, impedindo qualquer mutação parcial.
    - **Validação de contrato inaugural:** Para cada um dos 3 slugs individualmente, validar via `SELECT ... INTO STRICT` que a organização possui exatamente 1 termo no histórico total, que esse termo possui `version = 1` e que seu `starts_on = '2026-10-01'`, provando que se trata do primeiro contrato de implantação e não de uma renegociação legítima.
    - **Cardinalidade comprovada de 1 linha por organização:** Atualizar cirurgicamente o `id` específico de cada um dos 3 termos e materializar em tabela temporária `_migracao_termos_corrigidos on commit drop`. Comprovar que exatamente 3 linhas foram atualizadas e que para cada um dos 3 slugs há exatamente 1 linha corrigida.
-   - O trigger de imutabilidade `platform_commercial_terms_no_mutation` deve ser desabilitado estritamente durante a transação e reabilitado antes do commit.
+   - O trigger de imutabilidade `platform_commercial_terms_no_mutation` deve ser desabilitado estritamente durante a transação e reabilitado antes do fim do bloco.
    - Gerar eventos de auditoria completos em `platform_audit_events` com categoria `'admin'`, ação `'platform_terms_vigencia_corrigida'`, registrando `starts_on_anterior`, `starts_on_atual`, `setup_due_month_anterior`, `setup_due_month_atual` e `org_slug`.
 
 4. **Gate Operacional de Segurança Multi-Tenant em Produção (AGENTS.md):**
    - Nenhuma mutação de dados em produção pode ser executada sem um preview somente-leitura prévio listando nome, `org_id`, `term_id`, versão e valores atuais, seguido de autorização humana explícita de Diego.
-   - Logo após a execução em produção, um readback de prova matemática deve confirmar a correção dos 3 tenants e demonstrar que a contagem e checksum dos demais tenants permaneceram 100% inalterados.
+   - **Prova de Isolamento Total com Digest Criptográfico Determinístico:** Para comprovar que nenhum outro tenant foi alterado nem sofreu efeitos colaterais em nenhuma das tabelas afetadas, capturar contagem e digest MD5 completo (`row_to_json(t.*)`) de todas as linhas dos outros tenants em `platform_commercial_terms` e em `platform_audit_events` antes e após a execução em produção.
 
 ---
 
@@ -59,7 +59,7 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
 
 ### 3.1 Frontend: `src/components/platform-admin/commercial-terms-form.tsx`
 
-1. **Estado dinâmico e proteção de virada de mês:**
+1. **Estado dinâmico e sincronização de virada de mês:**
    ```typescript
    const isFirstContract = current === null;
    const [startsOn, setStartsOn] = useState(() => currentMonthStart());
@@ -68,6 +68,17 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
    const [form, setForm] = useState<FormState>(() => initialState(current, effectiveStartsOn));
    const [error, setError] = useState<string | null>(null);
    const revenueTouched = useRef(false);
+
+   function syncMonthRollover(nowMonth: string) {
+     setStartsOn(nowMonth);
+     setForm((previous) => ({
+       ...previous,
+       setupDueMonth: previous.setupDueMonth && previous.setupDueMonth < nowMonth.slice(0, 7)
+         ? nowMonth.slice(0, 7)
+         : previous.setupDueMonth,
+     }));
+     setError('A competência do mês virou enquanto o formulário estava aberto. A vigência foi ajustada para o mês atual. Revise e confirme o salvamento.');
+   }
 
    // Sincronização ao alterar tenant ou contrato
    useEffect(() => {
@@ -78,18 +89,12 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
      setError(null);
    }, [current, orgId]);
 
-   // Sincronização em tempo real se a janela permanecer aberta durante a virada do mês
+   // Sincronização em tempo real ao focar na janela se a competência virou em Fortaleza
    useEffect(() => {
      function syncOnFocus() {
        const nowMonth = currentMonthStart();
        if (isFirstContract && startsOn < nowMonth) {
-         setStartsOn(nowMonth);
-         setForm((previous) => ({
-           ...previous,
-           setupDueMonth: previous.setupDueMonth && previous.setupDueMonth < nowMonth.slice(0, 7)
-             ? nowMonth.slice(0, 7)
-             : previous.setupDueMonth,
-         }));
+         syncMonthRollover(nowMonth);
        }
      }
      window.addEventListener('focus', syncOnFocus);
@@ -115,17 +120,10 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
 
 3. **No submit (defensivo contra virada de mês e clamping estrito do payload):**
    ```typescript
-   // Defesa contra tela aberta na virada do mês
+   // Defesa contra virada do mês no momento do clique
    const nowCurrentMonth = currentMonthStart();
    if (isFirstContract && startsOn < nowCurrentMonth) {
-     setStartsOn(nowCurrentMonth);
-     setForm((previous) => ({
-       ...previous,
-       setupDueMonth: previous.setupDueMonth && previous.setupDueMonth < nowCurrentMonth.slice(0, 7)
-         ? nowCurrentMonth.slice(0, 7)
-         : previous.setupDueMonth,
-     }));
-     setError('A competência do mês virou enquanto o formulário estava aberto. A vigência foi ajustada para o mês atual. Revise e confirme o salvamento.');
+     syncMonthRollover(nowCurrentMonth);
      return;
    }
 
@@ -176,20 +174,6 @@ Arquivo: `supabase/migrations/20260919130000_platform_terms_vigencia_setembro.sq
 -- devido ao valor padrão do formulário anterior. Esta migration ajusta especificamente
 -- as três organizações para 2026-09-01 para habilitar previsão e fechamento de 2026-09.
 
-begin;
-
-alter table public.platform_commercial_terms disable trigger platform_commercial_terms_no_mutation;
-
-create temporary table _migracao_termos_corrigidos (
-  id uuid primary key,
-  org_id uuid not null,
-  slug text not null,
-  starts_on_anterior date not null,
-  starts_on_atual date not null,
-  setup_due_anterior date,
-  setup_due_atual date
-) on commit drop;
-
 do $$
 declare
   v_expected_orgs integer;
@@ -200,23 +184,37 @@ declare
   v_corrigido record;
   v_slug_count integer;
 begin
-  -- 1. Checagem incondicional de existência das organizações
+  -- 1. Pré-condição incondicional ANTES de qualquer DDL, lock ou alteração:
   select count(*) into v_expected_orgs
   from public.organizations
   where slug in ('avil', 'diego-souza', 'daludishop');
 
   -- Em ambiente limpo sem seeds de produção (ex.: suíte de testes isolada ou CI novo):
   if v_expected_orgs = 0 then
+    -- No-op absoluto: encerra sem tocar no trigger, na tabela ou em qualquer lock
     return;
   end if;
 
-  -- Se encontrou pelo menos uma, EXIGE obrigatoriamente que as 3 existam
+  -- Se encontrou pelo menos uma organização alvo, EXIGE obrigatoriamente que as 3 existam
   if v_expected_orgs <> 3 then
     raise exception 'Pré-condição violada: esperava exatamente 3 organizações (avil, diego-souza, daludishop) ou nenhuma (ambiente limpo), mas encontrou %', v_expected_orgs
       using errcode = '23514';
   end if;
 
-  -- 2. Para cada organização alvo, validar individualmente e atualizar cirurgicamente
+  -- 2. Somente após a pré-condição ser satisfeita, criar a tabela temporária e desabilitar o trigger:
+  create temporary table _migracao_termos_corrigidos (
+    id uuid primary key,
+    org_id uuid not null,
+    slug text not null,
+    starts_on_anterior date not null,
+    starts_on_atual date not null,
+    setup_due_anterior date,
+    setup_due_atual date
+  ) on commit drop;
+
+  alter table public.platform_commercial_terms disable trigger platform_commercial_terms_no_mutation;
+
+  -- 3. Para cada organização alvo, validar individualmente e atualizar cirurgicamente
   for v_target_slug in select unnest(array['avil', 'diego-souza', 'daludishop']) loop
     select id into strict v_org_id
     from public.organizations
@@ -264,13 +262,13 @@ begin
     );
   end loop;
 
-  -- 3. Asserção LOUD: exatamente 3 linhas atualizadas no total
+  -- 4. Asserção LOUD: exatamente 3 linhas atualizadas no total
   if (select count(*) from _migracao_termos_corrigidos) <> 3 then
     raise exception 'Esperava exatamente 3 linhas em _migracao_termos_corrigidos, mas obteve %', (select count(*) from _migracao_termos_corrigidos)
       using errcode = '23514';
   end if;
 
-  -- 4. Asserção LOUD: exatamente 1 linha por organização
+  -- 5. Asserção LOUD: exatamente 1 linha por organização
   for v_target_slug in select unnest(array['avil', 'diego-souza', 'daludishop']) loop
     select count(*) into v_slug_count
     from _migracao_termos_corrigidos
@@ -282,7 +280,7 @@ begin
     end if;
   end loop;
 
-  -- 5. Asserção LOUD: nenhum termo restante em 2026-10 para as organizações alvo
+  -- 6. Asserção LOUD: nenhum termo restante em 2026-10 para as organizações alvo
   if exists (
     select 1
     from public.platform_commercial_terms t
@@ -292,24 +290,23 @@ begin
   ) then
     raise exception 'Restaram termos em 2026-10 para as organizações alvo' using errcode = '23514';
   end if;
+
+  -- 7. Auditoria completa para cada termo modificado
+  insert into public.platform_audit_events (org_id, actor_id, category, action, result, target, reason, details)
+  select org_id, null, 'admin', 'platform_terms_vigencia_corrigida', 'success', id::text,
+    'Ajuste de vigencia inicial: primeiro contrato inicia no mes do cadastro (2026-09)',
+    jsonb_build_object(
+      'org_slug', slug,
+      'starts_on_anterior', starts_on_anterior,
+      'starts_on_atual', starts_on_atual,
+      'setup_due_month_anterior', setup_due_anterior,
+      'setup_due_month_atual', setup_due_atual
+    )
+  from _migracao_termos_corrigidos;
+
+  -- 8. Reabilitar o trigger incondicionalmente
+  alter table public.platform_commercial_terms enable trigger platform_commercial_terms_no_mutation;
 end $$;
-
--- 6. Auditoria completa para cada termo modificado
-insert into public.platform_audit_events (org_id, actor_id, category, action, result, target, reason, details)
-select org_id, null, 'admin', 'platform_terms_vigencia_corrigida', 'success', id::text,
-  'Ajuste de vigencia inicial: primeiro contrato inicia no mes do cadastro (2026-09)',
-  jsonb_build_object(
-    'org_slug', slug,
-    'starts_on_anterior', starts_on_anterior,
-    'starts_on_atual', starts_on_atual,
-    'setup_due_month_anterior', setup_due_anterior,
-    'setup_due_month_atual', setup_due_atual
-  )
-from _migracao_termos_corrigidos;
-
-alter table public.platform_commercial_terms enable trigger platform_commercial_terms_no_mutation;
-
-commit;
 ```
 
 ---
@@ -320,15 +317,19 @@ commit;
    - Substituição do teste padrão existente para esperar `starts_on = '2026-09-01'` e `setup_due_month = '2026-09'`.
    - Teste de clamping na seleção de vigência futura.
    - Teste de sanitização no submit contra input manual de mês de implantação defasado.
-   - Teste defensivo de virada de mês com formulário aberto.
+   - Teste defensivo de virada de mês com formulário aberto atravessando o fuso de Fortaleza (`02:59Z → 03:01Z`), testando o evento de foco na janela.
+   - Teste defensivo de virada de mês atravessando `02:59Z → 03:01Z` no evento de submit.
 2. **Typecheck e Lint:**
    - Executar `npx tsc -b --force`.
    - Executar `pnpm eslint src/components/platform-admin/commercial-terms-form.tsx src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`.
 3. **Suite SQL (`supabase/tests/platform_commercial.sql`):**
+   - Teste de 0 organizações (no-op absoluto).
+   - Teste de 1 e 2 organizações (abort com sqlstate 23514).
+   - Teste de 3 organizações + tenant controle com asserções completas de readback.
    - Executar via `psql -U supabase_admin -d codex_platform_admin_test_20260906 -v ON_ERROR_STOP=1 -f supabase/tests/platform_commercial.sql`.
 4. **Gate Operacional de Produção (AGENTS.md):**
-   - Preview somente-leitura dos 3 contratos reais + checksum dos demais tenants.
+   - Preview somente-leitura dos 3 contratos reais + digest MD5 de isolamento dos demais tenants nas tabelas `platform_commercial_terms` e `platform_audit_events`.
    - Autorização explícita de Diego.
-   - Readback pós-execução confirmando sucesso e isolamento estrito dos outros tenants.
+   - Readback pós-execução confirmando sucesso e digest dos demais tenants rigorosamente inalterado.
 5. **Documentação:**
    - Atualizar `obsidian-vault/09-Logs/Changelog.md` e `docs/project-status.md`.
