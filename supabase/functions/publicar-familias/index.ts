@@ -89,9 +89,11 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
     const todas = [...(novos ?? []), ...(updates ?? [])];
     const idsParaEnfileirar = todas.map((f) => f.id);
     const precosPorFamilia = new Map<string, Array<number | null>>();
+    // ADR-0167: família com QUALQUER variação de tamanho nunca é Legacy — ver decidir-split.ts.
+    const temTamanhoPorFamilia = new Set<string>();
     if (idsParaEnfileirar.length > 0) {
       const { data: vrs, error: errVrs } = await admin.from('variacoes')
-        .select('familia_id, preco_publicacao')
+        .select('familia_id, preco_publicacao, tamanho')
         .in('familia_id', idsParaEnfileirar).eq('excluida_da_publicacao', false);
       if (errVrs) {
         await auditarOperacaoSuporte(admin, context, target, 'failed');
@@ -100,6 +102,7 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
       for (const v of vrs ?? []) {
         (precosPorFamilia.get(v.familia_id) ?? precosPorFamilia.set(v.familia_id, []).get(v.familia_id)!)
           .push(precoCentavos(v.preco_publicacao));
+        if (v.tamanho) temTamanhoPorFamilia.add(v.familia_id);
       }
     }
     const paiPorFamilia = new Map(todas.map((f) => [f.id as string, f.codigo_pai as string]));
@@ -143,6 +146,7 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
         precosCentavos: precos,
         qtdParticoes: particoesPorPai.get(pai) ?? 0,
         ehUP: paisUP.has(pai),
+        temTamanho: temTamanhoPorFamilia.has(familiaId),
         somenteEstoque,
       });
     };

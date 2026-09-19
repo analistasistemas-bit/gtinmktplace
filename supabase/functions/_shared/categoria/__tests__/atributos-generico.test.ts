@@ -51,4 +51,20 @@ describe('atributosFaltantesGenerico', () => {
     const tem = [{ id: 'BRAND', value_name: 'X' }]; // COLOR nunca é montado na família
     expect(atributosFaltantesGenerico(tem, schemaComCor)).toEqual([]);
   });
+
+  // ADR-0167 / achado do checkpoint Fable: em categoria de roupa/calçado (ex. MLB108803), SIZE e
+  // GENDER são `required` no schema real do ML mas NUNCA entram em `atributos_ml` — SIZE vem de
+  // `variacoes.tamanho` (por SKU) e GENDER de `familias.genero`, os dois injetados só na hora de
+  // publicar (montarPayloadItem/publicarFamiliaUP), nunca gravados no nível de família. Sem
+  // ignorá-los aqui, toda família de roupa/calçado ficaria travada na Revisão como "faltando
+  // Tamanho/Gênero" mesmo com os dois já resolvidos — mesmo raciocínio que já vale pra COLOR.
+  it('ignora SIZE e GENDER obrigatórios (resolvidos por variação/família, não pelo atributos_ml genérico)', () => {
+    const schemaRoupa: AtributoSchema[] = [
+      A({ id: 'BRAND', nome: 'Marca', required: true }),
+      A({ id: 'SIZE', nome: 'Tamanho', required: true }),
+      A({ id: 'GENDER', nome: 'Gênero', required: true }),
+    ];
+    const tem = [{ id: 'BRAND', value_name: 'X' }];
+    expect(atributosFaltantesGenerico(tem, schemaRoupa)).toEqual([]);
+  });
 });

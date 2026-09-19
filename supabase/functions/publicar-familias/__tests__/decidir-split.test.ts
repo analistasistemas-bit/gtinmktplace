@@ -75,3 +75,38 @@ describe('decidirSplit — somente estoque (ADR-0160)', () => {
     expect(decidirSplit({ qtdCores: 101, precosCentavos: Array(101).fill(1000), qtdParticoes: 0, somenteEstoque: true })).toBe(true);
   });
 });
+
+// ADR-0167: família de roupa/calçado NUNCA é Legacy (o Spike 051 provou que essas categorias
+// recusam variations[] incondicionalmente) — publica sempre via item plano/saga UP, mesmo antes
+// de ter anuncios_externos_itens (família nova, `ehUP` ainda false). Sem este sinal, uma família
+// nova com 3 cores a preços diferentes caía no split worker (Legacy puro), que o ML rejeita.
+describe('decidirSplit — família com tamanho (ADR-0167)', () => {
+  it('preços divergentes + temTamanho → NÃO divide, mesmo família nova (ehUP ainda false)', () => {
+    expect(decidirSplit({
+      qtdCores: 3, precosCentavos: [59990, 59990, 64990], qtdParticoes: 0, temTamanho: true,
+    })).toBe(false);
+  });
+
+  it('uniforme + temTamanho também não divide', () => {
+    expect(decidirSplit({
+      qtdCores: 2, precosCentavos: [59990, 59990], qtdParticoes: 0, temTamanho: true,
+    })).toBe(false);
+  });
+
+  it('>100 cores divide mesmo com temTamanho (limite do ML, não do modelo de preço)', () => {
+    expect(decidirSplit({
+      qtdCores: 101, precosCentavos: Array(101).fill(1000), qtdParticoes: 0, temTamanho: true,
+    })).toBe(true);
+  });
+
+  it('já particionada divide mesmo com temTamanho', () => {
+    expect(decidirSplit({
+      qtdCores: 3, precosCentavos: [1000, 1000, 1000], qtdParticoes: 2, temTamanho: true,
+    })).toBe(true);
+  });
+
+  it('ausência de temTamanho se comporta como antes (INV-1 — trava contra regressão)', () => {
+    expect(decidirSplit({ qtdCores: 2, precosCentavos: [1000, 1200], qtdParticoes: 0 })).toBe(true);
+    expect(decidirSplit({ qtdCores: 2, precosCentavos: [1000, 1200], qtdParticoes: 0, temTamanho: false })).toBe(true);
+  });
+});

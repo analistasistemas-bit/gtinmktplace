@@ -289,6 +289,30 @@ describe('publicarFamiliaUP — guia de tamanhos (ADR-0167)', () => {
     })).rejects.toThrow(/genero ausente/i);
   });
 
+  // Achado do checkpoint Fable: GENDER é `required` no schema da categoria — a IA/operador na
+  // Revisão pode já ter preenchido `atributos_ml` com um GENDER (às vezes errado, ex. a IA
+  // classificou sozinha) ANTES desta família ganhar tamanho. Sem dedupe, o payload sai com dois
+  // atributos GENDER — o ML aceita o payload mas o comportamento de "qual vale" não é garantido.
+  it('GENDER pré-existente em atributos_ml (da IA/Revisão) é substituído, nunca duplicado', async () => {
+    const { admin } = fakeAdmin([]);
+    const anuncioComGenderErrado: AnuncioCanonico = {
+      ...ANUNCIO_COM_TAMANHO,
+      atributos: [{ id: 'GENDER', value_id: '339666' }, { id: 'BRAND', value_name: 'Daludi' }],
+    };
+    await publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: { ...FAMILIA, genero: 'feminino' } as never,
+      anuncio: anuncioComGenderErrado, categoriaId: 'MLB108803',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      garantirChartFn,
+    });
+    const montarPayloadPlano = (criarPortasSpy.mock.calls[0][0] as { montarPayloadPlano: (sku: string) => { attributes: { id?: string; value_id?: string; value_name?: string }[] } }).montarPayloadPlano;
+    const payload = montarPayloadPlano('s-azul-p');
+    const genders = payload.attributes.filter((a) => a.id === 'GENDER');
+    expect(genders).toEqual([{ id: 'GENDER', value_id: '339665' }]); // feminino, não o 339666 antigo
+    expect(payload.attributes).toEqual(expect.arrayContaining([{ id: 'BRAND', value_name: 'Daludi' }]));
+  });
+
   it('sem tamanho em nenhuma variação: garantirChartFn nunca é chamado (INV-1)', async () => {
     garantirChartFn.mockClear();
     const { admin } = fakeAdmin([]);

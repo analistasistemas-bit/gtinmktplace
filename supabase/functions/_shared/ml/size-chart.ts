@@ -115,8 +115,20 @@ export async function garantirChart(
     .eq('connection_id', connectionId).eq('domain_id', domainId).eq('genero', genero)
     .maybeSingle();
   if (cached) {
-    const linhas = cached.linhas as Record<string, string>;
-    return { chartId: cached.chart_id as string, linhaPorTamanho: new Map(Object.entries(linhas)) };
+    const linhaPorTamanho = new Map(Object.entries(cached.linhas as Record<string, string>));
+    // ADR-0167 Decisão 4 (chart imutável): se o cache não cobre um tamanho pedido, NUNCA editar o
+    // chart existente — falha alto com mensagem clara em vez da mensagem enganosa que vinha de
+    // publicar.ts ("garantirChart precisa rodar antes"). Não deveria acontecer se a criação sempre
+    // usa o superset (abaixo); mensagem serve de rede de segurança se o superset mudar no futuro.
+    const faltando = tamanhos.filter((t) => !linhaPorTamanho.has(t));
+    if (faltando.length > 0) {
+      throw new Error(
+        `Guia de tamanhos: chart existente (conexão=${connectionId}, domínio=${domainId}, `
+        + `gênero=${genero}) não cobre ${faltando.join(', ')} — chart é imutável (ADR-0167 `
+        + 'Decisão 4), amplie o superset em size-chart.ts e crie um chart novo.',
+      );
+    }
+    return { chartId: cached.chart_id as string, linhaPorTamanho };
   }
 
   const schema = await lerSchemaAtributos(token, categoriaId);
@@ -125,11 +137,26 @@ export async function garantirChart(
   if (!sizeAttr || !filtravelAttr) {
     throw new Error('Guia de tamanhos: schema da categoria não trouxe SIZE/FILTRABLE_SIZE.');
   }
-  const rows = montarLinhasChart(tamanhos, sizeAttr.valores, filtravelAttr.valores);
+
+  // ADR-0167 Decisão 2: o chart nasce com o SUPERSET de tamanhos com medida confirmada (nunca só
+  // os desta família) — senão a 1ª família (ex.: P/M/G) cacheia um chart que a 2ª família (ex.:
+  // com GG) não cobre, virando uma armadilha one-shot. Superset = interseção entre
+  // CONTORNO_PEITO_CM (medidas confirmadas) e a lista real de SIZE da categoria.
+  const supersetTamanhos = Object.keys(CONTORNO_PEITO_CM)
+    .filter((t) => sizeAttr.valores.some((v) => v.nome === t));
+  const foraDoSuperset = tamanhos.filter((t) => !supersetTamanhos.includes(t));
+  if (foraDoSuperset.length > 0) {
+    throw new Error(
+      `Guia de tamanhos: tamanho(s) ${foraDoSuperset.join(', ')} sem medida confirmada para esta `
+      + 'categoria — publicação bloqueada em vez de inventar payload.',
+    );
+  }
+
+  const rows = montarLinhasChart(supersetTamanhos, sizeAttr.valores, filtravelAttr.valores);
   const genderValue = GENDER_VALUE[genero];
 
   const body = {
-    names: { MLB: `PubliAI ${domainId} ${genero} ${tamanhos.join('-')}`.slice(0, 60) },
+    names: { MLB: `PubliAI ${domainId} ${genero} ${supersetTamanhos.join('-')}`.slice(0, 60) },
     domain_id: domainId,
     site_id: 'MLB',
     type: 'SPECIFIC',
@@ -152,10 +179,15 @@ export async function garantirChart(
     (respJson.rows ?? []) as { id: string; attributes: { id: string; values?: { name?: string }[] }[] }[],
   );
 
-  await admin.from('ml_size_charts').insert({
+  // Duas publicações concorrentes (mesma conexão+domínio+gênero, 1ª vez) podem criar 2 charts em
+  // paralelo — inofensivo (o ML aceita, cada uma referencia o seu), mas o insert aqui pode colidir
+  // se a PK já tiver a linha da outra corrida. Não é erro fatal: logar e seguir com o chart que
+  // ESTA chamada acabou de criar (é o que o payload desta publicação já referencia).
+  const { error: insertErr } = await admin.from('ml_size_charts').insert({
     connection_id: connectionId, domain_id: domainId, genero,
     chart_id: chartId, linhas: Object.fromEntries(linhaPorTamanho),
   });
+  if (insertErr) console.error('ml_size_charts insert falhou (chart criado no ML, cache não salvo):', insertErr.message);
 
   return { chartId, linhaPorTamanho };
 }

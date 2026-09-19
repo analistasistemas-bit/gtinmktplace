@@ -31,12 +31,21 @@ export function decidirSplit(p: {
    * refazer a publicação. O operador seguia uma instrução que não funcionava.
    */
   somenteEstoque?: boolean;
+  /**
+   * ADR-0167 — família com tamanho (roupa/calçado) NUNCA é Legacy: o Spike 051 provou (chamada
+   * real /items/validate) que essas categorias recusam `variations[]` incondicionalmente, mesmo
+   * com 1 cor só. Diferente de `ehUP` (que só é true DEPOIS da 1ª publicação, quando
+   * `anuncios_externos_itens` já existe), `temTamanho` é um sinal estrutural do CADASTRO — vale
+   * mesmo para família nova, nunca publicada, que é exatamente o caso do piloto (3 cores, preços
+   * diferentes, 1ª publicação). Sem isto, essa família cairia no split worker (Legacy puro).
+   */
+  temTamanho?: boolean;
 }): boolean {
   if (p.qtdCores > MAX_VARIACOES_ML) return true; // ADR-0048 (comportamento atual)
   if (p.qtdParticoes > 1) return true; // já dividido: só o split worker conhece as N partições
   // Os dois gatilhos acima valem para UP também: cap de cores é limite do ML, e família já dividida
   // em N partições continua sendo assunto do split worker (ADR-0105 §7).
-  if (p.ehUP) return false;
+  if (p.ehUP || p.temTamanho) return false;
   if (p.somenteEstoque) return false; // nenhum preço sai → divergência não divide nada
   const distintos = new Set(p.precosCentavos.filter((c): c is number => c != null));
   return distintos.size > 1; // ADR-0078 F2: divergência de preço (só Legacy)

@@ -120,7 +120,13 @@ export function rotuloParaTipo(tipo: TipoAviamento): string | null {
 // COLOR montado de variacoes.cor), não no nível da família → não entram nos "faltantes" da
 // Revisão. Sem ignorar COLOR, categorias que o exigem (comuns fora dos aviamentos) trancariam
 // como falso-faltante mesmo tendo cores — bloqueio indevido no SaaS multicategoria.
-const FALTANTES_IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON', 'COLOR']);
+//
+// ADR-0167: mesmo raciocínio para SIZE (variacoes.tamanho, por SKU) e GENDER (familias.genero) —
+// os dois são `required` no schema real de categorias de roupa/calçado (confirmado no Spike 051)
+// mas nunca entram em atributos_ml; são injetados só na hora de publicar (montarPayloadItem/
+// publicarFamiliaUP). Sem ignorá-los aqui, TODA família de roupa/calçado ficaria presa na Revisão
+// como "faltando Tamanho/Gênero" mesmo com os dois já resolvidos pelo cadastro estruturado.
+const FALTANTES_IGNORAR = new Set(['GTIN', 'EMPTY_GTIN_REASON', 'COLOR', 'SIZE', 'GENDER']);
 
 // Tags que tiram o atributo do escopo de "faltante acionável": read_only/hidden (não editável),
 // variation_attribute (vem da variação) e multivalued (não montamos lista). DEVE casar com o

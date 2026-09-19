@@ -75,7 +75,16 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
     }
     chart = await garantirChartFn(admin, await ctx.getToken(), conexao.id, categoriaId, familia.genero, tamanhos);
     const genderValue = GENDER_VALUE[familia.genero];
-    atributosComGenero = [...anuncio.atributos, { id: 'GENDER', value_id: genderValue.id }];
+    // Achado do checkpoint Fable: GENDER é `required` no schema — a IA/Revisão pode já ter
+    // preenchido `atributos_ml` com um GENDER (possivelmente divergente do `familias.genero`
+    // estruturado). SIZE/SIZE_GRID_ID/SIZE_GRID_ROW_ID entram por SKU em montarPayloadItem — se a
+    // IA também os tivesse posto em atributos_ml (nível família), duplicariam do mesmo jeito.
+    // `familias.genero` (ADR-0166, escolhido pelo operador) é sempre a fonte de verdade aqui.
+    const IDS_SUBSTITUIDOS = new Set(['GENDER', 'SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID']);
+    atributosComGenero = [
+      ...anuncio.atributos.filter((a) => !a.id || !IDS_SUBSTITUIDOS.has(a.id)),
+      { id: 'GENDER', value_id: genderValue.id },
+    ];
   }
 
   // family_name da partição: o ML agrupa numa mesma UPP todos os itens com o MESMO family_name
