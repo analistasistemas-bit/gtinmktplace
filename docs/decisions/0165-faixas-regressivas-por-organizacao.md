@@ -64,6 +64,17 @@ em TypeScript para ganhar uma flexibilidade que não foi pedida.
 - Devolução tardia continua usando a alíquota **congelada** do fechamento original; a faixa de um mês
   já fechado nunca é recalculada.
 - Sem trava de monotonia entre as 4 faixas — o intervalo 0–10000 de cada uma já barra erro grosseiro.
+- **O corte de faixa usa a mesma base líquida (`v_base = greatest(gross - refund, 0)`) que já era a
+  base do cálculo de percentual antes deste ADR** — não é uma base nova, é a mesma estendida também
+  para escolher a faixa. A página pública descreve as faixas como "sobre o faturamento bruto", mas a
+  cobrança de fato (percentual e, agora, também a faixa) sempre foi sobre o líquido — isso já era
+  verdade em produção antes desta entrega e não muda com ela. Consequência prática: uma organização
+  com bruto pouco acima de um corte mas com devolução suficiente cai numa faixa de faturamento líquido
+  menor — como a escala é regressiva (faturamento menor → percentual maior), o cliente paga a alíquota
+  mais alta dessa faixa, nunca a mais baixa que o bruto sozinho sugeriria na página pública. O desvio
+  é sempre a favor da Daludi, nunca do cliente — é risco contratual ("a página dizia X%"), não risco
+  de cobrar de menos. Revisado (achado da revisão final de branch); não é regressão desta entrega, é a
+  continuação de um comportamento pré-existente que a apresentação pública nunca detalhou.
 - `_shared/platform-admin/billing.ts` (`composeBillingPreview`) é código morto identificado durante o
   desenho, sem caminho de produção — **removido nesta entrega** (revisão do Fable: manter o tipo
   `CommercialTerms` compatível com ele exigiria uma segunda cópia da lógica de faixa em TypeScript,

@@ -908,7 +908,7 @@ begin
     jsonb_build_object('key','infrastructure','label','Infraestrutura','quantity',1,'unit_cents',v_infra,'amount_cents',v_infra,'source_type','commercial_terms','source_id',v_terms.id),
     jsonb_build_object('key','revenue','label','Remuneração ('||trim(trailing '.' from trim(trailing '0' from (coalesce(v_applied_bps,0)::numeric/100)::text))||'%)','quantity',null,'unit_cents',null,'amount_cents',v_fee,'source_type','sales','source_id',null)
   );
-  if v_terms.id is not null and v_terms.sonar_unit_cents>0 then
+  if v_terms.id is not null and (v_terms.sonar_unit_cents>0 or v_sonar>0) then
     v_lines:=v_lines||jsonb_build_array(jsonb_build_object('key','sonar','label','Consultas Sonar','quantity',v_sonar_units,'unit_cents',v_terms.sonar_unit_cents,'amount_cents',v_sonar,'source_type','sonar_deliveries','source_id',null));
   end if;
   if v_setup>0 then v_lines:=v_lines||jsonb_build_array(jsonb_build_object('key','setup','label','Implantação','quantity',1,'unit_cents',v_setup,'amount_cents',v_setup,'source_type','commercial_terms','source_id',v_terms.id)); end if;
@@ -2591,11 +2591,27 @@ select org_id, count(*), array_agg(distinct sonar_unit_cents)
 -- Espera 0 — senão o ADD CONSTRAINT platform_commercial_terms_modality_shape (sem NOT VALID)
 -- aborta o db push, porque validaria essa linha e ela falharia.
 select count(*) from platform_commercial_terms where modality = 2 and monthly_fee_cents <> 0;
+
+-- Achado da revisão final de branch (Critical): o backfill zera sonar_unit_cents do TERMO, mas
+-- entregas Sonar já registradas (platform_sonar_deliveries, append-only) mantêm o valor cobrado —
+-- se alguma já existir para uma organização modalidade 1 no mês corrente ou em meses ainda não
+-- fechados, a migration faz a linha "Consultas Sonar" sumir do preview enquanto o valor continua
+-- somado no total (demonstrativo que não fecha). Espera 0 linhas.
+select d.org_id, d.month, count(*), sum(d.total_cents)
+  from platform_sonar_deliveries d
+  join platform_commercial_terms t on t.id = d.terms_id
+  where t.modality = 1 and d.units = 1 and d.total_cents > 0
+  group by 1, 2;
+
+-- Espera 0 — confirma que nenhum mês foi fechado ainda (premissa usada para não migrar
+-- retroativamente snapshots de platform_billing_statements, que não teriam applied_bps).
+select count(*) from platform_billing_statements;
 ```
 
-Se a primeira trouxer qualquer organização além de Daludi Shop/DSA, ou a segunda vier diferente de
-0: **pare, não rode o `db push`** — o dado real de produção divergiu do medido em 2026-09-18 quando
-este design foi fechado, e a migration precisa ser revisada antes de aplicar (não é situação para
+Se a primeira trouxer qualquer organização além de Daludi Shop/DSA, a segunda ou a terceira vierem
+diferentes de 0, ou a quarta vier diferente de 0: **pare, não rode o `db push`** — o dado real de
+produção divergiu do medido em 2026-09-18 quando este design foi fechado, e a migration precisa ser
+revisada antes de aplicar (não é situação para
 seguir "porque o plano manda").
 
 - [ ] **Step 8: Documentar/lembrar a ordem de deploy em produção** (não é comando local — é o que o
