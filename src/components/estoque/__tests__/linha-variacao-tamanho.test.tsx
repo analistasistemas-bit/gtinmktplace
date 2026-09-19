@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { LinhaVariacaoForm, novaLinha } from '@/components/estoque/linha-variacao-form';
+import { erroCampo, LinhaVariacaoForm, novaLinha } from '@/components/estoque/linha-variacao-form';
 import { TAMANHOS_ROUPA } from '@/lib/tamanhos';
 
 function renderizar(gruposTamanho?: { grupo: string; valores: readonly string[] }[]) {
@@ -49,5 +49,14 @@ describe('LinhaVariacaoForm — Tamanho (ADR-0166)', () => {
 
   it('novaLinha nasce com tamanho vazio', () => {
     expect(novaLinha().tamanho).toBe('');
+  });
+
+  // Trava contra regressão: sem essa guarda em erroCampo, um valor tipo "P" tenta virar
+  // número (parseNum) e a linha aparece com "Valor inválido." sem nenhum operador ter digitado
+  // nada errado.
+  it('erroCampo nunca reclama de tamanho como se fosse campo numerico', () => {
+    for (const valor of [...TAMANHOS_ROUPA, '']) {
+      expect(erroCampo('tamanho', valor)).toBeNull();
+    }
   });
 });

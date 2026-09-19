@@ -169,17 +169,20 @@ export function LinhaVariacaoForm({
         {campoTexto('nome', 'Cor / nome')}
         {!!gruposTamanho?.length && (
           <div className="flex flex-col gap-1">
+            {/* Nome acessível igual ao rótulo visível (WCAG 2.5.3): aria-label vence o
+                htmlFor na precedência ARIA, então os dois têm que dizer a mesma coisa —
+                senão quem usa controle por voz ("clicar em Numeração") não acha o campo. */}
             <label htmlFor={id('tamanho')} className="text-xs text-muted-foreground">
               {gruposTamanho.length === 1 ? gruposTamanho[0].grupo : 'Tamanho / Numeração'}
             </label>
             <select
               id={id('tamanho')}
-              aria-label={`Tamanho da variação ${n}`}
+              aria-label={`${gruposTamanho.length === 1 ? gruposTamanho[0].grupo : 'Tamanho / Numeração'} da variação ${n}`}
               className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               value={linha.tamanho}
               onChange={(e) => onMudar({ tamanho: e.target.value })}
             >
-              <option value="">—</option>
+              <option value="">Sem tamanho</option>
               {gruposTamanho.map((g) => (
                 <optgroup key={g.grupo} label={g.grupo}>
                   {g.valores.map((v) => <option key={v} value={v}>{v}</option>)}
