@@ -12,7 +12,7 @@
 -- 0165 zera esse campo para toda organizacao modalidade 1, e mostrar "Consultas Sonar 0 x R$0,00"
 -- seria ruido.
 
-create function public.platform_terms_tier(p_base_cents bigint) returns smallint
+create or replace function public.platform_terms_tier(p_base_cents bigint) returns smallint
 language sql immutable set search_path = '' as $$
   select case
     when p_base_cents <= 10000000 then 1::smallint
@@ -22,7 +22,7 @@ language sql immutable set search_path = '' as $$
   end
 $$;
 
-create function public.platform_terms_tier_bps(
+create or replace function public.platform_terms_tier_bps(
   p_base_cents bigint, p_t1 integer, p_t2 integer, p_t3 integer, p_t4 integer
 ) returns integer
 language sql immutable set search_path = '' as $$
