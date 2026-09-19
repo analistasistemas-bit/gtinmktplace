@@ -931,4 +931,31 @@ describe('DialogCadastroProduto — gênero obrigatório com tamanho (ADR-0166 /
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '50');
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
   });
+
+  // Achado do code-quality review: os dois testes acima só provam que o BOTÃO libera/trava —
+  // nenhum confere o que de fato sai no payload. É o único ponto onde a normalização
+  // `tamanho.trim() || null` (Task 15) e `genero: pai.genero` (também Task 15) poderiam
+  // regredir em silêncio, já que é o dado que o guard de retry da Task 13 e a validação de
+  // backend da Task 12 comparam.
+  it('genero e tamanho chegam certos no payload enviado a cadastrarProduto', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'lote-1', familiaId: 'fam-1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }],
+    });
+    const user = userEvent.setup();
+    renderDialogCom();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta Básica');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Cor / nome da variação 1'), 'Azul');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '50');
+    await user.selectOptions(screen.getByLabelText('Tamanho da variação 1'), 'P');
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    const payload = cadastrarProdutoMock.mock.calls[0][0];
+    expect(payload.genero).toBe('masculino');
+    expect(payload.variacoes[0].tamanho).toBe('P');
+  });
 });
