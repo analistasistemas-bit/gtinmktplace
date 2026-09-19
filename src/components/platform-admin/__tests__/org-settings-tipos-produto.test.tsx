@@ -62,12 +62,14 @@ describe('OrgSettings — card Tipo de produto (ADR-0166)', () => {
     expect(screen.getByLabelText(/Calçado/)).not.toBeChecked();
   });
 
-  it('marca os dois e envia set_tipos_produto_org com os dois', async () => {
+  it('marca os dois e envia set_tipos_produto_org na ordem canonica, nao na ordem de clique', async () => {
     const user = userEvent.setup();
     renderSettings();
     await screen.findByLabelText(/Roupa/);
-    await user.click(screen.getByLabelText(/Roupa/));
+    // Clica Calçado primeiro e Roupa depois: se o payload saísse na ordem de clique (bug), este
+    // teste pegaria ['calcado', 'roupa']. A ordem canônica de TIPOS_PRODUTO é ['roupa', 'calcado'].
     await user.click(screen.getByLabelText(/Calçado/));
+    await user.click(screen.getByLabelText(/Roupa/));
     await user.click(screen.getByRole('button', { name: 'Salvar tipo de produto' }));
     await waitFor(() => {
       expect(mocks.invoke).toHaveBeenCalledWith('usuarios', {
