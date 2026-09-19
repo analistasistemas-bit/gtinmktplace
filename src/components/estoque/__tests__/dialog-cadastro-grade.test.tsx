@@ -271,6 +271,39 @@ describe('DialogCadastroGrade — etapa fiscal (ADR-0135 D-9)', () => {
     expect(screen.getByLabelText('NCM')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
   });
+
+  // Sem ESTE teste, trocar `fiscalAtivo ? fiscal : undefined` por `undefined` deixaria a suíte
+  // inteira verde e o bloco fiscal simplesmente não chegaria na edge — a forma exata do incidente
+  // do ORIGEM dropado pelo ingest-lote (duas semanas verde, tudo nacional).
+  it('o bloco fiscal preenchido chega ao payload', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }],
+    });
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '50');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+
+    await user.type(screen.getByLabelText('NCM'), '61091000');
+    // Origem fiscal 0 (nacional) de propósito: não está em ORIGENS_COM_FCI, então não abre o
+    // campo FCI obrigatório.
+    await user.selectOptions(screen.getByLabelText('Origem fiscal (NF-e)'), '0');
+    await user.selectOptions(screen.getByLabelText('CSOSN'), '102');
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    // `origemNfe` é NÚMERO no payload (montarPayload faz `Number(...)`) — string aqui passaria
+    // pelo form e seria recusada pela edge.
+    expect(cadastrarProdutoMock.mock.calls[0][0].fiscal).toMatchObject({
+      ncm: '61091000', origemNfe: 0, tributacaoIcms: '102',
+    });
+  });
 });
 
 describe('DialogCadastroGrade — salvar', () => {
@@ -366,8 +399,12 @@ describe('DialogCadastroGrade — salvar', () => {
   it('durante o salvamento a grade fica congelada (casamento posicional)', async () => {
     let liberar: (v: unknown) => void = () => {};
     cadastrarProdutoMock.mockReturnValueOnce(new Promise((res) => { liberar = res; }));
+    // 2 tipos de propósito: é o que faz "Trocar tipo" existir na tela. Ele apaga as linhas — com
+    // 1 tipo só o botão nem renderiza e o congelamento dele ficaria sem teste.
+    tiposProdutoMock.mockReturnValue({ data: ['roupa', 'calcado'] });
     const user = userEvent.setup();
     renderGrade();
+    await user.click(screen.getByRole('button', { name: 'Roupa' }));
     await user.type(screen.getByLabelText('Nome'), 'Camiseta');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
@@ -378,6 +415,7 @@ describe('DialogCadastroGrade — salvar', () => {
 
     expect(screen.getByRole('checkbox', { name: 'Branco' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Remover Preto · P' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Trocar tipo' })).toBeDisabled();
     // Soltar a promise e ESPERAR a etapa 2 aparecer: sem isso o `setState` do resultado cai
     // fora do `act` e vaza para o teste seguinte.
     liberar({ loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [], variacoes: [{ id: 'v1', codigo: '00000001' }] });
