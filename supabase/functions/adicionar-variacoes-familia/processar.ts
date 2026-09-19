@@ -221,6 +221,11 @@ export function montarVariacaoNova(
     // cor do process-familia é gateada por `if (v.cor) return v` (process-familia/index.ts:138),
     // e esta linha já nasce com `cor` preenchida. false é o valor honesto e inerte.
     cor_editada_pelo_operador: false,
+    // ADR-0166: este fluxo não suporta tamanho no v1 (a trava que recusa família com tamanho
+    // aqui é tarefa separada, ainda não implementada). `null` existe só para manter a paridade
+    // de chaves com `clonarVariacao` (que agora clona a coluna `tamanho` do `select('*')`);
+    // nunca é lido como "tamanho vazio de peça de roupa".
+    tamanho: null,
     excluida_da_publicacao: false,
     preco_publicacao: ctx.precoPublicacao,
     // false: `preco_publicacao` acima é DERIVADO das irmãs (precoPublicacaoNova = menor preço
