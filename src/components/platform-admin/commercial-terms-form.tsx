@@ -275,39 +275,41 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                 </label>
               </div>
             </div>
-            <label className="space-y-1 text-sm" htmlFor="terms-sonar">
-              <span className="font-medium">Sonar por consulta</span>
-              <Input
-                id="terms-sonar"
-                aria-label="Sonar por consulta"
-                inputMode="decimal"
-                disabled={form.modality === '1'}
-                value={form.modality === '1' ? '0,00' : form.sonar}
-                onChange={(event) => set('sonar', event.target.value)}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-setup">
-              <span className="font-medium">Implantação</span>
-              <Input
-                id="terms-setup"
-                aria-label="Implantação"
-                inputMode="decimal"
-                disabled={!isFirstContract}
-                value={form.setup}
-                onChange={(event) => set('setup', event.target.value)}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-setup-month">
-              <span className="font-medium">Mês da implantação</span>
-              <Input
-                id="terms-setup-month"
-                aria-label="Mês da implantação"
-                type="month"
-                disabled={!isFirstContract}
-                value={form.setupDueMonth}
-                onChange={(event) => set('setupDueMonth', event.target.value)}
-              />
-            </label>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-2">
+              <label className="space-y-1 text-sm" htmlFor="terms-sonar">
+                <span className="font-medium">Sonar por consulta</span>
+                <Input
+                  id="terms-sonar"
+                  aria-label="Sonar por consulta"
+                  inputMode="decimal"
+                  disabled={form.modality === '1'}
+                  value={form.modality === '1' ? '0,00' : form.sonar}
+                  onChange={(event) => set('sonar', event.target.value)}
+                />
+              </label>
+              <label className="space-y-1 text-sm" htmlFor="terms-setup">
+                <span className="font-medium">Implantação</span>
+                <Input
+                  id="terms-setup"
+                  aria-label="Implantação"
+                  inputMode="decimal"
+                  disabled={!isFirstContract}
+                  value={form.setup}
+                  onChange={(event) => set('setup', event.target.value)}
+                />
+              </label>
+              <label className="space-y-1 text-sm" htmlFor="terms-setup-month">
+                <span className="font-medium">Mês da implantação</span>
+                <Input
+                  id="terms-setup-month"
+                  aria-label="Mês da implantação"
+                  type="month"
+                  disabled={!isFirstContract}
+                  value={form.setupDueMonth}
+                  onChange={(event) => set('setupDueMonth', event.target.value)}
+                />
+              </label>
+            </div>
             <label className="space-y-1 text-sm md:col-span-2">
               <span className="font-medium">Motivo</span>
               <textarea
