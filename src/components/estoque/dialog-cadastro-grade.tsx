@@ -4,8 +4,10 @@
 // a grade inteira (preço, custo e as 4 dimensões) são preenchidos UMA vez no cabeçalho e
 // herdados por linha, com cadeado individual.
 //
-// Esta é a parte 1 do componente (passos 0 a 3: escolha do tipo, cabeçalho, seleção de
-// cor/tamanho e a grade). A etapa fiscal, o submit e a etapa de fotos entram na Task 9.
+// Fluxo completo: escolha do tipo (só com 2 tipos habilitados), cabeçalho + seleção de
+// cor/tamanho + grade, etapa fiscal (só com o módulo fiscal) e etapa de fotos. O cadastro em si
+// é o MESMO `useCadastroProduto` do dialog normal — idempotência, retry e upload em lote não
+// têm segunda implementação aqui.
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,8 +31,14 @@ import {
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { CORES_POPULARES, GeradorVariacoes } from '@/components/estoque/gerador-variacoes';
 import { LinhaGradeForm, ROTULOS } from '@/components/estoque/linha-grade-form';
-import { erroCampo } from '@/components/estoque/linha-variacao-form';
-import { CAMPOS_NUMERICOS } from '@/components/estoque/use-cadastro-produto';
+import { erroCampo, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
+import {
+  EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm,
+} from '@/components/estoque/etapa-fiscal-form';
+import { EtapaFotos } from '@/components/estoque/etapa-fotos';
+import {
+  CAMPOS_NUMERICOS, montarPayload, useCadastroProduto, useSugestaoNcm,
+} from '@/components/estoque/use-cadastro-produto';
 import { cn } from '@/lib/utils';
 
 const CABECALHO_VAZIO: CamposHerdaveis = {
@@ -89,12 +97,24 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   });
   const [tentouSalvar, setTentouSalvar] = useState(false);
   const [confirmar, setConfirmar] = useState<Confirmacao | null>(null);
+  // ADR-0135 D-9: etapa intermediária, só existe com o módulo fiscal ativo.
+  const [etapaFiscal, setEtapaFiscal] = useState(false);
+  const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
+
+  const api = useCadastroProduto({ aberto });
+  // A MESMA sugestão de NCM do dialog normal — o hook, nunca o efeito copiado. Duplicar as ~15
+  // linhas da flag `ignore` aqui reintroduziria o bug F1 (resposta de um produto aplicada em
+  // outro) nesta tela, sem nenhum teste acusar.
+  const { sugestao: sugestaoNcm, carregando: carregandoSugestao } =
+    useSugestaoNcm({ aberto, etapaFiscal, nome: nomePai, descricao: descricaoPai });
 
   // Reset ao FECHAR (mesmo padrão do dialog atual). `tipoManual` entra junto: senão reabrir numa
   // org de 2 tipos pularia o passo 0 e cairia direto no tipo da sessão anterior.
   useEffect(() => {
     if (aberto) return;
     setTipoManual(null);
+    setEtapaFiscal(false);
+    setFiscal(fiscalVazio());
     setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor('');
     setOrigem(null); setGenero('');
     setCabecalho(CABECALHO_VAZIO);
@@ -226,11 +246,39 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   const podeSalvar = !!nomePai.trim() && !!origem && !!genero && linhas.length > 0
     && resolvidas.every((r) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, r[c])));
 
+  function submeter() {
+    if (!origem || !genero) return;
+    setTentouSalvar(true);
+    // `resolvidas` é a MESMA lista que a tela mostra — o payload nunca resolve herança por conta
+    // própria (spec §2: `resolverLinha` é a única fonte do valor efetivo).
+    const variacoes: LinhaVariacao[] = resolvidas.map((r) => ({
+      clientId: r.clientId, nome: r.cor, tamanho: r.tamanho, gtin: r.gtin,
+      preco: r.preco, custo: r.custo, estoqueInicial: r.estoqueInicial,
+      pesoGramas: r.pesoGramas, alturaCm: r.alturaCm, larguraCm: r.larguraCm,
+      comprimentoCm: r.comprimentoCm, foto: r.foto,
+    }));
+    api.salvar(
+      montarPayload(
+        { nomePai, descricaoPai, unidade, fornecedor, origem, genero },
+        variacoes, api.chaveCadastro, fiscalAtivo ? fiscal : undefined,
+      ),
+      { capa: fotosCapa, porLinha: resolvidas.map((r) => r.foto) },
+    );
+  }
+
   const passo0 = tipos.length > 1 && tipoEscolhido === null;
-  // `M` já conta a etapa de fotos (Task 9) e a fiscal, para a numeração não mudar no meio do
-  // fluxo. `n` é a etapa atual dentro da parte que este componente ainda cobre.
+  // `M` conta o fluxo INTEIRO desde o primeiro render, para a numeração não mudar no meio do
+  // caminho: grade + fotos, mais o passo 0 e a etapa fiscal quando existem.
   const totalEtapas = 2 + (fiscalAtivo ? 1 : 0) + (tipos.length > 1 ? 1 : 0);
-  const etapaAtual = passo0 ? 1 : tipos.length > 1 ? 2 : 1;
+  const etapaGrade = tipos.length > 1 ? 2 : 1;
+  const resultado = api.resultado;
+  const etapaAtual = passo0 ? 1
+    : resultado ? totalEtapas
+      : etapaFiscal ? etapaGrade + 1 : etapaGrade;
+  // Contagem divergente = retry idempotente devolveu o cadastro ORIGINAL da edge, que pode ter
+  // outra quantidade de variações. É a mesma guarda de `subirLoteDeFotos`: sem ela a miniatura
+  // (e o patch da foto) vão para o SKU errado, em silêncio.
+  const batem = !!resultado && resolvidas.length === resultado.variacoes.length;
 
   const campoHerdavel = (campo: CampoHerdavel, obrigatorio = false) => {
     const { rotulo, prefixo, sufixo } = ROTULOS[campo];
@@ -269,22 +317,54 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
 
   return (
     <>
-      <Dialog open={aberto} onOpenChange={(o) => { if (!o) onFechar(); }}>
+      <Dialog open={aberto} onOpenChange={(o) => { if (!o) api.comConfirmacao(onFechar); }}>
         {/* sm: obrigatório: o default do componente é `sm:max-w-sm` e `max-w-3xl` sem o mesmo
             prefixo não vence a cascata (tailwind-merge trata como grupos diferentes). */}
-        <DialogContent className="max-h-[90vh] sm:max-w-3xl overflow-y-auto">
+        <DialogContent
+          processando={api.ocupado}
+          rotuloProcessando="Cadastrando a grade e enviando fotos"
+          className="max-h-[90vh] sm:max-w-3xl overflow-y-auto"
+        >
           <DialogHeader>
             {/* "em grade" é literal no título — é a âncora de que esta é a tela da grade, e não
                 um detalhe que só aparece na dica de texto do seletor de cores. */}
             <DialogTitle>{`Cadastrar em grade · etapa ${etapaAtual} de ${totalEtapas}`}</DialogTitle>
             <DialogDescription>
-              {passo0
-                ? 'O tipo decide o eixo da grade: Tamanho (roupa) ou Numeração (calçado).'
-                : 'Preço, custo e dimensões são preenchidos uma vez e herdados por linha. O cadastro não publica nada — a publicação continua sendo feita na Revisão.'}
+              {resultado
+                ? 'Envie a capa do produto e revise a foto de cada SKU. Depois é só ir para a Revisão.'
+                : passo0
+                  ? 'O tipo decide o eixo da grade: Tamanho (roupa) ou Numeração (calçado).'
+                  : 'Preço, custo e dimensões são preenchidos uma vez e herdados por linha. O cadastro não publica nada — a publicação continua sendo feita na Revisão.'}
             </DialogDescription>
           </DialogHeader>
 
-          {passo0 ? (
+          {resultado ? (
+            <EtapaFotos
+              api={api}
+              resultado={resultado}
+              fotosCapa={fotosCapa}
+              onEscolherCapa={(tipo, f) => setFotosCapa((prev) => ({ ...prev, [tipo]: f }))}
+              arquivoPorIndice={(i) => (batem ? resolvidas[i]?.foto ?? null : null)}
+              // O patch grava `foto` na LINHA (override individual), não em `fotoPorCor`: trocar
+              // a foto aqui é decisão sobre AQUELE SKU, e `resolverLinha` já faz o override da
+              // linha vencer a foto da cor.
+              onPatchFotoLinha={(i, foto) => {
+                if (!batem) return;
+                const alvo = linhas[i];
+                if (!alvo) return;
+                setLinhas((prev) => prev.map((x) => (x.clientId === alvo.clientId ? { ...x, foto } : x)));
+              }}
+            />
+          ) : etapaFiscal ? (
+            <EtapaFiscalForm
+              valor={fiscal}
+              origem={origem}
+              onMudar={(patch) => setFiscal((prev) => ({ ...prev, ...patch }))}
+              sugestaoNcm={sugestaoNcm}
+              carregandoSugestao={carregandoSugestao}
+              onAplicarSugestao={() => sugestaoNcm && setFiscal((prev) => ({ ...prev, ncm: sugestaoNcm.ncm }))}
+            />
+          ) : passo0 ? (
             <div className="grid gap-3 sm:grid-cols-2">
               {TIPOS_PRODUTO.filter((t) => tipos.includes(t.id)).map((t) => (
                 <div key={t.id} className="flex flex-col gap-2 rounded-lg border p-4">
@@ -310,7 +390,13 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                       {TIPOS_PRODUTO.find((t) => t.id === tipoEscolhido)?.nome}
                     </strong>
                   </span>
-                  <Button type="button" variant="ghost" size="sm" onClick={trocarTipo}>
+                  {/* Congelado durante o salvamento junto com o resto: `trocarTipo` apaga as
+                      linhas, e a lista tem que ficar imóvel até o casamento posicional terminar. */}
+                  <Button
+                    type="button" variant="ghost" size="sm"
+                    disabled={api.salvando}
+                    onClick={trocarTipo}
+                  >
                     Trocar tipo
                   </Button>
                 </div>
@@ -419,6 +505,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                           id={`grade-foto-${tipo}`}
                           ariaLabel={rotulo}
                           arquivo={fotosCapa[tipo]}
+                          disabled={api.salvando}
                           opcional
                           onEscolher={(f) => setFotosCapa((prev) => ({ ...prev, [tipo]: f }))}
                         />
@@ -436,10 +523,42 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                 tamanhosBloqueados={tamanhosBloqueados}
                 bloquearNovaCor={bloquearNovaCor}
                 avisoTamanho={avisoTamanho}
-                desabilitado={false}
+                desabilitado={api.salvando}
                 onMudarCores={mudarCores}
                 onMudarTamanhos={mudarTamanhos}
               />
+
+              {/* IRMÃO do GeradorVariacoes, nunca dentro dele: o teste do teto de 60 linhas
+                  escopa as consultas ao container "Cores e tamanhos", e o custo de uma consulta
+                  de testing-library cresce com o TAMANHO do container. 15 dropzones a mais lá
+                  dentro empurrariam aquele teste para o timeout. */}
+              {cores.size > 0 && (
+                <div className="flex flex-col gap-2">
+                  <span className="text-sm font-medium">Foto por cor</span>
+                  <span className="text-xs text-muted-foreground">
+                    Uma foto por cor vale para todos os tamanhos daquela cor. A linha que precisar
+                    de foto própria escolhe a dela na grade.
+                  </span>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {/* `id` por índice: uma cor personalizada ("Azul Marinho") tem espaço, e um
+                        espaço no `id` quebra o par label/input. O nome acessível vem do
+                        `ariaLabel`, não do `id`. */}
+                    {[...cores].map((cor, i) => (
+                      <div key={cor} className="flex flex-col gap-1">
+                        <span className="text-xs text-muted-foreground">{cor}</span>
+                        <CampoFoto
+                          id={`grade-foto-cor-${i}`}
+                          ariaLabel={`Foto da cor ${cor}`}
+                          arquivo={fotoPorCor[cor] ?? null}
+                          disabled={api.salvando}
+                          opcional
+                          onEscolher={(f) => setFotoPorCor((prev) => ({ ...prev, [cor]: f }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {linhas.length > 0 && (
                 <div className="flex flex-col gap-2">
@@ -458,7 +577,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                           linha={l}
                           resolvida={resolvida}
                           tentouSalvar={tentouSalvar}
-                          desabilitado={false}
+                          desabilitado={api.salvando}
                           podeRemover
                           onMudar={(patch) => patchLinha(l.clientId, patch)}
                           onMudarOverride={(campo, valor) => patchLinha(l.clientId, {
@@ -487,9 +606,44 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
           ) : null}
 
           <DialogFooter>
-            <Button variant="outline" onClick={onFechar}>Cancelar</Button>
-            {/* O submit em si entra na Task 9 (etapa fiscal, `useCadastroProduto`, fotos). */}
-            <Button onClick={() => setTentouSalvar(true)} disabled={!podeSalvar}>Cadastrar</Button>
+            {resultado ? (
+              <>
+                <Button variant="outline" onClick={() => api.comConfirmacao(onFechar)} disabled={api.ocupado}>
+                  Fechar
+                </Button>
+                <Button
+                  disabled={api.pendencias || api.ocupado}
+                  onClick={() => api.comConfirmacao(() => { onFechar(); api.irParaRevisao(resultado.loteId); })}
+                >
+                  Ir para a Revisão
+                </Button>
+              </>
+            ) : etapaFiscal ? (
+              <>
+                <Button variant="outline" onClick={() => setEtapaFiscal(false)} disabled={api.salvando}>
+                  Voltar
+                </Button>
+                <Button onClick={submeter} disabled={!fiscalCompleto(fiscal, origem) || api.salvando}>
+                  {api.salvando ? 'Cadastrando…' : 'Cadastrar'}
+                </Button>
+              </>
+            ) : fiscalAtivo ? (
+              <>
+                <Button variant="outline" onClick={() => api.comConfirmacao(onFechar)} disabled={api.ocupado}>
+                  Cancelar
+                </Button>
+                <Button onClick={() => setEtapaFiscal(true)} disabled={!podeSalvar}>Avançar</Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={() => api.comConfirmacao(onFechar)} disabled={api.ocupado}>
+                  Cancelar
+                </Button>
+                <Button onClick={submeter} disabled={!podeSalvar || api.salvando}>
+                  {api.salvando ? 'Cadastrando…' : 'Cadastrar'}
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -509,6 +663,30 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {confirmar?.rotulo}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Guarda de saída destrutiva do lote de fotos, idêntica à do dialog normal: os `File` das
+          fotos que falharam só existem em memória, e fechar sem confirmar os descartaria sem
+          nenhum sinal. Separada da confirmação da grade acima porque o estado vive no hook. */}
+      <AlertDialog open={!!api.confirmarFechar} onOpenChange={(o) => { if (!o) api.fecharConfirmacao(); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Fechar sem reenviar as fotos que falharam?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {api.falhasFoto.length} foto(s) não foram enviadas ({api.falhasFoto.join(', ')}). Continuar
+              descarta os arquivos escolhidos — você vai precisar selecioná-los de novo depois.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Continuar aqui</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => { const acao = api.confirmarFechar; api.fecharConfirmacao(); acao?.(); }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Fechar mesmo assim
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

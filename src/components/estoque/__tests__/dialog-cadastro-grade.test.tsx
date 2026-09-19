@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -248,5 +248,139 @@ describe('DialogCadastroGrade — resumo antes de salvar', () => {
     expect(screen.getByText(/2 SKUs/)).toBeInTheDocument();
     expect(screen.getByText(/4 unidades/)).toBeInTheDocument();
     expect(screen.getByText(/2 sem foto/)).toBeInTheDocument();
+  });
+});
+
+// Os testes abaixo buscam os campos do CABEÇALHO por `getByLabelText('Preço mínimo (líquido)')`
+// e `getByLabelText('Peso')` — rótulo puro, sem sufixo de unidade e sem "de <cor> · <tamanho>".
+// É a regra da Task 8 (`ROTULOS[campo].rotulo`): copiar o `aria-label` da linha aqui quebraria.
+describe('DialogCadastroGrade — etapa fiscal (ADR-0135 D-9)', () => {
+  beforeEach(() => modulosMock.mockReturnValue({ data: ['fiscal'], isLoading: false }));
+  afterEach(() => modulosMock.mockReturnValue({ data: [], isLoading: false }));
+
+  it('com o módulo fiscal, o passo fiscal existe e a numeração de etapas cresce', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '50');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('button', { name: 'Avançar' }));
+    expect(screen.getByLabelText('NCM')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+  });
+});
+
+describe('DialogCadastroGrade — salvar', () => {
+  // jsdom não implementa URL.createObjectURL/revokeObjectURL, e escolher a foto de uma cor
+  // renderiza a miniatura. Mesmo mock de dialog-cadastro-produto.test.tsx.
+  beforeEach(() => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true, value: vi.fn((f: File) => `blob:${f.name}`),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+  });
+
+  // cleanup() explícito ANTES de remover o mock: o cleanup automático do RTL roda num afterEach
+  // de escopo mais externo, que só executa DEPOIS deste — sem isto o unmount chama
+  // revokeObjectURL já sem o mock e o teste quebra por um motivo que não é o dele.
+  afterEach(() => {
+    cleanup();
+    Reflect.deleteProperty(URL, 'createObjectURL');
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
+  });
+
+  it('payload tem 1 variação por combinação, com os herdados já resolvidos', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }, { id: 'v2', codigo: '00000002' }],
+    });
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.type(screen.getByLabelText('Peso'), '300');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('checkbox', { name: 'M' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    const p = cadastrarProdutoMock.mock.calls[0][0];
+    expect(p.genero).toBe('masculino');
+    expect(p.variacoes).toHaveLength(2);
+    expect(p.variacoes[0]).toMatchObject({ nome: 'Preto', tamanho: 'P', preco: 99.9, pesoGramas: 300 });
+    expect(p.variacoes[1]).toMatchObject({ nome: 'Preto', tamanho: 'M', preco: 99.9, pesoGramas: 300 });
+  });
+
+  it('override de uma linha vence o cabeçalho no payload', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }],
+    });
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('button', { name: /Editar nesta linha/i }));
+    await user.click(screen.getByRole('button', { name: 'Destravar Preço mínimo (líquido) de Preto · P' }));
+    await user.clear(screen.getByLabelText('Preço mínimo (líquido) de Preto · P'));
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) de Preto · P'), '129,90');
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    expect(cadastrarProdutoMock.mock.calls[0][0].variacoes[0].preco).toBe(129.9);
+  });
+
+  it('a foto da COR vai para TODA linha daquela cor, uma por SKU', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }, { id: 'v2', codigo: '00000002' }],
+    });
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('checkbox', { name: 'M' }));
+    await user.upload(screen.getByLabelText('Foto da cor Preto'), new File(['x'], 'preto.jpg', { type: 'image/jpeg' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    const { uploadFotoProduto } = await import('@/lib/produtos-saldo');
+    await waitFor(() => expect(uploadFotoProduto).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(uploadFotoProduto).mock.calls[0][3]).toEqual({ tipo: 'variacao', variacaoId: 'v1' });
+    expect(vi.mocked(uploadFotoProduto).mock.calls[1][3]).toEqual({ tipo: 'variacao', variacaoId: 'v2' });
+  });
+
+  it('durante o salvamento a grade fica congelada (casamento posicional)', async () => {
+    let liberar: (v: unknown) => void = () => {};
+    cadastrarProdutoMock.mockReturnValueOnce(new Promise((res) => { liberar = res; }));
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    expect(screen.getByRole('checkbox', { name: 'Branco' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Remover Preto · P' })).toBeDisabled();
+    // Soltar a promise e ESPERAR a etapa 2 aparecer: sem isso o `setState` do resultado cai
+    // fora do `act` e vaza para o teste seguinte.
+    liberar({ loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [], variacoes: [{ id: 'v1', codigo: '00000001' }] });
+    await waitFor(() => expect(screen.getByText('Foto por variação')).toBeInTheDocument());
   });
 });
