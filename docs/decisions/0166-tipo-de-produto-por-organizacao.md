@@ -114,6 +114,33 @@ hoje sem cliente real do segmento infantil para validar contra.
   organização, sessão de suporte expirada), não `null`: o `coalesce` envolve a subquery inteira. Sem
   isso o front receberia `null` e teria um terceiro estado além de "vazio" e "habilitado".
 
+## Amendment (2026-09-19) — o eixo de grade saiu do dialog de cadastro normal
+
+A decisão original punha Gênero, Tamanho/Numeração e o gerador de variações **dentro** do dialog
+de cadastro existente, condicionados a `temEixoTamanho`. Depois de a org piloto cadastrar e
+publicar de verdade (uma jaqueta e uma sandália), o dono do produto apontou três problemas: o
+formulário misturava perguntas de grade com as de produto simples, preço/custo/dimensão tinham
+de ser revisados em cada uma das até 60 linhas, e "Tamanho Único" continuava sendo oferecido.
+
+Fica revisado assim, conforme
+`docs/superpowers/specs/2026-09-19-cadastro-grade-roupa-calcado-design.md`:
+
+- O cadastro em grade ganha **tela própria** (`src/components/estoque/dialog-cadastro-grade.tsx`),
+  aberta por um segundo botão em Estoque que só aparece para org com tipo habilitado.
+  `dialog-cadastro-produto.tsx` volta ao formato de antes deste ADR — sem Gênero, sem Tamanho,
+  sem `GeradorVariacoes`, para qualquer org.
+- Preço mínimo (líquido), custo e as 4 dimensões passam a ser **preenchidos uma vez** no
+  cabeçalho e herdados por linha, com destrava e "Voltar a herdar" por campo. A herança é
+  100% de frontend: o payload enviado à edge continua idêntico, campo a campo, por variação.
+- `'Tamanho Único'` sai de `TAMANHOS_ROUPA`. O Spike 051 §12 confirmou por chamada real que o ML
+  não tem guia de tamanhos para esse valor nos domínios de vestuário suportados — publicar com
+  ele falha sempre. Como a lista é a whitelist que a edge `cadastrar-produto` valida, a remoção
+  também recusa o valor vindo de aba antiga ou retry, com erro claro.
+
+O que **não** muda: o modelo de dados (`familias.genero`, `variacoes.tamanho`,
+`organizations.tipos_produto_habilitados`), a RPC `tipos_produto_da_org()`, a validação de
+backend e a publicação com guia de tamanhos (ADR-0167). Nenhuma migration.
+
 ## Como reverter
 
 Remover as colunas `familias.genero`, `variacoes.tamanho` e
