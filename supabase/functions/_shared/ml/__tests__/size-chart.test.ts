@@ -1,7 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CONTORNO_PEITO_CM, domainIdSemPrefixo, montarLinhasChart, parseLinhasResposta,
+  CONTORNO_PEITO_CM, domainIdSemPrefixo, montarLinhasChart, nomeChart, parseLinhasResposta,
 } from '../size-chart.ts';
+
+// Achado real (produção, 2026-09-19): a 1ª tentativa de publicação real ficou presa em retry
+// porque POST /catalog/charts recusou o nome com `invalid_chart_name` — a mensagem cita "máximo
+// 60 caracteres" mas o nome tinha 45; reproduzido isolado contra a API real, o `_` de
+// "JACKETS_AND_COATS" (domain_id cru) é que invalida o nome, não o tamanho. Nome sem `_` (mesmo
+// mais longo) passou. `nomeChart` nunca pode deixar `_` vazar pro campo `names`.
+describe('nomeChart (ADR-0167 — achado real de produção)', () => {
+  it('nunca contém underscore, mesmo com domain_id cru (JACKETS_AND_COATS)', () => {
+    const nome = nomeChart('JACKETS_AND_COATS', 'masculino', ['P', 'M', 'G', 'GG']);
+    expect(nome).not.toContain('_');
+  });
+
+  it('troca underscore por espaço, preservando legibilidade', () => {
+    expect(nomeChart('JACKETS_AND_COATS', 'masculino', ['P', 'M'])).toBe('PubliAI Jackets And Coats masculino P-M');
+  });
+
+  it('nunca passa de 60 caracteres (limite real confirmado)', () => {
+    const nome = nomeChart('JACKETS_AND_COATS', 'masculino', ['P', 'M', 'G', 'GG']);
+    expect(nome.length).toBeLessThanOrEqual(60);
+  });
+});
 
 describe('domainIdSemPrefixo (ADR-0167)', () => {
   it('remove o prefixo MLB- do catalog_domain', () => {

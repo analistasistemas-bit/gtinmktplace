@@ -38,6 +38,16 @@ export function domainIdSemPrefixo(catalogDomain: string | null | undefined): st
   return catalogDomain.startsWith('MLB-') ? catalogDomain.slice(4) : catalogDomain;
 }
 
+/** Achado real de produção (2026-09-19): `POST /catalog/charts` recusa `_` no nome do chart com
+ *  `invalid_chart_name` — a mensagem do ML fala em "máximo 60 caracteres", mas reproduzido
+ *  isolado contra a API real, o `_` de `domain_id` (ex. "JACKETS_AND_COATS") é que invalida, não
+ *  o tamanho (confirmado: mesmo nome mais longo sem `_` passou). Nunca usar `domainId` cru aqui. */
+export function nomeChart(domainId: string, genero: Genero, tamanhos: readonly string[]): string {
+  const dominioLegivel = domainId.replace(/_/g, ' ')
+    .toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+  return `PubliAI ${dominioLegivel} ${genero} ${tamanhos.join('-')}`.slice(0, 60);
+}
+
 interface LinhaAtributo { id: string; values: Array<{ id?: string; name: string }>; }
 interface LinhaChart { attributes: LinhaAtributo[]; }
 
@@ -156,7 +166,7 @@ export async function garantirChart(
   const genderValue = GENDER_VALUE[genero];
 
   const body = {
-    names: { MLB: `PubliAI ${domainId} ${genero} ${supersetTamanhos.join('-')}`.slice(0, 60) },
+    names: { MLB: nomeChart(domainId, genero, supersetTamanhos) },
     domain_id: domainId,
     site_id: 'MLB',
     type: 'SPECIFIC',
