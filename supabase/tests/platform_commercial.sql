@@ -351,6 +351,28 @@ create table public.ml_vendas_itens (
 \ir ../migrations/20260908022934_platform_org_cost_catalog_distinct.sql
 \ir ../migrations/20260908030002_platform_org_month_metrics.sql
 \ir ../migrations/20260918000000_adr164_implantacao_sobrevive_renegociacao.sql
+
+-- ADR-0165: fixture com o defeito real medido em producao (modalidade 1 cobrando Sonar do
+-- cliente), criada ANTES desta migration existir, pra provar que o backfill corrige de verdade
+-- (nao so que a suite nao quebra quando zero linhas violam).
+insert into public.organizations (id, nome, slug) values
+  ('90000000-0000-0000-0000-000000000094', 'Org Sonar Legado', 'org-sonar-legado');
+
+do $$
+declare
+  v_current date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+begin
+  perform public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000094',
+      'starts_on', v_current, 'modality', 1, 'monthly_fee_cents', 60000,
+      'revenue_bps', 500, 'sonar_unit_cents', 120, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'fixture pre-ADR-0165: modalidade 1 com sonar cobrado'
+    )
+  );
+end $$;
+
 \ir ../migrations/20260918010000_platform_commercial_terms_tiers.sql
 
 -- Implantacao > 0: o unico caminho que valida `setup_due_month`. Todos os casos acima usam
@@ -869,4 +891,26 @@ begin
     raise exception 'trigger de imutabilidade deveria continuar ativo apos a migration';
   exception when check_violation then null;
   end;
+end $$;
+
+-- ADR-0165: prova que o backfill de fato CORRIGE o Sonar de modalidade 1 pre-existente (nao so
+-- que a suite nao quebra quando zero linhas violam). Org '...094' foi criada no Step 3, ANTES do
+-- \ir desta migration, exatamente com o defeito medido em producao.
+do $$
+declare
+  v_row public.platform_commercial_terms%rowtype;
+begin
+  select * into v_row from public.platform_commercial_terms
+  where org_id = '90000000-0000-0000-0000-000000000094'
+  order by starts_on desc, version desc limit 1;
+  if v_row.sonar_unit_cents <> 0 then
+    raise exception 'backfill nao zerou o sonar de modalidade 1 pre-existente: %', v_row;
+  end if;
+  if not exists (
+    select 1 from public.platform_audit_events
+    where org_id = '90000000-0000-0000-0000-000000000094'
+      and action = 'platform_terms_sonar_corrected'
+  ) then
+    raise exception 'correcao do sonar nao gerou evento de auditoria para a organizacao';
+  end if;
 end $$;
