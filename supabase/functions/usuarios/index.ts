@@ -3,6 +3,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUser } from '../_shared/auth.ts';
 import { sanitizarDestinatario } from '../_shared/notificacoes/destinatario.ts';
 import { pendenciasAtivacaoFiscal } from '../_shared/fiscal/ativacao.ts';
+import { sanearTiposProduto } from './tipos-produto.ts';
 
 // Espelho de src/lib/menus.ts. Divergir daqui faz `allowed_menus` sanitizar e descartar
 // silenciosamente a permissão do menu novo.
@@ -28,7 +29,7 @@ Deno.serve(async (req) => {
   const { data: me } = await db.from('profiles')
     .select('is_admin, is_super_admin, is_active, org_id').eq('id', caller.id).single();
   if (!me || !me.is_active) return json({ error: 'forbidden' }, 403);
-  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'set_modulos_org', 'set_tipo_pessoa_org', 'delete_org'].includes(action);
+  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'set_modulos_org', 'set_tipos_produto_org', 'set_tipo_pessoa_org', 'delete_org'].includes(action);
   if (!(me.is_super_admin && !me.org_id && platformAction)) {
     if (!me.org_id || !me.is_admin) return json({ error: 'forbidden' }, 403);
   }
@@ -125,7 +126,7 @@ Deno.serve(async (req) => {
     case 'list_orgs': {
       if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
       const [{ data: orgs }, { data: profiles }] = await Promise.all([
-        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, modulos_habilitados, is_test, tipo_pessoa').order('criado_em'),
+        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, modulos_habilitados, tipos_produto_habilitados, is_test, tipo_pessoa').order('criado_em'),
         db.from('profiles').select('org_id'),
       ]);
       const counts = new Map<string, number>();
@@ -133,6 +134,7 @@ Deno.serve(async (req) => {
       const result = (orgs ?? []).map((o) => ({
           id: o.id, nome: o.nome, slug: o.slug, criado_em: o.criado_em,
           canais_habilitados: o.canais_habilitados, modulos_habilitados: o.modulos_habilitados ?? [],
+          tipos_produto_habilitados: o.tipos_produto_habilitados ?? [],
           is_test: o.is_test, membros: counts.get(o.id) ?? 0, tipo_pessoa: o.tipo_pessoa,
       }));
       return json({ orgs: result });
@@ -237,6 +239,23 @@ Deno.serve(async (req) => {
         .update({ modulos_habilitados: modulosUnicos, atualizado_em: new Date().toISOString() })
         .eq('id', alvo);
       const resultAuditError = await auditPlatformAction(alvo, action, error ? 'failure' : 'success', { modulos: modulosUnicos });
+      if (resultAuditError) return auditWriteError(error ? 'failure' : 'success', resultAuditError);
+      if (error) return json({ error: error.message }, 400);
+      return json({ ok: true });
+    }
+    case 'set_tipos_produto_org': {
+      if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
+      const alvo = String(body.org_id ?? '');
+      if (!alvo) return json({ error: 'org_id obrigatório' }, 400);
+      // ADR-0166. Diferente de set_canais_org: NAO ha tipo obrigatorio — lista vazia e o estado
+      // padrao de toda org e significa "so cor como eixo de variacao", o comportamento de hoje.
+      const tipos = sanearTiposProduto(body.tipos);
+      const intentAuditError = await auditPlatformAction(alvo, action, 'intent', { tipos });
+      if (intentAuditError) return auditWriteError('intent', intentAuditError);
+      const { error } = await db.from('organizations')
+        .update({ tipos_produto_habilitados: tipos, atualizado_em: new Date().toISOString() })
+        .eq('id', alvo);
+      const resultAuditError = await auditPlatformAction(alvo, action, error ? 'failure' : 'success', { tipos });
       if (resultAuditError) return auditWriteError(error ? 'failure' : 'success', resultAuditError);
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true });
