@@ -1133,7 +1133,7 @@ insert into public.platform_commercial_terms(
 ) values
   ('90000000-0000-0000-0000-000000000015',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,400,350,300,0,0,null,'tier fixture','80000000-0000-0000-0000-000000000001',1);
 insert into public.ml_vendas(id,org_id,order_id,date_closed,total_amount,status,atualizado_em,tem_devolucao,estorno) values
-  ('50000000-0000-0000-0000-000000000015','90000000-0000-0000-0000-000000000015',300020,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',400000,'paid','2026-07-02T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000017','90000000-0000-0000-0000-000000000015',300020,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',400000,'paid','2026-07-02T12:00:00Z',false,0),
   ('50000000-0000-0000-0000-000000000016','90000000-0000-0000-0000-000000000015',300021,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '2 days',350000,'refunded','2026-07-03T12:00:00Z',false,0);
 
 do $$
@@ -1157,9 +1157,9 @@ begin
   -- Devolucao tardia empurra a base revisada pra 5.000.000 (faixa 1, 500bps HOJE) -- o credito
   -- tem que usar a aliquota CONGELADA do fechamento (350), atravessando a fronteira de faixa.
   update public.ml_vendas set status='partially_refunded',atualizado_em='2026-08-04T12:00:00Z',tem_devolucao=true
-    where id='50000000-0000-0000-0000-000000000015';
+    where id='50000000-0000-0000-0000-000000000017';
   perform public.platform_reconcile_revenue('80000000-0000-0000-0000-000000000001',jsonb_build_object(
-    'org_id','90000000-0000-0000-0000-000000000015','sale_id','50000000-0000-0000-0000-000000000015',
+    'org_id','90000000-0000-0000-0000-000000000015','sale_id','50000000-0000-0000-0000-000000000017',
     'source_updated_at','2026-08-04T12:00:00Z','refunded_product_cents',35000000,'reason','devolucao tardia atravessando faixa'));
   v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000015',v_next);
   if v_preview#>>'{adjustments,0,amount_cents}'<>'1225000' or (v_preview->>'credit_balance_cents')::bigint<>1225000 then
