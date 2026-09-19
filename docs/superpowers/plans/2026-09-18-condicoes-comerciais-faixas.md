@@ -381,7 +381,60 @@ insert into public.platform_commercial_terms(
 (modalidade vira 2 — já tinham `monthly_fee_cents=0`, então já satisfazem o novo `CHECK`; as 4 faixas
 entram como 0 porque este arquivo testa consumo do Sonar, não percentual.)
 
-- [ ] **Step 4: Adicionar os novos casos de teste ao final de `supabase/tests/platform_commercial.sql`**
+- [ ] **Step 4: Corrigir 3 chamadas já existentes em `platform_commercial.sql` que ainda usam a chave `revenue_bps`**
+
+Essas chamadas rodam DEPOIS do ponto onde o `\ir` da nova migration foi inserido (Step 2), então
+`platform_save_terms` já vai exigir `revenue_bps_t1..t4` quando elas executarem — sem esta correção
+as 3 quebram (a terceira quebra de um jeito sutil: a mensagem de erro vira genérica, mascarando o que
+o teste original queria provar sobre `setup_due_month`).
+
+Na primeira ocorrência (bloco `do $$` que testa "Org Implantacao", teste "implantacao com mes
+valido"), troque as duas chamadas a `platform_save_terms` deste bloco — a primeira:
+
+```sql
+      'revenue_bps', 700, 'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+      'setup_due_month', v_mes, 'reason', 'implantacao com mes valido'
+```
+
+por:
+
+```sql
+      'revenue_bps_t1', 700, 'revenue_bps_t2', 700, 'revenue_bps_t3', 700, 'revenue_bps_t4', 700,
+      'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+      'setup_due_month', v_mes, 'reason', 'implantacao com mes valido'
+```
+
+e, no mesmo bloco `do $$`, a segunda chamada (a que testa `setup_due_month` com formato errado):
+
+```sql
+        'revenue_bps', 700, 'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+        'setup_due_month', '2026-10-01', 'reason', 'mes com dia nao e YYYY-MM'
+```
+
+por:
+
+```sql
+        'revenue_bps_t1', 700, 'revenue_bps_t2', 700, 'revenue_bps_t3', 700, 'revenue_bps_t4', 700,
+        'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+        'setup_due_month', '2026-10-01', 'reason', 'mes com dia nao e YYYY-MM'
+```
+
+Na segunda ocorrência (bloco `do $$` seguinte, teste "renegociacao depois da implantacao"):
+
+```sql
+      'revenue_bps', 600, 'sonar_unit_cents', 120, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'renegociacao depois da implantacao'
+```
+
+por:
+
+```sql
+      'revenue_bps_t1', 600, 'revenue_bps_t2', 600, 'revenue_bps_t3', 600, 'revenue_bps_t4', 600,
+      'sonar_unit_cents', 120, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'renegociacao depois da implantacao'
+```
+
+- [ ] **Step 5: Adicionar os novos casos de teste ao final de `supabase/tests/platform_commercial.sql`**
 
 Acrescente, ao final do arquivo:
 
@@ -473,7 +526,7 @@ begin
 end $$;
 ```
 
-- [ ] **Step 5: Rodar a suíte SQL e confirmar verde**
+- [ ] **Step 6: Rodar a suíte SQL e confirmar verde**
 
 Run: `psql -U supabase_admin -d codex_platform_admin_test_20260906 -f supabase/tests/platform_billing.sql`
 (este arquivo `\ir`'a `platform_sonar.sql`, que `\ir`'a `platform_commercial.sql` — roda a cadeia
@@ -481,7 +534,7 @@ inteira. Ver `docs/reference/edge-functions.md` ou `docs/how-to/` se o nome do b
 mudado.)
 Expected: sem `ERROR`, script termina sem lançar exceção.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
 git add supabase/migrations/20260918010000_platform_commercial_terms_tiers.sql \
@@ -1755,8 +1808,10 @@ const terms: CommercialTerms = {
 };
 ```
 
-E em `makePreview`, adicione `applied_bps`/`applied_tier` e zere a linha de infraestrutura, ajustando
-`total_cents` de acordo (a soma dos `amount_cents` das `lines` mais o Sonar, sem a infra de 60.000):
+E em `makePreview`, adicione `applied_bps`/`applied_tier` e zere o `amount_cents` da linha de
+infraestrutura (ela continua existindo no array — a migration 2 (Task 2) só torna condicionais as
+linhas `sonar`/`setup`/`credits`; `infrastructure` e `revenue` são sempre emitidas, só que agora com
+`amount_cents: 0` quando `monthly_fee_cents` é `0`), ajustando `total_cents` de acordo:
 
 ```ts
 function makePreview(overrides: Partial<BillingPreview> = {}): BillingPreview {
@@ -1775,6 +1830,7 @@ function makePreview(overrides: Partial<BillingPreview> = {}): BillingPreview {
     sonar_units: 10,
     sonar_cents: 1_200,
     lines: [
+      { key: 'infrastructure', label: 'Infraestrutura', quantity: 1, unit_cents: 0, amount_cents: 0, source_type: 'commercial_terms', source_id: 'terms-1' },
       { key: 'revenue', label: 'Remuneração sobre vendas', quantity: null, unit_cents: null, amount_cents: 45_000, source_type: 'sales', source_id: null },
       { key: 'sonar', label: 'Consultas Sonar', quantity: 10, unit_cents: 120, amount_cents: 1_200, source_type: 'sonar_deliveries', source_id: null },
     ],
@@ -1790,9 +1846,9 @@ function makePreview(overrides: Partial<BillingPreview> = {}): BillingPreview {
 }
 ```
 
-(removi a linha `infrastructure` porque `monthly_fee_cents` agora é `0` para modalidade 2; se algum
-teste específico do arquivo afirma o texto "Infraestrutura" ou o valor `106_200`, ajuste esse teste
-para os novos números — rode o Step 3 abaixo para achar exatamente quais.)
+(mantive a linha `infrastructure` no array, só com valor 0 — removê-la seria inventar um formato que
+o backend real não produz. Se algum teste específico do arquivo afirma o valor `106_200`, ajuste esse
+teste para `46_200` — rode o Step 3 abaixo para achar exatamente quais.)
 
 - [ ] **Step 3: Rodar os testes e corrigir divergências restantes**
 
@@ -1855,16 +1911,14 @@ Em `src/pages/__tests__/OrganizacaoDetalhe.test.tsx`, troque:
     gross_cents: 0, refund_cents: 0, base_cents: 0, fee_cents: 0, sonar_units: 0, sonar_cents: 0,
 ```
 
-por:
+por (mantendo `monthly_fee_cents: 0` sem mudança — nada nesta tarefa exige alterá-lo, e um `CHECK`
+de modalidade 1 aceita tanto `0` quanto um valor positivo; mudar um campo que ninguém pediu seria
+edição fora do escopo):
 
 ```ts
-    terms: { id: 't1', org_id: 'org-avil', starts_on: '2026-01-01', modality: 1, monthly_fee_cents: 60_000, revenue_bps_t1: 500, revenue_bps_t2: 400, revenue_bps_t3: 350, revenue_bps_t4: 300, sonar_unit_cents: 0, setup_fee_cents: 0, setup_due_month: null, reason: '', version: 1, timezone: 'America/Fortaleza', created_at: '', created_by: '' },
+    terms: { id: 't1', org_id: 'org-avil', starts_on: '2026-01-01', modality: 1, monthly_fee_cents: 0, revenue_bps_t1: 500, revenue_bps_t2: 400, revenue_bps_t3: 350, revenue_bps_t4: 300, sonar_unit_cents: 0, setup_fee_cents: 0, setup_due_month: null, reason: '', version: 1, timezone: 'America/Fortaleza', created_at: '', created_by: '' },
     gross_cents: 0, refund_cents: 0, base_cents: 0, fee_cents: 0, applied_bps: 500, applied_tier: 1, sonar_units: 0, sonar_cents: 0,
 ```
-
-(troquei `monthly_fee_cents` de `0` para `60_000` porque modalidade 1 pode ter infra — o valor
-antigo `0` era só um placeholder do fixture, não uma afirmação do teste; mantenha `0` se algum
-`expect` específico do arquivo depender dele, o Step 3 revela isso.)
 
 Se algum teste deste arquivo afirmar o texto antigo `"5,00% sobre receita"` (busque por
 `sobre receita` no arquivo), o texto continua idêntico porque `applied_bps: 500` produz o mesmo
