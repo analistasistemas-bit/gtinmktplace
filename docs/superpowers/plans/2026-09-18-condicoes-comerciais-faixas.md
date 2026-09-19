@@ -1,0 +1,2098 @@
+# Percentual por Faixa Regressiva de Faturamento — Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Trocar o percentual único de cobrança (`revenue_bps`) por 4 faixas fixas por organização
+(`revenue_bps_t1..t4`), escolhidas automaticamente pelo faturamento líquido do mês, e travar por
+modalidade quais campos cada organização pode cobrar (Sonar só na modalidade 2, infra separada só na
+modalidade 1).
+
+**Architecture:** Duas migrations SQL sequenciais (schema+RPC de gravação, depois função de faixa+RPC
+de cobrança), seguidas da propagação ao contrato TypeScript compartilhado (`_shared/platform-admin/`)
+e aos 4 pontos de UI que leem o percentual. Sem shape legado: a migration corrige o dado de produção
+já errado (2 organizações) no mesmo movimento em que troca o schema.
+
+**Tech Stack:** PostgreSQL/PL-pgSQL (Supabase), Deno (Edge Functions), React + TypeScript + Vitest.
+
+**Spec:** [docs/superpowers/specs/2026-09-18-condicoes-comerciais-faixas-design.md](../specs/2026-09-18-condicoes-comerciais-faixas-design.md)
+· [ADR-0165](../../decisions/0165-faixas-regressivas-por-organizacao.md)
+
+## Global Constraints
+
+- Cortes de faixa fixos e iguais para toda organização: ≤ R$100.000 / ≤ R$300.000 / ≤ R$500.000 /
+  acima — em centavos de faturamento líquido do mês: 10.000.000 / 30.000.000 / 50.000.000.
+- Modalidade 1 nunca cobra Sonar do cliente (`sonar_unit_cents = 0`); modalidade 2 nunca tem
+  infraestrutura separada (`monthly_fee_cents = 0`). Violação **rejeita** com erro — nunca normaliza
+  em silêncio.
+- Devolução tardia usa a alíquota **congelada** do fechamento original; nunca recalcula a faixa de um
+  mês já fechado.
+- Sem trava de monotonia entre as 4 faixas.
+- Nenhuma reimplementação da lógica de faixa em TypeScript — o único lugar com os 3 cortes é
+  `platform_terms_tier` (SQL).
+- Nunca rebaixar para um modelo mais barato nesta entrega (migrations de banco, código financeiro) —
+  regra do projeto (CLAUDE.md).
+
+---
+
+### Task 1: Migration 1 — schema de faixas, correção de dado, `platform_save_terms`
+
+**Files:**
+- Create: `supabase/migrations/20260918010000_platform_commercial_terms_tiers.sql`
+- Modify: `supabase/tests/platform_commercial.sql:353` (adicionar `\ir` da nova migration) e
+  `supabase/tests/platform_commercial.sql` (adicionar novos casos de teste ao final do arquivo)
+- Modify: `supabase/tests/platform_sonar.sql:24-31` (fixture usa a coluna `revenue_bps`, que deixa de
+  existir, e `modality=1` com `sonar_unit_cents>0`, que o novo `CHECK` rejeita)
+
+**Interfaces:**
+- Produces: `platform_commercial_terms.revenue_bps_t1..t4` (integer, not null, 0–10000 cada),
+  substituindo `revenue_bps` (removida). `CHECK platform_commercial_terms_modality_shape`. RPC
+  `platform_save_terms(p_actor uuid, p_input jsonb)` passa a exigir `revenue_bps_t1..t4` no lugar de
+  `revenue_bps` e rejeita combinação de modalidade errada.
+- Consumes: nada de tarefa anterior (primeira tarefa de código).
+
+- [ ] **Step 1: Escrever a migration**
+
+Crie `supabase/migrations/20260918010000_platform_commercial_terms_tiers.sql`:
+
+```sql
+-- ADR-0165: percentual de gestao por faixa regressiva de faturamento, por organizacao.
+--
+-- platform_commercial_terms grava hoje um unico revenue_bps por contrato. A pagina publica anuncia
+-- percentual regressivo por faixa de faturamento mensal (ate 100K / 100-300K / 300-500K / +500K)
+-- nas duas modalidades, e nada trava que modalidade 1 nao deveria cobrar Sonar do cliente nem que
+-- modalidade 2 nao deveria ter infra separada. Medido em 2026-09-18: Daludi Shop e DSA sao
+-- modalidade 1 com sonar_unit_cents = 120 (violam a regra que este ADR passa a travar).
+--
+-- Troca revenue_bps por 4 colunas fixas (revenue_bps_t1..t4, uma por faixa; os cortes sao fixos e
+-- vivem em platform_terms_tier, migration seguinte). O backfill das 3 organizacoes existentes copia
+-- o revenue_bps atual para as 4 faixas (comportamento identico ao de hoje ate a proxima
+-- renegociacao real) e corrige o Sonar de Daludi Shop/DSA (zera).
+--
+-- O trigger platform_commercial_terms_no_mutation bloqueia qualquer UPDATE incondicionalmente. E
+-- desabilitado so durante os dois UPDATEs de backfill, dentro desta transacao, e reabilitado antes
+-- do commit -- com asserção LOUD (raise exception) se o backfill ficar incompleto ou se o numero de
+-- organizacoes corrigidas nao bater com o medido, para nunca silenciar uma divergencia entre o dado
+-- real e o que esta migration espera.
+
+begin;
+
+alter table public.platform_commercial_terms
+  add column revenue_bps_t1 integer,
+  add column revenue_bps_t2 integer,
+  add column revenue_bps_t3 integer,
+  add column revenue_bps_t4 integer;
+
+alter table public.platform_commercial_terms disable trigger platform_commercial_terms_no_mutation;
+
+update public.platform_commercial_terms
+  set revenue_bps_t1 = revenue_bps, revenue_bps_t2 = revenue_bps,
+      revenue_bps_t3 = revenue_bps, revenue_bps_t4 = revenue_bps;
+
+do $$
+declare
+  v_corrigidas integer;
+begin
+  with corrigidos as (
+    update public.platform_commercial_terms
+      set sonar_unit_cents = 0
+      where modality = 1 and sonar_unit_cents <> 0
+      returning id, org_id
+  )
+  insert into public.platform_audit_events (org_id, actor_id, category, action, result, target, reason, details)
+  select org_id, null, 'admin', 'platform_terms_sonar_corrected', 'success', id::text,
+    'ADR-0165: modalidade 1 nao cobra Sonar do cliente', jsonb_build_object('sonar_unit_cents_after', 0)
+  from corrigidos;
+
+  get diagnostics v_corrigidas = row_count;
+  if v_corrigidas <> 2 then
+    raise exception 'esperava corrigir 2 organizacoes modalidade 1 com Sonar cobrado, corrigiu %', v_corrigidas
+      using errcode = '23514';
+  end if;
+end $$;
+
+alter table public.platform_commercial_terms enable trigger platform_commercial_terms_no_mutation;
+
+do $$
+begin
+  if exists (
+    select 1 from public.platform_commercial_terms
+    where revenue_bps_t1 is null or revenue_bps_t2 is null
+       or revenue_bps_t3 is null or revenue_bps_t4 is null
+  ) then
+    raise exception 'backfill de faixas incompleto' using errcode = '23514';
+  end if;
+end $$;
+
+alter table public.platform_commercial_terms
+  alter column revenue_bps_t1 set not null,
+  alter column revenue_bps_t2 set not null,
+  alter column revenue_bps_t3 set not null,
+  alter column revenue_bps_t4 set not null,
+  add constraint platform_commercial_terms_tiers_range check (
+    revenue_bps_t1 between 0 and 10000 and revenue_bps_t2 between 0 and 10000
+    and revenue_bps_t3 between 0 and 10000 and revenue_bps_t4 between 0 and 10000
+  ),
+  add constraint platform_commercial_terms_modality_shape check (
+    (modality <> 1 or sonar_unit_cents = 0)
+    and (modality <> 2 or monthly_fee_cents = 0)
+  ),
+  drop column revenue_bps;
+
+create or replace function public.platform_save_terms(p_actor uuid, p_input jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_org_id uuid;
+  v_starts_on date;
+  v_modality smallint;
+  v_monthly_fee bigint;
+  v_revenue_bps_t1 integer;
+  v_revenue_bps_t2 integer;
+  v_revenue_bps_t3 integer;
+  v_revenue_bps_t4 integer;
+  v_sonar_unit bigint;
+  v_setup_fee bigint;
+  v_setup_due date;
+  v_reason text;
+  v_modality_text text;
+  v_monthly_fee_text text;
+  v_revenue_bps_t1_text text;
+  v_revenue_bps_t2_text text;
+  v_revenue_bps_t3_text text;
+  v_revenue_bps_t4_text text;
+  v_sonar_unit_text text;
+  v_setup_fee_text text;
+  v_version integer;
+  v_term public.platform_commercial_terms%rowtype;
+  v_current_month date;
+  v_next_month date;
+  v_min_starts date;
+begin
+  if not exists (
+    select 1 from public.profiles p
+    where p.id = p_actor and p.is_super_admin and p.is_active
+  ) then
+    raise exception 'Active super-admin actor required' using errcode = '42501';
+  end if;
+
+  if p_input is null or jsonb_typeof(p_input) <> 'object' then
+    raise exception 'Commercial terms input is required' using errcode = '22023';
+  end if;
+
+  begin
+    v_org_id := (p_input->>'org_id')::uuid;
+    v_starts_on := (p_input->>'starts_on')::date;
+  exception when others then
+    raise exception 'Invalid commercial terms input' using errcode = '22023';
+  end;
+
+  v_modality_text := p_input->>'modality';
+  v_monthly_fee_text := p_input->>'monthly_fee_cents';
+  v_revenue_bps_t1_text := p_input->>'revenue_bps_t1';
+  v_revenue_bps_t2_text := p_input->>'revenue_bps_t2';
+  v_revenue_bps_t3_text := p_input->>'revenue_bps_t3';
+  v_revenue_bps_t4_text := p_input->>'revenue_bps_t4';
+  v_sonar_unit_text := p_input->>'sonar_unit_cents';
+  v_setup_fee_text := p_input->>'setup_fee_cents';
+
+  if v_org_id is null or v_starts_on is null
+    or jsonb_typeof(p_input->'modality') is distinct from 'number'
+    or v_modality_text !~ '^(0|[1-9][0-9]*)$'
+    or v_modality_text not in ('1', '2')
+    or jsonb_typeof(p_input->'revenue_bps_t1') is distinct from 'number'
+    or v_revenue_bps_t1_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_revenue_bps_t1_text) > 5
+    or jsonb_typeof(p_input->'revenue_bps_t2') is distinct from 'number'
+    or v_revenue_bps_t2_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_revenue_bps_t2_text) > 5
+    or jsonb_typeof(p_input->'revenue_bps_t3') is distinct from 'number'
+    or v_revenue_bps_t3_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_revenue_bps_t3_text) > 5
+    or jsonb_typeof(p_input->'revenue_bps_t4') is distinct from 'number'
+    or v_revenue_bps_t4_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_revenue_bps_t4_text) > 5
+    or jsonb_typeof(p_input->'monthly_fee_cents') is distinct from 'number'
+    or v_monthly_fee_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_monthly_fee_text) > 16
+    or (length(v_monthly_fee_text) = 16 and v_monthly_fee_text > '9007199254740991')
+    or jsonb_typeof(p_input->'sonar_unit_cents') is distinct from 'number'
+    or v_sonar_unit_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_sonar_unit_text) > 16
+    or (length(v_sonar_unit_text) = 16 and v_sonar_unit_text > '9007199254740991')
+    or jsonb_typeof(p_input->'setup_fee_cents') is distinct from 'number'
+    or v_setup_fee_text !~ '^(0|[1-9][0-9]*)$'
+    or length(v_setup_fee_text) > 16
+    or (length(v_setup_fee_text) = 16 and v_setup_fee_text > '9007199254740991')
+    or jsonb_typeof(p_input->'reason') is distinct from 'string' then
+    raise exception 'Invalid commercial terms input' using errcode = '22023';
+  end if;
+
+  v_modality := v_modality_text::smallint;
+  v_monthly_fee := v_monthly_fee_text::bigint;
+  v_revenue_bps_t1 := v_revenue_bps_t1_text::integer;
+  v_revenue_bps_t2 := v_revenue_bps_t2_text::integer;
+  v_revenue_bps_t3 := v_revenue_bps_t3_text::integer;
+  v_revenue_bps_t4 := v_revenue_bps_t4_text::integer;
+  v_sonar_unit := v_sonar_unit_text::bigint;
+  v_setup_fee := v_setup_fee_text::bigint;
+  v_reason := btrim(p_input->>'reason');
+
+  if v_starts_on <> date_trunc('month', v_starts_on)::date
+    or v_revenue_bps_t1 not between 0 and 10000
+    or v_revenue_bps_t2 not between 0 and 10000
+    or v_revenue_bps_t3 not between 0 and 10000
+    or v_revenue_bps_t4 not between 0 and 10000
+    or v_reason is null or v_reason = '' then
+    raise exception 'Invalid commercial terms input' using errcode = '22023';
+  end if;
+
+  if v_modality = 1 and v_sonar_unit <> 0 then
+    raise exception 'Modalidade 1 não cobra Sonar do cliente: informe 0,00' using errcode = '22023';
+  end if;
+  if v_modality = 2 and v_monthly_fee <> 0 then
+    raise exception 'Modalidade 2 não tem infraestrutura separada: informe 0,00' using errcode = '22023';
+  end if;
+
+  if v_setup_fee = 0 then
+    if p_input->>'setup_due_month' is not null then
+      raise exception 'setup_due_month is invalid without setup fee' using errcode = '22023';
+    end if;
+    v_setup_due := null;
+  else
+    if jsonb_typeof(p_input->'setup_due_month') is distinct from 'string'
+      or (p_input->>'setup_due_month') !~ '^\d{4}-(0[1-9]|1[0-2])$' then
+      raise exception 'setup_due_month must be YYYY-MM' using errcode = '22023';
+    end if;
+    v_setup_due := ((p_input->>'setup_due_month') || '-01')::date;
+    if v_setup_due < v_starts_on then
+      raise exception 'setup_due_month cannot precede starts_on' using errcode = '22023';
+    end if;
+  end if;
+
+  perform 1 from public.organizations o where o.id = v_org_id for update;
+  if not found then
+    raise exception 'Organization not found' using errcode = '23503';
+  end if;
+
+  v_current_month := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+  v_next_month := (v_current_month + interval '1 month')::date;
+  v_min_starts := case
+    when exists (select 1 from public.platform_commercial_terms t where t.org_id = v_org_id)
+    then v_next_month
+    else v_current_month
+  end;
+
+  if v_starts_on < v_min_starts then
+    raise exception 'Invalid commercial terms input' using errcode = '22023';
+  end if;
+
+  select coalesce(max(t.version), 0) + 1 into v_version
+  from public.platform_commercial_terms t
+  where t.org_id = v_org_id and t.starts_on = v_starts_on;
+
+  if v_setup_fee > 0 and exists (
+    select 1 from public.platform_commercial_terms t where t.org_id = v_org_id
+  ) then
+    raise exception 'Setup fee cannot be reapplied on renegotiation' using errcode = '22023';
+  end if;
+
+  if exists (select 1 from public.platform_commercial_terms t where t.org_id = v_org_id) then
+    select t.setup_fee_cents, t.setup_due_month into v_setup_fee, v_setup_due
+    from public.platform_commercial_terms t
+    where t.org_id = v_org_id
+    order by t.starts_on desc, t.version desc
+    limit 1;
+    v_setup_fee := coalesce(v_setup_fee, 0);
+
+    if v_setup_due < v_starts_on then
+      v_setup_fee := 0;
+      v_setup_due := null;
+    end if;
+  end if;
+
+  insert into public.platform_commercial_terms (
+    org_id, starts_on, modality, monthly_fee_cents,
+    revenue_bps_t1, revenue_bps_t2, revenue_bps_t3, revenue_bps_t4,
+    sonar_unit_cents, setup_fee_cents, setup_due_month, reason, created_by, version
+  ) values (
+    v_org_id, v_starts_on, v_modality, v_monthly_fee,
+    v_revenue_bps_t1, v_revenue_bps_t2, v_revenue_bps_t3, v_revenue_bps_t4,
+    v_sonar_unit, v_setup_fee, v_setup_due, v_reason, p_actor, v_version
+  ) returning * into v_term;
+
+  insert into public.platform_audit_events (
+    org_id, actor_id, category, action, result, target, reason, details
+  ) values (
+    v_org_id, p_actor, 'admin', 'platform_terms_saved', 'success', v_term.id::text, v_reason,
+    jsonb_build_object('starts_on', v_starts_on, 'version', v_version)
+  );
+
+  return to_jsonb(v_term);
+end;
+$$;
+
+revoke all on function public.platform_save_terms(uuid, jsonb) from public, anon, authenticated;
+grant execute on function public.platform_save_terms(uuid, jsonb) to service_role;
+
+commit;
+```
+
+- [ ] **Step 2: Encaixar a migration na cadeia de testes `platform_commercial.sql`**
+
+Em `supabase/tests/platform_commercial.sql:353`, logo após a linha
+`\ir ../migrations/20260918000000_adr164_implantacao_sobrevive_renegociacao.sql`, adicione:
+
+```sql
+\ir ../migrations/20260918010000_platform_commercial_terms_tiers.sql
+```
+
+- [ ] **Step 3: Corrigir a fixture de `platform_sonar.sql` (senão o `\ir` acima já quebra o teste de Sonar)**
+
+Em `supabase/tests/platform_sonar.sql:24-31`, troque:
+
+```sql
+insert into public.platform_commercial_terms(
+  org_id,starts_on,modality,monthly_fee_cents,revenue_bps,sonar_unit_cents,
+  setup_fee_cents,setup_due_month,reason,created_by,version
+) values
+('90000000-0000-0000-0000-000000000001',date_trunc('month',now() at time zone 'America/Fortaleza')::date,
+ 1,0,0,125,0,null,'sonar fixture','80000000-0000-0000-0000-000000000001',1),
+('90000000-0000-0000-0000-000000000002',date_trunc('month',now() at time zone 'America/Fortaleza')::date,
+ 1,0,0,275,0,null,'sonar fixture','80000000-0000-0000-0000-000000000001',1);
+```
+
+por:
+
+```sql
+insert into public.platform_commercial_terms(
+  org_id,starts_on,modality,monthly_fee_cents,
+  revenue_bps_t1,revenue_bps_t2,revenue_bps_t3,revenue_bps_t4,sonar_unit_cents,
+  setup_fee_cents,setup_due_month,reason,created_by,version
+) values
+('90000000-0000-0000-0000-000000000001',date_trunc('month',now() at time zone 'America/Fortaleza')::date,
+ 2,0,0,0,0,0,125,0,null,'sonar fixture','80000000-0000-0000-0000-000000000001',1),
+('90000000-0000-0000-0000-000000000002',date_trunc('month',now() at time zone 'America/Fortaleza')::date,
+ 2,0,0,0,0,0,275,0,null,'sonar fixture','80000000-0000-0000-0000-000000000001',1);
+```
+
+(modalidade vira 2 — já tinham `monthly_fee_cents=0`, então já satisfazem o novo `CHECK`; as 4 faixas
+entram como 0 porque este arquivo testa consumo do Sonar, não percentual.)
+
+- [ ] **Step 4: Adicionar os novos casos de teste ao final de `supabase/tests/platform_commercial.sql`**
+
+Acrescente, ao final do arquivo:
+
+```sql
+-- ADR-0165: modalidade 1 nunca cobra Sonar do cliente; modalidade 2 nunca tem infra separada.
+insert into public.organizations (id, nome, slug) values
+  ('90000000-0000-0000-0000-000000000092', 'Org Faixas', 'org-faixas');
+
+do $$
+declare
+  v_current date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+  v_erro text;
+begin
+  begin
+    perform public.platform_save_terms(
+      '80000000-0000-0000-0000-000000000001',
+      jsonb_build_object(
+        'org_id', '90000000-0000-0000-0000-000000000092',
+        'starts_on', v_current, 'modality', 1, 'monthly_fee_cents', 60000,
+        'revenue_bps_t1', 500, 'revenue_bps_t2', 400, 'revenue_bps_t3', 350, 'revenue_bps_t4', 300,
+        'sonar_unit_cents', 120, 'setup_fee_cents', 0, 'setup_due_month', null,
+        'reason', 'modalidade 1 tentando cobrar sonar'
+      )
+    );
+    raise exception 'modalidade 1 com sonar deveria ter sido recusada';
+  exception when sqlstate '22023' then
+    get stacked diagnostics v_erro = message_text;
+    if v_erro not like '%Modalidade 1 não cobra Sonar%' then
+      raise exception 'mensagem inesperada para modalidade 1 com sonar: %', v_erro;
+    end if;
+  end;
+
+  begin
+    perform public.platform_save_terms(
+      '80000000-0000-0000-0000-000000000001',
+      jsonb_build_object(
+        'org_id', '90000000-0000-0000-0000-000000000092',
+        'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 60000,
+        'revenue_bps_t1', 700, 'revenue_bps_t2', 600, 'revenue_bps_t3', 550, 'revenue_bps_t4', 500,
+        'sonar_unit_cents', 120, 'setup_fee_cents', 0, 'setup_due_month', null,
+        'reason', 'modalidade 2 tentando cobrar infra'
+      )
+    );
+    raise exception 'modalidade 2 com infra deveria ter sido recusada';
+  exception when sqlstate '22023' then
+    get stacked diagnostics v_erro = message_text;
+    if v_erro not like '%Modalidade 2 não tem infraestrutura%' then
+      raise exception 'mensagem inesperada para modalidade 2 com infra: %', v_erro;
+    end if;
+  end;
+end $$;
+
+-- Combinação correta: grava as 4 faixas.
+do $$
+declare
+  v_current date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+  v_term jsonb;
+begin
+  v_term := public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000092',
+      'starts_on', v_current, 'modality', 1, 'monthly_fee_cents', 60000,
+      'revenue_bps_t1', 500, 'revenue_bps_t2', 400, 'revenue_bps_t3', 350, 'revenue_bps_t4', 300,
+      'sonar_unit_cents', 0, 'setup_fee_cents', 0, 'setup_due_month', null,
+      'reason', 'modalidade 1 correta'
+    )
+  );
+  if (v_term->>'revenue_bps_t1')::int <> 500 or (v_term->>'revenue_bps_t4')::int <> 300 then
+    raise exception 'faixas nao gravadas corretamente: %', v_term;
+  end if;
+end $$;
+
+-- ADR-0165: as 3 organizacoes de producao saem do backfill com as 4 faixas iguais ao revenue_bps
+-- antigo, e Daludi Shop/DSA saem com sonar_unit_cents = 0. Este teste roda contra as orgs A/B/C
+-- criadas no topo deste arquivo (nao as de producao), entao so confere a FORMA do backfill: uma
+-- organizacao criada antes desta migration, com revenue_bps antigo, sai com t1..t4 iguais entre si.
+do $$
+declare
+  v_row public.platform_commercial_terms%rowtype;
+begin
+  select * into v_row from public.platform_commercial_terms
+  where org_id = '90000000-0000-0000-0000-000000000091'
+  order by starts_on desc, version desc limit 1;
+  if v_row.revenue_bps_t1 is null or v_row.revenue_bps_t1 <> v_row.revenue_bps_t2
+    or v_row.revenue_bps_t2 <> v_row.revenue_bps_t3 or v_row.revenue_bps_t3 <> v_row.revenue_bps_t4 then
+    raise exception 'backfill nao preservou o percentual antigo igual nas 4 faixas: %', v_row;
+  end if;
+end $$;
+```
+
+- [ ] **Step 5: Rodar a suíte SQL e confirmar verde**
+
+Run: `psql -U supabase_admin -d codex_platform_admin_test_20260906 -f supabase/tests/platform_billing.sql`
+(este arquivo `\ir`'a `platform_sonar.sql`, que `\ir`'a `platform_commercial.sql` — roda a cadeia
+inteira. Ver `docs/reference/edge-functions.md` ou `docs/how-to/` se o nome do banco de teste tiver
+mudado.)
+Expected: sem `ERROR`, script termina sem lançar exceção.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add supabase/migrations/20260918010000_platform_commercial_terms_tiers.sql \
+  supabase/tests/platform_commercial.sql supabase/tests/platform_sonar.sql
+git commit -m "feat(cobranca): faixas de percentual por organizacao (ADR-0165, migration 1)"
+```
+
+---
+
+### Task 2: Migration 2 — função de faixa, `platform_billing_preview`/`close` com `applied_bps`
+
+**Files:**
+- Create: `supabase/migrations/20260918010100_platform_billing_tiers.sql`
+- Modify: `supabase/tests/platform_billing.sql:22` (adicionar `\ir` da nova migration) e
+  `supabase/tests/platform_billing.sql` (novos casos de teste ao final)
+
+**Interfaces:**
+- Consumes: `platform_commercial_terms.revenue_bps_t1..t4` (Task 1).
+- Produces: `platform_terms_tier(bigint) returns smallint`, `platform_terms_tier_bps(bigint,
+  integer, integer, integer, integer) returns integer`. `platform_billing_preview` retorna
+  `applied_bps`/`applied_tier` na raiz do jsonb. `platform_billing_close` grava `applied_bps` em
+  `platform_billing_statements.revenue_bps`. Linha `sonar` do preview só aparece quando
+  `terms.sonar_unit_cents > 0`.
+
+- [ ] **Step 1: Escrever a migration**
+
+Crie `supabase/migrations/20260918010100_platform_billing_tiers.sql`:
+
+```sql
+-- ADR-0165: a faixa de faturamento aplicavel e escolhida automaticamente todo mes, pelo
+-- faturamento liquido do mes (mesma base ja usada, v_base = greatest(gross - refund, 0)). Os
+-- cortes sao fixos e vivem soh aqui.
+--
+-- platform_billing_close passa a gravar em platform_billing_statements.revenue_bps a aliquota
+-- REALMENTE aplicada (applied_bps), nao mais o revenue_bps do termo (que deixou de existir na
+-- migration anterior). Isso e o que a CTE `origin` de platform_billing_preview ja usa hoje para
+-- recalcular credito de devolucao tardia de meses anteriores (st.revenue_bps) -- sem essa troca o
+-- credito sairia errado em silencio.
+--
+-- A linha 'sonar' do preview so aparece quando o termo cobra Sonar (sonar_unit_cents > 0) -- ADR-
+-- 0165 zera esse campo para toda organizacao modalidade 1, e mostrar "Consultas Sonar 0 x R$0,00"
+-- seria ruido.
+
+create function public.platform_terms_tier(p_base_cents bigint) returns smallint
+language sql immutable set search_path = '' as $$
+  select case
+    when p_base_cents <= 10000000 then 1::smallint
+    when p_base_cents <= 30000000 then 2::smallint
+    when p_base_cents <= 50000000 then 3::smallint
+    else 4::smallint
+  end
+$$;
+
+create function public.platform_terms_tier_bps(
+  p_base_cents bigint, p_t1 integer, p_t2 integer, p_t3 integer, p_t4 integer
+) returns integer
+language sql immutable set search_path = '' as $$
+  select case public.platform_terms_tier(p_base_cents)
+    when 1 then p_t1
+    when 2 then p_t2
+    when 3 then p_t3
+    else p_t4
+  end
+$$;
+
+revoke all on function public.platform_terms_tier(bigint) from public, anon, authenticated;
+revoke all on function public.platform_terms_tier_bps(bigint, integer, integer, integer, integer) from public, anon, authenticated;
+grant execute on function public.platform_terms_tier(bigint) to service_role;
+grant execute on function public.platform_terms_tier_bps(bigint, integer, integer, integer, integer) to service_role;
+
+create or replace function public.platform_billing_preview(p_actor uuid,p_org uuid,p_month date) returns jsonb
+language plpgsql stable security definer set search_path='' as $$
+declare v_org public.organizations%rowtype;
+declare v_terms public.platform_commercial_terms%rowtype;
+declare v_start timestamptz;
+declare v_end timestamptz;
+declare v_sales jsonb := '[]'::jsonb;
+declare v_blockers jsonb := '[]'::jsonb;
+declare v_adjustments jsonb := '[]'::jsonb;
+declare v_gross bigint := 0;
+declare v_refund bigint := 0;
+declare v_base bigint := 0;
+declare v_fee bigint := 0;
+declare v_applied_bps integer;
+declare v_applied_tier smallint;
+declare v_sonar_units integer := 0;
+declare v_sonar bigint := 0;
+declare v_infra bigint := 0;
+declare v_setup bigint := 0;
+declare v_late_credit bigint := 0;
+declare v_carry bigint := 0;
+declare v_credit_pool bigint := 0;
+declare v_credit_applied bigint := 0;
+declare v_total bigint := 0;
+declare v_sources jsonb;
+declare v_revision text;
+declare v_lines jsonb;
+begin
+  perform public.platform_assert_admin_actor(p_actor);
+  if p_month is null or p_month<>date_trunc('month',p_month)::date then raise exception 'invalid month' using errcode='22023'; end if;
+  select * into v_org from public.organizations where id=p_org;
+  if not found then raise exception 'organization not found' using errcode='23503'; end if;
+  select * into v_terms from public.platform_resolve_terms(p_org,p_month);
+  if v_terms.id is null then
+    v_blockers:=v_blockers||jsonb_build_array(jsonb_build_object('code','commercial_terms_required','message','Condição comercial ausente'));
+  else
+    v_infra:=v_terms.monthly_fee_cents;
+    if v_terms.setup_due_month=p_month and not exists(
+      select 1 from public.platform_billing_statements st
+      cross join lateral jsonb_array_elements(st.snapshot->'lines') line
+      where st.org_id=p_org and line->>'key'='setup'
+    ) then v_setup:=v_terms.setup_fee_cents; end if;
+  end if;
+  v_start := (p_month::text||' 00:00:00 America/Fortaleza')::timestamptz;
+  v_end := v_start+interval '1 month';
+
+  with current_sales as (
+    select s.id,s.atualizado_em,s.status,round(s.total_amount*100)::bigint gross_cents,
+      case when s.status='refunded' then round(s.total_amount*100)::bigint
+        else least(coalesce(r.refunded_product_cents,0),round(s.total_amount*100)::bigint) end refund_cents
+    from public.ml_vendas s
+    left join public.platform_matching_reconciliation(
+      s.org_id, s.id, s.status, round(s.total_amount*100)::bigint
+    ) r on true
+    where s.org_id=p_org and s.date_closed>=v_start and s.date_closed<v_end
+      and s.status in ('paid','partially_refunded','refunded')
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'sale_id',s.id,'source_updated_at',s.atualizado_em,'status',s.status,'gross_cents',s.gross_cents,
+      'refunded_product_cents',s.refund_cents,
+      'recognized_base_cents',greatest(s.gross_cents-s.refund_cents,0)
+    ) order by s.id),'[]'::jsonb),coalesce(sum(s.gross_cents),0),coalesce(sum(s.refund_cents),0)
+  into v_sales,v_gross,v_refund
+  from current_sales s;
+
+  select v_blockers||coalesce(jsonb_agg(jsonb_build_object(
+    'code','refund_reconciliation_required','message','Devolução exige conciliação de produto e frete','sale_id',s.id,
+    'order_ref',s.order_id::text,'source_updated_at',s.atualizado_em,'gross_cents',round(s.total_amount*100)::bigint,
+    'status',s.status,'refunded_product_cents',r.refunded_product_cents
+  ) order by s.id),'[]'::jsonb) into v_blockers
+  from public.ml_vendas s
+  left join public.platform_matching_reconciliation(
+    s.org_id, s.id, s.status, round(s.total_amount*100)::bigint
+  ) r on true
+  where s.org_id=p_org
+    and public.platform_sale_needs_refund_reconciliation(s.status, s.tem_devolucao, s.estorno)
+    and r.id is null
+    and (s.date_closed>=v_start and s.date_closed<v_end
+      or exists(select 1 from public.platform_billing_sale_facts f where f.org_id=p_org and f.sale_id=s.id));
+
+  v_base:=greatest(v_gross-v_refund,0);
+  if v_terms.id is not null then
+    v_applied_bps := public.platform_terms_tier_bps(
+      v_base, v_terms.revenue_bps_t1, v_terms.revenue_bps_t2, v_terms.revenue_bps_t3, v_terms.revenue_bps_t4
+    );
+    v_applied_tier := public.platform_terms_tier(v_base);
+    v_fee := round(v_base::numeric * v_applied_bps / 10000)::bigint;
+  end if;
+  select count(*),coalesce(sum(total_cents),0) into v_sonar_units,v_sonar
+    from public.platform_sonar_deliveries where org_id=p_org and month=p_month and units=1;
+
+  select v_blockers||coalesce(jsonb_agg(jsonb_build_object(
+    'code',case when s.id is null then 'billing_source_missing'
+      when public.platform_sale_needs_refund_reconciliation(s.status, s.tem_devolucao, s.estorno) and r.id is null
+        then 'refund_reconciliation_required' else 'billing_source_changed' end,
+    'message',case when s.id is null then 'Venda original não está mais disponível'
+      when public.platform_sale_needs_refund_reconciliation(s.status, s.tem_devolucao, s.estorno) and r.id is null
+        then 'Devolução tardia exige conciliação' else 'Venda original foi alterada após o fechamento' end,
+    'sale_id',f.sale_id,'order_ref',s.order_id::text,'source_updated_at',s.atualizado_em,
+    'gross_cents',case when s.id is null then f.gross_cents else round(s.total_amount*100)::bigint end,
+    'status',s.status,'refunded_product_cents',r.refunded_product_cents
+  ) order by f.sale_id),'[]'::jsonb) into v_blockers
+  from public.platform_billing_sale_facts f
+  left join public.ml_vendas s on s.org_id=f.org_id and s.id=f.sale_id
+  left join public.platform_matching_reconciliation(
+    s.org_id, s.id, s.status, round(s.total_amount*100)::bigint
+  ) r on true
+  where f.org_id=p_org and (s.id is null
+    or (public.platform_sale_needs_refund_reconciliation(s.status, s.tem_devolucao, s.estorno) and r.id is null)
+    or (not public.platform_sale_needs_refund_reconciliation(s.status, s.tem_devolucao, s.estorno)
+      and s.status not in ('refunded','cancelled')
+      and (s.status is distinct from f.status or round(s.total_amount*100)::bigint<>f.gross_cents)));
+
+  with origin as (
+    select st.id,st.fee_cents,st.revenue_bps,
+      round(sum(greatest(f.gross_cents-case
+        when s.status in ('refunded','cancelled') then f.gross_cents
+        when r.id is not null then least(r.refunded_product_cents,f.gross_cents)
+        else f.refunded_product_cents end,0))::numeric*st.revenue_bps/10000)::bigint as revised_fee
+    from public.platform_billing_statements st
+    join public.platform_billing_sale_facts f on f.statement_id=st.id
+    left join public.ml_vendas s on s.org_id=f.org_id and s.id=f.sale_id
+    left join public.platform_matching_reconciliation(
+      s.org_id, s.id, s.status, round(s.total_amount*100)::bigint
+    ) r on true
+    where st.org_id=p_org and st.month<p_month
+    group by st.id,st.fee_cents,st.revenue_bps
+  ), credited as (
+    select (a->>'origin_statement_id')::uuid origin_id,coalesce(sum((a->>'amount_cents')::bigint),0) amount
+    from public.platform_billing_statements st cross join lateral jsonb_array_elements(coalesce(st.snapshot->'adjustments','[]')) a
+    where st.org_id=p_org and st.month<p_month group by 1
+  ), due as (
+    select o.id,greatest(o.fee_cents-o.revised_fee-coalesce(c.amount,0),0)::bigint amount
+    from origin o left join credited c on c.origin_id=o.id
+  ) select coalesce(jsonb_agg(jsonb_build_object('origin_statement_id',id,'amount_cents',amount) order by id)
+      filter(where amount>0),'[]'::jsonb),coalesce(sum(amount) filter(where amount>0),0)
+    into v_adjustments,v_late_credit from due;
+
+  select coalesce((snapshot->>'credit_balance_cents')::bigint,0) into v_carry
+    from public.platform_billing_statements where org_id=p_org and month<p_month order by month desc limit 1;
+  v_carry:=coalesce(v_carry,0);
+  v_credit_pool:=v_carry+v_late_credit;
+  v_credit_applied:=least(v_credit_pool,v_infra+v_setup+v_fee+v_sonar);
+  v_total:=v_infra+v_setup+v_fee+v_sonar-v_credit_applied;
+  v_lines:=jsonb_build_array(
+    jsonb_build_object('key','infrastructure','label','Infraestrutura','quantity',1,'unit_cents',v_infra,'amount_cents',v_infra,'source_type','commercial_terms','source_id',v_terms.id),
+    jsonb_build_object('key','revenue','label','Remuneração ('||trim(trailing '.' from trim(trailing '0' from (coalesce(v_applied_bps,0)::numeric/100)::text))||'%)','quantity',null,'unit_cents',null,'amount_cents',v_fee,'source_type','sales','source_id',null)
+  );
+  if v_terms.id is not null and v_terms.sonar_unit_cents>0 then
+    v_lines:=v_lines||jsonb_build_array(jsonb_build_object('key','sonar','label','Consultas Sonar','quantity',v_sonar_units,'unit_cents',v_terms.sonar_unit_cents,'amount_cents',v_sonar,'source_type','sonar_deliveries','source_id',null));
+  end if;
+  if v_setup>0 then v_lines:=v_lines||jsonb_build_array(jsonb_build_object('key','setup','label','Implantação','quantity',1,'unit_cents',v_setup,'amount_cents',v_setup,'source_type','commercial_terms','source_id',v_terms.id)); end if;
+  if v_credit_applied>0 then v_lines:=v_lines||jsonb_build_array(jsonb_build_object('key','credits','label','Créditos de competências anteriores','quantity',null,'unit_cents',null,'amount_cents',-v_credit_applied,'source_type','billing_adjustment','source_id',null)); end if;
+  v_sources:=jsonb_build_object('terms',to_jsonb(v_terms),'sales',v_sales,'sonar_units',v_sonar_units,
+    'sonar_cents',v_sonar,'adjustments',v_adjustments,'credit_carry_cents',v_carry,'blockers',v_blockers);
+  v_revision:=encode(pg_catalog.sha256(convert_to(v_sources::text,'UTF8')),'hex');
+  return jsonb_build_object(
+    'org_id',p_org,'org_name',v_org.nome,'month',to_char(p_month,'YYYY-MM'),'timezone','America/Fortaleza',
+    'terms',case when v_terms.id is null then null else to_jsonb(v_terms) end,'gross_cents',v_gross,'refund_cents',v_refund,
+    'base_cents',v_base,'fee_cents',v_fee,'applied_bps',v_applied_bps,'applied_tier',v_applied_tier,
+    'sonar_units',v_sonar_units,'sonar_cents',v_sonar,'lines',v_lines,
+    'total_cents',v_total,'credit_cents',v_credit_applied,'credit_balance_cents',v_credit_pool-v_credit_applied,
+    'adjustments',v_adjustments,'sources',v_sales,'revision',v_revision,'blockers',v_blockers
+  );
+end;
+$$;
+
+create or replace function public.platform_billing_close(p_actor uuid,p_org uuid,p_month date,p_expected_revision text) returns jsonb
+language plpgsql security definer set search_path='' as $$
+declare v_existing public.platform_billing_statements%rowtype;
+declare v_preview jsonb;
+declare v_statement public.platform_billing_statements%rowtype;
+declare v_first date;
+begin
+  perform public.platform_assert_admin_actor(p_actor);
+  perform 1 from public.organizations where id=p_org for update;
+  if not found then raise exception 'organization not found' using errcode='23503'; end if;
+  select * into v_existing from public.platform_billing_statements where org_id=p_org and month=p_month;
+  if found then return v_existing.snapshot||jsonb_build_object('id',v_existing.id,'closed_at',v_existing.closed_at,'closed_by',v_existing.closed_by); end if;
+  if p_month>=date_trunc('month',now() at time zone 'America/Fortaleza')::date then
+    raise exception 'only completed months can be closed' using errcode='22023';
+  end if;
+  lock table public.ml_vendas in share mode;
+  lock table public.platform_revenue_reconciliations in share mode;
+  lock table public.platform_sonar_deliveries in share mode;
+  v_preview:=public.platform_billing_preview(p_actor,p_org,p_month);
+  if v_preview->'terms' is null or jsonb_typeof(v_preview->'terms')='null' then
+    raise exception 'commercial terms required' using errcode='23514';
+  end if;
+  if v_preview->>'revision' is distinct from p_expected_revision then raise exception 'billing revision conflict' using errcode='40001'; end if;
+  if jsonb_array_length(v_preview->'blockers')>0 then raise exception 'billing preview has blockers' using errcode='23514'; end if;
+  select min(starts_on) into v_first from public.platform_commercial_terms where org_id=p_org and starts_on<=p_month;
+  if exists(select 1 from generate_series(v_first,p_month-interval '1 month',interval '1 month') as g(month_value)
+    where not exists(select 1 from public.platform_billing_statements s where s.org_id=p_org and s.month=g.month_value::date)) then
+    raise exception 'previous billing month must be closed first' using errcode='23514';
+  end if;
+  insert into public.platform_billing_statements(org_id,month,terms_id,revenue_bps,gross_cents,refund_cents,base_cents,
+    fee_cents,sonar_cents,credit_cents,total_cents,revision,snapshot,closed_by)
+  values(p_org,p_month,(v_preview->'terms'->>'id')::uuid,(v_preview->>'applied_bps')::integer,
+    (v_preview->>'gross_cents')::bigint,(v_preview->>'refund_cents')::bigint,(v_preview->>'base_cents')::bigint,
+    (v_preview->>'fee_cents')::bigint,(v_preview->>'sonar_cents')::bigint,(v_preview->>'credit_cents')::bigint,
+    (v_preview->>'total_cents')::bigint,v_preview->>'revision',v_preview,p_actor) returning * into v_statement;
+  insert into public.platform_billing_sale_facts(statement_id,org_id,sale_id,source_updated_at,status,gross_cents,refunded_product_cents,recognized_base_cents)
+    select v_statement.id,p_org,(row->>'sale_id')::uuid,(row->>'source_updated_at')::timestamptz,
+      row->>'status',(row->>'gross_cents')::bigint,(row->>'refunded_product_cents')::bigint,(row->>'recognized_base_cents')::bigint
+    from jsonb_array_elements(v_preview->'sources') row;
+  insert into public.platform_audit_events(org_id,actor_id,category,action,result,target,details)
+    values(p_org,p_actor,'billing','billing_closed','success',v_statement.id::text,jsonb_build_object('month',p_month,'revision',v_statement.revision));
+  return v_preview||jsonb_build_object('id',v_statement.id,'closed_at',v_statement.closed_at,'closed_by',v_statement.closed_by);
+end;
+$$;
+
+revoke all on function public.platform_billing_preview(uuid,uuid,date) from public,anon,authenticated;
+revoke all on function public.platform_billing_close(uuid,uuid,date,text) from public,anon,authenticated;
+grant execute on function public.platform_billing_preview(uuid,uuid,date) to service_role;
+grant execute on function public.platform_billing_close(uuid,uuid,date,text) to service_role;
+```
+
+- [ ] **Step 2: Encaixar a migration em `platform_billing.sql`**
+
+Em `supabase/tests/platform_billing.sql:22`, logo após
+`\ir ../migrations/20260907102428_platform_terms_contract_fix.sql`, adicione:
+
+```sql
+\ir ../migrations/20260918010100_platform_billing_tiers.sql
+```
+
+- [ ] **Step 3: Novos casos de teste ao final de `supabase/tests/platform_billing.sql`**
+
+Adicione (adapte os UUIDs de organização/actor aos já usados no restante do arquivo, seguindo o
+padrão de fixture de vendas — `ml_vendas` — já existente acima no mesmo arquivo, com uma
+organização nova para isolar o teste):
+
+```sql
+-- ADR-0165: platform_terms_tier escolhe a faixa certa nos pontos de borda dos cortes fixos
+-- (10.000.000 / 30.000.000 / 50.000.000 centavos).
+do $$
+begin
+  if public.platform_terms_tier(0) <> 1 then raise exception 'esperava faixa 1 para base 0'; end if;
+  if public.platform_terms_tier(10000000) <> 1 then raise exception 'esperava faixa 1 no corte de 100K'; end if;
+  if public.platform_terms_tier(10000001) <> 2 then raise exception 'esperava faixa 2 logo acima de 100K'; end if;
+  if public.platform_terms_tier(30000000) <> 2 then raise exception 'esperava faixa 2 no corte de 300K'; end if;
+  if public.platform_terms_tier(30000001) <> 3 then raise exception 'esperava faixa 3 logo acima de 300K'; end if;
+  if public.platform_terms_tier(50000000) <> 3 then raise exception 'esperava faixa 3 no corte de 500K'; end if;
+  if public.platform_terms_tier(50000001) <> 4 then raise exception 'esperava faixa 4 logo acima de 500K'; end if;
+  if public.platform_terms_tier(999999999) <> 4 then raise exception 'esperava faixa 4 bem acima do ultimo corte'; end if;
+
+  if public.platform_terms_tier_bps(30000001, 500, 400, 350, 300) <> 350 then
+    raise exception 'platform_terms_tier_bps nao aplicou a faixa 3 corretamente';
+  end if;
+end $$;
+```
+
+Além disso, localize (no mesmo arquivo) o teste que já monta uma prévia (`platform_billing_preview`)
+com uma organização e vendas fixture, e adicione as asserções abaixo logo após a chamada existente a
+`platform_billing_preview`:
+
+```sql
+  if (v_preview->>'applied_bps') is null then
+    raise exception 'preview deveria expor applied_bps quando ha condicao comercial: %', v_preview;
+  end if;
+  if (v_preview->>'applied_tier') is null then
+    raise exception 'preview deveria expor applied_tier quando ha condicao comercial: %', v_preview;
+  end if;
+```
+
+E, se esse mesmo teste chegar a chamar `platform_billing_close`, adicione depois:
+
+```sql
+  if (select revenue_bps from public.platform_billing_statements where id = (v_fechado->>'id')::uuid)
+      <> (v_preview->>'applied_bps')::integer then
+    raise exception 'close deveria gravar applied_bps em statements.revenue_bps';
+  end if;
+```
+
+(ajuste os nomes de variável `v_preview`/`v_fechado` para os já usados no bloco existente do
+arquivo — o objetivo é reaproveitar o cenário de dados já montado, não recriar um novo).
+
+- [ ] **Step 4: Rodar a suíte SQL e confirmar verde**
+
+Run: `psql -U supabase_admin -d codex_platform_admin_test_20260906 -f supabase/tests/platform_billing.sql`
+Expected: sem `ERROR`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add supabase/migrations/20260918010100_platform_billing_tiers.sql supabase/tests/platform_billing.sql
+git commit -m "feat(cobranca): faixa automatica na previa/fechamento (ADR-0165, migration 2)"
+```
+
+---
+
+### Task 3: `_shared/platform-admin/types.ts`
+
+**Files:**
+- Modify: `supabase/functions/_shared/platform-admin/types.ts:4-22`
+
+**Interfaces:**
+- Consumes: nada (tipos puros).
+- Produces: `CommercialTermsInput`/`CommercialTerms` com `revenue_bps_t1..t4`; `BillingPreview` com
+  `applied_bps`/`applied_tier`. Toda tarefa de front consome estes tipos.
+
+- [ ] **Step 1: Editar `types.ts`**
+
+Troque:
+
+```ts
+export type CommercialTermsInput = {
+  org_id: string;
+  starts_on: string;
+  modality: 1 | 2;
+  monthly_fee_cents: Cents;
+  revenue_bps: number;
+  sonar_unit_cents: Cents;
+  setup_fee_cents: Cents;
+  setup_due_month: Month | null;
+  reason: string;
+};
+```
+
+por:
+
+```ts
+export type CommercialTermsInput = {
+  org_id: string;
+  starts_on: string;
+  modality: 1 | 2;
+  monthly_fee_cents: Cents;
+  revenue_bps_t1: number;
+  revenue_bps_t2: number;
+  revenue_bps_t3: number;
+  revenue_bps_t4: number;
+  sonar_unit_cents: Cents;
+  setup_fee_cents: Cents;
+  setup_due_month: Month | null;
+  reason: string;
+};
+```
+
+E, no tipo `BillingPreview` (mesmo arquivo), logo após o campo `fee_cents: Cents;`, adicione:
+
+```ts
+  applied_bps: number | null;
+  applied_tier: 1 | 2 | 3 | 4 | null;
+```
+
+- [ ] **Step 2: `deno check`**
+
+Run: `cd supabase/functions && deno check _shared/platform-admin/types.ts`
+Expected: sem erro de tipo neste arquivo isoladamente (os importadores só ficam consistentes depois
+das Tasks 4-10 — é esperado que outros arquivos quebrem até lá).
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/functions/_shared/platform-admin/types.ts
+git commit -m "feat(cobranca): tipos de faixas e applied_bps no contrato do platform-admin"
+```
+
+---
+
+### Task 4: `_shared/platform-admin/validation.ts`
+
+**Files:**
+- Modify: `supabase/functions/_shared/platform-admin/validation.ts:33-34,53`
+- Modify: `supabase/functions/_shared/platform-admin/__tests__/validation.test.ts`
+
+**Interfaces:**
+- Consumes: `CommercialTermsInput` (Task 3).
+- Produces: `validateTerms(input: unknown): CommercialTermsInput` validando `revenue_bps_t1..t4` e
+  rejeitando modalidade/campo incompatível.
+
+- [ ] **Step 1: Editar `validation.ts`**
+
+Substitua o bloco:
+
+```ts
+  if (typeof value.revenue_bps !== 'number' || !Number.isSafeInteger(value.revenue_bps) || value.revenue_bps < 0 || value.revenue_bps > 10000) {
+    fail('revenue_bps deve estar entre 0 e 10000');
+  }
+```
+
+por:
+
+```ts
+  for (const tier of ['revenue_bps_t1', 'revenue_bps_t2', 'revenue_bps_t3', 'revenue_bps_t4'] as const) {
+    const tierValue = value[tier];
+    if (typeof tierValue !== 'number' || !Number.isSafeInteger(tierValue) || tierValue < 0 || tierValue > 10000) {
+      fail(`${tier} deve estar entre 0 e 10000`);
+    }
+  }
+  if (value.modality === 1 && value.sonar_unit_cents !== 0) {
+    fail('Modalidade 1 não cobra Sonar do cliente: informe 0');
+  }
+  if (value.modality === 2 && value.monthly_fee_cents !== 0) {
+    fail('Modalidade 2 não tem infraestrutura separada: informe 0');
+  }
+```
+
+(a checagem de modalidade entra depois da validação de `modality`/`sonar_unit_cents`/
+`monthly_fee_cents` já existentes acima no arquivo — mantenha a ordem das checagens anteriores
+intacta, só insira este bloco antes do `return`).
+
+E troque o `return` final:
+
+```ts
+  return {
+    org_id: value.org_id,
+    starts_on: value.starts_on,
+    modality: value.modality,
+    monthly_fee_cents: cents(value.monthly_fee_cents, 'monthly_fee_cents'),
+    revenue_bps: value.revenue_bps,
+    sonar_unit_cents: cents(value.sonar_unit_cents, 'sonar_unit_cents'),
+    setup_fee_cents: setupFee,
+    setup_due_month: setupDueMonth,
+    reason: value.reason.trim(),
+  };
+```
+
+por:
+
+```ts
+  return {
+    org_id: value.org_id,
+    starts_on: value.starts_on,
+    modality: value.modality,
+    monthly_fee_cents: cents(value.monthly_fee_cents, 'monthly_fee_cents'),
+    revenue_bps_t1: value.revenue_bps_t1 as number,
+    revenue_bps_t2: value.revenue_bps_t2 as number,
+    revenue_bps_t3: value.revenue_bps_t3 as number,
+    revenue_bps_t4: value.revenue_bps_t4 as number,
+    sonar_unit_cents: cents(value.sonar_unit_cents, 'sonar_unit_cents'),
+    setup_fee_cents: setupFee,
+    setup_due_month: setupDueMonth,
+    reason: value.reason.trim(),
+  };
+```
+
+- [ ] **Step 2: Atualizar `validation.test.ts`**
+
+Troque a fixture `valid`:
+
+```ts
+const valid = {
+  org_id: ORG,
+  starts_on: '2026-10-01',
+  modality: 2,
+  monthly_fee_cents: 60000,
+  revenue_bps: 700,
+  sonar_unit_cents: 0,
+  setup_fee_cents: 0,
+  setup_due_month: null,
+  reason: 'Negociação outubro',
+};
+```
+
+por:
+
+```ts
+const valid = {
+  org_id: ORG,
+  starts_on: '2026-10-01',
+  modality: 2,
+  monthly_fee_cents: 0,
+  revenue_bps_t1: 700,
+  revenue_bps_t2: 600,
+  revenue_bps_t3: 550,
+  revenue_bps_t4: 500,
+  sonar_unit_cents: 120,
+  setup_fee_cents: 0,
+  setup_due_month: null,
+  reason: 'Negociação outubro',
+};
+```
+
+(modalidade 2 exige `monthly_fee_cents: 0`; usei `sonar_unit_cents: 120` para a modalidade 2 ser
+realista — ajuste o teste `'preserva valores zero e a infraestrutura da modalidade 2'` de acordo,
+trocando as chaves que ele confere em `toMatchObject` de `monthly_fee_cents`/`sonar_unit_cents` para
+o que este fixture agora afirma.)
+
+Troque:
+
+```ts
+  it('rejeita percentual negativo', () => {
+    expect(() => validateTerms({ ...valid, revenue_bps: -1 })).toThrow();
+  });
+```
+
+por:
+
+```ts
+  it('rejeita percentual negativo em qualquer faixa', () => {
+    expect(() => validateTerms({ ...valid, revenue_bps_t1: -1 })).toThrow();
+    expect(() => validateTerms({ ...valid, revenue_bps_t4: -1 })).toThrow();
+  });
+```
+
+Troque:
+
+```ts
+  it('rejeita modalidade e percentual decimais', () => {
+    expect(() => validateTerms({ ...valid, modality: 1.5 })).toThrow();
+    expect(() => validateTerms({ ...valid, revenue_bps: 0.5 })).toThrow();
+  });
+```
+
+por:
+
+```ts
+  it('rejeita modalidade e percentual decimais', () => {
+    expect(() => validateTerms({ ...valid, modality: 1.5 })).toThrow();
+    expect(() => validateTerms({ ...valid, revenue_bps_t1: 0.5 })).toThrow();
+  });
+
+  it('rejeita modalidade 1 cobrando Sonar do cliente', () => {
+    expect(() => validateTerms({ ...valid, modality: 1, monthly_fee_cents: 60000, sonar_unit_cents: 120 }))
+      .toThrow('Modalidade 1 não cobra Sonar do cliente');
+  });
+
+  it('rejeita modalidade 2 com infraestrutura separada', () => {
+    expect(() => validateTerms({ ...valid, modality: 2, monthly_fee_cents: 60000 }))
+      .toThrow('Modalidade 2 não tem infraestrutura separada');
+  });
+```
+
+- [ ] **Step 3: Rodar os testes**
+
+Run: `pnpm test -- supabase/functions/_shared/platform-admin/__tests__/validation.test.ts`
+Expected: todos os testes passam.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add supabase/functions/_shared/platform-admin/validation.ts \
+  supabase/functions/_shared/platform-admin/__tests__/validation.test.ts
+git commit -m "feat(cobranca): validation.ts exige as 4 faixas e trava por modalidade"
+```
+
+---
+
+### Task 5: Remover `_shared/platform-admin/billing.ts` (código morto)
+
+**Files:**
+- Delete: `supabase/functions/_shared/platform-admin/billing.ts`
+- Delete: `supabase/functions/_shared/platform-admin/__tests__/billing.test.ts`
+
+**Interfaces:**
+- Consumes: nada — confirmado sem importador de produção (Task 3 quebraria o `deno check` deste
+  arquivo, já que ele lê `terms.revenue_bps`, removido).
+
+- [ ] **Step 1: Confirmar que nada mais importa este arquivo**
+
+Run: `grep -rln "from './billing'\|from '\.\./billing'" supabase/functions --include=*.ts`
+Expected: só o próprio `billing.ts`/`billing.test.ts` aparecem (nenhum outro arquivo).
+
+- [ ] **Step 2: Apagar os dois arquivos**
+
+```bash
+git rm supabase/functions/_shared/platform-admin/billing.ts \
+  supabase/functions/_shared/platform-admin/__tests__/billing.test.ts
+```
+
+- [ ] **Step 3: `deno check` em todo o diretório**
+
+Run: `cd supabase/functions && deno check _shared/platform-admin/*.ts`
+Expected: sem erro de import quebrado apontando para `billing.ts`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git commit -m "chore(cobranca): remove billing.ts morto (revenue_bps deixou de existir no tipo)"
+```
+
+---
+
+### Task 6: `handler.test.ts` — fixture de `save_terms`
+
+**Files:**
+- Modify: `supabase/functions/_shared/platform-admin/__tests__/handler.test.ts:66`
+
+**Interfaces:**
+- Consumes: `CommercialTermsInput` (Task 3).
+
+- [ ] **Step 1: Editar a linha da tabela `it.each`**
+
+Troque:
+
+```ts
+  ['save_terms', 'saveTerms', { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 10, revenue_bps: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }, [ACTOR, { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 10, revenue_bps: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }]],
+```
+
+por:
+
+```ts
+  ['save_terms', 'saveTerms', { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 0, revenue_bps_t1: 700, revenue_bps_t2: 600, revenue_bps_t3: 550, revenue_bps_t4: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }, [ACTOR, { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 0, revenue_bps_t1: 700, revenue_bps_t2: 600, revenue_bps_t3: 550, revenue_bps_t4: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }]],
+```
+
+(este teste só confere que o `handler` repassa o input validado para `repository.saveTerms` sem
+alterar nada — trocar `monthly_fee_cents: 10` por `0` é necessário porque modalidade 2 agora exige
+isso, senão `validateTerms` já rejeita antes de chegar no repositório mockado.)
+
+- [ ] **Step 2: Rodar o teste**
+
+Run: `pnpm test -- supabase/functions/_shared/platform-admin/__tests__/handler.test.ts`
+Expected: todos os testes passam.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add supabase/functions/_shared/platform-admin/__tests__/handler.test.ts
+git commit -m "test(cobranca): atualiza fixture de save_terms para as 4 faixas"
+```
+
+---
+
+### Task 7: `commercial-terms-form.tsx` — 4 faixas, trava por modalidade, rótulos reais
+
+**Files:**
+- Modify: `src/components/platform-admin/commercial-terms-form.tsx`
+- Modify: `src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`
+
+**Interfaces:**
+- Consumes: `CommercialTerms`/`CommercialTermsInput` (Task 3).
+- Produces: formulário com 4 inputs de percentual e campos Sonar/Infraestrutura desabilitados
+  conforme modalidade — nenhuma outra tarefa consome a saída deste componente diretamente (é folha
+  de UI), mas `org-billing.tsx` (Task 8) o renderiza sem mudança de props.
+
+- [ ] **Step 1: Editar o tipo `FormState` e `initialState`**
+
+Troque:
+
+```ts
+type FormState = {
+  modality: '1' | '2';
+  monthly: string;
+  revenue: string;
+  sonar: string;
+  setup: string;
+  setupDueMonth: string;
+  reason: string;
+};
+```
+
+por:
+
+```ts
+type FormState = {
+  modality: '1' | '2';
+  monthly: string;
+  revenueT1: string;
+  revenueT2: string;
+  revenueT3: string;
+  revenueT4: string;
+  sonar: string;
+  setup: string;
+  setupDueMonth: string;
+  reason: string;
+};
+```
+
+Troque:
+
+```ts
+function initialState(current: CommercialTerms | null, startsOn: string): FormState {
+  return {
+    modality: String(current?.modality ?? 1) as '1' | '2',
+    monthly: formatScaled(current?.monthly_fee_cents ?? 60_000, 2),
+    revenue: formatScaled(current?.revenue_bps ?? 500, 2),
+    sonar: formatScaled(current?.sonar_unit_cents ?? 120, 2),
+    setup: formatScaled(current?.setup_fee_cents ?? 300_000, 2),
+    setupDueMonth: current?.setup_due_month ?? startsOn.slice(0, 7),
+    reason: '',
+  };
+}
+```
+
+por:
+
+```ts
+function initialState(current: CommercialTerms | null, startsOn: string): FormState {
+  const modality = String(current?.modality ?? 1) as '1' | '2';
+  return {
+    modality,
+    monthly: formatScaled(current?.monthly_fee_cents ?? (modality === '1' ? 60_000 : 0), 2),
+    revenueT1: formatScaled(current?.revenue_bps_t1 ?? (modality === '2' ? 700 : 500), 2),
+    revenueT2: formatScaled(current?.revenue_bps_t2 ?? (modality === '2' ? 600 : 400), 2),
+    revenueT3: formatScaled(current?.revenue_bps_t3 ?? (modality === '2' ? 550 : 350), 2),
+    revenueT4: formatScaled(current?.revenue_bps_t4 ?? (modality === '2' ? 500 : 300), 2),
+    sonar: formatScaled(current?.sonar_unit_cents ?? (modality === '2' ? 120 : 0), 2),
+    setup: formatScaled(current?.setup_fee_cents ?? 300_000, 2),
+    setupDueMonth: current?.setup_due_month ?? startsOn.slice(0, 7),
+    reason: '',
+  };
+}
+```
+
+- [ ] **Step 2: Editar o `submit` e o handler de troca de modalidade**
+
+Troque, dentro de `submit`:
+
+```ts
+    const monthly = parseScaled(form.monthly, 2);
+    const revenue = parseScaled(form.revenue, 2);
+    const sonar = parseScaled(form.sonar, 2);
+    const setup = parseScaled(form.setup, 2);
+    if ([monthly, revenue, sonar, setup].some((value) => value === null)) {
+      setError('Use valores positivos ou zero, com no máximo duas casas decimais.');
+      return;
+    }
+```
+
+por:
+
+```ts
+    const monthly = parseScaled(form.monthly, 2);
+    const revenueT1 = parseScaled(form.revenueT1, 2);
+    const revenueT2 = parseScaled(form.revenueT2, 2);
+    const revenueT3 = parseScaled(form.revenueT3, 2);
+    const revenueT4 = parseScaled(form.revenueT4, 2);
+    const sonar = parseScaled(form.sonar, 2);
+    const setup = parseScaled(form.setup, 2);
+    if ([monthly, revenueT1, revenueT2, revenueT3, revenueT4, sonar, setup].some((value) => value === null)) {
+      setError('Use valores positivos ou zero, com no máximo duas casas decimais.');
+      return;
+    }
+```
+
+E troque o corpo do `save.mutateAsync`:
+
+```ts
+      await save.mutateAsync({
+        org_id: orgId,
+        starts_on: effectiveStartsOn,
+        modality: Number(form.modality) as 1 | 2,
+        monthly_fee_cents: monthly!,
+        revenue_bps: revenue!,
+        sonar_unit_cents: sonar!,
+        setup_fee_cents: isFirstContract ? setup! : 0,
+        setup_due_month: isFirstContract ? form.setupDueMonth || null : null,
+        reason: form.reason.trim(),
+      });
+```
+
+por:
+
+```ts
+      await save.mutateAsync({
+        org_id: orgId,
+        starts_on: effectiveStartsOn,
+        modality: Number(form.modality) as 1 | 2,
+        monthly_fee_cents: form.modality === '2' ? 0 : monthly!,
+        revenue_bps_t1: revenueT1!,
+        revenue_bps_t2: revenueT2!,
+        revenue_bps_t3: revenueT3!,
+        revenue_bps_t4: revenueT4!,
+        sonar_unit_cents: form.modality === '1' ? 0 : sonar!,
+        setup_fee_cents: isFirstContract ? setup! : 0,
+        setup_due_month: isFirstContract ? form.setupDueMonth || null : null,
+        reason: form.reason.trim(),
+      });
+```
+
+(o form força `0` no campo travado por modalidade no momento do envio — a UI também desabilita o
+campo, ver Step 3, mas é o envio que garante o valor correto mesmo que o usuário tenha digitado algo
+antes de trocar de modalidade.)
+
+Troque o `onChange` do `select` de modalidade:
+
+```tsx
+                onChange={(event) => {
+                  const modality = event.target.value as '1' | '2';
+                  setForm((previous) => ({
+                    ...previous,
+                    modality,
+                    revenue: current === null && !revenueTouched.current
+                      ? modality === '2' ? '7,00' : '5,00'
+                      : previous.revenue,
+                  }));
+                }}
+```
+
+por:
+
+```tsx
+                onChange={(event) => {
+                  const modality = event.target.value as '1' | '2';
+                  setForm((previous) => ({
+                    ...previous,
+                    modality,
+                    ...(current === null && !revenueTouched.current
+                      ? modality === '2'
+                        ? { revenueT1: '7,00', revenueT2: '6,00', revenueT3: '5,50', revenueT4: '5,00' }
+                        : { revenueT1: '5,00', revenueT2: '4,00', revenueT3: '3,50', revenueT4: '3,00' }
+                      : {}),
+                  }));
+                }}
+```
+
+- [ ] **Step 3: Trocar o input único de percentual pelos 4, e travar Sonar/Infra por modalidade**
+
+Troque as opções do `select` de modalidade:
+
+```tsx
+                <option value="1">1 · mensalidade + percentual</option>
+                <option value="2">2 · percentual com infraestrutura</option>
+```
+
+por:
+
+```tsx
+                <option value="1">Modalidade 1 · Gestão Completa Daludi</option>
+                <option value="2">Modalidade 2 · Gestão Completa + Inteligência</option>
+```
+
+Troque o bloco do input `terms-monthly` (Infraestrutura mensal) — adicione `disabled`:
+
+```tsx
+              <Input
+                id="terms-monthly"
+                aria-label="Infraestrutura mensal"
+                inputMode="decimal"
+                value={form.monthly}
+                onChange={(event) => set('monthly', event.target.value)}
+              />
+```
+
+por:
+
+```tsx
+              <Input
+                id="terms-monthly"
+                aria-label="Infraestrutura mensal"
+                inputMode="decimal"
+                disabled={form.modality === '2'}
+                value={form.modality === '2' ? '0,00' : form.monthly}
+                onChange={(event) => set('monthly', event.target.value)}
+              />
+```
+
+Troque o bloco de `terms-revenue` (um único `label`/`Input`) por 4 labels/inputs:
+
+```tsx
+            <label className="space-y-1 text-sm" htmlFor="terms-revenue">
+              <span className="font-medium">Percentual sobre receita</span>
+              <Input
+                id="terms-revenue"
+                aria-label="Percentual sobre receita"
+                inputMode="decimal"
+                value={form.revenue}
+                onChange={(event) => {
+                  revenueTouched.current = true;
+                  set('revenue', event.target.value);
+                }}
+              />
+            </label>
+```
+
+por:
+
+```tsx
+            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t1">
+              <span className="font-medium">Percentual até R$100 mil</span>
+              <Input
+                id="terms-revenue-t1"
+                aria-label="Percentual até R$100 mil"
+                inputMode="decimal"
+                value={form.revenueT1}
+                onChange={(event) => {
+                  revenueTouched.current = true;
+                  set('revenueT1', event.target.value);
+                }}
+              />
+            </label>
+            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t2">
+              <span className="font-medium">Percentual R$100–300 mil</span>
+              <Input
+                id="terms-revenue-t2"
+                aria-label="Percentual R$100–300 mil"
+                inputMode="decimal"
+                value={form.revenueT2}
+                onChange={(event) => {
+                  revenueTouched.current = true;
+                  set('revenueT2', event.target.value);
+                }}
+              />
+            </label>
+            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t3">
+              <span className="font-medium">Percentual R$300–500 mil</span>
+              <Input
+                id="terms-revenue-t3"
+                aria-label="Percentual R$300–500 mil"
+                inputMode="decimal"
+                value={form.revenueT3}
+                onChange={(event) => {
+                  revenueTouched.current = true;
+                  set('revenueT3', event.target.value);
+                }}
+              />
+            </label>
+            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t4">
+              <span className="font-medium">Percentual acima de R$500 mil</span>
+              <Input
+                id="terms-revenue-t4"
+                aria-label="Percentual acima de R$500 mil"
+                inputMode="decimal"
+                value={form.revenueT4}
+                onChange={(event) => {
+                  revenueTouched.current = true;
+                  set('revenueT4', event.target.value);
+                }}
+              />
+            </label>
+```
+
+Troque o bloco `terms-sonar` — adicione `disabled`:
+
+```tsx
+              <Input
+                id="terms-sonar"
+                aria-label="Sonar por consulta"
+                inputMode="decimal"
+                value={form.sonar}
+                onChange={(event) => set('sonar', event.target.value)}
+              />
+```
+
+por:
+
+```tsx
+              <Input
+                id="terms-sonar"
+                aria-label="Sonar por consulta"
+                inputMode="decimal"
+                disabled={form.modality === '1'}
+                value={form.modality === '1' ? '0,00' : form.sonar}
+                onChange={(event) => set('sonar', event.target.value)}
+              />
+```
+
+- [ ] **Step 4: Card-resumo e histórico — mostrar a faixa, não um número só**
+
+Troque:
+
+```tsx
+                <CardDescription>
+                  Modalidade {current.modality} · {formatScaled(current.revenue_bps, 2)}% sobre receita
+                  {' '}· {current.starts_on > today ? 'a partir de' : 'desde'} {current.starts_on}
+                </CardDescription>
+```
+
+por:
+
+```tsx
+                <CardDescription>
+                  Modalidade {current.modality} · {formatScaled(current.revenue_bps_t1, 2)}% a {formatScaled(current.revenue_bps_t4, 2)}% sobre receita
+                  {' '}· {current.starts_on > today ? 'a partir de' : 'desde'} {current.starts_on}
+                </CardDescription>
+```
+
+Troque:
+
+```tsx
+                    modalidade {term.modality} · {formatScaled(term.revenue_bps, 2)}%
+```
+
+por:
+
+```tsx
+                    modalidade {term.modality} · {formatScaled(term.revenue_bps_t1, 2)}% a {formatScaled(term.revenue_bps_t4, 2)}%
+```
+
+- [ ] **Step 5: Atualizar `commercial-terms-form.test.tsx`**
+
+Troque a fixture `current`:
+
+```ts
+const current: CommercialTerms = {
+  id: 'terms-current',
+  org_id: 'org-a',
+  starts_on: '2026-09-01',
+  modality: 1,
+  monthly_fee_cents: 0,
+  revenue_bps: 0,
+  sonar_unit_cents: 0,
+  setup_fee_cents: 0,
+  setup_due_month: null,
+  reason: 'condição atual',
+  version: 1,
+  timezone: 'America/Fortaleza',
+  created_at: '2026-09-01T03:00:00Z',
+  created_by: 'admin',
+};
+```
+
+por:
+
+```ts
+const current: CommercialTerms = {
+  id: 'terms-current',
+  org_id: 'org-a',
+  starts_on: '2026-09-01',
+  modality: 1,
+  monthly_fee_cents: 0,
+  revenue_bps_t1: 0,
+  revenue_bps_t2: 0,
+  revenue_bps_t3: 0,
+  revenue_bps_t4: 0,
+  sonar_unit_cents: 0,
+  setup_fee_cents: 0,
+  setup_due_month: null,
+  reason: 'condição atual',
+  version: 1,
+  timezone: 'America/Fortaleza',
+  created_at: '2026-09-01T03:00:00Z',
+  created_by: 'admin',
+};
+```
+
+No teste `'salva modalidade 2, infraestrutura e vigência no próximo mês'`, o `expect` continua igual
+(não afirma percentual), sem mudança.
+
+No teste `'contrato futuro prefila o formulario e o resumo diz "a partir de"'`, troque:
+
+```ts
+    const futuro = { ...current, starts_on: '2026-10-01', revenue_bps: 500, setup_fee_cents: 300_000, setup_due_month: '2026-10-01' };
+    render(<CommercialTermsForm orgId="org-zero" current={futuro} onSaved={vi.fn()} />);
+
+    expect(screen.getByText('Modalidade 1 · 5,00% sobre receita · a partir de 2026-10-01')).toBeInTheDocument();
+```
+
+por:
+
+```ts
+    const futuro = { ...current, starts_on: '2026-10-01', revenue_bps_t1: 500, revenue_bps_t4: 300, setup_fee_cents: 300_000, setup_due_month: '2026-10-01' };
+    render(<CommercialTermsForm orgId="org-zero" current={futuro} onSaved={vi.fn()} />);
+
+    expect(screen.getByText('Modalidade 1 · 5,00% a 3,00% sobre receita · a partir de 2026-10-01')).toBeInTheDocument();
+```
+
+No teste `'preserva zeros e os valores digitados ao trocar modalidade'`, troque o `expect` final:
+
+```ts
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      org_id: 'org-zero',
+      modality: 2,
+      monthly_fee_cents: 0,
+      revenue_bps: 0,
+      sonar_unit_cents: 0,
+      setup_fee_cents: 0,
+    }));
+```
+
+por:
+
+```ts
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      org_id: 'org-zero',
+      modality: 2,
+      monthly_fee_cents: 0,
+      revenue_bps_t1: 0,
+      revenue_bps_t2: 0,
+      revenue_bps_t3: 0,
+      revenue_bps_t4: 0,
+      sonar_unit_cents: 0,
+      setup_fee_cents: 0,
+    }));
+```
+
+No teste `'aplica o padrão de 7% da modalidade 2 sem sobrescrever percentual digitado'`, troque
+`screen.getByLabelText('Percentual sobre receita')` pelas 4 chamadas por faixa:
+
+```ts
+  it('aplica o padrão de 7% da modalidade 2 sem sobrescrever percentual digitado', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    expect(screen.getByLabelText('Percentual até R$100 mil')).toHaveValue('7,00');
+    await user.clear(screen.getByLabelText('Percentual até R$100 mil'));
+    await user.type(screen.getByLabelText('Percentual até R$100 mil'), '4,25');
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '1');
+
+    expect(screen.getByLabelText('Percentual até R$100 mil')).toHaveValue('4,25');
+  });
+```
+
+No teste `'com condição vigente, o card abre recolhido com o resumo e "Renegociar"'`, troque:
+
+```ts
+    expect(screen.getByText('Modalidade 1 · 0,00% sobre receita · desde 2026-09-01')).toBeInTheDocument();
+```
+
+por:
+
+```ts
+    expect(screen.getByText('Modalidade 1 · 0,00% a 0,00% sobre receita · desde 2026-09-01')).toBeInTheDocument();
+```
+
+Adicione dois testes novos ao final do `describe`, antes do `});` final:
+
+```ts
+  it('trava Sonar em 0,00 na modalidade 1 e Infraestrutura em 0,00 na modalidade 2', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    expect(screen.getByLabelText('Sonar por consulta')).toBeDisabled();
+    expect(screen.getByLabelText('Sonar por consulta')).toHaveValue('0,00');
+
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    expect(screen.getByLabelText('Sonar por consulta')).not.toBeDisabled();
+    expect(screen.getByLabelText('Infraestrutura mensal')).toBeDisabled();
+    expect(screen.getByLabelText('Infraestrutura mensal')).toHaveValue('0,00');
+  });
+```
+
+- [ ] **Step 6: Rodar os testes do componente**
+
+Run: `pnpm test -- src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`
+Expected: todos passam. Se algum `getByLabelText` antigo (`'Percentual sobre receita'`) ainda
+aparecer numa asserção não listada acima, ajuste-o para o rótulo de faixa correspondente ao que o
+teste pretende exercitar.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/components/platform-admin/commercial-terms-form.tsx \
+  src/components/platform-admin/__tests__/commercial-terms-form.test.tsx
+git commit -m "feat(cobranca): formulario com 4 faixas e travas por modalidade"
+```
+
+---
+
+### Task 8: `org-billing.tsx` — exibir `applied_bps`
+
+**Files:**
+- Modify: `src/components/platform-admin/org-billing.tsx:81`
+- Modify: `src/components/platform-admin/__tests__/org-billing.test.tsx`
+
+**Interfaces:**
+- Consumes: `BillingPreview.applied_bps` (Task 3).
+
+- [ ] **Step 1: Editar `Composition`**
+
+Troque:
+
+```tsx
+    [`Percentual (${humanPercent(preview.terms?.revenue_bps)})`, preview.fee_cents],
+```
+
+por:
+
+```tsx
+    [`Percentual (${humanPercent(preview.applied_bps)})`, preview.fee_cents],
+```
+
+- [ ] **Step 2: Atualizar a fixture de teste**
+
+Em `src/components/platform-admin/__tests__/org-billing.test.tsx`, troque a fixture `terms`:
+
+```ts
+const terms: CommercialTerms = {
+  id: 'terms-1',
+  org_id: 'org-a',
+  starts_on: '2026-08-01',
+  modality: 2,
+  monthly_fee_cents: 60_000,
+  revenue_bps: 500,
+  sonar_unit_cents: 120,
+  setup_fee_cents: 0,
+  setup_due_month: null,
+  reason: 'contrato',
+  version: 1,
+  timezone: 'America/Fortaleza',
+  created_at: '2026-08-01T03:00:00Z',
+  created_by: 'admin',
+};
+```
+
+por (modalidade 2 agora exige `monthly_fee_cents: 0`; a linha "Infraestrutura" do `makePreview`
+abaixo também precisa ficar `0` para não afirmar um dado que o backend rejeitaria):
+
+```ts
+const terms: CommercialTerms = {
+  id: 'terms-1',
+  org_id: 'org-a',
+  starts_on: '2026-08-01',
+  modality: 2,
+  monthly_fee_cents: 0,
+  revenue_bps_t1: 500,
+  revenue_bps_t2: 400,
+  revenue_bps_t3: 350,
+  revenue_bps_t4: 300,
+  sonar_unit_cents: 120,
+  setup_fee_cents: 0,
+  setup_due_month: null,
+  reason: 'contrato',
+  version: 1,
+  timezone: 'America/Fortaleza',
+  created_at: '2026-08-01T03:00:00Z',
+  created_by: 'admin',
+};
+```
+
+E em `makePreview`, adicione `applied_bps`/`applied_tier` e zere a linha de infraestrutura, ajustando
+`total_cents` de acordo (a soma dos `amount_cents` das `lines` mais o Sonar, sem a infra de 60.000):
+
+```ts
+function makePreview(overrides: Partial<BillingPreview> = {}): BillingPreview {
+  return {
+    org_id: 'org-a',
+    org_name: 'Loja Exemplo',
+    month: '2026-08',
+    timezone: 'America/Fortaleza',
+    terms,
+    gross_cents: 1_000_000,
+    refund_cents: 100_000,
+    base_cents: 900_000,
+    fee_cents: 45_000,
+    applied_bps: 500,
+    applied_tier: 1,
+    sonar_units: 10,
+    sonar_cents: 1_200,
+    lines: [
+      { key: 'revenue', label: 'Remuneração sobre vendas', quantity: null, unit_cents: null, amount_cents: 45_000, source_type: 'sales', source_id: null },
+      { key: 'sonar', label: 'Consultas Sonar', quantity: 10, unit_cents: 120, amount_cents: 1_200, source_type: 'sonar_deliveries', source_id: null },
+    ],
+    total_cents: 46_200,
+    credit_cents: 0,
+    credit_balance_cents: 0,
+    adjustments: [],
+    sources: [],
+    revision: 'rev-1',
+    blockers: [],
+    ...overrides,
+  };
+}
+```
+
+(removi a linha `infrastructure` porque `monthly_fee_cents` agora é `0` para modalidade 2; se algum
+teste específico do arquivo afirma o texto "Infraestrutura" ou o valor `106_200`, ajuste esse teste
+para os novos números — rode o Step 3 abaixo para achar exatamente quais.)
+
+- [ ] **Step 3: Rodar os testes e corrigir divergências restantes**
+
+Run: `pnpm test -- src/components/platform-admin/__tests__/org-billing.test.tsx`
+Expected: falhas remanescentes (se houver) apontam exatamente qual asserção ainda espera
+`total_cents: 106_200` ou o texto antigo de percentual — ajuste essas asserções para os valores
+derivados do novo `makePreview` acima e rode de novo até verde.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/components/platform-admin/org-billing.tsx \
+  src/components/platform-admin/__tests__/org-billing.test.tsx
+git commit -m "feat(cobranca): org-billing exibe a aliquota efetivamente aplicada"
+```
+
+---
+
+### Task 9: `OrganizacaoDetalhe.tsx` — exibir `applied_bps`
+
+**Files:**
+- Modify: `src/pages/OrganizacaoDetalhe.tsx:164-169`
+- Modify: `src/pages/__tests__/OrganizacaoDetalhe.test.tsx`
+
+**Interfaces:**
+- Consumes: `BillingPreview.applied_bps` (Task 3).
+
+- [ ] **Step 1: Editar o subtítulo**
+
+Troque:
+
+```tsx
+    } else if (preview.data?.terms) {
+      const terms = preview.data.terms;
+      subtitleNode = (
+        <p className="text-sm text-muted-foreground">
+          {org.slug} · Modalidade {terms.modality} · {humanPercent(terms.revenue_bps)} sobre receita
+        </p>
+      );
+```
+
+por:
+
+```tsx
+    } else if (preview.data?.terms) {
+      const terms = preview.data.terms;
+      subtitleNode = (
+        <p className="text-sm text-muted-foreground">
+          {org.slug} · Modalidade {terms.modality} · {humanPercent(preview.data.applied_bps)} sobre receita
+        </p>
+      );
+```
+
+- [ ] **Step 2: Atualizar a fixture de teste**
+
+Em `src/pages/__tests__/OrganizacaoDetalhe.test.tsx`, troque:
+
+```ts
+    terms: { id: 't1', org_id: 'org-avil', starts_on: '2026-01-01', modality: 1, monthly_fee_cents: 0, revenue_bps: 500, sonar_unit_cents: 0, setup_fee_cents: 0, setup_due_month: null, reason: '', version: 1, timezone: 'America/Fortaleza', created_at: '', created_by: '' },
+    gross_cents: 0, refund_cents: 0, base_cents: 0, fee_cents: 0, sonar_units: 0, sonar_cents: 0,
+```
+
+por:
+
+```ts
+    terms: { id: 't1', org_id: 'org-avil', starts_on: '2026-01-01', modality: 1, monthly_fee_cents: 60_000, revenue_bps_t1: 500, revenue_bps_t2: 400, revenue_bps_t3: 350, revenue_bps_t4: 300, sonar_unit_cents: 0, setup_fee_cents: 0, setup_due_month: null, reason: '', version: 1, timezone: 'America/Fortaleza', created_at: '', created_by: '' },
+    gross_cents: 0, refund_cents: 0, base_cents: 0, fee_cents: 0, applied_bps: 500, applied_tier: 1, sonar_units: 0, sonar_cents: 0,
+```
+
+(troquei `monthly_fee_cents` de `0` para `60_000` porque modalidade 1 pode ter infra — o valor
+antigo `0` era só um placeholder do fixture, não uma afirmação do teste; mantenha `0` se algum
+`expect` específico do arquivo depender dele, o Step 3 revela isso.)
+
+Se algum teste deste arquivo afirmar o texto antigo `"5,00% sobre receita"` (busque por
+`sobre receita` no arquivo), o texto continua idêntico porque `applied_bps: 500` produz o mesmo
+`humanPercent` de antes — nenhuma mudança de asserção é esperada além da fixture.
+
+- [ ] **Step 3: Rodar os testes**
+
+Run: `pnpm test -- src/pages/__tests__/OrganizacaoDetalhe.test.tsx`
+Expected: todos passam.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/pages/OrganizacaoDetalhe.tsx src/pages/__tests__/OrganizacaoDetalhe.test.tsx
+git commit -m "feat(cobranca): pagina da organizacao exibe a aliquota efetivamente aplicada"
+```
+
+---
+
+### Task 10: `lib/export/platform-billing.ts` — exportação usa `applied_bps`
+
+**Files:**
+- Modify: `src/lib/export/platform-billing.ts:19`
+- Modify: `src/lib/export/__tests__/platform-billing.test.ts`
+
+**Interfaces:**
+- Consumes: `BillingStatement.applied_bps` (Task 3 — `BillingStatement` estende `BillingPreview`).
+
+- [ ] **Step 1: Editar `buildSnapshotBlocks`**
+
+Troque:
+
+```ts
+        {
+          label: 'Percentual sobre receita',
+          valor: formatPercent(terms?.revenue_bps ?? null),
+        },
+```
+
+por:
+
+```ts
+        {
+          label: 'Percentual sobre receita',
+          valor: formatPercent(statement.applied_bps ?? null),
+        },
+```
+
+(o parâmetro da função já se chama `statement: BillingStatement`, então `statement.applied_bps` está
+disponível no escopo de `buildSnapshotBlocks`.)
+
+- [ ] **Step 2: Atualizar a fixture de teste**
+
+Em `src/lib/export/__tests__/platform-billing.test.ts`, troque:
+
+```ts
+  terms: {
+    id: 'terms-1',
+    org_id: 'org-1',
+    starts_on: '2026-08-01',
+    modality: 2,
+    monthly_fee_cents: 50_000,
+    revenue_bps: 500,
+    sonar_unit_cents: 120,
+    setup_fee_cents: 0,
+    setup_due_month: null,
+    reason: 'Contrato vigente',
+    version: 1,
+    timezone: 'America/Fortaleza',
+    created_at: '2026-07-15T12:00:00Z',
+    created_by: 'admin-1',
+  },
+  gross_cents: 1_000_000,
+  refund_cents: 100_000,
+  base_cents: 900_000,
+  fee_cents: 45_000,
+```
+
+por:
+
+```ts
+  terms: {
+    id: 'terms-1',
+    org_id: 'org-1',
+    starts_on: '2026-08-01',
+    modality: 2,
+    monthly_fee_cents: 0,
+    revenue_bps_t1: 500,
+    revenue_bps_t2: 400,
+    revenue_bps_t3: 350,
+    revenue_bps_t4: 300,
+    sonar_unit_cents: 120,
+    setup_fee_cents: 0,
+    setup_due_month: null,
+    reason: 'Contrato vigente',
+    version: 1,
+    timezone: 'America/Fortaleza',
+    created_at: '2026-07-15T12:00:00Z',
+    created_by: 'admin-1',
+  },
+  gross_cents: 1_000_000,
+  refund_cents: 100_000,
+  base_cents: 900_000,
+  fee_cents: 45_000,
+  applied_bps: 500,
+  applied_tier: 1,
+```
+
+(troquei `monthly_fee_cents` de `50_000` para `0` — modalidade 2 exige isso; a linha `monthly_fee`
+nas `lines` do fixture, mais abaixo no mesmo objeto, é um item independente de `lines[]` e não
+precisa mudar, já que `lines` é o snapshot congelado tal como o fechamento gravou, não recalculado
+a partir de `terms`.)
+
+Na última asserção do arquivo, que muta `currentTerms` para provar que o relatório exportado não
+muda:
+
+```ts
+  it('permanece idêntico quando condições atuais mudam fora do snapshot', () => {
+    const before = buildBillingReport(statement);
+    const currentTerms: CommercialTerms = { ...statement.terms!, revenue_bps: 900, sonar_unit_cents: 250 };
+    currentTerms.revenue_bps = 1_000;
+
+    expect(buildBillingReport(statement)).toEqual(before);
+  });
+```
+
+troque por:
+
+```ts
+  it('permanece idêntico quando condições atuais mudam fora do snapshot', () => {
+    const before = buildBillingReport(statement);
+    const currentTerms: CommercialTerms = { ...statement.terms!, revenue_bps_t1: 900, sonar_unit_cents: 250 };
+    currentTerms.revenue_bps_t1 = 1_000;
+
+    expect(buildBillingReport(statement)).toEqual(before);
+  });
+```
+
+(o teste já não usa `currentTerms` para nada além de provar, por tipo, que mutar uma cópia não afeta
+`statement` — o comportamento testado não muda, só os nomes de campo.)
+
+- [ ] **Step 3: Rodar os testes**
+
+Run: `pnpm test -- src/lib/export/__tests__/platform-billing.test.ts`
+Expected: todos passam.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add src/lib/export/platform-billing.ts src/lib/export/__tests__/platform-billing.test.ts
+git commit -m "feat(cobranca): exportacao do demonstrativo usa a aliquota efetivamente aplicada"
+```
+
+---
+
+### Task 11: Verificação completa e ordem de deploy
+
+**Files:** nenhum arquivo novo — só validação e documentação da ordem de entrega.
+
+- [ ] **Step 1: Suíte completa**
+
+Run: `pnpm test`
+Expected: verde.
+
+- [ ] **Step 2: Lint**
+
+Run: `pnpm lint`
+Expected: sem erros nos arquivos alterados.
+
+- [ ] **Step 3: `deno check` em todo o `_shared/platform-admin`**
+
+Run: `cd supabase/functions && deno check _shared/platform-admin/*.ts platform-admin/index.ts materializar-metricas/index.ts`
+Expected: sem erro de tipo (confirma que a remoção de `billing.ts` e a troca de `types.ts` não
+deixaram nenhum importador quebrado).
+
+- [ ] **Step 4: Build**
+
+Run: `pnpm build`
+Expected: sucesso.
+
+- [ ] **Step 5: `db:check`**
+
+Run: `npm run db:check`
+Expected: as duas migrations novas passam na validação de schema.
+
+- [ ] **Step 6: `preflight`**
+
+Run: `pnpm preflight` (ou `pnpm preflight:static` se for o portão de pré-push vigente — conferir qual
+está ativo no momento da execução)
+Expected: verde. É o portão real de pré-push deste projeto — não considerar a entrega pronta sem ele.
+
+- [ ] **Step 7: Documentar/lembrar a ordem de deploy em produção** (não é comando local — é o que o
+orquestrador roda ao aprovar o merge, por causa da regra do projeto de nunca deixar Edge Functions
+defasadas):
+
+1. `supabase db push` (aplica as duas migrations, nesta ordem — `platform_commercial_terms_tiers`
+   antes de `platform_billing_tiers`, que é a ordem cronológica dos arquivos).
+2. Confirmar a versão aplicada (`supabase migration list` ou equivalente).
+3. `supabase functions deploy platform-admin materializar-metricas` (as duas importam
+   `_shared/platform-admin/`, então as duas precisam redeployar juntas — regra do CLAUDE.md do
+   projeto para mudança em `_shared/`).
+4. Só então merge/push do front na `main`.
+
+- [ ] **Step 8: Commit final (se sobrar algo solto de lint/format automático)**
+
+```bash
+git add -A
+git commit -m "chore(cobranca): ajustes finais de lint/format pos-verificacao" --allow-empty
+```
+
+(vazio de propósito se não houver nada para adicionar — não force um commit sem conteúdo real.)
+
+---
+
+## Self-Review
+
+**Cobertura da spec:** os 5 pontos de "Decisões fechadas" do design (faixas fixas, percentuais por
+org, cálculo automático, trava por modalidade, rótulos) estão nas Tasks 1, 3, 4, 7. A armadilha do
+`applied_bps`/crédito de devolução tardia está na Task 2. As 4 ressalvas do Fable (split de
+migrations, remoção de `billing.ts`, backfill LOUD, `begin`/`commit`) estão nas Tasks 1, 2 e 5. A
+chamada de esconder a linha "Consultas Sonar" quando zerada está na Task 2. A ordem de deploy está na
+Task 11.
+
+**Placeholders:** nenhum "TBD"/"implementar depois" — os únicos pontos que pedem "rode e ajuste"
+(Tasks 8, 9 parcialmente) são fixtures de teste cujo valor exato depende de somas que só o test
+runner confirma com segurança; cada um desses pontos já vem com o valor recalculado que eu derivei
+manualmente (Task 8: `total_cents: 46_200` = 45.000 + 1.200), então "rode e ajuste" é uma rede de
+segurança, não uma lacuna.
+
+**Consistência de tipos:** `revenue_bps_t1..t4` e `applied_bps`/`applied_tier` são os mesmos nomes
+do primeiro uso (Task 1, SQL) até o último (Task 10, TypeScript) — conferido campo a campo.
