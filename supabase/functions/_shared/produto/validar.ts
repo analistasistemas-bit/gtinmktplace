@@ -4,6 +4,9 @@
 
 export interface VariacaoEntrada {
   nome?: string | null;
+  /** ADR-0166: tamanho (roupa) ou numeração (calçado). Ausente/null = variação sem esse eixo,
+   *  que é o caso de toda org sem tipo de produto habilitado. */
+  tamanho?: string | null;
   gtin?: string | null;
   preco: number;
   custo?: number | null;
@@ -31,6 +34,9 @@ export interface ProdutoEntrada {
   unidade?: string | null;
   fornecedor?: string | null;
   origem: 'nacional' | 'importado';
+  /** ADR-0166: gênero da peça. Ausente/null = não informado. O ML exige que o gênero do anúncio
+   *  bata com o da tabela de medidas, então valor inválido FALHA em vez de virar default. */
+  genero?: 'masculino' | 'feminino' | 'unissex' | null;
   // Idempotência da submissão (spec 2026-07-31, D-9). Sem ela um retry criaria um segundo
   // produto: o código é gerado, então os guards de duplicata NÃO pegam a repetição.
   chaveCadastro: string;
@@ -66,6 +72,36 @@ export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
     });
   }
 
+  // ADR-0166. Ausente é válido (org sem tipo habilitado). Presente e fora da lista FALHA: o ML
+  // recusa a publicação inteira quando o gênero do anúncio não bate com o da tabela de medidas,
+  // e "corrigir para unissex" seria afirmar sobre o produto um dado que ninguém informou.
+  const GENEROS_VALIDOS = ['masculino', 'feminino', 'unissex'];
+  if (p.genero != null && !GENEROS_VALIDOS.includes(p.genero)) {
+    erros.push({
+      campo: 'genero',
+      mensagem: 'Gênero inválido — use masculino, feminino ou unissex.',
+    });
+  }
+
+  // R3 (revisão do Fable): gênero é OBRIGATÓRIO quando alguma variação tem tamanho. O ML exige
+  // que o gênero do anúncio bata com o da tabela de medidas (ADR-0167) — sem ele a publicação
+  // falha LOUD e, antes desta trava, não havia tela nenhuma para informar o dado depois: o
+  // produto nascia impublicável. A recusa acontece aqui, no cadastro, que é onde o operador
+  // ainda está com a tela aberta e consegue corrigir.
+  //
+  // INV-1 intacto por construção: `entradaTamanhoEfetiva` (Task 16) roda ANTES deste validador
+  // e zera `tamanho` de org sem tipo de produto habilitado, então esta regra nunca é alcançada
+  // por quem não contratou o eixo — nem por um payload forjado.
+  if (p.variacoes?.some((v) => v.tamanho?.trim())) {
+    if (!p.genero) {
+      erros.push({
+        campo: 'genero',
+        mensagem: 'Informe o gênero (masculino, feminino ou unissex) — ele é obrigatório para '
+          + 'produto com tamanho/numeração e define a tabela de medidas usada na publicação.',
+      });
+    }
+  }
+
   if (!p.variacoes || p.variacoes.length === 0) {
     erros.push({ campo: 'variacoes', mensagem: 'Cadastre ao menos uma variação.' });
     return erros;
@@ -83,6 +119,27 @@ export function validarProdutoNovo(p: ProdutoEntrada): ErroValidacao[] {
       erros.push({ campo: `variacoes[${i}].estoqueInicial`, mensagem: 'Estoque inicial não pode ser negativo.' });
     }
   });
+
+  // ADR-0166: com dois eixos, o par (cor, tamanho) é a identidade do SKU. Duas linhas com o mesmo
+  // par são dois SKUs indistinguíveis — o ML recusa a variação duplicada e, pior, o casamento
+  // POSICIONAL de foto e de estoque inicial (cadastrar-produto/index.ts) passaria a depender de
+  // qual das duas o operador quis. Sem tamanho em nenhuma das duas, nada muda: cores repetidas
+  // sem tamanho continuam aceitas, como sempre foram.
+  const vistos = new Set<string>();
+  for (const v of p.variacoes) {
+    const cor = v.nome?.trim() || '';
+    const tam = v.tamanho?.trim() || '';
+    if (!tam) continue;
+    const chave = `${cor}\u0000${tam}`;
+    if (vistos.has(chave)) {
+      erros.push({
+        campo: 'variacoes',
+        mensagem: `Variação repetida: ${cor || '(sem cor)'} / ${tam}. Cada combinação de cor e tamanho pode aparecer uma vez só.`,
+      });
+      break;
+    }
+    vistos.add(chave);
+  }
 
   return erros;
 }
@@ -108,6 +165,9 @@ export function montarLinhasProduto(
     // Sempre explícita: validarProdutoNovo já barrou valor ausente/inválido, então nunca
     // caímos no DEFAULT 'nacional' da coluna sem o operador ter dito.
     origem: p.origem,
+    // ADR-0166: explícito, e null quando não informado — a coluna é nullable sem default e null
+    // é o estado de toda família de org sem tipo de produto habilitado.
+    genero: p.genero ?? null,
     operacao: 'CREATE',
     status: 'pendente',
     // ADR-0135 D-4: colunas fiscais só quando a entrada trouxe fiscal (org com módulo).
@@ -142,6 +202,10 @@ export function montarLinhasProduto(
       // Vision — melhor um lembrete visível do que um `cor` ausente que passa despercebido.
       ...(nome ? { cor: nome, cor_origem: 'manual' } : { cor: null }),
       gtin: v.gtin?.trim() || null,
+      // ADR-0166: tamanho (roupa) / numeração (calçado). Mesma normalização de nome/gtin —
+      // `trim() || null` — para nunca gravar string vazia, que viraria um valor de atributo
+      // vazio no payload do ML.
+      tamanho: v.tamanho?.trim() || null,
       // Cru, sem arredondar aqui: o Postgres parseia o texto decimal do JSON (não multiplica
       // float) e arredonda para numeric(12,2) na escrita — concorda com o que o guard de retry
       // idempotente (`variacoesDivergem`, cadastrar-produto/processar.ts) calcula via

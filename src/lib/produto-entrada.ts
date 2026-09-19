@@ -11,6 +11,9 @@
 
 export interface VariacaoEntrada {
   nome?: string | null;
+  /** ADR-0166: tamanho (roupa) ou numeração (calçado). Ausente/null = variação sem esse eixo,
+   *  que é o caso de toda org sem tipo de produto habilitado. */
+  tamanho?: string | null;
   gtin?: string | null;
   preco: number;
   custo?: number | null;
@@ -38,6 +41,9 @@ export interface ProdutoEntrada {
   unidade?: string | null;
   fornecedor?: string | null;
   origem: 'nacional' | 'importado';
+  /** ADR-0166: gênero da peça. Ausente/null = não informado. O ML exige que o gênero do anúncio
+   *  bata com o da tabela de medidas, então valor inválido FALHA em vez de virar default. */
+  genero?: 'masculino' | 'feminino' | 'unissex' | null;
   // Idempotência da submissão: o mesmo uuid reenviado devolve o cadastro original em vez de
   // criar um segundo produto. Só troca quando o diálogo fecha ou após sucesso confirmado —
   // nunca a cada tentativa (ver dialog-cadastro-produto.tsx).
