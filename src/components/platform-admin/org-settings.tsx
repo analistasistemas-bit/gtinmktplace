@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { LISTA_CANAIS } from '@/lib/canais';
 import { MODULOS } from '@/lib/modulos';
+import { TIPOS_PRODUTO } from '@/lib/tipos-produto';
 import { supabase } from '@/lib/supabase';
 
 type OrgRow = {
@@ -16,6 +17,7 @@ type OrgRow = {
   slug: string;
   canais_habilitados: string[];
   modulos_habilitados: string[];
+  tipos_produto_habilitados: string[];
   tipo_pessoa: 'pf' | 'pj' | null;
 };
 
@@ -44,6 +46,7 @@ export function OrgSettings({ orgId }: { orgId: string }) {
   const queryClient = useQueryClient();
   const [channels, setChannels] = useState<Set<string>>(new Set(['mercado_livre']));
   const [modules, setModules] = useState<Set<string>>(new Set());
+  const [productTypes, setProductTypes] = useState<Set<string>>(new Set());
   const [personType, setPersonType] = useState<'pf' | 'pj'>('pf');
   const [saving, setSaving] = useState<string | null>(null);
   const [savedKey, setSavedKey] = useState<string | null>(null);
@@ -63,6 +66,7 @@ export function OrgSettings({ orgId }: { orgId: string }) {
     if (!org) return;
     setChannels(new Set(org.canais_habilitados ?? ['mercado_livre']));
     setModules(new Set(org.modulos_habilitados ?? []));
+    setProductTypes(new Set(org.tipos_produto_habilitados ?? []));
     setPersonType(org.tipo_pessoa ?? 'pf');
   }, [org]);
 
@@ -221,6 +225,50 @@ export function OrgSettings({ orgId }: { orgId: string }) {
               Salvar módulos
             </Button>
             {cardFooter('modules')}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle>Tipo de produto</CardTitle></CardHeader>
+        <CardContent className="space-y-4">
+          <p className="text-xs text-muted-foreground">
+            Não é módulo pago — muda a estrutura do cadastro (adiciona um segundo eixo além da cor).
+          </p>
+          <div className="space-y-2">
+            {TIPOS_PRODUTO.map((tipo) => (
+              <label key={tipo.id} className="flex items-start gap-2 text-sm">
+                <Checkbox
+                  checked={productTypes.has(tipo.id)}
+                  onCheckedChange={(checked) => setProductTypes((previous) => {
+                    const next = new Set(previous);
+                    if (checked === true) next.add(tipo.id); else next.delete(tipo.id);
+                    return next;
+                  })}
+                />
+                <span>{tipo.nome}<span className="block text-xs text-muted-foreground">{tipo.descricao}</span></span>
+              </label>
+            ))}
+          </div>
+          {error?.key === 'productTypes' && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error.message}</p>
+          )}
+          <div className="flex items-center gap-3">
+            <Button
+              onClick={() => run(
+                'productTypes',
+                () => callUsuarios({
+                  action: 'set_tipos_produto_org',
+                  org_id: orgId,
+                  tipos: TIPOS_PRODUTO.filter((tipo) => productTypes.has(tipo.id)).map((tipo) => tipo.id),
+                }),
+                'Tipo de produto atualizado.',
+              )}
+              disabled={saving === 'productTypes'}
+            >
+              Salvar tipo de produto
+            </Button>
+            {cardFooter('productTypes')}
           </div>
         </CardContent>
       </Card>
