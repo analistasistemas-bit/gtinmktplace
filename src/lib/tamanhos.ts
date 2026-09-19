@@ -14,6 +14,7 @@
 import {
   TAMANHOS_ROUPA, NUMERACOES_CALCADO,
 } from '../../supabase/functions/_shared/produto/tipos-produto-valores';
+import { COMPRIMENTO_PE_CM } from '../../supabase/functions/_shared/ml/medidas-valores';
 
 export { TAMANHOS_ROUPA, NUMERACOES_CALCADO };
 
@@ -74,4 +75,22 @@ export function gerarCombinacoes(cores: string[], tamanhos: string[]): Combinaca
   if (t.length === 0) return c.map((cor) => ({ cor, tamanho: null }));
   if (c.length === 0) return t.map((tamanho) => ({ cor: '', tamanho }));
   return c.flatMap((cor) => t.map((tamanho) => ({ cor, tamanho })));
+}
+
+/** `false` = a numeração cadastra normal, mas hoje NÃO tem guia de tamanhos possível no ML para
+ *  esse gênero (pares de meio-número; 45/46 no feminino). Serve ao aviso inline do cadastro em
+ *  grade — nunca bloqueia a seleção: o cadastro pode existir só para controle de estoque.
+ *
+ *  Sem gênero escolhido devolve `true`: não dá para afirmar impossibilidade antes de saber a
+ *  tabela, e um aviso que some assim que o operador preenche o campo acima só assusta.
+ *  Unissex reaproveita a tabela masculina (Spike 051 §13 — o ML não publica STANDARD "Sem
+ *  gênero"), exatamente como `tabelaComprimentoPe` faz em `_shared/ml/size-chart.ts`. */
+export function numeracaoPublicavel(
+  numeracao: string,
+  genero: 'masculino' | 'feminino' | 'unissex' | '',
+): boolean {
+  if (!genero) return true;
+  if (!(NUMERACOES_CALCADO as readonly string[]).includes(numeracao)) return true;
+  const tabela = genero === 'feminino' ? COMPRIMENTO_PE_CM.feminino : COMPRIMENTO_PE_CM.masculino;
+  return numeracao in tabela;
 }

@@ -4,6 +4,7 @@
 // só criar um novo quando o conjunto de tamanhos muda.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { ehCategoriaMlValida, lerSchemaAtributos } from '../categoria/schema.ts';
+import { COMPRIMENTO_PE_CM } from './medidas-valores.ts';
 
 export type Genero = 'masculino' | 'feminino' | 'unissex';
 
@@ -24,16 +25,10 @@ export const CONTORNO_PEITO_CM: Readonly<Record<string, number>> = { P: 88, M: 9
 // valores vêm do chart STANDARD que o PRÓPRIO ML publica (GET via /catalog/charts/search,
 // type=STANDARD, domain_id=SNEAKERS): masculino = chart 210058, feminino = chart 210059. Não é
 // tabela inventada — é dado publicado pelo Mercado Livre, só copiado literalmente.
-export const COMPRIMENTO_PE_CM: Readonly<Record<'masculino' | 'feminino', Readonly<Record<string, number>>>> = {
-  masculino: {
-    33: 22.5, 34: 23, 35: 23.5, 36: 24, 37: 24.5, 38: 25, 39: 25.5, 40: 26.5,
-    41: 27.5, 42: 28, 43: 29, 44: 30, 45: 30.5, 46: 31, 47: 32, 48: 33,
-  },
-  feminino: {
-    33: 22, 34: 22.7, 35: 23.3, 36: 24, 37: 24.7, 38: 25.3, 39: 26, 40: 26.7,
-    41: 27.3, 42: 28, 43: 28.6, 44: 29.3,
-  },
-};
+//
+// Movida para um módulo folha (sem imports) para o frontend também poder lê-la sem redigitar a
+// tabela — ver medidas-valores.ts. Reexportada aqui para nenhum consumidor existente mudar.
+export { COMPRIMENTO_PE_CM } from './medidas-valores.ts';
 
 /** O ML não publica chart STANDARD "Sem gênero" (testado, `POST /catalog/charts/search` com
  *  `GENDER=Sem gênero` devolve `charts: []` — Spike 051 §13). Unissex reaproveita a tabela

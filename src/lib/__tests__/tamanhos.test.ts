@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   TAMANHOS_ROUPA, NUMERACOES_CALCADO, LIMITE_VARIACOES_GERADAS,
-  opcoesDeTamanho, gerarCombinacoes,
+  opcoesDeTamanho, gerarCombinacoes, numeracaoPublicavel,
 } from '@/lib/tamanhos';
 
 describe('TAMANHOS_ROUPA', () => {
@@ -80,5 +80,40 @@ describe('gerarCombinacoes', () => {
     const cores = Array.from({ length: 12 }, (_, i) => `Cor ${i}`);
     expect(gerarCombinacoes(cores, ['P', 'M', 'G', 'GG', 'Tamanho Único']))
       .toHaveLength(LIMITE_VARIACOES_GERADAS);
+  });
+});
+
+describe('numeracaoPublicavel (spec 2026-09-19 §2, aviso inline)', () => {
+  it('numeração isolada dentro da tabela do gênero é publicável', () => {
+    expect(numeracaoPublicavel('42', 'masculino')).toBe(true);
+    expect(numeracaoPublicavel('42', 'feminino')).toBe(true);
+  });
+
+  // COMPRIMENTO_PE_CM.feminino para em 44; masculino vai até 48. O aviso é POR GÊNERO.
+  it('45/46 publicam no masculino e NÃO publicam no feminino', () => {
+    expect(numeracaoPublicavel('45', 'masculino')).toBe(true);
+    expect(numeracaoPublicavel('46', 'masculino')).toBe(true);
+    expect(numeracaoPublicavel('45', 'feminino')).toBe(false);
+    expect(numeracaoPublicavel('46', 'feminino')).toBe(false);
+  });
+
+  // Spike 051 §13: o ML não publica chart STANDARD "Sem gênero"; unissex reaproveita a masculina.
+  it('unissex segue a tabela masculina', () => {
+    expect(numeracaoPublicavel('45', 'unissex')).toBe(true);
+  });
+
+  it('par de meio-número nunca publica — não existe comprimento de pé para dois números num SKU', () => {
+    expect(numeracaoPublicavel('45/46', 'masculino')).toBe(false);
+    expect(numeracaoPublicavel('33/34', 'feminino')).toBe(false);
+  });
+
+  // Sem gênero escolhido ainda, não dá para afirmar que NÃO publica — não assustar o operador
+  // com um aviso que some assim que ele preencher o campo logo acima.
+  it('sem gênero escolhido, não afirma que é impublicável', () => {
+    expect(numeracaoPublicavel('45', '')).toBe(true);
+  });
+
+  it('tamanho de roupa não é assunto desta função', () => {
+    expect(numeracaoPublicavel('P', 'masculino')).toBe(true);
   });
 });
