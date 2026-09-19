@@ -6,7 +6,10 @@ export type CommercialTermsInput = {
   starts_on: string;
   modality: 1 | 2;
   monthly_fee_cents: Cents;
-  revenue_bps: number;
+  revenue_bps_t1: number;
+  revenue_bps_t2: number;
+  revenue_bps_t3: number;
+  revenue_bps_t4: number;
   sonar_unit_cents: Cents;
   setup_fee_cents: Cents;
   setup_due_month: Month | null;
@@ -49,6 +52,8 @@ export type BillingPreview = {
   refund_cents: Cents;
   base_cents: Cents;
   fee_cents: Cents;
+  applied_bps: number | null;
+  applied_tier: 1 | 2 | 3 | 4 | null;
   sonar_units: number;
   sonar_cents: Cents;
   lines: BillingLine[];

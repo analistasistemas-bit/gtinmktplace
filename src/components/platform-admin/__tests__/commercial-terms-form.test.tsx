@@ -20,7 +20,10 @@ const current: CommercialTerms = {
   starts_on: '2026-09-01',
   modality: 1,
   monthly_fee_cents: 0,
-  revenue_bps: 0,
+  revenue_bps_t1: 0,
+  revenue_bps_t2: 0,
+  revenue_bps_t3: 0,
+  revenue_bps_t4: 0,
   sonar_unit_cents: 0,
   setup_fee_cents: 0,
   setup_due_month: null,
@@ -49,15 +52,16 @@ describe('CommercialTermsForm', () => {
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
     await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
-    await user.clear(screen.getByLabelText('Infraestrutura mensal'));
-    await user.type(screen.getByLabelText('Infraestrutura mensal'), '600,00');
+    await user.clear(screen.getByLabelText('Sonar por consulta'));
+    await user.type(screen.getByLabelText('Sonar por consulta'), '600,00');
     await user.type(screen.getByLabelText('Motivo'), 'novo contrato');
     await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
 
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
       org_id: 'org-a',
       modality: 2,
-      monthly_fee_cents: 60_000,
+      monthly_fee_cents: 0,
+      sonar_unit_cents: 60_000,
       starts_on: '2026-10-01',
     }));
   });
@@ -92,10 +96,10 @@ describe('CommercialTermsForm', () => {
   });
 
   it('contrato futuro prefila o formulario e o resumo diz "a partir de"', () => {
-    const futuro = { ...current, starts_on: '2026-10-01', revenue_bps: 500, setup_fee_cents: 300_000, setup_due_month: '2026-10-01' };
+    const futuro = { ...current, starts_on: '2026-10-01', revenue_bps_t1: 500, revenue_bps_t4: 300, setup_fee_cents: 300_000, setup_due_month: '2026-10-01' };
     render(<CommercialTermsForm orgId="org-zero" current={futuro} onSaved={vi.fn()} />);
 
-    expect(screen.getByText('Modalidade 1 · 5,00% sobre receita · a partir de 2026-10-01')).toBeInTheDocument();
+    expect(screen.getByText('Modalidade 1 · 5,00% a 3,00% sobre receita · a partir de 2026-10-01')).toBeInTheDocument();
     expect(screen.getByLabelText('Implantação')).toHaveValue('3000,00');
     expect(screen.getByLabelText('Implantação')).toBeDisabled();
   });
@@ -125,7 +129,7 @@ describe('CommercialTermsForm', () => {
     await user.clear(monthly);
     await user.type(monthly, '0');
     await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
-    expect(monthly).toHaveValue('0');
+    expect(monthly).toHaveValue('0,00');
     await user.type(screen.getByLabelText('Motivo'), 'manter gratuidade');
     await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
 
@@ -133,7 +137,10 @@ describe('CommercialTermsForm', () => {
       org_id: 'org-zero',
       modality: 2,
       monthly_fee_cents: 0,
-      revenue_bps: 0,
+      revenue_bps_t1: 0,
+      revenue_bps_t2: 0,
+      revenue_bps_t3: 0,
+      revenue_bps_t4: 0,
       sonar_unit_cents: 0,
       setup_fee_cents: 0,
     }));
@@ -144,12 +151,12 @@ describe('CommercialTermsForm', () => {
     render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
 
     await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
-    expect(screen.getByLabelText('Percentual sobre receita')).toHaveValue('7,00');
-    await user.clear(screen.getByLabelText('Percentual sobre receita'));
-    await user.type(screen.getByLabelText('Percentual sobre receita'), '4,25');
+    expect(screen.getByLabelText('Percentual até R$100 mil')).toHaveValue('7,00');
+    await user.clear(screen.getByLabelText('Percentual até R$100 mil'));
+    await user.type(screen.getByLabelText('Percentual até R$100 mil'), '4,25');
     await user.selectOptions(screen.getByLabelText('Modalidade'), '1');
 
-    expect(screen.getByLabelText('Percentual sobre receita')).toHaveValue('4,25');
+    expect(screen.getByLabelText('Percentual até R$100 mil')).toHaveValue('4,25');
   });
 
   it.each(['-1', '1,001'])('rejeita valor monetário inválido: %s', async (invalid) => {
@@ -169,7 +176,7 @@ describe('CommercialTermsForm', () => {
     render(<CommercialTermsForm orgId="org-zero" current={current} onSaved={vi.fn()} />);
 
     expect(screen.getByText('Renegociar')).toBeInTheDocument();
-    expect(screen.getByText('Modalidade 1 · 0,00% sobre receita · desde 2026-09-01')).toBeInTheDocument();
+    expect(screen.getByText('Modalidade 1 · 0,00% a 0,00% sobre receita · desde 2026-09-01')).toBeInTheDocument();
   });
 
   it('sem condição vigente (primeiro contrato), o card abre aberto', () => {
@@ -195,5 +202,45 @@ describe('CommercialTermsForm', () => {
     expect(screen.getByText(/Futura/)).toBeInTheDocument();
     expect(screen.getByText(/Vigente/)).toBeInTheDocument();
     expect(screen.getByText(/Anterior/)).toBeInTheDocument();
+  });
+
+  it('trava Sonar em 0,00 na modalidade 1 e Infraestrutura em 0,00 na modalidade 2', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    expect(screen.getByLabelText('Sonar por consulta')).toBeDisabled();
+    expect(screen.getByLabelText('Sonar por consulta')).toHaveValue('0,00');
+
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    expect(screen.getByLabelText('Sonar por consulta')).not.toBeDisabled();
+    expect(screen.getByLabelText('Infraestrutura mensal')).toBeDisabled();
+    expect(screen.getByLabelText('Infraestrutura mensal')).toHaveValue('0,00');
+  });
+
+  it('envia monthly_fee_cents zerado mesmo se o usuário digitou algo antes de trocar para modalidade 2', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    await user.clear(screen.getByLabelText('Infraestrutura mensal'));
+    await user.type(screen.getByLabelText('Infraestrutura mensal'), '999,00');
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await user.type(screen.getByLabelText('Motivo'), 'trava no envio');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ monthly_fee_cents: 0 }));
+  });
+
+  it('envia sonar_unit_cents zerado mesmo se o usuário digitou algo antes de trocar para modalidade 1', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await user.clear(screen.getByLabelText('Sonar por consulta'));
+    await user.type(screen.getByLabelText('Sonar por consulta'), '888,00');
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '1');
+    await user.type(screen.getByLabelText('Motivo'), 'trava no envio');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ sonar_unit_cents: 0 }));
   });
 });

@@ -165,7 +165,7 @@ export default function OrganizacaoDetalhe() {
       const terms = preview.data.terms;
       subtitleNode = (
         <p className="text-sm text-muted-foreground">
-          {org.slug} · Modalidade {terms.modality} · {humanPercent(terms.revenue_bps)} sobre receita
+          {org.slug} · Modalidade {terms.modality} · {humanPercent(preview.data.applied_bps)} sobre receita
         </p>
       );
     } else if (org.next_terms_starts_on) {

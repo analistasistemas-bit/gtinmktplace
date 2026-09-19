@@ -22,13 +22,14 @@ insert into public.support_requests(id,requester_id,org_id,scope,status,expires_
    '90000000-0000-0000-0000-000000000001','read','active',now()+interval '1 hour');
 
 insert into public.platform_commercial_terms(
-  org_id,starts_on,modality,monthly_fee_cents,revenue_bps,sonar_unit_cents,
+  org_id,starts_on,modality,monthly_fee_cents,
+  revenue_bps_t1,revenue_bps_t2,revenue_bps_t3,revenue_bps_t4,sonar_unit_cents,
   setup_fee_cents,setup_due_month,reason,created_by,version
 ) values
 ('90000000-0000-0000-0000-000000000001',date_trunc('month',now() at time zone 'America/Fortaleza')::date,
- 1,0,0,125,0,null,'sonar fixture','80000000-0000-0000-0000-000000000001',1),
+ 2,0,0,0,0,0,125,0,null,'sonar fixture','80000000-0000-0000-0000-000000000001',1),
 ('90000000-0000-0000-0000-000000000002',date_trunc('month',now() at time zone 'America/Fortaleza')::date,
- 1,0,0,275,0,null,'sonar fixture','80000000-0000-0000-0000-000000000001',1);
+ 2,0,0,0,0,0,275,0,null,'sonar fixture','80000000-0000-0000-0000-000000000001',1);
 
 \ir ../migrations/20260906170100_platform_sonar_metering.sql
 

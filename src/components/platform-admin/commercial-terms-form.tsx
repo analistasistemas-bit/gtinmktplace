@@ -16,7 +16,10 @@ type Props = {
 type FormState = {
   modality: '1' | '2';
   monthly: string;
-  revenue: string;
+  revenueT1: string;
+  revenueT2: string;
+  revenueT3: string;
+  revenueT4: string;
   sonar: string;
   setup: string;
   setupDueMonth: string;
@@ -64,11 +67,15 @@ function currentMonthStart(now = new Date()): string {
 }
 
 function initialState(current: CommercialTerms | null, startsOn: string): FormState {
+  const modality = String(current?.modality ?? 1) as '1' | '2';
   return {
-    modality: String(current?.modality ?? 1) as '1' | '2',
-    monthly: formatScaled(current?.monthly_fee_cents ?? 60_000, 2),
-    revenue: formatScaled(current?.revenue_bps ?? 500, 2),
-    sonar: formatScaled(current?.sonar_unit_cents ?? 120, 2),
+    modality,
+    monthly: formatScaled(current?.monthly_fee_cents ?? (modality === '1' ? 60_000 : 0), 2),
+    revenueT1: formatScaled(current?.revenue_bps_t1 ?? (modality === '2' ? 700 : 500), 2),
+    revenueT2: formatScaled(current?.revenue_bps_t2 ?? (modality === '2' ? 600 : 400), 2),
+    revenueT3: formatScaled(current?.revenue_bps_t3 ?? (modality === '2' ? 550 : 350), 2),
+    revenueT4: formatScaled(current?.revenue_bps_t4 ?? (modality === '2' ? 500 : 300), 2),
+    sonar: formatScaled(current?.sonar_unit_cents ?? (modality === '2' ? 120 : 0), 2),
     setup: formatScaled(current?.setup_fee_cents ?? 300_000, 2),
     setupDueMonth: current?.setup_due_month ?? startsOn.slice(0, 7),
     reason: '',
@@ -115,10 +122,13 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     const monthly = parseScaled(form.monthly, 2);
-    const revenue = parseScaled(form.revenue, 2);
+    const revenueT1 = parseScaled(form.revenueT1, 2);
+    const revenueT2 = parseScaled(form.revenueT2, 2);
+    const revenueT3 = parseScaled(form.revenueT3, 2);
+    const revenueT4 = parseScaled(form.revenueT4, 2);
     const sonar = parseScaled(form.sonar, 2);
     const setup = parseScaled(form.setup, 2);
-    if ([monthly, revenue, sonar, setup].some((value) => value === null)) {
+    if ([monthly, revenueT1, revenueT2, revenueT3, revenueT4, sonar, setup].some((value) => value === null)) {
       setError('Use valores positivos ou zero, com no máximo duas casas decimais.');
       return;
     }
@@ -133,9 +143,12 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
         org_id: orgId,
         starts_on: effectiveStartsOn,
         modality: Number(form.modality) as 1 | 2,
-        monthly_fee_cents: monthly!,
-        revenue_bps: revenue!,
-        sonar_unit_cents: sonar!,
+        monthly_fee_cents: form.modality === '2' ? 0 : monthly!,
+        revenue_bps_t1: revenueT1!,
+        revenue_bps_t2: revenueT2!,
+        revenue_bps_t3: revenueT3!,
+        revenue_bps_t4: revenueT4!,
+        sonar_unit_cents: form.modality === '1' ? 0 : sonar!,
         setup_fee_cents: isFirstContract ? setup! : 0,
         setup_due_month: isFirstContract ? form.setupDueMonth || null : null,
         reason: form.reason.trim(),
@@ -158,7 +171,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
               <CardTitle>Condições comerciais</CardTitle>
               {!isFirstContract && current && (
                 <CardDescription>
-                  Modalidade {current.modality} · {formatScaled(current.revenue_bps, 2)}% sobre receita
+                  Modalidade {current.modality} · {formatScaled(current.revenue_bps_t1, 2)}% a {formatScaled(current.revenue_bps_t4, 2)}% sobre receita
                   {' '}· {current.starts_on > today ? 'a partir de' : 'desde'} {current.starts_on}
                 </CardDescription>
               )}
@@ -182,14 +195,16 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                   setForm((previous) => ({
                     ...previous,
                     modality,
-                    revenue: current === null && !revenueTouched.current
-                      ? modality === '2' ? '7,00' : '5,00'
-                      : previous.revenue,
+                    ...(current === null && !revenueTouched.current
+                      ? modality === '2'
+                        ? { revenueT1: '7,00', revenueT2: '6,00', revenueT3: '5,50', revenueT4: '5,00' }
+                        : { revenueT1: '5,00', revenueT2: '4,00', revenueT3: '3,50', revenueT4: '3,00' }
+                      : {}),
                   }));
                 }}
               >
-                <option value="1">1 · mensalidade + percentual</option>
-                <option value="2">2 · percentual com infraestrutura</option>
+                <option value="1">Modalidade 1 · Gestão Completa Daludi</option>
+                <option value="2">Modalidade 2 · Gestão Completa + Inteligência</option>
               </select>
             </label>
             <label className="space-y-1 text-sm" htmlFor="terms-monthly">
@@ -198,55 +213,103 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                 id="terms-monthly"
                 aria-label="Infraestrutura mensal"
                 inputMode="decimal"
-                value={form.monthly}
+                disabled={form.modality === '2'}
+                value={form.modality === '2' ? '0,00' : form.monthly}
                 onChange={(event) => set('monthly', event.target.value)}
               />
             </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-revenue">
-              <span className="font-medium">Percentual sobre receita</span>
-              <Input
-                id="terms-revenue"
-                aria-label="Percentual sobre receita"
-                inputMode="decimal"
-                value={form.revenue}
-                onChange={(event) => {
-                  revenueTouched.current = true;
-                  set('revenue', event.target.value);
-                }}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-sonar">
-              <span className="font-medium">Sonar por consulta</span>
-              <Input
-                id="terms-sonar"
-                aria-label="Sonar por consulta"
-                inputMode="decimal"
-                value={form.sonar}
-                onChange={(event) => set('sonar', event.target.value)}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-setup">
-              <span className="font-medium">Implantação</span>
-              <Input
-                id="terms-setup"
-                aria-label="Implantação"
-                inputMode="decimal"
-                disabled={!isFirstContract}
-                value={form.setup}
-                onChange={(event) => set('setup', event.target.value)}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-setup-month">
-              <span className="font-medium">Mês da implantação</span>
-              <Input
-                id="terms-setup-month"
-                aria-label="Mês da implantação"
-                type="month"
-                disabled={!isFirstContract}
-                value={form.setupDueMonth}
-                onChange={(event) => set('setupDueMonth', event.target.value)}
-              />
-            </label>
+            <div className="space-y-2 md:col-span-2">
+              <span className="text-sm font-medium">Percentual por faixa de faturamento</span>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t1">
+                  <span className="text-xs text-muted-foreground">até R$100 mil</span>
+                  <Input
+                    id="terms-revenue-t1"
+                    aria-label="Percentual até R$100 mil"
+                    inputMode="decimal"
+                    value={form.revenueT1}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT1', event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t2">
+                  <span className="text-xs text-muted-foreground">R$100–300 mil</span>
+                  <Input
+                    id="terms-revenue-t2"
+                    aria-label="Percentual R$100–300 mil"
+                    inputMode="decimal"
+                    value={form.revenueT2}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT2', event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t3">
+                  <span className="text-xs text-muted-foreground">R$300–500 mil</span>
+                  <Input
+                    id="terms-revenue-t3"
+                    aria-label="Percentual R$300–500 mil"
+                    inputMode="decimal"
+                    value={form.revenueT3}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT3', event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t4">
+                  <span className="text-xs text-muted-foreground">acima de R$500 mil</span>
+                  <Input
+                    id="terms-revenue-t4"
+                    aria-label="Percentual acima de R$500 mil"
+                    inputMode="decimal"
+                    value={form.revenueT4}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT4', event.target.value);
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-2">
+              <label className="space-y-1 text-sm" htmlFor="terms-sonar">
+                <span className="font-medium">Sonar por consulta</span>
+                <Input
+                  id="terms-sonar"
+                  aria-label="Sonar por consulta"
+                  inputMode="decimal"
+                  disabled={form.modality === '1'}
+                  value={form.modality === '1' ? '0,00' : form.sonar}
+                  onChange={(event) => set('sonar', event.target.value)}
+                />
+              </label>
+              <label className="space-y-1 text-sm" htmlFor="terms-setup">
+                <span className="font-medium">Implantação</span>
+                <Input
+                  id="terms-setup"
+                  aria-label="Implantação"
+                  inputMode="decimal"
+                  disabled={!isFirstContract}
+                  value={form.setup}
+                  onChange={(event) => set('setup', event.target.value)}
+                />
+              </label>
+              <label className="space-y-1 text-sm" htmlFor="terms-setup-month">
+                <span className="font-medium">Mês da implantação</span>
+                <Input
+                  id="terms-setup-month"
+                  aria-label="Mês da implantação"
+                  type="month"
+                  disabled={!isFirstContract}
+                  value={form.setupDueMonth}
+                  onChange={(event) => set('setupDueMonth', event.target.value)}
+                />
+              </label>
+            </div>
             <label className="space-y-1 text-sm md:col-span-2">
               <span className="font-medium">Motivo</span>
               <textarea
@@ -312,7 +375,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                     <StatusPill tone={toneForStatus(historyStatus(term, history, today))}>
                       {historyStatus(term, history, today)}
                     </StatusPill>
-                    modalidade {term.modality} · {formatScaled(term.revenue_bps, 2)}%
+                    modalidade {term.modality} · {formatScaled(term.revenue_bps_t1, 2)}% a {formatScaled(term.revenue_bps_t4, 2)}%
                   </span>
                   <span className="text-muted-foreground">
                     desde {term.starts_on} · versão {term.version}

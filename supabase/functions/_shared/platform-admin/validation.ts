@@ -30,8 +30,19 @@ export function validateTerms(input: unknown): CommercialTermsInput {
   const starts = value.starts_on.match(MONTH_START);
   if (!starts) fail('starts_on deve ser o primeiro dia do mês');
   if (value.modality !== 1 && value.modality !== 2) fail('modalidade inválida');
-  if (typeof value.revenue_bps !== 'number' || !Number.isSafeInteger(value.revenue_bps) || value.revenue_bps < 0 || value.revenue_bps > 10000) {
-    fail('revenue_bps deve estar entre 0 e 10000');
+  for (const tier of ['revenue_bps_t1', 'revenue_bps_t2', 'revenue_bps_t3', 'revenue_bps_t4'] as const) {
+    const tierValue = value[tier];
+    if (typeof tierValue !== 'number' || !Number.isSafeInteger(tierValue) || tierValue < 0 || tierValue > 10000) {
+      fail(`${tier} deve estar entre 0 e 10000`);
+    }
+  }
+  const monthlyFeeCents = cents(value.monthly_fee_cents, 'monthly_fee_cents');
+  const sonarUnitCents = cents(value.sonar_unit_cents, 'sonar_unit_cents');
+  if (value.modality === 1 && sonarUnitCents !== 0) {
+    fail('Modalidade 1 não cobra Sonar do cliente: informe 0');
+  }
+  if (value.modality === 2 && monthlyFeeCents !== 0) {
+    fail('Modalidade 2 não tem infraestrutura separada: informe 0');
   }
   if (typeof value.reason !== 'string' || !value.reason.trim()) fail('reason é obrigatório');
 
@@ -49,9 +60,12 @@ export function validateTerms(input: unknown): CommercialTermsInput {
     org_id: value.org_id,
     starts_on: value.starts_on,
     modality: value.modality,
-    monthly_fee_cents: cents(value.monthly_fee_cents, 'monthly_fee_cents'),
-    revenue_bps: value.revenue_bps,
-    sonar_unit_cents: cents(value.sonar_unit_cents, 'sonar_unit_cents'),
+    monthly_fee_cents: monthlyFeeCents,
+    revenue_bps_t1: value.revenue_bps_t1 as number,
+    revenue_bps_t2: value.revenue_bps_t2 as number,
+    revenue_bps_t3: value.revenue_bps_t3 as number,
+    revenue_bps_t4: value.revenue_bps_t4 as number,
+    sonar_unit_cents: sonarUnitCents,
     setup_fee_cents: setupFee,
     setup_due_month: setupDueMonth,
     reason: value.reason.trim(),
