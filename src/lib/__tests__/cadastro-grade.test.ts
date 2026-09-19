@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { chaveGrade, reconciliarGrade, totalDaGrade } from '@/lib/cadastro-grade';
+import {
+  chaveGrade, novaLinhaGrade, reconciliarGrade, resolverLinha, totalDaGrade,
+  type CamposHerdaveis,
+} from '@/lib/cadastro-grade';
 
 const semLinhas: { cor: string; tamanho: string }[] = [];
 
@@ -81,5 +84,75 @@ describe('totalDaGrade', () => {
 
   it('um eixo vazio zera o total — grade exige os dois', () => {
     expect(totalDaGrade(['Azul'], [], new Set())).toBe(0);
+  });
+});
+
+const CABECALHO: CamposHerdaveis = {
+  preco: '99,90', custo: '40', pesoGramas: '300',
+  alturaCm: '5', larguraCm: '20', comprimentoCm: '30',
+};
+
+describe('resolverLinha', () => {
+  it('sem override, todo campo resolve para o valor do cabeçalho', () => {
+    const r = resolverLinha(CABECALHO, {}, novaLinhaGrade('Azul', 'M'));
+    expect(r.preco).toBe('99,90');
+    expect(r.custo).toBe('40');
+    expect(r.comprimentoCm).toBe('30');
+  });
+
+  it('override vale só para o campo destravado — os outros seguem herdando', () => {
+    const linha = { ...novaLinhaGrade('Azul', 'M'), overrides: { preco: '129,90' } };
+    const r = resolverLinha(CABECALHO, {}, linha);
+    expect(r.preco).toBe('129,90');
+    expect(r.custo).toBe('40');
+  });
+
+  it('cabeçalho mudando depois não afeta campo com override', () => {
+    const linha = { ...novaLinhaGrade('Azul', 'M'), overrides: { preco: '129,90' } };
+    const r = resolverLinha({ ...CABECALHO, preco: '10' }, {}, linha);
+    expect(r.preco).toBe('129,90');
+    expect(r.custo).toBe('40');
+  });
+
+  it('"Voltar a herdar" (apagar a chave do override) volta a resolver do cabeçalho', () => {
+    const linha = { ...novaLinhaGrade('Azul', 'M'), overrides: {} };
+    expect(resolverLinha(CABECALHO, {}, linha).preco).toBe('99,90');
+  });
+
+  // Override de string VAZIA é uma decisão do operador ("não quero custo nesta linha"), não
+  // "ainda não mexi" — tem que vencer o cabeçalho, senão o campo nunca fica limpável.
+  it('override vazio vence o cabeçalho em vez de cair na herança', () => {
+    const linha = { ...novaLinhaGrade('Azul', 'M'), overrides: { custo: '' } };
+    expect(resolverLinha(CABECALHO, {}, linha).custo).toBe('');
+  });
+
+  it('cabeçalho vazio resolve para vazio, não para estado quebrado', () => {
+    const vazio: CamposHerdaveis = {
+      preco: '', custo: '', pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '',
+    };
+    expect(resolverLinha(vazio, {}, novaLinhaGrade('Azul', 'M')).preco).toBe('');
+  });
+
+  it('foto vem da COR quando a linha não tem override de foto', () => {
+    const azul = new File([''], 'azul.jpg');
+    const r = resolverLinha(CABECALHO, { Azul: azul }, novaLinhaGrade('Azul', 'M'));
+    expect(r.foto).toBe(azul);
+  });
+
+  it('foto destravada individualmente vence a foto da cor', () => {
+    const azul = new File([''], 'azul.jpg');
+    const propria = new File([''], 'propria.jpg');
+    const linha = { ...novaLinhaGrade('Azul', 'M'), foto: propria };
+    expect(resolverLinha(CABECALHO, { Azul: azul }, linha).foto).toBe(propria);
+  });
+
+  it('foto destravada e ESVAZIADA (null) não volta a herdar a da cor', () => {
+    const azul = new File([''], 'azul.jpg');
+    const linha = { ...novaLinhaGrade('Azul', 'M'), foto: null as File | null };
+    expect(resolverLinha(CABECALHO, { Azul: azul }, linha).foto).toBeNull();
+  });
+
+  it('cor sem foto nenhuma resolve para null', () => {
+    expect(resolverLinha(CABECALHO, {}, novaLinhaGrade('Azul', 'M')).foto).toBeNull();
   });
 });

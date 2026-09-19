@@ -77,3 +77,61 @@ export function reconciliarGrade(
 
   return { novas, remover, removidas: podadas, ordem, total: ordem.length };
 }
+
+/** Os 6 campos que o cabeçalho preenche uma vez e a linha herda. GTIN e Estoque ficam de fora
+ *  de propósito: não existe "GTIN único" nem "estoque único" numa grade. */
+export const CAMPOS_HERDAVEIS = [
+  'preco', 'custo', 'pesoGramas', 'alturaCm', 'larguraCm', 'comprimentoCm',
+] as const;
+
+export type CampoHerdavel = typeof CAMPOS_HERDAVEIS[number];
+export type CamposHerdaveis = Record<CampoHerdavel, string>;
+
+export interface LinhaGrade {
+  /** Identidade estável da linha (mesma razão de `LinhaVariacao.clientId`: `key` por índice +
+   *  input de arquivo faz a foto escolhida "andar" para outra linha ao remover uma). */
+  clientId: string;
+  /** Travados depois de gerados: editá-los desalinharia a chave que a reconciliação usa. */
+  cor: string;
+  tamanho: string;
+  gtin: string;
+  estoqueInicial: string;
+  /** SÓ o que o operador de fato destravou e editou. Nunca uma cópia do valor herdado. */
+  overrides: Partial<CamposHerdaveis>;
+  /** `undefined` = herda a foto da cor. `File`/`null` = a linha tem foto própria (inclusive a
+   *  decisão explícita de "esta linha não tem foto"). */
+  foto?: File | null;
+}
+
+export interface LinhaResolvida extends CamposHerdaveis {
+  clientId: string; cor: string; tamanho: string; gtin: string; estoqueInicial: string;
+  foto: File | null;
+}
+
+export function novaLinhaGrade(cor: string, tamanho: string): LinhaGrade {
+  return { clientId: crypto.randomUUID(), cor, tamanho, gtin: '', estoqueInicial: '', overrides: {} };
+}
+
+/** Valor efetivo de cada campo da linha. Usada por TODO consumidor (montar payload, gate de
+ *  salvar, resolução da foto para o upload) — se algum deles resolver por conta própria, a
+ *  herança diverge entre o que a tela mostra e o que é gravado. */
+export function resolverLinha(
+  cabecalho: CamposHerdaveis,
+  fotoPorCor: Readonly<Record<string, File | null>>,
+  linha: LinhaGrade,
+): LinhaResolvida {
+  const campos = {} as CamposHerdaveis;
+  for (const campo of CAMPOS_HERDAVEIS) {
+    // `in`, não `??`: override de string vazia é decisão do operador, não "ainda não mexi".
+    campos[campo] = campo in linha.overrides ? linha.overrides[campo]! : cabecalho[campo];
+  }
+  return {
+    ...campos,
+    clientId: linha.clientId,
+    cor: linha.cor,
+    tamanho: linha.tamanho,
+    gtin: linha.gtin,
+    estoqueInicial: linha.estoqueInicial,
+    foto: 'foto' in linha ? linha.foto ?? null : fotoPorCor[linha.cor] ?? null,
+  };
+}
