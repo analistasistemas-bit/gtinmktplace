@@ -218,58 +218,63 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                 onChange={(event) => set('monthly', event.target.value)}
               />
             </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t1">
-              <span className="font-medium">Percentual até R$100 mil</span>
-              <Input
-                id="terms-revenue-t1"
-                aria-label="Percentual até R$100 mil"
-                inputMode="decimal"
-                value={form.revenueT1}
-                onChange={(event) => {
-                  revenueTouched.current = true;
-                  set('revenueT1', event.target.value);
-                }}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t2">
-              <span className="font-medium">Percentual R$100–300 mil</span>
-              <Input
-                id="terms-revenue-t2"
-                aria-label="Percentual R$100–300 mil"
-                inputMode="decimal"
-                value={form.revenueT2}
-                onChange={(event) => {
-                  revenueTouched.current = true;
-                  set('revenueT2', event.target.value);
-                }}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t3">
-              <span className="font-medium">Percentual R$300–500 mil</span>
-              <Input
-                id="terms-revenue-t3"
-                aria-label="Percentual R$300–500 mil"
-                inputMode="decimal"
-                value={form.revenueT3}
-                onChange={(event) => {
-                  revenueTouched.current = true;
-                  set('revenueT3', event.target.value);
-                }}
-              />
-            </label>
-            <label className="space-y-1 text-sm" htmlFor="terms-revenue-t4">
-              <span className="font-medium">Percentual acima de R$500 mil</span>
-              <Input
-                id="terms-revenue-t4"
-                aria-label="Percentual acima de R$500 mil"
-                inputMode="decimal"
-                value={form.revenueT4}
-                onChange={(event) => {
-                  revenueTouched.current = true;
-                  set('revenueT4', event.target.value);
-                }}
-              />
-            </label>
+            <div className="space-y-2 md:col-span-2">
+              <span className="text-sm font-medium">Percentual por faixa de faturamento</span>
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t1">
+                  <span className="text-xs text-muted-foreground">até R$100 mil</span>
+                  <Input
+                    id="terms-revenue-t1"
+                    aria-label="Percentual até R$100 mil"
+                    inputMode="decimal"
+                    value={form.revenueT1}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT1', event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t2">
+                  <span className="text-xs text-muted-foreground">R$100–300 mil</span>
+                  <Input
+                    id="terms-revenue-t2"
+                    aria-label="Percentual R$100–300 mil"
+                    inputMode="decimal"
+                    value={form.revenueT2}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT2', event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t3">
+                  <span className="text-xs text-muted-foreground">R$300–500 mil</span>
+                  <Input
+                    id="terms-revenue-t3"
+                    aria-label="Percentual R$300–500 mil"
+                    inputMode="decimal"
+                    value={form.revenueT3}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT3', event.target.value);
+                    }}
+                  />
+                </label>
+                <label className="space-y-1 text-sm" htmlFor="terms-revenue-t4">
+                  <span className="text-xs text-muted-foreground">acima de R$500 mil</span>
+                  <Input
+                    id="terms-revenue-t4"
+                    aria-label="Percentual acima de R$500 mil"
+                    inputMode="decimal"
+                    value={form.revenueT4}
+                    onChange={(event) => {
+                      revenueTouched.current = true;
+                      set('revenueT4', event.target.value);
+                    }}
+                  />
+                </label>
+              </div>
+            </div>
             <label className="space-y-1 text-sm" htmlFor="terms-sonar">
               <span className="font-medium">Sonar por consulta</span>
               <Input

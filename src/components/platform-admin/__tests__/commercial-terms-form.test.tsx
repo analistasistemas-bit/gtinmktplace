@@ -216,4 +216,31 @@ describe('CommercialTermsForm', () => {
     expect(screen.getByLabelText('Infraestrutura mensal')).toBeDisabled();
     expect(screen.getByLabelText('Infraestrutura mensal')).toHaveValue('0,00');
   });
+
+  it('envia monthly_fee_cents zerado mesmo se o usuário digitou algo antes de trocar para modalidade 2', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    await user.clear(screen.getByLabelText('Infraestrutura mensal'));
+    await user.type(screen.getByLabelText('Infraestrutura mensal'), '999,00');
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await user.type(screen.getByLabelText('Motivo'), 'trava no envio');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ monthly_fee_cents: 0 }));
+  });
+
+  it('envia sonar_unit_cents zerado mesmo se o usuário digitou algo antes de trocar para modalidade 1', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '2');
+    await user.clear(screen.getByLabelText('Sonar por consulta'));
+    await user.type(screen.getByLabelText('Sonar por consulta'), '888,00');
+    await user.selectOptions(screen.getByLabelText('Modalidade'), '1');
+    await user.type(screen.getByLabelText('Motivo'), 'trava no envio');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ sonar_unit_cents: 0 }));
+  });
 });
