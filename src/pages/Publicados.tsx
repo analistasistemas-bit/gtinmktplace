@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split } from 'lucide-react';
+import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -174,22 +174,44 @@ function baseParaKit(f: Familia, precoAtual: number): BaseParaKit {
   };
 }
 
-/** Lista, sob o card do produto-base, os kits vinculados já criados (ADR-0151). */
+/** Lista, sob o card do produto-base, os kits vinculados já criados (ADR-0151).
+ *  Polla enquanto expandido para o operador acompanhar o CREATE assíncrono no ML. */
 function KitsVinculados({ codigoPai, ativo }: { codigoPai: string; ativo: boolean }) {
-  const { data: kits } = useKitsDoProduto(codigoPai, ativo);
+  const { data: kits } = useKitsDoProduto(codigoPai, ativo, true);
   if (!kits || kits.length === 0) return null;
   return (
     <div className="rounded-md border bg-background px-3 py-2 text-xs">
       <span className="font-medium">Kits vinculados:</span>{' '}
-      {kits.map((k) => (
-        k.mlPermalink ? (
-          <a key={k.familiaId} href={k.mlPermalink} target="_blank" rel="noreferrer" className="mr-2 underline">
-            Kit {k.multiplicador}
-          </a>
-        ) : (
-          <span key={k.familiaId} className="mr-2">Kit {k.multiplicador} ({k.status})</span>
-        )
-      ))}
+      {kits.map((k) => {
+        if (k.mlPermalink) {
+          return (
+            <a key={k.familiaId} href={k.mlPermalink} target="_blank" rel="noreferrer" className="mr-2 underline">
+              Kit {k.multiplicador}
+            </a>
+          );
+        }
+        if (k.status === 'erro') {
+          return (
+            <span key={k.familiaId} className="mr-2 inline-flex items-center gap-1 text-destructive">
+              <AlertTriangle className="h-3 w-3 shrink-0" />Kit {k.multiplicador} (falhou)
+            </span>
+          );
+        }
+        if (k.status === 'publicando') {
+          return (
+            <span key={k.familiaId} className="mr-2 inline-flex items-center gap-1 text-info">
+              <Loader2 className="h-3 w-3 shrink-0 animate-spin" />Kit {k.multiplicador} (processando…)
+            </span>
+          );
+        }
+        // 'pronto' sem ml_item_id é repouso, não trânsito (D-2 em KitVinculado.mlItemId,
+        // queries.ts): aguardando a base publicar ou aguardando reenvio manual após falha.
+        return (
+          <span key={k.familiaId} className="mr-2 text-muted-foreground">
+            Kit {k.multiplicador} (aguardando publicação)
+          </span>
+        );
+      })}
     </div>
   );
 }
