@@ -1,7 +1,7 @@
 # Especificação de Design — Vigência Imediata no Cadastro de Condições Comerciais
 
 **Data:** 2026-09-19  
-**Status:** Aprovado para planejamento (Revisado pós-Adversarial Codex R8 — Blindagem Multi-tenant e Fuso Horário)  
+**Status:** Aprovado para planejamento (Revisado pós-Adversarial Codex R9 — Blindagem Multi-tenant e Fuso Horário)  
 **Autor:** Diego / Antigravity  
 **Contexto:** Menu Organizações (`/admin`) e Detalhe da Organização (`/admin/organizacoes/:id`)
 
@@ -314,7 +314,6 @@ end;
 $$;
 
 select pg_temp.executar_migracao_vigencia_setembro();
-drop function if exists pg_temp.executar_migracao_vigencia_setembro();
 ```
 
 ---
@@ -331,10 +330,11 @@ drop function if exists pg_temp.executar_migracao_vigencia_setembro();
    - Executar `npx tsc -b --force`.
    - Executar `pnpm eslint src/components/platform-admin/commercial-terms-form.tsx src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`.
 3. **Suite SQL (`supabase/tests/platform_commercial.sql`):**
-   - Teste de 0 organizações (no-op comprovado via contagem antes e depois em tabela temporária).
-   - Teste de 1 organização (executa `pg_temp.executar_migracao_vigencia_setembro()` e valida que lança `23514`).
-   - Teste de 2 organizações (executa `pg_temp.executar_migracao_vigencia_setembro()` e valida que lança `23514`).
-   - Teste de 3 organizações + tenant controle com asserções completas de readback e teste de trigger imutável sem falsos positivos.
+   - Teste de 0 organizações (no-op comprovado via contagem antes e depois na tabela temporária sem ON COMMIT DROP).
+   - Teste de 1 organização (executa `pg_temp.executar_migracao_vigencia_setembro()` preservada na sessão e valida que lança `23514`).
+   - Teste de 2 organizações (executa `pg_temp.executar_migracao_vigencia_setembro()` preservada na sessão e valida que lança `23514`).
+   - Teste de 3 organizações + tenant controle com asserções completas de readback e teste de trigger imutável sem falsos positivos via flag booleana.
+   - Limpeza final de `pg_temp.executar_migracao_vigencia_setembro()`.
    - Executar via `psql -U supabase_admin -d codex_platform_admin_test_20260906 -v ON_ERROR_STOP=1 -f supabase/tests/platform_commercial.sql`.
 4. **Gate Operacional de Produção (AGENTS.md):**
    - Preview somente-leitura dos 3 contratos reais + digest MD5 de isolamento dos demais tenants nas tabelas `platform_commercial_terms` e `platform_audit_events`.

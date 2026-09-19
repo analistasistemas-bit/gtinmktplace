@@ -244,7 +244,6 @@ end;
 $$;
 
 select pg_temp.executar_migracao_vigencia_setembro();
-drop function if exists pg_temp.executar_migracao_vigencia_setembro();
 ```
 
 - [ ] **Step 2: Adicionar testes completos para cenários 0, 1, 2 e 3 organizações na suite SQL**
@@ -260,7 +259,7 @@ Ao final de `supabase/tests/platform_commercial.sql`:
 create temporary table _check_zero_noop (
   terms_before integer not null,
   audits_before integer not null
-) on commit drop;
+);
 
 insert into _check_zero_noop (terms_before, audits_before)
 values (
@@ -284,6 +283,8 @@ begin
     raise exception 'Cenário 0 organizações violou o no-op: termos ou auditorias foram criados indevidamente';
   end if;
 end $$;
+
+drop table if exists _check_zero_noop;
 
 -- Cenário B1: 1 organização presente (apenas avil) -> Executa migration e valida abort atômico com exceção 23514
 do $$
@@ -468,6 +469,9 @@ begin
     raise exception 'Trigger de imutabilidade falhou ao bloquear update direto';
   end if;
 end $$;
+
+-- Limpeza final da função temporária
+drop function if exists pg_temp.executar_migracao_vigencia_setembro();
 ```
 
 - [ ] **Step 3: Executar a suite SQL para validar fixtures e readback**
