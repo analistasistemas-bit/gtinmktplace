@@ -11,6 +11,7 @@ import { erroCampo } from '@/components/estoque/linha-variacao-form';
 import {
   CAMPOS_HERDAVEIS, type CampoHerdavel, type LinhaGrade, type LinhaResolvida,
 } from '@/lib/cadastro-grade';
+import { cn } from '@/lib/utils';
 
 // Exportado: o cabeçalho do dialog de grade (Task 8) usa o MESMO rótulo, sem redigitá-lo.
 export const ROTULOS: Record<CampoHerdavel, { rotulo: string; prefixo?: string; sufixo?: string }> = {
@@ -115,7 +116,7 @@ export function LinhaGradeForm({
       ) : (
         <div className="grid gap-2 sm:grid-cols-3">
           {CAMPOS_HERDAVEIS.map((campo) => {
-            const { rotulo, sufixo } = ROTULOS[campo];
+            const { rotulo, prefixo, sufixo } = ROTULOS[campo];
             const destravado = campo in linha.overrides;
             const erro = erroCampo(campo, resolvida[campo]);
             return (
@@ -131,14 +132,26 @@ export function LinhaGradeForm({
                     {destravado ? <LockOpen className="h-3 w-3" /> : <Lock className="h-3 w-3" />}
                   </Button>
                 </div>
-                <Input
-                  id={id(campo)}
-                  aria-label={`${rotulo}${sufixo ? ` (${sufixo})` : ''} de ${nome}`}
-                  className="h-8 text-sm"
-                  value={resolvida[campo]}
-                  disabled={desabilitado || !destravado}
-                  onChange={(e) => onMudarOverride(campo, e.target.value)}
-                />
+                <div className="relative">
+                  {prefixo && (
+                    <span className="pointer-events-none absolute inset-y-0 left-2 flex items-center text-xs text-muted-foreground">
+                      {prefixo}
+                    </span>
+                  )}
+                  <Input
+                    id={id(campo)}
+                    aria-label={`${rotulo}${sufixo ? ` (${sufixo})` : ''} de ${nome}`}
+                    className={cn('h-8 text-sm', prefixo && 'pl-8', sufixo && 'pr-7')}
+                    value={resolvida[campo]}
+                    disabled={desabilitado || !destravado}
+                    onChange={(e) => onMudarOverride(campo, e.target.value)}
+                  />
+                  {sufixo && (
+                    <span className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-xs text-muted-foreground">
+                      {sufixo}
+                    </span>
+                  )}
+                </div>
                 {erro && tentouSalvar && destravado && (
                   <span className="text-xs text-destructive">{erro}</span>
                 )}

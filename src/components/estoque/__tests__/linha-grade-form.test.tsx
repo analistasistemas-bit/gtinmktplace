@@ -68,6 +68,17 @@ describe('LinhaGradeForm', () => {
     expect(screen.getByLabelText('Custo de Azul · M')).toBeDisabled();
   });
 
+  it('campo herdável destravado mostra o indicador visual de unidade (R$/g/cm), não só no aria-label', async () => {
+    const user = userEvent.setup();
+    renderLinha();
+    await user.click(screen.getByRole('button', { name: /Editar nesta linha/i }));
+    const camposComPrefixo = screen.getAllByText('R$');
+    expect(camposComPrefixo).toHaveLength(2); // preço e custo
+    expect(screen.getByText('g')).toBeInTheDocument(); // peso
+    const camposComCm = screen.getAllByText('cm');
+    expect(camposComCm).toHaveLength(3); // altura, largura, comprimento
+  });
+
   it('destravar um campo reporta SÓ aquele campo', async () => {
     const user = userEvent.setup();
     const { onDestravar } = renderLinha();
