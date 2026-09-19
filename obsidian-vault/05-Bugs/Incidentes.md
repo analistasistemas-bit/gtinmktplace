@@ -289,6 +289,34 @@ presente = token válido". Candidato a melhoria futura (não implementado): vali
 token no momento do save em Configurações (checável sem nem chamar a API do Telegram) para falhar
 LOUD ali, em vez de silenciar no primeiro envio real.
 
+**Reaparecimento parcial (2026-09-19, ainda sem fix):** "Enviar teste" pra um usuário específico
+(tela Usuários) deu "Falha ao enviar; confira token/chat ID." Não era token — era o Telegram
+recusando com `400 Bad Request: chat not found` (confirmado chamando `getChat` direto na API real
+com o token da org, nunca exposto). Causa: o destinatário nunca tinha iniciado conversa com o bot
+DESTA org especificamente (cada org tem um bot próprio, ADR-0068); a mesma pessoa recebe normal em
+outra org porque já falou com o bot de lá. Não é bug — é o aviso que já existe no formulário
+("abra o bot da empresa e mande qualquer mensagem uma vez"), só que a mensagem genérica de erro não
+diz QUAL é a causa (token errado, chat_id errado, ou "nunca falou com o bot" são indistinguíveis pra
+quem vê a tela). `enviarTelegram` (`_shared/notificacoes/telegram.ts:191`) continua só fazendo
+`console.warn` do motivo real e devolvendo `boolean` — a mesma lição de 02/08, ainda não corrigida.
+
+**Desenho pronto pra quando alguém for implementar** (avaliado e adiado em 19/09 — revisão de
+custo/benefício: precisaria redeployar as 9 edge functions que importam esse arquivo compartilhado
+— `reconciliar-faturamento`, `sync-venda`, `acompanhar-migracao-pxv`, `monitorar-moderados`,
+`notificar-liberacao`, `sync-devolucao`, `vincular-catalogo`, `sync-pergunta`, `sync-mensagem` —
+por uma melhoria de UX num botão de teste; fora do escopo de qualquer fix pontual):
+- `enviarTelegram` passa a devolver `{ ok: boolean; erro?: string }`, com `erro` = campo
+  `description` do JSON de erro do Telegram (ex.: `"Bad Request: chat not found"`), fallback
+  `` `HTTP ${status}` `` se o corpo não vier como JSON. Nunca usar o corpo bruto (`resp.text()`)
+  como mensagem — só o `description` já parseado — pra não vazar HTML de proxy/WAF em erro 5xx.
+- Único call site fora do teste (`_shared/notificacoes/config.ts:78`) vira
+  `if ((await enviarTelegram(...)).ok) enviados += 1;`.
+- `monitorar-moderados/index.ts:157-159`: propaga o `erro` real no lugar do texto fixo.
+- Risco de expor a `description` crua pro operador: baixo — a Bot API não ecoa token nem chat_id
+  nela, só strings fixas ("chat not found", "bot was blocked by the user", "Unauthorized"), e quem
+  vê a tela já é admin da org (já tem o token).
+- Sem teste hoje cobrindo `enviarTelegram`; adicionar um pro caso "chat not found" junto do fix.
+
 ## 2026-07-30 — Frete da Viabilidade saía R$0 sem explicação (conta ML sem Mercado Envios)
 
 **Sintoma:** Diego reportou que o "Frete (vendedor)" na Viabilidade estava R$12,35 pra um GTIN e
