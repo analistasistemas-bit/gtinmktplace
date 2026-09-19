@@ -4,7 +4,7 @@
 
 **Goal:** Alterar o comportamento do cadastro de condições comerciais para que o primeiro contrato inicie por padrão no mês corrente (em vez de no próximo mês) e corrigir cirurgicamente a vigência das 3 organizações existentes (Avil, DSA, Daludi Shop) para 2026-09.
 
-**Architecture:** Uma migration SQL pontual e restrita aos slugs alvo (`avil`, `diego-souza`, `daludishop`) desabilita temporariamente o trigger de imutabilidade, atualiza os termos de `2026-10-01` para `2026-09-01` (com auditoria detalhada de `starts_on` e `setup_due_month` e asserção de pós-condição), e o componente React `CommercialTermsForm` passa a inicializar com o mês corrente, aplicando clamping automático no `setupDueMonth` ao alternar opções de vigência.
+**Architecture:** Uma migration SQL pontual e restrita aos slugs alvo (`avil`, `diego-souza`, `daludishop`) desabilita temporariamente o trigger de imutabilidade, atualiza os termos de `2026-10-01` para `2026-09-01` (com auditoria detalhada de `starts_on` e `setup_due_month` e asserção LOUD pós-condição de contagem exata e ausência de resíduos), e o componente React `CommercialTermsForm` passa a inicializar com o mês corrente, aplicando clamping automático no `setupDueMonth` ao alternar opções de vigência.
 
 **Tech Stack:** Supabase PostgreSQL (PL-pgSQL), React, TypeScript, Vitest, Testing Library.
 
@@ -74,30 +74,53 @@ from corrigidos;
 
 alter table public.platform_commercial_terms enable trigger platform_commercial_terms_no_mutation;
 
--- Asserção LOUD: se restou qualquer linha alvo com starts_on = 2026-10-01, aborta
+-- Asserção LOUD pós-condição: valida o conjunto exato
 do $$
+declare
+  v_expected_count integer;
+  v_actual_count integer;
 begin
-  if exists (
-    select 1
+  select count(*) into v_expected_count
+  from public.organizations
+  where slug in ('avil', 'diego-souza', 'daludishop');
+
+  if v_expected_count = 3 then
+    select count(*) into v_actual_count
     from public.platform_commercial_terms t
     join public.organizations o on o.id = t.org_id
     where o.slug in ('avil', 'diego-souza', 'daludishop')
-      and t.starts_on = '2026-10-01'
-  ) then
-    raise exception 'Restaram termos em 2026-10 para as organizacoes alvo' using errcode = '23514';
+      and t.starts_on = '2026-09-01';
+
+    if v_actual_count <> 3 then
+      raise exception 'Esperava 3 termos corrigidos para 2026-09-01, mas encontrou %', v_actual_count using errcode = '23514';
+    end if;
+
+    if exists (
+      select 1
+      from public.platform_commercial_terms t
+      join public.organizations o on o.id = t.org_id
+      where o.slug in ('avil', 'diego-souza', 'daludishop')
+        and t.starts_on = '2026-10-01'
+    ) then
+      raise exception 'Restaram termos em 2026-10 para as organizacoes alvo' using errcode = '23514';
+    end if;
   end if;
 end $$;
 
 commit;
 ```
 
-- [ ] **Step 2: Adicionar chamada e testes de fixture na suite de testes SQL**
+- [ ] **Step 2: Adicionar fixtures e testes na suite SQL**
 
 Em `supabase/tests/platform_commercial.sql`:
-Criar fixtures antes de incluir a migration (uma org simulando `avil` com termo em 2026-10-01 e uma org controle `org-controle` que não deve ser alterada). Incluir `\ir ../migrations/20260919130000_platform_terms_vigencia_setembro.sql` e verificar:
-1. A org alvo foi atualizada para 2026-09-01.
-2. A org controle permaneceu com seus dados inalterados.
-3. O trigger de imutabilidade está ativo (tentativa de UPDATE direto falha).
+1. Inserir fixtures das 3 organizações alvo (`avil`, `diego-souza`, `daludishop`) com termos salvos com `starts_on = '2026-10-01'`.
+2. Inserir organização de controle `org-controle` com `starts_on = '2026-10-01'`.
+3. Adicionar `\ir ../migrations/20260919130000_platform_terms_vigencia_setembro.sql`.
+4. Validar via bloco `do $$`:
+   - `avil`, `diego-souza` e `daludishop` têm `starts_on = '2026-09-01'`.
+   - `org-controle` manteve `starts_on = '2026-10-01'`.
+   - 3 registros de auditoria foram gravados em `platform_audit_events`.
+   - O trigger `platform_commercial_terms_no_mutation` impede update direto (tenta update direto e captura exception).
 
 - [ ] **Step 3: Commit da Task 1**
 
@@ -210,7 +233,8 @@ git commit -m "feat(admin): define vigencia no mes corrente como padrao com clam
 ### Task 3: Validação de Qualidade e Integridade
 
 **Files:**
-- Scope: arquivos alterados e verificação de integridade
+- Modify: `obsidian-vault/09-Logs/Changelog.md`
+- Modify: `docs/project-status.md`
 
 - [ ] **Step 1: Rodar typecheck do projeto**
 
@@ -227,6 +251,13 @@ Expected: 0 warnings, 0 erros.
 Run: `pnpm test src/components/platform-admin`
 Expected: Todos passando.
 
-- [ ] **Step 4: Registrar decisão nos documentos**
+- [ ] **Step 4: Registrar decisão e exceção documental**
 
-Atualizar `docs/project-status.md` e changelog informando a correção das 3 organizações e a alteração da vigência inicial padrão.
+Em `obsidian-vault/09-Logs/Changelog.md` e `docs/project-status.md`, registrar a entrada de 2026-09-19 documentando a exceção autorizada e o ajuste das três organizações (Avil, DSA, Daludi Shop) para vigência em 2026-09-01, permitindo a apuração e fechamento da competência de setembro.
+
+- [ ] **Step 5: Commit da Task 3**
+
+```bash
+git add obsidian-vault/09-Logs/Changelog.md docs/project-status.md
+git commit -m "docs(cobranca): registra ajuste de vigencia das 3 organizacoes e novo padrao de cadastro"
+```
