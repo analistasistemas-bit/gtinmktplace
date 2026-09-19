@@ -1,0 +1,78 @@
+import { describe, expect, it } from 'vitest';
+import {
+  TAMANHOS_ROUPA, NUMERACOES_CALCADO, LIMITE_VARIACOES_GERADAS,
+  opcoesDeTamanho, gerarCombinacoes,
+} from '@/lib/tamanhos';
+
+describe('TAMANHOS_ROUPA', () => {
+  it('e a lista fechada decidida no grilling', () => {
+    expect(TAMANHOS_ROUPA).toEqual(['P', 'M', 'G', 'GG', 'Tamanho Único']);
+  });
+});
+
+describe('opcoesDeTamanho', () => {
+  it('org sem tipo nao oferece nenhum grupo — o campo Tamanho nem aparece', () => {
+    expect(opcoesDeTamanho([])).toEqual([]);
+  });
+
+  it('so roupa oferece so Tamanho', () => {
+    expect(opcoesDeTamanho(['roupa']).map((g) => g.grupo)).toEqual(['Tamanho']);
+  });
+
+  it('so calcado oferece so Numeracao', () => {
+    expect(opcoesDeTamanho(['calcado']).map((g) => g.grupo)).toEqual(['Numeração']);
+  });
+
+  it('os dois habilitados oferecem os dois grupos (combinavel, nao exclusivo)', () => {
+    expect(opcoesDeTamanho(['calcado', 'roupa']).map((g) => g.grupo)).toEqual(['Tamanho', 'Numeração']);
+  });
+});
+
+describe('gerarCombinacoes', () => {
+  it('produto cartesiano na ordem cor-externa, tamanho-interno', () => {
+    expect(gerarCombinacoes(['Azul', 'Preto'], ['P', 'M'])).toEqual([
+      { cor: 'Azul', tamanho: 'P' },
+      { cor: 'Azul', tamanho: 'M' },
+      { cor: 'Preto', tamanho: 'P' },
+      { cor: 'Preto', tamanho: 'M' },
+    ]);
+  });
+
+  it('sem tamanho marcado devolve uma linha por cor, com tamanho nulo', () => {
+    expect(gerarCombinacoes(['Azul', 'Preto'], [])).toEqual([
+      { cor: 'Azul', tamanho: null },
+      { cor: 'Preto', tamanho: null },
+    ]);
+  });
+
+  it('sem cor e sem tamanho devolve lista vazia — nao inventa uma linha', () => {
+    expect(gerarCombinacoes([], [])).toEqual([]);
+  });
+
+  it('sem cor mas com tamanho devolve uma linha por tamanho, com cor vazia', () => {
+    expect(gerarCombinacoes([], ['P', 'M'])).toEqual([
+      { cor: '', tamanho: 'P' },
+      { cor: '', tamanho: 'M' },
+    ]);
+  });
+
+  it('deduplica e apara cor e tamanho', () => {
+    expect(gerarCombinacoes([' Azul ', 'Azul', ''], ['P', 'P'])).toEqual([
+      { cor: 'Azul', tamanho: 'P' },
+    ]);
+  });
+
+  // Trava LOUD: `proximo_codigo_produto` reserva variacoes.length + 1 codigos de 8 digitos, e o
+  // cartesiano estoura facil. Descobrir o limite em producao (D-5) seria um cadastro perdido.
+  it('acima do limite LANCA com mensagem acionavel, nunca trunca', () => {
+    const cores = Array.from({ length: 13 }, (_, i) => `Cor ${i}`);
+    expect(() => gerarCombinacoes(cores, ['P', 'M', 'G', 'GG', 'Tamanho Único']))
+      .toThrow(/65 variações.*limite de 60/i);
+  });
+
+  it('exatamente no limite nao lanca', () => {
+    const cores = Array.from({ length: 12 }, (_, i) => `Cor ${i}`);
+    expect(gerarCombinacoes(cores, ['P', 'M', 'G', 'GG', 'Tamanho Único']))
+      .toHaveLength(LIMITE_VARIACOES_GERADAS);
+  });
+});
