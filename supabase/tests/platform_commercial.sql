@@ -351,6 +351,7 @@ create table public.ml_vendas_itens (
 \ir ../migrations/20260908022934_platform_org_cost_catalog_distinct.sql
 \ir ../migrations/20260908030002_platform_org_month_metrics.sql
 \ir ../migrations/20260918000000_adr164_implantacao_sobrevive_renegociacao.sql
+\ir ../migrations/20260918010000_platform_commercial_terms_tiers.sql
 
 -- Implantacao > 0: o unico caminho que valida `setup_due_month`. Todos os casos acima usam
 -- `setup_fee_cents = 0`, e foi por isso que a regex quebrada (escape duplo, que exigia barra
@@ -372,7 +373,8 @@ begin
     jsonb_build_object(
       'org_id', '90000000-0000-0000-0000-000000000091',
       'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 0,
-      'revenue_bps', 700, 'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+      'revenue_bps_t1', 700, 'revenue_bps_t2', 700, 'revenue_bps_t3', 700, 'revenue_bps_t4', 700,
+      'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
       'setup_due_month', v_mes, 'reason', 'implantacao com mes valido'
     )
   );
@@ -387,7 +389,8 @@ begin
       jsonb_build_object(
         'org_id', '90000000-0000-0000-0000-000000000091',
         'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 0,
-        'revenue_bps', 700, 'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+        'revenue_bps_t1', 700, 'revenue_bps_t2', 700, 'revenue_bps_t3', 700, 'revenue_bps_t4', 700,
+        'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
         'setup_due_month', '2026-10-01', 'reason', 'mes com dia nao e YYYY-MM'
       )
     );
@@ -417,7 +420,8 @@ begin
     jsonb_build_object(
       'org_id', '90000000-0000-0000-0000-000000000091',
       'starts_on', v_next, 'modality', 2, 'monthly_fee_cents', 0,
-      'revenue_bps', 600, 'sonar_unit_cents', 120, 'setup_fee_cents', 0,
+      'revenue_bps_t1', 600, 'revenue_bps_t2', 600, 'revenue_bps_t3', 600, 'revenue_bps_t4', 600,
+      'sonar_unit_cents', 120, 'setup_fee_cents', 0,
       'setup_due_month', null, 'reason', 'renegociacao depois da implantacao'
     )
   );
@@ -454,7 +458,8 @@ begin
     jsonb_build_object(
       'org_id', '90000000-0000-0000-0000-000000000092',
       'starts_on', v_next, 'modality', 1, 'monthly_fee_cents', 60000,
-      'revenue_bps', 500, 'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+      'revenue_bps_t1', 500, 'revenue_bps_t2', 500, 'revenue_bps_t3', 500, 'revenue_bps_t4', 500,
+      'sonar_unit_cents', 0, 'setup_fee_cents', 300000,
       'setup_due_month', v_mes, 'reason', 'primeiro contrato com implantacao'
     )
   );
@@ -465,7 +470,8 @@ begin
     jsonb_build_object(
       'org_id', '90000000-0000-0000-0000-000000000092',
       'starts_on', v_next, 'modality', 1, 'monthly_fee_cents', 60000,
-      'revenue_bps', 400, 'sonar_unit_cents', 120, 'setup_fee_cents', 0,
+      'revenue_bps_t1', 400, 'revenue_bps_t2', 400, 'revenue_bps_t3', 400, 'revenue_bps_t4', 400,
+      'sonar_unit_cents', 0, 'setup_fee_cents', 0,
       'setup_due_month', null, 'reason', 'ajuste de percentual antes de comecar'
     )
   );
@@ -494,7 +500,8 @@ begin
       jsonb_build_object(
         'org_id', '90000000-0000-0000-0000-000000000092',
         'starts_on', v_next, 'modality', 1, 'monthly_fee_cents', 60000,
-        'revenue_bps', 400, 'sonar_unit_cents', 120, 'setup_fee_cents', 300000,
+        'revenue_bps_t1', 400, 'revenue_bps_t2', 400, 'revenue_bps_t3', 400, 'revenue_bps_t4', 400,
+        'sonar_unit_cents', 0, 'setup_fee_cents', 300000,
         'setup_due_month', v_mes, 'reason', 'tentativa de reaplicar implantacao'
       )
     );
@@ -743,5 +750,91 @@ begin
   ) where month = '2026-08-01';
   if v_max <> '2026-08-20T10:00:00-03:00'::timestamptz then
     raise exception 'source_max_updated_at não refletiu o atualizado_em mais novo: %', v_max;
+  end if;
+end $$;
+
+-- ADR-0165: modalidade 1 nunca cobra Sonar do cliente; modalidade 2 nunca tem infra separada.
+insert into public.organizations (id, nome, slug) values
+  ('90000000-0000-0000-0000-000000000093', 'Org Faixas', 'org-faixas');
+
+do $$
+declare
+  v_current date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+  v_erro text;
+begin
+  begin
+    perform public.platform_save_terms(
+      '80000000-0000-0000-0000-000000000001',
+      jsonb_build_object(
+        'org_id', '90000000-0000-0000-0000-000000000093',
+        'starts_on', v_current, 'modality', 1, 'monthly_fee_cents', 60000,
+        'revenue_bps_t1', 500, 'revenue_bps_t2', 400, 'revenue_bps_t3', 350, 'revenue_bps_t4', 300,
+        'sonar_unit_cents', 120, 'setup_fee_cents', 0, 'setup_due_month', null,
+        'reason', 'modalidade 1 tentando cobrar sonar'
+      )
+    );
+    raise exception 'modalidade 1 com sonar deveria ter sido recusada';
+  exception when sqlstate '22023' then
+    get stacked diagnostics v_erro = message_text;
+    if v_erro not like '%Modalidade 1 não cobra Sonar%' then
+      raise exception 'mensagem inesperada para modalidade 1 com sonar: %', v_erro;
+    end if;
+  end;
+
+  begin
+    perform public.platform_save_terms(
+      '80000000-0000-0000-0000-000000000001',
+      jsonb_build_object(
+        'org_id', '90000000-0000-0000-0000-000000000093',
+        'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 60000,
+        'revenue_bps_t1', 700, 'revenue_bps_t2', 600, 'revenue_bps_t3', 550, 'revenue_bps_t4', 500,
+        'sonar_unit_cents', 120, 'setup_fee_cents', 0, 'setup_due_month', null,
+        'reason', 'modalidade 2 tentando cobrar infra'
+      )
+    );
+    raise exception 'modalidade 2 com infra deveria ter sido recusada';
+  exception when sqlstate '22023' then
+    get stacked diagnostics v_erro = message_text;
+    if v_erro not like '%Modalidade 2 não tem infraestrutura%' then
+      raise exception 'mensagem inesperada para modalidade 2 com infra: %', v_erro;
+    end if;
+  end;
+end $$;
+
+-- Combinação correta: grava as 4 faixas.
+do $$
+declare
+  v_current date := date_trunc('month', now() at time zone 'America/Fortaleza')::date;
+  v_term jsonb;
+begin
+  v_term := public.platform_save_terms(
+    '80000000-0000-0000-0000-000000000001',
+    jsonb_build_object(
+      'org_id', '90000000-0000-0000-0000-000000000093',
+      'starts_on', v_current, 'modality', 1, 'monthly_fee_cents', 60000,
+      'revenue_bps_t1', 500, 'revenue_bps_t2', 400, 'revenue_bps_t3', 350, 'revenue_bps_t4', 300,
+      'sonar_unit_cents', 0, 'setup_fee_cents', 0, 'setup_due_month', null,
+      'reason', 'modalidade 1 correta'
+    )
+  );
+  if (v_term->>'revenue_bps_t1')::int <> 500 or (v_term->>'revenue_bps_t4')::int <> 300 then
+    raise exception 'faixas nao gravadas corretamente: %', v_term;
+  end if;
+end $$;
+
+-- ADR-0165: as 3 organizacoes de producao saem do backfill com as 4 faixas iguais ao revenue_bps
+-- antigo, e Daludi Shop/DSA saem com sonar_unit_cents = 0. Este teste roda contra as orgs A/B/C
+-- criadas no topo deste arquivo (nao as de producao), entao so confere a FORMA do backfill: uma
+-- organizacao criada antes desta migration, com revenue_bps antigo, sai com t1..t4 iguais entre si.
+do $$
+declare
+  v_row public.platform_commercial_terms%rowtype;
+begin
+  select * into v_row from public.platform_commercial_terms
+  where org_id = '90000000-0000-0000-0000-000000000091'
+  order by starts_on desc, version desc limit 1;
+  if v_row.revenue_bps_t1 is null or v_row.revenue_bps_t1 <> v_row.revenue_bps_t2
+    or v_row.revenue_bps_t2 <> v_row.revenue_bps_t3 or v_row.revenue_bps_t3 <> v_row.revenue_bps_t4 then
+    raise exception 'backfill nao preservou o percentual antigo igual nas 4 faixas: %', v_row;
   end if;
 end $$;
