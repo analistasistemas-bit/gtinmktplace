@@ -987,11 +987,114 @@ Em `supabase/tests/platform_billing.sql:22`, logo após
 \ir ../migrations/20260918010100_platform_billing_tiers.sql
 ```
 
-- [ ] **Step 3: Novos casos de teste ao final de `supabase/tests/platform_billing.sql`**
+- [ ] **Step 3: Dividir a fixture "Org Billing" (`...003`) — ela testa infra + Sonar juntos, combinação que a Task 1 tornou ilegal**
 
-Adicione (adapte os UUIDs de organização/actor aos já usados no restante do arquivo, seguindo o
-padrão de fixture de vendas — `ml_vendas` — já existente acima no mesmo arquivo, com uma
-organização nova para isolar o teste):
+`supabase/tests/platform_billing.sql:40` insere um termo para a organização `...003` com
+`modality: 2, monthly_fee_cents: 60000, sonar_unit_cents: 120` — e o bloco de teste em `:76-99`
+verifica infra (60000), percentual (45000) e Sonar (1200) na MESMA prévia. Depois da Task 1/2,
+nenhuma modalidade permite essa combinação (modalidade 1 não cobra Sonar, modalidade 2 não tem
+infra separada). Além disso, esse `insert` usa a coluna `revenue_bps` (singular), removida pela
+Task 1 — ele já quebraria só por isso, independente da questão de modalidade.
+
+**Vira `...003` modalidade 1 (fica com a cobertura de infra), e uma organização nova `...014`
+modalidade 2 (cobertura de Sonar).**
+
+Troque a linha do `insert` de `...003` (dentro do bloco de `insert into
+public.platform_commercial_terms(...)` em `:36-47`):
+
+```sql
+  ('90000000-0000-0000-0000-000000000003',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,60000,500,120,0,null,'billing fixture','80000000-0000-0000-0000-000000000001',1),
+```
+
+por (modalidade 1, sonar zerado, e a lista de colunas do `insert` — compartilhada por todas as
+linhas do `values` — também precisa trocar `revenue_bps` pelas 4 colunas novas; ajuste a lista de
+colunas em `:37-38` de acordo e repita o mesmo `revenue_bps` antigo (500) nas 4 posições em CADA
+linha do `values`, já que nenhuma dessas fixtures testa faixa cruzando corte):
+
+```sql
+  ('90000000-0000-0000-0000-000000000003',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,1,60000,500,500,500,500,0,0,null,'billing fixture','80000000-0000-0000-0000-000000000001',1),
+```
+
+Remova o loop de entregas do Sonar para `...003` (`:61-74`, o `do $$ declare i integer... for i in
+1..10 loop ... insert into public.platform_sonar_deliveries ... values('90000000-0000-0000-0000-000000000003', ...`) — ele inteiro sai, a organização de infra não usa Sonar.
+
+No bloco de teste (`:76-99`), a asserção numérica muda porque não há mais Sonar nessa prévia
+(infra 60000 + percentual 45000 + sonar 0 = 105000, não mais 106200):
+
+```sql
+  if (v_preview->>'gross_cents')::bigint<>1000000 or (v_preview->>'refund_cents')::bigint<>100000
+    or (v_preview->>'base_cents')::bigint<>900000 or (v_preview->>'fee_cents')::bigint<>45000
+    or (v_preview->>'sonar_units')::integer<>10 or (v_preview->>'sonar_cents')::bigint<>1200
+    or (v_preview->>'total_cents')::bigint<>106200 or jsonb_array_length(v_preview->'blockers')<>0 then
+    raise exception 'numeric fixture failed: %',v_preview;
+  end if;
+```
+
+por:
+
+```sql
+  if (v_preview->>'gross_cents')::bigint<>1000000 or (v_preview->>'refund_cents')::bigint<>100000
+    or (v_preview->>'base_cents')::bigint<>900000 or (v_preview->>'fee_cents')::bigint<>45000
+    or (v_preview->>'sonar_units')::integer<>0 or (v_preview->>'sonar_cents')::bigint<>0
+    or (v_preview->>'total_cents')::bigint<>105000 or jsonb_array_length(v_preview->'blockers')<>0 then
+    raise exception 'numeric fixture failed: %',v_preview;
+  end if;
+```
+
+E, mais abaixo no mesmo bloco, `if (v_closed->>'total_cents')::bigint<>106200 then raise exception
+'close changed preview'; end if;` vira `<>105000`. Não toque em mais nada desse bloco — o check de
+revisão errada (`:88-92`) e os dois testes de imutabilidade (`:95-98`) não dependem de Sonar.
+
+Adicione uma organização nova, só para provar que a linha de Sonar continua funcionando quando é a
+modalidade certa que a cobra (insira logo depois do bloco de `...003`, antes do bloco da org
+`...004` "Partial"):
+
+```sql
+insert into public.organizations(id,nome,slug) values
+  ('90000000-0000-0000-0000-000000000014','Org Billing Sonar','org-billing-sonar');
+insert into public.platform_commercial_terms(
+  org_id,starts_on,modality,monthly_fee_cents,
+  revenue_bps_t1,revenue_bps_t2,revenue_bps_t3,revenue_bps_t4,sonar_unit_cents,
+  setup_fee_cents,setup_due_month,reason,created_by,version
+) values
+  ('90000000-0000-0000-0000-000000000014',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,2,0,500,500,500,500,120,0,null,'billing sonar fixture','80000000-0000-0000-0000-000000000001',1);
+insert into public.ml_vendas(id,org_id,order_id,date_closed,total_amount,status,atualizado_em,tem_devolucao,estorno) values
+  ('50000000-0000-0000-0000-000000000014','90000000-0000-0000-0000-000000000014',300014,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '1 day',9000,'paid','2026-07-02T12:00:00Z',false,0),
+  ('50000000-0000-0000-0000-000000000015','90000000-0000-0000-0000-000000000014',300015,date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months'+interval '2 days',1000,'refunded','2026-07-03T12:00:00Z',false,0);
+
+do $$
+declare i integer; v_result uuid; v_search uuid;
+begin
+  for i in 1..10 loop
+    insert into public.platform_sonar_results(normalized_query,query_type,schema_version,generation,payload,state,valid_until)
+      values('billing-sonar-'||i,'termo',1,1,jsonb_build_object('itens',jsonb_build_array(jsonb_build_object('id',i))),'ready',now()+interval '1 day') returning id into v_result;
+    insert into public.platform_sonar_searches(org_id,actor_id,request_id,intent_key,normalized_query,query_type,result_id,state,origin,completed_at)
+      values('90000000-0000-0000-0000-000000000014','80000000-0000-0000-0000-000000000001',gen_random_uuid(),'billing-sonar-'||i,'billing-sonar-'||i,'termo',v_result,'completed','cliente',now()) returning id into v_search;
+    insert into public.platform_sonar_deliveries(org_id,result_id,search_id,actor_id,terms_id,month,unit_cents,units,total_cents)
+      values('90000000-0000-0000-0000-000000000014',v_result,v_search,'80000000-0000-0000-0000-000000000001',
+        (select id from public.platform_resolve_terms('90000000-0000-0000-0000-000000000014',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date)),
+        (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,120,1,120);
+  end loop;
+end $$;
+
+do $$
+declare v_month date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
+declare v_preview jsonb; v_closed jsonb;
+begin
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000014',v_month);
+  if (v_preview->>'fee_cents')::bigint<>45000 or (v_preview->>'sonar_units')::integer<>10
+    or (v_preview->>'sonar_cents')::bigint<>1200 or (v_preview->>'total_cents')::bigint<>46200
+    or jsonb_array_length(v_preview->'blockers')<>0 then
+    raise exception 'org modalidade 2 com sonar: numeric fixture failed: %',v_preview;
+  end if;
+  v_closed:=public.platform_billing_close('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000014',v_month,v_preview->>'revision');
+  if (v_closed->>'total_cents')::bigint<>46200 then raise exception 'close changed preview (org sonar)'; end if;
+end $$;
+```
+
+- [ ] **Step 4: Novos casos de teste ao final de `supabase/tests/platform_billing.sql`**
+
+Adicione ao final do arquivo:
 
 ```sql
 -- ADR-0165: platform_terms_tier escolhe a faixa certa nos pontos de borda dos cortes fixos
@@ -1013,9 +1116,9 @@ begin
 end $$;
 ```
 
-Além disso, localize (no mesmo arquivo) o teste que já monta uma prévia (`platform_billing_preview`)
-com uma organização e vendas fixture, e adicione as asserções abaixo logo após a chamada existente a
-`platform_billing_preview`:
+No bloco de teste da organização `...003` (o mesmo que o Step 3 acima já editou — variáveis
+`v_preview`/`v_closed`), adicione as duas asserções abaixo logo após a chamada existente a
+`platform_billing_preview` (a mesma que agora afirma `total_cents<>105000`):
 
 ```sql
   if (v_preview->>'applied_bps') is null then
@@ -1026,24 +1129,35 @@ com uma organização e vendas fixture, e adicione as asserções abaixo logo ap
   end if;
 ```
 
-E, se esse mesmo teste chegar a chamar `platform_billing_close`, adicione depois:
+E, logo após a chamada existente a `platform_billing_close` (a que atribui `v_closed`, mesmo bloco):
 
 ```sql
-  if (select revenue_bps from public.platform_billing_statements where id = (v_fechado->>'id')::uuid)
+  if (select revenue_bps from public.platform_billing_statements where id = (v_closed->>'id')::uuid)
       <> (v_preview->>'applied_bps')::integer then
     raise exception 'close deveria gravar applied_bps em statements.revenue_bps';
   end if;
 ```
 
-(ajuste os nomes de variável `v_preview`/`v_fechado` para os já usados no bloco existente do
-arquivo — o objetivo é reaproveitar o cenário de dados já montado, não recriar um novo).
+- [ ] **Step 5: Rodar a suíte SQL de verdade e confirmar verde**
 
-- [ ] **Step 4: Rodar a suíte SQL e confirmar verde**
+`psql` não está direto no PATH deste ambiente, mas há um container Docker local do Supabase dev
+rodando (`docker ps | grep supabase_db`) com o banco de teste dedicado
+`codex_platform_admin_test_20260906` já criado dentro dele:
 
-Run: `psql -U supabase_admin -d codex_platform_admin_test_20260906 -f supabase/tests/platform_billing.sql`
-Expected: sem `ERROR`.
+```bash
+docker cp supabase/tests <container>:/tmp/sdd-test/supabase/tests
+docker cp supabase/migrations <container>:/tmp/sdd-test/supabase/migrations
+docker exec -w /tmp/sdd-test/supabase/tests <container> psql -U supabase_admin \
+  -d codex_platform_admin_test_20260906 -v ON_ERROR_STOP=1 -f platform_billing.sql
+```
 
-- [ ] **Step 5: Commit**
+(substitua `<container>` pelo nome real do `docker ps`; refaça os dois `docker cp` sempre que os
+arquivos locais mudarem — a cópia no container é um snapshot, não um mount.)
+Expected: `exit 0`, sem `ERROR`/`EXCEPTION` na saída. Cole a saída real (ou pelo menos confirme
+código de saída) no relatório — não é aceitável reportar "não consegui testar" quando esse caminho
+existe.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add supabase/migrations/20260918010100_platform_billing_tiers.sql supabase/tests/platform_billing.sql
@@ -2265,7 +2379,29 @@ Run: `pnpm preflight` (ou `pnpm preflight:static` se for o portão de pré-push 
 está ativo no momento da execução)
 Expected: verde. É o portão real de pré-push deste projeto — não considerar a entrega pronta sem ele.
 
-- [ ] **Step 7: Documentar/lembrar a ordem de deploy em produção** (não é comando local — é o que o
+- [ ] **Step 7: Medir produção ANTES do `db push`** (achado da revisão da Task 1 — a asserção de
+contagem foi removida da migration por travar qualquer banco de teste do zero; isso move a
+responsabilidade de "nenhuma linha fica sem corrigir/sem satisfazer a constraint" para uma medição
+manual, feita uma vez, contra o banco real, antes do `db push` rodar):
+
+Rode contra produção (read-only, via Management API/CLI conforme já é praxe no projeto):
+
+```sql
+-- Espera exatamente Daludi Shop e DSA (2 organizações) — são as que a migration corrige.
+select org_id, count(*), array_agg(distinct sonar_unit_cents)
+  from platform_commercial_terms where modality = 1 and sonar_unit_cents <> 0 group by org_id;
+
+-- Espera 0 — senão o ADD CONSTRAINT platform_commercial_terms_modality_shape (sem NOT VALID)
+-- aborta o db push, porque validaria essa linha e ela falharia.
+select count(*) from platform_commercial_terms where modality = 2 and monthly_fee_cents <> 0;
+```
+
+Se a primeira trouxer qualquer organização além de Daludi Shop/DSA, ou a segunda vier diferente de
+0: **pare, não rode o `db push`** — o dado real de produção divergiu do medido em 2026-09-18 quando
+este design foi fechado, e a migration precisa ser revisada antes de aplicar (não é situação para
+seguir "porque o plano manda").
+
+- [ ] **Step 8: Documentar/lembrar a ordem de deploy em produção** (não é comando local — é o que o
 orquestrador roda ao aprovar o merge, por causa da regra do projeto de nunca deixar Edge Functions
 defasadas):
 
@@ -2277,7 +2413,7 @@ defasadas):
    projeto para mudança em `_shared/`).
 4. Só então merge/push do front na `main`.
 
-- [ ] **Step 8: Commit final (se sobrar algo solto de lint/format automático)**
+- [ ] **Step 9: Commit final (se sobrar algo solto de lint/format automático)**
 
 ```bash
 git add -A
