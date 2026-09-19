@@ -1851,9 +1851,14 @@ usada num painel admin premium):
 
 (os 4 `aria-label` ficam idênticos aos que já existiam — nenhum teste que usa `getByLabelText`
 precisa mudar por causa deste agrupamento; só o texto VISÍVEL dentro de cada `label` encurtou, já
-que o `aria-label` carrega a descrição completa. Com o wrapper, a contagem de itens de 1 coluna
-antes do `Motivo` volta a ser par: Modalidade, Infraestrutura, [4 faixas = 1 item], Sonar,
-Implantação, Mês da implantação = 6, igual a antes desta task.)
+que o `aria-label` carrega a descrição completa.
+
+**Atenção — isto sozinho NÃO resta a paridade do grid** (achado da 2ª rodada de revisão: o cálculo
+"vira 6 itens, par" da 1ª rodada estava errado. O que decide se sobra buraco não é o número total de
+itens, é o tamanho do *run* de itens de largura 1 entre um bloco de largura 2 e o próximo — o wrapper
+das faixas é `md:col-span-2`, ocupa a própria linha, e o run seguinte [Sonar, Implantação, Mês da
+implantação] tem 3 itens de largura 1, ímpar, sobrando buraco antes do `Motivo`. Corrija isso
+também, ver logo abaixo, DEPOIS de editar o bloco do Sonar.)
 
 Troque o bloco `terms-sonar` — adicione `disabled`:
 
@@ -1879,6 +1884,96 @@ por:
                 onChange={(event) => set('sonar', event.target.value)}
               />
 ```
+
+**Correção real da paridade do grid** (achado da 2ª rodada): agrupe os 3 campos seguintes — Sonar,
+Implantação e Mês da implantação — no MESMO `<label>`/`<Input>` de cada um, só que dentro de um
+wrapper `md:col-span-2` com sub-grid de 3 colunas, do mesmo jeito que o grupo de faixas. Sem label de
+grupo aqui (não são uma unidade conceitual, é só correção de layout — cada campo já tem seu próprio
+rótulo). Troque o trecho (os 3 blocos `<label>` inteiros de `terms-sonar`, `terms-setup` e
+`terms-setup-month`, já com a trava do Sonar aplicada acima):
+
+```tsx
+            <label className="space-y-1 text-sm" htmlFor="terms-sonar">
+              <span className="font-medium">Sonar por consulta</span>
+              <Input
+                id="terms-sonar"
+                aria-label="Sonar por consulta"
+                inputMode="decimal"
+                disabled={form.modality === '1'}
+                value={form.modality === '1' ? '0,00' : form.sonar}
+                onChange={(event) => set('sonar', event.target.value)}
+              />
+            </label>
+            <label className="space-y-1 text-sm" htmlFor="terms-setup">
+              <span className="font-medium">Implantação</span>
+              <Input
+                id="terms-setup"
+                aria-label="Implantação"
+                inputMode="decimal"
+                disabled={!isFirstContract}
+                value={form.setup}
+                onChange={(event) => set('setup', event.target.value)}
+              />
+            </label>
+            <label className="space-y-1 text-sm" htmlFor="terms-setup-month">
+              <span className="font-medium">Mês da implantação</span>
+              <Input
+                id="terms-setup-month"
+                aria-label="Mês da implantação"
+                type="month"
+                disabled={!isFirstContract}
+                value={form.setupDueMonth}
+                onChange={(event) => set('setupDueMonth', event.target.value)}
+              />
+            </label>
+```
+
+por:
+
+```tsx
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 md:col-span-2">
+              <label className="space-y-1 text-sm" htmlFor="terms-sonar">
+                <span className="font-medium">Sonar por consulta</span>
+                <Input
+                  id="terms-sonar"
+                  aria-label="Sonar por consulta"
+                  inputMode="decimal"
+                  disabled={form.modality === '1'}
+                  value={form.modality === '1' ? '0,00' : form.sonar}
+                  onChange={(event) => set('sonar', event.target.value)}
+                />
+              </label>
+              <label className="space-y-1 text-sm" htmlFor="terms-setup">
+                <span className="font-medium">Implantação</span>
+                <Input
+                  id="terms-setup"
+                  aria-label="Implantação"
+                  inputMode="decimal"
+                  disabled={!isFirstContract}
+                  value={form.setup}
+                  onChange={(event) => set('setup', event.target.value)}
+                />
+              </label>
+              <label className="space-y-1 text-sm" htmlFor="terms-setup-month">
+                <span className="font-medium">Mês da implantação</span>
+                <Input
+                  id="terms-setup-month"
+                  aria-label="Mês da implantação"
+                  type="month"
+                  disabled={!isFirstContract}
+                  value={form.setupDueMonth}
+                  onChange={(event) => set('setupDueMonth', event.target.value)}
+                />
+              </label>
+            </div>
+```
+
+(os 3 `aria-label` continuam idênticos — nenhum teste muda por causa disto. Com isto, TODO item de
+nível superior do formulário passa a ser largura 2 depois da primeira linha [Modalidade,
+Infraestrutura]: `[Modalidade, Infra]`(preenche a linha 1) → `[Faixas]`(span2, linha própria) →
+`[Sonar+Implantação+Mês]`(span2, linha própria) → `[Início da vigência]`(span2, condicional, linha
+própria) → `[Motivo]`(span2, linha própria). Nenhum bloco span-2 nunca sobra num resto de linha
+parcialmente ocupada — zero buraco possível, independente de quais campos são condicionais.)
 
 - [ ] **Step 4: Card-resumo e histórico — mostrar a faixa, não um número só**
 
