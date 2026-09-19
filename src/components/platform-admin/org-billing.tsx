@@ -78,7 +78,7 @@ function Composition({ preview }: { preview: BillingPreview }) {
   const rows = [
     ['Receita bruta', preview.gross_cents],
     ['Ajustes da base', -preview.refund_cents || 0],
-    [`Percentual (${humanPercent(preview.terms?.revenue_bps)})`, preview.fee_cents],
+    [`Percentual (${humanPercent(preview.applied_bps)})`, preview.fee_cents],
     ['Infraestrutura', infrastructure],
     [`Consultas Sonar (${preview.sonar_units})`, preview.sonar_cents],
     ['Implantação', setup],

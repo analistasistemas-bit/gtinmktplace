@@ -41,8 +41,11 @@ const terms: CommercialTerms = {
   org_id: 'org-a',
   starts_on: '2026-08-01',
   modality: 2,
-  monthly_fee_cents: 60_000,
-  revenue_bps: 500,
+  monthly_fee_cents: 0,
+  revenue_bps_t1: 500,
+  revenue_bps_t2: 400,
+  revenue_bps_t3: 350,
+  revenue_bps_t4: 300,
   sonar_unit_cents: 120,
   setup_fee_cents: 0,
   setup_due_month: null,
@@ -64,14 +67,16 @@ function makePreview(overrides: Partial<BillingPreview> = {}): BillingPreview {
     refund_cents: 100_000,
     base_cents: 900_000,
     fee_cents: 45_000,
+    applied_bps: 500,
+    applied_tier: 1,
     sonar_units: 10,
     sonar_cents: 1_200,
     lines: [
-      { key: 'infrastructure', label: 'Infraestrutura', quantity: 1, unit_cents: 60_000, amount_cents: 60_000, source_type: 'commercial_terms', source_id: 'terms-1' },
+      { key: 'infrastructure', label: 'Infraestrutura', quantity: 1, unit_cents: 0, amount_cents: 0, source_type: 'commercial_terms', source_id: 'terms-1' },
       { key: 'revenue', label: 'Remuneração sobre vendas', quantity: null, unit_cents: null, amount_cents: 45_000, source_type: 'sales', source_id: null },
       { key: 'sonar', label: 'Consultas Sonar', quantity: 10, unit_cents: 120, amount_cents: 1_200, source_type: 'sonar_deliveries', source_id: null },
     ],
-    total_cents: 106_200,
+    total_cents: 46_200,
     credit_cents: 0,
     credit_balance_cents: 0,
     adjustments: [],
@@ -209,7 +214,7 @@ describe('OrgBilling', () => {
 
     await user.click(screen.getByRole('button', { name: 'Exportar snapshot' }));
     expect(mocks.report).toMatchObject({
-      kpis: [{ label: 'Total', valor: expect.stringContaining('1.062,00') }],
+      kpis: [{ label: 'Total', valor: expect.stringContaining('462,00') }],
     });
   });
 
