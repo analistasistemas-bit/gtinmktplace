@@ -2222,6 +2222,12 @@ const [confirmar, setConfirmar] = useState<{ titulo: string; texto: string; rotu
 
 **Passo 0** só existe quando `tipos.length > 1 && tipoEscolhido === null`: um `<Button>` por tipo habilitado, rotulado `Roupa` / `Calçado`, com `onClick={() => setTipoManual(t)}`. Com 1 tipo só, `tipoEscolhido` já é não-nulo e a tela abre direto no cabeçalho.
 
+**Gate explícito do cabeçalho (achado da revisão final do Fable):** o cabeçalho (Nome/Descrição/…)
+só renderiza quando `tipoEscolhido !== null`. Com `tipos.length === 0` (query ainda em voo, `data`
+undefined) o dialog mostra só o título, sem passo 0 e sem cabeçalho — não é o mesmo estado de "org
+sem tipo nenhum" nem de "escolher entre Roupa/Calçado". Gatear por "não é passo 0" em vez de por
+`tipoEscolhido !== null` faria esse instante intermediário cair errado num dos dois outros ramos.
+
 **Reset ao FECHAR** (mesmo padrão do dialog atual: efeito com `if (aberto) return;`). `tipoManual`
 entra no reset junto com o resto do formulário — senão reabrir o dialog numa org de 2 tipos pularia
 o passo 0 e cairia direto no tipo da sessão anterior:
@@ -2555,7 +2561,7 @@ function submeter() {
 }
 ```
 
-O congelamento é `desabilitado={api.salvando}` propagado a `GeradorVariacoes` e a cada `LinhaGradeForm`. A numeração do título segue o padrão do dialog atual, com um passo a mais quando há escolha de tipo: `etapa N de M`, `M = 2 + (fiscalAtivo ? 1 : 0) + (tipos.length > 1 ? 1 : 0)`.
+O congelamento é `desabilitado={api.salvando}` propagado a `GeradorVariacoes` e a cada `LinhaGradeForm`. **Título fixo:** `` `Cadastrar em grade · etapa ${n} de ${M}` `` — o texto base "Cadastrar em grade" é literal, não herdado do dialog atual (achado da revisão final do Fable: o teste da Task 10 ancora em `/grade/i` dentro do dialog, e sem essa palavra explícita no título ele só passaria de carona pela dica de texto do `GeradorVariacoes`, uma âncora frágil). Numeração segue o padrão do dialog atual: `M = 2 + (fiscalAtivo ? 1 : 0) + (tipos.length > 1 ? 1 : 0)`.
 
 A etapa 2 reaproveita `EtapaFotos` sem nenhuma adaptação de contrato — a foto já vem resolvida.
 Duas travas, as mesmas do dialog normal (Task 1, Step 5):
