@@ -334,6 +334,51 @@ essa chave de propósito — adicionar uma faria `montarLinhasChart` tentar e fa
 quando falhar cedo (na nossa validação) com mensagem clara é o comportamento correto até o ML
 oferecer o valor em `FILTRABLE_SIZE` para algum domínio.
 
+## 13. Calçado (FOOTWEAR) — contrato real, diferente de vestuário (achado real, 2026-09-19)
+
+**Gatilho:** pedido do Diego após a publicação real de roupa aprovada — "veja agora a de
+sapato/sandalias". Testado com chamadas reais contra `MLB23332` (Tênis, domínio `SNEAKERS`) e
+`MLB273770` (Sandálias e Chinelos, domínio `SANDALS_AND_CLOGS`).
+
+**CONFIRMADO — FOOTWEAR usa `BR_SIZE` + `FOOT_LENGTH`, não `SIZE`/`FILTRABLE_SIZE`/
+`CHEST_CIRCUMFERENCE_FROM` de vestuário.** `POST /catalog/charts` com uma linha `SIZE`+
+`FILTRABLE_SIZE` (formato de vestuário) devolveu `main_attribute_default_error` — não é o mesmo
+contrato. `GET /domains/SANDALS_AND_CLOGS/technical_specs?section=grids` lista `FOOT_LENGTH`,
+`FOOT_LENGTH_TO` e várias colunas regionais (`BR_SIZE`, `US_SIZE`, `EU_SIZE`...). Testado direto
+contra a API real até acertar: `main_attribute: {"id":"BR_SIZE"}`, linha com `BR_SIZE` (formato
+`{"values":[{"name":"37 BR","struct":{"number":37,"unit":"BR"}}]}`) + `FOOT_LENGTH` (mesmo
+formato `struct`, unidade `cm`) — **sem** o atributo `SIZE` na linha (o ML recusa com
+`invalid_row_attribute` se `SIZE` estiver presente; a resposta devolve um `SIZE` derivado
+automaticamente do `BR_SIZE`). Chart real criado: id `8077736` (feminino, linha 37).
+
+**CONFIRMADO — `SNEAKERS` (e mais 4 domínios) têm chart STANDARD OFICIAL do próprio ML, pronto,
+com dado real de comprimento de pé — não precisamos criar nada.** `POST
+/catalog/charts/domains/search` com `{"type":"STANDARD","site_id":"MLB"}` lista os domínios que
+têm: `BOOTS_AND_BOOTIES`, `SNEAKERS`, `SNEAKERS_TEST`, `FOOTBALL_SHOES`, `LOAFERS_AND_OXFORDS`.
+`SANDALS_AND_CLOGS` **não está nessa lista** (testado, resposta idêntica com/sem filtro de
+`domain_id` — a lista de domínios com STANDARD parece fixa, não filtrada pelo parâmetro).
+
+**CONFIRMADO — como buscar o chart STANDARD real:** `POST /catalog/charts/search` com
+`{"type":"STANDARD","domain_id":"SNEAKERS","site_id":"MLB","attributes":[{"id":"GENDER","values":[{"id":"<gender_id>","name":"<nome>"}]}]}`
+(o filtro `GENDER` é obrigatório — sem ele, `required_filter_missing`). Devolve o chart completo,
+com `rows` já preenchidas pelo ML:
+
+- **Masculino: chart id `210058`**, 16 linhas, `33 BR`→`22,5 cm` até `48 BR`→`33 cm`.
+- **Feminino: chart id `210059`**, 12 linhas, `33 BR`→`22 cm` até `44 BR`→`29,3 cm` (não vai até
+  48 como o masculino).
+- **"Sem gênero" (unissex): `charts: []`** — o ML **não publica** chart STANDARD unissex.
+  `COMPRIMENTO_PE_CM` (`_shared/ml/size-chart.ts`) reaproveita a tabela masculino para unissex —
+  decisão registrada, não silenciosa; cobre a faixa 33-48 inteira (a feminino pararia em 44).
+
+**CONFIRMADO — o número (`struct.number`) é a chave estável entre chart STANDARD e SPECIFIC.**
+`SIZE`/`BR_SIZE` sempre trazem `struct: {number: <int>, unit: ...}` — usar esse número (não o
+texto "37 BR") pra casar com `variacoes.tamanho` ("37"), que não tem o sufixo " BR".
+
+**NÃO CONFIRMADO:** `BOOTS_AND_BOOTIES`, `FOOTBALL_SHOES`, `LOAFERS_AND_OXFORDS` (STANDARD listado
+mas não testado — `garantirChart` ainda não os inclui em `DOMINIOS_CALCADO_STANDARD`, adicionar
+exige o mesmo teste feito aqui pra `SNEAKERS`, não presumir). Numeração infantil/bebê e domínios
+de calçado infantil — fora de escopo do pedido do Diego, não investigados.
+
 ## Achado que redesenha a Fase 5 (resumo para o checkpoint Fable)
 
 A seção 2 é o achado que mais importa: **nenhuma das categorias de vestuário/calçado testadas

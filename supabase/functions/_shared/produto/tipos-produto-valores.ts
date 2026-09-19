@@ -17,7 +17,14 @@ export const TIPOS_PRODUTO_VALIDOS = ['roupa', 'calcado'] as const;
 export const TAMANHOS_ROUPA = ['P', 'M', 'G', 'GG', 'Tamanho Único'] as const;
 
 /** Numeração adulta brasileira + os pares de meio-número que o ML usa. A seção 10 do spike 051
- *  confirma a lista contra a categoria real; ajustar é editar UMA linha, aqui. */
+ *  confirma a lista contra a categoria real; ajustar é editar UMA linha, aqui.
+ *
+ *  Achado real (§13, 2026-09-19): os pares ("33/34" etc.) e as numerações femininas 45/46 são
+ *  válidos para CADASTRO (o operador pode escolher), mas não têm guia de tamanhos possível no ML
+ *  hoje — `_shared/ml/size-chart.ts` (`COMPRIMENTO_PE_CM`) cobre só números isolados, 33-48
+ *  masculino/unissex e 33-44 feminino (dado real do chart STANDARD do próprio ML). Uma família
+ *  nesses valores cadastra normal e falha alto só na hora de publicar, com mensagem explicando o
+ *  motivo real — não é bug, é limite confirmado do catálogo. */
 export const NUMERACOES_CALCADO = [
   '33', '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46',
   '33/34', '35/36', '37/38', '39/40', '41/42', '43/44', '45/46',

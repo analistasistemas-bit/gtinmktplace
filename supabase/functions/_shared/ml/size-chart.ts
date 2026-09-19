@@ -19,10 +19,45 @@ export const GENDER_VALUE: Record<Genero, { id: string; nome: string }> = {
 // peito aplicável, falha alto em vez de inventar (nunca CLAUDE.md "inventar dado de produto").
 export const CONTORNO_PEITO_CM: Readonly<Record<string, number>> = { P: 88, M: 96, G: 104, GG: 112 };
 
-// Spike 051 §3/§7: domínios com a coluna de medida confirmada (CHEST_CIRCUMFERENCE_FROM) via
-// POST /catalog/charts real. Qualquer outro domínio falha alto — a coluna exigida não foi
-// confirmada, adivinhar aqui seria inventar payload de marketplace.
-export const DOMINIOS_SUPORTADOS = new Set(['JACKETS_AND_COATS', 'SPORT_T_SHIRTS']);
+// Spike 051 §13 (2026-09-19): FOOTWEAR usa BR_SIZE + FOOT_LENGTH, não SIZE/FILTRABLE_SIZE/
+// CHEST_CIRCUMFERENCE — confirmado via POST /catalog/charts real contra SANDALS_AND_CLOGS. Os
+// valores vêm do chart STANDARD que o PRÓPRIO ML publica (GET via /catalog/charts/search,
+// type=STANDARD, domain_id=SNEAKERS): masculino = chart 210058, feminino = chart 210059. Não é
+// tabela inventada — é dado publicado pelo Mercado Livre, só copiado literalmente.
+export const COMPRIMENTO_PE_CM: Readonly<Record<'masculino' | 'feminino', Readonly<Record<string, number>>>> = {
+  masculino: {
+    33: 22.5, 34: 23, 35: 23.5, 36: 24, 37: 24.5, 38: 25, 39: 25.5, 40: 26.5,
+    41: 27.5, 42: 28, 43: 29, 44: 30, 45: 30.5, 46: 31, 47: 32, 48: 33,
+  },
+  feminino: {
+    33: 22, 34: 22.7, 35: 23.3, 36: 24, 37: 24.7, 38: 25.3, 39: 26, 40: 26.7,
+    41: 27.3, 42: 28, 43: 28.6, 44: 29.3,
+  },
+};
+
+/** O ML não publica chart STANDARD "Sem gênero" (testado, `POST /catalog/charts/search` com
+ *  `GENDER=Sem gênero` devolve `charts: []` — Spike 051 §13). Unissex reaproveita a tabela
+ *  masculino: cobre 33-48 por completo (a faixa inteira de `NUMERACOES_CALCADO`), enquanto a
+ *  feminino para em 44. Assunção — sinalizada ao Diego, não decisão silenciosa. */
+export function tabelaComprimentoPe(genero: Genero): Readonly<Record<string, number>> {
+  return genero === 'feminino' ? COMPRIMENTO_PE_CM.feminino : COMPRIMENTO_PE_CM.masculino;
+}
+
+// Spike 051 §3/§7: domínios de vestuário com a coluna de medida confirmada
+// (CHEST_CIRCUMFERENCE_FROM) via POST /catalog/charts real.
+export const DOMINIOS_VESTUARIO = new Set(['JACKETS_AND_COATS', 'SPORT_T_SHIRTS']);
+
+// Spike 051 §13: SNEAKERS tem chart STANDARD oficial do ML (não criamos, só buscamos e
+// referenciamos — sem risco de inventar medida). SANDALS_AND_CLOGS não tem STANDARD (testado,
+// `/catalog/charts/domains/search` não lista) — cria SPECIFIC com COMPRIMENTO_PE_CM.
+export const DOMINIOS_CALCADO_STANDARD = new Set(['SNEAKERS']);
+export const DOMINIOS_CALCADO_SPECIFIC = new Set(['SANDALS_AND_CLOGS']);
+
+// Qualquer outro domínio falha alto — a coluna exigida (ou a disponibilidade de STANDARD) não
+// foi confirmada, adivinhar aqui seria inventar payload de marketplace.
+export const DOMINIOS_SUPORTADOS = new Set([
+  ...DOMINIOS_VESTUARIO, ...DOMINIOS_CALCADO_STANDARD, ...DOMINIOS_CALCADO_SPECIFIC,
+]);
 
 export interface ChartResolvido {
   chartId: string;
@@ -76,6 +111,18 @@ export function mensagemForaDoSuperset(foraDoSuperset: readonly string[]): strin
   return `Guia de tamanhos: ${partes.join('; ')}.`;
 }
 
+/** Numeração fora de `COMPRIMENTO_PE_CM` (ex.: pares como "33/34", de `NUMERACOES_CALCADO`) não
+ *  tem correspondência de comprimento de pé — nem o ML nem nós sabemos que medida usar pra um par
+ *  de numerações num único SKU. Mensagem específica, mesmo padrão de "Tamanho Único" (§12): deixa
+ *  claro que é limite real, não lacuna de mapeamento a corrigir. */
+export function mensagemNumeracaoNaoSuportada(foraDaTabela: readonly string[]): string {
+  return (
+    `Guia de tamanhos: numeração(ões) ${foraDaTabela.join(', ')} sem comprimento de pé confirmado `
+    + '— o Mercado Livre exige uma medida por numeração e não há uma referência real para pares '
+    + '(ex.: "33/34") ou fora da faixa 33-48; publicação bloqueada em vez de inventar payload.'
+  );
+}
+
 interface LinhaAtributo { id: string; values: Array<{ id?: string; name: string }>; }
 interface LinhaChart { attributes: LinhaAtributo[]; }
 
@@ -114,6 +161,41 @@ export function parseLinhasResposta(
   for (const row of rows) {
     const nomeTamanho = row.attributes.find((a) => a.id === 'SIZE')?.values?.[0]?.name;
     if (nomeTamanho) mapa.set(nomeTamanho, row.id);
+  }
+  return mapa;
+}
+
+/** Monta as linhas de um chart de calçado (BR_SIZE + FOOT_LENGTH, achado real Spike 051 §13 —
+ *  diferente do formato de vestuário). `comprimentoPeCm` vem de `COMPRIMENTO_PE_CM` (dado real do
+ *  ML, nunca inventado). Falha alto se a numeração não tiver comprimento confirmado. */
+export function montarLinhasChartCalcado(
+  numeracoes: readonly string[],
+  comprimentoPeCm: Readonly<Record<string, number>>,
+): LinhaChart[] {
+  return numeracoes.map((n) => {
+    const cm = comprimentoPeCm[n];
+    if (cm == null) throw new Error(mensagemNumeracaoNaoSuportada([n]));
+    return {
+      attributes: [
+        { id: 'BR_SIZE', values: [{ name: `${n} BR`, struct: { number: Number(n), unit: 'BR' } }] },
+        { id: 'FOOT_LENGTH', values: [{ name: `${cm} cm`, struct: { number: cm, unit: 'cm' } }] },
+      ],
+    };
+  });
+}
+
+/** Extrai numeração→row_id de um chart de calçado — funciona tanto pra chart STANDARD do ML
+ *  (atributo `SIZE`, nome "40 BR") quanto pra chart SPECIFIC nosso (atributo `BR_SIZE`) — os dois
+ *  têm `struct.number` real (achado Spike 051 §13), então a chave normalizada é sempre o número
+ *  puro ("40"), o mesmo formato que `variacoes.tamanho` usa. */
+export function parseLinhasCalcado(
+  rows: readonly { id: string; attributes: readonly { id: string; values?: readonly { struct?: { number?: number } }[] }[] }[],
+): Map<string, string> {
+  const mapa = new Map<string, string>();
+  for (const row of rows) {
+    const attr = row.attributes.find((a) => a.id === 'SIZE' || a.id === 'BR_SIZE');
+    const numero = attr?.values?.[0]?.struct?.number;
+    if (numero != null) mapa.set(String(numero), row.id);
   }
   return mapa;
 }
@@ -169,60 +251,121 @@ export async function garantirChart(
     return { chartId: cached.chart_id as string, linhaPorTamanho };
   }
 
+  const resolvido = DOMINIOS_CALCADO_STANDARD.has(domainId)
+    ? await buscarChartStandardCalcado(token, domainId, genero, tamanhos)
+    : DOMINIOS_CALCADO_SPECIFIC.has(domainId)
+      ? await criarChartCalcadoEspecifico(token, domainId, genero, tamanhos)
+      : await criarChartVestuario(token, categoriaId, domainId, genero, tamanhos);
+
+  // Duas publicações concorrentes (mesma conexão+domínio+gênero, 1ª vez) podem criar 2 charts em
+  // paralelo — inofensivo (o ML aceita, cada uma referencia o seu), mas o insert aqui pode colidir
+  // se a PK já tiver a linha da outra corrida. Não é erro fatal: logar e seguir com o chart que
+  // ESTA chamada acabou de resolver (é o que o payload desta publicação já referencia).
+  const { error: insertErr } = await admin.from('ml_size_charts').insert({
+    connection_id: connectionId, domain_id: domainId, genero,
+    chart_id: resolvido.chartId, linhas: Object.fromEntries(resolvido.linhaPorTamanho),
+  });
+  if (insertErr) console.error('ml_size_charts insert falhou (chart resolvido, cache não salvo):', insertErr.message);
+
+  return resolvido;
+}
+
+/** Vestuário (JACKETS_AND_COATS/SPORT_T_SHIRTS): cria um chart SPECIFIC com o superset de
+ *  CONTORNO_PEITO_CM (ADR-0167 Decisão 2 — nunca só os tamanhos desta família). */
+async function criarChartVestuario(
+  token: string, categoriaId: string, domainId: string, genero: Genero, tamanhos: readonly string[],
+): Promise<ChartResolvido> {
   const schema = await lerSchemaAtributos(token, categoriaId);
   const sizeAttr = schema.find((a) => a.id === 'SIZE');
   const filtravelAttr = schema.find((a) => a.id === 'FILTRABLE_SIZE');
   if (!sizeAttr || !filtravelAttr) {
     throw new Error('Guia de tamanhos: schema da categoria não trouxe SIZE/FILTRABLE_SIZE.');
   }
-
-  // ADR-0167 Decisão 2: o chart nasce com o SUPERSET de tamanhos com medida confirmada (nunca só
-  // os desta família) — senão a 1ª família (ex.: P/M/G) cacheia um chart que a 2ª família (ex.:
-  // com GG) não cobre, virando uma armadilha one-shot. Superset = interseção entre
-  // CONTORNO_PEITO_CM (medidas confirmadas) e a lista real de SIZE da categoria.
   const supersetTamanhos = Object.keys(CONTORNO_PEITO_CM)
     .filter((t) => sizeAttr.valores.some((v) => v.nome === t));
   const foraDoSuperset = tamanhos.filter((t) => !supersetTamanhos.includes(t));
-  if (foraDoSuperset.length > 0) {
-    throw new Error(mensagemForaDoSuperset(foraDoSuperset));
-  }
+  if (foraDoSuperset.length > 0) throw new Error(mensagemForaDoSuperset(foraDoSuperset));
 
   const rows = montarLinhasChart(supersetTamanhos, sizeAttr.valores, filtravelAttr.valores);
-  const genderValue = GENDER_VALUE[genero];
+  const respJson = await postCatalogChart(token, domainId, genero, supersetTamanhos, 'SIZE', rows);
+  return { chartId: String(respJson.id), linhaPorTamanho: parseLinhasResposta(respJson.rows) };
+}
 
+/** SANDALS_AND_CLOGS (sem chart STANDARD do ML): cria um SPECIFIC com o superset de
+ *  COMPRIMENTO_PE_CM (dado real do ML, ver Spike 051 §13 — nunca inventado). */
+async function criarChartCalcadoEspecifico(
+  token: string, domainId: string, genero: Genero, tamanhos: readonly string[],
+): Promise<ChartResolvido> {
+  const tabela = tabelaComprimentoPe(genero);
+  const supersetNumeracoes = Object.keys(tabela);
+  const foraDaTabela = tamanhos.filter((n) => !supersetNumeracoes.includes(n));
+  if (foraDaTabela.length > 0) throw new Error(mensagemNumeracaoNaoSuportada(foraDaTabela));
+
+  const rows = montarLinhasChartCalcado(supersetNumeracoes, tabela);
+  const respJson = await postCatalogChart(token, domainId, genero, supersetNumeracoes, 'BR_SIZE', rows);
+  return { chartId: String(respJson.id), linhaPorTamanho: parseLinhasCalcado(respJson.rows) };
+}
+
+interface RespostaChart { id: number | string; rows: never[]; }
+
+/** `POST /catalog/charts` — contrato comum aos dois SPECIFIC (vestuário e calçado); só o
+ *  `main_attribute` e as `rows` mudam entre eles. */
+async function postCatalogChart(
+  token: string, domainId: string, genero: Genero, tamanhos: readonly string[],
+  mainAttributeId: string, rows: LinhaChart[],
+): Promise<RespostaChart> {
+  const genderValue = GENDER_VALUE[genero];
   const body = {
-    names: { MLB: nomeChart(domainId, genero, supersetTamanhos) },
+    names: { MLB: nomeChart(domainId, genero, tamanhos) },
     domain_id: domainId,
     site_id: 'MLB',
     type: 'SPECIFIC',
     attributes: [{ id: 'GENDER', values: [{ id: genderValue.id, name: genderValue.nome }] }],
-    main_attribute: { id: 'SIZE' },
+    main_attribute: { id: mainAttributeId },
     rows,
   };
-
   const resp = await fetch('https://api.mercadolibre.com/catalog/charts', {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const respJson = await resp.json().catch(() => null) as { id?: number | string; rows?: unknown } | null;
+  const respJson = await resp.json().catch(() => null) as RespostaChart | null;
   if (!resp.ok || respJson?.id == null) {
     throw new Error(`Guia de tamanhos: POST /catalog/charts falhou (HTTP ${resp.status}): ${JSON.stringify(respJson)}`);
   }
-  const chartId = String(respJson.id);
-  const linhaPorTamanho = parseLinhasResposta(
-    (respJson.rows ?? []) as { id: string; attributes: { id: string; values?: { name?: string }[] }[] }[],
-  );
+  return { id: respJson.id, rows: respJson.rows ?? [] };
+}
 
-  // Duas publicações concorrentes (mesma conexão+domínio+gênero, 1ª vez) podem criar 2 charts em
-  // paralelo — inofensivo (o ML aceita, cada uma referencia o seu), mas o insert aqui pode colidir
-  // se a PK já tiver a linha da outra corrida. Não é erro fatal: logar e seguir com o chart que
-  // ESTA chamada acabou de criar (é o que o payload desta publicação já referencia).
-  const { error: insertErr } = await admin.from('ml_size_charts').insert({
-    connection_id: connectionId, domain_id: domainId, genero,
-    chart_id: chartId, linhas: Object.fromEntries(linhaPorTamanho),
+/** SNEAKERS (e domínios equivalentes, Spike 051 §13): busca o chart STANDARD que o PRÓPRIO ML
+ *  publica via `POST /catalog/charts/search` — nunca cria nada, só referencia dado real do ML.
+ *  Falha alto se o ML não tiver a numeração pedida na tabela (nunca inventa a linha faltante). */
+async function buscarChartStandardCalcado(
+  token: string, domainId: string, genero: Genero, tamanhos: readonly string[],
+): Promise<ChartResolvido> {
+  const genderValue = GENDER_VALUE[genero];
+  const resp = await fetch('https://api.mercadolibre.com/catalog/charts/search', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      type: 'STANDARD', domain_id: domainId, site_id: 'MLB',
+      attributes: [{ id: 'GENDER', values: [{ id: genderValue.id, name: genderValue.nome }] }],
+    }),
   });
-  if (insertErr) console.error('ml_size_charts insert falhou (chart criado no ML, cache não salvo):', insertErr.message);
-
-  return { chartId, linhaPorTamanho };
+  const respJson = await resp.json().catch(() => null) as { charts?: RespostaChart[] } | null;
+  const chart = respJson?.charts?.[0];
+  if (!resp.ok || !chart) {
+    throw new Error(
+      `Guia de tamanhos: nenhum chart STANDARD encontrado no ML para domínio=${domainId}, `
+      + `gênero=${genero} (HTTP ${resp.status}).`,
+    );
+  }
+  const linhaPorTamanho = parseLinhasCalcado(chart.rows);
+  const faltando = tamanhos.filter((n) => !linhaPorTamanho.has(n));
+  if (faltando.length > 0) {
+    throw new Error(
+      `Guia de tamanhos: numeração(ões) ${faltando.join(', ')} fora do chart STANDARD do ML `
+      + `(id ${chart.id}) para domínio=${domainId}, gênero=${genero}.`,
+    );
+  }
+  return { chartId: String(chart.id), linhaPorTamanho };
 }

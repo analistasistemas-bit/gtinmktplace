@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CONTORNO_PEITO_CM, domainIdSemPrefixo, mensagemForaDoSuperset, montarLinhasChart, nomeChart,
-  parseLinhasResposta,
+  COMPRIMENTO_PE_CM, CONTORNO_PEITO_CM, domainIdSemPrefixo, mensagemForaDoSuperset,
+  mensagemNumeracaoNaoSuportada, montarLinhasChart, montarLinhasChartCalcado, nomeChart,
+  parseLinhasCalcado, parseLinhasResposta, tabelaComprimentoPe,
 } from '../size-chart.ts';
 
 // Achado real (produção, 2026-09-19): a 1ª tentativa de publicação real ficou presa em retry
@@ -116,5 +117,91 @@ describe('parseLinhasResposta (ADR-0167 / Spike 051 §3)', () => {
   it('linha sem atributo SIZE não entra no mapa', () => {
     const rows = [{ id: '8522331:9', attributes: [{ id: 'FILTRABLE_SIZE', values: [{ name: 'P' }] }] }];
     expect(parseLinhasResposta(rows).size).toBe(0);
+  });
+});
+
+// ADR-0167 / achado real 2026-09-19 (pedido do Diego: "veja agora a de sapato/sandalias"):
+// FOOTWEAR não usa SIZE+FILTRABLE_SIZE+CHEST_CIRCUMFERENCE_FROM como vestuário — usa
+// BR_SIZE+FOOT_LENGTH (confirmado via POST /catalog/charts real contra SANDALS_AND_CLOGS,
+// Spike 051 §13). COMPRIMENTO_PE_CM vem do chart STANDARD oficial do próprio ML (masculino
+// id 210058, feminino id 210059) — não é tabela inventada, é dado publicado pelo ML.
+describe('COMPRIMENTO_PE_CM (ADR-0167 / Spike 051 §13 — dado real do chart STANDARD do ML)', () => {
+  it('masculino cobre 33 a 48 (chart STANDARD real 210058)', () => {
+    expect(COMPRIMENTO_PE_CM.masculino['33']).toBe(22.5);
+    expect(COMPRIMENTO_PE_CM.masculino['40']).toBe(26.5);
+    expect(COMPRIMENTO_PE_CM.masculino['48']).toBe(33);
+  });
+
+  it('feminino cobre 33 a 44 (chart STANDARD real 210059)', () => {
+    expect(COMPRIMENTO_PE_CM.feminino['33']).toBe(22);
+    expect(COMPRIMENTO_PE_CM.feminino['37']).toBe(24.7);
+    expect(COMPRIMENTO_PE_CM.feminino['44']).toBe(29.3);
+  });
+});
+
+describe('tabelaComprimentoPe (ADR-0167)', () => {
+  it('feminino usa a própria tabela', () => {
+    expect(tabelaComprimentoPe('feminino')).toBe(COMPRIMENTO_PE_CM.feminino);
+  });
+
+  it('masculino usa a própria tabela', () => {
+    expect(tabelaComprimentoPe('masculino')).toBe(COMPRIMENTO_PE_CM.masculino);
+  });
+
+  // Decisão explícita: o ML não publica chart STANDARD "Sem gênero" (testado, resposta vazia,
+  // Spike 051 §13) — unissex reaproveita a tabela masculino (cobre 33-48 por completo, igual à
+  // faixa de NUMERACOES_CALCADO; a feminino para em 44). Assunção sinalizada ao Diego.
+  it('unissex reaproveita a tabela masculino (sem chart STANDARD "Sem gênero" no ML)', () => {
+    expect(tabelaComprimentoPe('unissex')).toBe(COMPRIMENTO_PE_CM.masculino);
+  });
+});
+
+describe('montarLinhasChartCalcado (ADR-0167 / Spike 051 §13)', () => {
+  it('monta BR_SIZE + FOOT_LENGTH com struct numérico (formato real confirmado)', () => {
+    const linhas = montarLinhasChartCalcado(['37', '40'], COMPRIMENTO_PE_CM.feminino);
+    expect(linhas).toEqual([
+      { attributes: [
+        { id: 'BR_SIZE', values: [{ name: '37 BR', struct: { number: 37, unit: 'BR' } }] },
+        { id: 'FOOT_LENGTH', values: [{ name: '24.7 cm', struct: { number: 24.7, unit: 'cm' } }] },
+      ] },
+      { attributes: [
+        { id: 'BR_SIZE', values: [{ name: '40 BR', struct: { number: 40, unit: 'BR' } }] },
+        { id: 'FOOT_LENGTH', values: [{ name: '26.7 cm', struct: { number: 26.7, unit: 'cm' } }] },
+      ] },
+    ]);
+  });
+
+  it('numeração fora da tabela (ex.: par "33/34") falha alto em vez de inventar', () => {
+    expect(() => montarLinhasChartCalcado(['33/34'], COMPRIMENTO_PE_CM.masculino)).toThrow();
+  });
+});
+
+describe('parseLinhasCalcado (ADR-0167 / Spike 051 §13)', () => {
+  it('extrai numeração -> row_id de um chart STANDARD real (atributo SIZE com struct.number)', () => {
+    const rows = [
+      { id: '210058:8', attributes: [{ id: 'SIZE', values: [{ name: '40 BR', struct: { number: 40 } }] }] },
+    ];
+    expect(parseLinhasCalcado(rows).get('40')).toBe('210058:8');
+  });
+
+  it('extrai numeração -> row_id de um chart SPECIFIC nosso (atributo BR_SIZE com struct.number)', () => {
+    const rows = [
+      { id: '8077736:1', attributes: [{ id: 'BR_SIZE', values: [{ name: '37 BR', struct: { number: 37 } }] }] },
+    ];
+    expect(parseLinhasCalcado(rows).get('37')).toBe('8077736:1');
+  });
+
+  it('linha sem SIZE nem BR_SIZE não entra no mapa', () => {
+    const rows = [{ id: 'x:1', attributes: [{ id: 'FOOT_LENGTH', values: [{ name: '24 cm' }] }] }];
+    expect(parseLinhasCalcado(rows).size).toBe(0);
+  });
+});
+
+describe('mensagemNumeracaoNaoSuportada (ADR-0167)', () => {
+  it('cita o(s) valor(es) e explica que não é lacuna de mapeamento', () => {
+    const msg = mensagemNumeracaoNaoSuportada(['33/34', '45/46']);
+    expect(msg).toMatch(/33\/34/);
+    expect(msg).toMatch(/45\/46/);
+    expect(msg).toMatch(/comprimento de p[ée]/i);
   });
 });
