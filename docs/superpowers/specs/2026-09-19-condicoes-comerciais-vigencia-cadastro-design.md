@@ -1,7 +1,7 @@
 # Especificação de Design — Vigência Imediata no Cadastro de Condições Comerciais
 
 **Data:** 2026-09-19  
-**Status:** Aprovado para planejamento (Revisado pós-Adversarial Codex R2)  
+**Status:** Aprovado para planejamento (Revisado pós-Adversarial Codex R3)  
 **Autor:** Diego / Antigravity  
 **Contexto:** Menu Organizações (`/admin`) e Detalhe da Organização (`/admin/organizacoes/:id`)
 
@@ -42,8 +42,9 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
    - Jamais fazer UPDATE irrestrito por data (`where starts_on = '2026-10-01'`), protegendo quaisquer outros tenants ou futuras renegociações legítimas de outubro.
    - Ajustar `starts_on = '2026-09-01'` e `setup_due_month` de `'2026-10-01'` para `'2026-09-01'`.
    - O trigger de imutabilidade `platform_commercial_terms_no_mutation` deve ser desabilitado estritamente durante a transação e reabilitado antes do commit.
+   - Materializar o resultado do UPDATE em tabela temporária (`on commit drop`) para capturar a cardinalidade real das linhas atualizadas.
    - Gerar evento completo de auditoria em `platform_audit_events` com categoria `'admin'`, ação `'platform_terms_vigencia_corrigida'`, registrando `starts_on_anterior`, `starts_on_atual`, `setup_due_month_anterior`, `setup_due_month_atual` e `org_slug`.
-   - Incluir asserção LOUD (readback) confirmando que exatamente as 3 organizações alvo foram atualizadas (quando existentes no banco) e nenhuma linha alvo restou em `2026-10-01`.
+   - Incluir asserção LOUD (readback) confirmando que exatamente 3 linhas foram atualizadas (quando os 3 slugs alvo existem no banco) e nenhuma linha alvo restou em `2026-10-01`.
 
 ### 2.2 Requisitos Não-Funcionais
 
@@ -52,7 +53,7 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
    - Testes unitários do frontend (`src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`) cobrindo:
      a) Primeiro contrato com vigência padrão no mês corrente (`starts_on` e `setup_due_month`).
      b) Primeiro contrato com seleção de "Próximo mês", garantindo clamping de `setup_due_month`.
-   - Teste SQL em `supabase/tests/platform_commercial.sql` com fixtures para os 3 slugs alvo + tenant de controle, verificação de readback e asserção de integridade.
+   - Teste SQL em `supabase/tests/platform_commercial.sql` com fixtures completas para os 3 slugs alvo + tenant de controle, verificação minuciosa de readback de todos os campos alterados e inalterados, dados de auditoria e trigger reativado.
 
 ---
 
@@ -126,6 +127,7 @@ begin;
 
 alter table public.platform_commercial_terms disable trigger platform_commercial_terms_no_mutation;
 
+create temporary table _migracao_termos_corrigidos on commit drop as
 with target_orgs as (
   select id, slug from public.organizations where slug in ('avil', 'diego-souza', 'daludishop')
 ),
@@ -142,6 +144,8 @@ corrigidos as (
             (case when t.setup_due_month = '2026-09-01' then '2026-10-01'::date else t.setup_due_month end) as setup_due_anterior,
             t.setup_due_month as setup_due_atual
 )
+select * from corrigidos;
+
 insert into public.platform_audit_events (org_id, actor_id, category, action, result, target, reason, details)
 select org_id, null, 'admin', 'platform_terms_vigencia_corrigida', 'success', id::text,
   'Ajuste de vigencia inicial: primeiro contrato inicia no mes do cadastro (2026-09)',
@@ -152,29 +156,25 @@ select org_id, null, 'admin', 'platform_terms_vigencia_corrigida', 'success', id
     'setup_due_month_anterior', setup_due_anterior,
     'setup_due_month_atual', setup_due_atual
   )
-from corrigidos;
+from _migracao_termos_corrigidos;
 
 alter table public.platform_commercial_terms enable trigger platform_commercial_terms_no_mutation;
 
--- Asserção LOUD pós-condição: valida o conjunto exato
+-- Asserção LOUD pós-condição: valida o conjunto exato e a contagem real de linhas atualizadas
 do $$
 declare
-  v_expected_count integer;
-  v_actual_count integer;
+  v_expected_orgs integer;
+  v_rows_updated integer;
 begin
-  select count(*) into v_expected_count
+  select count(*) into v_expected_orgs
   from public.organizations
   where slug in ('avil', 'diego-souza', 'daludishop');
 
-  if v_expected_count = 3 then
-    select count(*) into v_actual_count
-    from public.platform_commercial_terms t
-    join public.organizations o on o.id = t.org_id
-    where o.slug in ('avil', 'diego-souza', 'daludishop')
-      and t.starts_on = '2026-09-01';
+  select count(*) into v_rows_updated from _migracao_termos_corrigidos;
 
-    if v_actual_count <> 3 then
-      raise exception 'Esperava 3 termos corrigidos para 2026-09-01, mas encontrou %', v_actual_count using errcode = '23514';
+  if v_expected_orgs = 3 then
+    if v_rows_updated <> 3 then
+      raise exception 'Esperava exatamente 3 linhas atualizadas em _migracao_termos_corrigidos, mas obteve %', v_rows_updated using errcode = '23514';
     end if;
 
     if exists (
@@ -202,6 +202,6 @@ commit;
    - Executar `npx tsc -b --force`.
    - Executar `pnpm eslint src/components/platform-admin/commercial-terms-form.tsx src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`.
 3. **Suite SQL:**
-   - Executar `supabase/tests/platform_commercial.sql` via `psql -U supabase_admin -d codex_platform_admin_test_20260906 -v ON_ERROR_STOP=1 -f supabase/tests/platform_commercial.sql` (ou runner docker correspondente).
+   - Executar `supabase/tests/platform_commercial.sql` via `psql -U supabase_admin -d codex_platform_admin_test_20260906 -v ON_ERROR_STOP=1 -f supabase/tests/platform_commercial.sql`.
 4. **Documentação:**
    - Atualizar `obsidian-vault/09-Logs/Changelog.md` e `docs/project-status.md`.

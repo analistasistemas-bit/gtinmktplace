@@ -4,7 +4,7 @@
 
 **Goal:** Alterar o comportamento do cadastro de condições comerciais para que o primeiro contrato inicie por padrão no mês corrente (em vez de no próximo mês) e corrigir cirurgicamente a vigência das 3 organizações existentes (Avil, DSA, Daludi Shop) para 2026-09.
 
-**Architecture:** Uma migration SQL pontual e restrita aos slugs alvo (`avil`, `diego-souza`, `daludishop`) desabilita temporariamente o trigger de imutabilidade, atualiza os termos de `2026-10-01` para `2026-09-01` (com auditoria detalhada de `starts_on` e `setup_due_month` e asserção LOUD pós-condição de contagem exata e ausência de resíduos), e o componente React `CommercialTermsForm` passa a inicializar com o mês corrente, aplicando clamping automático no `setupDueMonth` ao alternar opções de vigência.
+**Architecture:** Uma migration SQL pontual e restrita aos slugs alvo (`avil`, `diego-souza`, `daludishop`) desabilita temporariamente o trigger de imutabilidade, atualiza os termos de `2026-10-01` para `2026-09-01` (com materialização em tabela temporária, auditoria detalhada de `starts_on` e `setup_due_month` e asserção LOUD pós-condição validando exatamente 3 linhas atualizadas e ausência de resíduos), e o componente React `CommercialTermsForm` passa a inicializar com o mês corrente, aplicando clamping automático no `setupDueMonth` ao alternar opções de vigência.
 
 **Tech Stack:** Supabase PostgreSQL (PL-pgSQL), React, TypeScript, Vitest, Testing Library.
 
@@ -44,6 +44,7 @@ begin;
 
 alter table public.platform_commercial_terms disable trigger platform_commercial_terms_no_mutation;
 
+create temporary table _migracao_termos_corrigidos on commit drop as
 with target_orgs as (
   select id, slug from public.organizations where slug in ('avil', 'diego-souza', 'daludishop')
 ),
@@ -60,6 +61,8 @@ corrigidos as (
             (case when t.setup_due_month = '2026-09-01' then '2026-10-01'::date else t.setup_due_month end) as setup_due_anterior,
             t.setup_due_month as setup_due_atual
 )
+select * from corrigidos;
+
 insert into public.platform_audit_events (org_id, actor_id, category, action, result, target, reason, details)
 select org_id, null, 'admin', 'platform_terms_vigencia_corrigida', 'success', id::text,
   'Ajuste de vigencia inicial: primeiro contrato inicia no mes do cadastro (2026-09)',
@@ -70,29 +73,25 @@ select org_id, null, 'admin', 'platform_terms_vigencia_corrigida', 'success', id
     'setup_due_month_anterior', setup_due_anterior,
     'setup_due_month_atual', setup_due_atual
   )
-from corrigidos;
+from _migracao_termos_corrigidos;
 
 alter table public.platform_commercial_terms enable trigger platform_commercial_terms_no_mutation;
 
--- Asserção LOUD pós-condição: valida o conjunto exato
+-- Asserção LOUD pós-condição: valida que exatamente 3 linhas foram atualizadas se as 3 orgs existirem
 do $$
 declare
-  v_expected_count integer;
-  v_actual_count integer;
+  v_expected_orgs integer;
+  v_rows_updated integer;
 begin
-  select count(*) into v_expected_count
+  select count(*) into v_expected_orgs
   from public.organizations
   where slug in ('avil', 'diego-souza', 'daludishop');
 
-  if v_expected_count = 3 then
-    select count(*) into v_actual_count
-    from public.platform_commercial_terms t
-    join public.organizations o on o.id = t.org_id
-    where o.slug in ('avil', 'diego-souza', 'daludishop')
-      and t.starts_on = '2026-09-01';
+  select count(*) into v_rows_updated from _migracao_termos_corrigidos;
 
-    if v_actual_count <> 3 then
-      raise exception 'Esperava 3 termos corrigidos para 2026-09-01, mas encontrou %', v_actual_count using errcode = '23514';
+  if v_expected_orgs = 3 then
+    if v_rows_updated <> 3 then
+      raise exception 'Esperava exatamente 3 linhas atualizadas em _migracao_termos_corrigidos, mas obteve %', v_rows_updated using errcode = '23514';
     end if;
 
     if exists (
@@ -110,17 +109,96 @@ end $$;
 commit;
 ```
 
-- [ ] **Step 2: Adicionar fixtures e testes na suite SQL**
+- [ ] **Step 2: Adicionar fixtures e asserções completas de readback na suite SQL**
 
 Em `supabase/tests/platform_commercial.sql`:
-1. Inserir fixtures das 3 organizações alvo (`avil`, `diego-souza`, `daludishop`) com termos salvos com `starts_on = '2026-10-01'`.
-2. Inserir organização de controle `org-controle` com `starts_on = '2026-10-01'`.
-3. Adicionar `\ir ../migrations/20260919130000_platform_terms_vigencia_setembro.sql`.
-4. Validar via bloco `do $$`:
-   - `avil`, `diego-souza` e `daludishop` têm `starts_on = '2026-09-01'`.
-   - `org-controle` manteve `starts_on = '2026-10-01'`.
-   - 3 registros de auditoria foram gravados em `platform_audit_events`.
-   - O trigger `platform_commercial_terms_no_mutation` impede update direto (tenta update direto e captura exception).
+Adicionar bloco de teste antes e depois do `\ir` da migration:
+```sql
+-- Fixtures para validar migration 20260919130000_platform_terms_vigencia_setembro.sql:
+insert into public.organizations (id, nome, slug) values
+  ('90000000-0000-0000-0000-000000000051', 'Avil Teste', 'avil'),
+  ('90000000-0000-0000-0000-000000000052', 'DSA Teste', 'diego-souza'),
+  ('90000000-0000-0000-0000-000000000053', 'Daludi Shop Teste', 'daludishop'),
+  ('90000000-0000-0000-0000-000000000054', 'Controle Teste', 'org-controle')
+on conflict (slug) do nothing;
+
+-- Inserir termos para as 4 com starts_on = '2026-10-01' e setup_due_month = '2026-10-01':
+insert into public.platform_commercial_terms (
+  id, org_id, starts_on, modality, monthly_fee_cents,
+  revenue_bps_t1, revenue_bps_t2, revenue_bps_t3, revenue_bps_t4,
+  sonar_unit_cents, setup_fee_cents, setup_due_month, reason, created_by, version
+)
+select
+  ('a0000000-0000-0000-0000-00000000000' || row_number() over())::uuid,
+  o.id, '2026-10-01'::date, 2, 0, 700, 600, 550, 500, 120, 300000, '2026-10-01'::date,
+  'fixture vigencia outubro', '80000000-0000-0000-0000-000000000001'::uuid, 1
+from public.organizations o
+where o.slug in ('avil', 'diego-souza', 'daludishop', 'org-controle');
+
+\ir ../migrations/20260919130000_platform_terms_vigencia_setembro.sql
+
+-- Asserção completa de readback:
+do $$
+declare
+  v_rec record;
+  v_ctrl public.platform_commercial_terms%rowtype;
+  v_audits integer;
+begin
+  -- 1. Validar alvos: starts_on e setup_due_month = 2026-09-01
+  for v_rec in
+    select o.slug, t.starts_on, t.setup_due_month
+    from public.platform_commercial_terms t
+    join public.organizations o on o.id = t.org_id
+    where o.slug in ('avil', 'diego-souza', 'daludishop')
+  loop
+    if v_rec.starts_on <> '2026-09-01'::date or v_rec.setup_due_month <> '2026-09-01'::date then
+      raise exception 'Falha no readback do alvo %: starts_on=%, setup_due_month=%',
+        v_rec.slug, v_rec.starts_on, v_rec.setup_due_month;
+    end if;
+  end loop;
+
+  -- 2. Validar controle: permaneceu 2026-10-01 e inalterado
+  select t.* into v_ctrl
+  from public.platform_commercial_terms t
+  join public.organizations o on o.id = t.org_id
+  where o.slug = 'org-controle';
+
+  if v_ctrl.starts_on <> '2026-10-01'::date or v_ctrl.setup_due_month <> '2026-10-01'::date then
+    raise exception 'Tenant controle foi alterado indevidamente: %', v_ctrl;
+  end if;
+
+  -- 3. Validar auditoria detalhada para cada um dos 3 slugs
+  for v_rec in
+    select e.details->>'org_slug' as slug, e.category, e.action, e.result, e.details
+    from public.platform_audit_events e
+    where e.action = 'platform_terms_vigencia_corrigida'
+  loop
+    if v_rec.category <> 'admin' or v_rec.result <> 'success'
+       or (v_rec.details->>'starts_on_anterior') <> '2026-10-01'
+       or (v_rec.details->>'starts_on_atual') <> '2026-09-01'
+       or (v_rec.details->>'setup_due_month_anterior') <> '2026-10-01'
+       or (v_rec.details->>'setup_due_month_atual') <> '2026-09-01' then
+      raise exception 'Auditoria incompleta ou invalida: %', v_rec;
+    end if;
+  end loop;
+
+  select count(*) into v_audits
+  from public.platform_audit_events e
+  where e.action = 'platform_terms_vigencia_corrigida';
+
+  if v_audits <> 3 then
+    raise exception 'Esperava 3 eventos de auditoria, encontrou %', v_audits;
+  end if;
+
+  -- 4. Validar trigger de imutabilidade ativo
+  begin
+    update public.platform_commercial_terms set reason = 'tentativa ilegal'
+    where starts_on = '2026-09-01';
+    raise exception 'Trigger de imutabilidade falhou ao bloquear update direto';
+  exception when sqlstate '23514' then null;
+  end;
+end $$;
+```
 
 - [ ] **Step 3: Commit da Task 1**
 
@@ -230,7 +308,7 @@ git commit -m "feat(admin): define vigencia no mes corrente como padrao com clam
 
 ---
 
-### Task 3: Validação de Qualidade e Integridade
+### Task 3: Validação de Qualidade, Integridade e Documentação
 
 **Files:**
 - Modify: `obsidian-vault/09-Logs/Changelog.md`
