@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-  COMPRIMENTO_PE_CM, CONTORNO_PEITO_CM, domainIdSemPrefixo, mensagemForaDoSuperset,
+  COMPRIMENTO_PE_CM, CONTORNO_PEITO_CM, domainIdSemPrefixo, garantirChart, mensagemForaDoSuperset,
   mensagemNumeracaoNaoSuportada, montarLinhasChart, montarLinhasChartCalcado, nomeChart,
   parseLinhasCalcado, parseLinhasResposta, tabelaComprimentoPe,
 } from '../size-chart.ts';
@@ -206,5 +207,62 @@ describe('mensagemNumeracaoNaoSuportada (ADR-0167)', () => {
     expect(msg).toMatch(/33\/34/);
     expect(msg).toMatch(/45\/46/);
     expect(msg).toMatch(/comprimento de p[ée]/i);
+  });
+});
+
+// Achado real (revisão Fable, 2026-09-19): charts criados antes de 0cec85cb gravaram `linhas`
+// como `{tamanho: "rowId:versao"}` (string) — a migration 20260919154953 documenta esse formato.
+// O código novo espera `{tamanho: {rowId, sizeLabel}}`. Sem normalizar na leitura, uma linha
+// antiga vira a própria string em `linha?.rowId` (undefined) e a publicação quebra por
+// sizeGridRowId ausente. Este teste cobre exatamente o ramo do cache em `garantirChart` que o
+// CI anterior não pegava (só havia mock de `garantirChartFn`, nunca a função real).
+describe('garantirChart — cache em formato antigo (ADR-0167, achado real Fable)', () => {
+  function adminStub(linhas: unknown): SupabaseClient {
+    return {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: () => Promise.resolve({ data: { chart_id: '8522331', linhas } }),
+              }),
+            }),
+          }),
+        }),
+      }),
+    } as unknown as SupabaseClient;
+  }
+
+  it('normaliza linha antiga (string "rowId:versao") para {rowId, sizeLabel: tamanho}', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ settings: { catalog_domain: 'MLB-JACKETS_AND_COATS' } }),
+    })) as unknown as typeof fetch);
+
+    const resolvido = await garantirChart(
+      adminStub({ P: '8522331:1', M: '8522331:2' }),
+      'token', 'conexao-1', 'MLB123', 'masculino', ['P', 'M'],
+    );
+
+    expect(resolvido.linhaPorTamanho.get('P')).toEqual({ rowId: '8522331:1', sizeLabel: 'P' });
+    expect(resolvido.linhaPorTamanho.get('M')).toEqual({ rowId: '8522331:2', sizeLabel: 'M' });
+
+    vi.unstubAllGlobals();
+  });
+
+  it('mantém linha já no formato novo ({rowId, sizeLabel}) sem alterar', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ settings: { catalog_domain: 'MLB-SANDALS_AND_CLOGS' } }),
+    })) as unknown as typeof fetch);
+
+    const resolvido = await garantirChart(
+      adminStub({ 37: { rowId: '8078230:5', sizeLabel: '37 BR' } }),
+      'token', 'conexao-1', 'MLB123', 'unissex', ['37'],
+    );
+
+    expect(resolvido.linhaPorTamanho.get('37')).toEqual({ rowId: '8078230:5', sizeLabel: '37 BR' });
+
+    vi.unstubAllGlobals();
   });
 });

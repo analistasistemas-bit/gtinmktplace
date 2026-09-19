@@ -252,7 +252,15 @@ export async function garantirChart(
     .eq('connection_id', connectionId).eq('domain_id', domainId).eq('genero', genero)
     .maybeSingle();
   if (cached) {
-    const linhaPorTamanho = new Map(Object.entries(cached.linhas as Record<string, LinhaChartResolvida>));
+    // Cache pré-existente (charts criados antes de 0cec85cb) grava `linhas` como
+    // `{tamanho: "rowId:versao"}` (string). Formato novo é `{tamanho: {rowId, sizeLabel}}`. Sem
+    // esta normalização, uma linha antiga vira a própria string em `linha?.rowId` (undefined) e
+    // `montarPayloadItem` rejeita a publicação por sizeGridRowId ausente — quebra republicação de
+    // toda roupa já cacheada. Para vestuário, rótulo == tamanho cru, então a conversão é exata.
+    const linhaPorTamanho = new Map(
+      Object.entries(cached.linhas as Record<string, LinhaChartResolvida | string>)
+        .map(([t, l]) => [t, typeof l === 'string' ? { rowId: l, sizeLabel: t } : l] as const),
+    );
     // ADR-0167 Decisão 4 (chart imutável): se o cache não cobre um tamanho pedido, NUNCA editar o
     // chart existente — falha alto com mensagem clara em vez da mensagem enganosa que vinha de
     // publicar.ts ("garantirChart precisa rodar antes"). Não deveria acontecer se a criação sempre
