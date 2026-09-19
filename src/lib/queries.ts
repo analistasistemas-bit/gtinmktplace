@@ -941,6 +941,7 @@ export function publicadoFromRow(
       ml_variation_id: v.ml_variation_id ?? null,
     })),
     itensUpRetentaveis,
+    r.kit_multiplicador != null,
   );
   return {
     familiaId: r.id,
@@ -1034,7 +1035,7 @@ async function carregarItensUpRetentaveisPorCodigo(
 export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, kit_multiplicador, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
     .not('ml_item_id', 'is', null)
     .order('publicado_em', { ascending: false });
   if (error) throw error;
@@ -1187,7 +1188,7 @@ async function fetchPublicacoesIncompletas(codigosPublicados: Set<string>): Prom
 
   const { data: familias, error: famErr } = await supabase
     .from('familias')
-    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, kit_multiplicador, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
     .in('codigo_pai', [...remotoPorCodigo.keys()])
     .is('ml_item_id', null)
     // Publicação EM VOO não é incidente (achado da revisão do Fable): na saga UP os filhos ganham

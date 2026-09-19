@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Banner "sem vínculo de catálogo" acendia falso pra kit vinculado — 2026-09-19
+
+Org Daludi Shop: o Kit 2 Unidades Shampoo Johnson's 750ml (`00000011`, `kit_multiplicador=2`,
+ADR-0151) aparecia em Publicados como "1 anúncio sem vínculo de catálogo" com o botão ↻ ativo.
+GET real na API do ML (sem escrita) confirmou que o catálogo já estava vinculado lá (anúncio
+paralelo `MLB7665740658`, `catalog_listing:true`) — o banco só nunca soube, porque
+`guardKitVinculado` (worker `vincular-catalogo`) pula pra sempre a vinculação de kit vinculado por
+design (ADR-0151 D-5), deixando `catalog_status` preso no `pendente` default de publicação.
+`familiaTemCatalogoRetentavel` não conhecia essa exceção e oferecia uma retentativa que o worker
+sempre no-opava — alarme falso permanente, provável em outros kits vinculados também.
+
+- [x] `familiaTemCatalogoRetentavel` (`src/lib/catalogo-retentavel.ts` + cópia Deno em
+  `supabase/functions/_shared/ml/catalogo-retentavel.ts`) ganhou 3º parâmetro `kitVinculado` que
+  espelha o `guardKitVinculado` do worker.
+- [x] `kit_multiplicador` propagado nos selects de `fetchPublicados`/`fetchPublicacoesIncompletas`
+  (`src/lib/queries.ts`) e no select de `supabase/functions/retentar-catalogo/index.ts` (recusa
+  retry via API com 409 em vez de enfileirar um job que vira no-op).
+- [x] TDD: 2 testes novos em `catalogo-retentavel.test.ts`; suíte inteira 531 arquivos/5319 testes
+  verdes, lint 0 erros, build ok. Revisado e aprovado pelo Fable antes do merge.
+- [ ] `fetchCatalogoEmRisco`/`STATUS_RISCO` (`src/lib/catalogo-risco.ts`) tem o mesmo problema —
+  tela "Catálogo em risco" pode listar kit vinculado como risco. Fora deste fix por escopo (tela
+  separada, só leitura); fechar com `.is('kit_multiplicador', null)` no filtro quando tocar nela.
+
 ## Time Maestri — gate de consultor, roteamento de modelo e failover — 2026-09-18
 
 Origem: pós-merge da E12 (lock/traps do painel gerado), 3 ajustes operacionais nos prompts do

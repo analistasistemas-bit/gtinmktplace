@@ -65,7 +65,7 @@ Deno.serve(async (req) => {
 
   const { data: familia, error: famErr } = await admin
     .from('familias')
-    .select('id, ml_item_id, status, codigo_pai, org_id')
+    .select('id, ml_item_id, status, codigo_pai, org_id, kit_multiplicador')
     .eq('id', familiaId)
     .eq('org_id', orgId)
     .maybeSingle();
@@ -92,7 +92,7 @@ Deno.serve(async (req) => {
     return json({ erro: (e as Error).message }, 500);
   }
 
-  if (!familiaTemCatalogoRetentavel(variacoes ?? [], itensUp)) {
+  if (!familiaTemCatalogoRetentavel(variacoes ?? [], itensUp, familia.kit_multiplicador != null)) {
     return json({ erro: 'Nenhuma variação ou item com catálogo retentável (erro, não elegível, sem ficha ou pendente — e ainda sem vínculo).' }, 409);
   }
 
