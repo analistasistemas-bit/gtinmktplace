@@ -155,6 +155,38 @@ describe('montarPayloadItem', () => {
       { id: 'COLOR', value_name: 'TAM 01' },
     ]));
   });
+
+  // ADR-0167: item plano com tamanho (roupa/calçado) precisa de SIZE + SIZE_GRID_ID +
+  // SIZE_GRID_ROW_ID juntos (Spike 051 §4, confirmado via /items/validate real — sem os três, o
+  // ML recusa com missing.fashion_grid).
+  it('item plano com tamanho e guia de medidas envia SIZE + SIZE_GRID_ID + SIZE_GRID_ROW_ID (ADR-0167)', () => {
+    const roupa = { ...familia, categoria_ml_id: 'MLB108803' };
+    const v = { ...variacoes[0], tamanho: 'P', sizeGridId: '8522331', sizeGridRowId: '8522331:1' };
+    const p = montarPayloadItem(roupa, [v], capaPictureId, null, null, undefined, null, undefined, 'plano');
+    expect(p.attributes).toEqual(expect.arrayContaining([
+      { id: 'SIZE', value_name: 'P' },
+      { id: 'SIZE_GRID_ID', value_name: '8522331' },
+      { id: 'SIZE_GRID_ROW_ID', value_name: '8522331:1' },
+    ]));
+  });
+
+  it('item plano sem tamanho não envia SIZE/SIZE_GRID_ID/SIZE_GRID_ROW_ID (INV-1 — org sem tipo de produto)', () => {
+    const p = montarPayloadItem(
+      { ...familia, categoria_ml_id: 'MLB271227' }, [variacoes[0]], capaPictureId,
+      null, null, undefined, null, undefined, 'plano',
+    );
+    const ids = p.attributes.map((a) => a.id);
+    expect(ids).not.toContain('SIZE');
+    expect(ids).not.toContain('SIZE_GRID_ID');
+    expect(ids).not.toContain('SIZE_GRID_ROW_ID');
+  });
+
+  it('item plano com tamanho mas SEM guia de medidas resolvida falha LOUD (nunca publica sem grid numa categoria que exige)', () => {
+    const roupa = { ...familia, categoria_ml_id: 'MLB108803' };
+    const v = { ...variacoes[0], tamanho: 'P' };
+    expect(() => montarPayloadItem(roupa, [v], capaPictureId, null, null, undefined, null, undefined, 'plano'))
+      .toThrow(/guia de tamanhos/i);
+  });
 });
 
 describe('montarPayloadItem com 2a foto', () => {

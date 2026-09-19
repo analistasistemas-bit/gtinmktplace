@@ -238,6 +238,33 @@ describe('processarFamiliaML — roteamento CREATE + ADR-0088 (saga UP)', () => 
     expect(r.tipo).toBe('ok');
   });
 
+  // ADR-0167: o Spike 051 provou que categorias de roupa/calçado SEMPRE recusam Legacy
+  // (variations[]), até com 1 SKU só — e o retry reativo de 1 cor (ADR-0087) não sabe resolver
+  // o guia de tamanhos (isso só acontece dentro da saga UP). Uma família com tamanho tem que ir
+  // direto pra saga, mesmo com 1 SKU (onde `variacoes.length > 1` sozinho não bastaria).
+  it('1 SKU COM tamanho → vai direto pra saga UP, NUNCA tenta criarAnuncio (ADR-0167)', async () => {
+    const { admin } = fakeAdmin({
+      familia: { ...FAMILIA_BASE, genero: 'masculino', categoria_ml_id: 'MLB108803' },
+      variacoes: [{ ...VAR_BASE, tamanho: 'P' }],
+    });
+    let upChamado = false;
+    const deps = baseDeps(admin, { publicarUP: async () => { upChamado = true; return { estado: 'ativo', itemExternoId: 'MLB-P', permalink: null }; } });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 0 });
+    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(0);
+    expect(upChamado).toBe(true);
+    expect(r.tipo).toBe('ok');
+  });
+
+  it('1 SKU sem tamanho continua na REGRESSÃO 1 cor (INV-1) — trava contra alargar demais o gate', async () => {
+    const { admin } = fakeAdmin();
+    let upChamado = false;
+    const deps = baseDeps(admin, { publicarUP: async () => { upChamado = true; return { estado: 'ativo', itemExternoId: 'X', permalink: null }; } });
+    const r = await processarFamiliaML(deps, JOB, { tentativas: 0 });
+    expect(upChamado).toBe(false);
+    expect(fakeConnector.chamadas.filter((c) => c.metodo === 'criarAnuncio')).toHaveLength(1);
+    expect(r.tipo).toBe('ok');
+  });
+
   it('fix round 1: rota UP com módulo fiscal ativo e cadastro completo → enfileira o push fiscal', async () => {
     vi.mocked(enfileirarSincronizacaoFiscal).mockClear();
     const { admin } = fakeAdmin({ variacoes: multiCor(), familia: FAMILIA_FISCAL_OK, modulosHabilitados: ['fiscal'] });

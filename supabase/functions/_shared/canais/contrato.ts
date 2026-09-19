@@ -108,6 +108,8 @@ export interface VariacaoCanonica {
   preco: number | null;
   gtin: string | null;
   fotoId: string | null;
+  /** ADR-0167. Null/ausente = cadastro normal de hoje (INV-1). */
+  tamanho?: string | null;
 }
 
 /**

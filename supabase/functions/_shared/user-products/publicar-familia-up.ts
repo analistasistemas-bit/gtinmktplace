@@ -11,6 +11,7 @@ import { montarPayloadItem } from '../ml/publicar.ts';
 import { publicarGrupo, type ResultadoSaga, type CodigoErroSaga } from './publicar-grupo.ts';
 import { criarPortasSupabase } from './portas-supabase.ts';
 import { enfileirarVinculacaoCatalogo } from '../queue.ts';
+import { garantirChart, GENDER_VALUE, type ChartResolvido, type Genero } from '../ml/size-chart.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -22,6 +23,8 @@ export interface PublicarFamiliaUPArgs {
   familia: {
     id: string; user_id: string; org_id: string; codigo_pai: string;
     titulo_ml: string | null; nome_pai: string | null; descricao_ml: string | null;
+    /** ADR-0166/0167. Ausente/null = família sem tamanho, comportamento intacto (INV-1). */
+    genero?: Genero | null;
     atacado?: unknown; [k: string]: unknown;
   };
   anuncio: AnuncioCanonico;
@@ -30,6 +33,8 @@ export interface PublicarFamiliaUPArgs {
   aceitaEmptyGtin?: boolean;
   /** Injetável em teste; produção usa a saga real. */
   executarSaga?: (portas: ReturnType<typeof criarPortasSupabase>, entrada: { anuncioExternoId: string; skusEsperados: string[] }) => Promise<ResultadoSaga>;
+  /** Injetável em teste; produção resolve o chart real (ADR-0167). */
+  garantirChartFn?: typeof garantirChart;
   now?: () => string;
 }
 
@@ -49,7 +54,29 @@ function ordenarPorCor<T extends { sku: string; cor: string | null }>(vs: T[]): 
 export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<ResultadoUP> {
   const { admin, conn, ctx, conexao, familia, anuncio, categoriaId } = args;
   const executarSaga = args.executarSaga ?? publicarGrupo;
+  const garantirChartFn = args.garantirChartFn ?? garantirChart;
   const now = args.now ?? (() => new Date().toISOString());
+
+  // ADR-0167: família com tamanho precisa da guia de medidas ANTES de montar qualquer payload —
+  // resolvida uma vez por família (nunca por SKU: SIZE_GRID_ID é o mesmo chart para todas as
+  // cores/tamanhos da família, só SIZE_GRID_ROW_ID muda por tamanho). Sem tamanho em nenhuma
+  // variação (toda org sem tipo de produto habilitado, INV-1), chart fica null e nada muda.
+  const tamanhos = [...new Set(
+    anuncio.variacoes.map((v) => v.tamanho).filter((t): t is string => !!t?.trim()),
+  )];
+  let chart: ChartResolvido | null = null;
+  let atributosComGenero = anuncio.atributos;
+  if (tamanhos.length > 0) {
+    if (!familia.genero) {
+      throw new Error(
+        `Família ${familia.id}: variação com tamanho mas familias.genero ausente — o ML exige `
+        + 'GENDER junto com o guia de tamanhos (ADR-0167 Decisão 6); nunca publica sem gênero.',
+      );
+    }
+    chart = await garantirChartFn(admin, await ctx.getToken(), conexao.id, categoriaId, familia.genero, tamanhos);
+    const genderValue = GENDER_VALUE[familia.genero];
+    atributosComGenero = [...anuncio.atributos, { id: 'GENDER', value_id: genderValue.id }];
+  }
 
   // family_name da partição: o ML agrupa numa mesma UPP todos os itens com o MESMO family_name
   // (ADR §4) — e também o EXIBE como título ao cliente final (achado real em produção 2026-07-22:
@@ -78,13 +105,17 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
 
   // 2. Portas reais. Payload plano por SKU: mesma montarPayloadItem que o conector usa, com o
   //    titulo_ml substituído pelo family_name da partição (vira family_name no payload plano).
-  const familiaInput = { titulo_ml: familyName, descricao_ml: anuncio.descricao, categoria_ml_id: categoriaId, atributos_ml: anuncio.atributos };
+  const familiaInput = { titulo_ml: familyName, descricao_ml: anuncio.descricao, categoria_ml_id: categoriaId, atributos_ml: atributosComGenero };
   const varPorSku = new Map(anuncio.variacoes.map((v) => [v.sku, v]));
   const montarPayloadPlano = (sku: string) => {
     const v = varPorSku.get(sku)!;
+    const sizeGridRowId = v.tamanho ? chart?.linhaPorTamanho.get(v.tamanho) ?? null : null;
     return montarPayloadItem(
       familiaInput,
-      [{ codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId }],
+      [{
+        codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
+        tamanho: v.tamanho ?? null, sizeGridId: chart?.chartId ?? null, sizeGridRowId,
+      }],
       anuncio.capaFotoId, anuncio.capa2FotoId, anuncio.capa3FotoId,
       anuncio.listingTypeId, anuncio.dimensoes, args.aceitaEmptyGtin, 'plano',
     );

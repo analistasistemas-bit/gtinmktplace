@@ -5,10 +5,22 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 const { enfileirarCatalogoSpy } = vi.hoisted(() => ({ enfileirarCatalogoSpy: vi.fn() }));
 vi.mock('../../queue.ts', () => ({ enfileirarVinculacaoCatalogo: enfileirarCatalogoSpy }));
 
+// portas-supabase.ts recebe montarPayloadPlano como closure — capturamos aqui pra inspecionar o
+// payload de cada SKU sem precisar rodar a saga real (que já é faked via executarSaga).
+const { criarPortasSpy } = vi.hoisted(() => ({ criarPortasSpy: vi.fn() }));
+vi.mock('../portas-supabase.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../portas-supabase.ts')>();
+  return {
+    ...real,
+    criarPortasSupabase: (deps: unknown) => { criarPortasSpy(deps); return real.criarPortasSupabase(deps as never); },
+  };
+});
+
 import { publicarFamiliaUP } from '../publicar-familia-up';
 import type { ResultadoSaga } from '../publicar-grupo';
 import { fakeConnector } from '../../canais/fake';
 import type { AnuncioCanonico } from '../../canais/contrato';
+import type { ChartResolvido } from '../../ml/size-chart';
 
 // Fake admin: registra writes e devolve as linhas filhas (para a escolha do 1º item no 'ativo').
 function fakeAdmin(childRows: Record<string, unknown>[]) {
@@ -60,7 +72,11 @@ function deps(saga: ResultadoSaga, childRows: Record<string, unknown>[] = []) {
 }
 
 describe('publicarFamiliaUP — orquestra raiz + saga + persistência', () => {
-  beforeEach(() => { fakeConnector.reset(); enfileirarCatalogoSpy.mockReset().mockResolvedValue('msg-1'); });
+  beforeEach(() => {
+    fakeConnector.reset();
+    enfileirarCatalogoSpy.mockReset().mockResolvedValue('msg-1');
+    criarPortasSpy.mockReset();
+  });
 
   it('grava a raiz ANTES da saga: status=publicando, titulo=family_name, skus_esperados = todos', async () => {
     const { args, writes } = deps({ estado: 'compensacao_pendente' });
@@ -181,5 +197,107 @@ describe('publicarFamiliaUP — orquestra raiz + saga + persistência', () => {
     const famUpd = writes.find((w) => w.table === 'familias' && w.op === 'update')!;
     expect(famUpd.payload.status).toBe('erro');
     expect(String(famUpd.payload.erro_mensagem)).toMatch(/agrup/i);
+  });
+});
+
+// ADR-0167: família com tamanho precisa resolver o guia de medidas ANTES de montar o payload de
+// cada SKU, e gênero é obrigatório junto (Decisão 6). Sem tamanho em nenhuma variação (toda org
+// sem tipo de produto habilitado, INV-1), nada disto é acionado — coberto pelos testes acima, que
+// não setam `familia.genero` nem `variacoes[].tamanho` e continuam passando inalterados.
+describe('publicarFamiliaUP — guia de tamanhos (ADR-0167)', () => {
+  beforeEach(() => {
+    fakeConnector.reset();
+    enfileirarCatalogoSpy.mockReset().mockResolvedValue('msg-1');
+    criarPortasSpy.mockReset();
+  });
+
+  const CHART: ChartResolvido = {
+    chartId: '8522331',
+    linhaPorTamanho: new Map([['P', '8522331:1'], ['M', '8522331:2']]),
+  };
+  const garantirChartFn = vi.fn().mockResolvedValue(CHART);
+
+  const ANUNCIO_COM_TAMANHO: AnuncioCanonico = {
+    ...ANUNCIO,
+    variacoes: [
+      { sku: 's-azul-p', cor: 'Azul', estoque: 5, preco: 599.9, gtin: null, fotoId: 'F1', tamanho: 'P' },
+      { sku: 's-azul-m', cor: 'Azul', estoque: 3, preco: 599.9, gtin: null, fotoId: 'F2', tamanho: 'M' },
+    ],
+  };
+
+  it('resolve o chart UMA vez por família, com os tamanhos únicos das variações', async () => {
+    garantirChartFn.mockClear();
+    const { admin } = fakeAdmin([]);
+    await publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: { ...FAMILIA, genero: 'masculino' } as never,
+      anuncio: ANUNCIO_COM_TAMANHO, categoriaId: 'MLB108803',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      garantirChartFn,
+    });
+    expect(garantirChartFn).toHaveBeenCalledTimes(1);
+    expect(garantirChartFn).toHaveBeenCalledWith(
+      admin, 'tok', 'conn-1', 'MLB108803', 'masculino', ['P', 'M'],
+    );
+  });
+
+  it('cada SKU recebe tamanho + sizeGridId + sizeGridRowId da sua própria linha do chart', async () => {
+    const { admin } = fakeAdmin([]);
+    await publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: { ...FAMILIA, genero: 'masculino' } as never,
+      anuncio: ANUNCIO_COM_TAMANHO, categoriaId: 'MLB108803',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      garantirChartFn,
+    });
+    const montarPayloadPlano = (criarPortasSpy.mock.calls[0][0] as { montarPayloadPlano: (sku: string) => { attributes: { id?: string; value_name?: string }[] } }).montarPayloadPlano;
+    const payloadP = montarPayloadPlano('s-azul-p');
+    expect(payloadP.attributes).toEqual(expect.arrayContaining([
+      { id: 'SIZE', value_name: 'P' },
+      { id: 'SIZE_GRID_ID', value_name: '8522331' },
+      { id: 'SIZE_GRID_ROW_ID', value_name: '8522331:1' },
+    ]));
+    const payloadM = montarPayloadPlano('s-azul-m');
+    expect(payloadM.attributes).toEqual(expect.arrayContaining([
+      { id: 'SIZE', value_name: 'M' },
+      { id: 'SIZE_GRID_ROW_ID', value_name: '8522331:2' },
+    ]));
+  });
+
+  it('GENDER entra em atributos_ml quando há tamanho', async () => {
+    const { admin } = fakeAdmin([]);
+    await publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: { ...FAMILIA, genero: 'feminino' } as never,
+      anuncio: ANUNCIO_COM_TAMANHO, categoriaId: 'MLB108803',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      garantirChartFn,
+    });
+    const montarPayloadPlano = (criarPortasSpy.mock.calls[0][0] as { montarPayloadPlano: (sku: string) => { attributes: { id?: string; value_id?: string }[] } }).montarPayloadPlano;
+    const payload = montarPayloadPlano('s-azul-p');
+    expect(payload.attributes).toEqual(expect.arrayContaining([{ id: 'GENDER', value_id: '339665' }]));
+  });
+
+  it('família com tamanho mas SEM genero falha LOUD (ADR-0167 Decisão 6) — nunca publica sem gênero', async () => {
+    const { admin } = fakeAdmin([]);
+    await expect(publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: { ...FAMILIA, genero: null } as never,
+      anuncio: ANUNCIO_COM_TAMANHO, categoriaId: 'MLB108803',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      garantirChartFn,
+    })).rejects.toThrow(/genero ausente/i);
+  });
+
+  it('sem tamanho em nenhuma variação: garantirChartFn nunca é chamado (INV-1)', async () => {
+    garantirChartFn.mockClear();
+    const { admin } = fakeAdmin([]);
+    await publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: FAMILIA as never, anuncio: ANUNCIO, categoriaId: 'MLB419782',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      garantirChartFn,
+    });
+    expect(garantirChartFn).not.toHaveBeenCalled();
   });
 });

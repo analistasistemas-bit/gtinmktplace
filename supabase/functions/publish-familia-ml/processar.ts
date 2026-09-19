@@ -168,10 +168,18 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
     }
 
     // ── ADR-0088: roteamento multi-cor User Products ────────────────────────────────────────
-    // Só multi-cor (>1 variação) com categoria conhecida e conexão resolvida entra em jogo — o
-    // caso de 1 cor e o multi-cor Legacy seguem pelo caminho de sempre (retry ADR-0087 intocado).
+    // Multi-cor (>1 variação) OU qualquer variação com tamanho entra em jogo. O caso de 1 cor
+    // SEM tamanho e o multi-cor Legacy seguem pelo caminho de sempre (retry ADR-0087 intocado).
+    //
+    // ADR-0167: o Spike 051 provou (chamada real /items/validate) que categorias de roupa/calçado
+    // recusam `variations[]` incondicionalmente — inclusive com 1 SKU só. O retry reativo de 1
+    // cor do ADR-0087 (dentro de `criarAnuncio`) NÃO sabe resolver o guia de tamanhos (isso só
+    // acontece dentro da saga UP, `publicarFamiliaUP`) — deixar 1 SKU com tamanho cair em
+    // `criarAnuncio` publicaria sem SIZE_GRID_ID (rejeitado pelo ML) ou falharia com uma
+    // mensagem confusa. Por isso `temTamanho` entra no gate mesmo com `variacoes.length === 1`.
     const categoria = anuncio.categoriaId;
-    const podeUP = anuncio.variacoes.length > 1 && !!categoria && !!conexao;
+    const temTamanho = anuncio.variacoes.some((v) => !!v.tamanho);
+    const podeUP = (anuncio.variacoes.length > 1 || temTamanho) && !!categoria && !!conexao;
 
     // Dispara a saga UP e mapeia o desfecho. publicarFamiliaUP já persiste familias/variacoes/raiz
     // e marca 'publicado' só quando TODAS as cores ficam ativas; aqui só finaliza o lote + resposta.
@@ -199,6 +207,20 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
       }
       return { tipo: 'erro', mensagem: r.mensagem };
     };
+
+    // ADR-0167: família com tamanho vai direto pra saga — sem cache, sem tentar Legacy. O Spike
+    // 051 já provou que a Legacy nunca funciona nessas categorias; sondar aqui só gastaria 1 POST
+    // fadado a falhar e correria o risco de `criarAnuncio` tentar o retry reativo de 1 SKU
+    // (ADR-0087) sem saber resolver o guia de tamanhos.
+    if (temTamanho) {
+      if (!podeUP) {
+        throw new Error(
+          `Família ${job.familia_id}: variação com tamanho mas categoria/conexão indisponível `
+          + 'para publicar via User Products (ADR-0167).',
+        );
+      }
+      return await rotaSagaUP();
+    }
 
     // Cache hit `user_products`: pula a tentativa `variations` de vez (zero POST desperdiçado, §3).
     const formatoConhecido = podeUP

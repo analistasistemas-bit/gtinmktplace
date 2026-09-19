@@ -41,6 +41,13 @@ interface FamiliaInput {
 interface VariacaoInput {
   codigo: string; cor: string | null; estoque: number;
   preco_publicacao: number | null; gtin: string | null; ml_picture_id: string | null;
+  /** ADR-0167. `tamanho` vem de `variacoes.tamanho` (ADR-0166) — só preenchido para org com tipo
+   *  de produto habilitado (INV-1: ausente/null é o cadastro normal de hoje, sem efeito nenhum).
+   *  `sizeGridId`/`sizeGridRowId` vêm de `garantirChart` (`_shared/ml/size-chart.ts`), resolvidos
+   *  uma vez por família antes de montar o payload de cada SKU. */
+  tamanho?: string | null;
+  sizeGridId?: string | null;
+  sizeGridRowId?: string | null;
 }
 
 /** Ordena as variações com a principal primeiro; o resto por código ascendente.
@@ -162,6 +169,23 @@ export function montarPayloadItem(
       if (aceitaEmptyGtin) atributosFlat.push({ id: 'EMPTY_GTIN_REASON', value_id: EMPTY_GTIN_REASON_SEM_CODIGO });
     } else {
       atributosFlat.push({ id: 'GTIN', value_name: v.gtin! });
+    }
+    // ADR-0167: os três juntos ou nenhum — Spike 051 §4 confirmou via /items/validate real que o
+    // ML exige SIZE + SIZE_GRID_ID + SIZE_GRID_ROW_ID simultaneamente nas categorias que exigem
+    // guia de tamanhos. `v.tamanho` sem grid resolvido falha LOUD: nunca publica um SIZE solto
+    // que o ML vai rejeitar de qualquer forma, com uma mensagem que esconde a causa real.
+    if (v.tamanho) {
+      if (!v.sizeGridId || !v.sizeGridRowId) {
+        throw new Error(
+          `SKU ${v.codigo}: tamanho "${v.tamanho}" sem guia de tamanhos resolvida `
+          + '(sizeGridId/sizeGridRowId ausentes) — garantirChart precisa rodar antes de montarPayloadItem.',
+        );
+      }
+      atributosFlat.push(
+        { id: 'SIZE', value_name: v.tamanho },
+        { id: 'SIZE_GRID_ID', value_name: v.sizeGridId },
+        { id: 'SIZE_GRID_ROW_ID', value_name: v.sizeGridRowId },
+      );
     }
     const atributosPacoteFlat = dimensoes ? montarAtributosPacote(dimensoes) : [];
     const precoFlat = v.preco_publicacao ?? 0;

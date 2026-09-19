@@ -39,6 +39,8 @@ export interface VariacaoParaMontar {
   largura_cm: number | string | null;
   comprimento_cm: number | string | null;
   peso_gramas: number | string | null;
+  /** ADR-0167. Ausente/null = cadastro normal de hoje (INV-1). */
+  tamanho?: string | null;
 }
 
 /**
@@ -114,6 +116,7 @@ export async function montarAnuncioCanonico(
     variacoes: ordenadas.map((v) => ({
       sku: v.codigo, cor: v.cor, estoque: v.estoque,
       preco: v.preco_publicacao as number | null, gtin: v.gtin, fotoId: v.ml_picture_id,
+      tamanho: v.tamanho ?? null,
     })),
   };
 }
