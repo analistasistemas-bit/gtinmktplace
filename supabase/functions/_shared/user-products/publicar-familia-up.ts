@@ -118,12 +118,17 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
   const varPorSku = new Map(anuncio.variacoes.map((v) => [v.sku, v]));
   const montarPayloadPlano = (sku: string) => {
     const v = varPorSku.get(sku)!;
-    const sizeGridRowId = v.tamanho ? chart?.linhaPorTamanho.get(v.tamanho) ?? null : null;
+    // Achado real de produção (2026-09-19, sandália): item.attributes[SIZE] tem que bater com o
+    // RÓTULO da linha do chart ("37 BR"), não com `v.tamanho` cru ("37") — /items/validate real
+    // devolveu invalid.fashion_grid.size.values com o valor cru. `montarPayloadItem` recebe os
+    // dois: sizeLabel (o que vai no payload) e tamanho (só usado pro guard "sem grid resolvido").
+    const linha = v.tamanho ? chart?.linhaPorTamanho.get(v.tamanho) ?? null : null;
     return montarPayloadItem(
       familiaInput,
       [{
         codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
-        tamanho: v.tamanho ?? null, sizeGridId: chart?.chartId ?? null, sizeGridRowId,
+        tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null,
+        sizeGridId: chart?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
       }],
       anuncio.capaFotoId, anuncio.capa2FotoId, anuncio.capa3FotoId,
       anuncio.listingTypeId, anuncio.dimensoes, args.aceitaEmptyGtin, 'plano',

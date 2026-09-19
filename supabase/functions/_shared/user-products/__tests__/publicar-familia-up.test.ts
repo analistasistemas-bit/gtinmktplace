@@ -213,7 +213,10 @@ describe('publicarFamiliaUP — guia de tamanhos (ADR-0167)', () => {
 
   const CHART: ChartResolvido = {
     chartId: '8522331',
-    linhaPorTamanho: new Map([['P', '8522331:1'], ['M', '8522331:2']]),
+    linhaPorTamanho: new Map([
+      ['P', { rowId: '8522331:1', sizeLabel: 'P' }],
+      ['M', { rowId: '8522331:2', sizeLabel: 'M' }],
+    ]),
   };
   const garantirChartFn = vi.fn().mockResolvedValue(CHART);
 
@@ -262,6 +265,33 @@ describe('publicarFamiliaUP — guia de tamanhos (ADR-0167)', () => {
       { id: 'SIZE', value_name: 'M' },
       { id: 'SIZE_GRID_ROW_ID', value_name: '8522331:2' },
     ]));
+  });
+
+  // Achado real de produção (2026-09-19, sandália): /items/validate recusou SIZE="37"
+  // (invalid.fashion_grid.size.values), só aceitou "37 BR" — o rótulo da linha, não
+  // `variacoes.tamanho` cru. Em calçado os dois DIVERGEM (ao contrário de P=P em vestuário).
+  it('calçado: SIZE usa o sizeLabel da linha do chart, não o tamanho cru (achado real)', async () => {
+    const chartCalcado: ChartResolvido = {
+      chartId: '8078230',
+      linhaPorTamanho: new Map([['37', { rowId: '8078230:5', sizeLabel: '37 BR' }]]),
+    };
+    const garantirChartCalcado = vi.fn().mockResolvedValue(chartCalcado);
+    const anuncioCalcado: AnuncioCanonico = {
+      ...ANUNCIO,
+      variacoes: [{ sku: 's-preto-37', cor: 'Preto', estoque: 5, preco: 549.9, gtin: null, fotoId: 'F1', tamanho: '37' }],
+    };
+    const { admin } = fakeAdmin([]);
+    await publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: { ...FAMILIA, genero: 'unissex' } as never,
+      anuncio: anuncioCalcado, categoriaId: 'MLB273770',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      garantirChartFn: garantirChartCalcado,
+    });
+    const montarPayloadPlano = (criarPortasSpy.mock.calls[0][0] as { montarPayloadPlano: (sku: string) => { attributes: { id?: string; value_name?: string }[] } }).montarPayloadPlano;
+    const payload = montarPayloadPlano('s-preto-37');
+    expect(payload.attributes).toEqual(expect.arrayContaining([{ id: 'SIZE', value_name: '37 BR' }]));
+    expect(payload.attributes).not.toEqual(expect.arrayContaining([{ id: 'SIZE', value_name: '37' }]));
   });
 
   it('GENDER entra em atributos_ml quando há tamanho', async () => {

@@ -59,9 +59,21 @@ export const DOMINIOS_SUPORTADOS = new Set([
   ...DOMINIOS_VESTUARIO, ...DOMINIOS_CALCADO_STANDARD, ...DOMINIOS_CALCADO_SPECIFIC,
 ]);
 
+// Achado real (2026-09-19, sandália): o SIZE do ITEM tem que bater com o rótulo da linha do
+// chart ("37 BR"), não com o valor cru da categoria ("37") — /items/validate real devolveu
+// `invalid.fashion_grid.size.values` com "37" e passou com "37 BR". Em vestuário o rótulo da
+// linha é igual ao tamanho cru (P=P), por isso passou despercebido nos testes de jaqueta — mas o
+// contrato correto sempre foi "usa o rótulo da linha", não "usa o tamanho cru".
+export interface LinhaChartResolvida {
+  rowId: string;
+  /** Valor exato a mandar em `item.attributes[SIZE].value_name` — vem da própria linha do
+   *  chart, nunca de `variacoes.tamanho` direto. */
+  sizeLabel: string;
+}
+
 export interface ChartResolvido {
   chartId: string;
-  linhaPorTamanho: ReadonlyMap<string, string>;
+  linhaPorTamanho: ReadonlyMap<string, LinhaChartResolvida>;
 }
 
 /** `settings.catalog_domain` de `GET /categories/{id}` vem com o prefixo `MLB-` (ex.:
@@ -153,14 +165,17 @@ export function montarLinhasChart(
   });
 }
 
-/** Extrai tamanho→row_id da resposta real de `POST`/`GET /catalog/charts/{id}` (Spike 051 §3). */
+/** Extrai tamanho→{rowId, sizeLabel} da resposta real de `POST`/`GET /catalog/charts/{id}`
+ *  (Spike 051 §3). Em vestuário `sizeLabel` sempre é igual ao tamanho cru (P=P), mas o contrato
+ *  correto é sempre "usa o rótulo da linha" — nunca `variacoes.tamanho` direto no payload do item
+ *  (achado real de produção, Spike 051 §13, ver `LinhaChartResolvida`). */
 export function parseLinhasResposta(
   rows: readonly { id: string; attributes: readonly { id: string; values?: readonly { name?: string }[] }[] }[],
-): Map<string, string> {
-  const mapa = new Map<string, string>();
+): Map<string, LinhaChartResolvida> {
+  const mapa = new Map<string, LinhaChartResolvida>();
   for (const row of rows) {
     const nomeTamanho = row.attributes.find((a) => a.id === 'SIZE')?.values?.[0]?.name;
-    if (nomeTamanho) mapa.set(nomeTamanho, row.id);
+    if (nomeTamanho) mapa.set(nomeTamanho, { rowId: row.id, sizeLabel: nomeTamanho });
   }
   return mapa;
 }
@@ -184,18 +199,20 @@ export function montarLinhasChartCalcado(
   });
 }
 
-/** Extrai numeração→row_id de um chart de calçado — funciona tanto pra chart STANDARD do ML
- *  (atributo `SIZE`, nome "40 BR") quanto pra chart SPECIFIC nosso (atributo `BR_SIZE`) — os dois
- *  têm `struct.number` real (achado Spike 051 §13), então a chave normalizada é sempre o número
- *  puro ("40"), o mesmo formato que `variacoes.tamanho` usa. */
+/** Extrai numeração→{rowId, sizeLabel} de um chart de calçado — funciona tanto pra chart STANDARD
+ *  do ML (atributo `SIZE`, nome "40 BR") quanto pra chart SPECIFIC nosso (atributo `BR_SIZE`) —
+ *  os dois têm `struct.number` real (Spike 051 §13), então a CHAVE normalizada é o número puro
+ *  ("40", igual a `variacoes.tamanho`), mas `sizeLabel` guarda o rótulo completo ("40 BR") —
+ *  achado real de produção: `item.attributes[SIZE]` recusa o número puro, só aceita esse rótulo. */
 export function parseLinhasCalcado(
-  rows: readonly { id: string; attributes: readonly { id: string; values?: readonly { struct?: { number?: number } }[] }[] }[],
-): Map<string, string> {
-  const mapa = new Map<string, string>();
+  rows: readonly { id: string; attributes: readonly { id: string; values?: readonly { name?: string; struct?: { number?: number } }[] }[] }[],
+): Map<string, LinhaChartResolvida> {
+  const mapa = new Map<string, LinhaChartResolvida>();
   for (const row of rows) {
     const attr = row.attributes.find((a) => a.id === 'SIZE' || a.id === 'BR_SIZE');
-    const numero = attr?.values?.[0]?.struct?.number;
-    if (numero != null) mapa.set(String(numero), row.id);
+    const valor = attr?.values?.[0];
+    const numero = valor?.struct?.number;
+    if (numero != null && valor?.name) mapa.set(String(numero), { rowId: row.id, sizeLabel: valor.name });
   }
   return mapa;
 }
@@ -235,7 +252,7 @@ export async function garantirChart(
     .eq('connection_id', connectionId).eq('domain_id', domainId).eq('genero', genero)
     .maybeSingle();
   if (cached) {
-    const linhaPorTamanho = new Map(Object.entries(cached.linhas as Record<string, string>));
+    const linhaPorTamanho = new Map(Object.entries(cached.linhas as Record<string, LinhaChartResolvida>));
     // ADR-0167 Decisão 4 (chart imutável): se o cache não cobre um tamanho pedido, NUNCA editar o
     // chart existente — falha alto com mensagem clara em vez da mensagem enganosa que vinha de
     // publicar.ts ("garantirChart precisa rodar antes"). Não deveria acontecer se a criação sempre

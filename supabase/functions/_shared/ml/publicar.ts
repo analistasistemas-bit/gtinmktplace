@@ -48,6 +48,11 @@ interface VariacaoInput {
   tamanho?: string | null;
   sizeGridId?: string | null;
   sizeGridRowId?: string | null;
+  /** Achado real de produção (2026-09-19, sandália): `item.attributes[SIZE]` tem que bater com o
+   *  RÓTULO da linha do chart ("37 BR"), não com `variacoes.tamanho` cru ("37") —
+   *  /items/validate real devolveu `invalid.fashion_grid.size.values` com o valor cru. Em
+   *  vestuário os dois coincidem (P=P), por isso cai em `tamanho` quando ausente. */
+  sizeLabel?: string | null;
 }
 
 /** Ordena as variações com a principal primeiro; o resto por código ascendente.
@@ -182,7 +187,7 @@ export function montarPayloadItem(
         );
       }
       atributosFlat.push(
-        { id: 'SIZE', value_name: v.tamanho },
+        { id: 'SIZE', value_name: v.sizeLabel ?? v.tamanho },
         { id: 'SIZE_GRID_ID', value_name: v.sizeGridId },
         { id: 'SIZE_GRID_ROW_ID', value_name: v.sizeGridRowId },
       );

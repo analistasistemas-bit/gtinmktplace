@@ -170,6 +170,25 @@ describe('montarPayloadItem', () => {
     ]));
   });
 
+  // Achado real de produção (2026-09-19, sandália): /items/validate recusou SIZE="37"
+  // (invalid.fashion_grid.size.values) e só aceitou SIZE="37 BR" — o rótulo da linha do chart,
+  // não o valor cru de `variacoes.tamanho`. Em vestuário os dois coincidem (P=P), por isso não
+  // apareceu nos testes de jaqueta — mas o contrato correto é sempre "usa sizeLabel".
+  it('item plano com sizeLabel diferente de tamanho usa sizeLabel no SIZE (achado real de calçado, ADR-0167)', () => {
+    const calcado = { ...familia, categoria_ml_id: 'MLB273770' };
+    const v = { ...variacoes[0], tamanho: '37', sizeLabel: '37 BR', sizeGridId: '8078230', sizeGridRowId: '8078230:5' };
+    const p = montarPayloadItem(calcado, [v], capaPictureId, null, null, undefined, null, undefined, 'plano');
+    expect(p.attributes).toEqual(expect.arrayContaining([{ id: 'SIZE', value_name: '37 BR' }]));
+    expect(p.attributes).not.toEqual(expect.arrayContaining([{ id: 'SIZE', value_name: '37' }]));
+  });
+
+  it('item plano sem sizeLabel cai no tamanho cru (compat — vestuário onde os dois coincidem)', () => {
+    const roupa = { ...familia, categoria_ml_id: 'MLB108803' };
+    const v = { ...variacoes[0], tamanho: 'P', sizeGridId: '8522331', sizeGridRowId: '8522331:1' };
+    const p = montarPayloadItem(roupa, [v], capaPictureId, null, null, undefined, null, undefined, 'plano');
+    expect(p.attributes).toEqual(expect.arrayContaining([{ id: 'SIZE', value_name: 'P' }]));
+  });
+
   it('item plano sem tamanho não envia SIZE/SIZE_GRID_ID/SIZE_GRID_ROW_ID (INV-1 — org sem tipo de produto)', () => {
     const p = montarPayloadItem(
       { ...familia, categoria_ml_id: 'MLB271227' }, [variacoes[0]], capaPictureId,

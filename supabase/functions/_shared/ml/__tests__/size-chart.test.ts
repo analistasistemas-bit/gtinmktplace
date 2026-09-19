@@ -103,14 +103,14 @@ describe('montarLinhasChart (ADR-0167 / Spike 051 §3)', () => {
 });
 
 describe('parseLinhasResposta (ADR-0167 / Spike 051 §3)', () => {
-  it('extrai tamanho -> row_id da resposta real do ML', () => {
+  it('extrai tamanho -> {rowId, sizeLabel} da resposta real do ML', () => {
     const rows = [
       { id: '8522331:1', attributes: [{ id: 'SIZE', values: [{ name: 'P' }] }, { id: 'FILTRABLE_SIZE', values: [{ name: 'P' }] }] },
       { id: '8522331:2', attributes: [{ id: 'SIZE', values: [{ name: 'M' }] }] },
     ];
     const mapa = parseLinhasResposta(rows);
-    expect(mapa.get('P')).toBe('8522331:1');
-    expect(mapa.get('M')).toBe('8522331:2');
+    expect(mapa.get('P')).toEqual({ rowId: '8522331:1', sizeLabel: 'P' });
+    expect(mapa.get('M')).toEqual({ rowId: '8522331:2', sizeLabel: 'M' });
     expect(mapa.size).toBe(2);
   });
 
@@ -176,19 +176,22 @@ describe('montarLinhasChartCalcado (ADR-0167 / Spike 051 §13)', () => {
   });
 });
 
-describe('parseLinhasCalcado (ADR-0167 / Spike 051 §13)', () => {
-  it('extrai numeração -> row_id de um chart STANDARD real (atributo SIZE com struct.number)', () => {
+// Achado real (2026-09-19, sandália): /items/validate recusou o item com SIZE="37"
+// (invalid.fashion_grid.size.values) e só aceitou com SIZE="37 BR" — o rótulo da linha do chart,
+// não o valor cru da categoria. `sizeLabel` existe pra carregar esse rótulo até o payload do item.
+describe('parseLinhasCalcado (ADR-0167 / Spike 051 §13 — sizeLabel é o achado real de produção)', () => {
+  it('extrai numeração -> {rowId, sizeLabel} de um chart STANDARD real (atributo SIZE com struct.number)', () => {
     const rows = [
       { id: '210058:8', attributes: [{ id: 'SIZE', values: [{ name: '40 BR', struct: { number: 40 } }] }] },
     ];
-    expect(parseLinhasCalcado(rows).get('40')).toBe('210058:8');
+    expect(parseLinhasCalcado(rows).get('40')).toEqual({ rowId: '210058:8', sizeLabel: '40 BR' });
   });
 
-  it('extrai numeração -> row_id de um chart SPECIFIC nosso (atributo BR_SIZE com struct.number)', () => {
+  it('extrai numeração -> {rowId, sizeLabel} de um chart SPECIFIC nosso (atributo BR_SIZE com struct.number)', () => {
     const rows = [
       { id: '8077736:1', attributes: [{ id: 'BR_SIZE', values: [{ name: '37 BR', struct: { number: 37 } }] }] },
     ];
-    expect(parseLinhasCalcado(rows).get('37')).toBe('8077736:1');
+    expect(parseLinhasCalcado(rows).get('37')).toEqual({ rowId: '8077736:1', sizeLabel: '37 BR' });
   });
 
   it('linha sem SIZE nem BR_SIZE não entra no mapa', () => {
