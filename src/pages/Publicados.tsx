@@ -598,7 +598,9 @@ function LinhaTabela({
                 <AlertDialogDescription>
                   Você perde o vínculo de UPDATE para <strong>TODAS</strong> as futuras planilhas
                   com o código <code className="rounded bg-muted px-1">{item.codigoPai}</code>,
-                  não só deste lote. O anúncio no ML continua ativo.
+                  não só deste lote. Se o anúncio <strong>não teve venda no Mercado Livre</strong>,
+                  ele será encerrado e apagado lá também. Se já teve venda, a remoção será recusada
+                  nos dois lados — nada será alterado.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -697,7 +699,7 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
           </StatusPill>
           <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
           <p className="mt-0.5 text-xs text-destructive">
-            O anúncio está no Mercado Livre, mas o app não concluiu a publicação — remova para pausá-lo lá e refazer.
+            O anúncio está no Mercado Livre, mas o app não concluiu a publicação — remova para encerrá-lo lá (se não teve venda) e refazer.
           </p>
         </div>
       </TableCell>
@@ -733,7 +735,7 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
                 size="sm"
                 className="h-7 px-2 text-xs text-destructive hover:text-destructive"
                 aria-label="Remover publicação incompleta"
-                title="Pausa o anúncio no Mercado Livre e desfaz o vínculo"
+                title="Encerra no Mercado Livre (sem venda) e remove o vínculo"
                 disabled={removendo}
               >
                 <Trash2 className="h-3 w-3" />
@@ -744,8 +746,9 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
                 <AlertDialogTitle>Remover esta publicação incompleta?</AlertDialogTitle>
                 <AlertDialogDescription>
                   O anúncio <code className="rounded bg-muted px-1">{item.mlItemId}</code> será
-                  <strong> pausado no Mercado Livre</strong> e o vínculo local desfeito. O produto
-                  volta para a Revisão e você publica de novo — sem duplicar o anúncio.
+                  <strong> encerrado e apagado no Mercado Livre</strong> se não teve venda, e o
+                  vínculo no PubliAI será removido. Se já teve venda, a remoção será recusada nos
+                  dois lados — nada será alterado.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -764,7 +767,7 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
                     }
                   }}
                 >
-                  Pausar no ML e remover
+                  Remover
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>
@@ -1019,7 +1022,7 @@ export default function Publicados() {
     setRemovendoId(familiaId);
     try {
       await removerAsync(familiaId);
-      toast.success('Removido do sistema');
+      toast.success('Removido do PubliAI e encerrado no Mercado Livre');
     } catch (err) {
       toast.error('Falha ao remover', {
         description: err instanceof Error ? err.message : String(err),

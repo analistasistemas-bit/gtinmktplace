@@ -30,6 +30,14 @@ export interface ItemMLAtual {
   // ADR-0160: tags do item. `variations_migration_pending` prova que o UPtin ("preço por variação")
   // está em andamento — PUT nessa janela é aceito com 200 e perdido. Ver `anuncio-atualizavel.ts`.
   tags: string[];
+  // ADR-0168: vendas no ML — critério de bloqueio do Remover em Publicados.
+  soldQuantity: number | null;
+}
+
+const SUB_STATUS_MORTO = new Set(['deleted', 'forbidden']);
+
+export function itemJaExcluidoML(item: Pick<ItemMLAtual, 'subStatus'>): boolean {
+  return item.subStatus.some((s) => SUB_STATUS_MORTO.has(s));
 }
 
 function erroML(status: number, json: unknown): Error {
@@ -53,7 +61,7 @@ export function corDaVariacaoML(attributeCombinations: unknown): string | null {
 // Estado real do anúncio: ids + seller_custom_field + estoque de cada variação.
 export async function buscarItemML(accessToken: string, itemId: string): Promise<ItemMLAtual> {
   const url = `https://api.mercadolibre.com/items/${itemId}`
-    + '?attributes=id,variations,pictures,price,available_quantity,status,sub_status'
+    + '?attributes=id,variations,pictures,price,available_quantity,status,sub_status,sold_quantity'
     + ',family_id,family_name,seller_id,title,category_id,tags';
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
   const json = await resp.json();
@@ -90,6 +98,7 @@ export async function buscarItemML(accessToken: string, itemId: string): Promise
     tags: Array.isArray(json.tags)
       ? (json.tags as unknown[]).filter((t): t is string => typeof t === 'string')
       : [],
+    soldQuantity: (json.sold_quantity as number | null | undefined) ?? null,
   };
 }
 
@@ -154,4 +163,52 @@ export async function atualizarStatusML(accessToken: string, itemId: string, sta
   });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw erroML(resp.status, json);
+}
+
+/** ADR-0168: encerra (`closed`) e apaga (`deleted:"true"`) um item no ML, com retry curto em 409. */
+export async function excluirItemML(
+  accessToken: string,
+  itemId: string,
+  itemAtual?: ItemMLAtual,
+): Promise<void> {
+  const item = itemAtual ?? await buscarItemML(accessToken, itemId);
+  if (itemJaExcluidoML(item)) return;
+
+  if (item.status !== 'closed') {
+    await atualizarStatusML(accessToken, itemId, 'closed');
+  }
+
+  const putDeleted = async () => {
+    const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}`, {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ deleted: 'true' }),
+    });
+    const json = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw erroML(resp.status, json);
+  };
+
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    try {
+      await putDeleted();
+      break;
+    } catch (e) {
+      if (tentativa < 2 && (e as { status?: number }).status === 409) {
+        await new Promise((r) => setTimeout(r, 200));
+        continue;
+      }
+      throw e;
+    }
+  }
+
+  try {
+    const confirmado = await buscarItemML(accessToken, itemId);
+    if (!itemJaExcluidoML(confirmado) && confirmado.status !== 'closed') {
+      throw new Error(`item ${itemId} não confirmou exclusão no ML`);
+    }
+  } catch (e) {
+    const st = (e as { status?: number }).status;
+    if (st === 404 || st === 410) return;
+    throw e;
+  }
 }

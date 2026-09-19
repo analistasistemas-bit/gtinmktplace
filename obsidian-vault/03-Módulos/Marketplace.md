@@ -38,8 +38,7 @@ Gestão do que está publicado no canal ativo (Mercado Livre). Ver [[Publicaçã
   filtro próprio; antes passava por publicada. Complementa o filtro **"sem vínculo de catálogo"**.
   O texto do chip não promete ação que o não-admin não tem
 - **Moderação** — `monitorar-moderados` varre anúncios pausados/moderados e alerta Telegram
-- **Remoção** — `remover-publicado` (limpa registro local, ML intocado) e `excluir-lote`
-  (preserva publicados)
+- **Remoção** — `remover-publicado` (ADR-0168): sem venda no ML (`sold_quantity=0`) encerra+apaga no ML e limpa PubliAI; com venda, bloqueia os dois lados. `excluir-lote` preserva publicados
 - **Pausar/reativar** — toggle na linha (só admin, `atualizar-status-publicado`); pausar exige
   confirmação, reativar é direto. Sem persistência local de status — invalida o cache de
   status ao vivo após a ação (ADR-0060)

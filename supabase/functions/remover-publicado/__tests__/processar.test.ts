@@ -85,6 +85,42 @@ const CANAL = 'mercado_livre';
 const CTX = { getToken: async () => 'tok' } as never;
 const CONEXAO = { id: 'c', contaExternaId: 'seller-1' } as never;
 
+/** Stub de fetch ML para Remover (ADR-0168): GET sold_quantity + PUT closed/deleted. */
+function stubFetchML(
+  config: Record<string, { sold_quantity?: number; status?: string; getStatus?: number }>,
+  opts?: { putStatus?: number; failId?: string },
+) {
+  const excluidos = new Set<string>();
+  return vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+    const m = url.match(/items\/(MLB[^/?]+)/);
+    const id = m?.[1];
+    if (init?.method === 'PUT' && id) {
+      if (opts?.failId === id) return new Response('{}', { status: opts.putStatus ?? 500 });
+      const body = JSON.parse(init.body ?? '{}');
+      if (body.deleted) { excluidos.add(id); return new Response('{}', { status: 200 }); }
+      return new Response('{}', { status: 200 });
+    }
+    const cfg = id ? config[id] : undefined;
+    if (!cfg) return new Response('{}', { status: 404 });
+    if (cfg.getStatus) return new Response('{}', { status: cfg.getStatus });
+    if (excluidos.has(id!)) return new Response('{}', { status: 404 });
+    return new Response(JSON.stringify({
+      id,
+      sold_quantity: cfg.sold_quantity ?? 0,
+      status: cfg.status ?? 'active',
+      sub_status: [],
+      variations: [],
+      pictures: [],
+    }), { status: 200 });
+  });
+}
+
+function depsRemoverML(admin: unknown, ids: string[]) {
+  const cfg = Object.fromEntries(ids.map((id) => [id, { sold_quantity: 0 }]));
+  vi.stubGlobal('fetch', stubFetchML(cfg));
+  return { admin, ctx: CTX, conexao: CONEXAO };
+}
+
 describe('removerPublicado — família User Products (ADR-0088: mini-saga de remoção)', () => {
   it('modo republicar pausa filhos, preserva família/imagens e limpa somente vínculos ML', async () => {
     const { admin, deletes, updates, removidos } = fakeAdmin({
@@ -131,12 +167,18 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
     expect(removidos).toEqual([]);
   });
 
-  it('todos os filhos confirmam pausado → deleta normalmente (fluxo idêntico ao Legacy)', async () => {
-    const { admin, deletes, updates } = fakeAdmin({
+  it('Remover UP: todos sold_quantity=0 → encerra todos os filhos + delete local', async () => {
+    const puts: string[] = [];
+    vi.stubGlobal('fetch', stubFetchML({ MLB1: { sold_quantity: 0 }, MLB2: { sold_quantity: 0 } }));
+    const fetchOrig = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (init?.method === 'PUT') puts.push(String(init.body));
+      return fetchOrig(url, init);
+    }) as typeof fetch;
+    const { admin, deletes } = fakeAdmin({
       familias: [
-        { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, // alvo
-        [], // emVoo
-        [], // kits vivos (guard D-14) — nenhum
+        { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
+        [], [], 
         [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
@@ -148,17 +190,16 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
       lotes: [],
     });
 
-    const r = await removerPublicado(
-      { admin, ctx: CTX, conexao: CONEXAO, removerComposicao: async () => ({ tipo: 'pronto_para_deletar' }) },
-      { familiaId: 'fam-1', orgId: ORG, canal: CANAL },
-    );
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
 
     expect(r.tipo).toBe('ok');
     expect(deletes.map((d) => d.tabela)).toEqual(['familias', 'anuncios_externos', 'lotes']);
-    expect(updates).toEqual([]); // saga real faria os updates; aqui a saga é fake e não passou por salvarStatus
+    expect(puts.filter((p) => p.includes('"status":"closed"'))).toHaveLength(2);
+    expect(puts.filter((p) => p.includes('"deleted"'))).toHaveLength(2);
   });
 
-  it('1+ filhos não confirmam pausado → remocao_pendente, NADA é deletado (raiz e filhas preservadas)', async () => {
+  it('republicar: 1+ filhos não confirmam pausado → remocao_pendente, NADA é deletado', async () => {
     const { admin, deletes } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
@@ -173,14 +214,14 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
 
     const r = await removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO, removerComposicao: async () => ({ tipo: 'incompleto', pendentes: ['B'] }) },
-      { familiaId: 'fam-1', orgId: ORG, canal: CANAL },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
     );
 
     expect(r).toEqual({ tipo: 'remocao_pendente', pendentes: ['B'] });
-    expect(deletes).toEqual([]); // nada deletado — nem familias, nem anuncios_externos
+    expect(deletes).toEqual([]);
   });
 
-  it('família com filhos UP ativos SEM ctx/conexao → lança (nunca tenta pausar sem token)', async () => {
+  it('Remover com filhos UP SEM ctx/conexao → lança (ADR-0168 D-5)', async () => {
     const { admin } = fakeAdmin({
       familias: [{ id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
       anuncios_externos: [[{ id: 'ext-1' }]],
@@ -206,39 +247,43 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
       .rejects.toThrow(/consultar filhos UP falhou/);
   });
 
-  it('raiz UP existe mas SEM linhas filhas (família UP já esvaziada) → remove normalmente, SEM exigir ctx/conexao', async () => {
-    const { admin, deletes } = fakeAdmin({
+  it('raiz UP esvaziada → Remover exige ctx e encerra ml_item_id no ML', async () => {
+    const cenario = () => fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
-        [],
-        [], // kits vivos (guard D-14) — nenhum
+        [], [],
         [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
       anuncios_externos: [[{ id: 'ext-1' }]],
-      anuncios_externos_itens: [[]], // raiz existe mas sem filhos (nunca teve, ou já removidos)
+      anuncios_externos_itens: [[]],
       lotes: [],
     });
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }); // sem ctx/conexao — não deveria precisar
+    const { admin: adminSemCtx } = cenario();
+    await expect(removerPublicado({ admin: adminSemCtx }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
+      .rejects.toThrow(/conexão com o Mercado Livre/);
+    const { admin, deletes } = cenario();
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
     expect(r.tipo).toBe('ok');
     expect(deletes.map((d) => d.tabela)).toEqual(['familias', 'anuncios_externos', 'lotes']);
   });
 
-  it('família sem anuncios_externos (nunca publicada por esse canal): não bloqueia por UP', async () => {
+  it('família Legacy sem anuncios_externos: Remover exige ctx e consulta ML', async () => {
     const { admin, deletes } = fakeAdmin({
       familias: [
         { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
-        [],
-        [], // kits vivos (guard D-14) — nenhum
+        [], [],
         [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
         [],
       ],
       anuncios_externos: [[]],
       lotes: [],
     });
-
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
-
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
     expect(r.tipo).toBe('ok');
     expect(deletes.map((d) => d.tabela)).toContain('familias');
   });
@@ -271,9 +316,11 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
       anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: true }]],
       anuncios_externos_itens: [[]], // UP-esvaziada — sem filhos, pula direto pro delete
     });
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
     expect(r.tipo).toBe('em_voo');
-    expect(deletes).toEqual([]); // nada deletado — a composição que começou no meio-tempo é protegida
+    expect(deletes).toEqual([]);
   });
 
   // Revisão Codex round 3: a re-checagem original rodava DEPOIS do storage.remove(paths) — mesmo
@@ -289,10 +336,12 @@ describe('removerPublicado — família User Products (ADR-0088: mini-saga de re
       anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: true }]],
       anuncios_externos_itens: [[]],
     });
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
     expect(r.tipo).toBe('em_voo');
     expect(deletes).toEqual([]);
-    expect(removidos).toEqual([]); // fotos NUNCA removidas — a re-checagem abortou antes
+    expect(removidos).toEqual([]);
   });
 });
 
@@ -340,8 +389,10 @@ describe('removerPublicado — fail-closed em erros de query/delete (revisão Co
       familias: [{ id: 'fam-1', codigo_pai: '000', ml_item_id: 'MLB1', org_id: ORG }, [], [], ERRO('timeout')],
       anuncios_externos: [[]],
     });
-    await expect(removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
+    const deps = depsRemoverML(admin, ['MLB1']);
+    await expect(removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
       .rejects.toThrow(/listar famílias pra excluir falhou/);
+    vi.unstubAllGlobals();
   });
 
   it('erro ao deletar familias → lança', async () => {
@@ -354,8 +405,10 @@ describe('removerPublicado — fail-closed em erros de query/delete (revisão Co
       anuncios_externos: [[]],
       'familias:delete': [ERRO('constraint')],
     });
-    await expect(removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
+    const deps = depsRemoverML(admin, ['MLB1']);
+    await expect(removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
       .rejects.toThrow(/deletar familias falhou/);
+    vi.unstubAllGlobals();
   });
 
   it('erro ao deletar anuncios_externos → lança', async () => {
@@ -368,12 +421,14 @@ describe('removerPublicado — fail-closed em erros de query/delete (revisão Co
       anuncios_externos: [[]],
       'anuncios_externos:delete': [ERRO('timeout')],
     });
-    await expect(removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
+    const deps = depsRemoverML(admin, ['MLB1']);
+    await expect(removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
       .rejects.toThrow(/deletar anuncios_externos falhou/);
+    vi.unstubAllGlobals();
   });
 });
 
-describe('removerPublicado — família Legacy (regressão: comportamento de hoje inalterado)', () => {
+describe('removerPublicado — família Legacy (regressão)', () => {
   it('raiz em anuncios_externos mas SEM linhas em anuncios_externos_itens: remove normalmente', async () => {
     const { admin, deletes, removidos } = fakeAdmin({
       familias: [
@@ -392,7 +447,9 @@ describe('removerPublicado — família Legacy (regressão: comportamento de hoj
       lotes: [],
     });
 
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
 
     expect(r.tipo).toBe('ok');
     if (r.tipo === 'ok') {
@@ -428,7 +485,9 @@ describe('removerPublicado — família Legacy (regressão: comportamento de hoj
       lotes: [],
     });
 
-    await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
 
     expect(removidos).toEqual([[`${DONO}/capas/legitima.jpg`]]);
   });
@@ -456,7 +515,9 @@ describe('removerPublicado — varredura de movimentos órfãos (ADR-0097)', () 
   it('varre os órfãos da org DEPOIS de deletar as famílias', async () => {
     const { admin, rpcs } = cenarioRemove();
 
-    await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
 
     expect(rpcs).toHaveLength(1);
     expect(rpcs[0].nome).toBe('limpar_movimentos_orfaos');
@@ -470,7 +531,9 @@ describe('removerPublicado — varredura de movimentos órfãos (ADR-0097)', () 
     const { admin } = cenarioRemove();
     admin.rpc = async () => ({ data: null, error: { message: 'boom' } });
 
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
 
     expect(r.tipo).toBe('ok');
   });
@@ -557,7 +620,9 @@ describe('removerPublicado — guard D-14: base com kit vinculado ativo (ADR-015
       anuncios_externos: [[]],
       lotes: [],
     });
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
     expect(r.tipo).not.toBe('kit_vinculado_ativo');
   });
 });
@@ -591,7 +656,9 @@ describe('removerPublicado — guard D-13: componente de Kit Virtual publicado (
       kits_virtuais: [[{ id: 'kit-1', titulo: 'Kit Verão' }]],
       kits_virtuais_componentes: [[{ kit_id: 'kit-1', codigo_pai: '00099999', item_externo_id: null }]],
     });
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
     expect(r).toEqual({ tipo: 'kit_virtual_publicado', kits: ['Kit Verão'] });
     expect(deletes).toEqual([]);
     expect(updates).toEqual([]);
@@ -624,7 +691,9 @@ describe('removerPublicado — guard D-13: componente de Kit Virtual publicado (
         { kit_id: 'kit-2', codigo_pai: '00000001', item_externo_id: 'MLB-outro' }, // não casa
       ]],
     });
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
     expect(r).toEqual({ tipo: 'kit_virtual_publicado', kits: ['Kit Verão'] });
   });
 
@@ -643,7 +712,9 @@ describe('removerPublicado — guard D-13: componente de Kit Virtual publicado (
       anuncios_externos_itens: [[]],
       lotes: [],
     });
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
     expect(r.tipo).toBe('ok');
     expect(deletes.map((d) => d.tabela)).toEqual(['familias', 'anuncios_externos', 'lotes']);
   });
@@ -660,7 +731,9 @@ describe('removerPublicado — guard D-13: componente de Kit Virtual publicado (
       anuncios_externos_itens: [[]],
       lotes: [],
     });
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
     expect(r.tipo).toBe('ok');
   });
 
@@ -676,7 +749,9 @@ describe('removerPublicado — guard D-13: componente de Kit Virtual publicado (
       lotes: [],
       // kits_virtuais OMITIDO de propósito: fila ausente resolve como [] (nenhum kit publicado).
     });
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const deps = depsRemoverML(admin, ['MLB1']);
+    const r = await removerPublicado(deps, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.unstubAllGlobals();
     expect(r.tipo).toBe('ok');
     expect(deletes.map((d) => d.tabela)).toEqual(['familias', 'anuncios_externos', 'lotes']);
   });
@@ -697,12 +772,14 @@ describe('removerPublicado — guard D-13: componente de Kit Virtual publicado (
       // codigo_pai DIVERGENTE de propósito: só o item_externo_id (do filho B, não da raiz) casa.
       kits_virtuais_componentes: [[{ kit_id: 'kit-1', codigo_pai: '00000000', item_externo_id: 'MLB2' }]],
     });
+    vi.stubGlobal('fetch', stubFetchML({ MLB1: {}, MLB2: {} }));
     const r = await removerPublicado(
       { admin, ctx: CTX, conexao: CONEXAO },
       { familiaId: 'fam-1', orgId: ORG, canal: CANAL },
     );
+    vi.unstubAllGlobals();
     expect(r).toEqual({ tipo: 'kit_virtual_publicado', kits: ['Kit Combo'] });
-    expect(deletes).toEqual([]); // nem a mini-saga de pausar filhos chegou a rodar
+    expect(deletes).toEqual([]);
   });
 });
 
@@ -800,41 +877,29 @@ describe('removerPublicado — modo republicar pausa o anúncio raiz (família L
   });
 });
 
-// Confirmação (nível de integração de portas): a saga REAL de remoção também confirma pausado
-// por GET — nunca confia no PUT sem erro. Aqui exercitamos removerComposicaoUP via processar.ts
-// com um fetchLike fake, provando que o `confirmar` construído aqui (sem checagem de family_id,
-// diferente do da composição) aceita um item pausado com family_id ausente.
-describe('removerPublicado — integração das portas reais (sem removerComposicao injetado)', () => {
-  // `pausar` fecha sobre `atualizarStatusML`, que usa o `fetch` global direto (sem injeção) —
-  // diferente de `confirmar` (via `buscarItemUP`, que aceita `fetchLike`). Stub global só aqui,
-  // pra provar que a PORTA REAL construída em processar.ts (não um fake da saga) funciona
-  // ponta a ponta, incluindo o `confirmar` sem checagem de family_id (Opus: o da composição
-  // bloquearia um item genuinamente pausado com family_id ausente/lagado).
+// Republicar: integração das portas reais de pausa (removerComposicaoUP sem injeção).
+describe('removerPublicado — republicar integração das portas reais de pausa', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
-  it('GET confirma status=paused mesmo sem family_id → pronto pra deletar (não usa o confirmar da composição, que bloquearia)', async () => {
+  it('GET confirma status=paused → preservada (republicar)', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
       if (url.includes('/description')) return new Response('{}', { status: 200 });
       return new Response(JSON.stringify({ status: 'paused', seller_id: 'seller-1' }), { status: 200 });
     }));
     const { admin, deletes } = fakeAdmin({
-      familias: [
-        { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
-        [],
-        [], // kits vivos (guard D-14) — nenhum
-        [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
-        [],
-      ],
-      anuncios_externos: [[{ id: 'ext-1' }]],
+      familias: [{ id: 'fam-1', lote_id: 'l1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
+      anuncios_externos: [[{ id: 'ext-1' }], [{ mudando_composicao: false }]],
       anuncios_externos_itens: [[{ sku: 'A', item_externo_id: 'MLB1', retirado: false, status: 'ativo' }]],
-      lotes: [],
     });
-    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
-    expect(r.tipo).toBe('ok');
-    expect(deletes.map((d) => d.tabela)).toEqual(['familias', 'anuncios_externos', 'lotes']);
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r.tipo).toBe('preservada');
+    expect(deletes.map((d) => d.tabela)).toEqual(['anuncios_externos']);
   });
 
-  it('GET confirma item de OUTRO seller → remocao_pendente (inesperado, terminal)', async () => {
+  it('GET confirma item de OUTRO seller → remocao_pendente (republicar)', async () => {
     vi.stubGlobal('fetch', vi.fn(async () =>
       new Response(JSON.stringify({ status: 'active', seller_id: 'outro-seller' }), { status: 200 })));
     const { admin, deletes } = fakeAdmin({
@@ -842,46 +907,12 @@ describe('removerPublicado — integração das portas reais (sem removerComposi
       anuncios_externos: [[{ id: 'ext-1' }]],
       anuncios_externos_itens: [[{ sku: 'A', item_externo_id: 'MLB1', retirado: false, status: 'ativo' }]],
     });
-    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
     expect(r).toEqual({ tipo: 'remocao_pendente', pendentes: ['A'] });
     expect(deletes).toEqual([]);
-  });
-
-  // Revisão Codex: seller_id AUSENTE no GET não prova posse — operação destrutiva precisa ser
-  // fail-closed na identidade, não assumir "ok" só por não ter achado divergência explícita.
-  it('GET confirma status=paused mas SEM seller_id no corpo → remocao_pendente (fail-closed, identidade não confirmada)', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () =>
-      new Response(JSON.stringify({ status: 'paused' }), { status: 200 }))); // sem seller_id
-    const { admin, deletes } = fakeAdmin({
-      familias: [{ id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
-      anuncios_externos: [[{ id: 'ext-1' }]],
-      anuncios_externos_itens: [[{ sku: 'A', item_externo_id: 'MLB1', retirado: false, status: 'ativo' }]],
-    });
-    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
-    expect(r).toEqual({ tipo: 'remocao_pendente', pendentes: ['A'] });
-    expect(deletes).toEqual([]);
-  });
-
-  it('TRY-ALL sobrevive a erro de PUT (pausar) real: um filho falha, o outro é tentado e a remoção fica pendente pros dois corretamente', async () => {
-    let chamadas = 0;
-    vi.stubGlobal('fetch', vi.fn(async (url: string, opts?: { method?: string }) => {
-      chamadas++;
-      if (opts?.method === 'PUT' && url.includes('MLB1')) return new Response('{}', { status: 500 }); // pausar MLB1 falha
-      if (opts?.method === 'PUT') return new Response('{}', { status: 200 }); // pausar MLB2 ok
-      return new Response(JSON.stringify({ status: 'paused', seller_id: 'seller-1' }), { status: 200 }); // GET
-    }));
-    const { admin, deletes } = fakeAdmin({
-      familias: [{ id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
-      anuncios_externos: [[{ id: 'ext-1' }]],
-      anuncios_externos_itens: [[
-        { sku: 'A', item_externo_id: 'MLB1', retirado: false, status: 'ativo' },
-        { sku: 'B', item_externo_id: 'MLB2', retirado: false, status: 'ativo' },
-      ]],
-    });
-    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
-    expect(r).toEqual({ tipo: 'remocao_pendente', pendentes: ['A'] }); // só A pendente; B foi pausado+confirmado
-    expect(deletes).toEqual([]);
-    expect(chamadas).toBeGreaterThan(2); // ambos os filhos foram tentados (não parou no 1º)
   });
 });
 
@@ -914,7 +945,12 @@ describe('removerPublicado — família UP sem ml_item_id mas com filho vivo no 
       lotes: [],
     });
 
-    const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    vi.stubGlobal('fetch', stubFetchML({ MLB5210027027: { sold_quantity: 0 } }));
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL },
+    );
+    vi.unstubAllGlobals();
 
     expect(r.tipo).not.toBe('nao_publicada');
     expect(deletes.map((d) => d.tabela)).toContain('familias');
@@ -927,6 +963,157 @@ describe('removerPublicado — família UP sem ml_item_id mas com filho vivo no 
     });
     const r = await removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
     expect(r.tipo).toBe('nao_publicada');
+    expect(deletes).toEqual([]);
+  });
+});
+
+describe('removerPublicado — ADR-0168 (Remover encerra no ML só sem venda)', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  const cenarioLegacy = () => fakeAdmin({
+    familias: [
+      { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG },
+      [], [],
+      [{ id: 'fam-1', lote_id: 'lote-1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+      [],
+    ],
+    anuncios_externos: [[]],
+    anuncios_externos_itens: [[]],
+    lotes: [],
+  });
+
+  it('1. Legacy sold_quantity=0 → closed + deleted + delete local ok', async () => {
+    const puts: string[] = [];
+    vi.stubGlobal('fetch', stubFetchML({ MLB1: { sold_quantity: 0 } }));
+    const fetchOrig = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (init?.method === 'PUT') puts.push(String(init.body));
+      return fetchOrig(url, init);
+    }) as typeof fetch;
+    const { admin, deletes } = cenarioLegacy();
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r.tipo).toBe('ok');
+    expect(puts.some((p) => p.includes('"status":"closed"'))).toBe(true);
+    expect(puts.some((p) => p.includes('"deleted"'))).toBe(true);
+    expect(deletes.map((d) => d.tabela)).toContain('familias');
+  });
+
+  it('2. Legacy sold_quantity>0 → tem_movimentacao, zero PUT destrutivo, zero delete local', async () => {
+    const puts: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+      if (init?.method === 'PUT') { puts.push(String(init.body)); return new Response('{}', { status: 200 }); }
+      return new Response(JSON.stringify({
+        id: 'MLB1', sold_quantity: 3, status: 'active', sub_status: [], variations: [], pictures: [],
+      }), { status: 200 });
+    }));
+    const { admin, deletes } = cenarioLegacy();
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r).toEqual({ tipo: 'tem_movimentacao' });
+    expect(puts).toEqual([]);
+    expect(deletes).toEqual([]);
+  });
+
+  it('3. UP: 1 filho sold_quantity>0 e outros 0 → bloqueia tudo', async () => {
+    vi.stubGlobal('fetch', stubFetchML({ MLB1: { sold_quantity: 0 }, MLB2: { sold_quantity: 2 } }));
+    const { admin, deletes } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, [], [],
+        [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [],
+      ],
+      anuncios_externos: [[{ id: 'ext-1' }]],
+      anuncios_externos_itens: [[
+        { sku: 'A', item_externo_id: 'MLB1', retirado: false, status: 'ativo' },
+        { sku: 'B', item_externo_id: 'MLB2', retirado: false, status: 'ativo' },
+      ]],
+      lotes: [],
+    });
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r).toEqual({ tipo: 'tem_movimentacao' });
+    expect(deletes).toEqual([]);
+  });
+
+  it('4. UP todos sold_quantity=0 → encerra todos + delete local', async () => {
+    const puts: string[] = [];
+    vi.stubGlobal('fetch', stubFetchML({ MLB1: { sold_quantity: 0 }, MLB2: { sold_quantity: 0 } }));
+    const fetchOrig = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (init?.method === 'PUT') puts.push(String(init.body));
+      return fetchOrig(url, init);
+    }) as typeof fetch;
+    const { admin, deletes } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, [], [],
+        [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [],
+      ],
+      anuncios_externos: [[{ id: 'ext-1' }]],
+      anuncios_externos_itens: [[
+        { sku: 'A', item_externo_id: 'MLB1', retirado: false, status: 'ativo' },
+        { sku: 'B', item_externo_id: 'MLB2', retirado: false, status: 'ativo' },
+      ]],
+      lotes: [],
+    });
+    const r = await removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL });
+    expect(r.tipo).toBe('ok');
+    expect(puts.filter((p) => p.includes('"status":"closed"'))).toHaveLength(2);
+    expect(deletes.map((d) => d.tabela)).toContain('familias');
+  });
+
+  it('5. GET 5xx no meio → não deleta local', async () => {
+    vi.stubGlobal('fetch', stubFetchML({ MLB1: { getStatus: 500 } }));
+    const { admin, deletes } = cenarioLegacy();
+    await expect(removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
+      .rejects.toThrow(/consultar anúncio MLB1 no ML falhou/);
+    expect(deletes).toEqual([]);
+  });
+
+  it('5b. UP: PUT deleted falha no 2º filho → lança, zero delete local', async () => {
+    vi.stubGlobal('fetch', stubFetchML(
+      { MLB1: { sold_quantity: 0 }, MLB2: { sold_quantity: 0 } },
+      { failId: 'MLB2', putStatus: 500 },
+    ));
+    const { admin, deletes } = fakeAdmin({
+      familias: [
+        { id: 'fam-1', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, [], [],
+        [{ id: 'fam-1', lote_id: 'l1', user_id: DONO, capa_storage_path: null, capa2_storage_path: null, capa3_storage_path: null, variacoes: [] }],
+        [],
+      ],
+      anuncios_externos: [[{ id: 'ext-1' }], [{ mudando_composicao: false }]],
+      anuncios_externos_itens: [[
+        { sku: 'A', item_externo_id: 'MLB1', retirado: false, status: 'ativo' },
+        { sku: 'B', item_externo_id: 'MLB2', retirado: false, status: 'ativo' },
+      ]],
+      lotes: [],
+    });
+    await expect(removerPublicado({ admin, ctx: CTX, conexao: CONEXAO }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
+      .rejects.toThrow();
+    expect(deletes).toEqual([]);
+  });
+
+  it('6. Republicar (preservarFamilia) com active → ainda pausa (regressão)', async () => {
+    const puts: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
+      if (init?.method === 'PUT') { puts.push(String(init.body)); return new Response('{}', { status: 200 }); }
+      return new Response(JSON.stringify({ status: 'active' }), { status: 200 });
+    }));
+    const { admin } = fakeAdmin({
+      familias: [{ id: 'fam-1', lote_id: 'l40', codigo_pai: '00012345', ml_item_id: 'MLB1', org_id: ORG }, []],
+      anuncios_externos: [[{ id: 'ext-1', mudando_composicao: false }], [{ mudando_composicao: false }]],
+      anuncios_externos_itens: [[]],
+    });
+    const r = await removerPublicado(
+      { admin, ctx: CTX, conexao: CONEXAO },
+      { familiaId: 'fam-1', orgId: ORG, canal: CANAL, preservarFamilia: true },
+    );
+    expect(r.tipo).toBe('preservada');
+    expect(puts).toEqual([JSON.stringify({ status: 'paused' })]);
+  });
+
+  it('7. Legacy Remover sem ctx/token → erro explícito, não delete local', async () => {
+    const { admin, deletes } = cenarioLegacy();
+    await expect(removerPublicado({ admin }, { familiaId: 'fam-1', orgId: ORG, canal: CANAL }))
+      .rejects.toThrow(/conexão com o Mercado Livre/);
     expect(deletes).toEqual([]);
   });
 });

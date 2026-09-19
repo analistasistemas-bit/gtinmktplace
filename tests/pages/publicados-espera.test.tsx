@@ -445,7 +445,7 @@ const casos: Caso[] = [
   {
     nome: 'Remover publicação incompleta',
     abrir: 'Remover publicação incompleta',
-    confirmar: 'Pausar no ML e remover',
+    confirmar: 'Remover',
     montarItem: () => {
       usePublicadosMock.mockReturnValue({
         data: [itemBase({ publicacaoIncompleta: true })],

@@ -96,6 +96,13 @@ try { ({ orgId } = context = await requireUserOrg(req, { access: 'write' })); }
           + 'Encerre o kit no Mercado Livre antes de remover ou republicar este produto.',
       }, 409);
     }
+    case 'tem_movimentacao':
+      await auditarOperacaoSuporte(admin, context, target, 'denied');
+      return json({
+        erro: 'Este anúncio teve venda no Mercado Livre (sold_quantity > 0). '
+          + 'Não é possível remover no PubliAI nem encerrar no ML por este botão. Nada foi alterado.',
+        tipo: 'tem_movimentacao',
+      }, 409);
     case 'preservada':
       await auditarOperacaoSuporte(admin, context, target, 'succeeded');
       return json({ ok: true, familia_id: r.familiaId, lote_id: r.loteId });

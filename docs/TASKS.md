@@ -2,6 +2,12 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Remover publicado encerra no ML só sem venda — 2026-09-19
+
+Botão **Remover** em Publicados consulta `sold_quantity` ao vivo; com venda bloqueia os dois lados (409
+`tem_movimentacao`); sem venda faz `closed` + `deleted` no ML antes do delete local. Republicar inalterado.
+Ver [ADR-0168](decisions/0168-remover-publicado-encerra-ml-sem-venda.md).
+
 ## Banner "sem vínculo de catálogo" acendia falso pra kit vinculado — 2026-09-19
 
 Org Daludi Shop: o Kit 2 Unidades Shampoo Johnson's 750ml (`00000011`, `kit_multiplicador=2`,

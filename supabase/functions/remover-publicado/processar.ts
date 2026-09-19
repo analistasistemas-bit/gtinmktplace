@@ -4,7 +4,9 @@ import { recontarOuRemoverLote } from '../_shared/lote/recontar.ts';
 import { limparMovimentosOrfaos } from '../_shared/estoque/limpeza.ts';
 import type { ContextoCanal } from '../_shared/canais/contrato.ts';
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
-import { atualizarStatusML, buscarItemML } from '../_shared/ml/atualizar-item.ts';
+import {
+  atualizarStatusML, buscarItemML, excluirItemML, itemJaExcluidoML, type ItemMLAtual,
+} from '../_shared/ml/atualizar-item.ts';
 import { buscarItemUP, type FetchLike } from '../_shared/ml/buscar-item.ts';
 import {
   removerComposicaoUP, type PortasRemocao, type FilhoComp, type ResultadoRemocaoUP,
@@ -20,9 +22,8 @@ export interface RemoverPublicadoInput {
 
 export interface RemoverPublicadoDeps {
   admin: SupabaseClient;
-  /** Necessário quando a família tem filhos User Products ativos e, no modo republicar
-   *  (`preservarFamilia`), também para Legacy/UP-esvaziada — o anúncio raiz é pausado no ML
-   *  antes de cortar o vínculo. Só a REMOÇÃO de Legacy/UP-esvaziada segue sem token vivo. */
+  /** Obrigatório no Remover destrutivo (ADR-0168: GET sold_quantity + close/delete no ML).
+   *  No modo republicar (`preservarFamilia`), também pausa filhos UP e o anúncio raiz Legacy. */
   ctx?: ContextoCanal;
   conexao?: ConexaoCanal;
   /** Injetável em teste; produção usa a saga real (`removerComposicaoUP`). */
@@ -47,8 +48,60 @@ export type ResultadoRemocao =
    *  espelha `kit_vinculado_ativo` acima; a trigger `familias_bloquear_remocao_componente_kit_virtual`
    *  (migration 20260906140450) é a última linha, esta é a mensagem clara ANTES da mutação. */
   | { tipo: 'kit_virtual_publicado'; kits: string[] }
+  /** ADR-0168: sold_quantity > 0 em qualquer MLB do codigo_pai — zero mutação ML, zero delete local. */
+  | { tipo: 'tem_movimentacao' }
   | { tipo: 'preservada'; familiaId: string; loteId: string }
   | { tipo: 'ok'; familiasRemovidas: number; lotesRemovidos: number };
+
+interface SnapshotMLRemocao {
+  id: string;
+  item: ItemMLAtual | null;
+}
+
+function coletarIdsMLRemover(mlItemId: string | null, filhos: FilhoComp[]): string[] {
+  const ids = new Set<string>();
+  if (mlItemId) ids.add(mlItemId);
+  for (const f of filhos) {
+    if (f.itemExternoId) ids.add(f.itemExternoId);
+  }
+  return [...ids];
+}
+
+async function verificarVendasRemocaoML(
+  getToken: () => Promise<string>,
+  ids: string[],
+): Promise<{ temMovimentacao: boolean; snapshots: SnapshotMLRemocao[] }> {
+  const snapshots: SnapshotMLRemocao[] = [];
+  for (const id of ids) {
+    const token = await getToken();
+    try {
+      const item = await buscarItemML(token, id);
+      if ((item.soldQuantity ?? 0) > 0) {
+        return { temMovimentacao: true, snapshots: [] };
+      }
+      snapshots.push({ id, item });
+    } catch (e) {
+      const st = (e as { status?: number }).status;
+      if (st === 404 || st === 410) {
+        snapshots.push({ id, item: null });
+        continue;
+      }
+      throw new Error(`remover-publicado: consultar anúncio ${id} no ML falhou: ${(e as Error).message}`);
+    }
+  }
+  return { temMovimentacao: false, snapshots };
+}
+
+async function encerrarItensMLRemocao(
+  getToken: () => Promise<string>,
+  snapshots: SnapshotMLRemocao[],
+): Promise<void> {
+  for (const { id, item } of snapshots) {
+    if (!item || itemJaExcluidoML(item)) continue;
+    const token = await getToken();
+    await excluirItemML(token, id, item);
+  }
+}
 
 /**
  * ADR-0154 D-13: títulos dos Kits Virtuais PUBLICADOS que usam este produto como componente —
@@ -210,44 +263,35 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     return { tipo: 'kit_virtual_publicado', kits: kitsVirtuaisBloqueando };
   }
 
-  if (filhos.length > 0) {
-    // Gate ATRÁS de "tem filhos": família Legacy ou UP já esvaziada (só linhas retirado=true,
-    // filtradas antes de chegar aqui — na verdade filhos.length>0 já inclui essas, a saga que
-    // as ignora) não deveria exigir token vivo pra simplesmente deletar localmente.
-    if (!deps.ctx || !deps.conexao) throw new Error('Organização sem conexão com o Mercado Livre');
-    const { ctx, conexao } = deps;
-    const fetchLike = deps.fetchLike ?? fetch;
-    const portas: PortasRemocao = {
-      pausar: (itemExternoId) => ctx.getToken().then((token) => atualizarStatusML(token, itemExternoId, 'paused')),
-      async confirmar(itemExternoId) {
-        const item = await buscarItemUP(fetchLike, { accessToken: await ctx.getToken() }, itemExternoId);
-        const sellerEsperado = conexao.contaExternaId ?? '';
-        if (!item) return { ok: false, status: null }; // GET falhou → transiente.
-        // Operação destrutiva (revisão Codex): fail-closed na identidade. `seller_id` ausente no
-        // corpo do GET não prova posse — não assume ok só porque não achou divergência explícita.
-        if (item.sellerId == null || item.sellerId !== sellerEsperado) {
-          return { ok: false, status: item.status, inesperado: true }; // identidade não confirmada → terminal.
-        }
-        return { ok: true, status: item.status };
-      },
-      salvarStatus: async (sku, status) => {
-        const { error } = await admin.from('anuncios_externos_itens')
-          .update({ status }).eq('sku', sku).in('anuncio_externo_id', idsExternos);
-        // Propaga — o chamador (a mini-saga, via seu próprio wrapper best-effort) já loga e
-        // segue sem derrubar o TRY-ALL; aqui não podemos silenciar (perderia o único registro
-        // de que este filho ficou pendente).
-        if (error) throw new Error(`salvarStatus (${sku}): ${error.message}`);
-      },
-    };
-    const removerComposicao = deps.removerComposicao ?? removerComposicaoUP;
-    const resultado = await removerComposicao(portas, filhos);
-    if (resultado.tipo === 'incompleto') {
-      return { tipo: 'remocao_pendente', pendentes: resultado.pendentes };
-    }
-    // pronto_para_deletar → segue o fluxo comum de delete abaixo, idêntico ao Legacy.
-  }
-
   if (input.preservarFamilia) {
+    // ADR-0088: republicar pausa todos os filhos UP no ML antes de cortar o vínculo local.
+    if (filhos.length > 0) {
+      if (!deps.ctx || !deps.conexao) throw new Error('Organização sem conexão com o Mercado Livre');
+      const { ctx, conexao } = deps;
+      const fetchLike = deps.fetchLike ?? fetch;
+      const portas: PortasRemocao = {
+        pausar: (itemExternoId) => ctx.getToken().then((token) => atualizarStatusML(token, itemExternoId, 'paused')),
+        async confirmar(itemExternoId) {
+          const item = await buscarItemUP(fetchLike, { accessToken: await ctx.getToken() }, itemExternoId);
+          const sellerEsperado = conexao.contaExternaId ?? '';
+          if (!item) return { ok: false, status: null };
+          if (item.sellerId == null || item.sellerId !== sellerEsperado) {
+            return { ok: false, status: item.status, inesperado: true };
+          }
+          return { ok: true, status: item.status };
+        },
+        salvarStatus: async (sku, status) => {
+          const { error } = await admin.from('anuncios_externos_itens')
+            .update({ status }).eq('sku', sku).in('anuncio_externo_id', idsExternos);
+          if (error) throw new Error(`salvarStatus (${sku}): ${error.message}`);
+        },
+      };
+      const removerComposicao = deps.removerComposicao ?? removerComposicaoUP;
+      const resultado = await removerComposicao(portas, filhos);
+      if (resultado.tipo === 'incompleto') {
+        return { tipo: 'remocao_pendente', pendentes: resultado.pendentes };
+      }
+    }
     if (idsExternos.length > 0) {
       const { data: recheck, error: recheckErr } = await admin.from('anuncios_externos')
         .select('mudando_composicao').in('id', idsExternos);
@@ -309,6 +353,24 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
     return { tipo: 'preservada', familiaId: alvo.id, loteId: alvo.lote_id };
   }
 
+  // ADR-0168 D-1/D-2/D-5: Remover destrutivo sempre consulta o ML antes de qualquer delete local.
+  if (!deps.ctx) throw new Error('Organização sem conexão com o Mercado Livre');
+  const idsML = coletarIdsMLRemover(alvo.ml_item_id as string | null, filhos);
+  const { temMovimentacao, snapshots } = await verificarVendasRemocaoML(deps.ctx.getToken, idsML);
+  if (temMovimentacao) return { tipo: 'tem_movimentacao' };
+  // Re-checagem ANTES do close/delete irreversível (nit Fable): composição pode ter começado
+  // durante os GETs de sold_quantity — abortar aqui evita encerrar itens enquanto a saga UP
+  // ainda está criando/ativando filhos. A re-checagem pós-ML (abaixo, antes do Storage) permanece.
+  if (idsExternos.length > 0) {
+    const { data: recheckPre, error: recheckPreErr } = await admin.from('anuncios_externos')
+      .select('mudando_composicao').in('id', idsExternos);
+    if (recheckPreErr) throw new Error(`remover-publicado: re-checar mudando_composicao pré-ML falhou: ${recheckPreErr.message}`);
+    if ((recheckPre ?? []).some((e: { mudando_composicao?: boolean }) => e.mudando_composicao)) {
+      return { tipo: 'em_voo' };
+    }
+  }
+  await encerrarItensMLRemocao(deps.ctx.getToken, snapshots);
+
   // Codex P2: o vínculo de UPDATE é GLOBAL por (user_id, codigo_pai, ml_item_id not null) —
   // o ingest-lote casa por codigo_pai. Após ciclos de UPDATE existem várias linhas publicadas
   // do mesmo codigo_pai (uma por lote). Remover só a selecionada deixaria outra satisfazendo a
@@ -323,7 +385,7 @@ export async function removerPublicado(deps: RemoverPublicadoDeps, input: Remove
 
   // A família UP com saga interrompida (2026-09-10) não tem `ml_item_id` — só os filhos provam a
   // publicação —, então o filtro acima não a traz. Sem isto ela ficaria no banco depois da
-  // remoção, apontando para um anúncio que esta função acabou de pausar.
+  // remoção, apontando para um anúncio que esta função acabou de encerrar no ML.
   if (!alvos.some((f: { id: string }) => f.id === alvo.id)) {
     const { data: propria, error: propriaErr } = await admin.from('familias')
       .select('id, lote_id, user_id, capa_storage_path, capa2_storage_path, capa3_storage_path, variacoes(imagem_path)')
