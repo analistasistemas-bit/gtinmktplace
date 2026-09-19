@@ -39,6 +39,10 @@ revoke all on function public.platform_terms_tier_bps(bigint, integer, integer, 
 grant execute on function public.platform_terms_tier(bigint) to service_role;
 grant execute on function public.platform_terms_tier_bps(bigint, integer, integer, integer, integer) to service_role;
 
+comment on column public.platform_billing_statements.revenue_bps is
+  'Aliquota efetivamente aplicada no fechamento (applied_bps do preview daquele mes) -- nao e mais '
+  'necessariamente a aliquota configurada no termo comercial vigente hoje. Ver ADR-0165.';
+
 create or replace function public.platform_billing_preview(p_actor uuid,p_org uuid,p_month date) returns jsonb
 language plpgsql stable security definer set search_path='' as $$
 declare v_org public.organizations%rowtype;
@@ -187,7 +191,7 @@ begin
     jsonb_build_object('key','infrastructure','label','Infraestrutura','quantity',1,'unit_cents',v_infra,'amount_cents',v_infra,'source_type','commercial_terms','source_id',v_terms.id),
     jsonb_build_object('key','revenue','label','Remuneração ('||trim(trailing '.' from trim(trailing '0' from (coalesce(v_applied_bps,0)::numeric/100)::text))||'%)','quantity',null,'unit_cents',null,'amount_cents',v_fee,'source_type','sales','source_id',null)
   );
-  if v_terms.id is not null and v_terms.sonar_unit_cents>0 then
+  if v_terms.id is not null and (v_terms.sonar_unit_cents>0 or v_sonar>0) then
     v_lines:=v_lines||jsonb_build_array(jsonb_build_object('key','sonar','label','Consultas Sonar','quantity',v_sonar_units,'unit_cents',v_terms.sonar_unit_cents,'amount_cents',v_sonar,'source_type','sonar_deliveries','source_id',null));
   end if;
   if v_setup>0 then v_lines:=v_lines||jsonb_build_array(jsonb_build_object('key','setup','label','Implantação','quantity',1,'unit_cents',v_setup,'amount_cents',v_setup,'source_type','commercial_terms','source_id',v_terms.id)); end if;

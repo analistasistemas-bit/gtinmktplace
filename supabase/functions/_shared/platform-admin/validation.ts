@@ -36,10 +36,12 @@ export function validateTerms(input: unknown): CommercialTermsInput {
       fail(`${tier} deve estar entre 0 e 10000`);
     }
   }
-  if (value.modality === 1 && value.sonar_unit_cents !== 0) {
+  const monthlyFeeCents = cents(value.monthly_fee_cents, 'monthly_fee_cents');
+  const sonarUnitCents = cents(value.sonar_unit_cents, 'sonar_unit_cents');
+  if (value.modality === 1 && sonarUnitCents !== 0) {
     fail('Modalidade 1 não cobra Sonar do cliente: informe 0');
   }
-  if (value.modality === 2 && value.monthly_fee_cents !== 0) {
+  if (value.modality === 2 && monthlyFeeCents !== 0) {
     fail('Modalidade 2 não tem infraestrutura separada: informe 0');
   }
   if (typeof value.reason !== 'string' || !value.reason.trim()) fail('reason é obrigatório');
@@ -58,12 +60,12 @@ export function validateTerms(input: unknown): CommercialTermsInput {
     org_id: value.org_id,
     starts_on: value.starts_on,
     modality: value.modality,
-    monthly_fee_cents: cents(value.monthly_fee_cents, 'monthly_fee_cents'),
+    monthly_fee_cents: monthlyFeeCents,
     revenue_bps_t1: value.revenue_bps_t1 as number,
     revenue_bps_t2: value.revenue_bps_t2 as number,
     revenue_bps_t3: value.revenue_bps_t3 as number,
     revenue_bps_t4: value.revenue_bps_t4 as number,
-    sonar_unit_cents: cents(value.sonar_unit_cents, 'sonar_unit_cents'),
+    sonar_unit_cents: sonarUnitCents,
     setup_fee_cents: setupFee,
     setup_due_month: setupDueMonth,
     reason: value.reason.trim(),

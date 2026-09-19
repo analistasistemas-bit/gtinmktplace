@@ -61,4 +61,9 @@ describe('validateTerms', () => {
     expect(() => validateTerms({ ...valid, setup_fee_cents: 1, setup_due_month: null })).toThrow();
     expect(() => validateTerms({ ...valid, setup_fee_cents: 1, setup_due_month: '2026-13' })).toThrow();
   });
+
+  it('rejeita tipo inválido antes da checagem de modalidade', () => {
+    expect(() => validateTerms({ ...valid, modality: 1, monthly_fee_cents: 60000, sonar_unit_cents: '0' }))
+      .toThrow('sonar_unit_cents deve ser um inteiro não negativo');
+  });
 });

@@ -466,3 +466,42 @@ begin
     raise exception 'credito de devolucao tardia nao usou a aliquota congelada (esperava 1225000): %',v_preview;
   end if;
 end $$;
+
+-- ADR-0165 (achado Critical da revisão final de branch): a linha 'sonar' tem que aparecer sempre
+-- que houver valor de Sonar contabilizado (v_sonar>0), mesmo que o termo VIGENTE tenha
+-- sonar_unit_cents=0 -- cenário real: o backfill zera o termo retroativamente, mas entregas já
+-- registradas (append-only) continuam valendo. Sem isso, o total soma um valor que nenhuma linha
+-- explica.
+insert into public.organizations(id,nome,slug) values
+  ('90000000-0000-0000-0000-000000000016','Org Sonar Legado Cobravel','org-sonar-legado-cobravel');
+insert into public.platform_commercial_terms(
+  org_id,starts_on,modality,monthly_fee_cents,
+  revenue_bps_t1,revenue_bps_t2,revenue_bps_t3,revenue_bps_t4,sonar_unit_cents,
+  setup_fee_cents,setup_due_month,reason,created_by,version
+) values
+  ('90000000-0000-0000-0000-000000000016',(date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date,1,60000,500,400,350,300,0,0,null,'sonar orfa fixture','80000000-0000-0000-0000-000000000001',1);
+
+do $$
+declare i integer; v_result uuid; v_search uuid;
+declare v_month date := (date_trunc('month',now() at time zone 'America/Fortaleza')-interval '2 months')::date;
+declare v_preview jsonb;
+begin
+  for i in 1..3 loop
+    insert into public.platform_sonar_results(normalized_query,query_type,schema_version,generation,payload,state,valid_until)
+      values('sonar-orfao-'||i,'termo',1,1,jsonb_build_object('itens',jsonb_build_array(jsonb_build_object('id',i))),'ready',now()+interval '1 day') returning id into v_result;
+    insert into public.platform_sonar_searches(org_id,actor_id,request_id,intent_key,normalized_query,query_type,result_id,state,origin,completed_at)
+      values('90000000-0000-0000-0000-000000000016','80000000-0000-0000-0000-000000000001',gen_random_uuid(),'sonar-orfao-'||i,'sonar-orfao-'||i,'termo',v_result,'completed','cliente',now()) returning id into v_search;
+    insert into public.platform_sonar_deliveries(org_id,result_id,search_id,actor_id,terms_id,month,unit_cents,units,total_cents)
+      values('90000000-0000-0000-0000-000000000016',v_result,v_search,'80000000-0000-0000-0000-000000000001',
+        (select id from public.platform_resolve_terms('90000000-0000-0000-0000-000000000016',v_month)),
+        v_month,125,1,125);
+  end loop;
+
+  v_preview:=public.platform_billing_preview('80000000-0000-0000-0000-000000000001','90000000-0000-0000-0000-000000000016',v_month);
+  if not (v_preview->'lines' @> jsonb_build_array(jsonb_build_object('key','sonar'))) then
+    raise exception 'linha sonar deveria aparecer mesmo com termo.sonar_unit_cents=0 quando ha entregas cobraveis: %', v_preview;
+  end if;
+  if (v_preview->>'sonar_cents')::bigint <> 375 then
+    raise exception 'sonar_cents deveria ser 375 (3 entregas de 125): %', v_preview;
+  end if;
+end $$;
