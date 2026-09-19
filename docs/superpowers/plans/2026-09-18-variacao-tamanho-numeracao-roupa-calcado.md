@@ -2695,6 +2695,14 @@ insere `variacoes` por um caminho **próprio**, que não passa por `cadastrar-pr
    teste de paridade de chaves **falha**. Isso não é opcional nem "da Fase 6": é regressão
    direta da migration da Fase 2.
 
+> **Nota (checkpoint Fable — fim da Fase 2, 2026-09-19):** o item 2 acima (regressão da paridade de
+> chaves) já foi corrigido **fora de ordem**, na hora, para não deixar a branch com CI vermelho
+> entre a Fase 2 e a Fase 3 — commit `9387234f`, `tamanho: null` já está em `montarVariacaoNova`
+> (posição ligeiramente diferente do Step 2 abaixo: logo depois de `cor_editada_pelo_operador:
+> false,`, não de `cor_origem: 'manual',` — funcionalmente idêntico). **O Step 1 abaixo vai PASSAR,
+> não falhar** — isso é esperado, não sinal de migration não aplicada. **Pule o Step 2** (já feito)
+> e vá direto para o Step 3 (o guard de 400 no `index.ts`, item 1 acima — esse continua pendente).
+
 - [ ] **Step 1: Ver o teste de paridade de chaves falhar depois da Fase 2**
 
 ```bash
@@ -2705,7 +2713,7 @@ Expected: **FAIL** — `chavesClone()` tem `tamanho` e `chavesNova()` não. Se p
 a migration da Fase 2 já está aplicada no banco de onde o fixture do teste foi tirado (o teste
 compara contra a lista de colunas esperada, linha ~251 — ela também precisa ganhar `tamanho`).
 
-- [ ] **Step 2: Acrescentar `tamanho` ao builder da linha nova**
+- [ ] **Step 2: Acrescentar `tamanho` ao builder da linha nova (JÁ FEITO — ver nota acima, pule para o Step 3)**
 
 Em `supabase/functions/adicionar-variacoes-familia/processar.ts`, dentro de `montarVariacaoNova`,
 logo depois de `cor_origem: 'manual',`:

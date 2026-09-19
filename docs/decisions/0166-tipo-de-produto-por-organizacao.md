@@ -80,6 +80,13 @@ deliberada: são três valores fechados e o ML exige que o gênero do anúncio b
 medidas — valor errado ali derruba a publicação inteira, então a trava fica no banco, num `CHECK`
 nomeado (`familias_genero_valido`).
 
+**Domínio de `genero` é v1, não o conjunto completo do ML.** O `CHECK` cobre só
+`'masculino'|'feminino'|'unissex'` — os três valores que a organização piloto usa. A tabela de
+medidas do Mercado Livre e o atributo `GENDER` do canal têm um domínio maior (inclui infantil:
+meninos, meninas, bebês), e uma organização de roupa pode vender linha infantil. Alterar o `CHECK`
+depois é `drop constraint` + `add constraint`, uma migration pequena — não vale alargar o domínio
+hoje sem cliente real do segmento infantil para validar contra.
+
 ## Consequências
 
 - `familias.genero` e `variacoes.tamanho` passam a existir para toda organização, e nascem `null` em
