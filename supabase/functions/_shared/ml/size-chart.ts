@@ -48,6 +48,34 @@ export function nomeChart(domainId: string, genero: Genero, tamanhos: readonly s
   return `PubliAI Guia ${dominioLegivel} ${genero} ${tamanhos.join('-')}`.slice(0, 60);
 }
 
+// Achado real (2026-09-19, Spike 051 §12): "Tamanho Único" foi testado a fundo (3 chamadas reais)
+// e é impossível no guia de tamanhos destes domínios — FILTRABLE_SIZE não tem essa opção no
+// catálogo do ML (confirmado em JACKETS_AND_COATS e SPORT_T_SHIRTS), e o item exige SIZE_GRID_ID
+// incondicionalmente, sem isenção para "Único". Mensagem específica para não parecer bug nosso.
+const MOTIVO_UNICO = (
+  'Mercado Livre não tem "Único" na lista de FILTRABLE_SIZE para este domínio — limite do '
+  + 'catálogo do ML, confirmado via API (Spike 051 §12), não é possível publicar com guia de tamanhos.'
+);
+
+/** Mensagem de erro quando um ou mais tamanhos pedidos não têm medida confirmada (fora do
+ *  superset de `CONTORNO_PEITO_CM`). "Único" ganha uma explicação específica (achado real, não
+ *  lacuna de mapeamento) — os demais mantêm a mensagem genérica de "publicação bloqueada em vez
+ *  de inventar payload". */
+export function mensagemForaDoSuperset(foraDoSuperset: readonly string[]): string {
+  const semUnico = foraDoSuperset.filter((t) => t !== 'Único');
+  const partes: string[] = [];
+  if (semUnico.length > 0) {
+    partes.push(
+      `tamanho(s) ${semUnico.join(', ')} sem medida confirmada para esta categoria — `
+      + 'publicação bloqueada em vez de inventar payload',
+    );
+  }
+  if (foraDoSuperset.includes('Único')) {
+    partes.push(`tamanho "Único": ${MOTIVO_UNICO}`);
+  }
+  return `Guia de tamanhos: ${partes.join('; ')}.`;
+}
+
 interface LinhaAtributo { id: string; values: Array<{ id?: string; name: string }>; }
 interface LinhaChart { attributes: LinhaAtributo[]; }
 
@@ -156,10 +184,7 @@ export async function garantirChart(
     .filter((t) => sizeAttr.valores.some((v) => v.nome === t));
   const foraDoSuperset = tamanhos.filter((t) => !supersetTamanhos.includes(t));
   if (foraDoSuperset.length > 0) {
-    throw new Error(
-      `Guia de tamanhos: tamanho(s) ${foraDoSuperset.join(', ')} sem medida confirmada para esta `
-      + 'categoria — publicação bloqueada em vez de inventar payload.',
-    );
+    throw new Error(mensagemForaDoSuperset(foraDoSuperset));
   }
 
   const rows = montarLinhasChart(supersetTamanhos, sizeAttr.valores, filtravelAttr.valores);

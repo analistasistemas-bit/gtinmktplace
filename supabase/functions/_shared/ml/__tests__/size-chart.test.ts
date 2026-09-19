@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CONTORNO_PEITO_CM, domainIdSemPrefixo, montarLinhasChart, nomeChart, parseLinhasResposta,
+  CONTORNO_PEITO_CM, domainIdSemPrefixo, mensagemForaDoSuperset, montarLinhasChart, nomeChart,
+  parseLinhasResposta,
 } from '../size-chart.ts';
 
 // Achado real (produção, 2026-09-19): a 1ª tentativa de publicação real ficou presa em retry
@@ -36,6 +37,32 @@ describe('domainIdSemPrefixo (ADR-0167)', () => {
   it('null/undefined vira null', () => {
     expect(domainIdSemPrefixo(null)).toBeNull();
     expect(domainIdSemPrefixo(undefined)).toBeNull();
+  });
+});
+
+// Achado real (2026-09-19, pedido do Diego "acrescente o tamanho Único"): confirmado por 3
+// chamadas reais (Spike 051 §12) que "Tamanho Único" não pode entrar no guia de tamanhos em
+// JACKETS_AND_COATS/SPORT_T_SHIRTS — FILTRABLE_SIZE não tem essa opção no catálogo do ML, e o
+// item exige SIZE_GRID_ID incondicionalmente (nenhuma isenção pra Único). A mensagem de erro
+// precisa deixar claro que é limite do ML, não lacuna nossa — senão parece um bug a corrigir.
+describe('mensagemForaDoSuperset (ADR-0167 / achado real "Tamanho Único")', () => {
+  it('tamanho Único cita a causa real (FILTRABLE_SIZE sem essa opção no ML)', () => {
+    const msg = mensagemForaDoSuperset(['Único']);
+    expect(msg).toMatch(/FILTRABLE_SIZE/);
+    expect(msg).toMatch(/Mercado Livre|ML/);
+  });
+
+  it('outros tamanhos fora do superset mantêm a mensagem genérica', () => {
+    const msg = mensagemForaDoSuperset(['XG']);
+    expect(msg).toMatch(/sem medida confirmada/);
+    expect(msg).not.toMatch(/FILTRABLE_SIZE/);
+  });
+
+  it('mistura de Único com outro tamanho cita os dois casos', () => {
+    const msg = mensagemForaDoSuperset(['XG', 'Único']);
+    expect(msg).toMatch(/XG/);
+    expect(msg).toMatch(/Único/);
+    expect(msg).toMatch(/FILTRABLE_SIZE/);
   });
 });
 

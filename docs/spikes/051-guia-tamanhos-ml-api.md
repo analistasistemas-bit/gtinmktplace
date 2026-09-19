@@ -305,6 +305,35 @@ aceita está confirmado.
   BRAND+MODEL+atributos), o que é consistente com o padrão de catálogo/User Products já
   documentado no projeto. Confirmar antes de a Fase 5 tentar setar título manualmente.
 
+## 12. "Tamanho Único" — impossível via guia de tamanhos em TOPS/JACKETS (achado real, 2026-09-19)
+
+**CONFIRMADO** por 3 chamadas reais, feitas depois da primeira publicação real (pedido do Diego:
+"faltou o tamanho Único, acrescente"):
+
+1. `GET /categories/MLB108803/attributes` (Jaquetas) — `SIZE.values` **tem** `Único` (id
+   `6367305`), mas `FILTRABLE_SIZE.values` (40 valores) **não tem nenhum equivalente** a "Único" —
+   confirmado também em `GET /categories/MLB438951/attributes` (Camisetas, domínio
+   `SPORT_T_SHIRTS`, o outro domínio suportado): mesma lista de 40 valores, sem "Único". Não é uma
+   lacuna de mapeamento nossa — o catálogo do ML para esses dois domínios simplesmente não tem essa
+   opção em `FILTRABLE_SIZE`.
+2. `POST /catalog/charts` com uma linha `SIZE=Único` (id real) e **sem** `FILTRABLE_SIZE`: `HTTP
+   400`, `required_row_attribute_not_found` — `FILTRABLE_SIZE` é exigido em toda linha, sem
+   exceção para "Único". Como o valor não existe na lista aceita, não há combinação de payload que
+   passe.
+3. `POST /items/validate` com um item plano **sem nenhum atributo `SIZE`** (nem "Único", nenhum):
+   ainda assim `missing.fashion_grid.grid_id.values` — a exigência de `SIZE_GRID_ID` é
+   incondicional na categoria, não depende do valor de `SIZE` nem da presença dele. Um item
+   "tamanho único" não é isento do guia de tamanhos.
+
+**Conclusão:** nos dois domínios que este projeto suporta hoje (`JACKETS_AND_COATS`,
+`SPORT_T_SHIRTS`), **não existe payload possível para publicar uma peça "Tamanho Único" com guia
+de tamanhos via API** — é um limite estrutural do catálogo do Mercado Livre, não uma decisão de
+código. `TAMANHOS_ROUPA` (ADR-0166) continua incluindo "Tamanho Único" porque outros domínios de
+roupa podem aceitar (não testado); `CONTORNO_PEITO_CM` (`_shared/ml/size-chart.ts`) continua sem
+essa chave de propósito — adicionar uma faria `montarLinhasChart` tentar e falhar tarde (no ML),
+quando falhar cedo (na nossa validação) com mensagem clara é o comportamento correto até o ML
+oferecer o valor em `FILTRABLE_SIZE` para algum domínio.
+
 ## Achado que redesenha a Fase 5 (resumo para o checkpoint Fable)
 
 A seção 2 é o achado que mais importa: **nenhuma das categorias de vestuário/calçado testadas
