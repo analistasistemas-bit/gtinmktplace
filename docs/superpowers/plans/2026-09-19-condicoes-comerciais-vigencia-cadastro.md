@@ -139,7 +139,8 @@ where o.slug in ('avil', 'diego-souza', 'daludishop', 'org-controle');
 -- Asserção completa de readback:
 do $$
 declare
-  v_rec record;
+  v_term record;
+  v_audit record;
   v_ctrl public.platform_commercial_terms%rowtype;
   v_slug text;
   v_found_count integer;
@@ -148,34 +149,34 @@ begin
   for v_slug in select unnest(array['avil', 'diego-souza', 'daludishop'])
   loop
     select o.slug, t.id, t.starts_on, t.setup_due_month
-    into strict v_rec
+    into strict v_term
     from public.platform_commercial_terms t
     join public.organizations o on o.id = t.org_id
     where o.slug = v_slug;
 
-    if v_rec.starts_on is distinct from '2026-09-01'::date
-       or v_rec.setup_due_month is distinct from '2026-09-01'::date then
+    if v_term.starts_on is distinct from '2026-09-01'::date
+       or v_term.setup_due_month is distinct from '2026-09-01'::date then
       raise exception 'Falha no readback do alvo %: starts_on=%, setup_due_month=%',
-        v_rec.slug, v_rec.starts_on, v_rec.setup_due_month;
+        v_term.slug, v_term.starts_on, v_term.setup_due_month;
     end if;
 
     -- Validar evento de auditoria correlacionado individual para este slug
-    select e.* into strict v_rec
+    select e.* into strict v_audit
     from public.platform_audit_events e
     join public.organizations o on o.id = e.org_id
     where o.slug = v_slug and e.action = 'platform_terms_vigencia_corrigida';
 
-    if v_rec.category is distinct from 'admin'
-       or v_rec.actor_id is not null
-       or v_rec.result is distinct from 'success'
-       or v_rec.target is distinct from (select id::text from public.platform_commercial_terms where org_id = v_rec.org_id)
-       or v_rec.reason is distinct from 'Ajuste de vigencia inicial: primeiro contrato inicia no mes do cadastro (2026-09)'
-       or (v_rec.details->>'org_slug') is distinct from v_slug
-       or (v_rec.details->>'starts_on_anterior') is distinct from '2026-10-01'
-       or (v_rec.details->>'starts_on_atual') is distinct from '2026-09-01'
-       or (v_rec.details->>'setup_due_month_anterior') is distinct from '2026-10-01'
-       or (v_rec.details->>'setup_due_month_atual') is distinct from '2026-09-01' then
-      raise exception 'Auditoria incompleta ou invalida para %: %', v_slug, v_rec;
+    if v_audit.category is distinct from 'admin'
+       or v_audit.actor_id is not null
+       or v_audit.result is distinct from 'success'
+       or v_audit.target is distinct from v_term.id::text
+       or v_audit.reason is distinct from 'Ajuste de vigencia inicial: primeiro contrato inicia no mes do cadastro (2026-09)'
+       or (v_audit.details->>'org_slug') is distinct from v_slug
+       or (v_audit.details->>'starts_on_anterior') is distinct from '2026-10-01'
+       or (v_audit.details->>'starts_on_atual') is distinct from '2026-09-01'
+       or (v_audit.details->>'setup_due_month_anterior') is distinct from '2026-10-01'
+       or (v_audit.details->>'setup_due_month_atual') is distinct from '2026-09-01' then
+      raise exception 'Auditoria incompleta ou invalida para %: %', v_slug, v_audit;
     end if;
   end loop;
 

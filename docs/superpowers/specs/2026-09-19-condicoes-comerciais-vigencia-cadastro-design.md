@@ -1,7 +1,7 @@
 # Especificação de Design — Vigência Imediata no Cadastro de Condições Comerciais
 
 **Data:** 2026-09-19  
-**Status:** Aprovado para planejamento (Revisado pós-Adversarial Codex R4)  
+**Status:** Aprovado para planejamento (Revisado pós-Adversarial Codex R5)  
 **Autor:** Diego / Antigravity  
 **Contexto:** Menu Organizações (`/admin`) e Detalhe da Organização (`/admin/organizacoes/:id`)
 
@@ -53,7 +53,7 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
    - Testes unitários do frontend (`src/components/platform-admin/__tests__/commercial-terms-form.test.tsx`) cobrindo:
      a) Primeiro contrato com vigência padrão no mês corrente (`starts_on` e `setup_due_month`).
      b) Primeiro contrato com seleção de "Próximo mês", garantindo clamping de `setup_due_month`.
-   - Teste SQL em `supabase/tests/platform_commercial.sql` posicionado após a migration de faixas (onde `revenue_bps_t1..t4` já é válido), com fixtures completas para os 3 slugs alvo + tenant de controle, `SELECT INTO STRICT`, `IS DISTINCT FROM` e verificação minuciosa de readback de todos os campos alterados e inalterados, dados de auditoria correlacionados por slug e trigger reativado.
+   - Teste SQL em `supabase/tests/platform_commercial.sql` posicionado após a migration de faixas (onde `revenue_bps_t1..t4` já é válido), com fixtures completas para os 3 slugs alvo + tenant de controle, `SELECT ... INTO STRICT` para registros separados de termo (`v_term`) e auditoria (`v_audit`), correlação direta `v_audit.target is distinct from v_term.id::text`, `IS DISTINCT FROM` e verificação minuciosa de readback de todos os campos alterados e inalterados, dados de auditoria correlacionados por slug e trigger reativado.
 
 ---
 
