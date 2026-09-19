@@ -167,7 +167,7 @@ begin
     where o.slug = v_slug and e.action = 'platform_terms_vigencia_corrigida';
 
     if v_audit.category is distinct from 'admin'
-       or v_audit.actor_id is not null
+       or v_audit.actor_id is distinct from null
        or v_audit.result is distinct from 'success'
        or v_audit.target is distinct from v_term.id::text
        or v_audit.reason is distinct from 'Ajuste de vigencia inicial: primeiro contrato inicia no mes do cadastro (2026-09)'
