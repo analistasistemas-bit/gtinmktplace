@@ -48,12 +48,22 @@ function limparLista(valores: string[]): string[] {
   return saida;
 }
 
+/** Contagem do cartesiano após a MESMA dedup+trim que `gerarCombinacoes` aplica. Existe para a
+ *  prévia do `GeradorVariacoes` (componente) não divergir do resultado real — achado da Task 11:
+ *  contar `cores.length` cru mostraria "3 variações" para "Azul, Azul, Preto" onde o resultado
+ *  de fato é 2. */
+export function contarCombinacoes(cores: string[], tamanhos: string[]): number {
+  const c = limparLista(cores);
+  const t = limparLista(tamanhos);
+  return Math.max(c.length, 1) * Math.max(t.length, 1);
+}
+
 /** Produto cartesiano cor × tamanho. Cor é o eixo externo para as linhas saírem agrupadas por
  *  cor na tabela — é como o operador confere a foto, que é por cor. */
 export function gerarCombinacoes(cores: string[], tamanhos: string[]): Combinacao[] {
   const c = limparLista(cores);
   const t = limparLista(tamanhos);
-  const total = Math.max(c.length, 1) * Math.max(t.length, 1);
+  const total = contarCombinacoes(cores, tamanhos);
   if (c.length === 0 && t.length === 0) return [];
   if (total > LIMITE_VARIACOES_GERADAS) {
     throw new Error(

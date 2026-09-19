@@ -31,7 +31,10 @@ import { QK } from '@/lib/queries';
 import { effectiveOrgId, useSupportStore, canWrite } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
+import { opcoesDeTamanho } from '@/lib/tamanhos';
+import { GeradorVariacoes } from '@/components/estoque/gerador-variacoes';
 import {
   cadastrarProduto, uploadFotoProduto, ProdutoJaExisteError, CadastroResultadoAmbiguoError,
   type ResultadoCadastro,
@@ -69,7 +72,11 @@ export interface CadastroInicial {
 }
 
 function montarPayload(
-  pai: { nomePai: string; descricaoPai: string; unidade: string; fornecedor: string; origem: 'nacional' | 'importado' },
+  pai: {
+    nomePai: string; descricaoPai: string; unidade: string; fornecedor: string;
+    origem: 'nacional' | 'importado';
+    genero: 'masculino' | 'feminino' | 'unissex' | null;
+  },
   linhas: LinhaVariacao[],
   chaveCadastro: string,
   // ADR-0135: só a org com o módulo fiscal preenche a etapa fiscal — sem módulo, `fiscal` fica
@@ -78,6 +85,9 @@ function montarPayload(
 ): ProdutoEntrada {
   const variacoes: VariacaoEntrada[] = linhas.map((l) => ({
     nome: l.nome.trim() || null,
+    // ADR-0166: string vazia vira null — a edge normaliza de novo, mas mandar '' faria o guard
+    // de retry comparar '' contra null e divergir num retry legítimo.
+    tamanho: l.tamanho.trim() || null,
     gtin: l.gtin.trim() || null,
     preco: numOuNull(l.preco) ?? 0,
     custo: numOuNull(l.custo),
@@ -93,6 +103,7 @@ function montarPayload(
     unidade: pai.unidade.trim() || null,
     fornecedor: pai.fornecedor.trim() || null,
     origem: pai.origem,
+    genero: pai.genero,
     chaveCadastro,
     variacoes,
     ...(fiscal ? {
@@ -125,6 +136,13 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
   const { data: modulos } = useModulosHabilitados();
   const fiscalAtivo = !!modulos?.includes('fiscal');
 
+  // ADR-0166. `data === undefined` é "não sei" (falha de rede), não "org sem tipo": nos dois
+  // casos a tela fica igual à de hoje, que é o lado seguro — nunca oferecemos um eixo de
+  // variação que a org talvez não tenha.
+  const { data: tiposProduto } = useTiposProdutoHabilitados();
+  const gruposTamanho = opcoesDeTamanho(tiposProduto ?? []);
+  const temEixoTamanho = gruposTamanho.length > 0;
+
   const [nomePai, setNomePai] = useState('');
   const [descricaoPai, setDescricaoPai] = useState('');
   const [unidade, setUnidade] = useState('UN');
@@ -132,6 +150,11 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
   // Sem default silencioso: origem define a alíquota de imposto (ADR-0055) e o operador
   // precisa escolher. `null` mantém o botão de salvar travado.
   const [origem, setOrigem] = useState<'nacional' | 'importado' | null>(null);
+  // ADR-0166: só existe com tipo de produto habilitado.
+  //
+  // R3 (revisão do Fable): COM TRAVA DE SUBMIT quando alguma linha tem tamanho. Agora o gate é
+  // o mesmo de `origem`: sem o dado, não salva.
+  const [genero, setGenero] = useState<'masculino' | 'feminino' | 'unissex' | ''>('');
   const [linhas, setLinhas] = useState<LinhaVariacao[]>([novaLinha()]);
   // Só troca quando o último resultado foi CONHECIDO (sucesso, 409 ou validação): duplo
   // clique e retry de rede reusam a mesma chave, e a 2ª tentativa devolve o cadastro original
@@ -181,7 +204,7 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
   useEffect(() => {
     if (aberto) return;
     setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor('');
-    setOrigem(null); setLinhas([novaLinha()]); setResultado(null);
+    setOrigem(null); setGenero(''); setLinhas([novaLinha()]); setResultado(null);
     // chaveCadastro só regenera se o último resultado foi conhecido — resultado ambíguo (rede)
     // preserva a chave pro retry ser reconhecido pela idempotência da edge, em vez de criar
     // um segundo produto.
@@ -238,7 +261,15 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [etapaFiscal, aberto]);
 
+  // ADR-0166 / R3: gênero é obrigatório QUANDO alguma linha tem tamanho — não quando a org tem
+  // o tipo habilitado. Uma org de roupa também cadastra produto sem tamanho (embalagem, brinde),
+  // e travar por tipo habilitado impediria esse cadastro. O gate acompanha o DADO, não a org.
+  const algumaLinhaComTamanho = linhas.some((l) => l.tamanho.trim() !== '');
+
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
+    // Sem gênero, a publicação falharia LOUD em `prepararSizeChart` (ADR-0167) e não haveria
+    // tela para completar o dado depois. Trava aqui, igual a `origem`.
+    && (!algumaLinhaComTamanho || !!genero)
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
 
   // Guarda ÚNICA por onde toda saída destrutiva passa — Escape, clique fora, "Cancelar",
@@ -258,7 +289,8 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
     setResultadoAmbiguo(false);
     try {
       const r = await cadastrarProduto(montarPayload(
-        { nomePai, descricaoPai, unidade, fornecedor, origem }, linhas, chaveCadastro,
+        { nomePai, descricaoPai, unidade, fornecedor, origem, genero: genero || null },
+        linhas, chaveCadastro,
         fiscalAtivo ? fiscal : undefined,
       ));
       setResultado(r);
@@ -517,6 +549,31 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
                   <span className="text-xs text-muted-foreground">Define a alíquota de imposto — obrigatório.</span>
                 )}
               </div>
+              {temEixoTamanho && (
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="cad-genero" className="text-sm font-medium">
+                    Gênero{algumaLinhaComTamanho && <span className="text-destructive"> *</span>}
+                  </label>
+                  <select
+                    id="cad-genero"
+                    className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                    value={genero}
+                    onChange={(e) => setGenero(e.target.value as typeof genero)}
+                  >
+                    <option value="">Não informar</option>
+                    <option value="masculino">Masculino</option>
+                    <option value="feminino">Feminino</option>
+                    <option value="unissex">Unissex</option>
+                  </select>
+                  {/* R3: mesma forma da dica de `origem` — explica por que o botão está travado,
+                      em vez de deixar o operador procurar o campo que falta. */}
+                  {algumaLinhaComTamanho && !genero && (
+                    <span className="text-xs text-muted-foreground">
+                      Obrigatório com tamanho/numeração — define a tabela de medidas do anúncio.
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -557,12 +614,20 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
               {/* A dúvida recorrente do operador é o produto SEM variação — a tela só mostra
                   "Variação 1" e nada diz que deixá-la sem cor é o caminho certo. Some quando ele
                   adiciona a 2ª linha: aí o produto tem variação de fato e a dica viraria ruído. */}
-              {linhas.length === 1 && (
+              {linhas.length === 1 && !temEixoTamanho && (
                 <span className="text-xs text-muted-foreground">
                   <strong className="font-medium text-foreground">Produto sem variação?</strong>{' '}
                   Deixe só a Variação 1 e o campo <em>Cor / nome</em> em branco — sai um anúncio
                   simples, sem seletor de cor. A foto pode ficar só na Capa.
                 </span>
+              )}
+              {temEixoTamanho && (
+                <GeradorVariacoes
+                  gruposTamanho={gruposTamanho}
+                  onGerar={(combinacoes) => setLinhas(combinacoes.map((c) => ({
+                    ...novaLinha(), nome: c.cor, tamanho: c.tamanho ?? '',
+                  })))}
+                />
               )}
               <div className="flex flex-col gap-3">
                 {linhas.map((l, i) => (
@@ -572,6 +637,7 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
                     indice={i}
                     podeRemover={linhas.length > 1}
                     tentouSalvar={tentouSalvar}
+                    gruposTamanho={temEixoTamanho ? gruposTamanho : undefined}
                     onMudar={(patch) => setLinhas((prev) => prev.map((x) => (x.clientId === l.clientId ? { ...x, ...patch } : x)))}
                     onRemover={() => setLinhas((prev) => prev.filter((x) => x.clientId !== l.clientId))}
                   />

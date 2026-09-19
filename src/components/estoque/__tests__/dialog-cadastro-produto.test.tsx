@@ -55,6 +55,14 @@ const modulosMock = vi.fn(() => ({ data: [] as string[], isLoading: false }));
 vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => modulosMock(),
 }));
+// ADR-0166: sem mock, `useTiposProdutoHabilitados` cairia na rede real (supabase.rpc, que o
+// mock de '@/lib/supabase' acima nem define). A suíte inteira roda sem tipo habilitado por
+// padrão — igual ao Estoque de hoje, sem eixo de tamanho — só o describe do R3 (abaixo)
+// sobrescreve para org de roupa, mesmo padrão de `modulosMock`.
+const tiposProdutoMock = vi.fn(() => ({ data: [] as string[] }));
+vi.mock('@/hooks/useTiposProdutoHabilitados', () => ({
+  useTiposProdutoHabilitados: () => tiposProdutoMock(),
+}));
 
 function renderDialogCom(
   props: Partial<{ onFechar: () => void; inicial: CadastroInicial; onCadastrado: () => void }> = {},
@@ -890,5 +898,37 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /39269090/ })).toBeInTheDocument());
     expect(screen.queryByText(/11111111/)).not.toBeInTheDocument();
     expect(invoke).toHaveBeenNthCalledWith(2, 'sugerir-ncm', { body: { nome: 'Produto B', descricao: undefined } });
+  });
+});
+
+// ADR-0166 / R3: gênero é obrigatório QUANDO alguma linha tem tamanho — não pelo simples fato
+// de a org ter o tipo habilitado (uma org de roupa também cadastra produto sem tamanho).
+describe('DialogCadastroProduto — gênero obrigatório com tamanho (ADR-0166 / R3)', () => {
+  beforeEach(() => tiposProdutoMock.mockReturnValue({ data: ['roupa'] }));
+  afterEach(() => tiposProdutoMock.mockReturnValue({ data: [] as string[] }));
+
+  it('linha COM tamanho e sem gênero mantém o botão de salvar travado', async () => {
+    const user = userEvent.setup();
+    renderDialogCom();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta Básica');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Cor / nome da variação 1'), 'Azul');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '50');
+    await user.selectOptions(screen.getByLabelText('Tamanho da variação 1'), 'P');
+
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
+  });
+
+  it('SEM tamanho, gênero continua opcional — o botão libera sem ele (INV-1 do fluxo)', async () => {
+    const user = userEvent.setup();
+    renderDialogCom();
+    await user.type(screen.getByLabelText('Nome'), 'Zíper Nº5');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Cor / nome da variação 1'), 'Azul');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '50');
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
   });
 });
