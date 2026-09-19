@@ -901,43 +901,34 @@ describe('DialogCadastroProduto — etapa fiscal (ADR-0135 D-9)', () => {
   });
 });
 
-// ADR-0166 / R3: gênero é obrigatório QUANDO alguma linha tem tamanho — não pelo simples fato
-// de a org ter o tipo habilitado (uma org de roupa também cadastra produto sem tamanho).
-describe('DialogCadastroProduto — gênero obrigatório com tamanho (ADR-0166 / R3)', () => {
+// Revert do ADR-0166 (spec 2026-09-19 §1): o eixo Gênero/Tamanho/Cor saiu deste dialog e virou
+// tela própria (dialog-cadastro-grade.tsx). Uma org COM roupa habilitada tem que ver aqui
+// exatamente o que uma org sem tipo nenhum vê.
+describe('DialogCadastroProduto — sem eixo de grade, mesmo com tipo habilitado', () => {
   beforeEach(() => tiposProdutoMock.mockReturnValue({ data: ['roupa'] }));
   afterEach(() => tiposProdutoMock.mockReturnValue({ data: [] as string[] }));
 
-  it('linha COM tamanho e sem gênero mantém o botão de salvar travado', async () => {
+  it('org de roupa NÃO vê Gênero, nem Tamanho na variação, nem o gerador de variações', () => {
+    renderDialogCom();
+    expect(screen.queryByLabelText(/^Gênero/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Tamanho da variação 1')).not.toBeInTheDocument();
+    expect(screen.queryByText('Gerar variações')).not.toBeInTheDocument();
+  });
+
+  it('o botão libera sem gênero — o gate condicional de hoje não existe mais', async () => {
     const user = userEvent.setup();
     renderDialogCom();
     await user.type(screen.getByLabelText('Nome'), 'Camiseta Básica');
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Cor / nome da variação 1'), 'Azul');
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '50');
-    await user.selectOptions(screen.getByLabelText('Tamanho da variação 1'), 'P');
-
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
-
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
     expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
   });
 
-  it('SEM tamanho, gênero continua opcional — o botão libera sem ele (INV-1 do fluxo)', async () => {
-    const user = userEvent.setup();
-    renderDialogCom();
-    await user.type(screen.getByLabelText('Nome'), 'Zíper Nº5');
-    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
-    await user.type(screen.getByLabelText('Cor / nome da variação 1'), 'Azul');
-    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '50');
-    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeEnabled();
-  });
-
-  // Achado do code-quality review: os dois testes acima só provam que o BOTÃO libera/trava —
-  // nenhum confere o que de fato sai no payload. É o único ponto onde a normalização
-  // `tamanho.trim() || null` (Task 15) e `genero: pai.genero` (também Task 15) poderiam
-  // regredir em silêncio, já que é o dado que o guard de retry da Task 13 e a validação de
-  // backend da Task 12 comparam.
-  it('genero e tamanho chegam certos no payload enviado a cadastrarProduto', async () => {
+  // O payload NÃO pode perder os campos: `genero` e `tamanho` continuam existindo no contrato da
+  // edge e o dialog de grade depende deles. Um "revert limpo" que os apagasse de `montarPayload`
+  // quebraria a outra tela em silêncio — é o único teste que trava isso.
+  it('payload continua carregando genero: null e tamanho: null', async () => {
     cadastrarProdutoMock.mockResolvedValueOnce({
       loteId: 'lote-1', familiaId: 'fam-1', filaOk: true, falhasEstoque: [],
       variacoes: [{ id: 'v1', codigo: '00000001' }],
@@ -948,14 +939,12 @@ describe('DialogCadastroProduto — gênero obrigatório com tamanho (ADR-0166 /
     await user.click(screen.getByRole('radio', { name: 'Nacional' }));
     await user.type(screen.getByLabelText('Cor / nome da variação 1'), 'Azul');
     await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '50');
-    await user.selectOptions(screen.getByLabelText('Tamanho da variação 1'), 'P');
-    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
 
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
     const payload = cadastrarProdutoMock.mock.calls[0][0];
-    expect(payload.genero).toBe('masculino');
-    expect(payload.variacoes[0].tamanho).toBe('P');
+    expect(payload).toHaveProperty('genero', null);
+    expect(payload.variacoes[0]).toHaveProperty('tamanho', null);
   });
 });

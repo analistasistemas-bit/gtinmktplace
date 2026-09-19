@@ -25,10 +25,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
-import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
-import { opcoesDeTamanho } from '@/lib/tamanhos';
-import { GeradorVariacoes } from '@/components/estoque/gerador-variacoes';
 import {
   LinhaVariacaoForm, novaLinha, erroCampo, type LinhaVariacao,
 } from '@/components/estoque/linha-variacao-form';
@@ -66,13 +63,6 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
   const { data: modulos } = useModulosHabilitados();
   const fiscalAtivo = !!modulos?.includes('fiscal');
 
-  // ADR-0166. `data === undefined` é "não sei" (falha de rede), não "org sem tipo": nos dois
-  // casos a tela fica igual à de hoje, que é o lado seguro — nunca oferecemos um eixo de
-  // variação que a org talvez não tenha.
-  const { data: tiposProduto } = useTiposProdutoHabilitados();
-  const gruposTamanho = opcoesDeTamanho(tiposProduto ?? []);
-  const temEixoTamanho = gruposTamanho.length > 0;
-
   const [nomePai, setNomePai] = useState('');
   const [descricaoPai, setDescricaoPai] = useState('');
   const [unidade, setUnidade] = useState('UN');
@@ -80,11 +70,6 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
   // Sem default silencioso: origem define a alíquota de imposto (ADR-0055) e o operador
   // precisa escolher. `null` mantém o botão de salvar travado.
   const [origem, setOrigem] = useState<'nacional' | 'importado' | null>(null);
-  // ADR-0166: só existe com tipo de produto habilitado.
-  //
-  // R3 (revisão do Fable): COM TRAVA DE SUBMIT quando alguma linha tem tamanho. Agora o gate é
-  // o mesmo de `origem`: sem o dado, não salva.
-  const [genero, setGenero] = useState<'masculino' | 'feminino' | 'unissex' | ''>('');
   const [linhas, setLinhas] = useState<LinhaVariacao[]>([novaLinha()]);
   // Capa escolhida na etapa 1 — só existe familiaId depois do cadastro, então o upload real
   // só acontece dentro de subirLoteDeFotos, depois que `cadastrarProduto` devolve o resultado.
@@ -105,7 +90,7 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
   useEffect(() => {
     if (aberto) return;
     setNomePai(''); setDescricaoPai(''); setUnidade('UN'); setFornecedor('');
-    setOrigem(null); setGenero(''); setLinhas([novaLinha()]);
+    setOrigem(null); setLinhas([novaLinha()]);
     setFotosCapa({ capa: null, capa2: null, capa3: null });
     setTentouSalvar(false);
     setEtapaFiscal(false);
@@ -122,15 +107,7 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
     setLinhas([{ ...novaLinha(), ...inicial.variacao }]);
   }, [aberto, inicial]);
 
-  // ADR-0166 / R3: gênero é obrigatório QUANDO alguma linha tem tamanho — não quando a org tem
-  // o tipo habilitado. Uma org de roupa também cadastra produto sem tamanho (embalagem, brinde),
-  // e travar por tipo habilitado impediria esse cadastro. O gate acompanha o DADO, não a org.
-  const algumaLinhaComTamanho = linhas.some((l) => l.tamanho.trim() !== '');
-
   const podeSalvar = !!nomePai.trim() && !!origem && linhas.length > 0
-    // Sem gênero, a publicação falharia LOUD em `prepararSizeChart` (ADR-0167) e não haveria
-    // tela para completar o dado depois. Trava aqui, igual a `origem`.
-    && (!algumaLinhaComTamanho || !!genero)
     && linhas.every((l) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, l[c])));
 
   // setTentouSalvar: por completude com a spec (§5.4, branch "b"). Na prática o botão só é
@@ -142,7 +119,13 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
     setTentouSalvar(true);
     api.salvar(
       montarPayload(
-        { nomePai, descricaoPai, unidade, fornecedor, origem, genero: genero || null },
+        {
+          nomePai, descricaoPai, unidade, fornecedor, origem,
+          // Revert do ADR-0166: esta tela não pergunta Gênero. O campo continua no payload (a
+          // edge o aceita e o dialog de grade o preenche de verdade) — remover daqui a CHAVE, e
+          // não só o valor, quebraria `dialog-cadastro-grade.tsx` sem nenhum teste acusar.
+          genero: null,
+        },
         linhas, api.chaveCadastro, fiscalAtivo ? fiscal : undefined,
       ),
       { capa: fotosCapa, porLinha: linhas.map((l) => l.foto) },
@@ -275,31 +258,6 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
                   <span className="text-xs text-muted-foreground">Define a alíquota de imposto — obrigatório.</span>
                 )}
               </div>
-              {temEixoTamanho && (
-                <div className="flex flex-col gap-1.5">
-                  <label htmlFor="cad-genero" className="text-sm font-medium">
-                    Gênero{algumaLinhaComTamanho && <span className="text-destructive"> *</span>}
-                  </label>
-                  <select
-                    id="cad-genero"
-                    className="h-9 w-full rounded-md border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                    value={genero}
-                    onChange={(e) => setGenero(e.target.value as typeof genero)}
-                  >
-                    <option value="">Não informar</option>
-                    <option value="masculino">Masculino</option>
-                    <option value="feminino">Feminino</option>
-                    <option value="unissex">Unissex</option>
-                  </select>
-                  {/* R3: mesma forma da dica de `origem` — explica por que o botão está travado,
-                      em vez de deixar o operador procurar o campo que falta. */}
-                  {algumaLinhaComTamanho && !genero && (
-                    <span className="text-xs text-muted-foreground">
-                      Obrigatório com tamanho/numeração — define a tabela de medidas do anúncio.
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
 
             <div className="flex flex-col gap-2">
@@ -340,20 +298,12 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
               {/* A dúvida recorrente do operador é o produto SEM variação — a tela só mostra
                   "Variação 1" e nada diz que deixá-la sem cor é o caminho certo. Some quando ele
                   adiciona a 2ª linha: aí o produto tem variação de fato e a dica viraria ruído. */}
-              {linhas.length === 1 && !temEixoTamanho && (
+              {linhas.length === 1 && (
                 <span className="text-xs text-muted-foreground">
                   <strong className="font-medium text-foreground">Produto sem variação?</strong>{' '}
                   Deixe só a Variação 1 e o campo <em>Cor / nome</em> em branco — sai um anúncio
                   simples, sem seletor de cor. A foto pode ficar só na Capa.
                 </span>
-              )}
-              {temEixoTamanho && (
-                <GeradorVariacoes
-                  gruposTamanho={gruposTamanho}
-                  onGerar={(combinacoes) => setLinhas(combinacoes.map((c) => ({
-                    ...novaLinha(), nome: c.cor, tamanho: c.tamanho ?? '',
-                  })))}
-                />
               )}
               <div className="flex flex-col gap-3">
                 {linhas.map((l, i) => (
@@ -363,7 +313,6 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
                     indice={i}
                     podeRemover={linhas.length > 1}
                     tentouSalvar={tentouSalvar}
-                    gruposTamanho={temEixoTamanho ? gruposTamanho : undefined}
                     onMudar={(patch) => setLinhas((prev) => prev.map((x) => (x.clientId === l.clientId ? { ...x, ...patch } : x)))}
                     onRemover={() => setLinhas((prev) => prev.filter((x) => x.clientId !== l.clientId))}
                   />
