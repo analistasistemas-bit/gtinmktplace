@@ -16,11 +16,30 @@ export function fiscalEfetivo(
   return moduloFiscalAtivo ? p.fiscal : undefined;
 }
 
+/** Checkpoint Fable fim da Fase 3, ressalva 1: o front atual NUNCA manda `genero`/`tamanho`
+ *  para uma org sem tipo de produto habilitado — quem manda é um front que acreditava ter o
+ *  tipo (cache de alguns minutos depois do super-admin desligar) ou uma chamada forjada. Nos
+ *  dois casos, sanear em silêncio (`entradaTamanhoEfetiva`) é o lado errado: colapsa
+ *  "Azul/P, Azul/M, Azul/G" em três SKUs "Azul" idênticos, com estoque inicial aplicado e toast
+ *  de sucesso — um produto errado gravado é pior que um 400. Roda ANTES de
+ *  `entradaTamanhoEfetiva`, sobre a entrada crua (não a já saneada). */
+export function tamanhoNaoHabilitadoNaEntrada(
+  p: ProdutoEntrada, tipos: readonly string[],
+): boolean {
+  if (tipos.length > 0) return false;
+  if (p.genero != null) return true;
+  return (p.variacoes ?? []).some((v) => !!v.tamanho?.trim());
+}
+
 /** ADR-0166. Mesmo motivo de `fiscalEfetivo`: `montarLinhasProduto` grava as colunas pela mera
  *  PRESENÇA do campo, então um payload com `genero`/`tamanho` vindo de uma org SEM tipo de
  *  produto habilitado (engano do front, ou chamada HTTP direta) tem que ser descartado ANTES de
  *  chegar lá. Sem isto a org grava um eixo de variação que não contratou, e esse eixo chega ao
  *  payload do Mercado Livre.
+ *
+ *  `tamanhoNaoHabilitadoNaEntrada` já recusou com 400 o caso em que o payload TRAZ o campo —
+ *  esta função é o saneamento residual para o campo ausente/vazio, que é o cadastro normal de
+ *  toda org hoje (INV-1).
  *
  *  Não muta a entrada — devolve cópia rasa com as variações também copiadas. */
 export function entradaTamanhoEfetiva(

@@ -21,7 +21,7 @@ import { enfileirarFamilia } from '../_shared/queue.ts';
 import { type CodigosGerados, codigosJaUsados, derivarCodigos } from '../_shared/produto/codigos.ts';
 import {
   estoqueInicialDiverge, variacoesDivergem, validarFiscalDaEntrada, fiscalEfetivo,
-  entradaTamanhoEfetiva, validarTamanhosDaEntrada,
+  entradaTamanhoEfetiva, tamanhoNaoHabilitadoNaEntrada, validarTamanhosDaEntrada,
 } from './processar.ts';
 import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
 
@@ -65,12 +65,22 @@ Deno.serve(async (req) => {
   // PRESENÇA de `fiscal`.
   produto.fiscal = fiscalEfetivo(produto, moduloFiscal);
 
-  // ADR-0166: gênero/tamanho só existem para org com tipo de produto habilitado. Diferente do
-  // gate de módulo (que devolve 403), aqui o payload é SANEADO em vez de recusado: o campo é
-  // aditivo e o cadastro sem ele é um cadastro válido — recusar transformaria um front
-  // desatualizado num cadastro impossível. `tiposProdutoDaOrg` LANÇA em erro de leitura (nunca
-  // devolve [] silencioso), e o throw sobe como 500 — o operador retenta.
+  // ADR-0166: gênero/tamanho só existem para org com tipo de produto habilitado. `tiposProdutoDaOrg`
+  // LANÇA em erro de leitura (nunca devolve [] silencioso), e o throw sobe como 500 — o operador
+  // retenta.
   const tiposProduto = await tiposProdutoDaOrg(admin, orgId);
+
+  // Checkpoint Fable fim da Fase 3, ressalva 1: o front atual nunca manda genero/tamanho para
+  // org sem tipo habilitado — quem manda é front com cache desatualizado (super-admin desligou
+  // o tipo há pouco) ou chamada forjada. Recusar aqui, ANTES de sanear, evita colapsar
+  // "Azul/P, Azul/M, Azul/G" em três SKUs "Azul" idênticos com estoque aplicado e toast de
+  // sucesso — a mesma forma de erro de `validarTamanhosDaEntrada` (R7) logo abaixo.
+  if (tamanhoNaoHabilitadoNaEntrada(produto, tiposProduto)) {
+    return json({ erros: [{ campo: 'tamanho', mensagem: 'Tamanho/numeração não habilitado nesta organização — recarregue a página.' }] }, 400);
+  }
+
+  // Campo ausente/vazio (o cadastro normal de hoje, para toda org): saneamento residual,
+  // sem efeito para quem não enviou nada (INV-1).
   produto = entradaTamanhoEfetiva(produto, tiposProduto);
 
   // R7: valor de tamanho fora da lista do tipo da org é 400 explícito, na MESMA forma dos erros

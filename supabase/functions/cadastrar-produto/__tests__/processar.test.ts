@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  entradaTamanhoEfetiva, estoqueInicialDiverge, validarTamanhosDaEntrada, variacoesDivergem,
+  entradaTamanhoEfetiva, estoqueInicialDiverge, tamanhoNaoHabilitadoNaEntrada,
+  validarTamanhosDaEntrada, variacoesDivergem,
 } from '../processar.ts';
 
 const gravada = (over = {}) => ({ nome: 'Azul', gtin: '789', preco: 10.5, custo: 4.25, ...over });
@@ -294,6 +295,49 @@ describe('entradaTamanhoEfetiva (ADR-0166)', () => {
     entradaTamanhoEfetiva(entrada, []);
     expect(entrada.genero).toBe('masculino');
     expect(entrada.variacoes[0].tamanho).toBe('P');
+  });
+});
+
+// Ressalva 1 do checkpoint Fable fim da Fase 3: sanear em silencio (entradaTamanhoEfetiva) e
+// o lado errado quando o payload TRAZ genero/tamanho para uma org sem tipo habilitado — isso so
+// acontece com front que acreditava ter o tipo (cache pos-desligamento do super-admin) ou
+// chamada forjada, nunca com o front atual (que so manda o campo quando a org tem o tipo). Um
+// 400 aqui, ANTES de entradaTamanhoEfetiva descartar o campo, evita colapsar "Azul/P, Azul/M,
+// Azul/G" em tres SKUs "Azul" duplicados com estoque inicial aplicado e toast de sucesso.
+describe('tamanhoNaoHabilitadoNaEntrada (ADR-0166 / checkpoint Fase 3, ressalva 1)', () => {
+  const base = {
+    nomePai: 'Camiseta', origem: 'nacional' as const,
+    chaveCadastro: '11111111-1111-4111-8111-111111111111',
+    variacoes: [{ nome: 'Azul', preco: 50 }],
+  };
+
+  it('org sem tipo, payload sem genero/tamanho: false (cadastro normal de hoje)', () => {
+    expect(tamanhoNaoHabilitadoNaEntrada(base, [])).toBe(false);
+  });
+
+  it('org sem tipo, payload com genero preenchido: true', () => {
+    expect(tamanhoNaoHabilitadoNaEntrada({ ...base, genero: 'masculino' as const }, [])).toBe(true);
+  });
+
+  it('org sem tipo, alguma variacao com tamanho preenchido: true', () => {
+    const p = { ...base, variacoes: [{ nome: 'Azul', tamanho: 'P', preco: 50 }] };
+    expect(tamanhoNaoHabilitadoNaEntrada(p, [])).toBe(true);
+  });
+
+  it('org sem tipo, tamanho so com espacos: false (mesmo tratamento de "vazio" do resto da feature)', () => {
+    const p = { ...base, variacoes: [{ nome: 'Azul', tamanho: '   ', preco: 50 }] };
+    expect(tamanhoNaoHabilitadoNaEntrada(p, [])).toBe(false);
+  });
+
+  it('org COM tipo habilitado: sempre false, mesmo com genero/tamanho preenchidos', () => {
+    const p = { ...base, genero: 'masculino' as const, variacoes: [{ nome: 'Azul', tamanho: 'P', preco: 50 }] };
+    expect(tamanhoNaoHabilitadoNaEntrada(p, ['roupa'])).toBe(false);
+  });
+
+  it('payload sem variacoes nao lanca', () => {
+    const semVariacoes = { ...base, variacoes: undefined as never };
+    expect(() => tamanhoNaoHabilitadoNaEntrada(semVariacoes, [])).not.toThrow();
+    expect(tamanhoNaoHabilitadoNaEntrada(semVariacoes, [])).toBe(false);
   });
 });
 
