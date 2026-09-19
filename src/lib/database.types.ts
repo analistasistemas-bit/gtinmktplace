@@ -1607,6 +1607,7 @@ export type Database = {
           produto_seq: number
           slug: string
           tipo_pessoa: string
+          tipos_produto_habilitados: string[]
         }
         Insert: {
           atualizado_em?: string
@@ -1621,6 +1622,7 @@ export type Database = {
           produto_seq?: number
           slug: string
           tipo_pessoa?: string
+          tipos_produto_habilitados?: string[]
         }
         Update: {
           atualizado_em?: string
@@ -1635,8 +1637,644 @@ export type Database = {
           produto_seq?: number
           slug?: string
           tipo_pessoa?: string
+          tipos_produto_habilitados?: string[]
         }
         Relationships: []
+      }
+      platform_audit_events: {
+        Row: {
+          action: string
+          actor_id: string | null
+          category: string
+          details: Json
+          id: string
+          occurred_at: string
+          org_id: string
+          reason: string | null
+          result: string
+          target: string | null
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          category: string
+          details?: Json
+          id?: string
+          occurred_at?: string
+          org_id: string
+          reason?: string | null
+          result: string
+          target?: string | null
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          category?: string
+          details?: Json
+          id?: string
+          occurred_at?: string
+          org_id?: string
+          reason?: string | null
+          result?: string
+          target?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_audit_events_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_sale_facts: {
+        Row: {
+          gross_cents: number
+          id: string
+          org_id: string
+          recognized_base_cents: number
+          refunded_product_cents: number
+          sale_id: string
+          source_updated_at: string
+          statement_id: string
+          status: string
+        }
+        Insert: {
+          gross_cents: number
+          id?: string
+          org_id: string
+          recognized_base_cents: number
+          refunded_product_cents: number
+          sale_id: string
+          source_updated_at: string
+          statement_id: string
+          status: string
+        }
+        Update: {
+          gross_cents?: number
+          id?: string
+          org_id?: string
+          recognized_base_cents?: number
+          refunded_product_cents?: number
+          sale_id?: string
+          source_updated_at?: string
+          statement_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_sale_facts_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_sale_facts_statement_id_fkey"
+            columns: ["statement_id"]
+            isOneToOne: false
+            referencedRelation: "platform_billing_statements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_billing_statements: {
+        Row: {
+          base_cents: number
+          closed_at: string
+          closed_by: string
+          credit_cents: number
+          fee_cents: number
+          gross_cents: number
+          id: string
+          month: string
+          org_id: string
+          refund_cents: number
+          revenue_bps: number
+          revision: string
+          snapshot: Json
+          sonar_cents: number
+          terms_id: string
+          total_cents: number
+        }
+        Insert: {
+          base_cents: number
+          closed_at?: string
+          closed_by: string
+          credit_cents: number
+          fee_cents: number
+          gross_cents: number
+          id?: string
+          month: string
+          org_id: string
+          refund_cents: number
+          revenue_bps: number
+          revision: string
+          snapshot: Json
+          sonar_cents: number
+          terms_id: string
+          total_cents: number
+        }
+        Update: {
+          base_cents?: number
+          closed_at?: string
+          closed_by?: string
+          credit_cents?: number
+          fee_cents?: number
+          gross_cents?: number
+          id?: string
+          month?: string
+          org_id?: string
+          refund_cents?: number
+          revenue_bps?: number
+          revision?: string
+          snapshot?: Json
+          sonar_cents?: number
+          terms_id?: string
+          total_cents?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_billing_statements_closed_by_fkey"
+            columns: ["closed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_statements_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_billing_statements_terms_id_fkey"
+            columns: ["terms_id"]
+            isOneToOne: false
+            referencedRelation: "platform_commercial_terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_commercial_terms: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          modality: number
+          monthly_fee_cents: number
+          org_id: string
+          reason: string
+          revenue_bps_t1: number
+          revenue_bps_t2: number
+          revenue_bps_t3: number
+          revenue_bps_t4: number
+          setup_due_month: string | null
+          setup_fee_cents: number
+          sonar_unit_cents: number
+          starts_on: string
+          timezone: string
+          version: number
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          modality: number
+          monthly_fee_cents: number
+          org_id: string
+          reason: string
+          revenue_bps_t1: number
+          revenue_bps_t2: number
+          revenue_bps_t3: number
+          revenue_bps_t4: number
+          setup_due_month?: string | null
+          setup_fee_cents: number
+          sonar_unit_cents: number
+          starts_on: string
+          timezone?: string
+          version: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          modality?: number
+          monthly_fee_cents?: number
+          org_id?: string
+          reason?: string
+          revenue_bps_t1?: number
+          revenue_bps_t2?: number
+          revenue_bps_t3?: number
+          revenue_bps_t4?: number
+          setup_due_month?: string | null
+          setup_fee_cents?: number
+          sonar_unit_cents?: number
+          starts_on?: string
+          timezone?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_commercial_terms_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_org_month_metrics: {
+        Row: {
+          computed_at: string
+          cost_covered_orders: number
+          gross_cents: number
+          markup: number | null
+          month: string
+          orders: number
+          org_id: string
+          source_count: number
+          source_max_updated_at: string | null
+          tax_config_stamp: string
+          ticket_cents: number
+          total_orders: number
+          updated_at: string | null
+        }
+        Insert: {
+          computed_at?: string
+          cost_covered_orders: number
+          gross_cents: number
+          markup?: number | null
+          month: string
+          orders: number
+          org_id: string
+          source_count: number
+          source_max_updated_at?: string | null
+          tax_config_stamp: string
+          ticket_cents: number
+          total_orders: number
+          updated_at?: string | null
+        }
+        Update: {
+          computed_at?: string
+          cost_covered_orders?: number
+          gross_cents?: number
+          markup?: number | null
+          month?: string
+          orders?: number
+          org_id?: string
+          source_count?: number
+          source_max_updated_at?: string | null
+          tax_config_stamp?: string
+          ticket_cents?: number
+          total_orders?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_org_month_metrics_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_revenue_reconciliations: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          org_id: string
+          reason: string
+          refunded_product_cents: number
+          sale_id: string
+          source_gross_cents: number
+          source_status: string
+          source_updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          org_id: string
+          reason: string
+          refunded_product_cents: number
+          sale_id: string
+          source_gross_cents: number
+          source_status: string
+          source_updated_at: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          org_id?: string
+          reason?: string
+          refunded_product_cents?: number
+          sale_id?: string
+          source_gross_cents?: number
+          source_status?: string
+          source_updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_revenue_reconciliations_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_revenue_reconciliations_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_sonar_deliveries: {
+        Row: {
+          actor_id: string
+          delivered_at: string
+          id: string
+          month: string
+          org_id: string
+          reason: string | null
+          result_id: string
+          search_id: string
+          terms_id: string | null
+          timezone: string
+          total_cents: number
+          unit_cents: number
+          units: number
+        }
+        Insert: {
+          actor_id: string
+          delivered_at?: string
+          id?: string
+          month: string
+          org_id: string
+          reason?: string | null
+          result_id: string
+          search_id: string
+          terms_id?: string | null
+          timezone?: string
+          total_cents: number
+          unit_cents: number
+          units: number
+        }
+        Update: {
+          actor_id?: string
+          delivered_at?: string
+          id?: string
+          month?: string
+          org_id?: string
+          reason?: string | null
+          result_id?: string
+          search_id?: string
+          terms_id?: string | null
+          timezone?: string
+          total_cents?: number
+          unit_cents?: number
+          units?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_sonar_deliveries_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sonar_deliveries_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sonar_deliveries_result_id_fkey"
+            columns: ["result_id"]
+            isOneToOne: false
+            referencedRelation: "platform_sonar_results"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sonar_deliveries_search_id_fkey"
+            columns: ["search_id"]
+            isOneToOne: false
+            referencedRelation: "platform_sonar_searches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sonar_deliveries_terms_id_fkey"
+            columns: ["terms_id"]
+            isOneToOne: false
+            referencedRelation: "platform_commercial_terms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_sonar_events: {
+        Row: {
+          actor_id: string
+          details: Json
+          id: string
+          occurred_at: string
+          org_id: string
+          outcome: string
+          reason: string | null
+          result_id: string | null
+          search_id: string
+          stage: string
+        }
+        Insert: {
+          actor_id: string
+          details?: Json
+          id?: string
+          occurred_at?: string
+          org_id: string
+          outcome: string
+          reason?: string | null
+          result_id?: string | null
+          search_id: string
+          stage: string
+        }
+        Update: {
+          actor_id?: string
+          details?: Json
+          id?: string
+          occurred_at?: string
+          org_id?: string
+          outcome?: string
+          reason?: string | null
+          result_id?: string | null
+          search_id?: string
+          stage?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_sonar_events_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sonar_events_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sonar_events_result_id_fkey"
+            columns: ["result_id"]
+            isOneToOne: false
+            referencedRelation: "platform_sonar_results"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sonar_events_search_id_fkey"
+            columns: ["search_id"]
+            isOneToOne: false
+            referencedRelation: "platform_sonar_searches"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      platform_sonar_results: {
+        Row: {
+          created_at: string
+          failure_reason: string | null
+          generation: number
+          id: string
+          lease_token: string | null
+          lease_until: string | null
+          normalized_query: string
+          payload: Json | null
+          query_type: string
+          schema_version: number
+          state: string
+          updated_at: string
+          valid_until: string | null
+        }
+        Insert: {
+          created_at?: string
+          failure_reason?: string | null
+          generation: number
+          id?: string
+          lease_token?: string | null
+          lease_until?: string | null
+          normalized_query: string
+          payload?: Json | null
+          query_type: string
+          schema_version: number
+          state: string
+          updated_at?: string
+          valid_until?: string | null
+        }
+        Update: {
+          created_at?: string
+          failure_reason?: string | null
+          generation?: number
+          id?: string
+          lease_token?: string | null
+          lease_until?: string | null
+          normalized_query?: string
+          payload?: Json | null
+          query_type?: string
+          schema_version?: number
+          state?: string
+          updated_at?: string
+          valid_until?: string | null
+        }
+        Relationships: []
+      }
+      platform_sonar_searches: {
+        Row: {
+          actor_id: string
+          completed_at: string | null
+          created_at: string
+          id: string
+          intent_key: string
+          lease_token: string | null
+          normalized_query: string
+          org_id: string
+          origin: string
+          query_type: string
+          request_id: string
+          result_id: string | null
+          state: string
+          support_request_id: string | null
+        }
+        Insert: {
+          actor_id: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          intent_key: string
+          lease_token?: string | null
+          normalized_query: string
+          org_id: string
+          origin: string
+          query_type: string
+          request_id: string
+          result_id?: string | null
+          state: string
+          support_request_id?: string | null
+        }
+        Update: {
+          actor_id?: string
+          completed_at?: string | null
+          created_at?: string
+          id?: string
+          intent_key?: string
+          lease_token?: string | null
+          normalized_query?: string
+          org_id?: string
+          origin?: string
+          query_type?: string
+          request_id?: string
+          result_id?: string | null
+          state?: string
+          support_request_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "platform_sonar_searches_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sonar_searches_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sonar_searches_result_id_fkey"
+            columns: ["result_id"]
+            isOneToOne: false
+            referencedRelation: "platform_sonar_results"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_sonar_searches_support_request_id_fkey"
+            columns: ["support_request_id"]
+            isOneToOne: false
+            referencedRelation: "support_requests"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       profiles: {
         Row: {
@@ -2486,6 +3124,181 @@ export type Database = {
         }[]
       }
       modulos_habilitados_da_org: { Args: never; Returns: string[] }
+      platform_assert_admin_actor: {
+        Args: { p_actor: string }
+        Returns: undefined
+      }
+      platform_assert_sonar_context: {
+        Args: { p_actor: string; p_org_id: string; p_support_request?: string }
+        Returns: string
+      }
+      platform_billing_close: {
+        Args: {
+          p_actor: string
+          p_expected_revision: string
+          p_month: string
+          p_org: string
+        }
+        Returns: Json
+      }
+      platform_billing_preview: {
+        Args: { p_actor: string; p_month: string; p_org: string }
+        Returns: Json
+      }
+      platform_jwt_role: { Args: never; Returns: string }
+      platform_matching_reconciliation: {
+        Args: {
+          p_gross: number
+          p_org: string
+          p_sale: string
+          p_status: string
+        }
+        Returns: {
+          created_at: string
+          created_by: string
+          id: string
+          org_id: string
+          reason: string
+          refunded_product_cents: number
+          sale_id: string
+          source_gross_cents: number
+          source_status: string
+          source_updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "platform_revenue_reconciliations"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      platform_org_cost_catalog: {
+        Args: { p_org: string; p_since: string }
+        Returns: Json
+      }
+      platform_org_month_validation: {
+        Args: { p_org: string; p_since: string }
+        Returns: {
+          month: string
+          org_id: string
+          source_count: number
+          source_max_updated_at: string
+        }[]
+      }
+      platform_reconcile_revenue: {
+        Args: { p_actor: string; p_input: Json }
+        Returns: Json
+      }
+      platform_resolve_terms: {
+        Args: { p_on: string; p_org_id: string }
+        Returns: {
+          created_at: string
+          created_by: string
+          id: string
+          modality: number
+          monthly_fee_cents: number
+          org_id: string
+          reason: string
+          revenue_bps_t1: number
+          revenue_bps_t2: number
+          revenue_bps_t3: number
+          revenue_bps_t4: number
+          setup_due_month: string | null
+          setup_fee_cents: number
+          sonar_unit_cents: number
+          starts_on: string
+          timezone: string
+          version: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "platform_commercial_terms"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      platform_sale_needs_refund_reconciliation: {
+        Args: { p_estorno: number; p_status: string; p_tem_devolucao: boolean }
+        Returns: boolean
+      }
+      platform_save_terms: {
+        Args: { p_actor: string; p_input: Json }
+        Returns: Json
+      }
+      platform_sonar_begin: {
+        Args: {
+          p_actor: string
+          p_org_id: string
+          p_query: string
+          p_query_type: string
+          p_reopen_result?: string
+          p_request_id: string
+          p_schema_version?: number
+          p_support_request: string
+        }
+        Returns: Json
+      }
+      platform_sonar_complete: {
+        Args: {
+          p_actor: string
+          p_failure_reason?: string
+          p_lease_token: string
+          p_org_id: string
+          p_payload: Json
+          p_search_id: string
+          p_support_request: string
+        }
+        Returns: Json
+      }
+      platform_sonar_delivery_json: {
+        Args: {
+          p_search: Database["public"]["Tables"]["platform_sonar_searches"]["Row"]
+        }
+        Returns: Json
+      }
+      platform_sonar_get_payload: {
+        Args: {
+          p_actor: string
+          p_org_id: string
+          p_result_id: string
+          p_search_id: string
+          p_support_request: string
+        }
+        Returns: Json
+      }
+      platform_sonar_log_event: {
+        Args: {
+          p_actor: string
+          p_org_id: string
+          p_outcome: string
+          p_reason?: string
+          p_result_id: string
+          p_search_id: string
+          p_stage: string
+          p_support_request: string
+        }
+        Returns: string
+      }
+      platform_sonar_resolve_result: {
+        Args: {
+          p_actor: string
+          p_org_id: string
+          p_search_id: string
+          p_support_request: string
+        }
+        Returns: Json
+      }
+      platform_terms_tier: { Args: { p_base_cents: number }; Returns: number }
+      platform_terms_tier_bps: {
+        Args: {
+          p_base_cents: number
+          p_t1: number
+          p_t2: number
+          p_t3: number
+          p_t4: number
+        }
+        Returns: number
+      }
       produtos_estoque_resumo: { Args: never; Returns: Json }
       proximo_codigo_produto: {
         Args: { p_org: string; p_qtd: number; p_resync?: boolean }
@@ -2582,6 +3395,7 @@ export type Database = {
           tem_token: boolean
         }[]
       }
+      tipos_produto_da_org: { Args: never; Returns: string[] }
       upsert_marketplace_connection: {
         Args: {
           p_access_token: string
