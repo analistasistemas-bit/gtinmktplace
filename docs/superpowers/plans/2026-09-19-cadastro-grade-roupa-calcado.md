@@ -671,7 +671,7 @@ Expected: PASS (todos, incluindo os 3 novos).
 - [ ] **Step 5: Rodar o estático (o import órfão de `GeradorVariacoes` é erro de lint)**
 
 Run: `pnpm lint && pnpm exec tsc -b --force`
-Expected: sem erros. `GeradorVariacoes` fica sem consumidor até a Task 8 — isso é esperado e não é erro de lint (o arquivo é exportado e testado).
+Expected: sem erros. `GeradorVariacoes` fica sem consumidor entre esta task e a Task 8 — **verificado** que isso não derruba o portão: a única regra de "não usado" configurada é `@typescript-eslint/no-unused-vars` (`eslint.config.js:31`), que só olha símbolos locais do módulo, nunca exports; e `preflight:static` não roda `knip` nem `ts-prune`. Se mesmo assim o gate ficar vermelho aqui, **não** improvise: a correção é rodar a Task 6 antes desta.
 
 - [ ] **Step 6: Commit**
 
@@ -1370,7 +1370,9 @@ import { Input } from '@/components/ui/input';
 import type { GrupoTamanho } from '@/lib/tamanhos';
 
 // Exportada: o dialog de grade precisa da mesma lista para calcular quais chips estourariam o
-// limite. Redigitá-la lá seria duas fontes divergindo na primeira cor nova.
+// limite. Redigitá-la lá seria duas fontes divergindo na primeira cor nova. Exportar um não-
+// componente daqui é aceito pelo lint — `react-refresh/only-export-components` roda com
+// `allowConstantExport: true` (eslint.config.js:26-29) e isto é um `const`.
 export const CORES_POPULARES = [
   'Preto', 'Branco', 'Cinza', 'Azul Marinho', 'Azul Royal', 'Vermelho',
   'Verde Bandeira', 'Amarelo', 'Rosa', 'Roxo', 'Marrom', 'Bege',
@@ -2101,24 +2103,33 @@ const [confirmar, setConfirmar] = useState<{ titulo: string; texto: string; rotu
 
 Reconciliação num único efeito, dono da verdade:
 
+**`linhas` NÃO entra na lista de dependências.** O efeito chama `setLinhas`; se `linhas` fosse dependência, cada clique dispararia um segundo ciclo que só pararia por causa de um `if` de guarda — uma trava não testada que o próximo a editar o efeito remove sem perceber. Ler o valor anterior dentro do updater e devolver `prev` inalterado usa o bail-out do próprio React, e o loop deixa de ser possível por construção.
+
 ```tsx
 // A seleção JÁ É a ação: nenhum botão "Gerar". `reconciliarGrade` é pura e devolve o diff —
 // aqui só aplicamos. Ordenar por `ordem` mantém a lista agrupada por cor mesmo depois de o
 // operador marcar e desmarcar várias vezes.
 useEffect(() => {
-  const lista = [...cores];
-  const tams = [...tamanhos];
-  const r = reconciliarGrade(lista, tams, removidas, linhas);
-  if (r.novas.length === 0 && r.remover.length === 0 && r.removidas.size === removidas.size) return;
-  if (r.removidas.size !== removidas.size) setRemovidas(r.removidas);
+  // Poda das exclusões ANTES do updater: é o único efeito colateral do ciclo e não pertence
+  // dentro de um setState (que o React pode reexecutar).
+  const podadas = reconciliarGrade([...cores], [...tamanhos], removidas, []).removidas;
+  if (podadas.size !== removidas.size) { setRemovidas(podadas); return; }
+
   setLinhas((prev) => {
+    const r = reconciliarGrade([...cores], [...tamanhos], removidas, prev);
+    // `prev` inalterado = bail-out do React: sem novo render, sem ciclo.
+    if (r.novas.length === 0 && r.remover.length === 0) return prev;
     const fora = new Set(r.remover);
-    const mantidas = prev.filter((l) => !fora.has(chaveGrade(l.cor, l.tamanho)));
-    const todas = [...mantidas, ...r.novas.map((c) => novaLinhaGrade(c.cor, c.tamanho))];
+    const todas = [
+      ...prev.filter((l) => !fora.has(chaveGrade(l.cor, l.tamanho))),
+      ...r.novas.map((c) => novaLinhaGrade(c.cor, c.tamanho)),
+    ];
     const pos = new Map(r.ordem.map((k, i) => [k, i]));
-    return todas.sort((a, b) => (pos.get(chaveGrade(a.cor, a.tamanho)) ?? 0) - (pos.get(chaveGrade(b.cor, b.tamanho)) ?? 0));
+    return todas.sort((a, b) => (
+      (pos.get(chaveGrade(a.cor, a.tamanho)) ?? 0) - (pos.get(chaveGrade(b.cor, b.tamanho)) ?? 0)
+    ));
   });
-}, [cores, tamanhos, removidas, linhas]);
+}, [cores, tamanhos, removidas]);
 ```
 
 Uma linha "tem dado" (gatilho da confirmação) quando qualquer um destes é verdade:
