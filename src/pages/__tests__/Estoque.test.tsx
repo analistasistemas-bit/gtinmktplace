@@ -37,6 +37,13 @@ const fetchCanaisPorProdutoMock = vi.fn(() => Promise.resolve(new Map<string, st
 vi.mock('@/hooks/useModulosHabilitados', () => ({
   useModulosHabilitados: () => ({ data: ['estoque'], isLoading: false }),
 }));
+// O botão "Cadastrar com grade" depende do tipo de produto habilitado (ADR-0166). Sem mock,
+// `useTiposProdutoHabilitados` iria à rede real (supabase.rpc). Default = org SEM tipo, que é
+// o Estoque de hoje: o resto da suíte continua vendo só "Cadastrar produto".
+const tiposProdutoMock = vi.fn(() => ({ data: [] as string[] }));
+vi.mock('@/hooks/useTiposProdutoHabilitados', () => ({
+  useTiposProdutoHabilitados: () => tiposProdutoMock(),
+}));
 vi.mock('@/hooks/useImageUrl', () => ({ useImageUrl: () => ({ data: null, isError: false }) }));
 // ADR-0129 D-11: query de status por produto (badge no card) — sem mock, bateria na rede real
 // a cada render desta suíte. statusUpdatePorProduto continua o de verdade (função pura).
@@ -246,5 +253,31 @@ describe('Estoque', () => {
 
     await screen.findByText('Erro na última atualização');
     expect(toast.success).not.toHaveBeenCalled();
+  });
+});
+
+describe('Estoque — botão "Cadastrar com grade" (spec 2026-09-19 §1)', () => {
+  afterEach(() => tiposProdutoMock.mockReturnValue({ data: [] }));
+
+  it('org SEM tipo de produto habilitado não vê o botão', () => {
+    tiposProdutoMock.mockReturnValue({ data: [] });
+    renderEstoque();
+    expect(screen.getByRole('button', { name: /Cadastrar produto/ })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Cadastrar com grade/ })).not.toBeInTheDocument();
+  });
+
+  it('org COM roupa habilitado vê os dois botões, lado a lado', () => {
+    tiposProdutoMock.mockReturnValue({ data: ['roupa'] });
+    renderEstoque();
+    expect(screen.getByRole('button', { name: /Cadastrar produto/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Cadastrar com grade/ })).toBeInTheDocument();
+  });
+
+  it('clicar abre o dialog de grade, não o de cadastro normal', async () => {
+    tiposProdutoMock.mockReturnValue({ data: ['roupa'] });
+    const user = userEvent.setup();
+    renderEstoque();
+    await user.click(screen.getByRole('button', { name: /Cadastrar com grade/ }));
+    expect(screen.getByRole('dialog')).toHaveTextContent(/grade/i);
   });
 });

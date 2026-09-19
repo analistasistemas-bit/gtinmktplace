@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Boxes, Plus, PackagePlus } from 'lucide-react';
+import { Boxes, Plus, PackagePlus, Grid3x3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { DialogEntrada } from '@/components/estoque/dialog-entrada';
 import { DialogAjuste } from '@/components/estoque/dialog-ajuste';
 import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-produto';
+import { DialogCadastroGrade } from '@/components/estoque/dialog-cadastro-grade';
 import { DialogFiscalProduto } from '@/components/estoque/dialog-fiscal-produto';
 import { DialogExcluirProduto } from '@/components/estoque/dialog-excluir-produto';
 import { DialogAdicionarVariacao } from '@/components/estoque/dialog-adicionar-variacao';
@@ -19,6 +20,7 @@ import { ProdutoCard, CabecalhoProdutos, type AlvoEntrada } from '@/components/e
 import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque';
 import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
+import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { useEmpresaFiscal } from '@/hooks/useConfiguracoes';
 import {
   filtrarProdutos, canaisEfetivos, produtoFiscalPendente, type FiltroEstoque, type OrdemEstoque,
@@ -55,6 +57,11 @@ export default function Estoque() {
   const [entradaAberta, setEntradaAberta] = useState(false);
   const [alvoEntrada, setAlvoEntrada] = useState<AlvoEntrada | null>(null);
   const [cadastroAberto, setCadastroAberto] = useState(false);
+  // spec 2026-09-19 §1: segundo botão, SÓ para org com tipo de produto habilitado (ADR-0166).
+  // "Cadastrar produto" continua byte a byte igual ao de sempre — sem eixo de grade.
+  const { data: tiposProduto } = useTiposProdutoHabilitados();
+  const temTipoProduto = (tiposProduto?.length ?? 0) > 0;
+  const [gradeAberta, setGradeAberta] = useState(false);
   const { isAdmin } = useProfile();
   const [produtoAjuste, setProdutoAjuste] = useState<ProdutoComSaldo | null>(null);
   const [produtoExcluir, setProdutoExcluir] = useState<ProdutoEstoqueResumo | null>(null);
@@ -158,6 +165,12 @@ export default function Estoque() {
               <PackagePlus className="mr-2 h-4 w-4" />
               Dar entrada
             </Button>
+            {temTipoProduto && (
+              <Button variant="outline" onClick={() => setGradeAberta(true)}>
+                <Grid3x3 className="mr-2 h-4 w-4" />
+                Cadastrar com grade
+              </Button>
+            )}
             <Button onClick={() => setCadastroAberto(true)}>
               <Plus className="mr-2 h-4 w-4" />
               Cadastrar produto
@@ -248,6 +261,7 @@ export default function Estoque() {
         aberto={cadastroAberto}
         onFechar={() => setCadastroAberto(false)}
       />
+      <DialogCadastroGrade aberto={gradeAberta} onFechar={() => setGradeAberta(false)} />
       <DialogAdicionarVariacao
         produto={produtoAddVariacao}
         aberto={produtoAddVariacao != null}
