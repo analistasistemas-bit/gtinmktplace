@@ -268,6 +268,16 @@ describe('entradaTamanhoEfetiva (ADR-0166)', () => {
     expect(r.variacoes[0].preco).toBe(50);
   });
 
+  // Achado do code-quality review: payload forjado sem `variacoes` (o proprio caso que a
+  // funcao existe pra tratar — "chamada HTTP direta") nao pode lancar TypeError antes de
+  // `validarProdutoNovo` (index.ts) ter a chance de devolver o 400 de sempre. Isso afetaria
+  // TODA org sem tipo de produto, ou seja, toda org em producao hoje.
+  it('payload sem variacoes nao lanca — vira array vazio, para validarProdutoNovo tratar', () => {
+    const semVariacoes = { ...base, variacoes: undefined as never };
+    expect(() => entradaTamanhoEfetiva(semVariacoes, [])).not.toThrow();
+    expect(entradaTamanhoEfetiva(semVariacoes, []).variacoes).toEqual([]);
+  });
+
   it('org COM roupa habilitado preserva genero e tamanho', () => {
     const r = entradaTamanhoEfetiva(base, ['roupa']);
     expect(r.genero).toBe('masculino');

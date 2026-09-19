@@ -30,7 +30,13 @@ export function entradaTamanhoEfetiva(
   return {
     ...p,
     genero: undefined,
-    variacoes: p.variacoes.map((v) => ({ ...v, tamanho: undefined })),
+    // Achado do code-quality review: payload sem `variacoes` (o próprio caso que este
+    // comentário cita — "chamada HTTP direta") derrubava esta função com TypeError ANTES de
+    // `validarProdutoNovo` (index.ts) ter a chance de devolver o 400 de sempre ("Cadastre ao
+    // menos uma variação."). `?? []` restaura esse 400 limpo (o próprio check de
+    // `validarProdutoNovo` trata array vazio igual a ausente) — este ramo roda para TODA org
+    // sem tipo de produto, ou seja, toda org em produção hoje.
+    variacoes: p.variacoes?.map((v) => ({ ...v, tamanho: undefined })) ?? [],
   };
 }
 
