@@ -63,7 +63,7 @@ describe('createPlatformAdminHandler', () => {
     ['organization', 'organization', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['metrics', 'metrics', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['terms', 'terms', { org_id: ORG }, [ACTOR, ORG]],
-    ['save_terms', 'saveTerms', { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 10, revenue_bps: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }, [ACTOR, { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 10, revenue_bps: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }]],
+    ['save_terms', 'saveTerms', { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 0, revenue_bps_t1: 700, revenue_bps_t2: 600, revenue_bps_t3: 550, revenue_bps_t4: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }, [ACTOR, { org_id: ORG, starts_on: '2026-08-01', modality: 2, monthly_fee_cents: 0, revenue_bps_t1: 700, revenue_bps_t2: 600, revenue_bps_t3: 550, revenue_bps_t4: 500, sonar_unit_cents: 120, setup_fee_cents: 0, setup_due_month: null, reason: 'nova' }]],
     ['preview', 'preview', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['close', 'close', { org_id: ORG, month: '2026-08', expected_revision: 'rev' }, [ACTOR, ORG, '2026-08', 'rev']],
     ['statements', 'statements', { org_id: ORG, page: 2, page_size: 10 }, [ACTOR, ORG, 2, 10]],
