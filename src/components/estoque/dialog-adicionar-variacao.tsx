@@ -4,6 +4,11 @@
 // `publicar-familias`) — NUNCA passa pela tela Revisão (D-10). Versão SIMPLIFICADA do cadastro
 // (`dialog-cadastro-produto.tsx`, ADR-0094): uma etapa só, sem retry manual de foto — a
 // idempotência da edge (`chave`/`jaExistia`) já cobre o retry de rede.
+//
+// ADR-0166 / R4: este fluxo NÃO oferece o campo Tamanho de propósito (v1). A edge
+// `adicionar-variacoes-familia` recusa com 400 a família que tem tamanho, e o erro aparece aqui
+// pelo caminho de erro que já existe. Meia-feature (campo sem resolver a tabela de medidas nem o
+// SIZE_GRID_ROW_ID da cor nova) publicaria um anúncio quebrado — por isso recusa, não remendo.
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';

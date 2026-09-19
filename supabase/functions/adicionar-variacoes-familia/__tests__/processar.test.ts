@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  clonarFamilia, clonarVariacao, montarVariacaoNova, normalizarCodigo8,
+  clonarFamilia, clonarVariacao, familiaTemTamanho, montarVariacaoNova, normalizarCodigo8,
   precoPublicacaoNova, STRIP_FAMILIA, STRIP_VARIACAO, validarEntrada,
 } from '../processar.ts';
 
@@ -135,6 +135,20 @@ describe('precoPublicacaoNova', () => {
   });
   it('preco_publicacao nulo não conta — cai no fallback', () => {
     expect(precoPublicacaoNova([{ preco_publicacao: null, excluida_da_publicacao: false }], 99)).toBe(99);
+  });
+});
+
+describe('familiaTemTamanho (ADR-0166 / R4)', () => {
+  it('familia sem tamanho nenhum libera o fluxo', () => {
+    expect(familiaTemTamanho([{ tamanho: null }, { tamanho: '  ' }])).toBe(false);
+  });
+
+  it('UMA variacao com tamanho ja bloqueia — familia mista nao pode nascer', () => {
+    expect(familiaTemTamanho([{ tamanho: null }, { tamanho: 'P' }])).toBe(true);
+  });
+
+  it('lista vazia nao bloqueia', () => {
+    expect(familiaTemTamanho([])).toBe(false);
   });
 });
 

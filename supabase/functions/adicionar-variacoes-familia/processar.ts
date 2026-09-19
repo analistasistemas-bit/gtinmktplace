@@ -99,6 +99,16 @@ export function precoPublicacaoNova(
   return precos.length > 0 ? Math.min(...precos) : fallback;
 }
 
+// ADR-0166 / R4: adicionar cor a família COM tamanho está fora do escopo do v1.
+//
+// O diálogo deste fluxo não oferece o campo Tamanho, então a cor nova nasceria sem
+// SIZE_GRID_ROW_ID dentro de um anúncio que tem — o ML recusa o PUT INTEIRO e derruba o
+// estoque junto. Recusar é a opção honesta: melhor um erro claro do que um anúncio quebrado.
+// O caminho para o operador é o cadastro completo, que gera o cartesiano cor × tamanho de uma vez.
+export function familiaTemTamanho(variacoes: Array<{ tamanho: string | null }>): boolean {
+  return variacoes.some((v) => v.tamanho?.trim());
+}
+
 // Colunas removidas do clone de `familias` (verificado contra 20260527125643 e as migrations
 // posteriores que alteram `familias`, 2026-08-20):
 // - id/lote_id/status/chave_cadastro: identidade do lote/família NOVA, nunca da antiga.

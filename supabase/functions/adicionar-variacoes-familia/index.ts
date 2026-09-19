@@ -17,7 +17,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { codigosJaUsados } from '../_shared/produto/codigos.ts';
 import {
-  clonarFamilia, clonarVariacao, montarVariacaoNova, normalizarCodigo8,
+  clonarFamilia, clonarVariacao, familiaTemTamanho, montarVariacaoNova, normalizarCodigo8,
   precoPublicacaoNova, validarEntrada, type VariacaoNovaEntrada,
 } from './processar.ts';
 
@@ -128,6 +128,20 @@ Deno.serve(async (req) => {
     .select('*').eq('familia_id', anterior.id as string);
   if (errVivas) {
     return json({ error: `Falha lendo variações da família publicada: ${errVivas.message}` }, 500);
+  }
+
+  // ADR-0166 / R4: adicionar cor a família COM tamanho está fora do escopo do v1.
+  //
+  // O diálogo deste fluxo não oferece o campo Tamanho, então a cor nova nasceria sem
+  // SIZE_GRID_ROW_ID dentro de um anúncio que tem — o ML recusa o PUT INTEIRO e derruba o
+  // estoque junto (mesma classe do lote #45). Recusar é a opção honesta: melhor um erro claro
+  // do que um anúncio quebrado. O caminho para o operador é o cadastro completo, que gera o
+  // cartesiano cor × tamanho de uma vez.
+  if (familiaTemTamanho((variacoesVivas ?? []) as Array<{ tamanho: string | null }>)) {
+    return json({
+      error: 'Este produto usa tamanho/numeração — adicionar cor por aqui ainda não é suportado. '
+        + 'Cadastre as combinações de cor e tamanho pelo cadastro de produto.',
+    }, 400);
   }
 
   // Os guards de banco (20260804113000) rejeitariam com erro cru — valida antes e explica.
