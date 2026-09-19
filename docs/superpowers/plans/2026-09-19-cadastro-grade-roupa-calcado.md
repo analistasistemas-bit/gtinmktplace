@@ -27,7 +27,7 @@
 
 | Arquivo | Responsabilidade | Task |
 |---|---|---|
-| `src/components/estoque/use-cadastro-produto.ts` (**novo**) | Hook com todo o ciclo de vida do cadastro (chave idempotente, salvar, upload em lote, retry, 409, confirmação de fechar) + `montarPayload` compartilhado | 1 |
+| `src/components/estoque/use-cadastro-produto.ts` (**novo**) | Hook com todo o ciclo de vida do cadastro (chave idempotente, salvar, upload em lote, retry, 409, confirmação de fechar) + `montarPayload` + `useSugestaoNcm` compartilhados | 1 |
 | `src/components/estoque/etapa-fotos.tsx` (**novo**) | Etapa 2 (fotos) compartilhada pelos dois dialogs | 1 |
 | `src/components/estoque/dialog-cadastro-produto.tsx` | Cadastro normal — consome o hook; **revertido** ao formato de antes do ADR-0166 | 1, 2 |
 | `src/lib/cadastro-grade.ts` (**novo**) | Funções puras da grade: `chaveGrade`, `totalDaGrade`, `reconciliarGrade`, `resolverLinha` + tipos | 3, 4 |
@@ -58,6 +58,7 @@
   - `useCadastroProduto({ aberto, onCadastrado }): CadastroProdutoApi`
   - `montarPayload(pai, linhas, chaveCadastro, fiscal?): ProdutoEntrada` — agora **exportado**, com `pai.genero: 'masculino' | 'feminino' | 'unissex' | null`
   - `CAMPOS_NUMERICOS`, `numOuNull`
+  - `useSugestaoNcm({ aberto, etapaFiscal, nome, descricao }): { sugestao, carregando, limpar }` — a spec (§"2. Tela nova", linha 82) lista o efeito de sugestão de NCM como parte **obrigatória** da extração; sem ele o dialog de grade sai sem sugestão (regressão silenciosa) ou duplica as ~15 linhas da flag `ignore`
   - `<EtapaFotos api resultado fotosCapa onEscolherCapa arquivoPorIndice onPatchFotoLinha />`
   - tipos `FotosDoCadastro`, `AlvoFoto`, `CadastroProdutoApi`
 
@@ -153,7 +154,7 @@ export function montarPayload(
 }
 ```
 
-- [ ] **Step 3: Acrescentar o hook ao mesmo arquivo**
+- [ ] **Step 3: Acrescentar os hooks ao mesmo arquivo**
 
 `salvar` recebe o payload e as fotos já resolvidas — é isso que desacopla o hook das closures `linhas`/`fotosCapa`. `porLinha` vem na **mesma ordem** das `variacoes` do payload.
 
@@ -366,6 +367,69 @@ export function useCadastroProduto(
 }
 ```
 
+E, **no mesmo arquivo**, o segundo hook — a sugestão de NCM. A spec o lista explicitamente entre
+o que tem que ser extraído (§"2. Tela nova", linha 82), e com razão: deixá-lo no dialog normal faz
+o dialog de grade ou sair sem sugestão de NCM (regressão silenciosa, ninguém repara) ou duplicar as
+~15 linhas da flag `ignore` — cuja necessidade só se entende lendo o comentário "Fix round 1 (F1)"
+de `dialog-cadastro-produto.tsx:248-262`. Mover, sem alterar a lógica, o efeito de
+`dialog-cadastro-produto.tsx:248-262` mais os states `sugestaoNcm`/`carregandoSugestao`:
+
+```ts
+/**
+ * Sugestão de NCM pela IA, compartilhada pelos dois dialogs.
+ *
+ * A flag `ignore` NÃO é cerimônia: os dois dialogs ficam MONTADOS permanentemente nos call sites
+ * (Estoque.tsx, viabilidade-linha.tsx), então fechar antes de a resposta chegar não cancela o
+ * fetch. Sem ela, a resposta do produto A resolvia depois de fechado e aplicava o NCM de A no
+ * produto B, reaberto com outro nome, rotulado "Sugerida por IA" (Fix round 1 / F1).
+ *
+ * O cleanup roda sempre que `aberto` OU `etapaFiscal` mudam — inclusive ao fechar, mesmo com
+ * `etapaFiscal` ainda `true` nesse instante. `!aberto` no guard evita que reabrir a MESMA etapa
+ * fiscal dispare um fetch novo antes de o reset (que já limpa a sugestão) rodar.
+ *
+ * `nome`/`descricao` são lidos DENTRO do efeito e de propósito NÃO entram nas dependências (é o
+ * comportamento de hoje: a sugestão é pedida uma vez ao entrar na etapa fiscal, não a cada tecla).
+ */
+export function useSugestaoNcm(
+  { aberto, etapaFiscal, nome, descricao }:
+    { aberto: boolean; etapaFiscal: boolean; nome: string; descricao: string },
+) {
+  const [sugestao, setSugestao] = useState<{ ncm: string; justificativa: string } | null>(null);
+  const [carregando, setCarregando] = useState(false);
+
+  // Reset ao FECHAR — é exatamente onde o dialog de hoje limpa `sugestaoNcm` (efeito de reset
+  // com dependência `[aberto]`). Sai do dialog e entra aqui junto com o state que ele limpa.
+  useEffect(() => {
+    if (!aberto) setSugestao(null);
+  }, [aberto]);
+
+  useEffect(() => {
+    if (!aberto || !etapaFiscal || sugestao || carregando) return;
+    let ignore = false;
+    setCarregando(true);
+    supabase.functions.invoke('sugerir-ncm', { body: { nome, descricao: descricao || undefined } })
+      .then(({ data, error }) => {
+        if (ignore || error) return;
+        const r = data as { ncm: string | null; justificativa: string };
+        if (r?.ncm) setSugestao({ ncm: r.ncm, justificativa: r.justificativa });
+      })
+      .catch(() => {})
+      .finally(() => setCarregando(false));
+    return () => { ignore = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [etapaFiscal, aberto]);
+
+  return { sugestao, carregando, limpar: () => setSugestao(null) };
+}
+```
+
+**Restrição dura desta extração:** os testes de sugestão de NCM já existem em
+`dialog-cadastro-produto.test.tsx` (`sem o módulo fiscal nunca invoca sugerir-ncm`, ~linha 763; e o
+describe da etapa fiscal, ~linhas 774-903, incluindo o caso F1/F3(b) de fechar/reabrir com outro
+produto). Eles cobrem esta extração inteira e, como no resto da Task 1, **não podem ser editados**.
+Se o reset de `sugestao` ao fechar não couber exatamente onde o dialog o fazia hoje, ajuste o hook —
+nunca o teste.
+
 - [ ] **Step 4: Criar `src/components/estoque/etapa-fotos.tsx`**
 
 JSX movido de `dialog-cadastro-produto.tsx:652-790` (banners de fila/estoque, progresso, falhas, grid de capa, grid por variação). **Crítico:** não recebe `linhas` — recebe `arquivoPorIndice`/`onPatchFotoLinha`, senão o dialog de grade (cujas fotos são por cor, não por linha) não consegue reaproveitar.
@@ -511,7 +575,14 @@ export function EtapaFotos({
 
 - [ ] **Step 5: Reescrever `dialog-cadastro-produto.tsx` consumindo o hook**
 
-Trocar os 12 `useState` extraídos por `const api = useCadastroProduto({ aberto, onCadastrado });`. Manter no dialog **só** o estado de formulário: `nomePai`, `descricaoPai`, `unidade`, `fornecedor`, `origem`, `genero`, `linhas`, `fotosCapa`, `tentouSalvar`, `etapaFiscal`, `fiscal`, `sugestaoNcm`, `carregandoSugestao` — e o `useEffect` de reset desses campos (com dependência só `[aberto]`, já que `resultadoAmbiguo` foi para dentro do hook), o efeito de prefill (`inicial`) e o efeito de sugestão de NCM. O submit vira:
+Trocar os 12 `useState` extraídos por `const api = useCadastroProduto({ aberto, onCadastrado });` e os states `sugestaoNcm`/`carregandoSugestao` + o efeito de `:248-262` por:
+
+```tsx
+const { sugestao: sugestaoNcm, carregando: carregandoSugestao } =
+  useSugestaoNcm({ aberto, etapaFiscal, nome: nomePai, descricao: descricaoPai });
+```
+
+Manter no dialog **só** o estado de formulário: `nomePai`, `descricaoPai`, `unidade`, `fornecedor`, `origem`, `genero`, `linhas`, `fotosCapa`, `tentouSalvar`, `etapaFiscal`, `fiscal` — e o `useEffect` de reset desses campos (com dependência só `[aberto]`, já que `resultadoAmbiguo` foi para dentro do hook e a limpeza de `sugestaoNcm` foi para dentro de `useSugestaoNcm`) e o efeito de prefill (`inicial`). O submit vira:
 
 ```tsx
 function submeter() {
@@ -905,11 +976,18 @@ Expected: PASS (11 testes).
 
 - [ ] **Step 1: Escrever o teste falho**
 
-Acrescentar ao final de `src/lib/__tests__/cadastro-grade.test.ts`:
+Primeiro, **mesclar** os símbolos novos no `import` já existente no topo de `src/lib/__tests__/cadastro-grade.test.ts` (o da Task 3) — não acrescentar um segundo `import` no fim do arquivo:
 
 ```ts
-import { novaLinhaGrade, resolverLinha, type CamposHerdaveis } from '@/lib/cadastro-grade';
+import {
+  chaveGrade, novaLinhaGrade, reconciliarGrade, resolverLinha, totalDaGrade,
+  type CamposHerdaveis,
+} from '@/lib/cadastro-grade';
+```
 
+Depois, acrescentar os describes ao final do arquivo:
+
+```ts
 const CABECALHO: CamposHerdaveis = {
   preco: '99,90', custo: '40', pesoGramas: '300',
   alturaCm: '5', larguraCm: '20', comprimentoCm: '30',
@@ -1543,7 +1621,7 @@ Expected: PASS (13 testes).
 
 **Interfaces:**
 - Consumes: `LinhaGrade`, `LinhaResolvida`, `CamposHerdaveis`, `CAMPOS_HERDAVEIS`, `CampoHerdavel` (Task 4); `erroCampo` de `linha-variacao-form.tsx`; `CampoFoto`.
-- Produces: `<LinhaGradeForm linha resolvida tentouSalvar desabilitado podeRemover onMudar onDestravar onVoltarAHerdar onRemover />`.
+- Produces: `<LinhaGradeForm linha resolvida tentouSalvar desabilitado podeRemover onMudar onDestravar onVoltarAHerdar onRemover />` e o mapa **exportado** `ROTULOS` (o cabeçalho do dialog de grade, Task 8, lê o rótulo daqui em vez de redigitar as strings — rótulo divergente entre cabeçalho e linha é confusão pro operador e quebra teste).
 
 **Por que não reaproveitar `LinhaVariacaoForm`:** cor/tamanho travados, modo compacto e cadeado por campo são um layout diferente o suficiente (spec §2). Reaproveita-se o **tipo** e os **helpers** (`erroCampo`), não o JSX.
 
@@ -1686,7 +1764,8 @@ import {
   CAMPOS_HERDAVEIS, type CampoHerdavel, type LinhaGrade, type LinhaResolvida,
 } from '@/lib/cadastro-grade';
 
-const ROTULOS: Record<CampoHerdavel, { rotulo: string; prefixo?: string; sufixo?: string }> = {
+// Exportado: o cabeçalho do dialog de grade (Task 8) usa o MESMO rótulo, sem redigitá-lo.
+export const ROTULOS: Record<CampoHerdavel, { rotulo: string; prefixo?: string; sufixo?: string }> = {
   // Rótulo idêntico ao de `linha-variacao-form.tsx:58` — é a ponte com a Revisão, que exibe
   // este mesmo valor como "mín. líquido".
   preco: { rotulo: 'Preço mínimo (líquido)', prefixo: 'R$' },
@@ -1841,14 +1920,14 @@ Expected: PASS (10 testes).
 
 ## Task 8: `dialog-cadastro-grade.tsx` — passos 0 a 3 (montar a grade certa)
 
-**Modelo:** `sonnet`. É a maior task do plano, mas cada regra já está decidida e tem uma função pura correspondente já testada (Tasks 3 e 4) — o dialog só orquestra.
+**Modelo:** `opus`. É a maior task do plano e, embora cada regra já tenha uma função pura testada (Tasks 3 e 4), ~60% do JSX é "segue o padrão do dialog atual" — passo 0, cabeçalho, trocar tipo, título de etapas, foto por cor, resumo, footer em 3 modos — com muito julgamento implícito. Na revisão do Fable, o pouco de estado já escrito aqui continha 1 bug real (`tipoEscolhido` inicializado de uma query ainda `undefined`) e 1 seletor de teste errado. Sinal de que esta task precisa de mais capacidade de raciocínio, não menos.
 
 **Files:**
 - Create: `src/components/estoque/dialog-cadastro-grade.tsx`
 - Test: `src/components/estoque/__tests__/dialog-cadastro-grade.test.tsx`
 
 **Interfaces:**
-- Consumes: `useCadastroProduto`, `montarPayload`, `CAMPOS_NUMERICOS` (Task 1); `reconciliarGrade`, `totalDaGrade`, `chaveGrade`, `resolverLinha`, `novaLinhaGrade`, `CAMPOS_HERDAVEIS` (Tasks 3-4); `numeracaoPublicavel` (Task 5); `GeradorVariacoes` (Task 6); `LinhaGradeForm` (Task 7); `opcoesDeTamanho`, `LIMITE_VARIACOES_GERADAS`; `useTiposProdutoHabilitados`; `UNIDADES_FISCAIS`; `CampoFoto`.
+- Consumes: `useCadastroProduto`, `montarPayload`, `CAMPOS_NUMERICOS` (Task 1); `reconciliarGrade`, `totalDaGrade`, `chaveGrade`, `resolverLinha`, `novaLinhaGrade`, `CAMPOS_HERDAVEIS` (Tasks 3-4); `numeracaoPublicavel` (Task 5); `GeradorVariacoes` + `CORES_POPULARES` (Task 6); `LinhaGradeForm` + `ROTULOS` (Task 7); `opcoesDeTamanho`, `LIMITE_VARIACOES_GERADAS`; `useTiposProdutoHabilitados`; `UNIDADES_FISCAIS`; `CampoFoto`.
 - Produces: `<DialogCadastroGrade aberto onFechar />`.
 
 - [ ] **Step 1: Escrever o teste falho**
@@ -1904,6 +1983,30 @@ describe('DialogCadastroGrade — passo 0 (escolha do tipo)', () => {
     expect(screen.getByLabelText('Nome')).toBeInTheDocument();
   });
 
+  // O dialog fica MONTADO permanentemente em Estoque.tsx e `useTiposProdutoHabilitados` é
+  // react-query: o primeiro render acontece com `data === undefined`. Um `useState` inicializado
+  // de `tipos[0]` congelaria `null` e a org de 1 tipo ficaria num passo 0 vazio pra sempre. Os
+  // outros testes deste arquivo NÃO pegam isso — o mock devolve dado síncrono (mesmo padrão do
+  // incidente ADR-0129, "mock não basta"). Este é o único que reproduz a query chegando depois.
+  it('tipo que chega DEPOIS do primeiro render ainda pula o passo 0', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // FUNÇÃO, não constante: `rerender` com o MESMO objeto de elemento aciona o bail-out do
+    // React e o componente nem reexecuta — o teste passaria sem provar nada.
+    const arvore = () => (
+      <QueryClientProvider client={qc}>
+        <MemoryRouter><DialogCadastroGrade aberto onFechar={() => {}} /></MemoryRouter>
+      </QueryClientProvider>
+    );
+    tiposProdutoMock.mockReturnValue({ data: undefined as unknown as string[] });
+    const { rerender } = render(arvore());
+    expect(screen.queryByLabelText('Nome')).not.toBeInTheDocument();
+    // A query resolve. Com o tipo DERIVADO o passo 0 some sozinho; com `useState(tipos[0])`
+    // o state continua `null` e a tela fica presa num passo 0 sem botão nenhum.
+    tiposProdutoMock.mockReturnValue({ data: ['roupa'] });
+    rerender(arvore());
+    expect(screen.getByLabelText('Nome')).toBeInTheDocument();
+  });
+
   it('org com os 2 tipos escolhe entre Roupa e Calçado antes de tudo', async () => {
     tiposProdutoMock.mockReturnValue({ data: ['roupa', 'calcado'] });
     const user = userEvent.setup();
@@ -1936,7 +2039,10 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     const user = userEvent.setup();
     renderGrade();
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
-    expect(screen.queryByText(/·/)).not.toBeInTheDocument(); // só cor ainda não gera nada
+    // `/·/` sozinho NÃO serve: o título do dialog é `Cadastrar … · etapa N de M` (mesmo padrão
+    // de `dialog-cadastro-produto.tsx:447-450`), então o seletor casaria com o título e o teste
+    // falharia por um motivo que não tem nada a ver com a grade. Ancorar na cor real.
+    expect(screen.queryByText(/Preto · /)).not.toBeInTheDocument(); // só cor ainda não gera linha
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
     await user.click(screen.getByRole('checkbox', { name: 'M' }));
     expect(screen.getByText('Preto · P')).toBeInTheDocument();
@@ -2079,14 +2185,27 @@ Expected: FAIL com `Failed to resolve import "../dialog-cadastro-grade"`.
 
 - [ ] **Step 3: Implementar o dialog (passos 0 a 3)**
 
-Estrutura obrigatória do estado e da reconciliação — o resto do JSX segue o padrão do dialog atual (mesmos `DialogContent className="max-h-[90vh] sm:max-w-3xl overflow-y-auto"`, mesmos rótulos de Nome/Descrição/Unidade/Fornecedor/Origem, mesmo `CampoFoto` para capa/capa2/capa3):
+Estrutura obrigatória do estado e da reconciliação — o resto do JSX segue o padrão do dialog atual (mesmos `DialogContent className="max-h-[90vh] sm:max-w-3xl overflow-y-auto"`, mesmos rótulos de Nome/Descrição/Unidade/Fornecedor/Origem, mesmo `CampoFoto` para capa/capa2/capa3).
+
+**Rótulo dos campos herdáveis do cabeçalho: `ROTULOS[campo].rotulo`, SEM sufixo.** O cabeçalho é um campo só do produto inteiro, não "da variação N" — o `label`/`aria-label` é o rótulo puro: `Preço mínimo (líquido)`, `Custo`, `Peso`, `Altura`, `Largura`, `Comprimento`. **Não** copiar o `aria-label` de `linha-variacao-form.tsx:137`, que concatena a unidade e o número da linha (`Peso (g) da variação 1`): os testes das Tasks 8 e 9 buscam `getByLabelText('Preço mínimo (líquido)')` e `getByLabelText('Peso')` exatos, e o sufixo quebra os dois. O `g`/`cm` continua aparecendo como adorno visual dentro do campo (`ROTULOS[campo].sufixo`), igual ao `R$` do preço — só não entra no rótulo acessível.
 
 ```tsx
 const { data: tiposProduto } = useTiposProdutoHabilitados();
 const tipos = tiposProduto ?? [];
-const [tipoEscolhido, setTipoEscolhido] = useState<TipoProdutoId | null>(
-  tipos.length === 1 ? (tipos[0] as TipoProdutoId) : null,
-);
+// NÃO inicializar o state a partir de `tipos[0]`. `useTiposProdutoHabilitados` é react-query:
+// no PRIMEIRO render `data` é `undefined`, e este dialog fica MONTADO permanentemente em
+// `Estoque.tsx` (mesmo padrão do dialog atual — ele não desmonta ao fechar). Um
+// `useState(tipos.length === 1 ? tipos[0] : null)` leria `[]`, nasceria `null` e nunca
+// acompanharia a query chegando depois: uma org com 1 tipo ficaria presa num passo 0 vazio,
+// sem botão nenhum pra clicar. O state guarda SÓ a escolha MANUAL; o tipo efetivo é DERIVADO
+// a cada render, então ele se corrige sozinho quando `data` chega.
+//
+// Atenção ao testar: o mock de `tiposProdutoMock` devolve dado SÍNCRONO, então a versão
+// bugada passaria igual — é exatamente o padrão do incidente "mock não basta" (ADR-0129,
+// 2026-08-21). O teste do Step 1 que começa com `{ data: undefined }` é a única trava real.
+const [tipoManual, setTipoManual] = useState<TipoProdutoId | null>(null);
+const tipoEscolhido: TipoProdutoId | null =
+  tipos.length === 1 ? (tipos[0] as TipoProdutoId) : tipoManual;
 const gruposTamanho = opcoesDeTamanho(tipoEscolhido ? [tipoEscolhido] : []);
 
 const [cabecalho, setCabecalho] = useState<CamposHerdaveis>({
@@ -2099,6 +2218,49 @@ const [linhas, setLinhas] = useState<LinhaGrade[]>([]);
 const [fotoPorCor, setFotoPorCor] = useState<Record<string, File | null>>({});
 // Ação destrutiva pendente de confirmação (desmarcar eixo com dado, trocar de tipo).
 const [confirmar, setConfirmar] = useState<{ titulo: string; texto: string; rotulo: string; acao: () => void } | null>(null);
+```
+
+**Passo 0** só existe quando `tipos.length > 1 && tipoEscolhido === null`: um `<Button>` por tipo habilitado, rotulado `Roupa` / `Calçado`, com `onClick={() => setTipoManual(t)}`. Com 1 tipo só, `tipoEscolhido` já é não-nulo e a tela abre direto no cabeçalho.
+
+**Reset ao FECHAR** (mesmo padrão do dialog atual: efeito com `if (aberto) return;`). `tipoManual`
+entra no reset junto com o resto do formulário — senão reabrir o dialog numa org de 2 tipos pularia
+o passo 0 e cairia direto no tipo da sessão anterior:
+
+```tsx
+useEffect(() => {
+  if (aberto) return;
+  setTipoManual(null);
+  setCabecalho({ preco: '', custo: '', pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '' });
+  setCores(new Set()); setTamanhos(new Set()); setRemovidas(new Set());
+  setLinhas([]); setFotoPorCor({}); setConfirmar(null);
+  // + os campos de cabeçalho textual (nomePai, descricaoPai, unidade, fornecedor, origem,
+  //   genero), `fotosCapa`, `tentouSalvar` — e, na Task 9, `etapaFiscal` e `fiscal`.
+}, [aberto]);
+```
+
+**Trocar de tipo** (só existe quando `tipos.length > 1`): um botão `Trocar tipo` no cabeçalho.
+Se houver alguma linha (`linhas.length > 0`), passa pelo mesmo `setConfirmar` das outras ações
+destrutivas, com `rotulo: 'Trocar mesmo assim'`; sem linha nenhuma, troca direto. A ação
+confirmada **zera tudo que depende do tipo** — `tipoManual` (volta ao passo 0), `cores`,
+`tamanhos`, `removidas`, `linhas` e `fotoPorCor` — e **preserva** o cabeçalho textual
+(Nome/Descrição/Unidade/Fornecedor/Origem/Gênero) e os valores herdáveis, que não são
+específicos de roupa ou calçado:
+
+```tsx
+function trocarTipo() {
+  const acao = () => {
+    setTipoManual(null);
+    setCores(new Set()); setTamanhos(new Set()); setRemovidas(new Set());
+    setLinhas([]); setFotoPorCor({});
+  };
+  if (linhas.length === 0) { acao(); return; }
+  setConfirmar({
+    titulo: 'Trocar o tipo de produto?',
+    texto: `As ${linhas.length} linha(s) da grade serão apagadas — os tamanhos de roupa e de calçado não são os mesmos.`,
+    rotulo: 'Trocar mesmo assim',
+    acao,
+  });
+}
 ```
 
 Reconciliação num único efeito, dono da verdade:
@@ -2225,17 +2387,19 @@ Expected: PASS.
 
 ## Task 9: `dialog-cadastro-grade.tsx` — etapa fiscal, salvar e fotos
 
-**Modelo:** `sonnet`.
+**Modelo:** `opus`. Mesma razão da Task 8 (é o mesmo arquivo): o submit, a numeração de etapas, o reaproveitamento de `EtapaFotos` e o congelamento durante `salvando` dependem de julgamento que o texto do plano não consegue esgotar, e um erro aqui manda foto para o SKU errado em silêncio.
 
 **Files:**
 - Modify: `src/components/estoque/dialog-cadastro-grade.tsx`
 - Modify: `src/components/estoque/__tests__/dialog-cadastro-grade.test.tsx`
 
 **Interfaces:**
-- Consumes: `useCadastroProduto`, `montarPayload`, `EtapaFotos` (Task 1); `EtapaFiscalForm`, `fiscalVazio`, `fiscalCompleto` (existentes); `resolverLinha` (Task 4).
+- Consumes: `useCadastroProduto`, `montarPayload`, `useSugestaoNcm`, `EtapaFotos` (Task 1); `EtapaFiscalForm`, `fiscalVazio`, `fiscalCompleto` (existentes); `resolverLinha` (Task 4).
 - Produces: nada novo — fecha o dialog.
 
 - [ ] **Step 1: Escrever os testes falhos**
+
+Os testes abaixo buscam os campos do cabeçalho por `getByLabelText('Preço mínimo (líquido)')` e `getByLabelText('Peso')` — rótulo puro, **sem** o sufixo de unidade e **sem** "da variação N". É a regra já fixada na Task 8 (`ROTULOS[campo].rotulo`): se a implementação copiar o `aria-label` de `linha-variacao-form.tsx:137` (`Peso (g) da variação 1`), estes testes falham.
 
 ```tsx
 describe('DialogCadastroGrade — etapa fiscal (ADR-0135 D-9)', () => {
@@ -2364,6 +2528,11 @@ const { data: modulos } = useModulosHabilitados();
 const fiscalAtivo = !!modulos?.includes('fiscal');
 const [etapaFiscal, setEtapaFiscal] = useState(false);
 const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
+// Mesma sugestão de NCM do dialog normal — o hook da Task 1, nunca o efeito copiado. Duplicar
+// as ~15 linhas da flag `ignore` aqui reintroduziria o bug F1 (resposta de um produto aplicada
+// em outro) nesta tela, sem nenhum teste acusar.
+const { sugestao: sugestaoNcm, carregando: carregandoSugestao } =
+  useSugestaoNcm({ aberto, etapaFiscal, nome: nomePai, descricao: descricaoPai });
 
 function submeter() {
   if (!origem || !genero) return;
@@ -2388,22 +2557,40 @@ function submeter() {
 
 O congelamento é `desabilitado={api.salvando}` propagado a `GeradorVariacoes` e a cada `LinhaGradeForm`. A numeração do título segue o padrão do dialog atual, com um passo a mais quando há escolha de tipo: `etapa N de M`, `M = 2 + (fiscalAtivo ? 1 : 0) + (tipos.length > 1 ? 1 : 0)`.
 
-A etapa 2 reaproveita `EtapaFotos` sem nenhuma adaptação de contrato — a foto já vem resolvida:
+A etapa 2 reaproveita `EtapaFotos` sem nenhuma adaptação de contrato — a foto já vem resolvida.
+Duas travas, as mesmas do dialog normal (Task 1, Step 5):
+
+1. **A prop `resultado` é `ResultadoCadastro` NÃO-NULA** (Task 1, Step 4). `resultado={api.resultado}`
+   não compila com `| null`. Usar uma constante local e sair antes, nunca `api.resultado!`.
+2. **`arquivoPorIndice`/`onPatchFotoLinha` repetem a guarda de contagem divergente.** Um retry
+   idempotente devolve o cadastro ORIGINAL da edge, que pode ter outra quantidade de variações —
+   é o mesmo motivo pelo qual `subirLoteDeFotos` pula o casamento posicional. Sem a guarda, a
+   miniatura (e o patch) vão para o SKU errado, em silêncio.
 
 ```tsx
+const resultado = api.resultado;
+if (!resultado) return /* … etapa 1 / etapa fiscal … */;
+
+const batem = resolvidas.length === resultado.variacoes.length;
+
 <EtapaFotos
   api={api}
-  resultado={api.resultado}
+  resultado={resultado}
   fotosCapa={fotosCapa}
   onEscolherCapa={(tipo, f) => setFotosCapa((prev) => ({ ...prev, [tipo]: f }))}
-  arquivoPorIndice={(i) => resolvidas[i]?.foto ?? null}
+  arquivoPorIndice={(i) => (batem ? resolvidas[i]?.foto ?? null : null)}
   onPatchFotoLinha={(i, foto) => {
+    if (!batem) return;
     const alvo = linhas[i];
     if (!alvo) return;
     setLinhas((prev) => prev.map((x) => (x.clientId === alvo.clientId ? { ...x, foto } : x)));
   }}
 />
 ```
+
+Note que o patch grava `foto` na LINHA (override individual), não em `fotoPorCor`: escolher uma
+foto nova na etapa 2 é uma decisão sobre aquele SKU específico, e `resolverLinha` já faz o
+override da linha vencer a foto da cor (Task 4).
 
 - [ ] **Step 4: Rodar o arquivo inteiro**
 
@@ -2425,21 +2612,38 @@ Expected: PASS (todos os describes das Tasks 8 e 9).
 
 **Files:**
 - Modify: `src/pages/Estoque.tsx:6` (import do ícone), `:14` (import do dialog), `:57` (state), `:156-166` (actions do `PageHeader`), `:247-250` (montagem do dialog)
-- Test: `tests/pages/Estoque.test.tsx` (se existir; senão criar `src/pages/__tests__/Estoque.grade.test.tsx` — **conferir primeiro** com `ls tests/pages src/pages/__tests__`)
+- Test: `src/pages/__tests__/Estoque.test.tsx` (**conferido**: o arquivo existe; `tests/pages/` não tem Estoque)
 
 **Interfaces:**
 - Consumes: `DialogCadastroGrade` (Tasks 8-9), `useTiposProdutoHabilitados`.
 - Produces: nada.
 
-- [ ] **Step 1: Localizar o arquivo de teste da página**
+- [ ] **Step 1: Criar o mock de `useTiposProdutoHabilitados` em `Estoque.test.tsx`**
 
-Run: `ls tests/pages src/pages/__tests__ 2>/dev/null | grep -i estoque`
-Se houver um `Estoque.test.tsx`, acrescentar o describe abaixo nele (reaproveitando os mocks já montados lá). Se não houver, criar `src/pages/__tests__/Estoque.grade.test.tsx` com o mesmo conjunto de mocks usado por `dialog-cadastro-grade.test.tsx`.
+O arquivo é `src/pages/__tests__/Estoque.test.tsx` (**já conferido**, existe; não há Estoque em `tests/pages/`). O describe do Step 2 vai nele, reaproveitando os mocks já montados lá — **mas `tiposProdutoMock` NÃO existe nesse arquivo hoje**, e `@/hooks/useTiposProdutoHabilitados` não está mockado. Sem criá-lo antes, o hook cai na rede real (`supabase.rpc`) e o `tiposProdutoMock.mockReturnValue(...)` do teste nem compila.
+
+Acrescentar junto dos outros `vi.mock` do topo, copiando o padrão exato de `dialog-cadastro-produto.test.tsx:62-65`:
+
+```tsx
+// O botão "Cadastrar com grade" depende do tipo de produto habilitado (ADR-0166). Sem mock,
+// `useTiposProdutoHabilitados` iria à rede real (supabase.rpc). Default = org SEM tipo, que é
+// o Estoque de hoje: o resto da suíte continua vendo só "Cadastrar produto".
+const tiposProdutoMock = vi.fn(() => ({ data: [] as string[] }));
+vi.mock('@/hooks/useTiposProdutoHabilitados', () => ({
+  useTiposProdutoHabilitados: () => tiposProdutoMock(),
+}));
+```
+
+**Verificado:** o `afterEach` existente (`Estoque.test.tsx:83-89`) reseta mocks um a um, sem `vi.resetAllMocks()` — então a implementação do mock novo sobrevive. Em compensação o `mockReturnValue` de um teste **vaza** para os seguintes, por isso o describe do Step 2 tem o seu próprio `afterEach(() => tiposProdutoMock.mockReturnValue({ data: [] }))`, devolvendo o default de org sem tipo.
 
 - [ ] **Step 2: Escrever o teste falho**
 
 ```tsx
+// Acrescentar ao FINAL de `src/pages/__tests__/Estoque.test.tsx`, como describe irmão do
+// `describe('Estoque')` já existente (o `afterEach` daquele não alcança este).
 describe('Estoque — botão "Cadastrar com grade" (spec 2026-09-19 §1)', () => {
+  afterEach(() => tiposProdutoMock.mockReturnValue({ data: [] }));
+
   it('org SEM tipo de produto habilitado não vê o botão', () => {
     tiposProdutoMock.mockReturnValue({ data: [] });
     renderEstoque();
@@ -2466,7 +2670,7 @@ describe('Estoque — botão "Cadastrar com grade" (spec 2026-09-19 §1)', () =>
 
 - [ ] **Step 3: Rodar e confirmar que falha**
 
-Run: `pnpm test <caminho do arquivo de teste> -t "Cadastrar com grade"`
+Run: `pnpm test src/pages/__tests__/Estoque.test.tsx -t "Cadastrar com grade"`
 Expected: FAIL — o botão não existe.
 
 - [ ] **Step 4: Implementar**
@@ -2506,11 +2710,9 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-/usr/bin/git add src/pages/Estoque.tsx
+/usr/bin/git add src/pages/Estoque.tsx src/pages/__tests__/Estoque.test.tsx
 /usr/bin/git commit -m "feat(estoque): botao Cadastrar com grade para org de roupa/calcado"
 ```
-
-(Acrescente ao `git add` o arquivo de teste que o Step 1 escolheu.)
 
 ---
 
