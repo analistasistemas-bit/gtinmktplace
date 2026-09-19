@@ -914,3 +914,226 @@ begin
     raise exception 'correcao do sonar nao gerou evento de auditoria para a organizacao';
   end if;
 end $$;
+
+-- ============================================================================
+-- Testes da migration 20260919160000_platform_terms_vigencia_setembro.sql:
+-- ============================================================================
+
+-- Cenário A: 0 organizações presentes -> No-op absoluto sem efeitos colaterais
+create temporary table _check_zero_noop (
+  terms_before integer not null,
+  audits_before integer not null
+);
+
+insert into _check_zero_noop (terms_before, audits_before)
+values (
+  (select count(*) from public.platform_commercial_terms),
+  (select count(*) from public.platform_audit_events)
+);
+
+\ir ../migrations/20260919160000_platform_terms_vigencia_setembro.sql
+
+do $$
+declare
+  v_before record;
+  v_terms_after integer;
+  v_audits_after integer;
+begin
+  select * into strict v_before from _check_zero_noop;
+  select count(*) into v_terms_after from public.platform_commercial_terms;
+  select count(*) into v_audits_after from public.platform_audit_events;
+
+  if v_terms_after <> v_before.terms_before or v_audits_after <> v_before.audits_before then
+    raise exception 'Cenário 0 organizações violou o no-op: termos ou auditorias foram criados indevidamente';
+  end if;
+end $$;
+
+drop table if exists _check_zero_noop;
+
+-- Cenário B1: 1 organização presente (apenas avil) -> Executa migration e valida abort atômico com exceção 23514
+do $$
+declare
+  v_abortou boolean := false;
+begin
+  insert into public.organizations (id, nome, slug) values
+    ('90000000-0000-0000-0000-000000000061', 'Avil Parcial', 'avil')
+  on conflict (slug) do nothing;
+
+  insert into public.platform_commercial_terms (
+    id, org_id, starts_on, modality, monthly_fee_cents,
+    revenue_bps_t1, revenue_bps_t2, revenue_bps_t3, revenue_bps_t4,
+    sonar_unit_cents, setup_fee_cents, setup_due_month, reason, created_by, version
+  ) values (
+    'a0000000-0000-0000-0000-000000000061', '90000000-0000-0000-0000-000000000061',
+    '2026-10-01'::date, 2, 0, 700, 600, 550, 500, 120, 300000, '2026-10-01'::date,
+    'teste parcial 1 org', '80000000-0000-0000-0000-000000000001'::uuid, 1
+  );
+
+  begin
+    perform pg_temp.executar_migracao_vigencia_setembro();
+  exception when sqlstate '23514' then
+    v_abortou := true;
+  end;
+
+  -- Limpar fixtures
+  delete from public.platform_commercial_terms where id = 'a0000000-0000-0000-0000-000000000061';
+  delete from public.organizations where id = '90000000-0000-0000-0000-000000000061';
+
+  if not v_abortou then
+    raise exception 'Migration não abortou quando apenas 1 organização estava presente';
+  end if;
+end $$;
+
+-- Cenário B2: 2 organizações presentes (avil e diego-souza) -> Executa migration e valida abort atômico com exceção 23514
+do $$
+declare
+  v_abortou boolean := false;
+begin
+  insert into public.organizations (id, nome, slug) values
+    ('90000000-0000-0000-0000-000000000061', 'Avil Parcial', 'avil'),
+    ('90000000-0000-0000-0000-000000000062', 'DSA Parcial', 'diego-souza')
+  on conflict (slug) do nothing;
+
+  insert into public.platform_commercial_terms (
+    id, org_id, starts_on, modality, monthly_fee_cents,
+    revenue_bps_t1, revenue_bps_t2, revenue_bps_t3, revenue_bps_t4,
+    sonar_unit_cents, setup_fee_cents, setup_due_month, reason, created_by, version
+  ) values
+    ('a0000000-0000-0000-0000-000000000061', '90000000-0000-0000-0000-000000000061',
+     '2026-10-01'::date, 2, 0, 700, 600, 550, 500, 120, 300000, '2026-10-01'::date,
+     'teste parcial 2 orgs', '80000000-0000-0000-0000-000000000001'::uuid, 1),
+    ('a0000000-0000-0000-0000-000000000062', '90000000-0000-0000-0000-000000000062',
+     '2026-10-01'::date, 2, 0, 700, 600, 550, 500, 120, 300000, '2026-10-01'::date,
+     'teste parcial 2 orgs', '80000000-0000-0000-0000-000000000001'::uuid, 1);
+
+  begin
+    perform pg_temp.executar_migracao_vigencia_setembro();
+  exception when sqlstate '23514' then
+    v_abortou := true;
+  end;
+
+  -- Limpar fixtures
+  delete from public.platform_commercial_terms where id in ('a0000000-0000-0000-0000-000000000061', 'a0000000-0000-0000-0000-000000000062');
+  delete from public.organizations where id in ('90000000-0000-0000-0000-000000000061', '90000000-0000-0000-0000-000000000062');
+
+  if not v_abortou then
+    raise exception 'Migration não abortou quando apenas 2 organizações estavam presentes';
+  end if;
+end $$;
+
+-- Cenário C: 3 organizações presentes + Tenant de Controle -> Migração e Readback Completo
+insert into public.organizations (id, nome, slug) values
+  ('90000000-0000-0000-0000-000000000051', 'Avil Teste', 'avil'),
+  ('90000000-0000-0000-0000-000000000052', 'DSA Teste', 'diego-souza'),
+  ('90000000-0000-0000-0000-000000000053', 'Daludi Shop Teste', 'daludishop'),
+  ('90000000-0000-0000-0000-000000000054', 'Controle Teste', 'org-controle')
+on conflict (slug) do nothing;
+
+insert into public.platform_commercial_terms (
+  id, org_id, starts_on, modality, monthly_fee_cents,
+  revenue_bps_t1, revenue_bps_t2, revenue_bps_t3, revenue_bps_t4,
+  sonar_unit_cents, setup_fee_cents, setup_due_month, reason, created_by, version
+)
+select
+  ('a0000000-0000-0000-0000-00000000000' || row_number() over())::uuid,
+  o.id, '2026-10-01'::date, 2, 0, 700, 600, 550, 500, 120, 300000, '2026-10-01'::date,
+  'fixture vigencia outubro', '80000000-0000-0000-0000-000000000001'::uuid, 1
+from public.organizations o
+where o.slug in ('avil', 'diego-souza', 'daludishop', 'org-controle');
+
+\ir ../migrations/20260919160000_platform_terms_vigencia_setembro.sql
+
+-- Asserção completa de readback:
+do $$
+declare
+  v_term record;
+  v_audit record;
+  v_ctrl public.platform_commercial_terms%rowtype;
+  v_slug text;
+  v_found_count integer;
+  v_trigger_blocked boolean := false;
+begin
+  -- 1. Validar alvos: starts_on e setup_due_month = 2026-09-01 via IS DISTINCT FROM
+  for v_slug in select unnest(array['avil', 'diego-souza', 'daludishop'])
+  loop
+    select o.slug, t.id, t.starts_on, t.setup_due_month
+    into strict v_term
+    from public.platform_commercial_terms t
+    join public.organizations o on o.id = t.org_id
+    where o.slug = v_slug;
+
+    if v_term.starts_on is distinct from '2026-09-01'::date
+       or v_term.setup_due_month is distinct from '2026-09-01'::date then
+      raise exception 'Falha no readback do alvo %: starts_on=%, setup_due_month=%',
+        v_term.slug, v_term.starts_on, v_term.setup_due_month;
+    end if;
+
+    -- Validar evento de auditoria correlacionado individual para este slug
+    select e.* into strict v_audit
+    from public.platform_audit_events e
+    join public.organizations o on o.id = e.org_id
+    where o.slug = v_slug and e.action = 'platform_terms_vigencia_corrigida';
+
+    if v_audit.category is distinct from 'admin'
+       or v_audit.actor_id is distinct from null
+       or v_audit.result is distinct from 'success'
+       or v_audit.target is distinct from v_term.id::text
+       or v_audit.reason is distinct from 'Ajuste de vigencia inicial: primeiro contrato inicia no mes do cadastro (2026-09)'
+       or (v_audit.details->>'org_slug') is distinct from v_slug
+       or (v_audit.details->>'starts_on_anterior') is distinct from '2026-10-01'
+       or (v_audit.details->>'starts_on_atual') is distinct from '2026-09-01'
+       or (v_audit.details->>'setup_due_month_anterior') is distinct from '2026-10-01'
+       or (v_audit.details->>'setup_due_month_atual') is distinct from '2026-09-01' then
+      raise exception 'Auditoria incompleta ou invalida para %: %', v_slug, v_audit;
+    end if;
+  end loop;
+
+  -- 2. Validar controle: permaneceu 2026-10-01 e inalterado via SELECT INTO STRICT
+  select t.* into strict v_ctrl
+  from public.platform_commercial_terms t
+  join public.organizations o on o.id = t.org_id
+  where o.slug = 'org-controle';
+
+  if v_ctrl.starts_on is distinct from '2026-10-01'::date
+     or v_ctrl.setup_due_month is distinct from '2026-10-01'::date
+     or v_ctrl.modality is distinct from 2
+     or v_ctrl.monthly_fee_cents is distinct from 0
+     or v_ctrl.sonar_unit_cents is distinct from 120
+     or v_ctrl.setup_fee_cents is distinct from 300000 then
+    raise exception 'Tenant controle foi alterado indevidamente: %', v_ctrl;
+  end if;
+
+  if exists (
+    select 1
+    from public.platform_audit_events e
+    join public.organizations o on o.id = e.org_id
+    where o.slug = 'org-controle'
+  ) then
+    raise exception 'Tenant controle recebeu auditoria indevida';
+  end if;
+
+  -- 3. Validar total de auditorias
+  select count(*) into strict v_found_count
+  from public.platform_audit_events
+  where action = 'platform_terms_vigencia_corrigida';
+
+  if v_found_count is distinct from 3 then
+    raise exception 'Esperava exatamente 3 auditorias, encontrou %', v_found_count;
+  end if;
+
+  -- 4. Validar trigger de imutabilidade ativo sem falso positivo
+  begin
+    update public.platform_commercial_terms set reason = 'tentativa ilegal'
+    where starts_on = '2026-09-01';
+  exception when sqlstate '23514' then
+    v_trigger_blocked := true;
+  end;
+
+  if not v_trigger_blocked then
+    raise exception 'Trigger de imutabilidade falhou ao bloquear update direto';
+  end if;
+end $$;
+
+-- Limpeza final da função temporária
+drop function if exists pg_temp.executar_migracao_vigencia_setembro();
+

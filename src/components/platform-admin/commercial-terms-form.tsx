@@ -97,11 +97,9 @@ function toneForStatus(status: 'Vigente' | 'Futura' | 'Anterior'): StatusTone {
 }
 
 export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
-  const nextMonth = useMemo(() => nextMonthStart(), []);
-  const currentMonth = useMemo(() => currentMonthStart(), []);
   const isFirstContract = current === null;
-  const [startsOn, setStartsOn] = useState(nextMonth);
-  const effectiveStartsOn = isFirstContract ? startsOn : nextMonth;
+  const [startsOn, setStartsOn] = useState(() => currentMonthStart());
+  const effectiveStartsOn = isFirstContract ? startsOn : nextMonthStart();
   const today = useMemo(() => todayInFortaleza(), []);
   const [form, setForm] = useState<FormState>(() => initialState(current, effectiveStartsOn));
   const [error, setError] = useState<string | null>(null);
@@ -109,18 +107,48 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
   const terms = usePlatformTerms(orgId);
   const save = useSavePlatformTerms();
 
+  function syncMonthRollover(nowMonth: string) {
+    setStartsOn(nowMonth);
+    const minSetupMonth = nowMonth.slice(0, 7);
+    setForm((previous) => ({
+      ...previous,
+      setupDueMonth: previous.setupDueMonth && previous.setupDueMonth < minSetupMonth
+        ? minSetupMonth
+        : previous.setupDueMonth,
+    }));
+    setError('A competência do mês virou enquanto o formulário estava aberto. A vigência foi ajustada para o mês atual. Revise e confirme o salvamento.');
+  }
+
   useEffect(() => {
-    setStartsOn(nextMonth);
-    setForm(initialState(current, nextMonth));
+    const month = currentMonthStart();
+    setStartsOn(month);
+    setForm(initialState(current, month));
     revenueTouched.current = false;
     setError(null);
-  }, [current, orgId, nextMonth]);
+  }, [current, orgId]);
+
+  useEffect(() => {
+    function syncOnFocus() {
+      const nowMonth = currentMonthStart();
+      if (isFirstContract && startsOn < nowMonth) {
+        syncMonthRollover(nowMonth);
+      }
+    }
+    window.addEventListener('focus', syncOnFocus);
+    return () => window.removeEventListener('focus', syncOnFocus);
+  }, [isFirstContract, startsOn]);
 
   const set = (field: keyof FormState, value: string) =>
     setForm((previous) => ({ ...previous, [field]: value }));
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    const nowCurrentMonth = currentMonthStart();
+    if (isFirstContract && startsOn < nowCurrentMonth) {
+      syncMonthRollover(nowCurrentMonth);
+      return;
+    }
+
     const monthly = parseScaled(form.monthly, 2);
     const revenueT1 = parseScaled(form.revenueT1, 2);
     const revenueT2 = parseScaled(form.revenueT2, 2);
@@ -137,6 +165,12 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
       return;
     }
 
+    const effectiveSetupDue = isFirstContract
+      ? (form.setupDueMonth && form.setupDueMonth < effectiveStartsOn.slice(0, 7)
+          ? effectiveStartsOn.slice(0, 7)
+          : form.setupDueMonth || null)
+      : null;
+
     setError(null);
     try {
       await save.mutateAsync({
@@ -150,7 +184,7 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
         revenue_bps_t4: revenueT4!,
         sonar_unit_cents: form.modality === '1' ? 0 : sonar!,
         setup_fee_cents: isFirstContract ? setup! : 0,
-        setup_due_month: isFirstContract ? form.setupDueMonth || null : null,
+        setup_due_month: effectiveSetupDue,
         reason: form.reason.trim(),
       });
       set('reason', '');
@@ -326,17 +360,27 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                   aria-label="Início da vigência"
                   className="h-9 w-full rounded-md border border-input bg-transparent px-3"
                   value={startsOn}
-                  onChange={(event) => setStartsOn(event.target.value)}
+                  onChange={(event) => {
+                    const newStartsOn = event.target.value;
+                    setStartsOn(newStartsOn);
+                    const minSetupMonth = newStartsOn.slice(0, 7);
+                    setForm((previous) => {
+                      if (previous.setupDueMonth && previous.setupDueMonth < minSetupMonth) {
+                        return { ...previous, setupDueMonth: minSetupMonth };
+                      }
+                      return previous;
+                    });
+                  }}
                 >
-                  <option value={nextMonth}>Próximo mês ({nextMonth})</option>
-                  <option value={currentMonth}>Este mês ({currentMonth})</option>
+                  <option value={currentMonthStart()}>Este mês ({currentMonthStart()})</option>
+                  <option value={nextMonthStart()}>Próximo mês ({nextMonthStart()})</option>
                 </select>
               </label>
             ) : null}
             <p className="text-sm text-muted-foreground md:col-span-2">
               {isFirstContract ? (
                 <>
-                  Primeiro contrato pode iniciar neste mês, sem cobrança retroativa. Padrão: próximo mês.
+                  Primeiro contrato inicia por padrão no mês corrente, sem cobrança retroativa.
                   {' '}Vigência selecionada: <strong>{effectiveStartsOn}</strong>.
                 </>
               ) : (

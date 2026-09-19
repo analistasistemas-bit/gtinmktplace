@@ -44,6 +44,12 @@ export function itemExternoCatalogoRetentavel(item: {
     && statusRetentavel(item.catalog_status);
 }
 
+/**
+ * `kitVinculado` = true quando `familias.kit_multiplicador != null` (ADR-0151 D-5). O worker
+ * (`guardKitVinculado` em vincular-catalogo/vinculacao.ts) pula a vinculação pra sempre nesse
+ * caso — sem este guard aqui o `catalog_status` fica preso no default 'pendente' de publicação
+ * e o banner/botão ↻ oferecem uma retentativa que o worker sempre no-opa.
+ */
 export function familiaTemCatalogoRetentavel(
   variacoes: Array<{
     catalog_status: string | null;
@@ -55,7 +61,9 @@ export function familiaTemCatalogoRetentavel(
     catalog_listing_id?: string | null;
     item_externo_id?: string | null;
   }>,
+  kitVinculado?: boolean,
 ): boolean {
+  if (kitVinculado) return false;
   if (variacoes.some(variacaoCatalogoRetentavel)) return true;
   return (itensExternos ?? []).some(itemExternoCatalogoRetentavel);
 }

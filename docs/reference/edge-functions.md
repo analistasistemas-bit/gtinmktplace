@@ -118,7 +118,9 @@ frontend**: a tela usa esse campo para não acusar ausência de contrato. Ver o 
 [ADR-0159](../decisions/0159-central-cache-mensal-materializado.md) (Fase 3 do plano de
 performance: `platform_org_month_metrics` cacheia meses fechados; `readOrgMetrics`
 (`_shared/platform-admin/metrics-repository.ts`) faz o read-through/invalidação sozinho — o job
-abaixo só pré-aquece).
+abaixo só pré-aquece) e o [ADR-0165](../decisions/0165-faixas-regressivas-por-organizacao.md)
+(`terms` passa a ter `revenue_bps_t1..t4` no lugar de `revenue_bps`; `preview`/`close` ganham
+`applied_bps`/`applied_tier` — a faixa efetivamente aplicada naquele mês).
 
 `materializar-metricas` pré-aquece `platform_org_month_metrics` para todas as organizações: para
 cada uma, materializa (`materializeRecentMonths`) os últimos 6 meses fechados que estiverem ausentes

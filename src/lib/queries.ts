@@ -834,22 +834,36 @@ export async function fetchTelegramConfig(): Promise<TelegramConfig> {
   };
 }
 
-/** Salva chat_id e ativo; só grava o token quando informado (campo deixado vazio = mantém). */
+/**
+ * Salva chat_id e ativo; só grava o token quando informado (campo deixado vazio = mantém).
+ *
+ * O token vai num `update` separado, nunca no `upsert` (ON CONFLICT DO UPDATE): desde que
+ * `telegram_bot_token` perdeu o grant de SELECT (achado de segurança F5, migration
+ * 20260822131053), o Postgres passou a exigir SELECT na coluna pra resolver o `EXCLUDED.col`
+ * do ON CONFLICT — um `update().eq('org_id', …)` só lê org_id (que continua com SELECT) e
+ * escreve a coluna (UPDATE continua concedido), então não esbarra nisso.
+ */
 export async function salvarTelegramConfig(input: { chatId: string; ativo: boolean; botToken?: string }): Promise<void> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('sem sessão');
   const orgId = effectiveOrgId();
   if (!orgId) throw new Error('sem organização');
-  const tokenLimpo = input.botToken?.trim();
   const { error } = await supabase.from('configuracoes').upsert({
     org_id: orgId,
     user_id: user.id,
     telegram_chat_id: input.chatId || null,
     telegram_ativo: input.ativo,
     atualizado_em: new Date().toISOString(),
-    ...(tokenLimpo ? { telegram_bot_token: tokenLimpo } : {}),
   }, { onConflict: 'org_id' });
   if (error) throw error;
+
+  const tokenLimpo = input.botToken?.trim();
+  if (tokenLimpo) {
+    const { error: erroToken } = await supabase.from('configuracoes')
+      .update({ telegram_bot_token: tokenLimpo, atualizado_em: new Date().toISOString() })
+      .eq('org_id', orgId);
+    if (erroToken) throw erroToken;
+  }
 }
 
 async function invocarMonitorarModerados(payload: Record<string, unknown>): Promise<{ ok: boolean; novos?: number; erro?: string }> {
@@ -942,6 +956,7 @@ export function publicadoFromRow(
       ml_variation_id: v.ml_variation_id ?? null,
     })),
     itensUpRetentaveis,
+    r.kit_multiplicador != null,
   );
   return {
     familiaId: r.id,
@@ -1035,7 +1050,7 @@ async function carregarItensUpRetentaveisPorCodigo(
 export async function fetchPublicados(): Promise<PublicadoItem[]> {
   const { data, error } = await supabase
     .from('familias')
-    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, kit_multiplicador, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
     .not('ml_item_id', 'is', null)
     .order('publicado_em', { ascending: false });
   if (error) throw error;
@@ -1188,7 +1203,7 @@ async function fetchPublicacoesIncompletas(codigosPublicados: Set<string>): Prom
 
   const { data: familias, error: famErr } = await supabase
     .from('familias')
-    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
+    .select('id, codigo_pai, variacao_principal_codigo, titulo_ml, nome_pai, fornecedor, tipo_aviamento, categoria_nome, descricao_ml, ml_item_id, ml_permalink, publicado_em, can_invoice, kit_base_codigo_pai, kit_multiplicador, variacoes(codigo, gtin, preco_publicacao, excluida_da_publicacao, catalog_status, catalog_listing_id, ml_variation_id)')
     .in('codigo_pai', [...remotoPorCodigo.keys()])
     .is('ml_item_id', null)
     // Publicação EM VOO não é incidente (achado da revisão do Fable): na saga UP os filhos ganham

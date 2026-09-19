@@ -10,6 +10,14 @@ import {
   useEnviarTesteTelegram, useVerificarModeradosAgora,
 } from '@/hooks/useConfiguracoes';
 
+/** Postgrest e afins podem devolver o erro como objeto plano (sem `instanceof Error`) — sem
+ * isso o toast mostra "[object Object]" em vez da mensagem real. */
+function mensagemErro(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (typeof e === 'object' && e !== null && 'message' in e) return String((e as { message?: unknown }).message);
+  return String(e);
+}
+
 /**
  * `semCard`: renderiza sem o próprio Card, para entrar dentro de um SettingsGroup — card
  * dentro de card é ruído. `podeEditar`: replica a policy de `configuracoes` (admin ou
@@ -46,7 +54,7 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
       botToken: patch.botToken,
     }, {
       onSuccess: () => { if (patch.botToken) setBotToken(''); },
-      onError: (e) => toast.error('Falha ao salvar', { description: e instanceof Error ? e.message : String(e) }),
+      onError: (e) => toast.error('Falha ao salvar', { description: mensagemErro(e) }),
     });
   };
 
@@ -55,7 +63,7 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
       onSuccess: (r) => r.ok
         ? toast.success('Mensagem de teste enviada — confira seu Telegram.')
         : toast.error('Não enviou', { description: r.erro }),
-      onError: (e) => toast.error('Não enviou', { description: e instanceof Error ? e.message : String(e) }),
+      onError: (e) => toast.error('Não enviou', { description: mensagemErro(e) }),
     });
 
   const handleVerificar = () =>
@@ -63,7 +71,7 @@ export function ConfigTelegram({ semCard = false, podeEditar = true }: {
       onSuccess: (r) => toast.success(
         r.novos ? `${r.novos} novo(s) moderado(s) detectado(s).` : 'Verificação concluída — nenhum novo moderado.',
       ),
-      onError: (e) => toast.error('Falha ao verificar', { description: e instanceof Error ? e.message : String(e) }),
+      onError: (e) => toast.error('Falha ao verificar', { description: mensagemErro(e) }),
     });
 
   const tokenPlaceholder = cfg?.temToken ? '•••••••• (configurado — deixe vazio p/ manter)' : 'Cole o token do @BotFather';

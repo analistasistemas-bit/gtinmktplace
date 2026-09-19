@@ -105,6 +105,25 @@ silêncio catálogos acima de 1000 linhas) as variações da organização, com 
 `codigo`) casam com algum item vendido desde `p_since`. `security definer`, `search_path=''`,
 execução restrita a `service_role`. Usada por `readOrgMetrics` no lugar de ler `variacoes` inteira.
 
+As migrations `20260918010000_platform_commercial_terms_tiers.sql` e
+`20260918010100_platform_billing_tiers.sql` (ADR-0165) trocam a coluna única
+`platform_commercial_terms.revenue_bps` por quatro colunas fixas (`revenue_bps_t1..t4`, uma por
+faixa de faturamento mensal — cortes fixos e iguais para toda organização: ≤R$100 mil/≤R$300
+mil/≤R$500 mil/acima, só os 4 percentuais dentro deles são negociáveis por organização). A faixa
+aplicada é escolhida automaticamente pela função `platform_terms_tier(p_base_cents)` (só os 3
+cortes) e `platform_terms_tier_bps(...)` (aplica o percentual da faixa), usando a mesma base líquida
+que já calculava o percentual antes deste ADR. `platform_billing_preview` passa a expor
+`applied_bps`/`applied_tier` (a faixa realmente usada naquele mês, na raiz do jsonb) e
+`platform_billing_close` grava `applied_bps` — não mais o `revenue_bps` do termo — em
+`platform_billing_statements.revenue_bps`, porque o crédito de devolução tardia de meses anteriores
+é recalculado a partir dessa coluna do statement, não do termo comercial (a alíquota fica congelada
+no fechamento, nunca recalculada). `CHECK platform_commercial_terms_modality_shape` trava que
+modalidade 1 nunca tem `sonar_unit_cents > 0` e modalidade 2 nunca tem `monthly_fee_cents > 0`,
+espelhado em `platform_save_terms` e em `validateTerms` (TypeScript) — violação rejeita com erro,
+nunca normaliza em silêncio. Backfill das 3 organizações existentes desabilitou o trigger de
+imutabilidade da tabela só durante os `UPDATE`s de correção, dentro de uma transação com asserção
+LOUD antes de reabilitar.
+
 ### `marketplace_connections`
 **Substitui `ml_credentials`** como fonte da credencial de canal — a conexão é da **organização**,
 não do usuário (fecha a pendência do ADR-0047 "membros não publicam"). *Migration

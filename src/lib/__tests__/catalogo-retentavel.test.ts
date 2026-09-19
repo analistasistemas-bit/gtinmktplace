@@ -138,6 +138,27 @@ describe('familiaTemCatalogoRetentavel', () => {
       { catalog_status: 'sem_produto', catalog_listing_id: null, ml_variation_id: 'MLB5042154755' },
     ])).toBe(true);
   });
+
+  // ADR-0151 D-5: kit vinculado nunca tem catálogo por design — o worker (guardKitVinculado)
+  // pula a vinculação pra sempre, então `catalog_status` fica preso no default 'pendente' de
+  // publicação. Sem este guard o banner "sem vínculo de catálogo" e o botão ↻ ofereciam uma
+  // retentativa que o worker sempre no-opa (achado real: Daludi Shop, Kit 2 Unidades Shampoo
+  // Johnson's 750ml, 00000011 — pendente há dias enquanto o ML já linkava o par pelo GTIN).
+  it('kit vinculado (kitVinculado=true) → false mesmo com variação pendente sem listing', () => {
+    expect(familiaTemCatalogoRetentavel(
+      [{ catalog_status: 'pendente', catalog_listing_id: null, ml_variation_id: 'MLB5257437405' }],
+      undefined,
+      true,
+    )).toBe(false);
+  });
+
+  it('kitVinculado ausente/false não muda o comportamento normal', () => {
+    expect(familiaTemCatalogoRetentavel(
+      [{ catalog_status: 'pendente', catalog_listing_id: null, ml_variation_id: 'MLB5257437405' }],
+      undefined,
+      false,
+    )).toBe(true);
+  });
 });
 
 describe('catalogStatusRetentavelEmEspelho', () => {
