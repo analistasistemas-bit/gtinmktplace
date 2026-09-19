@@ -88,27 +88,21 @@ update public.platform_commercial_terms
   set revenue_bps_t1 = revenue_bps, revenue_bps_t2 = revenue_bps,
       revenue_bps_t3 = revenue_bps, revenue_bps_t4 = revenue_bps;
 
-do $$
-declare
-  v_corrigidas integer;
-begin
-  with corrigidos as (
-    update public.platform_commercial_terms
-      set sonar_unit_cents = 0
-      where modality = 1 and sonar_unit_cents <> 0
-      returning id, org_id
-  )
-  insert into public.platform_audit_events (org_id, actor_id, category, action, result, target, reason, details)
-  select org_id, null, 'admin', 'platform_terms_sonar_corrected', 'success', id::text,
-    'ADR-0165: modalidade 1 nao cobra Sonar do cliente', jsonb_build_object('sonar_unit_cents_after', 0)
-  from corrigidos;
-
-  get diagnostics v_corrigidas = row_count;
-  if v_corrigidas <> 2 then
-    raise exception 'esperava corrigir 2 organizacoes modalidade 1 com Sonar cobrado, corrigiu %', v_corrigidas
-      using errcode = '23514';
-  end if;
-end $$;
+-- Sem asserção de contagem fixa (ex.: "exatamente 2"): essa migration roda tanto em producao
+-- (onde hoje 2 linhas violam) quanto do zero em toda suite de teste local via `\ir` -- um numero
+-- hardcoded so seria verdade num dos dois mundos. A rede LOUD real e o CHECK de modalidade logo
+-- abaixo: se sobrar qualquer linha violando a regra depois deste UPDATE, o proprio `ALTER TABLE ...
+-- ADD CONSTRAINT` (sem `NOT VALID`) falha ao validar as linhas existentes.
+with corrigidos as (
+  update public.platform_commercial_terms
+    set sonar_unit_cents = 0
+    where modality = 1 and sonar_unit_cents <> 0
+    returning id, org_id
+)
+insert into public.platform_audit_events (org_id, actor_id, category, action, result, target, reason, details)
+select org_id, null, 'admin', 'platform_terms_sonar_corrected', 'success', id::text,
+  'ADR-0165: modalidade 1 nao cobra Sonar do cliente', jsonb_build_object('sonar_unit_cents_after', 0)
+from corrigidos;
 
 alter table public.platform_commercial_terms enable trigger platform_commercial_terms_no_mutation;
 
@@ -299,6 +293,14 @@ begin
     raise exception 'Setup fee cannot be reapplied on renegotiation' using errcode = '22023';
   end if;
 
+  -- ADR-0164: a implantacao e obrigacao do contrato, nao da versao. platform_resolve_terms devolve
+  -- so a linha mais nova do mes e platform_billing_preview le setup_fee_cents apenas dela -- entao
+  -- uma renegociacao gravada com setup zerado no mesmo starts_on apagava a taxa da cobranca em
+  -- silencio. Herdar do termo mais recente mantem a taxa viva sem afrouxar a trava acima (que
+  -- continua avaliando o input) e sem risco de cobranca dupla (o preview exige
+  -- setup_due_month = p_month e nenhum demonstrativo fechado com linha 'setup').
+  -- So em renegociacao: `select into` sem linha grava NULL nas variaveis, e no primeiro contrato
+  -- isso apagaria a implantacao que o operador acabou de informar.
   if exists (select 1 from public.platform_commercial_terms t where t.org_id = v_org_id) then
     select t.setup_fee_cents, t.setup_due_month into v_setup_fee, v_setup_due
     from public.platform_commercial_terms t
@@ -307,6 +309,10 @@ begin
     limit 1;
     v_setup_fee := coalesce(v_setup_fee, 0);
 
+    -- A versao nova comeca depois do mes da implantacao: herdar violaria
+    -- platform_commercial_terms_setup_once (setup_due_month >= starts_on) e recusaria toda
+    -- renegociacao a partir dali. Nao perde a taxa: platform_resolve_terms filtra
+    -- starts_on <= p_on, entao o mes da implantacao continua resolvendo para o termo anterior.
     if v_setup_due < v_starts_on then
       v_setup_fee := 0;
       v_setup_due := null;
@@ -340,7 +346,65 @@ grant execute on function public.platform_save_terms(uuid, jsonb) to service_rol
 commit;
 ```
 
-- [ ] **Step 2: Encaixar a migration na cadeia de testes `platform_commercial.sql`**
+- [ ] **Step 2: Corrigir 5 fixtures pré-existentes de `platform_commercial.sql` que violam a nova constraint de modalidade**
+
+O `CHECK platform_commercial_terms_modality_shape` do Step 1 é adicionado SEM `NOT VALID` — ele
+valida TODAS as linhas já existentes na tabela no momento do `ALTER TABLE`. Em
+`supabase/tests/platform_commercial.sql`, 5 chamadas bem-sucedidas a `platform_save_terms`
+(anteriores ao ponto onde esta migration entra) usam `modality: 2` com `monthly_fee_cents`
+diferente de zero — fixtures de outras ADRs (implantação, validação de tipos, concorrência via
+dblink) sem nenhuma relação com esta feature. `sonar_unit_cents` já é `0` nas 5, então trocar a
+modalidade para `1` mantém cada uma legal sob a nova regra sem mudar nada do que esses testes
+provam (nenhum deles afirma o valor de `modality` em si). Produção real não tem esse problema
+(Avil, a única organização modalidade 2, já está com `monthly_fee_cents = 0`) — a alternativa de
+adicionar a constraint com `NOT VALID` foi descartada porque deixaria pra sempre uma linha
+potencialmente errada sem revalidação, o que contraria a regra do projeto contra dado financeiro
+não verificado.
+
+Troque `'modality', 2, 'monthly_fee_cents', 60000,` por `'modality', 1, 'monthly_fee_cents', 60000,`
+nas duas ocorrências abaixo (uma delas é a organização "Org C" `...011`, a outra é a primeira
+chamada de "Org A" `...001`):
+
+```sql
+      'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 60000,
+      'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'primeiro contrato mês corrente'
+```
+
+```sql
+      'starts_on', v_next, 'modality', 2, 'monthly_fee_cents', 60000,
+      'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'primeira proposta'
+```
+
+Troque (organização "Org A", chamada "renegociação"):
+
+```sql
+      'starts_on', v_next, 'modality', 2, 'monthly_fee_cents', 70000,
+      'revenue_bps', 700, 'sonar_unit_cents', 0, 'setup_fee_cents', 0,
+      'setup_due_month', null, 'reason', 'renegociação'
+```
+
+por `'modality', 1, 'monthly_fee_cents', 70000,` no lugar de `'modality', 2, 'monthly_fee_cents', 70000,`.
+
+E nas duas chamadas concorrentes via `dblink` (organização "Org A", "concorrência um"/"concorrência
+dois"):
+
+```sql
+        'modality', 2, 'monthly_fee_cents', 71000, 'revenue_bps', 700,
+```
+```sql
+        'modality', 2, 'monthly_fee_cents', 72000, 'revenue_bps', 700,
+```
+
+troque `'modality', 2,` por `'modality', 1,` nas duas (mantendo os `monthly_fee_cents` 71000/72000
+intactos — é o valor que o teste de concorrência de versões confere).
+
+Não toque na chamada "renegociação mês corrente" (a que espera a exceção `'renegotiation in current
+month was accepted'`) — ela já é rejeitada antes de persistir, por outro motivo, então não precisa
+satisfazer o novo `CHECK`.
+
+- [ ] **Step 3: Encaixar a migration na cadeia de testes `platform_commercial.sql`**
 
 Em `supabase/tests/platform_commercial.sql:353`, logo após a linha
 `\ir ../migrations/20260918000000_adr164_implantacao_sobrevive_renegociacao.sql`, adicione:
@@ -349,7 +413,7 @@ Em `supabase/tests/platform_commercial.sql:353`, logo após a linha
 \ir ../migrations/20260918010000_platform_commercial_terms_tiers.sql
 ```
 
-- [ ] **Step 3: Corrigir a fixture de `platform_sonar.sql` (senão o `\ir` acima já quebra o teste de Sonar)**
+- [ ] **Step 4: Corrigir a fixture de `platform_sonar.sql` (senão o `\ir` acima já quebra o teste de Sonar)**
 
 Em `supabase/tests/platform_sonar.sql:24-31`, troque:
 
@@ -381,7 +445,7 @@ insert into public.platform_commercial_terms(
 (modalidade vira 2 — já tinham `monthly_fee_cents=0`, então já satisfazem o novo `CHECK`; as 4 faixas
 entram como 0 porque este arquivo testa consumo do Sonar, não percentual.)
 
-- [ ] **Step 4: Corrigir 3 chamadas já existentes em `platform_commercial.sql` que ainda usam a chave `revenue_bps`**
+- [ ] **Step 5: Corrigir 3 chamadas já existentes em `platform_commercial.sql` que ainda usam a chave `revenue_bps`**
 
 Essas chamadas rodam DEPOIS do ponto onde o `\ir` da nova migration foi inserido (Step 2), então
 `platform_save_terms` já vai exigir `revenue_bps_t1..t4` quando elas executarem — sem esta correção
@@ -434,14 +498,17 @@ por:
       'setup_due_month', null, 'reason', 'renegociacao depois da implantacao'
 ```
 
-- [ ] **Step 5: Adicionar os novos casos de teste ao final de `supabase/tests/platform_commercial.sql`**
+- [ ] **Step 6: Adicionar os novos casos de teste ao final de `supabase/tests/platform_commercial.sql`**
+
+A organização `...092` já existe no arquivo ("Org Heranca", teste de herança de implantação do
+ADR-0164, criada mais acima) — use `...093` para não colidir.
 
 Acrescente, ao final do arquivo:
 
 ```sql
 -- ADR-0165: modalidade 1 nunca cobra Sonar do cliente; modalidade 2 nunca tem infra separada.
 insert into public.organizations (id, nome, slug) values
-  ('90000000-0000-0000-0000-000000000092', 'Org Faixas', 'org-faixas');
+  ('90000000-0000-0000-0000-000000000093', 'Org Faixas', 'org-faixas');
 
 do $$
 declare
@@ -452,7 +519,7 @@ begin
     perform public.platform_save_terms(
       '80000000-0000-0000-0000-000000000001',
       jsonb_build_object(
-        'org_id', '90000000-0000-0000-0000-000000000092',
+        'org_id', '90000000-0000-0000-0000-000000000093',
         'starts_on', v_current, 'modality', 1, 'monthly_fee_cents', 60000,
         'revenue_bps_t1', 500, 'revenue_bps_t2', 400, 'revenue_bps_t3', 350, 'revenue_bps_t4', 300,
         'sonar_unit_cents', 120, 'setup_fee_cents', 0, 'setup_due_month', null,
@@ -471,7 +538,7 @@ begin
     perform public.platform_save_terms(
       '80000000-0000-0000-0000-000000000001',
       jsonb_build_object(
-        'org_id', '90000000-0000-0000-0000-000000000092',
+        'org_id', '90000000-0000-0000-0000-000000000093',
         'starts_on', v_current, 'modality', 2, 'monthly_fee_cents', 60000,
         'revenue_bps_t1', 700, 'revenue_bps_t2', 600, 'revenue_bps_t3', 550, 'revenue_bps_t4', 500,
         'sonar_unit_cents', 120, 'setup_fee_cents', 0, 'setup_due_month', null,
@@ -487,6 +554,25 @@ begin
   end;
 end $$;
 
+-- A trava de modalidade tambem protege quem grava direto na tabela, contornando a RPC (e o que
+-- platform_sonar.sql e platform_billing.sql fazem em algumas fixtures).
+do $$
+begin
+  begin
+    insert into public.platform_commercial_terms (
+      org_id, starts_on, modality, monthly_fee_cents,
+      revenue_bps_t1, revenue_bps_t2, revenue_bps_t3, revenue_bps_t4,
+      sonar_unit_cents, setup_fee_cents, setup_due_month, reason, created_by, version
+    ) values (
+      '90000000-0000-0000-0000-000000000093', date_trunc('month', now() at time zone 'America/Fortaleza')::date,
+      1, 0, 500, 400, 350, 300, 120, 0, null, 'insert direto tentando furar a trava',
+      '80000000-0000-0000-0000-000000000001', 99
+    );
+    raise exception 'insert direto com modalidade 1 e sonar deveria ter sido recusado pelo CHECK';
+  exception when check_violation then null;
+  end;
+end $$;
+
 -- Combinação correta: grava as 4 faixas.
 do $$
 declare
@@ -496,7 +582,7 @@ begin
   v_term := public.platform_save_terms(
     '80000000-0000-0000-0000-000000000001',
     jsonb_build_object(
-      'org_id', '90000000-0000-0000-0000-000000000092',
+      'org_id', '90000000-0000-0000-0000-000000000093',
       'starts_on', v_current, 'modality', 1, 'monthly_fee_cents', 60000,
       'revenue_bps_t1', 500, 'revenue_bps_t2', 400, 'revenue_bps_t3', 350, 'revenue_bps_t4', 300,
       'sonar_unit_cents', 0, 'setup_fee_cents', 0, 'setup_due_month', null,
@@ -508,33 +594,50 @@ begin
   end if;
 end $$;
 
--- ADR-0165: as 3 organizacoes de producao saem do backfill com as 4 faixas iguais ao revenue_bps
--- antigo, e Daludi Shop/DSA saem com sonar_unit_cents = 0. Este teste roda contra as orgs A/B/C
--- criadas no topo deste arquivo (nao as de producao), entao so confere a FORMA do backfill: uma
--- organizacao criada antes desta migration, com revenue_bps antigo, sai com t1..t4 iguais entre si.
+-- ADR-0165: prova o CAMINHO DE BACKFILL de verdade — org '...011' ("Org C") tem seu unico termo
+-- gravado no TOPO deste arquivo, com o antigo 'revenue_bps' = 700, MUITO ANTES do \ir desta
+-- migration. E a organizacao certa pra provar o backfill porque nao foi tocada por nenhuma chamada
+-- posterior a platform_save_terms (ao contrario de orgs criadas depois do \ir, que ja gravam as 4
+-- faixas diretamente via RPC e passariam neste teste mesmo que o backfill nunca tivesse rodado).
 do $$
 declare
   v_row public.platform_commercial_terms%rowtype;
 begin
   select * into v_row from public.platform_commercial_terms
-  where org_id = '90000000-0000-0000-0000-000000000091'
+  where org_id = '90000000-0000-0000-0000-000000000011'
   order by starts_on desc, version desc limit 1;
-  if v_row.revenue_bps_t1 is null or v_row.revenue_bps_t1 <> v_row.revenue_bps_t2
-    or v_row.revenue_bps_t2 <> v_row.revenue_bps_t3 or v_row.revenue_bps_t3 <> v_row.revenue_bps_t4 then
-    raise exception 'backfill nao preservou o percentual antigo igual nas 4 faixas: %', v_row;
+  if v_row.revenue_bps_t1 is distinct from 700 or v_row.revenue_bps_t2 is distinct from 700
+    or v_row.revenue_bps_t3 is distinct from 700 or v_row.revenue_bps_t4 is distinct from 700 then
+    raise exception 'backfill nao preservou o revenue_bps antigo (700) nas 4 faixas: %', v_row;
   end if;
+end $$;
+
+-- O trigger de imutabilidade precisa continuar ativo depois que a migration o reabilita — a
+-- mitigacao inteira do risco de desabilita-lo durante o backfill depende disso.
+do $$
+begin
+  begin
+    update public.platform_commercial_terms set monthly_fee_cents = 1
+      where org_id = '90000000-0000-0000-0000-000000000011';
+    raise exception 'trigger de imutabilidade deveria continuar ativo apos a migration';
+  exception when check_violation then null;
+  end;
 end $$;
 ```
 
-- [ ] **Step 6: Rodar a suíte SQL e confirmar verde**
+- [ ] **Step 7: Rodar a suíte SQL e confirmar verde**
 
-Run: `psql -U supabase_admin -d codex_platform_admin_test_20260906 -f supabase/tests/platform_billing.sql`
-(este arquivo `\ir`'a `platform_sonar.sql`, que `\ir`'a `platform_commercial.sql` — roda a cadeia
-inteira. Ver `docs/reference/edge-functions.md` ou `docs/how-to/` se o nome do banco de teste tiver
-mudado.)
+Run: `psql -U supabase_admin -d codex_platform_admin_test_20260906 -f supabase/tests/platform_commercial.sql`
+
+**Não** rode `platform_billing.sql` nesta tarefa — esse arquivo encadeia `platform_sonar.sql` e
+depois aplica `platform_billing_preview`/`platform_billing_close` de uma migration anterior
+(`20260907102428_platform_terms_contract_fix.sql`) que ainda lê `v_terms.revenue_bps`, coluna
+removida por esta migration. Ele só volta a funcionar depois da Task 2. Rodar `platform_commercial.sql`
+sozinho é a verificação correta e completa do escopo desta Task 1 (ele já encadeia a fundação e todas
+as migrations anteriores relevantes via os `\ir` do próprio arquivo).
 Expected: sem `ERROR`, script termina sem lançar exceção.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add supabase/migrations/20260918010000_platform_commercial_terms_tiers.sql \
