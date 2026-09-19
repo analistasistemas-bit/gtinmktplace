@@ -498,6 +498,7 @@ export type Database = {
           fiscal_sincronizado_em: string | null
           fornecedor: string | null
           frete_gratis: boolean
+          genero: string | null
           id: string
           kit_base_codigo_pai: string | null
           kit_multiplicador: number | null
@@ -582,6 +583,7 @@ export type Database = {
           fiscal_sincronizado_em?: string | null
           fornecedor?: string | null
           frete_gratis?: boolean
+          genero?: string | null
           id?: string
           kit_base_codigo_pai?: string | null
           kit_multiplicador?: number | null
@@ -666,6 +668,7 @@ export type Database = {
           fiscal_sincronizado_em?: string | null
           fornecedor?: string | null
           frete_gratis?: boolean
+          genero?: string | null
           id?: string
           kit_base_codigo_pai?: string | null
           kit_multiplicador?: number | null
@@ -2849,6 +2852,7 @@ export type Database = {
           preco_editado_pelo_operador: boolean
           preco_publicacao: number | null
           preco_publicado_ml: number | null
+          tamanho: string | null
           user_id: string
         }
         Insert: {
@@ -2886,6 +2890,7 @@ export type Database = {
           preco_editado_pelo_operador?: boolean
           preco_publicacao?: number | null
           preco_publicado_ml?: number | null
+          tamanho?: string | null
           user_id: string
         }
         Update: {
@@ -2923,6 +2928,7 @@ export type Database = {
           preco_editado_pelo_operador?: boolean
           preco_publicacao?: number | null
           preco_publicado_ml?: number | null
+          tamanho?: string | null
           user_id?: string
         }
         Relationships: [
