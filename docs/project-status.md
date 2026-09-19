@@ -467,7 +467,7 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   corrente (`2026-09`). O formulário (`commercial-terms-form.tsx`) foi ajustado para definir como
   padrão o início no mês corrente (`currentMonthStart()`), mantendo `setup_due_month` clampado para não
   ficar anterior à vigência e adicionando tratamento robusto para virada de mês (fuso `America/Fortaleza`,
-  UTC-3). No banco de dados, migration cirúrgica e segura (`20260919130000_platform_terms_vigencia_setembro.sql`)
+  UTC-3). No banco de dados, migration cirúrgica e segura (`20260919160000_platform_terms_vigencia_setembro.sql`)
   ajustou a vigência das 3 organizações inaugurais (`avil`, `diego-souza`, `daludishop`) de
   `2026-10-01` para `2026-09-01`, com pré-condições estritas de não-mutação se o cenário não for o
   esperado, asserções de contagem exata e registro em `platform_audit_events`. Ver

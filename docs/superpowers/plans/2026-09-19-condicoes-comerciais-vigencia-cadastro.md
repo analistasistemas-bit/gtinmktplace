@@ -89,7 +89,7 @@ Após a execução da migration em produção:
 ### Task 1: Migration SQL de Correção Cirúrgica de Vigência para Setembro/2026
 
 **Files:**
-- Create: `supabase/migrations/20260919130000_platform_terms_vigencia_setembro.sql`
+- Create: `supabase/migrations/20260919160000_platform_terms_vigencia_setembro.sql`
 - Modify: `supabase/tests/platform_commercial.sql`
 
 **Interfaces:**
@@ -97,7 +97,7 @@ Após a execução da migration em produção:
 
 - [ ] **Step 1: Criar o arquivo de migration com pré-condições incondicionais antes de qualquer DDL**
 
-Criar `supabase/migrations/20260919130000_platform_terms_vigencia_setembro.sql`:
+Criar `supabase/migrations/20260919160000_platform_terms_vigencia_setembro.sql`:
 
 ```sql
 -- Migration: Ajuste de vigência inicial dos primeiros contratos de Avil, DSA e Daludi Shop para setembro/2026
@@ -252,7 +252,7 @@ Ao final de `supabase/tests/platform_commercial.sql`:
 
 ```sql
 -- ============================================================================
--- Testes da migration 20260919130000_platform_terms_vigencia_setembro.sql:
+-- Testes da migration 20260919160000_platform_terms_vigencia_setembro.sql:
 -- ============================================================================
 
 -- Cenário A: 0 organizações presentes -> No-op absoluto sem efeitos colaterais
@@ -267,7 +267,7 @@ values (
   (select count(*) from public.platform_audit_events)
 );
 
-\ir ../migrations/20260919130000_platform_terms_vigencia_setembro.sql
+\ir ../migrations/20260919160000_platform_terms_vigencia_setembro.sql
 
 do $$
 declare
@@ -377,7 +377,7 @@ select
 from public.organizations o
 where o.slug in ('avil', 'diego-souza', 'daludishop', 'org-controle');
 
-\ir ../migrations/20260919130000_platform_terms_vigencia_setembro.sql
+\ir ../migrations/20260919160000_platform_terms_vigencia_setembro.sql
 
 -- Asserção completa de readback:
 do $$
@@ -482,7 +482,7 @@ Expected: 0 erros, script finaliza com sucesso.
 - [ ] **Step 4: Commit da Task 1**
 
 ```bash
-git add supabase/migrations/20260919130000_platform_terms_vigencia_setembro.sql supabase/tests/platform_commercial.sql
+git add supabase/migrations/20260919160000_platform_terms_vigencia_setembro.sql supabase/tests/platform_commercial.sql
 git commit -m "fix(db): migration cirurgica de ajuste de vigencia inicial dos termos para 2026-09"
 ```
 

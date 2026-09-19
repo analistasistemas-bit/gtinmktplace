@@ -167,7 +167,7 @@ Ao cadastrar os contratos das três organizações em setembro, a condição com
 
 ### 3.2 Banco de Dados: Migration Supabase
 
-Arquivo: `supabase/migrations/20260919130000_platform_terms_vigencia_setembro.sql`
+Arquivo: `supabase/migrations/20260919160000_platform_terms_vigencia_setembro.sql`
 
 ```sql
 -- Migration: Ajuste de vigência inicial dos primeiros contratos de Avil, DSA e Daludi Shop para setembro/2026

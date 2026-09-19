@@ -916,7 +916,7 @@ begin
 end $$;
 
 -- ============================================================================
--- Testes da migration 20260919130000_platform_terms_vigencia_setembro.sql:
+-- Testes da migration 20260919160000_platform_terms_vigencia_setembro.sql:
 -- ============================================================================
 
 -- Cenário A: 0 organizações presentes -> No-op absoluto sem efeitos colaterais
@@ -931,7 +931,7 @@ values (
   (select count(*) from public.platform_audit_events)
 );
 
-\ir ../migrations/20260919130000_platform_terms_vigencia_setembro.sql
+\ir ../migrations/20260919160000_platform_terms_vigencia_setembro.sql
 
 do $$
 declare
@@ -1041,7 +1041,7 @@ select
 from public.organizations o
 where o.slug in ('avil', 'diego-souza', 'daludishop', 'org-controle');
 
-\ir ../migrations/20260919130000_platform_terms_vigencia_setembro.sql
+\ir ../migrations/20260919160000_platform_terms_vigencia_setembro.sql
 
 -- Asserção completa de readback:
 do $$
