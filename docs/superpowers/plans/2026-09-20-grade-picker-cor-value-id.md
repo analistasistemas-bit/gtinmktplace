@@ -164,11 +164,29 @@ conjuntos de tamanhos diferentes de propósito.
 
 **Custo:** ~1h ADR + ~3h implementação com testes.
 
-### Alternativa estrutural (registrar, não decidir agora)
-Publicar cada cor como **um item com `variations[]` de tamanho** (modelo Legacy) em vez de um item
-por combinação: o tamanho sem estoque aparece indisponível *dentro* da cor e o comprador nunca pula
-de cor — o ML resolve o problema sozinho. Contraria o desenho atual (ADR-0088/0166, User Products);
-só vale reabrir se o preço por variação não for necessário nesta categoria.
+### Alternativa estrutural: DESCARTADA pela API (testada 20/09)
+
+A ideia era publicar cada cor como **um item com `variations[]` de tamanho** (modelo Legacy), onde
+o tamanho sem estoque fica indisponível *dentro* da cor e o comprador nunca pula. **A categoria não
+aceita.** `POST /items/validate` com um payload de 2 cores × 2 tamanhos em `variations[]`:
+
+```
+HTTP 400
+cause_id 369 — "The body does not contains ... [family_name, available_quantity]"
+cause_id 374 — "The field variations is invalid with family name"
+```
+
+`369 + 374` é exatamente a assinatura que o ADR-0088 usa para concluir "esta categoria exige item
+plano". Ou seja: em `MLB108803`, o ML **obriga** User Products (um item por combinação) e recusa
+`variations[]`. O comportamento do seletor de tamanho não é escolha nossa nem contornável por
+formato de publicação.
+
+### Consequência: vender um tamanho avulso sem confundir só tem um caminho
+
+Tirar a cor da família — publicá-la com `family_name` próprio, virando um anúncio separado só dela.
+Aí o seletor de tamanho tem apenas os tamanhos daquela cor e vender só G é natural. O custo é
+perder o agrupamento: essa cor deixa de aparecer junto das outras na mesma página. E ao completar a
+grade, voltar para a família exige recriar o item (mudar `family_name` muda a identidade).
 
 ### Demais itens do Track A (agora sem urgência — filtro/busca, não este incidente)
 
