@@ -5,7 +5,7 @@
 //
 // Estado interno é SÓ o modo de edição (uma string). Célula ativa NÃO é estado React: seria um
 // rerender da matriz inteira a cada tecla, com até 60 células (ver Task 7, navegação por foco DOM).
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { SlidersHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -61,11 +61,61 @@ export function MatrizGrade({
   const [modo, setModo] = useState<ModoGrade>('estoqueInicial');
   // SÓ o clientId, nunca a linha: a linha vem sempre de `linhas`, que é a fonte.
   const [detalhesDe, setDetalhesDe] = useState<string | null>(null);
+  // A referência é do CONTAINER, não de célula nenhuma: o alvo é encontrado por seletor a cada
+  // tecla. Guardar "célula ativa" em estado React rerenderizaria as até 60 células por tecla.
+  const containerRef = useRef<HTMLDivElement>(null);
   const def = MODOS.find((m) => m.valor === modo)!;
   // Derivado A CADA RENDER, nunca memoizado num estado: `linhas` é a fonte, e um cache aqui
   // divergiria na primeira reconciliação.
   const indice = new Map(linhas.map((l, i) => [chaveGrade(l.cor, l.tamanho), i]));
   const totais = totaisDaGrade(resolvidas, cores, tamanhos);
+
+  /** Move o foco para a célula (r, c). Alvo pode ser o `<input>` OU o botão "+" de uma célula
+   *  removida — os dois carregam `data-r`/`data-c` justamente por isto. Fora da matriz, no-op:
+   *  na borda o foco fica onde está, sem beep e sem pular para outro canto do formulário. */
+  function focarCelula(r: number, c: number) {
+    const alvo = containerRef.current
+      ?.querySelector<HTMLElement>(`[data-r="${r}"][data-c="${c}"]`);
+    alvo?.focus();
+  }
+
+  function teclado(e: React.KeyboardEvent<HTMLDivElement>) {
+    const alvo = e.target as HTMLElement;
+    const r = Number(alvo.dataset.r);
+    const c = Number(alvo.dataset.c);
+    if (Number.isNaN(r) || Number.isNaN(c)) return;
+
+    const input = alvo instanceof HTMLInputElement ? alvo : null;
+
+    if (e.key === 'ArrowDown') { e.preventDefault(); focarCelula(r + 1, c); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); focarCelula(r - 1, c); return; }
+
+    if (e.key === 'Enter') {
+      // Achado do Fable: o "+" (Task 6) também carrega data-r/data-c, e Enter é a ATIVAÇÃO
+      // NATIVA de um <button> focado. Interceptar Enter em qualquer alvo roubaria esse clique —
+      // o operador de teclado nunca reincluiria uma célula por Enter, só por Espaço. Em cima de
+      // um <input>, Enter continua navegação (célula de baixo); em cima de outra coisa (o
+      // botão), não interceptamos — o clique nativo do botão segue seu curso.
+      if (!input) return;
+      // `preventDefault` no Enter também impede o submit implícito do formulário do dialog.
+      e.preventDefault();
+      focarCelula(r + 1, c);
+      return;
+    }
+
+    // Setas laterais só saem da célula na BORDA do valor. No meio do texto elas são o cursor —
+    // sem isso ninguém corrige um dígito no meio de um GTIN de 13 caracteres.
+    if (e.key === 'ArrowLeft') {
+      if (input && input.selectionStart !== 0) return;
+      e.preventDefault(); focarCelula(r, c - 1); return;
+    }
+    if (e.key === 'ArrowRight') {
+      if (input && input.selectionEnd !== input.value.length) return;
+      e.preventDefault(); focarCelula(r, c + 1);
+    }
+    // Tab/Shift+Tab: NÃO interceptar. A ordem do DOM já é coluna-dentro-de-linha, e capturá-los
+    // impediria o operador de sair da matriz para o resto do formulário.
+  }
 
   function celula(cor: string, tamanho: string, c: number, r: number) {
     const chave = chaveGrade(cor, tamanho);
@@ -193,7 +243,7 @@ export function MatrizGrade({
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-2">
+    <div ref={containerRef} onKeyDown={teclado} className="flex min-w-0 flex-col gap-2">
       <SeletorDeModo modo={modo} onMudar={setModo} />
 
       <Table>

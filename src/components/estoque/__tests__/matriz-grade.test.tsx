@@ -258,3 +258,94 @@ describe('MatrizGrade — drawer de detalhes', () => {
     expect(onDestravar).toHaveBeenCalledWith(linhas[1]!.clientId, 'alturaCm');
   });
 });
+
+describe('MatrizGrade — teclado', () => {
+  it('Enter move para a célula de baixo, na mesma coluna', async () => {
+    const user = userEvent.setup();
+    montar(gradeCheia());
+    const topo = screen.getByLabelText('Estoque inicial de Preto · M');
+    topo.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByLabelText('Estoque inicial de Branco · M')).toHaveFocus();
+  });
+
+  it('Enter na última linha não rouba o foco nem submete nada', async () => {
+    const user = userEvent.setup();
+    montar(gradeCheia());
+    const base = screen.getByLabelText('Estoque inicial de Branco · P');
+    base.focus();
+    await user.keyboard('{Enter}');
+    expect(base).toHaveFocus();
+  });
+
+  // Grade parcial: a célula de baixo é um "+", não um campo. Sem `data-r`/`data-c` no botão, o
+  // Enter morre em silêncio exatamente onde a grade parcial existe.
+  it('Enter cai no "+" quando a célula de baixo foi removida', async () => {
+    const user = userEvent.setup();
+    const linhas = [novaLinhaGrade('Preto', 'P'), novaLinhaGrade('Preto', 'M'), novaLinhaGrade('Branco', 'M')];
+    montar(linhas, { removidas: new Set(['Branco\u0000P']) });
+    const topo = screen.getByLabelText('Estoque inicial de Preto · P');
+    topo.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: 'Reincluir Branco · P' })).toHaveFocus();
+  });
+
+  // Achado do Fable (revisão do plano): o "+" carrega data-r/data-c de propósito (Task 6), mas
+  // Enter também é a ATIVAÇÃO NATIVA de um <button> focado. Se `teclado()` interceptasse Enter
+  // em qualquer alvo com data-r/data-c, o "+" nunca clicaria por Enter — só por Espaço, o que
+  // ninguém espera de um botão. Enter no "+" precisa continuar sendo clique, não navegação.
+  it('Enter no "+" reinclui a célula (ativação nativa do botão, não navegação)', async () => {
+    const user = userEvent.setup();
+    const linhas = [novaLinhaGrade('Preto', 'P'), novaLinhaGrade('Preto', 'M'), novaLinhaGrade('Branco', 'M')];
+    const { onReincluirCelula } = montar(linhas, { removidas: new Set(['Branco\u0000P']) });
+    screen.getByRole('button', { name: 'Reincluir Branco · P' }).focus();
+    await user.keyboard('{Enter}');
+    expect(onReincluirCelula).toHaveBeenCalledWith('Branco', 'P');
+  });
+
+  it('ArrowDown/ArrowUp andam na coluna', async () => {
+    const user = userEvent.setup();
+    montar(gradeCheia());
+    screen.getByLabelText('Estoque inicial de Preto · P').focus();
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getByLabelText('Estoque inicial de Branco · P')).toHaveFocus();
+    await user.keyboard('{ArrowUp}');
+    expect(screen.getByLabelText('Estoque inicial de Preto · P')).toHaveFocus();
+  });
+
+  // A seta lateral só muda de célula na BORDA do valor — no meio do texto ela é o cursor, e
+  // roubar isso torna impossível corrigir um dígito no meio de um GTIN de 13 caracteres.
+  it('ArrowRight no meio do texto move o cursor, não a célula', async () => {
+    const user = userEvent.setup();
+    const linhas = gradeCheia();
+    linhas[0] = { ...linhas[0]!, estoqueInicial: '123' };
+    montar(linhas);
+    const campo = screen.getByLabelText('Estoque inicial de Preto · P') as HTMLInputElement;
+    campo.focus();
+    campo.setSelectionRange(1, 1);
+    await user.keyboard('{ArrowRight}');
+    expect(campo).toHaveFocus();
+  });
+
+  it('ArrowRight na borda direita do valor pula para a célula ao lado', async () => {
+    const user = userEvent.setup();
+    const linhas = gradeCheia();
+    linhas[0] = { ...linhas[0]!, estoqueInicial: '123' };
+    montar(linhas);
+    const campo = screen.getByLabelText('Estoque inicial de Preto · P') as HTMLInputElement;
+    campo.focus();
+    campo.setSelectionRange(3, 3);
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByLabelText('Estoque inicial de Preto · M')).toHaveFocus();
+  });
+
+  // Tab/Shift+Tab são do NAVEGADOR: a ordem do DOM já é coluna-dentro-de-linha. Interceptá-los
+  // quebraria a saída da matriz para o resto do formulário.
+  it('Tab não é interceptado — segue a ordem do DOM', async () => {
+    const user = userEvent.setup();
+    montar(gradeCheia());
+    screen.getByLabelText('Estoque inicial de Preto · P').focus();
+    await user.tab();
+    expect(screen.getByLabelText('Estoque inicial de Preto · P')).not.toHaveFocus();
+  });
+});
