@@ -13,6 +13,7 @@ const CABECALHO: CamposHerdaveis = {
 
 function montar(linhas: LinhaGrade[], props: {
   cores?: string[]; tamanhos?: string[]; desabilitado?: boolean; removidas?: Set<string>;
+  tentouSalvar?: boolean;
 } = {}) {
   const spies = {
     onMudarLinha: vi.fn(), onMudarOverride: vi.fn(), onDestravar: vi.fn(), onVoltarAHerdar: vi.fn(),
@@ -25,7 +26,7 @@ function montar(linhas: LinhaGrade[], props: {
       cores={props.cores ?? ['Preto', 'Branco']}
       tamanhos={props.tamanhos ?? ['P', 'M']}
       removidas={props.removidas ?? new Set()}
-      tentouSalvar={false}
+      tentouSalvar={props.tentouSalvar ?? false}
       desabilitado={props.desabilitado ?? false}
       {...spies}
     />,
@@ -287,6 +288,40 @@ describe('MatrizGrade — drawer de detalhes', () => {
     expect(drawer.getByText('Preto · M')).toBeInTheDocument();
     await user.click(drawer.getByRole('radio', { name: 'Usar valor específico — Altura' }));
     expect(onDestravar).toHaveBeenCalledWith(linhas[1]!.clientId, 'alturaCm');
+  });
+});
+
+describe('MatrizGrade — grade larga', () => {
+  // Calçado chega a 10+ colunas. Sem um scrollport próprio, a matriz empurra a largura do dialog
+  // e o operador perde a coluna da cor de vista ao rolar.
+  it('a tabela vive num container que rola na horizontal e é alcançável por teclado', () => {
+    montar([novaLinhaGrade('Preto', '33')], { cores: ['Preto'], tamanhos: ['33'] });
+    const scrollport = screen.getByRole('region', { name: 'Grade de variações' });
+    expect(scrollport).toHaveAttribute('tabindex', '0');
+    expect(scrollport.className).toMatch(/overflow-x-auto/);
+    // A altura limitada é o que faz o `sticky top-0` do cabeçalho ter contra o que grudar:
+    // sem `max-h`, `scrollHeight === clientHeight` e o sticky nunca dispara.
+    expect(scrollport.className).toMatch(/max-h-/);
+  });
+});
+
+describe('MatrizGrade — erro por célula', () => {
+  // Ruling da Task 4: o texto de erro sumiu quando os cards viraram matriz — só a borda mudava, e
+  // `tentouSalvar` é gate morto (só liga dentro de `submeter()`, inalcançável enquanto existir erro
+  // num CAMPOS_NUMERICOS, que é justamente a condição de erro). O texto tem que aparecer sem
+  // depender de um clique em "Cadastrar" antes.
+  it('mostra o texto de erro da célula sem exigir tentativa de salvar', () => {
+    const linhas = [novaLinhaGrade('Preto', 'P')];
+    linhas[0] = { ...linhas[0]!, estoqueInicial: '-1' };
+    montar(linhas, { cores: ['Preto'], tamanhos: ['P'] });
+    expect(screen.getByText('Estoque inicial não pode ser negativo.')).toBeInTheDocument();
+  });
+
+  it('célula sem erro não mostra texto nenhum', () => {
+    const linhas = [novaLinhaGrade('Preto', 'P')];
+    linhas[0] = { ...linhas[0]!, estoqueInicial: '3' };
+    montar(linhas, { cores: ['Preto'], tamanhos: ['P'] });
+    expect(screen.queryByText(/pode ser negativo/)).not.toBeInTheDocument();
   });
 });
 

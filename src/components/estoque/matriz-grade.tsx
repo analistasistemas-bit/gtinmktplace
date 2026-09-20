@@ -157,94 +157,104 @@ export function MatrizGrade({
     const erro = erroCampo(modo, valor);
 
     return (
-      <div className="group/celula relative flex items-center gap-0.5">
-        <div className="relative flex-1">
-          {def.prefixo && (
-            <span className="pointer-events-none absolute inset-y-0 left-1.5 flex items-center text-[10px] text-muted-foreground">
-              {def.prefixo}
-            </span>
-          )}
-          <Input
-            aria-label={`${def.rotulo} de ${nome}`}
-            // Alvo do foco programático da Task 7. O par (r, c) é POSIÇÃO VISUAL na matriz, não
-            // índice em `linhas` — a grade parcial faz os dois divergirem de propósito.
-            data-r={r}
-            data-c={c}
-            // Um só alvo para todas as células herdando, igual ao `gerador-motivo-limite`.
-            aria-describedby={herdavel && !temOverride ? 'matriz-herdado' : undefined}
-            className={cn(
-              'h-8 text-sm',
-              def.prefixo && 'pl-6',
-              // `pr-16` pareado com o adorno "herdado" à direita, mesma regra do par
-              // `sufixo`/`pr-7` em `linha-variacao-form.tsx:133`: sem ele, numa célula de ~100px
-              // o texto "herdado" cai por cima do valor no hover.
-              herdavel && !temOverride && 'pr-16 text-muted-foreground',
-              erro && tentouSalvar && 'border-destructive',
+      <div className="flex flex-col gap-0.5">
+        <div className="group/celula relative flex items-center gap-0.5">
+          <div className="relative flex-1">
+            {def.prefixo && (
+              <span className="pointer-events-none absolute inset-y-0 left-1.5 flex items-center text-[10px] text-muted-foreground">
+                {def.prefixo}
+              </span>
             )}
-            value={valor}
-            disabled={desabilitado}
-            // Achado do Fable: sem isto, focar uma célula herdada e digitar concatena no valor
-            // resolvido ("99,90" + "5" → "99,905") — o operador queria SUBSTITUIR, não anexar.
-            // Selecionar tudo no foco faz a primeira tecla trocar o conteúdo inteiro, como numa
-            // planilha de verdade. Bônus: com a seleção cobrindo o valor todo, as setas laterais
-            // já saem da célula na primeira tecla (regra da Task 7 é sobre a BORDA do valor).
-            onFocus={(e) => e.currentTarget.select()}
-            onChange={(e) => (herdavel
-              // Digitar numa célula herdada cria o override com o TEXTO DIGITADO. Não existe
-              // estado "travado" prévio para semear com o valor resolvido (regra do spec).
-              ? onMudarOverride(linha.clientId, modo, e.target.value)
-              : onMudarLinha(linha.clientId, { [modo]: e.target.value }))}
-          />
-          {herdavel && !temOverride && (
-            // Adorno INLINE à direita, dentro do wrapper relativo do input — mesmo padrão do
-            // `sufixo` em `linha-variacao-form.tsx:138-142`. Nada de `-top-*` negativo: a célula
-            // vive num scrollport (o container do `ui/table` rola nos dois eixos) e um badge
-            // acima da linha sumiria atrás do `<thead sticky bg-background z-20>` na 1ª linha.
-            //
-            // Só em foco/hover: 60 células gritando "herdado" ao mesmo tempo é ruído, e a cor
-            // `muted` sozinha não diz O QUE o cinza significa na primeira vez que se vê a tela.
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-muted-foreground opacity-0 transition-opacity group-focus-within/celula:opacity-100 group-hover/celula:opacity-100"
+            <Input
+              aria-label={`${def.rotulo} de ${nome}`}
+              // Alvo do foco programático da Task 7. O par (r, c) é POSIÇÃO VISUAL na matriz, não
+              // índice em `linhas` — a grade parcial faz os dois divergirem de propósito.
+              data-r={r}
+              data-c={c}
+              // Um só alvo para todas as células herdando, igual ao `gerador-motivo-limite`.
+              aria-describedby={herdavel && !temOverride ? 'matriz-herdado' : undefined}
+              className={cn(
+                'h-8 text-sm',
+                def.prefixo && 'pl-6',
+                // `pr-16` pareado com o adorno "herdado" à direita, mesma regra do par
+                // `sufixo`/`pr-7` em `linha-variacao-form.tsx:133`: sem ele, numa célula de ~100px
+                // o texto "herdado" cai por cima do valor no hover.
+                herdavel && !temOverride && 'pr-16 text-muted-foreground',
+                // SEM `&& tentouSalvar`: era gate morto (achado da Task 4) — `tentouSalvar` só
+                // liga dentro de `submeter()`, inalcançável enquanto existir erro em qualquer
+                // CAMPOS_NUMERICOS (é exatamente a condição de `podeSalvar=false` que trava o
+                // botão). O texto do erro abaixo segue a mesma regra, por consistência.
+                erro && 'border-destructive',
+              )}
+              value={valor}
+              disabled={desabilitado}
+              // Achado do Fable: sem isto, focar uma célula herdada e digitar concatena no valor
+              // resolvido ("99,90" + "5" → "99,905") — o operador queria SUBSTITUIR, não anexar.
+              // Selecionar tudo no foco faz a primeira tecla trocar o conteúdo inteiro, como numa
+              // planilha de verdade. Bônus: com a seleção cobrindo o valor todo, as setas laterais
+              // já saem da célula na primeira tecla (regra da Task 7 é sobre a BORDA do valor).
+              onFocus={(e) => e.currentTarget.select()}
+              onChange={(e) => (herdavel
+                // Digitar numa célula herdada cria o override com o TEXTO DIGITADO. Não existe
+                // estado "travado" prévio para semear com o valor resolvido (regra do spec).
+                ? onMudarOverride(linha.clientId, modo, e.target.value)
+                : onMudarLinha(linha.clientId, { [modo]: e.target.value }))}
+            />
+            {herdavel && !temOverride && (
+              // Adorno INLINE à direita, dentro do wrapper relativo do input — mesmo padrão do
+              // `sufixo` em `linha-variacao-form.tsx:138-142`. Nada de `-top-*` negativo: a célula
+              // vive num scrollport (o container do `ui/table` rola nos dois eixos) e um badge
+              // acima da linha sumiria atrás do `<thead sticky bg-background z-20>` na 1ª linha.
+              //
+              // Só em foco/hover: 60 células gritando "herdado" ao mesmo tempo é ruído, e a cor
+              // `muted` sozinha não diz O QUE o cinza significa na primeira vez que se vê a tela.
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-muted-foreground opacity-0 transition-opacity group-focus-within/celula:opacity-100 group-hover/celula:opacity-100"
+              >
+                herdado
+              </span>
+            )}
+          </div>
+          {temOverride && (
+            <Button
+              type="button" variant="ghost" size="sm"
+              className="h-6 w-6 shrink-0 p-0 text-[10px]"
+              disabled={desabilitado}
+              aria-label={`Voltar a herdar ${def.rotulo} de ${nome}`}
+              onClick={() => onVoltarAHerdar(linha.clientId, modo as CampoHerdavel)}
             >
-              herdado
-            </span>
+              ↺
+            </Button>
           )}
-        </div>
-        {temOverride && (
           <Button
             type="button" variant="ghost" size="sm"
-            className="h-6 w-6 shrink-0 p-0 text-[10px]"
+            className="h-6 w-6 shrink-0 p-0 opacity-0 focus-visible:opacity-100 group-hover/celula:opacity-100"
             disabled={desabilitado}
-            aria-label={`Voltar a herdar ${def.rotulo} de ${nome}`}
-            onClick={() => onVoltarAHerdar(linha.clientId, modo as CampoHerdavel)}
+            aria-label={`Detalhes de ${nome}`}
+            onClick={() => setDetalhesDe(linha.clientId)}
           >
-            ↺
+            <SlidersHorizontal className="h-3 w-3" />
           </Button>
-        )}
-        <Button
-          type="button" variant="ghost" size="sm"
-          className="h-6 w-6 shrink-0 p-0 opacity-0 focus-visible:opacity-100 group-hover/celula:opacity-100"
-          disabled={desabilitado}
-          aria-label={`Detalhes de ${nome}`}
-          onClick={() => setDetalhesDe(linha.clientId)}
-        >
-          <SlidersHorizontal className="h-3 w-3" />
-        </Button>
-        <Button
-          type="button" variant="ghost" size="sm"
-          className="h-6 w-6 shrink-0 p-0 opacity-0 focus-visible:opacity-100 group-hover/celula:opacity-100"
-          disabled={desabilitado}
-          aria-label={`Remover ${nome}`}
-          onClick={() => onRemoverCelula(cor, tamanho)}
-        >
-          <Trash2 className="h-3 w-3" />
-        </Button>
+          <Button
+            type="button" variant="ghost" size="sm"
+            className="h-6 w-6 shrink-0 p-0 opacity-0 focus-visible:opacity-100 group-hover/celula:opacity-100"
+            disabled={desabilitado}
+            aria-label={`Remover ${nome}`}
+            onClick={() => onRemoverCelula(cor, tamanho)}
+          >
+            <Trash2 className="h-3 w-3" />
+          </Button>
+        </div>
+        {erro && <span className="text-xs text-destructive">{erro}</span>}
       </div>
     );
   }
 
   return (
+    // Só delega `onKeyDown` (navegação por foco DOM, Task 7); nenhuma interação de mouse/clique é
+    // tratada aqui. Os elementos focáveis reais (inputs e botões) estão todos dentro dele.
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div ref={containerRef} onKeyDown={teclado} className="flex min-w-0 flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
         <SeletorDeModo modo={modo} onMudar={setModo} />
@@ -259,8 +269,23 @@ export function MatrizGrade({
         />
       </div>
 
-      <Table>
-        <TableHeader>
+      <Table
+        // O scrollport é o DIV do próprio `ui/table` — um `overflow-x-auto` por fora criaria dois
+        // scrollports aninhados e o de fora nunca rolaria. `role`/`tabIndex` ficam em QUEM ROLA
+        // (WCAG 2.1.1): sem eles a grade de calçado é inalcançável por teclado.
+        //
+        // O `max-h` + `overflow-y-auto` é o PREÇO do cabeçalho sticky, não descuido. Por CSS
+        // Overflow 3, um eixo `auto` faz o outro computar `auto`: este div já é o scrollport
+        // mais próximo do `<thead sticky top-0>` nos dois eixos. Sem altura limitada,
+        // `scrollHeight === clientHeight`, nunca há rolagem vertical interna, e o cabeçalho
+        // nunca desgruda — o sticky vira decoração. O custo aceito é o aninhamento com o
+        // `overflow-y-auto` do `DialogContent`: a roda do mouse rola a grade até o fim antes de
+        // mover o dialog.
+        containerClassName="max-h-[55vh] overflow-y-auto"
+        containerProps={{ role: 'region', tabIndex: 0, 'aria-label': 'Grade de variações' }}
+        className="min-w-max"
+      >
+        <TableHeader className="sticky top-0 z-20 bg-background">
           <TableRow>
             <TableHead scope="col">Cor</TableHead>
             {tamanhos.map((t) => (
@@ -282,7 +307,7 @@ export function MatrizGrade({
         <TableBody>
           {cores.map((cor, r) => (
             <TableRow key={cor}>
-              <TableHead scope="row">
+              <TableHead scope="row" className="sticky left-0 z-10 bg-background">
                 <PreencherEmMassa
                   escopoInicial={{ tipo: 'cor', valor: cor }}
                   cores={cores}
@@ -300,9 +325,9 @@ export function MatrizGrade({
             </TableRow>
           ))}
         </TableBody>
-        <TableFooter>
+        <TableFooter className="sticky bottom-0 z-20 bg-background">
           <TableRow>
-            <TableHead scope="row">Total</TableHead>
+            <TableHead scope="row" className="sticky left-0 z-10 bg-background">Total</TableHead>
             {tamanhos.map((t) => (
               <TableCell key={t} className="text-sm tabular-nums">{totais.porTamanho[t] ?? 0}</TableCell>
             ))}

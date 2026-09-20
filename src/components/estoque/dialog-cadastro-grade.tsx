@@ -26,14 +26,14 @@ import { TIPOS_PRODUTO, type TipoProdutoId } from '@/lib/tipos-produto';
 import { LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho } from '@/lib/tamanhos';
 import {
   aplicarEmMassa, chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha,
-  totalDaGrade,
+  totaisDaGrade, totalDaGrade,
   type CampoHerdavel, type CamposHerdaveis, type LinhaGrade, type OpcoesMassa,
 } from '@/lib/cadastro-grade';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { CORES_POPULARES, GeradorVariacoes } from '@/components/estoque/gerador-variacoes';
 import { ROTULOS } from '@/components/estoque/detalhes-sku';
 import { MatrizGrade } from '@/components/estoque/matriz-grade';
-import { erroCampo, parseNum, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
+import { erroCampo, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
 import {
   EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm,
 } from '@/components/estoque/etapa-fiscal-form';
@@ -329,7 +329,10 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
     cores: CORES_POPULARES,
     tamanhos: gruposTamanho.flatMap((g) => g.valores),
   });
-  const unidades = resolvidas.reduce((s, r) => s + (parseNum(r.estoqueInicial) || 0), 0);
+  // Fonte ÚNICA dos totais: o mesmo `totaisDaGrade` que a matriz usa no rodapé. Manter o `reduce`
+  // inline aqui daria dois números para a mesma pergunta, que divergiriam na primeira mudança.
+  const totais = totaisDaGrade(resolvidas, eixos.cores, eixos.tamanhos);
+  const unidades = totais.geral;
   const semFoto = resolvidas.filter((r) => !r.foto).length;
 
   const podeSalvar = !!nomePai.trim() && !!origem && !!genero && linhas.length > 0
@@ -406,12 +409,13 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   return (
     <>
       <Dialog open={aberto} onOpenChange={(o) => { if (!o) api.comConfirmacao(onFechar); }}>
-        {/* sm: obrigatório: o default do componente é `sm:max-w-sm` e `max-w-3xl` sem o mesmo
-            prefixo não vence a cascata (tailwind-merge trata como grupos diferentes). */}
+        {/* sm: obrigatório: o default do componente é `sm:max-w-sm` e `max-w-5xl` sem o mesmo
+            prefixo não vence a cascata (tailwind-merge trata como grupos diferentes). Alargado
+            de 3xl para 5xl na matriz: calçado chega a 10+ colunas. */}
         <DialogContent
           processando={api.ocupado}
           rotuloProcessando="Cadastrando a grade e enviando fotos"
-          className="max-h-[90vh] sm:max-w-3xl overflow-y-auto"
+          className="max-h-[90vh] sm:max-w-5xl overflow-y-auto"
         >
           <DialogHeader>
             {/* "em grade" é literal no título — é a âncora de que esta é a tela da grade, e não
@@ -654,6 +658,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                     <span className="text-sm font-medium">Grade</span>
                     <span className="text-xs text-muted-foreground">
                       {linhas.length} SKUs · {unidades} unidades · {semFoto} sem foto
+                      {totais.semGtin > 0 && ` · ${totais.semGtin} sem GTIN`}
                     </span>
                   </div>
                   <MatrizGrade

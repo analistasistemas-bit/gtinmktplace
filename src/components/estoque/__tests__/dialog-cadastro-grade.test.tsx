@@ -325,16 +325,21 @@ describe('DialogCadastroGrade — aviso de numeração não publicável', () => 
 });
 
 describe('DialogCadastroGrade — resumo antes de salvar', () => {
-  it('conta SKUs, unidades e linhas sem foto', async () => {
+  it('conta SKUs, unidades, linhas sem foto e SKUs sem GTIN', async () => {
     const user = userEvent.setup();
     renderGrade();
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
     await user.click(screen.getByRole('checkbox', { name: 'M' }));
     await user.type(screen.getByLabelText('Estoque inicial de Preto · P'), '4');
+    await user.click(screen.getByRole('button', { name: 'GTIN' }));
+    await user.type(screen.getByLabelText('GTIN de Preto · P'), '7891234567895');
     expect(screen.getByText(/2 SKUs/)).toBeInTheDocument();
     expect(screen.getByText(/4 unidades/)).toBeInTheDocument();
     expect(screen.getByText(/2 sem foto/)).toBeInTheDocument();
+    // Alimenta a decisão do operador ANTES de salvar: SKU sem GTIN é o que trava a publicação
+    // depois, em categoria que o exige.
+    expect(screen.getByText(/1 sem GTIN/)).toBeInTheDocument();
   });
 });
 
