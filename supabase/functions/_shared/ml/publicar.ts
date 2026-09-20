@@ -53,6 +53,9 @@ interface VariacaoInput {
    *  /items/validate real devolveu `invalid.fashion_grid.size.values` com o valor cru. Em
    *  vestuário os dois coincidem (P=P), por isso cai em `tamanho` quando ausente. */
   sizeLabel?: string | null;
+  /** `value_id` da cor no dicionário da categoria, resolvido pelo caller com o schema
+   *  (`_shared/cor/value-id.ts`). Ausente/null = cor fora do dicionário: vai só pelo nome. */
+  corValueId?: string | null;
 }
 
 /** Ordena as variações com a principal primeiro; o resto por código ascendente.
@@ -77,11 +80,17 @@ const LISTING_TYPE_PADRAO = 'gold_special';
 const CONDITION = 'new';
 const COR_UNITARIA = 'Único';
 
-function atributoVariacaoPlano(valor: string): AtributoItem {
+// `corValueId` (quando resolvido contra o dicionário da categoria — `_shared/cor/value-id.ts`)
+// vai JUNTO com o value_name do cadastro: sem ele a cor fica fora dos filtros de busca do ML e o
+// nome é reescrito pela grafia do dicionário; com os dois, a cor filtra e o nome é o do operador
+// (validado contra a API real, incidente 2026-09-20). Cor fora do dicionário segue só com o nome.
+function atributoVariacaoPlano(valor: string, corValueId?: string | null): AtributoItem {
   if (/^TAM(?:ANHO)?(?:\s|$)/i.test(valor)) {
     return { name: 'Tamanho', value_name: valor };
   }
-  return { id: 'COLOR', value_name: valor };
+  return corValueId
+    ? { id: 'COLOR', value_id: corValueId, value_name: valor }
+    : { id: 'COLOR', value_name: valor };
 }
 
 // Ausência legítima de código universal: nulo/vazio, código interno 3000* (não-EAN GS1),
@@ -168,7 +177,7 @@ export function montarPayloadItem(
     const cor = v.cor?.trim() || COR_UNITARIA;
     const atributosFlat: AtributoItem[] = [
       ...(familia.atributos_ml ?? []),
-      atributoVariacaoPlano(cor),
+      atributoVariacaoPlano(cor, v.corValueId),
     ];
     if (gtinAusente(v.gtin)) {
       if (aceitaEmptyGtin) atributosFlat.push({ id: 'EMPTY_GTIN_REASON', value_id: EMPTY_GTIN_REASON_SEM_CODIGO });

@@ -12,6 +12,8 @@ import { publicarGrupo, type ResultadoSaga, type CodigoErroSaga } from './public
 import { criarPortasSupabase } from './portas-supabase.ts';
 import { enfileirarVinculacaoCatalogo } from '../queue.ts';
 import { garantirChart, GENDER_VALUE, type ChartResolvido, type Genero } from '../ml/size-chart.ts';
+import { lerSchemaAtributos } from '../categoria/schema.ts';
+import { resolverCorValueId } from '../cor/value-id.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -35,6 +37,8 @@ export interface PublicarFamiliaUPArgs {
   executarSaga?: (portas: ReturnType<typeof criarPortasSupabase>, entrada: { anuncioExternoId: string; skusEsperados: string[] }) => Promise<ResultadoSaga>;
   /** Injetável em teste; produção resolve o chart real (ADR-0167). */
   garantirChartFn?: typeof garantirChart;
+  /** Injetável em teste; produção lê o schema real da categoria (dicionário de COLOR). */
+  lerSchemaAtributosFn?: typeof lerSchemaAtributos;
   now?: () => string;
 }
 
@@ -55,6 +59,7 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
   const { admin, conn, ctx, conexao, familia, anuncio, categoriaId } = args;
   const executarSaga = args.executarSaga ?? publicarGrupo;
   const garantirChartFn = args.garantirChartFn ?? garantirChart;
+  const lerSchemaAtributosFn = args.lerSchemaAtributosFn ?? lerSchemaAtributos;
   const now = args.now ?? (() => new Date().toISOString());
 
   // ADR-0167: família com tamanho precisa da guia de medidas ANTES de montar qualquer payload —
@@ -116,6 +121,13 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
   //    titulo_ml substituído pelo family_name da partição (vira family_name no payload plano).
   const familiaInput = { titulo_ml: familyName, descricao_ml: anuncio.descricao, categoria_ml_id: categoriaId, atributos_ml: atributosComGenero };
   const varPorSku = new Map(anuncio.variacoes.map((v) => [v.sku, v]));
+
+  // Dicionário de COLOR da categoria, lido UMA vez por família (cacheado no Redis por 30 dias).
+  // Incidente 2026-09-20 (grade de jaqueta): sem `value_id` a cor fica fora dos filtros de busca
+  // do ML e o nome do cadastro é reescrito pela grafia do dicionário. `lerSchemaAtributos` é
+  // resiliente (rede/4xx → []), então falha de schema publica como antes, só pelo nome.
+  const valoresCor = (await lerSchemaAtributosFn(await ctx.getToken(), categoriaId))
+    .find((a) => a.id === 'COLOR')?.valores ?? [];
   const montarPayloadPlano = (sku: string) => {
     const v = varPorSku.get(sku)!;
     // Achado real de produção (2026-09-19, sandália): item.attributes[SIZE] tem que bater com o
@@ -129,6 +141,7 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
         codigo: v.sku, cor: v.cor, estoque: v.estoque, preco_publicacao: v.preco, gtin: v.gtin, ml_picture_id: v.fotoId,
         tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null,
         sizeGridId: chart?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
+        corValueId: resolverCorValueId(v.cor, valoresCor),
       }],
       anuncio.capaFotoId, anuncio.capa2FotoId, anuncio.capa3FotoId,
       anuncio.listingTypeId, anuncio.dimensoes, args.aceitaEmptyGtin, 'plano',

@@ -319,3 +319,33 @@ describe('montarPayloadItem aceitaEmptyGtin override (E4 — categoria prevista)
     expect(ids).not.toContain('EMPTY_GTIN_REASON');
   });
 });
+
+// Incidente 2026-09-20 (grade de jaqueta): COLOR ia só com `value_name` livre. O ML aceita, mas
+// reescreve o nome pelo dicionário ("Azul Marinho" → "Azul-marinho") e deixa sem `value_id` a cor
+// que não existe na categoria — fora dos filtros de cor da busca. Validado contra a API real: o
+// ML aceita `value_id` + `value_name` juntos e preserva o nome do cadastro.
+describe('montarPayloadItem — COLOR com value_id do dicionário (item plano)', () => {
+  const planoComCor = (cor: string, corValueId?: string | null) => montarPayloadItem(
+    familia,
+    [{ ...variacoes[0], cor, corValueId }],
+    capaPictureId, null, null, undefined, null, undefined, 'plano',
+  );
+  const color = (p: { attributes: { id?: string }[] }) => p.attributes.find((a) => a.id === 'COLOR');
+
+  it('envia value_id junto com o nome do cadastro quando a cor existe no dicionário', () => {
+    expect(color(planoComCor('Azul Marinho', '283161'))).toEqual({
+      id: 'COLOR', value_id: '283161', value_name: 'Azul Marinho',
+    });
+  });
+
+  it('sem value_id resolvido, mantém o comportamento atual (só value_name)', () => {
+    expect(color(planoComCor('Azul Royal', null))).toEqual({ id: 'COLOR', value_name: 'Azul Royal' });
+    expect(color(planoComCor('Azul Royal'))).toEqual({ id: 'COLOR', value_name: 'Azul Royal' });
+  });
+
+  it('rótulo TAM continua virando atributo Tamanho, sem COLOR nem value_id', () => {
+    const p = planoComCor('TAM 01', '283161');
+    expect(color(p)).toBeUndefined();
+    expect(p.attributes).toEqual(expect.arrayContaining([{ name: 'Tamanho', value_name: 'TAM 01' }]));
+  });
+});

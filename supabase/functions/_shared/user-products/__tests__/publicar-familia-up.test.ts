@@ -355,3 +355,63 @@ describe('publicarFamiliaUP — guia de tamanhos (ADR-0167)', () => {
     expect(garantirChartFn).not.toHaveBeenCalled();
   });
 });
+
+// Incidente 2026-09-20 (grade de jaqueta, MLB108803): COLOR ia sem `value_id`, então o ML
+// reescrevia o nome do cadastro pela grafia do dicionário e deixava fora dos filtros de busca a
+// cor que não existe na categoria. O dicionário é lido uma vez por família.
+describe('publicarFamiliaUP — COLOR com value_id do dicionário da categoria', () => {
+  beforeEach(() => {
+    fakeConnector.reset();
+    enfileirarCatalogoSpy.mockReset().mockResolvedValue('msg-1');
+    criarPortasSpy.mockReset();
+  });
+
+  const SCHEMA_COM_CORES = [{
+    id: 'COLOR',
+    nome: 'Cor',
+    required: true,
+    conditionalRequired: false,
+    valueType: 'string' as const,
+    valores: [{ id: '283161', nome: 'Azul-marinho' }, { id: '52049', nome: 'Preto' }],
+    allowedUnits: [],
+    tags: ['allow_variations'],
+  }];
+
+  const ANUNCIO_CORES: AnuncioCanonico = {
+    ...ANUNCIO,
+    variacoes: [
+      { sku: 's-marinho', cor: 'Azul Marinho', estoque: 1, preco: 44.85, gtin: null, fotoId: 'F1' },
+      { sku: 's-royal', cor: 'Azul Royal', estoque: 1, preco: 44.85, gtin: null, fotoId: 'F2' },
+    ],
+  };
+
+  const publicar = async (lerSchemaAtributosFn: unknown) => {
+    const { admin } = fakeAdmin([]);
+    await publicarFamiliaUP({
+      admin, conn: fakeConnector as never, ctx, conexao,
+      familia: FAMILIA as never,
+      anuncio: ANUNCIO_CORES, categoriaId: 'MLB108803',
+      executarSaga: () => Promise.resolve({ estado: 'compensacao_pendente' }),
+      lerSchemaAtributosFn: lerSchemaAtributosFn as never,
+    });
+    return (criarPortasSpy.mock.calls[0][0] as {
+      montarPayloadPlano: (sku: string) => { attributes: { id?: string; value_id?: string; value_name?: string }[] };
+    }).montarPayloadPlano;
+  };
+  const cor = (p: { attributes: { id?: string }[] }) => p.attributes.find((a) => a.id === 'COLOR');
+
+  it('cor do dicionário sai com value_id E o nome do cadastro; cor de fora sai só com o nome', async () => {
+    const lerSchema = vi.fn().mockResolvedValue(SCHEMA_COM_CORES);
+    const montar = await publicar(lerSchema);
+    expect(cor(montar('s-marinho'))).toEqual({ id: 'COLOR', value_id: '283161', value_name: 'Azul Marinho' });
+    expect(cor(montar('s-royal'))).toEqual({ id: 'COLOR', value_name: 'Azul Royal' });
+    // Uma leitura por família, não por SKU.
+    expect(lerSchema).toHaveBeenCalledTimes(1);
+    expect(lerSchema).toHaveBeenCalledWith('tok', 'MLB108803');
+  });
+
+  it('schema indisponível (rede/4xx → []) publica como antes, só com o nome', async () => {
+    const montar = await publicar(vi.fn().mockResolvedValue([]));
+    expect(cor(montar('s-marinho'))).toEqual({ id: 'COLOR', value_name: 'Azul Marinho' });
+  });
+});
