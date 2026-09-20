@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter } from 'react-router-dom';
@@ -506,6 +506,112 @@ describe('DialogCadastroGrade — salvar', () => {
     // Soltar a promise e ESPERAR a etapa 2 aparecer: sem isso o `setState` do resultado cai
     // fora do `act` e vaza para o teste seguinte.
     liberar({ loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [], variacoes: [{ id: 'v1', codigo: '00000001' }] });
+    await waitFor(() => expect(screen.getByText('Foto por variação')).toBeInTheDocument());
+  });
+
+  // O fluxo que o Diego descreveu: preço diferente só no GG, resto continua herdando. A prova é
+  // o PAYLOAD, não o valor do input — só ele mostra que o override chegou a `resolverLinha`.
+  it('preço em massa no tamanho GG não contamina os outros tamanhos', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }, { id: 'v2', codigo: '00000002' }],
+    });
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '49,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('checkbox', { name: 'GG' }));
+
+    await user.click(screen.getByRole('button', { name: 'Preencher em massa no tamanho GG' }));
+    await user.selectOptions(screen.getByLabelText('Campo'), 'preco');
+    await user.type(screen.getByLabelText('Valor'), '64,90');
+    await user.click(screen.getByRole('button', { name: 'Aplicar' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    const variacoes = cadastrarProdutoMock.mock.calls[0][0].variacoes;
+    expect(variacoes).toHaveLength(2);
+    expect(variacoes[0]).toMatchObject({ tamanho: 'P', preco: 49.9 });
+    expect(variacoes[1]).toMatchObject({ tamanho: 'GG', preco: 64.9 });
+  });
+
+  it('preencher em massa não altera a contagem nem a ordem das linhas', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }, { id: 'v2', codigo: '00000002' },
+        { id: 'v3', codigo: '00000003' }, { id: 'v4', codigo: '00000004' }],
+    });
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '49,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Branco' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('checkbox', { name: 'M' }));
+
+    await user.click(screen.getByRole('button', { name: 'Preencher em massa na cor Preto' }));
+    await user.type(screen.getByLabelText('Valor'), '4');
+    await user.click(screen.getByRole('button', { name: 'Aplicar' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
+    const variacoes = cadastrarProdutoMock.mock.calls[0][0].variacoes;
+    expect(variacoes.map((v: { nome: string; tamanho: string }) => `${v.nome}/${v.tamanho}`))
+      .toEqual(['Preto/P', 'Preto/M', 'Branco/P', 'Branco/M']);
+    // `null`, não `0`: `montarPayload` passa por `numOuNull` (use-cadastro-produto.ts:33-36) e
+    // `parseNum('')` devolve `null`, que não é `typeof 'number'`. Estoque em branco chega à edge
+    // como `null`. `montarPayload` está FORA do escopo desta entrega — não ajustar a função.
+    expect(variacoes.map((v: { estoqueInicial: number | null }) => v.estoqueInicial))
+      .toEqual([4, 4, null, null]);
+  });
+
+  // Prova o RETURN de `aplicarMassa`, não o `disabled` do gatilho.
+  //
+  // `fireEvent.click` num `<button disabled>` NÃO serve: o React consulta
+  // `shouldPreventMouseEvent` e simplesmente não chama o `onClick` de elemento interativo
+  // desabilitado — o teste passaria com a guarda apagada. A única rota que chega ao handler com
+  // `salvando === true` é o popover JÁ ABERTO antes do save: o `desabilitado` gate só o
+  // `PopoverTrigger`, e o botão "Aplicar" lá dentro nunca recebe `disabled`.
+  it('preencher em massa com o popover aberto não altera nada durante o salvamento', async () => {
+    let liberar: (v: unknown) => void = () => {};
+    cadastrarProdutoMock.mockReturnValueOnce(new Promise((res) => { liberar = res; }));
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('checkbox', { name: 'M' }));
+
+    await user.click(screen.getByRole('button', { name: 'Preencher em massa na cor Preto' }));
+    await user.type(screen.getByLabelText('Valor'), '4');
+    // `fireEvent.click`, NÃO `user.click`: o `user.click` dispara `pointerdown` FORA do
+    // `PopoverContent`, e o DismissableLayer do Radix (react-dismissable-layer, index.mjs:166)
+    // fecha o popover ali mesmo — o "Aplicar" deixaria de existir antes de ser clicado.
+    // `fireEvent.click` manda só o `click`, que o Radix só escuta depois de um `pointerdown` de
+    // toque (index.mjs:156, `{ once: true }`), então não dismissa. E "Cadastrar" ainda NÃO está
+    // `disabled` neste ponto, então o React entrega o `onClick` normalmente.
+    fireEvent.click(screen.getByRole('button', { name: 'Cadastrar' })); // salvando = true
+
+    const antes = screen.getAllByLabelText(/^Estoque inicial de /)
+      .map((e) => (e as HTMLInputElement).value);
+    await user.click(screen.getByRole('button', { name: 'Aplicar' }));
+    expect(screen.getAllByLabelText(/^Estoque inicial de /)
+      .map((e) => (e as HTMLInputElement).value)).toEqual(antes);
+
+    liberar({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }, { id: 'v2', codigo: '00000002' }],
+    });
     await waitFor(() => expect(screen.getByText('Foto por variação')).toBeInTheDocument());
   });
 });

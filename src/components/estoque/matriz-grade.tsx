@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/table';
 import { erroCampo } from '@/components/estoque/linha-variacao-form';
 import { DetalhesSku, ROTULOS } from '@/components/estoque/detalhes-sku';
+import { PreencherEmMassa } from '@/components/estoque/preencher-em-massa';
 import {
   CAMPOS_HERDAVEIS, chaveGrade, totaisDaGrade,
   type CampoHerdavel, type LinhaGrade, type LinhaResolvida, type OpcoesMassa,
@@ -40,6 +41,7 @@ function ehHerdavel(modo: ModoGrade): modo is Extract<ModoGrade, CampoHerdavel> 
 export function MatrizGrade({
   linhas, resolvidas, cores, tamanhos, removidas, tentouSalvar, desabilitado,
   onMudarLinha, onMudarOverride, onDestravar, onVoltarAHerdar, onRemoverCelula, onReincluirCelula,
+  onAplicarMassa,
 }: {
   linhas: readonly LinhaGrade[];
   resolvidas: readonly LinhaResolvida[];
@@ -244,20 +246,53 @@ export function MatrizGrade({
 
   return (
     <div ref={containerRef} onKeyDown={teclado} className="flex min-w-0 flex-col gap-2">
-      <SeletorDeModo modo={modo} onMudar={setModo} />
+      <div className="flex items-center justify-between gap-2">
+        <SeletorDeModo modo={modo} onMudar={setModo} />
+        <PreencherEmMassa
+          escopoInicial={{ tipo: 'todos' }}
+          cores={cores}
+          tamanhos={tamanhos}
+          desabilitado={desabilitado}
+          gatilho="Preencher em massa"
+          rotuloGatilho="Preencher em massa"
+          onAplicar={onAplicarMassa}
+        />
+      </div>
 
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead scope="col">Cor</TableHead>
-            {tamanhos.map((t) => <TableHead key={t} scope="col">{t}</TableHead>)}
+            {tamanhos.map((t) => (
+              <TableHead key={t} scope="col">
+                <PreencherEmMassa
+                  escopoInicial={{ tipo: 'tamanho', valor: t }}
+                  cores={cores}
+                  tamanhos={tamanhos}
+                  desabilitado={desabilitado}
+                  gatilho={t}
+                  rotuloGatilho={`Preencher em massa no tamanho ${t}`}
+                  onAplicar={onAplicarMassa}
+                />
+              </TableHead>
+            ))}
             <TableHead scope="col">Total</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {cores.map((cor, r) => (
             <TableRow key={cor}>
-              <TableHead scope="row">{cor}</TableHead>
+              <TableHead scope="row">
+                <PreencherEmMassa
+                  escopoInicial={{ tipo: 'cor', valor: cor }}
+                  cores={cores}
+                  tamanhos={tamanhos}
+                  desabilitado={desabilitado}
+                  gatilho={cor}
+                  rotuloGatilho={`Preencher em massa na cor ${cor}`}
+                  onAplicar={onAplicarMassa}
+                />
+              </TableHead>
               {tamanhos.map((tamanho, c) => (
                 <TableCell key={tamanho}>{celula(cor, tamanho, c, r)}</TableCell>
               ))}
