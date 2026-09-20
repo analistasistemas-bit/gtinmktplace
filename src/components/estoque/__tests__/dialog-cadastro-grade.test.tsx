@@ -89,13 +89,15 @@ describe('DialogCadastroGrade — passo 0 (escolha do tipo)', () => {
     await user.click(screen.getByRole('button', { name: 'Roupa' }));
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('button', { name: 'GTIN' }));
     await user.type(screen.getByLabelText('GTIN de Preto · P'), '789');
 
     await user.click(screen.getByRole('button', { name: 'Trocar tipo' }));
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Trocar mesmo assim/i }));
     await user.click(screen.getByRole('button', { name: 'Calçado' }));
-    expect(screen.queryByText('Preto · P')).not.toBeInTheDocument();
+    // A troca de tipo reseta a matriz para o modo padrão (Estoque) junto com as linhas.
+    expect(screen.queryByLabelText('Estoque inicial de Preto · P')).not.toBeInTheDocument();
   });
 });
 
@@ -107,11 +109,12 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     // `/·/` sozinho NÃO serve: o título do dialog é `Cadastrar … · etapa N de M` (mesmo padrão
     // de `dialog-cadastro-produto.tsx:447-450`), então o seletor casaria com o título e o teste
     // falharia por um motivo que não tem nada a ver com a grade. Ancorar na cor real.
-    expect(screen.queryByText(/Preto · /)).not.toBeInTheDocument(); // só cor ainda não gera linha
+    // só cor ainda não gera linha
+    expect(screen.queryByLabelText(/^Estoque inicial de Preto · /)).not.toBeInTheDocument();
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
     await user.click(screen.getByRole('checkbox', { name: 'M' }));
-    expect(screen.getByText('Preto · P')).toBeInTheDocument();
-    expect(screen.getByText('Preto · M')).toBeInTheDocument();
+    expect(screen.getByLabelText('Estoque inicial de Preto · P')).toBeInTheDocument();
+    expect(screen.getByLabelText('Estoque inicial de Preto · M')).toBeInTheDocument();
   });
 
   it('marcar mais uma cor ACRESCENTA linhas sem apagar o que já foi digitado', async () => {
@@ -119,10 +122,11 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     renderGrade();
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('button', { name: 'GTIN' }));
     await user.type(screen.getByLabelText('GTIN de Preto · P'), '7891234');
     await user.click(screen.getByRole('checkbox', { name: 'Branco' }));
     expect(screen.getByLabelText('GTIN de Preto · P')).toHaveValue('7891234');
-    expect(screen.getByText('Branco · P')).toBeInTheDocument();
+    expect(screen.getByLabelText('GTIN de Branco · P')).toBeInTheDocument();
   });
 
   it('desmarcar cor de linha AINDA VAZIA remove direto, sem confirmação', async () => {
@@ -132,7 +136,7 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
-    expect(screen.queryByText('Preto · P')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Estoque inicial de Preto · P')).not.toBeInTheDocument();
   });
 
   it('desmarcar cor com dado digitado pede confirmação antes de apagar', async () => {
@@ -143,9 +147,9 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     await user.type(screen.getByLabelText('Estoque inicial de Preto · P'), '3');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
-    expect(screen.getByText('Preto · P')).toBeInTheDocument();
+    expect(screen.getByLabelText('Estoque inicial de Preto · P')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Remover mesmo assim/i }));
-    expect(screen.queryByText('Preto · P')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Estoque inicial de Preto · P')).not.toBeInTheDocument();
   });
 
   it('remover linha na mão mantém a grade parcial — não volta sozinha', async () => {
@@ -156,8 +160,8 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     await user.click(screen.getByRole('checkbox', { name: 'M' }));
     await user.click(screen.getByRole('button', { name: 'Remover Preto · P' }));
     await user.click(screen.getByRole('checkbox', { name: 'Branco' }));
-    expect(screen.queryByText('Preto · P')).not.toBeInTheDocument();
-    expect(screen.getByText('Branco · P')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Estoque inicial de Preto · P')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Estoque inicial de Branco · P')).toBeInTheDocument();
   });
 
   it('desmarcar a cor inteira e remarcar LIMPA a exclusão manual', async () => {
@@ -169,7 +173,7 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     await user.click(screen.getByRole('button', { name: 'Remover Preto · P' }));
     await user.click(screen.getByRole('checkbox', { name: 'Preto' })); // desmarca o eixo inteiro
     await user.click(screen.getByRole('checkbox', { name: 'Preto' })); // remarca
-    expect(screen.getByText('Preto · P')).toBeInTheDocument();
+    expect(screen.getByLabelText('Estoque inicial de Preto · P')).toBeInTheDocument();
   });
 
   it('chip que estouraria 60 fica desabilitado em vez de falhar depois', async () => {
@@ -193,7 +197,11 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     await user.type(seletor.getByLabelText('Nova cor'), 'Verde Musgo{Enter}');
     await user.type(seletor.getByLabelText('Nova cor'), 'Vinho{Enter}');
     await user.type(seletor.getByLabelText('Nova cor'), 'Laranja{Enter}');
-    expect(screen.getByText('Laranja · GG')).toBeInTheDocument();
+    // Escopo na matriz pelo MESMO motivo do `seletor` acima: com 60 células, uma consulta medida
+    // no `screen` varre o documento inteiro. `getByLabelText` não varre papéis (ao contrário de
+    // `getByRole('table')`/`rowheader`, que custaram 2,5s por chamada neste teste).
+    const grade = within(screen.getByText('Grade').parentElement!.parentElement!);
+    expect(grade.getByLabelText('Estoque inicial de Laranja · GG')).toBeInTheDocument();
     // A 16ª cor estouraria (64). O botão trava MESMO com texto válido digitado — sem o texto
     // ele já estaria desabilitado por `!novaCor.trim()` e o teste não provaria nada.
     await user.type(seletor.getByLabelText('Nova cor'), 'Caqui');
@@ -213,12 +221,15 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     await user.type(seletor.getByLabelText('Nova cor'), 'Verde Musgo{Enter}');
     await user.type(seletor.getByLabelText('Nova cor'), 'Vinho{Enter}');
     await user.type(seletor.getByLabelText('Nova cor'), 'Laranja{Enter}');
-    expect(screen.getByText('Laranja · GG')).toBeInTheDocument();
+    const grade = within(screen.getByText('Grade').parentElement!.parentElement!);
+    expect(grade.getByLabelText('Estoque inicial de Laranja · GG')).toBeInTheDocument();
     // A 16ª cor pelo ENTER (não pelo clique no botão) é o caminho que o achado Important aponta
     // como buraco: `adicionarCorPersonalizada` era chamada direto no `onKeyDown`, sem checar
     // `bloquearNovaCor`. Precisa continuar recusada mesmo por este caminho.
     await user.type(seletor.getByLabelText('Nova cor'), 'Caqui{Enter}');
-    expect(screen.queryByText('Caqui · GG')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/de Caqui · /)).not.toBeInTheDocument();
+    // Mantida como `queryByText`: ela cobre o CHIP no seletor (falha diferente de "não existe
+    // célula na matriz"), e a matriz não emite "Caqui" como texto em lugar nenhum.
     expect(screen.queryByText(/Caqui/)).not.toBeInTheDocument();
   });
 
@@ -231,8 +242,8 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: 'G' }));
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
-    const textos = screen.getAllByText(/^Preto · /).map((e) => e.textContent);
-    expect(textos).toEqual(['Preto · P', 'Preto · G']);
+    expect(screen.getAllByRole('columnheader').map((e) => e.textContent))
+      .toEqual(['Cor', 'P', 'G', 'Total']);
   });
 });
 
@@ -243,7 +254,8 @@ describe('DialogCadastroGrade — herança de campo', () => {
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
-    expect(screen.getByText(/R\$ 99,90/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Preço' }));
+    expect(screen.getByLabelText('Preço mínimo (líquido) de Preto · P')).toHaveValue('99,90');
   });
 
   it('mudar o cabeçalho propaga sozinho para quem não destravou', async () => {
@@ -254,7 +266,31 @@ describe('DialogCadastroGrade — herança de campo', () => {
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
     await user.clear(screen.getByLabelText('Preço mínimo (líquido)'));
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '150');
-    expect(screen.getByText(/R\$ 150/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Preço' }));
+    expect(screen.getByLabelText('Preço mínimo (líquido) de Preto · P')).toHaveValue('150');
+  });
+
+  // Regra explícita do spec: apagar a célula até vazio NÃO volta a herdar — vira override ''.
+  // Voltar a herdar é só por ação explícita. Sem este teste, "célula vazia herda de novo" seria
+  // uma mudança de comportamento que a suíte inteira aprovaria em silêncio.
+  it('esvaziar a célula vira override vazio, não volta a herdar', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('button', { name: 'Preço' }));
+    const celula = screen.getByLabelText('Preço mínimo (líquido) de Preto · P');
+    await user.clear(celula);
+    expect(celula).toHaveValue('');
+    // O botão de voltar ao herdado existe justamente porque o vazio NÃO volta sozinho.
+    expect(screen.getByRole('button', {
+      name: 'Voltar a herdar Preço mínimo (líquido) de Preto · P',
+    })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', {
+      name: 'Voltar a herdar Preço mínimo (líquido) de Preto · P',
+    }));
+    expect(screen.getByLabelText('Preço mínimo (líquido) de Preto · P')).toHaveValue('99,90');
   });
 });
 
@@ -398,10 +434,10 @@ describe('DialogCadastroGrade — salvar', () => {
     await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
-    await user.click(screen.getByRole('button', { name: /Editar nesta linha/i }));
-    await user.click(screen.getByRole('button', { name: 'Destravar Preço mínimo (líquido) de Preto · P' }));
-    await user.clear(screen.getByLabelText('Preço mínimo (líquido) de Preto · P'));
-    await user.type(screen.getByLabelText('Preço mínimo (líquido) de Preto · P'), '129,90');
+    await user.click(screen.getByRole('button', { name: 'Preço' }));
+    const celula = screen.getByLabelText('Preço mínimo (líquido) de Preto · P');
+    await user.clear(celula);
+    await user.type(celula, '129,90');
     await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));

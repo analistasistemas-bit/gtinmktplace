@@ -25,12 +25,14 @@ import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 import { TIPOS_PRODUTO, type TipoProdutoId } from '@/lib/tipos-produto';
 import { LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho } from '@/lib/tamanhos';
 import {
-  chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha, totalDaGrade,
-  type CampoHerdavel, type CamposHerdaveis, type LinhaGrade,
+  aplicarEmMassa, chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha,
+  totalDaGrade,
+  type CampoHerdavel, type CamposHerdaveis, type LinhaGrade, type OpcoesMassa,
 } from '@/lib/cadastro-grade';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { CORES_POPULARES, GeradorVariacoes } from '@/components/estoque/gerador-variacoes';
-import { LinhaGradeForm, ROTULOS } from '@/components/estoque/linha-grade-form';
+import { ROTULOS } from '@/components/estoque/linha-grade-form';
+import { MatrizGrade } from '@/components/estoque/matriz-grade';
 import { erroCampo, parseNum, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
 import {
   EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm,
@@ -185,6 +187,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   }
 
   function mudarCores(proximas: Set<string>) {
+    if (api.salvando) return;
     // Guarda central: cobre o chip, o Enter no campo de texto livre (gerador-variacoes.tsx) e
     // qualquer caminho futuro de entrada — nenhum deles chega às linhas sem passar por aqui.
     if (totalDaGrade([...proximas], [...tamanhos], removidas) > LIMITE_VARIACOES_GERADAS) return;
@@ -203,6 +206,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   }
 
   function mudarTamanhos(proximos: Set<string>) {
+    if (api.salvando) return;
     // Mesma guarda central de `mudarCores`, por simetria.
     if (totalDaGrade([...cores], [...proximos], removidas) > LIMITE_VARIACOES_GERADAS) return;
     const saindo = [...tamanhos].filter((t) => !proximos.has(t));
@@ -221,13 +225,36 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
 
   // Exclusão manual é permanente ENQUANTO os dois eixos continuarem marcados — é o que permite a
   // grade parcial. Desmarcar o eixo inteiro limpa a memória (`podar`, em cadastro-grade.ts).
-  function removerLinha(l: LinhaGrade) {
-    setRemovidas((prev) => new Set(prev).add(chaveGrade(l.cor, l.tamanho)));
-    setLinhas((prev) => prev.filter((x) => x.clientId !== l.clientId));
+  //
+  // A guarda `api.salvando` é a TRAVA CENTRAL (mesmo desenho do fix f4a6df68): toda função que
+  // muda contagem/ordem de `linhas` abre com ela. O `disabled` do botão é affordance — quem
+  // garante o casamento posicional é este `return`.
+  function removerLinha(cor: string, tamanho: string) {
+    if (api.salvando) return;
+    setRemovidas((prev) => new Set(prev).add(chaveGrade(cor, tamanho)));
+    setLinhas((prev) => prev.filter((x) => !(x.cor === cor && x.tamanho === tamanho)));
+  }
+
+  // Task 6 preenche o corpo; a trava central já nasce aqui porque ela é a invariante, não o
+  // recurso.
+  function reincluirLinha(cor: string, tamanho: string) {
+    if (api.salvando) return;
+    setRemovidas((prev) => {
+      const next = new Set(prev);
+      next.delete(chaveGrade(cor, tamanho));
+      return next;
+    });
+  }
+
+  // Task 8 liga a UI; a função já é a definitiva.
+  function aplicarMassa(opts: OpcoesMassa) {
+    if (api.salvando) return;
+    setLinhas((prev) => aplicarEmMassa(prev, opts));
   }
 
   function trocarTipo() {
     const acao = () => {
+      if (api.salvando) return;
       setTipoManual(null);
       setCores(new Set()); setTamanhos(new Set()); setRemovidas(new Set());
       setLinhas([]); setFotoPorCor({});
@@ -243,6 +270,22 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
 
   function patchLinha(clientId: string, patch: Partial<LinhaGrade>) {
     setLinhas((prev) => prev.map((x) => (x.clientId === clientId ? { ...x, ...patch } : x)));
+  }
+
+  function patchOverride(clientId: string, campo: CampoHerdavel, valor: string) {
+    setLinhas((prev) => prev.map((x) => (
+      x.clientId === clientId ? { ...x, overrides: { ...x.overrides, [campo]: valor } } : x
+    )));
+  }
+
+  function voltarAHerdar(clientId: string, campo: CampoHerdavel) {
+    setLinhas((prev) => prev.map((x) => {
+      if (x.clientId !== clientId) return x;
+      // Remover a CHAVE: `resolverLinha` decide por `campo in overrides`, então gravar
+      // `undefined` deixaria o campo resolvendo para undefined em vez de voltar ao cabeçalho.
+      const { [campo]: _removido, ...resto } = x.overrides;
+      return { ...x, overrides: resto };
+    }));
   }
 
   // Cada chip pergunta "e se eu marcasse este?". `totalDaGrade` é barato (duas multiplicações e
@@ -267,6 +310,14 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   );
 
   const resolvidas = linhas.map((l) => resolverLinha(cabecalho, fotoPorCor, l));
+  // `ordenarEixos` é chamada de novo aqui (o efeito também chama). Duplicar uma função pura e
+  // barata é mais seguro que um `useMemo` cujas dependências o próximo editor desalinha — e os
+  // dois pontos de chamada TÊM de concordar, senão a matriz desenha colunas fora da ordem das
+  // linhas. Não "otimizar" isto com estado.
+  const eixos = ordenarEixos(cores, tamanhos, {
+    cores: CORES_POPULARES,
+    tamanhos: gruposTamanho.flatMap((g) => g.valores),
+  });
   const unidades = resolvidas.reduce((s, r) => s + (parseNum(r.estoqueInicial) || 0), 0);
   const semFoto = resolvidas.filter((r) => !r.foto).length;
 
@@ -594,36 +645,21 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                       {linhas.length} SKUs · {unidades} unidades · {semFoto} sem foto
                     </span>
                   </div>
-                  <div className="flex flex-col gap-3">
-                    {linhas.map((l, i) => {
-                      const resolvida = resolvidas[i]!;
-                      return (
-                        <LinhaGradeForm
-                          key={l.clientId}
-                          linha={l}
-                          resolvida={resolvida}
-                          tentouSalvar={tentouSalvar}
-                          desabilitado={api.salvando}
-                          podeRemover
-                          onMudar={(patch) => patchLinha(l.clientId, patch)}
-                          onMudarOverride={(campo, valor) => patchLinha(l.clientId, {
-                            overrides: { ...l.overrides, [campo]: valor },
-                          })}
-                          // Destravar semeia o override com o valor RESOLVIDO — o campo parou de
-                          // seguir o cabeçalho, então guardar o valor não viola "nunca copiar o
-                          // herdado".
-                          onDestravar={(campo) => patchLinha(l.clientId, {
-                            overrides: { ...l.overrides, [campo]: resolvida[campo] },
-                          })}
-                          onVoltarAHerdar={(campo) => {
-                            const { [campo]: _, ...resto } = l.overrides;
-                            patchLinha(l.clientId, { overrides: resto });
-                          }}
-                          onRemover={() => removerLinha(l)}
-                        />
-                      );
-                    })}
-                  </div>
+                  <MatrizGrade
+                    linhas={linhas}
+                    resolvidas={resolvidas}
+                    cores={eixos.cores}
+                    tamanhos={eixos.tamanhos}
+                    removidas={removidas}
+                    tentouSalvar={tentouSalvar}
+                    desabilitado={api.salvando}
+                    onMudarLinha={patchLinha}
+                    onMudarOverride={patchOverride}
+                    onVoltarAHerdar={voltarAHerdar}
+                    onRemoverCelula={removerLinha}
+                    onReincluirCelula={reincluirLinha}
+                    onAplicarMassa={aplicarMassa}
+                  />
                 </div>
               )}
 
