@@ -204,6 +204,11 @@ canônico (A1), considerar esse par — ele preserva o nome do cadastro.
 
 Os outros 26 itens seguem como publicados.
 
+> Ponta solta a verificar antes de adotar `MAIN_COLOR`: `atributos-divergentes.ts:19` exclui COLOR
+> do delta do UPDATE (então as edições de COLOR não são revertidas pela saga), mas **`MAIN_COLOR`
+> não está nessa lista** e o app nem sabe que o atributo existe — não se sabe se o próximo UPDATE
+> desta família preserva ou apaga o valor.
+
 ### Opção descartada (mantida como registro)
 
 Antes de medir, as saídas consideradas eram apagar e recriar (a família inteira ou só as cores sem
