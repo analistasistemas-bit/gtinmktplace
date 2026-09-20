@@ -112,6 +112,16 @@ describe('LinhaGradeForm', () => {
     expect(screen.getByText(/obrigatório e deve ser maior que zero/i)).toBeInTheDocument();
   });
 
+  // Pedido do Diego (2026-09-19, depois de ver a tela rodando): a foto já é escolhida uma vez
+  // por cor, no passo anterior — repetir "Escolher foto" em CADA linha (P/M/G da mesma cor)
+  // não faz sentido e confunde o operador. A grade fica só com Estoque inicial + GTIN.
+  it('não existe campo de foto por linha — a foto é só por cor', () => {
+    renderLinha();
+    expect(screen.queryByText('Foto')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/Foto de Azul · M/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Escolher foto/i)).not.toBeInTheDocument();
+  });
+
   it('desabilitado congela remover, estoque, GTIN e os cadeados', async () => {
     const user = userEvent.setup();
     const { onRemover } = renderLinha(novaLinhaGrade('Azul', 'M'), { desabilitado: true });

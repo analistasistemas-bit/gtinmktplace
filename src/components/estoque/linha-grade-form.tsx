@@ -6,7 +6,6 @@ import { useState } from 'react';
 import { Lock, LockOpen, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { CampoFoto } from '@/components/estoque/campo-foto';
 import { erroCampo } from '@/components/estoque/linha-variacao-form';
 import {
   CAMPOS_HERDAVEIS, type CampoHerdavel, type LinhaGrade, type LinhaResolvida,
@@ -37,7 +36,7 @@ export function LinhaGradeForm({
   /** true durante `salvando`: a lista tem que ficar congelada (casamento posicional). */
   desabilitado: boolean;
   podeRemover: boolean;
-  onMudar: (patch: Partial<Pick<LinhaGrade, 'gtin' | 'estoqueInicial' | 'foto'>>) => void;
+  onMudar: (patch: Partial<Pick<LinhaGrade, 'gtin' | 'estoqueInicial'>>) => void;
   /** Editar um campo herdável já destravado — patch de `overrides`, não da linha crua. */
   onMudarOverride: (campo: CampoHerdavel, valor: string) => void;
   /** Destravar semeia o override com o valor resolvido no dialog — não viola "nunca copiar o
@@ -85,20 +84,9 @@ export function LinhaGradeForm({
         </Button>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2">
         {campoSimples('estoqueInicial', 'Estoque inicial')}
         {campoSimples('gtin', 'GTIN')}
-        <div className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Foto</span>
-          <CampoFoto
-            id={id('foto')}
-            ariaLabel={`Foto de ${nome}`}
-            arquivo={resolvida.foto}
-            disabled={desabilitado}
-            opcional
-            onEscolher={(f) => onMudar({ foto: f })}
-          />
-        </div>
       </div>
 
       {!expandido ? (
