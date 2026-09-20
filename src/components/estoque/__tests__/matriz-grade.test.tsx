@@ -15,7 +15,7 @@ function montar(linhas: LinhaGrade[], props: {
   cores?: string[]; tamanhos?: string[]; desabilitado?: boolean; removidas?: Set<string>;
 } = {}) {
   const spies = {
-    onMudarLinha: vi.fn(), onMudarOverride: vi.fn(), onVoltarAHerdar: vi.fn(),
+    onMudarLinha: vi.fn(), onMudarOverride: vi.fn(), onDestravar: vi.fn(), onVoltarAHerdar: vi.fn(),
     onRemoverCelula: vi.fn(), onReincluirCelula: vi.fn(), onAplicarMassa: vi.fn(),
   };
   render(
@@ -211,5 +211,18 @@ describe('MatrizGrade — totais', () => {
     // Trocar de modo não muda o total: ele é SEMPRE unidades de estoque.
     await user.click(screen.getByRole('button', { name: 'Preço' }));
     expect(within(linhaPreto).getByText('5')).toBeInTheDocument();
+  });
+});
+
+describe('MatrizGrade — drawer de detalhes', () => {
+  it('abre o drawer do SKU e destrava um campo ali', async () => {
+    const user = userEvent.setup();
+    const linhas = gradeCheia();
+    const { onDestravar } = montar(linhas);
+    await user.click(screen.getByRole('button', { name: 'Detalhes de Preto · M' }));
+    const drawer = within(screen.getByRole('dialog'));
+    expect(drawer.getByText('Preto · M')).toBeInTheDocument();
+    await user.click(drawer.getByRole('radio', { name: 'Usar valor específico — Altura' }));
+    expect(onDestravar).toHaveBeenCalledWith(linhas[1]!.clientId, 'alturaCm');
   });
 });

@@ -6,7 +6,7 @@
 // Estado interno é SÓ o modo de edição (uma string). Célula ativa NÃO é estado React: seria um
 // rerender da matriz inteira a cada tecla, com até 60 células (ver Task 7, navegação por foco DOM).
 import { useState } from 'react';
-import { Trash2 } from 'lucide-react';
+import { SlidersHorizontal, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { tabsListVariants, tabsTriggerClassName } from '@/components/ui/tabs';
@@ -14,7 +14,7 @@ import {
   Table, TableBody, TableCell, TableFooter, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { erroCampo } from '@/components/estoque/linha-variacao-form';
-import { ROTULOS } from '@/components/estoque/linha-grade-form';
+import { DetalhesSku, ROTULOS } from '@/components/estoque/detalhes-sku';
 import {
   CAMPOS_HERDAVEIS, chaveGrade, totaisDaGrade,
   type CampoHerdavel, type LinhaGrade, type LinhaResolvida, type OpcoesMassa,
@@ -39,7 +39,7 @@ function ehHerdavel(modo: ModoGrade): modo is Extract<ModoGrade, CampoHerdavel> 
 
 export function MatrizGrade({
   linhas, resolvidas, cores, tamanhos, tentouSalvar, desabilitado,
-  onMudarLinha, onMudarOverride, onVoltarAHerdar, onRemoverCelula,
+  onMudarLinha, onMudarOverride, onDestravar, onVoltarAHerdar, onRemoverCelula,
 }: {
   linhas: readonly LinhaGrade[];
   resolvidas: readonly LinhaResolvida[];
@@ -52,12 +52,15 @@ export function MatrizGrade({
   desabilitado: boolean;
   onMudarLinha: (clientId: string, patch: Partial<Pick<LinhaGrade, 'gtin' | 'estoqueInicial'>>) => void;
   onMudarOverride: (clientId: string, campo: CampoHerdavel, valor: string) => void;
+  onDestravar: (clientId: string, campo: CampoHerdavel) => void;
   onVoltarAHerdar: (clientId: string, campo: CampoHerdavel) => void;
   onRemoverCelula: (cor: string, tamanho: string) => void;
   onReincluirCelula: (cor: string, tamanho: string) => void;
   onAplicarMassa: (opts: OpcoesMassa) => void;
 }) {
   const [modo, setModo] = useState<ModoGrade>('estoqueInicial');
+  // SÓ o clientId, nunca a linha: a linha vem sempre de `linhas`, que é a fonte.
+  const [detalhesDe, setDetalhesDe] = useState<string | null>(null);
   const def = MODOS.find((m) => m.valor === modo)!;
   // Derivado A CADA RENDER, nunca memoizado num estado: `linhas` é a fonte, e um cache aqui
   // divergiria na primeira reconciliação.
@@ -150,6 +153,15 @@ export function MatrizGrade({
           type="button" variant="ghost" size="sm"
           className="h-6 w-6 shrink-0 p-0 opacity-0 focus-visible:opacity-100 group-hover/celula:opacity-100"
           disabled={desabilitado}
+          aria-label={`Detalhes de ${nome}`}
+          onClick={() => setDetalhesDe(linha.clientId)}
+        >
+          <SlidersHorizontal className="h-3 w-3" />
+        </Button>
+        <Button
+          type="button" variant="ghost" size="sm"
+          className="h-6 w-6 shrink-0 p-0 opacity-0 focus-visible:opacity-100 group-hover/celula:opacity-100"
+          disabled={desabilitado}
           aria-label={`Remover ${nome}`}
           onClick={() => onRemoverCelula(cor, tamanho)}
         >
@@ -194,6 +206,23 @@ export function MatrizGrade({
       </Table>
 
       <span id="matriz-herdado" className="sr-only">Valor herdado do produto.</span>
+
+      {(() => {
+        // Índice por clientId derivado na hora: o drawer nunca guarda posição.
+        const i = linhas.findIndex((l) => l.clientId === detalhesDe);
+        return (
+          <DetalhesSku
+            linha={i >= 0 ? linhas[i]! : null}
+            resolvida={i >= 0 ? resolvidas[i]! : null}
+            tentouSalvar={tentouSalvar}
+            desabilitado={desabilitado}
+            onFechar={() => setDetalhesDe(null)}
+            onMudarOverride={(campo, valor) => onMudarOverride(linhas[i]!.clientId, campo, valor)}
+            onDestravar={(campo) => onDestravar(linhas[i]!.clientId, campo)}
+            onVoltarAHerdar={(campo) => onVoltarAHerdar(linhas[i]!.clientId, campo)}
+          />
+        );
+      })()}
     </div>
   );
 }

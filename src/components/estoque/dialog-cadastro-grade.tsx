@@ -31,7 +31,7 @@ import {
 } from '@/lib/cadastro-grade';
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { CORES_POPULARES, GeradorVariacoes } from '@/components/estoque/gerador-variacoes';
-import { ROTULOS } from '@/components/estoque/linha-grade-form';
+import { ROTULOS } from '@/components/estoque/detalhes-sku';
 import { MatrizGrade } from '@/components/estoque/matriz-grade';
 import { erroCampo, parseNum, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
 import {
@@ -275,6 +275,17 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   function patchOverride(clientId: string, campo: CampoHerdavel, valor: string) {
     setLinhas((prev) => prev.map((x) => (
       x.clientId === clientId ? { ...x, overrides: { ...x.overrides, [campo]: valor } } : x
+    )));
+  }
+
+  // Destravar semeia o override com o valor RESOLVIDO: o campo parou de seguir o cabeçalho, então
+  // guardar o valor não viola "nunca copiar o herdado". É o oposto da célula da matriz, onde o
+  // operador já está digitando o valor que quer.
+  function destravar(clientId: string, campo: CampoHerdavel) {
+    setLinhas((prev) => prev.map((x) => (
+      x.clientId === clientId
+        ? { ...x, overrides: { ...x.overrides, [campo]: resolverLinha(cabecalho, fotoPorCor, x)[campo] } }
+        : x
     )));
   }
 
@@ -655,6 +666,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                     desabilitado={api.salvando}
                     onMudarLinha={patchLinha}
                     onMudarOverride={patchOverride}
+                    onDestravar={destravar}
                     onVoltarAHerdar={voltarAHerdar}
                     onRemoverCelula={removerLinha}
                     onReincluirCelula={reincluirLinha}
