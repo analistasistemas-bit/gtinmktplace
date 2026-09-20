@@ -878,19 +878,22 @@ describe('MatrizGrade — herança na célula', () => {
   // Regra explícita do spec: a célula JÁ é editável — não existe passo "destravar" antes. UMA
   // tecla numa célula herdando basta para reportar o override.
   //
-  // Por que NÃO usar `clear()` aqui: o helper `montar` renderiza uma árvore estática com spies,
-  // o pai nunca re-renderiza, e o `<Input>` é controlado — o React restaura '99,90' no DOM
-  // depois do `clear`, e a asserção mediria o artefato do harness, não o componente. O que prova
-  // a regra é o número de interações: uma só, sem clique em cadeado nenhum.
+  // Achado do Fable na revisão do plano: `onFocus` seleciona o valor inteiro (fix acima), então
+  // a primeira tecla SUBSTITUI '99,90' em vez de concatenar. `user.type` clica antes de digitar,
+  // e o clique reposiciona o caret de um jeito que varia entre versões do user-event — não é
+  // ele que prova o comportamento de foco/seleção. Por isso: `focus()` programático + apenas
+  // `user.keyboard`, e a asserção é o texto digitado sozinho, não resolvido+digitado.
   it('digitar numa célula herdada já reporta o override, sem passo de destravar', async () => {
     const user = userEvent.setup();
     const linhas = gradeCheia();
     const { onMudarOverride } = montar(linhas);
     await user.click(screen.getByRole('button', { name: 'Preço' }));
     expect(screen.queryByRole('button', { name: /^Destravar/ })).not.toBeInTheDocument();
-    await user.type(screen.getByLabelText('Preço mínimo (líquido) de Preto · P'), '5');
+    const campo = screen.getByLabelText('Preço mínimo (líquido) de Preto · P');
+    campo.focus();
+    await user.keyboard('5');
     expect(onMudarOverride).toHaveBeenCalledTimes(1);
-    expect(onMudarOverride).toHaveBeenCalledWith(linhas[0]!.clientId, 'preco', '99,905');
+    expect(onMudarOverride).toHaveBeenCalledWith(linhas[0]!.clientId, 'preco', '5');
   });
 
   it('"Voltar a herdar" só aparece na célula que TEM override', async () => {
@@ -1088,6 +1091,12 @@ export function MatrizGrade({
             )}
             value={valor}
             disabled={desabilitado}
+            // Achado do Fable: sem isto, focar uma célula herdada e digitar concatena no valor
+            // resolvido ("99,90" + "5" → "99,905") — o operador queria SUBSTITUIR, não anexar.
+            // Selecionar tudo no foco faz a primeira tecla trocar o conteúdo inteiro, como numa
+            // planilha de verdade. Bônus: com a seleção cobrindo o valor todo, as setas laterais
+            // já saem da célula na primeira tecla (regra da Task 7 é sobre a BORDA do valor).
+            onFocus={(e) => e.currentTarget.select()}
             onChange={(e) => (herdavel
               // Digitar numa célula herdada cria o override com o TEXTO DIGITADO. Não existe
               // estado "travado" prévio para semear com o valor resolvido (regra do spec).
@@ -2017,6 +2026,19 @@ describe('MatrizGrade — teclado', () => {
     expect(screen.getByRole('button', { name: 'Reincluir Branco · P' })).toHaveFocus();
   });
 
+  // Achado do Fable (revisão do plano): o "+" carrega data-r/data-c de propósito (Task 6), mas
+  // Enter também é a ATIVAÇÃO NATIVA de um <button> focado. Se `teclado()` interceptasse Enter
+  // em qualquer alvo com data-r/data-c, o "+" nunca clicaria por Enter — só por Espaço, o que
+  // ninguém espera de um botão. Enter no "+" precisa continuar sendo clique, não navegação.
+  it('Enter no "+" reinclui a célula (ativação nativa do botão, não navegação)', async () => {
+    const user = userEvent.setup();
+    const linhas = [novaLinhaGrade('Preto', 'P'), novaLinhaGrade('Preto', 'M'), novaLinhaGrade('Branco', 'M')];
+    const { onReincluirCelula } = montar(linhas, { removidas: new Set(['Branco\u0000P']) });
+    screen.getByRole('button', { name: 'Reincluir Branco · P' }).focus();
+    await user.keyboard('{Enter}');
+    expect(onReincluirCelula).toHaveBeenCalledWith('Branco\u0000P');
+  });
+
   it('ArrowDown/ArrowUp andam na coluna', async () => {
     const user = userEvent.setup();
     montar(gradeCheia());
@@ -2094,17 +2116,26 @@ Em `src/components/estoque/matriz-grade.tsx`, acrescentar `useRef` ao import do 
     const c = Number(alvo.dataset.c);
     if (Number.isNaN(r) || Number.isNaN(c)) return;
 
-    if (e.key === 'Enter' || e.key === 'ArrowDown') {
+    const input = alvo instanceof HTMLInputElement ? alvo : null;
+
+    if (e.key === 'ArrowDown') { e.preventDefault(); focarCelula(r + 1, c); return; }
+    if (e.key === 'ArrowUp') { e.preventDefault(); focarCelula(r - 1, c); return; }
+
+    if (e.key === 'Enter') {
+      // Achado do Fable: o "+" (Task 6) também carrega data-r/data-c, e Enter é a ATIVAÇÃO
+      // NATIVA de um <button> focado. Interceptar Enter em qualquer alvo roubaria esse clique —
+      // o operador de teclado nunca reincluiria uma célula por Enter, só por Espaço. Em cima de
+      // um <input>, Enter continua navegação (célula de baixo); em cima de outra coisa (o
+      // botão), não interceptamos — o clique nativo do botão segue seu curso.
+      if (!input) return;
       // `preventDefault` no Enter também impede o submit implícito do formulário do dialog.
       e.preventDefault();
       focarCelula(r + 1, c);
       return;
     }
-    if (e.key === 'ArrowUp') { e.preventDefault(); focarCelula(r - 1, c); return; }
 
     // Setas laterais só saem da célula na BORDA do valor. No meio do texto elas são o cursor —
     // sem isso ninguém corrige um dígito no meio de um GTIN de 13 caracteres.
-    const input = alvo instanceof HTMLInputElement ? alvo : null;
     if (e.key === 'ArrowLeft') {
       if (input && input.selectionStart !== 0) return;
       e.preventDefault(); focarCelula(r, c - 1); return;
