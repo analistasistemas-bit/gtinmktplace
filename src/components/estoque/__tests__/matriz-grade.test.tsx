@@ -176,6 +176,38 @@ describe('MatrizGrade — casamento posicional', () => {
   });
 });
 
+describe('MatrizGrade — célula removida', () => {
+  // O card antigo simplesmente sumia da lista. Na matriz a célula continua visível no espaço, e
+  // sem affordance vira um buraco mudo que o operador não sabe desfazer.
+  it('combinação removida na mão mostra "+" no lugar do campo', () => {
+    const linhas = [
+      novaLinhaGrade('Preto', 'M'), novaLinhaGrade('Branco', 'P'), novaLinhaGrade('Branco', 'M'),
+    ];
+    montar(linhas, { removidas: new Set(['Preto\u0000P']) });
+    expect(screen.queryByLabelText('Estoque inicial de Preto · P')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reincluir Preto · P' })).toBeInTheDocument();
+  });
+
+  it('clicar no "+" reporta a combinação a reincluir', async () => {
+    const user = userEvent.setup();
+    const linhas = [novaLinhaGrade('Preto', 'M'), novaLinhaGrade('Branco', 'P'), novaLinhaGrade('Branco', 'M')];
+    const { onReincluirCelula } = montar(linhas, { removidas: new Set(['Preto\u0000P']) });
+    await user.click(screen.getByRole('button', { name: 'Reincluir Preto · P' }));
+    expect(onReincluirCelula).toHaveBeenCalledWith('Preto', 'P');
+  });
+
+  // A contraparte ("sem linha e sem exclusão → inerte") já está coberta desde a Task 4, no teste
+  // `combinação sem linha fica inerte, sem campo`. É ela que impede esta task de oferecer "+" no
+  // frame pré-reconciliação — não duplicar aqui.
+
+  it('"+" congela durante o salvamento', () => {
+    montar([novaLinhaGrade('Preto', 'M')], {
+      removidas: new Set(['Preto\u0000P']), desabilitado: true, cores: ['Preto'], tamanhos: ['P', 'M'],
+    });
+    expect(screen.getByRole('button', { name: 'Reincluir Preto · P' })).toBeDisabled();
+  });
+});
+
 describe('MatrizGrade — congelamento', () => {
   it('desabilitado congela células e o botão de remover', async () => {
     const user = userEvent.setup();

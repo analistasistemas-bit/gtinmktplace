@@ -38,8 +38,8 @@ function ehHerdavel(modo: ModoGrade): modo is Extract<ModoGrade, CampoHerdavel> 
 }
 
 export function MatrizGrade({
-  linhas, resolvidas, cores, tamanhos, tentouSalvar, desabilitado,
-  onMudarLinha, onMudarOverride, onDestravar, onVoltarAHerdar, onRemoverCelula,
+  linhas, resolvidas, cores, tamanhos, removidas, tentouSalvar, desabilitado,
+  onMudarLinha, onMudarOverride, onDestravar, onVoltarAHerdar, onRemoverCelula, onReincluirCelula,
 }: {
   linhas: readonly LinhaGrade[];
   resolvidas: readonly LinhaResolvida[];
@@ -70,10 +70,31 @@ export function MatrizGrade({
   function celula(cor: string, tamanho: string, c: number, r: number) {
     const chave = chaveGrade(cor, tamanho);
     const i = indice.get(chave);
-    // Sem linha = célula inerte. A Task 6 distingue aqui a combinação removida na mão (que ganha
-    // um "+") do frame pré-reconciliação (que continua inerte).
     if (i === undefined) {
-      return <span className="text-xs text-muted-foreground" aria-hidden="true">—</span>;
+      // Combinação removida na mão → affordance de reinclusão. O card antigo simplesmente sumia
+      // da lista; a célula continua visível no espaço, e sem isto vira um buraco mudo que o
+      // operador não sabe desfazer.
+      //
+      // SEM chave em `removidas` é outra coisa: um frame pré-reconciliação, em que a linha ainda
+      // não foi criada. Oferecer "+" ali convidaria a reincluir algo que nunca saiu.
+      if (!removidas.has(chave)) {
+        return <span className="text-xs text-muted-foreground" aria-hidden="true">—</span>;
+      }
+      return (
+        <Button
+          type="button" variant="ghost" size="sm"
+          className="h-8 w-full p-0 text-muted-foreground"
+          // `data-r`/`data-c` também aqui: sem eles o Enter da Task 7 morre em silêncio exatamente
+          // onde a grade parcial existe.
+          data-r={r}
+          data-c={c}
+          disabled={desabilitado}
+          aria-label={`Reincluir ${cor} · ${tamanho}`}
+          onClick={() => onReincluirCelula(cor, tamanho)}
+        >
+          +
+        </Button>
+      );
     }
     const linha = linhas[i]!;
     const resolvida = resolvidas[i]!;

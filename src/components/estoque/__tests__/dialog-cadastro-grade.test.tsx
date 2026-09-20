@@ -164,6 +164,22 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     expect(screen.getByLabelText('Estoque inicial de Branco · P')).toBeInTheDocument();
   });
 
+  // Ciclo completo: remover, ver o "+", reincluir. A reinclusão limpa a chave de `removidas`, e
+  // o efeito de reconciliação recria a linha — com GTIN/estoque em branco, porque é uma linha
+  // nova, não a antiga ressuscitada.
+  it('reincluir pelo "+" devolve a combinação removida', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('checkbox', { name: 'M' }));
+    await user.click(screen.getByRole('button', { name: 'Remover Preto · P' }));
+    expect(screen.queryByLabelText('Estoque inicial de Preto · P')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Reincluir Preto · P' }));
+    expect(screen.getByLabelText('Estoque inicial de Preto · P')).toBeInTheDocument();
+    expect(screen.getByLabelText('Estoque inicial de Preto · P')).toHaveValue('');
+  });
+
   it('desmarcar a cor inteira e remarcar LIMPA a exclusão manual', async () => {
     const user = userEvent.setup();
     renderGrade();
