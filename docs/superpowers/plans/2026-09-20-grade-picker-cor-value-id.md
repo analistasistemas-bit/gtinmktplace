@@ -2,9 +2,11 @@
 
 **Data:** 2026-09-20
 **Severidade:** alta — primeiro produto de grade publicado (família 00000041, 30 SKUs, org DSA/Daludi Shop) está com a seleção de cor/tamanho inconsistente para o comprador.
-**Status:** causa raiz identificada na seção **2.1** (estoque zero pausa a combinação). As seções 3
-e 5 são de uma hipótese anterior (cor sem `value_id`), que segue válida como problema de filtro/busca
-mas **não** foi provada como causa deste sintoma — ler 2.1 primeiro.
+**Status:** ENCERRADO em 20/09. Causa raiz na seção **2.1** (combinação sem estoque sai da vitrine
+e o seletor de tamanho do ML é da família inteira). Nenhuma mudança de comportamento foi adotada:
+o Diego decidiu continuar vendendo o tamanho disponível (seção 4, A0). As seções 3 e 5 tratam de
+uma hipótese anterior (cor sem `value_id`) — problema real de filtro/busca, **não** a causa deste
+sintoma. Ler 2.1 primeiro.
 
 ---
 
@@ -153,16 +155,19 @@ Manteiga, Rosa Pink, Salmão), 9 cores inteiramente fora, **nenhuma cor mista**.
 
 ## 4. Track A — correção no código (reordenado após o achado de 2.1)
 
-### A0 (nova, prioridade máxima). Cor incompleta não vai ao ar
-Regra: uma cor só fica ativa no canal se **todos os tamanhos da família** estiverem ativos nela.
-Faltou um (estoque 0, célula removida, item moderado), a cor inteira é pausada; completou, a cor
-inteira volta. Vale na publicação e em cada movimento de estoque.
+### A0. Cor incompleta não vai ao ar — **DECIDIDO: NÃO FAZER** (Diego, 20/09)
 
-Pontos a resolver no ADR: o gatilho (publicação, `sincronizar-estoque`, reconciliação), como avisar
-o operador na tela (a cor está fora do ar e por quê) e o que fazer quando a grade tem cores com
-conjuntos de tamanhos diferentes de propósito.
+A regra chegou a ser aplicada à mão e depois **revertida a pedido do Diego**: *"não posso deixar de
+vender porque só tem um tamanho naquela cor, não faz o menor sentido"*. Os 9 itens pausados
+manualmente voltaram a `active` no mesmo dia; estado conferido item a item: 21 ativos e 9 pausados
+pelo próprio ML com `out_of_stock` — idêntico ao que era antes da intervenção.
 
-**Custo:** ~1h ADR + ~3h implementação com testes.
+**Decisão registrada:** vender o tamanho disponível vale mais que evitar o pulo de cor. O anúncio
+convive com o comportamento descrito em 2.1 enquanto houver cor com um só tamanho em estoque, e
+ele desaparece sozinho quando o estoque da combinação é reposto.
+
+Não implementar pausa automática por cor incompleta. Se um dia for reaberto, o caminho alternativo
+está na seção seguinte (cor fora da família), com o custo do agrupamento.
 
 ### Alternativa estrutural: DESCARTADA pela API (testada 20/09)
 
@@ -319,12 +324,14 @@ Nenhum destino se repete — as 15 cores continuam distintas no picker. A escolh
 
 ## 6. Sequência sugerida
 
-1. ✅ **Feito hoje:** 9 cores incompletas pausadas por inteiro (seção 3.9) — o sintoma sumiu da vitrine.
-2. **A0** (ADR + implementação): cor incompleta não vai ao ar. É o que impede o problema de voltar.
-3. A1 → A2 → A3 → A4: cor com `value_id` + `MAIN_COLOR` (filtro/busca), sem urgência.
-4. A5 (deploy) + merge.
+1. ✅ **Encerrado sem mudança de comportamento.** O sintoma foi explicado (2.1), a regra de pausar
+   cor incompleta foi testada e **rejeitada pelo Diego** (A0) — o anúncio ficou como estava: 21
+   itens ativos, 9 pausados por estoque 0.
+2. **Em aberto, sem urgência:** A1 → A2 → A3 → A4 (cor com `value_id` + `MAIN_COLOR`). Melhora
+   filtro e busca no ML; não tem relação com o pulo de cor.
+3. A5 (deploy) quando A1–A4 forem feitos.
 
-**A0:** ~4h. **Demais do Track A:** ~7h, podem esperar.
+**Nada pendente de execução imediata.** Track A restante: ~7h, quando entrar em prioridade.
 
 ---
 
