@@ -390,3 +390,53 @@ cores como estão cadastradas no PubliAI.
 Os itens da publicação anterior seguem no ML **pausados e sem vínculo local** (28, já que 2 foram
 encerrados para liberar o nome de cor). Não atrapalham a vitrine, mas podem voltar a conflitar
 como UP duplicado numa próxima republicação. Encerrá-los é uma operação de higiene pendente.
+
+---
+
+## 8. Segundo incidente da republicação: família com duas ofertas por produto
+
+**Sintoma (Diego, logo após a republicação):** "algumas cores mostram num formato de exibição,
+outras em outro; quando mudo de tamanho fica alternando" — e "o anúncio antigo continua no ar".
+Nos prints: um produto com **grade de 11 miniaturas** (várias tracejadas) e outros dois com
+**lista suspensa de uma única opção**. As URLs desses dois eram user products da publicação
+ANTIGA.
+
+**Causa medida** (scan dos 70 itens do vendedor + multiget filtrando `family_id`):
+
+| Conjunto | Qtd | Categoria | Status |
+|---|---|---|---|
+| Publicação antiga (14h) | 28 | MLB108803 | todos `paused` |
+| Publicação nova (15h) | 30 | MLB270221 | 21 `active`, 9 `paused/out_of_stock` |
+
+**58 itens na mesma `family_id`, em duas categorias diferentes** — e, pior, **cada produto com
+duas ofertas**: os 28 `MLBU` antigos são exatamente os mesmos dos novos (zero user product
+órfão). `remover-publicado` só pausa o item e apaga o vínculo local; o item continua na família
+do ML, e a página daquele produto segue acessível. O front do ML resolve o seletor pelo conjunto
+da oferta de entrada — daí dois layouts e a alternância.
+
+**Correção aplicada:** encerrar as 28 ofertas antigas (`status: closed` + `PUT {deleted:"true"}`),
+todas com `sold_quantity = 0`. Antes das 28, as provas que o Fable exigiu:
+
+- **Canário em um par compartilhado** (Preto M): encerrei o antigo `MLB7673212528` e o novo
+  `MLB5265172633` continuou `active`, mesma família, mesmo `MLBU5257212332`, com o user product
+  íntegro. Encerrar a oferta antiga **não** derruba a nova que compartilha o produto.
+- `sold_quantity = 0` conferido nos 28.
+
+**Achado que contraria a expectativa:** item encerrado **mantém** `family_id` no `GET /items/{id}`
+(com `sub_status: [deleted, paused_by_seller]`), mas some de `users/{id}/items/search` — a
+listagem leva alguns minutos para convergir. Não dá para usar `family_id` do item como prova de
+que ele saiu da família; use a listagem do vendedor.
+
+**Estado final:** 30 ofertas vivas, 15 cores, todas em MLB270221. Com M selecionado devem aparecer
+15 miniaturas e 5 tracejadas (Azul Royal, Caramelo, Cinza Claro, Marrom, Nude Rosado); com G, 4
+tracejadas (Azul Claro, Azul Marinho, Chumbo, Verde Militar) — exatamente as combinações sem
+estoque.
+
+**Residual conhecido e aceito:** clicar num tamanho que aquela cor não tem leva a uma página sem
+opção de compra (o modo "lista de uma opção"). É o mesmo efeito de estoque 0 da seção 2.1, que o
+Diego decidiu manter — some sozinho quando a combinação ganhar estoque.
+
+**Lição para o produto:** republicar uma família UP sem encerrar as ofertas antigas deixa a
+família com o dobro de ofertas e quebra a vitrine. Se `remover-publicado`/Republicar virar fluxo
+comum para grade, ele precisa encerrar (não só pausar) os itens quando a família for republicada
+— hoje isso ficou por conta de uma limpeza manual.
