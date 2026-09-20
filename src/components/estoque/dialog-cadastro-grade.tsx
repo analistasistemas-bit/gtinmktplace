@@ -31,7 +31,7 @@ import {
 import { CampoFoto } from '@/components/estoque/campo-foto';
 import { CORES_POPULARES, GeradorVariacoes } from '@/components/estoque/gerador-variacoes';
 import { LinhaGradeForm, ROTULOS } from '@/components/estoque/linha-grade-form';
-import { erroCampo, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
+import { erroCampo, parseNum, type LinhaVariacao } from '@/components/estoque/linha-variacao-form';
 import {
   EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm,
 } from '@/components/estoque/etapa-fiscal-form';
@@ -163,6 +163,9 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   }
 
   function mudarCores(proximas: Set<string>) {
+    // Guarda central: cobre o chip, o Enter no campo de texto livre (gerador-variacoes.tsx) e
+    // qualquer caminho futuro de entrada — nenhum deles chega às linhas sem passar por aqui.
+    if (totalDaGrade([...proximas], [...tamanhos], removidas) > LIMITE_VARIACOES_GERADAS) return;
     const saindo = [...cores].filter((c) => !proximas.has(c));
     const afetadas = linhas.filter((l) => saindo.includes(l.cor));
     if (afetadas.some(temDado)) {
@@ -178,6 +181,8 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   }
 
   function mudarTamanhos(proximos: Set<string>) {
+    // Mesma guarda central de `mudarCores`, por simetria.
+    if (totalDaGrade([...cores], [...proximos], removidas) > LIMITE_VARIACOES_GERADAS) return;
     const saindo = [...tamanhos].filter((t) => !proximos.has(t));
     const afetadas = linhas.filter((l) => saindo.includes(l.tamanho));
     if (afetadas.some(temDado)) {
@@ -240,7 +245,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   );
 
   const resolvidas = linhas.map((l) => resolverLinha(cabecalho, fotoPorCor, l));
-  const unidades = resolvidas.reduce((s, r) => s + (Number(r.estoqueInicial) || 0), 0);
+  const unidades = resolvidas.reduce((s, r) => s + (parseNum(r.estoqueInicial) || 0), 0);
   const semFoto = resolvidas.filter((r) => !r.foto).length;
 
   const podeSalvar = !!nomePai.trim() && !!origem && !!genero && linhas.length > 0

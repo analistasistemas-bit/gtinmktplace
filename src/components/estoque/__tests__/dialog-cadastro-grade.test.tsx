@@ -199,6 +199,28 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     await user.type(seletor.getByLabelText('Nova cor'), 'Caqui');
     expect(seletor.getByRole('button', { name: 'Adicionar cor' })).toBeDisabled();
   });
+
+  it('Enter no campo de nova cor não passa por cima do teto de 60 (achado da revisão final)', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    const seletor = within(screen.getByText('Cores e tamanhos').parentElement!);
+    for (const t of ['P', 'M', 'G', 'GG']) await user.click(seletor.getByRole('checkbox', { name: t }));
+    for (const c of ['Preto', 'Branco', 'Cinza', 'Azul Marinho', 'Azul Royal',
+      'Vermelho', 'Verde Bandeira', 'Amarelo', 'Rosa', 'Roxo', 'Marrom', 'Bege']) {
+      await user.click(seletor.getByRole('checkbox', { name: c }));
+    }
+    // 12 cores × 4 tamanhos = 48. Três a mais leva a 15 × 4 = 60, exatamente no teto.
+    await user.type(seletor.getByLabelText('Nova cor'), 'Verde Musgo{Enter}');
+    await user.type(seletor.getByLabelText('Nova cor'), 'Vinho{Enter}');
+    await user.type(seletor.getByLabelText('Nova cor'), 'Laranja{Enter}');
+    expect(screen.getByText('Laranja · GG')).toBeInTheDocument();
+    // A 16ª cor pelo ENTER (não pelo clique no botão) é o caminho que o achado Important aponta
+    // como buraco: `adicionarCorPersonalizada` era chamada direto no `onKeyDown`, sem checar
+    // `bloquearNovaCor`. Precisa continuar recusada mesmo por este caminho.
+    await user.type(seletor.getByLabelText('Nova cor'), 'Caqui{Enter}');
+    expect(screen.queryByText('Caqui · GG')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Caqui/)).not.toBeInTheDocument();
+  });
 });
 
 describe('DialogCadastroGrade — herança de campo', () => {
