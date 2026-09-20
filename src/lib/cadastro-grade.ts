@@ -4,6 +4,8 @@
 // Substitui `gerarCombinacoes`/`contarCombinacoes` (src/lib/tamanhos.ts): na grade, ao contrário
 // do cadastro normal, cor E tamanho são obrigatórios — uma linha sem um dos eixos não existe.
 
+import { parseNumeroPtBr } from '@/lib/formato';
+
 /** Chave canônica de uma célula. `\u0000` porque nem cor nem tamanho podem contê-lo: um
  *  separador visível ("|") colidiria com uma cor personalizada digitada com ele. */
 export function chaveGrade(cor: string, tamanho: string): string {
@@ -163,4 +165,42 @@ export function ordenarEixos(
     cores: porOrdem(cores, ordemCanonica.cores),
     tamanhos: porOrdem(tamanhos, ordemCanonica.tamanhos),
   };
+}
+
+export interface TotaisGrade {
+  /** Unidades de estoque por cor. Toda cor do eixo aparece, inclusive com 0. */
+  porCor: Record<string, number>;
+  porTamanho: Record<string, number>;
+  geral: number;
+  /** SKUs com GTIN em branco. Alimenta o resumo do topo — é o que trava a publicação depois. */
+  semGtin: number;
+}
+
+/** Totais da matriz. SEMPRE unidades de estoque, qualquer que seja o modo de edição ativo na
+ *  tela: não existe "total de preço". Os eixos vêm por parâmetro (e não derivados de
+ *  `resolvidas`) para que uma cor/tamanho cujas células foram todas removidas na mão ainda
+ *  apareça com 0 — a matriz continua exibindo a linha/coluna. */
+export function totaisDaGrade(
+  resolvidas: readonly LinhaResolvida[],
+  cores: readonly string[],
+  tamanhos: readonly string[],
+): TotaisGrade {
+  const porCor: Record<string, number> = {};
+  const porTamanho: Record<string, number> = {};
+  for (const c of cores) porCor[c] = 0;
+  for (const t of tamanhos) porTamanho[t] = 0;
+
+  let geral = 0;
+  let semGtin = 0;
+  for (const r of resolvidas) {
+    // `|| 0` cobre os DOIS retornos não-numéricos de `parseNumeroPtBr`: `null` (vazio) e `NaN`
+    // (texto inválido) — ambos são falsy. Um NaN escapando aqui transforma o rodapé inteiro em
+    // "NaN unidades" por causa de UMA célula.
+    const unidades = parseNumeroPtBr(r.estoqueInicial) || 0;
+    if (r.cor in porCor) porCor[r.cor]! += unidades;
+    if (r.tamanho in porTamanho) porTamanho[r.tamanho]! += unidades;
+    geral += unidades;
+    if (r.gtin.trim() === '') semGtin += 1;
+  }
+  return { porCor, porTamanho, geral, semGtin };
 }

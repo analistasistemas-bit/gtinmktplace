@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha, totalDaGrade,
-  type CamposHerdaveis,
+  chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha, totaisDaGrade,
+  totalDaGrade, type CamposHerdaveis,
 } from '@/lib/cadastro-grade';
 
 const semLinhas: { cor: string; tamanho: string }[] = [];
@@ -194,5 +194,56 @@ describe('ordenarEixos', () => {
     const ordem = { cores: ['Preto'] as const, tamanhos: ['39', '40', '39/40'] as const };
     const r = ordenarEixos(new Set(['Preto']), new Set(['39/40', '40', '39']), ordem);
     expect(r.tamanhos).toEqual(['39', '40', '39/40']);
+  });
+});
+
+describe('totaisDaGrade', () => {
+  const CAB: CamposHerdaveis = {
+    preco: '99,90', custo: '40', pesoGramas: '300',
+    alturaCm: '5', larguraCm: '20', comprimentoCm: '30',
+  };
+  const linha = (cor: string, tam: string, estoque: string, gtin = '') => resolverLinha(
+    CAB, {}, { ...novaLinhaGrade(cor, tam), estoqueInicial: estoque, gtin },
+  );
+
+  it('soma unidades por cor, por tamanho e no geral', () => {
+    const t = totaisDaGrade(
+      [linha('Preto', 'P', '2'), linha('Preto', 'M', '3'), linha('Branco', 'P', '4')],
+      ['Preto', 'Branco'], ['P', 'M'],
+    );
+    expect(t.porCor).toEqual({ Preto: 5, Branco: 4 });
+    expect(t.porTamanho).toEqual({ P: 6, M: 3 });
+    expect(t.geral).toBe(9);
+  });
+
+  // Eixo cujas células foram TODAS removidas na mão continua sendo coluna/linha da matriz — o
+  // total dele é 0, não "ausente". Sem isto o rodapé perderia a coluna e desalinharia da tabela.
+  it('eixo sem nenhuma linha resolvida vale 0, não some', () => {
+    const t = totaisDaGrade([linha('Preto', 'P', '2')], ['Preto', 'Branco'], ['P', 'M']);
+    expect(t.porCor).toEqual({ Preto: 2, Branco: 0 });
+    expect(t.porTamanho).toEqual({ P: 2, M: 0 });
+  });
+
+  // `parseNum` devolve NaN em texto inválido e null em vazio — nenhum dos dois pode contaminar a
+  // soma com NaN, senão o rodapé inteiro exibe "NaN unidades" por causa de UMA célula.
+  it('estoque vazio ou inválido conta 0, nunca NaN', () => {
+    const t = totaisDaGrade(
+      [linha('Preto', 'P', ''), linha('Preto', 'M', 'abc'), linha('Preto', 'G', '7')],
+      ['Preto'], ['P', 'M', 'G'],
+    );
+    expect(t.geral).toBe(7);
+    expect(t.porCor.Preto).toBe(7);
+  });
+
+  it('conta SKUs sem GTIN', () => {
+    const t = totaisDaGrade(
+      [linha('Preto', 'P', '1', '789'), linha('Preto', 'M', '1'), linha('Preto', 'G', '1', '   ')],
+      ['Preto'], ['P', 'M', 'G'],
+    );
+    expect(t.semGtin).toBe(2);
+  });
+
+  it('grade vazia devolve zeros, não erro', () => {
+    expect(totaisDaGrade([], [], [])).toEqual({ porCor: {}, porTamanho: {}, geral: 0, semGtin: 0 });
   });
 });
