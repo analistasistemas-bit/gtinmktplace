@@ -12,7 +12,7 @@ const CABECALHO: CamposHerdaveis = {
 };
 
 function montar(linha: LinhaGrade = novaLinhaGrade('Azul', 'M'), props: {
-  desabilitado?: boolean; tentouSalvar?: boolean;
+  desabilitado?: boolean;
 } = {}) {
   const spies = {
     onFechar: vi.fn(), onMudarOverride: vi.fn(), onDestravar: vi.fn(), onVoltarAHerdar: vi.fn(),
@@ -21,7 +21,6 @@ function montar(linha: LinhaGrade = novaLinhaGrade('Azul', 'M'), props: {
     <DetalhesSku
       linha={linha}
       resolvida={resolverLinha(CABECALHO, {}, linha)}
-      tentouSalvar={props.tentouSalvar ?? false}
       desabilitado={props.desabilitado ?? false}
       {...spies}
     />,
@@ -86,10 +85,27 @@ describe('DetalhesSku', () => {
     expect(onVoltarAHerdar).toHaveBeenCalledWith('preco');
   });
 
-  it('campo destravado com valor inválido mostra o erro depois de tentar salvar', () => {
+  // Sem gate por `tentouSalvar` (minor #5 da revisão final): ele só liga dentro de `submeter()`,
+  // inalcançável enquanto existir erro em campo numérico — era gate morto, e o drawer ficava mudo
+  // exatamente no SKU que trava o cadastro. Mesma decisão que a matriz já tomou.
+  it('campo destravado com valor inválido mostra o erro na hora', () => {
     const linha = { ...novaLinhaGrade('Azul', 'M'), overrides: { preco: '0' } };
-    montar(linha, { tentouSalvar: true });
+    montar(linha);
     expect(screen.getByText(/obrigatório e deve ser maior que zero/i)).toBeInTheDocument();
+  });
+
+  // O outro lado da mesma regra: campo HERDANDO não acusa erro do cabeçalho no drawer — quem
+  // sinaliza o cabeçalho é o cabeçalho, e 6 campos vermelhos aqui seriam o muro vermelho de volta.
+  it('campo herdando com cabeçalho inválido não acusa erro no drawer', () => {
+    render(
+      <DetalhesSku
+        linha={novaLinhaGrade('Azul', 'M')}
+        resolvida={resolverLinha({ ...CABECALHO, preco: '' }, {}, novaLinhaGrade('Azul', 'M'))}
+        desabilitado={false}
+        onFechar={vi.fn()} onMudarOverride={vi.fn()} onDestravar={vi.fn()} onVoltarAHerdar={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/obrigatório e deve ser maior que zero/i)).not.toBeInTheDocument();
   });
 
   // Pedido do Diego (2026-09-19): a foto é escolhida uma vez por cor, no passo anterior.
@@ -121,7 +137,7 @@ describe('DetalhesSku', () => {
   it('linha null mantém o drawer fechado', () => {
     render(
       <DetalhesSku
-        linha={null} resolvida={null} tentouSalvar={false} desabilitado={false}
+        linha={null} resolvida={null} desabilitado={false}
         onFechar={vi.fn()} onMudarOverride={vi.fn()} onDestravar={vi.fn()} onVoltarAHerdar={vi.fn()}
       />,
     );

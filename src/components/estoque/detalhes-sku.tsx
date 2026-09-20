@@ -33,13 +33,12 @@ export const ROTULOS: Record<CampoHerdavel, { rotulo: string; prefixo?: string; 
 };
 
 export function DetalhesSku({
-  linha, resolvida, tentouSalvar, desabilitado,
+  linha, resolvida, desabilitado,
   onFechar, onMudarOverride, onDestravar, onVoltarAHerdar,
 }: {
   /** `null` = drawer fechado. A matriz guarda só o `clientId` aberto. */
   linha: LinhaGrade | null;
   resolvida: LinhaResolvida | null;
-  tentouSalvar: boolean;
   desabilitado: boolean;
   onFechar: () => void;
   onMudarOverride: (campo: CampoHerdavel, valor: string) => void;
@@ -116,7 +115,12 @@ export function DetalhesSku({
                     </span>
                   )}
                 </div>
-                {erro && tentouSalvar && especifico && (
+                {/* SEM `&& tentouSalvar`: era o mesmo gate morto que a matriz já removeu — ele só
+                    liga dentro de `submeter()`, inalcançável enquanto existir erro em campo
+                    numérico (que é exatamente a condição que trava o botão). O `&& especifico`
+                    fica: num campo HERDANDO o erro é do cabeçalho, e quem sinaliza o cabeçalho é
+                    o cabeçalho. */}
+                {erro && especifico && (
                   <span className="text-xs text-destructive">{erro}</span>
                 )}
               </div>

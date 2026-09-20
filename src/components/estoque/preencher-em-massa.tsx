@@ -22,9 +22,11 @@ const CLASSE_SELECT =
   'h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50';
 
 export function PreencherEmMassa({
-  escopoInicial, cores, tamanhos, desabilitado, gatilho, rotuloGatilho, onAplicar,
+  escopoInicial, campoInicial, cores, tamanhos, desabilitado, gatilho, rotuloGatilho, onAplicar,
 }: {
   escopoInicial: EscopoMassa;
+  /** Aba ativa da matriz. Obrigatório: um default aqui dentro faria o popover discordar da tela. */
+  campoInicial: CampoMassa;
   cores: readonly string[];
   tamanhos: readonly string[];
   desabilitado: boolean;
@@ -38,7 +40,7 @@ export function PreencherEmMassa({
   const uid = useId();
   const [aberto, setAberto] = useState(false);
   const [escopo, setEscopo] = useState<EscopoMassa>(escopoInicial);
-  const [campo, setCampo] = useState<CampoMassa>('estoqueInicial');
+  const [campo, setCampo] = useState<CampoMassa>(campoInicial);
   const [valor, setValor] = useState('');
   const herdavel = (CAMPOS_HERDAVEIS as readonly string[]).includes(campo);
 
@@ -62,7 +64,11 @@ export function PreencherEmMassa({
       open={aberto}
       onOpenChange={(o) => {
         // Reabrir sempre volta ao escopo do gatilho: o cabeçalho clicado é a intenção declarada.
-        if (o) setEscopo(escopoInicial);
+        // Campo e valor entram na MESMA regra (achado da revisão final): sobrevivendo ao fechar,
+        // reabrir o mesmo cabeçalho depois de um uso em GTIN gravava o estoque digitado como GTIN
+        // de toda a cor/tamanho, em silêncio. O campo nasce da ABA ativa da matriz, que é o que o
+        // operador está olhando.
+        if (o) { setEscopo(escopoInicial); setCampo(campoInicial); setValor(''); }
         setAberto(o);
       }}
     >

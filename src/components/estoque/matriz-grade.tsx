@@ -39,7 +39,7 @@ function ehHerdavel(modo: ModoGrade): modo is Extract<ModoGrade, CampoHerdavel> 
 }
 
 export function MatrizGrade({
-  linhas, resolvidas, cores, tamanhos, removidas, tentouSalvar, desabilitado,
+  linhas, resolvidas, cores, tamanhos, removidas, desabilitado,
   onMudarLinha, onMudarOverride, onDestravar, onVoltarAHerdar, onRemoverCelula, onReincluirCelula,
   onAplicarMassa,
 }: {
@@ -49,7 +49,6 @@ export function MatrizGrade({
   cores: readonly string[];
   tamanhos: readonly string[];
   removidas: ReadonlySet<string>;
-  tentouSalvar: boolean;
   /** true durante `salvando`. Affordance — a trava de verdade está no dono do estado (dialog). */
   desabilitado: boolean;
   onMudarLinha: (clientId: string, patch: Partial<Pick<LinhaGrade, 'gtin' | 'estoqueInicial'>>) => void;
@@ -154,7 +153,20 @@ export function MatrizGrade({
     const herdavel = ehHerdavel(modo);
     const temOverride = herdavel && modo in linha.overrides;
     const valor = herdavel ? resolvida[modo] : linha[modo];
-    const erro = erroCampo(modo, valor);
+    // `valor !== ''` (fix round pós-revisão da Task 9): só `preco` reclama de vazio (`erroCampo`,
+    // linha-variacao-form.tsx:39) — os outros campos numéricos aceitam vazio como "ainda não
+    // preenchido". Sem este gate, abrir a aba Preço com o cabeçalho vazio pinta TODAS as células
+    // de vermelho sem o operador ter feito nada (o "muro vermelho"). Célula com valor real
+    // inválido ("-1", "abc") continua acusando na hora. Um só cálculo para a borda e o texto: dois
+    // gates iguais escritos em dois lugares divergem na primeira edição.
+    const erro = valor !== '' ? erroCampo(modo, valor) : null;
+    // Posicional (r, c), não `chaveGrade`: o id vai num `aria-describedby`, que é lista separada
+    // por ESPAÇO — cor com espaço no nome ("Azul Marinho") quebraria a referência em dois tokens.
+    const idErro = `matriz-erro-${r}-${c}`;
+    const descricao = [
+      herdavel && !temOverride ? 'matriz-herdado' : null,
+      erro ? idErro : null,
+    ].filter(Boolean).join(' ');
 
     return (
       <div className="flex flex-col gap-0.5">
@@ -171,8 +183,9 @@ export function MatrizGrade({
               // índice em `linhas` — a grade parcial faz os dois divergirem de propósito.
               data-r={r}
               data-c={c}
-              // Um só alvo para todas as células herdando, igual ao `gerador-motivo-limite`.
-              aria-describedby={herdavel && !temOverride ? 'matriz-herdado' : undefined}
+              // "herdado" é um só alvo para todas as células (igual ao `gerador-motivo-limite`);
+              // o erro é por célula. Leitor de tela precisa dos dois, daí a lista.
+              aria-describedby={descricao || undefined}
               className={cn(
                 'h-8 text-sm',
                 def.prefixo && 'pl-6',
@@ -184,22 +197,17 @@ export function MatrizGrade({
                 // liga dentro de `submeter()`, inalcançável enquanto existir erro em qualquer
                 // CAMPOS_NUMERICOS (é exatamente a condição de `podeSalvar=false` que trava o
                 // botão). O texto do erro abaixo segue a mesma regra, por consistência.
-                //
-                // `&& valor !== ''` (fix round pós-revisão): só `preco` reclama de vazio
-                // (`erroCampo`, linha-variacao-form.tsx:39) — os outros campos numéricos aceitam
-                // vazio como "ainda não preenchido". Sem este gate, abrir a aba Preço com o
-                // cabeçalho vazio pinta TODAS as células de vermelho sem o operador ter feito
-                // nada (o "muro vermelho" que a Task 9 sinalizou como preocupação). Célula com
-                // valor real inválido (ex. "-1", "abc") continua acusando na hora.
-                erro && valor !== '' && 'border-destructive',
+                erro && 'border-destructive',
               )}
               value={valor}
               disabled={desabilitado}
               // Achado do Fable: sem isto, focar uma célula herdada e digitar concatena no valor
               // resolvido ("99,90" + "5" → "99,905") — o operador queria SUBSTITUIR, não anexar.
               // Selecionar tudo no foco faz a primeira tecla trocar o conteúdo inteiro, como numa
-              // planilha de verdade. Bônus: com a seleção cobrindo o valor todo, as setas laterais
-              // já saem da célula na primeira tecla (regra da Task 7 é sobre a BORDA do valor).
+              // planilha de verdade. Efeito colateral conhecido: com a seleção cobrindo o valor
+              // inteiro, a regra da BORDA (Task 7) já está satisfeita, então a PRIMEIRA seta
+              // lateral sai da célula em vez de andar no texto. Para editar no meio do valor,
+              // colapsar a seleção antes (clique, Home ou End).
               onFocus={(e) => e.currentTarget.select()}
               onChange={(e) => (herdavel
                 // Digitar numa célula herdada cria o override com o TEXTO DIGITADO. Não existe
@@ -253,7 +261,7 @@ export function MatrizGrade({
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
-        {erro && valor !== '' && <span className="text-xs text-destructive">{erro}</span>}
+        {erro && <span id={idErro} className="text-xs text-destructive">{erro}</span>}
       </div>
     );
   }
@@ -267,6 +275,7 @@ export function MatrizGrade({
         <SeletorDeModo modo={modo} onMudar={setModo} />
         <PreencherEmMassa
           escopoInicial={{ tipo: 'todos' }}
+          campoInicial={modo}
           cores={cores}
           tamanhos={tamanhos}
           desabilitado={desabilitado}
@@ -299,6 +308,7 @@ export function MatrizGrade({
               <TableHead key={t} scope="col">
                 <PreencherEmMassa
                   escopoInicial={{ tipo: 'tamanho', valor: t }}
+                  campoInicial={modo}
                   cores={cores}
                   tamanhos={tamanhos}
                   desabilitado={desabilitado}
@@ -317,6 +327,7 @@ export function MatrizGrade({
               <TableHead scope="row" className="sticky left-0 z-10 bg-background">
                 <PreencherEmMassa
                   escopoInicial={{ tipo: 'cor', valor: cor }}
+                  campoInicial={modo}
                   cores={cores}
                   tamanhos={tamanhos}
                   desabilitado={desabilitado}
@@ -352,7 +363,6 @@ export function MatrizGrade({
           <DetalhesSku
             linha={i >= 0 ? linhas[i]! : null}
             resolvida={i >= 0 ? resolvidas[i]! : null}
-            tentouSalvar={tentouSalvar}
             desabilitado={desabilitado}
             onFechar={() => setDetalhesDe(null)}
             onMudarOverride={(campo, valor) => onMudarOverride(linhas[i]!.clientId, campo, valor)}

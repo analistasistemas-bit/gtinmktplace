@@ -14,12 +14,15 @@ function rotuloDe(e: Escopo): string {
     : `Preencher em massa no tamanho ${e.valor}`;
 }
 
-function montar(escopoInicial: Escopo, desabilitado = false) {
+type Campo = Parameters<typeof PreencherEmMassa>[0]['campoInicial'];
+
+function montar(escopoInicial: Escopo, desabilitado = false, campoInicial: Campo = 'estoqueInicial') {
   const onAplicar = vi.fn();
   const rotulo = rotuloDe(escopoInicial);
   render(
     <PreencherEmMassa
       escopoInicial={escopoInicial}
+      campoInicial={campoInicial}
       cores={['Preto', 'Branco']}
       tamanhos={['P', 'GG']}
       desabilitado={desabilitado}
@@ -96,6 +99,30 @@ describe('PreencherEmMassa', () => {
     await user.click(screen.getByRole('button', { name: rotulo }));
     await user.selectOptions(screen.getByLabelText('Campo'), 'gtin');
     expect(screen.queryByRole('button', { name: /gerar/i })).not.toBeInTheDocument();
+  });
+
+  // Achado Important da revisão final de branch: `onOpenChange` ressemeava só o ESCOPO. O campo e
+  // o valor sobreviviam ao fechar, então reabrir o MESMO cabeçalho depois de um uso em GTIN
+  // gravava o estoque digitado como GTIN de toda a cor/tamanho, em silêncio.
+  it('reabrir volta ao campo do modo ativo e limpa o valor digitado', async () => {
+    const user = userEvent.setup();
+    const { rotulo } = montar({ tipo: 'cor', valor: 'Preto' });
+    await user.click(screen.getByRole('button', { name: rotulo }));
+    await user.selectOptions(screen.getByLabelText('Campo'), 'gtin');
+    await user.type(screen.getByLabelText('Valor'), '789');
+    // Fechar SEM aplicar: `emitir` já limpa o valor, então fechar pelo "Aplicar" não reproduz.
+    await user.keyboard('{Escape}');
+    expect(screen.queryByLabelText('Campo')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: rotulo }));
+    expect(screen.getByLabelText('Campo')).toHaveValue('estoqueInicial');
+    expect(screen.getByLabelText('Valor')).toHaveValue('');
+  });
+
+  it('o campo inicial acompanha a aba ativa da matriz, não o default', async () => {
+    const user = userEvent.setup();
+    const { rotulo } = montar({ tipo: 'todos' }, false, 'preco');
+    await user.click(screen.getByRole('button', { name: rotulo }));
+    expect(screen.getByLabelText('Campo')).toHaveValue('preco');
   });
 
   it('desabilitado não abre', async () => {

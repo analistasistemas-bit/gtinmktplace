@@ -239,11 +239,15 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   // recurso.
   function reincluirLinha(cor: string, tamanho: string) {
     if (api.salvando) return;
-    setRemovidas((prev) => {
-      const next = new Set(prev);
-      next.delete(chaveGrade(cor, tamanho));
-      return next;
-    });
+    // MESMA guarda central de `mudarCores`/`mudarTamanhos` (achado da revisão final de branch):
+    // reincluir é o único caminho que AUMENTA a contagem de linhas sem passar pelos chips. Uma
+    // grade em exatamente 60 com células removidas na mão (16 cores × 4 tamanhos − 4 exclusões)
+    // passava para 61 pelo "+". O candidato é calculado FORA do updater para o early return não
+    // deixar nenhum estado pela metade.
+    const proximas = new Set(removidas);
+    proximas.delete(chaveGrade(cor, tamanho));
+    if (totalDaGrade([...cores], [...tamanhos], proximas) > LIMITE_VARIACOES_GERADAS) return;
+    setRemovidas(proximas);
   }
 
   // Task 8 liga a UI; a função já é a definitiva.
@@ -340,12 +344,21 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   // Único motivo de `podeSalvar=false` que ficou SEM sinal na tela depois do fix pós-revisão da
   // Task 9 (borda/texto de erro só aparecem com valor não-vazio, matando o "muro vermelho"):
   // nome/origem/gênero vazios já têm asterisco + texto próprios; sem linha nenhuma o botão
-  // "Cadastrar" nem existe ainda visível. Preço vazio é o único caso que ficaria mudo. Mesmo
-  // padrão já usado em `gerador-variacoes.tsx` (`title={bloqueada ? MOTIVO_LIMITE : undefined}`).
-  const precoPendente = linhas.length > 0 && resolvidas.some((r) => !!erroCampo('preco', r.preco));
-  const motivoBloqueio = precoPendente
-    ? 'Preencha o preço mínimo (líquido) — obrigatório em toda a grade.'
-    : undefined;
+  // "Cadastrar" nem existe ainda visível. Preço vazio é o único caso que ficaria mudo.
+  //
+  // O `title` do botão NÃO resolve sozinho (achado da revisão final): `buttonVariants` traz
+  // `disabled:pointer-events-none`, então a dica nunca abre no botão travado. Ele fica como
+  // redundância; quem informa é o texto visível renderizado junto do rodapé.
+  //
+  // Duas causas, duas mensagens. Cabeçalho vazio = TODA a grade pendente: listar os 60 SKUs seria
+  // o muro vermelho de volta, em forma de texto. Com o cabeçalho válido, o pendente é uma exceção
+  // que o operador esvaziou na mão — aí nomear é exatamente a informação que falta.
+  const semPreco = resolvidas.filter((r) => !!erroCampo('preco', r.preco));
+  const motivoBloqueio = semPreco.length === 0
+    ? undefined
+    : semPreco.length === resolvidas.length
+      ? 'Preencha o preço mínimo (líquido) — obrigatório em toda a grade.'
+      : `Preencha o preço mínimo (líquido) em: ${semPreco.slice(0, 3).map((r) => `${r.cor} · ${r.tamanho}`).join(', ')}${semPreco.length > 3 ? ` e mais ${semPreco.length - 3}` : ''}.`;
 
   function submeter() {
     if (!origem || !genero) return;
@@ -676,7 +689,6 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                     cores={eixos.cores}
                     tamanhos={eixos.tamanhos}
                     removidas={removidas}
-                    tentouSalvar={tentouSalvar}
                     desabilitado={api.salvando}
                     onMudarLinha={patchLinha}
                     onMudarOverride={patchOverride}
@@ -687,6 +699,14 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                     onAplicarMassa={aplicarMassa}
                   />
                 </div>
+              )}
+
+              {/* Motivo VISÍVEL do botão travado, último filho da etapa da grade (logo acima do
+                  rodapé) — mesmo padrão do aviso de origem, algumas dezenas de linhas acima. Aqui
+                  dentro, e não no `DialogFooter`: o rodapé também serve as etapas fiscal e de
+                  fotos, onde o botão é travado por outra coisa. */}
+              {motivoBloqueio && (
+                <span className="text-xs text-muted-foreground">{motivoBloqueio}</span>
               )}
 
               <span className="text-xs text-muted-foreground">* obrigatório</span>

@@ -13,7 +13,7 @@ const CABECALHO: CamposHerdaveis = {
 
 function montar(linhas: LinhaGrade[], props: {
   cores?: string[]; tamanhos?: string[]; desabilitado?: boolean; removidas?: Set<string>;
-  tentouSalvar?: boolean; cabecalho?: CamposHerdaveis;
+  cabecalho?: CamposHerdaveis;
 } = {}) {
   const spies = {
     onMudarLinha: vi.fn(), onMudarOverride: vi.fn(), onDestravar: vi.fn(), onVoltarAHerdar: vi.fn(),
@@ -26,7 +26,6 @@ function montar(linhas: LinhaGrade[], props: {
       cores={props.cores ?? ['Preto', 'Branco']}
       tamanhos={props.tamanhos ?? ['P', 'M']}
       removidas={props.removidas ?? new Set()}
-      tentouSalvar={props.tentouSalvar ?? false}
       desabilitado={props.desabilitado ?? false}
       {...spies}
     />,

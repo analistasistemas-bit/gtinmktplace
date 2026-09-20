@@ -249,6 +249,37 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     expect(screen.queryByText(/Caqui/)).not.toBeInTheDocument();
   });
 
+  // Achado Important #2 da revisão final: `reincluirLinha` era o ÚNICO caminho que aumenta a
+  // contagem de linhas sem consultar o teto. Com a grade exatamente em 60 (16 cores × 4 tamanhos
+  // menos 4 células removidas na mão), o "+" de uma célula removida levava a 61.
+  it('o "+" não passa por cima do teto de 60', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    const seletor = within(screen.getByText('Cores e tamanhos').parentElement!);
+    for (const t of ['P', 'M', 'G', 'GG']) await user.click(seletor.getByRole('checkbox', { name: t }));
+    for (const c of ['Preto', 'Branco', 'Cinza', 'Azul Marinho', 'Azul Royal',
+      'Vermelho', 'Verde Bandeira', 'Amarelo', 'Rosa', 'Roxo', 'Marrom', 'Bege']) {
+      await user.click(seletor.getByRole('checkbox', { name: c }));
+    }
+    // 15 cores × 4 = 60, no teto. Escopo idêntico ao dos outros testes de teto: com 60 células,
+    // uma consulta medida no `screen` varre o documento inteiro (2,5s por chamada).
+    await user.type(seletor.getByLabelText('Nova cor'), 'Verde Musgo{Enter}');
+    await user.type(seletor.getByLabelText('Nova cor'), 'Vinho{Enter}');
+    await user.type(seletor.getByLabelText('Nova cor'), 'Laranja{Enter}');
+    const grade = () => within(screen.getByText('Grade').parentElement!.parentElement!);
+    // Removendo 4 células a grade cai para 56 e abre espaço para a 16ª cor — é ASSIM que se chega
+    // a 60 linhas COM exclusão pendente. Em qualquer outra ordem o chip da 16ª cor já bloqueia.
+    for (const t of ['P', 'M', 'G', 'GG']) {
+      await user.click(grade().getByRole('button', { name: `Remover Preto · ${t}` }));
+    }
+    await user.type(seletor.getByLabelText('Nova cor'), 'Caqui{Enter}');
+    expect(grade().getByLabelText('Estoque inicial de Caqui · GG')).toBeInTheDocument();
+    // 60 linhas + a reinclusão = 61. O "+" tem que recusar.
+    await user.click(grade().getByRole('button', { name: 'Reincluir Preto · P' }));
+    expect(grade().queryByLabelText('Estoque inicial de Preto · P')).not.toBeInTheDocument();
+    expect(grade().getByRole('button', { name: 'Reincluir Preto · P' })).toBeInTheDocument();
+  }, 40000);
+
   // Ordem de CLIQUE não pode virar ordem de LINHA: `Set` preserva inserção, e sem `ordenarEixos`
   // marcar G antes de P produzia "Preto · G" antes de "Preto · P" — e o mesmo desalinho nos
   // códigos de SKU reservados. (Esta assertiva é reescrita na Task 4 para a ordem das COLUNAS.)
@@ -358,6 +389,47 @@ describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
     const botao = screen.getByRole('button', { name: 'Cadastrar' });
     expect(botao).toBeDisabled();
     expect(botao).toHaveAttribute('title', expect.stringMatching(/preço/i));
+  });
+
+  // Achado Important #1 da revisão final: o `title` do botão é INALCANÇÁVEL — `buttonVariants`
+  // traz `disabled:pointer-events-none`, então o hover nunca acontece no botão travado. O motivo
+  // precisa de texto VISÍVEL. Com o cabeçalho vazio o motivo é o cabeçalho: texto genérico, sem
+  // listar os SKUs (listar os 60 seria o muro vermelho de volta, em forma de texto).
+  it('cabeçalho de preço vazio explica o bloqueio em texto visível, sem listar SKU', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    expect(screen.getByText(/obrigatório em toda a grade/i, { selector: 'span' }))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/Preto · P/, { selector: 'span' })).not.toBeInTheDocument();
+  });
+
+  // O cenário REAL do achado: cabeçalho preenchido, o operador esvazia UMA célula e o botão trava
+  // sem nada na tela dizer qual célula é (a borda/texto vermelho da matriz só aparece com valor
+  // não-vazio, pelo fix da Task 9). O texto tem que NOMEAR o SKU.
+  it('célula de preço esvaziada nomeia o SKU que trava o cadastro', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.click(screen.getByRole('checkbox', { name: 'M' }));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).not.toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Preço' }));
+    await user.clear(screen.getByLabelText('Preço mínimo (líquido) de Preto · P'));
+    expect(screen.getByRole('button', { name: 'Cadastrar' })).toBeDisabled();
+    // `selector: 'span'`: com regex, todo ancestral que CONTÉM o texto também casa.
+    const motivo = screen.getByText(/Preto · P/, { selector: 'span' });
+    expect(motivo).toBeInTheDocument();
+    // O SKU que está OK não entra na lista — senão o texto vira o muro vermelho por extenso.
+    expect(motivo.textContent).not.toMatch(/Preto · M/);
   });
 
   it('preenchendo o preço, "Cadastrar" destrava e o title some', async () => {
