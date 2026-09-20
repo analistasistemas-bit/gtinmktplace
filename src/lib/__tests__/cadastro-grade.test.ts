@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha, totaisDaGrade,
-  totalDaGrade, type CamposHerdaveis,
+  aplicarEmMassa, chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha,
+  totaisDaGrade, totalDaGrade, type CamposHerdaveis,
 } from '@/lib/cadastro-grade';
 
 const semLinhas: { cor: string; tamanho: string }[] = [];
@@ -245,5 +245,80 @@ describe('totaisDaGrade', () => {
 
   it('grade vazia devolve zeros, não erro', () => {
     expect(totaisDaGrade([], [], [])).toEqual({ porCor: {}, porTamanho: {}, geral: 0, semGtin: 0 });
+  });
+});
+
+describe('aplicarEmMassa', () => {
+  const grade = () => [
+    novaLinhaGrade('Preto', 'P'), novaLinhaGrade('Preto', 'G'),
+    novaLinhaGrade('Branco', 'P'), novaLinhaGrade('Branco', 'G'),
+  ];
+
+  it('escopo "todos" atinge a grade inteira', () => {
+    const r = aplicarEmMassa(grade(), {
+      campo: 'estoqueInicial', escopo: { tipo: 'todos' }, valor: '10',
+    });
+    expect(r.map((l) => l.estoqueInicial)).toEqual(['10', '10', '10', '10']);
+  });
+
+  it('escopo "cor" atinge só as linhas daquela cor', () => {
+    const r = aplicarEmMassa(grade(), {
+      campo: 'estoqueInicial', escopo: { tipo: 'cor', valor: 'Preto' }, valor: '5',
+    });
+    expect(r.map((l) => l.estoqueInicial)).toEqual(['5', '5', '', '']);
+  });
+
+  // O fluxo real do Diego: preço diferente só no tamanho maior, resto continua herdando.
+  it('escopo "tamanho" cria override só naquela coluna; o resto segue herdando', () => {
+    const r = aplicarEmMassa(grade(), {
+      campo: 'preco', escopo: { tipo: 'tamanho', valor: 'G' }, valor: '64,90',
+    });
+    expect(r.map((l) => l.overrides.preco)).toEqual([undefined, '64,90', undefined, '64,90']);
+    // `undefined` por AUSÊNCIA da chave, não por valor `undefined` gravado: `resolverLinha` usa
+    // `campo in overrides`, então uma chave presente com undefined resolveria para undefined.
+    expect('preco' in r[0]!.overrides).toBe(false);
+  });
+
+  it('valor null num campo herdável REMOVE o override (volta a herdar)', () => {
+    const linhas = grade().map((l) => ({ ...l, overrides: { preco: '129,90', custo: '50' } }));
+    const r = aplicarEmMassa(linhas, {
+      campo: 'preco', escopo: { tipo: 'todos' }, valor: null,
+    });
+    expect('preco' in r[0]!.overrides).toBe(false);
+    // Só o campo pedido: o custo destravado continua destravado.
+    expect(r[0]!.overrides.custo).toBe('50');
+  });
+
+  it('valor null em estoque/GTIN LIMPA para string vazia, não remove nada', () => {
+    const linhas = grade().map((l) => ({ ...l, gtin: '789', estoqueInicial: '3' }));
+    const r = aplicarEmMassa(linhas, { campo: 'gtin', escopo: { tipo: 'todos' }, valor: null });
+    expect(r.map((l) => l.gtin)).toEqual(['', '', '', '']);
+    expect(r.map((l) => l.estoqueInicial)).toEqual(['3', '3', '3', '3']);
+  });
+
+  // Regra inegociável: nenhuma função desta entrega inventa GTIN. Um "preencher em massa" que
+  // gerasse sequência produziria código de barras falso num anúncio real.
+  it('nunca gera GTIN — só escreve o que foi passado', () => {
+    const r = aplicarEmMassa(grade(), { campo: 'gtin', escopo: { tipo: 'todos' }, valor: '789' });
+    expect(r.map((l) => l.gtin)).toEqual(['789', '789', '789', '789']);
+  });
+
+  // TRAVA DO CASAMENTO POSICIONAL: a função é um `map` e nada mais. Um `filter`/`sort`/`concat`
+  // aqui dentro desalinharia `linhas[i] ↔ resolvidas[i]` — o mesmo desalinho do bug f4a6df68.
+  it('preserva contagem, ordem e identidade das linhas', () => {
+    const entrada = grade();
+    const saida = aplicarEmMassa(entrada, {
+      campo: 'preco', escopo: { tipo: 'cor', valor: 'Preto' }, valor: '1',
+    });
+    expect(saida).toHaveLength(entrada.length);
+    expect(saida.map((l) => l.clientId)).toEqual(entrada.map((l) => l.clientId));
+    expect(saida.map((l) => `${l.cor}/${l.tamanho}`))
+      .toEqual(entrada.map((l) => `${l.cor}/${l.tamanho}`));
+  });
+
+  it('não muta o array nem as linhas de entrada', () => {
+    const entrada = grade();
+    aplicarEmMassa(entrada, { campo: 'estoqueInicial', escopo: { tipo: 'todos' }, valor: '9' });
+    expect(entrada.map((l) => l.estoqueInicial)).toEqual(['', '', '', '']);
   });
 });

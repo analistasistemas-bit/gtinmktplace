@@ -204,3 +204,50 @@ export function totaisDaGrade(
   }
   return { porCor, porTamanho, geral, semGtin };
 }
+
+export type CampoMassa = 'estoqueInicial' | 'gtin' | CampoHerdavel;
+
+export type EscopoMassa =
+  | { tipo: 'todos' }
+  | { tipo: 'cor'; valor: string }
+  | { tipo: 'tamanho'; valor: string };
+
+export interface OpcoesMassa {
+  campo: CampoMassa;
+  escopo: EscopoMassa;
+  /** `null` em campo herdável = REMOVE o override (volta a herdar). `null` em estoque/GTIN =
+   *  limpa para `''` (não existe "herdar estoque"). Nunca significa "gerar valor". */
+  valor: string | null;
+}
+
+function noEscopo(linha: LinhaGrade, escopo: EscopoMassa): boolean {
+  if (escopo.tipo === 'todos') return true;
+  if (escopo.tipo === 'cor') return linha.cor === escopo.valor;
+  return linha.tamanho === escopo.valor;
+}
+
+/** Preenchimento em massa. É um `map` e NADA MAIS: não filtra, não concatena, não ordena. A
+ *  contagem e a ordem de `linhas` são o casamento posicional com `resolvidas` — mexer nelas aqui
+ *  reintroduz o desalinho do bug f4a6df68 por um caminho que nenhum teste de UI pegaria.
+ *
+ *  NUNCA gera GTIN: o único valor escrito é o que veio em `opts.valor`. */
+export function aplicarEmMassa(
+  linhas: readonly LinhaGrade[],
+  opts: OpcoesMassa,
+): LinhaGrade[] {
+  const herdavel = (CAMPOS_HERDAVEIS as readonly string[]).includes(opts.campo);
+  return linhas.map((linha) => {
+    if (!noEscopo(linha, opts.escopo)) return linha;
+    if (!herdavel) {
+      // Estoque e GTIN moram na linha crua; `null` aqui é "limpar", não "voltar a herdar".
+      return { ...linha, [opts.campo]: opts.valor ?? '' };
+    }
+    const campo = opts.campo as CampoHerdavel;
+    if (opts.valor === null) {
+      // Remover a CHAVE, não gravar undefined: `resolverLinha` decide por `campo in overrides`.
+      const { [campo]: _removido, ...resto } = linha.overrides;
+      return { ...linha, overrides: resto };
+    }
+    return { ...linha, overrides: { ...linha.overrides, [campo]: opts.valor } };
+  });
+}
