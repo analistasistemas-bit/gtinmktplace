@@ -35,8 +35,8 @@
     { "from": "monitor", "to": "alerta", "label": "moderado", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "labelAt": [660, 690] }
   ],
   "cards": [
-    { "dot": "amber", "title": "Idempotência & Estoque", "items": ["Dedup por (topic, resource) evita reprocessar o mesmo evento", "Venda paga baixa estoque atomicamente no ledger e enfileira push cross-canal", "Retry do QStash é seguro — claim atômico"] },
-    { "dot": "cyan", "title": "Sincronização contínua", "items": ["Webhook (tempo real) + reconciliação horária (faturamento) + cron diário (estoque 12:30) + monitor de moderação"] },
+    { "dot": "amber", "title": "Idempotência & Estoque", "items": ["Dedup por (topic, resource) evita reprocessar o mesmo evento", "Venda paga baixa estoque atomicamente no ledger e enfileira push cross-canal", "Ao remover publicado sem vendas, encerra o MLB no Mercado Livre (ADR-0168)"] },
+    { "dot": "cyan", "title": "Sincronização contínua", "items": ["Webhook (tempo real) + reconciliação horária (faturamento) + cron diário (estoque 12:30) + convergência UP (15min)"] },
     { "dot": "violet", "title": "Eventos cobertos", "items": ["pedido, pergunta, devolução e moderação — todos chegam por webhook do Mercado Livre"] }
   ]
 }

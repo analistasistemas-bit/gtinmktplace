@@ -1,6 +1,6 @@
 # Referência — Edge Functions
 
-> **Tipo:** Reference (Diátaxis). As 60 Edge Functions Deno do PubliAI (`supabase/functions/`).
+> **Tipo:** Reference (Diátaxis). As 71 Edge Functions Deno do PubliAI (`supabase/functions/`).
 > `verify_jwt` é extraído de `supabase/config.toml` (verdade de configuração). Trigger e
 > idempotência vêm do código de cada `index.ts`. Termos em [glossario.md](glossario.md);
 > deploy em [../how-to/deploy-e-migrations.md](../how-to/deploy-e-migrations.md).
@@ -55,6 +55,9 @@
 | adicionar-variacoes-familia | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, D-8) |
 | criar-kit-vinculado | **true** | HTTP (frontend, **admin**) | sim (idempotência por `chave_cadastro`, 1 por kit) |
 | varrer-anuncios-orfaos | **true** | HTTP (frontend, **admin**) | sim (só leitura: ML + banco, nada escrito) |
+| **Preço por Variação (ADR-0161)** ||||
+| migrar-preco-por-variacao | **true** | HTTP (frontend) | sim (dispara migração UPtin no ML) |
+| acompanhar-migracao-pxv | false | QStash worker | sim (polling e finalização de migração) |
 | **Kit Virtual (ADR-0154)** ||||
 | buscar-componentes-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (leitura) |
 | preview-kit-virtual | **true** | HTTP (frontend, **admin**) | sim (leitura + IA opt-in) |

@@ -1,6 +1,6 @@
 ---
 tags: [arquitetura, banco-de-dados]
-atualizado: 2026-09-03
+atualizado: 2026-09-20
 ---
 
 # Banco de Dados
@@ -24,6 +24,8 @@ erDiagram
     lotes ||--o{ familias : contem
     familias ||--o{ variacoes : contem
     familias ||--o{ anuncios_externos : espelha
+    organizations ||--o{ ml_size_charts : "por categoria"
+    familias }o--o| ml_size_charts : "vincula size_chart_id"
     organizations ||--o{ marketplace_connections : "1 por canal"
     organizations ||--o{ pulse_produtos : "rastreia"
     pulse_produtos ||--o{ pulse_ofertas : "contem snapshots"
@@ -37,8 +39,9 @@ erDiagram
 | Tabela | Papel |
 |---|---|
 | `lotes` | Um upload de planilha + imagens ou lote técnico de kit/manual; inicia o pipeline |
-| `familias` | Um PAI = um anúncio; identidade, resultado da IA, estado de publicação; colunas de kit (`kit_base_codigo_pai`, `kit_multiplicador` - ADR-0151) e fiscais (`ncm`, `cest`, `origem_nfe`, `csosn`, `can_invoice` - ADR-0135) |
-| `variacoes` | Um SKU/cor = uma variação do anúncio |
+| `familias` | Um PAI = um anúncio; identidade, resultado da IA, estado de publicação; colunas de kit (`kit_base_codigo_pai`, `kit_multiplicador` - ADR-0151), fiscais (`ncm`, `cest`, `origem_nfe`, `csosn`, `can_invoice` - ADR-0135) e moda (`tipo_produto`, `genero`, `ml_size_chart_id` - ADR-0166/0167) |
+| `variacoes` | Um SKU = uma variação do anúncio; chave unívoca por cor (`variacoes.cor`) e tamanho/numeração (`variacoes.tamanho` - ADR-0166) |
+| `ml_size_charts` | Cache/mapeamento de guias de tamanhos oficiais da API do Mercado Livre por organização e categoria (ADR-0167) |
 | `anuncios_externos` | Espelho multicanal, identidade `(org_id, canal, codigo_pai, particao)` |
 | `marketplace_connections` | Credenciais OAuth por organização e canal (tokens no Vault) |
 | `ml_vendas` / `ml_vendas_itens` | Pedidos do ML e seus itens |
@@ -55,8 +58,11 @@ erDiagram
 | `sonar_snapshots` | Histórico global de buscas no Sonar para comparação temporal de vendas |
 | `empresa_fiscal` | Dados fiscais da organização (CNPJ, IE, regime, endereço) para faturamento ML |
 | `configuracoes` | Settings por organização (Telegram, alíquotas — ver [[Configurações]]; `desconto_pct` órfã, ADR-0162) |
-| `organizations` | Tenant; `canais_habilitados` e `modulos_habilitados` |
+| `organizations` | Tenant; `canais_habilitados`, `modulos_habilitados` e `tipos_produto_habilitados` (ADR-0166) |
 | `profiles` | Espelho de `auth.users` — `is_admin`, `allowed_menus` (ver [[Usuários]]) |
+| `platform_commercial_terms` | Contratos e condições comerciais da plataforma por org (faixas regressivas `revenue_bps_t1..t4`, implantação - ADR-0155/0165) |
+| `platform_billing_statements` | Demonstrativos de cobrança mensais fechados e imutáveis da plataforma (ADR-0155) |
+| `platform_org_month_metrics` | Cache materializado reconstituível de métricas mensais da carteira (ADR-0159) |
 
 ## Funções SQL (`security definer`)
 

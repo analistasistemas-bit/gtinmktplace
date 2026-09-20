@@ -4957,7 +4957,7 @@
         <div class="pulse-dot"></div>
         <h1>PubliAI — Fluxo de Publicação de Anúncio</h1>
       </div>
-      <p class="subtitle">AS-IS · planilha → revisão humana → publicação (ML + canais extras)</p>
+      <p class="subtitle">AS-IS · planilha/grade → revisão humana → publicação (ML + canais extras)</p>
     </div>
 
     <script id="archify-guided-views-data" type="application/json">[]</script>
@@ -5007,7 +5007,7 @@
          data-preset-badge-editorial-plate="ARCHIFY / PLATE 04">
       <svg viewBox="0 0 720 776" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="standard" data-quality-gates="advisory">
         <title id="archify-diagram-title">PubliAI — Fluxo de Publicação de Anúncio</title>
-        <desc id="archify-diagram-description">AS-IS · planilha → revisão humana → publicação (ML + canais extras)</desc>
+        <desc id="archify-diagram-description">AS-IS · planilha/grade → revisão humana → publicação (ML + canais extras)</desc>
         <!-- Definitions -->
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -5066,8 +5066,8 @@
         <path data-edge-from="fanout" data-edge-to="canal_extra" data-edge-label="canal ≠ ML" data-edge-key="5" data-composition-points="500,525;500,538;500,538;500,581" d="M 500 525 L 500 538 L 500 538 L 500 581" class="a-dashed" stroke-width="1.4" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Nodes -->
-        <g id="node-upload" data-node-id="upload" data-node-label="Upload" tabindex="0" role="button" aria-label="Focus Upload, planilha / manual, Operador" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="planilha / manual" data-node-context="Operador">
-          <title>Upload · planilha / manual · Operador</title>
+        <g id="node-upload" data-node-id="upload" data-node-label="Upload" tabindex="0" role="button" aria-label="Focus Upload, planilha/grade, Operador" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="planilha/grade" data-node-context="Operador">
+          <title>Upload · planilha/grade · Operador</title>
           <rect x="42" y="93" width="92" height="52" rx="6" class="c-mask"/>
           <rect x="42" y="93" width="92" height="52" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(48 99) scale(0.6875)">
@@ -5077,7 +5077,7 @@
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="88" y="114" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Upload</text>
-          <text data-detail="context" x="88" y="131" class="t-muted" font-size="8" text-anchor="middle">planilha / manual</text>
+          <text data-detail="context" x="88" y="131" class="t-muted" font-size="8" text-anchor="middle">planilha/grade</text>
         </g>
 
         <g id="node-ingest" data-node-id="ingest" data-node-label="Ingestão" tabindex="0" role="button" aria-label="Focus Ingestão, ingest-lote, Ingestão › Ingestão &amp; Enriquecimento" aria-pressed="false" data-node-kind="backend" data-node-sublabel="ingest-lote" data-node-context="Ingestão › Ingestão &amp; Enriquecimento">
@@ -5091,8 +5091,8 @@
           <text data-detail="context" x="220" y="255" class="t-muted" font-size="8" text-anchor="middle">ingest-lote</text>
         </g>
 
-        <g id="node-ia" data-node-id="ia" data-node-label="Enriquecimento" tabindex="0" role="button" aria-label="Focus Enriquecimento, process-familia, Enriquecimento IA › Ingestão &amp; Enriquecimento" aria-pressed="false" data-node-kind="backend" data-node-sublabel="process-familia" data-node-tag="sugestão catálogo" data-node-context="Enriquecimento IA › Ingestão &amp; Enriquecimento">
-          <title>Enriquecimento · process-familia · Enriquecimento IA › Ingestão &amp; Enriquecimento · sugestão catálogo</title>
+        <g id="node-ia" data-node-id="ia" data-node-label="Enriquecimento" tabindex="0" role="button" aria-label="Focus Enriquecimento, process-familia, Enriquecimento IA › Ingestão &amp; Enriquecimento" aria-pressed="false" data-node-kind="backend" data-node-sublabel="process-familia" data-node-tag="catálogo + atributos" data-node-context="Enriquecimento IA › Ingestão &amp; Enriquecimento">
+          <title>Enriquecimento · process-familia · Enriquecimento IA › Ingestão &amp; Enriquecimento · catálogo + atributos</title>
           <rect x="254" y="333" width="92" height="68" rx="6" class="c-mask"/>
           <rect x="254" y="333" width="92" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(260 339) scale(0.6875)">
@@ -5100,11 +5100,11 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="300" y="354" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Enriquecimento</text>
           <text data-detail="context" x="300" y="371" class="t-muted" font-size="8" text-anchor="middle">process-familia</text>
-        <text data-detail="fine" x="300" y="389" class="t-backend" font-size="7" text-anchor="middle">sugestão catálogo</text>
+        <text data-detail="fine" x="300" y="389" class="t-backend" font-size="7" text-anchor="middle">catálogo + atributos</text>
         </g>
 
-        <g id="node-revisao" data-node-id="revisao" data-node-label="Revisão humana" tabindex="0" role="button" aria-label="Focus Revisão humana, aprovação + fiscal, Operador › Revisão &amp; Publicação" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="aprovação + fiscal" data-node-tag="obrigatória" data-node-context="Operador › Revisão &amp; Publicação">
-          <title>Revisão humana · aprovação + fiscal · Operador › Revisão &amp; Publicação · obrigatória</title>
+        <g id="node-revisao" data-node-id="revisao" data-node-label="Revisão humana" tabindex="0" role="button" aria-label="Focus Revisão humana, aprovação e grade, Operador › Revisão &amp; Publicação" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="aprovação e grade" data-node-tag="obrigatória" data-node-context="Operador › Revisão &amp; Publicação">
+          <title>Revisão humana · aprovação e grade · Operador › Revisão &amp; Publicação · obrigatória</title>
           <rect x="384" y="85" width="92" height="68" rx="6" class="c-mask"/>
           <rect x="384" y="85" width="92" height="68" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(390 91) scale(0.6875)">
@@ -5114,7 +5114,7 @@
             <circle cx="6.3" cy="4.8" r=".7" class="sigil-fill"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="430" y="106" class="t-primary" font-size="10" font-weight="600" text-anchor="middle">Revisão humana</text>
-          <text data-detail="context" x="430" y="123" class="t-muted" font-size="7.7" text-anchor="middle">aprovação + fiscal</text>
+          <text data-detail="context" x="430" y="123" class="t-muted" font-size="8" text-anchor="middle">aprovação e grade</text>
         <text data-detail="fine" x="430" y="141" class="t-frontend" font-size="7" text-anchor="middle">obrigatória</text>
         </g>
 
@@ -5130,8 +5130,8 @@
         <text data-detail="fine" x="500" y="513" class="t-backend" font-size="7" text-anchor="middle">fan-out por canal</text>
         </g>
 
-        <g id="node-ml_publish" data-node-id="ml_publish" data-node-label="Mercado Livre" tabindex="0" role="button" aria-label="Focus Mercado Livre, publish/update, Publicação › Revisão &amp; Publicação" aria-pressed="false" data-node-kind="backend" data-node-sublabel="publish/update" data-node-tag="+ catálogo" data-node-context="Publicação › Revisão &amp; Publicação">
-          <title>Mercado Livre · publish/update · Publicação › Revisão &amp; Publicação · + catálogo</title>
+        <g id="node-ml_publish" data-node-id="ml_publish" data-node-label="Mercado Livre" tabindex="0" role="button" aria-label="Focus Mercado Livre, publish/update, Publicação › Revisão &amp; Publicação" aria-pressed="false" data-node-kind="backend" data-node-sublabel="publish/update" data-node-tag="+ size charts" data-node-context="Publicação › Revisão &amp; Publicação">
+          <title>Mercado Livre · publish/update · Publicação › Revisão &amp; Publicação · + size charts</title>
           <rect x="579" y="457" width="92" height="68" rx="6" class="c-mask"/>
           <rect x="579" y="457" width="92" height="68" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(585 463) scale(0.6875)">
@@ -5139,7 +5139,7 @@
           </g>
           <text data-node-label="" data-detail-anchor="" x="625" y="478" class="t-primary" font-size="10.7" font-weight="600" text-anchor="middle">Mercado Livre</text>
           <text data-detail="context" x="625" y="495" class="t-muted" font-size="8" text-anchor="middle">publish/update</text>
-        <text data-detail="fine" x="625" y="513" class="t-backend" font-size="7" text-anchor="middle">+ catálogo</text>
+        <text data-detail="fine" x="625" y="513" class="t-backend" font-size="7" text-anchor="middle">+ size charts</text>
         </g>
 
         <g id="node-canal_extra" data-node-id="canal_extra" data-node-label="Canal extra" tabindex="0" role="button" aria-label="Focus Canal extra, publicar-anuncio, Canais extras (E6) › Revisão &amp; Publicação" aria-pressed="false" data-node-kind="backend" data-node-sublabel="publicar-anuncio" data-node-tag="worker genérico" data-node-context="Canais extras (E6) › Revisão &amp; Publicação">
@@ -5380,6 +5380,7 @@
         <ul>
           <li>&bull; Revisão humana obrigatória — nada é publicado sem aprovação do operador</li>
           <li>&bull; Workers idempotentes — claim atômico, seguro para retry do QStash</li>
+          <li>&bull; Vestuário e calçados com duplo eixo Cor × Tamanho (ADR-0166) e Size Charts via API ML (ADR-0167)</li>
           <li>&bull; Kits vinculados (ADR-0151) nascem direto em &#39;pronto&#39; e publicam após a base</li>
           <li>&bull; Validação fiscal can_invoice (ADR-0135) garante prontidão para o Faturador ML</li>
         </ul>

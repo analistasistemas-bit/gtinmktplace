@@ -5034,7 +5034,7 @@
         <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="0" data-composition-frame-label="Organização (tenant) — 1 de N empresas clientes" x="30" y="230" width="210" height="114" rx="8" class="c-security-group" stroke-width="1"/>
 
         <!-- Connection paths (before components for correct z-order) -->
-        <path data-edge-from="operadores" data-edge-to="publiai" data-edge-label="planilha/manual, revisão, estoque" data-edge-key="0" data-composition-points="210,292;380,292" d="M 210 292 L 380 292" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="operadores" data-edge-to="publiai" data-edge-label="planilha/grade, revisão, estoque" data-edge-key="0" data-composition-points="210,292;380,292" d="M 210 292 L 380 292" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="publiai" data-edge-to="ml" data-edge-label="OAuth, publicar, ler status/vendas" data-edge-key="1" data-composition-points="540,278;630,278;630,152;720,152" d="M 540 278 L 622 278 Q 630 278 630 270 L 630 160 Q 630 152 638 152 L 720 152" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="ml" data-edge-to="publiai" data-edge-label="webhooks" data-edge-key="2" data-composition-points="800,184;800,218;460,218;460,252" d="M 800 184 L 800 210 Q 800 218 792 218 L 468 218 Q 460 218 460 226 L 460 252" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="publiai" data-edge-to="outros_mkt" data-edge-label="vitrine — ainda não conectado" data-edge-key="3" data-composition-points="540,292;720,292" d="M 540 292 L 720 292" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
@@ -5044,8 +5044,8 @@
         <path data-edge-from="publiai" data-edge-to="apify" data-edge-label="scraping nicho" data-edge-key="7" data-composition-points="380,292;295,292;295,470;210,470" d="M 380 292 L 303 292 Q 295 292 295 300 L 295 462 Q 295 470 287 470 L 210 470" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Components -->
-        <g id="node-operadores" data-node-id="operadores" data-node-label="Operadores" tabindex="0" role="button" aria-label="Focus Operadores, planilhas, manual, kits, revisão, Organização (tenant) — 1 de N empresas clientes" aria-pressed="false" data-node-kind="external" data-node-sublabel="planilhas, manual, kits, revisão" data-node-context="Organização (tenant) — 1 de N empresas clientes">
-          <title>Operadores · planilhas, manual, kits, revisão · Organização (tenant) — 1 de N empresas clientes</title>
+        <g id="node-operadores" data-node-id="operadores" data-node-label="Operadores" tabindex="0" role="button" aria-label="Focus Operadores, planilhas, grade, manual, revisão, Organização (tenant) — 1 de N empresas clientes" aria-pressed="false" data-node-kind="external" data-node-sublabel="planilhas, grade, manual, revisão" data-node-context="Organização (tenant) — 1 de N empresas clientes">
+          <title>Operadores · planilhas, grade, manual, revisão · Organização (tenant) — 1 de N empresas clientes</title>
           <rect x="60" y="260" width="150" height="64" rx="6" class="c-mask"/>
           <rect x="60" y="260" width="150" height="64" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(66 266) scale(0.6875)">
@@ -5053,22 +5053,22 @@
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="135" y="290" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Operadores</text>
-        <text data-detail="context" x="135" y="306" class="t-muted" font-size="7.3" text-anchor="middle">planilhas, manual, kits, revisão</text>
+        <text data-detail="context" x="135" y="306" class="t-muted" font-size="7.1" text-anchor="middle">planilhas, grade, manual, revisão</text>
         </g>
 
-        <g id="node-publiai" data-node-id="publiai" data-node-label="PubliAI" tabindex="0" role="button" aria-label="Focus PubliAI, SaaS multi-tenant, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="SaaS multi-tenant" data-node-context="Architecture component">
-          <title>PubliAI · SaaS multi-tenant · Architecture component</title>
+        <g id="node-publiai" data-node-id="publiai" data-node-label="PubliAI" tabindex="0" role="button" aria-label="Focus PubliAI, SaaS multi-tenant (aviamentos/moda), Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="SaaS multi-tenant (aviamentos/moda)" data-node-context="Architecture component">
+          <title>PubliAI · SaaS multi-tenant (aviamentos/moda) · Architecture component</title>
           <rect x="380" y="252" width="160" height="80" rx="6" class="c-mask"/>
           <rect x="380" y="252" width="160" height="80" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(386 258) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="460" y="290" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">PubliAI</text>
-        <text data-detail="context" x="460" y="306" class="t-muted" font-size="9" text-anchor="middle">SaaS multi-tenant</text>
+        <text data-detail="context" x="460" y="306" class="t-muted" font-size="7.2" text-anchor="middle">SaaS multi-tenant (aviamentos/moda)</text>
         </g>
 
-        <g id="node-ml" data-node-id="ml" data-node-label="Mercado Livre" tabindex="0" role="button" aria-label="Focus Mercado Livre, marketplace ativo, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="marketplace ativo" data-node-context="Architecture component">
-          <title>Mercado Livre · marketplace ativo · Architecture component</title>
+        <g id="node-ml" data-node-id="ml" data-node-label="Mercado Livre" tabindex="0" role="button" aria-label="Focus Mercado Livre, marketplace ativo (+ Size Charts), Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="marketplace ativo (+ Size Charts)" data-node-context="Architecture component">
+          <title>Mercado Livre · marketplace ativo (+ Size Charts) · Architecture component</title>
           <rect x="720" y="120" width="160" height="64" rx="6" class="c-mask"/>
           <rect x="720" y="120" width="160" height="64" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(726 126) scale(0.6875)">
@@ -5076,7 +5076,7 @@
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="800" y="150" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Mercado Livre</text>
-        <text data-detail="context" x="800" y="166" class="t-muted" font-size="9" text-anchor="middle">marketplace ativo</text>
+        <text data-detail="context" x="800" y="166" class="t-muted" font-size="7.6" text-anchor="middle">marketplace ativo (+ Size Charts)</text>
         </g>
 
         <g id="node-outros_mkt" data-node-id="outros_mkt" data-node-label="Outros marketplaces" tabindex="0" role="button" aria-label="Focus Outros marketplaces, vitrine &quot;em breve&quot;, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="vitrine &quot;em breve&quot;" data-node-context="Architecture component">
@@ -5140,9 +5140,9 @@
         </g>
 
         <!-- Connection labels -->
-        <g data-detail="context" data-edge-from="operadores" data-edge-to="publiai" data-edge-label="planilha/manual, revisão, estoque" data-edge-key="0">
-          <rect x="210.8" y="210" width="168.4" height="14" rx="3" class="c-mask"/>
-          <text x="295" y="220" class="t-backend" font-size="8" text-anchor="middle">planilha/manual, revisão, estoque</text>
+        <g data-detail="context" data-edge-from="operadores" data-edge-to="publiai" data-edge-label="planilha/grade, revisão, estoque" data-edge-key="0">
+          <rect x="213.2" y="210" width="163.6" height="14" rx="3" class="c-mask"/>
+          <text x="295" y="220" class="t-backend" font-size="8" text-anchor="middle">planilha/grade, revisão, estoque</text>
         </g>
         <g data-detail="context" data-edge-from="publiai" data-edge-to="ml" data-edge-label="OAuth, publicar, ler status/vendas" data-edge-key="1">
           <rect x="543.4" y="195" width="173.2" height="14" rx="3" class="c-mask"/>
@@ -5153,12 +5153,12 @@
           <text x="860" y="198" class="t-messagebus" font-size="8" text-anchor="middle">webhooks</text>
         </g>
         <g data-detail="context" data-edge-from="publiai" data-edge-to="outros_mkt" data-edge-label="vitrine — ainda não conectado" data-edge-key="3">
-          <rect x="555.4" y="272" width="149.2" height="14" rx="3" class="c-mask"/>
-          <text x="630" y="282" class="t-messagebus" font-size="8" text-anchor="middle">vitrine — ainda não conectado</text>
+          <rect x="555.4" y="296" width="149.2" height="14" rx="3" class="c-mask"/>
+          <text x="630" y="306" class="t-messagebus" font-size="8" text-anchor="middle">vitrine — ainda não conectado</text>
         </g>
         <g data-detail="context" data-edge-from="publiai" data-edge-to="openrouter" data-edge-label="copy + resolução de cor/atributos" data-edge-key="4">
-          <rect x="375.8" y="232" width="168.4" height="14" rx="3" class="c-mask"/>
-          <text x="460" y="242" class="t-muted" font-size="8" text-anchor="middle">copy + resolução de cor/atributos</text>
+          <rect x="335.8" y="232" width="168.4" height="14" rx="3" class="c-mask"/>
+          <text x="420" y="242" class="t-muted" font-size="8" text-anchor="middle">copy + resolução de cor/atributos</text>
         </g>
         <g data-detail="context" data-edge-from="publiai" data-edge-to="mp" data-edge-label="leitura de vendas liberadas" data-edge-key="5">
           <rect x="560.2" y="348" width="139.6" height="14" rx="3" class="c-mask"/>
@@ -5384,6 +5384,7 @@
         </div>
         <ul>
           <li>&bull; Transforma planilhas ou cadastro manual em anúncios publicados em marketplaces</li>
+          <li>&bull; Vestuário e calçados com duplo eixo Cor × Tamanho e Size Charts ML (ADR-0166/0167)</li>
           <li>&bull; Kits vinculados de N unidades com estoque derivado sem duplicação (ADR-0151)</li>
           <li>&bull; Inteligência de mercado e garimpo de oportunidades (Pulse Radar &amp; Sonar)</li>
           <li>&bull; Revisão humana obrigatória antes de publicar</li>
@@ -5393,10 +5394,11 @@
       <div class="card">
         <div class="card-header">
           <div class="card-dot amber"></div>
-          <h3>Multi-tenant</h3>
+          <h3>Multi-tenant &amp; Billing</h3>
         </div>
         <ul>
           <li>&bull; Cada empresa (organização) só enxerga os próprios dados via RLS org_id</li>
+          <li>&bull; Central de Gestão (/admin) com faixas regressivas de receita (ADR-0165) e demonstrativos auditáveis</li>
           <li>&bull; Hoje: 2 organizações em produção (Avil e DSA) — arquitetura suporta N</li>
         </ul>
       </div>

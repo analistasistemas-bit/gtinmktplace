@@ -4957,7 +4957,7 @@
         <div class="pulse-dot"></div>
         <h1>PubliAI — Infraestrutura Simplificada</h1>
       </div>
-      <p class="subtitle">AS-IS · onde o sistema executa e como é implantado</p>
+      <p class="subtitle">AS-IS · onde o sistema executa e como é implantado (71 Edge Functions)</p>
     </div>
 
     <script id="archify-guided-views-data" type="application/json">[]</script>
@@ -5007,7 +5007,7 @@
          data-preset-badge-editorial-plate="ARCHIFY / PLATE 04">
       <svg viewBox="0 0 1100 900" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="standard" data-quality-gates="advisory">
         <title id="archify-diagram-title">PubliAI — Infraestrutura Simplificada</title>
-        <desc id="archify-diagram-description">AS-IS · onde o sistema executa e como é implantado</desc>
+        <desc id="archify-diagram-description">AS-IS · onde o sistema executa e como é implantado (71 Edge Functions)</desc>
         <!-- Definitions -->
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -5067,15 +5067,15 @@
         <text data-detail="fine" x="115" y="396" class="t-frontend" font-size="7" text-anchor="middle">deploy: push → build</text>
         </g>
 
-        <g id="node-edge" data-node-id="edge" data-node-label="Edge Functions" tabindex="0" role="button" aria-label="Focus Edge Functions, Deno, ~62 funções, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Deno, ~62 funções" data-node-tag="deploy: CLI" data-node-context="Architecture component">
-          <title>Edge Functions · Deno, ~62 funções · Architecture component · deploy: CLI</title>
+        <g id="node-edge" data-node-id="edge" data-node-label="Edge Functions" tabindex="0" role="button" aria-label="Focus Edge Functions, Deno, 71 funções, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Deno, 71 funções" data-node-tag="deploy: CLI" data-node-context="Architecture component">
+          <title>Edge Functions · Deno, 71 funções · Architecture component · deploy: CLI</title>
           <rect x="300" y="332" width="160" height="80" rx="6" class="c-mask"/>
           <rect x="300" y="332" width="160" height="80" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(306 338) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="380" y="370" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Edge Functions</text>
-        <text data-detail="context" x="380" y="386" class="t-muted" font-size="9" text-anchor="middle">Deno, ~62 funções</text>
+        <text data-detail="context" x="380" y="386" class="t-muted" font-size="9" text-anchor="middle">Deno, 71 funções</text>
         <text data-detail="fine" x="380" y="404" class="t-backend" font-size="7" text-anchor="middle">deploy: CLI</text>
         </g>
 
@@ -5465,7 +5465,7 @@
         </div>
         <ul>
           <li>&bull; Frontend: Render Static Site, deploy automático no push (branch main)</li>
-          <li>&bull; Edge Functions: ~62 funções deployadas via Supabase CLI com controle de versão</li>
+          <li>&bull; Edge Functions: 71 funções deployadas via Supabase CLI com controle de versão</li>
           <li>&bull; Migrations: supabase migration new + db push (ADR-0043)</li>
         </ul>
       </div>
@@ -5473,11 +5473,12 @@
       <div class="card">
         <div class="card-header">
           <div class="card-dot amber"></div>
-          <h3>Observabilidade</h3>
+          <h3>Observabilidade &amp; Jobs</h3>
         </div>
         <ul>
           <li>&bull; Sem stack dedicada — logs via dashboards Supabase/Render</li>
           <li>&bull; Alertas operacionais via Telegram e notificações in-app</li>
+          <li>&bull; Agendamentos QStash: reconciliação UP (15min), estoque diário (12:30), faturamento e métricas mensais</li>
         </ul>
       </div>
 

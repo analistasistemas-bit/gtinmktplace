@@ -1,12 +1,12 @@
 ---
 tags: [arquitetura, backend, edge-functions]
-atualizado: 2026-09-03
+atualizado: 2026-09-20
 ---
 
 # Edge Functions
 
 Espelho resumido de `docs/reference/edge-functions.md` (fonte de verdade — atualize lá
-primeiro). **62 funções** Deno em `supabase/functions/` (contagem de 2026-09-03).
+primeiro). **71 funções** Deno em `supabase/functions/` (contagem de 2026-09-20).
 Ver [[Backend]], [[Segurança]].
 
 ## Como ler `verify_jwt`
@@ -24,16 +24,18 @@ Ver [[Backend]], [[Segurança]].
 | **Processamento / publicação** | process-familia, publicar-familias, publish-familia-ml, update-familia-ml, publicar-split-ml, **publicar-anuncio** (worker genérico p/ canais ≠ ML), regenerar-copy-familia, definir-categoria-familia, atributos-familia, vincular-catalogo, retentar-catalogo |
 | **User Products (ADR-0088)** | reconciliar-convergencia-up (`*/15 * * * *`), reconciliar-user-products (backfill de itens planos) |
 | **Remoção / reprocessamento** | remover-publicado, excluir-lote, excluir-produto, reprocessar-familia, invalidar-cache-cor |
+| **Preço por Variação / UPtin (ADR-0161)** | migrar-preco-por-variacao (`verify_jwt=true`), acompanhar-migracao-pxv (`verify_jwt=false`) |
+| **Estoque & Kits Vinculados** (módulo pago) | cadastrar-produto, entrada-estoque, **ajustar-estoque** (admin-only, ADR-0110), **criar-kit-vinculado** (ADR-0151), **adicionar-variacoes-familia** (ADR-0129), **varrer-anuncios-orfaos** — `verify_jwt=true`; **sincronizar-estoque** e **reconciliar-estoque** (`30 12 * * *`), workers com `verify_jwt=false`. Ver [[Estoque]] |
+| **Kit Virtual (ADR-0154)** | buscar-componentes-kit-virtual, preview-kit-virtual, criar-kit-virtual, encerrar-kit-virtual, subir-foto-kit-virtual (`verify_jwt=true`) |
 | **Faturamento** | ml-webhook, sync-venda, sync-pergunta, sync-mensagem, sync-devolucao, responder-pergunta, responder-mensagem, sugerir-resposta-pergunta, backfill-faturamento, reconciliar-faturamento |
-| **Estoque & Kits** (módulo pago) | cadastrar-produto, entrada-estoque, **ajustar-estoque** (admin-only, ADR-0110), **criar-kit-vinculado** (ADR-0151), **adicionar-variacoes-familia** (ADR-0129) — `verify_jwt=true` e gate de módulo 403; **sincronizar-estoque** e **reconciliar-estoque** (`30 12 * * *`), workers com `verify_jwt=false`. Ver [[Estoque]] |
 | **Pulse** (módulo inteligência) | pulse-coletar (`verify_jwt=false`), pulse-adicionar, pulse-sonar-vendas, pulse-sonar-visitas, pulse-analise-secoes237. Ver [[Pulse]] |
 | **Fiscal** (Faturador ML) | sincronizar-fiscal-ml, atualizar-fiscal-familia, sugerir-ncm |
 | **Monitoramento / alertas** | monitorar-moderados, notificar-liberacao |
 | **Status / métricas / viabilidade** | status-publicados, atualizar-status-publicado, metricas-vendas, analisar-viabilidade, calcular-tarifa-ml, tabela-frete-ml, buscar-categorias-ml |
-| **Acesso / usuários** | usuarios, suporte |
+| **Central / Billing / Usuários** | platform-admin, materializar-metricas (`verify_jwt=false`), usuarios, suporte. Ver [[Billing]] |
 | **Utilitário** | hello |
 
-Ver [[Publicação Mercado Livre]] (fluxo de publicação), [[Marketplace]] (módulo Faturamento).
+Ver [[Publicação Mercado Livre]] (fluxo de publicação), [[Marketplace]] (módulo Faturamento), [[Billing]].
 
 ## Padrões transversais
 

@@ -4957,7 +4957,7 @@
         <div class="pulse-dot"></div>
         <h1>PubliAI — Arquitetura Geral</h1>
       </div>
-      <p class="subtitle">AS-IS · contêineres e responsabilidades (E6/E7 em produção)</p>
+      <p class="subtitle">AS-IS · contêineres e responsabilidades (71 Edge Functions em produção)</p>
     </div>
 
     <script id="archify-guided-views-data" type="application/json">[]</script>
@@ -5007,7 +5007,7 @@
          data-preset-badge-editorial-plate="ARCHIFY / PLATE 04">
       <svg viewBox="0 0 1100 900" role="img" lang="en" aria-labelledby="archify-diagram-title archify-diagram-description" data-preset="classic" data-quality-profile="standard" data-quality-gates="advisory">
         <title id="archify-diagram-title">PubliAI — Arquitetura Geral</title>
-        <desc id="archify-diagram-description">AS-IS · contêineres e responsabilidades (E6/E7 em produção)</desc>
+        <desc id="archify-diagram-description">AS-IS · contêineres e responsabilidades (71 Edge Functions em produção)</desc>
         <!-- Definitions -->
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -5044,7 +5044,7 @@
         <path data-edge-from="edge" data-edge-to="qstash" data-edge-label="enfileira jobs" data-edge-key="5" data-composition-points="300,386;265,386;265,630;230,630" d="M 300 386 L 273 386 Q 265 386 265 394 L 265 622 Q 265 630 257 630 L 230 630" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="qstash" data-edge-to="edge" data-edge-label="dispara workers" data-edge-key="6" data-composition-points="155,600;155,506;373,506;373,412" d="M 155 600 L 155 514 Q 155 506 163 506 L 365 506 Q 373 506 373 498 L 373 412" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="edge" data-edge-to="redis" data-edge-label="cache + locks" data-edge-key="7" data-composition-points="387,412;387,506;355,506;355,600" d="M 387 412 L 387 498 Q 387 506 379 506 L 363 506 Q 355 506 355 514 L 355 600" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="edge" data-edge-to="ml" data-edge-label="OAuth, itens, webhooks" data-edge-key="8" data-composition-points="460,372;680,372;680,292;900,292" d="M 460 372 L 672 372 Q 680 372 680 364 L 680 300 Q 680 292 688 292 L 900 292" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="edge" data-edge-to="ml" data-edge-label="OAuth, itens, sizes, webhooks" data-edge-key="8" data-composition-points="460,372;680,372;680,292;900,292" d="M 460 372 L 672 372 Q 680 372 680 364 L 680 300 Q 680 292 688 292 L 900 292" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="ml" data-edge-to="edge" data-edge-label="webhooks" data-edge-key="9" data-composition-points="980,324;980,328;380,328;380,332" d="M 980 324 L 980 326 Q 980 328 978 328 L 382 328 Q 380 328 380 330 L 380 332" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="edge" data-edge-to="openrouter" data-edge-label="copy + vision" data-edge-key="10" data-composition-points="460,372;876,372;876,110;900,110" d="M 460 372 L 868 372 Q 876 372 876 364 L 876 118 Q 876 110 884 110 L 900 110" class="a-default" stroke-width="1.5" marker-end="url(#arrowhead)"/>
         <path data-edge-from="edge" data-edge-to="mp" data-edge-label="liberações" data-edge-key="11" data-composition-points="460,365;680,365;680,450;900,450" d="M 460 365 L 672 365 Q 680 365 680 373 L 680 442 Q 680 450 688 450 L 900 450" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
@@ -5066,15 +5066,15 @@
         <text data-detail="context" x="115" y="386" class="t-muted" font-size="7.8" text-anchor="middle">React+Vite, Render Static Site</text>
         </g>
 
-        <g id="node-edge" data-node-id="edge" data-node-label="Edge Functions" tabindex="0" role="button" aria-label="Focus Edge Functions, Deno, ~62 funções, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Deno, ~62 funções" data-node-context="Architecture component">
-          <title>Edge Functions · Deno, ~62 funções · Architecture component</title>
+        <g id="node-edge" data-node-id="edge" data-node-label="Edge Functions" tabindex="0" role="button" aria-label="Focus Edge Functions, Deno, 71 funções, Architecture component" aria-pressed="false" data-node-kind="backend" data-node-sublabel="Deno, 71 funções" data-node-context="Architecture component">
+          <title>Edge Functions · Deno, 71 funções · Architecture component</title>
           <rect x="300" y="332" width="160" height="80" rx="6" class="c-mask"/>
           <rect x="300" y="332" width="160" height="80" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(306 338) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="380" y="370" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Edge Functions</text>
-        <text data-detail="context" x="380" y="386" class="t-muted" font-size="9" text-anchor="middle">Deno, ~62 funções</text>
+        <text data-detail="context" x="380" y="386" class="t-muted" font-size="9" text-anchor="middle">Deno, 71 funções</text>
         </g>
 
         <g id="node-auth" data-node-id="auth" data-node-label="Auth" tabindex="0" role="button" aria-label="Focus Auth, Supabase Auth (JWT), Supabase" aria-pressed="false" data-node-kind="security" data-node-sublabel="Supabase Auth (JWT)" data-node-context="Supabase">
@@ -5089,8 +5089,8 @@
         <text data-detail="context" x="380" y="124" class="t-muted" font-size="9" text-anchor="middle">Supabase Auth (JWT)</text>
         </g>
 
-        <g id="node-postgres" data-node-id="postgres" data-node-label="Postgres" tabindex="0" role="button" aria-label="Focus Postgres, RLS por org_id, ledger estoque, Supabase" aria-pressed="false" data-node-kind="database" data-node-sublabel="RLS por org_id, ledger estoque" data-node-context="Supabase">
-          <title>Postgres · RLS por org_id, ledger estoque · Supabase</title>
+        <g id="node-postgres" data-node-id="postgres" data-node-label="Postgres" tabindex="0" role="button" aria-label="Focus Postgres, RLS org_id, estoque, billing, sizes, Supabase" aria-pressed="false" data-node-kind="database" data-node-sublabel="RLS org_id, estoque, billing, sizes" data-node-context="Supabase">
+          <title>Postgres · RLS org_id, estoque, billing, sizes · Supabase</title>
           <rect x="520" y="60" width="160" height="60" rx="6" class="c-mask"/>
           <rect x="520" y="60" width="160" height="60" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(526 66) scale(0.6875)">
@@ -5098,7 +5098,7 @@
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="600" y="88" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Postgres</text>
-        <text data-detail="context" x="600" y="104" class="t-muted" font-size="8.4" text-anchor="middle">RLS por org_id, ledger estoque</text>
+        <text data-detail="context" x="600" y="104" class="t-muted" font-size="7.2" text-anchor="middle">RLS org_id, estoque, billing, sizes</text>
         </g>
 
         <g id="node-storage" data-node-id="storage" data-node-label="Storage" tabindex="0" role="button" aria-label="Focus Storage, bucket imagens, Supabase" aria-pressed="false" data-node-kind="cloud" data-node-sublabel="bucket imagens" data-node-context="Supabase">
@@ -5150,8 +5150,8 @@
         <text data-detail="context" x="355" y="644" class="t-muted" font-size="9" text-anchor="middle">cache + locks</text>
         </g>
 
-        <g id="node-ml" data-node-id="ml" data-node-label="Mercado Livre" tabindex="0" role="button" aria-label="Focus Mercado Livre, API, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="API" data-node-context="Architecture component">
-          <title>Mercado Livre · API · Architecture component</title>
+        <g id="node-ml" data-node-id="ml" data-node-label="Mercado Livre" tabindex="0" role="button" aria-label="Focus Mercado Livre, API (itens, sizes, orders), Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="API (itens, sizes, orders)" data-node-context="Architecture component">
+          <title>Mercado Livre · API (itens, sizes, orders) · Architecture component</title>
           <rect x="900" y="260" width="160" height="64" rx="6" class="c-mask"/>
           <rect x="900" y="260" width="160" height="64" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(906 266) scale(0.6875)">
@@ -5159,7 +5159,7 @@
             <path d="M8 2.5h5.5V8M13.5 2.5 7.5 8.5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="980" y="290" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Mercado Livre</text>
-        <text data-detail="context" x="980" y="306" class="t-muted" font-size="9" text-anchor="middle">API</text>
+        <text data-detail="context" x="980" y="306" class="t-muted" font-size="9" text-anchor="middle">API (itens, sizes, orders)</text>
         </g>
 
         <g id="node-mp" data-node-id="mp" data-node-label="Mercado Pago" tabindex="0" role="button" aria-label="Focus Mercado Pago, API, Architecture component" aria-pressed="false" data-node-kind="external" data-node-sublabel="API" data-node-context="Architecture component">
@@ -5243,9 +5243,9 @@
           <rect x="334.8" y="486" width="72.4" height="14" rx="3" class="c-mask"/>
           <text x="371" y="496" class="t-muted" font-size="8" text-anchor="middle">cache + locks</text>
         </g>
-        <g data-detail="context" data-edge-from="edge" data-edge-to="ml" data-edge-label="OAuth, itens, webhooks" data-edge-key="8">
-          <rect x="622.2" y="290" width="115.6" height="14" rx="3" class="c-mask"/>
-          <text x="680" y="300" class="t-backend" font-size="8" text-anchor="middle">OAuth, itens, webhooks</text>
+        <g data-detail="context" data-edge-from="edge" data-edge-to="ml" data-edge-label="OAuth, itens, sizes, webhooks" data-edge-key="8">
+          <rect x="605.4" y="290" width="149.2" height="14" rx="3" class="c-mask"/>
+          <text x="680" y="300" class="t-backend" font-size="8" text-anchor="middle">OAuth, itens, sizes, webhooks</text>
         </g>
         <g data-detail="context" data-edge-from="ml" data-edge-to="edge" data-edge-label="webhooks" data-edge-key="9">
           <rect x="655.8" y="334" width="48.4" height="14" rx="3" class="c-mask"/>
@@ -5507,7 +5507,18 @@
           <li>&bull; Revisão humana obrigatória antes de publicar</li>
           <li>&bull; Segredos fora do código — tokens no Vault</li>
           <li>&bull; Ledger imutável de estoque — baixa atômica e push cross-canal</li>
-          <li>&bull; Kits vinculados de N unidades com estoque derivado sem duplicação</li>
+          <li>&bull; Kits vinculados e virtuais com estoque derivado sem duplicação</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot amber"></div>
+          <h3>Plataforma &amp; Moda</h3>
+        </div>
+        <ul>
+          <li>&bull; Central de Cobrança (/admin) com faixas regressivas de receita (ADR-0165) e demonstrativos</li>
+          <li>&bull; Vestuário e calçados com sincronização oficial de Size Charts via API ML (ADR-0167)</li>
         </ul>
       </div>
     </div>

@@ -44,7 +44,7 @@ docs/
 ├── ROADMAP.md                     ← visão estratégica das fases (vivo)
 ├── Roadmap-Estrategico-PubliAI-v2.md ← revisão de CTO do roadmap (8 fases, 2026-07-12)
 ├── TASKS.md                       ← checklist operacional do dia a dia (vivo)
-├── decisions/                     ← ADRs: Architecture Decision Records (imutáveis) — 130 documentos, mais recente 0130 (2026-08-21)
+├── decisions/                     ← ADRs: Architecture Decision Records (imutáveis) — 168 documentos, mais recente 0168 (2026-09-20)
 │   └── README.md                  ← como ler e escrever ADRs
 ├── reference/                     ← schema, edge functions, glossário, permissões ML
 ├── explanation/                   ← arquitetura ponta a ponta
@@ -57,8 +57,8 @@ docs/
 ├── design-system/                 ← tokens visuais derivados do código
 ├── brand/                         ← briefings de identidade visual
 └── superpowers/
-    ├── specs/                     ← spec formal do design (1 por marco de planejamento) — 56 arquivos
-    └── plans/                     ← plano de execução por marco — 52 arquivos
+    ├── specs/                     ← spec formal do design (1 por marco de planejamento) — 104 arquivos
+    └── plans/                     ← plano de execução por marco — 123 arquivos
 ```
 
 ## Documentos vivos vs imutáveis
@@ -96,9 +96,10 @@ docs/
 | Multi-tenancy (organizations + org_id) | [decisions/0027](decisions/0027-multi-tenancy-organizations.md) |
 | Monetização e billing (Asaas + planos) | [decisions/0028](decisions/0028-monetizacao-e-billing.md) |
 
-> A tabela acima é uma seleção curada. O **índice completo** (0001–0073) está logo abaixo.
+> A tabela acima é uma seleção curada. O **índice histórico inicial** (0001–0073) está logo abaixo.
+> Para o **índice completo e atualizado de todos os 168 ADRs** (0001 a 0168), consulte [obsidian-vault/04-Decisões/Índice de ADRs.md](../obsidian-vault/04-Decisões/Índice%20de%20ADRs.md).
 
-## Índice completo de ADRs (0001–0073)
+## Índice histórico de ADRs (0001–0073)
 
 > A antiga colisão de numeração (dois `0035` e dois `0037`) foi **resolvida em 2026-06-27**:
 > `cor-no-titulo-mono-cor` virou **0044** e `vendas-catalogo-match-ean` virou **0045**. Cada

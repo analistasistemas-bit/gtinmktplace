@@ -4,27 +4,30 @@
 
 ## Localização e versão
 
-- Instalada globalmente em `~/.agents/skills/archify` (symlink para Claude Code), instalada via `npx skills add tt-a1i/archify -g` em 2026-07-19.
-- `metadata.version` no `SKILL.md`: **2.11**. Baseada em Cocoon-AI/architecture-diagram-generator (MIT, v1.0).
+- Instalada em `~/.gemini/config/skills/archify` (e symlink `~/.agents/skills/archify`), instalada via `npx skills add tt-a1i/archify -g`.
+- `metadata.version` no `SKILL.md`: **2.17**. Baseada em Cocoon-AI/architecture-diagram-generator (MIT, v1.0).
 - Verificação de instalação: `node bin/archify.mjs doctor` (a partir da pasta da skill) — confirma Node ≥18, template, validadores standalone e os 5 renderers (architecture, workflow, sequence, dataflow, lifecycle).
 
 ## Forma de uso
 
-Não há dependências para instalar — os validadores são compilados a partir dos 5 JSON Schemas e distribuídos com a skill. Todo comando roda com `node bin/archify.mjs <comando> ...` **a partir de `~/.agents/skills/archify`** (os caminhos de input/output podem ser absolutos, apontando para fora da pasta da skill).
+Não há dependências para instalar — os validadores são compilados a partir dos 5 JSON Schemas e distribuídos com a skill. Todo comando roda com `node bin/archify.mjs <comando> ...` a partir da pasta da skill (os caminhos de input/output podem ser absolutos, apontando para fora da pasta da skill).
 
 ## Comandos usados neste projeto
 
 ```bash
-# validar o JSON antes de renderizar (pega overlap de label, componente fora do viewBox, etc.)
+# validar o JSON antes de renderizar (valida schema, clearance de rotas e rotas ortogonais)
 node bin/archify.mjs validate <tipo> <arquivo>.json --json
 
 # renderizar o HTML final a partir do JSON
 node bin/archify.mjs render <tipo> <arquivo>.json <saida>.html
 
-# verificar um HTML já gerado (SVG único, sem valores non-finite, setas ortogonais, legenda sem sobreposição)
+# entrega e aceitação canônica com snapshot atômico
+node bin/archify.mjs deliver <tipo> <arquivo>.json <saida>.html --json
+
+# verificar um HTML já gerado (SVG único, sem valores non-finite, setas ortogonais, clearance)
 node bin/archify.mjs check <saida>.html
 
-# inspecionar retângulos/paths computados sem abrir o HTML (útil para calibrar labelAt)
+# inspecionar retângulos/paths computados sem abrir o HTML (útil para calibrar labelAt e labelDx/Dy)
 node bin/archify.mjs inspect <tipo> <arquivo>.json
 ```
 

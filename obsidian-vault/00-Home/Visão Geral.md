@@ -1,6 +1,6 @@
 ---
 tags: [home, visao-geral]
-atualizado: 2026-09-03
+atualizado: 2026-09-20
 ---
 
 # Visão Geral
@@ -8,7 +8,7 @@ atualizado: 2026-09-03
 ## O que é
 
 PubliAI é um sistema interno que transforma planilhas de produtos (linha/botão/fita, categoria
-de aviamentos) em anúncios publicados em marketplaces, usando IA como copywriter e para resolução
+de aviamentos, e vestuário/calçados) em anúncios publicados em marketplaces, usando IA como copywriter e para resolução
 de cor/atributos. Primeiro marketplace em produção: **Mercado Livre**. Usuário-operador principal:
 Diego.
 
@@ -37,11 +37,14 @@ flowchart LR
 
 - Épicos validados em produção: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`, `E6b` (Blocos A e B)
 - Próximo épico de produto: `E5` — conector Shopee (**ainda não implementado**; ver [[Publicação Shopee]])
+- Vestuário e Calçados em produção: duplo eixo Cor × Tamanho/Numeração (`MatrizGrade`), guias de tamanho sincronizadas da API do ML (`ml_size_charts`, ADR-0166 e ADR-0167)
+- Central de Cobrança e Gestão da Plataforma (`/admin`, ADRs 0155 a 0165): condições comerciais versionadas, faixas regressivas (`revenue_bps_t1..t4`), metering Sonar e demonstrativos auditáveis
 - Split de produto em N anúncios (produtos com >100 cores) em produção
 - Multi-tenancy por `org_id` em produção desde o E7 (2026-07-05, [ADR-0027](../04-Decisões/) · [docs/architecture/06-multi-tenant](../../docs/architecture/diagrams/06-multi-tenant/)) — cada organização isola os próprios dados; operação compartilhada (ADR-0047) continua valendo *dentro* de cada organização
-- Módulo Estoque (`/estoque`): ledger imutável `estoque_movimentos`, push cross-canal, cadastro manual, kit vinculado (ADR-0151) e reposição rápida
+- Módulo Estoque (`/estoque`): ledger imutável `estoque_movimentos`, push cross-canal, cadastro manual, kit vinculado (ADR-0151), grade bidimensional e reposição rápida
 - Módulo Pulse (`/pulse`): inteligência de mercado, radar de concorrência qualificada (ADR-0130) e garimpo Sonar (ADR-0140) com Apify fallback
 - Módulo Financeiro (caixa, margem, evolução temporal) e Faturamento em produção
+- Remoção de publicado com encerramento automático de MLB sem venda (ADR-0168)
 - Fonte sempre atualizada: `docs/project-status.md`
 
 ## Pipeline principal

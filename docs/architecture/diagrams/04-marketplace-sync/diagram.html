@@ -5397,7 +5397,7 @@
         <ul>
           <li>&bull; Dedup por (topic, resource) evita reprocessar o mesmo evento</li>
           <li>&bull; Venda paga baixa estoque atomicamente no ledger e enfileira push cross-canal</li>
-          <li>&bull; Retry do QStash é seguro — claim atômico</li>
+          <li>&bull; Ao remover publicado sem vendas, encerra o MLB no Mercado Livre (ADR-0168)</li>
         </ul>
       </div>
 
@@ -5407,7 +5407,7 @@
           <h3>Sincronização contínua</h3>
         </div>
         <ul>
-          <li>&bull; Webhook (tempo real) + reconciliação horária (faturamento) + cron diário (estoque 12:30) + monitor de moderação</li>
+          <li>&bull; Webhook (tempo real) + reconciliação horária (faturamento) + cron diário (estoque 12:30) + convergência UP (15min)</li>
         </ul>
       </div>
 
