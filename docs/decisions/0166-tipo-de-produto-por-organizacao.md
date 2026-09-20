@@ -143,6 +143,41 @@ validação de backend (a edge `cadastrar-produto` continua validando contra uma
 LISTA que a whitelist usa mudou, com a saída de `'Tamanho Único'`) e a publicação com guia de
 tamanhos (ADR-0167). Nenhuma migration.
 
+## Amendment (2026-09-19b) — a grade é apresentada em matriz, não em lista de cards
+
+O amendment anterior criou a tela própria de cadastro em grade com uma linha (card) por SKU. Com
+a tela rodando, o dono do produto apontou que preencher 12 a 60 cards verticais é longo e
+repetitivo: o operador repete o mesmo gesto por combinação e perde a visão do conjunto.
+
+Fica revisado assim, conforme
+`docs/superpowers/specs/2026-09-19-cadastro-grade-matriz-design.md` e o plano
+`docs/superpowers/plans/2026-09-19-cadastro-grade-matriz.md`:
+
+- A etapa de preenchimento da grade é uma **matriz Cor × Tamanho** (linhas = cores, colunas =
+  tamanhos), com abas de modo (Estoque / GTIN / Preço / Custo), totais por linha, por coluna e
+  geral, navegação por teclado, preenchimento em massa por escopo (toda a grade / uma cor / um
+  tamanho) e um drawer "Detalhes do SKU" para os 6 campos herdáveis. `linha-grade-form.tsx`
+  deixa de existir.
+- A herança por campo continua exatamente a mesma decisão do amendment anterior — muda só como
+  ela aparece: o cadeado por campo vira valor em cinza na célula (com botão de voltar ao herdado
+  quando há override) e um par de radios "Herdar do produto" / "Usar valor específico" no drawer.
+- Uma regra de herança fica explícita porque a matriz a torna alcançável: **apagar o conteúdo de
+  uma célula não volta a herdar** — vira override vazio. Voltar a herdar é sempre ação explícita.
+  É a mesma regra que `resolverLinha` já aplicava a `foto` (a presença da chave em `overrides` é
+  a decisão do operador, não o conteúdo).
+- Bug latente corrigido junto: os eixos passam por `ordenarEixos` antes de `reconciliarGrade`, e
+  a grade deixa de seguir a ordem de CLIQUE do operador. Em lista de cards isso passava
+  despercebido; em colunas de matriz "G, M, P" é visivelmente errado — e a ordem também define a
+  sequência dos códigos de SKU reservados.
+
+O que **não** muda: o modelo de dados, `resolverLinha`/`reconciliarGrade` (assinatura pública
+intacta), o payload enviado à edge `cadastrar-produto` (continua um valor resolvido por variação,
+campo a campo), o teto de 60 variações (ADR-0094), a revisão humana antes de publicar e a
+validação de whitelist no backend. Nenhuma migration.
+
+Ficou fora, por decisão: colar da área de transferência, seleção múltipla de células, validação de
+dígito verificador de GTIN, estado de salvamento por célula e edição de grade já publicada.
+
 ## Como reverter
 
 Remover as colunas `familias.genero`, `variacoes.tamanho` e
