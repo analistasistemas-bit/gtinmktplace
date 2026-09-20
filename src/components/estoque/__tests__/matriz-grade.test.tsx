@@ -13,7 +13,7 @@ const CABECALHO: CamposHerdaveis = {
 
 function montar(linhas: LinhaGrade[], props: {
   cores?: string[]; tamanhos?: string[]; desabilitado?: boolean; removidas?: Set<string>;
-  tentouSalvar?: boolean;
+  tentouSalvar?: boolean; cabecalho?: CamposHerdaveis;
 } = {}) {
   const spies = {
     onMudarLinha: vi.fn(), onMudarOverride: vi.fn(), onDestravar: vi.fn(), onVoltarAHerdar: vi.fn(),
@@ -22,7 +22,7 @@ function montar(linhas: LinhaGrade[], props: {
   render(
     <MatrizGrade
       linhas={linhas}
-      resolvidas={linhas.map((l) => resolverLinha(CABECALHO, {}, l))}
+      resolvidas={linhas.map((l) => resolverLinha(props.cabecalho ?? CABECALHO, {}, l))}
       cores={props.cores ?? ['Preto', 'Branco']}
       tamanhos={props.tamanhos ?? ['P', 'M']}
       removidas={props.removidas ?? new Set()}
@@ -322,6 +322,39 @@ describe('MatrizGrade — erro por célula', () => {
     linhas[0] = { ...linhas[0]!, estoqueInicial: '3' };
     montar(linhas, { cores: ['Preto'], tamanhos: ['P'] });
     expect(screen.queryByText(/pode ser negativo/)).not.toBeInTheDocument();
+  });
+
+  // Fix round pós-revisão: `preco` é o único campo cujo `erroCampo` reclama de vazio — o
+  // cabeçalho nasce vazio (`CABECALHO_VAZIO` em dialog-cadastro-grade.tsx), então abrir a aba
+  // Preço sem o operador ter preenchido nada pintava TODAS as células de vermelho ("muro
+  // vermelho"). Célula vazia não pode mostrar erro.
+  it('célula de preço vazia (cabeçalho ainda não preenchido) não mostra borda nem texto de erro', async () => {
+    const user = userEvent.setup();
+    const linhas = [novaLinhaGrade('Preto', 'P')];
+    const cabecalhoVazio: CamposHerdaveis = {
+      preco: '', custo: '', pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '',
+    };
+    montar(linhas, { cores: ['Preto'], tamanhos: ['P'], cabecalho: cabecalhoVazio });
+    await user.click(screen.getByRole('button', { name: 'Preço' }));
+    const campo = screen.getByLabelText('Preço mínimo (líquido) de Preto · P');
+    // `Input` já traz `aria-invalid:border-destructive` fixo na classe base (variante do Tailwind,
+    // não literal condicional) — um match solto de substring casaria sempre. O token isolado
+    // (sem prefixo `aria-invalid:`) é o que a condição `erro && valor !== ''` de fato adiciona.
+    expect(campo.className.split(/\s+/)).not.toContain('border-destructive');
+    expect(screen.queryByText(/Preço mínimo.*obrigatório/)).not.toBeInTheDocument();
+  });
+
+  // Contraste do teste acima: valor NÃO-vazio inválido continua acusando na hora — o gate é só
+  // `valor !== ''`, não "desligar o erro do preço".
+  it('célula de preço com valor inválido (ex. "-1") continua mostrando borda e texto de erro', async () => {
+    const user = userEvent.setup();
+    const linhas = [novaLinhaGrade('Preto', 'P')];
+    linhas[0] = { ...linhas[0]!, overrides: { preco: '-1' } };
+    montar(linhas, { cores: ['Preto'], tamanhos: ['P'] });
+    await user.click(screen.getByRole('button', { name: 'Preço' }));
+    const campo = screen.getByLabelText('Preço mínimo (líquido) de Preto · P');
+    expect(campo.className.split(/\s+/)).toContain('border-destructive');
+    expect(screen.getByText(/Preço mínimo.*obrigatório/)).toBeInTheDocument();
   });
 });
 

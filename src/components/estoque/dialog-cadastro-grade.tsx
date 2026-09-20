@@ -337,6 +337,15 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
 
   const podeSalvar = !!nomePai.trim() && !!origem && !!genero && linhas.length > 0
     && resolvidas.every((r) => CAMPOS_NUMERICOS.every((c) => !erroCampo(c, r[c])));
+  // Único motivo de `podeSalvar=false` que ficou SEM sinal na tela depois do fix pós-revisão da
+  // Task 9 (borda/texto de erro só aparecem com valor não-vazio, matando o "muro vermelho"):
+  // nome/origem/gênero vazios já têm asterisco + texto próprios; sem linha nenhuma o botão
+  // "Cadastrar" nem existe ainda visível. Preço vazio é o único caso que ficaria mudo. Mesmo
+  // padrão já usado em `gerador-variacoes.tsx` (`title={bloqueada ? MOTIVO_LIMITE : undefined}`).
+  const precoPendente = linhas.length > 0 && resolvidas.some((r) => !!erroCampo('preco', r.preco));
+  const motivoBloqueio = precoPendente
+    ? 'Preencha o preço mínimo (líquido) — obrigatório em toda a grade.'
+    : undefined;
 
   function submeter() {
     if (!origem || !genero) return;
@@ -711,14 +720,16 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                 <Button variant="outline" onClick={() => api.comConfirmacao(onFechar)} disabled={api.ocupado}>
                   Cancelar
                 </Button>
-                <Button onClick={() => setEtapaFiscal(true)} disabled={!podeSalvar}>Avançar</Button>
+                <Button onClick={() => setEtapaFiscal(true)} disabled={!podeSalvar} title={motivoBloqueio}>
+                  Avançar
+                </Button>
               </>
             ) : (
               <>
                 <Button variant="outline" onClick={() => api.comConfirmacao(onFechar)} disabled={api.ocupado}>
                   Cancelar
                 </Button>
-                <Button onClick={submeter} disabled={!podeSalvar || api.salvando}>
+                <Button onClick={submeter} disabled={!podeSalvar || api.salvando} title={motivoBloqueio}>
                   {api.salvando ? 'Cadastrando…' : 'Cadastrar'}
                 </Button>
               </>

@@ -184,7 +184,14 @@ export function MatrizGrade({
                 // liga dentro de `submeter()`, inalcançável enquanto existir erro em qualquer
                 // CAMPOS_NUMERICOS (é exatamente a condição de `podeSalvar=false` que trava o
                 // botão). O texto do erro abaixo segue a mesma regra, por consistência.
-                erro && 'border-destructive',
+                //
+                // `&& valor !== ''` (fix round pós-revisão): só `preco` reclama de vazio
+                // (`erroCampo`, linha-variacao-form.tsx:39) — os outros campos numéricos aceitam
+                // vazio como "ainda não preenchido". Sem este gate, abrir a aba Preço com o
+                // cabeçalho vazio pinta TODAS as células de vermelho sem o operador ter feito
+                // nada (o "muro vermelho" que a Task 9 sinalizou como preocupação). Célula com
+                // valor real inválido (ex. "-1", "abc") continua acusando na hora.
+                erro && valor !== '' && 'border-destructive',
               )}
               value={valor}
               disabled={desabilitado}
@@ -246,7 +253,7 @@ export function MatrizGrade({
             <Trash2 className="h-3 w-3" />
           </Button>
         </div>
-        {erro && <span className="text-xs text-destructive">{erro}</span>}
+        {erro && valor !== '' && <span className="text-xs text-destructive">{erro}</span>}
       </div>
     );
   }

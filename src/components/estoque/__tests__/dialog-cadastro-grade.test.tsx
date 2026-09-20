@@ -343,6 +343,38 @@ describe('DialogCadastroGrade — resumo antes de salvar', () => {
   });
 });
 
+// Fix round pós-revisão: com a matriz não pintando mais erro em célula vazia, preço faltando
+// deixou de ter QUALQUER sinal na tela além do botão "Cadastrar" ficar cinza. `title` é o mesmo
+// padrão de `gerador-variacoes.tsx` (`title={bloqueada ? MOTIVO_LIMITE : undefined}`).
+describe('DialogCadastroGrade — motivo do botão travado por preço', () => {
+  it('"Cadastrar" travado só por preço vazio explica o motivo no title', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    const botao = screen.getByRole('button', { name: 'Cadastrar' });
+    expect(botao).toBeDisabled();
+    expect(botao).toHaveAttribute('title', expect.stringMatching(/preço/i));
+  });
+
+  it('preenchendo o preço, "Cadastrar" destrava e o title some', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    const botao = screen.getByRole('button', { name: 'Cadastrar' });
+    expect(botao).not.toBeDisabled();
+    expect(botao).not.toHaveAttribute('title');
+  });
+});
+
 // Os testes abaixo buscam os campos do CABEÇALHO por `getByLabelText('Preço mínimo (líquido)')`
 // e `getByLabelText('Peso')` — rótulo puro, sem sufixo de unidade e sem "de <cor> · <tamanho>".
 // É a regra da Task 8 (`ROTULOS[campo].rotulo`): copiar o `aria-label` da linha aqui quebraria.
