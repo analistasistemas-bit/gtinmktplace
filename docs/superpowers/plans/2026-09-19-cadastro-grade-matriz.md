@@ -1080,7 +1080,10 @@ export function MatrizGrade({
             className={cn(
               'h-8 text-sm',
               def.prefixo && 'pl-6',
-              herdavel && !temOverride && 'text-muted-foreground',
+              // `pr-16` pareado com o adorno "herdado" à direita, mesma regra do par
+              // `sufixo`/`pr-7` em `linha-variacao-form.tsx:133`: sem ele, numa célula de ~100px
+              // o texto "herdado" cai por cima do valor no hover.
+              herdavel && !temOverride && 'pr-16 text-muted-foreground',
               erro && tentouSalvar && 'border-destructive',
             )}
             value={valor}
@@ -2475,7 +2478,7 @@ Em `src/components/estoque/matriz-grade.tsx`:
               </TableHead>
 ```
 
-(e) Acrescentar o gatilho geral ao lado das tabs, dentro do mesmo flex:
+(e) **Substituir** a linha `<SeletorDeModo modo={modo} onMudar={setModo} />` (não acrescentar ao lado — senão a tela fica com dois seletores de modo) pelo flex abaixo, que põe o gatilho geral de massa ao lado dela:
 
 ```tsx
       <div className="flex items-center justify-between gap-2">
@@ -2593,7 +2596,13 @@ O plano insiste que `disabled` é affordance e que a trava é o `return`. Sem es
 
     await user.click(screen.getByRole('button', { name: 'Preencher em massa na cor Preto' }));
     await user.type(screen.getByLabelText('Valor'), '4');
-    await user.click(screen.getByRole('button', { name: 'Cadastrar' })); // salvando = true
+    // `fireEvent.click`, NÃO `user.click`: o `user.click` dispara `pointerdown` FORA do
+    // `PopoverContent`, e o DismissableLayer do Radix (react-dismissable-layer, index.mjs:166)
+    // fecha o popover ali mesmo — o "Aplicar" deixaria de existir antes de ser clicado.
+    // `fireEvent.click` manda só o `click`, que o Radix só escuta depois de um `pointerdown` de
+    // toque (index.mjs:156, `{ once: true }`), então não dismissa. E "Cadastrar" ainda NÃO está
+    // `disabled` neste ponto, então o React entrega o `onClick` normalmente.
+    fireEvent.click(screen.getByRole('button', { name: 'Cadastrar' })); // salvando = true
 
     const antes = screen.getAllByLabelText(/^Estoque inicial de /)
       .map((e) => (e as HTMLInputElement).value);
@@ -2608,6 +2617,8 @@ O plano insiste que `disabled` é affordance e que a trava é o `return`. Sem es
     await waitFor(() => expect(screen.getByText('Foto por variação')).toBeInTheDocument());
   });
 ```
+
+Acrescentar `fireEvent` ao import de `@testing-library/react` no topo do arquivo.
 
 > **Honestidade sobre a cobertura:** este teste cobre `aplicarMassa`. Para `removerLinha` e `reincluirLinha` **não existe rota de teste que alcance o handler** — o único ponto de entrada deles é um botão que já está `disabled`, e o React não entrega o `onClick` nesse caso. A guarda dos dois é redundante atrás do `disabled` **hoje**; ela fica porque a Global Constraint 3 diz que a trava mora no dono do estado, e porque o próximo ponto de entrada (um atalho de teclado, um menu de contexto) pode não vir com `disabled` de graça. Não escrever teste fingindo cobrir o que não cobre.
 
