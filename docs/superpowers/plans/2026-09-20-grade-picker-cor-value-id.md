@@ -22,7 +22,7 @@ A própria URL relatada já mostra a inconsistência:
 |---|---|
 | `MLBU5257197494` (produto exibido) | **Azul-marinho M** |
 | `COLOR:Azul Royal` (chip de cor) | outra cor |
-| `SIZE:MLBU5257197494` | o picker de tamanho está chaveado por **product id**, não por valor de tamanho |
+| `SIZE:MLBU5257197494` | o chip de tamanho aponta para o produto por id (encoding normal do ML) |
 | `MLB5264889383` / `MLBU5257209178` | **Amarelo Manteiga M** |
 
 ---
@@ -37,34 +37,46 @@ Ou seja: **o payload que enviamos está correto**. O defeito é de *identidade d
 
 ---
 
-## 3. Causa raiz
+## 3. Causa raiz: 9 das 15 cores foram publicadas sem identidade no ML
 
 Na categoria `MLB108803`, o schema do ML diz:
 
 | Atributo | `hierarchy` | `tags` | Valores no dicionário |
 |---|---|---|---|
 | `COLOR` | **CHILD_PK** | `allow_variations`, `defines_picture`, `required` | 51 |
-| `SIZE` | **CHILD_PK** | `allow_variations`, `required` | 45 (inclui `M`=2282666, `G`=10490141) |
-| `SIZE_GRID_ROW_ID` | CHILD_PK | `hidden`, `variation_attribute` | — |
+| `SIZE` | CHILD_PK | `allow_variations`, `required` | 45 |
+| `SIZE_GRID_ROW_ID` | CHILD_PK | `hidden`, **`variation_attribute`** | — |
 | `SIZE_GRID_ID` | FAMILY | — | — |
 
 `CHILD_PK` é a chave com que o ML identifica cada filho dentro da family e monta os pickers.
 
-**Nós enviamos os dois CHILD_PK só com `value_name` livre, sem `value_id`:**
+Enviamos `COLOR` só com `value_name` livre, sem `value_id` — `supabase/functions/_shared/ml/publicar.ts:84`:
 
-- `supabase/functions/_shared/ml/publicar.ts:84` → `return { id: 'COLOR', value_name: valor }`
-- `supabase/functions/_shared/ml/publicar.ts:190` → `{ id: 'SIZE', value_name: v.sizeLabel ?? v.tamanho }`
+```ts
+return { id: 'COLOR', value_name: valor };
+```
 
-Consequência medida nos 30 itens publicados:
+Resultado medido nos 30 itens publicados: **o ML resolveu sozinho 6 das 15 cores** (reescrevendo o nome, como já documentado: `Azul Marinho` → `Azul-marinho`/283161, `Azul Claro` → `Azul-claro`/52029 …) e deixou **9 sem `value_id`**, porque simplesmente não existem no dicionário da categoria:
 
-- **SIZE: `value_id = null` em 100% dos itens** — mesmo com `M` e `G` existindo no dicionário. O picker de tamanho fica sem chave e degenera para indexação por `product_id` (é o `SIZE:MLBU…` da URL).
-- **COLOR: o ML resolveu sozinho 6 de 15 cores** (reescrevendo o nome, conforme já documentado: `Azul Marinho` → `Azul-marinho`/283161, `Azul Claro` → `Azul-claro`/52029 …) e deixou **9 sem `value_id`**, porque não existem no dicionário da categoria:
+`Azul Royal`, `Chumbo`, `Cinza Claro`, `Amarelo Manteiga`, `Rosa Pink`, `Nude Rosado`, `Verde Militar`, `Caramelo`, `Salmão`.
 
-  `Azul Royal`, `Chumbo`, `Cinza Claro`, `Amarelo Manteiga`, `Rosa Pink`, `Nude Rosado`, `Verde Militar`, `Caramelo`, `Salmão`.
+`COLOR` é `defines_picture` + `CHILD_PK`: é o eixo com que o ML monta o seletor de cor e mantém a cor escolhida ao navegar entre tamanhos. Cor sem `value_id` não tem identidade nesse índice — trocar o tamanho dentro de uma dessas 9 cores cai no produto de outra cor. Por isso o par relatado é **Azul Royal (sem id) ↔ Azul-marinho (com id 283161)**.
 
-Com o eixo de tamanho sem chave e 9 cores sem identidade, o ML não consegue manter o par (cor, tamanho) ao navegar: trocar o tamanho dentro de uma cor sem `value_id` cai no produto de outra cor. Por isso o par citado é justamente **Azul Royal (sem id) ↔ Azul-marinho (com id 283161)**.
+> O ML aceitou tudo com HTTP 2xx. Nenhum erro na publicação — o defeito só aparece na vitrine.
 
-> Nota: o ML aceitou tudo com HTTP 2xx. Nenhum erro foi devolvido na publicação — o defeito só aparece na vitrine.
+### 3.1. O eixo tamanho foi investigado e está correto
+
+`SIZE` também sai sem `value_id` nos 30 itens, mas **isso é o formato esperado quando há guia de tamanhos**, não um defeito. A guia usada (`/catalog/charts/8600765`, `main_attribute_id: SIZE`) traz cada linha assim:
+
+```json
+{"id": "8600765:2",
+ "attributes": [{"id": "SIZE", "values": [{"name": "M"}]},
+                {"id": "FILTRABLE_SIZE", "values": [{"id": "12917795", "name": "M"}]}]}
+```
+
+O próprio ML guarda `SIZE` como etiqueta sem id e coloca a identidade em `FILTRABLE_SIZE`. Nossos itens têm `SIZE_GRID_ROW_ID` distinto e correto em 100% dos casos (`:2` = M, `:3` = G) — e `SIZE_GRID_ROW_ID` é o atributo marcado `variation_attribute`, ou seja, o discriminador real de tamanho.
+
+**Conclusão:** não mexer em `SIZE`. Mandar `SIZE.value_id` junto com uma size chart é, na melhor hipótese, redundante.
 
 ---
 
@@ -72,22 +84,22 @@ Com o eixo de tamanho sem chave e 9 cores sem identidade, o ML não consegue man
 
 Ordem obrigatória: ADR antes da implementação; TDD (RED antes do GREEN); deploy das edge functions é parte da entrega.
 
-### A1. ADR (amendment ao 0166/0167) — política de CHILD_PK
+### A1. ADR (amendment ao 0166/0167) — política de cor em família de grade
 Decidir e registrar:
-1. Todo atributo `CHILD_PK` da categoria vai ao ML **com `value_id`** sempre que o valor existir no dicionário.
-2. O que fazer quando a cor **não existe** no dicionário (as 9 acima). Duas saídas:
-   - **(recomendada) Falhar LOUD na validação, antes de publicar**, listando as cores inválidas e as válidas da categoria. Alinhado à regra de "nunca defaultar em silêncio".
-   - Mapear para a cor canônica mais próxima — rejeitada como default: colapsa duas cores comerciais no mesmo picker em silêncio (Azul Royal e Azul-marinho virariam a mesma coisa).
-3. O nome comercial da cor continua visível no título/descrição; o picker passa a usar a cor canônica.
+1. `COLOR` vai ao ML **com `value_id`** resolvido contra o dicionário da categoria (não depender da normalização silenciosa do ML).
+2. O que fazer quando a cor **não existe** no dicionário (as 9 acima):
+   - **(recomendada) Falhar LOUD na validação, antes de publicar**, listando as cores recusadas e as válidas da categoria. O operador escolhe a cor canônica — decisão explícita, nunca automática.
+   - Mapear automaticamente para a cor mais próxima — rejeitada: colapsaria duas cores comerciais no mesmo picker sem ninguém ver.
+3. O nome comercial ("Azul Royal") continua no título/descrição; o picker usa a cor canônica.
 
 **Custo:** ~1h (escrita + revisão).
 
-### A2. Resolver `value_id` de SIZE e COLOR pelo schema da categoria
-- Teste RED primeiro: item de grade cuja cor e tamanho existem no dicionário → payload deve conter `value_id`, não `value_name`.
+### A2. Resolver `value_id` de COLOR pelo schema da categoria
+- Teste RED primeiro: item de grade cuja cor existe no dicionário → payload com `value_id`, não `value_name`.
 - Reusar o padrão que já existe (`forcarSaleFormatKit`, `supabase/functions/_shared/categoria/atributos.ts:266`): casar contra o schema da categoria com normalização de acento/hífen/caixa (`Azul Marinho` ≡ `Azul-marinho`).
-- Aplicar em `montarPayloadItem` (`_shared/ml/publicar.ts`), tanto no eixo cor quanto no eixo tamanho.
+- Aplicar em `montarPayloadItem` (`_shared/ml/publicar.ts:84`). **Não tocar em `SIZE`** (ver 3.1).
 
-**Custo:** ~2h com testes.
+**Custo:** ~1h30 com testes.
 
 ### A3. Trava LOUD para cor fora do dicionário
 - Validação na publicação da grade: aborta a família com mensagem nomeando SKU, cor recusada e as cores válidas.
@@ -110,15 +122,35 @@ Decidir e registrar:
 
 ## 5. Track B — os 30 anúncios já no ar (decisão do Diego)
 
-**Não dá para consertar republicando.** Em família User Products, o UPDATE envia só `available_quantity`/`price`; atributo só vai no CREATE. Corrigir COLOR/SIZE dos itens vivos exige apagar e recriar no ML.
+**Não dá para consertar republicando.** Em família User Products, o UPDATE envia só `available_quantity`/`price`; atributo só vai no CREATE. Corrigir o COLOR dos itens vivos exige apagar e recriar no ML.
 
 | Opção | O que envolve | Custo / risco |
 |---|---|---|
 | **B1. Não mexer** | A vitrine segue com a navegação trocada nas 9 cores sem `value_id`. Track A protege as próximas publicações. | Zero risco técnico; o anúncio atual continua confundindo o comprador. |
-| **B2. Recriar só as 9 cores sem `value_id`** (18 itens) após renomeá-las para cores do dicionário | Apagar os 18 itens + UPs no ML, renomear na grade, republicar. As 6 cores com id ficam. | Perde histórico desses 18 itens; exige revisão humana; ~2h de operação. |
+| **B2. Recriar só as 9 cores sem `value_id`** (18 itens) com a cor renomeada para o dicionário | Apagar os 18 itens + UPs no ML, renomear na grade, republicar. As 6 cores já resolvidas ficam. | Perde o histórico desses 18 itens; exige revisão humana; ~2h de operação. |
 | **B3. Recriar a família inteira** (30 itens) | Mesma operação, família toda consistente de uma vez. | Perde o histórico dos 30; ~3h. |
 
 Recomendo **B2 depois de A2–A4 estarem no ar** — recriar antes do fix reproduz o mesmo defeito. Nenhuma dessas opções é executada sem o "vai" do Diego (regra: nunca alterar anúncio publicado fora do fluxo controlado).
+
+### B-pré-requisito: o mapeamento é viável, sem colisão (verificado)
+
+B2/B3 só fazem sentido se as 15 cores couberem em 15 valores **distintos** do dicionário de 51. Cabem:
+
+| Cor comercial (hoje) | Cor canônica proposta | Situação |
+|---|---|---|
+| Preto / Branco / Marrom | Preto / Branco / Marrom | já resolvida pelo ML |
+| Azul Marinho / Azul Claro / Azul Celeste | Azul-marinho / Azul-claro / Azul-celeste | já resolvida pelo ML |
+| **Azul Royal** | Azul (ou Azul-escuro) | a escolher |
+| **Chumbo** | Cinza-escuro | a escolher |
+| **Cinza Claro** | Cinza | a escolher |
+| **Amarelo Manteiga** | Amarelo | a escolher |
+| **Rosa Pink** | Rosa-chiclete | a escolher |
+| **Nude Rosado** | Nude | a escolher |
+| **Verde Militar** | Verde-musgo | a escolher |
+| **Caramelo** | Marrom-claro | a escolher |
+| **Salmão** | Coral | a escolher |
+
+Nenhum destino se repete — as 15 cores continuam distintas no picker. A escolha final é do Diego (é decisão comercial, não técnica); o dicionário da categoria não tem `Azul Royal`, `Pink`, `Caramelo` nem `Salmão`, então alguma aproximação é inevitável nessa categoria.
 
 ---
 
@@ -129,7 +161,7 @@ Recomendo **B2 depois de A2–A4 estarem no ar** — recriar antes do fix reprod
 3. A5 (deploy) + merge
 4. Só então Track B, com a opção que o Diego escolher.
 
-**Total Track A:** ~7h30 de trabalho efetivo.
+**Total Track A:** ~7h de trabalho efetivo.
 
 ---
 
@@ -145,4 +177,4 @@ deno run --allow-net --allow-env --node-modules-dir=none \
   scripts/ops/ml-get.ts <connection_id> /user-products/MLBU5257212414
 ```
 
-`COLOR` com `value_id: null` no retorno = cor fora do dicionário; `SIZE` com `value_id: null` = o defeito descrito aqui.
+`COLOR` com `value_id: null` no retorno = cor fora do dicionário, ou seja, o defeito descrito aqui. `SIZE` com `value_id: null` é esperado (ver 3.1).
