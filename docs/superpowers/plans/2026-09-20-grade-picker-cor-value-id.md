@@ -120,17 +120,53 @@ Decidir e registrar:
 
 ---
 
-## 5. Track B — os 30 anúncios já no ar (decisão do Diego)
+## 5. Track B — os 18 itens no ar: corrigem por PUT, sem recriar nada (testado em produção)
 
-**Não dá para consertar republicando.** Em família User Products, o UPDATE envia só `available_quantity`/`price`; atributo só vai no CREATE. Corrigir o COLOR dos itens vivos exige apagar e recriar no ML.
+> **Revisão de 2026-09-20, com autorização do Diego para testar escrita.** A versão anterior
+> desta seção afirmava que só recriando. **Errado** — medido contra a API real:
+
+| Teste | Resultado |
+|---|---|
+| `PUT /user-products/{MLBU}` com `attributes:[{id:COLOR, value_id}]` | **404** — rota não existe |
+| `PUT /items/MLB7673306888` (Azul Royal M, **pausado**, estoque 0) | **200** |
+| `PUT /items/MLB5264889233` (Azul Royal G, **ativo**, estoque 1) | **200** |
+
+Depois do PUT, em ambos:
+
+- `COLOR` = `Azul` / **`value_id: 52028`** (era texto livre sem id);
+- **o user product foi atualizado junto** — mesmo `MLBU`, nome corrigido para "… Azul M/G";
+- `family_id` **inalterado** (8188099135990610) — não desagrupou;
+- `SIZE` e `SIZE_GRID_ROW_ID` intactos; item ativo continuou `active` com o estoque;
+- nenhum item novo criado, nenhum MLB perdido.
+
+Ou seja: **corrigir os 18 itens custa 18 PUTs**, não uma recriação. O `available_quantity`/`price`
+do UPDATE da nossa saga é limitação do *nosso* código (`atributos-divergentes.ts:19` exclui COLOR
+do delta de propósito — "reescrever identidade desagrupa a família"), não da API. A premissa
+daquele comentário não se confirmou neste caso: o `family_id` sobreviveu.
+
+**Pendência ao corrigir por PUT:** o banco continua com o nome comercial (`Azul Royal`) enquanto o
+ML passa a ter a cor canônica (`Azul`). Alinhar `variacoes.cor` na mesma operação, senão a tela e o
+canal divergem e um re-ingest/republicação devolve a cor inválida.
+
+### Estado atual (já aplicado no teste)
+
+2 dos 30 itens foram corrigidos durante o teste: **Azul Royal M e G → Azul (52028)**. Os outros
+16 itens das 7 cores restantes seguem sem `value_id`.
+
+### Opção descartada (mantida como registro)
+
+Antes de medir, as saídas consideradas eram apagar e recriar (a família inteira ou só as cores sem
+`value_id`), assumindo que atributo só entra no CREATE.
 
 | Opção | O que envolve | Custo / risco |
 |---|---|---|
-| **B1. Não mexer** | A vitrine segue com a navegação trocada nas 9 cores sem `value_id`. Track A protege as próximas publicações. | Zero risco técnico; o anúncio atual continua confundindo o comprador. |
-| **B2. Recriar só as 9 cores sem `value_id`** (18 itens) com a cor renomeada para o dicionário | Apagar os 18 itens + UPs no ML, renomear na grade, republicar. As 6 cores já resolvidas ficam. | Perde o histórico desses 18 itens; exige revisão humana; ~2h de operação. |
-| **B3. Recriar a família inteira** (30 itens) | Mesma operação, família toda consistente de uma vez. | Perde o histórico dos 30; ~3h. |
+| **(recomendada) B-PUT. Corrigir os 16 itens restantes por PUT** | Um `PUT /items/{id}` por item com `COLOR.value_id` da cor canônica escolhida + `UPDATE variacoes.cor` no banco. | ~30min; itens, MLBs, family e estoque preservados. Exige escolher a cor canônica de cada uma das 7 cores restantes. |
+| B1. Não mexer | A vitrine segue com a navegação trocada nas 7 cores ainda sem `value_id`. | Zero risco técnico; o comprador continua confundido. |
+| B2/B3. Recriar (18 ou 30 itens) | Apagar e republicar. | Desnecessário — o PUT resolve. Só faria sentido se o PUT falhasse em algum item. |
 
-Recomendo **B2 depois de A2–A4 estarem no ar** — recriar antes do fix reproduz o mesmo defeito. Nenhuma dessas opções é executada sem o "vai" do Diego (regra: nunca alterar anúncio publicado fora do fluxo controlado).
+A escolha da cor canônica de cada cor comercial é do Diego (decisão comercial): o dicionário da
+categoria não tem `Azul Royal`, `Pink`, `Caramelo` nem `Salmão`, então alguma aproximação é
+inevitável. Nada mais é executado no ML sem o "vai" dele.
 
 ### B-pré-requisito: o mapeamento é viável, sem colisão (verificado)
 
@@ -156,12 +192,15 @@ Nenhum destino se repete — as 15 cores continuam distintas no picker. A escolh
 
 ## 6. Sequência sugerida
 
-1. A1 (ADR) → revisão
-2. A2 + A3 (TDD) → A4 (UI)
-3. A5 (deploy) + merge
-4. Só então Track B, com a opção que o Diego escolher.
+1. **B-PUT primeiro** (~30min): o anúncio no ar volta a funcionar hoje, sem depender do código.
+2. A1 (ADR) → revisão
+3. A2 + A3 (TDD) → A4 (UI)
+4. A5 (deploy) + merge
 
-**Total Track A:** ~7h de trabalho efetivo.
+O Track B deixou de depender do Track A: o PUT não recria nada, então corrigir a vitrine agora não
+reproduz o defeito. O Track A continua necessário para a **próxima** publicação de grade.
+
+**Total Track A:** ~7h de trabalho efetivo. **B-PUT:** ~30min.
 
 ---
 
