@@ -353,3 +353,40 @@ deno run --allow-net --allow-env --node-modules-dir=none \
 ```
 
 `COLOR` com `value_id: null` no retorno = cor fora do dicionário, ou seja, o defeito descrito aqui. `SIZE` com `value_id: null` é esperado (ver 3.1).
+
+---
+
+## 7. Desfecho (20/09, fim do dia): republicado em Moda Fitness com as cores do cadastro
+
+**Pedido do Diego:** despublicar e republicar em `MLB270221` (Moda Fitness > Jaquetas), com as
+cores como estão cadastradas no PubliAI.
+
+**Executado, nesta ordem:**
+
+1. Código: `COLOR` passa a ir com `value_id` do dicionário + `value_name` do cadastro
+   (commits `5fdb069a`, `eeb2ce0f`; revisão do Fable aplicada). Preflight 5625 testes, CI verde,
+   merge fast-forward na main, **17 edge functions deployadas** e confirmadas ACTIVE.
+2. `remover-publicado` com `preservar_familia=true` → família volta a `pronto`, cadastro intacto.
+3. `definir-categoria-familia` → `MLB270221`, atributos regenerados (7, nenhum faltante).
+4. `publicar-familias` → 30 itens novos, `status: publicado`.
+
+**Estado final medido item a item:** 30 itens em `MLB270221`, 21 ativos e 9 pausados por
+`out_of_stock` (os mesmos SKUs sem estoque). As 15 cores saem com **o nome exato do cadastro**
+("Azul Marinho", "Azul Claro", "Azul Celeste" — sem a hifenização do ML); 6 delas com `value_id`
+(entram nos filtros de cor da busca), 9 sem, por não existirem no dicionário da categoria.
+
+### Dois achados que o código sozinho não resolve
+
+- **No CREATE, `value_id` vence `value_name`.** Mandando os dois, o ML grava o nome canônico do
+  dicionário ("Azul-marinho"), diferente do `PUT`, que preserva o nome do vendedor. Então o fix
+  garante o `value_id` (o ganho de filtro), mas a grafia do cadastro nas cores do dicionário
+  exigiu um `PUT` por item depois da criação — feito nos 6 itens de Azul Marinho/Claro/Celeste.
+- **UP antigo com a mesma ficha bloqueia o rename:** `400 item.user_product.repeated.conflict`
+  ("User product was duplicated", com o `MLBU` em conflito). Só liberou depois de encerrar o item
+  antigo (`status: closed` + `PUT {deleted:"true"}`).
+
+### Pendência de limpeza
+
+Os itens da publicação anterior seguem no ML **pausados e sem vínculo local** (28, já que 2 foram
+encerrados para liberar o nome de cor). Não atrapalham a vitrine, mas podem voltar a conflitar
+como UP duplicado numa próxima republicação. Encerrá-los é uma operação de higiene pendente.
