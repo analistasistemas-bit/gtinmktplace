@@ -151,6 +151,14 @@ export function MatrizGrade({
     const resolvida = resolvidas[i]!;
     const nome = `${cor} · ${tamanho}`;
     const herdavel = ehHerdavel(modo);
+    // Pedido do Diego (2026-09-20, validação visual): Estoque/Preço/Custo forçavam rolagem
+    // horizontal na grade — o valor cabe em poucos caracteres, mas a célula tomava a largura
+    // inteira da coluna. GTIN fica de fora de propósito: 13 dígitos precisam do espaço que já
+    // tinha (comportamento inalterado). `w-16` (estoque, sem prefixo, sem badge — cabe "9999"
+    // folgado). `w-36` (preço/custo): testado ao vivo com "R$ 1.234,90" (pior caso realista) +
+    // prefixo (pl-6) + espaço reservado pro badge "herdado" (pr-16) sem cortar o valor — `w-28`
+    // cortava ("1.23…") nesse cenário.
+    const larguraEstreita = modo === 'estoqueInicial' ? 'w-16' : modo === 'preco' || modo === 'custo' ? 'w-36' : undefined;
     const temOverride = herdavel && modo in linha.overrides;
     const valor = herdavel ? resolvida[modo] : linha[modo];
     // `valor !== ''` (fix round pós-revisão da Task 9): só `preco` reclama de vazio (`erroCampo`,
@@ -171,7 +179,7 @@ export function MatrizGrade({
     return (
       <div className="flex flex-col gap-0.5">
         <div className="group/celula relative flex items-center gap-0.5">
-          <div className="relative flex-1">
+          <div className={cn('relative', larguraEstreita ?? 'flex-1')}>
             {def.prefixo && (
               <span className="pointer-events-none absolute inset-y-0 left-1.5 flex items-center text-[10px] text-muted-foreground">
                 {def.prefixo}
