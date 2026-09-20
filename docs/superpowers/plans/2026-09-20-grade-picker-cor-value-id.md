@@ -151,7 +151,7 @@ canal divergem e um re-ingest/republicação devolve a cor inválida.
 ### Estado atual (já aplicado no teste)
 
 2 dos 30 itens foram corrigidos durante o teste: **Azul Royal M e G → Azul (52028)**. Os outros
-16 itens das 7 cores restantes seguem sem `value_id`.
+16 itens das 8 cores restantes seguem sem `value_id`.
 
 ### Opção descartada (mantida como registro)
 
@@ -160,8 +160,8 @@ Antes de medir, as saídas consideradas eram apagar e recriar (a família inteir
 
 | Opção | O que envolve | Custo / risco |
 |---|---|---|
-| **(recomendada) B-PUT. Corrigir os 16 itens restantes por PUT** | Um `PUT /items/{id}` por item com `COLOR.value_id` da cor canônica escolhida + `UPDATE variacoes.cor` no banco. | ~30min; itens, MLBs, family e estoque preservados. Exige escolher a cor canônica de cada uma das 7 cores restantes. |
-| B1. Não mexer | A vitrine segue com a navegação trocada nas 7 cores ainda sem `value_id`. | Zero risco técnico; o comprador continua confundido. |
+| **(recomendada) B-PUT. Corrigir os 16 itens restantes por PUT** | Um `PUT /items/{id}` por item com `COLOR.value_id` da cor canônica escolhida + `UPDATE variacoes.cor` no banco. | ~30min; itens, MLBs, family e estoque preservados. Exige escolher a cor canônica de cada uma das 8 cores restantes. |
+| B1. Não mexer | A vitrine segue com a navegação trocada nas 8 cores ainda sem `value_id`. | Zero risco técnico; o comprador continua confundido. |
 | B2/B3. Recriar (18 ou 30 itens) | Apagar e republicar. | Desnecessário — o PUT resolve. Só faria sentido se o PUT falhasse em algum item. |
 
 A escolha da cor canônica de cada cor comercial é do Diego (decisão comercial): o dicionário da
