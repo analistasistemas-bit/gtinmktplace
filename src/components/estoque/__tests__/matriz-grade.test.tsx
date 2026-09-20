@@ -94,6 +94,37 @@ describe('MatrizGrade — estrutura', () => {
   });
 });
 
+describe('MatrizGrade — preencher em massa', () => {
+  // Os dois gatilhos de eixo são cobertos de ponta a ponta em `dialog-cadastro-grade.test.tsx`,
+  // mas o gatilho GERAL ("Toda a grade") não tinha nenhuma asserção: apagá-lo da matriz deixava a
+  // suíte inteira verde. O aria-label exato também é a prova de que o nome do gatilho geral não
+  // colide com os de cor/tamanho (`getByRole` casa o nome acessível por igualdade).
+  it('os 3 gatilhos existem: o geral, o da linha (cor) e o da coluna (tamanho)', () => {
+    montar(gradeCheia());
+    expect(screen.getByRole('button', { name: 'Preencher em massa' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Preencher em massa na cor Preto' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Preencher em massa no tamanho M' })).toBeInTheDocument();
+  });
+
+  it('o gatilho do cabeçalho de coluna aplica no tamanho daquela coluna', async () => {
+    const user = userEvent.setup();
+    const { onAplicarMassa } = montar(gradeCheia());
+    await user.click(screen.getByRole('button', { name: 'Preencher em massa no tamanho M' }));
+    await user.type(screen.getByLabelText('Valor'), '5');
+    await user.click(screen.getByRole('button', { name: 'Aplicar' }));
+    expect(onAplicarMassa).toHaveBeenCalledWith({
+      campo: 'estoqueInicial', escopo: { tipo: 'tamanho', valor: 'M' }, valor: '5',
+    });
+  });
+
+  it('os 3 gatilhos congelam durante o salvamento', () => {
+    montar(gradeCheia(), { desabilitado: true });
+    expect(screen.getByRole('button', { name: 'Preencher em massa' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Preencher em massa na cor Branco' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Preencher em massa no tamanho P' })).toBeDisabled();
+  });
+});
+
 describe('MatrizGrade — modos', () => {
   it('as 4 abas trocam o campo editado, mantendo a mesma matriz', async () => {
     const user = userEvent.setup();
