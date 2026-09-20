@@ -2,7 +2,9 @@
 
 **Data:** 2026-09-20
 **Severidade:** alta — primeiro produto de grade publicado (família 00000041, 30 SKUs, org DSA/Daludi Shop) está com a seleção de cor/tamanho inconsistente para o comprador.
-**Status:** diagnóstico fechado com evidência; correção pendente de decisão (ver Track B).
+**Status:** causa raiz identificada na seção **2.1** (estoque zero pausa a combinação). As seções 3
+e 5 são de uma hipótese anterior (cor sem `value_id`), que segue válida como problema de filtro/busca
+mas **não** foi provada como causa deste sintoma — ler 2.1 primeiro.
 
 ---
 
@@ -37,7 +39,42 @@ Ou seja: **o payload que enviamos está correto**. O defeito é de *identidade d
 
 ---
 
-## 3. Causa raiz: 9 das 15 cores foram publicadas sem identidade no ML
+## 2.1. CAUSA RAIZ (achado de 20/09, tarde — corrige as seções 3 e 5)
+
+**O que o Diego viu é causado por estoque zero, não por atributo.**
+
+Status real dos 30 itens no ML (`GET /items/{id}`, todos consultados):
+
+- **9 itens estão `paused` com `sub_status: ["out_of_stock"]`** — exatamente os 9 SKUs com estoque 0 no banco.
+- Item pausado sai da vitrine, então **a combinação cor+tamanho deixa de existir para o comprador**.
+
+O par relatado é o caso perfeito, porque as duas cores são complementares:
+
+| Cor | M | G |
+|---|---|---|
+| **Azul Royal** | ❌ pausado (estoque 0) | ✅ ativo |
+| **Azul Marinho** | ✅ ativo | ❌ pausado (estoque 0) |
+
+O comprador abre Azul Royal (só existe G), clica em **M** — não há Azul Royal M à venda, e o ML
+navega para o item que tem M dentro da família: **Azul Marinho M**. No sentido inverso, de Azul
+Marinho (só M) para **G**, cai em Azul Royal G. É a troca bidirecional descrita, ponta a ponta.
+
+Outras 7 cores estão no mesmo estado (um só tamanho ativo): Marrom, Azul-claro, Chumbo, Cinza
+Claro, Nude Rosado, Verde Militar, Caramelo. As 6 com os dois tamanhos ativos (Preto, Branco,
+Azul-celeste, Amarelo Manteiga, Rosa Pink, Salmão) não deveriam apresentar o sintoma.
+
+**Consequências:**
+
+1. Não há bug de dado nem de payload. Repor estoque na combinação faz o item voltar sozinho.
+2. **A hipótese do `value_id` (seção 3) não está provada como causa.** Amarelo Manteiga e Rosa Pink
+   não têm `value_id` e têm os dois tamanhos ativos: se a navegação funcionar nelas, o `value_id`
+   não tem relação com o sintoma. Teste pendente com o Diego (a vitrine bloqueia leitura automática).
+3. A cor sem `value_id` continua sendo um problema **de filtro/busca** (a cor não entra nos filtros
+   do ML), o que justifica o Track A — mas com outra severidade, não como causa deste incidente.
+
+---
+
+## 3. Investigado: cores sem identidade no dicionário (problema real, causa não provada)
 
 Na categoria `MLB108803`, o schema do ML diz:
 
@@ -148,10 +185,24 @@ daquele comentário não se confirmou neste caso: o `family_id` sobreviveu.
 ML passa a ter a cor canônica (`Azul`). Alinhar `variacoes.cor` na mesma operação, senão a tela e o
 canal divergem e um re-ingest/republicação devolve a cor inválida.
 
-### Estado atual (já aplicado no teste)
+### Estado atual (já aplicado nos testes)
 
-2 dos 30 itens foram corrigidos durante o teste: **Azul Royal M e G → Azul (52028)**. Os outros
-16 itens das 8 cores restantes seguem sem `value_id`.
+4 dos 30 itens foram ajustados, **mantendo o nome de cadastro do PubliAI** — o ML aceita
+`value_name` comercial junto com `value_id` do dicionário, e ainda aceita `MAIN_COLOR`:
+
+| Item | COLOR | MAIN_COLOR |
+|---|---|---|
+| MLB7673306888 (Azul Royal M) | `Azul Royal` / 52028 | Azul |
+| MLB5264889233 (Azul Royal G) | `Azul Royal` / 52028 | Azul |
+| MLB7673212568 (Azul Marinho M) | `Azul Marinho` / 283161 | Azul |
+| MLB5264889205 (Azul Marinho G) | `Azul Marinho` / 283161 | Azul |
+
+Achado que muda o Track A: **`MAIN_COLOR`** (`CHILD_DEPENDENT`, `variation_attribute`, 16 valores
+fechados) existe na categoria e nunca foi enviado por nós. O par correto é `COLOR` = nome comercial
+livre + `MAIN_COLOR` = cor básica do filtro. Antes de decidir que o nome comercial precisa virar
+canônico (A1), considerar esse par — ele preserva o nome do cadastro.
+
+Os outros 26 itens seguem como publicados.
 
 ### Opção descartada (mantida como registro)
 
