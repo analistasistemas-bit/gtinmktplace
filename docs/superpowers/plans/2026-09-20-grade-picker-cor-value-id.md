@@ -181,6 +181,11 @@ cause_id 369 — "The body does not contains ... [family_name, available_quantit
 cause_id 374 — "The field variations is invalid with family name"
 ```
 
+Repetido em **MLB270221** (Moda Fitness > Jaquetas, a categoria do anúncio de referência que o
+Diego mandou): **mesmo 400, mesmos 369+374**. Nenhuma categoria de moda testada aceita
+`variations[]` — o layout de um concorrente com cor em miniaturas e tamanhos em caixas é o layout
+de **família User Products**, o mesmo formato do nosso anúncio.
+
 `369 + 374` é exatamente a assinatura que o ADR-0088 usa para concluir "esta categoria exige item
 plano". Ou seja: em `MLB108803`, o ML **obriga** User Products (um item por combinação) e recusa
 `variations[]`. O comportamento do seletor de tamanho não é escolha nossa nem contornável por
