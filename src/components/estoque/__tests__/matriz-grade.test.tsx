@@ -316,6 +316,21 @@ describe('MatrizGrade — erro por célula', () => {
     expect(screen.getByText('Estoque inicial não pode ser negativo.')).toBeInTheDocument();
   });
 
+  // O id do texto de erro é POSICIONAL (`matriz-erro-{r}-{c}`): sem esta assertiva, uma mudança
+  // na indexação das células quebraria a associação em silêncio e nada falharia. Cobre também a
+  // lista separada por espaço — a célula herdando e com erro aponta para os DOIS alvos.
+  it('o texto de erro é anunciado pelo input via aria-describedby', async () => {
+    const user = userEvent.setup();
+    const linhas = [{ ...novaLinhaGrade('Azul Marinho', 'P'), overrides: { preco: '0' } }];
+    montar(linhas, { cores: ['Azul Marinho'], tamanhos: ['P'] });
+    // O erro de `preco` só existe na aba Preço.
+    await user.click(screen.getByRole('button', { name: 'Preço' }));
+    const input = screen.getByLabelText('Preço mínimo (líquido) de Azul Marinho · P');
+    const ids = input.getAttribute('aria-describedby')!.split(' ');
+    expect(ids.map((id) => document.getElementById(id)?.textContent).join(' '))
+      .toMatch(/maior que zero/i);
+  });
+
   it('célula sem erro não mostra texto nenhum', () => {
     const linhas = [novaLinhaGrade('Preto', 'P')];
     linhas[0] = { ...linhas[0]!, estoqueInicial: '3' };
