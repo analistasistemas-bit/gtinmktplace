@@ -117,7 +117,60 @@ O próprio ML guarda `SIZE` como etiqueta sem id e coloca a identidade em `FILTR
 
 ---
 
-## 4. Track A — correção no código
+## 3.9. Confirmado pelo Diego + ação executada (20/09, tarde)
+
+**Teste de controle:** em Amarelo Manteiga (M e G ativos, COLOR sem `value_id`) a cor **se mantém**
+ao trocar o tamanho. Isso fecha o diagnóstico: a causa é a combinação ausente da vitrine, e o
+`value_id` está descartado como causa deste sintoma.
+
+**Regra que o Diego definiu:** *"se só tiver estoque no tamanho que mostra, jamais mostrar dentro de
+uma cor, outra cor"*. O ML monta o seletor de tamanho com os tamanhos da **família inteira**, não da
+cor — não há configuração para mudar isso. A única forma de garantir a regra é não deixar cor
+incompleta no ar.
+
+**Executado (autorizado):** pausei o tamanho que ainda estava ativo nas 9 cores incompletas.
+
+| Cor | Item pausado agora | Já estava pausado (estoque 0) |
+|---|---|---|
+| Azul Marinho | MLB7673212568 (M) | MLB5264889205 (G) |
+| Azul Royal | MLB5264889233 (G) | MLB7673306888 (M) |
+| Marrom | MLB7673212618 (G) | MLB7673212604 (M) |
+| Azul-claro | MLB5264889275 (M) | MLB7673306972 (G) |
+| Chumbo | MLB7673212666 (M) | MLB7673307034 (G) |
+| Cinza Claro | MLB7673307056 (G) | MLB7673212704 (M) |
+| Nude Rosado | MLB7673259040 (G) | MLB7673212770 (M) |
+| Verde Militar | MLB5264889455 (M) | MLB7673307138 (G) |
+| Caramelo | MLB7673259066 (G) | MLB7673259062 (M) |
+
+Resultado verificado item a item: **6 cores completas no ar** (Preto, Branco, Azul-celeste, Amarelo
+Manteiga, Rosa Pink, Salmão), 9 cores inteiramente fora, **nenhuma cor mista**.
+
+> **Atenção ao repor estoque.** Os itens que eu pausei têm estoque ≥ 1 e **não** carregam
+> `out_of_stock` — o ML não os reativa sozinho. Quando o estoque do par for reposto, o ML reativa
+> só o que estava zerado e a cor volta a ficar mista (invertida). Ao repor, reativar o par junto.
+
+---
+
+## 4. Track A — correção no código (reordenado após o achado de 2.1)
+
+### A0 (nova, prioridade máxima). Cor incompleta não vai ao ar
+Regra: uma cor só fica ativa no canal se **todos os tamanhos da família** estiverem ativos nela.
+Faltou um (estoque 0, célula removida, item moderado), a cor inteira é pausada; completou, a cor
+inteira volta. Vale na publicação e em cada movimento de estoque.
+
+Pontos a resolver no ADR: o gatilho (publicação, `sincronizar-estoque`, reconciliação), como avisar
+o operador na tela (a cor está fora do ar e por quê) e o que fazer quando a grade tem cores com
+conjuntos de tamanhos diferentes de propósito.
+
+**Custo:** ~1h ADR + ~3h implementação com testes.
+
+### Alternativa estrutural (registrar, não decidir agora)
+Publicar cada cor como **um item com `variations[]` de tamanho** (modelo Legacy) em vez de um item
+por combinação: o tamanho sem estoque aparece indisponível *dentro* da cor e o comprador nunca pula
+de cor — o ML resolve o problema sozinho. Contraria o desenho atual (ADR-0088/0166, User Products);
+só vale reabrir se o preço por variação não for necessário nesta categoria.
+
+### Demais itens do Track A (agora sem urgência — filtro/busca, não este incidente)
 
 Ordem obrigatória: ADR antes da implementação; TDD (RED antes do GREEN); deploy das edge functions é parte da entrega.
 
@@ -248,15 +301,12 @@ Nenhum destino se repete — as 15 cores continuam distintas no picker. A escolh
 
 ## 6. Sequência sugerida
 
-1. **B-PUT primeiro** (~30min): o anúncio no ar volta a funcionar hoje, sem depender do código.
-2. A1 (ADR) → revisão
-3. A2 + A3 (TDD) → A4 (UI)
-4. A5 (deploy) + merge
+1. ✅ **Feito hoje:** 9 cores incompletas pausadas por inteiro (seção 3.9) — o sintoma sumiu da vitrine.
+2. **A0** (ADR + implementação): cor incompleta não vai ao ar. É o que impede o problema de voltar.
+3. A1 → A2 → A3 → A4: cor com `value_id` + `MAIN_COLOR` (filtro/busca), sem urgência.
+4. A5 (deploy) + merge.
 
-O Track B deixou de depender do Track A: o PUT não recria nada, então corrigir a vitrine agora não
-reproduz o defeito. O Track A continua necessário para a **próxima** publicação de grade.
-
-**Total Track A:** ~7h de trabalho efetivo. **B-PUT:** ~30min.
+**A0:** ~4h. **Demais do Track A:** ~7h, podem esperar.
 
 ---
 
