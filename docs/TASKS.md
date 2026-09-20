@@ -2,6 +2,65 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Cadastro de grade em matriz Cor x Tamanho (roupa e calçado) — 2026-09-19/20
+
+Substituição da lista linear de cards pelo componente `MatrizGrade` (`src/components/estoque/matriz-grade.tsx`)
+e drawer de detalhes, permitindo cadastrar e manipular grades bidimensionais completas.
+Ver [design](../docs/superpowers/specs/2026-09-19-cadastro-grade-matriz-design.md) e
+[plano](../docs/superpowers/plans/2026-09-19-cadastro-grade-matriz.md).
+
+- [x] `MatrizGrade` com 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas e Enter via foco DOM nativo (sem estado reativo por célula).
+- [x] Botão `+` em células removidas para reinclusão imediata da combinação de eixos.
+- [x] Ajuste de layout responsivo: células numéricas estreitas (`w-16` estoque, `w-36` preço/custo) e GTIN largo (13 dígitos) para evitar rolagem horizontal desnecessária.
+- [x] Drawer lateral `DetalhesSku` (`src/components/estoque/detalhes-sku.tsx`) substituindo card expandido, com toggle "Herdar do produto" / "Usar valor específico".
+- [x] Popover `PreencherEmMassa` (`src/components/estoque/preencher-em-massa.tsx`) com 3 escopos (grade inteira, linha de cor, coluna de tamanho), suporte a limpar e reverter ao herdado; bloqueio determinístico de geração de GTIN.
+- [x] Utilitários canônicos em `src/lib/cadastro-grade.ts`: `ordenarEixos`, `totaisDaGrade` e `aplicarEmMassa`.
+- [x] Testes unitários e de integração cobrindo renderização, atalhos de teclado, drawer e preenchimento em massa.
+
+## Tipo de produto por organização e Size Charts do ML (ADR-0166 / ADR-0167) — 2026-09-18/19
+
+Habilitação de vestuário e calçados por organização com duplo eixo estrutural (`cor` × `tamanho`) e integração
+com tabelas de medidas oficiais do Mercado Livre.
+Ver [ADR-0166](decisions/0166-tipo-de-produto-por-organizacao.md), [ADR-0167](decisions/0167-guia-de-tamanhos-gerenciado-via-api.md) e [Spike 051](spikes/051-guia-tamanhos-ml-api.md).
+
+- [x] Migrations `20260919105517_adr166_tipos_produto_por_org.sql`, `20260919110930_adr166_ajustes_revisao.sql` e `20260919114029_adr166_genero_e_tamanho.sql` (`organizations.tipos_produto_habilitados`, `familias.tipo_produto`, `familias.genero`, `variacoes.tamanho`).
+- [x] Migration `20260919154953_adr167_ml_size_charts.sql` (tabela `ml_size_charts` e coluna `familias.ml_size_chart_id`).
+- [x] Edge function `usuarios`: action `set_tipos_produto_org` para super-admin na Central de Organizações (`/admin`).
+- [x] Módulos de resolução e validação de domínio em `supabase/functions/_shared/produto/` (`tipo-produto.ts`, `tipos-produto-valores.ts`, `validar.ts`).
+- [x] Resolução e vinculação automática de guia de tamanho oficial no `publish-familia-ml` (`supabase/functions/_shared/ml/size-chart.ts` e `medidas-valores.ts`).
+- [x] Card de configuração em `src/components/platform-admin/org-settings.tsx` e hook `useTiposProdutoHabilitados`.
+
+## Condições comerciais: faixas regressivas e vigência de adesão (ADR-0165 / ADR-0164) — 2026-09-18/19
+
+Alinhamento da cobrança da plataforma com a política comercial de faturamento em faixas regressivas, travas
+por modalidade e regras de vigência e implantação.
+Ver [ADR-0165](decisions/0165-faixas-regressivas-por-organizacao.md) e [ADR-0164](decisions/0164-implantacao-sobrevive-a-renegociacao.md).
+
+- [x] Migrations `20260918010000_platform_commercial_terms_tiers.sql` e `20260918010100_platform_billing_tiers.sql` substituindo `revenue_bps` por 4 colunas fixas (`revenue_bps_t1..t4`).
+- [x] Seleção automática da alíquota da faixa no fechamento e prévia (`applied_bps`/`applied_tier`).
+- [x] Travas de modalidade por `CHECK` no Postgres e validação TS (`validation.ts`): modalidade 1 sem Sonar, modalidade 2 sem fee mensal.
+- [x] Migration `20260918000000_adr164_implantacao_sobrevive_renegociacao.sql`: preservação da taxa de implantação inaugural em caso de renegociação precoce.
+- [x] Migration `20260919160000_platform_terms_vigencia_setembro.sql` e `commercial-terms-form.tsx`: primeiro contrato entra em vigor no mês de cadastro (`currentMonthStart()`), permitindo prévia imediata.
+- [x] Correção de drift no demonstrativo e alinhamento do grid em `OrganizacaoDetalhe.tsx` e `org-billing.tsx`.
+
+## Padrão único de estados de espera em diálogos (ADR-0163) — 2026-09-17/18
+
+Unificação visual e comportamental de espera operacional em diálogos com o componente `ProgressoIndeterminado`.
+Ver [ADR-0163](decisions/0163-padrao-de-espera-em-dialogos.md) e [contrato-motion-v5](../docs/motion/contrato-motion-v5.md).
+
+- [x] Componente `ProgressoIndeterminado` (`src/components/ui/progresso-indeterminado.tsx`) com barra e glow coordenados.
+- [x] Prop `processando` em `DialogContent` e `AlertDialogContent` integrando `aria-busy`.
+- [x] Recorte de sobriedade limitando aos 18 diálogos do grupo A com operações remotas (ML, filas, relatórios pesados).
+- [x] 6 diálogos de confirmação de `Publicados` passam a segurar abertos durante o processamento remoto, evitando duplo clique e estados intermediários inconsistentes.
+
+## Busca canônica insensível a acentos — 2026-09-17
+
+Padronização da busca de texto na UI, eliminando discrepâncias com acentuação e caracteres especiais.
+
+- [x] Utilitário canônico `normalizarParaBusca` (`src/lib/texto.ts`).
+- [x] Aplicação nas buscas de `Publicados`, `Revisao`, `Faturamento` (pedidos), `DetalheVendas`, `Pulse` (radar) e `Platform-Admin` (carteira).
+- [x] Otimização de performance com pré-indexação em memória dos SKUs no diálogo de entrada de `Estoque` (`src/lib/dialog-entrada-busca.ts`).
+
 ## Remover publicado encerra no ML só sem venda — 2026-09-19
 
 Botão **Remover** em Publicados consulta `sold_quantity` ao vivo; com venda bloqueia os dois lados (409

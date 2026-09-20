@@ -1,15 +1,44 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-09-15
+atualizado: 2026-09-20
 ---
 
 # Sprint Atual
 
 Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
-`docs/project-status.md` (retrato curto, atualizado até **2026-09-15**, com a seção "Entregas de
+`docs/project-status.md` (retrato curto, atualizado até **2026-09-20**, com a seção "Entregas de
 setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-09-15) — EM PRODUÇÃO
+## 📍 Passo atual (2026-09-20) — EM PRODUÇÃO
+
+> **Semana de 16 a 20/09: 6 novos ADRs (0163 a 0168) e entrega da Matriz de Grade.**
+> Entregas consolidadas em produção:
+>
+> **✅ Matriz de Cadastro de Grade (Cor x Tamanho)** (`matriz-grade.tsx`, `detalhes-sku.tsx`, `preencher-em-massa.tsx`, `cadastro-grade.ts`):
+> visualização 2D em 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas/Enter via foco DOM nativo, reinclusão de combinações removidas (`+`), drawer lateral de herança de valores e popover de preenchimento em massa. Células numéricas estreitas para evitar rolagem horizontal desnecessária.
+>
+> **✅ Tipos de Produto por Organização ([[0166-tipo-de-produto-por-organizacao|ADR-0166]])**:
+> habilitação combinável de `roupa` e `calcado` via central `/admin`, desbloqueando o modelo de duplo eixo estrutural (`cor` × `tamanho`/`numeração`).
+>
+> **✅ Guia de Tamanhos via API do Mercado Livre ([[0167-guia-de-tamanhos-gerenciado-via-api|ADR-0167]])**:
+> tabela `ml_size_charts` como cache imutável de tabelas de medidas oficiais do ML, associadas automaticamente no `publish-familia-ml`.
+>
+> **✅ Faixas Regressivas de Cobrança ([[0165-faixas-regressivas-por-organizacao|ADR-0165]]) e Implantação ([[0164-implantacao-sobrevive-a-renegociacao|ADR-0164]])**:
+> comissão regressiva em 4 faixas fixas de faturamento mensal (`revenue_bps_t1..t4`), alíquota aplicada escolhida automaticamente, travas por modalidade em `CHECK` de banco e primeiro contrato vigente no mês corrente.
+>
+> **✅ Padrão Único de Estados de Espera ([[0163-padrao-de-espera-em-dialogos|ADR-0163]])**:
+> `ProgressoIndeterminado` e prop `processando` unificados em 18 pontos de diálogos com operações remotas, mantendo confirmações de Publicados abertas até resposta do ML.
+>
+> **✅ Busca Canônica Insensível a Acentos**:
+> utilitário `normalizarParaBusca` em 6 telas, com pré-indexação dos SKUs no diálogo de entrada de Estoque.
+>
+> **✅ Remoção de Publicados sem Venda ([[0168-remover-publicado-encerra-ml-sem-venda|ADR-0168]])**:
+> encerra e apaga anúncio no ML se sem vendas; bloqueia se houver vendas registradas.
+>
+> **✅ Ecossistema Maestri**:
+> coordenação multiagente, locks atômicos por `mkdir`, painel gerado via script e failover de consultores.
+
+## Passo anterior (2026-09-15)
 
 > **Semana de 09 a 15/09: 51 commits, nenhum ADR novo.** Foram extensões e correções dentro de
 > decisões já aceitas — os adendos em 0021, 0052, 0088 e 0151 foram escritos junto com o código.

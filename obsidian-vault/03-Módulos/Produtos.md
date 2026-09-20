@@ -1,15 +1,26 @@
 ---
 tags: [modulo, produtos]
-atualizado: 2026-08-24
+atualizado: 2026-09-20
 ---
 
 # Produtos
 
-O domínio central: **Lote → Família (= 1 anúncio) → Variação (= 1 SKU/cor)**. Ver [[Glossário]],
-[[Banco de Dados]].
+O domínio central: **Lote → Família (= 1 anúncio) → Variação (= 1 SKU)**. Ver [[Glossário]],
+[[Banco de Dados]], [[Estoque]].
+
+Historicamente, o eixo estrutural de variação era unicamente a **Cor** (`variacoes.cor`). A partir de
+setembro de 2026, com o suporte a vestuário e calçados ([[0166-tipo-de-produto-por-organizacao|ADR-0166]]),
+o SKU passa a ser definido pelo par **Cor × Tamanho/Numeração** em organizações com tipos habilitados.
 
 O saldo dessas variações é governado pelo módulo [[Estoque]] — `variacoes.estoque` só muda por RPC
 do ledger (entrada, venda, estorno, ajuste), nunca por escrita direta.
+
+## Modelos de Produto e Eixos Estruturais (ADR-0166 e ADR-0167)
+
+1. **Tipos de Produto Habilitados:** configurados por organização em `organizations.tipos_produto_habilitados` (`roupa` e `calcado`).
+2. **Duplo Eixo:** famílias com `tipo_produto` preenchido possuem gênero (`familias.genero`) e suas variações contêm tamanho (`variacoes.tamanho`: P, M, G ou numeração 37, 38...).
+3. **Guia de Tamanhos do ML (ADR-0167):** integração com a API de Size Charts do Mercado Livre via tabela `ml_size_charts`, amarrando automaticamente a tabela oficial de medidas no ato da publicação.
+4. **Edição e Matriz:** produtos de vestuário/calçado utilizam a `MatrizGrade` bidimensional em [[Estoque]].
 
 ## Telas
 

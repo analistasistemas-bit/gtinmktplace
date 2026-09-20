@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-09-19
+atualizado: 2026-09-20
 ---
 
 # Changelog
@@ -9,13 +9,57 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-09-20
+
+- **Cadastro de grade em matriz Cor x Tamanho (roupas e calçados):**
+  - **Matriz bidimensional interativa (`matriz-grade.tsx`):** substituição da lista linear de cards por visualização em grade Cor (linhas) × Tamanho (colunas) nos 4 modos (`estoque`, `preco`, `custo`, `gtin`).
+  - **Navegação de foco nativo via DOM:** setas do teclado e Enter movem o foco entre as células sem sobrecarga de estado reativo por célula.
+  - **Reinclusão ágil (`+`):** botão para restaurar células excluídas da grade diretamente no grid.
+  - **Ajuste ergonômico de células:** células numéricas estreitas (`w-16` para estoque, `w-36` para moeda com badge de herança) e GTIN largo (13 dígitos) prevenindo rolagem horizontal forçada.
+  - **Drawer Detalhes do SKU (`detalhes-sku.tsx`):** substitui o card expandido em um Sheet lateral, com controle granular "Herdar do produto" vs "Usar valor específico".
+  - **Preenchimento em massa por escopo (`preencher-em-massa.tsx`):** popover acionado na grade, linha ou coluna para aplicar valores, limpar ou voltar ao herdado, com trava determinística que impede geração de GTIN em lote.
+
 ## 2026-09-19
 
+- **Faixas regressivas de faturamento por organização ([[0165-faixas-regressivas-por-organizacao|ADR-0165]]):**
+  - Comissão regressiva estruturada em 4 faixas fixas (`revenue_bps_t1..t4`) com base na receita líquida mensal apurada.
+  - Cálculo automático de alíquota efetiva (`applied_bps`) na prévia e fechamento.
+  - Travas estritas por `CHECK` no banco de dados e validação TypeScript por modalidade contratual (modalidade 1 sem Sonar, modalidade 2 sem fee mensal).
+  - Migrations `20260918010000_platform_commercial_terms_tiers.sql` e `20260918010100_platform_billing_tiers.sql`.
+- **Tipos de produto por organização e duplo eixo ([[0166-tipo-de-produto-por-organizacao|ADR-0166]]):**
+  - Habilitação combinável de `roupa` e `calcado` em `organizations.tipos_produto_habilitados`, gerenciada em `/admin` sem custo de módulo pago.
+  - Variações passam a suportar duplo eixo canônico: `cor` × `tamanho` (ou numeração), com atributos `familias.tipo_produto`, `familias.genero` e `variacoes.tamanho`.
+  - Migrations `20260919105517_adr166_tipos_produto_por_org.sql`, `20260919110930_adr166_ajustes_revisao.sql` e `20260919114029_adr166_genero_e_tamanho.sql`.
+- **Guia de tamanhos oficial do ML via API ([[0167-guia-de-tamanhos-gerenciado-via-api|ADR-0167]]):**
+  - Tabela `ml_size_charts` para cache imutável de tabelas de medidas oficiais do Mercado Livre por conexão + domínio + gênero.
+  - Injeção e vínculo de `SIZE_GRID_ID` / `SIZE_GRID_ROW_ID` no `publish-familia-ml`. Migration `20260919154953_adr167_ml_size_charts.sql` e Spike 051.
+- **Remoção de publicado encerra no ML sem venda ([[0168-remover-publicado-encerra-ml-sem-venda|ADR-0168]]):**
+  - Botão Remover consulta `sold_quantity` ao vivo no ML: bloqueia com 409 caso haja vendas registradas; caso sem vendas, executa `closed` e `deleted` no canal remoto antes da remoção local.
 - **Vigência imediata no primeiro cadastro de condições comerciais e correção das organizações inaugurais:**
   - **Novo padrão no primeiro contrato:** Ao cadastrar as condições comerciais pela primeira vez (`current === null`) na Central de Organizações (`/admin`), o formulário agora define a vigência padrão como o mês corrente (`starts_on = currentMonthStart()`), permitindo apuração e previsão de cobrança imediatas para a competência de adesão. Renegociações subsequentes continuam entrando em vigor a partir do próximo mês (`nextMonthStart()`), preservando a estabilidade da competência em andamento.
   - **Clamping e sanitização de taxa de implantação:** Implementado clamping defensivo em `CommercialTermsForm` garantindo que o mês de vencimento da taxa de implantação (`setupDueMonth`) nunca anteceda a data de vigência (`startsOn`), tanto ao alternar a vigência no select quanto na sanitização do payload de submissão.
   - **Sincronização dinâmica com fuso de Fortaleza:** Proteção contra virada de competência com formulário aberto (fronteira `02:59Z → 03:01Z` em `America/Fortaleza`), sincronizando `startsOn` e `setupDueMonth` e alertando o operador tanto no evento de foco da janela quanto no submit.
   - **Ajuste cirúrgico em banco de dados (`20260919160000_platform_terms_vigencia_setembro.sql`):** Migration com pré-condições incondicionais e validação individual de contrato inaugural por slug (`v_term_count = 1`, `version = 1`, `starts_on = '2026-10-01'`) para as três organizações inaugurais (**Avil**, **DSA** e **Daludi Shop**), ajustando `starts_on` e `setup_due_month` para `2026-09-01`, desabilitando e reabilitando o trigger de imutabilidade atomicamente com auditoria completa em `platform_audit_events` e asserções LOUD.
+
+## 2026-09-18
+
+- **Taxa de implantação sobrevive a renegociação ([[0164-implantacao-sobrevive-a-renegociacao|ADR-0164]]):**
+  - Preservação da taxa inaugural (`setup_fee_cents`) na renegociação de contrato antes ou durante a competência de vencimento (`setup_due_month`).
+  - Prevenção de herança indevida em meses posteriores. Migration `20260918000000_adr164_implantacao_sobrevive_renegociacao.sql`.
+- **Ferramental e orquestração Maestri:**
+  - Painel gerado do RoadmapMaestri com controle de fases via `maestri-fase.sh` e flag `--encerrar`.
+  - Mutex atômico por diretório (`mkdir`) eliminando race conditions em ambientes concorrentes.
+  - Suporte a failover de consultores (Grok Backup) e regras de escalação para backend.
+
+## 2026-09-17
+
+- **Padrão único de estados de espera em diálogos ([[0163-padrao-de-espera-em-dialogos|ADR-0163]]):**
+  - Componente `ProgressoIndeterminado` e prop `processando` em diálogos (`DialogContent` e `AlertDialogContent`).
+  - Recorte de sobriedade limitando aos 18 pontos com operações assíncronas remotas.
+  - Diálogos de confirmação de Publicados seguram o modal aberto até retorno do Mercado Livre, prevenindo duplo clique.
+- **Busca canônica insensível a acentos:**
+  - Utilitário `normalizarParaBusca` em `src/lib/texto.ts`.
+  - Padronização em Publicados, Revisão, Faturamento, DetalheVendas, Pulse e Estoque (com pré-indexação em memória dos SKUs).
 
 ## 2026-09-08
 
