@@ -21,6 +21,7 @@ function variacao(over: Partial<Variacao> = {}): Variacao {
   return {
     codigo: '00445932',
     cor: 'Laranja',
+    tamanho: null,
     corHex: '#ff8800',
     corOrigem: 'vision',
     corEditadaPeloOperador: false,
@@ -54,7 +55,7 @@ const PROPS_BASE = {
 describe('VariacaoCard — zoom da foto', () => {
   it('sem fotoPath, não existe botão de ampliar foto', () => {
     renderWithClient(<VariacaoCard variacao={variacao({ fotoPath: undefined })} {...PROPS_BASE} />);
-    expect(screen.queryByRole('button', { name: 'Ampliar foto da variação' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Ampliar foto da variação/i })).not.toBeInTheDocument();
   });
 
   it('com fotoPath, clicar no botão abre dialog com a mesma imagem da miniatura', () => {
@@ -62,7 +63,7 @@ describe('VariacaoCard — zoom da foto', () => {
     const miniatura = screen.getByRole('img', { name: 'Laranja' });
     expect(miniatura).toHaveAttribute('src', 'https://exemplo.test/user/00445932.jpeg');
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ampliar foto da variação' }));
+    fireEvent.click(screen.getByRole('button', { name: /Ampliar foto da variação Laranja/i }));
 
     const dialog = screen.getByRole('dialog');
     const imgAmpliada = within(dialog).getByRole('img');
@@ -71,7 +72,7 @@ describe('VariacaoCard — zoom da foto', () => {
 
   it('Esc fecha o dialog', () => {
     renderWithClient(<VariacaoCard variacao={variacao({ fotoPath: 'user/00445932.jpeg' })} {...PROPS_BASE} />);
-    fireEvent.click(screen.getByRole('button', { name: 'Ampliar foto da variação' }));
+    fireEvent.click(screen.getByRole('button', { name: /Ampliar foto da variação Laranja/i }));
     expect(screen.getByRole('dialog')).toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });

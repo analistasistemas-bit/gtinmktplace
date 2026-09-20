@@ -16,7 +16,7 @@ vi.mock('@/hooks/useImageUrl', () => ({
 vi.mock('@/components/semaforo-preco', () => ({ SemaforoPreco: () => null }));
 
 const variacao: Variacao = {
-  id: 'v1', codigo: '92710170', cor: 'Natal', corHex: '#ccc', corOrigem: 'descricao',
+  id: 'v1', codigo: '92710170', cor: 'Natal', tamanho: null, corHex: '#ccc', corOrigem: 'descricao',
   corEditadaPeloOperador: false, preco: 78.9, precoPublicacao: null, precoPublicadoMl: null,
   estoque: 10, gtin: '48251671', excluidaDaPublicacao: false, mlVariationId: null,
   estoqueAnterior: null, custo: 40, pesoGramas: 100, alturaCm: 1, larguraCm: 1, comprimentoCm: 1,
@@ -70,5 +70,26 @@ describe('VariacaoCard — campo EAN/GTIN', () => {
     await userEvent.type(input, '7891234567895');
     await userEvent.tab();
     expect(onSalvarGtin).toHaveBeenCalledWith('92710170', '7891234567895');
+  });
+});
+
+describe('VariacaoCard — tamanho da grade', () => {
+  it('com tamanho, exibe badge e aria-label inclui cor · tamanho', () => {
+    renderCard({
+      variacao: {
+        ...variacao,
+        cor: 'Amarelo Manteiga',
+        tamanho: 'M',
+        gtin: '7891234567895',
+      },
+    });
+    expect(screen.getByLabelText('Tamanho M')).toBeInTheDocument();
+    expect(screen.getByLabelText(/GTIN da variação Amarelo Manteiga · M/i)).toBeInTheDocument();
+  });
+
+  it('sem tamanho, não exibe badge de tamanho', () => {
+    renderCard({ variacao: { ...variacao, tamanho: null, gtin: '7891234567895' } });
+    expect(screen.queryByLabelText(/^Tamanho /)).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/GTIN da variação Natal/i)).toBeInTheDocument();
   });
 });

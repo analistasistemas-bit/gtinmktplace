@@ -280,10 +280,39 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     expect(grade().getByRole('button', { name: 'Reincluir Preto · P' })).toBeInTheDocument();
   }, 40000);
 
-  // Ordem de CLIQUE não pode virar ordem de LINHA: `Set` preserva inserção, e sem `ordenarEixos`
-  // marcar G antes de P produzia "Preto · G" antes de "Preto · P" — e o mesmo desalinho nos
-  // códigos de SKU reservados. (Esta assertiva é reescrita na Task 4 para a ordem das COLUNAS.)
-  it('ordem de clique não decide a ordem da grade — a ordem canônica decide', async () => {
+  it('bloco "Foto por cor" lista cores em ordem alfabética (pt-BR), não na ordem de clique', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    // Ordem de clique propositalmente NÃO alfabética.
+    for (const cor of ['Vermelho', 'Branco', 'Preto']) {
+      await user.click(screen.getByRole('checkbox', { name: cor }));
+    }
+    const bloco = within(screen.getByText('Foto por cor').parentElement!);
+    const coresExibidas = bloco.getAllByLabelText(/^Foto da cor /).map((el) =>
+      el.getAttribute('aria-label')!.replace(/^Foto da cor /, ''),
+    );
+    const esperado = [...coresExibidas].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    expect(coresExibidas).toEqual(esperado);
+    expect(coresExibidas).toEqual(['Branco', 'Preto', 'Vermelho']);
+  });
+
+  it('matriz lista cores em ordem alfabética (pt-BR), não na ordem de clique', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    for (const cor of ['Vermelho', 'Branco', 'Preto']) {
+      await user.click(screen.getByRole('checkbox', { name: cor }));
+    }
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    const grade = within(screen.getByText('Grade').parentElement!.parentElement!);
+    const coresNaMatriz = grade.getAllByRole('rowheader')
+      .map((e) => e.textContent)
+      .filter((t) => t !== 'Total');
+    expect(coresNaMatriz).toEqual(['Branco', 'Preto', 'Vermelho']);
+  });
+
+  // Ordem de CLIQUE nos TAMANHOS não pode virar ordem de COLUNA: `Set` preserva inserção, e sem
+  // `ordenarEixos` marcar G antes de P produzia coluna G antes de P.
+  it('ordem de clique nos tamanhos não decide colunas — a ordem canônica decide', async () => {
     const user = userEvent.setup();
     renderGrade();
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
@@ -673,12 +702,12 @@ describe('DialogCadastroGrade — salvar', () => {
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
     const variacoes = cadastrarProdutoMock.mock.calls[0][0].variacoes;
     expect(variacoes.map((v: { nome: string; tamanho: string }) => `${v.nome}/${v.tamanho}`))
-      .toEqual(['Preto/P', 'Preto/M', 'Branco/P', 'Branco/M']);
+      .toEqual(['Branco/P', 'Branco/M', 'Preto/P', 'Preto/M']);
     // `null`, não `0`: `montarPayload` passa por `numOuNull` (use-cadastro-produto.ts:33-36) e
     // `parseNum('')` devolve `null`, que não é `typeof 'number'`. Estoque em branco chega à edge
     // como `null`. `montarPayload` está FORA do escopo desta entrega — não ajustar a função.
     expect(variacoes.map((v: { estoqueInicial: number | null }) => v.estoqueInicial))
-      .toEqual([4, 4, null, null]);
+      .toEqual([null, null, 4, 4]);
   });
 
   // Prova o RETURN de `aplicarMassa`, não o `disabled` do gatilho.

@@ -3,7 +3,7 @@ import { propsAnaliseDaVariacao, resumoViabilidade, variacaoRepresentativa } fro
 import type { Familia, Variacao } from '../tipos-dominio';
 
 const variacao = (over: Partial<Variacao>): Variacao => ({
-  codigo: 'C', cor: 'Cor', corHex: '#000', corOrigem: null, corEditadaPeloOperador: false,
+  codigo: 'C', cor: 'Cor', tamanho: null, corHex: '#000', corOrigem: null, corEditadaPeloOperador: false,
   preco: 10, precoPublicacao: 20, precoPublicadoMl: null, estoque: 5, gtin: null, excluidaDaPublicacao: false,
   mlVariationId: null, estoqueAnterior: null, custo: 5, pesoGramas: 100,
   alturaCm: 1, larguraCm: 2, comprimentoCm: 3,

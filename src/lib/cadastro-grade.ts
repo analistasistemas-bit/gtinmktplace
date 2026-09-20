@@ -138,9 +138,10 @@ export function resolverLinha(
   };
 }
 
-/** Ordem canônica de cada eixo. Vem por PARÂMETRO porque `src/lib` não importa de
- *  `src/components` — `CORES_POPULARES` mora em `gerador-variacoes.tsx` e os tamanhos vêm de
- *  `opcoesDeTamanho`, que depende do tipo habilitado na org. */
+/** Ordem canônica do eixo tamanho. Vem por PARÂMETRO porque `src/lib` não importa de
+ *  `src/components` — os tamanhos vêm de `opcoesDeTamanho`, que depende do tipo habilitado na
+ *  org. O campo `cores` permanece na assinatura por compatibilidade; `ordenarEixos` ordena cores
+ *  alfabeticamente (pt-BR), não por `CORES_POPULARES`. */
 export interface OrdemCanonica { cores: readonly string[]; tamanhos: readonly string[] }
 
 function porOrdem(valores: ReadonlySet<string>, canonica: readonly string[]): string[] {
@@ -152,17 +153,17 @@ function porOrdem(valores: ReadonlySet<string>, canonica: readonly string[]): st
   return [...naLista, ...fora];
 }
 
-/** Ordena os dois eixos da grade. Corrige um bug latente: `[...cores]`/`[...tamanhos]` preservam
- *  ORDEM DE CLIQUE, então marcar G antes de P produzia a sequência "G, M, P". Na lista de cards
- *  passava despercebido; em colunas de matriz fica visível e errado. Aplicada ANTES de
- *  `reconciliarGrade`, ela fixa a ordem de `linhas` também — e portanto a dos códigos de SKU. */
+/** Ordena os dois eixos da grade. Cores: A→Z (pt-BR), independente de clique ou lista popular.
+ *  Tamanhos: ordem canônica (`ordemCanonica.tamanhos`) — P/M/G e numeração de calçado. Corrige
+ *  bug latente em tamanhos: `[...tamanhos]` preserva ordem de clique (G antes de P). Aplicada
+ *  ANTES de `reconciliarGrade`, fixa a ordem de `linhas` e dos códigos de SKU. */
 export function ordenarEixos(
   cores: ReadonlySet<string>,
   tamanhos: ReadonlySet<string>,
   ordemCanonica: OrdemCanonica,
 ): { cores: string[]; tamanhos: string[] } {
   return {
-    cores: porOrdem(cores, ordemCanonica.cores),
+    cores: [...cores].sort((a, b) => a.localeCompare(b, 'pt-BR')),
     tamanhos: porOrdem(tamanhos, ordemCanonica.tamanhos),
   };
 }

@@ -55,7 +55,7 @@ import { FamiliaExpanded } from '../familia-expanded';
 
 function variacao(over: Partial<Variacao> = {}): Variacao {
   return {
-    codigo: 'V1', cor: '', corHex: '#fff', corOrigem: null, corEditadaPeloOperador: false,
+    codigo: 'V1', cor: '', tamanho: null, corHex: '#fff', corOrigem: null, corEditadaPeloOperador: false,
     preco: 59.9, precoPublicacao: null, precoPublicadoMl: null, estoque: 5, gtin: null,
     excluidaDaPublicacao: false, mlVariationId: null, estoqueAnterior: null, custo: null,
     pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null,

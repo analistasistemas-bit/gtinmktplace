@@ -170,18 +170,16 @@ describe('ordenarEixos', () => {
     expect(r.tamanhos).toEqual(['P', 'M', 'G']);
   });
 
-  it('cor marcada fora de ordem sai na ordem de CORES_POPULARES', () => {
+  it('cor marcada fora de ordem sai em ordem alfabética (pt-BR)', () => {
     const r = ordenarEixos(new Set(['Cinza', 'Preto']), new Set(['P']), ORDEM);
-    expect(r.cores).toEqual(['Preto', 'Cinza']);
+    expect(r.cores).toEqual(['Cinza', 'Preto']);
   });
 
-  // Cor personalizada não está na lista canônica: ordem de inserção do Set é a única ordem
-  // estável que existe para ela, e é a ordem em que o operador digitou.
-  it('cor personalizada vai depois das populares, na ordem em que foi inserida', () => {
+  it('cor personalizada entra na ordem alfabética junto com as demais', () => {
     const cores = new Set<string>();
     cores.add('Vinho'); cores.add('Branco'); cores.add('Caqui'); cores.add('Preto');
     const r = ordenarEixos(cores, new Set(['P']), ORDEM);
-    expect(r.cores).toEqual(['Preto', 'Branco', 'Vinho', 'Caqui']);
+    expect(r.cores).toEqual(['Branco', 'Caqui', 'Preto', 'Vinho']);
   });
 
   it('eixo vazio devolve array vazio, sem inventar valor', () => {

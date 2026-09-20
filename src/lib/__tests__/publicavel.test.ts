@@ -8,7 +8,7 @@ import type { Familia, Variacao } from '../tipos-dominio';
 // Builders mínimos: familiaPublicavel/criticasVariacao só leem um subset de campos.
 function mkVar(over: Partial<Variacao> = {}): Variacao {
   return {
-    codigo: '001', cor: 'Azul', corHex: '#00f', corOrigem: null, corEditadaPeloOperador: false,
+    codigo: '001', cor: 'Azul', tamanho: null, corHex: '#00f', corOrigem: null, corEditadaPeloOperador: false,
     preco: 40, precoPublicacao: 40, precoPublicadoMl: null, estoque: 5, gtin: null,
     fotoPath: 'foto/001.jpg', excluidaDaPublicacao: false, mlVariationId: null,
     estoqueAnterior: null, custo: null, pesoGramas: null, alturaCm: null, larguraCm: null,

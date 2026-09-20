@@ -99,6 +99,8 @@ export interface Variacao {
   id?: string;
   codigo: string;
   cor: string;
+  /** ADR-0166: eixo tamanho da grade (P/M/G, numeração calçado). null = produto sem eixo. */
+  tamanho: string | null;
   corHex: string;
   corOrigem: CorOrigem | null;
   corEditadaPeloOperador: boolean;

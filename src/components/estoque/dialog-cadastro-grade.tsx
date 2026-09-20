@@ -152,10 +152,9 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
     // que é exatamente quando `EtapaFotos` monta: o pior momento possível.
     if (api.salvando || resultado) return;
 
-    // A ordem canônica é DERIVADA aqui dentro, a partir de `tipoEscolhido` (primitivo). Pôr
-    // `gruposTamanho` nas dependências rodaria o efeito a cada render — `opcoesDeTamanho` devolve
-    // array NOVO sempre. Não entraria em loop (o bail-out do `return prev` segura), e é justamente
-    // por isso que seria pior: mataria em silêncio a garantia que o comentário acima descreve.
+    // Tamanhos canônicos derivados de `tipoEscolhido` (primitivo). Pôr `gruposTamanho` nas
+    // dependências rodaria o efeito a cada render — `opcoesDeTamanho` devolve array NOVO sempre.
+    // Cores são A→Z em `ordenarEixos`; `CORES_POPULARES` aqui só mantém a assinatura.
     const canonicos = opcoesDeTamanho(tipoEscolhido ? [tipoEscolhido] : []).flatMap((g) => g.valores);
     const eixos = ordenarEixos(cores, tamanhos, { cores: CORES_POPULARES, tamanhos: canonicos });
 
@@ -325,10 +324,9 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   );
 
   const resolvidas = linhas.map((l) => resolverLinha(cabecalho, fotoPorCor, l));
-  // `ordenarEixos` é chamada de novo aqui (o efeito também chama). Duplicar uma função pura e
-  // barata é mais seguro que um `useMemo` cujas dependências o próximo editor desalinha — e os
-  // dois pontos de chamada TÊM de concordar, senão a matriz desenha colunas fora da ordem das
-  // linhas. Não "otimizar" isto com estado.
+  // `ordenarEixos` é chamada de novo aqui (o efeito também chama). Cores A→Z; tamanhos canônicos.
+  // Duplicar uma função pura e barata é mais seguro que um `useMemo` cujas dependências o próximo
+  // editor desalinha — os dois pontos TÊM de concordar, senão matriz e linhas divergem.
   const eixos = ordenarEixos(cores, tamanhos, {
     cores: CORES_POPULARES,
     tamanhos: gruposTamanho.flatMap((g) => g.valores),
@@ -646,7 +644,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                   escopa as consultas ao container "Cores e tamanhos", e o custo de uma consulta
                   de testing-library cresce com o TAMANHO do container. 15 dropzones a mais lá
                   dentro empurrariam aquele teste para o timeout. */}
-              {cores.size > 0 && (
+              {eixos.cores.length > 0 && (
                 <div className="flex flex-col gap-2">
                   <span className="text-sm font-medium">Foto por cor</span>
                   <span className="text-xs text-muted-foreground">
@@ -656,8 +654,8 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                   <div className="grid gap-2 sm:grid-cols-3">
                     {/* `id` por índice: uma cor personalizada ("Azul Marinho") tem espaço, e um
                         espaço no `id` quebra o par label/input. O nome acessível vem do
-                        `ariaLabel`, não do `id`. */}
-                    {[...cores].map((cor, i) => (
+                        `ariaLabel`, não do `id`. Ordem = `eixos.cores` (A→Z, igual à matriz). */}
+                    {eixos.cores.map((cor, i) => (
                       <div key={cor} className="flex flex-col gap-1">
                         <span className="text-xs text-muted-foreground">{cor}</span>
                         <CampoFoto

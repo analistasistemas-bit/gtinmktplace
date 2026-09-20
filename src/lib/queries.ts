@@ -368,6 +368,7 @@ export function variacaoFromRow(r: VariacaoRow, skusAtivosUP?: Set<string>): Var
     // (fetchFamiliaPublicada sem itens, caminho Legacy) → checagem cai em mlVariationId, como antes.
     jaCasadaUP: skusAtivosUP?.has(r.codigo),
     cor: r.cor ?? '',
+    tamanho: r.tamanho ?? null,
     corHex: r.cor_hex ?? '#cccccc',
     corOrigem: r.cor_origem,
     corEditadaPeloOperador: r.cor_editada_pelo_operador,

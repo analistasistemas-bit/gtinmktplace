@@ -6,6 +6,7 @@ function criarVariacao(overrides: Partial<Variacao> = {}): Variacao {
   return {
     codigo: 'COD1',
     cor: 'Azul',
+    tamanho: null,
     corHex: '#0000ff',
     corOrigem: null,
     corEditadaPeloOperador: false,

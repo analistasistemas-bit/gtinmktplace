@@ -6,6 +6,7 @@ const v = (codigo: string, over: Partial<Variacao> = {}): Variacao => ({
   id: codigo,
   codigo,
   cor: 'Azul',
+  tamanho: null,
   corHex: '#00f',
   corOrigem: null,
   corEditadaPeloOperador: false,

@@ -14,6 +14,13 @@ import { fmtBRL } from '@/lib/formato';
 import { gtinInvalido } from '@/lib/gtin';
 import type { Variacao } from '@/lib/tipos-dominio';
 import { SemaforoPreco } from '@/components/semaforo-preco';
+import { Badge } from '@/components/ui/badge';
+
+function rotuloVariacao(v: Pick<Variacao, 'cor' | 'codigo' | 'tamanho'>): string {
+  const base = v.cor || v.codigo;
+  const tam = v.tamanho?.trim();
+  return tam ? `${base} · ${tam}` : base;
+}
 
 interface VariacaoCardProps {
   variacao: Variacao;
@@ -69,6 +76,8 @@ export function VariacaoCard({
     setGtinStr(variacao.gtin ?? '');
   }, [variacao.gtin]);
   const gtinRuim = gtinInvalido(gtinStr);
+  const rotulo = rotuloVariacao(variacao);
+  const tamanho = variacao.tamanho?.trim() || null;
 
   async function lidarTrocaFoto(arquivo: File) {
     const ext = arquivo.name.split('.').pop()?.toLowerCase() ?? 'jpeg';
@@ -101,12 +110,12 @@ export function VariacaoCard({
           <button
             type="button"
             onClick={() => setFotoAberta(true)}
-            aria-label="Ampliar foto da variação"
+            aria-label={`Ampliar foto da variação ${rotulo}`}
             className="mt-0.5 shrink-0"
           >
             <img
               src={imgUrl}
-              alt={variacao.cor || variacao.codigo}
+              alt={rotulo}
               className="h-8 w-8 rounded object-cover"
               loading="lazy"
             />
@@ -115,7 +124,7 @@ export function VariacaoCard({
           <div
             className="mt-0.5 h-8 w-8 shrink-0 rounded border"
             style={{ backgroundColor: variacao.corHex }}
-            aria-label={variacao.cor ? `Cor ${variacao.cor}` : 'Sem imagem'}
+            aria-label={variacao.cor ? `Cor ${rotulo}` : 'Sem imagem'}
           />
         )}
         <BotaoTrocarFoto
@@ -135,6 +144,16 @@ export function VariacaoCard({
             className="h-7"
           />
           <div className="flex items-center gap-1 whitespace-nowrap">
+            {tamanho && (
+              <Badge
+                variant="outline"
+                className="h-6 shrink-0 px-2 font-semibold tabular-nums"
+                aria-label={`Tamanho ${tamanho}`}
+                title={rotulo}
+              >
+                {tamanho}
+              </Badge>
+            )}
             {/* Alerta "sem cor" (⚠️) só para cor que vai ao ML agora: estoque 0 dorme
                 até repor e não exige cor. Com cor, o badge de origem é informativo. */}
             {(variacao.cor || variacao.estoque > 0) && (
@@ -153,7 +172,7 @@ export function VariacaoCard({
               onChange={(e) => setGtinStr(e.target.value)}
               onBlur={() => onSalvarGtin?.(variacao.codigo, gtinStr.trim() || null)}
               placeholder="sem código"
-              aria-label={`GTIN da variação ${variacao.cor || variacao.codigo}`}
+              aria-label={`GTIN da variação ${rotulo}`}
               aria-invalid={gtinRuim}
               className={`h-6 flex-1 text-xs tabular-nums ${gtinRuim ? 'border-destructive' : ''}`}
             />
@@ -273,7 +292,7 @@ export function VariacaoCard({
             operador precisa ver a foto GRANDE pra desempatar cor ambígua do Vision. */}
         <DialogContent className="sm:max-w-2xl">
           <DialogTitle className="sr-only">
-            Foto ampliada — {variacao.cor || variacao.codigo}
+            Foto ampliada — {rotulo}
           </DialogTitle>
           <DialogDescription className="sr-only">
             Foto da variação em tamanho grande, para conferir a cor.
@@ -281,7 +300,7 @@ export function VariacaoCard({
           {imgUrl && (
             <img
               src={imgUrl}
-              alt={variacao.cor || variacao.codigo}
+              alt={rotulo}
               className="max-h-[80vh] w-auto object-contain rounded"
             />
           )}
