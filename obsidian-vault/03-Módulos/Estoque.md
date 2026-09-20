@@ -1,6 +1,6 @@
 ---
 tags: [modulo, estoque]
-atualizado: 2026-09-03
+atualizado: 2026-09-20
 ---
 
 # Estoque
@@ -116,6 +116,21 @@ valem para as cores preenchidas, e custo em branco **preserva** o custo atual de
 Motivo: o picker vinha de `skus_estoque_org`, truncada em ~1000 linhas pelo PostgREST — com 8.491
 SKUs na org, um produto "do meio" da lista simplesmente não aparecia ("Nenhum SKU encontrado").
 Essa limitação **continua valendo para o botão do topo**; nenhum caminho do card depende mais dela.
+
+## Cadastro de Grade em Matriz Cor x Tamanho (ADR-0166 / 2026-09-20)
+
+Para organizações com tipos de produto habilitados (`roupa` ou `calcado`, ADR-0166), o cadastro manual de produto e de variações opera em **grade bidimensional (Cor × Tamanho/Numeração)** via o componente `MatrizGrade` (`matriz-grade.tsx`), substituindo a antiga lista linear de cards:
+
+1. **4 Modos de Edição e Visualização:**
+   - **Estoque:** entrada de quantidades com largura compacta (`w-16`).
+   - **Preço:** gestão de preços de venda com formatação monetária e badge de herança (`w-36`).
+   - **Custo:** gestão de custo de aquisição (`w-36`).
+   - **GTIN:** identificador EAN/GS1 sem largura fixa (comporta os 13 dígitos sem truncar).
+2. **Navegação Natural por Teclado:** setas (cima, baixo, esquerda, direita) e Enter movem o foco entre os inputs via navegação no DOM nativo, sem retenção de estado reativo pesado por célula.
+3. **Reinclusão de Combinações Removidas:** células excluídas exibem um botão `+` de fácil acesso para restaurar a combinação de Cor × Tamanho.
+4. **Drawer de Detalhes do SKU (`detalhes-sku.tsx`):** substitui o card expandido em um Sheet lateral, permitindo alternar facilmente entre "Herdar do produto" e "Usar valor específico" para preço, custo e medidas físicas.
+5. **Preenchimento em Massa (`preencher-em-massa.tsx`):** popover acionado no cabeçalho geral ou nos cabeçalhos de linha (cor) e coluna (tamanho), permitindo aplicar valores em lote, voltar ao herdado (`null`) ou limpar, com trava determinística que impede geração inadvertida de GTINs em lote.
+6. **Busca Insensível a Acentos e Pré-indexada:** busca rápida no diálogo de entrada com `normalizarParaBusca` (`dialog-entrada-busca.ts`), realizando pré-indexação em memória dos SKUs para eliminar lentidão em catálogos volumosos.
 
 ## Adicionar variação a produto publicado (ADR-0129)
 

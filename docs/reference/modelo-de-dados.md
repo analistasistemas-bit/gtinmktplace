@@ -66,6 +66,12 @@ action `set_tipo_pessoa_org`). Constraint **no banco**, não só na UI —
 exige nada (a obrigatoriedade nasce no ato de ligar o módulo, ver [Fiscal](#fiscal-adr-0135)
 abaixo).
 
+**`tipos_produto_habilitados` text[]** (default `'{}'`, migration `20260919105517_adr166_tipos_produto_por_org.sql`,
+ADR-0166): tipos de produto habilitados para a organização — valores aceitos: `'roupa'` e `'calcado'`.
+Diferente de `modulos_habilitados`, **não é um módulo pago** e não é cobrado: muda a estrutura do cadastro
+(o SKU passa a ser o par Cor × Tamanho/Numeração) e é configurado pelo super-admin em `/admin` (edge `usuarios`,
+action `set_tipos_produto_org`). Lida pelo front via hook `useTiposProdutoHabilitados`.
+
 ### Central de organizações e cobrança auditável (ADR-0155)
 
 As migrations `20260906170000_platform_commercial_foundation.sql`,
@@ -274,6 +280,11 @@ Grupos de colunas:
   `20260731192443_codigo_produto_automatico.sql`.*
 - **Lifecycle:** `status` (`familia_status`), `operacao` (`operacao_ml`).
 - **Categorização:** `tipo_aviamento`, `tipo_origem`, `categoria_ml_id`, `categoria_nome`.
+- **Tipo de produto, gênero e grade (ADR-0166 / ADR-0167):** `tipo_produto` (text, check `'roupa' | 'calcado'`
+  ou null, migration `20260919105517_adr166_tipos_produto_por_org.sql`), `genero` (text, check
+  `'feminino' | 'masculino' | 'unissex' | 'meninas' | 'meninos' | 'bebes'` ou null, migration
+  `20260919114029_adr166_genero_e_tamanho.sql`), `ml_size_chart_id` (text, nullable, ID do guia de tamanhos
+  vinculado no Mercado Livre, migration `20260919154953_adr167_ml_size_charts.sql`).
 - **Sugestão de categoria pela ficha de catálogo (ADR-0131):** `catalogo_categoria_sugerida_id`,
   `catalogo_categoria_sugerida_nome`, `catalogo_categoria_sugerida_vendedores` (nullable, mesmo
   padrão de `concorrencia_categoria_id`/ADR-0057). Escritas por `process-familia` só no fluxo CREATE
@@ -349,6 +360,9 @@ Grupos:
   ficaram órfãs (ADR-0162 — desconto visual descartado).
   *Migration `20260717131407_preco_por_variacao_config_grupo.sql`.*
 - **Dimensões:** `peso_gramas`, `altura_cm`, `largura_cm`, `comprimento_cm`.
+- **Grade e Tamanho (ADR-0166):** `tamanho` (text, nullable, migration `20260919114029_adr166_genero_e_tamanho.sql`):
+  tamanho da peça de roupa (`P`, `M`, `G`...) ou numeração do calçado (`37`, `38`...). Em famílias com
+  `tipo_produto` definido, o SKU real passa a ser a combinação `(cor, tamanho)`.
 - **Cor (ADR-0004/0029):** `cor`, `cor_hex`, `cor_origem`, `cor_editada_pelo_operador`.
 - **Foto:** `imagem_path`, `ml_picture_id`.
 - **Catálogo (ADR-0021):** `catalog_product_id`, `catalog_listing_id`,
@@ -473,6 +487,18 @@ CREATE (seed a partir da assinatura reativa confirmada, ADR-0087/0088), **nunca*
 (que segue 100% `GET`-ao-vivo). PK `(connection_id, categoria_id)`. RLS: leitura via `exists` contra
 `marketplace_connections` (não tem `org_id` direto); escrita `service_role`-only.
 *Migration `20260722145236_adr88_user_products_itens_e_formato.sql`.*
+
+### `ml_size_charts`
+Cache imutável de tabelas/guias de tamanhos oficiais do Mercado Livre por conexão + domínio + gênero
+(ADR-0167, Spike 051). O guia de tamanhos é propriedade da conta do ML e imutável após criado;
+um conjunto de tamanhos novo cria um chart novo. Mesma arquitetura de cache por conexão do
+`ml_formato_publicacao`.
+PK `(connection_id, domain_id, genero)`.
+Colunas: `connection_id` (FK `marketplace_connections`), `domain_id` (text), `genero`
+(text check `'masculino' | 'feminino' | 'unissex'`), `chart_id` (text), `linhas` (jsonb mapeando
+tamanho para row_id da tabela de medidas, ex: `{"P": "8522331:1", "M": "8522331:2"}`), `criado_em`.
+RLS: leitura via `exists` contra `marketplace_connections` por `current_org_id()`; escrita `service_role`-only.
+*Migration `20260919154953_adr167_ml_size_charts.sql`.*
 
 ### `kits_virtuais`
 Anúncio de **combinação** do Mercado Livre: de 2 a 6 produtos **distintos** já publicados,

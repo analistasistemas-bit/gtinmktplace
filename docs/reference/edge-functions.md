@@ -403,6 +403,10 @@ O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corr
   #46 (`48251671`, importado), cujo CREATE inteiro caía com "Product Identifier [GTIN] contains
   values with invalid format". O mesmo predicado guarda a busca de catálogo
   (`buscarProdutoCatalogoPorGtin`). O operador corrige ou apaga o GTIN direto na Revisão.
+  **Guia de tamanhos / Size Charts (ADR-0167):** quando a família tem `tipo_produto` preenchido
+  (vestuário/calçado), resolve ou cria a tabela de medidas oficial no Mercado Livre via
+  `_shared/ml/size-chart.ts` (cache imutável em `ml_size_charts`), associando `SIZE_GRID_ID` no
+  item e `SIZE_GRID_ROW_ID` nas variações.
   **User Products / multi-cor (ADR-0088):** categoria UP com >1 variação (`criarAnuncio` devolve
   `FORMATO_INCOMPATIVEL`) roteia pra saga `_shared/user-products/publicar-grupo.ts`
   (`publicar-familia-up.ts` orquestra): cria N itens técnicos separados (1 por SKU/cor) linkados pelo
@@ -1617,6 +1621,8 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `src/lib/canais.ts` (duplicada aqui de propósito, comentário de sincronia no código) e travando
   `mercado_livre` sempre habilitado e deduplicando o array (`[...new Set(canais)]` pós-allowlist);
   `list_orgs` passou a devolver `canais_habilitados` de cada org. Requer o secret `APP_URL`.
+  **`set_tipos_produto_org`** (ADR-0166): grava `organizations.tipos_produto_habilitados` da org alvo,
+  filtrando contra `TIPOS_PRODUTO_VALIDOS` (`'roupa'`, `'calcado'`) e deduplicando.
   **Menu `canais`** entrou em `MENU_KEYS` (tela `/canais`, ex-OAuth de Configurações) — mudança em
   `MENU_KEYS`/`_shared/` exige redeploy da `usuarios` via CLI completa (conferir versão pós-deploy).
   **Em produção desde 2026-07-15** (migration `20260715014055_menus_multicanal` + esta edge

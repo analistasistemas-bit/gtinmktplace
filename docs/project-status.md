@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-09-19
+**Ultima atualizacao:** 2026-09-20
 
 ## Snapshot
 
@@ -354,7 +354,7 @@ mas não é literalmente clicar na tela. Ver
 - **Viabilidade — mercado relevante e tabela de frete (2026-08-20/22).** Mercado relevante integrado (edge `buscar-mercado-relevante`); tabela compacta de frete Mercado Envios movida para fim da página; tolera payload sem observado durante skew de deploy.
 - **ADR-0135: Cadastro fiscal e emissão via Faturador do Mercado Livre (2026-08-25/26) — EM PRODUÇÃO.** Mergeado e deployado: as 3 edges do épico estão `ACTIVE` (`sincronizar-fiscal-ml` v4, `atualizar-fiscal-familia` v2, `sugerir-ncm` v2 — deploy em 2026-09-08, conferido por `supabase functions list` em 15/09/2026). Supersede parcialmente o ADR-0114: o PubliAI não transmite NF-e — quem emite é o Faturador grátis do próprio ML — e passa a cadastrar empresa (`empresa_fiscal`) e produto (colunas fiscais em `familias`), empurrar por SKU via a porta `DadosFiscaisCanal` (adaptador único ML) e mostrar a prontidão real (`can_invoice`) como semáforo em Publicados. `organizations.tipo_pessoa` com constraint no banco impede PF de ligar o módulo `fiscal`. 3 edges novas (`sincronizar-fiscal-ml`, `atualizar-fiscal-familia`, `sugerir-ncm`); `usuarios`, `cadastrar-produto`, `ingest-lote`, `publish-familia-ml`, `update-familia-ml` e `monitorar-moderados` afetadas por `_shared/fiscal/*` — nenhum schedule QStash novo. Migrations aplicadas em produção (schema aditivo); dialog de cadastro em 3 etapas + fila "fiscal pendente" no `/estoque` (D-9); NCM sugerido por IA, só grava com confirmação ativa. V1 Simples Nacional apenas. **Limitação conhecida:** anúncio externo sem família ainda não aparece com o aviso "sem cadastro fiscal" em Publicados (gap pré-existente da tela, não desta entrega — ver `modelo-de-dados.md#fiscal-adr-0135`). Deploy das edges e validação em runtime real ficam para depois do merge — checklist em `docs/how-to/deploy-e-migrations.md`.
 
-## Entregas de setembro de 2026 (até 15/09) — em produção
+## Entregas de setembro de 2026 (até 20/09) — em produção
 
 - **ADR-0151: Kit vinculado — criar anúncios de kit (N unidades) a partir de produto existente (2026-09-03) — EM PRODUÇÃO.** Extensão do módulo Estoque (ADR-0094): tela Estoque ganha "Criar kit vinculado" (admin-only) que gera família(s) nova(s) — `SALE_FORMAT=Kit`/`UNITS_PER_PACK=N` — com estoque 100% derivado da família-base (`floor(estoque_base/N)`, colunas `kit_base_codigo_pai`/`kit_multiplicador`, nunca uma coluna própria). Kit não passa por `process-familia`; nasce direto em `'pronto'` num lote técnico dedicado que publica só depois do CREATE da base confirmar. Baixa/estorno de venda e push cross-canal resolvem sempre para a base. Guards de banco: SKU de kit sem escrita direta, cor nova bloqueada com kit vivo, remoção da base bloqueada com kit vivo. Restrito na v1 a produto sem variação de cor. 11 tasks do plano de execução (`docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md`), 19 Edge Functions deployadas em produção (fechamento do grafo de imports).
 
@@ -473,6 +473,57 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   esperado, asserções de contagem exata e registro em `platform_audit_events`. Ver
   [design](superpowers/specs/2026-09-19-condicoes-comerciais-vigencia-cadastro-design.md) e
   [plano](superpowers/plans/2026-09-19-condicoes-comerciais-vigencia-cadastro.md).
+- **ADR-0163: Padrão único de estados de espera em diálogos (2026-09-17) — EM PRODUÇÃO.** Prop
+  `processando` unificada em `DialogContent`/`AlertDialogContent` com `ProgressoIndeterminado`
+  (barra e aura coordenada). Recorte de sobriedade restringiu o uso a 18 pontos onde há fala com
+  Mercado Livre, storage, fila, IA ou montagem de relatório paginado com modal aberto. Confirmações
+  de `Publicados` (migrar, pausar, republicar, remover, remover incompleta, refazer kit) passam a
+  segurar o modal aberto até resposta definitiva do canal remoto, eliminando races de clique duplo.
+  Emenda ao contrato motion v5 (§9 e §10). Ver [ADR-0163](decisions/0163-padrao-de-espera-em-dialogos.md).
+- **Busca canônica insensível a acentos (2026-09-17) — EM PRODUÇÃO.** Criação do utilitário
+  `normalizarParaBusca` em `src/lib/texto.ts` aplicando `normalize('NFD')` e strip de diacríticos.
+  Padronização homogênea em 6 superfícies: `Publicados`, `Revisao`, `Faturamento` (pedidos),
+  `DetalheVendas`, `Pulse` (radar) e `Estoque` (diálogo de entrada com pré-indexação em memória dos
+  SKUs para performance).
+- **ADR-0164: Taxa de implantação sobrevive a renegociação (2026-09-18) — EM PRODUÇÃO.** Na
+  renegociação de condições comerciais (`platform_commercial_terms`), a taxa de implantação inaugural
+  não é mais descartada quando o novo termo entra em vigor antes ou durante o mês de vencimento da taxa.
+  Ao mesmo tempo, impede que a taxa seja cobrada em duplicidade ou herdada indefinidamente em meses
+  posteriores. Migration `20260918000000_adr164_implantacao_sobrevive_renegociacao.sql`. Ver
+  [ADR-0164](decisions/0164-implantacao-sobrevive-a-renegociacao.md).
+- **Ecossistema Maestri: painel gerado, locks atômicos e failover (2026-09-18) — EM PRODUÇÃO.**
+  Ferramental de coordenação multiagente do time de 9 roles: painel gerado via script
+  `maestri-fase.sh` com flag `--encerrar`, lock concorrente via `mkdir` atômico sobre o span
+  leitura-renomeação, eliminação de traps órfãos e suporte a consultor de failover (Grok Backup).
+  Documentado em [how-to/maestri-painel.md](how-to/maestri-painel.md).
+- **ADR-0166: Tipos de produto (roupa / calçado) por organização (2026-09-19) — EM PRODUÇÃO.**
+  Habilitação de tipos de produto como lista combinável (`organizations.tipos_produto_habilitados`),
+  gerenciada na Central de Organizações (`/admin`) sem custo adicional (distinto de módulo pago).
+  Desbloqueia o modelo de múltiplos eixos estruturais: o SKU passa a ser o par Cor × Tamanho/Numeração.
+  Colunas `familias.tipo_produto`, `familias.genero` e `variacoes.tamanho`. Novas validações na edge
+  `usuarios` (action `set_tipos_produto_org`), `cadastrar-produto` e `adicionar-variacoes-familia`.
+  Migrations `20260919105517_adr166_tipos_produto_por_org.sql`, `20260919110930_adr166_ajustes_revisao.sql`
+  e `20260919114029_adr166_genero_e_tamanho.sql`. Ver [ADR-0166](decisions/0166-tipo-de-produto-por-organizacao.md).
+- **ADR-0167: Guia de tamanhos gerenciado via API do Mercado Livre (2026-09-19) — EM PRODUÇÃO.**
+  Criação da tabela `ml_size_charts` e coluna `familias.ml_size_chart_id`. Integração do conector ML
+  para resolução e amarração de tabela de medidas oficiais do ML nas categorias de vestuário/calçado
+  durante o `publish-familia-ml`. Migration `20260919154953_adr167_ml_size_charts.sql` e
+  [Spike 051](spikes/051-guia-tamanhos-ml-api.md). Ver [ADR-0167](decisions/0167-guia-de-tamanhos-gerenciado-via-api.md).
+- **ADR-0168: Remover publicado encerra no ML só sem venda (2026-09-19) — EM PRODUÇÃO.** O botão
+  Remover na tela Publicados consulta `sold_quantity` ao vivo na API do ML: caso haja histórico de
+  venda, bloqueia os dois lados (HTTP 409 `tem_movimentacao`); caso não tenha venda, executa `closed`
+  seguido de `deleted` no Mercado Livre antes de remover o registro local. Republicar continua
+  pausando normalmente. Ver [ADR-0168](decisions/0168-remover-publicado-encerra-ml-sem-venda.md).
+- **Cadastro de Grade em Matriz Cor x Tamanho (2026-09-19/20) — EM PRODUÇÃO.** Substituição da lista
+  linear de cards pelo componente `MatrizGrade` (`matriz-grade.tsx`): visualização bidimensional Cor (linhas)
+  × Tamanho (colunas) com 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas e
+  Enter via foco DOM natural (sem estado reativo por célula), reininclusão de células removidas (`+`),
+  largura adaptativa (células numéricas estreitas para evitar rolagem horizontal e GTIN largo).
+  Drawer lateral `DetalhesSku` (`detalhes-sku.tsx`) substituindo o card expandido, com seletor explícito
+  "Herdar do produto" vs "Usar valor específico". Popover `PreencherEmMassa` (`preencher-em-massa.tsx`)
+  com escopo por grade total, linha de cor ou coluna de tamanho (nunca gera GTIN em lote). Ordenação
+  canônica de eixos e consolidação de estoque via `cadastro-grade.ts`. Validado com Playwright e em
+  execução real pelo operador.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 
