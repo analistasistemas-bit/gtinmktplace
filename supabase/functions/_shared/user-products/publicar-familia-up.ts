@@ -92,6 +92,28 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
     ];
   }
 
+  // Dicionário de COLOR da categoria, lido UMA vez por família (schema cacheado no Redis por 30
+  // dias). Incidente 2026-09-20 (grade de jaqueta): sem `value_id` a cor fica fora dos filtros de
+  // busca do ML e o nome do cadastro é reescrito pela grafia do dicionário.
+  // ANTES do upsert da raiz e com try/catch próprio (revisão Fable): `lerSchemaAtributos` trata
+  // 4xx mas o `fetch` cru propaga DNS/timeout/reset — deixar estourar aqui abortaria a publicação
+  // com `anuncios_externos` já em `publicando`. Sem dicionário publicamos como antes (só o nome),
+  // mas nunca em silêncio: é exatamente o estado que gerou o incidente.
+  let valoresCor: { id: string; nome: string }[] = [];
+  try {
+    valoresCor = (await lerSchemaAtributosFn(await ctx.getToken(), categoriaId))
+      .find((a) => a.id === 'COLOR')?.valores ?? [];
+  } catch (e) {
+    valoresCor = [];
+    console.warn(`[publicar-familia-up] schema de ${categoriaId} indisponível: ${e instanceof Error ? e.message : e}`);
+  }
+  if (valoresCor.length === 0) {
+    console.warn(
+      `[publicar-familia-up] categoria ${categoriaId} sem dicionário de COLOR — publicando as cores `
+      + 'só pelo nome (sem value_id): elas não entram nos filtros de cor da busca do ML.',
+    );
+  }
+
   // family_name da partição: o ML agrupa numa mesma UPP todos os itens com o MESMO family_name
   // (ADR §4) — e também o EXIBE como título ao cliente final (achado real em produção 2026-07-22:
   // um sufixo de desambiguação de partição aparecia na tela do comprador). Este worker
@@ -122,12 +144,6 @@ export async function publicarFamiliaUP(args: PublicarFamiliaUPArgs): Promise<Re
   const familiaInput = { titulo_ml: familyName, descricao_ml: anuncio.descricao, categoria_ml_id: categoriaId, atributos_ml: atributosComGenero };
   const varPorSku = new Map(anuncio.variacoes.map((v) => [v.sku, v]));
 
-  // Dicionário de COLOR da categoria, lido UMA vez por família (cacheado no Redis por 30 dias).
-  // Incidente 2026-09-20 (grade de jaqueta): sem `value_id` a cor fica fora dos filtros de busca
-  // do ML e o nome do cadastro é reescrito pela grafia do dicionário. `lerSchemaAtributos` é
-  // resiliente (rede/4xx → []), então falha de schema publica como antes, só pelo nome.
-  const valoresCor = (await lerSchemaAtributosFn(await ctx.getToken(), categoriaId))
-    .find((a) => a.id === 'COLOR')?.valores ?? [];
   const montarPayloadPlano = (sku: string) => {
     const v = varPorSku.get(sku)!;
     // Achado real de produção (2026-09-19, sandália): item.attributes[SIZE] tem que bater com o

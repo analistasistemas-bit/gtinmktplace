@@ -16,6 +16,7 @@ import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { enfileirarVinculacaoCatalogo } from '../queue.ts';
 import { decidirRetryTransitorio } from '../publicacao/retry.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
+import { resolverCorValueId } from '../cor/value-id.ts';
 import { atributosDeFicha, mesclarAtributos } from './atributos-irmao.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
 import {
@@ -155,11 +156,16 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   }
 
   // aceitaEmptyGtin: lido do schema da categoria (como o CREATE/publish faz) p/ a cor nova.
+  // `valoresCor` sai do MESMO schema: a cor nova precisa nascer com o `value_id` do dicionário
+  // igual às irmãs criadas pelo publish (incidente 2026-09-20), senão entra na família com o nome
+  // reescrito pelo ML e fora dos filtros de cor.
   let aceitaEmptyGtin: boolean | undefined;
+  let valoresCor: { id: string; nome: string }[] = [];
   if (familia.categoria_ml_id) {
     try {
       const schema = await lerSchemaAtributos(await ctx.getToken(), familia.categoria_ml_id);
       if (schema.length) aceitaEmptyGtin = schema.some((s) => s.id === 'EMPTY_GTIN_REASON');
+      valoresCor = schema.find((s) => s.id === 'COLOR')?.valores ?? [];
     } catch { /* fallback hard-coded do montarPayloadItem */ }
   }
 
@@ -223,7 +229,10 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     };
     const payload = montarPayloadItem(
       { ...familiaInput, atributos_ml: mesclarAtributos(familia.atributos_ml, await lerFichaDoIrmao()) } as never,
-      [{ codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: num(v.preco_publicacao), gtin: v.gtin, ml_picture_id: picId }] as never,
+      [{
+        codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: num(v.preco_publicacao),
+        gtin: v.gtin, ml_picture_id: picId, corValueId: resolverCorValueId(v.cor, valoresCor),
+      }] as never,
       familia.capa_ml_picture_id, familia.capa2_ml_picture_id, familia.capa3_ml_picture_id,
       undefined, dimensoes, aceitaEmptyGtin, 'plano',
     );

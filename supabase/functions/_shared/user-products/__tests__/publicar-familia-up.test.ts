@@ -414,4 +414,12 @@ describe('publicarFamiliaUP — COLOR com value_id do dicionário da categoria',
     const montar = await publicar(vi.fn().mockResolvedValue([]));
     expect(cor(montar('s-marinho'))).toEqual({ id: 'COLOR', value_name: 'Azul Marinho' });
   });
+
+  // Revisão Fable: `lerSchemaAtributos` trata 4xx, mas o fetch cru propaga DNS/timeout/reset.
+  // Deixar estourar abortaria a publicação com a raiz já em `publicando`.
+  it('schema que LANÇA (DNS/timeout) não derruba a publicação — publica só com o nome', async () => {
+    const montar = await publicar(vi.fn().mockRejectedValue(new Error('getaddrinfo ENOTFOUND')));
+    expect(cor(montar('s-marinho'))).toEqual({ id: 'COLOR', value_name: 'Azul Marinho' });
+    expect(cor(montar('s-royal'))).toEqual({ id: 'COLOR', value_name: 'Azul Royal' });
+  });
 });
