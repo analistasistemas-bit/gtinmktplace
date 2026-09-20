@@ -135,3 +135,32 @@ export function resolverLinha(
     foto: 'foto' in linha ? linha.foto ?? null : fotoPorCor[linha.cor] ?? null,
   };
 }
+
+/** Ordem canônica de cada eixo. Vem por PARÂMETRO porque `src/lib` não importa de
+ *  `src/components` — `CORES_POPULARES` mora em `gerador-variacoes.tsx` e os tamanhos vêm de
+ *  `opcoesDeTamanho`, que depende do tipo habilitado na org. */
+export interface OrdemCanonica { cores: readonly string[]; tamanhos: readonly string[] }
+
+function porOrdem(valores: ReadonlySet<string>, canonica: readonly string[]): string[] {
+  // Duas passadas, não um `sort` com `indexOf`: o que NÃO está na lista canônica precisa manter a
+  // ordem de inserção do `Set` (é a ordem em que o operador digitou a cor personalizada), e um
+  // comparador com `-1` para ausentes embaralharia justamente esse grupo.
+  const naLista = canonica.filter((v) => valores.has(v));
+  const fora = [...valores].filter((v) => !canonica.includes(v));
+  return [...naLista, ...fora];
+}
+
+/** Ordena os dois eixos da grade. Corrige um bug latente: `[...cores]`/`[...tamanhos]` preservam
+ *  ORDEM DE CLIQUE, então marcar G antes de P produzia a sequência "G, M, P". Na lista de cards
+ *  passava despercebido; em colunas de matriz fica visível e errado. Aplicada ANTES de
+ *  `reconciliarGrade`, ela fixa a ordem de `linhas` também — e portanto a dos códigos de SKU. */
+export function ordenarEixos(
+  cores: ReadonlySet<string>,
+  tamanhos: ReadonlySet<string>,
+  ordemCanonica: OrdemCanonica,
+): { cores: string[]; tamanhos: string[] } {
+  return {
+    cores: porOrdem(cores, ordemCanonica.cores),
+    tamanhos: porOrdem(tamanhos, ordemCanonica.tamanhos),
+  };
+}

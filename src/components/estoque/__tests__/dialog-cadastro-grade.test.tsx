@@ -221,6 +221,19 @@ describe('DialogCadastroGrade — passo 2 (seleção) reconcilia a grade', () =>
     expect(screen.queryByText('Caqui · GG')).not.toBeInTheDocument();
     expect(screen.queryByText(/Caqui/)).not.toBeInTheDocument();
   });
+
+  // Ordem de CLIQUE não pode virar ordem de LINHA: `Set` preserva inserção, e sem `ordenarEixos`
+  // marcar G antes de P produzia "Preto · G" antes de "Preto · P" — e o mesmo desalinho nos
+  // códigos de SKU reservados. (Esta assertiva é reescrita na Task 4 para a ordem das COLUNAS.)
+  it('ordem de clique não decide a ordem da grade — a ordem canônica decide', async () => {
+    const user = userEvent.setup();
+    renderGrade();
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'G' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    const textos = screen.getAllByText(/^Preto · /).map((e) => e.textContent);
+    expect(textos).toEqual(['Preto · P', 'Preto · G']);
+  });
 });
 
 describe('DialogCadastroGrade — herança de campo', () => {

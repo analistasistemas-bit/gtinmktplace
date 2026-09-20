@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  chaveGrade, novaLinhaGrade, reconciliarGrade, resolverLinha, totalDaGrade,
+  chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha, totalDaGrade,
   type CamposHerdaveis,
 } from '@/lib/cadastro-grade';
 
@@ -154,5 +154,45 @@ describe('resolverLinha', () => {
 
   it('cor sem foto nenhuma resolve para null', () => {
     expect(resolverLinha(CABECALHO, {}, novaLinhaGrade('Azul', 'M')).foto).toBeNull();
+  });
+});
+
+describe('ordenarEixos', () => {
+  const ORDEM = {
+    cores: ['Preto', 'Branco', 'Cinza'] as const,
+    tamanhos: ['P', 'M', 'G', 'GG'] as const,
+  };
+
+  // O bug latente que esta função corrige: `Set` preserva ORDEM DE CLIQUE, e o operador que
+  // marcou G antes de P via a coluna "G, M, P". Na lista de cards ninguém percebia.
+  it('tamanho marcado fora de ordem sai na ordem canônica', () => {
+    const r = ordenarEixos(new Set(['Preto']), new Set(['G', 'P', 'M']), ORDEM);
+    expect(r.tamanhos).toEqual(['P', 'M', 'G']);
+  });
+
+  it('cor marcada fora de ordem sai na ordem de CORES_POPULARES', () => {
+    const r = ordenarEixos(new Set(['Cinza', 'Preto']), new Set(['P']), ORDEM);
+    expect(r.cores).toEqual(['Preto', 'Cinza']);
+  });
+
+  // Cor personalizada não está na lista canônica: ordem de inserção do Set é a única ordem
+  // estável que existe para ela, e é a ordem em que o operador digitou.
+  it('cor personalizada vai depois das populares, na ordem em que foi inserida', () => {
+    const cores = new Set<string>();
+    cores.add('Vinho'); cores.add('Branco'); cores.add('Caqui'); cores.add('Preto');
+    const r = ordenarEixos(cores, new Set(['P']), ORDEM);
+    expect(r.cores).toEqual(['Preto', 'Branco', 'Vinho', 'Caqui']);
+  });
+
+  it('eixo vazio devolve array vazio, sem inventar valor', () => {
+    expect(ordenarEixos(new Set(), new Set(['P']), ORDEM)).toEqual({ cores: [], tamanhos: ['P'] });
+  });
+
+  // Numeração de calçado: a ordem canônica é a da lista, não a alfabética nem a numérica —
+  // '33/34' vem DEPOIS de '46' em NUMERACOES_CALCADO, e ordenar por número quebraria isso.
+  it('respeita a ordem da lista, não a ordem numérica', () => {
+    const ordem = { cores: ['Preto'] as const, tamanhos: ['39', '40', '39/40'] as const };
+    const r = ordenarEixos(new Set(['Preto']), new Set(['39/40', '40', '39']), ordem);
+    expect(r.tamanhos).toEqual(['39', '40', '39/40']);
   });
 });

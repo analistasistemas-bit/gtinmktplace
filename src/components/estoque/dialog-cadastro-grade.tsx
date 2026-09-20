@@ -25,7 +25,7 @@ import { UNIDADES_FISCAIS } from '@/lib/fiscal';
 import { TIPOS_PRODUTO, type TipoProdutoId } from '@/lib/tipos-produto';
 import { LIMITE_VARIACOES_GERADAS, numeracaoPublicavel, opcoesDeTamanho } from '@/lib/tamanhos';
 import {
-  chaveGrade, novaLinhaGrade, reconciliarGrade, resolverLinha, totalDaGrade,
+  chaveGrade, novaLinhaGrade, ordenarEixos, reconciliarGrade, resolverLinha, totalDaGrade,
   type CampoHerdavel, type CamposHerdaveis, type LinhaGrade,
 } from '@/lib/cadastro-grade';
 import { CampoFoto } from '@/components/estoque/campo-foto';
@@ -102,6 +102,9 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   const [fiscal, setFiscal] = useState<FiscalForm>(fiscalVazio());
 
   const api = useCadastroProduto({ aberto });
+  // Alias de leitura, sem dependência de nada — movido para antes do `useEffect` de reconciliação
+  // logo abaixo, que lê `resultado` na guarda central.
+  const resultado = api.resultado;
   // A MESMA sugestão de NCM do dialog normal — o hook, nunca o efeito copiado. Duplicar as ~15
   // linhas da flag `ignore` aqui reintroduziria o bug F1 (resposta de um produto aplicada em
   // outro) nesta tela, sem nenhum teste acusar.
@@ -135,13 +138,32 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   // dentro do updater e devolver `prev` inalterado usa o bail-out do próprio React, e o loop
   // deixa de ser possível por construção.
   useEffect(() => {
+    // TRAVA CENTRAL (Global Constraint 3), 7º ponto de entrada. `tipoEscolhido` entra nas
+    // dependências abaixo e vem de react-query: um refetch que mude os tipos da org recalcularia
+    // `canonicos` → `ordenarEixos` → REORDENARIA `linhas`.
+    //
+    // `|| resultado`, não só `salvando`: a partir da resposta da edge, `linhas` é HISTÓRICO.
+    // `EtapaFotos` casa `arquivoPorIndice(i) → resolvidas[i]` e `onPatchFotoLinha(i) → linhas[i]`
+    // com `resultado.variacoes[i]`, e o único guard (`batem`) compara CONTAGEM, não ordem —
+    // reordenar aqui manda a foto para o SKU errado, em silêncio. Guardar só `salvando` apenas
+    // adiaria o estrago para o instante em que `salvando` volta a false E `resultado` é setado,
+    // que é exatamente quando `EtapaFotos` monta: o pior momento possível.
+    if (api.salvando || resultado) return;
+
+    // A ordem canônica é DERIVADA aqui dentro, a partir de `tipoEscolhido` (primitivo). Pôr
+    // `gruposTamanho` nas dependências rodaria o efeito a cada render — `opcoesDeTamanho` devolve
+    // array NOVO sempre. Não entraria em loop (o bail-out do `return prev` segura), e é justamente
+    // por isso que seria pior: mataria em silêncio a garantia que o comentário acima descreve.
+    const canonicos = opcoesDeTamanho(tipoEscolhido ? [tipoEscolhido] : []).flatMap((g) => g.valores);
+    const eixos = ordenarEixos(cores, tamanhos, { cores: CORES_POPULARES, tamanhos: canonicos });
+
     // Poda das exclusões ANTES do updater: é o único efeito colateral do ciclo e não pertence
     // dentro de um setState (que o React pode reexecutar).
-    const podadas = reconciliarGrade([...cores], [...tamanhos], removidas, []).removidas;
+    const podadas = reconciliarGrade(eixos.cores, eixos.tamanhos, removidas, []).removidas;
     if (podadas.size !== removidas.size) { setRemovidas(podadas); return; }
 
     setLinhas((prev) => {
-      const r = reconciliarGrade([...cores], [...tamanhos], removidas, prev);
+      const r = reconciliarGrade(eixos.cores, eixos.tamanhos, removidas, prev);
       // `prev` inalterado = bail-out do React: sem novo render, sem ciclo.
       if (r.novas.length === 0 && r.remover.length === 0) return prev;
       const fora = new Set(r.remover);
@@ -154,7 +176,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
         (pos.get(chaveGrade(a.cor, a.tamanho)) ?? 0) - (pos.get(chaveGrade(b.cor, b.tamanho)) ?? 0)
       ));
     });
-  }, [cores, tamanhos, removidas]);
+  }, [cores, tamanhos, removidas, tipoEscolhido, api.salvando, resultado]);
 
   /** Linha "tem dado" = apagá-la perderia algo que o operador digitou/escolheu. */
   function temDado(l: LinhaGrade): boolean {
@@ -276,7 +298,6 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
   // caminho: grade + fotos, mais o passo 0 e a etapa fiscal quando existem.
   const totalEtapas = 2 + (fiscalAtivo ? 1 : 0) + (tipos.length > 1 ? 1 : 0);
   const etapaGrade = tipos.length > 1 ? 2 : 1;
-  const resultado = api.resultado;
   const etapaAtual = passo0 ? 1
     : resultado ? totalEtapas
       : etapaFiscal ? etapaGrade + 1 : etapaGrade;
