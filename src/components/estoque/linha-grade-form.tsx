@@ -13,7 +13,8 @@ import {
 } from '@/lib/cadastro-grade';
 import { cn } from '@/lib/utils';
 
-// Exportado: o cabeçalho do dialog de grade (Task 8) usa o MESMO rótulo, sem redigitá-lo.
+// Exportado: o cabeçalho do dialog de grade (Task 8) usa o MESMO rótulo, sem redigitá-lo. Gera
+// warning de `react-refresh/only-export-components`, aceita — mesmo padrão de gerador-variacoes.tsx.
 export const ROTULOS: Record<CampoHerdavel, { rotulo: string; prefixo?: string; sufixo?: string }> = {
   // Rótulo idêntico ao de `linha-variacao-form.tsx:58` — é a ponte com a Revisão, que exibe
   // este mesmo valor como "mín. líquido".

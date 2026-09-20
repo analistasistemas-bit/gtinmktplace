@@ -15,9 +15,11 @@ import { Input } from '@/components/ui/input';
 import type { GrupoTamanho } from '@/lib/tamanhos';
 
 // Exportada: o dialog de grade precisa da mesma lista para calcular quais chips estourariam o
-// limite. Redigitá-la lá seria duas fontes divergindo na primeira cor nova. Exportar um não-
-// componente daqui é aceito pelo lint — `react-refresh/only-export-components` roda com
-// `allowConstantExport: true` (eslint.config.js:26-29) e isto é um `const`.
+// limite. Redigitá-la lá seria duas fontes divergindo na primeira cor nova. Isto GERA warning de
+// `react-refresh/only-export-components` (`allowConstantExport: true`, eslint.config.js:26-29,
+// só cobre literal primitivo — não um array) — aceita de propósito, mesmo padrão já usado em
+// outros arquivos do projeto (ex.: linha-variacao-form.tsx, etapa-fiscal-form.tsx) que exportam
+// constante ao lado de componente.
 export const CORES_POPULARES = [
   'Preto', 'Branco', 'Cinza', 'Azul Marinho', 'Azul Royal', 'Vermelho',
   'Verde Bandeira', 'Amarelo', 'Rosa', 'Roxo', 'Marrom', 'Bege',

@@ -138,8 +138,10 @@ Fica revisado assim, conforme
   também recusa o valor vindo de aba antiga ou retry, com erro claro.
 
 O que **não** muda: o modelo de dados (`familias.genero`, `variacoes.tamanho`,
-`organizations.tipos_produto_habilitados`), a RPC `tipos_produto_da_org()`, a validação de
-backend e a publicação com guia de tamanhos (ADR-0167). Nenhuma migration.
+`organizations.tipos_produto_habilitados`), a RPC `tipos_produto_da_org()`, o *mecanismo* de
+validação de backend (a edge `cadastrar-produto` continua validando contra uma whitelist — só a
+LISTA que a whitelist usa mudou, com a saída de `'Tamanho Único'`) e a publicação com guia de
+tamanhos (ADR-0167). Nenhuma migration.
 
 ## Como reverter
 

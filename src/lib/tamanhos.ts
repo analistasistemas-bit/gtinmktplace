@@ -1,5 +1,8 @@
-// ADR-0166: listas fixas de Tamanho (roupa) e Numeração (calçado), e o produto cartesiano
-// cor × tamanho que alimenta o botão "Gerar variações" do cadastro manual.
+// ADR-0166: listas fixas de Tamanho (roupa) e Numeração (calçado), o teto de linhas geradas
+// numa grade e o aviso de numeração sem guia de tamanhos no ML — consumidos pela tela dedicada
+// de cadastro em grade (`dialog-cadastro-grade.tsx`). O produto cartesiano cor × tamanho em si
+// mora em `src/lib/cadastro-grade.ts` (`totalDaGrade`/`reconciliarGrade`); o botão "Gerar
+// variações" do cadastro manual que costumava viver aqui foi removido (amendment do ADR-0166).
 //
 // São listas de PICK, nunca texto livre: o ML normaliza valor de atributo (o mesmo que já
 // acontece com COLOR, onde `Rosa Claro` vira `Rosa-claro` na publicação), e texto livre aqui
