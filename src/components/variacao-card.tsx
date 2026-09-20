@@ -248,17 +248,6 @@ export function VariacaoCard({
             mín. líquido: <span className="font-semibold text-foreground">{fmtBRL(variacao.preco)}</span>
           </span>
         </div>
-        {tamanho && (
-          <div
-            className="flex min-w-12 shrink-0 flex-col items-end leading-tight pt-0.5"
-            aria-label={`Tamanho ${tamanho}`}
-          >
-            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-              Tamanho
-            </span>
-            <span className="text-sm font-semibold tabular-nums">{tamanho}</span>
-          </div>
-        )}
         <div className="flex min-w-16 shrink-0 flex-col items-end leading-tight pt-0.5">
           <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             Estoque
