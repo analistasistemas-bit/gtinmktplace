@@ -353,11 +353,16 @@ Substituir o corpo do `useEffect` das linhas 137-157 por:
 ```tsx
   useEffect(() => {
     // TRAVA CENTRAL (Global Constraint 3), 7º ponto de entrada. `tipoEscolhido` entra nas
-    // dependências abaixo e vem de react-query: um refetch durante o salvamento que mude os tipos
-    // da org recalcularia `canonicos` → `ordenarEixos` → REORDENARIA `linhas` no meio do save.
-    // `EtapaFotos` casa por índice e o guard `batem` compara contagem, não ordem — a foto iria
-    // para o SKU errado, em silêncio.
-    if (api.salvando) return;
+    // dependências abaixo e vem de react-query: um refetch que mude os tipos da org recalcularia
+    // `canonicos` → `ordenarEixos` → REORDENARIA `linhas`.
+    //
+    // `|| resultado`, não só `salvando`: a partir da resposta da edge, `linhas` é HISTÓRICO.
+    // `EtapaFotos` casa `arquivoPorIndice(i) → resolvidas[i]` e `onPatchFotoLinha(i) → linhas[i]`
+    // com `resultado.variacoes[i]`, e o único guard (`batem`) compara CONTAGEM, não ordem —
+    // reordenar aqui manda a foto para o SKU errado, em silêncio. Guardar só `salvando` apenas
+    // adiaria o estrago para o instante em que `salvando` volta a false E `resultado` é setado,
+    // que é exatamente quando `EtapaFotos` monta: o pior momento possível.
+    if (api.salvando || resultado) return;
 
     // A ordem canônica é DERIVADA aqui dentro, a partir de `tipoEscolhido` (primitivo). Pôr
     // `gruposTamanho` nas dependências rodaria o efeito a cada render — `opcoesDeTamanho` devolve
@@ -385,10 +390,10 @@ Substituir o corpo do `useEffect` das linhas 137-157 por:
         (pos.get(chaveGrade(a.cor, a.tamanho)) ?? 0) - (pos.get(chaveGrade(b.cor, b.tamanho)) ?? 0)
       ));
     });
-  }, [cores, tamanhos, removidas, tipoEscolhido, api.salvando]);
+  }, [cores, tamanhos, removidas, tipoEscolhido, api.salvando, resultado]);
 ```
 
-`api.salvando` entra nas dependências junto com a guarda: sem isso, o efeito que voltou cedo durante o save nunca reexecutaria ao terminar, e uma seleção feita nesse intervalo ficaria fora de `linhas` para sempre.
+`api.salvando` e `resultado` entram nas dependências junto com a guarda porque são lidos dentro do efeito — é a regra do `exhaustive-deps`, não uma tentativa de recuperar trabalho perdido. Não há o que recuperar: `mudarCores`, `mudarTamanhos`, `removerLinha` e `reincluirLinha` já retornam cedo durante o save, então `cores`/`tamanhos`/`removidas` não mudam nesse intervalo. Atenção: `resultado` é lido aqui mas declarado na linha 279 do arquivo atual — **mover a declaração `const resultado = api.resultado;` para antes deste `useEffect`** (ela é só um alias de leitura, não tem dependência de nada).
 
 Nota para quem revisar: as outras chamadas de `totalDaGrade` (linhas 168, 185, 228-239) continuam com `[...cores]`/`[...tamanhos]` — elas só contam, e contagem não depende de ordem. Não "padronizar".
 
@@ -1058,16 +1063,6 @@ export function MatrizGrade({
 
     return (
       <div className="group/celula relative flex items-center gap-0.5">
-        {herdavel && !temOverride && (
-          // Sufixo só em foco/hover: 60 células gritando "herdado" ao mesmo tempo é ruído, e a
-          // cor `muted` sozinha não diz O QUE o cinza significa na primeira vez que se vê a tela.
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute -top-3 left-1 z-10 rounded bg-background px-1 text-[10px] text-muted-foreground opacity-0 transition-opacity group-focus-within/celula:opacity-100 group-hover/celula:opacity-100"
-          >
-            herdado
-          </span>
-        )}
         <div className="relative flex-1">
           {def.prefixo && (
             <span className="pointer-events-none absolute inset-y-0 left-1.5 flex items-center text-[10px] text-muted-foreground">
@@ -1096,6 +1091,21 @@ export function MatrizGrade({
               ? onMudarOverride(linha.clientId, modo, e.target.value)
               : onMudarLinha(linha.clientId, { [modo]: e.target.value }))}
           />
+          {herdavel && !temOverride && (
+            // Adorno INLINE à direita, dentro do wrapper relativo do input — mesmo padrão do
+            // `sufixo` em `linha-variacao-form.tsx:138-142`. Nada de `-top-*` negativo: a célula
+            // vive num scrollport (o container do `ui/table` rola nos dois eixos) e um badge
+            // acima da linha sumiria atrás do `<thead sticky bg-background z-20>` na 1ª linha.
+            //
+            // Só em foco/hover: 60 células gritando "herdado" ao mesmo tempo é ruído, e a cor
+            // `muted` sozinha não diz O QUE o cinza significa na primeira vez que se vê a tela.
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-2 flex items-center text-[10px] text-muted-foreground opacity-0 transition-opacity group-focus-within/celula:opacity-100 group-hover/celula:opacity-100"
+            >
+              herdado
+            </span>
+          )}
         </div>
         {temOverride && (
           <Button
@@ -1123,24 +1133,7 @@ export function MatrizGrade({
 
   return (
     <div className="flex min-w-0 flex-col gap-2">
-      {/* Grupo de botões `aria-pressed`, NÃO `<Tabs>` do Radix: não existe painel por modo (a
-          mesma tabela serve os 4), e um `TabsTrigger` sem `TabsContent` emite `aria-controls`
-          apontando para um id inexistente. É exatamente a saída que `ui/tabs.tsx` documenta ao
-          exportar `tabsTriggerClassName` — mesma aparência, semântica correta. */}
-      <div className={tabsListVariants()} role="group" aria-label="Modo de edição da grade">
-        {MODOS.map((m) => (
-          <button
-            key={m.valor}
-            type="button"
-            className={tabsTriggerClassName}
-            data-active={modo === m.valor ? '' : undefined}
-            aria-pressed={modo === m.valor}
-            onClick={() => setModo(m.valor)}
-          >
-            {m.aba}
-          </button>
-        ))}
-      </div>
+      <SeletorDeModo modo={modo} onMudar={setModo} />
 
       <Table>
         <TableHeader>
@@ -1176,9 +1169,55 @@ export function MatrizGrade({
     </div>
   );
 }
+
+/** Grupo de botões `aria-pressed`, NÃO `<Tabs>` do Radix: não existe painel por modo (a mesma
+ *  tabela serve os 4), e um `TabsTrigger` sem `TabsContent` emite `aria-controls` apontando para
+ *  um id inexistente. É exatamente a saída que `ui/tabs.tsx:58-60` documenta ao exportar
+ *  `tabsTriggerClassName`.
+ *
+ *  Reproduzir a aparência exige os atributos que `Tabs`/`TabsList` renderizam além das classes —
+ *  sem eles metade dos seletores de `tabsTriggerClassName` fica inerte:
+ *  - `group/tabs` + `data-orientation` (o que `Tabs` é): habilita `group-data-horizontal/tabs:h-8`
+ *    e o sublinhado `group-data-horizontal/tabs:after:…`;
+ *  - `data-variant="default"` (o que `TabsList` renderiza): habilita
+ *    `group-data-[variant=default]/tabs-list:data-active:shadow-sm`;
+ *  - `data-state` E `data-active` no botão ativo: `data-active:` é o nome da classe, mas neste
+ *    Tailwind ele casa com `data-state="active"` (medição do projeto; `radio-group.tsx:27` usa a
+ *    mesma premissa com `data-checked:`). Emitir só um é apostar em qual — os dois custam nada. */
+function SeletorDeModo({ modo, onMudar }: {
+  modo: ModoGrade; onMudar: (m: ModoGrade) => void;
+}) {
+  return (
+    <div className="group/tabs" data-orientation="horizontal">
+      <div
+        className={tabsListVariants()}
+        data-variant="default"
+        role="group"
+        aria-label="Modo de edição da grade"
+      >
+        {MODOS.map((m) => {
+          const ativo = modo === m.valor;
+          return (
+            <button
+              key={m.valor}
+              type="button"
+              className={tabsTriggerClassName}
+              data-state={ativo ? 'active' : 'inactive'}
+              data-active={ativo ? '' : undefined}
+              aria-pressed={ativo}
+              onClick={() => onMudar(m.valor)}
+            >
+              {m.aba}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 ```
 
-> **Nota ao implementador:** `removidas`, `onReincluirCelula` e `onAplicarMassa` já estão na assinatura mas só entram em uso nas tasks 6 (as duas primeiras) e 8. Desestruturar as três com alias `_` — `removidas: _removidas, onReincluirCelula: _onReincluirCelula, onAplicarMassa: _onAplicarMassa,` — que é o que o `varsIgnorePattern: '^_'` do `eslint.config.js:31-34` já cobre, e renomear de volta nas tasks 6 e 8. Nada de `<span>` de andaime no DOM.
+> **Nota ao implementador:** `removidas`, `onReincluirCelula` e `onAplicarMassa` estão no **tipo** das props (o dialog já as passa) mas só entram em uso nas tasks 6 (as duas primeiras) e 8. **Simplesmente não desestruturá-las nesta task** — nem ESLint nem TS reclamam de prop declarada no tipo e não desestruturada, e isso evita depender da isenção por `_` em *binding element* de destructuring, que é menos garantida no `noUnusedLocals`/`noUnusedParameters` do TS (`tsconfig.app.json:18-19`) do que num parâmetro simples. As tasks 6 e 8 acrescentam cada uma à desestruturação quando forem usá-las. Nada de `<span>` de andaime no DOM.
 
 - [ ] **Step 4: Rodar e confirmar que passa**
 
@@ -1876,12 +1915,12 @@ Em `src/components/estoque/__tests__/dialog-cadastro-grade.test.tsx`, no describ
 
 - [ ] **Step 2: Rodar e confirmar que falham**
 
-Run: `pnpm vitest run src/components/estoque/__tests__/matriz-grade.test.tsx -t "célula removida" && pnpm vitest run src/components/estoque/__tests__/dialog-cadastro-grade.test.tsx -t "Reincluir"`
+Run: `pnpm vitest run src/components/estoque/__tests__/matriz-grade.test.tsx -t "célula removida"` e depois `pnpm vitest run src/components/estoque/__tests__/dialog-cadastro-grade.test.tsx -t "reincluir pelo"` (o `-t` do vitest é case-sensitive: o teste do dialog começa com `reincluir` minúsculo, e um `-t "Reincluir"` rodaria zero testes e "passaria" em falso)
 Expected: FAIL nos 3 testes que esperam o botão `Reincluir …` (a Task 4 renderiza `—` para toda célula sem linha). O teste `célula sem linha e sem exclusão registrada fica inerte` passa desde a Task 4 — é a rede que impede esta task de oferecer `+` no frame pré-reconciliação.
 
 - [ ] **Step 3: Implementar a distinção**
 
-Em `src/components/estoque/matriz-grade.tsx`, renomear `_removidas` → `removidas` e `_onReincluirCelula` → `onReincluirCelula` na desestruturação, e trocar o ramo `i === undefined` de `celula(...)`:
+Em `src/components/estoque/matriz-grade.tsx`, acrescentar `removidas` e `onReincluirCelula` à desestruturação das props (na Task 4 elas existiam só no tipo) e trocar o ramo `i === undefined` de `celula(...)`:
 
 ```tsx
     const i = indice.get(chave);
@@ -1934,7 +1973,7 @@ Expected: PASS.
 - Test: `src/components/estoque/__tests__/matriz-grade.test.tsx`
 
 **Interfaces:**
-- Consumes: os atributos `data-r`/`data-c` já emitidos pela célula editável **e** pelo botão "+" (Task 4).
+- Consumes: os atributos `data-r`/`data-c` emitidos pela célula editável (Task 4) **e** pelo botão "+" (Task 6).
 - Produces: nada exportado. O contrato é o DOM.
 
 **Regra inegociável:** célula ativa **não** é estado React. Um `useState` de célula ativa rerenderiza as até 60 células a cada tecla. O movimento é `document`/`container.querySelector('[data-r=…][data-c=…]')` + `element.focus()`.
@@ -2400,7 +2439,7 @@ Em `src/components/estoque/matriz-grade.tsx`:
 
 (a) Importar: `import { PreencherEmMassa } from '@/components/estoque/preencher-em-massa';`
 
-(b) Renomear `_onAplicarMassa` → `onAplicarMassa` na desestruturação das props (o alias `_` veio da Task 4, quando a prop ainda não tinha uso).
+(b) Acrescentar `onAplicarMassa` à desestruturação das props (na Task 4 ela existia só no tipo, por ainda não ter uso).
 
 (c) Trocar o cabeçalho de coluna:
 
@@ -2440,20 +2479,7 @@ Em `src/components/estoque/matriz-grade.tsx`:
 
 ```tsx
       <div className="flex items-center justify-between gap-2">
-        <div className={tabsListVariants()} role="group" aria-label="Modo de edição da grade">
-          {MODOS.map((m) => (
-            <button
-              key={m.valor}
-              type="button"
-              className={tabsTriggerClassName}
-              data-active={modo === m.valor ? '' : undefined}
-              aria-pressed={modo === m.valor}
-              onClick={() => setModo(m.valor)}
-            >
-              {m.aba}
-            </button>
-          ))}
-        </div>
+        <SeletorDeModo modo={modo} onMudar={setModo} />
         <PreencherEmMassa
           escopoInicial={{ tipo: 'todos' }}
           cores={cores}
@@ -2545,11 +2571,14 @@ Em `src/components/estoque/__tests__/dialog-cadastro-grade.test.tsx`, no describ
 O plano insiste que `disabled` é affordance e que a trava é o `return`. Sem estes dois testes, trocar `if (api.salvando) return;` por nada deixaria a suíte verde. Acrescentar ao describe `DialogCadastroGrade — salvar` de `dialog-cadastro-grade.test.tsx`:
 
 ```tsx
-  // Prova o `return`, não o `disabled`: dispara o clique num gatilho JÁ desabilitado via
-  // `fireEvent` (que não respeita `pointer-events`/`disabled` como o `userEvent` faz) e confirma
-  // que a contagem de linhas não se mexeu. Se a guarda sumir, a linha some no meio do save e o
-  // casamento posicional de `EtapaFotos` manda a foto para o SKU errado.
-  it('durante o salvamento nem remover nem preencher em massa mexem nas linhas', async () => {
+  // Prova o RETURN de `aplicarMassa`, não o `disabled` do gatilho.
+  //
+  // `fireEvent.click` num `<button disabled>` NÃO serve: o React consulta
+  // `shouldPreventMouseEvent` e simplesmente não chama o `onClick` de elemento interativo
+  // desabilitado — o teste passaria com a guarda apagada. A única rota que chega ao handler com
+  // `salvando === true` é o popover JÁ ABERTO antes do save: o `desabilitado` gate só o
+  // `PopoverTrigger`, e o botão "Aplicar" lá dentro nunca recebe `disabled`.
+  it('preencher em massa com o popover aberto não altera nada durante o salvamento', async () => {
     let liberar: (v: unknown) => void = () => {};
     cadastrarProdutoMock.mockReturnValueOnce(new Promise((res) => { liberar = res; }));
     const user = userEvent.setup();
@@ -2561,13 +2590,16 @@ O plano insiste que `disabled` é affordance e que a trava é o `return`. Sem es
     await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
     await user.click(screen.getByRole('checkbox', { name: 'P' }));
     await user.click(screen.getByRole('checkbox', { name: 'M' }));
-    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
 
-    const antes = screen.getAllByLabelText(/^Estoque inicial de /).length;
-    fireEvent.click(screen.getByRole('button', { name: 'Remover Preto · P' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Preencher em massa na cor Preto' }));
-    expect(screen.getAllByLabelText(/^Estoque inicial de /)).toHaveLength(antes);
-    expect(screen.queryByRole('button', { name: 'Reincluir Preto · P' })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Preencher em massa na cor Preto' }));
+    await user.type(screen.getByLabelText('Valor'), '4');
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' })); // salvando = true
+
+    const antes = screen.getAllByLabelText(/^Estoque inicial de /)
+      .map((e) => (e as HTMLInputElement).value);
+    await user.click(screen.getByRole('button', { name: 'Aplicar' }));
+    expect(screen.getAllByLabelText(/^Estoque inicial de /)
+      .map((e) => (e as HTMLInputElement).value)).toEqual(antes);
 
     liberar({
       loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
@@ -2577,7 +2609,7 @@ O plano insiste que `disabled` é affordance e que a trava é o `return`. Sem es
   });
 ```
 
-Acrescentar `fireEvent` ao import de `@testing-library/react` no topo do arquivo.
+> **Honestidade sobre a cobertura:** este teste cobre `aplicarMassa`. Para `removerLinha` e `reincluirLinha` **não existe rota de teste que alcance o handler** — o único ponto de entrada deles é um botão que já está `disabled`, e o React não entrega o `onClick` nesse caso. A guarda dos dois é redundante atrás do `disabled` **hoje**; ela fica porque a Global Constraint 3 diz que a trava mora no dono do estado, e porque o próximo ponto de entrada (um atalho de teclado, um menu de contexto) pode não vir com `disabled` de graça. Não escrever teste fingindo cobrir o que não cobre.
 
 - [ ] **Step 8: Rodar tudo**
 
@@ -2639,6 +2671,9 @@ describe('MatrizGrade — grade larga', () => {
     const scrollport = screen.getByRole('region', { name: 'Grade de variações' });
     expect(scrollport).toHaveAttribute('tabindex', '0');
     expect(scrollport.className).toMatch(/overflow-x-auto/);
+    // A altura limitada é o que faz o `sticky top-0` do cabeçalho ter contra o que grudar:
+    // sem `max-h`, `scrollHeight === clientHeight` e o sticky nunca dispara.
+    expect(scrollport.className).toMatch(/max-h-/);
   });
 });
 ```
@@ -2678,11 +2713,14 @@ Em `src/components/estoque/matriz-grade.tsx`, trocar o `<Table>` por:
         // scrollports aninhados e o de fora nunca rolaria. `role`/`tabIndex` ficam em QUEM ROLA
         // (WCAG 2.1.1): sem eles a grade de calçado é inalcançável por teclado.
         //
-        // SÓ o eixo X. Um `max-h`/`overflow-y-auto` aqui criaria, no eixo Y, exatamente o
-        // aninhamento que a linha acima evita no X: o `DialogContent` já é
-        // `max-h-[90vh] overflow-y-auto`, e dois scrollports verticais empilhados fazem a roda
-        // do mouse rolar o de dentro até o fim antes de mover a página. O sticky do cabeçalho
-        // funciona igual contra o scroll do dialog.
+        // O `max-h` + `overflow-y-auto` é o PREÇO do cabeçalho sticky, não descuido. Por CSS
+        // Overflow 3, um eixo `auto` faz o outro computar `auto`: este div já é o scrollport
+        // mais próximo do `<thead sticky top-0>` nos dois eixos. Sem altura limitada,
+        // `scrollHeight === clientHeight`, nunca há rolagem vertical interna, e o cabeçalho
+        // nunca desgruda — o sticky vira decoração. O custo aceito é o aninhamento com o
+        // `overflow-y-auto` do `DialogContent`: a roda do mouse rola a grade até o fim antes de
+        // mover o dialog.
+        containerClassName="max-h-[55vh] overflow-y-auto"
         containerProps={{ role: 'region', tabIndex: 0, 'aria-label': 'Grade de variações' }}
         className="min-w-max"
       >
@@ -2792,8 +2830,8 @@ Expected: PASS.
 
 - [ ] **Step 5: Confirmar que não sobrou stub, TODO nem skip**
 
-Run: `grep -rn "TODO\|FIXME\|test\.skip\|it\.skip\|describe\.skip\|_onAplicarMassa\|_onReincluirCelula\|_removidas" src/components/estoque/ src/lib/cadastro-grade.ts`
-Expected: nenhuma linha — os aliases `_` das tasks 4/6/8 têm de ter sido renomeados de volta.
+Run: `grep -rn "TODO\|FIXME\|test\.skip\|it\.skip\|describe\.skip" src/components/estoque/ src/lib/cadastro-grade.ts`
+Expected: nenhuma linha.
 
 - [ ] **Step 6: Commit**
 
@@ -2808,6 +2846,10 @@ Expected: nenhuma linha — os aliases `_` das tasks 4/6/8 têm de ter sido reno
 
 1. Revisão de código do branch (`superpowers:requesting-code-review`).
 2. **Fable revisa o diff antes do merge** (regra do projeto, vale inclusive em background job).
-3. Validação visual com Playwright **em sessão isolada** — nunca disputar o Chrome do Diego (skill `playwright-cli`, conta `VALIDATION_*`). Checar especificamente: matriz de calçado com 10+ colunas (sticky da primeira coluna + scroll horizontal), popover de massa aberto a partir de um cabeçalho de coluna, drawer de detalhes sobre a matriz, e uma screenshot real — snapshot de acessibilidade não pega bug de layout CSS.
+3. Validação visual com Playwright **em sessão isolada** — nunca disputar o Chrome do Diego (skill `playwright-cli`, conta `VALIDATION_*`). Checar especificamente, com **screenshot real** (snapshot de acessibilidade não pega bug de layout CSS):
+   - matriz de calçado com 10+ colunas: sticky da primeira coluna, sticky do cabeçalho e scroll horizontal;
+   - **o botão do modo ativo tem fundo/sombra distintos dos outros três** — o seletor de modo é um grupo de botões reaproveitando `tabsTriggerClassName` (D5), e os seletores `group-data-*` e `data-active:`/`data-state` dele não são cobertos por teste nenhum;
+   - o badge "herdado" aparece no hover/foco de uma célula herdando, inclusive na primeira linha (o cabeçalho sticky fica por cima);
+   - popover de massa aberto a partir de um cabeçalho de coluna e drawer de detalhes sobre a matriz.
 4. Merge fast-forward na `main` com CI verde (`frontend`, `backend-lint`). **Este diff não toca `supabase/functions/**` nem `supabase/migrations/**`** — confirmar com `/usr/bin/git diff --name-only main...HEAD | grep supabase/` (esperado: nada) antes de dar por concluído. Se aparecer algo, deploy de Edge Function / migration é etapa obrigatória.
 5. Deletar a branch, remover o worktree e **`git pull` na `main` local** — o ciclo só fecha aí.
