@@ -1,6 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import { familiaFromRow, formatoPublicacaoMlFromRow } from '@/lib/queries';
+import { familiaFromRow, formatoPublicacaoMlFromRow, variacaoFromRow, type VariacaoRow } from '@/lib/queries';
 import { familiaPublicavel } from '@/lib/publicavel';
+
+const rowVariacao = (over: Partial<VariacaoRow> = {}): VariacaoRow => ({
+  id: 'v1',
+  codigo: '00000001',
+  cor: 'Preto',
+  tamanho: null,
+  cor_hex: '#000',
+  cor_origem: null,
+  cor_editada_pelo_operador: false,
+  preco: 10,
+  preco_publicacao: null,
+  preco_publicado_ml: null,
+  estoque: 1,
+  gtin: null,
+  imagem_path: null,
+  preco_editado_pelo_operador: false,
+  excluida_da_publicacao: false,
+  ml_variation_id: null,
+  estoque_anterior: null,
+  custo: null,
+  peso_gramas: null,
+  altura_cm: null,
+  largura_cm: null,
+  comprimento_cm: null,
+  atacado: null,
+  ...over,
+} as VariacaoRow);
+
+describe('variacaoFromRow', () => {
+  it('mapeia tamanho da grade', () => {
+    expect(variacaoFromRow(rowVariacao({ tamanho: 'G' })).tamanho).toBe('G');
+  });
+
+  it('tamanho ausente vira null', () => {
+    expect(variacaoFromRow(rowVariacao({ tamanho: null })).tamanho).toBeNull();
+  });
+});
 
 describe('formatoPublicacaoMlFromRow', () => {
   it('mapeia a propriedade sintética User Products', () => {

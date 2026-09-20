@@ -74,21 +74,30 @@ describe('VariacaoCard — campo EAN/GTIN', () => {
 });
 
 describe('VariacaoCard — tamanho da grade', () => {
-  it('com tamanho, exibe badge e aria-label inclui cor · tamanho', () => {
-    renderCard({
-      variacao: {
-        ...variacao,
-        cor: 'Amarelo Manteiga',
-        tamanho: 'M',
-        gtin: '7891234567895',
-      },
-    });
+  const comTamanho = {
+    ...variacao,
+    cor: 'Amarelo Manteiga',
+    gtin: '7891234567895',
+  };
+
+  it('com tamanho, exibe coluna Tamanho (espelho de Estoque) e pill info', () => {
+    renderCard({ variacao: { ...comTamanho, tamanho: 'M' } });
+    expect(screen.getByText('Tamanho')).toBeInTheDocument();
     expect(screen.getByLabelText('Tamanho M')).toBeInTheDocument();
     expect(screen.getByLabelText(/GTIN da variação Amarelo Manteiga · M/i)).toBeInTheDocument();
   });
 
-  it('sem tamanho, não exibe badge de tamanho', () => {
+  it('Amarelo Manteiga M e G exibem tamanhos distintos', () => {
+    renderCard({ variacao: { ...comTamanho, codigo: 'v-m', tamanho: 'M' } });
+    expect(screen.getByLabelText('Tamanho M')).toBeInTheDocument();
+    cleanup();
+    renderCard({ variacao: { ...comTamanho, codigo: 'v-g', tamanho: 'G' } });
+    expect(screen.getByLabelText('Tamanho G')).toBeInTheDocument();
+  });
+
+  it('sem tamanho, não exibe coluna Tamanho', () => {
     renderCard({ variacao: { ...variacao, tamanho: null, gtin: '7891234567895' } });
+    expect(screen.queryByText('Tamanho')).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/^Tamanho /)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/GTIN da variação Natal/i)).toBeInTheDocument();
   });

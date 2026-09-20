@@ -14,7 +14,6 @@ import { fmtBRL } from '@/lib/formato';
 import { gtinInvalido } from '@/lib/gtin';
 import type { Variacao } from '@/lib/tipos-dominio';
 import { SemaforoPreco } from '@/components/semaforo-preco';
-import { Badge } from '@/components/ui/badge';
 
 function rotuloVariacao(v: Pick<Variacao, 'cor' | 'codigo' | 'tamanho'>): string {
   const base = v.cor || v.codigo;
@@ -145,14 +144,11 @@ export function VariacaoCard({
           />
           <div className="flex items-center gap-1 whitespace-nowrap">
             {tamanho && (
-              <Badge
-                variant="outline"
-                className="h-6 shrink-0 px-2 font-semibold tabular-nums"
-                aria-label={`Tamanho ${tamanho}`}
-                title={rotulo}
-              >
-                {tamanho}
-              </Badge>
+              <span aria-hidden="true">
+                <StatusPill tone="info" title={rotulo} className="font-semibold tabular-nums">
+                  {tamanho}
+                </StatusPill>
+              </span>
             )}
             {/* Alerta "sem cor" (⚠️) só para cor que vai ao ML agora: estoque 0 dorme
                 até repor e não exige cor. Com cor, o badge de origem é informativo. */}
@@ -252,6 +248,17 @@ export function VariacaoCard({
             mín. líquido: <span className="font-semibold text-foreground">{fmtBRL(variacao.preco)}</span>
           </span>
         </div>
+        {tamanho && (
+          <div
+            className="flex min-w-12 shrink-0 flex-col items-end leading-tight pt-0.5"
+            aria-label={`Tamanho ${tamanho}`}
+          >
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              Tamanho
+            </span>
+            <span className="text-sm font-semibold tabular-nums">{tamanho}</span>
+          </div>
+        )}
         <div className="flex min-w-16 shrink-0 flex-col items-end leading-tight pt-0.5">
           <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
             Estoque
