@@ -21,16 +21,17 @@ export type AcaoDedupWebhook = 'enfileirar' | 'ignorar' | 'checar-messages';
 // custa 1 job a mais por transição.
 const REPROCESSA_NO_DUPLICADO = new Set(['questions', 'claims']);
 
-// Classifica o resultado do INSERT da linha de dedup do webhook. SÓ `23505` (unique_violation)
-// significa "já recebido"; qualquer outro erro do INSERT (RLS/timeout/pool) NÃO é duplicado — o
-// evento é novo e não pode ser engolido. Duplicado real: `messages` precisa da checagem temporal,
-// `questions`/`claims` reenfileiram sempre, o resto (vendas/envios, com backstop de 72h) ignora.
+// Classifica o resultado do upsert da linha de dedup do webhook (`ON CONFLICT DO NOTHING`):
+// duplicado é 0 linhas retornadas, sem erro no Postgres. Qualquer erro do upsert (RLS/timeout/
+// pool) NÃO é duplicado — o evento é novo e não pode ser engolido. Duplicado real: `messages`
+// precisa da checagem temporal, `questions`/`claims` reenfileiram sempre, o resto (vendas/envios,
+// com backstop de 72h) ignora.
 export function classificarDedupWebhook(
-  dupErr: { code?: string } | null,
+  resultado: { erro: { code?: string } | null; inseriu: boolean },
   topic: string,
 ): AcaoDedupWebhook {
-  if (!dupErr) return 'enfileirar'; // INSERT ok: evento novo.
-  if (dupErr.code !== '23505') return 'enfileirar'; // erro não-duplicado: não engole.
+  if (resultado.erro) return 'enfileirar'; // erro no upsert: não engole.
+  if (resultado.inseriu) return 'enfileirar'; // linha nova: evento novo.
   if (topic === 'messages') return 'checar-messages';
   return REPROCESSA_NO_DUPLICADO.has(topic) ? 'enfileirar' : 'ignorar';
 }

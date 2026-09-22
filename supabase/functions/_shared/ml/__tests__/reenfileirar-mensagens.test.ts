@@ -25,32 +25,28 @@ describe('deveReenfileirarMensagens', () => {
 });
 
 describe('classificarDedupWebhook', () => {
-  it('sem erro de INSERT (evento novo): enfileirar', () => {
-    expect(classificarDedupWebhook(null, 'orders_v2')).toBe('enfileirar');
-    expect(classificarDedupWebhook(null, 'messages')).toBe('enfileirar');
+  it('upsert inseriu (evento novo): enfileirar', () => {
+    expect(classificarDedupWebhook({ erro: null, inseriu: true }, 'orders_v2')).toBe('enfileirar');
+    expect(classificarDedupWebhook({ erro: null, inseriu: true }, 'messages')).toBe('enfileirar');
   });
 
-  it('erro NÃO-23505 (RLS/timeout/pool): enfileirar — não engole o evento', () => {
-    expect(classificarDedupWebhook({ code: '57014' }, 'orders_v2')).toBe('enfileirar'); // query_canceled/timeout
-    expect(classificarDedupWebhook({ code: '42501' }, 'questions')).toBe('enfileirar'); // insufficient_privilege (RLS)
-    expect(classificarDedupWebhook({ code: 'messages' }, 'messages')).toBe('enfileirar'); // code inesperado
+  it('erro do upsert (RLS/timeout/pool): enfileirar — não engole o evento', () => {
+    expect(classificarDedupWebhook({ erro: { code: '57014' }, inseriu: false }, 'orders_v2')).toBe('enfileirar'); // query_canceled/timeout
+    expect(classificarDedupWebhook({ erro: { code: '42501' }, inseriu: false }, 'questions')).toBe('enfileirar'); // insufficient_privilege (RLS)
+    expect(classificarDedupWebhook({ erro: {}, inseriu: false }, 'orders_v2')).toBe('enfileirar'); // erro sem code: na dúvida não perde o evento
   });
 
-  it('erro sem code (undefined): enfileirar — na dúvida não perde o evento', () => {
-    expect(classificarDedupWebhook({}, 'orders_v2')).toBe('enfileirar');
+  it('duplicado real (0 linhas, sem erro) de topic com resource estável (vendas/envios): ignorar', () => {
+    expect(classificarDedupWebhook({ erro: null, inseriu: false }, 'orders_v2')).toBe('ignorar');
+    expect(classificarDedupWebhook({ erro: null, inseriu: false }, 'shipments')).toBe('ignorar');
   });
 
-  it('duplicado real (23505) de topic com resource estável (vendas/envios): ignorar', () => {
-    expect(classificarDedupWebhook({ code: '23505' }, 'orders_v2')).toBe('ignorar');
-    expect(classificarDedupWebhook({ code: '23505' }, 'shipments')).toBe('ignorar');
+  it('duplicado real (0 linhas) de questions/claims: enfileirar — 2º evento é mudança de estado', () => {
+    expect(classificarDedupWebhook({ erro: null, inseriu: false }, 'questions')).toBe('enfileirar');
+    expect(classificarDedupWebhook({ erro: null, inseriu: false }, 'claims')).toBe('enfileirar');
   });
 
-  it('duplicado real (23505) de questions/claims: enfileirar — 2º evento é mudança de estado', () => {
-    expect(classificarDedupWebhook({ code: '23505' }, 'questions')).toBe('enfileirar');
-    expect(classificarDedupWebhook({ code: '23505' }, 'claims')).toBe('enfileirar');
-  });
-
-  it('duplicado real (23505) de messages: checar-messages (decisão temporal fica com deveReenfileirarMensagens)', () => {
-    expect(classificarDedupWebhook({ code: '23505' }, 'messages')).toBe('checar-messages');
+  it('duplicado real (0 linhas) de messages: checar-messages (decisão temporal fica com deveReenfileirarMensagens)', () => {
+    expect(classificarDedupWebhook({ erro: null, inseriu: false }, 'messages')).toBe('checar-messages');
   });
 });

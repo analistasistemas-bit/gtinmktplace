@@ -70,23 +70,27 @@ Deno.serve(async (req) => {
     console.warn('ml-webhook: throttle indisponível, seguindo sem limite:', e instanceof Error ? e.message : String(e));
   }
 
-  // Dedup: 1 evento por (topic, resource). Conflito → já recebido, não reenfileira — exceto
+  // Dedup: 1 evento por (topic, resource), via upsert `ON CONFLICT DO NOTHING` — duplicado é
+  // 0 linhas retornadas, sem erro no Postgres. Duplicado → já recebido, não reenfileira — exceto
   // `messages` (Step 4, plan 035): o resource é o mesmo para toda a conversa, então a linha de
   // dedup fica "viva" enquanto o worker não processa. Se ela for antiga e nunca processada, é
   // sinal de job perdido: reenfileira mesmo com o conflito (a linha de dedup permanece intacta).
-  const { error: dupErr } = await admin.from('ml_webhook_eventos')
-    .insert({ user_id: userId, org_id: orgId, topic: ev.topic, resource: ev.resource });
-  const acaoDedup = classificarDedupWebhook(dupErr, ev.topic);
-  if (acaoDedup === 'ignorar') return ok(); // duplicado real (23505) de topic ≠ messages.
+  const { data: dupData, error: dupErr } = await admin.from('ml_webhook_eventos')
+    .upsert({ user_id: userId, org_id: orgId, topic: ev.topic, resource: ev.resource }, {
+      onConflict: 'topic,resource', ignoreDuplicates: true,
+    }).select('id');
+  const inseriu = (dupData?.length ?? 0) > 0;
+  const acaoDedup = classificarDedupWebhook({ erro: dupErr, inseriu }, ev.topic);
+  if (acaoDedup === 'ignorar') return ok(); // duplicado real de topic ≠ messages.
   if (acaoDedup === 'checar-messages') {
     const { data: existente } = await admin.from('ml_webhook_eventos')
       .select('recebido_em, processado_em').eq('topic', 'messages').eq('resource', ev.resource)
       .eq('user_id', userId).maybeSingle();
     if (!deveReenfileirarMensagens(existente, Date.now())) return ok();
-  } else if (dupErr && (dupErr as { code?: string }).code !== '23505') {
-    // 'enfileirar' com erro não-23505 (RLS/timeout/pool): NÃO engole o evento (perguntas/devoluções
+  } else if (dupErr) {
+    // 'enfileirar' com erro no upsert (RLS/timeout/pool): NÃO engole o evento (perguntas/devoluções
     // não têm backstop). Loga e segue p/ enfileirar — o worker é idempotente.
-    console.error('ml-webhook: erro não-duplicado ao inserir dedup, prossegue p/ enfileirar:', (dupErr as { message?: string }).message ?? (dupErr as { code?: string }).code);
+    console.error('ml-webhook: erro não-duplicado ao gravar dedup, prossegue p/ enfileirar:', dupErr.message ?? dupErr.code);
   }
 
   // `messages`: o id do job é o pack, não o último segmento do resource (que é o seller).
