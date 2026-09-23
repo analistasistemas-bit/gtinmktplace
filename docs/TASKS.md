@@ -86,9 +86,11 @@ sempre no-opava — alarme falso permanente, provável em outros kits vinculados
   retry via API com 409 em vez de enfileirar um job que vira no-op).
 - [x] TDD: 2 testes novos em `catalogo-retentavel.test.ts`; suíte inteira 531 arquivos/5319 testes
   verdes, lint 0 erros, build ok. Revisado e aprovado pelo Fable antes do merge.
-- [ ] `fetchCatalogoEmRisco`/`STATUS_RISCO` (`src/lib/catalogo-risco.ts`) tem o mesmo problema —
-  tela "Catálogo em risco" pode listar kit vinculado como risco. Fora deste fix por escopo (tela
-  separada, só leitura); fechar com `.is('kit_multiplicador', null)` no filtro quando tocar nela.
+- [x] ~~`fetchCatalogoEmRisco`/`STATUS_RISCO` (`src/lib/catalogo-risco.ts`) tem o mesmo problema~~ —
+  fechado sem código em 2026-09-23: o único consumidor (`Publicados.tsx`) passa por
+  `filtrarCatalogForewarning`, que só mostra anúncio com a tag `catalog_forewarning` do próprio ML
+  (decisão de 2026-08-13). Kit vinculado não recebe a tag, então não aparece. Se algum dia a
+  inferência local voltar a ser exibida, aí sim filtrar `.is('kit_multiplicador', null)`.
 
 ## Time Maestri — gate de consultor, roteamento de modelo e failover — 2026-09-18
 
