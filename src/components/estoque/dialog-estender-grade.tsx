@@ -624,12 +624,16 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
                     {coresSemFotoHerdavel.map((cor, i) => (
                       <div key={cor} className="flex flex-col gap-1">
                         <span className="text-xs text-muted-foreground">{cor}</span>
+                        {/* SEM `opcional`: achado da validação de UI (runtime) — toda cor desta
+                            lista é obrigatória (o gate de Salvar exige `fotoPorCor[cor]` quando
+                            não há `fotoHerdavel`); "(opcional)" no rótulo enganava o operador. A
+                            prop, ausente, já é a variante "obrigatório" de `CampoFoto` (não existe
+                            uma prop separada pra isso). */}
                         <CampoFoto
                           id={`estender-foto-cor-${i}`}
                           ariaLabel={`Foto da cor ${cor}`}
                           arquivo={fotoPorCor[cor] ?? null}
                           disabled={salvando}
-                          opcional
                           onEscolher={(f) => setFotoPorCor((prev) => ({ ...prev, [cor]: f }))}
                         />
                       </div>

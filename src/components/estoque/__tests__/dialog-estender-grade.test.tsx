@@ -271,6 +271,9 @@ describe('DialogEstenderGrade — gate de Salvar', () => {
     await user.type(screen.getByLabelText('Estoque inicial de Verde · M'), '3');
     // Verde é cor nova, sem nenhum SKU existente — sem enviar foto própria da cor, trava.
     expect(BOTAO_SALVAR()).toBeDisabled();
+    // Achado da validação de UI: a foto da cor nova é OBRIGATÓRIA (é exatamente o que trava o
+    // Salvar acima) — o rótulo não pode dizer "(opcional)".
+    expect(screen.queryByText('(opcional)')).not.toBeInTheDocument();
     await user.upload(
       screen.getByLabelText('Foto da cor Verde'),
       new File(['a'], 'verde.png', { type: 'image/png' }),
