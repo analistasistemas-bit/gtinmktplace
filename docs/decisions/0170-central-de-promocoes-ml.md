@@ -27,29 +27,36 @@ o Diego em 2026-09-24.
 
 1. **Só leitura no MVP.** Nenhuma escrita no ML: o app diz o que aceitar e o botão "Abrir no ML"
    leva ao Seller Center. Aderir pelo app (com confirmação humana) é V2.
-2. **Sync agendado + sob demanda** num worker novo `sincronizar-promocoes`: QStash a cada 6 h dispara o
-   worker sem org, que publica **uma mensagem QStash por org com o módulo** (cada execução cuida de uma
-   org, dentro de um orçamento de 120 s; promoções que não couberem ficam para a próxima rodada, na
-   frente da fila); o botão "Atualizar agora" chama o worker como usuário logado (só a própria org), no
-   padrão de dupla autenticação do `monitorar-moderados`. A tela lê só do banco (`ml_promocoes`,
+2. **Sync agendado + sob demanda, em duas etapas**, num worker novo `sincronizar-promocoes`. QStash a cada
+   6 h faz fan-out de uma mensagem por org com o módulo. A **etapa de lista** (por org, segundos, com trava)
+   lista as promoções, encerra as que sumiram da lista do ML, avisa e **reserva + enfileira uma leitura por
+   promoção**. A **etapa de leitura** (por promoção) projeta os anúncios em lotes e, se o orçamento de tempo
+   da execução acabar, re-enfileira a si mesma com o cursor — uma campanha grande nunca trava as outras nem
+   a org. O botão "Atualizar agora" roda a etapa de lista como usuário logado (só a própria org), no padrão
+   de dupla autenticação do `monitorar-moderados`. A tela lê só do banco (`ml_promocoes`,
    `ml_promocao_itens`) e mostra "atualizado há X".
 3. **O líquido projetado é calculado no backend, no sync, e gravado.** Uma única conta —
    `liquidoClassico` com comissão de `listing_prices` e frete de `shipping_options/free` **no preço
    promocional**, alíquota por origem — serve à tela e aos alertas; a tela só aplica `calcularSemaforo`
    e `calcularMarkup` (puros) sobre os números gravados. Custo, piso, origem e dimensões vêm de
    `variacoes` por um resolvedor próprio (`_shared/promocoes/cadastro.ts`) com a mesma cadeia e o
-   mesmo desempate do financeiro (variação → anúncio → código → GTIN, linha mais recente, ADR-0108),
-   mais o vínculo de item filho de User Products por `anuncios_externos_itens` (família dissolvida não
-   tem SKU, ADR-0105). O mapa do financeiro não é tocado. Custo e piso são os **atuais**; mudança no
-   cadastro aparece no próximo sync. Origem ausente não vira 8% por padrão: a cor fica sem líquido.
+   mesma cadeia do custo vigente do financeiro (variação → anúncio → GTIN → código; linha com custo vence
+   linha sem custo, depois a mais recente, ADR-0108), com o vínculo de item filho de User Products por
+   `anuncios_externos_itens` na frente (família dissolvida não tem SKU, ADR-0105) e "anúncio" valendo só
+   para anúncio de cor única. O mapa do financeiro não é tocado. Custo e piso são os **atuais**; mudança
+   no cadastro aparece no próximo sync. Comissão ou frete que o ML não informou (proveniência
+   `estimated`) deixam a cor **sem líquido** — nunca viram zero. A origem vem de `familias.origem`
+   (obrigatória desde o ingest, ADR-0107).
 4. **Granularidade por cor, exibição por anúncio.** A promoção dá um preço por anúncio; o líquido é
    projetado por variação. A linha do anúncio mostra a **pior cor** (regra do ADR-0065); expandir mostra
    cada uma. Em User Products cada cor já é um item.
 5. **Anúncio ou cor sem custo no PubliAI aparece (⚪), sem semáforo.** A campanha fica completa como no
    Seller Center.
-6. **Preço avaliado:** `suggested_discounted_price` em campanha com faixa, `price` nas demais. Em
-   campanha com faixa, "até quanto descer" = menor preço da faixa com líquido ≥ piso, pelo gross-up já
-   existente (`_shared/preco/sugerir.ts`), recortado a `[min, max]`.
+6. **Preço avaliado:** anúncio **participando** → o `price` que está no ar; **convidado** →
+   `suggested_discounted_price` em campanha com faixa, `price` nas demais. Para convidado em campanha com
+   faixa, "até quanto descer" = menor preço da faixa com líquido ≥ piso, pelo gross-up já existente
+   (`_shared/preco/sugerir.ts`) refeito com a tarifa de cada candidato até parar de descer, recortado a
+   `[min, max]`.
 7. **"ML banca" nunca entra no líquido por suposição.** A fórmula do subsídio (`meli_percentage`) só
    entra no cálculo depois de conferida contra uma venda real de item em promoção co-participada
    (`ml_vendas`). Até lá o líquido é o conservador (sem subsídio) e a tela diz "ML banca X% — não
@@ -59,8 +66,9 @@ o Diego em 2026-09-24.
 9. **Dois alertas, com switch por org** `configuracoes.alertas_promocoes_ativo` (default `false`),
    destinatários = assinantes de `financeiro` via `notificarCategoria` (sem categoria nova):
    (a) **participando no prejuízo** (item `started` com pior cor 🔴); (b) **prazo de adesão ≤ 48 h**
-   com convidados 🟢. Dedup por `reservarNotificacao` (chave por promoção+item e por promoção). No
-   máximo **uma mensagem agregada por org por sync** — o primeiro sync não vira avalanche (ADR-0121).
+   com convidados 🟢. Os alertas leem o banco (última leitura concluída) na etapa de lista. Dedup por
+   `reservarNotificacao` (chave por promoção+item e por promoção). No máximo **uma mensagem agregada por
+   org por sync** — o primeiro sync não vira avalanche (ADR-0121).
 10. **Cupom do vendedor** aparece como card informativo, sem líquido nem semáforo (depende do carrinho).
 
 ## Alternativas descartadas
@@ -79,9 +87,12 @@ o Diego em 2026-09-24.
 ## Consequências
 
 - Três tabelas novas (`ml_promocoes`, `ml_promocao_itens`, `ml_promocoes_sync`) com RLS `org_id = current_org_id()` (select) e escrita só via service role.
-- Chamadas ao ML por sync crescem com o nº de convidados (listing_prices e frete por preço) — cache
-  Redis por chave de preço e concorrência limitada; o volume real da 10.10 (504) é medido antes do
-  deploy e define o intervalo definitivo.
+- Chamadas ao ML por sync crescem com o nº de convidados (listing_prices e frete por preço, e o ponto
+  fixo do "até quanto") — cache Redis separado para comissão e frete, lotes de 20 itens e concorrência
+  limitada; o volume real da 10.10 (504) é medido antes do deploy.
+- Duas colunas de controle: `ml_promocoes.rodada_em_curso` (reserva da leitura, 15 min) e
+  `ml_promocoes_sync.estado='sincronizando'` (trava da lista, 5 min). Só `candidate` (convidado) e
+  `started` (participando) contam; outro status do ML não é presumido.
 - A elegibilidade é por conta: lista vazia, conexão sem scope `offers` ou 403 são **estados** exibidos
   com explicação, nunca erro.
 - `promocoes` entra em `MENU_KEYS`, em `MODULOS` e no `MODULOS_VALIDOS` da edge `usuarios`.

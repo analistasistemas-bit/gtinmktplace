@@ -12,16 +12,17 @@
 
 ## Global Constraints
 
-- **Nenhuma escrita no ML.** O worker só faz `GET`. Nenhum `POST/PUT/DELETE` para `api.mercadolibre.com` em nenhum arquivo deste plano.
-- Líquido = `liquidoClassico(preco, comissao, frete, aliquotaPct)` (`_shared/preco/liquido.ts`), no **preço avaliado** = `preco_sugerido ?? preco_promo`. Comissão = `comissaoDe(buscarListingPrice(token, preco, categoria, listingType))`; frete = `(await buscarFreteVendedorComProveniencia(token, mlUserId, preco, categoria, dim)).valor` — as mesmas funções do `calcular-tarifa-ml`.
+- **Nenhuma escrita no ML.** Em promoção, item, tarifa e frete o worker só faz `GET`. Única exceção: o refresh OAuth que `getValidAccessTokenConexao` (`_shared/ml/token.ts`) já faz por `POST` no endpoint de token — não é escrita em anúncio.
+- Líquido = `liquidoClassico(preco, comissao, frete, aliquotaPct)` (`_shared/preco/liquido.ts`), no **preço avaliado**: item `started` (participando) → `preco_promo ?? preco_sugerido` (o preço que está no ar); convidado → `preco_sugerido ?? preco_promo`. Comissão = `comissaoDeComProveniencia(buscarListingPrice(...))`; frete = `buscarFreteVendedorComProveniencia(...)` — as mesmas fontes do `calcular-tarifa-ml`. **Proveniência `estimated` em qualquer dos dois (o ML não informou) → a cor fica sem líquido (`erro_tarifa`) e nada vai para o cache; nunca vira zero.** `partial` (frete com pacote padrão por falta de dimensão) é aceito — é o mesmo número que a Revisão mostra.
 - **`ml_pct` (ML banca) NÃO entra no líquido** (ADR-0170 §7). A tela diz "não incluído no líquido".
-- Alíquota: `aliquota_importado_pct` se origem `importado`, `aliquota_nacional_pct` se `nacional`. Org sem `aliquotas_confirmadas_em` → sync da org termina em `estado='erro'` com a mensagem `Confirme as alíquotas de imposto em Configurações antes de usar a Central de Promoções.` **Origem nula → cor sem líquido (`motivo='sem_origem'`)**, nunca 8% presumido.
+- Alíquota: `aliquota_importado_pct` se origem `importado`, `aliquota_nacional_pct` se `nacional`. Org sem `aliquotas_confirmadas_em` → sync da org termina em `estado='erro'` com a mensagem `Confirme as alíquotas de imposto em Configurações antes de usar a Central de Promoções.` A origem vem de `familias.origem` (enum `NOT NULL`, garantida pelo ingest — ADR-0107); o ramo `sem_origem` é só defesa de tipo, não uma trava de negócio.
 - Semáforo: 🟢 `liquido >= piso`; 🔴 `custo > 0 && liquido < custo`; 🟡 resto; `indisponivel` se `liquido == null`. Pior do anúncio: vermelho > amarelo > verde entre as cores **com** líquido; `indisponivel` só se nenhuma cor tem líquido.
 - Vocabulário da UI: "Convidados", "Participando", "Líquido", "Markup", "ML banca", "Até quanto descer", "Sem custo no PubliAI". Proibido na UI: "margem", "lucro", "candidato", emoji.
 - Módulo: `'promocoes'`; menu: `'promocoes'`, rota `/promocoes` e `/promocoes/:promocaoId`, ícone lucide `BadgePercent`, logo após Publicados.
 - Switch de alertas: `configuracoes.alertas_promocoes_ativo boolean not null default false` + `grant select (alertas_promocoes_ativo) on public.configuracoes to authenticated`.
-- Alertas: `notificarCategoria(admin, orgId, 'financeiro', texto)`; dedup `reservarNotificacao(admin, orgId, null, 'promo_prejuizo', '<promocao_id>:<ml_item_id>')` e `reservarNotificacao(admin, orgId, null, 'promo_prazo', '<promocao_id>')`; no máximo **1 mensagem por org por execução**.
-- Orçamento por execução de org: **120 000 ms**; throttle do botão: **2 min** desde `ml_promocoes_sync.iniciado_em`.
+- Status do item: **`candidate` = convidado, `started` = participando**; qualquer outro status é gravado mas não entra em contagem, filtro nem alerta.
+- Alertas: `notificarCategoria(admin, orgId, 'financeiro', texto)`; dedup `reservarNotificacao(admin, orgId, null, 'promo_prejuizo', '<promocao_id>:<ml_item_id>')` e `reservarNotificacao(admin, orgId, null, 'promo_prazo', '<promocao_id>')`; leem o **banco** (última leitura concluída) na etapa de lista; no máximo **1 mensagem por org por sync**.
+- Sync em duas etapas: **lista** por org (trava de 5 min por `ml_promocoes_sync.estado='sincronizando'`) e **leitura** por promoção (lotes de 20 itens, orçamento de **90 000 ms** por execução, continuação por cursor, reserva `ml_promocoes.rodada_em_curso` de 15 min). Throttle do botão: **2 min** desde `ml_promocoes_sync.iniciado_em`.
 - Migrations **só** via `supabase migration new` + `supabase db push` (ADR-0043). Nunca `apply_migration`/painel.
 - Git neste worktree: `/usr/bin/git`, um comando por chamada, commit com `-F <arquivo de mensagem absoluto>`; mensagem termina com `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
 - Roteamento de modelo (CLAUDE.md): Tasks 1-6 (migration, cálculo financeiro, integração ML) → **opus**; Tasks 7-9 (frontend) → **sonnet**; Tasks 0 e 10 → orquestrador (não delegar).
@@ -63,9 +64,9 @@
 
 Confirma na conta Avil, com o token da conexão (mesmo meio do spike, sem expor credencial), o que o código assume. **Nenhuma escrita no ML.** Resultado vai para a seção "Resultado da Task 0" no fim da spec e as fixtures anonimizadas para `supabase/functions/_shared/promocoes/__tests__/fixtures/` (repo público: trocar `seller_id`/nomes de conta por valores fictícios; MLB e preços podem ficar).
 
-- [ ] **Step 1: Formato das respostas.** `GET /seller-promotions/users/{uid}?app_version=v2`, `GET /seller-promotions/promotions/{id}/items?promotion_type=DEAL&app_version=v2&limit=50` (e a 2ª página com o cursor), `GET /seller-promotions/promotions/{id}/items?promotion_type=SMART&app_version=v2`, `GET /items?ids=<3 MLB, 1 Legacy multi-cor, 1 UP>&attributes=id,title,thumbnail,permalink,listing_type_id,category_id,seller_custom_field,attributes,variations&include_attributes=all`. Salvar como `promocoes-usuario.json`, `itens-deal-p1.json`, `itens-deal-p2.json`, `itens-smart.json`, `multiget.json`. Conferir: nome do cursor em `paging` (`searchAfter`) e do parâmetro de envio (`search_after`); campos `deadline_date`, `benefits`; `stock.min/max` no LIGHTNING. **Se divergir do que `ml.ts` (Task 4) lê, ajustar o normalizador e o teste da Task 4 ao formato real antes de implementá-la.**
+- [ ] **Step 1: Formato das respostas.** `GET /seller-promotions/users/{uid}?app_version=v2`, `GET /seller-promotions/promotions/{id}/items?promotion_type=DEAL&app_version=v2&limit=50` (e a 2ª página com o cursor), `GET /seller-promotions/promotions/{id}/items?promotion_type=SMART&app_version=v2`, `GET /items?ids=<3 MLB, 1 Legacy multi-cor, 1 UP>&attributes=id,title,thumbnail,permalink,listing_type_id,category_id,seller_custom_field,attributes,variations&include_attributes=all`. Salvar como `promocoes-usuario.json`, `itens-deal-p1.json`, `itens-deal-p2.json`, `itens-smart.json`, `multiget.json`. Conferir: nome do cursor em `paging` (`searchAfter`) e do parâmetro de envio (`search_after`); campos `deadline_date`, `benefits`; `stock.min/max` no LIGHTNING; **a lista de `status` distintos dos itens** (o código só reconhece `candidate` e `started` — outro status que signifique convidado/participando exige ajustar `contar`/`filtrarItens` e o glossário); e que `price` de um item `started` em DEAL é o preço que está no ar. **Se divergir do que `ml.ts` (Task 4) lê, ajustar o normalizador e o teste da Task 4 ao formato real antes de implementá-la.**
 - [ ] **Step 2: ML banca.** Achar em `ml_vendas`/`ml_vendas_itens` (SQL read-only via Management API) uma venda de item que estava `started` em SMART com `meli_percentage > 0`; comparar `unit_price`, `sale_fee` e o líquido gravado com `price`/`original_price`/`meli_percentage`. Registrar a regra observada na spec. **O MVP não muda:** o subsídio continua fora do líquido; incluir exige nova decisão do Diego.
-- [ ] **Step 3: Volume.** Contar itens `candidate`+`started` somando todas as promoções `pending`/`started` da Avil e o nº de preços distintos. Estimativa de chamadas = multiget/20 + 2 × preços distintos + ~2 × itens com faixa. Registrar; se > ~2 500 chamadas por org, reduzir a concorrência para 4 no `deps.ts` e avisar o Diego antes do deploy.
+- [ ] **Step 3: Volume.** Contar itens `candidate`+`started` somando todas as promoções `pending`/`started` da Avil e o nº de preços distintos. Estimativa de GETs por rodada = páginas de itens + multiget/20 + 2 × (combinações distintas de categoria×tipo×preço para comissão + categoria×preço×dimensão para frete), onde cada cor de convidado com faixa soma até 1 (preço avaliado) + 1 (máximo) + ~3 (ponto fixo do "até quanto"). Medir também o tempo de 1 lote de 20 itens da 10.10 com cache frio: tem de ficar bem abaixo de 90 s (orçamento) e do limite de parede da edge function. Registrar; se o lote passar de ~40 s, reduzir `lote` no worker e avisar o Diego antes do deploy.
 - [ ] **Step 4: Deep link.** Confirmar no navegador (sessão isolada, conta VALIDATION não serve — só abrir a URL pública de login) a URL da área de promoções do Seller Center (candidata: `https://www.mercadolivre.com.br/anuncios/promocoes`). Registrar em `URL_PROMOCOES_ML` (Task 7).
 - [ ] **Step 5: Commit** das fixtures + seção da spec: `docs(promocoes): resultado da validação de campo (Task 0)`.
 
@@ -101,6 +102,7 @@ create table public.ml_promocoes (
   erro                   text,
   sincronizado_em        timestamptz not null default now(),
   itens_sincronizados_em timestamptz,
+  rodada_em_curso        timestamptz,   -- reserva da leitura (15 min); null = nenhuma leitura em curso
   primary key (org_id, promocao_id)
 );
 
@@ -153,6 +155,11 @@ grant select on public.ml_promocoes, public.ml_promocao_itens, public.ml_promoco
 alter table public.configuracoes
   add column if not exists alertas_promocoes_ativo boolean not null default false;
 grant select (alertas_promocoes_ativo) on public.configuracoes to authenticated;
+
+-- Menu novo para não-admins que já administram a org (precedente: 20260816125057_pulse_v1.sql).
+-- O menu só aparece com o módulo ligado; sem esta linha o operador existente não o veria nem com o módulo.
+update public.profiles set allowed_menus = array_append(allowed_menus, 'promocoes')
+  where 'configuracoes' = any(allowed_menus) and not ('promocoes' = any(allowed_menus));
 ```
 
 - [ ] **Step 3:** `npm run db:check` → Expected: sem erro. `supabase db reset` local → Expected: aplica até o fim.
@@ -218,7 +225,7 @@ export interface LinhaItem extends ItemPromocaoML {
   preco_avaliado: number | null; projecao: ProjecaoCor[]; pior_semaforo: Semaforo;
 }
 export interface Contagem {
-  convidados: number; participando: number; verde: number; amarelo: number;
+  convidados: number; convidados_verde: number; participando: number; verde: number; amarelo: number;
   vermelho: number; indisponivel: number; participando_vermelho: number;
 }
 ```
@@ -256,10 +263,13 @@ describe('piorSemaforo', () => {
 });
 
 describe('precoAvaliado', () => {
-  it('sugerido quando há faixa, senão o preço da promoção', () => {
-    expect(precoAvaliado({ preco_sugerido: 49.9, preco_promo: 45 })).toBe(49.9);
-    expect(precoAvaliado({ preco_sugerido: null, preco_promo: 45 })).toBe(45);
-    expect(precoAvaliado({ preco_sugerido: null, preco_promo: null })).toBeNull();
+  it('convidado: sugerido quando há faixa, senão o preço da promoção', () => {
+    expect(precoAvaliado({ status: 'candidate', preco_sugerido: 49.9, preco_promo: 45 })).toBe(49.9);
+    expect(precoAvaliado({ status: 'candidate', preco_sugerido: null, preco_promo: 45 })).toBe(45);
+    expect(precoAvaliado({ status: 'candidate', preco_sugerido: null, preco_promo: null })).toBeNull();
+  });
+  it('participando: o preço que está no ar', () => {
+    expect(precoAvaliado({ status: 'started', preco_sugerido: 49.9, preco_promo: 45 })).toBe(45);
   });
 });
 
@@ -291,23 +301,32 @@ describe('ateQuantoDescer', () => {
     expect(liquidoNoPreco(r.valor!, t(10), 8)).toBeGreaterThanOrEqual(30);
   });
 
-  it('se a tarifa muda no preço candidato, itera até o líquido verificado bater', async () => {
-    // abaixo de 40 o frete é 0; a partir de 40 o vendedor paga 10 de frete
-    const tarifaPorPreco = async (p: number) => t(10, 0, p >= 40 ? 10 : 0);
-    const r = await ateQuantoDescer({ piso: 34, aliquotaPct: 8, min: 20, max: 80 }, tarifaPorPreco);
-    expect(r.valor).not.toBeNull();
-    expect(liquidoNoPreco(r.valor!, await tarifaPorPreco(r.valor!), 8)).toBeGreaterThanOrEqual(34);
+  it('frete menor abaixo de R$ 79: desce até o mínimo real, não para no 1º preço válido', async () => {
+    // frete 20 a partir de 79, 8 abaixo. Da tarifa do máximo: (30+20)/0,82 → 61,00 (válido, frete 8).
+    // Refazendo com a tarifa de 61: (30+8)/0,82 = 46,34… → 46,35 — o mínimo real.
+    const tarifa = async (p: number) => t(10, 0, p >= 79 ? 20 : 8);
+    const r = await ateQuantoDescer({ piso: 30, aliquotaPct: 8, min: 20, max: 100 }, tarifa);
+    expect(r.valor).toBeCloseTo(46.35, 2);
+    expect(liquidoNoPreco(46.35, await tarifa(46.35), 8)).toBeGreaterThanOrEqual(30);
+  });
+
+  it('frete maior acima de R$ 40: fica acima do degrau quando abaixo dele não há preço válido', async () => {
+    // abaixo de 40 precisaria de 34/0,82 = 41,46 (não existe < 40); a partir de 40: (34+10)/0,82 → 53,70
+    const tarifa = async (p: number) => t(10, 0, p >= 40 ? 10 : 0);
+    const r = await ateQuantoDescer({ piso: 34, aliquotaPct: 8, min: 20, max: 80 }, tarifa);
+    expect(r.valor).toBeCloseTo(53.7, 2);
   });
 });
 
 describe('contar', () => {
   const linha = (status: string, pior: LinhaItem['pior_semaforo']) => ({ status, pior_semaforo: pior }) as LinhaItem;
-  it('conta convidados, participando e o pior semáforo de cada anúncio', () => {
+  it('conta convidados, participando e o pior semáforo; status fora do glossário não conta', () => {
     expect(contar([
       linha('candidate', 'verde'), linha('candidate', 'indisponivel'),
-      linha('started', 'vermelho'), linha('started', 'amarelo'),
+      linha('started', 'vermelho'), linha('started', 'amarelo'), linha('pending', 'verde'),
     ])).toEqual({
-      convidados: 2, participando: 2, verde: 1, amarelo: 1, vermelho: 1, indisponivel: 1, participando_vermelho: 1,
+      convidados: 2, convidados_verde: 1, participando: 2, verde: 1, amarelo: 1, vermelho: 1, indisponivel: 1,
+      participando_vermelho: 1,
     });
   });
 });
@@ -337,7 +356,9 @@ export function piorSemaforo(cores: Semaforo[]): Semaforo {
   return cores.reduce<Semaforo>((pior, s) => (PESO[s] > PESO[pior] ? s : pior), 'indisponivel');
 }
 
-export function precoAvaliado(it: { preco_sugerido: number | null; preco_promo: number | null }): number | null {
+/** Participando: o preço que está no ar (`price`). Convidado: o sugerido da faixa, senão o preço da promoção. */
+export function precoAvaliado(it: { status: string; preco_sugerido: number | null; preco_promo: number | null }): number | null {
+  if (it.status === 'started') return it.preco_promo ?? it.preco_sugerido ?? null;
   return it.preco_sugerido ?? it.preco_promo ?? null;
 }
 
@@ -347,33 +368,37 @@ export function liquidoNoPreco(preco: number, t: Tarifa, aliquotaPct: number): n
 
 /**
  * Menor preço da faixa [min, max] cujo líquido, conferido na tarifa DAQUELE preço, fica ≥ piso.
- * Parte do gross-up da tarifa do máximo e re-verifica (a comissão fixa e o frete grátis mudam com o
- * preço). Nunca devolve um preço sem verificação: no pior caso fica no máximo, que já foi verificado.
+ * Ponto fixo: parte da tarifa do máximo e refaz o gross-up com a tarifa de cada candidato (a comissão
+ * fixa e o frete mudam por faixa de preço) até parar de descer. Só guarda preço verificado; no pior
+ * caso fica no máximo, que foi verificado primeiro.
  */
 export async function ateQuantoDescer(
   a: { piso: number; aliquotaPct: number; min: number; max: number },
   tarifaEm: (preco: number) => Promise<Tarifa>,
 ): Promise<{ valor: number | null; motivo: 'qualquer' | 'nenhum' | null }> {
-  if (liquidoNoPreco(a.min, await tarifaEm(a.min), a.aliquotaPct) >= a.piso) return { valor: null, motivo: 'qualquer' };
   let t = await tarifaEm(a.max);
   if (liquidoNoPreco(a.max, t, a.aliquotaPct) < a.piso) return { valor: null, motivo: 'nenhum' };
-  for (let i = 0; i < 4; i++) {
+  let melhor = a.max;
+  for (let i = 0; i < 6; i++) {
     const bruto = grossUp(a.piso, t.comissao.percentual, t.comissao.fixa, t.frete, a.aliquotaPct);
     const cand = Math.min(a.max, Math.max(a.min, bruto));
-    const tc = await tarifaEm(cand);
-    if (liquidoNoPreco(cand, tc, a.aliquotaPct) >= a.piso) return { valor: cand, motivo: null };
-    t = tc;
+    if (cand >= melhor) break;
+    t = await tarifaEm(cand);
+    if (liquidoNoPreco(cand, t, a.aliquotaPct) >= a.piso) melhor = cand;
   }
-  return { valor: a.max, motivo: null };
+  return melhor <= a.min ? { valor: null, motivo: 'qualquer' } : { valor: melhor, motivo: null };
 }
 
+/** Só `candidate` (convidado) e `started` (participando) contam — outro status do ML não é presumido. */
 export function contar(linhas: Pick<LinhaItem, 'status' | 'pior_semaforo'>[]): Contagem {
-  const c: Contagem = { convidados: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0 };
+  const c: Contagem = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0 };
   for (const l of linhas) {
     const participa = l.status === 'started';
+    if (!participa && l.status !== 'candidate') continue;
     if (participa) c.participando++; else c.convidados++;
     c[l.pior_semaforo]++;
     if (participa && l.pior_semaforo === 'vermelho') c.participando_vermelho++;
+    if (!participa && l.pior_semaforo === 'verde') c.convidados_verde++;
   }
   return c;
 }
@@ -448,8 +473,8 @@ describe('resolverCor', () => {
     expect(resolverCor(c, { item_id: 'MLBx', variation_id: 555, sku: null, gtin: null })?.cor).toBe('Verde');
   });
 
-  it('cai para código/SKU e depois GTIN, ignorando zeros à esquerda', () => {
-    const c = montarCadastro([v({ id: 'a', codigo: '00123', gtin: '0789' })], []);
+  it('cai para GTIN e depois código/SKU, ignorando zeros à esquerda', () => {
+    const c = montarCadastro([v({ id: 'a', codigo: '00123', gtin: '0789', familias: { ml_item_id: null, origem: 'nacional' } })], []);
     expect(resolverCor(c, { item_id: 'X', variation_id: null, sku: '123', gtin: null })?.variacao_id).toBe('a');
     expect(resolverCor(c, { item_id: 'X', variation_id: null, sku: null, gtin: '789' })?.variacao_id).toBe('a');
   });
@@ -459,6 +484,14 @@ describe('resolverCor', () => {
     expect(resolverCor(mono, { item_id: 'MLB1', variation_id: null, sku: null, gtin: null })?.variacao_id).toBe('a');
     const multi = montarCadastro([v({ id: 'a' }), v({ id: 'b' })], []);
     expect(resolverCor(multi, { item_id: 'MLB1', variation_id: null, sku: null, gtin: null })).toBeNull();
+  });
+
+  it('duplicata: linha sem custo nunca vence linha com custo, mesmo mais nova', () => {
+    const c = montarCadastro([
+      v({ id: 'com', codigo: '8', custo: 6, atualizado_em: '2026-01-01T00:00:00Z', familias: { ml_item_id: null, origem: 'nacional' } }),
+      v({ id: 'sem', codigo: '8', custo: null, atualizado_em: '2026-09-01T00:00:00Z', familias: { ml_item_id: null, origem: 'nacional' } }),
+    ], []);
+    expect(resolverCor(c, { item_id: 'X', variation_id: null, sku: '8', gtin: null })?.variacao_id).toBe('com');
   });
 
   it('duplicata de código: vence a linha mais recente (ADR-0108)', () => {
@@ -492,10 +525,13 @@ describe('resolverCor', () => {
 - [ ] **Step 3: Implementar `cadastro.ts`**
 
 ```ts
-// ADR-0170 — liga um anúncio da promoção à variação do cadastro. Mesma cadeia e desempate do custo
-// vigente (ADR-0108), mais o vínculo de item filho UP. Puro.
-// ponytail: cópia enxuta da cadeia de _shared/faturamento/custo-vigente.ts — aquele devolve só o
-// custo e é amarrado por paridade ao front; aqui precisamos de piso/origem/dimensões/cor.
+// ADR-0170 — liga um anúncio da promoção à variação do cadastro. Mesma cadeia do custo vigente
+// (_shared/faturamento/custo-vigente.ts: variação → anúncio → GTIN → código) com o vínculo de item
+// filho UP na frente. Desempate: linha COM custo vence linha sem custo; entre iguais, a mais recente
+// (ADR-0108). Diferença intencional: "anúncio" só resolve anúncio de cor única (o financeiro resolve
+// uma venda; aqui cada cor precisa do próprio custo). Puro.
+// ponytail: cópia enxuta — o custo-vigente devolve só o custo e é amarrado por paridade ao front;
+// aqui precisamos de piso/origem/dimensões/cor.
 import { normGtin } from '../faturamento/venda.ts';
 import type { CadastroVariacao, Origem } from './tipos.ts';
 
@@ -533,7 +569,10 @@ export function montarCadastro(variacoes: LinhaVariacao[], itensUp: LinhaItemUp[
   const quando = new Map<CadastroVariacao, number>();
   const recente = (m: Map<string, CadastroVariacao>, k: string, val: CadastroVariacao) => {
     const atual = m.get(k);
-    if (!atual || quando.get(val)! > quando.get(atual)!) m.set(k, val);
+    const vence = !atual
+      || (val.custo != null && atual.custo == null)
+      || ((val.custo != null) === (atual.custo != null) && quando.get(val)! > quando.get(atual)!);
+    if (vence) m.set(k, val);
   };
 
   for (const r of variacoes) {
@@ -573,16 +612,17 @@ export function resolverCor(
     const r = c.porVariacaoMl.get(String(q.variation_id));
     if (r) return r;
   }
-  if (q.sku) {
-    const r = c.porCodigo.get(normGtin(q.sku.trim()));
-    if (r) return r;
-  }
+  const doItem = c.porItem.get(q.item_id);
+  if (doItem && doItem.length === 1) return doItem[0];
   if (q.gtin) {
     const r = c.porGtin.get(normGtin(q.gtin.trim()));
     if (r) return r;
   }
-  const doItem = c.porItem.get(q.item_id);
-  return doItem && doItem.length === 1 ? doItem[0] : null;
+  if (q.sku) {
+    const r = c.porCodigo.get(normGtin(q.sku.trim()));
+    if (r) return r;
+  }
+  return null;
 }
 ```
 
@@ -870,7 +910,13 @@ Run: `pnpm test -- supabase/functions/_shared/promocoes/__tests__/ml.test.ts` �
 
 ---
 
-### Task 5: Orquestrador do sync + fiação (TDD)
+### Task 5: Orquestradores do sync (lista por org + leitura por promoção) + fiação (TDD)
+
+O sync tem **duas etapas** (revisão R1 do plano):
+- **Lista (por org, rápida):** confere alíquotas, lista as promoções, grava metadados, encerra as que sumiram, avisa (alertas lendo o banco) e **reserva + enfileira uma leitura por promoção** `pending`/`started` (cupom não).
+- **Leitura (por promoção):** lê os itens (ordenados por `ml_item_id`), projeta em **lotes**, grava cada lote; se o orçamento de tempo acabar, **re-enfileira a si mesma com o cursor**. Ao terminar, apaga o que não veio nesta rodada e recalcula a contagem no banco. Nenhuma promoção grande trava as outras nem a org.
+
+A reserva usa `ml_promocoes.rodada_em_curso` (Task 1): só enfileira se a coluna estiver nula ou tiver mais de 15 min; a leitura aborta em silêncio se a rodada da mensagem não for a rodada em curso (mensagem velha).
 
 **Files:**
 - Create: `supabase/functions/_shared/promocoes/sincronizar.ts`, `supabase/functions/_shared/promocoes/deps.ts`
@@ -878,21 +924,25 @@ Run: `pnpm test -- supabase/functions/_shared/promocoes/__tests__/ml.test.ts` �
 - Test: `supabase/functions/_shared/promocoes/__tests__/sincronizar.test.ts`
 
 **Interfaces:**
-- Consumes: Task 2 (`projecao.ts`), Task 3 (`cadastro.ts`), Task 4 (`ml.ts`); `buscarListingPrice`, `comissaoDe` (`../ml/listing-prices.ts`); `buscarFreteVendedorComProveniencia` (`../ml/frete.ts`); `redisGet`, `redisSet` (`../redis/client.ts`); `paginarTudo` (`../pagina.ts`).
+- Consumes: Task 2 (`projecao.ts`), Task 3 (`cadastro.ts`), Task 4 (`ml.ts`); `buscarListingPrice`, `comissaoDeComProveniencia` (`../ml/listing-prices.ts`); `buscarFreteVendedorComProveniencia` (`../ml/frete.ts`); `redisGet`, `redisSet` (`../redis/client.ts`); `paginarTudo` (`../pagina.ts`); `qstashClient` (`../queue.ts`).
 - Produces:
 
 ```ts
+// sincronizar.ts
 export type EstadoSync = 'ok' | 'sem_acesso' | 'sem_promocoes' | 'erro';
-export const MSG_ALIQUOTA: string;
-export const MSG_TEMPO: string;
+export const MSG_ALIQUOTA = 'Confirme as alíquotas de imposto em Configurações antes de usar a Central de Promoções.';
 export interface QueryTarifa { preco: number; categoria: string; listingType: string; dim: DimensoesPacote | null }
-export interface DepsSync { /* ver Step 4 */ }
-export interface ResultadoSync { estado: EstadoSync; processadas: { promo: PromocaoML; linhas: LinhaItem[] }[]; puladas: string[] }
+export interface MsgLeitura { etapa: 'promocao'; org_id: string; promocao_id: string; tipo: string; rodada: string; cursor: number }
+export interface DepsLista { lerAliquotas; listarPromocoes; gravarPromocoes; encerrarAusentes; reservarLeitura; enfileirar; avisar; gravarEstado }
+export interface DepsLeitura { agora; rodadaEmCurso; lerAliquotas; listarItens; buscarItensML; carregarCadastro; tarifaEm; gravarLote; continuar; concluir; falhar }
 export function projetarItem(it: ItemPromocaoML, ml: ItemML | null, cad: Cadastro, aliq: Aliquotas, tarifaEm: (q: QueryTarifa) => Promise<Tarifa>): Promise<LinhaItem>;
 export function emParalelo<T, R>(itens: T[], n: number, fn: (t: T) => Promise<R>): Promise<R[]>;
-export function sincronizarOrg(deps: DepsSync, opts: { limiteMs: number; concorrencia: number }): Promise<ResultadoSync>;
+export function sincronizarLista(deps: DepsLista, ctx: { orgId: string; rodada: string }): Promise<{ estado: EstadoSync; enfileiradas: string[] }>;
+export function sincronizarPromocao(deps: DepsLeitura, msg: MsgLeitura, opts: { limiteMs: number; lote: number; concorrencia: number }): Promise<{ resultado: 'concluida' | 'continua' | 'obsoleta' | 'erro'; processados: number }>;
 // deps.ts
-export function depsSync(admin: SupabaseClient, cx: { orgId: string; mlUserId: string; token: string }): DepsSync;
+export function depsLista(admin: SupabaseClient, cx: { orgId: string; mlUserId: string; token: string }): DepsLista;
+export function depsLeitura(admin: SupabaseClient, cx: { orgId: string; mlUserId: string; token: string }, msg: MsgLeitura): DepsLeitura;
+export class TarifaEstimada extends Error {}
 ```
 
 - [ ] **Step 1:** Em `tipos.ts`, trocar a linha do `MotivoSemLiquido` por:
@@ -905,7 +955,10 @@ export type MotivoSemLiquido = 'sem_cadastro' | 'sem_custo' | 'sem_origem' | 'se
 
 ```ts
 import { describe, expect, it, vi } from 'vitest';
-import { MSG_ALIQUOTA, MSG_TEMPO, projetarItem, sincronizarOrg, type DepsSync } from '../sincronizar.ts';
+import {
+  MSG_ALIQUOTA, projetarItem, sincronizarLista, sincronizarPromocao,
+  type DepsLeitura, type DepsLista, type MsgLeitura,
+} from '../sincronizar.ts';
 import { montarCadastro, type LinhaVariacao } from '../cadastro.ts';
 import { SemAcessoPromocoes } from '../ml.ts';
 import type { ItemML, ItemPromocaoML, PromocaoML, Tarifa } from '../tipos.ts';
@@ -946,12 +999,6 @@ describe('projetarItem', () => {
     expect(l.preco_avaliado).toBe(50);
   });
 
-  it('origem nula nunca vira 8%: sem líquido, motivo sem_origem', async () => {
-    const cad = montarCadastro([linhaVar({ id: 'a', familias: { ml_item_id: 'MLB1', origem: null } })], []);
-    const l = await projetarItem(item(), itemMl(), cad, aliq, async () => tarifa10);
-    expect(l.projecao[0]).toMatchObject({ liquido: null, motivo: 'sem_origem', semaforo: 'indisponivel' });
-  });
-
   it('importado usa a alíquota de importado', async () => {
     const cad = montarCadastro([linhaVar({ id: 'a', familias: { ml_item_id: 'MLB1', origem: 'importado' } })], []);
     const l = await projetarItem(item(), itemMl(), cad, aliq, async () => tarifa10);
@@ -959,17 +1006,23 @@ describe('projetarItem', () => {
     expect(l.projecao[0].liquido).toBeCloseTo(50 - 5 - 8, 10);
   });
 
-  it('faixa: avalia no sugerido e calcula até quanto descer', async () => {
+  it('convidado com faixa: avalia no sugerido e calcula até quanto descer', async () => {
     const cad = montarCadastro([linhaVar({ id: 'a', preco: 30 })], []);
     const l = await projetarItem(item({ preco_min: 20, preco_max: 60, preco_sugerido: 45 }), itemMl(), cad, aliq, async () => tarifa10);
     expect(l.preco_avaliado).toBe(45);
     expect(l.projecao[0].ate_quanto).toBeCloseTo(36.6, 2);
   });
 
-  it('falha na tarifa derruba só a cor (erro_tarifa)', async () => {
+  it('participando com faixa: avalia no preço que está no ar, não no sugerido', async () => {
     const cad = montarCadastro([linhaVar({ id: 'a' })], []);
-    const l = await projetarItem(item(), itemMl(), cad, aliq, async () => { throw new Error('ML 500'); });
-    expect(l.projecao[0]).toMatchObject({ motivo: 'erro_tarifa', liquido: null });
+    const l = await projetarItem(item({ status: 'started', preco_promo: 42, preco_sugerido: 45, preco_min: 20, preco_max: 60 }), itemMl(), cad, aliq, async () => tarifa10);
+    expect(l.preco_avaliado).toBe(42);
+  });
+
+  it('falha ou tarifa estimada derruba só a cor (erro_tarifa)', async () => {
+    const cad = montarCadastro([linhaVar({ id: 'a' })], []);
+    const l = await projetarItem(item(), itemMl(), cad, aliq, async () => { throw new Error('estimada'); });
+    expect(l.projecao[0]).toMatchObject({ motivo: 'erro_tarifa', liquido: null, semaforo: 'indisponivel' });
   });
 
   it('item fora do multiget: sem categoria, sem líquido', async () => {
@@ -979,81 +1032,129 @@ describe('projetarItem', () => {
   });
 });
 
-type Fake = DepsSync & { avancar: (ms: number) => void } & Record<string, ReturnType<typeof vi.fn>>;
-function fakeDeps(o: Partial<DepsSync> = {}): Fake {
-  let relogio = 0;
-  const base = {
-    agora: vi.fn(() => relogio),
-    avancar: (ms: number) => { relogio += ms; },
-    lerAliquotas: vi.fn(async () => aliq),
-    listarPromocoes: vi.fn(async (): Promise<PromocaoML[]> => []),
-    listarItens: vi.fn(async (): Promise<ItemPromocaoML[]> => [item()]),
-    buscarItensML: vi.fn(async () => new Map([['MLB1', itemMl()]])),
-    carregarCadastro: vi.fn(async () => montarCadastro([linhaVar({ id: 'a' })], [])),
-    tarifaEm: vi.fn(async () => tarifa10),
-    ultimaLeituraItens: vi.fn(async () => new Map<string, string | null>()),
-    gravarPromocoes: vi.fn(async () => {}),
-    gravarItens: vi.fn(async () => {}),
-    marcarErroPromocao: vi.fn(async () => {}),
-    gravarEstado: vi.fn(async () => {}),
-  };
-  return { ...base, ...o } as unknown as Fake;
-}
 const promo = (id: string, tipo = 'DEAL', status = 'pending') =>
   ({ id, tipo, status, nome: id, inicio: null, fim: null, prazo_adesao: null, beneficios: null, bruto: {} }) as PromocaoML;
-const opts = { limiteMs: 120_000, concorrencia: 4 };
 
-describe('sincronizarOrg', () => {
+type FakeLista = DepsLista & Record<keyof DepsLista, ReturnType<typeof vi.fn>>;
+const depsLista = (o: Partial<DepsLista> = {}): FakeLista => ({
+  lerAliquotas: vi.fn(async () => aliq),
+  listarPromocoes: vi.fn(async (): Promise<PromocaoML[]> => []),
+  gravarPromocoes: vi.fn(async () => {}),
+  encerrarAusentes: vi.fn(async () => {}),
+  reservarLeitura: vi.fn(async () => true),
+  enfileirar: vi.fn(async () => {}),
+  avisar: vi.fn(async () => 0),
+  gravarEstado: vi.fn(async () => {}),
+  ...o,
+}) as unknown as FakeLista;
+const ctx = { orgId: 'org', rodada: '2026-10-06T12:00:00.000Z' };
+
+describe('sincronizarLista', () => {
   it('alíquotas não confirmadas: falha LOUD sem chamar o ML', async () => {
-    const d = fakeDeps({ lerAliquotas: vi.fn(async () => null) });
-    const r = await sincronizarOrg(d, opts);
-    expect(r.estado).toBe('erro');
+    const d = depsLista({ lerAliquotas: vi.fn(async () => null) });
+    expect((await sincronizarLista(d, ctx)).estado).toBe('erro');
     expect(d.gravarEstado).toHaveBeenCalledWith({ estado: 'erro', erro: MSG_ALIQUOTA });
     expect(d.listarPromocoes).not.toHaveBeenCalled();
   });
 
-  it('403 do ML vira estado sem_acesso', async () => {
-    const d = fakeDeps({ listarPromocoes: vi.fn(async () => { throw new SemAcessoPromocoes('ML 403'); }) });
-    expect((await sincronizarOrg(d, opts)).estado).toBe('sem_acesso');
-    expect(d.gravarEstado).toHaveBeenCalledWith({ estado: 'sem_acesso', erro: 'ML 403' });
+  it('403 → sem_acesso; lista vazia → sem_promocoes e encerra as antigas', async () => {
+    const d1 = depsLista({ listarPromocoes: vi.fn(async () => { throw new SemAcessoPromocoes('ML 403'); }) });
+    expect((await sincronizarLista(d1, ctx)).estado).toBe('sem_acesso');
+    expect(d1.gravarEstado).toHaveBeenCalledWith({ estado: 'sem_acesso', erro: 'ML 403' });
+    const d2 = depsLista();
+    expect((await sincronizarLista(d2, ctx)).estado).toBe('sem_promocoes');
+    expect(d2.encerrarAusentes).toHaveBeenCalledWith([]);
   });
 
-  it('lista vazia vira sem_promocoes', async () => {
-    expect((await sincronizarOrg(fakeDeps(), opts)).estado).toBe('sem_promocoes');
-  });
-
-  it('cupom e encerrada só gravam a linha; pending/started leem itens', async () => {
-    const d = fakeDeps({ listarPromocoes: vi.fn(async () => [
-      promo('C', 'SELLER_COUPON_CAMPAIGN', 'started'), promo('F', 'DEAL', 'finished'), promo('P'),
-    ]) });
-    const r = await sincronizarOrg(d, opts);
-    expect(d.gravarPromocoes).toHaveBeenCalledTimes(1);
-    expect(d.listarItens).toHaveBeenCalledTimes(1);
-    expect(d.gravarItens.mock.calls[0][0]).toBe('P');
-    expect(d.gravarItens.mock.calls[0][2]).toMatchObject({ convidados: 1, verde: 1 });
-    expect(r.estado).toBe('ok');
+  it('grava, encerra ausentes, avisa e enfileira só pending/started não-cupom que reservou', async () => {
+    const d = depsLista({
+      listarPromocoes: vi.fn(async () => [
+        promo('C', 'SELLER_COUPON_CAMPAIGN', 'started'), promo('F', 'DEAL', 'finished'), promo('P'), promo('S', 'SMART', 'started'),
+      ]),
+      reservarLeitura: vi.fn(async (id: string) => id !== 'S'),
+    });
+    const r = await sincronizarLista(d, ctx);
+    expect(d.encerrarAusentes).toHaveBeenCalledWith(['C', 'F', 'P', 'S']);
+    expect(d.avisar).toHaveBeenCalledTimes(1);
+    expect(r.enfileiradas).toEqual(['P']);
+    expect(d.enfileirar).toHaveBeenCalledWith({ etapa: 'promocao', org_id: 'org', promocao_id: 'P', tipo: 'DEAL', rodada: ctx.rodada, cursor: 0 });
     expect(d.gravarEstado).toHaveBeenLastCalledWith({ estado: 'ok' });
   });
 
-  it('rodízio: nunca lida primeiro; estourou o orçamento → marca e fica para a próxima rodada', async () => {
-    const d = fakeDeps({
-      listarPromocoes: vi.fn(async () => [promo('Velha'), promo('Nunca')]),
-      ultimaLeituraItens: vi.fn(async () => new Map([['Velha', '2026-09-01T00:00:00Z']])),
-    });
-    d.listarItens.mockImplementation(async () => { d.avancar(200_000); return [item()]; });
-    const r = await sincronizarOrg(d, opts);
-    expect(d.listarItens.mock.calls[0][0].id).toBe('Nunca');
-    expect(d.marcarErroPromocao).toHaveBeenCalledWith('Velha', MSG_TEMPO);
-    expect(r.puladas).toEqual(['Velha']);
+  it('falha inesperada grava estado erro e relança (nada fica em "sincronizando")', async () => {
+    const d = depsLista({ listarPromocoes: vi.fn(async () => [promo('P')]), gravarPromocoes: vi.fn(async () => { throw new Error('db fora'); }) });
+    await expect(sincronizarLista(d, ctx)).rejects.toThrow('db fora');
+    expect(d.gravarEstado).toHaveBeenCalledWith({ estado: 'erro', erro: 'db fora' });
   });
 
-  it('falha numa promoção não derruba as outras', async () => {
-    const d = fakeDeps({ listarPromocoes: vi.fn(async () => [promo('A'), promo('B')]) });
-    d.listarItens.mockImplementationOnce(async () => { throw new Error('ML 500 em /x'); });
-    const r = await sincronizarOrg(d, opts);
-    expect(d.marcarErroPromocao).toHaveBeenCalledWith('A', 'ML 500 em /x');
-    expect(r.processadas.map((p) => p.promo.id)).toEqual(['B']);
-    expect(r.estado).toBe('ok');
+  it('falha nos alertas não derruba o sync', async () => {
+    const d = depsLista({ listarPromocoes: vi.fn(async () => [promo('P')]), avisar: vi.fn(async () => { throw new Error('telegram'); }) });
+    expect((await sincronizarLista(d, ctx)).estado).toBe('ok');
+  });
+});
+
+type FakeLeitura = DepsLeitura & Record<keyof DepsLeitura, ReturnType<typeof vi.fn>> & { avancar: (ms: number) => void };
+function depsLeitura(o: Partial<DepsLeitura> = {}): FakeLeitura {
+  let relogio = 0;
+  return {
+    avancar: (ms: number) => { relogio += ms; },
+    agora: vi.fn(() => relogio),
+    rodadaEmCurso: vi.fn(async () => ctx.rodada),
+    lerAliquotas: vi.fn(async () => aliq),
+    listarItens: vi.fn(async () => [item({ ml_item_id: 'MLB3' }), item({ ml_item_id: 'MLB1' }), item({ ml_item_id: 'MLB2' })]),
+    buscarItensML: vi.fn(async (ids: string[]) => new Map(ids.map((id) => [id, itemMl({ id })]))),
+    carregarCadastro: vi.fn(async () => montarCadastro([linhaVar({ id: 'a' })], [])),
+    tarifaEm: vi.fn(async () => tarifa10),
+    gravarLote: vi.fn(async () => {}),
+    continuar: vi.fn(async () => {}),
+    concluir: vi.fn(async () => {}),
+    falhar: vi.fn(async () => {}),
+    ...o,
+  } as unknown as FakeLeitura;
+}
+const msg: MsgLeitura = { etapa: 'promocao', org_id: 'org', promocao_id: 'P', tipo: 'DEAL', rodada: ctx.rodada, cursor: 0 };
+const opts = { limiteMs: 90_000, lote: 2, concorrencia: 4 };
+
+describe('sincronizarPromocao', () => {
+  it('lê em lotes na ordem de ml_item_id e conclui', async () => {
+    const d = depsLeitura();
+    const r = await sincronizarPromocao(d, msg, opts);
+    expect(r).toEqual({ resultado: 'concluida', processados: 3 });
+    expect(d.gravarLote.mock.calls.map((c) => c[0].map((l: { ml_item_id: string }) => l.ml_item_id))).toEqual([['MLB1', 'MLB2'], ['MLB3']]);
+    expect(d.concluir).toHaveBeenCalledTimes(1);
+  });
+
+  it('orçamento esgotado: grava o que fez e continua do cursor', async () => {
+    const d = depsLeitura();
+    d.gravarLote.mockImplementation(async () => { d.avancar(100_000); });
+    const r = await sincronizarPromocao(d, msg, opts);
+    expect(r).toEqual({ resultado: 'continua', processados: 2 });
+    expect(d.continuar).toHaveBeenCalledWith(2);
+    expect(d.concluir).not.toHaveBeenCalled();
+  });
+
+  it('retoma do cursor recebido', async () => {
+    const d = depsLeitura();
+    await sincronizarPromocao(d, { ...msg, cursor: 2 }, opts);
+    expect(d.gravarLote.mock.calls.map((c) => c[0].map((l: { ml_item_id: string }) => l.ml_item_id))).toEqual([['MLB3']]);
+  });
+
+  it('mensagem de rodada velha não faz nada', async () => {
+    const d = depsLeitura({ rodadaEmCurso: vi.fn(async () => '2026-10-06T18:00:00.000Z') });
+    expect((await sincronizarPromocao(d, msg, opts)).resultado).toBe('obsoleta');
+    expect(d.listarItens).not.toHaveBeenCalled();
+  });
+
+  it('erro marca a promoção e libera a reserva', async () => {
+    const d = depsLeitura({ listarItens: vi.fn(async () => { throw new Error('ML 500 em /x'); }) });
+    expect((await sincronizarPromocao(d, msg, opts)).resultado).toBe('erro');
+    expect(d.falhar).toHaveBeenCalledWith('ML 500 em /x');
+  });
+
+  it('alíquota desconfirmada no meio: falha LOUD', async () => {
+    const d = depsLeitura({ lerAliquotas: vi.fn(async () => null) });
+    expect((await sincronizarPromocao(d, msg, opts)).resultado).toBe('erro');
+    expect(d.falhar).toHaveBeenCalledWith(MSG_ALIQUOTA);
   });
 });
 ```
@@ -1062,43 +1163,53 @@ describe('sincronizarOrg', () => {
 - [ ] **Step 4: Implementar `sincronizar.ts`**
 
 ```ts
-// ADR-0170 — sync das promoções de UMA org. Decisão aqui, IO nas deps (fiação real em deps.ts).
+// ADR-0170 — sync das promoções: etapa de lista (por org) e etapa de leitura (por promoção, em lotes,
+// com continuação). Decisão aqui; IO nas deps (fiação real em deps.ts).
 import type { DimensoesPacote } from '../ml/pacote.ts';
 import { resolverCor, type Cadastro } from './cadastro.ts';
 import { SemAcessoPromocoes, TIPOS_CUPOM } from './ml.ts';
-import { ateQuantoDescer, contar, liquidoNoPreco, piorSemaforo, precoAvaliado, semaforo } from './projecao.ts';
+import { ateQuantoDescer, liquidoNoPreco, piorSemaforo, precoAvaliado, semaforo } from './projecao.ts';
 import type {
-  Aliquotas, Contagem, ItemML, ItemPromocaoML, LinhaItem, MotivoSemLiquido, ProjecaoCor, PromocaoML, Tarifa,
+  Aliquotas, ItemML, ItemPromocaoML, LinhaItem, MotivoSemLiquido, ProjecaoCor, PromocaoML, Tarifa,
 } from './tipos.ts';
 
 export type EstadoSync = 'ok' | 'sem_acesso' | 'sem_promocoes' | 'erro';
 export const MSG_ALIQUOTA = 'Confirme as alíquotas de imposto em Configurações antes de usar a Central de Promoções.';
-export const MSG_TEMPO = 'Não processada nesta rodada (tempo esgotado); entra primeiro na próxima.';
 
 export interface QueryTarifa { preco: number; categoria: string; listingType: string; dim: DimensoesPacote | null }
+export interface MsgLeitura { etapa: 'promocao'; org_id: string; promocao_id: string; tipo: string; rodada: string; cursor: number }
 
-export interface DepsSync {
-  agora(): number;
+export interface DepsLista {
   lerAliquotas(): Promise<Aliquotas | null>;
   listarPromocoes(): Promise<PromocaoML[]>;
-  listarItens(p: PromocaoML): Promise<ItemPromocaoML[]>;
-  buscarItensML(ids: string[]): Promise<Map<string, ItemML>>;
-  carregarCadastro(): Promise<Cadastro>;
-  tarifaEm(q: QueryTarifa): Promise<Tarifa>;
-  /** promocao_id → itens_sincronizados_em (null = nunca leu os itens). */
-  ultimaLeituraItens(): Promise<Map<string, string | null>>;
-  /** Upsert dos metadados; NÃO toca contagem, erro nem itens_sincronizados_em. */
+  /** Upsert dos metadados; não toca contagem, erro, itens_sincronizados_em nem rodada_em_curso. */
   gravarPromocoes(ps: PromocaoML[]): Promise<void>;
-  /** Upsert dos itens, apaga os que não vieram, grava contagem, erro=null e itens_sincronizados_em. */
-  gravarItens(promocaoId: string, linhas: LinhaItem[], contagem: Contagem): Promise<void>;
-  marcarErroPromocao(promocaoId: string, erro: string): Promise<void>;
+  /** status='finished' nas pending/started da org cujo id não está em `vistos`. */
+  encerrarAusentes(vistos: string[]): Promise<void>;
+  /** Reserva atômica: grava rodada_em_curso se estiver nula ou com mais de 15 min. true = reservou. */
+  reservarLeitura(promocaoId: string, rodada: string): Promise<boolean>;
+  enfileirar(m: MsgLeitura): Promise<void>;
+  /** Alertas lendo o banco (dados da rodada anterior). Devolve nº de envios. */
+  avisar(): Promise<number>;
   gravarEstado(e: { estado: EstadoSync; erro?: string }): Promise<void>;
 }
 
-export interface ResultadoSync {
-  estado: EstadoSync;
-  processadas: { promo: PromocaoML; linhas: LinhaItem[] }[];
-  puladas: string[];
+export interface DepsLeitura {
+  agora(): number;
+  rodadaEmCurso(): Promise<string | null>;
+  lerAliquotas(): Promise<Aliquotas | null>;
+  listarItens(): Promise<ItemPromocaoML[]>;
+  buscarItensML(ids: string[]): Promise<Map<string, ItemML>>;
+  carregarCadastro(): Promise<Cadastro>;
+  tarifaEm(q: QueryTarifa): Promise<Tarifa>;
+  /** Upsert das linhas com sincronizado_em = rodada. */
+  gravarLote(linhas: LinhaItem[]): Promise<void>;
+  /** Publica a mesma mensagem com o novo cursor. */
+  continuar(cursor: number): Promise<void>;
+  /** Apaga itens com sincronizado_em < rodada, recalcula a contagem no banco, itens_sincronizados_em = rodada, erro = null, rodada_em_curso = null. */
+  concluir(): Promise<void>;
+  /** erro = msg, rodada_em_curso = null. */
+  falhar(erro: string): Promise<void>;
 }
 
 const mensagem = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -1143,7 +1254,7 @@ async function projetarCor(
   try {
     const t = await tarifaNo(preco!);
     const liquido = liquidoNoPreco(preco!, t, aliquotaPct);
-    const ate = it.preco_min != null && it.preco_max != null
+    const ate = it.status === 'candidate' && it.preco_min != null && it.preco_max != null
       ? await ateQuantoDescer({ piso, aliquotaPct, min: it.preco_min, max: it.preco_max }, tarifaNo)
       : { valor: null, motivo: null };
     return {
@@ -1152,6 +1263,7 @@ async function projetarCor(
       semaforo: semaforo(liquido, piso, custo),
     };
   } catch {
+    // Inclui TarifaEstimada: comissão/frete que o ML não informou NUNCA vira zero (ADR-0170 §7).
     return { ...base, motivo: 'erro_tarifa' };
   }
 }
@@ -1173,101 +1285,202 @@ export async function projetarItem(
   };
 }
 
-export async function sincronizarOrg(
-  deps: DepsSync, opts: { limiteMs: number; concorrencia: number },
-): Promise<ResultadoSync> {
-  const inicio = deps.agora();
-  const fim = (estado: EstadoSync, extra: Partial<ResultadoSync> = {}): ResultadoSync =>
-    ({ estado, processadas: [], puladas: [], ...extra });
-
-  const aliq = await deps.lerAliquotas();
-  if (!aliq) {
-    await deps.gravarEstado({ estado: 'erro', erro: MSG_ALIQUOTA });
-    return fim('erro');
-  }
-
-  let promos: PromocaoML[];
+export async function sincronizarLista(
+  deps: DepsLista, ctx: { orgId: string; rodada: string },
+): Promise<{ estado: EstadoSync; enfileiradas: string[] }> {
   try {
-    promos = await deps.listarPromocoes();
-  } catch (e) {
-    const estado: EstadoSync = e instanceof SemAcessoPromocoes ? 'sem_acesso' : 'erro';
-    await deps.gravarEstado({ estado, erro: mensagem(e) });
-    return fim(estado);
-  }
-  if (promos.length === 0) {
-    await deps.gravarEstado({ estado: 'sem_promocoes' });
-    return fim('sem_promocoes');
-  }
-
-  await deps.gravarPromocoes(promos);
-  const ultima = await deps.ultimaLeituraItens();
-  const quando = (id: string) => Date.parse(ultima.get(id) ?? '') || 0; // nunca lida = 0 → primeiro
-  const aLer = promos
-    .filter((p) => !TIPOS_CUPOM.has(p.tipo) && (p.status === 'pending' || p.status === 'started'))
-    .sort((a, b) => quando(a.id) - quando(b.id));
-
-  const cadastro = await deps.carregarCadastro();
-  const processadas: ResultadoSync['processadas'] = [];
-  const puladas: string[] = [];
-  for (const p of aLer) {
-    if (deps.agora() - inicio > opts.limiteMs) {
-      await deps.marcarErroPromocao(p.id, MSG_TEMPO);
-      puladas.push(p.id);
-      continue;
+    if (!(await deps.lerAliquotas())) {
+      await deps.gravarEstado({ estado: 'erro', erro: MSG_ALIQUOTA });
+      return { estado: 'erro', enfileiradas: [] };
     }
+    let promos: PromocaoML[];
     try {
-      const itens = await deps.listarItens(p);
-      const ml = await deps.buscarItensML(itens.map((i) => i.ml_item_id));
-      const linhas = await emParalelo(itens, opts.concorrencia, (it) =>
-        projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q)));
-      await deps.gravarItens(p.id, linhas, contar(linhas));
-      processadas.push({ promo: p, linhas });
+      promos = await deps.listarPromocoes();
     } catch (e) {
-      await deps.marcarErroPromocao(p.id, mensagem(e));
+      if (!(e instanceof SemAcessoPromocoes)) throw e;
+      await deps.gravarEstado({ estado: 'sem_acesso', erro: e.message });
+      return { estado: 'sem_acesso', enfileiradas: [] };
     }
+    if (promos.length) await deps.gravarPromocoes(promos);
+    await deps.encerrarAusentes(promos.map((p) => p.id));
+    try {
+      await deps.avisar();
+    } catch (e) {
+      console.error('[promocoes] alertas falharam (sync mantido):', e);
+    }
+    if (!promos.length) {
+      await deps.gravarEstado({ estado: 'sem_promocoes' });
+      return { estado: 'sem_promocoes', enfileiradas: [] };
+    }
+    const enfileiradas: string[] = [];
+    for (const p of promos) {
+      if (TIPOS_CUPOM.has(p.tipo) || (p.status !== 'pending' && p.status !== 'started')) continue;
+      if (!(await deps.reservarLeitura(p.id, ctx.rodada))) continue; // já em leitura por outra rodada
+      await deps.enfileirar({ etapa: 'promocao', org_id: ctx.orgId, promocao_id: p.id, tipo: p.tipo, rodada: ctx.rodada, cursor: 0 });
+      enfileiradas.push(p.id);
+    }
+    await deps.gravarEstado({ estado: 'ok' });
+    return { estado: 'ok', enfileiradas };
+  } catch (e) {
+    await deps.gravarEstado({ estado: 'erro', erro: mensagem(e) });
+    throw e;
   }
-  await deps.gravarEstado({ estado: 'ok' });
-  return fim('ok', { processadas, puladas });
+}
+
+export async function sincronizarPromocao(
+  deps: DepsLeitura, msg: MsgLeitura, opts: { limiteMs: number; lote: number; concorrencia: number },
+): Promise<{ resultado: 'concluida' | 'continua' | 'obsoleta' | 'erro'; processados: number }> {
+  const inicio = deps.agora();
+  if ((await deps.rodadaEmCurso()) !== msg.rodada) return { resultado: 'obsoleta', processados: 0 };
+  try {
+    const aliq = await deps.lerAliquotas();
+    if (!aliq) {
+      await deps.falhar(MSG_ALIQUOTA);
+      return { resultado: 'erro', processados: 0 };
+    }
+    // Ordem estável entre continuações: o cursor é um índice nesta lista.
+    const itens = (await deps.listarItens()).sort((a, b) => a.ml_item_id.localeCompare(b.ml_item_id));
+    const cadastro = await deps.carregarCadastro();
+    let i = msg.cursor;
+    while (i < itens.length) {
+      if (i > msg.cursor && deps.agora() - inicio > opts.limiteMs) {
+        await deps.continuar(i);
+        return { resultado: 'continua', processados: i - msg.cursor };
+      }
+      const lote = itens.slice(i, i + opts.lote);
+      const ml = await deps.buscarItensML(lote.map((x) => x.ml_item_id));
+      const linhas = await emParalelo(lote, opts.concorrencia, (it) =>
+        projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q)));
+      await deps.gravarLote(linhas);
+      i += lote.length;
+    }
+    await deps.concluir();
+    return { resultado: 'concluida', processados: i - msg.cursor };
+  } catch (e) {
+    await deps.falhar(mensagem(e));
+    return { resultado: 'erro', processados: 0 };
+  }
 }
 ```
 
+(`i > msg.cursor` garante que toda execução avança pelo menos um lote — não existe continuação sem progresso.)
 - [ ] **Step 5:** `pnpm test -- supabase/functions/_shared/promocoes` → Expected: PASS (todas as suítes da pasta).
 - [ ] **Step 6: Implementar `deps.ts`** (fiação; validada contra Postgres real e o ML na Task 10)
 
 ```ts
 // Fiação real do sync de promoções (ADR-0170). Só ligação, nenhuma decisão — a regra vive em
-// sincronizar.ts, testada por vitest. Validada contra Postgres real e o ML na Task 10.
+// sincronizar.ts / alertas.ts, testadas por vitest. Validada contra Postgres real e o ML na Task 10.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { buscarListingPrice, comissaoDe } from '../ml/listing-prices.ts';
+import { buscarListingPrice, comissaoDeComProveniencia } from '../ml/listing-prices.ts';
 import { buscarFreteVendedorComProveniencia } from '../ml/frete.ts';
 import { redisGet, redisSet } from '../redis/client.ts';
 import { paginarTudo } from '../pagina.ts';
+import { qstashClient } from '../queue.ts';
 import { montarCadastro, type LinhaItemUp, type LinhaVariacao } from './cadastro.ts';
 import { buscarItensML, criarGetJson, listarItensPromocao, listarPromocoes } from './ml.ts';
-import type { DepsSync } from './sincronizar.ts';
-import type { Tarifa } from './tipos.ts';
+import { contar } from './projecao.ts';
+import { avisarPromocoes, depsAlertas } from './alertas.ts';
+import type { DepsLeitura, DepsLista, MsgLeitura } from './sincronizar.ts';
+import type { Comissao } from '../preco/sugerir.ts';
+import type { Aliquotas, LinhaItem } from './tipos.ts';
 
-const TTL_TARIFA_S = 6 * 60 * 60;
+const TTL_S = 6 * 60 * 60;
+const RESERVA_MIN = 15;
 
-export function depsSync(admin: SupabaseClient, cx: { orgId: string; mlUserId: string; token: string }): DepsSync {
+/** Comissão ou frete que o ML não informou: nunca vira zero, nunca entra no cache. */
+export class TarifaEstimada extends Error {}
+
+type Cx = { orgId: string; mlUserId: string; token: string };
+const falhou = (onde: string, e: { message: string } | null) => { if (e) throw new Error(`${onde}: ${e.message}`); };
+const urlWorker = () => `${Deno.env.get('SUPABASE_URL')}/functions/v1/sincronizar-promocoes`;
+
+async function lerAliquotas(admin: SupabaseClient, orgId: string): Promise<Aliquotas | null> {
+  const { data, error } = await admin.from('configuracoes')
+    .select('aliquota_nacional_pct, aliquota_importado_pct, aliquotas_confirmadas_em')
+    .eq('org_id', orgId).maybeSingle();
+  falhou('lerAliquotas', error);
+  if (!data?.aliquotas_confirmadas_em || data.aliquota_nacional_pct == null || data.aliquota_importado_pct == null) return null;
+  return { nacional: Number(data.aliquota_nacional_pct), importado: Number(data.aliquota_importado_pct) };
+}
+
+async function emCache<T>(chave: string, calcular: () => Promise<T>): Promise<T> {
+  try {
+    const hit = await redisGet(chave);
+    if (hit) return JSON.parse(hit) as T;
+  } catch { /* cache é otimização */ }
+  const v = await calcular(); // lança → não grava
+  try { await redisSet(chave, JSON.stringify(v), TTL_S); } catch { /* idem */ }
+  return v;
+}
+
+export function depsLista(admin: SupabaseClient, cx: Cx): DepsLista {
   const get = criarGetJson(cx.token);
   const { orgId } = cx;
-  const falhou = (onde: string, e: { message: string } | null) => { if (e) throw new Error(`${onde}: ${e.message}`); };
+  return {
+    lerAliquotas: () => lerAliquotas(admin, orgId),
+    listarPromocoes: () => listarPromocoes(get, cx.mlUserId),
 
+    async gravarPromocoes(ps) {
+      const agora = new Date().toISOString();
+      const { error } = await admin.from('ml_promocoes').upsert(ps.map((p) => ({
+        org_id: orgId, promocao_id: p.id, tipo: p.tipo, nome: p.nome, status: p.status,
+        inicio: p.inicio, fim: p.fim, prazo_adesao: p.prazo_adesao, beneficios: p.beneficios,
+        bruto: p.bruto, sincronizado_em: agora,
+      })), { onConflict: 'org_id,promocao_id' });
+      falhou('gravarPromocoes', error);
+    },
+
+    async encerrarAusentes(vistos) {
+      let q = admin.from('ml_promocoes').update({ status: 'finished', rodada_em_curso: null })
+        .eq('org_id', orgId).in('status', ['pending', 'started']);
+      if (vistos.length) q = q.not('promocao_id', 'in', `(${vistos.map((v) => `"${v.replaceAll('"', '')}"`).join(',')})`);
+      const { error } = await q;
+      falhou('encerrarAusentes', error);
+    },
+
+    async reservarLeitura(promocaoId, rodada) {
+      const limite = new Date(Date.now() - RESERVA_MIN * 60_000).toISOString();
+      const { data, error } = await admin.from('ml_promocoes').update({ rodada_em_curso: rodada })
+        .eq('org_id', orgId).eq('promocao_id', promocaoId)
+        .or(`rodada_em_curso.is.null,rodada_em_curso.lt.${limite}`)
+        .select('promocao_id');
+      falhou('reservarLeitura', error);
+      return (data ?? []).length === 1;
+    },
+
+    async enfileirar(m) {
+      await qstashClient().publishJSON({ url: urlWorker(), body: m, retries: 1 });
+    },
+
+    avisar: () => avisarPromocoes(Date.now(), depsAlertas(admin, orgId)),
+
+    async gravarEstado({ estado, erro }) {
+      const agora = new Date().toISOString();
+      const ok = estado === 'ok' || estado === 'sem_promocoes';
+      const { error } = await admin.from('ml_promocoes_sync').upsert({
+        org_id: orgId, estado, erro: erro ?? null,
+        ...(ok ? { ultimo_ok_em: agora } : { ultimo_erro_em: agora }),
+      }, { onConflict: 'org_id' });
+      falhou('gravarEstado', error);
+    },
+  };
+}
+
+export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): DepsLeitura {
+  const get = criarGetJson(cx.token);
+  const { orgId } = cx;
+  const daPromo = () => admin.from('ml_promocoes').select('*').eq('org_id', orgId).eq('promocao_id', msg.promocao_id);
   return {
     agora: () => Date.now(),
 
-    async lerAliquotas() {
-      const { data, error } = await admin.from('configuracoes')
-        .select('aliquota_nacional_pct, aliquota_importado_pct, aliquotas_confirmadas_em')
-        .eq('org_id', orgId).maybeSingle();
-      falhou('lerAliquotas', error);
-      if (!data?.aliquotas_confirmadas_em || data.aliquota_nacional_pct == null || data.aliquota_importado_pct == null) return null;
-      return { nacional: Number(data.aliquota_nacional_pct), importado: Number(data.aliquota_importado_pct) };
+    async rodadaEmCurso() {
+      const { data, error } = await daPromo().maybeSingle();
+      falhou('rodadaEmCurso', error);
+      return (data?.rodada_em_curso as string | null) ?? null;
     },
 
-    listarPromocoes: () => listarPromocoes(get, cx.mlUserId),
-    listarItens: (p) => listarItensPromocao(get, p),
+    lerAliquotas: () => lerAliquotas(admin, orgId),
+    listarItens: () => listarItensPromocao(get, { id: msg.promocao_id, tipo: msg.tipo } as never),
     buscarItensML: (ids) => buscarItensML(get, ids),
 
     async carregarCadastro() {
@@ -1282,104 +1495,94 @@ export function depsSync(admin: SupabaseClient, cx: { orgId: string; mlUserId: s
     },
 
     async tarifaEm({ preco, categoria, listingType, dim }) {
+      const p = preco.toFixed(2);
       const dimKey = dim ? `${dim.altura_cm}x${dim.largura_cm}x${dim.comprimento_cm}x${dim.peso_gramas}` : 'padrao';
-      const chave = `promo:tarifa:v1:${cx.mlUserId}:${categoria}:${listingType}:${preco.toFixed(2)}:${dimKey}`;
-      try {
-        const hit = await redisGet(chave);
-        if (hit) return JSON.parse(hit) as Tarifa;
-      } catch { /* cache é otimização; segue sem ele */ }
-      const [lp, frete] = await Promise.all([
-        buscarListingPrice(cx.token, preco, categoria, listingType),
-        buscarFreteVendedorComProveniencia(cx.token, cx.mlUserId, preco, categoria, dim),
+      const [comissao, frete] = await Promise.all([
+        emCache<Comissao>(`promo:lp:v1:${categoria}:${listingType}:${p}`, async () => {
+          const c = comissaoDeComProveniencia(await buscarListingPrice(cx.token, preco, categoria, listingType));
+          if (c.proveniencia === 'estimated') throw new TarifaEstimada(c.motivo ?? 'comissão estimada');
+          return c.valor;
+        }),
+        emCache<number>(`promo:frete:v1:${cx.mlUserId}:${categoria}:${p}:${dimKey}`, async () => {
+          const f = await buscarFreteVendedorComProveniencia(cx.token, cx.mlUserId, preco, categoria, dim);
+          // 'partial' (pacote padrão por falta de dimensão) é o mesmo número que a Revisão mostra: aceito.
+          if (f.proveniencia === 'estimated') throw new TarifaEstimada(f.motivo ?? 'frete estimado');
+          return f.valor;
+        }),
       ]);
-      const t: Tarifa = { comissao: comissaoDe(lp), frete: frete.valor };
-      try { await redisSet(chave, JSON.stringify(t), TTL_TARIFA_S); } catch { /* idem */ }
-      return t;
+      return { comissao, frete };
     },
 
-    async ultimaLeituraItens() {
-      const { data, error } = await admin.from('ml_promocoes')
-        .select('promocao_id, itens_sincronizados_em').eq('org_id', orgId);
-      falhou('ultimaLeituraItens', error);
-      return new Map((data ?? []).map((r) => [r.promocao_id as string, (r.itens_sincronizados_em as string | null) ?? null]));
+    async gravarLote(linhas: LinhaItem[]) {
+      const { error } = await admin.from('ml_promocao_itens').upsert(linhas.map((l) => ({
+        org_id: orgId, promocao_id: msg.promocao_id, ml_item_id: l.ml_item_id, status: l.status,
+        preco_original: l.preco_original, preco_promo: l.preco_promo, preco_min: l.preco_min, preco_max: l.preco_max,
+        preco_sugerido: l.preco_sugerido, preco_avaliado: l.preco_avaliado, ml_pct: l.ml_pct, vendedor_pct: l.vendedor_pct,
+        estoque_min: l.estoque_min, estoque_max: l.estoque_max, titulo: l.titulo, thumbnail: l.thumbnail,
+        permalink: l.permalink, listing_type_id: l.listing_type_id, projecao: l.projecao,
+        pior_semaforo: l.pior_semaforo, sincronizado_em: msg.rodada,
+      })), { onConflict: 'org_id,promocao_id,ml_item_id' });
+      falhou('gravarLote', error);
     },
 
-    async gravarPromocoes(ps) {
-      const agora = new Date().toISOString();
-      const { error } = await admin.from('ml_promocoes').upsert(ps.map((p) => ({
-        org_id: orgId, promocao_id: p.id, tipo: p.tipo, nome: p.nome, status: p.status,
-        inicio: p.inicio, fim: p.fim, prazo_adesao: p.prazo_adesao, beneficios: p.beneficios,
-        bruto: p.bruto, sincronizado_em: agora,
-      })), { onConflict: 'org_id,promocao_id' });
-      falhou('gravarPromocoes', error);
+    async continuar(cursor) {
+      await qstashClient().publishJSON({ url: urlWorker(), body: { ...msg, cursor }, retries: 1 });
     },
 
-    async gravarItens(promocaoId, linhas, contagem) {
-      const rodada = new Date().toISOString();
-      for (let i = 0; i < linhas.length; i += 500) {
-        const { error } = await admin.from('ml_promocao_itens').upsert(linhas.slice(i, i + 500).map((l) => ({
-          org_id: orgId, promocao_id: promocaoId, ml_item_id: l.ml_item_id, status: l.status,
-          preco_original: l.preco_original, preco_promo: l.preco_promo, preco_min: l.preco_min, preco_max: l.preco_max,
-          preco_sugerido: l.preco_sugerido, preco_avaliado: l.preco_avaliado, ml_pct: l.ml_pct, vendedor_pct: l.vendedor_pct,
-          estoque_min: l.estoque_min, estoque_max: l.estoque_max, titulo: l.titulo, thumbnail: l.thumbnail,
-          permalink: l.permalink, listing_type_id: l.listing_type_id, projecao: l.projecao,
-          pior_semaforo: l.pior_semaforo, sincronizado_em: rodada,
-        })), { onConflict: 'org_id,promocao_id,ml_item_id' });
-        falhou('gravarItens.upsert', error);
-      }
+    async concluir() {
       const del = await admin.from('ml_promocao_itens').delete()
-        .eq('org_id', orgId).eq('promocao_id', promocaoId).lt('sincronizado_em', rodada);
-      falhou('gravarItens.delete', del.error);
+        .eq('org_id', orgId).eq('promocao_id', msg.promocao_id).lt('sincronizado_em', msg.rodada);
+      falhou('concluir.delete', del.error);
+      const linhas = await paginarTudo<Pick<LinhaItem, 'status' | 'pior_semaforo'>>((de, ate) => admin.from('ml_promocao_itens')
+        .select('ml_item_id, status, pior_semaforo').eq('org_id', orgId).eq('promocao_id', msg.promocao_id)
+        .order('ml_item_id').range(de, ate) as never);
       const upd = await admin.from('ml_promocoes')
-        .update({ contagem, erro: null, itens_sincronizados_em: rodada })
-        .eq('org_id', orgId).eq('promocao_id', promocaoId);
-      falhou('gravarItens.contagem', upd.error);
+        .update({ contagem: contar(linhas), erro: null, itens_sincronizados_em: msg.rodada, rodada_em_curso: null })
+        .eq('org_id', orgId).eq('promocao_id', msg.promocao_id);
+      falhou('concluir.contagem', upd.error);
     },
 
-    async marcarErroPromocao(promocaoId, erro) {
-      const { error } = await admin.from('ml_promocoes').update({ erro })
-        .eq('org_id', orgId).eq('promocao_id', promocaoId);
-      falhou('marcarErroPromocao', error);
-    },
-
-    async gravarEstado({ estado, erro }) {
-      const agora = new Date().toISOString();
-      const ok = estado === 'ok' || estado === 'sem_promocoes';
-      const { error } = await admin.from('ml_promocoes_sync').upsert({
-        org_id: orgId, estado, erro: erro ?? null,
-        ...(ok ? { ultimo_ok_em: agora } : { ultimo_erro_em: agora }),
-      }, { onConflict: 'org_id' });
-      falhou('gravarEstado', error);
+    async falhar(erro) {
+      const { error } = await admin.from('ml_promocoes').update({ erro, rodada_em_curso: null })
+        .eq('org_id', orgId).eq('promocao_id', msg.promocao_id);
+      falhou('falhar', error);
     },
   };
 }
 ```
 
-- [ ] **Step 7:** `pnpm check:functions && pnpm lint:functions` → Expected: sem erro (o `deps.ts` só é verificado pelo `deno check`).
-- [ ] **Step 8: Commit** `feat(promocoes): orquestrador do sync por org com rodizio e orcamento (ADR-0170)`.
+- [ ] **Step 7:** `/usr/bin/git add supabase/functions/_shared/promocoes` (o `check:functions` só enxerga arquivo rastreado — `package.json:22` usa `git ls-files`) e então `pnpm check:functions && pnpm lint:functions` → Expected: sem erro.
+- [ ] **Step 8: Commit** `feat(promocoes): sync em duas etapas com leitura por promocao e continuacao (ADR-0170)`.
 
 ---
 
-### Task 6: Alertas + worker `sincronizar-promocoes` + módulo na edge `usuarios` (TDD)
+### Task 6: Alertas + worker `sincronizar-promocoes` + menu/módulo na edge `usuarios` (TDD)
+
+Os alertas leem o **banco** (dados da última leitura concluída) na etapa de lista: uma mensagem por org por sync, sem depender de quais promoções foram lidas agora.
 
 **Files:**
 - Create: `supabase/functions/_shared/promocoes/alertas.ts`, `supabase/functions/sincronizar-promocoes/index.ts`
-- Modify: `supabase/functions/usuarios/index.ts:211` (`MODULOS_VALIDOS`), `supabase/config.toml` (bloco da função nova)
+- Modify: `supabase/functions/usuarios/index.ts` (linha 10 `MENU_KEYS` e linha 211 `MODULOS_VALIDOS`), `supabase/config.toml` (bloco da função nova)
 - Test: `supabase/functions/_shared/promocoes/__tests__/alertas.test.ts`
 
 **Interfaces:**
-- Consumes: `ResultadoSync` (Task 5); `reservarNotificacao` (`../faturamento/notificacoes-dedupe.ts`); `notificarCategoria` (`../notificacoes/config.ts`); `requireUserOrg` (`../_shared/auth.ts`); `verificarAssinatura`, `qstashClient` (`../_shared/queue.ts`); `exigirModulo` (`../_shared/produto/modulo.ts`); `resolverConexao` (`../_shared/canais/conexao.ts`); `getValidAccessTokenConexao` (`../_shared/ml/token.ts`).
+- Consumes: `Contagem` com `convidados_verde` (Task 2); `reservarNotificacao` (`../faturamento/notificacoes-dedupe.ts`); `notificarCategoria` (`../notificacoes/config.ts`); no worker: `requireUserOrg` (`../_shared/auth.ts`), `verificarAssinatura`, `qstashClient` (`../_shared/queue.ts`), `exigirModulo` (`../_shared/produto/modulo.ts`), `resolverConexao` (`../_shared/canais/conexao.ts`), `getValidAccessTokenConexao` (`../_shared/ml/token.ts`), Task 5.
 - Produces:
 
 ```ts
+export interface PromoAlerta { promocao_id: string; nome: string | null; status: string; prazo_adesao: string | null; contagem: Contagem | null }
+export interface ItemAlerta { promocao_id: string; ml_item_id: string; titulo: string | null; preco_avaliado: number | null; projecao: ProjecaoCor[] }
 export interface DepsAlertas {
   ativo(): Promise<boolean>;
+  lerPromocoes(): Promise<PromoAlerta[]>;               // status pending/started
+  lerParticipandoNoPrejuizo(): Promise<ItemAlerta[]>;   // status 'started' e pior 'vermelho'
   reservar(entidade: 'promo_prejuizo' | 'promo_prazo', chave: string): Promise<boolean>;
   notificar(texto: string): Promise<number>;
 }
-export function selecionarAlertas(r: ResultadoSync, agoraMs: number): Selecao;
+export type Selecao = { prejuizo: { promo: PromoAlerta; item: ItemAlerta }[]; prazo: { promo: PromoAlerta; verdes: number }[] };
+export function selecionarAlertas(promos: PromoAlerta[], prejuizo: ItemAlerta[], agoraMs: number): Selecao;
 export function montarMensagemPromocoes(s: Selecao): string;
-export function avisarPromocoes(r: ResultadoSync, agoraMs: number, deps: DepsAlertas): Promise<number>;
+export function avisarPromocoes(agoraMs: number, deps: DepsAlertas): Promise<number>;
 export function depsAlertas(admin: SupabaseClient, orgId: string): DepsAlertas;
 ```
 
@@ -1387,59 +1590,60 @@ export function depsAlertas(admin: SupabaseClient, orgId: string): DepsAlertas;
 
 ```ts
 import { describe, expect, it, vi } from 'vitest';
-import { avisarPromocoes, montarMensagemPromocoes, selecionarAlertas, type DepsAlertas } from '../alertas.ts';
-import type { ResultadoSync } from '../sincronizar.ts';
-import type { LinhaItem, PromocaoML } from '../tipos.ts';
+import {
+  avisarPromocoes, montarMensagemPromocoes, selecionarAlertas,
+  type DepsAlertas, type ItemAlerta, type PromoAlerta,
+} from '../alertas.ts';
 
 const H = 3_600_000;
 const agora = Date.parse('2026-10-06T12:00:00Z');
-const promo = (id: string, status: string, prazoHoras: number | null) => ({
-  id, tipo: 'DEAL', nome: `Campanha ${id}`, status, inicio: null, fim: null, beneficios: null, bruto: {},
+const contagem = (verdes: number) => ({ convidados: 5, convidados_verde: verdes, participando: 0, verde: verdes, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0 });
+const promo = (id: string, status: string, prazoHoras: number | null, verdes = 1): PromoAlerta => ({
+  promocao_id: id, nome: `Campanha ${id}`, status, contagem: contagem(verdes),
   prazo_adesao: prazoHoras == null ? null : new Date(agora + prazoHoras * H).toISOString(),
-}) as PromocaoML;
-const linha = (id: string, status: string, pior: LinhaItem['pior_semaforo']) =>
-  ({ ml_item_id: id, status, pior_semaforo: pior, titulo: `Anúncio ${id}`, preco_avaliado: 49.9,
-     projecao: [{ liquido: 8.5, custo: 12 }] }) as unknown as LinhaItem;
-const r = (processadas: ResultadoSync['processadas']): ResultadoSync => ({ estado: 'ok', processadas, puladas: [] });
+});
+const item = (promocao: string, id: string): ItemAlerta => ({
+  promocao_id: promocao, ml_item_id: id, titulo: `Anúncio ${id}`, preco_avaliado: 49.9,
+  projecao: [{ liquido: 8.5, custo: 12 } as never],
+});
 
 describe('selecionarAlertas', () => {
-  it('prejuízo = participando com pior vermelho; convidado vermelho não conta', () => {
-    const s = selecionarAlertas(r([{ promo: promo('S', 'started', null), linhas: [
-      linha('A', 'started', 'vermelho'), linha('B', 'candidate', 'vermelho'), linha('C', 'started', 'amarelo'),
-    ] }]), agora);
-    expect(s.prejuizo.map((x) => x.linha.ml_item_id)).toEqual(['A']);
+  it('prejuízo: casa o item com a promoção; promoção desconhecida é ignorada', () => {
+    const s = selecionarAlertas([promo('S', 'started', null)], [item('S', 'A'), item('X', 'B')], agora);
+    expect(s.prejuizo.map((x) => x.item.ml_item_id)).toEqual(['A']);
   });
 
-  it('prazo = pending com adesão em ≤ 48 h (ainda aberta) e ≥ 1 convidado verde', () => {
-    const s = selecionarAlertas(r([
-      { promo: promo('P1', 'pending', 47), linhas: [linha('A', 'candidate', 'verde')] },
-      { promo: promo('P2', 'pending', 49), linhas: [linha('A', 'candidate', 'verde')] },
-      { promo: promo('P3', 'pending', 10), linhas: [linha('A', 'candidate', 'amarelo')] },
-      { promo: promo('P4', 'pending', -1), linhas: [linha('A', 'candidate', 'verde')] },
-    ]), agora);
-    expect(s.prazo).toEqual([{ promo: expect.objectContaining({ id: 'P1' }), verdes: 1 }]);
+  it('prazo: pending, adesão aberta em ≤ 48 h e ≥ 1 convidado verde', () => {
+    const s = selecionarAlertas([
+      promo('P1', 'pending', 47), promo('P2', 'pending', 49), promo('P3', 'pending', 10, 0),
+      promo('P4', 'pending', -1), promo('P5', 'started', 10),
+    ], [], agora);
+    expect(s.prazo).toEqual([{ promo: expect.objectContaining({ promocao_id: 'P1' }), verdes: 1 }]);
   });
 });
 
 describe('avisarPromocoes', () => {
-  type D = DepsAlertas & { notificar: ReturnType<typeof vi.fn>; reservar: ReturnType<typeof vi.fn> };
-  const deps = (o: Partial<DepsAlertas> = {}): D =>
-    ({ ativo: vi.fn(async () => true), reservar: vi.fn(async () => true), notificar: vi.fn(async () => 1), ...o }) as unknown as D;
-  const res = r([
-    { promo: promo('S', 'started', null), linhas: [linha('A', 'started', 'vermelho'), linha('B', 'started', 'vermelho')] },
-    { promo: promo('P', 'pending', 24), linhas: [linha('C', 'candidate', 'verde')] },
-  ]);
+  type D = DepsAlertas & Record<keyof DepsAlertas, ReturnType<typeof vi.fn>>;
+  const deps = (o: Partial<DepsAlertas> = {}): D => ({
+    ativo: vi.fn(async () => true),
+    lerPromocoes: vi.fn(async () => [promo('S', 'started', null), promo('P', 'pending', 24)]),
+    lerParticipandoNoPrejuizo: vi.fn(async () => [item('S', 'A'), item('S', 'B')]),
+    reservar: vi.fn(async () => true),
+    notificar: vi.fn(async () => 1),
+    ...o,
+  }) as unknown as D;
 
-  it('switch desligado: não reserva nem envia', async () => {
+  it('switch desligado: não lê, não reserva, não envia', async () => {
     const d = deps({ ativo: vi.fn(async () => false) });
-    expect(await avisarPromocoes(res, agora, d)).toBe(0);
+    expect(await avisarPromocoes(agora, d)).toBe(0);
+    expect(d.lerPromocoes).not.toHaveBeenCalled();
     expect(d.reservar).not.toHaveBeenCalled();
   });
 
   it('uma mensagem agregada só com o que reservou agora', async () => {
     const d = deps();
     d.reservar.mockImplementation(async (_e: string, chave: string) => chave !== 'S:B');
-    await avisarPromocoes(res, agora, d);
+    await avisarPromocoes(agora, d);
     expect(d.reservar).toHaveBeenCalledWith('promo_prejuizo', 'S:A');
     expect(d.reservar).toHaveBeenCalledWith('promo_prazo', 'P');
     expect(d.notificar).toHaveBeenCalledTimes(1);
@@ -1451,15 +1655,15 @@ describe('avisarPromocoes', () => {
 
   it('nada reservado → nenhuma mensagem', async () => {
     const d = deps({ reservar: vi.fn(async () => false) });
-    expect(await avisarPromocoes(res, agora, d)).toBe(0);
+    expect(await avisarPromocoes(agora, d)).toBe(0);
     expect(d.notificar).not.toHaveBeenCalled();
   });
 });
 
 describe('montarMensagemPromocoes', () => {
   it('lista até 10 anúncios, resume o resto e não usa "margem"/"lucro"', () => {
-    const linhas = Array.from({ length: 12 }, (_, i) => ({ promo: promo('S', 'started', null), linha: linha(`X${i}`, 'started', 'vermelho') }));
-    const t = montarMensagemPromocoes({ prejuizo: linhas, prazo: [] });
+    const p = promo('S', 'started', null);
+    const t = montarMensagemPromocoes({ prejuizo: Array.from({ length: 12 }, (_, i) => ({ promo: p, item: item('S', `X${i}`) })), prazo: [] });
     expect(t).toContain('e mais 2');
     expect(t).not.toMatch(/margem|lucro/i);
   });
@@ -1471,33 +1675,39 @@ describe('montarMensagemPromocoes', () => {
 
 ```ts
 // ADR-0170 §9 — alertas da Central de Promoções: participando no prejuízo e prazo acabando.
-// Uma mensagem por org por execução, só com o que reservou agora (o 1º sync não despeja histórico).
+// Lê o banco (última leitura concluída). Uma mensagem por org por sync, só com o que reservou
+// agora — o 1º sync não despeja histórico (ADR-0121).
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { reservarNotificacao } from '../faturamento/notificacoes-dedupe.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
-import type { ResultadoSync } from './sincronizar.ts';
-import type { LinhaItem, PromocaoML } from './tipos.ts';
+import type { Contagem, ProjecaoCor } from './tipos.ts';
 
 const JANELA_PRAZO_MS = 48 * 3_600_000;
 const MAX_LISTADOS = 10;
 
+export interface PromoAlerta { promocao_id: string; nome: string | null; status: string; prazo_adesao: string | null; contagem: Contagem | null }
+export interface ItemAlerta { promocao_id: string; ml_item_id: string; titulo: string | null; preco_avaliado: number | null; projecao: ProjecaoCor[] }
 export interface DepsAlertas {
   ativo(): Promise<boolean>;
+  lerPromocoes(): Promise<PromoAlerta[]>;
+  lerParticipandoNoPrejuizo(): Promise<ItemAlerta[]>;
   reservar(entidade: 'promo_prejuizo' | 'promo_prazo', chave: string): Promise<boolean>;
   notificar(texto: string): Promise<number>;
 }
-export type Selecao = { prejuizo: { promo: PromocaoML; linha: LinhaItem }[]; prazo: { promo: PromocaoML; verdes: number }[] };
+export type Selecao = { prejuizo: { promo: PromoAlerta; item: ItemAlerta }[]; prazo: { promo: PromoAlerta; verdes: number }[] };
 
-export function selecionarAlertas(r: ResultadoSync, agoraMs: number): Selecao {
+export function selecionarAlertas(promos: PromoAlerta[], prejuizo: ItemAlerta[], agoraMs: number): Selecao {
+  const porId = new Map(promos.map((p) => [p.promocao_id, p]));
   const s: Selecao = { prejuizo: [], prazo: [] };
-  for (const { promo, linhas } of r.processadas) {
-    for (const l of linhas) {
-      if (l.status === 'started' && l.pior_semaforo === 'vermelho') s.prejuizo.push({ promo, linha: l });
-    }
+  for (const it of prejuizo) {
+    const promo = porId.get(it.promocao_id);
+    if (promo) s.prejuizo.push({ promo, item: it });
+  }
+  for (const promo of promos) {
     const prazo = promo.prazo_adesao ? Date.parse(promo.prazo_adesao) : NaN;
-    if (promo.status === 'pending' && Number.isFinite(prazo) && prazo > agoraMs && prazo - agoraMs <= JANELA_PRAZO_MS) {
-      const verdes = linhas.filter((l) => l.status !== 'started' && l.pior_semaforo === 'verde').length;
-      if (verdes > 0) s.prazo.push({ promo, verdes });
+    const verdes = promo.contagem?.convidados_verde ?? 0;
+    if (promo.status === 'pending' && Number.isFinite(prazo) && prazo > agoraMs && prazo - agoraMs <= JANELA_PRAZO_MS && verdes > 0) {
+      s.prazo.push({ promo, verdes });
     }
   }
   return s;
@@ -1510,31 +1720,30 @@ export function montarMensagemPromocoes(s: Selecao): string {
   const partes: string[] = [];
   if (s.prejuizo.length) {
     partes.push(`🔴 Promoções: ${s.prejuizo.length} anúncio(s) participando com líquido abaixo do custo`);
-    for (const { promo, linha } of s.prejuizo.slice(0, MAX_LISTADOS)) {
-      const pior = linha.projecao.find((p) => p.liquido != null && p.custo != null && p.liquido < p.custo);
-      partes.push(`• ${linha.titulo ?? linha.ml_item_id} (${linha.ml_item_id}) em ${promo.nome ?? promo.id}: ` +
-        `preço ${brl(linha.preco_avaliado)}, líquido ${brl(pior?.liquido)}, custo ${brl(pior?.custo)}`);
+    for (const { promo, item } of s.prejuizo.slice(0, MAX_LISTADOS)) {
+      const pior = item.projecao.find((p) => p.liquido != null && p.custo != null && p.liquido < p.custo);
+      partes.push(`• ${item.titulo ?? item.ml_item_id} (${item.ml_item_id}) em ${promo.nome ?? promo.promocao_id}: ` +
+        `preço ${brl(item.preco_avaliado)}, líquido ${brl(pior?.liquido)}, custo ${brl(pior?.custo)}`);
     }
     if (s.prejuizo.length > MAX_LISTADOS) partes.push(`e mais ${s.prejuizo.length - MAX_LISTADOS}.`);
   }
   for (const { promo, verdes } of s.prazo) {
-    const prazo = promo.prazo_adesao ? new Date(promo.prazo_adesao).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
-    partes.push(`⏰ ${promo.nome ?? promo.id}: adesão até ${prazo}, ${verdes} anúncio(s) convidado(s) com líquido acima do mínimo.`);
+    const prazo = new Date(promo.prazo_adesao!).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+    partes.push(`⏰ ${promo.nome ?? promo.promocao_id}: adesão até ${prazo}, ${verdes} anúncio(s) convidado(s) com líquido acima do mínimo.`);
   }
   partes.push('Veja em Promoções no PubliAI.');
   return partes.join('\n');
 }
 
-export async function avisarPromocoes(r: ResultadoSync, agoraMs: number, deps: DepsAlertas): Promise<number> {
-  const s = selecionarAlertas(r, agoraMs);
-  if (!s.prejuizo.length && !s.prazo.length) return 0;
+export async function avisarPromocoes(agoraMs: number, deps: DepsAlertas): Promise<number> {
   if (!(await deps.ativo())) return 0;
+  const s = selecionarAlertas(await deps.lerPromocoes(), await deps.lerParticipandoNoPrejuizo(), agoraMs);
   const novos: Selecao = { prejuizo: [], prazo: [] };
   for (const x of s.prejuizo) {
-    if (await deps.reservar('promo_prejuizo', `${x.promo.id}:${x.linha.ml_item_id}`)) novos.prejuizo.push(x);
+    if (await deps.reservar('promo_prejuizo', `${x.promo.promocao_id}:${x.item.ml_item_id}`)) novos.prejuizo.push(x);
   }
   for (const x of s.prazo) {
-    if (await deps.reservar('promo_prazo', x.promo.id)) novos.prazo.push(x);
+    if (await deps.reservar('promo_prazo', x.promo.promocao_id)) novos.prazo.push(x);
   }
   if (!novos.prejuizo.length && !novos.prazo.length) return 0;
   return deps.notificar(montarMensagemPromocoes(novos));
@@ -1548,22 +1757,37 @@ export function depsAlertas(admin: SupabaseClient, orgId: string): DepsAlertas {
       if (error) throw new Error(`alertas_promocoes_ativo: ${error.message}`);
       return data?.alertas_promocoes_ativo === true;
     },
+    async lerPromocoes() {
+      const { data, error } = await admin.from('ml_promocoes')
+        .select('promocao_id, nome, status, prazo_adesao, contagem')
+        .eq('org_id', orgId).in('status', ['pending', 'started']);
+      if (error) throw new Error(`lerPromocoes: ${error.message}`);
+      return (data ?? []) as PromoAlerta[];
+    },
+    async lerParticipandoNoPrejuizo() {
+      const { data, error } = await admin.from('ml_promocao_itens')
+        .select('promocao_id, ml_item_id, titulo, preco_avaliado, projecao')
+        .eq('org_id', orgId).eq('status', 'started').eq('pior_semaforo', 'vermelho').limit(500);
+      if (error) throw new Error(`lerParticipandoNoPrejuizo: ${error.message}`);
+      return (data ?? []) as ItemAlerta[];
+    },
     reservar: (entidade, chave) => reservarNotificacao(admin, orgId, null, entidade, chave),
     notificar: (texto) => notificarCategoria(admin, orgId, 'financeiro', texto),
   };
 }
 ```
 
-O emoji aqui é do **texto do Telegram** (mesmo padrão das mensagens de `_shared/notificacoes/telegram.ts`), não da UI.
+O emoji é do **texto do Telegram** (padrão de `_shared/notificacoes/telegram.ts`), não da UI.
 - [ ] **Step 4:** `pnpm test -- supabase/functions/_shared/promocoes/__tests__/alertas.test.ts` → Expected: PASS.
 - [ ] **Step 5: Worker** — `supabase/functions/sincronizar-promocoes/index.ts`:
 
 ```ts
-// ADR-0170 — sync da Central de Promoções. Três modos:
-//  - QStash sem org_id (schedule 6/6 h): publica 1 mensagem por org com o módulo.
-//  - QStash com org_id: sincroniza essa org.
-//  - Usuário logado ("Atualizar agora"): só a própria org, com throttle de 2 min.
-// Só GET no ML (ver _shared/promocoes/ml.ts).
+// ADR-0170 — sync da Central de Promoções. Modos:
+//  - QStash {} (schedule 6/6 h): fan-out, 1 mensagem { etapa: 'lista', org_id } por org com o módulo.
+//  - QStash { etapa: 'lista', org_id }: etapa de lista da org (trava se já está sincronizando).
+//  - QStash { etapa: 'promocao', ... }: leitura de uma promoção (lotes + continuação).
+//  - Usuário logado ("Atualizar agora"): etapa de lista da própria org, com throttle de 2 min.
+// No ML só GET de promoção/item/tarifa/frete; o único POST é o refresh OAuth de token.ts.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
@@ -1571,36 +1795,35 @@ import { qstashClient, verificarAssinatura } from '../_shared/queue.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
-import { sincronizarOrg } from '../_shared/promocoes/sincronizar.ts';
-import { depsSync } from '../_shared/promocoes/deps.ts';
-import { avisarPromocoes, depsAlertas } from '../_shared/promocoes/alertas.ts';
+import { sincronizarLista, sincronizarPromocao, type MsgLeitura } from '../_shared/promocoes/sincronizar.ts';
+import { depsLeitura, depsLista } from '../_shared/promocoes/deps.ts';
 
-const LIMITE_MS = 120_000;
-const CONCORRENCIA = 6;
+const LEITURA = { limiteMs: 90_000, lote: 20, concorrencia: 6 };
 const THROTTLE_MS = 2 * 60_000;
+const TRAVA_LISTA_MS = 5 * 60_000;
 
+type Admin = ReturnType<typeof adminClient>;
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-async function sincronizar(admin: ReturnType<typeof adminClient>, orgId: string) {
+async function conexaoDaOrg(admin: Admin, orgId: string) {
   const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
-  if (!conexao?.contaExternaId) {
-    await admin.from('ml_promocoes_sync').upsert(
-      { org_id: orgId, estado: 'sem_acesso', erro: 'Organização sem conexão com o Mercado Livre.', ultimo_erro_em: new Date().toISOString() },
-      { onConflict: 'org_id' });
-    return { estado: 'sem_acesso' as const };
+  if (!conexao?.contaExternaId) return null;
+  return { orgId, mlUserId: conexao.contaExternaId, token: await getValidAccessTokenConexao(conexao) };
+}
+
+async function etapaLista(admin: Admin, orgId: string) {
+  const { data: atual } = await admin.from('ml_promocoes_sync').select('estado, iniciado_em').eq('org_id', orgId).maybeSingle();
+  const desde = atual?.iniciado_em ? Date.now() - Date.parse(atual.iniciado_em) : Infinity;
+  if (atual?.estado === 'sincronizando' && desde < TRAVA_LISTA_MS) return { estado: 'sincronizando' as const, enfileiradas: [] };
+  const rodada = new Date().toISOString();
+  await admin.from('ml_promocoes_sync').upsert({ org_id: orgId, estado: 'sincronizando', iniciado_em: rodada }, { onConflict: 'org_id' });
+  const cx = await conexaoDaOrg(admin, orgId).catch(() => null);
+  if (!cx) {
+    await admin.from('ml_promocoes_sync').upsert({ org_id: orgId, estado: 'sem_acesso', erro: 'Organização sem conexão com o Mercado Livre.', ultimo_erro_em: new Date().toISOString() }, { onConflict: 'org_id' });
+    return { estado: 'sem_acesso' as const, enfileiradas: [] };
   }
-  await admin.from('ml_promocoes_sync').upsert(
-    { org_id: orgId, estado: 'sincronizando', iniciado_em: new Date().toISOString() }, { onConflict: 'org_id' });
-  const token = await getValidAccessTokenConexao(conexao);
-  const r = await sincronizarOrg(depsSync(admin, { orgId, mlUserId: conexao.contaExternaId, token }),
-    { limiteMs: LIMITE_MS, concorrencia: CONCORRENCIA });
-  try {
-    await avisarPromocoes(r, Date.now(), depsAlertas(admin, orgId));
-  } catch (e) {
-    console.error('[sincronizar-promocoes] alertas falharam (sync mantido):', e);
-  }
-  return { estado: r.estado, processadas: r.processadas.length, puladas: r.puladas.length };
+  return sincronizarLista(depsLista(admin, cx), { orgId, rodada });
 }
 
 Deno.serve(async (req) => {
@@ -1612,21 +1835,24 @@ Deno.serve(async (req) => {
   try {
     if (req.headers.get('upstash-signature')) {
       if (!(await verificarAssinatura(req, body))) return new Response('Invalid signature', { status: 401, headers: corsHeaders });
-      let payload: { org_id?: string } = {};
+      let payload: Partial<MsgLeitura> & { etapa?: string; org_id?: string } = {};
       try { payload = body ? JSON.parse(body) : {}; } catch { /* body vazio */ }
 
       if (!payload.org_id) {
-        // Fan-out: uma execução por org, cada uma com o próprio orçamento de tempo.
         const { data: orgs, error } = await admin.from('organizations').select('id').contains('modulos_habilitados', ['promocoes']);
         if (error) throw new Error(`orgs com módulo: ${error.message}`);
         const alvo = `${Deno.env.get('SUPABASE_URL')}/functions/v1/sincronizar-promocoes`;
-        for (const o of orgs ?? []) {
-          await qstashClient().publishJSON({ url: alvo, body: { org_id: o.id }, retries: 1 });
-        }
+        for (const o of orgs ?? []) await qstashClient().publishJSON({ url: alvo, body: { etapa: 'lista', org_id: o.id }, retries: 1 });
         return json({ ok: true, orgs: (orgs ?? []).length });
       }
       if (!(await exigirModulo(admin, payload.org_id, 'promocoes'))) return json({ ok: false, erro: 'Módulo desabilitado.' }, 403);
-      return json({ ok: true, ...(await sincronizar(admin, payload.org_id)) });
+      if (payload.etapa === 'promocao') {
+        const cx = await conexaoDaOrg(admin, payload.org_id);
+        if (!cx) return json({ ok: false, erro: 'sem conexão' });
+        const r = await sincronizarPromocao(depsLeitura(admin, cx, payload as MsgLeitura), payload as MsgLeitura, LEITURA);
+        return json({ ok: true, ...r });
+      }
+      return json({ ok: true, ...(await etapaLista(admin, payload.org_id)) });
     }
 
     let orgId: string;
@@ -1644,7 +1870,7 @@ Deno.serve(async (req) => {
     if (Number.isFinite(ultimo) && Date.now() - ultimo < THROTTLE_MS) {
       return json({ ok: false, erro: 'Atualização feita há menos de 2 minutos. Tente de novo em instantes.' }, 429);
     }
-    return json({ ok: true, ...(await sincronizar(admin, orgId)) });
+    return json({ ok: true, ...(await etapaLista(admin, orgId)) });
   } catch (e) {
     console.error('[sincronizar-promocoes]', e);
     return json({ ok: false, erro: e instanceof Error ? e.message : String(e) }, 500);
@@ -1652,15 +1878,17 @@ Deno.serve(async (req) => {
 });
 ```
 
-- [ ] **Step 6: `verify_jwt`.** Em `supabase/config.toml`, copiar o bloco `[functions.monitorar-moderados]` como `[functions.sincronizar-promocoes]` (mesmo `verify_jwt = false`): a função valida a assinatura QStash ou o JWT do usuário por conta própria (ADR-0046). Se `monitorar-moderados` não tiver bloco (deploy com flag), usar a mesma flag no deploy da Task 10 e registrar isso aqui.
-- [ ] **Step 7: Módulo na edge `usuarios`** — em `supabase/functions/usuarios/index.ts:211`:
+O botão do usuário recebe a resposta da etapa de lista (segundos); as leituras das promoções seguem pelo QStash e a tela acompanha por `rodada_em_curso` (Task 8).
+- [ ] **Step 6: `verify_jwt`.** Em `supabase/config.toml`, copiar o bloco `[functions.monitorar-moderados]` como `[functions.sincronizar-promocoes]` (mesmo `verify_jwt = false`): a função valida a assinatura QStash ou o JWT do usuário por conta própria (ADR-0046). Se `monitorar-moderados` não tiver bloco (deploy com flag), usar a mesma flag no deploy da Task 10 e registrar aqui.
+- [ ] **Step 7: Menu e módulo na edge `usuarios`** — `supabase/functions/usuarios/index.ts`: na linha 10 (espelho de `src/lib/menus.ts`), inserir `'promocoes'` logo após `'publicados'` em `MENU_KEYS`; na linha 211:
 
 ```ts
       const MODULOS_VALIDOS = ['estoque', 'pulse', 'fiscal', 'promocoes'];
 ```
 
-- [ ] **Step 8:** `pnpm check:functions && pnpm lint:functions && pnpm test -- supabase/functions/_shared/promocoes` → Expected: tudo verde.
-- [ ] **Step 9: Commit** `feat(promocoes): worker sincronizar-promocoes e alertas (ADR-0170)`.
+Sem a chave em `MENU_KEYS`, o admin libera o menu e a edge descarta a permissão em silêncio.
+- [ ] **Step 8:** `/usr/bin/git add supabase/functions/_shared/promocoes supabase/functions/sincronizar-promocoes` e então `pnpm check:functions && pnpm lint:functions && pnpm test -- supabase/functions/_shared/promocoes` → Expected: tudo verde.
+- [ ] **Step 9: Commit** `feat(promocoes): worker sincronizar-promocoes, alertas e menu na edge usuarios (ADR-0170)`.
 
 ---
 
@@ -1679,8 +1907,8 @@ Deno.serve(async (req) => {
 ```ts
 // src/lib/promocoes.ts
 export type SemaforoPromo = 'verde' | 'amarelo' | 'vermelho' | 'indisponivel';
-export interface ContagemPromo { convidados: number; participando: number; verde: number; amarelo: number; vermelho: number; indisponivel: number; participando_vermelho: number }
-export interface Promocao { promocao_id: string; tipo: string; nome: string | null; status: string; inicio: string | null; fim: string | null; prazo_adesao: string | null; beneficios: Record<string, unknown> | null; contagem: ContagemPromo | null; erro: string | null; itens_sincronizados_em: string | null }
+export interface ContagemPromo { convidados: number; convidados_verde: number; participando: number; verde: number; amarelo: number; vermelho: number; indisponivel: number; participando_vermelho: number }
+export interface Promocao { promocao_id: string; tipo: string; nome: string | null; status: string; inicio: string | null; fim: string | null; prazo_adesao: string | null; beneficios: Record<string, unknown> | null; contagem: ContagemPromo | null; erro: string | null; itens_sincronizados_em: string | null; rodada_em_curso: string | null }
 export interface CorProjetada { variation_id: number | null; cor: string | null; sku: string | null; custo: number | null; piso: number | null; origem: string | null; liquido: number | null; ate_quanto: number | null; ate_quanto_motivo: 'qualquer' | 'nenhum' | null; semaforo: SemaforoPromo; motivo: string | null }
 export interface ItemPromocao { ml_item_id: string; status: string; preco_original: number | null; preco_promo: number | null; preco_min: number | null; preco_max: number | null; preco_sugerido: number | null; preco_avaliado: number | null; ml_pct: number | null; estoque_min: number | null; titulo: string | null; thumbnail: string | null; permalink: string | null; projecao: CorProjetada[]; pior_semaforo: SemaforoPromo }
 export interface EstadoSyncPromo { estado: 'sincronizando' | 'ok' | 'sem_acesso' | 'sem_promocoes' | 'erro'; iniciado_em: string | null; ultimo_ok_em: string | null; ultimo_erro_em: string | null; erro: string | null }
@@ -1694,12 +1922,14 @@ export function mlBancaPct(beneficios: Record<string, unknown> | null): number |
 export function prazoUrgente(prazo: string | null, agoraMs: number): boolean;
 export function corDeReferencia(it: ItemPromocao): CorProjetada | null;
 export function ateQuantoDaLinha(it: ItemPromocao): { valor: number | null; motivo: 'qualquer' | 'nenhum' | null };
+export function emLeitura(p: Pick<Promocao, 'rodada_em_curso'>, agoraMs: number): boolean;
+export function rotuloSemLiquido(it: ItemPromocao): 'Sem custo no PubliAI' | 'Sem líquido';
 export function fetchPromocoes(): Promise<Promocao[]>;
 export function fetchItensPromocao(promocaoId: string): Promise<ItemPromocao[]>;
 export function fetchEstadoSyncPromocoes(): Promise<EstadoSyncPromo | null>;
 // src/hooks/usePromocoes.ts
 export function usePromocoes(): UseQueryResult<Promocao[]>;
-export function useItensPromocao(promocaoId: string): UseQueryResult<ItemPromocao[]>;
+export function useItensPromocao(promocaoId: string, lendo?: boolean): UseQueryResult<ItemPromocao[]>;
 export function useEstadoSyncPromocoes(): UseQueryResult<EstadoSyncPromo | null>;
 export function useAtualizarPromocoes(): UseMutationResult<unknown, Error, void>;
 ```
@@ -1709,8 +1939,8 @@ export function useAtualizarPromocoes(): UseMutationResult<unknown, Error, void>
 ```ts
 import { describe, expect, it } from 'vitest';
 import {
-  abaDa, ateQuantoDaLinha, corDeReferencia, descontoPct, ehCupom, mlBancaPct, prazoUrgente, rotuloTipo,
-  type CorProjetada, type ItemPromocao,
+  abaDa, ateQuantoDaLinha, corDeReferencia, descontoPct, ehCupom, emLeitura, mlBancaPct, prazoUrgente,
+  rotuloSemLiquido, rotuloTipo, type CorProjetada, type ItemPromocao,
 } from '../promocoes';
 
 const agora = Date.parse('2026-10-06T12:00:00Z');
@@ -1728,6 +1958,14 @@ describe('abas', () => {
     expect(abaDa({ status: 'pending', fim: null }, agora)).toBe('futuras');
     expect(abaDa({ status: 'finished', fim: new Date(agora - 10 * dia).toISOString() }, agora)).toBe('encerradas');
     expect(abaDa({ status: 'finished', fim: new Date(agora - 31 * dia).toISOString() }, agora)).toBeNull();
+  });
+  it('fim já passou vira encerrada mesmo com status velho', () => {
+    expect(abaDa({ status: 'started', fim: new Date(agora - dia).toISOString() }, agora)).toBe('encerradas');
+  });
+  it('leitura em curso só vale por 15 min', () => {
+    expect(emLeitura({ rodada_em_curso: new Date(agora - 60_000).toISOString() }, agora)).toBe(true);
+    expect(emLeitura({ rodada_em_curso: new Date(agora - 16 * 60_000).toISOString() }, agora)).toBe(false);
+    expect(emLeitura({ rodada_em_curso: null }, agora)).toBe(false);
   });
 });
 
@@ -1763,6 +2001,10 @@ describe('linha da tabela', () => {
     expect(ateQuantoDaLinha(item([cor({ ate_quanto_motivo: 'qualquer' }), cor({ ate_quanto_motivo: 'qualquer' })], 'verde'))).toEqual({ valor: null, motivo: 'qualquer' });
     expect(ateQuantoDaLinha(item([cor({ ate_quanto_motivo: 'qualquer' }), cor({ ate_quanto: 41 })], 'verde'))).toEqual({ valor: 41, motivo: null });
     expect(ateQuantoDaLinha(item([cor({})], 'verde'))).toEqual({ valor: null, motivo: null });
+  });
+  it('rótulo sem líquido: "Sem custo" só quando falta cadastro/custo em todas as cores', () => {
+    expect(rotuloSemLiquido(item([cor({ liquido: null, motivo: 'sem_cadastro' })], 'indisponivel'))).toBe('Sem custo no PubliAI');
+    expect(rotuloSemLiquido(item([cor({ liquido: null, motivo: 'erro_tarifa' })], 'indisponivel'))).toBe('Sem líquido');
   });
 });
 ```
@@ -1828,14 +2070,14 @@ import { buscarTodasPaginas } from '@/lib/paginacao-supabase';
 
 export type SemaforoPromo = 'verde' | 'amarelo' | 'vermelho' | 'indisponivel';
 export interface ContagemPromo {
-  convidados: number; participando: number; verde: number; amarelo: number;
+  convidados: number; convidados_verde: number; participando: number; verde: number; amarelo: number;
   vermelho: number; indisponivel: number; participando_vermelho: number;
 }
 export interface Promocao {
   promocao_id: string; tipo: string; nome: string | null; status: string;
   inicio: string | null; fim: string | null; prazo_adesao: string | null;
   beneficios: Record<string, unknown> | null; contagem: ContagemPromo | null;
-  erro: string | null; itens_sincronizados_em: string | null;
+  erro: string | null; itens_sincronizados_em: string | null; rodada_em_curso: string | null;
 }
 export interface CorProjetada {
   variation_id: number | null; cor: string | null; sku: string | null;
@@ -1869,11 +2111,18 @@ const DIA = 86_400_000;
 export const ehCupom = (tipo: string) => tipo === 'SELLER_COUPON_CAMPAIGN';
 export const rotuloTipo = (tipo: string) => TIPOS[tipo] ?? tipo;
 
+/** `fim` no passado encerra a campanha mesmo que o status gravado ainda diga ativa/futura. */
 export function abaDa(p: Pick<Promocao, 'status' | 'fim'>, agoraMs: number): AbaPromo | null {
-  if (p.status === 'started') return 'ativas';
-  if (p.status === 'pending') return 'futuras';
   const fim = p.fim ? Date.parse(p.fim) : NaN;
+  const acabou = p.status === 'finished' || (Number.isFinite(fim) && fim < agoraMs);
+  if (!acabou) return p.status === 'started' ? 'ativas' : p.status === 'pending' ? 'futuras' : null;
   return Number.isFinite(fim) && fim >= agoraMs - 30 * DIA ? 'encerradas' : null;
+}
+
+/** A leitura dos anúncios de uma campanha está em curso (reserva de 15 min, igual ao worker). */
+export function emLeitura(p: Pick<Promocao, 'rodada_em_curso'>, agoraMs: number): boolean {
+  const t = p.rodada_em_curso ? Date.parse(p.rodada_em_curso) : NaN;
+  return Number.isFinite(t) && agoraMs - t < 15 * 60_000;
 }
 
 export function descontoPct(original: number | null, promo: number | null): number | null {
@@ -1897,6 +2146,12 @@ export function corDeReferencia(it: ItemPromocao): CorProjetada | null {
   return comLiquido.sort((a, b) => a.liquido! - b.liquido!)[0] ?? null;
 }
 
+/** ⚪: "Sem custo no PubliAI" só quando nenhuma cor tem cadastro/custo; senão o motivo é outro (tarifa, categoria…). */
+export function rotuloSemLiquido(it: ItemPromocao): 'Sem custo no PubliAI' | 'Sem líquido' {
+  const motivos = it.projecao.map((c) => c.motivo);
+  return motivos.length > 0 && motivos.every((m) => m === 'sem_cadastro' || m === 'sem_custo') ? 'Sem custo no PubliAI' : 'Sem líquido';
+}
+
 /** O preço tem de servir a todas as cores: vale o maior "até quanto"; uma cor sem saída trava o anúncio. */
 export function ateQuantoDaLinha(it: ItemPromocao): { valor: number | null; motivo: 'qualquer' | 'nenhum' | null } {
   const cores = it.projecao.filter((c) => c.liquido != null);
@@ -1907,7 +2162,7 @@ export function ateQuantoDaLinha(it: ItemPromocao): { valor: number | null; moti
   return { valor: null, motivo: null };
 }
 
-const COLS_PROMO = 'promocao_id, tipo, nome, status, inicio, fim, prazo_adesao, beneficios, contagem, erro, itens_sincronizados_em';
+const COLS_PROMO = 'promocao_id, tipo, nome, status, inicio, fim, prazo_adesao, beneficios, contagem, erro, itens_sincronizados_em, rodada_em_curso';
 const COLS_ITEM = 'ml_item_id, status, preco_original, preco_promo, preco_min, preco_max, preco_sugerido, preco_avaliado, ml_pct, estoque_min, titulo, thumbnail, permalink, projecao, pior_semaforo';
 
 export async function fetchPromocoes(): Promise<Promocao[]> {
@@ -1938,21 +2193,29 @@ Conferir a assinatura de `buscarTodasPaginas` em `src/lib/paginacao-supabase.ts`
 ```ts
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { fetchEstadoSyncPromocoes, fetchItensPromocao, fetchPromocoes } from '@/lib/promocoes';
+import { emLeitura, fetchEstadoSyncPromocoes, fetchItensPromocao, fetchPromocoes } from '@/lib/promocoes';
 
 const QK_PROMO = ['promocoes'] as const;
 
+/** Enquanto alguma campanha está em leitura, recarrega a cada 10 s para a tela acompanhar. */
 export function usePromocoes() {
-  return useQuery({ queryKey: [...QK_PROMO, 'lista'], queryFn: fetchPromocoes, staleTime: 60_000 });
+  return useQuery({
+    queryKey: [...QK_PROMO, 'lista'], queryFn: fetchPromocoes, staleTime: 60_000,
+    refetchInterval: (q) => ((q.state.data ?? []).some((p) => emLeitura(p, Date.now())) ? 10_000 : false),
+  });
 }
-export function useItensPromocao(promocaoId: string) {
-  return useQuery({ queryKey: [...QK_PROMO, 'itens', promocaoId], queryFn: () => fetchItensPromocao(promocaoId), staleTime: 60_000 });
+export function useItensPromocao(promocaoId: string, lendo = false) {
+  return useQuery({
+    queryKey: [...QK_PROMO, 'itens', promocaoId], queryFn: () => fetchItensPromocao(promocaoId), staleTime: 60_000,
+    refetchInterval: lendo ? 15_000 : false,
+  });
 }
 export function useEstadoSyncPromocoes() {
   return useQuery({ queryKey: [...QK_PROMO, 'estado'], queryFn: fetchEstadoSyncPromocoes, staleTime: 30_000 });
 }
 
-/** "Atualizar agora": o worker responde ao fim do sync (até ~2 min). 429 = atualizado há < 2 min. */
+/** "Atualizar agora": o worker responde ao fim da etapa de lista (segundos); a leitura das campanhas
+ *  segue em segundo plano e a lista acompanha por `rodada_em_curso`. 429 = atualizado há < 2 min. */
 export function useAtualizarPromocoes() {
   const qc = useQueryClient();
   return useMutation({
@@ -2095,7 +2358,8 @@ const agora = Date.parse('2026-10-06T12:00:00Z');
 const base: Promocao = {
   promocao_id: 'P-1', tipo: 'DEAL', nome: '10.10', status: 'pending', inicio: null, fim: null,
   prazo_adesao: new Date(agora + 24 * 3_600_000).toISOString(), beneficios: null, erro: null, itens_sincronizados_em: null,
-  contagem: { convidados: 504, participando: 0, verde: 310, amarelo: 120, vermelho: 40, indisponivel: 34, participando_vermelho: 0 },
+  rodada_em_curso: null,
+  contagem: { convidados: 504, convidados_verde: 310, participando: 0, verde: 310, amarelo: 120, vermelho: 40, indisponivel: 34, participando_vermelho: 0 },
 };
 const renderCard = (p: Promocao) => render(<MemoryRouter><CardCampanha promocao={p} agoraMs={agora} /></MemoryRouter>);
 
@@ -2140,7 +2404,7 @@ export const SEMAFORO_UI: Record<SemaforoPromo, { tone: StatusTone; label: strin
   verde: { tone: 'success', label: 'Vale a pena', Icon: CircleCheck },
   amarelo: { tone: 'warning', label: 'Abaixo do mínimo', Icon: CircleAlert },
   vermelho: { tone: 'danger', label: 'Prejuízo', Icon: CircleX },
-  indisponivel: { tone: 'neutral', label: 'Sem custo no PubliAI', Icon: CircleHelp },
+  indisponivel: { tone: 'neutral', label: 'Sem líquido', Icon: CircleHelp },
 };
 const ORDEM: SemaforoPromo[] = ['verde', 'amarelo', 'vermelho', 'indisponivel'];
 
@@ -2177,7 +2441,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { fmtInt } from '@/lib/formato';
-import { ehCupom, mlBancaPct, prazoUrgente, rotuloTipo, type Promocao } from '@/lib/promocoes';
+import { ehCupom, emLeitura, mlBancaPct, prazoUrgente, rotuloTipo, type Promocao } from '@/lib/promocoes';
 import { ContagemSemaforo } from './contagem-semaforo';
 
 const STATUS: Record<string, string> = { started: 'Ativa', pending: 'Futura', finished: 'Encerrada' };
@@ -2213,6 +2477,7 @@ export function CardCampanha({ promocao: p, agoraMs }: { promocao: Promocao; ago
       ) : (
         <StatusPill tone="neutral">{p.erro ?? 'Anúncios ainda não lidos'}</StatusPill>
       )}
+      {emLeitura(p, agoraMs) && <StatusPill tone="info">Lendo anúncios…</StatusPill>}
       {p.erro && p.contagem && <p className="text-xs text-muted-foreground">Não foi possível ler os anúncios na última atualização.</p>}
     </Card>
   );
@@ -2294,7 +2559,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CanalTabs } from '@/components/canal-tabs';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { useAtualizarPromocoes, useEstadoSyncPromocoes, usePromocoes } from '@/hooks/usePromocoes';
-import { abaDa, type AbaPromo } from '@/lib/promocoes';
+import { abaDa, emLeitura, type AbaPromo } from '@/lib/promocoes';
 import { CardCampanha } from '@/components/promocoes/card-campanha';
 import { PainelEstadoSync } from '@/components/promocoes/painel-estado-sync';
 
@@ -2334,7 +2599,8 @@ export default function Promocoes() {
   // Execução que caiu no meio deixa 'sincronizando' para trás: só vale se começou há < 5 min.
   const emCurso = estado.data?.estado === 'sincronizando'
     && Date.now() - Date.parse(estado.data.iniciado_em ?? '') < 5 * 60_000;
-  const sincronizando = atualizar.isPending || emCurso;
+  const lendo = (promocoes.data ?? []).some((p) => emLeitura(p, Date.now()));
+  const sincronizando = atualizar.isPending || emCurso || lendo;
   const temDados = (promocoes.data?.length ?? 0) > 0;
 
   return (
@@ -2401,7 +2667,7 @@ Com 1 canal, a `CanalTabs` mostra só ML (mesmo comportamento de Publicados). O 
 describe('filtrarItens', () => {
   const it2 = (id: string, status: string, pior: ItemPromocao['pior_semaforo']) =>
     ({ ml_item_id: id, status, pior_semaforo: pior, projecao: [] }) as unknown as ItemPromocao;
-  const itens = [it2('A', 'candidate', 'verde'), it2('B', 'started', 'vermelho'), it2('C', 'candidate', 'vermelho')];
+  const itens = [it2('A', 'candidate', 'verde'), it2('B', 'started', 'vermelho'), it2('C', 'candidate', 'vermelho'), it2('D', 'pending', 'verde')];
   it('convidados × participando e semáforo', () => {
     expect(filtrarItens(itens, { semaforo: null, participando: false }).map((i) => i.ml_item_id)).toEqual(['A', 'C']);
     expect(filtrarItens(itens, { semaforo: null, participando: true }).map((i) => i.ml_item_id)).toEqual(['B']);
@@ -2442,8 +2708,10 @@ describe('SheetCores', () => {
 - [ ] **Step 3: `filtrarItens`** — acrescentar em `src/lib/promocoes.ts`:
 
 ```ts
+/** Convidado = `candidate`, participando = `started`; outro status não aparece em nenhuma das duas abas. */
 export function filtrarItens(itens: ItemPromocao[], f: { semaforo: SemaforoPromo | null; participando: boolean }): ItemPromocao[] {
-  return itens.filter((i) => (i.status === 'started') === f.participando && (f.semaforo == null || i.pior_semaforo === f.semaforo));
+  return itens.filter((i) => (f.participando ? i.status === 'started' : i.status === 'candidate')
+    && (f.semaforo == null || i.pior_semaforo === f.semaforo));
 }
 ```
 
@@ -2458,7 +2726,7 @@ import type { ItemPromocao } from '@/lib/promocoes';
 import { SEMAFORO_UI } from './contagem-semaforo';
 
 const MOTIVO: Record<string, string> = {
-  sem_cadastro: 'Sem custo no PubliAI', sem_custo: 'Sem custo no PubliAI', sem_origem: 'Sem origem (nacional/importado) no cadastro',
+  sem_cadastro: 'Sem custo no PubliAI', sem_custo: 'Sem custo no PubliAI', sem_origem: 'Sem origem no cadastro',
   sem_preco: 'Sem preço na promoção', sem_categoria: 'Anúncio não lido no Mercado Livre', erro_tarifa: 'Tarifa do Mercado Livre indisponível',
 };
 
@@ -2519,13 +2787,13 @@ import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Button } from '@/components/ui/button';
 import { StatusPill } from '@/components/ui/status-pill';
 import { DataTable, type Column } from '@/components/ui/data-table';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useItensPromocao, usePromocoes } from '@/hooks/usePromocoes';
 import { calcularMarkup } from '@/lib/markup';
 import { fmtBRL, fmtMarkup } from '@/lib/formato';
 import {
-  URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, filtrarItens, rotuloTipo,
+  URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type SemaforoPromo,
 } from '@/lib/promocoes';
 import { ContagemSemaforo, SEMAFORO_UI } from '@/components/promocoes/contagem-semaforo';
@@ -2536,7 +2804,8 @@ const PESO: Record<SemaforoPromo, number> = { vermelho: 0, amarelo: 1, verde: 2,
 export default function PromocaoDetalhe() {
   const { promocaoId = '' } = useParams();
   const promocoes = usePromocoes();
-  const itens = useItensPromocao(promocaoId);
+  const promoAtual = promocoes.data?.find((p) => p.promocao_id === promocaoId);
+  const itens = useItensPromocao(promocaoId, promoAtual ? emLeitura(promoAtual, Date.now()) : false);
   const [semaforo, setSemaforo] = useState<SemaforoPromo | null>(null);
   const [participando, setParticipando] = useState(false);
   const [aberto, setAberto] = useState<ItemPromocao | null>(null);
@@ -2545,7 +2814,7 @@ export default function PromocaoDetalhe() {
   const daAba = useMemo(() => filtrarItens(itens.data ?? [], { semaforo: null, participando }), [itens.data, participando]);
   const linhas = useMemo(() => filtrarItens(itens.data ?? [], { semaforo, participando }), [itens.data, semaforo, participando]);
   const contagem = useMemo(() => {
-    const c = { convidados: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0 };
+    const c = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0 };
     for (const i of daAba) c[i.pior_semaforo]++;
     return c;
   }, [daAba]);
@@ -2586,13 +2855,18 @@ export default function PromocaoDetalhe() {
       ) : '—',
     },
     {
-      key: 'liquido', header: 'Líquido · Markup', className: 'text-right tabular-nums',
+      key: 'liquido', header: 'Líquido', className: 'text-right tabular-nums',
       sortValue: (r) => corDeReferencia(r)?.liquido ?? null,
       cell: (r) => {
         const c = corDeReferencia(r);
-        if (!c || c.custo == null) return <span className="text-muted-foreground">Sem custo no PubliAI</span>;
-        return <span>{fmtBRL(c.liquido!)} · {fmtMarkup(calcularMarkup(c.liquido!, c.custo).markup)}</span>;
+        if (!c || c.custo == null) return <span className="text-muted-foreground">{rotuloSemLiquido(r)}</span>;
+        return fmtBRL(c.liquido!);
       },
+    },
+    {
+      key: 'markup', header: 'Markup', className: 'text-right tabular-nums',
+      sortValue: (r) => { const c = corDeReferencia(r); return c && c.custo ? calcularMarkup(c.liquido!, c.custo).markup : null; },
+      cell: (r) => { const c = corDeReferencia(r); return c && c.custo != null ? fmtMarkup(calcularMarkup(c.liquido!, c.custo).markup) : '—'; },
     },
     {
       key: 'ate', header: 'Até quanto descer', className: 'text-right tabular-nums',
@@ -2620,6 +2894,7 @@ export default function PromocaoDetalhe() {
   }
 
   return (
+    <TooltipProvider>
     <div className="flex flex-col gap-6">
       <Breadcrumbs items={[{ label: 'Promoções', to: '/promocoes' }, { label: promo?.nome ?? promocaoId }]} />
       <PageHeader
@@ -2628,7 +2903,13 @@ export default function PromocaoDetalhe() {
         actions={<Button asChild variant="outline"><a href={URL_PROMOCOES_ML} target="_blank" rel="noreferrer">Abrir no Seller Center <ExternalLink className="size-4" aria-hidden /></a></Button>}
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <ContagemSemaforo contagem={contagem} ativo={semaforo} onFiltro={setSemaforo} />
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" aria-pressed={semaforo == null} onClick={() => setSemaforo(null)}
+            className="min-h-9 rounded-full border px-3 text-sm tabular-nums aria-pressed:bg-muted aria-pressed:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            Todos {daAba.length}
+          </button>
+          <ContagemSemaforo contagem={contagem} ativo={semaforo} onFiltro={setSemaforo} />
+        </div>
         <div role="group" aria-label="Filtrar por participação" className="inline-flex rounded-lg border p-0.5">
           {[{ v: false, l: 'Convidados' }, { v: true, l: 'Participando' }].map((o) => (
             <button key={o.l} type="button" aria-pressed={participando === o.v} onClick={() => { setParticipando(o.v); setSemaforo(null); }}
@@ -2649,6 +2930,7 @@ export default function PromocaoDetalhe() {
       </div>
       <SheetCores item={aberto} onClose={() => setAberto(null)} />
     </div>
+    </TooltipProvider>
   );
 }
 ```

@@ -68,40 +68,45 @@ tabela; a UI mostra as de `fim >= now() - 30 dias`. Sync substitui os itens de c
 
 ## Cálculo (backend, no sync)
 
-Por item convidado/participando, **no preço avaliado** (`preco_sugerido` se há faixa, senão `preco_promo`):
+Por item convidado/participando, **no preço avaliado** (participando: `preco_promo`, o preço no ar; convidado: `preco_sugerido` se há faixa, senão `preco_promo`):
 
 1. **Vínculo com o cadastro:** resolvedor próprio `_shared/promocoes/cadastro.ts` (custo, piso =
    `variacoes.preco`, origem, cor, dimensões): item filho UP por `anuncios_externos_itens.item_externo_id`
-   → `ml_variation_id` → código/SKU → GTIN → `ml_item_id` (só se o anúncio tem uma única variação);
-   duplicata → linha mais recente (ADR-0108). Legacy: as cores vêm de `variations[]` do item (multiget).
+   → `ml_variation_id` → `ml_item_id` (só se o anúncio tem uma única variação) → GTIN → código/SKU;
+   duplicata → linha com custo vence linha sem custo, depois a mais recente (ADR-0108). Legacy: as cores vêm de `variations[]` do item (multiget).
    User Products: o item é a cor. Origem nula → cor sem líquido (motivo "sem origem"), nunca 8% presumido.
-2. **Comissão:** `buscarListingPrice` no preço avaliado, `listing_type_id` real do item; cache Redis por
-   `(categoria, listing_type, preço)`.
-3. **Frete:** `buscarFreteVendedorComProveniencia(...).valor` no preço avaliado, com as dimensões da variação — a mesma função do `calcular-tarifa-ml`, para bater com a Revisão (o frete grátis depende do preço); cache Redis.
+2. **Comissão:** `comissaoDeComProveniencia(buscarListingPrice(...))` no preço avaliado, `listing_type_id`
+   real do item; cache Redis por `(categoria, listing_type, preço)`. Proveniência `estimated` → cor sem
+   líquido (`erro_tarifa`), sem cache.
+3. **Frete:** `buscarFreteVendedorComProveniencia(...).valor` no preço avaliado, com as dimensões da variação — a mesma função do `calcular-tarifa-ml`, para bater com a Revisão (o frete grátis depende do preço); cache Redis por `(categoria, preço, dimensão)`. `estimated` (o ML não respondeu/não informou) → cor sem líquido, sem cache; `partial` (pacote padrão) é aceito, igual à Revisão.
 4. **Imposto:** alíquota por origem da org (ADR-0055); org sem alíquota confirmada → falha LOUD do sync
    dessa org (ADR-0086), nunca 8/16 em silêncio.
 5. **Líquido:** `liquidoClassico(preco, comissao, frete, aliquota)`. **ML banca não entra** até a regra ser
    conferida contra venda real (ADR-0170 §7) — a tela diz "não incluído".
-6. **Até quanto descer** (só com faixa): gross-up de `_shared/preco/sugerir.ts` a partir do piso,
-   recortado a `[preco_min, preco_max]`; `null` + motivo quando nenhum preço da faixa atinge o piso.
+6. **Até quanto descer** (só convidado com faixa): gross-up de `_shared/preco/sugerir.ts` a partir do
+   piso, refeito com a tarifa de cada candidato até parar de descer (ponto fixo), recortado a
+   `[preco_min, preco_max]`; `null` + motivo quando nenhum preço da faixa atinge o piso.
 
 A tela aplica `calcularSemaforo(liquido, piso, custo)` e `calcularMarkup(liquido, custo)` sobre `projecao`.
 
 ## Worker `sincronizar-promocoes`
 
-- **QStash sem `org_id`** (schedule `0 */6 * * *`): lista as orgs com o módulo `promocoes` e conexão ML e
-  publica uma mensagem QStash por org para o próprio worker.
-- **QStash com `org_id`**: sincroniza essa org, com orçamento de 120 s. Promoções processadas da mais
-  antiga para a mais recente (`itens_sincronizados_em`, nulas primeiro); a que não couber fica marcada
-  "não processada nesta rodada" e vai para a frente da fila na próxima.
+- **QStash `{}`** (schedule `0 */6 * * *`): publica `{ etapa: 'lista', org_id }` para cada org com o módulo.
+- **Etapa de lista** (QStash `{ etapa: 'lista' }` ou botão): trava de 5 min (`ml_promocoes_sync.estado =
+  'sincronizando'`); lista as promoções; grava metadados; marca como `finished` as `pending`/`started` que
+  sumiram da lista; roda os alertas; para cada `pending`/`started` não-cupom, **reserva**
+  `ml_promocoes.rodada_em_curso` (só se nula ou com mais de 15 min) e publica
+  `{ etapa: 'promocao', org_id, promocao_id, tipo, rodada, cursor: 0 }`.
+- **Etapa de leitura** (QStash `{ etapa: 'promocao' }`): aborta se `rodada_em_curso` ≠ rodada da mensagem;
+  lê os itens (ordenados por `ml_item_id`), projeta em lotes de 20 e grava cada lote; passou de 90 s →
+  publica a mesma mensagem com o cursor e sai; no fim apaga os itens de rodadas anteriores, recalcula a
+  contagem no banco e libera a reserva. Erro → grava `erro` na promoção e libera a reserva.
 - **Usuário logado** (`requireUserOrg`): só a própria org; 403 se o módulo não estiver habilitado.
   Throttle: recusa se a org sincronizou há < 2 min (o botão fica desabilitado com a hora do último sync).
-- Por org: lista promoções → para cada promoção `pending`/`started` (cupom só grava a linha), pagina os
-  itens → multiget → cálculo → upsert. Concorrência limitada; falha de uma promoção não derruba as outras
-  (registra `erro` na linha da promoção e segue).
 - 403 / scope sem `offers` / lista vazia → grava `ml_promocoes_sync.estado` (`sem_acesso`,
   `sem_promocoes`, `erro`) para a tela explicar — nunca erro genérico.
-- Fim do sync → avalia alertas (abaixo).
+- Qualquer falha inesperada na etapa de lista grava `estado='erro'` antes de sair — nada fica preso em
+  `sincronizando`.
 
 ## Alertas
 
@@ -114,8 +119,9 @@ via `notificarCategoria` (Telegram + sino).
 - **Prazo acabando:** promoção `pending` com `prazo_adesao` em ≤ 48 h e ≥ 1 convidado `verde`, dedup
   `reservarNotificacao(org, 'promo_prazo', promocao_id)`.
 
-Uma mensagem agregada por org por sync (até 10 anúncios listados + "e mais N"), só com o que reservou
-agora — o primeiro sync não despeja o histórico (lição ADR-0121).
+Os alertas leem o **banco** (última leitura concluída de cada campanha) na etapa de lista. Uma mensagem
+agregada por org por sync (até 10 anúncios listados + "e mais N"), só com o que reservou agora — o
+primeiro sync não despeja o histórico (lição ADR-0121). Só `candidate`/`started` contam.
 
 ## Design da tela
 
