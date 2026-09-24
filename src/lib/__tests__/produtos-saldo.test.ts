@@ -202,6 +202,40 @@ describe('mapResumoEstoqueRpc', () => {
     expect(r.produtos[0].tributacaoIcmsRegime).toBe('simples');
     expect(r.produtos[0].canInvoice).toBe(true);
   });
+
+  // ADR-0166 (Task 2): `tem_tamanho` é opcional na RPC crua — org sem produto de grade nem
+  // manda a chave. Ausente tem que virar `false`, nunca `undefined` (a UI decide por booleano).
+  function produtoBase(tem_tamanho?: boolean) {
+    return {
+      codigo_pai: 'P1', nome_pai: 'Camiseta', descricao_pai: null,
+      saldo_total: 8, qtd_skus: 2,
+      capa_storage_path: null, capa_ml_picture_id: 'PIC1',
+      fornecedor: 'X', unidade: 'UN', origem: 'nacional',
+      ml_item_id: null, criado_em: '2026-08-01T10:00:00Z',
+      gtins: ['789'], codigos: ['A1', 'A2'], cores: ['Azul'], nomes: ['Camiseta P'], sku_unico: null,
+      familia_id: 'fam-1', ncm: '39269090', cest: null, origem_nfe: 0, fci: null,
+      tributacao_icms: '102', tributacao_icms_regime: 'simples', can_invoice: true,
+      ...(tem_tamanho === undefined ? {} : { tem_tamanho }),
+    };
+  }
+
+  it('tem_tamanho ausente na RPC vira temTamanho: false', async () => {
+    const { mapResumoEstoqueRpc } = await import('../produtos-saldo');
+    const r = mapResumoEstoqueRpc({
+      kpis: { produtos: 1, skus: 2, unidades: 8, skus_sem_estoque: 0, valor_em_estoque: 8, skus_sem_custo: 0 },
+      produtos: [produtoBase()],
+    });
+    expect(r.produtos[0].temTamanho).toBe(false);
+  });
+
+  it('tem_tamanho: true na RPC vira temTamanho: true', async () => {
+    const { mapResumoEstoqueRpc } = await import('../produtos-saldo');
+    const r = mapResumoEstoqueRpc({
+      kpis: { produtos: 1, skus: 2, unidades: 8, skus_sem_estoque: 0, valor_em_estoque: 8, skus_sem_custo: 0 },
+      produtos: [produtoBase(true)],
+    });
+    expect(r.produtos[0].temTamanho).toBe(true);
+  });
 });
 
 describe('fetchVariacoesProduto — ordem da lista', () => {
