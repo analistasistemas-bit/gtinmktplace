@@ -27,16 +27,21 @@ o Diego em 2026-09-24.
 
 1. **Só leitura no MVP.** Nenhuma escrita no ML: o app diz o que aceitar e o botão "Abrir no ML"
    leva ao Seller Center. Aderir pelo app (com confirmação humana) é V2.
-2. **Sync agendado + sob demanda** num worker novo `sincronizar-promocoes`: QStash a cada 6 h (todas as
-   orgs com o módulo) e botão "Atualizar agora" (usuário logado → só a própria org), no mesmo padrão
-   de dupla autenticação do `monitorar-moderados`. A tela lê só do banco (`ml_promocoes`,
+2. **Sync agendado + sob demanda** num worker novo `sincronizar-promocoes`: QStash a cada 6 h dispara o
+   worker sem org, que publica **uma mensagem QStash por org com o módulo** (cada execução cuida de uma
+   org, dentro de um orçamento de 120 s; promoções que não couberem ficam para a próxima rodada, na
+   frente da fila); o botão "Atualizar agora" chama o worker como usuário logado (só a própria org), no
+   padrão de dupla autenticação do `monitorar-moderados`. A tela lê só do banco (`ml_promocoes`,
    `ml_promocao_itens`) e mostra "atualizado há X".
 3. **O líquido projetado é calculado no backend, no sync, e gravado.** Uma única conta —
    `liquidoClassico` com comissão de `listing_prices` e frete de `shipping_options/free` **no preço
    promocional**, alíquota por origem — serve à tela e aos alertas; a tela só aplica `calcularSemaforo`
-   e `calcularMarkup` (puros) sobre os números gravados. Custo, piso e origem vêm de
-   `variacoes` pelo mesmo mapa do financeiro (`montarMapasCusto`, estendido com o piso). Custo e piso
-   são os **atuais**; mudança no cadastro aparece no próximo sync.
+   e `calcularMarkup` (puros) sobre os números gravados. Custo, piso, origem e dimensões vêm de
+   `variacoes` por um resolvedor próprio (`_shared/promocoes/cadastro.ts`) com a mesma cadeia e o
+   mesmo desempate do financeiro (variação → anúncio → código → GTIN, linha mais recente, ADR-0108),
+   mais o vínculo de item filho de User Products por `anuncios_externos_itens` (família dissolvida não
+   tem SKU, ADR-0105). O mapa do financeiro não é tocado. Custo e piso são os **atuais**; mudança no
+   cadastro aparece no próximo sync. Origem ausente não vira 8% por padrão: a cor fica sem líquido.
 4. **Granularidade por cor, exibição por anúncio.** A promoção dá um preço por anúncio; o líquido é
    projetado por variação. A linha do anúncio mostra a **pior cor** (regra do ADR-0065); expandir mostra
    cada uma. Em User Products cada cor já é um item.

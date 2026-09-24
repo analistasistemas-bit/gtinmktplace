@@ -38,7 +38,9 @@ Termos definidos em `docs/reference/glossario.md` § Promoções.
 | `inicio`, `fim`, `prazo_adesao` | `start_date`, `finish_date`, `deadline_date` |
 | `beneficios jsonb` | bloco de benefício/co-participação da promoção (cupom: valor e mínimo) |
 | `bruto jsonb` | resposta crua (auditoria; a API muda sem aviso) |
-| `sincronizado_em` | fim do sync que gravou a linha |
+| `contagem jsonb` | `{convidados, participando, verde, amarelo, vermelho, indisponivel, participando_vermelho}` por pior semáforo do anúncio — alimenta o card sem ler os itens |
+| `erro` | falha da última leitura dos itens (ou "não processada nesta rodada"); `null` = ok |
+| `sincronizado_em`, `itens_sincronizados_em` | última leitura da promoção / última leitura bem-sucedida dos itens (ordem do rodízio) |
 
 ### `ml_promocao_itens` (uma linha por anúncio por promoção)
 
@@ -68,12 +70,14 @@ tabela; a UI mostra as de `fim >= now() - 30 dias`. Sync substitui os itens de c
 
 Por item convidado/participando, **no preço avaliado** (`preco_sugerido` se há faixa, senão `preco_promo`):
 
-1. **Vínculo com o cadastro:** `montarMapasCusto` (`_shared/platform-admin/sales-costs.ts`) estendido com o
-   **piso** (`variacoes.preco`) — mesma ordem do financeiro: `ml_variation_id` → `ml_item_id` → GTIN →
-   código. Legacy: as cores vêm de `variations[]` do item (multiget). User Products: o item é a cor.
+1. **Vínculo com o cadastro:** resolvedor próprio `_shared/promocoes/cadastro.ts` (custo, piso =
+   `variacoes.preco`, origem, cor, dimensões): item filho UP por `anuncios_externos_itens.item_externo_id`
+   → `ml_variation_id` → código/SKU → GTIN → `ml_item_id` (só se o anúncio tem uma única variação);
+   duplicata → linha mais recente (ADR-0108). Legacy: as cores vêm de `variations[]` do item (multiget).
+   User Products: o item é a cor. Origem nula → cor sem líquido (motivo "sem origem"), nunca 8% presumido.
 2. **Comissão:** `buscarListingPrice` no preço avaliado, `listing_type_id` real do item; cache Redis por
    `(categoria, listing_type, preço)`.
-3. **Frete:** `buscarFreteVendedor` no preço avaliado (o frete grátis depende do preço); cache Redis.
+3. **Frete:** `buscarFreteVendedorComProveniencia(...).valor` no preço avaliado, com as dimensões da variação — a mesma função do `calcular-tarifa-ml`, para bater com a Revisão (o frete grátis depende do preço); cache Redis.
 4. **Imposto:** alíquota por origem da org (ADR-0055); org sem alíquota confirmada → falha LOUD do sync
    dessa org (ADR-0086), nunca 8/16 em silêncio.
 5. **Líquido:** `liquidoClassico(preco, comissao, frete, aliquota)`. **ML banca não entra** até a regra ser
@@ -85,7 +89,11 @@ A tela aplica `calcularSemaforo(liquido, piso, custo)` e `calcularMarkup(liquido
 
 ## Worker `sincronizar-promocoes`
 
-- **QStash** (assinatura válida, cron `0 */6 * * *`): todas as conexões ML de orgs com o módulo `promocoes`.
+- **QStash sem `org_id`** (schedule `0 */6 * * *`): lista as orgs com o módulo `promocoes` e conexão ML e
+  publica uma mensagem QStash por org para o próprio worker.
+- **QStash com `org_id`**: sincroniza essa org, com orçamento de 120 s. Promoções processadas da mais
+  antiga para a mais recente (`itens_sincronizados_em`, nulas primeiro); a que não couber fica marcada
+  "não processada nesta rodada" e vai para a frente da fila na próxima.
 - **Usuário logado** (`requireUserOrg`): só a própria org; 403 se o módulo não estiver habilitado.
   Throttle: recusa se a org sincronizou há < 2 min (o botão fica desabilitado com a hora do último sync).
 - Por org: lista promoções → para cada promoção `pending`/`started` (cupom só grava a linha), pagina os
