@@ -213,6 +213,36 @@ describe('DialogEstenderGrade — cor repetida em outra grafia', () => {
   });
 });
 
+describe('DialogEstenderGrade — cor que só existe em SKU excluído', () => {
+  const comVermelhoExcluido = () => familiaPublicadaMock.mockReturnValue([{
+    id: 'fam-pub-1', genero: 'unissex',
+    variacoes: [...SKUS_UMA_COR, variacaoBase({ codigo: '00000009', cor: 'Vermelho', tamanho: 'P', estoque: 0, temFoto: true, excluida: true })],
+  }]);
+  it('readicionar "Vermelho" (mesma grafia) é aceito: Vermelho·P travada, M/G editáveis', async () => {
+    comVermelhoExcluido();
+    const user = userEvent.setup();
+    renderDialog();
+    await screen.findByTitle('Preto · P: já publicado, 12 em estoque');
+    await user.click(screen.getByRole('checkbox', { name: 'Vermelho' }));
+    await user.click(screen.getByRole('checkbox', { name: 'G' }));
+    await waitFor(() => expect(screen.getByLabelText('Estoque inicial de Vermelho · M')).toBeInTheDocument());
+    expect(screen.getByLabelText('Estoque inicial de Vermelho · G')).toBeInTheDocument();
+    expect(screen.getByTitle('Vermelho · P: fora do anúncio')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Estoque inicial de Vermelho · P')).not.toBeInTheDocument();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+  it('"vermelho" (grafia diferente) no mesmo cenário é recusado', async () => {
+    comVermelhoExcluido();
+    const user = userEvent.setup();
+    renderDialog();
+    await screen.findByTitle('Preto · P: já publicado, 12 em estoque');
+    await user.type(screen.getByLabelText('Nova cor'), 'vermelho');
+    await user.click(screen.getByRole('button', { name: /Adicionar cor/ }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('A cor "vermelho" já existe nesta grade.'));
+    expect(screen.queryByLabelText('Estoque inicial de vermelho · M')).not.toBeInTheDocument();
+  });
+});
+
 describe('DialogEstenderGrade — gate de Salvar', () => {
   // Uma só cor publicada (SKUS_UMA_COR): marcar G cria EXATAMENTE uma célula nova (Preto·G),
   // que herda foto de Preto — isola a asserção de estoque sem depender de outra cor.

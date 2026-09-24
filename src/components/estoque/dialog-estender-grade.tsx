@@ -281,9 +281,11 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
   function mudarCores(proximas: Set<string>) {
     if (salvando) return;
     // Mesma chave de cor da edge (`validarGrade`): "Azul-marinho" com "Azul Marinho" na grade
-    // seria recusado lá como par repetido — nem deixa acrescentar.
-    const existentes = [...cores, ...skus.map((s) => s.cor)].map(normalizarNomeCor);
-    const repetida = [...proximas].find((c) => !cores.has(c) && existentes.includes(normalizarNomeCor(c)));
+    // seria recusado lá como par repetido — nem deixa acrescentar. Só GRAFIA DIFERENTE: a mesma
+    // grafia de uma cor que só existe em SKU excluído volta normal (a excluída fica travada).
+    const existentes = [...cores, ...skus.map((s) => s.cor)];
+    const repetida = [...proximas].find((c) => !cores.has(c)
+      && existentes.some((x) => x !== c && normalizarNomeCor(x) === normalizarNomeCor(c)));
     if (repetida) { toast.error(`A cor "${repetida}" já existe nesta grade.`); return; }
     if (totalComoEdge([...proximas], [...tamanhos], removidas) > LIMITE_VARIACOES_GERADAS) return;
     const saindo = [...cores].filter((c) => !proximas.has(c) && !eixosFixos.cores.has(c));
