@@ -92,6 +92,20 @@
 | **`DadosFiscaisCanal`** | Porta de canal (padrão ADR-0024) com um único adaptador (ML) para empurrar dados fiscais por SKU e ler prontidão. Existe para caber um segundo emissor no futuro; não é implementada agora. |
 | **`emissao_a_partir_de`** | Data que separa vendas "de antes de ser PJ" (nunca viram pendência fiscal) das vendas faturáveis — dado, não estrutura: a mesma org/conta ML muda de tipo, nunca cria org nova (D-8). |
 
+## Promoções (ADR-0170)
+
+| Termo | Definição |
+|---|---|
+| **Promoção (campanha)** | Evento de desconto que o **ML** cria e para o qual convida anúncios da conta (tipos `DEAL`, `SMART`, `LIGHTNING`, `PRICE_MATCHING`, `PRICE_DISCOUNT`...). O vendedor **adere**, não cria. Lida de `GET /seller-promotions/users/{uid}`. Status: `pending` = **futura**, `started` = **ativa**, `finished` = **encerrada**. ⚠️ Cupom do vendedor (`SELLER_COUPON_CAMPAIGN`) aparece na mesma lista mas **não é promoção de preço**: entra só como card informativo, sem líquido nem semáforo. |
+| **Convidado** | Anúncio que o ML aceita numa promoção e ainda **não participa** (item com `status: candidate`). Evitar "candidato" na UI. |
+| **Participando** | Anúncio que **já está** na promoção com o preço promocional no ar (item com `status: started`). O ML pode inscrever sozinho em alguns tipos (ex.: `SMART`). |
+| **Preço promocional** | Preço que o comprador paga na promoção. Em campanha **com faixa** (`DEAL`) é o `suggested_discounted_price` dentro de `min/max_discounted_price`; em campanha de preço fixo é o `price` do item. |
+| **ML banca** | Parte do desconto paga pelo Mercado Livre (`meli_percentage`) em promoção co-participada; o resto do desconto (`seller_percentage`) sai do vendedor. Como ele entra no líquido projetado está no ADR-0170. |
+| **Líquido projetado** | O **líquido** (mesma conta do resto do app: preço − comissão − frete absorvido − imposto por origem) calculado **no preço promocional**, com custo e piso atuais da variação. Com o **Markup** (`calcularMarkup`), é o único número de resultado da Central — não existe "margem %" nem "lucro" nessa tela. |
+| **Até quanto descer** | Em campanha com faixa: o **menor preço promocional** cujo líquido projetado ainda fica ≥ **piso** (🟢). Se o mínimo da faixa já fica 🟢 → "qualquer preço da faixa"; se nem o máximo chega ao piso → "nenhum preço da faixa atinge o mínimo". |
+| **Semáforo da promoção** | O `calcularSemaforo` de sempre (🟢 ≥ piso, 🟡 abaixo do mínimo, 🔴 < custo) aplicado ao líquido projetado. O anúncio mostra a **pior cor** (mesma regra família-level do ADR-0065); expandir mostra cada cor. ⚪ = anúncio ou cor **sem custo no PubliAI** (publicado fora do app) — aparece, mas sem semáforo. |
+| **Participando no prejuízo** | Anúncio **participando** com semáforo 🔴 (líquido projetado < custo). Dispara alerta. 🟡 não dispara. |
+
 ## Estados (enums)
 
 | Enum | Valores | Onde |
