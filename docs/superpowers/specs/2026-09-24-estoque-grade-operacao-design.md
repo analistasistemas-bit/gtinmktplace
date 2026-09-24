@@ -65,7 +65,8 @@ ganham `tamanho: string | null`; `fetchVariacoesProduto` e `fetchSkusEstoqueOrg`
 expandida (`variacao-estoque-linha.tsx`, `variacao-estoque-card.tsx`). Sem tamanho → string idêntica
 à atual (INV-1).
 
-**A4. Movimentos.** `estoque_movimentos` não tem cor/tamanho e não ganha join: o componente
+**A4. Movimentos.** (Interpretação registrada na revisão Codex r2 #5: o rótulo só aparece para
+variação com tamanho; produto comum continua mostrando só o código, como hoje — INV-1.) `estoque_movimentos` não tem cor/tamanho e não ganha join: o componente
 `MovimentosEstoque` recebe o mapa `codigo → rótulo` das variações que o card já carregou
 (`QK.variacoesEstoque(codigoPai)`) e mostra `código · rótulo`. Código ausente do mapa → só o código,
 como hoje.

@@ -26,6 +26,7 @@
 ## Review Focus
 
 0. Revisão Codex gpt-6-sol do plano (VERDICT:REVISE, 12 achados) incorporada: reconciliador com `preservarPublicadas` (T4), GENDER de `familias.genero` no UPDATE (T4), ledger reaplicado no retry (T5), UP detectado pela raiz (T5), travadas = última publicada (T7), picker geral da Entrada (T3), limite 60 sem dupla contagem (T7), roteador pelo dado (T7), numeração sem guia bloqueada (T7), fixture SQL com profile (T1), dry-run sem escrita + prova real (T8), caracterização de payload (T4/T7).
+0b. Revisão Codex r2 (VERDICT:REVISE, 9 achados) incorporada: tipo da grade inferido da família e validado na UI e na edge (T5/T7), intenção do retry gravada em `mudanca_estrutural.intencao` com 409 para incompleto/divergente (T5), `ehFluxoAddVariacao` falha alto (T4), numeração não publicável recusada na edge (T5), Movimentos sem mudança para produto comum (T3), roteador síncrono por `temTamanho` do resumo (T1/T2/T7), aceite real pendente formal + reversão (T9), fixtures de 8 dígitos (T5), chart fora do cache falha alto (T4).
 1. Irmão tem `SIZE`/`SIZE_GRID_ROW_ID` na ficha e a família tem `SIZE` em `atributos_ml` → o SKU novo sai com **um** `SIZE` e é o dele (Task 4, teste "um SIZE só").
 2. Cor nova de tamanho existente + tamanho novo de cor existente na MESMA submissão → só as células faltantes viram SKU; nenhuma célula publicada vai no payload (Task 7, teste de `celulasNovas`; Task 5, teste de par duplicado).
 3. Retry com a mesma `chave` depois de os códigos terem sido reservados → devolve o resultado anterior, não reserva códigos novos nem duplica SKU (Task 5, teste de idempotência reaproveitado + ordem: idempotência antes da reserva).
@@ -41,7 +42,7 @@
 - Create: `supabase/tests/estoque_rpc_tamanho.sql`
 
 **Interfaces:**
-- Produces: `variacoes_estoque_produto(text)` e `skus_estoque_org()` passam a incluir a chave `tamanho` (text|null) em cada objeto JSON. Nada mais muda (corpo, ordem, grants).
+- Produces: `variacoes_estoque_produto(text)` e `skus_estoque_org()` passam a incluir a chave `tamanho` (text|null) em cada objeto JSON; `produtos_estoque_resumo()` passa a incluir `tem_tamanho` (boolean) em cada produto da lista (Codex r2 #6: o roteador decide sem consulta extra nem espera). Nada mais muda (corpo, ordem, grants).
 
 - [ ] **Step 1: Criar a migration**
 
@@ -50,6 +51,8 @@ Run: `supabase migration new estoque_rpc_tamanho`
 Conteúdo: copiar **literalmente** as definições B e C de `supabase/migrations/20260903030505_estoque_rpc_exclui_kit.sql` (linhas 188–313: as duas `create or replace function`, `revoke` e `grant`), com exatamente duas alterações:
 - em `variacoes_estoque_produto`, dentro do `json_build_object`, logo após `'cor', v.cor,` acrescentar `'tamanho', v.tamanho,`
 - em `skus_estoque_org`, logo após `'cor', v.cor,` acrescentar `'tamanho', v.tamanho,`
+
+E a definição A (`produtos_estoque_resumo()`, mesmo arquivo, l.19–179, com `revoke`/`grant`), também literal, com: `v.tamanho` no select do CTE `vars`; no agregado por produto que hoje produz `qtd_skus`/`cores`, `bool_or(v.tamanho is not null) as tem_tamanho`; e no `json_build_object` do produto, `'tem_tamanho', coalesce(p.tem_tamanho, false),` ao lado de `'qtd_skus'`. Ler a função inteira antes: o agregado pode estar num CTE com outro alias — acompanhar o nome real.
 
 Cabeçalho do arquivo:
 ```sql
@@ -105,6 +108,9 @@ begin
   if not (r::jsonb ? 'tamanho') or r->>'tamanho' is not null then raise exception 'tamanho null deveria vir como chave nula: %', r; end if;
   select x into r from public.skus_estoque_org() x where x->>'codigo' = '09200001';
   if r->>'tamanho' is distinct from 'M' then raise exception 'skus_estoque_org sem tamanho: %', r; end if;
+  -- Localizar o array de produtos no JSON do resumo pelo nome real da chave (ler a função; ex.: 'produtos').
+  select p into r from json_array_elements(public.produtos_estoque_resumo()->'produtos') p where p->>'codigo_pai' = '09200000';
+  if (r->>'tem_tamanho')::boolean is distinct from true then raise exception 'resumo sem tem_tamanho: %', r; end if;
 end $$;
 rollback;
 ```
@@ -226,6 +232,7 @@ Antes de fechar: abrir `src/lib/cor.ts` e confirmar a assinatura de `compararCor
   - `mapVariacaoRpc`: acrescentar `tamanho: l.tamanho ?? null,`
   - `fetchVariacoesProduto`: `return ordenarVariacoesGrade((...).map(mapVariacaoRpc).sort(compararCor));`
   - `fetchSkusEstoqueOrg`: acrescentar `tamanho?: string | null` aos dois tipos inline e `tamanho: s.tamanho ?? null` no map.
+  - `ProdutoEstoqueResumo`: acrescentar `/** ADR-0166: alguma variação da família canônica tem tamanho. */ temTamanho: boolean;`; o tipo cru do resumo ganha `tem_tamanho?: boolean` e o mapeamento (`mapResumoEstoqueRpc`) faz `temTamanho: !!p.tem_tamanho`. Teste em `mapResumoEstoqueRpc`: ausente → `false`, `true` → `true`.
   - Corrigir fixtures de testes existentes que constroem `VariacaoComSaldo`/`SkuEstoqueOrg` literais (o `tsc` vai apontar): acrescentar `tamanho: null`.
 
 - [ ] **Step 5: Rodar** — `pnpm test src/lib` e `pnpm exec tsc -b --force` → PASS.
@@ -258,7 +265,8 @@ Antes de fechar: abrir `src/lib/cor.ts` e confirmar a assinatura de `compararCor
     `montarOpcaoSku({ codigo: '09200001', nome: 'Preto', cor: 'Preto', tamanho: 'M', codigoPai: '09200000', estoque: 1 })`
     → `rotulo === '09200001 · Preto (Preto) · M'` e `textoBusca` contém `m`; sem `tamanho` o rótulo é
     exatamente o de hoje (`'09200001 · Preto (Preto)'`).
-  - Movimentos: linha do movimento do código `09200001` mostra `09200001 · Preto · M` quando `variacoes` traz esse código; e mostra só `09200001` quando não traz.
+  - Movimentos: linha do movimento do código `09200001` mostra `09200001 · Preto · M` quando `variacoes` traz esse código com tamanho; mostra só `09200001` quando não traz; e mostra só `09200001` (texto de hoje, INV-1 — Codex r2 #5) quando traz a variação **sem** tamanho.
+  - Filtro de Movimentos: opção de variação sem tamanho tem exatamente o rótulo de hoje (fixar com `getByRole('option', { name: <texto atual> })`).
   Manter os casos antigos intactos (INV-1).
 
 - [ ] **Step 2: Rodar** — FAIL nos casos novos.
@@ -277,12 +285,14 @@ Antes de fechar: abrir `src/lib/cor.ts` e confirmar a assinatura de `compararCor
     `const sufixoTamanho = s.tamanho?.trim() ? \` · ${s.tamanho.trim()}\` : '';` e
     `rotulo = \`${s.codigo} · ${s.nome}${complemento}${sufixoTamanho}\`` (o `textoBusca` já deriva do
     rótulo). Em `dialog-entrada.tsx`, repassar `tamanho` de `SkuEstoqueOrg` ao montar os `SkuEntradaCru`.
-  - `filtros-movimentos.tsx`: `VariacaoFiltro` ganha `nome?: string | null; tamanho?: string | null`; o rótulo da opção passa a usar `rotuloVariacao({ cor: v.cor, nome: v.nome ?? null, tamanho: v.tamanho })`.
+  - `filtros-movimentos.tsx`: `VariacaoFiltro` ganha `nome?: string | null; tamanho?: string | null`; o rótulo da opção só muda quando há tamanho: `v.tamanho?.trim() ? \`${<rótulo atual>} · ${v.tamanho.trim()}\` : <rótulo atual>` — onde `<rótulo atual>` é a expressão que o arquivo já usa hoje (não trocar por `rotuloVariacao`, que para variação sem cor usaria `nome` e mudaria o texto).
   - `produto-card.tsx:523`: `variacoes={(variacoes ?? []).map((v) => ({ codigo: v.codigo, cor: v.cor, nome: v.nome, tamanho: v.tamanho }))}`
   - `movimentos-estoque.tsx`: 
     ```ts
+    // Só variação COM tamanho ganha sufixo: produto comum mantém a linha "só código" de hoje (INV-1).
     const rotuloPorCodigo = useMemo(
-      () => new Map(variacoes.map((v) => [v.codigo, rotuloVariacao({ cor: v.cor, nome: v.nome ?? null, tamanho: v.tamanho })])),
+      () => new Map(variacoes.filter((v) => v.tamanho?.trim())
+        .map((v) => [v.codigo, rotuloVariacao({ cor: v.cor, nome: v.nome ?? null, tamanho: v.tamanho })])),
       [variacoes],
     );
     ```
@@ -428,7 +438,8 @@ Se `atualizarFamiliaUP` capturar a exceção da porta e devolver `{ estado: 'err
       ```ts
       // ADR-0166 2026-09-24c: SKU novo de grade precisa do chart ANTES do payload. Resolvido uma vez
       // por execução (SIZE_GRID_ID é o mesmo para a família inteira). O chart nasce com o superset de
-      // tamanhos (ADR-0167 D2), então isto é cache hit; tamanho fora dele cria chart novo (D4).
+      // tamanhos (ADR-0167 D2), então isto é cache hit. Tamanho fora do chart em cache: garantirChart
+      // LANÇA (size-chart.ts:259-270) — falha alto, sem rotação automática (Codex r2 #9).
       const IDS_TAMANHO = new Set(['SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID']);
       let chartPromessa: Promise<ChartResolvido | null> | null = null;
       const resolverChart = (): Promise<ChartResolvido | null> => (chartPromessa ??= (async () => {
@@ -472,7 +483,15 @@ Se `atualizarFamiliaUP` capturar a exceção da porta e devolver `{ estado: 'err
     // ... na chamada:
     const resultado = await atualizarFamiliaUP({ ...(como hoje), preservarPublicadas });
     ```
-    Teste em `supabase/functions/reconciliar-convergencia-up/__tests__/` (seguir o fake de admin existente nessa suíte): lote com `origem='manual'` → `atualizarFamiliaUP` recebe `preservarPublicadas: true`; lote de planilha → `false`. Injetar `atualizarFamiliaUP` do mesmo jeito que a suíte já faz; se ela não tiver ponto de injeção, acrescentar `deps.atualizarUP` como em `update-familia-ml/processar.ts:100`.
+    **E `ehFluxoAddVariacao` passa a falhar alto** (Codex r2 #3 — hoje ignora o `error` e devolve `false`, reabrindo o repreço das irmãs): em `_shared/update/fluxo-add-variacao.ts`,
+    ```ts
+    const { data, error } = await admin.from('lotes').select('origem').eq('id', loteId).maybeSingle();
+    if (error) throw new Error(`ler origem do lote ${loteId}: ${error.message}`);
+    if (!data) throw new Error(`lote ${loteId} não encontrado ao decidir preservarPublicadas`);
+    return data.origem === 'manual';
+    ```
+    Os dois chamadores (`update-familia-ml/processar.ts:195` e o reconciliador) já estão dentro de caminhos cujo `throw` vira retry — conferir isso no código antes de fechar (no worker, o catch retenta; no reconciliador, a rodada falha e é retomada). Teste do helper: erro → lança; lote ausente → lança; manual → true; planilha → false.
+    Teste em `supabase/functions/reconciliar-convergencia-up/__tests__/` (seguir o fake de admin existente nessa suíte): lote com `origem='manual'` → `atualizarFamiliaUP` recebe `preservarPublicadas: true`; lote de planilha → `false`; erro lendo o lote → `atualizarFamiliaUP` **não** é chamado. Injetar `atualizarFamiliaUP` do mesmo jeito que a suíte já faz; se ela não tiver ponto de injeção, acrescentar `deps.atualizarUP` como em `update-familia-ml/processar.ts:100`.
 
 - [ ] **Step 5: Rodar** — `pnpm test supabase/functions/_shared/user-products supabase/functions/update-familia-ml supabase/functions/reconciliar-convergencia-up` → PASS; `pnpm check:functions` → PASS.
 
@@ -505,7 +524,11 @@ Se `atualizarFamiliaUP` capturar a exceção da porta e devolver `{ estado: 'err
   ```
   Resposta: `{ loteId, familiaId, publicacaoOk, falhasEstoque, codigos: string[] }` (`codigos` = SKUs novos, 8 dígitos, na ordem de `variacoes`; também no ramo `jaExistia`, lidos de `familias.mudanca_estrutural.novas`).
   - `derivarCodigosSku(ultimo: number, qtd: number): string[]`
-  - `validarGrade(entrada: VariacaoNovaEntrada[], ctx: { vivas: Array<{ codigo: string; cor: string | null; tamanho: string | null }>; tamanhosValidos: readonly string[]; genero: string | null; ehUP: boolean }): ErroValidacao[]`
+  - `validarGrade(entrada: VariacaoNovaEntrada[], ctx: { vivas: Array<{ codigo: string; cor: string | null; tamanho: string | null }>; tiposHabilitados: readonly string[]; genero: string | null; ehUP: boolean }): ErroValidacao[]`
+  - Em `supabase/functions/_shared/produto/tipos-produto-valores.ts` (fonte única, reexportada pelo front):
+    - `tipoDaGrade(tamanhos: readonly string[]): TipoProduto | null` — `'roupa'` se todos ∈ `TAMANHOS_ROUPA`, `'calcado'` se todos ∈ `NUMERACOES_CALCADO`, `null` se vazio, misto ou desconhecido (as listas são disjuntas).
+    - `tamanhosDoTipo(tipo: TipoProduto): readonly string[]`
+    - `numeracaoPublicavel(numeracao: string, genero: 'masculino' | 'feminino' | 'unissex'): boolean` — a regra que hoje vive em `src/lib/tamanhos.ts:49-56`, movida para cá (importando `COMPRIMENTO_PE_CM` de `../ml/medidas-valores.ts`); `src/lib/tamanhos.ts` passa a delegar, mantendo a assinatura dele (`genero` vazio → `true`).
   - `resolverFotoHerdada(fotoDeCodigo: string, cor: string, vivas: Array<{ codigo: string; cor: string | null; imagem_path: string | null; ml_picture_id: string | null }>): { imagemPath: string | null; mlPictureId: string | null } | null`
 
 - [ ] **Step 1: Testes puros (falham)**
@@ -533,7 +556,7 @@ describe('validarEntrada — grade', () => {
 
 describe('validarGrade', () => {
   const vivas = [{ codigo: '00000001', cor: 'Preto', tamanho: 'P' }, { codigo: '00000002', cor: 'Preto', tamanho: 'M' }];
-  const ctx = { vivas, tamanhosValidos: ['P', 'M', 'G'], genero: 'masculino', ehUP: true };
+  const ctx = { vivas, tiposHabilitados: ['roupa'], genero: 'masculino', ehUP: true };
   const nova = (cor: string, tamanho?: string, extra: object = {}) => ({ nome: cor, tamanho, gtin: null, preco: 10, custo: null, estoqueInicial: 1,
     pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null, imagemPath: 'u/x', ...extra });
   it('aceita cor nova e tamanho novo', () => {
@@ -559,20 +582,54 @@ describe('validarGrade', () => {
     expect(validarGrade([nova('Preto', 'G', { imagemPath: undefined, fotoDeCodigo: '00000001' })], ctx)).toEqual([]);
     expect(validarGrade([nova('Verde', 'G', { imagemPath: undefined, fotoDeCodigo: '00000001' })], ctx)).toHaveLength(1);
   });
+  it('org com roupa E calçado: jaqueta publicada não aceita numeração (Codex r2 #1)', () => {
+    const c = { ...ctx, tiposHabilitados: ['roupa', 'calcado'] };
+    expect(validarGrade([nova('Preto', '42')], c)[0]!.mensagem).toMatch(/tamanho/i);
+    expect(validarGrade([nova('Preto', 'G')], c)).toEqual([]);
+  });
+  it('tipo da grade desligado na org depois de publicar → recusa com motivo claro', () => {
+    expect(validarGrade([nova('Preto', 'G')], { ...ctx, tiposHabilitados: [] })[0]!.mensagem).toMatch(/desativad/i);
+  });
+  it('numeração sem guia de tamanhos para o gênero é recusada na edge (Codex r2 #4)', () => {
+    const vivasCalc = [{ codigo: '00000001', cor: 'Preto', tamanho: '38' }];
+    const c = { ...ctx, vivas: vivasCalc, tiposHabilitados: ['calcado'], genero: 'feminino' };
+    expect(validarGrade([nova('Preto', '45')], c)[0]!.mensagem).toMatch(/Mercado Livre/i);
+    expect(validarGrade([nova('Preto', '39')], c)).toEqual([]);
+  });
+  it('grade publicada com tamanhos mistos/desconhecidos → recusa (não adivinha o tipo)', () => {
+    const c = { ...ctx, vivas: [{ codigo: '00000001', cor: 'Preto', tamanho: 'P' }, { codigo: '00000002', cor: 'Preto', tamanho: '38' }], tiposHabilitados: ['roupa', 'calcado'] };
+    expect(validarGrade([nova('Azul', 'P')], c)).toHaveLength(1);
+  });
+});
+
+describe('tipoDaGrade / numeracaoPublicavel', () => {
+  it('infere o tipo pelos tamanhos', () => {
+    expect(tipoDaGrade(['P', 'GG'])).toBe('roupa');
+    expect(tipoDaGrade(['38', '41/42'])).toBe('calcado');
+    expect(tipoDaGrade(['P', '38'])).toBeNull();
+    expect(tipoDaGrade([])).toBeNull();
+  });
+  it('mesma regra que o front usava (conferir 45/46 feminino e pares contra COMPRIMENTO_PE_CM)', () => {
+    expect(numeracaoPublicavel('45', 'feminino')).toBe(false);
+    expect(numeracaoPublicavel('33/34', 'masculino')).toBe(false);
+    expect(numeracaoPublicavel('40', 'masculino')).toBe(true);
+  });
 });
 
 describe('resolverFotoHerdada', () => {
+  // Códigos vivos sempre com 8 dígitos (é o que o banco grava); `fotoDeCodigo` pode vir curto e é
+  // normalizado por `normalizarCodigo8` antes de comparar (Codex r2 #8).
   it('copia imagem_path e ml_picture_id do irmão da mesma cor', () => {
-    expect(resolverFotoHerdada('1', 'Preto', [{ codigo: '1', cor: 'Preto', imagem_path: 'o/a.jpg', ml_picture_id: 'PIC' }]))
+    expect(resolverFotoHerdada('1', 'Preto', [{ codigo: '00000001', cor: 'Preto', imagem_path: 'o/a.jpg', ml_picture_id: 'PIC' }]))
       .toEqual({ imagemPath: 'o/a.jpg', mlPictureId: 'PIC' });
   });
   it('irmão só com ml_picture_id ainda serve', () => {
-    expect(resolverFotoHerdada('1', 'Preto', [{ codigo: '1', cor: 'Preto', imagem_path: null, ml_picture_id: 'PIC' }]))
+    expect(resolverFotoHerdada('00000001', 'Preto', [{ codigo: '00000001', cor: 'Preto', imagem_path: null, ml_picture_id: 'PIC' }]))
       .toEqual({ imagemPath: null, mlPictureId: 'PIC' });
   });
   it('cor diferente ou irmão sem foto nenhuma → null', () => {
-    expect(resolverFotoHerdada('1', 'Verde', [{ codigo: '1', cor: 'Preto', imagem_path: 'x', ml_picture_id: null }])).toBeNull();
-    expect(resolverFotoHerdada('1', 'Preto', [{ codigo: '1', cor: 'Preto', imagem_path: null, ml_picture_id: null }])).toBeNull();
+    expect(resolverFotoHerdada('00000001', 'Verde', [{ codigo: '00000001', cor: 'Preto', imagem_path: 'x', ml_picture_id: null }])).toBeNull();
+    expect(resolverFotoHerdada('00000001', 'Preto', [{ codigo: '00000001', cor: 'Preto', imagem_path: null, ml_picture_id: null }])).toBeNull();
   });
 });
 
@@ -620,7 +677,7 @@ export function derivarCodigosSku(ultimo: number, qtd: number): string[] {
     ```ts
     export function validarGrade(entrada: VariacaoNovaEntrada[], ctx: {
       vivas: Array<{ codigo: string; cor: string | null; tamanho: string | null }>;
-      tamanhosValidos: readonly string[]; genero: string | null; ehUP: boolean;
+      tiposHabilitados: readonly string[]; genero: string | null; ehUP: boolean;
     }): ErroValidacao[] {
       const erros: ErroValidacao[] = [];
       const familiaGrade = familiaTemTamanho(ctx.vivas);
@@ -630,6 +687,18 @@ export function derivarCodigosSku(ultimo: number, qtd: number): string[] {
       if (familiaGrade && !ctx.genero) {
         return [{ campo: 'familia_id', mensagem: 'Produto de grade sem gênero cadastrado — o Mercado Livre exige gênero junto com a tabela de medidas.' }];
       }
+      // O tipo é da FAMÍLIA publicada, não da org (Codex r2 #1): org com roupa e calçado não pode
+      // pôr numeração numa jaqueta — o chart de vestuário recusaria DEPOIS de SKU e ledger gravados.
+      const tipo = familiaGrade
+        ? tipoDaGrade(ctx.vivas.map((v) => (v.tamanho ?? '').trim()).filter(Boolean))
+        : null;
+      if (familiaGrade && !tipo) {
+        return [{ campo: 'familia_id', mensagem: 'Os tamanhos publicados deste produto não pertencem a um único tipo (roupa ou calçado) — ajuste pelo suporte.' }];
+      }
+      if (tipo && !ctx.tiposHabilitados.includes(tipo)) {
+        return [{ campo: 'familia_id', mensagem: `O tipo ${tipo === 'roupa' ? 'Roupa' : 'Calçado'} está desativado nesta organização — peça ao administrador da plataforma para reativar.` }];
+      }
+      const tamanhosValidos = tipo ? tamanhosDoTipo(tipo) : [];
       const norm = (s: string | null | undefined) => (s ?? '').trim();
       const pares = new Set(ctx.vivas.map((v) => chaveGradeEdge(norm(v.cor), norm(v.tamanho))));
       entrada.forEach((v, i) => {
@@ -642,7 +711,10 @@ export function derivarCodigosSku(ultimo: number, qtd: number): string[] {
         }
         if (!tam) { erros.push({ campo: `${p}.tamanho`, mensagem: 'Tamanho é obrigatório neste produto.' }); return; }
         if (v.codigo !== undefined) { erros.push({ campo: `${p}.codigo`, mensagem: 'Em produto de grade o código é gerado pelo sistema.' }); return; }
-        if (!ctx.tamanhosValidos.includes(tam)) { erros.push({ campo: `${p}.tamanho`, mensagem: `Tamanho "${tam}" não é válido para esta organização.` }); return; }
+        if (!tamanhosValidos.includes(tam)) { erros.push({ campo: `${p}.tamanho`, mensagem: `Tamanho "${tam}" não é válido para este produto.` }); return; }
+        if (tipo === 'calcado' && !numeracaoPublicavel(tam, ctx.genero as 'masculino' | 'feminino' | 'unissex')) {
+          erros.push({ campo: `${p}.tamanho`, mensagem: `Numeração ${tam} não tem guia de tamanhos no Mercado Livre para este gênero.` }); return;
+        }
         const k = chaveGradeEdge(norm(v.nome), tam);
         if (pares.has(k)) { erros.push({ campo: `${p}.tamanho`, mensagem: `${norm(v.nome)} · ${tam} já existe neste produto.` }); return; }
         pares.add(k);
@@ -678,8 +750,8 @@ export function derivarCodigosSku(ultimo: number, qtd: number): string[] {
      ```
      Conferir o literal do canal usado em `update-familia-ml/processar.ts` (constante `CANAL`) e usar o mesmo.
      Extrair isto numa função `detectarUP(admin, orgId, codigoPai): Promise<boolean>` em `processar.ts` (lança em erro) para testar com fake: raiz ausente → false; raiz com 0 itens → false; raiz com itens → true; erro na consulta → lança; SKU igual em OUTRA raiz não conta (a consulta é por `anuncio_externo_id`).
-  3. `tamanhosValidos = tamanhosValidosParaTipos(await tiposProdutoDaOrg(admin, orgId))` (imports de `../_shared/produto/tipos-produto-valores.ts` e `../_shared/produto/tipo-produto.ts` — conferir o nome exato das exportações nesses arquivos, são as mesmas usadas por `cadastrar-produto/processar.ts:8,74` e `cadastrar-produto/index.ts:26`).
-  4. `const errosGrade = validarGrade(variacoesEntrada, { vivas, tamanhosValidos, genero: anterior.genero ?? null, ehUP }); if (errosGrade.length) return json({ erros: errosGrade }, 400);`
+  3. `tiposHabilitados = await tiposProdutoDaOrg(admin, orgId)` (import de `../_shared/produto/tipo-produto.ts`, o mesmo de `cadastrar-produto/index.ts:26` — conferir o nome exato).
+  4. `const errosGrade = validarGrade(variacoesEntrada, { vivas, tiposHabilitados, genero: anterior.genero ?? null, ehUP }); if (errosGrade.length) return json({ erros: errosGrade }, 400);`
   5. Teto: `if ((variacoesVivas?.length ?? 0) + variacoesEntrada.length > 60) return json({ error: 'Passaria do limite de 60 variações por produto.' }, 400);`
   6. Códigos: se a família é de grade, reservar `variacoesEntrada.length` com `proximo_codigo_produto` + `derivarCodigosSku`, conferir com `codigosJaUsados` e ressincronizar UMA vez com `p_resync: true` — cópia do bloco de `cadastrar-produto/index.ts:175-200` trocando `derivarCodigos(..., qtd)` por `derivarCodigosSku(..., n)` e sem PAI na conferência. Senão, `codigosNovos` continua vindo de `normalizarCodigo8(v.codigo)` + o `codigosJaUsados` que já existe (409 com `conflitos`).
      Resultado: `const codigosNovos: string[]` alinhado por índice com `variacoesEntrada`. **A reserva acontece depois do bloco de idempotência** (`jaExistente`) — que já está antes, não mover.
@@ -687,9 +759,17 @@ export function derivarCodigosSku(ultimo: number, qtd: number): string[] {
   8. `montarVariacaoNova({ ...v, codigo: codigosNovos[i], imagemPath: fotos[i].imagemPath, mlPictureId: fotos[i].mlPictureId }, ...)`.
   9. Ledger: `aplicarEstoqueInicial(...)` (ver 10b) com `codigosNovos[i]` em vez de `normalizarCodigo8(v.codigo)!`.
   10. Resposta: acrescentar `codigos: codigosNovos`; no ramo `jaExistia`, ler `mudanca_estrutural` da família (`select('id, lote_id, status, mudanca_estrutural')`) e devolver `codigos: (mudanca_estrutural?.novas ?? [])`.
-  10b. Ledger no retry (Codex #3 — hoje o ramo `jaExistia` devolve `falhasEstoque: []` sem olhar o ledger): no ramo `jaExistia`, **antes** de re-encadear a publicação, reaplicar `registrar_entrada` para cada `codigos[i]` com `variacoesEntrada[i].estoqueInicial`, mesma `p_ref: \`addvar:${familiaId}:${codigo}\`` (a unique parcial do ledger torna isso no-op se já aplicou — mesmo racional de `cadastrar-produto/index.ts`), e devolver as falhas reais em `falhasEstoque`. Só reaplicar quando `codigos.length === variacoesEntrada.length` (mesma submissão); senão devolver `falhasEstoque` vazio como hoje. **Não** muda a regra do ADR-0129 de publicar mesmo com falha de estoque (decisão registrada; o operador vê `falhasEstoque` e corrige por "Dar entrada").
+  10b. Ledger no retry (Codex #3 e r2 #2). A intenção original fica **gravada**, e o retry confere contra ela em vez de confiar no body novo:
+     - Na criação, `mudanca_estrutural = { novas: codigosNovos, removidas: [], intencao: variacoesEntrada.map((v, i) => ({ codigo: codigosNovos[i], nome: v.nome.trim(), tamanho: v.tamanho?.trim() || null, estoqueInicial: v.estoqueInicial, custo: v.custo })) }`. (`mudanca_estrutural` é jsonb; o único consumidor, `src/components/familia-row.tsx`, lê só `novas`/`removidas` — conferir antes.)
+     - No ramo `jaExistia` (selecionar também `mudanca_estrutural`), em ordem:
+       1. sem `intencao` (família criada por versão anterior da edge) → comportamento de hoje, `falhasEstoque: []`;
+       2. `variacoes` da família com `codigo in intencao.codigo` em número menor que `intencao.length` → **409** `'Solicitação em andamento. Tente novamente.'` (retry caiu entre o insert da família e o das variações — `index.ts:209-245`);
+       3. body divergente da intenção — comprimento diferente, ou para algum `i`: `nome.trim()`, `tamanho` normalizado ou `estoqueInicial` ≠ — → **409** `'Esta solicitação difere da original. Recarregue a tela e confira o produto antes de reenviar.'`;
+       4. senão: `aplicarEstoqueInicial` com as quantidades **da intenção** (não do body), mesma `p_ref: \`addvar:${familiaId}:${codigo}\`` (no-op se já aplicou), e devolver as falhas reais em `falhasEstoque`; só então o re-encadeamento de publicação que já existe.
+     - Extrair a decisão dos passos 1–3 para `decidirRetry(intencao, body, codigosPersistidos): { tipo: 'legado' } | { tipo: 'incompleto' } | { tipo: 'divergente' } | { tipo: 'reaplicar'; itens: ... }` (pura) e testar os 4 ramos, incluindo body com `estoqueInicial` alterado → `divergente`.
+     **Não** muda a regra do ADR-0129 de publicar mesmo com falha de estoque (decisão registrada; o operador vê `falhasEstoque` e corrige por "Dar entrada").
      Extrair o laço de ledger para `aplicarEstoqueInicial(admin, { orgId, familiaId, userId, itens: Array<{ codigo: string; qtd: number; custo: number | null }> }): Promise<string[]>` em `processar.ts` e usá-lo nos dois ramos. Teste: fake de `admin.rpc` que falha para um código → a função devolve `['<codigo>: <mensagem>']`; chamada duas vezes com a mesma entrada usa o mesmo `p_ref`.
-  11. `mudanca_estrutural = { novas: codigosNovos, removidas: [] }` (já é assim — só garantir que usa o array novo).
+  11. `mudanca_estrutural` com `novas`, `removidas` e `intencao` (ver 10b).
 
 - [ ] **Step 6: Rodar** — `pnpm test supabase/functions/adicionar-variacoes-familia supabase/functions/_shared/produto` → PASS; `pnpm lint:functions && pnpm check:functions` → PASS.
 
@@ -829,6 +909,12 @@ it('payload: herda foto quando a linha não tem foto própria e a cor tem foto; 
     - Estoque exibido nas travadas vem de `fetchVariacoesProduto` (QK `variacoesEstoque`, saldo canônico) casado por código; se não carregou, usar o da consulta.
   - `skus: SkuExistente[]` = variações com `tamanho` não nulo; `temFoto = !!(imagem_path || ml_picture_id)`.
   - Estado: `cores`/`tamanhos` (Set) iniciados com `eixosExistentes(skus)`; `removidas`; `linhas: LinhaGrade[]`; `cabecalho: CamposHerdaveis` pré-preenchido pelo SKU de referência (menor código entre os não `excluida_da_publicacao`, mesma regra de `irmaRef` no dialog atual); `fotoPorCor` (só para cores sem foto herdável); `chave` (UUID, regenerada ao fechar).
+  - Tipo da grade = `tipoDaGrade(skus.map((s) => s.tamanho))` (reexportado de `@/lib/tamanhos`); os tamanhos oferecidos são **só** os desse tipo (`opcoesDeTamanho([tipo])`), nunca a união dos tipos da org (Codex r2 #1). Estados de bloqueio, antes de qualquer upload e com o botão Salvar desabilitado:
+    - `useTiposProdutoHabilitados()` ainda `undefined` e sem erro → skeleton "Carregando…";
+    - erro do hook → aviso "Não foi possível confirmar os tipos de produto da organização. Tente de novo." (não assume nada);
+    - `tipo === null` (tamanhos mistos/desconhecidos) → aviso "Os tamanhos publicados deste produto não pertencem a um único tipo — fale com o suporte.";
+    - `tipo` fora dos tipos habilitados → aviso "O tipo {Roupa|Calçado} está desativado nesta organização — peça ao administrador da plataforma para reativar." (mesma regra da edge; a matriz aparece só para leitura).
+    Testes: org com roupa+calçado e jaqueta publicada → nenhum chip de numeração; tipo desligado → aviso e Salvar desabilitado; hook com erro → aviso.
   - Reconciliação: sempre que `cores`/`tamanhos`/`removidas` mudam, `reconciliarGrade(eixos.cores, eixos.tamanhos, removidas, [...linhas, ...skus.map(s => ({ cor: s.cor, tamanho: s.tamanho }))])` — as travadas entram como "já existentes", então nunca aparecem em `novas`; aplicar `novas` com `novaLinhaGrade` e `remover` filtrando `linhas` (nunca as travadas, que não estão em `linhas`). Mesmo padrão de `mudarCores`/`mudarTamanhos` de `dialog-cadastro-grade.tsx` (usar `ordenarEixos` com `tamanhos: opcoesDeTamanho(tipos).flatMap(g => g.valores)`).
   - UI, em ordem: cabeçalho com nome do produto e gênero (só leitura); campos herdáveis (copiar o `campoHerdavel` de `dialog-cadastro-grade.tsx:423-455`); `<GeradorVariacoes coresFixas tamanhosFixos … />` com `coresBloqueadas`/`tamanhosBloqueados`/`bloquearNovaCor` calculados com `totalDaGrade(...)` **direto** contra 60 — o cartesiano já inclui as células travadas, somar `skus.length` contaria duas vezes (Codex #7). Teste: 30 publicadas (6 cores × 5 tamanhos) + 1 cor nova = 36 → permitido; 12 × 5 = 60 → cor nova bloqueada;
   - Numeração sem guia de tamanhos (Codex #9): neste fluxo o UPDATE vai direto ao ML, então tamanho com `numeracaoPublicavel(t, genero) === false` entra em `tamanhosBloqueados` (não é só aviso, como no cadastro); o gerador mostra o motivo via `avisoTamanho` ("não publica no Mercado Livre para este gênero"). Teste: calçado feminino com `45` bloqueado; masculino com `45` liberado (conferir os valores reais em `COMPRIMENTO_PE_CM` antes de fixar o teste). "Foto por cor" só para cores da grade **sem** `fotoHerdavel` (texto: "Cores novas precisam de foto. Tamanhos novos de cores já publicadas usam a foto da cor."); `<MatrizGrade bloqueadas={bloqueadasDe(skusComSaldoCanonico)} … />` com os mesmos handlers de `dialog-cadastro-grade.tsx` (`patchLinha`, `patchOverride`, `destravar`, `voltarAHerdar`, `removerLinha`, `reincluirLinha`, `aplicarMassa`); banner de "atualização em andamento" (`familiaEmVoo`, igual ao dialog atual).
@@ -839,33 +925,22 @@ it('payload: herda foto quando a linha não tem foto própria e a cor tem foto; 
 - [ ] **Step 6: Roteador** — `dialog-adicionar-variacao-roteador.tsx`:
 ```tsx
 // ADR-0166 2026-09-24c: "Adicionar variação" em produto de grade abre a extensão da matriz; o
-// resto abre o dialog de sempre. Decide pelo DADO do produto (variação com tamanho), não pelo tipo
-// habilitado na org (Codex #8): o tipo pode ter sido desligado depois de a grade ser publicada, e
-// `useTiposProdutoHabilitados` devolve `undefined` = "não sei" em falha. A consulta é a mesma QK
-// do card expandido (cache compartilhado); enquanto carrega, nenhum dialog abre.
+// resto abre o dialog de sempre, na hora, sem consulta nova (INV-1, Codex r2 #6). Decide pelo DADO
+// do produto (`temTamanho`, vindo do resumo — Task 1/2), não pelo tipo habilitado na org (Codex #8).
 export function DialogAdicionarVariacaoRoteador({ produto, onFechar }: {
   produto: ProdutoEstoqueResumo | null; onFechar: () => void;
 }) {
-  const { data: variacoes, isError } = useQuery({
-    queryKey: QK.variacoesEstoque(produto?.codigoPai ?? ''),
-    queryFn: () => fetchVariacoesProduto(produto!.codigoPai),
-    enabled: !!produto,
-  });
-  useEffect(() => {
-    if (produto && isError) { toast.error('Não foi possível carregar as variações do produto.'); onFechar(); }
-  }, [produto, isError, onFechar]);
-  const pronto = produto != null && variacoes !== undefined;
-  const ehGrade = pronto && variacoes.some((v) => v.tamanho);
+  const ehGrade = !!produto?.temTamanho;
   return (
     <>
-      <DialogEstenderGrade produto={produto} aberto={pronto && ehGrade} onFechar={onFechar} />
-      <DialogAdicionarVariacao produto={produto} aberto={pronto && !ehGrade} onFechar={onFechar} />
+      <DialogEstenderGrade produto={ehGrade ? produto : null} aberto={produto != null && ehGrade} onFechar={onFechar} />
+      <DialogAdicionarVariacao produto={ehGrade ? null : produto} aberto={produto != null && !ehGrade} onFechar={onFechar} />
     </>
   );
 }
 ```
   Em `Estoque.tsx`, trocar `<DialogAdicionarVariacao produto=… aberto=… onFechar=… />` por `<DialogAdicionarVariacaoRoteador produto={produtoAddVariacao} onFechar={() => setProdutoAddVariacao(null)} />`.
-  Testes do roteador: (a) produto sem tamanho → `DialogAdicionarVariacao` (título "Adicionar variação", campo Código presente — igual ao de hoje); (b) produto com tamanho → `DialogEstenderGrade`, **mesmo com `tipos_produto_da_org` = `[]`**; (c) enquanto a RPC não respondeu, nenhum dialog aberto; (d) RPC com erro → toast e `onFechar` chamado.
+  Testes do roteador: (a) `temTamanho: false` → `DialogAdicionarVariacao` aberto na hora (título "Adicionar variação", campo Código presente — igual ao de hoje) e nenhuma chamada extra a `variacoes_estoque_produto`; (b) `temTamanho: true` → `DialogEstenderGrade`, **mesmo com `tipos_produto_da_org` = `[]`** (o dialog é que mostra o aviso de tipo desativado); (c) `produto = null` → nenhum dialog aberto.
   INV-1 do fluxo antigo (Codex #12): o teste existente de `dialog-adicionar-variacao` que monta o body enviado à edge tem que continuar passando sem alteração — se não houver um que compare o body inteiro, acrescentar um `toEqual` do body completo antes de mexer em `Estoque.tsx`.
 
 - [ ] **Step 7: Rodar** — `pnpm test src/lib src/components/estoque src/pages` → PASS; `pnpm exec tsc -b --force` → PASS.
@@ -888,4 +963,7 @@ export function DialogAdicionarVariacaoRoteador({ produto, onFechar }: {
 - [ ] **Step 2:** push da branch → CI verde (`frontend`, `backend-lint`).
 - [ ] **Step 3:** `supabase db push` → conferir as duas RPCs com a chave `tamanho` por SQL read-only.
 - [ ] **Step 4:** `supabase functions deploy adicionar-variacoes-familia update-familia-ml reconciliar-convergencia-up` + toda função que importa `_shared/user-products/atributos-irmao.ts` ou `atualizar-familia-up.ts` (listar com `grep -rl "atributos-irmao\|atualizar-familia-up" supabase/functions --include=index.ts --include=processar.ts`) → conferir versão ativa de cada uma.
-- [ ] **Step 5:** merge fast-forward na `main` (`/usr/bin/git push origin <sha>:main`), apagar a branch, remover a worktree (`rm -rf` + `git worktree prune`).
+- [ ] **Step 5:** merge fast-forward na `main` (`/usr/bin/git push origin <sha>:main`). A tela nova só existe para o Diego depois do merge (o front sobe da `main`), então a prova real (Task 8 Step 2b) vem **depois** — e isso fica declarado (Codex r2 #7):
+  - relatório final separa **entrega técnica** (CI, preflight, dry-run, deploy conferido) de **aceite real pendente** (Step 2b) — nunca "concluído" sem as duas;
+  - se o 2b mostrar irmã alterada, `family_id` divergente ou SIZE/GENDER errado: reverter só o commit do roteador (Task 7, `Estoque.tsx` volta a abrir o dialog antigo, que continua recusando grade na UI) com o mesmo ciclo branch → CI → ff, e abrir o incidente antes de qualquer nova tentativa. As mudanças de edge (Tasks 4–5) são compatíveis com o fluxo antigo e ficam.
+- [ ] **Step 6:** depois do 2b aprovado: apagar a branch, remover a worktree (`rm -rf` + `git worktree prune`).
