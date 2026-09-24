@@ -32,8 +32,9 @@ Iniciativa I6 do roadmap de melhorias (2026-09-21), escolhida pelo Diego em 2026
    categoria nova, portanto sem mexer nos CHECKs de `notificacoes`/`profiles`.
 6. **Dedup por `reservarNotificacao(orgId, 'frete_subiu', order_id)`** em `ml_notificacoes_enviadas`, o
    mesmo do aviso de venda paga. Sem coluna de marca nova.
-7. **Best-effort e no fim:** roda depois de alerta de venda, baixa e cancelamento, com prazo total de 8 s;
-   qualquer falha é logada e engolida — o registro da venda nunca cai nem atrasa por ele.
+7. **Best-effort e no fim:** roda depois de alerta de venda, baixa e cancelamento, com prazo de 8 s
+   checado antes da reserva do dedup (estourou → desiste sem reservar; sem trabalho órfão após a resposta);
+   qualquer falha é logada e engolida — o registro da venda nunca cai por ele.
 
 ## Alternativas descartadas
 

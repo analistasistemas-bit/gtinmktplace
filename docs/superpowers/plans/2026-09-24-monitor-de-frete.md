@@ -4,7 +4,7 @@
 
 **Goal:** Avisar (sino + Telegram, categoria `financeiro`) quando o frete pago pelo vendedor numa venda nova de 1 item sobe >10% e ≥R$2 vs a venda anterior do mesmo anúncio, com liga/desliga por org em Configurações > Notificações.
 
-**Architecture:** Função pura de decisão + orquestrador com dependências injetadas (padrão `cancelamento.ts` / `cancelamento-deps.ts`), chamado só pelo `sync-venda` no fim do handler (prazo 8 s), best-effort; a seleção da venda anterior é uma função SQL reusada pela medição. Coluna booleana nova em `configuracoes` com grant de SELECT por coluna. Switch no front no padrão de `reancora_lider_ativa`.
+**Architecture:** Função pura de decisão + orquestrador com dependências injetadas (padrão `cancelamento.ts` / `cancelamento-deps.ts`), chamado só pelo `sync-venda` no fim do handler (prazo checado antes da reserva), best-effort; a seleção da venda anterior é uma função SQL reusada pela medição. Coluna booleana nova em `configuracoes` com grant de SELECT por coluna. Switch no front no padrão de `reancora_lider_ativa`.
 
 **Tech Stack:** Supabase (Postgres + Edge Functions Deno), React + TanStack Query, vitest.
 
@@ -16,7 +16,7 @@
 - Só pedido com **1 item e `quantity = 1`** e **fora de pack** (`pack_id` nulo — em pack o `frete_vendedor` é o frete do ENVIO repetido em cada pedido, ADR-0042 item 4), comparado com a venda anterior do mesmo `ml_item_id` + `variation_id` (null casa com null), também 1 item/1 unidade/fora de pack, `frete_vendedor > 0`, status ≠ `cancelled`.
 - Data da venda = `coalesce(date_closed, date_created)`. "Anterior" = maior `(data, order_id)` estritamente menor que o da venda atual (desempate por `order_id`). A seleção vive na função SQL `frete_venda_anterior` (Task 1), que a medição da Task 6 reusa — código e medição são a mesma regra.
 - Só venda a **no máximo 3 dias** de agora; pedido atual `cancelled` não avisa.
-- O monitor roda no **fim** do `sync-venda` (depois de alerta de venda, baixa e cancelamento) e com **prazo total de 8 s** (`comPrazo`) — nunca atrasa o caminho crítico.
+- O monitor roda no **fim** do `sync-venda` (depois de alerta de venda, baixa e cancelamento) e com **prazo de 8 s checado antes da reserva do dedup** (`limiteMs`): estourou → desiste sem reservar, sem trabalho órfão após a resposta. Sem `Promise.race`.
 - Categoria do aviso: **`financeiro`** (via `notificarCategoria`). Dedup: `reservarNotificacao(admin, orgId, userId, 'frete_subiu', String(order_id))`.
 - Coluna: `configuracoes.monitor_frete_ativo boolean not null default false` + `grant select (monitor_frete_ativo) on public.configuracoes to authenticated`.
 - **Só o `sync-venda` chama o monitor.** Backfill/reconciliação/`sync-devolucao` NÃO.
@@ -40,7 +40,7 @@
 | `supabase/functions/_shared/faturamento/monitor-frete.ts` (novo) | `avaliarAltaFrete` (pura) + `verificarAltaFrete` (orquestra via deps) + tipos. **Sem import Deno-only** (testado por vitest/Node) |
 | `supabase/functions/_shared/faturamento/monitor-frete-deps.ts` (novo) | fiação real das deps com o client admin (só ligação, sem decisão) |
 | `supabase/functions/_shared/faturamento/__tests__/monitor-frete.test.ts` (novo) | testes da pura, da mensagem e do orquestrador |
-| `supabase/functions/sync-venda/index.ts` (mod) | chamada best-effort no fim do handler, com prazo de 8 s |
+| `supabase/functions/sync-venda/index.ts` (mod) | chamada best-effort no fim do handler, com prazo de 8 s checado antes da reserva |
 | `src/lib/queries.ts` (mod) | `fetchMonitorFreteAtivo` / `upsertMonitorFreteAtivo` |
 | `src/hooks/useConfiguracoes.ts` (mod) | `useMonitorFreteAtivo` / `useSalvarMonitorFreteAtivo` |
 | `src/components/configuracoes/secao-notificacoes.tsx` (mod) | grupo "Monitor de frete" com o Switch |
@@ -240,6 +240,8 @@ export interface CtxAltaFrete {
   orgId: string; userId: string; orderId: number; packId: number | null; status: string;
   freteVendedor: number | null; dataVenda: string | null; itens: ItemPedidoFrete[];
   agoraMs?: number; // injetável para teste; default Date.now()
+  limiteMs?: number; // epoch ms; passou dele antes da reserva → desiste sem reservar
+  relogio?: () => number; // injetável para teste; default Date.now
 }
 export interface VendaAnteriorFrete { order_id: number; frete_vendedor: number }
 export interface DepsAltaFrete {
@@ -249,7 +251,6 @@ export interface DepsAltaFrete {
   notificar(orgId: string, texto: string): Promise<unknown>;
 }
 export async function verificarAltaFrete(ctx: CtxAltaFrete, deps: DepsAltaFrete): Promise<boolean> // true = avisou
-export function comPrazo<T>(p: Promise<T>, ms: number, rotulo: string): Promise<T> // rejeita após ms
 export function depsMonitorFrete(admin: SupabaseClient): DepsAltaFrete // em monitor-frete-deps.ts
 ```
 
@@ -257,7 +258,7 @@ export function depsMonitorFrete(admin: SupabaseClient): DepsAltaFrete // em mon
 
 ```ts
 import { vi } from 'vitest';
-import { verificarAltaFrete, comPrazo, type CtxAltaFrete, type DepsAltaFrete } from '../monitor-frete.ts';
+import { verificarAltaFrete, type CtxAltaFrete, type DepsAltaFrete } from '../monitor-frete.ts';
 
 const AGORA = Date.parse('2026-09-24T12:00:00.000Z');
 const base = (over: Partial<CtxAltaFrete> = {}): CtxAltaFrete => ({
@@ -331,13 +332,17 @@ describe('verificarAltaFrete', () => {
     expect(d.notificar).not.toHaveBeenCalled();
   });
 
-  it('comPrazo: rejeita quando estoura o prazo e resolve quando cabe', async () => {
-    vi.useFakeTimers();
-    const lento = comPrazo(new Promise(() => {}), 8000, 'monitor');
-    vi.advanceTimersByTime(8000);
-    await expect(lento).rejects.toThrow(/monitor.*8000/);
-    vi.useRealTimers();
-    await expect(comPrazo(Promise.resolve(42), 8000, 'x')).resolves.toBe(42);
+  it('prazo estourado antes da reserva: não reserva nem avisa', async () => {
+    const d = deps();
+    const r = await verificarAltaFrete(base({ limiteMs: 1000, relogio: () => 1001 }), d);
+    expect(r).toBe(false);
+    expect(d.reservar).not.toHaveBeenCalled();
+    expect(d.notificar).not.toHaveBeenCalled();
+  });
+
+  it('dentro do prazo: segue normal', async () => {
+    const d = deps();
+    expect(await verificarAltaFrete(base({ limiteMs: 1000, relogio: () => 999 }), d)).toBe(true);
   });
 
   it('variação nula é repassada como null', async () => {
@@ -356,15 +361,6 @@ describe('verificarAltaFrete', () => {
 import { montarMensagemAltaFrete } from '../notificacoes/telegram.ts';
 
 const JANELA_MS = 3 * 24 * 60 * 60 * 1000;
-
-/** Prazo total para o monitor não segurar o sync-venda (o envio ao Telegram não tem timeout). */
-export function comPrazo<T>(p: Promise<T>, ms: number, rotulo: string): Promise<T> {
-  let t: ReturnType<typeof setTimeout> | undefined;
-  const prazo = new Promise<never>((_, rej) => {
-    t = setTimeout(() => rej(new Error(`${rotulo}: excedeu ${ms}ms`)), ms);
-  });
-  return Promise.race([p, prazo]).finally(() => clearTimeout(t));
-}
 
 /** ADR-0169. Chamado SÓ pelo sync-venda. Checagens baratas antes de qualquer leitura no banco. */
 export async function verificarAltaFrete(ctx: CtxAltaFrete, deps: DepsAltaFrete): Promise<boolean> {
@@ -389,6 +385,14 @@ export async function verificarAltaFrete(ctx: CtxAltaFrete, deps: DepsAltaFrete)
 
   const alta = avaliarAltaFrete(ctx.freteVendedor, anterior.frete_vendedor);
   if (!alta) return false;
+
+  // Prazo checado ANTES da reserva: se as leituras demoraram, desiste sem tomar o dedup — nada fica
+  // rodando depois da resposta do worker (não há Promise.race nem trabalho órfão no isolate).
+  const relogio = ctx.relogio ?? Date.now;
+  if (ctx.limiteMs != null && relogio() > ctx.limiteMs) {
+    console.warn(`monitor de frete (order ${ctx.orderId}): prazo estourado antes da reserva, desistindo`);
+    return false;
+  }
 
   if (!(await deps.reservar(ctx.orgId, ctx.userId, String(ctx.orderId)))) return false;
 
@@ -451,12 +455,12 @@ export function depsMonitorFrete(admin: SupabaseClient): DepsAltaFrete {
 - Modify: `supabase/functions/sync-venda/index.ts` (imports ~linha 16-18; chamada no FIM do handler, logo depois do bloco `if (orgId) { await tratarPedidoCancelado(...) }` (~linha 246) e ANTES do `if (liquidoPorPayment === null) { return ... 502 }`)
 
 **Interfaces:**
-- Consumes: `verificarAltaFrete`, `comPrazo` (Task 3), `depsMonitorFrete` (Task 3); `upsertVenda` já devolve `itens: VendaItemRow[]`; `frete` já é a variável do `Promise.all`; `pedido.pack_id` existe em `PedidoML`.
+- Consumes: `verificarAltaFrete` (Task 3), `depsMonitorFrete` (Task 3); `upsertVenda` já devolve `itens: VendaItemRow[]`; `frete` já é a variável do `Promise.all`; `pedido.pack_id` existe em `PedidoML`.
 
 - [ ] **Step 1: Imports**
 
 ```ts
-import { verificarAltaFrete, comPrazo } from '../_shared/faturamento/monitor-frete.ts';
+import { verificarAltaFrete } from '../_shared/faturamento/monitor-frete.ts';
 import { depsMonitorFrete } from '../_shared/faturamento/monitor-frete-deps.ts';
 ```
 
@@ -464,17 +468,17 @@ import { depsMonitorFrete } from '../_shared/faturamento/monitor-frete-deps.ts';
 
 ```ts
   // ADR-0169 — monitor de frete. SÓ aqui (não em backfill/reconciliação), para histórico nunca
-  // virar avalanche de avisos. Fica no FIM de propósito e com prazo total de 8 s: nunca atrasa
-  // alerta de venda, baixa ou cancelamento. Best-effort: falha do monitor não derruba o sync.
+  // virar avalanche de avisos. Fica no FIM de propósito (depois de alerta de venda, baixa e
+  // cancelamento) e com prazo de 8 s checado antes da reserva do dedup. Best-effort.
   if (orgId) {
     try {
-      await comPrazo(verificarAltaFrete({
-        orgId, userId, orderId: Number(pedido.id),
+      await verificarAltaFrete({
+        orgId, userId, orderId: Number(pedido.id), limiteMs: Date.now() + 8000,
         packId: pedido.pack_id != null ? Number(pedido.pack_id) : null,
         status: String(pedido.status ?? ''),
         freteVendedor: frete, dataVenda: pedido.date_closed ?? pedido.date_created ?? null,
         itens: itens.map((i) => ({ ml_item_id: i.ml_item_id, variation_id: i.variation_id, quantity: i.quantity, titulo: i.titulo })),
-      }, depsMonitorFrete(admin)), 8000, 'monitor de frete');
+      }, depsMonitorFrete(admin));
     } catch (e) {
       console.error(`monitor de frete (order ${pedido.id}): ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -671,15 +675,15 @@ with atual as (
 select a.org_id,
   count(*) as elegiveis,
   count(ant.order_id) as comparaveis,
-  count(*) filter (where a.frete - ant.frete_vendedor >= 2 and a.frete > ant.frete_vendedor * 1.10) as avisos
+  count(*) filter (where a.frete - ant.frete_vendedor >= 2 and a.frete > ant.frete_vendedor * 1.10) as teto_avisos
 from atual a
 left join lateral public.frete_venda_anterior(a.org_id, a.ml_item_id, a.variation_id, a.data, a.order_id) ant on true
 group by a.org_id;
 ```
 
-  Reportar ao Diego: vendas comparáveis e avisos/60 dias por org. Se o volume parecer barulho, parar e rediscutir o limite antes do deploy.
+  Reportar ao Diego como **teto** (vendas que entraram por backfill/reconciliação também contam, mas não dispariam o monitor): elegíveis, comparáveis e `teto_avisos`/60 dias por org. Se o volume parecer barulho, parar e rediscutir o limite antes do deploy.
 - [ ] **Step 6: Deploy** — `supabase functions deploy sync-venda`; `supabase functions list | grep sync-venda` → versão nova com `UPDATED_AT` de agora.
-- [ ] **Step 6b: Latência** — nos logs do `sync-venda` (Management API, com `iso_timestamp_start/end`), comparar `execution_time_ms` das execuções antes e depois do deploy; nenhum `monitor de frete: excedeu 8000ms`. O toggle só é ligado por decisão do Diego.
+- [ ] **Step 6b: Latência** — nos logs do `sync-venda` (Management API, com `iso_timestamp_start/end`), comparar `execution_time_ms` das execuções antes e depois do deploy; nenhum `prazo estourado antes da reserva` recorrente. O toggle só é ligado por decisão do Diego.
 - [ ] **Step 7: Docs** — `docs/TASKS.md` (seção nova no topo, 2026-09-24, com o checklist desta entrega) e `docs/reference/edge-functions.md` (linha do `sync-venda`: "chama o monitor de frete, ADR-0169"). Commit.
 - [ ] **Step 8: Merge** — CI verde no último commit → `git fetch` → fast-forward `git push origin <sha>:main` → apagar branch local/remota e o worktree → `git pull --ff-only` no checkout principal.
 - [ ] **Step 9: Graphify** — atualizar o grafo (skill `graphify-update-maintenance`) com os arquivos novos.
