@@ -55,13 +55,17 @@ create table public.ml_promocoes_sync (
   erro            text
 );
 
--- RLS: membro lê a própria org; insert/update/delete ficam só com service_role (sem grant).
+-- RLS: membro lê a própria org. Escrita só pelo service_role: os default privileges do Supabase dão ALL
+-- a anon/authenticated em tabela nova do public; os revokes abaixo tiram tudo de anon e, de authenticated,
+-- tudo exceto SELECT (TRUNCATE não passa por RLS). Precedente: 20260712142159_revoke_anon_ml_mensagens.sql.
 alter table public.ml_promocoes      enable row level security;
 alter table public.ml_promocao_itens enable row level security;
 alter table public.ml_promocoes_sync enable row level security;
 create policy "ml_promocoes: select org"      on public.ml_promocoes      for select to authenticated using (org_id = (select public.current_org_id()));
 create policy "ml_promocao_itens: select org" on public.ml_promocao_itens for select to authenticated using (org_id = (select public.current_org_id()));
 create policy "ml_promocoes_sync: select org" on public.ml_promocoes_sync for select to authenticated using (org_id = (select public.current_org_id()));
+revoke all on public.ml_promocoes, public.ml_promocao_itens, public.ml_promocoes_sync from anon;
+revoke insert, update, delete, truncate, references, trigger on public.ml_promocoes, public.ml_promocao_itens, public.ml_promocoes_sync from authenticated;
 grant select on public.ml_promocoes, public.ml_promocao_itens, public.ml_promocoes_sync to authenticated;
 
 -- Switch dos alertas (nasce desligado). SELECT de configuracoes é por coluna desde 20260822131053.
