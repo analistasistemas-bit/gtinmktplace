@@ -30,6 +30,7 @@ const TABELAS = [
   'ml_vendas_itens', 'ml_perguntas', 'ml_devolucoes', 'ml_moderacao', 'ml_webhook_eventos', 'configuracoes',
   'estoque_movimentos',
   'pulse_produtos', 'pulse_ofertas', 'pulse_vendedores', 'pulse_alertas',
+  'ml_promocoes', 'ml_promocao_itens', 'ml_promocoes_sync',
 ];
 
 type Resultado = { assercao: string; status: 'PASS' | 'FAIL'; detalhe: string };
@@ -81,6 +82,12 @@ async function criarTenant(tag: string) {
     p_canal: 'mercado_livre', p_ref: `iso:${tag}:${Date.now()}`,
   });
   if (baixaErr) throw new Error(`baixar_estoque no seed ${tag}: ${baixaErr.message}`);
+  // ADR-0170: Central de Promoções (escrita só pelo worker/service_role).
+  const promoId = `P-ISO-${tag}`;
+  const { error: promoErr } = await svc.from('ml_promocoes').insert({ org_id: orgId, promocao_id: promoId, tipo: 'DEAL', status: 'pending' });
+  if (promoErr) throw new Error(`ml_promocoes no seed ${tag}: ${promoErr.message}`);
+  await svc.from('ml_promocao_itens').insert({ org_id: orgId, promocao_id: promoId, ml_item_id: `MLB${tag}1`, status: 'candidate', pior_semaforo: 'verde' });
+  await svc.from('ml_promocoes_sync').insert({ org_id: orgId, estado: 'ok' });
 
   return { orgId, userId, email, senha, loteId: lote!.id as string, famId: fam!.id as string };
 }
@@ -120,6 +127,15 @@ async function main() {
   // 3. Escrita cruzada: B não insere linha com org_id de A (WITH CHECK bloqueia).
   const { error: insErr } = await cliB.from('lotes').insert({ user_id: B.userId, org_id: A.orgId, numero: (Date.now() % 2000000000) + 1 });
   assert(!!insErr, 'B não insere lote com org_id de A (WITH CHECK bloqueia)', 'insert cruzado NÃO foi bloqueado');
+
+  // 3a. ADR-0170: tabelas da Central de Promoções não aceitam escrita de `authenticated`, nem na própria org.
+  for (const t of ['ml_promocoes', 'ml_promocoes_sync'] as const) {
+    const linha = t === 'ml_promocoes'
+      ? { org_id: B.orgId, promocao_id: `P-ISO-X-${Date.now()}`, tipo: 'DEAL', status: 'pending' }
+      : { org_id: B.orgId, estado: 'ok' };
+    const { error: e } = await cliB.from(t).insert(linha);
+    assert(!!e, `${t}: B não insere nem na própria org (escrita só do worker)`, `insert em ${t} NÃO foi bloqueado`);
+  }
 
   // 3b. E6b/D-15: `estoque_movimentos` não tem policy de escrita — nem na própria org.
   const { error: movInsErr } = await cliB.from('estoque_movimentos').insert({
@@ -236,7 +252,7 @@ async function main() {
     // limpa, e a FK para `organizations` trava o delete da org, deixando lixo no banco.
     // `estoque_movimentos` e as `pulse_*` vêm primeiro: referenciam organizations sem
     // ON DELETE CASCADE (as pulse_* na ordem filhas → pai).
-    for (const t of ['estoque_movimentos', 'pulse_alertas', 'pulse_ofertas', 'pulse_vendedores', 'pulse_produtos', 'ml_vendas_itens', 'ml_moderacao', 'ml_devolucoes', 'ml_perguntas', 'ml_webhook_eventos', 'ml_vendas', 'ml_credentials', 'anuncios_externos', 'variacoes', 'familias', 'lotes', 'configuracoes']) {
+    for (const t of ['ml_promocao_itens', 'ml_promocoes', 'ml_promocoes_sync', 'estoque_movimentos', 'pulse_alertas', 'pulse_ofertas', 'pulse_vendedores', 'pulse_produtos', 'ml_vendas_itens', 'ml_moderacao', 'ml_devolucoes', 'ml_perguntas', 'ml_webhook_eventos', 'ml_vendas', 'ml_credentials', 'anuncios_externos', 'variacoes', 'familias', 'lotes', 'configuracoes']) {
       const { error } = await svc.from(t).delete().eq('org_id', tenant.orgId);
       // Limpeza silenciosa que falha deixa dado de teste no banco (aconteceu em
       // 2026-07-29 com estoque_movimentos). Erro aqui tem que aparecer.
