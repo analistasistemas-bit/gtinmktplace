@@ -45,6 +45,7 @@ flowchart LR
 - Módulo Pulse (`/pulse`): inteligência de mercado, radar de concorrência qualificada (ADR-0130) e garimpo Sonar (ADR-0140) com Apify fallback
 - Módulo Financeiro (caixa, margem, evolução temporal) e Faturamento em produção
 - Remoção de publicado com encerramento automático de MLB sem venda (ADR-0168)
+- Monitor de frete: alerta quando o frete pago num anúncio sobe >10% e ≥R$2, liga/desliga por org (ADR-0169)
 - Fonte sempre atualizada: `docs/project-status.md`
 
 ## Pipeline principal
