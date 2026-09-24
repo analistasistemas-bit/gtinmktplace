@@ -1098,7 +1098,12 @@ um smoke test contra Postgres real antes do primeiro deploy.
   conectada (`ehVendaDaConta`, ADR-0117): o webhook `orders_v2` notifica também pedidos em que a
   conta é COMPRADORA, e sem a guarda cada compra da empresa virava linha de venda (23 na base,
   R$ 8.810,50 em `paid`). Responde 200 `{ignorado:'compra-da-conta'}` — 4xx/5xx faria o QStash
-  re-tentar para sempre.
+  re-tentar para sempre. No fim do handler (depois de alerta de venda, baixa e cancelamento) chama o
+  **monitor de frete** (ADR-0169, `_shared/faturamento/monitor-frete.ts`): pedido de 1 item/1 unidade
+  fora de pack cujo frete subiu >10% e ≥R$2 vs a venda anterior do mesmo anúncio (função SQL
+  `frete_venda_anterior`) avisa a categoria `financeiro`, se `configuracoes.monitor_frete_ativo`.
+  Best-effort (try/catch) e com prazo de 8 s checado antes da reserva do dedup. Único caller:
+  backfill/reconciliação/`sync-devolucao` não chamam o monitor.
 - **ml-webhook** — receiver público do ML: ACK rápido (<500ms), dedup em `ml_webhook_eventos`,
   roteia para `sync-venda` (orders/shipments), `sync-pergunta` (questions), `sync-devolucao`
   (claims) ou `sync-mensagem` (messages). Nunca confia no corpo — o worker re-busca autenticado
