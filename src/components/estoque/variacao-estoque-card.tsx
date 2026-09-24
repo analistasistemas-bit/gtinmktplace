@@ -5,6 +5,7 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { useImageUrl } from '@/hooks/useImageUrl';
 import { fmtBRL } from '@/lib/formato';
 import type { VariacaoComSaldo } from '@/lib/produtos-saldo';
+import { rotuloVariacao } from '@/lib/rotulo-variacao';
 
 /** "200g · 10×20×30cm", só as partes informadas. "—" se nada foi preenchido. */
 function rotuloDimensoes(v: VariacaoComSaldo): string {
@@ -33,7 +34,7 @@ export function VariacaoEstoqueCard({ variacao: v }: { variacao: VariacaoComSald
           <span className="truncate font-mono font-medium">{v.codigo}</span>
           <span className="shrink-0 tabular-nums font-medium">{v.estoque}</span>
         </div>
-        <span className="truncate text-muted-foreground">{v.cor ?? v.nome ?? '—'}</span>
+        <span className="truncate text-muted-foreground">{rotuloVariacao(v) ?? '—'}</span>
         <span className="truncate text-muted-foreground">GTIN {v.gtin ?? '—'}</span>
         <span className="truncate text-muted-foreground">{rotuloDimensoes(v)}</span>
         <span className="truncate text-muted-foreground">

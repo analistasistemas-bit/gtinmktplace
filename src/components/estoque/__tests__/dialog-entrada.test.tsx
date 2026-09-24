@@ -106,6 +106,15 @@ describe('DialogEntrada — modo lista (aberto pelo card do produto)', () => {
     await screen.findByText(/18760901 · Vermelho/);
     expect(screen.getByRole('button', { name: /Registrar entrada/ })).toBeDisabled();
   });
+
+  // ADR-0166 (Task 3): cor com tamanho ganha o sufixo no rótulo da lista.
+  it('cor com tamanho aparece como "<codigo> · Preto · M"', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValueOnce([
+      { ...variacao('09200001', 'Preto', 5), tamanho: 'M' },
+    ]);
+    renderDialog({ codigoPaiInicial: '26705341' });
+    expect(await screen.findByText('09200001 · Preto · M')).toBeInTheDocument();
+  });
 });
 
 describe('DialogEntrada — modo picker (botão do topo da página)', () => {

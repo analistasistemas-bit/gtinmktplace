@@ -26,9 +26,10 @@ import {
   filtrarOpcoesSku,
   montarOpcoesSku,
 } from '@/lib/dialog-entrada-busca';
+import { rotuloVariacao } from '@/lib/rotulo-variacao';
 
-function rotuloVariacao(v: { codigo: string; cor: string | null; nome: string | null }): string {
-  const complemento = v.cor ?? v.nome;
+function rotuloComCodigo(v: { codigo: string; cor: string | null; nome: string | null; tamanho?: string | null }): string {
+  const complemento = rotuloVariacao(v);
   return complemento ? `${v.codigo} · ${complemento}` : v.codigo;
 }
 
@@ -212,7 +213,7 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
                     className="flex items-center justify-between gap-3 border-b px-3 py-2 last:border-b-0"
                   >
                     <div className="min-w-0">
-                      <div className="truncate text-sm">{rotuloVariacao(l.v)}</div>
+                      <div className="truncate text-sm">{rotuloComCodigo(l.v)}</div>
                       <div className="text-xs text-muted-foreground">
                         saldo <span className="tabular-nums">{l.v.estoque}</span>
                         {l.preenchida && !l.invalido && (
@@ -221,7 +222,7 @@ export function DialogEntrada({ aberto, onFechar, skuInicial, codigoPaiInicial }
                       </div>
                     </div>
                     <Input
-                      aria-label={`Quantidade para ${rotuloVariacao(l.v)}`}
+                      aria-label={`Quantidade para ${rotuloComCodigo(l.v)}`}
                       type="number" min={1} step={1} inputMode="numeric" placeholder="0"
                       className={`h-8 w-24 shrink-0 text-right ${l.invalido ? 'border-destructive' : ''}`}
                       value={l.bruto}

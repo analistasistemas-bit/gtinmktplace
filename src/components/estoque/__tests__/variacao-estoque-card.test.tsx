@@ -33,4 +33,10 @@ describe('VariacaoEstoqueCard', () => {
     render(<VariacaoEstoqueCard variacao={variacao({ estoque: -3 })} />);
     expect(screen.getByText('saldo inconsistente')).toBeInTheDocument();
   });
+
+  // ADR-0166 (Task 3): variação de grade ganha o tamanho no rótulo do card.
+  it('com tamanho, mostra "cor · tamanho"', () => {
+    render(<VariacaoEstoqueCard variacao={variacao({ cor: 'Preto', nome: 'Preto', tamanho: 'M' })} />);
+    expect(screen.getByText('Preto · M')).toBeInTheDocument();
+  });
 });

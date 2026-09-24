@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Pagination } from '@/components/ui/pagination';
 import { FiltrosMovimentos, type VariacaoFiltro } from '@/components/estoque/filtros-movimentos';
 import { resolverJanela, type Periodo } from '@/lib/metricas';
+import { rotuloVariacao } from '@/lib/rotulo-variacao';
 import {
   fetchMovimentosEstoque, rotuloMotivo, movimentoInformativo,
   type MovimentoEstoque, type GrupoMotivo, type FiltroMovimentos,
@@ -44,6 +45,13 @@ export function MovimentosEstoque({
   const [periodo, setPeriodo] = useState<Periodo | null>(null);
   const [codigo, setCodigo] = useState<string | null>(null);
   const [ordem, setOrdem] = useState<'recentes' | 'antigos'>('recentes');
+
+  // Só variação COM tamanho ganha sufixo: produto comum mantém a linha "só código" de hoje (INV-1).
+  const rotuloPorCodigo = useMemo(
+    () => new Map(variacoes.filter((v) => v.tamanho?.trim())
+      .map((v) => [v.codigo, rotuloVariacao({ cor: v.cor, nome: v.nome ?? null, tamanho: v.tamanho })])),
+    [variacoes],
+  );
 
   const filtro: FiltroMovimentos = useMemo(() => ({
     grupos,
@@ -119,6 +127,9 @@ export function MovimentosEstoque({
               <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-0.5">
                 <span className="tabular-nums text-muted-foreground">{fmtDataHora(m.criado_em)}</span>
                 <span className="font-mono">{m.codigo}</span>
+                {rotuloPorCodigo.get(m.codigo) && (
+                  <span className="text-muted-foreground"> · {rotuloPorCodigo.get(m.codigo)}</span>
+                )}
                 <span className="min-w-0">
                   {rotuloMotivo(m.motivo)}
                   {/* Vendeu mais do que havia: o saldo parou em 0 e o pedido real fica visível. */}

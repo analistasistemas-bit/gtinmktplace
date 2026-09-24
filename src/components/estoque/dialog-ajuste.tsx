@@ -11,9 +11,10 @@ import {
 } from '@/components/ui/dialog';
 import { QK } from '@/lib/queries';
 import { ajustarEstoque, type ProdutoComSaldo } from '@/lib/produtos-saldo';
+import { rotuloVariacao } from '@/lib/rotulo-variacao';
 
-function rotuloVariacao(v: { codigo: string; cor: string | null; nome: string | null }): string {
-  const complemento = v.cor ?? v.nome;
+function rotuloComCodigo(v: { codigo: string; cor: string | null; nome: string | null; tamanho?: string | null }): string {
+  const complemento = rotuloVariacao(v);
   return complemento ? `${v.codigo} · ${complemento}` : v.codigo;
 }
 
@@ -114,7 +115,7 @@ export function DialogAjuste({ produto, aberto, onFechar }: {
             {linhas.map(({ v, bruto, invalido, aumenta }) => (
               <div key={v.codigo} className="flex min-w-0 items-center gap-2">
                 <div className="flex min-w-0 flex-1 flex-col">
-                  <span className="truncate text-sm">{rotuloVariacao(v)}</span>
+                  <span className="truncate text-sm">{rotuloComCodigo(v)}</span>
                   <span className="text-xs text-muted-foreground tabular-nums">saldo {v.estoque}</span>
                 </div>
                 <Input

@@ -47,6 +47,12 @@ describe('VariacaoEstoqueLinha', () => {
     expect(screen.getByText(/custo — · preço/)).toBeInTheDocument();
   });
 
+  // ADR-0166 (Task 3): variação de grade ganha o tamanho no rótulo da linha expandida.
+  it('com tamanho, mostra "cor · tamanho"', () => {
+    render(<VariacaoEstoqueLinha variacao={variacao({ cor: 'Preto', nome: 'Preto', tamanho: 'M' })} />);
+    expect(screen.getByText('Preto · M')).toBeInTheDocument();
+  });
+
   // O bug que originou a coluna: `variacoes.preco` é o preço da planilha/markup e não é
   // reconciliado com o ML (NIVEA a R$ 28,99 na tela contra R$ 39,90 no anúncio). Quando o preço
   // vivo do canal é conhecido, é ELE que a coluna mostra — o local vira nota de rodapé.
