@@ -91,6 +91,10 @@ verify_jwt = false
 # checagem real (assinatura ou requireUserOrg) é dentro da function.
 [functions.pulse-coletar]
 verify_jwt = false
+# ADR-0170 (Central de Promoções): dual-mode como monitorar-moderados — QStash (schedule/fan-out/
+# leitura) sem JWT; a função valida a assinatura QStash ou o JWT do usuário (ADR-0046).
+[functions.sincronizar-promocoes]
+verify_jwt = false
 
 # --- verify_jwt = true (chamadas com JWT: frontend ou QStash autenticado) ---
 [functions.atributos-familia]
