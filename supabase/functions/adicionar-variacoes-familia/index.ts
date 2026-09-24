@@ -191,7 +191,13 @@ Deno.serve(async (req) => {
   // D-8: recusa se já existe família NÃO-TERMINAL para este codigo_pai (lote em voo) — dois
   // lotes da mesma família em voo é a receita para o race condition que o ADR-0104 já trata
   // como risco de composição. Órfã deste fluxo é limpa antes de recusar (ver `haFamiliaEmVoo`).
-  if (await haFamiliaEmVoo(admin, orgId, codigoPai, new Date())) {
+  let emVoo: boolean;
+  try { emVoo = await haFamiliaEmVoo(admin, orgId, codigoPai, new Date()); }
+  catch (e) {
+    console.error('adicionar_variacoes_familia_emvoo_falhou', { orgId, codigoPai, erro: String(e) });
+    return json({ error: 'Falha verificando atualização em andamento.' }, 500);
+  }
+  if (emVoo) {
     return json({ error: 'Já existe uma atualização em andamento para este produto.' }, 409);
   }
 

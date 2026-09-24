@@ -43,8 +43,15 @@ insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai,
 values ('92000000-0000-0000-0000-000000000304', '92000000-0000-0000-0000-000000000202',
   '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
   '09300000', 'Fita teste', 'UPDATE', 'nacional', gen_random_uuid(), now() + interval '1 minute');
+-- Tamanho só com espaços é "sem tamanho" (mesma regra de `classificarFamilia`, que usa trim()).
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, ml_item_id, publicado_em)
+values ('92000000-0000-0000-0000-000000000306', '92000000-0000-0000-0000-000000000201',
+  '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
+  '09600000', 'Caneca teste', 'CREATE', 'nacional', gen_random_uuid(), 'MLB-TESTE-BRANCO', now());
 insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, tamanho, preco, estoque)
 values
+  ('92000000-0000-0000-0000-000000000306', '92000000-0000-0000-0000-000000000101',
+   '92000000-0000-0000-0000-000000000001', '09600001', 'Branco', 'Branco', '  ', 50, 0),
   ('92000000-0000-0000-0000-000000000302', '92000000-0000-0000-0000-000000000101',
    '92000000-0000-0000-0000-000000000001', '09500001', 'Preto', 'Preto', 'G', 50, 0),
   ('92000000-0000-0000-0000-000000000305', '92000000-0000-0000-0000-000000000101',
@@ -84,5 +91,8 @@ begin
   if (r->>'tem_tamanho')::boolean is distinct from true then raise exception 'tem_tamanho deveria vir da última PUBLICADA (grade): %', r; end if;
   select p into r from json_array_elements(public.produtos_estoque_resumo()->'produtos') p where p->>'codigo_pai' = '09300000';
   if (r->>'tem_tamanho')::boolean is distinct from false then raise exception 'tem_tamanho deveria vir da última PUBLICADA (simples): %', r; end if;
+  select p into r from json_array_elements(public.produtos_estoque_resumo()->'produtos') p where p->>'codigo_pai' = '09600000';
+  if r is null then raise exception 'produto 09600000 ausente do resumo'; end if;
+  if (r->>'tem_tamanho')::boolean is distinct from false then raise exception 'tamanho só com espaços não é tamanho: %', r; end if;
 end $$;
 rollback;

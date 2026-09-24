@@ -10,8 +10,9 @@
 // Casamento por nome normalizado e EXATO: o dicionário do ML separa "Azul", "Azul-marinho" e
 // "Azul-escuro", então prefixo/substring casaria cores diferentes — pior que não resolver.
 
-/** minúsculas, sem acento, hífen vira espaço, espaços colapsados. */
-function normalizar(s: string): string {
+/** minúsculas, sem acento, hífen vira espaço, espaços colapsados. Também é a chave de "mesma cor"
+ *  do par cor × tamanho em `adicionar-variacoes-familia` e na tela de estender a grade. */
+export function normalizarNomeCor(s: string): string {
   return s
     .toLowerCase()
     .normalize('NFD')
@@ -26,7 +27,7 @@ export function resolverCorValueId(
   cor: string | null | undefined,
   valores: readonly { id: string; nome: string }[],
 ): string | null {
-  const alvo = normalizar(cor ?? '');
+  const alvo = normalizarNomeCor(cor ?? '');
   if (!alvo) return null;
-  return valores.find((v) => normalizar(v.nome) === alvo)?.id ?? null;
+  return valores.find((v) => normalizarNomeCor(v.nome) === alvo)?.id ?? null;
 }

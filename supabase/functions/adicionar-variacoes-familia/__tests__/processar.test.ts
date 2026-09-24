@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirIncompleto, decidirRetry,
-  detectarUP, familiaTemTamanho, haFamiliaEmVoo, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
+  detectarUP, haFamiliaEmVoo, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   precoPublicacaoNova, resolverFotoHerdada, STRIP_FAMILIA, STRIP_VARIACAO, validarEntrada,
   validarGrade, type VariacaoNovaEntrada,
 } from '../processar.ts';
@@ -122,6 +122,12 @@ describe('validarEntrada', () => {
     expect(erros.some((e) => e.campo.startsWith('variacoes') && e.mensagem.includes('duplicado'))).toBe(true);
   });
 
+  it('sem foto no fluxo SEM tamanho: mensagem de sempre (INV-1)', () => {
+    const { imagemPath: _i, ...semFoto } = variacaoValida();
+    const erros = validarEntrada({ ...bodyValido(), variacoes: [semFoto] }, userId);
+    expect(erros).toEqual([{ campo: 'variacoes[0].imagemPath', mensagem: 'Foto é obrigatória.' }]);
+  });
+
   it('chave fora do formato uuid gera erro', () => {
     const erros = validarEntrada({ ...bodyValido(), chave: 'not-a-uuid' }, userId);
     expect(erros.some((e) => e.campo === 'chave')).toBe(true);
@@ -140,20 +146,6 @@ describe('precoPublicacaoNova', () => {
   });
   it('preco_publicacao nulo não conta — cai no fallback', () => {
     expect(precoPublicacaoNova([{ preco_publicacao: null, excluida_da_publicacao: false }], 99)).toBe(99);
-  });
-});
-
-describe('familiaTemTamanho (ADR-0166 / R4)', () => {
-  it('familia sem tamanho nenhum libera o fluxo', () => {
-    expect(familiaTemTamanho([{ tamanho: null }, { tamanho: '  ' }])).toBe(false);
-  });
-
-  it('UMA variacao com tamanho ja bloqueia — familia mista nao pode nascer', () => {
-    expect(familiaTemTamanho([{ tamanho: null }, { tamanho: 'P' }])).toBe(true);
-  });
-
-  it('lista vazia nao bloqueia', () => {
-    expect(familiaTemTamanho([])).toBe(false);
   });
 });
 
@@ -343,7 +335,9 @@ describe('validarEntrada — grade', () => {
     expect(validarEntrada({ ...base, variacoes: [{ ...v, fotoDeCodigo: '00000001' }] }, 'u1')).toEqual([]);
   });
   it('recusa sem foto nenhuma e com as duas', () => {
-    expect(validarEntrada({ ...base, variacoes: [{ ...v }] }, 'u1').map((e) => e.campo)).toContain('variacoes[0].imagemPath');
+    expect(validarEntrada({ ...base, variacoes: [{ ...v }] }, 'u1')).toEqual([
+      { campo: 'variacoes[0].imagemPath', mensagem: 'Envie a foto ou herde a de um SKU da mesma cor.' },
+    ]);
     expect(validarEntrada({ ...base, variacoes: [{ ...v, imagemPath: 'u1/x', fotoDeCodigo: '1' }] }, 'u1').map((e) => e.campo)).toContain('variacoes[0].imagemPath');
   });
   it('sem tamanho continua exigindo código (fluxo antigo intacto)', () => {
@@ -374,6 +368,11 @@ describe('validarGrade', () => {
     expect(validarGrade([nova('Preto', 'M')], ctx)).toHaveLength(1);
     expect(validarGrade([nova('Verde', 'P'), nova('Verde', 'P')], ctx)).toHaveLength(1);
   });
+  it('par com a cor na grafia do ML ("Azul-marinho" × "Azul Marinho") é o MESMO par', () => {
+    const c = { ...ctx, vivas: [...vivas, { codigo: '00000003', cor: 'Azul Marinho', tamanho: 'P', excluida_da_publicacao: false }] };
+    expect(validarGrade([nova('Azul-marinho', 'P')], c)[0]!.mensagem).toMatch(/já existe/);
+    expect(validarGrade([nova('preto', 'G'), nova('Preto', 'G')], ctx)).toHaveLength(1);
+  });
   it('recusa tamanho fora da whitelist, sem tamanho e com código', () => {
     expect(validarGrade([nova('Verde', 'XGG')], ctx)[0]!.mensagem).toMatch(/tamanho/i);
     expect(validarGrade([nova('Verde')], ctx)[0]!.mensagem).toMatch(/tamanho/i);
@@ -394,6 +393,7 @@ describe('validarGrade', () => {
   it('fotoDeCodigo tem que apontar para SKU vivo da MESMA cor', () => {
     expect(validarGrade([nova('Preto', 'G', { imagemPath: undefined, fotoDeCodigo: '00000001' })], ctx)).toEqual([]);
     expect(validarGrade([nova('Verde', 'G', { imagemPath: undefined, fotoDeCodigo: '00000001' })], ctx)).toHaveLength(1);
+    expect(validarGrade([nova('PRETO', 'G', { imagemPath: undefined, fotoDeCodigo: '00000001' })], ctx)).toEqual([]);
   });
   it('org com roupa E calçado: jaqueta publicada não aceita numeração (Codex r2 #1)', () => {
     const c = { ...ctx, tiposHabilitados: ['roupa', 'calcado'] };
@@ -467,6 +467,10 @@ describe('resolverFotoHerdada', () => {
   it('irmão só com ml_picture_id ainda serve', () => {
     expect(resolverFotoHerdada('00000001', 'Preto', [{ codigo: '00000001', cor: 'Preto', imagem_path: null, ml_picture_id: 'PIC' }]))
       .toEqual({ imagemPath: null, mlPictureId: 'PIC' });
+  });
+  it('mesma cor em outra grafia ("Azul-marinho" × "Azul Marinho") herda', () => {
+    expect(resolverFotoHerdada('1', 'Azul-marinho', [{ codigo: '00000001', cor: 'Azul Marinho', imagem_path: 'o/a.jpg', ml_picture_id: null }]))
+      .toEqual({ imagemPath: 'o/a.jpg', mlPictureId: null });
   });
   it('cor diferente ou irmão sem foto nenhuma → null', () => {
     expect(resolverFotoHerdada('00000001', 'Verde', [{ codigo: '00000001', cor: 'Preto', imagem_path: 'x', ml_picture_id: null }])).toBeNull();
@@ -652,6 +656,11 @@ describe('haFamiliaEmVoo — órfã deste fluxo (rodada 2)', () => {
   it('erro na contagem de variações → nada apagado, 409 emVoo', async () => {
     const b = cenario(fam(), [], ['variacoes']);
     expect(await haFamiliaEmVoo(b.admin, 'org', '00000100', agora)).toBe(true);
+    expect(b.apagados).toEqual([]);
+  });
+  it('erro na consulta de famílias em voo → lança (fail-closed), nada apagado', async () => {
+    const b = cenario(fam(), [], ['familias']);
+    await expect(haFamiliaEmVoo(b.admin, 'org', '00000100', agora)).rejects.toThrow(/atualização em andamento/);
     expect(b.apagados).toEqual([]);
   });
   it('sem família em voo → uma consulta só, nada apagado', async () => {

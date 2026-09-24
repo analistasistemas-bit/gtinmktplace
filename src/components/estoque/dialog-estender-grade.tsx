@@ -49,6 +49,7 @@ import { erroCampo } from '@/components/estoque/linha-variacao-form';
 import { CAMPOS_NUMERICOS } from '@/components/estoque/use-cadastro-produto';
 import { fetchVariacoesProduto, type ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
 import { cn } from '@/lib/utils';
+import { normalizarNomeCor } from '../../../supabase/functions/_shared/cor/value-id';
 
 const CABECALHO_VAZIO: CamposHerdaveis = {
   preco: '', custo: '', pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '',
@@ -209,6 +210,12 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
   const gruposTamanho = opcoesDeTamanho(tipo ? [tipo] : []);
   const generoNorm = (familiaPublicada?.genero as Genero | null) ?? null;
 
+  // Teto igual ao da edge (`vivas.length + novas`, index.ts): o cartesiano já conta as travadas
+  // DENTRO dos eixos; as excluídas com eixo FORA da grade atual não viram célula, mas a edge conta.
+  const totalComoEdge = (cs: string[], ts: string[], rem: ReadonlySet<string>) =>
+    totalDaGrade(cs, ts, rem)
+    + skus.filter((s) => s.excluida && !(cs.includes(s.cor) && ts.includes(s.tamanho))).length;
+
   // Semeia cores/tamanhos com os eixos já publicados assim que a família chega — só ACRESCENTA
   // (nunca some, e checkbox fixo não pode ser desmarcado), então rodar de novo em cada refetch é
   // inofensivo.
@@ -273,7 +280,12 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
 
   function mudarCores(proximas: Set<string>) {
     if (salvando) return;
-    if (totalDaGrade([...proximas], [...tamanhos], removidas) > LIMITE_VARIACOES_GERADAS) return;
+    // Mesma chave de cor da edge (`validarGrade`): "Azul-marinho" com "Azul Marinho" na grade
+    // seria recusado lá como par repetido — nem deixa acrescentar.
+    const existentes = [...cores, ...skus.map((s) => s.cor)].map(normalizarNomeCor);
+    const repetida = [...proximas].find((c) => !cores.has(c) && existentes.includes(normalizarNomeCor(c)));
+    if (repetida) { toast.error(`A cor "${repetida}" já existe nesta grade.`); return; }
+    if (totalComoEdge([...proximas], [...tamanhos], removidas) > LIMITE_VARIACOES_GERADAS) return;
     const saindo = [...cores].filter((c) => !proximas.has(c) && !eixosFixos.cores.has(c));
     const afetadas = linhas.filter((l) => saindo.includes(l.cor));
     if (afetadas.some(temDado)) {
@@ -290,7 +302,7 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
 
   function mudarTamanhos(proximos: Set<string>) {
     if (salvando) return;
-    if (totalDaGrade([...cores], [...proximos], removidas) > LIMITE_VARIACOES_GERADAS) return;
+    if (totalComoEdge([...cores], [...proximos], removidas) > LIMITE_VARIACOES_GERADAS) return;
     const saindo = [...tamanhos].filter((t) => !proximos.has(t) && !eixosFixos.tamanhos.has(t));
     const afetadas = linhas.filter((l) => saindo.includes(l.tamanho));
     if (afetadas.some(temDado)) {
@@ -315,7 +327,7 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
     if (salvando) return;
     const proximas = new Set(removidas);
     proximas.delete(chaveGrade(cor, tamanho));
-    if (totalDaGrade([...cores], [...tamanhos], proximas) > LIMITE_VARIACOES_GERADAS) return;
+    if (totalComoEdge([...cores], [...tamanhos], proximas) > LIMITE_VARIACOES_GERADAS) return;
     setRemovidas(proximas);
   }
 
@@ -361,21 +373,22 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
   const bloqueadas = bloqueadasDe(skus);
 
   // O cartesiano de `cores`/`tamanhos` JÁ inclui os eixos fixos (semeados acima) — somar
-  // `skus.length` contaria as células travadas duas vezes (Codex #7 do brief).
+  // `skus.length` contaria as células travadas duas vezes (Codex #7 do brief); `totalComoEdge`
+  // só soma as excluídas que ficaram fora dos eixos.
   const coresBloqueadas = new Set(
     CORES_POPULARES.filter((c) => !cores.has(c)
-      && totalDaGrade([...cores, c], [...tamanhos], removidas) > LIMITE_VARIACOES_GERADAS),
+      && totalComoEdge([...cores, c], [...tamanhos], removidas) > LIMITE_VARIACOES_GERADAS),
   );
   const tamanhosBloqueados = new Set(
     gruposTamanho.flatMap((g) => g.valores).filter((t) => !tamanhos.has(t) && (
-      totalDaGrade([...cores], [...tamanhos, t], removidas) > LIMITE_VARIACOES_GERADAS
+      totalComoEdge([...cores], [...tamanhos, t], removidas) > LIMITE_VARIACOES_GERADAS
       // Neste fluxo o UPDATE vai direto ao ML (Codex #9): numeração sem guia de tamanhos BLOQUEIA,
       // não é só aviso como no cadastro.
       || (tipo === 'calcado' && !!generoNorm && !numeracaoPublicavel(t, generoNorm))
     )),
   );
   const bloquearNovaCor =
-    totalDaGrade([...cores, '\u0001hipotetica'], [...tamanhos], removidas) > LIMITE_VARIACOES_GERADAS;
+    totalComoEdge([...cores, '\u0001hipotetica'], [...tamanhos], removidas) > LIMITE_VARIACOES_GERADAS;
 
   const avisoTamanho = (v: string) => (
     tipo === 'calcado' && !!generoNorm && !numeracaoPublicavel(v, generoNorm)

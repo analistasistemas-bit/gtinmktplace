@@ -146,7 +146,7 @@ as $$
                 where fp.org_id = org.id and fp.codigo_pai = p.codigo_pai
                   and fp.kit_multiplicador is null and fp.ml_item_id is not null
                 order by fp.publicado_em desc nulls last limit 1)
-              and vp.tamanho is not null and not vp.excluida_da_publicacao
+              and nullif(btrim(vp.tamanho), '') is not null and not vp.excluida_da_publicacao
           ),
           'capa_storage_path', p.capa_storage_path,
           'capa_ml_picture_id', p.capa_ml_picture_id,

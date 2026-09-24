@@ -201,6 +201,18 @@ describe('DialogEstenderGrade — matriz com SKUs travados', () => {
   });
 });
 
+describe('DialogEstenderGrade — cor repetida em outra grafia', () => {
+  it('"PRETO" com Preto publicado não entra na grade (mesma chave de cor da edge)', async () => {
+    const user = userEvent.setup();
+    renderDialog();
+    await screen.findByTitle('Preto · P: já publicado, 12 em estoque');
+    await user.type(screen.getByLabelText('Nova cor'), 'PRETO');
+    await user.click(screen.getByRole('button', { name: /Adicionar cor/ }));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('A cor "PRETO" já existe nesta grade.'));
+    expect(screen.queryByLabelText('Estoque inicial de PRETO · P')).not.toBeInTheDocument();
+  });
+});
+
 describe('DialogEstenderGrade — gate de Salvar', () => {
   // Uma só cor publicada (SKUS_UMA_COR): marcar G cria EXATAMENTE uma célula nova (Preto·G),
   // que herda foto de Preto — isola a asserção de estoque sem depender de outra cor.
@@ -320,6 +332,26 @@ describe('DialogEstenderGrade — teto de 60 e preenchimento em massa', () => {
       codigo: String(ci * 10 + ti + 1).padStart(8, '0'), cor: c, tamanho: t, estoque: 1, temFoto: true,
     })));
     familiaPublicadaMock.mockReturnValue([{ id: 'fam-pub-1', genero: 'unissex', variacoes: publicadas60 }]);
+    const user = userEvent.setup();
+    renderDialog();
+    await screen.findByTitle('Cor0 · P: já publicado, 1 em estoque');
+    await user.type(screen.getByLabelText('Nova cor'), 'Verde');
+    expect(screen.getByRole('button', { name: /Adicionar cor/ })).toBeDisabled();
+  });
+
+  // Achado da revisão final: a edge conta TODAS as existentes (`vivas.length + novas`). 14 cores ×
+  // 4 = 56 células + 3 excluídas com cor fora dos eixos = 59; uma cor a mais daria 63 na edge
+  // (60 no cartesiano visível, que antes passava).
+  it('56 células + 3 excluídas fora dos eixos (59) bloqueia cor nova — conta igual à edge', async () => {
+    const cores14 = Array.from({ length: 14 }, (_, i) => `Cor${i}`);
+    const tamanhos4 = ['P', 'M', 'G', 'GG'];
+    const publicadas56 = cores14.flatMap((c, ci) => tamanhos4.map((t, ti) => variacaoBase({
+      codigo: String(ci * 10 + ti + 1).padStart(8, '0'), cor: c, tamanho: t, estoque: 1, temFoto: true,
+    })));
+    const excluidas3 = ['P', 'M', 'G'].map((t, i) => variacaoBase({
+      codigo: String(900 + i).padStart(8, '0'), cor: 'Fora', tamanho: t, estoque: 0, temFoto: true, excluida: true,
+    }));
+    familiaPublicadaMock.mockReturnValue([{ id: 'fam-pub-1', genero: 'unissex', variacoes: [...publicadas56, ...excluidas3] }]);
     const user = userEvent.setup();
     renderDialog();
     await screen.findByTitle('Cor0 · P: já publicado, 1 em estoque');

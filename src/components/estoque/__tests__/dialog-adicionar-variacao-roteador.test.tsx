@@ -92,7 +92,7 @@ describe('DialogAdicionarVariacaoRoteador', () => {
   it('produto sem tamanho abre DialogAdicionarVariacao na hora, sem consulta de grade', async () => {
     renderRoteador(produtoSimples);
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Adicionar variação' })).toBeInTheDocument());
-    expect(screen.getByLabelText('Código (SKU) da variação 1')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Código (SKU) da variação 1')).toBeInTheDocument();
     expect(familiaPublicadaMock).not.toHaveBeenCalled();
   });
 
@@ -133,6 +133,6 @@ describe('DialogAdicionarVariacaoRoteador', () => {
     }]);
     renderRoteador(produtoGrade);
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Adicionar variação' })).toBeInTheDocument());
-    expect(screen.getByLabelText('Código (SKU) da variação 1')).toBeInTheDocument();
+    expect(await screen.findByLabelText('Código (SKU) da variação 1')).toBeInTheDocument();
   });
 });

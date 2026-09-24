@@ -4,6 +4,7 @@
 // (`detectarUP`, `carregarContextoGrade`, `aplicarEstoqueInicial`); `index.ts` orquestra o resto.
 import type { adminClient } from '../_shared/supabase.ts';
 import { tiposProdutoDaOrg } from '../_shared/produto/tipo-produto.ts';
+import { normalizarNomeCor } from '../_shared/cor/value-id.ts';
 import {
   classificarFamilia, numeracaoPublicavel, tamanhosDoTipo, tipoDaGrade,
 } from '../_shared/produto/tipos-produto-valores.ts';
@@ -98,8 +99,12 @@ export function validarEntrada(
       erros.push({ campo: `${prefixo}.estoqueInicial`, mensagem: 'Estoque inicial deve ser um número inteiro maior que zero.' });
     }
     // Exatamente uma origem de foto: enviada agora (`imagemPath`) OU herdada (`fotoDeCodigo`).
+    // Sem tamanho a mensagem é a de sempre (INV-1); a de herança só faz sentido em grade.
     if ((v.imagemPath === undefined) === (v.fotoDeCodigo === undefined)) {
-      erros.push({ campo: `${prefixo}.imagemPath`, mensagem: 'Envie a foto ou herde a de um SKU da mesma cor.' });
+      erros.push({
+        campo: `${prefixo}.imagemPath`,
+        mensagem: v.tamanho === undefined ? 'Foto é obrigatória.' : 'Envie a foto ou herde a de um SKU da mesma cor.',
+      });
     } else if (v.imagemPath !== undefined) {
       if (typeof v.imagemPath !== 'string' || !v.imagemPath) {
         erros.push({ campo: `${prefixo}.imagemPath`, mensagem: 'Foto é obrigatória.' });
@@ -133,10 +138,7 @@ export function precoPublicacaoNova(
 // não-UP (`validarGrade`, abaixo): em User Products o SKU novo nasce com SIZE/SIZE_GRID_ROW_ID
 // próprios (Task 4). No Legacy a cor nova entraria sem SIZE_GRID_ROW_ID num anúncio que tem — o
 // ML recusa o PUT INTEIRO e derruba o estoque junto. `index.ts` decide por `classificarFamilia`
-// (que ignora as excluídas); esta função fica como o predicado cru "alguma tem tamanho".
-export function familiaTemTamanho(variacoes: Array<{ tamanho: string | null }>): boolean {
-  return variacoes.some((v) => v.tamanho?.trim());
-}
+// (que ignora as excluídas).
 
 const chaveGradeEdge = (cor: string, tamanho: string) => `${cor}\u0000${tamanho}`;
 
@@ -178,7 +180,9 @@ export function validarGrade(entrada: VariacaoNovaEntrada[], ctx: {
   }
   const tamanhosValidos = tipo ? tamanhosDoTipo(tipo) : [];
   const norm = (s: string | null | undefined) => (s ?? '').trim();
-  const pares = new Set(ctx.vivas.map((v) => chaveGradeEdge(norm(v.cor), norm(v.tamanho))));
+  // Cor comparada pela MESMA normalização do dicionário do ML (`resolverCorValueId`): "Azul
+  // Marinho" e "Azul-marinho" viram a mesma cor lá, então são o mesmo par aqui.
+  const pares = new Set(ctx.vivas.map((v) => chaveGradeEdge(normalizarNomeCor(v.cor ?? ''), norm(v.tamanho))));
   entrada.forEach((v, i) => {
     const p = `variacoes[${i}]`;
     const tam = norm(v.tamanho);
@@ -193,12 +197,12 @@ export function validarGrade(entrada: VariacaoNovaEntrada[], ctx: {
     if (tipo === 'calcado' && !numeracaoPublicavel(tam, ctx.genero as 'masculino' | 'feminino' | 'unissex')) {
       erros.push({ campo: `${p}.tamanho`, mensagem: `Numeração ${tam} não tem guia de tamanhos no Mercado Livre para este gênero.` }); return;
     }
-    const k = chaveGradeEdge(norm(v.nome), tam);
+    const k = chaveGradeEdge(normalizarNomeCor(v.nome), tam);
     if (pares.has(k)) { erros.push({ campo: `${p}.tamanho`, mensagem: `${norm(v.nome)} · ${tam} já existe neste produto.` }); return; }
     pares.add(k);
     if (v.fotoDeCodigo) {
       const irma = ctx.vivas.find((x) => x.codigo === normalizarCodigo8(v.fotoDeCodigo!));
-      if (!irma || norm(irma.cor) !== norm(v.nome)) {
+      if (!irma || normalizarNomeCor(irma.cor ?? '') !== normalizarNomeCor(v.nome)) {
         erros.push({ campo: `${p}.imagemPath`, mensagem: 'A foto herdada precisa ser de um SKU da mesma cor.' });
       }
     }
@@ -214,7 +218,7 @@ export function resolverFotoHerdada(
   vivas: Array<{ codigo: string; cor: string | null; imagem_path: string | null; ml_picture_id: string | null }>,
 ): { imagemPath: string | null; mlPictureId: string | null } | null {
   const codigo = normalizarCodigo8(fotoDeCodigo);
-  const irma = vivas.find((v) => v.codigo === codigo && (v.cor ?? '').trim() === cor.trim());
+  const irma = vivas.find((v) => v.codigo === codigo && normalizarNomeCor(v.cor ?? '') === normalizarNomeCor(cor));
   if (!irma || (irma.imagem_path == null && irma.ml_picture_id == null)) return null;
   return { imagemPath: irma.imagem_path, mlPictureId: irma.ml_picture_id };
 }
@@ -299,13 +303,15 @@ export async function limparOrfasDoFluxo(
 }
 
 /** D-8 (`emVoo`): há família NÃO-TERMINAL para o codigo_pai? Só no caminho da recusa limpa as
- *  órfãs deste fluxo e reavalia — o caminho feliz segue com UMA consulta, como sempre. */
+ *  órfãs deste fluxo e reavalia — o caminho feliz segue com UMA consulta, como sempre.
+ *  Fail-closed: erro na consulta LANÇA — nunca vira "nenhuma em voo" em silêncio. */
 export async function haFamiliaEmVoo(admin: Admin, orgId: string, codigoPai: string, agora: Date): Promise<boolean> {
   const consultar = async () => {
-    const { data } = await admin.from('familias').select('id')
+    const { data, error } = await admin.from('familias').select('id')
       .eq('org_id', orgId).eq('codigo_pai', codigoPai)
       .not('status', 'in', '("publicado","erro")').limit(1);
-    return !!data && data.length > 0;
+    if (error || !data) throw new Error(`Falha verificando atualização em andamento: ${error?.message ?? 'sem dados'}`);
+    return data.length > 0;
   };
   if (!(await consultar())) return false;
   await limparOrfasDoFluxo(admin, orgId, codigoPai, agora);
