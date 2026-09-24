@@ -93,6 +93,12 @@ export function ateQuantoDaLinha(it: ItemPromocao): { valor: number | null; moti
   return { valor: null, motivo: null };
 }
 
+/** Convidado = `candidate`; participando = `started` ou `pending` (inscrito em campanha futura); outro status não aparece. */
+export function filtrarItens(itens: ItemPromocao[], f: { semaforo: SemaforoPromo | null; participando: boolean }): ItemPromocao[] {
+  return itens.filter((i) => (f.participando ? i.status === 'started' || i.status === 'pending' : i.status === 'candidate')
+    && (f.semaforo == null || i.pior_semaforo === f.semaforo));
+}
+
 const COLS_PROMO = 'promocao_id, tipo, nome, status, inicio, fim, prazo_adesao, beneficios, contagem, erro, itens_sincronizados_em, rodada_em_curso';
 const COLS_ITEM = 'ml_item_id, status, preco_original, preco_promo, preco_min, preco_max, preco_sugerido, preco_avaliado, ml_pct, estoque_min, titulo, thumbnail, permalink, projecao, pior_semaforo';
 

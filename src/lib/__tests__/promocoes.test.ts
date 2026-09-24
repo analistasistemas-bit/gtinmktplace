@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  abaDa, ateQuantoDaLinha, corDeReferencia, descontoPct, ehCupom, emLeitura, prazoUrgente,
+  abaDa, ateQuantoDaLinha, corDeReferencia, descontoPct, ehCupom, emLeitura, filtrarItens, prazoUrgente,
   rotuloSemLiquido, rotuloTipo, type CorProjetada, type ItemPromocao,
 } from '../promocoes';
 
@@ -64,5 +64,16 @@ describe('linha da tabela', () => {
   it('rótulo sem líquido: "Sem custo" só quando falta cadastro/custo em todas as cores', () => {
     expect(rotuloSemLiquido(item([cor({ liquido: null, motivo: 'sem_cadastro' })], 'indisponivel'))).toBe('Sem custo no PubliAI');
     expect(rotuloSemLiquido(item([cor({ liquido: null, motivo: 'erro_tarifa' })], 'indisponivel'))).toBe('Sem líquido');
+  });
+});
+
+describe('filtrarItens', () => {
+  const it2 = (id: string, status: string, pior: ItemPromocao['pior_semaforo']) =>
+    ({ ml_item_id: id, status, pior_semaforo: pior, projecao: [] }) as unknown as ItemPromocao;
+  const itens = [it2('A', 'candidate', 'verde'), it2('B', 'started', 'vermelho'), it2('C', 'candidate', 'vermelho'), it2('D', 'pending', 'verde')];
+  it('convidados × participando e semáforo', () => {
+    expect(filtrarItens(itens, { semaforo: null, participando: false }).map((i) => i.ml_item_id)).toEqual(['A', 'C']);
+    expect(filtrarItens(itens, { semaforo: null, participando: true }).map((i) => i.ml_item_id)).toEqual(['B', 'D']);
+    expect(filtrarItens(itens, { semaforo: 'vermelho', participando: false }).map((i) => i.ml_item_id)).toEqual(['C']);
   });
 });
