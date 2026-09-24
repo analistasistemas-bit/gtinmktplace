@@ -15,7 +15,7 @@ function variacao(codigo: string, cor: string | null, estoque: number): Variacao
   return {
     codigo, nome: 'Tecido Helanca', cor, gtin: null, estoque, custo: 32.84, preco: 76.9,
     pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null,
-    imagemPath: null, mlPictureId: null, mlItemId: 'MLB1', kits: [],
+    imagemPath: null, mlPictureId: null, mlItemId: 'MLB1', kits: [], tamanho: null,
   };
 }
 

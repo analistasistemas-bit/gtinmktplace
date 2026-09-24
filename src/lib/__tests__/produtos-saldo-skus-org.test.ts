@@ -66,7 +66,7 @@ describe('fetchSkusEstoqueOrg', () => {
   it('mapeia codigo_pai para codigoPai', async () => {
     rpc.mockImplementation(paginas([{ codigo: 'S1', codigo_pai: 'PAI9', nome: 'X', cor: 'Azul', estoque: 7 }]));
     const r = await fetchSkusEstoqueOrg();
-    expect(r[0]).toEqual({ codigo: 'S1', codigoPai: 'PAI9', nome: 'X', cor: 'Azul', estoque: 7 });
+    expect(r[0]).toEqual({ codigo: 'S1', codigoPai: 'PAI9', nome: 'X', cor: 'Azul', estoque: 7, tamanho: null });
   });
 
   it('erro da RPC vira exceção, não lista vazia silenciosa', async () => {

@@ -8,7 +8,7 @@ function produto(over: Partial<ProdutoEstoqueResumo> = {}): ProdutoEstoqueResumo
     capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN',
     origem: 'nacional', mlItemId: null, criadoEm: '2026-08-01T10:00:00Z',
     saldoTotal: 20, qtdSkus: 1, skuUnico: '00000002',
-    gtins: ['4005800241901'], codigos: ['00000002'], cores: ['incolor'], nomes: [],
+    gtins: ['4005800241901'], codigos: ['00000002'], cores: ['incolor'], nomes: [], temTamanho: false,
     ...over,
   };
 }

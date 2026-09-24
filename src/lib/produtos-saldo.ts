@@ -5,6 +5,7 @@ import type { ResumoEstoque } from '@/lib/produtos-saldo-resumo';
 import { buildStoragePath, uploadFile } from '@/lib/storage';
 import { erroDaEdge, corpoDoErroDaEdge } from '@/lib/edge-erro';
 import { compararCor } from '@/lib/cor';
+import { ordenarVariacoesGrade } from '@/lib/rotulo-variacao';
 import type { ProdutoEntrada } from '@/lib/produto-entrada';
 
 export interface LinhaVariacaoCrua {
@@ -50,6 +51,8 @@ export interface VariacaoComSaldo {
   mlItemId: string | null;
   /** Kits vinculados a este produto-base. Vazio quando não há kit ativo. */
   kits: KitVinculado[];
+  /** ADR-0166: null = variação sem eixo de tamanho. */
+  tamanho: string | null;
 }
 
 /** Linha slim da lista Estoque — sem array de variações (carregadas sob demanda ao expandir). */
@@ -76,6 +79,8 @@ export interface ProdutoEstoqueResumo {
   nomes: string[];
   /** Preenchido quando qtdSkus === 1 — pré-seleção no DialogEntrada. */
   skuUnico: string | null;
+  /** ADR-0166: alguma variação da família canônica tem tamanho. */
+  temTamanho: boolean;
   /** ADR-0135 D-9 — id real da família canônica, para a edição fiscal (T13). Opcional: os
    *  fixtures de teste de telas que não mexem com fiscal não precisam preenchê-lo. */
   familiaId?: string;
@@ -118,6 +123,8 @@ export interface SkuEstoqueOrg {
   nome: string;
   cor: string | null;
   estoque: number;
+  /** ADR-0166: null = SKU sem eixo de tamanho. */
+  tamanho: string | null;
 }
 
 interface LinhaVariacaoRpc {
@@ -136,6 +143,7 @@ interface LinhaVariacaoRpc {
   ml_picture_id: string | null;
   ml_item_id: string | null;
   kits: Array<{ codigo_pai: string; multiplicador: number; disponivel: number }> | null;
+  tamanho?: string | null;
 }
 
 interface ProdutoResumoRpc {
@@ -156,6 +164,7 @@ interface ProdutoResumoRpc {
   cores: string[];
   nomes: string[];
   sku_unico: string | null;
+  tem_tamanho?: boolean;
   familia_id: string;
   ncm: string | null;
   cest: string | null;
@@ -190,6 +199,7 @@ function mapVariacaoRpc(l: LinhaVariacaoRpc): VariacaoComSaldo {
     kits: (l.kits ?? []).map((k) => ({
       codigoPai: k.codigo_pai, multiplicador: k.multiplicador, disponivel: k.disponivel,
     })),
+    tamanho: l.tamanho ?? null,
   };
 }
 
@@ -223,6 +233,7 @@ export function mapResumoEstoqueRpc(raw: ResumoRpcRaw): ResumoEstoqueRpc {
       cores: p.cores ?? [],
       nomes: p.nomes ?? [],
       skuUnico: p.sku_unico,
+      temTamanho: !!p.tem_tamanho,
       familiaId: p.familia_id,
       ncm: p.ncm,
       cest: p.cest,
@@ -295,8 +306,8 @@ export function agruparProdutosComSaldo(linhas: LinhaVariacaoCrua[]): ProdutoCom
       // mostrar o preço do mesmo anúncio — o bug que a RPC evita. Sem ponteiro, a linha cai no
       // preço local, que é sempre verdadeiro sobre si mesmo.
       imagemPath: l.imagem_path, mlPictureId: l.ml_picture_id, mlItemId: null,
-      // ponytail: caminho legado (@deprecated), sem a RPC nova — nunca calcula kit.
-      kits: [],
+      // ponytail: caminho legado (@deprecated), sem a RPC nova — nunca calcula kit nem tamanho.
+      kits: [], tamanho: null,
     });
     p.saldoTotal += l.estoque;
     if (f.variacao_principal_codigo) principalPorPai.set(pai, f.variacao_principal_codigo);
@@ -335,7 +346,7 @@ export async function fetchProdutosEstoqueResumo(): Promise<ResumoEstoqueRpc> {
 export async function fetchVariacoesProduto(codigoPai: string): Promise<VariacaoComSaldo[]> {
   const { data, error } = await supabase.rpc('variacoes_estoque_produto', { p_codigo_pai: codigoPai });
   if (error) throw new Error(error.message);
-  return ((data ?? []) as unknown as LinhaVariacaoRpc[]).map(mapVariacaoRpc).sort(compararCor);
+  return ordenarVariacoesGrade(((data ?? []) as unknown as LinhaVariacaoRpc[]).map(mapVariacaoRpc).sort(compararCor));
 }
 
 /**
@@ -355,9 +366,9 @@ export async function fetchVariacoesProduto(codigoPai: string): Promise<Variacao
  */
 export async function fetchSkusEstoqueOrg(): Promise<SkuEstoqueOrg[]> {
   const data = await buscarTodasPaginasParalelo<{
-    codigo: string; codigo_pai: string; nome: string; cor: string | null; estoque: number;
+    codigo: string; codigo_pai: string; nome: string; cor: string | null; estoque: number; tamanho?: string | null;
   }>((de, ate) => supabase.rpc('skus_estoque_org', undefined, { get: true }).range(de, ate) as unknown as PromiseLike<{
-    data: Array<{ codigo: string; codigo_pai: string; nome: string; cor: string | null; estoque: number }> | null;
+    data: Array<{ codigo: string; codigo_pai: string; nome: string; cor: string | null; estoque: number; tamanho?: string | null }> | null;
     error: { message: string } | null;
   }>);
   return data.map((s) => ({
@@ -366,6 +377,7 @@ export async function fetchSkusEstoqueOrg(): Promise<SkuEstoqueOrg[]> {
     nome: s.nome,
     cor: s.cor,
     estoque: s.estoque,
+    tamanho: s.tamanho ?? null,
   }));
 }
 
