@@ -28,6 +28,7 @@
 0. Revisão Codex gpt-6-sol do plano (VERDICT:REVISE, 12 achados) incorporada: reconciliador com `preservarPublicadas` (T4), GENDER de `familias.genero` no UPDATE (T4), ledger reaplicado no retry (T5), UP detectado pela raiz (T5), travadas = última publicada (T7), picker geral da Entrada (T3), limite 60 sem dupla contagem (T7), roteador pelo dado (T7), numeração sem guia bloqueada (T7), fixture SQL com profile (T1), dry-run sem escrita + prova real (T8), caracterização de payload (T4/T7).
 0b. Revisão Codex r2 (VERDICT:REVISE, 9 achados) incorporada: tipo da grade inferido da família e validado na UI e na edge (T5/T7), intenção do retry gravada em `mudanca_estrutural.intencao` com 409 para incompleto/divergente (T5), `ehFluxoAddVariacao` falha alto (T4), numeração não publicável recusada na edge (T5), Movimentos sem mudança para produto comum (T3), roteador síncrono por `temTamanho` do resumo (T1/T2/T7), aceite real pendente formal + reversão (T9), fixtures de 8 dígitos (T5), chart fora do cache falha alto (T4).
 0c. Revisão Codex r3 (VERDICT:REVISE, 5 achados) incorporada: grade/tipo decididos só pelas incluídas, excluídas travadas e contando no par (T5/T7); intenção completa normalizada no retry (T5); `POR_SKU` global intocado, SIZE*/GENDER filtrados só no ramo com tamanho + caracterização com irmão COM SIZE* (T4); `publicar-split-ml` no deploy (T9); três RPCs conferidas pós-push (T9).
+0f. Revisão Codex r6 (3 achados) incorporada: índice `familias_org_codigo_pai_publicada_idx` + medição do SELECT interno antes/depois (T1/T9), eixos do dialog só das incluídas (T7), fixture SQL com canônica ≠ publicada nos dois sentidos (T1).
 0e. Revisão Codex r5 (2 achados) incorporada: `tem_tamanho` calculado sobre a última publicada (T1), tipo do dialog só das incluídas (T7).
 0d. Revisão Codex r4 (2 achados) incorporada: `classificarFamilia` como fonte única de "é grade" (incluídas), usada por resumo, dialog e edge, com fallback do dialog de grade para o antigo (T1/T5/T7); consultas de tipo e UP só no ramo de grade (T5).
 1. Irmão tem `SIZE`/`SIZE_GRID_ROW_ID` na ficha e a família tem `SIZE` em `atributos_ml` → o SKU novo sai com **um** `SIZE` e é o dele (Task 4, teste "um SIZE só").
@@ -67,7 +68,15 @@ E a definição A (`produtos_estoque_resumo()`, mesmo arquivo, l.19–179, com `
     and vp.tamanho is not null and not vp.excluida_da_publicacao
 ),
 ```
-Ler a função inteira antes e usar o alias real do produto. Produto nunca publicado → `false` (o item "Adicionar variação" já fica desabilitado nele). Rodar `explain analyze select public.produtos_estoque_resumo()` na stack local antes e depois: a subconsulta por produto precisa usar índice de `familias` por `(org_id, codigo_pai)` — se o plano mostrar seq scan em `familias` por produto, parar e reportar antes de seguir.
+Ler a função inteira antes e usar o alias real do produto. Produto nunca publicado → `false` (o item "Adicionar variação" já fica desabilitado nele).
+
+**Índice (Codex r6 #1)** — `familias` só tem índice por `(user_id, codigo_pai)`; a subconsulta acima roda uma vez por produto e precisa de um índice próprio, criado na MESMA migration, antes das funções:
+```sql
+create index if not exists familias_org_codigo_pai_publicada_idx
+  on public.familias (org_id, codigo_pai, publicado_em desc nulls last)
+  where ml_item_id is not null and kit_multiplicador is null;
+```
+Medição: `explain analyze` da função não mostra o plano interno (é `security definer` em SQL). Medir o `SELECT` **interno** — o corpo da função com `public.current_org_id()` trocado pelo `org_id` literal da org de maior volume (AVIL) — por SQL read-only no projeto remoto, **antes** do `db push` (sem o índice) e **depois** (Task 9 Step 3). Critério: a subconsulta usa `familias_org_codigo_pai_publicada_idx` (Index Scan / Index Only Scan) e o tempo total não passa de 2× o de antes. Se passar, parar e reportar.
 
 Cabeçalho do arquivo:
 ```sql
@@ -100,6 +109,37 @@ insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai,
 values ('92000000-0000-0000-0000-000000000301', '92000000-0000-0000-0000-000000000201',
   '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
   '09200000', 'Camiseta teste', 'CREATE', 'nacional', gen_random_uuid(), 'MLB-TESTE-GRADE', now());
+-- Codex r6 #3: canônica ≠ publicada nos dois sentidos. `tem_tamanho` olha a última PUBLICADA; uma
+-- implementação que lesse a canônica erraria os dois casos (09500000 e 09300000).
+-- Produto próprio (09500000) para não mexer na canônica de 09200000, que as asserções de
+-- variacoes_estoque_produto usam: 302 = publicada COM tamanho; 305 = canônica posterior SEM.
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, ml_item_id, publicado_em)
+values ('92000000-0000-0000-0000-000000000302', '92000000-0000-0000-0000-000000000201',
+  '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
+  '09500000', 'Jaqueta teste', 'CREATE', 'nacional', gen_random_uuid(), 'MLB-TESTE-GRADE2', now());
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, criado_em)
+values ('92000000-0000-0000-0000-000000000305', '92000000-0000-0000-0000-000000000201',
+  '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
+  '09500000', 'Jaqueta teste', 'UPDATE', 'nacional', gen_random_uuid(), now() + interval '1 minute');
+-- Sentido inverso: produto 09300000 publicado SEM tamanho e canônica posterior COM tamanho → false.
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, ml_item_id, publicado_em)
+values ('92000000-0000-0000-0000-000000000303', '92000000-0000-0000-0000-000000000201',
+  '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
+  '09300000', 'Fita teste', 'CREATE', 'nacional', gen_random_uuid(), 'MLB-TESTE-SIMPLES', now());
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, criado_em)
+values ('92000000-0000-0000-0000-000000000304', '92000000-0000-0000-0000-000000000201',
+  '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
+  '09300000', 'Fita teste', 'UPDATE', 'nacional', gen_random_uuid(), now() + interval '1 minute');
+insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, tamanho, preco, estoque)
+values
+  ('92000000-0000-0000-0000-000000000302', '92000000-0000-0000-0000-000000000101',
+   '92000000-0000-0000-0000-000000000001', '09500001', 'Preto', 'Preto', 'G', 50, 0),
+  ('92000000-0000-0000-0000-000000000305', '92000000-0000-0000-0000-000000000101',
+   '92000000-0000-0000-0000-000000000001', '09500011', 'Preto', 'Preto', null, 50, 0),
+  ('92000000-0000-0000-0000-000000000303', '92000000-0000-0000-0000-000000000101',
+   '92000000-0000-0000-0000-000000000001', '09300001', 'Azul', 'Azul', null, 50, 0),
+  ('92000000-0000-0000-0000-000000000304', '92000000-0000-0000-0000-000000000101',
+   '92000000-0000-0000-0000-000000000001', '09300011', 'Azul', 'Azul', 'M', 50, 0);
 insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, tamanho, preco, estoque)
 values
   ('92000000-0000-0000-0000-000000000301', '92000000-0000-0000-0000-000000000101',
@@ -127,6 +167,10 @@ begin
   -- Localizar o array de produtos no JSON do resumo pelo nome real da chave (ler a função; ex.: 'produtos').
   select p into r from json_array_elements(public.produtos_estoque_resumo()->'produtos') p where p->>'codigo_pai' = '09200000';
   if (r->>'tem_tamanho')::boolean is distinct from true then raise exception 'resumo sem tem_tamanho: %', r; end if;
+  select p into r from json_array_elements(public.produtos_estoque_resumo()->'produtos') p where p->>'codigo_pai' = '09500000';
+  if (r->>'tem_tamanho')::boolean is distinct from true then raise exception 'tem_tamanho deveria vir da última PUBLICADA (grade): %', r; end if;
+  select p into r from json_array_elements(public.produtos_estoque_resumo()->'produtos') p where p->>'codigo_pai' = '09300000';
+  if (r->>'tem_tamanho')::boolean is distinct from false then raise exception 'tem_tamanho deveria vir da última PUBLICADA (simples): %', r; end if;
 end $$;
 rollback;
 ```
@@ -960,7 +1004,7 @@ it('payload: herda foto quando a linha não tem foto própria e a cor tem foto; 
     - Estoque exibido nas travadas vem de `fetchVariacoesProduto` (QK `variacoesEstoque`, saldo canônico) casado por código; se não carregou, usar o da consulta.
   - Classificação: `classificarFamilia` (a MESMA da edge) sobre as variações da família publicada. Com `tem_tamanho` do resumo também calculado sobre a publicada (Task 1), roteador, dialog e edge olham a mesma família; o fallback abaixo cobre só a janela entre o resumo em cache e uma publicação nova. Teste do roteador: canônica simples + publicada grade → resumo `temTamanho: true` → abre o dialog de grade (Codex r5 #1). `'simples'` (o resumo pode divergir da publicada — ex.: tamanho só num SKU excluído de uma tentativa mais nova) → o dialog chama a prop `onNaoEhGrade()` e o roteador abre o `DialogAdicionarVariacao` antigo no lugar (Codex r4 #1 — o fluxo antigo nunca fica inacessível). `'mista'` → aviso de bloqueio. Teste: publicada com incluído sem tamanho + excluído com tamanho e resumo `temTamanho: true` → o dialog antigo abre.
   - `skus: SkuExistente[]` = **todas** as variações da família publicada com `tamanho`, incluídas e excluídas (Codex r3 #1); `SkuExistente` ganha `excluida: boolean`. Excluídas ficam travadas também (a edge recusa o par), com rótulo "fora do anúncio" no `aria-label`/título da célula e sem contar como foto herdável. Tipo inferido só das incluídas; incluídas misturando tamanho e ausência → mesmo aviso de bloqueio da edge ("SKUs publicados com e sem tamanho — fale com o suporte"). `temFoto = !!(imagem_path || ml_picture_id)`.
-  - Estado: `cores`/`tamanhos` (Set) iniciados com `eixosExistentes(skus)`; `removidas`; `linhas: LinhaGrade[]`; `cabecalho: CamposHerdaveis` pré-preenchido pelo SKU de referência (menor código entre os não `excluida_da_publicacao`, mesma regra de `irmaRef` no dialog atual); `fotoPorCor` (só para cores sem foto herdável); `chave` (UUID, regenerada ao fechar).
+  - Estado: `cores`/`tamanhos` (Set) iniciados com `eixosExistentes(skus.filter((s) => !s.excluida))` — eixos só das **incluídas** (Codex r6 #2: `Azul·38` excluído numa roupa não pode trazer a coluna `38`, que geraria `Preto·38` editável e recusado pela edge). `bloqueadas` continua com todos os SKUs (incluídos e excluídos): a matriz só desenha as células dos eixos atuais, então uma excluída só aparece travada se os eixos dela estiverem na grade. Teste: roupa com `Preto·P` incluído e `Azul·38` excluído → nenhuma coluna `38`, nenhuma linha `Azul`, nenhuma célula nova com `38`; `removidas`; `linhas: LinhaGrade[]`; `cabecalho: CamposHerdaveis` pré-preenchido pelo SKU de referência (menor código entre os não `excluida_da_publicacao`, mesma regra de `irmaRef` no dialog atual); `fotoPorCor` (só para cores sem foto herdável); `chave` (UUID, regenerada ao fechar).
   - Tipo da grade = `tipoDaGrade(skus.filter((s) => !s.excluida).map((s) => s.tamanho))` — **só incluídas** (Codex r5 #2; excluídas ficam travadas mas não decidem o tipo; teste: roupa com numeração só num SKU excluído → matriz liberada com P/M/G/GG) (reexportado de `@/lib/tamanhos`); os tamanhos oferecidos são **só** os desse tipo (`opcoesDeTamanho([tipo])`), nunca a união dos tipos da org (Codex r2 #1). Estados de bloqueio, antes de qualquer upload e com o botão Salvar desabilitado:
     - `useTiposProdutoHabilitados()` ainda `undefined` e sem erro → skeleton "Carregando…";
     - erro do hook → aviso "Não foi possível confirmar os tipos de produto da organização. Tente de novo." (não assume nada);
@@ -1018,7 +1062,7 @@ export function DialogAdicionarVariacaoRoteador({ produto, onFechar }: {
 
 - [ ] **Step 1:** atualizar `docs/project-status.md` e `docs/TASKS.md` (item de grade no Estoque), `docs/reference/edge-functions.md` (contrato novo de `adicionar-variacoes-familia`), obsidian-vault `03-Módulos/Estoque.md`; `pnpm docs:links`.
 - [ ] **Step 2:** push da branch → CI verde (`frontend`, `backend-lint`).
-- [ ] **Step 3:** `supabase db push` → conferir as **três** RPCs (Codex r3 #5) por SQL read-only sob `set local role authenticated` + `request.jwt.claims` de um usuário da org piloto: `variacoes_estoque_produto`/`skus_estoque_org` com a chave `tamanho` (não nula num produto de grade), e `produtos_estoque_resumo` com `tem_tamanho = true` num produto de grade e `false` num produto sem tamanho.
+- [ ] **Step 3:** `supabase db push` → conferir as **três** RPCs (Codex r3 #5) por SQL read-only sob `set local role authenticated` + `request.jwt.claims` de um usuário da org piloto: `variacoes_estoque_produto`/`skus_estoque_org` com a chave `tamanho` (não nula num produto de grade), e `produtos_estoque_resumo` com `tem_tamanho = true` num produto de grade e `false` num produto sem tamanho. Repetir a medição do `SELECT` interno do resumo (Task 1, "Índice") e comparar com a de antes do push; registrar os dois tempos e o nó do índice no relatório.
 - [ ] **Step 4:** deploy de toda função que importa, direta ou transitivamente, um arquivo alterado em `_shared/` — listar com `grep -rl "fluxo-add-variacao\|atualizar-familia-up\|tipos-produto-valores\|produto/codigos" supabase/functions --include=*.ts | grep -v __tests__` e subir até o `index.ts` de cada função. Mínimo esperado: `adicionar-variacoes-familia`, `update-familia-ml`, `reconciliar-convergencia-up`, **`publicar-split-ml`** (importa `ehFluxoAddVariacao`, Codex r3 #4), `cadastrar-produto` (importa `tipos-produto-valores`/`codigos`). Conferir a versão ativa de cada uma com `supabase functions list`.
 - [ ] **Step 5:** merge fast-forward na `main` (`/usr/bin/git push origin <sha>:main`). A tela nova só existe para o Diego depois do merge (o front sobe da `main`), então a prova real (Task 8 Step 2b) vem **depois** — e isso fica declarado (Codex r2 #7):
   - relatório final separa **entrega técnica** (CI, preflight, dry-run, deploy conferido) de **aceite real pendente** (Step 2b) — nunca "concluído" sem as duas;
