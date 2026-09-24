@@ -136,3 +136,28 @@ describe('atualizarFamiliaUP — cor nova herda a ficha do irmão (incidente do 
     expect(atributosEnviados()).toContainEqual({ id: 'BRAND', value_name: 'BUFALO' });
   });
 });
+
+// Caracterização (Codex #12): payload COMPLETO que o código de ANTES da feature (ADR-0166
+// 2026-09-24c) gerava para a família sem tamanho — literais copiados da saída real daquele código.
+// Família sem tamanho tem que continuar byte a byte igual (INV-1).
+const PAYLOAD_SEM_TAMANHO_ATUAL = {"category_id":"","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"P2"}],"attributes":[{"id":"BRAND","value_id":"9165622"},{"id":"MANUFACTURER","value_id":"9165622"},{"id":"COMPOSITION","value_id":"4904381"},{"id":"LENGTH","value_name":"10 m"},{"id":"COLOR","value_name":"Preto"},{"id":"SELLER_PACKAGE_HEIGHT","value_name":"43 cm"},{"id":"SELLER_PACKAGE_WIDTH","value_name":"16 cm"},{"id":"SELLER_PACKAGE_LENGTH","value_name":"36 cm"},{"id":"SELLER_PACKAGE_WEIGHT","value_name":"2200 g"}],"price":10,"available_quantity":40,"seller_custom_field":"NOVA","family_name":"T"};
+// Irmão remoto COM SIZE* e banco sem tamanho: hoje o SIZE* do irmão é herdado — continua sendo.
+const PAYLOAD_SEM_TAMANHO_IRMAO_COM_SIZE = {"category_id":"","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"P2"}],"attributes":[{"id":"BRAND","value_id":"9165622"},{"id":"MANUFACTURER","value_id":"9165622"},{"id":"COMPOSITION","value_id":"4904381"},{"id":"SIZE","value_name":"M"},{"id":"SIZE_GRID_ID","value_name":"CH1"},{"id":"SIZE_GRID_ROW_ID","value_name":"CH1:2"},{"id":"LENGTH","value_name":"10 m"},{"id":"COLOR","value_name":"Preto"},{"id":"SELLER_PACKAGE_HEIGHT","value_name":"43 cm"},{"id":"SELLER_PACKAGE_WIDTH","value_name":"16 cm"},{"id":"SELLER_PACKAGE_LENGTH","value_name":"36 cm"},{"id":"SELLER_PACKAGE_WEIGHT","value_name":"2200 g"}],"price":10,"available_quantity":40,"seller_custom_field":"NOVA","family_name":"T"};
+
+describe('atualizarFamiliaUP — família sem tamanho (INV-1)', () => {
+  it('payload completo idêntico ao de antes da feature, e chart nunca é chamado', async () => {
+    const chartFake = vi.fn();
+    await atualizarFamiliaUP(args({ garantirChartFn: chartFake as never } as never));
+    expect(chartFake).not.toHaveBeenCalled();
+    expect(criarItemSpy.mock.calls[0]![1]).toEqual(PAYLOAD_SEM_TAMANHO_ATUAL);
+  });
+  // Codex r3 #3: irmão remoto COM SIZE* e banco sem tamanho → payload exatamente como hoje.
+  it('irmão remoto com SIZE* e variação sem tamanho: payload idêntico ao atual', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ attributes: [
+      ...ATRIBUTOS_DO_IRMAO, { id: 'SIZE', value_name: 'M' }, { id: 'SIZE_GRID_ID', value_name: 'CH1' },
+      { id: 'SIZE_GRID_ROW_ID', value_name: 'CH1:2' },
+    ] }), { status: 200 })) as typeof fetch;
+    await atualizarFamiliaUP(args());
+    expect(criarItemSpy.mock.calls[0]![1]).toEqual(PAYLOAD_SEM_TAMANHO_IRMAO_COM_SIZE);
+  });
+});
