@@ -142,9 +142,10 @@ até publicar no ML" vale para os dois.
   execução, não por SKU — e passa `tamanho`, `sizeLabel`, `sizeGridId`, `sizeGridRowId` ao
   `montarPayloadItem`, igual a `publicar-familia-up.ts:150-159`. Tamanho sem linha resolvida → erro
   alto (o guard de `montarPayloadItem` já faz).
-- `atributos-irmao.ts`: `SIZE`, `SIZE_GRID_ID` e `SIZE_GRID_ROW_ID` entram em `POR_SKU` — nunca
-  herdados do irmão. (`GENDER` continua herdado: é da família.) Efeito para família sem tamanho: nenhum
-  (a ficha do irmão não tem esses atributos).
+- No SKU novo **com tamanho**, `criarPlano` descarta `SIZE`, `SIZE_GRID_ID`, `SIZE_GRID_ROW_ID` e
+  `GENDER` da ficha mesclada (irmão + `atributos_ml`) e usa os próprios — `GENDER` de
+  `familias.genero`, como no CREATE. `atributos-irmao.ts` (`POR_SKU`) não muda: produto sem tamanho
+  herda exatamente como hoje, mesmo que o irmão remoto tenha `SIZE*` (revisão Codex r3 #3, INV-1).
 - `preservarPublicadas` continua valendo: só os SKUs novos vão ao ML.
 
 ## 7. Erros e recuperação

@@ -194,8 +194,12 @@ Fica revisado assim, conforme `docs/superpowers/specs/2026-09-24-estoque-grade-o
   cadastro em grade; o fluxo sem tamanho continua pedindo o código digitado.
 - A trava da edge `adicionar-variacoes-familia` passa a recusar só família com tamanho **fora** de User
   Products — pelo ADR-0167 grade sempre publica em UP, então a trava fica como guarda, não como caminho.
-- `SIZE`, `SIZE_GRID_ID` e `SIZE_GRID_ROW_ID` deixam de ser herdados da ficha do item irmão no UPDATE
-  UP: são por SKU, como `COLOR`/`GTIN`. Sem isso o SKU novo nasceria com o tamanho do irmão.
+- No SKU novo **com tamanho**, `SIZE`, `SIZE_GRID_ID`, `SIZE_GRID_ROW_ID` e `GENDER` deixam de ser
+  herdados da ficha do item irmão no UPDATE UP: os três primeiros vêm do chart, `GENDER` de
+  `familias.genero` (como no CREATE). Sem isso o SKU novo nasceria com o tamanho do irmão. Produto sem
+  tamanho herda exatamente como antes.
+- O tipo da grade (roupa ou calçado) é o da família publicada, inferido dos tamanhos dos SKUs
+  incluídos — não a união dos tipos da organização.
 - As telas do Estoque exibem `cor · tamanho` onde identificam uma variação.
 
 Continua fora: mudar o tamanho de SKU existente, remover SKU da grade, editar preço ou atributo das
