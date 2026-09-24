@@ -254,6 +254,14 @@ describe('DialogAdicionarVariacao', () => {
       codigo: '00000006', nome: 'Azul', preco: 10, estoqueInicial: 5,
     });
     expect(variacoes[0]!.imagemPath).toMatch(/^owner-1\/.+\/00000006-azul-1\.png$/);
+    // Task 7 (INV-1, Codex #12): o corpo INTEIRO enviado à edge — não só um subconjunto — precisa
+    // continuar exatamente assim depois do roteador de grade entrar em Estoque.tsx. Nenhum campo
+    // de tamanho/grade (`tamanho`, `fotoDeCodigo`) pode vazar para este fluxo simples.
+    const { imagemPath: _imagemPath, ...resto } = variacoes[0]!;
+    expect(resto).toEqual({
+      codigo: '00000006', nome: 'Azul', gtin: null, preco: 10, custo: null, estoqueInicial: 5,
+      pesoGramas: 100, alturaCm: 5, larguraCm: 5, comprimentoCm: 5,
+    });
 
     await waitFor(() => expect(onFechar).toHaveBeenCalled());
   });

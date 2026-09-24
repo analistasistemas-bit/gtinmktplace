@@ -15,7 +15,7 @@ import { DialogCadastroProduto } from '@/components/estoque/dialog-cadastro-prod
 import { DialogCadastroGrade } from '@/components/estoque/dialog-cadastro-grade';
 import { DialogFiscalProduto } from '@/components/estoque/dialog-fiscal-produto';
 import { DialogExcluirProduto } from '@/components/estoque/dialog-excluir-produto';
-import { DialogAdicionarVariacao } from '@/components/estoque/dialog-adicionar-variacao';
+import { DialogAdicionarVariacaoRoteador } from '@/components/estoque/dialog-adicionar-variacao-roteador';
 import { ProdutoCard, CabecalhoProdutos, type AlvoEntrada } from '@/components/estoque/produto-card';
 import { BarraFiltrosEstoque } from '@/components/estoque/barra-filtros-estoque';
 import { ResumoEstoqueKpis } from '@/components/estoque/resumo-estoque';
@@ -262,9 +262,8 @@ export default function Estoque() {
         onFechar={() => setCadastroAberto(false)}
       />
       <DialogCadastroGrade aberto={gradeAberta} onFechar={() => setGradeAberta(false)} />
-      <DialogAdicionarVariacao
+      <DialogAdicionarVariacaoRoteador
         produto={produtoAddVariacao}
-        aberto={produtoAddVariacao != null}
         onFechar={() => setProdutoAddVariacao(null)}
       />
       <DialogFiscalProduto
