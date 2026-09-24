@@ -28,6 +28,7 @@
 0. Revisão Codex gpt-6-sol do plano (VERDICT:REVISE, 12 achados) incorporada: reconciliador com `preservarPublicadas` (T4), GENDER de `familias.genero` no UPDATE (T4), ledger reaplicado no retry (T5), UP detectado pela raiz (T5), travadas = última publicada (T7), picker geral da Entrada (T3), limite 60 sem dupla contagem (T7), roteador pelo dado (T7), numeração sem guia bloqueada (T7), fixture SQL com profile (T1), dry-run sem escrita + prova real (T8), caracterização de payload (T4/T7).
 0b. Revisão Codex r2 (VERDICT:REVISE, 9 achados) incorporada: tipo da grade inferido da família e validado na UI e na edge (T5/T7), intenção do retry gravada em `mudanca_estrutural.intencao` com 409 para incompleto/divergente (T5), `ehFluxoAddVariacao` falha alto (T4), numeração não publicável recusada na edge (T5), Movimentos sem mudança para produto comum (T3), roteador síncrono por `temTamanho` do resumo (T1/T2/T7), aceite real pendente formal + reversão (T9), fixtures de 8 dígitos (T5), chart fora do cache falha alto (T4).
 0c. Revisão Codex r3 (VERDICT:REVISE, 5 achados) incorporada: grade/tipo decididos só pelas incluídas, excluídas travadas e contando no par (T5/T7); intenção completa normalizada no retry (T5); `POR_SKU` global intocado, SIZE*/GENDER filtrados só no ramo com tamanho + caracterização com irmão COM SIZE* (T4); `publicar-split-ml` no deploy (T9); três RPCs conferidas pós-push (T9).
+0d. Revisão Codex r4 (2 achados) incorporada: `classificarFamilia` como fonte única de "é grade" (incluídas), usada por resumo, dialog e edge, com fallback do dialog de grade para o antigo (T1/T5/T7); consultas de tipo e UP só no ramo de grade (T5).
 1. Irmão tem `SIZE`/`SIZE_GRID_ROW_ID` na ficha e a família tem `SIZE` em `atributos_ml` → o SKU novo sai com **um** `SIZE` e é o dele (Task 4, teste "um SIZE só").
 2. Cor nova de tamanho existente + tamanho novo de cor existente na MESMA submissão → só as células faltantes viram SKU; nenhuma célula publicada vai no payload (Task 7, teste de `celulasNovas`; Task 5, teste de par duplicado).
 3. Retry com a mesma `chave` depois de os códigos terem sido reservados → devolve o resultado anterior, não reserva códigos novos nem duplica SKU (Task 5, teste de idempotência reaproveitado + ordem: idempotência antes da reserva).
@@ -53,7 +54,7 @@ Conteúdo: copiar **literalmente** as definições B e C de `supabase/migrations
 - em `variacoes_estoque_produto`, dentro do `json_build_object`, logo após `'cor', v.cor,` acrescentar `'tamanho', v.tamanho,`
 - em `skus_estoque_org`, logo após `'cor', v.cor,` acrescentar `'tamanho', v.tamanho,`
 
-E a definição A (`produtos_estoque_resumo()`, mesmo arquivo, l.19–179, com `revoke`/`grant`), também literal, com: `v.tamanho` no select do CTE `vars`; no agregado por produto que hoje produz `qtd_skus`/`cores`, `bool_or(v.tamanho is not null) as tem_tamanho`; e no `json_build_object` do produto, `'tem_tamanho', coalesce(p.tem_tamanho, false),` ao lado de `'qtd_skus'`. Ler a função inteira antes: o agregado pode estar num CTE com outro alias — acompanhar o nome real.
+E a definição A (`produtos_estoque_resumo()`, mesmo arquivo, l.19–179, com `revoke`/`grant`), também literal, com: `v.tamanho` e `v.excluida_da_publicacao` no select do CTE `vars`; no agregado por produto que hoje produz `qtd_skus`/`cores`, `bool_or(v.tamanho is not null and not v.excluida_da_publicacao) as tem_tamanho` (mesma regra de `classificarFamilia`: só SKU incluído faz a família ser grade — Codex r4 #1); e no `json_build_object` do produto, `'tem_tamanho', coalesce(p.tem_tamanho, false),` ao lado de `'qtd_skus'`. Ler a função inteira antes: o agregado pode estar num CTE com outro alias — acompanhar o nome real.
 
 Cabeçalho do arquivo:
 ```sql
@@ -521,6 +522,7 @@ Se `atualizarFamiliaUP` capturar a exceção da porta e devolver `{ estado: 'err
   ```
   Resposta: `{ loteId, familiaId, publicacaoOk, falhasEstoque, codigos: string[] }` (`codigos` = SKUs novos, 8 dígitos, na ordem de `variacoes`; também no ramo `jaExistia`, lidos de `familias.mudanca_estrutural.novas`).
   - `derivarCodigosSku(ultimo: number, qtd: number): string[]`
+  - `classificarFamilia(vivas: Array<{ tamanho: string | null; excluida_da_publicacao: boolean }>): 'simples' | 'grade' | 'mista'` — pura, **fonte única** da regra "é grade" (Codex r4 #1): só as incluídas contam; todas sem tamanho → `simples`; todas com → `grade`; misto → `mista`. Mora em `_shared/produto/tipos-produto-valores.ts` e é reexportada em `@/lib/tamanhos` para o dialog usar a mesma. `validarGrade` usa ela em vez de recalcular.
   - `validarGrade(entrada: VariacaoNovaEntrada[], ctx: { vivas: Array<{ codigo: string; cor: string | null; tamanho: string | null; excluida_da_publicacao: boolean }>; tiposHabilitados: readonly string[]; genero: string | null; ehUP: boolean }): ErroValidacao[]`
     — "é grade" e o tipo vêm só das **incluídas** (`excluida_da_publicacao=false`); incluídas misturando tamanho e ausência dele → 400 antes de qualquer escrita; a checagem de par duplicado usa **todas** as vivas, inclusive as excluídas (Codex r3 #1).
   - Em `supabase/functions/_shared/produto/tipos-produto-valores.ts` (fonte única, reexportada pelo front):
@@ -697,11 +699,11 @@ export function derivarCodigosSku(ultimo: number, qtd: number): string[] {
       // Só as INCLUÍDAS definem o que o anúncio é (Codex r3 #1): uma excluída sem tamanho (ou com)
       // não publica e não pode decidir o tipo — mas continua existindo para a checagem de par.
       const incluidas = ctx.vivas.filter((v) => !v.excluida_da_publicacao);
-      const comTam = incluidas.filter((v) => v.tamanho?.trim()).length;
-      if (comTam > 0 && comTam < incluidas.length) {
+      const classe = classificarFamilia(ctx.vivas);
+      if (classe === 'mista') {
         return [{ campo: 'familia_id', mensagem: 'Este produto tem SKUs publicados com e sem tamanho — ajuste pelo suporte antes de adicionar.' }];
       }
-      const familiaGrade = comTam > 0;
+      const familiaGrade = classe === 'grade';
       if (familiaGrade && !ctx.ehUP) {
         return [{ campo: 'familia_id', mensagem: 'Este produto usa tamanho mas não está publicado em User Products — adicionar por aqui não é suportado.' }];
       }
@@ -755,7 +757,7 @@ export function derivarCodigosSku(ultimo: number, qtd: number): string[] {
   - Atualizar o comentário de `familiaTemTamanho` (a trava agora é só para família não-UP).
 
 - [ ] **Step 5: Implementar `index.ts`** — ordem das etapas depois de carregar `variacoesVivas`:
-  1. Remover o bloco `if (familiaTemTamanho(...)) return 400` (l.133–145).
+  1. Remover o bloco `if (familiaTemTamanho(...)) return 400` (l.133–145) e calcular `const classe = classificarFamilia(variacoesVivas)`. **Consultas novas (passos 2 e 3) só quando `classe !== 'simples'`** (Codex r4 #2): o fluxo sem tamanho não ganha nenhuma consulta nem ponto de falha novo — `validarGrade` recebe `ehUP: false, tiposHabilitados: []` nesse ramo e não os lê. Teste (fake de admin que conta chamadas por tabela/RPC): família simples → nenhuma chamada a `anuncios_externos`, `anuncios_externos_itens` nem `tipos_produto_da_org`; body e resposta iguais aos de hoje.
   2. `ehUP` — **mesma detecção do worker** (`update-familia-ml/processar.ts:202-237`: raiz da partição 0 do produto + linhas filhas), nunca por SKU solto na org (Codex #4). Só quando a família tem tamanho (fora disso `ehUP: false`; `validarGrade` não o lê):
      ```ts
      const { data: raiz, error: raizErr } = await admin.from('anuncios_externos').select('id')
@@ -942,6 +944,7 @@ it('payload: herda foto quando a linha não tem foto própria e a cor tem foto; 
       ```
       Uma combinação que só existe numa tentativa de UPDATE que falhou (família mais nova, não publicada) **não** fica travada: aparece como célula nova normal, e a edge a valida contra a publicada. Teste: publicada tem Preto·P; canônica (erro) tem Preto·P + Preto·M → só Preto·P travada, Preto·M editável.
     - Estoque exibido nas travadas vem de `fetchVariacoesProduto` (QK `variacoesEstoque`, saldo canônico) casado por código; se não carregou, usar o da consulta.
+  - Classificação: `classificarFamilia` (a MESMA da edge) sobre as variações da família publicada. `'simples'` (o resumo pode divergir da publicada — ex.: tamanho só num SKU excluído de uma tentativa mais nova) → o dialog chama a prop `onNaoEhGrade()` e o roteador abre o `DialogAdicionarVariacao` antigo no lugar (Codex r4 #1 — o fluxo antigo nunca fica inacessível). `'mista'` → aviso de bloqueio. Teste: publicada com incluído sem tamanho + excluído com tamanho e resumo `temTamanho: true` → o dialog antigo abre.
   - `skus: SkuExistente[]` = **todas** as variações da família publicada com `tamanho`, incluídas e excluídas (Codex r3 #1); `SkuExistente` ganha `excluida: boolean`. Excluídas ficam travadas também (a edge recusa o par), com rótulo "fora do anúncio" no `aria-label`/título da célula e sem contar como foto herdável. Tipo inferido só das incluídas; incluídas misturando tamanho e ausência → mesmo aviso de bloqueio da edge ("SKUs publicados com e sem tamanho — fale com o suporte"). `temFoto = !!(imagem_path || ml_picture_id)`.
   - Estado: `cores`/`tamanhos` (Set) iniciados com `eixosExistentes(skus)`; `removidas`; `linhas: LinhaGrade[]`; `cabecalho: CamposHerdaveis` pré-preenchido pelo SKU de referência (menor código entre os não `excluida_da_publicacao`, mesma regra de `irmaRef` no dialog atual); `fotoPorCor` (só para cores sem foto herdável); `chave` (UUID, regenerada ao fechar).
   - Tipo da grade = `tipoDaGrade(skus.map((s) => s.tamanho))` (reexportado de `@/lib/tamanhos`); os tamanhos oferecidos são **só** os desse tipo (`opcoesDeTamanho([tipo])`), nunca a união dos tipos da org (Codex r2 #1). Estados de bloqueio, antes de qualquer upload e com o botão Salvar desabilitado:
@@ -965,10 +968,15 @@ it('payload: herda foto quando a linha não tem foto própria e a cor tem foto; 
 export function DialogAdicionarVariacaoRoteador({ produto, onFechar }: {
   produto: ProdutoEstoqueResumo | null; onFechar: () => void;
 }) {
-  const ehGrade = !!produto?.temTamanho;
+  // A palavra final é do dialog de grade, que lê a família PUBLICADA com a mesma
+  // `classificarFamilia` da edge; se ela disser 'simples', cai para o fluxo antigo (Codex r4 #1).
+  const [forcarSimples, setForcarSimples] = useState(false);
+  useEffect(() => { setForcarSimples(false); }, [produto?.codigoPai]);
+  const ehGrade = !!produto?.temTamanho && !forcarSimples;
   return (
     <>
-      <DialogEstenderGrade produto={ehGrade ? produto : null} aberto={produto != null && ehGrade} onFechar={onFechar} />
+      <DialogEstenderGrade produto={ehGrade ? produto : null} aberto={produto != null && ehGrade}
+        onFechar={onFechar} onNaoEhGrade={() => setForcarSimples(true)} />
       <DialogAdicionarVariacao produto={ehGrade ? null : produto} aberto={produto != null && !ehGrade} onFechar={onFechar} />
     </>
   );
