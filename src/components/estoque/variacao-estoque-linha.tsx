@@ -7,6 +7,7 @@ import { useImageUrl } from '@/hooks/useImageUrl';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
 import { urlFotoMl, type VariacaoComSaldo } from '@/lib/produtos-saldo';
+import { rotuloVariacao } from '@/lib/rotulo-variacao';
 
 /** "200g · 10×20×30cm", só as partes informadas. "—" se nada foi preenchido. */
 function rotuloDimensoes(v: VariacaoComSaldo): string {
@@ -110,7 +111,7 @@ export function VariacaoEstoqueLinha({ variacao: v, precoMl, statusPublicacao, s
           <PillPublicacao status={statusPublicacao} />
           <PillSyncMl estado={syncMl} />
         </div>
-        <div className="truncate text-xs text-muted-foreground">{v.cor ?? v.nome ?? '—'}</div>
+        <div className="truncate text-xs text-muted-foreground">{rotuloVariacao(v) ?? '—'}</div>
         {/* Abaixo de lg as colunas somem: custo/preço voltam aqui para não sumir do mobile. */}
         <div className="truncate text-xs tabular-nums text-muted-foreground lg:hidden">
           custo {custo} · preço {preco}{divergente && ` · local ${precoLocal}`}

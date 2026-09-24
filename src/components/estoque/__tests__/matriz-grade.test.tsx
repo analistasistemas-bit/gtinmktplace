@@ -3,7 +3,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MatrizGrade } from '@/components/estoque/matriz-grade';
 import {
-  novaLinhaGrade, resolverLinha, type CamposHerdaveis, type LinhaGrade,
+  chaveGrade, novaLinhaGrade, resolverLinha, type CamposHerdaveis, type LinhaGrade,
 } from '@/lib/cadastro-grade';
 
 const CABECALHO: CamposHerdaveis = {
@@ -14,6 +14,7 @@ const CABECALHO: CamposHerdaveis = {
 function montar(linhas: LinhaGrade[], props: {
   cores?: string[]; tamanhos?: string[]; desabilitado?: boolean; removidas?: Set<string>;
   cabecalho?: CamposHerdaveis;
+  bloqueadas?: ReadonlyMap<string, { estoque: number; excluida?: boolean }>;
 } = {}) {
   const spies = {
     onMudarLinha: vi.fn(), onMudarOverride: vi.fn(), onDestravar: vi.fn(), onVoltarAHerdar: vi.fn(),
@@ -27,6 +28,7 @@ function montar(linhas: LinhaGrade[], props: {
       tamanhos={props.tamanhos ?? ['P', 'M']}
       removidas={props.removidas ?? new Set()}
       desabilitado={props.desabilitado ?? false}
+      bloqueadas={props.bloqueadas}
       {...spies}
     />,
   );
@@ -369,6 +371,75 @@ describe('MatrizGrade — erro por célula', () => {
     const campo = screen.getByLabelText('Preço mínimo (líquido) de Preto · P');
     expect(campo.className.split(/\s+/)).toContain('border-destructive');
     expect(screen.getByText(/Preço mínimo.*obrigatório/)).toBeInTheDocument();
+  });
+});
+
+describe('MatrizGrade — células travadas (Task 6: SKU já publicado, ADR-0129)', () => {
+  // Preto·P e Preto·M são travadas (já publicadas); só Verde tem linha nova na grade.
+  function montarComTravadas(bloqueadas: ReadonlyMap<string, { estoque: number; excluida?: boolean }>) {
+    const linhas = [novaLinhaGrade('Verde', 'P'), novaLinhaGrade('Verde', 'M')];
+    return {
+      linhas,
+      ...montar(linhas, { cores: ['Preto', 'Verde'], tamanhos: ['P', 'M'], bloqueadas }),
+    };
+  }
+
+  it('célula travada mostra o estoque publicado, sem input, com aria-label "já publicado"', () => {
+    montarComTravadas(new Map([
+      [chaveGrade('Preto', 'P'), { estoque: 12 }],
+      [chaveGrade('Preto', 'M'), { estoque: 8 }],
+    ]));
+    expect(screen.queryByLabelText('Estoque inicial de Preto · P')).not.toBeInTheDocument();
+    const p = screen.getByLabelText('Preto · P: já publicado, 12 em estoque');
+    const m = screen.getByLabelText('Preto · M: já publicado, 8 em estoque');
+    expect(p).toBeInTheDocument();
+    expect(p.tagName).not.toBe('INPUT');
+    expect(m).toHaveTextContent('8');
+  });
+
+  it('célula travada alinha como o input editável (mesma largura, à esquerda) — achado E2E 3', () => {
+    montarComTravadas(new Map([[chaveGrade('Preto', 'P'), { estoque: 12 }]]));
+    const travada = screen.getByLabelText('Preto · P: já publicado, 12 em estoque');
+    const input = screen.getByLabelText('Estoque inicial de Verde · P');
+    expect(travada).not.toHaveClass('justify-end');
+    expect(travada).toHaveClass('w-16');
+    expect(input.parentElement).toHaveClass('w-16');
+  });
+
+  it('célula travada não oferece o "+" de reinclusão', () => {
+    montarComTravadas(new Map([[chaveGrade('Preto', 'P'), { estoque: 12 }]]));
+    expect(screen.queryByRole('button', { name: 'Reincluir Preto · P' })).not.toBeInTheDocument();
+  });
+
+  it('células fora de `bloqueadas` continuam com input normal', () => {
+    montarComTravadas(new Map([[chaveGrade('Preto', 'P'), { estoque: 12 }]]));
+    expect(screen.getByLabelText('Estoque inicial de Verde · P')).toBeInTheDocument();
+    expect(screen.getByLabelText('Estoque inicial de Verde · M')).toBeInTheDocument();
+  });
+
+  it('totais consideram só as linhas novas — a travada não entra na soma', () => {
+    const { linhas } = montarComTravadas(new Map([
+      [chaveGrade('Preto', 'P'), { estoque: 12 }],
+      [chaveGrade('Preto', 'M'), { estoque: 8 }],
+    ]));
+    linhas[0] = { ...linhas[0]!, estoqueInicial: '3' };
+    // A soma de Preto (linha travada) não pode aparecer: 12 + 8 = 20 provaria que os totais
+    // leram `bloqueadas` por engano em vez de só `resolvidas`.
+    const linhaPreto = screen.getByText('Preto').closest('tr')!;
+    expect(within(linhaPreto).getByText('0')).toBeInTheDocument();
+  });
+
+  // Ruling R2 do controlador: célula travada com `excluida: true` continua travada, mas o texto
+  // muda — o SKU não está mais publicado no ML (foi removido do anúncio), então "já publicado"
+  // seria enganoso.
+  it('célula travada com `excluida: true` mostra "fora do anúncio" em vez de "já publicado"', () => {
+    montarComTravadas(new Map([
+      [chaveGrade('Preto', 'P'), { estoque: 12, excluida: true }],
+    ]));
+    const celula = screen.getByLabelText('Preto · P: fora do anúncio');
+    expect(celula).toBeInTheDocument();
+    expect(celula).toHaveAttribute('title', 'Preto · P: fora do anúncio');
+    expect(screen.queryByLabelText(/já publicado/)).not.toBeInTheDocument();
   });
 });
 

@@ -19,6 +19,7 @@ import { ehCorIndefinida } from '../cor/indefinida.ts';
 import { resolverCorValueId } from '../cor/value-id.ts';
 import { atributosDeFicha, mesclarAtributos } from './atributos-irmao.ts';
 import { notificarCategoria } from '../notificacoes/config.ts';
+import { garantirChart, GENDER_VALUE, type ChartResolvido, type Genero } from '../ml/size-chart.ts';
 import {
   atualizarComposicao, type PortasComposicao, type FilhoComp, type ConfirmacaoComp, type ResultadoComposicao,
 } from './atualizar-composicao.ts';
@@ -37,6 +38,8 @@ export interface VariacaoUP {
   exibir_com_desconto?: boolean | null;
   desconto_pct?: number | string | null;
   atacado?: unknown;
+  /** ADR-0166. null/ausente = sem eixo de tamanho (INV-1). */
+  tamanho?: string | null;
 }
 
 export interface RaizUP { id: string; titulo: string | null; criado_em?: string | null }
@@ -51,6 +54,7 @@ export interface AtualizarFamiliaUPArgs {
     categoria_ml_id: string | null; descricao_ml: string | null; atributos_ml?: unknown;
     capa_ml_picture_id: string | null; capa2_ml_picture_id: string | null; capa3_ml_picture_id: string | null;
     atacado?: unknown; atacado_status?: string | null;
+    genero?: string | null;
   };
   raiz: RaizUP;
   variacoes: VariacaoUP[];
@@ -76,6 +80,8 @@ export interface AtualizarFamiliaUPArgs {
    *  nunca precisa disso (variacoes já É o desejado atual). Sem override, comportamento intacto. */
   skusDesejadosOverride?: string[];
   /** Injetável em teste; produção usa a saga real. */
+  /** Injetável em teste; produção usa `garantirChart`. */
+  garantirChartFn?: typeof garantirChart;
   executarSaga?: (portas: PortasComposicao, entrada: Parameters<typeof atualizarComposicao>[1]) => Promise<ResultadoComposicao>;
   now?: () => string;
 }
@@ -214,6 +220,27 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
     titulo_ml: familyName, descricao_ml: familia.descricao_ml,
     categoria_ml_id: familia.categoria_ml_id, atributos_ml: familia.atributos_ml,
   };
+  // ADR-0166 2026-09-24c: SKU novo de grade precisa do chart ANTES do payload. Resolvido uma vez
+  // por execução (SIZE_GRID_ID é o mesmo para a família inteira). O chart nasce com o superset de
+  // tamanhos (ADR-0167 D2), então isto é cache hit. Tamanho fora do chart em cache: garantirChart
+  // LANÇA (size-chart.ts:259-270) — falha alto, sem rotação automática (Codex r2 #9).
+  const IDS_TAMANHO = new Set(['SIZE', 'SIZE_GRID_ID', 'SIZE_GRID_ROW_ID']);
+  let chartPromessa: Promise<ChartResolvido | null> | null = null;
+  const resolverChart = (): Promise<ChartResolvido | null> => (chartPromessa ??= (async () => {
+    const tamanhos = [...new Set(variacoes.map((v) => v.tamanho?.trim()).filter((t): t is string => !!t))];
+    if (tamanhos.length === 0) return null;
+    // 400: erro de cadastro determinístico — sem status, `decidirRetryPorErro` o retentaria como
+    // transitório, ocupando a fila serial da org à toa (mesmo padrão de update-familia-ml).
+    const definitivo = (m: string) => Object.assign(new Error(m), { status: 400 });
+    if (!familia.genero) {
+      throw definitivo(`Família ${familia.id}: SKU com tamanho mas familias.genero ausente — o ML exige GENDER com o guia de tamanhos (ADR-0167 D6).`);
+    }
+    if (!familia.categoria_ml_id) throw definitivo(`Família ${familia.id}: sem categoria_ml_id para resolver o guia de tamanhos.`);
+    return (args.garantirChartFn ?? garantirChart)(
+      admin, await ctx.getToken(), conexao.id, familia.categoria_ml_id, familia.genero as Genero, tamanhos,
+    );
+  })());
+
   // criarPlano: mesma disciplina de foto do caminho Legacy `novas` — sobe a foto da cor nova
   // (idempotente via ml_picture_id), depois monta o payload plano com o family_name da partição.
   const criarPlano = async (sku: string): Promise<{ itemExternoId: string; permalink: string }> => {
@@ -227,11 +254,28 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
       altura_cm: num(v.altura_cm), largura_cm: num(v.largura_cm),
       comprimento_cm: num(v.comprimento_cm), peso_gramas: num(v.peso_gramas),
     };
+    const chart = v.tamanho ? await resolverChart() : null;
+    const linha = v.tamanho ? chart?.linhaPorTamanho.get(v.tamanho) ?? null : null;
+    const atributosMesclados = mesclarAtributos(familia.atributos_ml, await lerFichaDoIrmao());
+    // SIZE* vão por SKU em montarPayloadItem; se a família também os tiver em atributos_ml
+    // (IA/Revisão) ou herdar do irmão, duplicariam — mesma limpeza de publicar-familia-up.ts
+    // (IDS_SUBSTITUIDOS). GENDER: mesma regra do CREATE (publicar-familia-up.ts) —
+    // familias.genero, escolhido pelo operador, é a fonte de verdade; o do irmão/IA pode divergir
+    // ou faltar (Codex #2). Sem tamanho, a herança fica exatamente como antes (INV-1).
+    const atributos = v.tamanho
+      ? [
+        ...atributosMesclados.filter((a) => !a.id || (!IDS_TAMANHO.has(a.id) && a.id !== 'GENDER')),
+        { id: 'GENDER', value_id: GENDER_VALUE[familia.genero as Genero].id },
+      ]
+      : atributosMesclados;
     const payload = montarPayloadItem(
-      { ...familiaInput, atributos_ml: mesclarAtributos(familia.atributos_ml, await lerFichaDoIrmao()) } as never,
+      { ...familiaInput, atributos_ml: atributos } as never,
       [{
         codigo: v.codigo, cor: v.cor, estoque: v.estoque, preco_publicacao: num(v.preco_publicacao),
         gtin: v.gtin, ml_picture_id: picId, corValueId: resolverCorValueId(v.cor, valoresCor),
+        // Tamanho sem linha no chart → o guard de montarPayloadItem lança "sem guia de tamanhos".
+        tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null,
+        sizeGridId: chart?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,
       }] as never,
       familia.capa_ml_picture_id, familia.capa2_ml_picture_id, familia.capa3_ml_picture_id,
       undefined, dimensoes, aceitaEmptyGtin, 'plano',

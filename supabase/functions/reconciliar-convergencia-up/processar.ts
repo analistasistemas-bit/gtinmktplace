@@ -5,6 +5,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
+import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
 import { atualizarFamiliaUP, type VariacaoUP } from '../_shared/user-products/atualizar-familia-up.ts';
 import {
   reconciliarConvergencia, type PortasConvergencia, type ClaimResultado, type ResultadoRaiz,
@@ -51,7 +52,7 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
       // Família EXATA do episódio (nunca inferida por recência, revisão adversarial) — a mesma
       // que o worker normal do UPDATE usaria se o operador clicasse "Reenviar" agora.
       const { data: familiaRow, error: famErr } = await admin.from('familias')
-        .select('id, org_id, codigo_pai, categoria_ml_id, descricao_ml, atributos_ml, capa_ml_picture_id, capa2_ml_picture_id, capa3_ml_picture_id, atacado, atacado_status')
+        .select('id, org_id, codigo_pai, categoria_ml_id, descricao_ml, atributos_ml, capa_ml_picture_id, capa2_ml_picture_id, capa3_ml_picture_id, atacado, atacado_status, genero, lote_id')
         .eq('id', claim.familiaId as string).maybeSingle();
       if (famErr) throw new Error(`resolver família (${claim.familiaId}): ${famErr.message}`);
       if (!familiaRow) throw new Error(`família ${claim.familiaId} não encontrada (referenciada pela raiz mas já apagada?)`);
@@ -59,10 +60,11 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
         id: string; org_id: string; codigo_pai: string; categoria_ml_id: string | null; descricao_ml: string | null;
         atributos_ml?: unknown; capa_ml_picture_id: string | null; capa2_ml_picture_id: string | null;
         capa3_ml_picture_id: string | null; atacado?: unknown; atacado_status?: string | null;
+        genero?: string | null; lote_id: string;
       };
 
       const { data: variacoesRaw, error: varErr } = await admin.from('variacoes')
-        .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, peso_gramas, altura_cm, largura_cm, comprimento_cm')
+        .select('codigo, cor, tamanho, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, peso_gramas, altura_cm, largura_cm, comprimento_cm')
         .eq('familia_id', familia.id).eq('excluida_da_publicacao', false);
       if (varErr) throw new Error(`consultar variações (${familia.id}): ${varErr.message}`);
       const variacoes = (variacoesRaw ?? []) as VariacaoUP[];
@@ -82,6 +84,11 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
         );
       }
 
+      // Codex #1: a retomada de uma composição do fluxo "Adicionar variação" (ADR-0129) rodava sem
+      // `preservarPublicadas` e podia reenviar preço/atributos às irmãs. Mesmo predicado do worker.
+      // Antes de resolver conexão/token: erro lendo o lote falha a rodada sem tocar o ML.
+      const preservarPublicadas = await ehFluxoAddVariacao(admin, familia.lote_id);
+
       const conexao = await resolverConexao(admin, claim.orgId, CANAL);
       if (!conexao) throw new Error(`organização ${claim.orgId} sem conexão com o Mercado Livre`);
       const conn = getConnector(CANAL);
@@ -91,7 +98,7 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
         admin, conn, ctx, conexao, familia,
         raiz: { id: claim.rootId, titulo: claim.titulo, criado_em: claim.criadoEm },
         variacoes, somenteEstoque: false, tentativas: claim.tentativas,
-        skusDesejadosOverride: claim.skusEsperados,
+        skusDesejadosOverride: claim.skusEsperados, preservarPublicadas,
       });
       // Rede de segurança (revisão adversarial, 2ª rodada — achado real): se o crash original
       // aconteceu DEPOIS de todos os filhos já confirmados ativos mas ANTES do `limparComposicao`

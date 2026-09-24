@@ -17,6 +17,7 @@ vi.mock('../../ml/criar-item.ts', () => ({
 
 import { atualizarFamiliaUP, type AtualizarFamiliaUPArgs } from '../atualizar-familia-up';
 import type { PortasComposicao, ResultadoComposicao } from '../atualizar-composicao';
+import { decidirRetryTransitorio } from '../../publicacao/retry';
 
 /** Ficha do irmão como o ML devolve: BRAND normalizado com value_id e COMPOSITION, que o app
  *  nunca envia — as duas divergências que desagruparam a família no lote 54. */
@@ -134,5 +135,110 @@ describe('atualizarFamiliaUP — cor nova herda a ficha do irmão (incidente do 
     globalThis.fetch = (async () => new Response('erro', { status: 500 })) as typeof fetch;
     await atualizarFamiliaUP(args());
     expect(atributosEnviados()).toContainEqual({ id: 'BRAND', value_name: 'BUFALO' });
+  });
+});
+
+// Caracterização (Codex #12): payload COMPLETO que o código de ANTES da feature (ADR-0166
+// 2026-09-24c) gerava para a família sem tamanho — literais copiados da saída real daquele código.
+// Família sem tamanho tem que continuar byte a byte igual (INV-1).
+const PAYLOAD_SEM_TAMANHO_ATUAL = {"category_id":"","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"P2"}],"attributes":[{"id":"BRAND","value_id":"9165622"},{"id":"MANUFACTURER","value_id":"9165622"},{"id":"COMPOSITION","value_id":"4904381"},{"id":"LENGTH","value_name":"10 m"},{"id":"COLOR","value_name":"Preto"},{"id":"SELLER_PACKAGE_HEIGHT","value_name":"43 cm"},{"id":"SELLER_PACKAGE_WIDTH","value_name":"16 cm"},{"id":"SELLER_PACKAGE_LENGTH","value_name":"36 cm"},{"id":"SELLER_PACKAGE_WEIGHT","value_name":"2200 g"}],"price":10,"available_quantity":40,"seller_custom_field":"NOVA","family_name":"T"};
+// Irmão remoto COM SIZE* e banco sem tamanho: hoje o SIZE* do irmão é herdado — continua sendo.
+const PAYLOAD_SEM_TAMANHO_IRMAO_COM_SIZE = {"category_id":"","currency_id":"BRL","buying_mode":"buy_it_now","listing_type_id":"gold_special","condition":"new","pictures":[{"id":"P2"}],"attributes":[{"id":"BRAND","value_id":"9165622"},{"id":"MANUFACTURER","value_id":"9165622"},{"id":"COMPOSITION","value_id":"4904381"},{"id":"SIZE","value_name":"M"},{"id":"SIZE_GRID_ID","value_name":"CH1"},{"id":"SIZE_GRID_ROW_ID","value_name":"CH1:2"},{"id":"LENGTH","value_name":"10 m"},{"id":"COLOR","value_name":"Preto"},{"id":"SELLER_PACKAGE_HEIGHT","value_name":"43 cm"},{"id":"SELLER_PACKAGE_WIDTH","value_name":"16 cm"},{"id":"SELLER_PACKAGE_LENGTH","value_name":"36 cm"},{"id":"SELLER_PACKAGE_WEIGHT","value_name":"2200 g"}],"price":10,"available_quantity":40,"seller_custom_field":"NOVA","family_name":"T"};
+
+describe('atualizarFamiliaUP — família sem tamanho (INV-1)', () => {
+  it('payload completo idêntico ao de antes da feature, e chart nunca é chamado', async () => {
+    const chartFake = vi.fn();
+    await atualizarFamiliaUP(args({ garantirChartFn: chartFake as never }));
+    expect(chartFake).not.toHaveBeenCalled();
+    expect(criarItemSpy.mock.calls[0]![1]).toEqual(PAYLOAD_SEM_TAMANHO_ATUAL);
+  });
+  // Codex r3 #3: irmão remoto COM SIZE* e banco sem tamanho → payload exatamente como hoje.
+  it('irmão remoto com SIZE* e variação sem tamanho: payload idêntico ao atual', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ attributes: [
+      ...ATRIBUTOS_DO_IRMAO, { id: 'SIZE', value_name: 'M' }, { id: 'SIZE_GRID_ID', value_name: 'CH1' },
+      { id: 'SIZE_GRID_ROW_ID', value_name: 'CH1:2' },
+    ] }), { status: 200 })) as typeof fetch;
+    await atualizarFamiliaUP(args());
+    expect(criarItemSpy.mock.calls[0]![1]).toEqual(PAYLOAD_SEM_TAMANHO_IRMAO_COM_SIZE);
+  });
+});
+
+describe('atualizarFamiliaUP — SKU novo de grade (ADR-0166 2026-09-24c)', () => {
+  const IRMAO_GRADE = [
+    ...ATRIBUTOS_DO_IRMAO,
+    { id: 'GENDER', value_id: '339666', value_name: 'Masculino' },
+    { id: 'SIZE', value_name: 'M' },
+    { id: 'SIZE_GRID_ID', value_name: 'CH1' },
+    { id: 'SIZE_GRID_ROW_ID', value_name: 'CH1:2' },
+  ];
+  const chartFake = vi.fn(async () => ({
+    chartId: 'CH1',
+    linhaPorTamanho: new Map([['M', { rowId: 'CH1:2', sizeLabel: 'M' }], ['G', { rowId: 'CH1:3', sizeLabel: 'G' }]]),
+  }));
+  function argsGrade(over: Partial<AtualizarFamiliaUPArgs> = {}) {
+    const base = args();
+    return args({
+      familia: { ...(base.familia as object), genero: 'masculino', categoria_ml_id: 'MLB1', atributos_ml: [{ id: 'SIZE', value_name: 'XX' }] } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul-petróleo', tamanho: 'M', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P1' },
+        { codigo: 'NOVA', cor: 'Preto', tamanho: 'G', estoque: 40, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P2' },
+      ] as never,
+      garantirChartFn: chartFake as never,
+      ...over,
+    });
+  }
+  beforeEach(() => {
+    chartFake.mockClear();
+    globalThis.fetch = (async () => new Response(JSON.stringify({ attributes: IRMAO_GRADE }), { status: 200 })) as typeof fetch;
+  });
+
+  it('SKU novo leva o SIZE e a linha do chart DELE, não os do irmão — e um SIZE só', async () => {
+    await atualizarFamiliaUP(argsGrade());
+    const attrs = atributosEnviados();
+    expect(attrs.filter((a) => a.id === 'SIZE')).toEqual([{ id: 'SIZE', value_name: 'G' }]);
+    expect(attrs.filter((a) => a.id === 'SIZE_GRID_ROW_ID')).toEqual([{ id: 'SIZE_GRID_ROW_ID', value_name: 'CH1:3' }]);
+    expect(attrs.filter((a) => a.id === 'SIZE_GRID_ID')).toEqual([{ id: 'SIZE_GRID_ID', value_name: 'CH1' }]);
+  });
+
+  it('chart resolvido uma vez, com gênero e todos os tamanhos da família', async () => {
+    await atualizarFamiliaUP(argsGrade());
+    expect(chartFake).toHaveBeenCalledTimes(1);
+    expect((chartFake.mock.calls[0] as unknown[]).slice(2)).toEqual(['c', 'MLB1', 'masculino', ['M', 'G']]);
+  });
+
+  it('família com tamanho e sem gênero falha alto, sem criar item', async () => {
+    await expect(atualizarFamiliaUP(argsGrade({
+      familia: { ...(args().familia as object), genero: null, categoria_ml_id: 'MLB1' } as never,
+    }))).rejects.toThrow(/genero/i);
+    expect(criarItemSpy).not.toHaveBeenCalled();
+  });
+
+  it('erro de cadastro (sem gênero / sem categoria) é definitivo: a decisão real de retry não retenta', async () => {
+    for (const over of [{ genero: null, categoria_ml_id: 'MLB1' }, { genero: 'masculino', categoria_ml_id: null }]) {
+      const err = await atualizarFamiliaUP(argsGrade({
+        familia: { ...(args().familia as object), ...over } as never,
+      })).then(() => null, (e: unknown) => e);
+      expect((err as { status?: number }).status).toBe(400);
+      expect(decidirRetryTransitorio(err, 0)).toBe('definitivo');
+    }
+  });
+
+  it('GENDER vem de familias.genero, nunca do irmão nem de atributos_ml (Codex #2)', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      attributes: IRMAO_GRADE.map((a) => (a.id === 'GENDER' ? { id: 'GENDER', value_id: '339665', value_name: 'Feminino' } : a)),
+    }), { status: 200 })) as typeof fetch;
+    await atualizarFamiliaUP(argsGrade({
+      familia: { ...(args().familia as object), genero: 'masculino', categoria_ml_id: 'MLB1',
+        atributos_ml: [{ id: 'GENDER', value_id: '110461' }] } as never,
+    }));
+    expect(atributosEnviados().filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339666' }]);
+  });
+
+  it('GET do irmão falhou → GENDER e SIZE continuam certos', async () => {
+    globalThis.fetch = (async () => new Response('erro', { status: 500 })) as typeof fetch;
+    await atualizarFamiliaUP(argsGrade());
+    const attrs = atributosEnviados();
+    expect(attrs.filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339666' }]);
+    expect(attrs.filter((a) => a.id === 'SIZE')).toEqual([{ id: 'SIZE', value_name: 'G' }]);
   });
 });

@@ -15,7 +15,7 @@ function variacao(codigo: string, cor: string | null, estoque: number): Variacao
   return {
     codigo, nome: 'Tecido Helanca', cor, gtin: null, estoque, custo: 32.84, preco: 76.9,
     pesoGramas: null, alturaCm: null, larguraCm: null, comprimentoCm: null,
-    imagemPath: null, mlPictureId: null, mlItemId: 'MLB1', kits: [],
+    imagemPath: null, mlPictureId: null, mlItemId: 'MLB1', kits: [], tamanho: null,
   };
 }
 
@@ -105,6 +105,15 @@ describe('DialogEntrada — modo lista (aberto pelo card do produto)', () => {
     renderDialog({ codigoPaiInicial: '26705341' });
     await screen.findByText(/18760901 · Vermelho/);
     expect(screen.getByRole('button', { name: /Registrar entrada/ })).toBeDisabled();
+  });
+
+  // ADR-0166 (Task 3): cor com tamanho ganha o sufixo no rótulo da lista.
+  it('cor com tamanho aparece como "<codigo> · Preto · M"', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValueOnce([
+      { ...variacao('09200001', 'Preto', 5), tamanho: 'M' },
+    ]);
+    renderDialog({ codigoPaiInicial: '26705341' });
+    expect(await screen.findByText('09200001 · Preto · M')).toBeInTheDocument();
   });
 });
 

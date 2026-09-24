@@ -10,7 +10,7 @@ function variacao(over: Partial<VariacaoComSaldo> = {}): VariacaoComSaldo {
     codigo: '00000005', nome: null, cor: 'incolor', gtin: '4005800241901',
     estoque: 20, custo: 12, preco: 89.9, pesoGramas: 200,
     alturaCm: 10, larguraCm: 20, comprimentoCm: 30, imagemPath: null, mlPictureId: null, mlItemId: null,
-    kits: [], ...over,
+    kits: [], tamanho: null, ...over,
   };
 }
 
@@ -45,6 +45,12 @@ describe('VariacaoEstoqueLinha', () => {
   it('custo ausente vira travessão, nunca R$ 0,00', () => {
     render(<VariacaoEstoqueLinha variacao={variacao({ custo: null })} />);
     expect(screen.getByText(/custo — · preço/)).toBeInTheDocument();
+  });
+
+  // ADR-0166 (Task 3): variação de grade ganha o tamanho no rótulo da linha expandida.
+  it('com tamanho, mostra "cor · tamanho"', () => {
+    render(<VariacaoEstoqueLinha variacao={variacao({ cor: 'Preto', nome: 'Preto', tamanho: 'M' })} />);
+    expect(screen.getByText('Preto · M')).toBeInTheDocument();
   });
 
   // O bug que originou a coluna: `variacoes.preco` é o preço da planilha/markup e não é

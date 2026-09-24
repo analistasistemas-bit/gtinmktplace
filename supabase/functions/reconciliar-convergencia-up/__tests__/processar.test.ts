@@ -21,7 +21,11 @@ import { criarPortasConvergencia, listarRaizesTravadas } from '../processar';
 // mutação remota — nem chega a resolver conexão/token; (2) família não encontrada (referenciada
 // pela raiz mas já apagada) falha com mensagem clara, não crasha ambíguo.
 // `updateErros`: marca `{tabela}` cuja PRÓXIMA chamada a `update()` deve resolver `{error}`.
-function fakeAdmin(filas: Record<string, unknown[]> = {}, rpcs: Record<string, unknown> = {}, updateErros: Record<string, string> = {}) {
+// `leituraErros`: `{tabela}` cujo `maybeSingle()` resolve `{error}` (ex.: ler a origem do lote).
+function fakeAdmin(
+  filas: Record<string, unknown[]> = {}, rpcs: Record<string, unknown> = {},
+  updateErros: Record<string, string> = {}, leituraErros: Record<string, string> = {},
+) {
   const updates: { tabela: string; payload: Record<string, unknown> }[] = [];
   const proximo = (tabela: string) => {
     const fila = filas[tabela] ?? [];
@@ -32,7 +36,9 @@ function fakeAdmin(filas: Record<string, unknown[]> = {}, rpcs: Record<string, u
       select: () => obj,
       eq: () => obj,
       lt: () => obj,
-      maybeSingle: async () => ({ data: proximo(tabela), error: null }),
+      maybeSingle: async () => (leituraErros[tabela]
+        ? { data: null, error: { message: leituraErros[tabela] } }
+        : { data: proximo(tabela), error: null }),
       update: (payload: Record<string, unknown>) => {
         updates.push({ tabela, payload });
         const erro = updateErros[tabela];
@@ -49,7 +55,8 @@ function fakeAdmin(filas: Record<string, unknown[]> = {}, rpcs: Record<string, u
   return { admin, updates };
 }
 
-const FAMILIA_OK = { id: 'fam-1', org_id: 'org-1', codigo_pai: '00012345' };
+const FAMILIA_OK = { id: 'fam-1', org_id: 'org-1', codigo_pai: '00012345', lote_id: 'lote-1' };
+const LOTE_PLANILHA = { origem: 'planilha' };
 const VARIACOES_OK = [{ codigo: 'A' }, { codigo: 'B' }];
 const CONEXAO_OK = { id: 'conn-1', org_id: 'org-1', canal: 'mercado_livre', conta_externa_id: 'seller-1', expires_at: null };
 const CLAIM_OK = {
@@ -120,6 +127,7 @@ describe('criarPortasConvergencia — resumirComposicao (guards, antes de tocar 
     const { admin } = fakeAdmin({
       familias: [{ id: 'fam-1', org_id: 'org-1', codigo_pai: '00012345' }],
       variacoes: [[{ codigo: 'A' }, { codigo: 'B' }]],
+      lotes: [LOTE_PLANILHA],
       marketplace_connections: [null], // sem conexão — falha depois do guard, prova que passou dele
     });
     const portas = criarPortasConvergencia(admin, '2026-01-01T00:00:00Z');
@@ -134,7 +142,7 @@ describe('criarPortasConvergencia — resumirComposicao (rede de segurança do s
   it("atualizarFamiliaUP retorna estado:'ok' → dispara UPDATE zerando mudando_composicao/reconciliacao_tentativas/mudando_composicao_familia_id na raiz", async () => {
     atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
     const { admin, updates } = fakeAdmin({
-      familias: [FAMILIA_OK], variacoes: [VARIACOES_OK], marketplace_connections: [CONEXAO_OK],
+      familias: [FAMILIA_OK], variacoes: [VARIACOES_OK], lotes: [LOTE_PLANILHA], marketplace_connections: [CONEXAO_OK],
     });
     const portas = criarPortasConvergencia(admin, '2026-01-01T00:00:00Z');
     const resultado = await portas.resumirComposicao(CLAIM_OK);
@@ -148,7 +156,7 @@ describe('criarPortasConvergencia — resumirComposicao (rede de segurança do s
   it('UPDATE de limpeza falha → lança (nunca reporta convergência falsa com a raiz ainda travada)', async () => {
     atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'ok' });
     const { admin } = fakeAdmin(
-      { familias: [FAMILIA_OK], variacoes: [VARIACOES_OK], marketplace_connections: [CONEXAO_OK] },
+      { familias: [FAMILIA_OK], variacoes: [VARIACOES_OK], lotes: [LOTE_PLANILHA], marketplace_connections: [CONEXAO_OK] },
       {},
       { anuncios_externos: 'timeout' },
     );
@@ -159,11 +167,39 @@ describe('criarPortasConvergencia — resumirComposicao (rede de segurança do s
   it("atualizarFamiliaUP retorna estado:'retry' → NÃO dispara a limpeza (raiz segue travada de propósito, ainda incompleta)", async () => {
     atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'retry' });
     const { admin, updates } = fakeAdmin({
-      familias: [FAMILIA_OK], variacoes: [VARIACOES_OK], marketplace_connections: [CONEXAO_OK],
+      familias: [FAMILIA_OK], variacoes: [VARIACOES_OK], lotes: [LOTE_PLANILHA], marketplace_connections: [CONEXAO_OK],
     });
     const portas = criarPortasConvergencia(admin, '2026-01-01T00:00:00Z');
     const resultado = await portas.resumirComposicao(CLAIM_OK);
     expect(resultado).toEqual({ estado: 'retry' });
     expect(updates.some((u) => u.tabela === 'anuncios_externos')).toBe(false);
+  });
+});
+
+describe('criarPortasConvergencia — resumirComposicao (preservarPublicadas, Codex #1)', () => {
+  const filas = (lote: unknown) => ({
+    familias: [FAMILIA_OK], variacoes: [VARIACOES_OK], lotes: [lote], marketplace_connections: [CONEXAO_OK],
+  });
+
+  it("lote origem='manual' (fluxo Adicionar variação) → atualizarFamiliaUP recebe preservarPublicadas: true", async () => {
+    atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'retry' });
+    const { admin } = fakeAdmin(filas({ origem: 'manual' }));
+    await criarPortasConvergencia(admin, '2026-01-01T00:00:00Z').resumirComposicao(CLAIM_OK);
+    expect(atualizarFamiliaUPMock.mock.calls[0]![0].preservarPublicadas).toBe(true);
+  });
+
+  it('lote de planilha → preservarPublicadas: false', async () => {
+    atualizarFamiliaUPMock.mockReset().mockResolvedValueOnce({ estado: 'retry' });
+    const { admin } = fakeAdmin(filas(LOTE_PLANILHA));
+    await criarPortasConvergencia(admin, '2026-01-01T00:00:00Z').resumirComposicao(CLAIM_OK);
+    expect(atualizarFamiliaUPMock.mock.calls[0]![0].preservarPublicadas).toBe(false);
+  });
+
+  it('erro lendo o lote → lança e atualizarFamiliaUP NÃO é chamado (nunca retoma repreçando as irmãs)', async () => {
+    atualizarFamiliaUPMock.mockReset();
+    const { admin } = fakeAdmin(filas(LOTE_PLANILHA), {}, {}, { lotes: 'timeout' });
+    await expect(criarPortasConvergencia(admin, '2026-01-01T00:00:00Z').resumirComposicao(CLAIM_OK))
+      .rejects.toThrow(/lote lote-1.*timeout/);
+    expect(atualizarFamiliaUPMock).not.toHaveBeenCalled();
   });
 });

@@ -59,6 +59,7 @@ const produtoResumo: ProdutoEstoqueResumo = {
   cores: [],
   nomes: [],
   skuUnico: 'SKU-2',
+  temTamanho: false,
 }
 
 const variacao = (codigo: string, valores: Partial<VariacaoComSaldo> = {}): VariacaoComSaldo => ({
@@ -77,6 +78,7 @@ const variacao = (codigo: string, valores: Partial<VariacaoComSaldo> = {}): Vari
   mlPictureId: null,
   mlItemId: null,
   kits: [],
+  tamanho: null,
   ...valores,
 })
 

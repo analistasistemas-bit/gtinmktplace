@@ -17,6 +17,11 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
  * extra — a família ficaria presa no mesmo erro a cada tentativa.
  */
 export async function ehFluxoAddVariacao(admin: SupabaseClient, loteId: string): Promise<boolean> {
-  const { data } = await admin.from('lotes').select('origem').eq('id', loteId).maybeSingle();
-  return data?.origem === 'manual';
+  // Falha alto (Codex r2 #3): devolver `false` num erro de leitura reabria o repreço das irmãs.
+  // Os chamadores tratam o throw como retry (worker/split: catch do QStash; reconciliador: rodada
+  // falha e a raiz segue travada para a próxima).
+  const { data, error } = await admin.from('lotes').select('origem').eq('id', loteId).maybeSingle();
+  if (error) throw new Error(`ler origem do lote ${loteId}: ${error.message}`);
+  if (!data) throw new Error(`lote ${loteId} não encontrado ao decidir preservarPublicadas`);
+  return data.origem === 'manual';
 }

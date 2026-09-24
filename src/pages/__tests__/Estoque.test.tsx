@@ -22,7 +22,7 @@ const produto: ProdutoEstoqueResumo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: null,
   capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
   mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 20, qtdSkus: 1, skuUnico: '00000005',
-  gtins: ['4005800241901'], codigos: ['00000005'], cores: ['incolor'], nomes: [],
+  gtins: ['4005800241901'], codigos: ['00000005'], cores: ['incolor'], nomes: [], temTamanho: false,
 };
 
 const resumoMock: ResumoEstoqueRpc = {

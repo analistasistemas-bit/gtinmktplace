@@ -54,7 +54,8 @@ function fakeAdmin(over: {
   const conexao = over.conexao === undefined ? CONEXAO_ROW : over.conexao;
   const raizUP = over.raizUP ?? null;
   const itensUP = over.itensUP ?? [];
-  const lote = over.lote === undefined ? null : over.lote;
+  // Default = lote de planilha existente: `ehFluxoAddVariacao` falha alto em lote ausente.
+  const lote = over.lote === undefined ? { origem: 'planilha' } : over.lote;
   const modulosHabilitados = over.modulosHabilitados ?? [];
   function chain(table: string) {
     const rec = { table, op: '', filters: {} as Record<string, unknown>, payload: {} as Record<string, unknown> };

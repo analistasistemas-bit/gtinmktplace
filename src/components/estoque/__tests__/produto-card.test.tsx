@@ -44,6 +44,7 @@ function mockVariacoes(n: number, codigoBase = 1001): VariacaoComSaldo[] {
     mlPictureId: null,
     mlItemId: null,
     kits: [],
+    tamanho: null,
   }));
 }
 
@@ -57,7 +58,7 @@ const produtoMono: ProdutoEstoqueResumo = {
   codigoPai: '00000004', nomePai: 'Protetor Solar', descricaoPai: 'Descrição longa.',
   capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
   mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 20, qtdSkus: 1, skuUnico: '00000005',
-  gtins: ['4005800241901'], codigos: ['00000005'], cores: ['incolor'], nomes: [],
+  gtins: ['4005800241901'], codigos: ['00000005'], cores: ['incolor'], nomes: [], temTamanho: false,
 };
 
 const produto: ProdutoEstoqueResumo = {
@@ -65,7 +66,7 @@ const produto: ProdutoEstoqueResumo = {
   capaStoragePath: null, capaMlPictureId: null, fornecedor: 'Eucerin', unidade: 'UN', origem: 'nacional',
   mlItemId: null, criadoEm: '2026-08-01T10:00:00Z', saldoTotal: 40, qtdSkus: 2, skuUnico: null,
   gtins: ['4005800241901', '4005800241902'], codigos: ['00000005', '00000006'], cores: ['incolor', 'branco'],
-  nomes: [],
+  nomes: [], temTamanho: false,
 };
 
 function renderCard(produtoFixture = produto, onDarEntrada = vi.fn()) {

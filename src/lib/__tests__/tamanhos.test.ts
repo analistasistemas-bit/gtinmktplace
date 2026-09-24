@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   TAMANHOS_ROUPA, NUMERACOES_CALCADO,
-  opcoesDeTamanho, numeracaoPublicavel,
+  opcoesDeTamanho, numeracaoPublicavel, classificarFamilia, tipoDaGrade, tamanhosDoTipo,
 } from '@/lib/tamanhos';
 
 describe('TAMANHOS_ROUPA', () => {
@@ -73,5 +73,15 @@ describe('numeracaoPublicavel (spec 2026-09-19 §2, aviso inline)', () => {
 
   it('tamanho de roupa não é assunto desta função', () => {
     expect(numeracaoPublicavel('P', 'masculino')).toBe(true);
+  });
+});
+
+// Ruling R1: a regra "é grade" e o tipo inferido vêm da fonte única de `_shared` (o dialog de
+// "Adicionar variação" e a edge precisam decidir igual).
+describe('reexports da fonte única', () => {
+  it('classificarFamilia, tipoDaGrade e tamanhosDoTipo estão disponíveis no front', () => {
+    expect(classificarFamilia([{ tamanho: 'P', excluida_da_publicacao: false }])).toBe('grade');
+    expect(tipoDaGrade(['38'])).toBe('calcado');
+    expect(tamanhosDoTipo('roupa')).toEqual(TAMANHOS_ROUPA);
   });
 });

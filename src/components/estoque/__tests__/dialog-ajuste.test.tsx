@@ -96,4 +96,20 @@ describe('DialogAjuste', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Zerar tudo' }));
     expect(screen.getByText(/−2000/)).toBeInTheDocument();
   });
+
+  // ADR-0166 (Task 3): cor com tamanho ganha o sufixo no rótulo da linha.
+  it('cor com tamanho aparece como "cor · tamanho"', () => {
+    const produtoComTamanho = {
+      codigoPai: '26705343',
+      nomePai: 'Tecido Helanca Light',
+      variacoes: [{ codigo: '18760903', cor: 'Preto', nome: 'Preto', estoque: 1990, tamanho: 'M' }],
+    } as unknown as ProdutoComSaldo;
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <DialogAjuste produto={produtoComTamanho} aberto onFechar={() => {}} />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByText('18760903 · Preto · M')).toBeInTheDocument();
+  });
 });

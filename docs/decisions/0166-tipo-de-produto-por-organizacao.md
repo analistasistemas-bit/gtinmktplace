@@ -178,6 +178,34 @@ validação de whitelist no backend. Nenhuma migration.
 Ficou fora, por decisão: colar da área de transferência, seleção múltipla de células, validação de
 dígito verificador de GTIN, estado de salvamento por célula e edição de grade já publicada.
 
+## Amendment (2026-09-24c) — grade publicada passa a ser operável pela tela Estoque
+
+O amendment 2026-09-19b deixou "edição de grade já publicada" fora. A auditoria da tela Estoque
+(2026-09-24) mostrou o custo disso: "Adicionar variação" abria o dialog só de cor e a edge recusava
+com 400 depois de o operador preencher tudo, e lista, Entrada, Ajuste e Movimentos não exibiam o
+tamanho — cinco SKUs "Preto" indistinguíveis na hora de dar entrada.
+
+Fica revisado assim, conforme `docs/superpowers/specs/2026-09-24-estoque-grade-operacao-design.md`:
+
+- **Acrescentar** cores e/ou tamanhos a uma família de grade publicada entra no escopo, pelo fluxo do
+  ADR-0129 (lote de UPDATE direto, sem Revisão), com tela própria que estende a matriz Cor × Tamanho
+  com as células publicadas travadas. Só os SKUs novos vão ao ML (`preservarPublicadas`, ADR-0160/I10).
+- Os códigos dos SKUs novos de grade são reservados pelo sistema (`proximo_codigo_produto`), como no
+  cadastro em grade; o fluxo sem tamanho continua pedindo o código digitado.
+- A trava da edge `adicionar-variacoes-familia` passa a recusar só família com tamanho **fora** de User
+  Products — pelo ADR-0167 grade sempre publica em UP, então a trava fica como guarda, não como caminho.
+- No SKU novo **com tamanho**, `SIZE`, `SIZE_GRID_ID`, `SIZE_GRID_ROW_ID` e `GENDER` deixam de ser
+  herdados da ficha do item irmão no UPDATE UP: os três primeiros vêm do chart, `GENDER` de
+  `familias.genero` (como no CREATE). Sem isso o SKU novo nasceria com o tamanho do irmão. Produto sem
+  tamanho herda exatamente como antes.
+- O tipo da grade (roupa ou calçado) é o da família publicada, inferido dos tamanhos dos SKUs
+  incluídos — não a união dos tipos da organização.
+- As telas do Estoque exibem `cor · tamanho` onde identificam uma variação.
+
+Continua fora: mudar o tamanho de SKU existente, remover SKU da grade, editar preço ou atributo das
+irmãs por este fluxo, grade via planilha. A invariante da Decisão 3 não muda: produto sem tamanho
+segue byte a byte igual.
+
 ## Como reverter
 
 Remover as colunas `familias.genero`, `variacoes.tamanho` e

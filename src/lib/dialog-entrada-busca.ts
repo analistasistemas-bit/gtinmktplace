@@ -13,6 +13,8 @@ export interface SkuEntradaCru {
   codigo: string;
   nome: string;
   cor?: string | null;
+  /** ADR-0166: presente só em SKU de grade. */
+  tamanho?: string | null;
   codigoPai: string;
   estoque: number;
 }
@@ -24,7 +26,8 @@ export interface SkuEntradaCru {
  */
 export function montarOpcaoSku(s: SkuEntradaCru): OpcaoSku {
   const complemento = s.cor ? ` (${s.cor})` : '';
-  const rotulo = `${s.codigo} · ${s.nome}${complemento}`;
+  const sufixoTamanho = s.tamanho?.trim() ? ` · ${s.tamanho.trim()}` : '';
+  const rotulo = `${s.codigo} · ${s.nome}${complemento}${sufixoTamanho}`;
   const textoBusca = normalizarParaBusca(`${rotulo} ${s.codigoPai}`);
 
   return {

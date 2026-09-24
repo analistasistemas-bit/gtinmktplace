@@ -15,10 +15,11 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
-import { codigosJaUsados } from '../_shared/produto/codigos.ts';
+import { codigosJaUsados, derivarCodigosSku } from '../_shared/produto/codigos.ts';
 import {
-  clonarFamilia, clonarVariacao, familiaTemTamanho, montarVariacaoNova, normalizarCodigo8,
-  precoPublicacaoNova, validarEntrada, type VariacaoNovaEntrada,
+  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirIncompleto, decidirRetry,
+  haAtualizacaoComErro, haFamiliaEmVoo, type IntencaoGravada, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
+  precoPublicacaoNova, resolverFotoHerdada, validarEntrada, validarGrade, type VariacaoNovaEntrada,
 } from './processar.ts';
 
 function json(body: unknown, status = 200): Response {
@@ -88,8 +89,38 @@ Deno.serve(async (req) => {
   // 'pronto'/'erro'; família já 'publicando'/'publicado' vira no-op e reportamos true, que aí
   // é observação, não previsão).
   const { data: jaExistente } = await admin.from('familias')
-    .select('id, lote_id, status').eq('org_id', orgId).eq('chave_cadastro', chave).maybeSingle();
+    .select('id, lote_id, status, criado_em, mudanca_estrutural').eq('org_id', orgId).eq('chave_cadastro', chave).maybeSingle();
   if (jaExistente) {
+    // Ledger no retry (Codex #3, r2 #2): confere o body contra a intenção GRAVADA na criação e
+    // reaplica o estoque com as quantidades DELA (p_ref idempotente → no-op no que já entrou).
+    // Família criada antes desta versão não tem `intencao` → comportamento antigo (`legado`).
+    const mudanca = jaExistente.mudanca_estrutural as { novas?: string[]; intencao?: IntencaoGravada[] } | null;
+    let falhasEstoque: string[] = [];
+    if (Array.isArray(mudanca?.intencao)) {
+      const { data: persistidas, error: persErr } = await admin.from('variacoes').select('codigo')
+        .eq('familia_id', jaExistente.id as string).in('codigo', mudanca.intencao.map((it) => it.codigo));
+      if (persErr) return json({ error: `Falha conferindo a solicitação anterior: ${persErr.message}` }, 500);
+      const decisao = decidirRetry(mudanca.intencao, variacoesEntrada, (persistidas ?? []).map((v) => v.codigo as string));
+      // Retry caiu entre o insert da família e o das variações: a 1ª tentativa ainda está em voo.
+      if (decisao.tipo === 'incompleto') {
+        // Insert multi-row é atômico → incompleto = 0 variações. Órfã antiga (a 1ª tentativa
+        // morreu) travaria o produto para sempre: o `emVoo` a enxerga em 'pronto' e barra até
+        // chave nova. Limpa como o caminho `varErr`; recente ainda pode estar em voo → aguarda.
+        if (decidirIncompleto(jaExistente.criado_em as string, new Date()) === 'aguardar') {
+          return json({ error: 'Solicitação em andamento. Tente novamente.' }, 409);
+        }
+        await limparFamiliaOrfa(admin, { id: jaExistente.id as string, lote_id: jaExistente.lote_id as string });
+        return json({ error: 'A tentativa anterior não terminou. Tente novamente.' }, 409);
+      }
+      if (decisao.tipo === 'divergente') {
+        return json({ error: 'Esta solicitação difere da original. Recarregue a tela e confira o produto antes de reenviar.' }, 409);
+      }
+      if (decisao.tipo === 'reaplicar') {
+        falhasEstoque = await aplicarEstoqueInicial(admin, {
+          orgId, familiaId: jaExistente.id as string, userId, itens: decisao.itens,
+        });
+      }
+    }
     let publicacaoOk = true;
     if (jaExistente.status === 'pronto') {
       publicacaoOk = await encadearPublicacao(req.headers.get('Authorization')!, jaExistente.id as string);
@@ -99,7 +130,7 @@ Deno.serve(async (req) => {
     }
     return json({
       jaExistia: true, familiaId: jaExistente.id, loteId: jaExistente.lote_id,
-      publicacaoOk, falhasEstoque: [],
+      publicacaoOk, falhasEstoque, codigos: mudanca?.novas ?? [],
     });
   }
 
@@ -130,18 +161,26 @@ Deno.serve(async (req) => {
     return json({ error: `Falha lendo variações da família publicada: ${errVivas.message}` }, 500);
   }
 
-  // ADR-0166 / R4: adicionar cor a família COM tamanho está fora do escopo do v1.
-  //
-  // O diálogo deste fluxo não oferece o campo Tamanho, então a cor nova nasceria sem
-  // SIZE_GRID_ROW_ID dentro de um anúncio que tem — o ML recusa o PUT INTEIRO e derruba o
-  // estoque junto (mesma classe do lote #45). Recusar é a opção honesta: melhor um erro claro
-  // do que um anúncio quebrado. O caminho para o operador é o cadastro completo, que gera o
-  // cartesiano cor × tamanho de uma vez.
-  if (familiaTemTamanho((variacoesVivas ?? []) as Array<{ tamanho: string | null }>)) {
-    return json({
-      error: 'Este produto usa tamanho/numeração — adicionar cor por aqui ainda não é suportado. '
-        + 'Cadastre as combinações de cor e tamanho pelo cadastro de produto.',
-    }, 400);
+  // ADR-0166 2026-09-24c: grade (cor × tamanho) só em User Products, onde o SKU novo nasce com
+  // SIZE/SIZE_GRID_ROW_ID próprios. Toda recusa abaixo vem ANTES de reservar código (a RPC queima
+  // a faixa) e de qualquer escrita. Família simples: nenhuma consulta nova (Codex r4 #2, INV-1).
+  const vivas = (variacoesVivas ?? []) as Array<{
+    codigo: string; cor: string | null; tamanho: string | null; excluida_da_publicacao: boolean;
+    imagem_path: string | null; ml_picture_id: string | null;
+  }>;
+  let contextoGrade: Awaited<ReturnType<typeof carregarContextoGrade>>;
+  try { contextoGrade = await carregarContextoGrade(admin, orgId, codigoPai, vivas); }
+  catch (e) { return json({ error: e instanceof Error ? e.message : 'Falha verificando o anúncio.' }, 500); }
+  const errosGrade = validarGrade(variacoesEntrada, {
+    vivas, tiposHabilitados: contextoGrade.tiposHabilitados,
+    genero: (anterior.genero as string | null) ?? null, ehUP: contextoGrade.ehUP,
+  });
+  if (errosGrade.length > 0) return json({ erros: errosGrade }, 400);
+  const familiaGrade = contextoGrade.classe === 'grade';
+  // Teto da grade (LIMITE_VARIACOES_GERADAS do cadastro): existentes + novas. Só em grade — a
+  // família simples segue sem teto próprio, como sempre (INV-1).
+  if (familiaGrade && vivas.length + variacoesEntrada.length > 60) {
+    return json({ error: 'Passaria do limite de 60 variações por produto.' }, 400);
   }
 
   // Os guards de banco (20260804113000) rejeitariam com erro cru — valida antes e explica.
@@ -149,22 +188,77 @@ Deno.serve(async (req) => {
     return json({ error: 'Produto com código fora do padrão de 8 dígitos — não é possível atualizar por este fluxo.' }, 409);
   }
 
+  // Achado E2E 1: grade com adição anterior em 'erro' mais nova que a publicada — os SKUs dela
+  // ficam fora da checagem de par e o mesmo par ganharia um 2º código. Antes de reservar código.
+  let erroPendente: boolean;
+  try {
+    erroPendente = await haAtualizacaoComErro(admin, orgId, codigoPai, contextoGrade.classe, anterior.criado_em as string);
+  } catch (e) {
+    console.error('adicionar_variacoes_familia_erro_pendente_falhou', { orgId, codigoPai, erro: String(e) });
+    return json({ error: 'Falha verificando atualização com erro.' }, 500);
+  }
+  if (erroPendente) {
+    return json({ error: 'Há uma atualização com erro para este produto. Reenvie ou descarte pela tela Lotes antes de adicionar mais.' }, 409);
+  }
+
   // D-8: recusa se já existe família NÃO-TERMINAL para este codigo_pai (lote em voo) — dois
   // lotes da mesma família em voo é a receita para o race condition que o ADR-0104 já trata
-  // como risco de composição.
-  const { data: emVoo } = await admin.from('familias').select('id')
-    .eq('org_id', orgId).eq('codigo_pai', codigoPai)
-    .not('status', 'in', '("publicado","erro")').limit(1);
-  if (emVoo && emVoo.length > 0) {
+  // como risco de composição. Órfã deste fluxo é limpa antes de recusar (ver `haFamiliaEmVoo`).
+  let emVoo: boolean;
+  try { emVoo = await haFamiliaEmVoo(admin, orgId, codigoPai, new Date()); }
+  catch (e) {
+    console.error('adicionar_variacoes_familia_emvoo_falhou', { orgId, codigoPai, erro: String(e) });
+    return json({ error: 'Falha verificando atualização em andamento.' }, 500);
+  }
+  if (emVoo) {
     return json({ error: 'Já existe uma atualização em andamento para este produto.' }, 409);
   }
 
-  // D-5: unicidade de SKU org-wide para os códigos NOVOS digitados (as variações clonadas já
-  // existem no banco — checá-las de novo acusaria colisão consigo mesmas).
-  const codigosNovos = variacoesEntrada.map((v) => normalizarCodigo8(v.codigo)!);
-  const conflitos = await codigosJaUsados(admin, orgId, codigosNovos);
-  if (conflitos.length > 0) {
-    return json({ error: 'Código já usado por outro produto nesta organização.', conflitos }, 409);
+  // Foto: enviada agora ou herdada da irmã viva da mesma cor (só grade — `validarGrade` já
+  // recusou `fotoDeCodigo` em família simples). Resolvida antes da reserva de códigos.
+  const fotos = variacoesEntrada.map((v) => (v.fotoDeCodigo
+    ? resolverFotoHerdada(v.fotoDeCodigo, v.nome, vivas)
+    : { imagemPath: v.imagemPath!, mlPictureId: null }));
+  const semFoto = fotos.findIndex((f) => f === null);
+  if (semFoto >= 0) {
+    return json({ erros: [{ campo: `variacoes[${semFoto}].imagemPath`, mensagem: 'O SKU de origem da foto não tem foto — envie uma.' }] }, 400);
+  }
+
+  let codigosNovos: string[];
+  if (familiaGrade) {
+    // Grade: o código é gerado pelo sistema — mesma reserva + conferência + UMA ressincronização
+    // de cadastrar-produto/index.ts (D-4.1), sem PAI (a família já tem o dela).
+    const n = variacoesEntrada.length;
+    try {
+      const { data: ultimo, error } = await admin.rpc('proximo_codigo_produto', { p_org: orgId, p_qtd: n });
+      if (error || ultimo == null) throw new Error(error?.message ?? 'sequência indisponível');
+      codigosNovos = derivarCodigosSku(Number(ultimo), n);
+      let usados = await codigosJaUsados(admin, orgId, codigosNovos);
+      if (usados.length > 0) {
+        console.warn('adicionar_variacoes_familia_resync_sequencia', { orgId, usados });
+        const { data: reUltimo, error: reErro } = await admin.rpc('proximo_codigo_produto', {
+          p_org: orgId, p_qtd: n, p_resync: true,
+        });
+        if (reErro || reUltimo == null) throw new Error(reErro?.message ?? 'sequência indisponível');
+        codigosNovos = derivarCodigosSku(Number(reUltimo), n);
+        usados = await codigosJaUsados(admin, orgId, codigosNovos);
+        if (usados.length > 0) {
+          // Erro de sistema: o operador não escolheu código nenhum para "renomear".
+          console.error('adicionar_variacoes_familia_colisao_pos_resync', { orgId, usados });
+          return json({ error: 'Falha na numeração automática. Tente novamente.' }, 500);
+        }
+      }
+    } catch (e) {
+      return json({ error: e instanceof Error ? e.message : 'Falha na numeração automática.' }, 500);
+    }
+  } else {
+    // D-5: unicidade de SKU org-wide para os códigos NOVOS digitados (as variações clonadas já
+    // existem no banco — checá-las de novo acusaria colisão consigo mesmas).
+    codigosNovos = variacoesEntrada.map((v) => normalizarCodigo8(v.codigo!)!);
+    const conflitos = await codigosJaUsados(admin, orgId, codigosNovos);
+    if (conflitos.length > 0) {
+      return json({ error: 'Código já usado por outro produto nesta organização.', conflitos }, 409);
+    }
   }
 
   // Estoque canônico: a família mais recente por codigo_pai (qualquer status) pode ser mais
@@ -204,7 +298,13 @@ Deno.serve(async (req) => {
   // cor, nunca remove — D-1 do ADR). O único consumidor hoje (src/components/familia-row.tsx,
   // contagem "removidas" da Revisão) nem alcança esta família (D-10), mas o campo fica coerente
   // em vez de arrastar o diff de um re-ingest antigo e não relacionado a esta submissão.
-  familiaClonada.mudanca_estrutural = { novas: codigosNovos, removidas: [] };
+  // `intencao`: a submissão inteira normalizada, contra a qual um retry com a mesma chave é
+  // conferido (ver o ramo `jaExistente`). `parseMudancaEstrutural` (src/lib/tipos-dominio.ts) lê
+  // só `novas`/`removidas` e ignora o resto.
+  familiaClonada.mudanca_estrutural = {
+    novas: codigosNovos, removidas: [],
+    intencao: variacoesEntrada.map((v, i) => ({ codigo: codigosNovos[i], ...normalizarIntencao(v) })),
+  };
 
   const { data: familiaCriada, error: famErr } = await admin.from('familias')
     .insert(familiaClonada).select('id').single();
@@ -230,8 +330,8 @@ Deno.serve(async (req) => {
   ));
   const irmasParaPreco = clonesVariacoes as unknown as
     { preco_publicacao: number | null; excluida_da_publicacao: boolean }[];
-  const novasVariacoes = variacoesEntrada.map((v) => montarVariacaoNova(
-    { ...v, codigo: normalizarCodigo8(v.codigo)! },
+  const novasVariacoes = variacoesEntrada.map((v, i) => montarVariacaoNova(
+    { ...v, codigo: codigosNovos[i], imagemPath: fotos[i]!.imagemPath, mlPictureId: fotos[i]!.mlPictureId },
     { familiaId, userId, orgId, precoPublicacao: precoPublicacaoNova(irmasParaPreco, v.preco) },
   ));
 
@@ -254,16 +354,10 @@ Deno.serve(async (req) => {
   // Ledger: estoque inicial de cada cor nova (mesmo padrão de cadastrar-produto/index.ts:253-263,
   // ref. `addvar:{familiaId}:{codigo}` própria desta feature). Falha aqui NÃO aborta — família e
   // variações já existem; o operador vê `falhasEstoque` e repõe manualmente pela tela Estoque.
-  const falhasEstoque: string[] = [];
-  for (const v of variacoesEntrada) {
-    const codigo = normalizarCodigo8(v.codigo)!;
-    const { error } = await admin.rpc('registrar_entrada', {
-      p_org: orgId, p_codigo: codigo, p_qtd: v.estoqueInicial,
-      p_custo: v.custo ?? null, p_doc: 'Variação adicionada', p_obs: null,
-      p_criado_por: userId, p_ref: `addvar:${familiaId}:${codigo}`,
-    });
-    if (error) falhasEstoque.push(`${codigo}: ${error.message}`);
-  }
+  const falhasEstoque = await aplicarEstoqueInicial(admin, {
+    orgId, familiaId, userId,
+    itens: variacoesEntrada.map((v, i) => ({ codigo: codigosNovos[i]!, qtd: v.estoqueInicial, custo: v.custo })),
+  });
 
   // Encadeia publicar-familias (desvio 1) — server-to-server, JWT do chamador encaminhado (a
   // edge de destino faz o próprio requireUserOrg, então autorização não é perdida no repasse).
@@ -280,5 +374,5 @@ Deno.serve(async (req) => {
   }
 
   await auditarOperacaoSuporte(admin, context, { type: 'familia', id: familiaId }, 'succeeded');
-  return json({ loteId, familiaId, publicacaoOk, falhasEstoque });
+  return json({ loteId, familiaId, publicacaoOk, falhasEstoque, codigos: codigosNovos });
 });

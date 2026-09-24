@@ -12,6 +12,15 @@ import type { Periodo } from '@/lib/metricas';
 export interface VariacaoFiltro {
   codigo: string;
   cor: string | null;
+  nome?: string | null;
+  /** ADR-0166: presente só em variação de grade. */
+  tamanho?: string | null;
+}
+
+/** "<codigo> · <cor>" de hoje; com tamanho, ganha " · <tamanho>" (INV-1 quando não tem). */
+function rotuloOpcao(v: VariacaoFiltro): string {
+  const base = v.cor ? `${v.codigo} · ${v.cor}` : v.codigo;
+  return v.tamanho?.trim() ? `${base} · ${v.tamanho.trim()}` : base;
 }
 
 interface Props {
@@ -87,7 +96,7 @@ export function FiltrosMovimentos({
             <SelectItem value={TODAS}>Todas as variações</SelectItem>
             {variacoes.map((v) => (
               <SelectItem key={v.codigo} value={v.codigo}>
-                {v.cor ? `${v.codigo} · ${v.cor}` : v.codigo}
+                {rotuloOpcao(v)}
               </SelectItem>
             ))}
           </SelectContent>

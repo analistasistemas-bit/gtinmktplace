@@ -520,7 +520,7 @@ export function ProdutoCard({
               <MovimentosEstoque
                 codigoPai={produto.codigoPai}
                 ativo={aberto}
-                variacoes={(variacoes ?? []).map((v) => ({ codigo: v.codigo, cor: v.cor }))}
+                variacoes={(variacoes ?? []).map((v) => ({ codigo: v.codigo, cor: v.cor, nome: v.nome, tamanho: v.tamanho }))}
               />
             </TabsContent>
           </Tabs>

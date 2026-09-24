@@ -39,7 +39,7 @@ function ehHerdavel(modo: ModoGrade): modo is Extract<ModoGrade, CampoHerdavel> 
 }
 
 export function MatrizGrade({
-  linhas, resolvidas, cores, tamanhos, removidas, desabilitado,
+  linhas, resolvidas, cores, tamanhos, removidas, desabilitado, bloqueadas,
   onMudarLinha, onMudarOverride, onDestravar, onVoltarAHerdar, onRemoverCelula, onReincluirCelula,
   onAplicarMassa,
 }: {
@@ -51,6 +51,11 @@ export function MatrizGrade({
   removidas: ReadonlySet<string>;
   /** true durante `salvando`. Affordance — a trava de verdade está no dono do estado (dialog). */
   desabilitado: boolean;
+  /** Task 7 ("Adicionar à grade"): SKUs já publicados no produto, por `chaveGrade(cor, tamanho)`.
+   *  A célula fica só leitura, fora de `linhas`/`resolvidas` — os totais não contam essas
+   *  unidades, só as das linhas novas. `excluida: true` = SKU foi removido do anúncio no ML (não
+   *  conta mais como publicado), mas o operador não pode reabrir a célula por aqui mesmo assim. */
+  bloqueadas?: ReadonlyMap<string, { estoque: number; excluida?: boolean }>;
   onMudarLinha: (clientId: string, patch: Partial<Pick<LinhaGrade, 'gtin' | 'estoqueInicial'>>) => void;
   onMudarOverride: (clientId: string, campo: CampoHerdavel, valor: string) => void;
   onDestravar: (clientId: string, campo: CampoHerdavel) => void;
@@ -120,6 +125,37 @@ export function MatrizGrade({
 
   function celula(cor: string, tamanho: string, c: number, r: number) {
     const chave = chaveGrade(cor, tamanho);
+    const trava = bloqueadas?.get(chave);
+    // Pedido do Diego (2026-09-20, validação visual): Estoque/Preço/Custo forçavam rolagem
+    // horizontal na grade — o valor cabe em poucos caracteres, mas a célula tomava a largura
+    // inteira da coluna. GTIN fica de fora de propósito: 13 dígitos precisam do espaço que já
+    // tinha (comportamento inalterado). `w-16` (estoque, sem prefixo, sem badge — cabe "9999"
+    // folgado). `w-36` (preço/custo): testado ao vivo com "R$ 1.234,90" (pior caso realista) +
+    // prefixo (pl-6) + espaço reservado pro badge "herdado" (pr-16) sem cortar o valor — `w-28`
+    // cortava ("1.23…") nesse cenário.
+    const larguraEstreita = modo === 'estoqueInicial' ? 'w-16' : modo === 'preco' || modo === 'custo' ? 'w-36' : undefined;
+    if (trava) {
+      // SKU já publicado (Task 7): só leitura, fora de `linhas`/`resolvidas` — por isso SEM
+      // `data-r`/`data-c` (a navegação por teclado pula a célula; `focarCelula` num alvo
+      // inexistente já é no-op, ver comentário acima) e sem o "+" de reinclusão.
+      const rotulo = trava.excluida
+        ? `${cor} · ${tamanho}: fora do anúncio`
+        : `${cor} · ${tamanho}: já publicado, ${trava.estoque} em estoque`;
+      return (
+        <div
+          // Mesma largura e recuo do input editável (borda transparente + `px-2.5` do `ui/input`):
+          // alinhado à direita, o número publicado ficava longe do título da coluna (achado E2E 3).
+          className={cn(
+            'flex h-8 items-center border border-transparent px-2.5 text-sm tabular-nums text-muted-foreground',
+            larguraEstreita ?? 'w-full',
+          )}
+          aria-label={rotulo}
+          title={rotulo}
+        >
+          {modo === 'estoqueInicial' ? trava.estoque : '—'}
+        </div>
+      );
+    }
     const i = indice.get(chave);
     if (i === undefined) {
       // Combinação removida na mão → affordance de reinclusão. O card antigo simplesmente sumia
@@ -151,14 +187,6 @@ export function MatrizGrade({
     const resolvida = resolvidas[i]!;
     const nome = `${cor} · ${tamanho}`;
     const herdavel = ehHerdavel(modo);
-    // Pedido do Diego (2026-09-20, validação visual): Estoque/Preço/Custo forçavam rolagem
-    // horizontal na grade — o valor cabe em poucos caracteres, mas a célula tomava a largura
-    // inteira da coluna. GTIN fica de fora de propósito: 13 dígitos precisam do espaço que já
-    // tinha (comportamento inalterado). `w-16` (estoque, sem prefixo, sem badge — cabe "9999"
-    // folgado). `w-36` (preço/custo): testado ao vivo com "R$ 1.234,90" (pior caso realista) +
-    // prefixo (pl-6) + espaço reservado pro badge "herdado" (pr-16) sem cortar o valor — `w-28`
-    // cortava ("1.23…") nesse cenário.
-    const larguraEstreita = modo === 'estoqueInicial' ? 'w-16' : modo === 'preco' || modo === 'custo' ? 'w-36' : undefined;
     const temOverride = herdavel && modo in linha.overrides;
     const valor = herdavel ? resolvida[modo] : linha[modo];
     // `valor !== ''` (fix round pós-revisão da Task 9): só `preco` reclama de vazio (`erroCampo`,

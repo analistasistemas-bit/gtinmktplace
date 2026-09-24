@@ -163,7 +163,8 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       // ADR-0160: `atacado` por variação entra no select — o caminho UP precisa DETECTAR config
       // por cor para recusar (I7), já que aplica só a config família-level. Sem lê-la, a
       // divergência passaria despercebida.
-      .select('codigo, cor, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, atacado')
+      // ADR-0166 2026-09-24c: `tamanho` — o SKU novo de grade monta SIZE/SIZE_GRID_ROW_ID próprios.
+      .select('codigo, cor, tamanho, estoque, preco_publicacao, gtin, imagem_path, ml_picture_id, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, atacado')
       .eq('familia_id', job.familia_id)
       .eq('excluida_da_publicacao', false);
     if (!variacoesDoSelect || variacoesDoSelect.length === 0) {
