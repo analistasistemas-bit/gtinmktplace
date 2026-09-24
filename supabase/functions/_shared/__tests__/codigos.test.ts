@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CODIGO_MAX, derivarCodigos } from '../produto/codigos.ts';
+import { CODIGO_MAX, derivarCodigos, derivarCodigosSku } from '../produto/codigos.ts';
 
 describe('derivarCodigos', () => {
   it('usa o menor número da faixa como PAI e os seguintes como SKU', () => {
@@ -38,5 +38,19 @@ describe('derivarCodigos', () => {
 
   it('rejeita faixa que começaria abaixo de 1', () => {
     expect(() => derivarCodigos(1, 3)).toThrow(/inválida/i);
+  });
+});
+
+// ADR-0166 2026-09-24c — "Adicionar variação" em grade: a família já tem PAI.
+describe('derivarCodigosSku', () => {
+  it('derivarCodigosSku reserva N SKUs sem PAI', () => {
+    expect(derivarCodigosSku(105, 3)).toEqual(['00000103', '00000104', '00000105']);
+    expect(() => derivarCodigosSku(5, 0)).toThrow();
+  });
+
+  it('aceita UM SKU e recusa faixa abaixo de 1 ou acima do limite', () => {
+    expect(derivarCodigosSku(1, 1)).toEqual(['00000001']);
+    expect(() => derivarCodigosSku(2, 3)).toThrow();
+    expect(() => derivarCodigosSku(CODIGO_MAX + 1, 1)).toThrow(/esgotada/);
   });
 });

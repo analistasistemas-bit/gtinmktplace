@@ -40,6 +40,16 @@ export function derivarCodigos(ultimo: number, qtd: number): CodigosGerados {
   };
 }
 
+/** Faixa de SKUs sem PAI — "Adicionar variação" em grade (ADR-0166 2026-09-24c): a família já tem
+ *  PAI, só as variações novas precisam de código. Mesmo formato e mesmo teto de `derivarCodigos`. */
+export function derivarCodigosSku(ultimo: number, qtd: number): string[] {
+  if (!Number.isInteger(ultimo) || !Number.isInteger(qtd) || qtd < 1) throw new Error('Faixa de códigos inválida.');
+  const primeiro = ultimo - qtd + 1;
+  if (primeiro < 1) throw new Error('Faixa de códigos inválida.');
+  if (ultimo > CODIGO_MAX) throw new Error(`Sequência de códigos da organização esgotada (limite ${CODIGO_MAX}).`);
+  return Array.from({ length: qtd }, (_, i) => String(primeiro + i).padStart(8, '0'));
+}
+
 /**
  * Confere os códigos GERADOS contra as duas tabelas (D-6).
  *

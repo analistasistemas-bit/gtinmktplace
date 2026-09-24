@@ -15,11 +15,13 @@
 // Antes elas só existiam no frontend — e por isso a edge não tinha como recusar um valor de
 // tamanho fora da lista do tipo da org. Este arquivo guarda apenas o que é de UI.
 import {
-  TAMANHOS_ROUPA, NUMERACOES_CALCADO,
+  TAMANHOS_ROUPA, NUMERACOES_CALCADO, classificarFamilia, tipoDaGrade, tamanhosDoTipo,
+  numeracaoPublicavel as numeracaoPublicavelNoMl,
 } from '../../supabase/functions/_shared/produto/tipos-produto-valores';
-import { COMPRIMENTO_PE_CM } from '../../supabase/functions/_shared/ml/medidas-valores';
 
-export { TAMANHOS_ROUPA, NUMERACOES_CALCADO };
+// Ruling R1 (2026-09-24): a regra "é grade", o tipo inferido e a publicabilidade da numeração
+// vivem em `_shared` — a edge `adicionar-variacoes-familia` e o dialog decidem com a MESMA função.
+export { TAMANHOS_ROUPA, NUMERACOES_CALCADO, classificarFamilia, tipoDaGrade, tamanhosDoTipo };
 
 export interface GrupoTamanho { grupo: string; valores: readonly string[] }
 
@@ -44,14 +46,10 @@ export const LIMITE_VARIACOES_GERADAS = 60;
  *
  *  Sem gênero escolhido devolve `true`: não dá para afirmar impossibilidade antes de saber a
  *  tabela, e um aviso que some assim que o operador preenche o campo acima só assusta.
- *  Unissex reaproveita a tabela masculina (Spike 051 §13 — o ML não publica STANDARD "Sem
- *  gênero"), exatamente como `tabelaComprimentoPe` faz em `_shared/ml/size-chart.ts`. */
+ *  O resto da regra é o de `_shared/produto/tipos-produto-valores.ts` (fonte única). */
 export function numeracaoPublicavel(
   numeracao: string,
   genero: 'masculino' | 'feminino' | 'unissex' | '',
 ): boolean {
-  if (!genero) return true;
-  if (!(NUMERACOES_CALCADO as readonly string[]).includes(numeracao)) return true;
-  const tabela = genero === 'feminino' ? COMPRIMENTO_PE_CM.feminino : COMPRIMENTO_PE_CM.masculino;
-  return numeracao in tabela;
+  return !genero || numeracaoPublicavelNoMl(numeracao, genero);
 }
