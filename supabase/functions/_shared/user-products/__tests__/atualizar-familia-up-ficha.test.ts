@@ -17,6 +17,7 @@ vi.mock('../../ml/criar-item.ts', () => ({
 
 import { atualizarFamiliaUP, type AtualizarFamiliaUPArgs } from '../atualizar-familia-up';
 import type { PortasComposicao, ResultadoComposicao } from '../atualizar-composicao';
+import { decidirRetryTransitorio } from '../../publicacao/retry';
 
 /** Ficha do irmão como o ML devolve: BRAND normalizado com value_id e COMPOSITION, que o app
  *  nunca envia — as duas divergências que desagruparam a família no lote 54. */
@@ -210,6 +211,16 @@ describe('atualizarFamiliaUP — SKU novo de grade (ADR-0166 2026-09-24c)', () =
       familia: { ...(args().familia as object), genero: null, categoria_ml_id: 'MLB1' } as never,
     }))).rejects.toThrow(/genero/i);
     expect(criarItemSpy).not.toHaveBeenCalled();
+  });
+
+  it('erro de cadastro (sem gênero / sem categoria) é definitivo: a decisão real de retry não retenta', async () => {
+    for (const over of [{ genero: null, categoria_ml_id: 'MLB1' }, { genero: 'masculino', categoria_ml_id: null }]) {
+      const err = await atualizarFamiliaUP(argsGrade({
+        familia: { ...(args().familia as object), ...over } as never,
+      })).then(() => null, (e: unknown) => e);
+      expect((err as { status?: number }).status).toBe(400);
+      expect(decidirRetryTransitorio(err, 0)).toBe('definitivo');
+    }
   });
 
   it('GENDER vem de familias.genero, nunca do irmão nem de atributos_ml (Codex #2)', async () => {

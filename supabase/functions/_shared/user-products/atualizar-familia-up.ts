@@ -229,10 +229,13 @@ export async function atualizarFamiliaUP(args: AtualizarFamiliaUPArgs): Promise<
   const resolverChart = (): Promise<ChartResolvido | null> => (chartPromessa ??= (async () => {
     const tamanhos = [...new Set(variacoes.map((v) => v.tamanho?.trim()).filter((t): t is string => !!t))];
     if (tamanhos.length === 0) return null;
+    // 400: erro de cadastro determinístico — sem status, `decidirRetryPorErro` o retentaria como
+    // transitório, ocupando a fila serial da org à toa (mesmo padrão de update-familia-ml).
+    const definitivo = (m: string) => Object.assign(new Error(m), { status: 400 });
     if (!familia.genero) {
-      throw new Error(`Família ${familia.id}: SKU com tamanho mas familias.genero ausente — o ML exige GENDER com o guia de tamanhos (ADR-0167 D6).`);
+      throw definitivo(`Família ${familia.id}: SKU com tamanho mas familias.genero ausente — o ML exige GENDER com o guia de tamanhos (ADR-0167 D6).`);
     }
-    if (!familia.categoria_ml_id) throw new Error(`Família ${familia.id}: sem categoria_ml_id para resolver o guia de tamanhos.`);
+    if (!familia.categoria_ml_id) throw definitivo(`Família ${familia.id}: sem categoria_ml_id para resolver o guia de tamanhos.`);
     return (args.garantirChartFn ?? garantirChart)(
       admin, await ctx.getToken(), conexao.id, familia.categoria_ml_id, familia.genero as Genero, tamanhos,
     );
