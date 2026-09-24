@@ -397,6 +397,15 @@ describe('MatrizGrade — células travadas (Task 6: SKU já publicado, ADR-0129
     expect(m).toHaveTextContent('8');
   });
 
+  it('célula travada alinha como o input editável (mesma largura, à esquerda) — achado E2E 3', () => {
+    montarComTravadas(new Map([[chaveGrade('Preto', 'P'), { estoque: 12 }]]));
+    const travada = screen.getByLabelText('Preto · P: já publicado, 12 em estoque');
+    const input = screen.getByLabelText('Estoque inicial de Verde · P');
+    expect(travada).not.toHaveClass('justify-end');
+    expect(travada).toHaveClass('w-16');
+    expect(input.parentElement).toHaveClass('w-16');
+  });
+
   it('célula travada não oferece o "+" de reinclusão', () => {
     montarComTravadas(new Map([[chaveGrade('Preto', 'P'), { estoque: 12 }]]));
     expect(screen.queryByRole('button', { name: 'Reincluir Preto · P' })).not.toBeInTheDocument();

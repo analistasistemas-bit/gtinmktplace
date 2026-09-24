@@ -18,7 +18,7 @@ import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { codigosJaUsados, derivarCodigosSku } from '../_shared/produto/codigos.ts';
 import {
   aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirIncompleto, decidirRetry,
-  haFamiliaEmVoo, type IntencaoGravada, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
+  haAtualizacaoComErro, haFamiliaEmVoo, type IntencaoGravada, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   precoPublicacaoNova, resolverFotoHerdada, validarEntrada, validarGrade, type VariacaoNovaEntrada,
 } from './processar.ts';
 
@@ -186,6 +186,19 @@ Deno.serve(async (req) => {
   // Os guards de banco (20260804113000) rejeitariam com erro cru — valida antes e explica.
   if (!CODIGO_8_DIGITOS.test(codigoPai) || (variacoesVivas ?? []).some((v) => !CODIGO_8_DIGITOS.test(v.codigo as string))) {
     return json({ error: 'Produto com código fora do padrão de 8 dígitos — não é possível atualizar por este fluxo.' }, 409);
+  }
+
+  // Achado E2E 1: grade com adição anterior em 'erro' mais nova que a publicada — os SKUs dela
+  // ficam fora da checagem de par e o mesmo par ganharia um 2º código. Antes de reservar código.
+  let erroPendente: boolean;
+  try {
+    erroPendente = await haAtualizacaoComErro(admin, orgId, codigoPai, contextoGrade.classe, anterior.criado_em as string);
+  } catch (e) {
+    console.error('adicionar_variacoes_familia_erro_pendente_falhou', { orgId, codigoPai, erro: String(e) });
+    return json({ error: 'Falha verificando atualização com erro.' }, 500);
+  }
+  if (erroPendente) {
+    return json({ error: 'Há uma atualização com erro para este produto. Reenvie ou descarte pela tela Lotes antes de adicionar mais.' }, 409);
   }
 
   // D-8: recusa se já existe família NÃO-TERMINAL para este codigo_pai (lote em voo) — dois

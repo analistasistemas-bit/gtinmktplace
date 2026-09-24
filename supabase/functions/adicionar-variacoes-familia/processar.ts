@@ -183,6 +183,7 @@ export function validarGrade(entrada: VariacaoNovaEntrada[], ctx: {
   // Cor comparada pela MESMA normalização do dicionário do ML (`resolverCorValueId`): "Azul
   // Marinho" e "Azul-marinho" viram a mesma cor lá, então são o mesmo par aqui.
   const pares = new Set(ctx.vivas.map((v) => chaveGradeEdge(normalizarNomeCor(v.cor ?? ''), norm(v.tamanho))));
+  const paresDaSubmissao = new Set<string>();
   entrada.forEach((v, i) => {
     const p = `variacoes[${i}]`;
     const tam = norm(v.tamanho);
@@ -199,7 +200,8 @@ export function validarGrade(entrada: VariacaoNovaEntrada[], ctx: {
     }
     const k = chaveGradeEdge(normalizarNomeCor(v.nome), tam);
     if (pares.has(k)) { erros.push({ campo: `${p}.tamanho`, mensagem: `${norm(v.nome)} · ${tam} já existe neste produto.` }); return; }
-    pares.add(k);
+    if (paresDaSubmissao.has(k)) { erros.push({ campo: `${p}.tamanho`, mensagem: `${norm(v.nome)} · ${tam} está repetido nesta submissão.` }); return; }
+    paresDaSubmissao.add(k);
     if (v.fotoDeCodigo) {
       const irma = ctx.vivas.find((x) => x.codigo === normalizarCodigo8(v.fotoDeCodigo!));
       if (!irma || normalizarNomeCor(irma.cor ?? '') !== normalizarNomeCor(v.nome)) {
@@ -316,6 +318,33 @@ export async function haFamiliaEmVoo(admin: Admin, orgId: string, codigoPai: str
   if (!(await consultar())) return false;
   await limparOrfasDoFluxo(admin, orgId, codigoPai, agora);
   return consultar();
+}
+
+/** Achado E2E 1: uma adição anterior que terminou em 'erro' DEPOIS da publicada tem SKUs que a
+ *  checagem de par (feita contra a publicada) não enxerga — o mesmo par ganharia um 2º código e
+ *  duplicaria tamanho no ML. Bloqueia só se a mais recente do codigo_pai está em 'erro' e é mais
+ *  nova que a publicada. */
+export function decidirErroPendente(
+  publicada: { criado_em: string }, maisRecente: { status: string; criado_em: string } | null,
+): boolean {
+  return maisRecente?.status === 'erro'
+    && new Date(maisRecente.criado_em).getTime() > new Date(publicada.criado_em).getTime();
+}
+
+/** `decidirErroPendente` com a consulta da mais recente (sem kit, `criado_em desc`). Família
+ *  simples → NENHUMA consulta (INV-1). Fail-closed: erro na consulta lança. */
+export async function haAtualizacaoComErro(
+  admin: Admin, orgId: string, codigoPai: string, classe: 'simples' | 'grade' | 'mista', publicadaCriadoEm: string,
+): Promise<boolean> {
+  if (classe === 'simples') return false;
+  const { data, error } = await admin.from('familias').select('status, criado_em')
+    .eq('org_id', orgId).eq('codigo_pai', codigoPai).is('kit_multiplicador', null)
+    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+  if (error) throw new Error(`Falha verificando atualização com erro: ${error.message}`);
+  return decidirErroPendente(
+    { criado_em: publicadaCriadoEm },
+    data as { status: string; criado_em: string } | null,
+  );
 }
 
 const CANAL = 'mercado_livre';

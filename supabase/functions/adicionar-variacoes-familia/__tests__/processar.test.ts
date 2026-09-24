@@ -5,8 +5,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirIncompleto, decidirRetry,
-  detectarUP, haFamiliaEmVoo, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
+  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirErroPendente, decidirIncompleto,
+  decidirRetry, detectarUP, haAtualizacaoComErro, haFamiliaEmVoo, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   precoPublicacaoNova, resolverFotoHerdada, STRIP_FAMILIA, STRIP_VARIACAO, validarEntrada,
   validarGrade, type VariacaoNovaEntrada,
 } from '../processar.ts';
@@ -309,6 +309,9 @@ function fakeAdmin(
         select: () => q,
         eq: (k: string, v: unknown) => { filtros[k] = v; return q; },
         in: (k: string, v: unknown) => { filtros[k] = v; return q; },
+        is: (k: string, v: unknown) => { filtros[`is:${k}`] = v; return q; },
+        order: (k: string, o: unknown) => { filtros[`order:${k}`] = o; return q; },
+        limit: (n: number) => { filtros.limit = n; return q; },
         maybeSingle: responder,
         then: (res: (x: unknown) => unknown, rej: (e: unknown) => unknown) => responder().then(res, rej),
       };
@@ -364,14 +367,18 @@ describe('validarGrade', () => {
   it('aceita cor nova e tamanho novo', () => {
     expect(validarGrade([nova('Verde', 'P'), nova('Preto', 'G')], ctx)).toEqual([]);
   });
-  it('recusa par que já existe e par repetido na submissão', () => {
-    expect(validarGrade([nova('Preto', 'M')], ctx)).toHaveLength(1);
-    expect(validarGrade([nova('Verde', 'P'), nova('Verde', 'P')], ctx)).toHaveLength(1);
+  it('recusa par que já existe e par repetido na submissão, com mensagens distintas', () => {
+    expect(validarGrade([nova('Preto', 'M')], ctx)).toEqual([
+      { campo: 'variacoes[0].tamanho', mensagem: 'Preto · M já existe neste produto.' },
+    ]);
+    expect(validarGrade([nova('Verde', 'P'), nova('Verde', 'P')], ctx)).toEqual([
+      { campo: 'variacoes[1].tamanho', mensagem: 'Verde · P está repetido nesta submissão.' },
+    ]);
   });
   it('par com a cor na grafia do ML ("Azul-marinho" × "Azul Marinho") é o MESMO par', () => {
     const c = { ...ctx, vivas: [...vivas, { codigo: '00000003', cor: 'Azul Marinho', tamanho: 'P', excluida_da_publicacao: false }] };
     expect(validarGrade([nova('Azul-marinho', 'P')], c)[0]!.mensagem).toMatch(/já existe/);
-    expect(validarGrade([nova('preto', 'G'), nova('Preto', 'G')], ctx)).toHaveLength(1);
+    expect(validarGrade([nova('preto', 'G'), nova('Preto', 'G')], ctx)[0]!.mensagem).toMatch(/repetido nesta submissão/);
   });
   it('recusa tamanho fora da whitelist, sem tamanho e com código', () => {
     expect(validarGrade([nova('Verde', 'XGG')], ctx)[0]!.mensagem).toMatch(/tamanho/i);
@@ -552,6 +559,46 @@ describe('carregarContextoGrade (Codex r4 #2)', () => {
     const r = await carregarContextoGrade(admin, 'org', '00000100', [{ tamanho: 'P', excluida_da_publicacao: false }]);
     expect(r).toEqual({ classe: 'grade', ehUP: true, tiposHabilitados: ['roupa'] });
     expect(chamadas.sort()).toEqual(['anuncios_externos', 'anuncios_externos_itens', 'organizations']);
+  });
+});
+
+describe('decidirErroPendente (achado E2E 1: adição anterior terminou em erro)', () => {
+  const publicada = { criado_em: '2026-09-20T10:00:00Z' };
+  it('família em erro mais nova que a publicada → bloqueia', () => {
+    expect(decidirErroPendente(publicada, { status: 'erro', criado_em: '2026-09-21T10:00:00Z' })).toBe(true);
+  });
+  it('família em erro mais antiga que a publicada → segue', () => {
+    expect(decidirErroPendente(publicada, { status: 'erro', criado_em: '2026-09-19T10:00:00Z' })).toBe(false);
+  });
+  it('a publicada é a mais recente (ou não há outra) → segue', () => {
+    expect(decidirErroPendente(publicada, { status: 'publicado', criado_em: publicada.criado_em })).toBe(false);
+    expect(decidirErroPendente(publicada, null)).toBe(false);
+  });
+});
+
+describe('haAtualizacaoComErro', () => {
+  const publicadaEm = '2026-09-20T10:00:00Z';
+  it('família simples → nunca consulta nem bloqueia (INV-1)', async () => {
+    const { admin, chamadas } = fakeAdmin({});
+    expect(await haAtualizacaoComErro(admin, 'org', '00000100', 'simples', publicadaEm)).toBe(false);
+    expect(chamadas).toEqual([]);
+  });
+  it('grade: mais recente do codigo_pai (sem kit, criado_em desc) em erro e mais nova → bloqueia', async () => {
+    let filtros: Record<string, unknown> = {};
+    const { admin } = fakeAdmin({ familias: (f) => { filtros = f; return { data: { status: 'erro', criado_em: '2026-09-21T10:00:00Z' } }; } });
+    expect(await haAtualizacaoComErro(admin, 'org', '00000100', 'grade', publicadaEm)).toBe(true);
+    expect(filtros).toMatchObject({
+      org_id: 'org', codigo_pai: '00000100', 'is:kit_multiplicador': null,
+      'order:criado_em': { ascending: false }, limit: 1,
+    });
+  });
+  it('grade: mais recente é a publicada → segue', async () => {
+    const { admin } = fakeAdmin({ familias: () => ({ data: { status: 'publicado', criado_em: publicadaEm } }) });
+    expect(await haAtualizacaoComErro(admin, 'org', '00000100', 'grade', publicadaEm)).toBe(false);
+  });
+  it('grade: erro na consulta → lança (falha fechada)', async () => {
+    const { admin } = fakeAdmin({ familias: () => ({ data: null, error: { message: 'boom' } }) });
+    await expect(haAtualizacaoComErro(admin, 'org', '00000100', 'grade', publicadaEm)).rejects.toThrow(/boom/);
   });
 });
 
