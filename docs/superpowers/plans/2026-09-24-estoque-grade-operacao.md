@@ -25,6 +25,7 @@
 
 ## Review Focus
 
+0. Revisão Codex gpt-6-sol do plano (VERDICT:REVISE, 12 achados) incorporada: reconciliador com `preservarPublicadas` (T4), GENDER de `familias.genero` no UPDATE (T4), ledger reaplicado no retry (T5), UP detectado pela raiz (T5), travadas = última publicada (T7), picker geral da Entrada (T3), limite 60 sem dupla contagem (T7), roteador pelo dado (T7), numeração sem guia bloqueada (T7), fixture SQL com profile (T1), dry-run sem escrita + prova real (T8), caracterização de payload (T4/T7).
 1. Irmão tem `SIZE`/`SIZE_GRID_ROW_ID` na ficha e a família tem `SIZE` em `atributos_ml` → o SKU novo sai com **um** `SIZE` e é o dele (Task 4, teste "um SIZE só").
 2. Cor nova de tamanho existente + tamanho novo de cor existente na MESMA submissão → só as células faltantes viram SKU; nenhuma célula publicada vai no payload (Task 7, teste de `celulasNovas`; Task 5, teste de par duplicado).
 3. Retry com a mesma `chave` depois de os códigos terem sido reservados → devolve o resultado anterior, não reserva códigos novos nem duplica SKU (Task 5, teste de idempotência reaproveitado + ordem: idempotência antes da reserva).
@@ -68,6 +69,11 @@ insert into public.organizations (id, nome, slug) values
 insert into auth.users (id, email, raw_user_meta_data) values
   ('92000000-0000-0000-0000-000000000101', 'grade@test.local',
    '{"org_id":"92000000-0000-0000-0000-000000000001"}'::jsonb);
+-- current_org_id() lê public.profiles ativo, não o metadado do auth.users (Codex #10). Upsert
+-- porque um trigger de signup pode já ter criado a linha.
+insert into public.profiles (id, org_id, is_active) values
+  ('92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001', true)
+on conflict (id) do update set org_id = excluded.org_id, is_active = true;
 insert into public.lotes (id, user_id, org_id, status, origem) values
   ('92000000-0000-0000-0000-000000000201', '92000000-0000-0000-0000-000000000101',
    '92000000-0000-0000-0000-000000000001', 'processando', 'manual');
@@ -86,8 +92,13 @@ set local role authenticated;
 set local request.jwt.claims = '{"sub":"92000000-0000-0000-0000-000000000101","role":"authenticated"}';
 
 do $$
-declare r json;
+declare r json; n int;
 begin
+  -- Sem estas contagens, uma RPC que devolve VAZIO (perfil/org não resolvidos) passaria calada.
+  select count(*) into n from public.variacoes_estoque_produto('09200000');
+  if n <> 2 then raise exception 'variacoes_estoque_produto devolveu % linhas, esperado 2', n; end if;
+  select count(*) into n from public.skus_estoque_org() x where x->>'codigo' in ('09200001', '09200002');
+  if n <> 2 then raise exception 'skus_estoque_org devolveu % linhas da fixture, esperado 2', n; end if;
   select x into r from public.variacoes_estoque_produto('09200000') x where x->>'codigo' = '09200001';
   if r->>'tamanho' is distinct from 'M' then raise exception 'variacoes_estoque_produto sem tamanho: %', r; end if;
   select x into r from public.variacoes_estoque_produto('09200000') x where x->>'codigo' = '09200002';
@@ -101,7 +112,7 @@ Se algum `insert` da fixture falhar por constraint que não é o objeto do teste
 
 - [ ] **Step 3: Rodar o teste — antes da migration deve falhar**
 
-Run (stack local): `supabase start` (se não estiver no ar) → `supabase db reset` **sem** a migration nova aplicada é difícil; alternativa aceita: aplicar tudo com `supabase db reset` e confirmar que o teste PASSA, depois `git stash`-free: comente temporariamente o `'tamanho', v.tamanho,` da migration, `supabase db reset`, confirme FAIL com "sem tamanho", restaure e `supabase db reset` de novo.
+Run (stack local): `supabase start` (se não estiver no ar). Prova de RED: comente temporariamente as duas linhas `'tamanho', v.tamanho,` da migration nova, `supabase db reset`, rode o teste → FAIL com "sem tamanho". Restaure as linhas, `supabase db reset`, rode de novo → PASS.
 Comando do teste: `psql "postgresql://supabase_admin:postgres@127.0.0.1:54322/postgres" -f supabase/tests/estoque_rpc_tamanho.sql`
 Expected: com a chave → sem saída de erro (`ROLLBACK`); sem a chave → `ERROR: variacoes_estoque_produto sem tamanho`.
 Se o stack local não subir: registrar isso no relatório e validar depois do `db push` (Task 9) com a mesma asserção via SQL read-only no projeto remoto.
@@ -228,7 +239,8 @@ Antes de fechar: abrir `src/lib/cor.ts` e confirmar a assinatura de `compararCor
 **Files:**
 - Modify: `src/components/estoque/variacao-estoque-linha.tsx:113`
 - Modify: `src/components/estoque/variacao-estoque-card.tsx` (onde exibe `cor ?? nome`)
-- Modify: `src/components/estoque/dialog-entrada.tsx:30-33`
+- Modify: `src/components/estoque/dialog-entrada.tsx:30-33` e o ponto onde monta `SkuEntradaCru` para `montarOpcoesSku` (~l.79)
+- Modify: `src/lib/dialog-entrada-busca.ts:12-28` (`SkuEntradaCru`, `montarOpcaoSku` — picker GERAL da Entrada, Codex #6)
 - Modify: `src/components/estoque/dialog-ajuste.tsx:15-18`
 - Modify: `src/components/estoque/filtros-movimentos.tsx:12-15` (+ onde rotula a opção)
 - Modify: `src/components/movimentos-estoque.tsx:121`
@@ -241,7 +253,11 @@ Antes de fechar: abrir `src/lib/cor.ts` e confirmar a assinatura de `compararCor
 
 - [ ] **Step 1: Testes que falham** — em cada suíte existente, acrescentar um caso com uma variação `{ cor: 'Preto', nome: 'Preto', tamanho: 'M' }` e esperar o texto `Preto · M`:
   - linha expandida: `screen.getByText('Preto · M')`
-  - Entrada e Ajuste: a opção do seletor com `'<codigo> · Preto · M'`
+  - Entrada e Ajuste (lista aberta pelo card): a opção do seletor com `'<codigo> · Preto · M'`
+  - Picker GERAL da Entrada (`src/lib/__tests__/dialog-entrada-busca*.test.ts`, criar se não existir):
+    `montarOpcaoSku({ codigo: '09200001', nome: 'Preto', cor: 'Preto', tamanho: 'M', codigoPai: '09200000', estoque: 1 })`
+    → `rotulo === '09200001 · Preto (Preto) · M'` e `textoBusca` contém `m`; sem `tamanho` o rótulo é
+    exatamente o de hoje (`'09200001 · Preto (Preto)'`).
   - Movimentos: linha do movimento do código `09200001` mostra `09200001 · Preto · M` quando `variacoes` traz esse código; e mostra só `09200001` quando não traz.
   Manter os casos antigos intactos (INV-1).
 
@@ -257,6 +273,10 @@ Antes de fechar: abrir `src/lib/cor.ts` e confirmar a assinatura de `compararCor
     }
     ```
     importando `rotuloVariacao` de `@/lib/rotulo-variacao` e trocando os usos de `rotuloVariacao` local por `rotuloComCodigo`. Se o picker filtra por texto digitado, incluir o rótulo novo no texto filtrável.
+  - `dialog-entrada-busca.ts`: `SkuEntradaCru` ganha `tamanho?: string | null`; em `montarOpcaoSku`,
+    `const sufixoTamanho = s.tamanho?.trim() ? \` · ${s.tamanho.trim()}\` : '';` e
+    `rotulo = \`${s.codigo} · ${s.nome}${complemento}${sufixoTamanho}\`` (o `textoBusca` já deriva do
+    rótulo). Em `dialog-entrada.tsx`, repassar `tamanho` de `SkuEstoqueOrg` ao montar os `SkuEntradaCru`.
   - `filtros-movimentos.tsx`: `VariacaoFiltro` ganha `nome?: string | null; tamanho?: string | null`; o rótulo da opção passa a usar `rotuloVariacao({ cor: v.cor, nome: v.nome ?? null, tamanho: v.tamanho })`.
   - `produto-card.tsx:523`: `variacoes={(variacoes ?? []).map((v) => ({ codigo: v.codigo, cor: v.cor, nome: v.nome, tamanho: v.tamanho }))}`
   - `movimentos-estoque.tsx`: 
@@ -352,10 +372,38 @@ describe('atualizarFamiliaUP — SKU novo de grade (ADR-0166 2026-09-24c)', () =
     expect(criarItemSpy).not.toHaveBeenCalled();
   });
 
-  it('família SEM tamanho: chart nunca é chamado e o payload segue igual (INV-1)', async () => {
+  it('GENDER vem de familias.genero, nunca do irmão nem de atributos_ml (Codex #2)', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      attributes: IRMAO_GRADE.map((a) => (a.id === 'GENDER' ? { id: 'GENDER', value_id: '339665', value_name: 'Feminino' } : a)),
+    }), { status: 200 })) as typeof fetch;
+    await atualizarFamiliaUP(argsGrade({
+      familia: { ...(args().familia as object), genero: 'masculino', categoria_ml_id: 'MLB1',
+        atributos_ml: [{ id: 'GENDER', value_id: '110461' }] } as never,
+    }));
+    expect(atributosEnviados().filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339666' }]);
+  });
+
+  it('GET do irmão falhou → GENDER e SIZE continuam certos', async () => {
+    globalThis.fetch = (async () => new Response('erro', { status: 500 })) as typeof fetch;
+    await atualizarFamiliaUP(argsGrade());
+    const attrs = atributosEnviados();
+    expect(attrs.filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339666' }]);
+    expect(attrs.filter((a) => a.id === 'SIZE')).toEqual([{ id: 'SIZE', value_name: 'G' }]);
+  });
+});
+
+// Caracterização (Codex #12): ANTES de tocar em atualizar-familia-up.ts, capture o payload COMPLETO
+// que o código atual gera para a família sem tamanho do `args()` padrão e fixe-o com
+// `expect(criarItemSpy.mock.calls[0]![1]).toEqual(PAYLOAD_SEM_TAMANHO_ATUAL)` — o objeto literal
+// é copiado do valor impresso pela 1ª execução (rodar o teste com `console.log(JSON.stringify(...))`
+// no código de hoje, colar o literal, remover o log). Commitar ESTE teste passando no código atual
+// antes de implementar o Step 4; ele tem que continuar passando depois (INV-1 byte a byte).
+describe('atualizarFamiliaUP — família sem tamanho (INV-1)', () => {
+  it('payload completo idêntico ao de antes da feature, e chart nunca é chamado', async () => {
+    const chartFake = vi.fn();
     await atualizarFamiliaUP(args({ garantirChartFn: chartFake as never }));
     expect(chartFake).not.toHaveBeenCalled();
-    expect(atributosEnviados().some((a) => a.id.startsWith('SIZE'))).toBe(false);
+    expect(criarItemSpy.mock.calls[0]![1]).toEqual(PAYLOAD_SEM_TAMANHO_ATUAL);
   });
 });
 ```
@@ -402,13 +450,29 @@ Se `atualizarFamiliaUP` capturar a exceção da porta e devolver `{ estado: 'err
       const atributosMesclados = mesclarAtributos(familia.atributos_ml, await lerFichaDoIrmao());
       // SIZE* vão por SKU em montarPayloadItem; se a família também os tiver em atributos_ml
       // (IA/Revisão), duplicariam — mesma limpeza de publicar-familia-up.ts (IDS_SUBSTITUIDOS).
-      const atributos = v.tamanho ? atributosMesclados.filter((a) => !a.id || !IDS_TAMANHO.has(a.id)) : atributosMesclados;
+      // GENDER: mesma regra do CREATE (publicar-familia-up.ts:74-92) — familias.genero, escolhido
+      // pelo operador, é a fonte de verdade; o do irmão/IA pode divergir ou faltar (Codex #2).
+      const atributos = v.tamanho
+        ? [
+          ...atributosMesclados.filter((a) => !a.id || (!IDS_TAMANHO.has(a.id) && a.id !== 'GENDER')),
+          { id: 'GENDER', value_id: GENDER_VALUE[familia.genero as Genero].id },
+        ]
+        : atributosMesclados;
       ```
+      (import de `GENDER_VALUE` junto com `garantirChart`; `resolverChart()` já garantiu `familia.genero` não nulo antes desta linha.)
       e no payload: `{ ...familiaInput, atributos_ml: atributos }` e na variação acrescentar
       `tamanho: v.tamanho ?? null, sizeLabel: linha?.sizeLabel ?? null, sizeGridId: chart?.chartId ?? null, sizeGridRowId: linha?.rowId ?? null,`.
       (Tamanho sem linha → o guard de `montarPayloadItem` já lança "sem guia de tamanhos resolvida".)
   - `update-familia-ml/processar.ts:166`: acrescentar `tamanho` ao select (a `familia` já é `select('*')` e leva `genero`).
-  - `reconciliar-convergencia-up/processar.ts`: `familias` select + `, genero`; `variacoes` select + `, tamanho`.
+  - `reconciliar-convergencia-up/processar.ts`: `familias` select + `, genero, lote_id`; `variacoes` select + `, tamanho`; e **passar `preservarPublicadas`** (Codex #1, BLOQUEANTE — hoje a retomada de uma composição interrompida do fluxo "Adicionar variação" roda sem ela e pode reenviar preço/atributos às irmãs; defeito pré-existente do ADR-0129 que a grade torna mais provável):
+    ```ts
+    import { ehFluxoAddVariacao } from '../_shared/update/fluxo-add-variacao.ts';
+    // ... depois de resolver `familia`:
+    const preservarPublicadas = await ehFluxoAddVariacao(admin, familia.lote_id);
+    // ... na chamada:
+    const resultado = await atualizarFamiliaUP({ ...(como hoje), preservarPublicadas });
+    ```
+    Teste em `supabase/functions/reconciliar-convergencia-up/__tests__/` (seguir o fake de admin existente nessa suíte): lote com `origem='manual'` → `atualizarFamiliaUP` recebe `preservarPublicadas: true`; lote de planilha → `false`. Injetar `atualizarFamiliaUP` do mesmo jeito que a suíte já faz; se ela não tiver ponto de injeção, acrescentar `deps.atualizarUP` como em `update-familia-ml/processar.ts:100`.
 
 - [ ] **Step 5: Rodar** — `pnpm test supabase/functions/_shared/user-products supabase/functions/update-familia-ml supabase/functions/reconciliar-convergencia-up` → PASS; `pnpm check:functions` → PASS.
 
@@ -599,7 +663,21 @@ export function derivarCodigosSku(ultimo: number, qtd: number): string[] {
 
 - [ ] **Step 5: Implementar `index.ts`** — ordem das etapas depois de carregar `variacoesVivas`:
   1. Remover o bloco `if (familiaTemTamanho(...)) return 400` (l.133–145).
-  2. `ehUP`: `const { count: itensUP } = await admin.from('anuncios_externos_itens').select('sku', { count: 'exact', head: true }).eq('org_id', orgId).in('sku', (variacoesVivas ?? []).map((v) => v.codigo as string));` → `ehUP = (itensUP ?? 0) > 0`. (Só consultado quando a família tem tamanho; fora disso passe `ehUP: false` — `validarGrade` não o lê.)
+  2. `ehUP` — **mesma detecção do worker** (`update-familia-ml/processar.ts:202-237`: raiz da partição 0 do produto + linhas filhas), nunca por SKU solto na org (Codex #4). Só quando a família tem tamanho (fora disso `ehUP: false`; `validarGrade` não o lê):
+     ```ts
+     const { data: raiz, error: raizErr } = await admin.from('anuncios_externos').select('id')
+       .eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('canal', 'mercado_livre').eq('particao', 0).maybeSingle();
+     if (raizErr) return json({ error: `Falha verificando o anúncio: ${raizErr.message}` }, 500);
+     let ehUP = false;
+     if (raiz) {
+       const { count, error: itErr } = await admin.from('anuncios_externos_itens')
+         .select('sku', { count: 'exact', head: true }).eq('anuncio_externo_id', raiz.id);
+       if (itErr) return json({ error: `Falha verificando o anúncio: ${itErr.message}` }, 500);
+       ehUP = (count ?? 0) > 0;
+     }
+     ```
+     Conferir o literal do canal usado em `update-familia-ml/processar.ts` (constante `CANAL`) e usar o mesmo.
+     Extrair isto numa função `detectarUP(admin, orgId, codigoPai): Promise<boolean>` em `processar.ts` (lança em erro) para testar com fake: raiz ausente → false; raiz com 0 itens → false; raiz com itens → true; erro na consulta → lança; SKU igual em OUTRA raiz não conta (a consulta é por `anuncio_externo_id`).
   3. `tamanhosValidos = tamanhosValidosParaTipos(await tiposProdutoDaOrg(admin, orgId))` (imports de `../_shared/produto/tipos-produto-valores.ts` e `../_shared/produto/tipo-produto.ts` — conferir o nome exato das exportações nesses arquivos, são as mesmas usadas por `cadastrar-produto/processar.ts:8,74` e `cadastrar-produto/index.ts:26`).
   4. `const errosGrade = validarGrade(variacoesEntrada, { vivas, tamanhosValidos, genero: anterior.genero ?? null, ehUP }); if (errosGrade.length) return json({ erros: errosGrade }, 400);`
   5. Teto: `if ((variacoesVivas?.length ?? 0) + variacoesEntrada.length > 60) return json({ error: 'Passaria do limite de 60 variações por produto.' }, 400);`
@@ -607,8 +685,10 @@ export function derivarCodigosSku(ultimo: number, qtd: number): string[] {
      Resultado: `const codigosNovos: string[]` alinhado por índice com `variacoesEntrada`. **A reserva acontece depois do bloco de idempotência** (`jaExistente`) — que já está antes, não mover.
   7. Fotos: `const fotos = variacoesEntrada.map((v) => v.fotoDeCodigo ? resolverFotoHerdada(v.fotoDeCodigo, v.nome, vivasComFoto) : { imagemPath: v.imagemPath!, mlPictureId: null });` onde `vivasComFoto` vem do `select('*')` que já existe. Qualquer `null` → 400 `{ erros: [{ campo: 'variacoes[i].imagemPath', mensagem: 'O SKU de origem da foto não tem foto — envie uma.' }] }`.
   8. `montarVariacaoNova({ ...v, codigo: codigosNovos[i], imagemPath: fotos[i].imagemPath, mlPictureId: fotos[i].mlPictureId }, ...)`.
-  9. Ledger: o laço usa `codigosNovos[i]` em vez de `normalizarCodigo8(v.codigo)!`.
+  9. Ledger: `aplicarEstoqueInicial(...)` (ver 10b) com `codigosNovos[i]` em vez de `normalizarCodigo8(v.codigo)!`.
   10. Resposta: acrescentar `codigos: codigosNovos`; no ramo `jaExistia`, ler `mudanca_estrutural` da família (`select('id, lote_id, status, mudanca_estrutural')`) e devolver `codigos: (mudanca_estrutural?.novas ?? [])`.
+  10b. Ledger no retry (Codex #3 — hoje o ramo `jaExistia` devolve `falhasEstoque: []` sem olhar o ledger): no ramo `jaExistia`, **antes** de re-encadear a publicação, reaplicar `registrar_entrada` para cada `codigos[i]` com `variacoesEntrada[i].estoqueInicial`, mesma `p_ref: \`addvar:${familiaId}:${codigo}\`` (a unique parcial do ledger torna isso no-op se já aplicou — mesmo racional de `cadastrar-produto/index.ts`), e devolver as falhas reais em `falhasEstoque`. Só reaplicar quando `codigos.length === variacoesEntrada.length` (mesma submissão); senão devolver `falhasEstoque` vazio como hoje. **Não** muda a regra do ADR-0129 de publicar mesmo com falha de estoque (decisão registrada; o operador vê `falhasEstoque` e corrige por "Dar entrada").
+     Extrair o laço de ledger para `aplicarEstoqueInicial(admin, { orgId, familiaId, userId, itens: Array<{ codigo: string; qtd: number; custo: number | null }> }): Promise<string[]>` em `processar.ts` e usá-lo nos dois ramos. Teste: fake de `admin.rpc` que falha para um código → a função devolve `['<codigo>: <mensagem>']`; chamada duas vezes com a mesma entrada usa o mesmo `p_ref`.
   11. `mudanca_estrutural = { novas: codigosNovos, removidas: [] }` (já é assim — só garantir que usa o array novo).
 
 - [ ] **Step 6: Rodar** — `pnpm test supabase/functions/adicionar-variacoes-familia supabase/functions/_shared/produto` → PASS; `pnpm lint:functions && pnpm check:functions` → PASS.
@@ -736,17 +816,22 @@ it('payload: herda foto quando a linha não tem foto própria e a cor tem foto; 
   6. total existentes + novas > 60 bloqueia com mensagem.
 
 - [ ] **Step 5: Implementar `dialog-estender-grade.tsx`** — composição, sem reinventar peças:
-  - Dados: `useQuery` da família canônica —
-    ```ts
-    supabase.from('familias')
-      .select('id, genero, variacoes(codigo, cor, tamanho, estoque, imagem_path, ml_picture_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, custo, preco, excluida_da_publicacao)')
-      .eq('codigo_pai', produto.codigoPai).order('criado_em', { ascending: false }).limit(1)
-    ```
-    (mesma consulta de `fetchFamiliaCanonicaPrefill` em `dialog-adicionar-variacao.tsx` acrescida de `genero`, `cor`, `tamanho`, `estoque`, `imagem_path`, `ml_picture_id`). Estoque exibido nas travadas vem de `fetchVariacoesProduto` (QK `variacoesEstoque`, saldo canônico) casado por código; se não carregou, usar o da consulta.
+  - Dados — **duas** famílias, como a edge (Codex #5):
+    - `familia_id` enviado à edge = a canônica (mais recente, `criado_em desc`), igual ao dialog atual (a edge resolve a publicada sozinha).
+    - SKUs travados = os da **última família publicada**, com a MESMA resolução da edge (`adicionar-variacoes-familia/index.ts:115-128`): 
+      ```ts
+      supabase.from('familias')
+        .select('id, genero, variacoes(codigo, cor, tamanho, estoque, imagem_path, ml_picture_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, custo, preco, excluida_da_publicacao)')
+        .eq('codigo_pai', produto.codigoPai).not('ml_item_id', 'is', null)
+        .order('publicado_em', { ascending: false, nullsFirst: false }).limit(1)
+      ```
+      Uma combinação que só existe numa tentativa de UPDATE que falhou (família mais nova, não publicada) **não** fica travada: aparece como célula nova normal, e a edge a valida contra a publicada. Teste: publicada tem Preto·P; canônica (erro) tem Preto·P + Preto·M → só Preto·P travada, Preto·M editável.
+    - Estoque exibido nas travadas vem de `fetchVariacoesProduto` (QK `variacoesEstoque`, saldo canônico) casado por código; se não carregou, usar o da consulta.
   - `skus: SkuExistente[]` = variações com `tamanho` não nulo; `temFoto = !!(imagem_path || ml_picture_id)`.
   - Estado: `cores`/`tamanhos` (Set) iniciados com `eixosExistentes(skus)`; `removidas`; `linhas: LinhaGrade[]`; `cabecalho: CamposHerdaveis` pré-preenchido pelo SKU de referência (menor código entre os não `excluida_da_publicacao`, mesma regra de `irmaRef` no dialog atual); `fotoPorCor` (só para cores sem foto herdável); `chave` (UUID, regenerada ao fechar).
   - Reconciliação: sempre que `cores`/`tamanhos`/`removidas` mudam, `reconciliarGrade(eixos.cores, eixos.tamanhos, removidas, [...linhas, ...skus.map(s => ({ cor: s.cor, tamanho: s.tamanho }))])` — as travadas entram como "já existentes", então nunca aparecem em `novas`; aplicar `novas` com `novaLinhaGrade` e `remover` filtrando `linhas` (nunca as travadas, que não estão em `linhas`). Mesmo padrão de `mudarCores`/`mudarTamanhos` de `dialog-cadastro-grade.tsx` (usar `ordenarEixos` com `tamanhos: opcoesDeTamanho(tipos).flatMap(g => g.valores)`).
-  - UI, em ordem: cabeçalho com nome do produto e gênero (só leitura); campos herdáveis (copiar o `campoHerdavel` de `dialog-cadastro-grade.tsx:423-455`); `<GeradorVariacoes coresFixas tamanhosFixos … />` com `coresBloqueadas`/`tamanhosBloqueados`/`bloquearNovaCor` calculados com `totalDaGrade` somando `skus.length` ao total (limite 60); "Foto por cor" só para cores da grade **sem** `fotoHerdavel` (texto: "Cores novas precisam de foto. Tamanhos novos de cores já publicadas usam a foto da cor."); `<MatrizGrade bloqueadas={bloqueadasDe(skusComSaldoCanonico)} … />` com os mesmos handlers de `dialog-cadastro-grade.tsx` (`patchLinha`, `patchOverride`, `destravar`, `voltarAHerdar`, `removerLinha`, `reincluirLinha`, `aplicarMassa`); banner de "atualização em andamento" (`familiaEmVoo`, igual ao dialog atual).
+  - UI, em ordem: cabeçalho com nome do produto e gênero (só leitura); campos herdáveis (copiar o `campoHerdavel` de `dialog-cadastro-grade.tsx:423-455`); `<GeradorVariacoes coresFixas tamanhosFixos … />` com `coresBloqueadas`/`tamanhosBloqueados`/`bloquearNovaCor` calculados com `totalDaGrade(...)` **direto** contra 60 — o cartesiano já inclui as células travadas, somar `skus.length` contaria duas vezes (Codex #7). Teste: 30 publicadas (6 cores × 5 tamanhos) + 1 cor nova = 36 → permitido; 12 × 5 = 60 → cor nova bloqueada;
+  - Numeração sem guia de tamanhos (Codex #9): neste fluxo o UPDATE vai direto ao ML, então tamanho com `numeracaoPublicavel(t, genero) === false` entra em `tamanhosBloqueados` (não é só aviso, como no cadastro); o gerador mostra o motivo via `avisoTamanho` ("não publica no Mercado Livre para este gênero"). Teste: calçado feminino com `45` bloqueado; masculino com `45` liberado (conferir os valores reais em `COMPRIMENTO_PE_CM` antes de fixar o teste). "Foto por cor" só para cores da grade **sem** `fotoHerdavel` (texto: "Cores novas precisam de foto. Tamanhos novos de cores já publicadas usam a foto da cor."); `<MatrizGrade bloqueadas={bloqueadasDe(skusComSaldoCanonico)} … />` com os mesmos handlers de `dialog-cadastro-grade.tsx` (`patchLinha`, `patchOverride`, `destravar`, `voltarAHerdar`, `removerLinha`, `reincluirLinha`, `aplicarMassa`); banner de "atualização em andamento" (`familiaEmVoo`, igual ao dialog atual).
   - Gate `podeSalvar`: `linhas.length > 0` && `!emVoo` && toda resolvida com `estoqueInicial` inteiro > 0 && `CAMPOS_NUMERICOS` sem erro (`erroCampo`) && toda linha tem foto própria **ou** `fotoPorCor[cor]` **ou** `fotoHerdavel(cor, skus)`.
   - Salvar: `canWrite()`; `effectiveOrgId()`; para cada linha cuja foto efetiva é um `File` (própria ou `fotoPorCor`), `uploadFile('imagens', buildStoragePath(owner, chave, \`${clientId}-${file.name}\`), file)` (mesmo `owner` do dialog atual via `storageOwnerForUpload`); `payloadEstender(...)`; `supabase.functions.invoke('adicionar-variacoes-familia', …)`; invalidações iguais às do dialog atual (`familiasNaoPublicadas`, `produtosEstoqueResumo`, `variacoesEstoque(codigoPai)`) e `setQueryData(QK.variacoesRecemAdicionadas(codigoPai), r.codigos)`; toasts iguais (sucesso, `publicacaoOk=false`, `falhasEstoque`).
   - Título: "Adicionar à grade"; descrição: "{nome}. Os SKUs novos vão direto para o Mercado Livre, sem passar pela Revisão. Os já publicados não mudam."; `DialogContent className="max-h-[90vh] sm:max-w-5xl overflow-y-auto"` (o `sm:` é obrigatório — ver comentário em `dialog-cadastro-grade.tsx`).
@@ -754,26 +839,34 @@ it('payload: herda foto quando a linha não tem foto própria e a cor tem foto; 
 - [ ] **Step 6: Roteador** — `dialog-adicionar-variacao-roteador.tsx`:
 ```tsx
 // ADR-0166 2026-09-24c: "Adicionar variação" em produto de grade abre a extensão da matriz; o
-// resto abre o dialog de sempre. Org sem tipo de produto habilitado nem consulta nada (INV-1).
+// resto abre o dialog de sempre. Decide pelo DADO do produto (variação com tamanho), não pelo tipo
+// habilitado na org (Codex #8): o tipo pode ter sido desligado depois de a grade ser publicada, e
+// `useTiposProdutoHabilitados` devolve `undefined` = "não sei" em falha. A consulta é a mesma QK
+// do card expandido (cache compartilhado); enquanto carrega, nenhum dialog abre.
 export function DialogAdicionarVariacaoRoteador({ produto, onFechar }: {
   produto: ProdutoEstoqueResumo | null; onFechar: () => void;
 }) {
-  const { data: tipos } = useTiposProdutoHabilitados();
-  const podeTerGrade = (tipos?.length ?? 0) > 0;
-  const { data: variacoes, isLoading } = useQuery({
+  const { data: variacoes, isError } = useQuery({
     queryKey: QK.variacoesEstoque(produto?.codigoPai ?? ''),
     queryFn: () => fetchVariacoesProduto(produto!.codigoPai),
-    enabled: !!produto && podeTerGrade,
+    enabled: !!produto,
   });
-  const ehGrade = podeTerGrade && (variacoes ?? []).some((v) => v.tamanho);
-  const aberto = produto != null && (!podeTerGrade || !isLoading);
-  return ehGrade
-    ? <DialogEstenderGrade produto={produto} aberto={aberto} onFechar={onFechar} />
-    : <DialogAdicionarVariacao produto={produto} aberto={aberto} onFechar={onFechar} />;
+  useEffect(() => {
+    if (produto && isError) { toast.error('Não foi possível carregar as variações do produto.'); onFechar(); }
+  }, [produto, isError, onFechar]);
+  const pronto = produto != null && variacoes !== undefined;
+  const ehGrade = pronto && variacoes.some((v) => v.tamanho);
+  return (
+    <>
+      <DialogEstenderGrade produto={produto} aberto={pronto && ehGrade} onFechar={onFechar} />
+      <DialogAdicionarVariacao produto={produto} aberto={pronto && !ehGrade} onFechar={onFechar} />
+    </>
+  );
 }
 ```
   Em `Estoque.tsx`, trocar `<DialogAdicionarVariacao produto=… aberto=… onFechar=… />` por `<DialogAdicionarVariacaoRoteador produto={produtoAddVariacao} onFechar={() => setProdutoAddVariacao(null)} />`.
-  Testes do roteador: (a) org sem tipos → abre `DialogAdicionarVariacao` e **não** chama a RPC; (b) org com tipos + produto sem tamanho → `DialogAdicionarVariacao`; (c) org com tipos + produto com tamanho → `DialogEstenderGrade`.
+  Testes do roteador: (a) produto sem tamanho → `DialogAdicionarVariacao` (título "Adicionar variação", campo Código presente — igual ao de hoje); (b) produto com tamanho → `DialogEstenderGrade`, **mesmo com `tipos_produto_da_org` = `[]`**; (c) enquanto a RPC não respondeu, nenhum dialog aberto; (d) RPC com erro → toast e `onFechar` chamado.
+  INV-1 do fluxo antigo (Codex #12): o teste existente de `dialog-adicionar-variacao` que monta o body enviado à edge tem que continuar passando sem alteração — se não houver um que compare o body inteiro, acrescentar um `toEqual` do body completo antes de mexer em `Estoque.tsx`.
 
 - [ ] **Step 7: Rodar** — `pnpm test src/lib src/components/estoque src/pages` → PASS; `pnpm exec tsc -b --force` → PASS.
 
@@ -784,7 +877,8 @@ export function DialogAdicionarVariacaoRoteador({ produto, onFechar }: {
 ### Task 8: Verificação ponta a ponta (loop principal)
 
 - [ ] **Step 1:** `pnpm preflight` (3–4 min) → verde. Falha fora do diff → provar em `origin/main` antes de chamar de pré-existente.
-- [ ] **Step 2 — dry-run no ML (sem criar anúncio):** script em `$CLAUDE_JOB_DIR/tmp/validar-sku-grade.ts` que, para uma família de grade publicada da org piloto (buscar por SQL read-only uma família com `variacoes.tamanho` não nulo e linhas em `anuncios_externos_itens`), monta o payload de um SKU hipotético (cor existente × tamanho ainda não usado) com o mesmo caminho de `criarPlano` (`atributosDeFicha` do GET do irmão + `garantirChart` em modo leitura de cache + `montarPayloadItem`) e envia **só** `POST /items/validate`. Expected: 204/200 sem erros de `fashion_grid`. Nunca `POST /items`.
+- [ ] **Step 2 — dry-run no ML (sem escrita nenhuma):** script em `$CLAUDE_JOB_DIR/tmp/validar-sku-grade.ts` que, para uma família de grade publicada da org piloto (SQL read-only: `variacoes.tamanho` não nulo + linhas em `anuncios_externos_itens`), monta o payload de um SKU hipotético (cor existente × tamanho ainda não usado) com o caminho de `criarPlano`: `atributosDeFicha` do `GET /items/{irmão}` + chart lido **direto da tabela `ml_size_charts`** por SELECT (nunca `garantirChart`, que em cache miss faz `POST /catalog/charts` e INSERT — Codex #11; se o tamanho não estiver no cache, parar e reportar) + `montarPayloadItem`; envia **só** `POST /items/validate`. Expected: sem erros de `fashion_grid`/`GENDER`. Nunca `POST /items`, nunca PUT.
+- [ ] **Step 2b — prova real do critério da spec (depende do Diego):** o `/items/validate` não prova `family_id` igual nem irmãs intocadas. Depois do deploy (Task 9), o Diego adiciona **um** SKU real pela tela nova a um produto de grade escolhido por ele. Eu leio, antes e depois, `GET /items/{id}` de 2 irmãs (preço, `attributes`, `family_id`) e do SKU novo (`SIZE`, `SIZE_GRID_ID`, `SIZE_GRID_ROW_ID`, `GENDER`, `COLOR`, `family_id`), e registro o diff no relatório. Só leitura da minha parte — nenhuma escrita direta no ML fora do fluxo do app.
 - [ ] **Step 3 — UI em runtime real (Playwright próprio, conta VALIDATION, skill `playwright-cli`):** dados de grade injetados via `route` no PostgREST (a conta de validação não tem os produtos do Diego — ver memória "Validar UI com dados injetados"); screenshots de: linha expandida com `Preto · M`; Entrada com a opção `código · Preto · M`; Movimentos com rótulo; dialog "Adicionar à grade" com células travadas e novas. Não submeter.
 - [ ] **Step 4:** revisão do Codex (modelo mais forte, `--effort high`, `< /dev/null`) sobre o diff completo da branch; tratar achados.
 
