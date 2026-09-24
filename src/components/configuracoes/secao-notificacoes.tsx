@@ -1,6 +1,9 @@
 import { ConfigTelegram } from '@/components/config-telegram';
 import { Switch } from '@/components/ui/switch';
-import { useMonitorFreteAtivo, useSalvarMonitorFreteAtivo } from '@/hooks/useConfiguracoes';
+import {
+  useAlertasPromocoesAtivo, useMonitorFreteAtivo,
+  useSalvarAlertasPromocoesAtivo, useSalvarMonitorFreteAtivo,
+} from '@/hooks/useConfiguracoes';
 import { usePermissoesConfig } from './permissoes';
 import { AvisoLeitura, EstadoSalvo, SettingsGroup, SettingsRow, estadoDeMutation } from './settings-row';
 
@@ -8,6 +11,8 @@ export function SecaoNotificacoes() {
   const { podeEditarConfig } = usePermissoesConfig();
   const { data: monitorFreteAtivo } = useMonitorFreteAtivo();
   const salvarMonitorFrete = useSalvarMonitorFreteAtivo();
+  const { data: alertasPromoAtivo } = useAlertasPromocoesAtivo();
+  const salvarAlertasPromo = useSalvarAlertasPromocoesAtivo();
   const aviso = !podeEditarConfig && <AvisoLeitura>Só um administrador altera estas opções.</AvisoLeitura>;
 
   // ConfigTelegram entra SEM card próprio — card dentro de card é o ruído que esta
@@ -38,6 +43,21 @@ export function SecaoNotificacoes() {
             disabled={!podeEditarConfig}
             onCheckedChange={(v) => salvarMonitorFrete.mutate(v)}
             aria-label="Monitor de frete: avisar quando o frete de um anúncio subir"
+          />
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup titulo="Promoções" descricao="Avisos da Central de Promoções, conferidos a cada atualização." aviso={aviso}>
+        <SettingsRow
+          titulo="Avisar sobre promoções"
+          descricao="Anúncio participando com líquido abaixo do custo, e campanha com adesão fechando em até 48 h que tem anúncios acima do mínimo. O aviso vai para quem recebe a categoria Financeiro (ADR-0170)."
+          estado={<EstadoSalvo estado={estadoDeMutation(salvarAlertasPromo)} />}
+        >
+          <Switch
+            checked={alertasPromoAtivo ?? false}
+            disabled={!podeEditarConfig}
+            onCheckedChange={(v) => salvarAlertasPromo.mutate(v)}
+            aria-label="Promoções: avisar sobre anúncios no prejuízo e prazos de adesão"
           />
         </SettingsRow>
       </SettingsGroup>

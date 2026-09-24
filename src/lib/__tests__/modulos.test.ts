@@ -26,4 +26,8 @@ describe('menusDeModulosDesabilitados', () => {
     expect(() => menusDeModulosDesabilitados(['modulo_que_nao_existe'])).not.toThrow();
     expect(menusDeModulosDesabilitados(['modulo_que_nao_existe'])).toEqual(menusComModulo);
   });
+  it('sem o módulo promocoes, o menu promocoes some', () => {
+    expect(menusDeModulosDesabilitados(['estoque'])).toContain('promocoes');
+    expect(menusDeModulosDesabilitados(['promocoes'])).not.toContain('promocoes');
+  });
 });

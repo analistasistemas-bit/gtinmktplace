@@ -4,6 +4,7 @@ import {
   fetchAliquotas, upsertAliquotas,
   fetchReancoraLiderAtiva, upsertReancoraLiderAtiva,
   fetchMonitorFreteAtivo, upsertMonitorFreteAtivo,
+  fetchAlertasPromocoesAtivo, upsertAlertasPromocoesAtivo,
   fetchMostrarLucroDashboard, upsertMostrarLucroDashboard,
   fetchTelegramConfig, salvarTelegramConfig, enviarTesteTelegram, verificarModeradosAgora,
   fetchModeloTexto, upsertModeloTexto,
@@ -52,6 +53,17 @@ export function useSalvarMonitorFreteAtivo() {
   return useMutation({
     mutationFn: (ativo: boolean) => upsertMonitorFreteAtivo(ativo),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'monitor_frete_ativo'] }),
+  });
+}
+
+export function useAlertasPromocoesAtivo() {
+  return useQuery({ queryKey: ['configuracoes', 'alertas_promocoes_ativo'], queryFn: fetchAlertasPromocoesAtivo });
+}
+export function useSalvarAlertasPromocoesAtivo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (ativo: boolean) => upsertAlertasPromocoesAtivo(ativo),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['configuracoes', 'alertas_promocoes_ativo'] }),
   });
 }
 

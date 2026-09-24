@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Layers, ListChecks, Settings, Package, Scale, Wallet, Receipt, Plug, Boxes, Activity } from 'lucide-react';
+import { LayoutDashboard, Layers, ListChecks, Settings, Package, Scale, Wallet, Receipt, Plug, Boxes, Activity, BadgePercent } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Logo } from '@/components/ui/logo';
 import { useProfile } from '@/hooks/useProfile';
@@ -18,6 +18,7 @@ export const NAV_ITEMS: { to: string; label: string; icon: typeof LayoutDashboar
   { to: '/lotes', label: 'Lotes', icon: Layers, end: false, key: 'lotes' },
   { to: '/revisao', label: 'Revisão', icon: ListChecks, end: false, key: 'revisao' },
   { to: '/publicados', label: 'Publicados', icon: Package, end: false, key: 'publicados' },
+  { to: '/promocoes', label: 'Promoções', icon: BadgePercent, end: false, key: 'promocoes' },
   { to: '/estoque', label: 'Estoque', icon: Boxes, end: false, key: 'estoque' },
   { to: '/pulse', label: 'Pulse', icon: Activity, end: false, key: 'pulse' },
   { to: '/faturamento', label: 'Faturamento', icon: Receipt, end: false, key: 'faturamento' },

@@ -19,7 +19,7 @@ import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 
 const MENU_LABEL: Record<MenuKey, string> = {
-  dashboard: 'Dashboard', lotes: 'Lotes', revisao: 'Revisão', publicados: 'Publicados',
+  dashboard: 'Dashboard', lotes: 'Lotes', revisao: 'Revisão', publicados: 'Publicados', promocoes: 'Promoções',
   estoque: 'Estoque', pulse: 'Pulse',
   faturamento: 'Faturamento', financeiro: 'Financeiro', viabilidade: 'Viabilidade',
   canais: 'Canais', configuracoes: 'Configurações', usuarios: 'Usuários',

@@ -781,6 +781,23 @@ export async function upsertMonitorFreteAtivo(ativo: boolean): Promise<void> {
   if (error) throw error;
 }
 
+export async function fetchAlertasPromocoesAtivo(): Promise<boolean> {
+  const orgId = effectiveOrgId();
+  if (!orgId) return false;
+  const { data } = await supabase.from('configuracoes')
+    .select('alertas_promocoes_ativo').eq('org_id', orgId).maybeSingle();
+  return data?.alertas_promocoes_ativo ?? false;
+}
+
+export async function upsertAlertasPromocoesAtivo(ativo: boolean): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const orgId = effectiveOrgId();
+  if (!user || !orgId) throw new Error('sem sessão');
+  const { error } = await supabase.from('configuracoes')
+    .upsert({ org_id: orgId, user_id: user.id, alertas_promocoes_ativo: ativo, atualizado_em: new Date().toISOString() }, { onConflict: 'org_id' });
+  if (error) throw error;
+}
+
 export async function fetchMostrarLucroDashboard(): Promise<boolean> {
   const orgId = effectiveOrgId();
   if (!orgId) return false;
