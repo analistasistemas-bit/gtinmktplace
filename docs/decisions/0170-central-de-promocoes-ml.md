@@ -39,8 +39,8 @@ o Diego em 2026-09-24.
    `liquidoClassico` com comissão de `listing_prices` e frete de `shipping_options/free` **no preço
    promocional**, alíquota por origem — serve à tela e aos alertas; a tela só aplica `calcularSemaforo`
    e `calcularMarkup` (puros) sobre os números gravados. Custo, piso, origem e dimensões vêm de
-   `variacoes` por um resolvedor próprio (`_shared/promocoes/cadastro.ts`) com a mesma cadeia e o
-   mesma cadeia do custo vigente do financeiro (variação → anúncio → GTIN → código; linha com custo vence
+   `variacoes` por um resolvedor próprio (`_shared/promocoes/cadastro.ts`) com a mesma cadeia do custo
+   vigente do financeiro (variação → anúncio → GTIN → código; linha com custo vence
    linha sem custo, depois a mais recente, ADR-0108), com o vínculo de item filho de User Products por
    `anuncios_externos_itens` na frente (família dissolvida não tem SKU, ADR-0105) e "anúncio" valendo só
    para anúncio de cor única. O mapa do financeiro não é tocado. Custo e piso são os **atuais**; mudança
@@ -90,11 +90,11 @@ o Diego em 2026-09-24.
 - Chamadas ao ML por sync crescem com o nº de convidados (listing_prices e frete por preço, e o ponto
   fixo do "até quanto") — cache Redis separado para comissão e frete, lotes de 20 itens e concorrência
   limitada; o volume real da 10.10 (504) é medido antes do deploy.
-- Duas colunas de controle: `ml_promocoes.rodada_em_curso` (reserva da leitura, 15 min) e
+- Duas colunas de controle: `ml_promocoes.rodada_em_curso` (reserva da leitura, 30 min; toda escrita da leitura confere a posse) e
   `ml_promocoes_sync.estado='sincronizando'` (trava da lista, 5 min). Só `candidate` (convidado) e
   `started` (participando) contam; outro status do ML não é presumido.
 - A elegibilidade é por conta: lista vazia, conexão sem scope `offers` ou 403 são **estados** exibidos
   com explicação, nunca erro.
-- `promocoes` entra em `MENU_KEYS`, em `MODULOS` e no `MODULOS_VALIDOS` da edge `usuarios`.
+- `promocoes` entra em `MENU_KEYS` (front e o espelho da edge `usuarios`), em `MODULOS` e no `MODULOS_VALIDOS` da edge `usuarios`; a migration faz o backfill de `profiles.allowed_menus` como no Pulse.
 - Deploy: `supabase db push` → deploy de `sincronizar-promocoes` (+ `usuarios`) → schedule QStash →
   merge do front.

@@ -22,7 +22,7 @@
 - Switch de alertas: `configuracoes.alertas_promocoes_ativo boolean not null default false` + `grant select (alertas_promocoes_ativo) on public.configuracoes to authenticated`.
 - Status do item: **`candidate` = convidado, `started` = participando**; qualquer outro status é gravado mas não entra em contagem, filtro nem alerta.
 - Alertas: `notificarCategoria(admin, orgId, 'financeiro', texto)`; dedup `reservarNotificacao(admin, orgId, null, 'promo_prejuizo', '<promocao_id>:<ml_item_id>')` e `reservarNotificacao(admin, orgId, null, 'promo_prazo', '<promocao_id>')`; leem o **banco** (última leitura concluída) na etapa de lista; no máximo **1 mensagem por org por sync**.
-- Sync em duas etapas: **lista** por org (trava de 5 min por `ml_promocoes_sync.estado='sincronizando'`) e **leitura** por promoção (lotes de 20 itens, orçamento de **90 000 ms** por execução, continuação por cursor, reserva `ml_promocoes.rodada_em_curso` de 15 min). Throttle do botão: **2 min** desde `ml_promocoes_sync.iniciado_em`.
+- Sync em duas etapas: **lista** por org (trava de 5 min por `ml_promocoes_sync.estado='sincronizando'`) e **leitura** por promoção (lotes de 20 itens, orçamento de **90 000 ms** por execução, continuação pelo último `ml_item_id` processado, reserva `ml_promocoes.rodada_em_curso` de 30 min; toda escrita da leitura confere a posse da rodada, comparando instantes, nunca texto). Throttle do botão: **2 min** desde `ml_promocoes_sync.iniciado_em`.
 - Migrations **só** via `supabase migration new` + `supabase db push` (ADR-0043). Nunca `apply_migration`/painel.
 - Git neste worktree: `/usr/bin/git`, um comando por chamada, commit com `-F <arquivo de mensagem absoluto>`; mensagem termina com `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
 - Roteamento de modelo (CLAUDE.md): Tasks 1-6 (migration, cálculo financeiro, integração ML) → **opus**; Tasks 7-9 (frontend) → **sonnet**; Tasks 0 e 10 → orquestrador (não delegar).
@@ -66,7 +66,7 @@ Confirma na conta Avil, com o token da conexão (mesmo meio do spike, sem expor 
 
 - [ ] **Step 1: Formato das respostas.** `GET /seller-promotions/users/{uid}?app_version=v2`, `GET /seller-promotions/promotions/{id}/items?promotion_type=DEAL&app_version=v2&limit=50` (e a 2ª página com o cursor), `GET /seller-promotions/promotions/{id}/items?promotion_type=SMART&app_version=v2`, `GET /items?ids=<3 MLB, 1 Legacy multi-cor, 1 UP>&attributes=id,title,thumbnail,permalink,listing_type_id,category_id,seller_custom_field,attributes,variations&include_attributes=all`. Salvar como `promocoes-usuario.json`, `itens-deal-p1.json`, `itens-deal-p2.json`, `itens-smart.json`, `multiget.json`. Conferir: nome do cursor em `paging` (`searchAfter`) e do parâmetro de envio (`search_after`); campos `deadline_date`, `benefits`; `stock.min/max` no LIGHTNING; **a lista de `status` distintos dos itens** (o código só reconhece `candidate` e `started` — outro status que signifique convidado/participando exige ajustar `contar`/`filtrarItens` e o glossário); e que `price` de um item `started` em DEAL é o preço que está no ar. **Se divergir do que `ml.ts` (Task 4) lê, ajustar o normalizador e o teste da Task 4 ao formato real antes de implementá-la.**
 - [ ] **Step 2: ML banca.** Achar em `ml_vendas`/`ml_vendas_itens` (SQL read-only via Management API) uma venda de item que estava `started` em SMART com `meli_percentage > 0`; comparar `unit_price`, `sale_fee` e o líquido gravado com `price`/`original_price`/`meli_percentage`. Registrar a regra observada na spec. **O MVP não muda:** o subsídio continua fora do líquido; incluir exige nova decisão do Diego.
-- [ ] **Step 3: Volume.** Contar itens `candidate`+`started` somando todas as promoções `pending`/`started` da Avil e o nº de preços distintos. Estimativa de GETs por rodada = páginas de itens + multiget/20 + 2 × (combinações distintas de categoria×tipo×preço para comissão + categoria×preço×dimensão para frete), onde cada cor de convidado com faixa soma até 1 (preço avaliado) + 1 (máximo) + ~3 (ponto fixo do "até quanto"). Medir também o tempo de 1 lote de 20 itens da 10.10 com cache frio: tem de ficar bem abaixo de 90 s (orçamento) e do limite de parede da edge function. Registrar; se o lote passar de ~40 s, reduzir `lote` no worker e avisar o Diego antes do deploy.
+- [ ] **Step 3: Volume.** Contar itens `candidate`+`started` somando todas as promoções `pending`/`started` da Avil e o nº de preços distintos. Estimativa de GETs por rodada = páginas de itens + multiget/20 + 2 × (combinações distintas de categoria×tipo×preço para comissão + categoria×preço×dimensão para frete), onde cada cor de convidado com faixa soma até 1 (preço avaliado) + 1 (máximo) + ~3 (ponto fixo do "até quanto"). Medir também o tempo de 1 lote de 20 itens da 10.10 com cache frio: tem de ficar bem abaixo de 90 s (orçamento) e do limite de parede da edge function. Registrar; se o lote passar de ~40 s, reduzir `lote` no worker e avisar o Diego antes do deploy. Com o tempo por lote, estimar a duração da cadeia inteira da 10.10 (nº de lotes × tempo): se passar de ~25 min, subir `RESERVA_MIN` (deps.ts) e o limite de `emLeitura` (front) juntos.
 - [ ] **Step 4: Deep link.** Confirmar no navegador (sessão isolada, conta VALIDATION não serve — só abrir a URL pública de login) a URL da área de promoções do Seller Center (candidata: `https://www.mercadolivre.com.br/anuncios/promocoes`). Registrar em `URL_PROMOCOES_ML` (Task 7).
 - [ ] **Step 5: Commit** das fixtures + seção da spec: `docs(promocoes): resultado da validação de campo (Task 0)`.
 
@@ -102,7 +102,7 @@ create table public.ml_promocoes (
   erro                   text,
   sincronizado_em        timestamptz not null default now(),
   itens_sincronizados_em timestamptz,
-  rodada_em_curso        timestamptz,   -- reserva da leitura (15 min); null = nenhuma leitura em curso
+  rodada_em_curso        timestamptz,   -- reserva da leitura (30 min); null = nenhuma leitura em curso
   primary key (org_id, promocao_id)
 );
 
@@ -916,7 +916,7 @@ O sync tem **duas etapas** (revisão R1 do plano):
 - **Lista (por org, rápida):** confere alíquotas, lista as promoções, grava metadados, encerra as que sumiram, avisa (alertas lendo o banco) e **reserva + enfileira uma leitura por promoção** `pending`/`started` (cupom não).
 - **Leitura (por promoção):** lê os itens (ordenados por `ml_item_id`), projeta em **lotes**, grava cada lote; se o orçamento de tempo acabar, **re-enfileira a si mesma com o cursor**. Ao terminar, apaga o que não veio nesta rodada e recalcula a contagem no banco. Nenhuma promoção grande trava as outras nem a org.
 
-A reserva usa `ml_promocoes.rodada_em_curso` (Task 1): só enfileira se a coluna estiver nula ou tiver mais de 15 min; a leitura aborta em silêncio se a rodada da mensagem não for a rodada em curso (mensagem velha).
+A reserva usa `ml_promocoes.rodada_em_curso` (Task 1): só enfileira se a coluna estiver nula ou tiver mais de 30 min (reserva vencida grava antes o aviso `MSG_INTERROMPIDA` na promoção). A leitura confere a posse **antes de cada lote e na conclusão**, comparando instantes (`mesmaRodada`) — o PostgREST devolve `…+00:00` e a mensagem leva `…Z` —, e aborta em silêncio se perdeu a posse: uma cadeia velha nunca apaga itens nem libera a reserva de uma rodada nova. O cursor é o **último `ml_item_id` processado**: item que entra ou sai da lista do ML entre duas execuções não desloca a retomada.
 
 **Files:**
 - Create: `supabase/functions/_shared/promocoes/sincronizar.ts`, `supabase/functions/_shared/promocoes/deps.ts`
@@ -932,12 +932,13 @@ A reserva usa `ml_promocoes.rodada_em_curso` (Task 1): só enfileira se a coluna
 export type EstadoSync = 'ok' | 'sem_acesso' | 'sem_promocoes' | 'erro';
 export const MSG_ALIQUOTA = 'Confirme as alíquotas de imposto em Configurações antes de usar a Central de Promoções.';
 export interface QueryTarifa { preco: number; categoria: string; listingType: string; dim: DimensoesPacote | null }
-export interface MsgLeitura { etapa: 'promocao'; org_id: string; promocao_id: string; tipo: string; rodada: string; cursor: number }
+export interface MsgLeitura { etapa: 'promocao'; org_id: string; promocao_id: string; tipo: string; rodada: string; cursor: string | null }
 export interface DepsLista { lerAliquotas; listarPromocoes; gravarPromocoes; encerrarAusentes; reservarLeitura; enfileirar; avisar; gravarEstado }
 export interface DepsLeitura { agora; rodadaEmCurso; lerAliquotas; listarItens; buscarItensML; carregarCadastro; tarifaEm; gravarLote; continuar; concluir; falhar }
 export function projetarItem(it: ItemPromocaoML, ml: ItemML | null, cad: Cadastro, aliq: Aliquotas, tarifaEm: (q: QueryTarifa) => Promise<Tarifa>): Promise<LinhaItem>;
 export function emParalelo<T, R>(itens: T[], n: number, fn: (t: T) => Promise<R>): Promise<R[]>;
 export function sincronizarLista(deps: DepsLista, ctx: { orgId: string; rodada: string }): Promise<{ estado: EstadoSync; enfileiradas: string[] }>;
+export function mesmaRodada(a: string | null, b: string): boolean;
 export function sincronizarPromocao(deps: DepsLeitura, msg: MsgLeitura, opts: { limiteMs: number; lote: number; concorrencia: number }): Promise<{ resultado: 'concluida' | 'continua' | 'obsoleta' | 'erro'; processados: number }>;
 // deps.ts
 export function depsLista(admin: SupabaseClient, cx: { orgId: string; mlUserId: string; token: string }): DepsLista;
@@ -956,7 +957,7 @@ export type MotivoSemLiquido = 'sem_cadastro' | 'sem_custo' | 'sem_origem' | 'se
 ```ts
 import { describe, expect, it, vi } from 'vitest';
 import {
-  MSG_ALIQUOTA, projetarItem, sincronizarLista, sincronizarPromocao,
+  MSG_ALIQUOTA, mesmaRodada, projetarItem, sincronizarLista, sincronizarPromocao,
   type DepsLeitura, type DepsLista, type MsgLeitura,
 } from '../sincronizar.ts';
 import { montarCadastro, type LinhaVariacao } from '../cadastro.ts';
@@ -1019,6 +1020,14 @@ describe('projetarItem', () => {
     expect(l.preco_avaliado).toBe(42);
   });
 
+  it('falha no "até quanto" não apaga o líquido já calculado no preço avaliado', async () => {
+    const cad = montarCadastro([linhaVar({ id: 'a', preco: 30 })], []);
+    const tarifa = async (q: { preco: number }) => { if (q.preco !== 45) throw new Error('estimada'); return tarifa10; };
+    const l = await projetarItem(item({ preco_min: 20, preco_max: 60, preco_sugerido: 45 }), itemMl(), cad, aliq, tarifa);
+    expect(l.projecao[0]).toMatchObject({ motivo: null, ate_quanto: null, semaforo: 'verde' });
+    expect(l.projecao[0].liquido).toBeCloseTo(45 * 0.82, 10);
+  });
+
   it('falha ou tarifa estimada derruba só a cor (erro_tarifa)', async () => {
     const cad = montarCadastro([linhaVar({ id: 'a' })], []);
     const l = await projetarItem(item(), itemMl(), cad, aliq, async () => { throw new Error('estimada'); });
@@ -1077,7 +1086,7 @@ describe('sincronizarLista', () => {
     expect(d.encerrarAusentes).toHaveBeenCalledWith(['C', 'F', 'P', 'S']);
     expect(d.avisar).toHaveBeenCalledTimes(1);
     expect(r.enfileiradas).toEqual(['P']);
-    expect(d.enfileirar).toHaveBeenCalledWith({ etapa: 'promocao', org_id: 'org', promocao_id: 'P', tipo: 'DEAL', rodada: ctx.rodada, cursor: 0 });
+    expect(d.enfileirar).toHaveBeenCalledWith({ etapa: 'promocao', org_id: 'org', promocao_id: 'P', tipo: 'DEAL', rodada: ctx.rodada, cursor: null });
     expect(d.gravarEstado).toHaveBeenLastCalledWith({ estado: 'ok' });
   });
 
@@ -1099,7 +1108,8 @@ function depsLeitura(o: Partial<DepsLeitura> = {}): FakeLeitura {
   return {
     avancar: (ms: number) => { relogio += ms; },
     agora: vi.fn(() => relogio),
-    rodadaEmCurso: vi.fn(async () => ctx.rodada),
+    // O PostgREST serializa timestamptz como `+00:00`; a mensagem leva `Z` (toISOString).
+    rodadaEmCurso: vi.fn(async (): Promise<string | null> => '2026-10-06T12:00:00+00:00'),
     lerAliquotas: vi.fn(async () => aliq),
     listarItens: vi.fn(async () => [item({ ml_item_id: 'MLB3' }), item({ ml_item_id: 'MLB1' }), item({ ml_item_id: 'MLB2' })]),
     buscarItensML: vi.fn(async (ids: string[]) => new Map(ids.map((id) => [id, itemMl({ id })]))),
@@ -1107,13 +1117,21 @@ function depsLeitura(o: Partial<DepsLeitura> = {}): FakeLeitura {
     tarifaEm: vi.fn(async () => tarifa10),
     gravarLote: vi.fn(async () => {}),
     continuar: vi.fn(async () => {}),
-    concluir: vi.fn(async () => {}),
+    concluir: vi.fn(async () => true),
     falhar: vi.fn(async () => {}),
     ...o,
   } as unknown as FakeLeitura;
 }
-const msg: MsgLeitura = { etapa: 'promocao', org_id: 'org', promocao_id: 'P', tipo: 'DEAL', rodada: ctx.rodada, cursor: 0 };
+const msg: MsgLeitura = { etapa: 'promocao', org_id: 'org', promocao_id: 'P', tipo: 'DEAL', rodada: ctx.rodada, cursor: null };
 const opts = { limiteMs: 90_000, lote: 2, concorrencia: 4 };
+
+describe('mesmaRodada', () => {
+  it('compara instantes, não texto', () => {
+    expect(mesmaRodada('2026-10-06T12:00:00+00:00', '2026-10-06T12:00:00.000Z')).toBe(true);
+    expect(mesmaRodada('2026-10-06T12:00:01+00:00', '2026-10-06T12:00:00.000Z')).toBe(false);
+    expect(mesmaRodada(null, '2026-10-06T12:00:00.000Z')).toBe(false);
+  });
+});
 
 describe('sincronizarPromocao', () => {
   it('lê em lotes na ordem de ml_item_id e conclui', async () => {
@@ -1129,20 +1147,44 @@ describe('sincronizarPromocao', () => {
     d.gravarLote.mockImplementation(async () => { d.avancar(100_000); });
     const r = await sincronizarPromocao(d, msg, opts);
     expect(r).toEqual({ resultado: 'continua', processados: 2 });
-    expect(d.continuar).toHaveBeenCalledWith(2);
+    expect(d.continuar).toHaveBeenCalledWith('MLB2');
     expect(d.concluir).not.toHaveBeenCalled();
   });
 
-  it('retoma do cursor recebido', async () => {
+  it('retoma depois do último id processado', async () => {
     const d = depsLeitura();
-    await sincronizarPromocao(d, { ...msg, cursor: 2 }, opts);
+    await sincronizarPromocao(d, { ...msg, cursor: 'MLB2' }, opts);
+    expect(d.gravarLote.mock.calls.map((c) => c[0].map((l: { ml_item_id: string }) => l.ml_item_id))).toEqual([['MLB3']]);
+  });
+
+  it('item novo antes do cursor não desloca a retomada', async () => {
+    const d = depsLeitura({ listarItens: vi.fn(async () => ['MLB0', 'MLB1', 'MLB2', 'MLB3'].map((id) => item({ ml_item_id: id }))) });
+    await sincronizarPromocao(d, { ...msg, cursor: 'MLB2' }, opts);
     expect(d.gravarLote.mock.calls.map((c) => c[0].map((l: { ml_item_id: string }) => l.ml_item_id))).toEqual([['MLB3']]);
   });
 
   it('mensagem de rodada velha não faz nada', async () => {
-    const d = depsLeitura({ rodadaEmCurso: vi.fn(async () => '2026-10-06T18:00:00.000Z') });
+    const d = depsLeitura({ rodadaEmCurso: vi.fn(async () => '2026-10-06T18:00:00+00:00') });
     expect((await sincronizarPromocao(d, msg, opts)).resultado).toBe('obsoleta');
     expect(d.listarItens).not.toHaveBeenCalled();
+  });
+
+  it('posse perdida no meio: para sem gravar, sem continuar e sem concluir', async () => {
+    const d = depsLeitura();
+    d.rodadaEmCurso
+      .mockResolvedValueOnce('2026-10-06T12:00:00+00:00')   // entrada
+      .mockResolvedValueOnce('2026-10-06T12:00:00+00:00')   // antes do 1º lote
+      .mockResolvedValue('2026-10-06T12:40:00+00:00');      // rodada nova reservou
+    const r = await sincronizarPromocao(d, msg, opts);
+    expect(r).toEqual({ resultado: 'obsoleta', processados: 2 });
+    expect(d.gravarLote).toHaveBeenCalledTimes(1);
+    expect(d.continuar).not.toHaveBeenCalled();
+    expect(d.concluir).not.toHaveBeenCalled();
+  });
+
+  it('conclusão sem posse vira obsoleta', async () => {
+    const d = depsLeitura({ concluir: vi.fn(async () => false) });
+    expect((await sincronizarPromocao(d, msg, opts)).resultado).toBe('obsoleta');
   });
 
   it('erro marca a promoção e libera a reserva', async () => {
@@ -1177,7 +1219,7 @@ export type EstadoSync = 'ok' | 'sem_acesso' | 'sem_promocoes' | 'erro';
 export const MSG_ALIQUOTA = 'Confirme as alíquotas de imposto em Configurações antes de usar a Central de Promoções.';
 
 export interface QueryTarifa { preco: number; categoria: string; listingType: string; dim: DimensoesPacote | null }
-export interface MsgLeitura { etapa: 'promocao'; org_id: string; promocao_id: string; tipo: string; rodada: string; cursor: number }
+export interface MsgLeitura { etapa: 'promocao'; org_id: string; promocao_id: string; tipo: string; rodada: string; cursor: string | null }
 
 export interface DepsLista {
   lerAliquotas(): Promise<Aliquotas | null>;
@@ -1186,7 +1228,7 @@ export interface DepsLista {
   gravarPromocoes(ps: PromocaoML[]): Promise<void>;
   /** status='finished' nas pending/started da org cujo id não está em `vistos`. */
   encerrarAusentes(vistos: string[]): Promise<void>;
-  /** Reserva atômica: grava rodada_em_curso se estiver nula ou com mais de 15 min. true = reservou. */
+  /** Reserva atômica: grava rodada_em_curso se estiver nula ou com mais de 30 min. true = reservou. */
   reservarLeitura(promocaoId: string, rodada: string): Promise<boolean>;
   enfileirar(m: MsgLeitura): Promise<void>;
   /** Alertas lendo o banco (dados da rodada anterior). Devolve nº de envios. */
@@ -1204,11 +1246,12 @@ export interface DepsLeitura {
   tarifaEm(q: QueryTarifa): Promise<Tarifa>;
   /** Upsert das linhas com sincronizado_em = rodada. */
   gravarLote(linhas: LinhaItem[]): Promise<void>;
-  /** Publica a mesma mensagem com o novo cursor. */
-  continuar(cursor: number): Promise<void>;
-  /** Apaga itens com sincronizado_em < rodada, recalcula a contagem no banco, itens_sincronizados_em = rodada, erro = null, rodada_em_curso = null. */
-  concluir(): Promise<void>;
-  /** erro = msg, rodada_em_curso = null. */
+  /** Publica a mesma mensagem com o cursor = último ml_item_id processado. */
+  continuar(cursor: string): Promise<void>;
+  /** Só com a posse da rodada: apaga itens com sincronizado_em < rodada, recalcula a contagem no banco,
+   *  itens_sincronizados_em = rodada, erro = null, rodada_em_curso = null. false = posse perdida, nada feito. */
+  concluir(): Promise<boolean>;
+  /** Só com a posse da rodada: erro = msg, rodada_em_curso = null. */
   falhar(erro: string): Promise<void>;
 }
 
@@ -1251,21 +1294,25 @@ async function projetarCor(
   const piso = r!.piso!, custo = r!.custo!;
   const aliquotaPct = r!.origem === 'importado' ? aliq.importado : aliq.nacional;
   const tarifaNo = (p: number) => tarifaEm({ preco: p, categoria: ml!.categoria!, listingType: ml!.listing_type_id!, dim: r!.dim });
+  let t: Tarifa;
   try {
-    const t = await tarifaNo(preco!);
-    const liquido = liquidoNoPreco(preco!, t, aliquotaPct);
-    const ate = it.status === 'candidate' && it.preco_min != null && it.preco_max != null
-      ? await ateQuantoDescer({ piso, aliquotaPct, min: it.preco_min, max: it.preco_max }, tarifaNo)
-      : { valor: null, motivo: null };
-    return {
-      ...base, comissao_pct: t.comissao.percentual, comissao_fixa: t.comissao.fixa, frete: t.frete,
-      aliquota_pct: aliquotaPct, liquido, ate_quanto: ate.valor, ate_quanto_motivo: ate.motivo,
-      semaforo: semaforo(liquido, piso, custo),
-    };
+    t = await tarifaNo(preco!);
   } catch {
     // Inclui TarifaEstimada: comissão/frete que o ML não informou NUNCA vira zero (ADR-0170 §7).
     return { ...base, motivo: 'erro_tarifa' };
   }
+  const liquido = liquidoNoPreco(preco!, t, aliquotaPct);
+  let ate: { valor: number | null; motivo: 'qualquer' | 'nenhum' | null } = { valor: null, motivo: null };
+  if (it.status === 'candidate' && it.preco_min != null && it.preco_max != null) {
+    try {
+      ate = await ateQuantoDescer({ piso, aliquotaPct, min: it.preco_min, max: it.preco_max }, tarifaNo);
+    } catch { /* sem "até quanto"; o líquido no preço avaliado continua válido */ }
+  }
+  return {
+    ...base, comissao_pct: t.comissao.percentual, comissao_fixa: t.comissao.fixa, frete: t.frete,
+    aliquota_pct: aliquotaPct, liquido, ate_quanto: ate.valor, ate_quanto_motivo: ate.motivo,
+    semaforo: semaforo(liquido, piso, custo),
+  };
 }
 
 export async function projetarItem(
@@ -1316,7 +1363,7 @@ export async function sincronizarLista(
     for (const p of promos) {
       if (TIPOS_CUPOM.has(p.tipo) || (p.status !== 'pending' && p.status !== 'started')) continue;
       if (!(await deps.reservarLeitura(p.id, ctx.rodada))) continue; // já em leitura por outra rodada
-      await deps.enfileirar({ etapa: 'promocao', org_id: ctx.orgId, promocao_id: p.id, tipo: p.tipo, rodada: ctx.rodada, cursor: 0 });
+      await deps.enfileirar({ etapa: 'promocao', org_id: ctx.orgId, promocao_id: p.id, tipo: p.tipo, rodada: ctx.rodada, cursor: null });
       enfileiradas.push(p.id);
     }
     await deps.gravarEstado({ estado: 'ok' });
@@ -1327,43 +1374,53 @@ export async function sincronizarLista(
   }
 }
 
+/** O PostgREST devolve timestamptz como `…+00:00`; a mensagem leva `…Z`. Compara o instante, nunca o texto. */
+export function mesmaRodada(a: string | null, b: string): boolean {
+  return a != null && Date.parse(a) === Date.parse(b);
+}
+
+const porId = (a: ItemPromocaoML, b: ItemPromocaoML) => (a.ml_item_id < b.ml_item_id ? -1 : a.ml_item_id > b.ml_item_id ? 1 : 0);
+
 export async function sincronizarPromocao(
   deps: DepsLeitura, msg: MsgLeitura, opts: { limiteMs: number; lote: number; concorrencia: number },
 ): Promise<{ resultado: 'concluida' | 'continua' | 'obsoleta' | 'erro'; processados: number }> {
   const inicio = deps.agora();
-  if ((await deps.rodadaEmCurso()) !== msg.rodada) return { resultado: 'obsoleta', processados: 0 };
+  if (!mesmaRodada(await deps.rodadaEmCurso(), msg.rodada)) return { resultado: 'obsoleta', processados: 0 };
+  let feitos = 0;
   try {
     const aliq = await deps.lerAliquotas();
     if (!aliq) {
       await deps.falhar(MSG_ALIQUOTA);
       return { resultado: 'erro', processados: 0 };
     }
-    // Ordem estável entre continuações: o cursor é um índice nesta lista.
-    const itens = (await deps.listarItens()).sort((a, b) => a.ml_item_id.localeCompare(b.ml_item_id));
+    // Cursor = último ml_item_id processado; a comparação é a mesma da ordenação (code units).
+    const pendentes = (await deps.listarItens()).sort(porId)
+      .filter((x) => msg.cursor == null || x.ml_item_id > msg.cursor);
     const cadastro = await deps.carregarCadastro();
-    let i = msg.cursor;
-    while (i < itens.length) {
-      if (i > msg.cursor && deps.agora() - inicio > opts.limiteMs) {
-        await deps.continuar(i);
-        return { resultado: 'continua', processados: i - msg.cursor };
+    while (feitos < pendentes.length) {
+      // Posse antes de cada lote: uma cadeia velha nunca escreve por cima de uma rodada nova.
+      if (!mesmaRodada(await deps.rodadaEmCurso(), msg.rodada)) return { resultado: 'obsoleta', processados: feitos };
+      if (feitos > 0 && deps.agora() - inicio > opts.limiteMs) {
+        await deps.continuar(pendentes[feitos - 1].ml_item_id);
+        return { resultado: 'continua', processados: feitos };
       }
-      const lote = itens.slice(i, i + opts.lote);
+      const lote = pendentes.slice(feitos, feitos + opts.lote);
       const ml = await deps.buscarItensML(lote.map((x) => x.ml_item_id));
       const linhas = await emParalelo(lote, opts.concorrencia, (it) =>
         projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q)));
       await deps.gravarLote(linhas);
-      i += lote.length;
+      feitos += lote.length;
     }
-    await deps.concluir();
-    return { resultado: 'concluida', processados: i - msg.cursor };
+    if (!(await deps.concluir())) return { resultado: 'obsoleta', processados: feitos };
+    return { resultado: 'concluida', processados: feitos };
   } catch (e) {
     await deps.falhar(mensagem(e));
-    return { resultado: 'erro', processados: 0 };
+    return { resultado: 'erro', processados: feitos };
   }
 }
 ```
 
-(`i > msg.cursor` garante que toda execução avança pelo menos um lote — não existe continuação sem progresso.)
+(`feitos > 0` garante que toda execução avança pelo menos um lote — não existe continuação sem progresso.)
 - [ ] **Step 5:** `pnpm test -- supabase/functions/_shared/promocoes` → Expected: PASS (todas as suítes da pasta).
 - [ ] **Step 6: Implementar `deps.ts`** (fiação; validada contra Postgres real e o ML na Task 10)
 
@@ -1380,12 +1437,13 @@ import { montarCadastro, type LinhaItemUp, type LinhaVariacao } from './cadastro
 import { buscarItensML, criarGetJson, listarItensPromocao, listarPromocoes } from './ml.ts';
 import { contar } from './projecao.ts';
 import { avisarPromocoes, depsAlertas } from './alertas.ts';
-import type { DepsLeitura, DepsLista, MsgLeitura } from './sincronizar.ts';
+import { mesmaRodada, type DepsLeitura, type DepsLista, type MsgLeitura } from './sincronizar.ts';
 import type { Comissao } from '../preco/sugerir.ts';
 import type { Aliquotas, LinhaItem } from './tipos.ts';
 
 const TTL_S = 6 * 60 * 60;
-const RESERVA_MIN = 15;
+const RESERVA_MIN = 30; // medir a duração da cadeia da 10.10 na Task 0 e ajustar (UI usa o mesmo valor em emLeitura)
+const MSG_INTERROMPIDA = 'A leitura anterior dos anúncios foi interrompida; os números podem estar incompletos.';
 
 /** Comissão ou frete que o ML não informou: nunca vira zero, nunca entra no cache. */
 export class TarifaEstimada extends Error {}
@@ -1440,6 +1498,10 @@ export function depsLista(admin: SupabaseClient, cx: Cx): DepsLista {
 
     async reservarLeitura(promocaoId, rodada) {
       const limite = new Date(Date.now() - RESERVA_MIN * 60_000).toISOString();
+      // Reserva vencida = cadeia anterior morreu sem concluir nem falhar: registra antes de reservar de novo.
+      const vencida = await admin.from('ml_promocoes').update({ erro: MSG_INTERROMPIDA })
+        .eq('org_id', orgId).eq('promocao_id', promocaoId).lt('rodada_em_curso', limite);
+      falhou('reservarLeitura.vencida', vencida.error);
       const { data, error } = await admin.from('ml_promocoes').update({ rodada_em_curso: rodada })
         .eq('org_id', orgId).eq('promocao_id', promocaoId)
         .or(`rodada_em_curso.is.null,rodada_em_curso.lt.${limite}`)
@@ -1469,15 +1531,15 @@ export function depsLista(admin: SupabaseClient, cx: Cx): DepsLista {
 export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): DepsLeitura {
   const get = criarGetJson(cx.token);
   const { orgId } = cx;
-  const daPromo = () => admin.from('ml_promocoes').select('*').eq('org_id', orgId).eq('promocao_id', msg.promocao_id);
+  const lerRodada = async (): Promise<string | null> => {
+    const { data, error } = await admin.from('ml_promocoes').select('rodada_em_curso')
+      .eq('org_id', orgId).eq('promocao_id', msg.promocao_id).maybeSingle();
+    falhou('rodadaEmCurso', error);
+    return (data?.rodada_em_curso as string | null) ?? null;
+  };
   return {
     agora: () => Date.now(),
-
-    async rodadaEmCurso() {
-      const { data, error } = await daPromo().maybeSingle();
-      falhou('rodadaEmCurso', error);
-      return (data?.rodada_em_curso as string | null) ?? null;
-    },
+    rodadaEmCurso: lerRodada,
 
     lerAliquotas: () => lerAliquotas(admin, orgId),
     listarItens: () => listarItensPromocao(get, { id: msg.promocao_id, tipo: msg.tipo } as never),
@@ -1530,21 +1592,25 @@ export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): Dep
     },
 
     async concluir() {
+      if (!mesmaRodada(await lerRodada(), msg.rodada)) return false;
       const del = await admin.from('ml_promocao_itens').delete()
         .eq('org_id', orgId).eq('promocao_id', msg.promocao_id).lt('sincronizado_em', msg.rodada);
       falhou('concluir.delete', del.error);
       const linhas = await paginarTudo<Pick<LinhaItem, 'status' | 'pior_semaforo'>>((de, ate) => admin.from('ml_promocao_itens')
         .select('ml_item_id, status, pior_semaforo').eq('org_id', orgId).eq('promocao_id', msg.promocao_id)
         .order('ml_item_id').range(de, ate) as never);
+      // PostgREST compara timestamptz pelo instante: `eq` com o texto da mensagem funciona.
       const upd = await admin.from('ml_promocoes')
         .update({ contagem: contar(linhas), erro: null, itens_sincronizados_em: msg.rodada, rodada_em_curso: null })
-        .eq('org_id', orgId).eq('promocao_id', msg.promocao_id);
+        .eq('org_id', orgId).eq('promocao_id', msg.promocao_id).eq('rodada_em_curso', msg.rodada)
+        .select('promocao_id');
       falhou('concluir.contagem', upd.error);
+      return (upd.data ?? []).length === 1;
     },
 
     async falhar(erro) {
       const { error } = await admin.from('ml_promocoes').update({ erro, rodada_em_curso: null })
-        .eq('org_id', orgId).eq('promocao_id', msg.promocao_id);
+        .eq('org_id', orgId).eq('promocao_id', msg.promocao_id).eq('rodada_em_curso', msg.rodada);
       falhou('falhar', error);
     },
   };
@@ -1962,9 +2028,9 @@ describe('abas', () => {
   it('fim já passou vira encerrada mesmo com status velho', () => {
     expect(abaDa({ status: 'started', fim: new Date(agora - dia).toISOString() }, agora)).toBe('encerradas');
   });
-  it('leitura em curso só vale por 15 min', () => {
+  it('leitura em curso só vale por 30 min (a reserva do worker)', () => {
     expect(emLeitura({ rodada_em_curso: new Date(agora - 60_000).toISOString() }, agora)).toBe(true);
-    expect(emLeitura({ rodada_em_curso: new Date(agora - 16 * 60_000).toISOString() }, agora)).toBe(false);
+    expect(emLeitura({ rodada_em_curso: new Date(agora - 31 * 60_000).toISOString() }, agora)).toBe(false);
     expect(emLeitura({ rodada_em_curso: null }, agora)).toBe(false);
   });
 });
@@ -2119,10 +2185,10 @@ export function abaDa(p: Pick<Promocao, 'status' | 'fim'>, agoraMs: number): Aba
   return Number.isFinite(fim) && fim >= agoraMs - 30 * DIA ? 'encerradas' : null;
 }
 
-/** A leitura dos anúncios de uma campanha está em curso (reserva de 15 min, igual ao worker). */
+/** A leitura dos anúncios de uma campanha está em curso (reserva de 30 min, igual a RESERVA_MIN do worker). */
 export function emLeitura(p: Pick<Promocao, 'rodada_em_curso'>, agoraMs: number): boolean {
   const t = p.rodada_em_curso ? Date.parse(p.rodada_em_curso) : NaN;
-  return Number.isFinite(t) && agoraMs - t < 15 * 60_000;
+  return Number.isFinite(t) && agoraMs - t < 30 * 60_000;
 }
 
 export function descontoPct(original: number | null, promo: number | null): number | null {
@@ -2593,13 +2659,16 @@ export default function Promocoes() {
   }, [promocoes.data, agora]);
 
   const onAtualizar = () => atualizar.mutate(undefined, {
-    onSuccess: () => toast.success('Promoções atualizadas'),
+    onSuccess: () => toast.success('Campanhas atualizadas. Buscando os anúncios de cada uma…'),
     onError: (e) => toast.error(e.message),
   });
   // Execução que caiu no meio deixa 'sincronizando' para trás: só vale se começou há < 5 min.
   const emCurso = estado.data?.estado === 'sincronizando'
     && Date.now() - Date.parse(estado.data.iniciado_em ?? '') < 5 * 60_000;
   const lendo = (promocoes.data ?? []).some((p) => emLeitura(p, Date.now()));
+  // "Atualizado há" = última leitura de anúncios concluída (a lista sozinha não atualiza números).
+  const ultimaLeitura = (promocoes.data ?? []).map((p) => p.itens_sincronizados_em)
+    .filter((x): x is string => x != null).sort((a, b) => Date.parse(a) - Date.parse(b)).at(-1) ?? null;
   const sincronizando = atualizar.isPending || emCurso || lendo;
   const temDados = (promocoes.data?.length ?? 0) > 0;
 
@@ -2610,7 +2679,7 @@ export default function Promocoes() {
         subtitle="Campanhas do Mercado Livre com o líquido de cada anúncio no preço da promoção."
         actions={
           <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">{atualizadoHa(estado.data?.ultimo_ok_em)}</span>
+            <span className="text-sm text-muted-foreground">{atualizadoHa(ultimaLeitura)}</span>
             <Button onClick={onAtualizar} disabled={sincronizando}>{sincronizando ? 'Atualizando…' : 'Atualizar agora'}</Button>
           </div>
         }

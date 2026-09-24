@@ -74,7 +74,7 @@ Por item convidado/participando, **no preço avaliado** (participando: `preco_pr
    `variacoes.preco`, origem, cor, dimensões): item filho UP por `anuncios_externos_itens.item_externo_id`
    → `ml_variation_id` → `ml_item_id` (só se o anúncio tem uma única variação) → GTIN → código/SKU;
    duplicata → linha com custo vence linha sem custo, depois a mais recente (ADR-0108). Legacy: as cores vêm de `variations[]` do item (multiget).
-   User Products: o item é a cor. Origem nula → cor sem líquido (motivo "sem origem"), nunca 8% presumido.
+   User Products: o item é a cor. A origem vem de `familias.origem` (enum obrigatório, garantido pelo ingest — ADR-0107).
 2. **Comissão:** `comissaoDeComProveniencia(buscarListingPrice(...))` no preço avaliado, `listing_type_id`
    real do item; cache Redis por `(categoria, listing_type, preço)`. Proveniência `estimated` → cor sem
    líquido (`erro_tarifa`), sem cache.
@@ -95,11 +95,12 @@ A tela aplica `calcularSemaforo(liquido, piso, custo)` e `calcularMarkup(liquido
 - **Etapa de lista** (QStash `{ etapa: 'lista' }` ou botão): trava de 5 min (`ml_promocoes_sync.estado =
   'sincronizando'`); lista as promoções; grava metadados; marca como `finished` as `pending`/`started` que
   sumiram da lista; roda os alertas; para cada `pending`/`started` não-cupom, **reserva**
-  `ml_promocoes.rodada_em_curso` (só se nula ou com mais de 15 min) e publica
+  `ml_promocoes.rodada_em_curso` (só se nula ou com mais de 30 min; reserva vencida grava antes o aviso de leitura interrompida) e publica
   `{ etapa: 'promocao', org_id, promocao_id, tipo, rodada, cursor: 0 }`.
 - **Etapa de leitura** (QStash `{ etapa: 'promocao' }`): aborta se `rodada_em_curso` ≠ rodada da mensagem;
-  lê os itens (ordenados por `ml_item_id`), projeta em lotes de 20 e grava cada lote; passou de 90 s →
-  publica a mesma mensagem com o cursor e sai; no fim apaga os itens de rodadas anteriores, recalcula a
+  lê os itens (ordenados por `ml_item_id`), projeta em lotes de 20 e grava cada lote, conferindo a posse
+  da rodada antes de cada lote (instantes, não texto); passou de 90 s → publica a mesma mensagem com o
+  cursor = último `ml_item_id` processado e sai; no fim apaga os itens de rodadas anteriores, recalcula a
   contagem no banco e libera a reserva. Erro → grava `erro` na promoção e libera a reserva.
 - **Usuário logado** (`requireUserOrg`): só a própria org; 403 se o módulo não estiver habilitado.
   Throttle: recusa se a org sincronizou há < 2 min (o botão fica desabilitado com a hora do último sync).
