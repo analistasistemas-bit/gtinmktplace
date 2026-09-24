@@ -44,8 +44,8 @@ Só alta dispara (queda de frete não é problema a alertar).
 | Unidade | O que faz | Onde |
 |---|---|---|
 | `avaliarAltaFrete(atual, anterior)` | Função pura: aplica regras 4, 6 → `{ diferenca, pct } \| null` | `supabase/functions/_shared/faturamento/monitor-frete.ts` |
-| `montarMensagemAltaFrete(...)` | Texto do aviso (título, MLB, valores, % e dica de causa) | mesmo arquivo |
-| `verificarAltaFrete(admin, ctx)` | IO: lê o toggle, conta itens, busca a venda anterior, chama a função pura, reserva e notifica | mesmo arquivo |
+| `montarMensagemAltaFrete(...)` | Texto do aviso (título, MLB, valores, % e dica de causa) | `supabase/functions/_shared/notificacoes/telegram.ts` |
+| `verificarAltaFrete(ctx, deps)` | Orquestra: checagens baratas, lê o toggle, busca a venda anterior, chama a função pura, checa o prazo, reserva e notifica — IO via deps injetadas (`monitor-frete-deps.ts`) | `monitor-frete.ts` |
 | chamada no `sync-venda` | No **fim** do handler (depois de alerta de venda, baixa e cancelamento), com prazo de 8 s checado **antes da reserva do dedup** (estourou → desiste sem reservar; sem `Promise.race`, nada roda depois da resposta) e `try/catch` — **o monitor nunca derruba o sync** (a venda é sagrada). O envio ao Telegram não tem timeout próprio — mesmo risco já aceito pelo aviso de venda nova | `supabase/functions/sync-venda/index.ts` |
 | função `frete_venda_anterior` + índice `ml_vendas_itens (org_id, ml_item_id)` | seleção da venda de referência (regra 5) | migration nova |
 | coluna `monitor_frete_ativo` | `boolean not null default false` + `grant select (monitor_frete_ativo)` a `authenticated` (a tabela tem grant de SELECT por coluna desde `20260822131053`) | migration nova |
