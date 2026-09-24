@@ -107,6 +107,16 @@ export function montarMensagemNovaVenda(v: NovaVendaAlerta): string {
   ].filter(Boolean).join('\n');
 }
 
+export function montarMensagemAltaFrete(a: {
+  titulo: string | null; mlItemId: string; atual: number; anterior: number; pct: number;
+}): string {
+  return [
+    `🚚 Frete subiu — ${a.titulo ?? a.mlItemId} (${a.mlItemId})`,
+    `Esta venda: ${fmtBRL(a.atual, 'BRL')} · venda anterior: ${fmtBRL(a.anterior, 'BRL')} (+${a.pct}%)`,
+    'Possível causa: o ML mudou peso/dimensões da embalagem. Confira o anúncio.',
+  ].join('\n');
+}
+
 export interface NovaPerguntaAlerta {
   question_id: number;
   texto: string;
