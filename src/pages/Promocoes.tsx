@@ -54,8 +54,10 @@ export default function Promocoes() {
   const sincronizando = atualizar.isPending || emCurso || lendo;
   const temDados = (promocoes.data?.length ?? 0) > 0;
 
+  const carregando = promocoes.isLoading || estado.isLoading;
+
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-6 p-4 sm:p-6">
       <PageHeader
         title="Promoções"
         subtitle="Campanhas do Mercado Livre com o líquido de cada anúncio no preço da promoção."
@@ -67,7 +69,9 @@ export default function Promocoes() {
         }
       />
       <CanalTabs canal={canal} onCanal={setCanal} habilitados={habilitados} />
-      <PainelEstadoSync estado={estado.data ?? null} temDados={temDados} onAtualizar={onAtualizar} atualizando={sincronizando} />
+      {!carregando && (
+        <PainelEstadoSync estado={estado.data ?? null} temDados={temDados} onAtualizar={onAtualizar} atualizando={sincronizando} />
+      )}
 
       {promocoes.isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
