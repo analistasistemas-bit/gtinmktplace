@@ -128,7 +128,7 @@ export default function PromocaoDetalhe() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" aria-pressed={semaforo == null} onClick={() => setSemaforo(null)}
-            className="min-h-9 rounded-full border px-3 text-sm tabular-nums aria-pressed:bg-muted aria-pressed:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            className="min-h-11 rounded-full border px-3 text-sm tabular-nums aria-pressed:bg-muted aria-pressed:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             Todos {daAba.length}
           </button>
           <ContagemSemaforo contagem={contagem} ativo={semaforo} onFiltro={setSemaforo} />
@@ -136,7 +136,7 @@ export default function PromocaoDetalhe() {
         <div role="group" aria-label="Filtrar por participação" className="inline-flex rounded-lg border p-0.5">
           {[{ v: false, l: 'Convidados' }, { v: true, l: 'Participando' }].map((o) => (
             <button key={o.l} type="button" aria-pressed={participando === o.v} onClick={() => { setParticipando(o.v); setSemaforo(null); }}
-              className="min-h-9 rounded-md px-3 text-sm aria-pressed:bg-muted aria-pressed:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              className="min-h-11 rounded-md px-3 text-sm aria-pressed:bg-muted aria-pressed:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {o.l}
             </button>
           ))}

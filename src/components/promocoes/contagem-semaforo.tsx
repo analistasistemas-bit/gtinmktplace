@@ -28,7 +28,7 @@ export function ContagemSemaforo({ contagem, ativo, onFiltro }: {
         );
         return onFiltro ? (
           <button key={s} type="button" aria-pressed={ativo === s} onClick={() => onFiltro(ativo === s ? null : s)}
-            className="rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-ring">
+            className="min-h-11 inline-flex items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-ring">
             {pill}
           </button>
         ) : <span key={s}>{pill}</span>;
