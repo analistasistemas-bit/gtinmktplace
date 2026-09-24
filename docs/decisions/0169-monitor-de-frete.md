@@ -18,10 +18,12 @@ Iniciativa I6 do roadmap de melhorias (2026-09-21), escolhida pelo Diego em 2026
 
 ## Decisão
 
-1. **Detecção no `sync-venda`, logo após o `upsertVenda`** — única chamada. Backfill, reconciliação e
+1. **Detecção no `sync-venda`, no fim do handler** — única chamada. Backfill, reconciliação e
    `sync-devolucao` não chamam o monitor, então dado histórico nunca gera aviso em massa.
-2. **Comparação só entre pedidos de 1 item e 1 unidade**, contra a venda anterior mais recente do mesmo
-   `ml_item_id` + `variation_id` na org. O frete é por pedido; com mais itens não há atribuição honesta.
+2. **Comparação só entre pedidos de 1 item e 1 unidade, fora de pack**, contra a venda anterior mais
+   recente (por `coalesce(date_closed, date_created)`, desempate por `order_id`) do mesmo `ml_item_id` +
+   `variation_id` na org. O frete é por pedido e, em pack, é o do envio repetido em cada pedido (ADR-0042);
+   com mais itens não há atribuição honesta. A seleção é a função SQL `frete_venda_anterior`.
 3. **Gatilho fixo:** atual − anterior ≥ R$ 2 **e** atual > anterior × 1,10. Frete 0 ou nulo em qualquer
    lado não compara (nulo = busca falhou; 0 = sem custo ao vendedor). Só vendas com até 3 dias.
 4. **Liga/desliga por org:** `configuracoes.monitor_frete_ativo boolean not null default false`, editável
@@ -30,7 +32,8 @@ Iniciativa I6 do roadmap de melhorias (2026-09-21), escolhida pelo Diego em 2026
    categoria nova, portanto sem mexer nos CHECKs de `notificacoes`/`profiles`.
 6. **Dedup por `reservarNotificacao(orgId, 'frete_subiu', order_id)`** em `ml_notificacoes_enviadas`, o
    mesmo do aviso de venda paga. Sem coluna de marca nova.
-7. **Best-effort:** qualquer falha do monitor é logada e engolida — o registro da venda nunca cai por ele.
+7. **Best-effort e no fim:** roda depois de alerta de venda, baixa e cancelamento, com prazo total de 8 s;
+   qualquer falha é logada e engolida — o registro da venda nunca cai nem atrasa por ele.
 
 ## Alternativas descartadas
 

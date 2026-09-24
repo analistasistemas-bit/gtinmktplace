@@ -21,15 +21,18 @@ o frete de um anúncio sobe sem aviso (o ML ignora dimensão no CREATE — ver m
 Para a venda que acabou de ser gravada pelo `upsertVenda` no `sync-venda`, avisar se **todas** valerem:
 
 1. `configuracoes.monitor_frete_ativo = true` para a org.
-2. O pedido tem **1 linha em `ml_vendas_itens` com `quantity = 1`**. O frete é por pedido; com mais
-   itens/unidades não dá para atribuir o valor a um anúncio.
+2. O pedido tem **1 linha em `ml_vendas_itens` com `quantity = 1`** e está **fora de pack** (`pack_id` nulo).
+   O frete é por pedido; com mais itens/unidades não dá para atribuir o valor a um anúncio, e em pack o
+   `frete_vendedor` é o frete do ENVIO repetido em cada pedido (ADR-0042 item 4).
 3. `date_closed` (ou `date_created`, se nulo) da venda atual está a **no máximo 3 dias** de agora — update
    tardio de pedido antigo (ex.: mudança de status de envio) não gera aviso.
 4. `frete_vendedor` atual **> 0** (null = a busca falhou; 0 = sem custo ao vendedor — nenhum dos dois é
    comparável; lição do incidente de 2026-07-30 "frete saía R$0").
 5. Existe **venda anterior** da mesma org com o mesmo `ml_item_id` **e** o mesmo `variation_id`
-   (null casa com null), também de 1 linha/1 unidade, `frete_vendedor > 0`, com data anterior à atual —
-   a mais recente delas é a referência.
+   (null casa com null), também de 1 linha/1 unidade/fora de pack, não cancelada, `frete_vendedor > 0`.
+   Data = `coalesce(date_closed, date_created)`; a referência é a de maior `(data, order_id)` estritamente
+   menor que a da venda atual. A seleção é a função SQL `frete_venda_anterior` (execute só `service_role`),
+   reusada pela medição — código e medição aplicam a mesma regra.
 6. `atual - anterior >= 2` **e** `atual > anterior * 1.10`.
 7. `reservarNotificacao(admin, orgId, userId, 'frete_subiu', String(order_id))` devolve `true`
    (dedup em `ml_notificacoes_enviadas`, PK `(org_id, entidade, chave)` — mesmo mecanismo do aviso de venda paga).
@@ -43,7 +46,8 @@ Só alta dispara (queda de frete não é problema a alertar).
 | `avaliarAltaFrete(atual, anterior)` | Função pura: aplica regras 4, 6 → `{ diferenca, pct } \| null` | `supabase/functions/_shared/faturamento/monitor-frete.ts` |
 | `montarMensagemAltaFrete(...)` | Texto do aviso (título, MLB, valores, % e dica de causa) | mesmo arquivo |
 | `verificarAltaFrete(admin, ctx)` | IO: lê o toggle, conta itens, busca a venda anterior, chama a função pura, reserva e notifica | mesmo arquivo |
-| chamada no `sync-venda` | Depois do `upsertVenda`, dentro de `try/catch` — **falha do monitor nunca derruba o sync** (a venda é sagrada) | `supabase/functions/sync-venda/index.ts` |
+| chamada no `sync-venda` | No **fim** do handler (depois de alerta de venda, baixa e cancelamento), com prazo total de 8 s e `try/catch` — **o monitor nunca atrasa nem derruba o sync** (a venda é sagrada; o envio ao Telegram não tem timeout próprio) | `supabase/functions/sync-venda/index.ts` |
+| função `frete_venda_anterior` + índice `ml_vendas_itens (org_id, ml_item_id)` | seleção da venda de referência (regra 5) | migration nova |
 | coluna `monitor_frete_ativo` | `boolean not null default false` + `grant select (monitor_frete_ativo)` a `authenticated` (a tabela tem grant de SELECT por coluna desde `20260822131053`) | migration nova |
 | switch na UI | "Monitor de frete" em Configurações > Notificações, gate `podeEditarConfig`; mesmo padrão de `reancora_lider_ativa` (hook em `useConfiguracoes.ts`, query/mutation em `queries.ts`) | `src/components/configuracoes/secao-notificacoes.tsx` |
 | tipos | coluna nova em `src/lib/database.types.ts` | — |
@@ -88,4 +92,4 @@ valendo só para o canal Telegram, como hoje.
 ## Fora de escopo
 
 Categoria de notificação própria, limite configurável, tela/lista de histórico de altas, correção
-automática de dimensões, pedidos com mais de 1 item.
+automática de dimensões, pedidos com mais de 1 item e pedidos em pack.
