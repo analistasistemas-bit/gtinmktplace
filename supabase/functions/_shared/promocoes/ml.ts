@@ -64,7 +64,7 @@ export function normalizarItemML(raw: Obj): ItemML {
     .filter((v) => Number.isFinite(v.variation_id));
   return {
     id: String(raw.id), titulo: str(raw.title),
-    thumbnail: str(raw.secure_thumbnail) ?? str(raw.thumbnail), permalink: str(raw.permalink),
+    thumbnail: (str(raw.secure_thumbnail) ?? str(raw.thumbnail))?.replace(/^http:\/\//, 'https://') ?? null, permalink: str(raw.permalink),
     listing_type_id: str(raw.listing_type_id), categoria: str(raw.category_id),
     sku: str(raw.seller_custom_field) ?? atributo(raw.attributes, 'SELLER_SKU'),
     gtin: atributo(raw.attributes, 'GTIN'),
@@ -74,16 +74,22 @@ export function normalizarItemML(raw: Obj): ItemML {
 
 export async function listarPromocoes(get: GetJson, mlUserId: string): Promise<PromocaoML[]> {
   const out: PromocaoML[] = [];
+  let lidos = 0;
   for (let offset = 0; offset < 10_000; offset += LIMITE) {
     const r = (await get(`/seller-promotions/users/${mlUserId}?app_version=v2&limit=${LIMITE}&offset=${offset}`)) as Obj;
     const res = lista(r.results);
+    lidos += res.length;
     for (const x of res) {
       const p = normalizarPromocao(x);
       if (p) out.push(p);
     }
-    if (res.length < LIMITE) break;
+    if (res.length < LIMITE) {
+      const total = num(r.paging && typeof r.paging === 'object' ? (r.paging as Obj).total : null);
+      if (total != null && lidos < total) throw new Error(`promoções do usuário ${mlUserId}: lidas ${lidos} de ${total}`);
+      return out;
+    }
   }
-  return out;
+  throw new Error(`paginação das promoções do usuário ${mlUserId} não terminou em 10000 registros`);
 }
 
 export async function listarItensPromocao(get: GetJson, p: PromocaoML): Promise<ItemPromocaoML[]> {

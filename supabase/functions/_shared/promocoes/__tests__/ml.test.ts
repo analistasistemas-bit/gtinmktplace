@@ -66,6 +66,20 @@ describe('paginação', () => {
     expect(get.mock.calls[1][0]).toBe('/seller-promotions/users/99?app_version=v2&limit=50&offset=50');
   });
 
+  it('promoções: paging.total maior que o lido falha LOUD', async () => {
+    const pagina = (n: number) => Array.from({ length: n }, (_, i) => ({ id: `P${i}`, type: 'SMART', status: 'started' }));
+    const get = vi.fn()
+      .mockResolvedValueOnce({ results: pagina(50), paging: { total: 60 } })
+      .mockResolvedValueOnce({ results: pagina(3), paging: { total: 60 } });
+    await expect(listarPromocoes(get, '99')).rejects.toThrow(/53.*60/);
+  });
+
+  it('promoções: laço esgotado falha LOUD', async () => {
+    const cheia = Array.from({ length: 50 }, (_, i) => ({ id: `P${i}`, type: 'SMART', status: 'started' }));
+    const get = vi.fn().mockResolvedValue({ results: cheia });
+    await expect(listarPromocoes(get, '99')).rejects.toThrow(/não terminou/);
+  });
+
   it('multiget: blocos de 20 e ignora code ≠ 200', async () => {
     const ids = Array.from({ length: 45 }, (_, i) => `MLB${i}`);
     const get = vi.fn(async (path: string) => {
@@ -109,5 +123,6 @@ describe('fixtures reais (Task 0)', () => {
   it('multiget: item Legacy multi-cor tem cor por variação', () => {
     const itens = (multiget as { code: number; body: Record<string, unknown> }[]).map((x) => normalizarItemML(x.body));
     expect(itens.some((i) => i.variacoes.length > 1 && i.variacoes.every((v) => v.cor))).toBe(true);
+    for (const i of itens) expect(i.thumbnail).toMatch(/^https:\/\//);
   });
 });
