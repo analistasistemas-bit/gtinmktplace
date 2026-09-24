@@ -2,6 +2,51 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Central de Promoções do ML (ADR-0170) — 2026-09-24
+
+MVP só-leitura das campanhas do Mercado Livre (Relâmpago, Tradicional, Smart, DEAL, cupom,
+co-participação) com margem líquida projetada por anúncio candidato — primeira entrega da
+iniciativa I1 do roadmap de melhorias. Ver
+[design](superpowers/specs/2026-09-24-central-de-promocoes-design.md),
+[plano](superpowers/plans/2026-09-24-central-de-promocoes.md),
+[ADR-0170](decisions/0170-central-de-promocoes-ml.md) e
+[glossário § Promoções](reference/glossario.md).
+
+- [x] Migration `20260924184220_central_promocoes.sql`: tabelas `ml_promocoes` (promoção da conta;
+  `rodada_em_curso` = reserva da leitura, 30 min), `ml_promocao_itens` (anúncio por promoção;
+  projeção jsonb por cor; `pior_semaforo`) e `ml_promocoes_sync` (estado por org:
+  `sincronizando|ok|sem_acesso|sem_promocoes|erro`); RLS select por `org_id`, `anon` sem acesso,
+  `authenticated` só `SELECT` (DML revogado); coluna `configuracoes.alertas_promocoes_ativo`
+  (default false); backfill de `profiles.allowed_menus` com `promocoes` para quem já tem
+  `configuracoes`.
+- [x] Edge function nova `sincronizar-promocoes` (v1, `verify_jwt=false`, valida assinatura QStash
+  ou JWT do usuário). QStash `{}` → fan-out por org; etapa `lista` (trava 5 min, lista promoções,
+  encerra ausentes, roda alertas lendo o banco, reserva + enfileira 1 leitura por promoção
+  pending/started não-cupom); etapa `promocao` (lotes de 20, orçamento 90s, continuação pelo
+  último `ml_item_id`, posse da rodada conferida a cada lote e na conclusão, `deduplicationId`).
+  Usuário logado dispara a etapa de lista da própria org (throttle 2 min, 403 sem módulo). Só GET
+  no ML (única exceção: refresh OAuth). Código em `supabase/functions/_shared/promocoes/`.
+- [x] Edge `usuarios` redeployada v36: `promocoes` em `MENU_KEYS` e `MODULOS_VALIDOS`.
+- [x] Schedule QStash `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm` → `sincronizar-promocoes`, cron
+  `0 */6 * * *`, body `{}`, 1 retry.
+- [x] Módulo `promocoes` por org, nasce desligado. Ligado em produção só na DSA (decisão do Fable,
+  validação real); Avil e Daludi Shop desligados (ligar na Avil é decisão do Diego em `/admin`).
+  Switch de alertas desligado em todas as orgs.
+- [x] Validação: preflight 568 arquivos / 5913 testes verdes; suíte de isolamento
+  (`scripts/verificar-isolamento-tenant.ts`, agora com as 3 tabelas novas) 77 PASS / 0 FAIL contra
+  produção; E2E real na DSA (lista em ~5s, 5 promoções, 52 anúncios lidos); prova dos números: 7/7
+  anúncios com líquido da Central = `calcular-tarifa-ml` (Revisão), diferença ≤ R$0,005 (convidado
+  DEAL/SMART, participando, Legacy multi-cor, frete 0 e pago); validação visual em 1440/1920/360px
+  e estados sem acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e
+  corrigidos na validação.
+
+**Pendências abertas:**
+- [ ] ligar módulo/alertas na Avil — decisão do Diego.
+- [ ] heartbeat da reserva de 30 min se a cadeia real de sincronização passar de ~20 min.
+- [ ] `CanalTabs` mostra dados do ML em qualquer aba de canal — revisar no E5.
+- [ ] toast de sucesso aparece mesmo quando a lista volta com estado erro.
+- [ ] "Nenhum preço da faixa atinge o mínimo" ocupa 3 linhas na tabela.
+
 ## Monitor de frete (ADR-0169) — 2026-09-24
 
 Alerta quando o frete pago pelo vendedor num anúncio sobe em relação à venda anterior — o ML às vezes

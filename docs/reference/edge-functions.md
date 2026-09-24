@@ -88,6 +88,8 @@
 | pulse-sonar-vendas | true | HTTP (frontend) | sim (leitura + grava `sonar_snapshots`; cache Redis 7d por termo) |
 | pulse-sonar-visitas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por item) |
 | pulse-analise-secoes237 | true | HTTP (frontend) | sim (leitura; demanda do nicho por vendedor, ponte pelo catálogo) |
+| **Promoções (ADR-0170)** ||||
+| sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`) |
 | **Status / métricas / viabilidade** ||||
 | status-publicados | true | HTTP (frontend) | sim (leitura) |
 | atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
@@ -148,10 +150,14 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |
 | `pulse-coletar` (tier completo) | `0 9 * * *` | `{"tier":"completo"}` | 2 |
 | `pulse-coletar` (tier quente) | `0 */6 * * *` | `{"tier":"quente"}` | 2 |
+| `sincronizar-promocoes` | `0 */6 * * *` | `{}` | 1 |
 
 Os dois schedules do `pulse-coletar` (ADR-0119) foram criados em 2026-08-16:
 `scd_7whbaAZrFGPAL3JkbWsmNuYb2AVc` (completo) e `scd_5pCHsB95LbDd7cpJMLsJNK8iHNQC` (quente), body
 auditado como JSON puro logo após a criação. Cron em UTC: `0 9 * * *` = 06:00 BRT.
+
+O schedule de `sincronizar-promocoes` (ADR-0170) é `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm`, criado em
+2026-09-24.
 
 ⚠️ **Armadilha do body duplamente codificado.** O `backfill-faturamento` é o único schedule que
 passa parâmetros, e ficou semanas com `body = '"{\"dias\":30}"'` — uma **string** contendo JSON,
@@ -1537,6 +1543,21 @@ um smoke test contra Postgres real antes do primeiro deploy.
   anuncios_na_amostra, catalogos_consultados, catalogos_com_falha}}`. Exige o módulo `pulse`.
   Só leitura, no banco e no ML; sem IA.
 
+### Promoções (ADR-0170)
+- **sincronizar-promocoes** *(nova, v1, `verify_jwt=false`; valida assinatura QStash **ou** JWT do
+  usuário)* — Central de Promoções do ML, só leitura. Código em
+  `supabase/functions/_shared/promocoes/` (`tipos`, `projecao`, `cadastro`, `ml`, `sincronizar`,
+  `alertas`, `deps`). Dois modos:
+  - **QStash `{}`** → fan-out por org com o módulo `promocoes` ativo, disparando `{etapa:'lista',
+    org_id}` por org. Etapa **`lista`**: trava de 5 min, lista as promoções da conta, encerra as
+    que sumiram, roda os alertas lendo o banco, e reserva + enfileira 1 leitura por promoção
+    `pending`/`started` não-cupom. Etapa **`promocao`**: lotes de 20 itens, orçamento de 90s,
+    continuação pelo último `ml_item_id`, posse da rodada (`rodada_em_curso`) conferida antes de
+    cada lote e na conclusão, `deduplicationId` no enfileiramento QStash.
+  - **Usuário logado** → dispara a etapa de lista só da própria org, throttle de 2 min, `403` sem
+    o módulo `promocoes`.
+  - Só faz `GET` no Mercado Livre (única exceção: refresh de token OAuth).
+
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal
   (resiliente a "sem credencial"). **E6 (ADR-0061):** agrupa `familias.ml_item_id` + `anuncios_externos`
@@ -1653,6 +1674,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `list_orgs` passou a devolver `canais_habilitados` de cada org. Requer o secret `APP_URL`.
   **`set_tipos_produto_org`** (ADR-0166): grava `organizations.tipos_produto_habilitados` da org alvo,
   filtrando contra `TIPOS_PRODUTO_VALIDOS` (`'roupa'`, `'calcado'`) e deduplicando.
+  **`promocoes`** (ADR-0170, redeploy v36): entrou no espelho `MENU_KEYS` e em `MODULOS_VALIDOS`.
   **Menu `canais`** entrou em `MENU_KEYS` (tela `/canais`, ex-OAuth de Configurações) — mudança em
   `MENU_KEYS`/`_shared/` exige redeploy da `usuarios` via CLI completa (conferir versão pós-deploy).
   **Em produção desde 2026-07-15** (migration `20260715014055_menus_multicanal` + esta edge

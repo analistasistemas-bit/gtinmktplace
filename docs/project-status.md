@@ -520,6 +520,22 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   >10% **e** ≥R$2 avisa a categoria `financeiro` (sino + Telegram). Liga/desliga por org em
   Configurações > Notificações (`configuracoes.monitor_frete_ativo`). Medição de 60 dias: Avil 0 avisos,
   DSA 1. `sync-venda` v87. Ver [ADR-0169](decisions/0169-monitor-de-frete.md).
+- **ADR-0170: Central de Promoções do ML — leitura com líquido projetado (2026-09-24) — EM
+  PRODUÇÃO (MVP da iniciativa I1 do roadmap de melhorias).** Central só-leitura das campanhas do
+  Mercado Livre (Relâmpago/Tradicional/Smart/DEAL, cupom, co-participação) com margem líquida
+  projetada por anúncio candidato, mesma régua de custo+imposto+tarifa+frete de `calcular-tarifa-ml`
+  (Revisão). Migration `20260924184220_central_promocoes.sql`: tabelas `ml_promocoes`,
+  `ml_promocao_itens` e `ml_promocoes_sync`, RLS por `org_id` (`authenticated` só `SELECT`), coluna
+  `configuracoes.alertas_promocoes_ativo` (nasce desligada) e backfill de `profiles.allowed_menus`.
+  Edge function nova `sincronizar-promocoes` (v1, QStash fan-out por org + acesso do usuário
+  logado, só GET no ML) e edge `usuarios` redeployada v36 (`promocoes` em
+  `MENU_KEYS`/`MODULOS_VALIDOS`). Schedule QStash `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm` a cada 6h.
+  Módulo nasce desligado por org; ligado em produção só na DSA (decisão do Fable, validação real)
+  — Avil e Daludi Shop seguem desligados (ligar na Avil é decisão do Diego). Validado: preflight
+  568/5913 verde, suíte de isolamento 77 PASS/0 FAIL contra produção, E2E real na DSA (lista em
+  ~5s, 5 promoções, 52 anúncios) e prova dos números: 7/7 anúncios com líquido da Central batendo
+  com `calcular-tarifa-ml` (diferença ≤ R$0,005). Ver
+  [ADR-0170](decisions/0170-central-de-promocoes-ml.md).
 - **Cadastro de Grade em Matriz Cor x Tamanho (2026-09-19/20) — EM PRODUÇÃO.** Substituição da lista
   linear de cards pelo componente `MatrizGrade` (`matriz-grade.tsx`): visualização bidimensional Cor (linhas)
   × Tamanho (colunas) com 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas e

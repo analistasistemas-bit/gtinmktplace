@@ -24,6 +24,22 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
     R$ 6,65 → R$ 13,25); Daludi 2 / 0. `sync-venda` v87.
   - **Processo:** plano revisado pelo Codex gpt-6-sol (3 rodadas — pegou frete repetido em pack,
     seleção da venda anterior e `Promise.race` sem cancelamento); revisão final do Fable.
+- **Central de Promoções do ML ([[0170-central-de-promocoes-ml|ADR-0170]]):** MVP só-leitura da
+  iniciativa I1 do roadmap de melhorias.
+  - **Central de Promoções:** lista as campanhas do Mercado Livre (Relâmpago, Tradicional, Smart,
+    DEAL, cupom, co-participação) com margem líquida projetada por anúncio candidato, calculada
+    com a mesma régua de custo+imposto+tarifa+frete de `calcular-tarifa-ml` (Revisão).
+  - **Sincronização (`sincronizar-promocoes`, edge nova):** QStash faz fan-out por org (etapa
+    `lista` a cada 6h + etapa `promocao` em lotes de 20 com reserva de rodada de 30 min); usuário
+    logado também pode disparar a lista da própria org (throttle 2 min). Só GET no ML.
+  - **Banco:** tabelas `ml_promocoes`, `ml_promocao_itens` e `ml_promocoes_sync` (RLS por org, só
+    leitura para `authenticated`) e coluna `configuracoes.alertas_promocoes_ativo` (nasce
+    desligada).
+  - **Rollout:** módulo `promocoes` nasce desligado por org; ligado em produção só na DSA
+    (decisão do Fable, validação real) — Avil e Daludi Shop seguem desligados.
+  - **Validação:** suíte de isolamento 77 PASS/0 FAIL contra produção; E2E real na DSA (5
+    promoções, 52 anúncios); 7/7 anúncios com líquido da Central batendo com `calcular-tarifa-ml`
+    (diferença ≤ R$0,005).
 
 ## 2026-09-20
 

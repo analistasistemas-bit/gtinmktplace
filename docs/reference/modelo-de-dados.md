@@ -877,6 +877,35 @@ bypassa RLS).
 
 ---
 
+## Promoções (ADR-0170)
+
+Central de Promoções do ML, só leitura. *Migration `20260924184220_central_promocoes.sql`.*
+
+### `ml_promocoes`
+Uma linha por promoção da conta ML. `org_id` + `promocao_id` (PK composta), `tipo`, `nome`,
+`status`, `inicio`, `fim`, `prazo_adesao`, `beneficios jsonb`, `bruto jsonb` (payload cru do ML,
+default `{}`), `contagem jsonb`, `erro`, `sincronizado_em`, `itens_sincronizados_em`,
+`rodada_em_curso` — reserva da leitura em curso (janela de 30 min; `null` = nenhuma leitura em
+andamento), conferida pelo worker antes de cada lote e na conclusão.
+
+### `ml_promocao_itens`
+Um anúncio candidato/participante dentro de uma promoção. `org_id` + `promocao_id` + `ml_item_id`
+(PK composta, FK composta para `ml_promocoes`, cascade). `status`, `preco_original`,
+`preco_promo`, `preco_min`, `preco_max`, `preco_sugerido`, `preco_avaliado`, `ml_pct` (percentual
+bancado pelo ML), `vendedor_pct`, `estoque_min`, `estoque_max`, `titulo`, `thumbnail`,
+`permalink`, `listing_type_id`, `projecao jsonb` (margem líquida projetada por cor, default
+`[]`), `pior_semaforo` (`verde|amarelo|vermelho|indisponivel`), `sincronizado_em`. Índice
+`(org_id, promocao_id, pior_semaforo)`.
+
+### `ml_promocoes_sync`
+Estado de sincronização por organização. `org_id` (PK, FK organizations, cascade), `estado`
+(`sincronizando|ok|sem_acesso|sem_promocoes|erro`), `iniciado_em`, `ultimo_ok_em`,
+`ultimo_erro_em`, `erro`.
+
+RLS nas três: `select` por `org_id = current_org_id()`; `anon` sem privilégio nenhum;
+`authenticated` só `SELECT` (`INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER`
+revogados) — escrita só por `service_role` (worker `sincronizar-promocoes`).
+
 ## Monitoramento e configuração
 
 ### `ml_moderacao`
@@ -928,6 +957,11 @@ inclusive todas as orgs em produção hoje) → `ai_model_texto` cai no fallback
 `AI_MODEL_COPY` via `resolverModeloTexto` (`_shared/ai/modelos.ts`); `ai_model_imagem` sem uso
 ainda — reserva o campo para a futura feature de geração de imagem. Sem RLS nova: admin-only sai
 de graça da RLS já existente de `configuracoes` (insert/update admin org).
+
+**`alertas_promocoes_ativo`** (boolean, default `false`, migration
+`20260924184220_central_promocoes.sql`, ADR-0170) — switch por org do alerta da Central de
+Promoções, nasce desligado; `grant select` por coluna (mesmo padrão pós-
+`20260822131053_revoke_telegram_bot_token_select.sql`).
 
 ---
 

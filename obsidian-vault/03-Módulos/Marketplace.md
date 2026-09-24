@@ -6,7 +6,7 @@ atualizado: 2026-09-15
 # Marketplace
 
 Gestão do que está publicado no canal ativo (Mercado Livre). Ver [[Publicação Mercado Livre]],
-[[Integrações]], [[APIs]].
+[[Integrações]], [[APIs]], [[Promoções]].
 
 ## Telas
 
