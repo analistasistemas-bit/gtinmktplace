@@ -17,7 +17,7 @@ export function SheetCores({ item, onClose }: { item: ItemPromocao | null; onClo
         {item && (
           <>
             <SheetHeader>
-              <SheetTitle>{item.titulo ?? item.ml_item_id}</SheetTitle>
+              <SheetTitle className="pr-8">{item.titulo ?? item.ml_item_id}</SheetTitle>
               <SheetDescription>
                 {item.ml_item_id} · preço da promoção {item.preco_avaliado != null ? fmtBRL(item.preco_avaliado) : '—'}
               </SheetDescription>

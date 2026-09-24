@@ -40,7 +40,7 @@ export default function PromocaoDetalhe() {
 
   const colunas: Column<ItemPromocao>[] = [
     {
-      key: 'semaforo', header: 'Semáforo',
+      key: 'semaforo', header: 'Semáforo', className: 'w-12',
       sortValue: (r) => PESO[r.pior_semaforo],
       cell: (r) => { const ui = SEMAFORO_UI[r.pior_semaforo]; return <StatusPill tone={ui.tone} title={ui.label}><ui.Icon className="size-3.5" aria-hidden /><span className="sr-only">{ui.label}</span></StatusPill>; },
     },
@@ -49,7 +49,7 @@ export default function PromocaoDetalhe() {
       cell: (r) => (
         <div className={`flex min-w-0 items-center gap-3 ${r.pior_semaforo === 'indisponivel' ? 'text-muted-foreground' : ''}`}>
           {r.thumbnail && <img src={r.thumbnail} alt="" className="size-10 shrink-0 rounded object-cover" loading="lazy" />}
-          <div className="min-w-0 max-w-[18rem] xl:max-w-[26rem]">
+          <div className="min-w-0 max-w-[14rem] 2xl:max-w-[24rem]">
             <p className="truncate" title={r.titulo ?? r.ml_item_id}>{r.titulo ?? r.ml_item_id}</p>
             <p className="text-xs text-muted-foreground">{r.ml_item_id}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
           </div>
@@ -57,11 +57,16 @@ export default function PromocaoDetalhe() {
       ),
     },
     {
-      key: 'preco', header: 'Preço → Promo', className: 'text-right tabular-nums',
+      key: 'preco', header: 'Preço → Promo', className: 'whitespace-normal text-right tabular-nums leading-tight',
       sortValue: (r) => r.preco_avaliado,
       cell: (r) => {
         const d = descontoPct(r.preco_original, r.preco_avaliado);
-        return <span>{r.preco_original != null ? fmtBRL(r.preco_original) : '—'} → {r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}{d != null ? ` (−${d}%)` : ''}</span>;
+        return (
+          <span className="block">
+            {r.preco_original != null ? fmtBRL(r.preco_original) : '—'} → {r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}
+            {d != null && <span className="block text-xs text-muted-foreground">(−{d}%)</span>}
+          </span>
+        );
       },
     },
     {
@@ -88,7 +93,7 @@ export default function PromocaoDetalhe() {
       cell: (r) => { const c = corDeReferencia(r); return c && c.custo != null ? fmtMarkup(calcularMarkup(c.liquido!, c.custo).markup) : '—'; },
     },
     {
-      key: 'ate', header: 'Até quanto descer', className: 'whitespace-normal w-40 text-right leading-tight',
+      key: 'ate', header: 'Até quanto descer', className: 'whitespace-normal w-36 text-right leading-tight',
       cell: (r) => {
         if (r.preco_min == null || r.preco_max == null) return '—';
         const a = ateQuantoDaLinha(r);
