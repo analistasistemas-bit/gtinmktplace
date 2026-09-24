@@ -2,6 +2,27 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Monitor de frete (ADR-0169) — 2026-09-24
+
+Alerta quando o frete pago pelo vendedor num anúncio sobe em relação à venda anterior — o ML às vezes
+troca as dimensões cadastradas por uma estimativa e o custo sobe em silêncio. Ver
+[design](superpowers/specs/2026-09-24-monitor-de-frete-design.md),
+[plano](superpowers/plans/2026-09-24-monitor-de-frete.md) (revisado pelo Codex gpt-6-sol em 3 rodadas) e
+[ADR-0169](decisions/0169-monitor-de-frete.md).
+
+- [x] Migration `20260924131012_monitor_frete.sql`: `configuracoes.monitor_frete_ativo` (default false) +
+  `grant select` por coluna; índice `ml_vendas_itens (org_id, ml_item_id)`; função
+  `frete_venda_anterior` (EXECUTE só `service_role`).
+- [x] Regra pura `avaliarAltaFrete` (>10% **e** ≥R$2; frete 0/nulo não compara) e mensagem
+  `montarMensagemAltaFrete` (`telegram.ts`).
+- [x] `verificarAltaFrete` com deps injetadas (`monitor-frete-deps.ts`): só pedido de 1 item/1 unidade
+  fora de pack, venda com até 3 dias, dedup `ml_notificacoes_enviadas` (`frete_subiu`), prazo de 8 s
+  checado antes da reserva.
+- [x] `sync-venda` chama o monitor no fim do handler, em try/catch — único caller.
+- [x] Switch "Monitor de frete" em Configurações > Notificações (só admin; nasce desligado); aviso vai
+  para quem assina a categoria Financeiro.
+- [x] TDD: suíte inteira verde (548 arquivos / 5657 testes); revisão por task + revisão final do Fable.
+
 ## Cadastro de grade em matriz Cor x Tamanho (roupa e calçado) — 2026-09-19/20
 
 Substituição da lista linear de cards pelo componente `MatrizGrade` (`src/components/estoque/matriz-grade.tsx`)

@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-09-20
+atualizado: 2026-09-24
 ---
 
 # Changelog
@@ -8,6 +8,22 @@ atualizado: 2026-09-20
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-09-24
+
+- **Monitor de frete ([[0169-monitor-de-frete|ADR-0169]]):** primeira entrega da fase de melhorias
+  (iniciativa I6 do roadmap de melhorias).
+  - **Detecção no `sync-venda`:** venda nova de 1 item/1 unidade fora de pack cujo frete pago pelo
+    vendedor subiu >10% **e** ≥R$2 em relação à venda anterior do mesmo anúncio+variação gera aviso
+    🚚 no sino e no Telegram para quem assina **Financeiro**. Só o `sync-venda` chama o monitor —
+    backfill/reconciliação nunca geram avalanche sobre histórico.
+  - **Configurações > Notificações:** switch "Monitor de frete" por organização, só admin, nasce desligado.
+  - **Banco:** coluna `monitor_frete_ativo` (grant de SELECT por coluna), índice
+    `ml_vendas_itens (org_id, ml_item_id)` e função `frete_venda_anterior` (EXECUTE só `service_role`).
+  - **Medição real (60 dias, teto):** Avil 309 comparáveis / 0 avisos; DSA 70 / 1 aviso real (frete de
+    R$ 6,65 → R$ 13,25); Daludi 2 / 0. `sync-venda` v87.
+  - **Processo:** plano revisado pelo Codex gpt-6-sol (3 rodadas — pegou frete repetido em pack,
+    seleção da venda anterior e `Promise.race` sem cancelamento); revisão final do Fable.
 
 ## 2026-09-20
 

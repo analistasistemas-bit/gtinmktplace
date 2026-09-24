@@ -218,6 +218,7 @@ export type Database = {
           criado_em: string
           desconto_concorrencia_pct: number
           desconto_pct: number
+          monitor_frete_ativo: boolean
           mostrar_lucro_dashboard: boolean
           org_id: string
           reancora_lider_ativa: boolean
@@ -238,6 +239,7 @@ export type Database = {
           criado_em?: string
           desconto_concorrencia_pct?: number
           desconto_pct?: number
+          monitor_frete_ativo?: boolean
           mostrar_lucro_dashboard?: boolean
           org_id: string
           reancora_lider_ativa?: boolean
@@ -258,6 +260,7 @@ export type Database = {
           criado_em?: string
           desconto_concorrencia_pct?: number
           desconto_pct?: number
+          monitor_frete_ativo?: boolean
           mostrar_lucro_dashboard?: boolean
           org_id?: string
           reancora_lider_ativa?: boolean

@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-09-20
+**Ultima atualizacao:** 2026-09-24
 
 ## Snapshot
 
@@ -354,7 +354,7 @@ mas não é literalmente clicar na tela. Ver
 - **Viabilidade — mercado relevante e tabela de frete (2026-08-20/22).** Mercado relevante integrado (edge `buscar-mercado-relevante`); tabela compacta de frete Mercado Envios movida para fim da página; tolera payload sem observado durante skew de deploy.
 - **ADR-0135: Cadastro fiscal e emissão via Faturador do Mercado Livre (2026-08-25/26) — EM PRODUÇÃO.** Mergeado e deployado: as 3 edges do épico estão `ACTIVE` (`sincronizar-fiscal-ml` v4, `atualizar-fiscal-familia` v2, `sugerir-ncm` v2 — deploy em 2026-09-08, conferido por `supabase functions list` em 15/09/2026). Supersede parcialmente o ADR-0114: o PubliAI não transmite NF-e — quem emite é o Faturador grátis do próprio ML — e passa a cadastrar empresa (`empresa_fiscal`) e produto (colunas fiscais em `familias`), empurrar por SKU via a porta `DadosFiscaisCanal` (adaptador único ML) e mostrar a prontidão real (`can_invoice`) como semáforo em Publicados. `organizations.tipo_pessoa` com constraint no banco impede PF de ligar o módulo `fiscal`. 3 edges novas (`sincronizar-fiscal-ml`, `atualizar-fiscal-familia`, `sugerir-ncm`); `usuarios`, `cadastrar-produto`, `ingest-lote`, `publish-familia-ml`, `update-familia-ml` e `monitorar-moderados` afetadas por `_shared/fiscal/*` — nenhum schedule QStash novo. Migrations aplicadas em produção (schema aditivo); dialog de cadastro em 3 etapas + fila "fiscal pendente" no `/estoque` (D-9); NCM sugerido por IA, só grava com confirmação ativa. V1 Simples Nacional apenas. **Limitação conhecida:** anúncio externo sem família ainda não aparece com o aviso "sem cadastro fiscal" em Publicados (gap pré-existente da tela, não desta entrega — ver `modelo-de-dados.md#fiscal-adr-0135`). Deploy das edges e validação em runtime real ficam para depois do merge — checklist em `docs/how-to/deploy-e-migrations.md`.
 
-## Entregas de setembro de 2026 (até 20/09) — em produção
+## Entregas de setembro de 2026 (até 24/09) — em produção
 
 - **ADR-0151: Kit vinculado — criar anúncios de kit (N unidades) a partir de produto existente (2026-09-03) — EM PRODUÇÃO.** Extensão do módulo Estoque (ADR-0094): tela Estoque ganha "Criar kit vinculado" (admin-only) que gera família(s) nova(s) — `SALE_FORMAT=Kit`/`UNITS_PER_PACK=N` — com estoque 100% derivado da família-base (`floor(estoque_base/N)`, colunas `kit_base_codigo_pai`/`kit_multiplicador`, nunca uma coluna própria). Kit não passa por `process-familia`; nasce direto em `'pronto'` num lote técnico dedicado que publica só depois do CREATE da base confirmar. Baixa/estorno de venda e push cross-canal resolvem sempre para a base. Guards de banco: SKU de kit sem escrita direta, cor nova bloqueada com kit vivo, remoção da base bloqueada com kit vivo. Restrito na v1 a produto sem variação de cor. 11 tasks do plano de execução (`docs/superpowers/plans/2026-09-02-kit-vinculado-plan.md`), 19 Edge Functions deployadas em produção (fechamento do grafo de imports).
 
@@ -514,6 +514,12 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   venda, bloqueia os dois lados (HTTP 409 `tem_movimentacao`); caso não tenha venda, executa `closed`
   seguido de `deleted` no Mercado Livre antes de remover o registro local. Republicar continua
   pausando normalmente. Ver [ADR-0168](decisions/0168-remover-publicado-encerra-ml-sem-venda.md).
+- **ADR-0169: Monitor de frete (2026-09-24) — EM PRODUÇÃO (switch nasce desligado).** O `sync-venda`
+  (único caller, no fim do handler, best-effort) compara o `frete_vendedor` de pedido de 1 item/1 unidade
+  fora de pack com a venda anterior do mesmo anúncio+variação (função SQL `frete_venda_anterior`); alta
+  >10% **e** ≥R$2 avisa a categoria `financeiro` (sino + Telegram). Liga/desliga por org em
+  Configurações > Notificações (`configuracoes.monitor_frete_ativo`). Medição de 60 dias: Avil 0 avisos,
+  DSA 1. `sync-venda` v87. Ver [ADR-0169](decisions/0169-monitor-de-frete.md).
 - **Cadastro de Grade em Matriz Cor x Tamanho (2026-09-19/20) — EM PRODUÇÃO.** Substituição da lista
   linear de cards pelo componente `MatrizGrade` (`matriz-grade.tsx`): visualização bidimensional Cor (linhas)
   × Tamanho (colunas) com 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas e

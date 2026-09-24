@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-09-20
+atualizado: 2026-09-24
 ---
 
 # Sprint Atual
@@ -9,7 +9,16 @@ Fonte de verdade viva: `docs/TASKS.md` (seções por data no topo do arquivo) e
 `docs/project-status.md` (retrato curto, atualizado até **2026-09-20**, com a seção "Entregas de
 setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 
-## 📍 Passo atual (2026-09-20) — EM PRODUÇÃO
+## 📍 Passo atual (2026-09-24) — fase de melhorias iniciada
+
+> **Fase de melhorias (roadmap local `docs/Roadmap/`, não versionado).** Ordem combinada com o Diego:
+> Monitor de Frete ✅ → Central de Promoções (MVP só leitura) → Operações em Massa → Promoções V2
+> (adesão em massa) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
+>
+> **✅ Monitor de frete ([[0169-monitor-de-frete|ADR-0169]])** — alerta quando o frete de um anúncio
+> sobe >10% e ≥R$2 vs a venda anterior; switch em Configurações > Notificações (nasce desligado).
+
+## Passo anterior (2026-09-20) — EM PRODUÇÃO
 
 > **Semana de 16 a 20/09: 6 novos ADRs (0163 a 0168) e entrega da Matriz de Grade.**
 > Entregas consolidadas em produção:

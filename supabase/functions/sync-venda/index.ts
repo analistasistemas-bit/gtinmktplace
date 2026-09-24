@@ -14,6 +14,8 @@ import {
 } from '../_shared/faturamento/io.ts';
 import { ehVendaDaConta } from '../_shared/faturamento/venda.ts';
 import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
+import { verificarAltaFrete } from '../_shared/faturamento/monitor-frete.ts';
+import { depsMonitorFrete } from '../_shared/faturamento/monitor-frete-deps.ts';
 import { carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemNovaVenda, montarMensagemConexaoBloqueada } from '../_shared/notificacoes/telegram.ts';
@@ -243,6 +245,23 @@ Deno.serve(async (req) => {
       shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
       temEnvio: pedido.shipping?.id != null,
     });
+  }
+
+  // ADR-0169 — monitor de frete. SÓ aqui (não em backfill/reconciliação), para histórico nunca
+  // virar avalanche de avisos. Fica no FIM de propósito (depois de alerta de venda, baixa e
+  // cancelamento) e com prazo de 8 s checado antes da reserva do dedup. Best-effort.
+  if (orgId) {
+    try {
+      await verificarAltaFrete({
+        orgId, userId, orderId: Number(pedido.id), limiteMs: Date.now() + 8000,
+        packId: pedido.pack_id != null ? Number(pedido.pack_id) : null,
+        status: String(pedido.status ?? ''),
+        freteVendedor: frete, dataVenda: pedido.date_closed ?? pedido.date_created ?? null,
+        itens: itens.map((i) => ({ ml_item_id: i.ml_item_id, variation_id: i.variation_id, quantity: i.quantity, titulo: i.titulo })),
+      }, depsMonitorFrete(admin));
+    } catch (e) {
+      console.error(`monitor de frete (order ${pedido.id}): ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   // Leitura do MP falhou: a venda e o alerta já saíram (upsertVenda é idempotente e
