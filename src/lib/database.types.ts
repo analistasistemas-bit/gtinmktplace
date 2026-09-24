@@ -210,6 +210,7 @@ export type Database = {
         Row: {
           ai_model_imagem: string | null
           ai_model_texto: string | null
+          alertas_promocoes_ativo: boolean
           aliquota_importado_pct: number
           aliquota_interna_pct: number | null
           aliquota_nacional_pct: number
@@ -231,6 +232,7 @@ export type Database = {
         Insert: {
           ai_model_imagem?: string | null
           ai_model_texto?: string | null
+          alertas_promocoes_ativo?: boolean
           aliquota_importado_pct?: number
           aliquota_interna_pct?: number | null
           aliquota_nacional_pct?: number
@@ -252,6 +254,7 @@ export type Database = {
         Update: {
           ai_model_imagem?: string | null
           ai_model_texto?: string | null
+          alertas_promocoes_ativo?: boolean
           aliquota_importado_pct?: number
           aliquota_interna_pct?: number | null
           aliquota_nacional_pct?: number
@@ -1326,6 +1329,159 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ml_promocao_itens: {
+        Row: {
+          estoque_max: number | null
+          estoque_min: number | null
+          listing_type_id: string | null
+          ml_item_id: string
+          ml_pct: number | null
+          org_id: string
+          permalink: string | null
+          pior_semaforo: string
+          preco_avaliado: number | null
+          preco_max: number | null
+          preco_min: number | null
+          preco_original: number | null
+          preco_promo: number | null
+          preco_sugerido: number | null
+          projecao: Json
+          promocao_id: string
+          sincronizado_em: string
+          status: string
+          thumbnail: string | null
+          titulo: string | null
+          vendedor_pct: number | null
+        }
+        Insert: {
+          estoque_max?: number | null
+          estoque_min?: number | null
+          listing_type_id?: string | null
+          ml_item_id: string
+          ml_pct?: number | null
+          org_id: string
+          permalink?: string | null
+          pior_semaforo: string
+          preco_avaliado?: number | null
+          preco_max?: number | null
+          preco_min?: number | null
+          preco_original?: number | null
+          preco_promo?: number | null
+          preco_sugerido?: number | null
+          projecao?: Json
+          promocao_id: string
+          sincronizado_em?: string
+          status: string
+          thumbnail?: string | null
+          titulo?: string | null
+          vendedor_pct?: number | null
+        }
+        Update: {
+          estoque_max?: number | null
+          estoque_min?: number | null
+          listing_type_id?: string | null
+          ml_item_id?: string
+          ml_pct?: number | null
+          org_id?: string
+          permalink?: string | null
+          pior_semaforo?: string
+          preco_avaliado?: number | null
+          preco_max?: number | null
+          preco_min?: number | null
+          preco_original?: number | null
+          preco_promo?: number | null
+          preco_sugerido?: number | null
+          projecao?: Json
+          promocao_id?: string
+          sincronizado_em?: string
+          status?: string
+          thumbnail?: string | null
+          titulo?: string | null
+          vendedor_pct?: number | null
+        }
+        Relationships: []
+      }
+      ml_promocoes: {
+        Row: {
+          beneficios: Json | null
+          bruto: Json
+          contagem: Json | null
+          erro: string | null
+          fim: string | null
+          inicio: string | null
+          itens_sincronizados_em: string | null
+          nome: string | null
+          org_id: string
+          prazo_adesao: string | null
+          promocao_id: string
+          rodada_em_curso: string | null
+          sincronizado_em: string
+          status: string
+          tipo: string
+        }
+        Insert: {
+          beneficios?: Json | null
+          bruto?: Json
+          contagem?: Json | null
+          erro?: string | null
+          fim?: string | null
+          inicio?: string | null
+          itens_sincronizados_em?: string | null
+          nome?: string | null
+          org_id: string
+          prazo_adesao?: string | null
+          promocao_id: string
+          rodada_em_curso?: string | null
+          sincronizado_em?: string
+          status: string
+          tipo: string
+        }
+        Update: {
+          beneficios?: Json | null
+          bruto?: Json
+          contagem?: Json | null
+          erro?: string | null
+          fim?: string | null
+          inicio?: string | null
+          itens_sincronizados_em?: string | null
+          nome?: string | null
+          org_id?: string
+          prazo_adesao?: string | null
+          promocao_id?: string
+          rodada_em_curso?: string | null
+          sincronizado_em?: string
+          status?: string
+          tipo?: string
+        }
+        Relationships: []
+      }
+      ml_promocoes_sync: {
+        Row: {
+          erro: string | null
+          estado: string
+          iniciado_em: string | null
+          org_id: string
+          ultimo_erro_em: string | null
+          ultimo_ok_em: string | null
+        }
+        Insert: {
+          erro?: string | null
+          estado: string
+          iniciado_em?: string | null
+          org_id: string
+          ultimo_erro_em?: string | null
+          ultimo_ok_em?: string | null
+        }
+        Update: {
+          erro?: string | null
+          estado?: string
+          iniciado_em?: string | null
+          org_id?: string
+          ultimo_erro_em?: string | null
+          ultimo_ok_em?: string | null
+        }
+        Relationships: []
       }
       ml_size_charts: {
         Row: {
