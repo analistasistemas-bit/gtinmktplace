@@ -147,7 +147,7 @@ const PAYLOAD_SEM_TAMANHO_IRMAO_COM_SIZE = {"category_id":"","currency_id":"BRL"
 describe('atualizarFamiliaUP — família sem tamanho (INV-1)', () => {
   it('payload completo idêntico ao de antes da feature, e chart nunca é chamado', async () => {
     const chartFake = vi.fn();
-    await atualizarFamiliaUP(args({ garantirChartFn: chartFake as never } as never));
+    await atualizarFamiliaUP(args({ garantirChartFn: chartFake as never }));
     expect(chartFake).not.toHaveBeenCalled();
     expect(criarItemSpy.mock.calls[0]![1]).toEqual(PAYLOAD_SEM_TAMANHO_ATUAL);
   });
@@ -159,5 +159,75 @@ describe('atualizarFamiliaUP — família sem tamanho (INV-1)', () => {
     ] }), { status: 200 })) as typeof fetch;
     await atualizarFamiliaUP(args());
     expect(criarItemSpy.mock.calls[0]![1]).toEqual(PAYLOAD_SEM_TAMANHO_IRMAO_COM_SIZE);
+  });
+});
+
+describe('atualizarFamiliaUP — SKU novo de grade (ADR-0166 2026-09-24c)', () => {
+  const IRMAO_GRADE = [
+    ...ATRIBUTOS_DO_IRMAO,
+    { id: 'GENDER', value_id: '339666', value_name: 'Masculino' },
+    { id: 'SIZE', value_name: 'M' },
+    { id: 'SIZE_GRID_ID', value_name: 'CH1' },
+    { id: 'SIZE_GRID_ROW_ID', value_name: 'CH1:2' },
+  ];
+  const chartFake = vi.fn(async () => ({
+    chartId: 'CH1',
+    linhaPorTamanho: new Map([['M', { rowId: 'CH1:2', sizeLabel: 'M' }], ['G', { rowId: 'CH1:3', sizeLabel: 'G' }]]),
+  }));
+  function argsGrade(over: Partial<AtualizarFamiliaUPArgs> = {}) {
+    const base = args();
+    return args({
+      familia: { ...(base.familia as object), genero: 'masculino', categoria_ml_id: 'MLB1', atributos_ml: [{ id: 'SIZE', value_name: 'XX' }] } as never,
+      variacoes: [
+        { codigo: 'A', cor: 'Azul-petróleo', tamanho: 'M', estoque: 1, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P1' },
+        { codigo: 'NOVA', cor: 'Preto', tamanho: 'G', estoque: 40, preco_publicacao: 10, gtin: null, imagem_path: null, ml_picture_id: 'P2' },
+      ] as never,
+      garantirChartFn: chartFake as never,
+      ...over,
+    });
+  }
+  beforeEach(() => {
+    chartFake.mockClear();
+    globalThis.fetch = (async () => new Response(JSON.stringify({ attributes: IRMAO_GRADE }), { status: 200 })) as typeof fetch;
+  });
+
+  it('SKU novo leva o SIZE e a linha do chart DELE, não os do irmão — e um SIZE só', async () => {
+    await atualizarFamiliaUP(argsGrade());
+    const attrs = atributosEnviados();
+    expect(attrs.filter((a) => a.id === 'SIZE')).toEqual([{ id: 'SIZE', value_name: 'G' }]);
+    expect(attrs.filter((a) => a.id === 'SIZE_GRID_ROW_ID')).toEqual([{ id: 'SIZE_GRID_ROW_ID', value_name: 'CH1:3' }]);
+    expect(attrs.filter((a) => a.id === 'SIZE_GRID_ID')).toEqual([{ id: 'SIZE_GRID_ID', value_name: 'CH1' }]);
+  });
+
+  it('chart resolvido uma vez, com gênero e todos os tamanhos da família', async () => {
+    await atualizarFamiliaUP(argsGrade());
+    expect(chartFake).toHaveBeenCalledTimes(1);
+    expect((chartFake.mock.calls[0] as unknown[]).slice(2)).toEqual(['c', 'MLB1', 'masculino', ['M', 'G']]);
+  });
+
+  it('família com tamanho e sem gênero falha alto, sem criar item', async () => {
+    await expect(atualizarFamiliaUP(argsGrade({
+      familia: { ...(args().familia as object), genero: null, categoria_ml_id: 'MLB1' } as never,
+    }))).rejects.toThrow(/genero/i);
+    expect(criarItemSpy).not.toHaveBeenCalled();
+  });
+
+  it('GENDER vem de familias.genero, nunca do irmão nem de atributos_ml (Codex #2)', async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({
+      attributes: IRMAO_GRADE.map((a) => (a.id === 'GENDER' ? { id: 'GENDER', value_id: '339665', value_name: 'Feminino' } : a)),
+    }), { status: 200 })) as typeof fetch;
+    await atualizarFamiliaUP(argsGrade({
+      familia: { ...(args().familia as object), genero: 'masculino', categoria_ml_id: 'MLB1',
+        atributos_ml: [{ id: 'GENDER', value_id: '110461' }] } as never,
+    }));
+    expect(atributosEnviados().filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339666' }]);
+  });
+
+  it('GET do irmão falhou → GENDER e SIZE continuam certos', async () => {
+    globalThis.fetch = (async () => new Response('erro', { status: 500 })) as typeof fetch;
+    await atualizarFamiliaUP(argsGrade());
+    const attrs = atributosEnviados();
+    expect(attrs.filter((a) => a.id === 'GENDER')).toEqual([{ id: 'GENDER', value_id: '339666' }]);
+    expect(attrs.filter((a) => a.id === 'SIZE')).toEqual([{ id: 'SIZE', value_name: 'G' }]);
   });
 });
