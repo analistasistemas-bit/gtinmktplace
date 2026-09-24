@@ -28,6 +28,7 @@
 0. Revisão Codex gpt-6-sol do plano (VERDICT:REVISE, 12 achados) incorporada: reconciliador com `preservarPublicadas` (T4), GENDER de `familias.genero` no UPDATE (T4), ledger reaplicado no retry (T5), UP detectado pela raiz (T5), travadas = última publicada (T7), picker geral da Entrada (T3), limite 60 sem dupla contagem (T7), roteador pelo dado (T7), numeração sem guia bloqueada (T7), fixture SQL com profile (T1), dry-run sem escrita + prova real (T8), caracterização de payload (T4/T7).
 0b. Revisão Codex r2 (VERDICT:REVISE, 9 achados) incorporada: tipo da grade inferido da família e validado na UI e na edge (T5/T7), intenção do retry gravada em `mudanca_estrutural.intencao` com 409 para incompleto/divergente (T5), `ehFluxoAddVariacao` falha alto (T4), numeração não publicável recusada na edge (T5), Movimentos sem mudança para produto comum (T3), roteador síncrono por `temTamanho` do resumo (T1/T2/T7), aceite real pendente formal + reversão (T9), fixtures de 8 dígitos (T5), chart fora do cache falha alto (T4).
 0c. Revisão Codex r3 (VERDICT:REVISE, 5 achados) incorporada: grade/tipo decididos só pelas incluídas, excluídas travadas e contando no par (T5/T7); intenção completa normalizada no retry (T5); `POR_SKU` global intocado, SIZE*/GENDER filtrados só no ramo com tamanho + caracterização com irmão COM SIZE* (T4); `publicar-split-ml` no deploy (T9); três RPCs conferidas pós-push (T9).
+0e. Revisão Codex r5 (2 achados) incorporada: `tem_tamanho` calculado sobre a última publicada (T1), tipo do dialog só das incluídas (T7).
 0d. Revisão Codex r4 (2 achados) incorporada: `classificarFamilia` como fonte única de "é grade" (incluídas), usada por resumo, dialog e edge, com fallback do dialog de grade para o antigo (T1/T5/T7); consultas de tipo e UP só no ramo de grade (T5).
 1. Irmão tem `SIZE`/`SIZE_GRID_ROW_ID` na ficha e a família tem `SIZE` em `atributos_ml` → o SKU novo sai com **um** `SIZE` e é o dele (Task 4, teste "um SIZE só").
 2. Cor nova de tamanho existente + tamanho novo de cor existente na MESMA submissão → só as células faltantes viram SKU; nenhuma célula publicada vai no payload (Task 7, teste de `celulasNovas`; Task 5, teste de par duplicado).
@@ -54,7 +55,19 @@ Conteúdo: copiar **literalmente** as definições B e C de `supabase/migrations
 - em `variacoes_estoque_produto`, dentro do `json_build_object`, logo após `'cor', v.cor,` acrescentar `'tamanho', v.tamanho,`
 - em `skus_estoque_org`, logo após `'cor', v.cor,` acrescentar `'tamanho', v.tamanho,`
 
-E a definição A (`produtos_estoque_resumo()`, mesmo arquivo, l.19–179, com `revoke`/`grant`), também literal, com: `v.tamanho` e `v.excluida_da_publicacao` no select do CTE `vars`; no agregado por produto que hoje produz `qtd_skus`/`cores`, `bool_or(v.tamanho is not null and not v.excluida_da_publicacao) as tem_tamanho` (mesma regra de `classificarFamilia`: só SKU incluído faz a família ser grade — Codex r4 #1); e no `json_build_object` do produto, `'tem_tamanho', coalesce(p.tem_tamanho, false),` ao lado de `'qtd_skus'`. Ler a função inteira antes: o agregado pode estar num CTE com outro alias — acompanhar o nome real.
+E a definição A (`produtos_estoque_resumo()`, mesmo arquivo, l.19–179, com `revoke`/`grant`), também literal, acrescentando ao `json_build_object` de cada produto (ao lado de `'qtd_skus'`) a chave `tem_tamanho` calculada sobre a **última família PUBLICADA** do `codigo_pai` — a mesma que a edge clona (`adicionar-variacoes-familia/index.ts:115-128`: `ml_item_id not null`, `publicado_em desc nulls last`) — e não sobre a canônica (Codex r5 #1: uma família canônica reingerida pela planilha nasce sem tamanho enquanto a publicada é grade). Só SKU **incluído** conta (mesma regra de `classificarFamilia`, Codex r4 #1):
+```sql
+'tem_tamanho', exists (
+  select 1 from public.variacoes vp
+  where vp.familia_id = (
+      select fp.id from public.familias fp
+      where fp.org_id = org.id and fp.codigo_pai = <alias do produto>.codigo_pai
+        and fp.kit_multiplicador is null and fp.ml_item_id is not null
+      order by fp.publicado_em desc nulls last limit 1)
+    and vp.tamanho is not null and not vp.excluida_da_publicacao
+),
+```
+Ler a função inteira antes e usar o alias real do produto. Produto nunca publicado → `false` (o item "Adicionar variação" já fica desabilitado nele). Rodar `explain analyze select public.produtos_estoque_resumo()` na stack local antes e depois: a subconsulta por produto precisa usar índice de `familias` por `(org_id, codigo_pai)` — se o plano mostrar seq scan em `familias` por produto, parar e reportar antes de seguir.
 
 Cabeçalho do arquivo:
 ```sql
@@ -82,10 +95,11 @@ on conflict (id) do update set org_id = excluded.org_id, is_active = true;
 insert into public.lotes (id, user_id, org_id, status, origem) values
   ('92000000-0000-0000-0000-000000000201', '92000000-0000-0000-0000-000000000101',
    '92000000-0000-0000-0000-000000000001', 'processando', 'manual');
-insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro)
+-- ml_item_id/publicado_em: `tem_tamanho` olha a última família PUBLICADA (Codex r5 #1).
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, ml_item_id, publicado_em)
 values ('92000000-0000-0000-0000-000000000301', '92000000-0000-0000-0000-000000000201',
   '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
-  '09200000', 'Camiseta teste', 'CREATE', 'nacional', gen_random_uuid());
+  '09200000', 'Camiseta teste', 'CREATE', 'nacional', gen_random_uuid(), 'MLB-TESTE-GRADE', now());
 insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, tamanho, preco, estoque)
 values
   ('92000000-0000-0000-0000-000000000301', '92000000-0000-0000-0000-000000000101',
@@ -944,10 +958,10 @@ it('payload: herda foto quando a linha não tem foto própria e a cor tem foto; 
       ```
       Uma combinação que só existe numa tentativa de UPDATE que falhou (família mais nova, não publicada) **não** fica travada: aparece como célula nova normal, e a edge a valida contra a publicada. Teste: publicada tem Preto·P; canônica (erro) tem Preto·P + Preto·M → só Preto·P travada, Preto·M editável.
     - Estoque exibido nas travadas vem de `fetchVariacoesProduto` (QK `variacoesEstoque`, saldo canônico) casado por código; se não carregou, usar o da consulta.
-  - Classificação: `classificarFamilia` (a MESMA da edge) sobre as variações da família publicada. `'simples'` (o resumo pode divergir da publicada — ex.: tamanho só num SKU excluído de uma tentativa mais nova) → o dialog chama a prop `onNaoEhGrade()` e o roteador abre o `DialogAdicionarVariacao` antigo no lugar (Codex r4 #1 — o fluxo antigo nunca fica inacessível). `'mista'` → aviso de bloqueio. Teste: publicada com incluído sem tamanho + excluído com tamanho e resumo `temTamanho: true` → o dialog antigo abre.
+  - Classificação: `classificarFamilia` (a MESMA da edge) sobre as variações da família publicada. Com `tem_tamanho` do resumo também calculado sobre a publicada (Task 1), roteador, dialog e edge olham a mesma família; o fallback abaixo cobre só a janela entre o resumo em cache e uma publicação nova. Teste do roteador: canônica simples + publicada grade → resumo `temTamanho: true` → abre o dialog de grade (Codex r5 #1). `'simples'` (o resumo pode divergir da publicada — ex.: tamanho só num SKU excluído de uma tentativa mais nova) → o dialog chama a prop `onNaoEhGrade()` e o roteador abre o `DialogAdicionarVariacao` antigo no lugar (Codex r4 #1 — o fluxo antigo nunca fica inacessível). `'mista'` → aviso de bloqueio. Teste: publicada com incluído sem tamanho + excluído com tamanho e resumo `temTamanho: true` → o dialog antigo abre.
   - `skus: SkuExistente[]` = **todas** as variações da família publicada com `tamanho`, incluídas e excluídas (Codex r3 #1); `SkuExistente` ganha `excluida: boolean`. Excluídas ficam travadas também (a edge recusa o par), com rótulo "fora do anúncio" no `aria-label`/título da célula e sem contar como foto herdável. Tipo inferido só das incluídas; incluídas misturando tamanho e ausência → mesmo aviso de bloqueio da edge ("SKUs publicados com e sem tamanho — fale com o suporte"). `temFoto = !!(imagem_path || ml_picture_id)`.
   - Estado: `cores`/`tamanhos` (Set) iniciados com `eixosExistentes(skus)`; `removidas`; `linhas: LinhaGrade[]`; `cabecalho: CamposHerdaveis` pré-preenchido pelo SKU de referência (menor código entre os não `excluida_da_publicacao`, mesma regra de `irmaRef` no dialog atual); `fotoPorCor` (só para cores sem foto herdável); `chave` (UUID, regenerada ao fechar).
-  - Tipo da grade = `tipoDaGrade(skus.map((s) => s.tamanho))` (reexportado de `@/lib/tamanhos`); os tamanhos oferecidos são **só** os desse tipo (`opcoesDeTamanho([tipo])`), nunca a união dos tipos da org (Codex r2 #1). Estados de bloqueio, antes de qualquer upload e com o botão Salvar desabilitado:
+  - Tipo da grade = `tipoDaGrade(skus.filter((s) => !s.excluida).map((s) => s.tamanho))` — **só incluídas** (Codex r5 #2; excluídas ficam travadas mas não decidem o tipo; teste: roupa com numeração só num SKU excluído → matriz liberada com P/M/G/GG) (reexportado de `@/lib/tamanhos`); os tamanhos oferecidos são **só** os desse tipo (`opcoesDeTamanho([tipo])`), nunca a união dos tipos da org (Codex r2 #1). Estados de bloqueio, antes de qualquer upload e com o botão Salvar desabilitado:
     - `useTiposProdutoHabilitados()` ainda `undefined` e sem erro → skeleton "Carregando…";
     - erro do hook → aviso "Não foi possível confirmar os tipos de produto da organização. Tente de novo." (não assume nada);
     - `tipo === null` (tamanhos mistos/desconhecidos) → aviso "Os tamanhos publicados deste produto não pertencem a um único tipo — fale com o suporte.";
