@@ -4,7 +4,7 @@ import type { DimensoesPacote } from '../ml/pacote.ts';
 
 export type Semaforo = 'verde' | 'amarelo' | 'vermelho' | 'indisponivel';
 export type Origem = 'nacional' | 'importado' | null;
-export type MotivoSemLiquido = 'sem_cadastro' | 'sem_custo' | 'sem_origem' | 'sem_preco' | 'sem_categoria';
+export type MotivoSemLiquido = 'sem_cadastro' | 'sem_custo' | 'sem_origem' | 'sem_preco' | 'sem_categoria' | 'erro_tarifa';
 
 export interface Tarifa { comissao: Comissao; frete: number }
 export interface Aliquotas { nacional: number; importado: number }
