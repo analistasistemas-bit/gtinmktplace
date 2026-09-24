@@ -132,6 +132,19 @@ Para organizações com tipos de produto habilitados (`roupa` ou `calcado`, ADR-
 5. **Preenchimento em Massa (`preencher-em-massa.tsx`):** popover acionado no cabeçalho geral ou nos cabeçalhos de linha (cor) e coluna (tamanho), permitindo aplicar valores em lote, voltar ao herdado (`null`) ou limpar, com trava determinística que impede geração inadvertida de GTINs em lote.
 6. **Busca Insensível a Acentos e Pré-indexada:** busca rápida no diálogo de entrada com `normalizarParaBusca` (`dialog-entrada-busca.ts`), realizando pré-indexação em memória dos SKUs para eliminar lentidão em catálogos volumosos.
 
+### Grade publicada — tamanho visível e extensão (ADR-0166 amendment 2026-09-24c)
+
+A grade acima cobre o **cadastro**; até 2026-09-24 uma grade já **publicada** não era operável pela
+tela: "Adicionar variação" abria o diálogo só de cor e a edge recusava com 400 depois de preenchido, e
+lista/Entrada/Ajuste/Movimentos não mostravam o tamanho — SKUs "Preto" indistinguíveis. Agora essas
+telas mostram `cor · tamanho` quando a variação tem tamanho, e "Adicionar variação" num produto de
+grade abre `DialogEstenderGrade` ("Adicionar à grade"), reaproveitando a `MatrizGrade` com as células já
+publicadas travadas (só leitura). Os SKUs novos vão ao Mercado Livre (User Products) com `SIZE`,
+`SIZE_GRID_ID`, `SIZE_GRID_ROW_ID` e `GENDER` próprios — deixam de herdar da ficha do irmão, que
+publicaria o SKU novo com o tamanho errado; produto sem tamanho continua exatamente como antes. Ver
+[spec](../../docs/superpowers/specs/2026-09-24-estoque-grade-operacao-design.md) e o amendment
+2026-09-24c do [ADR-0166](../../docs/decisions/0166-tipo-de-produto-por-organizacao.md).
+
 ## Adicionar variação a produto publicado (ADR-0129)
 
 Menu `⋮` do card → **Adicionar variação** (admin-only, mesmo gate do Ajuste/ADR-0110). Diferente

@@ -907,6 +907,28 @@ falha ao ler `organizations` não libera.
   a cor nova, que entra no preço vivo do anúncio. Lote nasce em `status='publicando'` de propósito — **nunca** aparece
   na fila de Revisão; se o encadeamento falhar, rebaixa para `'revisao'` só como rota de
   recuperação visível na tela Lotes.
+  **Grade (cor × tamanho), ADR-0166 amendment 2026-09-24c:** cada variação do body ganha
+  `tamanho?: string`; com tamanho o `codigo` é **proibido** (gerado pelo sistema via
+  `proximo_codigo_produto`, mesma reserva + resync do `cadastrar-produto`) e vale exatamente uma
+  origem de foto — `imagemPath` (upload novo) **ou** `fotoDeCodigo` (herda `imagem_path`/
+  `ml_picture_id` do SKU vivo daquele código, mesma cor; a edge copia no servidor, nunca aceita o
+  `imagem_path` do irmão vindo do front). Chaves ausentes (`codigo`, `tamanho`, `imagemPath`,
+  `fotoDeCodigo`) são **omitidas no JSON, nunca `null`** — a validação trata `undefined` como
+  ausência real. Resposta 200 ganhou `codigos: string[]` (os códigos novos, gerados ou digitados).
+  Validações novas em `validarGrade` (400, antes de qualquer escrita): família com tamanho só
+  segue se estiver em User Products (`classificarFamilia` sobre as variações vivas **incluídas** —
+  as excluídas não decidem o tipo, mas contam para o par); `familias.genero` preenchido; o tipo
+  (roupa/calçado) é o da família publicada (tamanhos das incluídas), não a união dos tipos da org;
+  tamanho ∈ whitelist do tipo e numeração publicável para o gênero; par `(cor, tamanho)` não repete
+  entre as vivas (todas, inclusive excluídas) nem na própria submissão, com a cor normalizada pelo
+  mesmo dicionário do ML (`normalizarNomeCor`). Teto de 60 variações (existentes + novas) passa a
+  valer só para família de grade — família simples continua sem teto próprio (INV-1). **Retry com a
+  mesma `chave`:** a intenção da submissão original fica gravada em
+  `familias.mudanca_estrutural.intencao`; um retry é conferido contra ela e devolve 409
+  "divergente" se o body mudou, ou 409 "incompleto" se a 1ª tentativa morreu entre o insert da
+  família e o das variações (< 2 min: "tente novamente"; ≥ 2 min: a família órfã deste fluxo é
+  apagada e o retry segue limpo). Família criada antes desta mudança não tem `intencao` → segue o
+  comportamento antigo (`jaExistia: true` sem reconferir).
 - **criar-kit-vinculado** (ADR-0151) — cria kit(s) "N unidades" a partir de uma família-base
   existente, direto da tela Estoque. **Admin-only** (mesmo gate de `adicionar-variacoes-familia`)
   e restrita ao módulo `estoque` (`exigirModulo`). Body: `{ familia_base_id, kits: [{

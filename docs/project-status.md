@@ -530,6 +530,21 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   com escopo por grade total, linha de cor ou coluna de tamanho (nunca gera GTIN em lote). Ordenação
   canônica de eixos e consolidação de estoque via `cadastro-grade.ts`. Validado com Playwright e em
   execução real pelo operador.
+- **Estoque para produtos de grade — tamanho visível e extensão da grade publicada (ADR-0166 amendment
+  2026-09-24c) — implementado, aceite real pendente.** A auditoria da tela Estoque (2026-09-24) achou
+  que grade (cor × tamanho) cadastrava e publicava mas não operava depois: "Adicionar variação" abria o
+  dialog só de cor e a edge recusava com 400 depois de o operador preencher tudo, e lista/Entrada/
+  Ajuste/Movimentos não mostravam o tamanho — SKUs "Preto" indistinguíveis. Agora lista, Entrada, Ajuste
+  e Movimentos mostram `cor · tamanho` quando a variação tem tamanho; "Adicionar variação" num produto de
+  grade abre `DialogEstenderGrade` ("Adicionar à grade"), com a matriz Cor × Tamanho e as células já
+  publicadas travadas (só leitura); os SKUs novos vão ao Mercado Livre (User Products) com `SIZE`,
+  `SIZE_GRID_ID`, `SIZE_GRID_ROW_ID` e `GENDER` próprios — deixam de herdar da ficha do irmão, que
+  publicaria o SKU novo com o tamanho errado. Produto sem tamanho continua byte a byte igual (INV-1).
+  Dry-run `POST /items/validate` sem erros de `fashion_grid`/`GENDER`. **Aceite real pendente após o
+  merge:** Diego adiciona 1 SKU pela tela nova e o diff é provado por `GET /items` de 2 irmãs e do SKU
+  novo, antes/depois. Ver [spec](superpowers/specs/2026-09-24-estoque-grade-operacao-design.md),
+  [plano](superpowers/plans/2026-09-24-estoque-grade-operacao.md) e o amendment 2026-09-24c do
+  [ADR-0166](decisions/0166-tipo-de-produto-por-organizacao.md).
 
 ## Trilho de UX/design (2026-06-21, em producao)
 

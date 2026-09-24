@@ -23,6 +23,39 @@ troca as dimensões cadastradas por uma estimativa e o custo sobe em silêncio. 
   para quem assina a categoria Financeiro.
 - [x] TDD: suíte inteira verde (548 arquivos / 5657 testes); revisão por task + revisão final do Fable.
 
+## Estoque para produtos de grade — operação pela tela (ADR-0166 amendment 2026-09-24c) — 2026-09-24
+
+Grade (cor × tamanho) publicada passa a ser operável pela tela Estoque: tamanho visível onde a variação
+é identificada, e dá pra acrescentar cor/tamanho a um anúncio de grade já publicado. Ver
+[design](superpowers/specs/2026-09-24-estoque-grade-operacao-design.md),
+[plano](superpowers/plans/2026-09-24-estoque-grade-operacao.md) e o amendment 2026-09-24c do
+[ADR-0166](decisions/0166-tipo-de-produto-por-organizacao.md).
+
+- [x] RPCs `variacoes_estoque_produto`/`skus_estoque_org` devolvem `tamanho`; `produtos_estoque_resumo`
+  devolve `tem_tamanho` (calculado sobre a última família PUBLICADA, só variações incluídas).
+- [x] Rótulo único `cor · tamanho` (`rotuloVariacao`) e ordenação canônica de grade em lista, Entrada
+  (card e picker geral), Ajuste, filtro de Movimentos e linha de Movimentos.
+- [x] "Adicionar variação" em produto de grade roteia para `DialogEstenderGrade` ("Adicionar à grade"),
+  reaproveitando a `MatrizGrade` com as células publicadas travadas (só leitura).
+- [x] Edge `adicionar-variacoes-familia` aceita `tamanho` por variação (código gerado pelo sistema em
+  grade, nunca digitado), com validações novas: só User Products, par cor×tamanho sem repetir,
+  whitelist de tamanho por tipo, numeração publicável e `familias.genero` preenchido.
+- [x] UPDATE User Products monta `SIZE`/`SIZE_GRID_ID`/`SIZE_GRID_ROW_ID`/`GENDER` do SKU novo a partir
+  do chart e de `familias.genero`, sem herdar da ficha do irmão nesse ramo; produto sem tamanho
+  continua herdando exatamente como antes (INV-1).
+- [x] `pnpm preflight` verde; dry-run `POST /items/validate` sem erros de `fashion_grid`/`GENDER`.
+
+**Pendências abertas:**
+- [ ] dívida R8: extrair `useEdicaoGrade` + `CampoHerdavel` (duplicação ~150 linhas entre
+  `dialog-cadastro-grade.tsx` e `dialog-estender-grade.tsx`).
+- [ ] R9: no fluxo "Adicionar variação" UP, a reposição ainda envia `available_quantity` às irmãs
+  ativas (pré-existente do ADR-0129/0160) — decidir com o Diego.
+- [ ] `publicar-split-ml` lê `ehFluxoAddVariacao` dentro do laço de partições (hoist antes do laço).
+- [ ] mesma foto de cor nova enviada N vezes (1 por tamanho) no dialog de grade.
+- [ ] `FILTRABLE_GENDER` herdado do irmão é ignorado pelo ML (warning inofensivo).
+- [ ] aceite real da grade: Diego adiciona 1 SKU e comparamos `GET /items` de 2 irmãs e do novo
+  antes/depois.
+
 ## Cadastro de grade em matriz Cor x Tamanho (roupa e calçado) — 2026-09-19/20
 
 Substituição da lista linear de cards pelo componente `MatrizGrade` (`src/components/estoque/matriz-grade.tsx`)
