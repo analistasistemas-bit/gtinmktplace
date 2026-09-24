@@ -31,7 +31,7 @@
 
 - [ ] Na raiz do worktree `/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/i1-central-promocoes`: `cp "/Users/diego/Desktop/IA/Anuncios MktPlace/.env.local" "/Users/diego/Desktop/IA/Anuncios MktPlace/.env.test" .`
 - [ ] `pnpm install --frozen-lockfile`
-- [ ] `pnpm test -- supabase/functions/_shared/preco src/lib` → suíte existente verde (linha de base).
+- [ ] `pnpm exec vitest run supabase/functions/_shared/preco src/lib` → suíte existente verde (linha de base).
 
 ## File Structure
 
@@ -346,7 +346,7 @@ describe('contar', () => {
 });
 ```
 
-- [ ] **Step 3:** `pnpm test -- supabase/functions/_shared/promocoes/__tests__/projecao.test.ts` → Expected: FAIL (módulo não existe).
+- [ ] **Step 3:** `pnpm exec vitest run supabase/functions/_shared/promocoes/__tests__/projecao.test.ts` → Expected: FAIL (módulo não existe).
 - [ ] **Step 4: Implementar `projecao.ts`**
 
 ```ts
@@ -424,7 +424,7 @@ export function contar(linhas: Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_
 }
 ```
 
-- [ ] **Step 5:** `pnpm test -- supabase/functions/_shared/promocoes/__tests__/projecao.test.ts` → Expected: PASS. Se `36.6` falhar, conferir `arredondar5Cima` em `sugerir.ts` e ajustar só o valor esperado ao arredondamento real (a asserção do líquido ≥ piso é a que não pode mudar).
+- [ ] **Step 5:** `pnpm exec vitest run supabase/functions/_shared/promocoes/__tests__/projecao.test.ts` → Expected: PASS. Se `36.6` falhar, conferir `arredondar5Cima` em `sugerir.ts` e ajustar só o valor esperado ao arredondamento real (a asserção do líquido ≥ piso é a que não pode mudar).
 - [ ] **Step 6: Paridade** — `tests/lib/paridade-semaforo-promocoes.test.ts`:
 
 ```ts
@@ -442,7 +442,7 @@ describe('paridade semáforo front × promoções', () => {
 });
 ```
 
-Run: `pnpm test -- tests/lib/paridade-semaforo-promocoes.test.ts` → Expected: PASS (7 casos). Se o import com extensão `.ts` for exigido pelas outras paridades (`tests/lib/paridade-preco-fe-be.test.ts`), copiar o estilo de import de lá.
+Run: `pnpm exec vitest run tests/lib/paridade-semaforo-promocoes.test.ts` → Expected: PASS (7 casos). Se o import com extensão `.ts` for exigido pelas outras paridades (`tests/lib/paridade-preco-fe-be.test.ts`), copiar o estilo de import de lá.
 - [ ] **Step 7: Commit** `feat(promocoes): projecao pura do liquido e ate quanto descer (ADR-0170)`.
 
 ---
@@ -541,7 +541,7 @@ describe('resolverCor', () => {
 });
 ```
 
-- [ ] **Step 2:** `pnpm test -- supabase/functions/_shared/promocoes/__tests__/cadastro.test.ts` → Expected: FAIL.
+- [ ] **Step 2:** `pnpm exec vitest run supabase/functions/_shared/promocoes/__tests__/cadastro.test.ts` → Expected: FAIL.
 - [ ] **Step 3: Implementar `cadastro.ts`**
 
 ```ts
@@ -646,7 +646,7 @@ export function resolverCor(
 }
 ```
 
-- [ ] **Step 4:** `pnpm test -- supabase/functions/_shared/promocoes/__tests__/cadastro.test.ts` → Expected: PASS.
+- [ ] **Step 4:** `pnpm exec vitest run supabase/functions/_shared/promocoes/__tests__/cadastro.test.ts` → Expected: PASS.
 - [ ] **Step 5: Commit** `feat(promocoes): resolucao do cadastro por cor (ADR-0170)`.
 
 ---
@@ -770,7 +770,7 @@ describe('criarGetJson', () => {
 });
 ```
 
-- [ ] **Step 2:** `pnpm test -- supabase/functions/_shared/promocoes/__tests__/ml.test.ts` → Expected: FAIL.
+- [ ] **Step 2:** `pnpm exec vitest run supabase/functions/_shared/promocoes/__tests__/ml.test.ts` → Expected: FAIL.
 - [ ] **Step 3: Implementar `ml.ts`**
 
 ```ts
@@ -897,7 +897,7 @@ export async function buscarItensML(get: GetJson, ids: string[]): Promise<Map<st
 }
 ```
 
-- [ ] **Step 4:** `pnpm test -- supabase/functions/_shared/promocoes/__tests__/ml.test.ts` → Expected: PASS.
+- [ ] **Step 4:** `pnpm exec vitest run supabase/functions/_shared/promocoes/__tests__/ml.test.ts` → Expected: PASS.
 - [ ] **Step 5: Teste com as fixtures da Task 0** (acrescentar ao mesmo arquivo):
 
 ```ts
@@ -925,7 +925,7 @@ describe('fixtures reais (Task 0)', () => {
 });
 ```
 
-Run: `pnpm test -- supabase/functions/_shared/promocoes/__tests__/ml.test.ts` → Expected: PASS. Se falhar, o normalizador está lendo um campo com nome errado: corrigir `ml.ts` (e o teste inline correspondente), nunca a fixture.
+Run: `pnpm exec vitest run supabase/functions/_shared/promocoes/__tests__/ml.test.ts` → Expected: PASS. Se falhar, o normalizador está lendo um campo com nome errado: corrigir `ml.ts` (e o teste inline correspondente), nunca a fixture.
 - [ ] **Step 6: Commit** `feat(promocoes): leitura das promocoes do ML so por GET (ADR-0170)`.
 
 ---
@@ -1232,7 +1232,7 @@ describe('sincronizarPromocao', () => {
 });
 ```
 
-- [ ] **Step 3:** `pnpm test -- supabase/functions/_shared/promocoes/__tests__/sincronizar.test.ts` → Expected: FAIL.
+- [ ] **Step 3:** `pnpm exec vitest run supabase/functions/_shared/promocoes/__tests__/sincronizar.test.ts` → Expected: FAIL.
 - [ ] **Step 4: Implementar `sincronizar.ts`**
 
 ```ts
@@ -1454,7 +1454,7 @@ export async function sincronizarPromocao(
 ```
 
 (`feitos > 0` garante que toda execução avança pelo menos um lote — não existe continuação sem progresso.)
-- [ ] **Step 5:** `pnpm test -- supabase/functions/_shared/promocoes` → Expected: PASS (todas as suítes da pasta).
+- [ ] **Step 5:** `pnpm exec vitest run supabase/functions/_shared/promocoes` → Expected: PASS (todas as suítes da pasta).
 - [ ] **Step 6: Implementar `deps.ts`** (fiação; validada contra Postgres real e o ML na Task 10)
 
 ```ts
@@ -1769,7 +1769,7 @@ describe('montarMensagemPromocoes', () => {
 });
 ```
 
-- [ ] **Step 2:** `pnpm test -- supabase/functions/_shared/promocoes/__tests__/alertas.test.ts` → Expected: FAIL.
+- [ ] **Step 2:** `pnpm exec vitest run supabase/functions/_shared/promocoes/__tests__/alertas.test.ts` → Expected: FAIL.
 - [ ] **Step 3: Implementar `alertas.ts`**
 
 ```ts
@@ -1877,7 +1877,7 @@ export function depsAlertas(admin: SupabaseClient, orgId: string): DepsAlertas {
 ```
 
 O emoji é do **texto do Telegram** (padrão de `_shared/notificacoes/telegram.ts`), não da UI.
-- [ ] **Step 4:** `pnpm test -- supabase/functions/_shared/promocoes/__tests__/alertas.test.ts` → Expected: PASS.
+- [ ] **Step 4:** `pnpm exec vitest run supabase/functions/_shared/promocoes/__tests__/alertas.test.ts` → Expected: PASS.
 - [ ] **Step 5: Worker** — `supabase/functions/sincronizar-promocoes/index.ts`:
 
 ```ts
@@ -1986,7 +1986,7 @@ O botão do usuário recebe a resposta da etapa de lista (segundos); as leituras
 ```
 
 Sem a chave em `MENU_KEYS`, o admin libera o menu e a edge descarta a permissão em silêncio.
-- [ ] **Step 8:** `/usr/bin/git add supabase/functions/_shared/promocoes supabase/functions/sincronizar-promocoes` e então `pnpm check:functions && pnpm lint:functions && pnpm test -- supabase/functions/_shared/promocoes` → Expected: tudo verde.
+- [ ] **Step 8:** `/usr/bin/git add supabase/functions/_shared/promocoes supabase/functions/sincronizar-promocoes` e então `pnpm check:functions && pnpm lint:functions && pnpm exec vitest run supabase/functions/_shared/promocoes` → Expected: tudo verde.
 - [ ] **Step 9: Commit** `feat(promocoes): worker sincronizar-promocoes, alertas e menu na edge usuarios (ADR-0170)`.
 
 ---
@@ -2124,7 +2124,7 @@ Acrescentar em `src/lib/__tests__/modulos.test.ts` (no `describe` existente):
   });
 ```
 
-- [ ] **Step 2:** `pnpm test -- src/lib/__tests__/promocoes.test.ts src/lib/__tests__/menus.test.ts src/lib/__tests__/modulos.test.ts` → Expected: FAIL.
+- [ ] **Step 2:** `pnpm exec vitest run src/lib/__tests__/promocoes.test.ts src/lib/__tests__/menus.test.ts src/lib/__tests__/modulos.test.ts` → Expected: FAIL.
 - [ ] **Step 3: Menu e módulo.** `src/lib/menus.ts`: em `MENU_KEYS`, inserir `'promocoes'` logo após `'publicados'`; em `PREFIX`, acrescentar `promocoes: 'promocoes',` após `publicados`. `src/lib/modulos.ts`: `export type ModuloId = 'estoque' | 'pulse' | 'fiscal' | 'promocoes';` e acrescentar ao fim de `MODULOS`:
 
 ```ts
@@ -2280,7 +2280,7 @@ export async function fetchEstadoSyncPromocoes(): Promise<EstadoSyncPromo | null
 ```
 
 Conferir a assinatura de `buscarTodasPaginas` em `src/lib/paginacao-supabase.ts` e usar o mesmo formato de chamada de `src/lib/anuncio-canonico.ts:30`. A RLS já limita à org do usuário; não filtrar por `org_id` no front (padrão das telas).
-- [ ] **Step 5:** `pnpm test -- src/lib/__tests__/promocoes.test.ts src/lib/__tests__/menus.test.ts src/lib/__tests__/modulos.test.ts` → Expected: PASS. Rodar também `pnpm test -- src/lib src/components/__tests__` para pegar teste que lista `MENU_KEYS` inteiro; se algum quebrar só por causa da chave nova, atualizar a lista esperada.
+- [ ] **Step 5:** `pnpm exec vitest run src/lib/__tests__/promocoes.test.ts src/lib/__tests__/menus.test.ts src/lib/__tests__/modulos.test.ts` → Expected: PASS. Rodar também `pnpm exec vitest run src/lib src/components/__tests__` para pegar teste que lista `MENU_KEYS` inteiro; se algum quebrar só por causa da chave nova, atualizar a lista esperada.
 - [ ] **Step 6: `src/hooks/usePromocoes.ts`**
 
 ```ts
@@ -2381,7 +2381,7 @@ Em `secao-notificacoes.tsx`, importar os dois hooks, declarar `const { data: ale
 ```
 
 Se existir `src/components/configuracoes/__tests__/secao-notificacoes.test.tsx` (criado no ADR-0169), acrescentar o mock dos dois hooks novos no mesmo formato dos do monitor de frete e um caso "switch de promoções chama o mutate com true".
-- [ ] **Step 8:** `pnpm test -- src/lib src/components/configuracoes src/hooks` e `pnpm build` → Expected: verde.
+- [ ] **Step 8:** `pnpm exec vitest run src/lib src/components/configuracoes src/hooks` e `pnpm build` → Expected: verde.
 - [ ] **Step 9: Commit** `feat(promocoes): menu, modulo, leitura e switch de alertas no front (ADR-0170)`.
 
 ---
@@ -2488,7 +2488,7 @@ describe('CardCampanha', () => {
 });
 ```
 
-- [ ] **Step 2:** `pnpm test -- src/components/promocoes` → Expected: FAIL.
+- [ ] **Step 2:** `pnpm exec vitest run src/components/promocoes` → Expected: FAIL.
 - [ ] **Step 3: `contagem-semaforo.tsx`**
 
 ```tsx
@@ -2745,7 +2745,7 @@ export default function Promocoes() {
 ```
 
 Com 1 canal, a `CanalTabs` mostra só ML (mesmo comportamento de Publicados). O botão segue o padrão de espera do ADR-0163: se `src/components/ui` tiver o componente de espera usado nos diálogos (ver `docs/decisions/0163-padrao-de-espera-em-dialogos.md`), usar ele no lugar do texto "Atualizando…".
-- [ ] **Step 7:** `pnpm test -- src/components/promocoes` → Expected: PASS. `pnpm build` → Expected: verde.
+- [ ] **Step 7:** `pnpm exec vitest run src/components/promocoes` → Expected: PASS. `pnpm build` → Expected: verde.
 - [ ] **Step 8: Commit** `feat(promocoes): tela de campanhas com estados (ADR-0170)`.
 
 ---
@@ -2805,7 +2805,7 @@ describe('SheetCores', () => {
 });
 ```
 
-- [ ] **Step 2:** `pnpm test -- src/lib/__tests__/promocoes.test.ts src/components/promocoes` → Expected: FAIL.
+- [ ] **Step 2:** `pnpm exec vitest run src/lib/__tests__/promocoes.test.ts src/components/promocoes` → Expected: FAIL.
 - [ ] **Step 3: `filtrarItens`** — acrescentar em `src/lib/promocoes.ts`:
 
 ```ts
@@ -3037,7 +3037,7 @@ export default function PromocaoDetalhe() {
 ```
 
 Conferir que `text-danger` existe como utilitário (tokens `danger` de `src/index.css`, usados pelo `StatusPill`); senão usar a mesma classe de cor que o `StatusPill` usa para `danger`.
-- [ ] **Step 6:** `pnpm test -- src/lib/__tests__/promocoes.test.ts src/components/promocoes` → Expected: PASS. `pnpm build` e `pnpm lint` → Expected: verde.
+- [ ] **Step 6:** `pnpm exec vitest run src/lib/__tests__/promocoes.test.ts src/components/promocoes` → Expected: PASS. `pnpm build` e `pnpm lint` → Expected: verde.
 - [ ] **Step 7: Commit** `feat(promocoes): detalhe da campanha com liquido por cor (ADR-0170)`.
 
 ---
