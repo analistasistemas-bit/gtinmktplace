@@ -19,6 +19,8 @@ function renderGerador(props: Partial<React.ComponentProps<typeof GeradorVariaco
       bloquearNovaCor={props.bloquearNovaCor ?? false}
       avisoTamanho={props.avisoTamanho ?? (() => null)}
       desabilitado={props.desabilitado ?? false}
+      coresFixas={props.coresFixas}
+      tamanhosFixos={props.tamanhosFixos}
       onMudarCores={props.onMudarCores ?? onMudarCores}
       onMudarTamanhos={props.onMudarTamanhos ?? onMudarTamanhos}
     />,
@@ -118,5 +120,46 @@ describe('GeradorVariacoes (controlado — a seleção já é a ação)', () => 
     expect(screen.getByRole('checkbox', { name: 'Preto' })).toBeDisabled();
     expect(screen.getByRole('checkbox', { name: 'P' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Adicionar cor' })).toBeDisabled();
+  });
+});
+
+describe('GeradorVariacoes — eixos fixos (Task 6: cor/tamanho já publicados)', () => {
+  it('cor fixa aparece marcada e desabilitada; clicar nela não reporta mudança', async () => {
+    const user = userEvent.setup();
+    const { onMudarCores } = renderGerador({
+      cores: new Set(['Preto']), coresFixas: new Set(['Preto']),
+    });
+    const chip = screen.getByRole('checkbox', { name: 'Preto' });
+    expect(chip).toBeChecked();
+    expect(chip).toBeDisabled();
+    await user.click(chip);
+    expect(onMudarCores).not.toHaveBeenCalled();
+  });
+
+  it('tamanho fixo aparece marcado e desabilitado; clicar nele não reporta mudança', async () => {
+    const user = userEvent.setup();
+    const { onMudarTamanhos } = renderGerador({
+      tamanhos: new Set(['M']), tamanhosFixos: new Set(['M']),
+    });
+    const chip = screen.getByRole('checkbox', { name: 'M' });
+    expect(chip).toBeChecked();
+    expect(chip).toBeDisabled();
+    await user.click(chip);
+    expect(onMudarTamanhos).not.toHaveBeenCalled();
+  });
+
+  it('cor fixa fora de CORES_POPULARES aparece como personalizada sem o botão de remover', () => {
+    renderGerador({ cores: new Set(['Verde Musgo']), coresFixas: new Set(['Verde Musgo']) });
+    expect(screen.getByText('Verde Musgo')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Remover cor Verde Musgo' })).not.toBeInTheDocument();
+  });
+
+  it('sem as props novas, cor e tamanho continuam desmarcáveis (comportamento de hoje)', async () => {
+    const user = userEvent.setup();
+    const { onMudarCores } = renderGerador({ cores: new Set(['Preto']) });
+    const chip = screen.getByRole('checkbox', { name: 'Preto' });
+    expect(chip).not.toBeDisabled();
+    await user.click(chip);
+    expect(onMudarCores).toHaveBeenCalledWith(new Set());
   });
 });

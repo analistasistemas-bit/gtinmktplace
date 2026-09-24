@@ -35,7 +35,7 @@ function alternar(atual: ReadonlySet<string>, valor: string, marcar: boolean): S
 
 export function GeradorVariacoes({
   gruposTamanho, cores, tamanhos, coresBloqueadas, tamanhosBloqueados, bloquearNovaCor,
-  avisoTamanho, desabilitado, onMudarCores, onMudarTamanhos,
+  avisoTamanho, desabilitado, coresFixas, tamanhosFixos, onMudarCores, onMudarTamanhos,
 }: {
   gruposTamanho: GrupoTamanho[];
   cores: ReadonlySet<string>;
@@ -50,6 +50,10 @@ export function GeradorVariacoes({
   avisoTamanho: (valor: string) => string | null;
   /** true durante `salvando`: congela a seleção (o casamento posicional exige a lista congelada). */
   desabilitado: boolean;
+  /** Cores já publicadas no produto (Task 7, "Adicionar à grade"): aparecem marcadas e não dá
+   *  para desmarcar — o SKU publicado continua na grade quer o operador queira ou não. */
+  coresFixas?: ReadonlySet<string>;
+  tamanhosFixos?: ReadonlySet<string>;
   onMudarCores: (cores: Set<string>) => void;
   onMudarTamanhos: (tamanhos: Set<string>) => void;
 }) {
@@ -74,14 +78,15 @@ export function GeradorVariacoes({
         <div className="flex flex-wrap gap-x-4 gap-y-2">
           {CORES_POPULARES.map((cor) => {
             const bloqueada = coresBloqueadas.has(cor) && !cores.has(cor);
+            const fixa = coresFixas?.has(cor) ?? false;
             return (
               <label key={cor} className="flex items-center gap-1.5 text-sm">
                 <Checkbox
                   aria-label={cor}
                   aria-describedby={bloqueada ? 'gerador-motivo-limite' : undefined}
-                  title={bloqueada ? MOTIVO_LIMITE : undefined}
+                  title={fixa ? 'Já publicada neste produto.' : bloqueada ? MOTIVO_LIMITE : undefined}
                   checked={cores.has(cor)}
-                  disabled={desabilitado || bloqueada}
+                  disabled={desabilitado || fixa || bloqueada}
                   onCheckedChange={(checked) => onMudarCores(alternar(cores, cor, checked === true))}
                 />
                 {cor}
@@ -94,14 +99,17 @@ export function GeradorVariacoes({
             {personalizadas.map((cor) => (
               <Badge key={cor} variant="secondary">
                 {cor}
-                <button
-                  type="button"
-                  aria-label={`Remover cor ${cor}`}
-                  disabled={desabilitado}
-                  onClick={() => onMudarCores(alternar(cores, cor, false))}
-                >
-                  <X className="h-3 w-3" />
-                </button>
+                {/* Cor fixa (já publicada) não pode ser removida — sem botão de remover. */}
+                {!(coresFixas?.has(cor) ?? false) && (
+                  <button
+                    type="button"
+                    aria-label={`Remover cor ${cor}`}
+                    disabled={desabilitado}
+                    onClick={() => onMudarCores(alternar(cores, cor, false))}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                )}
               </Badge>
             ))}
           </div>
@@ -134,6 +142,7 @@ export function GeradorVariacoes({
           <div className="flex flex-wrap gap-x-4 gap-y-2">
             {g.valores.map((v) => {
               const bloqueado = tamanhosBloqueados.has(v) && !tamanhos.has(v);
+              const fixo = tamanhosFixos?.has(v) ?? false;
               const aviso = avisoTamanho(v);
               return (
                 <label key={v} className="flex flex-col gap-0.5 text-sm">
@@ -141,9 +150,9 @@ export function GeradorVariacoes({
                     <Checkbox
                       aria-label={v}
                       aria-describedby={bloqueado ? 'gerador-motivo-limite' : undefined}
-                      title={bloqueado ? MOTIVO_LIMITE : undefined}
+                      title={fixo ? 'Já publicado neste produto.' : bloqueado ? MOTIVO_LIMITE : undefined}
                       checked={tamanhos.has(v)}
-                      disabled={desabilitado || bloqueado}
+                      disabled={desabilitado || fixo || bloqueado}
                       onCheckedChange={(checked) => onMudarTamanhos(alternar(tamanhos, v, checked === true))}
                     />
                     {v}

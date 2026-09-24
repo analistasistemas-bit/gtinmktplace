@@ -39,7 +39,7 @@ function ehHerdavel(modo: ModoGrade): modo is Extract<ModoGrade, CampoHerdavel> 
 }
 
 export function MatrizGrade({
-  linhas, resolvidas, cores, tamanhos, removidas, desabilitado,
+  linhas, resolvidas, cores, tamanhos, removidas, desabilitado, bloqueadas,
   onMudarLinha, onMudarOverride, onDestravar, onVoltarAHerdar, onRemoverCelula, onReincluirCelula,
   onAplicarMassa,
 }: {
@@ -51,6 +51,11 @@ export function MatrizGrade({
   removidas: ReadonlySet<string>;
   /** true durante `salvando`. Affordance — a trava de verdade está no dono do estado (dialog). */
   desabilitado: boolean;
+  /** Task 7 ("Adicionar à grade"): SKUs já publicados no produto, por `chaveGrade(cor, tamanho)`.
+   *  A célula fica só leitura, fora de `linhas`/`resolvidas` — os totais não contam essas
+   *  unidades, só as das linhas novas. `excluida: true` = SKU foi removido do anúncio no ML (não
+   *  conta mais como publicado), mas o operador não pode reabrir a célula por aqui mesmo assim. */
+  bloqueadas?: ReadonlyMap<string, { estoque: number; excluida?: boolean }>;
   onMudarLinha: (clientId: string, patch: Partial<Pick<LinhaGrade, 'gtin' | 'estoqueInicial'>>) => void;
   onMudarOverride: (clientId: string, campo: CampoHerdavel, valor: string) => void;
   onDestravar: (clientId: string, campo: CampoHerdavel) => void;
@@ -120,6 +125,24 @@ export function MatrizGrade({
 
   function celula(cor: string, tamanho: string, c: number, r: number) {
     const chave = chaveGrade(cor, tamanho);
+    const trava = bloqueadas?.get(chave);
+    if (trava) {
+      // SKU já publicado (Task 7): só leitura, fora de `linhas`/`resolvidas` — por isso SEM
+      // `data-r`/`data-c` (a navegação por teclado pula a célula; `focarCelula` num alvo
+      // inexistente já é no-op, ver comentário acima) e sem o "+" de reinclusão.
+      const rotulo = trava.excluida
+        ? `${cor} · ${tamanho}: fora do anúncio`
+        : `${cor} · ${tamanho}: já publicado, ${trava.estoque} em estoque`;
+      return (
+        <div
+          className="flex h-8 items-center justify-end px-2 text-sm tabular-nums text-muted-foreground"
+          aria-label={rotulo}
+          title={rotulo}
+        >
+          {modo === 'estoqueInicial' ? trava.estoque : '—'}
+        </div>
+      );
+    }
     const i = indice.get(chave);
     if (i === undefined) {
       // Combinação removida na mão → affordance de reinclusão. O card antigo simplesmente sumia
