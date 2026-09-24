@@ -1174,12 +1174,23 @@ describe('sincronizarPromocao', () => {
     d.rodadaEmCurso
       .mockResolvedValueOnce('2026-10-06T12:00:00+00:00')   // entrada
       .mockResolvedValueOnce('2026-10-06T12:00:00+00:00')   // antes do 1º lote
+      .mockResolvedValueOnce('2026-10-06T12:00:00+00:00')   // antes de gravar o 1º lote
       .mockResolvedValue('2026-10-06T12:40:00+00:00');      // rodada nova reservou
     const r = await sincronizarPromocao(d, msg, opts);
     expect(r).toEqual({ resultado: 'obsoleta', processados: 2 });
     expect(d.gravarLote).toHaveBeenCalledTimes(1);
     expect(d.continuar).not.toHaveBeenCalled();
     expect(d.concluir).not.toHaveBeenCalled();
+  });
+
+  it('posse perdida durante a projeção: não grava o lote', async () => {
+    const d = depsLeitura();
+    d.rodadaEmCurso
+      .mockResolvedValueOnce('2026-10-06T12:00:00+00:00')   // entrada
+      .mockResolvedValueOnce('2026-10-06T12:00:00+00:00')   // antes do 1º lote
+      .mockResolvedValue('2026-10-06T12:40:00+00:00');      // perdeu enquanto projetava
+    expect(await sincronizarPromocao(d, msg, opts)).toEqual({ resultado: 'obsoleta', processados: 0 });
+    expect(d.gravarLote).not.toHaveBeenCalled();
   });
 
   it('conclusão sem posse vira obsoleta', async () => {
@@ -1408,6 +1419,8 @@ export async function sincronizarPromocao(
       const ml = await deps.buscarItensML(lote.map((x) => x.ml_item_id));
       const linhas = await emParalelo(lote, opts.concorrencia, (it) =>
         projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q)));
+      // O lote leva segundos: reconfere a posse logo antes de escrever.
+      if (!mesmaRodada(await deps.rodadaEmCurso(), msg.rodada)) return { resultado: 'obsoleta', processados: feitos };
       await deps.gravarLote(linhas);
       feitos += lote.length;
     }
