@@ -18,7 +18,7 @@ import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { codigosJaUsados, derivarCodigosSku } from '../_shared/produto/codigos.ts';
 import {
   aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirIncompleto, decidirRetry,
-  type IntencaoGravada, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
+  haFamiliaEmVoo, type IntencaoGravada, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   precoPublicacaoNova, resolverFotoHerdada, validarEntrada, validarGrade, type VariacaoNovaEntrada,
 } from './processar.ts';
 
@@ -109,10 +109,7 @@ Deno.serve(async (req) => {
         if (decidirIncompleto(jaExistente.criado_em as string, new Date()) === 'aguardar') {
           return json({ error: 'Solicitação em andamento. Tente novamente.' }, 409);
         }
-        await admin.from('familias').delete().eq('id', jaExistente.id as string);
-        const { count: outras } = await admin.from('familias')
-          .select('id', { count: 'exact', head: true }).eq('lote_id', jaExistente.lote_id as string);
-        if (outras === 0) await admin.from('lotes').delete().eq('id', jaExistente.lote_id as string);
+        await limparFamiliaOrfa(admin, { id: jaExistente.id as string, lote_id: jaExistente.lote_id as string });
         return json({ error: 'A tentativa anterior não terminou. Tente novamente.' }, 409);
       }
       if (decisao.tipo === 'divergente') {
@@ -193,11 +190,8 @@ Deno.serve(async (req) => {
 
   // D-8: recusa se já existe família NÃO-TERMINAL para este codigo_pai (lote em voo) — dois
   // lotes da mesma família em voo é a receita para o race condition que o ADR-0104 já trata
-  // como risco de composição.
-  const { data: emVoo } = await admin.from('familias').select('id')
-    .eq('org_id', orgId).eq('codigo_pai', codigoPai)
-    .not('status', 'in', '("publicado","erro")').limit(1);
-  if (emVoo && emVoo.length > 0) {
+  // como risco de composição. Órfã deste fluxo é limpa antes de recusar (ver `haFamiliaEmVoo`).
+  if (await haFamiliaEmVoo(admin, orgId, codigoPai, new Date())) {
     return json({ error: 'Já existe uma atualização em andamento para este produto.' }, 409);
   }
 

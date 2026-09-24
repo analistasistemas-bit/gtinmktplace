@@ -6,7 +6,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirIncompleto, decidirRetry,
-  detectarUP, familiaTemTamanho, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
+  detectarUP, familiaTemTamanho, haFamiliaEmVoo, limparFamiliaOrfa, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   precoPublicacaoNova, resolverFotoHerdada, STRIP_FAMILIA, STRIP_VARIACAO, validarEntrada,
   validarGrade, type VariacaoNovaEntrada,
 } from '../processar.ts';
@@ -577,6 +577,95 @@ describe('decidirIncompleto (órfã não pode travar o produto via emVoo)', () =
   it('órfã recente (até 2 min) → aguardar', () => {
     expect(decidirIncompleto('2026-09-24T12:09:00Z', agora)).toBe('aguardar');
     expect(decidirIncompleto('2026-09-24T12:08:00Z', agora)).toBe('aguardar');
+  });
+});
+
+/** Banco em memória mínimo para a limpeza de órfãs: select/eq/not-in/limit, count head e delete.
+ *  `falhar` = tabela cuja LEITURA devolve erro (delete nunca falha aqui). */
+function bancoFake(estado: Record<string, Array<Record<string, unknown>>>, falhar: string[] = []) {
+  const apagados: string[] = [];
+  const admin = {
+    from(t: string) {
+      const filtros: Array<(r: Record<string, unknown>) => boolean> = [];
+      let op: 'select' | 'delete' = 'select';
+      let head = false;
+      const responder = () => {
+        const linhas = (estado[t] ?? []).filter((r) => filtros.every((f) => f(r)));
+        if (op === 'delete') {
+          estado[t] = (estado[t] ?? []).filter((r) => !linhas.includes(r));
+          linhas.forEach((r) => apagados.push(`${t}:${r.id}`));
+          return Promise.resolve({ error: null });
+        }
+        if (falhar.includes(t)) return Promise.resolve({ data: null, count: null, error: { message: 'falha' } });
+        return Promise.resolve(head ? { count: linhas.length, error: null } : { data: linhas, error: null });
+      };
+      const q = {
+        select: (_c: string, o?: { head?: boolean }) => { head = !!o?.head; return q; },
+        delete: () => { op = 'delete'; return q; },
+        eq: (k: string, v: unknown) => { filtros.push((r) => r[k] === v); return q; },
+        not: (k: string, _op: string, _v: string) => { filtros.push((r) => !['publicado', 'erro'].includes(r[k] as string)); return q; },
+        limit: () => q,
+        then: (res: (x: unknown) => unknown, rej: (e: unknown) => unknown) => responder().then(res, rej),
+      };
+      return q;
+    },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  } as any;
+  return { admin, apagados, estado };
+}
+
+describe('haFamiliaEmVoo — órfã deste fluxo (rodada 2)', () => {
+  const agora = new Date('2026-09-24T12:10:00Z');
+  const fam = (extra: Record<string, unknown> = {}) => ({
+    id: 'fo', lote_id: 'lo', org_id: 'org', codigo_pai: '00000100', status: 'pronto', operacao: 'UPDATE',
+    criado_em: '2026-09-24T12:00:00Z', mudanca_estrutural: { novas: ['00000103'], removidas: [], intencao: [{}] },
+    ...extra,
+  });
+  const cenario = (f: Record<string, unknown>, variacoes: Array<Record<string, unknown>> = [], falhar: string[] = []) =>
+    bancoFake({ familias: [f], variacoes, lotes: [{ id: 'lo' }] }, falhar);
+
+  it('órfã antiga deste fluxo → limpa família e lote e a submissão segue', async () => {
+    const b = cenario(fam());
+    expect(await haFamiliaEmVoo(b.admin, 'org', '00000100', agora)).toBe(false);
+    expect(b.apagados).toEqual(['familias:fo', 'lotes:lo']);
+  });
+  it('lote com outra família sobrevive', async () => {
+    const b = bancoFake({ familias: [fam(), { id: 'outra', lote_id: 'lo', org_id: 'org', codigo_pai: '00000999', status: 'publicado' }], variacoes: [], lotes: [{ id: 'lo' }] });
+    expect(await haFamiliaEmVoo(b.admin, 'org', '00000100', agora)).toBe(false);
+    expect(b.apagados).toEqual(['familias:fo']);
+  });
+  it('órfã recente → nada apagado, 409 emVoo', async () => {
+    const b = cenario(fam({ criado_em: '2026-09-24T12:09:00Z' }));
+    expect(await haFamiliaEmVoo(b.admin, 'org', '00000100', agora)).toBe(true);
+    expect(b.apagados).toEqual([]);
+  });
+  it.each([
+    ['com variações', fam(), [{ id: 'v1', familia_id: 'fo' }]],
+    ['sem intencao', fam({ mudanca_estrutural: { novas: [], removidas: [] } }), []],
+    ["status 'publicando'", fam({ status: 'publicando' }), []],
+    ['operação CREATE', fam({ operacao: 'CREATE' }), []],
+  ])('família em voo real (%s) → nunca apagada', async (_n, f, vars) => {
+    const b = cenario(f as Record<string, unknown>, vars as Array<Record<string, unknown>>);
+    expect(await haFamiliaEmVoo(b.admin, 'org', '00000100', agora)).toBe(true);
+    expect(b.apagados).toEqual([]);
+  });
+  it('erro na contagem de variações → nada apagado, 409 emVoo', async () => {
+    const b = cenario(fam(), [], ['variacoes']);
+    expect(await haFamiliaEmVoo(b.admin, 'org', '00000100', agora)).toBe(true);
+    expect(b.apagados).toEqual([]);
+  });
+  it('sem família em voo → uma consulta só, nada apagado', async () => {
+    const b = cenario(fam({ status: 'publicado' }));
+    expect(await haFamiliaEmVoo(b.admin, 'org', '00000100', agora)).toBe(false);
+    expect(b.apagados).toEqual([]);
+  });
+});
+
+describe('limparFamiliaOrfa', () => {
+  it('erro no count de famílias restantes → lote fica', async () => {
+    const b = bancoFake({ familias: [{ id: 'fo', lote_id: 'lo' }], lotes: [{ id: 'lo' }] }, ['familias']);
+    await limparFamiliaOrfa(b.admin, { id: 'fo', lote_id: 'lo' });
+    expect(b.apagados).toEqual(['familias:fo']);
   });
 });
 

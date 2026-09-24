@@ -259,6 +259,59 @@ export function decidirIncompleto(criadoEm: string, agora: Date): 'limpar' | 'ag
   return agora.getTime() - new Date(criadoEm).getTime() > 2 * 60_000 ? 'limpar' : 'aguardar';
 }
 
+/** Órfã DESTE fluxo (pré-filtro puro): 'pronto' + UPDATE + `intencao` gravada (só esta edge
+ *  escreve) + mais de 2 min. A contagem de variações (tem que ser 0) é conferida à parte. */
+export function candidataOrfa(
+  f: { status: unknown; operacao: unknown; criado_em: unknown; mudanca_estrutural: unknown }, agora: Date,
+): boolean {
+  const me = f.mudanca_estrutural as { intencao?: unknown } | null;
+  return f.status === 'pronto' && f.operacao === 'UPDATE' && Array.isArray(me?.intencao)
+    && decidirIncompleto(f.criado_em as string, agora) === 'limpar';
+}
+
+/** Limpeza de família órfã (mesma do caminho `varErr`): a família, e o lote só se não sobrar outra
+ *  família nele. Erro no count → o lote fica (prefere lixo a apagar lote alheio). */
+export async function limparFamiliaOrfa(admin: Admin, f: { id: string; lote_id: string }): Promise<void> {
+  await admin.from('familias').delete().eq('id', f.id);
+  const { count, error } = await admin.from('familias')
+    .select('id', { count: 'exact', head: true }).eq('lote_id', f.lote_id);
+  if (!error && count === 0) await admin.from('lotes').delete().eq('id', f.lote_id);
+}
+
+/** Antes do 409 do `emVoo`: uma órfã deste fluxo (1ª tentativa morreu entre o insert da família e
+ *  o das variações) travaria o produto para sempre — o front gera chave nova, então o retry não a
+ *  alcança. Fail-safe: erro em QUALQUER consulta → não apaga nada (o `emVoo` recusa normal). */
+export async function limparOrfasDoFluxo(
+  admin: Admin, orgId: string, codigoPai: string, agora: Date,
+): Promise<void> {
+  const { data: fams, error } = await admin.from('familias')
+    .select('id, lote_id, status, operacao, criado_em, mudanca_estrutural')
+    .eq('org_id', orgId).eq('codigo_pai', codigoPai).eq('status', 'pronto').eq('operacao', 'UPDATE');
+  if (error || !fams) return;
+  const orfas: Array<{ id: string; lote_id: string }> = [];
+  for (const f of fams.filter((x) => candidataOrfa(x, agora))) {
+    const { count, error: cErr } = await admin.from('variacoes')
+      .select('id', { count: 'exact', head: true }).eq('familia_id', f.id as string);
+    if (cErr || count == null) return;
+    if (count === 0) orfas.push({ id: f.id as string, lote_id: f.lote_id as string });
+  }
+  for (const f of orfas) await limparFamiliaOrfa(admin, f);
+}
+
+/** D-8 (`emVoo`): há família NÃO-TERMINAL para o codigo_pai? Só no caminho da recusa limpa as
+ *  órfãs deste fluxo e reavalia — o caminho feliz segue com UMA consulta, como sempre. */
+export async function haFamiliaEmVoo(admin: Admin, orgId: string, codigoPai: string, agora: Date): Promise<boolean> {
+  const consultar = async () => {
+    const { data } = await admin.from('familias').select('id')
+      .eq('org_id', orgId).eq('codigo_pai', codigoPai)
+      .not('status', 'in', '("publicado","erro")').limit(1);
+    return !!data && data.length > 0;
+  };
+  if (!(await consultar())) return false;
+  await limparOrfasDoFluxo(admin, orgId, codigoPai, agora);
+  return consultar();
+}
+
 const CANAL = 'mercado_livre';
 
 /** Família é User Products? MESMA detecção do worker (`update-familia-ml/processar.ts`, roteamento
