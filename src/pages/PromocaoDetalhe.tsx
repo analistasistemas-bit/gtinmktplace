@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { EmptyState } from '@/components/ui/empty-state';
 import { useItensPromocao, usePromocoes } from '@/hooks/usePromocoes';
 import { calcularMarkup } from '@/lib/markup';
-import { fmtBRL, fmtMarkup } from '@/lib/formato';
+import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
 import {
   URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type SemaforoPromo,
@@ -49,8 +49,8 @@ export default function PromocaoDetalhe() {
       cell: (r) => (
         <div className={`flex min-w-0 items-center gap-3 ${r.pior_semaforo === 'indisponivel' ? 'text-muted-foreground' : ''}`}>
           {r.thumbnail && <img src={r.thumbnail} alt="" className="size-10 shrink-0 rounded object-cover" loading="lazy" />}
-          <div className="min-w-0">
-            <p className="truncate">{r.titulo ?? r.ml_item_id}</p>
+          <div className="min-w-0 max-w-[18rem] xl:max-w-[26rem]">
+            <p className="truncate" title={r.titulo ?? r.ml_item_id}>{r.titulo ?? r.ml_item_id}</p>
             <p className="text-xs text-muted-foreground">{r.ml_item_id}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
           </div>
         </div>
@@ -68,7 +68,7 @@ export default function PromocaoDetalhe() {
       key: 'banca', header: 'ML banca', className: 'text-right tabular-nums',
       cell: (r) => r.ml_pct ? (
         <Tooltip>
-          <TooltipTrigger className="underline decoration-dotted">{r.ml_pct}%</TooltipTrigger>
+          <TooltipTrigger className="underline decoration-dotted">{fmtPct(r.ml_pct)}</TooltipTrigger>
           <TooltipContent>Parte do desconto paga pelo Mercado Livre — não incluída no líquido.</TooltipContent>
         </Tooltip>
       ) : '—',
@@ -88,13 +88,13 @@ export default function PromocaoDetalhe() {
       cell: (r) => { const c = corDeReferencia(r); return c && c.custo != null ? fmtMarkup(calcularMarkup(c.liquido!, c.custo).markup) : '—'; },
     },
     {
-      key: 'ate', header: 'Até quanto descer', className: 'text-right tabular-nums',
+      key: 'ate', header: 'Até quanto descer', className: 'whitespace-normal w-40 text-right leading-tight',
       cell: (r) => {
         if (r.preco_min == null || r.preco_max == null) return '—';
         const a = ateQuantoDaLinha(r);
         if (a.motivo === 'qualquer') return 'Qualquer preço da faixa';
         if (a.motivo === 'nenhum') return <span className="text-danger">Nenhum preço da faixa atinge o mínimo</span>;
-        return a.valor != null ? fmtBRL(a.valor) : '—';
+        return a.valor != null ? <span className="tabular-nums">{fmtBRL(a.valor)}</span> : '—';
       },
     },
     {
@@ -128,8 +128,10 @@ export default function PromocaoDetalhe() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" aria-pressed={semaforo == null} onClick={() => setSemaforo(null)}
-            className="min-h-11 rounded-full border px-3 text-sm tabular-nums aria-pressed:bg-muted aria-pressed:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-            Todos {daAba.length}
+            className="min-h-11 inline-flex items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-ring">
+            <StatusPill tone="neutral">
+              <span className="tabular-nums">Todos {daAba.length}</span>
+            </StatusPill>
           </button>
           <ContagemSemaforo contagem={contagem} ativo={semaforo} onFiltro={setSemaforo} />
         </div>

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/status-pill';
-import { fmtInt } from '@/lib/formato';
+import { fmtInt, fmtPct } from '@/lib/formato';
 import { ehCupom, emLeitura, prazoUrgente, rotuloTipo, type Promocao } from '@/lib/promocoes';
 import { ContagemSemaforo } from './contagem-semaforo';
 
@@ -28,7 +28,7 @@ export function CardCampanha({ promocao: p, agoraMs }: { promocao: Promocao; ago
             {p.status === 'started'
               ? `${fmtInt(p.contagem.participando)} participando · ${fmtInt(p.contagem.convidados)} convidados`
               : `${fmtInt(p.contagem.convidados)} anúncios convidados`}
-            {banca != null && ` · ML banca até ${banca}%`}
+            {banca != null && ` · ML banca até ${fmtPct(banca)}`}
           </p>
           <ContagemSemaforo contagem={p.contagem} />
           {p.contagem.participando_vermelho > 0 && (

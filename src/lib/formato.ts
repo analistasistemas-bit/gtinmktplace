@@ -40,6 +40,11 @@ export function fmtMarkup(m: number | null | undefined): string {
   return `${pct >= 0 ? '+' : ''}${pct}%`;
 }
 
+/** Percentual pt-BR, no máx. 1 casa (ex.: 1.911 → "1,9%", 2.13 → "2,1%", 30 → "30%"). */
+export function fmtPct(n: number): string {
+  return `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`;
+}
+
 /**
  * Parse de número em texto digitado no padrão pt-BR. `null` = campo vazio. `NaN` = texto
  * inválido — NUNCA vira "vazio" em silêncio, quem chama precisa tratar como erro.

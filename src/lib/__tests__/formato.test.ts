@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { fmtMilhar, parseNumeroPtBr } from '../formato';
+import { fmtMilhar, fmtPct, parseNumeroPtBr } from '../formato';
+
+describe('fmtPct', () => {
+  it.each([
+    [1.911, '1,9%'],
+    [2.13, '2,1%'],
+    [30, '30%'],
+    [0, '0%'],
+  ])('fmtPct(%s) === %s', (input, esperado) => {
+    expect(fmtPct(input)).toBe(esperado);
+  });
+});
 
 describe('fmtMilhar', () => {
   it('sem decimal (comportamento das telas que já usavam) arredonda o milhar', () => {
