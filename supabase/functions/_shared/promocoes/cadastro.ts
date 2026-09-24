@@ -51,6 +51,7 @@ export function montarCadastro(variacoes: LinhaVariacao[], itensUp: LinhaItemUp[
   for (const r of variacoes) {
     const fam = Array.isArray(r.familias) ? r.familias[0] : r.familias;
     const custo = numOuNull(r.custo);
+    const preco = numOuNull(r.preco);
     const origem: Origem = fam?.origem === 'nacional' || fam?.origem === 'importado' ? fam.origem : null;
     const altura = numOuNull(r.altura_cm), largura = numOuNull(r.largura_cm);
     const comprimento = numOuNull(r.comprimento_cm), peso = numOuNull(r.peso_gramas);
@@ -58,7 +59,7 @@ export function montarCadastro(variacoes: LinhaVariacao[], itensUp: LinhaItemUp[
     const val: CadastroVariacao = {
       variacao_id: r.id,
       custo: custo != null && custo > 0 ? custo : null,
-      piso: numOuNull(r.preco),
+      piso: preco != null && preco > 0 ? preco : null,
       origem,
       cor: r.cor,
       codigo: r.codigo,

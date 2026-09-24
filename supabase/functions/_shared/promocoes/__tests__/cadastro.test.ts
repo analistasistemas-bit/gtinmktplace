@@ -55,6 +55,13 @@ describe('resolverCor', () => {
     expect(r.piso).toBe(18);
   });
 
+  it('preço ≤0 vira piso null (evita verde falso com piso 0)', () => {
+    for (const preco of [0, -5]) {
+      const c = montarCadastro([v({ id: 'a', ml_variation_id: '1', preco })], []);
+      expect(resolverCor(c, { item_id: 'M', variation_id: 1, sku: null, gtin: null })!.piso).toBeNull();
+    }
+  });
+
   it('dimensões inválidas viram null (o frete usa o default do ML)', () => {
     const c = montarCadastro([v({ id: 'a', ml_variation_id: '1', altura_cm: null })], []);
     expect(resolverCor(c, { item_id: 'M', variation_id: 1, sku: null, gtin: null })!.dim).toBeNull();
