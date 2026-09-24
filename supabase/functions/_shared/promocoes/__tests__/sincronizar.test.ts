@@ -77,6 +77,15 @@ describe('projetarItem', () => {
     expect(l.projecao[0]).toMatchObject({ motivo: 'erro_tarifa', liquido: null, semaforo: 'indisponivel' });
   });
 
+  it('falha de tarifa deixa rastro no log (console.warn), sem mudar o resultado', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const cad = montarCadastro([linhaVar({ id: 'a' })], []);
+    const l = await projetarItem(item(), itemMl(), cad, aliq, async () => { throw new Error('estimada'); });
+    expect(l.projecao[0].motivo).toBe('erro_tarifa');
+    expect(warn).toHaveBeenCalledWith('[promocoes] tarifa indisponível', expect.objectContaining({ ml_item_id: item().ml_item_id, erro: 'estimada' }));
+    warn.mockRestore();
+  });
+
   it('item fora do multiget: sem categoria, sem líquido', async () => {
     const cad = montarCadastro([linhaVar({ id: 'a' })], []);
     const l = await projetarItem(item(), null, cad, aliq, async () => tarifa10);

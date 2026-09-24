@@ -7,7 +7,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CanalTabs } from '@/components/canal-tabs';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { useAtualizarPromocoes, useEstadoSyncPromocoes, usePromocoes } from '@/hooks/usePromocoes';
-import { abaDa, emLeitura, type AbaPromo } from '@/lib/promocoes';
+import { abaDa, emLeitura, sincronizandoAgora, type AbaPromo } from '@/lib/promocoes';
 import { CardCampanha } from '@/components/promocoes/card-campanha';
 import { PainelEstadoSync } from '@/components/promocoes/painel-estado-sync';
 
@@ -44,9 +44,7 @@ export default function Promocoes() {
     onSuccess: () => toast.success('Campanhas atualizadas. Buscando os anúncios de cada uma…'),
     onError: (e) => toast.error(e.message),
   });
-  // Execução que caiu no meio deixa 'sincronizando' para trás: só vale se começou há < 5 min.
-  const emCurso = estado.data?.estado === 'sincronizando'
-    && Date.now() - Date.parse(estado.data.iniciado_em ?? '') < 5 * 60_000;
+  const emCurso = sincronizandoAgora(estado.data ?? null, Date.now());
   const lendo = (promocoes.data ?? []).some((p) => emLeitura(p, Date.now()));
   // "Atualizado há" = última leitura de anúncios concluída (a lista sozinha não atualiza números).
   const ultimaLeitura = (promocoes.data ?? []).map((p) => p.itens_sincronizados_em)
@@ -70,7 +68,7 @@ export default function Promocoes() {
       />
       <CanalTabs canal={canal} onCanal={setCanal} habilitados={habilitados} />
       {!carregando && (
-        <PainelEstadoSync estado={estado.data ?? null} temDados={temDados} onAtualizar={onAtualizar} atualizando={sincronizando} />
+        <PainelEstadoSync estado={estado.data ?? null} temDados={temDados} onAtualizar={onAtualizar} atualizando={sincronizando} agoraMs={agora} />
       )}
 
       {promocoes.isLoading ? (

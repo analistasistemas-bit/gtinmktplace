@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   abaDa, ateQuantoDaLinha, corDeReferencia, descontoPct, ehCupom, emLeitura, filtrarItens, prazoUrgente,
-  rotuloSemLiquido, rotuloTipo, type CorProjetada, type ItemPromocao,
+  rotuloSemLiquido, rotuloTipo, sincronizandoAgora, type CorProjetada, type ItemPromocao,
 } from '../promocoes';
 
 const agora = Date.parse('2026-10-06T12:00:00Z');
@@ -75,5 +75,17 @@ describe('filtrarItens', () => {
     expect(filtrarItens(itens, { semaforo: null, participando: false }).map((i) => i.ml_item_id)).toEqual(['A', 'C']);
     expect(filtrarItens(itens, { semaforo: null, participando: true }).map((i) => i.ml_item_id)).toEqual(['B', 'D']);
     expect(filtrarItens(itens, { semaforo: 'vermelho', participando: false }).map((i) => i.ml_item_id)).toEqual(['C']);
+  });
+});
+
+describe('sincronizandoAgora', () => {
+  const e = (estado: 'sincronizando' | 'ok', iniciado_em: string | null) =>
+    ({ estado, iniciado_em, ultimo_ok_em: null, ultimo_erro_em: null, erro: null });
+  it('só vale se começou há < 5 min', () => {
+    expect(sincronizandoAgora(e('sincronizando', new Date(agora - 4 * 60_000).toISOString()), agora)).toBe(true);
+    expect(sincronizandoAgora(e('sincronizando', new Date(agora - 6 * 60_000).toISOString()), agora)).toBe(false);
+    expect(sincronizandoAgora(e('sincronizando', null), agora)).toBe(false);
+    expect(sincronizandoAgora(e('ok', new Date(agora).toISOString()), agora)).toBe(false);
+    expect(sincronizandoAgora(null, agora)).toBe(false);
   });
 });

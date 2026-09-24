@@ -14,7 +14,7 @@ import { mesmaRodada, type DepsLeitura, type DepsLista, type MsgLeitura } from '
 import type { Comissao } from '../preco/sugerir.ts';
 import type { Aliquotas, LinhaItem } from './tipos.ts';
 
-const TTL_S = 6 * 60 * 60;
+const TTL_S = 8 * 60 * 60; // > período do schedule (6 h): o run agendado seguinte ainda acha o cache quente
 const RESERVA_MIN = 30; // medir a duração da cadeia da 10.10 na Task 0 e ajustar (UI usa o mesmo valor em emLeitura)
 const MSG_INTERROMPIDA = 'A leitura anterior dos anúncios foi interrompida; os números podem estar incompletos.';
 
@@ -24,6 +24,9 @@ export class TarifaEstimada extends Error {}
 type Cx = { orgId: string; mlUserId: string; token: string };
 const falhou = (onde: string, e: { message: string } | null) => { if (e) throw new Error(`${onde}: ${e.message}`); };
 const urlWorker = () => `${Deno.env.get('SUPABASE_URL')}/functions/v1/sincronizar-promocoes`;
+/** Entrega duplicada do QStash não bifurca a cadeia: mesma mensagem → mesmo id (QStash aceita e descarta). */
+const dedupId = (m: MsgLeitura) =>
+  `${m.org_id}:${m.promocao_id}:${m.rodada}:${m.cursor ?? ''}`.replace(/[^A-Za-z0-9_-]/g, '_');
 
 async function lerAliquotas(admin: SupabaseClient, orgId: string): Promise<Aliquotas | null> {
   const { data, error } = await admin.from('configuracoes')
@@ -84,7 +87,7 @@ export function depsLista(admin: SupabaseClient, cx: Cx): DepsLista {
     },
 
     async enfileirar(m) {
-      await qstashClient().publishJSON({ url: urlWorker(), body: m, retries: 1 });
+      await qstashClient().publishJSON({ url: urlWorker(), body: m, retries: 1, deduplicationId: dedupId(m) });
     },
 
     avisar: () => avisarPromocoes(Date.now(), depsAlertas(admin, orgId)),
@@ -161,7 +164,8 @@ export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): Dep
     },
 
     async continuar(cursor) {
-      await qstashClient().publishJSON({ url: urlWorker(), body: { ...msg, cursor }, retries: 1 });
+      const m = { ...msg, cursor };
+      await qstashClient().publishJSON({ url: urlWorker(), body: m, retries: 1, deduplicationId: dedupId(m) });
     },
 
     async concluir() {

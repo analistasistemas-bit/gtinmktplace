@@ -36,7 +36,7 @@ export function CardCampanha({ promocao: p, agoraMs }: { promocao: Promocao; ago
           )}
         </>
       ) : (
-        <StatusPill tone="neutral">{p.erro ?? 'Anúncios ainda não lidos'}</StatusPill>
+        <StatusPill tone="neutral" title={p.erro ?? undefined}>{p.erro ? 'Não foi possível ler os anúncios' : 'Anúncios ainda não lidos'}</StatusPill>
       )}
       {emLeitura(p, agoraMs) && <StatusPill tone="info">Lendo anúncios…</StatusPill>}
       {p.erro && p.contagem && <StatusPill tone="neutral">Não foi possível ler os anúncios</StatusPill>}

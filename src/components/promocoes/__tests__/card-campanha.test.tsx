@@ -38,6 +38,18 @@ describe('CardCampanha', () => {
     expect(screen.queryByRole('link')).toBeNull();
   });
 
+  it('sem contagem e com erro: rótulo curto, texto técnico só no title', () => {
+    const erro = 'ML 500 em /seller-promotions/P-1/items';
+    renderCard({ ...base, contagem: null, erro });
+    expect(screen.queryByText(erro)).toBeNull();
+    expect(screen.getByText('Não foi possível ler os anúncios').closest('[title]')?.getAttribute('title')).toBe(erro);
+  });
+
+  it('sem contagem e sem erro: ainda não lidos', () => {
+    renderCard({ ...base, contagem: null });
+    expect(screen.getByText('Anúncios ainda não lidos')).toBeTruthy();
+  });
+
   it('nenhuma palavra proibida', () => {
     const { container } = renderCard(base);
     expect(container.textContent).not.toMatch(/margem|lucro|candidato/i);

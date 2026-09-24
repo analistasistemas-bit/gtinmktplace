@@ -76,4 +76,11 @@ describe('montarMensagemPromocoes', () => {
     expect(t).toContain('e mais 2');
     expect(t).not.toMatch(/margem|lucro/i);
   });
+
+  it('mostra a cor mais no prejuízo (menor líquido − custo), não a primeira', () => {
+    const p = promo('S', 'started', null);
+    const it = { ...item('S', 'A'), projecao: [{ liquido: 8, custo: 12 }, { liquido: 30, custo: 25 }, { liquido: 9, custo: 20 }] as never };
+    const t = montarMensagemPromocoes({ prejuizo: [{ promo: p, item: it }], prazo: [] });
+    expect(t).toMatch(/líquido R\$\s9,00, custo R\$\s20,00/);
+  });
 });

@@ -45,7 +45,8 @@ export function montarMensagemPromocoes(s: Selecao): string {
   if (s.prejuizo.length) {
     partes.push(`🔴 Promoções: ${s.prejuizo.length} anúncio(s) participando com líquido abaixo do custo`);
     for (const { promo, item } of s.prejuizo.slice(0, MAX_LISTADOS)) {
-      const pior = item.projecao.find((p) => p.liquido != null && p.custo != null && p.liquido < p.custo);
+      const pior = item.projecao.filter((p) => p.liquido != null && p.custo != null && p.liquido < p.custo)
+        .sort((a, b) => (a.liquido! - a.custo!) - (b.liquido! - b.custo!))[0];
       partes.push(`• ${item.titulo ?? item.ml_item_id} (${item.ml_item_id}) em ${promo.nome ?? promo.promocao_id}: ` +
         `preço ${brl(item.preco_avaliado)}, líquido ${brl(pior?.liquido)}, custo ${brl(pior?.custo)}`);
     }

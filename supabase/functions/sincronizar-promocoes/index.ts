@@ -28,15 +28,29 @@ async function conexaoDaOrg(admin: Admin, orgId: string) {
   return { orgId, mlUserId: conexao.contaExternaId, token: await getValidAccessTokenConexao(conexao) };
 }
 
+async function gravarSync(admin: Admin, linha: Record<string, unknown>) {
+  const { error } = await admin.from('ml_promocoes_sync').upsert(linha, { onConflict: 'org_id' });
+  if (error) throw new Error(`ml_promocoes_sync: ${error.message}`);
+}
+
 async function etapaLista(admin: Admin, orgId: string) {
   const { data: atual } = await admin.from('ml_promocoes_sync').select('estado, iniciado_em').eq('org_id', orgId).maybeSingle();
   const desde = atual?.iniciado_em ? Date.now() - Date.parse(atual.iniciado_em) : Infinity;
   if (atual?.estado === 'sincronizando' && desde < TRAVA_LISTA_MS) return { estado: 'sincronizando' as const, enfileiradas: [] };
   const rodada = new Date().toISOString();
-  await admin.from('ml_promocoes_sync').upsert({ org_id: orgId, estado: 'sincronizando', iniciado_em: rodada }, { onConflict: 'org_id' });
-  const cx = await conexaoDaOrg(admin, orgId).catch(() => null);
+  await gravarSync(admin, { org_id: orgId, estado: 'sincronizando', iniciado_em: rodada });
+  let cx: Awaited<ReturnType<typeof conexaoDaOrg>>;
+  try {
+    cx = await conexaoDaOrg(admin, orgId);
+  } catch (e) {
+    // Refresh do token/rede falhou: é falha transitória, não "sem conexão" (não mandar reconectar em Canais).
+    const erro = e instanceof Error ? e.message : String(e);
+    console.error('[sincronizar-promocoes] conexão ML', { orgId, erro });
+    await gravarSync(admin, { org_id: orgId, estado: 'erro', erro, ultimo_erro_em: new Date().toISOString() });
+    return { estado: 'erro' as const, enfileiradas: [] };
+  }
   if (!cx) {
-    await admin.from('ml_promocoes_sync').upsert({ org_id: orgId, estado: 'sem_acesso', erro: 'Organização sem conexão com o Mercado Livre.', ultimo_erro_em: new Date().toISOString() }, { onConflict: 'org_id' });
+    await gravarSync(admin, { org_id: orgId, estado: 'sem_acesso', erro: 'Organização sem conexão com o Mercado Livre.', ultimo_erro_em: new Date().toISOString() });
     return { estado: 'sem_acesso' as const, enfileiradas: [] };
   }
   return sincronizarLista(depsLista(admin, cx), { orgId, rodada });

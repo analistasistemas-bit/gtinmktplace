@@ -65,8 +65,8 @@ o Diego em 2026-09-24.
    recusa org sem o módulo (403) — esconder o menu não é a fronteira de segurança.
 9. **Dois alertas, com switch por org** `configuracoes.alertas_promocoes_ativo` (default `false`),
    destinatários = assinantes de `financeiro` via `notificarCategoria` (sem categoria nova):
-   (a) **participando no prejuízo** (item `started` com pior cor 🔴); (b) **prazo de adesão ≤ 48 h**
-   com convidados 🟢. Os alertas leem o banco (última leitura concluída) na etapa de lista. Dedup por
+   (a) **participando no prejuízo** (item `started` ou `pending` com pior cor 🔴); (b) **prazo de adesão ≤ 48 h**
+   com convidados 🟢 (`candidate` = convidado; `started` e `pending` = participando). Os alertas leem o banco (última leitura concluída) na etapa de lista. Dedup por
    `reservarNotificacao` (chave por promoção+item e por promoção). No máximo **uma mensagem agregada por
    org por sync** — o primeiro sync não vira avalanche (ADR-0121).
 10. **Cupom do vendedor** aparece como card informativo, sem líquido nem semáforo (depende do carrinho).
@@ -91,8 +91,8 @@ o Diego em 2026-09-24.
   fixo do "até quanto") — cache Redis separado para comissão e frete, lotes de 20 itens e concorrência
   limitada; o volume real da 10.10 (504) é medido antes do deploy.
 - Duas colunas de controle: `ml_promocoes.rodada_em_curso` (reserva da leitura, 30 min; toda escrita da leitura confere a posse) e
-  `ml_promocoes_sync.estado='sincronizando'` (trava da lista, 5 min). Só `candidate` (convidado) e
-  `started` (participando) contam; outro status do ML não é presumido.
+  `ml_promocoes_sync.estado='sincronizando'` (trava da lista, 5 min). `candidate` = convidado; `started` e
+  `pending` = participando; outro status do ML não é presumido.
 - A elegibilidade é por conta: lista vazia, conexão sem scope `offers` ou 403 são **estados** exibidos
   com explicação, nunca erro.
 - `promocoes` entra em `MENU_KEYS` (front e o espelho da edge `usuarios`), em `MODULOS` e no `MODULOS_VALIDOS` da edge `usuarios`; a migration faz o backfill de `profiles.allowed_menus` como no Pulse.

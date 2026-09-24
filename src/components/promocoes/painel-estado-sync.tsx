@@ -2,17 +2,19 @@ import { Link } from 'react-router-dom';
 import { BadgePercent, PlugZap } from 'lucide-react';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
-import type { EstadoSyncPromo } from '@/lib/promocoes';
+import { sincronizandoAgora, type EstadoSyncPromo } from '@/lib/promocoes';
 
 const hora = (iso: string | null) => (iso ? new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '—');
 
-export function PainelEstadoSync({ estado, temDados, onAtualizar, atualizando }: {
-  estado: EstadoSyncPromo | null; temDados: boolean; onAtualizar: () => void; atualizando: boolean;
+export function PainelEstadoSync({ estado, temDados, onAtualizar, atualizando, agoraMs }: {
+  estado: EstadoSyncPromo | null; temDados: boolean; onAtualizar: () => void; atualizando: boolean; agoraMs: number;
 }) {
-  if (estado?.estado === 'sincronizando' && !temDados) {
+  if (sincronizandoAgora(estado, agoraMs) && !temDados) {
     return <EmptyState icon={BadgePercent} title="Buscando as promoções no Mercado Livre…" description="Leva até 2 minutos." />;
   }
-  if (!estado && !temDados) {
+  // 'sincronizando' com mais de 5 min = execução que caiu: cai no erro anterior, se houver, ou em "nunca buscamos".
+  const parado = estado?.estado === 'sincronizando';
+  if ((!estado || (parado && !estado.erro)) && !temDados) {
     return (
       <EmptyState icon={BadgePercent} title="Ainda não buscamos as promoções desta conta."
         action={<Button onClick={onAtualizar} disabled={atualizando}>Buscar promoções agora</Button>} />
@@ -39,7 +41,7 @@ export function PainelEstadoSync({ estado, temDados, onAtualizar, atualizando }:
       </div>
     );
   }
-  if (estado?.estado === 'erro') {
+  if (estado?.estado === 'erro' || (parado && !temDados)) {
     return (
       <EmptyState icon={BadgePercent} title="Não foi possível buscar as promoções."
         description={estado.erro ?? undefined}

@@ -61,6 +61,12 @@ export function emLeitura(p: Pick<Promocao, 'rodada_em_curso'>, agoraMs: number)
   return Number.isFinite(t) && agoraMs - t < 30 * 60_000;
 }
 
+/** A etapa de lista está rodando: execução que caiu no meio deixa 'sincronizando' para trás, só vale se começou há < 5 min
+ *  (TRAVA_LISTA_MS do worker). */
+export function sincronizandoAgora(e: Pick<EstadoSyncPromo, 'estado' | 'iniciado_em'> | null, agoraMs: number): boolean {
+  return e?.estado === 'sincronizando' && agoraMs - Date.parse(e.iniciado_em ?? '') < 5 * 60_000;
+}
+
 export function descontoPct(original: number | null, promo: number | null): number | null {
   if (original == null || promo == null || original <= 0) return null;
   return Math.round((1 - promo / original) * 100);

@@ -90,8 +90,9 @@ async function projetarCor(
   let t: Tarifa;
   try {
     t = await tarifaNo(preco!);
-  } catch {
+  } catch (e) {
     // Inclui TarifaEstimada: comissão/frete que o ML não informou NUNCA vira zero (ADR-0170 §7).
+    console.warn('[promocoes] tarifa indisponível', { ml_item_id: it.ml_item_id, variation_id: c.variation_id, erro: mensagem(e) });
     return { ...base, motivo: 'erro_tarifa' };
   }
   const liquido = liquidoNoPreco(preco!, t, aliquotaPct);
@@ -99,7 +100,10 @@ async function projetarCor(
   if (it.status === 'candidate' && it.preco_min != null && it.preco_max != null) {
     try {
       ate = await ateQuantoDescer({ piso, aliquotaPct, min: it.preco_min, max: it.preco_max }, tarifaNo);
-    } catch { /* sem "até quanto"; o líquido no preço avaliado continua válido */ }
+    } catch (e) {
+      // sem "até quanto"; o líquido no preço avaliado continua válido
+      console.warn('[promocoes] até quanto indisponível', { ml_item_id: it.ml_item_id, variation_id: c.variation_id, erro: mensagem(e) });
+    }
   }
   return {
     ...base, comissao_pct: t.comissao.percentual, comissao_fixa: t.comissao.fixa, frete: t.frete,
