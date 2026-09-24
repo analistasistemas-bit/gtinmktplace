@@ -17,7 +17,7 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { codigosJaUsados, derivarCodigosSku } from '../_shared/produto/codigos.ts';
 import {
-  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirRetry,
+  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirIncompleto, decidirRetry,
   type IntencaoGravada, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   precoPublicacaoNova, resolverFotoHerdada, validarEntrada, validarGrade, type VariacaoNovaEntrada,
 } from './processar.ts';
@@ -89,7 +89,7 @@ Deno.serve(async (req) => {
   // 'pronto'/'erro'; família já 'publicando'/'publicado' vira no-op e reportamos true, que aí
   // é observação, não previsão).
   const { data: jaExistente } = await admin.from('familias')
-    .select('id, lote_id, status, mudanca_estrutural').eq('org_id', orgId).eq('chave_cadastro', chave).maybeSingle();
+    .select('id, lote_id, status, criado_em, mudanca_estrutural').eq('org_id', orgId).eq('chave_cadastro', chave).maybeSingle();
   if (jaExistente) {
     // Ledger no retry (Codex #3, r2 #2): confere o body contra a intenção GRAVADA na criação e
     // reaplica o estoque com as quantidades DELA (p_ref idempotente → no-op no que já entrou).
@@ -102,7 +102,19 @@ Deno.serve(async (req) => {
       if (persErr) return json({ error: `Falha conferindo a solicitação anterior: ${persErr.message}` }, 500);
       const decisao = decidirRetry(mudanca.intencao, variacoesEntrada, (persistidas ?? []).map((v) => v.codigo as string));
       // Retry caiu entre o insert da família e o das variações: a 1ª tentativa ainda está em voo.
-      if (decisao.tipo === 'incompleto') return json({ error: 'Solicitação em andamento. Tente novamente.' }, 409);
+      if (decisao.tipo === 'incompleto') {
+        // Insert multi-row é atômico → incompleto = 0 variações. Órfã antiga (a 1ª tentativa
+        // morreu) travaria o produto para sempre: o `emVoo` a enxerga em 'pronto' e barra até
+        // chave nova. Limpa como o caminho `varErr`; recente ainda pode estar em voo → aguarda.
+        if (decidirIncompleto(jaExistente.criado_em as string, new Date()) === 'aguardar') {
+          return json({ error: 'Solicitação em andamento. Tente novamente.' }, 409);
+        }
+        await admin.from('familias').delete().eq('id', jaExistente.id as string);
+        const { count: outras } = await admin.from('familias')
+          .select('id', { count: 'exact', head: true }).eq('lote_id', jaExistente.lote_id as string);
+        if (outras === 0) await admin.from('lotes').delete().eq('id', jaExistente.lote_id as string);
+        return json({ error: 'A tentativa anterior não terminou. Tente novamente.' }, 409);
+      }
       if (decisao.tipo === 'divergente') {
         return json({ error: 'Esta solicitação difere da original. Recarregue a tela e confira o produto antes de reenviar.' }, 409);
       }

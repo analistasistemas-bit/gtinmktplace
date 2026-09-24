@@ -253,6 +253,12 @@ export function decidirRetry(
   return { tipo: 'reaplicar', itens: intencao.map((it) => ({ codigo: it.codigo, qtd: it.estoqueInicial, custo: it.custo })) };
 }
 
+/** Retry `incompleto`: família da chave sem as variações. Com mais de 2 min a 1ª tentativa
+ *  morreu (a edge não leva isso) → `limpar`; antes disso pode estar em voo → `aguardar`. */
+export function decidirIncompleto(criadoEm: string, agora: Date): 'limpar' | 'aguardar' {
+  return agora.getTime() - new Date(criadoEm).getTime() > 2 * 60_000 ? 'limpar' : 'aguardar';
+}
+
 const CANAL = 'mercado_livre';
 
 /** Família é User Products? MESMA detecção do worker (`update-familia-ml/processar.ts`, roteamento

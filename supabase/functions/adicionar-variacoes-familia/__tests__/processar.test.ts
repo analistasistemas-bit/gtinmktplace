@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
-  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirRetry,
+  aplicarEstoqueInicial, carregarContextoGrade, clonarFamilia, clonarVariacao, decidirIncompleto, decidirRetry,
   detectarUP, familiaTemTamanho, montarVariacaoNova, normalizarCodigo8, normalizarIntencao,
   precoPublicacaoNova, resolverFotoHerdada, STRIP_FAMILIA, STRIP_VARIACAO, validarEntrada,
   validarGrade, type VariacaoNovaEntrada,
@@ -566,6 +566,17 @@ describe('aplicarEstoqueInicial', () => {
       p_org: 'org', p_codigo: '00000002', p_qtd: 1, p_custo: 5, p_doc: 'Variação adicionada',
       p_obs: null, p_criado_por: 'u', p_ref: 'addvar:fam:00000002',
     });
+  });
+});
+
+describe('decidirIncompleto (órfã não pode travar o produto via emVoo)', () => {
+  const agora = new Date('2026-09-24T12:10:00Z');
+  it('órfã com mais de 2 min → limpar', () => {
+    expect(decidirIncompleto('2026-09-24T12:07:59Z', agora)).toBe('limpar');
+  });
+  it('órfã recente (até 2 min) → aguardar', () => {
+    expect(decidirIncompleto('2026-09-24T12:09:00Z', agora)).toBe('aguardar');
+    expect(decidirIncompleto('2026-09-24T12:08:00Z', agora)).toBe('aguardar');
   });
 });
 
