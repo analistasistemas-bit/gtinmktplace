@@ -1,0 +1,1643 @@
+[
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB7190685332",
+   "title": "Renda Búfalo 37mm 50m | 100% Poliéster | Elegante E Versátil",
+   "category_id": "MLB271477",
+   "listing_type_id": "gold_pro",
+   "permalink": "https://produto.mercadolivre.com.br/MLB-7190685332-renda-bufalo-37mm-50m-100-poliester-elegante-e-versatil-_JM",
+   "thumbnail": "http://http2.mlstatic.com/D_701440-MLB113443636406_072026-I.webp",
+   "attributes": [
+    {
+     "id": "IS_DOUBLE_FACE",
+     "name": "É dupla face",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "MATERIAL",
+     "name": "Material",
+     "value_id": "4904381",
+     "value_name": "100% poliéster",
+     "values": [
+      {
+       "id": "4904381",
+       "name": "100% poliéster",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "RIBBON_FORMAT",
+     "name": "Formato da fita",
+     "value_id": "22691451",
+     "value_name": "Carretel",
+     "values": [
+      {
+       "id": "22691451",
+       "name": "Carretel",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "RIBBON_TYPE",
+     "name": "Tipo de fita",
+     "value_id": "21206106",
+     "value_name": "Renda",
+     "values": [
+      {
+       "id": "21206106",
+       "name": "Renda",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "BRAND",
+     "name": "Marca",
+     "value_id": "9165622",
+     "value_name": "Búfalo",
+     "values": [
+      {
+       "id": "9165622",
+       "name": "Búfalo",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "ITEM_CONDITION",
+     "name": "Condição do item",
+     "value_id": "2230284",
+     "value_name": "Novo",
+     "values": [
+      {
+       "id": "2230284",
+       "name": "Novo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "SELLER_PACKAGE_HEIGHT",
+     "name": "Altura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "3.6 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "3.6 cm",
+       "struct": {
+        "number": 3.6,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_LENGTH",
+     "name": "Comprimento da embalagem do vendor",
+     "value_id": null,
+     "value_name": "14 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "14 cm",
+       "struct": {
+        "number": 14,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WEIGHT",
+     "name": "Peso da embalagem do vendor",
+     "value_id": null,
+     "value_name": "117 g",
+     "values": [
+      {
+       "id": null,
+       "name": "117 g",
+       "struct": {
+        "number": 117,
+        "unit": "g"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WIDTH",
+     "name": "Largura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "14 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "14 cm",
+       "struct": {
+        "number": 14,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "UNITS_PER_PACK",
+     "name": "Quantidade de rendas",
+     "value_id": null,
+     "value_name": "1",
+     "values": [
+      {
+       "id": null,
+       "name": "1",
+       "struct": null
+      }
+     ],
+     "value_type": "number"
+    },
+    {
+     "id": "WIDTH",
+     "name": "Largura",
+     "value_id": null,
+     "value_name": "3.7 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "3.7 cm",
+       "struct": {
+        "number": 3.7,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    }
+   ],
+   "variations": [
+    {
+     "id": 205333585219,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": "52049",
+       "value_name": "Preto",
+       "values": [
+        {
+         "id": "52049",
+         "name": "Preto",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 187,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "701440-MLB113443636406_072026",
+      "719358-MLB114704336971_072026",
+      "759680-MLB113442758632_072026"
+     ],
+     "seller_custom_field": "02863707",
+     "catalog_product_id": null,
+     "attributes": [
+      {
+       "id": "GTIN",
+       "name": "Código universal de produto",
+       "value_id": null,
+       "value_name": "7890384051339",
+       "value_struct": null,
+       "values": [
+        {
+         "id": null,
+         "name": "7890384051339",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4353386280"
+    },
+    {
+     "id": 205333585221,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": "51993",
+       "value_name": "Vermelho",
+       "values": [
+        {
+         "id": "51993",
+         "name": "Vermelho",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 718,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "918462-MLB113442758840_072026",
+      "701440-MLB113443636406_072026",
+      "881696-MLB113443132772_072026"
+     ],
+     "seller_custom_field": "02863715",
+     "catalog_product_id": null,
+     "attributes": [
+      {
+       "id": "GTIN",
+       "name": "Código universal de produto",
+       "value_id": null,
+       "value_name": "7890384051346",
+       "value_struct": null,
+       "values": [
+        {
+         "id": null,
+         "name": "7890384051346",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4353380862"
+    },
+    {
+     "id": 205333585223,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": "52007",
+       "value_name": "Amarelo",
+       "values": [
+        {
+         "id": "52007",
+         "name": "Amarelo",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 48,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "934750-MLB113442759076_072026",
+      "701440-MLB113443636406_072026",
+      "741504-MLB113443619024_072026"
+     ],
+     "seller_custom_field": "02863723",
+     "catalog_product_id": null,
+     "attributes": [],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4330958711"
+    },
+    {
+     "id": 205333585225,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": "3377277",
+       "value_name": "Azul royal",
+       "values": [
+        {
+         "id": "3377277",
+         "name": "Azul royal",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 274,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "928418-MLB113442827604_072026",
+      "701440-MLB113443636406_072026",
+      "741504-MLB113443619024_072026"
+     ],
+     "seller_custom_field": "02863731",
+     "catalog_product_id": null,
+     "attributes": [
+      {
+       "id": "GTIN",
+       "name": "Código universal de produto",
+       "value_id": null,
+       "value_name": "7890384051360",
+       "value_struct": null,
+       "values": [
+        {
+         "id": null,
+         "name": "7890384051360",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4330955323"
+    },
+    {
+     "id": 205333585227,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": "17105815",
+       "value_name": "verde bandeira",
+       "values": [
+        {
+         "id": "17105815",
+         "name": "verde bandeira",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 354,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "908952-MLB113442827726_072026",
+      "701440-MLB113443636406_072026",
+      "741504-MLB113443619024_072026"
+     ],
+     "seller_custom_field": "02863740",
+     "catalog_product_id": null,
+     "attributes": [],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4353380870"
+    },
+    {
+     "id": 205333585229,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": "52038",
+       "value_name": "Lilás",
+       "values": [
+        {
+         "id": "52038",
+         "name": "Lilás",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 596,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "658200-MLB113442760362_072026",
+      "701440-MLB113443636406_072026",
+      "741504-MLB113443619024_072026"
+     ],
+     "seller_custom_field": "02863758",
+     "catalog_product_id": null,
+     "attributes": [
+      {
+       "id": "GTIN",
+       "name": "Código universal de produto",
+       "value_id": null,
+       "value_name": "7890384051377",
+       "value_struct": null,
+       "values": [
+        {
+         "id": null,
+         "name": "7890384051377",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4330955333"
+    },
+    {
+     "id": 205333585231,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": "52000",
+       "value_name": "Laranja",
+       "values": [
+        {
+         "id": "52000",
+         "name": "Laranja",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 283,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "735578-MLB113442829008_072026",
+      "701440-MLB113443636406_072026",
+      "741504-MLB113443619024_072026"
+     ],
+     "seller_custom_field": "02863766",
+     "catalog_product_id": null,
+     "attributes": [],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4353380884"
+    },
+    {
+     "id": 205333585233,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": "13830284",
+       "value_name": "Verde Neon",
+       "values": [
+        {
+         "id": "13830284",
+         "name": "Verde Neon",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 341,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "717985-MLB113442829342_072026",
+      "701440-MLB113443636406_072026",
+      "741504-MLB113443619024_072026"
+     ],
+     "seller_custom_field": "02863774",
+     "catalog_product_id": null,
+     "attributes": [],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4353386296"
+    },
+    {
+     "id": 205333585235,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": null,
+       "value_name": "Rosa Neon",
+       "values": [
+        {
+         "id": null,
+         "name": "Rosa Neon",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 719,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "682531-MLB113442802068_072026",
+      "701440-MLB113443636406_072026",
+      "741504-MLB113443619024_072026"
+     ],
+     "seller_custom_field": "02863782",
+     "catalog_product_id": null,
+     "attributes": [],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4353380890"
+    },
+    {
+     "id": 205333585237,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": "51994",
+       "value_name": "Rosa",
+       "values": [
+        {
+         "id": "51994",
+         "name": "Rosa",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 300,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "896945-MLB113442802768_072026",
+      "701440-MLB113443636406_072026",
+      "741504-MLB113443619024_072026"
+     ],
+     "seller_custom_field": "02863790",
+     "catalog_product_id": null,
+     "attributes": [
+      {
+       "id": "GTIN",
+       "name": "Código universal de produto",
+       "value_id": null,
+       "value_name": "7890384051216",
+       "value_struct": null,
+       "values": [
+        {
+         "id": null,
+         "name": "7890384051216",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4353386300"
+    },
+    {
+     "id": 205333585239,
+     "price": 58,
+     "attribute_combinations": [
+      {
+       "id": "COLOR",
+       "name": "Cor",
+       "value_id": null,
+       "value_name": "Outra",
+       "values": [
+        {
+         "id": null,
+         "name": "Outra",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "available_quantity": 708,
+     "sold_quantity": 0,
+     "sale_terms": [],
+     "picture_ids": [
+      "963100-MLB113442762018_072026",
+      "701440-MLB113443636406_072026",
+      "741504-MLB113443619024_072026"
+     ],
+     "seller_custom_field": "02863880",
+     "catalog_product_id": null,
+     "attributes": [
+      {
+       "id": "GTIN",
+       "name": "Código universal de produto",
+       "value_id": null,
+       "value_name": "7890384051223",
+       "value_struct": null,
+       "values": [
+        {
+         "id": null,
+         "name": "7890384051223",
+         "struct": null
+        }
+       ],
+       "value_type": "string"
+      }
+     ],
+     "inventory_id": null,
+     "item_relations": [],
+     "user_product_id": "MLBU4330958727"
+    }
+   ],
+   "seller_custom_field": null
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB7655821140",
+   "title": "Fita Natalina Aramada Búfalo 3,8cm X 9,14m Luxo Vermelho 11",
+   "category_id": "MLB255054",
+   "listing_type_id": "gold_special",
+   "permalink": "https://produto.mercadolivre.com.br/MLB-7655821140-fita-natalina-aramada-bufalo-38cm-x-914m-luxo-vermelho-11-_JM",
+   "thumbnail": "http://http2.mlstatic.com/D_786629-MLB117803279891_092026-I.jpg",
+   "attributes": [
+    {
+     "id": "ITEM_CONDITION",
+     "name": "Condição do item",
+     "value_id": "2230284",
+     "value_name": "Novo",
+     "values": [
+      {
+       "id": "2230284",
+       "name": "Novo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "BRAND",
+     "name": "Marca",
+     "value_id": null,
+     "value_name": "BUFALO",
+     "values": [
+      {
+       "id": null,
+       "name": "BUFALO",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "COLOR",
+     "name": "Cor",
+     "value_id": null,
+     "value_name": "Vermelho 11",
+     "values": [
+      {
+       "id": null,
+       "name": "Vermelho 11",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "EMPTY_GTIN_REASON",
+     "name": "Motivo de GTIN vazio",
+     "value_id": "17055160",
+     "value_name": "O produto não tem código cadastrado",
+     "values": [
+      {
+       "id": "17055160",
+       "name": "O produto não tem código cadastrado",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "IS_DOUBLE_FACE",
+     "name": "É dupla face",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "LENGTH",
+     "name": "Comprimento",
+     "value_id": null,
+     "value_name": "9.14 m",
+     "values": [
+      {
+       "id": null,
+       "name": "9.14 m",
+       "struct": {
+        "number": 9.14,
+        "unit": "m"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "MODEL",
+     "name": "Modelo",
+     "value_id": null,
+     "value_name": "ART P/FES FITA ARM ENF DE NATAL 6,3CMX914CM 10JDS",
+     "values": [
+      {
+       "id": null,
+       "name": "ART P/FES FITA ARM ENF DE NATAL 6,3CMX914CM 10JDS",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "RIBBON_FORMAT",
+     "name": "Formato da fita",
+     "value_id": "5038980",
+     "value_name": "Rolo",
+     "values": [
+      {
+       "id": "5038980",
+       "name": "Rolo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "RIBBON_TYPE",
+     "name": "Tipo de fita",
+     "value_id": "22691456",
+     "value_name": "Fita",
+     "values": [
+      {
+       "id": "22691456",
+       "name": "Fita",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "SELLER_PACKAGE_HEIGHT",
+     "name": "Altura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "19 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "19 cm",
+       "struct": {
+        "number": 19,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_LENGTH",
+     "name": "Comprimento da embalagem do vendor",
+     "value_id": null,
+     "value_name": "6 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "6 cm",
+       "struct": {
+        "number": 6,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WEIGHT",
+     "name": "Peso da embalagem do vendor",
+     "value_id": null,
+     "value_name": "88 g",
+     "values": [
+      {
+       "id": null,
+       "name": "88 g",
+       "struct": {
+        "number": 88,
+        "unit": "g"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WIDTH",
+     "name": "Largura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "15 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "15 cm",
+       "struct": {
+        "number": 15,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "UNITS_PER_PACK",
+     "name": "Quantidade de fitas",
+     "value_id": null,
+     "value_name": "1",
+     "values": [
+      {
+       "id": null,
+       "name": "1",
+       "struct": null
+      }
+     ],
+     "value_type": "number"
+    },
+    {
+     "id": "WIDTH",
+     "name": "Largura",
+     "value_id": null,
+     "value_name": "6.3 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "6.3 cm",
+       "struct": {
+        "number": 6.3,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    }
+   ],
+   "variations": [],
+   "seller_custom_field": "02972557"
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB7638610798",
+   "title": "Fita Natalina Aramada Búfalo 3,8cm X 9,14m Estampada Vermelho",
+   "category_id": "MLB255054",
+   "listing_type_id": "gold_special",
+   "permalink": "https://produto.mercadolivre.com.br/MLB-7638610798-fita-natalina-aramada-bufalo-38cm-x-914m-estampada-vermelho-_JM",
+   "thumbnail": "http://http2.mlstatic.com/D_654275-MLB116165697184_092026-I.jpg",
+   "attributes": [
+    {
+     "id": "ITEM_CONDITION",
+     "name": "Condição do item",
+     "value_id": "2230284",
+     "value_name": "Novo",
+     "values": [
+      {
+       "id": "2230284",
+       "name": "Novo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "BRAND",
+     "name": "Marca",
+     "value_id": "9165622",
+     "value_name": "Búfalo",
+     "values": [
+      {
+       "id": "9165622",
+       "name": "Búfalo",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "COLOR",
+     "name": "Cor",
+     "value_id": "51993",
+     "value_name": "Vermelho",
+     "values": [
+      {
+       "id": "51993",
+       "name": "Vermelho",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "EMPTY_GTIN_REASON",
+     "name": "Motivo de GTIN vazio",
+     "value_id": "17055160",
+     "value_name": "O produto não tem código cadastrado",
+     "values": [
+      {
+       "id": "17055160",
+       "name": "O produto não tem código cadastrado",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "IS_DOUBLE_FACE",
+     "name": "É dupla face",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "LENGTH",
+     "name": "Comprimento",
+     "value_id": null,
+     "value_name": "9.14 m",
+     "values": [
+      {
+       "id": null,
+       "name": "9.14 m",
+       "struct": {
+        "number": 9.14,
+        "unit": "m"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "MODEL",
+     "name": "Modelo",
+     "value_id": null,
+     "value_name": "ART P/ FES FITA ARM ENF DE NATAL 3,8CMX914CM 10JDS",
+     "values": [
+      {
+       "id": null,
+       "name": "ART P/ FES FITA ARM ENF DE NATAL 3,8CMX914CM 10JDS",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "RIBBON_FORMAT",
+     "name": "Formato da fita",
+     "value_id": "5038980",
+     "value_name": "Rolo",
+     "values": [
+      {
+       "id": "5038980",
+       "name": "Rolo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "RIBBON_TYPE",
+     "name": "Tipo de fita",
+     "value_id": "22691456",
+     "value_name": "Fita",
+     "values": [
+      {
+       "id": "22691456",
+       "name": "Fita",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "SELLER_PACKAGE_HEIGHT",
+     "name": "Altura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "18 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "18 cm",
+       "struct": {
+        "number": 18,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_LENGTH",
+     "name": "Comprimento da embalagem do vendor",
+     "value_id": null,
+     "value_name": "5 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "5 cm",
+       "struct": {
+        "number": 5,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WEIGHT",
+     "name": "Peso da embalagem do vendor",
+     "value_id": null,
+     "value_name": "50 g",
+     "values": [
+      {
+       "id": null,
+       "name": "50 g",
+       "struct": {
+        "number": 50,
+        "unit": "g"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WIDTH",
+     "name": "Largura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "15 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "15 cm",
+       "struct": {
+        "number": 15,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "UNITS_PER_PACK",
+     "name": "Quantidade de fitas",
+     "value_id": null,
+     "value_name": "1",
+     "values": [
+      {
+       "id": null,
+       "name": "1",
+       "struct": null
+      }
+     ],
+     "value_type": "number"
+    },
+    {
+     "id": "WIDTH",
+     "name": "Largura",
+     "value_id": null,
+     "value_name": "3.8 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "3.8 cm",
+       "struct": {
+        "number": 3.8,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    }
+   ],
+   "variations": [],
+   "seller_custom_field": "02787350"
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB7655689128",
+   "title": "Fita Natalina Aramada Búfalo 3,8cm X 9,14m Luxo Amarelo Ouro 4",
+   "category_id": "MLB255054",
+   "listing_type_id": "gold_special",
+   "permalink": "https://produto.mercadolivre.com.br/MLB-7655689128-fita-natalina-aramada-bufalo-38cm-x-914m-luxo-amarelo-ouro-4-_JM",
+   "thumbnail": "http://http2.mlstatic.com/D_693210-MLB116309444756_092026-I.jpg",
+   "attributes": [
+    {
+     "id": "ITEM_CONDITION",
+     "name": "Condição do item",
+     "value_id": "2230284",
+     "value_name": "Novo",
+     "values": [
+      {
+       "id": "2230284",
+       "name": "Novo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "BRAND",
+     "name": "Marca",
+     "value_id": null,
+     "value_name": "BUFALO",
+     "values": [
+      {
+       "id": null,
+       "name": "BUFALO",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "COLOR",
+     "name": "Cor",
+     "value_id": null,
+     "value_name": "Amarelo Ouro 4",
+     "values": [
+      {
+       "id": null,
+       "name": "Amarelo Ouro 4",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "EMPTY_GTIN_REASON",
+     "name": "Motivo de GTIN vazio",
+     "value_id": "17055160",
+     "value_name": "O produto não tem código cadastrado",
+     "values": [
+      {
+       "id": "17055160",
+       "name": "O produto não tem código cadastrado",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "IS_DOUBLE_FACE",
+     "name": "É dupla face",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "LENGTH",
+     "name": "Comprimento",
+     "value_id": null,
+     "value_name": "9.14 m",
+     "values": [
+      {
+       "id": null,
+       "name": "9.14 m",
+       "struct": {
+        "number": 9.14,
+        "unit": "m"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "MODEL",
+     "name": "Modelo",
+     "value_id": null,
+     "value_name": "ART P/FES FITA ARM ENF DE NATAL 6,3CMX914CM 10JDS",
+     "values": [
+      {
+       "id": null,
+       "name": "ART P/FES FITA ARM ENF DE NATAL 6,3CMX914CM 10JDS",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "RIBBON_FORMAT",
+     "name": "Formato da fita",
+     "value_id": "5038980",
+     "value_name": "Rolo",
+     "values": [
+      {
+       "id": "5038980",
+       "name": "Rolo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "RIBBON_TYPE",
+     "name": "Tipo de fita",
+     "value_id": "22691456",
+     "value_name": "Fita",
+     "values": [
+      {
+       "id": "22691456",
+       "name": "Fita",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "SELLER_PACKAGE_HEIGHT",
+     "name": "Altura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "19 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "19 cm",
+       "struct": {
+        "number": 19,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_LENGTH",
+     "name": "Comprimento da embalagem do vendor",
+     "value_id": null,
+     "value_name": "6 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "6 cm",
+       "struct": {
+        "number": 6,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WEIGHT",
+     "name": "Peso da embalagem do vendor",
+     "value_id": null,
+     "value_name": "88 g",
+     "values": [
+      {
+       "id": null,
+       "name": "88 g",
+       "struct": {
+        "number": 88,
+        "unit": "g"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WIDTH",
+     "name": "Largura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "15 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "15 cm",
+       "struct": {
+        "number": 15,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "UNITS_PER_PACK",
+     "name": "Quantidade de fitas",
+     "value_id": null,
+     "value_name": "1",
+     "values": [
+      {
+       "id": null,
+       "name": "1",
+       "struct": null
+      }
+     ],
+     "value_type": "number"
+    },
+    {
+     "id": "WIDTH",
+     "name": "Largura",
+     "value_id": null,
+     "value_name": "6.3 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "6.3 cm",
+       "struct": {
+        "number": 6.3,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    }
+   ],
+   "variations": [],
+   "seller_custom_field": "02930773"
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB7638610826",
+   "title": "Fita Natalina Aramada Búfalo 3,8cm X 9,14m Estampada Dourado",
+   "category_id": "MLB255054",
+   "listing_type_id": "gold_special",
+   "permalink": "https://produto.mercadolivre.com.br/MLB-7638610826-fita-natalina-aramada-bufalo-38cm-x-914m-estampada-dourado-_JM",
+   "thumbnail": "http://http2.mlstatic.com/D_933158-MLB116165614240_092026-I.jpg",
+   "attributes": [
+    {
+     "id": "ITEM_CONDITION",
+     "name": "Condição do item",
+     "value_id": "2230284",
+     "value_name": "Novo",
+     "values": [
+      {
+       "id": "2230284",
+       "name": "Novo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "BRAND",
+     "name": "Marca",
+     "value_id": "9165622",
+     "value_name": "Búfalo",
+     "values": [
+      {
+       "id": "9165622",
+       "name": "Búfalo",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "COLOR",
+     "name": "Cor",
+     "value_id": "283164",
+     "value_name": "Dourado",
+     "values": [
+      {
+       "id": "283164",
+       "name": "Dourado",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "GTIN",
+     "name": "Código universal de produto",
+     "value_id": null,
+     "value_name": "7890384057096",
+     "values": [
+      {
+       "id": null,
+       "name": "7890384057096",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "IS_DOUBLE_FACE",
+     "name": "É dupla face",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "LENGTH",
+     "name": "Comprimento",
+     "value_id": null,
+     "value_name": "9.14 m",
+     "values": [
+      {
+       "id": null,
+       "name": "9.14 m",
+       "struct": {
+        "number": 9.14,
+        "unit": "m"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "MODEL",
+     "name": "Modelo",
+     "value_id": null,
+     "value_name": "ART P/ FES FITA ARM ENF DE NATAL 3,8CMX914CM 10JDS",
+     "values": [
+      {
+       "id": null,
+       "name": "ART P/ FES FITA ARM ENF DE NATAL 3,8CMX914CM 10JDS",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "RIBBON_FORMAT",
+     "name": "Formato da fita",
+     "value_id": "5038980",
+     "value_name": "Rolo",
+     "values": [
+      {
+       "id": "5038980",
+       "name": "Rolo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "RIBBON_TYPE",
+     "name": "Tipo de fita",
+     "value_id": "22691456",
+     "value_name": "Fita",
+     "values": [
+      {
+       "id": "22691456",
+       "name": "Fita",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "SELLER_PACKAGE_HEIGHT",
+     "name": "Altura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "18 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "18 cm",
+       "struct": {
+        "number": 18,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_LENGTH",
+     "name": "Comprimento da embalagem do vendor",
+     "value_id": null,
+     "value_name": "5 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "5 cm",
+       "struct": {
+        "number": 5,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WEIGHT",
+     "name": "Peso da embalagem do vendor",
+     "value_id": null,
+     "value_name": "50 g",
+     "values": [
+      {
+       "id": null,
+       "name": "50 g",
+       "struct": {
+        "number": 50,
+        "unit": "g"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WIDTH",
+     "name": "Largura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "15 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "15 cm",
+       "struct": {
+        "number": 15,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "UNITS_PER_PACK",
+     "name": "Quantidade de fitas",
+     "value_id": null,
+     "value_name": "1",
+     "values": [
+      {
+       "id": null,
+       "name": "1",
+       "struct": null
+      }
+     ],
+     "value_type": "number"
+    },
+    {
+     "id": "WIDTH",
+     "name": "Largura",
+     "value_id": null,
+     "value_name": "3.8 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "3.8 cm",
+       "struct": {
+        "number": 3.8,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    }
+   ],
+   "variations": [],
+   "seller_custom_field": "02787385"
+  }
+ }
+]

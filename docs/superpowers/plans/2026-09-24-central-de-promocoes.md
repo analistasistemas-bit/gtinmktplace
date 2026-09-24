@@ -20,7 +20,7 @@
 - Vocabulário da UI: "Convidados", "Participando", "Líquido", "Markup", "ML banca", "Até quanto descer", "Sem custo no PubliAI". Proibido na UI: "margem", "lucro", "candidato", emoji.
 - Módulo: `'promocoes'`; menu: `'promocoes'`, rota `/promocoes` e `/promocoes/:promocaoId`, ícone lucide `BadgePercent`, logo após Publicados.
 - Switch de alertas: `configuracoes.alertas_promocoes_ativo boolean not null default false` + `grant select (alertas_promocoes_ativo) on public.configuracoes to authenticated`.
-- Status do item: **`candidate` = convidado, `started` = participando**; qualquer outro status é gravado mas não entra em contagem, filtro nem alerta.
+- Status do item: **`candidate` = convidado; `started` (no ar) e `pending` (inscrito numa campanha que ainda não começou — visto na 10.10, Task 0) = participando**; qualquer outro status é gravado mas não entra em contagem, filtro nem alerta.
 - Alertas: `notificarCategoria(admin, orgId, 'financeiro', texto)`; dedup `reservarNotificacao(admin, orgId, null, 'promo_prejuizo', '<promocao_id>:<ml_item_id>')` e `reservarNotificacao(admin, orgId, null, 'promo_prazo', '<promocao_id>')`; leem o **banco** (última leitura concluída) na etapa de lista; no máximo **1 mensagem por org por sync**.
 - Sync em duas etapas: **lista** por org (trava de 5 min por `ml_promocoes_sync.estado='sincronizando'`) e **leitura** por promoção (lotes de 20 itens, orçamento de **90 000 ms** por execução, continuação pelo último `ml_item_id` processado, reserva `ml_promocoes.rodada_em_curso` de 30 min; toda escrita da leitura confere a posse da rodada, comparando instantes, nunca texto). Throttle do botão: **2 min** desde `ml_promocoes_sync.iniciado_em`.
 - Migrations **só** via `supabase migration new` + `supabase db push` (ADR-0043). Nunca `apply_migration`/painel.
@@ -150,6 +150,9 @@ create policy "ml_promocoes: select org"      on public.ml_promocoes      for se
 create policy "ml_promocao_itens: select org" on public.ml_promocao_itens for select to authenticated using (org_id = (select public.current_org_id()));
 create policy "ml_promocoes_sync: select org" on public.ml_promocoes_sync for select to authenticated using (org_id = (select public.current_org_id()));
 grant select on public.ml_promocoes, public.ml_promocao_itens, public.ml_promocoes_sync to authenticated;
+-- Default privileges do Supabase dão ALL a anon/authenticated em tabela nova (precedente: 20260712142159_revoke_anon_ml_mensagens.sql).
+revoke all on public.ml_promocoes, public.ml_promocao_itens, public.ml_promocoes_sync from anon;
+revoke insert, update, delete, truncate, references, trigger on public.ml_promocoes, public.ml_promocao_itens, public.ml_promocoes_sync from authenticated;
 
 -- Switch dos alertas (nasce desligado). SELECT de configuracoes é por coluna desde 20260822131053.
 alter table public.configuracoes
@@ -227,6 +230,8 @@ export interface LinhaItem extends ItemPromocaoML {
 export interface Contagem {
   convidados: number; convidados_verde: number; participando: number; verde: number; amarelo: number;
   vermelho: number; indisponivel: number; participando_vermelho: number;
+  /** Maior parte do desconto bancada pelo ML entre os anúncios (meli_percentage); `benefits` da promoção vem nulo (Task 0). */
+  ml_pct_max: number | null;
 }
 ```
 
@@ -236,7 +241,7 @@ export interface Contagem {
 ```ts
 import { describe, expect, it } from 'vitest';
 import {
-  ateQuantoDescer, contar, liquidoNoPreco, piorSemaforo, precoAvaliado, semaforo,
+  ateQuantoDescer, contar, ehParticipando, liquidoNoPreco, piorSemaforo, precoAvaliado, semaforo,
 } from '../projecao.ts';
 import type { LinhaItem, Tarifa } from '../tipos.ts';
 
@@ -268,8 +273,11 @@ describe('precoAvaliado', () => {
     expect(precoAvaliado({ status: 'candidate', preco_sugerido: null, preco_promo: 45 })).toBe(45);
     expect(precoAvaliado({ status: 'candidate', preco_sugerido: null, preco_promo: null })).toBeNull();
   });
-  it('participando: o preço que está no ar', () => {
+  it('participando (no ar ou inscrito em campanha futura): o preço escolhido', () => {
     expect(precoAvaliado({ status: 'started', preco_sugerido: 49.9, preco_promo: 45 })).toBe(45);
+    expect(precoAvaliado({ status: 'pending', preco_sugerido: 49.9, preco_promo: 45 })).toBe(45);
+    expect(ehParticipando('candidate')).toBe(false);
+    expect(ehParticipando('finished')).toBe(false);
   });
 });
 
@@ -320,14 +328,20 @@ describe('ateQuantoDescer', () => {
 
 describe('contar', () => {
   const linha = (status: string, pior: LinhaItem['pior_semaforo']) => ({ status, pior_semaforo: pior }) as LinhaItem;
-  it('conta convidados, participando e o pior semáforo; status fora do glossário não conta', () => {
+  it('conta convidados, participando (started + pending) e o pior semáforo; outro status não conta', () => {
     expect(contar([
       linha('candidate', 'verde'), linha('candidate', 'indisponivel'),
-      linha('started', 'vermelho'), linha('started', 'amarelo'), linha('pending', 'verde'),
+      linha('started', 'vermelho'), linha('started', 'amarelo'), linha('pending', 'verde'), linha('finished', 'verde'),
     ])).toEqual({
-      convidados: 2, convidados_verde: 1, participando: 2, verde: 1, amarelo: 1, vermelho: 1, indisponivel: 1,
-      participando_vermelho: 1,
+      convidados: 2, convidados_verde: 1, participando: 3, verde: 2, amarelo: 1, vermelho: 1, indisponivel: 1,
+      participando_vermelho: 1, ml_pct_max: null,
     });
+  });
+
+  it('ml_pct_max = maior parte bancada pelo ML entre os anúncios contados', () => {
+    const l = (status: string, ml_pct: number | null) => ({ status, pior_semaforo: 'verde', ml_pct }) as LinhaItem;
+    expect(contar([l('candidate', 30), l('started', 10), l('candidate', null)]).ml_pct_max).toBe(30);
+    expect(contar([l('candidate', 0)]).ml_pct_max).toBeNull();
   });
 });
 ```
@@ -356,9 +370,14 @@ export function piorSemaforo(cores: Semaforo[]): Semaforo {
   return cores.reduce<Semaforo>((pior, s) => (PESO[s] > PESO[pior] ? s : pior), 'indisponivel');
 }
 
-/** Participando: o preço que está no ar (`price`). Convidado: o sugerido da faixa, senão o preço da promoção. */
+/** Convidado = `candidate`; participando = `started` (no ar) ou `pending` (inscrito, campanha ainda não começou). */
+export function ehParticipando(status: string): boolean {
+  return status === 'started' || status === 'pending';
+}
+
+/** Participando: o preço escolhido/no ar (`price`). Convidado: o sugerido da faixa, senão o preço da promoção. */
 export function precoAvaliado(it: { status: string; preco_sugerido: number | null; preco_promo: number | null }): number | null {
-  if (it.status === 'started') return it.preco_promo ?? it.preco_sugerido ?? null;
+  if (ehParticipando(it.status)) return it.preco_promo ?? it.preco_sugerido ?? null;
   return it.preco_sugerido ?? it.preco_promo ?? null;
 }
 
@@ -389,16 +408,17 @@ export async function ateQuantoDescer(
   return melhor <= a.min ? { valor: null, motivo: 'qualquer' } : { valor: melhor, motivo: null };
 }
 
-/** Só `candidate` (convidado) e `started` (participando) contam — outro status do ML não é presumido. */
-export function contar(linhas: Pick<LinhaItem, 'status' | 'pior_semaforo'>[]): Contagem {
-  const c: Contagem = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0 };
+/** Só convidado e participando contam — outro status do ML não é presumido. */
+export function contar(linhas: Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_pct'>[]): Contagem {
+  const c: Contagem = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0, ml_pct_max: null };
   for (const l of linhas) {
-    const participa = l.status === 'started';
+    const participa = ehParticipando(l.status);
     if (!participa && l.status !== 'candidate') continue;
     if (participa) c.participando++; else c.convidados++;
     c[l.pior_semaforo]++;
     if (participa && l.pior_semaforo === 'vermelho') c.participando_vermelho++;
     if (!participa && l.pior_semaforo === 'verde') c.convidados_verde++;
+    if (l.ml_pct != null && l.ml_pct > 0) c.ml_pct_max = Math.max(c.ml_pct_max ?? 0, l.ml_pct);
   }
   return c;
 }
@@ -1609,8 +1629,8 @@ export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): Dep
       const del = await admin.from('ml_promocao_itens').delete()
         .eq('org_id', orgId).eq('promocao_id', msg.promocao_id).lt('sincronizado_em', msg.rodada);
       falhou('concluir.delete', del.error);
-      const linhas = await paginarTudo<Pick<LinhaItem, 'status' | 'pior_semaforo'>>((de, ate) => admin.from('ml_promocao_itens')
-        .select('ml_item_id, status, pior_semaforo').eq('org_id', orgId).eq('promocao_id', msg.promocao_id)
+      const linhas = await paginarTudo<Pick<LinhaItem, 'status' | 'pior_semaforo' | 'ml_pct'>>((de, ate) => admin.from('ml_promocao_itens')
+        .select('ml_item_id, status, pior_semaforo, ml_pct').eq('org_id', orgId).eq('promocao_id', msg.promocao_id)
         .order('ml_item_id').range(de, ate) as never);
       // PostgREST compara timestamptz pelo instante: `eq` com o texto da mensagem funciona.
       const upd = await admin.from('ml_promocoes')
@@ -1654,7 +1674,7 @@ export interface ItemAlerta { promocao_id: string; ml_item_id: string; titulo: s
 export interface DepsAlertas {
   ativo(): Promise<boolean>;
   lerPromocoes(): Promise<PromoAlerta[]>;               // status pending/started
-  lerParticipandoNoPrejuizo(): Promise<ItemAlerta[]>;   // status 'started' e pior 'vermelho'
+  lerParticipandoNoPrejuizo(): Promise<ItemAlerta[]>;   // status 'started'/'pending' e pior 'vermelho'
   reservar(entidade: 'promo_prejuizo' | 'promo_prazo', chave: string): Promise<boolean>;
   notificar(texto: string): Promise<number>;
 }
@@ -1676,7 +1696,7 @@ import {
 
 const H = 3_600_000;
 const agora = Date.parse('2026-10-06T12:00:00Z');
-const contagem = (verdes: number) => ({ convidados: 5, convidados_verde: verdes, participando: 0, verde: verdes, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0 });
+const contagem = (verdes: number) => ({ convidados: 5, convidados_verde: verdes, participando: 0, verde: verdes, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0, ml_pct_max: null });
 const promo = (id: string, status: string, prazoHoras: number | null, verdes = 1): PromoAlerta => ({
   promocao_id: id, nome: `Campanha ${id}`, status, contagem: contagem(verdes),
   prazo_adesao: prazoHoras == null ? null : new Date(agora + prazoHoras * H).toISOString(),
@@ -1846,7 +1866,7 @@ export function depsAlertas(admin: SupabaseClient, orgId: string): DepsAlertas {
     async lerParticipandoNoPrejuizo() {
       const { data, error } = await admin.from('ml_promocao_itens')
         .select('promocao_id, ml_item_id, titulo, preco_avaliado, projecao')
-        .eq('org_id', orgId).eq('status', 'started').eq('pior_semaforo', 'vermelho').limit(500);
+        .eq('org_id', orgId).in('status', ['started', 'pending']).eq('pior_semaforo', 'vermelho').limit(500);
       if (error) throw new Error(`lerParticipandoNoPrejuizo: ${error.message}`);
       return (data ?? []) as ItemAlerta[];
     },
@@ -1986,7 +2006,7 @@ Sem a chave em `MENU_KEYS`, o admin libera o menu e a edge descarta a permissão
 ```ts
 // src/lib/promocoes.ts
 export type SemaforoPromo = 'verde' | 'amarelo' | 'vermelho' | 'indisponivel';
-export interface ContagemPromo { convidados: number; convidados_verde: number; participando: number; verde: number; amarelo: number; vermelho: number; indisponivel: number; participando_vermelho: number }
+export interface ContagemPromo { convidados: number; convidados_verde: number; participando: number; verde: number; amarelo: number; vermelho: number; indisponivel: number; participando_vermelho: number; ml_pct_max: number | null }
 export interface Promocao { promocao_id: string; tipo: string; nome: string | null; status: string; inicio: string | null; fim: string | null; prazo_adesao: string | null; beneficios: Record<string, unknown> | null; contagem: ContagemPromo | null; erro: string | null; itens_sincronizados_em: string | null; rodada_em_curso: string | null }
 export interface CorProjetada { variation_id: number | null; cor: string | null; sku: string | null; custo: number | null; piso: number | null; origem: string | null; liquido: number | null; ate_quanto: number | null; ate_quanto_motivo: 'qualquer' | 'nenhum' | null; semaforo: SemaforoPromo; motivo: string | null }
 export interface ItemPromocao { ml_item_id: string; status: string; preco_original: number | null; preco_promo: number | null; preco_min: number | null; preco_max: number | null; preco_sugerido: number | null; preco_avaliado: number | null; ml_pct: number | null; estoque_min: number | null; titulo: string | null; thumbnail: string | null; permalink: string | null; projecao: CorProjetada[]; pior_semaforo: SemaforoPromo }
@@ -1997,7 +2017,6 @@ export function ehCupom(tipo: string): boolean;
 export function abaDa(p: Pick<Promocao, 'status' | 'fim'>, agoraMs: number): AbaPromo | null;
 export function rotuloTipo(tipo: string): string;
 export function descontoPct(original: number | null, promo: number | null): number | null;
-export function mlBancaPct(beneficios: Record<string, unknown> | null): number | null;
 export function prazoUrgente(prazo: string | null, agoraMs: number): boolean;
 export function corDeReferencia(it: ItemPromocao): CorProjetada | null;
 export function ateQuantoDaLinha(it: ItemPromocao): { valor: number | null; motivo: 'qualquer' | 'nenhum' | null };
@@ -2018,7 +2037,7 @@ export function useAtualizarPromocoes(): UseMutationResult<unknown, Error, void>
 ```ts
 import { describe, expect, it } from 'vitest';
 import {
-  abaDa, ateQuantoDaLinha, corDeReferencia, descontoPct, ehCupom, emLeitura, mlBancaPct, prazoUrgente,
+  abaDa, ateQuantoDaLinha, corDeReferencia, descontoPct, ehCupom, emLeitura, prazoUrgente,
   rotuloSemLiquido, rotuloTipo, type CorProjetada, type ItemPromocao,
 } from '../promocoes';
 
@@ -2054,11 +2073,9 @@ describe('rótulos e números', () => {
     expect(rotuloTipo('LIGHTNING')).toBe('Relâmpago');
     expect(rotuloTipo('XYZ')).toBe('XYZ');
   });
-  it('desconto % arredondado, ML banca do bloco de benefícios', () => {
+  it('desconto % arredondado', () => {
     expect(descontoPct(59.9, 49.9)).toBe(17);
     expect(descontoPct(null, 49.9)).toBeNull();
-    expect(mlBancaPct({ meli_percent: 30 })).toBe(30);
-    expect(mlBancaPct(null)).toBeNull();
   });
   it('prazo urgente = adesão em até 48 h e ainda aberta', () => {
     expect(prazoUrgente(new Date(agora + 47 * 3_600_000).toISOString(), agora)).toBe(true);
@@ -2151,6 +2168,8 @@ export type SemaforoPromo = 'verde' | 'amarelo' | 'vermelho' | 'indisponivel';
 export interface ContagemPromo {
   convidados: number; convidados_verde: number; participando: number; verde: number; amarelo: number;
   vermelho: number; indisponivel: number; participando_vermelho: number;
+  /** Maior parte do desconto bancada pelo ML entre os anúncios (meli_percentage); `benefits` da promoção vem nulo (Task 0). */
+  ml_pct_max: number | null;
 }
 export interface Promocao {
   promocao_id: string; tipo: string; nome: string | null; status: string;
@@ -2207,11 +2226,6 @@ export function emLeitura(p: Pick<Promocao, 'rodada_em_curso'>, agoraMs: number)
 export function descontoPct(original: number | null, promo: number | null): number | null {
   if (original == null || promo == null || original <= 0) return null;
   return Math.round((1 - promo / original) * 100);
-}
-
-export function mlBancaPct(beneficios: Record<string, unknown> | null): number | null {
-  const n = Number(beneficios?.meli_percent);
-  return beneficios?.meli_percent == null || !Number.isFinite(n) ? null : n;
 }
 
 export function prazoUrgente(prazo: string | null, agoraMs: number): boolean {
@@ -2438,7 +2452,7 @@ const base: Promocao = {
   promocao_id: 'P-1', tipo: 'DEAL', nome: '10.10', status: 'pending', inicio: null, fim: null,
   prazo_adesao: new Date(agora + 24 * 3_600_000).toISOString(), beneficios: null, erro: null, itens_sincronizados_em: null,
   rodada_em_curso: null,
-  contagem: { convidados: 504, convidados_verde: 310, participando: 0, verde: 310, amarelo: 120, vermelho: 40, indisponivel: 34, participando_vermelho: 0 },
+  contagem: { convidados: 504, convidados_verde: 310, participando: 0, verde: 310, amarelo: 120, vermelho: 40, indisponivel: 34, participando_vermelho: 0, ml_pct_max: null },
 };
 const renderCard = (p: Promocao) => render(<MemoryRouter><CardCampanha promocao={p} agoraMs={agora} /></MemoryRouter>);
 
@@ -2454,6 +2468,11 @@ describe('CardCampanha', () => {
   it('participando no prejuízo aparece em destaque', () => {
     renderCard({ ...base, status: 'started', contagem: { ...base.contagem!, participando: 12, participando_vermelho: 2 } });
     expect(screen.getByText('2 participando com líquido abaixo do custo')).toBeTruthy();
+  });
+
+  it('ML banca: maior parte bancada entre os anúncios', () => {
+    renderCard({ ...base, contagem: { ...base.contagem!, ml_pct_max: 30 } });
+    expect(screen.getByText(/ML banca até 30%/)).toBeTruthy();
   });
 
   it('cupom: informativo, sem contagem e sem link', () => {
@@ -2520,7 +2539,7 @@ import { Link } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { fmtInt } from '@/lib/formato';
-import { ehCupom, emLeitura, mlBancaPct, prazoUrgente, rotuloTipo, type Promocao } from '@/lib/promocoes';
+import { ehCupom, emLeitura, prazoUrgente, rotuloTipo, type Promocao } from '@/lib/promocoes';
 import { ContagemSemaforo } from './contagem-semaforo';
 
 const STATUS: Record<string, string> = { started: 'Ativa', pending: 'Futura', finished: 'Encerrada' };
@@ -2528,7 +2547,7 @@ const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '
 
 export function CardCampanha({ promocao: p, agoraMs }: { promocao: Promocao; agoraMs: number }) {
   const cupom = ehCupom(p.tipo);
-  const banca = mlBancaPct(p.beneficios);
+  const banca = p.contagem?.ml_pct_max ?? null;
   const corpo = (
     <Card className="flex h-full flex-col gap-3 p-4 transition-colors group-hover:bg-muted/40">
       <div className="flex items-start justify-between gap-2">
@@ -2752,7 +2771,7 @@ describe('filtrarItens', () => {
   const itens = [it2('A', 'candidate', 'verde'), it2('B', 'started', 'vermelho'), it2('C', 'candidate', 'vermelho'), it2('D', 'pending', 'verde')];
   it('convidados × participando e semáforo', () => {
     expect(filtrarItens(itens, { semaforo: null, participando: false }).map((i) => i.ml_item_id)).toEqual(['A', 'C']);
-    expect(filtrarItens(itens, { semaforo: null, participando: true }).map((i) => i.ml_item_id)).toEqual(['B']);
+    expect(filtrarItens(itens, { semaforo: null, participando: true }).map((i) => i.ml_item_id)).toEqual(['B', 'D']);
     expect(filtrarItens(itens, { semaforo: 'vermelho', participando: false }).map((i) => i.ml_item_id)).toEqual(['C']);
   });
 });
@@ -2790,9 +2809,9 @@ describe('SheetCores', () => {
 - [ ] **Step 3: `filtrarItens`** — acrescentar em `src/lib/promocoes.ts`:
 
 ```ts
-/** Convidado = `candidate`, participando = `started`; outro status não aparece em nenhuma das duas abas. */
+/** Convidado = `candidate`; participando = `started` ou `pending` (inscrito em campanha futura); outro status não aparece. */
 export function filtrarItens(itens: ItemPromocao[], f: { semaforo: SemaforoPromo | null; participando: boolean }): ItemPromocao[] {
-  return itens.filter((i) => (f.participando ? i.status === 'started' : i.status === 'candidate')
+  return itens.filter((i) => (f.participando ? i.status === 'started' || i.status === 'pending' : i.status === 'candidate')
     && (f.semaforo == null || i.pior_semaforo === f.semaforo));
 }
 ```
@@ -2896,7 +2915,7 @@ export default function PromocaoDetalhe() {
   const daAba = useMemo(() => filtrarItens(itens.data ?? [], { semaforo: null, participando }), [itens.data, participando]);
   const linhas = useMemo(() => filtrarItens(itens.data ?? [], { semaforo, participando }), [itens.data, semaforo, participando]);
   const contagem = useMemo(() => {
-    const c = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0 };
+    const c = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0, ml_pct_max: null };
     for (const i of daAba) c[i.pior_semaforo]++;
     return c;
   }, [daAba]);

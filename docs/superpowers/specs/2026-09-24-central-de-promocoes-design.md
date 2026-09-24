@@ -225,3 +225,22 @@ campanha; Shopee; simulador de preço livre.
 - **Regra do "ML banca" no líquido:** conferir contra venda real de item em `SMART` (`ml_vendas`).
 - **Volume:** medir chamadas e tempo do sync da 10.10 (504) com cache; ajustar concorrência/intervalo.
 - **Deep link do Seller Center** para a área de promoções: confirmar a URL atual.
+
+## Resultado da Task 0 (validação de campo, 2026-09-24, conta Avil, só GET)
+
+- **Promoções:** 10 (LIGHTNING, PRICE_MATCHING, 3 SMART, 2 cupons, 2 DEAL ativas, 10.10 `pending`). O bloco
+  `benefits` veio **nulo em todas** → "ML banca até X%" do card sai do `meli_percentage` dos itens
+  (`contagem.ml_pct_max`).
+- **Status de item:** `candidate`, `started` e **`pending`** (26 itens da 10.10 — anúncio já inscrito numa
+  campanha que ainda não começou) → `pending` conta como **participando**.
+- **Paginação:** promoções por `offset` (`paging: total, limit, offset`); itens por cursor `paging.searchAfter`
+  enviado como `search_after` — conferido lendo os 502 itens da 10.10 em 11 páginas.
+- **Volume da 10.10:** 502 itens, 476 com faixa, 116 preços distintos, 39 pares categoria×tipo, 61 anúncios
+  multi-cor. GET ~0,27 s (mediana) → ~10 s por lote de 20 com concorrência 6; cadeia da 10.10 ≈ 3 execuções.
+  Reserva de 30 min tem folga.
+- **ML banca:** inconclusivo. Venda real de item SMART participando (`meli_percentage` 1, `seller_percentage` 9):
+  `unit_price` = `price` da promoção e comissão menor que a tabela cheia — não dá para separar o subsídio só
+  pelos campos gravados. **O líquido segue conservador** (sem subsídio), como decidido no ADR-0170 §7.
+- **Deep link do Seller Center:** `https://www.mercadolivre.com.br/anuncios/promocoes` responde 403 a acesso
+  automatizado (anti-bot); confirmar no navegador na validação de UI (Task 10).
+- Fixtures anonimizadas em `supabase/functions/_shared/promocoes/__tests__/fixtures/`.

@@ -1,0 +1,409 @@
+{
+ "results": [
+  {
+   "id": "MLB7655821216",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655821192",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655821140",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655821122",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655821080",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655821044",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655689200",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655689128",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655689120",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655689096",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655689080",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7655689054",
+   "status": "candidate",
+   "original_price": 29,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.55,
+   "suggested_discounted_price": 27.55
+  },
+  {
+   "id": "MLB7638610854",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 3.8,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7638610826",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 6.65,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7638610798",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 3.8,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7638610754",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 3.8,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7586017842",
+   "status": "candidate",
+   "original_price": 75.35,
+   "min_discounted_price": 30.14,
+   "max_discounted_price": 71.58,
+   "suggested_discounted_price": 71.58
+  },
+  {
+   "id": "MLB7580019140",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 3.8,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7580019100",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 6.65,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7580006356",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 6.65,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7573805398",
+   "status": "candidate",
+   "original_price": 28.9,
+   "min_discounted_price": 10.12,
+   "max_discounted_price": 27.45,
+   "suggested_discounted_price": 27.45
+  },
+  {
+   "id": "MLB7573792762",
+   "status": "candidate",
+   "original_price": 28.9,
+   "min_discounted_price": 5.78,
+   "max_discounted_price": 27.45,
+   "suggested_discounted_price": 27.45
+  },
+  {
+   "id": "MLB7573762818",
+   "status": "candidate",
+   "original_price": 28.9,
+   "min_discounted_price": 10.12,
+   "max_discounted_price": 27.45,
+   "suggested_discounted_price": 27.45
+  },
+  {
+   "id": "MLB7572965090",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 3.8,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7572965036",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 3.8,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7572964924",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 3.8,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7572964860",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 3.8,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7572964760",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 3.8,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7562220848",
+   "status": "candidate",
+   "original_price": 32.9,
+   "min_discounted_price": 6.59,
+   "max_discounted_price": 31.25,
+   "suggested_discounted_price": 31.25
+  },
+  {
+   "id": "MLB7350108040",
+   "status": "candidate",
+   "original_price": 28.99,
+   "min_discounted_price": 10.15,
+   "max_discounted_price": 27.54,
+   "suggested_discounted_price": 27.17
+  },
+  {
+   "id": "MLB7350108036",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 5.53,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7350108024",
+   "status": "candidate",
+   "original_price": 28.99,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.54,
+   "suggested_discounted_price": 27.17
+  },
+  {
+   "id": "MLB7350108022",
+   "status": "candidate",
+   "original_price": 19,
+   "min_discounted_price": 3.8,
+   "max_discounted_price": 18.04,
+   "suggested_discounted_price": 18.04
+  },
+  {
+   "id": "MLB7350108000",
+   "status": "candidate",
+   "original_price": 28.99,
+   "min_discounted_price": 10.15,
+   "max_discounted_price": 27.54,
+   "suggested_discounted_price": 27.17
+  },
+  {
+   "id": "MLB7350107988",
+   "status": "candidate",
+   "original_price": 28.99,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.54,
+   "suggested_discounted_price": 27.17
+  },
+  {
+   "id": "MLB7350107982",
+   "status": "candidate",
+   "original_price": 28.99,
+   "min_discounted_price": 10.15,
+   "max_discounted_price": 27.54,
+   "suggested_discounted_price": 27.17
+  },
+  {
+   "id": "MLB7350107976",
+   "status": "candidate",
+   "original_price": 28.99,
+   "min_discounted_price": 10.15,
+   "max_discounted_price": 27.54,
+   "suggested_discounted_price": 27.17
+  },
+  {
+   "id": "MLB7350107962",
+   "status": "candidate",
+   "original_price": 28.99,
+   "min_discounted_price": 10.15,
+   "max_discounted_price": 27.54,
+   "suggested_discounted_price": 26.27
+  },
+  {
+   "id": "MLB7350107936",
+   "status": "candidate",
+   "original_price": 28.99,
+   "min_discounted_price": 5.8,
+   "max_discounted_price": 27.54,
+   "suggested_discounted_price": 25.36
+  },
+  {
+   "id": "MLB7350106694",
+   "status": "candidate",
+   "original_price": 29.5,
+   "min_discounted_price": 10.33,
+   "max_discounted_price": 28.02,
+   "suggested_discounted_price": 28.02
+  },
+  {
+   "id": "MLB7350106672",
+   "status": "candidate",
+   "original_price": 29.5,
+   "min_discounted_price": 10.33,
+   "max_discounted_price": 28.02,
+   "suggested_discounted_price": 26.73
+  },
+  {
+   "id": "MLB7350106664",
+   "status": "candidate",
+   "original_price": 29.5,
+   "min_discounted_price": 10.33,
+   "max_discounted_price": 28.02,
+   "suggested_discounted_price": 27.39
+  },
+  {
+   "id": "MLB7350106660",
+   "status": "candidate",
+   "original_price": 29.5,
+   "min_discounted_price": 10.33,
+   "max_discounted_price": 28.02,
+   "suggested_discounted_price": 28.02
+  },
+  {
+   "id": "MLB7350106656",
+   "status": "candidate",
+   "original_price": 29.5,
+   "min_discounted_price": 5.9,
+   "max_discounted_price": 28.02,
+   "suggested_discounted_price": 28.02
+  },
+  {
+   "id": "MLB7350106636",
+   "status": "candidate",
+   "original_price": 29.5,
+   "min_discounted_price": 10.33,
+   "max_discounted_price": 28.02,
+   "suggested_discounted_price": 26.25
+  },
+  {
+   "id": "MLB7350106630",
+   "status": "candidate",
+   "original_price": 29.5,
+   "min_discounted_price": 10.33,
+   "max_discounted_price": 28.02,
+   "suggested_discounted_price": 24.89
+  },
+  {
+   "id": "MLB7350106614",
+   "status": "candidate",
+   "original_price": 29.5,
+   "min_discounted_price": 10.33,
+   "max_discounted_price": 28.02,
+   "suggested_discounted_price": 25
+  },
+  {
+   "id": "MLB7282810532",
+   "status": "candidate",
+   "original_price": 69.9,
+   "min_discounted_price": 26.56,
+   "max_discounted_price": 66.4,
+   "suggested_discounted_price": 66.4
+  },
+  {
+   "id": "MLB7282797860",
+   "status": "candidate",
+   "original_price": 69.9,
+   "min_discounted_price": 27.12,
+   "max_discounted_price": 66.4,
+   "suggested_discounted_price": 66.4
+  },
+  {
+   "id": "MLB7282797738",
+   "status": "candidate",
+   "original_price": 69.9,
+   "min_discounted_price": 26.56,
+   "max_discounted_price": 66.4,
+   "suggested_discounted_price": 66.4
+  }
+ ],
+ "paging": {
+  "total": 502,
+  "limit": 50,
+  "searchAfter": "9f070bd3e38e556a9b18874a016910a2d65e0c3cf1c2a829d69881782ed1ad8dde0dabd98125d63dd3afe2e2a45420cb114ab88ec72e3f1ab832244a6419a74586e7d6c695ee95477a1a7f0e62d058e8c8a468adfcd2fbdc8418ad109dbbd0b9c5b975b1410e3201e6b388ac97dd2b8cc9c90248f24810dcacffe2bc2f5981c7"
+ }
+}
