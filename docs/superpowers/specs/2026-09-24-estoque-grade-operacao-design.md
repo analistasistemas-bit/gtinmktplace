@@ -52,10 +52,9 @@ planilha, código de SKU digitado pelo operador no fluxo de grade, Kit/Catálogo
 
 **A1. Banco (migration nova, `supabase migration new`).** `variacoes_estoque_produto(text)` e
 `skus_estoque_org()` (última definição: `20260903030505_estoque_rpc_exclui_kit.sql`) passam a
-devolver `tamanho text`. Mudar `returns table` exige `drop function` + `create function` — não
-`create or replace`. A migration refaz, na ordem: drop, create (corpo idêntico ao atual + coluna),
-`grant execute … to authenticated`. `db push` não roda em transação: a janela sem a função é de
-milissegundos e aceitável; o `grant` fica na mesma migration, logo após o create.
+devolver a chave `tamanho` no objeto JSON. As duas retornam `setof json`, então acrescentar uma
+chave **não** muda o tipo de retorno: `create or replace` com o corpo atual + `'tamanho', v.tamanho`,
+repetindo o `revoke`/`grant execute … to authenticated` do original (sem janela sem função).
 
 **A2. Tipos e fetch.** `LinhaVariacaoRpc`/`VariacaoComSaldo` e `SkuEstoqueOrg` (`src/lib/produtos-saldo.ts`)
 ganham `tamanho: string | null`; `fetchVariacoesProduto` e `fetchSkusEstoqueOrg` mapeiam o campo.
@@ -127,8 +126,10 @@ até publicar no ML" vale para os dois.
   - `familias.genero` preenchido.
 - `processar.ts`: o clone deixa de forçar `tamanho: null` para as variações novas — grava o
   `tamanho` recebido; clones das vivas mantêm o seu. Conferir que o clone da família leva `genero`.
-- Foto herdada (cor existente): a variação nova grava o `imagem_path` recebido do front (o do irmão)
-  e `ml_picture_id` do irmão da mesma cor, para não re-subir a mesma foto.
+- Foto herdada (cor existente): o front manda `fotoDeCodigo` (código de um SKU vivo da mesma cor) em
+  vez de `imagemPath`; a edge copia `imagem_path` e `ml_picture_id` desse irmão no servidor. Não
+  aceitar o `imagem_path` do irmão vindo do front: ele pode estar sob o prefixo de outro usuário e
+  reprovaria a validação de caminho (`startsWith(userId/)`), que existe por segurança.
 
 ### C3. Publicação UP
 
