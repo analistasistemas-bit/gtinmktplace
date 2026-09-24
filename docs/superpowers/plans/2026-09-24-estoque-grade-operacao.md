@@ -28,6 +28,7 @@
 0. Revisão Codex gpt-6-sol do plano (VERDICT:REVISE, 12 achados) incorporada: reconciliador com `preservarPublicadas` (T4), GENDER de `familias.genero` no UPDATE (T4), ledger reaplicado no retry (T5), UP detectado pela raiz (T5), travadas = última publicada (T7), picker geral da Entrada (T3), limite 60 sem dupla contagem (T7), roteador pelo dado (T7), numeração sem guia bloqueada (T7), fixture SQL com profile (T1), dry-run sem escrita + prova real (T8), caracterização de payload (T4/T7).
 0b. Revisão Codex r2 (VERDICT:REVISE, 9 achados) incorporada: tipo da grade inferido da família e validado na UI e na edge (T5/T7), intenção do retry gravada em `mudanca_estrutural.intencao` com 409 para incompleto/divergente (T5), `ehFluxoAddVariacao` falha alto (T4), numeração não publicável recusada na edge (T5), Movimentos sem mudança para produto comum (T3), roteador síncrono por `temTamanho` do resumo (T1/T2/T7), aceite real pendente formal + reversão (T9), fixtures de 8 dígitos (T5), chart fora do cache falha alto (T4).
 0c. Revisão Codex r3 (VERDICT:REVISE, 5 achados) incorporada: grade/tipo decididos só pelas incluídas, excluídas travadas e contando no par (T5/T7); intenção completa normalizada no retry (T5); `POR_SKU` global intocado, SIZE*/GENDER filtrados só no ramo com tamanho + caracterização com irmão COM SIZE* (T4); `publicar-split-ml` no deploy (T9); três RPCs conferidas pós-push (T9).
+0g. Revisão Codex r7 (1 achado): canônicas posteriores da fixture SQL em lote próprio (T1).
 0f. Revisão Codex r6 (3 achados) incorporada: índice `familias_org_codigo_pai_publicada_idx` + medição do SELECT interno antes/depois (T1/T9), eixos do dialog só das incluídas (T7), fixture SQL com canônica ≠ publicada nos dois sentidos (T1).
 0e. Revisão Codex r5 (2 achados) incorporada: `tem_tamanho` calculado sobre a última publicada (T1), tipo do dialog só das incluídas (T7).
 0d. Revisão Codex r4 (2 achados) incorporada: `classificarFamilia` como fonte única de "é grade" (incluídas), usada por resumo, dialog e edge, com fallback do dialog de grade para o antigo (T1/T5/T7); consultas de tipo e UP só no ramo de grade (T5).
@@ -109,6 +110,10 @@ insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai,
 values ('92000000-0000-0000-0000-000000000301', '92000000-0000-0000-0000-000000000201',
   '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
   '09200000', 'Camiseta teste', 'CREATE', 'nacional', gen_random_uuid(), 'MLB-TESTE-GRADE', now());
+-- Lote próprio para as tentativas canônicas posteriores: `unique (lote_id, codigo_pai)` (Codex r7 #1).
+insert into public.lotes (id, user_id, org_id, status, origem) values
+  ('92000000-0000-0000-0000-000000000202', '92000000-0000-0000-0000-000000000101',
+   '92000000-0000-0000-0000-000000000001', 'processando', 'manual');
 -- Codex r6 #3: canônica ≠ publicada nos dois sentidos. `tem_tamanho` olha a última PUBLICADA; uma
 -- implementação que lesse a canônica erraria os dois casos (09500000 e 09300000).
 -- Produto próprio (09500000) para não mexer na canônica de 09200000, que as asserções de
@@ -118,7 +123,7 @@ values ('92000000-0000-0000-0000-000000000302', '92000000-0000-0000-0000-0000000
   '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
   '09500000', 'Jaqueta teste', 'CREATE', 'nacional', gen_random_uuid(), 'MLB-TESTE-GRADE2', now());
 insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, criado_em)
-values ('92000000-0000-0000-0000-000000000305', '92000000-0000-0000-0000-000000000201',
+values ('92000000-0000-0000-0000-000000000305', '92000000-0000-0000-0000-000000000202',
   '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
   '09500000', 'Jaqueta teste', 'UPDATE', 'nacional', gen_random_uuid(), now() + interval '1 minute');
 -- Sentido inverso: produto 09300000 publicado SEM tamanho e canônica posterior COM tamanho → false.
@@ -127,7 +132,7 @@ values ('92000000-0000-0000-0000-000000000303', '92000000-0000-0000-0000-0000000
   '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
   '09300000', 'Fita teste', 'CREATE', 'nacional', gen_random_uuid(), 'MLB-TESTE-SIMPLES', now());
 insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, origem, chave_cadastro, criado_em)
-values ('92000000-0000-0000-0000-000000000304', '92000000-0000-0000-0000-000000000201',
+values ('92000000-0000-0000-0000-000000000304', '92000000-0000-0000-0000-000000000202',
   '92000000-0000-0000-0000-000000000101', '92000000-0000-0000-0000-000000000001',
   '09300000', 'Fita teste', 'UPDATE', 'nacional', gen_random_uuid(), now() + interval '1 minute');
 insert into public.variacoes (familia_id, user_id, org_id, codigo, nome, cor, tamanho, preco, estoque)
