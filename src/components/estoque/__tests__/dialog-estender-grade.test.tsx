@@ -18,6 +18,11 @@ const familiaCanonicaMock = vi.fn();
 const variacoesCanonicasMock = vi.fn();
 const famRowsMock = vi.fn();
 const tiposProdutoMock = vi.fn(() => ({ data: ['roupa', 'calcado'] as string[] | undefined, isError: false }));
+// Achado da revisão (rodada 1): as duas consultas de `familias` podem falhar. `null` (default) =
+// sucesso; um Error aqui faz `fetchFamiliaPublicada`/`fetchFamiliaCanonicaId` relançar, e o
+// `useQuery` correspondente entra em `isError`.
+const familiaPublicadaErroMock = vi.fn<() => Error | null>(() => null);
+const familiaCanonicaErroMock = vi.fn<() => Error | null>(() => null);
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -30,14 +35,17 @@ vi.mock('@/lib/supabase', () => ({
           eq: () => ({
             // fetchFamiliaPublicada: .eq().not().order().limit()
             not: () => ({
-              order: () => ({ limit: () => Promise.resolve({ data: familiaPublicadaMock(), error: null }) }),
+              order: () => ({
+                limit: () => Promise.resolve(familiaPublicadaErroMock()
+                  ? { data: null, error: familiaPublicadaErroMock() }
+                  : { data: familiaPublicadaMock(), error: null }),
+              }),
             }),
             // fetchFamiliaCanonicaId: .eq().order().limit() — só 'id' na seleção.
             order: () => ({
-              limit: () => Promise.resolve({
-                data: colunas === 'id' ? familiaCanonicaMock() : [],
-                error: null,
-              }),
+              limit: () => Promise.resolve(colunas === 'id' && familiaCanonicaErroMock()
+                ? { data: null, error: familiaCanonicaErroMock() }
+                : { data: colunas === 'id' ? familiaCanonicaMock() : [], error: null }),
             }),
           }),
         }),
@@ -128,6 +136,8 @@ beforeEach(() => {
   familiaCanonicaMock.mockReset();
   variacoesCanonicasMock.mockReset();
   famRowsMock.mockReset();
+  familiaPublicadaErroMock.mockReset();
+  familiaCanonicaErroMock.mockReset();
   vi.mocked(toast.success).mockReset();
   vi.mocked(toast.warning).mockReset();
   vi.mocked(toast.error).mockReset();
@@ -136,6 +146,8 @@ beforeEach(() => {
   variacoesCanonicasMock.mockReturnValue([]);
   familiaCanonicaMock.mockReturnValue([{ id: 'fam-canonica-1' }]);
   familiaPublicadaMock.mockReturnValue([{ id: 'fam-pub-1', genero: 'unissex', variacoes: SKUS_BASE }]);
+  familiaPublicadaErroMock.mockReturnValue(null);
+  familiaCanonicaErroMock.mockReturnValue(null);
   Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn((f: File) => `blob:${f.name}`) });
   Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
 });
@@ -280,21 +292,39 @@ describe('DialogEstenderGrade — salvar', () => {
 });
 
 describe('DialogEstenderGrade — teto de 60 e preenchimento em massa', () => {
-  // 6 cores × 5 tamanhos publicadas (30) + 1 cor nova (6 células) = 36 ≤ 60 → permitido.
-  it('30 publicadas + 1 cor nova (36) permitido; 12×5=60 bloqueia cor nova', async () => {
+  // Achado da revisão (rodada 1): TAMANHOS_ROUPA só tem 4 valores (P/M/G/GG) — 6 cores × 4 = 24,
+  // nunca 30. Números reais no nome: 24 publicadas + 1 cor nova (4 células) = 28 ≤ 60 → permitido.
+  it('6 cores × 4 tamanhos publicadas (24) + 1 cor nova (28) permitido', async () => {
     const cores6 = ['C1', 'C2', 'C3', 'C4', 'C5', 'C6'];
-    const tamanhos5 = ['P', 'M', 'G', 'GG'];
-    const publicadas30 = cores6.flatMap((c, ci) => tamanhos5.map((t, ti) => variacaoBase({
+    const tamanhos4 = ['P', 'M', 'G', 'GG'];
+    const publicadas24 = cores6.flatMap((c, ci) => tamanhos4.map((t, ti) => variacaoBase({
       codigo: String(ci * 10 + ti + 1).padStart(8, '0'), cor: c, tamanho: t, estoque: 1, temFoto: true,
     })));
-    familiaPublicadaMock.mockReturnValue([{ id: 'fam-pub-1', genero: 'unissex', variacoes: publicadas30 }]);
+    familiaPublicadaMock.mockReturnValue([{ id: 'fam-pub-1', genero: 'unissex', variacoes: publicadas24 }]);
     const user = userEvent.setup();
     renderDialog();
     await screen.findByTitle('C1 · P: já publicado, 1 em estoque');
-    // 24 células (6×4) publicadas, ainda longe do teto — "Adicionar cor" livre (o botão só some
-    // do teto quando o campo "Nova cor" também tem texto — sem isso ele SEMPRE trava, vazio).
+    // 24 células publicadas, 28 com a cor nova — ainda longe do teto de 60. "Adicionar cor" livre
+    // (o botão só some do teto quando o campo "Nova cor" também tem texto — sem isso ele SEMPRE
+    // trava, vazio).
     await user.type(screen.getByLabelText('Nova cor'), 'Verde');
     expect(screen.getByRole('button', { name: /Adicionar cor/ })).not.toBeDisabled();
+  });
+
+  // 15 cores × 4 tamanhos = 60 (o teto exato) — qualquer cor a mais estoura. Mesmo tipo (roupa)
+  // do teste acima, só a contagem de cores muda — não precisa de calçado pra alcançar 60.
+  it('15 cores × 4 tamanhos publicadas (60, o teto exato) bloqueia cor nova', async () => {
+    const cores15 = Array.from({ length: 15 }, (_, i) => `Cor${i}`);
+    const tamanhos4 = ['P', 'M', 'G', 'GG'];
+    const publicadas60 = cores15.flatMap((c, ci) => tamanhos4.map((t, ti) => variacaoBase({
+      codigo: String(ci * 10 + ti + 1).padStart(8, '0'), cor: c, tamanho: t, estoque: 1, temFoto: true,
+    })));
+    familiaPublicadaMock.mockReturnValue([{ id: 'fam-pub-1', genero: 'unissex', variacoes: publicadas60 }]);
+    const user = userEvent.setup();
+    renderDialog();
+    await screen.findByTitle('Cor0 · P: já publicado, 1 em estoque');
+    await user.type(screen.getByLabelText('Nova cor'), 'Verde');
+    expect(screen.getByRole('button', { name: /Adicionar cor/ })).toBeDisabled();
   });
 
   it('12 cores × 5 (60) bloqueia "Adicionar cor"', async () => {
@@ -345,6 +375,86 @@ describe('DialogEstenderGrade — teto de 60 e preenchimento em massa', () => {
   });
 });
 
+describe('DialogEstenderGrade — testes do brief ausentes (achado da revisão, rodada 1)', () => {
+  // (a) Só a família PUBLICADA trava célula. A CANÔNICA (usada só pra extrair `familia_id`, uma
+  // tentativa de UPDATE que falhou pode ter Preto·P + Preto·M) nunca é lida pra travar nada — o
+  // dialog não consulta as variações dela. Preto·P (publicada) trava; Preto·M (só existiria numa
+  // canônica hipotética) é célula nova comum assim que o operador marca o tamanho.
+  it('SKU que só existiria numa família CANÔNICA (tentativa falha) fica editável — só a publicada trava', async () => {
+    familiaPublicadaMock.mockReturnValue([{
+      id: 'fam-pub-1', genero: 'unissex',
+      variacoes: [variacaoBase({ codigo: '00000001', cor: 'Preto', tamanho: 'P', estoque: 12, temFoto: true })],
+    }]);
+    const user = userEvent.setup();
+    renderDialog();
+    await screen.findByTitle('Preto · P: já publicado, 12 em estoque');
+    await user.click(screen.getByRole('checkbox', { name: 'M' }));
+    await waitFor(() => expect(screen.getByLabelText('Estoque inicial de Preto · M')).toBeInTheDocument());
+    expect(screen.getByTitle('Preto · P: já publicado, 12 em estoque')).toBeInTheDocument();
+  });
+
+  // (b) Preto·P incluído + Azul·38 excluído: excluída não traz eixo — nem coluna 38 (nem é
+  // NUMERACOES_CALCADO válida pro tipo roupa já resolvido), nem linha Azul, nem célula nova com 38.
+  it('roupa com Preto·P incluído e Azul·38 excluído — nenhuma coluna 38, nenhuma linha Azul', async () => {
+    familiaPublicadaMock.mockReturnValue([{
+      id: 'fam-pub-1', genero: 'unissex',
+      variacoes: [
+        variacaoBase({ codigo: '00000001', cor: 'Preto', tamanho: 'P', estoque: 12, temFoto: true }),
+        variacaoBase({ codigo: '00000002', cor: 'Azul', tamanho: '38', estoque: 3, temFoto: true, excluida: true }),
+      ],
+    }]);
+    renderDialog();
+    await screen.findByTitle('Preto · P: já publicado, 12 em estoque');
+    expect(screen.queryByRole('checkbox', { name: '38' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/de Azul/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/38/)).not.toBeInTheDocument();
+  });
+
+  // (c) O SKU com numeração de calçado é o EXCLUÍDO — só ele, sozinho, decidiria o tipo errado
+  // (misto) se contasse. Como só as incluídas decidem, o tipo resolve 'roupa' e os 4 chips
+  // aparecem liberados (sem o aviso de "tipos incompatíveis").
+  it('numeração de calçado só num SKU excluído — tipo resolve roupa, chips P/M/G/GG liberados', async () => {
+    familiaPublicadaMock.mockReturnValue([{
+      id: 'fam-pub-1', genero: 'unissex',
+      variacoes: [
+        variacaoBase({ codigo: '00000001', cor: 'Preto', tamanho: 'P', estoque: 12, temFoto: true }),
+        variacaoBase({ codigo: '00000002', cor: 'Preto', tamanho: '38', estoque: 3, temFoto: true, excluida: true }),
+      ],
+    }]);
+    renderDialog();
+    await screen.findByTitle('Preto · P: já publicado, 12 em estoque');
+    expect(screen.queryByText(/não pertencem a um único tipo/)).not.toBeInTheDocument();
+    for (const t of ['P', 'M', 'G', 'GG']) {
+      expect(screen.getByRole('checkbox', { name: t })).toBeInTheDocument();
+    }
+  });
+
+  // (d) Org com os DOIS tipos habilitados, mas a família publicada é uma jaqueta (roupa) — os
+  // tamanhos oferecidos vêm só do TIPO DA FAMÍLIA, nunca da união dos tipos da org (Codex r5 #2).
+  it('org com roupa+calçado habilitados e jaqueta publicada — nenhum chip de numeração de calçado', async () => {
+    tiposProdutoMock.mockReturnValue({ data: ['roupa', 'calcado'], isError: false });
+    renderDialog();
+    await screen.findByTitle('Preto · P: já publicado, 12 em estoque');
+    expect(screen.queryByRole('checkbox', { name: '38' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: '40' })).not.toBeInTheDocument();
+  });
+
+  // (e) Incluídas misturando tamanho e ausência de tamanho → `classificarFamilia` devolve
+  // 'mista' — aviso específico de bloqueio (diferente do "tipos incompatíveis"), Salvar travado.
+  it("família 'mista' (incluídas com e sem tamanho) mostra aviso de bloqueio e trava Salvar", async () => {
+    familiaPublicadaMock.mockReturnValue([{
+      id: 'fam-pub-1', genero: 'unissex',
+      variacoes: [
+        variacaoBase({ codigo: '00000001', cor: 'Preto', tamanho: 'P', estoque: 12, temFoto: true }),
+        variacaoBase({ codigo: '00000002', cor: 'Azul', tamanho: '', estoque: 5, temFoto: true }),
+      ],
+    }]);
+    renderDialog();
+    await screen.findByText('SKUs publicados com e sem tamanho — fale com o suporte.');
+    expect(BOTAO_SALVAR()).toBeDisabled();
+  });
+});
+
 describe('DialogEstenderGrade — numeração de calçado sem guia de tamanhos', () => {
   const skuCalcado = [variacaoBase({ codigo: '00000001', cor: 'Preto', tamanho: '38', estoque: 5, temFoto: true })];
 
@@ -389,6 +499,30 @@ describe('DialogEstenderGrade — família publicada simples (fallback do rotead
       id: 'fam-pub-1', genero: null,
       variacoes: [variacaoBase({ codigo: '00000001', cor: 'Único', tamanho: '', estoque: 5, temFoto: true })],
     }]);
+    const onNaoEhGrade = vi.fn();
+    renderDialog({ onNaoEhGrade });
+    await waitFor(() => expect(onNaoEhGrade).toHaveBeenCalled());
+  });
+});
+
+describe('DialogEstenderGrade — erro de consulta (rodada 1)', () => {
+  it('erro em fetchFamiliaPublicada mostra aviso (não fica preso no skeleton)', async () => {
+    familiaPublicadaErroMock.mockReturnValue(new Error('falha de rede'));
+    renderDialog();
+    await screen.findByText('Não foi possível carregar o produto. Tente de novo.');
+    expect(screen.queryByTitle(/já publicado/)).not.toBeInTheDocument();
+  });
+
+  it('erro em fetchFamiliaCanonicaId mostra aviso; a matriz (publicada) continua visível', async () => {
+    familiaCanonicaErroMock.mockReturnValue(new Error('falha de rede'));
+    renderDialog();
+    await screen.findByTitle('Preto · P: já publicado, 12 em estoque');
+    expect(screen.getByText('Não foi possível carregar o produto. Tente de novo.')).toBeInTheDocument();
+    expect(BOTAO_SALVAR()).toBeDisabled();
+  });
+
+  it('familiaPublicada === null (resumo defasado, produto ainda não publicado) chama onNaoEhGrade', async () => {
+    familiaPublicadaMock.mockReturnValue([]); // .limit() sem linha nenhuma → null
     const onNaoEhGrade = vi.fn();
     renderDialog({ onNaoEhGrade });
     await waitFor(() => expect(onNaoEhGrade).toHaveBeenCalled());

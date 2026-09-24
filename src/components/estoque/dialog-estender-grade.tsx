@@ -54,6 +54,12 @@ const CABECALHO_VAZIO: CamposHerdaveis = {
   preco: '', custo: '', pesoGramas: '', alturaCm: '', larguraCm: '', comprimentoCm: '',
 };
 
+// Achado da revisão (rodada 1): mesma mensagem para as duas consultas que podem falhar
+// (`fetchFamiliaPublicada`/`fetchFamiliaCanonicaId`) — nenhuma delas tem retry automático
+// (padrão do projeto pra `useQuery` fora de `useTiposProdutoHabilitados`), então "tente de novo"
+// aponta pro único jeito real de recuperar: fechar e reabrir o dialog.
+const MSG_ERRO_CARGA = 'Não foi possível carregar o produto. Tente de novo.';
+
 type Genero = 'masculino' | 'feminino' | 'unissex';
 
 const ROTULO_GENERO: Record<Genero, string> = { masculino: 'Masculino', feminino: 'Feminino', unissex: 'Unissex' };
@@ -113,16 +119,21 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
   const qc = useQueryClient();
   const codigoPai = produto?.codigoPai;
 
-  const { data: familiaPublicada } = useQuery({
+  // Objeto INTEIRO da query (não só `data`): `isError` é o que distingue "ainda carregando"
+  // (`data === undefined`, sem erro) de "falhou" (idem, mas `isError === true`) — sem isso um
+  // erro de rede deixava a tela presa no skeleton pra sempre (achado da revisão, rodada 1).
+  const familiaPublicadaQuery = useQuery({
     queryKey: ['familia-publicada-grade', codigoPai],
     queryFn: () => fetchFamiliaPublicada(codigoPai!),
     enabled: aberto && !!produto,
   });
-  const { data: familiaCanonica } = useQuery({
+  const familiaPublicada = familiaPublicadaQuery.data;
+  const familiaCanonicaQuery = useQuery({
     queryKey: ['familia-canonica-grade', codigoPai],
     queryFn: () => fetchFamiliaCanonicaId(codigoPai!),
     enabled: aberto && !!produto,
   });
+  const familiaCanonica = familiaCanonicaQuery.data;
   // Saldo CANÔNICO (mesma fonte que a tela Estoque mostra) para as células travadas — a família
   // publicada pode não ser a mais recente em saldo (ex.: uma entrada de mercadoria posterior).
   const { data: variacoesCanonicas } = useQuery({
@@ -170,6 +181,11 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
     vivas.map((v) => ({ tamanho: v.tamanho, excluida_da_publicacao: v.excluida_da_publicacao })),
   );
   useEffect(() => {
+    // `null` = a consulta resolveu e não achou família publicada nenhuma — resumo (`temTamanho`)
+    // defasado de um produto ainda não publicado no ML. O dialog antigo já sabe tratar "produto
+    // sem publicação" (mostra o erro que a edge devolve ao tentar); não travar aqui numa tela
+    // vazia pra sempre (achado da revisão, rodada 1).
+    if (familiaPublicada === null) { onNaoEhGrade(); return; }
     if (familiaPublicada && classe === 'simples') onNaoEhGrade();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [familiaPublicada, classe]);
@@ -502,10 +518,29 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
             </DialogDescription>
           </DialogHeader>
 
-          {!familiaPublicada ? (
+          {familiaPublicadaQuery.isError ? (
+            // Sem isto a consulta que falha nunca sai de `data === undefined` e a tela ficava no
+            // skeleton pra sempre (achado da revisão, rodada 1) — `isError` é o único sinal de
+            // que não adianta esperar mais.
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
+              <span>{MSG_ERRO_CARGA}</span>
+            </div>
+          ) : !familiaPublicada ? (
             <Skeleton className="h-40 w-full" />
           ) : classe === 'simples' ? null : (
             <div className="flex min-w-0 flex-col gap-4">
+              {familiaCanonicaQuery.isError && (
+                // A matriz continua legível (a família PUBLICADA carregou) — só falta o
+                // `familia_id` que vai no payload. `podeSalvar` já trava sozinho por
+                // `!!familiaCanonica`; este aviso é o motivo VISÍVEL (achado da revisão, rodada 1
+                // — sem ele o botão travava sem explicação nenhuma).
+                <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
+                  <span>{MSG_ERRO_CARGA}</span>
+                </div>
+              )}
+
               {emVoo && (
                 <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-500" />
