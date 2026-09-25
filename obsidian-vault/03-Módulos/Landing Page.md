@@ -217,8 +217,10 @@ preview use `vercel curl <url>`, que gera o token de bypass. Para depurar um dep
   idioma das tabs) no lugar do `<select>` nativo; EAN (opcional, 8–14 dígitos) separado da
   descrição (obrigatória); custo compacto com `R$` na linha de peso/medidas, unidades `g`/`cm`
   dentro dos campos; produtos 2–5 como linhas tracejadas "+ Produto N".
-- **Aviso de lead no Telegram:** o hidden `_webhook` do FormSubmit chama a edge
+- **Aviso de lead no Telegram:** depois que o FormSubmit aceita o lead, o JS da página chama a edge
   `lead-landing-telegram`, que manda o lead no Telegram do Diego pelo bot dedicado
   `@Publiai_leads_bot` (secrets `TELEGRAM_BOT_TOKEN`, `TELEGRAM_LEADS_CHAT_ID`). Não usa o
   Telegram por org (`configuracoes`/`profiles`): lead da landing não é de org cliente. Best-effort —
-  o e-mail segue sendo o registro. A URL do webhook é pública (está no HTML); sem rate limit por ora.
+  o e-mail segue sendo o registro. A URL da edge é pública (está no HTML); sem rate limit por ora.
+- **Armadilha:** o `_webhook` do FormSubmit quebra o envio (500 "Server Error", medido 25/09/2026 com e
+  sem o campo na mesma página). Por isso a chamada sai do JS, depois do sucesso.

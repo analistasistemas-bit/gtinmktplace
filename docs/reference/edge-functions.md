@@ -1689,7 +1689,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
 
 ### Utilitário
 - **hello** — smoke test de deploy.
-- **lead-landing-telegram** — `_webhook` do formulário da landing (ADR-0152). Recebe `{form_data}` do FormSubmit, exige `nome`, `email` e `produto_1_descricao` (senão 400) e manda o lead no Telegram da Daludi pelo bot dedicado `@Publiai_leads_bot`. Secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_LEADS_CHAT_ID`. Não usa o Telegram por org (`configuracoes`/`profiles`): lead da landing não pertence a org cliente. URL pública (fica no HTML), sem rate limit; e-mail do FormSubmit segue sendo o registro.
+- **lead-landing-telegram** — chamada pelo JS da landing depois que o FormSubmit aceitou o lead (ADR-0152; o `_webhook` do FormSubmit foi descartado: com ele o FormSubmit responde 500). Aceita o corpo plano ou `{form_data}`, exige `nome`, `email` e `produto_1_descricao` (senão 400) e manda o lead no Telegram da Daludi pelo bot dedicado `@Publiai_leads_bot`. Secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_LEADS_CHAT_ID`. Não usa o Telegram por org (`configuracoes`/`profiles`): lead da landing não pertence a org cliente. URL pública (fica no HTML), sem rate limit; e-mail do FormSubmit segue sendo o registro.
 
 ---
 

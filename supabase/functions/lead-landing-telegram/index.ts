@@ -1,6 +1,6 @@
 // Edge Function: lead-landing-telegram
-// Webhook do FormSubmit (_webhook no formulário da landing, ADR-0152): avisa no Telegram da Daludi
-// a cada lead. Bot dedicado (TELEGRAM_BOT_TOKEN + TELEGRAM_LEADS_CHAT_ID), fora do Telegram por org.
+// Chamada pelo JS da landing depois que o FormSubmit aceitou o lead (ADR-0152): avisa no Telegram
+// da Daludi. Não é o _webhook do FormSubmit: com ele o FormSubmit responde 500 e o lead não sai. Bot dedicado (TELEGRAM_BOT_TOKEN + TELEGRAM_LEADS_CHAT_ID), fora do Telegram por org.
 // O e-mail do FormSubmit continua sendo o registro; este aviso é best-effort.
 // ponytail: a URL é pública (fica no HTML); o filtro é só leadValido. Rate limit se aparecer spam.
 import { enviarTelegram } from '../_shared/notificacoes/telegram.ts';
