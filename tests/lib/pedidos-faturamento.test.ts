@@ -59,6 +59,29 @@ describe('agruparPorPedido', () => {
     ]);
   });
 
+  // Pack 2000014844302469: a RPC de saque recusa a order cancelada (sem dinheiro), então ela nunca
+  // ganha sacado_em — e o pack ficava preso em "Liberados" mesmo com as pagas já sacadas.
+  it('pack sacado quando todas as orders FATURÁVEIS estão sacadas (ignora a cancelada)', () => {
+    const sacado = '2026-09-15T14:05:46Z';
+    const [p] = agruparPorPedido([
+      venda({ id: 'a', order_id: 1, pack_id: 50, status: 'cancelled', sacado_em: null, money_release_date: null }),
+      venda({ id: 'b', order_id: 2, pack_id: 50, sacado_em: sacado, sacado_por: 'u1', money_release_date: '2026-09-14T00:00:00Z' }),
+      venda({ id: 'c', order_id: 3, pack_id: 50, sacado_em: sacado, sacado_por: 'u1', money_release_date: '2026-09-14T00:00:00Z' }),
+    ]);
+    expect(p.sacado_em).toBe(sacado);
+    expect(p.sacado_por).toBe('u1');
+    expect(p.temMembrosSemDataLiberacao).toBe(false);
+  });
+
+  it('pack com uma order paga ainda não sacada continua não sacado', () => {
+    const [p] = agruparPorPedido([
+      venda({ id: 'a', order_id: 1, pack_id: 50, status: 'cancelled', sacado_em: null }),
+      venda({ id: 'b', order_id: 2, pack_id: 50, sacado_em: '2026-09-15T14:05:46Z' }),
+      venda({ id: 'c', order_id: 3, pack_id: 50, sacado_em: null }),
+    ]);
+    expect(p.sacado_em).toBeNull();
+  });
+
   it('pedido sem pack vira 1 linha (chave = order_id)', () => {
     const pedidos = agruparPorPedido([venda({ id: 'a', order_id: 7, pack_id: null })]);
     expect(pedidos).toHaveLength(1);

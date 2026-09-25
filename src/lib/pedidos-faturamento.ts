@@ -190,9 +190,13 @@ export function agruparPorPedido(
     const markup = custo != null && custo > 0 ? calcularMarkup(liquidoComImposto, custo).markup : null;
 
     const primeiro = membros[0];
-    const grupoSacado = membros.every((v) => v.sacado_em != null);
-    const pendentes = membros.filter((v) => v.sacado_em == null);
-    const baseLiberacao = grupoSacado ? membros : pendentes;
+    // Saque só olha orders faturáveis: a RPC recusa a cancelada (sem dinheiro a sacar, ADR-0038),
+    // que ficaria sem sacado_em para sempre e prenderia o pack misto em "Liberados".
+    const faturaveis = membros.filter((v) => ehFaturavel(v.status));
+    const baseSaque = faturaveis.length > 0 ? faturaveis : membros;
+    const grupoSacado = baseSaque.every((v) => v.sacado_em != null);
+    const pendentes = baseSaque.filter((v) => v.sacado_em == null);
+    const baseLiberacao = grupoSacado ? baseSaque : pendentes;
     const datasLiberacaoPendentes = baseLiberacao
       .map((v) => v.money_release_date)
       .filter((data): data is string => data != null);
@@ -202,8 +206,8 @@ export function agruparPorPedido(
       ))
       : null;
     const temMembrosSemDataLiberacao = pendentes.some((v) => v.money_release_date == null);
-    const sacado_em = grupoSacado ? membros[0].sacado_em : null;
-    const sacado_por = grupoSacado ? membros[0].sacado_por : null;
+    const sacado_em = grupoSacado ? baseSaque[0].sacado_em : null;
+    const sacado_por = grupoSacado ? baseSaque[0].sacado_por : null;
     pedidos.push({
       chave,
       isPack: primeiro.pack_id != null && membros.length > 1,
