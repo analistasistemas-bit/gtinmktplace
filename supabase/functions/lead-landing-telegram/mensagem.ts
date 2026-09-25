@@ -43,5 +43,6 @@ export function montarMensagemLead(d: Dados): string {
     [`Produtos (${produtos.length}):`, ...produtos].join('\n'),
     descobrir && `Quer descobrir: ${descobrir}`,
   ];
-  return blocos.filter(Boolean).join('\n\n');
+  // Telegram recusa text > 4096; o e-mail do FormSubmit guarda o lead completo.
+  return blocos.filter(Boolean).join('\n\n').slice(0, 4000);
 }

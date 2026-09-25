@@ -18,7 +18,7 @@ Deno.serve(async (req) => {
   } catch {
     return json(400, { ok: false, erro: 'corpo não é JSON' });
   }
-  const dados = (corpo.form_data ?? corpo) as Record<string, unknown>;
+  const dados = (corpo?.form_data ?? corpo ?? {}) as Record<string, unknown>;
   if (!leadValido(dados)) return json(400, { ok: false, erro: 'lead incompleto' });
 
   const enviado = await enviarTelegram(

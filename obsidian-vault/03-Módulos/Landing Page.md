@@ -206,10 +206,19 @@ preview use `vercel curl <url>`, que gera o token de bypass. Para depurar um dep
   <https://publiai.daludi.com.br>; o app foi para <https://app.publiai.daludi.com.br> (Render), e a
   premissa antiga ("a raiz já é o app", medida em 05/09/2026) deixou de valer. `og:image` e URL
   canônica destravadas.
-- ⚠️ **FormSubmit: não confirmado.** A ativação de 05/09/2026 foi registrada justamente para
-  `https://publiai.daludi.com.br/` — o host onde a landing acabou ficando —, então a reativação
-  provavelmente não é mais necessária. Mas **nenhum envio real foi feito desde a publicação**, e
-  isso só se prova enviando. Ação: um envio de teste rotulado a partir da página no ar; a resposta
-  AJAX distingue sucesso da mensagem "needs Activation". Até lá o formulário é **não verificado** —
-  se estiver quebrado, o lead não chega e ninguém fica sabendo.
+- ✅ **FormSubmit confirmado em 25/09/2026.** Envio de teste rotulado pela página no ar voltou
+  `{"success":"true"}` e o Diego conferiu a chegada em `sac@daludi.com.br` (assunto "Novos 5
+  produtos para análise, landing PubliAI", template tabela com os nomes técnicos dos campos).
 - Os dois sites (este e `daludi.com.br`) não se linkam entre si além do rodapé daqui.
+
+## Rodada de 2026-09-25 — formulário e aviso no Telegram
+
+- **Formulário no padrão da página:** "Vende hoje em marketplaces?" virou grupo de pílulas (radio,
+  idioma das tabs) no lugar do `<select>` nativo; EAN (opcional, 8–14 dígitos) separado da
+  descrição (obrigatória); custo compacto com `R$` na linha de peso/medidas, unidades `g`/`cm`
+  dentro dos campos; produtos 2–5 como linhas tracejadas "+ Produto N".
+- **Aviso de lead no Telegram:** o hidden `_webhook` do FormSubmit chama a edge
+  `lead-landing-telegram`, que manda o lead no Telegram do Diego pelo bot dedicado
+  `@Publiai_leads_bot` (secrets `TELEGRAM_BOT_TOKEN`, `TELEGRAM_LEADS_CHAT_ID`). Não usa o
+  Telegram por org (`configuracoes`/`profiles`): lead da landing não é de org cliente. Best-effort —
+  o e-mail segue sendo o registro. A URL do webhook é pública (está no HTML); sem rate limit por ora.
