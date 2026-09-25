@@ -80,7 +80,8 @@ export interface Pedido {
   money_release_date: string | null;
   /** Há venda ainda não sacada sem money_release_date no grupo. */
   temMembrosSemDataLiberacao: boolean;
-  /** Quando todas as vendas do pedido foram marcadas como sacadas. null se nenhuma/parte não sacada. */
+  /** Quando todas as vendas FATURÁVEIS do pedido foram marcadas como sacadas (a cancelada nunca é
+   *  sacada pela RPC). null se nenhuma/parte não sacada. */
   sacado_em: string | null;
   /** Usuário da primeira marcação de saque do grupo, quando o pedido inteiro está sacado. */
   sacado_por: string | null;
