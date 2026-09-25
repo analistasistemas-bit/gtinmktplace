@@ -68,12 +68,18 @@ export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido
           {p.itens.map((it) => {
             const mCor = it.markup == null ? undefined
               : it.markup >= 0 ? 'text-success' : 'text-destructive';
+            // O "estornado" do pedido não dizia de qual item vinha (pack 2000014844302469).
+            const marca = [!it.faturavel && 'cancelado', it.estorno > 0 && `estornado ${fmtBRL(it.estorno)}`]
+              .filter(Boolean).join(' · ');
             return (
               <TableRow key={it.id}>
                 <TableCell className="max-w-[280px] uppercase" title={it.titulo ?? ''}>
                   <span className="flex items-center gap-2">
                     <ThumbProduto path={it.imagem_path} titulo={it.titulo} size={28} />
-                    <span className="truncate">{it.titulo ?? '—'}</span>
+                    <span className="min-w-0">
+                      <span className="block truncate">{it.titulo ?? '—'}</span>
+                      {marca && <span className="block normal-case text-destructive">{marca}</span>}
+                    </span>
                   </span>
                 </TableCell>
                 <TableCell>{it.cor ?? '—'}</TableCell>

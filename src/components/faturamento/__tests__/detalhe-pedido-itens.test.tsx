@@ -16,7 +16,7 @@ function item(overrides: Partial<ItemPedido>): ItemPedido {
   return {
     id: 'i1', ml_item_id: null, titulo: 'Produto', codigo: null, cor: null, ean: null,
     quantity: 1, unit_price: 50, imagem_path: null, custo: null, liquido: 40,
-    imposto: 0, aliquotaPct: null, markup: null,
+    imposto: 0, aliquotaPct: null, markup: null, faturavel: true, estorno: 0,
     ...overrides,
   };
 }
@@ -108,5 +108,21 @@ describe('DetalhePedidoItens', () => {
     const p = pedido({ imposto: 4, itens: [item({ imposto: 4, aliquotaPct: null })] });
     renderComProvider(p);
     expect(screen.queryByText(/%\)/)).not.toBeInTheDocument();
+  });
+});
+
+describe('DetalhePedidoItens — item cancelado/estornado', () => {
+  it('marca o item cancelado com o valor estornado', () => {
+    renderComProvider(pedido({ itens: [
+      item({ id: 'a', faturavel: false, estorno: 124.38 }),
+      item({ id: 'b' }),
+    ] }));
+    expect(screen.getByText('cancelado · estornado R$ 124,38')).toBeInTheDocument();
+    expect(screen.getAllByText(/cancelado|estornado/)).toHaveLength(1);
+  });
+
+  it('estorno parcial em item faturável mostra só o estorno', () => {
+    renderComProvider(pedido({ itens: [item({ estorno: 10 })] }));
+    expect(screen.getByText('estornado R$ 10,00')).toBeInTheDocument();
   });
 });

@@ -33,6 +33,10 @@ export interface ItemPedido {
   aliquotaPct: number | null;
   /** (líquido − custo) ÷ custo, com líquido já líquido do imposto. null sem custo. */
   markup: number | null;
+  /** A order do item conta como faturamento (ADR-0038). false = cancelada/devolvida. */
+  faturavel: boolean;
+  /** Estorno da order do item, em R$ — só no 1º item da order (0 nos demais), para não duplicar. */
+  estorno: number;
 }
 
 export interface Pedido {
@@ -143,7 +147,7 @@ export function agruparPorPedido(
       const faturavel = ehFaturavel(v.status);
       // A UF vem da venda, não do pedido: um pack pode agrupar order_ids, e o imposto é resolvido
       // por venda (ADR-0112).
-      return v.itens.map((it) => ({ it, faturavel, uf: v.uf }));
+      return v.itens.map((it, i) => ({ it, faturavel, uf: v.uf, estorno: i === 0 ? v.estorno ?? 0 : 0 }));
     });
     const unidades = itensFlat.reduce((s, { it }) => s + it.quantity, 0);
     // Base do rateio: só o valor dos itens faturáveis — um item cancelado não "rouba" fatia do
@@ -155,7 +159,7 @@ export function agruparPorPedido(
     let custoTotal = 0;
     let temCusto = false;
     let impostoTotal = 0;
-    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf }) => {
+    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, estorno }) => {
       const custo = custoDoItem(it, custoResolver);
       if (faturavel && custo != null) { custoTotal += custo; temCusto = true; }
       const imposto = faturavel ? impostoDoItem(it, aliquotaResolver, uf) : 0;
@@ -176,7 +180,7 @@ export function agruparPorPedido(
         cor: it.cor ?? corResolver?.(it) ?? null,
         ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
         imagem_path: fotoResolver?.(it) ?? null,
-        custo, liquido: liqItemComImposto, imposto, aliquotaPct, markup,
+        custo, liquido: liqItemComImposto, imposto, aliquotaPct, markup, faturavel, estorno,
       };
     });
     const custo = temCusto ? round2(custoTotal) : null;

@@ -42,6 +42,21 @@ describe('agruparPorPedido', () => {
     expect(p.itens).toHaveLength(2);
   });
 
+  // Pack real 2000014844302469: o "estornado R$ 124,38" do pack não dizia de qual item vinha.
+  it('marca no item de qual order veio o cancelamento/estorno (uma vez por order)', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, pack_id: 50, status: 'cancelled', total_amount: 124.38, estorno: 124.38,
+        itens: [item({ id: 'i1', unit_price: 62.19, quantity: 1 }), item({ id: 'i2', unit_price: 62.19, quantity: 1 })] }),
+      venda({ id: 'b', order_id: 2, pack_id: 50, total_amount: 12.55, estorno: 0,
+        itens: [item({ id: 'i3', unit_price: 12.55 })] }),
+    ];
+    const [p] = agruparPorPedido(vendas);
+    expect(p.estorno).toBe(124.38);
+    expect(p.itens.map((it) => [it.id, it.faturavel, it.estorno])).toEqual([
+      ['i1', false, 124.38], ['i2', false, 0], ['i3', true, 0],
+    ]);
+  });
+
   it('pedido sem pack vira 1 linha (chave = order_id)', () => {
     const pedidos = agruparPorPedido([venda({ id: 'a', order_id: 7, pack_id: null })]);
     expect(pedidos).toHaveLength(1);
