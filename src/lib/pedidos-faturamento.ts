@@ -141,7 +141,8 @@ export function agruparPorPedido(
     const liquido = round2(membros.reduce((s, v) => s + liquidoMembro(v), 0));
     const freteMax = Math.max(0, ...membros.map((v) => v.frete_vendedor ?? 0));
     const frete = freteMax > 0 ? round2(freteMax) : null;
-    const comissao = round2(membros.reduce((s, v) => s + (v.sale_fee_total ?? 0), 0));
+    // Só faturáveis: a comissão da order cancelada volta ao vendedor (mesma base de `liquido`/Retido).
+    const comissao = round2(membros.reduce((s, v) => s + (ehFaturavel(v.status) ? v.sale_fee_total ?? 0 : 0), 0));
 
     const itensFlat = membros.flatMap((v) => {
       const faturavel = ehFaturavel(v.status);

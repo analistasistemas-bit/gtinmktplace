@@ -51,6 +51,8 @@ describe('agruparPorPedido', () => {
         itens: [item({ id: 'i3', unit_price: 12.55 })] }),
     ];
     const [p] = agruparPorPedido(vendas);
+    // Comissão da order cancelada volta ao vendedor: soma só a faturável (fecha com o Retido).
+    expect(p.comissao).toBe(1);
     expect(p.estorno).toBe(124.38);
     expect(p.itens.map((it) => [it.id, it.faturavel, it.estorno])).toEqual([
       ['i1', false, 124.38], ['i2', false, 0], ['i3', true, 0],
