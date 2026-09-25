@@ -6,6 +6,8 @@ project_id = "txvncrgkoynoxwopfkbp"
 # --- verify_jwt = false (públicas / QStash / callbacks ML) ---
 [functions.hello]
 verify_jwt = false
+[functions.lead-landing-telegram]
+verify_jwt = false
 [functions.process-familia]
 verify_jwt = false
 [functions.regenerar-copy-familia]

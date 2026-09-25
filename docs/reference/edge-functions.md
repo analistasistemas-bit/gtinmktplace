@@ -105,6 +105,7 @@
 | suporte | true | HTTP (frontend) | transições condicionais; início/renovação atômicos na RPC |
 | **Utilitário** ||||
 | hello | false | HTTP (smoke test) | sim |
+| lead-landing-telegram | false | Webhook do FormSubmit (landing) | não (reenvio duplica o aviso) |
 
 `platform-admin` concentra carteira, métricas, condições, prévia/fechamento, demonstrativos,
 conciliação, consumo Pulse e auditoria da central. A função autentica novamente no servidor e usa
@@ -1688,6 +1689,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
 
 ### Utilitário
 - **hello** — smoke test de deploy.
+- **lead-landing-telegram** — `_webhook` do formulário da landing (ADR-0152). Recebe `{form_data}` do FormSubmit, exige `nome`, `email` e `produto_1_descricao` (senão 400) e manda o lead no Telegram da Daludi pelo bot dedicado `@Publiai_leads_bot`. Secrets: `TELEGRAM_BOT_TOKEN`, `TELEGRAM_LEADS_CHAT_ID`. Não usa o Telegram por org (`configuracoes`/`profiles`): lead da landing não pertence a org cliente. URL pública (fica no HTML), sem rate limit; e-mail do FormSubmit segue sendo o registro.
 
 ---
 
