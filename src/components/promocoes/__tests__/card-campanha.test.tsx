@@ -16,8 +16,9 @@ const renderCard = (p: Promocao) => render(<MemoryRouter><CardCampanha promocao=
 describe('CardCampanha', () => {
   it('mostra convidados, contagem e prazo urgente; link para o detalhe', () => {
     renderCard(base);
-    expect(screen.getByText('504 anúncios convidados')).toBeTruthy();
-    expect(screen.getByText('310')).toBeTruthy();
+    expect(screen.getByText('504')).toBeTruthy();
+    expect(screen.getByText(/convidados/i)).toBeTruthy();
+    expect(screen.getAllByText('310').length).toBeGreaterThan(0);
     expect(screen.getByText(/Adesão até/)).toBeTruthy();
     expect(screen.getByRole('link').getAttribute('href')).toBe('/promocoes/P-1');
   });

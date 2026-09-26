@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
 import { toast } from 'sonner';
+import { BadgePercent } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '@/components/ui/empty-state';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CanalTabs } from '@/components/canal-tabs';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
@@ -73,17 +75,17 @@ export default function Promocoes() {
 
       {promocoes.isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-40 rounded-xl" />)}
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-[228px] rounded-xl" />)}
         </div>
       ) : temDados && (
         <Tabs value={aba} onValueChange={(v) => setAba(v as AbaPromo)}>
           <TabsList>
-            <TabsTrigger value="ativas">Ativas ({porAba.ativas.length})</TabsTrigger>
-            <TabsTrigger value="futuras">Futuras ({porAba.futuras.length})</TabsTrigger>
+            <TabsTrigger value="ativas">Ativas<span className="ml-1 tabular-nums text-muted-foreground">{porAba.ativas.length}</span></TabsTrigger>
+            <TabsTrigger value="futuras">Futuras<span className="ml-1 tabular-nums text-muted-foreground">{porAba.futuras.length}</span></TabsTrigger>
             <TabsTrigger value="encerradas">Encerradas</TabsTrigger>
           </TabsList>
           {porAba[aba].length === 0 ? (
-            <p className="py-8 text-sm text-muted-foreground">{VAZIO[aba]}</p>
+            <EmptyState icon={BadgePercent} title={VAZIO[aba]} className="mt-4" />
           ) : (
             <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {porAba[aba].map((p) => <CardCampanha key={p.promocao_id} promocao={p} agoraMs={agora} />)}

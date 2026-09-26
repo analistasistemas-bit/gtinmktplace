@@ -1,21 +1,22 @@
 import { useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
+import { CircleX, ExternalLink } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Button } from '@/components/ui/button';
-import { StatusPill } from '@/components/ui/status-pill';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/components/ui/empty-state';
 import { useItensPromocao, usePromocoes } from '@/hooks/usePromocoes';
 import { calcularMarkup } from '@/lib/markup';
+import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
 import {
   URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type SemaforoPromo,
 } from '@/lib/promocoes';
-import { ContagemSemaforo, SEMAFORO_UI } from '@/components/promocoes/contagem-semaforo';
+import { ChipFiltro, ContagemSemaforo, SEMAFORO_UI } from '@/components/promocoes/contagem-semaforo';
 import { SheetCores } from '@/components/promocoes/sheet-cores';
 
 const PESO: Record<SemaforoPromo, number> = { vermelho: 0, amarelo: 1, verde: 2, indisponivel: 3 };
@@ -42,7 +43,15 @@ export default function PromocaoDetalhe() {
     {
       key: 'semaforo', header: 'Semáforo', className: 'w-12',
       sortValue: (r) => PESO[r.pior_semaforo],
-      cell: (r) => { const ui = SEMAFORO_UI[r.pior_semaforo]; return <StatusPill tone={ui.tone} title={ui.label}><ui.Icon className="size-3.5" aria-hidden /><span className="sr-only">{ui.label}</span></StatusPill>; },
+      cell: (r) => {
+        const ui = SEMAFORO_UI[r.pior_semaforo];
+        return (
+          <span title={ui.label} className="inline-flex">
+            <ui.Icon className={cn('size-4', ui.text)} aria-hidden />
+            <span className="sr-only">{ui.label}</span>
+          </span>
+        );
+      },
     },
     {
       key: 'anuncio', header: 'Anúncio',
@@ -57,14 +66,18 @@ export default function PromocaoDetalhe() {
       ),
     },
     {
-      key: 'preco', header: 'Preço → Promo', className: 'whitespace-normal text-right tabular-nums leading-tight',
+      key: 'preco', header: 'Preço na promoção', className: 'whitespace-normal text-right tabular-nums leading-tight',
       sortValue: (r) => r.preco_avaliado,
       cell: (r) => {
         const d = descontoPct(r.preco_original, r.preco_avaliado);
         return (
           <span className="block">
-            {r.preco_original != null ? fmtBRL(r.preco_original) : '—'} → {r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}
-            {d != null && <span className="block text-xs text-muted-foreground">(−{d}%)</span>}
+            <span className="block font-medium">{r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}</span>
+            {r.preco_original != null && (
+              <span className="block text-xs text-muted-foreground">
+                <s>{fmtBRL(r.preco_original)}</s>{d != null && ` · −${d}%`}
+              </span>
+            )}
           </span>
         );
       },
@@ -84,22 +97,34 @@ export default function PromocaoDetalhe() {
       cell: (r) => {
         const c = corDeReferencia(r);
         if (!c || c.custo == null) return <span className="text-muted-foreground">{rotuloSemLiquido(r)}</span>;
-        return fmtBRL(c.liquido!);
+        return <span className="font-medium">{fmtBRL(c.liquido!)}</span>;
       },
     },
     {
       key: 'markup', header: 'Markup', className: 'text-right tabular-nums',
       sortValue: (r) => { const c = corDeReferencia(r); return c && c.custo ? calcularMarkup(c.liquido!, c.custo).markup : null; },
-      cell: (r) => { const c = corDeReferencia(r); return c && c.custo != null ? fmtMarkup(calcularMarkup(c.liquido!, c.custo).markup) : '—'; },
+      cell: (r) => {
+        const c = corDeReferencia(r);
+        if (!c || c.custo == null) return '—';
+        const { markup } = calcularMarkup(c.liquido!, c.custo);
+        return <span className={markup < 0 ? 'text-danger' : undefined}>{fmtMarkup(markup)}</span>;
+      },
     },
     {
-      key: 'ate', header: 'Até quanto descer', className: 'whitespace-normal w-36 text-right leading-tight',
+      key: 'ate', header: 'Até quanto descer', className: 'whitespace-normal w-40 text-right leading-tight',
       cell: (r) => {
         if (r.preco_min == null || r.preco_max == null) return '—';
         const a = ateQuantoDaLinha(r);
-        if (a.motivo === 'qualquer') return 'Qualquer preço da faixa';
-        if (a.motivo === 'nenhum') return <span className="text-danger">Nenhum preço da faixa atinge o mínimo</span>;
-        return a.valor != null ? <span className="tabular-nums">{fmtBRL(a.valor)}</span> : '—';
+        if (a.motivo === 'nenhum') return (
+          <Tooltip>
+            <TooltipTrigger className="inline-flex items-center gap-1 text-xs font-medium text-danger">
+              <CircleX className="size-3.5" aria-hidden />Sem preço viável
+            </TooltipTrigger>
+            <TooltipContent>Nenhum preço da faixa da promoção atinge o líquido mínimo.</TooltipContent>
+          </Tooltip>
+        );
+        if (a.motivo === 'qualquer') return <span className="text-xs text-success">Qualquer preço da faixa</span>;
+        return a.valor != null ? <span className="font-medium tabular-nums">{fmtBRL(a.valor)}</span> : '—';
       },
     },
     {
@@ -132,22 +157,19 @@ export default function PromocaoDetalhe() {
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" aria-pressed={semaforo == null} onClick={() => setSemaforo(null)}
-            className="min-h-11 inline-flex items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:ring-2 aria-pressed:ring-ring">
-            <StatusPill tone="neutral">
-              <span className="tabular-nums">Todos {daAba.length}</span>
-            </StatusPill>
-          </button>
+          <ChipFiltro ativo={semaforo == null} onClick={() => setSemaforo(null)}>
+            <span className="font-semibold tabular-nums">{daAba.length}</span>
+            <span className="text-muted-foreground">Todos</span>
+          </ChipFiltro>
           <ContagemSemaforo contagem={contagem} ativo={semaforo} onFiltro={setSemaforo} />
         </div>
-        <div role="group" aria-label="Filtrar por participação" className="inline-flex rounded-lg border p-0.5">
-          {[{ v: false, l: 'Convidados' }, { v: true, l: 'Participando' }].map((o) => (
-            <button key={o.l} type="button" aria-pressed={participando === o.v} onClick={() => { setParticipando(o.v); setSemaforo(null); }}
-              className="min-h-11 rounded-md px-3 text-sm aria-pressed:bg-muted aria-pressed:font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-              {o.l}
-            </button>
-          ))}
-        </div>
+        <Tabs value={participando ? 'participando' : 'convidados'}
+          onValueChange={(v) => { setParticipando(v === 'participando'); setSemaforo(null); }}>
+          <TabsList aria-label="Filtrar por participação">
+            <TabsTrigger value="convidados">Convidados</TabsTrigger>
+            <TabsTrigger value="participando">Participando</TabsTrigger>
+          </TabsList>
+        </Tabs>
       </div>
       <div className="overflow-x-auto">
         <DataTable
