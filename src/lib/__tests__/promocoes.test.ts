@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   abaDa, ateQuantoDaLinha, corDeReferencia, descontoPct, ehCupom, emLeitura, filtrarItens, prazoUrgente,
-  rotuloSemLiquido, rotuloTipo, sincronizandoAgora, type CorProjetada, type ItemPromocao,
+  avisoAtualizacao, rotuloSemLiquido, rotuloTipo, sincronizandoAgora, type CorProjetada, type ItemPromocao,
 } from '../promocoes';
 
 const agora = Date.parse('2026-10-06T12:00:00Z');
@@ -87,5 +87,23 @@ describe('sincronizandoAgora', () => {
     expect(sincronizandoAgora(e('sincronizando', null), agora)).toBe(false);
     expect(sincronizandoAgora(e('ok', new Date(agora).toISOString()), agora)).toBe(false);
     expect(sincronizandoAgora(null, agora)).toBe(false);
+  });
+});
+
+// Follow-up do I1: a edge responde 200 com o estado da etapa de lista; toast verde em 'erro' mentia.
+describe('avisoAtualizacao', () => {
+  it('ok e sem promoções: sucesso', () => {
+    expect(avisoAtualizacao({ estado: 'ok' }).tipo).toBe('sucesso');
+    expect(avisoAtualizacao({ estado: 'sem_promocoes' }).tipo).toBe('sucesso');
+  });
+  it('erro e sem acesso: erro', () => {
+    expect(avisoAtualizacao({ estado: 'erro' }).tipo).toBe('erro');
+    expect(avisoAtualizacao({ estado: 'sem_acesso' }).tipo).toBe('erro');
+  });
+  it('já sincronizando: informativo', () => {
+    expect(avisoAtualizacao({ estado: 'sincronizando' }).tipo).toBe('info');
+  });
+  it('resposta sem estado conhecido: não afirma sucesso', () => {
+    expect(avisoAtualizacao(null).tipo).toBe('info');
   });
 });

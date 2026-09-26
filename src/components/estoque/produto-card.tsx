@@ -211,6 +211,9 @@ export function ProdutoCard({
     // null (não undefined): o React Query v5 rejeita undefined no queryFn e ignora setQueryData(key, undefined).
     queryFn: (): MarcadorSyncMl | null => null,
     staleTime: Infinity,
+    // Card fora da lista (filtro/busca) fica sem observer: o gcTime padrão (5 min) descartaria o
+    // marcador antes do teto de espera. Quem limpa é o próprio card (teto / "✓ no ML").
+    gcTime: Infinity,
   });
   const aguardandoMl = temSkuAguardando(marcadorSync);
 

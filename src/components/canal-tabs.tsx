@@ -21,7 +21,9 @@ export function CanalTabs({ canal, onCanal, habilitados, contadores, className }
   const emBreve = canaisEmBreve(habilitados);
   return (
     <Tabs value={canal} onValueChange={(v) => onCanal(v as CanalAtivo)} className={className}>
-      <TabsList className="h-auto flex-wrap">
+      {/* Mesmo prefixo do default (`group-data-horizontal/tabs:h-8`): `h-auto` puro não sobrescreve
+          no twMerge e a faixa quebrava linha presa em 32px, cortando os canais no celular. */}
+      <TabsList className="group-data-horizontal/tabs:h-auto flex-wrap">
         <TabsTrigger value="todos">Todos</TabsTrigger>
         {operaveis.map((c) => (
           <TabsTrigger key={c.id} value={c.id} className="gap-1.5">

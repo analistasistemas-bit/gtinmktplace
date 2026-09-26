@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -46,7 +47,23 @@ describe('PromocaoDetalhe', () => {
     renderDetalhe();
 
     expect(screen.getAllByText('Campanha teste').length).toBeGreaterThan(0);
-    expect(screen.getByText('Anúncio teste')).toBeTruthy();
+    // Título aparece na linha da tabela desktop e no cartão da lista mobile (jsdom não aplica a media query, os dois layouts existem no DOM).
+    expect(screen.getAllByText('Anúncio teste').length).toBeGreaterThan(0);
     expect(screen.getByText('10%')).toBeTruthy();
+  });
+
+  it('mostra líquido e markup no cartão mobile e abre o sheet ao clicar', async () => {
+    const user = userEvent.setup();
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);
+
+    renderDetalhe();
+
+    const lista = within(screen.getByTestId('lista-mobile'));
+    expect(lista.getByText('R$ 32,00')).toBeTruthy();
+    expect(lista.getByText('+60%')).toBeTruthy();
+
+    await user.click(lista.getByRole('button'));
+    expect(within(screen.getByRole('dialog')).getByText('Anúncio teste')).toBeTruthy();
   });
 });

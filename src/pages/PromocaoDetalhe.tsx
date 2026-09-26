@@ -8,6 +8,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useItensPromocao, usePromocoes } from '@/hooks/usePromocoes';
 import { calcularMarkup } from '@/lib/markup';
 import { cn } from '@/lib/utils';
@@ -21,6 +22,51 @@ import { SheetCores } from '@/components/promocoes/sheet-cores';
 
 const PESO: Record<SemaforoPromo, number> = { vermelho: 0, amarelo: 1, verde: 2, indisponivel: 3 };
 
+// Reutilizados pela coluna da tabela desktop e pelo cartão da lista mobile — mesmo conteúdo, um só lugar.
+function precoPromo(r: ItemPromocao) {
+  const d = descontoPct(r.preco_original, r.preco_avaliado);
+  return (
+    <span className="block">
+      <span className="block font-medium">{r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}</span>
+      {r.preco_original != null && (
+        <span className="block text-xs text-muted-foreground">
+          <s>{fmtBRL(r.preco_original)}</s>{d != null && ` · −${d}%`}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function liquidoCel(r: ItemPromocao) {
+  const c = corDeReferencia(r);
+  if (!c || c.custo == null) return <span className="text-muted-foreground">{rotuloSemLiquido(r)}</span>;
+  return <span className="font-medium">{fmtBRL(c.liquido!)}</span>;
+}
+
+function markupCel(r: ItemPromocao) {
+  const c = corDeReferencia(r);
+  if (!c || c.custo == null) return '—';
+  const { markup } = calcularMarkup(c.liquido!, c.custo);
+  return <span className={markup < 0 ? 'text-danger' : undefined}>{fmtMarkup(markup)}</span>;
+}
+
+function ateQuanto(r: ItemPromocao, { tooltip }: { tooltip: boolean }) {
+  if (r.preco_min == null || r.preco_max == null) return '—';
+  const a = ateQuantoDaLinha(r);
+  if (a.motivo === 'nenhum') {
+    const conteudo = <><CircleX className="size-3.5" aria-hidden />Sem preço viável</>;
+    if (!tooltip) return <span className="inline-flex items-center gap-1 text-xs font-medium text-danger">{conteudo}</span>;
+    return (
+      <Tooltip>
+        <TooltipTrigger className="inline-flex items-center gap-1 text-xs font-medium text-danger">{conteudo}</TooltipTrigger>
+        <TooltipContent>Nenhum preço da faixa da promoção atinge o líquido mínimo.</TooltipContent>
+      </Tooltip>
+    );
+  }
+  if (a.motivo === 'qualquer') return <span className="text-xs text-success">Qualquer preço da faixa</span>;
+  return a.valor != null ? <span className="font-medium tabular-nums">{fmtBRL(a.valor)}</span> : '—';
+}
+
 export default function PromocaoDetalhe() {
   const { promocaoId = '' } = useParams();
   const promocoes = usePromocoes();
@@ -33,6 +79,7 @@ export default function PromocaoDetalhe() {
   const promo = promocoes.data?.find((p) => p.promocao_id === promocaoId) ?? null;
   const daAba = useMemo(() => filtrarItens(itens.data ?? [], { semaforo: null, participando }), [itens.data, participando]);
   const linhas = useMemo(() => filtrarItens(itens.data ?? [], { semaforo, participando }), [itens.data, semaforo, participando]);
+  const linhasMobile = useMemo(() => [...linhas].sort((a, b) => PESO[a.pior_semaforo] - PESO[b.pior_semaforo]), [linhas]);
   const contagem = useMemo(() => {
     const c = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0, ml_pct_max: null };
     for (const i of daAba) c[i.pior_semaforo]++;
@@ -68,19 +115,7 @@ export default function PromocaoDetalhe() {
     {
       key: 'preco', header: 'Preço na promoção', className: 'whitespace-normal text-right tabular-nums leading-tight',
       sortValue: (r) => r.preco_avaliado,
-      cell: (r) => {
-        const d = descontoPct(r.preco_original, r.preco_avaliado);
-        return (
-          <span className="block">
-            <span className="block font-medium">{r.preco_avaliado != null ? fmtBRL(r.preco_avaliado) : '—'}</span>
-            {r.preco_original != null && (
-              <span className="block text-xs text-muted-foreground">
-                <s>{fmtBRL(r.preco_original)}</s>{d != null && ` · −${d}%`}
-              </span>
-            )}
-          </span>
-        );
-      },
+      cell: (r) => precoPromo(r),
     },
     {
       key: 'banca', header: 'ML banca', className: 'text-right tabular-nums',
@@ -94,38 +129,16 @@ export default function PromocaoDetalhe() {
     {
       key: 'liquido', header: 'Líquido', className: 'text-right tabular-nums',
       sortValue: (r) => corDeReferencia(r)?.liquido ?? null,
-      cell: (r) => {
-        const c = corDeReferencia(r);
-        if (!c || c.custo == null) return <span className="text-muted-foreground">{rotuloSemLiquido(r)}</span>;
-        return <span className="font-medium">{fmtBRL(c.liquido!)}</span>;
-      },
+      cell: (r) => liquidoCel(r),
     },
     {
       key: 'markup', header: 'Markup', className: 'text-right tabular-nums',
       sortValue: (r) => { const c = corDeReferencia(r); return c && c.custo ? calcularMarkup(c.liquido!, c.custo).markup : null; },
-      cell: (r) => {
-        const c = corDeReferencia(r);
-        if (!c || c.custo == null) return '—';
-        const { markup } = calcularMarkup(c.liquido!, c.custo);
-        return <span className={markup < 0 ? 'text-danger' : undefined}>{fmtMarkup(markup)}</span>;
-      },
+      cell: (r) => markupCel(r),
     },
     {
       key: 'ate', header: 'Até quanto descer', className: 'whitespace-normal w-40 text-right leading-tight',
-      cell: (r) => {
-        if (r.preco_min == null || r.preco_max == null) return '—';
-        const a = ateQuantoDaLinha(r);
-        if (a.motivo === 'nenhum') return (
-          <Tooltip>
-            <TooltipTrigger className="inline-flex items-center gap-1 text-xs font-medium text-danger">
-              <CircleX className="size-3.5" aria-hidden />Sem preço viável
-            </TooltipTrigger>
-            <TooltipContent>Nenhum preço da faixa da promoção atinge o líquido mínimo.</TooltipContent>
-          </Tooltip>
-        );
-        if (a.motivo === 'qualquer') return <span className="text-xs text-success">Qualquer preço da faixa</span>;
-        return a.valor != null ? <span className="font-medium tabular-nums">{fmtBRL(a.valor)}</span> : '—';
-      },
+      cell: (r) => ateQuanto(r, { tooltip: true }),
     },
     {
       key: 'ml', header: <span className="sr-only">Abrir no Mercado Livre</span>, stickyRight: true,
@@ -171,7 +184,7 @@ export default function PromocaoDetalhe() {
           </TabsList>
         </Tabs>
       </div>
-      <div className="overflow-x-auto">
+      <div className="hidden overflow-x-auto md:block">
         <DataTable
           columns={colunas} rows={linhas} rowKey={(r) => r.ml_item_id}
           loading={itens.isLoading} skeletonRows={8}
@@ -180,8 +193,88 @@ export default function PromocaoDetalhe() {
           empty={<p className="py-8 text-center text-sm text-muted-foreground">Nenhum anúncio neste filtro.</p>}
         />
       </div>
+      <div className="md:hidden" data-testid="lista-mobile">
+        <ListaMobile linhas={linhasMobile} loading={itens.isLoading} onAbrir={setAberto} />
+      </div>
       <SheetCores item={aberto} onClose={() => setAberto(null)} />
     </div>
     </TooltipProvider>
+  );
+}
+
+/** Cartões abaixo de `md` — a DataTable estoura a largura e some preço/líquido/markup no scroll horizontal. */
+function ListaMobile({ linhas, loading, onAbrir }: {
+  linhas: ItemPromocao[]; loading: boolean; onAbrir: (r: ItemPromocao) => void;
+}) {
+  if (loading) {
+    return (
+      <ul className="flex flex-col gap-3">
+        {Array.from({ length: 4 }).map((_, i) => <Skeleton key={`sk-${i}`} className="h-28 rounded-xl" />)}
+      </ul>
+    );
+  }
+  if (linhas.length === 0) {
+    return <p className="py-8 text-center text-sm text-muted-foreground">Nenhum anúncio neste filtro.</p>;
+  }
+  return (
+    <ul className="flex flex-col gap-3">
+      {linhas.map((r) => {
+        const ui = SEMAFORO_UI[r.pior_semaforo];
+        const temFaixa = r.preco_min != null && r.preco_max != null;
+        const a = temFaixa ? ateQuantoDaLinha(r) : null;
+        return (
+          <li key={r.ml_item_id} className="relative rounded-xl border bg-card shadow-xs">
+            <button type="button" onClick={() => onAbrir(r)}
+              className="w-full rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              <div className={cn('flex min-w-0 items-center gap-3 pr-9', r.pior_semaforo === 'indisponivel' && 'text-muted-foreground')}>
+                {r.thumbnail && <img src={r.thumbnail} alt="" className="size-12 shrink-0 rounded object-cover" loading="lazy" />}
+                <span title={ui.label} className="inline-flex shrink-0">
+                  <ui.Icon className={cn('size-4', ui.text)} aria-hidden />
+                  <span className="sr-only">{ui.label}</span>
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{r.titulo ?? r.ml_item_id}</p>
+                  <p className="text-xs text-muted-foreground">{r.ml_item_id}</p>
+                </div>
+              </div>
+              <dl className="mt-3 grid grid-cols-3 gap-2">
+                <div>
+                  <dt className="text-xs text-muted-foreground">Promo</dt>
+                  <dd className="tabular-nums">{precoPromo(r)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Líquido</dt>
+                  <dd className="tabular-nums font-medium">{liquidoCel(r)}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs text-muted-foreground">Markup</dt>
+                  <dd className="tabular-nums font-medium">{markupCel(r)}</dd>
+                </div>
+              </dl>
+              {(temFaixa || r.ml_pct) && (
+                <div className="mt-3 flex flex-col gap-0.5 text-xs">
+                  {temFaixa && (
+                    <>
+                      <p><span className="text-muted-foreground">Até quanto descer:</span> {ateQuanto(r, { tooltip: false })}</p>
+                      {a?.motivo === 'nenhum' && (
+                        <p className="text-muted-foreground">Nenhum preço da faixa atinge o líquido mínimo.</p>
+                      )}
+                    </>
+                  )}
+                  {r.ml_pct ? <p className="text-muted-foreground">ML banca {fmtPct(r.ml_pct)}</p> : null}
+                </div>
+              )}
+            </button>
+            {r.permalink && (
+              <a href={r.permalink} target="_blank" rel="noreferrer"
+                aria-label={`Abrir ${r.ml_item_id} no Mercado Livre`}
+                className="absolute right-1 top-1 inline-flex size-11 items-center justify-center rounded-md hover:bg-muted">
+                <ExternalLink className="size-4" aria-hidden />
+              </a>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }

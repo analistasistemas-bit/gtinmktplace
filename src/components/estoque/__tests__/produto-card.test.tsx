@@ -565,6 +565,28 @@ describe('ProdutoCard', () => {
     expect(screen.queryByText('atualizando no ML…')).not.toBeInTheDocument();
   });
 
+  // Card fora da lista (filtro/busca) fica sem observer: com o gcTime padrão (5 min) o marcador
+  // era descartado antes do teto de espera e a badge sumia ao voltar o card.
+  it('marcador sobrevive ao card sair da tela por mais de 5 min', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([mockVariacoes(1, 6)[0]!]);
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const marcador = { porSku: { '00000006': 'aguardando' as const }, desde: new Date().toISOString() };
+    qc.setQueryData(QK.skusAguardandoMl(produto.codigoPai), marcador);
+    const { unmount } = render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    vi.useFakeTimers();
+    try {
+      unmount();
+      vi.advanceTimersByTime(6 * 60_000);
+      expect(qc.getQueryData(QK.skusAguardandoMl(produto.codigoPai))).toEqual(marcador);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('sem marcador, nenhuma badge de sincronização aparece', async () => {
     fetchVariacoesProdutoMock.mockResolvedValue([mockVariacoes(1, 6)[0]!]);
     renderCard();

@@ -9,7 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { CanalTabs } from '@/components/canal-tabs';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { useAtualizarPromocoes, useEstadoSyncPromocoes, usePromocoes } from '@/hooks/usePromocoes';
-import { abaDa, emLeitura, sincronizandoAgora, type AbaPromo } from '@/lib/promocoes';
+import { abaDa, avisoAtualizacao, emLeitura, sincronizandoAgora, type AbaPromo } from '@/lib/promocoes';
 import { CardCampanha } from '@/components/promocoes/card-campanha';
 import { PainelEstadoSync } from '@/components/promocoes/painel-estado-sync';
 
@@ -43,7 +43,10 @@ export default function Promocoes() {
   }, [promocoes.data, agora]);
 
   const onAtualizar = () => atualizar.mutate(undefined, {
-    onSuccess: () => toast.success('Campanhas atualizadas. Buscando os anúncios de cada uma…'),
+    onSuccess: (r) => {
+      const { tipo, texto } = avisoAtualizacao(r as { estado?: string } | null);
+      if (tipo === 'sucesso') toast.success(texto); else if (tipo === 'erro') toast.error(texto); else toast.info(texto);
+    },
     onError: (e) => toast.error(e.message),
   });
   const emCurso = sincronizandoAgora(estado.data ?? null, Date.now());

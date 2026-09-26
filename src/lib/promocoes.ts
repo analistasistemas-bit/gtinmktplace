@@ -67,6 +67,18 @@ export function sincronizandoAgora(e: Pick<EstadoSyncPromo, 'estado' | 'iniciado
   return e?.estado === 'sincronizando' && agoraMs - Date.parse(e.iniciado_em ?? '') < 5 * 60_000;
 }
 
+/** Toast do "Atualizar agora": a edge responde 200 com o estado da etapa de lista, inclusive em falha. */
+export function avisoAtualizacao(r: { estado?: string } | null | undefined): { tipo: 'sucesso' | 'erro' | 'info'; texto: string } {
+  switch (r?.estado) {
+    case 'ok': return { tipo: 'sucesso', texto: 'Campanhas atualizadas. Buscando os anúncios de cada uma…' };
+    case 'sem_promocoes': return { tipo: 'sucesso', texto: 'Atualizado: nenhuma promoção disponível agora no Mercado Livre.' };
+    case 'sem_acesso': return { tipo: 'erro', texto: 'O Mercado Livre não liberou promoções para esta conta.' };
+    case 'erro': return { tipo: 'erro', texto: 'Não foi possível atualizar as promoções. Tente de novo em instantes.' };
+    case 'sincronizando': return { tipo: 'info', texto: 'Já existe uma atualização em andamento.' };
+    default: return { tipo: 'info', texto: 'Atualização solicitada.' };
+  }
+}
+
 export function descontoPct(original: number | null, promo: number | null): number | null {
   if (original == null || promo == null || original <= 0) return null;
   return Math.round((1 - promo / original) * 100);

@@ -59,8 +59,9 @@ export function DistribuicaoSemaforo({ contagem }: { contagem: ContagemPromo }) 
 export function ContagemSemaforo({ contagem, ativo, onFiltro }: {
   contagem: ContagemPromo; ativo?: SemaforoPromo | null; onFiltro?: (s: SemaforoPromo | null) => void;
 }) {
+  // `contents`: os chips entram no mesmo flex-wrap do "Todos" (sem grupo aninhado quebrando linha sozinho).
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="contents">
       {ORDEM.map((s) => {
         const { label, Icon, text } = SEMAFORO_UI[s];
         const n = contagem[s];

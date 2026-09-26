@@ -29,9 +29,8 @@ export function SheetCores({ item, onClose }: { item: ItemPromocao | null; onClo
                   <li key={c.variation_id ?? i} className="flex items-center justify-between gap-3 py-3">
                     <div className="min-w-0">
                       <p className="truncate font-medium">{c.cor ?? 'Única'}</p>
-                      <p className="text-xs text-muted-foreground tabular-nums">
-                        {c.custo != null ? `custo ${fmtBRL(c.custo)}` : ''}{c.piso != null ? ` · mín. líquido ${fmtBRL(c.piso)}` : ''}
-                      </p>
+                      {c.custo != null && <p className="text-xs text-muted-foreground tabular-nums">Custo {fmtBRL(c.custo)}</p>}
+                      {c.piso != null && <p className="text-xs text-muted-foreground tabular-nums">Mín. líquido {fmtBRL(c.piso)}</p>}
                     </div>
                     {c.liquido != null && c.custo != null ? (
                       <div className="flex shrink-0 items-center gap-3 text-right">
