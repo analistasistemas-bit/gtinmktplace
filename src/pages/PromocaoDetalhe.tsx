@@ -208,9 +208,9 @@ function ListaMobile({ linhas, loading, onAbrir }: {
 }) {
   if (loading) {
     return (
-      <ul className="flex flex-col gap-3">
+      <div className="flex flex-col gap-3">
         {Array.from({ length: 4 }).map((_, i) => <Skeleton key={`sk-${i}`} className="h-28 rounded-xl" />)}
-      </ul>
+      </div>
     );
   }
   if (linhas.length === 0) {
@@ -234,7 +234,7 @@ function ListaMobile({ linhas, loading, onAbrir }: {
                 </span>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{r.titulo ?? r.ml_item_id}</p>
-                  <p className="text-xs text-muted-foreground">{r.ml_item_id}</p>
+                  <p className="text-xs text-muted-foreground">{r.ml_item_id}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
                 </div>
               </div>
               <dl className="mt-3 grid grid-cols-3 gap-2">

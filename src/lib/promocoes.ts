@@ -72,8 +72,8 @@ export function avisoAtualizacao(r: { estado?: string } | null | undefined): { t
   switch (r?.estado) {
     case 'ok': return { tipo: 'sucesso', texto: 'Campanhas atualizadas. Buscando os anúncios de cada uma…' };
     case 'sem_promocoes': return { tipo: 'sucesso', texto: 'Atualizado: nenhuma promoção disponível agora no Mercado Livre.' };
-    case 'sem_acesso': return { tipo: 'erro', texto: 'O Mercado Livre não liberou promoções para esta conta.' };
-    case 'erro': return { tipo: 'erro', texto: 'Não foi possível atualizar as promoções. Tente de novo em instantes.' };
+    case 'sem_acesso': return { tipo: 'erro', texto: 'Sem acesso às promoções do Mercado Livre nesta conta. Confira a conexão em Canais.' };
+    case 'erro': return { tipo: 'erro', texto: 'Não foi possível atualizar as promoções. Tente de novo em alguns minutos.' };
     case 'sincronizando': return { tipo: 'info', texto: 'Já existe uma atualização em andamento.' };
     default: return { tipo: 'info', texto: 'Atualização solicitada.' };
   }
