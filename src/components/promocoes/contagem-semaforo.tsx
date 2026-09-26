@@ -14,9 +14,9 @@ export const SEMAFORO_UI: Record<SemaforoPromo, { tone: StatusTone; label: strin
 };
 const ORDEM: SemaforoPromo[] = ['verde', 'amarelo', 'vermelho', 'indisponivel'];
 
-const CHIP_CLASS = 'min-h-11 inline-flex items-center gap-2 rounded-lg border bg-card px-3 text-sm shadow-xs transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary/60 aria-pressed:bg-primary/5 aria-pressed:ring-1 aria-pressed:ring-primary/40 disabled:opacity-50 disabled:pointer-events-none';
+const CHIP_CLASS = 'min-h-11 inline-flex items-center gap-2 rounded-lg border bg-card px-3 text-sm shadow-xs transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring aria-pressed:border-primary/60 aria-pressed:bg-primary/5 aria-pressed:ring-1 aria-pressed:ring-primary/40 disabled:opacity-50';
 
-/** Chip de filtro reutilizável (mesma aparência do gatilho de aba) para grupos `aria-pressed`
+/** Chip de filtro reutilizável (mesmo estado ativo do KpiCard compacto) para grupos `aria-pressed`
  *  sem painel associado; usado pelos semáforos e pelo "Todos" do detalhe. */
 export function ChipFiltro({ ativo, onClick, disabled, title, ariaLabel, children }: {
   ativo: boolean; onClick: () => void; disabled?: boolean; title?: string; ariaLabel?: string; children: ReactNode;
@@ -62,12 +62,12 @@ export function ContagemSemaforo({ contagem, ativo, onFiltro }: {
   return (
     <div className="flex flex-wrap gap-2">
       {ORDEM.map((s) => {
-        const { label, dot } = SEMAFORO_UI[s];
+        const { label, Icon, text } = SEMAFORO_UI[s];
         const n = contagem[s];
         const isAtivo = ativo === s;
         const conteudo = (
           <>
-            <span className={cn('size-2 rounded-full', dot)} aria-hidden />
+            <Icon className={cn('size-3.5', text)} aria-hidden />
             <span className="font-semibold tabular-nums">{fmtInt(n)}</span>
             <span className="hidden text-muted-foreground sm:inline">{label}</span>
           </>

@@ -26,11 +26,11 @@ export function CardCampanha({ promocao: p, agoraMs }: { promocao: Promocao; ago
   );
 
   const corpo = (
-    <Card className="h-full gap-0 p-0 py-0 transition-[transform,box-shadow] duration-200 motion-safe:group-hover:-translate-y-0.5 group-hover:shadow-md group-hover:ring-primary/30">
+    <Card className="h-full gap-0 p-0 transition-[transform,box-shadow] duration-200 motion-safe:group-hover:-translate-y-0.5 group-hover:shadow-md group-hover:ring-primary/30">
       <div className="flex flex-1 flex-col gap-4 p-5">
         <header className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between gap-2 text-xs">
-            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <IconeTipo className="size-3.5" aria-hidden />{rotuloTipo(p.tipo)}
             </span>
             <span className="inline-flex items-center gap-1.5 text-muted-foreground">
@@ -80,7 +80,7 @@ export function CardCampanha({ promocao: p, agoraMs }: { promocao: Promocao; ago
         <footer className="mt-auto flex items-center justify-between gap-2 border-t px-5 py-3 text-xs text-muted-foreground">
           <span>{banca != null ? `ML banca até ${fmtPct(banca)}` : ''}</span>
           <span className="inline-flex items-center gap-1 font-medium transition-colors group-hover:text-primary">
-            Ver anúncios<ChevronRight className="size-3.5 transition-transform group-hover:translate-x-0.5" aria-hidden />
+            Ver anúncios<ChevronRight className="size-3.5 transition-transform motion-safe:group-hover:translate-x-0.5" aria-hidden />
           </span>
         </footer>
       )}

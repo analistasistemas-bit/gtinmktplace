@@ -80,8 +80,8 @@ export default function Promocoes() {
       ) : temDados && (
         <Tabs value={aba} onValueChange={(v) => setAba(v as AbaPromo)}>
           <TabsList>
-            <TabsTrigger value="ativas">Ativas<span className="ml-1 tabular-nums text-muted-foreground">{porAba.ativas.length}</span></TabsTrigger>
-            <TabsTrigger value="futuras">Futuras<span className="ml-1 tabular-nums text-muted-foreground">{porAba.futuras.length}</span></TabsTrigger>
+            <TabsTrigger value="ativas">Ativas{' '}<span className="tabular-nums text-muted-foreground">{porAba.ativas.length}</span></TabsTrigger>
+            <TabsTrigger value="futuras">Futuras{' '}<span className="tabular-nums text-muted-foreground">{porAba.futuras.length}</span></TabsTrigger>
             <TabsTrigger value="encerradas">Encerradas</TabsTrigger>
           </TabsList>
           {porAba[aba].length === 0 ? (
