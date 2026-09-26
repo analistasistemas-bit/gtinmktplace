@@ -536,6 +536,16 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   ~5s, 5 promoções, 52 anúncios) e prova dos números: 7/7 anúncios com líquido da Central batendo
   com `calcular-tarifa-ml` (diferença ≤ R$0,005). Ver
   [ADR-0170](decisions/0170-central-de-promocoes-ml.md).
+- **ADR-0171: Renovação proativa do token ML fora da virada da hora (2026-09-26) — Aceito,
+  aguardando deploy.** A Central de Promoções da DSA levou 429 em 3 rodadas seguidas: o refresh
+  preguiçoso do ADR-0012 concentra a renovação nos crons da virada da hora, e o rate limit de
+  refresh do ML é por app/`client_id`, não por conta. Edge nova `renovar-tokens-ml` (schedule
+  `40 * * * *`) renova conexões `mercado_livre` com token a menos de 165 min de vencer, uma por
+  vez com 2s de pausa; um 429 encerra a rodada. `renovarTokenConexao` em `_shared/ml/token.ts` é só
+  adição (`getValidAccessTokenConexao` e as constantes do ADR-0012 ficam byte-idênticas, sem
+  redeploy das ~60 funções que as usam). `sincronizar-promocoes` passa a devolver 500 no ramo
+  QStash da etapa `lista` em `estado: 'erro'`, para o QStash retentar. Ver
+  [ADR-0171](decisions/0171-renovacao-proativa-token-ml.md).
 - **Cadastro de Grade em Matriz Cor x Tamanho (2026-09-19/20) — EM PRODUÇÃO.** Substituição da lista
   linear de cards pelo componente `MatrizGrade` (`matriz-grade.tsx`): visualização bidimensional Cor (linhas)
   × Tamanho (colunas) com 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas e

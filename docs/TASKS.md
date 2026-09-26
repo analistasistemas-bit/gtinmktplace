@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Renovação proativa do token ML (ADR-0171) — 2026-09-26
+
+A Central de Promoções da DSA levou 429 (`grant_type refresh_token` excedido) em 3 rodadas
+seguidas na virada da hora. Ver [ADR-0171](decisions/0171-renovacao-proativa-token-ml.md).
+
+- [x] `renovarTokenConexao` em `supabase/functions/_shared/ml/token.ts` — só ADIÇÃO, mesmo lock do
+  ADR-0012; `getValidAccessTokenConexao` e as constantes existentes ficam byte-idênticas.
+- [x] Edge nova `renovar-tokens-ml` (`verify_jwt=false`, só QStash, schedule `40 * * * *`): renova
+  conexões `mercado_livre` com token a menos de 165 min de vencer, uma por vez, 2s de pausa; 429
+  encerra a rodada; sempre responde 200.
+- [x] `sincronizar-promocoes`: ramo QStash da etapa `lista` devolve 500 em `estado: 'erro'` (o
+  fan-out tem `retries: 1`); caminho "Atualizar agora" intocado.
+- [x] Testes vitest (mock, sem rede real) para `renovarTokenConexao` e para a lógica do renovador.
+- [x] Cron de `sincronizar-promocoes` mudado à mão para `10 */6 * * *` em 2026-09-26 (schedule
+  `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm`).
+- [ ] Deploy (`supabase functions deploy renovar-tokens-ml`) + criar o schedule QStash
+  `40 * * * *`, body `{}` — feito por Diego.
+
 ## Central de Promoções do ML (ADR-0170) — 2026-09-24
 
 MVP só-leitura das campanhas do Mercado Livre (Relâmpago, Tradicional, Smart, DEAL, cupom,

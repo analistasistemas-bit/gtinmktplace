@@ -82,7 +82,12 @@ Deno.serve(async (req) => {
         const r = await sincronizarPromocao(depsLeitura(admin, cx, payload as MsgLeitura), payload as MsgLeitura, LEITURA);
         return json({ ok: true, ...r });
       }
-      return json({ ok: true, ...(await etapaLista(admin, payload.org_id)) });
+      // ADR-0171: falha de conexão na etapa 'lista' devolve 500 só aqui (ramo QStash) — o
+      // fan-out publica com `retries: 1`, então o QStash tenta de novo ~12s depois (cobre um
+      // tropeço de rede; o 429 do refresh em si é resolvido pelo worker renovar-tokens-ml). O
+      // caminho "Atualizar agora" (abaixo) não muda: usuário já vê o estado 'erro' na tela.
+      const resultadoLista = await etapaLista(admin, payload.org_id);
+      return json({ ok: true, ...resultadoLista }, resultadoLista.estado === 'erro' ? 500 : 200);
     }
 
     let orgId: string;

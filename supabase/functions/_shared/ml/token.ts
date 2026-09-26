@@ -139,3 +139,40 @@ export async function getValidAccessTokenConexao(conexao: ConexaoCanal): Promise
   // rotacionado para não invalidar a credencial).
   throw new Error('Timeout aguardando refresh de token ML (lock concorrente)');
 }
+
+export type ResultadoRenovacaoProativa = 'renovado' | 'pulado_lock' | 'pulado_fora_limite';
+
+/**
+ * ADR-0171 — renovação PROATIVA de uma conexão, usada pelo worker `renovar-tokens-ml`
+ * (fora da virada da hora, onde os crons de leitura se concentram e disputam o rate limit
+ * de refresh do ML, que é por app/`client_id`). Usa o MESMO lock do ADR-0012
+ * (`lock:token:refresh:{id}`) — sem o lock, outro processo já está cuidando desta conexão.
+ * Com o lock, RELÊ o token (pode ter sido renovado por outro caminho entre a listagem que
+ * escolheu esta conexão e agora) e só renova se ainda estiver dentro de `limiteMs`. Erros do
+ * ML (inclusive `MLApiError` 429) propagam para o chamador decidir (ADR-0171: um 429 encerra
+ * a rodada do worker). `getValidAccessTokenConexao` acima e as constantes do módulo continuam
+ * intocadas — este é o único ponto novo.
+ */
+export async function renovarTokenConexao(
+  conexao: ConexaoCanal,
+  limiteMs: number,
+): Promise<ResultadoRenovacaoProativa> {
+  const lockKey = `lock:token:refresh:${conexao.id}`;
+  const pegouLock = await redisSetNX(lockKey, '1', LOCK_TTL_S);
+  if (!pegouLock) return 'pulado_lock';
+
+  try {
+    const row = await lerTokensConexao(conexao.id);
+    if (!precisaRenovar(Date.parse(row.expires_at), Date.now(), limiteMs)) {
+      return 'pulado_fora_limite';
+    }
+    const tok = await refreshTokenML(row.refresh_token);
+    if (!tok.access_token || !tok.refresh_token) {
+      throw new Error('ML não retornou tokens completos na rotação');
+    }
+    await gravarRotacaoConexao(conexao, tok);
+    return 'renovado';
+  } finally {
+    await redisDel(lockKey);
+  }
+}

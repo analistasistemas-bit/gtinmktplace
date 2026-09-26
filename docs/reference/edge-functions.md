@@ -90,6 +90,8 @@
 | pulse-analise-secoes237 | true | HTTP (frontend) | sim (leitura; demanda do nicho por vendedor, ponte pelo catálogo) |
 | **Promoções (ADR-0170)** ||||
 | sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`) |
+| **Token ML (ADR-0171)** ||||
+| renovar-tokens-ml | false | QStash schedule | sim (lock Redis do ADR-0012; conexão já renovada só é pulada) |
 | **Status / métricas / viabilidade** ||||
 | status-publicados | true | HTTP (frontend) | sim (leitura) |
 | atualizar-status-publicado | true | HTTP (frontend, admin) | sim (PUT idempotente) |
@@ -151,14 +153,20 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |
 | `pulse-coletar` (tier completo) | `0 9 * * *` | `{"tier":"completo"}` | 2 |
 | `pulse-coletar` (tier quente) | `0 */6 * * *` | `{"tier":"quente"}` | 2 |
-| `sincronizar-promocoes` | `0 */6 * * *` | `{}` | 1 |
+| `sincronizar-promocoes` | `10 */6 * * *` | `{}` | 1 |
+| `renovar-tokens-ml` | `40 * * * *` | `{}` | 0 (sempre responde 200; retry só martelaria `/oauth/token`) |
 
 Os dois schedules do `pulse-coletar` (ADR-0119) foram criados em 2026-08-16:
 `scd_7whbaAZrFGPAL3JkbWsmNuYb2AVc` (completo) e `scd_5pCHsB95LbDd7cpJMLsJNK8iHNQC` (quente), body
 auditado como JSON puro logo após a criação. Cron em UTC: `0 9 * * *` = 06:00 BRT.
 
 O schedule de `sincronizar-promocoes` (ADR-0170) é `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm`, criado em
-2026-09-24.
+2026-09-24; o cron mudou à mão para `10 */6 * * *` em 2026-09-26 (ADR-0171, item 1) para sair da
+virada da hora, onde disputava o rate limit de refresh do ML com os demais crons.
+
+O schedule de `renovar-tokens-ml` (ADR-0171) é criado no deploy deste ADR, cron `40 * * * *` — o
+único minuto livre de `*/15`, `30 6`, `30 12` e `10 */6` — para renovar conexões ML com token perto
+de vencer fora da virada da hora.
 
 ⚠️ **Armadilha do body duplamente codificado.** O `backfill-faturamento` é o único schedule que
 passa parâmetros, e ficou semanas com `body = '"{\"dias\":30}"'` — uma **string** contendo JSON,
@@ -1558,6 +1566,22 @@ um smoke test contra Postgres real antes do primeiro deploy.
   - **Usuário logado** → dispara a etapa de lista só da própria org, throttle de 2 min, `403` sem
     o módulo `promocoes`.
   - Só faz `GET` no Mercado Livre (única exceção: refresh de token OAuth).
+  - **ADR-0171:** no ramo QStash, se a etapa `lista` terminar em `estado: 'erro'` (falha ao resolver
+    a conexão/token), a resposta é **500** — o fan-out publica com `retries: 1`, então o QStash
+    tenta de novo ~12s depois (cobre um tropeço de rede). O caminho "Atualizar agora" (usuário
+    logado) não muda: continua sempre 200, o estado 'erro' já aparece na tela.
+
+### Token ML (ADR-0171)
+- **renovar-tokens-ml** *(nova, `verify_jwt=false`, só QStash, schedule `40 * * * *`)* — renova
+  proativamente as conexões `mercado_livre` com token válido e `expires_at` a menos de 165 min,
+  ordenadas por `expires_at` asc, uma por vez com 2s de pausa entre elas. Usa
+  `renovarTokenConexao` (`_shared/ml/token.ts`, só ADIÇÃO ao módulo do ADR-0012 — nenhuma função
+  existente mudou, sem precisar redeployar quem já usa `getValidAccessTokenConexao`). Cada conexão
+  roda em try/catch (inclusive Redis): um 429 do ML encerra a rodada inteira (rate limit de refresh
+  é por app/`client_id`, não por conta); qualquer outro erro é logado e a rodada segue. Sempre
+  responde 200 com `{ok, renovadas, puladas, falhas, interrompido_429}`. Token já vencido ou
+  `expires_at` nulo fica fora (assunto do refresh preguiçoso do ADR-0012 e da reconexão manual).
+  Lógica pura em `processar.ts` (deps injetadas), casca fina em `index.ts`.
 
 ### Status / métricas / viabilidade
 - **status-publicados** — lê status de todos os anúncios (ML + extras) via conector multicanal
