@@ -81,6 +81,6 @@ export function esperaEsgotada(marcador: MarcadorSyncMl, agora: Date = new Date(
 
 /** Ainda há push em voo? É o que liga o poll do status vivo — sem isso a tela não descobre
  *  sozinha que o ML já convergiu. */
-export function temSkuAguardando(marcador: MarcadorSyncMl | undefined): boolean {
+export function temSkuAguardando(marcador: MarcadorSyncMl | null | undefined): boolean {
   return !!marcador && Object.values(marcador.porSku).some((e) => e === 'aguardando');
 }

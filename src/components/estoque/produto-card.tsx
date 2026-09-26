@@ -206,9 +206,10 @@ export function ProdutoCard({
 
   // Badge "atualizando no ML…" (pedido do Diego 03/09/2026): SKUs da última entrada de estoque
   // deste produto, marcados pelo DialogEntrada. Marcador de sessão, como o de cores novas.
-  const { data: marcadorSync } = useQuery<MarcadorSyncMl | undefined>({
+  const { data: marcadorSync } = useQuery<MarcadorSyncMl | null>({
     queryKey: QK.skusAguardandoMl(produto.codigoPai),
-    queryFn: (): MarcadorSyncMl | undefined => undefined,
+    // null (não undefined): o React Query v5 rejeita undefined no queryFn e ignora setQueryData(key, undefined).
+    queryFn: (): MarcadorSyncMl | null => null,
     staleTime: Infinity,
   });
   const aguardandoMl = temSkuAguardando(marcadorSync);
@@ -245,7 +246,7 @@ export function ProdutoCard({
   useEffect(() => {
     if (!marcadorSync) return;
     if (esperaEsgotada(marcadorSync)) {
-      qc.setQueryData(QK.skusAguardandoMl(produto.codigoPai), undefined);
+      qc.setQueryData(QK.skusAguardandoMl(produto.codigoPai), null);
       return;
     }
     const aguardando = Object.entries(marcadorSync.porSku)
@@ -263,7 +264,7 @@ export function ProdutoCard({
   // "✓ no ML" é confirmação, não estado: some sozinho depois de alguns segundos.
   useEffect(() => {
     if (!marcadorSync || temSkuAguardando(marcadorSync)) return;
-    const t = setTimeout(() => qc.setQueryData(QK.skusAguardandoMl(produto.codigoPai), undefined), 8_000);
+    const t = setTimeout(() => qc.setQueryData(QK.skusAguardandoMl(produto.codigoPai), null), 8_000);
     return () => clearTimeout(t);
   }, [marcadorSync, qc, produto.codigoPai]);
 

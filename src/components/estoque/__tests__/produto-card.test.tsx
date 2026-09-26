@@ -543,6 +543,28 @@ describe('ProdutoCard', () => {
     expect(screen.queryByText('atualizando no ML…')).not.toBeInTheDocument();
   });
 
+  // setQueryData(key, undefined) é no-op no React Query v5: o descarte do marcador vencido
+  // não acontecia e a badge ficava acesa (com poll de 15 s) até recarregar a página.
+  it('marcador além do teto de espera é descartado: a badge some', async () => {
+    fetchVariacoesProdutoMock.mockResolvedValue([
+      { ...mockVariacoes(1, 6)[0]!, estoque: 40, mlItemId: 'MLB-A' },
+    ]);
+    statusItens = [{ ml_item_id: 'MLB-A', preco: null }];
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(QK.skusAguardandoMl(produto.codigoPai), {
+      porSku: { '00000006': 'aguardando' }, desde: '2020-01-01T00:00:00Z',
+    });
+    render(
+      <QueryClientProvider client={qc}>
+        <ProdutoCard produto={produto} canais={[]} onDarEntrada={vi.fn()} />
+      </QueryClientProvider>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /^Protetor Solar/ }));
+    await waitFor(() => expect(screen.getByText('00000006')).toBeInTheDocument());
+    await waitFor(() => expect(qc.getQueryData(QK.skusAguardandoMl(produto.codigoPai))).toBeNull());
+    expect(screen.queryByText('atualizando no ML…')).not.toBeInTheDocument();
+  });
+
   it('sem marcador, nenhuma badge de sincronização aparece', async () => {
     fetchVariacoesProdutoMock.mockResolvedValue([mockVariacoes(1, 6)[0]!]);
     renderCard();
