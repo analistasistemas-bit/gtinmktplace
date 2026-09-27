@@ -16,12 +16,12 @@
 - **Unidade de dado = `ad_group_id`** (R3). Toda soma é por grupo, deduplicada por `ad_group_id`; nunca por MLB. A métrica por MLB/cor do ML (`/ad_groups/{id}/ads` com métricas) **não** é usada como valor (R2: não fecha com o grupo e passa em +0,95 % o total).
 - **Endpoints (R4, spike 053 §3):** `GET /advertising/advertisers?product_id=PADS` com header `Api-Version: 1`; todos os outros com `api-version: 2`: `…/advertisers/{adv}/product_ads/ad_groups/search?limit=100&offset=N&date_from&date_to&metrics=<MAIÚSCULAS>&metrics_summary=true&filters[status]=ACTIVE,PAUSED,IDLE,EMPTY,HOLD`, `…/product_ads/ad_groups/{id}?date_from&date_to&metrics=<MAIÚSCULAS>&aggregation_type=daily` (minúsculo) e `…/product_ads/ad_groups/{id}/ads?limit=100&offset=N&date_from&date_to&metrics=COST` (só para a lista de membros de FAMILY/CATALOG). **Proibidos** os legados `ads/search` e `product_ads/items?item_ids=`.
 - **Janela (R4):** carga inicial `[hoje−90, hoje−1]` (BRT; em 27/09/2026 = 29/06–26/09, exatamente a janela aceita no spike; > 90 dias dá 400). Dia a dia: `[hoje−15, hoje−1]` (D-1 + 14 dias de releitura da atribuição), estendida para trás até `último dia ok − 14` se o worker ficou parado, sem passar de `hoje−90`. **Hoje nunca é pedido nem gravado** (o ML já devolve o dia corrente parcial).
-- **Série densa:** o ML devolve zero explícito. Dia da janela sem linha na resposta **não** é gravado (desconhecido, nunca zero escrito). Os percentuais da API (`acos`, `roas`, `cpc`, `ctr`, `cvr`, `sov`, `tacos`) são descartados no parser.
-- **Métricas (R8):** CPC = Σcost/Σclicks, ROAS = Σtotal_amount/Σcost, ACOS = Σcost/Σtotal_amount — sempre por Σ. "Despesa de Ads do período" = Σcost dos dias do período até ontem. "Lucro após Ads" = lucro atual do período (`linhaPeriodo.m.lucro`) − despesa, **só** com alcance `sku` (ou `familia` na visão da família) e período inteiro coberto; senão "indisponível" com o motivo (gasto compartilhado com N códigos / lucro sem custo / fora da cobertura). Lucro nulo → Lucro após Ads nulo, nunca "−despesa". O lucro atual fica intacto. Nada entra em ranking, ABC, Financeiro ou billing.
+- **Série densa e zero só com linha real:** o ML devolve zero explícito. Resposta com algum dia da janela faltando é inválida (`parseSerieGrupo` → `null` → rodada `erro`); nada é gravado pela metade. No front, zero só aparece quando existe linha com `cost: 0`; dia sem linha, fora da cobertura ou com carga `parcial` fica sem valor (`null`). Depois de 5 adiamentos no mesmo cursor, os grupos não lidos viram falha e a rodada fecha em `erro` (nunca `ok`). Os percentuais da API (`acos`, `roas`, `cpc`, `ctr`, `cvr`, `sov`, `tacos`) são descartados no parser.
+- **Métricas (R8):** CPC = Σcost/Σclicks, ROAS = Σtotal_amount/Σcost, ACOS = Σcost/Σtotal_amount — sempre por Σ. "Despesa de Ads do período" = Σcost dos dias **cobertos** do período até ontem (mesmo recorte do gráfico). "Lucro após Ads" = lucro atual do período (`linhaPeriodo.m.lucro`) − despesa, **só** com alcance `sku` (ou `familia` na visão da família) e período inteiro coberto; senão "indisponível" com o motivo (gasto compartilhado com N códigos / lucro sem custo / fora da cobertura / gasto fora dos grupos listados — `custo_resumo − custo_listado > 0` em `ml_ads_sync`, provável grupo excluído; a despesa continua aparecendo). Lucro nulo → Lucro após Ads nulo, nunca "−despesa". O lucro atual fica intacto. Nada entra em ranking, ABC, Financeiro ou billing.
 - **Alcance (R7):** `sku` = todo grupo em que o código aparece tem só esse código (todo membro com código resolvido); `familia` = idem com "todos os códigos na família"; `anuncio` = algum grupo compartilhado (mostra o gasto dos grupos, rotulado); `indisponivel` = nenhum MLB do alvo no mapa. Membro sem código resolvido **impede** a exclusividade.
-- **Vínculo MLB → código (R6):** o mesmo UNION de `vendas_sku_mlbs` (Fatia 2a), sem `familias.ml_item_id`, rodando no front com `current_org_id()`. Vínculo grupo → MLB = só o atual, com `visto_em`, rotulado "vínculo atual" (R5). ITEM: `ad_group_external_id` é o MLB. FAMILY/CATALOG: `/ad_groups/{id}/ads`.
+- **Vínculo MLB → código (R6):** o mesmo UNION de `vendas_sku_mlbs` (Fatia 2a), sem `familias.ml_item_id`, rodando no front com `current_org_id()`. Vínculo grupo → MLB = só o atual, com `visto_em`, rotulado "vínculo atual" (R5). ITEM: `ad_group_external_id` é o MLB. FAMILY/CATALOG: `/ad_groups/{id}/ads`, **sempre na janela de 90 dias**; lista vazia ou menor que o vínculo gravado → `itens: null` (o vínculo gravado fica; nunca encolhe por uma leitura, para nunca gerar um falso `sku`).
 - **Estados (R9):** `sem_coleta`, `sem_permissao` (403 PolicyAgent: texto "sem permissão de Publicidade ou conexão recusada"), `sem_advertiser` (404 no advertiser ou lista sem MLB), `sem_acesso` (401 / sem conexão), `sem_ads` (zero comprovado **nos anúncios do mapa atual**: o texto diz "anúncios vinculados", porque um anúncio de catálogo que nunca vendeu não está no mapa de R6), `parcial` (carga inicial em curso), `desatualizado` (último ok há > 48 h), "atribuição em aberto" por dia (dia relido < 15 dias depois dele — medido pelo `coletado_em`, não pelo relógio de hoje), hoje nunca mostrado.
-- **Worker (R10):** `coletar-ads-ml`, estado próprio `ml_ads_sync`; reaproveita de `_shared/trafego/` o contrato de posse/cursor, `buscarML`, `tratarRequisicao`, `corteRetencao`, `delaySegundos`, `TIMEOUT_ML_MS`, `diaDeHoje` e `emParalelo` (`_shared/promocoes`). Não refatora a 2b: só dois acréscimos compatíveis em `_shared/trafego/fiacao.ts` (parâmetro opcional `headers` em `buscarML` e `rotulo` opcional em `Rotas`). `deduplicationId` com prefixo **`ads:`** (o QStash deduplica por conta: reusar `trafego:` descartaria a mensagem de Ads). Lote 20, concorrência 6, orçamento 90 s, 429/5xx com `Retry-After` só se couber, adiamento no mesmo cursor, `verify_jwt = false` + `verificarAssinatura`, `erro` → HTTP 500 (ADR-0171), `obsoleta` → 200. Retenção 13 meses **depois** do fan-out; falha da limpeza só loga. Schedule diário **`17 14 * * *` UTC** (11:17 BRT, depois das 10:00 BRT de atualização do ML).
+- **Worker (R10):** `coletar-ads-ml`, estado próprio `ml_ads_sync`; reaproveita de `_shared/trafego/` o contrato de posse/cursor, `buscarML`, `tratarRequisicao`, `corteRetencao`, `delaySegundos`, `TIMEOUT_ML_MS`, `diaDeHoje` e `emParalelo` (`_shared/promocoes`). Não refatora a 2b: só dois acréscimos compatíveis em `_shared/trafego/fiacao.ts` (parâmetro opcional `headers` em `buscarML` e `rotulo` opcional em `Rotas`). 401 no meio da cadeia: as deps descartam o token em memória, pedem de novo a `getValidAccessTokenConexao` **uma vez** e repetem a chamada; 401 de novo → `sem_acesso`; 403 nunca repete. `deduplicationId` com prefixo **`ads:`** (o QStash deduplica por conta: reusar `trafego:` descartaria a mensagem de Ads). Lote 20, concorrência 6, orçamento 90 s, 429/5xx com `Retry-After` só se couber, adiamento no mesmo cursor, `verify_jwt = false` + `verificarAssinatura`, `erro` → HTTP 500 (ADR-0171), `obsoleta` → 200. Retenção 13 meses **depois** do fan-out; falha da limpeza só loga. Schedule diário **`17 14 * * *` UTC** (11:17 BRT, depois das 10:00 BRT de atualização do ML).
 - **Tabelas (R11):** org-scoped, RLS de select por `current_org_id()`, bloco de revoke/grant idêntico a `20260927084615_vendas_sku_trafego.sql:53-66`; RPCs de escrita `security definer`, `search_path = ''`, `revoke all … from public, anon, authenticated`, `grant execute … to service_role`. Upsert de `ml_ads_grupo_dia` = "o mais recente vence" por `coletado_em` (a atribuição muda por 14 dias; **não** vale "ok não regride"). Checks de faixa ≥ 0. Nenhuma linha é apagada quando um grupo some do search — só a retenção apaga.
 - **Migrations:** só `supabase migration new vendas_sku_ads` (o timestamp vem do comando; chamado `<TS>` abaixo — substituir `<TS>` pelo valor real em todo arquivo e comentário criado nas tasks seguintes). Aplicar **só no Postgres local** (`docker exec -i -e PGPASSWORD=postgres supabase_db_txvncrgkoynoxwopfkbp psql -h 127.0.0.1 -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < arquivo.sql`). **Sem `supabase db push`, sem deploy, sem schedule, sem merge, sem push** (R14). Runbook pronto para o Diego.
 - **Repo público:** fixtures com números inventados e ids fictícios (`1000001`, `2000001`, `3000001`, `4000001`, `MLB1000000001`); nenhum valor real de cliente.
@@ -31,11 +31,11 @@
 
 ## Review Focus
 
-1. **Alcance errado — grupo contado 2× na família, ou grupo com membro de outro código marcado como `sku`.** Um grupo FAMILY alcançado por dois MLBs da família entra uma vez só; o par "grupo ITEM antigo + grupo FAMILY novo" do mesmo MLB migrado soma os dois (são grupos distintos); um membro do grupo que não está no mapa do dossiê (cor irmã, anúncio de catálogo sem venda) ou sem código resolvido tira o grupo do `sku`. Testes: T5 (`dedup por ad_group_id`, `par ITEM+FAMILY`, `membro sem código`, `membro de outro código`) e T1 (`vendas_sku_codigos_mlbs`).
+1. **Alcance errado — grupo contado 2× na família, ou grupo compartilhado marcado como `sku`.** Um grupo FAMILY alcançado por dois MLBs da família entra uma vez só; o par "grupo ITEM antigo + grupo FAMILY novo" do mesmo MLB migrado soma os dois; um membro fora do mapa do dossiê ou sem código resolvido tira o grupo do `sku`; uma releitura de `/ads` que devolve menos membros (ou nenhum) não encolhe o vínculo. Testes: T5 (`dedup por ad_group_id`, `par ITEM+FAMILY`, `membro sem código`, `membro de outro código`), T3 (`releitura com menos membros… não vira sku`, `/ads paginado > 100`), T1 (`vendas_sku_codigos_mlbs`, `itens [] não apaga`).
 2. **Média de percentuais.** ROAS/ACOS/CPC do período vêm de Σ/Σ, e o parser nem lê `acos`/`roas`/`cpc` da API. Testes: T2 (`parseSerieGrupo descarta percentuais`) e T5 (`ROAS 1,9 e não 5,5`).
 3. **Atribuição em aberto tratada como final.** Com o worker parado há semanas, um dia lido quando tinha 12 dias continua "em aberto": a finalidade vem de `coletado_em − dia ≥ 15`, nunca de `hoje − dia`. Testes: T5 (`atribuicaoFinal` e `worker parado`).
 4. **403 de política confundido com token expirado.** 403 `PA_UNAUTHORIZED_RESULT_FROM_POLICIES` → `sem_permissao`, sem retry, sem renovar; 401 → `sem_acesso`; 404 no advertiser ou lista sem MLB → `sem_advertiser`; 404 de um grupo → pula o grupo e mantém os dias gravados. Testes: T2 (`classificarResposta`) e T3 (quatro casos de parada + `404 de grupo`).
-5. **Grupo `deleted` sumindo e o total da família ficando abaixo do real.** Grupo que saiu do search mas tem gasto gravado na janela é relido por id (vínculo mantido); se o ML devolver 404, os dias gravados ficam; nada é apagado fora da retenção; T7 mede Σ dias × `metrics_summary.cost` e registra a diferença. Testes: T1 (`grupo fora do lote intacto`), T3 (`releitura de grupo fora do search`, `404 de grupo`).
+5. **Gasto sumindo ou zero falso: grupo `deleted`, dia sem linha, série furada.** Grupo que saiu do search mas tem gasto gravado é relido por id; 404 mantém os dias; nada é apagado fora da retenção. Gasto fora de qualquer grupo listado (`custo_resumo > custo_listado`) tira o "Lucro após Ads". Série com dia faltando é erro, 5 adiamentos fecham em `erro`, e o front só mostra zero com linha `cost: 0`; a despesa soma só dia coberto. A T7 prova Σ gravado = `custo_listado` e que o 2º run não mexe em dia com mais de 15 dias. Testes: T1 (`grupo fora do lote intacto`, `custos no sync`), T2 (`dia faltando → null`), T3 (`releitura de grupo fora do search`, `404 de grupo`, `5º adiamento`, `série furada`), T5 (`zero só com linha real`, `despesa só soma dia coberto`, `gasto fora dos grupos listados`).
 
 ---
 
@@ -51,14 +51,14 @@
 **Interfaces:**
 - Consumes: `public.organizations(id)`, `public.current_org_id()`, as tabelas-fonte de `vendas_sku_mlbs` (`ml_vendas_itens`, `anuncios_externos_itens`, `anuncios_externos`).
 - Produces (usados por T3/T4/T5):
-  - `ml_ads_sync(org_id uuid pk, advertiser_id bigint, estado text, erro text, rodada timestamptz, posse_ate timestamptz, iniciado_em timestamptz, cursor text, ultimo_ok_em timestamptz, ultimo_erro_em timestamptz, carga_inicial_ok boolean not null default false, cobertura_desde date)`
+  - `ml_ads_sync(org_id uuid pk, advertiser_id bigint, estado text, erro text, rodada timestamptz, posse_ate timestamptz, iniciado_em timestamptz, cursor text, ultimo_ok_em timestamptz, ultimo_erro_em timestamptz, carga_inicial_ok boolean not null default false, cobertura_desde date, custo_resumo numeric, custo_listado numeric)`
   - `ml_ads_grupo(org_id, ad_group_id bigint, tipo text, external_id text, campaign_id bigint, status text, atualizado_em timestamptz)`, PK `(org_id, ad_group_id)`
   - `ml_ads_grupo_item(org_id, ad_group_id bigint, ml_item_id text, visto_em timestamptz)`, PK `(org_id, ad_group_id, ml_item_id)`
   - `ml_ads_grupo_dia(org_id, ad_group_id bigint, dia date, cost numeric, clicks int, prints int, direct_amount numeric, indirect_amount numeric, total_amount numeric, direct_units int, units int, coletado_em timestamptz)`, PK `(org_id, ad_group_id, dia)`
   - `reservar_ads_posse(p_org uuid) returns table(rodada timestamptz, cursor text)`
   - `avancar_ads_cursor(p_org uuid, p_rodada timestamptz, p_cursor_atual text, p_cursor_novo text) returns boolean`
-  - `gravar_ads_lote(p_org uuid, p_rodada timestamptz, p_coletado_em timestamptz, p_grupos jsonb) returns boolean` — `p_grupos`: `[{ad_group_id, tipo, external_id, campaign_id, status, itens: string[] | null, dias: [{dia, cost, clicks, prints, direct_amount, indirect_amount, total_amount, direct_units, units}]}]`; `false` = rodada não é a dona.
-  - `concluir_ads_rodada(p_org uuid, p_rodada timestamptz, p_estado text, p_erro text default null, p_carga_concluida boolean default false, p_advertiser_id bigint default null, p_cobertura_desde date default null) returns boolean`
+  - `gravar_ads_lote(p_org uuid, p_rodada timestamptz, p_coletado_em timestamptz, p_grupos jsonb) returns boolean` — `p_grupos`: `[{ad_group_id, tipo, external_id, campaign_id, status, itens: string[] | null, dias: [{dia, cost, clicks, prints, direct_amount, indirect_amount, total_amount, direct_units, units}]}]`; `itens` null **ou vazio** mantém o vínculo gravado; `false` = rodada não é a dona.
+  - `concluir_ads_rodada(p_org uuid, p_rodada timestamptz, p_estado text, p_erro text default null, p_carga_concluida boolean default false, p_advertiser_id bigint default null, p_cobertura_desde date default null, p_custo_resumo numeric default null, p_custo_listado numeric default null) returns boolean` — com `ok`, grava `custo_resumo`/`custo_listado` da janela da rodada.
   - `limpar_ads_retencao(p_corte date) returns void`
   - `vendas_sku_codigos_mlbs(p_mlbs text[]) returns jsonb` — `{ "MLB…": ["cod", …] }`, só da org do chamador; MLB sem código fica fora do objeto. `execute` para `authenticated`.
 
@@ -98,7 +98,7 @@ begin
   foreach f in array array[
     'public.reservar_ads_posse(uuid)', 'public.avancar_ads_cursor(uuid,timestamptz,text,text)',
     'public.gravar_ads_lote(uuid,timestamptz,timestamptz,jsonb)',
-    'public.concluir_ads_rodada(uuid,timestamptz,text,text,boolean,bigint,date)',
+    'public.concluir_ads_rodada(uuid,timestamptz,text,text,boolean,bigint,date,numeric,numeric)',
     'public.limpar_ads_retencao(date)'] loop
     if has_function_privilege('anon', f, 'execute') or has_function_privilege('authenticated', f, 'execute')
        or has_function_privilege('public', f, 'execute') then raise exception 'RPC exposta: %', f; end if;
@@ -161,15 +161,22 @@ begin
   if (select status from public.ml_ads_grupo where org_id = org1 and ad_group_id = 3000001) <> 'ACTIVE'
     then raise exception 'leitura velha trocou o status'; end if;
 
-  -- Grupo fora do lote (sumiu do search) fica intacto; itens [] zera só o vínculo, não os dias.
+  -- Grupo fora do lote (sumiu do search) fica intacto; itens [] (lista vazia do ML) NÃO apaga o vínculo.
   if not exists (select 1 from public.ml_ads_grupo_dia where org_id = org1 and ad_group_id = 3000002)
     then raise exception 'grupo fora do lote perdeu dias'; end if;
   perform public.gravar_ads_lote(org1, rod, '2026-09-29T14:00:00Z',
     '[{"ad_group_id":3000001,"tipo":"FAMILY","external_id":"4000001","campaign_id":2000001,"status":"EMPTY","itens":[],"dias":[]}]');
-  if exists (select 1 from public.ml_ads_grupo_item where org_id = org1 and ad_group_id = 3000001)
-    then raise exception 'itens [] não zerou o vínculo atual'; end if;
+  if (select count(*) from public.ml_ads_grupo_item where org_id = org1 and ad_group_id = 3000001) <> 2
+    then raise exception 'itens [] apagou o vínculo gravado'; end if;
   if (select count(*) from public.ml_ads_grupo_dia where org_id = org1 and ad_group_id = 3000001) <> 2
     then raise exception 'itens [] apagou dias'; end if;
+  if (select status from public.ml_ads_grupo where org_id = org1 and ad_group_id = 3000001) <> 'EMPTY'
+    then raise exception 'metadado mais novo não foi gravado'; end if;
+  -- Lista nova não vazia substitui o vínculo (o worker só manda quando não é menor que o gravado).
+  perform public.gravar_ads_lote(org1, rod, '2026-09-29T15:00:00Z',
+    '[{"ad_group_id":3000001,"tipo":"FAMILY","external_id":"4000001","campaign_id":2000001,"status":"ACTIVE","itens":["MLB1","MLB2","MLB4"],"dias":[]}]');
+  if (select count(*) from public.ml_ads_grupo_item where org_id = org1 and ad_group_id = 3000001) <> 3
+    then raise exception 'lista nova não substituiu o vínculo'; end if;
 
   -- Checks de faixa e de tipo.
   begin
@@ -187,18 +194,19 @@ begin
 
   -- concluir: rodada obsoleta não fecha; ok fecha carga, grava advertiser e cobertura.
   if public.concluir_ads_rodada(org1, rod - interval '1 day', 'ok') then raise exception 'concluir obsoleto passou'; end if;
-  if not public.concluir_ads_rodada(org1, rod, 'ok', null, true, 1000001, '2026-06-29') then raise exception 'concluir ok falhou'; end if;
+  if not public.concluir_ads_rodada(org1, rod, 'ok', null, true, 1000001, '2026-06-29', 100.00, 97.40) then raise exception 'concluir ok falhou'; end if;
   select * into r from public.ml_ads_sync where org_id = org1;
   if r.estado <> 'ok' or not r.carga_inicial_ok or r.cobertura_desde <> '2026-06-29' or r.advertiser_id <> 1000001
-     or r.cursor is not null or r.posse_ate is not null or r.ultimo_ok_em is null then raise exception 'concluir ok errado: %', r; end if;
+     or r.cursor is not null or r.posse_ate is not null or r.ultimo_ok_em is null
+     or r.custo_resumo <> 100.00 or r.custo_listado <> 97.40 then raise exception 'concluir ok errado (custos no sync?): %', r; end if;
   -- Rodada diária seguinte não recua a cobertura.
   select * into r from public.reservar_ads_posse(org1);
-  perform public.concluir_ads_rodada(org1, r.rodada, 'ok', null, true, 1000001, '2026-09-12');
+  perform public.concluir_ads_rodada(org1, r.rodada, 'ok', null, true, 1000001, '2026-09-12', 100.00, 97.40);
   if (select cobertura_desde from public.ml_ads_sync where org_id = org1) <> '2026-06-29' then raise exception 'cobertura recuou'; end if;
   -- Worker parado > 90 dias: a janela relida começa depois de "último ok − 14" → a cobertura avança (buraco ≠ zero).
   update public.ml_ads_sync set ultimo_ok_em = now() - interval '200 days' where org_id = org1;
   select * into r from public.reservar_ads_posse(org1);
-  perform public.concluir_ads_rodada(org1, r.rodada, 'ok', null, true, 1000001, current_date - 90);
+  perform public.concluir_ads_rodada(org1, r.rodada, 'ok', null, true, 1000001, current_date - 90, 100.00, 97.40);
   if (select cobertura_desde from public.ml_ads_sync where org_id = org1) <> current_date - 90
     then raise exception 'cobertura não avançou depois do buraco'; end if;
   -- sem_permissao: guarda o motivo e preserva ultimo_ok_em.
@@ -207,6 +215,7 @@ begin
   select * into r from public.ml_ads_sync where org_id = org1;
   if r.estado <> 'sem_permissao' or r.erro is null or r.ultimo_erro_em is null or r.ultimo_ok_em is null
     then raise exception 'concluir sem_permissao errado: %', r; end if;
+  if r.custo_resumo is null then raise exception 'rodada sem ok apagou os custos da última rodada ok'; end if;
   -- Carga inicial interrompida: a próxima rodada retoma o cursor.
   update public.ml_ads_sync set carga_inicial_ok = false where org_id = org1;
   select * into r from public.reservar_ads_posse(org1);
@@ -291,7 +300,9 @@ create table public.ml_ads_sync (
   ultimo_ok_em     timestamptz,
   ultimo_erro_em   timestamptz,
   carga_inicial_ok boolean not null default false,  -- carga de 90 dias concluída
-  cobertura_desde  date           -- 1º dia da carga inicial: antes dele não há prova de zero
+  cobertura_desde  date,          -- 1º dia coberto por coleta ok (carga inicial; avança com retenção/buraco)
+  custo_resumo     numeric check (custo_resumo is null or custo_resumo >= 0),    -- metrics_summary.cost da última janela ok
+  custo_listado    numeric check (custo_listado is null or custo_listado >= 0)   -- Σ cost dos grupos listados na mesma janela
 );
 
 create table public.ml_ads_grupo (
@@ -380,7 +391,8 @@ $$;
 
 -- p_grupos: [{ad_group_id, tipo, external_id, campaign_id, status, itens: [mlb]|null, dias: [...]}].
 -- O mais recente vence por p_coletado_em (a atribuição muda por 14 dias, inclusive para baixo).
--- itens array = vínculo atual completo (substitui); null = não lido nesta rodada (mantém).
+-- itens array não vazio = vínculo atual completo (substitui); null ou [] = mantém o gravado (lista vazia do
+-- ML não apaga vínculo: o gasto do grupo sumiria do dossiê).
 -- Grupo que não vem no lote não é tocado: nada é apagado quando um grupo some do search.
 create function public.gravar_ads_lote(p_org uuid, p_rodada timestamptz, p_coletado_em timestamptz, p_grupos jsonb)
 returns boolean
@@ -402,7 +414,7 @@ begin
     on conflict (org_id, ad_group_id) do update
       set tipo = excluded.tipo, external_id = excluded.external_id, campaign_id = excluded.campaign_id,
           status = excluded.status, atualizado_em = excluded.atualizado_em;
-    if jsonb_typeof(g->'itens') = 'array' then
+    if jsonb_typeof(g->'itens') = 'array' and jsonb_array_length(g->'itens') > 0 then
       delete from public.ml_ads_grupo_item i
        where i.org_id = p_org and i.ad_group_id = v_id
          and not (i.ml_item_id in (select jsonb_array_elements_text(g->'itens')));
@@ -428,14 +440,16 @@ begin
   return true;
 end $$;
 
--- Fecha a rodada (só a dona). ok → ultimo_ok_em; outro estado → ultimo_erro_em + erro (ultimo_ok_em fica).
+-- Fecha a rodada (só a dona). ok → ultimo_ok_em, custo_resumo e custo_listado da janela; outro estado →
+-- ultimo_erro_em + erro (ultimo_ok_em e os custos da última rodada ok ficam).
 -- p_carga_concluida → carga_inicial_ok, cursor zerado e cobertura_desde: a 1ª carga a define; depois ela só
 -- avança se a janela relida (p_cobertura_desde) começou depois de "último ok − 14" — worker parado > 90 dias
 -- deixou buraco que não pode virar zero. `ultimo_ok_em` no SET é o valor anterior ao update.
 -- Sempre solta a posse.
 create function public.concluir_ads_rodada(p_org uuid, p_rodada timestamptz, p_estado text, p_erro text default null,
                                            p_carga_concluida boolean default false, p_advertiser_id bigint default null,
-                                           p_cobertura_desde date default null)
+                                           p_cobertura_desde date default null, p_custo_resumo numeric default null,
+                                           p_custo_listado numeric default null)
 returns boolean
 language sql security definer set search_path = '' as $$
   with u as (
@@ -446,6 +460,8 @@ language sql security definer set search_path = '' as $$
            ultimo_ok_em = case when p_estado = 'ok' then now() else ultimo_ok_em end,
            ultimo_erro_em = case when p_estado <> 'ok' then now() else ultimo_erro_em end,
            erro = case when p_estado <> 'ok' then p_erro end,
+           custo_resumo = case when p_estado = 'ok' then p_custo_resumo else custo_resumo end,
+           custo_listado = case when p_estado = 'ok' then p_custo_listado else custo_listado end,
            carga_inicial_ok = carga_inicial_ok or p_carga_concluida,
            cobertura_desde = case
              when not p_carga_concluida then cobertura_desde
@@ -513,12 +529,12 @@ $$;
 revoke all on function public.reservar_ads_posse(uuid)                                   from public, anon, authenticated;
 revoke all on function public.avancar_ads_cursor(uuid, timestamptz, text, text)          from public, anon, authenticated;
 revoke all on function public.gravar_ads_lote(uuid, timestamptz, timestamptz, jsonb)     from public, anon, authenticated;
-revoke all on function public.concluir_ads_rodada(uuid, timestamptz, text, text, boolean, bigint, date) from public, anon, authenticated;
+revoke all on function public.concluir_ads_rodada(uuid, timestamptz, text, text, boolean, bigint, date, numeric, numeric) from public, anon, authenticated;
 revoke all on function public.limpar_ads_retencao(date)                                   from public, anon, authenticated;
 grant execute on function public.reservar_ads_posse(uuid)                                to service_role;
 grant execute on function public.avancar_ads_cursor(uuid, timestamptz, text, text)       to service_role;
 grant execute on function public.gravar_ads_lote(uuid, timestamptz, timestamptz, jsonb)  to service_role;
-grant execute on function public.concluir_ads_rodada(uuid, timestamptz, text, text, boolean, bigint, date) to service_role;
+grant execute on function public.concluir_ads_rodada(uuid, timestamptz, text, text, boolean, bigint, date, numeric, numeric) to service_role;
 grant execute on function public.limpar_ads_retencao(date)                                to service_role;
 revoke all on function public.vendas_sku_codigos_mlbs(text[]) from public, anon;
 grant execute on function public.vendas_sku_codigos_mlbs(text[]) to authenticated;
@@ -609,6 +625,8 @@ import { describe, expect, it } from 'vitest';
 import { classificarResposta, parseAdvertiser, parseBuscaGrupos, parseMembros, parseSerieGrupo } from '../parsers.ts';
 
 const JANELA = { desde: '2026-09-12', ate: '2026-09-26' };
+/** Os 15 dias da janela (a série do ML é densa: toda resposta válida traz todos). */
+const DIAS = Array.from({ length: 15 }, (_, i) => `2026-09-${String(12 + i).padStart(2, '0')}`);
 const linha = (date: string, o: Record<string, unknown> = {}) => ({
   date, clicks: 3, prints: 400, cost: 1.5, cpc: 0.5, ctr: 0.75, direct_amount: 20, indirect_amount: 0, total_amount: 20,
   direct_units_quantity: 1, units_quantity: 1, organic_units_quantity: 0, acos: 7.5, roas: 13.33, sov: 100, ...o,
@@ -662,6 +680,9 @@ describe('parseBuscaGrupos', () => {
       ],
     });
   });
+  it('status fora da lista conhecida (ex.: ARCHIVED) é mantido como veio: o grupo não some da leitura', () => {
+    expect(parseBuscaGrupos({ ...corpo, results: [{ ...corpo.results[0], status: 'ARCHIVED' }] })?.grupos[0].status).toBe('ARCHIVED');
+  });
   it('sem metrics_summary → custoResumo null', () => {
     expect(parseBuscaGrupos({ ...corpo, metrics_summary: undefined })?.custoResumo).toBeNull();
   });
@@ -673,24 +694,29 @@ describe('parseBuscaGrupos', () => {
 });
 
 describe('parseSerieGrupo', () => {
-  it('lê a série diária, ordena por dia e descarta os percentuais da API (acos/roas/cpc)', () => {
-    const dias = parseSerieGrupo({ results: [linha('2026-09-26'), linha('2026-09-25', { cost: 0, clicks: 0, total_amount: 0, direct_amount: 0, direct_units_quantity: 0, units_quantity: 0 })] }, JANELA);
-    expect(dias).toEqual([
-      { dia: '2026-09-25', cost: 0, clicks: 0, prints: 400, direct_amount: 0, indirect_amount: 0, total_amount: 0, direct_units: 0, units: 0 },
-      { dia: '2026-09-26', cost: 1.5, clicks: 3, prints: 400, direct_amount: 20, indirect_amount: 0, total_amount: 20, direct_units: 1, units: 1 },
-    ]);
+  const completa = (o: (d: string) => Record<string, unknown> = () => ({})) => ({ results: DIAS.map((d) => linha(d, o(d))) });
+  it('lê a série densa, ordena por dia e descarta os percentuais da API (acos/roas/cpc)', () => {
+    const dias = parseSerieGrupo({ results: [...DIAS].reverse().map((d) => linha(d)) }, JANELA);
+    expect(dias).toHaveLength(15);
+    expect(dias![0]).toEqual({ dia: '2026-09-12', cost: 1.5, clicks: 3, prints: 400, direct_amount: 20, indirect_amount: 0, total_amount: 20, direct_units: 1, units: 1 });
     expect(dias!.some((d) => 'roas' in d || 'cpc' in d || 'acos' in d)).toBe(false);
   });
-  it('dia da janela sem linha fica sem linha (nunca vira zero escrito)', () => {
-    expect(parseSerieGrupo({ results: [linha('2026-09-26')] }, JANELA)?.map((d) => d.dia)).toEqual(['2026-09-26']);
+  it('zero explícito do ML vira linha com cost 0', () => {
+    const dias = parseSerieGrupo(completa((d) => (d === '2026-09-25'
+      ? { cost: 0, clicks: 0, direct_amount: 0, total_amount: 0, direct_units_quantity: 0, units_quantity: 0 } : {})), JANELA);
+    expect(dias!.find((d) => d.dia === '2026-09-25')).toMatchObject({ cost: 0, clicks: 0, total_amount: 0 });
+  });
+  it('dia da janela faltando → null (série furada: nunca vira zero nem é gravada pela metade)', () => {
+    expect(parseSerieGrupo({ results: DIAS.slice(1).map((d) => linha(d)) }, JANELA)).toBeNull();
+    expect(parseSerieGrupo({ results: [] }, JANELA)).toBeNull();
   });
   it('dia fora da janela (inclusive hoje, parcial), repetido, negativo ou campo ausente → null', () => {
-    expect(parseSerieGrupo({ results: [linha('2026-09-27')] }, JANELA)).toBeNull();
-    expect(parseSerieGrupo({ results: [linha('2026-09-11')] }, JANELA)).toBeNull();
-    expect(parseSerieGrupo({ results: [linha('2026-09-26'), linha('2026-09-26')] }, JANELA)).toBeNull();
-    expect(parseSerieGrupo({ results: [linha('2026-09-26', { cost: -0.01 })] }, JANELA)).toBeNull();
-    expect(parseSerieGrupo({ results: [linha('2026-09-26', { units_quantity: undefined })] }, JANELA)).toBeNull();
-    expect(parseSerieGrupo({ results: [linha('2026-09-26', { clicks: 1.5 })] }, JANELA)).toBeNull();
+    expect(parseSerieGrupo({ results: [...DIAS.map((d) => linha(d)), linha('2026-09-27')] }, JANELA)).toBeNull();
+    expect(parseSerieGrupo({ results: [...DIAS.map((d) => linha(d)), linha('2026-09-11')] }, JANELA)).toBeNull();
+    expect(parseSerieGrupo({ results: [...DIAS.map((d) => linha(d)), linha('2026-09-26')] }, JANELA)).toBeNull();
+    expect(parseSerieGrupo(completa((d) => (d === '2026-09-26' ? { cost: -0.01 } : {})), JANELA)).toBeNull();
+    expect(parseSerieGrupo(completa((d) => (d === '2026-09-26' ? { units_quantity: undefined } : {})), JANELA)).toBeNull();
+    expect(parseSerieGrupo(completa((d) => (d === '2026-09-26' ? { clicks: 1.5 } : {})), JANELA)).toBeNull();
     expect(parseSerieGrupo({ results: 'x' }, JANELA)).toBeNull();
   });
 });
@@ -815,10 +841,14 @@ export function parseBuscaGrupos(corpo: unknown): { total: number; grupos: Grupo
   return { total, grupos, custoResumo: naoNeg(resumo) ? resumo : null };
 }
 
+const DIA_MS = 86_400_000;
+const diasNaJanela = (j: { desde: string; ate: string }) =>
+  Math.round((Date.parse(`${j.ate}T00:00:00Z`) - Date.parse(`${j.desde}T00:00:00Z`)) / DIA_MS) + 1;
+
 /**
- * `…/ad_groups/{id}?aggregation_type=daily`. A série é densa (zero vem explícito); dia da janela sem
- * linha fica sem linha — desconhecido, nunca gravado como zero. Dia fora da janela (inclusive hoje),
- * repetido ou com campo inválido → null.
+ * `…/ad_groups/{id}?aggregation_type=daily`. A série é densa (zero vem explícito): resposta válida traz
+ * TODOS os dias da janela. Dia faltando, fora da janela (inclusive hoje), repetido ou com campo inválido
+ * → null (a rodada vira erro; nada é gravado pela metade nem completado com zero).
  */
 export function parseSerieGrupo(corpo: unknown, janela: { desde: string; ate: string }): DiaAds[] | null {
   if (!obj(corpo) || !Array.isArray(corpo.results)) return null;
@@ -837,6 +867,7 @@ export function parseSerieGrupo(corpo: unknown, janela: { desde: string; ate: st
       direct_units: unidadesDiretas, units: unidades,
     });
   }
+  if (porDia.size !== diasNaJanela(janela)) return null;
   return [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
 }
 
@@ -885,7 +916,8 @@ Run: `/usr/bin/git add supabase/functions/_shared/ads/janelas.ts supabase/functi
   - `type MsgAds = MsgTrafego`; `type ResultadoAds = 'ok' | 'continua' | 'obsoleta' | 'erro' | 'sem_acesso'`
   - `interface GrupoConhecido { ad_group_id: number; tipo: TipoGrupo; external_id: string | null; campaign_id: number | null; status: string }`
   - `interface GrupoGravar extends GrupoConhecido { itens: string[] | null; dias: DiaAds[] }`
-  - `interface DepsAds` (abaixo) e `sincronizarAdsOrg(deps: DepsAds, msg: MsgAds, cfg?): Promise<{ resultado: ResultadoAds }>`
+  - `interface ExtraConcluir { cargaConcluida: boolean; advertiserId: number | null; coberturaDesde: string | null; custoResumo: number | null; custoListado: number | null }`
+  - `interface DepsAds` (abaixo; inclui `contarVinculos(ids: number[]): Promise<Map<number, number>>`) e `sincronizarAdsOrg(deps: DepsAds, msg: MsgAds, cfg?): Promise<{ resultado: ResultadoAds }>`
 
 - [ ] **Step 1: Escrever os testes (RED)**
 
@@ -900,18 +932,26 @@ const T0 = Date.parse('2026-09-27T15:00:00Z'); // 12:00 BRT → hoje = 2026-09-2
 const RODADA = '2026-09-27T14:17:00.123Z';
 const ORG = 'org-1';
 const JANELA_DIARIA = { desde: '2026-09-12', ate: '2026-09-26' };
+const JANELA_90 = { desde: '2026-06-29', ate: '2026-09-26' };
 const ok = (corpo: unknown): RespostaML => ({ status: 200, retryAfterMs: null, corpo });
 const http = (status: number, corpo: unknown = null, retryAfterMs: number | null = null): RespostaML => ({ status, retryAfterMs, corpo });
-const grupo = (id: number, tipo: 'ITEM' | 'FAMILY' | 'CATALOG' = 'FAMILY', cost = 10) => ({
+const grupo = (id: number, tipo: 'ITEM' | 'FAMILY' | 'CATALOG' = 'FAMILY', cost = 10, status = 'ACTIVE') => ({
   id, ad_group_type: tipo, ad_group_external_id: tipo === 'ITEM' ? `MLB${id}` : String(4000000 + id),
-  campaign_id: 2000001, status: 'ACTIVE', metrics: { cost },
+  campaign_id: 2000001, status, metrics: { cost },
 });
 const busca = (grupos: unknown[], total = grupos.length) => ok({ paging: { offset: 0, total, limit: 100 }, results: grupos, metrics_summary: { cost: 99 } });
-const serie = (dias = ['2026-09-25', '2026-09-26']) => ok({ results: dias.map((date) => ({
+/** Série densa: uma linha por dia da janela pedida (o parser recusa série furada). */
+function diasDe(j: { desde: string; ate: string }): string[] {
+  const out: string[] = [];
+  for (let t = Date.parse(`${j.desde}T00:00:00Z`); t <= Date.parse(`${j.ate}T00:00:00Z`); t += 86_400_000) out.push(new Date(t).toISOString().slice(0, 10));
+  return out;
+}
+const serie = (j: { desde: string; ate: string }) => ok({ results: diasDe(j).map((date) => ({
   date, clicks: 2, prints: 100, cost: 1.25, cpc: 0.62, direct_amount: 10, indirect_amount: 0, total_amount: 10,
   direct_units_quantity: 1, units_quantity: 1, acos: 12.5, roas: 8,
 })) });
-const membros = (itens: string[]) => ok({ paging: { total: itens.length, offset: 0, limit: 100 }, results: itens.map((item_id) => ({ item_id })) });
+const membros = (itens: string[], total = itens.length) =>
+  ok({ paging: { total, offset: 0, limit: 100 }, results: itens.map((item_id) => ({ item_id })) });
 const DIA = { cost: 1.25, clicks: 2, prints: 100, direct_amount: 10, indirect_amount: 0, total_amount: 10, direct_units: 1, units: 1 };
 
 type Fake = DepsAds & Record<keyof DepsAds, ReturnType<typeof vi.fn>> & { relogio: { t: number } };
@@ -925,9 +965,10 @@ function fake(o: Partial<DepsAds> = {}): Fake {
     avancarCursor: vi.fn(async () => true),
     lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: true, ultimoOkEm: '2026-09-26T14:20:00Z' })),
     lerGruposComGasto: vi.fn(async () => []),
+    contarVinculos: vi.fn(async () => new Map<number, number>()),
     buscarAdvertiser: vi.fn(async () => ok({ advertisers: [{ advertiser_id: 1000001, site_id: 'MLB' }] })),
     buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY'), grupo(13, 'CATALOG', 0)])),
-    buscarSerieGrupo: vi.fn(async () => serie()),
+    buscarSerieGrupo: vi.fn(async (_id: number, j: { desde: string; ate: string }) => serie(j)),
     buscarMembros: vi.fn(async () => membros(['MLB21', 'MLB22'])),
     gravarLote: vi.fn(async () => true),
     continuar: vi.fn(async () => {}),
@@ -938,6 +979,7 @@ function fake(o: Partial<DepsAds> = {}): Fake {
 const primeira = { org_id: ORG, primeira: true };
 const gravados = (d: Fake): GrupoGravar[] => d.gravarLote.mock.calls.flatMap((c) => c[2] as GrupoGravar[]);
 const lidos = (d: Fake) => d.buscarSerieGrupo.mock.calls.map((c) => c[0]);
+const PARADA = { cargaConcluida: false, coberturaDesde: null, custoResumo: null, custoListado: null };
 
 describe('sincronizarAdsOrg', () => {
   it('primeira: advertiser → search → série dos grupos com gasto → grava por grupo → CAS → conclui', async () => {
@@ -946,23 +988,27 @@ describe('sincronizarAdsOrg', () => {
     expect(d.buscarGrupos).toHaveBeenCalledWith(1000001, JANELA_DIARIA, 0);
     expect(lidos(d)).toEqual([11, 12]); // 13 sem gasto na janela: nem lido
     expect(d.buscarSerieGrupo).toHaveBeenCalledWith(11, JANELA_DIARIA);
+    // Membros sempre na janela de 90 dias, mesmo na rodada diária.
     expect(d.buscarMembros).toHaveBeenCalledTimes(1);
-    expect(d.buscarMembros).toHaveBeenCalledWith(12, JANELA_DIARIA, 0);
-    expect(d.gravarLote).toHaveBeenCalledWith(RODADA, new Date(T0).toISOString(), [
-      { ad_group_id: 11, tipo: 'ITEM', external_id: 'MLB11', campaign_id: 2000001, status: 'ACTIVE', itens: ['MLB11'],
-        dias: [{ dia: '2026-09-25', ...DIA }, { dia: '2026-09-26', ...DIA }] },
-      { ad_group_id: 12, tipo: 'FAMILY', external_id: '4000012', campaign_id: 2000001, status: 'ACTIVE', itens: ['MLB21', 'MLB22'],
-        dias: [{ dia: '2026-09-25', ...DIA }, { dia: '2026-09-26', ...DIA }] },
-    ]);
+    expect(d.buscarMembros).toHaveBeenCalledWith(12, JANELA_90, 0);
+    expect(d.gravarLote.mock.calls[0].slice(0, 2)).toEqual([RODADA, new Date(T0).toISOString()]);
+    const [g11, g12] = gravados(d);
+    expect(g11).toMatchObject({ ad_group_id: 11, tipo: 'ITEM', external_id: 'MLB11', campaign_id: 2000001, status: 'ACTIVE', itens: ['MLB11'] });
+    expect(g11.dias).toHaveLength(15);
+    expect(g11.dias[0]).toEqual({ dia: '2026-09-12', ...DIA });
+    expect(g11.dias[0]).not.toHaveProperty('roas');
+    expect(g12).toMatchObject({ ad_group_id: 12, tipo: 'FAMILY', external_id: '4000012', itens: ['MLB21', 'MLB22'] });
     expect(d.gravarLote.mock.invocationCallOrder[0]).toBeLessThan(d.avancarCursor.mock.invocationCallOrder[0]);
     expect(d.avancarCursor).toHaveBeenCalledWith(RODADA, null, '12');
-    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'ok', null, { cargaConcluida: true, advertiserId: 1000001, coberturaDesde: '2026-09-12' });
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'ok', null,
+      { cargaConcluida: true, advertiserId: 1000001, coberturaDesde: '2026-09-12', custoResumo: 99, custoListado: 20 });
   });
 
   it('carga inicial: janela de 90 dias terminando ontem', async () => {
     const d = fake({ lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })) });
     await sincronizarAdsOrg(d, primeira);
-    expect(d.buscarGrupos).toHaveBeenCalledWith(1000001, { desde: '2026-06-29', ate: '2026-09-26' }, 0);
+    expect(d.buscarGrupos).toHaveBeenCalledWith(1000001, JANELA_90, 0);
+    expect(gravados(d)[0].dias).toHaveLength(90);
     expect(d.concluir.mock.calls[0][3]).toMatchObject({ coberturaDesde: '2026-06-29' });
   });
 
@@ -974,6 +1020,45 @@ describe('sincronizarAdsOrg', () => {
     expect(lidos(d)).toEqual([11, 12, 14]);
   });
 
+  it('status de grupo fora da lista conhecida no search: o grupo com gasto é lido e gravado com o status do ML', async () => {
+    const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(15, 'ITEM', 5, 'ARCHIVED')])) });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    expect(gravados(d)[0]).toMatchObject({ ad_group_id: 15, status: 'ARCHIVED' });
+  });
+
+  it('/ads paginado com total > 100: lê todas as páginas', async () => {
+    const pag1 = Array.from({ length: 100 }, (_, k) => `MLB${3000 + k}`);
+    const pag2 = Array.from({ length: 50 }, (_, k) => `MLB${4000 + k}`);
+    const d = fake({
+      buscarGrupos: vi.fn(async () => busca([grupo(12, 'FAMILY')])),
+      buscarMembros: vi.fn(async (_id: number, _j: unknown, offset: number) => (offset === 0 ? membros(pag1, 150) : membros(pag2, 150))),
+    });
+    await sincronizarAdsOrg(d, primeira);
+    expect(d.buscarMembros.mock.calls.map((c) => c[2])).toEqual([0, 100]);
+    expect(gravados(d)[0].itens).toHaveLength(150);
+  });
+
+  it('releitura com menos membros que o vínculo gravado (ou lista vazia) mantém o vínculo: o grupo compartilhado não vira sku', async () => {
+    const menor = fake({
+      buscarGrupos: vi.fn(async () => busca([grupo(12, 'FAMILY')])),
+      contarVinculos: vi.fn(async () => new Map([[12, 2]])),
+      buscarMembros: vi.fn(async () => membros(['MLB21'])), // a cor irmã MLB22 sumiu da leitura
+    });
+    await sincronizarAdsOrg(menor, primeira);
+    expect(menor.contarVinculos).toHaveBeenCalledWith([12]);
+    expect(gravados(menor)[0].itens).toBeNull();
+    const vazia = fake({ buscarGrupos: vi.fn(async () => busca([grupo(12, 'FAMILY')])), buscarMembros: vi.fn(async () => membros([])) });
+    await sincronizarAdsOrg(vazia, primeira);
+    expect(gravados(vazia)[0].itens).toBeNull();
+    const maior = fake({
+      buscarGrupos: vi.fn(async () => busca([grupo(12, 'FAMILY')])),
+      contarVinculos: vi.fn(async () => new Map([[12, 2]])),
+      buscarMembros: vi.fn(async () => membros(['MLB21', 'MLB22', 'MLB23'])),
+    });
+    await sincronizarAdsOrg(maior, primeira);
+    expect(gravados(maior)[0].itens).toEqual(['MLB21', 'MLB22', 'MLB23']);
+  });
+
   it('403 PolicyAgent no advertiser → sem_permissao, sem retry e sem tocar em grupos', async () => {
     const d = fake({ buscarAdvertiser: vi.fn(async () => http(403, { blocked_by: 'PolicyAgent', code: 'PA_UNAUTHORIZED_RESULT_FROM_POLICIES' })) });
     expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'sem_acesso' });
@@ -981,11 +1066,10 @@ describe('sincronizarAdsOrg', () => {
     expect(d.esperar).not.toHaveBeenCalled();
     expect(d.buscarGrupos).not.toHaveBeenCalled();
     expect(d.concluir).toHaveBeenCalledWith(RODADA, 'sem_permissao',
-      expect.stringContaining('sem permissão de Publicidade ou conexão recusada'),
-      { cargaConcluida: false, advertiserId: null, coberturaDesde: null });
+      expect.stringContaining('sem permissão de Publicidade ou conexão recusada'), { ...PARADA, advertiserId: null });
   });
 
-  it('401 → sem_acesso; 404 no advertiser ou lista sem MLB → sem_advertiser', async () => {
+  it('401 (já depois da releitura do token nas deps) → sem_acesso; 404 no advertiser ou lista sem MLB → sem_advertiser', async () => {
     const a = fake({ buscarAdvertiser: vi.fn(async () => http(401, { error_code: 'unauthorized' })) });
     await sincronizarAdsOrg(a, primeira);
     expect(a.concluir.mock.calls[0][1]).toBe('sem_acesso');
@@ -1004,7 +1088,8 @@ describe('sincronizarAdsOrg', () => {
   });
 
   it('404 de um grupo (apagado entre o search e a leitura) → pula o grupo, grava os outros', async () => {
-    const d = fake({ buscarSerieGrupo: vi.fn(async (id: number) => (id === 11 ? http(404, { error_code: 'ad_group_not_found_exception' }) : serie())) });
+    const d = fake({ buscarSerieGrupo: vi.fn(async (id: number, j: { desde: string; ate: string }) =>
+      (id === 11 ? http(404, { error_code: 'ad_group_not_found_exception' }) : serie(j))) });
     expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
     expect(gravados(d).map((g) => g.ad_group_id)).toEqual([12]);
   });
@@ -1028,9 +1113,19 @@ describe('sincronizarAdsOrg', () => {
     expect(d.continuar).toHaveBeenCalledWith({ org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 1 }, { atrasoMs: 120_000 });
   });
 
+  it('5º adiamento no mesmo cursor: os grupos não lidos viram falha, o cursor anda e a rodada fecha em erro (nunca ok)', async () => {
+    const d = fake({ buscarSerieGrupo: vi.fn(async () => http(429, null, 120_000)) });
+    expect(await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 })).toEqual({ resultado: 'erro' });
+    expect(d.continuar).not.toHaveBeenCalled();
+    expect(d.gravarLote).not.toHaveBeenCalled();
+    expect(d.avancarCursor).toHaveBeenCalledWith(RODADA, null, '12');
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('2 grupos não lidos'), { ...PARADA, advertiserId: 1000001 });
+    expect(d.concluir.mock.calls.some((c) => c[1] === 'ok')).toBe(false);
+  });
+
   it('429 com Retry-After que cabe → espera e segue', async () => {
     let n = 0;
-    const d = fake({ buscarSerieGrupo: vi.fn(async () => (n++ === 0 ? http(429, null, 1_000) : serie())) });
+    const d = fake({ buscarSerieGrupo: vi.fn(async (_id: number, j: { desde: string; ate: string }) => (n++ === 0 ? http(429, null, 1_000) : serie(j))) });
     expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
     expect(d.esperar).toHaveBeenCalledWith(1_000);
   });
@@ -1042,10 +1137,8 @@ describe('sincronizarAdsOrg', () => {
   });
 
   it('orçamento estourado entre lotes → continua do último grupo gravado', async () => {
-    const d = fake({
-      buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'ITEM'), grupo(14, 'ITEM')])),
-    });
-    d.buscarSerieGrupo.mockImplementation(async () => { d.relogio.t += 40_000; return serie(); });
+    const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'ITEM'), grupo(14, 'ITEM')])) });
+    d.buscarSerieGrupo.mockImplementation(async (_id: number, j: { desde: string; ate: string }) => { d.relogio.t += 40_000; return serie(j); });
     expect(await sincronizarAdsOrg(d, primeira, { limiteMs: 60_000, lote: 1, concorrencia: 1 })).toEqual({ resultado: 'continua' });
     expect(d.continuar).toHaveBeenCalledWith({ org_id: ORG, rodada: RODADA, cursor: '12', primeira: false, tentativa: 0 }, {});
   });
@@ -1057,12 +1150,15 @@ describe('sincronizarAdsOrg', () => {
     expect(lidos(d)).toEqual([12]);
   });
 
-  it('série malformada → erro da rodada (500), nunca grava zero inventado', async () => {
-    const d = fake({ buscarSerieGrupo: vi.fn(async () => ok({ results: [{ date: '2026-09-26', cost: 'x' }] })) });
-    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'erro' });
-    expect(d.gravarLote).not.toHaveBeenCalled();
-    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('resposta inválida'),
-      { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null });
+  it('série malformada ou furada → erro da rodada (500), nunca grava zero inventado', async () => {
+    const malformada = fake({ buscarSerieGrupo: vi.fn(async () => ok({ results: [{ date: '2026-09-26', cost: 'x' }] })) });
+    expect(await sincronizarAdsOrg(malformada, primeira)).toEqual({ resultado: 'erro' });
+    expect(malformada.gravarLote).not.toHaveBeenCalled();
+    expect(malformada.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('resposta inválida'), { ...PARADA, advertiserId: 1000001 });
+    const furada = fake({ buscarSerieGrupo: vi.fn(async (_id: number, j: { desde: string; ate: string }) =>
+      ok({ results: (serie(j).corpo as { results: unknown[] }).results.slice(1) })) });
+    expect(await sincronizarAdsOrg(furada, primeira)).toEqual({ resultado: 'erro' });
+    expect(furada.gravarLote).not.toHaveBeenCalled();
   });
 
   it('primeira sem posse → obsoleta sem ler nada', async () => {
@@ -1119,7 +1215,10 @@ export interface DepsAds {
   lerEstadoSync(): Promise<{ cargaInicialOk: boolean; ultimoOkEm: string | null }>;
   /** Grupos com linha de custo > 0 gravada em [desde, ate] (relidos mesmo fora do search). */
   lerGruposComGasto(desde: string, ate: string): Promise<GrupoConhecido[]>;
-  /** Os GETs nunca lançam por status HTTP. Sem conexão → lançar ParadaAds('sem_acesso'). */
+  /** Nº de MLBs no vínculo gravado de cada grupo (ml_ads_grupo_item). */
+  contarVinculos(adGroupIds: number[]): Promise<Map<number, number>>;
+  /** Os GETs nunca lançam por status HTTP (401 já vem depois de 1 releitura do token, ver
+   *  getComReautenticacao). Sem conexão → lançar ParadaAds('sem_acesso'). */
   buscarAdvertiser(): Promise<RespostaML>;
   buscarGrupos(advertiserId: number, janela: JanelaAds, offset: number): Promise<RespostaML>;
   buscarSerieGrupo(adGroupId: number, janela: JanelaAds): Promise<RespostaML>;
@@ -1127,8 +1226,13 @@ export interface DepsAds {
   /** gravar_ads_lote: false = a rodada não é mais a dona. */
   gravarLote(rodada: string, coletadoEm: string, grupos: GrupoGravar[]): Promise<boolean>;
   continuar(msg: MsgAds, opts: { atrasoMs?: number }): Promise<void>;
-  concluir(rodada: string, estado: 'ok' | 'erro' | EstadoParada, erro: string | null,
-    extra: { cargaConcluida: boolean; advertiserId: number | null; coberturaDesde: string | null }): Promise<boolean>;
+  concluir(rodada: string, estado: 'ok' | 'erro' | EstadoParada, erro: string | null, extra: ExtraConcluir): Promise<boolean>;
+}
+
+/** custoResumo = metrics_summary.cost do search; custoListado = Σ cost dos grupos listados (mesma janela). */
+export interface ExtraConcluir {
+  cargaConcluida: boolean; advertiserId: number | null; coberturaDesde: string | null;
+  custoResumo: number | null; custoListado: number | null;
 }
 
 const FALLBACK_RETRY_MS = 1_500;
@@ -1169,6 +1273,8 @@ export async function sincronizarAdsOrg(
   const fim = inicio + cfg.limiteMs;
   let rodada: string | null = null;
   let advertiserId: number | null = null;
+  const parada = (extra: Partial<ExtraConcluir> = {}): ExtraConcluir =>
+    ({ cargaConcluida: false, advertiserId, coberturaDesde: null, custoResumo: null, custoListado: null, ...extra });
   try {
     let cursor: string | null;
     if (msg.primeira) {
@@ -1191,11 +1297,15 @@ export async function sincronizarAdsOrg(
     };
 
     const estado = await deps.lerEstadoSync();
+    const hoje = diaDeHoje(new Date(inicio), 'brt');
     const janela = janelaAds({
-      hoje: diaDeHoje(new Date(inicio), 'brt'),
+      hoje,
       cargaInicialOk: estado.cargaInicialOk,
       ultimoOkDia: estado.ultimoOkEm ? diaDeHoje(new Date(estado.ultimoOkEm), 'brt') : null,
     });
+    // Membros sempre na janela de 90 dias: numa janela curta o ML pode omitir a cor sem atividade, e o
+    // vínculo encolhido faria um grupo compartilhado parecer exclusivo.
+    const janelaMembros = janelaAds({ hoje, cargaInicialOk: false, ultimoOkDia: null });
 
     const a = await comRetry(deps, fim, () => deps.buscarAdvertiser());
     if ('adiar' in a) return await continuar(cursor, a.adiar);
@@ -1227,16 +1337,19 @@ export async function sincronizarAdsOrg(
     const pendentes = [...alvo.values()].sort((x, y) => x.ad_group_id - y.ad_group_id)
       .filter((g) => inicial == null || g.ad_group_id > Number(inicial));
 
+    let naoLidos = 0;
     for (let i = 0; i < pendentes.length; i += cfg.lote) {
       if (i > 0 && deps.agora() - inicio > cfg.limiteMs) return await continuar(cursor);
       const lote = pendentes.slice(i, i + cfg.lote);
+      const vinculos = await deps.contarVinculos(lote.map((g) => g.ad_group_id));
       let adiarMs: number | null = null;
-      const lidos = await emParalelo(lote, cfg.concorrencia, async (g): Promise<GrupoGravar | null> => {
+      // null = não lido (adiado); 'sumiu' = 404 (grupo apagado: os dias gravados ficam).
+      const lidos = await emParalelo(lote, cfg.concorrencia, async (g): Promise<GrupoGravar | 'sumiu' | null> => {
         if (adiarMs != null) return null;
         if (deps.agora() > fim) { adiarMs ??= 0; return null; }
         const s = await comRetry(deps, fim, () => deps.buscarSerieGrupo(g.ad_group_id, janela));
         if ('adiar' in s) { adiarMs ??= s.adiar; return null; }
-        if (classificarResposta(s) === 'nao_encontrado') return null;
+        if (classificarResposta(s) === 'nao_encontrado') return 'sumiu';
         exigir(s, `ad_groups/${g.ad_group_id}`);
         const dias = parseSerieGrupo(s.corpo, janela);
         if (!dias) throw new Error(`ad_groups/${g.ad_group_id}: resposta inválida`);
@@ -1246,9 +1359,9 @@ export async function sincronizarAdsOrg(
         } else if (noSearch.has(g.ad_group_id)) {
           const achados: string[] = [];
           for (let offset = 0; ;) {
-            const m = await comRetry(deps, fim, () => deps.buscarMembros(g.ad_group_id, janela, offset));
+            const m = await comRetry(deps, fim, () => deps.buscarMembros(g.ad_group_id, janelaMembros, offset));
             if ('adiar' in m) { adiarMs ??= m.adiar; return null; }
-            if (classificarResposta(m) === 'nao_encontrado') return null;
+            if (classificarResposta(m) === 'nao_encontrado') return 'sumiu';
             exigir(m, `ad_groups/${g.ad_group_id}/ads`);
             const p = parseMembros(m.corpo);
             if (!p) throw new Error(`ad_groups/${g.ad_group_id}/ads: resposta inválida`);
@@ -1257,16 +1370,21 @@ export async function sincronizarAdsOrg(
             if (p.itens.length === 0 || offset >= p.total) break;
           }
           itens = [...new Set(achados)].sort();
+          // Lista vazia ou menor que o vínculo gravado: mantém o gravado (itens null). O vínculo nunca encolhe
+          // por esta leitura; o custo é uma cor removida de verdade seguir no grupo (fica "compartilhado",
+          // o lado conservador: nunca um falso `sku`).
+          if (itens.length === 0 || itens.length < (vinculos.get(g.ad_group_id) ?? 0)) itens = null;
         }
         return { ...g, itens, dias };
       });
       if (adiarMs != null) {
-        // Mesmo limite da 2b: depois de 5 adiamentos no mesmo cursor, o lote segue sem os não lidos
-        // (os dias já gravados deles ficam; a próxima execução relê a janela).
+        // Mesmo limite da 2b: depois de 5 adiamentos no mesmo cursor, os não lidos viram falha e o cursor
+        // anda. A rodada termina em `erro` (nunca `ok`): ultimo_ok_em não avança e o dossiê não prova zero.
         const preso = cursor === inicial && (msg.tentativa ?? 0) >= LIMITE_ADIAMENTOS;
         if (!preso) return await continuar(cursor, adiarMs);
+        naoLidos += lidos.filter((x) => x === null).length;
       }
-      const grupos = lidos.filter((x): x is GrupoGravar => x != null);
+      const grupos = lidos.filter((x): x is GrupoGravar => x != null && x !== 'sumiu');
       if (grupos.length && !(await deps.gravarLote(dona, new Date(deps.agora()).toISOString(), grupos))) {
         return { resultado: 'obsoleta' };
       }
@@ -1275,31 +1393,39 @@ export async function sincronizarAdsOrg(
       cursor = novo;
     }
 
-    // Conferência do spike: gasto fora de grupo listado (provável `deleted`) aparece aqui (T7 mede).
-    const custoListado = listados.reduce((s, g) => s + g.cost, 0);
-    console.info('[ads] custo da janela', { org_id: msg.org_id, janela, custoResumo, custoListado });
+    // Gasto fora de grupo listado (provável `deleted`, spike ~2,6 %) fica gravado no sync: com diferença > 0
+    // o dossiê não mostra "Lucro após Ads". Só a razão vai para o log (valor em R$ não sai do banco).
+    const custoListado = Math.round(listados.reduce((s, g) => s + g.cost, 0) * 100) / 100;
+    console.info('[ads] custo da janela', {
+      org_id: msg.org_id, janela, listadoSobreResumo: custoResumo ? custoListado / custoResumo : null,
+    });
+    if (naoLidos > 0) {
+      const erro = `${naoLidos} ${naoLidos === 1 ? 'grupo não lido' : 'grupos não lidos'} depois de ${LIMITE_ADIAMENTOS} adiamentos (429/5xx)`;
+      if (!(await deps.concluir(dona, 'erro', erro, parada({ advertiserId: adv })))) return { resultado: 'obsoleta' };
+      return { resultado: 'erro' };
+    }
     let dono: boolean;
     try {
-      dono = await deps.concluir(dona, 'ok', null, { cargaConcluida: true, advertiserId: adv, coberturaDesde: janela.desde });
+      dono = await deps.concluir(dona, 'ok', null,
+        { cargaConcluida: true, advertiserId: adv, coberturaDesde: janela.desde, custoResumo, custoListado });
     } catch (e) {
       console.error('[ads] concluir ok falhou', { org_id: msg.org_id, erro: mensagem(e) });
       return { resultado: 'erro' };
     }
     return { resultado: dono ? 'ok' : 'obsoleta' };
   } catch (e) {
-    const parada = e instanceof ParadaAds ? e.estado : null;
+    const estadoParada = e instanceof ParadaAds ? e.estado : null;
     if (rodada == null) {
       console.error('[ads] falha antes da posse', { org_id: msg.org_id, erro: mensagem(e) });
       return { resultado: 'erro' };
     }
     try {
-      const dono = await deps.concluir(rodada, parada ?? 'erro', mensagem(e),
-        { cargaConcluida: false, advertiserId, coberturaDesde: null });
+      const dono = await deps.concluir(rodada, estadoParada ?? 'erro', mensagem(e), parada());
       if (!dono) return { resultado: 'obsoleta' };
     } catch (e2) {
       console.error('[ads] concluir falhou', { org_id: msg.org_id, erro: mensagem(e), concluir: mensagem(e2) });
     }
-    return { resultado: parada ? 'sem_acesso' : 'erro' };
+    return { resultado: estadoParada ? 'sem_acesso' : 'erro' };
   }
 }
 ```
@@ -1335,6 +1461,7 @@ Run: `/usr/bin/git add supabase/functions/_shared/ads/sincronizar.ts supabase/fu
 - Produces:
   - `buscarML(url, token, f = fetch, headers: Record<string, string> = {})` (compatível com a 2b)
   - `Rotas.rotulo?: string` (default `'coletar-trafego-ml'` nos logs)
+  - `getComReautenticacao(token: () => Promise<string>, renovar: () => void, chamar: (t: string) => Promise<RespostaML>): Promise<RespostaML>` (401 → 1 releitura do token)
   - `ML_API`, `METRICAS_GRUPO`, `STATUS_GRUPOS`, `HEADERS_ADVERTISER`, `HEADERS_ADS`, `urlAdvertiser()`, `urlBuscaGrupos(adv, j, offset)`, `urlSerieGrupo(id, j)`, `urlMembros(id, j, offset)`, `dedupFanoutAds(org, dia)`, `dedupContinuacaoAds(msg)`
   - `depsAds(admin, orgId, tokenFixo?: () => Promise<string>): DepsAds`, `publicarFanout(admin)`, `limparRetencao(admin)` (T7 usa `depsAds` com `tokenFixo`)
 
@@ -1345,8 +1472,9 @@ Create `supabase/functions/_shared/ads/__tests__/fiacao.test.ts`:
 ```ts
 import { describe, expect, it, vi } from 'vitest';
 import { buscarML, dedupFanout, tratarRequisicao } from '../../trafego/fiacao.ts';
+import type { RespostaML } from '../../trafego/sincronizar.ts';
 import {
-  HEADERS_ADS, HEADERS_ADVERTISER, dedupContinuacaoAds, dedupFanoutAds,
+  HEADERS_ADS, HEADERS_ADVERTISER, dedupContinuacaoAds, dedupFanoutAds, getComReautenticacao,
   urlAdvertiser, urlBuscaGrupos, urlMembros, urlSerieGrupo,
 } from '../fiacao.ts';
 
@@ -1383,6 +1511,26 @@ describe('fiação de Ads', () => {
     expect(init.method).toBe('GET');
     expect(init.headers).toEqual({ 'api-version': '2', Authorization: 'Bearer tok' });
     expect(r).toEqual({ status: 200, retryAfterMs: null, corpo: { ok: true } });
+  });
+  it('401 no meio da cadeia: relê o token uma vez e repete; 401 de novo volta; 403 nunca repete', async () => {
+    const r = (status: number): RespostaML => ({ status, retryAfterMs: null, corpo: null });
+    let n = 0;
+    const token = vi.fn(async () => (n === 0 ? 'velho' : 'novo'));
+    const renovar = vi.fn(() => { n++; });
+    const chamar = vi.fn(async (t: string) => r(t === 'velho' ? 401 : 200));
+    expect((await getComReautenticacao(token, renovar, chamar)).status).toBe(200);
+    expect(renovar).toHaveBeenCalledTimes(1);
+    expect(chamar.mock.calls.map((c) => c[0])).toEqual(['velho', 'novo']);
+
+    const sempre401 = vi.fn(async () => r(401));
+    expect((await getComReautenticacao(async () => 't', () => {}, sempre401)).status).toBe(401);
+    expect(sempre401).toHaveBeenCalledTimes(2);
+
+    const deu403 = vi.fn(async () => r(403));
+    const renovar403 = vi.fn();
+    expect((await getComReautenticacao(async () => 't', renovar403, deu403)).status).toBe(403);
+    expect(deu403).toHaveBeenCalledTimes(1);
+    expect(renovar403).not.toHaveBeenCalled();
   });
   it('tratarRequisicao usa o rótulo do worker no log de erro', async () => {
     const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -1438,12 +1586,14 @@ Rodar `pnpm vitest run supabase/functions/_shared/trafego` → os testes da 2b c
 ```ts
 // Partes puras da fiação do worker `coletar-ads-ml` (Fatia 2c): URLs e headers do Product Ads (spike 053 §3)
 // e ids de deduplicação do QStash. Sem import Deno/npm: o vitest carrega.
-import type { MsgTrafego } from '../trafego/sincronizar.ts';
+import type { MsgTrafego, RespostaML } from '../trafego/sincronizar.ts';
 import type { JanelaAds } from './janelas.ts';
 
 export const ML_API = 'https://api.mercadolibre.com';
 export const METRICAS_GRUPO = 'CLICKS,PRINTS,COST,DIRECT_AMOUNT,INDIRECT_AMOUNT,TOTAL_AMOUNT,DIRECT_UNITS_QUANTITY,UNITS_QUANTITY';
-/** Todos os status de grupo vistos no spike (sem filtro o search de campanhas escondia as em `error`). */
+/** Os status de grupo vistos no spike 053 (EMPTY, IDLE, ACTIVE, HOLD, PAUSED), como pede R4. Os 2,4 % de gasto
+ *  escondidos no spike vieram de campanhas em `error` no `campaigns/search`, não de status de grupo; a T7
+ *  confere que o total do `ad_groups/search` com este filtro é igual ao total sem filtro. */
 export const STATUS_GRUPOS = 'ACTIVE,PAUSED,IDLE,EMPTY,HOLD';
 export const LIMITE_PAGINA = 100;
 export const HEADERS_ADVERTISER: Record<string, string> = { 'Api-Version': '1' };
@@ -1461,6 +1611,21 @@ export const urlSerieGrupo = (id: number, j: JanelaAds) =>
 /** Só a lista de membros: as métricas por MLB não são usadas (R2). */
 export const urlMembros = (id: number, j: JanelaAds, offset: number) =>
   `${BASE}/product_ads/ad_groups/${id}/ads?limit=${LIMITE_PAGINA}&offset=${offset}&${periodo(j)}&metrics=COST`;
+
+/**
+ * GET com 1 releitura do token em caso de 401: o token pode ter sido rotacionado no meio da cadeia (ex.:
+ * renovar-tokens-ml). `renovar` só descarta o token em memória; o próximo `token()` passa de novo por
+ * getValidAccessTokenConexao (única rota de refresh). 401 de novo → devolvido (a rodada vira sem_acesso).
+ * 403 nunca repete: é permissão, não token.
+ */
+export async function getComReautenticacao(
+  token: () => Promise<string>, renovar: () => void, chamar: (t: string) => Promise<RespostaML>,
+): Promise<RespostaML> {
+  const r = await chamar(await token());
+  if (r.status !== 401) return r;
+  renovar();
+  return chamar(await token());
+}
 
 const seguro = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, '_'); // mesmo filtro de trafego/fiacao.ts
 /** Prefixo próprio: o QStash deduplica por conta, e `trafego:` descartaria a mensagem de Ads. */
@@ -1490,7 +1655,7 @@ import { paginarTudo } from '../_shared/pagina.ts';
 import { diaDeHoje } from '../_shared/trafego/janelas.ts';
 import { buscarML, corteRetencao, delaySegundos } from '../_shared/trafego/fiacao.ts';
 import {
-  HEADERS_ADS, HEADERS_ADVERTISER, ML_API, dedupContinuacaoAds, dedupFanoutAds,
+  HEADERS_ADS, HEADERS_ADVERTISER, ML_API, dedupContinuacaoAds, dedupFanoutAds, getComReautenticacao,
   urlAdvertiser, urlBuscaGrupos, urlMembros, urlSerieGrupo,
 } from '../_shared/ads/fiacao.ts';
 import { ParadaAds, type DepsAds, type GrupoConhecido } from '../_shared/ads/sincronizar.ts';
@@ -1530,8 +1695,9 @@ export function depsAds(admin: SupabaseClient, orgId: string, tokenFixo?: () => 
     if (!cx?.contaExternaId) throw new ParadaAds('sem_acesso', 'Organização sem conexão com o Mercado Livre.');
     return getValidAccessTokenConexao(cx);
   })());
-  const get = async (caminho: string, headers: Record<string, string>) =>
-    buscarML(`${ML_API}${caminho}`, await tokenML(), fetch, headers);
+  // 401 → descarta o token em memória e pede de novo a getValidAccessTokenConexao, uma vez.
+  const get = (caminho: string, headers: Record<string, string>) =>
+    getComReautenticacao(tokenML, () => { token = null; }, (t) => buscarML(`${ML_API}${caminho}`, t, fetch, headers));
   const rpc = async (fn: string, args: Record<string, unknown>) => {
     const { data, error } = await admin.rpc(fn, args);
     falhou(fn, error);
@@ -1567,6 +1733,16 @@ export function depsAds(admin: SupabaseClient, orgId: string, tokenFixo?: () => 
       return (data ?? []) as GrupoConhecido[];
     },
 
+    async contarVinculos(ids) {
+      // ≤ 20 grupos por lote × dezenas de MLBs: bem abaixo do teto de 1.000 linhas do PostgREST.
+      const { data, error } = await admin.from('ml_ads_grupo_item').select('ad_group_id')
+        .eq('org_id', orgId).in('ad_group_id', ids);
+      falhou('contarVinculos', error);
+      const n = new Map<number, number>();
+      for (const l of data ?? []) n.set(l.ad_group_id as number, (n.get(l.ad_group_id as number) ?? 0) + 1);
+      return n;
+    },
+
     buscarAdvertiser: () => get(urlAdvertiser(), HEADERS_ADVERTISER),
     buscarGrupos: (adv, j, offset) => get(urlBuscaGrupos(adv, j, offset), HEADERS_ADS),
     buscarSerieGrupo: (id, j) => get(urlSerieGrupo(id, j), HEADERS_ADS),
@@ -1585,6 +1761,7 @@ export function depsAds(admin: SupabaseClient, orgId: string, tokenFixo?: () => 
       (await rpc('concluir_ads_rodada', {
         p_org: orgId, p_rodada: rodada, p_estado: estado, p_erro: erro, p_carga_concluida: extra.cargaConcluida,
         p_advertiser_id: extra.advertiserId, p_cobertura_desde: extra.coberturaDesde,
+        p_custo_resumo: extra.custoResumo, p_custo_listado: extra.custoListado,
       })) === true,
   };
 }
@@ -1692,12 +1869,14 @@ Anotar o `scheduleId` e acrescentar a linha na tabela de schedules de
 2. Fan-out: `{ "ok": true, "orgs": N }`.
 3. Por org (Logs do QStash): `{ "ok": true, "resultado": "ok" | "continua" | "sem_acesso" }`. Carga inicial
    da Avil: ~134 grupos com gasto em 90 dias ≈ 1 série + membros por grupo, em 1–3 mensagens.
-4. Log `[ads] custo da janela` da última mensagem: `custoResumo` (metrics_summary do ML) × `custoListado`
-   (Σ dos grupos listados). A diferença é gasto fora de grupo listado (spike: ~2,6 %, provável `deleted`).
+4. `ml_ads_sync.custo_resumo` (metrics_summary do ML) × `custo_listado` (Σ dos grupos listados), da última
+   janela ok. Diferença > 0 = gasto fora de grupo listado (spike: ~2,6 %, provável `deleted`): o dossiê mostra a
+   despesa, mas deixa o "Lucro após Ads" indisponível com esse motivo. O log `[ads] custo da janela` só traz a razão.
 5. SQL (read-only, Management API):
 
 ```sql
-select org_id, estado, advertiser_id, carga_inicial_ok, cobertura_desde, ultimo_ok_em, cursor, posse_ate, erro
+select org_id, estado, advertiser_id, carga_inicial_ok, cobertura_desde, ultimo_ok_em, cursor, posse_ate, erro,
+       round(100 * (custo_resumo - custo_listado) / nullif(custo_resumo, 0), 2) as pct_fora_dos_grupos
   from ml_ads_sync;
 select tipo, status, count(*) from ml_ads_grupo group by 1, 2 order by 1, 2;
 select min(dia), max(dia), count(*), sum(cost) from ml_ads_grupo_dia;
@@ -1714,13 +1893,16 @@ Esperado ao fim: `estado = 'ok'`, `carga_inicial_ok = true`, `cobertura_desde` =
 | `ok` | Rodada concluída. | Nada. |
 | `sem_permissao` | ML devolveu 403 PolicyAgent: sem permissão de Publicidade **ou** conexão recusada (o ML usa o mesmo corpo para bearer malformado). Não é tratado como token expirado. | Conferir a permissão funcional "Publicidade" do app no portal do ML e reconectar a conta em Canais. |
 | `sem_advertiser` | 404 no advertiser ou conta sem anunciante MLB. | O vendedor ativa em *Meu perfil → Publicidade* (reputação amarela ou melhor, 15 dias de cadastro, sem fatura vencida). |
-| `sem_acesso` | Org sem conexão ML ou 401. | Reconectar a conta em Canais. |
-| `erro` | Falha real (banco, resposta fora do contrato, 5xx esgotado). A mensagem devolveu 500 e o QStash tentou 1 vez. | Ver logs pelo `org_id`. A execução do dia seguinte recomeça. |
+| `sem_acesso` | Org sem conexão ML, ou 401 que se repetiu depois de reler o token uma vez em `getValidAccessTokenConexao`. | Reconectar a conta em Canais. |
+| `erro` | Falha real (banco, resposta fora do contrato — inclusive série diária com dia faltando —, 5xx esgotado, ou grupos não lidos depois de 5 adiamentos). A mensagem devolveu 500 e o QStash tentou 1 vez. `ultimo_ok_em` não avança. | Ver logs pelo `org_id`. A execução do dia seguinte recomeça. |
 
 Outros sinais:
 - `{ "resultado": "obsoleta" }` (HTTP 200) é normal: rodada que perdeu a posse.
 - 429/5xx que não cabe no orçamento de 90 s → continuação no mesmo cursor com `delay` = `Retry-After`;
-  depois de 5 adiamentos o lote segue sem os grupos não lidos (os dias já gravados ficam).
+  depois de 5 adiamentos os grupos não lidos viram falha, o cursor anda e a rodada fecha em `erro` (os dias já
+  gravados ficam; o dossiê marca "desatualizado" depois de 48 h sem ok).
+- Membros de FAMILY/CATALOG: lidos sempre na janela de 90 dias. Lista vazia ou menor que o vínculo gravado
+  não substitui o vínculo (conservador: o grupo nunca vira "exclusivo" por uma leitura parcial).
 - Grupo que some do search (provável `deleted`) **não** é apagado: se ainda tem gasto gravado na janela, é
   relido por id; 404 → os dias ficam. Só a retenção apaga.
 - Atribuição: `direct/indirect/total_amount` mudam por 14 dias; cada execução relê D-1 + 14 dias e a
@@ -1783,12 +1965,18 @@ const AGORA = new Date('2026-09-27T15:00:00Z'); // 12:00 BRT → hoje 27/09, ont
 const JANELA = { desde: '2026-09-14T03:00:00.000Z', ate: '2026-09-28T02:59:59.999Z' };
 // Semanas BRT de 14/09 (14..20) e 21/09 (21..27; o dia 27 é hoje e nunca entra).
 const IVS = intervalosBRT(JANELA.desde, JANELA.ate, 'semana', AGORA);
-const SYNC: AdsSync = { estado: 'ok', erro: null, ultimo_ok_em: '2026-09-27T14:20:00Z', carga_inicial_ok: true, cobertura_desde: '2026-06-29' };
+const SYNC: AdsSync = {
+  estado: 'ok', erro: null, ultimo_ok_em: '2026-09-27T14:20:00Z', carga_inicial_ok: true, cobertura_desde: '2026-06-29',
+  custo_resumo: 100, custo_listado: 100,
+};
 
 function dia(id: number, d: string, o: Partial<AdsDia> = {}): AdsDia {
   return { ad_group_id: id, dia: d, cost: 0, clicks: 0, prints: 0, direct_amount: 0, indirect_amount: 0, total_amount: 0,
     direct_units: 0, units: 0, coletado_em: '2026-09-27T14:20:00Z', ...o };
 }
+/** Uma linha por dia de `de` a `ate` (dias de set/2026), como a série densa que o worker grava. */
+const diasDe = (id: number, de: number, ate: number, o: Partial<AdsDia> = {}): AdsDia[] =>
+  Array.from({ length: ate - de + 1 }, (_, k) => dia(id, `2026-09-${String(de + k).padStart(2, '0')}`, o));
 const grupo = (id: number, tipo: AdsGrupo['tipo'] = 'FAMILY'): AdsGrupo =>
   ({ ad_group_id: id, tipo, external_id: String(4000000 + id), campaign_id: 2000001, status: 'ACTIVE', atualizado_em: '2026-09-27T14:20:00Z' });
 function fonte(p: { membros: [number, string][]; codigos: Record<string, string[]>; dias?: AdsDia[]; sync?: AdsSync | null }): FonteAds {
@@ -1830,10 +2018,10 @@ describe('montarAds', () => {
     expect(a.lucroAposAds).toBe(400);
     expect(a.motivoSemLucro).toBeNull();
     expect(a.grupos.map((g) => [g.id, g.custo, g.exclusivo])).toEqual([[12, 90, true], [11, 10, true]]);
-    // Série diária: 14/09 a 26/09 (hoje fora), dia sem linha coberto = 0.
+    // Série diária: 14/09 a 26/09 (hoje fora); dia sem linha gravada fica sem valor (nunca 0).
     expect(a.serieDiaria.map((p) => p.intervalo.rotulo)).toEqual(
       ['14/09', '15/09', '16/09', '17/09', '18/09', '19/09', '20/09', '21/09', '22/09', '23/09', '24/09', '25/09', '26/09']);
-    expect(a.serieDiaria.slice(0, 3).map((p) => p.custo)).toEqual([0, 10, 90]);
+    expect(a.serieDiaria.slice(0, 3).map((p) => p.custo)).toEqual([null, 10, 90]);
   });
 
   it('família: grupo alcançado por dois MLBs da família conta uma vez só (dedup por ad_group_id)', () => {
@@ -1866,7 +2054,7 @@ describe('montarAds', () => {
   });
 
   it('atribuição em aberto vem do coletado_em; com o worker parado o dia continua em aberto', () => {
-    const f = fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: [dia(11, '2026-09-15', { cost: 5 })] });
+    const f = fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: diasDe(11, 14, 20, { cost: 5 }) });
     const hoje = monta({ fonte: f });
     expect(hoje.serie[0].aberto).toBe(true);
     expect(hoje.diasAbertos).toBeGreaterThan(0);
@@ -1881,12 +2069,32 @@ describe('montarAds', () => {
     expect(a.estado).toBe('sem_ads');
   });
 
-  it('cobertura: intervalo antes da carga fica sem dado; dia coberto sem linha é zero comprovado', () => {
-    const a = monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, sync: { ...SYNC, cobertura_desde: '2026-09-16' } }) });
+  it('cobertura: intervalo antes da carga fica sem dado; despesa só soma dia coberto (mesmo recorte do gráfico)', () => {
+    const a = monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, sync: { ...SYNC, cobertura_desde: '2026-09-16' },
+      dias: [dia(11, '2026-09-15', { cost: 7 }), ...diasDe(11, 21, 26)] }) });
     expect(a.serie[0].custo).toBeNull();
-    expect(a.serie[1].custo).toBe(0);
+    expect(a.serie[1].custo).toBe(0);      // zero porque o ML devolveu as linhas com cost 0
+    expect(a.totais!.custo).toBe(0);       // os R$ 7 de 15/09 estão antes da cobertura: fora da despesa
     expect(a.lucroAposAds).toBeNull();
     expect(a.motivoSemLucro).toBe('cobertura');
+  });
+
+  it('zero só com linha real: dia coberto sem linha deixa o intervalo sem valor; carga parcial não desenha', () => {
+    const f = fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: diasDe(11, 21, 25) });
+    const a = monta({ fonte: f });
+    expect(a.serie[1].custo).toBeNull();   // 26/09 sem linha
+    expect(a.serieDiaria.find((p) => p.intervalo.rotulo === '25/09')!.custo).toBe(0);
+    expect(a.serieDiaria.find((p) => p.intervalo.rotulo === '26/09')!.custo).toBeNull();
+    const parcial = monta({ fonte: { ...f, sync: { ...SYNC, carga_inicial_ok: false, cobertura_desde: null } } });
+    expect([...parcial.serie, ...parcial.serieDiaria].every((p) => p.custo === null)).toBe(true);
+  });
+
+  it('gasto fora dos grupos listados (provável grupo excluído): despesa aparece, lucro após Ads indisponível', () => {
+    const a = monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: [dia(11, '2026-09-15', { cost: 10 })],
+      sync: { ...SYNC, custo_resumo: 100, custo_listado: 97.4 } }) });
+    expect(a.totais!.custo).toBe(10);
+    expect(a.lucroAposAds).toBeNull();
+    expect(a.motivoSemLucro).toBe('fora_dos_grupos');
   });
 
   it('lucro do período nulo → lucro após Ads nulo, nunca "−despesa"', () => {
@@ -1929,6 +2137,8 @@ Acrescentar ao fim do arquivo:
 
 export interface AdsSync {
   estado: string; erro: string | null; ultimo_ok_em: string | null; carga_inicial_ok: boolean; cobertura_desde: string | null;
+  /** metrics_summary.cost × Σ dos grupos listados na última janela ok: diferença > 0 = gasto fora de grupo listado. */
+  custo_resumo: number | null; custo_listado: number | null;
 }
 export interface AdsGrupo {
   ad_group_id: number; tipo: 'ITEM' | 'FAMILY' | 'CATALOG'; external_id: string | null; campaign_id: number | null;
@@ -1948,9 +2158,12 @@ export interface FonteAds {
 /** Estado da coleta de Ads da org; null = nunca rodou. */
 export async function buscarAdsSync(): Promise<AdsSync | null> {
   const { data, error } = await supabase.from('ml_ads_sync')
-    .select('estado, erro, ultimo_ok_em, carga_inicial_ok, cobertura_desde').maybeSingle();
+    .select('estado, erro, ultimo_ok_em, carga_inicial_ok, cobertura_desde, custo_resumo, custo_listado').maybeSingle();
   if (error) throw new Error(error.message);
-  return data;
+  if (!data) return null;
+  // numeric do Postgres: Number() como em src/lib/pulse.ts (o PostgREST pode devolver string em precisão alta).
+  return { ...data, custo_resumo: data.custo_resumo == null ? null : Number(data.custo_resumo),
+    custo_listado: data.custo_listado == null ? null : Number(data.custo_listado) };
 }
 
 /** MLB → códigos de MLBs arbitrários — RPC `vendas_sku_codigos_mlbs` (mesma UNION de vendas_sku_mlbs).
@@ -1981,7 +2194,12 @@ export async function buscarFonteAds(mlbs: string[], desde: string, ate: string)
       .in('ad_group_id', lote.map(Number)).gte('dia', desde).lte('dia', ate).order('ad_group_id').order('dia').range(de, fim)),
   ]);
   const codigosDosMembros = await buscarCodigosMlbs([...new Set(membros.map((m) => m.ml_item_id))].sort());
-  return { sync, grupos, membros, dias, codigosDosMembros };
+  // numeric → Number() (mesmo cinto de src/lib/pulse.ts).
+  const diasNum = dias.map((d) => ({
+    ...d, cost: Number(d.cost), direct_amount: Number(d.direct_amount), indirect_amount: Number(d.indirect_amount),
+    total_amount: Number(d.total_amount),
+  }));
+  return { sync, grupos, membros, dias: diasNum, codigosDosMembros };
 }
 ```
 
@@ -2002,7 +2220,7 @@ import type { AdsDia, FonteAds } from './sku-dossie-dados';
 export type AlcanceAds = 'sku' | 'anuncio' | 'familia' | 'indisponivel';
 export type EstadoAds = 'carregando' | 'erro' | 'sem_coleta' | 'sem_permissao' | 'sem_advertiser' | 'sem_acesso'
   | 'parcial' | 'desatualizado' | 'sem_ads' | 'ok';
-export type MotivoSemLucro = 'compartilhado' | 'sem_lucro' | 'cobertura' | null;
+export type MotivoSemLucro = 'compartilhado' | 'sem_lucro' | 'cobertura' | 'fora_dos_grupos' | null;
 
 export interface TotaisAds {
   custo: number; cliques: number; impressoes: number; vendasDiretas: number; vendasIndiretas: number; vendasTotais: number;
@@ -2010,7 +2228,8 @@ export interface TotaisAds {
 }
 export interface PontoAds {
   intervalo: Intervalo;
-  /** null = algum dia do intervalo fora da cobertura da coleta (sem prova de zero). */
+  /** null = algum dia do intervalo sem linha gravada, fora da cobertura ou carga inicial em curso.
+   *  Zero só aparece quando o ML devolveu a linha com cost 0. */
   custo: number | null;
   vendas: number | null;
   /** Algum dia do intervalo ainda pode ganhar vendas atribuídas (relido < 15 dias depois dele). */
@@ -2103,8 +2322,8 @@ export function montarAds(p: {
   const hoje = diaBRT(p.agora.getTime());
   const ontem = somarDias(hoje, -1);
   const parcial = !sync.carga_inicial_ok;
-  // Último dia que uma coleta ok cobriu (ela lê até D-1). Sem linha entre cobertura_desde e ele = zero
-  // comprovado: o grupo sem gasto na janela nem é lido; com gasto, a série densa traz todos os dias.
+  // Último dia que uma coleta ok cobriu (ela lê até D-1). Coberto = dentro de [cobertura_desde, ultimoDia].
+  // Coberto não é zero: o gráfico só mostra valor em dia com linha real; a despesa só soma dia coberto.
   const ultimoDia = sync.ultimo_ok_em ? somarDias(diaBRT(Date.parse(sync.ultimo_ok_em)), -1) : null;
   const coberto = (d: string) => sync.cobertura_desde != null && ultimoDia != null && d >= sync.cobertura_desde && d <= ultimoDia;
   const aberto = (d: string, coletadoEm: string | null) => !coletadoEm || !atribuicaoFinal(d, coletadoEm);
@@ -2123,7 +2342,8 @@ export function montarAds(p: {
   const desdeDia = diaBRT(Date.parse(p.janela.desde));
   const fimJanela = diaBRT(Date.parse(p.janela.ate));
   const ateDia = fimJanela < ontem ? fimJanela : ontem;
-  const doPeriodo = linhas.filter((d) => d.dia >= desdeDia && d.dia <= ateDia);
+  // Despesa do período = mesmo recorte do gráfico: só dia coberto (na carga parcial, o que já chegou, rotulado).
+  const doPeriodo = linhas.filter((d) => d.dia >= desdeDia && d.dia <= ateDia && (parcial || coberto(d.dia)));
   const diasPeriodo = diasEntre(desdeDia, ateDia);
 
   const codigosDe = (m: string) => f.codigosDosMembros.get(m) ?? [];
@@ -2146,15 +2366,21 @@ export function montarAds(p: {
     : !sync.ultimo_ok_em || p.agora.getTime() - Date.parse(sync.ultimo_ok_em) > DESATUALIZADO_MS ? 'desatualizado'
       : totais.custo === 0 ? 'sem_ads' : 'ok';
   const periodoCoberto = !parcial && diasPeriodo.length > 0 && diasPeriodo.every(coberto);
+  // Gasto do anunciante fora de qualquer grupo listado (provável grupo excluído): a despesa do alcance pode
+  // estar abaixo do real, então não há "Lucro após Ads" — a despesa continua aparecendo.
+  const foraDosGrupos = sync.custo_resumo != null && sync.custo_listado != null && sync.custo_resumo - sync.custo_listado > 0.005;
   const motivoSemLucro: MotivoSemLucro = alcance === 'anuncio' ? 'compartilhado'
-    : p.lucroPeriodo == null ? 'sem_lucro' : !periodoCoberto ? 'cobertura' : null;
+    : p.lucroPeriodo == null ? 'sem_lucro' : !periodoCoberto ? 'cobertura' : foraDosGrupos ? 'fora_dos_grupos' : null;
   const lucroAposAds = motivoSemLucro == null && p.lucroPeriodo != null ? round2(p.lucroPeriodo - totais.custo) : null;
 
   const abertoNoDia = (d: string, ls: AdsDia[]) => (ls.length ? ls.some((l) => aberto(d, l.coletado_em)) : aberto(d, sync.ultimo_ok_em));
+  const porDia = new Map<string, AdsDia[]>();
+  for (const l of linhas) porDia.set(l.dia, [...(porDia.get(l.dia) ?? []), l]);
   const ponto = (intervalo: Intervalo): PontoAds => {
     const ds = diasDoIntervalo(intervalo, p.agora).filter((d) => d <= ontem);
-    const doIv = linhas.filter((l) => ds.includes(l.dia));
-    const provado = ds.length > 0 && (parcial || ds.every(coberto));
+    const doIv = ds.flatMap((d) => porDia.get(d) ?? []);
+    // Valor só com todos os dias cobertos E com linha real; carga parcial → sem valor no gráfico.
+    const provado = !parcial && ds.length > 0 && ds.every((d) => coberto(d) && porDia.has(d));
     return {
       intervalo,
       custo: provado ? round2(doIv.reduce((s, l) => s + l.cost, 0)) : null,
@@ -2218,7 +2444,7 @@ Run: `/usr/bin/git add src/lib/sku-dossie-dados.ts src/lib/sku-ads.ts tests/lib/
 Create `src/components/sku-dossie/__tests__/ads-dossie.test.tsx`:
 
 ```tsx
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { AdsDossie } from '../ads-dossie';
 import { intervalosBRT } from '@/lib/calendario-brt';
@@ -2232,7 +2458,10 @@ const base: DadosAds = {
     unidadesDiretas: 2, unidades: 3, cpc: 2, roas: 1.9, acos: 100 / 190 },
   lucroAposAds: 400, motivoSemLucro: null, compartilhadoCom: { codigos: [], semVinculo: 0 },
   serie: IVS.map((intervalo, i) => ({ intervalo, custo: i ? 90 : 10, vendas: i ? 90 : 100, aberto: i === 1 })),
-  serieDiaria: [],
+  serieDiaria: ['14', '15'].map((d) => ({
+    intervalo: { inicio: `2026-09-${d}T03:00:00.000Z`, fim: `2026-09-${Number(d) + 1}T03:00:00.000Z`, rotulo: `${d}/09`, incompleto: false, inicioParcial: false },
+    custo: 5, vendas: 20, aberto: true,
+  })),
   grupos: [{ id: 3000001, tipo: 'FAMILY', status: 'ACTIVE', campanhaId: 2000001, custo: 100, exclusivo: true, mlbs: ['MLB1'], codigos: ['A'], semVinculo: 0 }],
   coberturaDesde: '2026-06-29', ultimoOkEm: '2026-09-27T14:20:00Z', diasAbertos: 12, erro: null,
 };
@@ -2246,6 +2475,32 @@ describe('AdsDossie', () => {
     expect(screen.getByText('1,9×')).toBeInTheDocument();
     expect(screen.getByText('Lucro após Ads')).toBeInTheDocument();
     expect(screen.getByText('Vendas atribuídas · 12 dias com atribuição em aberto')).toBeInTheDocument();
+  });
+  it('"Dia" troca para a série diária (rótulo dd/mm) sem mexer no Passo do dossiê', () => {
+    const onPasso = vi.fn();
+    render(<AdsDossie ads={base} familia={false} passo="semana" onPasso={onPasso} onTentar={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Dia' }));
+    expect(screen.getByRole('heading', { name: 'Ads por dia' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Dia' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/Série diária de 14\/09 a 15\/09\./)).toBeInTheDocument();
+    expect(onPasso).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Mês' }));
+    expect(onPasso).toHaveBeenCalledWith('mes');
+  });
+  it('estados com dado: parcial, desatualizado e sem_ads', () => {
+    const r1 = renderiza({ ...base, estado: 'parcial' });
+    expect(screen.getByText(/Carga inicial dos últimos 90 dias em curso/)).toBeInTheDocument();
+    r1.unmount();
+    const r2 = renderiza({ ...base, estado: 'desatualizado' });
+    expect(screen.getByText(/Última coleta ok/)).toBeInTheDocument();
+    r2.unmount();
+    renderiza({ ...base, estado: 'sem_ads', totais: { ...base.totais!, custo: 0 } });
+    expect(screen.getByText(/Nenhum gasto de Ads nos anúncios vinculados a este SKU/)).toBeInTheDocument();
+  });
+  it('gasto fora dos grupos listados: lucro após Ads indisponível, despesa continua', () => {
+    renderiza({ ...base, lucroAposAds: null, motivoSemLucro: 'fora_dos_grupos' });
+    expect(screen.getAllByText(/gasto fora dos grupos listados \(provável grupo excluído\)/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Despesa de Ads do período')).toBeInTheDocument();
   });
   it('gasto compartilhado: lucro após Ads indisponível com o motivo', () => {
     renderiza({ ...base, alcance: 'anuncio', lucroAposAds: null, motivoSemLucro: 'compartilhado', compartilhadoCom: { codigos: ['B'], semVinculo: 0 } });
@@ -2317,6 +2572,7 @@ function textoSemLucro(a: DadosAds): string {
   }
   if (a.motivoSemLucro === 'sem_lucro') return 'indisponível: lucro do período sem custo cadastrado';
   if (a.motivoSemLucro === 'cobertura') return 'indisponível: período fora da coleta de Ads';
+  if (a.motivoSemLucro === 'fora_dos_grupos') return 'indisponível: gasto fora dos grupos listados (provável grupo excluído)';
   return '';
 }
 
@@ -2402,6 +2658,7 @@ export function AdsDossie({ ads: a, familia, passo, onPasso, onTentar }: Props) 
       t.roas != null ? `ROAS ${fmtRoas(t.roas)}.` : '',
       a.lucroAposAds != null ? `Lucro após Ads ${fmtBRL(a.lucroAposAds)}.` : `Lucro após Ads ${textoSemLucro(a)}.`,
       a.diasAbertos ? `${plural(a.diasAbertos, 'dia', 'dias')} com atribuição em aberto.` : '',
+      n ? `Série ${diario ? 'diária' : passo === 'semana' ? 'semanal' : 'mensal'} de ${serie[0].intervalo.rotulo} a ${serie[n - 1].intervalo.rotulo}.` : '',
     ].filter(Boolean).join(' ');
     corpo = (
       <>
@@ -2640,6 +2897,7 @@ Create `scripts/validar-ads-ml.ts`:
 // - Token lido em memória via public.get_connection_tokens (Management API, SQL só leitura). NUNCA impresso,
 //   NUNCA renovado: vencido → aborta sem chamar o ML.
 // - API_URL tem que ser local (127.0.0.1/localhost): o script recusa gravar fora do Postgres local.
+// - Valores em R$ saem SÓ neste terminal local; nunca copiar para arquivo versionado (repo público).
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { depsAds } from '../supabase/functions/coletar-ads-ml/deps.ts';
 import { sincronizarAdsOrg } from '../supabase/functions/_shared/ads/sincronizar.ts';
@@ -2692,8 +2950,8 @@ const semFiltroUrl = urlBuscaGrupos(adv, janela, 0).replace(`&filters[status]=${
 const semFiltro = parseBuscaGrupos((await buscarML(`${ML_API}${semFiltroUrl}`, token, fetch, HEADERS_ADS)).corpo);
 console.log('grupos listados', { comFiltro: comFiltro?.total, semFiltro: semFiltro?.total, resumoCusto: comFiltro?.custoResumo });
 
-// Membros: /ads com janela lista também quem não teve atividade nela? (senão o vínculo vira subconjunto e um
-// grupo multi-cor pareceria exclusivo). Compara o total de membros em 90 dias × só no último dia.
+// Membros (informativo): o worker sempre lê /ads na janela de 90 dias e nunca encolhe o vínculo; aqui só se
+// registra se o ML filtra membros pela atividade da janela (90 dias × último dia).
 const familias = (comFiltro?.grupos ?? []).filter((g) => g.tipo === 'FAMILY' && g.cost > 0).slice(0, 3);
 for (const g of familias) {
   const t90 = parseMembros((await buscarML(`${ML_API}${urlMembros(g.ad_group_id, janela, 0)}`, token, fetch, HEADERS_ADS)).corpo)?.total;
@@ -2701,12 +2959,58 @@ for (const g of familias) {
   console.log('membros', { grupo: g.ad_group_id, janela90: t90, dia1: t1 });
 }
 
-// Cadeia inteira localmente: continuações vão para uma fila em memória, não para o QStash.
-for (const rodadaN of [1, 2]) {
+/** Σ cost gravado no Postgres local em [desde, ate] (paginado; só leitura). */
+async function somaCusto(desde: string, ate: string): Promise<number> {
+  let total = 0;
+  for (let de = 0; ; de += 1000) {
+    const { data, error } = await admin.from('ml_ads_grupo_dia').select('cost').eq('org_id', org)
+      .gte('dia', desde).lte('dia', ate).order('ad_group_id').order('dia').range(de, de + 999);
+    if (error) throw new Error(error.message);
+    for (const l of data ?? []) total += Number(l.cost);
+    if ((data ?? []).length < 1000) return Math.round(total * 100) / 100;
+  }
+}
+
+/** Cadeia inteira localmente: continuações vão para uma fila em memória, não para o QStash. */
+async function rodar(n: number): Promise<void> {
   const fila: MsgTrafego[] = [{ org_id: org, primeira: true }];
   const deps = { ...depsAds(admin, org, async () => token), continuar: async (m: MsgTrafego) => { fila.push(m); } };
-  while (fila.length) console.log(`run ${rodadaN}`, await sincronizarAdsOrg(deps, fila.shift()!));
+  while (fila.length) {
+    const r = await sincronizarAdsOrg(deps, fila.shift()!);
+    console.log(`run ${n}`, r);
+    if (r.resultado === 'erro' || r.resultado === 'sem_acesso') { console.error(`FALHA: run ${n} terminou em ${r.resultado}`); Deno.exit(1); }
+  }
 }
+
+// Run 1 = carga inicial de 90 dias. Prova: Σ gravado no intervalo da carga = custoListado do sync.
+await rodar(1);
+const { data: sync, error: eSync } = await admin.from('ml_ads_sync')
+  .select('estado, carga_inicial_ok, cobertura_desde, custo_resumo, custo_listado').eq('org_id', org).single();
+if (eSync || !sync) throw new Error(`ml_ads_sync: ${eSync?.message ?? 'sem linha'}`);
+const somaCarga = await somaCusto(janela.desde, janela.ate);
+const resumo = Number(sync.custo_resumo); const listado = Number(sync.custo_listado);
+console.log('run 1 (R$ só neste terminal)', {
+  estado: sync.estado, cargaInicialOk: sync.carga_inicial_ok, coberturaDesde: sync.cobertura_desde,
+  custoResumo: resumo, custoListado: listado, somaCarga,
+  foraDosGruposPct: resumo > 0 ? `${(((resumo - listado) / resumo) * 100).toFixed(2)} %` : 'n/a',
+});
+if (Math.abs(somaCarga - listado) > 0.01) {
+  console.error('FALHA: Σ gravado na carga ≠ custoListado do search', { somaCarga, custoListado: listado });
+  Deno.exit(1);
+}
+
+// Run 2 = rodada diária (15 dias). Dias com mais de 15 dias (dia < hoje−15) não podem mudar.
+const limiteAntigo = new Date(Date.parse(`${janelaAds({ hoje, cargaInicialOk: true, ultimoOkDia: null }).desde}T00:00:00Z`) - 86_400_000)
+  .toISOString().slice(0, 10);
+const antigosAntes = await somaCusto(janela.desde, limiteAntigo);
+await rodar(2);
+const antigosDepois = await somaCusto(janela.desde, limiteAntigo);
+console.log('run 2', { diasAte: limiteAntigo, antigosAntes, antigosDepois });
+if (Math.abs(antigosDepois - antigosAntes) > 0.005) {
+  console.error('FALHA: o 2º run mudou dias com mais de 15 dias');
+  Deno.exit(1);
+}
+console.log('OK: carga = custoListado; 2º run não mexeu nos dias antigos');
 ```
 
 - [ ] **Step 2: Preparar a org local e rodar (só leitura no ML)**
@@ -2720,7 +3024,12 @@ Pegar o `connection_id` da conexão ML da Avil com `python3 scripts/spike-ads-ml
 eval "$(supabase status -o env | grep -E '^(API_URL|SERVICE_ROLE_KEY)=')"
 deno run -A scripts/validar-ads-ml.ts <connection_id_avil> 96000000-0000-0000-0000-000000000001
 ```
-Expected: `grupos listados { comFiltro: N, semFiltro: N, … }` com N igual nos dois (se diferir, **parar** e reportar ao controlador: o filtro de R4 esconde grupos); `membros { janela90: X, dia1: X }` iguais em cada grupo FAMILY (se diferirem, **parar** e reportar: `/ads` filtra membros pela atividade na janela e o vínculo atual sairia incompleto); `run 1 { resultado: 'ok' }` (ou `continua` seguido de `ok`); log `[ads] custo da janela` com `custoResumo` e `custoListado`; `run 2 { resultado: 'ok' }` com a janela diária.
+Expected (valores em R$ **só neste terminal**; nunca copiar para arquivo versionado):
+- `grupos listados { comFiltro: N, semFiltro: N, … }` com N igual (se diferir, **parar** e reportar: o filtro de R4 esconde grupos);
+- `membros { janela90, dia1 }` por grupo FAMILY: informativo (o worker já usa 90 dias e não encolhe vínculo); registrar se diferem;
+- `run 1 { resultado: 'ok' }` (ou `continua` … `ok`). Se der `erro` com "resposta inválida" (série diária com dia faltando, por exemplo grupo criado dentro da janela), **parar** e reportar ao controlador com o id do grupo e as datas: a premissa de série densa por grupo caiu;
+- `run 1 (R$ só neste terminal) { custoResumo, custoListado, somaCarga, foraDosGruposPct }` com `somaCarga = custoListado` (± R$ 0,01; o script falha sozinho se não bater);
+- `run 2 { diasAte, antigosAntes, antigosDepois }` iguais (o script falha sozinho se a soma dos dias com mais de 15 dias mudar) e `OK: carga = custoListado; 2º run não mexeu nos dias antigos`.
 
 - [ ] **Step 3: Conferências no Postgres local**
 
@@ -2733,16 +3042,16 @@ select count(*) from (select ad_group_id, dia from ml_ads_grupo_dia group by 1, 
 ```
 Critérios:
 - `max(dia)` = ontem (BRT); `min(dia)` = hoje − 90; `carga_inicial_ok = true`; `cursor` e `posse_ate` nulos.
-- Σcost da tabela ≈ `custoListado` do log (a diferença para `custoResumo` é o gasto fora de grupo listado; registrar a % — o spike mediu ~2,6 %).
+- `somaCarga = custoListado` e a % `foraDosGruposPct` (o spike mediu ~2,6 %) já saíram do script; no `project-status` vai só a %.
 - Nº de grupos com gasto na mesma ordem do spike (Avil: 134 em 90 dias) e tipos ITEM/FAMILY/CATALOG presentes.
-- 2º run: nenhuma chave duplicada (última query = 0); Σcost dos dias com mais de 15 dias igual antes e depois do 2º run (rodar a 2ª query com `where dia < current_date - 15` antes e depois).
+- 2º run: nenhuma chave duplicada (última query = 0); a estabilidade dos dias com mais de 15 dias já foi provada pelo script (`antigosAntes = antigosDepois`).
 - Nenhum token em nenhuma saída (`grep -c APP_USR` no log do terminal = 0).
 - Dossiê local (conta VALIDATION não tem os produtos da Avil): a validação visual ficou na T6 com dados injetados; aqui só números.
 
 - [ ] **Step 4: Documentação (skill `docs-update-checklist`)**
 
 Invocar a skill `docs-update-checklist` e seguir o mapeamento dela. No mínimo:
-- `docs/reference/glossario.md`: **Despesa de Ads do período** (Σcost dos grupos do alcance, dias até ontem); **Lucro após Ads** (lucro atual − despesa, só com gasto exclusivo e período coberto; senão indisponível com o motivo); **Grupo de anúncios (Ad Group)** (unidade de gasto do Product Ads: ITEM/FAMILY/CATALOG; soma sempre por grupo); **Atribuição em aberto** (dia relido há menos de 15 dias; vendas atribuídas ainda podem mudar); **Alcance de Ads** (sku/família/anúncio/indisponível).
+- `docs/reference/glossario.md`: **Despesa de Ads do período** (Σcost dos grupos do alcance, dias até ontem); **Lucro após Ads** (lucro atual − despesa, só com gasto exclusivo e período coberto; senão indisponível com o motivo, inclusive "gasto fora dos grupos listados"); **Grupo de anúncios (Ad Group)** (unidade de gasto do Product Ads: ITEM/FAMILY/CATALOG; soma sempre por grupo); **Atribuição em aberto** (dia relido há menos de 15 dias; vendas atribuídas ainda podem mudar); **Alcance de Ads** (sku/família/anúncio/indisponível).
 - `docs/reference/modelo-de-dados.md`: as 4 tabelas (colunas, PK, RLS de leitura por org, escrita só service_role), as 5 RPCs de escrita e `vendas_sku_codigos_mlbs`.
 - `docs/reference/edge-functions.md`: `coletar-ads-ml` (QStash, `verify_jwt = false`, schedule `17 14 * * *` UTC ainda **não registrado**, runbook `docs/runbooks/coletar-ads-ml.md`); nota de que `coletar-trafego-ml` precisa de redeploy por `_shared/trafego/fiacao.ts`.
 - `docs/decisions/0172-vendas-sku-analise-por-variacao.md`: nota "Fatia 2c" — unidade `ad_group_id`, R2 (sem gasto por cor), alcance, estados, o que ficou fora (posição na busca por ToS 7.6; Ads em ranking/ABC/Financeiro/billing; conferência com a fatura `PADS`, bloqueada por 403 no billing).
