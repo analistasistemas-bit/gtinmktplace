@@ -19,7 +19,11 @@ const PCT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
  * Faturamento continua mostrando o líquido já líquido de imposto (default). O Markup não muda: nos
  * dois casos usa `it.markup`, que continua calculado líquido de imposto.
  */
-export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido: Pedido; liquidoBruto?: boolean }) {
+export function DetalhePedidoItens({ pedido: p, liquidoBruto = false, destaque }: {
+  pedido: Pedido; liquidoBruto?: boolean;
+  /** Dossiê do SKU: marca os itens destes códigos num pedido que também tem outros produtos. */
+  destaque?: { codigos: ReadonlySet<string>; rotulo: string };
+}) {
   // `chave` já é `pack_id ?? order_id`, e a rota aceita os dois (ver `urlVendaML`). A rota antiga
   // `/vendas/pacote/…` foi descontinuada pelo ML e devolvia 301 para a lista de vendas.
   const urlVenda = urlVendaML(p.chave);
@@ -71,13 +75,15 @@ export function DetalhePedidoItens({ pedido: p, liquidoBruto = false }: { pedido
             // O "estornado" do pedido não dizia de qual item vinha (pack 2000014844302469).
             const marca = [!it.faturavel && 'cancelado', it.estorno > 0 && `estornado ${fmtBRL(it.estorno)}`]
               .filter(Boolean).join(' · ');
+            const destacado = !!destaque && destaque.codigos.has(it.codigo?.trim() ?? '');
             return (
-              <TableRow key={it.id}>
+              <TableRow key={it.id} className={destacado ? 'bg-primary/5 hover:bg-primary/10' : undefined}>
                 <TableCell className="max-w-[280px] uppercase" title={it.titulo ?? ''}>
                   <span className="flex items-center gap-2">
                     <ThumbProduto path={it.imagem_path} titulo={it.titulo} size={28} />
                     <span className="min-w-0">
                       <span className="block truncate">{it.titulo ?? '—'}</span>
+                      {destacado && <span className="block text-[11px] font-medium normal-case text-primary">{destaque.rotulo}</span>}
                       {marca && <span className="block normal-case text-destructive">{marca}</span>}
                     </span>
                   </span>

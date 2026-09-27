@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,7 +8,9 @@ import { idadeComercial } from '@/components/sku-dossie/formato-dossie';
 import { useSkuDossie } from '@/hooks/useSkuDossie';
 import { RankingSku } from '@/components/faturamento/ranking-sku';
 import { SEM_CODIGO, metricas, somarAcumuladores, type LinhaSku } from '@/lib/vendas-sku';
-import type { DossieSku, EstadoDossie } from '@/lib/sku-dossie';
+import type { DossieSku, EstadoDossie, PontoSerie } from '@/lib/sku-dossie';
+import { agruparPorPedido } from '@/lib/pedidos-faturamento';
+import type { Venda } from '@/lib/faturamento';
 import type { CatalogoSku } from '@/lib/vendas-sku-catalogo';
 
 vi.mock('@/hooks/useSkuDossie', () => ({ useSkuDossie: vi.fn() }));
@@ -32,7 +35,7 @@ const dossie = (over: Partial<DossieSku> = {}): DossieSku => ({
   historicoDesde: '2026-05-10T12:00:00Z', ultimaVenda: '2026-09-20T12:00:00Z',
   linhaPeriodo: linha('00123', 'Camiseta Dry Azul M'), linhaAnterior: null,
   tendencia: 'em_alta', cobertura: 40, estoque: 12, alertas: [], serie: [], eventos: [], perguntasPorIntervalo: [],
-  ufs: { valores: {}, semUf: 0 }, mix: null, campanhas: [], mlbs: new Map(),
+  ufs: { valores: {}, semUf: 0 }, mix: null, campanhas: [], mlbs: new Map(), kitVirtual: null,
   qualidade: { pctBrutoCustoReal: 0.9, fontesParciais: ['Promoções: só a situação atual'] },
   ...over,
 });
@@ -107,6 +110,101 @@ describe('SkuDossie', () => {
     expect(screen.getByText('Sem vendas registradas desde a entrada no PubliAI')).toBeInTheDocument();
     expect(screen.getByText('12 un.')).toBeInTheDocument();
     expect(screen.queryByText('Faturamento')).not.toBeInTheDocument();
+  });
+});
+
+const venda = (order: number, codigo: string, titulo: string): Venda => ({
+  id: `v${order}`, order_id: order, pack_id: null, status: 'paid', status_detail: null, date_closed: '2026-09-15T12:00:00Z',
+  date_created: null, comprador_nick: 'COMPRADOR1', comprador_id: 1, total_amount: 20, paid_amount: 20, sale_fee_total: 2,
+  frete_vendedor: null, liquido: 18, estorno: null, money_release_date: null, currency: 'BRL', shipping_id: null,
+  shipping_status: null, shipping_substatus: null, shipping_logistic: null, tracking_number: null, is_publiai: true,
+  tem_devolucao: false, itens: [{ id: `i${order}`, ml_item_id: 'MLB1', variation_id: null, titulo, codigo, cor: null,
+    ean: null, quantity: 2, unit_price: 10, sale_fee: 2, is_publiai: true }],
+} as Venda);
+
+const ponto = (inicio: string, fim: string, rotulo: string, incompleto: boolean, over: Partial<PontoSerie> = {}): PontoSerie => ({
+  intervalo: { inicio, fim, rotulo, incompleto }, unidades: 0, bruto: 0, lucro: null, fonteCusto: 'sem_custo',
+  precoMedio: null, precoMin: null, precoMax: null, unidadesKit: 0, pedidos: [], ...over,
+});
+
+const comSerie = (over: Partial<DossieSku> = {}) => dossie({
+  serie: [
+    ponto('2026-09-14T03:00:00.000Z', '2026-09-21T03:00:00.000Z', '14/09', false, {
+      unidades: 2, bruto: 20, lucro: 8, fonteCusto: 'real', precoMedio: 10, precoMin: 10, precoMax: 10,
+      pedidos: agruparPorPedido([venda(4401, '00123', 'Camiseta Dry Azul M')]),
+    }),
+    ponto('2026-09-21T03:00:00.000Z', '2026-09-28T03:00:00.000Z', '21/09', true),
+  ],
+  perguntasPorIntervalo: [3, 0],
+  eventos: [
+    { id: 'e1', tipo: 'moderacao_detectada', em: '2026-09-16T12:00:00Z', titulo: 'Moderação detectada', detalhe: 'Foto', vinculo: 'compartilhado', mlb: 'MLB3' },
+    { id: 'e2', tipo: 'moderacao_resolvida', em: '2026-09-18T12:00:00Z', titulo: 'Resolução observada', detalhe: null, vinculo: 'nao_resolvido', mlb: 'MLB9' },
+  ],
+  ...over,
+});
+
+describe('SkuDossie: série e eventos', () => {
+  it('série: rótulos dos intervalos, "(parcial)" no corrente e resumo textual', () => {
+    renderPagina('ok', comSerie());
+    const serie = screen.getByRole('region', { name: /Evolução/ });
+    expect(within(serie).getByRole('button', { name: /14\/09/ })).toBeInTheDocument();
+    expect(within(serie).getByRole('button', { name: /21\/09.*parcial/ })).toBeInTheDocument();
+    expect(within(serie).getByText('(parcial)')).toBeInTheDocument();
+    const resumo = serie.querySelector('.sr-only');
+    expect(resumo?.textContent).toMatch(/2 unidades/);
+    expect(resumo?.textContent).toMatch(/14\/09/);
+  });
+
+  it('alternador semana/mês pede o passo', async () => {
+    renderPagina('ok', comSerie());
+    expect(screen.getByRole('button', { name: 'Semana' })).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(screen.getByRole('button', { name: 'Mês' }));
+    expect(vi.mocked(useSkuDossie).mock.calls.at(-1)?.[2]).toBe('mes');
+  });
+
+  it('família: nota do mix no preço médio', () => {
+    renderPagina('ok', comSerie({ titulo: 'Camiseta Dry' }), '/faturamento/sku/familia/P1');
+    expect(screen.getByText(/o preço médio também muda pelo mix de variações/)).toBeInTheDocument();
+  });
+
+  it('kit virtual: dica no KPI de unidades e nota de cobertura parcial', () => {
+    renderPagina('ok', comSerie({ kitVirtual: { unidadesPeriodo: 3, unidadesPorIntervalo: [1, 0] } }));
+    expect(screen.getByText(/3 un\. dentro de kit/)).toBeInTheDocument();
+    expect(screen.getByText(/cobertura parcial \(sem histórico antes de set\/2026\)/)).toBeInTheDocument();
+  });
+
+  it('teclado: o intervalo abre o Sheet com os pedidos e o SKU destacado', async () => {
+    const user = userEvent.setup();
+    renderPagina('ok', comSerie());
+    const botao = within(screen.getByRole('region', { name: /Evolução/ })).getByRole('button', { name: /14\/09/ });
+    botao.focus();
+    await user.keyboard('{Enter}');
+    const sheet = await screen.findByRole('dialog');
+    expect(within(sheet).getByText(/Semana de 14\/09/)).toBeInTheDocument();
+    await user.click(within(sheet).getByRole('button', { name: /COMPRADOR1/ }));
+    expect(within(sheet).getByText('4401')).toBeInTheDocument();
+    expect(within(sheet).getByText('este SKU')).toBeInTheDocument();
+  });
+
+  it('eventos: agrupados por mês, selos de compartilhado e não resolvido', () => {
+    renderPagina('ok', comSerie());
+    const ev = screen.getByRole('region', { name: 'Eventos' });
+    expect(within(ev).getByRole('heading', { name: /setembro de 2026/ })).toBeInTheDocument();
+    expect(within(ev).getByText('anúncio compartilhado · MLB3')).toBeInTheDocument();
+    expect(within(ev).getByText('vínculo não resolvido')).toBeInTheDocument();
+  });
+
+  it('eventos: kit marca o estoque como da base; vazio mostra o aviso', () => {
+    renderPagina('ok', comSerie({
+      catalogo: [{ ...cat, ehKit: true, kitMultiplicador: 2, kitBaseCodigo: '00100', estoqueKit: 3 }],
+      eventos: [{ id: 'e3', tipo: 'ruptura', em: '2026-09-16T12:00:00Z', titulo: 'Ruptura do kit', detalhe: null, vinculo: 'exato', mlb: null }],
+    }));
+    expect(within(screen.getByRole('region', { name: 'Eventos' })).getByText('estoque da base')).toBeInTheDocument();
+  });
+
+  it('eventos vazios: aviso próprio', () => {
+    renderPagina('ok', comSerie({ eventos: [] }));
+    expect(within(screen.getByRole('region', { name: 'Eventos' })).getByText('Nenhum evento registrado')).toBeInTheDocument();
   });
 });
 

@@ -9,6 +9,8 @@ import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import { CabecalhoDossie } from '@/components/sku-dossie/cabecalho-dossie';
 import { QualidadeHistorico } from '@/components/sku-dossie/qualidade-historico';
 import { KpisDossie } from '@/components/sku-dossie/kpis-dossie';
+import { SerieDossie } from '@/components/sku-dossie/serie-dossie';
+import { EventosDossie } from '@/components/sku-dossie/eventos-dossie';
 import { useSkuDossie } from '@/hooks/useSkuDossie';
 import { cn } from '@/lib/utils';
 import { rotuloAnterior, type Periodo } from '@/lib/metricas';
@@ -67,8 +69,7 @@ export default function SkuDossie() {
     ? { tipo: 'familia', codigoPai } : { tipo: 'sku', codigo: codigo ?? '' }), [codigo, codigoPai]);
   const familia = alvo.tipo === 'familia';
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
-  // Task 8: o alternador semana/mês da série ganha o setter.
-  const [passo] = useState<Passo>('semana');
+  const [passo, setPasso] = useState<Passo>('semana');
   const { estado, dados, refetch } = useSkuDossie(alvo, periodo, passo);
 
   const cat = dados?.catalogo[0];
@@ -139,15 +140,19 @@ export default function SkuDossie() {
             <h2 id="dossie-periodo" className="text-h3">Resultado no período</h2>
             <SeletorPeriodo periodo={periodo} onPeriodo={setPeriodo} mostrarMesAtual rotulo="Período" />
           </div>
-          <KpisDossie atual={dados.linhaPeriodo} anterior={dados.linhaAnterior} rot={rotuloAnterior(periodo)} />
+          <KpisDossie atual={dados.linhaPeriodo} anterior={dados.linhaAnterior} rot={rotuloAnterior(periodo)}
+            unidadesKit={dados.kitVirtual?.unidadesPeriodo} />
           {!dados.linhaPeriodo && (
             <p className="text-xs text-muted-foreground">Nenhuma venda neste período. O Δ compara com o período anterior.</p>
           )}
-          {/* Task 8: série (SerieDossie + Sheet de pedidos) entra aqui: segue o `periodo` e o `passo`. */}
+          <SerieDossie serie={dados.serie} perguntas={dados.perguntasPorIntervalo} eventos={dados.eventos} codigos={dados.codigos}
+            familia={familia} temKit={dados.kitVirtual != null} passo={passo} onPasso={setPasso} />
         </section>
       )}
 
-      {/* Task 8: <section aria-labelledby="dossie-eventos"> EventosDossie (não aparece em sem_vendas se não houver eventos). */}
+      {(estado !== 'sem_vendas' || dados.eventos.length > 0) && (
+        <EventosDossie eventos={dados.eventos} kit={dados.catalogo.some((c) => c.ehKit)} />
+      )}
       {/* Task 9: estoque (também em sem_vendas), devoluções, UFs, mix (só família) e campanhas, cada um na sua <section aria-labelledby>. */}
     </div>
   );

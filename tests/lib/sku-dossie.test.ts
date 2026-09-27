@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { agregarPorSku } from '@/lib/vendas-sku';
-import { serieDoSku, vinculoDoMlb, montarEventos, perguntasPorIntervalo, ufsDoSku, mixDaFamilia, situacaoCampanhas } from '@/lib/sku-dossie';
+import { serieDoSku, vinculoDoMlb, montarEventos, perguntasPorIntervalo, ufsDoSku, mixDaFamilia, situacaoCampanhas, montarDossie } from '@/lib/sku-dossie';
 import type { Movimento, Moderacao } from '@/lib/sku-dossie-dados';
 import type { Devolucao } from '@/lib/devolucoes';
 import type { CatalogoSku } from '@/lib/vendas-sku-catalogo';
@@ -71,6 +71,58 @@ describe('serieDoSku', () => {
     const oraculo = agregarPorSku(agrupar(vendas), S1, new Map(), new Set()).find((l) => l.codigo === 'A')!;
     expect(oraculo.acc.liquido).toBe(21);
     expect(s1.lucro).toBe(oraculo.m.lucro);
+  });
+});
+
+describe('serieDoSku: pedidos e kit por intervalo', () => {
+  it('cada ponto traz os pedidos do intervalo que contêm o SKU e as unidades vendidas dentro de kit', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, date_closed: '2026-09-15T12:00:00Z', itens: [item({ id: 'i1', codigo: 'A', quantity: 2 })] }),
+      venda({ id: 'k', order_id: 2, kit_item_id: 'KIT1', date_closed: '2026-09-16T12:00:00Z', itens: [item({ id: 'i2', codigo: 'A', quantity: 3 })] }),
+      // kit cancelado: não faturável, fora das unidades de kit
+      venda({ id: 'kc', order_id: 5, kit_item_id: 'KIT1', status: 'cancelled', date_closed: '2026-09-16T13:00:00Z', itens: [item({ id: 'i5', codigo: 'A', quantity: 4 })] }),
+      venda({ id: 'b', order_id: 3, date_closed: '2026-09-16T12:00:00Z', itens: [item({ id: 'i3', codigo: 'B' })] }),
+      venda({ id: 'c', order_id: 4, date_closed: '2026-09-22T12:00:00Z', itens: [item({ id: 'i4', codigo: 'A' })] }),
+    ];
+    const [s1, s2] = serieDoSku({ vendas, agrupar, codigos: ['A'], intervalos: IVS, catalogo: new Map(), ordensDevolvidas: new Set() });
+    expect(s1.pedidos.map((p) => p.orderIds[0]).sort()).toEqual([1, 2, 5]);
+    expect(s1.unidades).toBe(5);
+    expect(s1.unidadesKit).toBe(3);
+    expect(s2.pedidos.map((p) => p.orderIds[0])).toEqual([4]);
+    expect(s2.unidadesKit).toBe(0);
+  });
+});
+
+describe('montarDossie: kitVirtual', () => {
+  const cat: CatalogoSku = {
+    codigo: 'A', codigoPai: null, nomeFamilia: null, nome: 'FITA A', cor: null, tamanho: null, estoque: 5, fornecedor: null,
+    origem: 'nacional', ehKit: false, primeiraVenda: '2026-09-01T12:00:00Z', ultimaVenda: '2026-09-22T12:00:00Z',
+    kitMultiplicador: null, kitBaseCodigo: null, estoqueKit: null,
+  };
+  const base = (vendas: Venda[]) => montarDossie({
+    alvo: { tipo: 'sku', codigo: 'A' }, codigos: ['A'], vendas, agrupar, catalogo: [cat], devolucoes: [],
+    // Período começa na quarta 16/09: a 1ª semana do gráfico (desde segunda 14/09) vai além dele.
+    janela: { desde: '2026-09-16T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
+    anterior: { desde: '2026-09-05T03:00:00.000Z', ate: '2026-09-16T02:59:59.999Z' },
+    hoje: { desde: '2026-08-28T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
+    hojeAnterior: { desde: '2026-07-29T03:00:00.000Z', ate: '2026-08-28T02:59:59.999Z' },
+    intervalos: IVS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
+  });
+
+  it('unidades dentro de kit no período (corte da janela) e por intervalo (corte do intervalo)', () => {
+    const { dados } = base([
+      // segunda 15/09: dentro da 1ª semana, fora do período
+      venda({ id: 'k0', order_id: 1, kit_item_id: 'KIT1', date_closed: '2026-09-15T12:00:00Z', itens: [item({ id: 'i1', codigo: 'A', quantity: 2 })] }),
+      venda({ id: 'k1', order_id: 2, kit_item_id: 'KIT1', date_closed: '2026-09-17T12:00:00Z', itens: [item({ id: 'i2', codigo: 'A', quantity: 3 })] }),
+      venda({ id: 'k2', order_id: 3, kit_item_id: 'KIT1', date_closed: '2026-09-22T12:00:00Z', itens: [item({ id: 'i3', codigo: 'A', quantity: 1 })] }),
+      venda({ id: 'n', order_id: 4, date_closed: '2026-09-22T12:00:00Z', itens: [item({ id: 'i4', codigo: 'A', quantity: 7 })] }),
+    ]);
+    expect(dados?.kitVirtual).toEqual({ unidadesPeriodo: 4, unidadesPorIntervalo: [5, 1] });
+  });
+
+  it('sem venda dentro de kit → null', () => {
+    const { dados } = base([venda({ id: 'n', order_id: 4, date_closed: '2026-09-22T12:00:00Z', itens: [item({ id: 'i4', codigo: 'A' })] })]);
+    expect(dados?.kitVirtual).toBeNull();
   });
 });
 

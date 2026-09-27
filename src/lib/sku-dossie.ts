@@ -24,6 +24,20 @@ export interface PontoSerie {
   precoMedio: number | null;
   precoMin: number | null;
   precoMax: number | null;
+  /** Unidades faturáveis do SKU vendidas dentro de Kit Virtual (já incluídas em `unidades`). */
+  unidadesKit: number;
+  /** Pedidos do intervalo com algum item do SKU (inclui cancelados, como a aba Vendas). */
+  pedidos: Pedido[];
+}
+
+/** Unidades faturáveis dos códigos vendidas dentro de kit (`dentroDeKit`), no corte da janela. */
+function unidadesEmKit(pedidos: Pedido[], codigos: Set<string>, janela: Janela): number {
+  let n = 0;
+  for (const ped of pedidos) {
+    if (!dentroDaJanela(ped.data, janela)) continue;
+    for (const it of ped.itens) if (it.faturavel && it.dentroDeKit && codigos.has(it.codigo?.trim() || SEM_CODIGO)) n += it.quantity;
+  }
+  return n;
 }
 
 export function serieDoSku(p: {
@@ -59,6 +73,9 @@ export function serieDoSku(p: {
     return {
       intervalo, unidades: acc.unidades, bruto: round2(acc.bruto), lucro: m.lucro, fonteCusto: m.fonteCusto,
       precoMedio: qtd > 0 ? round2(valor / qtd) : null, precoMin: min, precoMax: max,
+      unidadesKit: unidadesEmKit(pedidos, codigos, janela),
+      pedidos: pedidos.filter((ped) => dentroDaJanela(ped.data, janela)
+        && ped.itens.some((it) => codigos.has(it.codigo?.trim() || SEM_CODIGO))),
     };
   });
 }
@@ -219,6 +236,8 @@ export interface DossieSku {
   mix: LinhaMix[] | null;
   campanhas: ReturnType<typeof situacaoCampanhas>;
   mlbs: Map<string, string[]>;
+  /** Vendido dentro de Kit Virtual (cobertura parcial: sem histórico antes de set/2026); null sem nenhuma. */
+  kitVirtual: { unidadesPeriodo: number; unidadesPorIntervalo: number[] } | null;
   qualidade: { pctBrutoCustoReal: number | null; fontesParciais: string[] };
 }
 
@@ -278,6 +297,10 @@ export function montarDossie(p: {
   const kitsN = new Set(catalogo.map((c) => c.kitMultiplicador));
   const fontesParciais = ['Promoções: só a situação atual', 'Publicação: só vínculos registrados'];
   if (vendasDoAlvo.some((v) => v.kit_item_id != null)) fontesParciais.push('Kit Virtual: sem histórico antes de set/2026');
+  const pedidosPeriodo = p.agrupar(p.vendas.filter((v) => dentroDaJanela(v.date_closed, p.janela)));
+  const serie = serieDoSku({ vendas: p.vendas, agrupar: p.agrupar, codigos: p.codigos, intervalos: p.intervalos, catalogo: catMap, ordensDevolvidas: devolvidas });
+  const kitPeriodo = unidadesEmKit(pedidosPeriodo, cods, p.janela);
+  const kitPorIntervalo = serie.map((s) => s.unidadesKit);
   const mixRaw = familia == null ? null : montarVendasSku({ ...base, agrupar: p.agrupar, janela: p.janela, anterior: p.anterior });
 
   const dados: DossieSku = {
@@ -285,7 +308,7 @@ export function montarDossie(p: {
     linhaPeriodo, linhaAnterior: vestir(daChave(periodo.linhasAnterior)),
     tendencia, cobertura, estoque,
     alertas: linhaPeriodo ? alertasSku(linhaPeriodo, cobertura) : [],
-    serie: serieDoSku({ vendas: p.vendas, agrupar: p.agrupar, codigos: p.codigos, intervalos: p.intervalos, catalogo: catMap, ordensDevolvidas: devolvidas }),
+    serie,
     eventos: montarEventos({
       movimentos: p.movimentos, moderacoes: p.moderacoes, devolucoes: p.devolucoes, mlbs: p.mlbs,
       ordersDosCodigos: new Set(vendasDoAlvo.map((v) => v.order_id)),
@@ -293,10 +316,11 @@ export function montarDossie(p: {
       kitMultiplicador: kitsN.size === 1 ? [...kitsN][0] : null,
     }),
     perguntasPorIntervalo: perguntasPorIntervalo(p.perguntas, p.intervalos),
-    ufs: ufsDoSku(p.agrupar(p.vendas.filter((v) => dentroDaJanela(v.date_closed, p.janela))), p.codigos),
+    ufs: ufsDoSku(pedidosPeriodo, p.codigos),
     mix: mixRaw ? mixDaFamilia(mixRaw.linhas, mixRaw.linhasAnterior, catalogo) : null,
     campanhas: situacaoCampanhas(p.campanhas),
     mlbs: p.mlbs,
+    kitVirtual: kitPeriodo > 0 || kitPorIntervalo.some((n) => n > 0) ? { unidadesPeriodo: kitPeriodo, unidadesPorIntervalo: kitPorIntervalo } : null,
     qualidade: { pctBrutoCustoReal: hist && hist.acc.bruto > 0 ? hist.acc.brutoCustoReal / hist.acc.bruto : null, fontesParciais },
   };
   return { estado: !vendasDoAlvo.length ? 'sem_vendas' : !catalogo.length ? 'sem_cadastro' : 'ok', dados };

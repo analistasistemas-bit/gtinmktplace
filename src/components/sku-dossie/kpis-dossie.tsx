@@ -14,7 +14,11 @@ const HINT_CUSTO = { parcial: 'Parcial: só os itens com custo', estimado: 'Com 
 
 /** KPIs do período, na mesma apresentação da aba Vendas SKU. Linha null = nenhuma venda no recorte:
  *  faturamento e unidades são 0 de verdade; as razões ficam sem valor. */
-export function KpisDossie({ atual, anterior, rot }: { atual: LinhaSku | null; anterior: LinhaSku | null; rot: string }) {
+export function KpisDossie({ atual, anterior, rot, unidadesKit = 0 }: {
+  atual: LinhaSku | null; anterior: LinhaSku | null; rot: string;
+  /** Unidades do período vendidas dentro de Kit Virtual (já contadas em Unidades). */
+  unidadesKit?: number;
+}) {
   const bruto = atual?.acc.bruto ?? 0;
   const unidades = atual?.acc.unidades ?? 0;
   const lucro = atual?.m.lucro ?? null;
@@ -41,7 +45,7 @@ export function KpisDossie({ atual, anterior, rot }: { atual: LinhaSku | null; a
       <KpiCard size="compact" icon={Scale} label="Margem s/ venda" infoKey="Margem s/ venda::vendas-sku" tom="info" value={pct(margem)}
         {...comDelta(deltaPp(margem, a?.margemSVenda ?? null), rot)} />
       <KpiCard size="compact" icon={Package} label="Unidades" infoKey="Unidades::vendas-sku" tom="info" value={fmtInt(unidades)}
-        hint={atual ? `${fmtInt(atual.acc.pedidos)} ${atual.acc.pedidos === 1 ? "pedido" : "pedidos"}` : undefined}
+        hint={atual ? `${fmtInt(atual.acc.pedidos)} ${atual.acc.pedidos === 1 ? "pedido" : "pedidos"}${unidadesKit ? ` · ${fmtInt(unidadesKit)} un. dentro de kit` : ''}` : undefined}
         {...comDelta(deltaValor(unidades, aUnid, fmtInt), rot)} />
       <KpiCard size="compact" icon={Undo2} label="Devolução"
         tom={atual?.acc.pedidosDevolvidos ? 'warning' : 'info'} value={pct(devol)}
