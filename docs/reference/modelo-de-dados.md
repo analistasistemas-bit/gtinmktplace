@@ -430,7 +430,9 @@ da FK composta da tabela filha abaixo. *Migration
 transitório, não histórico), **`migracao_pxv_erro`**, **`migracao_pxv_solicitada_em`**,
 **`migracao_pxv_tentativa`** (`int not null default 0`, base do claim atômico por rodada do worker),
 **`migracao_pxv_snapshot`** (`jsonb` — `variations[]` do item ANTES do disparo, como
-`[{id, seller_custom_field, cor}]`) e **`ml_item_id_anterior`** (`text`).
+`[{id, sku, cor}]` — o campo é **`sku`**, não `seller_custom_field`: `migrar-preco-por-variacao`
+grava `sku: v.seller_custom_field ?? null` ao montar o snapshot) e **`ml_item_id_anterior`**
+(`text`).
 
 Estas colunas moram na **raiz**, e não em `familias`, porque há N linhas em `familias` por
 `codigo_pai` (uma por lote) e cada consumidor escolhe uma diferente: a tela Publicados usa a **mais
@@ -808,6 +810,18 @@ D-10): item_id do **Kit Virtual** que originou o pedido, lido de `bundle.parent_
 de estoque não precisa de código novo. A coluna só marca a linha com um badge "Kit" na tela: as
 orders **não** são agrupadas e nenhum cálculo financeiro a usa (os preços rateados dos componentes
 já somam o preço do kit). **Sem backfill** — `bundle.parent_item` não está nos `raw` já gravados.
+
+**Dossiê do SKU (ADR-0172 Fatia 2a,** *migration `20260927045118_vendas_sku_dossie.sql`,
+**ainda não em produção — sem `db push` nesta fatia):** três índices que servem a RPC
+`vendas_sku_dossie_ids` — `ml_vendas_itens_org_codigo_idx (org_id, codigo)`,
+`ml_vendas_org_pack_idx (org_id, pack_id) where pack_id is not null` e
+`ml_vendas_org_shipping_idx (org_id, shipping_id) where shipping_id is not null`. Medição de carga
+(T10) contra produção mostrou que o `EXPLAIN` do `OR` de 3 `IN` (id próprio / pack / shipping) **não
+usa** os dois índices parciais: o planner resolve pelo `Index Scan` já existente em `(org_id)` e
+aplica o `OR` como `Filter` via subplans hasheados, varrendo todas as vendas da org. No SKU de maior
+volume medido (Avil, 648 itens, 708 ids após expansão de pack) isso ainda foi rápido (~13 ms,
+tabela pequena o bastante); o remédio documentado — trocar o `OR` por `UNION` das três consultas —
+fica registrado como melhoria futura, não bloqueante nesta fatia (ver `progress.md` da Fatia 2a).
 
 ### `ml_vendas_itens`
 Itens de um pedido. *Mesma migration + `20260623104822` + `20260627095025` (unique).*
@@ -1214,7 +1228,9 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `baixar_estoque(p_org, p_codigo, p_qtd, p_canal, p_ref)` | ADR-0094: baixa atômica e idempotente de estoque na venda paga — service_role-only |
 | `estornar_estoque(p_org, p_canal, p_ref_venda, p_codigo)` | ADR-0094: repõe só o que foi de fato baixado no cancelamento pré-despacho — service_role-only |
 | `registrar_entrada(p_org, p_codigo, p_qtd, p_custo, p_doc, p_obs, p_criado_por, p_ref)` | ADR-0094: entrada de mercadoria, sobrescreve custo quando informado — service_role-only |
-| `vendas_sku_catalogo()` | ADR-0172 (Fatia 1, ainda não em produção): enriquecimento por `codigo` para a aba Vendas SKU — nome de família, cor, tamanho, estoque, fornecedor, origem, kit e 1ª/última venda faturável. Família mais recente por `(org, codigo)`, mesma âncora do estoque canônico (ADR-0025). Não calcula dinheiro (o lucro vem dos itens de `agruparPorPedido` no navegador). `security definer`, `search_path=''`, revogada de `public`/`anon`, concedida a `authenticated` |
+| `vendas_sku_catalogo()` | ADR-0172 (Fatia 1 + 2a, ainda não em produção): enriquecimento por `codigo` para a aba Vendas SKU e para o Dossiê do SKU — nome de família, cor, tamanho, estoque, fornecedor, origem, kit e 1ª/última venda faturável, mais (Fatia 2a) `kit_multiplicador`, `kit_base_codigo` e `estoque_kit` do **Kit Virtual vinculado** (saldo do kit = `floor(estoque da base / multiplicador)`, base = família mais recente do `codigo_pai` alvo com exatamente 1 variação; ambíguo ou ausente → `null`/`0`, nunca inventa). Família mais recente por `(org, codigo)`, mesma âncora do estoque canônico (ADR-0025). Não calcula dinheiro (o lucro vem dos itens de `agruparPorPedido` no navegador). `security definer`, `search_path=''`, revogada de `public`/`anon`, concedida a `authenticated` |
+| `vendas_sku_dossie_ids(p_codigos text[]) → uuid[]` | ADR-0172 (Fatia 2a, ainda não em produção): ids de `ml_vendas` do Dossiê do SKU — a venda com item de algum código do array, **mais** todo membro do mesmo `pack_id`/`shipping_id`, para o rateio de frete de `agruparPorPedido` bater com a aba Vendas ao reagrupar o pack inteiro. Retorna valor único (`uuid[]`) por POST, sem depender de `Range` (mesmo truque de `platform_org_cost_catalog` contra o teto de 1.000 linhas do PostgREST). `security definer`, `search_path=''`, org só via `current_org_id()`, revogada de `public`/`anon`, concedida a `authenticated` |
+| `vendas_sku_mlbs(p_codigos text[]) → jsonb` | ADR-0172 (Fatia 2a, ainda não em produção): mapa `{mlb: [codigo, ...]}` — de onde a UI deriva o **vínculo do MLB**: `exato` (1 código), `compartilhado` (2+ códigos) ou `não resolvido` (MLB fora do mapa). Casa por `ml_vendas_itens.ml_item_id`, `anuncios_externos_itens` (User Products), `anuncios_externos.variacoes_externas` (Legacy) e `anuncios_externos.migracao_pxv_snapshot` via `ml_item_id_anterior` (MLB encerrado pela migração PxV, ADR-0161 — o campo do snapshot é `sku`, não `seller_custom_field`). `security definer`, `search_path=''`, revogada de `public`/`anon`, concedida a `authenticated` |
 | ~~`upsert_ml_credentials(...)`~~ | **Deprecada** (E7) — substituída por `upsert_marketplace_connection` |
 | ~~`get_ml_tokens(user_id)`~~ | **Deprecada** (E7) — substituída por `get_connection_tokens` |
 | ~~`delete_ml_credentials(user_id)`~~ | **Deprecada** (E7) — substituída por `delete_marketplace_connection` |

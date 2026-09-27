@@ -561,6 +561,26 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   `.superpowers/sdd/2026-09-26-vendas-sku-fatia-1/`. **Faltam:** `supabase db push` da migration,
   revisão final do diff e merge — não executados nesta tarefa por decisão do controller (ver
   `progress.md` da Fatia 1, Rulings 1-2). Ver [ADR-0172](decisions/0172-vendas-sku-analise-por-variacao.md).
+- **ADR-0172: Dossiê do SKU, Fatia 2a (2026-09-27) — Proposto, na mesma branch, ainda não mergeado
+  nem em produção.** Página `/faturamento/sku/:codigo` e `/faturamento/sku/familia/:codigoPai`:
+  aprofunda a linha do ranking de Vendas SKU num histórico completo (KPIs do período, série
+  semanal/mensal com eventos, estoque com Kit Virtual vinculado, devoluções, vendas por UF, mix da
+  família e situação nas campanhas). Duas RPCs novas — `vendas_sku_dossie_ids` (ids de `ml_vendas`
+  com pack/envio expandidos, para o rateio de frete bater com a aba Vendas) e `vendas_sku_mlbs`
+  (vínculo do MLB: exato/compartilhado/não resolvido) — e três índices em `ml_vendas`/`ml_vendas_itens`,
+  migration `20260927045118`, **aplicada só localmente** (sem `db push`, Ruling 2a-1). **Paridade
+  real (T10, conta VALIDATION/DSA, SKU 00000029, período Personalizado 01–31/08/2026, ids do dossiê
+  calculados por SQL read-only com a mesma lógica da RPC):** Faturamento R$ 9.683,21 e Lucro R$
+  1.173,72 idênticos entre o ranking da Vendas SKU e os KPIs do Dossiê. **Carga (T10, leitura
+  read-only em produção, SKU de maior volume da Avil — código `02989271`, 648 itens de venda):** a
+  expansão de pack leva a 708 vendas; payload estimado do `buscarVendasPorIds` ≈ 973 KB (~1,37 KB
+  linha). `EXPLAIN` do `vendas_sku_dossie_ids` confirma o minor já registrado no `progress.md` da
+  Fatia 2a: o `OR` das 3 condições (id próprio/pack/envio) **não usa** os dois índices parciais
+  novos — resolve via `Filter`/subplans sobre o índice de `org_id` já existente (~13 ms na Avil,
+  tabela ainda pequena; `UNION` seria o remédio se a carga crescer). Testes e `pnpm preflight`
+  verdes; screenshots 1440/390 claro/escuro (SKU e família) em
+  `.superpowers/sdd/2026-09-27-vendas-sku-fatia-2a/`. **Faltam:** `supabase db push` da migration,
+  revisão final do diff e merge — mesma decisão do controller da Fatia 1.
 - **Cadastro de Grade em Matriz Cor x Tamanho (2026-09-19/20) — EM PRODUÇÃO.** Substituição da lista
   linear de cards pelo componente `MatrizGrade` (`matriz-grade.tsx`): visualização bidimensional Cor (linhas)
   × Tamanho (colunas) com 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas e

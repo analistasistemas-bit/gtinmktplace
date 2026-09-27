@@ -118,3 +118,26 @@ Tendência (30 dias contra os 30 anteriores: ±20%, mínimo de 5 unidades), cobe
 - **Ranking por faturamento (como o benchmark):** coloca no topo SKU que fatura e dá prejuízo.
 - **Agregar no banco (RPC):** reescreveria em SQL comissão, frete rateado, imposto por UF e custo, uma 3ª
   fórmula que exigiria teste de paridade permanente com a aba Vendas.
+
+## Nota — Fatia 2a: Dossiê do SKU (2026-09-27)
+
+Entregue o **Dossiê do SKU** (`/faturamento/sku/:codigo` e `/faturamento/sku/familia/:codigoPai`), que
+aprofunda a linha do ranking (D-1) num histórico completo: KPIs do período, série semanal/mensal com
+eventos, estoque (com Kit Virtual vinculado), devoluções, vendas por UF, mix da família e situação nas
+campanhas. Duas RPCs novas seguem a mesma linha de D-5 (cálculo no navegador; a RPC só **seleciona**,
+nunca soma dinheiro): `vendas_sku_dossie_ids` devolve os ids de `ml_vendas` do código pedido **mais** todo
+membro do mesmo pack/envio — para o rateio de frete de `agruparPorPedido` bater com a aba Vendas quando o
+navegador reagrupa o pedido inteiro — e `vendas_sku_mlbs` devolve o vínculo de cada MLB (exato/
+compartilhado/não resolvido), para a UI nunca inventar de qual anúncio uma venda saiu.
+
+**Validação real (T10):** paridade confirmada (conta VALIDATION/org DSA, SKU 00000029, período
+Personalizado 01–31/08/2026): Faturamento R$ 9.683,21 e Lucro R$ 1.173,72 idênticos entre o ranking da
+Vendas SKU e os KPIs do Dossiê — os ids do dossiê foram calculados por SQL read-only com a mesma lógica
+da RPC (`vendas_sku_dossie_ids` ainda não existe em produção) e injetados via mock de rede. Medição de
+carga contra produção (SKU de maior volume da Avil, código `02989271`, 648 itens de venda → 708 ids após
+expansão de pack) achou o `EXPLAIN` do `OR` de 3 `IN` **não usando** os dois índices parciais novos
+(`ml_vendas_org_pack_idx`/`ml_vendas_org_shipping_idx`) — o planner resolve pelo índice de `org_id` já
+existente e aplica o `OR` como filtro pós-scan. Rápido hoje (~13 ms, tabela pequena); se a carga crescer,
+o remédio é trocar o `OR` por `UNION` das três consultas (registrado como melhoria futura, não bloqueante).
+Migration `20260927045118_vendas_sku_dossie.sql` aplicada só localmente (Ruling 2a-1, sem `db push` nesta
+fatia). **Status continua Proposto:** falta `db push`, revisão final e merge.

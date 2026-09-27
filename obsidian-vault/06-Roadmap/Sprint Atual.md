@@ -27,6 +27,17 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > venda. 576 arquivos / 5993 testes verdes, `pnpm preflight` verde, paridade Faturamento/Unidades
 > confirmada contra dado real da Avil (01–25/09/2026). Falta `supabase db push` da migration,
 > revisão final e merge.
+>
+> **📋 Vendas SKU — Fatia 2a: Dossiê do SKU ([[0172-vendas-sku-analise-por-variacao|ADR-0172]]),
+> mesma branch, ainda não mergeado.** Página `/faturamento/sku/:codigo` (e `.../familia/:codigoPai`):
+> KPIs do período, série semanal/mensal com eventos, estoque (com Kit Virtual vinculado), devoluções,
+> vendas por UF, mix da família e situação nas campanhas. RPCs novas `vendas_sku_dossie_ids`
+> (ids do pedido + pack/envio inteiros, para o rateio de frete bater com a aba Vendas) e
+> `vendas_sku_mlbs` (vínculo exato/compartilhado/não resolvido do MLB). **Paridade real confirmada**
+> (conta VALIDATION/DSA, SKU 00000029, Personalizado 01–31/08): Faturamento R$ 9.683,21 e Lucro
+> R$ 1.173,72 idênticos entre ranking e Dossiê. **Carga** (maior SKU da Avil, 648 itens → 708 ids
+> com pack): `EXPLAIN` mostra que o `OR` de 3 `IN` não usa os índices parciais novos — melhoria
+> futura (`UNION`), não bloqueante hoje (~13 ms). Falta `db push`, revisão final e merge.
 
 ## Passo anterior (2026-09-20) — EM PRODUÇÃO
 
