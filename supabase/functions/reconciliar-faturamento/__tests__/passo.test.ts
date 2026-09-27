@@ -4,7 +4,7 @@ import type { ConexaoCanal } from '../../_shared/canais/conexao.ts';
 import type { PedidoML } from '../../_shared/faturamento/venda.ts';
 import type { ClaimML } from '../../_shared/faturamento/devolucao.ts';
 import { LOTE_PENDENCIAS } from '../../_shared/faturamento/pendencias.ts';
-import { LOTE_CLAIMS, LOTE_PEDIDOS, passoReconciliar, type DepsReconciliar, type ParamsReconciliar } from '../passo.ts';
+import { LOTE_CLAIMS, LOTE_PEDIDOS, desfechoPedido, passoReconciliar, resultadoVazio, type DepsReconciliar, type ParamsReconciliar } from '../passo.ts';
 
 const PARAMS: ParamsReconciliar = { desde: '2026-09-24T12:00:00.000Z', ate: '2026-09-27T12:00:00.000Z', hojeBRT: '2026-09-27' };
 const CX: ConexaoCanal = { id: 'cx-1', orgId: 'org-1', canal: 'mercado_livre', contaExternaId: '999', expiresAt: null };
@@ -34,7 +34,7 @@ function criarDeps(over: Partial<DepsReconciliar> = {}, pend: string[] = []) {
     pendentesAtivos: vi.fn(async () => 0),
     agora: vi.fn(() => INICIO),
     processarPedidos: vi.fn(async (_t: string, _cx: ConexaoCanal, _u: string, _o: string, ps: PedidoML[]) =>
-      ({ ok: ps.map((p) => String(p.id)), falhas: [] as string[] })),
+      ({ ok: ps.map((p) => String(p.id)), falhas: [] as string[], mpFalhou: [] as string[] })),
     liberacoes: vi.fn(async () => 3),
     ...over,
   };
@@ -173,7 +173,7 @@ describe('passoReconciliar', () => {
     it('falha em vendas → registrarPendencias(ok, inicio, [id]) com inicio capturado antes do processamento', async () => {
       const deps = criarDeps({
         processarPedidos: vi.fn(async (_t: string, _cx: ConexaoCanal, _u: string, _o: string, ps: PedidoML[]) =>
-          ({ ok: ps.filter((p) => p.id !== 7).map((p) => String(p.id)), falhas: ['7'] })),
+          ({ ok: ps.filter((p) => p.id !== 7).map((p) => String(p.id)), falhas: ['7'], mpFalhou: [] as string[] })),
         registrarPendencias: vi.fn(async () => 1),
       });
       const r = await rodar(deps, 'vendas|');
@@ -240,6 +240,50 @@ describe('passoReconciliar', () => {
       expect(deps.processarPedidos).not.toHaveBeenCalled();
       expect(deps.registrarPendencias).toHaveBeenCalledWith([], INICIO, ['o01', 'o02'], expect.stringMatching(/^reconciliar: /));
     });
+  });
+});
+
+describe('10. MP não lido (carregarLiquidoMPDoPedido null) → nem ok nem falha', () => {
+  it('desfechoPedido: MP ok → ok; MP null → mpFalhou; exceção → falhas (e devolve o erro)', async () => {
+    const r = resultadoVazio();
+    expect(await desfechoPedido(r, '1', async () => true)).toBeNull();
+    expect(await desfechoPedido(r, '2', async () => false)).toBeNull();
+    const boom = new Error('upsert falhou');
+    expect(await desfechoPedido(r, '3', async () => { throw boom; })).toBe(boom);
+    expect(r).toEqual({ ok: ['1'], falhas: ['3'], mpFalhou: ['2'] });
+  });
+
+  // processarPedidos falso que classifica com o helper real: o id 2 teve MP null, o 3 lançou.
+  const processarComMP = () => vi.fn(async (_t: string, _cx: ConexaoCanal, _u: string, _o: string, ps: PedidoML[]) => {
+    const r = resultadoVazio();
+    for (const p of ps) {
+      await desfechoPedido(r, String(p.id), async () => {
+        if (String(p.id) === '3' || p.id === 'o03') throw new Error('ML 500');
+        return !(String(p.id) === '2' || p.id === 'o02');
+      });
+    }
+    return r;
+  });
+
+  it('vendas: id com MP null fica fora de ok e de falhas em registrarPendencias; mpFalhou conta', async () => {
+    const deps = criarDeps({ pedidosDaJanela: vi.fn(async () => pedidos(4)), processarPedidos: processarComMP() });
+    const r = await rodar(deps, 'vendas|');
+    const [ok, inicio, falhas] = deps.registrarPendencias.mock.calls[0];
+    expect(ok).toEqual(['1', '4']);
+    expect(falhas).toEqual(['3']);
+    expect(inicio).toBe(INICIO);
+    expect(ok).not.toContain('2');
+    expect(falhas).not.toContain('2');
+    expect(r.acumulado).toMatchObject({ reconciliados: 2, pedidosComFalha: 1, mpFalhou: 1 });
+  });
+
+  it('pendencias: idem — a pendência do MP null não é apagada nem ganha tentativa; fim sai parcial', async () => {
+    const deps = criarDeps({ processarPedidos: processarComMP(), pendentesAtivos: vi.fn(async () => 2) }, idsPend(4));
+    const r = await rodar(deps, null);
+    expect(deps.registrarPendencias).toHaveBeenCalledWith(['o01', 'o04'], INICIO, ['o03'], expect.stringMatching(/^reconciliar: /));
+    expect(r.acumulado.mpFalhou).toBe(1);
+    const f = await rodar(deps, 'liberacoes|', r.acumulado);
+    expect(f.parcial).toBe('2 pedido(s) pendente(s)');
   });
 });
 

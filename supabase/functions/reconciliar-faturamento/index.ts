@@ -23,7 +23,7 @@ import { lerPendencias, registrarPendencias, temPendenciaAtiva } from '../_share
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
 import { SemAcessoRodada, cicloHoraUtc, executarMensagem, rotear, statusHttp, type MsgOrg } from '../_shared/rodada/rodada.ts';
 import { depsRodada, fanoutAtivo, publicarDisparo } from '../_shared/rodada/deps.ts';
-import { passoReconciliar, type DepsReconciliar, type ParamsReconciliar } from './passo.ts';
+import { desfechoPedido, passoReconciliar, resultadoVazio, type DepsReconciliar, type ParamsReconciliar } from './passo.ts';
 
 const FN = 'reconciliar-faturamento';
 
@@ -389,11 +389,10 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
     async processarPedidos(token, cx, userId, org, pedidos) {
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await catalogoDe(userId);
       const gtinPorItem = await carregarGtinsFallback(token, pedidos, idsPubliai);
-      const ok: string[] = [];
-      const falhas: string[] = [];
+      const r = resultadoVazio();
       for (const lote of chunk(pedidos, PARALELAS)) {
         await Promise.all(lote.map(async (pedido) => {
-          try {
+          const erro = await desfechoPedido(r, String(pedido.id), async () => {
             const shippingId = pedido.shipping?.id ?? null;
             // MP por pedido (1-2 GETs), não a varredura de 120 dias — essa fica só na etapa liberacoes.
             const [frete, shipment, liquidoPorPayment] = await Promise.all([
@@ -401,9 +400,11 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
               buscarShipment(token, shippingId),
               carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId), pagamentosDoPedido(pedido)),
             ]);
-            // null: preservarDadosMP guarda estorno/liberação já gravados; a etapa liberacoes realinha.
+            // null = leitura do MP falhou: preservarDadosMP guarda estorno/liberação já gravados, e o
+            // pedido NÃO conta como ok (desfechoPedido) — a pendência dele, se houver, fica para o
+            // próximo ciclo. A etapa liberacoes só realinha money_release_date, nunca o estorno.
             if (liquidoPorPayment === null) {
-              console.warn(`reconciliar: leitura do MP falhou para o pedido ${pedido.id} (org ${org}); estorno/liberação preservados`);
+              console.warn(`reconciliar: leitura do MP falhou para o pedido ${pedido.id} (org ${org}); estorno/liberação preservados, pendência mantida`);
             }
             const { itens } = await upsertVenda(admin, userId, org, pedido, {
               freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
@@ -416,14 +417,12 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
               shipmentStatus: shipment?.status != null ? String(shipment.status) : null,
               temEnvio: pedido.shipping?.id != null,
             });
-            ok.push(String(pedido.id));
-          } catch (e) {
-            falhas.push(String(pedido.id));
-            console.warn(`reconciliar: pedido ${pedido.id} da org ${org} falhou: ${(e as Error).message}`);
-          }
+            return liquidoPorPayment !== null;
+          });
+          if (erro) console.warn(`reconciliar: pedido ${pedido.id} da org ${org} falhou: ${(erro as Error)?.message ?? erro}`);
         }));
       }
-      return { ok, falhas };
+      return r;
     },
 
     async liberacoes(token, cx, org, hojeBRT) {
