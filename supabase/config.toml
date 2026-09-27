@@ -103,6 +103,9 @@ verify_jwt = false
 # Vendas SKU Fatia 2b: worker QStash puro (schedule `17 9 * * *` UTC), só aceita assinatura QStash.
 [functions.coletar-trafego-ml]
 verify_jwt = false
+# Vendas SKU Fatia 2c: worker QStash puro (schedule `17 14 * * *` UTC), só aceita assinatura QStash.
+[functions.coletar-ads-ml]
+verify_jwt = false
 
 # --- verify_jwt = true (chamadas com JWT: frontend ou QStash autenticado) ---
 [functions.atributos-familia]

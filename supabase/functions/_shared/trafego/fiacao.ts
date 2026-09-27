@@ -31,11 +31,14 @@ export const TIMEOUT_ML_MS = 10_000;
  * GET no ML com timeout de 10 s. Nunca lança: status HTTP + Retry-After + corpo (JSON ou null).
  * Timeout/rede → 503 (transitório: entra no retry/adiamento em vez de virar `falha` na hora).
  */
-export async function buscarML(url: string, token: string, f: typeof fetch = fetch): Promise<RespostaML> {
+export async function buscarML(
+  url: string, token: string, f: typeof fetch = fetch, headers: Record<string, string> = {},
+): Promise<RespostaML> {
   try {
     const r = await f(url, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
+      // Headers extras (api-version do Product Ads) antes: o Authorization nunca é sobrescrito.
+      headers: { ...headers, Authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(TIMEOUT_ML_MS),
     });
     const texto = await r.text();
@@ -90,6 +93,8 @@ export function corteRetencao(agora: Date): string {
 export const corteVendidos = (agoraMs: number) => new Date(agoraMs - 180 * DAY_MS).toISOString();
 
 export interface Rotas {
+  /** Nome do worker nos logs (default 'coletar-trafego-ml'). */
+  rotulo?: string;
   verificar(req: Request, body: string): Promise<boolean>;
   /** Publica uma mensagem `primeira` por org com conexão ML; devolve quantas. */
   fanout(): Promise<number>;
@@ -123,7 +128,7 @@ export async function tratarRequisicao(req: Request, r: Rotas): Promise<Response
       try {
         await r.limpar();
       } catch (e) {
-        console.error('[coletar-trafego-ml] limpeza da retenção falhou', e instanceof Error ? e.message : e);
+        console.error(`[${r.rotulo ?? 'coletar-trafego-ml'}] limpeza da retenção falhou`, e instanceof Error ? e.message : e);
       }
       return json({ ok: true, orgs });
     }
@@ -134,7 +139,7 @@ export async function tratarRequisicao(req: Request, r: Rotas): Promise<Response
     const { resultado } = await r.sincronizar(msg);
     return json({ ok: resultado !== 'erro', resultado }, resultado === 'erro' ? 500 : 200);
   } catch (e) {
-    console.error('[coletar-trafego-ml]', e instanceof Error ? e.message : e);
+    console.error(`[${r.rotulo ?? 'coletar-trafego-ml'}]`, e instanceof Error ? e.message : e);
     return json({ ok: false, erro: e instanceof Error ? e.message : String(e) }, 500);
   }
 }
