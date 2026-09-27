@@ -178,13 +178,35 @@ derruba o dossiê financeiro.
 anúncios, preço histórico reconstruído, cupom/atacado/comprador, varredura diária da conta inteira, Ads e
 posição (2c).
 
-## Fatia 2c — Ads e posição (após spikes)
+## Fatia 2c — Ads (após spike); posição na busca fora
 
-- **Spike Ads (1 dia):** o app tem permissão de Product Ads? Avil/DSA anunciam? Métrica diária por
-  anúncio (cliques, impressões, CPC, ROAS, orgânico × pago). Se sim, entra no dossiê e o lucro ganha
-  "lucro após Ads".
-- **Spike posição:** custo mensal medido (Apify × SKUs × frequência) + de onde vem a palavra-chave de cada
-  SKU. Diego aprova o custo antes de ligar.
+Revisada pelo GPT-6 Astra em 2026-09-27. Ads e posição são entregas independentes.
+
+- **Posição na busca: fora da 2c.** A fonte seria scraping (Apify), e a cláusula 7.6 dos termos do
+  programa de desenvolvedores do ML proíbe scraping para acessar conteúdo do ML. O ADR-0119 registra 403 em
+  `/sites/MLB/search?q=`, e não há palavra-chave canônica por família. Volta só se o Diego decidir assumir
+  o risco contratual (o Sonar já usa Apify) ou se surgir uma fonte oficial. Nesse caso: termo confirmado
+  pelo operador por família, rótulo "posição observada nesta consulta" e teto de custo aprovado.
+- **Spike Ads (só GET, token nunca impresso nem renovado):**
+  1. Acesso: matriz Avil/DSA com org, conta, advertiser, permissão "Publicidade" efetiva e HTTP de cada
+     chamada. Distinguir token inválido, acesso negado, sem advertiser, sem campanha e gasto zero.
+  2. Granularidade: a métrica atual é por Ad Group (`ITEM`/`FAMILY`/`CATALOG`), não por anúncio. Mapear
+     grupo → MLBs → códigos com casos reais (legado multi-cor, UP, catálogo, kit), sem contar grupo duas
+     vezes na família.
+  3. Métricas e calendário: campos, moeda, datas inclusivas, fuso, atribuição direta/indireta (janela de
+     14 dias), atraso e revisão. Conferir uma janela contra o painel oficial.
+  4. Reconciliação: uma competência com gasto contra `sale_fee`, cobranças e lucro atual. Provar que não há
+     dupla contagem.
+  5. Operação: paginação, histórico disponível, volume de grupos, chamadas, latência, 401/403/429.
+     Resultado negativo (sem acesso ou sem Ads) encerra o spike e a 2c.
+- **Se o spike der sim:** o dossiê ganha métricas de Ads no alcance comprovado (grupo exclusivo do SKU,
+  anúncio ou família), com CPC/ROAS agregados por numerador e denominador, nunca por média de percentuais.
+  "Após Ads" é a **despesa de Ads do período**, rotulada e separada do lucro atual, sem rateio por cor.
+  Grupo compartilhado mostra o gasto do grupo e o lucro por SKU fica indisponível. Estados honestos: sem
+  permissão, sem Ads, zero comprovado, parcial e desatualizado. Coleta reaproveita assinatura QStash,
+  posse e cursor da 2b, com estado próprio, RLS por org e retenção de 13 meses.
+- **Fora da 2c:** lucro após Ads por cor em grupo compartilhado, visitas orgânicas por subtração
+  (visitas − cliques), causalidade Ads → vendas, e Ads no ranking, na ABC, no Financeiro ou no billing.
 
 ## Fatia 3 — depois
 
