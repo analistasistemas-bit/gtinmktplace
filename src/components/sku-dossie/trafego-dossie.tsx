@@ -9,7 +9,7 @@ import { fmtBRL, fmtInt } from '@/lib/formato';
 import type { Passo } from '@/lib/calendario-brt';
 import type { PontoTrafego, TrafegoDossie } from '@/lib/sku-trafego';
 import { Fato } from './cabecalho-dossie';
-import { EIXO, EIXO_LUCRO, EIXO_UNID, MARGEM, MIN_POR_INTERVALO, TOOLTIP, kCompacto, marcaParcial } from './serie-pontos';
+import { EIXO, EIXO_LUCRO, EIXO_UNID, MARGEM, MIN_POR_INTERVALO, TOOLTIP, kCompacto, marcaParcial, passosRotulo } from './serie-pontos';
 import { asHoraDeBRT, diaMesLiteral } from './formato-dossie';
 
 /** Razão, nunca "%": 1 venda em 14 visitas = "0,071 un./visita"; pode passar de 1. Dois dígitos
@@ -119,8 +119,7 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
   const maxUpv = Math.max(0, ...serie.map((p) => p.unidadesPorVisita ?? 0));
   // Piso levemente negativo: a linha no 0 fica acima da base e não some no eixo.
   const topoUpv = maxUpv > 0 ? maxUpv * 1.1 : 0.1;
-  const passoSm = Math.max(1, Math.ceil(n / 6));
-  const passoLg = Math.max(1, Math.ceil(n / 16));
+  const { passoSm, passoLg } = passosRotulo(n);
   const situacoes = useMemo(() => serie.map(situacao), [serie]);
   const tem = (tipo: Situacao['tipo']) => situacoes.some((s) => s.tipo === tipo);
 

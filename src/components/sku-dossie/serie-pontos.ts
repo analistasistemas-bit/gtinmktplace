@@ -55,3 +55,21 @@ export function indiceHistorico(serie: PontoSerie[], historicoDesde: string | nu
   if (t <= Date.parse(serie[0].intervalo.inicio)) return -1;
   return serie.findIndex((p) => t >= Date.parse(p.intervalo.inicio) && t < Date.parse(p.intervalo.fim));
 }
+
+/** Cadência dos rótulos da régua: um a cada `passoLg` em sm+, um a cada `passoSm` no celular. passoSm é
+ *  múltiplo de passoLg, senão um rótulo visível no celular sumiria em sm (ex.: 30 dias → 5 e 2). */
+export function passosRotulo(n: number): { passoSm: number; passoLg: number } {
+  const passoLg = Math.max(1, Math.ceil(n / 16));
+  return { passoSm: passoLg * Math.max(1, Math.ceil(Math.ceil(n / 6) / passoLg)), passoLg };
+}
+
+/** Eixo de 0 a um topo redondo (passo 1/2/2,5/5 × 10^k, até 5 ticks) que cobre `max`. */
+export function escalaRedonda(max: number): { topo: number; ticks: number[] } {
+  if (!(max > 0)) return { topo: 1, ticks: [0, 1] };
+  const bruto = max / 4;
+  const mag = 10 ** Math.floor(Math.log10(bruto));
+  const passo = ([1, 2, 2.5, 5, 10].find((k) => k * mag >= bruto - 1e-12) ?? 10) * mag;
+  const n = Math.ceil(max / passo - 1e-9);
+  const ticks = Array.from({ length: n + 1 }, (_, i) => Number((i * passo).toPrecision(12)));
+  return { topo: ticks[n], ticks };
+}

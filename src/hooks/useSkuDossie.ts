@@ -144,7 +144,7 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
     if (!r.dados || !extrasQ.data) return null;
     return montarAds({
       alvo: alvoM, codigos, mlbs: extrasQ.data.mlbs, intervalos, janela,
-      lucroPeriodo: r.dados.linhaPeriodo?.m.lucro ?? null, agora: new Date(),
+      lucroPeriodo: r.dados.linhaPeriodo?.m.lucro ?? null, fonteCusto: r.dados.linhaPeriodo?.m.fonteCusto ?? null, agora: new Date(),
       fonte: adsQ.isError ? 'erro' : adsQ.data ?? 'carregando',
     });
   }, [r.dados, extrasQ.data, alvoM, codigos, intervalos, janela, adsQ.isError, adsQ.data]);

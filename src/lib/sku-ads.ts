@@ -6,6 +6,7 @@ import { round2 } from './formato';
 import { diasDoIntervalo } from './sku-trafego';
 import type { AlvoDossie } from './sku-dossie';
 import type { AdsDia, FonteAds } from './sku-dossie-dados';
+import type { FonteCusto } from './vendas-sku';
 
 export type AlcanceAds = 'sku' | 'anuncio' | 'familia' | 'indisponivel';
 export type EstadoAds = 'carregando' | 'erro' | 'sem_coleta' | 'sem_permissao' | 'sem_advertiser' | 'sem_acesso'
@@ -18,8 +19,8 @@ export interface TotaisAds {
 }
 export interface PontoAds {
   intervalo: Intervalo;
-  /** null = algum dia do intervalo sem linha gravada, fora da cobertura ou carga inicial em curso.
-   *  Zero só aparece quando o ML devolveu a linha com cost 0. */
+  /** null = algum dia do intervalo fora da cobertura ou carga inicial em curso ("sem dado").
+   *  Dentro da cobertura, dia sem linha é gasto zero real (o worker só deixa de gravar o que não gastou). */
   custo: number | null;
   vendas: number | null;
   /** Algum dia do intervalo ainda pode ganhar vendas atribuídas (relido < 15 dias depois dele). */
@@ -36,6 +37,9 @@ export interface AdsDossie {
   alcance: AlcanceAds;
   totais: TotaisAds | null;
   lucroAposAds: number | null;
+  /** Custo por trás do lucro atual (parcial = só os itens com custo; estimado = custo do cadastro).
+   *  null quando não há Lucro após Ads. */
+  fonteLucro: Exclude<FonteCusto, 'sem_custo'> | null;
   motivoSemLucro: MotivoSemLucro;
   /** Códigos de fora do alvo e membros sem código nos grupos do alcance. */
   compartilhadoCom: { codigos: string[]; semVinculo: number };
@@ -99,13 +103,15 @@ export function montarAds(p: {
   janela: { desde: string; ate: string };
   /** Lucro atual do período (linhaPeriodo.m.lucro); null = sem custo. */
   lucroPeriodo: number | null;
+  /** linhaPeriodo.m.fonteCusto: a marca do lucro atual segue para o Lucro após Ads. */
+  fonteCusto: FonteCusto | null;
   agora: Date;
   fonte: FonteAds | 'carregando' | 'erro';
 }): AdsDossie {
   const cods = new Set(p.codigos);
   const mlbsAlvo = new Set([...p.mlbs].filter(([, cs]) => cs.some((c) => cods.has(c))).map(([m]) => m));
   const vazio = (estado: EstadoAds, erro: string | null = null): AdsDossie => ({
-    estado, alcance: 'indisponivel', totais: null, lucroAposAds: null, motivoSemLucro: null,
+    estado, alcance: 'indisponivel', totais: null, lucroAposAds: null, fonteLucro: null, motivoSemLucro: null,
     compartilhadoCom: { codigos: [], semVinculo: 0 }, serie: [], serieDiaria: [], grupos: [], coberturaDesde: null, ultimoOkEm: null,
     diasAbertos: 0, erro,
   });
@@ -122,7 +128,8 @@ export function montarAds(p: {
   const ontem = somarDias(hoje, -1);
   const parcial = !sync.carga_inicial_ok;
   // Último dia que uma coleta ok cobriu (ela lê até D-1). Coberto = dentro de [cobertura_desde, ultimoDia].
-  // Coberto não é zero: o gráfico só mostra valor em dia com linha real; a despesa só soma dia coberto.
+  // Dentro da cobertura, dia sem linha = gasto zero real (conferido no worker: ele grava a série densa de
+  // todo grupo com gasto na janela; grupo sem gasto não tem linha). Fora dela = sem dado.
   const ultimoDia = sync.ultimo_ok_em ? somarDias(diaBRT(Date.parse(sync.ultimo_ok_em)), -1) : null;
   const coberto = (d: string) => sync.cobertura_desde != null && ultimoDia != null && d >= sync.cobertura_desde && d <= ultimoDia;
   const aberto = (d: string, coletadoEm: string | null) => !coletadoEm || !atribuicaoFinal(d, coletadoEm);
@@ -172,6 +179,7 @@ export function montarAds(p: {
   const motivoSemLucro: MotivoSemLucro = alcance === 'anuncio' ? 'compartilhado'
     : p.lucroPeriodo == null ? 'sem_lucro' : !periodoCoberto ? 'cobertura' : foraDosGrupos ? 'fora_dos_grupos' : null;
   const lucroAposAds = motivoSemLucro == null && p.lucroPeriodo != null && totais ? round2(p.lucroPeriodo - totais.custo) : null;
+  const fonteLucro = lucroAposAds == null ? null : p.fonteCusto === 'parcial' || p.fonteCusto === 'estimado' ? p.fonteCusto : 'real';
 
   const abertoNoDia = (d: string, ls: AdsDia[]) => (ls.length ? ls.some((l) => aberto(d, l.coletado_em)) : aberto(d, sync.ultimo_ok_em));
   const porDia = new Map<string, AdsDia[]>();
@@ -179,8 +187,8 @@ export function montarAds(p: {
   const ponto = (intervalo: Intervalo): PontoAds => {
     const ds = diasDoIntervalo(intervalo, p.agora).filter((d) => d <= ontem);
     const doIv = ds.flatMap((d) => porDia.get(d) ?? []);
-    // Valor só com todos os dias cobertos E com linha real; carga parcial → sem valor no gráfico.
-    const provado = !parcial && ds.length > 0 && ds.every((d) => coberto(d) && porDia.has(d));
+    // Valor com todos os dias cobertos (dia sem linha soma 0); fora da cobertura ou carga parcial → sem valor.
+    const provado = !parcial && ds.length > 0 && ds.every(coberto);
     return {
       intervalo,
       custo: provado ? round2(doIv.reduce((s, l) => s + l.cost, 0)) : null,
@@ -194,7 +202,7 @@ export function montarAds(p: {
   });
 
   return {
-    estado, alcance, totais, lucroAposAds, motivoSemLucro,
+    estado, alcance, totais, lucroAposAds, fonteLucro, motivoSemLucro,
     compartilhadoCom: {
       codigos: [...new Set(grupos.flatMap((g) => g.codigos.filter((c) => !cods.has(c))))].sort(),
       semVinculo: grupos.reduce((s, g) => s + g.semVinculo, 0),

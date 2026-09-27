@@ -13,14 +13,14 @@ const base: DadosAds = {
   estado: 'ok', alcance: 'sku',
   totais: { custo: 100, cliques: 50, impressoes: 900, vendasDiretas: 100, vendasIndiretas: 90, vendasTotais: 190,
     unidadesDiretas: 2, unidades: 3, cpc: 2, roas: 1.9, acos: 100 / 190 },
-  lucroAposAds: 400, motivoSemLucro: null, compartilhadoCom: { codigos: [], semVinculo: 0 },
+  lucroAposAds: 400, fonteLucro: 'real', motivoSemLucro: null, compartilhadoCom: { codigos: [], semVinculo: 0 },
   serie: IVS.map((intervalo, i) => ({ intervalo, custo: i ? 90 : 10, vendas: i ? 90 : 100, aberto: i === 1 })),
   serieDiaria: ['14', '15'].map((d) => ({ intervalo: dia(d), custo: 5, vendas: 20, aberto: true })),
   grupos: [{ id: 3000001, tipo: 'FAMILY', status: 'ACTIVE', campanhaId: 2000001, custo: 100, exclusivo: true, mlbs: ['MLB1'], codigos: ['A'], semVinculo: 0 }],
   coberturaDesde: '2026-06-29', ultimoOkEm: '2026-09-27T14:20:00Z', diasAbertos: 12, erro: null,
 };
 const vazio = (estado: DadosAds['estado']): DadosAds => ({
-  ...base, estado, alcance: 'indisponivel', totais: null, lucroAposAds: null, serie: [], serieDiaria: [], grupos: [], diasAbertos: 0,
+  ...base, estado, alcance: 'indisponivel', totais: null, lucroAposAds: null, fonteLucro: null, serie: [], serieDiaria: [], grupos: [], diasAbertos: 0,
 });
 const renderiza = (ads: DadosAds | null, familia = false) =>
   render(<PainelAds ads={ads} familia={familia} passo="semana" onPasso={vi.fn()} onTentar={vi.fn()} />);
@@ -148,5 +148,69 @@ describe('PainelAds', () => {
     r4.unmount();
     renderiza(null);
     expect(screen.getByRole('status')).toHaveAttribute('aria-busy', 'true');
+  });
+
+  it('lucro com custo parcial ou estimado: número continua, com a marca no fato, no rodapé e no resumo', () => {
+    const r1 = renderiza({ ...base, fonteLucro: 'parcial' });
+    expect(screen.getByText('· custo parcial')).toBeInTheDocument();
+    expect(screen.getByText('R$ 400,00')).toBeInTheDocument();
+    expect(screen.getByText(/lucro atual do período \(parcial: só os itens com custo\) − despesa de Ads até ontem/)).toBeInTheDocument();
+    expect(screen.getByText(/Lucro após Ads R\$\s400,00, custo parcial\./)).toBeInTheDocument();
+    r1.unmount();
+    renderiza({ ...base, fonteLucro: 'estimado' });
+    expect(screen.getByText('· custo estimado')).toBeInTheDocument();
+    expect(screen.getByText(/lucro atual do período \(com custo estimado do cadastro\) − despesa/)).toBeInTheDocument();
+    expect(screen.getByText(/Lucro após Ads R\$\s400,00, custo estimado\./)).toBeInTheDocument();
+  });
+
+  it('lucro real não leva marca; lucro negativo em vermelho', () => {
+    const r1 = renderiza(base);
+    expect(screen.queryByText(/· custo/)).toBeNull();
+    r1.unmount();
+    renderiza({ ...base, lucroAposAds: -50 });
+    expect(screen.getByText('-R$ 50,00')).toHaveClass('text-danger');
+  });
+
+  it('sem_ads: aviso, KPIs e grupos; sem gráfico, régua, detalhe nem Dia/Semana/Mês', () => {
+    renderiza({ ...base, estado: 'sem_ads', totais: { ...base.totais!, custo: 0, roas: null },
+      serie: base.serie.map((p) => ({ ...p, custo: 0, vendas: 0, aberto: false })) });
+    expect(screen.getByText('Despesa de Ads do período')).toBeInTheDocument();
+    expect(screen.getByText('Grupos de anúncios · vínculo atual')).toBeInTheDocument();
+    expect(screen.queryByRole('list', { name: 'Intervalos dos Ads' })).toBeNull();
+    expect(screen.queryByTestId('detalhe-ads')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Dia' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Ads' })).toBeInTheDocument();
+  });
+
+  it('pill do grupo compartilhado conta os códigos de fora (coerente com o motivo) e os MLBs têm title', () => {
+    renderiza({ ...base, alcance: 'anuncio', lucroAposAds: null, fonteLucro: null, motivoSemLucro: 'compartilhado',
+      compartilhadoCom: { codigos: ['B'], semVinculo: 1 },
+      grupos: [{ ...base.grupos[0], exclusivo: false, codigos: ['A', 'B'], semVinculo: 1, mlbs: ['MLB1', 'MLB2', 'MLB3'] }] });
+    expect(screen.getByText('compartilhado · +1 código de fora + 1 sem vínculo')).toBeInTheDocument();
+    expect(screen.getByTitle('MLB1, MLB2, MLB3')).toBeInTheDocument();
+  });
+
+  it('legenda "Sem dado" só quando há intervalo sem dado', () => {
+    const r1 = renderiza(base);
+    expect(screen.queryByText('Sem dado')).toBeNull();
+    r1.unmount();
+    renderiza({ ...base, serie: [{ ...base.serie[0], custo: null, vendas: null, aberto: false }, base.serie[1]] });
+    expect(screen.getByText('Sem dado')).toBeInTheDocument();
+  });
+
+  it('régua: Home e End vão ao primeiro e ao último intervalo', () => {
+    renderiza(base);
+    const primeiro = screen.getByRole('button', { name: /^Semana de 14\/09/ });
+    fireEvent.keyDown(primeiro, { key: 'End' });
+    expect(within(detalhe()).getByText(/Semana de 21\/09/)).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByRole('button', { name: /^Semana de 21\/09/ }), { key: 'Home' });
+    expect(within(detalhe()).getByText('Semana de 14/09')).toBeInTheDocument();
+  });
+
+  it('série diária: coluna mínima de 24 px (alvo de toque); semanal segue a do dossiê', () => {
+    renderiza(base);
+    expect(screen.getByTestId('ads-plot')).toHaveStyle({ minWidth: `${2 * 14 + 4}px` });
+    fireEvent.click(screen.getByRole('button', { name: 'Dia' }));
+    expect(screen.getByTestId('ads-plot')).toHaveStyle({ minWidth: `${2 * 24 + 4}px` });
   });
 });

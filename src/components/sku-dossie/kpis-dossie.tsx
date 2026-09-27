@@ -2,6 +2,7 @@ import { DollarSign, Package, Percent, Scale, TrendingUp, Undo2 } from 'lucide-r
 import { KpiCard } from '@/components/ui/kpi-card';
 import { fmtBRL, fmtBRLSinal, fmtInt, fmtMarkup } from '@/lib/formato';
 import { deltaPp, deltaValor, type Delta, type LinhaSku } from '@/lib/vendas-sku';
+import { HINT_CUSTO } from './formato-dossie';
 
 // Idioma do app para "sem valor" (o mesmo da aba Vendas SKU).
 const NADA = '—';
@@ -10,7 +11,6 @@ const pct = (v: number | null) => (v == null ? NADA : `${(v * 100).toFixed(1).re
 const comDeltaRot = (d: Delta | null, rot: string) => (!d ? {}
   : { delta: `${d.tendencia === 'neutral' ? d.texto.replace(/^[+−]/, '') : d.texto} ${rot}`, deltaTrend: d.tendencia });
 
-const HINT_CUSTO = { parcial: 'Parcial: só os itens com custo', estimado: 'Com custo estimado do cadastro', sem_custo: 'Sem custo cadastrado', real: undefined } as const;
 
 /** KPIs do período, na mesma apresentação da aba Vendas SKU. Linha null = nenhuma venda no recorte:
  *  faturamento e unidades são 0 de verdade; as razões ficam sem valor. */

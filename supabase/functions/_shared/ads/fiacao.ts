@@ -57,5 +57,12 @@ const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' 
  * `falhou` não-booleano nunca vira `true`; e `falhou` só entra no `msg` quando `true` (nunca grava `false`
  * explícito no corpo publicado pelo QStash — `msg` intocado, mesma referência, quando ausente).
  */
-export const msgAdsDoCorpo = (msg: MsgTrafego, bruto: unknown): MsgAds =>
-  (obj(bruto) && bruto.falhou === true ? { ...msg, falhou: true } : msg);
+export function msgAdsDoCorpo(msg: MsgTrafego, bruto: unknown): MsgAds {
+  if (!obj(bruto)) return msg;
+  const falhou = bruto.falhou === true;
+  // `descontar` (404 de grupo com gasto): só número finito > 0; o resto é ignorado.
+  const d = bruto.descontar;
+  const descontar = typeof d === 'number' && Number.isFinite(d) && d > 0 ? d : null;
+  if (!falhou && descontar == null) return msg;
+  return { ...msg, ...(falhou ? { falhou: true } : {}), ...(descontar != null ? { descontar } : {}) };
+}

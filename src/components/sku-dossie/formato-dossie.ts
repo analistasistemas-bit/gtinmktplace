@@ -25,3 +25,6 @@ export function idadeComercial(desde: string, agora = Date.now()): string {
   const a = `${anos} ${anos === 1 ? 'ano' : 'anos'}`;
   return resto ? `${a} e ${resto} ${resto === 1 ? 'mês' : 'meses'}` : a;
 }
+
+/** Dica do custo por trás do lucro (KPIs do dossiê e Lucro após Ads). */
+export const HINT_CUSTO = { parcial: 'Parcial: só os itens com custo', estimado: 'Com custo estimado do cadastro', sem_custo: 'Sem custo cadastrado', real: undefined } as const;

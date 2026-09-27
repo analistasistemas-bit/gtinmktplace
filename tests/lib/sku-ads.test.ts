@@ -34,7 +34,7 @@ function fonte(p: { membros: [number, string][]; codigos: Record<string, string[
 type Entrada = Parameters<typeof montarAds>[0];
 const monta = (o: Partial<Entrada> & Pick<Entrada, 'fonte'>) => montarAds({
   alvo: { tipo: 'sku', codigo: 'A' }, codigos: ['A'], mlbs: new Map([['MLB1', ['A']]]),
-  intervalos: IVS, janela: JANELA, lucroPeriodo: 500, agora: AGORA, ...o,
+  intervalos: IVS, janela: JANELA, lucroPeriodo: 500, fonteCusto: 'real', agora: AGORA, ...o,
 });
 
 describe('atribuicaoFinal', () => {
@@ -60,10 +60,11 @@ describe('montarAds', () => {
     expect(a.lucroAposAds).toBe(400);
     expect(a.motivoSemLucro).toBeNull();
     expect(a.grupos.map((g) => [g.id, g.custo, g.exclusivo])).toEqual([[12, 90, true], [11, 10, true]]);
-    // Série diária: 14/09 a 26/09 (hoje fora); dia sem linha gravada fica sem valor (nunca 0).
+    // Série diária: 14/09 a 26/09 (hoje fora); dia coberto sem linha = gasto zero real (o worker não grava dia sem gasto).
     expect(a.serieDiaria.map((p) => p.intervalo.rotulo)).toEqual(
       ['14/09', '15/09', '16/09', '17/09', '18/09', '19/09', '20/09', '21/09', '22/09', '23/09', '24/09', '25/09', '26/09']);
-    expect(a.serieDiaria.slice(0, 3).map((p) => p.custo)).toEqual([null, 10, 90]);
+    expect(a.serieDiaria.slice(0, 3).map((p) => p.custo)).toEqual([0, 10, 90]);
+    expect(a.serie.map((p) => p.custo)).toEqual([100, 0]);
   });
 
   it('família: grupo alcançado por dois MLBs da família conta uma vez só (dedup por ad_group_id)', () => {
@@ -121,12 +122,15 @@ describe('montarAds', () => {
     expect(a.motivoSemLucro).toBe('cobertura');
   });
 
-  it('zero só com linha real: dia coberto sem linha deixa o intervalo sem valor; carga parcial não desenha', () => {
-    const f = fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: diasDe(11, 21, 25) });
+  it('dia coberto sem linha = zero medido; fora da cobertura = sem dado; carga parcial não desenha', () => {
+    const f = fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: diasDe(11, 21, 25, { cost: 3, total_amount: 9 }) });
     const a = monta({ fonte: f });
-    expect(a.serie[1].custo).toBeNull();   // 26/09 sem linha
-    expect(a.serieDiaria.find((p) => p.intervalo.rotulo === '25/09')!.custo).toBe(0);
-    expect(a.serieDiaria.find((p) => p.intervalo.rotulo === '26/09')!.custo).toBeNull();
+    expect(a.serie[1]).toMatchObject({ custo: 15, vendas: 45 }); // 26/09 sem linha entra como 0
+    expect(a.serieDiaria.find((p) => p.intervalo.rotulo === '26/09')).toMatchObject({ custo: 0, vendas: 0 });
+    const fora = monta({ fonte: { ...f, sync: { ...SYNC, cobertura_desde: '2026-09-22' } } });
+    expect(fora.serie[1].custo).toBeNull();                   // 21/09 antes da cobertura
+    expect(fora.serieDiaria.find((p) => p.intervalo.rotulo === '21/09')!.custo).toBeNull();
+    expect(fora.serieDiaria.find((p) => p.intervalo.rotulo === '26/09')!.custo).toBe(0);
     const parcial = monta({ fonte: { ...f, sync: { ...SYNC, carga_inicial_ok: false, cobertura_desde: null } } });
     expect([...parcial.serie, ...parcial.serieDiaria].every((p) => p.custo === null)).toBe(true);
   });
@@ -137,6 +141,14 @@ describe('montarAds', () => {
     expect(a.totais!.custo).toBe(10);
     expect(a.lucroAposAds).toBeNull();
     expect(a.motivoSemLucro).toBe('fora_dos_grupos');
+  });
+
+  it('fonte do lucro: parcial e estimado seguem com o número e a marca; real também; sem lucro após Ads, sem fonte', () => {
+    const f = fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: [dia(11, '2026-09-15', { cost: 7 })] });
+    expect(monta({ fonte: f, fonteCusto: 'parcial' })).toMatchObject({ lucroAposAds: 493, fonteLucro: 'parcial' });
+    expect(monta({ fonte: f, fonteCusto: 'estimado' })).toMatchObject({ lucroAposAds: 493, fonteLucro: 'estimado' });
+    expect(monta({ fonte: f })).toMatchObject({ lucroAposAds: 493, fonteLucro: 'real' });
+    expect(monta({ fonte: f, lucroPeriodo: null, fonteCusto: 'sem_custo' })).toMatchObject({ lucroAposAds: null, fonteLucro: null });
   });
 
   it('lucro do período nulo → lucro após Ads nulo, nunca "−despesa"', () => {

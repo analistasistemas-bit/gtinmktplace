@@ -84,6 +84,15 @@ describe('fiação de Ads', () => {
     expect(msgAdsDoCorpo(msg, { falhou: 'true' })).toBe(msg);
     expect('falhou' in msgAdsDoCorpo(msg, {})).toBe(false);
   });
+  it('msgAdsDoCorpo repassa descontar só quando é número finito > 0', () => {
+    const msg = { org_id: 'org-1', rodada: 'r', cursor: '12', primeira: false };
+    expect(msgAdsDoCorpo(msg, { descontar: 7.5 })).toEqual({ ...msg, descontar: 7.5 });
+    expect(msgAdsDoCorpo(msg, { falhou: true, descontar: 2 })).toEqual({ ...msg, falhou: true, descontar: 2 });
+    expect(msgAdsDoCorpo(msg, { descontar: '7.5' })).toBe(msg);
+    expect(msgAdsDoCorpo(msg, { descontar: -1 })).toBe(msg);
+    expect(msgAdsDoCorpo(msg, { descontar: Number.NaN })).toBe(msg);
+  });
+
   it('falhou sobrevive ao ciclo real corpo HTTP → msg → sincronizar (Rulings 2c-5/2c-6): '
     + 'tratarRequisicao (2b) repassa o corpo já parseado como 2º argumento, e o worker junta a flag de volta', async () => {
     const sincronizar = vi.fn(async (msg: { org_id: string; primeira: boolean }, bruto: Record<string, unknown>) => {

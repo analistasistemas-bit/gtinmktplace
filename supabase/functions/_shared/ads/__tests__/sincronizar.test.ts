@@ -168,6 +168,33 @@ describe('sincronizarAdsOrg', () => {
     expect(gravados(d).map((g) => g.ad_group_id)).toEqual([12]);
   });
 
+  it('404 de grupo listado com gasto: o custo dele sai do custoListado (dispara fora_dos_grupos, nunca despesa menor sem aviso)', async () => {
+    const d = fake({ buscarSerieGrupo: vi.fn(async (id: number, j: { desde: string; ate: string }) =>
+      (id === 11 ? http(404, { error_code: 'ad_group_not_found_exception' }) : serie(j))) });
+    await sincronizarAdsOrg(d, primeira);
+    expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoResumo: 99, custoListado: 10 }); // 20 listados − 10 do 11
+  });
+
+  it('404 com gasto numa mensagem que continua: o desconto viaja na continuação e fecha na última', async () => {
+    const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM', 7.5), grupo(12, 'ITEM'), grupo(14, 'ITEM')])) });
+    d.buscarSerieGrupo.mockImplementation(async (id: number, j: { desde: string; ate: string }) => {
+      d.relogio.t += 40_000; return id === 11 ? http(404, null) : serie(j);
+    });
+    expect(await sincronizarAdsOrg(d, primeira, { limiteMs: 60_000, lote: 1, concorrencia: 1 })).toEqual({ resultado: 'continua' });
+    expect(d.continuar).toHaveBeenCalledWith({ org_id: ORG, rodada: RODADA, cursor: '12', primeira: false, tentativa: 0, descontar: 7.5 }, {});
+    const e = fake({ buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM', 7.5), grupo(12, 'ITEM'), grupo(14, 'ITEM')])) });
+    await sincronizarAdsOrg(e, { org_id: ORG, rodada: RODADA, cursor: '12', primeira: false, descontar: 7.5 });
+    expect(e.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 20 }); // 27,5 − 7,5
+  });
+
+  it('lote adiado com 404 no meio não desconta duas vezes (o desconto só entra quando o lote é gravado)', async () => {
+    const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'ITEM')])) });
+    d.buscarSerieGrupo.mockImplementation(async (id: number, j: { desde: string; ate: string }) =>
+      (id === 11 ? http(404, null) : http(429, null, 999_999)));
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'continua' });
+    expect(d.continuar.mock.calls[0][0]).not.toHaveProperty('descontar');
+  });
+
   it('grupo com gasto gravado na janela que saiu do search é relido por id e mantém o vínculo', async () => {
     const d = fake({
       buscarGrupos: vi.fn(async () => busca([grupo(12, 'FAMILY')])),

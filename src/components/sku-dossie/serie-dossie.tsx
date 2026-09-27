@@ -12,7 +12,7 @@ import { nomeCurtoComprador, nomeExibicaoComprador, type Pedido } from '@/lib/pe
 import type { Passo } from '@/lib/calendario-brt';
 import type { Evento, PontoSerie, TipoEvento } from '@/lib/sku-dossie';
 import { TIPO_EVENTO } from './tipos-evento';
-import { EIXO, EIXO_LUCRO, EIXO_UNID, MARGEM, MIN_POR_INTERVALO, TOOLTIP, indiceHistorico, kCompacto, marcaParcial, pontosDaSerie, ultimoComPreco } from './serie-pontos';
+import { EIXO, EIXO_LUCRO, EIXO_UNID, MARGEM, MIN_POR_INTERVALO, TOOLTIP, indiceHistorico, kCompacto, marcaParcial, pontosDaSerie, ultimoComPreco, passosRotulo } from './serie-pontos';
 import { dataBR } from './formato-dossie';
 
 // Ordem do tooltip: a mesma leitura da legenda.
@@ -59,8 +59,7 @@ export function SerieDossie({ serie, perguntas, eventos, codigos, familia, temKi
   const lucroNeg = serie.some((p) => (p.lucro ?? 0) < 0);
   const ivHistorico = indiceHistorico(serie, historicoDesde);
   // Rótulos da régua: contados do fim (o intervalo corrente sempre aparece); menos no celular.
-  const passoSm = Math.max(1, Math.ceil(n / 6));
-  const passoLg = Math.max(1, Math.ceil(n / 16));
+  const { passoSm, passoLg } = passosRotulo(n);
 
   const resumo = useMemo(() => {
     if (!n) return 'Sem intervalos no período.';

@@ -18,7 +18,7 @@ const { custosQ, catQ, devQ, dados } = vi.hoisted(() => ({
   dados: {
     buscarIdsDossie: vi.fn(), buscarMlbsDossie: vi.fn(), buscarMovimentos: vi.fn(),
     buscarModeracoes: vi.fn(), buscarPerguntas: vi.fn(), buscarCampanhas: vi.fn(), buscarVendasPorIds: vi.fn(),
-    buscarVisitasDia: vi.fn(), buscarPrecoDia: vi.fn(), buscarTrafegoSync: vi.fn(),
+    buscarVisitasDia: vi.fn(), buscarPrecoDia: vi.fn(), buscarTrafegoSync: vi.fn(), buscarFonteAds: vi.fn(),
   },
 }));
 const q = (data: unknown) => ({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
@@ -35,6 +35,7 @@ vi.mock('@/lib/sku-dossie-dados', () => ({
   buscarMovimentos: dados.buscarMovimentos, buscarModeracoes: dados.buscarModeracoes,
   buscarPerguntas: dados.buscarPerguntas, buscarCampanhas: dados.buscarCampanhas,
   buscarVisitasDia: dados.buscarVisitasDia, buscarPrecoDia: dados.buscarPrecoDia, buscarTrafegoSync: dados.buscarTrafegoSync,
+  buscarFonteAds: dados.buscarFonteAds,
 }));
 vi.mock('@/lib/faturamento', async (orig) => ({ ...(await orig<object>()), buscarVendasPorIds: dados.buscarVendasPorIds }));
 
@@ -77,6 +78,7 @@ function servir(vendas: Venda[], mlbs: Record<string, string[]> = {}) {
   dados.buscarVisitasDia.mockResolvedValue([]);
   dados.buscarPrecoDia.mockResolvedValue([]);
   dados.buscarTrafegoSync.mockResolvedValue(null);
+  dados.buscarFonteAds.mockResolvedValue({ sync: null, grupos: [], membros: [], dias: [], codigosDosMembros: new Map() });
 }
 
 async function assentar(alvo: Parameters<typeof useSkuDossie>[0]) {
@@ -256,5 +258,29 @@ describe('useSkuDossie — tráfego', () => {
     await expect(r.refetch()).resolves.toBeDefined();
     await expect(r.refetchTrafego()).resolves.toBeUndefined();
     expect(dados.buscarVisitasDia).not.toHaveBeenCalled();
+  });
+
+  it('Ads: buscarFonteAds com os MLBs ordenados e a faixa do tráfego (1º dia do 1º intervalo); refetchAds só refaz os Ads', async () => {
+    dados.buscarFonteAds.mockClear();
+    servir([venda({ id: 'a' })], { MLB9: ['A'], MLB2: ['A'] });
+    const h = renderHook(() => useSkuDossie(sku('A'), SET, 'semana'), { wrapper });
+    await waitFor(() => expect(h.result.current.ads?.estado ?? 'carregando').not.toBe('carregando'));
+    // Período 01/09–30/09; a 1ª semana BRT começa na segunda 31/08.
+    expect(dados.buscarFonteAds).toHaveBeenCalledWith(['MLB2', 'MLB9'], '2026-08-31', '2026-10-04');
+    expect(h.result.current.ads).toMatchObject({ estado: 'sem_coleta' });
+    dados.buscarFonteAds.mockClear(); dados.buscarIdsDossie.mockClear(); dados.buscarVisitasDia.mockClear();
+    await h.result.current.refetchAds();
+    expect(dados.buscarFonteAds).toHaveBeenCalledTimes(1);
+    expect(dados.buscarIdsDossie).not.toHaveBeenCalled();
+    expect(dados.buscarVisitasDia).not.toHaveBeenCalled();
+  });
+
+  it('Ads: falha na leitura não derruba o dossiê', async () => {
+    servir([venda({ id: 'a' })], { MLB1: ['A'] });
+    dados.buscarFonteAds.mockRejectedValue(new Error('rls'));
+    const h = renderHook(() => useSkuDossie(sku('A'), SET, 'semana'), { wrapper });
+    await waitFor(() => expect(h.result.current.ads?.estado ?? 'carregando').not.toBe('carregando'));
+    expect(h.result.current.ads!.estado).toBe('erro');
+    expect(h.result.current.estado).toBe('ok');
   });
 });

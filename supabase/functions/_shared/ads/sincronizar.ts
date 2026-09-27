@@ -18,9 +18,12 @@ export class ParadaAds extends Error {
   constructor(estado: EstadoParada, mensagem: string) { super(mensagem); this.estado = estado; }
 }
 
-/** `falhou` (Ruling 2c-5): carregado em toda continuação depois que um grupo não foi lido nesta rodada,
+/** `descontar`: Σ cost (no search) dos grupos listados com gasto que deram 404 nesta rodada. Sai do
+ *  custoListado para o dossiê ver `fora_dos_grupos` em vez de uma despesa menor sem aviso; viaja na cadeia
+ *  como `falhou`.
+ *  `falhou` (Ruling 2c-5): carregado em toda continuação depois que um grupo não foi lido nesta rodada,
  *  para a mensagem final nunca fechar em `ok` mesmo quando o cursor andou numa mensagem sem falha. */
-export type MsgAds = MsgTrafego & { falhou?: boolean };
+export type MsgAds = MsgTrafego & { falhou?: boolean; descontar?: number };
 export type ResultadoAds = 'ok' | 'continua' | 'obsoleta' | 'erro' | 'sem_acesso';
 export interface GrupoConhecido { ad_group_id: number; tipo: TipoGrupo; external_id: string | null; campaign_id: number | null; status: string }
 /** `itens` null = vínculo não lido nesta rodada (o banco mantém o atual). */
@@ -102,6 +105,7 @@ export async function sincronizarAdsOrg(
   // falha nesta mensagem, se já veio marcada de uma mensagem anterior): a mensagem final da rodada
   // sempre sabe que houve grupo não lido, mesmo que o cursor já tenha andado antes disso ser visto.
   let falhou = msg.falhou === true;
+  let descontar = msg.descontar ?? 0;
   const parada = (extra: Partial<ExtraConcluir> = {}): ExtraConcluir =>
     ({ cargaConcluida: false, advertiserId, coberturaDesde: null, custoResumo: null, custoListado: null, ...extra });
   try {
@@ -120,7 +124,8 @@ export async function sincronizarAdsOrg(
     const continuar = async (c: string | null, atrasoMs?: number) => {
       const tentativa = c === inicial ? (msg.tentativa ?? 0) + 1 : 0;
       await deps.continuar(
-        { org_id: msg.org_id, rodada: dona, cursor: c, primeira: false, tentativa, ...(falhou ? { falhou: true } : {}) },
+        { org_id: msg.org_id, rodada: dona, cursor: c, primeira: false, tentativa, ...(falhou ? { falhou: true } : {}),
+          ...(descontar > 0 ? { descontar: Math.round(descontar * 100) / 100 } : {}) },
         atrasoMs != null ? { atrasoMs } : {});
       return { resultado: 'continua' as const };
     };
@@ -158,6 +163,7 @@ export async function sincronizarAdsOrg(
       if (p.grupos.length === 0 || offset >= p.total) break;
     }
     const noSearch = new Set(listados.map((g) => g.ad_group_id));
+    const custoNoSearch = new Map(listados.map((g) => [g.ad_group_id, g.cost]));
     // Relidos: com gasto na janela pelo search + os que já têm gasto gravado nela (grupo apagado some do
     // search, mas o ML o mantém 90 dias; 404 → os dias gravados ficam).
     const alvo = new Map<number, GrupoConhecido>();
@@ -218,6 +224,8 @@ export async function sincronizarAdsOrg(
         naoLidos += lidos.filter((x) => x === null).length;
         falhou = true;
       }
+      // Só com o lote aceito (um lote adiado é relido e contaria duas vezes).
+      lidos.forEach((x, k) => { if (x === 'sumiu') descontar += custoNoSearch.get(lote[k].ad_group_id) ?? 0; });
       const grupos = lidos.filter((x): x is GrupoGravar => x != null && x !== 'sumiu');
       if (grupos.length && !(await deps.gravarLote(dona, new Date(deps.agora()).toISOString(), grupos))) {
         return { resultado: 'obsoleta' };
@@ -238,7 +246,8 @@ export async function sincronizarAdsOrg(
 
     // Gasto fora de grupo listado (provável `deleted`, spike ~2,6 %) fica gravado no sync: com diferença > 0
     // o dossiê não mostra "Lucro após Ads". Só a razão vai para o log (valor em R$ não sai do banco).
-    const custoListado = Math.round(listados.reduce((s, g) => s + g.cost, 0) * 100) / 100;
+    // Grupo listado com gasto que deu 404 na leitura: o gasto dele não foi gravado, então sai do listado.
+    const custoListado = Math.round((listados.reduce((s, g) => s + g.cost, 0) - descontar) * 100) / 100;
     console.info('[ads] custo da janela', {
       org_id: msg.org_id, janela, listadoSobreResumo: custoResumo ? custoListado / custoResumo : null,
     });
