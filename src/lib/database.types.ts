@@ -1129,6 +1129,69 @@ export type Database = {
           },
         ]
       }
+      ml_item_preco_dia: {
+        Row: {
+          dia: string
+          ml_item_id: string
+          moeda: string
+          observado_em: string
+          org_id: string
+          origem: string
+          preco: number
+          preco_regular: number | null
+        }
+        Insert: {
+          dia: string
+          ml_item_id: string
+          moeda: string
+          observado_em: string
+          org_id: string
+          origem: string
+          preco: number
+          preco_regular?: number | null
+        }
+        Update: {
+          dia?: string
+          ml_item_id?: string
+          moeda?: string
+          observado_em?: string
+          org_id?: string
+          origem?: string
+          preco?: number
+          preco_regular?: number | null
+        }
+        Relationships: []
+      }
+      ml_item_visitas_dia: {
+        Row: {
+          coletado_em: string
+          dia: string
+          estado: string
+          ml_item_id: string
+          org_id: string
+          rodada: string
+          visitas: number | null
+        }
+        Insert: {
+          coletado_em: string
+          dia: string
+          estado: string
+          ml_item_id: string
+          org_id: string
+          rodada: string
+          visitas?: number | null
+        }
+        Update: {
+          coletado_em?: string
+          dia?: string
+          estado?: string
+          ml_item_id?: string
+          org_id?: string
+          rodada?: string
+          visitas?: number | null
+        }
+        Relationships: []
+      }
       ml_mensagens: {
         Row: {
           atualizado_em: string
@@ -1517,6 +1580,69 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ml_trafego_item: {
+        Row: {
+          ml_item_id: string
+          org_id: string
+          status: string
+          status_desde: string
+          ultimo_ok_em: string | null
+        }
+        Insert: {
+          ml_item_id: string
+          org_id: string
+          status: string
+          status_desde: string
+          ultimo_ok_em?: string | null
+        }
+        Update: {
+          ml_item_id?: string
+          org_id?: string
+          status?: string
+          status_desde?: string
+          ultimo_ok_em?: string | null
+        }
+        Relationships: []
+      }
+      ml_trafego_sync: {
+        Row: {
+          carga_inicial_concluida_em: string | null
+          cursor: string | null
+          erro: string | null
+          estado: string
+          iniciado_em: string | null
+          org_id: string
+          posse_ate: string | null
+          rodada: string | null
+          ultimo_erro_em: string | null
+          ultimo_ok_em: string | null
+        }
+        Insert: {
+          carga_inicial_concluida_em?: string | null
+          cursor?: string | null
+          erro?: string | null
+          estado: string
+          iniciado_em?: string | null
+          org_id: string
+          posse_ate?: string | null
+          rodada?: string | null
+          ultimo_erro_em?: string | null
+          ultimo_ok_em?: string | null
+        }
+        Update: {
+          carga_inicial_concluida_em?: string | null
+          cursor?: string | null
+          erro?: string | null
+          estado?: string
+          iniciado_em?: string | null
+          org_id?: string
+          posse_ate?: string | null
+          rodada?: string | null
+          ultimo_erro_em?: string | null
+          ultimo_ok_em?: string | null
+        }
+        Relationships: []
       }
       ml_vendas: {
         Row: {
@@ -3259,6 +3385,15 @@ export type Database = {
         }
         Returns: number
       }
+      avancar_trafego_cursor: {
+        Args: {
+          p_cursor_atual: string | null
+          p_cursor_novo: string | null
+          p_org: string
+          p_rodada: string
+        }
+        Returns: boolean
+      }
       baixar_estoque: {
         Args: {
           p_canal: string
@@ -3309,6 +3444,18 @@ export type Database = {
           expires_at: string
           refresh_token: string
         }[]
+      }
+      gravar_preco_dia: {
+        Args: { p_org: string; p_pontos: Json }
+        Returns: undefined
+      }
+      gravar_trafego_item: {
+        Args: { p_itens: Json; p_org: string }
+        Returns: undefined
+      }
+      gravar_visitas_dia: {
+        Args: { p_org: string; p_pontos: Json; p_rodada: string }
+        Returns: undefined
       }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
@@ -3554,6 +3701,13 @@ export type Database = {
         Returns: number
       }
       registrar_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
+      reservar_trafego_posse: {
+        Args: { p_org: string }
+        Returns: {
+          cursor: string
+          rodada: string
+        }[]
+      }
       skus_estoque_org: { Args: never; Returns: Json[] }
       start_support_session: {
         Args: { p_now: string; p_request_id: string; p_requester_id: string }
