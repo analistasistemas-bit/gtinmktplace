@@ -21,7 +21,7 @@
 - Caminho manual (JWT) de `pulse-coletar` e `backfill-faturamento`: comportamento inalterado, **provado por teste de caracterização** (Tasks 4 e 5).
 - HTTP do consumidor: **200** para `executado|continua|obsoleta|concluida|sem_acesso`; **500** para `erro|ocupada|repetir`.
 - Mensagens por org: `retries: 3` explícito (backoff do QStash 12 s → 148 s → ~30 min).
-- Ciclo: um formato por job, ordenável como texto — dia BRT `YYYY-MM-DD` (`backfill`, `pulse-completo`), hora UTC `YYYY-MM-DDTHH` (`reconciliar`, `pulse-quente`), instante ISO do disparo (`backfill-recuperacao`). Os crons (`30 6`, `0 9`, `0 */6`, `0 *` UTC) disparam longe da virada do ciclo, e os retries do schedule (≤ ~35 min) não a atravessam; mesmo assim, a janela vale a **gravada na abertura** (a 1ª mensagem do ciclo), nunca a recalculada.
+- Ciclo: um formato por job, ordenável como texto — dia BRT `YYYY-MM-DD` (`backfill`, `pulse-completo`), hora UTC `YYYY-MM-DDTHH` (`reconciliar`, `pulse-quente`), a própria janela `desde_ate` do body (`backfill-recuperacao` — Ruling 10: um retry do disparador cai no mesmo ciclo; recuperações diferentes viram ciclos diferentes). Os crons (`30 6`, `0 9`, `0 */6`, `0 *` UTC) disparam longe da virada do ciclo, e os retries do schedule (≤ ~35 min) não a atravessam; mesmo assim, a janela vale a **gravada na abertura** (a 1ª mensagem do ciclo), nunca a recalculada.
 - Flags: `FANOUT_BACKFILL`, `FANOUT_PULSE`, `FANOUT_RECONCILIAR` = `'1'` ligam o disparador em fan-out; sem flag → caminho legado (código de hoje). O consumidor de `MsgOrg` fica sempre deployado.
 - Repositório público: nenhum valor real de cliente em R$ em arquivo versionado.
 

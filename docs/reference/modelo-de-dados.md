@@ -1013,6 +1013,60 @@ revogadas de `public`/`anon`/`authenticated`):
 | `limpar_ads_retencao(p_corte)` | Retenção de 13 meses; grupo sem dia retido sai com o vínculo; a cobertura avança junto. |
 | `vendas_sku_codigos_mlbs(p_mlbs)` | Leitura do dossiê (`authenticated`, org do chamador): códigos de MLBs arbitrários (membros de um grupo), pela mesma UNION de `vendas_sku_mlbs`. MLB sem código fica fora do objeto e impede a exclusividade do grupo. |
 
+## Fan-out por org dos workers agendados (ADR-0173)
+
+**Status: código deployado, fan-out DESLIGADO em produção** (flags `FANOUT_BACKFILL`/`FANOUT_PULSE`/
+`FANOUT_RECONCILIAR` ausentes → os 3 workers seguem no caminho legado de hoje). Protocolo
+compartilhado por `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento` para processar
+uma organização por mensagem QStash, em lotes retomáveis, evitando o `CPU Time exceeded` (HTTP 546)
+de processar todas as orgs numa única requisição. Runbook de ativação/rollback em
+[edge-functions.md](edge-functions.md#fan-out-por-org-adr-0173-ativação-e-rollback).
+*Migration `20260927205804_worker_rodadas.sql`.*
+
+### `worker_rodadas`
+Fonte da verdade de UMA rodada por `(job, org_id)` (PK). `job` (`pulse-completo` | `pulse-quente` |
+`backfill` | `backfill-recuperacao` | `reconciliar`), `ciclo` (texto ordenável: dia BRT para os jobs
+diários, hora UTC para o reconciliar e o tier quente, `desde_ate` da janela do body para a
+recuperação histórica do backfill), `estado` (`rodando|ok|parcial|sem_acesso`), `params` (jsonb —
+janela/tier **gravados na abertura do ciclo**, a mensagem nunca carrega o cursor), `cursor` (texto
+`etapa|pos`; `null` = início), `acumulado` (jsonb, contadores por etapa), `lease_id` +
+`lease_ate` (posse curta de 150s com identidade própria — cada execução toma a posse, faz o CAS do
+cursor com ela e a solta ao fim; posse ocupada → HTTP 500, o QStash repete), `notificar_pendente`
+(notificação do Pulse sobrevive à virada de ciclo até ser entregue), `iniciado_em`, `ultimo_ok_em`,
+`ultimo_erro_em`, `erro`. RLS: `select` por `org_id = current_org_id()`; escrita só `service_role`,
+pelas RPCs abaixo (`security definer`, `search_path=''`, revogadas de `public`/`anon`/`authenticated`):
+
+| RPC | Função |
+|---|---|
+| `abrir_execucao(p_job, p_org, p_ciclo, p_params)` | Toma a posse. `executar` (nova ou retomada), `ocupada` (posse viva de outra execução), `obsoleta` (ciclo da mensagem é mais antigo que o da linha), `concluida` (ciclo já fechado, sem notificação pendente) ou `notificar_anterior` (entrega primeiro a notificação do ciclo anterior antes de abrir o novo). |
+| `avancar_execucao(p_job, p_org, p_lease, p_cursor_novo, p_acumulado)` | CAS do cursor com a posse. `false` = posse vencida (o retry refaz o mesmo lote, nunca repete um já avançado). |
+| `concluir_execucao(p_job, p_org, p_lease, p_estado, p_erro, p_acumulado, p_notificar)` | Fecha o ciclo (`ok|parcial|sem_acesso`). Com `p_notificar`, a posse é **mantida** até `marcar_notificado` — ninguém mais processa aquela (job, org) até a notificação sair. |
+| `liberar_execucao(p_job, p_org, p_lease, p_erro)` | Solta a posse sem fechar o ciclo (fim de lote normal, ou erro). |
+| `marcar_notificado(p_job, p_org, p_lease)` | Confirma a entrega (in-app já gravado) e solta a posse. |
+| `registrar_pendencias_pedido(p_org, p_ok, p_inicio, p_falhas, p_erro)` | Grava/atualiza pendências de pedido da org (ver `worker_pendencias`); `p_inicio` é o instante em que a tentativa **começou** — um sucesso só apaga falha registrada **antes** disso, então uma falha concorrente registrada durante a tentativa não é apagada por engano. Na 5ª falha marca `descartado_em` (não some da tabela). Só o `reconciliar` passa `p_ok`; o `backfill` só registra falhas. |
+| `registrar_falha_coleta_pulse(p_org, p_produto)` | Incrementa `pulse_produtos.coleta_falhas_seguidas` e grava `coleta_tentativa_em`, no máximo 1x/hora por produto. |
+
+### `worker_pendencias`
+Pedido cujo upsert falhou, por **organização** (PK `org_id, order_id`) — compartilhada pelo
+`backfill`, pela recuperação histórica e pelo `reconciliar`. `tentativas` (≥1), `ultimo_erro`,
+`criado_em`, `atualizado_em`, `descartado_em` (`null` = ativa; preenchido na 5ª tentativa, mas a
+linha **continua na tabela** — limpar a coluna reenfileira). Só o `reconciliar-faturamento` lê e
+apaga pendências (escopo completo, com `tratarPedidoCancelado`, serializado por org pela posse); o
+`backfill` só registra falha novas (`p_ok=[]`). Índice parcial `(org_id, order_id) WHERE
+descartado_em IS NULL` (leitura das ativas). RLS: `select` por `org_id = current_org_id()`; escrita
+só `service_role`.
+
+### Colunas novas em tabelas existentes
+- `pulse_produtos.coleta_tentativa_em` (timestamptz), `coleta_falhas_seguidas` (integer, default 0,
+  `check >= 0`) — tentativa de coleta e backoff por produto (Task 5): `mlGet` que devolve `null`
+  (qualquer erro na ficha) incrementa o contador e grava o carimbo em vez de declarar a ficha morta;
+  produto elegível de novo após 3 dias com 3+ falhas seguidas (tier completo; o tier quente nunca
+  retoma um produto em backoff).
+- `notificacoes.chave` (text, nullable) + índice único `(user_id, chave)` — idempotência do canal
+  in-app por `(usuário, chave)`, `NULL` não colide (mantém o comportamento de hoje para quem não usa
+  chave). Só a notificação do Pulse em fan-out usa (`chaveNotificacaoPulse`, formato
+  `pulse:<job>:<org_id>:<ciclo>`); os demais alertas continuam sem chave.
+
 ## Monitoramento e configuração
 
 ### `ml_moderacao`

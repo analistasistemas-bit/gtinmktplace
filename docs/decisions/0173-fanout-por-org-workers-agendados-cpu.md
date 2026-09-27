@@ -65,8 +65,10 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
    fan-out; sem a flag o schedule segue no caminho de hoje. O consumidor das mensagens por org fica
    sempre deployado. Rollback = desligar a flag, nunca redeployar a versão antiga com mensagens na
    fila (o handler antigo leria a mensagem por org como execução global). Qualquer versão futura, inclusive
-   um rollback de código, mantém a **guarda permanente**: mensagem por org é reconhecida antes de qualquer
-   outro ramo assinado (processada ou ignorada com 200), nunca tratada como schedule.
+   um rollback de código, mantém a **guarda permanente**: mensagem `modo:'org'` bem formada é reconhecida
+   antes de qualquer outro ramo assinado — processada normalmente, ou (numa versão de rollback sem o
+   disparador) ignorada com 200 —, nunca tratada como schedule. `modo:'org'` malformada (sem `job`/
+   `org_id`/`ciclo`/`params` válidos) responde **400** e nunca cai no disparador nem no caminho legado.
 7. **Específico por função:**
    - **Pulse:** o schedule só coleta orgs com o módulo `pulse` habilitado (Avil e Daludi Shop saem até o
      módulo ser ligado; com os lotes, a Avil passa a caber quando for). Tentativa de coleta registrada
@@ -91,6 +93,25 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
 - Risco residual aceito no Pulse: queda entre o upsert das ofertas e a gravação dos alertas de um lote
   perde os alertas daquele lote (o diff seguinte já parte do estado novo). Com lotes pequenos a janela
   é curta; é o mesmo risco que já existia com a execução inteira.
+
+## Implementação (2026-09-27)
+
+Código completo na branch `worktree-diag-cpu-546` (Tasks 1-7 do plano de execução em
+`docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`): migration `worker_rodadas`/
+`worker_pendencias`, protocolo compartilhado `_shared/rodada/rodada.ts`, e as 3 funções com o modo
+fan-out atrás das flags. **Status ainda `Proposto`: nada ativado em produção** — as flags
+`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR` não estão setadas, deploy e ativação medida
+ficam para a Task 8 (portão local, revisão, deploy com as flags desligadas, ativação por função com
+OK do Diego, validação de 3 dias, recuperação histórica). Vira `Aceito` só depois da ativação em
+produção. Runbook completo em `docs/reference/edge-functions.md`; modelo de dados em
+`docs/reference/modelo-de-dados.md`.
+
+Ponto 5 (liberações do MP): a recuperação por org (reconciliar/backfill/sync-venda/sync-devolucao)
+lê o líquido por pedido (`carregarLiquidoMPDoPedido`), nunca pela varredura de 120 dias que os
+workers de lote usam — a equivalência dos dois caminhos (mesmo líquido/liberação para o mesmo
+pedido, incluindo estorno total e parcial) está provada em
+`supabase/functions/_shared/faturamento/__tests__/mp-por-pedido.test.ts`, sem divergência nos 4
+casos testados.
 
 ## Alternativas descartadas
 

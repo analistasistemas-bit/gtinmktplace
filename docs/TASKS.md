@@ -2,6 +2,24 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fan-out por org — incidente CPU 546 (ADR-0173) — código pronto, NADA deployado/ativado
+
+Correção do incidente diagnosticado em 27/09 (pendência abaixo): `pulse-coletar`,
+`backfill-faturamento` e `reconciliar-faturamento` estouravam `CPU Time exceeded` (546) por
+processar todas as orgs numa única requisição. Plano em
+`docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`, relatórios em
+`.superpowers/sdd/2026-09-27-fanout-workers-cpu/`. Runbook de ativação/rollback em
+[edge-functions.md](reference/edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback).
+
+- [x] Task 1: migration `worker_rodadas`/`worker_pendencias` + RPCs de posse/CAS/pendência + teste SQL de concorrência.
+- [x] Task 2: protocolo compartilhado `_shared/rodada/rodada.ts` (`executarMensagem`, posse/CAS/notificação durável).
+- [x] Task 3: leituras/gravações estritas (`buscarPedidosPeriodoEstrito` e afins), `pendencias.ts`, notificação idempotente por `chave`.
+- [x] Task 4: `backfill-faturamento` em rodada por org atrás de `FANOUT_BACKFILL`.
+- [x] Task 5: `pulse-coletar` em rodada por org (backoff por produto) atrás de `FANOUT_PULSE`.
+- [x] Task 6: `reconciliar-faturamento` em rodada por org atrás de `FANOUT_RECONCILIAR`.
+- [x] Task 7: equivalência do líquido MP por pedido (varredura × leitura por pedido, `mp-por-pedido.test.ts` — os 4 casos batem, sem divergência) + esta documentação (ADR-0173, modelo de dados, runbook).
+- [ ] **Task 8 (pendente): portão local, revisão Grok 4.7 xhigh, push + CI, deploy com as 3 flags DESLIGADAS, ativação por função com OK do Diego (backfill → pulse → reconciliar), validação de 3 dias em produção, recuperação histórica do backfill.** Nenhuma flag setada até aqui — os 3 workers seguem no caminho legado de hoje.
+
 ## Vendas SKU — Fatias 1, 2a, 2b e 2c (ADR-0172) — EM PRODUÇÃO desde 2026-09-27
 
 Merge fast-forward na main até o commit `0635262c`. As 4 migrations aplicadas em produção por
@@ -73,11 +91,9 @@ Lucro/Markup/Margem s/ venda, ABC e Tendência. Ver [ADR-0172](decisions/0172-ve
 - [ ] **Decisão do Diego — Lucro após Ads:** manter a regra rígida (indisponível com qualquer gasto
   fora dos grupos listados) ou mostrar o Lucro após Ads com aviso ("~N % do gasto de Ads da conta
   não pôde ser atribuído"). Medido em 27/09: Avil ~3,1 %, DSA ~7,4 %, Daludi Shop ~14 %.
-- [ ] **Incidente de CPU pré-existente (não causado pela Vendas SKU), diagnosticado em 27/09:**
-  `pulse-coletar` (tier completo, `0 9`), `backfill-faturamento` (`30 6`) e, às vezes,
-  `reconciliar-faturamento` estouram o limite de 2 s de CPU por requisição da edge (QStash 546,
-  "CPU Time exceeded"); `backfill-faturamento` não completa desde ~10/09. Correção recomendada:
-  fan-out por org via QStash (ADR a escrever). Será tratado por outro agente, em branch separada.
+- [x] **Incidente de CPU pré-existente (não causado pela Vendas SKU), diagnosticado em 27/09** —
+  ver a seção "Fan-out por org — incidente CPU 546 (ADR-0173)" no topo deste arquivo: Tasks 1-7
+  concluídas (código pronto), Task 8 (deploy/ativação em produção) ainda pendente.
 
 ## Renovação proativa do token ML (ADR-0171) — 2026-09-26
 

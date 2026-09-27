@@ -77,13 +77,13 @@
 | responder-pergunta | true | HTTP (frontend) | não |
 | responder-mensagem | true | HTTP (frontend) | não |
 | sugerir-resposta-pergunta | true | HTTP (frontend) | não (stateless) |
-| backfill-faturamento | false | HTTP (JWT) **ou** QStash | sim (upsert) |
-| reconciliar-faturamento | false | QStash schedule | sim (upsert) |
+| backfill-faturamento | false | HTTP (JWT) **ou** QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_BACKFILL` (ADR-0173, desligado) | sim (upsert; posse + CAS do cursor no modo fan-out) |
+| reconciliar-faturamento | false | QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_RECONCILIAR` (ADR-0173, desligado) | sim (upsert; posse + CAS do cursor no modo fan-out) |
 | **Monitoramento / alertas** ||||
 | monitorar-moderados | false | HTTP (JWT manual) ou QStash | sim |
 | notificar-liberacao | false | QStash schedule | sim (1×/dia BRT) |
 | **Pulse (ADR-0119)** ||||
-| pulse-coletar | false | HTTP (JWT manual) ou QStash | sim (upsert por dia; `preco_caiu` uma vez por produto/par de preços/dia UTC) |
+| pulse-coletar | false | HTTP (JWT manual) ou QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_PULSE` (ADR-0173, desligado) | sim (upsert por dia; `preco_caiu` uma vez por produto/par de preços/dia UTC; posse + CAS do cursor no modo fan-out) |
 | pulse-adicionar | true | HTTP (frontend) | sim (upsert por cpid) |
 | pulse-sonar-vendas | true | HTTP (frontend) | sim (leitura + grava `sonar_snapshots`; cache Redis 7d por termo) |
 | pulse-sonar-visitas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por item) |
@@ -154,7 +154,7 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `reconciliar-faturamento` | `0 * * * *` | *(sem body)* | 3 |
 | `notificar-liberacao` | `0 11 * * *` | *(sem body)* | 3 |
 | `reconciliar-estoque` | `30 12 * * *` | `{}` | 3 |
-| `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |
+| `materializar-metricas` | `0 6 * * *` | *(sem body)* | 3 |[^materializar-metricas-sem-schedule]
 | `pulse-coletar` (tier completo) | `0 9 * * *` | `{"tier":"completo"}` | 2 |
 | `pulse-coletar` (tier quente) | `0 */6 * * *` | `{"tier":"quente"}` | 2 |
 | `sincronizar-promocoes` | `10 */6 * * *` | `{}` | 1 |
@@ -192,6 +192,64 @@ curl -s https://qstash.upstash.io/v2/schedules -H "Authorization: Bearer $QSTASH
 
 O body tem que aparecer como `'{"dias":7}'` — se vier com aspas escapadas por fora, está errado.
 O worker hoje desembrulha e loga um `console.warn`, mas o schedule deve ser corrigido mesmo assim.
+
+[^materializar-metricas-sem-schedule]: **Achado lateral (2026-09-27, durante a Task 7 do ADR-0173):**
+`materializar-metricas` está listado aqui com `0 6 * * *`, mas a consulta de invocações em produção
+não mostra nenhuma execução nos últimos 7 dias — o schedule provavelmente não existe (ou foi
+apagado) no QStash, mesmo estando documentado. Não é bloqueador (o read-through de `readOrgMetrics`
+já cobre a materialização sob demanda, ver a descrição da função acima), mas o pré-aquecimento
+diário não está rodando. Confirmar com `GET /v2/schedules` e recriar se de fato ausente — fora do
+escopo do ADR-0173, registrado aqui só para não se perder.
+
+## Fan-out por org (ADR-0173): protocolo, ativação e rollback
+
+**Status em 2026-09-27: nada ativado em produção.** O código do consumidor (`MsgOrg`) está
+deployado nas 3 funções, mas as flags `FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR` não
+estão setadas — os 3 schedules continuam no caminho legado de hoje (execução única, todas as orgs,
+sem lotes). Ativação é posterior, por função, com OK do Diego antes de cada uma (ver runbook
+abaixo). Modelo de dados em [modelo-de-dados.md](modelo-de-dados.md#fan-out-por-org-dos-workers-agendados-adr-0173).
+
+**Por que:** `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento` processavam todas
+as organizações numa única requisição e passaram a estourar `CPU Time exceeded` (HTTP 546, teto de
+2s de CPU) — ver ADR-0173 para o diagnóstico completo.
+
+**Protocolo:** o schedule existente vira **disparador**: publica 1 mensagem QStash por conexão ML
+(`MsgOrg = { modo:'org', job, org_id, ciclo, params }`) e responde 200. Cada mensagem processa **um
+lote** de tamanho fixo (produtos/pedidos/packs/claims) de **uma** org. `worker_rodadas` é a fonte da
+verdade (ciclo, cursor, acumulado); cada execução toma uma posse curta (`lease`, 150s), faz o CAS do
+cursor e publica a continuação (`_shared/rodada/rodada.ts`, `executarMensagem`). Pedido que falha no
+upsert vira pendência em `worker_pendencias`, por org — o `backfill` só registra, o `reconciliar`
+horário é quem retoma e apaga. **Guarda permanente:** o `Deno.serve` das 3 funções reconhece
+`MsgOrg` (`ehMsgOrg`) **antes** de qualquer outro ramo assinado, mesmo com a flag desligada ou numa
+versão futura sem o disparador — uma mensagem por org nunca é tratada como execução global,
+mesmo por engano.
+
+### Ativação (por função, ordem backfill → pulse → reconciliar)
+
+1. `supabase secrets set FANOUT_X=1` (`X` = `BACKFILL`/`PULSE`/`RECONCILIAR`) e confirmar com
+   `supabase secrets list` — `secrets set` pode gravar valor vazio em silêncio.
+2. Publicar 1 disparo manual pelo QStash com o **mesmo body do schedule** (ou esperar o próximo
+   schedule).
+3. Antes de ativar a função seguinte, medir: `worker_rodadas` com todas as orgs `ok`/`parcial` no
+   ciclo; `function_logs` com `[rodada] lote` por mensagem; **`cpu_time_used` por etapa < 1.500 ms**
+   (radar, perguntas, claims, vendas, mensagens, liberações). Acima disso: desligar a flag e reduzir
+   o tamanho do lote, ou abrir tarefa para a etapa que não cabe.
+4. Validação em produção por 3 dias (só leitura) antes de considerar estável: 0 shutdowns
+   `CPUTime`; `worker_rodadas` sem linha `rodando` com posse vencida há mais de 1h; `notificacoes`
+   `pulse` com no máximo 1 linha por `(usuário, chave)`; `worker_pendencias` por org visível, com as
+   ativas decrescendo.
+
+### Rollback
+
+1. **Normal:** `supabase secrets unset FANOUT_X`. O disparador volta ao caminho legado no próximo
+   schedule. Mensagens `MsgOrg` já enfileiradas ou atrasadas continuam sendo consumidas pelo código
+   novo (que permanece deployado) — não é preciso esvaziar a fila.
+2. **De código** (bug no consumidor): a versão de rollback é a **legada + a guarda de `MsgOrg`**,
+   nunca o commit anterior puro — sem a guarda, uma entrega tardia de `MsgOrg` seria tratada como
+   execução global (no backfill, janela default de 90 dias, cara demais para uma única requisição).
+3. **Limite aceito:** esgotados os 3 retries do QStash de uma mensagem, a cadeia daquela (job, org)
+   para até o próximo ciclo, que a assume do zero. As pendências de pedido não se perdem (seguem em
+   `worker_pendencias`). Fica visível como uma linha `rodando` com posse vencida em `worker_rodadas`.
 
 ---
 
@@ -1267,7 +1325,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   orientação de responder dentro da reclamação — o app não tem acesso ao canal de mediação.
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
-  ou todos os usuários (QStash). Não busca shipment (frete fica nulo).
+  ou todos os usuários (QStash). Não busca shipment (frete fica nulo). **ADR-0173 (2026-09-27):**
+  ganhou um 3º modo, fan-out por org atrás de `FANOUT_BACKFILL` (desligado hoje) — ver
+  [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). O modo
+  QStash legado descrito abaixo continua ativo enquanto a flag não é ligada.
   **Resposta** (desde 2026-09-11): `{ ok, sincronizados, conexoesComFalha, pedidosComFalha, conexoesSemMP }`.
   `conexoesSemMP` conta conexões em que `carregarLiquidoMP` devolveu `null`. O que fica pendente é
   **`money_release_date` e `estorno`** — **não** o `liquido`, que sai de `calcularLiquido` com dados
@@ -1315,7 +1376,11 @@ um smoke test contra Postgres real antes do primeiro deploy.
   acima são do schedule, que percorre todas as conexões — o 546 do botão em 30 dias (02/08) é
   consistente com os 129s medidos em 27/07 mais esse crescimento, mas não há cronometragem direta
   do caminho manual.
-- **reconciliar-faturamento** *(schedule)* — **Data de liberação do MP (ADR-0123, 18/08/2026):** o
+- **reconciliar-faturamento** *(schedule)* — **ADR-0173 (2026-09-27):** ganhou um modo fan-out por
+  org atrás de `FANOUT_RECONCILIAR` (desligado hoje) — ver
+  [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). O caminho
+  legado abaixo continua ativo enquanto a flag não é ligada.
+  **Data de liberação do MP (ADR-0123, 18/08/2026):** o
   Passo 2 realinha `ml_vendas.money_release_date` de TODAS as vendas da org (não só as 72h) com o
   mapa de pagamentos que `carregarLiquidoMP` já carregou — `mapaLiberacaoPorOrder` (puro, indexa
   por `payment.order.id` e fica com a liberação mais recente) + `reconciliarLiberacoes` (io.ts).
@@ -1372,7 +1437,11 @@ um smoke test contra Postgres real antes do primeiro deploy.
 - **notificar-liberacao** — alerta quando uma venda é liberada no saldo MP; idempotente por dia BRT (ADR-0040).
 
 ### Pulse (ADR-0119)
-- **pulse-coletar** — coletor server-side do radar de concorrência, dual-mode (mesmo padrão de
+- **pulse-coletar** — **ADR-0173 (2026-09-27):** ganhou um modo fan-out por org (só orgs com o
+  módulo `pulse`) atrás de `FANOUT_PULSE` (desligado hoje), com backoff por produto na coleta — ver
+  [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). O
+  dual-mode legado abaixo continua ativo enquanto a flag não é ligada.
+  Coletor server-side do radar de concorrência, dual-mode (mesmo padrão de
   `monitorar-moderados`): QStash (schedule) roda sem escopo de org — todas as conexões ML, tier do
   `body`; usuário logado (botão "Atualizar agora") escopa só a própria org, sempre tier `completo`,
   teto de 50 produtos **por org** na execução. Tier `completo` (schedule diário 06h BRT, teto 200

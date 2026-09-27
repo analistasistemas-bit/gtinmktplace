@@ -634,6 +634,23 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   [plano](superpowers/plans/2026-09-24-estoque-grade-operacao.md) e o amendment 2026-09-24c do
   [ADR-0166](decisions/0166-tipo-de-produto-por-organizacao.md).
 
+## Incidente CPU 546 e fan-out por org (ADR-0173, 25-27/09/2026) — código pronto, ativação pendente
+
+**Não está em produção.** `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento`
+passaram a falhar com `CPU Time exceeded` (HTTP 546, teto de 2s de CPU por requisição) porque
+processam todas as organizações numa única requisição — `backfill-faturamento` sem execução
+completa desde ~10/09, `reconciliar-faturamento` com 12 de 74 execuções em 546 numa janela de 72h.
+Correção: o schedule de cada função vira um disparador que publica 1 mensagem QStash por org,
+processada em lotes retomáveis por `worker_rodadas` (posse com lease, CAS do cursor). Pedido que
+falha vira pendência por org (`worker_pendencias`); notificação do Pulse durável e idempotente por
+chave. Ativação por flag, uma função por vez, com validação de CPU por etapa antes de ligar a
+próxima — nenhuma flag setada ainda. Runbook completo em
+[edge-functions.md](reference/edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback).
+Ver [ADR-0173](decisions/0173-fanout-por-org-workers-agendados-cpu.md) e o plano
+`docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`. **Achado lateral:** `materializar-metricas`
+está documentado com schedule diário mas sem invocações em produção nos últimos 7 dias — investigar
+fora deste ADR.
+
 ## Trilho de UX/design (2026-06-21, em producao)
 
 Preparacao do app para virar SaaS comercial. Tudo light+dark, TDD na logica, sem tocar backend/lifecycle. Detalhe em `TASKS.md`.

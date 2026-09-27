@@ -8,6 +8,31 @@ atualizado: 2026-08-25
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
 
+## 2026-09-27 — `pulse-coletar`/`backfill-faturamento`/`reconciliar-faturamento` estourando CPU (HTTP 546) — **correção pronta, ainda não ativada**
+
+Três edge functions agendadas passaram a falhar com `CPU Time exceeded` (HTTP 546): o Supabase
+encerra a requisição ao somar 2s de CPU. `pulse-coletar` (tier completo) caía todo dia depois da
+Avil; `backfill-faturamento` sem execução completa desde ~10/09 (é o único backstop das mensagens
+pós-venda); `reconciliar-faturamento` com 12 de 74 execuções em 546 numa janela de 72h.
+
+**Causa:** todas as organizações são processadas numa única requisição — cada org a mais soma CPU
+na mesma conta. As guardas existentes (`LIMITE_MS`, `ORCAMENTO_MS`) medem relógio, não CPU, e por
+isso não evitavam a queda.
+
+**Correção (ADR-0173):** o schedule de cada função vira um disparador que publica 1 mensagem QStash
+por org; cada mensagem processa um lote de tamanho fixo, com `worker_rodadas` como fonte da verdade
+(posse com lease de 150s, CAS do cursor) e pedido que falha registrado como pendência por org
+(`worker_pendencias`). Ativação por flag (`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR`),
+uma função por vez, com medição de CPU antes de ligar a próxima.
+
+**Status em 2026-09-27:** código pronto (Tasks 1-7 do plano de execução), **nenhuma flag ativada em
+produção** — os 3 workers seguem no caminho legado até o Task 8 (deploy + ativação medida + OK do
+Diego). Runbook em `docs/reference/edge-functions.md`. Ver [[Índice de ADRs|ADR-0173]].
+
+**Achado lateral (não relacionado ao fan-out):** `materializar-metricas` está documentado com
+schedule diário (`0 6 * * *`) mas sem invocações registradas em produção nos últimos 7 dias —
+investigar se o schedule ainda existe no QStash.
+
 ## 2026-08-25 — alerta de "2 anúncios moderados" que nunca foram moderados
 
 Às 09:00 (BRT) o Telegram e as notificações in-app avisaram "2 anúncios moderados pelo Mercado
