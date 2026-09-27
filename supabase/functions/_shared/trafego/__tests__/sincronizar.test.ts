@@ -4,6 +4,7 @@ import {
   type DepsTrafego, type PontoVisitasGravar, type RespostaML,
 } from '../sincronizar.ts';
 import type { FontesInventario } from '../inventario.ts';
+import { TIMEOUT_ML_MS } from '../fiacao.ts';
 
 const T0 = Date.parse('2026-09-27T12:00:00Z'); // 09:00 BRT → hoje = 2026-09-27
 const RODADA = '2026-09-27T09:17:00.123Z';
@@ -293,12 +294,34 @@ describe('sincronizarTrafegoOrg', () => {
     expect(d.buscarVisitas).toHaveBeenCalledWith('MLB2', { last: 149, ending: '2026-09-27' });
   });
 
-  it('429 no preço que não cabe não atrasa o lote (preço fica para a próxima execução)', async () => {
+  it('429 no preço que não cabe → adia o lote (mesmo cursor, atraso do Retry-After), sem falha', async () => {
     const d = fake({ buscarPreco: vi.fn(async () => ({ status: 429, retryAfterMs: 120_000, corpo: null })) }, ['MLB1']);
-    expect(await sincronizarTrafegoOrg(d, primeira)).toEqual({ resultado: 'ok' });
-    expect(d.continuar).not.toHaveBeenCalled();
+    expect(await sincronizarTrafegoOrg(d, primeira)).toEqual({ resultado: 'continua' });
+    expect(d.continuar).toHaveBeenCalledWith(
+      { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 1 }, { atrasoMs: 120_000 });
+    expect(d.gravarVisitas).not.toHaveBeenCalled();
     expect(d.gravarPreco).not.toHaveBeenCalled();
-    expect(pontos(d).every((x) => x.estado !== 'falha')).toBe(true);
+  });
+
+  it('preço que trava não passa do orçamento: não tenta de novo se a espera + timeout não cabem', async () => {
+    const d = fake({}, ['MLB1']);
+    d.buscarVisitas.mockImplementation(async () => { d.relogio.t += 75_000; return visitas200; });
+    d.buscarPreco.mockImplementation(async () => { d.relogio.t += TIMEOUT_ML_MS; return { status: 503, retryAfterMs: null, corpo: null }; });
+    expect(await sincronizarTrafegoOrg(d, primeira)).toEqual({ resultado: 'continua' });
+    expect(d.buscarPreco).toHaveBeenCalledTimes(1);
+    expect(d.relogio.t - T0).toBeLessThanOrEqual(90_000 + TIMEOUT_ML_MS);
+    expect(d.continuar).toHaveBeenCalledWith(expect.objectContaining({ cursor: null, tentativa: 1 }), { atrasoMs: 1_500 });
+    expect(d.gravarVisitas).not.toHaveBeenCalled();
+  });
+
+  it('item que começaria depois do fim do orçamento não é buscado; o lote adia sem falha', async () => {
+    const d = fake({}, ['MLB1', 'MLB2']);
+    d.buscarVisitas.mockImplementation(async () => { d.relogio.t += 95_000; return visitas200; });
+    const r = await sincronizarTrafegoOrg(d, primeira, { limiteMs: 90_000, lote: 20, concorrencia: 1 });
+    expect(r).toEqual({ resultado: 'continua' });
+    expect(idsVisitados(d)).toEqual(['MLB1']);
+    expect(d.continuar).toHaveBeenCalledWith(expect.objectContaining({ cursor: null, tentativa: 1 }), { atrasoMs: 0 });
+    expect(d.gravarVisitas).not.toHaveBeenCalled();
   });
 
   it('preço observado depois da meia-noite BRT não é gravado no dia anterior', async () => {

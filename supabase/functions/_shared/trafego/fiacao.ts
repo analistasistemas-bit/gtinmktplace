@@ -1,7 +1,10 @@
 // Partes puras da fiação do worker `coletar-trafego-ml` (Task 5): ids do QStash, fetch próprio do ML,
 // multiget de status, cortes de data e o roteamento HTTP. Sem import Deno/npm: o vitest carrega.
 import { DAY_MS, diaDeHoje } from './janelas.ts';
-import { STATUS_DESCONHECIDO, type MsgTrafego, type RespostaML, type ResultadoTrafego, type StatusItemGravar } from './sincronizar.ts';
+import type { MsgTrafego, RespostaML, ResultadoTrafego, StatusItemGravar } from './sincronizar.ts';
+
+/** MLB com visitas ok que o multiget não trouxe. */
+export const STATUS_DESCONHECIDO = 'desconhecido';
 
 const seguro = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, '_'); // mesmo filtro de promocoes/deps.ts
 
@@ -21,10 +24,11 @@ export function parseRetryAfterMs(h: string | null): number | null {
   return Number.isFinite(n) && n >= 0 ? n * 1000 : null;
 }
 
-export const TIMEOUT_ML_MS = 15_000;
+/** Timeout de cada GET no ML; o orquestrador reserva 1 timeout do orçamento antes de cada tentativa. */
+export const TIMEOUT_ML_MS = 10_000;
 
 /**
- * GET no ML com timeout de 15 s. Nunca lança: status HTTP + Retry-After + corpo (JSON ou null).
+ * GET no ML com timeout de 10 s. Nunca lança: status HTTP + Retry-After + corpo (JSON ou null).
  * Timeout/rede → 503 (transitório: entra no retry/adiamento em vez de virar `falha` na hora).
  */
 export async function buscarML(url: string, token: string, f: typeof fetch = fetch): Promise<RespostaML> {
@@ -105,7 +109,14 @@ export async function tratarRequisicao(req: Request, r: Rotas): Promise<Response
   const body = await req.text();
   if (!(await r.verificar(req, body))) return new Response('Invalid signature', { status: 401 });
   let p: Partial<MsgTrafego> = {};
-  try { p = body ? JSON.parse(body) : {}; } catch { /* body vazio do schedule */ }
+  try {
+    p = body ? JSON.parse(body) : {}; // schedule manda sem body
+  } catch {
+    return json({ ok: false, erro: 'corpo não é JSON' }, 400);
+  }
+  if (p === null || typeof p !== 'object' || Array.isArray(p) || (p.org_id != null && typeof p.org_id !== 'string')) {
+    return json({ ok: false, erro: 'mensagem inválida' }, 400);
+  }
   try {
     if (!p.org_id) {
       const orgs = await r.fanout();

@@ -66,7 +66,8 @@ Anotar o `scheduleId` devolvido, conferir com o `curl … /v2/schedules` de
 
 1. Disparar uma execução única pelo QStash (publish sem body na mesma URL, ou "Trigger" no schedule).
 2. Resposta do fan-out: `{ "ok": true, "orgs": N }` — N = orgs com conexão ML.
-3. Nos logs da função: uma chamada por org com `{ "resultado": "continua" | "ok" }`. Na carga inicial
+3. No QStash (Logs/Events de cada mensagem — a função só loga erro): uma entrega por org com resposta
+   `{ "ok": true, "resultado": "continua" | "ok" }`. Na carga inicial
    (150 dias) a Avil gera ~29 mensagens de lote 20 (spike 052 §4).
 4. SQL (read-only, Management API):
 

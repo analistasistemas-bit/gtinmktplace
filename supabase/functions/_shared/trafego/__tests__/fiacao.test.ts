@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buscarML, classificarItensTrafego, corteRetencao, corteVendidos, dedupContinuacao, dedupFanout,
-  delaySegundos, parseMultigetStatus, parseRetryAfterMs, preservarStatus, tratarRequisicao, type Rotas,
+  delaySegundos, parseMultigetStatus, parseRetryAfterMs, preservarStatus, TIMEOUT_ML_MS, tratarRequisicao, type Rotas,
 } from '../fiacao.ts';
 
 describe('ids de deduplicação do QStash', () => {
@@ -131,6 +131,15 @@ describe('tratarRequisicao', () => {
     expect(await res.json()).toEqual({ ok: true, orgs: 2 });
     expect(r.fanout.mock.invocationCallOrder[0]).toBeLessThan(r.limpar.mock.invocationCallOrder[0]);
   });
+  it('corpo que não é JSON ou org_id não-string → 400, sem fan-out nem sincronização', async () => {
+    for (const body of ['{não json', '{"org_id":123}', '[]']) {
+      const r = rotas();
+      expect((await tratarRequisicao(post(body), r)).status).toBe(400);
+      expect(r.fanout).not.toHaveBeenCalled();
+      expect(r.sincronizar).not.toHaveBeenCalled();
+    }
+  });
+  it('TIMEOUT_ML_MS = 10 s', () => { expect(TIMEOUT_ML_MS).toBe(10_000); });
   it('fan-out que falha → 500 e sem limpeza', async () => {
     const r = rotas({ fanout: vi.fn(async () => { throw new Error('qstash'); }) });
     expect((await tratarRequisicao(post('{}'), r)).status).toBe(500);

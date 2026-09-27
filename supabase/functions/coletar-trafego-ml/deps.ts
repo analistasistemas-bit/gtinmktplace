@@ -9,9 +9,9 @@ import { paginarTudo } from '../_shared/pagina.ts';
 import { diaDeHoje } from '../_shared/trafego/janelas.ts';
 import {
   buscarML, classificarItensTrafego, corteRetencao, corteVendidos, dedupContinuacao, dedupFanout,
-  delaySegundos, parseMultigetStatus, preservarStatus, type LinhaTrafegoItem,
+  delaySegundos, parseMultigetStatus, preservarStatus, STATUS_DESCONHECIDO, type LinhaTrafegoItem,
 } from '../_shared/trafego/fiacao.ts';
-import { SemAcessoTrafego, STATUS_DESCONHECIDO, type DepsTrafego } from '../_shared/trafego/sincronizar.ts';
+import { SemAcessoTrafego, type DepsTrafego } from '../_shared/trafego/sincronizar.ts';
 
 const ML = 'https://api.mercadolibre.com';
 const urlWorker = () => `${Deno.env.get('SUPABASE_URL')}/functions/v1/coletar-trafego-ml`;

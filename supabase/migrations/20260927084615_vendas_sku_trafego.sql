@@ -12,6 +12,8 @@ create table public.ml_item_visitas_dia (
   primary key (org_id, ml_item_id, dia),  -- cobre (org_id, ml_item_id, dia desc)
   check (estado <> 'ok' or visitas is not null)
 );
+-- ultimoDiaOk do worker (max(dia) where estado='ok' da org) e limpeza de retenção (org_id, dia < corte).
+create index ml_item_visitas_dia_org_dia_idx on public.ml_item_visitas_dia (org_id, dia);
 
 create table public.ml_item_preco_dia (
   org_id        uuid not null references public.organizations(id) on delete cascade,

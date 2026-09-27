@@ -5,6 +5,7 @@ import { emParalelo } from '../promocoes/sincronizar.ts';
 import { montarInventario, type FontesInventario } from './inventario.ts';
 import { diaDeHoje, diasAColetar, parametrosJanela } from './janelas.ts';
 import { diasDaJanela, parseSalePrice, parseVisitas } from './parsers.ts';
+import { STATUS_DESCONHECIDO, TIMEOUT_ML_MS } from './fiacao.ts';
 
 /** Token/conexão ML inválidos: a org fecha a rodada como `sem_acesso`. */
 export class SemAcessoTrafego extends Error {}
@@ -14,8 +15,6 @@ const FALLBACK_RETRY_MS = 1_500;
 const MAX_TENTATIVAS = 3;
 /** Adiamentos seguidos no mesmo cursor antes de marcar `falha` no lote e seguir (a cadeia nunca fica presa). */
 const LIMITE_ADIAMENTOS = 5;
-/** MLB com visitas ok que o multiget não trouxe. */
-export const STATUS_DESCONHECIDO = 'desconhecido';
 
 export interface RespostaML { status: number; retryAfterMs: number | null; corpo: unknown }
 /** `tentativa` = republicações seguidas no mesmo cursor (0/ausente quando o cursor andou). */
@@ -63,8 +62,10 @@ export interface DepsTrafego {
 const mensagem = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
- * 401 → SemAcessoTrafego. 429/5xx → espera Retry-After (fallback 1,5 s) só se couber até `fimMs`,
- * no máx. 3 tentativas; não coube → `{ adiar: esperaMs }`; esgotou → devolve a última resposta.
+ * 401 → SemAcessoTrafego. 429/5xx → espera Retry-After (fallback 1,5 s) só se a espera **e** uma
+ * requisição inteira (timeout) ainda couberem até `fimMs`, no máx. 3 tentativas; não coube →
+ * `{ adiar: esperaMs }`; esgotou → devolve a última resposta. Com o corte de início de item, a cauda
+ * fica em fim + 2 timeouts (visitas começada antes do fim + 1ª tentativa do preço) — a edge morre em ~150 s.
  */
 async function comRetry(
   deps: DepsTrafego, fimMs: number, busca: () => Promise<RespostaML>,
@@ -75,7 +76,7 @@ async function comRetry(
     if (r.status !== 429 && r.status < 500) return r;
     if (tentativa >= MAX_TENTATIVAS) return r;
     const espera = r.retryAfterMs ?? FALLBACK_RETRY_MS;
-    if (deps.agora() + espera > fimMs) return { adiar: espera };
+    if (deps.agora() + espera + TIMEOUT_ML_MS > fimMs) return { adiar: espera };
     await deps.esperar(espera);
   }
 }
@@ -139,6 +140,8 @@ export async function sincronizarTrafegoOrg(
       let adiarMs: number | null = null;
       const resultados = await emParalelo(lote, cfg.concorrencia, async (id): Promise<ColetaItem | null> => {
         if (adiarMs != null) return null;
+        // Item que começaria depois do fim do orçamento não sai: o lote volta inteiro, sem `falha`.
+        if (deps.agora() > fim) { adiarMs ??= 0; return null; }
         const janela = janelaDe(id);
         const v = await comRetry(deps, fim, () => deps.buscarVisitas(id, parametrosJanela(janela)));
         if ('adiar' in v) { adiarMs ??= v.adiar; return null; }
@@ -149,8 +152,11 @@ export async function sincronizarTrafegoOrg(
 
         let preco: PontoPrecoGravar | null = null;
         if (adiarMs == null && !jaTemPreco.has(id)) {
-          // Preço é secundário: sem 200 válido (inclusive 429 que não cabe) só fica sem linha hoje.
+          // Preço sem 200 válido (403/404/corpo inválido/5xx esgotado) só fica sem linha hoje.
           const p = await comRetry(deps, fim, () => deps.buscarPreco(id));
+          // 429/5xx/orçamento sem espera que caiba: o lote adia (preço de hoje sai na continuação).
+          // As visitas ok ficam no item: valem se o lote chegar ao limite de adiamentos.
+          if ('adiar' in p) adiarMs ??= p.adiar;
           const obs = !('adiar' in p) && p.status === 200 ? parseSalePrice(p.corpo) : null;
           const quando = new Date(deps.agora());
           // Continuação que cruzou a meia-noite não grava o preço de hoje no dia anterior.
