@@ -14,7 +14,12 @@ const vazio: FontesInventario = {
   catalogoItensUp: [], pxvAnteriores: [], vendidos: [],
 };
 const ok = (corpo: unknown): RespostaML => ({ status: 200, retryAfterMs: null, corpo });
-const visitas200 = ok({ results: [{ date: '2026-09-22T00:00:00Z', total: 5 }] });
+// janela móvel padrão do fake() (last:6, ending:'2026-09-27'): date_from/date_to precisam
+// confirmar exatamente essa janela, senão parseVisitas devolve null (vendas-sku-design, Fatia 2b).
+const visitas200 = ok({
+  date_from: '2026-09-21T00:00:00Z', date_to: '2026-09-27T00:00:00Z',
+  results: [{ date: '2026-09-22T00:00:00Z', total: 5 }],
+});
 const preco200 = ok({ amount: 49.9, regular_amount: 59.9, currency_id: 'BRL' });
 
 type Fake = DepsTrafego & Record<keyof DepsTrafego, ReturnType<typeof vi.fn>> & { relogio: { t: number } };

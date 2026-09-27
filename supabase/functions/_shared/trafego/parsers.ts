@@ -26,6 +26,14 @@ export function diasDaJanela(desde: string, ate: string): string[] {
  * (nunca convertido de fuso — spike 052 §2.3); `calendario` só decide o instante em que um dia
  * termina, para a regra das 48h. `results` fora de ordem, duplicado ou com forma inválida →
  * resposta inteira `null` (dado não confiável, nunca inventar um valor).
+ *
+ * `date_from`/`date_to` da resposta precisam confirmar a janela pedida: comparando só
+ * `[:10]` (nunca convertendo — o fuso ecoado varia entre `Z` e `-04:00`, spike 052 §2.2 item 5),
+ * `date_from[:10]` tem que ser igual a `janela.desde` e `date_to[:10]` igual a `janela.ate`
+ * (medido nas 3 fixtures reais: sempre igualdade exata, com e sem `ending`). Ausentes, inválidos
+ * ou divergentes → `null` (a orquestração trata como `falha`, que nunca sobrescreve um dia `ok` —
+ * ao contrário de um zero de resposta truncada ou de outra janela). Um `result` cuja data caia
+ * fora de `[date_from, date_to]` ecoados também é dado não confiável → `null`.
  */
 export function parseVisitas(
   resp: unknown,
@@ -34,8 +42,14 @@ export function parseVisitas(
   janela: { desde: string; ate: string },
 ): PontoVisitas[] | null {
   if (typeof resp !== 'object' || resp === null) return null;
-  const results = (resp as Record<string, unknown>).results;
+  const { results, date_from: dateFrom, date_to: dateTo } = resp as Record<string, unknown>;
   if (!Array.isArray(results)) return null;
+  if (typeof dateFrom !== 'string' || typeof dateTo !== 'string') return null;
+  if (dateFrom.length < 10 || dateTo.length < 10) return null;
+  const echoDesde = dateFrom.slice(0, 10);
+  const echoAte = dateTo.slice(0, 10);
+  if (!DIA_RE.test(echoDesde) || !DIA_RE.test(echoAte)) return null;
+  if (echoDesde !== janela.desde || echoAte !== janela.ate) return null;
 
   const porDia = new Map<string, number>();
   for (const r of results) {
@@ -44,6 +58,7 @@ export function parseVisitas(
     if (typeof date !== 'string' || date.length < 10) return null;
     const dia = date.slice(0, 10);
     if (!DIA_RE.test(dia) || typeof total !== 'number' || !Number.isFinite(total)) return null;
+    if (dia < echoDesde || dia > echoAte) return null;
     if (porDia.has(dia)) return null;
     porDia.set(dia, total);
   }

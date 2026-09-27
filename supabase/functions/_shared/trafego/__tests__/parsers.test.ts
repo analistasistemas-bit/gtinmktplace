@@ -63,10 +63,38 @@ describe('parseVisitas — fixtures reais (spike 052)', () => {
     // agora = 2026-09-27T00:00:00Z está a exatamente 48h do fim utc (→ ok) e a 45h do fim brt
     // (→ ainda pendente): o mesmo instante separa os dois calendários.
     const janela = { desde: '2026-09-24', ate: '2026-09-24' };
-    const respostaZero = { results: [] };
+    const respostaZero = { date_from: '2026-09-24T00:00:00Z', date_to: '2026-09-24T00:00:00Z', results: [] };
     const agora = new Date('2026-09-27T00:00:00Z');
     expect(parseVisitas(respostaZero, 'brt', agora, janela)![0].estado).toBe('pendente');
     expect(parseVisitas(respostaZero, 'utc', agora, janela)![0].estado).toBe('ok');
+  });
+
+  it('resposta sem date_from ou date_to → null (janela não confirmada)', () => {
+    const janela = { desde: '2026-09-10', ate: '2026-09-20' };
+    expect(parseVisitas({ results: [] }, 'brt', AGORA, janela)).toBeNull();
+    expect(parseVisitas({ date_from: '2026-09-10T00:00:00Z', results: [] }, 'brt', AGORA, janela)).toBeNull();
+    expect(parseVisitas({ date_to: '2026-09-20T00:00:00Z', results: [] }, 'brt', AGORA, janela)).toBeNull();
+  });
+
+  it('date_to anterior ao ate pedido (resposta truncada) → null', () => {
+    const janela = { desde: '2026-09-10', ate: '2026-09-20' };
+    const resp = { date_from: '2026-09-10T00:00:00Z', date_to: '2026-09-19T00:00:00Z', results: [] };
+    expect(parseVisitas(resp, 'brt', AGORA, janela)).toBeNull();
+  });
+
+  it('date_from posterior ao desde pedido (janela de outra consulta) → null', () => {
+    const janela = { desde: '2026-09-10', ate: '2026-09-20' };
+    const resp = { date_from: '2026-09-11T00:00:00Z', date_to: '2026-09-20T00:00:00Z', results: [] };
+    expect(parseVisitas(resp, 'brt', AGORA, janela)).toBeNull();
+  });
+
+  it('result com data fora da janela ecoada pela resposta → null (dado não confiável)', () => {
+    const janela = { desde: '2026-09-10', ate: '2026-09-20' };
+    const resp = {
+      date_from: '2026-09-10T00:00:00Z', date_to: '2026-09-20T00:00:00Z',
+      results: [{ date: '2026-09-21T00:00:00Z', total: 5 }],
+    };
+    expect(parseVisitas(resp, 'brt', AGORA, janela)).toBeNull();
   });
 
   it('resposta malformada nunca lança: null em cada caso', () => {

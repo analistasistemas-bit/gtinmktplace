@@ -65,7 +65,7 @@ const mensagem = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * 401 → SemAcessoTrafego. 429/5xx → espera Retry-After (fallback 1,5 s) só se a espera **e** uma
  * requisição inteira (timeout) ainda couberem até `fimMs`, no máx. 3 tentativas; não coube →
  * `{ adiar: esperaMs }`; esgotou → devolve a última resposta. Com o corte de início de item, a cauda
- * fica em fim + 2 timeouts (visitas começada antes do fim + 1ª tentativa do preço) — a edge morre em ~150 s.
+ * fica em fim + 2 timeouts (visitas começada antes do fim + 1ª tentativa do preço) — a edge morre em ~120 s.
  */
 async function comRetry(
   deps: DepsTrafego, fimMs: number, busca: () => Promise<RespostaML>,
