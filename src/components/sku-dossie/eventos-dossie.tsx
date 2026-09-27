@@ -10,7 +10,7 @@ const MES = new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', t
 const QUANDO = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 
 /** Linha do tempo do SKU, do mais recente para o mais antigo, agrupada por mês. */
-export function EventosDossie({ eventos, kit }: { eventos: Evento[]; kit: boolean }) {
+export function EventosDossie({ eventos }: { eventos: Evento[] }) {
   const meses: { mes: string; itens: Evento[] }[] = [];
   for (const e of [...eventos].reverse()) {
     const mes = MES.format(new Date(e.em));
@@ -45,7 +45,7 @@ export function EventosDossie({ eventos, kit }: { eventos: Evento[]; kit: boolea
                         <time dateTime={e.em} className="text-xs tabular-nums text-muted-foreground">{QUANDO.format(new Date(e.em))}</time>
                       </div>
                       {e.detalhe && <p className="mt-0.5 text-xs text-muted-foreground">{e.detalhe}</p>}
-                      {(e.vinculo === 'compartilhado' || e.vinculo === 'nao_resolvido' || (kit && EVENTO_DE_ESTOQUE.has(e.tipo))) && (
+                      {(e.vinculo === 'compartilhado' || e.vinculo === 'nao_resolvido' || (e.estoqueDaBase && EVENTO_DE_ESTOQUE.has(e.tipo))) && (
                         <div className="mt-1.5 flex flex-wrap gap-1.5">
                           {e.vinculo === 'compartilhado' && (
                             <StatusPill tone="info" title="O anúncio vende este e outros códigos: o evento pode ser de outro deles.">
@@ -55,7 +55,7 @@ export function EventosDossie({ eventos, kit }: { eventos: Evento[]; kit: boolea
                           {e.vinculo === 'nao_resolvido' && (
                             <StatusPill tone="warning" title={`${e.mlb ?? 'O anúncio'} não está no mapa de anúncios deste código.`}>vínculo não resolvido</StatusPill>
                           )}
-                          {kit && EVENTO_DE_ESTOQUE.has(e.tipo) && (
+                          {e.estoqueDaBase && EVENTO_DE_ESTOQUE.has(e.tipo) && (
                             <StatusPill tone="neutral" title="O kit não tem estoque próprio: o saldo vem da base.">estoque da base</StatusPill>
                           )}
                         </div>

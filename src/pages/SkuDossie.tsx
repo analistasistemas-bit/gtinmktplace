@@ -148,7 +148,7 @@ export default function SkuDossie() {
           <KpisDossie atual={dados.linhaPeriodo} anterior={dados.linhaAnterior} rot={rotuloAnterior(periodo)}
             unidadesKit={dados.kitVirtual?.unidadesPeriodo} />
           {!dados.linhaPeriodo && (
-            <p className="text-xs text-muted-foreground">Nenhuma venda neste período. O Δ compara com o período anterior.</p>
+            <p className="text-xs text-muted-foreground">{`Nenhuma venda neste período. ${dados.linhaAnterior ? 'O Δ compara com o período anterior.' : 'Sem Δ: sem histórico no período anterior.'}`}</p>
           )}
           <SerieDossie serie={dados.serie} perguntas={dados.perguntasPorIntervalo} eventos={dados.eventos} codigos={dados.codigos}
             familia={familia} temKit={dados.kitVirtual != null} historicoDesde={dados.historicoDesde} passo={passo} onPasso={setPasso} />
@@ -159,21 +159,22 @@ export default function SkuDossie() {
           hoje (estoque, campanhas) e, por fim, todo o histórico (eventos). */}
       {estado !== 'sem_vendas' && dados.mix && <MixFamilia mix={dados.mix} voltar={voltar} />}
 
-      {/* Em lg, duas colunas que empilham sem vãos (esquerda: devoluções + estoque; direita: UFs +
-          campanhas). No celular as colunas viram `contents` e o `order` devolve a ordem lógica. */}
+      {/* Em lg, duas colunas que empilham sem vãos. Par medido nos prints de SKU e família:
+          devoluções + campanhas | UFs + estoque (diferença de 48-80px; o par inverso deixava ~340-375px).
+          No celular as colunas viram `contents` e o `order` devolve a ordem lógica. */}
       <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
         <div className="contents lg:flex lg:flex-col lg:gap-6">
           {estado !== 'sem_vendas' && <DevolucoesDossie linha={dados.linhaPeriodo} eventos={dados.eventos} className="order-1" />}
-          <EstoqueDossie dados={dados} familia={familia} voltar={voltar} className="order-3" />
+          <CampanhasDossie campanhas={dados.campanhas} className="order-4" />
         </div>
         <div className="contents lg:flex lg:flex-col lg:gap-6">
           {estado !== 'sem_vendas' && <UfsDossie ufs={dados.ufs} className="order-2" />}
-          <CampanhasDossie campanhas={dados.campanhas} className="order-4" />
+          <EstoqueDossie dados={dados} familia={familia} voltar={voltar} className="order-3" />
         </div>
       </div>
 
       {(estado !== 'sem_vendas' || dados.eventos.length > 0) && (
-        <EventosDossie eventos={dados.eventos} kit={dados.catalogo.some((c) => c.ehKit)} />
+        <EventosDossie eventos={dados.eventos} />
       )}
     </div>
   );

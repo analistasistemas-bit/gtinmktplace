@@ -149,6 +149,41 @@ describe('montarDossie: estoque com kit', () => {
     expect(typeof d.cobertura).toBe('number');
   });
 
+  it('família mista: a cobertura usa só o ritmo das variações comuns (kits vendidos ficam fora do u30)', () => {
+    const d = montarDossie({
+      alvo: { tipo: 'familia', codigoPai: 'P' }, codigos: ['A', 'K'], agrupar, catalogo: [cat('A'), kit('K')], devolucoes: [],
+      vendas: [
+        venda({ id: 'n', order_id: 4, date_closed: '2026-09-22T12:00:00Z', itens: [item({ id: 'i4', codigo: 'A', quantity: 3 })] }),
+        venda({ id: 'k', order_id: 5, date_closed: '2026-09-22T12:00:00Z', itens: [item({ id: 'i5', codigo: 'K', quantity: 3 })] }),
+      ],
+      janela: { desde: '2026-09-16T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
+      anterior: { desde: '2026-09-05T03:00:00.000Z', ate: '2026-09-16T02:59:59.999Z' },
+      hoje: { desde: '2026-08-28T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
+      hojeAnterior: { desde: '2026-07-29T03:00:00.000Z', ate: '2026-08-28T02:59:59.999Z' },
+      intervalos: IVS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
+    }).dados!;
+    // 10 un. ÷ (3 un. de A em 30 dias) = 100 dias; contando os 3 kits daria 50
+    expect(d.cobertura).toBe(100);
+  });
+
+  it('eventos de estoque: só os da base de um kit (fora do alvo) levam estoqueDaBase', () => {
+    const d = montarDossie({
+      alvo: { tipo: 'familia', codigoPai: 'P' }, codigos: ['A', 'K'], agrupar, devolucoes: [],
+      catalogo: [cat('A'), { ...kit('K'), kitBaseCodigo: 'X' }],
+      vendas: [venda({ id: 'n', order_id: 4, date_closed: '2026-09-22T12:00:00Z', itens: [item({ id: 'i4', codigo: 'A', quantity: 3 })] })],
+      janela: { desde: '2026-09-16T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
+      anterior: { desde: '2026-09-05T03:00:00.000Z', ate: '2026-09-16T02:59:59.999Z' },
+      hoje: { desde: '2026-08-28T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
+      hojeAnterior: { desde: '2026-07-29T03:00:00.000Z', ate: '2026-08-28T02:59:59.999Z' },
+      intervalos: IVS, mlbs: new Map(), moderacoes: [], perguntas: [], campanhas: [],
+      movimentos: [
+        mov({ id: 'ma', codigo: 'A', estoque_anterior: 2, estoque_resultante: 0 }),
+        mov({ id: 'mx', codigo: 'X', estoque_anterior: 3, estoque_resultante: 0, criado_em: '2026-09-11T12:00:00Z' }),
+      ],
+    }).dados!;
+    expect(d.eventos.map((e) => [e.id, e.estoqueDaBase ?? false])).toEqual([['ma:ruptura', false], ['mx:ruptura', true]]);
+  });
+
   it('só kits: saldo floor(base/N) e cobertura compartilhada', () => {
     const d = monta({ tipo: 'sku', codigo: 'K' }, ['K'], [kit('K')]);
     expect(d.estoque).toBe(4);

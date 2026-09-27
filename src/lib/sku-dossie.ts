@@ -99,6 +99,8 @@ export interface Evento {
   /** Devolução: motivo traduzido do ML (`reason_texto`); null = não informado. Demais tipos: null. */
   motivo: string | null;
   vinculo: Vinculo | null; mlb: string | null;
+  /** Movimento de estoque da base de um kit (código fora do alvo): o saldo não é do próprio código. */
+  estoqueDaBase?: boolean;
 }
 
 /** Linha do tempo do SKU (ou da família). Movimentos e devoluções são do próprio código/order
@@ -107,6 +109,8 @@ export interface Evento {
 export function montarEventos(p: {
   movimentos: Movimento[]; moderacoes: Moderacao[]; devolucoes: Devolucao[]; ordersDosCodigos: Set<number>;
   mlbs: Map<string, string[]>; kitMultiplicador: number | null;
+  /** Códigos-base de kits que não fazem parte do alvo: os movimentos deles levam `estoqueDaBase`. */
+  codigosBase?: ReadonlySet<string>;
 }): Evento[] {
   const eventos = new Map<string, Evento>();
   const add = (e: Omit<Evento, 'vinculo' | 'mlb' | 'motivo'> & Partial<Pick<Evento, 'vinculo' | 'mlb' | 'motivo'>>) =>
@@ -115,18 +119,19 @@ export function montarEventos(p: {
   const saldo = (s: number) => (n ? Math.floor(s / n) : s);
 
   for (const m of p.movimentos) {
+    const daBase = p.codigosBase?.has(m.codigo) ? { estoqueDaBase: true } : {};
     if (m.motivo === 'entrada') {
       const custo = m.custo_unitario != null ? ` a ${fmtBRL(m.custo_unitario)}` : ' (sem custo)';
       add({ id: `${m.id}:entrada`, tipo: 'entrada', em: m.criado_em,
-        titulo: `Entrada registrada${n ? ' na base' : ''}: ${m.quantidade} un.${custo}`, detalhe: null });
+        titulo: `Entrada registrada${n ? ' na base' : ''}: ${m.quantidade} un.${custo}`, detalhe: null, ...daBase });
     }
     if (m.estoque_anterior == null || m.estoque_resultante == null) continue; // sem saldo: ignora
     const antes = saldo(m.estoque_anterior);
     const depois = saldo(m.estoque_resultante);
     if (antes > 0 && depois === 0) {
-      add({ id: `${m.id}:ruptura`, tipo: 'ruptura', em: m.criado_em, titulo: n ? 'Ruptura do kit' : 'Ruptura: estoque zerou', detalhe: null });
+      add({ id: `${m.id}:ruptura`, tipo: 'ruptura', em: m.criado_em, titulo: n ? 'Ruptura do kit' : 'Ruptura: estoque zerou', detalhe: null, ...daBase });
     } else if (antes === 0 && depois > 0) {
-      add({ id: `${m.id}:retorno`, tipo: 'retorno_estoque', em: m.criado_em, titulo: `Estoque voltou: ${depois} ${n ? 'kits' : 'un.'}`, detalhe: null });
+      add({ id: `${m.id}:retorno`, tipo: 'retorno_estoque', em: m.criado_em, titulo: `Estoque voltou: ${depois} ${n ? 'kits' : 'un.'}`, detalhe: null, ...daBase });
     }
   }
 
@@ -300,7 +305,13 @@ export function montarDossie(p: {
   const u30 = daChave(hoje.linhas)?.acc.unidades ?? 0;
   const uAnt = daChave(hoje.linhasAnterior)?.acc.unidades ?? 0;
   const tendencia = vendasDoAlvo.length ? classificarTendencia(u30, uAnt, historicoDesde, Date.parse(p.hoje.ate)) : null;
-  const cobertura = coberturaDias(estoque, u30, ehKit);
+  // Família mista: o saldo é só das variações comuns, então o ritmo também (kits vendidos
+  // consomem a base, não este saldo). A tendência segue com a família inteira.
+  const kitsDoAlvo = new Set(catalogo.filter((c) => c.ehKit).map((c) => c.codigo));
+  const u30Cobertura = ehKit || !kitsDoAlvo.size ? u30
+    : montarVendasSku({ ...base, agrupar: p.agrupar, janela: p.hoje, anterior: p.hojeAnterior }).linhas
+      .filter((l) => cods.has(l.codigo) && !kitsDoAlvo.has(l.codigo)).reduce((s, l) => s + l.acc.unidades, 0);
+  const cobertura = coberturaDias(estoque, u30Cobertura, ehKit);
   const linhaPeriodo = vestir(daChave(periodo.linhas));
 
   const devolvidas = orderIdsComDevolucaoReal(p.devolucoes);
@@ -327,6 +338,7 @@ export function montarDossie(p: {
       ordersDosCodigos: new Set(vendasDoAlvo.map((v) => v.order_id)),
       // ponytail: um N só; família de kits com N diferentes mostra o saldo da base sem dividir.
       kitMultiplicador: kitsN.size === 1 ? [...kitsN][0] : null,
+      codigosBase: new Set(catalogo.flatMap((c) => (c.ehKit && c.kitBaseCodigo && !cods.has(c.kitBaseCodigo) ? [c.kitBaseCodigo] : []))),
     }),
     perguntasPorIntervalo: perguntasPorIntervalo(p.perguntas, p.intervalos),
     ufs: ufsDoSku(pedidosPeriodo, p.codigos),

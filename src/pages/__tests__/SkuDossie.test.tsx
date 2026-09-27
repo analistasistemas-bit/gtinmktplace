@@ -232,9 +232,27 @@ describe('SkuDossie: série e eventos', () => {
   it('eventos: kit marca o estoque como da base; vazio mostra o aviso', () => {
     renderPagina('ok', comSerie({
       catalogo: [{ ...cat, ehKit: true, kitMultiplicador: 2, kitBaseCodigo: '00100', estoqueKit: 3 }],
-      eventos: [{ id: 'e3', tipo: 'ruptura', em: '2026-09-16T12:00:00Z', titulo: 'Ruptura do kit', detalhe: null, motivo: null, vinculo: 'exato', mlb: null }],
+      eventos: [{ id: 'e3', tipo: 'ruptura', em: '2026-09-16T12:00:00Z', titulo: 'Ruptura do kit', detalhe: null, motivo: null, vinculo: 'exato', mlb: null, estoqueDaBase: true }],
     }));
     expect(within(screen.getByRole('region', { name: 'Eventos' })).getByText('estoque da base')).toBeInTheDocument();
+  });
+
+  it('eventos da família mista: só o evento da base do kit leva o selo', () => {
+    renderPagina('ok', comSerie({
+      catalogo: [cat, { ...cat, codigo: '00125', ehKit: true, kitMultiplicador: 2, kitBaseCodigo: '00999', estoqueKit: 3 }],
+      eventos: [
+        { id: 'a', tipo: 'ruptura', em: '2026-09-16T12:00:00Z', titulo: 'Ruptura: estoque zerou', detalhe: null, motivo: null, vinculo: 'exato', mlb: null },
+        { id: 'b', tipo: 'retorno_estoque', em: '2026-09-17T12:00:00Z', titulo: 'Estoque voltou: 4 un.', detalhe: null, motivo: null, vinculo: 'exato', mlb: null, estoqueDaBase: true },
+      ],
+    }), '/faturamento/sku/familia/P1');
+    expect(within(screen.getByRole('region', { name: 'Eventos' })).getAllByText('estoque da base')).toHaveLength(1);
+  });
+
+  it('sem venda no período e sem histórico no anterior: a nota não promete Δ', () => {
+    renderPagina('ok', dossie({ linhaPeriodo: null, linhaAnterior: null }));
+    const periodo = screen.getByRole('region', { name: 'Resultado no período' });
+    expect(within(periodo).getByText(/Sem Δ: sem histórico no período anterior/)).toBeInTheDocument();
+    expect(within(periodo).queryByText(/O Δ compara com o período anterior/)).not.toBeInTheDocument();
   });
 
   it('eventos vazios: aviso próprio', () => {
