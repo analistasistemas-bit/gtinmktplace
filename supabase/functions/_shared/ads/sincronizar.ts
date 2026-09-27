@@ -282,19 +282,22 @@ export async function sincronizarAdsOrg(
     let custoResumoFinal = custoResumo;
     let custoListadoFinal = custoListado;
     if (!cargaInicial) {
+      // Ruling 2c-9, correção da re-revisão: cursor/inicial/tentativa não mudam durante este laço, então
+      // "presa" é a mesma checagem para as duas saídas (orçamento estourado e 429/5xx) — sem isso, um
+      // orçamento sempre estourado nunca fecharia a cadeia.
+      const preso90 = cursor === inicial && (msg.tentativa ?? 0) >= LIMITE_ADIAMENTOS;
+      const fecharPreso90 = async () => {
+        const erro = `busca de custo de 90 dias sem resposta depois de ${LIMITE_ADIAMENTOS} adiamentos (429/5xx/tempo)`;
+        if (!(await deps.avancarCursor(dona, cursor, null))) return { resultado: 'obsoleta' as const };
+        if (!(await deps.concluir(dona, 'erro', erro, parada({ advertiserId: adv })))) return { resultado: 'obsoleta' as const };
+        return { resultado: 'erro' as const };
+      };
       const listados90: GrupoBusca[] = [];
       let custoResumo90: number | null = null;
       for (let offset = 0; ;) {
-        if (deps.agora() > fim) return await continuar(cursor, 0);
+        if (deps.agora() > fim) return preso90 ? await fecharPreso90() : await continuar(cursor, 0);
         const r = await comRetry(deps, fim, () => deps.buscarGrupos(adv, janelaMembros, offset));
-        if ('adiar' in r) {
-          const preso = cursor === inicial && (msg.tentativa ?? 0) >= LIMITE_ADIAMENTOS;
-          if (!preso) return await continuar(cursor, r.adiar);
-          const erro = `busca de custo de 90 dias sem resposta depois de ${LIMITE_ADIAMENTOS} adiamentos (429/5xx/tempo)`;
-          if (!(await deps.avancarCursor(dona, cursor, null))) return { resultado: 'obsoleta' };
-          if (!(await deps.concluir(dona, 'erro', erro, parada({ advertiserId: adv })))) return { resultado: 'obsoleta' };
-          return { resultado: 'erro' };
-        }
+        if ('adiar' in r) return preso90 ? await fecharPreso90() : await continuar(cursor, r.adiar);
         exigir(r, 'ad_groups/search (90d)');
         const p = parseBuscaGrupos(r.corpo);
         if (!p) throw new Error('ad_groups/search (90d): resposta inválida');
@@ -311,7 +314,8 @@ export async function sincronizarAdsOrg(
       // tem o próprio MLB como membro — Ruling 2c-7 desconta ITEM sem external_id do mesmo jeito) é o
       // mesmo desconto do 2c-7, com o custo de 90 dias.
       const extrasIds = listados90
-        .filter((g) => g.cost > 0 && (g.tipo !== 'ITEM' || !g.external_id) && !alvo.has(g.ad_group_id))
+        .filter((g) => g.cost > 0 && (g.tipo !== 'ITEM' || !g.external_id) && !alvo.has(g.ad_group_id)
+          && !descontados.has(g.ad_group_id)) // já contado acima; sem isso descontaria 2×
         .map((g) => g.ad_group_id);
       if (extrasIds.length) {
         const vinculosExtras = await deps.contarVinculos(extrasIds);

@@ -588,4 +588,55 @@ describe('sincronizarAdsOrg', () => {
       .toEqual({ resultado: 'ok' });
     expect(chamadas90d()).toBe(1); // só a mensagem que conclui
   });
+
+  // Correção da re-revisão, item 1: o estouro de orçamento na busca de 90 dias não tinha teto de
+  // adiamento (só o 429 tinha) — sem isso a cadeia nunca fecharia se o orçamento estourasse sempre.
+  it('Ruling 2c-9 — orçamento sempre estourado na busca de 90 dias também tem teto: a cadeia fecha em erro depois de 5 tentativas, nunca em ok', async () => {
+    const d = fake();
+    d.buscarGrupos.mockImplementation(async () => { d.relogio.t += 2_000; return busca([]); });
+    let msg: { org_id: string; primeira: boolean; rodada?: string; cursor?: string | null; tentativa?: number } =
+      { org_id: ORG, primeira: false, rodada: RODADA, cursor: null, tentativa: 0 };
+    for (let i = 1; i <= 5; i++) {
+      expect(await sincronizarAdsOrg(d, msg, { limiteMs: 1_000, lote: 20, concorrencia: 6 })).toEqual({ resultado: 'continua' });
+      const ultima = d.continuar.mock.calls.at(-1)?.[0] as typeof msg;
+      expect(ultima).toMatchObject({ cursor: null, tentativa: i, primeira: false });
+      msg = ultima;
+    }
+    expect(await sincronizarAdsOrg(d, msg, { limiteMs: 1_000, lote: 20, concorrencia: 6 })).toEqual({ resultado: 'erro' });
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, null, null);
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('90 dias'),
+      { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
+    expect(d.concluir.mock.calls.some((c) => c[1] === 'ok')).toBe(false);
+  });
+
+  // Correção da re-revisão, item 2: um id já em `descontados` não pode ser reconferido pelos "extras"
+  // (grupo com gasto só em 90 dias, não relido) — senão o mesmo grupo desconta duas vezes.
+  it('Ruling 2c-9 — grupo em descontados não é descontado de novo pelos "extras" (desconto em dobro)', async () => {
+    const d = fake({
+      buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }) =>
+        (j.desde === JANELA_90.desde ? busca([grupo(12, 'FAMILY', 30), grupo(99, 'FAMILY', 50)]) : busca([]))),
+      contarVinculos: vi.fn(async (ids: number[]) => new Map(ids.map((id) => [id, id === 99 ? 2 : 0]))),
+    });
+    await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 0, descontados: [12] });
+    expect(d.contarVinculos).toHaveBeenCalledWith([99]); // 12 já está em `descontados`; não é reconferido nos extras
+    // Σ (30+50) − 30 (12, já contado em `descontados`) = 50. Sem o filtro, 12 desconta de novo: 80 − 60 = 20.
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'ok', null,
+      expect.objectContaining({ custoResumo: 99, custoListado: 50 }));
+  });
+
+  // Correção da re-revisão, item 2 (piso 0): única entrada alcançável é a mesma página duplicada na busca
+  // de 90 dias — daí `Σ` (soma bruta, sem dedup) e o mapa por id (que fica só com a última página) divergem.
+  it('Ruling 2c-9 — página duplicada na busca de 90 dias (mesmo ad_group_id em duas páginas): custoListado nunca fica negativo (piso 0)', async () => {
+    const d = fake({
+      buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }, offset: number) => {
+        if (j.desde !== JANELA_90.desde) return busca([]);
+        return offset === 0 ? busca([grupo(12, 'FAMILY', 10)], 2) : busca([grupo(12, 'FAMILY', 40)], 2);
+      }),
+      contarVinculos: vi.fn(async (ids: number[]) => new Map(ids.map((id) => [id, 0]))),
+    });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    // Σ (10+40, sem dedup) − 80 (12 descontado 2×, uma por página) = −30 sem o piso; com o piso, 0.
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'ok', null,
+      expect.objectContaining({ custoResumo: 99, custoListado: 0 }));
+  });
 });
