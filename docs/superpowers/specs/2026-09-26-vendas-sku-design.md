@@ -130,11 +130,53 @@ pergunta, lucro líquido de devoluções como métrica nova.
 
 ## Fatia 2b — coleta diária (visitas, conversão, preço)
 
-- Worker diário (QStash, `verify_jwt=false`, idempotente por `(org, item, dia)`), só leitura no ML.
-- Visitas: `items/{id}/visits/time_window`, carga inicial de até 150 dias (cobre desde jun/2026). O ML
-  consolida em até 48h, então o dia corrente fica pendente.
-- Preço diário: multiget do próprio anúncio, 20 por chamada.
-- No dossiê: visitas/dia, **conversão** (unidades ÷ visitas) e preço diário sobre a linha do tempo.
+> Revisada pelo GPT-6 Astra em 2026-09-27 ("sim com ajustes"). Decisões abaixo seguem as recomendações da revisão.
+
+**Unidade da coleta:** `org + MLB + dia da fonte`. A associação MLB → SKU fica separada, com vigência
+declarada. Nada é rateado entre cores.
+
+**Métrica: "unidades por visita"** (Σ unidades ÷ Σ visitas, nos mesmos MLBs e dias cobertos; nunca média de
+taxas; pode passar de 100%). No dossiê do SKU só aparece quando o MLB atende **exclusivamente** aquele código
+no período; anúncio compartilhado mostra "visitas do anúncio compartilhado" e a métrica do anúncio inteiro,
+rotulada. Vínculo incerto → indisponível. Vendas dentro de Kit Virtual ficam fora do numerador.
+
+**Inventário:** anúncios do PubliAI (vínculos atuais, filhos UP pelo MLB técnico, oferta própria de catálogo,
+anúncio antigo do PxV) **mais** MLBs observados nas vendas da org (anúncios externos), com titularidade pela
+conexão. Paginado. Anúncio encerrado há mais de 30 dias sai da coleta.
+
+**Calendário:** um spike lê a API real de visitas (só GET) e registra os limites do dia (UTC ou BRT) e se
+`ending` é exclusivo. Se o dia for UTC, o tráfego vira **painel próprio com o calendário declarado**,
+nunca sobreposto às semanas BRT do faturamento como se fossem os mesmos intervalos.
+
+**Frescor:** recoleta de uma janela móvel de 7 dias; um dia só é "estabilizado" quando encerrado há 48 h e
+consultado depois disso. Estados distintos: zero retornado, pendente, falha, ausente. Lacuna nunca vira zero;
+conversão nunca usa denominador parcial. A conversão é calculada na leitura (não congelada pelo worker).
+Cobertura calculada (a partir de quando há série, por MLB).
+
+**Preço:** "preço de oferta observado às HH:mm" via `GET /items/{id}/sale_price?context=channel_marketplace`
+(moeda, instante, origem; preço regular separado quando vier), só daqui para frente, uma observação por dia.
+Separado do "preço vendido" ponderado da 2a. SKU com várias ofertas mostra a faixa. Retentativa não preenche o
+preço de um dia que já passou.
+
+**Worker:** descoberta por org → carga inicial (até 150 dias) → coleta incremental diária, em lotes pequenos
+(20 MLBs) com cursor persistido, orçamento de 90 s por invocação, reserva atômica e proteção contra rodada
+antiga (padrão de `sincronizar-promocoes`). 429/5xx recuperáveis com `Retry-After`; itens com falha
+reprocessados; falha fica visível (nunca 200 silencioso — ADR-0171). Token por
+`getValidAccessTokenConexao` (lock Redis + renovador proativo). QStash com assinatura validada
+(`verify_jwt=false`). Cron fora da virada da hora. Só leitura no ML.
+
+**Persistência:** tabelas org-scoped com RLS (`select` por `current_org_id()`, sem escrita de usuário,
+`revoke` de anon), chave única `(org_id, ml_item_id, dia)`, frescor de visitas e de preço independentes,
+upsert que aceita revisão de visitas mas não deixa rodada antiga sobrescrever a nova. Sem JSON bruto por
+ponto. Retenção: 13 meses de detalhe diário.
+
+**No dossiê:** painel alternável "Tráfego e oferta" (visitas/dia, unidades por visita, preço observado), sem
+empilhar mais curvas no gráfico de vendas; busca só os MLBs e o intervalo necessários; falha na coleta não
+derruba o dossiê financeiro.
+
+**Fora da 2b:** conversão por cor em anúncio compartilhado, rateio de visitas, deduplicação de pessoas entre
+anúncios, preço histórico reconstruído, cupom/atacado/comprador, varredura diária da conta inteira, Ads e
+posição (2c).
 
 ## Fatia 2c — Ads e posição (após spikes)
 
