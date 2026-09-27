@@ -39,10 +39,10 @@ export function CampanhasDossie({ campanhas }: { campanhas: DossieSku['campanhas
           description="Quando um anúncio for convidado ou entrar numa campanha do Mercado Livre, a situação aparece aqui depois da sincronização." />
       ) : (
         <ul className="flex-1 divide-y rounded-lg border bg-card shadow-sm">
-          {lista.map((c) => {
+          {lista.map((c, i) => {
             const it = item(c.statusItem);
             return (
-              <li key={`${c.mlb}:${c.nome}:${c.vigencia.inicio}`} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+              <li key={`${c.mlb}:${i}`} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
                 <div className="min-w-0 space-y-1">
                   <p className="flex flex-wrap items-center gap-x-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                     {c.tipo ? rotuloTipo(c.tipo) : 'Campanha'}

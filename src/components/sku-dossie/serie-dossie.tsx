@@ -181,7 +181,7 @@ export function SerieDossie({ serie, perguntas, eventos, codigos, familia, temKi
                   // Rótulo direto no último preço: sem ele o preço seria lido contra o eixo R$ do lucro.
                   label={({ x, y, index, value }) => (index === ivPreco && value != null ? (
                     <text x={Number(x) + (ivPreco > n / 2 ? -6 : 6)} y={Number(y) - 7} textAnchor={ivPreco > n / 2 ? 'end' : 'start'}
-                      fontSize={10} fill="var(--muted-foreground)" className="tabular-nums">{fmtBRL(Number(value))}</text>
+                      fontSize={10} fill="var(--muted-foreground)" stroke="var(--card)" strokeWidth={3} paintOrder="stroke" className="tabular-nums">{fmtBRL(Number(value))}</text>
                   ) : <g />)}>
                   <ErrorBar dataKey="bigode" direction="y" width={5} stroke="var(--muted-foreground)" strokeWidth={1} />
                 </Line>
