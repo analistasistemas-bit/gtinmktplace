@@ -14,7 +14,7 @@ import { fmtBRL, fmtBRLSinal, fmtInt, fmtMarkup } from '@/lib/formato';
 import { rotuloAnterior, type Periodo } from '@/lib/metricas';
 import { normalizarParaBusca } from '@/lib/texto';
 import { useVendasSku } from '@/hooks/useVendasSku';
-import { RankingSku, type ChaveOrdem } from '@/components/faturamento/ranking-sku';
+import { LinkDossie, RankingSku, type ChaveOrdem } from '@/components/faturamento/ranking-sku';
 import { SEM_CODIGO, agruparPorFamilia, curvaAbc, deltaPp, deltaValor, type Delta, type LinhaSku } from '@/lib/vendas-sku';
 
 // Idioma do app para "sem valor" (o mesmo de fmtMarkup e da aba Vendas).
@@ -206,9 +206,30 @@ export function AbaVendasSku() {
           {dados.insights.length > 0 && (
             <Painel icone={Lightbulb} titulo="Leituras do período">
               <ul className="space-y-1.5 text-sm">
-                {dados.insights.map((t) => (
-                  <li key={t} className="flex gap-2">
-                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/60" aria-hidden />{t}
+                {dados.insights.map((ins) => (
+                  <li key={ins.texto} className="flex gap-2">
+                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/60" aria-hidden />
+                    {!ins.skus?.length ? ins.texto : (
+                      <details className="group min-w-0 flex-1">
+                        <summary className="cursor-pointer list-none rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                          {ins.texto}{' '}
+                          <span className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground">
+                            <span className="group-open:hidden">ver quais</span><span className="hidden group-open:inline">ocultar</span>
+                            <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" aria-hidden />
+                          </span>
+                        </summary>
+                        <ul className="mt-1.5 max-h-48 space-y-0.5 overflow-y-auto pr-1 text-xs">
+                          {ins.skus.map((s) => (
+                            <li key={s.codigo} className="flex items-baseline gap-2">
+                              <LinkDossie to={`/faturamento/sku/${encodeURIComponent(s.codigo)}`} className="min-w-0 truncate">
+                                <span title={s.nome}>{s.nome}</span>
+                              </LinkDossie>
+                              <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{s.detalhe}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
                   </li>
                 ))}
               </ul>

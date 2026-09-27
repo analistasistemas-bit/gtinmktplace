@@ -20,7 +20,7 @@ const dados: VendasSku = {
   kpis: { bruto: 400, lucro: 45, markup: 0.6, margemSVenda: 0.3, unidades: 8, skusComVenda: 4, skusVendaUnica: 0, concentracaoTop5: 1, pctBrutoCustoReal: 0.5, prejuizo: 0 },
   kpisAnterior: kz,
   tendencias: new Map([['A', 'em_alta']]), coberturas: new Map(), alertas: new Map([['B', ['sem_custo']]]),
-  variacoes: [], insights: ['1 SKU faz metade do lucro do período.'], parados: 0, devolucoesNaoAtribuidas: 0,
+  variacoes: [], insights: [{ texto: '1 SKU faz metade do lucro do período.', skus: [{ codigo: 'A', nome: 'Família P · Preto', detalhe: 'R$ 10,00' }] }], parados: 0, devolucoesNaoAtribuidas: 0,
   historicoDesde: '2026-06-02T12:00:00Z',
 };
 vi.mock('@/hooks/useVendasSku', () => ({ useVendasSku: () => ({ dados, isLoading: false, isFetching: false, refetch: vi.fn() }) }));
@@ -37,6 +37,12 @@ describe('AbaVendasSku', () => {
     expect(screen.getAllByText('Markup').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Margem s/ venda').length).toBeGreaterThan(0);
     expect(screen.getByText(/Histórico desde 02\/06\/2026/)).toBeInTheDocument();
+  });
+
+  it('leitura do período lista de quais SKUs fala, com link para o dossiê', () => {
+    renderAba();
+    expect(screen.getByText('ver quais')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Família P · Preto', hidden: true })).toHaveAttribute('href', '/faturamento/sku/A');
   });
 
   it('ordena por lucro e troca a ordem ao clicar em Unidades', () => {

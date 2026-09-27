@@ -3,7 +3,7 @@ import { agruparPorPedido, calcularKpisPedidos } from '@/lib/pedidos-faturamento
 import {
   agregarPorSku, SEM_CODIGO,
   classificarTendencia, coberturaDias, alertasSku, unidadesPorCodigo, metricas, somarAcumuladores,
-  calcularKpisSku, deltaValor, deltaPp, curvaAbc, explicarVariacao, gerarInsights, agruparPorFamilia, type LinhaSku,
+  calcularKpisSku, deltaValor, deltaPp, curvaAbc, explicarVariacao, gerarInsights, agruparPorFamilia, nomeSku, type LinhaSku,
   janelaEstendida, montarVendasSku,
 } from '@/lib/vendas-sku';
 import type { Venda, VendaItem } from '@/lib/faturamento';
@@ -221,12 +221,43 @@ describe('explicarVariacao', () => {
   });
 });
 
+describe('nomeSku', () => {
+  it('variação que só tem a cor ganha o nome da família na frente', () => {
+    expect(nomeSku({ codigo: '1', titulo: 'Preto', nomeFamilia: 'Fita de Cetim 10mm' })).toBe('Fita de Cetim 10mm · Preto');
+    expect(nomeSku({ codigo: '1', titulo: 'LAPIS COMUM C/72', nomeFamilia: 'Lápis Comum' })).toBe('LAPIS COMUM C/72');
+    expect(nomeSku({ codigo: '1', titulo: 'Fita', nomeFamilia: null })).toBe('Fita');
+    expect(nomeSku({ codigo: '1', titulo: null, nomeFamilia: 'Fita' })).toBe('Fita');
+    expect(nomeSku({ codigo: '1', titulo: null, nomeFamilia: null })).toBe('1');
+  });
+  it('explicarVariacao usa o nome com a família', () => {
+    const v = explicarVariacao([linha('a', 100, 100, { titulo: 'Verde Musgo', nomeFamilia: 'Tecido Oxford' })], []);
+    expect(v[0].titulo).toBe('Tecido Oxford · Verde Musgo');
+  });
+});
+
 describe('gerarInsights', () => {
+  const vazio = { variacoes: [], coberturaBaixa: [], parados: [] };
   it('no máximo 3, e só com evidência', () => {
-    expect(gerarInsights({ linhas: [linha('a', 10)], variacoes: [], coberturaBaixa: 0, parados: 0 })).toEqual([]);
-    const ins = gerarInsights({ linhas: [], variacoes: [{ codigo: 'a', titulo: 'Fita', delta: -50, situacao: 'mudou' }], coberturaBaixa: 2, parados: 3 });
+    expect(gerarInsights({ ...vazio, linhas: [linha('a', 10)] })).toEqual([]);
+    const it1 = { codigo: 'x', nome: 'X', detalhe: '' };
+    const ins = gerarInsights({ linhas: [], variacoes: [{ codigo: 'a', titulo: 'Fita', delta: -50, situacao: 'mudou' }],
+      coberturaBaixa: [it1, it1], parados: [it1, it1, it1] });
     expect(ins.length).toBeLessThanOrEqual(3);
-    expect(ins[0]).toContain('Fita');
+    expect(ins[0].texto).toContain('Fita');
+  });
+  it('cada leitura diz de quais SKUs fala', () => {
+    const ls = [linha('a', 100, 100, { titulo: 'Preto', nomeFamilia: 'Fita' }), ...['b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'].map((c) => linha(c, 1))];
+    const cob = [{ codigo: 'b', nome: 'B', detalhe: '3 dias' }];
+    const par = [{ codigo: 'z', nome: 'Z', detalhe: '9 un. em estoque' }];
+    const ins = gerarInsights({ linhas: ls, variacoes: [], coberturaBaixa: cob, parados: par });
+    expect(ins.map((i) => i.texto)).toEqual([
+      '1 SKU faz metade do lucro do período.',
+      '1 SKU tem estoque para menos de 15 dias.',
+      '1 SKU parou de vender há mais de 30 dias.',
+    ]);
+    expect(ins[0].skus).toEqual([{ codigo: 'a', nome: 'Fita · Preto', detalhe: 'R$\u00a0100,00' }]);
+    expect(ins[1].skus).toBe(cob);
+    expect(ins[2].skus).toBe(par);
   });
 });
 
@@ -325,8 +356,8 @@ describe('SEM_CODIGO fora dos rankings', () => {
 
   it('insight "metade do lucro" não conta a linha sem código', () => {
     const ls = ['a', 'b', 'c', 'd', 'e'].map((c) => linha(c, 10));
-    const ins = gerarInsights({ linhas: [linha(SEM_CODIGO, 1000), ...ls], variacoes: [], coberturaBaixa: 0, parados: 0 });
-    expect(ins.some((s) => s.includes('metade do lucro'))).toBe(false); // 5 × 10: 3 SKUs fazem metade, acima de 20%
+    const ins = gerarInsights({ linhas: [linha(SEM_CODIGO, 1000), ...ls], variacoes: [], coberturaBaixa: [], parados: [] });
+    expect(ins.some((s) => s.texto.includes('metade do lucro'))).toBe(false); // 5 × 10: 3 SKUs fazem metade, acima de 20%
   });
 
   it('explicarVariacao pula a linha sem código', () => {

@@ -29,7 +29,7 @@ const TITULO = 'line-clamp-2 max-w-40 whitespace-normal font-medium leading-snug
 /** Nome que abre o dossiê. Para o clique aqui: a linha continua alternando a conta pelo resto dela. */
 const LINK_DOSSIE = 'rounded-sm underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
-function LinkDossie({ to, className, children, ...rest }: { to: string; className?: string; children: ReactNode; 'aria-label'?: string }) {
+export function LinkDossie({ to, className, children, ...rest }: { to: string; className?: string; children: ReactNode; 'aria-label'?: string }) {
   const location = useLocation();
   return (
     <Link to={to} state={{ de: location.pathname + location.search }} onClick={(e) => e.stopPropagation()}
