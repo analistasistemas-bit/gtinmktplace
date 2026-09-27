@@ -1,4 +1,4 @@
-# Fan-out por org em lotes retomáveis (incidente CPU 546) — Implementation Plan (v5)
+# Fan-out por org em lotes retomáveis (incidente CPU 546) — Implementation Plan (v6)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -8,7 +8,7 @@
 
 **Tech Stack:** Supabase Edge Functions (Deno), Postgres (plpgsql `security definer`), QStash (`_shared/queue.ts`), vitest.
 
-**Spec:** `docs/decisions/0173-fanout-por-org-workers-agendados-cpu.md` (ADR-0173). Revisões do Codex `gpt-6-astra`: diagnóstico APROVADO COM AJUSTES; plano v1–v4 REPROVADOS — esta v5 responde ao único bloqueio da v4 (contrato das pendências). A divergência das liberações (Task 6) foi aceita pelo revisor na 3ª rodada.
+**Spec:** `docs/decisions/0173-fanout-por-org-workers-agendados-cpu.md` (ADR-0173). Revisões do Codex `gpt-6-astra`: diagnóstico APROVADO COM AJUSTES; plano v1–v5 REPROVADOS — esta v6 aplica a correção prescrita na 5ª revisão (falha nova em pendência descartada atualiza o carimbo). A divergência das liberações (Task 6) foi aceita pelo revisor na 3ª rodada.
 
 ## Global Constraints
 
@@ -239,7 +239,7 @@ $$;
 -- apaga falha registrada ANTES disso — uma falha de outra execução registrada durante/depois (ex.: um
 -- upsert concorrente que apagou itens e falhou ao reinserir, io.ts:380) sobrevive e é retomada.
 -- Falha entra com 1 ou soma 1 (carimbo por chamada: clock_timestamp()); na 5ª recebe `descartado_em`
--- e continua na tabela. Devolve quantos foram descartados NESTA chamada (RETURNING, não relógio).
+-- e continua na tabela. Devolve quantos foram descartados NESTA chamada (RETURNING do contador).
 create function public.registrar_pendencias_pedido(p_org uuid, p_ok text[], p_inicio timestamptz,
                                                    p_falhas text[], p_erro text)
 returns table (descartados integer)
@@ -253,11 +253,14 @@ begin
     insert into public.worker_pendencias as p (org_id, order_id, ultimo_erro, criado_em, atualizado_em)
     select p_org, x, p_erro, clock_timestamp(), clock_timestamp() from unnest(coalesce(p_falhas, '{}')) as x
     on conflict (org_id, order_id) do update
+      -- SEMPRE atualiza carimbo/erro/contador, inclusive em pendência já descartada: senão um sucesso
+      -- atrasado (p_inicio anterior a esta falha) acharia o carimbo velho e apagaria a linha. O descarte,
+      -- uma vez marcado, permanece (coalesce).
       set tentativas = p.tentativas + 1, ultimo_erro = excluded.ultimo_erro, atualizado_em = clock_timestamp(),
-          descartado_em = case when p.tentativas + 1 >= 5 then clock_timestamp() else null end
-      where p.descartado_em is null
-    returning (p.descartado_em is not null) as descartou)
-  select count(*) filter (where descartou)::int into n from u;
+          descartado_em = coalesce(p.descartado_em, case when p.tentativas + 1 >= 5 then clock_timestamp() end)
+    returning p.tentativas as tentativas_depois)
+  -- Descartado NESTA chamada ⇔ o contador acabou de chegar a 5 (ele nunca para de subir).
+  select count(*) filter (where tentativas_depois = 5)::int into n from u;
   return query select n;
 end;
 $$;
@@ -298,8 +301,8 @@ Antes de escrever, conferir em `supabase/migrations/` (`20260721094323_notificac
   5. `concluir(... 'parcial' ...)` grava `estado='parcial'`, `erro`, `ultimo_ok_em`.
   6. **Notificação:** `concluir(... p_notificar => true)` mantém a posse; `abrir` mesmo ciclo → `ocupada`; `marcar_notificado(lease)` → `true` e solta; `abrir` → `concluida`. Variante: `concluir(... true)`, vencer a posse, `abrir` com ciclo **novo** → `notificar_anterior` com ciclo/acumulado antigos; após `marcar_notificado`, `abrir` ciclo novo → `executar`.
   7. `concluir_execucao` com lease vencido → `false`. `liberar_execucao` zera a posse e grava `erro`.
-  8. `registrar_pendencias_pedido(org, '{}', now(), '{7}', 'x')` → `tentativas=1`; mais 3 falhas → 4, `descartado_em` null; 5ª → `tentativas=5`, `descartado_em` preenchido, devolve `1`; 6ª → nada muda e devolve `0` (inclusive **na mesma transação** da 5ª); sucesso com `p_inicio` posterior à última falha → linha apagada.
-  8b. **Sucesso atrasado não apaga falha nova:** `t0 = clock_timestamp()`; registrar falha de `'9'` (carimbo > t0); depois `registrar_pendencias_pedido(org, '{9}', t0, '{}', null)` → a linha de `'9'` **continua**. Com `p_inicio` posterior à falha → apagada.
+  8. `registrar_pendencias_pedido(org, '{}', now(), '{7}', 'x')` → `tentativas=1`; mais 3 falhas → 4, `descartado_em` null; 5ª → `tentativas=5`, `descartado_em` preenchido, devolve `1`; 6ª → `tentativas=6`, `atualizado_em` e `ultimo_erro` atualizados, `descartado_em` **inalterado**, devolve `0` (inclusive **na mesma transação** da 5ª); sucesso com `p_inicio` posterior à última falha → linha apagada.
+  8b. **Sucesso atrasado não apaga falha nova:** `t0 = clock_timestamp()`; registrar falha de `'9'` (carimbo > t0); depois `registrar_pendencias_pedido(org, '{9}', t0, '{}', null)` → a linha de `'9'` **continua**. Com `p_inicio` posterior à falha → apagada. **Variante descartada:** pendência `'9'` já com `descartado_em`; `t0 = clock_timestamp()`; nova falha de `'9'` → `atualizado_em > t0`; `registrar_pendencias_pedido(org, '{9}', t0, '{}', null)` → a linha **continua** (descartada, com o erro novo).
   9. `registrar_falha_coleta_pulse` 2x seguidas → `coleta_falhas_seguidas = 1`; recuando `coleta_tentativa_em` 2 h → 2.
   10. Dois inserts em `notificacoes` com a mesma `(user_id, chave)` → o 2º viola o índice; com `chave` null → ambos entram.
   11. Grants: `authenticated` sem `execute` nas 7 funções e sem `insert/update/delete` nas 2 tabelas; `service_role` com `execute`.
