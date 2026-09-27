@@ -42,9 +42,11 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
    nunca lista parcial) e o lote é escolhido localmente por `id` > cursor — o `sort` do ML é por
    `date_closed` e o filtro por `date_created`, então offset entre chamadas não é estável. A leitura confere
    a cobertura (ids únicos = `paging.total`, total estável entre a 1ª e a última página) e lança se houver
-   buraco. Pedido que falha vira **pendência da org** (`worker_pendencias`), retomada por qualquer job que
-   trata pedido (backfill diário, reconciliar horário), inclusive as deixadas pela recuperação histórica;
-   na 5ª falha é marcada descartada, sem sumir. Rodada com pendência conclui `parcial`, não `ok`.
+   buraco. Pedido que falha vira **pendência da org** (`worker_pendencias`), inclusive as deixadas pela
+   recuperação histórica. O backfill só registra; o reconciliar horário é o único que retoma e apaga
+   (escopo completo, com `tratarPedidoCancelado`, serializado por org pela posse), e um sucesso só apaga
+   falha registrada antes do início da própria tentativa. Na 5ª falha a pendência é marcada descartada,
+   sem sumir. Rodada com pendência conclui `parcial`, não `ok`.
 5. **Etapas caras separadas.** Radar do Pulse, perguntas, claims e liberações do Mercado Pago são
    etapas próprias, cada uma em mensagem separada, com CPU medida isoladamente. Nos lotes de vendas, o
    líquido do MP vem pelos pagamentos do próprio pedido (`carregarLiquidoMPDoPedido`, já usado por
