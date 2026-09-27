@@ -131,7 +131,7 @@ navegador reagrupa o pedido inteiro — e `vendas_sku_mlbs` devolve o vínculo d
 compartilhado/não resolvido), para a UI nunca inventar de qual anúncio uma venda saiu.
 
 **Validação real (T10):** paridade confirmada (conta VALIDATION/org DSA, SKU 00000029, período
-Personalizado 01–31/08/2026): Faturamento R$ 9.683,21 e Lucro R$ 1.173,72 idênticos entre o ranking da
+Personalizado 01–31/08/2026): Faturamento e Lucro idênticos entre o ranking da
 Vendas SKU e os KPIs do Dossiê — os ids do dossiê foram calculados por SQL read-only com a mesma lógica
 da RPC (`vendas_sku_dossie_ids` ainda não existe em produção) e injetados via mock de rede. Medição de
 carga contra produção (SKU de maior volume da Avil, código `02989271`, 648 itens de venda → 708 ids após

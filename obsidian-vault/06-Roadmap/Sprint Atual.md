@@ -34,8 +34,8 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > vendas por UF, mix da família e situação nas campanhas. RPCs novas `vendas_sku_dossie_ids`
 > (ids do pedido + pack/envio inteiros, para o rateio de frete bater com a aba Vendas) e
 > `vendas_sku_mlbs` (vínculo exato/compartilhado/não resolvido do MLB). **Paridade real confirmada**
-> (conta VALIDATION/DSA, SKU 00000029, Personalizado 01–31/08): Faturamento R$ 9.683,21 e Lucro
-> R$ 1.173,72 idênticos entre ranking e Dossiê. **Carga** (maior SKU da Avil, 648 itens → 708 ids
+> (conta VALIDATION/DSA, SKU 00000029, Personalizado 01–31/08): Faturamento e Lucro
+> idênticos entre ranking e Dossiê. **Carga** (maior SKU da Avil, 648 itens → 708 ids
 > com pack): `EXPLAIN` mostra que o `OR` de 3 `IN` não usa os índices parciais novos — melhoria
 > futura (`UNION`), não bloqueante hoje (~13 ms). Falta `db push`, revisão final e merge.
 >

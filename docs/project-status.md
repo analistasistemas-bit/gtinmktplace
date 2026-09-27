@@ -556,8 +556,7 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   fornecedor, origem, 1ª/última venda) vem da RPC nova `vendas_sku_catalogo()` (migration
   `20260927024030`, aplicada só localmente). Testes: 576 arquivos / 5993 testes verdes,
   `pnpm preflight` verde. Validação com dados reais da Avil (playwright, sessão isolada, período
-  fechado 01–25/09/2026): Faturamento e Unidades batem 1:1 entre a aba Vendas e a Vendas SKU (R$
-  19.748,74 / 333 un.). Screenshots 1440/390, claro/escuro, e o estado de erro em
+  fechado 01–25/09/2026): Faturamento e Unidades batem 1:1 entre a aba Vendas e a Vendas SKU (idênticos centavo a centavo). Screenshots 1440/390, claro/escuro, e o estado de erro em
   `.superpowers/sdd/2026-09-26-vendas-sku-fatia-1/`. **Faltam:** `supabase db push` da migration,
   revisão final do diff e merge — não executados nesta tarefa por decisão do controller (ver
   `progress.md` da Fatia 1, Rulings 1-2). Ver [ADR-0172](decisions/0172-vendas-sku-analise-por-variacao.md).
@@ -570,8 +569,7 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   (vínculo do MLB: exato/compartilhado/não resolvido) — e três índices em `ml_vendas`/`ml_vendas_itens`,
   migration `20260927045118`, **aplicada só localmente** (sem `db push`, Ruling 2a-1). **Paridade
   real (T10, conta VALIDATION/DSA, SKU 00000029, período Personalizado 01–31/08/2026, ids do dossiê
-  calculados por SQL read-only com a mesma lógica da RPC):** Faturamento R$ 9.683,21 e Lucro R$
-  1.173,72 idênticos entre o ranking da Vendas SKU e os KPIs do Dossiê. **Carga (T10, leitura
+  calculados por SQL read-only com a mesma lógica da RPC):** Faturamento e Lucro idênticos entre o ranking da Vendas SKU e os KPIs do Dossiê. **Carga (T10, leitura
   read-only em produção, SKU de maior volume da Avil — código `02989271`, 648 itens de venda):** a
   expansão de pack leva a 708 vendas; payload estimado do `buscarVendasPorIds` ≈ 973 KB (~1,37 KB
   linha). `EXPLAIN` do `vendas_sku_dossie_ids` confirma o minor já registrado no `progress.md` da

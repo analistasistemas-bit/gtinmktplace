@@ -50,7 +50,7 @@ mergeada nem em produção**. Ver [ADR-0172](decisions/0172-vendas-sku-analise-p
   `Faturamento.tsx`.
 - [x] Suíte completa: 576 arquivos / 5993 testes verdes; `pnpm preflight` verde.
 - [x] Paridade real: Faturamento e Unidades da aba Vendas e da Vendas SKU batem 1:1 no período
-  01–25/09/2026 (R$ 19.748,74 / 333 un.), validado com dado real da Avil via `playwright-cli`.
+  01–25/09/2026 (faturamento e unidades idênticos centavo a centavo), validado com dado real da Avil via `playwright-cli`.
 - [x] Validação visual 1440/390, claro/escuro, e estado de erro (catálogo indisponível) —
   screenshots em `.superpowers/sdd/2026-09-26-vendas-sku-fatia-1/`.
 - [ ] `supabase db push` da migration em produção — **não executado** (fora do escopo desta tarefa,
