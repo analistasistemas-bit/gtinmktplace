@@ -106,6 +106,21 @@
 | **Semáforo da promoção** | O `calcularSemaforo` de sempre (🟢 ≥ piso, 🟡 abaixo do mínimo, 🔴 < custo) aplicado ao líquido projetado. O anúncio mostra a **pior cor** (mesma regra família-level do ADR-0065); abrir o anúncio mostra cada cor. ⚪ = **sem líquido**: na maioria das vezes anúncio ou cor **sem custo no PubliAI** (publicado fora do app), mas também tarifa/frete que o ML não informou — o motivo aparece na cor. |
 | **Participando no prejuízo** | Anúncio **participando** com semáforo 🔴 (líquido projetado < custo). Dispara alerta. 🟡 não dispara. |
 
+## Vendas SKU (análise por SKU)
+
+| Termo | Definição |
+|---|---|
+| **Vendas SKU** | Análise de vendas cuja unidade é a **variação** (o `codigo`), não o anúncio nem o MLB — o código atravessa republicação (MLB novo), canal e custo. Pode ser vista **agrupada por família**, que soma as variações sem deixar de mostrá-las. Decidido em grilling 2026-09-26. |
+| **História do SKU** | Tudo o que aconteceu com uma variação desde a **primeira venda registrada no PubliAI** — não a primeira venda real no marketplace. Vendas anteriores à entrada da organização no PubliAI não são importadas; a tela diz a partir de quando conta. Grilling 2026-09-26. |
+| **Lucro (do SKU)** | Líquido − custo congelado da venda (ADR-0109), somado no período. É o número que ordena o ranking de Vendas SKU e a Curva ABC por padrão. Venda sem custo congelado mostra "sem custo" e fica **fora** do ranking por lucro — nunca entra com lucro = líquido. Grilling 2026-09-26. |
+| **Margem s/ venda** | `lucro ÷ preço de venda` — a saúde do preço. Sempre escrita com o denominador no nome; "margem" sozinha ou `%` sem denominador não aparecem na tela (ADR-0150). Não confundir com **Markup**. |
+| **Markup** | `lucro ÷ custo` (`calcularMarkup`) — o retorno sobre a compra. Mesmo número de Faturamento, Pulse e Promoções. |
+| **Taxa de devolução (do SKU)** | Unidades devolvidas ÷ unidades vendidas faturáveis do SKU no período. Cancelada e devolvida aparecem em colunas próprias, nunca somadas ao faturamento: Vendas SKU usa exatamente a regra da aba Vendas (`ehFaturavel`; devolução no período do estorno, ADR-0106), e a soma de todos os SKUs de um período **bate** com o total da aba Vendas no mesmo filtro. Grilling 2026-09-26. |
+| **Evento da história** | Fato datado marcado na linha do tempo do SKU: publicação/republicação (MLB novo), entrada de mercadoria com mudança de custo, ruptura (estoque zerou/voltou), mudança de preço praticado (visto nas vendas — só enxerga dia com venda), moderação, devolução aberta e perguntas (contagem semanal, não um marcador por pergunta). **Promoção** entra como evento **aproximado** — o PubliAI guarda o estado atual do item na campanha, não quando entrou ou saiu. Pausa/reativação não é evento enquanto não houver registro. Grilling 2026-09-26. |
+| **Tendência do SKU** | Etiqueta comparando unidades dos últimos 30 dias com os 30 anteriores: **Novo** (1ª venda há < 30 dias), **Em alta** (≥ +20%), **Em queda** (≤ −20%), **Estável** (entre os dois), **Parado** (já vendeu, zero há ≥ 30 dias) e **Baixo giro** (< 5 unidades na janela — não classifica alta/queda, para 2 vs 1 não virar "+100%"). O motivo aparece no tooltip. Grilling 2026-09-26. |
+| **Alerta de risco (do SKU)** | Sinal independente da tendência: **lucro negativo** no período, **cobertura < 15 dias**, **taxa de devolução > 5%** (com ≥ 20 unidades vendidas) e **sem custo**. Limites fixos na v1, recalibrados com dado real. Grilling 2026-09-26. |
+| **Cobertura (de estoque)** | Dias até o estoque acabar no ritmo atual: estoque canônico ÷ média diária de unidades vendidas nos últimos 30 dias. SKU sem venda na janela não tem cobertura (não é "infinito"). Grilling 2026-09-26. |
+
 ## Estados (enums)
 
 | Enum | Valores | Onde |
