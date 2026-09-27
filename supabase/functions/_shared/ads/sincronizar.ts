@@ -18,7 +18,9 @@ export class ParadaAds extends Error {
   constructor(estado: EstadoParada, mensagem: string) { super(mensagem); this.estado = estado; }
 }
 
-export type MsgAds = MsgTrafego;
+/** `falhou` (Ruling 2c-5): carregado em toda continuação depois que um grupo não foi lido nesta rodada,
+ *  para a mensagem final nunca fechar em `ok` mesmo quando o cursor andou numa mensagem sem falha. */
+export type MsgAds = MsgTrafego & { falhou?: boolean };
 export type ResultadoAds = 'ok' | 'continua' | 'obsoleta' | 'erro' | 'sem_acesso';
 export interface GrupoConhecido { ad_group_id: number; tipo: TipoGrupo; external_id: string | null; campaign_id: number | null; status: string }
 /** `itens` null = vínculo não lido nesta rodada (o banco mantém o atual). */
@@ -108,9 +110,14 @@ export async function sincronizarAdsOrg(
     }
     const dona = rodada;
     const inicial = cursor;
+    // Uma vez marcada, a flag viaja em toda `continuar` desta cadeia (inclusive as anteriores a qualquer
+    // falha nesta mensagem, se já veio marcada de uma mensagem anterior): a mensagem final da rodada
+    // sempre sabe que houve grupo não lido, mesmo que o cursor já tenha andado antes disso ser visto.
+    let falhou = msg.falhou === true;
     const continuar = async (c: string | null, atrasoMs?: number) => {
       const tentativa = c === inicial ? (msg.tentativa ?? 0) + 1 : 0;
-      await deps.continuar({ org_id: msg.org_id, rodada: dona, cursor: c, primeira: false, tentativa },
+      await deps.continuar(
+        { org_id: msg.org_id, rodada: dona, cursor: c, primeira: false, tentativa, ...(falhou ? { falhou: true } : {}) },
         atrasoMs != null ? { atrasoMs } : {});
       return { resultado: 'continua' as const };
     };
@@ -177,6 +184,7 @@ export async function sincronizarAdsOrg(
         } else if (noSearch.has(g.ad_group_id)) {
           const achados: string[] = [];
           for (let offset = 0; ;) {
+            if (deps.agora() > fim) { adiarMs ??= 0; return null; }
             const m = await comRetry(deps, fim, () => deps.buscarMembros(g.ad_group_id, janelaMembros, offset));
             if ('adiar' in m) { adiarMs ??= m.adiar; return null; }
             if (classificarResposta(m) === 'nao_encontrado') return 'sumiu';
@@ -201,6 +209,7 @@ export async function sincronizarAdsOrg(
         const preso = cursor === inicial && (msg.tentativa ?? 0) >= LIMITE_ADIAMENTOS;
         if (!preso) return await continuar(cursor, adiarMs);
         naoLidos += lidos.filter((x) => x === null).length;
+        falhou = true;
       }
       const grupos = lidos.filter((x): x is GrupoGravar => x != null && x !== 'sumiu');
       if (grupos.length && !(await deps.gravarLote(dona, new Date(deps.agora()).toISOString(), grupos))) {
@@ -217,8 +226,14 @@ export async function sincronizarAdsOrg(
     console.info('[ads] custo da janela', {
       org_id: msg.org_id, janela, listadoSobreResumo: custoResumo ? custoListado / custoResumo : null,
     });
-    if (naoLidos > 0) {
-      const erro = `${naoLidos} ${naoLidos === 1 ? 'grupo não lido' : 'grupos não lidos'} depois de ${LIMITE_ADIAMENTOS} adiamentos (429/5xx)`;
+    if (falhou) {
+      // Ruling 2c-5: zera o cursor (a próxima "primeira" recomeça do zero — na carga inicial isso
+      // significa reler os 90 dias inteiros, nunca deixar os dias do grupo preso órfãos) e nunca fecha em
+      // `ok`/com cobertura ou custos (o dossiê não pode achar que a rodada leu tudo).
+      if (!(await deps.avancarCursor(dona, cursor, null))) return { resultado: 'obsoleta' };
+      const erro = naoLidos > 0
+        ? `${naoLidos} ${naoLidos === 1 ? 'grupo não lido' : 'grupos não lidos'} depois de ${LIMITE_ADIAMENTOS} adiamentos (429/5xx/tempo)`
+        : 'grupo(s) não lido(s) em mensagem anterior desta rodada (429/5xx/tempo)';
       if (!(await deps.concluir(dona, 'erro', erro, parada({ advertiserId: adv })))) return { resultado: 'obsoleta' };
       return { resultado: 'erro' };
     }

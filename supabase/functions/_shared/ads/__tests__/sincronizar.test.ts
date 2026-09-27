@@ -240,4 +240,75 @@ describe('sincronizarAdsOrg', () => {
     expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'obsoleta' });
     expect(d.buscarAdvertiser).not.toHaveBeenCalled();
   });
+
+  // Ruling 2c-5 (fix round 1): a falha de um grupo não pode se perder entre mensagens da mesma rodada.
+  it('CRÍTICO — lote preso, depois orçamento estourado entre lotes: a continuação carrega falhou, e a rodada nunca fecha em ok (cursor zera no fim)', async () => {
+    const d = fake();
+    d.buscarSerieGrupo.mockImplementation(async (id: number, j: { desde: string; ate: string }) => {
+      d.relogio.t += 40_000;
+      return id === 11 ? http(429, null, 120_000) : serie(j);
+    });
+    const r1 = await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 },
+      { limiteMs: 30_000, lote: 1, concorrencia: 1 });
+    expect(r1).toEqual({ resultado: 'continua' });
+    expect(d.continuar).toHaveBeenCalledWith(
+      { org_id: ORG, rodada: RODADA, cursor: '11', primeira: false, tentativa: 0, falhou: true }, {});
+    expect(d.concluir.mock.calls.some((c) => c[1] === 'ok')).toBe(false);
+
+    const r2 = await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: '11', primeira: false, tentativa: 0, falhou: true });
+    expect(r2).toEqual({ resultado: 'erro' });
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, '12', null); // zera: a próxima "primeira" recomeça do zero
+    expect(d.concluir).toHaveBeenCalledTimes(1);
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.any(String),
+      { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
+    expect(d.concluir.mock.calls.some((c) => c[1] === 'ok')).toBe(false);
+  });
+
+  it('CRÍTICO — carga inicial com falha: cursor zera (a próxima carga recomeça do início, sem perder dias 16–90)', async () => {
+    const d = fake({
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      buscarSerieGrupo: vi.fn(async () => http(429, null, 120_000)),
+    });
+    expect(await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 }))
+      .toEqual({ resultado: 'erro' });
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, '12', null);
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('2 grupos não lidos'),
+      { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
+  });
+
+  // IMPORTANTE: item que começaria depois do fim do orçamento não é lido (nunca abre uma requisição sem orçamento).
+  it('item que começaria depois do fim do orçamento não é lido: adia com atrasoMs 0', async () => {
+    const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'ITEM')])) });
+    d.buscarSerieGrupo.mockImplementation(async (id: number, j: { desde: string; ate: string }) => {
+      if (id === 11) d.relogio.t += 200_000;
+      return serie(j);
+    });
+    expect(await sincronizarAdsOrg(d, primeira, { limiteMs: 90_000, lote: 2, concorrencia: 1 })).toEqual({ resultado: 'continua' });
+    expect(d.buscarSerieGrupo).toHaveBeenCalledTimes(1); // o 2º item nem chega a pedir a série
+    expect(d.continuar).toHaveBeenCalledWith(
+      { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 1 }, { atrasoMs: 0 });
+  });
+
+  // Menor 1: a paginação de /ads também confere o fim do orçamento antes de cada página.
+  it('paginação de /ads confere o fim do orçamento antes de cada página', async () => {
+    const pag1 = Array.from({ length: 100 }, (_, k) => `MLB${3000 + k}`);
+    const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(12, 'FAMILY')])) });
+    d.buscarMembros.mockImplementation(async (_id: number, _j: unknown, offset: number) => {
+      if (offset === 0) d.relogio.t += 100_000;
+      return membros(pag1, 150);
+    });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'continua' });
+    expect(d.buscarMembros).toHaveBeenCalledTimes(1); // a 2ª página não é pedida fora do orçamento
+    expect(d.continuar).toHaveBeenCalledWith(
+      { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 1 }, { atrasoMs: 0 });
+  });
+
+  // Menor 3: a margem de TIMEOUT_ML_MS em comRetry — cabe sem o timeout mas não com ele → adia sem esperar.
+  it('margem do timeout no Retry-After: cabe sem reservar o timeout de uma requisição inteira, mas não com ele → adia sem esperar', async () => {
+    const d = fake({ buscarAdvertiser: vi.fn(async () => http(429, null, 81_000)) });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'continua' });
+    expect(d.esperar).not.toHaveBeenCalled();
+    expect(d.continuar).toHaveBeenCalledWith(
+      { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 1 }, { atrasoMs: 81_000 });
+  });
 });
