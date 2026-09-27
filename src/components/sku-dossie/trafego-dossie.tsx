@@ -101,9 +101,12 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
   const nMlbs = t.porMlb.filter((m) => m.considerado).length;
   const anuncio = t.alcance === 'anuncio';
   // Entrada no último intervalo completo: o corrente quase sempre ainda espera as 48 h.
-  const [foco, setFoco] = useState(n > 1 && serie[n - 1].intervalo.incompleto ? n - 2 : n - 1);
+  // O foco vale para a série em que foi escolhido: série nova (Semana/Mês, período, carga) volta ao inicial.
+  const inicial = n > 1 && serie[n - 1].intervalo.incompleto ? n - 2 : n - 1;
+  const [escolha, setEscolha] = useState<{ serie: PontoTrafego[]; i: number } | null>(null);
+  const setFoco = (i: number) => setEscolha({ serie, i });
   const botoes = useRef<(HTMLButtonElement | null)[]>([]);
-  const focoAtual = Math.min(Math.max(foco, 0), n - 1);
+  const focoAtual = Math.min(Math.max(escolha?.serie === serie ? escolha.i : inicial, 0), n - 1);
 
   const dados = useMemo(() => serie.map((p, i) => ({
     i, rotulo: p.intervalo.rotulo, marca: marcaParcial(p.intervalo), parcial: p.intervalo.incompleto,
@@ -325,7 +328,8 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <h3 id="dossie-trafego" className="text-sm font-medium">
-            {passo === 'semana' ? 'Tráfego semanal' : 'Tráfego mensal'}{t.calendario === 'utc' ? ' (dias em UTC)' : ''}
+            {/* Sem série não há agrupamento a declarar. */}
+            {!temGrafico ? 'Tráfego' : passo === 'semana' ? 'Tráfego semanal' : 'Tráfego mensal'}{t.calendario === 'utc' ? ' (dias em UTC)' : ''}
           </h3>
           {alcance && <p className="text-xs text-muted-foreground">{`Visitas e unidades por visita ${alcance}`}</p>}
         </div>

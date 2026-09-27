@@ -171,6 +171,20 @@ describe('montarTrafego', () => {
     expect(ok.serie[0].estados).toEqual({ ok: 0, pendente: 0, falha: 0, ausente: 7, nao_coletado: 0 });
   });
 
+  it('parcial com 2 MLBs: o sem nenhum dia coletado conta como não coletado, não como sem dado', () => {
+    const mlbs = new Map([['MLB1', ['A']], ['MLB3', ['A']]]);
+    const t = montarTrafego({ ...base, alvo: { tipo: 'sku', codigo: 'A' }, codigos: ['A'], mlbs, vendas: [],
+      fonte: fonte([...dias('MLB1', 14, 27), ...dias('MLB1', 16, 16, 'falha', null).map((v) => ({ ...v, ml_item_id: 'MLB3' }))]) });
+    expect(t.estadoColeta).toBe('parcial');
+    // MLB1: 7 ok; MLB3: falha real no dia 16, e os outros 6 dias sem cobertura dele → não coletado
+    expect(t.serie[0].estados).toEqual({ ok: 7, pendente: 0, falha: 1, ausente: 0, nao_coletado: 6 });
+    expect(t.serie[1].estados).toEqual({ ok: 7, pendente: 0, falha: 0, ausente: 0, nao_coletado: 7 });
+    // MLB3 cobre desde 22: 21 dele é não coletado; depois de 22, lacuna é ausente
+    const u = montarTrafego({ ...base, alvo: { tipo: 'sku', codigo: 'A' }, codigos: ['A'], mlbs, vendas: [],
+      fonte: fonte([...dias('MLB1', 14, 27), ...dias('MLB3', 22, 24), ...dias('MLB3', 26, 27)], [], { estado: 'sincronizando', carga_inicial_concluida_em: null, ultimo_ok_em: null }) });
+    expect(u.serie[1].estados).toEqual({ ok: 12, pendente: 0, falha: 0, ausente: 1, nao_coletado: 1 });
+  });
+
   it('motivo: sync em erro/sem_acesso diz por que a coleta parou, mesmo sem nenhuma linha', () => {
     const mlbs = new Map([['MLB1', ['A']]]);
     const p = { ...base, alvo: { tipo: 'sku', codigo: 'A' } as const, codigos: ['A'], mlbs, vendas: [] };

@@ -277,7 +277,7 @@ const traf = (over: Partial<TrafegoDossie> = {}): TrafegoDossie => ({
   precoAtual: { preco: 49.9, observadoEm: '2026-09-22T02:30:00Z', mlb: 'MLB1' },
   ...over,
 });
-const REG = /^Tráfego (semanal|mensal)/;
+const REG = /^Tráfego/;
 // "48 h" com espaço não-quebrável
 const H48 = 'aguardando 48 h';
 
@@ -371,6 +371,8 @@ describe('SkuDossie: tráfego e oferta', () => {
     expect(within(reg).getByText(/A coleta de tráfego começa após a ativação\./)).toBeInTheDocument();
     expect(reg.textContent).not.toMatch(/runbook|docs\//);
     expect(within(reg).queryByRole('button', { name: 'Semana' })).not.toBeInTheDocument();
+    // sem série, o título não promete "semanal"
+    expect(within(reg).getByRole('heading', { level: 3 })).toHaveTextContent(/^Tráfego$/);
   });
 
   it('coleta interrompida: diz o motivo (sem acesso / falha)', async () => {
@@ -401,6 +403,38 @@ describe('SkuDossie: tráfego e oferta', () => {
     cleanup();
     const r2 = await abrirTrafego(traf({ estadoColeta: 'carregando', serie: [], precoAtual: null, coberturaDesde: null }));
     expect(r2.querySelector('[aria-busy="true"]')).not.toBeNull();
+  });
+
+  it('trocar Semana → Mês reinicia o foco no último intervalo completo da série nova', async () => {
+    const user = userEvent.setup();
+    const IVSET = { inicio: '2026-09-01T03:00:00.000Z', fim: '2026-10-01T03:00:00.000Z', rotulo: 'set/26', incompleto: false, inicioParcial: false };
+    const IVOUT = { inicio: '2026-10-01T03:00:00.000Z', fim: '2026-11-01T03:00:00.000Z', rotulo: 'out/26', incompleto: true, inicioParcial: false };
+    const IV07 = { ...IV14, inicio: '2026-09-07T03:00:00.000Z', fim: '2026-09-14T03:00:00.000Z', rotulo: '07/09' };
+    const semana = comSerie({ trafego: traf({ serie: [pt(IV07), pt(IV14), pt(IV21, { visitas: null, unidadesPorVisita: null, estados: EST({ ok: 4, pendente: 2 }) })] }) });
+    const IVAGO = { ...IVSET, inicio: '2026-08-01T03:00:00.000Z', fim: '2026-09-01T03:00:00.000Z', rotulo: 'ago/26' };
+    // 3 intervalos: o foco antigo (índice 0 = ago/26) não coincide com o último completo (set/26)
+    const mes = comSerie({ trafego: traf({ serie: [pt(IVAGO, { visitas: 250 }), pt(IVSET, { visitas: 300 }), pt(IVOUT, { visitas: null, unidadesPorVisita: null, estados: EST({ ok: 0, pendente: 2 }) })] }) });
+    vi.mocked(useSkuDossie).mockImplementation(((_a: unknown, _p: unknown, passo: string) =>
+      ({ estado: 'ok', dados: passo === 'mes' ? mes : semana, refetch: vi.fn(), refetchTrafego: vi.fn() })) as never);
+    render(
+      <MemoryRouter initialEntries={['/faturamento/sku/00123']}>
+        <QueryClientProvider client={new QueryClient()}>
+          <Routes><Route path="/faturamento/sku/:codigo" element={<SkuDossie />} /></Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await user.click(screen.getByRole('tab', { name: 'Tráfego e oferta' }));
+    const reg = screen.getByRole('region', { name: REG });
+    // foco sai do último completo (14/09) e anda até 07/09
+    within(reg).getByRole('button', { name: /14\/09/ }).focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(within(reg).getByTestId('detalhe-trafego')).toHaveTextContent(/Semana de 07\/09/);
+    await user.click(within(reg).getByRole('button', { name: 'Mês' }));
+    // série nova: o foco volta ao último completo (set/26), não fica no índice 0 antigo nem no parcial
+    const r2 = screen.getByRole('region', { name: REG });
+    expect(within(r2).getByTestId('detalhe-trafego')).toHaveTextContent(/set\/26.*Visitas300/);
+    expect(within(r2).getByRole('button', { name: /set\/26/ })).toHaveAttribute('tabindex', '0');
+    vi.mocked(useSkuDossie).mockReset();
   });
 
   it('régua do tráfego: entra no último intervalo completo; setas andam e o detalhe acompanha', async () => {

@@ -117,8 +117,14 @@ export function montarTrafego(p: {
   const estadoColeta: EstadoColeta = !sync || !visitas.length ? 'sem_coleta'
     : !sync.carga_inicial_concluida_em || conj.mlbs.some((m) => !comDado.has(m)) ? 'parcial' : 'ok';
   const coberturaDesde = oks.reduce<string | null>((a, v) => (!a || v.dia < a ? v.dia : a), null);
-  // Parcial: sem linha antes do 1º dia ok não é buraco, é carga que ainda não chegou.
-  const naoColetado = (dia: string) => estadoColeta === 'parcial' && (!coberturaDesde || dia < coberturaDesde);
+  // Parcial: sem linha antes do 1º dia ok DAQUELE MLB (ou MLB ainda sem dia ok) não é buraco, é carga
+  // que ainda não chegou nele. Por MLB: a cobertura de um anúncio não prova a do outro.
+  const primeiroOk = new Map<string, string>();
+  for (const v of oks) if (!primeiroOk.has(v.ml_item_id) || v.dia < primeiroOk.get(v.ml_item_id)!) primeiroOk.set(v.ml_item_id, v.dia);
+  const naoColetado = (mlb: string, dia: string) => {
+    const desde = primeiroOk.get(mlb);
+    return estadoColeta === 'parcial' && (!desde || dia < desde);
+  };
 
   const serie = p.intervalos.map((intervalo): PontoTrafego => {
     const dias = diasDoIntervalo(intervalo, p.agora);
@@ -127,7 +133,7 @@ export function montarTrafego(p: {
     for (const mlb of conj.mlbs) for (const dia of dias) {
       const v = porChave.get(`${mlb}|${dia}`);
       // Sem linha: dentro das 48 h o worker ainda nem devia ter o dia estável → pendente.
-      if (!v) { estados[agoraMs - fimDoDia(dia) < ESPERA_MS ? 'pendente' : naoColetado(dia) ? 'nao_coletado' : 'ausente']++; continue; }
+      if (!v) { estados[agoraMs - fimDoDia(dia) < ESPERA_MS ? 'pendente' : naoColetado(mlb, dia) ? 'nao_coletado' : 'ausente']++; continue; }
       estados[v.estado]++;
       if (v.estado === 'ok') soma += v.visitas ?? 0;
     }
