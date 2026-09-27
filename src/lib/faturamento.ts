@@ -44,18 +44,28 @@ function posProcessarVenda(v: Venda): Venda {
 }
 
 const LOTE_IDS_DOSSIE = 80;
+// ponytail: 4 lotes em voo (708 ids: ~3,1 s em série → ~1 s); subir só se o pool do PostgREST folgar.
+const LOTES_EM_VOO = 4;
 
 /** Vendas do dossiê do SKU por id (Fatia 2a) — mesmo `select`/pós-processamento de `buscarVendas`,
  *  sem filtro de janela (o dossiê já recebeu os ids prontos via `vendas_sku_dossie_ids`). Lotes de
- *  80 ids: `select` + 150 uuids por `.in` já perto de 8 KB de URL. */
+ *  80 ids: `select` + 150 uuids por `.in` já perto de 8 KB de URL. Até {@link LOTES_EM_VOO} lotes
+ *  em paralelo; qualquer lote com erro rejeita tudo (nunca dado parcial). */
 export async function buscarVendasPorIds(ids: string[]): Promise<Venda[]> {
-  const vendas: Venda[] = [];
-  for (let inicio = 0; inicio < ids.length; inicio += LOTE_IDS_DOSSIE) {
-    const lote = ids.slice(inicio, inicio + LOTE_IDS_DOSSIE);
-    const { data, error } = await supabase.from('ml_vendas').select(SELECT_VENDAS).in('id', lote);
-    if (error) throw new Error(error.message);
-    vendas.push(...((data ?? []) as unknown as Venda[]));
-  }
+  const lotes: string[][] = [];
+  for (let inicio = 0; inicio < ids.length; inicio += LOTE_IDS_DOSSIE) lotes.push(ids.slice(inicio, inicio + LOTE_IDS_DOSSIE));
+  const porLote: Venda[][] = [];
+  let proximo = 0;
+  const trabalhador = async () => {
+    while (proximo < lotes.length) {
+      const i = proximo++;
+      const { data, error } = await supabase.from('ml_vendas').select(SELECT_VENDAS).in('id', lotes[i]);
+      if (error) throw new Error(error.message);
+      porLote[i] = (data ?? []) as unknown as Venda[];
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(LOTES_EM_VOO, lotes.length) }, trabalhador));
+  const vendas = porLote.flat();
   return vendas
     .map(posProcessarVenda)
     .sort((a, b) => (b.date_closed ?? '').localeCompare(a.date_closed ?? '') || a.id.localeCompare(b.id));

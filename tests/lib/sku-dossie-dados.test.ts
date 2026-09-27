@@ -62,6 +62,68 @@ describe('buscarVendasPorIds', () => {
   });
 });
 
+describe('buscarVendasPorIds — lotes em paralelo (concorrência 4)', () => {
+  beforeEach(() => { mockFrom.mockReset(); });
+
+  /** Cada `from()` devolve um lote pendente; o teste decide quando (e em que ordem) cada um resolve. */
+  function lotesPendentes() {
+    const pendentes: { resolver: (r: unknown) => void; ids: string[] }[] = [];
+    let emVoo = 0;
+    let picoEmVoo = 0;
+    mockFrom.mockImplementation(() => {
+      const chain: any = {
+        select: vi.fn(() => chain),
+        in: vi.fn((_col: string, ids: string[]) => { chain.ids = ids; return chain; }),
+        then: (resolve: any, reject: any) => {
+          emVoo++;
+          picoEmVoo = Math.max(picoEmVoo, emVoo);
+          return new Promise((r) => pendentes.push({ ids: chain.ids, resolver: (v) => { emVoo--; r(v); } })).then(resolve, reject);
+        },
+      };
+      return chain;
+    });
+    return { pendentes, pico: () => picoEmVoo };
+  }
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const ids = (n: number) => Array.from({ length: n }, (_, i) => `id-${i}`);
+
+  it('320 ids → 4 lotes de 80 disparados juntos, antes de qualquer um responder', async () => {
+    const { pendentes, pico } = lotesPendentes();
+    const p = buscarVendasPorIds(ids(320));
+    await flush();
+    expect(mockFrom).toHaveBeenCalledTimes(4);
+    expect(pendentes.map((x) => x.ids.length)).toEqual([80, 80, 80, 80]);
+    // Resolve na ordem inversa: o resultado sai ordenado igual (date_closed desc, id).
+    [3, 2, 1, 0].forEach((i) => pendentes[i].resolver({ data: [venda(`v${i}`, `2026-09-0${i + 1}T00:00:00+00:00`)], error: null }));
+    expect((await p).map((v) => v.id)).toEqual(['v3', 'v2', 'v1', 'v0']);
+    expect(pico()).toBe(4);
+  });
+
+  it('nunca mais de 4 em voo: o 5º lote só sai quando um termina', async () => {
+    const { pendentes, pico } = lotesPendentes();
+    const p = buscarVendasPorIds(ids(400));
+    await flush();
+    expect(mockFrom).toHaveBeenCalledTimes(4);
+    pendentes[2].resolver({ data: [venda('c', '2026-09-03T00:00:00+00:00')], error: null });
+    await flush();
+    expect(mockFrom).toHaveBeenCalledTimes(5);
+    for (const [i, x] of pendentes.entries()) if (i !== 2) x.resolver({ data: [venda(`v${i}`, '2026-09-01T00:00:00+00:00')], error: null });
+    expect((await p).map((v) => v.id)).toEqual(['c', 'v0', 'v1', 'v3', 'v4']);
+    expect(pico()).toBe(4);
+  });
+
+  it('um lote com erro → rejeita (nunca dado parcial), mesmo com os outros ok', async () => {
+    const { pendentes } = lotesPendentes();
+    const p = buscarVendasPorIds(ids(320));
+    await flush();
+    pendentes[0].resolver({ data: [venda('a', '2026-09-01T00:00:00+00:00')], error: null });
+    pendentes[1].resolver({ data: null, error: { message: 'lote 2 caiu' } });
+    pendentes[2].resolver({ data: [], error: null });
+    pendentes[3].resolver({ data: [], error: null });
+    await expect(p).rejects.toThrow('lote 2 caiu');
+  });
+});
+
 describe('buscarIdsDossie', () => {
   it('chama a RPC com os códigos e devolve o array de ids', async () => {
     mockRpc.mockResolvedValueOnce({ data: ['id-1', 'id-2'], error: null });
@@ -101,7 +163,7 @@ describe('buscarMlbsDossie', () => {
 });
 
 describe('fetchers de eventos', () => {
-  beforeEach(() => mockFrom.mockReset());
+  beforeEach(() => { mockFrom.mockReset(); });
   it('buscarMovimentos: colunas explícitas, filtro por código, ordem estável', async () => {
     const chain = fakeChain({ data: [{ id: 'm1' }], error: null });
     mockFrom.mockReturnValue(chain);

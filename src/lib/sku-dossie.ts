@@ -180,6 +180,8 @@ export function ufsDoSku(pedidos: Pedido[], codigos: string[]): { valores: Recor
 export interface LinhaMix {
   codigo: string; titulo: string; unidades: number; participacaoUnidades: number;
   lucro: number | null; deltaLucro: number | null; semVendas: boolean;
+  /** Vendeu agora, nada no anterior, com a família tendo histórico: o Δ é o lucro inteiro (alta real). */
+  novaNoPeriodo: boolean;
 }
 
 /** Mix das irmãs: só a composição atual do catálogo (irmãs sem venda incluídas) — as linhas de
@@ -205,6 +207,7 @@ export function mixDaFamilia(linhas: LinhaSku[], anterior: LinhaSku[], catalogoF
       participacaoUnidades: total > 0 ? unidades / total : 0,
       lucro, deltaLucro: antes.size > 0 && (l || a) && lucroAgora != null && lucroAntes != null ? round2(lucroAgora - lucroAntes) : null,
       semVendas: unidades === 0,
+      novaNoPeriodo: antes.size > 0 && !!l && !a,
     };
   }).sort((a, b) => b.unidades - a.unidades || a.codigo.localeCompare(b.codigo));
 }

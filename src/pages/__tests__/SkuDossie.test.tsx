@@ -352,14 +352,26 @@ describe('SkuDossie: estoque, devoluções, UFs, mix e campanhas', () => {
   it('mix da família: irmã sem venda como "sem vendas" e cada linha abre o dossiê da variação', () => {
     const de = '/faturamento?aba=sku&busca=dry';
     renderPagina('ok', dossie({ titulo: 'Camiseta Dry', codigos: ['00123', '00124'], mix: [
-      { codigo: '00123', titulo: 'Camiseta Dry Azul M', unidades: 6, participacaoUnidades: 1, lucro: 90, deltaLucro: 10, semVendas: false },
-      { codigo: '00124', titulo: 'Camiseta Dry Azul G', unidades: 0, participacaoUnidades: 0, lucro: null, deltaLucro: -15, semVendas: true },
+      { codigo: '00123', titulo: 'Camiseta Dry Azul M', unidades: 6, participacaoUnidades: 1, lucro: 90, deltaLucro: 10, semVendas: false, novaNoPeriodo: false },
+      { codigo: '00124', titulo: 'Camiseta Dry Azul G', unidades: 0, participacaoUnidades: 0, lucro: null, deltaLucro: -15, semVendas: true, novaNoPeriodo: false },
     ] }), { pathname: '/faturamento/sku/familia/P1', state: { de } });
     const reg = screen.getByRole('region', { name: 'Mix da família' });
     expect(within(reg).getByText('sem vendas')).toBeInTheDocument();
     expect(within(reg).getByText('100,0%')).toBeInTheDocument();
     expect(within(reg).getByRole('link', { name: /Camiseta Dry Azul G/ })).toHaveAttribute('href', '/faturamento/sku/00124');
     expect(within(reg).getAllByRole('link').every((a) => !a.getAttribute('href')?.includes('familia:'))).toBe(true);
+  });
+
+  it('mix da família: irmã nova no período explica que o Δ é o lucro inteiro', () => {
+    renderPagina('ok', dossie({ titulo: 'Camiseta Dry', codigos: ['00123', '00125'], mix: [
+      { codigo: '00123', titulo: 'Camiseta Dry Azul M', unidades: 6, participacaoUnidades: 0.6, lucro: 90, deltaLucro: 10, semVendas: false, novaNoPeriodo: false },
+      { codigo: '00125', titulo: 'Camiseta Dry Rosa M', unidades: 4, participacaoUnidades: 0.4, lucro: 30, deltaLucro: 30, semVendas: false, novaNoPeriodo: true },
+    ] }), { pathname: '/faturamento/sku/familia/P1', state: null });
+    const reg = screen.getByRole('region', { name: 'Mix da família' });
+    const titulo = 'Sem vendas desta variação no período anterior: o Δ é o lucro inteiro deste período.';
+    const celulas = within(reg).getAllByTitle(titulo);
+    expect(celulas).toHaveLength(1);
+    expect(celulas[0].closest('tr')).toHaveTextContent('Camiseta Dry Rosa M');
   });
 
   it('SKU solto não tem mix', () => {

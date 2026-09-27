@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
-import { agregarPorSku } from '@/lib/vendas-sku';
+import { agregarPorSku, montarVendasSku } from '@/lib/vendas-sku';
 import { serieDoSku, vinculoDoMlb, montarEventos, perguntasPorIntervalo, ufsDoSku, mixDaFamilia, situacaoCampanhas, montarDossie } from '@/lib/sku-dossie';
 import type { Movimento, Moderacao } from '@/lib/sku-dossie-dados';
 import type { Devolucao } from '@/lib/devolucoes';
@@ -191,6 +191,54 @@ describe('montarDossie: estoque com kit', () => {
   });
 });
 
+describe('montarDossie: chave da família (familia:<pai>) — paridade de dinheiro com o ranking', () => {
+  const cat = (codigo: string): CatalogoSku => ({
+    codigo, codigoPai: 'P', nomeFamilia: 'Fam', nome: codigo, cor: null, tamanho: null, estoque: 10, fornecedor: null,
+    origem: 'nacional', ehKit: false, primeiraVenda: '2026-09-01T12:00:00Z', ultimaVenda: '2026-09-22T12:00:00Z',
+    kitMultiplicador: null, kitBaseCodigo: null, estoqueKit: null,
+  });
+  const janela = { desde: '2026-09-16T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' };
+  const anterior = { desde: '2026-09-05T03:00:00.000Z', ate: '2026-09-16T02:59:59.999Z' };
+  const quando = '2026-09-20T12:00:00Z';
+  // Pack 900: order 11 (A×2), order 12 (A + B — duas irmãs na MESMA order), order 13 (Z, outro produto).
+  // Fora do pack: order 20 (C). Taxas por item para o rateio do pack não ser trivial.
+  const vendas = [
+    venda({ id: 'p11', order_id: 11, pack_id: 900, date_closed: quando, total_amount: 40, sale_fee_total: 5, liquido: 35,
+      itens: [item({ id: 'i11', codigo: 'A', quantity: 2, unit_price: 20, sale_fee: 2.5 })] }),
+    venda({ id: 'p12', order_id: 12, pack_id: 900, date_closed: quando, total_amount: 50, sale_fee_total: 6, liquido: 44,
+      itens: [item({ id: 'i12a', codigo: 'A', quantity: 1, unit_price: 20, sale_fee: 2 }), item({ id: 'i12b', codigo: 'B', quantity: 1, unit_price: 30, sale_fee: 4 })] }),
+    venda({ id: 'p13', order_id: 13, pack_id: 900, date_closed: quando, total_amount: 45, sale_fee_total: 4.5, liquido: 40.5,
+      itens: [item({ id: 'i13', codigo: 'Z', quantity: 3, unit_price: 15, sale_fee: 1.5 })] }),
+    venda({ id: 'o20', order_id: 20, date_closed: quando, total_amount: 25, sale_fee_total: 3, liquido: 22,
+      itens: [item({ id: 'i20', codigo: 'C', quantity: 1, unit_price: 25, sale_fee: 3 })] }),
+  ];
+  const catalogo = [cat('A'), cat('B'), cat('C')];
+
+  it('lucro e bruto = soma das linhas por código; pedidos contam orders (não linhas)', () => {
+    const d = montarDossie({
+      alvo: { tipo: 'familia', codigoPai: 'P' }, codigos: ['A', 'B', 'C'], vendas, agrupar, catalogo, devolucoes: [],
+      janela, anterior,
+      hoje: { desde: '2026-08-28T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
+      hojeAnterior: { desde: '2026-07-29T03:00:00.000Z', ate: '2026-08-28T02:59:59.999Z' },
+      intervalos: IVS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
+    }).dados!;
+    const ranking = montarVendasSku({ vendas, agrupar, janela, anterior, catalogo: new Map(catalogo.map((c) => [c.codigo, c])), devolucoes: [] });
+    const irmas = ranking.linhas.filter((l) => ['A', 'B', 'C'].includes(l.codigo));
+    expect(irmas).toHaveLength(3);
+    const soma = (f: (l: (typeof irmas)[number]) => number) => Math.round(irmas.reduce((t, l) => t + f(l), 0) * 100) / 100;
+
+    const linha = d.linhaPeriodo!;
+    expect(linha.codigo).toBe('familia:P');
+    expect(linha.m.lucro).toBeCloseTo(soma((l) => l.m.lucro ?? NaN), 2);
+    expect(linha.acc.bruto).toBeCloseTo(soma((l) => l.acc.bruto), 2);
+    // Z (outro produto do pack) fica fora: bruto das irmãs = 40 + 20 + 30 + 25.
+    expect(linha.acc.bruto).toBeCloseTo(115, 2);
+    // Orders 11, 12 e 20: a order 12 tem duas irmãs e conta uma vez (soma das linhas daria 4).
+    expect(soma((l) => l.acc.pedidos)).toBe(4);
+    expect(linha.acc.pedidos).toBe(3);
+  });
+});
+
 // ---------------- Eventos, UFs, mix, campanhas ----------------
 const mov = (over: Partial<Movimento>): Movimento => ({ id: 'm1', codigo: 'A', motivo: 'venda', quantidade: -1,
   custo_unitario: null, estoque_anterior: 1, estoque_resultante: 0, criado_em: '2026-09-10T12:00:00Z', ...over });
@@ -302,7 +350,9 @@ describe('mixDaFamilia', () => {
     const mix = mixDaFamilia(linhas, anterior, [cat('A', 'Azul'), cat('B', 'Verde'), cat('C', 'Rosa')]);
     // A: líquido 27 − custo 12 = 15 nos dois períodos; B: 9 − 4 = 5, sem venda no anterior (conta 0)
     expect(mix.find((m) => m.codigo === 'A')).toMatchObject({ titulo: 'Azul', unidades: 3, participacaoUnidades: 0.75, lucro: 15, deltaLucro: 0, semVendas: false });
-    expect(mix.find((m) => m.codigo === 'B')).toMatchObject({ unidades: 1, participacaoUnidades: 0.25, lucro: 5, deltaLucro: 5 });
+    // B é irmã nova (sem linha no anterior, família com histórico): Δ = lucro inteiro, marcada para a UI explicar.
+    expect(mix.find((m) => m.codigo === 'B')).toMatchObject({ unidades: 1, participacaoUnidades: 0.25, lucro: 5, deltaLucro: 5, novaNoPeriodo: true });
+    expect(mix.filter((m) => m.novaNoPeriodo).map((m) => m.codigo)).toEqual(['B']);
     expect(mix.find((m) => m.codigo === 'C')).toMatchObject({ titulo: 'Rosa', unidades: 0, participacaoUnidades: 0, lucro: null, deltaLucro: null, semVendas: true });
   });
 
