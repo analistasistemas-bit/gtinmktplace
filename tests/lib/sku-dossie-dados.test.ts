@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mesmo padrão de src/lib/__tests__/notificacoes.test.ts: mocka o client e testa a lógica sem rede.
 const { mockFrom, mockRpc } = vi.hoisted(() => ({ mockFrom: vi.fn(), mockRpc: vi.fn() }));
@@ -7,13 +7,15 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 const { buscarVendasPorIds } = await import('@/lib/faturamento');
-const { buscarIdsDossie, buscarMlbsDossie } = await import('@/lib/sku-dossie-dados');
+const { buscarIdsDossie, buscarMlbsDossie, buscarMovimentos, buscarModeracoes, buscarPerguntas, buscarCampanhas } = await import('@/lib/sku-dossie-dados');
 
 /** Chain que resolve `resultado` a qualquer ponto (select/in), como o PostgrestFilterBuilder real. */
 function fakeChain(resultado: unknown) {
   const chain: any = {
-    select: () => chain,
-    in: () => chain,
+    select: vi.fn(() => chain),
+    in: vi.fn(() => chain),
+    order: vi.fn(() => chain),
+    range: vi.fn(() => chain),
     then: (resolve: any) => Promise.resolve(resultado).then(resolve),
   };
   return chain;
@@ -95,5 +97,50 @@ describe('buscarMlbsDossie', () => {
   it('erro → lança', async () => {
     mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
     await expect(buscarMlbsDossie(['x'])).rejects.toThrow('boom');
+  });
+});
+
+describe('fetchers de eventos', () => {
+  beforeEach(() => mockFrom.mockReset());
+  it('buscarMovimentos: colunas explícitas, filtro por código, ordem estável', async () => {
+    const chain = fakeChain({ data: [{ id: 'm1' }], error: null });
+    mockFrom.mockReturnValue(chain);
+    expect(await buscarMovimentos(['A'])).toEqual([{ id: 'm1' }]);
+    expect(mockFrom).toHaveBeenCalledWith('estoque_movimentos');
+    expect(chain.select).toHaveBeenCalledWith('id, codigo, motivo, quantidade, custo_unitario, estoque_anterior, estoque_resultante, criado_em');
+    expect(chain.in).toHaveBeenCalledWith('codigo', ['A']);
+    expect(chain.order.mock.calls.map((c: unknown[]) => c[0])).toEqual(['criado_em', 'id']);
+  });
+
+  it('buscarPerguntas: coluna item_id, 170 MLBs → 3 lotes de 80', async () => {
+    const chain = fakeChain({ data: [{ id: 'p' }], error: null });
+    mockFrom.mockReturnValue(chain);
+    const mlbs = Array.from({ length: 170 }, (_, i) => `MLB${i}`);
+    expect(await buscarPerguntas(mlbs)).toHaveLength(3);
+    expect(chain.select).toHaveBeenCalledWith('id, item_id, criada_em');
+    expect(chain.in.mock.calls.map((c: unknown[]) => [c[0], (c[1] as string[]).length])).toEqual([['item_id', 80], ['item_id', 80], ['item_id', 10]]);
+  });
+
+  it('buscarModeracoes: sem MLB → não consulta', async () => {
+    expect(await buscarModeracoes([])).toEqual([]);
+    expect(mockFrom).not.toHaveBeenCalled();
+  });
+
+  it('buscarCampanhas: duas leituras e join no cliente pelo promocao_id', async () => {
+    const itens = fakeChain({ data: [
+      { promocao_id: 'P1', ml_item_id: 'MLB1', status: 'started', preco_promo: 10, sincronizado_em: 's1' },
+      { promocao_id: 'P2', ml_item_id: 'MLB1', status: 'candidate', preco_promo: null, sincronizado_em: 's2' },
+    ], error: null });
+    const promos = fakeChain({ data: [{ promocao_id: 'P1', nome: 'Dia', tipo: 'DEAL', status: 'started', inicio: null, fim: null, sincronizado_em: 'x' }], error: null });
+    mockFrom.mockImplementation((t: string) => (t === 'ml_promocao_itens' ? itens : promos));
+    const r = await buscarCampanhas(['MLB1']);
+    expect(promos.in).toHaveBeenCalledWith('promocao_id', ['P1', 'P2']);
+    expect(r[0].promocao?.nome).toBe('Dia');
+    expect(r[1].promocao).toBeNull();
+  });
+
+  it('erro → lança', async () => {
+    mockFrom.mockReturnValue(fakeChain({ data: null, error: { message: 'boom' } }));
+    await expect(buscarModeracoes(['MLB1'])).rejects.toThrow('boom');
   });
 });

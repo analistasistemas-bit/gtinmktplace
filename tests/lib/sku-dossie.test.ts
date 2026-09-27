@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { agregarPorSku } from '@/lib/vendas-sku';
-import { serieDoSku } from '@/lib/sku-dossie';
+import { serieDoSku, vinculoDoMlb, montarEventos, perguntasPorIntervalo, ufsDoSku, mixDaFamilia, situacaoCampanhas } from '@/lib/sku-dossie';
+import type { Movimento, Moderacao } from '@/lib/sku-dossie-dados';
+import type { Devolucao } from '@/lib/devolucoes';
+import type { CatalogoSku } from '@/lib/vendas-sku-catalogo';
 import { intervalosBRT } from '@/lib/calendario-brt';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 import type { CustoResolver } from '@/lib/resumo-vendas';
@@ -68,5 +71,126 @@ describe('serieDoSku', () => {
     const oraculo = agregarPorSku(agrupar(vendas), S1, new Map(), new Set()).find((l) => l.codigo === 'A')!;
     expect(oraculo.acc.liquido).toBe(21);
     expect(s1.lucro).toBe(oraculo.m.lucro);
+  });
+});
+
+// ---------------- Eventos, UFs, mix, campanhas ----------------
+const mov = (over: Partial<Movimento>): Movimento => ({ id: 'm1', codigo: 'A', motivo: 'venda', quantidade: -1,
+  custo_unitario: null, estoque_anterior: 1, estoque_resultante: 0, criado_em: '2026-09-10T12:00:00Z', ...over });
+const dev = (over: Partial<Devolucao>): Devolucao => ({ id: 'd1', claim_id: 1, order_id: 10, stage: 'claim', status: 'closed',
+  type: 'returns', reason_texto: null, reason_id: 'PDD9939', valor_em_jogo: null, return_status: null, return_status_money: 'refunded',
+  acoes_pendentes: null, aberto_em: '2026-09-05T12:00:00Z', fechado_em: '2026-09-08T12:00:00Z', ...over });
+const MLBS = new Map([['MLB1', ['A']], ['MLB3', ['A', 'B', 'C']]]);
+const BASE = { movimentos: [] as Movimento[], moderacoes: [] as Moderacao[], devolucoes: [] as Devolucao[],
+  ordersDosCodigos: new Set([10]), mlbs: MLBS, kitMultiplicador: null as number | null };
+
+describe('vinculoDoMlb', () => {
+  it('1 código exato; 2+ compartilhado; fora do mapa não resolvido', () => {
+    expect(vinculoDoMlb('MLB1', MLBS)).toBe('exato');
+    expect(vinculoDoMlb('MLB3', MLBS)).toBe('compartilhado');
+    expect(vinculoDoMlb('MLB9', MLBS)).toBe('nao_resolvido');
+  });
+});
+
+describe('montarEventos', () => {
+  it('devolução: só returns com order do SKU; abertura e estorno viram 2 eventos; motivo cai no reason_id', () => {
+    const ev = montarEventos({ ...BASE, devolucoes: [
+      dev({}),
+      dev({ id: 'd2', order_id: 99 }), // outro produto
+      dev({ id: 'd3', type: 'mediations' }),
+    ] });
+    expect(ev.map((e) => e.id)).toEqual(['d1:abertura', 'd1:estorno']);
+    expect(ev.map((e) => e.tipo)).toEqual(['devolucao_aberta', 'devolucao_estorno']);
+    expect(ev[0].detalhe).toContain('PDD9939');
+    expect(montarEventos({ ...BASE, devolucoes: [dev({ reason_id: null })] })[0].detalhe).toContain('não informado');
+    expect(montarEventos({ ...BASE, devolucoes: [dev({ reason_texto: 'Defeito' })] })[0].detalhe).toContain('Defeito');
+  });
+
+  it('moderação: detectada e resolvida viram 2 eventos com o vínculo do MLB', () => {
+    const ev = montarEventos({ ...BASE, moderacoes: [
+      { id: 'x', ml_item_id: 'MLB3', status: 'resolvida', motivo: 'foto', detectado_em: '2026-09-01T00:00:00Z', resolvido_em: '2026-09-02T00:00:00Z' },
+      { id: 'y', ml_item_id: 'MLB9', status: 'ativa', motivo: null, detectado_em: '2026-09-03T00:00:00Z', resolvido_em: null },
+    ] });
+    expect(ev.map((e) => [e.id, e.tipo, e.vinculo, e.mlb])).toEqual([
+      ['x:detectada', 'moderacao_detectada', 'compartilhado', 'MLB3'],
+      ['x:resolvida', 'moderacao_resolvida', 'compartilhado', 'MLB3'],
+      ['y:detectada', 'moderacao_detectada', 'nao_resolvido', 'MLB9'],
+    ]);
+  });
+
+  it('ruptura/retorno só por transição; movimento sem saldo ignorado; entrada com custo', () => {
+    const ev = montarEventos({ ...BASE, movimentos: [
+      mov({ id: 'a', estoque_anterior: 5, estoque_resultante: 3 }), // sem transição
+      mov({ id: 'b', estoque_anterior: 3, estoque_resultante: 0, criado_em: '2026-09-11T00:00:00Z' }),
+      mov({ id: 'c', estoque_anterior: null, estoque_resultante: 0, criado_em: '2026-09-12T00:00:00Z' }),
+      mov({ id: 'd', motivo: 'entrada', quantidade: 10, custo_unitario: 4.5, estoque_anterior: 0, estoque_resultante: 10, criado_em: '2026-09-13T00:00:00Z' }),
+    ] });
+    expect(ev.map((e) => e.id)).toEqual(['b:ruptura', 'd:entrada', 'd:retorno']);
+    expect(ev[1].titulo).toContain('10 un.');
+    expect(ev[1].titulo).toContain('4,50');
+    expect(ev.every((e) => e.vinculo === 'exato')).toBe(true);
+  });
+
+  it('kit: ruptura quando floor(base/N) zera, não quando a base zera', () => {
+    const ev = montarEventos({ ...BASE, kitMultiplicador: 3, movimentos: [
+      mov({ id: 'a', estoque_anterior: 4, estoque_resultante: 2 }), // 1 kit → 0 kit
+      mov({ id: 'b', estoque_anterior: 2, estoque_resultante: 0, criado_em: '2026-09-11T00:00:00Z' }), // 0 → 0
+      mov({ id: 'c', estoque_anterior: 0, estoque_resultante: 3, criado_em: '2026-09-12T00:00:00Z' }), // 0 → 1
+    ] });
+    expect(ev.map((e) => e.id)).toEqual(['a:ruptura', 'c:retorno']);
+  });
+
+  it('família: o mesmo evento não duplica ao juntar códigos', () => {
+    const m: Moderacao = { id: 'x', ml_item_id: 'MLB3', status: 'ativa', motivo: null, detectado_em: '2026-09-01T00:00:00Z', resolvido_em: null };
+    const ev = montarEventos({ ...BASE, moderacoes: [m, m], devolucoes: [dev({}), dev({})] });
+    expect(ev.map((e) => e.id)).toEqual(['x:detectada', 'd1:abertura', 'd1:estorno']);
+  });
+});
+
+describe('perguntasPorIntervalo', () => {
+  it('conta por intervalo meio-aberto', () => {
+    const p = [{ criada_em: '2026-09-15T00:00:00Z' }, { criada_em: '2026-09-21T03:00:00.000Z' }, { criada_em: null }, { criada_em: '2026-01-01T00:00:00Z' }];
+    expect(perguntasPorIntervalo(p, IVS)).toEqual([1, 1]);
+  });
+});
+
+describe('ufsDoSku', () => {
+  it('pack com 2 UFs: soma o bruto dos itens faturáveis do SKU pela UF do item, nunca o bruto do pack', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, pack_id: 9, uf: 'SP', total_amount: 20, itens: [item({ id: 'i1', codigo: 'A', quantity: 2, unit_price: 10 })] } as Partial<Venda>),
+      venda({ id: 'b', order_id: 2, pack_id: 9, uf: 'RJ', total_amount: 30, itens: [item({ id: 'i2', codigo: 'A', quantity: 1, unit_price: 30 })] } as Partial<Venda>),
+      venda({ id: 'c', order_id: 3, pack_id: 9, uf: 'RJ', total_amount: 50, itens: [item({ id: 'i3', codigo: 'B', quantity: 1, unit_price: 50 })] } as Partial<Venda>),
+      venda({ id: 'd', order_id: 4, uf: null, total_amount: 7, itens: [item({ id: 'i4', codigo: 'A', quantity: 1, unit_price: 7 })] } as Partial<Venda>),
+      venda({ id: 'e', order_id: 5, status: 'cancelled', uf: 'MG', total_amount: 9, itens: [item({ id: 'i5', codigo: 'A', quantity: 1, unit_price: 9 })] } as Partial<Venda>),
+    ];
+    expect(ufsDoSku(agrupar(vendas), ['A'])).toEqual({ valores: { SP: 20, RJ: 30 }, semUf: 7 });
+  });
+});
+
+describe('mixDaFamilia', () => {
+  const cat = (codigo: string, nome: string): CatalogoSku => ({ codigo, codigoPai: 'P', nomeFamilia: 'F', nome, cor: null, tamanho: null,
+    estoque: 0, fornecedor: null, origem: null, ehKit: false, primeiraVenda: null, ultimaVenda: null,
+    kitMultiplicador: null, kitBaseCodigo: null, estoqueKit: null });
+  it('participação em unidades, delta de lucro contra o anterior, irmã sem venda aparece', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, date_closed: '2026-09-15T12:00:00Z', total_amount: 30, liquido: 27, itens: [item({ id: 'i1', codigo: 'A', quantity: 3, unit_price: 10 })] }),
+      venda({ id: 'b', order_id: 2, date_closed: '2026-09-15T12:00:00Z', total_amount: 10, liquido: 9, itens: [item({ id: 'i2', codigo: 'B', quantity: 1, unit_price: 10 })] }),
+    ];
+    const linhas = agregarPorSku(agrupar(vendas), S1, new Map(), new Set());
+    const anterior = agregarPorSku(agrupar([vendas[0]]), S1, new Map(), new Set());
+    const mix = mixDaFamilia(linhas, anterior, [cat('A', 'Azul'), cat('B', 'Verde'), cat('C', 'Rosa')]);
+    // A: líquido 27 − custo 12 = 15 nos dois períodos; B: 9 − 4 = 5, sem venda no anterior (conta 0)
+    expect(mix.find((m) => m.codigo === 'A')).toMatchObject({ titulo: 'Azul', unidades: 3, participacaoUnidades: 0.75, lucro: 15, deltaLucro: 0, semVendas: false });
+    expect(mix.find((m) => m.codigo === 'B')).toMatchObject({ unidades: 1, participacaoUnidades: 0.25, lucro: 5, deltaLucro: 5 });
+    expect(mix.find((m) => m.codigo === 'C')).toMatchObject({ titulo: 'Rosa', unidades: 0, participacaoUnidades: 0, lucro: null, deltaLucro: null, semVendas: true });
+  });
+});
+
+describe('situacaoCampanhas', () => {
+  it('status do item e da campanha, vigência e última sincronização', () => {
+    const r = situacaoCampanhas([{ ml_item_id: 'MLB1', promocao_id: 'P1', status: 'started', preco_promo: 19.9, sincronizado_em: '2026-09-20T00:00:00Z',
+      promocao: { promocao_id: 'P1', nome: 'Dia do Cliente', tipo: 'DEAL', status: 'started', inicio: '2026-09-15T00:00:00Z', fim: '2026-09-30T00:00:00Z', sincronizado_em: '2026-09-21T00:00:00Z' } }]);
+    expect(r).toEqual([{ mlb: 'MLB1', nome: 'Dia do Cliente', tipo: 'DEAL', statusItem: 'started', statusCampanha: 'started', precoPromo: 19.9,
+      vigencia: { inicio: '2026-09-15T00:00:00Z', fim: '2026-09-30T00:00:00Z' }, sincronizadoEm: '2026-09-20T00:00:00Z' }]);
   });
 });
