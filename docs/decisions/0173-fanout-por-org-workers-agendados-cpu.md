@@ -53,9 +53,11 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
    de 5 leituras ruins do MP (condição transitória, não do pedido). A pendência existente, se houver,
    fica como está (`desfechoPedido`, `reconciliar-faturamento/passo.ts`). **Lacuna aceita, sem
    correção nesta entrega:** na etapa `vendas`, um pedido com MP `null` e **sem** pendência prévia não
-   ganha pendência nenhuma (só `pendencias`/`falhas` viram linha em `worker_pendencias`); se ele saiba
-   da janela de 72h antes de uma leitura boa do MP, o estorno/liberação daquele pedido não é
-   re-tentado por nenhum caminho.
+   ganha pendência nenhuma (só `pendencias`/`falhas` viram linha em `worker_pendencias`); se ele saia
+   da janela de 72h antes de uma leitura boa do MP, o **estorno** daquele pedido não é re-tentado por
+   nenhum caminho (a **liberação** é diferente: `reconciliarLiberacoes` roda em TODA execução da etapa
+   `liberacoes`, para todas as vendas da org com data do MP disponível, sem depender de pendência —
+   ver ponto 5).
 5. **Etapas caras separadas.** Radar do Pulse, perguntas, claims e liberações do Mercado Pago são
    etapas próprias, cada uma em mensagem separada, com CPU medida isoladamente. Nos lotes de vendas, o
    líquido do MP vem pelos pagamentos do próprio pedido (`carregarLiquidoMPDoPedido`, já usado por
@@ -118,16 +120,21 @@ OK do Diego, validação de 3 dias, recuperação histórica). Vira `Aceito` só
 produção. Runbook completo em `docs/reference/edge-functions.md`; modelo de dados em
 `docs/reference/modelo-de-dados.md`.
 
-Ponto 5 (líquido do MP): as etapas `pendencias`/`vendas` do reconciliar e do backfill (e os
-workers de evento `sync-venda`/`sync-devolucao`) lêem o líquido por pedido
-(`carregarLiquidoMPDoPedido`). A etapa `liberacoes` do reconciliar é a **única** que continua na
+Ponto 5 (líquido do MP) — **só no protocolo NOVO por org** (ainda não deployado): as etapas
+`pendencias`/`claims`/`vendas` do reconciliar e a etapa `vendas` do backfill (que não tem etapa
+`pendencias` — o cursor do backfill começa direto em `vendas`, `backfill-faturamento/passo.ts:42`)
+lêem o líquido por pedido (`carregarLiquidoMPDoPedido`), assim como os workers de evento
+`sync-venda`/`sync-devolucao`. A etapa `liberacoes` do reconciliar é a **única** que continua na
 varredura de 120 dias (`carregarLiquidoMP`, `reconciliar-faturamento/passo.ts` → `liberacoes()`) —
 sem paginação, sem a alternativa por pedido (que não existe no código desta entrega; ver o portão
-do ponto 5, acima). A equivalência entre os dois caminhos (mesmo líquido/liberação para o mesmo
-pedido, incluindo estorno total e parcial) está provada em
-`supabase/functions/_shared/faturamento/__tests__/mp-por-pedido.test.ts`, sem divergência nos 4
-casos testados — isso mostra que a alternativa por pedido É viável para a etapa `liberacoes` se o
-portão de CPU disparar na ativação, mas não implementa essa alternativa.
+do ponto 5, acima). **No caminho legado de hoje** (flags desligadas, o que roda em produção), essa
+distinção não existe: `reconciliar-faturamento/index.ts:183` e `backfill-faturamento/index.ts:182`
+chamam `carregarLiquidoMP` (a mesma varredura de 120 dias) para TODO o processamento de pedidos da
+org, não só para liberações — o per-pedido é exclusivo do protocolo novo. A equivalência entre os
+dois caminhos (mesmo líquido/liberação para o mesmo pedido, incluindo estorno total e parcial) está
+provada em `supabase/functions/_shared/faturamento/__tests__/mp-por-pedido.test.ts`, sem
+divergência nos 4 casos testados — isso mostra que a alternativa por pedido É viável para a etapa
+`liberacoes` se o portão de CPU disparar na ativação, mas não implementa essa alternativa.
 
 ## Alternativas descartadas
 
