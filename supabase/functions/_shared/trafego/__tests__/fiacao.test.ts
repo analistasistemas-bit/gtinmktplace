@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buscarML, classificarItensTrafego, corteRetencao, corteVendidos, dedupContinuacao, dedupFanout,
-  delaySegundos, parseMultigetStatus, parseRetryAfterMs, tratarRequisicao, type Rotas,
+  delaySegundos, parseMultigetStatus, parseRetryAfterMs, preservarStatus, tratarRequisicao, type Rotas,
 } from '../fiacao.ts';
 
 describe('ids de deduplicação do QStash', () => {
@@ -42,6 +42,21 @@ describe('parseMultigetStatus', () => {
       null,
     ])).toEqual([{ ml_item_id: 'MLB1', status: 'active' }]);
     expect(parseMultigetStatus({ erro: 1 })).toEqual([]);
+  });
+});
+
+describe('preservarStatus', () => {
+  it("'desconhecido' não sobrescreve status já gravado (closed segue closed); MLB novo fica desconhecido", () => {
+    const iso = '2026-09-27T12:00:00.000Z';
+    expect(preservarStatus([
+      { ml_item_id: 'MLB1', status: 'desconhecido', ultimo_ok_em: iso },
+      { ml_item_id: 'MLB2', status: 'desconhecido', ultimo_ok_em: iso },
+      { ml_item_id: 'MLB3', status: 'active', ultimo_ok_em: null },
+    ], new Map([['MLB1', 'closed'], ['MLB3', 'paused']]))).toEqual([
+      { ml_item_id: 'MLB1', status: 'closed', ultimo_ok_em: iso },
+      { ml_item_id: 'MLB2', status: 'desconhecido', ultimo_ok_em: iso },
+      { ml_item_id: 'MLB3', status: 'active', ultimo_ok_em: null },
+    ]);
   });
 });
 

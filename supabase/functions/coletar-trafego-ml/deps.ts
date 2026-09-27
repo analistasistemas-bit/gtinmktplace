@@ -9,7 +9,7 @@ import { paginarTudo } from '../_shared/pagina.ts';
 import { diaDeHoje } from '../_shared/trafego/janelas.ts';
 import {
   buscarML, classificarItensTrafego, corteRetencao, corteVendidos, dedupContinuacao, dedupFanout,
-  delaySegundos, parseMultigetStatus, type LinhaTrafegoItem,
+  delaySegundos, parseMultigetStatus, preservarStatus, type LinhaTrafegoItem,
 } from '../_shared/trafego/fiacao.ts';
 import { SemAcessoTrafego, STATUS_DESCONHECIDO, type DepsTrafego } from '../_shared/trafego/sincronizar.ts';
 
@@ -151,8 +151,6 @@ export function depsTrafego(admin: SupabaseClient, orgId: string): DepsTrafego {
     gravarPreco: async (pontos) => { await rpc('gravar_preco_dia', { p_org: orgId, p_pontos: pontos }); },
 
     async gravarStatusItens(itens) {
-      // 'desconhecido' não pode sobrescrever um status real: gravar_trafego_item troca o status e zera
-      // status_desde, e um `closed` nunca completaria os 30 dias. Mantém o status já gravado.
       const sem = itens.filter((i) => i.status === STATUS_DESCONHECIDO).map((i) => i.ml_item_id);
       let atuais = new Map<string, string>();
       if (sem.length) {
@@ -161,8 +159,7 @@ export function depsTrafego(admin: SupabaseClient, orgId: string): DepsTrafego {
         falhou('gravarStatusItens.atuais', error);
         atuais = new Map((data ?? []).map((l) => [l.ml_item_id as string, l.status as string]));
       }
-      const p_itens = itens.map((i) => ({ ...i, status: i.status === STATUS_DESCONHECIDO ? atuais.get(i.ml_item_id) ?? i.status : i.status }));
-      await rpc('gravar_trafego_item', { p_org: orgId, p_itens });
+      await rpc('gravar_trafego_item', { p_org: orgId, p_itens: preservarStatus(itens, atuais) });
     },
 
     async continuar(msg, { atrasoMs }) {

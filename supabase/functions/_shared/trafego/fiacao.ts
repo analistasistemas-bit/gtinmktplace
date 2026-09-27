@@ -1,7 +1,7 @@
 // Partes puras da fiação do worker `coletar-trafego-ml` (Task 5): ids do QStash, fetch próprio do ML,
 // multiget de status, cortes de data e o roteamento HTTP. Sem import Deno/npm: o vitest carrega.
 import { DAY_MS, diaDeHoje } from './janelas.ts';
-import type { MsgTrafego, RespostaML, ResultadoTrafego } from './sincronizar.ts';
+import { STATUS_DESCONHECIDO, type MsgTrafego, type RespostaML, type ResultadoTrafego, type StatusItemGravar } from './sincronizar.ts';
 
 const seguro = (s: string) => s.replace(/[^A-Za-z0-9_-]/g, '_'); // mesmo filtro de promocoes/deps.ts
 
@@ -55,6 +55,13 @@ export function parseMultigetStatus(corpo: unknown): { ml_item_id: string; statu
   }
   return out;
 }
+
+/**
+ * `gravar_trafego_item` troca o status e zera `status_desde`: um 'desconhecido' por cima de `closed`
+ * reiniciaria os 30 dias para sempre. Mantém o status já gravado; só MLB sem linha fica 'desconhecido'.
+ */
+export const preservarStatus = (itens: StatusItemGravar[], atuais: Map<string, string>): StatusItemGravar[] =>
+  itens.map((i) => (i.status === STATUS_DESCONHECIDO ? { ...i, status: atuais.get(i.ml_item_id) ?? i.status } : i));
 
 export interface LinhaTrafegoItem { ml_item_id: string; status: string; status_desde: string; ultimo_ok_em: string | null }
 
