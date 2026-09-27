@@ -208,9 +208,54 @@ Revisada pelo GPT-6 Astra em 2026-09-27. Ads e posição são entregas independe
 - **Fora da 2c:** lucro após Ads por cor em grupo compartilhado, visitas orgânicas por subtração
   (visitas − cliques), causalidade Ads → vendas, e Ads no ranking, na ABC, no Financeiro ou no billing.
 
-## Fatia 3 — depois
+## Fatia 3 — recompra, exportação e atalhos
 
-Recompra (compradores que voltam ao SKU), exportação, ações diretas (abrir família, ver promoção).
+Revisada pelo GPT-6 Astra em 2026-09-27. Três entregas independentes.
+
+- **Recompra (só no dossiê):**
+  - **Métrica:** "Compradores recorrentes do SKU no período" = compradores identificados com compra
+    elegível no período e outra ocasião anterior do **mesmo código** ÷ compradores identificados com
+    compra elegível no período.
+  - **Identidade:** a conta compradora `(org_id, ml_vendas.comprador_id)`. Um ID ausente fica fora e
+    aparece como cobertura ("N de M compradores identificados"). Nunca usar nome ou nickname.
+  - **Ocasião:** `pack_id ?? order_id`. Várias unidades ou orders do mesmo pack não são recompra.
+  - **Histórico:** a compra anterior pode ser de antes do período, desde a entrada da org
+    ("observado desde dd/mm/aaaa"). "Primeira compra observada" não significa cliente novo.
+  - **Elegibilidade:** saem as canceladas, as reembolsadas integralmente e as devoluções (`returns`).
+    Devolução em aberto fica de fora. A regra vale para a compra anterior e para a atual e não muda
+    os KPIs financeiros.
+  - **Outra cor:** não conta no SKU. Na visão da família, conta com rótulo próprio e deduplicação entre
+    as irmãs. Kit vinculado fica separado. Compra dentro de Kit Virtual fica fora da 1ª versão, com
+    aviso.
+  - **Amostra:** com menos de 20 compradores identificados elegíveis, mostra "amostra insuficiente".
+  - **Não reaproveitar** `pctRecompra` de `calcularKpisPedidos`, que é outra métrica.
+  - **LGPD:** a tela mostra só agregados. Nenhum ID, nome, nickname, endereço ou rastreio. Testes com
+    duas orgs e dados sintéticos.
+- **Exportação (XLSX, infraestrutura `src/lib/export/`):**
+  - O que sai: ranking filtrado, ranking agrupado por família e série semanal/mensal do dossiê.
+  - Os objetos exportados são os mesmos que alimentam a tabela/série. Não recalcular dinheiro.
+  - A planilha distingue "total das linhas exportadas" de "KPIs gerais do período" e registra
+    período BRT, comparação, filtros e instante da extração.
+  - Valores e estados:
+    - `fonteCusto` e cobertura de custo exportados;
+    - indisponível sai como célula vazia, nunca zero;
+    - código como texto, preservando zeros à esquerda.
+  - Sem dados de comprador.
+  - Um arquivo truncado é proibido: informar a contagem e, acima do teto medido, pedir um período
+    menor.
+- **Atalhos (só navegação):**
+  - "Analisar família" abre `/faturamento/sku/familia/:codigoPai`.
+  - "Ver em Publicados" abre `/publicados?q=<codigo>`, que é uma busca, não seleção.
+  - "Ver campanha" abre `/promocoes/:promocaoId`. Para isso, preservar o `promocao_id` em
+    `situacaoCampanhas`, com um link por campanha.
+  - Cada atalho só aparece com permissão do menu de destino e com o módulo contratado.
+  - Nenhuma ação publica, pausa, reativa, altera preço ou estoque, ou mexe em promoção no ML.
+- **Fora da Fatia 3:**
+  - recompra no ranking inteiro;
+  - coortes 30/90 dias, previsão e alertas;
+  - lista ou exportação de compradores;
+  - PDF do dossiê e exportação de pedidos brutos;
+  - CSV (que exige neutralizar fórmulas).
 
 ## Fora
 
