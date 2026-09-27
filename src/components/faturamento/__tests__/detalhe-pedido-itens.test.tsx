@@ -17,6 +17,7 @@ function item(overrides: Partial<ItemPedido>): ItemPedido {
     id: 'i1', ml_item_id: null, titulo: 'Produto', codigo: null, cor: null, ean: null,
     quantity: 1, unit_price: 50, imagem_path: null, custo: null, liquido: 40,
     imposto: 0, aliquotaPct: null, markup: null, faturavel: true, estorno: 0,
+    custoEstimado: false, temDevolucao: false, orderId: 1,
     ...overrides,
   };
 }

@@ -357,3 +357,26 @@ describe('unidades faturáveis', () => {
     expect(calcularKpisPedidos(pedidos).unidades).toBe(1);
   });
 });
+
+describe('sinais por item para Vendas SKU', () => {
+  it('custoEstimado = tem custo mas não congelado; temDevolucao e orderId vêm da order do item', () => {
+    const custo: CustoResolver = (it) => (it.custo_congelado ?? 7);
+    const vendas = [
+      venda({ id: 'a', order_id: 11, pack_id: 70, tem_devolucao: true,
+        itens: [item({ id: 'i1', custo_congelado: 5 })] }),
+      venda({ id: 'b', order_id: 12, pack_id: 70,
+        itens: [item({ id: 'i2' })] }),
+    ];
+    const [p] = agruparPorPedido(vendas, custo);
+    const i1 = p.itens.find((x) => x.id === 'i1')!;
+    const i2 = p.itens.find((x) => x.id === 'i2')!;
+    expect([i1.custoEstimado, i1.temDevolucao, i1.orderId]).toEqual([false, true, 11]);
+    expect([i2.custoEstimado, i2.temDevolucao, i2.orderId]).toEqual([true, false, 12]);
+  });
+
+  it('sem custo nenhum → custoEstimado false (é "sem custo", não "estimado")', () => {
+    const [p] = agruparPorPedido([venda({ id: 'a' })]);
+    expect(p.itens[0].custo).toBeNull();
+    expect(p.itens[0].custoEstimado).toBe(false);
+  });
+});

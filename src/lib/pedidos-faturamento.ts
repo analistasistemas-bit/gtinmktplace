@@ -35,6 +35,12 @@ export interface ItemPedido {
   markup: number | null;
   /** A order do item conta como faturamento (ADR-0038). false = cancelada/devolvida. */
   faturavel: boolean;
+  /** Tem custo, mas não congelado na venda (ADR-0109): veio do custo atual do cadastro. */
+  custoEstimado: boolean;
+  /** A order deste item tem devolução (ml_vendas.tem_devolucao). */
+  temDevolucao: boolean;
+  /** order_id do ML de onde veio o item (um pack junta várias). */
+  orderId: number;
   /** Estorno da order do item, em R$ — só no 1º item da order (0 nos demais), para não duplicar. */
   estorno: number;
 }
@@ -151,7 +157,10 @@ export function agruparPorPedido(
       const faturavel = ehFaturavel(v.status);
       // A UF vem da venda, não do pedido: um pack pode agrupar order_ids, e o imposto é resolvido
       // por venda (ADR-0112).
-      return v.itens.map((it, i) => ({ it, faturavel, uf: v.uf, estorno: i === 0 ? v.estorno ?? 0 : 0 }));
+      return v.itens.map((it, i) => ({
+        it, faturavel, uf: v.uf, estorno: i === 0 ? v.estorno ?? 0 : 0,
+        temDevolucao: v.tem_devolucao, orderId: v.order_id,
+      }));
     });
     const unidades = itensFlat.reduce((s, { it }) => s + it.quantity, 0);
     // KPI "Unidades" conta só o que foi vendido de fato — igual ao Financeiro (calcularResumo).
@@ -177,7 +186,7 @@ export function agruparPorPedido(
     let custoTotal = 0;
     let temCusto = false;
     let impostoTotal = 0;
-    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, estorno }, i) => {
+    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, estorno, temDevolucao, orderId }, i) => {
       const custo = custoDoItem(it, custoResolver);
       if (faturavel && custo != null) { custoTotal += custo; temCusto = true; }
       const imposto = faturavel ? impostoDoItem(it, aliquotaResolver, uf) : 0;
@@ -196,6 +205,8 @@ export function agruparPorPedido(
         ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
         imagem_path: fotoResolver?.(it) ?? null,
         custo, liquido: liqItemComImposto, imposto, aliquotaPct, markup, faturavel, estorno,
+        custoEstimado: custo != null && it.custo_congelado == null,
+        temDevolucao, orderId,
       };
     });
     const custo = temCusto ? round2(custoTotal) : null;
