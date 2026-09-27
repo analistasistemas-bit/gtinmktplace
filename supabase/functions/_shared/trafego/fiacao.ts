@@ -99,7 +99,9 @@ export interface Rotas {
   /** Publica uma mensagem `primeira` por org com conexão ML; devolve quantas. */
   fanout(): Promise<number>;
   limpar(): Promise<void>;
-  sincronizar(msg: MsgTrafego): Promise<{ resultado: ResultadoTrafego }>;
+  /** `bruto` = corpo JSON já parseado, sem validação: campos que esta interface não conhece (ex.: `falhou`
+   *  de Ads, Ruling 2c-5) sobrevivem aqui. A 2b ignora o 2º argumento. */
+  sincronizar(msg: MsgTrafego, bruto: Record<string, unknown>): Promise<{ resultado: ResultadoTrafego }>;
 }
 
 const json = (body: unknown, status = 200) =>
@@ -136,7 +138,7 @@ export async function tratarRequisicao(req: Request, r: Rotas): Promise<Response
     if (p.rodada != null) msg.rodada = p.rodada;
     if (p.cursor !== undefined) msg.cursor = p.cursor;
     if (p.tentativa != null) msg.tentativa = p.tentativa;
-    const { resultado } = await r.sincronizar(msg);
+    const { resultado } = await r.sincronizar(msg, p as Record<string, unknown>);
     return json({ ok: resultado !== 'erro', resultado }, resultado === 'erro' ? 500 : 200);
   } catch (e) {
     console.error(`[${r.rotulo ?? 'coletar-trafego-ml'}]`, e instanceof Error ? e.message : e);

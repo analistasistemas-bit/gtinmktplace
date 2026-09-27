@@ -70,8 +70,7 @@ describe('fiação de Ads', () => {
     expect(erro).toHaveBeenCalledWith('[coletar-ads-ml]', 'boom');
     erro.mockRestore();
   });
-  it('falhou sobrevive ao ciclo corpo → msg → continuação publicada (Rulings 2c-5/2c-6): '
-    + 'tratarRequisicao (2b) não conhece o campo, então o worker precisa juntá-lo de volta a partir do corpo cru', () => {
+  it('msgAdsDoCorpo só inclui falhou quando true (nunca grava false explícito no corpo publicado)', () => {
     const msg = { org_id: 'org-1', rodada: 'r1', cursor: '12', primeira: false, tentativa: 1 };
     const comFalha = msgAdsDoCorpo(msg, { falhou: true });
     expect(comFalha).toEqual({ ...msg, falhou: true });
@@ -79,9 +78,28 @@ describe('fiação de Ads', () => {
     expect(JSON.parse(JSON.stringify(comFalha)).falhou).toBe(true);
     // dedup não muda com a flag: mesma cadeia, mesmo id
     expect(dedupContinuacaoAds(comFalha)).toBe(dedupContinuacaoAds(msg));
-    // corpo sem a flag, corpo não-JSON (null) e corpo com falhou não-booleano → nunca vira true
-    expect(msgAdsDoCorpo(msg, {}).falhou).toBe(false);
-    expect(msgAdsDoCorpo(msg, null).falhou).toBe(false);
-    expect(msgAdsDoCorpo(msg, { falhou: 'true' }).falhou).toBe(false);
+    // corpo sem a flag, corpo não-JSON (null) e corpo com falhou não-booleano → msg intocada, sem a chave
+    expect(msgAdsDoCorpo(msg, {})).toBe(msg);
+    expect(msgAdsDoCorpo(msg, null)).toBe(msg);
+    expect(msgAdsDoCorpo(msg, { falhou: 'true' })).toBe(msg);
+    expect('falhou' in msgAdsDoCorpo(msg, {})).toBe(false);
+  });
+  it('falhou sobrevive ao ciclo real corpo HTTP → msg → sincronizar (Rulings 2c-5/2c-6): '
+    + 'tratarRequisicao (2b) repassa o corpo já parseado como 2º argumento, e o worker junta a flag de volta', async () => {
+    const sincronizar = vi.fn(async (msg: { org_id: string; primeira: boolean }, bruto: Record<string, unknown>) => {
+      expect(msgAdsDoCorpo(msg, bruto)).toEqual({ ...msg, falhou: true });
+      return { resultado: 'ok' as const };
+    });
+    const req = new Request('https://x', { method: 'POST', body: '{"org_id":"org-1","falhou":true}' });
+    const res = await tratarRequisicao(req, {
+      verificar: async () => true, fanout: async () => 0, limpar: async () => {}, sincronizar,
+    });
+    expect(res.status).toBe(200);
+    expect(sincronizar).toHaveBeenCalledTimes(1);
+    const [msgChamado, brutoChamado] = sincronizar.mock.calls[0];
+    // tratarRequisicao não conhece `falhou`: o msg que ele monta nunca traz o campo
+    expect(msgChamado).toEqual({ org_id: 'org-1', primeira: false });
+    // mas o 2º argumento é o corpo cru, e `falhou` sobrevive nele
+    expect(brutoChamado).toEqual({ org_id: 'org-1', falhou: true });
   });
 });

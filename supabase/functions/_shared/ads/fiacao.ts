@@ -52,9 +52,10 @@ const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' 
 
 /**
  * `tratarRequisicao` (2b) monta `msg: MsgTrafego` a partir do corpo HTTP sem conhecer `falhou` — campo
- * específico da orquestração de Ads (Ruling 2c-5). O worker junta a flag de volta lendo o corpo cru
- * (clonado antes de `tratarRequisicao` consumi-lo), espelhando o mesmo parsing tolerante: corpo ausente,
- * inválido ou com `falhou` não-booleano nunca vira `true`.
+ * específico da orquestração de Ads (Ruling 2c-5) — mas repassa o corpo já parseado (`bruto`) como 2º
+ * argumento de `sincronizar`. O worker junta a flag de volta a partir dele. Corpo ausente, inválido ou com
+ * `falhou` não-booleano nunca vira `true`; e `falhou` só entra no `msg` quando `true` (nunca grava `false`
+ * explícito no corpo publicado pelo QStash — `msg` intocado, mesma referência, quando ausente).
  */
-export const msgAdsDoCorpo = (msg: MsgTrafego, corpo: unknown): MsgAds =>
-  ({ ...msg, falhou: obj(corpo) && corpo.falhou === true });
+export const msgAdsDoCorpo = (msg: MsgTrafego, bruto: unknown): MsgAds =>
+  (obj(bruto) && bruto.falhou === true ? { ...msg, falhou: true } : msg);

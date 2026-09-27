@@ -149,7 +149,9 @@ describe('tratarRequisicao', () => {
     const r = rotas();
     const msg = { org_id: 'o', rodada: 'R', cursor: 'MLB1', primeira: false, tentativa: 1 };
     expect((await tratarRequisicao(post(JSON.stringify(msg)), r)).status).toBe(200);
-    expect(r.sincronizar).toHaveBeenCalledWith(msg);
+    // tratarRequisicao agora repassa o corpo já parseado como 2º argumento (Rotas.sincronizar(msg, bruto));
+    // aqui o corpo bate com o próprio `msg` (mesmos campos), então o 2º argumento é estruturalmente igual.
+    expect(r.sincronizar).toHaveBeenCalledWith(msg, msg);
     for (const [resultado, status] of [['erro', 500], ['obsoleta', 200], ['continua', 200], ['sem_acesso', 200]] as const) {
       const r2 = rotas({ sincronizar: vi.fn(async () => ({ resultado })) });
       expect((await tratarRequisicao(post('{"org_id":"o","primeira":true}'), r2)).status).toBe(status);
