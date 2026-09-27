@@ -152,7 +152,7 @@ describe('PainelAds', () => {
 
   it('lucro com custo parcial ou estimado: número continua, com a marca no fato, no rodapé e no resumo', () => {
     const r1 = renderiza({ ...base, fonteLucro: 'parcial' });
-    expect(screen.getByText('· custo parcial')).toBeInTheDocument();
+    expect(screen.getByText('· custo parcial')).toHaveClass('block');
     expect(screen.getByText('R$ 400,00')).toBeInTheDocument();
     expect(screen.getByText(/lucro atual do período \(parcial: só os itens com custo\) − despesa de Ads até ontem/)).toBeInTheDocument();
     expect(screen.getByText(/Lucro após Ads R\$\s400,00, custo parcial\./)).toBeInTheDocument();
@@ -180,6 +180,8 @@ describe('PainelAds', () => {
     expect(screen.queryByTestId('detalhe-ads')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Dia' })).toBeNull();
     expect(screen.getByRole('heading', { name: 'Ads' })).toBeInTheDocument();
+    expect(screen.getByText('Vendas atribuídas')).toBeInTheDocument();
+    expect(screen.queryByText(/com atribuição em aberto/)).toBeNull();
   });
 
   it('pill do grupo compartilhado conta os códigos de fora (coerente com o motivo) e os MLBs têm title', () => {

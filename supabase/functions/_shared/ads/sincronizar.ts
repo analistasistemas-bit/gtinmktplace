@@ -247,7 +247,8 @@ export async function sincronizarAdsOrg(
     // Gasto fora de grupo listado (provável `deleted`, spike ~2,6 %) fica gravado no sync: com diferença > 0
     // o dossiê não mostra "Lucro após Ads". Só a razão vai para o log (valor em R$ não sai do banco).
     // Grupo listado com gasto que deu 404 na leitura: o gasto dele não foi gravado, então sai do listado.
-    const custoListado = Math.round((listados.reduce((s, g) => s + g.cost, 0) - descontar) * 100) / 100;
+    // Piso 0: o grupo do 404 pode também ter saído do search numa mensagem seguinte (desconto > listado).
+    const custoListado = Math.max(0, Math.round((listados.reduce((s, g) => s + g.cost, 0) - descontar) * 100) / 100);
     console.info('[ads] custo da janela', {
       org_id: msg.org_id, janela, listadoSobreResumo: custoResumo ? custoListado / custoResumo : null,
     });

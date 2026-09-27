@@ -211,7 +211,7 @@ export function PainelAds({ ads: a, familia, passo, onPasso, onTentar }: Props) 
       a.lucroAposAds != null
         ? `Lucro após Ads ${fmtBRL(a.lucroAposAds)}${marcaLucro(a.fonteLucro) ? `, ${marcaLucro(a.fonteLucro)}` : ''}.`
         : `Lucro após Ads ${textoSemLucro(a)}.`,
-      a.diasAbertos ? `${plural(a.diasAbertos, 'dia', 'dias')} com atribuição em aberto.` : '',
+      a.diasAbertos && a.estado !== 'sem_ads' ? `${plural(a.diasAbertos, 'dia', 'dias')} com atribuição em aberto.` : '',
       n ? `Série ${diario ? 'diária' : passo === 'semana' ? 'semanal' : 'mensal'} de ${serie[0].intervalo.rotulo} a ${serie[n - 1].intervalo.rotulo}.` : '',
       n ? 'Os botões de cada intervalo mostram o detalhe; as setas andam entre eles.' : '',
     ].filter(Boolean).join(' ');
@@ -228,14 +228,15 @@ export function PainelAds({ ads: a, familia, passo, onPasso, onTentar }: Props) 
 
         <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3">
           <Fato rotulo="Despesa de Ads do período">{fmtBRL(t.custo)}</Fato>
-          <Fato rotulo={`Vendas atribuídas${a.diasAbertos ? ` · ${plural(a.diasAbertos, 'dia', 'dias')} com atribuição em aberto` : ''}`}>
+          <Fato rotulo={`Vendas atribuídas${a.diasAbertos && a.estado !== 'sem_ads' ? ` · ${plural(a.diasAbertos, 'dia', 'dias')} com atribuição em aberto` : ''}`}>
             {fmtBRL(t.vendasTotais)} <span className="font-normal text-muted-foreground">{`${fmtInt(t.unidades)} un.`}</span>
           </Fato>
           <Fato rotulo="Lucro após Ads" fraco={a.lucroAposAds == null}>
             {a.lucroAposAds != null
               ? <>
                 <span className={cn(a.lucroAposAds < 0 && 'text-danger')}>{fmtBRL(a.lucroAposAds)}</span>
-                {marcaLucro(a.fonteLucro) && <span className="font-normal text-muted-foreground"> {`· ${marcaLucro(a.fonteLucro)}`}</span>}
+                {/* Linha própria: o Fato trunca, e a marca não pode sumir no celular. */}
+                {marcaLucro(a.fonteLucro) && <span className="block text-xs font-normal text-muted-foreground">{`· ${marcaLucro(a.fonteLucro)}`}</span>}
               </>
               : 'indisponível'}
           </Fato>

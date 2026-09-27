@@ -187,6 +187,12 @@ describe('sincronizarAdsOrg', () => {
     expect(e.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 20 }); // 27,5 − 7,5
   });
 
+  it('desconto herdado maior que o listado (o grupo do 404 também sumiu do search): custoListado nunca negativo', async () => {
+    const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(12, 'ITEM', 5)])) });
+    await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: '11', primeira: false, descontar: 50 });
+    expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 0 });
+  });
+
   it('lote adiado com 404 no meio não desconta duas vezes (o desconto só entra quando o lote é gravado)', async () => {
     const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'ITEM')])) });
     d.buscarSerieGrupo.mockImplementation(async (id: number, j: { desde: string; ate: string }) =>
