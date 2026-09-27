@@ -275,11 +275,12 @@ export function AbaVendasSku() {
           onClick={() => setSoSemCusto((v) => !v)}>Só sem custo</Button>
         <Button size="sm" className={BOTAO} variant={porFamilia ? 'default' : 'outline'} aria-pressed={porFamilia}
           onClick={() => setPorFamilia((v) => !v)}>Agrupar por família</Button>
+        {/* Trocar a base também ordena por ela: a curva lê A→B→C de cima para baixo. Só o selo mudando parecia não fazer nada. */}
         <div className="flex items-center gap-1" role="group" aria-label="Base da curva ABC">
           <span className="text-xs text-muted-foreground">Curva ABC por</span>
           {(['lucro', 'bruto'] as const).map((b) => (
             <Button key={b} size="sm" className={BOTAO} variant={baseAbc === b ? 'secondary' : 'outline'} aria-pressed={baseAbc === b}
-              onClick={() => setBaseAbc(b)}>{b === 'lucro' ? 'lucro' : 'faturamento'}</Button>
+              onClick={() => { setBaseAbc(b); setOrdem(b); }}>{b === 'lucro' ? 'lucro' : 'faturamento'}</Button>
           ))}
         </div>
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">

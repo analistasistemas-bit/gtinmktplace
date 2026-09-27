@@ -48,9 +48,19 @@ describe('AbaVendasSku', () => {
   it('ordena por lucro e troca a ordem ao clicar em Unidades', () => {
     renderAba();
     const nomes = () => screen.getAllByTestId('sku-titulo').map((e) => e.textContent);
-    expect(nomes()[0]).toBe('Produto A');
+    expect(nomes()[0]).toBe('Família P · Produto A');
     fireEvent.click(screen.getByRole('button', { name: /Unidades/ }));
     expect(nomes()).toHaveLength(4);
+  });
+
+  it('trocar a base da curva ABC reordena a tabela por ela', () => {
+    renderAba();
+    const nomes = () => screen.getAllByTestId('sku-titulo').map((e) => e.textContent);
+    expect(nomes()[1]).toBe('Família P · Produto C'); // lucro: A 30, C 10, D 5, B sem custo
+    fireEvent.click(screen.getByRole('button', { name: 'faturamento' }));
+    expect(nomes()[1]).toBe('Família P · Produto B'); // faturamento empatado: por código
+    fireEvent.click(screen.getByRole('button', { name: 'lucro' }));
+    expect(nomes()[1]).toBe('Família P · Produto C');
   });
 
   it('agrupar por família mostra a família e, ao expandir, as variações', () => {
