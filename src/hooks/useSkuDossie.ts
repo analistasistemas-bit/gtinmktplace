@@ -15,9 +15,11 @@ import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { buscarVendasPorIds, type Venda } from '@/lib/faturamento';
 import {
   buscarIdsDossie, buscarMlbsDossie, buscarMovimentos, buscarModeracoes, buscarPerguntas, buscarCampanhas,
+  buscarVisitasDia, buscarPrecoDia, buscarTrafegoSync,
 } from '@/lib/sku-dossie-dados';
 import { intervalosBRT, type Passo } from '@/lib/calendario-brt';
 import { montarDossie, type AlvoDossie, type DossieSku, type EstadoDossie } from '@/lib/sku-dossie';
+import { conjuntoTrafego, faixaTrafego, montarTrafego } from '@/lib/sku-trafego';
 
 const HOJE_30: Periodo = { tipo: 'preset', dias: 30 };
 
@@ -71,28 +73,61 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
     staleTime: 5 * 60_000,
   });
 
-  const r = useMemo<{ estado: EstadoDossie; dados: DossieSku | null }>(() => {
-    if (catQ.isError || devQ.isError || vendasQ.isError || extrasQ.isError) return { estado: 'erro', dados: null };
-    if (!catQ.data) return { estado: 'carregando', dados: null };
-    if (!codigos.length) return { estado: 'nao_encontrado', dados: null }; // família fora do catálogo
-    // Espera custos (sem erro) e devoluções como useVendasSku: nada de "sem custo" ou taxa 0 no load.
-    if (!vendasQ.data || !extrasQ.data || !devQ.data || (!custos && !custosQ.isError)) return { estado: 'carregando', dados: null };
+  // Tráfego (Fatia 2b): query à parte — falhar aqui não derruba o dossiê.
+  const conj = useMemo(() => (extrasQ.data ? conjuntoTrafego(alvoM, codigos, extrasQ.data.mlbs) : null), [extrasQ.data, alvoM, codigos]);
+  const faixa = useMemo(() => faixaTrafego(intervalos), [intervalos]);
+  const trafegoQ = useQuery({
+    queryKey: ['sku-dossie-trafego', conj?.mlbs, conj?.codigosExtras, faixa],
+    queryFn: async () => {
+      const { mlbs, codigosExtras } = conj!;
+      const { desde, ate } = faixa!;
+      const [visitas, precos, sync, vendasExtras] = await Promise.all([
+        buscarVisitasDia(mlbs, desde, ate), buscarPrecoDia(mlbs, desde, ate), buscarTrafegoSync(),
+        // Alcance anúncio: as vendas dos outros códigos do MLB compartilhado (as do alvo já vieram).
+        codigosExtras.length ? buscarIdsDossie(codigosExtras).then(buscarVendasPorIds) : Promise.resolve([] as Venda[]),
+      ]);
+      return { visitas, precos, sync, vendasExtras };
+    },
+    enabled: !!conj && conj.mlbs.length > 0 && !!faixa,
+    staleTime: 5 * 60_000,
+  });
+
+  const agrupar = useMemo(() => {
     const custoR = montarCustoResolver(custos);
     const pesoR = montarPesoResolver(custos);
     const fotoR = montarFotoResolver(fotos, canonico);
     const aliqR = montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 });
     const corR = montarCorResolver(cores, canonico);
+    return (vs: Venda[]) => agruparPorPedido(vs, custoR, pesoR, fotoR, aliqR, corR);
+  }, [custos, fotos, cores, canonico, aliquotas]);
+
+  const r = useMemo<{ estado: EstadoDossie; dados: Omit<DossieSku, 'trafego'> | null }>(() => {
+    if (catQ.isError || devQ.isError || vendasQ.isError || extrasQ.isError) return { estado: 'erro', dados: null };
+    if (!catQ.data) return { estado: 'carregando', dados: null };
+    if (!codigos.length) return { estado: 'nao_encontrado', dados: null }; // família fora do catálogo
+    // Espera custos (sem erro) e devoluções como useVendasSku: nada de "sem custo" ou taxa 0 no load.
+    if (!vendasQ.data || !extrasQ.data || !devQ.data || (!custos && !custosQ.isError)) return { estado: 'carregando', dados: null };
     const hoje = resolverJanela(HOJE_30); // posição de hoje: "agora" reancora a cada recálculo
     return montarDossie({
-      alvo: alvoM, codigos, vendas: vendasQ.data,
-      agrupar: (vs: Venda[]) => agruparPorPedido(vs, custoR, pesoR, fotoR, aliqR, corR),
+      alvo: alvoM, codigos, vendas: vendasQ.data, agrupar,
       catalogo: catQ.data, devolucoes: devQ.data, janela, anterior, hoje, hojeAnterior: janelaAnterior(hoje, HOJE_30), intervalos, ...extrasQ.data,
     });
   }, [catQ.isError, devQ.isError, vendasQ.isError, extrasQ.isError, catQ.data, alvoM, codigos, vendasQ.data, extrasQ.data, devQ.data,
-    custos, custosQ.isError, fotos, cores, canonico, aliquotas, janela, anterior, intervalos]);
+    custos, custosQ.isError, agrupar, janela, anterior, intervalos]);
+
+  // Memo à parte: o tráfego chegar (ou falhar) não recalcula o dossiê.
+  const dados = useMemo<DossieSku | null>(() => {
+    if (!r.dados || !extrasQ.data || !vendasQ.data) return null;
+    const trafego = montarTrafego({
+      alvo: alvoM, codigos, mlbs: extrasQ.data.mlbs, agrupar, intervalos, agora: new Date(),
+      vendas: trafegoQ.data ? [...vendasQ.data, ...trafegoQ.data.vendasExtras] : vendasQ.data,
+      fonte: trafegoQ.isError ? 'erro' : trafegoQ.data ?? 'carregando',
+    });
+    return { ...r.dados, trafego };
+  }, [r.dados, extrasQ.data, vendasQ.data, alvoM, codigos, agrupar, intervalos, trafegoQ.isError, trafegoQ.data]);
 
   return {
-    ...r,
-    refetch: () => Promise.all([catQ.refetch(), devQ.refetch(), vendasQ.refetch(), extrasQ.refetch()]),
+    estado: r.estado, dados,
+    refetch: () => Promise.all([catQ.refetch(), devQ.refetch(), vendasQ.refetch(), extrasQ.refetch(), trafegoQ.refetch()]),
   };
 }

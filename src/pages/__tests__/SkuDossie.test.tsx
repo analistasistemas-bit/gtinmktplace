@@ -37,6 +37,7 @@ const dossie = (over: Partial<DossieSku> = {}): DossieSku => ({
   tendencia: 'em_alta', cobertura: 40, estoque: 12, alertas: [], serie: [], eventos: [], perguntasPorIntervalo: [],
   ufs: { valores: {}, semUf: 0 }, mix: null, campanhas: [], mlbs: new Map(), kitVirtual: null,
   qualidade: { pctBrutoCustoReal: 0.9, fontesParciais: ['Promoções: só a situação atual'] },
+  trafego: { calendario: 'brt', alcance: 'indisponivel', porMlb: [], serie: [], coberturaDesde: null, estadoColeta: 'sem_coleta', precoAtual: null },
   ...over,
 });
 

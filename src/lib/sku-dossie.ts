@@ -13,6 +13,7 @@ import type { Janela } from './metricas';
 import { orderIdsComDevolucaoReal, type Devolucao } from './devolucoes';
 import type { Movimento, Moderacao, ItemCampanha, Pergunta } from './sku-dossie-dados';
 import { round2, fmtBRL } from './formato';
+import type { TrafegoDossie } from './sku-trafego';
 
 export interface PontoSerie {
   intervalo: Intervalo;
@@ -253,6 +254,8 @@ export interface DossieSku {
   /** Vendido dentro de Kit Virtual (cobertura parcial: sem histórico antes de set/2026); null sem nenhuma. */
   kitVirtual: { unidadesPeriodo: number; unidadesPorIntervalo: number[] } | null;
   qualidade: { pctBrutoCustoReal: number | null; fontesParciais: string[] };
+  /** Tráfego e oferta (Fatia 2b): montado à parte (montarTrafego) — a falha dele não derruba o dossiê. */
+  trafego: TrafegoDossie;
 }
 
 /** O alvo é kit (estoque da base, sem cobertura própria) só quando todos os códigos são kit. */
@@ -269,7 +272,7 @@ export function montarDossie(p: {
   janela: Janela; anterior: Janela; hoje: Janela; hojeAnterior: Janela; intervalos: Intervalo[];
   mlbs: Map<string, string[]>; movimentos: Movimento[]; moderacoes: Moderacao[]; perguntas: Pergunta[];
   campanhas: ItemCampanha[];
-}): { estado: Exclude<EstadoDossie, 'carregando' | 'erro'>; dados: DossieSku | null } {
+}): { estado: Exclude<EstadoDossie, 'carregando' | 'erro'>; dados: Omit<DossieSku, 'trafego'> | null } {
   const cods = new Set(p.codigos);
   const doAlvo = (codigo: string | null) => cods.has(codigo?.trim() || SEM_CODIGO);
   const catMap = new Map(p.catalogo.map((c) => [c.codigo, c]));
@@ -330,7 +333,7 @@ export function montarDossie(p: {
   const kitPorIntervalo = serie.map((s) => s.unidadesKit);
   const mixRaw = familia == null ? null : montarVendasSku({ ...base, agrupar: p.agrupar, janela: p.janela, anterior: p.anterior });
 
-  const dados: DossieSku = {
+  const dados: Omit<DossieSku, 'trafego'> = {
     codigos: p.codigos, titulo, catalogo, historicoDesde, ultimaVenda,
     linhaPeriodo, linhaAnterior: vestir(daChave(periodo.linhasAnterior)),
     tendencia, cobertura, estoque,

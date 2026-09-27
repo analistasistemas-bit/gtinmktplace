@@ -18,6 +18,7 @@ const { custosQ, catQ, devQ, dados } = vi.hoisted(() => ({
   dados: {
     buscarIdsDossie: vi.fn(), buscarMlbsDossie: vi.fn(), buscarMovimentos: vi.fn(),
     buscarModeracoes: vi.fn(), buscarPerguntas: vi.fn(), buscarCampanhas: vi.fn(), buscarVendasPorIds: vi.fn(),
+    buscarVisitasDia: vi.fn(), buscarPrecoDia: vi.fn(), buscarTrafegoSync: vi.fn(),
   },
 }));
 const q = (data: unknown) => ({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
@@ -33,6 +34,7 @@ vi.mock('@/lib/sku-dossie-dados', () => ({
   buscarIdsDossie: dados.buscarIdsDossie, buscarMlbsDossie: dados.buscarMlbsDossie,
   buscarMovimentos: dados.buscarMovimentos, buscarModeracoes: dados.buscarModeracoes,
   buscarPerguntas: dados.buscarPerguntas, buscarCampanhas: dados.buscarCampanhas,
+  buscarVisitasDia: dados.buscarVisitasDia, buscarPrecoDia: dados.buscarPrecoDia, buscarTrafegoSync: dados.buscarTrafegoSync,
 }));
 vi.mock('@/lib/faturamento', async (orig) => ({ ...(await orig<object>()), buscarVendasPorIds: dados.buscarVendasPorIds }));
 
@@ -72,6 +74,9 @@ function servir(vendas: Venda[], mlbs: Record<string, string[]> = {}) {
   dados.buscarModeracoes.mockResolvedValue([]);
   dados.buscarPerguntas.mockResolvedValue([]);
   dados.buscarCampanhas.mockResolvedValue([]);
+  dados.buscarVisitasDia.mockResolvedValue([]);
+  dados.buscarPrecoDia.mockResolvedValue([]);
+  dados.buscarTrafegoSync.mockResolvedValue(null);
 }
 
 async function assentar(alvo: Parameters<typeof useSkuDossie>[0]) {
@@ -196,5 +201,51 @@ describe('useSkuDossie — família', () => {
     const r = await assentar(sku('K'));
     expect(r.dados).toMatchObject({ cobertura: 'compartilhado', estoque: 2 });
     expect(dados.buscarMovimentos).toHaveBeenCalledWith(['A']);
+  });
+});
+
+describe('useSkuDossie — tráfego', () => {
+  async function comTrafego(alvo: Parameters<typeof useSkuDossie>[0]) {
+    const r = renderHook(() => useSkuDossie(alvo, SET, 'semana'), { wrapper });
+    await waitFor(() => expect(r.result.current.dados?.trafego.estadoColeta ?? 'carregando').not.toBe('carregando'));
+    return r.result.current;
+  }
+  // Semanas BRT do período: 31/08, 07/09, … — agora = 28/09 12:00 BRT.
+  const diasOk = (mlb: string) => Array.from({ length: 29 }, (_, i) => ({
+    ml_item_id: mlb, dia: new Date(Date.UTC(2026, 7, 31 + i)).toISOString().slice(0, 10), visitas: 10, estado: 'ok' }));
+
+  it('falha na leitura do tráfego não derruba o dossiê', async () => {
+    servir([venda({ id: 'a' })], { MLB1: ['A'] });
+    dados.buscarVisitasDia.mockRejectedValue(new Error('rls'));
+    const r = await comTrafego(sku('A'));
+    expect(r.estado).toBe('ok');
+    expect(r.dados!.linhaPeriodo!.acc.unidades).toBe(1);
+    expect(r.dados!.trafego).toMatchObject({ estadoColeta: 'erro', alcance: 'sku', serie: [] });
+  });
+
+  it('MLB compartilhado: busca as vendas dos outros códigos do anúncio e mede o anúncio inteiro', async () => {
+    const a = venda({ id: 'a', order_id: 1, date_closed: '2026-09-10T12:00:00Z', itens: [item({ ml_item_id: 'MLB2', codigo: 'A', quantity: 2 })] });
+    const b = venda({ id: 'b', order_id: 2, date_closed: '2026-09-11T12:00:00Z', itens: [item({ id: 'i2', ml_item_id: 'MLB2', codigo: 'B', quantity: 3 })] });
+    servir([a], { MLB2: ['A', 'B'] });
+    dados.buscarIdsDossie.mockImplementation(async (cs: string[]) => (cs.includes('B') ? ['a', 'b'] : ['a']));
+    dados.buscarVendasPorIds.mockImplementation(async (ids: string[]) => [a, b].filter((v) => ids.includes(v.id)));
+    dados.buscarVisitasDia.mockResolvedValue(diasOk('MLB2'));
+    dados.buscarTrafegoSync.mockResolvedValue({ estado: 'ok', carga_inicial_concluida_em: '2026-09-01T00:00:00Z', ultimo_ok_em: null });
+    const r = await comTrafego(sku('A'));
+    expect(dados.buscarIdsDossie).toHaveBeenCalledWith(['B']); // só os códigos de fora; as de A já vieram
+    expect(dados.buscarVisitasDia).toHaveBeenCalledWith(['MLB2'], '2026-08-31', '2026-10-04');
+    const t = r.dados!.trafego;
+    expect(t).toMatchObject({ alcance: 'anuncio', estadoColeta: 'ok' });
+    expect(t.serie[1]).toMatchObject({ unidades: 5, visitas: 70, unidadesPorVisita: 5 / 70 });
+    // o dossiê do SKU segue só com a venda de A
+    expect(r.dados!.linhaPeriodo!.acc.unidades).toBe(2);
+  });
+
+  it('sem MLB (não resolvido): indisponível na hora, sem ler tráfego', async () => {
+    dados.buscarVisitasDia.mockClear();
+    servir([venda({ id: 'a' })]);
+    const r = await comTrafego(sku('A'));
+    expect(r.dados!.trafego).toMatchObject({ alcance: 'indisponivel', estadoColeta: 'sem_coleta' });
+    expect(dados.buscarVisitasDia).not.toHaveBeenCalled();
   });
 });

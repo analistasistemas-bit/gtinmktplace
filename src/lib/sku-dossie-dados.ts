@@ -77,3 +77,26 @@ export async function buscarCampanhas(mlbs: string[]): Promise<ItemCampanha[]> {
   const porId = new Map(promos.map((p) => [p.promocao_id, p]));
   return itens.map((i) => ({ ...i, promocao: porId.get(i.promocao_id) ?? null }));
 }
+
+// ---- Tráfego e oferta (Fatia 2b). Dia = data literal BRT (spike 052). ----
+
+export interface VisitaDia { ml_item_id: string; dia: string; visitas: number | null; estado: 'ok' | 'pendente' | 'falha' }
+export interface PrecoDia { ml_item_id: string; dia: string; preco: number; observado_em: string }
+export interface TrafegoSync { estado: string; carga_inicial_concluida_em: string | null; ultimo_ok_em: string | null }
+
+/** Visitas/dia dos MLBs em `[desde, ate]` (datas YYYY-MM-DD, inclusive). */
+export const buscarVisitasDia = (mlbs: string[], desde: string, ate: string) => emLotes<VisitaDia>(mlbs, (lote, de, fim) =>
+  supabase.from('ml_item_visitas_dia').select('ml_item_id, dia, visitas, estado')
+    .in('ml_item_id', lote).gte('dia', desde).lte('dia', ate).order('ml_item_id').order('dia').range(de, fim) as Pagina<VisitaDia>);
+
+/** Preço de oferta observado por dia dos MLBs em `[desde, ate]`. */
+export const buscarPrecoDia = (mlbs: string[], desde: string, ate: string) => emLotes<PrecoDia>(mlbs, (lote, de, fim) =>
+  supabase.from('ml_item_preco_dia').select('ml_item_id, dia, preco, observado_em')
+    .in('ml_item_id', lote).gte('dia', desde).lte('dia', ate).order('ml_item_id').order('dia').range(de, fim));
+
+/** Estado da coleta da org (RLS: só a própria org); null = a coleta nunca rodou. */
+export async function buscarTrafegoSync(): Promise<TrafegoSync | null> {
+  const { data, error } = await supabase.from('ml_trafego_sync').select('estado, carga_inicial_concluida_em, ultimo_ok_em').maybeSingle();
+  if (error) throw new Error(error.message);
+  return data;
+}

@@ -10,6 +10,8 @@ export interface Intervalo { inicio: string; fim: string; rotulo: string; incomp
 /** "Relógio de parede" BRT como Date UTC (getUTC* = campos BRT). */
 const brt = (ms: number) => new Date(ms - OFFSET_MS);
 const deBrt = (d: Date) => new Date(d.getTime() + OFFSET_MS);
+/** Data BRT (YYYY-MM-DD) do instante `ms`. */
+export const diaBRT = (ms: number) => brt(ms).toISOString().slice(0, 10);
 
 function inicioDe(ms: number, passo: Passo): Date {
   const d = brt(ms);
