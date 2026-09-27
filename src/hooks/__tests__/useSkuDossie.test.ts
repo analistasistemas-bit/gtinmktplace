@@ -247,5 +247,8 @@ describe('useSkuDossie — tráfego', () => {
     const r = await comTrafego(sku('A'));
     expect(r.dados!.trafego).toMatchObject({ alcance: 'indisponivel', estadoColeta: 'sem_coleta' });
     expect(dados.buscarVisitasDia).not.toHaveBeenCalled();
+    // refetch com a query de tráfego desligada não roda a queryFn (conj/faixa seriam null)
+    await expect(r.refetch()).resolves.toBeDefined();
+    expect(dados.buscarVisitasDia).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,11 @@ const DIA_MES = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-dig
 const DIA_MES_HORA = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
 export const diaMesBRT = (d: string | Date = new Date()) => DIA_MES.format(new Date(d));
 export const diaMesHoraBRT = (d: string) => DIA_MES_HORA.format(new Date(d));
+const HORA = new Intl.DateTimeFormat('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+/** "às 14:05 de 27/09" (relógio de São Paulo). */
+export const asHoraDeBRT = (d: string) => `às ${HORA.format(new Date(d))} de ${DIA_MES.format(new Date(d))}`;
+/** Dia literal YYYY-MM-DD → dd/mm, sem passar por fuso (new Date do dia puro é meia-noite UTC). */
+export const diaMesLiteral = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
 export const pctBR = (v: number) => `${(v * 100).toFixed(1).replace('.', ',')}%`;
 const DIA = 86_400_000;
 

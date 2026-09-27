@@ -12,26 +12,9 @@ import { nomeCurtoComprador, nomeExibicaoComprador, type Pedido } from '@/lib/pe
 import type { Passo } from '@/lib/calendario-brt';
 import type { Evento, PontoSerie, TipoEvento } from '@/lib/sku-dossie';
 import { TIPO_EVENTO } from './tipos-evento';
-import { indiceHistorico, marcaParcial, pontosDaSerie, ultimoComPreco } from './serie-pontos';
+import { EIXO, EIXO_LUCRO, EIXO_UNID, MARGEM, MIN_POR_INTERVALO, TOOLTIP, indiceHistorico, kCompacto, marcaParcial, pontosDaSerie, ultimoComPreco } from './serie-pontos';
 import { dataBR } from './formato-dossie';
 
-// Larguras dos eixos: a régua de intervalos embaixo do gráfico usa as mesmas medidas para cair
-// exatamente sob cada barra (eixo X categórico = faixas iguais na área de plotagem).
-const MARGEM = 4;
-const EIXO_UNID = 32;
-const EIXO_LUCRO = 40;
-// ponytail: largura mínima por intervalo; acima disso (1 ano em semanas) rola dentro do cartão.
-const MIN_POR_INTERVALO = 14;
-
-const TOOLTIP = {
-  contentStyle: { backgroundColor: 'var(--popover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--popover-foreground)', fontSize: 12 },
-  labelStyle: { color: 'var(--popover-foreground)', fontWeight: 500, marginBottom: 2 },
-  itemStyle: { color: 'var(--popover-foreground)', padding: 0 },
-  cursor: { fill: 'var(--muted)', fillOpacity: 0.5 },
-  separator: ': ',
-};
-const EIXO = { fontSize: 11, fill: 'var(--muted-foreground)' };
-const kReais = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(Math.abs(v) >= 10_000 ? 0 : 1).replace('.', ',')}k` : String(Math.round(v)));
 // Ordem do tooltip: a mesma leitura da legenda.
 const ORDEM_TOOLTIP = ['Unidades', 'Fora de kit', 'Dentro de kit', 'Lucro', 'Preço médio', 'Perguntas'];
 const tom = (t: 'success' | 'warning' | 'danger' | 'muted'): StatusTone => (t === 'muted' ? 'neutral' : t);
@@ -142,7 +125,7 @@ export function SerieDossie({ serie, perguntas, eventos, codigos, familia, temKi
                 <CartesianGrid yAxisId="un" strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="rotulo" hide />
                 <YAxis yAxisId="un" width={EIXO_UNID} tick={EIXO} stroke="var(--border)" allowDecimals={false} tickFormatter={(v) => fmtInt(Number(v))} />
-                <YAxis yAxisId="lucro" orientation="right" width={EIXO_LUCRO} tick={EIXO} stroke="var(--border)" tickFormatter={(v) => kReais(Number(v))} />
+                <YAxis yAxisId="lucro" orientation="right" width={EIXO_LUCRO} tick={EIXO} stroke="var(--border)" tickFormatter={(v) => kCompacto(Number(v))} />
                 {/* Preço a partir de zero: a variação aparece no tamanho real, não esticada. */}
                 {/* Domínio fixo: a série invisível de perguntas (mesmo eixo) não pode esticar a escala do preço. */}
                 <YAxis yAxisId="preco" hide width={0} allowDataOverflow domain={[0, maxPreco > 0 ? maxPreco * 1.15 : 1]} />

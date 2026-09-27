@@ -8,7 +8,7 @@ import { dataBR, idadeComercial } from '@/components/sku-dossie/formato-dossie';
 import { fmtInt } from '@/lib/formato';
 import { soKits, type DossieSku } from '@/lib/sku-dossie';
 
-function Fato({ rotulo, children, fraco = false }: { rotulo: string; children: ReactNode; fraco?: boolean }) {
+export function Fato({ rotulo, children, fraco = false }: { rotulo: string; children: ReactNode; fraco?: boolean }) {
   return (
     <div className="min-w-0 bg-card px-3 py-2.5">
       <dt className="text-xs text-muted-foreground">{rotulo}</dt>

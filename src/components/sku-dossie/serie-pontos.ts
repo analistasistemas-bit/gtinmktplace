@@ -1,6 +1,24 @@
 import type { Intervalo } from '@/lib/calendario-brt';
 import type { PontoSerie } from '@/lib/sku-dossie';
 
+// Larguras dos eixos: a régua de intervalos embaixo do gráfico usa as mesmas medidas para cair
+// exatamente sob cada barra (eixo X categórico = faixas iguais na área de plotagem).
+export const MARGEM = 4;
+export const EIXO_UNID = 32;
+export const EIXO_LUCRO = 40;
+// ponytail: largura mínima por intervalo; acima disso (1 ano em semanas) rola dentro do cartão.
+export const MIN_POR_INTERVALO = 14;
+
+export const TOOLTIP = {
+  contentStyle: { backgroundColor: 'var(--popover)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--popover-foreground)', fontSize: 12 },
+  labelStyle: { color: 'var(--popover-foreground)', fontWeight: 500, marginBottom: 2 },
+  itemStyle: { color: 'var(--popover-foreground)', padding: 0 },
+  cursor: { fill: 'var(--muted)', fillOpacity: 0.5 },
+  separator: ': ',
+};
+export const EIXO = { fontSize: 11, fill: 'var(--muted-foreground)' };
+export const kCompacto = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toFixed(Math.abs(v) >= 10_000 ? 0 : 1).replace('.', ',')}k` : String(Math.round(v)));
+
 /** "(parcial)" no intervalo em andamento; "(início parcial)" no 1º, que começa antes do período. */
 export const marcaParcial = (iv: Intervalo) => (iv.incompleto ? '(parcial)' : iv.inicioParcial ? '(início parcial)' : null);
 

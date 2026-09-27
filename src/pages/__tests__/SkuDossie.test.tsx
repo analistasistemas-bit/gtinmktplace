@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -9,6 +9,7 @@ import { useSkuDossie } from '@/hooks/useSkuDossie';
 import { RankingSku } from '@/components/faturamento/ranking-sku';
 import { SEM_CODIGO, metricas, somarAcumuladores, type LinhaSku } from '@/lib/vendas-sku';
 import type { DossieSku, EstadoDossie, PontoSerie } from '@/lib/sku-dossie';
+import type { PontoTrafego, TrafegoDossie } from '@/lib/sku-trafego';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import type { Venda } from '@/lib/faturamento';
 import type { CatalogoSku } from '@/lib/vendas-sku-catalogo';
@@ -37,7 +38,7 @@ const dossie = (over: Partial<DossieSku> = {}): DossieSku => ({
   tendencia: 'em_alta', cobertura: 40, estoque: 12, alertas: [], serie: [], eventos: [], perguntasPorIntervalo: [],
   ufs: { valores: {}, semUf: 0 }, mix: null, campanhas: [], mlbs: new Map(), kitVirtual: null,
   qualidade: { pctBrutoCustoReal: 0.9, fontesParciais: ['Promoções: só a situação atual'] },
-  trafego: { calendario: 'brt', alcance: 'indisponivel', porMlb: [], serie: [], coberturaDesde: null, estadoColeta: 'sem_coleta', precoAtual: null },
+  trafego: { calendario: 'brt', alcance: 'indisponivel', porMlb: [], serie: [], coberturaDesde: null, estadoColeta: 'sem_coleta', precoAtual: null, motivo: null },
   ...over,
 });
 
@@ -259,6 +260,122 @@ describe('SkuDossie: série e eventos', () => {
   it('eventos vazios: aviso próprio', () => {
     renderPagina('ok', comSerie({ eventos: [] }));
     expect(within(screen.getByRole('region', { name: 'Eventos' })).getByText('Nenhum evento registrado')).toBeInTheDocument();
+  });
+});
+
+const IV14 = { inicio: '2026-09-14T03:00:00.000Z', fim: '2026-09-21T03:00:00.000Z', rotulo: '14/09', incompleto: false, inicioParcial: false };
+const IV21 = { inicio: '2026-09-21T03:00:00.000Z', fim: '2026-09-28T03:00:00.000Z', rotulo: '21/09', incompleto: true, inicioParcial: false };
+const pt = (intervalo: PontoTrafego['intervalo'], over: Partial<PontoTrafego> = {}): PontoTrafego => ({
+  intervalo, visitas: 70, estados: { ok: 7, pendente: 0, falha: 0, ausente: 0 }, unidades: 5, unidadesPorVisita: 5 / 70,
+  precoObservado: { min: 47.9, max: 49.9 }, ...over,
+});
+const traf = (over: Partial<TrafegoDossie> = {}): TrafegoDossie => ({
+  calendario: 'brt', alcance: 'sku', estadoColeta: 'ok', motivo: null, coberturaDesde: '2026-09-14',
+  porMlb: [{ mlb: 'MLB1', vinculo: 'exato', codigos: ['00123'], considerado: true }],
+  serie: [pt(IV14), pt(IV21, { visitas: null, unidades: 1, unidadesPorVisita: null, estados: { ok: 4, pendente: 2, falha: 0, ausente: 0 } })],
+  precoAtual: { preco: 49.9, observadoEm: '2026-09-22T02:30:00Z', mlb: 'MLB1' },
+  ...over,
+});
+
+async function abrirTrafego(t: TrafegoDossie, rota?: string) {
+  const user = userEvent.setup();
+  renderPagina('ok', comSerie({ trafego: t }), rota);
+  await user.click(screen.getByRole('tab', { name: 'Tráfego e oferta' }));
+  return screen.getByRole('region', { name: /Tráfego e oferta/ });
+}
+
+describe('SkuDossie: tráfego e oferta', () => {
+  it('alterna Vendas | Tráfego e oferta numa tablist; Vendas é o padrão', async () => {
+    renderPagina('ok', comSerie({ trafego: traf() }));
+    expect(screen.getByRole('tablist')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Vendas' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: /Evolução/ })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Tráfego e oferta' }));
+    expect(screen.getByRole('tab', { name: 'Tráfego e oferta' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: /Tráfego e oferta/ })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: /Evolução/ })).not.toBeInTheDocument();
+  });
+
+  it('SKU exclusivo: "deste SKU", unidades por visita como razão (nunca %), preço observado com hora BRT e cobertura', async () => {
+    const reg = await abrirTrafego(traf());
+    expect(within(reg).getAllByText(/deste SKU/).length).toBeGreaterThan(0);
+    expect(within(reg).getAllByText('0,071 un./visita').length).toBeGreaterThan(0);
+    expect(reg.textContent).not.toMatch(/%/);
+    expect(within(reg).getByText(/R\$\s?49,90 às 23:30 de 21\/09/)).toBeInTheDocument();
+    expect(within(reg).getByText(/dados no período desde 14\/09/i)).toBeInTheDocument();
+    expect(reg.textContent).not.toMatch(/coleta desde/i);
+  });
+
+  it('intervalo com dia pendente: "em curso · aguardando 48 h"; falha/ausente: "sem dado" com a contagem', async () => {
+    const reg = await abrirTrafego(traf({ serie: [
+      pt(IV14, { visitas: null, unidadesPorVisita: null, estados: { ok: 5, pendente: 0, falha: 1, ausente: 1 } }),
+      pt(IV21, { visitas: null, unidadesPorVisita: null, estados: { ok: 4, pendente: 2, falha: 0, ausente: 0 } }),
+    ] }));
+    expect(within(reg).getByRole('button', { name: /21\/09.*em curso · aguardando 48 h/ })).toBeInTheDocument();
+    expect(within(reg).getByRole('button', { name: /14\/09.*sem dado em 2 dias/ })).toBeInTheDocument();
+  });
+
+  it('anúncio compartilhado: métrica do anúncio inteiro, com o MLB e quantas variações dividem o anúncio', async () => {
+    const reg = await abrirTrafego(traf({ alcance: 'anuncio',
+      porMlb: [{ mlb: 'MLB2', vinculo: 'compartilhado', codigos: ['00123', '00124', '00125'], considerado: true }] }));
+    expect(within(reg).getAllByText(/do anúncio inteiro \(compartilhado com 2 variações\)/).length).toBeGreaterThan(0);
+    expect(within(reg).getAllByText(/MLB2/).length).toBeGreaterThan(0);
+  });
+
+  it('família: "da família"; anúncio misto aparece fora da métrica', async () => {
+    const reg = await abrirTrafego(traf({ alcance: 'familia', porMlb: [
+      { mlb: 'MLB1', vinculo: 'exato', codigos: ['00123'], considerado: true },
+      { mlb: 'MLB7', vinculo: 'compartilhado', codigos: ['00123', '00999'], considerado: false },
+    ] }), '/faturamento/sku/familia/P1');
+    expect(within(reg).getAllByText(/da família/).length).toBeGreaterThan(0);
+    const lista = within(reg).getByRole('list', { name: /Anúncios/ });
+    expect(within(lista).getByText('fora da métrica')).toBeInTheDocument();
+    expect(within(lista).getByText('entra na métrica')).toBeInTheDocument();
+  });
+
+  it('indisponível vem antes de sem_coleta: SKU sem MLB não lê "a coleta ainda não começou"', async () => {
+    const reg = await abrirTrafego(traf({ alcance: 'indisponivel', estadoColeta: 'sem_coleta', porMlb: [], serie: [], precoAtual: null, coberturaDesde: null }));
+    expect(within(reg).getByText(/Nenhum anúncio do Mercado Livre vinculado/)).toBeInTheDocument();
+    expect(within(reg).queryByText(/coleta de tráfego começa/)).not.toBeInTheDocument();
+  });
+
+  it('sem_coleta: começa depois da ativação', async () => {
+    const reg = await abrirTrafego(traf({ estadoColeta: 'sem_coleta', serie: [], precoAtual: null, coberturaDesde: null }));
+    expect(within(reg).getByText(/A coleta de tráfego começa depois da ativação/)).toBeInTheDocument();
+  });
+
+  it('coleta interrompida: diz o motivo (sem acesso / falha)', async () => {
+    let reg = await abrirTrafego(traf({ motivo: 'sem_acesso', estadoColeta: 'sem_coleta', serie: [], precoAtual: null, coberturaDesde: null }));
+    expect(within(reg).getByText(/Coleta interrompida: sem acesso à conta do Mercado Livre/)).toBeInTheDocument();
+    expect(within(reg).queryByText(/começa depois da ativação/)).not.toBeInTheDocument();
+    cleanup();
+    reg = await abrirTrafego(traf({ motivo: 'erro' }));
+    expect(within(reg).getByText(/Coleta interrompida: falhou na última execução/)).toBeInTheDocument();
+  });
+
+  it('erro na leitura do tráfego: o painel avisa e o dossiê continua', async () => {
+    const reg = await abrirTrafego(traf({ estadoColeta: 'erro', serie: [], precoAtual: null, coberturaDesde: null }));
+    expect(within(reg).getByText(/Não foi possível ler o tráfego/)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Estoque' })).toBeInTheDocument();
+  });
+
+  it('parcial: avisa a carga em andamento; carregando: skeleton ocupado', async () => {
+    const reg = await abrirTrafego(traf({ estadoColeta: 'parcial' }));
+    expect(within(reg).getByText(/Coleta parcial/)).toBeInTheDocument();
+    cleanup();
+    const r2 = await abrirTrafego(traf({ estadoColeta: 'carregando', serie: [], precoAtual: null, coberturaDesde: null }));
+    expect(r2.querySelector('[aria-busy="true"]')).not.toBeNull();
+  });
+
+  it('régua do tráfego: um tab stop, setas andam e o detalhe acompanha', async () => {
+    const reg = await abrirTrafego(traf());
+    const b14 = within(reg).getByRole('button', { name: /14\/09/ });
+    const b21 = within(reg).getByRole('button', { name: /21\/09/ });
+    expect(b21).toHaveAttribute('tabindex', '0');
+    b21.focus();
+    await userEvent.keyboard('{ArrowLeft}');
+    expect(b14).toHaveFocus();
+    expect(within(reg).getByTestId('detalhe-trafego')).toHaveTextContent(/Semana de 14\/09.*Visitas70/);
   });
 });
 

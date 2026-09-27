@@ -10,6 +10,8 @@ import { CabecalhoDossie } from '@/components/sku-dossie/cabecalho-dossie';
 import { QualidadeHistorico } from '@/components/sku-dossie/qualidade-historico';
 import { KpisDossie } from '@/components/sku-dossie/kpis-dossie';
 import { SerieDossie } from '@/components/sku-dossie/serie-dossie';
+import { TrafegoDossie } from '@/components/sku-dossie/trafego-dossie';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EventosDossie } from '@/components/sku-dossie/eventos-dossie';
 import { EstoqueDossie } from '@/components/sku-dossie/estoque-dossie';
 import { DevolucoesDossie } from '@/components/sku-dossie/devolucoes-dossie';
@@ -150,8 +152,20 @@ export default function SkuDossie() {
           {!dados.linhaPeriodo && (
             <p className="text-xs text-muted-foreground">{`Nenhuma venda neste período. ${dados.linhaAnterior ? 'O Δ compara com o período anterior.' : 'Sem Δ: sem histórico no período anterior.'}`}</p>
           )}
-          <SerieDossie serie={dados.serie} perguntas={dados.perguntasPorIntervalo} eventos={dados.eventos} codigos={dados.codigos}
-            familia={familia} temKit={dados.kitVirtual != null} historicoDesde={dados.historicoDesde} passo={passo} onPasso={setPasso} />
+          {/* Vendas | Tráfego: medidas diferentes (unidades × visitas) não dividem o mesmo gráfico. */}
+          <Tabs defaultValue="vendas" className="gap-3">
+            <TabsList aria-label="Série do período">
+              <TabsTrigger value="vendas" className="px-3">Vendas</TabsTrigger>
+              <TabsTrigger value="trafego" className="px-3">Tráfego e oferta</TabsTrigger>
+            </TabsList>
+            <TabsContent value="vendas">
+              <SerieDossie serie={dados.serie} perguntas={dados.perguntasPorIntervalo} eventos={dados.eventos} codigos={dados.codigos}
+                familia={familia} temKit={dados.kitVirtual != null} historicoDesde={dados.historicoDesde} passo={passo} onPasso={setPasso} />
+            </TabsContent>
+            <TabsContent value="trafego">
+              <TrafegoDossie trafego={dados.trafego} familia={familia} passo={passo} onPasso={setPasso} onTentar={() => { void refetch(); }} />
+            </TabsContent>
+          </Tabs>
         </section>
       )}
 

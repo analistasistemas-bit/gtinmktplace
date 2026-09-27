@@ -151,6 +151,25 @@ describe('montarTrafego', () => {
     expect(ok.coberturaDesde).toBe('2026-09-10');
   });
 
+  it('dia sem linha nas últimas 48 h (fim do dia BRT) é pendente, não ausente', () => {
+    const mlbs = new Map([['MLB1', ['A']]]);
+    // semana de 28/09 cortada em hoje (01/10 BRT): 28 terminou há 57 h → ausente; 29 (33 h), 30 e 01 → pendente
+    const iv = { inicio: '2026-09-28T03:00:00.000Z', fim: '2026-10-05T03:00:00.000Z', rotulo: '28/09', incompleto: true, inicioParcial: false };
+    const t = montarTrafego({ ...base, intervalos: [iv], alvo: { tipo: 'sku', codigo: 'A' }, codigos: ['A'], mlbs, vendas: [], fonte: fonte(dias('MLB1', 14, 27)) });
+    expect(t.serie[0]).toMatchObject({ visitas: null, estados: { ok: 0, pendente: 3, falha: 0, ausente: 1 } });
+  });
+
+  it('motivo: sync em erro/sem_acesso diz por que a coleta parou, mesmo sem nenhuma linha', () => {
+    const mlbs = new Map([['MLB1', ['A']]]);
+    const p = { ...base, alvo: { tipo: 'sku', codigo: 'A' } as const, codigos: ['A'], mlbs, vendas: [] };
+    const sync = (estado: string) => ({ estado, carga_inicial_concluida_em: null, ultimo_ok_em: null });
+    expect(montarTrafego({ ...p, fonte: fonte([], [], sync('sem_acesso')) })).toMatchObject({ estadoColeta: 'sem_coleta', motivo: 'sem_acesso' });
+    expect(montarTrafego({ ...p, fonte: fonte(dias('MLB1', 14, 27), [], sync('erro')) }).motivo).toBe('erro');
+    expect(montarTrafego({ ...p, fonte: fonte(dias('MLB1', 14, 27), [], sync('sincronizando')) }).motivo).toBeNull();
+    expect(montarTrafego({ ...p, fonte: fonte([], [], null) }).motivo).toBeNull();
+    expect(montarTrafego({ ...p, fonte: 'erro' }).motivo).toBeNull();
+  });
+
   it('fonte carregando/erro: alcance e porMlb já saem; série vazia; indisponível nunca espera', () => {
     const mlbs = new Map([['MLB1', ['A']]]);
     const p = { ...base, alvo: { tipo: 'sku', codigo: 'A' } as const, codigos: ['A'], mlbs, vendas: [] };

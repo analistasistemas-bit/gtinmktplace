@@ -76,6 +76,7 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
   // Tráfego (Fatia 2b): query à parte — falhar aqui não derruba o dossiê.
   const conj = useMemo(() => (extrasQ.data ? conjuntoTrafego(alvoM, codigos, extrasQ.data.mlbs) : null), [extrasQ.data, alvoM, codigos]);
   const faixa = useMemo(() => faixaTrafego(intervalos), [intervalos]);
+  const temTrafego = !!conj && conj.mlbs.length > 0 && !!faixa;
   const trafegoQ = useQuery({
     queryKey: ['sku-dossie-trafego', conj?.mlbs, conj?.codigosExtras, faixa],
     queryFn: async () => {
@@ -88,7 +89,7 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
       ]);
       return { visitas, precos, sync, vendasExtras };
     },
-    enabled: !!conj && conj.mlbs.length > 0 && !!faixa,
+    enabled: temTrafego,
     staleTime: 5 * 60_000,
   });
 
@@ -128,6 +129,8 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
 
   return {
     estado: r.estado, dados,
-    refetch: () => Promise.all([catQ.refetch(), devQ.refetch(), vendasQ.refetch(), extrasQ.refetch(), trafegoQ.refetch()]),
+    refetch: () => Promise.all([catQ.refetch(), devQ.refetch(), vendasQ.refetch(), extrasQ.refetch(),
+      // refetch() roda a queryFn mesmo com enabled=false: sem conjunto, não há o que ler.
+      ...(temTrafego ? [trafegoQ.refetch()] : [])]),
   };
 }
