@@ -154,6 +154,7 @@ describe('montarAds', () => {
     expect(a.grupos.map((g) => g.custo)).toEqual([null]);
     expect(a.lucroAposAds).toBeNull();
     expect(a.motivoSemLucro).toBe('cobertura');
+    expect([...a.serie, ...a.serieDiaria].every((p) => p.custo === null)).toBe(true);
   });
 
   it('período não coberto e sem linhas não é "sem_ads"', () => {
@@ -167,11 +168,12 @@ describe('montarAds', () => {
     expect(a.totais).toMatchObject({ custo: 0, cliques: 0, vendasTotais: 0, cpc: null, roas: null, acos: null });
   });
 
-  it('fora_dos_grupos: diferença de 0,004 é ruído e libera o lucro; 0,01 bloqueia', () => {
+  it('fora_dos_grupos: diferença de 0,004 é ruído e libera o lucro; 0,006 bloqueia', () => {
     const com = (custo_listado: number) => monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] },
       dias: diasDe(11, 14, 26, { cost: 1 }), sync: { ...SYNC, custo_resumo: 100, custo_listado } }) });
     expect(com(99.996)).toMatchObject({ motivoSemLucro: null, lucroAposAds: 487 });
-    expect(com(99.99)).toMatchObject({ motivoSemLucro: 'fora_dos_grupos', lucroAposAds: null });
+    // 0,006 e não 0,01 — em float 100 − 99.99 = 0,010000000000005 e deixaria passar o mutante `> 0.01`.
+    expect(com(99.994)).toMatchObject({ motivoSemLucro: 'fora_dos_grupos', lucroAposAds: null });
   });
 
   it('estados honestos', () => {
