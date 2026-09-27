@@ -3627,6 +3627,7 @@ export type Database = {
         Args: { p_codigo_pai: string }
         Returns: Json[]
       }
+      vendas_sku_catalogo: { Args: never; Returns: Json[] }
     }
     Enums: {
       canal_externo: "mercado_livre"
