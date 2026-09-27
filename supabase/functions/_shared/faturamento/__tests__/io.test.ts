@@ -14,6 +14,39 @@ function criarAdminFake(
   erroCusto: { message: string } | null = null,
 ) {
   let linha: Linha = null;
+  // ml_vendas_itens em memória: chave única (venda_id, ml_item_id, variation_id), como no banco.
+  const itens: Array<Record<string, unknown> & { id: string }> = [];
+  const falhas = { upsertItens: null as { message: string } | null };
+  let seq = 0;
+  const chave = (r: Record<string, unknown>) => `${r.venda_id}|${r.ml_item_id}|${r.variation_id}`;
+  const tabelaItens = {
+    upsert: (rows: Record<string, unknown>[]) => ({
+      select: async () => {
+        if (falhas.upsertItens) return { data: null, error: falhas.upsertItens };
+        const data = rows.map((r) => {
+          let e = itens.find((i) => chave(i) === chave(r));
+          if (e) Object.assign(e, r); else { e = { ...r, id: `it-${++seq}` }; itens.push(e); }
+          return { id: e.id };
+        });
+        return { data, error: null };
+      },
+    }),
+    delete: () => ({
+      eq: (_c: string, vendaId: string) => {
+        let manter: string[] = [];
+        const q = {
+          not: (_c2: string, _op: string, lista: string) => { manter = lista.slice(1, -1).split(','); return q; },
+          then: (res: (v: { error: null }) => unknown) => {
+            for (let i = itens.length - 1; i >= 0; i--) {
+              if (itens[i].venda_id === vendaId && !manter.includes(itens[i].id)) itens.splice(i, 1);
+            }
+            return Promise.resolve({ error: null }).then(res);
+          },
+        };
+        return q;
+      },
+    }),
+  };
   const atualizarMensagens = vi.fn(() => ({
     eq: () => ({ or: async () => ({ error: errosSnapshot.shift() ?? null }) }),
   }));
@@ -33,13 +66,10 @@ function criarAdminFake(
         ? { update: atualizarMensagens }
         : tabela === 'venda_item_custo'
           ? { upsert: upsertCustos }
-          : {
-            delete: () => ({ eq: async () => ({ error: null }) }),
-            upsert: async () => ({ error: null }),
-          });
+          : tabelaItens);
   return {
     admin: { from } as unknown as Parameters<typeof upsertVenda>[0],
-    upsertVendas, atualizarMensagens, upsertCustos,
+    upsertVendas, atualizarMensagens, upsertCustos, itens, falhas,
   };
 }
 
@@ -167,5 +197,28 @@ describe('upsertVenda — congelamento do custo (ADR-0109)', () => {
     await expect(
       upsertVenda(admin, 'user-1', 'org-1', pedido, { ...opts, custoVigenteResolver: () => 10 }),
     ).rejects.toThrow(/congelar custo/i);
+  });
+});
+
+// Incidente 2026-09: o backfill morria por "CPU Time exceeded" entre o DELETE e o reinsert dos
+// itens, e 5 pedidos pagos ficaram sem item — a aba Vendas somava o total, a Vendas SKU não.
+describe('upsertVenda — itens nunca somem no meio da troca', () => {
+  it('se a gravação dos itens falhar, os itens anteriores continuam', async () => {
+    const { admin, itens, falhas } = criarAdminFake();
+    await upsertVenda(admin, 'user-1', 'org-1', pedido, opts);
+    expect(itens).toHaveLength(1);
+    falhas.upsertItens = { message: 'processo morreu' };
+    await expect(upsertVenda(admin, 'user-1', 'org-1', pedido, opts)).rejects.toThrow('upsert ml_vendas_itens');
+    expect(itens.map((i) => i.ml_item_id)).toEqual(['MLB1']);
+  });
+
+  it('reprocessar mantém um item por linha e remove o que saiu do pedido', async () => {
+    const { admin, itens } = criarAdminFake();
+    const dois = { ...pedido, order_items: [...pedido.order_items!, { item: { id: 'MLB2' }, quantity: 1, unit_price: 5, sale_fee: 1 }] };
+    await upsertVenda(admin, 'user-1', 'org-1', dois, opts);
+    await upsertVenda(admin, 'user-1', 'org-1', dois, opts);
+    expect(itens.map((i) => i.ml_item_id).sort()).toEqual(['MLB1', 'MLB2']);
+    await upsertVenda(admin, 'user-1', 'org-1', pedido, opts);
+    expect(itens.map((i) => i.ml_item_id)).toEqual(['MLB1']);
   });
 });
