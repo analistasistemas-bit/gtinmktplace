@@ -3,7 +3,7 @@ import { buscarML, dedupFanout, tratarRequisicao } from '../../trafego/fiacao.ts
 import type { RespostaML } from '../../trafego/sincronizar.ts';
 import {
   HEADERS_ADS, HEADERS_ADVERTISER, dedupContinuacaoAds, dedupFanoutAds, getComReautenticacao, msgAdsDoCorpo,
-  urlAdvertiser, urlBuscaGrupos, urlMembros, urlSerieGrupo,
+  resultadoParaFiacaoTrafego, urlAdvertiser, urlBuscaGrupos, urlMembros, urlSerieGrupo,
 } from '../fiacao.ts';
 
 const J = { desde: '2026-09-12', ate: '2026-09-26' };
@@ -120,5 +120,15 @@ describe('fiação de Ads', () => {
     expect(msgChamado).toEqual({ org_id: 'org-1', primeira: false });
     // mas o 2º argumento é o corpo cru, e `falhou` sobrevive nele
     expect(brutoChamado).toEqual({ org_id: 'org-1', falhou: true });
+  });
+
+  it('resultadoParaFiacaoTrafego (item 2 da correção final): sem_permissao/sem_advertiser colapsam pra sem_acesso, o resto passa direto', () => {
+    expect(resultadoParaFiacaoTrafego('sem_permissao')).toBe('sem_acesso');
+    expect(resultadoParaFiacaoTrafego('sem_advertiser')).toBe('sem_acesso');
+    expect(resultadoParaFiacaoTrafego('sem_acesso')).toBe('sem_acesso');
+    expect(resultadoParaFiacaoTrafego('ok')).toBe('ok');
+    expect(resultadoParaFiacaoTrafego('continua')).toBe('continua');
+    expect(resultadoParaFiacaoTrafego('obsoleta')).toBe('obsoleta');
+    expect(resultadoParaFiacaoTrafego('erro')).toBe('erro');
   });
 });

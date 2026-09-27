@@ -14,7 +14,7 @@ import { EIXO, EIXO_LUCRO, MARGEM, MIN_POR_INTERVALO, TOOLTIP, escalaRedonda, kC
 import { HINT_CUSTO, asHoraDeBRT, diaMesLiteral, pctBR } from './formato-dossie';
 
 const TIPO: Record<GrupoAdsDossie['tipo'], string> = { ITEM: 'Anúncio', FAMILY: 'Família (UP)', CATALOG: 'Catálogo' };
-const STATUS: Record<string, string> = { active: 'ativo', paused: 'pausado', idle: 'parado', hold: 'retido', desconhecido: 'status desconhecido' };
+const STATUS: Record<string, string> = { active: 'ativo', paused: 'pausado', idle: 'parado', hold: 'retido', empty: 'vazio', desconhecido: 'status desconhecido' };
 const fmtRoas = (v: number) => `${v.toLocaleString('pt-BR', { maximumFractionDigits: 2 })}×`;
 const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 // Despesa = saída (tom quente); vendas atribuídas = a linha de sempre (chart-1, como a razão do tráfego).

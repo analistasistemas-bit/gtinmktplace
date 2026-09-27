@@ -1,7 +1,7 @@
 // Partes puras da fiação do worker `coletar-ads-ml` (Fatia 2c): URLs e headers do Product Ads (spike 053 §3)
 // e ids de deduplicação do QStash. Sem import Deno/npm: o vitest carrega.
-import type { MsgTrafego, RespostaML } from '../trafego/sincronizar.ts';
-import type { MsgAds } from './sincronizar.ts';
+import type { MsgTrafego, RespostaML, ResultadoTrafego } from '../trafego/sincronizar.ts';
+import type { MsgAds, ResultadoAds } from './sincronizar.ts';
 import type { JanelaAds } from './janelas.ts';
 
 export const ML_API = 'https://api.mercadolibre.com';
@@ -78,4 +78,15 @@ export function msgAdsDoCorpo(msg: MsgTrafego, bruto: unknown): MsgAds {
     ...(descontar != null ? { descontar } : {}),
     ...(descontados != null && descontados.length > 0 ? { descontados } : {}),
   };
+}
+
+/**
+ * `coletar-ads-ml` usa `tratarRequisicao` (2b), que só conhece `ResultadoTrafego` (item 2 da correção
+ * final): `sincronizarAdsOrg` agora distingue `sem_permissao`/`sem_advertiser` de `sem_acesso` (mais
+ * preciso pra quem chama a função direto, ex.: `deps.ts`/scripts), mas o corpo HTTP do worker QStash só
+ * precisa saber `erro` (500) de todo o resto (200) — por isso os três colapsam aqui, na borda, nunca
+ * dentro da orquestração.
+ */
+export function resultadoParaFiacaoTrafego(resultado: ResultadoAds): ResultadoTrafego {
+  return resultado === 'sem_permissao' || resultado === 'sem_advertiser' ? 'sem_acesso' : resultado;
 }

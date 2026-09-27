@@ -7,7 +7,7 @@
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { tratarRequisicao } from '../_shared/trafego/fiacao.ts';
-import { msgAdsDoCorpo } from '../_shared/ads/fiacao.ts';
+import { msgAdsDoCorpo, resultadoParaFiacaoTrafego } from '../_shared/ads/fiacao.ts';
 import { sincronizarAdsOrg } from '../_shared/ads/sincronizar.ts';
 import { depsAds, limparRetencao, publicarFanout } from './deps.ts';
 
@@ -16,5 +16,10 @@ Deno.serve((req) => tratarRequisicao(req, {
   verificar: verificarAssinatura,
   fanout: () => publicarFanout(adminClient()),
   limpar: () => limparRetencao(adminClient()),
-  sincronizar: (msg, p) => sincronizarAdsOrg(depsAds(adminClient(), msg.org_id), msgAdsDoCorpo(msg, p)),
+  // `tratarRequisicao` (2b) só conhece ResultadoTrafego; sincronizarAdsOrg distingue mais estados
+  // (sem_permissao/sem_advertiser) — resultadoParaFiacaoTrafego colapsa só nesta borda HTTP.
+  sincronizar: async (msg, p) => {
+    const { resultado } = await sincronizarAdsOrg(depsAds(adminClient(), msg.org_id), msgAdsDoCorpo(msg, p));
+    return { resultado: resultadoParaFiacaoTrafego(resultado) };
+  },
 }));

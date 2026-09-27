@@ -140,7 +140,9 @@ describe('sincronizarAdsOrg', () => {
 
   it('403 PolicyAgent no advertiser → sem_permissao, sem retry e sem tocar em grupos', async () => {
     const d = fake({ buscarAdvertiser: vi.fn(async () => http(403, { blocked_by: 'PolicyAgent', code: 'PA_UNAUTHORIZED_RESULT_FROM_POLICIES' })) });
-    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'sem_acesso' });
+    // Item 2 da correção final: o resultado da função é o estado preciso, não um "sem_acesso" genérico
+    // (o worker/index é quem decide se colapsa pra sem_acesso, ver fiacao.ts).
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'sem_permissao' });
     expect(d.buscarAdvertiser).toHaveBeenCalledTimes(1);
     expect(d.esperar).not.toHaveBeenCalled();
     expect(d.buscarGrupos).not.toHaveBeenCalled();
@@ -150,13 +152,13 @@ describe('sincronizarAdsOrg', () => {
 
   it('401 (já depois da releitura do token nas deps) → sem_acesso; 404 no advertiser ou lista sem MLB → sem_advertiser', async () => {
     const a = fake({ buscarAdvertiser: vi.fn(async () => http(401, { error_code: 'unauthorized' })) });
-    await sincronizarAdsOrg(a, primeira);
+    expect(await sincronizarAdsOrg(a, primeira)).toEqual({ resultado: 'sem_acesso' });
     expect(a.concluir.mock.calls[0][1]).toBe('sem_acesso');
     const b = fake({ buscarAdvertiser: vi.fn(async () => http(404, { message: 'No permissions found for user_id' })) });
-    await sincronizarAdsOrg(b, primeira);
+    expect(await sincronizarAdsOrg(b, primeira)).toEqual({ resultado: 'sem_advertiser' });
     expect(b.concluir.mock.calls[0][1]).toBe('sem_advertiser');
     const c = fake({ buscarAdvertiser: vi.fn(async () => ok({ advertisers: [] })) });
-    expect(await sincronizarAdsOrg(c, primeira)).toEqual({ resultado: 'sem_acesso' });
+    expect(await sincronizarAdsOrg(c, primeira)).toEqual({ resultado: 'sem_advertiser' });
     expect(c.concluir.mock.calls[0][1]).toBe('sem_advertiser');
   });
 
@@ -560,6 +562,33 @@ describe('sincronizarAdsOrg', () => {
   });
 
   // Item 4 da rodada de correção: a busca extra de 90 dias tem o mesmo teto de adiamento das outras.
+  // Item 1 da correção final (Grok 4.7 xhigh, ALTA): os dois primeiros GETs da cadeia (anunciante e
+  // ad_groups/search de 15 dias) publicavam continuação sem olhar LIMITE_ADIAMENTOS — presos, a posse
+  // renovava para sempre e o cursor nunca andava.
+  it('429 constante no anunciante também tem teto de adiamento: presa, a rodada fecha em erro sem publicar continuação', async () => {
+    const d = fake({ buscarAdvertiser: vi.fn(async () => http(429, null, 120_000)) });
+    expect(await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 }))
+      .toEqual({ resultado: 'erro' });
+    expect(d.continuar).not.toHaveBeenCalled();
+    expect(d.buscarGrupos).not.toHaveBeenCalled();
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, null, null);
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('anunciante'),
+      { cargaConcluida: false, advertiserId: null, coberturaDesde: null, custoResumo: null, custoListado: null });
+    expect(d.concluir.mock.calls.some((c) => c[1] === 'ok')).toBe(false);
+  });
+
+  it('429 constante no ad_groups/search de 15 dias também tem teto de adiamento: presa, a rodada fecha em erro sem publicar continuação', async () => {
+    const d = fake({ buscarGrupos: vi.fn(async () => http(429, null, 120_000)) });
+    expect(await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 }))
+      .toEqual({ resultado: 'erro' });
+    expect(d.continuar).not.toHaveBeenCalled();
+    expect(d.buscarSerieGrupo).not.toHaveBeenCalled();
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, null, null);
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('ad_groups/search'),
+      { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
+    expect(d.concluir.mock.calls.some((c) => c[1] === 'ok')).toBe(false);
+  });
+
   it('Ruling 2c-9 — 429 constante na busca extra de 90 dias tem teto de adiamento: presa, a rodada fecha em erro (nunca ok sem o custo de 90 dias)', async () => {
     const d = fake({
       buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }) =>

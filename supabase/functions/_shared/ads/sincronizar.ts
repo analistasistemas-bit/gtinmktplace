@@ -28,7 +28,10 @@ export class ParadaAds extends Error {
  *  `falhou` (Ruling 2c-5): carregado em toda continuação depois que um grupo não foi lido nesta rodada,
  *  para a mensagem final nunca fechar em `ok` mesmo quando o cursor andou numa mensagem sem falha. */
 export type MsgAds = MsgTrafego & { falhou?: boolean; descontar?: number; descontados?: number[] };
-export type ResultadoAds = 'ok' | 'continua' | 'obsoleta' | 'erro' | 'sem_acesso';
+/** `sem_permissao`/`sem_advertiser` distintos de `sem_acesso` (item 2 da correção final): quem chama e só
+ *  conhece o contrato mais estreito do 2b (`ResultadoTrafego`) decide se colapsa — ver
+ *  `resultadoParaFiacaoTrafego` em `fiacao.ts`, usado por `coletar-ads-ml`. */
+export type ResultadoAds = 'ok' | 'continua' | 'obsoleta' | 'erro' | EstadoParada;
 export interface GrupoConhecido { ad_group_id: number; tipo: TipoGrupo; external_id: string | null; campaign_id: number | null; status: string }
 /** `itens` null = vínculo não lido nesta rodada (o banco mantém o atual). */
 export interface GrupoGravar extends GrupoConhecido { itens: string[] | null; dias: DiaAds[] }
@@ -135,6 +138,17 @@ export async function sincronizarAdsOrg(
         atrasoMs != null ? { atrasoMs } : {});
       return { resultado: 'continua' as const };
     };
+    // Correção final (Grok 4.7 xhigh, item 1): TODO `continuar` de um 429/5xx sem orçamento passa por este
+    // mesmo teto — cursor/inicial/tentativa não mudam antes do laço principal, então "presa" vale para o
+    // anunciante, o `ad_groups/search` de 15 dias e a busca extra de 90 dias (a única que roda depois do
+    // laço, quando cursor pode ter andado — daí reavaliar, não reusar um valor fixo).
+    const preso = () => cursor === inicial && (msg.tentativa ?? 0) >= LIMITE_ADIAMENTOS;
+    const fecharPreso = async (onde: string) => {
+      const erro = `${onde} sem resposta depois de ${LIMITE_ADIAMENTOS} adiamentos (429/5xx/tempo)`;
+      if (!(await deps.avancarCursor(dona, cursor, null))) return { resultado: 'obsoleta' as const };
+      if (!(await deps.concluir(dona, 'erro', erro, parada({ advertiserId })))) return { resultado: 'obsoleta' as const };
+      return { resultado: 'erro' as const };
+    };
 
     const estado = await deps.lerEstadoSync();
     cargaInicial = !estado.cargaInicialOk;
@@ -148,7 +162,7 @@ export async function sincronizarAdsOrg(
     const janelaMembros = janelaAds({ hoje, cargaInicialOk: false, ultimoOkDia: null });
 
     const a = await comRetry(deps, fim, () => deps.buscarAdvertiser());
-    if ('adiar' in a) return await continuar(cursor, a.adiar);
+    if ('adiar' in a) return preso() ? await fecharPreso('anunciante') : await continuar(cursor, a.adiar);
     if (classificarResposta(a) === 'nao_encontrado') throw new ParadaAds('sem_advertiser', 'ML 404: conta sem anunciante de Product Ads');
     exigir(a, 'advertisers');
     advertiserId = parseAdvertiser(a.corpo);
@@ -159,7 +173,7 @@ export async function sincronizarAdsOrg(
     let custoResumo: number | null = null;
     for (let offset = 0; ;) {
       const r = await comRetry(deps, fim, () => deps.buscarGrupos(adv, janela, offset));
-      if ('adiar' in r) return await continuar(cursor, r.adiar);
+      if ('adiar' in r) return preso() ? await fecharPreso('ad_groups/search') : await continuar(cursor, r.adiar);
       exigir(r, 'ad_groups/search');
       const p = parseBuscaGrupos(r.corpo);
       if (!p) throw new Error('ad_groups/search: resposta inválida');
@@ -282,22 +296,14 @@ export async function sincronizarAdsOrg(
     let custoResumoFinal = custoResumo;
     let custoListadoFinal = custoListado;
     if (!cargaInicial) {
-      // Ruling 2c-9, correção da re-revisão: cursor/inicial/tentativa não mudam durante este laço, então
-      // "presa" é a mesma checagem para as duas saídas (orçamento estourado e 429/5xx) — sem isso, um
-      // orçamento sempre estourado nunca fecharia a cadeia.
-      const preso90 = cursor === inicial && (msg.tentativa ?? 0) >= LIMITE_ADIAMENTOS;
-      const fecharPreso90 = async () => {
-        const erro = `busca de custo de 90 dias sem resposta depois de ${LIMITE_ADIAMENTOS} adiamentos (429/5xx/tempo)`;
-        if (!(await deps.avancarCursor(dona, cursor, null))) return { resultado: 'obsoleta' as const };
-        if (!(await deps.concluir(dona, 'erro', erro, parada({ advertiserId: adv })))) return { resultado: 'obsoleta' as const };
-        return { resultado: 'erro' as const };
-      };
+      // Ruling 2c-9: aqui o cursor já pode ter andado nesta mesma mensagem (lotes processados antes deste
+      // ponto) — por isso reavalia `preso()` em vez de reusar o valor de antes do laço principal.
       const listados90: GrupoBusca[] = [];
       let custoResumo90: number | null = null;
       for (let offset = 0; ;) {
-        if (deps.agora() > fim) return preso90 ? await fecharPreso90() : await continuar(cursor, 0);
+        if (deps.agora() > fim) return preso() ? await fecharPreso('busca de custo de 90 dias') : await continuar(cursor, 0);
         const r = await comRetry(deps, fim, () => deps.buscarGrupos(adv, janelaMembros, offset));
-        if ('adiar' in r) return preso90 ? await fecharPreso90() : await continuar(cursor, r.adiar);
+        if ('adiar' in r) return preso() ? await fecharPreso('busca de custo de 90 dias') : await continuar(cursor, r.adiar);
         exigir(r, 'ad_groups/search (90d)');
         const p = parseBuscaGrupos(r.corpo);
         if (!p) throw new Error('ad_groups/search (90d): resposta inválida');
@@ -356,6 +362,6 @@ export async function sincronizarAdsOrg(
     } catch (e2) {
       console.error('[ads] concluir falhou', { org_id: msg.org_id, erro: mensagem(e), concluir: mensagem(e2) });
     }
-    return { resultado: estadoParada ? 'sem_acesso' : 'erro' };
+    return { resultado: estadoParada ?? 'erro' };
   }
 }

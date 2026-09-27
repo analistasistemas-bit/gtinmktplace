@@ -86,6 +86,11 @@ describe('PainelAds', () => {
     expect(screen.getByText('indisponível')).toBeInTheDocument();
   });
 
+  it('status do grupo EMPTY traduzido para "vazio" (item 3 da correção final: o mais comum não tinha tradução)', () => {
+    renderiza({ ...base, grupos: [{ ...base.grupos[0], status: 'EMPTY' }] });
+    expect(screen.getByText('vazio')).toBeInTheDocument();
+  });
+
   it('gasto compartilhado: lucro após Ads indisponível com o motivo', () => {
     renderiza({ ...base, alcance: 'anuncio', lucroAposAds: null, motivoSemLucro: 'compartilhado', compartilhadoCom: { codigos: ['B'], semVinculo: 1 } });
     expect(screen.getAllByText(/gasto compartilhado com 1 código de fora e 1 anúncio sem vínculo/).length).toBeGreaterThan(0);
