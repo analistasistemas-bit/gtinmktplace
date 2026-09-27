@@ -3566,8 +3566,8 @@ export type Database = {
       }
       avancar_ads_cursor: {
         Args: {
-          p_cursor_atual: string
-          p_cursor_novo: string
+          p_cursor_atual: string | null
+          p_cursor_novo: string | null
           p_org: string
           p_rodada: string
         }
@@ -3597,12 +3597,12 @@ export type Database = {
       cleanup_support_audit_events: { Args: never; Returns: number }
       concluir_ads_rodada: {
         Args: {
-          p_advertiser_id?: number
+          p_advertiser_id?: number | null
           p_carga_concluida?: boolean
-          p_cobertura_desde?: string
-          p_custo_listado?: number
-          p_custo_resumo?: number
-          p_erro?: string
+          p_cobertura_desde?: string | null
+          p_custo_listado?: number | null
+          p_custo_resumo?: number | null
+          p_erro?: string | null
           p_estado: string
           p_org: string
           p_rodada: string
@@ -3926,7 +3926,7 @@ export type Database = {
       reservar_ads_posse: {
         Args: { p_org: string }
         Returns: {
-          cursor: string
+          cursor: string | null
           rodada: string
         }[]
       }

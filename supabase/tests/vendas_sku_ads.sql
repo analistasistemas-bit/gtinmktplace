@@ -10,12 +10,22 @@ insert into public.profiles (id, org_id, is_active) values
   ('95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', true),
   ('95000000-0000-0000-0000-000000000102', '95000000-0000-0000-0000-000000000002', true)
 on conflict (id) do update set org_id = excluded.org_id, is_active = true;
--- Mapa MLB → código (mesmas fontes de vendas_sku_mlbs): MLB1 legado multi-cor (A, B), MLB2 filho UP (A).
+-- Mapa MLB → código (mesmas fontes de vendas_sku_mlbs), uma fonte por MLB na org 1:
+-- MLB1 legado multi-cor (A, B), MLB2 filho UP (A), MLB5 venda (C), MLB6 item anterior da migração PxV (D).
+-- Org 2 tem MLB1 em TODAS as fontes (Z, Y, X, W) — nada disso pode aparecer para a org 1.
 insert into public.anuncios_externos (id, user_id, org_id, canal, codigo_pai, item_externo_id, variacoes_externas, ml_item_id_anterior, migracao_pxv_snapshot) values
   ('95000000-0000-0000-0000-000000000601', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 'mercado_livre', '09500000', 'MLB1', '{"A":{},"B":{}}'::jsonb, null, null),
-  ('95000000-0000-0000-0000-000000000602', '95000000-0000-0000-0000-000000000102', '95000000-0000-0000-0000-000000000002', 'mercado_livre', '09500000', 'MLB1', '{"Z":{}}'::jsonb, null, null);
+  ('95000000-0000-0000-0000-000000000603', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 'mercado_livre', '09500001', 'MLB10', '{}'::jsonb, 'MLB6', '[{"sku":"D"}]'::jsonb),
+  ('95000000-0000-0000-0000-000000000602', '95000000-0000-0000-0000-000000000102', '95000000-0000-0000-0000-000000000002', 'mercado_livre', '09500000', 'MLB1', '{"Z":{}}'::jsonb, 'MLB1', '[{"sku":"W"}]'::jsonb);
 insert into public.anuncios_externos_itens (anuncio_externo_id, org_id, sku, status, item_externo_id) values
-  ('95000000-0000-0000-0000-000000000601', '95000000-0000-0000-0000-000000000001', 'A', 'ativo', 'MLB2');
+  ('95000000-0000-0000-0000-000000000601', '95000000-0000-0000-0000-000000000001', 'A', 'ativo', 'MLB2'),
+  ('95000000-0000-0000-0000-000000000602', '95000000-0000-0000-0000-000000000002', 'X', 'ativo', 'MLB1');
+insert into public.ml_vendas (id, user_id, org_id, order_id, status, date_closed, total_amount) values
+  ('95000000-0000-0000-0000-000000000501', '95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', 955001, 'paid', '2026-09-01T12:00:00Z', 10),
+  ('95000000-0000-0000-0000-000000000502', '95000000-0000-0000-0000-000000000102', '95000000-0000-0000-0000-000000000002', 955002, 'paid', '2026-09-01T12:00:00Z', 10);
+insert into public.ml_vendas_itens (user_id, org_id, venda_id, codigo, quantity, unit_price, ml_item_id) values
+  ('95000000-0000-0000-0000-000000000101', '95000000-0000-0000-0000-000000000001', '95000000-0000-0000-0000-000000000501', 'C', 1, 10, 'MLB5'),
+  ('95000000-0000-0000-0000-000000000102', '95000000-0000-0000-0000-000000000002', '95000000-0000-0000-0000-000000000502', 'Y', 1, 10, 'MLB1');
 
 -- Grants: escrita só service_role; leitura do mapa só authenticated.
 do $$
@@ -103,6 +113,18 @@ begin
     '[{"ad_group_id":3000001,"tipo":"FAMILY","external_id":"4000001","campaign_id":2000001,"status":"ACTIVE","itens":["MLB1","MLB2","MLB4"],"dias":[]}]');
   if (select count(*) from public.ml_ads_grupo_item where org_id = org1 and ad_group_id = 3000001) <> 3
     then raise exception 'lista nova não substituiu o vínculo'; end if;
+  -- Guarda do dia (excluded.coletado_em >= a.coletado_em): grupo com atualizado_em forjado para trás passa
+  -- pelo teste do continue, mas o dia com coletado_em mais novo (2026-09-28) não é sobrescrito pelo lote de 09-27.
+  -- Pelo caminho das RPCs isso não acontece (atualizado_em do grupo ≥ coletado_em de todo dia dele); é defesa.
+  update public.ml_ads_grupo set atualizado_em = '2026-09-01' where org_id = org1 and ad_group_id = 3000001;
+  if not public.gravar_ads_lote(org1, rod, '2026-09-27T12:00:00Z',
+    '[{"ad_group_id":3000001,"tipo":"FAMILY","external_id":"4000001","campaign_id":2000001,"status":"ACTIVE","itens":null,
+       "dias":[{"dia":"2026-09-26","cost":7,"clicks":4,"prints":500,"direct_amount":0,"indirect_amount":77,"total_amount":77,"direct_units":0,"units":1}]}]')
+    then raise exception 'lote da guarda recusado'; end if;
+  if (select atualizado_em from public.ml_ads_grupo where org_id = org1 and ad_group_id = 3000001) <> '2026-09-27T12:00:00Z'
+    then raise exception 'grupo não passou pelo continue (teste da guarda não exercita o dia)'; end if;
+  if (select total_amount from public.ml_ads_grupo_dia where org_id = org1 and ad_group_id = 3000001 and dia = '2026-09-26') <> 5
+    then raise exception 'guarda do dia: lote mais velho sobrescreveu dia mais novo'; end if;
 
   -- Checks de faixa e de tipo.
   begin
@@ -125,9 +147,12 @@ begin
   if r.estado <> 'ok' or not r.carga_inicial_ok or r.cobertura_desde <> '2026-06-29' or r.advertiser_id <> 1000001
      or r.cursor is not null or r.posse_ate is not null or r.ultimo_ok_em is null
      or r.custo_resumo <> 100.00 or r.custo_listado <> 97.40 then raise exception 'concluir ok errado (custos no sync?): %', r; end if;
-  -- Rodada diária seguinte não recua a cobertura.
+  -- Rodada diária seguinte não recua a cobertura. Fronteira: último ok ontem → "último ok − 14" = hoje − 15 (SP);
+  -- janela começando exatamente nesse dia NÃO avança (o `>` é estrito).
+  update public.ml_ads_sync set ultimo_ok_em = now() - interval '1 day' where org_id = org1;
   select * into r from public.reservar_ads_posse(org1);
-  perform public.concluir_ads_rodada(org1, r.rodada, 'ok', null, true, 1000001, '2026-09-12', 100.00, 97.40);
+  perform public.concluir_ads_rodada(org1, r.rodada, 'ok', null, true, 1000001,
+    (now() at time zone 'America/Sao_Paulo')::date - 15, 100.00, 97.40);
   if (select cobertura_desde from public.ml_ads_sync where org_id = org1) <> '2026-06-29' then raise exception 'cobertura recuou'; end if;
   -- Worker parado > 90 dias: a janela relida começa depois de "último ok − 14" → a cobertura avança (buraco ≠ zero).
   update public.ml_ads_sync set ultimo_ok_em = now() - interval '200 days' where org_id = org1;
@@ -171,19 +196,37 @@ reset role;
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"95000000-0000-0000-0000-000000000101","role":"authenticated"}';
 do $$
-declare m jsonb;
+declare m jsonb; o1 uuid := '95000000-0000-0000-0000-000000000001';
 begin
-  if (select count(*) from public.ml_ads_sync) <> 1 then raise exception 'RLS: viu sync de outra org'; end if;
-  if exists (select 1 from public.ml_ads_grupo_dia where org_id <> '95000000-0000-0000-0000-000000000001')
-    then raise exception 'RLS: viu dia de outra org'; end if;
-  begin
-    insert into public.ml_ads_sync (org_id, estado) values ('95000000-0000-0000-0000-000000000001', 'ok');
-    raise exception 'authenticated inseriu';
-  exception when insufficient_privilege then null; end;
+  -- RLS nas 4 tabelas: vê a própria org (positivo) e nada da org 2 (que tem linha em todas).
+  if (select count(*) from public.ml_ads_sync) <> 1 or not exists (select 1 from public.ml_ads_sync where org_id = o1)
+    then raise exception 'RLS: sync errado'; end if;
+  if exists (select 1 from public.ml_ads_grupo where org_id <> o1) or not exists (select 1 from public.ml_ads_grupo)
+    then raise exception 'RLS: grupo errado'; end if;
+  if exists (select 1 from public.ml_ads_grupo_item where org_id <> o1) or not exists (select 1 from public.ml_ads_grupo_item)
+    then raise exception 'RLS: grupo_item errado'; end if;
+  if exists (select 1 from public.ml_ads_grupo_dia where org_id <> o1) or not exists (select 1 from public.ml_ads_grupo_dia)
+    then raise exception 'RLS: grupo_dia errado'; end if;
+  -- Escrita negada nas 4.
+  begin insert into public.ml_ads_sync (org_id, estado) values (o1, 'ok');
+    raise exception 'authenticated inseriu sync'; exception when insufficient_privilege then null; end;
+  begin insert into public.ml_ads_grupo values (o1, 1, 'ITEM', null, null, 'X', now());
+    raise exception 'authenticated inseriu grupo'; exception when insufficient_privilege then null; end;
+  begin insert into public.ml_ads_grupo_item values (o1, 3000001, 'MLB99', now());
+    raise exception 'authenticated inseriu grupo_item'; exception when insufficient_privilege then null; end;
+  begin insert into public.ml_ads_grupo_dia values (o1, 3000001, '2026-09-30', 0, 0, 0, 0, 0, 0, 0, 0, now());
+    raise exception 'authenticated inseriu grupo_dia'; exception when insufficient_privilege then null; end;
+  begin update public.ml_ads_grupo_dia set cost = 0;
+    raise exception 'authenticated alterou grupo_dia'; exception when insufficient_privilege then null; end;
+  begin delete from public.ml_ads_grupo;
+    raise exception 'authenticated apagou grupo'; exception when insufficient_privilege then null; end;
   -- Mapa MLB → código de QUALQUER membro (inclusive o que não é do dossiê), só da própria org.
-  m := public.vendas_sku_codigos_mlbs('{MLB1,MLB2,MLB7}');
+  -- Org 2 tem MLB1 nas 4 fontes (Z, Y, X, W): nenhum desses códigos pode aparecer.
+  m := public.vendas_sku_codigos_mlbs('{MLB1,MLB2,MLB5,MLB6,MLB7}');
   if m->'MLB1' is distinct from '["A","B"]'::jsonb then raise exception 'MLB1 errado (org 2 vazou?): %', m; end if;
-  if m->'MLB2' is distinct from '["A"]'::jsonb then raise exception 'MLB2 errado: %', m; end if;
+  if m->'MLB2' is distinct from '["A"]'::jsonb then raise exception 'MLB2 errado (anuncios_externos_itens): %', m; end if;
+  if m->'MLB5' is distinct from '["C"]'::jsonb then raise exception 'MLB5 errado (ml_vendas_itens): %', m; end if;
+  if m->'MLB6' is distinct from '["D"]'::jsonb then raise exception 'MLB6 errado (migracao_pxv_snapshot): %', m; end if;
   if m ? 'MLB7' then raise exception 'MLB sem código entrou: %', m; end if;
 end $$;
 reset role;
@@ -191,10 +234,10 @@ reset role;
 set local role anon;
 do $$
 begin
-  begin
-    perform 1 from public.ml_ads_grupo_dia;
-    raise exception 'anon leu';
-  exception when insufficient_privilege then null; end;
+  begin perform 1 from public.ml_ads_sync;       raise exception 'anon leu sync';       exception when insufficient_privilege then null; end;
+  begin perform 1 from public.ml_ads_grupo;      raise exception 'anon leu grupo';      exception when insufficient_privilege then null; end;
+  begin perform 1 from public.ml_ads_grupo_item; raise exception 'anon leu grupo_item'; exception when insufficient_privilege then null; end;
+  begin perform 1 from public.ml_ads_grupo_dia;  raise exception 'anon leu grupo_dia';  exception when insufficient_privilege then null; end;
 end $$;
 reset role;
 rollback;

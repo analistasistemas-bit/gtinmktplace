@@ -108,6 +108,9 @@ $$;
 -- itens array não vazio = vínculo atual completo (substitui); null ou [] = mantém o gravado (lista vazia do
 -- ML não apaga vínculo: o gasto do grupo sumiria do dossiê).
 -- Grupo que não vem no lote não é tocado: nada é apagado quando um grupo some do search.
+-- A guarda `excluded.coletado_em >= a.coletado_em` do dia é redundante pelo caminho das RPCs: o `continue`
+-- já barra lote mais velho que o grupo, e atualizado_em do grupo ≥ coletado_em de todo dia dele (os dois
+-- são gravados juntos, sob o lock da linha de sync). Fica como defesa contra escrita fora das RPCs.
 create function public.gravar_ads_lote(p_org uuid, p_rodada timestamptz, p_coletado_em timestamptz, p_grupos jsonb)
 returns boolean
 language plpgsql security definer set search_path = '' as $$
