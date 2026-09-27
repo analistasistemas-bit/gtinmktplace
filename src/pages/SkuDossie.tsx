@@ -11,6 +11,7 @@ import { QualidadeHistorico } from '@/components/sku-dossie/qualidade-historico'
 import { KpisDossie } from '@/components/sku-dossie/kpis-dossie';
 import { SerieDossie } from '@/components/sku-dossie/serie-dossie';
 import { TrafegoDossie } from '@/components/sku-dossie/trafego-dossie';
+import { PainelAds } from '@/components/sku-dossie/ads-dossie';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { EventosDossie } from '@/components/sku-dossie/eventos-dossie';
 import { EstoqueDossie } from '@/components/sku-dossie/estoque-dossie';
@@ -77,7 +78,7 @@ export default function SkuDossie() {
   const familia = alvo.tipo === 'familia';
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const [passo, setPasso] = useState<Passo>('semana');
-  const { estado, dados, refetch, refetchTrafego } = useSkuDossie(alvo, periodo, passo);
+  const { estado, dados, ads, refetch, refetchTrafego, refetchAds } = useSkuDossie(alvo, periodo, passo);
 
   const cat = dados?.catalogo[0];
   const trilha: BreadcrumbItem[] = [
@@ -158,6 +159,7 @@ export default function SkuDossie() {
           <TabsList aria-label="Série do período">
             <TabsTrigger value="vendas" className="px-3">Vendas</TabsTrigger>
             <TabsTrigger value="trafego" className="px-3">Tráfego e oferta</TabsTrigger>
+            <TabsTrigger value="ads" className="px-3">Ads</TabsTrigger>
           </TabsList>
           <TabsContent value="vendas">
             {estado === 'sem_vendas' ? (
@@ -170,6 +172,9 @@ export default function SkuDossie() {
           </TabsContent>
           <TabsContent value="trafego">
             <TrafegoDossie trafego={dados.trafego} familia={familia} passo={passo} onPasso={setPasso} onTentar={() => { void refetchTrafego(); }} />
+          </TabsContent>
+          <TabsContent value="ads">
+            <PainelAds ads={ads} familia={familia} passo={passo} onPasso={setPasso} onTentar={() => { void refetchAds(); }} />
           </TabsContent>
         </Tabs>
       </section>

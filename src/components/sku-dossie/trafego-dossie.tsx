@@ -66,7 +66,7 @@ function alcanceTexto(t: TrafegoDossie): string {
   return '';
 }
 
-function Aviso({ icone: Icone, tom, children }: { icone: typeof AlertTriangle; tom: 'warning' | 'muted'; children: ReactNode }) {
+export function Aviso({ icone: Icone, tom, children }: { icone: typeof AlertTriangle; tom: 'warning' | 'muted'; children: ReactNode }) {
   return (
     <div role="note" className={cn('flex items-start gap-2 rounded-lg border px-3 py-2.5 text-sm',
       tom === 'warning' ? 'border-warning/30 bg-warning/10' : 'border-dashed text-muted-foreground')}>

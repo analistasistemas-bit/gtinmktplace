@@ -42,8 +42,8 @@ const dossie = (over: Partial<DossieSku> = {}): DossieSku => ({
   ...over,
 });
 
-function renderPagina(estado: EstadoDossie, dados: DossieSku | null, rota: string | { pathname: string; state: unknown } = '/faturamento/sku/00123') {
-  vi.mocked(useSkuDossie).mockReturnValue({ estado, dados, refetch: vi.fn(), refetchTrafego: vi.fn() } as never);
+function renderPagina(estado: EstadoDossie, dados: DossieSku | null, rota: string | { pathname: string; state: unknown } = '/faturamento/sku/00123', ads: unknown = null) {
+  vi.mocked(useSkuDossie).mockReturnValue({ estado, dados, ads, refetch: vi.fn(), refetchTrafego: vi.fn(), refetchAds: vi.fn() } as never);
   render(
     <MemoryRouter initialEntries={[rota]}>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -625,5 +625,21 @@ describe('idadeComercial', () => {
     expect(idadeComercial('2026-08-01T12:00:00Z', agora)).toBe('57 dias');
     expect(idadeComercial('2026-05-10T12:00:00Z', agora)).toBe('4 meses');
     expect(idadeComercial('2025-06-01T12:00:00Z', agora)).toBe('1 ano e 3 meses');
+  });
+});
+
+describe('SkuDossie: Ads', () => {
+  it('aba Ads ao lado do tráfego; erro de leitura refaz só os Ads', async () => {
+    const ads = { estado: 'erro', alcance: 'indisponivel', totais: null, lucroAposAds: null, motivoSemLucro: null,
+      compartilhadoCom: { codigos: [], semVinculo: 0 }, serie: [], serieDiaria: [], grupos: [], coberturaDesde: null,
+      ultimoOkEm: null, diasAbertos: 0, erro: null };
+    renderPagina('ok', dossie(), '/faturamento/sku/00123', ads);
+    const h = vi.mocked(useSkuDossie).mock.results.at(-1)!.value as { refetch: () => void; refetchTrafego: () => void; refetchAds: () => void };
+    await userEvent.click(screen.getByRole('tab', { name: 'Ads' }));
+    const reg = screen.getByRole('region', { name: 'Ads' });
+    await userEvent.click(within(reg).getByRole('button', { name: 'Tentar de novo' }));
+    expect(h.refetchAds).toHaveBeenCalled();
+    expect(h.refetch).not.toHaveBeenCalled();
+    expect(h.refetchTrafego).not.toHaveBeenCalled();
   });
 });

@@ -15,11 +15,12 @@ import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { buscarVendasPorIds, type Venda } from '@/lib/faturamento';
 import {
   buscarIdsDossie, buscarMlbsDossie, buscarMovimentos, buscarModeracoes, buscarPerguntas, buscarCampanhas,
-  buscarVisitasDia, buscarPrecoDia, buscarTrafegoSync,
+  buscarVisitasDia, buscarPrecoDia, buscarTrafegoSync, buscarFonteAds,
 } from '@/lib/sku-dossie-dados';
 import { intervalosBRT, type Passo } from '@/lib/calendario-brt';
 import { montarDossie, type AlvoDossie, type DossieSku, type EstadoDossie } from '@/lib/sku-dossie';
 import { conjuntoTrafego, faixaTrafego, montarTrafego } from '@/lib/sku-trafego';
+import { montarAds, type AdsDossie } from '@/lib/sku-ads';
 
 const HOJE_30: Periodo = { tipo: 'preset', dias: 30 };
 
@@ -93,6 +94,17 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
     staleTime: 5 * 60_000,
   });
 
+  // Ads (Fatia 2c): query à parte, como o tráfego — falhar aqui não derruba o dossiê. Faixa do tráfego:
+  // a partir do 1º dia do 1º intervalo (que pode começar antes do período).
+  const mlbsAds = useMemo(() => (extrasQ.data ? [...extrasQ.data.mlbs.keys()].sort() : []), [extrasQ.data]);
+  const temAds = mlbsAds.length > 0 && !!faixa;
+  const adsQ = useQuery({
+    queryKey: ['sku-dossie-ads', mlbsAds, faixa],
+    queryFn: () => buscarFonteAds(mlbsAds, faixa!.desde, faixa!.ate),
+    enabled: temAds,
+    staleTime: 5 * 60_000,
+  });
+
   const agrupar = useMemo(() => {
     const custoR = montarCustoResolver(custos);
     const pesoR = montarPesoResolver(custos);
@@ -127,12 +139,24 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
     return { ...r.dados, trafego };
   }, [r.dados, extrasQ.data, vendasQ.data, alvoM, codigos, agrupar, intervalos, trafegoQ.isError, trafegoQ.data]);
 
+  // Memo à parte: os Ads chegarem (ou falharem) não recalculam o dossiê. Só leitura: nada volta ao lucro.
+  const ads = useMemo<AdsDossie | null>(() => {
+    if (!r.dados || !extrasQ.data) return null;
+    return montarAds({
+      alvo: alvoM, codigos, mlbs: extrasQ.data.mlbs, intervalos, janela,
+      lucroPeriodo: r.dados.linhaPeriodo?.m.lucro ?? null, agora: new Date(),
+      fonte: adsQ.isError ? 'erro' : adsQ.data ?? 'carregando',
+    });
+  }, [r.dados, extrasQ.data, alvoM, codigos, intervalos, janela, adsQ.isError, adsQ.data]);
+
   return {
-    estado: r.estado, dados,
+    estado: r.estado, dados, ads,
     refetch: () => Promise.all([catQ.refetch(), devQ.refetch(), vendasQ.refetch(), extrasQ.refetch(),
       // refetch() roda a queryFn mesmo com enabled=false: sem conjunto, não há o que ler.
-      ...(temTrafego ? [trafegoQ.refetch()] : [])]),
+      ...(temTrafego ? [trafegoQ.refetch()] : []), ...(temAds ? [adsQ.refetch()] : [])]),
     /** "Tentar de novo" do painel de tráfego: só a query dele. */
     refetchTrafego: async () => { if (temTrafego) await trafegoQ.refetch(); },
+    /** "Tentar de novo" da aba Ads: só a query dela. */
+    refetchAds: async () => { if (temAds) await adsQ.refetch(); },
   };
 }
