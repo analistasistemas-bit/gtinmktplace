@@ -173,52 +173,117 @@ describe('sincronizarAdsOrg', () => {
     expect(gravados(d).map((g) => g.ad_group_id)).toEqual([12]);
   });
 
-  it('404 de grupo listado com gasto: o custo dele sai do custoListado (dispara fora_dos_grupos, nunca despesa menor sem aviso)', async () => {
-    const d = fake({ buscarSerieGrupo: vi.fn(async (id: number, j: { desde: string; ate: string }) =>
-      (id === 11 ? http(404, { error_code: 'ad_group_not_found_exception' }) : serie(j))) });
+  it('404 de grupo listado com gasto: o custo de 90 dias dele sai do custoListado (dispara fora_dos_grupos, nunca despesa menor sem aviso)', async () => {
+    const d = fake({
+      buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }) =>
+        (j.desde === JANELA_90.desde
+          ? busca([grupo(11, 'ITEM', 20), grupo(12, 'FAMILY', 10), grupo(13, 'CATALOG', 0)])
+          : busca([grupo(11, 'ITEM', 7.5), grupo(12, 'FAMILY', 10), grupo(13, 'CATALOG', 0)]))),
+      buscarSerieGrupo: vi.fn(async (id: number, j: { desde: string; ate: string }) =>
+        (id === 11 ? http(404, { error_code: 'ad_group_not_found_exception' }) : serie(j))),
+    });
+    await sincronizarAdsOrg(d, primeira);
+    // 90 dias: 30 listados (20+10) − 20 do 11 (404) = 10; com o custo de 15 dias (7,5) daria 22,5.
+    expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoResumo: 99, custoListado: 10 });
+  });
+
+  it('CARGA INICIAL — 404 de grupo listado com gasto: o custo dele sai do custoListado', async () => {
+    const d = fake({
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      buscarSerieGrupo: vi.fn(async (id: number, j: { desde: string; ate: string }) =>
+        (id === 11 ? http(404, { error_code: 'ad_group_not_found_exception' }) : serie(j))),
+    });
     await sincronizarAdsOrg(d, primeira);
     expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoResumo: 99, custoListado: 10 }); // 20 listados − 10 do 11
   });
 
-  it('404 com gasto numa mensagem que continua: o desconto viaja na continuação e fecha na última', async () => {
+  it('404 com gasto numa mensagem que continua: os ids descontados viajam na continuação, e o custo de 90 dias fecha na última', async () => {
     const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM', 7.5), grupo(12, 'ITEM'), grupo(14, 'ITEM')])) });
     d.buscarSerieGrupo.mockImplementation(async (id: number, j: { desde: string; ate: string }) => {
       d.relogio.t += 40_000; return id === 11 ? http(404, null) : serie(j);
     });
     expect(await sincronizarAdsOrg(d, primeira, { limiteMs: 60_000, lote: 1, concorrencia: 1 })).toEqual({ resultado: 'continua' });
-    // Ruling 2c-8: o mesmo desconto viaja também em custo de 90 dias (o mock ignora a janela, então o
-    // valor de 90d é igual ao de 15d neste caso).
+    // Ruling 2c-9: a mensagem que só continua não sabe o custo de 90 dias do grupo (a busca extra só roda
+    // na que conclui) — carrega o id, não o valor.
     expect(d.continuar).toHaveBeenCalledWith(
-      { org_id: ORG, rodada: RODADA, cursor: '12', primeira: false, tentativa: 0, descontar: 7.5, descontar90: 7.5 }, {});
-    const e = fake({ buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM', 7.5), grupo(12, 'ITEM'), grupo(14, 'ITEM')])) });
-    await sincronizarAdsOrg(e, { org_id: ORG, rodada: RODADA, cursor: '12', primeira: false, descontar: 7.5, descontar90: 7.5 });
+      { org_id: ORG, rodada: RODADA, cursor: '12', primeira: false, tentativa: 0, descontar: 7.5, descontados: [11] }, {});
+    const e = fake({
+      buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }) =>
+        (j.desde === JANELA_90.desde
+          ? busca([grupo(11, 'ITEM', 20), grupo(12, 'ITEM'), grupo(14, 'ITEM')])
+          : busca([grupo(11, 'ITEM', 7.5), grupo(12, 'ITEM'), grupo(14, 'ITEM')]))),
+    });
+    await sincronizarAdsOrg(e, { org_id: ORG, rodada: RODADA, cursor: '12', primeira: false, descontar: 7.5, descontados: [11] });
+    // 90 dias: 40 listados (20+10+10) − 20 do 11 (id herdado) = 20.
+    expect(e.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 20 });
+  });
+
+  it('CARGA INICIAL — 404 com gasto numa mensagem que continua: o desconto viaja na continuação e fecha na última', async () => {
+    const inicial = { lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })) };
+    const d = fake({ ...inicial, buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM', 7.5), grupo(12, 'ITEM'), grupo(14, 'ITEM')])) });
+    d.buscarSerieGrupo.mockImplementation(async (id: number, j: { desde: string; ate: string }) => {
+      d.relogio.t += 40_000; return id === 11 ? http(404, null) : serie(j);
+    });
+    expect(await sincronizarAdsOrg(d, primeira, { limiteMs: 60_000, lote: 1, concorrencia: 1 })).toEqual({ resultado: 'continua' });
+    expect(d.continuar).toHaveBeenCalledWith(
+      { org_id: ORG, rodada: RODADA, cursor: '12', primeira: false, tentativa: 0, descontar: 7.5 }, {});
+    const e = fake({ ...inicial, buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM', 7.5), grupo(12, 'ITEM'), grupo(14, 'ITEM')])) });
+    await sincronizarAdsOrg(e, { org_id: ORG, rodada: RODADA, cursor: '12', primeira: false, descontar: 7.5 });
     expect(e.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 20 }); // 27,5 − 7,5
   });
 
-  it('Ruling 2c-7 — FAMILY listado com gasto, /ads vazio e sem vínculo gravado: o custo sai do custoListado', async () => {
+  it('Ruling 2c-7 — FAMILY listado com gasto, /ads vazio e sem vínculo gravado: o custo de 90 dias sai do custoListado', async () => {
     const d = fake({
-      buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY', 4)])),
+      buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }) =>
+        (j.desde === JANELA_90.desde
+          ? busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY', 20)])
+          : busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY', 4)]))),
       buscarMembros: vi.fn(async () => membros([])),
     });
     expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
     expect(gravados(d).find((g) => g.ad_group_id === 12)?.itens).toBeNull(); // os dias continuam gravados
+    // 90 dias: 30 listados (10+20) − 20 do 12 (vazio sem vínculo) = 10; com o custo de 15 dias (4) daria 26.
+    expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 10 });
+  });
+
+  it('CARGA INICIAL — Ruling 2c-7: FAMILY listado com gasto, /ads vazio e sem vínculo gravado: o custo sai do custoListado', async () => {
+    const d = fake({
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY', 4)])),
+      buscarMembros: vi.fn(async () => membros([])),
+    });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    expect(gravados(d).find((g) => g.ad_group_id === 12)?.itens).toBeNull();
     expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 10 }); // 14 listados − 4 do 12
   });
 
   it('Ruling 2c-7 — EMPTY com vínculo anterior preservado (itens null) NÃO é descontado', async () => {
     const d = fake({
-      buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY', 4, 'EMPTY')])),
+      buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }) =>
+        (j.desde === JANELA_90.desde
+          ? busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY', 20, 'EMPTY')])
+          : busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY', 4, 'EMPTY')]))),
       contarVinculos: vi.fn(async () => new Map([[12, 2]])),
       buscarMembros: vi.fn(async () => membros([])),
     });
     await sincronizarAdsOrg(d, primeira);
     expect(gravados(d).find((g) => g.ad_group_id === 12)?.itens).toBeNull();
-    expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 14 });
+    // 90 dias: 30 listados (10+20), sem desconto (vínculo preservado) = 30; com 15 dias (4) daria 14.
+    expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 30 });
   });
 
   it('desconto herdado maior que o listado (o grupo do 404 também sumiu do search): custoListado nunca negativo', async () => {
     const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(12, 'ITEM', 5)])) });
-    await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: '11', primeira: false, descontar: 50, descontar90: 50 });
+    await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: '11', primeira: false, descontar: 50, descontados: [12] });
+    expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 0 });
+  });
+
+  it('CARGA INICIAL — desconto herdado maior que o listado: custoListado nunca negativo', async () => {
+    const d = fake({
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      buscarGrupos: vi.fn(async () => busca([grupo(12, 'ITEM', 5)])),
+    });
+    await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: '11', primeira: false, descontar: 50 });
     expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 0 });
   });
 
@@ -465,5 +530,62 @@ describe('sincronizarAdsOrg', () => {
     expect(d.buscarSerieGrupo).not.toHaveBeenCalled(); // não foi relido: sem gasto em 15 dias
     expect(d.concluir).toHaveBeenCalledWith(RODADA, 'ok', null,
       expect.objectContaining({ custoResumo: 99, custoListado: 0 }));
+  });
+
+  it('Ruling 2c-8 — grupo com gasto só entre 16 e 90 dias atrás, hoje vazio mas com vínculo gravado: NÃO é descontado', async () => {
+    const d = fake({
+      buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }) =>
+        (j.desde === JANELA_90.desde ? busca([grupo(12, 'FAMILY', 30)]) : busca([]))),
+      contarVinculos: vi.fn(async (ids: number[]) => new Map(ids.map((id) => [id, 2]))),
+    });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    expect(d.contarVinculos).toHaveBeenCalledWith([12]);
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'ok', null,
+      expect.objectContaining({ custoResumo: 99, custoListado: 30 }));
+  });
+
+  // Item 5 da rodada de correção: os "extras" (grupo com gasto só em 90d, não relido) excluíam todo ITEM,
+  // mas o Ruling 2c-7 desconta ITEM sem external_id (e sem vínculo) do mesmo jeito que FAMILY/CATALOG vazios.
+  it('grupo ITEM sem external_id, com gasto só em 90 dias e sem vínculo: também é descontado (extras não excluem ITEM sem external_id)', async () => {
+    const itemSemExternalId = { id: 20, ad_group_type: 'ITEM' as const, ad_group_external_id: null, campaign_id: 2000001, status: 'ACTIVE', metrics: { cost: 12 } };
+    const d = fake({
+      buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }) =>
+        (j.desde === JANELA_90.desde ? busca([itemSemExternalId]) : busca([]))),
+      contarVinculos: vi.fn(async (ids: number[]) => new Map(ids.map((id) => [id, 0]))),
+    });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    expect(d.contarVinculos).toHaveBeenCalledWith([20]);
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'ok', null,
+      expect.objectContaining({ custoResumo: 99, custoListado: 0 }));
+  });
+
+  // Item 4 da rodada de correção: a busca extra de 90 dias tem o mesmo teto de adiamento das outras.
+  it('Ruling 2c-9 — 429 constante na busca extra de 90 dias tem teto de adiamento: presa, a rodada fecha em erro (nunca ok sem o custo de 90 dias)', async () => {
+    const d = fake({
+      buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }) =>
+        (j.desde === JANELA_90.desde ? http(429, null, 120_000) : busca([]))),
+    });
+    expect(await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 }))
+      .toEqual({ resultado: 'erro' });
+    expect(d.continuar).not.toHaveBeenCalled();
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, null, null);
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('90 dias'),
+      { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
+    expect(d.concluir.mock.calls.some((c) => c[1] === 'ok')).toBe(false);
+  });
+
+  // Item 6 da rodada de correção (Ruling 2c-9): a busca extra só roda na mensagem que fecha a rodada.
+  it('Ruling 2c-9 — diária com 2 mensagens: a busca extra de 90 dias roda só na que conclui a rodada (a última)', async () => {
+    const d = fake({
+      buscarGrupos: vi.fn(async (_adv: number, j: { desde: string; ate: string }) =>
+        (j.desde === JANELA_90.desde ? busca([]) : busca([grupo(11, 'ITEM'), grupo(12, 'ITEM'), grupo(14, 'ITEM')]))),
+    });
+    d.buscarSerieGrupo.mockImplementation(async (_id: number, j: { desde: string; ate: string }) => { d.relogio.t += 40_000; return serie(j); });
+    const chamadas90d = () => d.buscarGrupos.mock.calls.filter((c) => (c[1] as { desde: string }).desde === JANELA_90.desde).length;
+    expect(await sincronizarAdsOrg(d, primeira, { limiteMs: 60_000, lote: 1, concorrencia: 1 })).toEqual({ resultado: 'continua' });
+    expect(chamadas90d()).toBe(0); // mensagem que só continua não busca o custo de 90 dias
+    expect(await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: '12', primeira: false, tentativa: 0 }))
+      .toEqual({ resultado: 'ok' });
+    expect(chamadas90d()).toBe(1); // só a mensagem que conclui
   });
 });

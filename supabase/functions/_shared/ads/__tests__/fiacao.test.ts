@@ -92,12 +92,15 @@ describe('fiação de Ads', () => {
     expect(msgAdsDoCorpo(msg, { descontar: -1 })).toBe(msg);
     expect(msgAdsDoCorpo(msg, { descontar: Number.NaN })).toBe(msg);
   });
-  it('msgAdsDoCorpo repassa descontar90 (Ruling 2c-8) só quando é número finito > 0', () => {
+  it('msgAdsDoCorpo repassa descontados (Ruling 2c-9) só os ad_group_id inteiros seguros e positivos, sem duplicata', () => {
     const msg = { org_id: 'org-1', rodada: 'r', cursor: '12', primeira: false };
-    expect(msgAdsDoCorpo(msg, { descontar90: 9.25 })).toEqual({ ...msg, descontar90: 9.25 });
-    expect(msgAdsDoCorpo(msg, { descontar: 2, descontar90: 5 })).toEqual({ ...msg, descontar: 2, descontar90: 5 });
-    expect(msgAdsDoCorpo(msg, { descontar90: '5' })).toBe(msg);
-    expect(msgAdsDoCorpo(msg, { descontar90: 0 })).toBe(msg);
+    expect(msgAdsDoCorpo(msg, { descontados: [11, 12] })).toEqual({ ...msg, descontados: [11, 12] });
+    expect(msgAdsDoCorpo(msg, { descontar: 2, descontados: [11] })).toEqual({ ...msg, descontar: 2, descontados: [11] });
+    expect(msgAdsDoCorpo(msg, { descontados: [11, 11, 12] })).toEqual({ ...msg, descontados: [11, 12] }); // dedup
+    expect(msgAdsDoCorpo(msg, { descontados: [11, '12', -1, 0, 1.5, Number.NaN] })).toEqual({ ...msg, descontados: [11] });
+    expect(msgAdsDoCorpo(msg, { descontados: [] })).toBe(msg);
+    expect(msgAdsDoCorpo(msg, { descontados: 'x' })).toBe(msg);
+    expect(msgAdsDoCorpo(msg, { descontados: [-1, 0, 'x'] })).toBe(msg);
   });
 
   it('falhou sobrevive ao ciclo real corpo HTTP → msg → sincronizar (Rulings 2c-5/2c-6): '

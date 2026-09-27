@@ -60,15 +60,22 @@ const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' 
 export function msgAdsDoCorpo(msg: MsgTrafego, bruto: unknown): MsgAds {
   if (!obj(bruto)) return msg;
   const falhou = bruto.falhou === true;
-  // `descontar`/`descontar90` (404 ou grupo sem membros com gasto): só número finito > 0; o resto é ignorado.
+  // `descontar` (404 ou grupo sem membros com gasto, custo de 15 dias): só número finito > 0.
   const positivo = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
   const descontar = positivo(bruto.descontar);
-  const descontar90 = positivo(bruto.descontar90);
-  if (!falhou && descontar == null && descontar90 == null) return msg;
+  // `descontados` (Ruling 2c-9): os `ad_group_id` desses mesmos grupos, sem o valor — o custo de 90 dias
+  // de cada um só existe na mensagem que fecha a rodada (a busca extra do 2c-8 não roda em toda
+  // continuação). Só inteiros seguros positivos; duplicata sai (o forEach da orquestração já não desconta
+  // duas vezes, mas a lista sai limpa mesmo assim).
+  const idPositivo = (v: unknown): number | null => (typeof v === 'number' && Number.isSafeInteger(v) && v > 0 ? v : null);
+  const descontados = Array.isArray(bruto.descontados)
+    ? [...new Set(bruto.descontados.map(idPositivo).filter((v): v is number => v != null))]
+    : null;
+  if (!falhou && descontar == null && (descontados == null || descontados.length === 0)) return msg;
   return {
     ...msg,
     ...(falhou ? { falhou: true } : {}),
     ...(descontar != null ? { descontar } : {}),
-    ...(descontar90 != null ? { descontar90 } : {}),
+    ...(descontados != null && descontados.length > 0 ? { descontados } : {}),
   };
 }
