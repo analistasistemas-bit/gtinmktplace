@@ -6,6 +6,8 @@ import { cn } from '@/lib/utils';
 export interface BreadcrumbItem {
   label: string;
   to?: string;
+  /** Estado de navegação levado pelo link (ex.: a origem `de` para o "voltar" da tela seguinte). */
+  state?: unknown;
 }
 
 /** Trilha de navegação hierárquica. O último item é a página atual (texto, não link). */
@@ -20,7 +22,7 @@ export function Breadcrumbs({ items, className }: { items: BreadcrumbItem[]; cla
         return (
           <Fragment key={i}>
             {item.to && !ultimo ? (
-              <Link to={item.to} className="transition-colors hover:text-foreground">
+              <Link to={item.to} state={item.state} className="transition-colors hover:text-foreground">
                 {item.label}
               </Link>
             ) : (

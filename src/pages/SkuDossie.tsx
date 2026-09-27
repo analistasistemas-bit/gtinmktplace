@@ -4,24 +4,27 @@ import { AlertTriangle, CloudOff, PackageOpen, SearchX } from 'lucide-react';
 import { Breadcrumbs, type BreadcrumbItem } from '@/components/ui/breadcrumbs';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
-import { KpiCard } from '@/components/ui/kpi-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import { CabecalhoDossie } from '@/components/sku-dossie/cabecalho-dossie';
 import { QualidadeHistorico } from '@/components/sku-dossie/qualidade-historico';
 import { KpisDossie } from '@/components/sku-dossie/kpis-dossie';
 import { useSkuDossie } from '@/hooks/useSkuDossie';
+import { cn } from '@/lib/utils';
 import { rotuloAnterior, type Periodo } from '@/lib/metricas';
 import type { Passo } from '@/lib/calendario-brt';
 import type { AlvoDossie } from '@/lib/sku-dossie';
 
 const ORIGEM_PADRAO = '/faturamento?aba=sku';
 const PAGINA = 'flex min-w-0 flex-col gap-6 p-4 sm:p-6';
+// No escuro `bg-muted` quase some sobre `bg-card`; dentro de cartão a barra usa o texto com 10%.
+const SOBRE_CARD = 'bg-foreground/10';
 
 /** Skeleton do layout real: cabeçalho, faixa de fatos, qualidade, KPIs e o bloco do gráfico. */
 function Carregando() {
   return (
-    <div className="flex flex-col gap-6" aria-busy="true" aria-label="Carregando o dossiê">
+    <div className="flex flex-col gap-6" role="status" aria-busy="true">
+      <span className="sr-only">Carregando o dossiê</span>
       <div className="flex items-start gap-4">
         <Skeleton className="size-14 shrink-0 rounded-md" />
         <div className="min-w-0 flex-1 space-y-2">
@@ -32,12 +35,22 @@ function Carregando() {
       </div>
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-4">
         {Array.from({ length: 4 }, (_, i) => (
-          <div key={i} className="space-y-1.5 bg-card px-3 py-2.5"><Skeleton className="h-3 w-16" /><Skeleton className="h-4 w-20" /></div>
+          <div key={i} className="space-y-1.5 bg-card px-3 py-2.5"><Skeleton className={cn('h-3 w-16', SOBRE_CARD)} /><Skeleton className={cn('h-4 w-20', SOBRE_CARD)} /></div>
         ))}
       </div>
       <Skeleton className="h-9 w-full rounded-lg" />
+      {/* Reserva a linha "Resultado no período" + SeletorPeriodo: nada salta quando os dados chegam. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <Skeleton className="h-6 w-44" />
+        <div className="flex flex-wrap gap-1">{Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-8 w-16" />)}</div>
+      </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        {Array.from({ length: 6 }, (_, i) => <KpiCard key={i} size="compact" label="" value="" loading />)}
+        {Array.from({ length: 6 }, (_, i) => (
+          <div key={i} className="h-[5.5rem] rounded-lg border bg-card px-3 py-2.5 shadow-sm">
+            <Skeleton className={cn('h-4 w-20', SOBRE_CARD)} />
+            <Skeleton className={cn('mt-2 h-6 w-16', SOBRE_CARD)} />
+          </div>
+        ))}
       </div>
       <Skeleton className="h-72 w-full rounded-lg" />
     </div>
@@ -62,9 +75,10 @@ export default function SkuDossie() {
   const trilha: BreadcrumbItem[] = [
     { label: 'Vendas por SKU', to: voltar },
     ...(!familia && cat?.codigoPai
-      ? [{ label: cat.nomeFamilia ?? `Família ${cat.codigoPai}`, to: `/faturamento/sku/familia/${encodeURIComponent(cat.codigoPai)}` }]
+      ? [{ label: cat.nomeFamilia ?? `Família ${cat.codigoPai}`, to: `/faturamento/sku/familia/${encodeURIComponent(cat.codigoPai)}`, state: { de: voltar } }]
       : []),
-    { label: dados?.titulo ?? (familia ? `Família ${codigoPai}` : `Código ${codigo}`) },
+    // Identificador curto: o título inteiro já é o h1 logo abaixo (no celular ele ocupava 3 linhas aqui).
+    { label: familia ? `Família ${codigoPai}` : `Código ${codigo}` },
   ];
   const cabecaDeEstado = (titulo: string) => (
     <>
@@ -104,9 +118,7 @@ export default function SkuDossie() {
   return (
     <div className={PAGINA}>
       <Breadcrumbs items={trilha} className="mb-0" />
-      <CabecalhoDossie dados={dados} familia={familia} />
-
-      {estado === 'sem_cadastro' && (
+      <CabecalhoDossie dados={dados} familia={familia} aviso={estado === 'sem_cadastro' && (
         <div role="note" className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-sm">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
           <p>
@@ -114,7 +126,7 @@ export default function SkuDossie() {
             <span className="text-muted-foreground">As vendas registradas continuam aqui; família e estoque ficam sem fonte atual.</span>
           </p>
         </div>
-      )}
+      )} />
 
       <QualidadeHistorico historicoDesde={dados.historicoDesde} qualidade={dados.qualidade} />
 

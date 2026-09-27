@@ -17,7 +17,8 @@ function Fato({ rotulo, children, fraco = false }: { rotulo: string; children: R
   );
 }
 
-export function CabecalhoDossie({ dados, familia }: { dados: DossieSku; familia: boolean }) {
+/** `aviso` fica entre o título e a faixa de fatos: a explicação vem antes do "desconhecido". */
+export function CabecalhoDossie({ dados, familia, aviso }: { dados: DossieSku; familia: boolean; aviso?: ReactNode }) {
   const cat = dados.catalogo[0];
   const ehKit = dados.catalogo.some((c) => c.ehKit);
   // ponytail: o hook só expõe a cobertura do Kit Virtual como fonte parcial; o texto é o contrato.
@@ -39,7 +40,8 @@ export function CabecalhoDossie({ dados, familia }: { dados: DossieSku; familia:
           <h1 className="text-xl font-semibold leading-tight tracking-[-0.01em] text-balance break-words sm:text-2xl">{dados.titulo}</h1>
           <p className="text-sm text-muted-foreground tabular-nums">{sub.filter(Boolean).join(' · ')}</p>
           {(t || dados.alertas.length > 0 || ehKit || kitVirtual) && (
-            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+            // Dois relógios, dois grupos: a tendência é a posição de hoje; os alertas seguem o período escolhido.
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 pt-0.5">
               {t && (
                 <span className="inline-flex items-center gap-1.5">
                   <StatusPill tone={t.tom} title={t.dica}>{t.label}</StatusPill>
@@ -48,23 +50,34 @@ export function CabecalhoDossie({ dados, familia }: { dados: DossieSku; familia:
                   </span>
                 </span>
               )}
-              {dados.alertas.map((a) => (
-                <StatusPill key={a} tone={ALERTA[a].tom}>{a === 'sem_custo' && parcial ? 'Lucro parcial' : ALERTA[a].label}</StatusPill>
-              ))}
-              {ehKit && (
-                <StatusPill tone="neutral" title="Kit vinculado: o estoque é o da base, dividido pelas unidades do kit">
-                  <Layers className="h-3 w-3" aria-hidden />Kit: estoque da base
-                </StatusPill>
+              {dados.alertas.length > 0 && (
+                <span className="inline-flex flex-wrap items-center gap-1.5">
+                  <span className="text-xs text-muted-foreground">No período:</span>
+                  {dados.alertas.map((a) => (
+                    <StatusPill key={a} tone={ALERTA[a].tom}>{a === 'sem_custo' && parcial ? 'Lucro parcial' : ALERTA[a].label}</StatusPill>
+                  ))}
+                </span>
               )}
-              {kitVirtual && (
-                <StatusPill tone="info" title="Vendas dentro de Kit Virtual só têm registro a partir de set/2026">
-                  <PackageOpen className="h-3 w-3" aria-hidden />Vendido também em Kit Virtual
-                </StatusPill>
+              {(ehKit || kitVirtual) && (
+                <span className="inline-flex flex-wrap items-center gap-1.5">
+                  {ehKit && (
+                    <StatusPill tone="neutral" title="Kit vinculado: o estoque é o da base, dividido pelas unidades do kit">
+                      <Layers className="h-3 w-3" aria-hidden />Kit: estoque da base
+                    </StatusPill>
+                  )}
+                  {kitVirtual && (
+                    <StatusPill tone="info" title="Vendas dentro de Kit Virtual só têm registro a partir de set/2026">
+                      <PackageOpen className="h-3 w-3" aria-hidden />Vendido também em Kit Virtual
+                    </StatusPill>
+                  )}
+                </span>
               )}
             </div>
           )}
         </div>
       </header>
+
+      {aviso}
 
       {/* Hairline entre os fatos: grid com gap de 1px sobre bg-border, sem uma borda por célula. */}
       <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border shadow-sm sm:grid-cols-4">
