@@ -148,3 +148,68 @@ export function agregarPorSku(pedidos: Pedido[], janela: Janela, catalogo: Map<s
   }
   return linhas;
 }
+
+/** Limites fixos da v1 (ADR-0172 D-7) — recalibrar com dado real, sem tela de configuração. */
+export const LIMITES = {
+  janelaTendenciaDias: 30,
+  variacaoTendencia: 0.2,
+  minUnidadesTendencia: 5,
+  coberturaMinDias: 15,
+  taxaDevolucaoMax: 0.05,
+  minPedidosDevolucao: 20,
+  abcA: 0.8,
+  abcB: 0.95,
+} as const;
+
+const DIA_MS = 86_400_000;
+
+export type Tendencia = 'novo' | 'em_alta' | 'em_queda' | 'estavel' | 'parado' | 'baixo_giro';
+
+export function unidadesPorCodigo(pedidos: Pedido[], j: Janela): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const p of pedidos) {
+    if (!dentroDaJanela(p.data, j)) continue;
+    for (const it of p.itens) {
+      if (!it.faturavel) continue;
+      const c = it.codigo?.trim() || SEM_CODIGO;
+      m.set(c, (m.get(c) ?? 0) + it.quantity);
+    }
+  }
+  return m;
+}
+
+/** u30 = unidades nos 30 dias até o fim do período; uAnt = os 30 anteriores. Precedência:
+ *  novo > parado > baixo giro > alta/queda/estável (glossário "Tendência do SKU"). */
+export function classificarTendencia(u30: number, uAnt: number, primeiraVenda: string | null, fimMs: number): Tendencia {
+  if (primeiraVenda && fimMs - Date.parse(primeiraVenda) < LIMITES.janelaTendenciaDias * DIA_MS) return 'novo';
+  if (u30 === 0) return 'parado';
+  if (Math.max(u30, uAnt) < LIMITES.minUnidadesTendencia) return 'baixo_giro';
+  if (uAnt === 0) return 'em_alta';
+  const d = (u30 - uAnt) / uAnt;
+  if (d >= LIMITES.variacaoTendencia) return 'em_alta';
+  if (d <= -LIMITES.variacaoTendencia) return 'em_queda';
+  return 'estavel';
+}
+
+export type Cobertura = number | null | 'compartilhado';
+
+/** Dias até acabar no ritmo dos últimos 30 dias. Kit vinculado divide o estoque com a base
+ *  (ADR-0151): não tem número próprio. */
+export function coberturaDias(estoque: number | null, u30: number, ehKit: boolean): Cobertura {
+  if (ehKit) return 'compartilhado';
+  if (estoque == null || u30 <= 0) return null;
+  return Math.floor(estoque / (u30 / LIMITES.janelaTendenciaDias));
+}
+
+export type Alerta = 'lucro_negativo' | 'cobertura_baixa' | 'devolucao_alta' | 'sem_custo';
+
+export function alertasSku(l: Pick<LinhaSku, 'acc' | 'm'>, cobertura: Cobertura): Alerta[] {
+  const out: Alerta[] = [];
+  if (l.m.lucro != null && l.m.lucro < 0) out.push('lucro_negativo');
+  if (typeof cobertura === 'number' && cobertura < LIMITES.coberturaMinDias) out.push('cobertura_baixa');
+  if (l.acc.pedidosBaseDevolucao >= LIMITES.minPedidosDevolucao && (l.m.taxaDevolucao ?? 0) > LIMITES.taxaDevolucaoMax) {
+    out.push('devolucao_alta');
+  }
+  if (l.m.fonteCusto === 'sem_custo' || l.m.fonteCusto === 'parcial') out.push('sem_custo');
+  return out;
+}

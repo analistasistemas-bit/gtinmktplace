@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { agruparPorPedido, calcularKpisPedidos } from '@/lib/pedidos-faturamento';
-import { agregarPorSku, SEM_CODIGO } from '@/lib/vendas-sku';
+import {
+  agregarPorSku, SEM_CODIGO,
+  classificarTendencia, coberturaDias, alertasSku, unidadesPorCodigo, metricas, somarAcumuladores,
+} from '@/lib/vendas-sku';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 import type { CustoResolver } from '@/lib/resumo-vendas';
 import type { Janela } from '@/lib/metricas';
@@ -91,5 +94,54 @@ describe('agregarPorSku', () => {
       tamanho: null, estoque: 7, fornecedor: 'F', origem: 'nacional' as const, ehKit: false, primeiraVenda: null, ultimaVenda: null }]]);
     const [l] = agregarPorSku(agruparPorPedido([venda()]), SET, cat);
     expect([l.titulo, l.nomeFamilia, l.fornecedor, l.estoque, l.origem]).toEqual(['Fita azul', 'Fitas', 'F', 7, 'nacional']);
+  });
+});
+
+const DIA = 86_400_000;
+const FIM = Date.parse('2026-09-30T23:59:59.999Z');
+
+describe('classificarTendencia', () => {
+  it('precedência: novo > parado > baixo giro > alta/queda/estável', () => {
+    expect(classificarTendencia(10, 0, new Date(FIM - 10 * DIA).toISOString(), FIM)).toBe('novo');
+    expect(classificarTendencia(0, 8, '2026-06-01T00:00:00Z', FIM)).toBe('parado');
+    expect(classificarTendencia(2, 1, '2026-06-01T00:00:00Z', FIM)).toBe('baixo_giro'); // 2 vs 1 não é "+100%"
+    expect(classificarTendencia(12, 10, '2026-06-01T00:00:00Z', FIM)).toBe('em_alta');  // +20%
+    expect(classificarTendencia(8, 10, '2026-06-01T00:00:00Z', FIM)).toBe('em_queda');  // −20%
+    expect(classificarTendencia(11, 10, '2026-06-01T00:00:00Z', FIM)).toBe('estavel');
+    expect(classificarTendencia(6, 0, '2026-06-01T00:00:00Z', FIM)).toBe('em_alta');    // voltou a vender
+  });
+});
+
+describe('coberturaDias', () => {
+  it('estoque ÷ média diária dos últimos 30 dias', () => {
+    expect(coberturaDias(30, 60, false)).toBe(15); // 2/dia
+  });
+  it('kit vinculado → compartilhado; sem venda → null (não infinito)', () => {
+    expect(coberturaDias(30, 60, true)).toBe('compartilhado');
+    expect(coberturaDias(30, 0, false)).toBeNull();
+  });
+});
+
+describe('alertasSku', () => {
+  it('devolução alta só com ≥ 20 pedidos; lucro negativo; cobertura baixa; sem custo', () => {
+    const base = somarAcumuladores([]);
+    const l = (over: Partial<typeof base>) => {
+      const acc = { ...base, ...over };
+      return { acc, m: metricas(acc) } as unknown as Parameters<typeof alertasSku>[0];
+    };
+    expect(alertasSku(l({ pedidosBaseDevolucao: 19, pedidosDevolvidos: 5 }), null)).toEqual([]);
+    expect(alertasSku(l({ pedidosBaseDevolucao: 20, pedidosDevolvidos: 2 }), null)).toEqual(['devolucao_alta']);
+    expect(alertasSku(l({ itensComCusto: 1, liquidoComCusto: 5, custo: 8 }), 10)).toEqual(['lucro_negativo', 'cobertura_baixa']);
+    expect(alertasSku(l({ itensSemCusto: 1 }), 'compartilhado')).toEqual(['sem_custo']);
+  });
+});
+
+describe('unidadesPorCodigo', () => {
+  it('soma só itens faturáveis dentro da janela', () => {
+    const pedidos = agruparPorPedido([
+      venda({ id: 'a', order_id: 1, itens: [item({ codigo: 'A', quantity: 2 })] }),
+      venda({ id: 'b', order_id: 2, status: 'cancelled', itens: [item({ codigo: 'A', quantity: 5 })] }),
+    ]);
+    expect(unidadesPorCodigo(pedidos, SET).get('A')).toBe(2);
   });
 });
