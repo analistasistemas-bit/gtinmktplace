@@ -18,10 +18,10 @@ sinais de risco.
 | KPIs: valor, qtde, ticket, SKUs com venda, concentração top 5 | fica, com Δ% contra o período anterior |
 | Frase "X lidera com Y%" | vira 3 insights automáticos |
 | Ranking com participação valor/qtde | fica, ordenado por lucro |
-| Top 10 em barras (valor + ticket) | vira scatter volume × lucro de todos os SKUs |
-| Volume × Faturamento (5 cards) | idem acima |
+| Top 10 em barras (valor + ticket) | sai: o ranking ordenável (lucro, unidades, lucro/unidade) responde |
+| Volume × Faturamento (5 cards) | sai, pelo mesmo motivo |
 | Vendas por UF do SKU (modal) | vai para o dossiê |
-| Faixas de ticket | fica como filtro |
+| Faixas de ticket | sai (nunca definida) |
 | Curva ABC em outra página e outro período | embutida, no mesmo período, por lucro ou faturamento |
 
 O que falta lá e é o diferencial daqui: lucro/Markup/Margem s/ venda, comparação de períodos, canceladas e
@@ -30,17 +30,32 @@ atalhos de período (lá é texto dd/mm/aaaa).
 
 ## Fatia 1 — aba `/faturamento?aba=sku`
 
+**Fonte:** os itens de `agruparPorPedido` (a mesma da aba Vendas), agrupados por `codigo` no navegador
+(ADR-0172 D-5). Sem RPC e sem fórmula nova. Enriquecimento pela família mais recente do `(org, codigo)`.
+
 - **Filtros:** período com atalhos (7/30/90 dias, mês, custom) + comparar com o período anterior; busca
-  por código/título; família, fornecedor, origem; alternador **agrupar por família**.
+  por código/título; família, fornecedor, origem (nacional/importado); filtro **sem custo**; alternador
+  **agrupar por família**.
+- **Faixa "sem custo"** no topo quando houver: "N SKUs sem custo · R$ X de faturamento sem lucro calculado".
+  Todo produto tem que ter custo.
 - **KPIs:** faturamento, lucro, Markup, Margem s/ venda, unidades, SKUs com venda (e quantos venderam 1
-  vez), concentração top 5 — cada um com Δ%.
-- **Insights (3):** ex.: "3 SKUs fazem 50% do lucro", "02989271 caiu 35% contra o período anterior",
-  "4 SKUs com cobertura < 15 dias".
-- **Ranking:** código + título + miniatura, unidades, faturamento, lucro, Markup, Margem s/ venda, ticket,
-  canceladas, devolvidas + taxa de devolução, **tendência** e **alertas** (glossário). Ordena por lucro por
-  padrão. "Sem custo" fica fora do ranking por lucro.
-- **Curva ABC** (lucro | faturamento) e **scatter volume × lucro** com quadrantes.
-- **Invariante:** a soma dos SKUs no período = total da aba Vendas no mesmo filtro (teste).
+  vez), concentração top 5, **% do faturamento com custo real** e **prejuízo total** (quanto os SKUs
+  negativos tiraram). Δ contra o período anterior: % nos valores, **pontos percentuais** em Markup e Margem,
+  e R$ quando a base anterior é zero ou negativa.
+- **Quem explica a variação do lucro:** os SKUs que mais somaram ou tiraram em R$, incluindo "entrou no
+  período" e "deixou de vender".
+- **Insights:** de 0 a 3, só com evidência (ex.: "3 SKUs fazem 50% do lucro", "4 SKUs com cobertura
+  < 15 dias").
+- **Ranking:** código + título + miniatura, unidades, faturamento, lucro, **lucro por unidade**, Markup,
+  Margem s/ venda, ticket, canceladas, taxa de devolução, **tendência** e **alertas** (glossário). Ordena
+  por lucro por padrão. Selos: "custo estimado", "lucro parcial", "sem custo". Linha extra: "devolução não
+  atribuída" e "sem código".
+- **Abrir a conta da linha:** bruto → comissão → frete → imposto → custo → lucro, com link para os pedidos.
+- **Curva ABC** (lucro | faturamento). Por lucro, só sobre o lucro positivo; SKUs com prejuízo ficam na
+  faixa "D — prejuízo".
+- **Cobertura:** kit vinculado mostra "estoque compartilhado com a base", sem dias.
+- **Invariante:** a soma dos SKUs no período = total da aba Vendas no mesmo filtro (por construção; teste
+  de guarda).
 
 ## Fatia 2a — Dossiê `/faturamento/sku/:codigo` (dados existentes)
 

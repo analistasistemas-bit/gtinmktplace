@@ -31,26 +31,54 @@ O ADR-0039 deixou "ranking de produto, curva ABC" fora do Faturamento. Este ADR 
 A análise segue o código, que atravessa republicação (MLB novo), canal e custo. Nunca o MLB. A lista pode
 ser **agrupada por família**, que soma as variações e continua mostrando cada uma.
 
+Chave = `ml_vendas_itens.codigo`. Título, foto, família e estoque vêm da **família mais recente** do
+`(org_id, codigo)`, a mesma âncora do estoque canônico e do Publicados (ADR-0025). Cada reimportação cria
+família nova com o mesmo código, então um join simples multiplicaria linhas. Medido em 2026-09-26: 99,9% dos
+itens vendidos têm o código de uma variação real e nenhum tem o código pai. Item sem código cai numa linha
+"sem código" e nunca é descartado. Kit vinculado aparece sob o próprio código. Kit Virtual aparece nos
+componentes (o ML gera um pedido por componente).
+
 ### D-2 — A história começa na entrada da organização no PubliAI
 Sem backfill de pedidos anteriores. A tela diz a partir de quando conta ("histórico desde jun/2026").
 
 ### D-3 — Lucro é o protagonista; dois percentuais com o denominador no nome
 Ranking e Curva ABC ordenam por **lucro** (líquido − custo congelado) por padrão, com troca para
 faturamento ou unidades. Ao lado aparecem **Markup** (`lucro ÷ custo`) e **Margem s/ venda**
-(`lucro ÷ preço de venda`), com os nomes do ADR-0150. Venda sem custo aparece como "sem custo" e fica fora do
-ranking por lucro.
+(`lucro ÷ preço de venda`), com os nomes do ADR-0150.
 
-### D-4 — Mesma regra da aba Vendas, e a soma bate
-Canceladas e devolvidas seguem `ehFaturavel` e o ADR-0106, em colunas próprias (quantidade, R$, taxa de
-devolução). A soma de todos os SKUs de um período é igual ao total da aba Vendas no mesmo filtro. Um teste
-automatizado garante isso.
+O lucro é calculado **por item**, não por pedido. Assim, um pack com custo em só parte dos itens não infla o
+lucro. A regra de custo é a da aba Vendas, mas visível. Com custo congelado, vale ele. Sem congelado, vale o
+custo atual do cadastro, marcado **"custo estimado"**. Sem nenhum custo, o lucro fica vazio e o SKU sai do
+ranking por lucro. SKU com parte das vendas sem custo mostra **"lucro parcial"**. Um KPI mostra o **% do
+faturamento com custo real**.
 
-### D-5 — Agregação no banco, por RPC
-O ranking e a série temporal são agregados no Postgres (RPC por org, período e granularidade), não no
-navegador. Motivos: volume (~1.300 pedidos/mês numa org), o teto de 1.000 linhas do PostgREST e o corte de
-egress do ADR-0081. A RPC é a fonte única que o teste de D-4 confere. RLS por `org_id`; permissão herdada do
-menu Faturamento (ADR-0047). A aba vive em `/faturamento?aba=sku` e o dossiê em `/faturamento/sku/:codigo`
-(família: `/faturamento/sku/familia/:codigo_pai`).
+**Todo produto tem que ter custo** (Diego, 2026-09-26). SKU sem custo é alerta de primeira classe, e não só
+uma nota:
+- uma faixa no topo da aba ("N SKUs sem custo · R$ X de faturamento sem lucro calculado");
+- um filtro "sem custo";
+- um selo na linha.
+
+### D-4 — Mesma regra da aba Vendas para o dinheiro; taxa de devolução por coorte
+O dinheiro segue `ehFaturavel` e o ADR-0106 (estorno no período em que aconteceu). A soma de todos os SKUs
+de um período é igual ao total da aba Vendas no mesmo filtro, por construção (D-5).
+
+A **taxa de devolução** olha as vendas do período: dos pedidos do SKU vendidos no período, quantos foram
+devolvidos, qualquer que seja a data do estorno. É contada em pedidos, porque a devolução parcial não informa
+a quantidade. A devolução chega ao SKU pelo pedido, porque no ML 1 pedido = 1 item (medido em 2026-09-26:
+4.211 de 4.211). Medido também: 161 de 175 devoluções casam com um pedido. Devoluções de carrinho e de envio
+sem pedido vão para "devolução não atribuída". Hoje `pedidos-faturamento.ts` joga o estorno inteiro no 1º
+item do pedido, o que é indiferente com 1 item por pedido.
+
+### D-5 — Cálculo no navegador, sobre os itens da aba Vendas
+O ranking agrupa por SKU os **itens que `agruparPorPedido` já produz** (`src/lib/pedidos-faturamento.ts`), a
+mesma fonte da aba Vendas, do Financeiro, do Dashboard e da Geografia. Não existe fórmula nova de lucro, nem
+em SQL nem em TS. A soma bate com a aba Vendas por construção. A paginação (teto de 1.000 linhas) e o cache já
+existem em `useVendas`. O período carregado estica para trás o necessário para a tendência (60 dias). O
+dossiê (Fatia 2a) busca um SKU só. Migrar para agregação no banco só se uma org passar de ~10 mil pedidos no
+período. Revisão Codex (GPT-6 Astra) de 2026-09-26: uma RPC seria a 3ª implementação de comissão, frete,
+imposto por UF e custo. Permissão herdada do menu Faturamento (ADR-0047). A aba vive em
+`/faturamento?aba=sku` e o dossiê em `/faturamento/sku/:codigo` (família:
+`/faturamento/sku/familia/:codigo_pai`).
 
 ### D-6 — Coleta diária nova, só leitura no ML
 Três séries diárias por anúncio próprio, gravadas pelo PubliAI:
@@ -68,7 +96,7 @@ Nenhuma coleta escreve no ML.
 
 ### D-7 — Limites de tendência e risco fixos na v1
 Tendência (30 dias contra os 30 anteriores: ±20%, mínimo de 5 unidades), cobertura < 15 dias e devolução
-> 5% (com ≥ 20 unidades) são constantes no código, sem tela de configuração. Recalibrar com dado real.
+> 5% (com ≥ 20 pedidos) são constantes no código, sem tela de configuração. Recalibrar com dado real.
 
 ## Consequências
 
@@ -88,4 +116,5 @@ Tendência (30 dias contra os 30 anteriores: ±20%, mínimo de 5 unidades), cobe
   puxa a venda.
 - **Backfill de pedidos antigos:** Diego preferiu começar na entrada no PubliAI.
 - **Ranking por faturamento (como o benchmark):** coloca no topo SKU que fatura e dá prejuízo.
-- **Agregar no navegador:** esbarra no teto de 1.000 linhas e no egress.
+- **Agregar no banco (RPC):** reescreveria em SQL comissão, frete rateado, imposto por UF e custo, uma 3ª
+  fórmula que exigiria teste de paridade permanente com a aba Vendas.
