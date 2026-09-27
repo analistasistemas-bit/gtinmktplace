@@ -4,6 +4,7 @@ import {
   agregarPorSku, SEM_CODIGO,
   classificarTendencia, coberturaDias, alertasSku, unidadesPorCodigo, metricas, somarAcumuladores,
   calcularKpisSku, deltaValor, deltaPp, curvaAbc, explicarVariacao, gerarInsights, agruparPorFamilia, type LinhaSku,
+  janelaEstendida, montarVendasSku,
 } from '@/lib/vendas-sku';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 import type { CustoResolver } from '@/lib/resumo-vendas';
@@ -211,5 +212,75 @@ describe('agruparPorFamilia', () => {
     expect(fams[0].m.lucro).toBe(40);
     expect(fams[0].m.margemSVenda).toBeCloseTo(0.2, 5);
     expect(fams[0].filhos).toHaveLength(2);
+  });
+});
+
+describe('janelaEstendida', () => {
+  it('começa no menor entre o início do anterior e fim − 60 dias', () => {
+    const atual = { desde: '2026-09-24T00:00:00.000Z', ate: '2026-09-30T23:59:59.999Z' };
+    const ant = { desde: '2026-09-17T00:00:00.000Z', ate: '2026-09-24T00:00:00.000Z' };
+    expect(janelaEstendida(atual, ant)).toEqual({ desde: new Date(Date.parse(atual.ate) - 60 * DIA).toISOString(), ate: atual.ate });
+  });
+});
+
+describe('montarVendasSku', () => {
+  const ANT = { desde: '2026-08-01T00:00:00.000Z', ate: '2026-08-31T23:59:59.999Z' };
+  const agrupar = (vs: Venda[]) => agruparPorPedido(vs);
+
+  it('ranking usa só o período; tendência usa os 60 dias até o fim; parados só com estoque', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, date_closed: '2026-09-10T12:00:00Z', itens: [item({ codigo: 'A', quantity: 6 })] }),
+      venda({ id: 'b', order_id: 2, date_closed: '2026-08-10T12:00:00Z', itens: [item({ codigo: 'A', quantity: 5 })] }),
+    ];
+    const z = { codigo: 'Z', codigoPai: null, nomeFamilia: null, nome: 'Parado', cor: null, tamanho: null,
+      estoque: 3, fornecedor: null, origem: null, ehKit: false, primeiraVenda: '2026-05-01T00:00:00Z', ultimaVenda: '2026-07-01T00:00:00Z' };
+    const semEstoque = { ...z, codigo: 'Y', estoque: 0 };
+    const r = montarVendasSku({ vendas, agrupar, janela: SET, anterior: ANT,
+      catalogo: new Map([['Z', z], ['Y', semEstoque]]), devolucoes: [] });
+    expect(r.linhas.map((l) => [l.codigo, l.acc.unidades])).toEqual([['A', 6]]);
+    expect(r.linhasAnterior.map((l) => [l.codigo, l.acc.unidades])).toEqual([['A', 5]]);
+    expect(r.tendencias.get('A')).toBe('em_alta');  // 6 vs 5 = +20%
+    expect(r.parados).toBe(1);                       // Y tem estoque 0: não conta
+    expect(r.historicoDesde).toBe('2026-05-01T00:00:00Z');
+  });
+
+  it('pack com uma order em agosto e outra em setembro é dividido, igual à aba Vendas', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, pack_id: 77, date_closed: '2026-08-31T20:00:00Z', itens: [item({ codigo: 'A' })] }),
+      venda({ id: 'b', order_id: 2, pack_id: 77, date_closed: '2026-09-01T10:00:00Z', itens: [item({ codigo: 'B' })] }),
+    ];
+    const r = montarVendasSku({ vendas, agrupar, janela: SET, anterior: ANT, catalogo: new Map(), devolucoes: [] });
+    expect(r.linhas.map((l) => l.codigo)).toEqual(['B']);
+    expect(r.linhasAnterior.map((l) => l.codigo)).toEqual(['A']);
+    const kpisVendasSet = calcularKpisPedidos(agrupar(vendas.filter((v) => v.date_closed! >= SET.desde)));
+    expect(r.kpis.bruto).toBe(kpisVendasSet.bruto);
+  });
+
+  it('devolução sem pedido conhecido conta como não atribuída', () => {
+    const dev = [{ id: 'd', claim_id: 1, order_id: null, stage: null, status: 'closed', type: null, reason_texto: null,
+      valor_em_jogo: null, return_status: null, return_status_money: null, acoes_pendentes: null,
+      aberto_em: '2026-09-05T00:00:00Z', fechado_em: '2026-09-06T00:00:00Z' }];
+    const r = montarVendasSku({ vendas: [], agrupar, janela: SET, anterior: SET, catalogo: new Map(), devolucoes: dev });
+    expect(r.devolucoesNaoAtribuidas).toBe(1);
+  });
+});
+
+describe('SEM_CODIGO fora dos rankings', () => {
+  it('concentração top 5 ignora a linha sem código; o lucro total continua somando', () => {
+    const ls = ['a', 'b', 'c', 'd', 'e', 'f'].map((c) => linha(c, 10));
+    const k = calcularKpisSku([linha(SEM_CODIGO, 100), ...ls]);
+    expect(k.concentracaoTop5).toBeCloseTo(50 / 60, 5);
+    expect(k.lucro).toBe(160);
+  });
+
+  it('curva ABC não classifica a linha sem código nem a conta no total', () => {
+    const abc = curvaAbc([linha(SEM_CODIGO, 1000), linha('a', 80), linha('b', 20)], 'lucro');
+    expect([abc.get(SEM_CODIGO), abc.get('a'), abc.get('b')]).toEqual([undefined, 'A', 'B']);
+    expect(curvaAbc([linha(SEM_CODIGO, -5)], 'lucro').has(SEM_CODIGO)).toBe(false);
+  });
+
+  it('explicarVariacao pula a linha sem código', () => {
+    const v = explicarVariacao([linha(SEM_CODIGO, 100), linha('a', 10)], []);
+    expect(v.map((x) => x.codigo)).toEqual(['a']);
   });
 });

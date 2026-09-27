@@ -5,6 +5,8 @@ import type { Pedido } from './pedidos-faturamento';
 import type { CatalogoSku } from './vendas-sku-catalogo';
 import type { Janela } from './metricas';
 import { round2 } from './formato';
+import type { Venda } from './faturamento';
+import { dataNoPeriodo, type Devolucao } from './devolucoes';
 
 export const SEM_CODIGO = '';
 
@@ -223,7 +225,8 @@ export interface KpisSku {
 export function calcularKpisSku(linhas: LinhaSku[]): KpisSku {
   const total = somarAcumuladores(linhas.map((l) => l.acc));
   const m = metricas(total);
-  const positivos = linhas.map((l) => l.m.lucro ?? 0).filter((v) => v > 0).sort((a, b) => b - a);
+  // Sem código não é SKU: fica fora da concentração, mas segue nos totais.
+  const positivos = linhas.filter((l) => l.codigo !== SEM_CODIGO).map((l) => l.m.lucro ?? 0).filter((v) => v > 0).sort((a, b) => b - a);
   const somaPos = positivos.reduce((s, v) => s + v, 0);
   const comVenda = linhas.filter((l) => l.codigo !== SEM_CODIGO && l.acc.unidades > 0);
   return {
@@ -265,7 +268,8 @@ export type ClasseAbc = 'A' | 'B' | 'C' | 'D';
 
 /** A até 80% acumulado, B até 95%, C o resto — acumulado ANTES do item, então o 1º é sempre A.
  *  Por lucro: só lucro positivo entra; prejuízo = D; sem custo fica sem classe. */
-export function curvaAbc(linhas: LinhaSku[], base: 'lucro' | 'bruto'): Map<string, ClasseAbc> {
+export function curvaAbc(todas: LinhaSku[], base: 'lucro' | 'bruto'): Map<string, ClasseAbc> {
+  const linhas = todas.filter((l) => l.codigo !== SEM_CODIGO); // sem código fica sem classe e fora do total
   const valor = (l: LinhaSku) => (base === 'lucro' ? l.m.lucro : l.acc.bruto);
   const out = new Map<string, ClasseAbc>();
   const pos = linhas.filter((l) => (valor(l) ?? 0) > 0).sort((a, b) => valor(b)! - valor(a)!);
@@ -288,6 +292,7 @@ export function explicarVariacao(atual: LinhaSku[], anterior: LinhaSku[], n = 5)
   const at = new Map(atual.map((l) => [l.codigo, l]));
   const out: VariacaoLucro[] = [];
   for (const codigo of new Set([...at.keys(), ...ant.keys()])) {
+    if (codigo === SEM_CODIGO) continue;
     const a = at.get(codigo); const b = ant.get(codigo);
     if (a?.m.lucro == null && b?.m.lucro == null) continue;
     const delta = round2((a?.m.lucro ?? 0) - (b?.m.lucro ?? 0));
@@ -328,4 +333,71 @@ export function agruparPorFamilia(linhas: LinhaSku[]): LinhaFamilia[] {
     const acc = somarAcumuladores(filhos.map((f) => f.acc));
     return { codigoPai, nomeFamilia: filhos[0].nomeFamilia, acc, m: metricas(acc), filhos };
   });
+}
+
+export function janelaEstendida(atual: Janela, anterior: Janela): Janela {
+  const fim = Date.parse(atual.ate);
+  const inicio = Math.min(Date.parse(anterior.desde), fim - 2 * LIMITES.janelaTendenciaDias * DIA_MS);
+  return { desde: new Date(inicio).toISOString(), ate: atual.ate };
+}
+
+export interface VendasSku {
+  linhas: LinhaSku[]; linhasAnterior: LinhaSku[];
+  kpis: KpisSku; kpisAnterior: KpisSku;
+  tendencias: Map<string, Tendencia>; coberturas: Map<string, Cobertura>; alertas: Map<string, Alerta[]>;
+  variacoes: VariacaoLucro[]; insights: string[]; parados: number; devolucoesNaoAtribuidas: number;
+  /** Primeira venda faturável registrada na org (ADR-0172 D-2): a tela diz desde quando conta. */
+  historicoDesde: string | null;
+}
+
+export function montarVendasSku(p: {
+  vendas: Venda[]; agrupar: (vs: Venda[]) => Pedido[]; janela: Janela; anterior: Janela;
+  catalogo: Map<string, CatalogoSku>; devolucoes: Devolucao[];
+}): VendasSku {
+  // Recorta as VENDAS pela data antes de agrupar, como a aba Vendas (que só carrega a janela).
+  const recorte = (j: Janela) => p.agrupar(p.vendas.filter((v) => dentroDaJanela(v.date_closed, j)));
+  const fim = Date.parse(p.janela.ate);
+  const j30 = { desde: new Date(fim - LIMITES.janelaTendenciaDias * DIA_MS).toISOString(), ate: p.janela.ate };
+  const jAnt = {
+    desde: new Date(fim - 2 * LIMITES.janelaTendenciaDias * DIA_MS).toISOString(),
+    ate: new Date(fim - LIMITES.janelaTendenciaDias * DIA_MS - 1).toISOString(),
+  };
+  const linhas = agregarPorSku(recorte(p.janela), p.janela, p.catalogo)
+    .sort((a, b) => (b.m.lucro ?? -Infinity) - (a.m.lucro ?? -Infinity) || a.codigo.localeCompare(b.codigo));
+  const linhasAnterior = agregarPorSku(recorte(p.anterior), p.anterior, p.catalogo);
+  const u30 = unidadesPorCodigo(recorte(j30), j30);
+  const uAnt = unidadesPorCodigo(recorte(jAnt), jAnt);
+
+  const tendencias = new Map<string, Tendencia>();
+  const coberturas = new Map<string, Cobertura>();
+  const alertas = new Map<string, Alerta[]>();
+  for (const l of linhas) {
+    if (l.codigo === SEM_CODIGO) continue;
+    tendencias.set(l.codigo, classificarTendencia(u30.get(l.codigo) ?? 0, uAnt.get(l.codigo) ?? 0, l.primeiraVenda, fim));
+    const cob = coberturaDias(l.estoque, u30.get(l.codigo) ?? 0, l.ehKit);
+    coberturas.set(l.codigo, cob);
+    alertas.set(l.codigo, alertasSku(l, cob));
+  }
+  // ponytail: "parado" = SKU do catálogo com estoque > 0 cuja última venda faturável é anterior aos
+  // 30 dias até o fim do período (estoque parado é o que importa). Não vê SKU fora do catálogo.
+  let parados = 0;
+  let historicoDesde: string | null = null;
+  for (const c of p.catalogo.values()) {
+    if (c.estoque > 0 && c.ultimaVenda && Date.parse(c.ultimaVenda) < Date.parse(j30.desde)) parados += 1;
+    if (c.primeiraVenda && (historicoDesde == null || Date.parse(c.primeiraVenda) < Date.parse(historicoDesde))) historicoDesde = c.primeiraVenda;
+  }
+  const variacoes = explicarVariacao(linhas, linhasAnterior);
+  const coberturaBaixa = [...alertas.values()].filter((a) => a.includes('cobertura_baixa')).length;
+  // ponytail: devolução "não atribuída" = claim do período sem pedido carregado na janela estendida.
+  // Um claim de venda mais antiga que a janela também cai aqui; é um teto conhecido.
+  const orderIds = new Set(p.vendas.map((v) => v.order_id));
+  const devolucoesNaoAtribuidas = p.devolucoes.filter((d) =>
+    dentroDaJanela(dataNoPeriodo(d), p.janela) && (d.order_id == null || !orderIds.has(d.order_id))).length;
+  return {
+    linhas, linhasAnterior,
+    kpis: calcularKpisSku(linhas), kpisAnterior: calcularKpisSku(linhasAnterior),
+    tendencias, coberturas, alertas, variacoes,
+    insights: gerarInsights({ linhas, variacoes, coberturaBaixa, parados }),
+    parados, devolucoesNaoAtribuidas, historicoDesde,
+  };
 }

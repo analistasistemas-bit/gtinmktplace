@@ -1,0 +1,49 @@
+import { useMemo } from 'react';
+import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
+import { useVendas } from '@/hooks/useVendas';
+import { useCustos } from '@/hooks/useCustos';
+import { useFotosProduto } from '@/hooks/useFotosProduto';
+import { useCoresProduto } from '@/hooks/useCoresProduto';
+import { useAnuncioCanonico } from '@/hooks/useAnuncioCanonico';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
+import { useDevolucoes } from '@/hooks/useDevolucoes';
+import { useCatalogoVendasSku } from '@/hooks/useCatalogoVendasSku';
+import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
+import { montarFotoResolver } from '@/lib/fotos-produto';
+import { montarCorResolver } from '@/lib/cor-produto';
+import { agruparPorPedido } from '@/lib/pedidos-faturamento';
+import type { Venda } from '@/lib/faturamento';
+import { janelaEstendida, montarVendasSku, type VendasSku } from '@/lib/vendas-sku';
+
+/** Mesmos resolvers e mesma fonte da aba Vendas (aba-vendas.tsx:173-190): é isso que faz a soma bater. */
+export function useVendasSku(periodo: Periodo) {
+  const janela = useMemo(() => resolverJanela(periodo), [periodo]);
+  const anterior = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
+  const estendida = useMemo(() => janelaEstendida(janela, anterior), [janela, anterior]);
+  const vendasQ = useVendas(estendida, 'todos');
+  const { data: custos } = useCustos();
+  const { data: fotos } = useFotosProduto();
+  const { data: cores } = useCoresProduto();
+  const { data: canonico } = useAnuncioCanonico();
+  const { data: aliquotas } = useAliquotas();
+  const { data: devolucoes } = useDevolucoes();
+  const catQ = useCatalogoVendasSku();
+
+  const dados = useMemo<VendasSku | null>(() => {
+    if (!vendasQ.data || !catQ.data) return null;
+    const custoR = montarCustoResolver(custos);
+    const pesoR = montarPesoResolver(custos);
+    const fotoR = montarFotoResolver(fotos, canonico);
+    const aliqR = montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 });
+    const corR = montarCorResolver(cores, canonico);
+    return montarVendasSku({
+      vendas: vendasQ.data,
+      agrupar: (vs: Venda[]) => agruparPorPedido(vs, custoR, pesoR, fotoR, aliqR, corR),
+      janela, anterior,
+      catalogo: new Map(catQ.data.map((c) => [c.codigo, c])),
+      devolucoes: devolucoes ?? [],
+    });
+  }, [vendasQ.data, catQ.data, custos, fotos, cores, canonico, aliquotas, devolucoes, janela, anterior]);
+
+  return { dados, isLoading: vendasQ.isLoading || catQ.isLoading, isFetching: vendasQ.isFetching, refetch: vendasQ.refetch };
+}
