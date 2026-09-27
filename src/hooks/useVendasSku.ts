@@ -52,6 +52,8 @@ export function useVendasSku(periodo: Periodo) {
     dados,
     isLoading: vendasQ.isLoading || catQ.isLoading || custosQ.isLoading,
     isFetching: vendasQ.isFetching || catQ.isFetching,
-    refetch: vendasQ.refetch,
+    /** Sem isso a tela ficaria em skeleton para sempre quando vendas ou catálogo falham. */
+    isError: vendasQ.isError || catQ.isError,
+    refetch: () => Promise.all([vendasQ.refetch(), catQ.refetch()]),
   };
 }

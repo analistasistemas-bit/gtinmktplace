@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  AlertTriangle, Boxes, ChevronRight, DollarSign, Lightbulb, Package, Percent, PieChart, ReceiptText, Scale, TrendingUp,
+  AlertTriangle, Boxes, CloudOff, ChevronRight, DollarSign, Lightbulb, Package, Percent, PieChart, ReceiptText, Scale, TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -10,17 +10,19 @@ import { KpiCard } from '@/components/ui/kpi-card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
-import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
+import { fmtBRL, fmtBRLSinal, fmtInt, fmtMarkup } from '@/lib/formato';
 import { rotuloAnterior, type Periodo } from '@/lib/metricas';
 import { normalizarParaBusca } from '@/lib/texto';
 import { useVendasSku } from '@/hooks/useVendasSku';
 import { RankingSku, type ChaveOrdem } from '@/components/faturamento/ranking-sku';
-import { agruparPorFamilia, curvaAbc, deltaPp, deltaValor, type Delta, type LinhaSku } from '@/lib/vendas-sku';
+import { SEM_CODIGO, agruparPorFamilia, curvaAbc, deltaPp, deltaValor, type Delta, type LinhaSku } from '@/lib/vendas-sku';
 
 // Idioma do app para "sem valor" (o mesmo de fmtMarkup e da aba Vendas).
 const NADA = '—';
 const pct = (v: number | null) => (v == null ? NADA : `${(v * 100).toFixed(1).replace('.', ',')}%`);
-const comDelta = (d: Delta | null, rot: string) => (d ? { delta: `${d.texto} ${rot}`, deltaTrend: d.tendencia } : {});
+// Delta zero não tem sinal nem cor: "+R$ 0,00" em verde lia como alta.
+const comDelta = (d: Delta | null, rot: string) => (!d ? {}
+  : { delta: `${d.tendencia === 'neutral' ? d.texto.replace(/^[+\u2212]/, '') : d.texto} ${rot}`, deltaTrend: d.tendencia });
 const valorOrdem = (l: Pick<LinhaSku, 'acc' | 'm'>, k: ChaveOrdem): number =>
   k === 'lucro' ? l.m.lucro ?? -Infinity : k === 'lucroPorUnidade' ? l.m.lucroPorUnidade ?? -Infinity
     : k === 'bruto' ? l.acc.bruto : l.acc.unidades;
@@ -73,7 +75,7 @@ export function AbaVendasSku() {
   const [porFamilia, setPorFamilia] = useState(false);
   const [baseAbc, setBaseAbc] = useState<'lucro' | 'bruto'>('lucro');
   const [ordem, setOrdem] = useState<ChaveOrdem>('lucro');
-  const { dados, isLoading, isFetching } = useVendasSku(periodo);
+  const { dados, isLoading, isFetching, isError, refetch } = useVendasSku(periodo);
 
   const opcoes = useMemo(() => {
     const ls = dados?.linhas ?? [];
@@ -106,6 +108,20 @@ export function AbaVendasSku() {
     <SeletorPeriodo periodo={periodo} onPeriodo={setPeriodo} mostrarMesAtual rotulo="Período" carregando={isFetching && !isLoading} />
   );
 
+  if (isError && !dados) {
+    return (
+      <div className="space-y-4">
+        {seletor}
+        <EmptyState
+          icon={CloudOff}
+          title="Não foi possível carregar as vendas por SKU"
+          description="A busca das vendas ou do catálogo falhou. Tente de novo; se continuar, troque o período ou recarregue a página."
+          action={<Button variant="outline" size="sm" onClick={() => { void refetch(); }}>Tentar de novo</Button>}
+        />
+      </div>
+    );
+  }
+
   if (isLoading || !dados) return <div className="space-y-4">{seletor}<Carregando /></div>;
 
   if (dados.linhas.length === 0) {
@@ -133,6 +149,7 @@ export function AbaVendasSku() {
   const parciais = dados.linhas.filter((l) => l.m.fonteCusto === 'parcial');
   const brutoSemCusto = [...semCusto, ...parciais].reduce((s, l) => s + l.acc.bruto - l.acc.brutoComCusto, 0);
   const totalLinhas = familias ? familias.length : filtradas.length;
+  const nPrejuizo = dados.linhas.filter((l) => l.codigo !== SEM_CODIGO && l.m.lucro != null && l.m.lucro < 0).length;
 
   return (
     <div className="space-y-4">
@@ -141,7 +158,7 @@ export function AbaVendasSku() {
       {(semCusto.length > 0 || parciais.length > 0) && (
         <button
           type="button"
-          onClick={() => setSoSemCusto(true)}
+          onClick={() => setSoSemCusto((v) => !v)}
           aria-pressed={soSemCusto}
           className="group flex w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5 text-left text-sm transition-colors duration-(--motion-duration-state) hover:bg-warning/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
@@ -153,7 +170,7 @@ export function AbaVendasSku() {
             <span className="tabular-nums">{fmtBRL(brutoSemCusto)}</span> de faturamento sem lucro calculado. Cadastre o custo para entrar na conta.
           </span>
           <span className="ml-auto inline-flex items-center gap-0.5 text-xs font-medium">
-            {soSemCusto ? 'Filtro aplicado' : 'Ver só esses'}
+            {soSemCusto ? 'Mostrar todos' : 'Ver só esses'}
             {!soSemCusto && <ChevronRight className="h-3.5 w-3.5 transition-transform motion-safe:group-hover:translate-x-0.5" aria-hidden />}
           </span>
         </button>
@@ -161,11 +178,12 @@ export function AbaVendasSku() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         <KpiCard size="compact" icon={TrendingUp} label="Lucro" infoKey="Lucro::vendas-sku"
-          tom={kpis.lucro != null && kpis.lucro < 0 ? 'danger' : 'success'}
+          tom={kpis.lucro == null ? 'info' : kpis.lucro < 0 ? 'danger' : 'success'}
           valueClassName={kpis.lucro == null ? undefined : kpis.lucro < 0 ? 'text-destructive' : 'text-success'}
-          value={kpis.lucro == null ? NADA : fmtBRL(kpis.lucro)}
+          value={kpis.lucro == null ? NADA : fmtBRLSinal(kpis.lucro)}
+          hint={nPrejuizo > 0 ? `${nPrejuizo} ${nPrejuizo === 1 ? 'SKU' : 'SKUs'} no prejuízo: ${fmtBRLSinal(kpis.prejuizo)}` : undefined}
           {...comDelta(deltaValor(kpis.lucro, ka.lucro, fmtBRL), rot)} />
-        <KpiCard size="compact" icon={DollarSign} label="Faturamento" tom="info" value={fmtBRL(kpis.bruto)}
+        <KpiCard size="compact" icon={DollarSign} label="Faturamento" tom="success" value={fmtBRL(kpis.bruto)}
           {...comDelta(deltaValor(kpis.bruto, ka.bruto, fmtBRL), rot)} />
         <KpiCard size="compact" icon={Percent} label="Markup" infoKey="Markup::vendas-sku" tom="info" value={fmtMarkup(kpis.markup)}
           {...comDelta(deltaPp(kpis.markup, ka.markup), rot)} />
@@ -179,12 +197,12 @@ export function AbaVendasSku() {
           hint={`${fmtInt(kpis.skusVendaUnica)} ${kpis.skusVendaUnica === 1 ? 'vendeu' : 'venderam'} 1 vez`} />
         <KpiCard size="compact" icon={PieChart} label="Concentração top 5" tom="info" value={pct(kpis.concentracaoTop5)} hint="do lucro positivo" />
         <KpiCard size="compact" icon={ReceiptText} label="Faturamento com custo real" infoKey="Faturamento com custo real::vendas-sku"
-          tom={kpis.prejuizo < 0 ? 'warning' : 'info'} value={pct(kpis.pctBrutoCustoReal)}
-          hint={kpis.prejuizo < 0 ? `SKUs com prejuízo: ${fmtBRL(kpis.prejuizo)}` : undefined} />
+          // ponytail: abaixo de 80% com custo real o lucro depende muito do custo estimado; recalibrar com uso.
+          tom={kpis.pctBrutoCustoReal != null && kpis.pctBrutoCustoReal < 0.8 ? 'warning' : 'info'} value={pct(kpis.pctBrutoCustoReal)} />
       </div>
 
       {(dados.insights.length > 0 || dados.variacoes.length > 0) && (
-        <div className={cn('grid gap-3', dados.insights.length > 0 && dados.variacoes.length > 0 && 'lg:grid-cols-2')}>
+        <div className="grid gap-3 lg:grid-cols-2">
           {dados.insights.length > 0 && (
             <Painel icone={Lightbulb} titulo="Leituras do período">
               <ul className="space-y-1.5 text-sm">
@@ -200,14 +218,12 @@ export function AbaVendasSku() {
             <Painel icone={TrendingUp} titulo={`Quem explica a variação do lucro (${rot})`}>
               <ul className="space-y-1 text-sm">
                 {dados.variacoes.map((v) => (
-                  <li key={v.codigo} className="flex items-baseline justify-between gap-3">
-                    <span className="min-w-0 truncate" title={v.titulo ?? v.codigo}>
-                      {v.titulo ?? v.codigo}
-                      {v.situacao !== 'mudou' && (
-                        <span className="ml-1.5 text-xs text-muted-foreground">{v.situacao === 'entrou' ? 'entrou' : 'deixou de vender'}</span>
-                      )}
-                    </span>
-                    <span className={cn('shrink-0 font-medium tabular-nums', v.delta < 0 ? 'text-destructive' : 'text-success')}>
+                  <li key={v.codigo} className="flex items-baseline gap-1.5">
+                    <span className="min-w-0 truncate" title={v.titulo ?? v.codigo}>{v.titulo ?? v.codigo}</span>
+                    {v.situacao !== 'mudou' && (
+                      <span className="shrink-0 text-xs text-muted-foreground">{v.situacao === 'entrou' ? 'entrou' : 'deixou de vender'}</span>
+                    )}
+                    <span className={cn('ml-auto shrink-0 pl-2 font-medium tabular-nums', v.delta < 0 ? 'text-destructive' : 'text-success')}>
                       {v.delta > 0 ? '+' : '−'}{fmtBRL(Math.abs(v.delta))}
                     </span>
                   </li>

@@ -4,6 +4,11 @@ export function fmtBRL(valor: number): string {
   return BRL.format(valor);
 }
 
+/** fmtBRL com o sinal de menos tipográfico (U+2212), o mesmo dos deltas (`deltaValor`); −0 vira 0. */
+export function fmtBRLSinal(valor: number): string {
+  return valor < 0 && round2(valor) !== 0 ? `−${BRL.format(-valor)}` : BRL.format(Math.abs(valor));
+}
+
 /** Arredonda a 2 casas (centavos). Fonte única do arredondamento monetário no frontend. */
 export function round2(n: number): number {
   return Math.round(n * 100) / 100;

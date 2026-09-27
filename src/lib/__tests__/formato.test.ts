@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fmtMilhar, fmtPct, parseNumeroPtBr } from '../formato';
+import { fmtBRLSinal, fmtMilhar, fmtPct, parseNumeroPtBr } from '../formato';
 
 describe('fmtPct', () => {
   it.each([
@@ -59,5 +59,14 @@ describe('parseNumeroPtBr', () => {
 
   it('milhar malformado (grupos incompletos) é NaN, não um número lixo', () => {
     expect(parseNumeroPtBr('1.234.56')).toBeNaN();
+  });
+});
+
+describe('fmtBRLSinal', () => {
+  it('negativo com U+2212, sem sinal no zero nem no −0', () => {
+    expect(fmtBRLSinal(-190.87)).toBe('\u2212R$\u00a0190,87');
+    expect(fmtBRLSinal(12.5)).toBe('R$\u00a012,50');
+    expect(fmtBRLSinal(-0)).toBe('R$\u00a00,00');
+    expect(fmtBRLSinal(-0.001)).toBe('R$\u00a00,00');
   });
 });

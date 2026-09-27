@@ -4,8 +4,9 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { montarMapasCusto } from '@/lib/custos';
 
-const { custosQ } = vi.hoisted(() => ({
+const { custosQ, catQ } = vi.hoisted(() => ({
   custosQ: { data: undefined as unknown, isLoading: true, isFetching: true, isError: false },
+  catQ: { data: [] as unknown, isLoading: false, isFetching: false, isError: false, refetch: () => Promise.resolve() },
 }));
 const q = (data: unknown) => ({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
 
@@ -16,7 +17,7 @@ vi.mock('@/hooks/useCoresProduto', () => ({ useCoresProduto: () => q(undefined) 
 vi.mock('@/hooks/useAnuncioCanonico', () => ({ useAnuncioCanonico: () => q(undefined) }));
 vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => q({ nacional: 8, importado: 16 }) }));
 vi.mock('@/hooks/useDevolucoes', () => ({ useDevolucoes: () => q([]) }));
-vi.mock('@/hooks/useCatalogoVendasSku', () => ({ useCatalogoVendasSku: () => q([]) }));
+vi.mock('@/hooks/useCatalogoVendasSku', () => ({ useCatalogoVendasSku: () => catQ }));
 
 const { useVendasSku } = await import('../useVendasSku');
 const periodo = { tipo: 'preset', dias: 30 } as const;
@@ -41,5 +42,16 @@ describe('useVendasSku — espera os custos', () => {
     const r = renderHook(() => useVendasSku(periodo)).result.current;
     expect(r.dados).not.toBeNull();
     expect(r.isLoading).toBe(false);
+  });
+});
+
+describe('useVendasSku — erro', () => {
+  it('catálogo com erro: isError true (a tela não fica em skeleton para sempre)', () => {
+    Object.assign(custosQ, { data: montarMapasCusto([]), isLoading: false, isFetching: false, isError: false });
+    Object.assign(catQ, { data: undefined, isError: true });
+    const r = renderHook(() => useVendasSku(periodo)).result.current;
+    expect(r.isError).toBe(true);
+    expect(r.dados).toBeNull();
+    Object.assign(catQ, { data: [], isError: false });
   });
 });

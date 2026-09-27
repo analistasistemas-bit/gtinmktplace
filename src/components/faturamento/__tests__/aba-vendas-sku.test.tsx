@@ -54,4 +54,13 @@ describe('AbaVendasSku', () => {
     fireEvent.click(screen.getByText(/Família P \(4 variações\)/));
     expect(screen.getAllByTestId('sku-titulo').map((e) => e.textContent)).toContain('Produto A');
   });
+
+  it('abrir a conta de um filho não fecha a família', () => {
+    renderAba();
+    fireEvent.click(screen.getByRole('button', { name: 'Agrupar por família' }));
+    fireEvent.click(screen.getByRole('button', { name: /Mostrar variações de Família P/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver a conta de Produto A' }));
+    expect(screen.getAllByTestId('sku-titulo').map((e) => e.textContent)).toEqual(expect.arrayContaining(['Produto A', 'Produto C']));
+    expect(screen.getByText('Comissão + frete')).toBeInTheDocument();
+  });
 });
