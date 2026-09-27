@@ -1442,16 +1442,18 @@ export default function Publicados() {
           {resumo.pedidos > 0 && (
             <Link
               to="/financeiro"
-              className="group mb-3 flex cursor-pointer items-center justify-between rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg"
+              className="group mb-3 block cursor-pointer rounded-lg border bg-[image:var(--brand-gradient-soft)] px-4 py-3 shadow-sm outline-none ring-offset-background transition-all hover:-translate-y-0.5 hover:border-primary/40 hover:shadow-lg focus-visible:ring-2 focus-visible:ring-ring"
             >
-              <div className="flex items-center gap-2">
-                <Wallet className="h-4 w-4 text-success" />
-                <span className="text-sm text-muted-foreground">Líquido das vendas (você recebe)</span>
-                <span className="text-lg font-semibold tabular-nums text-success">{fmtBRL(resumo.liquido)}</span>
+              {/* Empilhado como o card do Financeiro: numa linha só, o rótulo quebrava em 3 no celular. */}
+              <div className="flex items-center justify-between gap-2 text-xs">
+                <span className="flex items-center gap-1.5 text-success">
+                  <Wallet className="h-4 w-4 shrink-0" /> Líquido das vendas<span className="hidden sm:inline"> (você recebe)</span>
+                </span>
+                <span className="flex shrink-0 items-center gap-0.5 text-muted-foreground">
+                  Ver financeiro <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                </span>
               </div>
-              <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                Ver financeiro <ChevronRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
-              </span>
+              <div className="mt-1 text-2xl font-semibold tabular-nums text-success">{fmtBRL(resumo.liquido)}</div>
             </Link>
           )}
 
