@@ -1,4 +1,4 @@
-import { Receipt, RotateCcw, MessageCircleQuestion, MessagesSquare, MapPin, PackageOpen } from 'lucide-react';
+import { Boxes, Receipt, RotateCcw, MessageCircleQuestion, MessagesSquare, MapPin, PackageOpen } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { PageHeader } from '@/components/ui/page-header';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { CanalTabs } from '@/components/canal-tabs';
 import { useCanalAtivo } from '@/hooks/useCanalAtivo';
 import { infoCanal } from '@/lib/canais';
 import { AbaVendas } from '@/components/faturamento/aba-vendas';
+import { AbaVendasSku } from '@/components/faturamento/aba-vendas-sku';
 import { AbaDevolucoes } from '@/components/faturamento/aba-devolucoes';
 import { AbaPerguntas } from '@/components/faturamento/aba-perguntas';
 import { AbaMensagens } from '@/components/faturamento/aba-mensagens';
@@ -15,7 +16,7 @@ import { AbaGeografia } from '@/components/faturamento/aba-geografia';
 import { usePerguntasNaoRespondidas } from '@/hooks/usePerguntas';
 import { useMensagensAguardando } from '@/hooks/useMensagens';
 
-const ABAS = ['vendas', 'devolucoes', 'perguntas', 'mensagens', 'geografia'] as const;
+const ABAS = ['vendas', 'sku', 'devolucoes', 'perguntas', 'mensagens', 'geografia'] as const;
 type Aba = (typeof ABAS)[number];
 
 export default function Faturamento() {
@@ -54,6 +55,7 @@ export default function Faturamento() {
         <Tabs value={aba} onValueChange={setAba}>
           <TabsList>
             <TabsTrigger value="vendas"><Receipt className="h-4 w-4" />Vendas</TabsTrigger>
+            <TabsTrigger value="sku"><Boxes className="h-4 w-4" />Vendas SKU</TabsTrigger>
             <TabsTrigger value="devolucoes"><RotateCcw className="h-4 w-4" />Devoluções</TabsTrigger>
             <TabsTrigger value="perguntas">
               <MessageCircleQuestion className="h-4 w-4" />Perguntas
@@ -74,6 +76,7 @@ export default function Faturamento() {
             <TabsTrigger value="geografia"><MapPin className="h-4 w-4" />Geografia</TabsTrigger>
           </TabsList>
           <TabsContent value="vendas" className="mt-4"><AbaVendas /></TabsContent>
+          <TabsContent value="sku" className="mt-4"><AbaVendasSku /></TabsContent>
           <TabsContent value="devolucoes" className="mt-4"><AbaDevolucoes /></TabsContent>
           <TabsContent value="perguntas" className="mt-4"><AbaPerguntas /></TabsContent>
           <TabsContent value="mensagens" className="mt-4"><AbaMensagens /></TabsContent>
