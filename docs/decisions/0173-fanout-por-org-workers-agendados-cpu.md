@@ -28,21 +28,29 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
 1. **Fan-out por org.** A mensagem do schedule (sem `org_id`) vira **disparador**: publica uma mensagem
    por conexão ML para a própria função e responde 200. Os schedules existentes, seus bodies e o número
    de schedules **não mudam**; muda só o que a função faz com eles.
-2. **Rodada com posse e cursor.** Cada (job, org) tem uma linha em `worker_rodadas` com posse (TTL),
-   cursor e acumulado. É o mesmo contrato do tráfego (ADR-0172): reservar posse → lote → CAS do cursor
-   → continuação por QStash → concluir. Uma cadeia viva impede uma segunda cadeia para a mesma
-   (job, org), e um ciclo já concluído com `ok` não abre rodada nova (a janela de dedup do QStash não é a única trava).
-3. **Trabalho limitado por contagem, não por relógio.** Cada mensagem processa no máximo um lote de
-   tamanho fixo (produtos, pedidos, packs), com tamanho medido e ajustável por constante. O relógio
-   (90 s) fica como proteção secundária.
-4. **Etapas caras separadas.** Onde um passo lê um volume que não depende do lote (mapa de 120 dias do
-   Mercado Pago, histórico de perguntas/claims), ele vira uma etapa própria da cadeia, em mensagem
-   separada. Nos lotes de vendas, o líquido do MP vem pelos pagamentos do próprio pedido
-   (`carregarLiquidoMPDoPedido`, já usado por `sync-venda`), não pela varredura de 120 dias.
-5. **Payload preserva o modo.** A mensagem por org carrega job, tier/dias/janela e ciclo. Nunca reusa o
-   caminho manual (`scopedOrgId`), que impõe 50 produtos e desliga o baseline no Pulse.
-6. **Deduplicação por (função, job, org, ciclo).** Ciclo = dia BRT para os jobs diários e hora UTC para
-   o reconciliar e o tier quente. As continuações acrescentam rodada, cursor e tentativa.
+2. **O banco é a fonte da verdade da rodada.** Cada (job, org) tem uma linha em `worker_rodadas` com
+   ciclo, `params` (janela/tier gravados na abertura do ciclo), cursor (`etapa|pos`), acumulado e
+   `notificar_pendente`. A mensagem só aponta (job, org, ciclo); o cursor nunca viaja na mensagem.
+3. **Posse por execução.** Cada execução toma uma posse curta com identidade própria (`lease_id`,
+   150 s), processa um lote, faz o CAS do cursor com essa posse, publica a continuação e solta a posse.
+   Posse ocupada → HTTP 500 (o QStash repete depois); assim o retry de uma execução que morreu por CPU
+   retoma o mesmo lote, e uma continuação publicada em duplicidade só serializa trabalho, nunca repete
+   lote. Mensagem de ciclo mais antigo que o da linha → `obsoleta`; ciclo já concluído → `concluida`.
+4. **Trabalho limitado por contagem, não por relógio.** Cada mensagem processa no máximo um lote de
+   tamanho fixo (produtos, uma página de pedidos, packs, claims), ajustável por constante após medição.
+   Listas do ML são lidas uma página por mensagem, e página que falha lança (nunca lista parcial).
+5. **Etapas caras separadas.** Radar do Pulse, perguntas, claims e liberações do Mercado Pago são
+   etapas próprias, cada uma em mensagem separada, com CPU medida isoladamente. Nos lotes de vendas, o
+   líquido do MP vem pelos pagamentos do próprio pedido (`carregarLiquidoMPDoPedido`, já usado por
+   `sync-venda`). A varredura de 120 dias fica só na etapa de liberações e **não é paginada**: cortar
+   os pagamentos de um pedido entre páginas pode gravar data de liberação errada.
+6. **Deduplicação por (função, job, org, ciclo, cursor).** Ciclo = dia BRT para os jobs diários e hora
+   UTC para o reconciliar e o tier quente. Notificação do Pulse: pendência durável na linha, enviada
+   pelo menos uma vez e marcada depois do envio.
+6b. **Ativação por flag.** `FANOUT_BACKFILL`, `FANOUT_PULSE`, `FANOUT_RECONCILIAR` ligam o disparador em
+   fan-out; sem a flag o schedule segue no caminho de hoje. O consumidor das mensagens por org fica
+   sempre deployado. Rollback = desligar a flag, nunca redeployar a versão antiga com mensagens na
+   fila (o handler antigo leria a mensagem por org como execução global).
 7. **Específico por função:**
    - **Pulse:** o schedule só coleta orgs com o módulo `pulse` habilitado (Avil e Daludi Shop saem até o
      módulo ser ligado; com os lotes, a Avil passa a caber quando for). Tentativa de coleta registrada
@@ -52,7 +60,7 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
    - **Backfill:** o caminho agendado deixa de reler perguntas e claims (o reconciliar relê o mesmo
      histórico de hora em hora, com filtro). Vendas e mensagens viram etapas com cursor. Falha
      transitória ao ler mensagens deixa de virar `[]` calado no caminho do backfill.
-   - **Reconciliar:** etapas `perguntas_claims` → `vendas` → `liberacoes`, por org.
+   - **Reconciliar:** etapas `perguntas` → `claims` (lotes) → `vendas` (páginas) → `liberacoes`, por org.
 8. **Caminho manual intocado.** Os botões "Atualizar agora" (Pulse) e "Sincronizar" (faturamento)
    continuam como hoje, numa requisição só da própria org.
 
