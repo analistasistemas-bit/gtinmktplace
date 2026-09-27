@@ -1861,7 +1861,7 @@ curl -s -X POST \
 ```
 
 Anotar o `scheduleId` e acrescentar a linha na tabela de schedules de
-[edge-functions.md](../reference/edge-functions.md).
+`docs/reference/edge-functions.md`.
 
 ## 4. Teste ponta a ponta
 
