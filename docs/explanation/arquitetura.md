@@ -108,7 +108,9 @@ usuário: as publicações de uma conta acontecem uma de cada vez. Ver ADR-0034 
 - **Mercado Livre → ml-webhook:** receiver público que faz ACK rápido, deduplica e
   re-enfileira; nunca confia no corpo (o worker re-busca autenticado).
 - **OAuth ML:** refresh de token protegido por lock Redis para evitar corrida (ADR-0012);
-  tokens guardados criptografados no Vault.
+  tokens guardados criptografados no Vault. O worker `renovar-tokens-ml` (cron `40 * * * *`) renova
+  com antecedência, fora da virada da hora, porque o rate limit de refresh do ML é por app
+  (ADR-0171). O refresh na hora do uso continua como rede de segurança.
 
 > ⚠️ Há divergências atuais de `verify_jwt` no `config.toml` para funções acionadas por
 > QStash/webhook — ver a nota no fim de [edge-functions.md](../reference/edge-functions.md).

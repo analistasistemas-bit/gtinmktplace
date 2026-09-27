@@ -101,6 +101,9 @@ resolver:
 2. Confirme que `marketplace_connections` foi atualizado (novo `expires_at`).
 
 O refresh de token é automático e protegido por lock; não há ação manual no fluxo normal.
+Quem renova com antecedência é o `renovar-tokens-ml` (QStash `40 * * * *`, ADR-0171). Diante de um
+`429 Rate limiter grant_type refresh_token`, confira primeiro no histórico do QStash se esse
+schedule está entregando, antes de mexer em `_shared/ml/token.ts`.
 
 ## Habilitar um canal (marketplace) para uma organização
 
