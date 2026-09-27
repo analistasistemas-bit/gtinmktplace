@@ -96,6 +96,8 @@ export type TipoEvento = 'entrada' | 'ruptura' | 'retorno_estoque' | 'moderacao_
 
 export interface Evento {
   id: string; tipo: TipoEvento; em: string; titulo: string; detalhe: string | null;
+  /** Devolução: motivo traduzido do ML (`reason_texto`); null = não informado. Demais tipos: null. */
+  motivo: string | null;
   vinculo: Vinculo | null; mlb: string | null;
 }
 
@@ -107,8 +109,8 @@ export function montarEventos(p: {
   mlbs: Map<string, string[]>; kitMultiplicador: number | null;
 }): Evento[] {
   const eventos = new Map<string, Evento>();
-  const add = (e: Omit<Evento, 'vinculo' | 'mlb'> & Partial<Pick<Evento, 'vinculo' | 'mlb'>>) =>
-    eventos.set(e.id, { vinculo: 'exato', mlb: null, ...e });
+  const add = (e: Omit<Evento, 'vinculo' | 'mlb' | 'motivo'> & Partial<Pick<Evento, 'vinculo' | 'mlb' | 'motivo'>>) =>
+    eventos.set(e.id, { vinculo: 'exato', mlb: null, motivo: null, ...e });
   const n = p.kitMultiplicador;
   const saldo = (s: number) => (n ? Math.floor(s / n) : s);
 
@@ -136,10 +138,12 @@ export function montarEventos(p: {
 
   for (const d of p.devolucoes) {
     if (d.type !== 'returns' || d.order_id == null || !p.ordersDosCodigos.has(d.order_id)) continue;
-    const detalhe = `Motivo: ${d.reason_texto ?? d.reason_id ?? 'não informado'}`;
-    if (d.aberto_em) add({ id: `${d.id}:abertura`, tipo: 'devolucao_aberta', em: d.aberto_em, titulo: 'Devolução aberta', detalhe });
+    // O código cru do ML (reason_id) não é texto para o dono: sem tradução, "não informado".
+    const motivo = d.reason_texto?.trim() || null;
+    const detalhe = `Motivo: ${motivo ?? 'não informado'}`;
+    if (d.aberto_em) add({ id: `${d.id}:abertura`, tipo: 'devolucao_aberta', em: d.aberto_em, titulo: 'Devolução aberta', detalhe, motivo });
     if (d.fechado_em) add({ id: `${d.id}:estorno`, tipo: 'devolucao_estorno', em: d.fechado_em,
-      titulo: d.return_status_money === 'refunded' ? 'Devolução encerrada com estorno' : 'Devolução encerrada', detalhe });
+      titulo: d.return_status_money === 'refunded' ? 'Devolução encerrada com estorno' : 'Devolução encerrada', detalhe, motivo });
   }
 
   return [...eventos.values()].sort((a, b) => Date.parse(a.em) - Date.parse(b.em) || a.id.localeCompare(b.id));
@@ -175,7 +179,9 @@ export interface LinhaMix {
 
 /** Mix das irmãs: só a composição atual do catálogo (irmãs sem venda incluídas) — as linhas de
  *  outros produtos do mesmo pack e SEM_CODIGO ficam de fora, inclusive do total. Delta de lucro
- *  contra o período anterior; o lado sem venda conta 0 (a irmã que zerou mostra a queda). */
+ *  contra o período anterior; o lado sem venda conta 0 (a irmã que zerou mostra a queda). Família
+ *  sem venda nenhuma no anterior (ex.: o anterior acaba antes do histórico): sem Δ, nunca o lucro
+ *  inteiro como alta. */
 export function mixDaFamilia(linhas: LinhaSku[], anterior: LinhaSku[], catalogoFamilia: CatalogoSku[]): LinhaMix[] {
   const nomes = new Map(catalogoFamilia.map((c) => [c.codigo, c.nome]));
   const atual = new Map(linhas.filter((l) => nomes.has(l.codigo)).map((l) => [l.codigo, l]));
@@ -192,7 +198,7 @@ export function mixDaFamilia(linhas: LinhaSku[], anterior: LinhaSku[], catalogoF
     return {
       codigo, titulo: nomes.get(codigo) ?? l?.titulo ?? codigo, unidades,
       participacaoUnidades: total > 0 ? unidades / total : 0,
-      lucro, deltaLucro: (l || a) && lucroAgora != null && lucroAntes != null ? round2(lucroAgora - lucroAntes) : null,
+      lucro, deltaLucro: antes.size > 0 && (l || a) && lucroAgora != null && lucroAntes != null ? round2(lucroAgora - lucroAntes) : null,
       semVendas: unidades === 0,
     };
   }).sort((a, b) => b.unidades - a.unidades || a.codigo.localeCompare(b.codigo));
@@ -241,6 +247,9 @@ export interface DossieSku {
   qualidade: { pctBrutoCustoReal: number | null; fontesParciais: string[] };
 }
 
+/** O alvo é kit (estoque da base, sem cobertura própria) só quando todos os códigos são kit. */
+export const soKits = (catalogo: CatalogoSku[]) => catalogo.length > 0 && catalogo.every((c) => c.ehKit);
+
 const extremo = (datas: (string | null | undefined)[], fim: 'min' | 'max'): string | null => {
   const ds = datas.filter((d): d is string => !!d).sort((a, b) => Date.parse(a) - Date.parse(b));
   return (fim === 'min' ? ds[0] : ds[ds.length - 1]) ?? null;
@@ -273,8 +282,12 @@ export function montarDossie(p: {
   const hoje = montarVendasSku({ ...base, janela: p.hoje, anterior: p.hojeAnterior });
   const daChave = (ls: LinhaSku[]) => ls.find((l) => l.codigo === chave) ?? null;
 
-  const ehKit = catalogo.some((c) => c.ehKit);
-  const estoque = catalogo.length ? catalogo.reduce((s, c) => s + (c.ehKit ? c.estoqueKit ?? 0 : c.estoque), 0) : null;
+  // Kit só quando todos os códigos são kit: numa família mista, kits (estoque da base) e unidades
+  // não se somam — o saldo é o das variações comuns e a cobertura segue em dias.
+  const ehKit = soKits(catalogo);
+  const estoque = !catalogo.length ? null
+    : ehKit ? catalogo.reduce((s, c) => s + (c.estoqueKit ?? 0), 0)
+      : catalogo.reduce((s, c) => s + (c.ehKit ? 0 : c.estoque), 0);
   const historicoDesde = extremo(catalogo.map((c) => c.primeiraVenda), 'min') ?? extremo(vendasDoAlvo.map((v) => v.date_closed), 'min');
   const ultimaVenda = extremo(catalogo.map((c) => c.ultimaVenda), 'max') ?? extremo(vendasDoAlvo.map((v) => v.date_closed), 'max');
   const titulo = familia != null

@@ -143,8 +143,8 @@ const comSerie = (over: Partial<DossieSku> = {}) => dossie({
   ],
   perguntasPorIntervalo: [3, 0],
   eventos: [
-    { id: 'e1', tipo: 'moderacao_detectada', em: '2026-09-16T12:00:00Z', titulo: 'Moderação detectada', detalhe: 'Foto', vinculo: 'compartilhado', mlb: 'MLB3' },
-    { id: 'e2', tipo: 'moderacao_resolvida', em: '2026-09-18T12:00:00Z', titulo: 'Resolução observada', detalhe: null, vinculo: 'nao_resolvido', mlb: 'MLB9' },
+    { id: 'e1', tipo: 'moderacao_detectada', em: '2026-09-16T12:00:00Z', titulo: 'Moderação detectada', detalhe: 'Foto', motivo: null, vinculo: 'compartilhado', mlb: 'MLB3' },
+    { id: 'e2', tipo: 'moderacao_resolvida', em: '2026-09-18T12:00:00Z', titulo: 'Resolução observada', detalhe: null, motivo: null, vinculo: 'nao_resolvido', mlb: 'MLB9' },
   ],
   ...over,
 });
@@ -232,7 +232,7 @@ describe('SkuDossie: série e eventos', () => {
   it('eventos: kit marca o estoque como da base; vazio mostra o aviso', () => {
     renderPagina('ok', comSerie({
       catalogo: [{ ...cat, ehKit: true, kitMultiplicador: 2, kitBaseCodigo: '00100', estoqueKit: 3 }],
-      eventos: [{ id: 'e3', tipo: 'ruptura', em: '2026-09-16T12:00:00Z', titulo: 'Ruptura do kit', detalhe: null, vinculo: 'exato', mlb: null }],
+      eventos: [{ id: 'e3', tipo: 'ruptura', em: '2026-09-16T12:00:00Z', titulo: 'Ruptura do kit', detalhe: null, motivo: null, vinculo: 'exato', mlb: null }],
     }));
     expect(within(screen.getByRole('region', { name: 'Eventos' })).getByText('estoque da base')).toBeInTheDocument();
   });
@@ -264,22 +264,50 @@ describe('SkuDossie: estoque, devoluções, UFs, mix e campanhas', () => {
     expect(within(est).queryByText(/\d dias/)).not.toBeInTheDocument();
   });
 
+  it('família com irmã kit: saldo em unidades e a nota das variações kit', () => {
+    renderPagina('ok', dossie({
+      titulo: 'Camiseta Dry', codigos: ['00123', '00125'], estoque: 12, cobertura: 40,
+      catalogo: [cat, { ...cat, codigo: '00125', ehKit: true, kitMultiplicador: 2, kitBaseCodigo: '00123', estoqueKit: 3 }],
+    }), '/faturamento/sku/familia/P1');
+    const est = screen.getByRole('region', { name: 'Estoque' });
+    expect(within(est).getByText('12 un.')).toBeInTheDocument();
+    expect(within(est).getByText('40 dias')).toBeInTheDocument();
+    expect(within(est).getByText(/inclui 1 variação kit com estoque da base/i)).toBeInTheDocument();
+    expect(within(est).queryByText(/kits$/)).not.toBeInTheDocument();
+  });
+
+  it('KPIs sem venda no período anterior: sem Δ e o aviso "sem histórico no período anterior"', () => {
+    renderPagina('ok', dossie({ linhaAnterior: null }));
+    const periodo = screen.getByRole('region', { name: 'Resultado no período' });
+    expect(within(periodo).getByText(/sem histórico no período anterior/i)).toBeInTheDocument();
+    expect(within(periodo).queryByText(/vs\./)).not.toBeInTheDocument();
+  });
+
+  it('KPIs com venda no período anterior: Δ aparece', () => {
+    renderPagina('ok', dossie({ linhaAnterior: linha('00123', 'Camiseta Dry Azul M') }));
+    const periodo = screen.getByRole('region', { name: 'Resultado no período' });
+    expect(within(periodo).queryByText(/sem histórico no período anterior/i)).not.toBeInTheDocument();
+    expect(within(periodo).getAllByText(/vs\./).length).toBeGreaterThan(0);
+  });
+
   it('estoque sem ritmo: sem vendas nos últimos 30 dias, não zero dias', () => {
     renderPagina('ok', dossie({ cobertura: null }));
     expect(within(screen.getByRole('region', { name: 'Estoque' })).getByText(/sem vendas nos últimos 30 dias/i)).toBeInTheDocument();
   });
 
   it('devoluções: taxa com N de M pedidos e motivos por devolução (sem contar a mesma duas vezes)', () => {
-    const dev = (id: string, tipo: 'devolucao_aberta' | 'devolucao_estorno', detalhe: string | null) =>
-      ({ id, tipo, em: '2026-09-10T12:00:00Z', titulo: 'Devolução', detalhe, vinculo: 'exato' as const, mlb: null });
+    // O bloco usa o campo `motivo` do evento, nunca o texto do detalhe.
+    const dev = (id: string, tipo: 'devolucao_aberta' | 'devolucao_estorno', motivo: string | null) =>
+      ({ id, tipo, em: '2026-09-10T12:00:00Z', titulo: 'Devolução', detalhe: 'texto livre', motivo, vinculo: 'exato' as const, mlb: null });
     renderPagina('ok', dossie({ eventos: [
-      dev('d1:abertura', 'devolucao_aberta', 'Motivo: Produto com defeito'),
-      dev('d1:estorno', 'devolucao_estorno', 'Motivo: Produto com defeito'),
-      dev('d2:abertura', 'devolucao_aberta', 'Motivo: não informado'),
+      dev('d1:abertura', 'devolucao_aberta', 'Produto com defeito'),
+      dev('d1:estorno', 'devolucao_estorno', 'Produto com defeito'),
+      dev('d2:abertura', 'devolucao_aberta', null),
     ] }));
     const reg = screen.getByRole('region', { name: 'Devoluções' });
     expect(within(reg).getByText('20,0%')).toBeInTheDocument();
     expect(within(reg).getByText(/1 de 5 pedidos/)).toBeInTheDocument();
+    expect(within(reg).getByText('Motivos · todo o histórico (2 devoluções)')).toBeInTheDocument();
     const motivos = within(reg).getByRole('list', { name: /Motivos/ });
     expect(within(motivos).getAllByRole('listitem')).toHaveLength(2);
     expect(within(motivos).getByText('Produto com defeito')).toBeInTheDocument();

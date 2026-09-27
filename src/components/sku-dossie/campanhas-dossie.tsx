@@ -18,6 +18,8 @@ const ITEM: Record<string, { label: string; tom: StatusTone; ordem: number }> = 
 };
 const item = (s: string) => ITEM[s] ?? { label: s, tom: 'neutral' as StatusTone, ordem: 2 };
 
+const fimMs = (c: Situacao) => (c.vigencia.fim ? Date.parse(c.vigencia.fim) : 0);
+
 function vigencia({ inicio, fim }: Situacao['vigencia']): string {
   if (inicio && fim) return `${diaMesBRT(inicio)} a ${diaMesBRT(fim)}`;
   if (fim) return `até ${diaMesBRT(fim)}`;
@@ -27,13 +29,13 @@ function vigencia({ inicio, fim }: Situacao['vigencia']): string {
 
 /** Situação atual nas campanhas do ML, na última sincronização. Nunca "data de adesão": o ML não
  *  guarda quando o anúncio entrou ou saiu, então a participação histórica é desconhecida. */
-export function CampanhasDossie({ campanhas }: { campanhas: DossieSku['campanhas'] }) {
+export function CampanhasDossie({ campanhas, className }: { campanhas: DossieSku['campanhas']; className?: string }) {
   const lista = [...campanhas].sort((a, b) => item(a.statusItem).ordem - item(b.statusItem).ordem
-    || Date.parse(b.vigencia.fim ?? '') - Date.parse(a.vigencia.fim ?? '') || a.mlb.localeCompare(b.mlb));
+    || fimMs(b) - fimMs(a) || a.mlb.localeCompare(b.mlb));
 
   return (
     <BlocoDossie id="dossie-campanhas" titulo="Campanhas"
-      relogio="Situação atual nas campanhas, da última sincronização; participação histórica desconhecida">
+      relogio="Situação na última sincronização · participação histórica desconhecida" className={className}>
       {lista.length === 0 ? (
         <EmptyState icon={Megaphone} title="Nenhuma campanha nos anúncios deste código" className="flex-1"
           description="Quando um anúncio for convidado ou entrar numa campanha do Mercado Livre, a situação aparece aqui depois da sincronização." />

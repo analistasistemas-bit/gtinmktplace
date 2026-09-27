@@ -10,14 +10,14 @@ const TOP = 5;
 
 /** Onde estão os compradores deste código no período: faturamento bruto por UF da order. A % é
  *  sobre o total com "sem localização", então tudo fecha em 100%. */
-export function UfsDossie({ ufs }: { ufs: DossieSku['ufs'] }) {
+export function UfsDossie({ ufs, className }: { ufs: DossieSku['ufs']; className?: string }) {
   const ordem = Object.entries(ufs.valores).sort((a, b) => b[1] - a[1]);
   const total = ordem.reduce((s, [, v]) => s + v, 0) + ufs.semUf;
   const top = ordem.slice(0, TOP);
   const max = top[0]?.[1] ?? 1;
 
   return (
-    <BlocoDossie id="dossie-ufs" titulo="Vendas por estado" relogio="Faturamento bruto deste código por UF do comprador, no período escolhido">
+    <BlocoDossie id="dossie-ufs" titulo="Vendas por estado" relogio="Faturamento bruto por UF do comprador, no período escolhido" className={className}>
       {total <= 0 ? (
         <EmptyState icon={MapPinned} title="Nenhuma venda no período" className="flex-1"
           description="O mapa mostra onde estão os compradores assim que houver vendas neste período." />

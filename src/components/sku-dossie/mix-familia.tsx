@@ -14,13 +14,14 @@ const LINK = 'rounded-sm font-medium underline-offset-2 hover:underline focus-vi
 // A chave agregada da família (`familia:P`) e SEM_CODIGO não são dossiês de variação.
 const corDelta = (d: number | null) => (d == null || d === 0 ? 'text-muted-foreground' : d > 0 ? 'text-success' : 'text-destructive');
 const textoDelta = (d: number | null) => (d == null ? NADA : fmtBRLSinal(d));
+const SEM_DELTA = 'Sem Δ: sem venda da variação ou sem histórico no período anterior';
 const temDossie = (codigo: string) => codigo !== SEM_CODIGO && !codigo.startsWith('familia:');
 
 /** Variações da composição atual da família no período, inclusive as sem venda. Cada nome abre o
  *  dossiê da variação levando a mesma origem (`de`) do dossiê da família. */
 export function MixFamilia({ mix, voltar }: { mix: LinhaMix[]; voltar: string }) {
   return (
-    <BlocoDossie id="dossie-mix" titulo="Mix da família" relogio="Variações do catálogo atual no período escolhido; Δ do lucro contra o período anterior">
+    <BlocoDossie id="dossie-mix" titulo="Mix da família" relogio="Variações do catálogo atual no período escolhido · Δ contra o período anterior">
       <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
         <Table>
           <TableHeader>
@@ -60,7 +61,7 @@ export function MixFamilia({ mix, voltar }: { mix: LinhaMix[]; voltar: string })
                   {/* No celular o Δ desce para baixo do lucro: a coluna dele tiraria o espaço do nome. */}
                   <span className={cn('mt-1 block text-xs sm:hidden', corDelta(l.deltaLucro))}>{`Δ ${textoDelta(l.deltaLucro)}`}</span>
                 </TableCell>
-                <TableCell className={cn('hidden py-2.5 text-right text-xs tabular-nums sm:table-cell', corDelta(l.deltaLucro))}>
+                <TableCell title={l.deltaLucro == null ? SEM_DELTA : undefined} className={cn('hidden py-2.5 text-right text-xs tabular-nums sm:table-cell', corDelta(l.deltaLucro))}>
                   {textoDelta(l.deltaLucro)}
                 </TableCell>
               </TableRow>

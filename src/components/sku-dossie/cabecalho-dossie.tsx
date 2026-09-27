@@ -6,7 +6,7 @@ import { ThumbProduto } from '@/components/faturamento/pilha-thumbs';
 import { ALERTA, TENDENCIA } from '@/components/faturamento/rotulos-sku';
 import { dataBR, idadeComercial } from '@/components/sku-dossie/formato-dossie';
 import { fmtInt } from '@/lib/formato';
-import type { DossieSku } from '@/lib/sku-dossie';
+import { soKits, type DossieSku } from '@/lib/sku-dossie';
 
 function Fato({ rotulo, children, fraco = false }: { rotulo: string; children: ReactNode; fraco?: boolean }) {
   return (
@@ -20,7 +20,7 @@ function Fato({ rotulo, children, fraco = false }: { rotulo: string; children: R
 /** `aviso` fica entre o título e a faixa de fatos: a explicação vem antes do "desconhecido". */
 export function CabecalhoDossie({ dados, familia, aviso }: { dados: DossieSku; familia: boolean; aviso?: ReactNode }) {
   const cat = dados.catalogo[0];
-  const ehKit = dados.catalogo.some((c) => c.ehKit);
+  const ehKit = soKits(dados.catalogo);
   // ponytail: o hook só expõe a cobertura do Kit Virtual como fonte parcial; o texto é o contrato.
   const kitVirtual = dados.qualidade.fontesParciais.some((f) => f.startsWith('Kit Virtual'));
   const foto = dados.linhaPeriodo?.imagemPath ?? dados.linhaAnterior?.imagemPath ?? null;

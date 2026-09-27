@@ -155,19 +155,21 @@ export default function SkuDossie() {
         </section>
       )}
 
-      {/* Ordem por relógio: o período escolhido (KPIs, série, devoluções, UFs, mix), a posição de
+      {/* Ordem por relógio: o período escolhido (KPIs, série, mix, devoluções, UFs), a posição de
           hoje (estoque, campanhas) e, por fim, todo o histórico (eventos). */}
-      {estado !== 'sem_vendas' && (
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
-          <DevolucoesDossie linha={dados.linhaPeriodo} eventos={dados.eventos} />
-          <UfsDossie ufs={dados.ufs} />
-        </div>
-      )}
       {estado !== 'sem_vendas' && dados.mix && <MixFamilia mix={dados.mix} voltar={voltar} />}
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
-        <EstoqueDossie dados={dados} familia={familia} voltar={voltar} />
-        <CampanhasDossie campanhas={dados.campanhas} />
+      {/* Em lg, duas colunas que empilham sem vãos (esquerda: devoluções + estoque; direita: UFs +
+          campanhas). No celular as colunas viram `contents` e o `order` devolve a ordem lógica. */}
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
+        <div className="contents lg:flex lg:flex-col lg:gap-6">
+          {estado !== 'sem_vendas' && <DevolucoesDossie linha={dados.linhaPeriodo} eventos={dados.eventos} className="order-1" />}
+          <EstoqueDossie dados={dados} familia={familia} voltar={voltar} className="order-3" />
+        </div>
+        <div className="contents lg:flex lg:flex-col lg:gap-6">
+          {estado !== 'sem_vendas' && <UfsDossie ufs={dados.ufs} className="order-2" />}
+          <CampanhasDossie campanhas={dados.campanhas} className="order-4" />
+        </div>
       </div>
 
       {(estado !== 'sem_vendas' || dados.eventos.length > 0) && (

@@ -126,6 +126,36 @@ describe('montarDossie: kitVirtual', () => {
   });
 });
 
+describe('montarDossie: estoque com kit', () => {
+  const cat = (codigo: string, over: Partial<CatalogoSku> = {}): CatalogoSku => ({
+    codigo, codigoPai: 'P', nomeFamilia: 'Fam', nome: codigo, cor: null, tamanho: null, estoque: 10, fornecedor: null,
+    origem: 'nacional', ehKit: false, primeiraVenda: '2026-09-01T12:00:00Z', ultimaVenda: '2026-09-22T12:00:00Z',
+    kitMultiplicador: null, kitBaseCodigo: null, estoqueKit: null, ...over,
+  });
+  const kit = (codigo: string) => cat(codigo, { ehKit: true, estoque: 0, kitMultiplicador: 2, kitBaseCodigo: 'A', estoqueKit: 4 });
+  const monta = (alvo: { tipo: 'sku'; codigo: string } | { tipo: 'familia'; codigoPai: string }, codigos: string[], catalogo: CatalogoSku[]) => montarDossie({
+    alvo, codigos, agrupar, catalogo, devolucoes: [],
+    vendas: [venda({ id: 'n', order_id: 4, date_closed: '2026-09-22T12:00:00Z', itens: [item({ id: 'i4', codigo: 'A', quantity: 3 })] })],
+    janela: { desde: '2026-09-16T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
+    anterior: { desde: '2026-09-05T03:00:00.000Z', ate: '2026-09-16T02:59:59.999Z' },
+    hoje: { desde: '2026-08-28T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
+    hojeAnterior: { desde: '2026-07-29T03:00:00.000Z', ate: '2026-08-28T02:59:59.999Z' },
+    intervalos: IVS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
+  }).dados!;
+
+  it('família com irmã kit: saldo só das unidades não-kit e cobertura em dias (não soma kits com unidades)', () => {
+    const d = monta({ tipo: 'familia', codigoPai: 'P' }, ['A', 'K'], [cat('A'), kit('K')]);
+    expect(d.estoque).toBe(10);
+    expect(typeof d.cobertura).toBe('number');
+  });
+
+  it('só kits: saldo floor(base/N) e cobertura compartilhada', () => {
+    const d = monta({ tipo: 'sku', codigo: 'K' }, ['K'], [kit('K')]);
+    expect(d.estoque).toBe(4);
+    expect(d.cobertura).toBe('compartilhado');
+  });
+});
+
 // ---------------- Eventos, UFs, mix, campanhas ----------------
 const mov = (over: Partial<Movimento>): Movimento => ({ id: 'm1', codigo: 'A', motivo: 'venda', quantidade: -1,
   custo_unitario: null, estoque_anterior: 1, estoque_resultante: 0, criado_em: '2026-09-10T12:00:00Z', ...over });
@@ -153,9 +183,13 @@ describe('montarEventos', () => {
     ] });
     expect(ev.map((e) => e.id)).toEqual(['d1:abertura', 'd1:estorno']);
     expect(ev.map((e) => e.tipo)).toEqual(['devolucao_aberta', 'devolucao_estorno']);
-    expect(ev[0].detalhe).toContain('PDD9939');
-    expect(montarEventos({ ...BASE, devolucoes: [dev({ reason_id: null })] })[0].detalhe).toContain('não informado');
-    expect(montarEventos({ ...BASE, devolucoes: [dev({ reason_texto: 'Defeito' })] })[0].detalhe).toContain('Defeito');
+    // código cru do ML (reason_id) não aparece: sem texto traduzido é "não informado"
+    expect(ev[0].motivo).toBeNull();
+    expect(ev[0].detalhe).not.toContain('PDD9939');
+    expect(ev[0].detalhe).toContain('não informado');
+    const comTexto = montarEventos({ ...BASE, devolucoes: [dev({ reason_texto: 'Defeito' })] })[0];
+    expect(comTexto.motivo).toBe('Defeito');
+    expect(comTexto.detalhe).toContain('Defeito');
   });
 
   it('moderação: detectada e resolvida viram 2 eventos com o vínculo do MLB', () => {
@@ -247,6 +281,14 @@ describe('mixDaFamilia', () => {
     const mix = mixDaFamilia(linhas, [], [cat('A', 'Azul'), cat('B', 'Verde')]);
     expect(mix.map((m) => m.codigo)).toEqual(['A', 'B']);
     expect(mix[0].participacaoUnidades).toBe(1);
+  });
+
+  it('família sem venda nenhuma no anterior: sem Δ (nunca o lucro inteiro como alta)', () => {
+    const vendas = [venda({ id: 'a', order_id: 1, date_closed: '2026-09-15T12:00:00Z', total_amount: 30, liquido: 27,
+      itens: [item({ id: 'i1', codigo: 'A', quantity: 3, unit_price: 10 })] })];
+    const linhas = agregarPorSku(agrupar(vendas), S1, new Map(), new Set());
+    const mix = mixDaFamilia(linhas, [], [cat('A', 'Azul'), cat('B', 'Verde')]);
+    expect(mix.map((m) => m.deltaLucro)).toEqual([null, null]);
   });
 
   it('irmã que vendeu no anterior e zerou agora: delta mostra a queda', () => {
