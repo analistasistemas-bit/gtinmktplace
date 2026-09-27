@@ -2,6 +2,29 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Vendas SKU — Fatia 1 (ADR-0172) — 2026-09-26
+
+Nova aba **Vendas SKU** em `/faturamento?aba=sku`: análise de vendas por variação (`codigo`), com
+Lucro/Markup/Margem s/ venda, ABC e Tendência. Branch `worktree-vendas-sku-design`, ainda **não
+mergeada nem em produção**. Ver [ADR-0172](decisions/0172-vendas-sku-analise-por-variacao.md) e
+[spec](superpowers/specs/2026-09-26-vendas-sku-design.md).
+
+- [x] Lib `src/lib/vendas-sku.ts` + `src/lib/vendas-sku-catalogo.ts` (agregação, tendência,
+  cobertura, insights, curva ABC, agrupamento por família).
+- [x] RPC `vendas_sku_catalogo()` (migration `20260927024030_vendas_sku_catalogo.sql`) — só
+  enriquece por `codigo` (família, estoque, fornecedor, origem, 1ª/última venda); nenhum cálculo
+  de dinheiro.
+- [x] Hook `src/hooks/useVendasSku.ts` + UI `aba-vendas-sku.tsx`/`ranking-sku.tsx`, tab `sku` em
+  `Faturamento.tsx`.
+- [x] Suíte completa: 576 arquivos / 5993 testes verdes; `pnpm preflight` verde.
+- [x] Paridade real: Faturamento e Unidades da aba Vendas e da Vendas SKU batem 1:1 no período
+  01–25/09/2026 (R$ 19.748,74 / 333 un.), validado com dado real da Avil via `playwright-cli`.
+- [x] Validação visual 1440/390, claro/escuro, e estado de erro (catálogo indisponível) —
+  screenshots em `.superpowers/sdd/2026-09-26-vendas-sku-fatia-1/`.
+- [ ] `supabase db push` da migration em produção — **não executado** (fora do escopo desta tarefa,
+  ver `progress.md` da Fatia 1).
+- [ ] Revisão final do diff + merge fast-forward na `main` — pendente.
+
 ## Renovação proativa do token ML (ADR-0171) — 2026-09-26
 
 A Central de Promoções da DSA levou 429 (`grant_type refresh_token` excedido) em 3 rodadas

@@ -1214,6 +1214,7 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `baixar_estoque(p_org, p_codigo, p_qtd, p_canal, p_ref)` | ADR-0094: baixa atômica e idempotente de estoque na venda paga — service_role-only |
 | `estornar_estoque(p_org, p_canal, p_ref_venda, p_codigo)` | ADR-0094: repõe só o que foi de fato baixado no cancelamento pré-despacho — service_role-only |
 | `registrar_entrada(p_org, p_codigo, p_qtd, p_custo, p_doc, p_obs, p_criado_por, p_ref)` | ADR-0094: entrada de mercadoria, sobrescreve custo quando informado — service_role-only |
+| `vendas_sku_catalogo()` | ADR-0172 (Fatia 1, ainda não em produção): enriquecimento por `codigo` para a aba Vendas SKU — nome de família, cor, tamanho, estoque, fornecedor, origem, kit e 1ª/última venda faturável. Família mais recente por `(org, codigo)`, mesma âncora do estoque canônico (ADR-0025). Não calcula dinheiro (o lucro vem dos itens de `agruparPorPedido` no navegador). `security definer`, `search_path=''`, revogada de `public`/`anon`, concedida a `authenticated` |
 | ~~`upsert_ml_credentials(...)`~~ | **Deprecada** (E7) — substituída por `upsert_marketplace_connection` |
 | ~~`get_ml_tokens(user_id)`~~ | **Deprecada** (E7) — substituída por `get_connection_tokens` |
 | ~~`delete_ml_credentials(user_id)`~~ | **Deprecada** (E7) — substituída por `delete_marketplace_connection` |

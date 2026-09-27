@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-09-24
+atualizado: 2026-09-26
 ---
 
 # Sprint Atual
@@ -17,6 +17,16 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 >
 > **✅ Monitor de frete ([[0169-monitor-de-frete|ADR-0169]])** — alerta quando o frete de um anúncio
 > sobe >10% e ≥R$2 vs a venda anterior; switch em Configurações > Notificações (nasce desligado).
+>
+> **📋 Vendas SKU — Fatia 1 ([[0172-vendas-sku-analise-por-variacao|ADR-0172]]), na branch
+> `worktree-vendas-sku-design`, ainda não mergeado nem em produção.** Nova aba em
+> `/faturamento?aba=sku`: ranking por variação (`codigo`) com Lucro, Markup, Margem s/ venda,
+> Faturamento, Unidades, devolução, ABC e Tendência, agrupável por família. Todo o cálculo de
+> dinheiro roda no navegador sobre os mesmos itens da aba Vendas — a soma bate por construção,
+> sem fórmula nova. RPC nova `vendas_sku_catalogo()` só enriquece com família/estoque/1ª-última
+> venda. 576 arquivos / 5993 testes verdes, `pnpm preflight` verde, paridade Faturamento/Unidades
+> confirmada contra dado real da Avil (01–25/09/2026). Falta `supabase db push` da migration,
+> revisão final e merge.
 
 ## Passo anterior (2026-09-20) — EM PRODUÇÃO
 

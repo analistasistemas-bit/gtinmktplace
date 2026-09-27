@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-09-24
+**Ultima atualizacao:** 2026-09-26
 
 ## Snapshot
 
@@ -546,6 +546,21 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   redeploy das ~60 funções que as usam). `sincronizar-promocoes` passa a devolver 500 no ramo
   QStash da etapa `lista` em `estado: 'erro'`, para o QStash retentar. Ver
   [ADR-0171](decisions/0171-renovacao-proativa-token-ml.md).
+- **ADR-0172: Vendas SKU — análise de vendas por variação, Fatia 1 (2026-09-26) — Proposto, na
+  branch `worktree-vendas-sku-design`, ainda não mergeado nem em produção.** Nova aba **Vendas
+  SKU** em `/faturamento?aba=sku`: ranking por SKU (`codigo`) com Lucro (líquido − custo
+  congelado), Markup, Margem s/ venda, Faturamento, Unidades, taxa de devolução, ABC (por lucro ou
+  faturamento) e Tendência, com opção de agrupar por família. Cálculo 100% no navegador sobre os
+  mesmos itens de `agruparPorPedido` (`src/lib/pedidos-faturamento.ts`) — nenhuma fórmula nova de
+  dinheiro, soma bate com a aba Vendas por construção. Enriquecimento (nome de família, estoque,
+  fornecedor, origem, 1ª/última venda) vem da RPC nova `vendas_sku_catalogo()` (migration
+  `20260927024030`, aplicada só localmente). Testes: 576 arquivos / 5993 testes verdes,
+  `pnpm preflight` verde. Validação com dados reais da Avil (playwright, sessão isolada, período
+  fechado 01–25/09/2026): Faturamento e Unidades batem 1:1 entre a aba Vendas e a Vendas SKU (R$
+  19.748,74 / 333 un.). Screenshots 1440/390, claro/escuro, e o estado de erro em
+  `.superpowers/sdd/2026-09-26-vendas-sku-fatia-1/`. **Faltam:** `supabase db push` da migration,
+  revisão final do diff e merge — não executados nesta tarefa por decisão do controller (ver
+  `progress.md` da Fatia 1, Rulings 1-2). Ver [ADR-0172](decisions/0172-vendas-sku-analise-por-variacao.md).
 - **Cadastro de Grade em Matriz Cor x Tamanho (2026-09-19/20) — EM PRODUÇÃO.** Substituição da lista
   linear de cards pelo componente `MatrizGrade` (`matriz-grade.tsx`): visualização bidimensional Cor (linhas)
   × Tamanho (colunas) com 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas e
