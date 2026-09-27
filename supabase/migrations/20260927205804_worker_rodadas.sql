@@ -173,7 +173,7 @@ begin
    where org_id = p_org and order_id = any(coalesce(p_ok, '{}')) and atualizado_em < p_inicio;
   with u as (
     insert into public.worker_pendencias as p (org_id, order_id, ultimo_erro, criado_em, atualizado_em)
-    select p_org, x, p_erro, clock_timestamp(), clock_timestamp() from unnest(coalesce(p_falhas, '{}')) as x
+    select p_org, x, p_erro, clock_timestamp(), clock_timestamp() from (select distinct x from unnest(coalesce(p_falhas, '{}')) as x) d
     on conflict (org_id, order_id) do update
       -- SEMPRE atualiza carimbo/erro/contador, inclusive em pendência já descartada: senão um sucesso
       -- atrasado (p_inicio anterior a esta falha) acharia o carimbo velho e apagaria a linha. O descarte,

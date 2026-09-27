@@ -167,6 +167,12 @@ begin
   select * into w from public.worker_pendencias where org_id = o and order_id = '9';
   if w is null or w.descartado_em is null or w.ultimo_erro <> 'novo' then raise exception '8bv: sucesso atrasado apagou descartada'; end if;
 
+  -- 8c) Falha repetida na mesma chamada: dedup no SQL, 1 linha com tentativas=1.
+  perform public.registrar_pendencias_pedido(o, '{}', now(), '{11,11}', 'x');
+  if (select count(*) from public.worker_pendencias where org_id = o and order_id = '11') <> 1
+     or (select tentativas from public.worker_pendencias where org_id = o and order_id = '11') <> 1
+    then raise exception '8c: dedup de p_falhas errado'; end if;
+
   -- 9) Falha de coleta do Pulse: no máximo 1 por hora.
   perform public.registrar_falha_coleta_pulse(o, '95000000-0000-0000-0000-000000000201');
   perform public.registrar_falha_coleta_pulse(o, '95000000-0000-0000-0000-000000000201');
