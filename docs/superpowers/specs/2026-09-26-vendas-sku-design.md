@@ -50,7 +50,9 @@ atalhos de período (lá é texto dd/mm/aaaa).
   Margem s/ venda, ticket, canceladas, taxa de devolução, **tendência** e **alertas** (glossário). Ordena
   por lucro por padrão. Selos: "custo estimado", "lucro parcial", "sem custo". Linha extra: "devolução não
   atribuída" e "sem código".
-- **Abrir a conta da linha:** bruto → comissão → frete → imposto → custo → lucro, com link para os pedidos.
+- **Abrir a conta da linha:** bruto → comissão + frete → imposto → custo → lucro, com a quantidade de
+  pedidos. Comissão e frete aparecem juntos porque o item só carrega o líquido rateado. O link para os
+  pedidos fica no dossiê (2a).
 - **Curva ABC** (lucro | faturamento). Por lucro, só sobre o lucro positivo; SKUs com prejuízo ficam na
   faixa "D — prejuízo".
 - **Cobertura:** kit vinculado mostra "estoque compartilhado com a base", sem dias.
