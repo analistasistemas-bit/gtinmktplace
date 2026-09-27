@@ -15,10 +15,17 @@ export interface CatalogoSku {
   ehKit: boolean;
   primeiraVenda: string | null;
   ultimaVenda: string | null;
+  /** Kit vinculado: N unidades da base; null quando não é kit. */
+  kitMultiplicador: number | null;
+  /** Código da única variação da família-base canônica; null se não é kit ou a base não tem exatamente 1. */
+  kitBaseCodigo: string | null;
+  /** floor(estoque da base / N); 0 se a base é inválida; null quando não é kit. */
+  estoqueKit: number | null;
 }
 
 type Raw = Record<string, unknown>;
 const txt = (v: unknown): string | null => (v == null ? null : String(v));
+const num = (v: unknown): number | null => (v == null ? null : Number(v));
 
 export function mapCatalogoSku(r: Raw): CatalogoSku {
   const origem = r.origem === 'nacional' || r.origem === 'importado' ? r.origem : null;
@@ -35,6 +42,9 @@ export function mapCatalogoSku(r: Raw): CatalogoSku {
     ehKit: r.eh_kit === true,
     primeiraVenda: txt(r.primeira_venda),
     ultimaVenda: txt(r.ultima_venda),
+    kitMultiplicador: num(r.kit_multiplicador),
+    kitBaseCodigo: txt(r.kit_base_codigo),
+    estoqueKit: num(r.estoque_kit),
   };
 }
 

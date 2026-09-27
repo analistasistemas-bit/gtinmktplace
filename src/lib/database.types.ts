@@ -3628,6 +3628,8 @@ export type Database = {
         Returns: Json[]
       }
       vendas_sku_catalogo: { Args: never; Returns: Json[] }
+      vendas_sku_dossie_ids: { Args: { p_codigos: string[] }; Returns: string[] }
+      vendas_sku_mlbs: { Args: { p_codigos: string[] }; Returns: Json }
     }
     Enums: {
       canal_externo: "mercado_livre"

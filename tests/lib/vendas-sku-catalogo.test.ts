@@ -11,10 +11,18 @@ describe('mapCatalogoSku', () => {
       codigo: '09300001', codigoPai: '09300000', nomeFamilia: 'Fita', nome: 'Fita azul', cor: 'Azul',
       tamanho: null, estoque: 9, fornecedor: 'B', origem: 'importado', ehKit: false,
       primeiraVenda: '2026-07-01T12:00:00+00:00', ultimaVenda: null,
+      kitMultiplicador: null, kitBaseCodigo: null, estoqueKit: null,
     });
   });
 
   it('origem fora de nacional/importado vira null (nunca presumida)', () => {
     expect(mapCatalogoSku({ codigo: 'x', estoque: 0, eh_kit: false, origem: 'NACIONAL ' }).origem).toBeNull();
+  });
+
+  it('kit vinculado: multiplicador, código da base e saldo derivado', () => {
+    const r = mapCatalogoSku({
+      codigo: '09310001', estoque: 0, eh_kit: true, kit_multiplicador: 2, kit_base_codigo: '09300001', estoque_kit: 4,
+    });
+    expect([r.kitMultiplicador, r.kitBaseCodigo, r.estoqueKit]).toEqual([2, '09300001', 4]);
   });
 });
