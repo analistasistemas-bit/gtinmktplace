@@ -71,6 +71,13 @@ scope do momento da autorização.
   visível nas duas visões (descarta atraso de propagação). Com `deal_id` no lugar → 400 "Promotion id is
   required". **200 do DELETE não prova remoção.** Decisões 2 (Reverter) e 5 (idempotência) dependem de achar
   o caminho de saída.
+- **Atualização 2026-09-27 13:42 — a saída é ASSÍNCRONA e lenta:** o item voltou a `candidate` na visão da
+  campanha e `/items` segue com `price 19.99`, `deal_ids: []` (o preço promocional nunca foi ao ar). Ainda
+  estava `pending` ~30 min depois do primeiro DELETE; saiu em algum momento antes das 13:42 do dia seguinte.
+  Não dá para saber qual dos dois DELETEs valeu (ambos 200). Consequência para o motor: o 200 do DELETE é
+  **"saída solicitada"**, não "saiu"; o item da operação só vira concluído quando uma leitura posterior da
+  visão da campanha confirmar — conferência agendada, não na hora. Reenviar DELETE enquanto `pending` é inócuo
+  (200 idempotente), então o retry não precisa de trava.
 - **Par User Product / catálogo:** o item testado (`catalog_listing: false`) e `MLB7553277320`
   (`catalog_listing: true`, "COMPETINDO") são o mesmo `user_product_id`, ligados por `item_relations`
   (estoque compartilhado). O Seller Center mostra promoções **só no item de catálogo** e marca o outro como
