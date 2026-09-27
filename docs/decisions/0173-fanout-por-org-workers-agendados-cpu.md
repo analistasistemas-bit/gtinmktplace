@@ -40,9 +40,11 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
    tamanho fixo (produtos, pedidos, packs, claims), ajustável por constante após medição. A lista de
    pedidos da janela é lida inteira a cada mensagem em modo estrito (qualquer página que falha lança,
    nunca lista parcial) e o lote é escolhido localmente por `id` > cursor — o `sort` do ML é por
-   `date_closed` e o filtro por `date_created`, então offset entre chamadas não é estável. Pedido que
-   falha vira **pendência persistida** (`worker_rodadas.pendencias`), atravessa ciclos e é retentado
-   até 5 vezes; rodada com pendência conclui `parcial`, não `ok`.
+   `date_closed` e o filtro por `date_created`, então offset entre chamadas não é estável. A leitura confere
+   a cobertura (ids únicos = `paging.total`, total estável entre a 1ª e a última página) e lança se houver
+   buraco. Pedido que falha vira **pendência da org** (`worker_pendencias`), retomada por qualquer job que
+   trata pedido (backfill diário, reconciliar horário), inclusive as deixadas pela recuperação histórica;
+   na 5ª falha é marcada descartada, sem sumir. Rodada com pendência conclui `parcial`, não `ok`.
 5. **Etapas caras separadas.** Radar do Pulse, perguntas, claims e liberações do Mercado Pago são
    etapas próprias, cada uma em mensagem separada, com CPU medida isoladamente. Nos lotes de vendas, o
    líquido do MP vem pelos pagamentos do próprio pedido (`carregarLiquidoMPDoPedido`, já usado por
@@ -51,15 +53,18 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
    Portão: acima de 1.500 ms de CPU nessa mensagem, entra a alternativa por pedido (plano, Task 6).
 6. **Deduplicação por (função, job, org, ciclo, cursor).** Ciclo = dia BRT para os jobs diários e hora
    UTC para o reconciliar e o tier quente. Notificação do Pulse: pendência durável na linha (preservada
-   mesmo quando chega um ciclo novo), enviada com chave idempotente no destino
-   (`notificacoes (user_id, chave)`; Telegram só para linha recém-inserida) e com a posse mantida até
-   marcar a entrega — nunca duplicada, nunca perdida.
+   mesmo quando chega um ciclo novo), gravada in-app exatamente uma vez por
+   (usuário, chave) — `notificacoes (user_id, chave)`, leituras de assinantes e módulo estritas, posse
+   mantida até marcar a entrega. O Telegram é **melhor esforço, no máximo uma vez** (só para linha
+   in-app recém-inserida); uma queda entre o registro e o envio perde aquele Telegram.
 6a. **Limite aceito:** esgotados os retries do QStash, a cadeia da (job, org) para até o próximo ciclo,
    que a assume do zero (pendências preservadas). Fica visível em `worker_rodadas`.
 6b. **Ativação por flag.** `FANOUT_BACKFILL`, `FANOUT_PULSE`, `FANOUT_RECONCILIAR` ligam o disparador em
    fan-out; sem a flag o schedule segue no caminho de hoje. O consumidor das mensagens por org fica
    sempre deployado. Rollback = desligar a flag, nunca redeployar a versão antiga com mensagens na
-   fila (o handler antigo leria a mensagem por org como execução global).
+   fila (o handler antigo leria a mensagem por org como execução global). Qualquer versão futura, inclusive
+   um rollback de código, mantém a **guarda permanente**: mensagem por org é reconhecida antes de qualquer
+   outro ramo assinado (processada ou ignorada com 200), nunca tratada como schedule.
 7. **Específico por função:**
    - **Pulse:** o schedule só coleta orgs com o módulo `pulse` habilitado (Avil e Daludi Shop saem até o
      módulo ser ligado; com os lotes, a Avil passa a caber quando for). Tentativa de coleta registrada

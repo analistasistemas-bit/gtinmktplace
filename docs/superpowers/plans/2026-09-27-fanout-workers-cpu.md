@@ -1,14 +1,14 @@
-# Fan-out por org em lotes retomáveis (incidente CPU 546) — Implementation Plan (v3)
+# Fan-out por org em lotes retomáveis (incidente CPU 546) — Implementation Plan (v4)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Acabar com os 546 (`CPU Time exceeded`) de `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento`: cada mensagem QStash processa uma org e um lote limitado, sem perder pedido, lote nem notificação.
 
-**Architecture:** O schedule existente vira disparador (1 mensagem por org), ligado por flag por função. Cada (job, org) tem uma linha em `worker_rodadas` que é a **fonte da verdade**: ciclo, `params` (janela/tier gravados na abertura), cursor (`etapa|pos`), acumulado, pendências (pedidos que falharam) e notificação pendente. A mensagem só aponta (job, org, ciclo). Cada execução toma uma **posse curta com identidade própria** (`lease_id`, 150 s), processa um lote, faz CAS do cursor com essa posse, publica a continuação (dedup pelo cursor resultante) e solta a posse. Qualquer situação em que a cadeia ainda precisa andar responde **500** (o QStash repete). Caminhos manuais não mudam de comportamento.
+**Architecture:** O schedule existente vira disparador (1 mensagem por org), ligado por flag por função. Cada (job, org) tem uma linha em `worker_rodadas` que é a **fonte da verdade**: ciclo, `params` (janela/tier gravados na abertura), cursor (`etapa|pos`), acumulado e notificação pendente. Pedidos que falham ficam em `worker_pendencias`, **por org**, compartilhados pelos jobs que tratam pedido. A mensagem só aponta (job, org, ciclo). Cada execução toma uma **posse curta com identidade própria** (`lease_id`, 150 s), processa um lote, faz CAS do cursor com essa posse, publica a continuação (dedup pelo cursor resultante) e solta a posse. Qualquer situação em que a cadeia ainda precisa andar responde **500** (o QStash repete). Caminhos manuais não mudam de comportamento.
 
 **Tech Stack:** Supabase Edge Functions (Deno), Postgres (plpgsql `security definer`), QStash (`_shared/queue.ts`), vitest.
 
-**Spec:** `docs/decisions/0173-fanout-por-org-workers-agendados-cpu.md` (ADR-0173). Revisões do Codex `gpt-6-astra`: diagnóstico APROVADO COM AJUSTES; plano v1 e v2 REPROVADOS — esta v3 responde a todos os bloqueios da v2, com uma divergência declarada (Task 6, liberações).
+**Spec:** `docs/decisions/0173-fanout-por-org-workers-agendados-cpu.md` (ADR-0173). Revisões do Codex `gpt-6-astra`: diagnóstico APROVADO COM AJUSTES; plano v1, v2 e v3 REPROVADOS — esta v4 responde a todos os bloqueios da v3. A divergência das liberações (Task 6) foi aceita pelo revisor na 3ª rodada.
 
 ## Global Constraints
 
@@ -30,8 +30,8 @@
 1. **Queda por CPU no meio do lote** (posse viva): retry → `ocupada`/500; com a posse vencida, o retry refaz o mesmo lote e a cadeia segue — Task 1 teste 2, Task 2 teste 3.
 2. **Publicação ambígua da continuação** (aceita mas sem resposta, ou falha após o CAS) e **posse vencida no CAS**: o retry lê o cursor do banco; nunca repete lote, nunca devolve 200 com a cadeia parada — Task 2 testes 4, 6, 7.
 3. **Duas primeiras aberturas concorrentes da mesma (job, org)**: uma executa, a outra recebe `ocupada` — Task 1 teste 1 (duas sessões).
-4. **Pedido que falha no upsert** (inclusive na recuperação histórica): vira pendência persistida, é retentado nas rodadas seguintes, e a rodada conclui `parcial`, não `ok` — Task 4 testes 7–8.
-5. **Notificação do Pulse**: nunca duplicada (chave idempotente no destino) e nunca perdida (pendência preservada até entregar, mesmo com ciclo novo chegando) — Task 1 teste 6, Task 2 testes 9–10, Task 3 testes de `notificarCategoria`.
+4. **Pedido que falha no upsert** (inclusive na recuperação histórica, que não tem próximo ciclo): vira pendência **da org** em `worker_pendencias`, retomada pelo backfill diário e pelo reconciliar horário; na 5ª falha é marcada descartada, sem sumir; a rodada conclui `parcial`, não `ok` — Task 1 teste 8, Task 4 testes 7–9. **Leitura de pedidos com buraco** (páginas sobrepostas/omitidas pela reordenação do ML) é detectada e lança — Task 3.
+5. **Notificação do Pulse**: registro in-app exatamente uma vez por (usuário, chave), nunca limpo sem ter sido gravado (leituras estritas de assinantes e módulo); Telegram é melhor esforço, no máximo uma vez — Task 1 teste 6, Task 2 testes 9–10, Task 3 `chave.test.ts`, Task 5.
 
 ---
 
@@ -46,7 +46,7 @@
 | `supabase/functions/_shared/notificacoes/config.ts` | `notificarCategoria(..., { chave })` idempotente |
 | `supabase/functions/_shared/faturamento/io.ts` | + `buscarPedidosPeriodoEstrito` |
 | `supabase/functions/_shared/faturamento/mensagens-io.ts` | + `buscarMensagensPackEstrito`, `upsertMensagensEstrito`, `listarPacksDeVendasEstrito` |
-| `supabase/functions/_shared/faturamento/pendencias.ts` (novo) | Regras puras de pendências de pedido |
+| `supabase/functions/_shared/faturamento/pendencias.ts` (novo) | Leitura/registro de pendências de pedido por org (`worker_pendencias`) |
 | `supabase/functions/backfill-faturamento/passo.ts` (novo) | Passo: `pendencias` → `vendas` → `mensagens` |
 | `supabase/functions/pulse-coletar/processar.ts` | `processarLoteProdutos` extraído; falha de coleta atômica |
 | `supabase/functions/pulse-coletar/passo.ts` (novo) | Passo: `radar` → `produtos` |
@@ -59,25 +59,35 @@
 
 **Files:**
 - Create: `supabase/migrations/<timestamp>_worker_rodadas.sql` (via `supabase migration new worker_rodadas`)
-- Create: `supabase/tests/worker_rodadas.sql`
+- Create: `supabase/tests/worker_rodadas.sql`, `supabase/tests/worker_rodadas_concorrencia.sh`
 
 **Interfaces (Produces, só `service_role`):**
-- `abrir_execucao(p_job text, p_org uuid, p_ciclo text, p_params jsonb) returns table (resultado text, lease uuid, estado text, ciclo text, cursor text, acumulado jsonb, params jsonb, pendencias jsonb, notificar_pendente boolean)` — sempre 1 linha; `resultado ∈ {'executar','ocupada','obsoleta','concluida','notificar_anterior'}`.
-- `avancar_execucao(p_job text, p_org uuid, p_lease uuid, p_cursor_novo text, p_acumulado jsonb, p_pendencias jsonb) returns boolean`
-- `concluir_execucao(p_job text, p_org uuid, p_lease uuid, p_estado text, p_erro text, p_acumulado jsonb, p_pendencias jsonb, p_notificar boolean) returns boolean`
+- `abrir_execucao(p_job text, p_org uuid, p_ciclo text, p_params jsonb) returns table (resultado text, lease uuid, estado text, ciclo text, cursor text, acumulado jsonb, params jsonb, notificar_pendente boolean)` — sempre 1 linha; `resultado ∈ {'executar','ocupada','obsoleta','concluida','notificar_anterior'}`.
+- `avancar_execucao(p_job text, p_org uuid, p_lease uuid, p_cursor_novo text, p_acumulado jsonb) returns boolean`
+- `concluir_execucao(p_job text, p_org uuid, p_lease uuid, p_estado text, p_erro text, p_acumulado jsonb, p_notificar boolean) returns boolean`
 - `liberar_execucao(p_job text, p_org uuid, p_lease uuid, p_erro text) returns void`
 - `marcar_notificado(p_job text, p_org uuid, p_lease uuid) returns boolean`
+- `registrar_pendencias_pedido(p_org uuid, p_ok text[], p_falhas text[], p_erro text) returns table (descartados integer)`
 - `registrar_falha_coleta_pulse(p_org uuid, p_produto uuid) returns void`
+- Tabela `worker_pendencias` (pendências de pedido **por org**, compartilhadas por `backfill`, `backfill-recuperacao` e `reconciliar`)
 - `pulse_produtos.coleta_tentativa_em timestamptz`, `pulse_produtos.coleta_falhas_seguidas integer not null default 0`
-- `notificacoes.chave text` + índice único `(user_id, chave)` (NULL não colide: linhas sem chave continuam livres)
+- `notificacoes.chave text` + índice único `(user_id, chave)` (NULL não colide)
 
-- [ ] **Step 1: Criar a migration** (`supabase migration new worker_rodadas`):
+- [ ] **Step 1: Criar a migration** (`supabase migration new worker_rodadas`). **Ordem importa:** colunas e tabelas antes das funções que as usam (`check_function_bodies` valida o corpo SQL na criação).
 
 ```sql
 -- ADR-0173: estado das rodadas por (job, org) dos workers agendados em fan-out.
--- A linha é a fonte da verdade (ciclo, params, cursor, acumulado, pendências, notificação pendente);
--- a mensagem QStash só aponta (job, org, ciclo). Cada execução toma uma posse curta com identidade
--- própria (lease), faz o CAS do cursor com ela e a solta no fim. Escrita só pelo service_role.
+-- A linha é a fonte da verdade (ciclo, params, cursor, acumulado, notificação pendente); a mensagem
+-- QStash só aponta (job, org, ciclo). Cada execução toma uma posse curta com identidade própria
+-- (lease), faz o CAS do cursor com ela e a solta no fim. Escrita só pelo service_role.
+
+-- 1) Colunas/tabelas primeiro.
+alter table public.pulse_produtos
+  add column coleta_tentativa_em timestamptz,
+  add column coleta_falhas_seguidas integer not null default 0 check (coleta_falhas_seguidas >= 0);
+
+alter table public.notificacoes add column chave text;
+create unique index notificacoes_user_chave_key on public.notificacoes (user_id, chave);
 
 create table public.worker_rodadas (
   job                text not null check (job in ('pulse-completo','pulse-quente','backfill','backfill-recuperacao','reconciliar')),
@@ -87,7 +97,6 @@ create table public.worker_rodadas (
   params             jsonb not null default '{}'::jsonb,   -- janela/tier gravados na abertura do ciclo
   cursor             text,              -- 'etapa|pos'; null = início
   acumulado          jsonb not null default '{}'::jsonb,
-  pendencias         jsonb not null default '[]'::jsonb,   -- [{id, tentativas}] de pedidos que falharam; atravessa ciclos
   lease_id           uuid,
   lease_ate          timestamptz,
   notificar_pendente boolean not null default false,
@@ -98,16 +107,33 @@ create table public.worker_rodadas (
   primary key (job, org_id)
 );
 
-alter table public.worker_rodadas enable row level security;
-create policy "worker_rodadas: select org" on public.worker_rodadas for select to authenticated
-  using (org_id = (select public.current_org_id()));
-revoke all on public.worker_rodadas from anon;
-revoke insert, update, delete, truncate, references, trigger on public.worker_rodadas from authenticated;
-grant select on public.worker_rodadas to authenticated;
+-- Pedido que falhou no upsert, por org (qualquer job que processa pedido lê e grava aqui).
+-- Descarte NÃO apaga: `descartado_em` preenchido tira da fila automática e deixa a falha terminal
+-- visível e recuperável (limpar `descartado_em`/`tentativas` volta o pedido para a fila).
+create table public.worker_pendencias (
+  org_id        uuid not null references public.organizations(id) on delete cascade,
+  order_id      text not null,
+  tentativas    integer not null default 1 check (tentativas >= 1),
+  ultimo_erro   text,
+  criado_em     timestamptz not null default now(),
+  atualizado_em timestamptz not null default now(),
+  descartado_em timestamptz,
+  primary key (org_id, order_id)
+);
+create index worker_pendencias_ativas_idx on public.worker_pendencias (org_id, order_id) where descartado_em is null;
 
+alter table public.worker_rodadas    enable row level security;
+alter table public.worker_pendencias enable row level security;
+create policy "worker_rodadas: select org"    on public.worker_rodadas    for select to authenticated using (org_id = (select public.current_org_id()));
+create policy "worker_pendencias: select org" on public.worker_pendencias for select to authenticated using (org_id = (select public.current_org_id()));
+revoke all on public.worker_rodadas, public.worker_pendencias from anon;
+revoke insert, update, delete, truncate, references, trigger on public.worker_rodadas, public.worker_pendencias from authenticated;
+grant select on public.worker_rodadas, public.worker_pendencias to authenticated;
+
+-- 2) Funções.
 create function public.abrir_execucao(p_job text, p_org uuid, p_ciclo text, p_params jsonb)
 returns table (resultado text, lease uuid, estado text, ciclo text, cursor text, acumulado jsonb,
-               params jsonb, pendencias jsonb, notificar_pendente boolean)
+               params jsonb, notificar_pendente boolean)
 language plpgsql security definer set search_path = '' as $$
 #variable_conflict use_column
 declare
@@ -122,47 +148,46 @@ begin
   select * into strict w from public.worker_rodadas r where r.job = p_job and r.org_id = p_org for update;
 
   if w.ciclo > p_ciclo then
-    return query select 'obsoleta'::text, null::uuid, w.estado, w.ciclo, w.cursor, w.acumulado, w.params, w.pendencias, w.notificar_pendente;
+    return query select 'obsoleta'::text, null::uuid, w.estado, w.ciclo, w.cursor, w.acumulado, w.params, w.notificar_pendente;
     return;
   end if;
   if w.lease_ate is not null and w.lease_ate > now() then
-    return query select 'ocupada'::text, null::uuid, w.estado, w.ciclo, w.cursor, w.acumulado, w.params, w.pendencias, w.notificar_pendente;
+    return query select 'ocupada'::text, null::uuid, w.estado, w.ciclo, w.cursor, w.acumulado, w.params, w.notificar_pendente;
     return;
   end if;
   if w.ciclo < p_ciclo and w.notificar_pendente then
     -- Entrega primeiro a notificação do ciclo anterior (o chamador responde 500 e o retry abre o novo).
     update public.worker_rodadas r set lease_id = novo, lease_ate = now() + interval '150 seconds'
      where r.job = p_job and r.org_id = p_org;
-    return query select 'notificar_anterior'::text, novo, w.estado, w.ciclo, w.cursor, w.acumulado, w.params, w.pendencias, true;
+    return query select 'notificar_anterior'::text, novo, w.estado, w.ciclo, w.cursor, w.acumulado, w.params, true;
     return;
   end if;
   if w.ciclo < p_ciclo then
-    -- Ciclo novo assume (o anterior terminou ou morreu com a posse vencida). Pendências ATRAVESSAM.
+    -- Ciclo novo assume (o anterior terminou ou morreu com a posse vencida).
     update public.worker_rodadas r set ciclo = p_ciclo, estado = 'rodando', params = coalesce(p_params, '{}'::jsonb),
       cursor = null, acumulado = '{}'::jsonb, lease_id = novo, lease_ate = now() + interval '150 seconds',
       notificar_pendente = false, iniciado_em = now(), erro = null
      where r.job = p_job and r.org_id = p_org;
     return query select 'executar'::text, novo, 'rodando'::text, p_ciclo, null::text, '{}'::jsonb,
-      coalesce(p_params, '{}'::jsonb), w.pendencias, false;
+      coalesce(p_params, '{}'::jsonb), false;
     return;
   end if;
   -- mesmo ciclo
   if w.estado <> 'rodando' and not w.notificar_pendente then
-    return query select 'concluida'::text, null::uuid, w.estado, w.ciclo, w.cursor, w.acumulado, w.params, w.pendencias, false;
+    return query select 'concluida'::text, null::uuid, w.estado, w.ciclo, w.cursor, w.acumulado, w.params, false;
     return;
   end if;
   update public.worker_rodadas r set lease_id = novo, lease_ate = now() + interval '150 seconds'
    where r.job = p_job and r.org_id = p_org;
-  return query select 'executar'::text, novo, w.estado, w.ciclo, w.cursor, w.acumulado, w.params, w.pendencias, w.notificar_pendente;
+  return query select 'executar'::text, novo, w.estado, w.ciclo, w.cursor, w.acumulado, w.params, w.notificar_pendente;
 end;
 $$;
 
-create function public.avancar_execucao(p_job text, p_org uuid, p_lease uuid, p_cursor_novo text,
-                                        p_acumulado jsonb, p_pendencias jsonb)
+create function public.avancar_execucao(p_job text, p_org uuid, p_lease uuid, p_cursor_novo text, p_acumulado jsonb)
 returns boolean
 language sql security definer set search_path = '' as $$
   with u as (
-    update public.worker_rodadas set cursor = p_cursor_novo, acumulado = p_acumulado, pendencias = p_pendencias
+    update public.worker_rodadas set cursor = p_cursor_novo, acumulado = p_acumulado
      where job = p_job and org_id = p_org and lease_id = p_lease and lease_ate > now() and estado = 'rodando'
     returning 1)
   select exists (select 1 from u);
@@ -170,14 +195,13 @@ $$;
 
 -- Com p_notificar a posse é MANTIDA (renovada) até marcar_notificado: ninguém notifica em paralelo.
 create function public.concluir_execucao(p_job text, p_org uuid, p_lease uuid, p_estado text, p_erro text,
-                                         p_acumulado jsonb, p_pendencias jsonb, p_notificar boolean)
+                                         p_acumulado jsonb, p_notificar boolean)
 returns boolean
 language sql security definer set search_path = '' as $$
   with u as (
     update public.worker_rodadas
        set estado = p_estado,
-           acumulado  = coalesce(p_acumulado, acumulado),
-           pendencias = coalesce(p_pendencias, pendencias),
+           acumulado = coalesce(p_acumulado, acumulado),
            notificar_pendente = coalesce(p_notificar, false),
            lease_id  = case when coalesce(p_notificar, false) then lease_id else null end,
            lease_ate = case when coalesce(p_notificar, false) then now() + interval '150 seconds' else null end,
@@ -200,7 +224,7 @@ language sql security definer set search_path = '' as $$
    where job = p_job and org_id = p_org and lease_id = p_lease;
 $$;
 
--- Chamado DEPOIS do envio (idempotente no destino pela chave). Solta a posse.
+-- Chamado DEPOIS do envio in-app (idempotente pela chave). Solta a posse.
 create function public.marcar_notificado(p_job text, p_org uuid, p_lease uuid)
 returns boolean
 language sql security definer set search_path = '' as $$
@@ -211,8 +235,28 @@ language sql security definer set search_path = '' as $$
   select exists (select 1 from u);
 $$;
 
--- Falha de leitura da ficha: incremento atômico e no máximo 1 por hora por produto — retries da
--- mesma mensagem e rodadas sobrepostas (manual/quente/completo) não inflam o contador.
+-- Atômico: ok sai da fila; falha entra com 1 ou soma 1; ao chegar a 5 recebe `descartado_em`
+-- (continua na tabela). Devolve quantos foram descartados NESTA chamada.
+create function public.registrar_pendencias_pedido(p_org uuid, p_ok text[], p_falhas text[], p_erro text)
+returns table (descartados integer)
+language plpgsql security definer set search_path = '' as $$
+#variable_conflict use_column
+declare n integer;
+begin
+  delete from public.worker_pendencias where org_id = p_org and order_id = any(coalesce(p_ok, '{}'));
+  insert into public.worker_pendencias as p (org_id, order_id, ultimo_erro)
+  select p_org, x, p_erro from unnest(coalesce(p_falhas, '{}')) as x
+  on conflict (org_id, order_id) do update
+    set tentativas = p.tentativas + 1, ultimo_erro = excluded.ultimo_erro, atualizado_em = now(),
+        descartado_em = case when p.tentativas + 1 >= 5 then coalesce(p.descartado_em, now()) else p.descartado_em end
+    where p.descartado_em is null;
+  select count(*)::int into n from public.worker_pendencias
+   where org_id = p_org and order_id = any(coalesce(p_falhas, '{}')) and descartado_em = now();  -- now() é o instante da transação: só os descartados agora
+  return query select n;
+end;
+$$;
+
+-- Falha de leitura da ficha: incremento atômico e no máximo 1 por hora por produto.
 create function public.registrar_falha_coleta_pulse(p_org uuid, p_produto uuid)
 returns void
 language sql security definer set search_path = '' as $$
@@ -222,45 +266,38 @@ language sql security definer set search_path = '' as $$
      and (coleta_tentativa_em is null or coleta_tentativa_em < now() - interval '1 hour' or coleta_falhas_seguidas = 0);
 $$;
 
-revoke all on function public.abrir_execucao(text, uuid, text, jsonb)                                 from public, anon, authenticated;
-revoke all on function public.avancar_execucao(text, uuid, uuid, text, jsonb, jsonb)                  from public, anon, authenticated;
-revoke all on function public.concluir_execucao(text, uuid, uuid, text, text, jsonb, jsonb, boolean)  from public, anon, authenticated;
-revoke all on function public.liberar_execucao(text, uuid, uuid, text)                                from public, anon, authenticated;
-revoke all on function public.marcar_notificado(text, uuid, uuid)                                     from public, anon, authenticated;
-revoke all on function public.registrar_falha_coleta_pulse(uuid, uuid)                                from public, anon, authenticated;
-grant execute on function public.abrir_execucao(text, uuid, text, jsonb)                              to service_role;
-grant execute on function public.avancar_execucao(text, uuid, uuid, text, jsonb, jsonb)               to service_role;
-grant execute on function public.concluir_execucao(text, uuid, uuid, text, text, jsonb, jsonb, boolean) to service_role;
-grant execute on function public.liberar_execucao(text, uuid, uuid, text)                             to service_role;
-grant execute on function public.marcar_notificado(text, uuid, uuid)                                  to service_role;
-grant execute on function public.registrar_falha_coleta_pulse(uuid, uuid)                             to service_role;
-
--- Pulse: tentativa de coleta por produto, separada do snapshot. `mlGet` devolve null para QUALQUER
--- erro, então isto não declara a ficha morta: só tira da frente quem falha seguidamente.
-alter table public.pulse_produtos
-  add column coleta_tentativa_em timestamptz,
-  add column coleta_falhas_seguidas integer not null default 0 check (coleta_falhas_seguidas >= 0);
-
--- Notificação idempotente: mesma (user_id, chave) nunca vira 2 linhas. NULL não colide.
-alter table public.notificacoes add column chave text;
-create unique index notificacoes_user_chave_key on public.notificacoes (user_id, chave);
+revoke all on function public.abrir_execucao(text, uuid, text, jsonb)                          from public, anon, authenticated;
+revoke all on function public.avancar_execucao(text, uuid, uuid, text, jsonb)                  from public, anon, authenticated;
+revoke all on function public.concluir_execucao(text, uuid, uuid, text, text, jsonb, boolean)  from public, anon, authenticated;
+revoke all on function public.liberar_execucao(text, uuid, uuid, text)                         from public, anon, authenticated;
+revoke all on function public.marcar_notificado(text, uuid, uuid)                              from public, anon, authenticated;
+revoke all on function public.registrar_pendencias_pedido(uuid, text[], text[], text)          from public, anon, authenticated;
+revoke all on function public.registrar_falha_coleta_pulse(uuid, uuid)                         from public, anon, authenticated;
+grant execute on function public.abrir_execucao(text, uuid, text, jsonb)                       to service_role;
+grant execute on function public.avancar_execucao(text, uuid, uuid, text, jsonb)               to service_role;
+grant execute on function public.concluir_execucao(text, uuid, uuid, text, text, jsonb, boolean) to service_role;
+grant execute on function public.liberar_execucao(text, uuid, uuid, text)                      to service_role;
+grant execute on function public.marcar_notificado(text, uuid, uuid)                           to service_role;
+grant execute on function public.registrar_pendencias_pedido(uuid, text[], text[], text)       to service_role;
+grant execute on function public.registrar_falha_coleta_pulse(uuid, uuid)                      to service_role;
 ```
 
-Antes de escrever, conferir em `supabase/migrations/` a definição de `notificacoes` (coluna `user_id` existe — `config.ts:57` grava `user_id`) e de `pulse_produtos.org_id`.
+Antes de escrever, conferir em `supabase/migrations/` (`20260721094323_notificacoes_in_app.sql`) que `notificacoes.user_id` existe e que não há índice/constraint conflitante; e que `pulse_produtos` tem `org_id`.
 
 - [ ] **Step 2: Teste SQL** (`supabase/tests/worker_rodadas.sql`, formato de `supabase/tests/vendas_sku_trafego.sql`). Vencer a posse: `update worker_rodadas set lease_ate = now() - interval '1 second'`.
-  1. **Concorrência (duas sessões):** num script à parte `supabase/tests/worker_rodadas_concorrencia.sh`, abrir duas conexões `psql`; a sessão A faz `begin; select * from abrir_execucao('backfill', org, '2026-09-27', '{}');` sem commit; a sessão B chama o mesmo e fica bloqueada; A faz `commit`; B recebe `ocupada`. (Precedente de script de concorrência: `scripts/test-platform-billing-concurrency.sh`.)
-  2. `executar` → vencer a posse → `executar` com **lease diferente**; `avancar_execucao` com o lease antigo → `false`; com o novo → `true`, gravando cursor/acumulado/pendências.
+  1. **Concorrência (duas sessões)** em `supabase/tests/worker_rodadas_concorrencia.sh` (precedente: `scripts/test-platform-billing-concurrency.sh`): sessão A `begin; select * from abrir_execucao('backfill', org, '2026-09-27', '{}');` sem commit; sessão B chama o mesmo e bloqueia; A `commit`; B recebe `ocupada`. Variante com a linha **ainda inexistente** nas duas sessões.
+  2. `executar` → vencer a posse → `executar` com **lease diferente**; `avancar_execucao` com o lease antigo → `false`; com o novo → `true`.
   3. Mesmo ciclo, `p_params` diferente → devolve os `params` **gravados** na abertura.
-  4. `concluir_execucao(... 'ok' ..., p_notificar => false)` → `true` e posse solta; `abrir` mesmo ciclo → `concluida`; ciclo anterior → `obsoleta`; ciclo novo → `executar` com cursor null, acumulado `{}` e **as mesmas `pendencias`**.
-  5. `concluir(... 'parcial' ...)` grava `estado='parcial'`, `erro` e `ultimo_ok_em`.
-  6. **Notificação:** `concluir(... p_notificar => true)` mantém `lease_id` e `lease_ate` futuro; `abrir` mesmo ciclo → `ocupada`; `marcar_notificado(lease)` → `true` e posse solta; `abrir` → `concluida`. Variante: `concluir(... p_notificar => true)`, vencer a posse, `abrir` com **ciclo novo** → `notificar_anterior` com `ciclo` antigo e `acumulado` antigo; após `marcar_notificado`, `abrir` ciclo novo → `executar`.
+  4. `concluir_execucao(... 'ok' ..., p_notificar => false)` → `true` e posse solta; `abrir` mesmo ciclo → `concluida`; ciclo anterior → `obsoleta`; ciclo novo → `executar` com cursor null e acumulado `{}`.
+  5. `concluir(... 'parcial' ...)` grava `estado='parcial'`, `erro`, `ultimo_ok_em`.
+  6. **Notificação:** `concluir(... p_notificar => true)` mantém a posse; `abrir` mesmo ciclo → `ocupada`; `marcar_notificado(lease)` → `true` e solta; `abrir` → `concluida`. Variante: `concluir(... true)`, vencer a posse, `abrir` com ciclo **novo** → `notificar_anterior` com ciclo/acumulado antigos; após `marcar_notificado`, `abrir` ciclo novo → `executar`.
   7. `concluir_execucao` com lease vencido → `false`. `liberar_execucao` zera a posse e grava `erro`.
-  8. `registrar_falha_coleta_pulse` 2x seguidas → `coleta_falhas_seguidas = 1`; com `coleta_tentativa_em` recuado 2 h → 2.
-  9. Dois inserts em `notificacoes` com a mesma `(user_id, chave)` → o 2º viola o índice; com `chave` null → ambos entram.
-  10. Grants: `authenticated` sem `execute` nas 6 funções; `service_role` com.
-- [ ] **Step 3:** `npm run db:check`; aplicar a migration no Postgres local e rodar os testes por `psql -U supabase_admin` no container. Expected: sem `ERROR`; o script de concorrência imprime `ocupada`.
-- [ ] **Step 4: Commit** — `feat(rodadas): worker_rodadas, RPCs de execução, falha atômica do Pulse e chave de notificação (ADR-0173)`.
+  8. `registrar_pendencias_pedido(org, '{}', '{7}', 'x')` → linha `tentativas=1`; mais 3 falhas → 4, `descartado_em` null; 5ª → `tentativas=5`, `descartado_em` preenchido e a função devolve `1`; 6ª falha → nada muda (já descartado); `registrar_pendencias_pedido(org, '{7}', '{}', null)` → linha apagada.
+  9. `registrar_falha_coleta_pulse` 2x seguidas → `coleta_falhas_seguidas = 1`; recuando `coleta_tentativa_em` 2 h → 2.
+  10. Dois inserts em `notificacoes` com a mesma `(user_id, chave)` → o 2º viola o índice; com `chave` null → ambos entram.
+  11. Grants: `authenticated` sem `execute` nas 7 funções e sem `insert/update/delete` nas 2 tabelas; `service_role` com `execute`.
+- [ ] **Step 3:** `npm run db:check`; aplicar a migration no Postgres local e rodar os testes por `psql -U supabase_admin` no container. Expected: sem `ERROR`; o script de concorrência imprime `ocupada` nas duas variantes.
+- [ ] **Step 4: Commit** — `feat(rodadas): worker_rodadas, worker_pendencias, RPCs de execução, falha atômica do Pulse e chave de notificação (ADR-0173)`.
 
 ---
 
@@ -276,7 +313,6 @@ Antes de escrever, conferir em `supabase/migrations/` a definição de `notifica
 // rodada.ts (puro)
 export type Job = 'pulse-completo' | 'pulse-quente' | 'backfill' | 'backfill-recuperacao' | 'reconciliar';
 export type Acumulado = Record<string, number>;
-export interface Pendencia { id: string; tentativas: number }
 export type ResultadoMsg = 'executado' | 'continua' | 'obsoleta' | 'concluida' | 'sem_acesso' | 'ocupada' | 'erro' | 'repetir';
 export interface MsgOrg<P = Record<string, unknown>> { modo: 'org'; job: Job; org_id: string; ciclo: string; params: P }
 export class SemAcessoRodada extends Error {}
@@ -288,26 +324,28 @@ export const cicloHoraUtc = (d: Date): string => d.toISOString().slice(0, 13);
 export const dedupMsg = (fn: string, m: Pick<MsgOrg, 'job' | 'org_id' | 'ciclo'>, cursor: string | null) =>
   `${fn}:${m.job}:${m.org_id}:${m.ciclo}:${cursor ?? 'inicio'}`.replace(/[^A-Za-z0-9_-]/g, '_');
 export function ehMsgOrg(x: unknown): x is MsgOrg;
-export interface EntradaPasso<P> { cursor: string | null; acumulado: Acumulado; params: P; pendencias: Pendencia[] }
-export interface ResultadoPasso { proximo: string | null; acumulado: Acumulado; pendencias: Pendencia[] }
+export interface EntradaPasso<P> { cursor: string | null; acumulado: Acumulado; params: P }
+/** `parcial` = a rodada termina com pendência de pedido não resolvida (só lido quando `proximo === null`). */
+export interface ResultadoPasso { proximo: string | null; acumulado: Acumulado; parcial?: string | null }
 export type Passo<P = Record<string, unknown>> = (e: EntradaPasso<P>) => Promise<ResultadoPasso>;
 export interface Abertura {
   resultado: 'executar' | 'ocupada' | 'obsoleta' | 'concluida' | 'notificar_anterior';
   lease: string | null; estado: string; ciclo: string; cursor: string | null; acumulado: Acumulado;
-  params: Record<string, unknown>; pendencias: Pendencia[]; notificarPendente: boolean;
+  params: Record<string, unknown>; notificarPendente: boolean;
 }
 export interface DepsRodada {
   abrir(m: MsgOrg): Promise<Abertura>;
-  avancar(m: MsgOrg, lease: string, cursorNovo: string, acumulado: Acumulado, pendencias: Pendencia[]): Promise<boolean>;
+  avancar(m: MsgOrg, lease: string, cursorNovo: string, acumulado: Acumulado): Promise<boolean>;
   concluir(m: MsgOrg, lease: string, estado: 'ok' | 'parcial' | 'sem_acesso', erro: string | null,
-    acumulado: Acumulado | null, pendencias: Pendencia[] | null, notificar: boolean): Promise<boolean>;
+    acumulado: Acumulado | null, notificar: boolean): Promise<boolean>;
   liberar(m: MsgOrg, lease: string, erro: string | null): Promise<void>;
   marcarNotificado(m: MsgOrg, lease: string): Promise<boolean>;
   publicar(m: MsgOrg, cursor: string): Promise<void>;
 }
 export interface OpcoesMsg {
   precisaNotificar?: (acumulado: Acumulado) => boolean;
-  /** Envia com chave idempotente derivada de (job, org, ciclo) — reenvio não duplica. Lança → 500 e retry. */
+  /** Grava in-app com chave idempotente de (job, org, ciclo) e LANÇA se não conseguir; Telegram é
+   *  melhor esforço (ver Task 3). Lança → 500 e retry. */
   notificar?: (acumulado: Acumulado, ciclo: string) => Promise<void>;
 }
 export async function executarMensagem<P>(deps: DepsRodada, m: MsgOrg<P>, passo: Passo<P>, op?: OpcoesMsg): Promise<ResultadoMsg>;
@@ -346,10 +384,10 @@ export async function executarMensagem(deps, m, passo, op = {}) {
   const inicio = Date.now();
   let r: ResultadoPasso;
   try {
-    r = await passo({ cursor: a.cursor, acumulado: a.acumulado, params: a.params as P, pendencias: a.pendencias });
+    r = await passo({ cursor: a.cursor, acumulado: a.acumulado, params: a.params as P });
   } catch (e) {
     if (e instanceof SemAcessoRodada) {
-      await deps.concluir(m, lease, 'sem_acesso', msgErro(e), null, null, false);
+      await deps.concluir(m, lease, 'sem_acesso', msgErro(e), null, false);
       log('sem_acesso', { erro: msgErro(e) });
       return 'sem_acesso';
     }
@@ -357,20 +395,19 @@ export async function executarMensagem(deps, m, passo, op = {}) {
     log('lote falhou', { cursor: a.cursor, erro: msgErro(e) });
     return 'erro';
   }
-  log('lote', { cursor: a.cursor, proximo: r.proximo, pendencias: r.pendencias.length, ms: Date.now() - inicio });
+  log('lote', { cursor: a.cursor, proximo: r.proximo, ms: Date.now() - inicio });
 
   if (r.proximo === null) {
-    const estado = r.pendencias.length > 0 ? 'parcial' : 'ok';
-    const erro = estado === 'parcial' ? `${r.pendencias.length} pedido(s) pendente(s)` : null;
+    const estado = r.parcial ? 'parcial' : 'ok';
     const notificar = !!op.precisaNotificar?.(r.acumulado);
     // false = a posse venceu durante o lote. NÃO é 'obsoleta': o retry refaz o último lote (idempotente).
-    if (!(await deps.concluir(m, lease, estado, erro, r.acumulado, r.pendencias, notificar))) return 'erro';
+    if (!(await deps.concluir(m, lease, estado, r.parcial ?? null, r.acumulado, notificar))) return 'erro';
     if (!notificar || !op.notificar) return 'executado';
     try { await op.notificar(r.acumulado, m.ciclo); await deps.marcarNotificado(m, lease); return 'executado'; }
     catch (e) { await deps.liberar(m, lease, msgErro(e)); log('notificacao falhou', { erro: msgErro(e) }); return 'erro'; }
   }
 
-  if (!(await deps.avancar(m, lease, r.proximo, r.acumulado, r.pendencias))) return 'erro'; // posse venceu → retry refaz
+  if (!(await deps.avancar(m, lease, r.proximo, r.acumulado))) return 'erro'; // posse venceu → retry refaz
   try {
     await deps.publicar(m, r.proximo);
   } catch (e) {
@@ -385,41 +422,46 @@ export async function executarMensagem(deps, m, passo, op = {}) {
 const msgErro = (e: unknown) => (e instanceof Error ? e.message : String(e));
 ```
 
-Limite conhecido e aceito (documentar no ADR): se os 3 retries do QStash se esgotarem, a cadeia daquela (job, org) para até o próximo ciclo, que a assume do zero (as pendências atravessam). Isso fica visível em `worker_rodadas` (linha `rodando` com posse vencida) — base do alarme do follow-up.
+Limite conhecido e aceito (documentar no ADR): esgotados os 3 retries do QStash, a cadeia daquela (job, org) para até o próximo ciclo, que a assume do zero. As pendências de pedido não se perdem (estão em `worker_pendencias`, por org). Fica visível em `worker_rodadas` (linha `rodando` com posse vencida) — base do alarme do follow-up.
 
 - [ ] **Step 1: Testes que falham** — `DepsRodada` falso que **reimplementa a semântica da Task 1 em memória** (linha por job+org, relógio falso para `lease_ate`):
-  1. Mensagem nova → passo recebe `cursor:null`, `params` da abertura e `pendencias` da linha; `proximo:'vendas|p1'` → `avancar` + `publicar(m,'vendas|p1')` + `liberar` → `continua`.
+  1. Mensagem nova → passo recebe `cursor:null` e os `params` da abertura; `proximo:'vendas|p1'` → `avancar` + `publicar(m,'vendas|p1')` + `liberar` → `continua`.
   2. `ocupada` → passo não chamado; `statusHttp` 500.
   3. **Queda por CPU**: 1ª execução não libera; retry +12 s → `ocupada`; +160 s → passo com o **mesmo** cursor.
   4. **Posse vence durante o lote** (`avancar` → false) → `erro` (500), nunca `obsoleta`; retry refaz o lote. Idem com `concluir` → false.
   5. Passo lança `Error` → `liberar` + `erro`; `SemAcessoRodada` → `concluir('sem_acesso')` + 200.
   6. **`publicar` lança após o `avancar`** → `erro`; retry recebe o cursor novo e segue; cursor nunca volta.
   7. **Entrega duplicada** da mesma mensagem → a 2ª processa o lote seguinte, nunca repete cursor.
-  8. `proximo:null` com `pendencias` vazio → `concluir('ok')`; com 2 pendências → `concluir('parcial', '2 pedido(s) pendente(s)')`.
+  8. `proximo:null` sem `parcial` → `concluir('ok')`; com `parcial:'2 pedido(s) pendente(s)'` → `concluir('parcial', '2 pedido(s) pendente(s)')`.
   9. `precisaNotificar` true: `concluir(..., notificar:true)` → `notificar(acumulado, ciclo)` → `marcarNotificado`; se `notificar` lança → `erro`; retry (mesmo ciclo, estado `ok`, pendente) → `notificar` de novo → `executado`; próxima entrega → `concluida`.
   10. `notificar_anterior` → `notificar(acumulado_antigo, ciclo_antigo)` → `marcarNotificado` → `repetir` (500); retry → abre o ciclo novo e roda o passo.
   11. Utilitários: `lerCursor('vendas|123')`, `lerCursor('radar|')`, `lerCursor(null)`; `cicloDiaBrt(new Date('2026-09-28T02:30:00Z'))` → `'2026-09-27'`; `cicloHoraUtc` → `'2026-09-28T02'`; `dedupMsg` só `[A-Za-z0-9_-]`; `ehMsgOrg({tier:'completo'})`/`ehMsgOrg({dias:7})` → false.
 - [ ] **Step 2:** `pnpm test -- supabase/functions/_shared/rodada` → FAIL.
 - [ ] **Step 3:** Implementar. `publicar` = `qstashClient().publishJSON({ url: urlDaFuncao(fn), body: m, retries: 3, deduplicationId: dedupMsg(fn, m, cursor) })`; `publicarDisparo` idem com `cursor=null`, sequencial, lança no fim se algum falhou.
 - [ ] **Step 4:** PASS; `pnpm lint:functions && pnpm check:functions`.
-- [ ] **Step 5: Commit** — `feat(rodadas): protocolo de execução por org com posse, CAS, pendências e notificação durável (ADR-0173)`.
+- [ ] **Step 5: Commit** — `feat(rodadas): protocolo de execução por org com posse, CAS e notificação durável (ADR-0173)`.
 
 ---
 
-### Task 3: Leituras/gravações estritas e notificação idempotente
+### Task 3: Leituras/gravações estritas, pendências e notificação idempotente
 
 **Files:**
 - Modify: `supabase/functions/_shared/faturamento/io.ts` (novo `buscarPedidosPeriodoEstrito` ao lado de `buscarPedidosPeriodo:272-307`, que fica igual)
 - Modify: `supabase/functions/_shared/faturamento/mensagens-io.ts` (estritas ao lado das atuais, que ficam iguais)
-- Modify: `supabase/functions/_shared/notificacoes/config.ts:67-81`
+- Modify: `supabase/functions/_shared/notificacoes/config.ts:23-81`
 - Create: `supabase/functions/_shared/faturamento/pendencias.ts`
 - Test: `supabase/functions/_shared/faturamento/__tests__/estritos.test.ts`, `__tests__/pendencias.test.ts`, `supabase/functions/_shared/notificacoes/__tests__/chave.test.ts`
 
 **Interfaces (Produces):**
 
 ```ts
-// io.ts — mesma varredura de buscarPedidosPeriodo, mas QUALQUER página não-2xx (ou exceção) LANÇA.
-// Nada de lista parcial: o lote que depende dela não roda e a mensagem é repetida.
+// io.ts
+export const TETO_PEDIDOS_JANELA = 5000;
+/** Mesma varredura de buscarPedidosPeriodo, mas com COBERTURA VERIFICÁVEL: qualquer página não-2xx ou
+ *  exceção lança; `paging.total` > TETO lança (janela grande demais — encurtar); ao fim, deduplica por
+ *  id e exige `ids únicos === paging.total` E total igual na 1ª e na última página. Divergência =
+ *  reordenação entre páginas durante a leitura (o sort do ML é por date_closed) → lança; o retry da
+ *  mensagem relê. Nunca devolve lista com buraco. */
 export async function buscarPedidosPeriodoEstrito(token: string, intervalo: { desde: string; ate: string }, f: typeof fetch = fetch): Promise<PedidoML[]>;
 
 // mensagens-io.ts
@@ -427,29 +469,34 @@ export async function buscarMensagensPackEstrito(token: string, packId: string |
 export async function upsertMensagensEstrito(/* mesmos params de upsertMensagens :49-57 */): Promise<{ novasRecebidas: number }>; // error em qualquer upsert → lança
 export async function listarPacksDeVendasEstrito(admin: SupabaseClient, userId: string, limite = 200): Promise<PackVenda[]>;   // error → lança
 
-// pendencias.ts (puro)
-export const MAX_TENTATIVAS_PEDIDO = 5;
-/** Aplica o resultado de um lote às pendências: sucesso remove; falha nova entra com tentativas=1;
- *  falha repetida soma 1; ao atingir MAX_TENTATIVAS_PEDIDO sai da lista e vai para `descartados`. */
-export function aplicarResultado(pendencias: Pendencia[], ok: string[], falhas: string[]): { pendencias: Pendencia[]; descartados: string[] };
+// pendencias.ts (fiação fina sobre a Task 1)
+export const LOTE_PENDENCIAS = 20;
+/** Pendências ativas (descartado_em null) da org com order_id > depoisDe, por order_id (texto), até `limite`. Lança em erro. */
+export async function lerPendencias(admin: SupabaseClient, orgId: string, depoisDe: string, limite: number): Promise<string[]>;
+/** registrar_pendencias_pedido; devolve quantos foram descartados nesta chamada. Lança em erro. */
+export async function registrarPendencias(admin: SupabaseClient, orgId: string, ok: string[], falhas: string[], erro: string | null): Promise<number>;
+/** Há pendência ativa na org? (decide `parcial` no fim da rodada). Lança em erro. */
+export async function temPendenciaAtiva(admin: SupabaseClient, orgId: string): Promise<number>; // quantidade
 
 // config.ts
 export async function notificarCategoria(admin, orgId, categoria, texto, opcoes?: { chave?: string }): Promise<number>;
 ```
 
-`notificarCategoria` com `chave`: o in-app vira `upsert(linhas com chave, { onConflict: 'user_id,chave', ignoreDuplicates: true }).select('user_id')`; `error` → **lança** (o chamador repete); Telegram só para assinantes cujo `user_id` voltou do upsert (linha nova). Sem `chave`: comportamento de hoje, byte a byte (best-effort, `console.warn`).
-
-**Ordenação de pedidos (resposta à revisão):** não se usa offset do ML. `buscarPedidosPeriodoEstrito` lê a janela inteira (a busca filtra por `date_created`, e o `sort` do ML é por `date_closed` — offset entre páginas de chamadas diferentes não é estável). O lote é escolhido **localmente**: ordenar por `id` numérico, pegar `id > cursor`. A janela `[desde, ate]` é fixa (gravada na abertura), e o ML não devolve pedido novo dentro de um intervalo que já passou, então o conjunto é o mesmo em toda mensagem da rodada. Custo: a lista é relida a cada mensagem (7 dias da Avil ≈ 3 páginas; 72 h ≈ 2) — medido na Task 8.
+`notificarCategoria` **com `chave`** (caminho novo, só a rodada do Pulse usa):
+1. `lerAssinantes` **estrito**: `error` do select → lança (hoje `:26-31` devolve `[]` e a pendência seria limpa sem ninguém notificado).
+2. In-app: `upsert(linhas com chave, { onConflict: 'user_id,chave', ignoreDuplicates: true }).select('user_id')`; `error` → lança. **O in-app é o canal garantido**: gravado exatamente uma vez por (usuário, chave).
+3. Telegram: **melhor esforço, no máximo uma vez** — só para assinantes cujo `user_id` voltou do upsert (linha nova). Queda entre o upsert e o envio perde aquele Telegram; o registro in-app fica. Isso é declarado no ADR, não prometido como garantido.
+**Sem `chave`**: comportamento de hoje, byte a byte (best-effort, `console.warn`, `lerAssinantes` tolerante).
 
 - [ ] **Step 1: Testes que falham**
-  - `buscarPedidosPeriodoEstrito`: 2 páginas 200 → concatena; **1ª ok e 2ª 500 → rejeita** (hoje `:295-297` devolveria a 1ª); 429 na 1ª → rejeita; `fetch` que lança → rejeita.
+  - `buscarPedidosPeriodoEstrito` (fetch falso por página): 2 páginas coerentes (`total:70`) → 70 pedidos; **1ª ok e 2ª 500 → rejeita**; 429 na 1ª → rejeita; `fetch` que lança → rejeita; **páginas sobrepostas** (id 50 nas duas páginas, 69 únicos com `total:70`) → rejeita; **página que omite um id** (total 70, chegam 69 únicos) → rejeita; `total` da 1ª página 70 e da última 71 → rejeita; `total: 5001` → rejeita.
   - `buscarMensagensPackEstrito`: 200 → parseado; 404/403 → `[]`; 429/500/rede → rejeita.
   - `upsertMensagensEstrito`: `error` no 1º ou no 2º upsert → rejeita; sem erro → mesmo `novasRecebidas` de `upsertMensagens`.
   - `listarPacksDeVendasEstrito`: `error` → rejeita.
-  - `aplicarResultado`: sucesso remove; falha nova entra com 1; falha existente vai de 2 para 3; a 5ª tentativa sai da lista e vai para `descartados`; `ok` e `falhas` sem interseção preservam as outras pendências.
-  - `notificarCategoria` com chave: 1ª chamada grava e manda Telegram para 2 assinantes; 2ª chamada com a mesma chave (upsert devolve `[]`) **não** manda Telegram; upsert com `error` → rejeita. Sem chave: igual a hoje (insert simples, erro só loga).
+  - `pendencias.test.ts` (cliente falso): `lerPendencias` filtra `descartado_em is null`, `order_id > depoisDe`, ordena e limita; `error` → rejeita; `registrarPendencias` chama a RPC com os arrays e devolve `descartados`.
+  - `chave.test.ts`: com chave, 1ª chamada grava 2 linhas e manda 2 Telegrams; 2ª chamada (upsert devolve `[]`) **não** manda Telegram; `lerAssinantes` com `error` → rejeita; upsert com `error` → rejeita. Sem chave: insert simples, erro só loga, `lerAssinantes` com erro → segue com lista vazia (como hoje).
 - [ ] **Step 2:** FAIL. **Step 3:** implementar (extrair o miolo comum para não duplicar parse/mapeamento). **Step 4:** `pnpm test -- supabase/functions/_shared/faturamento supabase/functions/_shared/notificacoes` → PASS (inclui os testes antigos).
-- [ ] **Step 5: Commit** — `feat(shared): leituras/gravações estritas, pendências de pedido e notificação idempotente por chave`.
+- [ ] **Step 5: Commit** — `feat(shared): leituras/gravações estritas, pendências por org e notificação idempotente por chave`.
 
 ---
 
@@ -461,7 +508,7 @@ export async function notificarCategoria(admin, orgId, categoria, texto, opcoes?
 - Test: `supabase/functions/backfill-faturamento/__tests__/passo.test.ts`, `__tests__/roteamento.test.ts`, `__tests__/manual.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 2 e 3; `buscarPedido` (`_shared/faturamento/io.ts`, já usado pelo reconciliar).
+- Consumes: Tasks 2 e 3; `buscarPedido` (`_shared/faturamento/io.ts:221`).
 - Produces:
 
 ```ts
@@ -476,21 +523,25 @@ export interface DepsBackfill {
   pedidoPorId(token: string, id: string): Promise<PedidoML>;                                // buscarPedido; lança
   /** Por pedido: frete, shipment, carregarLiquidoMPDoPedido, GTIN fallback, upsertVenda. Nunca lança por pedido. */
   processarPedidos(token: string, cx: ConexaoCanal, userId: string, pedidos: PedidoML[]): Promise<{ ok: string[]; falhas: string[]; mpFalhou: boolean }>;
+  pendencias(depoisDe: string, limite: number): Promise<string[]>;                         // lerPendencias(org)
+  registrarPendencias(ok: string[], falhas: string[], erro: string | null): Promise<number>; // devolve descartados
+  pendentesAtivos(): Promise<number>;                                                       // temPendenciaAtiva(org)
   packs(userId: string): Promise<PackVenda[]>;                                              // listarPacksDeVendasEstrito
   processarPacks(token: string, userId: string, orgId: string, contaExternaId: string, packs: PackVenda[]): Promise<number>; // lança na 1ª falha transitória
 }
 export function passoBackfill(deps: DepsBackfill, orgId: string): Passo<ParamsBackfill>;
 ```
 
-Regras (acumulado inicial `{}`; somar com `(a.k ?? 0) + n`):
-1. `conexao()` null ou `userId` null → `{ proximo: null, acumulado, pendencias }` (como `SEM_NADA`, `index.ts:97`).
+Regras (acumulado inicial `{}`; somar com `(a.k ?? 0) + n`; cursor `pendencias|<ultimoId>` → `vendas|<ultimoId>` → `mensagens|<ultimoPackId>` → fim):
+1. `conexao()` null ou `userId` null → `{ proximo: null, acumulado }` (como `SEM_NADA`, `index.ts:97`).
 2. `token(cx)` em toda mensagem.
-3. Cursor null → `pendencias|` se `pendencias.length > 0`, senão `vendas|`.
-4. **`pendencias`**: os primeiros `LOTE_PEDIDOS` ids (ordem da lista); para cada um `pedidoPorId` (falha de leitura = falha do pedido); `processarPedidos` dos lidos; `aplicarResultado(pendencias, ok, falhas)`; `acumulado.pedidosDescartados += descartados.length` e `console.error` com os ids descartados. Se ainda houver pendência **não tentada nesta rodada** além do lote → `proximo:'pendencias|<ultimoIdTentado>'` (próximas: ids após ele na lista); senão `proximo:'vendas|'`.
-5. **`vendas`**: `pedidosDaJanela` (lança → propaga); ordenar por `Number(id)`; `id > pos`; `LOTE_PEDIDOS`. Vazio → `proximo:'mensagens|'`. Senão `processarPedidos`; `sincronizados += ok.length`; `pedidosComFalha += falhas.length`; `mpFalhou = max`; `pendencias = aplicarResultado(pendencias, ok, falhas).pendencias`; `proximo:'vendas|' + ultimoId`.
-6. **`mensagens`**: `cx.contaExternaId` null → `proximo:null`. `packs(userId)` por `packId` (`localeCompare`), `> pos`, `LOTE_PACKS`; vazio → `proximo:null`; senão `packs += processarPacks(...)`, `proximo:'mensagens|' + ultimo`.
-7. Não relê perguntas nem claims no caminho agendado.
-8. `processarPedidos` real: `carregarCatalogo(admin, userId)` 1x por mensagem; `carregarGtinsFallback(token, pedidos, idsPubliai)`; `chunk(pedidos, PARALELAS)` com `buscarFreteVendedor`, `buscarShipment`, `carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId), paymentIds)` e `upsertVenda` com os argumentos de `index.ts:181-184`; exceção de um pedido → `falhas.push(String(pedido.id))` + `console.warn`.
+3. Cursor null → etapa `pendencias` com `pos=''`.
+4. **`pendencias`** (as da ORG, inclusive as deixadas pela recuperação histórica ou pelo reconciliar): `ids = pendencias(pos, LOTE_PEDIDOS)`. Vazio → `proximo:'vendas|'`. Para cada id `pedidoPorId` (exceção = falha do pedido); `processarPedidos` dos lidos; `acumulado.pedidosDescartados += registrarPendencias(ok, falhas, 'backfill: ' + resumo)`. `ids.length === LOTE_PEDIDOS` → `proximo:'pendencias|' + ultimoId`; senão `'vendas|'`.
+5. **`vendas`**: `pedidosDaJanela` (lança → propaga); ordenar por `Number(id)`; `id > pos`; `LOTE_PEDIDOS`. Vazio → `proximo:'mensagens|'`. Senão `processarPedidos`; `sincronizados += ok.length`; `pedidosComFalha += falhas.length`; `mpFalhou = max`; `acumulado.pedidosDescartados += registrarPendencias(ok, falhas, ...)` (os `ok` também limpam pendência antiga do mesmo pedido); `proximo:'vendas|' + ultimoId`.
+6. **`mensagens`**: `cx.contaExternaId` null → fim. `packs(userId)` por `packId` (`localeCompare`), `> pos`, `LOTE_PACKS`; vazio → fim; senão `packs += processarPacks(...)`, `proximo:'mensagens|' + ultimo`.
+7. **Fim** (`proximo:null`): `n = pendentesAtivos()`; `parcial = n > 0 ? `${n} pedido(s) pendente(s)` : (acumulado.pedidosDescartados > 0 ? `${acumulado.pedidosDescartados} pedido(s) descartado(s) após 5 tentativas` : null)`. Descartado continua em `worker_pendencias` com `descartado_em` (recuperável limpando a coluna).
+8. Não relê perguntas nem claims no caminho agendado.
+9. `processarPedidos` real: `carregarCatalogo(admin, userId)` 1x por mensagem; `carregarGtinsFallback(token, pedidos, idsPubliai)`; `chunk(pedidos, PARALELAS)` com `buscarFreteVendedor`, `buscarShipment`, `carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId), paymentIds)` e `upsertVenda` com os argumentos de `index.ts:181-184`; exceção de um pedido → `falhas.push(String(pedido.id))` + `console.warn`.
 
 Roteamento (`Deno.serve`), com a decisão numa função pura testável:
 
@@ -501,22 +552,28 @@ export function rotear(temAssinatura: boolean, parsed: unknown, flagAtiva: boole
   if (ehMsgOrg(parsed)) return 'org';
   return flagAtiva ? 'disparo' : 'legado';
 }
+/** Identidade do disparo. Diário: dia BRT. Recuperação: a própria janela do body (`desde_ate`, ISO
+ *  completos) — um retry do disparador gera o MESMO ciclo; recuperações diferentes, ciclos diferentes.
+ *  Ordem textual entre recuperações = ordem de `desde`, o que só importa para rejeitar mensagem de uma
+ *  recuperação anterior chegando depois de outra (vira `obsoleta`; as pendências ficam na org). */
+export function cicloDoDisparo(body: { desde?: string; ate?: string }, agora: Date): { job: Job; ciclo: string };
 ```
 
-Disparo: `intervalo = janela(parsed)`; recuperação (`parsed.desde` presente) → `job:'backfill-recuperacao'`, `ciclo: new Date().toISOString()`; senão `job:'backfill'`, `ciclo: cicloDiaBrt(new Date())`; orgs = conexões ML (erro de leitura → 500); `publicarDisparo(FN, orgs.map(org_id => ({ modo:'org', job, org_id, ciclo, params: intervalo })))`; log com job, ciclo, janela e nº de orgs. `org`: `executarMensagem(depsRodada(admin, FN), msg, passoBackfill(depsBackfillReal(admin, msg.org_id), msg.org_id))` → `statusHttp`. `legado`: o laço de hoje (`:246-289`). `manual`: inalterado.
+Disparo: `intervalo = janela(parsed)`; `{ job, ciclo } = cicloDoDisparo(parsed, new Date())` (recuperação exige `desde` **e** `ate` explícitos no body; só `desde` → 400); orgs = conexões ML (erro de leitura → 500); `publicarDisparo(FN, orgs.map(org_id => ({ modo:'org', job, org_id, ciclo, params: intervalo })))`; log com job, ciclo, janela e nº de orgs. `org`: `executarMensagem(depsRodada(admin, FN), msg, passoBackfill(depsBackfillReal(admin, msg.org_id), msg.org_id))` → `statusHttp`. `legado`: o laço de hoje (`:246-289`). `manual`: inalterado.
 
 - [ ] **Step 1: Testes que falham**
   - `passo.test.ts` (`DepsBackfill` falso):
     1. conexão null / `userId` null → `proximo:null`, sem `token`.
-    2. 45 pedidos embaralhados, cursor null, sem pendências → ids 1..20, `proximo:'vendas|20'`; `'vendas|40'` → 41..45; `'vendas|45'` → `'mensagens|'` sem `processarPedidos`.
-    3. `pedidosDaJanela` lança → rejeita (Review Focus: lista parcial nunca é usada).
-    4. **Reordenação:** a lista volta em ordem diferente a cada chamada → o lote escolhido depende só do cursor (mesmos ids).
+    2. Sem pendências: cursor null → `'vendas|'` sem `processarPedidos`; 45 pedidos embaralhados em `'vendas|'` → ids 1..20, `'vendas|20'`; `'vendas|40'` → 41..45; `'vendas|45'` → `'mensagens|'`.
+    3. `pedidosDaJanela` lança → rejeita.
+    4. **Reordenação:** a lista volta em ordem diferente a cada chamada → o lote depende só do cursor.
     5. Mensagens: 50 packs → 40, 10, fim; `contaExternaId` null → fim.
     6. `processarPacks` lança → rejeita; `token` lança `SemAcessoRodada` → rejeita com `SemAcessoRodada`.
-    7. **Falha de pedido:** `processarPedidos` devolve `falhas:['7']` → `pendencias` contém `{id:'7',tentativas:1}` e o cursor anda.
-    8. **Retentativa:** rodada nova com `pendencias:[{id:'7',tentativas:1}]` → cursor null vai para `pendencias|`; `pedidoPorId('7')`; sucesso → pendência some e `proximo:'vendas|'`; falha na 5ª tentativa → descartada, `acumulado.pedidosDescartados === 1`.
-  - `roteamento.test.ts`: `rotear` nos 4 casos; ciclo/job do disparo para `{dias:7}` e `{desde,ate}`.
-  - `manual.test.ts` (caracterização): `processarConexao` com `io` falso → com `soVendas:false` chama perguntas, claims, pedidos e mensagens, e usa a varredura de 120 dias do MP (`carregarLiquidoMP`), exatamente como hoje; com `soVendas:true` pula perguntas/claims/mensagens.
+    7. **Falha de pedido:** `processarPedidos` devolve `falhas:['7']` → `registrarPendencias([...ok], ['7'], ...)` e o cursor anda.
+    8. **Pendências:** 25 ids pendentes → 1ª mensagem processa 20 e `'pendencias|<20º>'`, 2ª processa 5 e `'vendas|'`; `pedidoPorId` que lança conta como falha; `registrarPendencias` devolvendo 1 → `acumulado.pedidosDescartados === 1`.
+    9. **Fim:** `pendentesAtivos()` 2 → `parcial:'2 pedido(s) pendente(s)'`; 0 com 1 descartado → `parcial` de descarte; 0 e 0 → `parcial` null.
+  - `roteamento.test.ts`: `rotear` nos 4 casos; `cicloDoDisparo({})` → `backfill` + dia BRT; `cicloDoDisparo({desde,ate})` → `backfill-recuperacao` + `desde_ate`, **igual em duas chamadas com relógios diferentes**.
+  - `manual.test.ts` (caracterização): `processarConexao` com `io` falso → com `soVendas:false` chama perguntas, claims, pedidos e mensagens e usa `carregarLiquidoMP` (120 dias), como hoje; com `soVendas:true` pula perguntas/claims/mensagens.
 - [ ] **Step 2:** FAIL. **Step 3:** implementar. **Step 4:** `pnpm test -- supabase/functions/backfill-faturamento` → PASS; `pnpm lint:functions && pnpm check:functions`.
 - [ ] **Step 5: Commit** — `feat(backfill): rodada por org (pendências → vendas → mensagens) atrás de FANOUT_BACKFILL (ADR-0173)`.
 
@@ -575,10 +632,10 @@ Regras:
 1. `processarColetaOrg` (manual e legado) = composição das `partes`: `prepararContexto` → (`completo`) `sincronizarRadar` → seleção de hoje (`:439-446`, trazendo também as 2 colunas novas; **sem** filtro de backoff) → `processarLoteProdutos` → `notificarRodadaPulse` **sem chave** se `alertas > 0`. Retorno `{ produtos, gravadas, alertas }` idêntico ao de hoje.
 2. Passo 3: `json === null` → `admin.rpc('registrar_falha_coleta_pulse', { p_org: orgId, p_produto: produto.id })` e `return` (snapshot preservado). Leitura boa → o `patch` de `:548-557` ganha `coleta_tentativa_em: agora, coleta_falhas_seguidas: 0` (valor constante: idempotente).
 3. `elegivelPorBackoff`: `falhas < 3` → true; senão quente → false; senão `tentativa == null || agoraMs - Date.parse(tentativa) >= 3 * 86_400_000`.
-4. `passoPulse` (cursor `radar|` → `produtos|<ultimoIdExaminado>` → fim; pendências não se aplicam — devolver as recebidas):
+4. `passoPulse` (cursor `radar|` → `produtos|<ultimoIdExaminado>` → fim; `parcial` sempre null):
    - Cursor null: `conexao()` null → `SemAcessoRodada`. `completo` → `sincronizarRadar()`, `proximo:'produtos|'`. `quente` → etapa produtos com `pos=''` na mesma mensagem.
-   - `produtos`: `ctx = contexto(cx)`; `lidos = produtos(pos, JANELA_LEITURA, tier)`; vazio → `proximo:null`. Percorrer `lidos` em ordem acumulando elegíveis até `LOTE`; `ultimoExaminado` = id do último percorrido. **O cursor nunca passa de item não examinado.** Com elegíveis → `processarLote(..., baseline = tier === 'completo')`; somar `produtos, gravadas, alertas, acao`; `naoClassificavel = max(atual, ctx ? 1 : 0)`. `proximo:'produtos|' + ultimoExaminado`.
-5. Consumidor: `executarMensagem(deps, m, passoPulse(depsPulseReal(admin, m.org_id)), { precisaNotificar: precisaNotificarPulse, notificar: (a, ciclo) => notificarRodadaPulse(admin, m.org_id, { alertas: a.alertas ?? 0, acao: a.acao ?? 0, naoClassificavel: (a.naoClassificavel ?? 0) === 1 }, chaveNotificacaoPulse(m.job, m.org_id, ciclo)) })`. `notificarRodadaPulse` checa o módulo `pulse` antes (`:777-781`); módulo desligado → não envia e não lança.
+   - `produtos`: `ctx = contexto(cx)`; `lidos = produtos(pos, JANELA_LEITURA, tier)`; vazio → `proximo:null`. Percorrer `lidos` em ordem acumulando elegíveis até `LOTE`; `ultimoExaminado` = id do último percorrido. **O cursor nunca passa de item não examinado.** Com elegíveis → `processarLote(..., baseline = tier === 'completo')`; somar `produtos, gravadas, alertas, acao`; `acumulado.naoClassificavel = Math.max(acumulado.naoClassificavel ?? 0, ctx.naoClassificavel ? 1 : 0)`. `proximo:'produtos|' + ultimoExaminado`.
+5. Consumidor: `executarMensagem(deps, m, passoPulse(depsPulseReal(admin, m.org_id)), { precisaNotificar: precisaNotificarPulse, notificar: (a, ciclo) => notificarRodadaPulse(admin, m.org_id, { alertas: a.alertas ?? 0, acao: a.acao ?? 0, naoClassificavel: (a.naoClassificavel ?? 0) === 1 }, chaveNotificacaoPulse(m.job, m.org_id, ciclo)) })`. `notificarRodadaPulse` checa o módulo `pulse` antes (`:777-781`); **com chave, a leitura de `organizations.modulos_habilitados` é estrita** (`error` → lança, o retry repete); módulo desligado (leitura boa) → não envia e não lança.
 6. Disparador (flag `FANOUT_PULSE`, mesma `rotear` da Task 4 copiada para o Pulse): tier do body (`:42`); orgs = conexões ML cuja org tem `'pulse'` em `organizations.modulos_habilitados`; `pulse-completo` + `cicloDiaBrt` ou `pulse-quente` + `cicloHoraUtc`; `params:{ tier }`; log com publicadas e fora por módulo. Sem flag → legado (`:45-80`).
 
 - [ ] **Step 1: Testes que falham**
@@ -586,7 +643,7 @@ Regras:
   - `passo.test.ts`: (1) completo, cursor null → radar 1x, sem lote, `'produtos|'`; (2) quente, cursor null → sem radar, lote de 40 com `baseline:false`; (3) conexão null → `SemAcessoRodada`; (4) 45 elegíveis `p01..p45` → lote `p01..p20`, `proximo:'produtos|p20'`; (5) `p01..p10` em backoff + resto elegível → lote `p11..p30`, `'produtos|p30'`; (6) janela lida toda em backoff → sem lote, cursor no último lido; (7) `lidos` vazio → `proximo:null`; (8) `naoClassificavel` fica 1 depois de visto.
   - `roteamento.test.ts`: `{tier:'quente'}` com flag → disparo `pulse-quente` com ciclo por hora; sem flag → legado.
   - `manual.test.ts`: `processarColetaOrg` com `partes` espiãs → radar só no completo, sem filtro de backoff, `notificarRodadaPulse` só com `alertas > 0` e **sem chave**, retorno `{produtos, gravadas, alertas}`.
-  - Teste de `notificarRodadaPulse` com chave e módulo desligado → não chama `notificarCategoria`.
+  - Teste de `notificarRodadaPulse` com chave: módulo desligado → não chama `notificarCategoria`; leitura do módulo com `error` → rejeita; módulo ligado → chama `notificarCategoria(..., { chave })`. E no `passo.test.ts`: contexto com `naoClassificavel:false` mantém `acumulado.naoClassificavel` 0; com `true` vira 1 e continua 1 no lote seguinte mesmo com contexto `false`.
 - [ ] **Step 2:** FAIL. **Step 3:** implementar em 3 commits locais: (a) extração mecânica com os testes antigos (`alertas-severidade`, `dedupe-preco-caiu`) verdes; (b) falha atômica/backoff; (c) `passo.ts` + roteamento. **Step 4:** `pnpm test -- supabase/functions/pulse-coletar` → PASS; `pnpm lint:functions && pnpm check:functions`.
 - [ ] **Step 5: Commit** — `feat(pulse): rodada por org em lotes, só orgs com módulo, backoff por produto, atrás de FANOUT_PULSE (ADR-0173)`.
 
@@ -617,6 +674,9 @@ export interface DepsReconciliar {
   processarClaims(token: string, cx: ConexaoCanal, userId: string, orgId: string, claims: ClaimML[]): Promise<number>;
   pedidosDaJanela(token: string, janela: { desde: string; ate: string }): Promise<PedidoML[]>;  // buscarPedidosPeriodoEstrito
   pedidoPorId(token: string, id: string): Promise<PedidoML>;
+  pendencias(depoisDe: string, limite: number): Promise<string[]>;                         // lerPendencias(org)
+  registrarPendencias(ok: string[], falhas: string[], erro: string | null): Promise<number>;
+  pendentesAtivos(): Promise<number>;
   /** :206-229 com carregarLiquidoMPDoPedido por pedido; mantém tratarPedidoCancelado. Nunca lança por pedido. */
   processarPedidos(token: string, cx: ConexaoCanal, userId: string, orgId: string, pedidos: PedidoML[]): Promise<{ ok: string[]; falhas: string[] }>;
   /** carregarLiquidoMP (120 d) + reconciliarLiberacoes (:181-205). MP null → loga e devolve 0. */
@@ -626,15 +686,15 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
 ```
 
 Regras (cursor `pendencias|` → `perguntas|` → `claims|<ultimoId>` → `vendas|<ultimoId>` → `liberacoes|` → fim):
-1. Cursor null → `pendencias|` se houver, senão `perguntas|`. `conexao()` null ou `userId` null → `proximo:null`.
-2. `pendencias` e `vendas`: mesmas regras 4–5 da Task 4 (com `pedidosDaJanela(params)` e `processarPedidos` deste worker); fim de `vendas` → `'liberacoes|'`.
+1. Cursor null → etapa `pendencias` com `pos=''`. `conexao()` null ou `userId` null → `proximo:null`.
+2. `pendencias` e `vendas`: mesmas regras 4–5 da Task 4 (as pendências são as da ORG em `worker_pendencias`, compartilhadas com o backfill; `pedidosDaJanela(params)` e `processarPedidos` deste worker); fim de `pendencias` → `'perguntas|'`; fim de `vendas` → `'liberacoes|'`. No fim da rodada, `parcial` pela mesma regra 7 da Task 4.
 3. `perguntas` → soma, `'claims|'`. `claims`: `claimsPendentes`, ordenar por `Number(id)`, `> pos`, `LOTE_CLAIMS`; vazio → `'vendas|'`; senão soma e `'claims|' + ultimoId`.
 4. `liberacoes` → soma `liberacoesCorrigidas`, `proximo:null`.
 5. Disparador (flag `FANOUT_RECONCILIAR`): conexões com `criado_por` não nulo; `job:'reconciliar'`, `ciclo: cicloHoraUtc(agora)`, `params:{ desde: agora-72h, ate: agora, hojeBRT }`. Sem flag → `legado()` (código de hoje, com `ORCAMENTO_MS`).
 
 **Liberações — divergência declarada com a revisão do Codex.** A etapa `liberacoes` **não é fatiada nesta entrega**: a varredura de 120 dias é limitada por construção (`buscarPagamentosMP`: 2 status × até 2.000 pagamentos em páginas de 50 = ≤ 80 páginas — `_shared/mercadopago/financeiro.ts:49-69`), roda isolada numa mensagem (a CPU dela aparece sozinha no `cpu_time_used`) e fatiar por página do MP pode separar os pagamentos de um pedido e gravar data de liberação errada (`mapaLiberacaoPorOrder` agrega por pedido). **Portão:** se a mensagem `liberacoes` passar de 1.500 ms de CPU na validação (Task 8, Step 7), a ativação do reconciliar é revertida (flag) e entra a alternativa: lotes de pedidos locais com liberação ainda relevante (`money_release_date` nulo ou ≥ hoje−1, `date_closed` nos últimos 120 dias), carregando **todos** os pagamentos de cada pedido por `carregarLiquidoMPDoPedido` antes de `reconciliarLiberacoes`, rodando só nos ciclos de hora múltipla de 6 (custo em requisições ao MP maior que a varredura — 1 por pagamento contra ≤ 80 páginas —, por isso não é o padrão).
 
-- [ ] **Step 1: Testes que falham**: (1) cursor null sem pendências → `perguntas` e `'claims|'`; com pendências → `'pendencias|'`; (2) `userId` null → `proximo:null` sem `token`; (3) 23 claims pendentes (objetos) → 10/10/3 e `'vendas|'`, e `processarClaims` recebe objetos, não ids; (4) vendas com 60 pedidos → 25/25/10, depois `'liberacoes|'`; (5) `liberacoes` → `proximo:null`; (6) `token` chamado em toda etapa, `SemAcessoRodada` propaga de qualquer uma; (7) `pedidosDaJanela` lança → rejeita; (8) pedido com falha vira pendência e é retentado na rodada seguinte (mesma regra da Task 4).
+- [ ] **Step 1: Testes que falham**: (1) cursor null sem pendências → `'perguntas|'` sem processar pedido; com 3 pendências → processa as 3 e `'perguntas|'`; etapa `perguntas` → `'claims|'`; (2) `userId` null → `proximo:null` sem `token`; (3) 23 claims pendentes (objetos) → 10/10/3 e `'vendas|'`, e `processarClaims` recebe objetos, não ids; (4) vendas com 60 pedidos → 25/25/10, depois `'liberacoes|'`; (5) `liberacoes` → `proximo:null`; (6) `token` chamado em toda etapa, `SemAcessoRodada` propaga de qualquer uma; (7) `pedidosDaJanela` lança → rejeita; (8) pedido com falha → `registrarPendencias([], ['id'], ...)`; `pendentesAtivos()` > 0 no fim → `parcial`; (9) `rotear` do reconciliar: `MsgOrg` → `org` com e sem flag; body do schedule sem flag → `legado`.
 - [ ] **Step 2:** FAIL. **Step 3:** implementar. **Step 4:** `pnpm test -- supabase/functions/reconciliar-faturamento supabase/functions/_shared/faturamento` → PASS; `pnpm lint:functions && pnpm check:functions`.
 - [ ] **Step 5: Commit** — `feat(reconciliar): rodada por org em etapas atrás de FANOUT_RECONCILIAR (ADR-0173)`.
 
@@ -662,7 +722,10 @@ Regras (cursor `pendencias|` → `perguntas|` → `claims|<ultimoId>` → `venda
   1. `supabase secrets set FANOUT_X=1` e conferir com `supabase secrets list` (memória: `secrets set` pode gravar vazio em silêncio);
   2. publicar 1 disparo manual pelo QStash com **o mesmo body do schedule** (ou esperar o schedule);
   3. medir antes de ativar a próxima: `worker_rodadas` com todas as orgs `ok`/`parcial` no ciclo; `function_logs` com `[rodada] lote` por mensagem e **`cpu_time_used` por etapa < 1.500 ms** (radar, perguntas, claims, vendas, mensagens, liberações, catálogo por mensagem); acima disso, desligar a flag e reduzir o lote (etapa por lote) ou abrir tarefa (etapa de custo fixo).
-- [ ] **Step 6: Rollback** — `supabase secrets unset FANOUT_X`: o disparador volta ao legado; mensagens `MsgOrg` já na fila seguem consumidas pelo código novo, que permanece deployado. **Redeploy da versão antiga só com a fila drenada**: flag desligada, nenhuma linha `rodando` com posse renovada na última 1 h em `worker_rodadas` para os jobs da função, e nenhum evento QStash com destino na função na última 1 h (cadeia + último retry de ~30 min). Pausar a fila não basta: mensagem pausada volta depois.
-- [ ] **Step 7: Validação em produção (3 dias, só leitura)**: 0 shutdowns `CPUTime`; `cpu_time_used` por etapa < 1.500 ms (liberações: portão da Task 6); `worker_rodadas` sem linha `rodando` com posse vencida há mais de 1 h; `notificacoes` `pulse` com no máximo 1 linha por (usuário, chave); `pulse_produtos` da DSA sem elegível com snapshot parado > 2 dias; `pendencias` de cada (job, org) visíveis e decrescendo.
-- [ ] **Step 8: Recuperação histórica (só após o Step 7 verde, com OK do Diego)** — 1 mensagem ao disparador do backfill com `{"desde":"2026-09-10T00:00:00Z","ate":"<agora ISO>"}` (`backfill-recuperacao`). Conferir `ml_vendas` de 10–27/09, mensagens novas e `pendencias` da linha `backfill-recuperacao` zeradas ou descartadas com log. Só então marcar o incidente resolvido.
-- [ ] **Step 9 (follow-up, fora desta entrega):** após 7 dias estáveis, remover o legado e as flags; alarme de rodada parada / pendências descartadas a partir de `worker_rodadas`.
+- [ ] **Step 6: Rollback — sem depender de inspecionar a fila.**
+  1. Rollback normal = `supabase secrets unset FANOUT_X`: o disparador volta ao legado no próximo schedule; mensagens `MsgOrg` já enfileiradas, pausadas ou atrasadas seguem consumidas pelo código novo, que permanece deployado.
+  2. Se for preciso reverter **código** do consumidor (bug no passo), a versão de rollback é a versão **legada + a guarda de `MsgOrg`**, nunca o commit anterior puro: o `Deno.serve` de cada uma das 3 funções mantém, antes de qualquer outro ramo assinado, `if (ehMsgOrg(parsed)) return 200 { ignorada: 'rollback' }` (loga org e ciclo). A guarda é **permanente**: qualquer versão futura dessas funções, inclusive a remoção do legado no follow-up, preserva o reconhecimento de `MsgOrg`. Assim uma entrega tardia jamais vira execução global (no backfill, janela default de 90 dias).
+  3. Teste da guarda: `roteamento.test.ts` das 3 funções cobre `ehMsgOrg` → rota `org` mesmo com flag desligada; o ADR registra a regra.
+- [ ] **Step 7: Validação em produção (3 dias, só leitura)**: 0 shutdowns `CPUTime`; `cpu_time_used` por etapa < 1.500 ms (liberações: portão da Task 6); `worker_rodadas` sem linha `rodando` com posse vencida há mais de 1 h; `notificacoes` `pulse` com no máximo 1 linha por (usuário, chave); `pulse_produtos` da DSA sem elegível com snapshot parado > 2 dias; `worker_pendencias` por org visível, com as ativas decrescendo.
+- [ ] **Step 8: Recuperação histórica (só após o Step 7 verde, com OK do Diego)** — 1 mensagem ao disparador do backfill com `{"desde":"2026-09-10T00:00:00Z","ate":"<agora ISO, fixado uma vez>"}` (`backfill-recuperacao`, ciclo = a própria janela; um retry do disparador cai no mesmo ciclo). Conferir `ml_vendas` de 10–27/09, mensagens novas e `worker_pendencias` da org: ativas são retomadas pelo backfill diário e pelo reconciliar; descartadas ficam listadas para decisão. Só então marcar o incidente resolvido.
+- [ ] **Step 9 (follow-up, fora desta entrega):** após 7 dias estáveis, remover o legado e as flags (mantendo a guarda de `MsgOrg`); alarme de rodada parada / pendência descartada a partir de `worker_rodadas` e `worker_pendencias`.
