@@ -145,6 +145,35 @@ describe('montarAds', () => {
     expect(a.motivoSemLucro).toBe('sem_lucro');
   });
 
+  it('parcial com linhas já gravadas: nenhuma despesa (totais e custo por grupo nulos), nem lucro após Ads', () => {
+    const a = monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] },
+      sync: { ...SYNC, carga_inicial_ok: false, cobertura_desde: '2026-09-14' },
+      dias: [dia(11, '2026-09-15', { cost: 7, clicks: 2, total_amount: 30 })] }) });
+    expect(a.estado).toBe('parcial');
+    expect(a.totais).toBeNull();
+    expect(a.grupos.map((g) => g.custo)).toEqual([null]);
+    expect(a.lucroAposAds).toBeNull();
+    expect(a.motivoSemLucro).toBe('cobertura');
+  });
+
+  it('período não coberto e sem linhas não é "sem_ads"', () => {
+    const a = monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, sync: { ...SYNC, cobertura_desde: '2026-09-20' } }) });
+    expect(a.totais!.custo).toBe(0);
+    expect(a.estado).not.toBe('sem_ads');
+  });
+
+  it('denominador zero: CPC, ROAS e ACOS nulos (nunca 0, Infinity ou NaN)', () => {
+    const a = monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: diasDe(11, 14, 26) }) });
+    expect(a.totais).toMatchObject({ custo: 0, cliques: 0, vendasTotais: 0, cpc: null, roas: null, acos: null });
+  });
+
+  it('fora_dos_grupos: diferença de 0,004 é ruído e libera o lucro; 0,01 bloqueia', () => {
+    const com = (custo_listado: number) => monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] },
+      dias: diasDe(11, 14, 26, { cost: 1 }), sync: { ...SYNC, custo_resumo: 100, custo_listado } }) });
+    expect(com(99.996)).toMatchObject({ motivoSemLucro: null, lucroAposAds: 487 });
+    expect(com(99.99)).toMatchObject({ motivoSemLucro: 'fora_dos_grupos', lucroAposAds: null });
+  });
+
   it('estados honestos', () => {
     const base = { membros: [[11, 'MLB1']] as [number, string][], codigos: { MLB1: ['A'] } };
     expect(monta({ fonte: fonte({ ...base, sync: null }) }).estado).toBe('sem_coleta');

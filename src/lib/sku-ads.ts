@@ -26,7 +26,9 @@ export interface PontoAds {
   aberto: boolean;
 }
 export interface GrupoAdsDossie {
-  id: number; tipo: 'ITEM' | 'FAMILY' | 'CATALOG'; status: string; campanhaId: number | null; custo: number;
+  id: number; tipo: 'ITEM' | 'FAMILY' | 'CATALOG'; status: string; campanhaId: number | null;
+  /** null na carga parcial (sem despesa até a carga inicial fechar). */
+  custo: number | null;
   exclusivo: boolean; mlbs: string[]; codigos: string[]; semVinculo: number;
 }
 export interface AdsDossie {
@@ -81,6 +83,13 @@ export function totaisAds(linhas: AdsDia[]): TotaisAds {
   };
 }
 
+/** Ads do alvo no período. Contrato com o chamador (T6):
+ *  - decidir pelo `alcance` ANTES do `estado`: `alcance: 'indisponivel'` (alvo sem MLB) vem com `estado: 'ok'` e
+ *    totais null — não há o que mostrar, e isso não é "sem Ads";
+ *  - `estado: 'parcial'` → `totais` null e `grupos[].custo` null (nenhuma despesa até a carga inicial fechar);
+ *  - `fonte` vem de `buscarFonteAds(mlbs, desde, ate)` com a faixa a partir do 1º dia do 1º intervalo da série
+ *    (`faixaTrafego(intervalos)`, como na 2b) — o 1º intervalo pode começar antes do período e, sem essas
+ *    linhas, fica sem valor no gráfico. */
 export function montarAds(p: {
   alvo: AlvoDossie; codigos: string[];
   /** Mapa do dossiê (vendas_sku_mlbs): MLBs do alvo. */
@@ -132,8 +141,8 @@ export function montarAds(p: {
   const desdeDia = diaBRT(Date.parse(p.janela.desde));
   const fimJanela = diaBRT(Date.parse(p.janela.ate));
   const ateDia = fimJanela < ontem ? fimJanela : ontem;
-  // Despesa do período = mesmo recorte do gráfico: só dia coberto (na carga parcial, o que já chegou, rotulado).
-  const doPeriodo = linhas.filter((d) => d.dia >= desdeDia && d.dia <= ateDia && (parcial || coberto(d.dia)));
+  // Despesa do período = mesmo recorte do gráfico: só dia coberto. Na carga parcial não há despesa (totais null).
+  const doPeriodo = linhas.filter((d) => d.dia >= desdeDia && d.dia <= ateDia && coberto(d.dia));
   const diasPeriodo = diasEntre(desdeDia, ateDia);
 
   const codigosDe = (m: string) => f.codigosDosMembros.get(m) ?? [];
@@ -145,23 +154,24 @@ export function montarAds(p: {
     const g = meta.get(id); // a FK garante a linha; sem ela (RLS/leitura parcial) o grupo aparece como desconhecido
     return {
       id, tipo: g?.tipo ?? 'ITEM', status: g?.status ?? 'desconhecido', campanhaId: g?.campaign_id ?? null,
-      custo: round2(doPeriodo.filter((d) => d.ad_group_id === id).reduce((s, d) => s + d.cost, 0)),
+      custo: parcial ? null : round2(doPeriodo.filter((d) => d.ad_group_id === id).reduce((s, d) => s + d.cost, 0)),
       exclusivo: semVinculo === 0 && codigos.every((c) => cods.has(c)), mlbs: ms, codigos, semVinculo,
     };
-  }).sort((a, b) => b.custo - a.custo || a.id - b.id);
+  }).sort((a, b) => (b.custo ?? 0) - (a.custo ?? 0) || a.id - b.id);
 
   const alcance: AlcanceAds = grupos.every((g) => g.exclusivo) ? (p.alvo.tipo === 'sku' ? 'sku' : 'familia') : 'anuncio';
-  const totais = totaisAds(doPeriodo);
-  const estado: EstadoAds = parcial ? 'parcial'
-    : !sync.ultimo_ok_em || p.agora.getTime() - Date.parse(sync.ultimo_ok_em) > DESATUALIZADO_MS ? 'desatualizado'
-      : totais.custo === 0 ? 'sem_ads' : 'ok';
+  const totais = parcial ? null : totaisAds(doPeriodo);
   const periodoCoberto = !parcial && diasPeriodo.length > 0 && diasPeriodo.every(coberto);
+  // "Sem Ads" só se provado: zero de despesa num período inteiramente coberto.
+  const estado: EstadoAds = !totais ? 'parcial'
+    : !sync.ultimo_ok_em || p.agora.getTime() - Date.parse(sync.ultimo_ok_em) > DESATUALIZADO_MS ? 'desatualizado'
+      : totais.custo === 0 && periodoCoberto ? 'sem_ads' : 'ok';
   // Gasto do anunciante fora de qualquer grupo listado (provável grupo excluído): a despesa do alcance pode
   // estar abaixo do real, então não há "Lucro após Ads" — a despesa continua aparecendo.
   const foraDosGrupos = sync.custo_resumo != null && sync.custo_listado != null && sync.custo_resumo - sync.custo_listado > 0.005;
   const motivoSemLucro: MotivoSemLucro = alcance === 'anuncio' ? 'compartilhado'
     : p.lucroPeriodo == null ? 'sem_lucro' : !periodoCoberto ? 'cobertura' : foraDosGrupos ? 'fora_dos_grupos' : null;
-  const lucroAposAds = motivoSemLucro == null && p.lucroPeriodo != null ? round2(p.lucroPeriodo - totais.custo) : null;
+  const lucroAposAds = motivoSemLucro == null && p.lucroPeriodo != null && totais ? round2(p.lucroPeriodo - totais.custo) : null;
 
   const abertoNoDia = (d: string, ls: AdsDia[]) => (ls.length ? ls.some((l) => aberto(d, l.coletado_em)) : aberto(d, sync.ultimo_ok_em));
   const porDia = new Map<string, AdsDia[]>();
