@@ -94,10 +94,17 @@ export async function sincronizarAdsOrg(
   const fim = inicio + cfg.limiteMs;
   let rodada: string | null = null;
   let advertiserId: number | null = null;
+  // Fora do try (Ruling 2c-6): o catch também precisa zerar o cursor, então cursor/cargaInicial/falhou
+  // têm que sobreviver a uma exceção lançada no meio da cadeia.
+  let cursor: string | null = null;
+  let cargaInicial = false;
+  // Uma vez marcada, a flag viaja em toda `continuar` desta cadeia (inclusive as anteriores a qualquer
+  // falha nesta mensagem, se já veio marcada de uma mensagem anterior): a mensagem final da rodada
+  // sempre sabe que houve grupo não lido, mesmo que o cursor já tenha andado antes disso ser visto.
+  let falhou = msg.falhou === true;
   const parada = (extra: Partial<ExtraConcluir> = {}): ExtraConcluir =>
     ({ cargaConcluida: false, advertiserId, coberturaDesde: null, custoResumo: null, custoListado: null, ...extra });
   try {
-    let cursor: string | null;
     if (msg.primeira) {
       const posse = await deps.reservarPosse();
       if (!posse) return { resultado: 'obsoleta' };
@@ -110,10 +117,6 @@ export async function sincronizarAdsOrg(
     }
     const dona = rodada;
     const inicial = cursor;
-    // Uma vez marcada, a flag viaja em toda `continuar` desta cadeia (inclusive as anteriores a qualquer
-    // falha nesta mensagem, se já veio marcada de uma mensagem anterior): a mensagem final da rodada
-    // sempre sabe que houve grupo não lido, mesmo que o cursor já tenha andado antes disso ser visto.
-    let falhou = msg.falhou === true;
     const continuar = async (c: string | null, atrasoMs?: number) => {
       const tentativa = c === inicial ? (msg.tentativa ?? 0) + 1 : 0;
       await deps.continuar(
@@ -123,6 +126,7 @@ export async function sincronizarAdsOrg(
     };
 
     const estado = await deps.lerEstadoSync();
+    cargaInicial = !estado.cargaInicialOk;
     const hoje = diaDeHoje(new Date(inicio), 'brt');
     const janela = janelaAds({
       hoje, cargaInicialOk: estado.cargaInicialOk,
@@ -163,6 +167,9 @@ export async function sincronizarAdsOrg(
       .filter((g) => inicial == null || g.ad_group_id > Number(inicial));
 
     let naoLidos = 0;
+    const erroNaoLidos = () => naoLidos > 0
+      ? `${naoLidos} ${naoLidos === 1 ? 'grupo não lido' : 'grupos não lidos'} depois de ${LIMITE_ADIAMENTOS} adiamentos (429/5xx/tempo)`
+      : 'grupo(s) não lido(s) em mensagem anterior desta rodada (429/5xx/tempo)';
     for (let i = 0; i < pendentes.length; i += cfg.lote) {
       if (i > 0 && deps.agora() - inicio > cfg.limiteMs) return await continuar(cursor);
       const lote = pendentes.slice(i, i + cfg.lote);
@@ -215,6 +222,15 @@ export async function sincronizarAdsOrg(
       if (grupos.length && !(await deps.gravarLote(dona, new Date(deps.agora()).toISOString(), grupos))) {
         return { resultado: 'obsoleta' };
       }
+      if (falhou && cargaInicial) {
+        // Ruling 2c-6: na carga inicial a regra não espera o fim da cadeia — se o cursor avançasse para
+        // depois do grupo não lido, reservar_ads_posse o retomaria dali (ele só some quando a carga já
+        // está ok), deixando os dias 16–90 desse grupo sem leitura pra sempre. Grava o que já leu (acima),
+        // zera na hora e fecha, sem publicar continuação.
+        if (!(await deps.avancarCursor(dona, cursor, null))) return { resultado: 'obsoleta' };
+        if (!(await deps.concluir(dona, 'erro', erroNaoLidos(), parada({ advertiserId: adv })))) return { resultado: 'obsoleta' };
+        return { resultado: 'erro' };
+      }
       const novo = String(lote[lote.length - 1].ad_group_id);
       if (!(await deps.avancarCursor(dona, cursor, novo))) return { resultado: 'obsoleta' };
       cursor = novo;
@@ -231,10 +247,7 @@ export async function sincronizarAdsOrg(
       // significa reler os 90 dias inteiros, nunca deixar os dias do grupo preso órfãos) e nunca fecha em
       // `ok`/com cobertura ou custos (o dossiê não pode achar que a rodada leu tudo).
       if (!(await deps.avancarCursor(dona, cursor, null))) return { resultado: 'obsoleta' };
-      const erro = naoLidos > 0
-        ? `${naoLidos} ${naoLidos === 1 ? 'grupo não lido' : 'grupos não lidos'} depois de ${LIMITE_ADIAMENTOS} adiamentos (429/5xx/tempo)`
-        : 'grupo(s) não lido(s) em mensagem anterior desta rodada (429/5xx/tempo)';
-      if (!(await deps.concluir(dona, 'erro', erro, parada({ advertiserId: adv })))) return { resultado: 'obsoleta' };
+      if (!(await deps.concluir(dona, 'erro', erroNaoLidos(), parada({ advertiserId: adv })))) return { resultado: 'obsoleta' };
       return { resultado: 'erro' };
     }
     let dono: boolean;
@@ -253,6 +266,13 @@ export async function sincronizarAdsOrg(
       return { resultado: 'erro' };
     }
     try {
+      // Ruling 2c-6: falha pendente (`falhou`) ou carga inicial nunca deixa o cursor adiante do que já foi
+      // lido — senão a próxima "primeira" retoma dali e nunca relê o que faltou. A carga inicial normalmente
+      // já teria zerado antes de chegar aqui (bloco acima), mas uma exceção (série furada, 401/403 no meio
+      // da leitura de um grupo etc.) pula direto pra este catch sem passar por lá.
+      if ((falhou || cargaInicial) && !(await deps.avancarCursor(rodada, cursor, null))) {
+        return { resultado: 'obsoleta' };
+      }
       const dono = await deps.concluir(rodada, estadoParada ?? 'erro', mensagem(e), parada());
       if (!dono) return { resultado: 'obsoleta' };
     } catch (e2) {

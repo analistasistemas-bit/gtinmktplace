@@ -264,14 +264,17 @@ describe('sincronizarAdsOrg', () => {
     expect(d.concluir.mock.calls.some((c) => c[1] === 'ok')).toBe(false);
   });
 
-  it('CRÍTICO — carga inicial com falha: cursor zera (a próxima carga recomeça do início, sem perder dias 16–90)', async () => {
+  // Ruling 2c-6 substitui o "avança pro fim do lote e zera depois" pelo zero imediato na carga inicial:
+  // com o lote padrão (20) os dois grupos pendentes cabem no mesmo lote, e o cursor nunca sai de null.
+  it('CRÍTICO — carga inicial com falha: cursor zera na hora, sem nunca ter avançado (recomeça do início)', async () => {
     const d = fake({
       lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
       buscarSerieGrupo: vi.fn(async () => http(429, null, 120_000)),
     });
     expect(await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 }))
       .toEqual({ resultado: 'erro' });
-    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, '12', null);
+    expect(d.avancarCursor).not.toHaveBeenCalledWith(RODADA, null, '12');
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, null, null);
     expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('2 grupos não lidos'),
       { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
   });
@@ -310,5 +313,49 @@ describe('sincronizarAdsOrg', () => {
     expect(d.esperar).not.toHaveBeenCalled();
     expect(d.continuar).toHaveBeenCalledWith(
       { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 1 }, { atrasoMs: 81_000 });
+  });
+
+  // Ruling 2c-6 (fix round 2): na carga inicial a regra não espera o fim da cadeia.
+  it('CARGA INICIAL (Ruling 2c-6) — lote 1 preso: zera o cursor e fecha em erro na mesma mensagem, sem publicar continuação', async () => {
+    const d = fake({
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      buscarSerieGrupo: vi.fn(async () => http(429, null, 120_000)),
+    });
+    const r = await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 },
+      { limiteMs: 30_000, lote: 1, concorrencia: 1 });
+    expect(r).toEqual({ resultado: 'erro' });
+    expect(d.continuar).not.toHaveBeenCalled();
+    expect(d.buscarSerieGrupo).toHaveBeenCalledTimes(1); // nunca chega no 2º grupo (lote 2)
+    expect(d.avancarCursor).not.toHaveBeenCalledWith(RODADA, null, '11'); // nunca avança para depois do não lido
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, null, null); // zera na hora
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('1 grupo não lido'),
+      { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
+  });
+
+  it('CARGA INICIAL (Ruling 2c-6) — exceção no lote 2 depois de um lote ok: o cursor é zerado', async () => {
+    const d = fake({
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      buscarSerieGrupo: vi.fn(async (id: number, j: { desde: string; ate: string }) =>
+        (id === 11 ? serie(j) : ok({ results: [{ date: '2026-09-26', cost: 'x' }] }))),
+    });
+    const r = await sincronizarAdsOrg(d, primeira, { limiteMs: 90_000, lote: 1, concorrencia: 1 });
+    expect(r).toEqual({ resultado: 'erro' });
+    expect(d.gravarLote).toHaveBeenCalledTimes(1); // o lote 1 (grupo 11) foi gravado antes da exceção
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, '11', null); // zera depois do avanço do lote 1
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('resposta inválida'),
+      { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
+  });
+
+  it('DIÁRIA (Ruling 2c-6) — exceção com falhou herdado de mensagem anterior: zera o cursor mesmo fora da carga inicial', async () => {
+    const d = fake({
+      buscarSerieGrupo: vi.fn(async (id: number, j: { desde: string; ate: string }) =>
+        (id === 11 ? serie(j) : ok({ results: [{ date: '2026-09-26', cost: 'x' }] }))),
+    });
+    const r = await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 0, falhou: true },
+      { limiteMs: 90_000, lote: 1, concorrencia: 1 });
+    expect(r).toEqual({ resultado: 'erro' });
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, '11', null);
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('resposta inválida'),
+      { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
   });
 });
