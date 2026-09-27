@@ -281,12 +281,12 @@ async function resolverSellerId(headers: Record<string, string>, f: typeof fetch
   return String(seller);
 }
 
-function parsePaginaBusca(data: unknown): { pedidos: PedidoML[]; total: number } {
+function parsePaginaBusca(data: unknown): { pedidos: PedidoML[]; totalBruto: unknown } {
   const pedidos: PedidoML[] = Array.isArray((data as { results?: unknown })?.results)
     ? (data as { results: PedidoML[] }).results
     : [];
-  const total = Number((data as { paging?: { total?: number } })?.paging?.total ?? pedidos.length);
-  return { pedidos, total };
+  const totalBruto = (data as { paging?: { total?: unknown } })?.paging?.total;
+  return { pedidos, totalBruto };
 }
 
 /** Varre /orders/search do vendedor no período. Retorna pedidos completos. */
@@ -314,8 +314,11 @@ export async function buscarPedidosPeriodo(
       if (offset === 0) throw new Error(`ML /orders ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
       break;
     }
-    const { pedidos: results, total } = parsePaginaBusca(await resp.json());
+    const { pedidos: results, totalBruto } = parsePaginaBusca(await resp.json());
     pedidos.push(...results);
+    // Fallback sem paging.total: tamanho ACUMULADO já lido (pedidos.length pós-push) — semântica
+    // original, preservada de propósito (byte-identical).
+    const total = Number(totalBruto ?? pedidos.length);
     offset += limit;
     if (results.length === 0 || offset >= total) break;
   }
@@ -323,10 +326,12 @@ export async function buscarPedidosPeriodo(
 }
 
 /** Mesma varredura de buscarPedidosPeriodo, mas com COBERTURA VERIFICÁVEL (ADR-0173): qualquer
- *  página não-2xx ou exceção lança; `paging.total` > TETO lança (janela grande demais — encurtar);
- *  ao fim, deduplica por id e exige `ids únicos === paging.total` E total igual na 1ª e na última
- *  página. Divergência = reordenação entre páginas durante a leitura (o sort do ML é por
- *  date_closed) → lança; o retry da mensagem relê. Nunca devolve lista com buraco. */
+ *  página não-2xx ou exceção lança; `paging.total` ausente/null/não numérico lança (cobertura não
+ *  verificável — nunca usa o tamanho da página como se fosse o total); `paging.total` > TETO lança
+ *  (janela grande demais — encurtar), verificado em TODA página, não só na 1ª; ao fim, deduplica
+ *  por id e exige `ids únicos === paging.total` E total igual na 1ª e na última página. Divergência
+ *  = reordenação entre páginas durante a leitura (o sort do ML é por date_closed) → lança; o retry
+ *  da mensagem relê. Nunca devolve lista com buraco. */
 export async function buscarPedidosPeriodoEstrito(
   token: string,
   intervalo: { desde: string; ate: string },
@@ -351,13 +356,19 @@ export async function buscarPedidosPeriodoEstrito(
     });
     const resp = await f(`${API}/orders/search?${params}`, { headers });
     if (!resp.ok) throw new Error(`ML /orders ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
-    const { pedidos: results, total } = parsePaginaBusca(await resp.json());
-    if (totalPrimeira === null) {
-      totalPrimeira = total;
-      if (totalPrimeira > TETO_PEDIDOS_JANELA) {
-        throw new Error(`ML /orders: janela com ${totalPrimeira} pedidos, acima do teto de ${TETO_PEDIDOS_JANELA} — encurte o período`);
-      }
+    const { pedidos: results, totalBruto } = parsePaginaBusca(await resp.json());
+    // null/undefined (incl. explícito `paging.total: null`) ou não numérico: sem total confiável
+    // não dá pra provar cobertura — lança em vez de aceitar a página como se fosse tudo.
+    if (totalBruto == null || !Number.isFinite(Number(totalBruto))) {
+      throw new Error('ML /orders: página sem paging.total (ou não numérico) — cobertura não verificável');
     }
+    const total = Number(totalBruto);
+    // Teto verificado em TODA página (não só na 1ª): um total inflado numa página tardia também
+    // é janela grande demais para paginar dentro do CPU de 2s.
+    if (total > TETO_PEDIDOS_JANELA) {
+      throw new Error(`ML /orders: janela com ${total} pedidos, acima do teto de ${TETO_PEDIDOS_JANELA} — encurte o período`);
+    }
+    if (totalPrimeira === null) totalPrimeira = total;
     totalUltima = total;
     pedidos.push(...results);
     offset += limit;

@@ -1,7 +1,7 @@
 // ADR-0173: variantes ESTRITAS de leituras/gravações do faturamento — cobertura verificável (sem
 // buraco silencioso) para os workers agendados em fan-out, que rodam 1 org + 1 lote por mensagem.
-import { describe, it, expect, vi } from 'vitest';
-import { buscarPedidosPeriodoEstrito, TETO_PEDIDOS_JANELA } from '../io';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { buscarPedidosPeriodo, buscarPedidosPeriodoEstrito, TETO_PEDIDOS_JANELA } from '../io';
 import { buscarMensagensPackEstrito, upsertMensagensEstrito, listarPacksDeVendasEstrito } from '../mensagens-io';
 import type { MensagemML } from '../mensagem-mapper';
 
@@ -85,6 +85,53 @@ describe('buscarPedidosPeriodoEstrito', () => {
     const f = vi.fn().mockResolvedValueOnce(ME).mockResolvedValueOnce(pagina([], TETO_PEDIDOS_JANELA + 1));
     await expect(buscarPedidosPeriodoEstrito('tok', intervalo, f as unknown as typeof fetch))
       .rejects.toThrow(new RegExp(String(TETO_PEDIDOS_JANELA)));
+  });
+
+  it('2ª página relata total acima do teto → rejeita (teto verificado em toda página, não só na 1ª)', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(ME)
+      .mockResolvedValueOnce(pagina(faixa(0, 50), 70))
+      .mockResolvedValueOnce(pagina(faixa(50, 70), TETO_PEDIDOS_JANELA + 1));
+    await expect(buscarPedidosPeriodoEstrito('tok', intervalo, f as unknown as typeof fetch))
+      .rejects.toThrow(new RegExp(String(TETO_PEDIDOS_JANELA)));
+  });
+
+  it('página sem paging.total → rejeita (cobertura não verificável)', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(ME)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ results: faixa(0, 10) }) });
+    await expect(buscarPedidosPeriodoEstrito('tok', intervalo, f as unknown as typeof fetch))
+      .rejects.toThrow(/paging\.total/);
+  });
+
+  it('paging.total: null → rejeita', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(ME)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ results: faixa(0, 10), paging: { total: null } }) });
+    await expect(buscarPedidosPeriodoEstrito('tok', intervalo, f as unknown as typeof fetch))
+      .rejects.toThrow(/paging\.total/);
+  });
+
+  it('total: 0 e página vazia → lista vazia (total 0 é um total válido)', async () => {
+    const f = vi.fn().mockResolvedValueOnce(ME).mockResolvedValueOnce(pagina([], 0));
+    await expect(buscarPedidosPeriodoEstrito('tok', intervalo, f as unknown as typeof fetch)).resolves.toEqual([]);
+  });
+});
+
+describe('buscarPedidosPeriodo (legado) — fallback do total ausente', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('total explícito na 1ª página + paging.total ausente na 2ª → lê as duas páginas (50 + 10)', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(ME)
+      .mockResolvedValueOnce(pagina(faixa(0, 50), 60)) // total explícito permite continuar
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ results: faixa(50, 60) }) }); // sem paging.total
+    vi.stubGlobal('fetch', fetchMock);
+
+    const r = await buscarPedidosPeriodo('tok', intervalo);
+
+    expect(r).toHaveLength(60);
+    expect(fetchMock).toHaveBeenCalledTimes(3); // /users/me + 2 páginas
   });
 });
 
