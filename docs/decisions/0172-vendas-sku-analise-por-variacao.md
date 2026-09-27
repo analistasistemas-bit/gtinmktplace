@@ -205,10 +205,15 @@ Entregue a segunda parte de D-6: gasto e vendas atribuídas do **Product Ads** d
   MLB conhecido) conta como **não listado**: o custo dele sai de `custo_listado` (piso 0), como no 404.
   Os dias dele continuam gravados, mas ele não chega a dossiê nenhum, então nunca infla o Lucro após Ads
   de um SKU. Grupo vazio com vínculo anterior preservado (`itens: null`) não é descontado.
-  **Consequência:** enquanto a última janela lida (90 dias na carga inicial, 15 dias nas rodadas diárias)
-  tiver gasto de grupos excluídos ou sem membros, o Lucro após Ads fica indisponível em toda a conta
-  (`fora_dos_grupos`); a despesa, o ROAS e o ACOS continuam visíveis. Na Avil, ~3 % do gasto na carga
-  de 90 dias; 0 % na janela diária medida.
+- **Ruling 2c-8:** o aviso `fora_dos_grupos` cobre sempre os **últimos 90 dias**. Na carga inicial a
+  busca principal já é de 90 dias; na diária, uma busca extra de `ad_groups/search` sobre os 90 dias
+  (só para medir, não decide o que reler) calcula `custo_resumo` e `custo_listado`, com os descontos do
+  404 e do 2c-7 em custo de 90 dias (`descontar90` na cadeia). Custo: ~3 GETs a mais por dia na Avil.
+- **Consequência (2c-7 + 2c-8):** enquanto houver gasto de grupos excluídos ou sem membros nos últimos 90
+  dias, o Lucro após Ads fica indisponível em toda a conta; hoje, na Avil, ~3 % do gasto está fora dos
+  grupos, e por isso o Lucro após Ads fica indisponível. A despesa, o ROAS e o ACOS continuam visíveis.
+  **Decisão pendente do Diego:** manter essa regra rígida ou mostrar o Lucro após Ads com um aviso
+  ("~N % do gasto de Ads da conta não pôde ser atribuído").
 - **Fora da 2c:** posição na busca (a fonte seria scraping, proibido pela cláusula 7.6 dos termos do
   programa de desenvolvedores do ML; `/sites/MLB/search` dá 403, ADR-0119); Ads no ranking, na curva ABC,
   no Financeiro e no billing; conferência com a fatura `PADS` (o app não tem permissão de faturamento: 403).
@@ -217,13 +222,13 @@ Entregue a segunda parte de D-6: gasto e vendas atribuídas do **Product Ads** d
 GET, token lido por SQL só de leitura, sem refresh, nunca impresso) e o Postgres **local**, com a
 continuação repetida como o QStash faria (`scripts/validar-ads-ml.ts`). O total de grupos do
 `ad_groups/search` com o filtro de status é igual ao total sem filtro; os membros de 3 grupos FAMILY com
-gasto são os mesmos na janela de 90 dias e na de 1 dia. A carga de 90 dias fechou em `ok`: Σ cost gravado
+gasto são os mesmos na janela de 90 dias e na de 1 dia. A carga de 90 dias fechou em `ok`: `custo_listado`
 **confere** com o Σ cost gravado dos grupos com vínculo (diferença zero); o gasto fora dos grupos
 listados é 3,08 % do resumo do anunciante: ~2,57 % de grupos fora do search (o spike mediu ~2,6 %) mais
 os 3 grupos `EMPTY` sem membros (2 FAMILY, 1 CATALOG; 0,52 % do gasto gravado), descontados pelo Ruling
 2c-7. 134 grupos com gasto (84 ITEM, 31 FAMILY, 19 CATALOG, a mesma contagem
 do spike), todos com a série densa de 90 dias; `max(dia)` = ontem, `min(dia)` = hoje − 90, cursor e posse
-nulos. O 2º run (15 dias) não mudou nenhum dia com mais de 15 dias e não duplicou chave; nessa janela
-o gasto fora dos grupos é 0 %. Nenhum token nas
+nulos. O 2º run (diária, 15 dias relidos) não mudou nenhum dia com mais de 15 dias, não duplicou chave
+e, com o Ruling 2c-8, gravou o resumo de 90 dias: o gasto fora dos grupos segue em 3,08 %. Nenhum token nas
 saídas. **Status continua Proposto:** falta `db push`, deploy de `coletar-ads-ml` e `coletar-trafego-ml`,
 schedule do QStash (runbook `docs/runbooks/coletar-ads-ml.md`), revisão final e merge.

@@ -1613,7 +1613,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
   - Falhas (Rulings 2c-5/2c-6): grupo não lido depois de 5 adiamentos fecha a rodada em `erro` (nunca
     `ok`) e zera o cursor; na carga inicial a 1ª falha fecha na hora, sem continuação. 404 de grupo
     listado desconta o custo dele de `custo_listado` (piso 0); grupo listado com gasto,
-    `/ads` vazio e sem vínculo gravado também (Ruling 2c-7). 403 = `sem_permissao`, 404 do anunciante
+    `/ads` vazio e sem vínculo gravado também (Ruling 2c-7). Na diária, uma busca extra de
+    `ad_groups/search` sobre 90 dias mede `custo_resumo`/`custo_listado` (Ruling 2c-8, ~3 GETs a mais
+    por dia na Avil): o aviso `fora_dos_grupos` sempre cobre os últimos 90 dias. 403 = `sem_permissao`, 404 do anunciante
     = `sem_advertiser`.
   - Tabelas e RPCs: `docs/reference/modelo-de-dados.md` § Ads por grupo.
   - **Redeploy junto:** a 2c alterou `_shared/trafego/fiacao.ts`, importado também por

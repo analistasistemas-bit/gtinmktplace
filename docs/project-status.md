@@ -600,9 +600,11 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   sem filtro); carga de 90 dias em `ok`, Σ gravado dos grupos com vínculo **confere** com o custo listado;
   gasto fora dos grupos listados 3,08 % (~2,57 % fora do search + 0,52 % de 3 grupos `EMPTY` sem membros,
   Ruling 2c-7); 134 grupos com gasto (84 ITEM, 31 FAMILY, 19 CATALOG), série densa de 90 dias em todos;
-  2º run sem mexer nos dias com mais de 15 dias nem duplicar chave. **Consequência (2c-7):** enquanto a
-  última janela lida tiver gasto de grupos excluídos ou sem membros, o Lucro após Ads fica indisponível
-  na conta (Avil: ~3 % na carga de 90 dias, 0 % na janela diária); despesa, ROAS e ACOS seguem visíveis.
+  2º run (diária) sem mexer nos dias com mais de 15 dias nem duplicar chave, gravando o resumo de 90 dias
+  (fora dos grupos segue em 3,08 %, Ruling 2c-8). **Consequência (2c-7 + 2c-8):** o aviso de gasto fora
+  dos grupos cobre os últimos 90 dias; hoje, na Avil, ~3 % do gasto está fora dos grupos, e por isso o
+  Lucro após Ads fica indisponível; despesa, ROAS e ACOS continuam visíveis. **Decisão pendente do
+  Diego:** manter a regra rígida ou mostrar o Lucro após Ads com um aviso.
   **Faltam:** `supabase db push`, deploy de `coletar-ads-ml` **e**
   `coletar-trafego-ml` (`_shared/trafego/fiacao.ts` mudou), schedule QStash `17 14 * * *` UTC (runbook
   `docs/runbooks/coletar-ads-ml.md`), revisão final e merge.
