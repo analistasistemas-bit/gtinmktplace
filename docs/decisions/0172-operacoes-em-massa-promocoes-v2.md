@@ -56,6 +56,22 @@ scope do momento da autorização.
    ML inscreve de novo sozinho?; depois de sair, o anúncio volta a ser convidado?; mudar o preço base de item
    participando em DEAL: recusa ou remove?; rate limit de escrita.
 
+### Resultado parcial do spike (2026-09-27, DSA, `MLB7553152348`)
+
+- **Scope:** o token só passou a `offers:/read-write` depois de **reconectar** a conta. Mudar o DevCenter não
+  basta e o refresh não atualiza o scope → reconexão vira passo de onboarding do módulo.
+- **Aderir DEAL funciona:** `POST /seller-promotions/items/{id}?app_version=v2` com
+  `{promotion_id, promotion_type:'DEAL', deal_price}` → **201** `{price, original_price, currency_id}`.
+- **A visão por item não confirma adesão:** `GET /seller-promotions/items/{id}` seguiu mostrando a DEAL como
+  `candidate` (price 0) depois do 201; só a visão da campanha
+  (`/promotions/{pid}/items?promotion_type=DEAL&item_id=`) mostrou `pending`. Revalidação e conferência do
+  motor precisam ler a **visão da campanha**.
+- **Sair de DEAL futura NÃO funcionou:** `DELETE ...?promotion_type=DEAL&promotion_id=` → **200 com corpo vazio**,
+  e o item seguiu `pending` por 13+ min. Com `deal_id` no lugar → 400 "Promotion id is required". **200 do
+  DELETE não prova remoção.** Decisões 2 (Reverter) e 5 (idempotência) dependem de achar o caminho de saída.
+- A visão da campanha devolve **500 intermitente** (2 em ~25 leituras) → retry na leitura.
+- **SMART não testada:** suspensa até a saída ser provada (preço vai ao ar na hora).
+
 ## Consequências
 
 - O motor nasce com os requisitos reais de uma operação (promoção); o segundo tipo testa se ele é genérico de
