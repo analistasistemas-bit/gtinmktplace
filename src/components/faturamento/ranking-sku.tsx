@@ -1,8 +1,10 @@
 import { Fragment, useState, type ReactNode } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { ArrowDown, ChevronDown, ChevronRight, ChevronsUpDown, Layers } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
-import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
+import { StatusPill } from '@/components/ui/status-pill';
+import { ALERTA, TENDENCIA } from '@/components/faturamento/rotulos-sku';
 import { ThumbProduto } from '@/components/faturamento/pilha-thumbs';
 import { fmtBRL, fmtBRLSinal, fmtInt, fmtMarkup } from '@/lib/formato';
 import {
@@ -11,20 +13,6 @@ import {
 
 export type ChaveOrdem = 'lucro' | 'bruto' | 'unidades' | 'lucroPorUnidade';
 
-const TENDENCIA: Record<Tendencia, { label: string; tom: StatusTone; dica: string }> = {
-  novo: { label: 'Novo', tom: 'info', dica: '1ª venda há menos de 30 dias' },
-  em_alta: { label: 'Em alta', tom: 'success', dica: '+20% ou mais em unidades: últimos 30 dias contra os 30 anteriores' },
-  em_queda: { label: 'Em queda', tom: 'danger', dica: '−20% ou menos em unidades: últimos 30 dias contra os 30 anteriores' },
-  estavel: { label: 'Estável', tom: 'neutral', dica: 'Entre −20% e +20%' },
-  parado: { label: 'Parado', tom: 'warning', dica: 'Já vendeu; nenhuma venda nos últimos 30 dias' },
-  baixo_giro: { label: 'Baixo giro', tom: 'neutral', dica: 'Menos de 5 unidades nas duas janelas de 30 dias' },
-};
-const ALERTA: Record<Alerta, { label: string; tom: StatusTone }> = {
-  lucro_negativo: { label: 'Lucro negativo', tom: 'danger' },
-  cobertura_baixa: { label: 'Estoque < 15 dias', tom: 'warning' },
-  devolucao_alta: { label: 'Devolução > 5%', tom: 'warning' },
-  sem_custo: { label: 'Sem custo', tom: 'warning' },
-};
 const ABC_CLS: Record<ClasseAbc, string> = {
   A: 'bg-success/10 text-success ring-success/20',
   B: 'bg-info/10 text-info ring-info/20',
@@ -38,6 +26,18 @@ const TOTAL_COLUNAS = 11;
 /** Título em até 2 linhas, largura contida: linhas irmãs ("Camiseta Dry Fit Masculina Azul/Preta")
  *  continuam distinguíveis e a tabela cabe em 1440px sem rolar. */
 const TITULO = 'line-clamp-2 max-w-40 whitespace-normal font-medium leading-snug lg:max-w-56';
+/** Nome que abre o dossiê. Para o clique aqui: a linha continua alternando a conta pelo resto dela. */
+const LINK_DOSSIE = 'rounded-sm underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
+
+function LinkDossie({ to, className, children, ...rest }: { to: string; className?: string; children: ReactNode; 'aria-label'?: string }) {
+  const location = useLocation();
+  return (
+    <Link to={to} state={{ de: location.pathname + location.search }} onClick={(e) => e.stopPropagation()}
+      className={cn(LINK_DOSSIE, className)} {...rest}>
+      {children}
+    </Link>
+  );
+}
 
 export interface RankingSkuProps {
   /** Variações soltas (usadas quando `familias` é null). */
@@ -138,7 +138,13 @@ function Nome({ l, recuo = false, selos }: { l: LinhaSku; recuo?: boolean; selos
     <div className={cn('flex min-w-0 items-center gap-2.5', recuo && 'pl-6')}>
       <ThumbProduto path={l.imagemPath} titulo={l.titulo} size={32} />
       <div className="min-w-0">
-        <div className={TITULO} data-testid="sku-titulo" title={l.titulo ?? undefined}>{l.titulo ?? NADA}</div>
+        {l.codigo === SEM_CODIGO
+          ? <div className={TITULO} data-testid="sku-titulo" title={l.titulo ?? undefined}>{l.titulo ?? NADA}</div>
+          : (
+            <LinkDossie to={`/faturamento/sku/${encodeURIComponent(l.codigo)}`} className="block w-fit">
+              <div className={TITULO} data-testid="sku-titulo" title={l.titulo ?? undefined}>{l.titulo ?? NADA}</div>
+            </LinkDossie>
+          )}
         <div className="text-xs text-muted-foreground tabular-nums">
           {l.codigo === SEM_CODIGO ? 'sem código' : l.codigo}
           {l.m.fonteCusto === 'estimado' && <> · <span title="Sem custo congelado na venda: usa o custo atual do cadastro">custo estimado</span></>}
@@ -281,8 +287,17 @@ export function RankingSku({ linhas, familias, tendencias, coberturas, alertas, 
                       <div className="min-w-0">
                         {/* Visual: nome em até 2 linhas e a contagem na sub-linha, onde nunca é cortada. O leitor
                             de tela recebe o nome inteiro uma vez só (sr-only), sem a versão partida. */}
-                        <div className={TITULO} title={nome} aria-hidden>{base}</div>
-                        <span className="sr-only">{nome}</span>
+                        {semFamilia ? (
+                          <>
+                            <div className={TITULO} title={nome} aria-hidden>{base}</div>
+                            <span className="sr-only">{nome}</span>
+                          </>
+                        ) : (
+                          <LinkDossie to={`/faturamento/sku/familia/${encodeURIComponent(f.codigoPai)}`} className="block w-fit">
+                            <div className={TITULO} title={nome} aria-hidden>{base}</div>
+                            <span className="sr-only">{nome}</span>
+                          </LinkDossie>
+                        )}
                         <div className="text-xs text-muted-foreground tabular-nums" aria-hidden>
                           {semFamilia ? 'sem família' : f.codigoPai} · {f.filhos.length} {f.filhos.length === 1 ? 'variação' : 'variações'}
                         </div>

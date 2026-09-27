@@ -51,7 +51,8 @@ describe('AbaVendasSku', () => {
     renderAba();
     fireEvent.click(screen.getByRole('button', { name: 'Agrupar por família' }));
     expect(screen.getByText(/Família P \(4 variações\)/)).toBeInTheDocument();
-    fireEvent.click(screen.getByText(/Família P \(4 variações\)/));
+    expect(screen.getByRole('link', { name: /Família P \(4 variações\)/ })).toHaveAttribute('href', '/faturamento/sku/familia/P');
+    fireEvent.click(screen.getByRole('button', { name: /Mostrar variações de Família P/ }));
     expect(screen.getAllByTestId('sku-titulo').map((e) => e.textContent)).toContain('Produto A');
   });
 
