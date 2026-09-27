@@ -976,9 +976,13 @@ Estado da coleta por organização. `org_id` (PK), `advertiser_id`, `estado`
 (`sincronizando|ok|sem_permissao|sem_advertiser|sem_acesso|erro`), `erro`, `rodada`, `posse_ate` (posse
 de 10 min, renovada a cada lote), `iniciado_em`, `cursor` (último `ad_group_id` gravado),
 `ultimo_ok_em`, `ultimo_erro_em`, `carga_inicial_ok` (carga de 90 dias concluída), `cobertura_desde`
-(1º dia coberto por coleta `ok`), `custo_resumo` (`metrics_summary.cost` da última janela `ok`) e
-`custo_listado` (Σ cost dos grupos listados na mesma janela). `custo_resumo > custo_listado` = gasto fora
-dos grupos listados.
+(1º dia coberto por coleta `ok`), `custo_resumo` e `custo_listado`. Os dois são **sempre os últimos 90
+dias** (Ruling 2c-9: na diária, uma busca extra ao `ad_groups/search` de 90 dias — só na mensagem que
+fecha a rodada — mede esse custo além da janela de 15 dias que decide o que reler; na carga inicial a
+busca principal já é de 90 dias). `custo_resumo` é `metrics_summary.cost`; `custo_listado` é a Σ cost dos
+grupos listados nos mesmos 90 dias, já sem os grupos que deram 404 na releitura e sem os que ficaram sem
+nenhum MLB conhecido (`/ads` vazio e nenhum vínculo gravado — Rulings 2c-7/2c-8). `custo_resumo >
+custo_listado` = gasto fora dos grupos listados.
 
 ### `ml_ads_grupo`
 Um grupo de anúncios. `org_id` + `ad_group_id` (PK), `tipo` (`ITEM|FAMILY|CATALOG`), `external_id`

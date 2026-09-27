@@ -15,8 +15,8 @@ create table public.ml_ads_sync (
   ultimo_erro_em   timestamptz,
   carga_inicial_ok boolean not null default false,  -- carga de 90 dias concluída
   cobertura_desde  date,          -- 1º dia coberto por coleta ok (carga inicial; avança com retenção/buraco)
-  custo_resumo     numeric check (custo_resumo is null or custo_resumo >= 0),    -- metrics_summary.cost da última janela ok
-  custo_listado    numeric check (custo_listado is null or custo_listado >= 0)   -- Σ cost dos grupos listados na mesma janela
+  custo_resumo     numeric check (custo_resumo is null or custo_resumo >= 0),    -- metrics_summary.cost dos últimos 90 dias (sempre; Ruling 2c-9: busca extra só na msg que fecha a rodada)
+  custo_listado    numeric check (custo_listado is null or custo_listado >= 0)   -- Σ cost dos grupos listados nos últimos 90 dias, já sem 404 e sem vazio-sem-vínculo (Rulings 2c-7/2c-8)
 );
 
 create table public.ml_ads_grupo (

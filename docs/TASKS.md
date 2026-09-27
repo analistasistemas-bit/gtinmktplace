@@ -10,11 +10,11 @@ Relatórios em `.superpowers/sdd/2026-09-27-vendas-sku-fatia-2c/`.
 
 - [x] Spike 053 (contrato real do Product Ads, só GET).
 - [x] Migration `20260927124602_vendas_sku_ads.sql` (4 tabelas + 5 RPCs de escrita + `vendas_sku_codigos_mlbs`) + teste SQL, aplicada só localmente.
-- [x] Worker `_shared/ads/*` + `coletar-ads-ml` (posse, CAS do cursor, continuação QStash, Rulings 2c-5/2c-6) e runbook.
+- [x] Worker `_shared/ads/*` + `coletar-ads-ml` (posse, CAS do cursor, continuação QStash, Rulings 2c-5/2c-6/2c-9) e runbook.
 - [x] Painel Ads (`src/lib/sku-ads.ts`, `ads-dossie.tsx`).
 - [x] Validação real (T7): ML da Avil só GET + Postgres local — filtro de status sem esconder grupo, Σ gravado
   confere com o custo listado, fora dos grupos 3,08 % na carga e na diária (Rulings 2c-7/2c-8), 134 grupos com série densa, 2º run sem mexer nos dias
-  antigos. 594 arquivos / 6306 testes; `pnpm preflight` verde.
+  antigos. 594 arquivos / 6319 testes; `pnpm preflight` verde.
 - [ ] `supabase db push`, deploy de `coletar-ads-ml` e `coletar-trafego-ml` e schedule QStash (runbook `docs/runbooks/coletar-ads-ml.md`) — pendente.
 - [ ] Decisão do Diego: manter o Lucro após Ads indisponível com gasto fora dos grupos (~3 % na Avil) ou mostrá-lo com aviso.
 - [ ] Revisão final do diff + merge fast-forward na `main` — pendente.

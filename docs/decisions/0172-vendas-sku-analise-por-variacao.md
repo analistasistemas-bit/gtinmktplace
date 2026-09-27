@@ -208,7 +208,16 @@ Entregue a segunda parte de D-6: gasto e vendas atribuídas do **Product Ads** d
 - **Ruling 2c-8:** o aviso `fora_dos_grupos` cobre sempre os **últimos 90 dias**. Na carga inicial a
   busca principal já é de 90 dias; na diária, uma busca extra de `ad_groups/search` sobre os 90 dias
   (só para medir, não decide o que reler) calcula `custo_resumo` e `custo_listado`, com os descontos do
-  404 e do 2c-7 em custo de 90 dias (`descontar90` na cadeia). Custo: ~3 GETs a mais por dia na Avil.
+  404 e do 2c-7 em custo de 90 dias.
+- **Ruling 2c-9:** a busca extra do 2c-8 só roda na mensagem que fecha a rodada em `ok`, nunca em toda
+  continuação — refazê-la a cada mensagem desperdiçava GETs sem mudar o resultado. Tem o mesmo teto de
+  adiamento das outras leituras (5 adiamentos por 429/5xx/tempo): presa, a rodada fecha em `erro`, nunca
+  `ok` sem o custo de 90 dias. Como o custo de 90 dias de um grupo 404/vazio só existe quando essa busca
+  roda, a cadeia carrega os `ad_group_id` descontados (`descontados`), não um valor já convertido; a
+  mensagem final soma o custo de 90 dias de cada um. Corrigido também: o desconto do grupo com gasto só
+  em 90 dias e sem vínculo (2c-8) não excluía mais ITEM sem `external_id` — agora desconta do mesmo jeito
+  que FAMILY/CATALOG vazio (2c-7). Custo: ~3 GETs a mais por dia na Avil (292 grupos, paginação de 100),
+  só na última mensagem da rodada.
 - **Consequência (2c-7 + 2c-8):** enquanto houver gasto de grupos excluídos ou sem membros nos últimos 90
   dias, o Lucro após Ads fica indisponível em toda a conta; hoje, na Avil, ~3 % do gasto está fora dos
   grupos, e por isso o Lucro após Ads fica indisponível. A despesa, o ROAS e o ACOS continuam visíveis.
