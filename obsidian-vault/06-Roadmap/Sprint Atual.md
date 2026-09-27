@@ -45,6 +45,14 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > com Unidades por visita. **Validação real:** ML da Avil + Postgres local, 3 MLBs do spike 052 — 149
 > dias idênticos ao spike, preço de hoje igual, 2º run sem duplicar nem regredir. 6200 testes,
 > `pnpm preflight` verde. Falta `db push`, deploy da função, schedule QStash, revisão final e merge.
+>
+> **📋 Vendas SKU — Fatia 2c: Ads no dossiê ([[0172-vendas-sku-analise-por-variacao|ADR-0172]]), mesma
+> branch, ainda não mergeado.** Worker novo `coletar-ads-ml` (QStash, só GET no ML) grava o Product Ads
+> por grupo de anúncios (4 tabelas + 6 RPCs); painel Ads no Dossiê com Despesa de Ads do período e Lucro
+> após Ads (só com gasto exclusivo e período coberto). **Validação real:** ML da Avil + Postgres local —
+> Σ gravado confere com o custo listado, gasto fora dos grupos 2,57 %, 134 grupos com série densa, 2º
+> run sem mexer nos dias antigos. 6304 testes, `pnpm preflight` verde. Falta `db push`, deploy de
+> `coletar-ads-ml` e `coletar-trafego-ml`, schedule QStash, revisão final e merge.
 
 ## Passo anterior (2026-09-20) — EM PRODUÇÃO
 

@@ -171,3 +171,49 @@ duplicou nem regrediu nada (450 linhas de visitas, 3 de preço e 3 de status ant
 `ok` idêntico; nenhum `ok` virou `falha`; nenhum GET de preço repetido). **Status continua Proposto:**
 falta `db push`, deploy da função, schedule do QStash (runbook `docs/runbooks/coletar-trafego-ml.md`),
 revisão final e merge.
+
+## Nota — Fatia 2c: Ads no dossiê do SKU (2026-09-27)
+
+Entregue a segunda parte de D-6: gasto e vendas atribuídas do **Product Ads** do ML no Dossiê do SKU
+(painel `PainelAds`), com **Despesa de Ads do período** e **Lucro após Ads**. Só GET no ML (spike 053).
+
+- **Unidade = grupo de anúncios (`ad_group_id`).** Toda soma é por grupo (ITEM, FAMILY ou CATALOG). O ML
+  não separa o gasto por cor (R2): nenhum rateio por MLB, nenhum "gasto da cor".
+- **Alcance:** `sku` ou `família` quando todos os grupos do alvo só anunciam códigos do alvo; `anúncio`
+  quando algum grupo também anuncia outro código ou tem MLB sem código (gasto compartilhado); `indisponível`
+  sem MLB. O mapa MLB → código vem de `vendas_sku_codigos_mlbs` (vínculo atual, sem vigência histórica,
+  como na 2b).
+- **Estados:** `sem_coleta`, `sem_permissao` (403 de política, nunca tratado como token expirado),
+  `sem_advertiser`, `sem_acesso`, `parcial` (carga inicial não fechada: sem despesa), `desatualizado`,
+  `sem_ads` (zero só quando o período inteiro está coberto) e `ok`. Dentro da cobertura, dia sem linha
+  vale 0. **Lucro após Ads** só com gasto exclusivo e período inteiro coberto; senão fica indisponível
+  com o motivo (compartilhado, sem lucro, cobertura, **gasto fora dos grupos listados**) e herda a marca
+  do lucro atual (custo parcial ou estimado).
+- **Dados:** 4 tabelas (`ml_ads_sync`, `ml_ads_grupo`, `ml_ads_grupo_item`, `ml_ads_grupo_dia`) e 6 RPCs
+  (5 de escrita `service_role` + a leitura `vendas_sku_codigos_mlbs`), migration
+  `20260927124602_vendas_sku_ads.sql`. Retenção de 13 meses.
+- **Worker:** `coletar-ads-ml` (QStash, `verify_jwt=false`): carga inicial de 90 dias (o máximo da API),
+  depois 15 dias relidos por dia, porque a atribuição de vendas muda por 14 dias (**atribuição em
+  aberto**). Membros sempre lidos na janela de 90 dias; o vínculo nunca encolhe por uma leitura.
+- **Ruling 2c-5:** um grupo não lido (5 adiamentos por 429/5xx/tempo) marca a flag `falhou`, que viaja em
+  toda continuação; a rodada fecha em `erro`, nunca em `ok`, e o cursor é zerado.
+- **Ruling 2c-6:** na carga inicial, a 1ª falha grava o que já leu, zera o cursor e fecha em `erro` na
+  hora, sem continuação (senão os dias antigos do grupo falho ficariam sem leitura para sempre). Um 404 de
+  grupo listado desconta o custo dele de `custo_listado` (piso 0), para o dossiê ver "gasto fora dos
+  grupos" em vez de uma despesa menor sem aviso.
+- **Fora da 2c:** posição na busca (a fonte seria scraping, proibido pela cláusula 7.6 dos termos do
+  programa de desenvolvedores do ML; `/sites/MLB/search` dá 403, ADR-0119); Ads no ranking, na curva ABC,
+  no Financeiro e no billing; conferência com a fatura `PADS` (o app não tem permissão de faturamento: 403).
+
+**Validação real (T7):** `sincronizarAdsOrg` rodou com a fiação real (`depsAds`), o ML real da Avil (só
+GET, token lido por SQL só de leitura, sem refresh, nunca impresso) e o Postgres **local**, com a
+continuação repetida como o QStash faria (`scripts/validar-ads-ml.ts`). O total de grupos do
+`ad_groups/search` com o filtro de status é igual ao total sem filtro; os membros de 3 grupos FAMILY com
+gasto são os mesmos na janela de 90 dias e na de 1 dia. A carga de 90 dias fechou em `ok`: Σ cost gravado
+**confere** com `custo_listado` (diferença zero); o gasto fora dos grupos listados é 2,57 % do resumo do
+anunciante (o spike mediu ~2,6 %). 134 grupos com gasto (84 ITEM, 31 FAMILY, 19 CATALOG, a mesma contagem
+do spike), todos com a série densa de 90 dias; `max(dia)` = ontem, `min(dia)` = hoje − 90, cursor e posse
+nulos. 3 grupos `EMPTY` (2 FAMILY, 1 CATALOG; 0,52 % do gasto listado) ficaram sem vínculo porque o
+ML devolve a lista de membros vazia: o gasto deles não entra em nenhum dossiê. O 2º run (15 dias) não mudou nenhum dia com mais de 15 dias e não duplicou chave. Nenhum token nas
+saídas. **Status continua Proposto:** falta `db push`, deploy de `coletar-ads-ml` e `coletar-trafego-ml`,
+schedule do QStash (runbook `docs/runbooks/coletar-ads-ml.md`), revisão final e merge.

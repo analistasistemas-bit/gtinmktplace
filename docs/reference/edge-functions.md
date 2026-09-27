@@ -92,6 +92,8 @@
 | sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`) |
 | **Tráfego e oferta (ADR-0172, Fatia 2b)** ||||
 | coletar-trafego-ml | false | QStash (fan-out por org + cadeia de continuações) | sim (posse + CAS do cursor, `ok` nunca vira `falha`, `deduplicationId`) |
+| **Ads por grupo (ADR-0172, Fatia 2c)** ||||
+| coletar-ads-ml | false | QStash (fan-out por org + cadeia de continuações) | sim (posse + CAS do cursor, o mais recente vence por `coletado_em`, `deduplicationId` com prefixo `ads:`) |
 | **Token ML (ADR-0171)** ||||
 | renovar-tokens-ml | false | QStash schedule | sim (lock Redis do ADR-0012; conexão já renovada só é pulada) |
 | **Status / métricas / viabilidade** ||||
@@ -1593,6 +1595,29 @@ um smoke test contra Postgres real antes do primeiro deploy.
   - Respostas: `erro` → 500 (1 retry do QStash); `ok`/`continua`/`obsoleta`/`sem_acesso` → 200;
     sem assinatura → 401.
   - Tabelas e RPCs: `docs/reference/modelo-de-dados.md` § Tráfego e oferta.
+
+### Ads por grupo (ADR-0172, Fatia 2c)
+- **coletar-ads-ml** *(nova, `verify_jwt=false`, só QStash; **ainda não deployada nem ativa** — runbook
+  `docs/runbooks/coletar-ads-ml.md`, schedule previsto `17 14 * * *` UTC = 11:17 BRT, **ainda não
+  registrado**, sem body, retries 1)* — coleta diária do Product Ads por grupo de anúncios
+  (`ad_group_id`), só `GET` no Mercado Livre (única exceção: refresh OAuth de `_shared/ml/token.ts`).
+  Regra em `supabase/functions/_shared/ads/` (`janelas`, `parsers`, `sincronizar`, `fiacao`, vitest);
+  fiação em `coletar-ads-ml/deps.ts`. Dois modos:
+  - **`{}`** → fan-out de uma mensagem `{org_id, primeira:true}` por org com conexão ML
+    (`deduplicationId` `ads:` org+dia BRT) e, depois, a retenção de 13 meses.
+  - **`{org_id, …}`** → uma mensagem da cadeia (`sincronizarAdsOrg`): posse (`reservar_ads_posse`),
+    anunciante, `ad_groups/search` com gasto na janela (carga inicial de 90 dias; depois 15 dias
+    relidos), série diária por grupo e membros de FAMILY/CATALOG (sempre na janela de 90 dias), lotes
+    de 20 grupos com concorrência 6 e orçamento de 90 s, cursor por CAS, continuação pelo QStash (a
+    flag `falhou` e o `descontar` viajam na cadeia) e `concluir_ads_rodada` no fim.
+  - Falhas (Rulings 2c-5/2c-6): grupo não lido depois de 5 adiamentos fecha a rodada em `erro` (nunca
+    `ok`) e zera o cursor; na carga inicial a 1ª falha fecha na hora, sem continuação. 404 de grupo
+    listado desconta o custo dele de `custo_listado` (piso 0). 403 = `sem_permissao`, 404 do anunciante
+    = `sem_advertiser`.
+  - Tabelas e RPCs: `docs/reference/modelo-de-dados.md` § Ads por grupo.
+  - **Redeploy junto:** a 2c alterou `_shared/trafego/fiacao.ts`, importado também por
+    `coletar-trafego-ml`; no deploy, publicar `coletar-ads-ml` **e** `coletar-trafego-ml`
+    (ambas `--no-verify-jwt`) e conferir a versão das duas.
 
 ### Token ML (ADR-0171)
 - **renovar-tokens-ml** *(nova, `verify_jwt=false`, só QStash, schedule `40 * * * *`)* — renova

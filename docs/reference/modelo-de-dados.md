@@ -964,6 +964,51 @@ só `SELECT`. Escrita só por `service_role`, pelas RPCs abaixo (todas `security
 
 Retenção de 13 meses em `ml_item_visitas_dia` e `ml_item_preco_dia` (limpeza diária do worker).
 
+## Ads por grupo (ADR-0172, Fatia 2c)
+
+Gasto e resultado do Product Ads por **grupo de anúncios** (`ad_group_id`), coletados pelo worker
+`coletar-ads-ml` (só GET no ML, spike 053). *Migration `20260927124602_vendas_sku_ads.sql` (ainda não em
+produção).* A unidade é o grupo: toda soma é por grupo, nunca por MLB (o ML não separa o gasto por cor).
+O dia é a data literal do ML (BRT).
+
+### `ml_ads_sync`
+Estado da coleta por organização. `org_id` (PK), `advertiser_id`, `estado`
+(`sincronizando|ok|sem_permissao|sem_advertiser|sem_acesso|erro`), `erro`, `rodada`, `posse_ate` (posse
+de 10 min, renovada a cada lote), `iniciado_em`, `cursor` (último `ad_group_id` gravado),
+`ultimo_ok_em`, `ultimo_erro_em`, `carga_inicial_ok` (carga de 90 dias concluída), `cobertura_desde`
+(1º dia coberto por coleta `ok`), `custo_resumo` (`metrics_summary.cost` da última janela `ok`) e
+`custo_listado` (Σ cost dos grupos listados na mesma janela). `custo_resumo > custo_listado` = gasto fora
+dos grupos listados.
+
+### `ml_ads_grupo`
+Um grupo de anúncios. `org_id` + `ad_group_id` (PK), `tipo` (`ITEM|FAMILY|CATALOG`), `external_id`
+(ITEM: MLB; FAMILY: `family_id`; CATALOG: `parent_id`), `campaign_id` (0 = fora de campanha hoje),
+`status`, `atualizado_em`.
+
+### `ml_ads_grupo_item`
+Vínculo **atual** grupo → MLB. `org_id` + `ad_group_id` + `ml_item_id` (PK), `visto_em`. FK para
+`ml_ads_grupo` (cascade). Índice `(org_id, ml_item_id)` para o dossiê achar os grupos do alvo. Lista
+vazia do ML não apaga o vínculo; o worker também não o encolhe (lê `/ads` sempre na janela de 90 dias).
+
+### `ml_ads_grupo_dia`
+Série diária por grupo. `org_id` + `ad_group_id` + `dia` (PK), `cost`, `clicks`, `prints`,
+`direct_amount`, `indirect_amount`, `total_amount`, `direct_units`, `units` (todos ≥ 0) e `coletado_em`
+(define se a atribuição do dia já fechou: `coletado_em − dia ≥ 15`). Todo grupo com gasto na janela tem a
+série densa; dentro da cobertura, dia sem linha vale 0. Índice `(org_id, dia)`.
+
+RLS nas quatro: `select` por `org_id = current_org_id()`; `anon` sem privilégio; `authenticated` só
+`SELECT`. Escrita só por `service_role`, pelas RPCs abaixo (`security definer`, `search_path=''`,
+revogadas de `public`/`anon`/`authenticated`):
+
+| RPC | Função |
+|---|---|
+| `reservar_ads_posse(p_org)` | Toma a posse (1 linha `{rodada, cursor}`) ou 0 linhas se outra cadeia está viva. Retoma o cursor só enquanto a carga inicial não terminou. |
+| `avancar_ads_cursor(p_org, p_rodada, p_cursor_atual, p_cursor_novo)` | CAS do cursor + renovação da posse. `false` = rodada obsoleta. |
+| `gravar_ads_lote(p_org, p_rodada, p_coletado_em, p_grupos)` | Upsert de grupo, vínculo e dias; o mais recente vence por `coletado_em`. `itens` não vazio substitui o vínculo; `null`/`[]` mantém. Grupo fora do lote não é tocado. |
+| `concluir_ads_rodada(p_org, p_rodada, p_estado, p_erro, p_carga_concluida, p_advertiser_id, p_cobertura_desde, p_custo_resumo, p_custo_listado)` | Fecha a rodada (só a dona) e solta a posse. `ok` grava `ultimo_ok_em` e os custos da janela; a carga concluída define `cobertura_desde` e zera o cursor. |
+| `limpar_ads_retencao(p_corte)` | Retenção de 13 meses; grupo sem dia retido sai com o vínculo; a cobertura avança junto. |
+| `vendas_sku_codigos_mlbs(p_mlbs)` | Leitura do dossiê (`authenticated`, org do chamador): códigos de MLBs arbitrários (membros de um grupo), pela mesma UNION de `vendas_sku_mlbs`. MLB sem código fica fora do objeto e impede a exclusividade do grupo. |
+
 ## Monitoramento e configuração
 
 ### `ml_moderacao`

@@ -590,6 +590,19 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   e Postgres local, 3 MLBs do spike: 149 dias (01/05–26/09/2026) idênticos ao spike e preço de hoje
   igual; 2º run sem duplicar nem regredir. **Faltam:** `supabase db push`, deploy da função, schedule
   QStash (runbook `docs/runbooks/coletar-trafego-ml.md`), revisão final e merge.
+- **ADR-0172: Ads no dossiê, Fatia 2c (2026-09-27) — Proposto, pronta na mesma branch, ainda não
+  mergeada nem em produção.** Gasto e vendas atribuídas do Product Ads por grupo de anúncios
+  (`ad_group_id`; worker novo `coletar-ads-ml`, QStash, só GET no ML; spike 053) e painel `PainelAds` no
+  Dossiê do SKU (Despesa de Ads do período, Lucro após Ads, alcance sku/família/anúncio, atribuição em
+  aberto). Migration `20260927124602_vendas_sku_ads.sql` (4 tabelas + 5 RPCs `service_role` + a leitura
+  `vendas_sku_codigos_mlbs`), **aplicada só localmente**. **Validação real (T7):** fiação real, ML real
+  da Avil (só GET, sem refresh) e Postgres local: filtro de status sem esconder grupo (total igual com e
+  sem filtro); carga de 90 dias em `ok`, Σ gravado **confere** com o custo listado; gasto fora dos grupos
+  listados 2,57 % (spike ~2,6 %); 134 grupos com gasto (84 ITEM, 31 FAMILY, 19 CATALOG), série densa de
+  90 dias em todos; 2º run sem mexer nos dias com mais de 15 dias nem duplicar chave; 3 grupos `EMPTY`
+  (0,52 % do gasto listado) sem vínculo. **Faltam:** `supabase db push`, deploy de `coletar-ads-ml` **e**
+  `coletar-trafego-ml` (`_shared/trafego/fiacao.ts` mudou), schedule QStash `17 14 * * *` UTC (runbook
+  `docs/runbooks/coletar-ads-ml.md`), revisão final e merge.
 - **Cadastro de Grade em Matriz Cor x Tamanho (2026-09-19/20) — EM PRODUÇÃO.** Substituição da lista
   linear de cards pelo componente `MatrizGrade` (`matriz-grade.tsx`): visualização bidimensional Cor (linhas)
   × Tamanho (colunas) com 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas e

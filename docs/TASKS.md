@@ -2,6 +2,22 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Vendas SKU — Fatia 2c: Ads no dossiê do SKU (ADR-0172) — 2026-09-27
+
+Gasto e vendas atribuídas do Product Ads por grupo de anúncios (worker `coletar-ads-ml`) e painel
+`PainelAds` no Dossiê do SKU. Branch `worktree-vendas-sku-design`, ainda **não mergeada nem em produção**.
+Relatórios em `.superpowers/sdd/2026-09-27-vendas-sku-fatia-2c/`.
+
+- [x] Spike 053 (contrato real do Product Ads, só GET).
+- [x] Migration `20260927124602_vendas_sku_ads.sql` (4 tabelas + 5 RPCs de escrita + `vendas_sku_codigos_mlbs`) + teste SQL, aplicada só localmente.
+- [x] Worker `_shared/ads/*` + `coletar-ads-ml` (posse, CAS do cursor, continuação QStash, Rulings 2c-5/2c-6) e runbook.
+- [x] Painel Ads (`src/lib/sku-ads.ts`, `ads-dossie.tsx`).
+- [x] Validação real (T7): ML da Avil só GET + Postgres local — filtro de status sem esconder grupo, Σ gravado
+  confere com o custo listado, fora dos grupos 2,57 %, 134 grupos com série densa, 2º run sem mexer nos dias
+  antigos. 594 arquivos / 6304 testes; `pnpm preflight` verde.
+- [ ] `supabase db push`, deploy de `coletar-ads-ml` e `coletar-trafego-ml` e schedule QStash (runbook `docs/runbooks/coletar-ads-ml.md`) — pendente.
+- [ ] Revisão final do diff + merge fast-forward na `main` — pendente.
+
 ## Vendas SKU — Fatia 2b: Tráfego e oferta (ADR-0172) — 2026-09-27
 
 Coleta diária de visitas e preço de oferta por MLB (worker `coletar-trafego-ml`) e painel **Tráfego e
