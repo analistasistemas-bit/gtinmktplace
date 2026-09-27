@@ -3407,6 +3407,16 @@ export type Database = {
       can_write_current_org: { Args: never; Returns: boolean }
       canais_habilitados_da_org: { Args: never; Returns: string[] }
       cleanup_support_audit_events: { Args: never; Returns: number }
+      concluir_trafego_rodada: {
+        Args: {
+          p_carga_concluida?: boolean
+          p_erro?: string
+          p_estado: string
+          p_org: string
+          p_rodada: string
+        }
+        Returns: boolean
+      }
       contar_conversas_aguardando: { Args: never; Returns: number }
       current_org_id: { Args: never; Returns: string }
       current_support_scope: {
@@ -3704,7 +3714,7 @@ export type Database = {
       reservar_trafego_posse: {
         Args: { p_org: string }
         Returns: {
-          cursor: string
+          cursor: string | null
           rodada: string
         }[]
       }

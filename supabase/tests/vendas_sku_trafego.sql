@@ -18,7 +18,8 @@ begin
   foreach f in array array[
     'public.gravar_visitas_dia(uuid,timestamptz,jsonb)', 'public.gravar_preco_dia(uuid,jsonb)',
     'public.gravar_trafego_item(uuid,jsonb)', 'public.reservar_trafego_posse(uuid)',
-    'public.avancar_trafego_cursor(uuid,timestamptz,text,text)'] loop
+    'public.avancar_trafego_cursor(uuid,timestamptz,text,text)',
+    'public.concluir_trafego_rodada(uuid,timestamptz,text,text,boolean)'] loop
     if has_function_privilege('anon', f, 'execute') or has_function_privilege('authenticated', f, 'execute')
        or has_function_privilege('public', f, 'execute') then raise exception 'RPC exposta: %', f; end if;
     if not has_function_privilege('service_role', f, 'execute') then raise exception 'service_role sem execute: %', f; end if;
@@ -27,7 +28,7 @@ end $$;
 
 set local role service_role;
 do $$
-declare r record; ok boolean;
+declare r record; ok boolean; js timestamptz;
 begin
   -- Posse: 1ª reserva devolve rodada; 2ª com posse viva não devolve nada.
   select * into r from public.reservar_trafego_posse('94000000-0000-0000-0000-000000000001');
@@ -51,6 +52,57 @@ begin
     carga_inicial_concluida_em = now() where org_id = '94000000-0000-0000-0000-000000000001';
   select * into r from public.reservar_trafego_posse('94000000-0000-0000-0000-000000000001');
   if r.cursor is not null then raise exception 'carga concluída devia recomeçar do início: %', r; end if;
+
+  -- Rodada em ms: a ida e volta pelo Date do JS (toISOString) mantém o CAS válido.
+  js := to_char(r.rodada at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')::timestamptz;
+  if not public.avancar_trafego_cursor('94000000-0000-0000-0000-000000000001', js, null, null)
+    then raise exception 'CAS com rodada vinda do JS (ms) falhou: % vs %', r.rodada, js; end if;
+
+  -- concluir_trafego_rodada: rodada obsoleta não fecha; erro grava erro e mantém cursor; reservar limpa erro.
+  if public.concluir_trafego_rodada('94000000-0000-0000-0000-000000000001', js - interval '1 day', 'ok')
+    then raise exception 'concluir com rodada obsoleta passou'; end if;
+  perform public.avancar_trafego_cursor('94000000-0000-0000-0000-000000000001', js, null, 'MLB60');
+  if not public.concluir_trafego_rodada('94000000-0000-0000-0000-000000000001', js, 'erro', 'boom')
+    then raise exception 'concluir erro falhou'; end if;
+  select * into r from public.ml_trafego_sync where org_id = '94000000-0000-0000-0000-000000000001';
+  if r.estado <> 'erro' or r.erro <> 'boom' or r.ultimo_erro_em is null or r.posse_ate is not null or r.cursor <> 'MLB60'
+    then raise exception 'concluir erro errado: %', r; end if;
+  update public.ml_trafego_sync set carga_inicial_concluida_em = null where org_id = '94000000-0000-0000-0000-000000000001';
+  select * into r from public.reservar_trafego_posse('94000000-0000-0000-0000-000000000001');
+  if r.cursor is distinct from 'MLB60' then raise exception 'não retomou após erro: %', r; end if;
+  if (select erro from public.ml_trafego_sync where org_id = '94000000-0000-0000-0000-000000000001') is not null
+    then raise exception 'reservar não limpou erro'; end if;
+  if not public.concluir_trafego_rodada('94000000-0000-0000-0000-000000000001', r.rodada, 'ok', null, true)
+    then raise exception 'concluir ok falhou'; end if;
+  select * into r from public.ml_trafego_sync where org_id = '94000000-0000-0000-0000-000000000001';
+  if r.estado <> 'ok' or r.ultimo_ok_em is null or r.carga_inicial_concluida_em is null or r.cursor is not null
+     or r.posse_ate is not null or r.ultimo_erro_em is null then raise exception 'concluir ok errado: %', r; end if;
+
+  -- Checks: ok sem visitas, visitas negativas, preço negativo.
+  begin
+    insert into public.ml_item_visitas_dia values ('94000000-0000-0000-0000-000000000001', 'MLBX', '2026-09-01', null, 'ok', now(), now());
+    raise exception 'ok com visitas null passou';
+  exception when check_violation then null; end;
+  begin
+    insert into public.ml_item_visitas_dia values ('94000000-0000-0000-0000-000000000001', 'MLBX', '2026-09-01', -1, 'pendente', now(), now());
+    raise exception 'visitas negativas passaram';
+  exception when check_violation then null; end;
+  begin
+    insert into public.ml_item_preco_dia values ('94000000-0000-0000-0000-000000000001', 'MLBX', '2026-09-01', -1, null, 'BRL', now(), 'x');
+    raise exception 'preço negativo passou';
+  exception when check_violation then null; end;
+  begin
+    insert into public.ml_item_preco_dia values ('94000000-0000-0000-0000-000000000001', 'MLBX', '2026-09-01', 1, -1, 'BRL', now(), 'x');
+    raise exception 'preço regular negativo passou';
+  exception when check_violation then null; end;
+
+  -- Lote com chave repetida: não estoura e o ok vence.
+  perform public.gravar_visitas_dia('94000000-0000-0000-0000-000000000001', '2026-09-20T10:00:00Z',
+    '[{"ml_item_id":"MLB7","dia":"2026-09-05","visitas":4,"estado":"ok"},
+      {"ml_item_id":"MLB7","dia":"2026-09-05","visitas":null,"estado":"falha"}]');
+  if (select visitas from public.ml_item_visitas_dia where ml_item_id = 'MLB7') is distinct from 4
+    then raise exception 'dedup do lote errado'; end if;
+  delete from public.ml_item_visitas_dia where ml_item_id = 'MLB7';
 
   -- Visitas.
   perform public.gravar_visitas_dia('94000000-0000-0000-0000-000000000001', '2026-09-20T10:00:00Z',
