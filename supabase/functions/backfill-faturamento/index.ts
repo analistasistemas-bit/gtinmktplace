@@ -17,12 +17,24 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mapearConexao, type ConexaoCanal } from '../_shared/canais/conexao.ts';
-import { buscarPedidosPeriodo, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
-import { carregarLiquidoMP, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
+import { buscarPedidosPeriodo, buscarPedidosPeriodoEstrito, carregarCatalogo, upsertVenda, buscarShipment, buscarFreteVendedor } from '../_shared/faturamento/io.ts';
+import { carregarLiquidoMP, carregarLiquidoMPDoPedido, carregarGtinsFallback } from '../_shared/faturamento/enriquecimento.ts';
 import { buscarPerguntasSeller, buscarTituloItem, upsertPergunta } from '../_shared/faturamento/perguntas-io.ts';
-import { buscarMensagensPack, upsertMensagens, listarPacksDeVendas } from '../_shared/faturamento/mensagens-io.ts';
+import {
+  buscarMensagensPack, upsertMensagens, listarPacksDeVendas,
+  buscarMensagensPackEstrito, upsertMensagensEstrito, listarPacksDeVendasEstrito,
+} from '../_shared/faturamento/mensagens-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { registrarPendencias } from '../_shared/faturamento/pendencias.ts';
+import type { PedidoML } from '../_shared/faturamento/venda.ts';
 import { chunk } from '../_shared/faturamento/utils.ts';
+import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
+import { registrarFalhaAuth } from '../_shared/ml/liveness.ts';
+import { SemAcessoRodada, executarMensagem, rotear, statusHttp, type MsgOrg } from '../_shared/rodada/rodada.ts';
+import { depsRodada, fanoutAtivo, publicarDisparo } from '../_shared/rodada/deps.ts';
+import { cicloDoDisparo, passoBackfill, type DepsBackfill, type ParamsBackfill } from './passo.ts';
+
+const FN = 'backfill-faturamento';
 
 interface Body { dias?: number; desde?: string; ate?: string; soVendas?: boolean }
 
@@ -76,6 +88,15 @@ interface ResultadoConexao {
 const SEM_NADA: ResultadoConexao = { sincronizados: 0, leituraFalhou: false, pedidosComFalha: 0, mpFalhou: false };
 const LEITURA_FALHOU: ResultadoConexao = { sincronizados: 0, leituraFalhou: true, pedidosComFalha: 0, mpFalhou: false };
 
+// Fronteiras de IO do caminho manual/legado — injetáveis só para o teste de caracterização
+// (__tests__/manual.test.ts). Produção usa sempre estas, as MESMAS (não estritas) de antes do ADR-0173.
+const IO_PADRAO = {
+  getValidAccessTokenConexao, buscarPerguntasSeller, buscarTituloItem, upsertPergunta, buscarClaimsSeller,
+  buscarReturn, upsertDevolucao, buscarPedidosPeriodo, carregarCatalogo, carregarLiquidoMP, carregarGtinsFallback,
+  buscarFreteVendedor, buscarShipment, upsertVenda, listarPacksDeVendas, buscarMensagensPack, upsertMensagens,
+};
+type IoConexao = typeof IO_PADRAO;
+
 /**
  * `soVendas` pula os passos 1, 2 e 4 (perguntas, claims, mensagens).
  *
@@ -89,26 +110,26 @@ const LEITURA_FALHOU: ResultadoConexao = { sincronizados: 0, leituraFalhou: true
  *
  * O schedule do QStash não manda a flag: lá é uma execução só, e ela precisa fazer tudo.
  */
-async function processarConexao(admin: ReturnType<typeof adminClient>, cx: ConexaoComDono, intervalo: { desde: string; ate: string }, soVendas = false): Promise<ResultadoConexao> {
+export async function processarConexao(admin: ReturnType<typeof adminClient>, cx: ConexaoComDono, intervalo: { desde: string; ate: string }, soVendas = false, io: IoConexao = IO_PADRAO): Promise<ResultadoConexao> {
   const orgId = cx.orgId;
   const userId = cx.criadoPor; // proxy legado: tabelas/funções ainda por user_id (carregarCatalogo, perguntas, telegram)
   // Conexão sem dono é estado estrutural, não falha transitória: sinalizar aqui acenderia o alerta
   // em toda execução sem nada para o operador fazer a respeito.
   if (!userId) return SEM_NADA;
   let token: string;
-  try { token = await getValidAccessTokenConexao(cx); } catch { return LEITURA_FALHOU; }
+  try { token = await io.getValidAccessTokenConexao(cx); } catch { return LEITURA_FALHOU; }
 
   if (!soVendas) {
   // 1. Perguntas (sem alerta no backfill — só importa o estado atual).
   //    Títulos primeiro, deduplicados por item: várias perguntas caem no mesmo anúncio.
   try {
-    const perguntas = await buscarPerguntasSeller(token);
+    const perguntas = await io.buscarPerguntasSeller(token);
     const itemIds = [...new Set(perguntas.map((q) => q.item_id).filter((i): i is string => !!i))];
     const titulos = new Map<string, string | null>();
     const tituloFalhou = new Set<string>();
     for (const lote of chunk(itemIds, PARALELAS)) {
       await Promise.all(lote.map(async (itemId) => {
-        try { titulos.set(itemId, await buscarTituloItem(token, itemId)); } catch { tituloFalhou.add(itemId); }
+        try { titulos.set(itemId, await io.buscarTituloItem(token, itemId)); } catch { tituloFalhou.add(itemId); }
       }));
     }
     for (const lote of chunk(perguntas, PARALELAS)) {
@@ -120,7 +141,7 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
           // upsert inteiro nesse caso; preserva-se o mesmo efeito. Título que veio null de verdade
           // (item sem título) segue sendo gravado.
           if (itemId && tituloFalhou.has(itemId)) return;
-          await upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null, token);
+          await io.upsertPergunta(admin, userId, orgId, q, itemId ? titulos.get(itemId) ?? null : null, token);
         } catch (e) {
           // Isola a falha do item — uma pergunta ruim não derruba o chunk —, mas NÃO em silêncio:
           // falha determinística (payload novo, permissão negada) sumiria do histórico sem rastro.
@@ -134,12 +155,12 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
 
   // 2. Devoluções/claims (sem alerta no backfill).
   try {
-    const claims = await buscarClaimsSeller(token);
+    const claims = await io.buscarClaimsSeller(token);
     for (const lote of chunk(claims, PARALELAS)) {
       await Promise.all(lote.map(async (claim) => {
         try {
-          const ret = await buscarReturn(token, String(claim.id));
-          await upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId);
+          const ret = await io.buscarReturn(token, String(claim.id));
+          await io.upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId);
         } catch (e) {
           console.warn(`backfill: claim ${claim?.id} de ${userId} falhou: ${(e as Error).message}`);
         }
@@ -152,14 +173,14 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
 
   // 3. Vendas
   let pedidos;
-  try { pedidos = await buscarPedidosPeriodo(token, intervalo); } catch (e) {
+  try { pedidos = await io.buscarPedidosPeriodo(token, intervalo); } catch (e) {
     console.warn(`backfill: erro lendo pedidos da org ${orgId}: ${(e as Error).message}`);
     return LEITURA_FALHOU;
   }
-  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
+  const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await io.carregarCatalogo(admin, userId);
   const [liquidoPorPayment, gtinPorItem] = await Promise.all([
-    carregarLiquidoMP(token, Number(cx.contaExternaId)),
-    carregarGtinsFallback(token, pedidos, idsPubliai),
+    io.carregarLiquidoMP(token, Number(cx.contaExternaId)),
+    io.carregarGtinsFallback(token, pedidos, idsPubliai),
   ]);
   // Varredura: derrubar o lote inteiro por um erro do MP é pior que seguir. preservarDadosMP
   // impede que o mapa vazio apague estorno/liberação já gravados, e o worker volta a estes pedidos.
@@ -175,10 +196,10 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
       try {
         const shippingId = pedido.shipping?.id ?? null;
         const [frete, shipment] = await Promise.all([
-          buscarFreteVendedor(token, shippingId),
-          buscarShipment(token, shippingId),
+          io.buscarFreteVendedor(token, shippingId),
+          io.buscarShipment(token, shippingId),
         ]);
-        await upsertVenda(admin, userId, orgId, pedido, {
+        await io.upsertVenda(admin, userId, orgId, pedido, {
           freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
           liquidoPorPayment: liquidoPorPayment ?? undefined,
         });
@@ -194,13 +215,13 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   //    Roda após as vendas para ter os packs em ml_vendas. 1 GET por pack.
   if (!soVendas && cx.contaExternaId) {
     try {
-      const packs = await listarPacksDeVendas(admin, userId);
+      const packs = await io.listarPacksDeVendas(admin, userId);
       const contaExternaId = cx.contaExternaId;
       for (const lote of chunk(packs, PARALELAS)) {
         await Promise.all(lote.map(async (p) => {
           try {
-            const msgs = await buscarMensagensPack(token, p.packId, contaExternaId);
-            if (msgs.length) await upsertMensagens(admin, userId, orgId, p.packId, p, contaExternaId, msgs);
+            const msgs = await io.buscarMensagensPack(token, p.packId, contaExternaId);
+            if (msgs.length) await io.upsertMensagens(admin, userId, orgId, p.packId, p, contaExternaId, msgs);
           } catch (e) {
             console.warn(`backfill: mensagens do pack ${p?.packId} de ${userId} falharam: ${(e as Error).message}`);
           }
@@ -212,6 +233,140 @@ async function processarConexao(admin: ReturnType<typeof adminClient>, cx: Conex
   }
 
   return { sincronizados: n, leituraFalhou: false, pedidosComFalha, mpFalhou: liquidoPorPayment === null };
+}
+
+// ─── ADR-0173: rodada por org (vendas → mensagens) ──────────────────────────────────────────────
+
+const json = (corpo: unknown, status = 200) =>
+  new Response(JSON.stringify(corpo), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+const pagamentosDoPedido = (pedido: PedidoML) => (pedido.payments ?? []).flatMap((p) => (p?.id != null ? [p.id] : []));
+
+function depsBackfillReal(admin: ReturnType<typeof adminClient>, orgId: string): DepsBackfill {
+  return {
+    async conexao() {
+      // Consulta própria (não resolverConexao): erro de leitura LANÇA — virar `null` fecharia a
+      // rodada como ok e o dia se perderia calado.
+      const { data, error } = await admin.from('marketplace_connections')
+        .select('id, org_id, canal, conta_externa_id, expires_at, criado_por')
+        .eq('org_id', orgId).eq('canal', 'mercado_livre').maybeSingle();
+      if (error) throw new Error(`ler conexão ML da org: ${error.message}`);
+      if (!data) return null;
+      const cx = mapCx(data as ConexaoRow);
+      return { cx, userId: cx.criadoPor };
+    },
+
+    async token(cx) {
+      try {
+        return await getValidAccessTokenConexao(cx);
+      } catch (e) {
+        // Só token morto fecha a rodada (sem_acesso); transiente relança → 500 → retry do QStash.
+        const status = e instanceof MLApiError ? e.status : null;
+        const oauthError = e instanceof MLApiError ? e.oauthError : null;
+        if (classificarErroML(status, oauthError) === 'permanente-auth') {
+          await registrarFalhaAuth(admin, cx.id, (e as Error).message);
+          throw new SemAcessoRodada((e as Error).message);
+        }
+        throw e;
+      }
+    },
+
+    pedidosDaJanela: (token, janela) => buscarPedidosPeriodoEstrito(token, janela),
+
+    async processarPedidos(token, cx, userId, pedidos) {
+      const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, userId);
+      const gtinPorItem = await carregarGtinsFallback(token, pedidos, idsPubliai);
+      const ok: string[] = [];
+      const falhas: string[] = [];
+      let mpFalhou = false;
+      for (const lote of chunk(pedidos, PARALELAS)) {
+        await Promise.all(lote.map(async (pedido) => {
+          try {
+            const shippingId = pedido.shipping?.id ?? null;
+            // MP por pedido (1-2 GETs), não a varredura de 120 dias: o lote é de 20 pedidos.
+            const [frete, shipment, liquidoPorPayment] = await Promise.all([
+              buscarFreteVendedor(token, shippingId),
+              buscarShipment(token, shippingId),
+              carregarLiquidoMPDoPedido(token, Number(cx.contaExternaId), pagamentosDoPedido(pedido)),
+            ]);
+            // null = leitura do MP falhou: informativo (preservarDadosMP guarda o que já havia).
+            if (liquidoPorPayment === null) mpFalhou = true;
+            await upsertVenda(admin, userId, orgId, pedido, {
+              freteVendedor: frete, shipment, idsPubliai, codigoResolver, eanResolver, infoPorGtin, gtinPorItem, custoVigenteResolver, contaExternaId: cx.contaExternaId,
+              liquidoPorPayment: liquidoPorPayment ?? undefined,
+            });
+            ok.push(String(pedido.id));
+          } catch (e) {
+            falhas.push(String(pedido.id));
+            console.warn(`backfill: erro upsert pedido ${pedido.id} da org ${orgId}: ${(e as Error).message}`);
+          }
+        }));
+      }
+      return { ok, falhas, mpFalhou };
+    },
+
+    // ok=[] SEMPRE: o backfill só registra; quem apaga pendência é o reconciliar.
+    registrarFalhas: (falhas, erro) => registrarPendencias(admin, orgId, [], new Date().toISOString(), falhas, erro),
+
+    packs: (userId) => listarPacksDeVendasEstrito(admin, userId),
+
+    async processarPacks(token, userId, org, contaExternaId, packs) {
+      for (const lote of chunk(packs, PARALELAS)) {
+        // allSettled: nada fica em voo quando o lote lança.
+        const rs = await Promise.allSettled(lote.map(async (p) => {
+          const msgs = await buscarMensagensPackEstrito(token, p.packId, contaExternaId);
+          if (msgs.length) await upsertMensagensEstrito(admin, userId, org, p.packId, p, contaExternaId, msgs);
+        }));
+        const falha = rs.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+        if (falha) throw falha.reason;
+      }
+      return packs.length;
+    },
+  };
+}
+
+const JOBS_BACKFILL = new Set(['backfill', 'backfill-recuperacao']);
+
+async function consumirMensagemOrg(admin: ReturnType<typeof adminClient>, msg: MsgOrg): Promise<Response> {
+  const p = msg.params as Partial<ParamsBackfill>;
+  // Mensagem de outro job (ou sem janela) nunca roda o passo do backfill sobre a rodada alheia.
+  if (!JOBS_BACKFILL.has(msg.job) || typeof p.desde !== 'string' || typeof p.ate !== 'string') {
+    console.error(`backfill: mensagem por org de job/params inválidos, descartada: job=${msg.job} org=${msg.org_id}`);
+    return json({ ok: false, erro: 'job ou params inválidos para o backfill' }, 400);
+  }
+  const m = msg as MsgOrg<ParamsBackfill>;
+  try {
+    const r = await executarMensagem(depsRodada(admin, FN), m, passoBackfill(depsBackfillReal(admin, m.org_id), m.org_id));
+    return json({ resultado: r }, statusHttp(r));
+  } catch (e) {
+    // abrir/avancar/liberar lançaram (RPC fora): 500 → retry do QStash.
+    console.error(`backfill: mensagem por org falhou (job=${m.job} org=${m.org_id} ciclo=${m.ciclo}):`, e instanceof Error ? e.message : e);
+    return json({ ok: false, erro: 'falha interna' }, 500);
+  }
+}
+
+async function disparar(admin: ReturnType<typeof adminClient>, payload: Body): Promise<Response> {
+  // Recuperação exige a janela inteira: só um dos dois cairia no default e geraria o ciclo errado.
+  if (!payload.desde !== !payload.ate) {
+    console.error(`backfill: disparo com só um de desde/ate (${payload.desde ?? '-'}..${payload.ate ?? '-'}), recusado`);
+    return json({ ok: false, erro: 'desde e ate devem vir juntos' }, 400);
+  }
+  const intervalo = janela(payload);
+  const { job, ciclo } = cicloDoDisparo(payload, new Date());
+  const { data, error } = await admin.from('marketplace_connections').select('org_id').eq('canal', 'mercado_livre');
+  if (error) {
+    console.error(`backfill: disparo não leu as conexões: ${error.message}`);
+    return json({ ok: false, erro: 'falha ao ler conexões' }, 500);
+  }
+  const orgs = [...new Set(((data ?? []) as Array<{ org_id: string }>).map((r) => r.org_id))];
+  try {
+    await publicarDisparo(FN, orgs.map((org_id) => ({ modo: 'org' as const, job, org_id, ciclo, params: intervalo })));
+  } catch (e) {
+    console.error(`backfill: disparo job=${job} ciclo=${ciclo} falhou ao publicar:`, e instanceof Error ? e.message : e);
+    return json({ ok: false, erro: 'falha ao publicar o disparo' }, 500);
+  }
+  console.log(`backfill: disparo job=${job} ciclo=${ciclo} janela=${intervalo.desde}..${intervalo.ate} orgs=${orgs.length}`);
+  return json({ ok: true, job, ciclo, orgs: orgs.length });
 }
 
 Deno.serve(async (req) => {
@@ -231,8 +386,9 @@ try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'w
   }
 
   let payload: Body = {};
+  let parsed: unknown = {};
   try {
-    let parsed: unknown = body ? JSON.parse(body) : {};
+    parsed = body ? JSON.parse(body) : {};
     // O QStash pode guardar o body duplamente codificado (uma string contendo JSON). Foi
     // exatamente isso: o schedule tinha `"{\"dias\":30}"`, o parse devolvia uma string, `dias`
     // ficava undefined e a janela caía no default de 90 dias — carga que não cabe numa execução.
@@ -243,6 +399,17 @@ try { ({ orgId: scopedOrgId } = context = await requireUserOrg(req, { access: 'w
     }
     if (parsed && typeof parsed === 'object') payload = parsed as Body;
   } catch { /* vazio */ }
+
+  // ADR-0173: mensagem por org (sempre aceita) e disparador em fan-out (só com FANOUT_BACKFILL).
+  // Sem a flag o schedule segue no laço legado abaixo; o manual (JWT) nunca passa por aqui.
+  const rota = rotear(temAssinatura, parsed, fanoutAtivo('FANOUT_BACKFILL'));
+  if (rota === 'invalida') {
+    console.error(`backfill: mensagem modo:'org' malformada, descartada: ${body.slice(0, 500)}`);
+    return json({ ok: false, erro: 'mensagem por org malformada' }, 400);
+  }
+  if (rota === 'org') return await consumirMensagemOrg(admin, parsed as MsgOrg);
+  if (rota === 'disparo') return await disparar(admin, payload);
+
   const intervalo = janela(payload);
   // A janela efetiva vai para o log: sem isso, cair no default é indistinguível de ter sido pedido.
   console.log(`backfill: janela efetiva ${intervalo.desde}..${intervalo.ate} (dias=${payload.dias ?? 'DEFAULT 90'}${payload.soVendas === true ? ', soVendas' : ''})`);

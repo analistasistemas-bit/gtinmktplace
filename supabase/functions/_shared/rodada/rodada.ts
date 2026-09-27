@@ -53,6 +53,17 @@ export function ehMsgOrg(x: unknown): x is MsgOrg {
     && typeof o.params === 'object' && o.params !== null;
 }
 
+export type Rota = 'org' | 'invalida' | 'disparo' | 'legado' | 'manual';
+
+/** Decide o caminho de uma requisição de worker em fan-out. Sem assinatura QStash → manual (JWT). */
+export function rotear(temAssinatura: boolean, parsed: unknown, flagAtiva: boolean): Rota {
+  if (!temAssinatura) return 'manual';
+  if (ehMsgOrg(parsed)) return 'org';
+  // `modo:'org'` malformado NUNCA cai no disparador/legado global: 400 e log (guarda permanente).
+  if (parsed && typeof parsed === 'object' && (parsed as { modo?: unknown }).modo === 'org') return 'invalida';
+  return flagAtiva ? 'disparo' : 'legado';
+}
+
 export interface EntradaPasso<P extends Record<string, unknown> = Record<string, unknown>> {
   cursor: string | null;
   acumulado: Acumulado;
