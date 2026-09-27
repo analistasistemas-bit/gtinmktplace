@@ -82,7 +82,7 @@ describe('SkuDossie', () => {
     expect(screen.getByText(/Histórico desde 10\/05\/2026/)).toBeInTheDocument();
     expect(screen.getByText('Em alta')).toBeInTheDocument();
     expect(screen.getByText('Faturamento')).toBeInTheDocument();
-    expect(screen.getByText('20,0%')).toBeInTheDocument(); // taxa de devolução 1/5
+    expect(within(screen.getByRole('region', { name: 'Resultado no período' })).getByText('20,0%')).toBeInTheDocument(); // taxa de devolução 1/5
     expect(screen.getByRole('link', { name: /Vendas por SKU/ })).toHaveAttribute('href', '/faturamento?aba=sku');
     expect(vi.mocked(useSkuDossie).mock.calls.at(-1)?.[0]).toEqual({ tipo: 'sku', codigo: '00123' });
   });
@@ -102,14 +102,20 @@ describe('SkuDossie', () => {
   it('sem cadastro: aviso e estoque desconhecido, nunca zero', () => {
     renderPagina('sem_cadastro', dossie({ catalogo: [], estoque: null }));
     expect(screen.getByText(/Este código não está mais no catálogo/)).toBeInTheDocument();
-    expect(screen.getByText('desconhecido')).toBeInTheDocument();
+    expect(screen.getAllByText('desconhecido').length).toBeGreaterThan(0);
+    expect(within(screen.getByRole('region', { name: 'Estoque' })).getByText('desconhecido')).toBeInTheDocument();
   });
 
   it('sem vendas: cabeçalho, estoque e o aviso, sem KPIs', () => {
     renderPagina('sem_vendas', dossie({ linhaPeriodo: null, tendencia: null, historicoDesde: null, ultimaVenda: null }));
     expect(screen.getByText('Sem vendas registradas desde a entrada no PubliAI')).toBeInTheDocument();
-    expect(screen.getByText('12 un.')).toBeInTheDocument();
+    expect(screen.getAllByText('12 un.').length).toBeGreaterThan(0);
     expect(screen.queryByText('Faturamento')).not.toBeInTheDocument();
+    // posição de hoje (estoque, campanhas) aparece; blocos do período não
+    expect(screen.getByRole('region', { name: 'Estoque' })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: 'Campanhas' })).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Devoluções' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Vendas por estado' })).not.toBeInTheDocument();
   });
 });
 
@@ -169,7 +175,7 @@ describe('SkuDossie: série e eventos', () => {
 
   it('kit virtual: dica no KPI de unidades e nota de cobertura parcial', () => {
     renderPagina('ok', comSerie({ kitVirtual: { unidadesPeriodo: 3, unidadesPorIntervalo: [1, 0] } }));
-    expect(screen.getByText(/3 un\. dentro de kit/)).toBeInTheDocument();
+    expect(screen.getByText(/3 un\. vendidas dentro de kit/)).toBeInTheDocument();
     expect(screen.getByText(/cobertura parcial \(sem histórico antes de set\/2026\)/)).toBeInTheDocument();
   });
 
@@ -234,6 +240,103 @@ describe('SkuDossie: série e eventos', () => {
   it('eventos vazios: aviso próprio', () => {
     renderPagina('ok', comSerie({ eventos: [] }));
     expect(within(screen.getByRole('region', { name: 'Eventos' })).getByText('Nenhum evento registrado')).toBeInTheDocument();
+  });
+});
+
+describe('SkuDossie: estoque, devoluções, UFs, mix e campanhas', () => {
+  it('estoque do SKU: saldo e cobertura em dias', () => {
+    renderPagina('ok', dossie());
+    const est = screen.getByRole('region', { name: 'Estoque' });
+    expect(within(est).getByText('40 dias')).toBeInTheDocument();
+    expect(within(est).getByText('12 un.')).toBeInTheDocument();
+    expect(within(est).getByText(/posição em \d{2}\/\d{2}/i)).toBeInTheDocument();
+  });
+
+  it('estoque do kit: compartilhado com a base, saldo floor(base/N) e link da base', () => {
+    renderPagina('ok', dossie({
+      catalogo: [{ ...cat, ehKit: true, kitMultiplicador: 2, kitBaseCodigo: '00100', estoqueKit: 3 }],
+      estoque: 3, cobertura: 'compartilhado',
+    }));
+    const est = screen.getByRole('region', { name: 'Estoque' });
+    expect(within(est).getByText(/estoque compartilhado com a base/i)).toBeInTheDocument();
+    expect(within(est).getByText('3 kits')).toBeInTheDocument();
+    expect(within(est).getByRole('link', { name: /00100/ })).toHaveAttribute('href', '/faturamento/sku/00100');
+    expect(within(est).queryByText(/\d dias/)).not.toBeInTheDocument();
+  });
+
+  it('estoque sem ritmo: sem vendas nos últimos 30 dias, não zero dias', () => {
+    renderPagina('ok', dossie({ cobertura: null }));
+    expect(within(screen.getByRole('region', { name: 'Estoque' })).getByText(/sem vendas nos últimos 30 dias/i)).toBeInTheDocument();
+  });
+
+  it('devoluções: taxa com N de M pedidos e motivos por devolução (sem contar a mesma duas vezes)', () => {
+    const dev = (id: string, tipo: 'devolucao_aberta' | 'devolucao_estorno', detalhe: string | null) =>
+      ({ id, tipo, em: '2026-09-10T12:00:00Z', titulo: 'Devolução', detalhe, vinculo: 'exato' as const, mlb: null });
+    renderPagina('ok', dossie({ eventos: [
+      dev('d1:abertura', 'devolucao_aberta', 'Motivo: Produto com defeito'),
+      dev('d1:estorno', 'devolucao_estorno', 'Motivo: Produto com defeito'),
+      dev('d2:abertura', 'devolucao_aberta', 'Motivo: não informado'),
+    ] }));
+    const reg = screen.getByRole('region', { name: 'Devoluções' });
+    expect(within(reg).getByText('20,0%')).toBeInTheDocument();
+    expect(within(reg).getByText(/1 de 5 pedidos/)).toBeInTheDocument();
+    const motivos = within(reg).getByRole('list', { name: /Motivos/ });
+    expect(within(motivos).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(motivos).getByText('Produto com defeito')).toBeInTheDocument();
+    expect(within(motivos).getByText('não informado')).toBeInTheDocument();
+  });
+
+  it('UFs: mapa, top 5 com % e "sem localização"', () => {
+    renderPagina('ok', dossie({ ufs: { valores: { SP: 200, RJ: 50, MG: 30, PR: 10, SC: 5, BA: 5 }, semUf: 20 } }));
+    const reg = screen.getByRole('region', { name: 'Vendas por estado' });
+    expect(within(reg).getByLabelText('Mapa do Brasil por UF')).toBeInTheDocument();
+    const top = within(reg).getByRole('list', { name: /Maiores estados/ });
+    expect(within(top).getAllByRole('listitem')).toHaveLength(5);
+    expect(within(top).getByText('SP')).toBeInTheDocument();
+    expect(within(top).queryByText('BA')).not.toBeInTheDocument();
+    expect(within(top).getByText('62,5%')).toBeInTheDocument(); // 200 / 320
+    expect(within(reg).getByText(/sem localização/i)).toBeInTheDocument();
+  });
+
+  it('UFs vazias: aviso próprio', () => {
+    renderPagina('ok', dossie());
+    expect(within(screen.getByRole('region', { name: 'Vendas por estado' })).getByText('Nenhuma venda no período')).toBeInTheDocument();
+  });
+
+  it('mix da família: irmã sem venda como "sem vendas" e cada linha abre o dossiê da variação', () => {
+    const de = '/faturamento?aba=sku&busca=dry';
+    renderPagina('ok', dossie({ titulo: 'Camiseta Dry', codigos: ['00123', '00124'], mix: [
+      { codigo: '00123', titulo: 'Camiseta Dry Azul M', unidades: 6, participacaoUnidades: 1, lucro: 90, deltaLucro: 10, semVendas: false },
+      { codigo: '00124', titulo: 'Camiseta Dry Azul G', unidades: 0, participacaoUnidades: 0, lucro: null, deltaLucro: -15, semVendas: true },
+    ] }), { pathname: '/faturamento/sku/familia/P1', state: { de } });
+    const reg = screen.getByRole('region', { name: 'Mix da família' });
+    expect(within(reg).getByText('sem vendas')).toBeInTheDocument();
+    expect(within(reg).getByText('100,0%')).toBeInTheDocument();
+    expect(within(reg).getByRole('link', { name: /Camiseta Dry Azul G/ })).toHaveAttribute('href', '/faturamento/sku/00124');
+    expect(within(reg).getAllByRole('link').every((a) => !a.getAttribute('href')?.includes('familia:'))).toBe(true);
+  });
+
+  it('SKU solto não tem mix', () => {
+    renderPagina('ok', dossie());
+    expect(screen.queryByRole('region', { name: 'Mix da família' })).not.toBeInTheDocument();
+  });
+
+  it('campanhas: situação atual, participação histórica desconhecida', () => {
+    renderPagina('ok', dossie({ campanhas: [{
+      mlb: 'MLB1', nome: 'Oferta da semana', tipo: 'LIGHTNING', statusItem: 'started', statusCampanha: 'started', precoPromo: 29.9,
+      vigencia: { inicio: '2026-09-20T03:00:00Z', fim: '2026-09-30T03:00:00Z' }, sincronizadoEm: '2026-09-27T12:00:00Z',
+    }] }));
+    const reg = screen.getByRole('region', { name: 'Campanhas' });
+    expect(within(reg).getByText(/participação histórica desconhecida/)).toBeInTheDocument();
+    expect(within(reg).getByText('Oferta da semana')).toBeInTheDocument();
+    expect(within(reg).getByText('Participando')).toBeInTheDocument();
+    expect(within(reg).getByText('R$ 29,90')).toBeInTheDocument();
+    expect(within(reg).getByText(/sincronizado em/i)).toBeInTheDocument();
+  });
+
+  it('campanhas vazias: aviso próprio', () => {
+    renderPagina('ok', dossie());
+    expect(within(screen.getByRole('region', { name: 'Campanhas' })).getByText('Nenhuma campanha nos anúncios deste código')).toBeInTheDocument();
   });
 });
 

@@ -9,9 +9,10 @@ import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
 import { fmtDataCurta, labelStatusPedido } from '@/lib/ml-status';
 import { nomeCurtoComprador, nomeExibicaoComprador, type Pedido } from '@/lib/pedidos-faturamento';
-import type { Intervalo, Passo } from '@/lib/calendario-brt';
+import type { Passo } from '@/lib/calendario-brt';
 import type { Evento, PontoSerie, TipoEvento } from '@/lib/sku-dossie';
 import { TIPO_EVENTO } from './tipos-evento';
+import { indiceHistorico, marcaParcial, pontosDaSerie, ultimoComPreco } from './serie-pontos';
 import { dataBR } from './formato-dossie';
 
 // Larguras dos eixos: a régua de intervalos embaixo do gráfico usa as mesmas medidas para cair
@@ -36,8 +37,6 @@ const ORDEM_TOOLTIP = ['Unidades', 'Fora de kit', 'Dentro de kit', 'Lucro', 'Pre
 const tom = (t: 'success' | 'warning' | 'danger' | 'muted'): StatusTone => (t === 'muted' ? 'neutral' : t);
 
 const nomeIntervalo = (p: PontoSerie, passo: Passo) => (passo === 'semana' ? `Semana de ${p.intervalo.rotulo}` : p.intervalo.rotulo);
-/** "(parcial)" no intervalo em andamento; "(início parcial)" no 1º, que começa antes do período. */
-const marcaParcial = (iv: Intervalo) => (iv.incompleto ? '(parcial)' : iv.inicioParcial ? '(início parcial)' : null);
 
 interface Props {
   serie: PontoSerie[];
@@ -62,20 +61,9 @@ export function SerieDossie({ serie, perguntas, eventos, codigos, familia, temKi
   const botoes = useRef<(HTMLButtonElement | null)[]>([]);
   const focoAtual = Math.min(Math.max(foco, 0), n - 1);
 
-  const dados = useMemo(() => {
-    // O intervalo em andamento é sempre o último.
-    const ultimoCompleto = serie[serie.length - 1]?.intervalo.incompleto ? serie.length - 2 : serie.length - 1;
-    return serie.map((p, i) => ({
-      i, rotulo: p.intervalo.rotulo, marca: marcaParcial(p.intervalo), parcial: p.intervalo.incompleto,
-      diretas: p.unidades - p.unidadesKit, kit: p.unidadesKit,
-      // O trecho que chega ao intervalo em andamento é tracejado: a queda ainda não é real.
-      lucro: p.intervalo.incompleto ? null : p.lucro,
-      lucroParcial: p.intervalo.incompleto || i === ultimoCompleto ? p.lucro : null,
-      precoMedio: p.precoMedio, precoMin: p.precoMin, precoMax: p.precoMax,
-      bigode: p.precoMedio != null && p.precoMin != null && p.precoMax != null ? [p.precoMedio - p.precoMin, p.precoMax - p.precoMedio] : null,
-      perguntas: perguntas[i] ?? 0,
-    }));
-  }, [serie, perguntas]);
+  // O trecho que chega ao intervalo em andamento é tracejado: a queda ainda não é real.
+  const dados = useMemo(() => pontosDaSerie(serie, perguntas), [serie, perguntas]);
+  const ivPreco = ultimoComPreco(serie);
   const eventosPorIv = useMemo(() => serie.map((p) => {
     const ini = Date.parse(p.intervalo.inicio); const fim = Date.parse(p.intervalo.fim);
     return eventos.filter((e) => { const t = Date.parse(e.em); return t >= ini && t < fim; });
@@ -86,10 +74,7 @@ export function SerieDossie({ serie, perguntas, eventos, codigos, familia, temKi
   const maxPerg = Math.max(0, ...perguntas);
   const maxPreco = Math.max(0, ...serie.map((p) => p.precoMax ?? 0));
   const lucroNeg = serie.some((p) => (p.lucro ?? 0) < 0);
-  // Marcador "Histórico desde": só quando a 1ª venda cai depois do início do 1º intervalo.
-  const ivHistorico = historicoDesde ? serie.findIndex((p) => {
-    const t = Date.parse(historicoDesde); return t > Date.parse(serie[0].intervalo.inicio) && t >= Date.parse(p.intervalo.inicio) && t < Date.parse(p.intervalo.fim);
-  }) : -1;
+  const ivHistorico = indiceHistorico(serie, historicoDesde);
   // Rótulos da régua: contados do fim (o intervalo corrente sempre aparece); menos no celular.
   const passoSm = Math.max(1, Math.ceil(n / 6));
   const passoLg = Math.max(1, Math.ceil(n / 16));
@@ -159,11 +144,12 @@ export function SerieDossie({ serie, perguntas, eventos, codigos, familia, temKi
                 <YAxis yAxisId="un" width={EIXO_UNID} tick={EIXO} stroke="var(--border)" allowDecimals={false} tickFormatter={(v) => fmtInt(Number(v))} />
                 <YAxis yAxisId="lucro" orientation="right" width={EIXO_LUCRO} tick={EIXO} stroke="var(--border)" tickFormatter={(v) => kReais(Number(v))} />
                 {/* Preço a partir de zero: a variação aparece no tamanho real, não esticada. */}
-                <YAxis yAxisId="preco" hide width={0} domain={[0, maxPreco > 0 ? maxPreco * 1.15 : 1]} />
+                {/* Domínio fixo: a série invisível de perguntas (mesmo eixo) não pode esticar a escala do preço. */}
+                <YAxis yAxisId="preco" hide width={0} allowDataOverflow domain={[0, maxPreco > 0 ? maxPreco * 1.15 : 1]} />
                 {lucroNeg && <ReferenceLine yAxisId="lucro" y={0} stroke="var(--muted-foreground)" strokeOpacity={0.5} />}
-                {ivHistorico > 0 && historicoDesde && (
+                {ivHistorico >= 0 && historicoDesde && (
                   <ReferenceLine yAxisId="un" x={dados[ivHistorico].rotulo} stroke="var(--muted-foreground)" strokeDasharray="2 3" strokeOpacity={0.6}
-                    label={{ value: `Histórico desde ${dataBR(historicoDesde).slice(0, 5)}`, position: 'insideTopLeft', fontSize: 10, fill: 'var(--muted-foreground)', dy: -14 }} />
+                    label={{ value: `Histórico desde ${dataBR(historicoDesde).slice(0, 5)}`, position: ivHistorico > n / 2 ? 'insideTopRight' : 'insideTopLeft', fontSize: 10, fill: 'var(--muted-foreground)', dy: -14 }} />
                 )}
                 <Tooltip {...TOOLTIP} itemSorter={(it) => ORDEM_TOOLTIP.indexOf(String(it.name))}
                   labelFormatter={(_, payload) => {
@@ -191,13 +177,20 @@ export function SerieDossie({ serie, perguntas, eventos, codigos, familia, temKi
                   </Bar>
                 )}
                 <Line yAxisId="preco" dataKey="precoMedio" name="Preço médio" stroke="var(--muted-foreground)" strokeWidth={1.25}
-                  dot={{ r: 2, fill: 'var(--muted-foreground)', strokeWidth: 0 }} activeDot={{ r: 3.5 }} connectNulls={false} isAnimationActive={false}>
+                  dot={{ r: 2, fill: 'var(--muted-foreground)', strokeWidth: 0 }} activeDot={{ r: 3.5 }} connectNulls={false} isAnimationActive={false}
+                  // Rótulo direto no último preço: sem ele o preço seria lido contra o eixo R$ do lucro.
+                  label={({ x, y, index, value }) => (index === ivPreco && value != null ? (
+                    <text x={Number(x) + (ivPreco > n / 2 ? -6 : 6)} y={Number(y) - 7} textAnchor={ivPreco > n / 2 ? 'end' : 'start'}
+                      fontSize={10} fill="var(--muted-foreground)" className="tabular-nums">{fmtBRL(Number(value))}</text>
+                  ) : <g />)}>
                   <ErrorBar dataKey="bigode" direction="y" width={5} stroke="var(--muted-foreground)" strokeWidth={1} />
                 </Line>
-                <Line yAxisId="lucro" dataKey="lucro" name="Lucro" stroke="var(--success)" strokeWidth={2}
+                <Line yAxisId="lucro" dataKey="lucro" name="Lucro" tooltipType="none" stroke="var(--success)" strokeWidth={2}
                   dot={{ r: 2.5, fill: 'var(--success)', strokeWidth: 0 }} activeDot={{ r: 4 }} connectNulls={false} isAnimationActive={false} />
                 <Line yAxisId="lucro" dataKey="lucroParcial" name="Lucro" tooltipType="none" stroke="var(--success)" strokeWidth={2} strokeDasharray="4 3"
                   dot={{ r: 2.5, fill: 'var(--success)', strokeWidth: 0 }} activeDot={false} connectNulls={false} isAnimationActive={false} />
+                {/* Só para o tooltip: um Lucro por ponto, inclusive no intervalo em andamento. */}
+                <Line yAxisId="lucro" dataKey="lucroTooltip" name="Lucro" stroke="none" dot={false} activeDot={false} isAnimationActive={false} />
                 {/* Só para o tooltip: perguntas no eixo do preço (domínio fixo), sem traço. */}
                 <Line yAxisId="preco" dataKey="perguntas" name="Perguntas" stroke="none" dot={false} activeDot={false} isAnimationActive={false} />
               </ComposedChart>

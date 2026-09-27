@@ -4,11 +4,8 @@ import { Card } from '@/components/ui/card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import { fmtInt, fmtPct } from '@/lib/formato';
-import { ehCupom, emLeitura, prazoUrgente, rotuloTipo, type Promocao } from '@/lib/promocoes';
+import { ehCupom, emLeitura, prazoUrgente, rotuloTipo, STATUS_CAMPANHA as STATUS, STATUS_CAMPANHA_DOT as STATUS_DOT, type Promocao } from '@/lib/promocoes';
 import { DistribuicaoSemaforo } from './contagem-semaforo';
-
-const STATUS: Record<string, string> = { started: 'Ativa', pending: 'Futura', finished: 'Encerrada' };
-const STATUS_DOT: Record<string, string> = { started: 'bg-success', pending: 'bg-info', finished: 'bg-muted-foreground/50' };
 const ICONE_TIPO: Record<string, typeof Zap> = {
   LIGHTNING: Zap, SELLER_COUPON_CAMPAIGN: Ticket, PRICE_MATCHING: Scale, SMART: Handshake, VOLUME: Layers,
 };

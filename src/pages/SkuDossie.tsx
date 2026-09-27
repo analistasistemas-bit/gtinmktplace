@@ -11,6 +11,11 @@ import { QualidadeHistorico } from '@/components/sku-dossie/qualidade-historico'
 import { KpisDossie } from '@/components/sku-dossie/kpis-dossie';
 import { SerieDossie } from '@/components/sku-dossie/serie-dossie';
 import { EventosDossie } from '@/components/sku-dossie/eventos-dossie';
+import { EstoqueDossie } from '@/components/sku-dossie/estoque-dossie';
+import { DevolucoesDossie } from '@/components/sku-dossie/devolucoes-dossie';
+import { UfsDossie } from '@/components/sku-dossie/ufs-dossie';
+import { MixFamilia } from '@/components/sku-dossie/mix-familia';
+import { CampanhasDossie } from '@/components/sku-dossie/campanhas-dossie';
 import { useSkuDossie } from '@/hooks/useSkuDossie';
 import { cn } from '@/lib/utils';
 import { rotuloAnterior, type Periodo } from '@/lib/metricas';
@@ -150,10 +155,24 @@ export default function SkuDossie() {
         </section>
       )}
 
+      {/* Ordem por relógio: o período escolhido (KPIs, série, devoluções, UFs, mix), a posição de
+          hoje (estoque, campanhas) e, por fim, todo o histórico (eventos). */}
+      {estado !== 'sem_vendas' && (
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
+          <DevolucoesDossie linha={dados.linhaPeriodo} eventos={dados.eventos} />
+          <UfsDossie ufs={dados.ufs} />
+        </div>
+      )}
+      {estado !== 'sem_vendas' && dados.mix && <MixFamilia mix={dados.mix} voltar={voltar} />}
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] lg:items-start">
+        <EstoqueDossie dados={dados} familia={familia} voltar={voltar} />
+        <CampanhasDossie campanhas={dados.campanhas} />
+      </div>
+
       {(estado !== 'sem_vendas' || dados.eventos.length > 0) && (
         <EventosDossie eventos={dados.eventos} kit={dados.catalogo.some((c) => c.ehKit)} />
       )}
-      {/* Task 9: estoque (também em sem_vendas), devoluções, UFs, mix (só família) e campanhas, cada um na sua <section aria-labelledby>. */}
     </div>
   );
 }

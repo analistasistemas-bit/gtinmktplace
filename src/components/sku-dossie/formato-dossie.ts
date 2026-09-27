@@ -1,4 +1,11 @@
 export const dataBR = (iso: string) => new Date(iso).toLocaleDateString('pt-BR');
+
+// Calendário fixo de São Paulo (os blocos novos): um instante às 02:00Z ainda é o dia anterior.
+const DIA_MES = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });
+const DIA_MES_HORA = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' });
+export const diaMesBRT = (d: string | Date = new Date()) => DIA_MES.format(new Date(d));
+export const diaMesHoraBRT = (d: string) => DIA_MES_HORA.format(new Date(d));
+export const pctBR = (v: number) => `${(v * 100).toFixed(1).replace('.', ',')}%`;
 const DIA = 86_400_000;
 
 /** Tempo desde a 1ª venda: dias até 2 meses, depois meses, depois anos e meses. */
