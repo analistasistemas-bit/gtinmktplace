@@ -279,6 +279,12 @@ describe('SEM_CODIGO fora dos rankings', () => {
     expect(curvaAbc([linha(SEM_CODIGO, -5)], 'lucro').has(SEM_CODIGO)).toBe(false);
   });
 
+  it('insight "metade do lucro" não conta a linha sem código', () => {
+    const ls = ['a', 'b', 'c', 'd', 'e'].map((c) => linha(c, 10));
+    const ins = gerarInsights({ linhas: [linha(SEM_CODIGO, 1000), ...ls], variacoes: [], coberturaBaixa: 0, parados: 0 });
+    expect(ins.some((s) => s.includes('metade do lucro'))).toBe(false); // 5 × 10: 3 SKUs fazem metade, acima de 20%
+  });
+
   it('explicarVariacao pula a linha sem código', () => {
     const v = explicarVariacao([linha(SEM_CODIGO, 100), linha('a', 10)], []);
     expect(v.map((x) => x.codigo)).toEqual(['a']);

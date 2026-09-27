@@ -307,7 +307,7 @@ const fmtBRL0 = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', cu
 /** 0 a 3 frases, só quando a evidência existe. */
 export function gerarInsights(p: { linhas: LinhaSku[]; variacoes: VariacaoLucro[]; coberturaBaixa: number; parados: number }): string[] {
   const out: string[] = [];
-  const pos = p.linhas.map((l) => l.m.lucro ?? 0).filter((v) => v > 0).sort((a, b) => b - a);
+  const pos = p.linhas.filter((l) => l.codigo !== SEM_CODIGO).map((l) => l.m.lucro ?? 0).filter((v) => v > 0).sort((a, b) => b - a);
   if (pos.length >= 5) {
     const metade = pos.reduce((s, v) => s + v, 0) / 2;
     let acum = 0; let k = 0;

@@ -21,7 +21,8 @@ export function useVendasSku(periodo: Periodo) {
   const anterior = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
   const estendida = useMemo(() => janelaEstendida(janela, anterior), [janela, anterior]);
   const vendasQ = useVendas(estendida, 'todos');
-  const { data: custos } = useCustos();
+  const custosQ = useCustos();
+  const custos = custosQ.data;
   const { data: fotos } = useFotosProduto();
   const { data: cores } = useCoresProduto();
   const { data: canonico } = useAnuncioCanonico();
@@ -30,7 +31,8 @@ export function useVendasSku(periodo: Periodo) {
   const catQ = useCatalogoVendasSku();
 
   const dados = useMemo<VendasSku | null>(() => {
-    if (!vendasQ.data || !catQ.data) return null;
+    // Sem custos toda linha sairia "sem custo" por um instante: espera a query assentar.
+    if (!vendasQ.data || !catQ.data || !custos) return null;
     const custoR = montarCustoResolver(custos);
     const pesoR = montarPesoResolver(custos);
     const fotoR = montarFotoResolver(fotos, canonico);
@@ -45,5 +47,10 @@ export function useVendasSku(periodo: Periodo) {
     });
   }, [vendasQ.data, catQ.data, custos, fotos, cores, canonico, aliquotas, devolucoes, janela, anterior]);
 
-  return { dados, isLoading: vendasQ.isLoading || catQ.isLoading, isFetching: vendasQ.isFetching, refetch: vendasQ.refetch };
+  return {
+    dados,
+    isLoading: vendasQ.isLoading || catQ.isLoading || custosQ.isLoading,
+    isFetching: vendasQ.isFetching || catQ.isFetching,
+    refetch: vendasQ.refetch,
+  };
 }
