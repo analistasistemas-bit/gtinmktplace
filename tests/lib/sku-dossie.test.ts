@@ -184,6 +184,27 @@ describe('mixDaFamilia', () => {
     expect(mix.find((m) => m.codigo === 'B')).toMatchObject({ unidades: 1, participacaoUnidades: 0.25, lucro: 5, deltaLucro: 5 });
     expect(mix.find((m) => m.codigo === 'C')).toMatchObject({ titulo: 'Rosa', unidades: 0, participacaoUnidades: 0, lucro: null, deltaLucro: null, semVendas: true });
   });
+
+  it('só a composição do catálogo: produto de outro pack e SEM_CODIGO não entram nem no total', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, date_closed: '2026-09-15T12:00:00Z', total_amount: 30, liquido: 27, itens: [item({ id: 'i1', codigo: 'A', quantity: 3, unit_price: 10 })] }),
+      venda({ id: 'x', order_id: 2, date_closed: '2026-09-15T12:00:00Z', total_amount: 10, liquido: 9, itens: [item({ id: 'i2', codigo: 'Z', quantity: 5, unit_price: 2 })] }),
+      venda({ id: 'y', order_id: 3, date_closed: '2026-09-15T12:00:00Z', total_amount: 10, liquido: 9, itens: [item({ id: 'i3', codigo: null, quantity: 4, unit_price: 2.5 })] }),
+    ];
+    const linhas = agregarPorSku(agrupar(vendas), S1, new Map(), new Set());
+    const mix = mixDaFamilia(linhas, [], [cat('A', 'Azul'), cat('B', 'Verde')]);
+    expect(mix.map((m) => m.codigo)).toEqual(['A', 'B']);
+    expect(mix[0].participacaoUnidades).toBe(1);
+  });
+
+  it('irmã que vendeu no anterior e zerou agora: delta mostra a queda', () => {
+    const vendas = [venda({ id: 'b', order_id: 2, date_closed: '2026-09-15T12:00:00Z', total_amount: 60, liquido: 54,
+      itens: [item({ id: 'i2', codigo: 'B', quantity: 1, unit_price: 60 })] })];
+    const anterior = agregarPorSku(agrupar(vendas), S1, new Map(), new Set());
+    expect(anterior[0].m.lucro).toBe(50); // 54 − 4
+    const b = mixDaFamilia([], anterior, [cat('B', 'Verde')])[0];
+    expect(b).toMatchObject({ lucro: null, deltaLucro: -50, semVendas: true });
+  });
 });
 
 describe('situacaoCampanhas', () => {

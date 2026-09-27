@@ -152,23 +152,26 @@ export interface LinhaMix {
   lucro: number | null; deltaLucro: number | null; semVendas: boolean;
 }
 
-/** Mix das irmãs: composição atual do catálogo (irmãs sem venda incluídas) mais códigos vendidos
- *  fora dele. Delta de lucro contra o período anterior; sem venda no anterior conta 0. */
+/** Mix das irmãs: só a composição atual do catálogo (irmãs sem venda incluídas) — as linhas de
+ *  outros produtos do mesmo pack e SEM_CODIGO ficam de fora, inclusive do total. Delta de lucro
+ *  contra o período anterior; o lado sem venda conta 0 (a irmã que zerou mostra a queda). */
 export function mixDaFamilia(linhas: LinhaSku[], anterior: LinhaSku[], catalogoFamilia: CatalogoSku[]): LinhaMix[] {
-  const atual = new Map(linhas.map((l) => [l.codigo, l]));
-  const antes = new Map(anterior.map((l) => [l.codigo, l]));
   const nomes = new Map(catalogoFamilia.map((c) => [c.codigo, c.nome]));
-  const codigos = [...new Set([...catalogoFamilia.map((c) => c.codigo), ...linhas.map((l) => l.codigo)])];
-  const total = linhas.reduce((s, l) => s + l.acc.unidades, 0);
-  return codigos.map((codigo) => {
+  const atual = new Map(linhas.filter((l) => nomes.has(l.codigo)).map((l) => [l.codigo, l]));
+  const antes = new Map(anterior.filter((l) => nomes.has(l.codigo)).map((l) => [l.codigo, l]));
+  let total = 0;
+  for (const l of atual.values()) total += l.acc.unidades;
+  return [...nomes.keys()].map((codigo) => {
     const l = atual.get(codigo);
+    const a = antes.get(codigo);
     const unidades = l?.acc.unidades ?? 0;
     const lucro = l ? l.m.lucro : null;
-    const lucroAntes = antes.has(codigo) ? antes.get(codigo)!.m.lucro : 0;
+    const lucroAgora = l ? l.m.lucro : 0;
+    const lucroAntes = a ? a.m.lucro : 0;
     return {
       codigo, titulo: nomes.get(codigo) ?? l?.titulo ?? codigo, unidades,
       participacaoUnidades: total > 0 ? unidades / total : 0,
-      lucro, deltaLucro: lucro != null && lucroAntes != null ? round2(lucro - lucroAntes) : null,
+      lucro, deltaLucro: (l || a) && lucroAgora != null && lucroAntes != null ? round2(lucroAgora - lucroAntes) : null,
       semVendas: unidades === 0,
     };
   }).sort((a, b) => b.unidades - a.unidades || a.codigo.localeCompare(b.codigo));
