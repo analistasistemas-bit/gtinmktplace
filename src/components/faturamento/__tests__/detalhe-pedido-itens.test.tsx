@@ -27,7 +27,7 @@ function pedido(overrides: Partial<Pedido>): Pedido {
     comprador_id: null, comprador_nick: null, comprador_nome: null, status: 'paid',
     faturavel: true,
     statusDetail: null, shipping_status: null, shipping_substatus: null, uf: null, cidade: null,
-    unidades: 1, bruto: 50, brutoFaturavel: 50, frete: null, liquido: 40, money_release_date: null,
+    unidades: 1, unidadesFaturaveis: 1, bruto: 50, brutoFaturavel: 50, frete: null, liquido: 40, money_release_date: null,
     temMembrosSemDataLiberacao: false, sacado_em: null, sacado_por: null, estorno: 0,
     custo: null, imposto: 0, markup: null, comissao: 5, rastreio: null, is_publiai: false,
     tem_devolucao: false, ehKit: false, itens: [],

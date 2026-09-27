@@ -66,6 +66,8 @@ export interface Pedido {
   cidade: string | null;
   /** Soma das quantidades dos itens. */
   unidades: number;
+  /** Só itens de orders faturáveis — o que o KPI "Unidades" conta (pack misto não conta o cancelado). */
+  unidadesFaturaveis: number;
   /** Valor do checkout: soma de total_amount dos orders do pedido, faturáveis ou não. */
   bruto: number;
   /** Bruto que conta como faturamento (ADR-0038): só os membros `paid/partially_refunded/refunded`.
@@ -152,25 +154,36 @@ export function agruparPorPedido(
       return v.itens.map((it, i) => ({ it, faturavel, uf: v.uf, estorno: i === 0 ? v.estorno ?? 0 : 0 }));
     });
     const unidades = itensFlat.reduce((s, { it }) => s + it.quantity, 0);
+    // KPI "Unidades" conta só o que foi vendido de fato — igual ao Financeiro (calcularResumo).
+    const unidadesFaturaveis = itensFlat.reduce((s, { it, faturavel }) => s + (faturavel ? it.quantity : 0), 0);
     // Base do rateio: só o valor dos itens faturáveis — um item cancelado não "rouba" fatia do
     // líquido (que também só soma membros faturáveis; ver liquidoMembro acima).
     const valorItensFaturaveis = itensFlat
       .filter(({ faturavel }) => faturavel)
       .reduce((s, { it }) => s + it.unit_price * it.quantity, 0);
+    // Fatia do líquido por item, com o resíduo de centavos no item faturável de maior valor (mesma
+    // regra do rateio de frete): a soma dos itens bate com o líquido do pedido (Vendas SKU, ADR-0172).
+    const liqItens = itensFlat.map(({ it, faturavel }) => (faturavel && valorItensFaturaveis > 0
+      ? round2((liquido * it.unit_price * it.quantity) / valorItensFaturaveis)
+      : 0));
+    let idxMaior = -1;
+    itensFlat.forEach(({ it, faturavel }, i) => {
+      if (faturavel && (idxMaior < 0 || it.unit_price * it.quantity > itensFlat[idxMaior].it.unit_price * itensFlat[idxMaior].it.quantity)) idxMaior = i;
+    });
+    if (idxMaior >= 0 && valorItensFaturaveis > 0) {
+      liqItens[idxMaior] = round2(liqItens[idxMaior] + liquido - liqItens.reduce((s, x) => s + x, 0));
+    }
 
     let custoTotal = 0;
     let temCusto = false;
     let impostoTotal = 0;
-    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, estorno }) => {
+    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, estorno }, i) => {
       const custo = custoDoItem(it, custoResolver);
       if (faturavel && custo != null) { custoTotal += custo; temCusto = true; }
       const imposto = faturavel ? impostoDoItem(it, aliquotaResolver, uf) : 0;
       const aliquotaPct = imposto > 0 ? aliquotaResolver?.(it, uf) ?? null : null;
       impostoTotal += imposto;
-      const valorItem = it.unit_price * it.quantity;
-      const liqItem = faturavel && valorItensFaturaveis > 0
-        ? round2((liquido * valorItem) / valorItensFaturaveis)
-        : 0;
+      const liqItem = liqItens[i];
       const liqItemComImposto = round2(liqItem - imposto);
       const markup = faturavel && custo != null && custo > 0
         ? calcularMarkup(liqItemComImposto, custo).markup
@@ -228,7 +241,7 @@ export function agruparPorPedido(
       sacado_em,
       sacado_por,
       estorno: round2(membros.reduce((s, v) => s + (v.estorno ?? 0), 0)),
-      unidades, bruto, brutoFaturavel, frete, liquido: liquidoComImposto, custo, imposto, markup, comissao,
+      unidades, unidadesFaturaveis, bruto, brutoFaturavel, frete, liquido: liquidoComImposto, custo, imposto, markup, comissao,
       rastreio: primeiro.tracking_number,
       uf: primeiro.uf ?? null,
       cidade: primeiro.cidade ?? null,
@@ -362,7 +375,7 @@ export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
     faturaveis += 1;
     bruto += p.brutoFaturavel;
     liquido += p.liquido;
-    unidades += p.unidades;
+    unidades += p.unidadesFaturaveis;
     if (p.custo != null && p.custo > 0) { liqComCusto += p.liquido; custoTotal += p.custo; }
     if (p.comprador_id != null) {
       pedidosPorComprador.set(p.comprador_id, (pedidosPorComprador.get(p.comprador_id) ?? 0) + 1);

@@ -22,6 +22,7 @@ function pedido(chave: string, faturavel = true): Pedido {
     uf: null,
     cidade: null,
     unidades: 1,
+    unidadesFaturaveis: 1,
     bruto: 10,
     brutoFaturavel: faturavel ? 10 : 0,
     frete: null,

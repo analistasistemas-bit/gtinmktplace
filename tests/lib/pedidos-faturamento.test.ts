@@ -326,3 +326,34 @@ describe('pedidoCasaBusca', () => {
     expect(pedidoCasaBusca(p, '')).toBe(true);
   });
 });
+
+// Vendas SKU (ADR-0172) soma o líquido dos itens por SKU e precisa bater com o líquido dos pedidos.
+describe('rateio do líquido entre itens', () => {
+  it('não perde centavos: soma dos itens = líquido do pedido', () => {
+    const vendas = [venda({
+      id: 'a', order_id: 1, total_amount: 120, sale_fee_total: 20, liquido: 100,
+      itens: [
+        item({ id: 'i1', unit_price: 40 }), item({ id: 'i2', unit_price: 40 }), item({ id: 'i3', unit_price: 40 }),
+      ],
+    })];
+    const [p] = agruparPorPedido(vendas);
+    expect(p.liquido).toBe(100);
+    const soma = Math.round(p.itens.reduce((s, it) => s + it.liquido, 0) * 100) / 100;
+    expect(soma).toBe(100);
+  });
+});
+
+describe('unidades faturáveis', () => {
+  it('pack com uma order cancelada: KPI conta só as unidades faturáveis (igual ao Financeiro)', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, pack_id: 50, status: 'cancelled', total_amount: 10,
+        itens: [item({ id: 'i1', quantity: 1 })] }),
+      venda({ id: 'b', order_id: 2, pack_id: 50, total_amount: 10,
+        itens: [item({ id: 'i2', quantity: 1 })] }),
+    ];
+    const pedidos = agruparPorPedido(vendas);
+    expect(pedidos[0].unidades).toBe(2);            // a linha do pedido mostra o que foi comprado
+    expect(pedidos[0].unidadesFaturaveis).toBe(1);  // o que conta como vendido
+    expect(calcularKpisPedidos(pedidos).unidades).toBe(1);
+  });
+});

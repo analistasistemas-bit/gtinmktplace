@@ -29,8 +29,16 @@ function pedido(over: Partial<Pedido> = {}): Pedido {
     tem_devolucao: false,
     itens: [],
     ...over,
+    unidadesFaturaveis: over.unidadesFaturaveis ?? over.unidades ?? 1,
   };
 }
+
+describe('agruparPorGeografia — unidades', () => {
+  it('pack com order cancelada conta só as unidades faturáveis na UF', () => {
+    const geo = agruparPorGeografia([pedido({ uf: 'SP', unidades: 2, unidadesFaturaveis: 1 })]);
+    expect(geo.porUf.find((u) => u.uf === 'SP')!.unidades).toBe(1);
+  });
+});
 
 describe('agruparPorGeografia', () => {
   it('agrupa 2 UFs corretamente (pedidos, valor, pctPedidos)', () => {

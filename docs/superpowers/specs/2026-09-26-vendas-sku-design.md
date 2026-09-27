@@ -92,6 +92,16 @@ Recompra (compradores que voltam ao SKU), exportação, ações diretas (abrir f
 Pausa/reativação na linha do tempo, enquanto não houver registro. Tela de configuração dos limites.
 Backfill de pedidos anteriores à entrada no PubliAI.
 
+## Pré-requisitos corrigidos antes da Fatia 1 (2026-09-26)
+
+- **Centavos:** o rateio do líquido entre itens (`agruparPorPedido`) agora joga o resíduo no item faturável
+  de maior valor. A soma dos itens = líquido do pedido.
+- **Unidades:** `Pedido.unidadesFaturaveis` alimenta o KPI "Unidades" da aba Vendas e a Geografia. Pack
+  com order cancelada não conta o item cancelado, igual ao Financeiro.
+- **Não alterado, de propósito:** o markup por pedido/pack continua entrando com o líquido inteiro quando
+  qualquer item tem custo (`sales-summary.ts`, comentário "assim markup/lucro batem entre todas as telas").
+  Medido: 1 pack em 3.778. A Vendas SKU calcula por item e não herda isso.
+
 ## Riscos
 
 - Dossiê de SKU com pouco volume vira ruído: a tendência exige ≥ 5 unidades na janela.
