@@ -268,23 +268,41 @@ export async function buscarShipment(token: string, shippingId: number | string 
   }
 }
 
+/** Teto de pedidos numa janela de varredura (ADR-0173): acima disso, `buscarPedidosPeriodoEstrito`
+ *  lança em vez de paginar sem fim — o worker deve encurtar a janela, não gastar o CPU de 2s
+ *  paginando uma organização com histórico grande. */
+export const TETO_PEDIDOS_JANELA = 5000;
+
+async function resolverSellerId(headers: Record<string, string>, f: typeof fetch): Promise<string> {
+  const meResp = await f(`${API}/users/me`, { headers });
+  if (!meResp.ok) throw new Error(`ML /users/me ${meResp.status}`);
+  const seller = (await meResp.json())?.id;
+  if (!seller) throw new Error('ML: seller id ausente');
+  return String(seller);
+}
+
+function parsePaginaBusca(data: unknown): { pedidos: PedidoML[]; total: number } {
+  const pedidos: PedidoML[] = Array.isArray((data as { results?: unknown })?.results)
+    ? (data as { results: PedidoML[] }).results
+    : [];
+  const total = Number((data as { paging?: { total?: number } })?.paging?.total ?? pedidos.length);
+  return { pedidos, total };
+}
+
 /** Varre /orders/search do vendedor no período. Retorna pedidos completos. */
 export async function buscarPedidosPeriodo(
   token: string,
   intervalo: { desde: string; ate: string },
 ): Promise<PedidoML[]> {
   const headers = { Authorization: `Bearer ${token}` };
-  const meResp = await fetch(`${API}/users/me`, { headers });
-  if (!meResp.ok) throw new Error(`ML /users/me ${meResp.status}`);
-  const seller = (await meResp.json())?.id;
-  if (!seller) throw new Error('ML: seller id ausente');
+  const seller = await resolverSellerId(headers, fetch);
 
   const pedidos: PedidoML[] = [];
   const limit = 50;
   let offset = 0;
   while (offset < 5000) {
     const params = new URLSearchParams({
-      seller: String(seller),
+      seller,
       'order.date_created.from': intervalo.desde,
       'order.date_created.to': intervalo.ate,
       sort: 'date_desc',
@@ -296,14 +314,65 @@ export async function buscarPedidosPeriodo(
       if (offset === 0) throw new Error(`ML /orders ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
       break;
     }
-    const data = await resp.json();
-    const results: PedidoML[] = Array.isArray(data?.results) ? data.results : [];
+    const { pedidos: results, total } = parsePaginaBusca(await resp.json());
     pedidos.push(...results);
-    const total = Number(data?.paging?.total ?? pedidos.length);
     offset += limit;
     if (results.length === 0 || offset >= total) break;
   }
   return pedidos;
+}
+
+/** Mesma varredura de buscarPedidosPeriodo, mas com COBERTURA VERIFICÁVEL (ADR-0173): qualquer
+ *  página não-2xx ou exceção lança; `paging.total` > TETO lança (janela grande demais — encurtar);
+ *  ao fim, deduplica por id e exige `ids únicos === paging.total` E total igual na 1ª e na última
+ *  página. Divergência = reordenação entre páginas durante a leitura (o sort do ML é por
+ *  date_closed) → lança; o retry da mensagem relê. Nunca devolve lista com buraco. */
+export async function buscarPedidosPeriodoEstrito(
+  token: string,
+  intervalo: { desde: string; ate: string },
+  f: typeof fetch = fetch,
+): Promise<PedidoML[]> {
+  const headers = { Authorization: `Bearer ${token}` };
+  const seller = await resolverSellerId(headers, f);
+
+  const pedidos: PedidoML[] = [];
+  const limit = 50;
+  let offset = 0;
+  let totalPrimeira: number | null = null;
+  let totalUltima = 0;
+  for (;;) {
+    const params = new URLSearchParams({
+      seller,
+      'order.date_created.from': intervalo.desde,
+      'order.date_created.to': intervalo.ate,
+      sort: 'date_desc',
+      offset: String(offset),
+      limit: String(limit),
+    });
+    const resp = await f(`${API}/orders/search?${params}`, { headers });
+    if (!resp.ok) throw new Error(`ML /orders ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+    const { pedidos: results, total } = parsePaginaBusca(await resp.json());
+    if (totalPrimeira === null) {
+      totalPrimeira = total;
+      if (totalPrimeira > TETO_PEDIDOS_JANELA) {
+        throw new Error(`ML /orders: janela com ${totalPrimeira} pedidos, acima do teto de ${TETO_PEDIDOS_JANELA} — encurte o período`);
+      }
+    }
+    totalUltima = total;
+    pedidos.push(...results);
+    offset += limit;
+    if (results.length === 0 || offset >= total) break;
+  }
+
+  if (totalPrimeira !== totalUltima) {
+    throw new Error(`ML /orders: total mudou durante a varredura (${totalPrimeira} → ${totalUltima}) — pedido novo ou reordenação`);
+  }
+  const vistos = new Map<string, PedidoML>();
+  for (const p of pedidos) vistos.set(String(p.id), p);
+  if (vistos.size !== totalPrimeira) {
+    throw new Error(`ML /orders: cobertura incompleta (${vistos.size} pedidos únicos, total ${totalPrimeira}) — reordenação entre páginas`);
+  }
+  return [...vistos.values()];
 }
 
 /** Upsert de uma venda + substituição dos itens. Idempotente por (user_id, order_id). */
