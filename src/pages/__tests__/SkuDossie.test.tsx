@@ -123,7 +123,7 @@ const venda = (order: number, codigo: string, titulo: string): Venda => ({
 } as Venda);
 
 const ponto = (inicio: string, fim: string, rotulo: string, incompleto: boolean, over: Partial<PontoSerie> = {}): PontoSerie => ({
-  intervalo: { inicio, fim, rotulo, incompleto }, unidades: 0, bruto: 0, lucro: null, fonteCusto: 'sem_custo',
+  intervalo: { inicio, fim, rotulo, incompleto, inicioParcial: false }, unidades: 0, bruto: 0, lucro: null, fonteCusto: 'sem_custo',
   precoMedio: null, precoMin: null, precoMax: null, unidadesKit: 0, pedidos: [], ...over,
 });
 
@@ -184,6 +184,35 @@ describe('SkuDossie: série e eventos', () => {
     await user.click(within(sheet).getByRole('button', { name: /COMPRADOR1/ }));
     expect(within(sheet).getByText('4401')).toBeInTheDocument();
     expect(within(sheet).getByText('este SKU')).toBeInTheDocument();
+  });
+
+  it('1º intervalo que começa antes do período: "(início parcial)"', () => {
+    const d = comSerie();
+    d.serie[0] = { ...d.serie[0], intervalo: { ...d.serie[0].intervalo, inicioParcial: true } };
+    renderPagina('ok', d);
+    const serie = screen.getByRole('region', { name: /Evolução/ });
+    expect(within(serie).getByRole('button', { name: /14\/09 \(início parcial\)/ })).toBeInTheDocument();
+    expect(within(serie).getByText('(início parcial)')).toBeInTheDocument();
+  });
+
+  it('régua: um só tab stop, setas andam entre intervalos e Enter abre o Sheet', async () => {
+    const user = userEvent.setup();
+    renderPagina('ok', comSerie());
+    const serie = screen.getByRole('region', { name: /Evolução/ });
+    const b14 = within(serie).getByRole('button', { name: /14\/09/ });
+    const b21 = within(serie).getByRole('button', { name: /21\/09/ });
+    // o intervalo corrente é o ponto de entrada
+    expect(b21).toHaveAttribute('tabindex', '0');
+    expect(b14).toHaveAttribute('tabindex', '-1');
+    b21.focus();
+    await user.keyboard('{ArrowLeft}');
+    expect(b14).toHaveFocus();
+    expect(b14).toHaveAttribute('tabindex', '0');
+    await user.keyboard('{ArrowRight}');
+    expect(b21).toHaveFocus();
+    await user.keyboard('{ArrowLeft}{Enter}');
+    expect(within(await screen.findByRole('dialog')).getByText(/Semana de 14\/09/)).toBeInTheDocument();
+    expect(within(screen.getByRole('dialog')).getByText('total do pedido')).toBeInTheDocument();
   });
 
   it('eventos: agrupados por mês, selos de compartilhado e não resolvido', () => {

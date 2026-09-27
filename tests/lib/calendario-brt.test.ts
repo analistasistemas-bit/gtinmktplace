@@ -21,4 +21,10 @@ describe('intervalosBRT', () => {
       ['2026-09-01T03:00:00.000Z', 'set/26', true],
     ]);
   });
+  it('1º intervalo que começa antes do período é marcado inicioParcial', () => {
+    const iv = intervalosBRT('2026-09-16T03:00:00.000Z', '2026-09-27T02:59:59.999Z', 'semana', new Date('2026-10-01T12:00:00Z'));
+    expect(iv.map((i) => i.inicioParcial)).toEqual([true, false]);
+    const exato = intervalosBRT('2026-09-14T03:00:00.000Z', '2026-09-27T02:59:59.999Z', 'semana', new Date('2026-10-01T12:00:00Z'));
+    expect(exato.map((i) => i.inicioParcial)).toEqual([false, false]);
+  });
 });

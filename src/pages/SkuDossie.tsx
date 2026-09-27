@@ -146,7 +146,7 @@ export default function SkuDossie() {
             <p className="text-xs text-muted-foreground">Nenhuma venda neste período. O Δ compara com o período anterior.</p>
           )}
           <SerieDossie serie={dados.serie} perguntas={dados.perguntasPorIntervalo} eventos={dados.eventos} codigos={dados.codigos}
-            familia={familia} temKit={dados.kitVirtual != null} passo={passo} onPasso={setPasso} />
+            familia={familia} temKit={dados.kitVirtual != null} historicoDesde={dados.historicoDesde} passo={passo} onPasso={setPasso} />
         </section>
       )}
 

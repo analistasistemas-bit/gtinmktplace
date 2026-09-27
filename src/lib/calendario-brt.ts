@@ -3,8 +3,9 @@
 const OFFSET_MS = 3 * 3_600_000;
 const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 export type Passo = 'semana' | 'mes';
-/** Intervalo meio-aberto `[inicio, fim)` em ISO. `incompleto` = ainda não terminou em `agora`. */
-export interface Intervalo { inicio: string; fim: string; rotulo: string; incompleto: boolean }
+/** Intervalo meio-aberto `[inicio, fim)` em ISO. `incompleto` = ainda não terminou em `agora`;
+ *  `inicioParcial` = começa antes de `desde` (a 1ª semana/mês vai além do período escolhido). */
+export interface Intervalo { inicio: string; fim: string; rotulo: string; incompleto: boolean; inicioParcial: boolean }
 
 /** "Relógio de parede" BRT como Date UTC (getUTC* = campos BRT). */
 const brt = (ms: number) => new Date(ms - OFFSET_MS);
@@ -34,6 +35,7 @@ export function intervalosBRT(desde: string, ate: string, passo: Passo, agora: D
       inicio: inicio.toISOString(), fim: fim.toISOString(),
       rotulo: passo === 'mes' ? `${MESES[d.getUTCMonth()]}/${String(d.getUTCFullYear()).slice(2)}` : `${dd(d.getUTCDate())}/${dd(d.getUTCMonth() + 1)}`,
       incompleto: fim.getTime() > agora.getTime(),
+      inicioParcial: inicio.getTime() < Date.parse(desde),
     });
   }
   return out;
