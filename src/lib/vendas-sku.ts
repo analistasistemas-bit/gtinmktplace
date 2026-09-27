@@ -213,3 +213,119 @@ export function alertasSku(l: Pick<LinhaSku, 'acc' | 'm'>, cobertura: Cobertura)
   if (l.m.fonteCusto === 'sem_custo' || l.m.fonteCusto === 'parcial') out.push('sem_custo');
   return out;
 }
+
+export interface KpisSku {
+  bruto: number; lucro: number | null; markup: number | null; margemSVenda: number | null;
+  unidades: number; skusComVenda: number; skusVendaUnica: number;
+  concentracaoTop5: number | null; pctBrutoCustoReal: number | null; prejuizo: number;
+}
+
+export function calcularKpisSku(linhas: LinhaSku[]): KpisSku {
+  const total = somarAcumuladores(linhas.map((l) => l.acc));
+  const m = metricas(total);
+  const positivos = linhas.map((l) => l.m.lucro ?? 0).filter((v) => v > 0).sort((a, b) => b - a);
+  const somaPos = positivos.reduce((s, v) => s + v, 0);
+  const comVenda = linhas.filter((l) => l.codigo !== SEM_CODIGO && l.acc.unidades > 0);
+  return {
+    bruto: round2(total.bruto),
+    lucro: m.lucro,
+    markup: m.markup,
+    margemSVenda: m.margemSVenda,
+    unidades: total.unidades,
+    skusComVenda: comVenda.length,
+    skusVendaUnica: comVenda.filter((l) => l.acc.pedidos === 1).length,
+    concentracaoTop5: somaPos > 0 ? positivos.slice(0, 5).reduce((s, v) => s + v, 0) / somaPos : null,
+    pctBrutoCustoReal: total.bruto > 0 ? total.brutoCustoReal / total.bruto : null,
+    prejuizo: round2(linhas.reduce((s, l) => s + (l.m.lucro != null && l.m.lucro < 0 ? l.m.lucro : 0), 0)),
+  };
+}
+
+export interface Delta { texto: string; tendencia: 'up' | 'down' | 'neutral' }
+
+// Mesmo sinal de menos (U+2212) no Δ% e no Δ em R$.
+const pct1 = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${Math.abs(n * 100).toFixed(1).replace('.', ',')}`;
+const tend = (d: number): Delta['tendencia'] => (d > 0 ? 'up' : d < 0 ? 'down' : 'neutral');
+
+/** Δ% quando a base anterior é positiva; senão Δ em R$ (base zero/negativa não tem % honesto). */
+export function deltaValor(atual: number | null, anterior: number | null, fmt: (n: number) => string): Delta | null {
+  if (atual == null || anterior == null) return null;
+  const d = atual - anterior;
+  if (anterior > 0) return { texto: `${pct1(d / anterior)}%`, tendencia: tend(d) };
+  return { texto: `${d >= 0 ? '+' : '−'}${fmt(Math.abs(d))}`, tendencia: tend(d) };
+}
+
+/** Markup e Margem s/ venda variam em pontos percentuais. */
+export function deltaPp(atual: number | null, anterior: number | null): Delta | null {
+  if (atual == null || anterior == null) return null;
+  const d = atual - anterior;
+  return { texto: `${pct1(d)} p.p.`, tendencia: tend(d) };
+}
+
+export type ClasseAbc = 'A' | 'B' | 'C' | 'D';
+
+/** A até 80% acumulado, B até 95%, C o resto — acumulado ANTES do item, então o 1º é sempre A.
+ *  Por lucro: só lucro positivo entra; prejuízo = D; sem custo fica sem classe. */
+export function curvaAbc(linhas: LinhaSku[], base: 'lucro' | 'bruto'): Map<string, ClasseAbc> {
+  const valor = (l: LinhaSku) => (base === 'lucro' ? l.m.lucro : l.acc.bruto);
+  const out = new Map<string, ClasseAbc>();
+  const pos = linhas.filter((l) => (valor(l) ?? 0) > 0).sort((a, b) => valor(b)! - valor(a)!);
+  const total = pos.reduce((s, l) => s + valor(l)!, 0);
+  let acum = 0;
+  for (const l of pos) {
+    const share = acum / total;
+    out.set(l.codigo, share < LIMITES.abcA ? 'A' : share < LIMITES.abcB ? 'B' : 'C');
+    acum += valor(l)!;
+  }
+  if (base === 'lucro') for (const l of linhas) if (l.m.lucro != null && l.m.lucro < 0) out.set(l.codigo, 'D');
+  return out;
+}
+
+export interface VariacaoLucro { codigo: string; titulo: string | null; delta: number; situacao: 'entrou' | 'saiu' | 'mudou' }
+
+/** Quem explica a variação do lucro, em R$. Só SKUs com lucro calculado em algum dos períodos. */
+export function explicarVariacao(atual: LinhaSku[], anterior: LinhaSku[], n = 5): VariacaoLucro[] {
+  const ant = new Map(anterior.map((l) => [l.codigo, l]));
+  const at = new Map(atual.map((l) => [l.codigo, l]));
+  const out: VariacaoLucro[] = [];
+  for (const codigo of new Set([...at.keys(), ...ant.keys()])) {
+    const a = at.get(codigo); const b = ant.get(codigo);
+    if (a?.m.lucro == null && b?.m.lucro == null) continue;
+    const delta = round2((a?.m.lucro ?? 0) - (b?.m.lucro ?? 0));
+    if (delta === 0) continue;
+    out.push({ codigo, titulo: (a ?? b)!.titulo, delta, situacao: !b ? 'entrou' : !a ? 'saiu' : 'mudou' });
+  }
+  return out.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta)).slice(0, n);
+}
+
+const fmtBRL0 = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/** 0 a 3 frases, só quando a evidência existe. */
+export function gerarInsights(p: { linhas: LinhaSku[]; variacoes: VariacaoLucro[]; coberturaBaixa: number; parados: number }): string[] {
+  const out: string[] = [];
+  const pos = p.linhas.map((l) => l.m.lucro ?? 0).filter((v) => v > 0).sort((a, b) => b - a);
+  if (pos.length >= 5) {
+    const metade = pos.reduce((s, v) => s + v, 0) / 2;
+    let acum = 0; let k = 0;
+    while (acum < metade) acum += pos[k++];
+    if (k <= Math.ceil(pos.length * 0.2)) out.push(`${k} ${k === 1 ? 'SKU faz' : 'SKUs fazem'} metade do lucro do período.`);
+  }
+  const queda = p.variacoes.find((v) => v.delta < 0 && v.situacao !== 'entrou');
+  if (queda) out.push(`${queda.titulo ?? queda.codigo} tirou ${fmtBRL0(-queda.delta)} do lucro contra o período anterior.`);
+  if (p.coberturaBaixa > 0) out.push(`${p.coberturaBaixa} ${p.coberturaBaixa === 1 ? 'SKU tem' : 'SKUs têm'} estoque para menos de ${LIMITES.coberturaMinDias} dias.`);
+  if (p.parados > 0) out.push(`${p.parados} ${p.parados === 1 ? 'SKU parou' : 'SKUs pararam'} de vender há mais de ${LIMITES.janelaTendenciaDias} dias.`);
+  return out.slice(0, 3);
+}
+
+export interface LinhaFamilia { codigoPai: string; nomeFamilia: string | null; acc: AcumuladorSku; m: MetricasSku; filhos: LinhaSku[] }
+
+export function agruparPorFamilia(linhas: LinhaSku[]): LinhaFamilia[] {
+  const g = new Map<string, LinhaSku[]>();
+  for (const l of linhas) {
+    const k = l.codigoPai ?? `sem-familia:${l.codigo}`;
+    g.set(k, [...(g.get(k) ?? []), l]);
+  }
+  return [...g].map(([codigoPai, filhos]) => {
+    const acc = somarAcumuladores(filhos.map((f) => f.acc));
+    return { codigoPai, nomeFamilia: filhos[0].nomeFamilia, acc, m: metricas(acc), filhos };
+  });
+}

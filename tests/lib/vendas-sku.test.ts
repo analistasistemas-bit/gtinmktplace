@@ -3,6 +3,7 @@ import { agruparPorPedido, calcularKpisPedidos } from '@/lib/pedidos-faturamento
 import {
   agregarPorSku, SEM_CODIGO,
   classificarTendencia, coberturaDias, alertasSku, unidadesPorCodigo, metricas, somarAcumuladores,
+  calcularKpisSku, deltaValor, deltaPp, curvaAbc, explicarVariacao, gerarInsights, agruparPorFamilia, type LinhaSku,
 } from '@/lib/vendas-sku';
 import type { Venda, VendaItem } from '@/lib/faturamento';
 import type { CustoResolver } from '@/lib/resumo-vendas';
@@ -143,5 +144,72 @@ describe('unidadesPorCodigo', () => {
       venda({ id: 'b', order_id: 2, status: 'cancelled', itens: [item({ codigo: 'A', quantity: 5 })] }),
     ]);
     expect(unidadesPorCodigo(pedidos, SET).get('A')).toBe(2);
+  });
+});
+
+function linha(codigo: string, lucro: number | null, bruto = 100, extra: Partial<LinhaSku> = {}): LinhaSku {
+  const acc = somarAcumuladores([]);
+  acc.bruto = bruto; acc.unidades = 1; acc.pedidos = 1; acc.brutoCustoReal = bruto;
+  if (lucro != null) { acc.itensComCusto = 1; acc.unidadesComCusto = 1; acc.custo = 10; acc.liquidoComCusto = lucro + 10; acc.brutoComCusto = bruto; }
+  return { codigo, titulo: codigo, imagemPath: null, codigoPai: null, nomeFamilia: null, fornecedor: null,
+    origem: null, ehKit: false, estoque: null, primeiraVenda: null, acc, m: metricas(acc), pedidoChaves: [], ...extra };
+}
+const brl = (n: number) => `R$ ${n.toFixed(2)}`;
+
+describe('deltas', () => {
+  it('base anterior zero ou negativa → Δ em R$, não %', () => {
+    expect(deltaValor(50, 0, brl)).toEqual({ texto: '+R$ 50.00', tendencia: 'up' });
+    expect(deltaValor(-20, -50, brl)).toEqual({ texto: '+R$ 30.00', tendencia: 'up' });
+    expect(deltaValor(120, 100, brl)).toEqual({ texto: '+20,0%', tendencia: 'up' });
+    expect(deltaValor(null, 100, brl)).toBeNull();
+  });
+  it('percentuais variam em pontos percentuais', () => {
+    expect(deltaPp(0.35, 0.3)).toEqual({ texto: '+5,0 p.p.', tendencia: 'up' });
+  });
+});
+
+describe('curvaAbc por lucro', () => {
+  it('só lucro positivo entra em A/B/C; prejuízo é D; sem custo fica sem classe', () => {
+    const ls = [linha('a', 80), linha('b', 15), linha('c', 5), linha('d', -30), linha('e', null)];
+    const abc = curvaAbc(ls, 'lucro');
+    expect([abc.get('a'), abc.get('b'), abc.get('c'), abc.get('d'), abc.get('e')]).toEqual(['A', 'B', 'C', 'D', undefined]);
+  });
+});
+
+describe('calcularKpisSku', () => {
+  it('prejuízo total, concentração sobre lucro positivo e % do bruto com custo real', () => {
+    const k = calcularKpisSku([linha('a', 80), linha('b', 20), linha('d', -30), linha('e', null)]);
+    expect(k.prejuizo).toBe(-30);
+    expect(k.concentracaoTop5).toBe(1);   // 100 de 100 positivos
+    expect(k.skusComVenda).toBe(4);
+    expect(k.pctBrutoCustoReal).toBe(1);
+  });
+});
+
+describe('explicarVariacao', () => {
+  it('ordena por |Δ lucro| e marca entrou/saiu', () => {
+    const v = explicarVariacao([linha('a', 100), linha('n', 40)], [linha('a', 150), linha('x', 10)]);
+    expect(v.map((x) => [x.codigo, x.delta, x.situacao])).toEqual([
+      ['a', -50, 'mudou'], ['n', 40, 'entrou'], ['x', -10, 'saiu'],
+    ]);
+  });
+});
+
+describe('gerarInsights', () => {
+  it('no máximo 3, e só com evidência', () => {
+    expect(gerarInsights({ linhas: [linha('a', 10)], variacoes: [], coberturaBaixa: 0, parados: 0 })).toEqual([]);
+    const ins = gerarInsights({ linhas: [], variacoes: [{ codigo: 'a', titulo: 'Fita', delta: -50, situacao: 'mudou' }], coberturaBaixa: 2, parados: 3 });
+    expect(ins.length).toBeLessThanOrEqual(3);
+    expect(ins[0]).toContain('Fita');
+  });
+});
+
+describe('agruparPorFamilia', () => {
+  it('soma os filhos e recalcula as razões pelo total', () => {
+    const fams = agruparPorFamilia([linha('a', 10, 100, { codigoPai: 'P' }), linha('b', 30, 100, { codigoPai: 'P' })]);
+    expect(fams).toHaveLength(1);
+    expect(fams[0].m.lucro).toBe(40);
+    expect(fams[0].m.margemSVenda).toBeCloseTo(0.2, 5);
+    expect(fams[0].filhos).toHaveLength(2);
   });
 });
