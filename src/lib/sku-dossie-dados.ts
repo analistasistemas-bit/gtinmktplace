@@ -100,3 +100,72 @@ export async function buscarTrafegoSync(): Promise<TrafegoSync | null> {
   if (error) throw new Error(error.message);
   return data;
 }
+
+// ---- Ads (Fatia 2c). Tabelas org-scoped com RLS; unidade = ad_group_id. ----
+
+export interface AdsSync {
+  estado: string; erro: string | null; ultimo_ok_em: string | null; carga_inicial_ok: boolean; cobertura_desde: string | null;
+  /** metrics_summary.cost × Σ dos grupos listados na última janela ok: diferença > 0 = gasto fora de grupo listado. */
+  custo_resumo: number | null; custo_listado: number | null;
+}
+export interface AdsGrupo {
+  ad_group_id: number; tipo: 'ITEM' | 'FAMILY' | 'CATALOG'; external_id: string | null; campaign_id: number | null;
+  status: string; atualizado_em: string;
+}
+export interface AdsMembro { ad_group_id: number; ml_item_id: string }
+export interface AdsDia {
+  ad_group_id: number; dia: string; cost: number; clicks: number; prints: number; direct_amount: number;
+  indirect_amount: number; total_amount: number; direct_units: number; units: number; coletado_em: string;
+}
+/** Grupos que tocam os MLBs do dossiê, TODOS os membros deles e o código de cada membro. */
+export interface FonteAds {
+  sync: AdsSync | null; grupos: AdsGrupo[]; membros: AdsMembro[]; dias: AdsDia[];
+  codigosDosMembros: Map<string, string[]>;
+}
+
+/** Estado da coleta de Ads da org; null = nunca rodou. */
+export async function buscarAdsSync(): Promise<AdsSync | null> {
+  const { data, error } = await supabase.from('ml_ads_sync')
+    .select('estado, erro, ultimo_ok_em, carga_inicial_ok, cobertura_desde, custo_resumo, custo_listado').maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+  // numeric do Postgres: Number() como em src/lib/pulse.ts (o PostgREST pode devolver string em precisão alta).
+  return { ...data, custo_resumo: data.custo_resumo == null ? null : Number(data.custo_resumo),
+    custo_listado: data.custo_listado == null ? null : Number(data.custo_listado) };
+}
+
+/** MLB → códigos de MLBs arbitrários — RPC `vendas_sku_codigos_mlbs` (mesma UNION de vendas_sku_mlbs).
+ *  MLB sem código não vem no objeto. */
+export async function buscarCodigosMlbs(mlbs: string[]): Promise<Map<string, string[]>> {
+  if (!mlbs.length) return new Map();
+  const { data, error } = await supabase.rpc('vendas_sku_codigos_mlbs', { p_mlbs: mlbs });
+  if (error) throw new Error(error.message);
+  return new Map(Object.entries((data ?? {}) as Record<string, string[]>));
+}
+
+export async function buscarFonteAds(mlbs: string[], desde: string, ate: string): Promise<FonteAds> {
+  const [sync, doDossie] = await Promise.all([
+    buscarAdsSync(),
+    emLotes<AdsMembro>(mlbs, (lote, de, fim) => supabase.from('ml_ads_grupo_item').select('ad_group_id, ml_item_id')
+      .in('ml_item_id', lote).order('ad_group_id').order('ml_item_id').range(de, fim)),
+  ]);
+  const ids = [...new Set(doDossie.map((m) => String(m.ad_group_id)))].sort();
+  if (!ids.length) return { sync, grupos: [], membros: [], dias: [], codigosDosMembros: new Map() };
+  const [grupos, membros, dias] = await Promise.all([
+    emLotes<AdsGrupo>(ids, (lote, de, fim) => supabase.from('ml_ads_grupo')
+      .select('ad_group_id, tipo, external_id, campaign_id, status, atualizado_em')
+      .in('ad_group_id', lote.map(Number)).order('ad_group_id').range(de, fim) as Pagina<AdsGrupo>),
+    emLotes<AdsMembro>(ids, (lote, de, fim) => supabase.from('ml_ads_grupo_item').select('ad_group_id, ml_item_id')
+      .in('ad_group_id', lote.map(Number)).order('ad_group_id').order('ml_item_id').range(de, fim)),
+    emLotes<AdsDia>(ids, (lote, de, fim) => supabase.from('ml_ads_grupo_dia')
+      .select('ad_group_id, dia, cost, clicks, prints, direct_amount, indirect_amount, total_amount, direct_units, units, coletado_em')
+      .in('ad_group_id', lote.map(Number)).gte('dia', desde).lte('dia', ate).order('ad_group_id').order('dia').range(de, fim)),
+  ]);
+  const codigosDosMembros = await buscarCodigosMlbs([...new Set(membros.map((m) => m.ml_item_id))].sort());
+  // numeric → Number() (mesmo cinto de src/lib/pulse.ts).
+  const diasNum = dias.map((d) => ({
+    ...d, cost: Number(d.cost), direct_amount: Number(d.direct_amount), indirect_amount: Number(d.indirect_amount),
+    total_amount: Number(d.total_amount),
+  }));
+  return { sync, grupos, membros, dias: diasNum, codigosDosMembros };
+}

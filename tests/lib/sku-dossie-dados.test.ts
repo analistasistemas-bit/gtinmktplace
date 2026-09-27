@@ -206,3 +206,40 @@ describe('fetchers de eventos', () => {
     await expect(buscarModeracoes(['MLB1'])).rejects.toThrow('boom');
   });
 });
+
+describe('buscarFonteAds (Fatia 2c)', () => {
+  beforeEach(() => { mockFrom.mockReset(); mockRpc.mockReset(); });
+  const syncChain = (data: unknown) => ({ select: () => ({ maybeSingle: () => Promise.resolve({ data, error: null }) }) });
+
+  it('numeric do PostgREST chega como string → Number() em cost, *_amount e no custo do sync', async () => {
+    const sync = { estado: 'ok', erro: null, ultimo_ok_em: null, carga_inicial_ok: true, cobertura_desde: null, custo_resumo: '100.50', custo_listado: '97.40' };
+    const tabelas: Record<string, unknown> = {
+      ml_ads_grupo_item: { data: [{ ad_group_id: 11, ml_item_id: 'MLB1' }], error: null },
+      ml_ads_grupo: { data: [{ ad_group_id: 11, tipo: 'ITEM', external_id: null, campaign_id: null, status: 'ACTIVE', atualizado_em: 'x' }], error: null },
+      ml_ads_grupo_dia: { data: [{ ad_group_id: 11, dia: '2026-09-15', cost: '12.34', clicks: 3, prints: 9, direct_amount: '50.10',
+        indirect_amount: '0.90', total_amount: '51.00', direct_units: 1, units: 1, coletado_em: 'x' }], error: null },
+    };
+    mockFrom.mockImplementation((t: string) => {
+      if (t === 'ml_ads_sync') return syncChain(sync);
+      const chain = fakeChain(tabelas[t]);
+      chain.gte = vi.fn(() => chain);
+      chain.lte = vi.fn(() => chain);
+      return chain;
+    });
+    mockRpc.mockResolvedValueOnce({ data: { MLB1: ['A'] }, error: null });
+    const { buscarFonteAds } = await import('@/lib/sku-dossie-dados');
+    const f = await buscarFonteAds(['MLB1'], '2026-09-14', '2026-09-26');
+    expect(f.sync).toMatchObject({ custo_resumo: 100.5, custo_listado: 97.4 });
+    expect(f.dias[0]).toMatchObject({ cost: 12.34, direct_amount: 50.1, indirect_amount: 0.9, total_amount: 51 });
+    expect(f.codigosDosMembros.get('MLB1')).toEqual(['A']);
+    expect(mockRpc).toHaveBeenCalledWith('vendas_sku_codigos_mlbs', { p_mlbs: ['MLB1'] });
+  });
+
+  it('nenhum grupo toca os MLBs → não lê grupos, dias nem códigos', async () => {
+    mockFrom.mockImplementation((t: string) => (t === 'ml_ads_sync' ? syncChain(null) : fakeChain({ data: [], error: null })));
+    const { buscarFonteAds } = await import('@/lib/sku-dossie-dados');
+    expect(await buscarFonteAds(['MLB1'], '2026-09-14', '2026-09-26')).toMatchObject({ sync: null, grupos: [], dias: [] });
+    expect(mockFrom).toHaveBeenCalledTimes(2);
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+});
