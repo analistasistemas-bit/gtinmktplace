@@ -14,6 +14,8 @@ const FALLBACK_RETRY_MS = 1_500;
 const MAX_TENTATIVAS = 3;
 /** Adiamentos seguidos no mesmo cursor antes de marcar `falha` no lote e seguir (a cadeia nunca fica presa). */
 const LIMITE_ADIAMENTOS = 5;
+/** MLB com visitas ok que o multiget não trouxe. */
+export const STATUS_DESCONHECIDO = 'desconhecido';
 
 export interface RespostaML { status: number; retryAfterMs: number | null; corpo: unknown }
 /** `tentativa` = republicações seguidas no mesmo cursor (0/ausente quando o cursor andou). */
@@ -203,21 +205,23 @@ export async function sincronizarTrafegoOrg(
   }
 }
 
-/** Status é consultivo: erro no multiget só pula a gravação deste lote. Sem duplicatas, só MLBs do lote. */
+/**
+ * Status é consultivo: erro no multiget não derruba a org. Sem duplicatas, só MLBs do lote.
+ * `ultimo_ok_em` vai para todo MLB com visitas ok, com ou sem status (Ruling T4): senão o MLB que o
+ * multiget não trouxe paga a janela de 150 dias todo dia. Sem status → 'desconhecido' (o adapter
+ * preserva o status já gravado).
+ */
 async function gravarStatus(deps: DepsTrafego, lote: string[], feitos: ColetaItem[], orgId: string) {
-  let lidos: { ml_item_id: string; status: string }[];
+  let lidos: { ml_item_id: string; status: string }[] = [];
   try {
     lidos = await deps.lerStatusItens(lote);
   } catch (e) {
     console.warn('[trafego] status dos itens indisponível', { org_id: orgId, erro: mensagem(e) });
-    return;
   }
-  const okEm = new Map(feitos.map((r) => [r.id, r.ultimoOkEm]));
-  const status = new Map<string, StatusItemGravar>();
-  for (const s of lidos) {
-    if (okEm.has(s.ml_item_id) && !status.has(s.ml_item_id)) {
-      status.set(s.ml_item_id, { ml_item_id: s.ml_item_id, status: s.status, ultimo_ok_em: okEm.get(s.ml_item_id)! });
-    }
-  }
-  if (status.size) await deps.gravarStatusItens([...status.values()]);
+  const statusDe = new Map<string, string>();
+  for (const s of lidos) if (!statusDe.has(s.ml_item_id)) statusDe.set(s.ml_item_id, s.status);
+  const itens = feitos
+    .filter((r) => r.ultimoOkEm != null || statusDe.has(r.id))
+    .map((r) => ({ ml_item_id: r.id, status: statusDe.get(r.id) ?? STATUS_DESCONHECIDO, ultimo_ok_em: r.ultimoOkEm }));
+  if (itens.length) await deps.gravarStatusItens(itens);
 }

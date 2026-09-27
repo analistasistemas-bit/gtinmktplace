@@ -100,6 +100,9 @@ verify_jwt = false
 # ADR-0171: worker QStash puro (schedule `40 * * * *`), só aceita assinatura QStash.
 [functions.renovar-tokens-ml]
 verify_jwt = false
+# Vendas SKU Fatia 2b: worker QStash puro (schedule `17 9 * * *` UTC), só aceita assinatura QStash.
+[functions.coletar-trafego-ml]
+verify_jwt = false
 
 # --- verify_jwt = true (chamadas com JWT: frontend ou QStash autenticado) ---
 [functions.atributos-familia]

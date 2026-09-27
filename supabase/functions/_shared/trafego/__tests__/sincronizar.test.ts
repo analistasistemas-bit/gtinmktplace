@@ -261,11 +261,26 @@ describe('sincronizarTrafegoOrg', () => {
     expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, 'MLB1', 'MLB4');
   });
 
-  it('erro no multiget de status não derruba a org: pula o status do lote e segue', async () => {
-    const d = fake({ lerStatusItens: vi.fn(async () => { throw new Error('ML 429'); }) }, ['MLB1']);
+  it('erro no multiget de status não derruba a org: grava ultimo_ok_em com status desconhecido e segue', async () => {
+    const d = fake({ lerStatusItens: vi.fn(async () => { throw new Error('ML 429'); }) }, ['MLB1', 'MLB2']);
+    d.buscarVisitas.mockImplementation(async (id: string) =>
+      id === 'MLB2' ? { status: 404, retryAfterMs: null, corpo: null } : visitas200);
     expect(await sincronizarTrafegoOrg(d, primeira)).toEqual({ resultado: 'ok' });
-    expect(d.gravarStatusItens).not.toHaveBeenCalled();
-    expect(d.avancarCursor).toHaveBeenCalledWith(RODADA, null, 'MLB1');
+    // MLB2 sem visitas ok e sem status: nada a gravar dele
+    expect(d.gravarStatusItens.mock.calls).toEqual([[[
+      { ml_item_id: 'MLB1', status: 'desconhecido', ultimo_ok_em: new Date(T0).toISOString() },
+    ]]]);
+    expect(d.avancarCursor).toHaveBeenCalledWith(RODADA, null, 'MLB2');
+  });
+
+  it('MLB com visitas ok que o multiget não trouxe → ultimo_ok_em gravado com status desconhecido', async () => {
+    const d = fake({ lerStatusItens: vi.fn(async () => [{ ml_item_id: 'MLB1', status: 'active' }]) }, ['MLB1', 'MLB2']);
+    await sincronizarTrafegoOrg(d, primeira);
+    const iso = new Date(T0).toISOString();
+    expect(d.gravarStatusItens.mock.calls).toEqual([[[
+      { ml_item_id: 'MLB1', status: 'active', ultimo_ok_em: iso },
+      { ml_item_id: 'MLB2', status: 'desconhecido', ultimo_ok_em: iso },
+    ]]]);
   });
 
   it('MLB sem coleta ok anterior ganha a janela de 150 dias mesmo com a carga da org concluída', async () => {
