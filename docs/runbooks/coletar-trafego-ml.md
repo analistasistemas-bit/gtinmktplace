@@ -11,8 +11,9 @@ RPCs de `supabase/migrations/20260927084615_vendas_sku_trafego.sql` (service_rol
 decisões: plano `docs/superpowers/plans/2026-09-27-vendas-sku-fatia-2b.md`, spike
 `docs/spikes/052-visitas-e-preco-ml.md`.
 
-Nada disto foi aplicado em produção pela implementação (Ruling 2b-1). A ordem abaixo é obrigatória:
-banco → função → schedule.
+**Ativado em produção em 2026-09-27:** migration aplicada (`db push`), função deployada (ACTIVE, v1) e
+schedule criado (cron `17 9 * * *` UTC, scheduleId `scd_6hhsCf2EDfohfUaikbfkRMCbNXug`). Os passos abaixo
+seguem valendo para reexecução manual, diagnóstico e a rotina de pausar/retomar.
 
 ## 1. Migration (one-time)
 
@@ -61,6 +62,7 @@ curl -s -X POST \
 
 Anotar o `scheduleId` devolvido, conferir com o `curl … /v2/schedules` de
 [edge-functions.md](../reference/edge-functions.md) e acrescentar a linha na tabela de schedules de lá.
+`scheduleId` em produção: `scd_6hhsCf2EDfohfUaikbfkRMCbNXug`.
 
 ## 4. Teste ponta a ponta
 

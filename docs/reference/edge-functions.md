@@ -159,6 +159,13 @@ referência para auditar e recriar. Mantê-la atualizada ao mexer em qualquer cr
 | `pulse-coletar` (tier quente) | `0 */6 * * *` | `{"tier":"quente"}` | 2 |
 | `sincronizar-promocoes` | `10 */6 * * *` | `{}` | 1 |
 | `renovar-tokens-ml` | `40 * * * *` | `{}` | 0 (sempre responde 200; retry só martelaria `/oauth/token`) |
+| `coletar-trafego-ml` | `17 9 * * *` | `{}` | 1 |
+| `coletar-ads-ml` | `17 14 * * *` | `{}` | 1 |
+
+Os schedules de `coletar-trafego-ml` e `coletar-ads-ml` (ADR-0172) foram criados em 2026-09-27:
+`scd_6hhsCf2EDfohfUaikbfkRMCbNXug` (tráfego, `17 9 * * *` UTC) e `scd_7c8F3D7T64XecBkStgxwpDNuho1R`
+(Ads, `17 14 * * *` UTC). O plano QStash foi migrado de Free para **Pay as You Go** nessa data — o
+Free tinha teto de 10 schedules e 1.000 mensagens/dia.
 
 Os dois schedules do `pulse-coletar` (ADR-0119) foram criados em 2026-08-16:
 `scd_7whbaAZrFGPAL3JkbWsmNuYb2AVc` (completo) e `scd_5pCHsB95LbDd7cpJMLsJNK8iHNQC` (quente), body
@@ -1576,8 +1583,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
     logado) não muda: continua sempre 200, o estado 'erro' já aparece na tela.
 
 ### Tráfego e oferta (ADR-0172, Fatia 2b)
-- **coletar-trafego-ml** *(nova, `verify_jwt=false`, só QStash; **ainda não deployada** — runbook
-  `docs/runbooks/coletar-trafego-ml.md`, schedule previsto `17 9 * * *` UTC = 06:17 BRT, sem body,
+- **coletar-trafego-ml** *(nova, `verify_jwt=false`, só QStash; **deployada e ACTIVE (v1) desde
+  2026-09-27** — runbook `docs/runbooks/coletar-trafego-ml.md`, schedule `17 9 * * *` UTC = 06:17 BRT
+  (`scd_6hhsCf2EDfohfUaikbfkRMCbNXug`), sem body,
   retries 1)* — coleta diária de visitas por dia e preço de oferta por MLB, só `GET` no Mercado Livre
   (única exceção: refresh OAuth de `_shared/ml/token.ts`). Regra em `supabase/functions/_shared/trafego/`
   (`inventario`, `janelas`, `parsers`, `sincronizar`, `fiacao`, vitest); fiação em
@@ -1597,9 +1605,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   - Tabelas e RPCs: `docs/reference/modelo-de-dados.md` § Tráfego e oferta.
 
 ### Ads por grupo (ADR-0172, Fatia 2c)
-- **coletar-ads-ml** *(nova, `verify_jwt=false`, só QStash; **ainda não deployada nem ativa** — runbook
-  `docs/runbooks/coletar-ads-ml.md`, schedule previsto `17 14 * * *` UTC = 11:17 BRT, **ainda não
-  registrado**, sem body, retries 1)* — coleta diária do Product Ads por grupo de anúncios
+- **coletar-ads-ml** *(nova, `verify_jwt=false`, só QStash; **deployada e ACTIVE (v1) desde
+  2026-09-27** — runbook
+  `docs/runbooks/coletar-ads-ml.md`, schedule `17 14 * * *` UTC = 11:17 BRT
+  (`scd_7c8F3D7T64XecBkStgxwpDNuho1R`), sem body, retries 1)* — coleta diária do Product Ads por grupo de anúncios
   (`ad_group_id`), só `GET` no Mercado Livre (única exceção: refresh OAuth de `_shared/ml/token.ts`).
   Regra em `supabase/functions/_shared/ads/` (`janelas`, `parsers`, `sincronizar`, `fiacao`, vitest);
   fiação em `coletar-ads-ml/deps.ts`. Dois modos:

@@ -1,6 +1,6 @@
 ---
 tags: [roadmap, sprint]
-atualizado: 2026-09-26
+atualizado: 2026-09-27
 ---
 
 # Sprint Atual
@@ -18,18 +18,28 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > **✅ Monitor de frete ([[0169-monitor-de-frete|ADR-0169]])** — alerta quando o frete de um anúncio
 > sobe >10% e ≥R$2 vs a venda anterior; switch em Configurações > Notificações (nasce desligado).
 >
-> **📋 Vendas SKU — Fatia 1 ([[0172-vendas-sku-analise-por-variacao|ADR-0172]]), na branch
-> `worktree-vendas-sku-design`, ainda não mergeado nem em produção.** Nova aba em
-> `/faturamento?aba=sku`: ranking por variação (`codigo`) com Lucro, Markup, Margem s/ venda,
-> Faturamento, Unidades, devolução, ABC e Tendência, agrupável por família. Todo o cálculo de
-> dinheiro roda no navegador sobre os mesmos itens da aba Vendas — a soma bate por construção,
-> sem fórmula nova. RPC nova `vendas_sku_catalogo()` só enriquece com família/estoque/1ª-última
-> venda. 576 arquivos / 5993 testes verdes, `pnpm preflight` verde, paridade Faturamento/Unidades
-> confirmada contra dado real da Avil (01–25/09/2026). Falta `supabase db push` da migration,
-> revisão final e merge.
+> **✅ Vendas SKU — Fatias 1, 2a, 2b e 2c ([[0172-vendas-sku-analise-por-variacao|ADR-0172]]) — EM
+> PRODUÇÃO desde 2026-09-27.** Merge fast-forward na main até o commit `0635262c`. As 4 migrations
+> aplicadas em produção por `supabase db push` (`20260927024030_vendas_sku_catalogo`,
+> `20260927045118_vendas_sku_dossie`, `20260927084615_vendas_sku_trafego`,
+> `20260927124602_vendas_sku_ads`), histórico remoto e local alinhados. Edge functions
+> `coletar-trafego-ml` e `coletar-ads-ml` deployadas (ACTIVE, v1, `verify_jwt=false`). Plano QStash
+> migrado para Pay as You Go (o Free tinha teto de 10 schedules/1.000 msgs por dia); schedules
+> criados: `coletar-trafego-ml` `17 9 * * *` UTC (`scd_6hhsCf2EDfohfUaikbfkRMCbNXug`) e
+> `coletar-ads-ml` `17 14 * * *` UTC (`scd_7c8F3D7T64XecBkStgxwpDNuho1R`). 1ª execução em produção
+> (27/09 ~18h26 UTC) concluiu `ok` para tráfego e Ads, carga inicial completa nas 3 orgs (Avil, DSA,
+> Daludi Shop), sem erro de CPU. Front validado em produção (conta VALIDATION, só leitura): ranking,
+> dossiê e as abas Vendas / Tráfego e oferta / Ads OK, sem regressão na aba Vendas do Faturamento,
+> 0 erros de console.
 >
-> **📋 Vendas SKU — Fatia 2a: Dossiê do SKU ([[0172-vendas-sku-analise-por-variacao|ADR-0172]]),
-> mesma branch, ainda não mergeado.** Página `/faturamento/sku/:codigo` (e `.../familia/:codigoPai`):
+> **Fatia 1 — aba Vendas SKU.** Nova aba em `/faturamento?aba=sku`: ranking por variação (`codigo`)
+> com Lucro, Markup, Margem s/ venda, Faturamento, Unidades, devolução, ABC e Tendência, agrupável
+> por família. Todo o cálculo de dinheiro roda no navegador sobre os mesmos itens da aba Vendas — a
+> soma bate por construção, sem fórmula nova. RPC nova `vendas_sku_catalogo()` só enriquece com
+> família/estoque/1ª-última venda. 576 arquivos / 5993 testes verdes, `pnpm preflight` verde,
+> paridade Faturamento/Unidades confirmada contra dado real da Avil (01–25/09/2026).
+>
+> **Fatia 2a — Dossiê do SKU.** Página `/faturamento/sku/:codigo` (e `.../familia/:codigoPai`):
 > KPIs do período, série semanal/mensal com eventos, estoque (com Kit Virtual vinculado), devoluções,
 > vendas por UF, mix da família e situação nas campanhas. RPCs novas `vendas_sku_dossie_ids`
 > (ids do pedido + pack/envio inteiros, para o rateio de frete bater com a aba Vendas) e
@@ -37,22 +47,32 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > (conta VALIDATION/DSA, SKU 00000029, Personalizado 01–31/08): Faturamento e Lucro
 > idênticos entre ranking e Dossiê. **Carga** (maior SKU da Avil, 648 itens → 708 ids
 > com pack): `EXPLAIN` mostra que o `OR` de 3 `IN` não usa os índices parciais novos — melhoria
-> futura (`UNION`), não bloqueante hoje (~13 ms). Falta `db push`, revisão final e merge.
+> futura (`UNION`), não bloqueante hoje (~13 ms).
 >
-> **📋 Vendas SKU — Fatia 2b: Tráfego e oferta ([[0172-vendas-sku-analise-por-variacao|ADR-0172]]),
-> mesma branch, ainda não mergeado.** Worker novo `coletar-trafego-ml` (QStash, só GET no ML) grava
+> **Fatia 2b — Tráfego e oferta.** Worker novo `coletar-trafego-ml` (QStash, só GET no ML) grava
 > visitas por dia e preço de oferta por MLB (4 tabelas + 6 RPCs); painel Tráfego e oferta no Dossiê
 > com Unidades por visita. **Validação real:** ML da Avil + Postgres local, 3 MLBs do spike 052 — 149
 > dias idênticos ao spike, preço de hoje igual, 2º run sem duplicar nem regredir. 6200 testes,
-> `pnpm preflight` verde. Falta `db push`, deploy da função, schedule QStash, revisão final e merge.
+> `pnpm preflight` verde.
 >
-> **📋 Vendas SKU — Fatia 2c: Ads no dossiê ([[0172-vendas-sku-analise-por-variacao|ADR-0172]]), mesma
-> branch, ainda não mergeado.** Worker novo `coletar-ads-ml` (QStash, só GET no ML) grava o Product Ads
-> por grupo de anúncios (4 tabelas + 6 RPCs); painel Ads no Dossiê com Despesa de Ads do período e Lucro
-> após Ads (só com gasto exclusivo e período coberto). **Validação real:** ML da Avil + Postgres local —
-> Σ gravado confere com o custo listado, gasto fora dos grupos 3,08 % nos últimos 90 dias (Rulings 2c-7/2c-8/2c-9: Lucro após Ads indisponível; decisão pendente do Diego entre manter a regra rígida ou mostrar com aviso), 134 grupos com série densa, 2º
-> run sem mexer nos dias antigos. 6319 testes, `pnpm preflight` verde. Falta `db push`, deploy de
-> `coletar-ads-ml` e `coletar-trafego-ml`, schedule QStash, revisão final e merge.
+> **Fatia 2c — Ads no dossiê.** Worker novo `coletar-ads-ml` (QStash, só GET no ML) grava o Product
+> Ads por grupo de anúncios (4 tabelas + 6 RPCs); painel Ads no Dossiê com Despesa de Ads do período
+> e Lucro após Ads (só com gasto exclusivo e período coberto). **Validação real:** ML da Avil +
+> Postgres local — Σ gravado confere com o custo listado, gasto fora dos grupos 3,08 % nos últimos
+> 90 dias na validação (Rulings 2c-7/2c-8/2c-9), 134 grupos com série densa, 2º run sem mexer nos
+> dias antigos. 6319 testes, `pnpm preflight` verde. Em produção, o gasto fora dos grupos listados
+> deixa o Lucro após Ads indisponível nas 3 orgs (Avil ~3,1 %, DSA ~7,4 %, Daludi Shop ~14 %) —
+> **decisão pendente do Diego** entre manter a regra rígida ou mostrar com aviso.
+>
+> **Adiado por decisão do Diego:** Fatia 3 (recompra, XLSX, atalhos — plano em
+> `docs/superpowers/plans/2026-09-27-vendas-sku-fatia-3.md`) e posição na busca (fora de escopo,
+> ToS 7.6 do ML).
+>
+> **Incidente pré-existente, não causado pela Vendas SKU (diagnosticado em 27/09):**
+> `pulse-coletar` (tier completo), `backfill-faturamento` e, às vezes, `reconciliar-faturamento`
+> estouram o limite de 2 s de CPU por requisição da edge (QStash 546); `backfill-faturamento` não
+> completa desde ~10/09. Correção recomendada: fan-out por org via QStash (ADR a escrever),
+> registrada em `docs/TASKS.md` para outro agente, em branch separada.
 
 ## Passo anterior (2026-09-20) — EM PRODUÇÃO
 

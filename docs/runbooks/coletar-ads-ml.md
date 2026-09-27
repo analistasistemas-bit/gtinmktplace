@@ -11,7 +11,9 @@ Grava em `ml_ads_sync`, `ml_ads_grupo`, `ml_ads_grupo_item` e `ml_ads_grupo_dia`
 `supabase/migrations/20260927124602_vendas_sku_ads.sql`. Contrato: plano
 `docs/superpowers/plans/2026-09-27-vendas-sku-fatia-2c.md`; spike `docs/spikes/053-product-ads-ml.md`.
 
-Nada disto foi aplicado em produção pela implementação (R14). Ordem obrigatória: banco → funções → schedule.
+**Ativado em produção em 2026-09-27:** migration aplicada (`db push`), função deployada (ACTIVE, v1) e
+schedule criado (cron `17 14 * * *` UTC, scheduleId `scd_7c8F3D7T64XecBkStgxwpDNuho1R`). Os passos abaixo
+seguem valendo para reexecução manual, diagnóstico e a rotina de pausar/retomar.
 
 ## 1. Migration (one-time)
 
@@ -58,7 +60,7 @@ curl -s -X POST \
 ```
 
 Anotar o `scheduleId` e acrescentar a linha na tabela de schedules de
-`docs/reference/edge-functions.md`.
+`docs/reference/edge-functions.md`. `scheduleId` em produção: `scd_7c8F3D7T64XecBkStgxwpDNuho1R`.
 
 ## 4. Teste ponta a ponta
 

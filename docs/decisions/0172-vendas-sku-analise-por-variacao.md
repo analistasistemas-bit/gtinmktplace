@@ -1,6 +1,6 @@
 # ADR-0172 — Vendas SKU: análise de vendas por variação, com história e coleta diária
 
-**Status:** Proposto
+**Status:** Aceito — em produção desde 2026-09-27
 **Data:** 2026-09-26
 **Relacionado:** [ADR-0039](0039-faturamento-por-pedido-geografia-kpis.md) (revoga o "ranking de produto /
 curva ABC fora de escopo"), [ADR-0047](0047-operacao-compartilhada-rbac-menu.md) (permissão por menu),
@@ -139,8 +139,8 @@ expansão de pack) achou o `EXPLAIN` do `OR` de 3 `IN` **não usando** os dois �
 (`ml_vendas_org_pack_idx`/`ml_vendas_org_shipping_idx`) — o planner resolve pelo índice de `org_id` já
 existente e aplica o `OR` como filtro pós-scan. Rápido hoje (~13 ms, tabela pequena); se a carga crescer,
 o remédio é trocar o `OR` por `UNION` das três consultas (registrado como melhoria futura, não bloqueante).
-Migration `20260927045118_vendas_sku_dossie.sql` aplicada só localmente (Ruling 2a-1, sem `db push` nesta
-fatia). **Status continua Proposto:** falta `db push`, revisão final e merge.
+Migration `20260927045118_vendas_sku_dossie.sql` aplicada em produção por `db push` em 2026-09-27, junto com
+as demais fatias (nota de entrada em produção no fim do documento).
 
 ## Nota — Fatia 2b: Tráfego e oferta (2026-09-27)
 
@@ -168,9 +168,9 @@ Avil (só GET, token lido por SQL read-only, sem refresh) e o Postgres **local**
 (dois ativos e um pausado). Os 149 dias de 01/05 a 26/09/2026 bateram 1:1 com o spike (12.960,
 5.061 e 0 visitas); o preço de hoje (65,90, 39,90 e 14,89, sem promoção) é o mesmo do spike. Um 2º run não
 duplicou nem regrediu nada (450 linhas de visitas, 3 de preço e 3 de status antes e depois; hash dos dias
-`ok` idêntico; nenhum `ok` virou `falha`; nenhum GET de preço repetido). **Status continua Proposto:**
-falta `db push`, deploy da função, schedule do QStash (runbook `docs/runbooks/coletar-trafego-ml.md`),
-revisão final e merge.
+`ok` idêntico; nenhum `ok` virou `falha`; nenhum GET de preço repetido). Migration, deploy da função e
+schedule do QStash em produção desde 2026-09-27 (runbook `docs/runbooks/coletar-trafego-ml.md`; nota de
+entrada em produção no fim do documento).
 
 ## Nota — Fatia 2c: Ads no dossiê do SKU (2026-09-27)
 
@@ -239,5 +239,35 @@ os 3 grupos `EMPTY` sem membros (2 FAMILY, 1 CATALOG; 0,52 % do gasto gravado), 
 do spike), todos com a série densa de 90 dias; `max(dia)` = ontem, `min(dia)` = hoje − 90, cursor e posse
 nulos. O 2º run (diária, 15 dias relidos) não mudou nenhum dia com mais de 15 dias, não duplicou chave
 e, com o Ruling 2c-8, gravou o resumo de 90 dias: o gasto fora dos grupos segue em 3,08 %. Nenhum token nas
-saídas. **Status continua Proposto:** falta `db push`, deploy de `coletar-ads-ml` e `coletar-trafego-ml`,
-schedule do QStash (runbook `docs/runbooks/coletar-ads-ml.md`), revisão final e merge.
+saídas. Migration, deploy de `coletar-ads-ml` e `coletar-trafego-ml` e schedule do QStash em produção desde
+2026-09-27 (runbook `docs/runbooks/coletar-ads-ml.md`; nota de entrada em produção no fim do documento).
+
+## Nota — Entrada em produção (2026-09-27)
+
+Merge fast-forward na main até o commit `0635262c`. As 4 migrations das Fatias 1, 2a, 2b e 2c
+(`20260927024030_vendas_sku_catalogo`, `20260927045118_vendas_sku_dossie`, `20260927084615_vendas_sku_trafego`,
+`20260927124602_vendas_sku_ads`) foram aplicadas em produção por `supabase db push`, com histórico remoto e
+local alinhados. As edge functions `coletar-trafego-ml` e `coletar-ads-ml` foram deployadas (ACTIVE, versão 1,
+`verify_jwt=false`). O plano QStash foi migrado para Pay as You Go (o Free tinha teto de 10 schedules e 1.000
+mensagens/dia) e os schedules diários foram criados: `coletar-trafego-ml` às 9h17 UTC
+(`scd_6hhsCf2EDfohfUaikbfkRMCbNXug`) e `coletar-ads-ml` às 14h17 UTC (`scd_7c8F3D7T64XecBkStgxwpDNuho1R`).
+
+A 1ª execução em produção (disparo manual, 27/09 ~18h26 UTC) concluiu `ok` para tráfego e Ads, com a carga
+inicial completa nas 3 orgs (Avil, DSA, Daludi Shop) e sem erro de CPU; a carga de tráfego mais longa foi a
+da Avil (~1m40s somando a cadeia). O front foi validado em produção, só leitura, com a conta VALIDATION:
+ranking, dossiê e as abas Vendas / Tráfego e oferta / Ads OK, sem regressão na aba Vendas do Faturamento,
+0 erros de console, RPCs e tabelas novas respondendo 200.
+
+O gasto de Ads fora dos grupos listados (últimos 90 dias) segue acima do esperado nas 3 orgs (Avil ~3,1 %,
+DSA ~7,4 %, Daludi Shop ~14 %), então o **Lucro após Ads** aparece indisponível nas 3 — decisão pendente do
+Diego sobre manter a regra rígida ou mostrar o lucro com aviso (ver Ruling 2c-7/2c-8 acima).
+
+**Fora do escopo desta entrega, adiados por decisão do Diego:** Fatia 3 (recompra, XLSX, atalhos — plano em
+`docs/superpowers/plans/2026-09-27-vendas-sku-fatia-3.md`) e posição na busca (fora do escopo, ver
+cláusula 7.6 dos termos do ML acima).
+
+Diagnosticado em 27/09, **incidente pré-existente e não causado pela Vendas SKU**: `pulse-coletar`,
+`backfill-faturamento` e, às vezes, `reconciliar-faturamento` estouram o limite de 2 s de CPU por
+requisição da edge (QStash 546); `backfill-faturamento` não completa desde ~10/09. Correção recomendada:
+fan-out por org via QStash (ADR a escrever), tratada por outro agente em branch separada. Registrado em
+`docs/TASKS.md`.
