@@ -6,7 +6,7 @@ import type { CatalogoSku } from './vendas-sku-catalogo';
 import type { Janela } from './metricas';
 import { round2 } from './formato';
 import type { Venda } from './faturamento';
-import { dataNoPeriodo, type Devolucao } from './devolucoes';
+import { dataNoPeriodo, orderIdsComDevolucaoReal, type Devolucao } from './devolucoes';
 
 export const SEM_CODIGO = '';
 
@@ -87,7 +87,11 @@ interface Grupo {
   chaves: Set<string>; titulo: string | null; imagem: string | null;
 }
 
-export function agregarPorSku(pedidos: Pedido[], janela: Janela, catalogo: Map<string, CatalogoSku>): LinhaSku[] {
+/** `ordensDevolvidas`: order_ids com claim `returns` (orderIdsComDevolucaoReal). NÃO usar
+ *  `it.temDevolucao`: ele marca QUALQUER claim (cancelamento, mediação…) e inflava a taxa ~7x. */
+export function agregarPorSku(
+  pedidos: Pedido[], janela: Janela, catalogo: Map<string, CatalogoSku>, ordensDevolvidas: Set<number>,
+): LinhaSku[] {
   const grupos = new Map<string, Grupo>();
   for (const p of pedidos) {
     if (!dentroDaJanela(p.data, janela)) continue;
@@ -99,6 +103,7 @@ export function agregarPorSku(pedidos: Pedido[], janela: Janela, catalogo: Map<s
         grupos.set(codigo, g);
       }
       const a = g.acc;
+      const devolvido = ordensDevolvidas.has(it.orderId);
       const valor = it.unit_price * it.quantity;
       g.chaves.add(p.chave);
       g.titulo ??= it.titulo;
@@ -119,11 +124,11 @@ export function agregarPorSku(pedidos: Pedido[], janela: Janela, catalogo: Map<s
         } else {
           a.itensSemCusto += 1;
         }
-      } else if (!it.temDevolucao) {
+      } else if (!devolvido) {
         a.canceladas += it.quantity;
       }
-      if (it.faturavel || it.temDevolucao) g.base.add(it.orderId);
-      if (it.temDevolucao) g.devolvidos.add(it.orderId);
+      if (it.faturavel || devolvido) g.base.add(it.orderId);
+      if (devolvido) g.devolvidos.add(it.orderId);
     }
   }
   const linhas: LinhaSku[] = [];
@@ -362,9 +367,12 @@ export function montarVendasSku(p: {
     desde: new Date(fim - 2 * LIMITES.janelaTendenciaDias * DIA_MS).toISOString(),
     ate: new Date(fim - LIMITES.janelaTendenciaDias * DIA_MS - 1).toISOString(),
   };
-  const linhas = agregarPorSku(recorte(p.janela), p.janela, p.catalogo)
+  // ponytail: p.devolucoes vem de buscarDevolucoes, que não pagina — teto de 1.000 linhas do PostgREST
+  // (175 em 2026-09-27). Passando disso, paginar como buscarVendas.
+  const devolvidas = orderIdsComDevolucaoReal(p.devolucoes);
+  const linhas = agregarPorSku(recorte(p.janela), p.janela, p.catalogo, devolvidas)
     .sort((a, b) => (b.m.lucro ?? -Infinity) - (a.m.lucro ?? -Infinity) || a.codigo.localeCompare(b.codigo));
-  const linhasAnterior = agregarPorSku(recorte(p.anterior), p.anterior, p.catalogo);
+  const linhasAnterior = agregarPorSku(recorte(p.anterior), p.anterior, p.catalogo, devolvidas);
   const u30 = unidadesPorCodigo(recorte(j30), j30);
   const uAnt = unidadesPorCodigo(recorte(jAnt), jAnt);
 

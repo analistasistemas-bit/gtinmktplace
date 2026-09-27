@@ -36,7 +36,7 @@ describe('agregarPorSku', () => {
       venda({ id: 'c', order_id: 3, total_amount: 10, itens: [item({ id: 'i4', codigo: 'A' })] }),
     ];
     const pedidos = agruparPorPedido(vendas, custo);
-    const linhas = agregarPorSku(pedidos, SET, new Map());
+    const linhas = agregarPorSku(pedidos, SET, new Map(), new Set());
     const k = calcularKpisPedidos(pedidos);
     expect(r2(linhas.reduce((s, l) => s + l.acc.bruto, 0))).toBe(k.bruto);
     expect(r2(linhas.reduce((s, l) => s + l.acc.liquido, 0))).toBe(k.liquido);
@@ -51,7 +51,7 @@ describe('agregarPorSku', () => {
       venda({ id: 'a', order_id: 1, total_amount: 10, sale_fee_total: 0, liquido: 10, itens: [item({ id: 'i1', codigo: 'A', custo_congelado: 4 })] }),
       venda({ id: 'b', order_id: 2, total_amount: 10, sale_fee_total: 0, liquido: 10, itens: [item({ id: 'i2', codigo: 'A' })] }),
     ];
-    const [l] = agregarPorSku(agruparPorPedido(vendas, custo), SET, new Map());
+    const [l] = agregarPorSku(agruparPorPedido(vendas, custo), SET, new Map(), new Set());
     expect(l.m.fonteCusto).toBe('parcial');
     expect(l.m.lucro).toBe(6);                 // 10 − 4, o item sem custo fica fora
     expect(l.m.markup).toBeCloseTo(1.5, 5);    // 6 ÷ 4
@@ -60,13 +60,13 @@ describe('agregarPorSku', () => {
   });
 
   it('sem custo nenhum → lucro null e fonte sem_custo (nunca lucro = líquido)', () => {
-    const [l] = agregarPorSku(agruparPorPedido([venda()]), SET, new Map());
+    const [l] = agregarPorSku(agruparPorPedido([venda()]), SET, new Map(), new Set());
     expect(l.m.lucro).toBeNull();
     expect(l.m.fonteCusto).toBe('sem_custo');
   });
 
   it('custo atual (não congelado) → fonte estimado', () => {
-    const [l] = agregarPorSku(agruparPorPedido([venda()], () => 3), SET, new Map());
+    const [l] = agregarPorSku(agruparPorPedido([venda()], () => 3), SET, new Map(), new Set());
     expect(l.m.fonteCusto).toBe('estimado');
   });
 
@@ -75,26 +75,51 @@ describe('agregarPorSku', () => {
       venda({ id: 'a', order_id: 1, tem_devolucao: true, status: 'cancelled', itens: [item({ id: 'i1', codigo: 'A' })] }),
       venda({ id: 'b', order_id: 2, itens: [item({ id: 'i2', codigo: 'A', quantity: 3 })] }),
     ];
-    const [l] = agregarPorSku(agruparPorPedido(vendas), SET, new Map());
+    const [l] = agregarPorSku(agruparPorPedido(vendas), SET, new Map(), new Set([1]));
     expect(l.m.taxaDevolucao).toBe(0.5);
     expect(l.acc.canceladas).toBe(0);  // devolvida não é "cancelada"
   });
 
+  it('claim de cancelamento (cancel_purchase) não é devolução: conta em canceladas, taxa 0', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, tem_devolucao: true, status: 'cancelled', itens: [item({ id: 'i1', codigo: 'A' })] }),
+      venda({ id: 'b', order_id: 2, itens: [item({ id: 'i2', codigo: 'A' })] }),
+    ];
+    // Order 1 tem claim, mas cancel_purchase: fora do Set de devolução real.
+    const [l] = agregarPorSku(agruparPorPedido(vendas), SET, new Map(), new Set());
+    expect(l.acc.canceladas).toBe(1);
+    expect(l.acc.pedidosDevolvidos).toBe(0);
+    expect(l.m.taxaDevolucao).toBe(0);
+  });
+
+  it('claim returns conta como devolvido', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, tem_devolucao: true, status: 'cancelled', itens: [item({ id: 'i1', codigo: 'A' })] }),
+      venda({ id: 'b', order_id: 2, itens: [item({ id: 'i2', codigo: 'A' })] }),
+      venda({ id: 'c', order_id: 3, itens: [item({ id: 'i3', codigo: 'A' })] }),
+    ];
+    const [l] = agregarPorSku(agruparPorPedido(vendas), SET, new Map(), new Set([1]));
+    expect(l.acc.canceladas).toBe(0);
+    expect(l.acc.pedidosDevolvidos).toBe(1);
+    expect(l.acc.pedidosBaseDevolucao).toBe(3);
+    expect(l.m.taxaDevolucao).toBeCloseTo(1 / 3, 10);
+  });
+
   it('item sem código vira a linha SEM_CODIGO e não some do total', () => {
-    const linhas = agregarPorSku(agruparPorPedido([venda({ itens: [item({ codigo: null })] })]), SET, new Map());
+    const linhas = agregarPorSku(agruparPorPedido([venda({ itens: [item({ codigo: null })] })]), SET, new Map(), new Set());
     expect(linhas.map((l) => l.codigo)).toEqual([SEM_CODIGO]);
     expect(linhas[0].acc.bruto).toBe(10);
   });
 
   it('pedido fora da janela não entra', () => {
-    const linhas = agregarPorSku(agruparPorPedido([venda({ date_closed: '2026-08-31T23:59:59.000Z' })]), SET, new Map());
+    const linhas = agregarPorSku(agruparPorPedido([venda({ date_closed: '2026-08-31T23:59:59.000Z' })]), SET, new Map(), new Set());
     expect(linhas).toHaveLength(0);
   });
 
   it('usa o catálogo para título, família, fornecedor, estoque', () => {
     const cat = new Map([['001', { codigo: '001', codigoPai: '000', nomeFamilia: 'Fitas', nome: 'Fita azul', cor: null,
       tamanho: null, estoque: 7, fornecedor: 'F', origem: 'nacional' as const, ehKit: false, primeiraVenda: null, ultimaVenda: null }]]);
-    const [l] = agregarPorSku(agruparPorPedido([venda()]), SET, cat);
+    const [l] = agregarPorSku(agruparPorPedido([venda()]), SET, cat, new Set());
     expect([l.titulo, l.nomeFamilia, l.fornecedor, l.estoque, l.origem]).toEqual(['Fita azul', 'Fitas', 'F', 7, 'nacional']);
   });
 });
@@ -254,6 +279,25 @@ describe('montarVendasSku', () => {
     expect(r.linhasAnterior.map((l) => l.codigo)).toEqual(['A']);
     const kpisVendasSet = calcularKpisPedidos(agrupar(vendas.filter((v) => v.date_closed! >= SET.desde)));
     expect(r.kpis.bruto).toBe(kpisVendasSet.bruto);
+  });
+
+  it('só claim type returns entra na taxa (cancel_purchase/mediations não)', () => {
+    const dev = (order_id: number, type: string) => ({ id: `d${order_id}`, claim_id: order_id, order_id, stage: null,
+      status: 'closed', type, reason_texto: null, valor_em_jogo: null, return_status: null, return_status_money: null,
+      acoes_pendentes: null, aberto_em: '2026-09-05T00:00:00Z', fechado_em: '2026-09-06T00:00:00Z' });
+    const vendas = [
+      venda({ id: 'a', order_id: 1, tem_devolucao: true, status: 'cancelled', itens: [item({ id: 'i1', codigo: 'A' })] }),
+      venda({ id: 'b', order_id: 2, tem_devolucao: true, status: 'cancelled', itens: [item({ id: 'i2', codigo: 'A' })] }),
+      venda({ id: 'c', order_id: 3, tem_devolucao: true, itens: [item({ id: 'i3', codigo: 'A' })] }),
+      venda({ id: 'd', order_id: 4, itens: [item({ id: 'i4', codigo: 'A' })] }),
+    ];
+    const r = montarVendasSku({ vendas, agrupar, janela: SET, anterior: ANT, catalogo: new Map(),
+      devolucoes: [dev(1, 'cancel_purchase'), dev(2, 'returns'), dev(3, 'mediations')] });
+    const [l] = r.linhas;
+    expect(l.acc.canceladas).toBe(1);          // order 1
+    expect(l.acc.pedidosDevolvidos).toBe(1);   // só order 2
+    expect(l.acc.pedidosBaseDevolucao).toBe(3); // 2, 3, 4
+    expect(l.m.taxaDevolucao).toBeCloseTo(1 / 3, 10);
   });
 
   it('devolução sem pedido conhecido conta como não atribuída', () => {
