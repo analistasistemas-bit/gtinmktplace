@@ -17,8 +17,9 @@ export interface PontoTrafego {
   intervalo: Intervalo;
   /** Σ visitas; null se algum dia (MLB × dia até hoje) não é `ok` — dia ausente ≠ zero. */
   visitas: number | null;
-  /** MLB × dia do intervalo (até hoje, BRT) por estado; `ausente` = sem linha. */
-  estados: { ok: number; pendente: number; falha: number; ausente: number };
+  /** MLB × dia do intervalo (até hoje, BRT) por estado; `ausente` = sem linha; `nao_coletado` = sem
+   *  linha antes do início da cobertura enquanto a coleta é parcial (a carga ainda não chegou lá). */
+  estados: { ok: number; pendente: number; falha: number; ausente: number; nao_coletado: number };
   /** Numerador: itens faturáveis fora de kit dos MLBs considerados (vínculo atual). */
   unidades: number;
   /** null com visitas null ou 0. Pode passar de 1 (não é "%" de conversão). */
@@ -111,15 +112,22 @@ export function montarTrafego(p: {
   const precos = p.fonte.precos.filter((v) => set.has(v.ml_item_id));
   const porChave = new Map(visitas.map((v) => [`${v.ml_item_id}|${v.dia}`, v]));
   const vendas = [...new Map(p.vendas.map((v) => [v.id, v])).values()];
+  const oks = visitas.filter((v) => v.estado === 'ok');
+  const comDado = new Set(oks.map((v) => v.ml_item_id));
+  const estadoColeta: EstadoColeta = !sync || !visitas.length ? 'sem_coleta'
+    : !sync.carga_inicial_concluida_em || conj.mlbs.some((m) => !comDado.has(m)) ? 'parcial' : 'ok';
+  const coberturaDesde = oks.reduce<string | null>((a, v) => (!a || v.dia < a ? v.dia : a), null);
+  // Parcial: sem linha antes do 1º dia ok não é buraco, é carga que ainda não chegou.
+  const naoColetado = (dia: string) => estadoColeta === 'parcial' && (!coberturaDesde || dia < coberturaDesde);
 
   const serie = p.intervalos.map((intervalo): PontoTrafego => {
     const dias = diasDoIntervalo(intervalo, p.agora);
-    const estados = { ok: 0, pendente: 0, falha: 0, ausente: 0 };
+    const estados = { ok: 0, pendente: 0, falha: 0, ausente: 0, nao_coletado: 0 };
     let soma = 0;
     for (const mlb of conj.mlbs) for (const dia of dias) {
       const v = porChave.get(`${mlb}|${dia}`);
       // Sem linha: dentro das 48 h o worker ainda nem devia ter o dia estável → pendente.
-      if (!v) { estados[agoraMs - fimDoDia(dia) < ESPERA_MS ? 'pendente' : 'ausente']++; continue; }
+      if (!v) { estados[agoraMs - fimDoDia(dia) < ESPERA_MS ? 'pendente' : naoColetado(dia) ? 'nao_coletado' : 'ausente']++; continue; }
       estados[v.estado]++;
       if (v.estado === 'ok') soma += v.visitas ?? 0;
     }
@@ -143,14 +151,10 @@ export function montarTrafego(p: {
     };
   });
 
-  const oks = visitas.filter((v) => v.estado === 'ok');
-  const comDado = new Set(oks.map((v) => v.ml_item_id));
-  const estadoColeta: EstadoColeta = !sync || !visitas.length ? 'sem_coleta'
-    : !sync.carga_inicial_concluida_em || conj.mlbs.some((m) => !comDado.has(m)) ? 'parcial' : 'ok';
   const ultimo = precos.reduce<PrecoDia | null>((a, x) => (!a || Date.parse(x.observado_em) > Date.parse(a.observado_em) ? x : a), null);
   return {
     calendario: 'brt', alcance: conj.alcance, porMlb, serie, estadoColeta, motivo,
-    coberturaDesde: oks.reduce<string | null>((a, v) => (!a || v.dia < a ? v.dia : a), null),
+    coberturaDesde,
     precoAtual: ultimo && { preco: ultimo.preco, observadoEm: ultimo.observado_em, mlb: ultimo.ml_item_id },
   };
 }

@@ -43,7 +43,7 @@ const dossie = (over: Partial<DossieSku> = {}): DossieSku => ({
 });
 
 function renderPagina(estado: EstadoDossie, dados: DossieSku | null, rota: string | { pathname: string; state: unknown } = '/faturamento/sku/00123') {
-  vi.mocked(useSkuDossie).mockReturnValue({ estado, dados, refetch: vi.fn() } as never);
+  vi.mocked(useSkuDossie).mockReturnValue({ estado, dados, refetch: vi.fn(), refetchTrafego: vi.fn() } as never);
   render(
     <MemoryRouter initialEntries={[rota]}>
       <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -265,35 +265,47 @@ describe('SkuDossie: série e eventos', () => {
 
 const IV14 = { inicio: '2026-09-14T03:00:00.000Z', fim: '2026-09-21T03:00:00.000Z', rotulo: '14/09', incompleto: false, inicioParcial: false };
 const IV21 = { inicio: '2026-09-21T03:00:00.000Z', fim: '2026-09-28T03:00:00.000Z', rotulo: '21/09', incompleto: true, inicioParcial: false };
+const EST = (over: Partial<PontoTrafego['estados']> = {}): PontoTrafego['estados'] => ({ ok: 7, pendente: 0, falha: 0, ausente: 0, nao_coletado: 0, ...over });
 const pt = (intervalo: PontoTrafego['intervalo'], over: Partial<PontoTrafego> = {}): PontoTrafego => ({
-  intervalo, visitas: 70, estados: { ok: 7, pendente: 0, falha: 0, ausente: 0 }, unidades: 5, unidadesPorVisita: 5 / 70,
+  intervalo, visitas: 70, estados: EST(), unidades: 5, unidadesPorVisita: 5 / 70,
   precoObservado: { min: 47.9, max: 49.9 }, ...over,
 });
 const traf = (over: Partial<TrafegoDossie> = {}): TrafegoDossie => ({
   calendario: 'brt', alcance: 'sku', estadoColeta: 'ok', motivo: null, coberturaDesde: '2026-09-14',
   porMlb: [{ mlb: 'MLB1', vinculo: 'exato', codigos: ['00123'], considerado: true }],
-  serie: [pt(IV14), pt(IV21, { visitas: null, unidades: 1, unidadesPorVisita: null, estados: { ok: 4, pendente: 2, falha: 0, ausente: 0 } })],
+  serie: [pt(IV14), pt(IV21, { visitas: null, unidades: 1, unidadesPorVisita: null, estados: EST({ ok: 4, pendente: 2 }) })],
   precoAtual: { preco: 49.9, observadoEm: '2026-09-22T02:30:00Z', mlb: 'MLB1' },
   ...over,
 });
+const REG = /^Tráfego (semanal|mensal)/;
+// "48 h" com espaço não-quebrável
+const H48 = 'aguardando 48 h';
 
-async function abrirTrafego(t: TrafegoDossie, rota?: string) {
+async function abrirTrafego(t: TrafegoDossie, rota?: string, estado: EstadoDossie = 'ok', over: Partial<DossieSku> = {}) {
   const user = userEvent.setup();
-  renderPagina('ok', comSerie({ trafego: t }), rota);
+  renderPagina(estado, comSerie({ trafego: t, ...over }), rota);
   await user.click(screen.getByRole('tab', { name: 'Tráfego e oferta' }));
-  return screen.getByRole('region', { name: /Tráfego e oferta/ });
+  return screen.getByRole('region', { name: REG });
 }
 
 describe('SkuDossie: tráfego e oferta', () => {
-  it('alterna Vendas | Tráfego e oferta numa tablist; Vendas é o padrão', async () => {
+  it('alterna Vendas | Tráfego e oferta numa tablist; Vendas é o padrão; título espelha a série', async () => {
     renderPagina('ok', comSerie({ trafego: traf() }));
     expect(screen.getByRole('tablist')).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Vendas' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('region', { name: /Evolução/ })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('tab', { name: 'Tráfego e oferta' }));
     expect(screen.getByRole('tab', { name: 'Tráfego e oferta' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('region', { name: /Tráfego e oferta/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Tráfego semanal' })).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: /Evolução/ })).not.toBeInTheDocument();
+  });
+
+  it('sem vendas: a aba Vendas mantém o aviso e o tráfego continua acessível', async () => {
+    const reg = await abrirTrafego(traf(), undefined, 'sem_vendas', { linhaPeriodo: null, tendencia: null, historicoDesde: null, ultimaVenda: null, serie: [] });
+    expect(within(reg).getAllByText('0,071 un./visita').length).toBeGreaterThan(0);
+    await userEvent.click(screen.getByRole('tab', { name: 'Vendas' }));
+    expect(screen.getByText('Sem vendas registradas desde a entrada no PubliAI')).toBeInTheDocument();
+    expect(screen.queryByText('Faturamento')).not.toBeInTheDocument();
   });
 
   it('SKU exclusivo: "deste SKU", unidades por visita como razão (nunca %), preço observado com hora BRT e cobertura', async () => {
@@ -302,24 +314,38 @@ describe('SkuDossie: tráfego e oferta', () => {
     expect(within(reg).getAllByText('0,071 un./visita').length).toBeGreaterThan(0);
     expect(reg.textContent).not.toMatch(/%/);
     expect(within(reg).getByText(/R\$\s?49,90 às 23:30 de 21\/09/)).toBeInTheDocument();
-    expect(within(reg).getByText(/dados no período desde 14\/09/i)).toBeInTheDocument();
+    expect(within(reg).getByText(/Visitas no período desde 14\/09/)).toBeInTheDocument();
     expect(reg.textContent).not.toMatch(/coleta desde/i);
   });
 
-  it('intervalo com dia pendente: "em curso · aguardando 48 h"; falha/ausente: "sem dado" com a contagem', async () => {
+  it('intervalo com dia pendente: "em curso · aguardando 48 h"; falha/ausente: "sem dado" com a contagem; legenda só do que existe', async () => {
     const reg = await abrirTrafego(traf({ serie: [
-      pt(IV14, { visitas: null, unidadesPorVisita: null, estados: { ok: 5, pendente: 0, falha: 1, ausente: 1 } }),
-      pt(IV21, { visitas: null, unidadesPorVisita: null, estados: { ok: 4, pendente: 2, falha: 0, ausente: 0 } }),
+      pt(IV14, { visitas: null, unidadesPorVisita: null, estados: EST({ ok: 5, falha: 1, ausente: 1 }) }),
+      pt(IV21, { visitas: null, unidadesPorVisita: null, estados: EST({ ok: 4, pendente: 2 }) }),
     ] }));
-    expect(within(reg).getByRole('button', { name: /21\/09.*em curso · aguardando 48 h/ })).toBeInTheDocument();
+    expect(within(reg).getByRole('button', { name: new RegExp(`21/09.*em curso · ${H48}`) })).toBeInTheDocument();
     expect(within(reg).getByRole('button', { name: /14\/09.*sem dado em 2 dias/ })).toBeInTheDocument();
+    expect(within(reg).queryByText('Ainda não coletado')).not.toBeInTheDocument();
   });
 
-  it('anúncio compartilhado: métrica do anúncio inteiro, com o MLB e quantas variações dividem o anúncio', async () => {
+  it('parcial: dias antes da cobertura são "ainda não coletado", não sem dado', async () => {
+    const reg = await abrirTrafego(traf({ estadoColeta: 'parcial', serie: [
+      pt(IV14, { visitas: null, unidadesPorVisita: null, estados: EST({ ok: 0, nao_coletado: 7 }) }),
+      pt(IV21, { visitas: null, unidadesPorVisita: null, estados: EST({ ok: 4, pendente: 2 }) }),
+    ] }));
+    expect(within(reg).getByRole('button', { name: /14\/09.*ainda não coletado/ })).toBeInTheDocument();
+    expect(within(reg).queryByRole('button', { name: /sem dado/ })).not.toBeInTheDocument();
+    expect(within(reg).getByText('Ainda não coletado')).toBeInTheDocument();
+    expect(within(reg).queryByText('Sem dado')).not.toBeInTheDocument();
+  });
+
+  it('anúncio compartilhado: métrica do anúncio inteiro, um só número de variações e "Unidades do anúncio"', async () => {
     const reg = await abrirTrafego(traf({ alcance: 'anuncio',
       porMlb: [{ mlb: 'MLB2', vinculo: 'compartilhado', codigos: ['00123', '00124', '00125'], considerado: true }] }));
     expect(within(reg).getAllByText(/do anúncio inteiro \(compartilhado com 2 variações\)/).length).toBeGreaterThan(0);
-    expect(within(reg).getAllByText(/MLB2/).length).toBeGreaterThan(0);
+    expect(within(reg).getByText('anúncio compartilhado · MLB2')).toBeInTheDocument();
+    expect(reg.textContent).not.toMatch(/3 códigos/);
+    expect(within(reg).getByTestId('detalhe-trafego')).toHaveTextContent(/Unidades do anúncio/);
   });
 
   it('família: "da família"; anúncio misto aparece fora da métrica', async () => {
@@ -337,28 +363,35 @@ describe('SkuDossie: tráfego e oferta', () => {
     const reg = await abrirTrafego(traf({ alcance: 'indisponivel', estadoColeta: 'sem_coleta', porMlb: [], serie: [], precoAtual: null, coberturaDesde: null }));
     expect(within(reg).getByText(/Nenhum anúncio do Mercado Livre vinculado/)).toBeInTheDocument();
     expect(within(reg).queryByText(/coleta de tráfego começa/)).not.toBeInTheDocument();
+    expect(within(reg).queryByRole('button', { name: 'Mês' })).not.toBeInTheDocument();
   });
 
-  it('sem_coleta: começa depois da ativação', async () => {
+  it('sem_coleta: começa após a ativação, sem caminho de runbook e sem Semana/Mês', async () => {
     const reg = await abrirTrafego(traf({ estadoColeta: 'sem_coleta', serie: [], precoAtual: null, coberturaDesde: null }));
-    expect(within(reg).getByText(/A coleta de tráfego começa depois da ativação/)).toBeInTheDocument();
+    expect(within(reg).getByText(/A coleta de tráfego começa após a ativação\./)).toBeInTheDocument();
+    expect(reg.textContent).not.toMatch(/runbook|docs\//);
+    expect(within(reg).queryByRole('button', { name: 'Semana' })).not.toBeInTheDocument();
   });
 
   it('coleta interrompida: diz o motivo (sem acesso / falha)', async () => {
     // Forma real de montarTrafego: sem_coleta traz um ponto por intervalo, todos sem dado.
-    const vazio = (iv: PontoTrafego['intervalo']) => pt(iv, { visitas: null, unidades: 0, unidadesPorVisita: null, precoObservado: null, estados: { ok: 0, pendente: 0, falha: 0, ausente: 7 } });
+    const vazio = (iv: PontoTrafego['intervalo']) => pt(iv, { visitas: null, unidades: 0, unidadesPorVisita: null, precoObservado: null, estados: EST({ ok: 0, ausente: 7 }) });
     let reg = await abrirTrafego(traf({ motivo: 'sem_acesso', estadoColeta: 'sem_coleta', serie: [vazio(IV14), vazio(IV21)], precoAtual: null, coberturaDesde: null }));
     expect(within(reg).getByText(/Coleta interrompida: sem acesso à conta do Mercado Livre/)).toBeInTheDocument();
-    expect(within(reg).queryByText(/começa depois da ativação/)).not.toBeInTheDocument();
+    expect(within(reg).queryByText(/começa após a ativação/)).not.toBeInTheDocument();
     expect(reg.textContent).not.toMatch(/Os dados abaixo/);
     cleanup();
     reg = await abrirTrafego(traf({ motivo: 'erro' }));
     expect(within(reg).getByText(/Coleta interrompida: falhou na última execução/)).toBeInTheDocument();
   });
 
-  it('erro na leitura do tráfego: o painel avisa e o dossiê continua', async () => {
+  it('erro na leitura do tráfego: o painel avisa, "Tentar de novo" refaz só o tráfego e o dossiê continua', async () => {
     const reg = await abrirTrafego(traf({ estadoColeta: 'erro', serie: [], precoAtual: null, coberturaDesde: null }));
     expect(within(reg).getByText(/Não foi possível ler o tráfego/)).toBeInTheDocument();
+    await userEvent.click(within(reg).getByRole('button', { name: 'Tentar de novo' }));
+    const h = vi.mocked(useSkuDossie).mock.results.at(-1)!.value as { refetch: () => void; refetchTrafego: () => void };
+    expect(h.refetchTrafego).toHaveBeenCalled();
+    expect(h.refetch).not.toHaveBeenCalled();
     expect(screen.getByRole('region', { name: 'Estoque' })).toBeInTheDocument();
   });
 
@@ -370,15 +403,16 @@ describe('SkuDossie: tráfego e oferta', () => {
     expect(r2.querySelector('[aria-busy="true"]')).not.toBeNull();
   });
 
-  it('régua do tráfego: um tab stop, setas andam e o detalhe acompanha', async () => {
+  it('régua do tráfego: entra no último intervalo completo; setas andam e o detalhe acompanha', async () => {
     const reg = await abrirTrafego(traf());
     const b14 = within(reg).getByRole('button', { name: /14\/09/ });
     const b21 = within(reg).getByRole('button', { name: /21\/09/ });
-    expect(b21).toHaveAttribute('tabindex', '0');
-    b21.focus();
-    await userEvent.keyboard('{ArrowLeft}');
-    expect(b14).toHaveFocus();
+    expect(b14).toHaveAttribute('tabindex', '0');
     expect(within(reg).getByTestId('detalhe-trafego')).toHaveTextContent(/Semana de 14\/09.*Visitas70/);
+    b14.focus();
+    await userEvent.keyboard('{ArrowRight}');
+    expect(b21).toHaveFocus();
+    expect(within(reg).getByTestId('detalhe-trafego')).toHaveTextContent(/Semana de 21\/09.*aguardando 48\sh/); // toHaveTextContent normaliza o nbsp
   });
 });
 

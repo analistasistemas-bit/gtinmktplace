@@ -221,6 +221,11 @@ describe('useSkuDossie — tráfego', () => {
     expect(r.estado).toBe('ok');
     expect(r.dados!.linhaPeriodo!.acc.unidades).toBe(1);
     expect(r.dados!.trafego).toMatchObject({ estadoColeta: 'erro', alcance: 'sku', serie: [] });
+    // "Tentar de novo" do painel refaz só o tráfego
+    dados.buscarVisitasDia.mockClear(); dados.buscarIdsDossie.mockClear();
+    await r.refetchTrafego();
+    expect(dados.buscarVisitasDia).toHaveBeenCalledTimes(1);
+    expect(dados.buscarIdsDossie).not.toHaveBeenCalled();
   });
 
   it('MLB compartilhado: busca as vendas dos outros códigos do anúncio e mede o anúncio inteiro', async () => {
@@ -249,6 +254,7 @@ describe('useSkuDossie — tráfego', () => {
     expect(dados.buscarVisitasDia).not.toHaveBeenCalled();
     // refetch com a query de tráfego desligada não roda a queryFn (conj/faixa seriam null)
     await expect(r.refetch()).resolves.toBeDefined();
+    await expect(r.refetchTrafego()).resolves.toBeUndefined();
     expect(dados.buscarVisitasDia).not.toHaveBeenCalled();
   });
 });

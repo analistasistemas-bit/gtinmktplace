@@ -132,5 +132,7 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
     refetch: () => Promise.all([catQ.refetch(), devQ.refetch(), vendasQ.refetch(), extrasQ.refetch(),
       // refetch() roda a queryFn mesmo com enabled=false: sem conjunto, não há o que ler.
       ...(temTrafego ? [trafegoQ.refetch()] : [])]),
+    /** "Tentar de novo" do painel de tráfego: só a query dele. */
+    refetchTrafego: async () => { if (temTrafego) await trafegoQ.refetch(); },
   };
 }

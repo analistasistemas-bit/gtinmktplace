@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { Bar, CartesianGrid, Cell, ComposedChart, ErrorBar, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { AlertTriangle, CircleSlash, Clock, CloudOff, Unlink } from 'lucide-react';
+import { AlertTriangle, CircleDashed, CircleSlash, Clock, CloudOff, Unlink } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -14,32 +14,37 @@ import { asHoraDeBRT, diaMesLiteral } from './formato-dossie';
 
 /** Razão, nunca "%": 1 venda em 14 visitas = "0,071 un./visita"; pode passar de 1. Dois dígitos
  *  significativos: 1 venda em 500 visitas não vira "0,00". */
-export const fmtUnPorVisita = (v: number) => `${v.toLocaleString('pt-BR', { maximumSignificantDigits: 2 })} un./visita`;
+const fmtUnPorVisita = (v: number) => `${v.toLocaleString('pt-BR', { maximumSignificantDigits: 2 })} un./visita`;
 const razaoEixo = (v: number) => v.toLocaleString('pt-BR', { maximumSignificantDigits: 2 });
+const H48 = '48 h';
 
-type Situacao = { tipo: 'ok' } | { tipo: 'aguardando' } | { tipo: 'sem_dado'; n: number };
-/** Visitas null: algum MLB × dia não é `ok`. Falha/ausente pesa mais que "ainda nas 48 h". */
+type Situacao = { tipo: 'ok' } | { tipo: 'aguardando' } | { tipo: 'nao_coletado' } | { tipo: 'sem_dado'; n: number };
+/** Visitas null: algum MLB × dia não é `ok`. Falha/ausente pesa mais que "ainda não coletado"
+ *  (carga parcial), que pesa mais que "ainda nas 48 h". */
 function situacao(p: PontoTrafego): Situacao {
   if (p.visitas != null) return { tipo: 'ok' };
   const n = p.estados.falha + p.estados.ausente;
-  return n > 0 ? { tipo: 'sem_dado', n } : { tipo: 'aguardando' };
+  if (n > 0) return { tipo: 'sem_dado', n };
+  return p.estados.nao_coletado > 0 ? { tipo: 'nao_coletado' } : { tipo: 'aguardando' };
 }
 /** A contagem é MLB × dia: com mais de um anúncio, "dia" sozinho mentiria. */
 function textoSituacao(s: Situacao, nMlbs: number): string {
-  if (s.tipo === 'aguardando') return 'em curso · aguardando 48 h';
+  if (s.tipo === 'aguardando') return `em curso · aguardando ${H48}`;
+  if (s.tipo === 'nao_coletado') return 'ainda não coletado';
   if (s.tipo === 'sem_dado') return `sem dado em ${s.n} ${nMlbs > 1 ? (s.n === 1 ? 'dia de anúncio' : 'dias de anúncio') : (s.n === 1 ? 'dia' : 'dias')}`;
   return '';
 }
+const ICONE = { aguardando: Clock, nao_coletado: CircleDashed, sem_dado: CircleSlash } as const;
 
 const nomeIntervalo = (p: PontoTrafego, passo: Passo) => `${passo === 'semana' ? 'Semana de ' : ''}${p.intervalo.rotulo}`;
 const faixaPreco = (f: PontoTrafego['precoObservado']) => (!f ? 'sem observação' : f.min === f.max ? fmtBRL(f.min) : `${fmtBRL(f.min)} a ${fmtBRL(f.max)}`);
 
-/** As mesmas linhas no tooltip, no detalhe do teclado e no rótulo do botão da régua. */
-function linhas(p: PontoTrafego, nMlbs: number): Array<[string, string]> {
+/** As mesmas linhas no tooltip, no detalhe do intervalo e no rótulo do botão da régua. */
+function linhas(p: PontoTrafego, nMlbs: number, anuncio: boolean): Array<[string, string]> {
   const s = situacao(p);
   return [
     ['Visitas', p.visitas != null ? fmtInt(p.visitas) : textoSituacao(s, nMlbs)],
-    ['Unidades', `${fmtInt(p.unidades)} un.`],
+    [anuncio ? 'Unidades do anúncio' : 'Unidades', `${fmtInt(p.unidades)} un.`],
     ['Unidades por visita', p.unidadesPorVisita != null ? fmtUnPorVisita(p.unidadesPorVisita)
       : p.visitas === 0 ? 'sem visitas' : 'não medida'],
     ['Preço observado', faixaPreco(p.precoObservado)],
@@ -71,6 +76,14 @@ function Aviso({ icone: Icone, tom, children }: { icone: typeof AlertTriangle; t
   );
 }
 
+/** Ponto da razão: 0 medido é um anel (lê como ponto na base), lacuna fica sem ponto. */
+function PontoRazao({ cx, cy, value, index }: { cx?: number; cy?: number; value?: number | null; index?: number }) {
+  if (cx == null || cy == null || value == null) return <g key={index} />;
+  return value === 0
+    ? <circle key={index} cx={cx} cy={cy} r={2.75} fill="var(--card)" stroke="var(--chart-1)" strokeWidth={1.5} />
+    : <circle key={index} cx={cx} cy={cy} r={2.5} fill="var(--chart-1)" />;
+}
+
 interface Props {
   trafego: TrafegoDossie;
   familia: boolean;
@@ -81,12 +94,14 @@ interface Props {
 
 /** Tráfego e oferta do período: visitas (barras), unidades por visita (linha, eixo à direita) e o
  *  preço de oferta observado (faixa mín./máx. por intervalo, como o bigode da série de vendas).
- *  Intervalo com dia faltando não vira zero: a barra some e a régua diz por quê. */
+ *  Intervalo incompleto não vira zero: a barra dá lugar a uma faixa apagada e a régua diz por quê. */
 export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }: Props) {
   const serie = t.serie;
   const n = serie.length;
   const nMlbs = t.porMlb.filter((m) => m.considerado).length;
-  const [foco, setFoco] = useState(n - 1);
+  const anuncio = t.alcance === 'anuncio';
+  // Entrada no último intervalo completo: o corrente quase sempre ainda espera as 48 h.
+  const [foco, setFoco] = useState(n > 1 && serie[n - 1].intervalo.incompleto ? n - 2 : n - 1);
   const botoes = useRef<(HTMLButtonElement | null)[]>([]);
   const focoAtual = Math.min(Math.max(foco, 0), n - 1);
 
@@ -98,8 +113,13 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
     bigode: p.precoObservado ? (p.precoObservado.max - p.precoObservado.min) / 2 : null,
   })), [serie]);
   const maxPreco = Math.max(0, ...serie.map((p) => p.precoObservado?.max ?? 0));
+  const maxUpv = Math.max(0, ...serie.map((p) => p.unidadesPorVisita ?? 0));
+  // Piso levemente negativo: a linha no 0 fica acima da base e não some no eixo.
+  const topoUpv = maxUpv > 0 ? maxUpv * 1.1 : 0.1;
   const passoSm = Math.max(1, Math.ceil(n / 6));
   const passoLg = Math.max(1, Math.ceil(n / 16));
+  const situacoes = useMemo(() => serie.map(situacao), [serie]);
+  const tem = (tipo: Situacao['tipo']) => situacoes.some((s) => s.tipo === tipo);
 
   // Período: só os intervalos com todos os dias `ok` (mesmos MLBs e dias no numerador e no denominador).
   const completos = serie.filter((p) => p.visitas != null);
@@ -109,20 +129,22 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
 
   const alcance = alcanceTexto(t);
   const compartilhados = t.porMlb.filter((m) => m.considerado && m.vinculo === 'compartilhado');
+  const comSelo = new Set(compartilhados.map((m) => m.mlb));
+  const temGrafico = t.alcance !== 'indisponivel' && (t.estadoColeta === 'ok' || t.estadoColeta === 'parcial') && n > 0;
 
   const resumo = useMemo(() => {
     if (!n) return '';
-    const aguardando = serie.filter((p) => situacao(p).tipo === 'aguardando').length;
-    const semDado = serie.filter((p) => situacao(p).tipo === 'sem_dado').length;
+    const conta = (tipo: Situacao['tipo']) => situacoes.filter((s) => s.tipo === tipo).length;
     return [
       `Tráfego ${passo === 'semana' ? 'semanal' : 'mensal'} ${alcance}: ${n} ${n === 1 ? 'intervalo' : 'intervalos'}, de ${serie[0].intervalo.rotulo} a ${serie[n - 1].intervalo.rotulo}.`,
       `${fmtInt(somaVisitas)} visitas em ${completos.length} ${completos.length === 1 ? 'intervalo completo' : 'intervalos completos'}${upvPeriodo != null ? `, ${fmtUnPorVisita(upvPeriodo)}` : ''}.`,
-      aguardando ? `${aguardando} em curso, aguardando 48 h.` : '',
-      semDado ? `${semDado} sem dado.` : '',
+      conta('aguardando') ? `${conta('aguardando')} em curso, aguardando ${H48}.` : '',
+      conta('nao_coletado') ? `${conta('nao_coletado')} ainda não coletado.` : '',
+      conta('sem_dado') ? `${conta('sem_dado')} sem dado.` : '',
       t.precoAtual ? `Preço de oferta ${fmtBRL(t.precoAtual.preco)} ${asHoraDeBRT(t.precoAtual.observadoEm)}.` : '',
       'Os botões de cada intervalo mostram o detalhe; as setas andam entre eles.',
     ].filter(Boolean).join(' ');
-  }, [serie, n, passo, alcance, somaVisitas, completos.length, upvPeriodo, t.precoAtual]);
+  }, [serie, situacoes, n, passo, alcance, somaVisitas, completos.length, upvPeriodo, t.precoAtual]);
 
   const moverFoco = (e: KeyboardEvent<HTMLButtonElement>) => {
     const alvo = { ArrowLeft: focoAtual - 1, ArrowRight: focoAtual + 1, Home: 0, End: n - 1 }[e.key];
@@ -134,7 +156,7 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
   };
 
   // Precedência: sem anúncio que sirva > leitura > motivo da parada > coleta não começou > parcial.
-  let corpo: ReactNode;
+  let corpo: ReactNode = null;
   if (t.alcance === 'indisponivel') {
     corpo = (
       <Aviso icone={Unlink} tom="muted">
@@ -168,13 +190,10 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
   } else if (t.estadoColeta === 'sem_coleta' && !t.motivo) {
     corpo = (
       <Aviso icone={Clock} tom="muted">
-        A coleta de tráfego começa depois da ativação: veja o runbook <span className="font-mono text-xs">docs/runbooks/coletar-trafego-ml.md</span>.
-        As visitas aparecem aqui a partir do dia seguinte.
+        A coleta de tráfego começa após a ativação. As visitas aparecem aqui a partir do dia seguinte.
       </Aviso>
     );
-  } else if (t.estadoColeta === 'sem_coleta') {
-    corpo = null; // só o aviso do motivo, abaixo
-  } else {
+  } else if (temGrafico) {
     corpo = (
       <>
         <dl className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-3">
@@ -200,21 +219,30 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
             </svg>
             Preço de oferta, mín. a máx.
           </li>
-          <li className="flex items-center gap-1.5"><Clock className="size-3" />Aguardando 48 h</li>
-          <li className="flex items-center gap-1.5"><CircleSlash className="size-3" />Sem dado</li>
+          {tem('aguardando') && <li className="flex items-center gap-1.5"><Clock className="size-3" />{`Aguardando ${H48}`}</li>}
+          {tem('nao_coletado') && <li className="flex items-center gap-1.5"><CircleDashed className="size-3" />Ainda não coletado</li>}
+          {tem('sem_dado') && <li className="flex items-center gap-1.5"><CircleSlash className="size-3 text-warning" />Sem dado</li>}
         </ul>
 
         <div className="-mx-1 overflow-x-auto px-1">
           <div style={{ minWidth: n * MIN_POR_INTERVALO + EIXO_UNID + EIXO_LUCRO + 2 * MARGEM }}>
-            <div className="relative h-60 sm:h-64" aria-hidden>
+            {/* Toque/clique em qualquer coluna (inclusive as sem barra) leva o detalhe para ela; a coluna sai
+                da posição (faixas iguais na área de plotagem), sem depender do estado do tooltip. O caminho
+                acessível é a régua abaixo. */}
+            <div className="relative h-60 cursor-pointer sm:h-64 [&_*]:outline-none" aria-hidden onClick={(e) => {
+              const r = e.currentTarget.getBoundingClientRect();
+              const x = e.clientX - r.left - MARGEM - EIXO_UNID;
+              const largura = r.width - 2 * MARGEM - EIXO_UNID - EIXO_LUCRO;
+              if (n > 0 && x >= 0 && x < largura) setFoco(Math.floor((x / largura) * n));
+            }}>
               <ResponsiveContainer width="100%" height="100%">
-                <ComposedChart data={dados} margin={{ top: 16, right: MARGEM, left: MARGEM, bottom: 0 }}>
+                {/* Sem camada de acessibilidade: o gráfico é aria-hidden (resumo e régua fazem esse papel). */}
+                <ComposedChart data={dados} margin={{ top: 16, right: MARGEM, left: MARGEM, bottom: 0 }} accessibilityLayer={false}>
                   <CartesianGrid yAxisId="vis" strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis dataKey="rotulo" hide />
                   <YAxis yAxisId="vis" width={EIXO_UNID} tick={EIXO} stroke="var(--border)" allowDecimals={false} tickFormatter={(v) => kCompacto(Number(v))} />
-                  {/* Só zeros medidos: sem o teto mínimo o eixo inventaria 0..4. */}
                   <YAxis yAxisId="upv" orientation="right" width={EIXO_LUCRO} tick={EIXO} stroke="var(--border)" tickFormatter={(v) => razaoEixo(Number(v))}
-                    domain={[0, (max: number) => (max > 0 ? max * 1.1 : 0.1)]} />
+                    domain={[-topoUpv * 0.04, topoUpv]} ticks={[0, 0.25, 0.5, 0.75, 1].map((k) => k * topoUpv)} />
                   <YAxis yAxisId="preco" hide width={0} allowDataOverflow domain={[0, maxPreco > 0 ? maxPreco * 1.15 : 1]} />
                   {/* Intervalo sem visitas completas: faixa apagada no lugar da barra, nunca uma barra zero. */}
                   {dados.filter((d) => d.visitas == null).map((d) => (
@@ -225,19 +253,19 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
                     const i = (payload?.[0]?.payload as { i?: number } | undefined)?.i;
                     if (!active || i == null) return null;
                     const p = serie[i];
+                    // No celular o tooltip não cabe: o toque leva o card de detalhe abaixo do gráfico.
                     return (
-                      <div className="min-w-44 rounded-lg border bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-md">
+                      <div className="hidden min-w-44 rounded-lg border bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-md sm:block">
                         <p className="mb-1 font-medium">{nomeIntervalo(p, passo)}{marcaParcial(p.intervalo) ? ` ${marcaParcial(p.intervalo)}` : ''}</p>
                         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
-                          {linhas(p, nMlbs).map(([k, v]) => (
+                          {linhas(p, nMlbs, anuncio).map(([k, v]) => (
                             <div key={k} className="contents"><dt className="text-muted-foreground">{k}</dt><dd className="text-right tabular-nums">{v}</dd></div>
                           ))}
                         </dl>
                       </div>
                     );
                   }} />
-                  <Bar yAxisId="vis" dataKey="visitas" name="Visitas" fill="var(--chart-3)" radius={[3, 3, 0, 0]} maxBarSize={36}
-                    onClick={(_, i) => { setFoco(i); botoes.current[i]?.focus(); }}>
+                  <Bar yAxisId="vis" dataKey="visitas" name="Visitas" fill="var(--chart-3)" radius={[3, 3, 0, 0]} maxBarSize={36} cursor="pointer">
                     {dados.map((d) => <Cell key={d.i} fillOpacity={d.parcial ? 0.4 : 1} />)}
                   </Bar>
                   <Line yAxisId="preco" dataKey="preco" name="Preço de oferta" stroke="var(--muted-foreground)" strokeWidth={1.25} strokeOpacity={0.6}
@@ -245,7 +273,8 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
                     <ErrorBar dataKey="bigode" direction="y" width={5} stroke="var(--muted-foreground)" strokeWidth={1} />
                   </Line>
                   <Line yAxisId="upv" dataKey="upv" name="Unidades por visita" stroke="var(--chart-1)" strokeWidth={2}
-                    dot={{ r: 2.5, fill: 'var(--chart-1)', strokeWidth: 0 }} activeDot={{ r: 4 }} connectNulls={false} isAnimationActive={false} />
+                    dot={(p) => <PontoRazao key={p.index} cx={p.cx} cy={p.cy} value={p.value as number | null} index={p.index} />}
+                    activeDot={{ r: 4 }} connectNulls={false} isAnimationActive={false} />
                 </ComposedChart>
               </ResponsiveContainer>
               {completos.length === 0 && (
@@ -259,12 +288,12 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
             <ol className="grid border-t" aria-label="Intervalos do tráfego"
               style={{ gridTemplateColumns: `repeat(${n}, minmax(0, 1fr))`, paddingLeft: MARGEM + EIXO_UNID, paddingRight: MARGEM + EIXO_LUCRO }}>
               {serie.map((p, i) => {
-                const s = situacao(p);
+                const s = situacoes[i];
                 const doFim = n - 1 - i;
                 const visivel = doFim % passoSm === 0 ? '' : doFim % passoLg === 0 ? 'invisible sm:visible' : 'invisible';
                 const marca = marcaParcial(p.intervalo);
-                const rotulo = `${nomeIntervalo(p, passo)}${marca ? ` ${marca}` : ''}: ${linhas(p, nMlbs).map(([k, v]) => `${k.toLowerCase()} ${v}`).join(', ')}`;
-                const Icone = s.tipo === 'aguardando' ? Clock : s.tipo === 'sem_dado' ? CircleSlash : null;
+                const rotulo = `${nomeIntervalo(p, passo)}${marca ? ` ${marca}` : ''}: ${linhas(p, nMlbs, anuncio).map(([k, v]) => `${k.toLowerCase()} ${v}`).join(', ')}`;
+                const Icone = s.tipo === 'ok' ? null : ICONE[s.tipo];
                 return (
                   <li key={p.intervalo.inicio} className="min-w-0">
                     <button type="button" aria-label={rotulo} title={rotulo} tabIndex={i === focoAtual ? 0 : -1} aria-pressed={i === focoAtual}
@@ -284,32 +313,32 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
           </div>
         </div>
 
-        {n > 0 && (
-          <DetalheIntervalo p={serie[focoAtual]} passo={passo} nMlbs={nMlbs} />
-        )}
+        <DetalheIntervalo p={serie[focoAtual]} passo={passo} nMlbs={nMlbs} anuncio={anuncio} />
       </>
     );
   }
 
-  const cobertura = t.coberturaDesde && t.alcance !== 'indisponivel' && (t.estadoColeta === 'ok' || t.estadoColeta === 'parcial');
+  const cobertura = temGrafico && t.coberturaDesde;
 
   return (
     <section aria-labelledby="dossie-trafego" className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <div className="min-w-0">
           <h3 id="dossie-trafego" className="text-sm font-medium">
-            Tráfego e oferta{t.calendario === 'utc' ? ' (dias em UTC)' : ''}
+            {passo === 'semana' ? 'Tráfego semanal' : 'Tráfego mensal'}{t.calendario === 'utc' ? ' (dias em UTC)' : ''}
           </h3>
           {alcance && <p className="text-xs text-muted-foreground">{`Visitas e unidades por visita ${alcance}`}</p>}
         </div>
-        <div role="group" aria-label="Agrupar por" className="flex gap-1">
-          {(['semana', 'mes'] as const).map((p) => (
-            <Button key={p} size="sm" variant={passo === p ? 'default' : 'outline'} className="h-7 px-2.5 text-xs"
-              aria-pressed={passo === p} onClick={() => onPasso(p)}>
-              {p === 'semana' ? 'Semana' : 'Mês'}
-            </Button>
-          ))}
-        </div>
+        {temGrafico && (
+          <div role="group" aria-label="Agrupar por" className="flex gap-1">
+            {(['semana', 'mes'] as const).map((p) => (
+              <Button key={p} size="sm" variant={passo === p ? 'default' : 'outline'} className="h-7 px-2.5 text-xs"
+                aria-pressed={passo === p} onClick={() => onPasso(p)}>
+                {p === 'semana' ? 'Semana' : 'Mês'}
+              </Button>
+            ))}
+          </div>
+        )}
       </div>
 
       {compartilhados.length > 0 && (
@@ -329,7 +358,7 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
           </p>
           <p className="text-muted-foreground">
             {t.motivo === 'sem_acesso' ? 'Reconecte a conta do Mercado Livre para a coleta voltar.' : 'A próxima execução tenta de novo.'}
-            {t.estadoColeta !== 'sem_coleta' ? ' Os dados abaixo vão até a última coleta.' : ''}
+            {temGrafico ? ' Os dados abaixo vão até a última coleta.' : ''}
           </p>
         </Aviso>
       )}
@@ -342,7 +371,9 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
       {corpo}
 
       {cobertura && (
-        <p className="text-xs text-muted-foreground tabular-nums">{`Dados no período desde ${diaMesLiteral(t.coberturaDesde!)}. Dia estável 48 h depois de encerrado (calendário de São Paulo).`}</p>
+        <p className="text-xs text-muted-foreground tabular-nums">
+          {`Visitas no período desde ${diaMesLiteral(t.coberturaDesde!)}. Dia estável ${H48} depois de encerrado (calendário ${t.calendario === 'utc' ? 'UTC' : 'de São Paulo'}).`}
+        </p>
       )}
 
       {t.porMlb.length > 0 && (
@@ -353,7 +384,8 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
               <li key={m.mlb} className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1.5">
                 <span className="font-mono tabular-nums">{m.mlb}</span>
                 {m.vinculo === 'exato' && <StatusPill tone="neutral">exclusivo</StatusPill>}
-                {m.vinculo === 'compartilhado' && <StatusPill tone="info">{`compartilhado · ${m.codigos.length} códigos`}</StatusPill>}
+                {/* O compartilhado que entra na métrica já tem o selo no topo: um só lugar para o fato. */}
+                {m.vinculo === 'compartilhado' && !comSelo.has(m.mlb) && <StatusPill tone="info">compartilhado</StatusPill>}
                 {m.vinculo === 'nao_resolvido' && <StatusPill tone="warning">vínculo não resolvido</StatusPill>}
                 <span className={cn('ml-auto', m.considerado ? 'text-foreground' : 'text-muted-foreground')}>
                   {m.considerado ? 'entra na métrica' : 'fora da métrica'}
@@ -367,14 +399,14 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
   );
 }
 
-/** Detalhe do intervalo em foco: o caminho do teclado e do toque (o tooltip é só do mouse). */
-function DetalheIntervalo({ p, passo, nMlbs }: { p: PontoTrafego; passo: Passo; nMlbs: number }) {
+/** Detalhe do intervalo em foco: o caminho do teclado e do toque (o tooltip é só do mouse, em sm+). */
+function DetalheIntervalo({ p, passo, nMlbs, anuncio }: { p: PontoTrafego; passo: Passo; nMlbs: number; anuncio: boolean }) {
   const marca = marcaParcial(p.intervalo);
   return (
     <div data-testid="detalhe-trafego" aria-live="polite" className="rounded-md bg-muted/40 px-3 py-2 text-xs">
       <p className="font-medium">{nomeIntervalo(p, passo)}{marca ? <span className="font-normal text-muted-foreground"> {marca}</span> : null}</p>
       <dl className="mt-1 grid grid-cols-2 gap-x-4 gap-y-0.5 sm:grid-cols-4">
-        {linhas(p, nMlbs).map(([k, v]) => (
+        {linhas(p, nMlbs, anuncio).map(([k, v]) => (
           <div key={k} className="min-w-0">
             <dt className="text-muted-foreground">{k}</dt>
             <dd className="tabular-nums">{v}</dd>

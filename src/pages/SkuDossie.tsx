@@ -77,7 +77,7 @@ export default function SkuDossie() {
   const familia = alvo.tipo === 'familia';
   const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const [passo, setPasso] = useState<Passo>('semana');
-  const { estado, dados, refetch } = useSkuDossie(alvo, periodo, passo);
+  const { estado, dados, refetch, refetchTrafego } = useSkuDossie(alvo, periodo, passo);
 
   const cat = dados?.catalogo[0];
   const trilha: BreadcrumbItem[] = [
@@ -138,36 +138,41 @@ export default function SkuDossie() {
 
       <QualidadeHistorico historicoDesde={dados.historicoDesde} qualidade={dados.qualidade} />
 
-      {estado === 'sem_vendas' ? (
-        <EmptyState icon={PackageOpen} title="Sem vendas registradas desde a entrada no PubliAI"
-          description="O código está no catálogo, com o estoque acima. Idade comercial e tendência aparecem depois da primeira venda." />
-      ) : (
-        <section aria-labelledby="dossie-periodo" className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-            <h2 id="dossie-periodo" className="text-h3">Resultado no período</h2>
-            <SeletorPeriodo periodo={periodo} onPeriodo={setPeriodo} mostrarMesAtual rotulo="Período" />
-          </div>
-          <KpisDossie atual={dados.linhaPeriodo} anterior={dados.linhaAnterior} rot={rotuloAnterior(periodo)}
-            unidadesKit={dados.kitVirtual?.unidadesPeriodo} />
-          {!dados.linhaPeriodo && (
-            <p className="text-xs text-muted-foreground">{`Nenhuma venda neste período. ${dados.linhaAnterior ? 'O Δ compara com o período anterior.' : 'Sem Δ: sem histórico no período anterior.'}`}</p>
-          )}
-          {/* Vendas | Tráfego: medidas diferentes (unidades × visitas) não dividem o mesmo gráfico. */}
-          <Tabs defaultValue="vendas" className="gap-3">
-            <TabsList aria-label="Série do período">
-              <TabsTrigger value="vendas" className="px-3">Vendas</TabsTrigger>
-              <TabsTrigger value="trafego" className="px-3">Tráfego e oferta</TabsTrigger>
-            </TabsList>
-            <TabsContent value="vendas">
+      <section aria-labelledby="dossie-periodo" className="flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <h2 id="dossie-periodo" className="text-h3">Resultado no período</h2>
+          <SeletorPeriodo periodo={periodo} onPeriodo={setPeriodo} mostrarMesAtual rotulo="Período" />
+        </div>
+        {estado !== 'sem_vendas' && (
+          <>
+            <KpisDossie atual={dados.linhaPeriodo} anterior={dados.linhaAnterior} rot={rotuloAnterior(periodo)}
+              unidadesKit={dados.kitVirtual?.unidadesPeriodo} />
+            {!dados.linhaPeriodo && (
+              <p className="text-xs text-muted-foreground">{`Nenhuma venda neste período. ${dados.linhaAnterior ? 'O Δ compara com o período anterior.' : 'Sem Δ: sem histórico no período anterior.'}`}</p>
+            )}
+          </>
+        )}
+        {/* Vendas | Tráfego: medidas diferentes (unidades × visitas) não dividem o mesmo gráfico. Sem venda
+            nenhuma o tráfego continua aqui: visitas sem venda é justamente o diagnóstico. */}
+        <Tabs defaultValue="vendas" className="gap-3">
+          <TabsList aria-label="Série do período">
+            <TabsTrigger value="vendas" className="px-3">Vendas</TabsTrigger>
+            <TabsTrigger value="trafego" className="px-3">Tráfego e oferta</TabsTrigger>
+          </TabsList>
+          <TabsContent value="vendas">
+            {estado === 'sem_vendas' ? (
+              <EmptyState icon={PackageOpen} title="Sem vendas registradas desde a entrada no PubliAI"
+                description="O código está no catálogo, com o estoque acima. Idade comercial e tendência aparecem depois da primeira venda." />
+            ) : (
               <SerieDossie serie={dados.serie} perguntas={dados.perguntasPorIntervalo} eventos={dados.eventos} codigos={dados.codigos}
                 familia={familia} temKit={dados.kitVirtual != null} historicoDesde={dados.historicoDesde} passo={passo} onPasso={setPasso} />
-            </TabsContent>
-            <TabsContent value="trafego">
-              <TrafegoDossie trafego={dados.trafego} familia={familia} passo={passo} onPasso={setPasso} onTentar={() => { void refetch(); }} />
-            </TabsContent>
-          </Tabs>
-        </section>
-      )}
+            )}
+          </TabsContent>
+          <TabsContent value="trafego">
+            <TrafegoDossie trafego={dados.trafego} familia={familia} passo={passo} onPasso={setPasso} onTentar={() => { void refetchTrafego(); }} />
+          </TabsContent>
+        </Tabs>
+      </section>
 
       {/* Ordem por relógio: o período escolhido (KPIs, série, mix, devoluções, UFs), a posição de
           hoje (estoque, campanhas) e, por fim, todo o histórico (eventos). */}
