@@ -26,7 +26,7 @@ function fake(o: Partial<DepsTrafego> = {}, mlbs = ['MLB3', 'MLB1', 'MLB2']): Fa
     reservarPosse: vi.fn(async () => ({ rodada: RODADA, cursor: null })),
     avancarCursor: vi.fn(async () => true),
     lerEstadoSync: vi.fn(async () => ({ cargaInicialConcluida: true, ultimoDiaOk: '2026-09-25' })),
-    lerInventario: vi.fn(async () => ({ fontes: { ...vazio, familias: mlbs }, encerradosHaMaisDe30d: new Set<string>() })),
+    lerInventario: vi.fn(async () => ({ fontes: { ...vazio, familias: mlbs }, encerradosHaMaisDe30d: new Set<string>(), comColetaOk: new Set(mlbs) })),
     lerStatusItens: vi.fn(async (ids: string[]) => ids.map((id) => ({ ml_item_id: id, status: 'active' }))),
     buscarVisitas: vi.fn(async () => visitas200),
     buscarPreco: vi.fn(async () => preco200),
@@ -101,7 +101,7 @@ describe('sincronizarTrafegoOrg', () => {
     expect(r).toEqual({ resultado: 'continua' });
     expect(idsVisitados(d)).toEqual(['MLB1', 'MLB2']);
     expect(d.avancarCursor).toHaveBeenCalledWith(RODADA, null, 'MLB2');
-    expect(d.continuar).toHaveBeenCalledWith({ org_id: ORG, rodada: RODADA, cursor: 'MLB2', primeira: false });
+    expect(d.continuar).toHaveBeenCalledWith({ org_id: ORG, rodada: RODADA, cursor: 'MLB2', primeira: false, tentativa: 0 }, {});
     expect(d.concluir).not.toHaveBeenCalled();
   });
 
@@ -135,14 +135,15 @@ describe('sincronizarTrafegoOrg', () => {
     expect(pontos(d).every((x) => x.estado !== 'falha')).toBe(true);
   });
 
-  it('429 cujo Retry-After não cabe → continua no mesmo cursor, sem gravar falha', async () => {
+  it('429 cujo Retry-After não cabe → continua no mesmo cursor (tentativa+1, atraso do Retry-After), sem falha', async () => {
     const d = fake({}, ['MLB1', 'MLB2', 'MLB3']);
     d.buscarVisitas.mockImplementation(async (id: string) =>
       id === 'MLB3' ? { status: 429, retryAfterMs: 120_000, corpo: null } : visitas200);
-    const r = await sincronizarTrafegoOrg(d, { org_id: ORG, rodada: RODADA, cursor: 'MLB1', primeira: false });
+    const r = await sincronizarTrafegoOrg(d, { org_id: ORG, rodada: RODADA, cursor: 'MLB1', primeira: false, tentativa: 2 });
     expect(r).toEqual({ resultado: 'continua' });
     expect(d.esperar).not.toHaveBeenCalled();
-    expect(d.continuar).toHaveBeenCalledWith({ org_id: ORG, rodada: RODADA, cursor: 'MLB1', primeira: false });
+    expect(d.continuar).toHaveBeenCalledWith(
+      { org_id: ORG, rodada: RODADA, cursor: 'MLB1', primeira: false, tentativa: 3 }, { atrasoMs: 120_000 });
     expect(d.gravarVisitas).not.toHaveBeenCalled();
     expect(d.avancarCursor.mock.calls).toEqual([[RODADA, 'MLB1', 'MLB1']]);
     expect(d.concluir).not.toHaveBeenCalled();
@@ -230,6 +231,79 @@ describe('sincronizarTrafegoOrg', () => {
 
     const d3 = fake({ reservarPosse: vi.fn(async () => { throw new Error('rpc'); }) });
     expect(await sincronizarTrafegoOrg(d3, primeira)).toEqual({ resultado: 'erro' });
+  });
+
+  it('adiar num lote posterior → continua do cursor já avançado, tentativa zerada', async () => {
+    const d = fake({}, ['MLB1', 'MLB2', 'MLB3', 'MLB4']);
+    d.buscarVisitas.mockImplementation(async (id: string) =>
+      id === 'MLB3' ? { status: 429, retryAfterMs: 120_000, corpo: null } : visitas200);
+    const r = await sincronizarTrafegoOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 4 },
+      { limiteMs: 90_000, lote: 2, concorrencia: 6 });
+    expect(r).toEqual({ resultado: 'continua' });
+    expect(d.continuar).toHaveBeenCalledWith(
+      { org_id: ORG, rodada: RODADA, cursor: 'MLB2', primeira: false, tentativa: 0 }, { atrasoMs: 120_000 });
+  });
+
+  it('limite de adiamentos no mesmo cursor → falha só dos MLBs não coletados e o cursor anda', async () => {
+    const d = fake({}, ['MLB1', 'MLB2', 'MLB3', 'MLB4']);
+    d.buscarVisitas.mockImplementation(async (id: string) =>
+      id === 'MLB3' ? { status: 429, retryAfterMs: 120_000, corpo: null } : visitas200);
+    const r = await sincronizarTrafegoOrg(d, { org_id: ORG, rodada: RODADA, cursor: 'MLB1', primeira: false, tentativa: 5 },
+      { limiteMs: 90_000, lote: 20, concorrencia: 1 });
+    expect(r).toEqual({ resultado: 'ok' });
+    expect(d.continuar).not.toHaveBeenCalled();
+    expect(idsVisitados(d)).toEqual(['MLB2', 'MLB3']); // MLB4 nem é buscado depois do adiamento
+    const estados = (id: string) => new Set(pontos(d).filter((x) => x.ml_item_id === id).map((x) => x.estado));
+    expect(estados('MLB2').has('falha')).toBe(false);
+    expect(estados('MLB3')).toEqual(new Set(['falha']));
+    expect(estados('MLB4')).toEqual(new Set(['falha']));
+    expect(d.buscarPreco.mock.calls.map((c) => c[0])).toEqual(['MLB2']); // sem preço depois de marcar adiamento
+    expect(d.avancarCursor).toHaveBeenLastCalledWith(RODADA, 'MLB1', 'MLB4');
+  });
+
+  it('erro no multiget de status não derruba a org: pula o status do lote e segue', async () => {
+    const d = fake({ lerStatusItens: vi.fn(async () => { throw new Error('ML 429'); }) }, ['MLB1']);
+    expect(await sincronizarTrafegoOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    expect(d.gravarStatusItens).not.toHaveBeenCalled();
+    expect(d.avancarCursor).toHaveBeenCalledWith(RODADA, null, 'MLB1');
+  });
+
+  it('MLB sem coleta ok anterior ganha a janela de 150 dias mesmo com a carga da org concluída', async () => {
+    const d = fake({}, ['MLB1', 'MLB2']);
+    d.lerInventario.mockResolvedValue({
+      fontes: { ...vazio, familias: ['MLB1', 'MLB2'] }, encerradosHaMaisDe30d: new Set<string>(), comColetaOk: new Set(['MLB1']),
+    });
+    await sincronizarTrafegoOrg(d, primeira);
+    expect(d.buscarVisitas).toHaveBeenCalledWith('MLB1', { last: 6, ending: '2026-09-27' });
+    expect(d.buscarVisitas).toHaveBeenCalledWith('MLB2', { last: 149, ending: '2026-09-27' });
+  });
+
+  it('429 no preço que não cabe não atrasa o lote (preço fica para a próxima execução)', async () => {
+    const d = fake({ buscarPreco: vi.fn(async () => ({ status: 429, retryAfterMs: 120_000, corpo: null })) }, ['MLB1']);
+    expect(await sincronizarTrafegoOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    expect(d.continuar).not.toHaveBeenCalled();
+    expect(d.gravarPreco).not.toHaveBeenCalled();
+    expect(pontos(d).every((x) => x.estado !== 'falha')).toBe(true);
+  });
+
+  it('preço observado depois da meia-noite BRT não é gravado no dia anterior', async () => {
+    const d = fake({}, ['MLB1']);
+    d.relogio.t = Date.parse('2026-09-28T02:59:59Z'); // 23:59:59 BRT de 27/09
+    d.buscarPreco.mockImplementation(async () => { d.relogio.t += 2_000; return preco200; });
+    expect(await sincronizarTrafegoOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    expect(d.precoJaGravadoHoje).toHaveBeenCalledWith(['MLB1'], '2026-09-27');
+    expect(d.gravarPreco).not.toHaveBeenCalled();
+  });
+
+  it('concluir devolvendo false → obsoleta', async () => {
+    const d = fake({ concluir: vi.fn(async () => false) });
+    expect(await sincronizarTrafegoOrg(d, primeira)).toEqual({ resultado: 'obsoleta' });
+  });
+
+  it('concluir(ok) que lança → erro, sem chamar concluir(erro) por cima', async () => {
+    const d = fake({ concluir: vi.fn(async () => { throw new Error('rede'); }) });
+    expect(await sincronizarTrafegoOrg(d, primeira)).toEqual({ resultado: 'erro' });
+    expect(d.concluir).toHaveBeenCalledTimes(1);
   });
 
   it('inventário vazio → conclui ok', async () => {
