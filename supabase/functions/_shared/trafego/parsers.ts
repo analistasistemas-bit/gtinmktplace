@@ -12,7 +12,7 @@ export interface PontoVisitas {
 const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
 const QUARENTA_E_OITO_HORAS_MS = 48 * 3_600_000;
 
-function diasDaJanela(desde: string, ate: string): string[] {
+export function diasDaJanela(desde: string, ate: string): string[] {
   const desdeMs = Date.parse(`${desde}T00:00:00Z`);
   const ateMs = Date.parse(`${ate}T00:00:00Z`);
   if (Number.isNaN(desdeMs) || Number.isNaN(ateMs) || ateMs < desdeMs) return [];
