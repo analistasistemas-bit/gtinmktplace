@@ -38,6 +38,13 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > R$ 1.173,72 idênticos entre ranking e Dossiê. **Carga** (maior SKU da Avil, 648 itens → 708 ids
 > com pack): `EXPLAIN` mostra que o `OR` de 3 `IN` não usa os índices parciais novos — melhoria
 > futura (`UNION`), não bloqueante hoje (~13 ms). Falta `db push`, revisão final e merge.
+>
+> **📋 Vendas SKU — Fatia 2b: Tráfego e oferta ([[0172-vendas-sku-analise-por-variacao|ADR-0172]]),
+> mesma branch, ainda não mergeado.** Worker novo `coletar-trafego-ml` (QStash, só GET no ML) grava
+> visitas por dia e preço de oferta por MLB (4 tabelas + 6 RPCs); painel Tráfego e oferta no Dossiê
+> com Unidades por visita. **Validação real:** ML da Avil + Postgres local, 3 MLBs do spike 052 — 149
+> dias idênticos ao spike, preço de hoje igual, 2º run sem duplicar nem regredir. 6200 testes,
+> `pnpm preflight` verde. Falta `db push`, deploy da função, schedule QStash, revisão final e merge.
 
 ## Passo anterior (2026-09-20) — EM PRODUÇÃO
 

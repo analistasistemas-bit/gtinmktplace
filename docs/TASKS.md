@@ -2,6 +2,21 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Vendas SKU — Fatia 2b: Tráfego e oferta (ADR-0172) — 2026-09-27
+
+Coleta diária de visitas e preço de oferta por MLB (worker `coletar-trafego-ml`) e painel **Tráfego e
+oferta** no Dossiê do SKU. Branch `worktree-vendas-sku-design`, ainda **não mergeada nem em produção**.
+Relatórios em `.superpowers/sdd/2026-09-27-vendas-sku-fatia-2b/`.
+
+- [x] Spike 052 (contrato real de visitas e `sale_price`, só GET).
+- [x] Migration `20260927084615_vendas_sku_trafego.sql` (4 tabelas + 6 RPCs) + teste SQL, aplicada só localmente.
+- [x] Worker `_shared/trafego/*` + `coletar-trafego-ml` (posse, CAS do cursor, continuação QStash) e runbook.
+- [x] Painel Tráfego e oferta (`src/lib/sku-trafego.ts`, `trafego-dossie.tsx`).
+- [x] Validação real (T8): ML da Avil só GET + Postgres local, 3 MLBs do spike — 149 dias idênticos ao spike,
+  preço de hoje igual, 2º run sem duplicar nem regredir. 588 arquivos / 6200 testes; `pnpm preflight` verde.
+- [ ] `supabase db push`, deploy da função e schedule QStash (runbook `docs/runbooks/coletar-trafego-ml.md`) — pendente.
+- [ ] Revisão final do diff + merge fast-forward na `main` — pendente.
+
 ## Vendas SKU — Fatia 1 (ADR-0172) — 2026-09-26
 
 Nova aba **Vendas SKU** em `/faturamento?aba=sku`: análise de vendas por variação (`codigo`), com

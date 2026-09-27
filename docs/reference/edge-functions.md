@@ -90,6 +90,8 @@
 | pulse-analise-secoes237 | true | HTTP (frontend) | sim (leitura; demanda do nicho por vendedor, ponte pelo catálogo) |
 | **Promoções (ADR-0170)** ||||
 | sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`) |
+| **Tráfego e oferta (ADR-0172, Fatia 2b)** ||||
+| coletar-trafego-ml | false | QStash (fan-out por org + cadeia de continuações) | sim (posse + CAS do cursor, `ok` nunca vira `falha`, `deduplicationId`) |
 | **Token ML (ADR-0171)** ||||
 | renovar-tokens-ml | false | QStash schedule | sim (lock Redis do ADR-0012; conexão já renovada só é pulada) |
 | **Status / métricas / viabilidade** ||||
@@ -1570,6 +1572,27 @@ um smoke test contra Postgres real antes do primeiro deploy.
     a conexão/token), a resposta é **500** — o fan-out publica com `retries: 1`, então o QStash
     tenta de novo ~12s depois (cobre um tropeço de rede). O caminho "Atualizar agora" (usuário
     logado) não muda: continua sempre 200, o estado 'erro' já aparece na tela.
+
+### Tráfego e oferta (ADR-0172, Fatia 2b)
+- **coletar-trafego-ml** *(nova, `verify_jwt=false`, só QStash; **ainda não deployada** — runbook
+  `docs/runbooks/coletar-trafego-ml.md`, schedule previsto `17 9 * * *` UTC = 06:17 BRT, sem body,
+  retries 1)* — coleta diária de visitas por dia e preço de oferta por MLB, só `GET` no Mercado Livre
+  (única exceção: refresh OAuth de `_shared/ml/token.ts`). Regra em `supabase/functions/_shared/trafego/`
+  (`inventario`, `janelas`, `parsers`, `sincronizar`, `fiacao`, vitest); fiação em
+  `coletar-trafego-ml/deps.ts`. Dois modos:
+  - **`{}`** → fan-out de uma mensagem `{org_id, primeira:true}` por org com conexão ML
+    (`deduplicationId` org+dia BRT) e, depois, a retenção de 13 meses.
+  - **`{org_id, …}`** → uma mensagem da cadeia (`sincronizarTrafegoOrg`): posse
+    (`reservar_trafego_posse`), inventário (as 7 fontes de `varrer-anuncios-orfaos` + vendidos em
+    180 dias, sem `closed` há > 30 dias), lotes de 20 MLBs com concorrência 6 e orçamento de 90 s,
+    cursor por CAS (`avancar_trafego_cursor`), continuação pelo QStash (`deduplicationId`
+    org+rodada+cursor+tentativa; 429 → `delay` = Retry-After), `concluir_trafego_rodada` no fim.
+  - Por MLB: 1 GET de visitas (`/visits/time_window`, 150 dias na carga inicial ou para MLB sem
+    coleta `ok`; senão janela móvel de 7 dias, estendida até o dia seguinte ao último `ok`), 1 GET de `sale_price` por dia (só se ainda não há
+    preço de hoje) e o multiget de status do lote (consultivo).
+  - Respostas: `erro` → 500 (1 retry do QStash); `ok`/`continua`/`obsoleta`/`sem_acesso` → 200;
+    sem assinatura → 401.
+  - Tabelas e RPCs: `docs/reference/modelo-de-dados.md` § Tráfego e oferta.
 
 ### Token ML (ADR-0171)
 - **renovar-tokens-ml** *(nova, `verify_jwt=false`, só QStash, schedule `40 * * * *`)* — renova

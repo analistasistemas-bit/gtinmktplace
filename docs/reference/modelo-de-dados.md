@@ -920,6 +920,50 @@ RLS nas três: `select` por `org_id = current_org_id()`; `anon` sem privilégio 
 `authenticated` só `SELECT` (`INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER`
 revogados) — escrita só por `service_role` (worker `sincronizar-promocoes`).
 
+## Tráfego e oferta (ADR-0172, Fatia 2b)
+
+Visitas por dia e preço de oferta observado por MLB, coletados pelo worker `coletar-trafego-ml`
+(só GET no ML). *Migration `20260927084615_vendas_sku_trafego.sql` (ainda não em produção).* O dia
+é o rótulo literal `results[].date[:10]` da API de visitas, em calendário BRT (spike 052).
+
+### `ml_item_visitas_dia`
+Uma linha por MLB por dia. `org_id` + `ml_item_id` + `dia` (PK). `visitas` (integer ≥ 0; `null`
+só em `falha`), `estado` (`ok|pendente|falha`; `ok` exige `visitas`), `coletado_em`, `rodada`
+(rodada de `ml_trafego_sync` que gravou a linha). Dentro de uma resposta 200, dia sem ponto = 0
+visitas `ok` (a API omite dias com zero). Dia com menos de 48 h fica `pendente` com o parcial.
+Índice `(org_id, dia)` (último dia `ok` e retenção).
+
+### `ml_item_preco_dia`
+Uma foto de preço por MLB por dia (a 1ª observação do dia fica). `org_id` + `ml_item_id` + `dia`
+(PK), `preco` (`sale_price.amount`, preço "por"), `preco_regular` (preço "de" quando há
+promoção, senão `null`), `moeda`, `observado_em`, `origem` (`sale_price`). Só daqui para frente.
+
+### `ml_trafego_sync`
+Estado da coleta por organização. `org_id` (PK), `estado` (`sincronizando|ok|sem_acesso|erro`),
+`rodada` (identidade da cadeia dona), `posse_ate` (posse de 10 min, renovada a cada lote),
+`iniciado_em`, `ultimo_ok_em`, `ultimo_erro_em`, `erro`, `cursor` (último MLB processado),
+`carga_inicial_concluida_em` (`null` = carga de 150 dias ainda não terminou).
+
+### `ml_trafego_item`
+Status do anúncio por MLB (multiget `/items?attributes=id,status`). `org_id` + `ml_item_id` (PK),
+`status`, `status_desde` (só muda quando o status muda), `ultimo_ok_em` (última coleta de visitas
+`ok`; MLB sem ela recebe a janela de 150 dias). `closed` há mais de 30 dias sai do inventário.
+
+RLS nas quatro: `select` por `org_id = current_org_id()`; `anon` sem privilégio; `authenticated`
+só `SELECT`. Escrita só por `service_role`, pelas RPCs abaixo (todas `security definer`,
+`search_path=''`, revogadas de `public`/`anon`/`authenticated`, concedidas a `service_role`):
+
+| RPC | Função |
+|---|---|
+| `reservar_trafego_posse(p_org)` | Toma a posse (1 linha `{rodada, cursor}`) ou devolve 0 linhas se outra cadeia está viva. Retoma o cursor se a carga inicial não terminou. |
+| `avancar_trafego_cursor(p_org, p_rodada, p_cursor_atual, p_cursor_novo)` | CAS do cursor + renovação da posse. `false` = rodada obsoleta. |
+| `gravar_visitas_dia(p_org, p_rodada, p_pontos)` | Upsert das visitas. Rodada mais antiga nunca sobrescreve; `ok` só é trocado por outro `ok`. |
+| `gravar_preco_dia(p_org, p_pontos)` | Insere o preço do dia; já existindo, mantém a 1ª observação. |
+| `gravar_trafego_item(p_org, p_itens)` | Upsert do status; `status_desde` só muda com o status; `ultimo_ok_em` só avança. |
+| `concluir_trafego_rodada(p_org, p_rodada, p_estado, p_erro, p_carga_concluida)` | Fecha a rodada (só a dona) e solta a posse; marca a carga inicial concluída. `false` = obsoleta. |
+
+Retenção de 13 meses em `ml_item_visitas_dia` e `ml_item_preco_dia` (limpeza diária do worker).
+
 ## Monitoramento e configuração
 
 ### `ml_moderacao`

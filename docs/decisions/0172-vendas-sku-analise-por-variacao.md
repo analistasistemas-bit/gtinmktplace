@@ -141,3 +141,33 @@ existente e aplica o `OR` como filtro pós-scan. Rápido hoje (~13 ms, tabela pe
 o remédio é trocar o `OR` por `UNION` das três consultas (registrado como melhoria futura, não bloqueante).
 Migration `20260927045118_vendas_sku_dossie.sql` aplicada só localmente (Ruling 2a-1, sem `db push` nesta
 fatia). **Status continua Proposto:** falta `db push`, revisão final e merge.
+
+## Nota — Fatia 2b: Tráfego e oferta (2026-09-27)
+
+Entregue a primeira parte de D-6: **visitas por dia** e **preço de oferta observado** por MLB, e o painel
+**Tráfego e oferta** no Dossiê do SKU (visitas, **Unidades por visita** e preço de oferta mín./máx. por
+intervalo). Ads e posição na busca continuam na Fatia 2c, condicionados aos spikes.
+
+- **Contrato da API (spike 052):** o dia é o rótulo literal `results[].date[:10]`, em calendário **BRT**
+  (UTC descartado; resíduo −04:00 registrado); dia sem ponto numa resposta 200 é **0 visitas `ok`**; dia
+  com menos de 48 h fica `pendente`; 1 GET cobre 150 dias. Preço vem de
+  `sale_price?context=channel_marketplace`.
+- **Dados:** 4 tabelas (`ml_item_visitas_dia`, `ml_item_preco_dia`, `ml_trafego_sync`, `ml_trafego_item`)
+  e 6 RPCs `service_role` (posse, CAS do cursor, 3 gravações, conclusão), migration
+  `20260927084615_vendas_sku_trafego.sql`. O plano previa "3 tabelas + 2 RPCs"; a posse, o CAS do cursor e
+  o status do anúncio entraram nas Tasks 2/4. `ok` nunca é trocado por `falha`/`pendente`; a 1ª observação
+  de preço do dia fica. Retenção de 13 meses.
+- **Worker:** `coletar-trafego-ml` (QStash, `verify_jwt=false`, só GET no ML): fan-out por org e cadeia
+  de continuações com posse, lote de 20 MLBs, orçamento de 90 s. Carga inicial de 150 dias; depois, janela
+  móvel de 7 dias estendida até o último `ok`. MLB sem coleta `ok` ganha os 150 dias.
+- **Métrica:** Unidades por visita = Σ unidades ÷ Σ visitas nos mesmos MLBs e dias, só com todos os dias
+  `ok`; o mapa MLB→código é o **vínculo atual** (sem vigência histórica — Ruling 2b-2).
+
+**Validação real (T8):** `sincronizarTrafegoOrg` rodou com a fiação real (`depsTrafego`), o ML real da
+Avil (só GET, token lido por SQL read-only, sem refresh) e o Postgres **local**, para 3 MLBs do spike
+(dois ativos e um pausado). Os 149 dias de 01/05 a 26/09/2026 bateram 1:1 com o spike (12.960,
+5.061 e 0 visitas); o preço de hoje (65,90, 39,90 e 14,89, sem promoção) é o mesmo do spike. Um 2º run não
+duplicou nem regrediu nada (450 linhas de visitas, 3 de preço e 3 de status antes e depois; hash dos dias
+`ok` idêntico; nenhum `ok` virou `falha`; nenhum GET de preço repetido). **Status continua Proposto:**
+falta `db push`, deploy da função, schedule do QStash (runbook `docs/runbooks/coletar-trafego-ml.md`),
+revisão final e merge.

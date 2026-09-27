@@ -581,6 +581,15 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   verdes; screenshots 1440/390 claro/escuro (SKU e família) em
   `.superpowers/sdd/2026-09-27-vendas-sku-fatia-2a/`. **Faltam:** `supabase db push` da migration,
   revisão final do diff e merge — mesma decisão do controller da Fatia 1.
+- **ADR-0172: Tráfego e oferta, Fatia 2b (2026-09-27) — Proposto, na mesma branch, ainda não mergeado
+  nem em produção.** Coleta diária de visitas por dia e preço de oferta por MLB (worker novo
+  `coletar-trafego-ml`, QStash, só GET no ML; spike 052) e painel **Tráfego e oferta** no Dossiê do SKU
+  (visitas, Unidades por visita, preço de oferta observado, estados do dia). Migration
+  `20260927084615_vendas_sku_trafego.sql` (4 tabelas + 6 RPCs `service_role`), **aplicada só
+  localmente**. **Validação real (T8):** worker com a fiação real, ML real da Avil (só GET, sem refresh)
+  e Postgres local, 3 MLBs do spike: 149 dias (01/05–26/09/2026) idênticos ao spike e preço de hoje
+  igual; 2º run sem duplicar nem regredir. **Faltam:** `supabase db push`, deploy da função, schedule
+  QStash (runbook `docs/runbooks/coletar-trafego-ml.md`), revisão final e merge.
 - **Cadastro de Grade em Matriz Cor x Tamanho (2026-09-19/20) — EM PRODUÇÃO.** Substituição da lista
   linear de cards pelo componente `MatrizGrade` (`matriz-grade.tsx`): visualização bidimensional Cor (linhas)
   × Tamanho (colunas) com 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas e
