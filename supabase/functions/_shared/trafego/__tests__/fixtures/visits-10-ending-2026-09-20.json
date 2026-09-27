@@ -1,0 +1,120 @@
+{
+ "item_id": "MLB1000000002",
+ "date_from": "2026-09-10T00:00:00-04:00",
+ "date_to": "2026-09-20T00:00:00-04:00",
+ "total_visits": 1243,
+ "last": 10,
+ "unit": "day",
+ "results": [
+  {
+   "date": "2026-09-12T00:00:00Z",
+   "total": 108,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 108
+    }
+   ]
+  },
+  {
+   "date": "2026-09-18T00:00:00Z",
+   "total": 100,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 100
+    }
+   ]
+  },
+  {
+   "date": "2026-09-20T00:00:00Z",
+   "total": 91,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 91
+    }
+   ]
+  },
+  {
+   "date": "2026-09-15T00:00:00Z",
+   "total": 125,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 125
+    }
+   ]
+  },
+  {
+   "date": "2026-09-11T00:00:00Z",
+   "total": 113,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 113
+    }
+   ]
+  },
+  {
+   "date": "2026-09-14T00:00:00Z",
+   "total": 143,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 143
+    }
+   ]
+  },
+  {
+   "date": "2026-09-13T00:00:00Z",
+   "total": 107,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 107
+    }
+   ]
+  },
+  {
+   "date": "2026-09-10T00:00:00Z",
+   "total": 129,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 129
+    }
+   ]
+  },
+  {
+   "date": "2026-09-16T00:00:00Z",
+   "total": 121,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 121
+    }
+   ]
+  },
+  {
+   "date": "2026-09-19T00:00:00Z",
+   "total": 99,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 99
+    }
+   ]
+  },
+  {
+   "date": "2026-09-17T00:00:00Z",
+   "total": 107,
+   "visits_detail": [
+    {
+     "company": "mercadolibre",
+     "quantity": 107
+    }
+   ]
+  }
+ ]
+}
