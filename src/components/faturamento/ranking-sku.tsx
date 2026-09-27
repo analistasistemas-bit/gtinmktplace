@@ -136,13 +136,13 @@ function Selos({ alertas, cob, parcial }: { alertas: Alerta[]; cob?: Cobertura; 
 
 function Nome({ l, recuo = false, selos }: { l: LinhaSku; recuo?: boolean; selos?: ReactNode }) {
   // Dentro da família (recuo) a linha de cima já dá o produto; solta, a cor sozinha não diz nada.
-  const nome = recuo ? formatarNomeProduto(l.titulo) || NADA : nomeSku(l);
+  const nome = (recuo || l.codigo === SEM_CODIGO ? formatarNomeProduto(l.titulo) : nomeSku(l)) || NADA;
   return (
     <div className={cn('flex min-w-0 items-center gap-2.5', recuo && 'pl-6')}>
       <ThumbProduto path={l.imagemPath} titulo={nome} size={32} />
       <div className="min-w-0">
         {l.codigo === SEM_CODIGO
-          ? <div className={TITULO} data-testid="sku-titulo" title={l.titulo ?? undefined}>{l.titulo ?? NADA}</div>
+          ? <div className={TITULO} data-testid="sku-titulo" title={nome}>{nome}</div>
           : (
             <LinkDossie to={`/faturamento/sku/${encodeURIComponent(l.codigo)}`} className="block w-fit">
               <div className={TITULO} data-testid="sku-titulo" title={nome}>{nome}</div>

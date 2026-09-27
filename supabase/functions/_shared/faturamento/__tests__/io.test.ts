@@ -16,13 +16,14 @@ function criarAdminFake(
   let linha: Linha = null;
   // ml_vendas_itens em memória: chave única (venda_id, ml_item_id, variation_id), como no banco.
   const itens: Array<Record<string, unknown> & { id: string }> = [];
-  const falhas = { upsertItens: null as { message: string } | null };
+  const falhas = { upsertItens: null as { message: string } | null, upsertVazio: false };
   let seq = 0;
   const chave = (r: Record<string, unknown>) => `${r.venda_id}|${r.ml_item_id}|${r.variation_id}`;
   const tabelaItens = {
     upsert: (rows: Record<string, unknown>[]) => ({
       select: async () => {
         if (falhas.upsertItens) return { data: null, error: falhas.upsertItens };
+        if (falhas.upsertVazio) return { data: [], error: null };
         const data = rows.map((r) => {
           let e = itens.find((i) => chave(i) === chave(r));
           if (e) Object.assign(e, r); else { e = { ...r, id: `it-${++seq}` }; itens.push(e); }
@@ -210,6 +211,14 @@ describe('upsertVenda — itens nunca somem no meio da troca', () => {
     falhas.upsertItens = { message: 'processo morreu' };
     await expect(upsertVenda(admin, 'user-1', 'org-1', pedido, opts)).rejects.toThrow('upsert ml_vendas_itens');
     expect(itens.map((i) => i.ml_item_id)).toEqual(['MLB1']);
+  });
+
+  it('upsert que volta sem linhas não apaga os itens', async () => {
+    const { admin, itens, falhas } = criarAdminFake();
+    await upsertVenda(admin, 'user-1', 'org-1', pedido, opts);
+    falhas.upsertVazio = true;
+    await expect(upsertVenda(admin, 'user-1', 'org-1', pedido, opts)).rejects.toThrow('sem linhas');
+    expect(itens).toHaveLength(1);
   });
 
   it('reprocessar mantém um item por linha e remove o que saiu do pedido', async () => {

@@ -56,7 +56,7 @@ describe('AbaVendasSku', () => {
     const nomes = () => screen.getAllByTestId('sku-titulo').map((e) => e.textContent);
     expect(nomes()[0]).toBe('Família P · Produto A');
     fireEvent.click(screen.getByRole('button', { name: /Unidades/ }));
-    expect(nomes()).toHaveLength(4);
+    expect(nomes()[1]).toBe('Família P · Produto B'); // unidades empatadas: por código
   });
 
   it('trocar a base da curva ABC reordena a tabela por ela', () => {

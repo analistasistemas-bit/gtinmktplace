@@ -17,7 +17,9 @@ export function nomeSku(l: Pick<LinhaSku, 'codigo' | 'titulo' | 'nomeFamilia'>):
   const tFmt = formatarNomeProduto(t) || null;
   const fFmt = formatarNomeProduto(f) || null;
   if (!t) return fFmt ?? l.codigo;
-  if (!f || normalizarParaBusca(t).includes(normalizarParaBusca(f))) return tFmt!;
+  // Família como palavras inteiras dentro do título ("Tapete" não contém a família "PET").
+  const palavras = (s: string) => ` ${normalizarParaBusca(s).split(/\s+/).join(' ')} `;
+  if (!f || palavras(t).includes(palavras(f))) return tFmt!;
   return `${fFmt} · ${tFmt}`;
 }
 

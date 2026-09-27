@@ -228,6 +228,8 @@ describe('nomeSku', () => {
     expect(nomeSku({ codigo: '1', titulo: 'Fita', nomeFamilia: null })).toBe('Fita');
     expect(nomeSku({ codigo: '1', titulo: null, nomeFamilia: 'Fita' })).toBe('Fita');
     expect(nomeSku({ codigo: '1', titulo: null, nomeFamilia: null })).toBe('1');
+    // Família como palavra inteira, não substring: "Tapete" contém "pet".
+    expect(nomeSku({ codigo: '1', titulo: 'Tapete', nomeFamilia: 'PET' })).toBe('PET · Tapete');
   });
   it('explicarVariacao usa o nome com a família', () => {
     const v = explicarVariacao([linha('a', 100, 100, { titulo: 'Verde Musgo', nomeFamilia: 'Tecido Oxford' })], []);

@@ -387,6 +387,8 @@ export async function upsertVenda(
     ).select('id');
     if (itensErr) throw new Error(`upsert ml_vendas_itens: ${itensErr.message}`);
     manter = (gravados ?? []).map((r: { id: string }) => r.id);
+    // Sem ids, o delete abaixo viraria "apaga tudo" — o mesmo estrago do incidente.
+    if (manter.length === 0) throw new Error('upsert ml_vendas_itens voltou sem linhas');
   }
   let sobras = admin.from('ml_vendas_itens').delete().eq('venda_id', vendaId);
   if (manter.length > 0) sobras = sobras.not('id', 'in', `(${manter.join(',')})`);
