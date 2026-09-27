@@ -27,13 +27,15 @@ export function useVendasSku(periodo: Periodo) {
   const { data: cores } = useCoresProduto();
   const { data: canonico } = useAnuncioCanonico();
   const { data: aliquotas } = useAliquotas();
-  const { data: devolucoes } = useDevolucoes();
+  const devQ = useDevolucoes();
+  const devolucoes = devQ.data;
   const catQ = useCatalogoVendasSku();
 
   const dados = useMemo<VendasSku | null>(() => {
     // Sem custos toda linha sairia "sem custo" por um instante: espera a query assentar.
     // Com erro nos custos calcula sem eles ("sem custo" é o honesto).
-    if (!vendasQ.data || !catQ.data || (!custos && !custosQ.isError)) return null;
+    // Sem devoluções a taxa sairia 0 (no load ou com a query em erro): espera — o erro vai em isError.
+    if (!vendasQ.data || !catQ.data || (!custos && !custosQ.isError) || !devolucoes) return null;
     const custoR = montarCustoResolver(custos);
     const pesoR = montarPesoResolver(custos);
     const fotoR = montarFotoResolver(fotos, canonico);
@@ -44,16 +46,16 @@ export function useVendasSku(periodo: Periodo) {
       agrupar: (vs: Venda[]) => agruparPorPedido(vs, custoR, pesoR, fotoR, aliqR, corR),
       janela, anterior,
       catalogo: new Map(catQ.data.map((c) => [c.codigo, c])),
-      devolucoes: devolucoes ?? [],
+      devolucoes,
     });
   }, [vendasQ.data, catQ.data, custos, custosQ.isError, fotos, cores, canonico, aliquotas, devolucoes, janela, anterior]);
 
   return {
     dados,
-    isLoading: vendasQ.isLoading || catQ.isLoading || custosQ.isLoading,
+    isLoading: vendasQ.isLoading || catQ.isLoading || custosQ.isLoading || devQ.isLoading,
     isFetching: vendasQ.isFetching || catQ.isFetching,
-    /** Sem isso a tela ficaria em skeleton para sempre quando vendas ou catálogo falham. */
-    isError: vendasQ.isError || catQ.isError,
-    refetch: () => Promise.all([vendasQ.refetch(), catQ.refetch()]),
+    /** Sem isso a tela ficaria em skeleton para sempre quando vendas, catálogo ou devoluções falham. */
+    isError: vendasQ.isError || catQ.isError || devQ.isError,
+    refetch: () => Promise.all([vendasQ.refetch(), catQ.refetch(), devQ.refetch()]),
   };
 }

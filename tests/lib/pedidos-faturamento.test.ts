@@ -99,6 +99,24 @@ describe('agruparPorPedido', () => {
     expect(semKit[0].ehKit).toBe(false);
   });
 
+  describe('uf por item', () => {
+    it('cada item carrega a UF da própria order', () => {
+      const [p] = agruparPorPedido([
+        venda({ id: 'a', order_id: 1, pack_id: 9, uf: 'SP', itens: [item({ id: 'i1' })] }),
+        venda({ id: 'b', order_id: 2, pack_id: 9, uf: 'RJ', itens: [item({ id: 'i2' })] }),
+      ]);
+      expect(p.itens.map((x) => [x.id, x.uf])).toEqual([['i1', 'SP'], ['i2', 'RJ']]);
+    });
+
+    it('dentroDeKit segue o kit_item_id da order do item (só rótulo)', () => {
+      const [p] = agruparPorPedido([
+        venda({ id: 'a', order_id: 1, pack_id: 9, kit_item_id: 'MLB-KIT1', itens: [item({ id: 'i1' })] }),
+        venda({ id: 'b', order_id: 2, pack_id: 9, kit_item_id: null, itens: [item({ id: 'i2' })] }),
+      ]);
+      expect(p.itens.map((x) => [x.id, x.dentroDeKit])).toEqual([['i1', true], ['i2', false]]);
+    });
+  });
+
   it('markup do pedido e por produto usando custo (rateio do líquido por valor)', () => {
     const custo: CustoResolver = (it) => (it.id === 'i1' ? 5 : 10); // custo unitário
     const vendas = [venda({

@@ -4,9 +4,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { montarMapasCusto } from '@/lib/custos';
 
-const { custosQ, catQ } = vi.hoisted(() => ({
+const { custosQ, catQ, devQ } = vi.hoisted(() => ({
   custosQ: { data: undefined as unknown, isLoading: true, isFetching: true, isError: false },
   catQ: { data: [] as unknown, isLoading: false, isFetching: false, isError: false, refetch: () => Promise.resolve() },
+  devQ: { data: [] as unknown, isLoading: false, isFetching: false, isError: false, refetch: () => Promise.resolve() },
 }));
 const q = (data: unknown) => ({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
 
@@ -16,7 +17,7 @@ vi.mock('@/hooks/useFotosProduto', () => ({ useFotosProduto: () => q(undefined) 
 vi.mock('@/hooks/useCoresProduto', () => ({ useCoresProduto: () => q(undefined) }));
 vi.mock('@/hooks/useAnuncioCanonico', () => ({ useAnuncioCanonico: () => q(undefined) }));
 vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => q({ nacional: 8, importado: 16 }) }));
-vi.mock('@/hooks/useDevolucoes', () => ({ useDevolucoes: () => q([]) }));
+vi.mock('@/hooks/useDevolucoes', () => ({ useDevolucoes: () => devQ }));
 vi.mock('@/hooks/useCatalogoVendasSku', () => ({ useCatalogoVendasSku: () => catQ }));
 
 const { useVendasSku } = await import('../useVendasSku');
@@ -53,5 +54,24 @@ describe('useVendasSku — erro', () => {
     expect(r.isError).toBe(true);
     expect(r.dados).toBeNull();
     Object.assign(catQ, { data: [], isError: false });
+  });
+});
+
+describe('useVendasSku — espera as devoluções', () => {
+  it('devoluções carregando: dados null e isLoading true (taxa não sai 0 no load)', () => {
+    Object.assign(custosQ, { data: montarMapasCusto([]), isLoading: false, isFetching: false, isError: false });
+    Object.assign(devQ, { data: undefined, isLoading: true });
+    const r = renderHook(() => useVendasSku(periodo)).result.current;
+    expect(r.dados).toBeNull();
+    expect(r.isLoading).toBe(true);
+    Object.assign(devQ, { data: [], isLoading: false });
+  });
+
+  it('devoluções com erro: isError true (taxa não é calculada com lista vazia em silêncio)', () => {
+    Object.assign(devQ, { data: undefined, isError: true });
+    const r = renderHook(() => useVendasSku(periodo)).result.current;
+    expect(r.isError).toBe(true);
+    expect(r.dados).toBeNull();
+    Object.assign(devQ, { data: [], isError: false });
   });
 });

@@ -41,6 +41,10 @@ export interface ItemPedido {
   temDevolucao: boolean;
   /** order_id do ML de onde veio o item (um pack junta várias). */
   orderId: number;
+  /** UF da order deste item (um pack pode ter orders de UFs diferentes). */
+  uf: string | null;
+  /** A order deste item veio de um kit (`ml_vendas.kit_item_id`). Só rótulo — nenhum valor usa. */
+  dentroDeKit: boolean;
   /** Estorno da order do item, em R$ — só no 1º item da order (0 nos demais), para não duplicar. */
   estorno: number;
 }
@@ -159,7 +163,7 @@ export function agruparPorPedido(
       // por venda (ADR-0112).
       return v.itens.map((it, i) => ({
         it, faturavel, uf: v.uf, estorno: i === 0 ? v.estorno ?? 0 : 0,
-        temDevolucao: v.tem_devolucao, orderId: v.order_id,
+        temDevolucao: v.tem_devolucao, orderId: v.order_id, kitItemId: v.kit_item_id,
       }));
     });
     const unidades = itensFlat.reduce((s, { it }) => s + it.quantity, 0);
@@ -186,7 +190,7 @@ export function agruparPorPedido(
     let custoTotal = 0;
     let temCusto = false;
     let impostoTotal = 0;
-    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, estorno, temDevolucao, orderId }, i) => {
+    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, estorno, temDevolucao, orderId, kitItemId }, i) => {
       const custo = custoDoItem(it, custoResolver);
       if (faturavel && custo != null) { custoTotal += custo; temCusto = true; }
       const imposto = faturavel ? impostoDoItem(it, aliquotaResolver, uf) : 0;
@@ -206,7 +210,7 @@ export function agruparPorPedido(
         imagem_path: fotoResolver?.(it) ?? null,
         custo, liquido: liqItemComImposto, imposto, aliquotaPct, markup, faturavel, estorno,
         custoEstimado: custo != null && it.custo_congelado == null,
-        temDevolucao, orderId,
+        temDevolucao, orderId, uf: uf ?? null, dentroDeKit: kitItemId != null,
       };
     });
     const custo = temCusto ? round2(custoTotal) : null;
