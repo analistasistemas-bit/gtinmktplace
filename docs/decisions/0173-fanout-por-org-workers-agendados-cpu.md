@@ -37,16 +37,25 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
    retoma o mesmo lote, e uma continuação publicada em duplicidade só serializa trabalho, nunca repete
    lote. Mensagem de ciclo mais antigo que o da linha → `obsoleta`; ciclo já concluído → `concluida`.
 4. **Trabalho limitado por contagem, não por relógio.** Cada mensagem processa no máximo um lote de
-   tamanho fixo (produtos, uma página de pedidos, packs, claims), ajustável por constante após medição.
-   Listas do ML são lidas uma página por mensagem, e página que falha lança (nunca lista parcial).
+   tamanho fixo (produtos, pedidos, packs, claims), ajustável por constante após medição. A lista de
+   pedidos da janela é lida inteira a cada mensagem em modo estrito (qualquer página que falha lança,
+   nunca lista parcial) e o lote é escolhido localmente por `id` > cursor — o `sort` do ML é por
+   `date_closed` e o filtro por `date_created`, então offset entre chamadas não é estável. Pedido que
+   falha vira **pendência persistida** (`worker_rodadas.pendencias`), atravessa ciclos e é retentado
+   até 5 vezes; rodada com pendência conclui `parcial`, não `ok`.
 5. **Etapas caras separadas.** Radar do Pulse, perguntas, claims e liberações do Mercado Pago são
    etapas próprias, cada uma em mensagem separada, com CPU medida isoladamente. Nos lotes de vendas, o
    líquido do MP vem pelos pagamentos do próprio pedido (`carregarLiquidoMPDoPedido`, já usado por
-   `sync-venda`). A varredura de 120 dias fica só na etapa de liberações e **não é paginada**: cortar
-   os pagamentos de um pedido entre páginas pode gravar data de liberação errada.
+   `sync-venda`). A varredura de 120 dias (≤ 80 páginas) fica só na etapa de liberações e **não é
+   paginada**: cortar os pagamentos de um pedido entre páginas pode gravar data de liberação errada.
+   Portão: acima de 1.500 ms de CPU nessa mensagem, entra a alternativa por pedido (plano, Task 6).
 6. **Deduplicação por (função, job, org, ciclo, cursor).** Ciclo = dia BRT para os jobs diários e hora
-   UTC para o reconciliar e o tier quente. Notificação do Pulse: pendência durável na linha, enviada
-   pelo menos uma vez e marcada depois do envio.
+   UTC para o reconciliar e o tier quente. Notificação do Pulse: pendência durável na linha (preservada
+   mesmo quando chega um ciclo novo), enviada com chave idempotente no destino
+   (`notificacoes (user_id, chave)`; Telegram só para linha recém-inserida) e com a posse mantida até
+   marcar a entrega — nunca duplicada, nunca perdida.
+6a. **Limite aceito:** esgotados os retries do QStash, a cadeia da (job, org) para até o próximo ciclo,
+   que a assume do zero (pendências preservadas). Fica visível em `worker_rodadas`.
 6b. **Ativação por flag.** `FANOUT_BACKFILL`, `FANOUT_PULSE`, `FANOUT_RECONCILIAR` ligam o disparador em
    fan-out; sem a flag o schedule segue no caminho de hoje. O consumidor das mensagens por org fica
    sempre deployado. Rollback = desligar a flag, nunca redeployar a versão antiga com mensagens na
