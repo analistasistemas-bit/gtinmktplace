@@ -1015,12 +1015,14 @@ revogadas de `public`/`anon`/`authenticated`):
 
 ## Fan-out por org dos workers agendados (ADR-0173)
 
-**Status: código deployado, fan-out DESLIGADO em produção** (flags `FANOUT_BACKFILL`/`FANOUT_PULSE`/
-`FANOUT_RECONCILIAR` ausentes → os 3 workers seguem no caminho legado de hoje). Protocolo
-compartilhado por `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento` para processar
-uma organização por mensagem QStash, em lotes retomáveis, evitando o `CPU Time exceeded` (HTTP 546)
-de processar todas as orgs numa única requisição. Runbook de ativação/rollback em
-[edge-functions.md](edge-functions.md#fan-out-por-org-adr-0173-ativação-e-rollback).
+**Status: código pronto, NADA deployado em produção ainda** (o deploy é a Task 8, pendente, com OK
+do Diego). Após o deploy, o consumidor fica ativo com as flags
+`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR` desligadas — os 3 workers seguem no caminho
+legado de hoje até cada flag ser ligada. Protocolo compartilhado por `pulse-coletar`,
+`backfill-faturamento` e `reconciliar-faturamento` para processar uma organização por mensagem
+QStash, em lotes retomáveis, evitando o `CPU Time exceeded` (HTTP 546) de processar todas as orgs
+numa única requisição. Runbook de ativação/rollback em
+[edge-functions.md](edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback).
 *Migration `20260927205804_worker_rodadas.sql`.*
 
 ### `worker_rodadas`
@@ -1052,7 +1054,7 @@ Pedido cujo upsert falhou, por **organização** (PK `org_id, order_id`) — com
 `criado_em`, `atualizado_em`, `descartado_em` (`null` = ativa; preenchido na 5ª tentativa, mas a
 linha **continua na tabela** — limpar a coluna reenfileira). Só o `reconciliar-faturamento` lê e
 apaga pendências (escopo completo, com `tratarPedidoCancelado`, serializado por org pela posse); o
-`backfill` só registra falha novas (`p_ok=[]`). Índice parcial `(org_id, order_id) WHERE
+`backfill` só registra falhas novas (`p_ok=[]`). Índice parcial `(org_id, order_id) WHERE
 descartado_em IS NULL` (leitura das ativas). RLS: `select` por `org_id = current_org_id()`; escrita
 só `service_role`.
 

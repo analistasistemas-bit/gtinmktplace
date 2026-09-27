@@ -47,12 +47,24 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
    (escopo completo, com `tratarPedidoCancelado`, serializado por org pela posse), e um sucesso só apaga
    falha registrada antes do início da própria tentativa. Na 5ª falha a pendência é marcada descartada,
    sem sumir. Rodada com pendência conclui `parcial`, não `ok`.
+   **Ruling 14 (revisão Grok, 2026-09-27):** pedido cuja leitura do MP falha (`carregarLiquidoMPDoPedido`
+   devolve `null`, `mpFalhou`) não entra em `ok` **nem** em `falhas` — `ok` apagaria a única
+   re-tentativa do estorno de um pedido fora da janela de 72h, e `falhas` descartaria a venda depois
+   de 5 leituras ruins do MP (condição transitória, não do pedido). A pendência existente, se houver,
+   fica como está (`desfechoPedido`, `reconciliar-faturamento/passo.ts`). **Lacuna aceita, sem
+   correção nesta entrega:** na etapa `vendas`, um pedido com MP `null` e **sem** pendência prévia não
+   ganha pendência nenhuma (só `pendencias`/`falhas` viram linha em `worker_pendencias`); se ele saiba
+   da janela de 72h antes de uma leitura boa do MP, o estorno/liberação daquele pedido não é
+   re-tentado por nenhum caminho.
 5. **Etapas caras separadas.** Radar do Pulse, perguntas, claims e liberações do Mercado Pago são
    etapas próprias, cada uma em mensagem separada, com CPU medida isoladamente. Nos lotes de vendas, o
    líquido do MP vem pelos pagamentos do próprio pedido (`carregarLiquidoMPDoPedido`, já usado por
    `sync-venda`). A varredura de 120 dias (≤ 80 páginas) fica só na etapa de liberações e **não é
    paginada**: cortar os pagamentos de um pedido entre páginas pode gravar data de liberação errada.
-   Portão: acima de 1.500 ms de CPU nessa mensagem, entra a alternativa por pedido (plano, Task 6).
+   Portão: **medido na ativação** (Task 8) — se essa mensagem passar de 1.500 ms de CPU, a flag do
+   reconciliar é desligada e a alternativa por pedido (varrer os pedidos locais com liberação ainda
+   relevante, carregando os pagamentos de cada um por `carregarLiquidoMPDoPedido`) entra como
+   **trabalho novo**; ela não existe no código desta entrega.
 6. **Deduplicação por (função, job, org, ciclo, cursor).** Ciclo = dia BRT para os jobs diários e hora
    UTC para o reconciliar e o tier quente. Notificação do Pulse: pendência durável na linha (preservada
    mesmo quando chega um ciclo novo), gravada in-app exatamente uma vez por
@@ -106,12 +118,16 @@ OK do Diego, validação de 3 dias, recuperação histórica). Vira `Aceito` só
 produção. Runbook completo em `docs/reference/edge-functions.md`; modelo de dados em
 `docs/reference/modelo-de-dados.md`.
 
-Ponto 5 (liberações do MP): a recuperação por org (reconciliar/backfill/sync-venda/sync-devolucao)
-lê o líquido por pedido (`carregarLiquidoMPDoPedido`), nunca pela varredura de 120 dias que os
-workers de lote usam — a equivalência dos dois caminhos (mesmo líquido/liberação para o mesmo
+Ponto 5 (líquido do MP): as etapas `pendencias`/`vendas` do reconciliar e do backfill (e os
+workers de evento `sync-venda`/`sync-devolucao`) lêem o líquido por pedido
+(`carregarLiquidoMPDoPedido`). A etapa `liberacoes` do reconciliar é a **única** que continua na
+varredura de 120 dias (`carregarLiquidoMP`, `reconciliar-faturamento/passo.ts` → `liberacoes()`) —
+sem paginação, sem a alternativa por pedido (que não existe no código desta entrega; ver o portão
+do ponto 5, acima). A equivalência entre os dois caminhos (mesmo líquido/liberação para o mesmo
 pedido, incluindo estorno total e parcial) está provada em
 `supabase/functions/_shared/faturamento/__tests__/mp-por-pedido.test.ts`, sem divergência nos 4
-casos testados.
+casos testados — isso mostra que a alternativa por pedido É viável para a etapa `liberacoes` se o
+portão de CPU disparar na ativação, mas não implementa essa alternativa.
 
 ## Alternativas descartadas
 
