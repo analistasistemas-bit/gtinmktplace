@@ -345,9 +345,12 @@ describe('SkuDossie: tráfego e oferta', () => {
   });
 
   it('coleta interrompida: diz o motivo (sem acesso / falha)', async () => {
-    let reg = await abrirTrafego(traf({ motivo: 'sem_acesso', estadoColeta: 'sem_coleta', serie: [], precoAtual: null, coberturaDesde: null }));
+    // Forma real de montarTrafego: sem_coleta traz um ponto por intervalo, todos sem dado.
+    const vazio = (iv: PontoTrafego['intervalo']) => pt(iv, { visitas: null, unidades: 0, unidadesPorVisita: null, precoObservado: null, estados: { ok: 0, pendente: 0, falha: 0, ausente: 7 } });
+    let reg = await abrirTrafego(traf({ motivo: 'sem_acesso', estadoColeta: 'sem_coleta', serie: [vazio(IV14), vazio(IV21)], precoAtual: null, coberturaDesde: null }));
     expect(within(reg).getByText(/Coleta interrompida: sem acesso à conta do Mercado Livre/)).toBeInTheDocument();
     expect(within(reg).queryByText(/começa depois da ativação/)).not.toBeInTheDocument();
+    expect(reg.textContent).not.toMatch(/Os dados abaixo/);
     cleanup();
     reg = await abrirTrafego(traf({ motivo: 'erro' }));
     expect(within(reg).getByText(/Coleta interrompida: falhou na última execução/)).toBeInTheDocument();

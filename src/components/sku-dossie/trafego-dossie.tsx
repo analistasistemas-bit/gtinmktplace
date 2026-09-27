@@ -221,7 +221,7 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
                     <ReferenceArea key={d.i} yAxisId="vis" x1={d.rotulo} x2={d.rotulo} fill="var(--muted-foreground)" fillOpacity={0.08}
                       stroke="var(--muted-foreground)" strokeOpacity={0.35} strokeDasharray="3 3" ifOverflow="hidden" />
                   ))}
-                  <Tooltip cursor={TOOLTIP.cursor} content={({ active, payload }) => {
+                  <Tooltip cursor={TOOLTIP.cursor} filterNull={false} content={({ active, payload }) => {
                     const i = (payload?.[0]?.payload as { i?: number } | undefined)?.i;
                     if (!active || i == null) return null;
                     const p = serie[i];
@@ -329,7 +329,7 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
           </p>
           <p className="text-muted-foreground">
             {t.motivo === 'sem_acesso' ? 'Reconecte a conta do Mercado Livre para a coleta voltar.' : 'A próxima execução tenta de novo.'}
-            {t.serie.length > 0 ? ' Os dados abaixo vão até a última coleta.' : ''}
+            {t.estadoColeta !== 'sem_coleta' ? ' Os dados abaixo vão até a última coleta.' : ''}
           </p>
         </Aviso>
       )}
