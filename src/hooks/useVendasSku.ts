@@ -32,7 +32,8 @@ export function useVendasSku(periodo: Periodo) {
 
   const dados = useMemo<VendasSku | null>(() => {
     // Sem custos toda linha sairia "sem custo" por um instante: espera a query assentar.
-    if (!vendasQ.data || !catQ.data || !custos) return null;
+    // Com erro nos custos calcula sem eles ("sem custo" é o honesto).
+    if (!vendasQ.data || !catQ.data || (!custos && !custosQ.isError)) return null;
     const custoR = montarCustoResolver(custos);
     const pesoR = montarPesoResolver(custos);
     const fotoR = montarFotoResolver(fotos, canonico);
@@ -45,7 +46,7 @@ export function useVendasSku(periodo: Periodo) {
       catalogo: new Map(catQ.data.map((c) => [c.codigo, c])),
       devolucoes: devolucoes ?? [],
     });
-  }, [vendasQ.data, catQ.data, custos, fotos, cores, canonico, aliquotas, devolucoes, janela, anterior]);
+  }, [vendasQ.data, catQ.data, custos, custosQ.isError, fotos, cores, canonico, aliquotas, devolucoes, janela, anterior]);
 
   return {
     dados,

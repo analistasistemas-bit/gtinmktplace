@@ -28,6 +28,14 @@ describe('useVendasSku — espera os custos', () => {
     expect(r.isLoading).toBe(true);
   });
 
+  it('custos com erro: calcula sem custos (tela mostra "sem custo")', () => {
+    Object.assign(custosQ, { data: undefined, isLoading: false, isFetching: false, isError: true });
+    const r = renderHook(() => useVendasSku(periodo)).result.current;
+    expect(r.dados).not.toBeNull();
+    expect(r.isLoading).toBe(false);
+    Object.assign(custosQ, { isError: false });
+  });
+
   it('custos prontos: dados calculados', () => {
     Object.assign(custosQ, { data: montarMapasCusto([]), isLoading: false, isFetching: false });
     const r = renderHook(() => useVendasSku(periodo)).result.current;
