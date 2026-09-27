@@ -54,7 +54,7 @@ function Carregando() {
 
 function Painel({ icone: Icone, titulo, children }: { icone: typeof Lightbulb; titulo: string; children: ReactNode }) {
   return (
-    <section className="rounded-lg border bg-card px-3 py-2.5 shadow-sm">
+    <section className="min-w-0 rounded-lg border bg-card px-3 py-2.5 shadow-sm">
       <h3 className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
         <Icone className="h-3.5 w-3.5 shrink-0" aria-hidden />{titulo}
       </h3>
@@ -219,7 +219,7 @@ export function AbaVendasSku() {
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Input className="h-7 w-full text-xs sm:w-56" placeholder="Buscar código, produto ou família…" aria-label="Buscar SKU"
+        <Input className="h-7 w-full text-xs sm:w-56" placeholder="Buscar SKU ou produto…" aria-label="Buscar SKU"
           value={busca} onChange={(e) => setBusca(e.target.value)} />
         <select className={SELECT} value={familia} onChange={(e) => setFamilia(e.target.value)} aria-label="Família">
           <option value="">Todas as famílias</option>

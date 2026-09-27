@@ -34,7 +34,7 @@ const ABC_CLS: Record<ClasseAbc, string> = {
 // Idioma do app para "sem valor" (o mesmo de fmtMarkup e da aba Vendas).
 const NADA = '—';
 const pct = (v: number | null) => (v == null ? NADA : `${(v * 100).toFixed(1).replace('.', ',')}%`);
-const TOTAL_COLUNAS = 14;
+const TOTAL_COLUNAS = 13;
 
 export interface RankingSkuProps {
   /** Variações soltas (usadas quando `familias` é null). */
@@ -54,7 +54,7 @@ export interface RankingSkuProps {
 function Cabecalho({ rot, k, ordem, onOrdem }: { rot: string; k: ChaveOrdem; ordem: ChaveOrdem; onOrdem: (k: ChaveOrdem) => void }) {
   const ativo = ordem === k;
   return (
-    <TableHead className="text-right" aria-sort={ativo ? 'descending' : undefined}>
+    <TableHead className="text-right text-muted-foreground" aria-sort={ativo ? 'descending' : undefined}>
       <button
         type="button"
         onClick={() => onOrdem(k)}
@@ -79,9 +79,7 @@ function Abc({ c }: { c?: ClasseAbc }) {
   );
 }
 
-function Celulas({ l, abc, t, alertas, cob }: {
-  l: LinhaSku; abc?: ClasseAbc; t?: Tendencia; alertas: Alerta[]; cob?: Cobertura;
-}) {
+function Celulas({ l, abc, t }: { l: LinhaSku; abc?: ClasseAbc; t?: Tendencia }) {
   const { lucro } = l.m;
   const parcial = l.m.fonteCusto === 'parcial';
   const num = 'text-right tabular-nums';
@@ -97,8 +95,8 @@ function Celulas({ l, abc, t, alertas, cob }: {
       <TableCell className={cn(num, l.m.lucroPorUnidade != null && l.m.lucroPorUnidade < 0 && 'text-destructive')}>
         {l.m.lucroPorUnidade == null ? NADA : fmtBRL(l.m.lucroPorUnidade)}
       </TableCell>
-      <TableCell className={num}>{fmtMarkup(l.m.markup)}</TableCell>
-      <TableCell className={num}>{pct(l.m.margemSVenda)}</TableCell>
+      <TableCell className={cn(num, l.m.markup != null && l.m.markup < 0 && 'text-destructive')}>{fmtMarkup(l.m.markup)}</TableCell>
+      <TableCell className={cn(num, l.m.margemSVenda != null && l.m.margemSVenda < 0 && 'text-destructive')}>{pct(l.m.margemSVenda)}</TableCell>
       <TableCell className={cn(num, 'text-muted-foreground')}>{fmtBRL(l.acc.bruto)}</TableCell>
       <TableCell className={cn(num, 'text-muted-foreground')}>{fmtInt(l.acc.unidades)}</TableCell>
       <TableCell className={cn(num, 'text-muted-foreground')}>{fmtBRL(l.m.ticket)}</TableCell>
@@ -106,31 +104,41 @@ function Celulas({ l, abc, t, alertas, cob }: {
       <TableCell className={cn(num, 'text-muted-foreground')}>{pct(l.m.taxaDevolucao)}</TableCell>
       <TableCell className="text-center"><Abc c={abc} /></TableCell>
       <TableCell>{t && <StatusPill tone={TENDENCIA[t].tom} title={TENDENCIA[t].dica}>{TENDENCIA[t].label}</StatusPill>}</TableCell>
-      <TableCell>
-        <span className="flex items-center gap-1">
-          {alertas.map((a) => {
-            const rot = a === 'sem_custo' && parcial ? 'Lucro parcial' : ALERTA[a].label;
-            return <StatusPill key={a} tone={ALERTA[a].tom}>{rot}</StatusPill>;
-          })}
-          {cob === 'compartilhado' && (
-            <StatusPill tone="neutral" title="Kit: o estoque é o da base, sem cobertura própria"><Layers className="h-3 w-3" aria-hidden />Estoque da base</StatusPill>
-          )}
-        </span>
-      </TableCell>
     </>
   );
 }
 
-function Nome({ l, recuo = false }: { l: LinhaSku; recuo?: boolean }) {
+/** Alertas vão na célula do SKU (2ª linha), não numa coluna no fim: a tabela é larga e a coluna
+ *  final ficava fora da tela até em 1440px. */
+function Selos({ alertas, cob, parcial }: { alertas: Alerta[]; cob?: Cobertura; parcial: boolean }) {
+  if (alertas.length === 0 && cob !== 'compartilhado') return null;
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {alertas.map((a) => (
+        <StatusPill key={a} tone={ALERTA[a].tom} className="px-1.5 py-0 text-[11px]">
+          {a === 'sem_custo' && parcial ? 'Lucro parcial' : ALERTA[a].label}
+        </StatusPill>
+      ))}
+      {cob === 'compartilhado' && (
+        <StatusPill tone="neutral" className="px-1.5 py-0 text-[11px]" title="Kit: o estoque é o da base, sem cobertura própria">
+          <Layers className="h-3 w-3" aria-hidden />Estoque da base
+        </StatusPill>
+      )}
+    </span>
+  );
+}
+
+function Nome({ l, recuo = false, selos }: { l: LinhaSku; recuo?: boolean; selos?: ReactNode }) {
   return (
     <div className={cn('flex min-w-0 items-center gap-2.5', recuo && 'pl-6')}>
       <ThumbProduto path={l.imagemPath} titulo={l.titulo} size={32} />
       <div className="min-w-0">
-        <div className="max-w-72 truncate font-medium" data-testid="sku-titulo" title={l.titulo ?? undefined}>{l.titulo ?? NADA}</div>
+        <div className="max-w-36 truncate sm:max-w-72 font-medium" data-testid="sku-titulo" title={l.titulo ?? undefined}>{l.titulo ?? NADA}</div>
         <div className="text-xs text-muted-foreground tabular-nums">
           {l.codigo === SEM_CODIGO ? 'sem código' : l.codigo}
           {l.m.fonteCusto === 'estimado' && <> · <span title="Sem custo congelado na venda: usa o custo atual do cadastro">custo estimado</span></>}
         </div>
+        {selos && <div className="mt-1">{selos}</div>}
       </div>
     </div>
   );
@@ -149,7 +157,7 @@ function ContaDaLinha({ l }: { l: LinhaSku }) {
       {passos.map(([rot, v]) => (
         <span key={rot} className="flex flex-col">
           <span className="text-muted-foreground">{rot}</span>
-          <span className="tabular-nums">{v == null ? NADA : fmtBRL(v)}</span>
+          <span className="tabular-nums">{v == null ? NADA : fmtBRL(v || 0)}</span>
         </span>
       ))}
       <span className="flex flex-col border-l pl-5">
@@ -192,9 +200,10 @@ export function RankingSku({ linhas, familias, tendencias, coberturas, alertas, 
       <Fragment key={`v:${l.codigo || 'sem-codigo'}`}>
         <TableRow className={cn('cursor-pointer', recuo && 'bg-muted/10')} onClick={() => alternar(chave)}>
           <TableCell className="w-8"><Alternar aberto={exp} rotulo={`Ver a conta de ${l.titulo ?? l.codigo}`} onClick={() => alternar(chave)} /></TableCell>
-          <TableCell className="min-w-56"><Nome l={l} recuo={recuo} /></TableCell>
-          <Celulas l={l} abc={recuo ? undefined : abc.get(l.codigo)} t={tendencias.get(l.codigo)}
-            alertas={alertas.get(l.codigo) ?? []} cob={coberturas.get(l.codigo)} />
+          <TableCell className="sm:min-w-56"><Nome l={l} recuo={recuo} selos={(
+            <Selos alertas={alertas.get(l.codigo) ?? []} cob={coberturas.get(l.codigo)} parcial={l.m.fonteCusto === 'parcial'} />
+          )} /></TableCell>
+          <Celulas l={l} abc={recuo ? undefined : abc.get(l.codigo)} t={tendencias.get(l.codigo)} />
         </TableRow>
         {exp && (
           <TableRow className="bg-muted/30 hover:bg-muted/30">
@@ -225,7 +234,6 @@ export function RankingSku({ linhas, familias, tendencias, coberturas, alertas, 
           <TableHead className="text-right text-muted-foreground">Devolução</TableHead>
           <TableHead className="text-center text-muted-foreground">ABC</TableHead>
           <TableHead className="text-muted-foreground">Tendência</TableHead>
-          <TableHead className="text-muted-foreground">Alertas</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -250,16 +258,17 @@ export function RankingSku({ linhas, familias, tendencias, coberturas, alertas, 
               <Fragment key={chave}>
                 <TableRow className="cursor-pointer" onClick={() => alternar(chave)}>
                   <TableCell className="w-8"><Alternar aberto={exp} rotulo={`Mostrar variações de ${nome}`} onClick={() => alternar(chave)} /></TableCell>
-                  <TableCell className="min-w-56">
+                  <TableCell className="sm:min-w-56">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <ThumbProduto path={f.filhos[0].imagemPath} titulo={nome} size={32} />
                       <div className="min-w-0">
-                        <div className="max-w-72 truncate font-medium" title={nome}>{nome}</div>
+                        <div className="max-w-36 truncate sm:max-w-72 font-medium" title={nome}>{nome}</div>
                         <div className="text-xs text-muted-foreground tabular-nums">{semFamilia ? 'sem família' : f.codigoPai}</div>
+                        {!exp && piores.length > 0 && <div className="mt-1"><Selos alertas={piores} parcial={f.m.fonteCusto === 'parcial'} /></div>}
                       </div>
                     </div>
                   </TableCell>
-                  <Celulas l={soma} abc={abc.get(f.codigoPai)} alertas={piores} />
+                  <Celulas l={soma} abc={abc.get(f.codigoPai)} />
                 </TableRow>
                 {exp && f.filhos.map((x) => linhaVariacao(x, true))}
               </Fragment>
