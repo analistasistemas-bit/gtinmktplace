@@ -60,9 +60,15 @@ const obj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' 
 export function msgAdsDoCorpo(msg: MsgTrafego, bruto: unknown): MsgAds {
   if (!obj(bruto)) return msg;
   const falhou = bruto.falhou === true;
-  // `descontar` (404 de grupo com gasto): só número finito > 0; o resto é ignorado.
-  const d = bruto.descontar;
-  const descontar = typeof d === 'number' && Number.isFinite(d) && d > 0 ? d : null;
-  if (!falhou && descontar == null) return msg;
-  return { ...msg, ...(falhou ? { falhou: true } : {}), ...(descontar != null ? { descontar } : {}) };
+  // `descontar`/`descontar90` (404 ou grupo sem membros com gasto): só número finito > 0; o resto é ignorado.
+  const positivo = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null);
+  const descontar = positivo(bruto.descontar);
+  const descontar90 = positivo(bruto.descontar90);
+  if (!falhou && descontar == null && descontar90 == null) return msg;
+  return {
+    ...msg,
+    ...(falhou ? { falhou: true } : {}),
+    ...(descontar != null ? { descontar } : {}),
+    ...(descontar90 != null ? { descontar90 } : {}),
+  };
 }
