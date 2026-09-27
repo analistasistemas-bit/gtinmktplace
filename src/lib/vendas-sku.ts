@@ -5,7 +5,7 @@ import type { Pedido } from './pedidos-faturamento';
 import type { CatalogoSku } from './vendas-sku-catalogo';
 import type { Janela } from './metricas';
 import { round2 } from './formato';
-import { normalizarParaBusca } from './texto';
+import { formatarNomeProduto, normalizarParaBusca } from './texto';
 import type { Venda } from './faturamento';
 import { dataNoPeriodo, orderIdsComDevolucaoReal, type Devolucao } from './devolucoes';
 
@@ -14,9 +14,11 @@ export const SEM_CODIGO = '';
 /** Nome legível do SKU: a variação costuma se chamar só pela cor ("Preto"); aí vai o nome da família na frente. */
 export function nomeSku(l: Pick<LinhaSku, 'codigo' | 'titulo' | 'nomeFamilia'>): string {
   const { titulo: t, nomeFamilia: f } = l;
-  if (!t) return f ?? l.codigo;
-  if (!f || normalizarParaBusca(t).includes(normalizarParaBusca(f))) return t;
-  return `${f} · ${t}`;
+  const tFmt = formatarNomeProduto(t) || null;
+  const fFmt = formatarNomeProduto(f) || null;
+  if (!t) return fFmt ?? l.codigo;
+  if (!f || normalizarParaBusca(t).includes(normalizarParaBusca(f))) return tFmt!;
+  return `${fFmt} · ${tFmt}`;
 }
 
 export interface AcumuladorSku {

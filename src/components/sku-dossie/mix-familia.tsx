@@ -3,6 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { StatusPill } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import { fmtBRLSinal, fmtInt } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 import { SEM_CODIGO } from '@/lib/vendas-sku';
 import type { LinhaMix } from '@/lib/sku-dossie';
 import { BlocoDossie } from './bloco-dossie';
@@ -40,9 +41,9 @@ export function MixFamilia({ mix, voltar }: { mix: LinhaMix[]; voltar: string })
                   {temDossie(l.codigo) ? (
                     <Link to={`/faturamento/sku/${encodeURIComponent(l.codigo)}`} state={{ de: voltar }}
                       className={cn(LINK, 'line-clamp-2 whitespace-normal leading-snug', l.semVendas && 'text-muted-foreground')}>
-                      {l.titulo}
+                      {formatarNomeProduto(l.titulo)}
                     </Link>
-                  ) : <span className="line-clamp-2 whitespace-normal font-medium leading-snug">{l.titulo}</span>}
+                  ) : <span className="line-clamp-2 whitespace-normal font-medium leading-snug">{formatarNomeProduto(l.titulo)}</span>}
                   <span className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
                     {l.codigo}
                     {l.semVendas && <StatusPill tone="neutral">sem vendas</StatusPill>}

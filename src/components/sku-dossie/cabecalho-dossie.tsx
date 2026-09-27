@@ -6,6 +6,7 @@ import { ThumbProduto } from '@/components/faturamento/pilha-thumbs';
 import { ALERTA, TENDENCIA } from '@/components/faturamento/rotulos-sku';
 import { dataBR, idadeComercial } from '@/components/sku-dossie/formato-dossie';
 import { fmtInt } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 import { soKits, type DossieSku } from '@/lib/sku-dossie';
 
 export function Fato({ rotulo, children, fraco = false }: { rotulo: string; children: ReactNode; fraco?: boolean }) {
@@ -37,7 +38,7 @@ export function CabecalhoDossie({ dados, familia, aviso }: { dados: DossieSku; f
       <header className="flex min-w-0 items-start gap-4">
         <ThumbProduto path={foto} titulo={dados.titulo} size={56} />
         <div className="min-w-0 flex-1 space-y-1.5">
-          <h1 className="text-xl font-semibold leading-tight tracking-[-0.01em] text-balance break-words sm:text-2xl">{dados.titulo}</h1>
+          <h1 className="text-xl font-semibold leading-tight tracking-[-0.01em] text-balance break-words sm:text-2xl">{formatarNomeProduto(dados.titulo)}</h1>
           <p className="text-sm text-muted-foreground tabular-nums">{sub.filter(Boolean).join(' · ')}</p>
           {(t || dados.alertas.length > 0 || ehKit || kitVirtual) && (
             // Dois relógios, dois grupos: a tendência é a posição de hoje; os alertas seguem o período escolhido.

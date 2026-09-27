@@ -9,6 +9,7 @@ import {
 } from '@/lib/perguntas';
 import { fmtDataCurta, URL_PERGUNTAS_ML } from '@/lib/ml-status';
 import { nomeCurtoComprador } from '@/lib/pedidos-faturamento';
+import { formatarNomeProduto } from '@/lib/texto';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -70,7 +71,7 @@ function CardPergunta({ grupo }: { grupo: GrupoPerguntas }) {
             <span className="truncate">
               {repetidas > 1
                 ? `${repetidas} perguntas · ${anuncios.length} ${anuncios.length > 1 ? 'anúncios' : 'anúncio'}`
-                : p.item_titulo ?? p.item_id ?? '—'}
+                : formatarNomeProduto(p.item_titulo) || p.item_id || '—'}
             </span>
             <a href={URL_PERGUNTAS_ML} target="_blank" rel="noreferrer" aria-label="Abrir perguntas no Mercado Livre" className="text-info hover:underline"><ExternalLink className="h-3 w-3" /></a>
             <span title={p.comprador_nome ?? p.comprador_nick ?? undefined}>
@@ -82,7 +83,7 @@ function CardPergunta({ grupo }: { grupo: GrupoPerguntas }) {
           {repetidas > 1 && (
             <ul className="mt-1 space-y-0.5 text-xs text-muted-foreground">
               {anuncios.map((q) => (
-                <li key={q.id} className="truncate">· {q.item_titulo ?? q.item_id ?? '—'}</li>
+                <li key={q.id} className="truncate">· {formatarNomeProduto(q.item_titulo) || q.item_id || '—'}</li>
               ))}
             </ul>
           )}

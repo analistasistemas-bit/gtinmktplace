@@ -21,6 +21,7 @@ import { MixFamilia } from '@/components/sku-dossie/mix-familia';
 import { CampanhasDossie } from '@/components/sku-dossie/campanhas-dossie';
 import { useSkuDossie } from '@/hooks/useSkuDossie';
 import { cn } from '@/lib/utils';
+import { formatarNomeProduto } from '@/lib/texto';
 import { rotuloAnterior, type Periodo } from '@/lib/metricas';
 import type { Passo } from '@/lib/calendario-brt';
 import type { AlvoDossie } from '@/lib/sku-dossie';
@@ -84,7 +85,7 @@ export default function SkuDossie() {
   const trilha: BreadcrumbItem[] = [
     { label: 'Vendas por SKU', to: voltar },
     ...(!familia && cat?.codigoPai
-      ? [{ label: cat.nomeFamilia ?? `Família ${cat.codigoPai}`, to: `/faturamento/sku/familia/${encodeURIComponent(cat.codigoPai)}`, state: { de: voltar } }]
+      ? [{ label: formatarNomeProduto(cat.nomeFamilia) || `Família ${cat.codigoPai}`, to: `/faturamento/sku/familia/${encodeURIComponent(cat.codigoPai)}`, state: { de: voltar } }]
       : []),
     // Identificador curto: o título inteiro já é o h1 logo abaixo (no celular ele ocupava 3 linhas aqui).
     { label: familia ? `Família ${codigoPai}` : `Código ${codigo}` },

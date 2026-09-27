@@ -224,7 +224,7 @@ describe('explicarVariacao', () => {
 describe('nomeSku', () => {
   it('variação que só tem a cor ganha o nome da família na frente', () => {
     expect(nomeSku({ codigo: '1', titulo: 'Preto', nomeFamilia: 'Fita de Cetim 10mm' })).toBe('Fita de Cetim 10mm · Preto');
-    expect(nomeSku({ codigo: '1', titulo: 'LAPIS COMUM C/72', nomeFamilia: 'Lápis Comum' })).toBe('LAPIS COMUM C/72');
+    expect(nomeSku({ codigo: '1', titulo: 'LAPIS COMUM C/72', nomeFamilia: 'Lápis Comum' })).toBe('Lapis Comum C/72');
     expect(nomeSku({ codigo: '1', titulo: 'Fita', nomeFamilia: null })).toBe('Fita');
     expect(nomeSku({ codigo: '1', titulo: null, nomeFamilia: 'Fita' })).toBe('Fita');
     expect(nomeSku({ codigo: '1', titulo: null, nomeFamilia: null })).toBe('1');

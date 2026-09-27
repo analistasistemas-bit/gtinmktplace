@@ -29,6 +29,7 @@ import {
   LinhaVariacaoForm, novaLinha, parseNum, erroCampo, type LinhaVariacao,
 } from '@/components/estoque/linha-variacao-form';
 import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
+import { formatarNomeProduto } from '@/lib/texto';
 
 type LinhaAddVariacao = LinhaVariacao & { codigo: string };
 
@@ -283,7 +284,7 @@ export function DialogAdicionarVariacao({ produto, aberto, onFechar }: {
         <DialogHeader>
           <DialogTitle>Adicionar variação</DialogTitle>
           <DialogDescription>
-            {produto?.nomePai}. Monta um lote de atualização real — vai direto para o Mercado
+            {formatarNomeProduto(produto?.nomePai)}. Monta um lote de atualização real — vai direto para o Mercado
             Livre, sem passar pela Revisão.
           </DialogDescription>
         </DialogHeader>

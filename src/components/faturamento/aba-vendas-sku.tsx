@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import { fmtBRL, fmtBRLSinal, fmtInt, fmtMarkup } from '@/lib/formato';
 import { rotuloAnterior, type Periodo } from '@/lib/metricas';
-import { normalizarParaBusca } from '@/lib/texto';
+import { formatarNomeProduto, normalizarParaBusca } from '@/lib/texto';
 import { useVendasSku } from '@/hooks/useVendasSku';
 import { LinkDossie, RankingSku, type ChaveOrdem } from '@/components/faturamento/ranking-sku';
 import { SEM_CODIGO, agruparPorFamilia, curvaAbc, deltaPp, deltaValor, type Delta, type LinhaSku } from '@/lib/vendas-sku';
@@ -260,7 +260,7 @@ export function AbaVendasSku() {
           value={busca} onChange={(e) => setBusca(e.target.value)} />
         <select className={SELECT} value={familia} onChange={(e) => setFamilia(e.target.value)} aria-label="Família">
           <option value="">Todas as famílias</option>
-          {opcoes.familias.map((f) => <option key={f} value={f}>{f}</option>)}
+          {opcoes.familias.map((f) => <option key={f} value={f}>{formatarNomeProduto(f)}</option>)}
         </select>
         <select className={SELECT} value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} aria-label="Fornecedor">
           <option value="">Todos os fornecedores</option>

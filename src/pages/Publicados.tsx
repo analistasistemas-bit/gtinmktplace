@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 import { filtrarPublicados, ordenarPublicados, rotuloTipo, fiscalPendente } from '@/lib/publicados';
 import { CanalTabs } from '@/components/canal-tabs';
 import { CanalBadge } from '@/components/canal-badge';
@@ -325,7 +326,7 @@ function LinhaTabela({
             <ChevronRight className={cn('h-4 w-4 motion-safe:transition-transform duration-(--motion-duration-state) ease-reversible', aberto && 'rotate-90')} />
           </button>
           <div className="max-w-[260px]">
-            <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
+            <p className="text-sm font-medium break-words">{formatarNomeProduto(item.titulo)}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{item.codigoPai}</p>
             <CanalBadge canal={item.canal ?? 'mercado_livre'} className="mt-1" />
           </div>
@@ -697,7 +698,7 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
             <AlertTriangle className="h-3 w-3" />
             Publicação incompleta
           </StatusPill>
-          <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
+          <p className="text-sm font-medium break-words">{formatarNomeProduto(item.titulo)}</p>
           <p className="mt-0.5 text-xs text-destructive">
             O anúncio está no Mercado Livre, mas o app não concluiu a publicação — remova para encerrá-lo lá (se não teve venda) e refazer.
           </p>
@@ -797,7 +798,7 @@ function LinhaKitVirtual({ item, isAdmin, temFiscal, onRefazer, refazendo }: Lin
             <Package className="h-3 w-3" />
             Kit Virtual
           </StatusPill>
-          <p className="text-sm font-medium uppercase break-words">{item.titulo}</p>
+          <p className="text-sm font-medium break-words">{formatarNomeProduto(item.titulo)}</p>
         </div>
       </TableCell>
       <TableCell className="text-sm tabular-nums">—</TableCell>

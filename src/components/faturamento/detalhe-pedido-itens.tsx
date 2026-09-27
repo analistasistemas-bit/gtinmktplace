@@ -3,6 +3,7 @@ import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMarkup } from '@/lib/formato';
 import { urlVendaML } from '@/lib/ml-status';
 import type { Pedido } from '@/lib/pedidos-faturamento';
+import { formatarNomeProduto } from '@/lib/texto';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
 import { ThumbProduto } from './pilha-thumbs';
 
@@ -76,13 +77,14 @@ export function DetalhePedidoItens({ pedido: p, liquidoBruto = false, destaque }
             const marca = [!it.faturavel && 'cancelado', it.estorno > 0 && `estornado ${fmtBRL(it.estorno)}`]
               .filter(Boolean).join(' · ');
             const destacado = !!destaque && destaque.codigos.has(it.codigo?.trim() ?? '');
+            const nomeItem = formatarNomeProduto(it.titulo);
             return (
               <TableRow key={it.id} className={destacado ? 'bg-primary/5 hover:bg-primary/10' : undefined}>
-                <TableCell className="max-w-[280px] uppercase" title={it.titulo ?? ''}>
+                <TableCell className="max-w-[280px]" title={nomeItem}>
                   <span className="flex items-center gap-2">
                     <ThumbProduto path={it.imagem_path} titulo={it.titulo} size={28} />
                     <span className="min-w-0">
-                      <span className="block truncate">{it.titulo ?? '—'}</span>
+                      <span className="block truncate">{nomeItem || '—'}</span>
                       {destacado && <span className="block text-[11px] font-medium normal-case text-primary">{destaque.rotulo}</span>}
                       {marca && <span className="block normal-case text-destructive">{marca}</span>}
                     </span>

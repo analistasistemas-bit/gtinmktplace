@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { DollarSign, Package, Receipt, Target, CheckCircle2, AlertTriangle, PackageX, Trophy, TrendingUp, Coins, Layers, PauseCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import { KpiCard, KpiInfoButton } from '@/components/ui/kpi-card';
 import type { PublicadoItem } from '@/lib/publicados';
@@ -158,7 +159,7 @@ export function DashboardPublicados({
             <ul className="space-y-1">
               {resumo.topFat.map((i) => (
                 <li key={i.familiaId} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="truncate" title={i.titulo}>{i.titulo}</span>
+                  <span className="truncate" title={formatarNomeProduto(i.titulo)}>{formatarNomeProduto(i.titulo)}</span>
                   <span className="shrink-0 font-medium tabular-nums">{fmtBRL(i.valorVendido ?? 0)}</span>
                 </li>
               ))}

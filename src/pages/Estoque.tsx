@@ -37,6 +37,7 @@ import {
 } from '@/lib/estoque-update-status';
 import { useProfile } from '@/hooks/useProfile';
 import type { ResumoEstoque } from '@/lib/produtos-saldo-resumo';
+import { formatarNomeProduto } from '@/lib/texto';
 
 const RESUMO_VAZIO: ResumoEstoque = {
   produtos: 0, skus: 0, unidades: 0, skusSemEstoque: 0, valorEmEstoque: 0, skusSemCusto: 0,
@@ -103,7 +104,7 @@ export default function Estoque() {
   const statusMapAnteriorRef = useRef<Map<string, StatusUpdateProduto>>(new Map());
   useEffect(() => {
     for (const codigoPai of codigosConcluidosComSucesso(statusMapAnteriorRef.current, statusMap)) {
-      const nome = produtos.find((p) => p.codigoPai === codigoPai)?.nomePai ?? codigoPai;
+      const nome = formatarNomeProduto(produtos.find((p) => p.codigoPai === codigoPai)?.nomePai) || codigoPai;
       toast.success(`✓ "${nome}" atualizado no Mercado Livre`);
       qc.invalidateQueries({ queryKey: QK.variacoesEstoque(codigoPai) });
     }
