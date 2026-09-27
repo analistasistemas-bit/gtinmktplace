@@ -60,6 +60,9 @@
 - **XLSX: formato.**
   - Só XLSX: CSV e PDF ficam fora da Vendas SKU.
   - Dinheiro vai como número, arredondado com `round2`, com formato `#,##0.00`. Percentual vai como fração, com formato `0.0%`.
+  - Markup vai como número com formato `+0%;-0%;+0%`, que abre igual ao `fmtMarkup` da tela.
+  - Botão com um só formato exporta direto, sem o diálogo de volume; quem barra arquivo grande é o teto.
+  - Recompra: "Compradores identificados" conta só pessoas. As compras sem conta compradora aparecem numa nota, nunca somadas a pessoas.
   - Indisponível vai como **célula vazia** (`null`), nunca 0. Código vai como **texto**, preservando zeros à esquerda.
 - **XLSX: conteúdo.**
   - A planilha distingue "Total das linhas exportadas" de "KPIs gerais do período".
@@ -324,7 +327,7 @@ export interface Recompra {
   escopo: 'sku' | 'familia';
   compradoresIdentificados: number;
   recorrentes: number;
-  /** Ocasiões elegíveis do período sem comprador_id — cada uma conta como 1 na cobertura "N de M". */
+  /** Ocasiões elegíveis do período sem comprador_id (compras, não pessoas: sem ID não dá para deduplicar). */
   comprasSemIdentificacao: number;
   /** recorrentes ÷ identificados; null com amostra insuficiente. */
   taxa: number | null;
@@ -403,6 +406,14 @@ describe('calcularRecompra', () => {
     const r = calc([
       venda({ org_id: 'org-2', comprador_id: 1, date_closed: ANTES }),
       venda({ org_id: 'org-1', comprador_id: 1, date_closed: DURANTE }),
+    ]);
+    expect(r).toMatchObject({ compradoresIdentificados: 1, recorrentes: 0 });
+  });
+
+  it('empate de instante: duas ocasiões no mesmo milissegundo não são recompra (anterior = estritamente antes)', () => {
+    const r = calc([
+      venda({ comprador_id: 1, order_id: 91, date_closed: DURANTE }),
+      venda({ comprador_id: 1, order_id: 92, date_closed: DURANTE }),
     ]);
     expect(r).toMatchObject({ compradoresIdentificados: 1, recorrentes: 0 });
   });
@@ -512,8 +523,8 @@ export interface Recompra {
   escopo: 'sku' | 'familia';
   compradoresIdentificados: number;
   recorrentes: number;
-  /** Ocasiões elegíveis do período sem comprador_id. Sem ID não dá para deduplicar a pessoa, então
-   *  cada uma conta como 1 na cobertura "N de M compradores identificados". */
+  /** Ocasiões elegíveis do período sem comprador_id. São COMPRAS, não pessoas: sem ID não dá para
+   *  deduplicar a pessoa. Ficam fora da taxa (numerador e denominador) e aparecem só numa nota. */
   comprasSemIdentificacao: number;
   /** recorrentes ÷ identificados; null com amostra insuficiente. */
   taxa: number | null;
@@ -585,7 +596,7 @@ export function calcularRecompra(p: {
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `pnpm vitest run tests/lib/sku-recompra.test.ts`
-Expected: PASS (15 testes).
+Expected: PASS (16 testes).
 
 Depois: `pnpm preflight:static`.
 
@@ -760,13 +771,14 @@ const base: Recompra = {
 };
 
 describe('RecompraDossie', () => {
-  it('mostra a taxa, os recorrentes, a cobertura "N de M" e desde quando observa', () => {
+  it('mostra a taxa, os recorrentes, os identificados (só pessoas) e desde quando observa', () => {
     render(<RecompraDossie recompra={base} />);
     expect(screen.getByRole('heading', { name: 'Recompra' })).toBeInTheDocument();
     expect(screen.getByText('15,0%')).toBeInTheDocument();
     expect(screen.getByText(/já tinham comprado este código antes/)).toBeInTheDocument();
     expect(screen.getByText('6')).toBeInTheDocument();
-    expect(screen.getByText('40 de 42')).toBeInTheDocument();
+    expect(screen.getByText('40')).toBeInTheDocument(); // só compradores identificados; compras sem ID ficam na nota
+    expect(screen.queryByText(/40 de/)).not.toBeInTheDocument();
     expect(screen.getByText(/2 compras sem conta compradora identificada/)).toBeInTheDocument();
     expect(screen.getAllByText(/10\/05\/2026/).length).toBeGreaterThan(0);
     expect(screen.getByText(/não significa cliente novo/)).toBeInTheDocument();
@@ -789,6 +801,14 @@ describe('RecompraDossie', () => {
   it('sem compra elegível no período: estado vazio', () => {
     render(<RecompraDossie recompra={{ ...base, compradoresIdentificados: 0, recorrentes: 0, comprasSemIdentificacao: 0, taxa: null, amostraInsuficiente: true }} />);
     expect(screen.getByText('Nenhuma compra elegível no período')).toBeInTheDocument();
+    expect(screen.queryByText(/Kit Virtual/)).not.toBeInTheDocument();
+  });
+
+  it('período só com vendas em Kit Virtual: estado vazio COM o aviso do kit', () => {
+    render(<RecompraDossie recompra={{ ...base, compradoresIdentificados: 0, recorrentes: 0, comprasSemIdentificacao: 0,
+      taxa: null, amostraInsuficiente: true, comprasEmKitVirtual: 2 }} />);
+    expect(screen.getByText('Nenhuma compra elegível no período')).toBeInTheDocument();
+    expect(screen.getByText(/2 compras dentro de Kit Virtual ficaram fora/)).toBeInTheDocument();
   });
 });
 ```
@@ -827,9 +847,12 @@ export function RecompraDossie({ recompra: r, className }: { recompra: Recompra;
   const alvo = familia ? 'qualquer variação desta família' : 'este código';
   const total = r.compradoresIdentificados + r.comprasSemIdentificacao;
   const desde = r.observadoDesde ? dataBR(r.observadoDesde) : null;
+  const notaKit = r.comprasEmKitVirtual > 0
+    ? `${plural(r.comprasEmKitVirtual, 'compra dentro de Kit Virtual ficou', 'compras dentro de Kit Virtual ficaram')} fora: comprar o conjunto não comprova preferência pelo item.`
+    : null;
   const notas = [
     r.comprasSemIdentificacao > 0 && `${plural(r.comprasSemIdentificacao, 'compra sem conta compradora identificada ficou', 'compras sem conta compradora identificada ficaram')} fora da conta.`,
-    r.comprasEmKitVirtual > 0 && `${plural(r.comprasEmKitVirtual, 'compra dentro de Kit Virtual ficou', 'compras dentro de Kit Virtual ficaram')} fora: comprar o conjunto não comprova preferência pelo item.`,
+    notaKit,
     familia ? 'Cada comprador conta uma vez, em qualquer variação; kits vinculados ficam fora.' : 'Compra de outra cor não conta.',
     'Canceladas, reembolsadas integralmente e devolvidas não contam.',
     `Primeira compra observada não significa cliente novo${desde ? `: antes de ${desde} o PubliAI não tem registro` : ''}.`,
@@ -840,7 +863,9 @@ export function RecompraDossie({ recompra: r, className }: { recompra: Recompra;
       relogio={`Período escolhido · compras anteriores observadas${desde ? ` desde ${desde}` : ''}`}>
       {total === 0 ? (
         <EmptyState icon={Repeat} title="Nenhuma compra elegível no período"
-          description="Canceladas, reembolsadas integralmente e devolvidas ficam fora da recompra." />
+          description="Canceladas, reembolsadas integralmente e devolvidas ficam fora da recompra."
+          // O aviso do Kit Virtual vale também aqui: um período só com vendas em kit cai neste estado.
+          action={notaKit ? <p className="max-w-prose text-xs text-muted-foreground">{notaKit}</p> : undefined} />
       ) : (
         <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
           <div className="px-4 py-3">
@@ -860,7 +885,7 @@ export function RecompraDossie({ recompra: r, className }: { recompra: Recompra;
           </div>
           <dl className="grid grid-cols-2 gap-px border-t bg-border">
             <Fato rotulo="Compradores recorrentes">{fmtInt(r.recorrentes)}</Fato>
-            <Fato rotulo="Compradores identificados">{`${fmtInt(r.compradoresIdentificados)} de ${fmtInt(total)}`}</Fato>
+            <Fato rotulo="Compradores identificados">{fmtInt(r.compradoresIdentificados)}</Fato>
           </dl>
           <ul className="space-y-1 border-t px-4 py-2.5 text-xs text-muted-foreground">
             {notas.map((n) => <li key={n}>{n}</li>)}
@@ -909,7 +934,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
 
 **Interfaces:**
 - Produces:
-  - `export type FormatoCelula = 'dinheiro' | 'percentual' | 'inteiro';`
+  - `export type FormatoCelula = 'dinheiro' | 'percentual' | 'inteiro' | 'markup';` (`markup` = percentual inteiro com sinal, como o `fmtMarkup` da tela: `+42%`)
   - `Coluna.formato?: FormatoCelula`.
   - `montarWorkbook`:
     - célula `null`/ausente vira **ausente** (vazia de verdade), nos Dados e no Resumo (`valor: ''`);
@@ -990,6 +1015,14 @@ describe('BotaoExportar', () => {
     expect(exportarMock).toHaveBeenCalledWith(report, 'excel');
   });
 
+  it('um formato só com 201 linhas: exporta direto, sem o diálogo de volume', async () => {
+    exportarMock.mockClear();
+    render(<BotaoExportar formatos={['excel']} montarReport={() => report} totalLinhas={201} limiteLinhas={10_000} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Exportar Excel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(exportarMock).toHaveBeenCalledWith(report, 'excel');
+  });
+
   it('acima do teto: desabilitado e pede período menor (nunca arquivo cortado)', () => {
     render(<BotaoExportar formatos={['excel']} montarReport={() => report} totalLinhas={10_001} limiteLinhas={10_000} />);
     expect(screen.getByRole('button', { name: /Exportar Excel/ })).toBeDisabled();
@@ -1016,7 +1049,7 @@ Expected: FAIL:
 
 ```ts
 /** Formato numérico da coluna no Excel. Sem formato: texto (código, rótulo). */
-export type FormatoCelula = 'dinheiro' | 'percentual' | 'inteiro';
+export type FormatoCelula = 'dinheiro' | 'percentual' | 'inteiro' | 'markup';
 
 export interface Coluna {
   chave: string;
@@ -1029,7 +1062,8 @@ export interface Coluna {
   Em `src/lib/export/excel.ts`, trocar o import para `import type { ReportData, Celula, Coluna, FormatoCelula } from './tipos';` e:
 
 ```ts
-const FORMATO_EXCEL: Record<FormatoCelula, string> = { dinheiro: '#,##0.00', percentual: '0.0%', inteiro: '0' };
+// markup: mesmo desenho do fmtMarkup (+42%, -5%, +0%). Terceira seção com '+' porque fmtMarkup(0) = '+0%'.
+export const FORMATO_EXCEL: Record<FormatoCelula, string> = { dinheiro: '#,##0.00', percentual: '0.0%', inteiro: '0', markup: '+0%;-0%;+0%' };
 
 // null/ausente fica null: o SheetJS omite a célula (vazia de verdade), em vez de uma string '' (Fatia 3:
 // indisponível nunca vira 0 nem texto).
@@ -1080,7 +1114,18 @@ const ITEM: Record<ExportFormato, string> = { pdf: 'PDF', excel: 'Excel', csv: '
   const acimaDoTeto = limiteLinhas != null && totalLinhas != null && totalLinhas > limiteLinhas;
 ```
 
-  - Na 1ª linha de `escolher`, pôr `if (acimaDoTeto) return;`.
+  - Trocar `escolher` inteira por (com um formato só não há o que perguntar: exporta direto, sem o diálogo de volume acima de 200 linhas; quem barra arquivo grande é o teto, que desabilita o botão):
+
+```ts
+  function escolher(f: ExportFormato) {
+    if (acimaDoTeto) return;
+    if (precisaPerguntar && formatos.length > 1) {
+      setFormato(f);
+    } else {
+      void disparar({ formato: f, expandido: false, incluirKpis: false });
+    }
+  }
+```
   - Trocar o bloco `<DropdownMenu>…</DropdownMenu>` por:
 
 ```tsx
@@ -1307,6 +1352,8 @@ import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { RankingSku } from '@/components/faturamento/ranking-sku';
+import * as XLSX from 'xlsx';
+import { FORMATO_EXCEL } from '@/lib/export/excel';
 import { buildRankingSkuReport } from '@/lib/export/vendas-sku-xlsx';
 import { agruparPorFamilia, metricas, somarAcumuladores, type LinhaSku, type LinhaFamilia } from '@/lib/vendas-sku';
 import { fmtBRL, fmtBRLSinal } from '@/lib/formato';
@@ -1326,12 +1373,17 @@ const report = (linhas: LinhaSku[], familias: LinhaFamilia[] | null) => buildRan
 });
 const desenhar = (linhas: LinhaSku[], familias: LinhaFamilia[] | null) => render(<MemoryRouter><RankingSku linhas={linhas} familias={familias}
   tendencias={new Map()} coberturas={new Map()} alertas={new Map()} abc={new Map()} ordem="lucro" onOrdem={() => {}} /></MemoryRouter>);
-/** [lucro, faturamento] como a tela desenha, linha a linha (sem o cabeçalho). */
+/** [lucro, markup, faturamento] como a tela desenha, linha a linha (sem o cabeçalho). */
 const desenhadas = () => screen.getAllByRole('row').slice(1).map((row) => {
   const cels = within(row).getAllByRole('cell');
-  return [cels[2].firstChild?.textContent ?? '', cels[6].querySelector('div')?.textContent ?? ''];
+  return [cels[2].firstChild?.textContent ?? '', cels[4].textContent ?? '', cels[6].querySelector('div')?.textContent ?? ''];
 });
-const esperado = (c: Record<string, unknown>) => [c.lucro == null ? '—' : fmtBRLSinal(c.lucro as number), fmtBRL(c.faturamento as number)];
+// Markup: o Excel desenha o número com FORMATO_EXCEL.markup; o que abre na planilha tem de ser o texto da tela.
+const esperado = (c: Record<string, unknown>) => [
+  c.lucro == null ? '—' : fmtBRLSinal(c.lucro as number),
+  c.markup == null ? '—' : XLSX.SSF.format(FORMATO_EXCEL.markup, c.markup as number),
+  fmtBRL(c.faturamento as number),
+];
 const linhas = [linha('00123', 'P1', 1234.567, 210.4), linha('0456', 'P1', 99.995, null), linha('0789', 'P2', 10, -3.21)];
 
 describe('XLSX × tabela desenhada (centavo a centavo)', () => {
@@ -1351,7 +1403,7 @@ describe('XLSX × tabela desenhada (centavo a centavo)', () => {
 });
 ```
 
-  (Na célula de Lucro, `firstChild` é o texto do valor: o `*` e o sr-only do "parcial" são nós irmãos. Se o `render` do 2º teste somar ao do 1º, chamar `cleanup()` do Testing Library no início dele.)
+  (A coluna Markup compara o texto que o Excel desenha, `XLSX.SSF.format` com o formato da coluna, contra o `fmtMarkup` da tela. Na célula de Lucro, `firstChild` é o texto do valor: o `*` e o sr-only do "parcial" são nós irmãos. Se o `render` do 2º teste somar ao do 1º, chamar `cleanup()` do Testing Library no início dele.)
 
   Em `src/components/faturamento/__tests__/aba-vendas-sku.test.tsx`:
   - O mock de `useVendasSku` passa a devolver também `janela: { desde: '2026-09-01T03:00:00.000Z', ate: '2026-10-01T02:59:59.999Z' }, anterior: { desde: '2026-08-02T03:00:00.000Z', ate: '2026-09-01T02:59:59.999Z' }`.
@@ -1453,7 +1505,7 @@ const COLS_RANKING: Coluna[] = [
   { chave: 'origem', titulo: 'Origem' },
   { chave: 'lucro', titulo: 'Lucro (R$)', formato: 'dinheiro' },
   { chave: 'lucroPorUnidade', titulo: 'Lucro por unidade (R$)', formato: 'dinheiro' },
-  { chave: 'markup', titulo: 'Markup', formato: 'percentual' },
+  { chave: 'markup', titulo: 'Markup', formato: 'markup' },
   { chave: 'margem', titulo: 'Margem s/ venda', formato: 'percentual' },
   { chave: 'faturamento', titulo: 'Faturamento (R$)', formato: 'dinheiro' },
   { chave: 'ticket', titulo: 'Preço médio (R$)', formato: 'dinheiro' },
@@ -1654,7 +1706,7 @@ describe('buildSerieDossieReport', () => {
 
   it('uma linha por ponto da série, com os mesmos números; intervalo corrente marcado parcial', () => {
     expect(r.linhas).toHaveLength(3);
-    expect(r.linhas[0].celulas).toMatchObject({ intervalo: 'Semana de 14/09', situacao: 'completo', unidades: 3, faturamento: 33.335, lucro: 18.1, fonteCusto: 'custo estimado', precoMedio: 11.11 });
+    expect(r.linhas[0].celulas).toMatchObject({ intervalo: 'Semana de 14/09', situacao: 'completo', unidades: 3, faturamento: round2(33.335), lucro: 18.1, fonteCusto: 'custo estimado', precoMedio: 11.11 });
     expect(r.linhas[1].celulas).toMatchObject({ situacao: 'parcial (em andamento)', lucro: null, fonteCusto: 'sem custo', unidadesKit: 1 });
     expect(r.linhas[0].celulas.inicio).toBe('14/09/2026, 00:00');
     expect(r.linhas[0].celulas.fim).toBe('20/09/2026, 23:59');
@@ -1679,9 +1731,11 @@ describe('buildSerieDossieReport', () => {
   - Acrescentar:
 
 ```tsx
-  it('série tem botão "Exportar Excel"; sem vendas, não', () => {
+  it('série tem botão "Exportar Excel" só na aba Vendas; sem vendas, não', async () => {
     renderPagina('ok', dossie());
     expect(screen.getByRole('button', { name: 'Exportar Excel' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('tab', { name: 'Tráfego e oferta' }));
+    expect(screen.queryByRole('button', { name: 'Exportar Excel' })).not.toBeInTheDocument();
     cleanup();
     renderPagina('sem_vendas', dossie({ linhaPeriodo: null, tendencia: null, historicoDesde: null, ultimaVenda: null }));
     expect(screen.queryByRole('button', { name: 'Exportar Excel' })).not.toBeInTheDocument();
@@ -1719,7 +1773,7 @@ export function buildSerieDossieReport(a: { dados: DossieSku; familia: boolean; 
     inicio: instanteBRT(p.intervalo.inicio),
     fim: instanteBRT(new Date(Date.parse(p.intervalo.fim) - 1)), // [inicio, fim): mostra o último instante
     situacao: p.intervalo.incompleto ? 'parcial (em andamento)' : 'completo',
-    unidades: p.unidades, faturamento: p.bruto, lucro: p.lucro,
+    unidades: p.unidades, faturamento: round2(p.bruto), lucro: p.lucro, // round2, como o ranking
     fonteCusto: p.unidades > 0 ? FONTE[p.fonteCusto] : null,
     precoMedio: p.precoMedio, precoMin: p.precoMin, precoMax: p.precoMax, unidadesKit: p.unidadesKit,
   } }));
@@ -1777,19 +1831,17 @@ import { buildSerieDossieReport, TETO_LINHAS_XLSX } from '@/lib/export/vendas-sk
 ```
 
   - Desestruturar `janela` de `useSkuDossie(...)`.
-  - Trocar o `<TabsList aria-label="Série do período">…</TabsList>` por:
+  - O botão fica **dentro** do conteúdo da aba Vendas: ele exporta vendas, então não aparece em "Tráfego e oferta". No `<TabsContent value="vendas">`, trocar o ramo `<SerieDossie … />` (o que não é `sem_vendas`) por:
 
 ```tsx
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <TabsList aria-label="Série do período">
-              <TabsTrigger value="vendas" className="px-3">Vendas</TabsTrigger>
-              <TabsTrigger value="trafego" className="px-3">Tráfego e oferta</TabsTrigger>
-            </TabsList>
-            {estado !== 'sem_vendas' && (
-              <BotaoExportar formatos={['excel']} totalLinhas={dados.serie.length} limiteLinhas={TETO_LINHAS_XLSX}
-                montarReport={() => buildSerieDossieReport({ dados, familia, passo, janela, agora: new Date() })} />
-            )}
-          </div>
+              <div className="flex flex-col gap-3">
+                <div className="flex justify-end">
+                  <BotaoExportar formatos={['excel']} totalLinhas={dados.serie.length} limiteLinhas={TETO_LINHAS_XLSX}
+                    montarReport={() => buildSerieDossieReport({ dados, familia, passo, janela, agora: new Date() })} />
+                </div>
+                <SerieDossie serie={dados.serie} perguntas={dados.perguntasPorIntervalo} eventos={dados.eventos} codigos={dados.codigos}
+                  familia={familia} temKit={dados.kitVirtual != null} historicoDesde={dados.historicoDesde} passo={passo} onPasso={setPasso} />
+              </div>
 ```
 
 - [ ] **Step 4: Run and verify.**
@@ -2156,8 +2208,9 @@ select to_char(date_trunc('month', date_closed at time zone 'America/Sao_Paulo')
 ```
 
   2. **Paridade da recompra.**
-     - Escolher o código de maior volume dos últimos 90 dias: `select i.codigo, sum(i.quantity) from public.ml_vendas_itens i join public.ml_vendas v on v.id = i.venda_id where v.org_id = '<ORG_AVIL>' and v.date_closed >= now() - interval '90 days' group by 1 order by 2 desc limit 1`.
-     - Aplicar a mesma regra da lib, com `<CODIGO>` e a janela de 90 dias:
+     - Fixar a janela **uma vez**, antes de tudo, e usar os mesmos dois instantes no SQL e no JSON. Exemplo: `<DESDE>` = início BRT do dia de 90 dias atrás (ex.: `2026-06-29T03:00:00.000Z`) e `<ATE>` = fim BRT de ontem (ex.: `2026-09-27T02:59:59.999Z`). Janela inclusiva `[desde, ate]`, igual à lib.
+     - Escolher o código de maior volume nessa janela: `select i.codigo, sum(i.quantity) from public.ml_vendas_itens i join public.ml_vendas v on v.id = i.venda_id where v.org_id = '<ORG_AVIL>' and v.date_closed >= '<DESDE>' and v.date_closed <= '<ATE>' group by 1 order by 2 desc limit 1`.
+     - Aplicar a mesma regra da lib com `<CODIGO>`, `<DESDE>` e `<ATE>`. Pack misto (uma order com `comprador_id` e outra sem, mesmo `pack_id`): a lib conta a ocasião uma vez, como identificada, e o SQL faz o mesmo (`sem_id` exclui ocasião que tem alguma order identificada):
 
 ```sql
 with elegiveis as (
@@ -2172,20 +2225,24 @@ with elegiveis as (
   select org_id, comprador_id, ocasiao, min(date_closed) as em from elegiveis group by 1, 2, 3
 ), por_conta as (
   select org_id, comprador_id, min(em) as primeira,
-         bool_or(em >= now() - interval '90 days') as comprou_no_periodo
+         bool_or(em >= '<DESDE>' and em <= '<ATE>') as comprou_no_periodo
     from ocasioes where comprador_id is not null group by 1, 2
 )
 select count(*) filter (where p.comprou_no_periodo) as identificados,
        count(*) filter (where p.comprou_no_periodo and exists (
          select 1 from ocasioes o where o.org_id = p.org_id and o.comprador_id = p.comprador_id
-            and o.em >= now() - interval '90 days' and o.em > p.primeira)) as recorrentes,
-       (select count(distinct ocasiao) from ocasioes where comprador_id is null and em >= now() - interval '90 days') as sem_id
+            and o.em >= '<DESDE>' and o.em <= '<ATE>' and o.em > p.primeira)) as recorrentes,
+       (select count(distinct s.ocasiao) from ocasioes s
+         where s.comprador_id is null and s.em >= '<DESDE>' and s.em <= '<ATE>'
+           and not exists (select 1 from ocasioes c where c.ocasiao = s.ocasiao and c.comprador_id is not null
+                            and c.em >= '<DESDE>' and c.em <= '<ATE>')) as sem_id
   from por_conta p;
 ```
 
   3. Exportar as vendas desse código para `/Users/diego/.claude/jobs/1e464c62/tmp/recompra-real.json`:
      - as colunas de `SELECT_VENDAS` + itens, com `org_id`, só as vendas que contêm o código;
-     - junto, os `order_id` com claim `returns` (`devolvidas`), o código, `desde`/`ate` = a mesma janela de 90 dias em ISO, e o resultado do SQL em `esperado`.
+     - junto, os `order_id` com claim `returns` (`devolvidas`), o código, `desde` = `<DESDE>` e `ate` = `<ATE>` (os mesmos literais do SQL, sem recalcular) e o resultado do SQL em `esperado`.
+     - Conferir no relatório quantos packs mistos (order com e sem `comprador_id`) o código tem: se for 0, a paridade não exercitou esse caso, que fica coberto pelo teste unitário da Task 2 (acrescentar lá, se ainda não houver).
 
      Depois rodar o teste vitest **temporário** `tests/lib/recompra-real.test.ts`:
 
