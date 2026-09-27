@@ -18,13 +18,15 @@ export class ParadaAds extends Error {
   constructor(estado: EstadoParada, mensagem: string) { super(mensagem); this.estado = estado; }
 }
 
-/** `descontar`: Σ cost (no search) dos grupos listados com gasto que deram 404 nesta rodada
+/** `descontar`: Σ cost (no search de 15 dias) dos grupos listados com gasto que deram 404 nesta rodada
  *  ou que ficaram sem nenhum MLB conhecido (Ruling 2c-7). Sai do
- *  custoListado para o dossiê ver `fora_dos_grupos` em vez de uma despesa menor sem aviso; viaja na cadeia
- *  como `falhou`.
+ *  custoListado para o dossiê ver `fora_dos_grupos` em vez de uma despesa menor sem aviso; viaja na cadeia.
+ *  `descontar90` (Ruling 2c-8): o mesmo desconto, mas em custo de 90 dias — a diária só sabe se um grupo
+ *  404ou/ficou vazio nesta rodada (o que só é decidido uma vez, na mensagem que o releu), então o valor de
+ *  90 dias desse desconto também precisa viajar na cadeia, e não só o de 15.
  *  `falhou` (Ruling 2c-5): carregado em toda continuação depois que um grupo não foi lido nesta rodada,
  *  para a mensagem final nunca fechar em `ok` mesmo quando o cursor andou numa mensagem sem falha. */
-export type MsgAds = MsgTrafego & { falhou?: boolean; descontar?: number };
+export type MsgAds = MsgTrafego & { falhou?: boolean; descontar?: number; descontar90?: number };
 export type ResultadoAds = 'ok' | 'continua' | 'obsoleta' | 'erro' | 'sem_acesso';
 export interface GrupoConhecido { ad_group_id: number; tipo: TipoGrupo; external_id: string | null; campaign_id: number | null; status: string }
 /** `itens` null = vínculo não lido nesta rodada (o banco mantém o atual). */
@@ -107,6 +109,7 @@ export async function sincronizarAdsOrg(
   // sempre sabe que houve grupo não lido, mesmo que o cursor já tenha andado antes disso ser visto.
   let falhou = msg.falhou === true;
   let descontar = msg.descontar ?? 0;
+  let descontar90 = msg.descontar90 ?? 0;
   const parada = (extra: Partial<ExtraConcluir> = {}): ExtraConcluir =>
     ({ cargaConcluida: false, advertiserId, coberturaDesde: null, custoResumo: null, custoListado: null, ...extra });
   try {
@@ -126,7 +129,8 @@ export async function sincronizarAdsOrg(
       const tentativa = c === inicial ? (msg.tentativa ?? 0) + 1 : 0;
       await deps.continuar(
         { org_id: msg.org_id, rodada: dona, cursor: c, primeira: false, tentativa, ...(falhou ? { falhou: true } : {}),
-          ...(descontar > 0 ? { descontar: Math.round(descontar * 100) / 100 } : {}) },
+          ...(descontar > 0 ? { descontar: Math.round(descontar * 100) / 100 } : {}),
+          ...(descontar90 > 0 ? { descontar90: Math.round(descontar90 * 100) / 100 } : {}) },
         atrasoMs != null ? { atrasoMs } : {});
       return { resultado: 'continua' as const };
     };
@@ -172,6 +176,42 @@ export async function sincronizarAdsOrg(
     for (const g of listados) if (g.cost > 0) alvo.set(g.ad_group_id, meta(g));
     const pendentes = [...alvo.values()].sort((x, y) => x.ad_group_id - y.ad_group_id)
       .filter((g) => inicial == null || g.ad_group_id > Number(inicial));
+
+    // Ruling 2c-8: na diária, custo_resumo/custo_listado só cobriam a janela de 15 dias (a mesma que decide
+    // o que reler) — um grupo excluído ou vazio entre 16 e 90 dias atrás nunca entrava em `fora_dos_grupos`,
+    // e o dossiê de 90 dias mostrava "Lucro após Ads" sem aviso. Busca extra só pra medir o custo de 90
+    // dias; não decide o que reler (isso continua pela busca de 15 dias acima). Na carga inicial a busca
+    // principal já é de 90 dias — não duplica.
+    let listados90 = listados;
+    let custoResumo90 = custoResumo;
+    let custoNoSearch90 = custoNoSearch;
+    let extrasDescontar90 = 0;
+    if (!cargaInicial) {
+      listados90 = [];
+      custoResumo90 = null;
+      for (let offset = 0; ;) {
+        const r = await comRetry(deps, fim, () => deps.buscarGrupos(adv, janelaMembros, offset));
+        if ('adiar' in r) return await continuar(cursor, r.adiar);
+        exigir(r, 'ad_groups/search (90d)');
+        const p = parseBuscaGrupos(r.corpo);
+        if (!p) throw new Error('ad_groups/search (90d): resposta inválida');
+        if (offset === 0) custoResumo90 = p.custoResumo;
+        listados90.push(...p.grupos);
+        offset += p.grupos.length;
+        if (p.grupos.length === 0 || offset >= p.total) break;
+      }
+      custoNoSearch90 = new Map(listados90.map((g) => [g.ad_group_id, g.cost]));
+      // Grupo com custo em 90 dias que não teve custo em 15 dias nunca entra em `pendentes` — não é relido
+      // nesta rodada nem em nenhuma outra deste ciclo diário. Confere o vínculo já gravado: sem vínculo (e
+      // não é ITEM, que sempre tem o próprio MLB como membro) é o mesmo desconto do 2c-7, com custo de 90d.
+      const extrasIds = listados90
+        .filter((g) => g.cost > 0 && g.tipo !== 'ITEM' && !alvo.has(g.ad_group_id))
+        .map((g) => g.ad_group_id);
+      if (extrasIds.length) {
+        const vinculosExtras = await deps.contarVinculos(extrasIds);
+        for (const id of extrasIds) if (!(vinculosExtras.get(id) ?? 0)) extrasDescontar90 += custoNoSearch90.get(id) ?? 0;
+      }
+    }
 
     let naoLidos = 0;
     const erroNaoLidos = () => naoLidos > 0
@@ -231,7 +271,10 @@ export async function sincronizarAdsOrg(
       lidos.forEach((x, k) => {
         const id = lote[k].ad_group_id;
         const semMembro = x != null && x !== 'sumiu' && x.itens == null && !(vinculos.get(id) ?? 0);
-        if (x === 'sumiu' || semMembro) descontar += custoNoSearch.get(id) ?? 0;
+        if (x === 'sumiu' || semMembro) {
+          descontar += custoNoSearch.get(id) ?? 0;
+          if (!cargaInicial) descontar90 += custoNoSearch90.get(id) ?? 0;
+        }
       });
       const grupos = lidos.filter((x): x is GrupoGravar => x != null && x !== 'sumiu');
       if (grupos.length && !(await deps.gravarLote(dona, new Date(deps.agora()).toISOString(), grupos))) {
@@ -256,8 +299,14 @@ export async function sincronizarAdsOrg(
     // Grupo listado com gasto que deu 404 na leitura: o gasto dele não foi gravado, então sai do listado.
     // Piso 0: o grupo do 404 pode também ter saído do search numa mensagem seguinte (desconto > listado).
     const custoListado = Math.max(0, Math.round((listados.reduce((s, g) => s + g.cost, 0) - descontar) * 100) / 100);
+    // Ruling 2c-8: na diária, o que vai pro dossiê é o custo de 90 dias (busca extra acima), não o de 15
+    // dias que só decidiu o que reler. Na carga inicial `listados90 === listados`: nada a recalcular.
+    const custoListado90 = Math.max(0, Math.round(
+      (listados90.reduce((s, g) => s + g.cost, 0) - descontar90 - extrasDescontar90) * 100) / 100);
+    const custoResumoFinal = cargaInicial ? custoResumo : custoResumo90;
+    const custoListadoFinal = cargaInicial ? custoListado : custoListado90;
     console.info('[ads] custo da janela', {
-      org_id: msg.org_id, janela, listadoSobreResumo: custoResumo ? custoListado / custoResumo : null,
+      org_id: msg.org_id, janela, listadoSobreResumo: custoResumoFinal ? custoListadoFinal / custoResumoFinal : null,
     });
     if (falhou) {
       // Ruling 2c-5: zera o cursor (a próxima "primeira" recomeça do zero — na carga inicial isso
@@ -270,7 +319,8 @@ export async function sincronizarAdsOrg(
     let dono: boolean;
     try {
       dono = await deps.concluir(dona, 'ok', null,
-        { cargaConcluida: true, advertiserId: adv, coberturaDesde: janela.desde, custoResumo, custoListado });
+        { cargaConcluida: true, advertiserId: adv, coberturaDesde: janela.desde,
+          custoResumo: custoResumoFinal, custoListado: custoListadoFinal });
     } catch (e) {
       console.error('[ads] concluir ok falhou', { org_id: msg.org_id, erro: mensagem(e) });
       return { resultado: 'erro' };
