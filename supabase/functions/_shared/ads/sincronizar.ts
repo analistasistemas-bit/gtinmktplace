@@ -18,7 +18,8 @@ export class ParadaAds extends Error {
   constructor(estado: EstadoParada, mensagem: string) { super(mensagem); this.estado = estado; }
 }
 
-/** `descontar`: Σ cost (no search) dos grupos listados com gasto que deram 404 nesta rodada. Sai do
+/** `descontar`: Σ cost (no search) dos grupos listados com gasto que deram 404 nesta rodada
+ *  ou que ficaram sem nenhum MLB conhecido (Ruling 2c-7). Sai do
  *  custoListado para o dossiê ver `fora_dos_grupos` em vez de uma despesa menor sem aviso; viaja na cadeia
  *  como `falhou`.
  *  `falhou` (Ruling 2c-5): carregado em toda continuação depois que um grupo não foi lido nesta rodada,
@@ -225,7 +226,13 @@ export async function sincronizarAdsOrg(
         falhou = true;
       }
       // Só com o lote aceito (um lote adiado é relido e contaria duas vezes).
-      lidos.forEach((x, k) => { if (x === 'sumiu') descontar += custoNoSearch.get(lote[k].ad_group_id) ?? 0; });
+      // Ruling 2c-7: grupo lido mas sem nenhum MLB conhecido (/ads vazio e nenhum vínculo gravado) não chega a
+      // dossiê nenhum — conta como não listado, igual ao 404, para disparar `fora_dos_grupos`.
+      lidos.forEach((x, k) => {
+        const id = lote[k].ad_group_id;
+        const semMembro = x != null && x !== 'sumiu' && x.itens == null && !(vinculos.get(id) ?? 0);
+        if (x === 'sumiu' || semMembro) descontar += custoNoSearch.get(id) ?? 0;
+      });
       const grupos = lidos.filter((x): x is GrupoGravar => x != null && x !== 'sumiu');
       if (grupos.length && !(await deps.gravarLote(dona, new Date(deps.agora()).toISOString(), grupos))) {
         return { resultado: 'obsoleta' };

@@ -69,14 +69,26 @@ for (const g of familias) {
 }
 if (parar) { console.error('PARADA: ponto de parada do brief (ver acima); nada gravado'); Deno.exit(2); }
 
-/** Σ cost gravado no Postgres local em [desde, ate] (paginado; só leitura). */
-async function somaCusto(desde: string, ate: string): Promise<number> {
+/** Grupos com vínculo gravado (os sem nenhum MLB conhecido saem do custoListado — Ruling 2c-7). */
+async function gruposComVinculo(): Promise<Set<number>> {
+  const ids = new Set<number>();
+  for (let de = 0; ; de += 1000) {
+    const { data, error } = await admin.from('ml_ads_grupo_item').select('ad_group_id').eq('org_id', org)
+      .order('ad_group_id').order('ml_item_id').range(de, de + 999);
+    if (error) throw new Error(error.message);
+    for (const l of data ?? []) ids.add(Number(l.ad_group_id));
+    if ((data ?? []).length < 1000) return ids;
+  }
+}
+
+/** Σ cost gravado no Postgres local em [desde, ate], opcionalmente só dos grupos em `so` (paginado; só leitura). */
+async function somaCusto(desde: string, ate: string, so?: Set<number>): Promise<number> {
   let total = 0;
   for (let de = 0; ; de += 1000) {
-    const { data, error } = await admin.from('ml_ads_grupo_dia').select('cost').eq('org_id', org)
+    const { data, error } = await admin.from('ml_ads_grupo_dia').select('ad_group_id, cost').eq('org_id', org)
       .gte('dia', desde).lte('dia', ate).order('ad_group_id').order('dia').range(de, de + 999);
     if (error) throw new Error(error.message);
-    for (const l of data ?? []) total += Number(l.cost);
+    for (const l of data ?? []) if (!so || so.has(Number(l.ad_group_id))) total += Number(l.cost);
     if ((data ?? []).length < 1000) return Math.round(total * 100) / 100;
   }
 }
@@ -102,17 +114,19 @@ async function rodar(n: number): Promise<void> {
   }
 }
 
-// Run 1 = carga inicial de 90 dias. Prova: Σ gravado no intervalo da carga = custoListado do sync.
+// Run 1 = carga inicial de 90 dias. Prova: Σ gravado dos grupos com vínculo = custoListado do sync.
 await rodar(1);
 const { data: sync, error: eSync } = await admin.from('ml_ads_sync')
   .select('estado, carga_inicial_ok, cobertura_desde, custo_resumo, custo_listado').eq('org_id', org).single();
 if (eSync || !sync) throw new Error(`ml_ads_sync: ${eSync?.message ?? 'sem linha'}`);
-const somaCarga = await somaCusto(janela.desde, janela.ate);
+const somaCarga = await somaCusto(janela.desde, janela.ate, await gruposComVinculo());
+const somaTudo = await somaCusto(janela.desde, janela.ate);
 const resumo = Number(sync.custo_resumo); const listado = Number(sync.custo_listado);
 console.log('run 1 (R$ só neste terminal)', {
   estado: sync.estado, cargaInicialOk: sync.carga_inicial_ok, coberturaDesde: sync.cobertura_desde,
   custoResumo: resumo, custoListado: listado, somaCarga,
   foraDosGruposPct: resumo > 0 ? `${(((resumo - listado) / resumo) * 100).toFixed(2)} %` : 'n/a',
+  semVinculoPct: somaTudo > 0 ? `${(((somaTudo - somaCarga) / somaTudo) * 100).toFixed(2)} %` : 'n/a',
 });
 if (Math.abs(somaCarga - listado) > 0.01) {
   console.error('FALHA: Σ gravado na carga ≠ custoListado do search', { somaCarga, custoListado: listado });

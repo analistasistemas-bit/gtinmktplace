@@ -187,6 +187,27 @@ describe('sincronizarAdsOrg', () => {
     expect(e.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 20 }); // 27,5 − 7,5
   });
 
+  it('Ruling 2c-7 — FAMILY listado com gasto, /ads vazio e sem vínculo gravado: o custo sai do custoListado', async () => {
+    const d = fake({
+      buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY', 4)])),
+      buscarMembros: vi.fn(async () => membros([])),
+    });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    expect(gravados(d).find((g) => g.ad_group_id === 12)?.itens).toBeNull(); // os dias continuam gravados
+    expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 10 }); // 14 listados − 4 do 12
+  });
+
+  it('Ruling 2c-7 — EMPTY com vínculo anterior preservado (itens null) NÃO é descontado', async () => {
+    const d = fake({
+      buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY', 4, 'EMPTY')])),
+      contarVinculos: vi.fn(async () => new Map([[12, 2]])),
+      buscarMembros: vi.fn(async () => membros([])),
+    });
+    await sincronizarAdsOrg(d, primeira);
+    expect(gravados(d).find((g) => g.ad_group_id === 12)?.itens).toBeNull();
+    expect(d.concluir.mock.calls[0][3]).toMatchObject({ custoListado: 14 });
+  });
+
   it('desconto herdado maior que o listado (o grupo do 404 também sumiu do search): custoListado nunca negativo', async () => {
     const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(12, 'ITEM', 5)])) });
     await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: '11', primeira: false, descontar: 50 });

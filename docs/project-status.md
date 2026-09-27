@@ -597,10 +597,13 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   aberto). Migration `20260927124602_vendas_sku_ads.sql` (4 tabelas + 5 RPCs `service_role` + a leitura
   `vendas_sku_codigos_mlbs`), **aplicada só localmente**. **Validação real (T7):** fiação real, ML real
   da Avil (só GET, sem refresh) e Postgres local: filtro de status sem esconder grupo (total igual com e
-  sem filtro); carga de 90 dias em `ok`, Σ gravado **confere** com o custo listado; gasto fora dos grupos
-  listados 2,57 % (spike ~2,6 %); 134 grupos com gasto (84 ITEM, 31 FAMILY, 19 CATALOG), série densa de
-  90 dias em todos; 2º run sem mexer nos dias com mais de 15 dias nem duplicar chave; 3 grupos `EMPTY`
-  (0,52 % do gasto listado) sem vínculo. **Faltam:** `supabase db push`, deploy de `coletar-ads-ml` **e**
+  sem filtro); carga de 90 dias em `ok`, Σ gravado dos grupos com vínculo **confere** com o custo listado;
+  gasto fora dos grupos listados 3,08 % (~2,57 % fora do search + 0,52 % de 3 grupos `EMPTY` sem membros,
+  Ruling 2c-7); 134 grupos com gasto (84 ITEM, 31 FAMILY, 19 CATALOG), série densa de 90 dias em todos;
+  2º run sem mexer nos dias com mais de 15 dias nem duplicar chave. **Consequência (2c-7):** enquanto a
+  última janela lida tiver gasto de grupos excluídos ou sem membros, o Lucro após Ads fica indisponível
+  na conta (Avil: ~3 % na carga de 90 dias, 0 % na janela diária); despesa, ROAS e ACOS seguem visíveis.
+  **Faltam:** `supabase db push`, deploy de `coletar-ads-ml` **e**
   `coletar-trafego-ml` (`_shared/trafego/fiacao.ts` mudou), schedule QStash `17 14 * * *` UTC (runbook
   `docs/runbooks/coletar-ads-ml.md`), revisão final e merge.
 - **Cadastro de Grade em Matriz Cor x Tamanho (2026-09-19/20) — EM PRODUÇÃO.** Substituição da lista

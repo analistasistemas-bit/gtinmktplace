@@ -201,6 +201,14 @@ Entregue a segunda parte de D-6: gasto e vendas atribuídas do **Product Ads** d
   hora, sem continuação (senão os dias antigos do grupo falho ficariam sem leitura para sempre). Um 404 de
   grupo listado desconta o custo dele de `custo_listado` (piso 0), para o dossiê ver "gasto fora dos
   grupos" em vez de uma despesa menor sem aviso.
+- **Ruling 2c-7:** grupo listado com gasto cujo `/ads` volta vazio e que não tem vínculo gravado (nenhum
+  MLB conhecido) conta como **não listado**: o custo dele sai de `custo_listado` (piso 0), como no 404.
+  Os dias dele continuam gravados, mas ele não chega a dossiê nenhum, então nunca infla o Lucro após Ads
+  de um SKU. Grupo vazio com vínculo anterior preservado (`itens: null`) não é descontado.
+  **Consequência:** enquanto a última janela lida (90 dias na carga inicial, 15 dias nas rodadas diárias)
+  tiver gasto de grupos excluídos ou sem membros, o Lucro após Ads fica indisponível em toda a conta
+  (`fora_dos_grupos`); a despesa, o ROAS e o ACOS continuam visíveis. Na Avil, ~3 % do gasto na carga
+  de 90 dias; 0 % na janela diária medida.
 - **Fora da 2c:** posição na busca (a fonte seria scraping, proibido pela cláusula 7.6 dos termos do
   programa de desenvolvedores do ML; `/sites/MLB/search` dá 403, ADR-0119); Ads no ranking, na curva ABC,
   no Financeiro e no billing; conferência com a fatura `PADS` (o app não tem permissão de faturamento: 403).
@@ -210,10 +218,12 @@ GET, token lido por SQL só de leitura, sem refresh, nunca impresso) e o Postgre
 continuação repetida como o QStash faria (`scripts/validar-ads-ml.ts`). O total de grupos do
 `ad_groups/search` com o filtro de status é igual ao total sem filtro; os membros de 3 grupos FAMILY com
 gasto são os mesmos na janela de 90 dias e na de 1 dia. A carga de 90 dias fechou em `ok`: Σ cost gravado
-**confere** com `custo_listado` (diferença zero); o gasto fora dos grupos listados é 2,57 % do resumo do
-anunciante (o spike mediu ~2,6 %). 134 grupos com gasto (84 ITEM, 31 FAMILY, 19 CATALOG, a mesma contagem
+**confere** com o Σ cost gravado dos grupos com vínculo (diferença zero); o gasto fora dos grupos
+listados é 3,08 % do resumo do anunciante: ~2,57 % de grupos fora do search (o spike mediu ~2,6 %) mais
+os 3 grupos `EMPTY` sem membros (2 FAMILY, 1 CATALOG; 0,52 % do gasto gravado), descontados pelo Ruling
+2c-7. 134 grupos com gasto (84 ITEM, 31 FAMILY, 19 CATALOG, a mesma contagem
 do spike), todos com a série densa de 90 dias; `max(dia)` = ontem, `min(dia)` = hoje − 90, cursor e posse
-nulos. 3 grupos `EMPTY` (2 FAMILY, 1 CATALOG; 0,52 % do gasto listado) ficaram sem vínculo porque o
-ML devolve a lista de membros vazia: o gasto deles não entra em nenhum dossiê. O 2º run (15 dias) não mudou nenhum dia com mais de 15 dias e não duplicou chave. Nenhum token nas
+nulos. O 2º run (15 dias) não mudou nenhum dia com mais de 15 dias e não duplicou chave; nessa janela
+o gasto fora dos grupos é 0 %. Nenhum token nas
 saídas. **Status continua Proposto:** falta `db push`, deploy de `coletar-ads-ml` e `coletar-trafego-ml`,
 schedule do QStash (runbook `docs/runbooks/coletar-ads-ml.md`), revisão final e merge.

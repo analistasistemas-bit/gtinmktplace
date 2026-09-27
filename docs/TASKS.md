@@ -13,8 +13,8 @@ Relatórios em `.superpowers/sdd/2026-09-27-vendas-sku-fatia-2c/`.
 - [x] Worker `_shared/ads/*` + `coletar-ads-ml` (posse, CAS do cursor, continuação QStash, Rulings 2c-5/2c-6) e runbook.
 - [x] Painel Ads (`src/lib/sku-ads.ts`, `ads-dossie.tsx`).
 - [x] Validação real (T7): ML da Avil só GET + Postgres local — filtro de status sem esconder grupo, Σ gravado
-  confere com o custo listado, fora dos grupos 2,57 %, 134 grupos com série densa, 2º run sem mexer nos dias
-  antigos. 594 arquivos / 6304 testes; `pnpm preflight` verde.
+  confere com o custo listado, fora dos grupos 3,08 % (Ruling 2c-7), 134 grupos com série densa, 2º run sem mexer nos dias
+  antigos. 594 arquivos / 6306 testes; `pnpm preflight` verde.
 - [ ] `supabase db push`, deploy de `coletar-ads-ml` e `coletar-trafego-ml` e schedule QStash (runbook `docs/runbooks/coletar-ads-ml.md`) — pendente.
 - [ ] Revisão final do diff + merge fast-forward na `main` — pendente.
 

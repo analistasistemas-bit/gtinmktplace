@@ -50,8 +50,8 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > branch, ainda não mergeado.** Worker novo `coletar-ads-ml` (QStash, só GET no ML) grava o Product Ads
 > por grupo de anúncios (4 tabelas + 6 RPCs); painel Ads no Dossiê com Despesa de Ads do período e Lucro
 > após Ads (só com gasto exclusivo e período coberto). **Validação real:** ML da Avil + Postgres local —
-> Σ gravado confere com o custo listado, gasto fora dos grupos 2,57 %, 134 grupos com série densa, 2º
-> run sem mexer nos dias antigos. 6304 testes, `pnpm preflight` verde. Falta `db push`, deploy de
+> Σ gravado confere com o custo listado, gasto fora dos grupos 3,08 % (Ruling 2c-7), 134 grupos com série densa, 2º
+> run sem mexer nos dias antigos. 6306 testes, `pnpm preflight` verde. Falta `db push`, deploy de
 > `coletar-ads-ml` e `coletar-trafego-ml`, schedule QStash, revisão final e merge.
 
 ## Passo anterior (2026-09-20) — EM PRODUÇÃO
