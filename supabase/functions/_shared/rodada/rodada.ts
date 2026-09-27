@@ -22,9 +22,10 @@ export class SemAcessoRodada extends Error {}
 export interface Cursor { etapa: string; pos: string }
 
 export function lerCursor(c: string | null | undefined): Cursor | null {
-  if (!c) return null;
+  if (c == null) return null;
   const i = c.indexOf('|');
-  if (i === -1) return null;
+  // Cursor malformado NUNCA reinicia o ciclo em silêncio — isso perderia o progresso sem avisar.
+  if (i === -1) throw new Error(`cursor inválido: ${c}`);
   return { etapa: c.slice(0, i), pos: c.slice(i + 1) };
 }
 
@@ -34,7 +35,9 @@ export const cicloDiaBrt = (d: Date): string => d.toLocaleDateString('en-CA', { 
 
 export const cicloHoraUtc = (d: Date): string => d.toISOString().slice(0, 13);
 
-/** Chave de deduplicação do QStash: cursor identifica o lote, evitando bifurcar a cadeia em entrega dupla. */
+/** Chave de deduplicação do QStash: identifica (fn, job, org, ciclo, cursor) pra não republicar o
+ *  MESMO lote duas vezes. NÃO impede uma entrega duplicada de bifurcar a cadeia em duas execuções
+ *  paralelas — quem garante isso é o lease/CAS de executarMensagem, não este dedup. */
 export const dedupMsg = (fn: string, m: Pick<MsgOrg, 'job' | 'org_id' | 'ciclo'>, cursor: string | null) =>
   `${fn}:${m.job}:${m.org_id}:${m.ciclo}:${cursor ?? 'inicio'}`.replace(/[^A-Za-z0-9_-]/g, '_');
 
@@ -123,7 +126,9 @@ export async function executarMensagem<P extends Record<string, unknown> = Recor
     r = await passo({ cursor: a.cursor, acumulado: a.acumulado, params: a.params as P });
   } catch (e) {
     if (e instanceof SemAcessoRodada) {
-      await deps.concluir(m, lease, 'sem_acesso', msgErro(e), null, false);
+      // false = a posse venceu durante o lote. NÃO retorna 'sem_acesso' por cima: sem o commit, a
+      // linha fica presa em 'rodando' e o retorno enganaria o caller com um 200 que não aconteceu.
+      if (!(await deps.concluir(m, lease, 'sem_acesso', msgErro(e), null, false))) return 'erro';
       log('sem_acesso', { erro: msgErro(e) });
       return 'sem_acesso';
     }

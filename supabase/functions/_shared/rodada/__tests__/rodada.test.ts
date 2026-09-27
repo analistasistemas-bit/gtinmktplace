@@ -167,29 +167,54 @@ describe('executarMensagem', () => {
     expect(r2).toBe('executado');
   });
 
-  it('posse vence durante o lote (avancar → false) → erro, nunca obsoleta', async () => {
+  it('queda por CPU com cursor não-nulo: o cursor sobrevive à queda e chega intacto no retry', async () => {
     const relogio = { t: 0 };
     const d = criarDeps(relogio);
     const m = msg();
-    const passo = vi.fn(async () => {
+    // avança o cursor pra 'vendas|p1' num ciclo normal, sem queda
+    await executarMensagem(d, m, vi.fn(async () => ({ proximo: 'vendas|p1', acumulado: {} })));
+
+    await d.abrir(m); // a execução seguinte abre a posse (cursor já em 'vendas|p1') e morre por CPU
+    relogio.t += 160_000; // > lease de 150s desde essa abertura
+    const passo = vi.fn(async (e) => { expect(e.cursor).toBe('vendas|p1'); return { proximo: null, acumulado: {} }; });
+    const r = await executarMensagem(d, m, passo);
+    expect(passo).toHaveBeenCalledTimes(1);
+    expect(r).toBe('executado');
+  });
+
+  it('posse vence durante o lote (avancar → false) → erro, nunca obsoleta; retry refaz o lote', async () => {
+    const relogio = { t: 0 };
+    const d = criarDeps(relogio);
+    const m = msg();
+    const passo1 = vi.fn(async () => {
       relogio.t += 200_000; // ultrapassa a lease de 150s durante o "lote"
       return { proximo: 'a|1', acumulado: {} };
     });
-    const r = await executarMensagem(d, m, passo);
-    expect(r).toBe('erro');
+    const r1 = await executarMensagem(d, m, passo1);
+    expect(r1).toBe('erro');
     expect(d.publicar).not.toHaveBeenCalled();
+    expect(passo1).toHaveBeenCalledWith({ cursor: null, acumulado: {}, params: {} });
+
+    // retry: a linha nunca avançou (avancar falhou) → o lote é refeito com o MESMO cursor
+    const passo2 = vi.fn(async (e) => { expect(e.cursor).toBeNull(); return { proximo: 'a|1', acumulado: {} }; });
+    const r2 = await executarMensagem(d, m, passo2);
+    expect(passo2).toHaveBeenCalledTimes(1);
+    expect(r2).toBe('continua');
   });
 
-  it('posse vence durante o lote (concluir → false) → erro, nunca obsoleta', async () => {
+  it('posse vence durante o lote (concluir → false) → erro, nunca obsoleta; não notifica nem marca', async () => {
     const relogio = { t: 0 };
     const d = criarDeps(relogio);
     const m = msg();
+    const notificar = vi.fn();
     const passo = vi.fn(async () => {
       relogio.t += 200_000;
-      return { proximo: null, acumulado: {} };
+      return { proximo: null, acumulado: { total: 1 } };
     });
-    const r = await executarMensagem(d, m, passo);
+    const r = await executarMensagem(d, m, passo, { precisaNotificar: () => true, notificar });
     expect(r).toBe('erro');
+    expect(notificar).not.toHaveBeenCalled();
+    expect(d.marcarNotificado).not.toHaveBeenCalled();
   });
 
   it('passo lança Error → libera e retorna erro', async () => {
@@ -211,6 +236,20 @@ describe('executarMensagem', () => {
     expect(statusHttp(r)).toBe(200);
     expect(d.concluir).toHaveBeenCalledWith(m, expect.any(String), 'sem_acesso', 'token inválido', null, false);
     expect(d.liberar).not.toHaveBeenCalled();
+  });
+
+  it('passo lança SemAcessoRodada com a posse já vencida (concluir → false) → erro, 500, linha continua rodando', async () => {
+    const relogio = { t: 0 };
+    const d = criarDeps(relogio);
+    const m = msg();
+    const passo = vi.fn(async () => {
+      relogio.t += 200_000; // ultrapassa a lease de 150s antes do concluir('sem_acesso')
+      throw new SemAcessoRodada('token inválido');
+    });
+    const r = await executarMensagem(d, m, passo);
+    expect(r).toBe('erro'); // NÃO 'sem_acesso': o commit não aconteceu, a linha não mudou
+    expect(statusHttp(r)).toBe(500);
+    expect(d.linhas.get('pulse-completo:org-1')?.estado).toBe('rodando');
   });
 
   it('publicar lança após o avancar → erro; retry recebe o cursor novo e segue; cursor nunca volta', async () => {
@@ -310,6 +349,12 @@ describe('utilitários', () => {
     expect(lerCursor('vendas|123')).toEqual({ etapa: 'vendas', pos: '123' });
     expect(lerCursor('radar|')).toEqual({ etapa: 'radar', pos: '' });
     expect(lerCursor(null)).toBeNull();
+    expect(lerCursor(undefined)).toBeNull();
+  });
+
+  it('lerCursor lança em cursor malformado (string não-nula sem "|") em vez de reiniciar o ciclo em silêncio', () => {
+    expect(() => lerCursor('vendas')).toThrow(/cursor inválido/);
+    expect(() => lerCursor('')).toThrow(/cursor inválido/);
   });
 
   it('gravarCursor é o inverso de lerCursor', () => {
