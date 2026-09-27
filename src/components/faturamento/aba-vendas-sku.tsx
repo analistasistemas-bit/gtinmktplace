@@ -66,7 +66,7 @@ function Painel({ icone: Icone, titulo, children }: { icone: typeof Lightbulb; t
 }
 
 export function AbaVendasSku() {
-  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
+  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'mes_atual' });
   const [busca, setBusca] = useState('');
   const [familia, setFamilia] = useState('');
   const [fornecedor, setFornecedor] = useState('');

@@ -23,7 +23,8 @@ const dados: VendasSku = {
   variacoes: [], insights: [{ texto: '1 SKU faz metade do lucro do período.', skus: [{ codigo: 'A', nome: 'Família P · Preto', detalhe: 'R$ 10,00' }] }], parados: 0, devolucoesNaoAtribuidas: 0,
   historicoDesde: '2026-06-02T12:00:00Z',
 };
-vi.mock('@/hooks/useVendasSku', () => ({ useVendasSku: () => ({ dados, isLoading: false, isFetching: false, refetch: vi.fn() }) }));
+const periodos = vi.hoisted(() => [] as unknown[]);
+vi.mock('@/hooks/useVendasSku', () => ({ useVendasSku: (p: unknown) => { periodos.push(p); return { dados, isLoading: false, isFetching: false, refetch: vi.fn() }; } }));
 
 const renderAba = () => render(
   <QueryClientProvider client={new QueryClient()}><MemoryRouter><AbaVendasSku /></MemoryRouter></QueryClientProvider>,
@@ -43,6 +44,11 @@ describe('AbaVendasSku', () => {
     renderAba();
     expect(screen.getByText('ver quais')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Família P · Preto', hidden: true })).toHaveAttribute('href', '/faturamento/sku/A');
+  });
+
+  it('abre no mês atual', () => {
+    renderAba();
+    expect(periodos[0]).toEqual({ tipo: 'mes_atual' });
   });
 
   it('ordena por lucro e troca a ordem ao clicar em Unidades', () => {
