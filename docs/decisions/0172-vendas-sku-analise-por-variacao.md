@@ -227,7 +227,7 @@ Entregue a segunda parte de D-6: gasto e vendas atribuídas do **Product Ads** d
   programa de desenvolvedores do ML; `/sites/MLB/search` dá 403, ADR-0119); Ads no ranking, na curva ABC,
   no Financeiro e no billing; conferência com a fatura `PADS` (o app não tem permissão de faturamento: 403).
 
-**Validação real (T7):** `sincronizarAdsOrg` rodou com a fiação real (`depsAds`), o ML real da Avil (só
+**Validação real (T7), validado no ML real com o código final (Rulings até 2c-9):** `sincronizarAdsOrg` rodou com a fiação real (`depsAds`), o ML real da Avil (só
 GET, token lido por SQL só de leitura, sem refresh, nunca impresso) e o Postgres **local**, com a
 continuação repetida como o QStash faria (`scripts/validar-ads-ml.ts`). O total de grupos do
 `ad_groups/search` com o filtro de status é igual ao total sem filtro; os membros de 3 grupos FAMILY com

@@ -595,7 +595,7 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   (`ad_group_id`; worker novo `coletar-ads-ml`, QStash, só GET no ML; spike 053) e painel `PainelAds` no
   Dossiê do SKU (Despesa de Ads do período, Lucro após Ads, alcance sku/família/anúncio, atribuição em
   aberto). Migration `20260927124602_vendas_sku_ads.sql` (4 tabelas + 5 RPCs `service_role` + a leitura
-  `vendas_sku_codigos_mlbs`), **aplicada só localmente**. **Validação real (T7):** fiação real, ML real
+  `vendas_sku_codigos_mlbs`), **aplicada só localmente**. **Validação real (T7), validado no ML real com o código final (Rulings até 2c-9):** fiação real, ML real
   da Avil (só GET, sem refresh) e Postgres local: filtro de status sem esconder grupo (total igual com e
   sem filtro); carga de 90 dias em `ok`, Σ gravado dos grupos com vínculo **confere** com o custo listado;
   gasto fora dos grupos listados 3,08 % (~2,57 % fora do search + 0,52 % de 3 grupos `EMPTY` sem membros,
