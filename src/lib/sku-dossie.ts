@@ -5,9 +5,13 @@ import type { Venda } from './faturamento';
 import type { Pedido } from './pedidos-faturamento';
 import type { CatalogoSku } from './vendas-sku-catalogo';
 import type { Intervalo } from './calendario-brt';
-import { agregarPorSku, somarAcumuladores, metricas, dentroDaJanela, SEM_CODIGO, type FonteCusto, type LinhaSku } from './vendas-sku';
-import type { Devolucao } from './devolucoes';
-import type { Movimento, Moderacao, ItemCampanha } from './sku-dossie-dados';
+import {
+  agregarPorSku, somarAcumuladores, metricas, dentroDaJanela, montarVendasSku, classificarTendencia, coberturaDias,
+  alertasSku, SEM_CODIGO, type FonteCusto, type LinhaSku, type Tendencia, type Cobertura, type Alerta,
+} from './vendas-sku';
+import type { Janela } from './metricas';
+import { orderIdsComDevolucaoReal, type Devolucao } from './devolucoes';
+import type { Movimento, Moderacao, ItemCampanha, Pergunta } from './sku-dossie-dados';
 import { round2, fmtBRL } from './formato';
 
 export interface PontoSerie {
@@ -184,4 +188,116 @@ export function situacaoCampanhas(itens: ItemCampanha[]) {
     statusItem: i.status, statusCampanha: i.promocao?.status ?? null, precoPromo: i.preco_promo,
     vigencia: { inicio: i.promocao?.inicio ?? null, fim: i.promocao?.fim ?? null }, sincronizadoEm: i.sincronizado_em,
   }));
+}
+
+// ---- Montagem do dossiê (o hook só busca e chama isto) ----
+
+export type AlvoDossie = { tipo: 'sku'; codigo: string } | { tipo: 'familia'; codigoPai: string };
+export type EstadoDossie = 'carregando' | 'erro' | 'nao_encontrado' | 'sem_vendas' | 'sem_cadastro' | 'ok';
+
+export interface DossieSku {
+  codigos: string[];
+  titulo: string;
+  /** Linhas do catálogo dos códigos; vazio em `sem_cadastro`. */
+  catalogo: CatalogoSku[];
+  historicoDesde: string | null;
+  ultimaVenda: string | null;
+  /** KPIs do período = linha do ranking (montarVendasSku); família numa chave só (pedidos por order). */
+  linhaPeriodo: LinhaSku | null;
+  linhaAnterior: LinhaSku | null;
+  /** Posição de hoje (30 dias até agora); null sem venda nenhuma. */
+  tendencia: Tendencia | null;
+  cobertura: Cobertura;
+  /** Kit: floor(base/N); família: soma; null = desconhecido (fora do catálogo), nunca zero. */
+  estoque: number | null;
+  alertas: Alerta[];
+  serie: PontoSerie[];
+  eventos: Evento[];
+  perguntasPorIntervalo: number[];
+  ufs: { valores: Record<string, number>; semUf: number };
+  /** Só na família. */
+  mix: LinhaMix[] | null;
+  campanhas: ReturnType<typeof situacaoCampanhas>;
+  mlbs: Map<string, string[]>;
+  qualidade: { pctBrutoCustoReal: number | null; fontesParciais: string[] };
+}
+
+const extremo = (datas: (string | null | undefined)[], fim: 'min' | 'max'): string | null => {
+  const ds = datas.filter((d): d is string => !!d).sort((a, b) => Date.parse(a) - Date.parse(b));
+  return (fim === 'min' ? ds[0] : ds[ds.length - 1]) ?? null;
+};
+
+export function montarDossie(p: {
+  alvo: AlvoDossie; codigos: string[]; vendas: Venda[]; agrupar: (vs: Venda[]) => Pedido[];
+  catalogo: CatalogoSku[]; devolucoes: Devolucao[];
+  janela: Janela; anterior: Janela; hoje: Janela; hojeAnterior: Janela; intervalos: Intervalo[];
+  mlbs: Map<string, string[]>; movimentos: Movimento[]; moderacoes: Moderacao[]; perguntas: Pergunta[];
+  campanhas: ItemCampanha[];
+}): { estado: Exclude<EstadoDossie, 'carregando' | 'erro'>; dados: DossieSku | null } {
+  const cods = new Set(p.codigos);
+  const doAlvo = (codigo: string | null) => cods.has(codigo?.trim() || SEM_CODIGO);
+  const catMap = new Map(p.catalogo.map((c) => [c.codigo, c]));
+  const catalogo = p.codigos.flatMap((c) => catMap.get(c) ?? []);
+  // Vendas (orders) que contêm o código — a RPC também traz os outros membros dos packs.
+  const vendasDoAlvo = p.vendas.filter((v) => v.itens.some((it) => doAlvo(it.codigo)));
+  if (!vendasDoAlvo.length && !catalogo.length) return { estado: 'nao_encontrado', dados: null };
+
+  const familia = p.alvo.tipo === 'familia' ? p.alvo.codigoPai : null;
+  const chave = familia != null ? `familia:${familia}` : p.codigos[0];
+  // Família: os códigos viram uma chave só depois de agrupar — dinheiro igual à soma das irmãs,
+  // mas pedidos e devoluções contam por order (a mesma order com 2 irmãs é 1 pedido).
+  const agruparAlvo = familia == null ? p.agrupar : (vs: Venda[]) => p.agrupar(vs).map((ped) => ({
+    ...ped, itens: ped.itens.map((it) => (doAlvo(it.codigo) ? { ...it, codigo: chave } : it)),
+  }));
+  const base = { vendas: p.vendas, catalogo: catMap, devolucoes: p.devolucoes, agrupar: agruparAlvo };
+  const periodo = montarVendasSku({ ...base, janela: p.janela, anterior: p.anterior });
+  const hoje = montarVendasSku({ ...base, janela: p.hoje, anterior: p.hojeAnterior });
+  const daChave = (ls: LinhaSku[]) => ls.find((l) => l.codigo === chave) ?? null;
+
+  const ehKit = catalogo.some((c) => c.ehKit);
+  const estoque = catalogo.length ? catalogo.reduce((s, c) => s + (c.ehKit ? c.estoqueKit ?? 0 : c.estoque), 0) : null;
+  const historicoDesde = extremo(catalogo.map((c) => c.primeiraVenda), 'min') ?? extremo(vendasDoAlvo.map((v) => v.date_closed), 'min');
+  const ultimaVenda = extremo(catalogo.map((c) => c.ultimaVenda), 'max') ?? extremo(vendasDoAlvo.map((v) => v.date_closed), 'max');
+  const titulo = familia != null
+    ? catalogo[0]?.nomeFamilia ?? familia
+    : catalogo[0]?.nome ?? vendasDoAlvo.flatMap((v) => v.itens).find((it) => doAlvo(it.codigo))?.titulo ?? p.codigos[0];
+  const vestir = (l: LinhaSku | null): LinhaSku | null => (l && familia != null
+    ? { ...l, titulo, codigoPai: familia, nomeFamilia: catalogo[0]?.nomeFamilia ?? null, ehKit, estoque, primeiraVenda: historicoDesde }
+    : l);
+
+  const u30 = daChave(hoje.linhas)?.acc.unidades ?? 0;
+  const uAnt = daChave(hoje.linhasAnterior)?.acc.unidades ?? 0;
+  const tendencia = vendasDoAlvo.length ? classificarTendencia(u30, uAnt, historicoDesde, Date.parse(p.hoje.ate)) : null;
+  const cobertura = coberturaDias(estoque, u30, ehKit);
+  const linhaPeriodo = vestir(daChave(periodo.linhas));
+
+  const devolvidas = orderIdsComDevolucaoReal(p.devolucoes);
+  // ponytail: % com custo real sobre todo o histórico carregado (bloco "Qualidade do histórico"),
+  // agrupado de uma vez — só indicador de cobertura, não entra em KPI nenhum.
+  const hist = daChave(agregarPorSku(agruparAlvo(p.vendas), { desde: new Date(0).toISOString(), ate: p.hoje.ate }, catMap, devolvidas));
+  const kitsN = new Set(catalogo.map((c) => c.kitMultiplicador));
+  const fontesParciais = ['Promoções: só a situação atual', 'Publicação: só vínculos registrados'];
+  if (vendasDoAlvo.some((v) => v.kit_item_id != null)) fontesParciais.push('Kit Virtual: sem histórico antes de set/2026');
+  const mixRaw = familia == null ? null : montarVendasSku({ ...base, agrupar: p.agrupar, janela: p.janela, anterior: p.anterior });
+
+  const dados: DossieSku = {
+    codigos: p.codigos, titulo, catalogo, historicoDesde, ultimaVenda,
+    linhaPeriodo, linhaAnterior: vestir(daChave(periodo.linhasAnterior)),
+    tendencia, cobertura, estoque,
+    alertas: linhaPeriodo ? alertasSku(linhaPeriodo, cobertura) : [],
+    serie: serieDoSku({ vendas: p.vendas, agrupar: p.agrupar, codigos: p.codigos, intervalos: p.intervalos, catalogo: catMap, ordensDevolvidas: devolvidas }),
+    eventos: montarEventos({
+      movimentos: p.movimentos, moderacoes: p.moderacoes, devolucoes: p.devolucoes, mlbs: p.mlbs,
+      ordersDosCodigos: new Set(vendasDoAlvo.map((v) => v.order_id)),
+      // ponytail: um N só; família de kits com N diferentes mostra o saldo da base sem dividir.
+      kitMultiplicador: kitsN.size === 1 ? [...kitsN][0] : null,
+    }),
+    perguntasPorIntervalo: perguntasPorIntervalo(p.perguntas, p.intervalos),
+    ufs: ufsDoSku(p.agrupar(p.vendas.filter((v) => dentroDaJanela(v.date_closed, p.janela))), p.codigos),
+    mix: mixRaw ? mixDaFamilia(mixRaw.linhas, mixRaw.linhasAnterior, catalogo) : null,
+    campanhas: situacaoCampanhas(p.campanhas),
+    mlbs: p.mlbs,
+    qualidade: { pctBrutoCustoReal: hist && hist.acc.bruto > 0 ? hist.acc.brutoCustoReal / hist.acc.bruto : null, fontesParciais },
+  };
+  return { estado: !vendasDoAlvo.length ? 'sem_vendas' : !catalogo.length ? 'sem_cadastro' : 'ok', dados };
 }
