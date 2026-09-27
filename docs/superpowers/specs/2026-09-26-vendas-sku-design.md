@@ -61,13 +61,72 @@ atalhos de período (lá é texto dd/mm/aaaa).
 
 ## Fatia 2a — Dossiê `/faturamento/sku/:codigo` (dados existentes)
 
-- Cabeçalho: foto, título, família, MLB(s) atual/anteriores, 1ª e última venda, idade, tendência, alertas.
-- **Linha do tempo** semanal/mensal: unidades, faturamento, lucro, e o **preço praticado** tirado das vendas.
-- **Eventos** (glossário "Evento da história"): publicação/republicação, entrada de mercadoria + mudança de
-  custo, ruptura, mudança de preço, moderação, devolução; perguntas como faixa semanal; promoção marcada
-  como aproximada.
-- Estoque canônico + **cobertura**; devoluções com motivos; UFs; variações irmãs (mix da família).
-- Família (`/faturamento/sku/familia/:codigo_pai`): mesma tela somando as variações, com seletor.
+> Revisada pelo GPT-6 Astra em 2026-09-27 ("sim com ajustes"). As decisões abaixo incorporam a revisão.
+
+**Contrato: histórico observado, com cobertura explícita.** O dossiê mostra o que os registros do PubliAI
+comprovam, desde a primeira venda registrada. Não promete "história completa": publicação, promoção e
+estoque têm cobertura parcial, e a tela diz isso.
+
+**Carga (sem fórmula nova):** uma RPC de **seleção** (`security definer`, `current_org_id()`, sem dinheiro)
+devolve os ids das vendas que contêm o código **mais os demais membros dos mesmos packs/envios**. O
+navegador busca essas vendas com o mesmo `select` de `buscarVendas`, roda os mesmos resolvers e
+`agruparPorPedido`, e **só depois** separa os itens do SKU. Assim o rateio de frete e os centavos são
+os da aba Vendas. Paginação por GET com desempate por id; colunas explícitas, nunca `raw` inteiro.
+Critério de aceite: medir linhas, bytes e tempo do SKU de maior volume da Avil, incluindo a expansão dos
+packs.
+
+**Referência temporal:** gráfico e KPIs seguem o período escolhido; tendência e cobertura são a posição
+**de hoje** ("posição em dd/mm"). Calendário em BRT: semana começa na segunda, mês civil, intervalos
+sem sobreposição; a semana/mês corrente é marcada como incompleta.
+
+**Cabeçalho:** foto, título, família, 1ª e última venda, idade comercial, tendência, alertas, e o bloco
+**Qualidade do histórico**: desde quando há vendas, % do faturamento com custo real, e quais fontes têm
+cobertura parcial.
+
+**Linha do tempo** (semanal/mensal): unidades, faturamento, lucro e **preço vendido** = média ponderada
+por quantidade, com faixa mín./máx.; semana sem venda fica sem preço. Na família, avisa que o preço
+médio também muda pelo mix. Clicar num ponto abre os pedidos daquele intervalo, com o SKU destacado.
+
+**Eventos**, cada um com o vínculo declarado: **SKU exato**, **anúncio compartilhado** (evento do MLB que
+atende várias variações) ou **não resolvido**.
+- Anúncios identificados nos registros (vínculo atual, vendas antigas e snapshot PxV). Não existe
+  histórico geral de republicação; primeira venda de um MLB não vira "data de publicação".
+- Entrada registrada com custo X (`estoque_movimentos`); ruptura = saldo anterior > 0 → resultante 0;
+  retorno = anterior 0 → resultante > 0. Movimento sem saldo é ignorado.
+- Moderação **detectada** / **resolução observada** (`ml_moderacao`, por MLB → anúncio compartilhado
+  quando o MLB tem várias variações).
+- Devolução (só `type='returns'`, a mesma definição da Fatia 1): evento em `aberto_em`, estorno em
+  `fechado_em`. Motivo = texto traduzido, código cru ou "não informado".
+- Perguntas: faixa semanal de contagem, por MLB (anúncio compartilhado).
+- Promoção: **não entra na linha do tempo**. Vira o bloco **Situação atual nas campanhas** (status e
+  última sincronização). Se houver faixa no gráfico, o texto é "vigência da campanha; participação
+  histórica desconhecida".
+
+**Estoque:** saldo canônico e cobertura (posição de hoje). **Kit vinculado:** saldo = `floor(base/N)`,
+cobertura "estoque compartilhado" sem dias, ruptura quando `floor(base/N)` chega a 0; entradas pertencem
+à base.
+
+**Devoluções:** taxa por coorte (pedidos, só `returns`), motivos. **UFs:** agregadas pelos **itens
+faturáveis do SKU** com a UF da respectiva order (nunca o bruto do pack inteiro), com "sem localização".
+
+**Família** (`/faturamento/sku/familia/:codigo_pai`): composição **atual** pelo catálogo, incluindo
+irmãs **sem vendas**; soma valores e unidades e recalcula percentuais (nunca soma taxas nem coberturas);
+eventos compartilhados deduplicados pelo id original; pedidos contados por order. **Mix das irmãs**:
+participação em unidades e contribuição para o lucro, contra o período anterior.
+
+**Kit Virtual:** vendas com `kit_item_id` aparecem separadas ("vendido dentro de kit"), com aviso de
+cobertura parcial (sem backfill de `kit_item_id`).
+
+**Estados:** cadastrado sem vendas (idade e tendência indisponíveis), histórico sem cadastro atual
+(vendas aparecem, família/estoque não), código não encontrado (404 do app), estoque desconhecido ≠ zero.
+A linha "sem código" do ranking não abre dossiê.
+
+**Segurança:** rotas sob os guards existentes; a RPC nova deriva a org no servidor, fixa
+`search_path`, revoga `public`/`anon`, e tem teste com o mesmo código/MLB em duas orgs e chamada anônima.
+
+**Fora da 2a:** histórico completo de publicação/republicação, adesão/saída histórica de promoção e efeito
+atribuído à campanha, dias exatos sem estoque/demanda perdida, marcador por mudança de preço ou por
+pergunta, lucro líquido de devoluções como métrica nova.
 
 ## Fatia 2b — coleta diária (visitas, conversão, preço)
 
@@ -107,6 +166,5 @@ Backfill de pedidos anteriores à entrada no PubliAI.
 ## Riscos
 
 - Dossiê de SKU com pouco volume vira ruído: a tendência exige ≥ 5 unidades na janela.
-- Kit vinculado: estoque vem da base (`floor(base/N)`). A cobertura do kit usa o estoque resolvido, não
-  `variacoes.estoque`.
+- Kit vinculado: estoque vem da base (`floor(base/N)`); cobertura é "estoque compartilhado", sem dias.
 - Janela de 48h das visitas: a conversão do dia corrente não é mostrada.
