@@ -62,13 +62,23 @@ scope do momento da autorização.
   basta e o refresh não atualiza o scope → reconexão vira passo de onboarding do módulo.
 - **Aderir DEAL funciona:** `POST /seller-promotions/items/{id}?app_version=v2` com
   `{promotion_id, promotion_type:'DEAL', deal_price}` → **201** `{price, original_price, currency_id}`.
-- **A visão por item não confirma adesão:** `GET /seller-promotions/items/{id}` seguiu mostrando a DEAL como
-  `candidate` (price 0) depois do 201; só a visão da campanha
-  (`/promotions/{pid}/items?promotion_type=DEAL&item_id=`) mostrou `pending`. Revalidação e conferência do
-  motor precisam ler a **visão da campanha**.
+- **A visão por item atrasa:** `GET /seller-promotions/items/{id}` seguiu mostrando a DEAL como `candidate`
+  (price 0) logo depois do 201 e só passou a `pending` minutos depois; a visão da campanha
+  (`/promotions/{pid}/items?promotion_type=DEAL&item_id=`) mostrou `pending` na hora. Revalidação e conferência
+  do motor leem a **visão da campanha**.
 - **Sair de DEAL futura NÃO funcionou:** `DELETE ...?promotion_type=DEAL&promotion_id=` → **200 com corpo vazio**,
-  e o item seguiu `pending` por 13+ min. Com `deal_id` no lugar → 400 "Promotion id is required". **200 do
-  DELETE não prova remoção.** Decisões 2 (Reverter) e 5 (idempotência) dependem de achar o caminho de saída.
+  e o item seguiu `pending` — tanto 3 s depois do POST quanto repetido ~40 min depois, com a inscrição já
+  visível nas duas visões (descarta atraso de propagação). Com `deal_id` no lugar → 400 "Promotion id is
+  required". **200 do DELETE não prova remoção.** Decisões 2 (Reverter) e 5 (idempotência) dependem de achar
+  o caminho de saída.
+- **Par User Product / catálogo:** o item testado (`catalog_listing: false`) e `MLB7553277320`
+  (`catalog_listing: true`, "COMPETINDO") são o mesmo `user_product_id`, ligados por `item_relations`
+  (estoque compartilhado). O Seller Center mostra promoções **só no item de catálogo** e marca o outro como
+  "não elegível" — mas a API aceitou a inscrição nele, e ela **não aparece nem pode ser removida pelo Seller
+  Center**. O motor precisa decidir em qual item do par inscrever (provavelmente o de catálogo) e nunca
+  inscrever o que o Seller Center não mostra.
+- Atenção a datas: a 10.10 vai de **28/09 a 13/10** (`start_date`); o `prazo_adesao` gravado pelo sync é o
+  fim, não o início.
 - A visão da campanha devolve **500 intermitente** (2 em ~25 leituras) → retry na leitura.
 - **SMART não testada:** suspensa até a saída ser provada (preço vai ao ar na hora).
 
