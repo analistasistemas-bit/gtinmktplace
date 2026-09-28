@@ -31,5 +31,6 @@ describe('TrafegoDossie: zero medido × lacuna', () => {
     };
     render(<TrafegoDossie trafego={t} familia={false} passo="semana" onPasso={vi.fn()} onTentar={vi.fn()} />);
     expect(screen.getAllByTestId('zero-visitas')).toHaveLength(2);
+    expect(screen.getByText('0 visitas medidas')).toBeInTheDocument();
   });
 });

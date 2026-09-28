@@ -146,7 +146,7 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
         texto: `do anúncio${considerados.length > 1 ? ` ${m.mlb}` : ''} · compartilhado com ${outras} ${outras === 1 ? 'variação' : 'variações'}` };
     })
     : [];
-  const comSelo = new Set(t.alcance === 'anuncio' ? considerados.map((m) => m.mlb) : []);
+  const comSelo = new Set(considerados.map((m) => m.mlb));
   const temGrafico = t.alcance !== 'indisponivel' && (t.estadoColeta === 'ok' || t.estadoColeta === 'parcial') && n > 0;
 
   const resumo = useMemo(() => {
@@ -236,6 +236,9 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
             </svg>
             Preço de oferta, mín. a máx.
           </li>
+          {serie.some((p) => p.visitas === 0) && (
+            <li className="flex items-center gap-1.5"><span className="size-2 rounded-full border-[1.5px] border-chart-3" />0 visitas medidas</li>
+          )}
           {tem('aguardando') && <li className="flex items-center gap-1.5"><Clock className="size-3" />{`Aguardando ${H48}`}</li>}
           {tem('nao_coletado') && <li className="flex items-center gap-1.5"><CircleDashed className="size-3" />Ainda não coletado</li>}
           {tem('sem_dado') && <li className="flex items-center gap-1.5"><CircleSlash className="size-3 text-warning" />Sem dado</li>}

@@ -375,6 +375,7 @@ describe('SkuDossie: tráfego e oferta', () => {
     ] }), '/faturamento/sku/familia/P1');
     expect(within(reg).getByText('família')).toBeInTheDocument();
     expect(reg.textContent).not.toMatch(/anúncio compartilhado|do anúncio ·/);
+    expect(within(within(reg).getByRole('list', { name: /Anúncios/ })).queryByText('compartilhado')).not.toBeInTheDocument();
   });
 
   it('SKU exclusivo: selo "deste SKU"', async () => {
@@ -486,11 +487,11 @@ describe('SkuDossie: estoque, devoluções, UFs, mix e campanhas', () => {
     renderPagina('ok', dossie({
       catalogo: [{ ...cat, ehKit: true, kitMultiplicador: 2, kitBaseCodigo: '00100', estoqueKit: 3 }],
       estoque: 3, cobertura: 'compartilhado',
-    }));
+    }), '/faturamento/sku/00123?dias=90');
     const est = screen.getByRole('region', { name: 'Estoque' });
     expect(within(est).getByText(/estoque compartilhado com a base/i)).toBeInTheDocument();
     expect(within(est).getByText('3 kits')).toBeInTheDocument();
-    expect(within(est).getByRole('link', { name: /00100/ })).toHaveAttribute('href', '/faturamento/sku/00100');
+    expect(within(est).getByRole('link', { name: /00100/ })).toHaveAttribute('href', '/faturamento/sku/00100?dias=90');
     expect(within(est).queryByText(/\d dias/)).not.toBeInTheDocument();
   });
 
@@ -566,11 +567,11 @@ describe('SkuDossie: estoque, devoluções, UFs, mix e campanhas', () => {
     renderPagina('ok', dossie({ titulo: 'Camiseta Dry', codigos: ['00123', '00124'], mix: [
       { codigo: '00123', titulo: 'Camiseta Dry Azul M', unidades: 6, participacaoUnidades: 1, lucro: 90, deltaLucro: 10, semVendas: false, novaNoPeriodo: false },
       { codigo: '00124', titulo: 'Camiseta Dry Azul G', unidades: 0, participacaoUnidades: 0, lucro: null, deltaLucro: -15, semVendas: true, novaNoPeriodo: false },
-    ] }), { pathname: '/faturamento/sku/familia/P1', state: { de } });
+    ] }), { pathname: '/faturamento/sku/familia/P1', search: '?dias=90', state: { de } });
     const reg = screen.getByRole('region', { name: 'Mix da família' });
     expect(within(reg).getByText('sem vendas')).toBeInTheDocument();
     expect(within(reg).getByText('100,0%')).toBeInTheDocument();
-    expect(within(reg).getByRole('link', { name: /Camiseta Dry Azul G/ })).toHaveAttribute('href', '/faturamento/sku/00124');
+    expect(within(reg).getByRole('link', { name: /Camiseta Dry Azul G/ })).toHaveAttribute('href', '/faturamento/sku/00124?dias=90');
     expect(within(reg).getAllByRole('link').every((a) => !a.getAttribute('href')?.includes('familia:'))).toBe(true);
   });
 

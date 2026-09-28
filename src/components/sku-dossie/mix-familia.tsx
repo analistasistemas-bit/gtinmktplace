@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { StatusPill } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
@@ -22,6 +22,7 @@ const temDossie = (codigo: string) => codigo !== SEM_CODIGO && !codigo.startsWit
 /** Variações da composição atual da família no período, inclusive as sem venda. Cada nome abre o
  *  dossiê da variação levando a mesma origem (`de`) do dossiê da família. */
 export function MixFamilia({ mix, voltar }: { mix: LinhaMix[]; voltar: string }) {
+  const { search } = useLocation(); // o período do dossiê segue para a irmã
   return (
     <BlocoDossie id="dossie-mix" titulo="Mix da família" relogio="Variações do catálogo atual no período escolhido · Δ contra o período anterior">
       <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
@@ -39,7 +40,7 @@ export function MixFamilia({ mix, voltar }: { mix: LinhaMix[]; voltar: string })
               <TableRow key={l.codigo}>
                 <TableCell className="w-full max-w-0 py-2.5">
                   {temDossie(l.codigo) ? (
-                    <Link to={`/faturamento/sku/${encodeURIComponent(l.codigo)}`} state={{ de: voltar }}
+                    <Link to={`/faturamento/sku/${encodeURIComponent(l.codigo)}${search}`} state={{ de: voltar }}
                       className={cn(LINK, 'line-clamp-2 whitespace-normal leading-snug', l.semVendas && 'text-muted-foreground')}>
                       {formatarNomeProduto(l.titulo)}
                     </Link>

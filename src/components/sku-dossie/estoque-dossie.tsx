@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { fmtInt } from '@/lib/formato';
 import { LIMITES } from '@/lib/vendas-sku';
@@ -13,6 +13,7 @@ import { diaMesBRT } from './formato-dossie';
 export function EstoqueDossie({ dados, familia, voltar, className }: {
   dados: Pick<DossieSku, 'estoque' | 'cobertura' | 'catalogo'>; familia: boolean; voltar: string; className?: string;
 }) {
+  const { search } = useLocation(); // o período do dossiê segue para a base do kit
   const { estoque, cobertura, catalogo } = dados;
   const kit = soKits(catalogo) ? catalogo[0] : null;
   const kitsNaFamilia = kit ? 0 : catalogo.filter((c) => c.ehKit).length;
@@ -29,7 +30,7 @@ export function EstoqueDossie({ dados, familia, voltar, className }: {
       <>
         Estoque compartilhado com a base{' '}
         {base ? (
-          <Link to={`/faturamento/sku/${encodeURIComponent(base)}`} state={{ de: voltar }}
+          <Link to={`/faturamento/sku/${encodeURIComponent(base)}${search}`} state={{ de: voltar }}
             className="rounded-sm font-medium text-foreground underline underline-offset-2 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             {base}
           </Link>
