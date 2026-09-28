@@ -31,7 +31,7 @@ export function useEstadoSyncPromocoes() {
  *  `finished` mas não reescreve nem apaga a linha do item — ela fica `started`/`pending` para
  *  sempre. Sem checar `ml_promocoes.status`, o aviso dispara pra sempre numa campanha morta. */
 export function useParticipacoesPorItem(mlItemIds: string[]) {
-  const { data: modulosHabilitados } = useModulosHabilitados();
+  const { data: modulosHabilitados } = useModulosHabilitados({ retryOnMount: false });
   const habilitado = !!modulosHabilitados?.includes('promocoes');
   const ids = [...new Set(mlItemIds)].sort();
   return useQuery({
