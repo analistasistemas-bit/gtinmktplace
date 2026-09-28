@@ -18,6 +18,7 @@ export interface Promocao {
 export interface CorProjetada {
   variation_id: number | null; cor: string | null; sku: string | null;
   custo: number | null; piso: number | null; origem: string | null;
+  comissao_pct: number | null; comissao_fixa: number | null; frete: number | null; aliquota_pct: number | null;
   liquido: number | null; ate_quanto: number | null; ate_quanto_motivo: 'qualquer' | 'nenhum' | null;
   semaforo: SemaforoPromo; motivo: string | null;
 }

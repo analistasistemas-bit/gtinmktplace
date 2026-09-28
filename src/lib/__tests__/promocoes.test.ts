@@ -7,7 +7,8 @@ import {
 const agora = Date.parse('2026-10-06T12:00:00Z');
 const dia = 86_400_000;
 const cor = (o: Partial<CorProjetada>): CorProjetada => ({
-  variation_id: null, cor: null, sku: null, custo: 10, piso: 20, origem: 'nacional', liquido: 25,
+  variation_id: null, cor: null, sku: null, custo: 10, piso: 20, origem: 'nacional',
+  comissao_pct: null, comissao_fixa: null, frete: null, aliquota_pct: null, liquido: 25,
   ate_quanto: null, ate_quanto_motivo: null, semaforo: 'verde', motivo: null, ...o,
 });
 const item = (projecao: CorProjetada[], pior: ItemPromocao['pior_semaforo']) =>
