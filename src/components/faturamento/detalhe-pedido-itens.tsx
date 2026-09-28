@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMarkup } from '@/lib/formato';
@@ -20,8 +21,10 @@ const PCT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
  * Faturamento continua mostrando o líquido já líquido de imposto (default). O Markup não muda: nos
  * dois casos usa `it.markup`, que continua calculado líquido de imposto.
  */
-export function DetalhePedidoItens({ pedido: p, liquidoBruto = false, destaque }: {
+export function DetalhePedidoItens({ pedido: p, liquidoBruto = false, destaque, linkSku = false }: {
   pedido: Pedido; liquidoBruto?: boolean;
+  /** Faturamento › Vendas: o código do item abre o dossiê do SKU. */
+  linkSku?: boolean;
   /** Dossiê do SKU: marca os itens destes códigos num pedido que também tem outros produtos. */
   destaque?: { codigos: ReadonlySet<string>; rotulo: string };
 }) {
@@ -91,7 +94,11 @@ export function DetalhePedidoItens({ pedido: p, liquidoBruto = false, destaque }
                   </span>
                 </TableCell>
                 <TableCell>{it.cor ?? '—'}</TableCell>
-                <TableCell className="tabular-nums">{it.codigo ?? '—'}</TableCell>
+                <TableCell className="tabular-nums">
+                  {linkSku && it.codigo?.trim()
+                    ? <Link to={`/faturamento/sku/${encodeURIComponent(it.codigo.trim())}`} className="underline-offset-2 hover:underline">{it.codigo}</Link>
+                    : it.codigo ?? '—'}
+                </TableCell>
                 <TableCell className="tabular-nums">{it.ean ?? '—'}</TableCell>
                 <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
                 <TableCell className="text-right tabular-nums">{fmtBRL(it.unit_price)}</TableCell>

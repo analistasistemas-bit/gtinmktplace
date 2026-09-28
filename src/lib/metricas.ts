@@ -112,3 +112,19 @@ export function periodoFromParams(get: (k: string) => string | null): Periodo {
   if (dias === 7 || dias === 30 || dias === 90) return { tipo: 'preset', dias };
   return { tipo: 'preset', dias: 30 };
 }
+
+/** Padrão do ranking Vendas SKU (e do link dele para o dossiê). */
+export const MES_ATUAL: Periodo = { tipo: 'mes_atual' };
+
+/** Período da query; sem nenhum parâmetro de período, o `padrao` da tela. */
+export function periodoDaQuery(q: URLSearchParams, padrao: Periodo): Periodo {
+  return ['periodo', 'dias', 'de'].some((k) => q.has(k)) ? periodoFromParams((k) => q.get(k)) : padrao;
+}
+
+/** Troca só os parâmetros de período da query, preservando os demais (ex.: ?aba=sku). */
+export function comPeriodo(search: string | URLSearchParams, p: Periodo): URLSearchParams {
+  const q = new URLSearchParams(search);
+  for (const k of ['periodo', 'dias', 'de', 'ate']) q.delete(k);
+  for (const [k, v] of Object.entries(periodoToParams(p))) q.set(k, v);
+  return q;
+}

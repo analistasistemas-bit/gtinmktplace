@@ -42,7 +42,7 @@ const dossie = (over: Partial<DossieSku> = {}): DossieSku => ({
   ...over,
 });
 
-function renderPagina(estado: EstadoDossie, dados: DossieSku | null, rota: string | { pathname: string; state: unknown } = '/faturamento/sku/00123', ads: unknown = null) {
+function renderPagina(estado: EstadoDossie, dados: DossieSku | null, rota: string | { pathname: string; search?: string; state: unknown } = '/faturamento/sku/00123', ads: unknown = null) {
   vi.mocked(useSkuDossie).mockReturnValue({ estado, dados, ads, refetch: vi.fn(), refetchTrafego: vi.fn(), refetchAds: vi.fn() } as never);
   render(
     <MemoryRouter initialEntries={[rota]}>
@@ -67,10 +67,20 @@ describe('SkuDossie', () => {
   it('link da família na trilha leva a origem (state.de) adiante', () => {
     const de = '/faturamento?aba=sku&busca=dry';
     renderPagina('ok', dossie(), { pathname: '/faturamento/sku/00123', state: { de } });
-    expect(screen.getByRole('link', { name: 'Vendas por SKU' })).toHaveAttribute('href', de);
+    expect(screen.getByRole('link', { name: 'Vendas SKU' })).toHaveAttribute('href', `${de}&dias=30`);
     fireEvent.click(screen.getByRole('link', { name: 'Camiseta Dry' }));
     expect(vi.mocked(useSkuDossie).mock.calls.at(-1)?.[0]).toEqual({ tipo: 'familia', codigoPai: 'P1' });
-    expect(screen.getByRole('link', { name: 'Vendas por SKU' })).toHaveAttribute('href', de);
+    expect(screen.getByRole('link', { name: 'Vendas SKU' })).toHaveAttribute('href', `${de}&dias=30`);
+  });
+
+  it('período da URL: dossiê usa o do ranking, a volta o preserva e a trilha começa em Faturamento', () => {
+    const q = '?de=2026-06-29&ate=2026-09-26';
+    renderPagina('ok', dossie(), { pathname: '/faturamento/sku/00123', search: q, state: { de: `/faturamento?aba=sku&${q.slice(1)}` } });
+    expect(vi.mocked(useSkuDossie).mock.calls.at(-1)?.[1]).toEqual({ tipo: 'range', desde: '2026-06-29', ate: '2026-09-26' });
+    const trilha = screen.getByRole('navigation', { name: 'Trilha de navegação' });
+    expect(within(trilha).getAllByRole('link').map((l) => l.textContent)).toEqual(['Faturamento', 'Vendas SKU', 'Camiseta Dry']);
+    expect(within(trilha).getByRole('link', { name: 'Vendas SKU' })).toHaveAttribute('href', `/faturamento?aba=sku&${q.slice(1)}`);
+    expect(within(trilha).getByRole('link', { name: 'Camiseta Dry' })).toHaveAttribute('href', `/faturamento/sku/familia/P1${q}`);
   });
 
   it('sem vendas não repete o aviso na faixa de qualidade', () => {
@@ -83,9 +93,9 @@ describe('SkuDossie', () => {
     expect(screen.getByRole('heading', { level: 1, name: 'Camiseta Dry Azul M' })).toBeInTheDocument();
     expect(screen.getByText(/Histórico desde 10\/05\/2026/)).toBeInTheDocument();
     expect(screen.getByText('Em alta')).toBeInTheDocument();
-    expect(screen.getByText('Faturamento')).toBeInTheDocument();
+    expect(screen.getByText('Faturamento', { ignore: 'nav *' })).toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Resultado no período' })).getByText('20,0%')).toBeInTheDocument(); // taxa de devolução 1/5
-    expect(screen.getByRole('link', { name: /Vendas por SKU/ })).toHaveAttribute('href', '/faturamento?aba=sku');
+    expect(screen.getByRole('link', { name: 'Vendas SKU' })).toHaveAttribute('href', '/faturamento?aba=sku&dias=30');
     expect(vi.mocked(useSkuDossie).mock.calls.at(-1)?.[0]).toEqual({ tipo: 'sku', codigo: '00123' });
   });
 
@@ -112,7 +122,7 @@ describe('SkuDossie', () => {
     renderPagina('sem_vendas', dossie({ linhaPeriodo: null, tendencia: null, historicoDesde: null, ultimaVenda: null }));
     expect(screen.getByText('Sem vendas registradas desde a entrada no PubliAI')).toBeInTheDocument();
     expect(screen.getAllByText('12 un.').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Faturamento')).not.toBeInTheDocument();
+    expect(screen.queryByText('Faturamento', { ignore: 'nav *' })).not.toBeInTheDocument();
     // posição de hoje (estoque, campanhas) aparece; blocos do período não
     expect(screen.getByRole('region', { name: 'Estoque' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Campanhas' })).toBeInTheDocument();
@@ -305,7 +315,7 @@ describe('SkuDossie: tráfego e oferta', () => {
     expect(within(reg).getAllByText('0,071 un./visita').length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole('tab', { name: 'Vendas' }));
     expect(screen.getByText('Sem vendas registradas desde a entrada no PubliAI')).toBeInTheDocument();
-    expect(screen.queryByText('Faturamento')).not.toBeInTheDocument();
+    expect(screen.queryByText('Faturamento', { ignore: 'nav *' })).not.toBeInTheDocument();
   });
 
   it('SKU exclusivo: "deste SKU", unidades por visita como razão (nunca %), preço observado com hora BRT e cobertura', async () => {
@@ -343,7 +353,7 @@ describe('SkuDossie: tráfego e oferta', () => {
     const reg = await abrirTrafego(traf({ alcance: 'anuncio',
       porMlb: [{ mlb: 'MLB2', vinculo: 'compartilhado', codigos: ['00123', '00124', '00125'], considerado: true }] }));
     expect(within(reg).getAllByText(/do anúncio inteiro \(compartilhado com 2 variações\)/).length).toBeGreaterThan(0);
-    expect(within(reg).getByText('anúncio compartilhado · MLB2')).toBeInTheDocument();
+    expect(within(reg).getByText('do anúncio · compartilhado com 2 variações')).toBeInTheDocument();
     expect(reg.textContent).not.toMatch(/3 códigos/);
     expect(within(reg).getByTestId('detalhe-trafego')).toHaveTextContent(/Unidades do anúncio/);
   });
@@ -357,6 +367,20 @@ describe('SkuDossie: tráfego e oferta', () => {
     const lista = within(reg).getByRole('list', { name: /Anúncios/ });
     expect(within(lista).getByText('fora da métrica')).toBeInTheDocument();
     expect(within(lista).getByText('entra na métrica')).toBeInTheDocument();
+  });
+
+  it('família com anúncio só dela (vários códigos): selo "família", nunca "anúncio compartilhado"', async () => {
+    const reg = await abrirTrafego(traf({ alcance: 'familia', porMlb: [
+      { mlb: 'MLB9', vinculo: 'compartilhado', codigos: ['00123', '00124'], considerado: true },
+    ] }), '/faturamento/sku/familia/P1');
+    expect(within(reg).getByText('família')).toBeInTheDocument();
+    expect(reg.textContent).not.toMatch(/anúncio compartilhado|do anúncio ·/);
+    expect(within(within(reg).getByRole('list', { name: /Anúncios/ })).queryByText('compartilhado')).not.toBeInTheDocument();
+  });
+
+  it('SKU exclusivo: selo "deste SKU"', async () => {
+    const reg = await abrirTrafego(traf());
+    expect(within(reg).getByText('deste SKU')).toBeInTheDocument();
   });
 
   it('indisponível vem antes de sem_coleta: SKU sem MLB não lê "a coleta ainda não começou"', async () => {
@@ -463,11 +487,11 @@ describe('SkuDossie: estoque, devoluções, UFs, mix e campanhas', () => {
     renderPagina('ok', dossie({
       catalogo: [{ ...cat, ehKit: true, kitMultiplicador: 2, kitBaseCodigo: '00100', estoqueKit: 3 }],
       estoque: 3, cobertura: 'compartilhado',
-    }));
+    }), '/faturamento/sku/00123?dias=90');
     const est = screen.getByRole('region', { name: 'Estoque' });
     expect(within(est).getByText(/estoque compartilhado com a base/i)).toBeInTheDocument();
     expect(within(est).getByText('3 kits')).toBeInTheDocument();
-    expect(within(est).getByRole('link', { name: /00100/ })).toHaveAttribute('href', '/faturamento/sku/00100');
+    expect(within(est).getByRole('link', { name: /00100/ })).toHaveAttribute('href', '/faturamento/sku/00100?dias=90');
     expect(within(est).queryByText(/\d dias/)).not.toBeInTheDocument();
   });
 
@@ -543,11 +567,11 @@ describe('SkuDossie: estoque, devoluções, UFs, mix e campanhas', () => {
     renderPagina('ok', dossie({ titulo: 'Camiseta Dry', codigos: ['00123', '00124'], mix: [
       { codigo: '00123', titulo: 'Camiseta Dry Azul M', unidades: 6, participacaoUnidades: 1, lucro: 90, deltaLucro: 10, semVendas: false, novaNoPeriodo: false },
       { codigo: '00124', titulo: 'Camiseta Dry Azul G', unidades: 0, participacaoUnidades: 0, lucro: null, deltaLucro: -15, semVendas: true, novaNoPeriodo: false },
-    ] }), { pathname: '/faturamento/sku/familia/P1', state: { de } });
+    ] }), { pathname: '/faturamento/sku/familia/P1', search: '?dias=90', state: { de } });
     const reg = screen.getByRole('region', { name: 'Mix da família' });
     expect(within(reg).getByText('sem vendas')).toBeInTheDocument();
     expect(within(reg).getByText('100,0%')).toBeInTheDocument();
-    expect(within(reg).getByRole('link', { name: /Camiseta Dry Azul G/ })).toHaveAttribute('href', '/faturamento/sku/00124');
+    expect(within(reg).getByRole('link', { name: /Camiseta Dry Azul G/ })).toHaveAttribute('href', '/faturamento/sku/00124?dias=90');
     expect(within(reg).getAllByRole('link').every((a) => !a.getAttribute('href')?.includes('familia:'))).toBe(true);
   });
 
@@ -595,7 +619,7 @@ describe('RankingSku → dossiê', () => {
           tendencias={new Map()} coberturas={new Map()} alertas={new Map()} abc={new Map()} ordem="lucro" onOrdem={() => {}} />
       </QueryClientProvider></MemoryRouter>,
     );
-    expect(screen.getByRole('link', { name: /Camiseta Dry Azul M/ })).toHaveAttribute('href', '/faturamento/sku/00123');
+    expect(screen.getByRole('link', { name: /Camiseta Dry Azul M/ })).toHaveAttribute('href', '/faturamento/sku/00123?periodo=mes_atual');
     const avulso = screen.getByText('Avulso');
     expect(avulso.closest('a')).toBeNull();
     expect(within(screen.getByRole('table')).getAllByRole('link')).toHaveLength(1);
@@ -614,7 +638,7 @@ describe('RankingSku → dossiê', () => {
     );
     const links = within(screen.getByRole('table')).getAllByRole('link');
     expect(links).toHaveLength(1);
-    expect(links[0]).toHaveAttribute('href', '/faturamento/sku/familia/P1');
+    expect(links[0]).toHaveAttribute('href', '/faturamento/sku/familia/P1?periodo=mes_atual');
   });
 });
 

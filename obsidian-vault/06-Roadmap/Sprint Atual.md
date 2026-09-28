@@ -68,11 +68,13 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > `docs/superpowers/plans/2026-09-27-vendas-sku-fatia-3.md`) e posição na busca (fora de escopo,
 > ToS 7.6 do ML).
 >
-> **Incidente pré-existente, não causado pela Vendas SKU (diagnosticado em 27/09):**
-> `pulse-coletar` (tier completo), `backfill-faturamento` e, às vezes, `reconciliar-faturamento`
-> estouram o limite de 2 s de CPU por requisição da edge (QStash 546); `backfill-faturamento` não
-> completa desde ~10/09. Correção recomendada: fan-out por org via QStash (ADR a escrever),
-> registrada em `docs/TASKS.md` para outro agente, em branch separada.
+> **Incidente pré-existente, não causado pela Vendas SKU (diagnosticado em 27/09, resolvido em
+> 28/09):** `pulse-coletar` (tier completo), `backfill-faturamento` e, às vezes,
+> `reconciliar-faturamento` estouravam o limite de 2 s de CPU por requisição da edge (QStash 546);
+> `backfill-faturamento` sem execução completa desde ~10/09. Correção: fan-out por org via QStash
+> ([[Índice de ADRs|ADR-0173]]) — deployado e ativo em produção desde 28/09, com a recuperação
+> histórica do backfill feita; falta a validação de 3 dias (a partir de 01/10) para o ADR virar
+> `Aceito`.
 
 ## Passo anterior (2026-09-20) — EM PRODUÇÃO
 

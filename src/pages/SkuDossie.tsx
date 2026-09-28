@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { AlertTriangle, CloudOff, PackageOpen, SearchX } from 'lucide-react';
 import { Breadcrumbs, type BreadcrumbItem } from '@/components/ui/breadcrumbs';
 import { Button } from '@/components/ui/button';
@@ -22,7 +22,7 @@ import { CampanhasDossie } from '@/components/sku-dossie/campanhas-dossie';
 import { useSkuDossie } from '@/hooks/useSkuDossie';
 import { cn } from '@/lib/utils';
 import { formatarNomeProduto } from '@/lib/texto';
-import { rotuloAnterior, type Periodo } from '@/lib/metricas';
+import { comPeriodo, periodoFromParams, rotuloAnterior, type Periodo } from '@/lib/metricas';
 import type { Passo } from '@/lib/calendario-brt';
 import type { AlvoDossie } from '@/lib/sku-dossie';
 
@@ -72,20 +72,26 @@ export default function SkuDossie() {
   const { codigo, codigoPai } = useParams();
   const location = useLocation();
   const de = (location.state as { de?: unknown } | null)?.de;
-  const voltar = typeof de === 'string' && de.startsWith('/') ? de : ORIGEM_PADRAO;
+  // Período na URL (o ranking manda o dele); sem parâmetro, 30 dias.
+  const [search, setSearch] = useSearchParams();
+  const periodo = useMemo(() => periodoFromParams((k) => search.get(k)), [search]);
+  const setPeriodo = (p: Periodo) => setSearch((prev) => comPeriodo(prev, p), { replace: true, state: location.state });
+  // O "voltar" devolve o período atual do dossiê à origem.
+  const [origem, queryOrigem] = (typeof de === 'string' && de.startsWith('/') ? de : ORIGEM_PADRAO).split('?');
+  const voltar = `${origem}?${comPeriodo(queryOrigem ?? '', periodo)}`;
 
   const alvo = useMemo<AlvoDossie>(() => (codigoPai != null
     ? { tipo: 'familia', codigoPai } : { tipo: 'sku', codigo: codigo ?? '' }), [codigo, codigoPai]);
   const familia = alvo.tipo === 'familia';
-  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
   const [passo, setPasso] = useState<Passo>('semana');
   const { estado, dados, ads, refetch, refetchTrafego, refetchAds } = useSkuDossie(alvo, periodo, passo);
 
   const cat = dados?.catalogo[0];
   const trilha: BreadcrumbItem[] = [
-    { label: 'Vendas por SKU', to: voltar },
+    { label: 'Faturamento', to: '/faturamento' },
+    { label: 'Vendas SKU', to: voltar },
     ...(!familia && cat?.codigoPai
-      ? [{ label: formatarNomeProduto(cat.nomeFamilia) || `Família ${cat.codigoPai}`, to: `/faturamento/sku/familia/${encodeURIComponent(cat.codigoPai)}`, state: { de: voltar } }]
+      ? [{ label: formatarNomeProduto(cat.nomeFamilia) || `Família ${cat.codigoPai}`, to: `/faturamento/sku/familia/${encodeURIComponent(cat.codigoPai)}?${comPeriodo('', periodo)}`, state: { de: voltar } }]
       : []),
     // Identificador curto: o título inteiro já é o h1 logo abaixo (no celular ele ocupava 3 linhas aqui).
     { label: familia ? `Família ${codigoPai}` : `Código ${codigo}` },

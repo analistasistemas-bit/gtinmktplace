@@ -49,13 +49,14 @@ Ver [[Publicação Mercado Livre]] (fluxo de publicação), [[Marketplace]] (mó
   `anuncios_externos` e enfileira `publicar-anuncio`. O worker **verifica** o status (não
   re-claima), preservando a idempotência do retry do QStash. Auth do gateway agora por
   `requireUserOrg` (org do E7).
-- **Fan-out por org dos workers agendados (ADR-0173, 2026-09-27, código pronto mas NADA ativado
-  em produção)** — `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento` estouravam
+- **Fan-out por org dos workers agendados (ADR-0173, deployado e ATIVO em produção desde
+  2026-09-28)** — `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento` estouravam
   `CPU Time exceeded` (546) processando todas as orgs numa requisição só. Correção: schedule vira
   disparador (1 mensagem QStash por org), `worker_rodadas` é a fonte da verdade (posse com lease,
   CAS do cursor), pedido que falha vira pendência por org (`worker_pendencias`). Ativação por flag
-  (`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR`), uma função por vez. Ver runbook em
-  `docs/reference/edge-functions.md`.
+  (`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR`), uma função por vez — as 3 ligadas e
+  medidas, 0 `CPUTime` pós-ativação; ADR ainda `Proposto` até a validação de 3 dias (a partir de
+  01/10). Ver runbook em `docs/reference/edge-functions.md`.
 
 ## Incidente resolvido — divergência de `verify_jwt`
 

@@ -5,6 +5,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { AbaVendas } from '@/components/faturamento/aba-vendas';
 import type { Venda } from '@/lib/faturamento';
 
@@ -75,7 +76,8 @@ vi.mock('@/hooks/useImageUrl', () => ({
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function renderAba() {
-  return render(<AbaVendas />);
+  // O detalhe do pedido linka o SKU ao dossiê: na app a aba sempre vive dentro do Router.
+  return render(<MemoryRouter><AbaVendas /></MemoryRouter>);
 }
 
 describe('AbaVendas — visão por pedido', () => {

@@ -22,14 +22,15 @@ caminho unitário separado. 10 tasks (SDD, revisor Grok 4.7 xHigh por task), rel
 - [x] Task 10: esta documentação (ADR-0174 aceito, edge-functions.md, modelo-de-dados.md, glossário).
 - [ ] **Deploy (pendente, faz o controlador):** `supabase db push` + `supabase functions deploy operacoes-massa` + confirmar versão ativa antes de considerar a entrega em produção.
 
-## Fan-out por org — incidente CPU 546 (ADR-0173) — código pronto, NADA deployado/ativado
+## Fan-out por org — incidente CPU 546 (ADR-0173) — DEPLOYADO e ATIVO, validação de 3 dias pendente
 
-Correção do incidente diagnosticado em 27/09 (pendência abaixo): `pulse-coletar`,
-`backfill-faturamento` e `reconciliar-faturamento` estouravam `CPU Time exceeded` (546) por
-processar todas as orgs numa única requisição. Plano em
-`docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`, relatórios em
+Correção do incidente diagnosticado em 27/09: `pulse-coletar`, `backfill-faturamento` e
+`reconciliar-faturamento` estouravam `CPU Time exceeded` (546) por processar todas as orgs numa
+única requisição. Plano em `docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`, relatórios em
 `.superpowers/sdd/2026-09-27-fanout-workers-cpu/`. Runbook de ativação/rollback em
-[edge-functions.md](reference/edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback).
+[edge-functions.md](reference/edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback);
+números da implantação em
+[ADR-0173 → Implantação](decisions/0173-fanout-por-org-workers-agendados-cpu.md#implantação-2026-09-28).
 
 - [x] Task 1: migration `worker_rodadas`/`worker_pendencias` + RPCs de posse/CAS/pendência + teste SQL de concorrência.
 - [x] Task 2: protocolo compartilhado `_shared/rodada/rodada.ts` (`executarMensagem`, posse/CAS/notificação durável).
@@ -38,7 +39,20 @@ processar todas as orgs numa única requisição. Plano em
 - [x] Task 5: `pulse-coletar` em rodada por org (backoff por produto) atrás de `FANOUT_PULSE`.
 - [x] Task 6: `reconciliar-faturamento` em rodada por org atrás de `FANOUT_RECONCILIAR`.
 - [x] Task 7: equivalência do líquido MP por pedido (varredura × leitura por pedido, `mp-por-pedido.test.ts` — os 4 casos batem, sem divergência) + esta documentação (ADR-0173, modelo de dados, runbook).
-- [ ] **Task 8 (pendente): portão local, revisão Grok 4.7 xhigh, push + CI, deploy com as 3 flags DESLIGADAS, ativação por função com OK do Diego (backfill → pulse → reconciliar), validação de 3 dias em produção, recuperação histórica do backfill.** Nenhuma flag setada até aqui — os 3 workers seguem no caminho legado de hoje.
+- [x] **Task 8: deploy (28/09) — migration `20260927205804_worker_rodadas.sql` em produção, 17 funções
+  redeployadas, 3 flags ligadas (backfill → pulse → reconciliar), ativação medida (0 `CPUTime`;
+  máximo de CPU por função: backfill 311 ms, pulse 1.152 ms, reconciliar 299 ms) e recuperação
+  histórica do backfill (1.241 vendas regravadas, 0 falhas).** Detalhes em
+  [ADR-0173 → Implantação](decisions/0173-fanout-por-org-workers-agendados-cpu.md#implantação-2026-09-28).
+- [ ] **Validar 3 dias em produção a partir de 01/10** (0 `CPUTime`; nenhuma `worker_rodadas`
+  `rodando` com posse vencida > 1h; `worker_pendencias` sem crescimento; ≤ 1 notificação por
+  `(user_id, chave)`) — só então o ADR-0173 passa de `Proposto` para `Aceito`.
+- [ ] Follow-up: pack de mensagens com 5xx permanente trava a etapa `mensagens` da org até o próximo ciclo.
+- [ ] Follow-up: pedido com leitura do MP nula e sem pendência prévia não é retentado depois de sair da janela de 72h (reconciliar e backfill — Ruling 14 do ADR).
+- [ ] Follow-up: teste de concorrência `supabase/tests/worker_rodadas_concorrencia.sh` usa `sleep 1` (pode oscilar).
+- [ ] Follow-up: contagem de descarte pode dobrar se um lote for refeito.
+- [ ] Follow-up: `contaExternaId` não numérico vira `"NaN"` no frete do Pulse.
+- [ ] Follow-up: `materializar-metricas` sem schedule em produção (0 invocações em 7 dias até 27/09) — investigar fora deste ADR.
 
 ## Vendas SKU — Fatias 1, 2a, 2b e 2c (ADR-0172) — EM PRODUÇÃO desde 2026-09-27
 
@@ -53,6 +67,15 @@ concluiu `ok` para tráfego e Ads, carga inicial completa nas 3 orgs (Avil, DSA,
 erro de CPU. Front validado em produção (conta VALIDATION, só leitura): ranking, dossiê e as abas
 Vendas / Tráfego e oferta / Ads OK, sem regressão na aba Vendas do Faturamento, 0 erros de console.
 Ver [ADR-0172](decisions/0172-vendas-sku-analise-por-variacao.md).
+
+### Correções pós-auditoria do menu Faturamento (2026-09-27)
+
+Auditoria de navegação/valores (Avil, só leitura) achou 4 bugs; corrigidos só no frontend, sem deploy de backend.
+
+- [x] Período ranking ↔ dossiê na URL (`periodoDaQuery`/`comPeriodo` em `src/lib/metricas.ts`): ida e volta no mesmo período, inclusive entre dossiês (Mix, base do kit, família); trilha Faturamento › Vendas SKU › …; paridade conferida em 29/06–26/09 (SKU 02989271).
+- [x] Faturamento › Vendas: código do item abre `/faturamento/sku/<código>` (prop `linkSku`; Financeiro inalterado).
+- [x] Tráfego e oferta: selo pelo `alcance` (deste SKU / do anúncio · compartilhado com N variações / família), não pelo vínculo.
+- [x] Tráfego: 0 visitas medidas = anel na base + legenda; ausência de dado segue lacuna.
 
 ### Fatia 2c: Ads no dossiê do SKU
 
@@ -112,8 +135,9 @@ Lucro/Markup/Margem s/ venda, ABC e Tendência. Ver [ADR-0172](decisions/0172-ve
   fora dos grupos listados) ou mostrar o Lucro após Ads com aviso ("~N % do gasto de Ads da conta
   não pôde ser atribuído"). Medido em 27/09: Avil ~3,1 %, DSA ~7,4 %, Daludi Shop ~14 %.
 - [x] **Incidente de CPU pré-existente (não causado pela Vendas SKU), diagnosticado em 27/09** —
-  ver a seção "Fan-out por org — incidente CPU 546 (ADR-0173)" no topo deste arquivo: Tasks 1-7
-  concluídas (código pronto), Task 8 (deploy/ativação em produção) ainda pendente.
+  ver a seção "Fan-out por org — incidente CPU 546 (ADR-0173)" no topo deste arquivo: deployado e
+  ativo em produção desde 28/09; falta só a validação de 3 dias (a partir de 01/10) para o ADR
+  virar `Aceito`.
 
 ## Renovação proativa do token ML (ADR-0171) — 2026-09-26
 

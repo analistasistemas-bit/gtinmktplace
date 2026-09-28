@@ -145,7 +145,7 @@ function LinhaPedido({ p, isNovo, onVisto }: { p: Pedido; isNovo?: boolean; onVi
       {aberto && (
         <TableRow className="bg-muted/20 hover:bg-muted/20">
           <TableCell colSpan={11} className="p-0">
-            <DetalhePedidoItens pedido={p} />
+            <DetalhePedidoItens pedido={p} linkSku />
           </TableCell>
         </TableRow>
       )}

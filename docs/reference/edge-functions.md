@@ -77,13 +77,13 @@
 | responder-pergunta | true | HTTP (frontend) | não |
 | responder-mensagem | true | HTTP (frontend) | não |
 | sugerir-resposta-pergunta | true | HTTP (frontend) | não (stateless) |
-| backfill-faturamento | false | HTTP (JWT) **ou** QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_BACKFILL` (ADR-0173, código pronto, ainda não deployado) | sim (upsert; posse + CAS do cursor no modo fan-out) |
-| reconciliar-faturamento | false | QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_RECONCILIAR` (ADR-0173, código pronto, ainda não deployado) | sim (upsert; posse + CAS do cursor no modo fan-out) |
+| backfill-faturamento | false | HTTP (JWT) **ou** QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_BACKFILL` (ADR-0173, ativo em produção desde 28/09) | sim (upsert; posse + CAS do cursor no modo fan-out) |
+| reconciliar-faturamento | false | QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_RECONCILIAR` (ADR-0173, ativo em produção desde 28/09) | sim (upsert; posse + CAS do cursor no modo fan-out) |
 | **Monitoramento / alertas** ||||
 | monitorar-moderados | false | HTTP (JWT manual) ou QStash | sim |
 | notificar-liberacao | false | QStash schedule | sim (1×/dia BRT) |
 | **Pulse (ADR-0119)** ||||
-| pulse-coletar | false | HTTP (JWT manual) ou QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_PULSE` (ADR-0173, código pronto, ainda não deployado) | sim (upsert por dia; `preco_caiu` uma vez por produto/par de preços/dia UTC; posse + CAS do cursor no modo fan-out) |
+| pulse-coletar | false | HTTP (JWT manual) ou QStash schedule (legado) **ou** QStash fan-out por org atrás de `FANOUT_PULSE` (ADR-0173, ativo em produção desde 28/09) | sim (upsert por dia; `preco_caiu` uma vez por produto/par de preços/dia UTC; posse + CAS do cursor no modo fan-out) |
 | pulse-adicionar | true | HTTP (frontend) | sim (upsert por cpid) |
 | pulse-sonar-vendas | true | HTTP (frontend) | sim (leitura + grava `sonar_snapshots`; cache Redis 7d por termo) |
 | pulse-sonar-visitas | true | HTTP (frontend) | sim (leitura; cache Redis 24h por item) |
@@ -205,13 +205,15 @@ escopo do ADR-0173, registrado aqui só para não se perder.
 
 ## Fan-out por org (ADR-0173): protocolo, ativação e rollback
 
-**Status em 2026-09-27: nada deployado em produção ainda.** O código do consumidor (`MsgOrg`) está
-pronto nas 3 funções, mas o deploy é a Task 8 (pendente, com OK do Diego) — até lá os 3 schedules
-continuam no caminho legado de hoje (execução única, todas as orgs, sem lotes), sem nenhum código
-novo em produção. **Após o deploy** (Task 8, Step 4), o consumidor fica ativo com as flags
-`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR` desligadas — os schedules seguem no legado até
-cada flag ser ligada. Ativação é posterior, por função, com OK do Diego antes de cada uma (ver
-runbook abaixo). Modelo de dados em [modelo-de-dados.md](modelo-de-dados.md#fan-out-por-org-dos-workers-agendados-adr-0173).
+**Status em 2026-09-28: deployado e ATIVO em produção nas 3 funções**, com as 3 flags ligadas
+(`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR=1`) e a recuperação histórica do backfill já
+feita. Ativação medida por função (backfill → pulse → reconciliar), sem nenhum `CPUTime` desde a
+virada — detalhes e números em
+[ADR-0173 → Implantação (2026-09-28)](../decisions/0173-fanout-por-org-workers-agendados-cpu.md#implantação-2026-09-28).
+ADR ainda **Proposto**: falta só a validação de 3 dias em produção (a partir de 01/10) para virar
+`Aceito`. O runbook abaixo (ativação/rollback) segue valendo tal como está — é o procedimento usado
+na ativação e o que vale para reativar ou rollback. Modelo de dados em
+[modelo-de-dados.md](modelo-de-dados.md#fan-out-por-org-dos-workers-agendados-adr-0173).
 
 **Por que:** `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento` processavam todas
 as organizações numa única requisição e passaram a estourar `CPU Time exceeded` (HTTP 546, teto de
@@ -240,8 +242,8 @@ mesmo por engano.
    o tamanho do lote, ou abrir tarefa para a etapa que não cabe.
 4. Validação em produção por 3 dias (só leitura) antes de considerar estável: 0 shutdowns
    `CPUTime`; `worker_rodadas` sem linha `rodando` com posse vencida há mais de 1h; `notificacoes`
-   `pulse` com no máximo 1 linha por `(usuário, chave)`; `worker_pendencias` por org visível, com as
-   ativas decrescendo.
+   `pulse` com no máximo 1 linha por `(usuário, chave)`; `worker_pendencias` por org visível, sem
+   crescimento.
 
 ### Rollback
 
@@ -1329,11 +1331,11 @@ um smoke test contra Postgres real antes do primeiro deploy.
   orientação de responder dentro da reclamação — o app não tem acesso ao canal de mediação.
 - **sugerir-resposta-pergunta** — IA sugere resposta (não envia ao ML). Usada por Perguntas e Mensagens.
 - **backfill-faturamento** — sincroniza um período retroativo. Dois modos: usuário logado (JWT)
-  ou todos os usuários (QStash). Não busca shipment (frete fica nulo). **ADR-0173 (2026-09-27):**
-  código pronto para um 3º modo, fan-out por org atrás de `FANOUT_BACKFILL`, mas **ainda não
-  deployado** (Task 8 pendente) — ver
-  [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). Até o
-  deploy, só o modo QStash legado descrito abaixo existe em produção.
+  ou todos os usuários (QStash). Não busca shipment (frete fica nulo). **ADR-0173:** desde 28/09,
+  o schedule QStash roda no 3º modo, fan-out por org atrás de `FANOUT_BACKFILL` (ligada em
+  produção) — ver
+  [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). O modo
+  legado (execução única, todas as orgs) só volta se a flag for desligada (rollback).
   **Resposta** (desde 2026-09-11): `{ ok, sincronizados, conexoesComFalha, pedidosComFalha, conexoesSemMP }`.
   `conexoesSemMP` conta conexões em que `carregarLiquidoMP` devolveu `null`. O que fica pendente é
   **`money_release_date` e `estorno`** — **não** o `liquido`, que sai de `calcularLiquido` com dados
@@ -1362,8 +1364,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   é a mais recente (o laço vai do presente para trás): o estado acessório segue atualizado uma vez
   por sincronização. O schedule do QStash **não** manda a flag — lá é execução única e precisa
   fazer tudo. Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
-  ⚠️ **Não tem a guarda de orçamento que o `reconciliar-faturamento` ganhou em 31/07** — por isso
-  ainda é o worker de faturamento que estoura. Medido no schedule (`dias:7`, todas as orgs, só
+  ⚠️ **Histórico até 27/09 — não tinha a guarda de orçamento que o `reconciliar-faturamento` ganhou
+  em 31/07:** até a ativação do ADR-0173 (fan-out por org, 28/09), era o worker de faturamento que
+  estourava. Resolvido: 0 shutdowns `CPUTime` na checagem de 28/09 01:07 UTC. Medições históricas
+  do caminho legado (`dias:7`, todas as orgs, só
   ciclos sem retry): mediana **70s em 27/07 → 81s em 03/08**, ~+1,6s/dia, com **5 falhas** no
   período — 4 timeouts (546 em 30/07, 31/07 e 02/08; 504 em 30/07) e um 520 em 02/08 — todas
   salvas pelo retry do QStash. (Ciclos de 233–253s nos eventos são tentativa + retry somados, não
@@ -1375,16 +1379,17 @@ um smoke test contra Postgres real antes do primeiro deploy.
   ofensor: `listarPacksDeVendas` tem `limite = 200`, então é caro porém constante.
   Consequência prática:
   encolher a janela (30→7 no schedule em 27/07, e no botão "Sincronizar" em 03/08 após um 546) só
-  compra tempo. Correção de raiz pendente: portar `ORCAMENTO_MS` + retomabilidade do
-  `reconciliar-faturamento`.
+  comprava tempo. Correção de raiz: fan-out por org com lotes retomáveis (ADR-0173), em vez de
+  portar `ORCAMENTO_MS`/retomabilidade do modelo do `reconciliar-faturamento` — ativa em produção
+  desde 28/09.
   Nota sobre o caminho manual: o botão é **single-org** (`scopedOrgId` pelo JWT) e as medições
   acima são do schedule, que percorre todas as conexões — o 546 do botão em 30 dias (02/08) é
   consistente com os 129s medidos em 27/07 mais esse crescimento, mas não há cronometragem direta
   do caminho manual.
-- **reconciliar-faturamento** *(schedule)* — **ADR-0173 (2026-09-27):** código pronto para um modo
-  fan-out por org atrás de `FANOUT_RECONCILIAR`, mas **ainda não deployado** (Task 8 pendente) —
-  ver [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). Até
-  o deploy, só o caminho legado abaixo existe em produção.
+- **reconciliar-faturamento** *(schedule)* — **ADR-0173:** desde 28/09, o schedule roda no modo
+  fan-out por org atrás de `FANOUT_RECONCILIAR` (ligada em produção) — ver
+  [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). O
+  caminho legado abaixo só volta se a flag for desligada (rollback).
   **Data de liberação do MP (ADR-0123, 18/08/2026):** o
   Passo 2 realinha `ml_vendas.money_release_date` de TODAS as vendas da org (não só as 72h) com o
   mapa de pagamentos que `carregarLiquidoMP` já carregou — `mapaLiberacaoPorOrder` (puro, indexa
@@ -1442,11 +1447,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
 - **notificar-liberacao** — alerta quando uma venda é liberada no saldo MP; idempotente por dia BRT (ADR-0040).
 
 ### Pulse (ADR-0119)
-- **pulse-coletar** — **ADR-0173 (2026-09-27):** código pronto para um modo fan-out por org (só
-  orgs com o módulo `pulse`) atrás de `FANOUT_PULSE`, com backoff por produto na coleta, mas
-  **ainda não deployado** (Task 8 pendente) — ver
-  [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). Até o
-  deploy, só o dual-mode legado abaixo existe em produção.
+- **pulse-coletar** — **ADR-0173:** desde 28/09, o modo fan-out por org (só orgs com o módulo
+  `pulse`) atrás de `FANOUT_PULSE` (ligada em produção) roda com backoff por produto na coleta —
+  ver [runbook de ativação/rollback](#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback). O
+  dual-mode legado abaixo só volta se a flag for desligada (rollback).
   Coletor server-side do radar de concorrência, dual-mode (mesmo padrão de
   `monitorar-moderados`): QStash (schedule) roda sem escopo de org — todas as conexões ML, tier do
   `body`; usuário logado (botão "Atualizar agora") escopa só a própria org, sempre tier `completo`,
