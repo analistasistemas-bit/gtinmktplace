@@ -12,8 +12,8 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 ## 📍 Passo atual (2026-09-24) — fase de melhorias iniciada
 
 > **Fase de melhorias (roadmap local `docs/Roadmap/`, não versionado).** Ordem combinada com o Diego:
-> Monitor de Frete ✅ → Central de Promoções (MVP só leitura) → Operações em Massa → Promoções V2
-> (adesão em massa) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
+> Monitor de Frete ✅ → Central de Promoções (MVP só leitura) ✅ → Operações em Massa ✅ → Promoções V2
+> (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
 >
 > **✅ Monitor de frete ([[0169-monitor-de-frete|ADR-0169]])** — alerta quando o frete de um anúncio
 > sobe >10% e ≥R$2 vs a venda anterior; switch em Configurações > Notificações (nasce desligado).

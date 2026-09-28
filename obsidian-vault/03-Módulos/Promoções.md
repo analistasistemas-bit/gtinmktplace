@@ -62,6 +62,14 @@ com líquido da Central = `calcular-tarifa-ml` (Revisão), diferença ≤ R$0,00
 participando, Legacy multi-cor, frete 0 e pago); validação visual em 1440/1920/360px e estados sem
 acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corrigidos.
 
+## Operações em massa — aderir/sair (ADR-0174, 2026-09-28)
+
+- No detalhe de campanha DEAL/SMART: caixa por anúncio + "Selecionar todos"; barra "Aderir N / Sair N" no rodapé.
+- Preview: só 🟢 vem marcado; DEAL usa o preço sugerido, editável dentro da faixa; 🔴/⚪ exigem "Aderir mesmo assim".
+- Execução via QStash: relê a campanha no ML antes de escrever (item que mudou não é escrito; par de catálogo oculto é bloqueado); saída fica "Saída pedida" até o ML confirmar (conferência 5→60 min, até 24 h, depois erro).
+- Aba **Operações**: resultado por anúncio; **Reverter** = nova operação inversa com preview; já revertida mostra "Revertida em {data}".
+- Só admin executa (suporte só com acesso total). Conta ML precisa reconectar para ganhar `offers:/read-write`.
+
 ## Pendências conhecidas
 
 - Ligar módulo/alertas na Avil — decisão do Diego.

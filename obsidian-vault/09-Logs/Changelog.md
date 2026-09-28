@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-09-28
 
+**Operações em massa + Promoções V2 em produção ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]).** Admin seleciona anúncios numa campanha DEAL/SMART da Central, revisa o preview e adere ou sai de uma vez; aba Operações com resultado por anúncio e Reverter; aviso na Revisão para família participando. Plano e diff revisados pelo Grok 4.7 xHigh; preflight 619 arquivos verde; validação real na DSA (Feito / Mudou desde o preview / Bloqueado numa só operação; Reverter com saída SMART confirmada em ~5 min). Main `075bbd11`.
+
 - **Fan-out por org dos workers agendados ([[Índice de ADRs|ADR-0173]]) — deploy e ativação em
   produção.** Correção do incidente de CPU 546 (`pulse-coletar`, `backfill-faturamento`,
   `reconciliar-faturamento` estourando `CPU Time exceeded` ao processar todas as orgs numa
