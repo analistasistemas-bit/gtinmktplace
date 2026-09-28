@@ -93,7 +93,9 @@ scope do momento da autorização.
     **`offer_id` NOVO** (`OFFER-...`); a visão da campanha passa a `started` em segundos.
   - **Sair exige o `offer_id` devolvido pelo POST.** DELETE com o `CANDIDATE-...` → 200 no-op (o item segue
     `started`); com o `OFFER-...` → 200 e o item **some da visão da campanha em ~30 s** (`results: null`).
-    O motor tem que **gravar o `offer_id` da resposta** no item da operação — é ele que o Reverter usa.
+    O motor grava o `offer_id` da resposta do POST no item da operação, para auditoria; a saída usa
+    o `offer_id` que a leitura fresca da visão da campanha devolve no participante (`OFFER-...`),
+    não essa coluna.
   - `/items/{id}` não mostrou o preço promocional durante os ~2 min de participação (`price` e `deal_ids`
     inalterados) → conferência de preço não serve de prova de adesão; só a visão da campanha.
 

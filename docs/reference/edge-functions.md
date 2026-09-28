@@ -1679,8 +1679,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
     campanha em intervalo crescente (5, 10, 20, 40 min, depois 60 min) até 24h desde o pedido; sem
     confirmação nesse prazo, vira `erro` ("O ML ainda não confirmou a saída. Confira no Seller
     Center.") — nunca fica `saida_solicitada` parado, porque o índice anti-duplicidade travaria o
-    anúncio para sempre. 401/403 do ML encerra a operação (todos os pendentes → `erro`), sem
-    reentrega.
+    anúncio para sempre. 401/403 do ML marca todos os pendentes como `erro` (sem reentrega); se
+    ainda houver saída pedida (`saida_solicitada`) em andamento, a conferência dessas continua
+    normalmente — só os pendentes são encerrados, não a operação inteira.
   - Espelha o resultado em `ml_promocao_itens.status` (aderir: `pending`/`started` lido da
     campanha; sair confirmado: DEAL volta a `candidate`, SMART tem a linha apagada) — best-effort,
     o `sincronizar-promocoes` corrige depois.

@@ -29,12 +29,15 @@ export function useEstadoSyncPromocoes() {
  *  sem embed.
  *  Fix round 1 (achado 1): `encerrarAusentes` (`_shared/promocoes/deps.ts`) marca a CAMPANHA
  *  `finished` mas não reescreve nem apaga a linha do item — ela fica `started`/`pending` para
- *  sempre. Sem checar `ml_promocoes.status`, o aviso dispara pra sempre numa campanha morta. */
+ *  sempre. Sem checar `ml_promocoes.status`, o aviso dispara pra sempre numa campanha morta.
+ *  Fix round 2 (achado 3 da revisão final): RPC de módulos em erro deixa `habilitado` falso, o que
+ *  desliga esta query (`enabled: false`) — ela nunca chega a `isError`, escondendo a falha da
+ *  conferência do diálogo de publicar. Repassa o erro dos módulos no `isError` devolvido. */
 export function useParticipacoesPorItem(mlItemIds: string[]) {
-  const { data: modulosHabilitados } = useModulosHabilitados({ retryOnMount: false });
+  const { data: modulosHabilitados, isError: modulosFalhou } = useModulosHabilitados({ retryOnMount: false });
   const habilitado = !!modulosHabilitados?.includes('promocoes');
   const ids = [...new Set(mlItemIds)].sort();
-  return useQuery({
+  const query = useQuery({
     queryKey: [...QK_PROMO, 'participacoes', ids],
     enabled: habilitado && ids.length > 0,
     staleTime: 60_000,
@@ -63,6 +66,7 @@ export function useParticipacoesPorItem(mlItemIds: string[]) {
       return mapa;
     },
   });
+  return { ...query, isError: query.isError || modulosFalhou };
 }
 
 /** MLBs de família User Products (ADR-0088): cada cor é um item ML próprio, gravado em

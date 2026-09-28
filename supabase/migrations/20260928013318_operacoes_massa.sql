@@ -23,7 +23,8 @@ create table public.operacoes_massa_itens (
   preco             numeric,               -- DEAL: deal_price pedido; SMART: preço da oferta (informativo)
   semaforo          text check (semaforo in ('verde','amarelo','vermelho','indisponivel')),
   confirmado_risco  boolean not null default false,
-  offer_id          text,                  -- SMART: OFFER-... devolvido pelo POST (usado pelo Reverter)
+  offer_id          text,                  -- SMART: OFFER-... devolvido pelo POST (auditoria; a saída usa o
+                                            -- offer_id da leitura fresca da visão da campanha, não esta coluna)
   status            text not null default 'pendente'
                     check (status in ('pendente','enviando','aplicado','ja_estava','mudou','bloqueado','erro','saida_solicitada')),
   mensagem          text,

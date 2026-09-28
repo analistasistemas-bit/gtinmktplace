@@ -8,8 +8,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // `started`/`pending` pra sempre em `ml_promocao_itens`. Sem checar `ml_promocoes.status`, o aviso
 // dispararia pra sempre numa campanha já encerrada. Este teste prova que a campanha finished é
 // ignorada mesmo com o item ainda "started".
+const useModulosHabilitadosMock = vi.fn<() => { data: string[] | undefined; isError: boolean }>(
+  () => ({ data: ['promocoes'], isError: false }),
+);
 vi.mock('@/hooks/useModulosHabilitados', () => ({
-  useModulosHabilitados: () => ({ data: ['promocoes'] }),
+  useModulosHabilitados: () => useModulosHabilitadosMock(),
 }));
 
 const itensQueryMock = vi.fn();
@@ -37,6 +40,7 @@ describe('useParticipacoesPorItem', () => {
     fromMock.mockClear();
     itensQueryMock.mockReset();
     promosQueryMock.mockReset();
+    useModulosHabilitadosMock.mockReturnValue({ data: ['promocoes'], isError: false });
   });
 
   it('ignora item ainda "started" cuja campanha já está "finished" (sync não reescreve o item)', async () => {
@@ -69,5 +73,16 @@ describe('useParticipacoesPorItem', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data).toEqual(new Map([['MLB1', 'Campanha Ativa']]));
+  });
+
+  // Fix round 2 (achado 3 da revisão final): RPC de módulos em erro desliga esta query
+  // (habilitado=false → enabled=false), que sozinha nunca chega a isError.
+  it('conta como falha quando a RPC de módulos falha', async () => {
+    useModulosHabilitadosMock.mockReturnValue({ data: undefined, isError: true });
+
+    const { result } = renderHook(() => useParticipacoesPorItem(['MLB1']), { wrapper });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(itensQueryMock).not.toHaveBeenCalled();
   });
 });

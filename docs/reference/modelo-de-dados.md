@@ -936,14 +936,15 @@ Um anúncio dentro de uma operação, com resultado próprio. PK composta
 `(operacao_id, ml_item_id)`. `org_id`, `promocao_id`, `titulo`, `preco` (DEAL: `deal_price`
 pedido; SMART: preço da oferta, informativo), `semaforo` (`verde|amarelo|vermelho|indisponivel`,
 `null` no `sair` — sair nunca cria prejuízo), `confirmado_risco`, `offer_id` (SMART: `OFFER-...`
-devolvido pelo POST, usado pelo Reverter), `status`
+devolvido pelo POST, guardado para auditoria — a saída usa o `offer_id` que a leitura fresca da
+visão da campanha devolve no participante, não esta coluna), `status`
 (`pendente|enviando|aplicado|ja_estava|mudou|bloqueado|erro|saida_solicitada`), `mensagem`,
 `conferencias`, `proxima_conferencia`, `saida_pedida_em` (relógio das 24h da conferência de
 saída), `atualizado_em`. Índice `(org_id)`. Índice único de anti-duplicidade
 `(org_id, promocao_id, ml_item_id) where status in ('pendente','enviando','saida_solicitada')` —
 o mesmo anúncio não fica em andamento em duas operações da mesma promoção.
 
-### `operacoes_massa_reivindicar(p_org, p_operacao, p_ml_item)` — RPC `security definer`
+### `operacoes_massa_reivindicar(p_org, p_operacao, p_ml_item)` — RPC
 Claim atômico do item antes de escrever no ML (idempotência do QStash): `pendente`, ou `enviando`
 parado há mais de 2 min (worker morreu no meio), vira `enviando`; sem linha devolvida = outro
 worker já pegou. `revoke all from public, anon, authenticated`; `grant execute to service_role`.
