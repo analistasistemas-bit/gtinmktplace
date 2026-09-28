@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { DetalhePedidoItens } from '../detalhe-pedido-itens';
 import type { Pedido, ItemPedido } from '@/lib/pedidos-faturamento';
@@ -125,5 +126,14 @@ describe('DetalhePedidoItens — item cancelado/estornado', () => {
   it('estorno parcial em item faturável mostra só o estorno', () => {
     renderComProvider(pedido({ itens: [item({ estorno: 10 })] }));
     expect(screen.getByText('estornado R$ 10,00')).toBeInTheDocument();
+  });
+});
+
+describe('DetalhePedidoItens — link do SKU (Faturamento › Vendas)', () => {
+  it('item com código leva ao dossiê; item sem código fica sem link', () => {
+    const p = pedido({ itens: [item({ id: 'a', codigo: '02989271' }), item({ id: 'b', codigo: null, titulo: 'Sem código' })] });
+    render(<MemoryRouter><QueryClientProvider client={new QueryClient()}><DetalhePedidoItens pedido={p} linkSku /></QueryClientProvider></MemoryRouter>);
+    expect(screen.getByRole('link', { name: '02989271' })).toHaveAttribute('href', '/faturamento/sku/02989271');
+    expect(screen.getAllByRole('link').filter((l) => l.getAttribute('href')?.startsWith('/faturamento/sku/'))).toHaveLength(1);
   });
 });

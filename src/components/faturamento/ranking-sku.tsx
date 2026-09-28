@@ -11,6 +11,7 @@ import {
   SEM_CODIGO, nomeSku, type LinhaSku, type LinhaFamilia, type Tendencia, type Alerta, type Cobertura, type ClasseAbc,
 } from '@/lib/vendas-sku';
 import { formatarNomeProduto } from '@/lib/texto';
+import { MES_ATUAL, comPeriodo, periodoDaQuery } from '@/lib/metricas';
 
 export type ChaveOrdem = 'lucro' | 'bruto' | 'unidades' | 'lucroPorUnidade';
 
@@ -32,8 +33,10 @@ const LINK_DOSSIE = 'rounded-sm underline-offset-2 hover:underline focus-visible
 
 export function LinkDossie({ to, className, children, ...rest }: { to: string; className?: string; children: ReactNode; 'aria-label'?: string }) {
   const location = useLocation();
+  // O dossiê abre no mesmo período do ranking (sem ele, cairia no padrão de 30 dias).
+  const periodo = periodoDaQuery(new URLSearchParams(location.search), MES_ATUAL);
   return (
-    <Link to={to} state={{ de: location.pathname + location.search }} onClick={(e) => e.stopPropagation()}
+    <Link to={`${to}?${comPeriodo('', periodo)}`} state={{ de: location.pathname + location.search }} onClick={(e) => e.stopPropagation()}
       className={cn(LINK_DOSSIE, className)} {...rest}>
       {children}
     </Link>

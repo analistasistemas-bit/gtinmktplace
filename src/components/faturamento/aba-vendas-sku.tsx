@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle, Boxes, CloudOff, ChevronRight, DollarSign, Lightbulb, Package, Percent, PieChart, ReceiptText, Scale, TrendingUp,
 } from 'lucide-react';
@@ -11,7 +11,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import { fmtBRL, fmtBRLSinal, fmtInt, fmtMarkup } from '@/lib/formato';
-import { rotuloAnterior, type Periodo } from '@/lib/metricas';
+import { MES_ATUAL, comPeriodo, periodoDaQuery, rotuloAnterior, type Periodo } from '@/lib/metricas';
 import { formatarNomeProduto, normalizarParaBusca } from '@/lib/texto';
 import { useVendasSku } from '@/hooks/useVendasSku';
 import { LinkDossie, RankingSku, type ChaveOrdem } from '@/components/faturamento/ranking-sku';
@@ -66,7 +66,10 @@ function Painel({ icone: Icone, titulo, children }: { icone: typeof Lightbulb; t
 }
 
 export function AbaVendasSku() {
-  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'mes_atual' });
+  // Período na URL: o dossiê recebe o mesmo e o "voltar" o devolve (ida e volta no mesmo período).
+  const [search, setSearch] = useSearchParams();
+  const periodo = useMemo(() => periodoDaQuery(search, MES_ATUAL), [search]);
+  const setPeriodo = (p: Periodo) => setSearch((prev) => comPeriodo(prev, p), { replace: true });
   const [busca, setBusca] = useState('');
   const [familia, setFamilia] = useState('');
   const [fornecedor, setFornecedor] = useState('');

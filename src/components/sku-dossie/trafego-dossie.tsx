@@ -84,6 +84,12 @@ function PontoRazao({ cx, cy, value, index }: { cx?: number; cy?: number; value?
     : <circle key={index} cx={cx} cy={cy} r={2.5} fill="var(--chart-1)" />;
 }
 
+/** 0 visitas medidas: a barra de altura 0 some, então vira um anel apoiado na base; lacuna fica sem marca. */
+function AnelZeroVisitas({ cx, cy, value, index }: { cx?: number; cy?: number; value?: number | null; index?: number }) {
+  if (cx == null || cy == null || value == null) return <g key={index} />;
+  return <circle key={index} data-testid="zero-visitas" cx={cx} cy={cy - 4} r={2.75} fill="var(--card)" stroke="var(--chart-3)" strokeWidth={1.5} />;
+}
+
 interface Props {
   trafego: TrafegoDossie;
   familia: boolean;
@@ -110,7 +116,7 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
 
   const dados = useMemo(() => serie.map((p, i) => ({
     i, rotulo: p.intervalo.rotulo, marca: marcaParcial(p.intervalo), parcial: p.intervalo.incompleto,
-    visitas: p.visitas, upv: p.unidadesPorVisita,
+    visitas: p.visitas, upv: p.unidadesPorVisita, zeroVisitas: p.visitas === 0 ? 0 : null,
     // Preço: ponto no meio da faixa com bigode simétrico até o mín. e o máx.
     preco: p.precoObservado ? (p.precoObservado.min + p.precoObservado.max) / 2 : null,
     bigode: p.precoObservado ? (p.precoObservado.max - p.precoObservado.min) / 2 : null,
@@ -130,8 +136,17 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
   const upvPeriodo = somaVisitas > 0 ? somaUnidades / somaVisitas : null;
 
   const alcance = alcanceTexto(t);
-  const compartilhados = t.porMlb.filter((m) => m.considerado && m.vinculo === 'compartilhado');
-  const comSelo = new Set(compartilhados.map((m) => m.mlb));
+  // Selo pelo alcance da métrica, não pelo vínculo: o anúncio da família tem vários códigos, todos dela.
+  const considerados = t.porMlb.filter((m) => m.considerado);
+  const selos = t.alcance === 'sku' ? [{ chave: 'sku', texto: 'deste SKU', dica: undefined as string | undefined }]
+    : t.alcance === 'familia' ? [{ chave: 'familia', texto: 'família', dica: 'As visitas são dos anúncios da família: só códigos desta família.' }]
+    : t.alcance === 'anuncio' ? considerados.map((m) => {
+      const outras = m.codigos.length - 1;
+      return { chave: m.mlb, dica: `As visitas são do anúncio inteiro (${m.mlb}): todas as variações dele entram na métrica.`,
+        texto: `do anúncio${considerados.length > 1 ? ` ${m.mlb}` : ''} · compartilhado com ${outras} ${outras === 1 ? 'variação' : 'variações'}` };
+    })
+    : [];
+  const comSelo = new Set(t.alcance === 'anuncio' ? considerados.map((m) => m.mlb) : []);
   const temGrafico = t.alcance !== 'indisponivel' && (t.estadoColeta === 'ok' || t.estadoColeta === 'parcial') && n > 0;
 
   const resumo = useMemo(() => {
@@ -270,6 +285,9 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
                   <Bar yAxisId="vis" dataKey="visitas" name="Visitas" fill="var(--chart-3)" radius={[3, 3, 0, 0]} maxBarSize={36} cursor="pointer">
                     {dados.map((d) => <Cell key={d.i} fillOpacity={d.parcial ? 0.4 : 1} />)}
                   </Bar>
+                  <Line yAxisId="vis" dataKey="zeroVisitas" name="Visitas medidas zero" stroke="none" legendType="none" tooltipType="none"
+                    dot={(p) => <AnelZeroVisitas key={p.index} cx={p.cx} cy={p.cy} value={p.value as number | null} index={p.index} />}
+                    activeDot={false} connectNulls={false} isAnimationActive={false} />
                   <Line yAxisId="preco" dataKey="preco" name="Preço de oferta" stroke="var(--muted-foreground)" strokeWidth={1.25} strokeOpacity={0.6}
                     dot={{ r: 2, fill: 'var(--muted-foreground)', strokeWidth: 0 }} activeDot={{ r: 3.5 }} connectNulls={false} isAnimationActive={false}>
                     <ErrorBar dataKey="bigode" direction="y" width={5} stroke="var(--muted-foreground)" strokeWidth={1} />
@@ -344,13 +362,9 @@ export function TrafegoDossie({ trafego: t, familia, passo, onPasso, onTentar }:
         )}
       </div>
 
-      {compartilhados.length > 0 && (
+      {selos.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {compartilhados.map((m) => (
-            <StatusPill key={m.mlb} tone="info" title="As visitas são do anúncio inteiro: todas as variações dele entram na métrica.">
-              {`anúncio compartilhado · ${m.mlb}`}
-            </StatusPill>
-          ))}
+          {selos.map((sl) => <StatusPill key={sl.chave} tone="info" title={sl.dica}>{sl.texto}</StatusPill>)}
         </div>
       )}
 

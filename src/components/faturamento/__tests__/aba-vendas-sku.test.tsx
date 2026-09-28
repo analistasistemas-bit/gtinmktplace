@@ -26,8 +26,8 @@ const dados: VendasSku = {
 const periodos = vi.hoisted(() => [] as unknown[]);
 vi.mock('@/hooks/useVendasSku', () => ({ useVendasSku: (p: unknown) => { periodos.push(p); return { dados, isLoading: false, isFetching: false, refetch: vi.fn() }; } }));
 
-const renderAba = () => render(
-  <QueryClientProvider client={new QueryClient()}><MemoryRouter><AbaVendasSku /></MemoryRouter></QueryClientProvider>,
+const renderAba = (url = '/faturamento?aba=sku') => render(
+  <QueryClientProvider client={new QueryClient()}><MemoryRouter initialEntries={[url]}><AbaVendasSku /></MemoryRouter></QueryClientProvider>,
 );
 
 describe('AbaVendasSku', () => {
@@ -43,12 +43,20 @@ describe('AbaVendasSku', () => {
   it('leitura do período lista de quais SKUs fala, com link para o dossiê', () => {
     renderAba();
     expect(screen.getByText('ver quais')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Família P · Preto', hidden: true })).toHaveAttribute('href', '/faturamento/sku/A');
+    expect(screen.getByRole('link', { name: 'Família P · Preto', hidden: true })).toHaveAttribute('href', '/faturamento/sku/A?periodo=mes_atual');
   });
 
   it('abre no mês atual', () => {
     renderAba();
     expect(periodos[0]).toEqual({ tipo: 'mes_atual' });
+  });
+
+  it('período da URL vale no ranking e segue no link do dossiê', () => {
+    periodos.length = 0;
+    renderAba('/faturamento?aba=sku&de=2026-06-29&ate=2026-09-26');
+    expect(periodos[0]).toEqual({ tipo: 'range', desde: '2026-06-29', ate: '2026-09-26' });
+    expect(screen.getByRole('link', { name: 'Família P · Preto', hidden: true }))
+      .toHaveAttribute('href', '/faturamento/sku/A?de=2026-06-29&ate=2026-09-26');
   });
 
   it('ordena por lucro e troca a ordem ao clicar em Unidades', () => {
@@ -73,7 +81,7 @@ describe('AbaVendasSku', () => {
     renderAba();
     fireEvent.click(screen.getByRole('button', { name: 'Agrupar por família' }));
     expect(screen.getByText(/Família P \(4 variações\)/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Família P \(4 variações\)/ })).toHaveAttribute('href', '/faturamento/sku/familia/P');
+    expect(screen.getByRole('link', { name: /Família P \(4 variações\)/ })).toHaveAttribute('href', '/faturamento/sku/familia/P?periodo=mes_atual');
     fireEvent.click(screen.getByRole('button', { name: /Mostrar variações de Família P/ }));
     expect(screen.getAllByTestId('sku-titulo').map((e) => e.textContent)).toContain('Produto A');
   });
