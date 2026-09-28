@@ -26,7 +26,10 @@ export function useEstadoSyncPromocoes() {
  *  (`started`/`pending`) agora. Sem módulo Promoções ligado, não busca — é aviso, não fronteira de
  *  segurança, mas sem o módulo a org não tem `ml_promocao_itens` sincronizado mesmo.
  *  `ml_promocao_itens` não tem FK declarada para `ml_promocoes` (database.types.ts) — duas buscas,
- *  sem embed. */
+ *  sem embed.
+ *  Fix round 1 (achado 1): `encerrarAusentes` (`_shared/promocoes/deps.ts`) marca a CAMPANHA
+ *  `finished` mas não reescreve nem apaga a linha do item — ela fica `started`/`pending` para
+ *  sempre. Sem checar `ml_promocoes.status`, o aviso dispara pra sempre numa campanha morta. */
 export function useParticipacoesPorItem(mlItemIds: string[]) {
   const { data: modulosHabilitados } = useModulosHabilitados();
   const habilitado = !!modulosHabilitados?.includes('promocoes');
@@ -46,9 +49,13 @@ export function useParticipacoesPorItem(mlItemIds: string[]) {
       const promocaoIds = [...new Set((itens ?? []).map((i) => i.promocao_id))];
       if (promocaoIds.length === 0) return mapa;
       const { data: promos, error: errPromo } = await supabase
-        .from('ml_promocoes').select('promocao_id, nome, tipo').in('promocao_id', promocaoIds);
+        .from('ml_promocoes').select('promocao_id, nome, tipo, status').in('promocao_id', promocaoIds);
       if (errPromo) throw errPromo;
-      const nomePorPromocao = new Map((promos ?? []).map((p) => [p.promocao_id, p.nome ?? rotuloTipo(p.tipo)]));
+      const nomePorPromocao = new Map(
+        (promos ?? [])
+          .filter((p) => p.status === 'started' || p.status === 'pending')
+          .map((p) => [p.promocao_id, p.nome ?? rotuloTipo(p.tipo)]),
+      );
       for (const it of itens ?? []) {
         const nome = nomePorPromocao.get(it.promocao_id);
         if (nome) mapa.set(it.ml_item_id, nome);

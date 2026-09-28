@@ -81,15 +81,20 @@ export function filtrarFamilias(
  *  aviso por família (a primeira campanha achada entre os MLBs dela). `itensUp` são os MLBs por
  *  cor de família User Products (`anuncios_externos_itens.item_externo_id`, chave `codigoPai`) —
  *  Legacy não entra em `itensUp` e usa só `familia.mlItemId`. `participacoes` é `ml_item_id -> nome
- *  da promoção` (só quem está participando agora). */
+ *  da promoção` (só quem está participando agora).
+ *  Fix round 1 (achado 2): com "Somente estoque" efetivo (global ou exceção por produto), o preço
+ *  não vai ao ML — mesma fórmula de `exigemDivisao` (~l.777) — então a família não entra no aviso. */
 export function avisosParticipacaoPromocao(
   familias: Familia[],
   itensUp: Map<string, string[]>,
   participacoes: Map<string, string>,
+  somenteEstoque: { global: boolean; overrides: Set<string> },
 ): { id: string; texto: string }[] {
   const avisos: { id: string; texto: string }[] = [];
   for (const f of familias) {
     if (f.operacao !== 'UPDATE' || !temAlteracaoPreco(f)) continue;
+    const emSomenteEstoque = somenteEstoque.overrides.has(f.id) ? !somenteEstoque.global : somenteEstoque.global;
+    if (emSomenteEstoque) continue;
     const ids = [f.mlItemId, ...(itensUp.get(f.codigoPai) ?? [])].filter((id): id is string => !!id);
     const promocao = ids.map((id) => participacoes.get(id)).find((nome) => nome != null);
     if (promocao) {
@@ -360,16 +365,23 @@ export default function Revisao() {
   const codigosPaiUp = confirmando
     ? familiasComPrecoAlterado.filter((f) => f.formatoPublicacaoMl === 'user_products').map((f) => f.codigoPai)
     : [];
-  const { data: itensUp } = useItensUpPorCodigoPai(codigosPaiUp);
+  const { data: itensUp, isLoading: itensUpCarregando, isError: itensUpFalhou } = useItensUpPorCodigoPai(codigosPaiUp);
   const idsParaChecarPromocao = confirmando
     ? [
         ...familiasComPrecoAlterado.map((f) => f.mlItemId).filter((id): id is string => !!id),
         ...[...(itensUp?.values() ?? [])].flat(),
       ]
     : [];
-  const { data: participacoesPromocao } = useParticipacoesPorItem(idsParaChecarPromocao);
+  const {
+    data: participacoesPromocao, isLoading: participacoesCarregando, isError: participacoesFalhou,
+  } = useParticipacoesPorItem(idsParaChecarPromocao);
+  // Fix round 1 (achado 3): sem isto, a busca atrasar ou falhar passava batido — o diálogo ficava
+  // liberado pra publicar sem o aviso mesmo quando a conferência ainda não tinha terminado.
+  const conferindoPromocao = itensUpCarregando || participacoesCarregando;
+  const promocaoFalhou = itensUpFalhou || participacoesFalhou;
   const avisosPromocao = avisosParticipacaoPromocao(
     familiasComPrecoAlterado, itensUp ?? new Map(), participacoesPromocao ?? new Map(),
+    { global: somenteEstoqueGlobal, overrides: somenteEstoqueOverrides },
   );
 
   async function confirmarPublicacao() {
@@ -760,6 +772,14 @@ export default function Revisao() {
                     </label>
                   ))}
                 </div>
+              )}
+              {conferindoPromocao && (
+                <p className="mt-2 text-xs text-muted-foreground">Conferindo promoções…</p>
+              )}
+              {promocaoFalhou && (
+                <p className="mt-2 text-xs text-warning">
+                  Não foi possível conferir promoções agora — confira manualmente no Seller Center.
+                </p>
               )}
               {avisosPromocao.length > 0 && (
                 <div className="mt-2 space-y-1 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
