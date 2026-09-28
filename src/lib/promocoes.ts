@@ -95,7 +95,11 @@ export function prazoUrgente(prazo: string | null, agoraMs: number): boolean {
 }
 
 /** A cor que dá o semáforo do anúncio (a pior com líquido; menor líquido no empate). */
+/** Uma cor com kit a conferir (`kit_*`) trava a linha inteira: nada de líquido, markup nem "até quanto". */
+const temKitAConferir = (it: ItemPromocao) => it.projecao.some((c) => c.motivo?.startsWith('kit_'));
+
 export function corDeReferencia(it: ItemPromocao): CorProjetada | null {
+  if (temKitAConferir(it)) return null;
   const comLiquido = it.projecao.filter((c) => c.liquido != null && c.semaforo === it.pior_semaforo);
   return comLiquido.sort((a, b) => a.liquido! - b.liquido!)[0] ?? null;
 }
@@ -103,12 +107,13 @@ export function corDeReferencia(it: ItemPromocao): CorProjetada | null {
 /** ⚪: "Sem custo no PubliAI" só quando nenhuma cor tem cadastro/custo; senão o motivo é outro (tarifa, categoria…). */
 export function rotuloSemLiquido(it: ItemPromocao): 'Sem custo no PubliAI' | 'Sem líquido' | 'Kit a conferir' {
   const motivos = it.projecao.map((c) => c.motivo);
-  if (motivos.length > 0 && motivos.every((m) => m?.startsWith('kit_'))) return 'Kit a conferir';
+  if (temKitAConferir(it)) return 'Kit a conferir';
   return motivos.length > 0 && motivos.every((m) => m === 'sem_cadastro' || m === 'sem_custo') ? 'Sem custo no PubliAI' : 'Sem líquido';
 }
 
 /** O preço tem de servir a todas as cores: vale o maior "até quanto"; uma cor sem saída trava o anúncio. */
 export function ateQuantoDaLinha(it: ItemPromocao): { valor: number | null; motivo: 'qualquer' | 'nenhum' | null } {
+  if (temKitAConferir(it)) return { valor: null, motivo: null };
   const cores = it.projecao.filter((c) => c.liquido != null);
   if (cores.some((c) => c.ate_quanto_motivo === 'nenhum')) return { valor: null, motivo: 'nenhum' };
   const valores = cores.map((c) => c.ate_quanto).filter((v): v is number => v != null);

@@ -62,6 +62,12 @@ describe('linha da tabela', () => {
     expect(ateQuantoDaLinha(item([cor({ ate_quanto_motivo: 'qualquer' }), cor({ ate_quanto: 41 })], 'verde'))).toEqual({ valor: 41, motivo: null });
     expect(ateQuantoDaLinha(item([cor({})], 'verde'))).toEqual({ valor: null, motivo: null });
   });
+  it('uma cor com kit a conferir: sem "até quanto", sem cor de referência e rótulo de kit na linha toda', () => {
+    const misto = item([cor({ ate_quanto: 59 }), cor({ liquido: null, motivo: 'kit_divergente' })], 'indisponivel');
+    expect(ateQuantoDaLinha(misto)).toEqual({ valor: null, motivo: null });
+    expect(corDeReferencia(misto)).toBeNull();
+    expect(rotuloSemLiquido(misto)).toBe('Kit a conferir');
+  });
   it('rótulo sem líquido: "Sem custo" só quando falta cadastro/custo em todas as cores', () => {
     expect(rotuloSemLiquido(item([cor({ liquido: null, motivo: 'sem_cadastro' })], 'indisponivel'))).toBe('Sem custo no PubliAI');
     expect(rotuloSemLiquido(item([cor({ liquido: null, motivo: 'erro_tarifa' })], 'indisponivel'))).toBe('Sem líquido');
