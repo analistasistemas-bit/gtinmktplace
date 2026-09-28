@@ -40,6 +40,8 @@ interface VariacaoCardProps {
   /** Críticas da variação (ex.: "sem cor", "sem foto", "sem preço") — liga cada campo
    *  ao bloco de crítica correspondente (`#criticas-${codigo}`) via aria-describedby. */
   criticas?: string[];
+  /** `familiaExigeCor` da família. Produto simples (false) publica como "Único" — sem alerta ⚠. */
+  exigeCor?: boolean;
 }
 
 export function VariacaoCard({
@@ -56,6 +58,7 @@ export function VariacaoCard({
   categoriaMlId,
   aliquotaPct,
   criticas = [],
+  exigeCor = true,
 }: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   const qc = useQueryClient();
@@ -151,8 +154,8 @@ export function VariacaoCard({
               </span>
             )}
             {/* Alerta "sem cor" (⚠️) só para cor que vai ao ML agora: estoque 0 dorme
-                até repor e não exige cor. Com cor, o badge de origem é informativo. */}
-            {(variacao.cor || variacao.estoque > 0) && (
+                até repor e não exige cor, nem produto simples. Com cor, o badge de origem é informativo. */}
+            {(variacao.cor || (exigeCor && variacao.estoque > 0)) && (
               <BadgeCorOrigem origem={variacao.cor ? variacao.corOrigem : null} />
             )}
             <StatusInline status={statusCor} />

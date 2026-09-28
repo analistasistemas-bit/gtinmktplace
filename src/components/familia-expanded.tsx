@@ -593,6 +593,7 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
               categoriaMlId={familia.categoriaMlId}
               aliquotaPct={aliquotaPct}
               criticas={criticas}
+              exigeCor={exigeCor}
             />
           </div>
         </div>
