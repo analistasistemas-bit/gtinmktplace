@@ -34,6 +34,15 @@ erro de CPU. Front validado em produção (conta VALIDATION, só leitura): ranki
 Vendas / Tráfego e oferta / Ads OK, sem regressão na aba Vendas do Faturamento, 0 erros de console.
 Ver [ADR-0172](decisions/0172-vendas-sku-analise-por-variacao.md).
 
+### Correções pós-auditoria do menu Faturamento (2026-09-27)
+
+Auditoria de navegação/valores (Avil, só leitura) achou 4 bugs; corrigidos só no frontend, sem deploy de backend.
+
+- [x] Período ranking ↔ dossiê na URL (`periodoDaQuery`/`comPeriodo` em `src/lib/metricas.ts`): ida e volta no mesmo período, inclusive entre dossiês (Mix, base do kit, família); trilha Faturamento › Vendas SKU › …; paridade conferida em 29/06–26/09 (SKU 02989271).
+- [x] Faturamento › Vendas: código do item abre `/faturamento/sku/<código>` (prop `linkSku`; Financeiro inalterado).
+- [x] Tráfego e oferta: selo pelo `alcance` (deste SKU / do anúncio · compartilhado com N variações / família), não pelo vínculo.
+- [x] Tráfego: 0 visitas medidas = anel na base + legenda; ausência de dado segue lacuna.
+
 ### Fatia 2c: Ads no dossiê do SKU
 
 Gasto e vendas atribuídas do Product Ads por grupo de anúncios (worker `coletar-ads-ml`) e painel
