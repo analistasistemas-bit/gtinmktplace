@@ -49,6 +49,18 @@ describe('lerNaCampanha', () => {
     expect(f).toHaveBeenCalledTimes(3);
   });
 
+  it('502 × 3 → lança com o status real', async () => {
+    const f = vi.fn().mockResolvedValue(resp(502));
+    const ml = criarClienteML('tok', f, semEspera());
+    await expect(ml.lerNaCampanha('P', 'DEAL', 'MLB1')).rejects.toThrow('ML 502 em /seller-promotions/promotions');
+    expect(f).toHaveBeenCalledTimes(3);
+  });
+
+  it('item sem status → lança (não inventa status)', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, { results: [{ id: 'MLB1', offer_id: 'OFFER-X' }] }));
+    await expect(criarClienteML('tok', f, semEspera()).lerNaCampanha('P', 'SMART', 'MLB1')).rejects.toThrow('sem status');
+  });
+
   it('403 → SemEscritaPromocoes, sem retry', async () => {
     const f = vi.fn().mockResolvedValue(resp(403, { message: 'forbidden' }));
     const ml = criarClienteML('tok', f, semEspera());
@@ -121,6 +133,14 @@ describe('lerRelacoes', () => {
     expect(await ml.lerRelacoes('MLB1')).toEqual({ catalog_listing: true, relacionados: [] });
     expect(f).toHaveBeenCalledTimes(1);
     await expect(ml.lerRelacoes('MLB1')).rejects.toBeInstanceOf(SemEscritaPromocoes);
+  });
+
+  it('relacionado com code 404 no 2º multiget → rejeita (não vira catalog_listing:false)', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ code: 200, body: { id: 'MLB1', catalog_listing: false,
+        item_relations: [{ id: 'MLB2', variation_id: null, stock_relation: 1 }] } }]))
+      .mockResolvedValueOnce(resp(200, [{ code: 404, body: { message: 'not found' } }]));
+    await expect(criarClienteML('tok', f, semEspera()).lerRelacoes('MLB1')).rejects.toThrow('MLB2');
   });
 
   it('item não devolvido pelo multiget → Error', async () => {

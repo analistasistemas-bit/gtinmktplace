@@ -55,7 +55,10 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
         if (r.ok) {
           const x = lista(((await r.json()) as Obj | null)?.results)[0];
           if (!x) return null;
-          return { status: str(x.status) ?? 'desconhecido', preco_min: num(x.min_discounted_price),
+          const status = str(x.status);
+          // Sem status não dá para decidir (em 'sair' viraria ja_estava sem DELETE) → falha em vez de inventar.
+          if (!status) throw new Error(`ML sem status do item ${itemId} na campanha ${promocaoId}`);
+          return { status, preco_min: num(x.min_discounted_price),
             preco_max: num(x.max_discounted_price), offer_id: str(x.offer_id) };
         }
         if (![500, 502, 503].includes(r.status)) throw await falha(r);
@@ -69,9 +72,12 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
       if (!item) throw new Error(`ML não devolveu o item ${itemId}`);
       const rels = lista(item.item_relations).map((r) => str(r.id)).filter((x): x is string => x != null);
       const m = rels.length ? await multiget(rels, 'id,catalog_listing') : new Map<string, Obj>();
+      // Relacionado que o multiget não devolveu não pode virar catalog_listing:false — liberaria o par UP/catálogo.
+      const faltou = rels.find((id) => !m.has(id));
+      if (faltou) throw new Error(`ML não devolveu o item relacionado ${faltou}`);
       return {
         catalog_listing: item.catalog_listing === true,
-        relacionados: rels.map((id) => ({ id, catalog_listing: m.get(id)?.catalog_listing === true })),
+        relacionados: rels.map((id) => ({ id, catalog_listing: m.get(id)!.catalog_listing === true })),
       };
     },
 
