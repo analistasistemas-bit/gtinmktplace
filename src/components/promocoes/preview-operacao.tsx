@@ -181,7 +181,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
               <p className="font-medium text-danger">{textoRisco(risco.vermelho, risco.indisponivel)}</p>
               <label htmlFor="risco-confirmado" className="mt-2 flex items-center gap-2">
                 <Checkbox id="risco-confirmado" checked={confirmadoRisco} onCheckedChange={(v) => setConfirmadoRisco(!!v)} />
-                Aderir mesmo assim
+                {acao === 'aderir' ? 'Aderir mesmo assim' : 'Sair mesmo assim'}
               </label>
             </div>
           )}

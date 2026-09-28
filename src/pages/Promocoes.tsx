@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { BadgePercent } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
@@ -12,6 +13,9 @@ import { useAtualizarPromocoes, useEstadoSyncPromocoes, usePromocoes } from '@/h
 import { abaDa, avisoAtualizacao, emLeitura, sincronizandoAgora, type AbaPromo } from '@/lib/promocoes';
 import { CardCampanha } from '@/components/promocoes/card-campanha';
 import { PainelEstadoSync } from '@/components/promocoes/painel-estado-sync';
+import { ListaOperacoes } from '@/components/promocoes/lista-operacoes';
+
+type AbaTela = AbaPromo | 'operacoes';
 
 const VAZIO: Record<AbaPromo, string> = {
   ativas: 'Nenhuma campanha ativa.', futuras: 'Nenhuma campanha futura.', encerradas: 'Nenhuma campanha encerrada nos últimos 30 dias.',
@@ -30,7 +34,8 @@ export default function Promocoes() {
   const promocoes = usePromocoes();
   const estado = useEstadoSyncPromocoes();
   const atualizar = useAtualizarPromocoes();
-  const [aba, setAba] = useState<AbaPromo>('ativas');
+  const [searchParams] = useSearchParams();
+  const [aba, setAba] = useState<AbaTela>(searchParams.get('aba') === 'operacoes' ? 'operacoes' : 'ativas');
   const agora = Date.now();
 
   const porAba = useMemo(() => {
@@ -81,13 +86,16 @@ export default function Promocoes() {
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-[228px] rounded-xl" />)}
         </div>
       ) : temDados && (
-        <Tabs value={aba} onValueChange={(v) => setAba(v as AbaPromo)}>
+        <Tabs value={aba} onValueChange={(v) => setAba(v as AbaTela)}>
           <TabsList>
             <TabsTrigger value="ativas">Ativas{' '}<span className="tabular-nums text-muted-foreground">{porAba.ativas.length}</span></TabsTrigger>
             <TabsTrigger value="futuras">Futuras{' '}<span className="tabular-nums text-muted-foreground">{porAba.futuras.length}</span></TabsTrigger>
             <TabsTrigger value="encerradas">Encerradas</TabsTrigger>
+            <TabsTrigger value="operacoes">Operações</TabsTrigger>
           </TabsList>
-          {porAba[aba].length === 0 ? (
+          {aba === 'operacoes' ? (
+            <ListaOperacoes />
+          ) : porAba[aba].length === 0 ? (
             <EmptyState icon={BadgePercent} title={VAZIO[aba]} className="mt-4" />
           ) : (
             <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">

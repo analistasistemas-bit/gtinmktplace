@@ -109,4 +109,13 @@ describe('PreviewOperacao', () => {
     });
     expect(toast.success).toHaveBeenCalledWith('Operação iniciada: 1 anúncios');
   });
+
+  it('naoRevertiveis: linha nasce desmarcada, com o motivo, e o checkbox fica desabilitado (Reverter)', () => {
+    const linha = item({ ml_item_id: 'V' });
+    renderPreview({ itens: [linha], naoRevertiveis: new Map([['V', 'Não revertível: o anúncio não está mais convidado/participando']]) });
+
+    expect(screen.getByLabelText('Selecionar V')).not.toBeChecked();
+    expect(screen.getByLabelText('Selecionar V')).toBeDisabled();
+    expect(screen.getByText('Não revertível: o anúncio não está mais convidado/participando')).toBeInTheDocument();
+  });
 });
