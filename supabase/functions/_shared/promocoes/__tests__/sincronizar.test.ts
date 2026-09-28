@@ -20,7 +20,7 @@ const item = (o: Partial<ItemPromocaoML> = {}): ItemPromocaoML => ({
 });
 const itemMl = (o: Partial<ItemML> = {}): ItemML => ({
   id: 'MLB1', titulo: 'Toalha', thumbnail: null, permalink: 'https://p', listing_type_id: 'gold_special',
-  categoria: 'MLB123', sku: null, gtin: null, unidades: null, variacoes: [], ...o,
+  categoria: 'MLB123', sku: null, gtin: null, unidades: null, formato_kit: false, variacoes: [], ...o,
 });
 
 describe('projetarItem', () => {
@@ -47,6 +47,17 @@ describe('projetarItem', () => {
       expect(l.projecao[0]).toMatchObject({ semaforo: 'indisponivel', motivo: 'kit_divergente', liquido: null, ate_quanto: null });
       expect(l.pior_semaforo).toBe('indisponivel');
       expect(tarifa).not.toHaveBeenCalled();
+    });
+
+    it('uma cor de kit ⚪ trava o anúncio em ⚪ mesmo com outra cor verde', async () => {
+      const cad2 = montarCadastro([linhaVar({ id: 'a', ml_variation_id: '1', custo: 10, preco: 20 }),
+        linhaVar({ id: 'k', ml_variation_id: '2', custo: 20, preco: 40, familias: { ml_item_id: 'MLB1', origem: 'nacional', kit_multiplicador: 2 } })], []);
+      const l = await projetarItem(item(), itemMl({ variacoes: [
+        { variation_id: 1, cor: 'Azul', sku: null, gtin: null },
+        { variation_id: 2, cor: 'Rosa', sku: null, gtin: null, unidades: 3 },
+      ] }), cad2, aliq, async () => tarifa10);
+      expect(l.projecao.map((p) => p.semaforo)).toEqual(['verde', 'indisponivel']);
+      expect(l.pior_semaforo).toBe('indisponivel');
     });
   });
 

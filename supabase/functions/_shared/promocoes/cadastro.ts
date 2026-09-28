@@ -103,7 +103,7 @@ export function resolverCor(
 
 const centavos = (x: number | null) => (x == null ? null : Math.round(x * 100));
 const mesmoPacote = (a: CadastroVariacao, b: CadastroVariacao) =>
-  centavos(a.custo) === centavos(b.custo)
+  a.origem === b.origem && centavos(a.custo) === centavos(b.custo)
   && JSON.stringify(a.dim && Object.values(a.dim).map(centavos)) === JSON.stringify(b.dim && Object.values(b.dim).map(centavos));
 
 /**
@@ -125,24 +125,32 @@ function paraPack(v: CadastroVariacao, n: number): CadastroVariacao | MotivoKit 
 /**
  * resolverCor + nº de unidades do anúncio (`UNITS_PER_PACK`; null = o ML não informa → vale o cadastro).
  * O kit publica o GTIN da unidade (ADR-0151), então o GTIN casa a base mesmo quando o SKU aponta o kit
- * próprio: com pacote, GTIN e SKU que casam cadastros diferentes precisam dar o mesmo custo e medidas —
- * senão é ambíguo e nada é chutado. Empate vai para o cadastro que já é daquele pacote (piso próprio).
+ * próprio: com pacote, GTIN e SKU que casam cadastros diferentes precisam dar o mesmo custo, medidas e
+ * origem — senão é ambíguo e nada é chutado. Empate vai para o cadastro que já é daquele pacote (piso
+ * próprio). `formatoKit` (SALE_FORMAT=Kit) sem quantidade e sem cadastro de kit → ⚪.
  */
 export function resolverPack(
   c: Cadastro,
   q: { item_id: string; variation_id: number | null; sku: string | null; gtin: string | null },
   unidades: number | null,
+  formatoKit = false,
 ): CadastroVariacao | MotivoKit | null {
   const r = resolverCor(c, q);
   if (!r) return null;
-  const n = unidades ?? r.kit;
-  if (n === 1 && r.kit === 1) return r;
+  const porSku = q.sku ? c.porCodigo.get(normGtin(q.sku.trim())) : undefined;
+  const outro = porSku && porSku !== r ? porSku : undefined;
+  const n = unidades ?? Math.max(r.kit, outro?.kit ?? 1);
+  // Fora de pacote a cadeia do resolverCor vale como sempre (ADR-0108).
+  if (n === 1) return r.kit !== 1 || (unidades == null && formatoKit) ? 'kit_divergente' : r;
   const alvo = paraPack(r, n);
-  const outro = q.sku ? c.porCodigo.get(normGtin(q.sku.trim())) : undefined;
-  if (!outro || outro === r) return alvo;
+  if (!outro) return alvo;
   const alt = paraPack(outro, n);
-  if (typeof alvo === 'string') return alvo;
-  if (typeof alt === 'string') return alt;
+  if (typeof alvo === 'string' || typeof alt === 'string') {
+    // Um lado inválido: só serve o outro se ele já for o cadastro daquele pacote, completo.
+    if (typeof alt !== 'string' && outro.kit === n) return alt;
+    if (typeof alvo !== 'string' && r.kit === n) return alvo;
+    return typeof alvo === 'string' ? alvo : (alt as MotivoKit);
+  }
   if (!mesmoPacote(alvo, alt)) return 'kit_ambiguo';
   return outro.kit === n && r.kit !== n ? alt : alvo;
 }

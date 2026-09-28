@@ -34,7 +34,7 @@ describe('normalizadores', () => {
       attributes: [{ id: 'GTIN', value_name: '789' }],
       variations: [{ id: 11, seller_custom_field: 'SKU-A',
         attribute_combinations: [{ id: 'COLOR', value_name: 'Azul' }], attributes: [{ id: 'GTIN', value_name: '0789' }] }] });
-    expect(legacy.variacoes).toEqual([{ variation_id: 11, cor: 'Azul', sku: 'SKU-A', gtin: '0789' }]);
+    expect(legacy.variacoes).toEqual([{ variation_id: 11, cor: 'Azul', sku: 'SKU-A', gtin: '0789', unidades: null }]);
     expect(legacy).toMatchObject({ categoria: 'MLB123', listing_type_id: 'gold_special', thumbnail: 'https://x/t.jpg', gtin: '789' });
     const up = normalizarItemML({ id: 'MLB2', attributes: [{ id: 'SELLER_SKU', value_name: '00123' }] });
     expect(up).toMatchObject({ sku: '00123', variacoes: [], unidades: null });
@@ -44,6 +44,11 @@ describe('normalizadores', () => {
     expect(normalizarItemML({ id: 'K', attributes: [{ id: 'SALE_FORMAT', value_name: 'Kit' }, { id: 'UNITS_PER_PACK', value_name: '2' }] }).unidades).toBe(2);
     expect(normalizarItemML({ id: 'K', attributes: [{ id: 'UNITS_PER_PACK', value_name: 'dois' }] }).unidades).toBeNull();
     expect(normalizarItemML({ id: 'K', attributes: [{ id: 'UNITS_PER_PACK', value_name: '0' }] }).unidades).toBeNull();
+    expect(normalizarItemML({ id: 'K', attributes: [{ id: 'SALE_FORMAT', value_name: 'Kit' }] }).formato_kit).toBe(true);
+    expect(normalizarItemML({ id: 'K', attributes: [{ id: 'SALE_FORMAT', value_name: 'Unidade' }] }).formato_kit).toBe(false);
+    const porVar = normalizarItemML({ id: 'K', attributes: [{ id: 'UNITS_PER_PACK', value_name: '2' }],
+      variations: [{ id: 1, attributes: [{ id: 'UNITS_PER_PACK', value_name: '3' }] }, { id: 2 }] });
+    expect(porVar.variacoes.map((v) => v.unidades)).toEqual([3, null]);
   });
 });
 

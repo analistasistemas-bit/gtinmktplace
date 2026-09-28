@@ -1,5 +1,5 @@
 // ADR-0174 — validação do pedido de operação em massa (criação). Puro: a tarifa exata entra por parâmetro.
-import { ehParticipando, liquidoNoPreco, piorSemaforo, semaforo } from '../promocoes/projecao.ts';
+import { ehParticipando, liquidoNoPreco, semaforo, semaforoDaLinha } from '../promocoes/projecao.ts';
 import type { ProjecaoCor, Semaforo } from '../promocoes/tipos.ts';
 import type { Acao } from './tipos.ts';
 
@@ -27,7 +27,7 @@ const centavos = (n: number) => Math.round(n * 100);
 /** Semáforo no preço com a tarifa gravada na projeção (a do preço avaliado); cor sem dado → indisponivel. */
 export function semaforoNoPreco(projecao: ProjecaoCor[], preco: number | null): Semaforo {
   if (preco == null) return 'indisponivel';
-  return piorSemaforo(projecao.map((c) => {
+  return semaforoDaLinha(projecao, projecao.map((c) => {
     if (c.comissao_pct == null || c.frete == null || c.aliquota_pct == null || c.custo == null) return 'indisponivel';
     const liquido = liquidoNoPreco(preco, { comissao: { percentual: c.comissao_pct, fixa: c.comissao_fixa ?? 0 }, frete: c.frete }, c.aliquota_pct);
     return semaforo(liquido, c.piso ?? c.custo, c.custo);

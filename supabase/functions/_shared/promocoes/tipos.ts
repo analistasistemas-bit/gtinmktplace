@@ -23,12 +23,18 @@ export interface ItemPromocaoML {
   ml_pct: number | null; vendedor_pct: number | null;
   estoque_min: number | null; estoque_max: number | null;
 }
-export interface VariacaoML { variation_id: number; cor: string | null; sku: string | null; gtin: string | null }
+export interface VariacaoML {
+  variation_id: number; cor: string | null; sku: string | null; gtin: string | null;
+  /** UNITS_PER_PACK da variação, quando a categoria permite por variação; senão vale o do item. */
+  unidades?: number | null;
+}
 export interface ItemML {
   id: string; titulo: string | null; thumbnail: string | null; permalink: string | null;
   listing_type_id: string | null; categoria: string | null; sku: string | null; gtin: string | null;
   /** UNITS_PER_PACK do anúncio (kit); null = o ML não informa. */
   unidades: number | null;
+  /** SALE_FORMAT=Kit: sinal de pack mesmo sem UNITS_PER_PACK (categoria que não o expõe, ADR-0151). */
+  formato_kit: boolean;
   variacoes: VariacaoML[];
 }
 export interface CadastroVariacao {

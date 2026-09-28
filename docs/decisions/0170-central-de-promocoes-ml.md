@@ -113,6 +113,11 @@ unidade (ADR-0151) e SKU do kit próprio (`00000012`). O resolvedor tenta GTIN a
   (kit sem as 4 medidas não cota frete padrão), `kit_ambiguo` (GTIN e SKU casam cadastros cujo custo/medidas
   no pacote não batem). Empate vai para o cadastro que já é daquele pacote (piso próprio). Fora de pacote a
   cadeia de resolução não muda (ADR-0108).
+- **Revisão Codex (gpt-6-sol):** sem `UNITS_PER_PACK`, o SKU de kit próprio define o pacote;
+  `SALE_FORMAT=Kit` sem quantidade e sem cadastro de kit → ⚪; origem fiscal entra na comparação; um lado
+  inválido não bloqueia o kit próprio completo do outro lado; `UNITS_PER_PACK` lido por variação. Uma cor
+  `kit_*` trava a linha inteira em ⚪ (`semaforoDaLinha`) — na Central e na validação de Operações (ADR-0174),
+  para o verde de outra cor não levar o kit à adesão.
 - **Semáforo** (aqui e em `src/lib/semaforo.ts`, ADR-0020): `líquido < custo` → 🔴 antes de olhar o piso.
 - **"Até quanto descer"** mira `max(piso, custo)`.
 

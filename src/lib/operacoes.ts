@@ -31,6 +31,7 @@ function liquidoNoPreco(preco: number, pct: number, fixa: number, frete: number,
 /** Semáforo no preço com a tarifa gravada na projeção (paridade com o backend). */
 export function semaforoNoPreco(projecao: CorProjetada[], preco: number | null): Semaforo {
   if (preco == null) return 'indisponivel';
+  if (projecao.some((c) => c.motivo?.startsWith('kit_'))) return 'indisponivel'; // espelha semaforoDaLinha do backend
   return piorSemaforo(projecao.map((c) => {
     if (c.comissao_pct == null || c.frete == null || c.aliquota_pct == null || c.custo == null) return 'indisponivel';
     const liquido = liquidoNoPreco(preco, c.comissao_pct, c.comissao_fixa ?? 0, c.frete, c.aliquota_pct);

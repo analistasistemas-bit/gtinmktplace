@@ -123,6 +123,28 @@ describe('resolverPack (kit — ADR-0151)', () => {
     expect(resolverPack(montarCadastro([kitSemDim], []), q({ item_id: 'MLBKIT' }), null)).toBe('kit_sem_dimensao');
   });
 
+  it('kit sem UNITS_PER_PACK: SKU do kit próprio define o pacote (não cai no custo unitário)', () => {
+    const r = resolverPack(montarCadastro([base, kit], []), q({ gtin: '7891010027858', sku: '00000012' }), null);
+    expect(r).toMatchObject({ variacao_id: 'kit', custo: 59.8 });
+  });
+
+  it('SALE_FORMAT=Kit sem quantidade e sem cadastro de kit → ⚪ kit_divergente', () => {
+    expect(resolverPack(montarCadastro([base], []), q({ gtin: '7891010027858' }), null, true)).toBe('kit_divergente');
+    // sem o sinal de kit, avulso segue igual
+    expect(resolverPack(montarCadastro([base], []), q({ gtin: '7891010027858' }), null, false)).toMatchObject({ variacao_id: 'base' });
+  });
+
+  it('mesmo custo e medidas mas origem fiscal diferente → kit_ambiguo', () => {
+    const importado = { ...kit, familias: { ml_item_id: 'MLBKIT', origem: 'importado', kit_multiplicador: 2 } };
+    expect(resolverPack(montarCadastro([base, importado], []), q({ gtin: '7891010027858', sku: '00000012' }), 2)).toBe('kit_ambiguo');
+  });
+
+  it('unidade sem medidas pelo GTIN + kit próprio completo pelo SKU → usa o kit próprio', () => {
+    const semDim = { ...base, altura_cm: null };
+    expect(resolverPack(montarCadastro([semDim, kit], []), q({ gtin: '7891010027858', sku: '00000012' }), 2))
+      .toMatchObject({ variacao_id: 'kit', custo: 59.8 });
+  });
+
   it('nada casa → null', () => {
     expect(resolverPack(montarCadastro([], []), q({ gtin: '1' }), 2)).toBeNull();
   });

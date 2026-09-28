@@ -3,7 +3,7 @@
 import type { DimensoesPacote } from '../ml/pacote.ts';
 import { resolverPack, type Cadastro } from './cadastro.ts';
 import { SemAcessoPromocoes, TIPOS_CUPOM } from './ml.ts';
-import { ateQuantoDescer, liquidoNoPreco, piorSemaforo, precoAvaliado, semaforo } from './projecao.ts';
+import { ateQuantoDescer, liquidoNoPreco, precoAvaliado, semaforo, semaforoDaLinha } from './projecao.ts';
 import type {
   Aliquotas, ItemML, ItemPromocaoML, LinhaItem, MotivoSemLiquido, ProjecaoCor, PromocaoML, Tarifa,
 } from './tipos.ts';
@@ -65,10 +65,10 @@ export async function emParalelo<T, R>(itens: T[], n: number, fn: (t: T) => Prom
 
 async function projetarCor(
   it: ItemPromocaoML, ml: ItemML | null,
-  c: { variation_id: number | null; cor: string | null; sku: string | null; gtin: string | null },
+  c: { variation_id: number | null; cor: string | null; sku: string | null; gtin: string | null; unidades: number | null },
   cad: Cadastro, aliq: Aliquotas, preco: number | null, tarifaEm: (q: QueryTarifa) => Promise<Tarifa>,
 ): Promise<ProjecaoCor> {
-  const achado = resolverPack(cad, { item_id: it.ml_item_id, variation_id: c.variation_id, sku: c.sku, gtin: c.gtin }, ml?.unidades ?? null);
+  const achado = resolverPack(cad, { item_id: it.ml_item_id, variation_id: c.variation_id, sku: c.sku, gtin: c.gtin }, c.unidades, ml?.formato_kit ?? false);
   const r = typeof achado === 'string' ? null : achado;
   const base: ProjecaoCor = {
     variation_id: c.variation_id, cor: c.cor ?? r?.cor ?? null, sku: c.sku,
@@ -119,15 +119,15 @@ export async function projetarItem(
 ): Promise<LinhaItem> {
   const preco = precoAvaliado(it);
   const cores = ml && ml.variacoes.length
-    ? ml.variacoes.map((v) => ({ variation_id: v.variation_id, cor: v.cor, sku: v.sku ?? ml.sku, gtin: v.gtin ?? ml.gtin }))
-    : [{ variation_id: null, cor: null, sku: ml?.sku ?? null, gtin: ml?.gtin ?? null }];
+    ? ml.variacoes.map((v) => ({ variation_id: v.variation_id, cor: v.cor, sku: v.sku ?? ml.sku, gtin: v.gtin ?? ml.gtin, unidades: v.unidades ?? ml.unidades }))
+    : [{ variation_id: null, cor: null, sku: ml?.sku ?? null, gtin: ml?.gtin ?? null, unidades: ml?.unidades ?? null }];
   const projecao: ProjecaoCor[] = [];
   for (const c of cores) projecao.push(await projetarCor(it, ml, c, cad, aliq, preco, tarifaEm));
   return {
     ...it,
     titulo: ml?.titulo ?? null, thumbnail: ml?.thumbnail ?? null, permalink: ml?.permalink ?? null,
     listing_type_id: ml?.listing_type_id ?? null, preco_avaliado: preco, projecao,
-    pior_semaforo: piorSemaforo(projecao.map((p) => p.semaforo)),
+    pior_semaforo: semaforoDaLinha(projecao, projecao.map((p) => p.semaforo)),
   };
 }
 

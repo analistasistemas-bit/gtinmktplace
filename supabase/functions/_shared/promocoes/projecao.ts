@@ -1,7 +1,7 @@
 // ADR-0170 — projeção do líquido de um anúncio numa promoção do ML. Puro: IO entra por parâmetro.
 import { liquidoClassico } from '../preco/liquido.ts';
 import { grossUp } from '../preco/sugerir.ts';
-import type { Contagem, LinhaItem, Semaforo, Tarifa } from './tipos.ts';
+import type { Contagem, LinhaItem, ProjecaoCor, Semaforo, Tarifa } from './tipos.ts';
 
 /** Mesma regra de `src/lib/semaforo.ts` (amarrada por tests/lib/paridade-semaforo-promocoes.test.ts). */
 export function semaforo(liquido: number | null, piso: number, custo: number | null): Semaforo {
@@ -17,6 +17,12 @@ const PESO: Record<Semaforo, number> = { indisponivel: 0, verde: 1, amarelo: 2, 
 /** Pior cor entre as que têm líquido; `indisponivel` só quando nenhuma tem (ADR-0065, família-level). */
 export function piorSemaforo(cores: Semaforo[]): Semaforo {
   return cores.reduce<Semaforo>((pior, s) => (PESO[s] > PESO[pior] ? s : pior), 'indisponivel');
+}
+
+/** Pior semáforo da linha; uma cor com kit a conferir (`kit_*`) trava a linha inteira em ⚪ — o verde
+ *  das outras cores não pode levar um kit mal resolvido a adesão (ADR-0170, adendo de kit). */
+export function semaforoDaLinha(projecao: Pick<ProjecaoCor, 'motivo'>[], cores: Semaforo[]): Semaforo {
+  return projecao.some((c) => c.motivo?.startsWith('kit_')) ? 'indisponivel' : piorSemaforo(cores);
 }
 
 /** Convidado = `candidate`; participando = `started` (no ar) ou `pending` (inscrito, campanha ainda não começou). */

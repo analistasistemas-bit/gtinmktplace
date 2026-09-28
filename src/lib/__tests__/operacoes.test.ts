@@ -109,4 +109,10 @@ describe('paridade semáforo front × backend (operações)', () => {
   it.each(casos)('caso %#', (projecao, preco) => {
     expect(semaforoNoPreco(projecao as unknown as CorProjetada[], preco)).toBe(semaforoNoPrecoBackend(projecao, preco));
   });
+
+  it('cor de kit ⚪ (kit_*) trava a linha mesmo com outra cor verde — nunca adesão automática', () => {
+    const kit = { ...semCadastro, motivo: 'kit_divergente' as const };
+    expect(semaforoNoPreco([cAzul, kit] as unknown as CorProjetada[], 85)).toBe('indisponivel');
+    expect(semaforoNoPrecoBackend([cAzul, kit], 85)).toBe('indisponivel');
+  });
 });

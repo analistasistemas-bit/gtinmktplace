@@ -65,6 +65,7 @@ export function normalizarItemML(raw: Obj): ItemML {
       cor: atributo(v.attribute_combinations, 'COLOR'),
       sku: str(v.seller_custom_field) ?? atributo(v.attributes, 'SELLER_SKU'),
       gtin: atributo(v.attributes, 'GTIN'),
+      unidades: unidades(atributo(v.attributes, 'UNITS_PER_PACK')),
     }))
     .filter((v) => Number.isFinite(v.variation_id));
   return {
@@ -74,6 +75,7 @@ export function normalizarItemML(raw: Obj): ItemML {
     sku: str(raw.seller_custom_field) ?? atributo(raw.attributes, 'SELLER_SKU'),
     gtin: atributo(raw.attributes, 'GTIN'),
     unidades: unidades(atributo(raw.attributes, 'UNITS_PER_PACK')),
+    formato_kit: atributo(raw.attributes, 'SALE_FORMAT')?.toLowerCase() === 'kit',
     variacoes,
   };
 }
