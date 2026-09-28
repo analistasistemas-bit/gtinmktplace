@@ -35,6 +35,16 @@ export interface ItemPedido {
   markup: number | null;
   /** A order do item conta como faturamento (ADR-0038). false = cancelada/devolvida. */
   faturavel: boolean;
+  /** Tem custo, mas não congelado na venda (ADR-0109): veio do custo atual do cadastro. */
+  custoEstimado: boolean;
+  /** A order deste item tem devolução (ml_vendas.tem_devolucao). */
+  temDevolucao: boolean;
+  /** order_id do ML de onde veio o item (um pack junta várias). */
+  orderId: number;
+  /** UF da order deste item (um pack pode ter orders de UFs diferentes). */
+  uf: string | null;
+  /** A order deste item veio de um kit (`ml_vendas.kit_item_id`). Só rótulo — nenhum valor usa. */
+  dentroDeKit: boolean;
   /** Estorno da order do item, em R$ — só no 1º item da order (0 nos demais), para não duplicar. */
   estorno: number;
 }
@@ -66,6 +76,8 @@ export interface Pedido {
   cidade: string | null;
   /** Soma das quantidades dos itens. */
   unidades: number;
+  /** Só itens de orders faturáveis — o que o KPI "Unidades" conta (pack misto não conta o cancelado). */
+  unidadesFaturaveis: number;
   /** Valor do checkout: soma de total_amount dos orders do pedido, faturáveis ou não. */
   bruto: number;
   /** Bruto que conta como faturamento (ADR-0038): só os membros `paid/partially_refunded/refunded`.
@@ -149,28 +161,42 @@ export function agruparPorPedido(
       const faturavel = ehFaturavel(v.status);
       // A UF vem da venda, não do pedido: um pack pode agrupar order_ids, e o imposto é resolvido
       // por venda (ADR-0112).
-      return v.itens.map((it, i) => ({ it, faturavel, uf: v.uf, estorno: i === 0 ? v.estorno ?? 0 : 0 }));
+      return v.itens.map((it, i) => ({
+        it, faturavel, uf: v.uf, estorno: i === 0 ? v.estorno ?? 0 : 0,
+        temDevolucao: v.tem_devolucao, orderId: v.order_id, kitItemId: v.kit_item_id,
+      }));
     });
     const unidades = itensFlat.reduce((s, { it }) => s + it.quantity, 0);
+    // KPI "Unidades" conta só o que foi vendido de fato — igual ao Financeiro (calcularResumo).
+    const unidadesFaturaveis = itensFlat.reduce((s, { it, faturavel }) => s + (faturavel ? it.quantity : 0), 0);
     // Base do rateio: só o valor dos itens faturáveis — um item cancelado não "rouba" fatia do
     // líquido (que também só soma membros faturáveis; ver liquidoMembro acima).
     const valorItensFaturaveis = itensFlat
       .filter(({ faturavel }) => faturavel)
       .reduce((s, { it }) => s + it.unit_price * it.quantity, 0);
+    // Fatia do líquido por item, com o resíduo de centavos no item faturável de maior valor (mesma
+    // regra do rateio de frete): a soma dos itens bate com o líquido do pedido (Vendas SKU, ADR-0172).
+    const liqItens = itensFlat.map(({ it, faturavel }) => (faturavel && valorItensFaturaveis > 0
+      ? round2((liquido * it.unit_price * it.quantity) / valorItensFaturaveis)
+      : 0));
+    let idxMaior = -1;
+    itensFlat.forEach(({ it, faturavel }, i) => {
+      if (faturavel && (idxMaior < 0 || it.unit_price * it.quantity > itensFlat[idxMaior].it.unit_price * itensFlat[idxMaior].it.quantity)) idxMaior = i;
+    });
+    if (idxMaior >= 0 && valorItensFaturaveis > 0) {
+      liqItens[idxMaior] = round2(liqItens[idxMaior] + liquido - liqItens.reduce((s, x) => s + x, 0));
+    }
 
     let custoTotal = 0;
     let temCusto = false;
     let impostoTotal = 0;
-    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, estorno }) => {
+    const itens: ItemPedido[] = itensFlat.map(({ it, faturavel, uf, estorno, temDevolucao, orderId, kitItemId }, i) => {
       const custo = custoDoItem(it, custoResolver);
       if (faturavel && custo != null) { custoTotal += custo; temCusto = true; }
       const imposto = faturavel ? impostoDoItem(it, aliquotaResolver, uf) : 0;
       const aliquotaPct = imposto > 0 ? aliquotaResolver?.(it, uf) ?? null : null;
       impostoTotal += imposto;
-      const valorItem = it.unit_price * it.quantity;
-      const liqItem = faturavel && valorItensFaturaveis > 0
-        ? round2((liquido * valorItem) / valorItensFaturaveis)
-        : 0;
+      const liqItem = liqItens[i];
       const liqItemComImposto = round2(liqItem - imposto);
       const markup = faturavel && custo != null && custo > 0
         ? calcularMarkup(liqItemComImposto, custo).markup
@@ -183,6 +209,8 @@ export function agruparPorPedido(
         ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
         imagem_path: fotoResolver?.(it) ?? null,
         custo, liquido: liqItemComImposto, imposto, aliquotaPct, markup, faturavel, estorno,
+        custoEstimado: custo != null && it.custo_congelado == null,
+        temDevolucao, orderId, uf: uf ?? null, dentroDeKit: kitItemId != null,
       };
     });
     const custo = temCusto ? round2(custoTotal) : null;
@@ -228,7 +256,7 @@ export function agruparPorPedido(
       sacado_em,
       sacado_por,
       estorno: round2(membros.reduce((s, v) => s + (v.estorno ?? 0), 0)),
-      unidades, bruto, brutoFaturavel, frete, liquido: liquidoComImposto, custo, imposto, markup, comissao,
+      unidades, unidadesFaturaveis, bruto, brutoFaturavel, frete, liquido: liquidoComImposto, custo, imposto, markup, comissao,
       rastreio: primeiro.tracking_number,
       uf: primeiro.uf ?? null,
       cidade: primeiro.cidade ?? null,
@@ -362,7 +390,7 @@ export function calcularKpisPedidos(pedidos: Pedido[]): KpisPedidos {
     faturaveis += 1;
     bruto += p.brutoFaturavel;
     liquido += p.liquido;
-    unidades += p.unidades;
+    unidades += p.unidadesFaturaveis;
     if (p.custo != null && p.custo > 0) { liqComCusto += p.liquido; custoTotal += p.custo; }
     if (p.comprador_id != null) {
       pedidosPorComprador.set(p.comprador_id, (pedidosPorComprador.get(p.comprador_id) ?? 0) + 1);

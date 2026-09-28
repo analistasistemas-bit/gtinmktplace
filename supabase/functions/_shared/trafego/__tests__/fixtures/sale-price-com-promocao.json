@@ -1,0 +1,12 @@
+{
+ "price_id": "25",
+ "amount": 12.69,
+ "regular_amount": 14.1,
+ "currency_id": "BRL",
+ "reference_date": "2026-09-27T08:03:06Z",
+ "metadata": {
+  "campaign_id": "P-MLB00000000",
+  "promotion_id": "OFFER-MLB1000000004-00000000000",
+  "promotion_type": "marketplace_campaign"
+ }
+}

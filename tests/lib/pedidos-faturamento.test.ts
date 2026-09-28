@@ -99,6 +99,24 @@ describe('agruparPorPedido', () => {
     expect(semKit[0].ehKit).toBe(false);
   });
 
+  describe('uf por item', () => {
+    it('cada item carrega a UF da própria order', () => {
+      const [p] = agruparPorPedido([
+        venda({ id: 'a', order_id: 1, pack_id: 9, uf: 'SP', itens: [item({ id: 'i1' })] }),
+        venda({ id: 'b', order_id: 2, pack_id: 9, uf: 'RJ', itens: [item({ id: 'i2' })] }),
+      ]);
+      expect(p.itens.map((x) => [x.id, x.uf])).toEqual([['i1', 'SP'], ['i2', 'RJ']]);
+    });
+
+    it('dentroDeKit segue o kit_item_id da order do item (só rótulo)', () => {
+      const [p] = agruparPorPedido([
+        venda({ id: 'a', order_id: 1, pack_id: 9, kit_item_id: 'MLB-KIT1', itens: [item({ id: 'i1' })] }),
+        venda({ id: 'b', order_id: 2, pack_id: 9, kit_item_id: null, itens: [item({ id: 'i2' })] }),
+      ]);
+      expect(p.itens.map((x) => [x.id, x.dentroDeKit])).toEqual([['i1', true], ['i2', false]]);
+    });
+  });
+
   it('markup do pedido e por produto usando custo (rateio do líquido por valor)', () => {
     const custo: CustoResolver = (it) => (it.id === 'i1' ? 5 : 10); // custo unitário
     const vendas = [venda({
@@ -324,5 +342,59 @@ describe('pedidoCasaBusca', () => {
 
   it('busca vazia sempre casa', () => {
     expect(pedidoCasaBusca(p, '')).toBe(true);
+  });
+});
+
+// Vendas SKU (ADR-0172) soma o líquido dos itens por SKU e precisa bater com o líquido dos pedidos.
+describe('rateio do líquido entre itens', () => {
+  it('não perde centavos: soma dos itens = líquido do pedido', () => {
+    const vendas = [venda({
+      id: 'a', order_id: 1, total_amount: 120, sale_fee_total: 20, liquido: 100,
+      itens: [
+        item({ id: 'i1', unit_price: 40 }), item({ id: 'i2', unit_price: 40 }), item({ id: 'i3', unit_price: 40 }),
+      ],
+    })];
+    const [p] = agruparPorPedido(vendas);
+    expect(p.liquido).toBe(100);
+    const soma = Math.round(p.itens.reduce((s, it) => s + it.liquido, 0) * 100) / 100;
+    expect(soma).toBe(100);
+  });
+});
+
+describe('unidades faturáveis', () => {
+  it('pack com uma order cancelada: KPI conta só as unidades faturáveis (igual ao Financeiro)', () => {
+    const vendas = [
+      venda({ id: 'a', order_id: 1, pack_id: 50, status: 'cancelled', total_amount: 10,
+        itens: [item({ id: 'i1', quantity: 1 })] }),
+      venda({ id: 'b', order_id: 2, pack_id: 50, total_amount: 10,
+        itens: [item({ id: 'i2', quantity: 1 })] }),
+    ];
+    const pedidos = agruparPorPedido(vendas);
+    expect(pedidos[0].unidades).toBe(2);            // a linha do pedido mostra o que foi comprado
+    expect(pedidos[0].unidadesFaturaveis).toBe(1);  // o que conta como vendido
+    expect(calcularKpisPedidos(pedidos).unidades).toBe(1);
+  });
+});
+
+describe('sinais por item para Vendas SKU', () => {
+  it('custoEstimado = tem custo mas não congelado; temDevolucao e orderId vêm da order do item', () => {
+    const custo: CustoResolver = (it) => (it.custo_congelado ?? 7);
+    const vendas = [
+      venda({ id: 'a', order_id: 11, pack_id: 70, tem_devolucao: true,
+        itens: [item({ id: 'i1', custo_congelado: 5 })] }),
+      venda({ id: 'b', order_id: 12, pack_id: 70,
+        itens: [item({ id: 'i2' })] }),
+    ];
+    const [p] = agruparPorPedido(vendas, custo);
+    const i1 = p.itens.find((x) => x.id === 'i1')!;
+    const i2 = p.itens.find((x) => x.id === 'i2')!;
+    expect([i1.custoEstimado, i1.temDevolucao, i1.orderId]).toEqual([false, true, 11]);
+    expect([i2.custoEstimado, i2.temDevolucao, i2.orderId]).toEqual([true, false, 12]);
+  });
+
+  it('sem custo nenhum → custoEstimado false (é "sem custo", não "estimado")', () => {
+    const [p] = agruparPorPedido([venda({ id: 'a' })]);
+    expect(p.itens[0].custo).toBeNull();
+    expect(p.itens[0].custoEstimado).toBe(false);
   });
 });

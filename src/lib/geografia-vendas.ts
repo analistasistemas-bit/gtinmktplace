@@ -54,7 +54,7 @@ export function agruparPorGeografia(pedidos: Pedido[]): GeografiaVendas {
     // Agrega por UF
     const ufAcc = porUfMap.get(p.uf) ?? { pedidos: 0, unidades: 0, valor: 0 };
     ufAcc.pedidos += 1;
-    ufAcc.unidades += p.unidades;
+    ufAcc.unidades += p.unidadesFaturaveis;
     ufAcc.valor += p.bruto;
     porUfMap.set(p.uf, ufAcc);
 

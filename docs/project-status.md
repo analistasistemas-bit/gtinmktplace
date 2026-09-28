@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-09-24
+**Ultima atualizacao:** 2026-09-27
 
 ## Snapshot
 
@@ -546,6 +546,68 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   redeploy das ~60 funções que as usam). `sincronizar-promocoes` passa a devolver 500 no ramo
   QStash da etapa `lista` em `estado: 'erro'`, para o QStash retentar. Ver
   [ADR-0171](decisions/0171-renovacao-proativa-token-ml.md).
+- **ADR-0172: Vendas SKU — análise de vendas por variação, Fatia 1 (2026-09-26) — EM PRODUÇÃO
+  (2026-09-27).** Nova aba **Vendas
+  SKU** em `/faturamento?aba=sku`: ranking por SKU (`codigo`) com Lucro (líquido − custo
+  congelado), Markup, Margem s/ venda, Faturamento, Unidades, taxa de devolução, ABC (por lucro ou
+  faturamento) e Tendência, com opção de agrupar por família. Cálculo 100% no navegador sobre os
+  mesmos itens de `agruparPorPedido` (`src/lib/pedidos-faturamento.ts`) — nenhuma fórmula nova de
+  dinheiro, soma bate com a aba Vendas por construção. Enriquecimento (nome de família, estoque,
+  fornecedor, origem, 1ª/última venda) vem da RPC nova `vendas_sku_catalogo()` (migration
+  `20260927024030_vendas_sku_catalogo`, aplicada em produção por `db push` em 2026-09-27). Testes: 576 arquivos / 5993 testes verdes,
+  `pnpm preflight` verde. Validação com dados reais da Avil (playwright, sessão isolada, período
+  fechado 01–25/09/2026): Faturamento e Unidades batem 1:1 entre a aba Vendas e a Vendas SKU (idênticos centavo a centavo). Screenshots 1440/390, claro/escuro, e o estado de erro em
+  `.superpowers/sdd/2026-09-26-vendas-sku-fatia-1/`. Merge fast-forward na main até o commit `0635262c`;
+  front validado em produção (conta VALIDATION, só leitura), 0 erros de console. Ver
+  [ADR-0172](decisions/0172-vendas-sku-analise-por-variacao.md).
+- **ADR-0172: Dossiê do SKU, Fatia 2a (2026-09-27) — EM PRODUÇÃO (2026-09-27).** Página
+  `/faturamento/sku/:codigo` e `/faturamento/sku/familia/:codigoPai`:
+  aprofunda a linha do ranking de Vendas SKU num histórico completo (KPIs do período, série
+  semanal/mensal com eventos, estoque com Kit Virtual vinculado, devoluções, vendas por UF, mix da
+  família e situação nas campanhas). Duas RPCs novas — `vendas_sku_dossie_ids` (ids de `ml_vendas`
+  com pack/envio expandidos, para o rateio de frete bater com a aba Vendas) e `vendas_sku_mlbs`
+  (vínculo do MLB: exato/compartilhado/não resolvido) — e três índices em `ml_vendas`/`ml_vendas_itens`,
+  migration `20260927045118_vendas_sku_dossie`, **aplicada em produção por `db push` em 2026-09-27**. **Paridade
+  real (T10, conta VALIDATION/DSA, SKU 00000029, período Personalizado 01–31/08/2026, ids do dossiê
+  calculados por SQL read-only com a mesma lógica da RPC):** Faturamento e Lucro idênticos entre o ranking da Vendas SKU e os KPIs do Dossiê. **Carga (T10, leitura
+  read-only em produção, SKU de maior volume da Avil — código `02989271`, 648 itens de venda):** a
+  expansão de pack leva a 708 vendas; payload estimado do `buscarVendasPorIds` ≈ 973 KB (~1,37 KB
+  linha). `EXPLAIN` do `vendas_sku_dossie_ids` confirma o minor já registrado no `progress.md` da
+  Fatia 2a: o `OR` das 3 condições (id próprio/pack/envio) **não usa** os dois índices parciais
+  novos — resolve via `Filter`/subplans sobre o índice de `org_id` já existente (~13 ms na Avil,
+  tabela ainda pequena; `UNION` seria o remédio se a carga crescer). Testes e `pnpm preflight`
+  verdes; screenshots 1440/390 claro/escuro (SKU e família) em
+  `.superpowers/sdd/2026-09-27-vendas-sku-fatia-2a/`. Merge fast-forward na main até o commit
+  `0635262c`; front validado em produção (conta VALIDATION, só leitura), sem regressão na aba Vendas.
+- **ADR-0172: Tráfego e oferta, Fatia 2b (2026-09-27) — EM PRODUÇÃO (2026-09-27).** Coleta diária de
+  visitas por dia e preço de oferta por MLB (worker novo
+  `coletar-trafego-ml`, QStash, só GET no ML; spike 052) e painel **Tráfego e oferta** no Dossiê do SKU
+  (visitas, Unidades por visita, preço de oferta observado, estados do dia). Migration
+  `20260927084615_vendas_sku_trafego`, **aplicada em produção por `db push` em 2026-09-27**. **Validação real (T8):** worker com a fiação real, ML real da Avil (só GET, sem refresh)
+  e Postgres local, 3 MLBs do spike: 149 dias (01/05–26/09/2026) idênticos ao spike e preço de hoje
+  igual; 2º run sem duplicar nem regredir. Edge function `coletar-trafego-ml` deployada (ACTIVE, v1,
+  `verify_jwt=false`); schedule QStash `17 9 * * *` UTC (`scd_6hhsCf2EDfohfUaikbfkRMCbNXug`, runbook
+  `docs/runbooks/coletar-trafego-ml.md`), plano QStash migrado para Pay as You Go. 1ª execução em
+  produção (27/09 ~18h26 UTC) concluiu `ok` nas 3 orgs (Avil, DSA, Daludi Shop), carga da Avil ~1m40s.
+- **ADR-0172: Ads no dossiê, Fatia 2c (2026-09-27) — EM PRODUÇÃO (2026-09-27).** Gasto e vendas
+  atribuídas do Product Ads por grupo de anúncios
+  (`ad_group_id`; worker novo `coletar-ads-ml`, QStash, só GET no ML; spike 053) e painel `PainelAds` no
+  Dossiê do SKU (Despesa de Ads do período, Lucro após Ads, alcance sku/família/anúncio, atribuição em
+  aberto). Migration `20260927124602_vendas_sku_ads`, **aplicada em produção por `db push` em
+  2026-09-27**. **Validação real (T7), validado no ML real com o código final (Rulings até 2c-9):** fiação real, ML real
+  da Avil (só GET, sem refresh) e Postgres local: filtro de status sem esconder grupo (total igual com e
+  sem filtro); carga de 90 dias em `ok`, Σ gravado dos grupos com vínculo **confere** com o custo listado;
+  gasto fora dos grupos listados 3,08 % (~2,57 % fora do search + 0,52 % de 3 grupos `EMPTY` sem membros,
+  Ruling 2c-7); 134 grupos com gasto (84 ITEM, 31 FAMILY, 19 CATALOG), série densa de 90 dias em todos;
+  2º run (diária) sem mexer nos dias com mais de 15 dias nem duplicar chave, gravando o resumo de 90 dias
+  (fora dos grupos segue em 3,08 %, Ruling 2c-8). **Consequência (2c-7 + 2c-8):** o aviso de gasto fora
+  dos grupos cobre os últimos 90 dias; em produção (27/09), o gasto fora dos grupos listados é ~3,1 % na
+  Avil, ~7,4 % na DSA e ~14 % na Daludi Shop, e por isso o
+  Lucro após Ads aparece indisponível nas 3 orgs; despesa, ROAS e ACOS continuam visíveis. **Decisão pendente do
+  Diego:** manter a regra rígida ou mostrar o Lucro após Ads com um aviso.
+  Edge function `coletar-ads-ml` deployada (ACTIVE, v1, `verify_jwt=false`); schedule QStash
+  `17 14 * * *` UTC (`scd_7c8F3D7T64XecBkStgxwpDNuho1R`, runbook `docs/runbooks/coletar-ads-ml.md`). 1ª
+  execução em produção (27/09 ~18h26 UTC) concluiu `ok` nas 3 orgs, sem erro de CPU.
 - **Cadastro de Grade em Matriz Cor x Tamanho (2026-09-19/20) — EM PRODUÇÃO.** Substituição da lista
   linear de cards pelo componente `MatrizGrade` (`matriz-grade.tsx`): visualização bidimensional Cor (linhas)
   × Tamanho (colunas) com 4 modos (`estoque`, `preco`, `custo`, `gtin`), navegação fluida por setas e
@@ -571,6 +633,23 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   novo, antes/depois. Ver [spec](superpowers/specs/2026-09-24-estoque-grade-operacao-design.md),
   [plano](superpowers/plans/2026-09-24-estoque-grade-operacao.md) e o amendment 2026-09-24c do
   [ADR-0166](decisions/0166-tipo-de-produto-por-organizacao.md).
+
+## Incidente CPU 546 e fan-out por org (ADR-0173, 25-27/09/2026) — código pronto, ativação pendente
+
+**Não está em produção.** `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento`
+passaram a falhar com `CPU Time exceeded` (HTTP 546, teto de 2s de CPU por requisição) porque
+processam todas as organizações numa única requisição — `backfill-faturamento` sem execução
+completa desde ~10/09, `reconciliar-faturamento` com 12 de 74 execuções em 546 numa janela de 72h.
+Correção: o schedule de cada função vira um disparador que publica 1 mensagem QStash por org,
+processada em lotes retomáveis por `worker_rodadas` (posse com lease, CAS do cursor). Pedido que
+falha vira pendência por org (`worker_pendencias`); notificação do Pulse durável e idempotente por
+chave. Ativação por flag, uma função por vez, com validação de CPU por etapa antes de ligar a
+próxima — nenhuma flag setada ainda. Runbook completo em
+[edge-functions.md](reference/edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback).
+Ver [ADR-0173](decisions/0173-fanout-por-org-workers-agendados-cpu.md) e o plano
+`docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`. **Achado lateral:** `materializar-metricas`
+está documentado com schedule diário mas sem invocações em produção nos últimos 7 dias — investigar
+fora deste ADR.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 

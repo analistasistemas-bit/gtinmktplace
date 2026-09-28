@@ -8,6 +8,9 @@ import type { CanalAtivo } from './canal-ativo';
 import { comCustoCongelado, type CustoCongeladoRow, type OrigemVenda, type Venda } from '../../supabase/functions/_shared/platform-admin/sales-types';
 export { comCustoCongelado, type CustoCongeladoRow, type OrigemVenda, type Venda, type VendaItem } from '../../supabase/functions/_shared/platform-admin/sales-types';
 
+/** Mesmo `select` da aba Vendas (`buscarVendas`) — reusado por `buscarVendasPorIds` (dossiê do SKU). */
+export const SELECT_VENDAS = 'id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, kit_item_id, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai), custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)';
+
 /** Lê as vendas do período direto da tabela (RLS por user). Inclui os itens.
  *  Pagina (`.range`) para não truncar em ~1000 linhas (teto padrão do PostgREST).
  *  `atualizadoDesde`: marca d'água do poll incremental (ADR-0082) — quando presente, filtra
@@ -17,7 +20,7 @@ export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'
   const vendas = await buscarTodasPaginas<Venda>((de, ate) => {
     let q = supabase
       .from('ml_vendas')
-      .select('id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, kit_item_id, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai), custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)')
+      .select(SELECT_VENDAS)
       .gte('date_closed', janela.desde)
       .lte('date_closed', janela.ate)
       .order('date_closed', { ascending: false })
@@ -28,14 +31,44 @@ export async function buscarVendas(janela: Janela, origem: OrigemVenda = 'todos'
     if (atualizadoDesde) q = q.gte('atualizado_em', atualizadoDesde);
     return q as unknown as PromiseLike<{ data: Venda[] | null; error: { message: string } | null }>;
   });
-  // 'canal' ainda não está no select (coluna só existe em produção após a migration da Task 4);
-  // fallback para 'mercado_livre' preserva o comportamento atual até a Task 9 ligar o filtro real.
-  // `custos` sai do objeto: é insumo do embed, já consumido por `comCustoCongelado`. Sem isto ele
-  // viajaria para os consumidores como campo não declarado em `Venda`.
-  return vendas.map((v) => {
-    const { custos: _custos, ...resto } = v as Venda & { custos?: CustoCongeladoRow[] | null };
-    return { ...resto, canal: v.canal ?? 'mercado_livre', itens: comCustoCongelado(v) };
-  });
+  return vendas.map(posProcessarVenda);
+}
+
+// 'canal' ainda não está no select (coluna só existe em produção após a migration da Task 4);
+// fallback para 'mercado_livre' preserva o comportamento atual até a Task 9 ligar o filtro real.
+// `custos` sai do objeto: é insumo do embed, já consumido por `comCustoCongelado`. Sem isto ele
+// viajaria para os consumidores como campo não declarado em `Venda`.
+function posProcessarVenda(v: Venda): Venda {
+  const { custos: _custos, ...resto } = v as Venda & { custos?: CustoCongeladoRow[] | null };
+  return { ...resto, canal: v.canal ?? 'mercado_livre', itens: comCustoCongelado(v) };
+}
+
+const LOTE_IDS_DOSSIE = 80;
+// ponytail: 4 lotes em voo (708 ids: ~3,1 s em série → ~1 s); subir só se o pool do PostgREST folgar.
+const LOTES_EM_VOO = 4;
+
+/** Vendas do dossiê do SKU por id (Fatia 2a) — mesmo `select`/pós-processamento de `buscarVendas`,
+ *  sem filtro de janela (o dossiê já recebeu os ids prontos via `vendas_sku_dossie_ids`). Lotes de
+ *  80 ids: `select` + 150 uuids por `.in` já perto de 8 KB de URL. Até {@link LOTES_EM_VOO} lotes
+ *  em paralelo; qualquer lote com erro rejeita tudo (nunca dado parcial). */
+export async function buscarVendasPorIds(ids: string[]): Promise<Venda[]> {
+  const lotes: string[][] = [];
+  for (let inicio = 0; inicio < ids.length; inicio += LOTE_IDS_DOSSIE) lotes.push(ids.slice(inicio, inicio + LOTE_IDS_DOSSIE));
+  const porLote: Venda[][] = [];
+  let proximo = 0;
+  const trabalhador = async () => {
+    while (proximo < lotes.length) {
+      const i = proximo++;
+      const { data, error } = await supabase.from('ml_vendas').select(SELECT_VENDAS).in('id', lotes[i]);
+      if (error) throw new Error(error.message);
+      porLote[i] = (data ?? []) as unknown as Venda[];
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(LOTES_EM_VOO, lotes.length) }, trabalhador));
+  const vendas = porLote.flat();
+  return vendas
+    .map(posProcessarVenda)
+    .sort((a, b) => (b.date_closed ?? '').localeCompare(a.date_closed ?? '') || a.id.localeCompare(b.id));
 }
 
 /** Folga da marca d'água. `atualizado_em = now()` no Postgres é o timestamp do INÍCIO da

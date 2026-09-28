@@ -49,7 +49,7 @@ describe('DetalheVendas', () => {
     expect(screen.getByRole('heading', { name: /Detalhe de vendas/i })).toBeInTheDocument();
     expect(screen.getAllByText(/Seus anúncios/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Fora do PubliAI/i).length).toBeGreaterThan(0);
-    expect(screen.getByText('LINHA LINHANYL 150')).toBeInTheDocument();
+    expect(screen.getByText('Linha Linhanyl 150')).toBeInTheDocument();
     expect(screen.getByText('Fita Externa')).toBeInTheDocument();
   });
 });

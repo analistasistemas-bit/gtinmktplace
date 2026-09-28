@@ -2,6 +2,99 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Fan-out por org — incidente CPU 546 (ADR-0173) — código pronto, NADA deployado/ativado
+
+Correção do incidente diagnosticado em 27/09 (pendência abaixo): `pulse-coletar`,
+`backfill-faturamento` e `reconciliar-faturamento` estouravam `CPU Time exceeded` (546) por
+processar todas as orgs numa única requisição. Plano em
+`docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`, relatórios em
+`.superpowers/sdd/2026-09-27-fanout-workers-cpu/`. Runbook de ativação/rollback em
+[edge-functions.md](reference/edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback).
+
+- [x] Task 1: migration `worker_rodadas`/`worker_pendencias` + RPCs de posse/CAS/pendência + teste SQL de concorrência.
+- [x] Task 2: protocolo compartilhado `_shared/rodada/rodada.ts` (`executarMensagem`, posse/CAS/notificação durável).
+- [x] Task 3: leituras/gravações estritas (`buscarPedidosPeriodoEstrito` e afins), `pendencias.ts`, notificação idempotente por `chave`.
+- [x] Task 4: `backfill-faturamento` em rodada por org atrás de `FANOUT_BACKFILL`.
+- [x] Task 5: `pulse-coletar` em rodada por org (backoff por produto) atrás de `FANOUT_PULSE`.
+- [x] Task 6: `reconciliar-faturamento` em rodada por org atrás de `FANOUT_RECONCILIAR`.
+- [x] Task 7: equivalência do líquido MP por pedido (varredura × leitura por pedido, `mp-por-pedido.test.ts` — os 4 casos batem, sem divergência) + esta documentação (ADR-0173, modelo de dados, runbook).
+- [ ] **Task 8 (pendente): portão local, revisão Grok 4.7 xhigh, push + CI, deploy com as 3 flags DESLIGADAS, ativação por função com OK do Diego (backfill → pulse → reconciliar), validação de 3 dias em produção, recuperação histórica do backfill.** Nenhuma flag setada até aqui — os 3 workers seguem no caminho legado de hoje.
+
+## Vendas SKU — Fatias 1, 2a, 2b e 2c (ADR-0172) — EM PRODUÇÃO desde 2026-09-27
+
+Merge fast-forward na main até o commit `0635262c`. As 4 migrations aplicadas em produção por
+`supabase db push` (`20260927024030_vendas_sku_catalogo`, `20260927045118_vendas_sku_dossie`,
+`20260927084615_vendas_sku_trafego`, `20260927124602_vendas_sku_ads`), histórico remoto e local
+alinhados. Edge functions `coletar-trafego-ml` e `coletar-ads-ml` deployadas (ACTIVE, v1,
+`verify_jwt=false`). Plano QStash migrado para Pay as You Go; schedules criados:
+`coletar-trafego-ml` `17 9 * * *` UTC (`scd_6hhsCf2EDfohfUaikbfkRMCbNXug`) e `coletar-ads-ml`
+`17 14 * * *` UTC (`scd_7c8F3D7T64XecBkStgxwpDNuho1R`). 1ª execução em produção (27/09 ~18h26 UTC)
+concluiu `ok` para tráfego e Ads, carga inicial completa nas 3 orgs (Avil, DSA, Daludi Shop), sem
+erro de CPU. Front validado em produção (conta VALIDATION, só leitura): ranking, dossiê e as abas
+Vendas / Tráfego e oferta / Ads OK, sem regressão na aba Vendas do Faturamento, 0 erros de console.
+Ver [ADR-0172](decisions/0172-vendas-sku-analise-por-variacao.md).
+
+### Fatia 2c: Ads no dossiê do SKU
+
+Gasto e vendas atribuídas do Product Ads por grupo de anúncios (worker `coletar-ads-ml`) e painel
+`PainelAds` no Dossiê do SKU. Relatórios em `.superpowers/sdd/2026-09-27-vendas-sku-fatia-2c/`.
+
+- [x] Spike 053 (contrato real do Product Ads, só GET).
+- [x] Migration `20260927124602_vendas_sku_ads.sql` (4 tabelas + 5 RPCs de escrita + `vendas_sku_codigos_mlbs`) + teste SQL, aplicada em produção.
+- [x] Worker `_shared/ads/*` + `coletar-ads-ml` (posse, CAS do cursor, continuação QStash, Rulings 2c-5/2c-6/2c-9) e runbook.
+- [x] Painel Ads (`src/lib/sku-ads.ts`, `ads-dossie.tsx`).
+- [x] Validação real (T7): ML da Avil só GET + Postgres local — filtro de status sem esconder grupo, Σ gravado
+  confere com o custo listado, fora dos grupos 3,08 % na carga e na diária (Rulings 2c-7/2c-8), 134 grupos com série densa, 2º run sem mexer nos dias
+  antigos. 594 arquivos / 6319 testes; `pnpm preflight` verde.
+- [x] `supabase db push`, deploy de `coletar-ads-ml` e `coletar-trafego-ml` e schedule QStash (runbook `docs/runbooks/coletar-ads-ml.md`) — feito em 27/09.
+- [x] Revisão final do diff + merge fast-forward na `main` — feito em 27/09 (`0635262c`).
+
+### Fatia 2b: Tráfego e oferta
+
+Coleta diária de visitas e preço de oferta por MLB (worker `coletar-trafego-ml`) e painel **Tráfego e
+oferta** no Dossiê do SKU. Relatórios em `.superpowers/sdd/2026-09-27-vendas-sku-fatia-2b/`.
+
+- [x] Spike 052 (contrato real de visitas e `sale_price`, só GET).
+- [x] Migration `20260927084615_vendas_sku_trafego.sql` (4 tabelas + 6 RPCs) + teste SQL, aplicada em produção.
+- [x] Worker `_shared/trafego/*` + `coletar-trafego-ml` (posse, CAS do cursor, continuação QStash) e runbook.
+- [x] Painel Tráfego e oferta (`src/lib/sku-trafego.ts`, `trafego-dossie.tsx`).
+- [x] Validação real (T8): ML da Avil só GET + Postgres local, 3 MLBs do spike — 149 dias idênticos ao spike,
+  preço de hoje igual, 2º run sem duplicar nem regredir. 588 arquivos / 6200 testes; `pnpm preflight` verde.
+- [x] `supabase db push`, deploy da função e schedule QStash (runbook `docs/runbooks/coletar-trafego-ml.md`) — feito em 27/09.
+- [x] Revisão final do diff + merge fast-forward na `main` — feito em 27/09 (`0635262c`).
+
+### Fatia 1: aba Vendas SKU
+
+Nova aba **Vendas SKU** em `/faturamento?aba=sku`: análise de vendas por variação (`codigo`), com
+Lucro/Markup/Margem s/ venda, ABC e Tendência. Ver [ADR-0172](decisions/0172-vendas-sku-analise-por-variacao.md) e
+[spec](superpowers/specs/2026-09-26-vendas-sku-design.md).
+
+- [x] Lib `src/lib/vendas-sku.ts` + `src/lib/vendas-sku-catalogo.ts` (agregação, tendência,
+  cobertura, insights, curva ABC, agrupamento por família).
+- [x] RPC `vendas_sku_catalogo()` (migration `20260927024030_vendas_sku_catalogo.sql`) — só
+  enriquece por `codigo` (família, estoque, fornecedor, origem, 1ª/última venda); nenhum cálculo
+  de dinheiro.
+- [x] Hook `src/hooks/useVendasSku.ts` + UI `aba-vendas-sku.tsx`/`ranking-sku.tsx`, tab `sku` em
+  `Faturamento.tsx`.
+- [x] Suíte completa: 576 arquivos / 5993 testes verdes; `pnpm preflight` verde.
+- [x] Paridade real: Faturamento e Unidades da aba Vendas e da Vendas SKU batem 1:1 no período
+  01–25/09/2026 (faturamento e unidades idênticos centavo a centavo), validado com dado real da Avil via `playwright-cli`.
+- [x] Validação visual 1440/390, claro/escuro, e estado de erro (catálogo indisponível) —
+  screenshots em `.superpowers/sdd/2026-09-26-vendas-sku-fatia-1/`.
+- [x] `supabase db push` da migration em produção — feito em 27/09.
+- [x] Revisão final do diff + merge fast-forward na `main` — feito em 27/09 (`0635262c`).
+
+### Pendências abertas pela entrega da Vendas SKU
+
+- [ ] **Fatia 3 (recompra, XLSX, atalhos)** — adiada por decisão do Diego. Plano em
+  `docs/superpowers/plans/2026-09-27-vendas-sku-fatia-3.md`.
+- [ ] **Decisão do Diego — Lucro após Ads:** manter a regra rígida (indisponível com qualquer gasto
+  fora dos grupos listados) ou mostrar o Lucro após Ads com aviso ("~N % do gasto de Ads da conta
+  não pôde ser atribuído"). Medido em 27/09: Avil ~3,1 %, DSA ~7,4 %, Daludi Shop ~14 %.
+- [x] **Incidente de CPU pré-existente (não causado pela Vendas SKU), diagnosticado em 27/09** —
+  ver a seção "Fan-out por org — incidente CPU 546 (ADR-0173)" no topo deste arquivo: Tasks 1-7
+  concluídas (código pronto), Task 8 (deploy/ativação em produção) ainda pendente.
+
 ## Renovação proativa do token ML (ADR-0171) — 2026-09-26
 
 A Central de Promoções da DSA levou 429 (`grant_type refresh_token` excedido) em 3 rodadas

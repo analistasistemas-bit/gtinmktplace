@@ -45,16 +45,22 @@ export async function buscarMensagensPack(
   } catch { return []; }
 }
 
-/** Upsert idempotente das mensagens de um pack. Retorna nº de novas RECEBIDAS (para alerta). */
-export async function upsertMensagens(
-  admin: SupabaseClient,
-  userId: string,
-  orgId: string | null,
-  packId: string | number,
-  meta: MetaPack,
-  sellerId: string | number,
-  msgs: MensagemML[],
-): Promise<{ novasRecebidas: number }> {
+/** Mesma leitura, ESTRITA (ADR-0173): 403/404 (pack sem mensagens/sem permissão) → []; qualquer
+ *  outro não-2xx (429/5xx) ou erro de rede → lança — o worker precisa distinguir "não há nada"
+ *  de "a leitura falhou", que hoje voltam ambos como []. */
+export async function buscarMensagensPackEstrito(
+  token: string, packId: string | number, sellerId: string | number, f: typeof fetch = fetch,
+): Promise<MensagemML[]> {
+  const url = `${API}/messages/packs/${packId}/sellers/${sellerId}?tag=post_sale&mark_as_read=false`;
+  const resp = await f(url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+  if (resp.status === 403 || resp.status === 404) return [];
+  if (!resp.ok) throw new Error(`ML /messages/packs ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+  return extrairMensagens(await resp.json());
+}
+
+function montarLinhasMensagens(
+  userId: string, orgId: string | null, packId: string | number, meta: MetaPack, sellerId: string | number, msgs: MensagemML[],
+) {
   // null significa que a fonte atual não sabe o valor; omitir a coluna no upsert preserva o
   // snapshot já completo de uma sincronização anterior (novas linhas continuam com null no DB).
   const metadata = {
@@ -65,7 +71,7 @@ export async function upsertMensagens(
     ...(meta.compradorNick != null ? { comprador_nick: meta.compradorNick } : {}),
     ...(meta.orderStatus != null ? { order_status: meta.orderStatus } : {}),
   };
-  const rows = msgs.map((m) => {
+  return msgs.map((m) => {
     const r = mapearMensagem(m, sellerId);
     return {
       user_id: userId,
@@ -77,6 +83,19 @@ export async function upsertMensagens(
       ...r,
     };
   }).filter((r) => r.message_id);
+}
+
+/** Upsert idempotente das mensagens de um pack. Retorna nº de novas RECEBIDAS (para alerta). */
+export async function upsertMensagens(
+  admin: SupabaseClient,
+  userId: string,
+  orgId: string | null,
+  packId: string | number,
+  meta: MetaPack,
+  sellerId: string | number,
+  msgs: MensagemML[],
+): Promise<{ novasRecebidas: number }> {
+  const rows = montarLinhasMensagens(userId, orgId, packId, meta, sellerId, msgs);
   if (rows.length === 0) return { novasRecebidas: 0 };
 
   // ignoreDuplicates: só as linhas efetivamente INSERIDAS (novas) voltam no .select() — DO NOTHING
@@ -89,6 +108,32 @@ export async function upsertMensagens(
   // 2ª passada: upsert de verdade (sem ignoreDuplicates) para as existentes continuarem
   // recebendo raw/atualizado_em/item_titulo atualizados — a 1ª não escreve nada nelas.
   await admin.from('ml_mensagens').upsert(rows, { onConflict: 'user_id,message_id' });
+
+  return { novasRecebidas };
+}
+
+/** Mesmo upsert, ESTRITO (ADR-0173): `error` de QUALQUER um dos dois upserts lança — hoje ambos
+ *  são ignorados, e uma falha silenciosa deixaria a pendência do worker limpa sem gravar nada. */
+export async function upsertMensagensEstrito(
+  admin: SupabaseClient,
+  userId: string,
+  orgId: string | null,
+  packId: string | number,
+  meta: MetaPack,
+  sellerId: string | number,
+  msgs: MensagemML[],
+): Promise<{ novasRecebidas: number }> {
+  const rows = montarLinhasMensagens(userId, orgId, packId, meta, sellerId, msgs);
+  if (rows.length === 0) return { novasRecebidas: 0 };
+
+  const { data: inseridas, error: erroNovas } = await admin.from('ml_mensagens')
+    .upsert(rows, { onConflict: 'user_id,message_id', ignoreDuplicates: true })
+    .select('message_id, direcao');
+  if (erroNovas) throw new Error(`upsert ml_mensagens (novas): ${erroNovas.message}`);
+  const novasRecebidas = (inseridas ?? []).filter((r) => r.direcao === 'recebida').length;
+
+  const { error: erroAtualiza } = await admin.from('ml_mensagens').upsert(rows, { onConflict: 'user_id,message_id' });
+  if (erroAtualiza) throw new Error(`upsert ml_mensagens (atualização): ${erroAtualiza.message}`);
 
   return { novasRecebidas };
 }
@@ -149,13 +194,7 @@ export async function resolverMetaPack(
 
 export interface PackVenda extends MetaPack { packId: string }
 
-/** Packs dos pedidos já conhecidos (backfill). Sem pack_id, usa o próprio order_id (pedido solo). */
-export async function listarPacksDeVendas(admin: SupabaseClient, userId: string, limite = 200): Promise<PackVenda[]> {
-  const { data } = await admin.from('ml_vendas')
-    .select('order_id, pack_id, status, comprador_nome, comprador_nick, ml_vendas_itens(ml_item_id, titulo)')
-    .eq('user_id', userId)
-    .order('date_closed', { ascending: false })
-    .limit(limite);
+function mapearPacksDeVendas(data: unknown): PackVenda[] {
   const vistos = new Set<string>();
   const out: PackVenda[] = [];
   for (const v of (data ?? []) as Array<{
@@ -178,6 +217,27 @@ export async function listarPacksDeVendas(admin: SupabaseClient, userId: string,
     });
   }
   return out;
+}
+
+/** Packs dos pedidos já conhecidos (backfill). Sem pack_id, usa o próprio order_id (pedido solo). */
+export async function listarPacksDeVendas(admin: SupabaseClient, userId: string, limite = 200): Promise<PackVenda[]> {
+  const { data } = await admin.from('ml_vendas')
+    .select('order_id, pack_id, status, comprador_nome, comprador_nick, ml_vendas_itens(ml_item_id, titulo)')
+    .eq('user_id', userId)
+    .order('date_closed', { ascending: false })
+    .limit(limite);
+  return mapearPacksDeVendas(data);
+}
+
+/** Mesma leitura, ESTRITA (ADR-0173): `error` do select lança em vez de tratar como "sem packs". */
+export async function listarPacksDeVendasEstrito(admin: SupabaseClient, userId: string, limite = 200): Promise<PackVenda[]> {
+  const { data, error } = await admin.from('ml_vendas')
+    .select('order_id, pack_id, status, comprador_nome, comprador_nick, ml_vendas_itens(ml_item_id, titulo)')
+    .eq('user_id', userId)
+    .order('date_closed', { ascending: false })
+    .limit(limite);
+  if (error) throw new Error(`listar packs de vendas: ${error.message}`);
+  return mapearPacksDeVendas(data);
 }
 
 export async function marcarConversaCancelada(

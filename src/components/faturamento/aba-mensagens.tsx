@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { useListaMensagens } from '@/hooks/useMensagens';
 import { responderMensagem, sugerirRespostaMensagem, dispensarConversa, ehPedidoCancelado, type Conversa } from '@/lib/mensagens';
 import { fmtDataCurta, urlVendaML } from '@/lib/ml-status';
+import { formatarNomeProduto } from '@/lib/texto';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -80,7 +81,7 @@ function CardConversa({ c }: { c: Conversa }) {
       <div className="mb-3 flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-xs text-muted-foreground">
-            <span className="truncate">{c.item_titulo ?? (c.order_id ? `Pedido ${c.order_id}` : c.pack_id)}</span>
+            <span className="truncate">{formatarNomeProduto(c.item_titulo) || (c.order_id ? `Pedido ${c.order_id}` : c.pack_id)}</span>
             <a
               href={urlConversa}
               target="_blank"

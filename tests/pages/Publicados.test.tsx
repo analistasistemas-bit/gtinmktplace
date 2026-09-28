@@ -303,7 +303,7 @@ describe('Publicados', () => {
       </MemoryRouter>,
     );
 
-    const linha = screen.getAllByText('COLA LIQUIDA SILICONE 250ML')
+    const linha = screen.getAllByText('Cola Liquida Silicone 250ML')
       .map((el) => el.closest('tr'))
       .find((tr): tr is HTMLTableRowElement => tr != null)!;
     // getByText (não toHaveTextContent): a célula tem que ser exatamente 59, senão qualquer valor
@@ -338,7 +338,7 @@ describe('Publicados', () => {
       </MemoryRouter>,
     );
 
-    const linha = screen.getAllByText('COLA LIQUIDA SILICONE 250ML')
+    const linha = screen.getAllByText('Cola Liquida Silicone 250ML')
       .map((el) => el.closest('tr'))
       .find((tr): tr is HTMLTableRowElement => tr != null)!;
     expect(within(linha).getByText('49')).toBeInTheDocument();
@@ -367,7 +367,7 @@ describe('Publicados', () => {
       </MemoryRouter>,
     );
 
-    const linha = screen.getAllByText('COLA LIQUIDA SILICONE 250ML')
+    const linha = screen.getAllByText('Cola Liquida Silicone 250ML')
       .map((el) => el.closest('tr'))
       .find((tr): tr is HTMLTableRowElement => tr != null)!;
     expect(within(linha).queryByText('38')).not.toBeInTheDocument();
@@ -408,7 +408,7 @@ describe('Publicados', () => {
       </MemoryRouter>,
     );
     // clica no título do produto (fora da seta) → a linha inteira é clicável
-    fireEvent.click(screen.getByText('COLA LIQUIDA SILICONE 250ML'));
+    fireEvent.click(screen.getByText('Cola Liquida Silicone 250ML'));
     expect(screen.getByRole('button', { name: 'Recolher análise' })).toHaveAttribute('aria-expanded', 'true');
   });
 
@@ -436,8 +436,8 @@ describe('Publicados', () => {
         <Publicados />
       </MemoryRouter>,
     );
-    expect(screen.getByText('COLA LIQUIDA SILICONE 250ML')).toBeInTheDocument();
-    expect(screen.queryByText('TESOURA INOX SHOPEE')).not.toBeInTheDocument();
+    expect(screen.getByText('Cola Liquida Silicone 250ML')).toBeInTheDocument();
+    expect(screen.queryByText('Tesoura Inox Shopee')).not.toBeInTheDocument();
     comFiltro.unmount();
 
     render(
@@ -445,8 +445,8 @@ describe('Publicados', () => {
         <Publicados />
       </MemoryRouter>,
     );
-    expect(screen.getByText('COLA LIQUIDA SILICONE 250ML')).toBeInTheDocument();
-    expect(screen.getByText('TESOURA INOX SHOPEE')).toBeInTheDocument();
+    expect(screen.getByText('Cola Liquida Silicone 250ML')).toBeInTheDocument();
+    expect(screen.getByText('Tesoura Inox Shopee')).toBeInTheDocument();
   });
 
   it('admin + catalogRetentavel: botão retentar catálogo visível e dispara mutation', () => {
@@ -723,7 +723,7 @@ describe('Publicados', () => {
       );
       // Produto normal: continua com todos os botões de sempre (Pausar/Republicar/Remover) e
       // sem nada herdado do kit (fornecedor/codigoPai não colidem).
-      expect(screen.getByText('COLA LIQUIDA SILICONE 250ML')).toBeInTheDocument();
+      expect(screen.getByText('Cola Liquida Silicone 250ML')).toBeInTheDocument();
       expect(screen.getByText('01829149')).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Pausar' })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: 'Remover' })).toBeInTheDocument();

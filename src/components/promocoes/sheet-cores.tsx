@@ -2,6 +2,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '
 import { StatusPill } from '@/components/ui/status-pill';
 import { calcularMarkup } from '@/lib/markup';
 import { fmtBRL, fmtMarkup } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 import type { ItemPromocao } from '@/lib/promocoes';
 import { SEMAFORO_UI } from './contagem-semaforo';
 
@@ -17,7 +18,7 @@ export function SheetCores({ item, onClose }: { item: ItemPromocao | null; onClo
         {item && (
           <>
             <SheetHeader>
-              <SheetTitle className="pr-8">{item.titulo ?? item.ml_item_id}</SheetTitle>
+              <SheetTitle className="pr-8">{formatarNomeProduto(item.titulo) || item.ml_item_id}</SheetTitle>
               <SheetDescription>
                 {item.ml_item_id} · preço da promoção {item.preco_avaliado != null ? fmtBRL(item.preco_avaliado) : '—'}
               </SheetDescription>

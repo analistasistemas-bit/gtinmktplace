@@ -10,6 +10,8 @@ export interface Devolucao {
   status: string | null;
   type: string | null;
   reason_texto: string | null;
+  /** Código cru do motivo no ML (fallback quando não há texto traduzido). */
+  reason_id?: string | null;
   valor_em_jogo: number | null;
   return_status: string | null;
   return_status_money: string | null;
@@ -30,7 +32,7 @@ export interface Devolucao {
 export async function buscarDevolucoes(): Promise<Devolucao[]> {
   const { data, error } = await supabase
     .from('ml_devolucoes')
-    .select('id, claim_id, order_id, stage, status, type, reason_texto, valor_em_jogo, return_status, return_status_money, acoes_pendentes, aberto_em, fechado_em')
+    .select('id, claim_id, order_id, stage, status, type, reason_id, reason_texto, valor_em_jogo, return_status, return_status_money, acoes_pendentes, aberto_em, fechado_em')
     .order('aberto_em', { ascending: false });
   if (error) throw new Error(error.message);
 

@@ -12,6 +12,7 @@ import {
 import { QK } from '@/lib/queries';
 import { ajustarEstoque, type ProdutoComSaldo } from '@/lib/produtos-saldo';
 import { rotuloVariacao } from '@/lib/rotulo-variacao';
+import { formatarNomeProduto } from '@/lib/texto';
 
 function rotuloComCodigo(v: { codigo: string; cor: string | null; nome: string | null; tamanho?: string | null }): string {
   const complemento = rotuloVariacao(v);
@@ -99,7 +100,7 @@ export function DialogAjuste({ produto, aberto, onFechar }: {
         <DialogHeader>
           <DialogTitle>Ajustar estoque</DialogTitle>
           <DialogDescription>
-            {produto?.nomePai}. Reduz ou zera o saldo e propaga para todos os marketplaces em que
+            {formatarNomeProduto(produto?.nomePai)}. Reduz ou zera o saldo e propaga para todos os marketplaces em que
             o produto está publicado. Para aumentar, use Entrada de mercadoria.
           </DialogDescription>
         </DialogHeader>

@@ -11,6 +11,8 @@ export interface MapaBrasilProps {
   selecionada?: string | null;
   /** callback ao clicar numa UF (opcional). */
   onSelecionar?: (uf: string) => void;
+  /** Texto do valor no tooltip (ex.: fmtBRL); substitui "valor unidade". */
+  formatar?: (valor: number) => string;
 }
 
 interface Projected {
@@ -45,6 +47,7 @@ export function MapaBrasil({
   unidade = 'pedidos',
   selecionada,
   onSelecionar,
+  formatar,
 }: MapaBrasilProps) {
   const { viewBox, paths, max } = useMemo(() => {
     const features = BRASIL_UF_GEOJSON.features as UfFeature[];
@@ -130,7 +133,7 @@ export function MapaBrasil({
                 onClick={() => onSelecionar?.(uf)}
               >
                 <title>
-                  {uf} — {valor} {unidade}
+                  {uf} — {formatar ? formatar(valor) : `${valor} ${unidade}`}
                 </title>
               </path>
             );

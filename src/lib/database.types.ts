@@ -976,6 +976,185 @@ export type Database = {
           },
         ]
       }
+      ml_ads_grupo: {
+        Row: {
+          ad_group_id: number
+          atualizado_em: string
+          campaign_id: number | null
+          external_id: string | null
+          org_id: string
+          status: string
+          tipo: string
+        }
+        Insert: {
+          ad_group_id: number
+          atualizado_em: string
+          campaign_id?: number | null
+          external_id?: string | null
+          org_id: string
+          status: string
+          tipo: string
+        }
+        Update: {
+          ad_group_id?: number
+          atualizado_em?: string
+          campaign_id?: number | null
+          external_id?: string | null
+          org_id?: string
+          status?: string
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_ads_grupo_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_ads_grupo_dia: {
+        Row: {
+          ad_group_id: number
+          clicks: number
+          coletado_em: string
+          cost: number
+          dia: string
+          direct_amount: number
+          direct_units: number
+          indirect_amount: number
+          org_id: string
+          prints: number
+          total_amount: number
+          units: number
+        }
+        Insert: {
+          ad_group_id: number
+          clicks: number
+          coletado_em: string
+          cost: number
+          dia: string
+          direct_amount: number
+          direct_units: number
+          indirect_amount: number
+          org_id: string
+          prints: number
+          total_amount: number
+          units: number
+        }
+        Update: {
+          ad_group_id?: number
+          clicks?: number
+          coletado_em?: string
+          cost?: number
+          dia?: string
+          direct_amount?: number
+          direct_units?: number
+          indirect_amount?: number
+          org_id?: string
+          prints?: number
+          total_amount?: number
+          units?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_ads_grupo_dia_org_id_ad_group_id_fkey"
+            columns: ["org_id", "ad_group_id"]
+            isOneToOne: false
+            referencedRelation: "ml_ads_grupo"
+            referencedColumns: ["org_id", "ad_group_id"]
+          },
+        ]
+      }
+      ml_ads_grupo_item: {
+        Row: {
+          ad_group_id: number
+          ml_item_id: string
+          org_id: string
+          visto_em: string
+        }
+        Insert: {
+          ad_group_id: number
+          ml_item_id: string
+          org_id: string
+          visto_em: string
+        }
+        Update: {
+          ad_group_id?: number
+          ml_item_id?: string
+          org_id?: string
+          visto_em?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_ads_grupo_item_org_id_ad_group_id_fkey"
+            columns: ["org_id", "ad_group_id"]
+            isOneToOne: false
+            referencedRelation: "ml_ads_grupo"
+            referencedColumns: ["org_id", "ad_group_id"]
+          },
+        ]
+      }
+      ml_ads_sync: {
+        Row: {
+          advertiser_id: number | null
+          carga_inicial_ok: boolean
+          cobertura_desde: string | null
+          cursor: string | null
+          custo_listado: number | null
+          custo_resumo: number | null
+          erro: string | null
+          estado: string
+          iniciado_em: string | null
+          org_id: string
+          posse_ate: string | null
+          rodada: string | null
+          ultimo_erro_em: string | null
+          ultimo_ok_em: string | null
+        }
+        Insert: {
+          advertiser_id?: number | null
+          carga_inicial_ok?: boolean
+          cobertura_desde?: string | null
+          cursor?: string | null
+          custo_listado?: number | null
+          custo_resumo?: number | null
+          erro?: string | null
+          estado: string
+          iniciado_em?: string | null
+          org_id: string
+          posse_ate?: string | null
+          rodada?: string | null
+          ultimo_erro_em?: string | null
+          ultimo_ok_em?: string | null
+        }
+        Update: {
+          advertiser_id?: number | null
+          carga_inicial_ok?: boolean
+          cobertura_desde?: string | null
+          cursor?: string | null
+          custo_listado?: number | null
+          custo_resumo?: number | null
+          erro?: string | null
+          estado?: string
+          iniciado_em?: string | null
+          org_id?: string
+          posse_ate?: string | null
+          rodada?: string | null
+          ultimo_erro_em?: string | null
+          ultimo_ok_em?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_ads_sync_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: true
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ml_credentials: {
         Row: {
           access_token_secret_id: string
@@ -1128,6 +1307,69 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ml_item_preco_dia: {
+        Row: {
+          dia: string
+          ml_item_id: string
+          moeda: string
+          observado_em: string
+          org_id: string
+          origem: string
+          preco: number
+          preco_regular: number | null
+        }
+        Insert: {
+          dia: string
+          ml_item_id: string
+          moeda: string
+          observado_em: string
+          org_id: string
+          origem: string
+          preco: number
+          preco_regular?: number | null
+        }
+        Update: {
+          dia?: string
+          ml_item_id?: string
+          moeda?: string
+          observado_em?: string
+          org_id?: string
+          origem?: string
+          preco?: number
+          preco_regular?: number | null
+        }
+        Relationships: []
+      }
+      ml_item_visitas_dia: {
+        Row: {
+          coletado_em: string
+          dia: string
+          estado: string
+          ml_item_id: string
+          org_id: string
+          rodada: string
+          visitas: number | null
+        }
+        Insert: {
+          coletado_em: string
+          dia: string
+          estado: string
+          ml_item_id: string
+          org_id: string
+          rodada: string
+          visitas?: number | null
+        }
+        Update: {
+          coletado_em?: string
+          dia?: string
+          estado?: string
+          ml_item_id?: string
+          org_id?: string
+          rodada?: string
+          visitas?: number | null
+        }
+        Relationships: []
       }
       ml_mensagens: {
         Row: {
@@ -1517,6 +1759,69 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ml_trafego_item: {
+        Row: {
+          ml_item_id: string
+          org_id: string
+          status: string
+          status_desde: string
+          ultimo_ok_em: string | null
+        }
+        Insert: {
+          ml_item_id: string
+          org_id: string
+          status: string
+          status_desde: string
+          ultimo_ok_em?: string | null
+        }
+        Update: {
+          ml_item_id?: string
+          org_id?: string
+          status?: string
+          status_desde?: string
+          ultimo_ok_em?: string | null
+        }
+        Relationships: []
+      }
+      ml_trafego_sync: {
+        Row: {
+          carga_inicial_concluida_em: string | null
+          cursor: string | null
+          erro: string | null
+          estado: string
+          iniciado_em: string | null
+          org_id: string
+          posse_ate: string | null
+          rodada: string | null
+          ultimo_erro_em: string | null
+          ultimo_ok_em: string | null
+        }
+        Insert: {
+          carga_inicial_concluida_em?: string | null
+          cursor?: string | null
+          erro?: string | null
+          estado: string
+          iniciado_em?: string | null
+          org_id: string
+          posse_ate?: string | null
+          rodada?: string | null
+          ultimo_erro_em?: string | null
+          ultimo_ok_em?: string | null
+        }
+        Update: {
+          carga_inicial_concluida_em?: string | null
+          cursor?: string | null
+          erro?: string | null
+          estado?: string
+          iniciado_em?: string | null
+          org_id?: string
+          posse_ate?: string | null
+          rodada?: string | null
+          ultimo_erro_em?: string | null
+          ultimo_ok_em?: string | null
+        }
+        Relationships: []
       }
       ml_vendas: {
         Row: {
@@ -3259,6 +3564,24 @@ export type Database = {
         }
         Returns: number
       }
+      avancar_ads_cursor: {
+        Args: {
+          p_cursor_atual: string | null
+          p_cursor_novo: string | null
+          p_org: string
+          p_rodada: string
+        }
+        Returns: boolean
+      }
+      avancar_trafego_cursor: {
+        Args: {
+          p_cursor_atual: string | null
+          p_cursor_novo: string | null
+          p_org: string
+          p_rodada: string
+        }
+        Returns: boolean
+      }
       baixar_estoque: {
         Args: {
           p_canal: string
@@ -3272,6 +3595,30 @@ export type Database = {
       can_write_current_org: { Args: never; Returns: boolean }
       canais_habilitados_da_org: { Args: never; Returns: string[] }
       cleanup_support_audit_events: { Args: never; Returns: number }
+      concluir_ads_rodada: {
+        Args: {
+          p_advertiser_id?: number | null
+          p_carga_concluida?: boolean
+          p_cobertura_desde?: string | null
+          p_custo_listado?: number | null
+          p_custo_resumo?: number | null
+          p_erro?: string | null
+          p_estado: string
+          p_org: string
+          p_rodada: string
+        }
+        Returns: boolean
+      }
+      concluir_trafego_rodada: {
+        Args: {
+          p_carga_concluida?: boolean
+          p_erro?: string
+          p_estado: string
+          p_org: string
+          p_rodada: string
+        }
+        Returns: boolean
+      }
       contar_conversas_aguardando: { Args: never; Returns: number }
       current_org_id: { Args: never; Returns: string }
       current_support_scope: {
@@ -3310,8 +3657,30 @@ export type Database = {
           refresh_token: string
         }[]
       }
+      gravar_ads_lote: {
+        Args: {
+          p_coletado_em: string
+          p_grupos: Json
+          p_org: string
+          p_rodada: string
+        }
+        Returns: boolean
+      }
+      gravar_preco_dia: {
+        Args: { p_org: string; p_pontos: Json }
+        Returns: undefined
+      }
+      gravar_trafego_item: {
+        Args: { p_itens: Json; p_org: string }
+        Returns: undefined
+      }
+      gravar_visitas_dia: {
+        Args: { p_org: string; p_pontos: Json; p_rodada: string }
+        Returns: undefined
+      }
       is_admin: { Args: never; Returns: boolean }
       is_super_admin: { Args: never; Returns: boolean }
+      limpar_ads_retencao: { Args: { p_corte: string }; Returns: undefined }
       limpar_movimentos_orfaos: { Args: { p_org: string }; Returns: number }
       marcar_mensagens_lidas: { Args: { p_pack_id: string }; Returns: number }
       marcar_notificacoes_lidas: { Args: { p_ids?: string[] }; Returns: number }
@@ -3554,6 +3923,20 @@ export type Database = {
         Returns: number
       }
       registrar_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
+      reservar_ads_posse: {
+        Args: { p_org: string }
+        Returns: {
+          cursor: string | null
+          rodada: string
+        }[]
+      }
+      reservar_trafego_posse: {
+        Args: { p_org: string }
+        Returns: {
+          cursor: string | null
+          rodada: string
+        }[]
+      }
       skus_estoque_org: { Args: never; Returns: Json[] }
       start_support_session: {
         Args: { p_now: string; p_request_id: string; p_requester_id: string }
@@ -3627,6 +4010,10 @@ export type Database = {
         Args: { p_codigo_pai: string }
         Returns: Json[]
       }
+      vendas_sku_catalogo: { Args: never; Returns: Json[] }
+      vendas_sku_codigos_mlbs: { Args: { p_mlbs: string[] }; Returns: Json }
+      vendas_sku_dossie_ids: { Args: { p_codigos: string[] }; Returns: string[] }
+      vendas_sku_mlbs: { Args: { p_codigos: string[] }; Returns: Json }
     }
     Enums: {
       canal_externo: "mercado_livre"

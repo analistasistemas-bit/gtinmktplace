@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { RefreshCw, AlertTriangle, CheckCircle2, ChevronDown, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { varrerAnunciosOrfaos, type AnuncioOrfao, type ResultadoVarredura } from '@/lib/orfaos';
+import { formatarNomeProduto } from '@/lib/texto';
 
 /**
  * Confere a conta do ML contra o banco e mostra o que o PubliAI não reconhece (incidente
@@ -144,7 +145,7 @@ function Item({ o, destaque }: { o: AnuncioOrfao; destaque?: 'destructive' | 'wa
   return (
     <li className={`rounded-md border px-2 py-1.5 text-xs ${borda}`}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-        <span className="font-medium">{o.titulo ?? o.mlItemId}</span>
+        <span className="font-medium">{formatarNomeProduto(o.titulo) || o.mlItemId}</span>
         <span className="text-muted-foreground">{o.mlItemId}</span>
         {o.status && <span className="text-muted-foreground">· {o.status}</span>}
         {o.estoque != null && <span className="text-muted-foreground">· {o.estoque} un.</span>}

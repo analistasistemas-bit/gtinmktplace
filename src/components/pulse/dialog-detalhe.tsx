@@ -26,6 +26,7 @@ import {
   rotuloReputacao, rotuloStatusQualificacao, tipoAnuncio,
 } from '@/lib/pulse-formato';
 import { fmtBRL, fmtInt, parseNumeroPtBr } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 import { buildPulseSearchUrl } from '@/lib/pulse-url';
 import { DialogReprecificar } from '@/components/pulse/dialog-reprecificar';
 import { cn } from '@/lib/utils';
@@ -389,7 +390,7 @@ export function DialogDetalhe({ produto, onFechar }: { produto: PulseProduto | n
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-7xl">
           <DialogHeader className="pr-8">
             <DialogTitle className="text-base leading-snug">
-              {produto?.titulo ?? 'Ficha sem nome'}
+              {formatarNomeProduto(produto?.titulo) || 'Ficha sem nome'}
             </DialogTitle>
             <DialogDescription className="flex flex-wrap items-center gap-x-3 gap-y-1 tabular-nums">
               <span>{produto?.gtin ?? `Ficha ${produto?.catalog_product_id ?? ''}`}</span>

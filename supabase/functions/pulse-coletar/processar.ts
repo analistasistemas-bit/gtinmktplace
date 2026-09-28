@@ -9,6 +9,7 @@ import { buscarVisitas30d } from '../_shared/ml/visitas-item.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
 import { pool } from '../_shared/concorrencia/pool.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
+import { exigirModulo, moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
 import {
   extrairNossaOferta, leituraCompletaDaFicha, ofertasNaoLidas, parseComissao, parseOfertasProduto, parsePriceToWin,
   parseStatusAnuncios, type AnuncioMultiget,
@@ -23,6 +24,12 @@ const CONCORRENCIA = 6;
 
 export interface ResultadoColeta { produtos: number; gravadas: number; alertas: number; }
 
+// ADR-0173: contexto de auth/classificação (passo 1) e resultado de um LOTE de produtos (passos
+// 3→7, sem notificar) — Task 5 usa isso tanto na org inteira (manual/legado) quanto por lote da
+// rodada por org.
+export interface ContextoColeta { token: string; proprioSellerId: number | null; naoClassificavel: boolean }
+export interface ResultadoLote { produtos: number; gravadas: number; alertas: number; acao: number }
+
 interface AnuncioPublicadoRow {
   codigo_pai: string;
   variacoes_externas: Record<string, { catalog_product_id?: string }> | null;
@@ -35,6 +42,10 @@ interface PulseProdutoRow {
   origem: 'auto' | 'manual';
   titulo: string | null;
 }
+
+/** Produto com as duas colunas de backoff (ADR-0173): presentes desde a mesma seleção de sempre,
+ *  sem filtro nenhum aqui — é a rodada por org (passo.ts) quem decide o que é elegível. */
+export type ProdutoColeta = PulseProdutoRow & { coleta_falhas_seguidas: number; coleta_tentativa_em: string | null };
 
 type OfertaAnteriorComVisitas = OfertaAnterior & { visitas_30d: number | null };
 interface AlertaPendente {
@@ -62,7 +73,7 @@ interface PerfilVendedorAtual {
 
 // 1) sincronizarRadar (só tier completo): espelha anuncios_externos publicados em pulse_produtos
 // e arquiva os que saíram da lista de publicados.
-async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<void> {
+export async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<void> {
   const publicados = await paginarTudo<AnuncioPublicadoRow>((de, ate) =>
     admin.from('anuncios_externos')
       .select('codigo_pai, variacoes_externas')
@@ -408,14 +419,11 @@ export function textoNotificacaoAlertas(
   return `Pulse: ${acao} alerta(s) exigem decisão de preço${sufixo} — abra a aba Alertas do Pulse.`;
 }
 
-export async function processarColetaOrg(
-  admin: SupabaseClient, conexao: ConexaoCanal, orgId: string,
-  tier: 'completo' | 'quente', maxProdutos: number,
-  // `baseline` é a varredura agendada da madrugada, e NÃO se deduz de `tier`: o botão "Atualizar
-  // agora" do operador também roda em tier completo. Passos caros que medem algo de janela longa
-  // (visitas 30d) só entram aqui — senão cada clique no botão dispararia a varredura inteira.
-  baseline = false,
-): Promise<ResultadoColeta> {
+/** Passo 1 (auth + classificação). Extração mecânica — SEM tratamento de auth permanente aqui: o
+ *  caminho manual/legado sempre deixou o erro subir cru (a org falha, as outras seguem). Quem
+ *  precisa fechar a rodada com SemAcessoRodada é o caminho por org (Task 5): depsPulseReal.contexto
+ *  em index.ts envolve esta mesma chamada com a classificação de erro. */
+export async function prepararContexto(conexao: ConexaoCanal, orgId: string): Promise<ContextoColeta> {
   const token = await getValidAccessTokenConexao(conexao);
   // Nossa conta no ML: a lista de ofertas do catálogo inclui o NOSSO anúncio, que não é
   // concorrente de si mesmo (valor não-numérico → NaN → nada é filtrado: no FILTRO isso é seguro,
@@ -432,18 +440,35 @@ export async function processarColetaOrg(
       + 'nenhum alerta desta execução pode ser classificado como decisão de preço.',
     );
   }
+  return { token, proprioSellerId, naoClassificavel };
+}
 
-  if (tier === 'completo') await sincronizarRadar(admin, orgId);
+// ADR-0173: backoff por produto. Falha de LEITURA da ficha (passo 3) incrementa
+// `coleta_falhas_seguidas` — abaixo de 3 tenta sempre de novo; a partir de 3, o tier quente (a
+// cada 6h) para de insistir num produto morto, e o tier completo (diário) espera DIAS_BACKOFF
+// antes de tentar de novo. Leitura boa reseta o contador (no patch do passo 3).
+export const FALHAS_BACKOFF = 3;
+export const DIAS_BACKOFF = 3;
 
-  // 2) selecionar
-  let query = admin.from('pulse_produtos')
-    .select('id, catalog_product_id, codigo_pai, origem, titulo')
-    .eq('org_id', orgId).eq('status', 'ativo')
-    .order('ultimo_snapshot_em', { ascending: true, nullsFirst: true })
-    .limit(maxProdutos);
-  if (tier === 'quente') query = query.eq('origem', 'auto');
-  const { data: produtosRaw } = await query;
-  const produtos = (produtosRaw ?? []) as PulseProdutoRow[];
+export function elegivelPorBackoff(
+  p: { coleta_falhas_seguidas: number; coleta_tentativa_em: string | null },
+  agoraMs: number,
+  tier: 'completo' | 'quente',
+): boolean {
+  if (p.coleta_falhas_seguidas < FALHAS_BACKOFF) return true;
+  if (tier === 'quente') return false;
+  if (p.coleta_tentativa_em == null) return true;
+  return agoraMs - Date.parse(p.coleta_tentativa_em) >= DIAS_BACKOFF * 24 * 60 * 60 * 1000;
+}
+
+/** Passos 3→7 sobre UM lote de produtos já selecionado (sem notificar — quem chama decide quando
+ *  notificar, com ou sem chave). Extração mecânica dos mesmos passos de sempre; a única regra nova
+ *  é o passo 3 registrar a falha de leitura para o backoff em vez de só pular o produto. */
+export async function processarLoteProdutos(
+  admin: SupabaseClient, orgId: string, ctx: ContextoColeta,
+  produtos: ProdutoColeta[], tier: 'completo' | 'quente', baseline: boolean,
+): Promise<ResultadoLote> {
+  const { token, proprioSellerId } = ctx;
 
   let gravadas = 0;
   let alertasTotal = 0;
@@ -462,7 +487,12 @@ export async function processarColetaOrg(
     const json = await mlGet(`${API}/products/${produto.catalog_product_id}/items?limit=100`, token);
     // Falha de LEITURA não é "sem ofertas" (mesma trava de monitorar-moderados/catalogo.ts):
     // json===null viraria diffOfertas([...], []) e fabricaria concorrente_saiu para todo mundo.
-    if (json === null) return;
+    // ADR-0173: em vez de só pular, registra a falha (backoff) — o snapshot de hoje é preservado.
+    if (json === null) {
+      const { error } = await admin.rpc('registrar_falha_coleta_pulse', { p_org: orgId, p_produto: produto.id });
+      if (error) console.warn(`pulse-coletar: registrar_falha_coleta_pulse do produto ${produto.id} falhou:`, error.message);
+      return;
+    }
     const naoLidas = ofertasNaoLidas(json);
     const fichaCompleta = leituraCompletaDaFicha(json);
     if (naoLidas > 0) {
@@ -554,6 +584,9 @@ export async function processarColetaOrg(
       // "pausado ou sem estoque" sobre produto que a coleta nem chegou a alcançar (o teto de
       // produtos por execução deixa uma sobra para o ciclo seguinte).
       meu_preco_em: agora,
+      // ADR-0173: leitura BOA reseta o backoff — valor constante, idempotente mesmo repetido.
+      coleta_tentativa_em: agora,
+      coleta_falhas_seguidas: 0,
     };
     if (!produto.titulo) {
       const ficha = await mlGet(`${API}/products/${produto.catalog_product_id}`, token);
@@ -677,7 +710,9 @@ export async function processarColetaOrg(
             `${API}/sites/MLB/listing_prices?price=${preco}&category_id=${info.category_id}&listing_type_id=${info.listing_type_id}`,
             token,
           ),
-          buscarFreteVendedor(token, conexao.contaExternaId ?? 'me', preco, info.category_id),
+          // ContextoColeta não carrega o contaExternaId (string) — só o número já classificado.
+          // Convertê-lo de volta é seguro: contaExternaId é sempre um id numérico do ML.
+          buscarFreteVendedor(token, proprioSellerId != null ? String(proprioSellerId) : 'me', preco, info.category_id),
         ]);
         const c = parseComissao(json);
         if (c) comissaoPorItem.set(info.item_id, { ...c, preco });
@@ -772,23 +807,75 @@ export async function processarColetaOrg(
   const resultadoAlertas = await gravarAlertasRelevantes(admin, orgId, alertasPendentes);
   alertasTotal = resultadoAlertas.total;
 
-  // Uma notificação agregada por org por execução — SÓ para org com o módulo habilitado.
-  if (alertasTotal > 0) {
-    const { data: org } = await admin.from('organizations')
-      .select('modulos_habilitados').eq('id', orgId).maybeSingle();
-    const moduloAtivo = ((org?.modulos_habilitados as string[] | null) ?? []).includes('pulse');
-    if (!moduloAtivo) {
-      console.warn(`pulse-coletar: ${alertasTotal} alerta(s) da org ${orgId} sem notificação — módulo pulse desabilitado`);
-    } else {
-      const { count } = await admin.from('pulse_alertas')
-        .select('id', { count: 'exact', head: true })
-        .eq('org_id', orgId).eq('lido', false).eq('severidade', 'acao');
-      await notificarCategoria(admin, orgId, 'pulse', textoNotificacaoAlertas({
-        total: alertasTotal, acao: resultadoAlertas.acao, pendentesAcao: count ?? 0,
-        naoClassificavel,
-      }));
-    }
+  return { produtos: produtos.length, gravadas, alertas: alertasTotal, acao: resultadoAlertas.acao };
+}
+
+/** Notificação agregada de uma rodada/execução — SÓ para org com o módulo Pulse habilitado.
+ *  Sem `chave`: caminho manual/legado, leitura do módulo não-estrita (erro → não notifica, como
+ *  sempre foi). Com `chave`: caminho por org (Task 5) — leitura do módulo ESTRITA (erro → lança,
+ *  o retry do QStash repete) e a notificação in-app fica idempotente por (job, org, ciclo). */
+export async function notificarRodadaPulse(
+  admin: SupabaseClient, orgId: string,
+  r: { alertas: number; acao: number; naoClassificavel: boolean },
+  chave?: string,
+): Promise<void> {
+  const moduloAtivo = chave
+    ? await moduloHabilitadoStrict(admin, orgId, 'pulse')
+    : await exigirModulo(admin, orgId, 'pulse');
+  if (!moduloAtivo) {
+    console.warn(`pulse-coletar: ${r.alertas} alerta(s) da org ${orgId} sem notificação — módulo pulse desabilitado`);
+    return;
+  }
+  const { count } = await admin.from('pulse_alertas')
+    .select('id', { count: 'exact', head: true })
+    .eq('org_id', orgId).eq('lido', false).eq('severidade', 'acao');
+  const texto = textoNotificacaoAlertas({
+    total: r.alertas, acao: r.acao, pendentesAcao: count ?? 0, naoClassificavel: r.naoClassificavel,
+  });
+  await notificarCategoria(admin, orgId, 'pulse', texto, chave ? { chave } : undefined);
+}
+
+export interface PartesColeta {
+  prepararContexto: typeof prepararContexto;
+  sincronizarRadar: typeof sincronizarRadar;
+  processarLoteProdutos: typeof processarLoteProdutos;
+  notificarRodadaPulse: typeof notificarRodadaPulse;
+}
+const PARTES_PADRAO: PartesColeta = { prepararContexto, sincronizarRadar, processarLoteProdutos, notificarRodadaPulse };
+
+/** Caminho manual (botão "Atualizar agora") e legado (QStash sem FANOUT_PULSE): a org inteira numa
+ *  execução só, sem filtro de backoff — composição das mesmas `partes` que a rodada por org usa
+ *  peça por peça (passo.ts). `partes` só é trocado nos testes de caracterização. */
+export async function processarColetaOrg(
+  admin: SupabaseClient, conexao: ConexaoCanal, orgId: string,
+  tier: 'completo' | 'quente', maxProdutos: number,
+  // `baseline` é a varredura agendada da madrugada, e NÃO se deduz de `tier`: o botão "Atualizar
+  // agora" do operador também roda em tier completo. Passos caros que medem algo de janela longa
+  // (visitas 30d) só entram aqui — senão cada clique no botão dispararia a varredura inteira.
+  baseline = false,
+  partes: PartesColeta = PARTES_PADRAO,
+): Promise<ResultadoColeta> {
+  const ctx = await partes.prepararContexto(conexao, orgId);
+
+  if (tier === 'completo') await partes.sincronizarRadar(admin, orgId);
+
+  // 2) selecionar — sem filtro de backoff: é a rodada por org (passo.ts) que filtra.
+  let query = admin.from('pulse_produtos')
+    .select('id, catalog_product_id, codigo_pai, origem, titulo, coleta_falhas_seguidas, coleta_tentativa_em')
+    .eq('org_id', orgId).eq('status', 'ativo')
+    .order('ultimo_snapshot_em', { ascending: true, nullsFirst: true })
+    .limit(maxProdutos);
+  if (tier === 'quente') query = query.eq('origem', 'auto');
+  const { data: produtosRaw } = await query;
+  const produtos = (produtosRaw ?? []) as ProdutoColeta[];
+
+  const resultado = await partes.processarLoteProdutos(admin, orgId, ctx, produtos, tier, baseline);
+
+  if (resultado.alertas > 0) {
+    await partes.notificarRodadaPulse(admin, orgId, {
+      alertas: resultado.alertas, acao: resultado.acao, naoClassificavel: ctx.naoClassificavel,
+    });
   }
 
-  return { produtos: produtos.length, gravadas, alertas: alertasTotal };
+  return { produtos: produtos.length, gravadas: resultado.gravadas, alertas: resultado.alertas };
 }

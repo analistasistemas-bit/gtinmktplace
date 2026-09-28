@@ -268,23 +268,41 @@ export async function buscarShipment(token: string, shippingId: number | string 
   }
 }
 
+/** Teto de pedidos numa janela de varredura (ADR-0173): acima disso, `buscarPedidosPeriodoEstrito`
+ *  lança em vez de paginar sem fim — o worker deve encurtar a janela, não gastar o CPU de 2s
+ *  paginando uma organização com histórico grande. */
+export const TETO_PEDIDOS_JANELA = 5000;
+
+async function resolverSellerId(headers: Record<string, string>, f: typeof fetch): Promise<string> {
+  const meResp = await f(`${API}/users/me`, { headers });
+  if (!meResp.ok) throw new Error(`ML /users/me ${meResp.status}`);
+  const seller = (await meResp.json())?.id;
+  if (!seller) throw new Error('ML: seller id ausente');
+  return String(seller);
+}
+
+function parsePaginaBusca(data: unknown): { pedidos: PedidoML[]; totalBruto: unknown } {
+  const pedidos: PedidoML[] = Array.isArray((data as { results?: unknown })?.results)
+    ? (data as { results: PedidoML[] }).results
+    : [];
+  const totalBruto = (data as { paging?: { total?: unknown } })?.paging?.total;
+  return { pedidos, totalBruto };
+}
+
 /** Varre /orders/search do vendedor no período. Retorna pedidos completos. */
 export async function buscarPedidosPeriodo(
   token: string,
   intervalo: { desde: string; ate: string },
 ): Promise<PedidoML[]> {
   const headers = { Authorization: `Bearer ${token}` };
-  const meResp = await fetch(`${API}/users/me`, { headers });
-  if (!meResp.ok) throw new Error(`ML /users/me ${meResp.status}`);
-  const seller = (await meResp.json())?.id;
-  if (!seller) throw new Error('ML: seller id ausente');
+  const seller = await resolverSellerId(headers, fetch);
 
   const pedidos: PedidoML[] = [];
   const limit = 50;
   let offset = 0;
   while (offset < 5000) {
     const params = new URLSearchParams({
-      seller: String(seller),
+      seller,
       'order.date_created.from': intervalo.desde,
       'order.date_created.to': intervalo.ate,
       sort: 'date_desc',
@@ -296,14 +314,76 @@ export async function buscarPedidosPeriodo(
       if (offset === 0) throw new Error(`ML /orders ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
       break;
     }
-    const data = await resp.json();
-    const results: PedidoML[] = Array.isArray(data?.results) ? data.results : [];
+    const { pedidos: results, totalBruto } = parsePaginaBusca(await resp.json());
     pedidos.push(...results);
-    const total = Number(data?.paging?.total ?? pedidos.length);
+    // Fallback sem paging.total: tamanho ACUMULADO já lido (pedidos.length pós-push) — semântica
+    // original, preservada de propósito (byte-identical).
+    const total = Number(totalBruto ?? pedidos.length);
     offset += limit;
     if (results.length === 0 || offset >= total) break;
   }
   return pedidos;
+}
+
+/** Mesma varredura de buscarPedidosPeriodo, mas com COBERTURA VERIFICÁVEL (ADR-0173): qualquer
+ *  página não-2xx ou exceção lança; `paging.total` ausente/null/não numérico lança (cobertura não
+ *  verificável — nunca usa o tamanho da página como se fosse o total); `paging.total` > TETO lança
+ *  (janela grande demais — encurtar), verificado em TODA página, não só na 1ª; ao fim, deduplica
+ *  por id e exige `ids únicos === paging.total` E total igual na 1ª e na última página. Divergência
+ *  = reordenação entre páginas durante a leitura (o sort do ML é por date_closed) → lança; o retry
+ *  da mensagem relê. Nunca devolve lista com buraco. */
+export async function buscarPedidosPeriodoEstrito(
+  token: string,
+  intervalo: { desde: string; ate: string },
+  f: typeof fetch = fetch,
+): Promise<PedidoML[]> {
+  const headers = { Authorization: `Bearer ${token}` };
+  const seller = await resolverSellerId(headers, f);
+
+  const pedidos: PedidoML[] = [];
+  const limit = 50;
+  let offset = 0;
+  let totalPrimeira: number | null = null;
+  let totalUltima = 0;
+  for (;;) {
+    const params = new URLSearchParams({
+      seller,
+      'order.date_created.from': intervalo.desde,
+      'order.date_created.to': intervalo.ate,
+      sort: 'date_desc',
+      offset: String(offset),
+      limit: String(limit),
+    });
+    const resp = await f(`${API}/orders/search?${params}`, { headers });
+    if (!resp.ok) throw new Error(`ML /orders ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
+    const { pedidos: results, totalBruto } = parsePaginaBusca(await resp.json());
+    // null/undefined (incl. explícito `paging.total: null`) ou não numérico: sem total confiável
+    // não dá pra provar cobertura — lança em vez de aceitar a página como se fosse tudo.
+    if (totalBruto == null || !Number.isFinite(Number(totalBruto))) {
+      throw new Error('ML /orders: página sem paging.total (ou não numérico) — cobertura não verificável');
+    }
+    const total = Number(totalBruto);
+    // Teto verificado em TODA página (não só na 1ª): um total inflado numa página tardia também
+    // é janela grande demais para paginar dentro do CPU de 2s.
+    if (total > TETO_PEDIDOS_JANELA) {
+      throw new Error(`ML /orders: janela com ${total} pedidos, acima do teto de ${TETO_PEDIDOS_JANELA} — encurte o período`);
+    }
+    if (totalPrimeira === null) totalPrimeira = total;
+    totalUltima = total;
+    pedidos.push(...results);
+    offset += limit;
+    if (results.length === 0 || offset >= total) break;
+  }
+
+  if (totalPrimeira !== totalUltima) {
+    throw new Error(`ML /orders: total mudou durante a varredura (${totalPrimeira} → ${totalUltima}) — pedido novo ou reordenação`);
+  }
+  const vistos = new Map<string, PedidoML>();
+  for (const p of pedidos) vistos.set(String(p.id), p);
+  if (vistos.size !== totalPrimeira) {
+    throw new Error(`ML /orders: cobertura incompleta (${vistos.size} pedidos únicos, total ${totalPrimeira}) — reordenação entre páginas`);
+  }
+  return [...vistos.values()];
 }
 
 /** Upsert de uma venda + substituição dos itens. Idempotente por (user_id, order_id). */
@@ -377,14 +457,23 @@ export async function upsertVenda(
 
   // Substitui os itens. Idempotente: unique (venda_id, ml_item_id, variation_id) impede
   // duplicata quando dois syncs do mesmo pedido correm concorrentes (ver plans/012).
-  await admin.from('ml_vendas_itens').delete().eq('venda_id', vendaId);
+  // Grava ANTES de apagar as sobras: apagando primeiro, a função derrubada por "CPU Time exceeded"
+  // entre os dois passos deixava o pedido pago sem nenhum item (incidente 2026-09, 5 pedidos).
+  let manter: string[] = [];
   if (itens.length > 0) {
-    const { error: itensErr } = await admin.from('ml_vendas_itens').upsert(
+    const { data: gravados, error: itensErr } = await admin.from('ml_vendas_itens').upsert(
       itens.map((i: VendaItemRow) => ({ user_id: userId, org_id: orgId, venda_id: vendaId, ...i })),
       { onConflict: 'venda_id,ml_item_id,variation_id' },
-    );
+    ).select('id');
     if (itensErr) throw new Error(`upsert ml_vendas_itens: ${itensErr.message}`);
+    manter = (gravados ?? []).map((r: { id: string }) => r.id);
+    // Sem ids, o delete abaixo viraria "apaga tudo" — o mesmo estrago do incidente.
+    if (manter.length === 0) throw new Error('upsert ml_vendas_itens voltou sem linhas');
   }
+  let sobras = admin.from('ml_vendas_itens').delete().eq('venda_id', vendaId);
+  if (manter.length > 0) sobras = sobras.not('id', 'in', `(${manter.join(',')})`);
+  const { error: sobrasErr } = await sobras;
+  if (sobrasErr) throw new Error(`limpar itens antigos: ${sobrasErr.message}`);
 
   // ADR-0109 — congela o custo do produto no instante da venda. Fica FORA do delete/upsert acima
   // de propósito: `venda_item_custo` é outra tabela justamente para o DELETE dos itens não a

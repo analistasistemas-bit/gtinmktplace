@@ -32,6 +32,7 @@ import {
   fetchVariacoesProduto, mergeProdutoComVariacoes,
   urlFotoMl, type ProdutoComSaldo, type ProdutoEstoqueResumo, type VariacaoComSaldo,
 } from '@/lib/produtos-saldo';
+import { formatarNomeProduto } from '@/lib/texto';
 
 /** Acima deste limite a lista de variações no expand usa virtualização. */
 export const VARIACOES_VIRTUAL_THRESHOLD = 50;
@@ -176,6 +177,7 @@ export function ProdutoCard({
   const qc = useQueryClient();
   const [aberto, setAberto] = useState(false);
   const painelId = useId();
+  const nomePai = formatarNomeProduto(produto.nomePai) || produto.nomePai;
   const { data: capaUrl } = useImageUrl(produto.capaStoragePath);
   const capa = capaUrl ?? urlFotoMl(produto.capaMlPictureId);
 
@@ -304,7 +306,7 @@ export function ProdutoCard({
           <ChevronRight className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', aberto && 'rotate-90')} />
           <FotoCapaFamilia capaUrl={capa} tamanho="small" />
           <div className="min-w-0">
-            <div className="truncate text-sm font-medium leading-tight">{produto.nomePai}</div>
+            <div className="truncate text-sm font-medium leading-tight">{nomePai}</div>
             <div className="truncate font-mono text-xs leading-tight text-muted-foreground">{produto.codigoPai}</div>
             {/* ADR-0129 D-11: sinaliza o lote de "Adicionar variação" desta tela mesmo antes de
                 expandir o card — pareado com o sino de notificação no fim do processamento. */}
@@ -320,7 +322,7 @@ export function ProdutoCard({
         </button>
         {statusUpdate === 'erro' && loteRevisaoId && (
           <Button asChild variant="outline" size="sm" className="h-7 shrink-0 px-2">
-            <Link to={`/revisao/${loteRevisaoId}`} aria-label={`Revisar atualização de ${produto.nomePai}`}>
+            <Link to={`/revisao/${loteRevisaoId}`} aria-label={`Revisar atualização de ${nomePai}`}>
               <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
               {/* Mesmo padrão de Entrada/Ajustar: abaixo de md a coluna do produto não comporta
                   rótulo + nome, e o nome é o que identifica a linha. */}
@@ -356,7 +358,7 @@ export function ProdutoCard({
             variant="outline"
             size="sm"
             className="h-9 min-w-0 flex-1 px-2 md:h-7"
-            aria-label={`Dar entrada em ${produto.nomePai}`}
+            aria-label={`Dar entrada em ${nomePai}`}
             onClick={() => onDarEntrada(alvo)}
           >
             <PackagePlus className="h-3.5 w-3.5 shrink-0" />
@@ -367,7 +369,7 @@ export function ProdutoCard({
               variant="outline"
               size="sm"
               className="h-9 min-w-0 flex-1 px-2 md:h-7"
-              aria-label={`Ajustar estoque de ${produto.nomePai}`}
+              aria-label={`Ajustar estoque de ${nomePai}`}
               onClick={() => void handleAjustar()}
             >
               <PackageMinus className="h-3.5 w-3.5 shrink-0" />
@@ -379,7 +381,7 @@ export function ProdutoCard({
               variant="outline"
               size="sm"
               className="h-9 min-w-0 flex-1 px-2 md:h-7"
-              aria-label={`Preencher fiscal de ${produto.nomePai}`}
+              aria-label={`Preencher fiscal de ${nomePai}`}
               onClick={() => onPreencherFiscal(produto)}
             >
               <Receipt className="h-3.5 w-3.5 shrink-0" />
@@ -401,7 +403,7 @@ export function ProdutoCard({
                 href={urlAnuncioML(produto.mlItemId)}
                 target="_blank"
                 rel="noreferrer"
-                aria-label={`Ver ${produto.nomePai} no Mercado Livre`}
+                aria-label={`Ver ${nomePai} no Mercado Livre`}
                 title="Ver anúncio no Mercado Livre"
               >
                 <ExternalLink className="h-3.5 w-3.5 shrink-0" />
@@ -415,7 +417,7 @@ export function ProdutoCard({
                   variant="outline"
                   size="sm"
                   className="hidden shrink-0 px-0 md:flex md:h-7 md:w-7"
-                  aria-label={`Mais ações para ${produto.nomePai}`}
+                  aria-label={`Mais ações para ${nomePai}`}
                 >
                   <MoreVertical className="h-3.5 w-3.5" />
                 </Button>
@@ -494,7 +496,7 @@ export function ProdutoCard({
                   return (
                     <ListaVariacoesEstoque
                       variacoes={lista}
-                      nomeProduto={produto.nomePai}
+                      nomeProduto={nomePai}
                       precoMl={precoMl}
                       statusPublicacao={statusPublicacao}
                       syncMl={syncMl}

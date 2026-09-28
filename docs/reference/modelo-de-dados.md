@@ -430,7 +430,9 @@ da FK composta da tabela filha abaixo. *Migration
 transitório, não histórico), **`migracao_pxv_erro`**, **`migracao_pxv_solicitada_em`**,
 **`migracao_pxv_tentativa`** (`int not null default 0`, base do claim atômico por rodada do worker),
 **`migracao_pxv_snapshot`** (`jsonb` — `variations[]` do item ANTES do disparo, como
-`[{id, seller_custom_field, cor}]`) e **`ml_item_id_anterior`** (`text`).
+`[{id, sku, cor}]` — o campo é **`sku`**, não `seller_custom_field`: `migrar-preco-por-variacao`
+grava `sku: v.seller_custom_field ?? null` ao montar o snapshot) e **`ml_item_id_anterior`**
+(`text`).
 
 Estas colunas moram na **raiz**, e não em `familias`, porque há N linhas em `familias` por
 `codigo_pai` (uma por lote) e cada consumidor escolhe uma diferente: a tela Publicados usa a **mais
@@ -809,6 +811,18 @@ de estoque não precisa de código novo. A coluna só marca a linha com um badge
 orders **não** são agrupadas e nenhum cálculo financeiro a usa (os preços rateados dos componentes
 já somam o preço do kit). **Sem backfill** — `bundle.parent_item` não está nos `raw` já gravados.
 
+**Dossiê do SKU (ADR-0172 Fatia 2a,** *migration `20260927045118_vendas_sku_dossie.sql`,
+**ainda não em produção — sem `db push` nesta fatia):** três índices que servem a RPC
+`vendas_sku_dossie_ids` — `ml_vendas_itens_org_codigo_idx (org_id, codigo)`,
+`ml_vendas_org_pack_idx (org_id, pack_id) where pack_id is not null` e
+`ml_vendas_org_shipping_idx (org_id, shipping_id) where shipping_id is not null`. Medição de carga
+(T10) contra produção mostrou que o `EXPLAIN` do `OR` de 3 `IN` (id próprio / pack / shipping) **não
+usa** os dois índices parciais: o planner resolve pelo `Index Scan` já existente em `(org_id)` e
+aplica o `OR` como `Filter` via subplans hasheados, varrendo todas as vendas da org. No SKU de maior
+volume medido (Avil, 648 itens, 708 ids após expansão de pack) isso ainda foi rápido (~13 ms,
+tabela pequena o bastante); o remédio documentado — trocar o `OR` por `UNION` das três consultas —
+fica registrado como melhoria futura, não bloqueante nesta fatia (ver `progress.md` da Fatia 2a).
+
 ### `ml_vendas_itens`
 Itens de um pedido. *Mesma migration + `20260623104822` + `20260627095025` (unique).*
 `venda_id` (FK→ml_vendas, cascade), `ml_item_id`, `variation_id`, `titulo`, `codigo`, `cor`,
@@ -905,6 +919,155 @@ Estado de sincronização por organização. `org_id` (PK, FK organizations, cas
 RLS nas três: `select` por `org_id = current_org_id()`; `anon` sem privilégio nenhum;
 `authenticated` só `SELECT` (`INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER`
 revogados) — escrita só por `service_role` (worker `sincronizar-promocoes`).
+
+## Tráfego e oferta (ADR-0172, Fatia 2b)
+
+Visitas por dia e preço de oferta observado por MLB, coletados pelo worker `coletar-trafego-ml`
+(só GET no ML). *Migration `20260927084615_vendas_sku_trafego.sql` (ainda não em produção).* O dia
+é o rótulo literal `results[].date[:10]` da API de visitas, em calendário BRT (spike 052).
+
+### `ml_item_visitas_dia`
+Uma linha por MLB por dia. `org_id` + `ml_item_id` + `dia` (PK). `visitas` (integer ≥ 0; `null`
+só em `falha`), `estado` (`ok|pendente|falha`; `ok` exige `visitas`), `coletado_em`, `rodada`
+(rodada de `ml_trafego_sync` que gravou a linha). Dentro de uma resposta 200, dia sem ponto = 0
+visitas `ok` (a API omite dias com zero). Dia com menos de 48 h fica `pendente` com o parcial.
+Índice `(org_id, dia)` (último dia `ok` e retenção).
+
+### `ml_item_preco_dia`
+Uma foto de preço por MLB por dia (a 1ª observação do dia fica). `org_id` + `ml_item_id` + `dia`
+(PK), `preco` (`sale_price.amount`, preço "por"), `preco_regular` (preço "de" quando há
+promoção, senão `null`), `moeda`, `observado_em`, `origem` (`sale_price`). Só daqui para frente.
+
+### `ml_trafego_sync`
+Estado da coleta por organização. `org_id` (PK), `estado` (`sincronizando|ok|sem_acesso|erro`),
+`rodada` (identidade da cadeia dona), `posse_ate` (posse de 10 min, renovada a cada lote),
+`iniciado_em`, `ultimo_ok_em`, `ultimo_erro_em`, `erro`, `cursor` (último MLB processado),
+`carga_inicial_concluida_em` (`null` = carga de 150 dias ainda não terminou).
+
+### `ml_trafego_item`
+Status do anúncio por MLB (multiget `/items?attributes=id,status`). `org_id` + `ml_item_id` (PK),
+`status`, `status_desde` (só muda quando o status muda), `ultimo_ok_em` (última coleta de visitas
+`ok`; MLB sem ela recebe a janela de 150 dias). `closed` há mais de 30 dias sai do inventário.
+
+RLS nas quatro: `select` por `org_id = current_org_id()`; `anon` sem privilégio; `authenticated`
+só `SELECT`. Escrita só por `service_role`, pelas RPCs abaixo (todas `security definer`,
+`search_path=''`, revogadas de `public`/`anon`/`authenticated`, concedidas a `service_role`):
+
+| RPC | Função |
+|---|---|
+| `reservar_trafego_posse(p_org)` | Toma a posse (1 linha `{rodada, cursor}`) ou devolve 0 linhas se outra cadeia está viva. Retoma o cursor se a carga inicial não terminou. |
+| `avancar_trafego_cursor(p_org, p_rodada, p_cursor_atual, p_cursor_novo)` | CAS do cursor + renovação da posse. `false` = rodada obsoleta. |
+| `gravar_visitas_dia(p_org, p_rodada, p_pontos)` | Upsert das visitas. Rodada mais antiga nunca sobrescreve; `ok` só é trocado por outro `ok`. |
+| `gravar_preco_dia(p_org, p_pontos)` | Insere o preço do dia; já existindo, mantém a 1ª observação. |
+| `gravar_trafego_item(p_org, p_itens)` | Upsert do status; `status_desde` só muda com o status; `ultimo_ok_em` só avança. |
+| `concluir_trafego_rodada(p_org, p_rodada, p_estado, p_erro, p_carga_concluida)` | Fecha a rodada (só a dona) e solta a posse; marca a carga inicial concluída. `false` = obsoleta. |
+
+Retenção de 13 meses em `ml_item_visitas_dia` e `ml_item_preco_dia` (limpeza diária do worker).
+
+## Ads por grupo (ADR-0172, Fatia 2c)
+
+Gasto e resultado do Product Ads por **grupo de anúncios** (`ad_group_id`), coletados pelo worker
+`coletar-ads-ml` (só GET no ML, spike 053). *Migration `20260927124602_vendas_sku_ads.sql` (ainda não em
+produção).* A unidade é o grupo: toda soma é por grupo, nunca por MLB (o ML não separa o gasto por cor).
+O dia é a data literal do ML (BRT).
+
+### `ml_ads_sync`
+Estado da coleta por organização. `org_id` (PK), `advertiser_id`, `estado`
+(`sincronizando|ok|sem_permissao|sem_advertiser|sem_acesso|erro`), `erro`, `rodada`, `posse_ate` (posse
+de 10 min, renovada a cada lote), `iniciado_em`, `cursor` (último `ad_group_id` gravado),
+`ultimo_ok_em`, `ultimo_erro_em`, `carga_inicial_ok` (carga de 90 dias concluída), `cobertura_desde`
+(1º dia coberto por coleta `ok`), `custo_resumo` e `custo_listado`. Os dois são **sempre os últimos 90
+dias** (Ruling 2c-9: na diária, uma busca extra ao `ad_groups/search` de 90 dias — só na mensagem que
+fecha a rodada — mede esse custo além da janela de 15 dias que decide o que reler; na carga inicial a
+busca principal já é de 90 dias). `custo_resumo` é `metrics_summary.cost`; `custo_listado` é a Σ cost dos
+grupos listados nos mesmos 90 dias, já sem os grupos que deram 404 na releitura e sem os que ficaram sem
+nenhum MLB conhecido (`/ads` vazio e nenhum vínculo gravado — Rulings 2c-7/2c-8). `custo_resumo >
+custo_listado` = gasto fora dos grupos listados.
+
+### `ml_ads_grupo`
+Um grupo de anúncios. `org_id` + `ad_group_id` (PK), `tipo` (`ITEM|FAMILY|CATALOG`), `external_id`
+(ITEM: MLB; FAMILY: `family_id`; CATALOG: `parent_id`), `campaign_id` (0 = fora de campanha hoje),
+`status`, `atualizado_em`.
+
+### `ml_ads_grupo_item`
+Vínculo **atual** grupo → MLB. `org_id` + `ad_group_id` + `ml_item_id` (PK), `visto_em`. FK para
+`ml_ads_grupo` (cascade). Índice `(org_id, ml_item_id)` para o dossiê achar os grupos do alvo. Lista
+vazia do ML não apaga o vínculo; o worker também não o encolhe (lê `/ads` sempre na janela de 90 dias).
+
+### `ml_ads_grupo_dia`
+Série diária por grupo. `org_id` + `ad_group_id` + `dia` (PK), `cost`, `clicks`, `prints`,
+`direct_amount`, `indirect_amount`, `total_amount`, `direct_units`, `units` (todos ≥ 0) e `coletado_em`
+(define se a atribuição do dia já fechou: `coletado_em − dia ≥ 15`). Todo grupo com gasto na janela tem a
+série densa; dentro da cobertura, dia sem linha vale 0. Índice `(org_id, dia)`.
+
+RLS nas quatro: `select` por `org_id = current_org_id()`; `anon` sem privilégio; `authenticated` só
+`SELECT`. Escrita só por `service_role`, pelas RPCs abaixo (`security definer`, `search_path=''`,
+revogadas de `public`/`anon`/`authenticated`):
+
+| RPC | Função |
+|---|---|
+| `reservar_ads_posse(p_org)` | Toma a posse (1 linha `{rodada, cursor}`) ou 0 linhas se outra cadeia está viva. Retoma o cursor só enquanto a carga inicial não terminou. |
+| `avancar_ads_cursor(p_org, p_rodada, p_cursor_atual, p_cursor_novo)` | CAS do cursor + renovação da posse. `false` = rodada obsoleta. |
+| `gravar_ads_lote(p_org, p_rodada, p_coletado_em, p_grupos)` | Upsert de grupo, vínculo e dias; o mais recente vence por `coletado_em`. `itens` não vazio substitui o vínculo; `null`/`[]` mantém. Grupo fora do lote não é tocado. |
+| `concluir_ads_rodada(p_org, p_rodada, p_estado, p_erro, p_carga_concluida, p_advertiser_id, p_cobertura_desde, p_custo_resumo, p_custo_listado)` | Fecha a rodada (só a dona) e solta a posse. `ok` grava `ultimo_ok_em` e os custos da janela; a carga concluída define `cobertura_desde` e zera o cursor. |
+| `limpar_ads_retencao(p_corte)` | Retenção de 13 meses; grupo sem dia retido sai com o vínculo; a cobertura avança junto. |
+| `vendas_sku_codigos_mlbs(p_mlbs)` | Leitura do dossiê (`authenticated`, org do chamador): códigos de MLBs arbitrários (membros de um grupo), pela mesma UNION de `vendas_sku_mlbs`. MLB sem código fica fora do objeto e impede a exclusividade do grupo. |
+
+## Fan-out por org dos workers agendados (ADR-0173)
+
+**Status: código pronto, NADA deployado em produção ainda** (o deploy é a Task 8, pendente, com OK
+do Diego). Após o deploy, o consumidor fica ativo com as flags
+`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR` desligadas — os 3 workers seguem no caminho
+legado de hoje até cada flag ser ligada. Protocolo compartilhado por `pulse-coletar`,
+`backfill-faturamento` e `reconciliar-faturamento` para processar uma organização por mensagem
+QStash, em lotes retomáveis, evitando o `CPU Time exceeded` (HTTP 546) de processar todas as orgs
+numa única requisição. Runbook de ativação/rollback em
+[edge-functions.md](edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback).
+*Migration `20260927205804_worker_rodadas.sql`.*
+
+### `worker_rodadas`
+Fonte da verdade de UMA rodada por `(job, org_id)` (PK). `job` (`pulse-completo` | `pulse-quente` |
+`backfill` | `backfill-recuperacao` | `reconciliar`), `ciclo` (texto ordenável: dia BRT para os jobs
+diários, hora UTC para o reconciliar e o tier quente, `desde_ate` da janela do body para a
+recuperação histórica do backfill), `estado` (`rodando|ok|parcial|sem_acesso`), `params` (jsonb —
+janela/tier **gravados na abertura do ciclo**, a mensagem nunca carrega o cursor), `cursor` (texto
+`etapa|pos`; `null` = início), `acumulado` (jsonb, contadores por etapa), `lease_id` +
+`lease_ate` (posse curta de 150s com identidade própria — cada execução toma a posse, faz o CAS do
+cursor com ela e a solta ao fim; posse ocupada → HTTP 500, o QStash repete), `notificar_pendente`
+(notificação do Pulse sobrevive à virada de ciclo até ser entregue), `iniciado_em`, `ultimo_ok_em`,
+`ultimo_erro_em`, `erro`. RLS: `select` por `org_id = current_org_id()`; escrita só `service_role`,
+pelas RPCs abaixo (`security definer`, `search_path=''`, revogadas de `public`/`anon`/`authenticated`):
+
+| RPC | Função |
+|---|---|
+| `abrir_execucao(p_job, p_org, p_ciclo, p_params)` | Toma a posse. `executar` (nova ou retomada), `ocupada` (posse viva de outra execução), `obsoleta` (ciclo da mensagem é mais antigo que o da linha), `concluida` (ciclo já fechado, sem notificação pendente) ou `notificar_anterior` (entrega primeiro a notificação do ciclo anterior antes de abrir o novo). |
+| `avancar_execucao(p_job, p_org, p_lease, p_cursor_novo, p_acumulado)` | CAS do cursor com a posse. `false` = posse vencida (o retry refaz o mesmo lote, nunca repete um já avançado). |
+| `concluir_execucao(p_job, p_org, p_lease, p_estado, p_erro, p_acumulado, p_notificar)` | Fecha o ciclo (`ok|parcial|sem_acesso`). Com `p_notificar`, a posse é **mantida** até `marcar_notificado` — ninguém mais processa aquela (job, org) até a notificação sair. |
+| `liberar_execucao(p_job, p_org, p_lease, p_erro)` | Solta a posse sem fechar o ciclo (fim de lote normal, ou erro). |
+| `marcar_notificado(p_job, p_org, p_lease)` | Confirma a entrega (in-app já gravado) e solta a posse. |
+| `registrar_pendencias_pedido(p_org, p_ok, p_inicio, p_falhas, p_erro)` | Grava/atualiza pendências de pedido da org (ver `worker_pendencias`); `p_inicio` é o instante em que a tentativa **começou** — um sucesso só apaga falha registrada **antes** disso, então uma falha concorrente registrada durante a tentativa não é apagada por engano. Na 5ª falha marca `descartado_em` (não some da tabela). Só o `reconciliar` passa `p_ok`; o `backfill` só registra falhas. |
+| `registrar_falha_coleta_pulse(p_org, p_produto)` | Incrementa `pulse_produtos.coleta_falhas_seguidas` e grava `coleta_tentativa_em`, no máximo 1x/hora por produto. |
+
+### `worker_pendencias`
+Pedido cujo upsert falhou, por **organização** (PK `org_id, order_id`) — compartilhada pelo
+`backfill`, pela recuperação histórica e pelo `reconciliar`. `tentativas` (≥1), `ultimo_erro`,
+`criado_em`, `atualizado_em`, `descartado_em` (`null` = ativa; preenchido na 5ª tentativa, mas a
+linha **continua na tabela** — limpar a coluna reenfileira). Só o `reconciliar-faturamento` lê e
+apaga pendências (escopo completo, com `tratarPedidoCancelado`, serializado por org pela posse); o
+`backfill` só registra falhas novas (`p_ok=[]`). Índice parcial `(org_id, order_id) WHERE
+descartado_em IS NULL` (leitura das ativas). RLS: `select` por `org_id = current_org_id()`; escrita
+só `service_role`.
+
+### Colunas novas em tabelas existentes
+- `pulse_produtos.coleta_tentativa_em` (timestamptz), `coleta_falhas_seguidas` (integer, default 0,
+  `check >= 0`) — tentativa de coleta e backoff por produto (Task 5): `mlGet` que devolve `null`
+  (qualquer erro na ficha) incrementa o contador e grava o carimbo em vez de declarar a ficha morta;
+  produto elegível de novo após 3 dias com 3+ falhas seguidas (tier completo; o tier quente nunca
+  retoma um produto em backoff).
+- `notificacoes.chave` (text, nullable) + índice único `(user_id, chave)` — idempotência do canal
+  in-app por `(usuário, chave)`, `NULL` não colide (mantém o comportamento de hoje para quem não usa
+  chave). Só a notificação do Pulse em fan-out usa (`chaveNotificacaoPulse`, formato
+  `pulse:<job>:<org_id>:<ciclo>`); os demais alertas continuam sem chave.
 
 ## Monitoramento e configuração
 
@@ -1214,6 +1377,9 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `baixar_estoque(p_org, p_codigo, p_qtd, p_canal, p_ref)` | ADR-0094: baixa atômica e idempotente de estoque na venda paga — service_role-only |
 | `estornar_estoque(p_org, p_canal, p_ref_venda, p_codigo)` | ADR-0094: repõe só o que foi de fato baixado no cancelamento pré-despacho — service_role-only |
 | `registrar_entrada(p_org, p_codigo, p_qtd, p_custo, p_doc, p_obs, p_criado_por, p_ref)` | ADR-0094: entrada de mercadoria, sobrescreve custo quando informado — service_role-only |
+| `vendas_sku_catalogo()` | ADR-0172 (Fatia 1 + 2a, ainda não em produção): enriquecimento por `codigo` para a aba Vendas SKU e para o Dossiê do SKU — nome de família, cor, tamanho, estoque, fornecedor, origem, kit e 1ª/última venda faturável, mais (Fatia 2a) `kit_multiplicador`, `kit_base_codigo` e `estoque_kit` do **Kit Virtual vinculado** (saldo do kit = `floor(estoque da base / multiplicador)`, base = família mais recente do `codigo_pai` alvo com exatamente 1 variação; ambíguo ou ausente → `null`/`0`, nunca inventa). Família mais recente por `(org, codigo)`, mesma âncora do estoque canônico (ADR-0025). Não calcula dinheiro (o lucro vem dos itens de `agruparPorPedido` no navegador). `security definer`, `search_path=''`, revogada de `public`/`anon`, concedida a `authenticated` |
+| `vendas_sku_dossie_ids(p_codigos text[]) → uuid[]` | ADR-0172 (Fatia 2a, ainda não em produção): ids de `ml_vendas` do Dossiê do SKU — a venda com item de algum código do array, **mais** todo membro do mesmo `pack_id`/`shipping_id`, para o rateio de frete de `agruparPorPedido` bater com a aba Vendas ao reagrupar o pack inteiro. Retorna valor único (`uuid[]`) por POST, sem depender de `Range` (mesmo truque de `platform_org_cost_catalog` contra o teto de 1.000 linhas do PostgREST). `security definer`, `search_path=''`, org só via `current_org_id()`, revogada de `public`/`anon`, concedida a `authenticated` |
+| `vendas_sku_mlbs(p_codigos text[]) → jsonb` | ADR-0172 (Fatia 2a, ainda não em produção): mapa `{mlb: [codigo, ...]}` — de onde a UI deriva o **vínculo do MLB**: `exato` (1 código), `compartilhado` (2+ códigos) ou `não resolvido` (MLB fora do mapa). Casa por `ml_vendas_itens.ml_item_id`, `anuncios_externos_itens` (User Products), `anuncios_externos.variacoes_externas` (Legacy) e `anuncios_externos.migracao_pxv_snapshot` via `ml_item_id_anterior` (MLB encerrado pela migração PxV, ADR-0161 — o campo do snapshot é `sku`, não `seller_custom_field`). `security definer`, `search_path=''`, revogada de `public`/`anon`, concedida a `authenticated` |
 | ~~`upsert_ml_credentials(...)`~~ | **Deprecada** (E7) — substituída por `upsert_marketplace_connection` |
 | ~~`get_ml_tokens(user_id)`~~ | **Deprecada** (E7) — substituída por `get_connection_tokens` |
 | ~~`delete_ml_credentials(user_id)`~~ | **Deprecada** (E7) — substituída por `delete_marketplace_connection` |

@@ -1,0 +1,40 @@
+import { AlertTriangle } from 'lucide-react';
+import type { DossieSku } from '@/lib/sku-dossie';
+import { dataBR } from '@/components/sku-dossie/formato-dossie';
+
+// ponytail: mesmo limiar do KPI "Faturamento com custo real" da aba (80%); recalibrar junto.
+const LIMIAR_CUSTO_REAL = 0.8;
+
+/** Discreto de propósito: diz até onde o histórico vai, sem competir com os números. */
+export function QualidadeHistorico({ historicoDesde, qualidade }: Pick<DossieSku, 'historicoDesde' | 'qualidade'>) {
+  const pct = qualidade.pctBrutoCustoReal;
+  return (
+    <section aria-labelledby="dossie-qualidade" className="rounded-lg border border-dashed px-3 py-2.5 text-xs text-muted-foreground">
+      <div className="flex flex-col gap-1.5 lg:flex-row lg:flex-wrap lg:items-baseline lg:gap-x-4">
+        <h2 id="dossie-qualidade" className="font-medium text-foreground">Qualidade do histórico</h2>
+        {/* Sem vendas: quem diz isso é o aviso principal da página, não esta faixa. */}
+        {historicoDesde && <p className="tabular-nums">{`Histórico desde ${dataBR(historicoDesde)}, a 1ª venda registrada no PubliAI.`}</p>}
+        {pct != null && (
+          <p>
+            {pct < LIMIAR_CUSTO_REAL && (
+              <><AlertTriangle className="mr-1 inline h-3.5 w-3.5 -translate-y-px text-warning" aria-hidden /><span className="sr-only">Atenção, abaixo de 80%: </span></>
+            )}
+            <span className="font-medium tabular-nums text-foreground">{(pct * 100).toFixed(1).replace('.', ',')}%</span>{' '}
+            do faturamento com custo real.
+          </p>
+        )}
+      </div>
+      {qualidade.fontesParciais.length > 0 && (
+        // Texto corrido que quebra como frase (sem display: contents, que tira a semântica da lista).
+        <div className="mt-1.5">
+          <span>Cobertura parcial: </span>
+          <ul className="inline">
+            {qualidade.fontesParciais.map((f, i) => (
+              <li key={f} className="inline">{f}{i < qualidade.fontesParciais.length - 1 ? '; ' : '.'}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}

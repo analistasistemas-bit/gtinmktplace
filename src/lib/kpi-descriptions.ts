@@ -132,6 +132,16 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Quantos vendedores da amostra têm hoje mais transações na conta do que no mesmo ponto de 12 meses atrás. É a LOJA INTEIRA do vendedor (ADR-0142): a API do Mercado Livre não expõe venda por anúncio de terceiro. Sinal de nicho em expansão ou retração, nunca de venda deste produto.',
   'Média mensal por vendedor (12 meses)':
     'Total de transações da conta do vendedor dividido por 12 (ADR-0146). O campo do ML é uma janela móvel de 365 dias, provada no Spike 048 — por isso ÷12 é média mensal de verdade. Continua sendo da loja inteira, somando nichos sem relação com o que você está prospectando.',
+
+  // ── Faturamento / aba Vendas SKU (ADR-0172): lucro por ITEM, não por pedido ──
+  'Lucro::vendas-sku':
+    'Soma, por item vendido, do líquido (já sem comissão, frete e imposto) menos o custo. Só entram itens com custo; item sem custo não entra como lucro.',
+  'Markup::vendas-sku':
+    'Lucro ÷ custo, somando item a item. Mede o retorno sobre a compra. Só itens com custo.',
+  'Margem s/ venda::vendas-sku':
+    'Lucro ÷ preço de venda dos itens com custo. Mede a saúde do preço.',
+  'Faturamento com custo real::vendas-sku':
+    'Quanto do faturamento tem custo congelado na venda. O resto usa o custo atual do cadastro (custo estimado) ou não tem custo.',
 };
 
 /** Resolve a descrição de um KPI pelo `label` (ou `infoKey` composto). undefined = sem entrada

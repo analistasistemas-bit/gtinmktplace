@@ -44,6 +44,10 @@ const TIPOS: Record<string, string> = {
 };
 const DIA = 86_400_000;
 
+/** Status da campanha no ML (o cartão da Central e o dossiê do SKU). */
+export const STATUS_CAMPANHA: Record<string, string> = { started: 'Ativa', pending: 'Futura', finished: 'Encerrada' };
+export const STATUS_CAMPANHA_DOT: Record<string, string> = { started: 'bg-success', pending: 'bg-info', finished: 'bg-muted-foreground/50' };
+
 export const ehCupom = (tipo: string) => tipo === 'SELLER_COUPON_CAMPAIGN';
 export const rotuloTipo = (tipo: string) => TIPOS[tipo] ?? tipo;
 
