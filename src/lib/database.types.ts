@@ -2095,6 +2095,129 @@ export type Database = {
         }
         Relationships: []
       }
+      operacoes_massa: {
+        Row: {
+          acao: string
+          concluido_em: string | null
+          criado_em: string
+          criado_por: string | null
+          id: string
+          org_id: string
+          origem_id: string | null
+          promocao_id: string
+          promocao_nome: string | null
+          promocao_tipo: string
+          status: string
+        }
+        Insert: {
+          acao: string
+          concluido_em?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          id?: string
+          org_id: string
+          origem_id?: string | null
+          promocao_id: string
+          promocao_nome?: string | null
+          promocao_tipo: string
+          status?: string
+        }
+        Update: {
+          acao?: string
+          concluido_em?: string | null
+          criado_em?: string
+          criado_por?: string | null
+          id?: string
+          org_id?: string
+          origem_id?: string | null
+          promocao_id?: string
+          promocao_nome?: string | null
+          promocao_tipo?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operacoes_massa_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operacoes_massa_origem_id_fkey"
+            columns: ["origem_id"]
+            isOneToOne: false
+            referencedRelation: "operacoes_massa"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
+      operacoes_massa_itens: {
+        Row: {
+          atualizado_em: string
+          conferencias: number
+          confirmado_risco: boolean
+          mensagem: string | null
+          ml_item_id: string
+          offer_id: string | null
+          operacao_id: string
+          org_id: string
+          preco: number | null
+          promocao_id: string
+          proxima_conferencia: string | null
+          semaforo: string | null
+          status: string
+          titulo: string | null
+        }
+        Insert: {
+          atualizado_em?: string
+          conferencias?: number
+          confirmado_risco?: boolean
+          mensagem?: string | null
+          ml_item_id: string
+          offer_id?: string | null
+          operacao_id: string
+          org_id: string
+          preco?: number | null
+          promocao_id: string
+          proxima_conferencia?: string | null
+          semaforo?: string | null
+          status?: string
+          titulo?: string | null
+        }
+        Update: {
+          atualizado_em?: string
+          conferencias?: number
+          confirmado_risco?: boolean
+          mensagem?: string | null
+          ml_item_id?: string
+          offer_id?: string | null
+          operacao_id?: string
+          org_id?: string
+          preco?: number | null
+          promocao_id?: string
+          proxima_conferencia?: string | null
+          semaforo?: string | null
+          status?: string
+          titulo?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "operacoes_massa_itens_operacao_id_fkey"
+            columns: ["operacao_id"]
+            isOneToOne: false
+            referencedRelation: "operacoes_massa"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "operacoes_massa_itens_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          }
+        ]
+      }
       organizations: {
         Row: {
           atualizado_em: string
