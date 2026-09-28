@@ -7,19 +7,18 @@ import { adminClient } from '../_shared/supabase.ts';
 import { requireUserOrg } from '../_shared/auth.ts';
 import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { qstashClient, verificarAssinatura } from '../_shared/queue.ts';
-import { exigirModulo } from '../_shared/produto/modulo.ts';
-import { resolverConexao } from '../_shared/canais/conexao.ts';
+import { exigirModulo, moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { conferir, executar, type OperacaoRow } from '../_shared/operacoes/executar.ts';
 import { validarPedido, type ItemPedido, type LinhaCentral } from '../_shared/operacoes/validar.ts';
 import {
   COLS_CENTRAL, criarSemaforoExato, dedup, depsExecutar, encerrarComErro, linhaCentral, urlOperacoes,
 } from '../_shared/operacoes/deps.ts';
+import { lerConexaoML, MSG_SEM_CONEXAO, respostaFalhaCriacao, SemConexaoML } from '../_shared/operacoes/falhas.ts';
 import type { Acao } from '../_shared/operacoes/tipos.ts';
 
 const EXECUCAO = { limiteMs: 90_000, lote: 20 };
 const SEM_MODULO = 'A Central de Promoções não está habilitada para esta organização.';
-const SEM_CONEXAO = 'Organização sem conexão com o Mercado Livre';
 const PROMOCAO_ENCERRADA = 'A promoção não está mais ativa no Mercado Livre';
 const NAO_INICIOU = 'Não foi possível iniciar a operação. Tente de novo.';
 
@@ -27,8 +26,9 @@ type Admin = ReturnType<typeof adminClient>;
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
+/** null = org sem conta ML (ausência real); erro de leitura ou de refresh LANÇA (transitório). */
 async function conexaoDaOrg(admin: Admin, orgId: string) {
-  const conexao = await resolverConexao(admin, orgId, 'mercado_livre');
+  const conexao = await lerConexaoML(admin, orgId);
   if (!conexao?.contaExternaId) return null;
   return { orgId, mlUserId: conexao.contaExternaId, token: await getValidAccessTokenConexao(conexao) };
 }
@@ -55,7 +55,9 @@ async function etapaQStash(admin: Admin, req: Request, body: string): Promise<Re
   if (!linha) return json({ ok: false, erro: 'operação não encontrada' });
   if (linha.status === 'concluida') return json({ ok: true, ignorada: true });
 
-  if (!(await exigirModulo(admin, linha.org_id, 'promocoes'))) {
+  // Encerrar só com ausência REAL (módulo desligado, promoção encerrada, conta não conectada): erro de leitura
+  // lança → 500 → QStash reentrega. Encerrar por engano solta do índice anti-duplicidade item em saída pedida.
+  if (!(await moduloHabilitadoStrict(admin, linha.org_id, 'promocoes'))) {
     await encerrarComErro(admin, linha, SEM_MODULO);
     return json({ ok: false, erro: SEM_MODULO });
   }
@@ -64,11 +66,10 @@ async function etapaQStash(admin: Admin, req: Request, body: string): Promise<Re
     await encerrarComErro(admin, linha, PROMOCAO_ENCERRADA);
     return json({ ok: false, erro: PROMOCAO_ENCERRADA });
   }
-  // Refresh do token/rede falhando é transitório: lança → 500 → QStash tenta de novo (não é "sem conexão").
   const cx = await conexaoDaOrg(admin, linha.org_id);
   if (!cx) {
-    await encerrarComErro(admin, linha, SEM_CONEXAO);
-    return json({ ok: false, erro: SEM_CONEXAO });
+    await encerrarComErro(admin, linha, MSG_SEM_CONEXAO);
+    return json({ ok: false, erro: MSG_SEM_CONEXAO });
   }
 
   const op: OperacaoRow = {
@@ -143,14 +144,22 @@ async function criar(admin: Admin, req: Request, body: string): Promise<Response
 
   // Conexão só é aberta se algum preço editado pedir a tarifa exata.
   let exato: ReturnType<typeof criarSemaforoExato> | null = null;
-  const v = await validarPedido(pedido.acao, promo.tipo, pedido.itens, central, async (l, preco) => {
-    if (!exato) {
-      const cx = await conexaoDaOrg(admin, orgId);
-      if (!cx) throw new Error(SEM_CONEXAO);
-      exato = criarSemaforoExato(admin, cx);
-    }
-    return exato(l, preco);
-  });
+  let v: Awaited<ReturnType<typeof validarPedido>>;
+  try {
+    v = await validarPedido(pedido.acao, promo.tipo, pedido.itens, central, async (l, preco) => {
+      if (!exato) {
+        const cx = await conexaoDaOrg(admin, orgId);
+        if (!cx) throw new SemConexaoML();
+        exato = criarSemaforoExato(admin, cx);
+      }
+      return exato(l, preco);
+    });
+  } catch (e) {
+    // Conta ausente → 400; ML recusou o token → 403; o resto é transitório (500 no catch geral).
+    const r = respostaFalhaCriacao(e);
+    if (!r) throw e;
+    return json({ erro: r.erro }, r.status);
+  }
   if (!v.ok) return json({ erro: v.erro, ...(v.itens ? { itens: v.itens } : {}) }, 400);
 
   const { data: op, error: eOp } = await admin.from('operacoes_massa').insert({
