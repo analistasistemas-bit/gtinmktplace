@@ -9,6 +9,8 @@ import { SEMAFORO_UI } from './contagem-semaforo';
 const MOTIVO: Record<string, string> = {
   sem_cadastro: 'Sem custo no PubliAI', sem_custo: 'Sem custo no PubliAI', sem_origem: 'Sem origem no cadastro',
   sem_preco: 'Sem preço na promoção', sem_categoria: 'Anúncio não lido no Mercado Livre', erro_tarifa: 'Tarifa do Mercado Livre indisponível',
+  kit_divergente: 'Kit: unidades do anúncio diferentes do cadastro', kit_ambiguo: 'Kit: GTIN e SKU apontam cadastros diferentes',
+  kit_sem_dimensao: 'Kit sem medidas no cadastro (frete incerto)',
 };
 
 export function SheetCores({ item, onClose }: { item: ItemPromocao | null; onClose: () => void }) {

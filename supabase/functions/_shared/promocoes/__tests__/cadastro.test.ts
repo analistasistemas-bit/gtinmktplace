@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { montarCadastro, resolverCor, type LinhaVariacao } from '../cadastro.ts';
+import { montarCadastro, resolverCor, resolverPack, type LinhaVariacao } from '../cadastro.ts';
 
 const v = (o: Partial<LinhaVariacao> & { id: string }): LinhaVariacao => ({
   custo: 10, preco: 18, cor: 'Azul', codigo: null, gtin: null, ml_variation_id: null,
@@ -69,5 +69,61 @@ describe('resolverCor', () => {
 
   it('nada casa → null', () => {
     expect(resolverCor(montarCadastro([], []), { item_id: 'Z', variation_id: 1, sku: 's', gtin: 'g' })).toBeNull();
+  });
+});
+
+describe('resolverPack (kit — ADR-0151)', () => {
+  // Caso real MLB7665740658: par de catálogo do kit, GTIN da unidade, SKU do kit próprio, UNITS_PER_PACK=2.
+  const base = v({ id: 'base', codigo: '00000010', gtin: '7891010027858', custo: 29.9, preco: 39.99,
+    peso_gramas: 800, altura_cm: 22, largura_cm: 10, comprimento_cm: 7, familias: { ml_item_id: 'MLBBASE', origem: 'nacional' } });
+  const kit = v({ id: 'kit', codigo: '00000012', gtin: null, custo: 59.8, preco: 111.8,
+    peso_gramas: 1600, altura_cm: 44, largura_cm: 10, comprimento_cm: 7,
+    familias: { ml_item_id: 'MLBKIT', origem: 'nacional', kit_multiplicador: 2 } });
+  const q = (o: Partial<{ item_id: string; sku: string | null; gtin: string | null }>) =>
+    ({ item_id: 'MLBX', variation_id: null, sku: null, gtin: null, ...o });
+
+  it('produto avulso sem UNITS_PER_PACK: igual ao resolverCor', () => {
+    const c = montarCadastro([base], []);
+    expect(resolverPack(c, q({ gtin: '7891010027858' }), null)).toBe(resolverCor(c, q({ gtin: '7891010027858' })));
+    expect(resolverPack(c, q({ gtin: '7891010027858' }), 1)).toBe(resolverCor(c, q({ gtin: '7891010027858' })));
+  });
+
+  it('GTIN casa a unidade e o ML diz 2 unidades: custo/piso/peso/altura ×2, largura/comprimento da base', () => {
+    const r = resolverPack(montarCadastro([base], []), q({ gtin: '7891010027858' }), 2);
+    expect(r).toMatchObject({ variacao_id: 'base', custo: 59.8, piso: 79.98, kit: 2,
+      dim: { altura_cm: 44, largura_cm: 10, comprimento_cm: 7, peso_gramas: 1600 } });
+  });
+
+  it('kit próprio já nasce multiplicado: nunca multiplica de novo (com ou sem UNITS_PER_PACK)', () => {
+    const c = montarCadastro([base, kit], []);
+    for (const n of [2, null]) {
+      expect(resolverPack(c, q({ item_id: 'MLBKIT' }), n)).toMatchObject({ variacao_id: 'kit', custo: 59.8, piso: 111.8 });
+    }
+  });
+
+  it('incidente: GTIN → unidade, SKU → kit próprio com o mesmo pacote → usa o kit próprio', () => {
+    const r = resolverPack(montarCadastro([base, kit], []), q({ gtin: '7891010027858', sku: '00000012' }), 2);
+    expect(r).toMatchObject({ variacao_id: 'kit', custo: 59.8, piso: 111.8 });
+  });
+
+  it('GTIN e SKU apontam cadastros que não batem no pacote → kit_ambiguo', () => {
+    const outro = { ...kit, custo: 70 };
+    expect(resolverPack(montarCadastro([base, outro], []), q({ gtin: '7891010027858', sku: '00000012' }), 2)).toBe('kit_ambiguo');
+  });
+
+  it('kit de 2 no cadastro, anúncio de 3 no ML → kit_divergente', () => {
+    expect(resolverPack(montarCadastro([kit], []), q({ item_id: 'MLBKIT' }), 3)).toBe('kit_divergente');
+    expect(resolverPack(montarCadastro([kit], []), q({ item_id: 'MLBKIT' }), 1)).toBe('kit_divergente');
+  });
+
+  it('kit sem medidas não cota frete padrão → kit_sem_dimensao', () => {
+    const semDim = { ...base, altura_cm: null };
+    expect(resolverPack(montarCadastro([semDim], []), q({ gtin: '7891010027858' }), 2)).toBe('kit_sem_dimensao');
+    const kitSemDim = { ...kit, peso_gramas: null };
+    expect(resolverPack(montarCadastro([kitSemDim], []), q({ item_id: 'MLBKIT' }), null)).toBe('kit_sem_dimensao');
+  });
+
+  it('nada casa → null', () => {
+    expect(resolverPack(montarCadastro([], []), q({ gtin: '1' }), 2)).toBeNull();
   });
 });

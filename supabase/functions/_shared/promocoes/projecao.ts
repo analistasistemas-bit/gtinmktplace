@@ -6,8 +6,9 @@ import type { Contagem, LinhaItem, Semaforo, Tarifa } from './tipos.ts';
 /** Mesma regra de `src/lib/semaforo.ts` (amarrada por tests/lib/paridade-semaforo-promocoes.test.ts). */
 export function semaforo(liquido: number | null, piso: number, custo: number | null): Semaforo {
   if (liquido == null) return 'indisponivel';
-  if (liquido >= piso) return 'verde';
+  // Prejuízo vence o piso: piso cadastrado abaixo do custo nunca pinta de verde uma venda no vermelho.
   if (custo != null && custo > 0 && liquido < custo) return 'vermelho';
+  if (liquido >= piso) return 'verde';
   return 'amarelo';
 }
 
@@ -37,12 +38,14 @@ export function liquidoNoPreco(preco: number, t: Tarifa, aliquotaPct: number): n
  * Menor preço da faixa [min, max] cujo líquido, conferido na tarifa DAQUELE preço, fica ≥ piso.
  * Ponto fixo: parte da tarifa do máximo e refaz o gross-up com a tarifa de cada candidato (a comissão
  * fixa e o frete mudam por faixa de preço) até parar de descer. Só guarda preço verificado; no pior
- * caso fica no máximo, que foi verificado primeiro.
+ * caso fica no máximo, que foi verificado primeiro. O alvo é max(piso, custo): nunca sugere preço
+ * cujo líquido fique abaixo do custo, mesmo com piso cadastrado mais baixo.
  */
 export async function ateQuantoDescer(
-  a: { piso: number; aliquotaPct: number; min: number; max: number },
+  entrada: { piso: number; custo: number; aliquotaPct: number; min: number; max: number },
   tarifaEm: (preco: number) => Promise<Tarifa>,
 ): Promise<{ valor: number | null; motivo: 'qualquer' | 'nenhum' | null }> {
+  const a = { ...entrada, piso: Math.max(entrada.piso, entrada.custo) };
   let t = await tarifaEm(a.max);
   if (liquidoNoPreco(a.max, t, a.aliquotaPct) < a.piso) return { valor: null, motivo: 'nenhum' };
   let melhor = a.max;

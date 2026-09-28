@@ -20,10 +20,36 @@ const item = (o: Partial<ItemPromocaoML> = {}): ItemPromocaoML => ({
 });
 const itemMl = (o: Partial<ItemML> = {}): ItemML => ({
   id: 'MLB1', titulo: 'Toalha', thumbnail: null, permalink: 'https://p', listing_type_id: 'gold_special',
-  categoria: 'MLB123', sku: null, gtin: null, variacoes: [], ...o,
+  categoria: 'MLB123', sku: null, gtin: null, unidades: null, variacoes: [], ...o,
 });
 
 describe('projetarItem', () => {
+  describe('kit (incidente MLB7665740658)', () => {
+    const cad = montarCadastro([
+      linhaVar({ id: 'base', codigo: '00000010', gtin: '7891010027858', custo: 29.9, preco: 39.99, peso_gramas: 800,
+        altura_cm: 22, largura_cm: 10, comprimento_cm: 7, familias: { ml_item_id: 'MLBBASE', origem: 'nacional' } }),
+      linhaVar({ id: 'kit', codigo: '00000012', custo: 59.8, preco: 111.8, peso_gramas: 1600,
+        altura_cm: 44, largura_cm: 10, comprimento_cm: 7, familias: { ml_item_id: 'MLBKIT', origem: 'nacional', kit_multiplicador: 2 } }),
+    ], []);
+    const it_ = item({ ml_item_id: 'MLB7665740658', preco_sugerido: 106.21, preco_min: 22.36, preco_max: 106.21 });
+    const ml = (unidades: number | null) => itemMl({ id: 'MLB7665740658', sku: '00000012', gtin: '7891010027858', unidades });
+
+    it('custo e medidas do pacote; nunca verde; não sugere descer abaixo do piso do kit', async () => {
+      const dims: unknown[] = [];
+      const l = await projetarItem(it_, ml(2), cad, aliq, async (q) => { dims.push(q.dim); return tarifa10; });
+      expect(l.projecao[0]).toMatchObject({ custo: 59.8, piso: 111.8, semaforo: 'amarelo', ate_quanto: null, ate_quanto_motivo: 'nenhum' });
+      expect(dims.every((d) => JSON.stringify(d) === JSON.stringify({ altura_cm: 44, largura_cm: 10, comprimento_cm: 7, peso_gramas: 1600 }))).toBe(true);
+    });
+
+    it('ML diz 3 unidades, cadastro diz kit de 2 → ⚪ sem líquido nem sugestão', async () => {
+      const tarifa = vi.fn(async () => tarifa10);
+      const l = await projetarItem(it_, ml(3), cad, aliq, tarifa);
+      expect(l.projecao[0]).toMatchObject({ semaforo: 'indisponivel', motivo: 'kit_divergente', liquido: null, ate_quanto: null });
+      expect(l.pior_semaforo).toBe('indisponivel');
+      expect(tarifa).not.toHaveBeenCalled();
+    });
+  });
+
   it('Legacy 3 cores: líquido por cor, pior semáforo entre as que têm líquido', async () => {
     const cad = montarCadastro([
       linhaVar({ id: 'a', ml_variation_id: '1', custo: 20, preco: 30 }),  // 50 − 5 − 4 = 41 ≥ 30 → verde

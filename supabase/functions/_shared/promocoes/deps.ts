@@ -50,7 +50,7 @@ async function emCache<T>(chave: string, calcular: () => Promise<T>): Promise<T>
 /** Cadastro da org (custo, piso, origem, dimensões) para resolver a cor de cada anúncio. */
 export async function carregarCadastro(admin: SupabaseClient, orgId: string): Promise<Cadastro> {
   const variacoes = await paginarTudo<LinhaVariacao>((de, ate) => admin.from('variacoes')
-    .select('id, custo, preco, cor, codigo, gtin, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, atualizado_em, familias!inner(ml_item_id, origem)')
+    .select('id, custo, preco, cor, codigo, gtin, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, atualizado_em, familias!inner(ml_item_id, origem, kit_multiplicador)')
     .eq('org_id', orgId).order('id').range(de, ate) as never);
   const itensUp = await paginarTudo<LinhaItemUp>((de, ate) => admin.from('anuncios_externos_itens')
     .select('item_externo_id, variacao_id')

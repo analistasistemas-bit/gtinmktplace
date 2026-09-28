@@ -14,6 +14,10 @@ describe('semaforo', () => {
     expect(semaforo(null, 20, 10)).toBe('indisponivel');
     expect(semaforo(5, 20, 0)).toBe('amarelo'); // custo 0 nunca vira vermelho (igual ao front)
   });
+
+  it('prejuízo vence o piso: líquido ≥ piso mas < custo → vermelho', () => {
+    expect(semaforo(35, 30, 59.8)).toBe('vermelho');
+  });
 });
 
 describe('piorSemaforo', () => {
@@ -51,17 +55,26 @@ describe('ateQuantoDescer', () => {
   const tarifaFixa = async () => t(10, 0, 0); // líquido = 0,82·P com imposto 8%
 
   it('"qualquer" quando o mínimo da faixa já atinge o piso', async () => {
-    const r = await ateQuantoDescer({ piso: 20, aliquotaPct: 8, min: 30, max: 50 }, tarifaFixa);
+    const r = await ateQuantoDescer({ custo: 0, piso: 20, aliquotaPct: 8, min: 30, max: 50 }, tarifaFixa);
     expect(r).toEqual({ valor: null, motivo: 'qualquer' });
   });
 
+  it('piso abaixo do custo: o alvo é o custo — nunca sugere preço com líquido < custo', async () => {
+    const r = await ateQuantoDescer({ custo: 40, piso: 30, aliquotaPct: 8, min: 20, max: 60 }, tarifaFixa);
+    // 40/0,82 = 48,78… → 48,80 (com piso 30 seria 36,60)
+    expect(r.valor).toBeCloseTo(48.8, 2);
+    expect(liquidoNoPreco(r.valor!, t(10), 8)).toBeGreaterThanOrEqual(40);
+    expect(await ateQuantoDescer({ custo: 50, piso: 30, aliquotaPct: 8, min: 20, max: 60 }, tarifaFixa))
+      .toEqual({ valor: null, motivo: 'nenhum' });
+  });
+
   it('"nenhum" quando nem o máximo atinge o piso', async () => {
-    const r = await ateQuantoDescer({ piso: 100, aliquotaPct: 8, min: 30, max: 50 }, tarifaFixa);
+    const r = await ateQuantoDescer({ custo: 0, piso: 100, aliquotaPct: 8, min: 30, max: 50 }, tarifaFixa);
     expect(r).toEqual({ valor: null, motivo: 'nenhum' });
   });
 
   it('menor preço da faixa com líquido ≥ piso, verificado na tarifa daquele preço', async () => {
-    const r = await ateQuantoDescer({ piso: 30, aliquotaPct: 8, min: 20, max: 60 }, tarifaFixa);
+    const r = await ateQuantoDescer({ custo: 0, piso: 30, aliquotaPct: 8, min: 20, max: 60 }, tarifaFixa);
     // grossUp(30, 10, 0, 0, 8) = 30/0,82 = 36,585… → arredonda p/ cima de 5 centavos = 36,60
     expect(r.motivo).toBeNull();
     expect(r.valor).toBeCloseTo(36.6, 2);
@@ -72,7 +85,7 @@ describe('ateQuantoDescer', () => {
     // frete 20 a partir de 79, 8 abaixo. Da tarifa do máximo: (30+20)/0,82 → 61,00 (válido, frete 8).
     // Refazendo com a tarifa de 61: (30+8)/0,82 = 46,34… → 46,35 — o mínimo real.
     const tarifa = async (p: number) => t(10, 0, p >= 79 ? 20 : 8);
-    const r = await ateQuantoDescer({ piso: 30, aliquotaPct: 8, min: 20, max: 100 }, tarifa);
+    const r = await ateQuantoDescer({ custo: 0, piso: 30, aliquotaPct: 8, min: 20, max: 100 }, tarifa);
     expect(r.valor).toBeCloseTo(46.35, 2);
     expect(liquidoNoPreco(46.35, await tarifa(46.35), 8)).toBeGreaterThanOrEqual(30);
   });
@@ -80,7 +93,7 @@ describe('ateQuantoDescer', () => {
   it('frete maior acima de R$ 40: fica acima do degrau quando abaixo dele não há preço válido', async () => {
     // abaixo de 40 precisaria de 34/0,82 = 41,46 (não existe < 40); a partir de 40: (34+10)/0,82 → 53,70
     const tarifa = async (p: number) => t(10, 0, p >= 40 ? 10 : 0);
-    const r = await ateQuantoDescer({ piso: 34, aliquotaPct: 8, min: 20, max: 80 }, tarifa);
+    const r = await ateQuantoDescer({ custo: 0, piso: 34, aliquotaPct: 8, min: 20, max: 80 }, tarifa);
     expect(r.valor).toBeCloseTo(53.7, 2);
   });
 });

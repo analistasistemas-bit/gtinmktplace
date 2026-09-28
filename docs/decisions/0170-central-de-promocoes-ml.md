@@ -98,3 +98,21 @@ o Diego em 2026-09-24.
 - `promocoes` entra em `MENU_KEYS` (front e o espelho da edge `usuarios`), em `MODULOS` e no `MODULOS_VALIDOS` da edge `usuarios`; a migration faz o backfill de `profiles.allowed_menus` como no Pulse.
 - Deploy: `supabase db push` → deploy de `sincronizar-promocoes` (+ `usuarios`) → schedule QStash →
   merge do front.
+
+## Adendo 2026-09-28 — kit calculado como unidade (incidente MLB7665740658)
+
+Par de catálogo do "Kit 2x Shampoo Johnson's 750ml": `SALE_FORMAT=Kit`, `UNITS_PER_PACK=2`, GTIN da
+unidade (ADR-0151) e SKU do kit próprio (`00000012`). O resolvedor tenta GTIN antes do SKU, casou a base
+(custo R$ 29,90, piso R$ 39,99) e pintou 🟢 com "até quanto" R$ 59,10 — venda com prejuízo de ~R$ 25.
+
+- **Pacote:** `ItemML.unidades` = `UNITS_PER_PACK`; `CadastroVariacao.kit` = `familias.kit_multiplicador`
+  (senão 1). Kit próprio já nasce multiplicado — nunca multiplica de novo. Unidade avulsa num anúncio de N:
+  custo, piso, peso e altura ×N; largura/comprimento da base (ADR-0151 D-4). `UNITS_PER_PACK` ausente = vale
+  o cadastro.
+- **⚪ sem chute** (`resolverPack`): `kit_divergente` (anúncio de N, cadastro de K≠N), `kit_sem_dimensao`
+  (kit sem as 4 medidas não cota frete padrão), `kit_ambiguo` (GTIN e SKU casam cadastros cujo custo/medidas
+  no pacote não batem). Empate vai para o cadastro que já é daquele pacote (piso próprio). Fora de pacote a
+  cadeia de resolução não muda (ADR-0108).
+- **Semáforo** (aqui e em `src/lib/semaforo.ts`, ADR-0020): `líquido < custo` → 🔴 antes de olhar o piso.
+- **"Até quanto descer"** mira `max(piso, custo)`.
+

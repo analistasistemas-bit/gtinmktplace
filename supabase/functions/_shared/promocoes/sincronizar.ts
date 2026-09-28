@@ -1,7 +1,7 @@
 // ADR-0170 — sync das promoções: etapa de lista (por org) e etapa de leitura (por promoção, em lotes,
 // com continuação). Decisão aqui; IO nas deps (fiação real em deps.ts).
 import type { DimensoesPacote } from '../ml/pacote.ts';
-import { resolverCor, type Cadastro } from './cadastro.ts';
+import { resolverPack, type Cadastro } from './cadastro.ts';
 import { SemAcessoPromocoes, TIPOS_CUPOM } from './ml.ts';
 import { ateQuantoDescer, liquidoNoPreco, piorSemaforo, precoAvaliado, semaforo } from './projecao.ts';
 import type {
@@ -68,7 +68,8 @@ async function projetarCor(
   c: { variation_id: number | null; cor: string | null; sku: string | null; gtin: string | null },
   cad: Cadastro, aliq: Aliquotas, preco: number | null, tarifaEm: (q: QueryTarifa) => Promise<Tarifa>,
 ): Promise<ProjecaoCor> {
-  const r = resolverCor(cad, { item_id: it.ml_item_id, variation_id: c.variation_id, sku: c.sku, gtin: c.gtin });
+  const achado = resolverPack(cad, { item_id: it.ml_item_id, variation_id: c.variation_id, sku: c.sku, gtin: c.gtin }, ml?.unidades ?? null);
+  const r = typeof achado === 'string' ? null : achado;
   const base: ProjecaoCor = {
     variation_id: c.variation_id, cor: c.cor ?? r?.cor ?? null, sku: c.sku,
     custo: r?.custo ?? null, piso: r?.piso ?? null, origem: r?.origem ?? null,
@@ -76,7 +77,8 @@ async function projetarCor(
     liquido: null, ate_quanto: null, ate_quanto_motivo: null, semaforo: 'indisponivel', motivo: null,
   };
   const motivo: MotivoSemLiquido | null =
-    !r ? 'sem_cadastro'
+    typeof achado === 'string' ? achado
+    : !r ? 'sem_cadastro'
     : r.custo == null || r.piso == null ? 'sem_custo'
     : r.origem == null ? 'sem_origem'
     : preco == null ? 'sem_preco'
@@ -99,7 +101,7 @@ async function projetarCor(
   let ate: { valor: number | null; motivo: 'qualquer' | 'nenhum' | null } = { valor: null, motivo: null };
   if (it.status === 'candidate' && it.preco_min != null && it.preco_max != null) {
     try {
-      ate = await ateQuantoDescer({ piso, aliquotaPct, min: it.preco_min, max: it.preco_max }, tarifaNo);
+      ate = await ateQuantoDescer({ piso, custo, aliquotaPct, min: it.preco_min, max: it.preco_max }, tarifaNo);
     } catch (e) {
       // sem "até quanto"; o líquido no preço avaliado continua válido
       console.warn('[promocoes] até quanto indisponível', { ml_item_id: it.ml_item_id, variation_id: c.variation_id, erro: mensagem(e) });

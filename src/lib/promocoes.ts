@@ -101,8 +101,9 @@ export function corDeReferencia(it: ItemPromocao): CorProjetada | null {
 }
 
 /** ⚪: "Sem custo no PubliAI" só quando nenhuma cor tem cadastro/custo; senão o motivo é outro (tarifa, categoria…). */
-export function rotuloSemLiquido(it: ItemPromocao): 'Sem custo no PubliAI' | 'Sem líquido' {
+export function rotuloSemLiquido(it: ItemPromocao): 'Sem custo no PubliAI' | 'Sem líquido' | 'Kit a conferir' {
   const motivos = it.projecao.map((c) => c.motivo);
+  if (motivos.length > 0 && motivos.every((m) => m?.startsWith('kit_'))) return 'Kit a conferir';
   return motivos.length > 0 && motivos.every((m) => m === 'sem_cadastro' || m === 'sem_custo') ? 'Sem custo no PubliAI' : 'Sem líquido';
 }
 

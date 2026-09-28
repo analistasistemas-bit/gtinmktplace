@@ -18,6 +18,11 @@ const str = (x: unknown): string | null => (typeof x === 'string' && x !== '' ? 
 const lista = (x: unknown): Obj[] => (Array.isArray(x) ? (x as Obj[]) : []);
 const atributo = (attrs: unknown, id: string): string | null => str(lista(attrs).find((a) => a.id === id)?.value_name);
 
+const unidades = (x: string | null): number | null => {
+  const n = Number(x);
+  return x != null && Number.isInteger(n) && n >= 1 ? n : null;
+};
+
 export function criarGetJson(token: string, f: typeof fetch = fetch): GetJson {
   return async (path) => {
     const r = await f(`${API}${path}`, { method: 'GET', headers: { Authorization: `Bearer ${token}` } });
@@ -68,6 +73,7 @@ export function normalizarItemML(raw: Obj): ItemML {
     listing_type_id: str(raw.listing_type_id), categoria: str(raw.category_id),
     sku: str(raw.seller_custom_field) ?? atributo(raw.attributes, 'SELLER_SKU'),
     gtin: atributo(raw.attributes, 'GTIN'),
+    unidades: unidades(atributo(raw.attributes, 'UNITS_PER_PACK')),
     variacoes,
   };
 }

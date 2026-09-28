@@ -37,7 +37,13 @@ describe('normalizadores', () => {
     expect(legacy.variacoes).toEqual([{ variation_id: 11, cor: 'Azul', sku: 'SKU-A', gtin: '0789' }]);
     expect(legacy).toMatchObject({ categoria: 'MLB123', listing_type_id: 'gold_special', thumbnail: 'https://x/t.jpg', gtin: '789' });
     const up = normalizarItemML({ id: 'MLB2', attributes: [{ id: 'SELLER_SKU', value_name: '00123' }] });
-    expect(up).toMatchObject({ sku: '00123', variacoes: [] });
+    expect(up).toMatchObject({ sku: '00123', variacoes: [], unidades: null });
+  });
+
+  it('kit: UNITS_PER_PACK vira unidades; valor inválido vira null', () => {
+    expect(normalizarItemML({ id: 'K', attributes: [{ id: 'SALE_FORMAT', value_name: 'Kit' }, { id: 'UNITS_PER_PACK', value_name: '2' }] }).unidades).toBe(2);
+    expect(normalizarItemML({ id: 'K', attributes: [{ id: 'UNITS_PER_PACK', value_name: 'dois' }] }).unidades).toBeNull();
+    expect(normalizarItemML({ id: 'K', attributes: [{ id: 'UNITS_PER_PACK', value_name: '0' }] }).unidades).toBeNull();
   });
 });
 

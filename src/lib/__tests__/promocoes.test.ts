@@ -65,6 +65,7 @@ describe('linha da tabela', () => {
   it('rótulo sem líquido: "Sem custo" só quando falta cadastro/custo em todas as cores', () => {
     expect(rotuloSemLiquido(item([cor({ liquido: null, motivo: 'sem_cadastro' })], 'indisponivel'))).toBe('Sem custo no PubliAI');
     expect(rotuloSemLiquido(item([cor({ liquido: null, motivo: 'erro_tarifa' })], 'indisponivel'))).toBe('Sem líquido');
+    expect(rotuloSemLiquido(item([cor({ liquido: null, motivo: 'kit_divergente' })], 'indisponivel'))).toBe('Kit a conferir');
   });
 });
 

@@ -4,7 +4,9 @@ import type { DimensoesPacote } from '../ml/pacote.ts';
 
 export type Semaforo = 'verde' | 'amarelo' | 'vermelho' | 'indisponivel';
 export type Origem = 'nacional' | 'importado' | null;
-export type MotivoSemLiquido = 'sem_cadastro' | 'sem_custo' | 'sem_origem' | 'sem_preco' | 'sem_categoria' | 'erro_tarifa';
+/** Kit (ADR-0151): unidades do anúncio ≠ cadastro, GTIN/SKU apontando cadastros diferentes, ou kit sem medidas. */
+export type MotivoKit = 'kit_divergente' | 'kit_ambiguo' | 'kit_sem_dimensao';
+export type MotivoSemLiquido = 'sem_cadastro' | 'sem_custo' | 'sem_origem' | 'sem_preco' | 'sem_categoria' | 'erro_tarifa' | MotivoKit;
 
 export interface Tarifa { comissao: Comissao; frete: number }
 export interface Aliquotas { nacional: number; importado: number }
@@ -25,11 +27,15 @@ export interface VariacaoML { variation_id: number; cor: string | null; sku: str
 export interface ItemML {
   id: string; titulo: string | null; thumbnail: string | null; permalink: string | null;
   listing_type_id: string | null; categoria: string | null; sku: string | null; gtin: string | null;
+  /** UNITS_PER_PACK do anúncio (kit); null = o ML não informa. */
+  unidades: number | null;
   variacoes: VariacaoML[];
 }
 export interface CadastroVariacao {
   variacao_id: string; custo: number | null; piso: number | null; origem: Origem;
   cor: string | null; codigo: string | null; dim: DimensoesPacote | null;
+  /** Unidades que custo/piso/dim representam: familias.kit_multiplicador do kit próprio, senão 1. */
+  kit: number;
 }
 export interface ProjecaoCor {
   variation_id: number | null; cor: string | null; sku: string | null;
