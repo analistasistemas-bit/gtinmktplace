@@ -33,7 +33,7 @@ produção (a partir de 01/10) para virar `Aceito`. Runbook em `docs/reference/e
 Ver [[Índice de ADRs|ADR-0173]].
 
 **Achado lateral (não relacionado ao fan-out):** `materializar-metricas` está documentado com
-schedule diário (`0 6 * * *`) mas sem invocações registradas em produção nos últimos 7 dias —
+schedule diário (`0 6 * * *`) mas sem invocações registradas em produção em 7 dias até 27/09 —
 investigar se o schedule ainda existe no QStash.
 
 ## 2026-08-25 — alerta de "2 anúncios moderados" que nunca foram moderados

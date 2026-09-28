@@ -656,8 +656,8 @@ Runbook completo em
 **Pendente:** validação de 3 dias em produção (a partir de 01/10) — só depois disso o ADR-0173
 passa de `Proposto` para `Aceito`. Ver [ADR-0173](decisions/0173-fanout-por-org-workers-agendados-cpu.md)
 e o plano `docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`. **Achado lateral:**
-`materializar-metricas` está documentado com schedule diário mas sem invocações em produção nos
-últimos 7 dias — investigar fora deste ADR.
+`materializar-metricas` está documentado com schedule diário mas sem invocações em produção em 7
+dias até 27/09 — investigar fora deste ADR.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 

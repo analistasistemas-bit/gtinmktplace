@@ -130,8 +130,8 @@ dois caminhos (mesmo líquido/liberação para o mesmo pedido, incluindo estorno
 provada em `supabase/functions/_shared/faturamento/__tests__/mp-por-pedido.test.ts`, sem
 divergência nos 4 casos testados — isso mostra que a alternativa por pedido É viável para a etapa
 `liberacoes` se o portão de CPU disparar na ativação, mas não implementa essa alternativa. Medido
-na ativação: a etapa `liberacoes` ficou em 142 ms de mediana / 299 ms de máximo — bem abaixo do
-portão de 1.500 ms.
+na ativação: a rodada do reconciliar (30 mensagens, incluindo a etapa `liberacoes`) teve máximo de
+299 ms — portão de 1.500 ms atendido.
 
 ## Implantação (2026-09-28)
 

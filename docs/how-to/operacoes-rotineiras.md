@@ -382,7 +382,8 @@ Duas coisas que não estão lá:
 - **Medir CPU de uma execução:** logs da função via Management API (`function_logs`), campo
   `log_attributes.cpu_time_used` (ms) e `log_attributes.reason` (`CPUTime` = 546). Consulta por
   janela pede `iso_timestamp_start`/`iso_timestamp_end` — **`iso_timestamp_end` não pode ser
-  futuro** (a API rejeita).
+  futuro** (a API rejeita). A Management API devolve **429 com frequência** — espace as consultas
+  (evite laço apertado).
 - **Consultar o estado de uma rodada:** `select * from worker_rodadas where job = '<job>' and
   org_id = '<org>'` (cursor, `estado`, `lease_ate`) e `select * from worker_pendencias where
   org_id = '<org>' and descartado_em is null` (pendências ativas) — via Management API, read-only.

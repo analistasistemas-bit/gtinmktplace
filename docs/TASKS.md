@@ -20,9 +20,9 @@ números da implantação em
 - [x] Task 6: `reconciliar-faturamento` em rodada por org atrás de `FANOUT_RECONCILIAR`.
 - [x] Task 7: equivalência do líquido MP por pedido (varredura × leitura por pedido, `mp-por-pedido.test.ts` — os 4 casos batem, sem divergência) + esta documentação (ADR-0173, modelo de dados, runbook).
 - [x] **Task 8: deploy (28/09) — migration `20260927205804_worker_rodadas.sql` em produção, 17 funções
-  redeployadas, 3 flags ligadas (backfill → pulse → reconciliar), ativação medida (0 `CPUTime`, CPU
-  por etapa bem abaixo do portão de 1.500 ms) e recuperação histórica do backfill (1.241 vendas
-  regravadas, 0 falhas).** Detalhes em
+  redeployadas, 3 flags ligadas (backfill → pulse → reconciliar), ativação medida (0 `CPUTime`;
+  máximo de CPU por função: backfill 311 ms, pulse 1.152 ms, reconciliar 299 ms) e recuperação
+  histórica do backfill (1.241 vendas regravadas, 0 falhas).** Detalhes em
   [ADR-0173 → Implantação](decisions/0173-fanout-por-org-workers-agendados-cpu.md#implantação-2026-09-28).
 - [ ] **Validar 3 dias em produção a partir de 01/10** (0 `CPUTime`; nenhuma `worker_rodadas`
   `rodando` com posse vencida > 1h; `worker_pendencias` sem crescimento; ≤ 1 notificação por

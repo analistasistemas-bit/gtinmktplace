@@ -240,8 +240,8 @@ mesmo por engano.
    o tamanho do lote, ou abrir tarefa para a etapa que não cabe.
 4. Validação em produção por 3 dias (só leitura) antes de considerar estável: 0 shutdowns
    `CPUTime`; `worker_rodadas` sem linha `rodando` com posse vencida há mais de 1h; `notificacoes`
-   `pulse` com no máximo 1 linha por `(usuário, chave)`; `worker_pendencias` por org visível, com as
-   ativas decrescendo.
+   `pulse` com no máximo 1 linha por `(usuário, chave)`; `worker_pendencias` por org visível, sem
+   crescimento.
 
 ### Rollback
 
@@ -1362,8 +1362,10 @@ um smoke test contra Postgres real antes do primeiro deploy.
   é a mais recente (o laço vai do presente para trás): o estado acessório segue atualizado uma vez
   por sincronização. O schedule do QStash **não** manda a flag — lá é execução única e precisa
   fazer tudo. Otimizado em lotes concorrentes (batching de 5) e executa Perguntas e Devoluções no início para evitar timeouts (504/546). Passo 4 (ADR-0067): após as vendas, varre os packs conhecidos (`ml_vendas`) e puxa as mensagens pós-venda de cada um (1 GET/pack, sem alerta).
-  ⚠️ **Não tem a guarda de orçamento que o `reconciliar-faturamento` ganhou em 31/07** — por isso
-  ainda é o worker de faturamento que estoura. Medido no schedule (`dias:7`, todas as orgs, só
+  ⚠️ **Histórico até 27/09 — não tinha a guarda de orçamento que o `reconciliar-faturamento` ganhou
+  em 31/07:** até a ativação do ADR-0173 (fan-out por org, 28/09), era o worker de faturamento que
+  estourava. Resolvido: 0 shutdowns `CPUTime` na checagem de 28/09 01:07 UTC. Medições históricas
+  do caminho legado (`dias:7`, todas as orgs, só
   ciclos sem retry): mediana **70s em 27/07 → 81s em 03/08**, ~+1,6s/dia, com **5 falhas** no
   período — 4 timeouts (546 em 30/07, 31/07 e 02/08; 504 em 30/07) e um 520 em 02/08 — todas
   salvas pelo retry do QStash. (Ciclos de 233–253s nos eventos são tentativa + retry somados, não
@@ -1375,8 +1377,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
   ofensor: `listarPacksDeVendas` tem `limite = 200`, então é caro porém constante.
   Consequência prática:
   encolher a janela (30→7 no schedule em 27/07, e no botão "Sincronizar" em 03/08 após um 546) só
-  compra tempo. Correção de raiz pendente: portar `ORCAMENTO_MS` + retomabilidade do
-  `reconciliar-faturamento`.
+  comprava tempo. Correção de raiz: fan-out por org com lotes retomáveis (ADR-0173), em vez de
+  portar `ORCAMENTO_MS`/retomabilidade do modelo do `reconciliar-faturamento` — ativa em produção
+  desde 28/09.
   Nota sobre o caminho manual: o botão é **single-org** (`scopedOrgId` pelo JWT) e as medições
   acima são do schedule, que percorre todas as conexões — o 546 do botão em 30 dias (02/08) é
   consistente com os 129s medidos em 27/07 mais esse crescimento, mas não há cronometragem direta

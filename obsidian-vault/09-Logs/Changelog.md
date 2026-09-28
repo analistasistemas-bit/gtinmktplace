@@ -24,7 +24,7 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
     reconciliar 3 orgs `ok` (CPU mediana 142 ms, inclui `liberacoes` dentro do portão de 1.500 ms).
   - **Recuperação histórica do backfill (~00:55 UTC):** janela 10/09-28/09, 3 orgs `ok`, 1.241
     vendas regravadas (estado/frete/estorno/líquido), 0 falhas.
-  - **Checagem (01:07 UTC):** 188 shutdowns nas 3 funções desde a ativação, 0 por `CPUTime`.
+  - **Checagem (01:07 UTC):** 188 shutdowns nas 3 funções desde 00:30 UTC de 28/09, 0 por `CPUTime`.
   - **Pendente:** validação de 3 dias em produção (a partir de 01/10) para o ADR virar `Aceito`
     (continua `Proposto`).
 
