@@ -920,6 +920,37 @@ RLS nas três: `select` por `org_id = current_org_id()`; `anon` sem privilégio 
 `authenticated` só `SELECT` (`INSERT`/`UPDATE`/`DELETE`/`TRUNCATE`/`REFERENCES`/`TRIGGER`
 revogados) — escrita só por `service_role` (worker `sincronizar-promocoes`).
 
+## Operações em massa (ADR-0174) — código pronto, deploy pendente
+
+Motor de operações em massa; primeira operação: aderir/sair de promoção `DEAL`/`SMART`.
+*Migration `20260928013318_operacoes_massa.sql` (ainda não aplicada em produção).*
+
+### `operacoes_massa`
+Uma linha por operação. `id` (PK), `org_id`, `acao` (`aderir|sair`), `promocao_id`,
+`promocao_tipo` (`DEAL|SMART`), `promocao_nome`, `origem_id` (FK para `operacoes_massa`, `set
+null` — a operação original quando esta é um Reverter), `status` (`executando|concluida`),
+`criado_por`, `criado_em`, `concluido_em`. Índice `(org_id, criado_em desc)`.
+
+### `operacoes_massa_itens`
+Um anúncio dentro de uma operação, com resultado próprio. PK composta
+`(operacao_id, ml_item_id)`. `org_id`, `promocao_id`, `titulo`, `preco` (DEAL: `deal_price`
+pedido; SMART: preço da oferta, informativo), `semaforo` (`verde|amarelo|vermelho|indisponivel`,
+`null` no `sair` — sair nunca cria prejuízo), `confirmado_risco`, `offer_id` (SMART: `OFFER-...`
+devolvido pelo POST, usado pelo Reverter), `status`
+(`pendente|enviando|aplicado|ja_estava|mudou|bloqueado|erro|saida_solicitada`), `mensagem`,
+`conferencias`, `proxima_conferencia`, `saida_pedida_em` (relógio das 24h da conferência de
+saída), `atualizado_em`. Índice `(org_id)`. Índice único de anti-duplicidade
+`(org_id, promocao_id, ml_item_id) where status in ('pendente','enviando','saida_solicitada')` —
+o mesmo anúncio não fica em andamento em duas operações da mesma promoção.
+
+### `operacoes_massa_reivindicar(p_org, p_operacao, p_ml_item)` — RPC `security definer`
+Claim atômico do item antes de escrever no ML (idempotência do QStash): `pendente`, ou `enviando`
+parado há mais de 2 min (worker morreu no meio), vira `enviando`; sem linha devolvida = outro
+worker já pegou. `revoke all from public, anon, authenticated`; `grant execute to service_role`.
+
+RLS nas duas tabelas: `select` por `org_id = current_org_id()`; escrita só por `service_role`
+(edge `operacoes-massa`, que é a única escritora).
+
 ## Tráfego e oferta (ADR-0172, Fatia 2b)
 
 Visitas por dia e preço de oferta observado por MLB, coletados pelo worker `coletar-trafego-ml`

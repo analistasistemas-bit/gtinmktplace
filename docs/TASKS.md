@@ -2,6 +2,26 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Operações em massa — aderir/sair de promoção (ADR-0174, 2026-09-28) — código pronto, deploy pendente
+
+I5 (motor de operações em massa) + Promoções V2 (aderir/sair de campanha) resolvidos como uma
+única entrega: aderir um anúncio a uma promoção é uma operação em massa de tamanho 1, não existe
+caminho unitário separado. 10 tasks (SDD, revisor Grok 4.7 xHigh por task), relatório em
+`.claude/jobs/b90cf6f1/tmp/sdd/progress.md`. **Nada deployado ainda** — falta `supabase db push`
+(migration `20260928013318_operacoes_massa.sql`) e `supabase functions deploy operacoes-massa`.
+
+- [x] Task 1: migration `operacoes_massa`/`operacoes_massa_itens` + RPC `operacoes_massa_reivindicar` (claim atômico) + índice anti-duplicidade + teste SQL.
+- [x] Task 2: `decidir.ts` (decisão pura por item: convidado/participando/relação de catálogo) + `piorou()` (semáforo pior que o preview).
+- [x] Task 3: `ml.ts` — cliente `/seller-promotions` (POST aderir, DELETE sair, leitura fresca da campanha com retry em 500, multiget de relações), `SemEscritaPromocoes` em 401/403.
+- [x] Task 4: `executar.ts` — laço sequencial com orçamento de tempo, claim por item, conferência agendada da saída (5, 10, 20, 40, 60 min até 24h), espelho em `ml_promocao_itens`.
+- [x] Task 5: `validar.ts`/`deps.ts` — validação do pedido na criação (trava financeira com tarifa exata via `projetarItem`), dedup do QStash pelo id da mensagem de entrada.
+- [x] Task 6: `src/lib/operacoes.ts` — regras puras do front (preview, semáforo, `itensRevertiveis`).
+- [x] Task 7: `barra-selecao.tsx`/`useOperacoes.ts` — seleção múltipla, permissão `usePodeExecutarOperacao`.
+- [x] Task 8: `preview-operacao.tsx`/`lista-operacoes.tsx` — painel de preview, Executar, aba Operações, Reverter.
+- [x] Task 9: `Revisao.tsx` — aviso de família participando de promoção (não bloqueia).
+- [x] Task 10: esta documentação (ADR-0174 aceito, edge-functions.md, modelo-de-dados.md, glossário).
+- [ ] **Deploy (pendente, faz o controlador):** `supabase db push` + `supabase functions deploy operacoes-massa` + confirmar versão ativa antes de considerar a entrega em produção.
+
 ## Fan-out por org — incidente CPU 546 (ADR-0173) — código pronto, NADA deployado/ativado
 
 Correção do incidente diagnosticado em 27/09 (pendência abaixo): `pulse-coletar`,

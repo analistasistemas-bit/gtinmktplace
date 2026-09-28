@@ -90,6 +90,8 @@
 | pulse-analise-secoes237 | true | HTTP (frontend) | sim (leitura; demanda do nicho por vendedor, ponte pelo catálogo) |
 | **Promoções (ADR-0170)** ||||
 | sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`) |
+| **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
+| operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
 | **Tráfego e oferta (ADR-0172, Fatia 2b)** ||||
 | coletar-trafego-ml | false | QStash (fan-out por org + cadeia de continuações) | sim (posse + CAS do cursor, `ok` nunca vira `falha`, `deduplicationId`) |
 | **Ads por grupo (ADR-0172, Fatia 2c)** ||||
@@ -1654,6 +1656,35 @@ um smoke test contra Postgres real antes do primeiro deploy.
     a conexão/token), a resposta é **500** — o fan-out publica com `retries: 1`, então o QStash
     tenta de novo ~12s depois (cobre um tropeço de rede). O caminho "Atualizar agora" (usuário
     logado) não muda: continua sempre 200, o estado 'erro' já aparece na tela.
+
+### Operações em massa (ADR-0174) — código pronto, deploy pendente
+- **operacoes-massa** *(`verify_jwt=false`, dual-mode como `sincronizar-promocoes`)* — motor de
+  operações em massa; primeira operação: aderir/sair de promoção (`DEAL`/`SMART`). Código em
+  `supabase/functions/_shared/operacoes/` (`validar`, `decidir`, `executar`, `ml`, `deps`, `falhas`,
+  `tipos`). Dois modos:
+  - **HTTP com JWT do usuário** (criação) — valida `isAdmin || support.scope === 'full'`, o módulo
+    `promocoes`, e o pedido contra a Central (`ml_promocao_itens`); grava `operacoes_massa` +
+    `operacoes_massa_itens` e publica `{etapa:'executar', operacao_id}` no QStash
+    (`deduplicationId` pelo id da mensagem). Falha ao publicar → todos os itens `erro`, resposta
+    500.
+  - **QStash `{etapa:'executar'|'conferir', operacao_id}`** — `executar`: laço sequencial com
+    orçamento de 90s/lote de 20, claim por item (`operacoes_massa_reivindicar`) antes de
+    POST/DELETE em `/seller-promotions`, revalidação do semáforo contra a Central atual antes de
+    cada aderir (sem risco confirmado, resultado pior que o preview → `mudou`). DELETE aceito
+    (200) não prova saída: item vira `saida_solicitada` e a conferência (`conferir`) confere a
+    campanha em intervalo crescente (5, 10, 20, 40 min, depois 60 min) até 24h desde o pedido; sem
+    confirmação nesse prazo, vira `erro` ("O ML ainda não confirmou a saída. Confira no Seller
+    Center.") — nunca fica `saida_solicitada` parado, porque o índice anti-duplicidade travaria o
+    anúncio para sempre. 401/403 do ML encerra a operação (todos os pendentes → `erro`), sem
+    reentrega.
+  - Espelha o resultado em `ml_promocao_itens.status` (aderir: `pending`/`started` lido da
+    campanha; sair confirmado: DEAL volta a `candidate`, SMART tem a linha apagada) — best-effort,
+    o `sincronizar-promocoes` corrige depois.
+  - **Reverter** é uma nova operação com a ação inversa e `origem_id` apontando a original — sem
+    desfazer silencioso.
+  - Telas: seleção → preview → Executar no detalhe da campanha (`PromocaoDetalhe.tsx`); aba
+    **Operações** em Promoções (`Promocoes.tsx`, `lista-operacoes.tsx`) para acompanhar e
+    reverter. Ver [ADR-0174](../decisions/0174-operacoes-em-massa-promocoes-v2.md).
 
 ### Tráfego e oferta (ADR-0172, Fatia 2b)
 - **coletar-trafego-ml** *(nova, `verify_jwt=false`, só QStash; **deployada e ACTIVE (v1) desde

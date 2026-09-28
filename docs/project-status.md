@@ -2,7 +2,7 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-09-27
+**Ultima atualizacao:** 2026-09-28
 
 ## Snapshot
 
@@ -650,6 +650,20 @@ Ver [ADR-0173](decisions/0173-fanout-por-org-workers-agendados-cpu.md) e o plano
 `docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`. **Achado lateral:** `materializar-metricas`
 está documentado com schedule diário mas sem invocações em produção nos últimos 7 dias — investigar
 fora deste ADR.
+
+## ADR-0174: Operações em massa — aderir/sair de promoção (2026-09-28) — código pronto, deploy pendente
+
+**Não está em produção.** I5 (motor de operações em massa) e Promoções V2 (aderir/sair de campanha
+pelo app) resolvidos juntos: aderir um anúncio numa promoção é uma operação em massa de tamanho 1.
+Primeira operação suportada: aderir/sair de `DEAL`/`SMART` no Mercado Livre. Motor com claim
+atômico por item (idempotência do QStash), revalidação do semáforo contra a Central antes de cada
+escrita, conferência agendada da saída (o DELETE aceito pelo ML não prova saída — intervalo de 5 a
+60 min até 24h) e Reverter (nova operação com a ação inversa, nunca desfazer silencioso). Tela:
+seleção → preview → Executar no detalhe da campanha; aba **Operações** dentro de Promoções para
+acompanhar e reverter. Só admin da org (ou suporte com acesso total) executa; membro comum vê e
+monta o preview. **Falta:** `supabase db push` (migration `operacoes_massa`) e `supabase functions
+deploy operacoes-massa`. Ver [ADR-0174](decisions/0174-operacoes-em-massa-promocoes-v2.md) e
+`TASKS.md`.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 

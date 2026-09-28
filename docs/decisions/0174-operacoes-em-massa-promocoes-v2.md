@@ -1,6 +1,6 @@
 # ADR-0174 — Operações em massa, começando por aderir/sair de promoção (I5 + Promoções V2)
 
-**Status:** Proposto (vira Aceito depois do spike de escrita — ver "Pré-requisito")
+**Status:** Aceito (implementado em 2026-09-28; deploy pendente)
 **Data:** 2026-09-26
 **Relacionado:** [ADR-0170](0170-central-de-promocoes-ml.md) (Central de Promoções, só leitura),
 [ADR-0060](0060-pausar-reativar-anuncio-ml.md) (pausar/reativar restrito a admin),
@@ -96,6 +96,49 @@ scope do momento da autorização.
     O motor tem que **gravar o `offer_id` da resposta** no item da operação — é ele que o Reverter usa.
   - `/items/{id}` não mostrou o preço promocional durante os ~2 min de participação (`price` e `deal_ids`
     inalterados) → conferência de preço não serve de prova de adesão; só a visão da campanha.
+
+## Implementação
+
+Código pronto na branch `worktree-i5-operacoes-em-massa-design` (2026-09-28); **deploy pendente**
+(migration + edge function).
+
+- **Schema** (`supabase/migrations/20260928013318_operacoes_massa.sql`): `operacoes_massa` (1 linha
+  por operação: `acao`, `promocao_id`/`promocao_tipo`, `origem_id` para o Reverter, `status`
+  `executando|concluida`) e `operacoes_massa_itens` (1 linha por anúncio: `status`
+  `pendente|enviando|aplicado|ja_estava|mudou|bloqueado|erro|saida_solicitada`, `semaforo`,
+  `confirmado_risco`, `offer_id` do SMART, `conferencias`/`proxima_conferencia`/`saida_pedida_em`
+  para a conferência de saída). Índice único de anti-duplicidade cobre `pendente`, `enviando` e
+  `saida_solicitada` — o mesmo anúncio não fica em duas operações da mesma promoção ao mesmo tempo.
+  RPC `operacoes_massa_reivindicar` (claim atômico por item antes de escrever no ML).
+- **Edge `operacoes-massa`**: `POST` do usuário cria a operação (valida contra a Central, grava
+  `preco`/`semaforo`/`confirmado_risco` por item, publica a 1ª mensagem QStash); QStash chama de
+  volta com `{etapa:'executar'|'conferir', operacao_id}`. Código em `_shared/operacoes/`
+  (`validar.ts`, `decidir.ts`, `executar.ts`, `ml.ts`, `deps.ts`, `falhas.ts`, `tipos.ts`).
+- **Decisões tomadas durante a implementação (prevalecem sobre o texto acima onde divergirem):**
+  - **Dedup do QStash** pelo `upstash-message-id` da mensagem de entrada (`{etapa}_{operacao_id}_{id
+    de entrega}`), não por um contador — a fórmula por contador repetia id em continuação/403 e
+    deixava a operação sem mensagem na fila.
+  - **Trava financeira com tarifa exata:** quando o preço pedido difere do `preco_avaliado` gravado
+    na Central, o semáforo da criação é recalculado com a tarifa exata daquele preço, reprojetando
+    via `projetarItem` do sync (a mesma extração usada pelo `sincronizar-promocoes`) em vez do
+    `tarifaEm` isolado (que não tem categoria/dimensão do item). Com preço = avaliado, usa a
+    projeção já gravada.
+  - **Trava de risco só no aderir:** sair grava `semaforo = null` — sair nunca cria prejuízo, então
+    o Reverter (aderir → sair) não pode travar em vermelho.
+  - **Claim antes de escrever:** status `enviando` via `operacoes_massa_reivindicar` antes de
+    qualquer POST/DELETE no ML; item `enviando` parado > 2 min (worker morreu no meio) volta ao
+    laço e é redecidido pela leitura fresca da campanha.
+  - **Saída não confirmada em 24 h vira `erro`** ("O ML ainda não confirmou a saída. Confira no
+    Seller Center."), não `saida_solicitada` — senão o índice anti-duplicidade travaria o anúncio
+    para sempre, sem nenhum caminho para tentar de novo.
+  - **Conferência da saída:** intervalo crescente 5, 10, 20, 40 min, depois 60 min, até 24 h desde
+    o DELETE aceito (`saida_pedida_em`). DEAL confirmada volta a `candidate` em `ml_promocao_itens`;
+    SMART confirmada **apaga** a linha (o item some da campanha).
+- **Telas:** seleção → painel de preview → Executar dentro do detalhe da campanha
+  (`PromocaoDetalhe.tsx`, componentes `barra-selecao.tsx`/`preview-operacao.tsx`); acompanhamento
+  numa aba **Operações** dentro de Promoções (`Promocoes.tsx`, `lista-operacoes.tsx`), com Reverter.
+  Revisão avisa quando a família tem anúncio participando de promoção, sem bloquear (`Revisao.tsx`).
+  Permissão de Executar/Reverter: `isAdmin || suporte.scope === 'full'` (`usePodeExecutarOperacao`).
 
 ## Consequências
 

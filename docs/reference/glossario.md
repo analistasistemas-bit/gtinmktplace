@@ -106,13 +106,14 @@
 | **Semáforo da promoção** | O `calcularSemaforo` de sempre (🟢 ≥ piso, 🟡 abaixo do mínimo, 🔴 < custo) aplicado ao líquido projetado. O anúncio mostra a **pior cor** (mesma regra família-level do ADR-0065); abrir o anúncio mostra cada cor. ⚪ = **sem líquido**: na maioria das vezes anúncio ou cor **sem custo no PubliAI** (publicado fora do app), mas também tarifa/frete que o ML não informou — o motivo aparece na cor. |
 | **Participando no prejuízo** | Anúncio **participando** com semáforo 🔴 (líquido projetado < custo). Dispara alerta. 🟡 não dispara. |
 
-## Operações em massa (I5 — em design)
+## Operações em massa (ADR-0174)
 
 | Termo | Definição |
 |---|---|
 | **Operação em massa** | Uma única ação pedida pelo operador sobre N anúncios de uma vez (ex.: "Aderir à 10.10 — 38 anúncios"). Aderir um anúncio só é uma operação em massa de tamanho 1 — não existe caminho unitário separado. Primeira operação suportada: aderir/sair de promoção. _Evitar_: **lote** (é o lote de planilha/cadastro), job, tarefa. |
 | **Item da operação** | Um anúncio dentro de uma operação em massa, com resultado próprio — a operação pode terminar com parte dos itens aplicada e parte com erro. |
 | **Reverter** | Criar uma **nova** operação em massa com a ação inversa (aderir ↔ sair), só sobre os itens que foram aplicados na original, passando por preview e confirmação como qualquer outra. Não existe desfazer silencioso: o histórico mostra as duas operações. Um item que o ML não aceita mais (ex.: deixou de ser convidado) entra no preview como não revertível. _Evitar_: undo, desfazer automático. |
+| **Saída pedida** | Status do item entre o DELETE aceito pelo ML (200) e a confirmação de que saiu de fato — 200 não prova remoção, e DEAL pode levar de minutos a horas. O app confere a campanha a cada 5, 10, 20, 40 min e depois a cada 60 min, até 24 h desde o pedido. Sem confirmação em 24 h, o item vira erro: "O ML ainda não confirmou a saída. Confira no Seller Center." |
 
 ## Vendas SKU (análise por SKU)
 
