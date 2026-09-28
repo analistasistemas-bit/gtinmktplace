@@ -1,4 +1,4 @@
-# ADR-0172 — Operações em massa, começando por aderir/sair de promoção (I5 + Promoções V2)
+# ADR-0174 — Operações em massa, começando por aderir/sair de promoção (I5 + Promoções V2)
 
 **Status:** Proposto (vira Aceito depois do spike de escrita — ver "Pré-requisito")
 **Data:** 2026-09-26
