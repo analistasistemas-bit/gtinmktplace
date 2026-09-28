@@ -323,4 +323,44 @@ describe('CommercialTermsForm', () => {
 
     expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({ sonar_unit_cents: 0 }));
   });
+
+  it('desabilita Mês da implantação e envia setup_due_month como null quando implantação é 0', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    const setupInput = screen.getByLabelText('Implantação');
+    const setupMonthInput = screen.getByLabelText('Mês da implantação');
+
+    expect(setupMonthInput).not.toBeDisabled();
+    expect(setupMonthInput).toHaveValue('2026-09');
+
+    await user.clear(setupInput);
+    await user.type(setupInput, '0');
+
+    expect(setupMonthInput).toBeDisabled();
+    expect(setupMonthInput).toHaveValue('');
+
+    await user.type(screen.getByLabelText('Motivo'), 'cliente novo sem taxa de implantação');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(mocks.save).toHaveBeenCalledWith(expect.objectContaining({
+      setup_fee_cents: 0,
+      setup_due_month: null,
+    }));
+  });
+
+  it('exige mês da implantação quando implantação é maior que zero e o mês for apagado', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    render(<CommercialTermsForm orgId="org-a" current={null} onSaved={vi.fn()} />);
+
+    const setupMonthInput = screen.getByLabelText('Mês da implantação');
+    await user.clear(setupMonthInput);
+    await user.type(screen.getByLabelText('Motivo'), 'teste obrigatoriedade mês');
+    await user.click(screen.getByRole('button', { name: 'Salvar condições' }));
+
+    expect(screen.getByText('Informe o mês da implantação.')).toBeInTheDocument();
+    expect(mocks.save).not.toHaveBeenCalled();
+  });
 });
+
+

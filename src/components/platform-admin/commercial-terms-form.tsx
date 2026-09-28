@@ -165,11 +165,17 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
       return;
     }
 
-    const effectiveSetupDue = isFirstContract
+    const hasEffectiveSetup = isFirstContract && setup! > 0;
+    const effectiveSetupDue = hasEffectiveSetup
       ? (form.setupDueMonth && form.setupDueMonth < effectiveStartsOn.slice(0, 7)
           ? effectiveStartsOn.slice(0, 7)
           : form.setupDueMonth || null)
       : null;
+
+    if (hasEffectiveSetup && !effectiveSetupDue) {
+      setError('Informe o mês da implantação.');
+      return;
+    }
 
     setError(null);
     try {
@@ -195,6 +201,8 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
   }
 
   const history = terms.data?.rows ?? [];
+  const parsedSetup = parseScaled(form.setup, 2);
+  const hasSetupFee = isFirstContract && parsedSetup !== 0;
 
   return (
     <div className="space-y-4">
@@ -338,8 +346,8 @@ export function CommercialTermsForm({ orgId, current, onSaved }: Props) {
                   id="terms-setup-month"
                   aria-label="Mês da implantação"
                   type="month"
-                  disabled={!isFirstContract}
-                  value={form.setupDueMonth}
+                  disabled={!hasSetupFee}
+                  value={hasSetupFee ? form.setupDueMonth : ''}
                   onChange={(event) => set('setupDueMonth', event.target.value)}
                 />
               </label>
