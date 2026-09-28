@@ -87,7 +87,15 @@ scope do momento da autorização.
 - Atenção a datas: a 10.10 vai de **28/09 a 13/10** (`start_date`); o `prazo_adesao` gravado pelo sync é o
   fim, não o início.
 - A visão da campanha devolve **500 intermitente** (2 em ~25 leituras) → retry na leitura.
-- **SMART não testada:** suspensa até a saída ser provada (preço vai ao ar na hora).
+- **SMART (2026-09-27, `MLB5140706557`, avulso — o anúncio de catálogo do par não era convidado):**
+  - Convite traz `offer_id: "CANDIDATE-..."` na visão da campanha (a visão por item chama o mesmo valor de
+    `ref_id`). `POST {promotion_id, promotion_type:'SMART', offer_id: <CANDIDATE>}` → **201** e devolve um
+    **`offer_id` NOVO** (`OFFER-...`); a visão da campanha passa a `started` em segundos.
+  - **Sair exige o `offer_id` devolvido pelo POST.** DELETE com o `CANDIDATE-...` → 200 no-op (o item segue
+    `started`); com o `OFFER-...` → 200 e o item **some da visão da campanha em ~30 s** (`results: null`).
+    O motor tem que **gravar o `offer_id` da resposta** no item da operação — é ele que o Reverter usa.
+  - `/items/{id}` não mostrou o preço promocional durante os ~2 min de participação (`price` e `deal_ids`
+    inalterados) → conferência de preço não serve de prova de adesão; só a visão da campanha.
 
 ## Consequências
 
