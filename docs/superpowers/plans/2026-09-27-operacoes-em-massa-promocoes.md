@@ -22,7 +22,7 @@
   - Sair DEAL: `DELETE /seller-promotions/items/{id}?promotion_type=DEAL&promotion_id={pid}&app_version=v2`.
   - Sair SMART: `DELETE ...?promotion_type=SMART&promotion_id={pid}&offer_id={OFFER-...}&app_version=v2` — o `offer_id` vem da leitura fresca da visão da campanha (item participando traz o `OFFER-...`).
 - Leitura fresca = **visão da campanha** `GET /seller-promotions/promotions/{pid}/items?promotion_type={T}&item_id={id}&app_version=v2` (a visão por item atrasa). Retry em 500 (o ML devolve 500 intermitente): até 3 tentativas, 1 s entre elas.
-- 200 do DELETE ≠ saiu: item vira `saida_solicitada`; conferência agendada (QStash `delay` 300 s) até a visão da campanha não mostrar mais o item como participando → `aplicado`. Máximo 12 conferências (~1 h); depois fica `saida_solicitada` com mensagem "O ML ainda não confirmou a saída".
+- 200 do DELETE ≠ saiu: item vira `saida_solicitada`; conferência agendada (QStash `delay`, intervalo crescente — ver Ajuste 7) até a visão da campanha não mostrar mais o item como participando → `aplicado`. Limite 24 h; depois fica `saida_solicitada` com "O ML ainda não confirmou a saída. Confira no Seller Center.".
 - Par User Product/catálogo: aderir recusado (`bloqueado`) quando o item tem `item_relations` para outro item com `catalog_listing: true` e ele próprio `catalog_listing: false` — mensagem "Anúncio sincronizado com o de catálogo {id}: inscreva o de catálogo".
 - Preço DEAL: default `preco_sugerido`; editável dentro de `[preco_min, preco_max]`; fora da faixa → recusado na criação (400).
 - Trava financeira: item cujo semáforo no preço escolhido é `vermelho` ou `indisponivel` só entra com `confirmado_risco = true` (checkbox separado no preview); criação sem confirmação → 400.
@@ -30,6 +30,26 @@
 - Textos de UI em pt-BR, termos do glossário: "Operação em massa", "Convidado", "Participando", "Reverter", "Líquido", "Markup". Nunca "lote" para operação, nunca "candidato", nunca "margem %".
 - Migrations só por `supabase migration new` + `supabase db push`; validar com `npm run db:check`.
 - Tokens nunca logados. Idempotência: reprocessar a mesma mensagem QStash não pode escrever duas vezes no ML.
+
+## Ajustes obrigatórios — revisão Grok 4.7 xHigh (2026-09-27)
+
+**Prevalecem sobre o texto das tasks abaixo onde houver conflito.** Cada implementador lê esta seção inteira.
+
+1. **Dedup do QStash (Task 5 `deps.ts`)**: ids só com `[A-Za-z0-9_-]` (ver `.replace` em `_shared/promocoes/deps.ts` ~l.29 e `dedupContinuacao` em `_shared/trafego/fiacao.ts` ~l.9 — reutilizar esse helper se servir). Id monotônico: `executar_{operacaoId}_{itensForaDePendente}` e `conferir_{operacaoId}_{conferenciaGlobal}` onde `conferenciaGlobal` = `max(conferencias)` dos itens + 1 (nunca soma). Se o `publishJSON` da **criação** falhar: marcar todos os itens `erro` "Não foi possível iniciar a operação. Tente de novo." e concluir; responder 500.
+2. **Claim antes de escrever (Tasks 1, 4, 5)**: status novo `enviando`. Antes do POST/DELETE, `update operacoes_massa_itens set status='enviando' where operacao_id=… and ml_item_id=… and status='pendente' returning *` — sem linha devolvida → outro worker já pegou; pular. `DepsExecutar` ganha `reivindicar(operacaoId, mlItemId): Promise<boolean>`. Itens `enviando` com `atualizado_em` > 2 min (worker morreu no meio) voltam ao laço: relê a campanha e `decidir` resolve (participando → `ja_estava`/`aplicado`; ainda convidado → posta). `itensPendentes` devolve `pendente` + `enviando` antigos.
+3. **401/403 conclui (Task 4)**: depois de marcar os pendentes `erro`, chamar `agendarConferencia()` se houver `saida_solicitada`, senão `concluir()`. Nunca deixar `executando` sem mensagem na fila.
+4. **Reverter (Tasks 6, 8)**: `itensRevertiveis(acao, itens)`: operação `sair` → só `aplicado`; operação `aderir` → `aplicado` e `ja_estava`.
+5. **Trava financeira com tarifa exata (Tasks 5, 6)**: na edge (criação), para item cujo `preco` ≠ `preco_avaliado` da linha da Central, calcular o semáforo com a **tarifa do preço pedido** via o `tarifaEm` já existente em `_shared/promocoes/deps.ts` (extrair/exportar uma fábrica reutilizável se hoje estiver preso ao `depsLeitura`; manter o cache `promo:tarifa`). Com preço = avaliado, usar a projeção gravada. Exigir `confirmado_risco` pelo semáforo real; responder 400 com `itens[].motivo` e o semáforo real para o front mostrar. O cálculo do front (Task 6) é só orientação do input.
+6. **Semáforo piorou (decisão 5 do ADR) na execução (Tasks 2, 4)**: `ItemRow` ganha `semaforo` e `confirmado_risco`. Antes do POST de aderir, recalcular o semáforo do item no preço pedido com a projeção **atual** da Central (+ tarifa exata se preço ≠ avaliado, como no ajuste 5); se ficou pior que o gravado (ordem verde < amarelo < vermelho, indisponivel conta como vermelho) e `confirmado_risco = false` → `mudou` "O resultado piorou desde o preview". Implementar como função pura `piorou(gravado, atual): boolean` testada.
+7. **Conferência de saída (Task 4)**: intervalo crescente (5, 10, 20, 40 min, depois 60 min) até **24 h**; guardar `proxima_conferencia`. Espelho na Central: aderir → gravar em `ml_promocao_itens.status` o status real lido da campanha (`pending` ou `started`) após o 201 (reler; se ainda `candidate`, gravar `pending` se a promoção é futura, `started` se ativa); saída confirmada: DEAL → `candidate`; SMART → **apagar** a linha de `ml_promocao_itens` (o item some da campanha). Depois de 24 h sem confirmação: mantém `saida_solicitada` com "O ML ainda não confirmou a saída. Confira no Seller Center." e conclui.
+8. **Índice anti-duplicidade** cobre `pendente`, `enviando`, `saida_solicitada` (já no SQL da Task 1).
+9. **401/403 em qualquer chamada (Task 3)**: `lerNaCampanha` e `lerRelacoes` também lançam `SemEscritaPromocoes`. `lerRelacoes`: usar multiget (`/items?ids=a,b&attributes=…`, padrão de `buscarItensML` em `_shared/promocoes/ml.ts`) para o item + relacionados — 2 GETs no máximo.
+10. **Tipos e permissões no front (Tasks 6, 7, 8, 9)**:
+    - Estender `CorProjetada` em `src/lib/promocoes.ts` com `comissao_pct`, `comissao_fixa`, `frete`, `aliquota_pct` (já existem no jsonb).
+    - "Pode executar" = `isAdmin || support?.scope === 'full'` — usar o helper de `src/components/configuracoes/permissoes.ts` (ou o que ele usa para suporte), não só `useProfile().isAdmin`. Edge: chamar `auditarOperacaoSuporte` quando o acesso vier de suporte, igual `atualizar-status-publicado/index.ts`.
+    - Revisão (Task 9): `Familia` usa `mlItemId`; em User Products os MLBs vêm de `anuncios_externos_itens.item_externo_id` (ver `_shared/promocoes/cadastro.ts` ~l.128-131).
+    - Atualizar `src/lib/database.types.ts` com as 2 tabelas novas (Task 1), senão `pnpm build` quebra.
+11. **Teste SQL (Task 1)**: simular usuário com `set local request.jwt.claim.sub = '<uid>'` como `supabase/tests/support_access.sql` ~l.56; `current_org_id()` resolve pela `profiles` — criar o profile do usuário com `org_id`. Recusar criação em promoção com `status = 'finished'` (400).
 
 ## Review Focus
 
@@ -110,16 +130,19 @@ create table public.operacoes_massa_itens (
   confirmado_risco  boolean not null default false,
   offer_id          text,                  -- SMART: OFFER-... devolvido pelo POST (usado pelo Reverter)
   status            text not null default 'pendente'
-                    check (status in ('pendente','aplicado','ja_estava','mudou','bloqueado','erro','saida_solicitada')),
+                    check (status in ('pendente','enviando','aplicado','ja_estava','mudou','bloqueado','erro','saida_solicitada')),
   mensagem          text,
   conferencias      integer not null default 0,
+  proxima_conferencia timestamptz,
   atualizado_em     timestamptz not null default now(),
   primary key (operacao_id, ml_item_id)
 );
 create index operacoes_massa_itens_org on public.operacoes_massa_itens (org_id);
--- Anti-duplicidade: o mesmo anúncio não fica pendente em duas operações da mesma promoção.
-create unique index operacoes_massa_itens_pendente_unico
-  on public.operacoes_massa_itens (org_id, promocao_id, ml_item_id) where status = 'pendente';
+-- Anti-duplicidade: o mesmo anúncio não fica em andamento em duas operações da mesma promoção
+-- (inclui saída pedida e ainda não confirmada — um aderir não pode correr junto do DELETE).
+create unique index operacoes_massa_itens_andamento_unico
+  on public.operacoes_massa_itens (org_id, promocao_id, ml_item_id)
+  where status in ('pendente','enviando','saida_solicitada');
 
 alter table public.operacoes_massa enable row level security;
 alter table public.operacoes_massa_itens enable row level security;
@@ -178,7 +201,7 @@ git commit -m "feat(operacoes): tabelas do motor de operações em massa com RLS
 // tipos.ts
 export type Acao = 'aderir' | 'sair';
 export type TipoPromocao = 'DEAL' | 'SMART';
-export type StatusItem = 'pendente' | 'aplicado' | 'ja_estava' | 'mudou' | 'bloqueado' | 'erro' | 'saida_solicitada';
+export type StatusItem = 'pendente' | 'enviando' | 'aplicado' | 'ja_estava' | 'mudou' | 'bloqueado' | 'erro' | 'saida_solicitada';
 /** Leitura fresca da visão da campanha para UM item; null = o item não aparece na campanha. */
 export interface ItemNaCampanha {
   status: string;                 // candidate | started | pending | ...
@@ -190,7 +213,7 @@ export interface PedidoItem { ml_item_id: string; preco: number | null }
 export type Decisao =
   | { tipo: 'post'; body: Record<string, unknown> }
   | { tipo: 'delete'; query: string }
-  | { tipo: 'fim'; status: Exclude<StatusItem, 'pendente'>; mensagem: string | null };
+  | { tipo: 'fim'; status: Exclude<StatusItem, 'pendente' | 'enviando'>; mensagem: string | null };
 ```
 
 ```ts
