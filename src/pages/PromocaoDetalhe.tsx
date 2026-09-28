@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CircleX, ExternalLink } from 'lucide-react';
 import { PageHeader } from '@/components/ui/page-header';
 import { Breadcrumbs } from '@/components/ui/breadcrumbs';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -14,12 +15,15 @@ import { calcularMarkup } from '@/lib/markup';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
+import type { AcaoOperacao } from '@/lib/operacoes';
 import {
   URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type SemaforoPromo,
 } from '@/lib/promocoes';
 import { ChipFiltro, ContagemSemaforo, SEMAFORO_UI } from '@/components/promocoes/contagem-semaforo';
 import { SheetCores } from '@/components/promocoes/sheet-cores';
+import { BarraSelecao } from '@/components/promocoes/barra-selecao';
+import { PreviewOperacao } from '@/components/promocoes/preview-operacao';
 
 const PESO: Record<SemaforoPromo, number> = { vermelho: 0, amarelo: 1, verde: 2, indisponivel: 3 };
 
@@ -76,11 +80,37 @@ export default function PromocaoDetalhe() {
   const [semaforo, setSemaforo] = useState<SemaforoPromo | null>(null);
   const [participando, setParticipando] = useState(false);
   const [aberto, setAberto] = useState<ItemPromocao | null>(null);
+  const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
+  const [preview, setPreview] = useState<{ acao: AcaoOperacao; itens: ItemPromocao[] } | null>(null);
 
   const promo = promocoes.data?.find((p) => p.promocao_id === promocaoId) ?? null;
+  // Trocar de campanha (navegação entre detalhes) não deve arrastar a seleção anterior.
+  useEffect(() => { setSelecionados(new Set()); setPreview(null); }, [promocaoId]);
+
+  const podeSelecionar = promo != null && (promo.tipo === 'DEAL' || promo.tipo === 'SMART') && promo.status !== 'finished';
   const daAba = useMemo(() => filtrarItens(itens.data ?? [], { semaforo: null, participando }), [itens.data, participando]);
   const linhas = useMemo(() => filtrarItens(itens.data ?? [], { semaforo, participando }), [itens.data, semaforo, participando]);
   const linhasMobile = useMemo(() => [...linhas].sort((a, b) => PESO[a.pior_semaforo] - PESO[b.pior_semaforo]), [linhas]);
+
+  const selecionadosItens = useMemo(() => (itens.data ?? []).filter((i) => selecionados.has(i.ml_item_id)), [itens.data, selecionados]);
+  const convidadosSelecionados = selecionadosItens.filter((i) => i.status === 'candidate');
+  const participandoSelecionados = selecionadosItens.filter((i) => i.status === 'started' || i.status === 'pending');
+  const todosMarcadosNoFiltro = linhas.length > 0 && linhas.every((r) => selecionados.has(r.ml_item_id));
+
+  function alternarItem(id: string) {
+    setSelecionados((prev) => {
+      const novo = new Set(prev);
+      if (novo.has(id)) novo.delete(id); else novo.add(id);
+      return novo;
+    });
+  }
+  function alternarTodos(marcar: boolean) {
+    setSelecionados((prev) => {
+      const novo = new Set(prev);
+      for (const r of linhas) { if (marcar) novo.add(r.ml_item_id); else novo.delete(r.ml_item_id); }
+      return novo;
+    });
+  }
   const contagem = useMemo(() => {
     const c = { convidados: 0, convidados_verde: 0, participando: 0, verde: 0, amarelo: 0, vermelho: 0, indisponivel: 0, participando_vermelho: 0, ml_pct_max: null };
     for (const i of daAba) c[i.pior_semaforo]++;
@@ -88,6 +118,17 @@ export default function PromocaoDetalhe() {
   }, [daAba]);
 
   const colunas: Column<ItemPromocao>[] = [
+    ...(podeSelecionar ? [{
+      key: 'sel', header: (
+        <Checkbox aria-label="Selecionar todos" checked={todosMarcadosNoFiltro} onCheckedChange={(v) => alternarTodos(!!v)} />
+      ), className: 'w-10',
+      cell: (r: ItemPromocao) => (
+        <Checkbox
+          aria-label={`Selecionar ${r.ml_item_id}`} checked={selecionados.has(r.ml_item_id)}
+          onCheckedChange={() => alternarItem(r.ml_item_id)} onClick={(e) => e.stopPropagation()}
+        />
+      ),
+    } satisfies Column<ItemPromocao>] : []),
     {
       key: 'semaforo', header: 'Semáforo', className: 'w-12',
       sortValue: (r) => PESO[r.pior_semaforo],
@@ -195,17 +236,32 @@ export default function PromocaoDetalhe() {
         />
       </div>
       <div className="md:hidden" data-testid="lista-mobile">
-        <ListaMobile linhas={linhasMobile} loading={itens.isLoading} onAbrir={setAberto} />
+        <ListaMobile
+          linhas={linhasMobile} loading={itens.isLoading} onAbrir={setAberto}
+          podeSelecionar={podeSelecionar} selecionados={selecionados} onToggle={alternarItem}
+        />
       </div>
+      <BarraSelecao
+        convidados={convidadosSelecionados.length} participando={participandoSelecionados.length}
+        onAderir={() => setPreview({ acao: 'aderir', itens: convidadosSelecionados })}
+        onSair={() => setPreview({ acao: 'sair', itens: participandoSelecionados })}
+        onLimpar={() => setSelecionados(new Set())}
+      />
       <SheetCores item={aberto} onClose={() => setAberto(null)} />
+      <PreviewOperacao
+        acao={preview?.acao ?? 'aderir'} tipo={promo?.tipo === 'SMART' ? 'SMART' : 'DEAL'}
+        promocaoId={promocaoId} promocaoNome={promo?.nome ?? promocaoId} itens={preview?.itens ?? []}
+        aberto={preview != null} onClose={() => { setPreview(null); setSelecionados(new Set()); }}
+      />
     </div>
     </TooltipProvider>
   );
 }
 
 /** Cartões abaixo de `md` — a DataTable estoura a largura e some preço/líquido/markup no scroll horizontal. */
-function ListaMobile({ linhas, loading, onAbrir }: {
+function ListaMobile({ linhas, loading, onAbrir, podeSelecionar, selecionados, onToggle }: {
   linhas: ItemPromocao[]; loading: boolean; onAbrir: (r: ItemPromocao) => void;
+  podeSelecionar: boolean; selecionados: Set<string>; onToggle: (id: string) => void;
 }) {
   if (loading) {
     return (
@@ -225,8 +281,16 @@ function ListaMobile({ linhas, loading, onAbrir }: {
         const a = temFaixa ? ateQuantoDaLinha(r) : null;
         return (
           <li key={r.ml_item_id} className="relative rounded-xl border bg-card shadow-xs">
+            {podeSelecionar && (
+              <div className="absolute left-3 top-4 z-10">
+                <Checkbox
+                  aria-label={`Selecionar ${r.ml_item_id}`} checked={selecionados.has(r.ml_item_id)}
+                  onCheckedChange={() => onToggle(r.ml_item_id)} onClick={(e) => e.stopPropagation()}
+                />
+              </div>
+            )}
             <button type="button" onClick={() => onAbrir(r)}
-              className="w-full rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+              className={cn('w-full rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', podeSelecionar && 'pl-10')}>
               <div className={cn('flex min-w-0 items-center gap-3 pr-9', r.pior_semaforo === 'indisponivel' && 'text-muted-foreground')}>
                 {r.thumbnail && <img src={r.thumbnail} alt="" className="size-12 shrink-0 rounded object-cover" loading="lazy" />}
                 <span title={ui.label} className="inline-flex shrink-0">

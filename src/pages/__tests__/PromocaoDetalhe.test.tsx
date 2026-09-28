@@ -66,4 +66,33 @@ describe('PromocaoDetalhe', () => {
     await user.click(lista.getByRole('button'));
     expect(within(screen.getByRole('dialog')).getByText('Anúncio teste')).toBeTruthy();
   });
+
+  it('não mostra seleção quando o tipo da campanha não é DEAL/SMART', () => {
+    vi.mocked(usePromocoes).mockReturnValue({ data: [{ ...promo, tipo: 'LIGHTNING' }], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);
+
+    renderDetalhe();
+
+    expect(screen.queryByLabelText('Selecionar MLB1')).not.toBeInTheDocument();
+  });
+
+  it('seleciona convidado e participando em abas diferentes e abre o preview de Aderir', async () => {
+    const user = userEvent.setup();
+    const participando = { ...item, ml_item_id: 'MLB2', status: 'started', titulo: 'Anúncio participando' } as ItemPromocao;
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [item, participando], isLoading: false } as never);
+
+    renderDetalhe();
+    const tabela = within(screen.getByRole('region', { name: 'Tabela de dados' }));
+
+    await user.click(tabela.getByLabelText('Selecionar MLB1'));
+    await user.click(screen.getByRole('tab', { name: 'Participando' }));
+    await user.click(tabela.getByLabelText('Selecionar MLB2'));
+
+    expect(screen.getByRole('button', { name: 'Aderir 1' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Sair 1' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Aderir 1' }));
+    expect(within(screen.getByRole('dialog')).getByText('Aderir à Campanha teste')).toBeTruthy();
+  });
 });

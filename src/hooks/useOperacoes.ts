@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import type { Tables } from '@/lib/database.types';
 import type { AcaoOperacao, StatusItemOperacao } from '@/lib/operacoes';
+import { useProfile } from '@/hooks/useProfile';
+import { useSupportStore } from '@/stores/support-store';
 
 export const QK_OPERACOES = ['operacoes'] as const;
 
@@ -70,4 +72,12 @@ export function useCriarOperacao() {
       qc.invalidateQueries({ queryKey: ['promocoes'] });
     },
   });
+}
+
+/** Ajuste 10: quem pode Executar/Reverter — mesmo predicado de `configuracoes` (admin ou suporte
+ *  com escopo `full`), não só `isAdmin`. */
+export function usePodeExecutarOperacao(): boolean {
+  const { isAdmin } = useProfile();
+  const support = useSupportStore((s) => s.context);
+  return isAdmin || support?.scope === 'full';
 }
