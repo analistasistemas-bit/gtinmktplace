@@ -29,6 +29,7 @@ create table public.operacoes_massa_itens (
   mensagem          text,
   conferencias      integer not null default 0,
   proxima_conferencia timestamptz,
+  saida_pedida_em   timestamptz,           -- 1º DELETE aceito: relógio das 24 h da conferência
   atualizado_em     timestamptz not null default now(),
   primary key (operacao_id, ml_item_id)
 );
@@ -52,3 +53,21 @@ create policy operacoes_massa_itens_select on public.operacoes_massa_itens
 revoke all on public.operacoes_massa, public.operacoes_massa_itens from anon, authenticated;
 grant select on public.operacoes_massa, public.operacoes_massa_itens to authenticated;
 grant all on public.operacoes_massa, public.operacoes_massa_itens to service_role;
+
+-- Claim do item antes de escrever no ML (idempotência do QStash): pendente, ou enviando parado há > 2 min
+-- (worker morreu no meio), vira enviando. Relógio do banco; sem linha = outro worker já pegou.
+create function public.operacoes_massa_reivindicar(p_org uuid, p_operacao uuid, p_ml_item text)
+returns boolean
+language sql
+set search_path = ''
+as $$
+  with pego as (
+    update public.operacoes_massa_itens set status = 'enviando', atualizado_em = now()
+    where org_id = p_org and operacao_id = p_operacao and ml_item_id = p_ml_item
+      and (status = 'pendente' or (status = 'enviando' and atualizado_em < now() - interval '2 minutes'))
+    returning 1
+  )
+  select exists (select 1 from pego);
+$$;
+revoke execute on function public.operacoes_massa_reivindicar(uuid, uuid, text) from public, anon, authenticated;
+grant execute on function public.operacoes_massa_reivindicar(uuid, uuid, text) to service_role;

@@ -6,13 +6,13 @@ import { buscarFreteVendedorComProveniencia } from '../ml/frete.ts';
 import { redisGet, redisSet } from '../redis/client.ts';
 import { paginarTudo } from '../pagina.ts';
 import { qstashClient } from '../queue.ts';
-import { montarCadastro, type LinhaItemUp, type LinhaVariacao } from './cadastro.ts';
+import { montarCadastro, type Cadastro, type LinhaItemUp, type LinhaVariacao } from './cadastro.ts';
 import { buscarItensML, criarGetJson, listarItensPromocao, listarPromocoes } from './ml.ts';
 import { contar } from './projecao.ts';
 import { avisarPromocoes, depsAlertas } from './alertas.ts';
-import { mesmaRodada, type DepsLeitura, type DepsLista, type MsgLeitura } from './sincronizar.ts';
+import { mesmaRodada, type DepsLeitura, type DepsLista, type MsgLeitura, type QueryTarifa } from './sincronizar.ts';
 import type { Comissao } from '../preco/sugerir.ts';
-import type { Aliquotas, LinhaItem } from './tipos.ts';
+import type { Aliquotas, LinhaItem, Tarifa } from './tipos.ts';
 
 const TTL_S = 8 * 60 * 60; // > período do schedule (6 h): o run agendado seguinte ainda acha o cache quente
 const RESERVA_MIN = 30; // medir a duração da cadeia da 10.10 na Task 0 e ajustar (UI usa o mesmo valor em emLeitura)
@@ -21,14 +21,14 @@ const MSG_INTERROMPIDA = 'A leitura anterior dos anúncios foi interrompida; os 
 /** Comissão ou frete que o ML não informou: nunca vira zero, nunca entra no cache. */
 export class TarifaEstimada extends Error {}
 
-type Cx = { orgId: string; mlUserId: string; token: string };
+export type Cx = { orgId: string; mlUserId: string; token: string };
 const falhou = (onde: string, e: { message: string } | null) => { if (e) throw new Error(`${onde}: ${e.message}`); };
 const urlWorker = () => `${Deno.env.get('SUPABASE_URL')}/functions/v1/sincronizar-promocoes`;
 /** Entrega duplicada do QStash não bifurca a cadeia: mesma mensagem → mesmo id (QStash aceita e descarta). */
 const dedupId = (m: MsgLeitura) =>
   `${m.org_id}:${m.promocao_id}:${m.rodada}:${m.cursor ?? ''}`.replace(/[^A-Za-z0-9_-]/g, '_');
 
-async function lerAliquotas(admin: SupabaseClient, orgId: string): Promise<Aliquotas | null> {
+export async function lerAliquotas(admin: SupabaseClient, orgId: string): Promise<Aliquotas | null> {
   const { data, error } = await admin.from('configuracoes')
     .select('aliquota_nacional_pct, aliquota_importado_pct, aliquotas_confirmadas_em')
     .eq('org_id', orgId).maybeSingle();
@@ -45,6 +45,40 @@ async function emCache<T>(chave: string, calcular: () => Promise<T>): Promise<T>
   const v = await calcular(); // lança → não grava
   try { await redisSet(chave, JSON.stringify(v), TTL_S); } catch { /* idem */ }
   return v;
+}
+
+/** Cadastro da org (custo, piso, origem, dimensões) para resolver a cor de cada anúncio. */
+export async function carregarCadastro(admin: SupabaseClient, orgId: string): Promise<Cadastro> {
+  const variacoes = await paginarTudo<LinhaVariacao>((de, ate) => admin.from('variacoes')
+    .select('id, custo, preco, cor, codigo, gtin, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, atualizado_em, familias!inner(ml_item_id, origem)')
+    .eq('org_id', orgId).order('id').range(de, ate) as never);
+  const itensUp = await paginarTudo<LinhaItemUp>((de, ate) => admin.from('anuncios_externos_itens')
+    .select('item_externo_id, variacao_id')
+    .eq('org_id', orgId).not('item_externo_id', 'is', null).not('variacao_id', 'is', null)
+    .order('id').range(de, ate) as never);
+  return montarCadastro(variacoes, itensUp);
+}
+
+/** Comissão + frete exatos num preço (cache `promo:` no Redis); estimado lança TarifaEstimada. */
+export function criarTarifaEm(cx: Cx): (q: QueryTarifa) => Promise<Tarifa> {
+  return async ({ preco, categoria, listingType, dim }) => {
+    const p = preco.toFixed(2);
+    const dimKey = dim ? `${dim.altura_cm}x${dim.largura_cm}x${dim.comprimento_cm}x${dim.peso_gramas}` : 'padrao';
+    const [comissao, frete] = await Promise.all([
+      emCache<Comissao>(`promo:lp:v1:${categoria}:${listingType}:${p}`, async () => {
+        const c = comissaoDeComProveniencia(await buscarListingPrice(cx.token, preco, categoria, listingType));
+        if (c.proveniencia === 'estimated') throw new TarifaEstimada(c.motivo ?? 'comissão estimada');
+        return c.valor;
+      }),
+      emCache<number>(`promo:frete:v1:${cx.mlUserId}:${categoria}:${p}:${dimKey}`, async () => {
+        const f = await buscarFreteVendedorComProveniencia(cx.token, cx.mlUserId, preco, categoria, dim);
+        // 'partial' (pacote padrão por falta de dimensão) é o mesmo número que a Revisão mostra: aceito.
+        if (f.proveniencia === 'estimated') throw new TarifaEstimada(f.motivo ?? 'frete estimado');
+        return f.valor;
+      }),
+    ]);
+    return { comissao, frete };
+  };
 }
 
 export function depsLista(admin: SupabaseClient, cx: Cx): DepsLista {
@@ -121,35 +155,8 @@ export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): Dep
     listarItens: () => listarItensPromocao(get, { id: msg.promocao_id, tipo: msg.tipo } as never),
     buscarItensML: (ids) => buscarItensML(get, ids),
 
-    async carregarCadastro() {
-      const variacoes = await paginarTudo<LinhaVariacao>((de, ate) => admin.from('variacoes')
-        .select('id, custo, preco, cor, codigo, gtin, ml_variation_id, peso_gramas, altura_cm, largura_cm, comprimento_cm, atualizado_em, familias!inner(ml_item_id, origem)')
-        .eq('org_id', orgId).order('id').range(de, ate) as never);
-      const itensUp = await paginarTudo<LinhaItemUp>((de, ate) => admin.from('anuncios_externos_itens')
-        .select('item_externo_id, variacao_id')
-        .eq('org_id', orgId).not('item_externo_id', 'is', null).not('variacao_id', 'is', null)
-        .order('id').range(de, ate) as never);
-      return montarCadastro(variacoes, itensUp);
-    },
-
-    async tarifaEm({ preco, categoria, listingType, dim }) {
-      const p = preco.toFixed(2);
-      const dimKey = dim ? `${dim.altura_cm}x${dim.largura_cm}x${dim.comprimento_cm}x${dim.peso_gramas}` : 'padrao';
-      const [comissao, frete] = await Promise.all([
-        emCache<Comissao>(`promo:lp:v1:${categoria}:${listingType}:${p}`, async () => {
-          const c = comissaoDeComProveniencia(await buscarListingPrice(cx.token, preco, categoria, listingType));
-          if (c.proveniencia === 'estimated') throw new TarifaEstimada(c.motivo ?? 'comissão estimada');
-          return c.valor;
-        }),
-        emCache<number>(`promo:frete:v1:${cx.mlUserId}:${categoria}:${p}:${dimKey}`, async () => {
-          const f = await buscarFreteVendedorComProveniencia(cx.token, cx.mlUserId, preco, categoria, dim);
-          // 'partial' (pacote padrão por falta de dimensão) é o mesmo número que a Revisão mostra: aceito.
-          if (f.proveniencia === 'estimated') throw new TarifaEstimada(f.motivo ?? 'frete estimado');
-          return f.valor;
-        }),
-      ]);
-      return { comissao, frete };
-    },
+    carregarCadastro: () => carregarCadastro(admin, orgId),
+    tarifaEm: criarTarifaEm(cx),
 
     async gravarLote(linhas: LinhaItem[]) {
       const { error } = await admin.from('ml_promocao_itens').upsert(linhas.map((l) => ({

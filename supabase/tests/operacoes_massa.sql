@@ -83,6 +83,41 @@ where operacao_id = '91000000-0000-0000-0000-000000000201' and ml_item_id = 'MLB
 insert into public.operacoes_massa_itens (operacao_id, org_id, promocao_id, ml_item_id)
 values ('91000000-0000-0000-0000-000000000203', '91000000-0000-0000-0000-000000000001', 'P-A', 'MLB1');
 
+-- 4. Claim (operacoes_massa_reivindicar): pendente → enviando uma vez só; enviando recente não; parado > 2 min sim;
+-- outra org nunca; authenticated não executa.
+do $$
+declare
+  org_a constant uuid := '91000000-0000-0000-0000-000000000001';
+  op constant uuid := '91000000-0000-0000-0000-000000000203';
+begin
+  if not public.operacoes_massa_reivindicar(org_a, op, 'MLB1') then raise exception 'claim: pendente não virou enviando'; end if;
+  if (select status from public.operacoes_massa_itens where operacao_id = op and ml_item_id = 'MLB1') <> 'enviando' then
+    raise exception 'claim: status não é enviando';
+  end if;
+  if public.operacoes_massa_reivindicar(org_a, op, 'MLB1') then raise exception 'claim: enviando recente reivindicado de novo'; end if;
+  if public.operacoes_massa_reivindicar('91000000-0000-0000-0000-000000000002', op, 'MLB1') then raise exception 'claim: outra org'; end if;
+  update public.operacoes_massa_itens set atualizado_em = now() - interval '3 minutes' where operacao_id = op and ml_item_id = 'MLB1';
+  if not public.operacoes_massa_reivindicar(org_a, op, 'MLB1') then raise exception 'claim: enviando parado não voltou'; end if;
+  update public.operacoes_massa_itens set status = 'aplicado', atualizado_em = now() - interval '1 hour' where operacao_id = op and ml_item_id = 'MLB1';
+  if public.operacoes_massa_reivindicar(org_a, op, 'MLB1') then raise exception 'claim: item concluído reivindicado'; end if;
+  if public.operacoes_massa_reivindicar(org_a, op, 'MLB404') then raise exception 'claim: item inexistente'; end if;
+end;
+$$;
+-- Checagem pelo catálogo: chamar a função sem privilégio derruba (segfault) o Postgres local deste ambiente.
+do $$
+declare r text;
+begin
+  foreach r in array array['anon','authenticated'] loop
+    if has_function_privilege(r, 'public.operacoes_massa_reivindicar(uuid, uuid, text)', 'execute') then
+      raise exception '% pode executar operacoes_massa_reivindicar', r;
+    end if;
+  end loop;
+  if not has_function_privilege('service_role', 'public.operacoes_massa_reivindicar(uuid, uuid, text)', 'execute') then
+    raise exception 'service_role não executa operacoes_massa_reivindicar';
+  end if;
+end;
+$$;
+
 select 'operacoes_massa: ok' as resultado;
 
 rollback;

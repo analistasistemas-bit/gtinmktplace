@@ -2165,6 +2165,7 @@ export type Database = {
           preco: number | null
           promocao_id: string
           proxima_conferencia: string | null
+          saida_pedida_em: string | null
           semaforo: string | null
           status: string
           titulo: string | null
@@ -2181,6 +2182,7 @@ export type Database = {
           preco?: number | null
           promocao_id: string
           proxima_conferencia?: string | null
+          saida_pedida_em?: string | null
           semaforo?: string | null
           status?: string
           titulo?: string | null
@@ -2197,6 +2199,7 @@ export type Database = {
           preco?: number | null
           promocao_id?: string
           proxima_conferencia?: string | null
+          saida_pedida_em?: string | null
           semaforo?: string | null
           status?: string
           titulo?: string | null
@@ -3816,6 +3819,10 @@ export type Database = {
         }[]
       }
       modulos_habilitados_da_org: { Args: never; Returns: string[] }
+      operacoes_massa_reivindicar: {
+        Args: { p_ml_item: string; p_operacao: string; p_org: string }
+        Returns: boolean
+      }
       platform_assert_admin_actor: {
         Args: { p_actor: string }
         Returns: undefined

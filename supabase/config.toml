@@ -97,6 +97,10 @@ verify_jwt = false
 # leitura) sem JWT; a função valida a assinatura QStash ou o JWT do usuário (ADR-0046).
 [functions.sincronizar-promocoes]
 verify_jwt = false
+# ADR-0174 (operações em massa): dual-mode — QStash (executar/conferir) sem JWT; a criação valida o JWT
+# do usuário via requireUserOrg.
+[functions.operacoes-massa]
+verify_jwt = false
 # ADR-0171: worker QStash puro (schedule `40 * * * *`), só aceita assinatura QStash.
 [functions.renovar-tokens-ml]
 verify_jwt = false
