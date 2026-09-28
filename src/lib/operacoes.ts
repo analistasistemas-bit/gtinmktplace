@@ -52,8 +52,11 @@ export function montarPreview(acao: AcaoOperacao, tipo: 'DEAL' | 'SMART', itens:
   });
 }
 
-/** Quantas linhas marcadas exigem o checkbox de risco confirmado (trava financeira do backend). */
-export function precisaConfirmarRisco(linhas: LinhaPreview[]): { vermelho: number; indisponivel: number } {
+/** Quantas linhas marcadas exigem o checkbox de risco confirmado (trava financeira do backend).
+ *  Fix round 1 (achado 1): `sair` nunca exige — `validar.ts` não olha semáforo na saída (não cria
+ *  prejuízo), então o checkbox de risco é só do `aderir`. */
+export function precisaConfirmarRisco(acao: AcaoOperacao, linhas: LinhaPreview[]): { vermelho: number; indisponivel: number } {
+  if (acao === 'sair') return { vermelho: 0, indisponivel: 0 };
   const marcadas = linhas.filter((l) => l.marcado);
   return {
     vermelho: marcadas.filter((l) => l.semaforo === 'vermelho').length,

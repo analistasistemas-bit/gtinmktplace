@@ -45,7 +45,9 @@ export function useOperacoes() {
   });
 }
 
-export function useItensOperacao(operacaoId: string) {
+/** Fix round 1 (achado 3): recarrega a cada 5 s enquanto a operação (`operacoes_massa.status`)
+ *  ainda está `executando` — senão o detalhe (mensagem, `saida_solicitada`) fica parado. */
+export function useItensOperacao(operacaoId: string, executando = false) {
   return useQuery({
     queryKey: [...QK_OPERACOES, operacaoId, 'itens'],
     queryFn: async () => {
@@ -55,6 +57,7 @@ export function useItensOperacao(operacaoId: string) {
       return (data ?? []) as ItemOperacaoRow[];
     },
     enabled: !!operacaoId,
+    refetchInterval: executando ? 5_000 : false,
   });
 }
 
@@ -74,10 +77,13 @@ export function useCriarOperacao() {
   });
 }
 
-/** Ajuste 10: quem pode Executar/Reverter — mesmo predicado de `configuracoes` (admin ou suporte
- *  com escopo `full`), não só `isAdmin`. */
+/** Ajuste 10: quem pode Executar/Reverter — mesmo predicado de `configuracoes/permissoes.ts`
+ *  (`podeEditarConfig`): em sessão de suporte vale só o escopo `full` (mesmo super-admin, que
+ *  carrega `profiles.is_admin = true`, fica de fora em `read`); fora de suporte vale `isAdmin`.
+ *  Fix round 1 (achado 2): a versão anterior liberava `isAdmin || scope === 'full'`, o que deixava
+ *  o super-admin executar em sessão de suporte só-leitura — o servidor (`auth-org.ts`) recusa. */
 export function usePodeExecutarOperacao(): boolean {
   const { isAdmin } = useProfile();
-  const support = useSupportStore((s) => s.context);
-  return isAdmin || support?.scope === 'full';
+  const context = useSupportStore((s) => s.context);
+  return context ? context.scope === 'full' : isAdmin;
 }

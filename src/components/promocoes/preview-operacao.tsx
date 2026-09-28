@@ -66,7 +66,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
 
   const podeEditarPreco = acao === 'aderir' && tipo === 'DEAL';
   const marcadas = linhas.filter((l) => l.marcado);
-  const risco = precisaConfirmarRisco(linhas);
+  const risco = precisaConfirmarRisco(acao, linhas);
   const temRisco = risco.vermelho + risco.indisponivel > 0;
   const precoInvalido = (l: LinhaEditavel) => podeEditarPreco && (l.preco == null || (l.min != null && l.max != null && (l.preco < l.min || l.preco > l.max)));
   const podeEnviar = marcadas.length > 0 && !marcadas.some(precoInvalido) && (!temRisco || confirmadoRisco);

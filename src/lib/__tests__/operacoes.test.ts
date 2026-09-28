@@ -58,14 +58,18 @@ describe('montarPreview', () => {
 });
 
 describe('precisaConfirmarRisco', () => {
-  it('conta só as linhas marcadas', () => {
-    const linhas = [
-      { ml_item_id: '1', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'vermelho' as const, marcado: true },
-      { ml_item_id: '2', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'vermelho' as const, marcado: false },
-      { ml_item_id: '3', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'indisponivel' as const, marcado: true },
-      { ml_item_id: '4', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'verde' as const, marcado: true },
-    ];
-    expect(precisaConfirmarRisco(linhas)).toEqual({ vermelho: 1, indisponivel: 1 });
+  const linhas = [
+    { ml_item_id: '1', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'vermelho' as const, marcado: true },
+    { ml_item_id: '2', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'vermelho' as const, marcado: false },
+    { ml_item_id: '3', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'indisponivel' as const, marcado: true },
+    { ml_item_id: '4', titulo: null, preco: 1, min: null, max: null, sugerido: null, ateQuanto: null, semaforo: 'verde' as const, marcado: true },
+  ];
+  it('aderir conta só as linhas marcadas', () => {
+    expect(precisaConfirmarRisco('aderir', linhas)).toEqual({ vermelho: 1, indisponivel: 1 });
+  });
+  // Fix round 1 (achado 1): sair não olha semáforo (validar.ts não trava a saída) — nunca exige o checkbox.
+  it('sair nunca exige confirmação de risco, mesmo com marcado vermelho/indisponivel', () => {
+    expect(precisaConfirmarRisco('sair', linhas)).toEqual({ vermelho: 0, indisponivel: 0 });
   });
 });
 
@@ -91,10 +95,16 @@ describe('inversa', () => {
 });
 
 describe('paridade semáforo front × backend (operações)', () => {
+  const cAzul = { variation_id: 1, cor: null, sku: null, custo: 5, piso: 10, origem: 'nacional' as const, comissao_pct: 12, comissao_fixa: 0, frete: 0, aliquota_pct: 0, liquido: null, ate_quanto: null, ate_quanto_motivo: null, semaforo: 'verde' as const, motivo: null };
+  const semCadastro = { ...cAzul, custo: null, piso: null, origem: null, comissao_pct: null, comissao_fixa: null, frete: null, aliquota_pct: null, semaforo: 'indisponivel' as const, motivo: 'sem_cadastro' as const };
+  // liquido = preco*0.88; custo=5, piso=10 → amarelo entre preco≈5,68 e ≈11,36.
+  const cVermelho = { ...cAzul, custo: 80, piso: 90 };
   const casos: [ProjecaoCor[], number | null][] = [
-    [[{ variation_id: 1, cor: null, sku: null, custo: 5, piso: 10, origem: 'nacional', comissao_pct: 12, comissao_fixa: 0, frete: 0, aliquota_pct: 0, liquido: null, ate_quanto: null, ate_quanto_motivo: null, semaforo: 'verde', motivo: null }], 85],
-    [[{ variation_id: 1, cor: null, sku: null, custo: 5, piso: 10, origem: 'nacional', comissao_pct: 12, comissao_fixa: 0, frete: 0, aliquota_pct: 0, liquido: null, ate_quanto: null, ate_quanto_motivo: null, semaforo: 'verde', motivo: null }], 5],
-    [[{ variation_id: 1, cor: null, sku: null, custo: null, piso: null, origem: null, comissao_pct: null, comissao_fixa: null, frete: null, aliquota_pct: null, liquido: null, ate_quanto: null, ate_quanto_motivo: null, semaforo: 'indisponivel', motivo: 'sem_cadastro' }], 50],
+    [[cAzul], 85],           // verde
+    [[cAzul], 5],            // vermelho (liquido < custo)
+    [[semCadastro], 50],     // indisponivel (sem tarifa/custo)
+    [[cAzul], 8],            // amarelo (liquido entre custo e piso)
+    [[cAzul, cVermelho], 85], // duas cores: pior entre elas (vermelho na 2ª)
   ];
   it.each(casos)('caso %#', (projecao, preco) => {
     expect(semaforoNoPreco(projecao as unknown as CorProjetada[], preco)).toBe(semaforoNoPrecoBackend(projecao, preco));
