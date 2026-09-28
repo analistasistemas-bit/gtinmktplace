@@ -1015,15 +1015,17 @@ revogadas de `public`/`anon`/`authenticated`):
 
 ## Fan-out por org dos workers agendados (ADR-0173)
 
-**Status: código pronto, NADA deployado em produção ainda** (o deploy é a Task 8, pendente, com OK
-do Diego). Após o deploy, o consumidor fica ativo com as flags
-`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR` desligadas — os 3 workers seguem no caminho
-legado de hoje até cada flag ser ligada. Protocolo compartilhado por `pulse-coletar`,
-`backfill-faturamento` e `reconciliar-faturamento` para processar uma organização por mensagem
-QStash, em lotes retomáveis, evitando o `CPU Time exceeded` (HTTP 546) de processar todas as orgs
-numa única requisição. Runbook de ativação/rollback em
+**Status: deployado e ATIVO em produção desde 2026-09-28**, com as 3 flags
+(`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR`) ligadas e a recuperação histórica do
+backfill já feita — ADR ainda `Proposto`, falta só a validação de 3 dias (a partir de 01/10) para
+virar `Aceito` (números da ativação em
+[ADR-0173 → Implantação](../decisions/0173-fanout-por-org-workers-agendados-cpu.md#implantação-2026-09-28)).
+Protocolo compartilhado por `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento`
+para processar uma organização por mensagem QStash, em lotes retomáveis, evitando o `CPU Time
+exceeded` (HTTP 546) de processar todas as orgs numa única requisição. Runbook de
+ativação/rollback em
 [edge-functions.md](edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback).
-*Migration `20260927205804_worker_rodadas.sql`.*
+*Migration `20260927205804_worker_rodadas.sql`, aplicada em produção em 28/09.*
 
 ### `worker_rodadas`
 Fonte da verdade de UMA rodada por `(job, org_id)` (PK). `job` (`pulse-completo` | `pulse-quente` |

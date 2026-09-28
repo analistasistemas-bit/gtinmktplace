@@ -8,7 +8,7 @@ atualizado: 2026-08-25
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
 
-## 2026-09-27 — `pulse-coletar`/`backfill-faturamento`/`reconciliar-faturamento` estourando CPU (HTTP 546) — **correção pronta, ainda não ativada**
+## 2026-09-27 — `pulse-coletar`/`backfill-faturamento`/`reconciliar-faturamento` estourando CPU (HTTP 546) — **corrigido e ativo em produção, validação de 3 dias pendente**
 
 Três edge functions agendadas passaram a falhar com `CPU Time exceeded` (HTTP 546): o Supabase
 encerra a requisição ao somar 2s de CPU. `pulse-coletar` (tier completo) caía todo dia depois da
@@ -25,12 +25,15 @@ por org; cada mensagem processa um lote de tamanho fixo, com `worker_rodadas` co
 (`worker_pendencias`). Ativação por flag (`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR`),
 uma função por vez, com medição de CPU antes de ligar a próxima.
 
-**Status em 2026-09-27:** código pronto (Tasks 1-7 do plano de execução), **nenhuma flag ativada em
-produção** — os 3 workers seguem no caminho legado até o Task 8 (deploy + ativação medida + OK do
-Diego). Runbook em `docs/reference/edge-functions.md`. Ver [[Índice de ADRs|ADR-0173]].
+**Status em 2026-09-28:** deployado e ativo em produção — migration `20260927205804_worker_rodadas.sql`
+aplicada, 17 funções redeployadas, as 3 flags ligadas (ativação medida, uma função por vez) e a
+recuperação histórica do backfill feita (1.241 vendas regravadas, 0 falhas). Checagem pós-ativação:
+188 shutdowns nas 3 funções, 0 por `CPUTime`. ADR ainda `Proposto`: falta a validação de 3 dias em
+produção (a partir de 01/10) para virar `Aceito`. Runbook em `docs/reference/edge-functions.md`.
+Ver [[Índice de ADRs|ADR-0173]].
 
 **Achado lateral (não relacionado ao fan-out):** `materializar-metricas` está documentado com
-schedule diário (`0 6 * * *`) mas sem invocações registradas em produção nos últimos 7 dias —
+schedule diário (`0 6 * * *`) mas sem invocações registradas em produção em 7 dias até 27/09 —
 investigar se o schedule ainda existe no QStash.
 
 ## 2026-08-25 — alerta de "2 anúncios moderados" que nunca foram moderados

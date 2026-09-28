@@ -634,22 +634,30 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   [plano](superpowers/plans/2026-09-24-estoque-grade-operacao.md) e o amendment 2026-09-24c do
   [ADR-0166](decisions/0166-tipo-de-produto-por-organizacao.md).
 
-## Incidente CPU 546 e fan-out por org (ADR-0173, 25-27/09/2026) — código pronto, ativação pendente
+## Incidente CPU 546 e fan-out por org (ADR-0173, 25-28/09/2026) — resolvido em produção, validação de 3 dias pendente
 
-**Não está em produção.** `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento`
-passaram a falhar com `CPU Time exceeded` (HTTP 546, teto de 2s de CPU por requisição) porque
-processam todas as organizações numa única requisição — `backfill-faturamento` sem execução
-completa desde ~10/09, `reconciliar-faturamento` com 12 de 74 execuções em 546 numa janela de 72h.
-Correção: o schedule de cada função vira um disparador que publica 1 mensagem QStash por org,
-processada em lotes retomáveis por `worker_rodadas` (posse com lease, CAS do cursor). Pedido que
-falha vira pendência por org (`worker_pendencias`); notificação do Pulse durável e idempotente por
-chave. Ativação por flag, uma função por vez, com validação de CPU por etapa antes de ligar a
-próxima — nenhuma flag setada ainda. Runbook completo em
+`pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento` passaram a falhar com `CPU Time
+exceeded` (HTTP 546, teto de 2s de CPU por requisição) porque processavam todas as organizações
+numa única requisição — `backfill-faturamento` sem execução completa desde ~10/09,
+`reconciliar-faturamento` com 12 de 74 execuções em 546 numa janela de 72h. Correção: o schedule de
+cada função virou um disparador que publica 1 mensagem QStash por org, processada em lotes
+retomáveis por `worker_rodadas` (posse com lease, CAS do cursor). Pedido que falha vira pendência
+por org (`worker_pendencias`); notificação do Pulse durável e idempotente por chave.
+
+**Deployado e ativo desde 28/09:** migration `20260927205804_worker_rodadas.sql` em produção, 17
+funções redeployadas, as 3 flags (`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR`) ligadas
+(ativação medida, uma função por vez), e a recuperação histórica do backfill feita (1.241 vendas
+regravadas, 0 falhas). Checagem pós-ativação: 188 shutdowns nas 3 funções, 0 por `CPUTime`. Números
+completos em
+[ADR-0173 → Implantação](decisions/0173-fanout-por-org-workers-agendados-cpu.md#implantação-2026-09-28).
+Runbook completo em
 [edge-functions.md](reference/edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback).
-Ver [ADR-0173](decisions/0173-fanout-por-org-workers-agendados-cpu.md) e o plano
-`docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`. **Achado lateral:** `materializar-metricas`
-está documentado com schedule diário mas sem invocações em produção nos últimos 7 dias — investigar
-fora deste ADR.
+
+**Pendente:** validação de 3 dias em produção (a partir de 01/10) — só depois disso o ADR-0173
+passa de `Proposto` para `Aceito`. Ver [ADR-0173](decisions/0173-fanout-por-org-workers-agendados-cpu.md)
+e o plano `docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`. **Achado lateral:**
+`materializar-metricas` está documentado com schedule diário mas sem invocações em produção em 7
+dias até 27/09 — investigar fora deste ADR.
 
 ## Trilho de UX/design (2026-06-21, em producao)
 

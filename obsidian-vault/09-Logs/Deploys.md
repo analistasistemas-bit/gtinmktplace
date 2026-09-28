@@ -1,6 +1,6 @@
 ---
 tags: [logs, deploys]
-atualizado: 2026-07-01
+atualizado: 2026-09-28
 ---
 
 # Deploys
@@ -38,6 +38,10 @@ supabase db push --linked   # produção
 
 ## Deploys operacionais mais recentes (fonte: `docs/project-status.md`)
 
+- **2026-09-28 — Fan-out por org ([[Índice de ADRs|ADR-0173]]):** migration
+  `20260927205804_worker_rodadas.sql` (`worker_rodadas`/`worker_pendencias`) + as 17 funções que
+  importam `_shared` alterado, todas `ACTIVE`. Flags `FANOUT_BACKFILL`/`FANOUT_PULSE`/
+  `FANOUT_RECONCILIAR` ligadas (`= 1`) em produção.
 - `process-familia` v41 (refactor A1: resolver de categoria sem fallback hard-coded)
 - `publish-familia-ml` v31
 - `remover-publicado` v7
