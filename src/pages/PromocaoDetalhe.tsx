@@ -203,7 +203,7 @@ export default function PromocaoDetalhe() {
 
   return (
     <TooltipProvider>
-    <div className="flex flex-col gap-6 p-4 sm:p-6">
+    <div className="flex h-full flex-col gap-6 p-4 sm:p-6">
       <Breadcrumbs items={[{ label: 'Promoções', to: '/promocoes' }, { label: promo?.nome ?? promocaoId }]} />
       <PageHeader
         title={promo?.nome ?? promocaoId}
@@ -226,20 +226,33 @@ export default function PromocaoDetalhe() {
           </TabsList>
         </Tabs>
       </div>
-      <div className="hidden overflow-x-auto md:block">
-        <DataTable
-          columns={colunas} rows={linhas} rowKey={(r) => r.ml_item_id}
-          loading={itens.isLoading} skeletonRows={8}
-          defaultSort={{ key: 'semaforo', dir: 'asc' }}
-          onRowClick={setAberto}
-          empty={<p className="py-8 text-center text-sm text-muted-foreground">Nenhum anúncio neste filtro.</p>}
-        />
-      </div>
-      <div className="md:hidden" data-testid="lista-mobile">
-        <ListaMobile
-          linhas={linhasMobile} loading={itens.isLoading} onAbrir={setAberto}
-          podeSelecionar={podeSelecionar} selecionados={selecionados} onToggle={alternarItem}
-        />
+      {/* Achado 1 (revisão): quem rola é este bloco, não a página — a BarraSelecao (abaixo, fora
+          do scroll) fica sempre visível, presa ao rodapé da área visível. */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="hidden overflow-x-auto md:block">
+          <DataTable
+            columns={colunas} rows={linhas} rowKey={(r) => r.ml_item_id}
+            loading={itens.isLoading} skeletonRows={8}
+            defaultSort={{ key: 'semaforo', dir: 'asc' }}
+            onRowClick={setAberto}
+            empty={<p className="py-8 text-center text-sm text-muted-foreground">Nenhum anúncio neste filtro.</p>}
+          />
+        </div>
+        <div className="md:hidden" data-testid="lista-mobile">
+          {podeSelecionar && (
+            <div className="mb-2 flex items-center gap-2">
+              <Checkbox
+                id="sel-todos-mobile" aria-label="Selecionar todos" disabled={linhas.length === 0}
+                checked={todosMarcadosNoFiltro} onCheckedChange={(v) => alternarTodos(!!v)}
+              />
+              <label htmlFor="sel-todos-mobile" className="text-sm text-muted-foreground">Selecionar todos</label>
+            </div>
+          )}
+          <ListaMobile
+            linhas={linhasMobile} loading={itens.isLoading} onAbrir={setAberto}
+            podeSelecionar={podeSelecionar} selecionados={selecionados} onToggle={alternarItem}
+          />
+        </div>
       </div>
       <BarraSelecao
         convidados={convidadosSelecionados.length} participando={participandoSelecionados.length}
@@ -251,7 +264,7 @@ export default function PromocaoDetalhe() {
       <PreviewOperacao
         acao={preview?.acao ?? 'aderir'} tipo={promo?.tipo === 'SMART' ? 'SMART' : 'DEAL'}
         promocaoId={promocaoId} promocaoNome={promo?.nome ?? promocaoId} itens={preview?.itens ?? []}
-        aberto={preview != null} onClose={() => { setPreview(null); setSelecionados(new Set()); }}
+        aberto={preview != null} onClose={() => setPreview(null)} onSucesso={() => setSelecionados(new Set())}
       />
     </div>
     </TooltipProvider>

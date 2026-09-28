@@ -95,4 +95,21 @@ describe('PromocaoDetalhe', () => {
     await user.click(screen.getByRole('button', { name: 'Aderir 1' }));
     expect(within(screen.getByRole('dialog')).getByText('Aderir à Campanha teste')).toBeTruthy();
   });
+
+  it('achado 2 (revisão): fechar o preview sem executar mantém a seleção', async () => {
+    const user = userEvent.setup();
+    vi.mocked(usePromocoes).mockReturnValue({ data: [promo], isLoading: false } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [item], isLoading: false } as never);
+
+    renderDetalhe();
+    const tabela = within(screen.getByRole('region', { name: 'Tabela de dados' }));
+    await user.click(tabela.getByLabelText('Selecionar MLB1'));
+    await user.click(screen.getByRole('button', { name: 'Aderir 1' }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Aderir 1' })).toBeInTheDocument();
+  });
 });

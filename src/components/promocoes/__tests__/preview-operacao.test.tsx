@@ -110,6 +110,31 @@ describe('PreviewOperacao', () => {
     expect(toast.success).toHaveBeenCalledWith('Operação iniciada: 1 anúncios');
   });
 
+  it('achado 2 (revisão): sucesso chama onSucesso (quem limpa a seleção), antes de fechar', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onSucesso = vi.fn();
+    const verde = item({ ml_item_id: 'V', preco_sugerido: 10, preco_min: 7, preco_max: 18.99, projecao: [cor({ custo: 5, piso: 8 })] });
+    renderPreview({ itens: [verde], onClose, onSucesso });
+
+    await user.click(screen.getByRole('button', { name: 'Executar' }));
+
+    expect(onSucesso).toHaveBeenCalledTimes(1);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('achado 2 (revisão): fechar sem executar (X do sheet) não chama onSucesso', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const onSucesso = vi.fn();
+    renderPreview({ itens: [item()], onClose, onSucesso });
+
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onSucesso).not.toHaveBeenCalled();
+  });
+
   it('naoRevertiveis: linha nasce desmarcada, com o motivo, e o checkbox fica desabilitado (Reverter)', () => {
     const linha = item({ ml_item_id: 'V' });
     renderPreview({ itens: [linha], naoRevertiveis: new Map([['V', 'Não revertível: o anúncio não está mais convidado/participando']]) });

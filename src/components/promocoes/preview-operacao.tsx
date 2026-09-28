@@ -47,9 +47,12 @@ function textoRisco(vermelho: number, indisponivel: number): string {
   return partes.join(' e ');
 }
 
-export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, naoRevertiveis }: {
+export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis }: {
   acao: AcaoOperacao; tipo: 'DEAL' | 'SMART'; promocaoId: string; promocaoNome: string; itens: ItemPromocao[];
-  origemId?: string | null; aberto: boolean; onClose: () => void; naoRevertiveis?: Map<string, string>;
+  origemId?: string | null; aberto: boolean; onClose: () => void;
+  /** Achado 2 (revisão): só a criação com sucesso limpa a seleção de quem chamou — fechar o
+   *  sheet (X, Esc, overlay) não pode apagar a seleção que o operador fez nas duas abas. */
+  onSucesso?: () => void; naoRevertiveis?: Map<string, string>;
 }) {
   const podeExecutar = usePodeExecutarOperacao();
   const criar = useCriarOperacao();
@@ -93,6 +96,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
     try {
       await criar.mutateAsync({ acao, promocao_id: promocaoId, origem_id: origemId ?? null, itens: pedido });
       toast.success(`Operação iniciada: ${pedido.length} anúncios`);
+      onSucesso?.();
       onClose();
       navigate('/promocoes?aba=operacoes');
     } catch (e) {
@@ -151,7 +155,7 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                   </StatusPill>
                 </div>
                 {podeEditarPreco ? (
-                  <div className="ml-7 flex flex-wrap items-center gap-2">
+                  <div className="ml-7 flex flex-col gap-1.5">
                     <Input
                       value={l.precoTexto}
                       onChange={(e) => editarPreco(l.ml_item_id, e.target.value)}
@@ -159,14 +163,16 @@ export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, o
                       aria-label={`Preço de ${l.ml_item_id}`}
                       className={cn('w-24', precoInvalido(l) && 'border-danger')}
                     />
-                    {l.min != null && l.max != null && (
-                      <span className="text-xs text-muted-foreground">{fmtBRLSemSimbolo(l.min)} a {fmtBRLSemSimbolo(l.max)}</span>
-                    )}
-                    {l.ateQuanto != null && (
-                      <Button type="button" variant="outline" size="xs" onClick={() => usarAteQuanto(l.ml_item_id)}>
-                        Usar Até quanto descer
-                      </Button>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {l.min != null && l.max != null && (
+                        <span className="text-xs text-muted-foreground">{fmtBRLSemSimbolo(l.min)} a {fmtBRLSemSimbolo(l.max)}</span>
+                      )}
+                      {l.ateQuanto != null && (
+                        <Button type="button" variant="outline" size="xs" onClick={() => usarAteQuanto(l.ml_item_id)}>
+                          Usar Até quanto descer
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <p className="ml-7 text-sm tabular-nums">{l.preco != null ? fmtBRL(l.preco) : '—'}</p>
