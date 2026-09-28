@@ -89,15 +89,19 @@ export function useOperacao(id: string | null) {
 
 /** Revisão UX (achado B): saber se uma operação já foi revertida (existe outra operação com
  *  `origem_id` = este id) para trocar o botão Reverter por um aviso. Mesmo padrão de `useOperacao`:
- *  busca só quando a reversão não está na página de 50 já carregada. */
+ *  busca só quando a reversão não está na página de 50 já carregada.
+ *  Fix (revisão Grok, achado IMPORTANTE): traz `itens:operacoes_massa_itens(status)` igual à lista
+ *  — quem chama precisa do status dos itens pra distinguir reversão que pegou de reversão que
+ *  falhou toda (`encerrarComErro`), não só da existência da linha. */
 export function useOperacaoPorOrigem(id: string | null) {
   return useQuery({
     queryKey: [...QK_OPERACOES, 'origem', id],
     queryFn: async () => {
-      const { data, error } = await supabase.from('operacoes_massa').select('*')
+      const { data, error } = await supabase.from('operacoes_massa')
+        .select('*, itens:operacoes_massa_itens(status)')
         .eq('origem_id', id!).order('criado_em', { ascending: false }).limit(1).maybeSingle();
       if (error) throw error;
-      return data as Tables<'operacoes_massa'> | null;
+      return data as unknown as OperacaoRow | null;
     },
     enabled: !!id,
   });

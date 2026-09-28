@@ -71,7 +71,7 @@ beforeEach(() => {
   vi.mocked(useItensPromocao).mockReturnValue({ data: [itemCentral()] } as never);
   vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog()] } as never);
   vi.mocked(useOperacao).mockReturnValue({ data: undefined } as never);
-  vi.mocked(useOperacaoPorOrigem).mockReturnValue({ data: null } as never);
+  vi.mocked(useOperacaoPorOrigem).mockReturnValue({ data: null, isLoading: false } as never);
 });
 
 function renderLista() {
@@ -239,7 +239,7 @@ describe('ListaOperacoes', () => {
     const user = userEvent.setup();
     vi.mocked(useOperacoes).mockReturnValue({
       data: [
-        op({ id: 'OP2', acao: 'aderir', origem_id: 'OP1', criado_em: '2026-09-05T12:00:00Z', itens: [] }),
+        op({ id: 'OP2', acao: 'aderir', origem_id: 'OP1', criado_em: '2026-09-05T12:00:00Z', itens: [{ status: 'aplicado' }] }),
         op({ id: 'OP1', acao: 'sair', itens: [{ status: 'aplicado' }] }),
       ], isLoading: false,
     } as never);
@@ -263,7 +263,8 @@ describe('ListaOperacoes', () => {
       data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })],
     } as never);
     vi.mocked(useOperacaoPorOrigem).mockReturnValue({
-      data: op({ id: 'OP9', origem_id: 'OP1', criado_em: '2026-09-06T08:00:00Z' }),
+      data: op({ id: 'OP9', origem_id: 'OP1', criado_em: '2026-09-06T08:00:00Z', itens: [{ status: 'aplicado' }] }),
+      isLoading: false,
     } as never);
 
     renderLista();
@@ -271,5 +272,66 @@ describe('ListaOperacoes', () => {
 
     expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
     expect(screen.getByText(`Revertida em ${dataHora('2026-09-06T08:00:00Z')}`)).toBeInTheDocument();
+  });
+
+  it('achado IMPORTANTE (revisão Grok): reversão ainda executando mostra "Reversão em andamento", sem botão', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [
+        op({ id: 'OP2', acao: 'aderir', origem_id: 'OP1', status: 'executando', itens: [] }),
+        op({ id: 'OP1', acao: 'sair', itens: [{ status: 'aplicado' }] }),
+      ], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({
+      data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })],
+    } as never);
+
+    renderLista();
+    await user.click(screen.getByText('Sair de Campanha X'));
+
+    expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
+    expect(screen.getByText('Reversão em andamento')).toBeInTheDocument();
+  });
+
+  it('achado IMPORTANTE (revisão Grok): reversão concluída sem nenhum item aplicado/já estava deixa o botão Reverter voltar', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [
+        // Reversão "concluida" mas encerrada em erro (encerrarComErro) — nenhum item pegou.
+        op({ id: 'OP2', acao: 'aderir', origem_id: 'OP1', status: 'concluida', itens: [{ status: 'erro' }, { status: 'mudou' }] }),
+        op({ id: 'OP1', acao: 'sair', itens: [{ status: 'aplicado' }] }),
+      ], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({
+      data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })],
+    } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({
+      data: [itemCentral({ ml_item_id: 'MLB1', status: 'candidate' })],
+    } as never);
+
+    renderLista();
+    await user.click(screen.getByText('Sair de Campanha X'));
+
+    expect(screen.queryByText(/Revertida em/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Reversão em andamento')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reverter' })).toBeInTheDocument();
+  });
+
+  it('achado MENOR (revisão Grok): enquanto a busca da reversão fora da página carrega, o botão Reverter não aparece', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ id: 'OP1', acao: 'sair', itens: [{ status: 'aplicado' }] })], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({
+      data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })],
+    } as never);
+    vi.mocked(useOperacaoPorOrigem).mockReturnValue({ data: undefined, isLoading: true } as never);
+
+    renderLista();
+    await user.click(screen.getByText('Sair de Campanha X'));
+
+    expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Revertida em/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Reversão em andamento')).not.toBeInTheDocument();
   });
 });

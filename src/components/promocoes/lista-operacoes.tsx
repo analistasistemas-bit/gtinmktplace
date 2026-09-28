@@ -24,6 +24,9 @@ const TONE_STATUS: Record<StatusItemOperacao, StatusTone> = {
 const ORDEM_STATUS = Object.keys(ROTULO_STATUS) as StatusItemOperacao[];
 const NAO_TERMINAL: StatusItemOperacao[] = ['pendente', 'enviando'];
 const MOTIVO_NAO_REVERTIVEL = 'Não revertível: o anúncio não está mais convidado/participando';
+// Revisão Grok (achado IMPORTANTE): status de item que prova que a reversão pegou pelo menos um
+// anúncio; sem nenhum destes (tudo erro/mudou/bloqueado — `encerrarComErro`) não conta como revertida.
+const ITENS_REVERSAO_OK: StatusItemOperacao[] = ['aplicado', 'ja_estava'];
 
 const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 const tituloOperacao = (op: Pick<OperacaoRow, 'acao' | 'promocao_nome' | 'promocao_id'>) =>
@@ -127,8 +130,18 @@ export function ListaOperacoes() {
   const original = originalNaLista ?? originalBuscada.data ?? null;
   // Revisão UX (achado B): já foi revertida? (existe outra operação com origem_id = a desta).
   const revertidaNaLista = opAberta ? operacoes.data?.find((o) => o.origem_id === opAberta.id) ?? null : null;
-  const revertidaBuscada = useOperacaoPorOrigem(opAberta && !revertidaNaLista ? opAberta.id : null);
+  const buscandoRevertida = !!opAberta && !revertidaNaLista;
+  const revertidaBuscada = useOperacaoPorOrigem(buscandoRevertida ? opAberta!.id : null);
   const revertida = revertidaNaLista ?? revertidaBuscada.data ?? null;
+  // Revisão Grok (achado IMPORTANTE): `executando` ainda não terminou de reverter; `concluida` só
+  // conta como revertida se pegou ao menos um item (senão `encerrarComErro` fechou tudo em erro e
+  // o operador precisa poder tentar de novo — botão Reverter volta).
+  const revertidaAndamento = revertida?.status === 'executando';
+  const revertidaOk = revertida != null && revertida.status === 'concluida'
+    && revertida.itens.some((i) => ITENS_REVERSAO_OK.includes(i.status));
+  // Achado MENOR: enquanto a busca da reversão fora da página (achado B) ainda não voltou, não
+  // mostra o botão — evita reabrir uma reversão que só não chegou ainda.
+  const carregandoRevertida = buscandoRevertida && revertidaBuscada.isLoading;
 
   const idsRevertiveis = opAberta && itensOp.data ? itensRevertiveis(opAberta.acao as AcaoOperacao, paraRevertiveis(itensOp.data)) : [];
   const podeReverter = podeExecutar && opAberta?.status === 'concluida' && idsRevertiveis.length > 0;
@@ -208,10 +221,12 @@ export function ListaOperacoes() {
                   );
                 })}
               </ul>
-              {podeReverter && (
+              {podeReverter && !carregandoRevertida && (
                 <div className="border-t p-4">
-                  {revertida ? (
-                    <p className="text-sm text-muted-foreground">Revertida em {dataHora(revertida.criado_em)}</p>
+                  {revertidaAndamento ? (
+                    <p className="text-sm text-muted-foreground">Reversão em andamento</p>
+                  ) : revertidaOk ? (
+                    <p className="text-sm text-muted-foreground">Revertida em {dataHora(revertida!.criado_em)}</p>
                   ) : (
                     <Button onClick={iniciarReversao}>Reverter</Button>
                   )}
