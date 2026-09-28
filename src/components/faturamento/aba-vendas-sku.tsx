@@ -12,9 +12,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { SeletorPeriodo } from '@/components/ui/seletor-periodo';
 import { fmtBRL, fmtBRLSinal, fmtInt, fmtMarkup } from '@/lib/formato';
 import { rotuloAnterior, type Periodo } from '@/lib/metricas';
-import { normalizarParaBusca } from '@/lib/texto';
+import { formatarNomeProduto, normalizarParaBusca } from '@/lib/texto';
 import { useVendasSku } from '@/hooks/useVendasSku';
-import { RankingSku, type ChaveOrdem } from '@/components/faturamento/ranking-sku';
+import { LinkDossie, RankingSku, type ChaveOrdem } from '@/components/faturamento/ranking-sku';
 import { SEM_CODIGO, agruparPorFamilia, curvaAbc, deltaPp, deltaValor, type Delta, type LinhaSku } from '@/lib/vendas-sku';
 
 // Idioma do app para "sem valor" (o mesmo de fmtMarkup e da aba Vendas).
@@ -66,7 +66,7 @@ function Painel({ icone: Icone, titulo, children }: { icone: typeof Lightbulb; t
 }
 
 export function AbaVendasSku() {
-  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'preset', dias: 30 });
+  const [periodo, setPeriodo] = useState<Periodo>({ tipo: 'mes_atual' });
   const [busca, setBusca] = useState('');
   const [familia, setFamilia] = useState('');
   const [fornecedor, setFornecedor] = useState('');
@@ -206,9 +206,30 @@ export function AbaVendasSku() {
           {dados.insights.length > 0 && (
             <Painel icone={Lightbulb} titulo="Leituras do período">
               <ul className="space-y-1.5 text-sm">
-                {dados.insights.map((t) => (
-                  <li key={t} className="flex gap-2">
-                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/60" aria-hidden />{t}
+                {dados.insights.map((ins) => (
+                  <li key={ins.texto} className="flex gap-2">
+                    <span className="mt-2 size-1.5 shrink-0 rounded-full bg-primary/60" aria-hidden />
+                    {!ins.skus?.length ? ins.texto : (
+                      <details className="group min-w-0 flex-1">
+                        <summary className="cursor-pointer list-none rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [&::-webkit-details-marker]:hidden">
+                          {ins.texto}{' '}
+                          <span className="inline-flex items-center gap-0.5 text-xs font-medium text-muted-foreground">
+                            <span className="group-open:hidden">ver quais</span><span className="hidden group-open:inline">ocultar</span>
+                            <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" aria-hidden />
+                          </span>
+                        </summary>
+                        <ul className="mt-1.5 max-h-48 space-y-0.5 overflow-y-auto pr-1 text-xs">
+                          {ins.skus.map((s) => (
+                            <li key={s.codigo} className="flex items-baseline gap-2">
+                              <LinkDossie to={`/faturamento/sku/${encodeURIComponent(s.codigo)}`} className="min-w-0 truncate">
+                                <span title={s.nome}>{s.nome}</span>
+                              </LinkDossie>
+                              <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{s.detalhe}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -239,7 +260,7 @@ export function AbaVendasSku() {
           value={busca} onChange={(e) => setBusca(e.target.value)} />
         <select className={SELECT} value={familia} onChange={(e) => setFamilia(e.target.value)} aria-label="Família">
           <option value="">Todas as famílias</option>
-          {opcoes.familias.map((f) => <option key={f} value={f}>{f}</option>)}
+          {opcoes.familias.map((f) => <option key={f} value={f}>{formatarNomeProduto(f)}</option>)}
         </select>
         <select className={SELECT} value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} aria-label="Fornecedor">
           <option value="">Todos os fornecedores</option>
@@ -254,11 +275,12 @@ export function AbaVendasSku() {
           onClick={() => setSoSemCusto((v) => !v)}>Só sem custo</Button>
         <Button size="sm" className={BOTAO} variant={porFamilia ? 'default' : 'outline'} aria-pressed={porFamilia}
           onClick={() => setPorFamilia((v) => !v)}>Agrupar por família</Button>
+        {/* Trocar a base também ordena por ela: a curva lê A→B→C de cima para baixo. Só o selo mudando parecia não fazer nada. */}
         <div className="flex items-center gap-1" role="group" aria-label="Base da curva ABC">
           <span className="text-xs text-muted-foreground">Curva ABC por</span>
           {(['lucro', 'bruto'] as const).map((b) => (
             <Button key={b} size="sm" className={BOTAO} variant={baseAbc === b ? 'secondary' : 'outline'} aria-pressed={baseAbc === b}
-              onClick={() => setBaseAbc(b)}>{b === 'lucro' ? 'lucro' : 'faturamento'}</Button>
+              onClick={() => { setBaseAbc(b); setOrdem(b); }}>{b === 'lucro' ? 'lucro' : 'faturamento'}</Button>
           ))}
         </div>
         <span className="ml-auto text-xs text-muted-foreground tabular-nums">

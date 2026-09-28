@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { supabase } from '@/lib/supabase';
 import { corpoDoErroDaEdge } from '@/lib/edge-erro';
 import { UNIDADES_FISCAIS } from '@/lib/fiscal';
+import { formatarNomeProduto } from '@/lib/texto';
 import {
   EtapaFiscalForm, fiscalVazio, fiscalCompleto, type FiscalForm,
 } from '@/components/estoque/etapa-fiscal-form';
@@ -162,7 +163,7 @@ export function DialogFiscalProduto({ familiaId, fila, onFechar, onAvancar, onSa
     <Dialog open={familiaId != null} onOpenChange={(o) => { if (!o) onFechar(); }}>
       <DialogContent className="max-h-[90vh] sm:max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Dados fiscais{familia ? ` — ${familia.nomePai}` : ''}</DialogTitle>
+          <DialogTitle>Dados fiscais{familia ? ` — ${formatarNomeProduto(familia.nomePai)}` : ''}</DialogTitle>
           <DialogDescription>
             Preencha os dados fiscais para o Mercado Livre poder emitir a nota deste produto.
           </DialogDescription>

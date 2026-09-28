@@ -8,8 +8,9 @@ import { ALERTA, TENDENCIA } from '@/components/faturamento/rotulos-sku';
 import { ThumbProduto } from '@/components/faturamento/pilha-thumbs';
 import { fmtBRL, fmtBRLSinal, fmtInt, fmtMarkup } from '@/lib/formato';
 import {
-  SEM_CODIGO, type LinhaSku, type LinhaFamilia, type Tendencia, type Alerta, type Cobertura, type ClasseAbc,
+  SEM_CODIGO, nomeSku, type LinhaSku, type LinhaFamilia, type Tendencia, type Alerta, type Cobertura, type ClasseAbc,
 } from '@/lib/vendas-sku';
+import { formatarNomeProduto } from '@/lib/texto';
 
 export type ChaveOrdem = 'lucro' | 'bruto' | 'unidades' | 'lucroPorUnidade';
 
@@ -29,7 +30,7 @@ const TITULO = 'line-clamp-2 max-w-40 whitespace-normal font-medium leading-snug
 /** Nome que abre o dossiê. Para o clique aqui: a linha continua alternando a conta pelo resto dela. */
 const LINK_DOSSIE = 'rounded-sm underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
-function LinkDossie({ to, className, children, ...rest }: { to: string; className?: string; children: ReactNode; 'aria-label'?: string }) {
+export function LinkDossie({ to, className, children, ...rest }: { to: string; className?: string; children: ReactNode; 'aria-label'?: string }) {
   const location = useLocation();
   return (
     <Link to={to} state={{ de: location.pathname + location.search }} onClick={(e) => e.stopPropagation()}
@@ -134,15 +135,17 @@ function Selos({ alertas, cob, parcial }: { alertas: Alerta[]; cob?: Cobertura; 
 }
 
 function Nome({ l, recuo = false, selos }: { l: LinhaSku; recuo?: boolean; selos?: ReactNode }) {
+  // Dentro da família (recuo) a linha de cima já dá o produto; solta, a cor sozinha não diz nada.
+  const nome = (recuo || l.codigo === SEM_CODIGO ? formatarNomeProduto(l.titulo) : nomeSku(l)) || NADA;
   return (
     <div className={cn('flex min-w-0 items-center gap-2.5', recuo && 'pl-6')}>
-      <ThumbProduto path={l.imagemPath} titulo={l.titulo} size={32} />
+      <ThumbProduto path={l.imagemPath} titulo={nome} size={32} />
       <div className="min-w-0">
         {l.codigo === SEM_CODIGO
-          ? <div className={TITULO} data-testid="sku-titulo" title={l.titulo ?? undefined}>{l.titulo ?? NADA}</div>
+          ? <div className={TITULO} data-testid="sku-titulo" title={nome}>{nome}</div>
           : (
             <LinkDossie to={`/faturamento/sku/${encodeURIComponent(l.codigo)}`} className="block w-fit">
-              <div className={TITULO} data-testid="sku-titulo" title={l.titulo ?? undefined}>{l.titulo ?? NADA}</div>
+              <div className={TITULO} data-testid="sku-titulo" title={nome}>{nome}</div>
             </LinkDossie>
           )}
         <div className="text-xs text-muted-foreground tabular-nums">
@@ -222,7 +225,7 @@ export function RankingSku({ linhas, familias, tendencias, coberturas, alertas, 
     return (
       <Fragment key={`v:${l.codigo || 'sem-codigo'}`}>
         <TableRow className={cn('cursor-pointer', recuo && 'bg-muted/10')} onClick={() => alternarConta(chave)}>
-          <TableCell className="w-8"><Alternar aberto={exp} rotulo={`Ver a conta de ${l.titulo ?? l.codigo}`} onClick={() => alternarConta(chave)} /></TableCell>
+          <TableCell className="w-8"><Alternar aberto={exp} rotulo={`Ver a conta de ${recuo ? formatarNomeProduto(l.titulo) || l.codigo : nomeSku(l)}`} onClick={() => alternarConta(chave)} /></TableCell>
           <TableCell><Nome l={l} recuo={recuo} selos={(
             <Selos alertas={alertas.get(l.codigo) ?? []} cob={coberturas.get(l.codigo)} parcial={l.m.fonteCusto === 'parcial'} />
           )} /></TableCell>
@@ -270,7 +273,7 @@ export function RankingSku({ linhas, familias, tendencias, coberturas, alertas, 
             const chave = f.codigoPai;
             const exp = familiasAbertas.has(chave);
             const semFamilia = f.codigoPai.startsWith('sem-familia:');
-            const base = f.nomeFamilia ?? (semFamilia ? f.filhos[0].titulo ?? 'Sem família' : f.codigoPai);
+            const base = formatarNomeProduto(f.nomeFamilia) || (semFamilia ? formatarNomeProduto(f.filhos[0].titulo) || 'Sem família' : f.codigoPai);
             const nome = `${base} (${f.filhos.length} ${f.filhos.length === 1 ? 'variação' : 'variações'})`;
             const soma: LinhaSku = {
               ...f.filhos[0], codigo: f.codigoPai, titulo: nome,

@@ -16,6 +16,7 @@ import type {
 } from '@/lib/veredito-sonar';
 import type { PainelVendasSonar, VisitasAnuncio } from '@/lib/sonar';
 import { fmtBRL, fmtInt } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 
 /** Borda do card: baixa=vermelho, alta=verde; demais (média / não medida / fechada) = warning. */
 const CLS_VEREDITO = {
@@ -132,7 +133,9 @@ function PodioColuna({ titulo, dica, Icone, itens }: {
         <Icone className="h-3 w-3" aria-hidden /> {titulo}
       </div>
       <ul className="flex flex-col gap-2">
-        {itens.map((i) => (
+        {itens.map((i) => {
+          const nome = formatarNomeProduto(i.nome);
+          return (
           <li key={i.chave} className="grid grid-cols-[1rem_1fr_auto] items-baseline gap-x-2 gap-y-0.5">
             <span className={cn('text-[11px] tabular-nums text-muted-foreground', i.posicao === 1 && 'font-semibold text-foreground')}>
               {i.posicao}
@@ -142,15 +145,15 @@ function PodioColuna({ titulo, dica, Icone, itens }: {
                 href={i.href}
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label={`Abrir "${i.nome}" no Mercado Livre (nova aba)`}
-                title={i.nome}
+                aria-label={`Abrir "${nome}" no Mercado Livre (nova aba)`}
+                title={nome}
                 className="flex min-w-0 items-center gap-1 text-xs font-medium hover:underline focus-visible:underline focus-visible:outline-none"
               >
-                <span className="line-clamp-2">{i.nome}</span>
+                <span className="line-clamp-2">{nome}</span>
                 <ExternalLink className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
               </a>
             ) : (
-              <span className="min-w-0 line-clamp-2 text-xs font-medium" title={i.nome}>{i.nome}</span>
+              <span className="min-w-0 line-clamp-2 text-xs font-medium" title={nome}>{nome}</span>
             )}
             <span className="flex items-center gap-1 text-xs font-semibold tabular-nums" title={i.valorDica}>
               {i.avisoCatalogo && (
@@ -171,7 +174,8 @@ function PodioColuna({ titulo, dica, Icone, itens }: {
               <span className="col-start-2 col-span-2 text-[11px] tabular-nums text-muted-foreground">{i.meta}</span>
             )}
           </li>
-        ))}
+          );
+        })}
       </ul>
     </div>
   );

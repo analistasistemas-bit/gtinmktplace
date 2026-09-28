@@ -5,10 +5,23 @@ import type { Pedido } from './pedidos-faturamento';
 import type { CatalogoSku } from './vendas-sku-catalogo';
 import type { Janela } from './metricas';
 import { round2 } from './formato';
+import { formatarNomeProduto, normalizarParaBusca } from './texto';
 import type { Venda } from './faturamento';
 import { dataNoPeriodo, orderIdsComDevolucaoReal, type Devolucao } from './devolucoes';
 
 export const SEM_CODIGO = '';
+
+/** Nome legível do SKU: a variação costuma se chamar só pela cor ("Preto"); aí vai o nome da família na frente. */
+export function nomeSku(l: Pick<LinhaSku, 'codigo' | 'titulo' | 'nomeFamilia'>): string {
+  const { titulo: t, nomeFamilia: f } = l;
+  const tFmt = formatarNomeProduto(t) || null;
+  const fFmt = formatarNomeProduto(f) || null;
+  if (!t) return fFmt ?? l.codigo;
+  // Família como palavras inteiras dentro do título ("Tapete" não contém a família "PET").
+  const palavras = (s: string) => ` ${normalizarParaBusca(s).split(/\s+/).join(' ')} `;
+  if (!f || palavras(t).includes(palavras(f))) return tFmt!;
+  return `${fFmt} · ${tFmt}`;
+}
 
 export interface AcumuladorSku {
   unidades: number; unidadesComCusto: number; pedidos: number;
@@ -302,7 +315,7 @@ export function explicarVariacao(atual: LinhaSku[], anterior: LinhaSku[], n = 5)
     if (a?.m.lucro == null && b?.m.lucro == null) continue;
     const delta = round2((a?.m.lucro ?? 0) - (b?.m.lucro ?? 0));
     if (delta === 0) continue;
-    out.push({ codigo, titulo: (a ?? b)!.titulo, delta, situacao: !b ? 'entrou' : !a ? 'saiu' : 'mudou' });
+    out.push({ codigo, titulo: nomeSku((a ?? b)!), delta, situacao: !b ? 'entrou' : !a ? 'saiu' : 'mudou' });
   }
   return out.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta)).slice(0, n);
 }
@@ -310,19 +323,29 @@ export function explicarVariacao(atual: LinhaSku[], anterior: LinhaSku[], n = 5)
 const fmtBRL0 = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 /** 0 a 3 frases, só quando a evidência existe. */
-export function gerarInsights(p: { linhas: LinhaSku[]; variacoes: VariacaoLucro[]; coberturaBaixa: number; parados: number }): string[] {
-  const out: string[] = [];
-  const pos = p.linhas.filter((l) => l.codigo !== SEM_CODIGO).map((l) => l.m.lucro ?? 0).filter((v) => v > 0).sort((a, b) => b - a);
+export interface SkuInsight { codigo: string; nome: string; detalhe: string }
+/** `skus`: de quem a frase fala, para a tela listar. */
+export interface Insight { texto: string; skus?: SkuInsight[] }
+
+/** 0 a 3 frases, só quando a evidência existe. */
+export function gerarInsights(p: { linhas: LinhaSku[]; variacoes: VariacaoLucro[]; coberturaBaixa: SkuInsight[]; parados: SkuInsight[] }): Insight[] {
+  const out: Insight[] = [];
+  const pos = p.linhas.filter((l) => l.codigo !== SEM_CODIGO && (l.m.lucro ?? 0) > 0).sort((a, b) => b.m.lucro! - a.m.lucro!);
   if (pos.length >= 5) {
-    const metade = pos.reduce((s, v) => s + v, 0) / 2;
+    const metade = pos.reduce((s, l) => s + l.m.lucro!, 0) / 2;
     let acum = 0; let k = 0;
-    while (acum < metade) acum += pos[k++];
-    if (k <= Math.ceil(pos.length * 0.2)) out.push(`${k} ${k === 1 ? 'SKU faz' : 'SKUs fazem'} metade do lucro do período.`);
+    while (acum < metade) acum += pos[k++].m.lucro!;
+    if (k <= Math.ceil(pos.length * 0.2)) out.push({
+      texto: `${k} ${k === 1 ? 'SKU faz' : 'SKUs fazem'} metade do lucro do período.`,
+      skus: pos.slice(0, k).map((l) => ({ codigo: l.codigo, nome: nomeSku(l), detalhe: fmtBRL0(l.m.lucro!) })),
+    });
   }
   const queda = p.variacoes.find((v) => v.delta < 0 && v.situacao !== 'entrou');
-  if (queda) out.push(`${queda.titulo ?? queda.codigo} tirou ${fmtBRL0(-queda.delta)} do lucro contra o período anterior.`);
-  if (p.coberturaBaixa > 0) out.push(`${p.coberturaBaixa} ${p.coberturaBaixa === 1 ? 'SKU tem' : 'SKUs têm'} estoque para menos de ${LIMITES.coberturaMinDias} dias.`);
-  if (p.parados > 0) out.push(`${p.parados} ${p.parados === 1 ? 'SKU parou' : 'SKUs pararam'} de vender há mais de ${LIMITES.janelaTendenciaDias} dias.`);
+  if (queda) out.push({ texto: `${queda.titulo ?? queda.codigo} tirou ${fmtBRL0(-queda.delta)} do lucro contra o período anterior.` });
+  const nc = p.coberturaBaixa.length;
+  if (nc > 0) out.push({ texto: `${nc} ${nc === 1 ? 'SKU tem' : 'SKUs têm'} estoque para menos de ${LIMITES.coberturaMinDias} dias.`, skus: p.coberturaBaixa });
+  const np = p.parados.length;
+  if (np > 0) out.push({ texto: `${np} ${np === 1 ? 'SKU parou' : 'SKUs pararam'} de vender há mais de ${LIMITES.janelaTendenciaDias} dias.`, skus: p.parados });
   return out.slice(0, 3);
 }
 
@@ -350,7 +373,7 @@ export interface VendasSku {
   linhas: LinhaSku[]; linhasAnterior: LinhaSku[];
   kpis: KpisSku; kpisAnterior: KpisSku;
   tendencias: Map<string, Tendencia>; coberturas: Map<string, Cobertura>; alertas: Map<string, Alerta[]>;
-  variacoes: VariacaoLucro[]; insights: string[]; parados: number; devolucoesNaoAtribuidas: number;
+  variacoes: VariacaoLucro[]; insights: Insight[]; parados: number; devolucoesNaoAtribuidas: number;
   /** Primeira venda faturável registrada na org (ADR-0172 D-2): a tela diz desde quando conta. */
   historicoDesde: string | null;
 }
@@ -388,14 +411,23 @@ export function montarVendasSku(p: {
   }
   // ponytail: "parado" = SKU do catálogo com estoque > 0 cuja última venda faturável é anterior aos
   // 30 dias até o fim do período (estoque parado é o que importa). Não vê SKU fora do catálogo.
-  let parados = 0;
+  const listaParados: (SkuInsight & { estoque: number })[] = [];
   let historicoDesde: string | null = null;
   for (const c of p.catalogo.values()) {
-    if (c.estoque > 0 && c.ultimaVenda && Date.parse(c.ultimaVenda) < Date.parse(j30.desde)) parados += 1;
+    if (c.estoque > 0 && c.ultimaVenda && Date.parse(c.ultimaVenda) < Date.parse(j30.desde)) {
+      listaParados.push({ codigo: c.codigo, nome: nomeSku({ codigo: c.codigo, titulo: c.nome, nomeFamilia: c.nomeFamilia }),
+        detalhe: `${c.estoque} un. em estoque`, estoque: c.estoque });
+    }
     if (c.primeiraVenda && (historicoDesde == null || Date.parse(c.primeiraVenda) < Date.parse(historicoDesde))) historicoDesde = c.primeiraVenda;
   }
   const variacoes = explicarVariacao(linhas, linhasAnterior);
-  const coberturaBaixa = [...alertas.values()].filter((a) => a.includes('cobertura_baixa')).length;
+  // Estoque parado maior primeiro; cobertura mais curta primeiro.
+  const parados: SkuInsight[] = listaParados.sort((a, b) => b.estoque - a.estoque);
+  const coberturaBaixa: SkuInsight[] = linhas
+    .filter((l) => alertas.get(l.codigo)?.includes('cobertura_baixa'))
+    .map((l) => ({ l, d: coberturas.get(l.codigo) as number }))
+    .sort((a, b) => a.d - b.d)
+    .map(({ l, d }) => ({ codigo: l.codigo, nome: nomeSku(l), detalhe: `${d} ${d === 1 ? 'dia' : 'dias'}` }));
   // ponytail: devolução "não atribuída" = claim do período sem pedido carregado na janela estendida.
   // Um claim de venda mais antiga que a janela também cai aqui; é um teto conhecido.
   const orderIds = new Set(p.vendas.map((v) => v.order_id));
@@ -406,6 +438,6 @@ export function montarVendasSku(p: {
     kpis: calcularKpisSku(linhas), kpisAnterior: calcularKpisSku(linhasAnterior),
     tendencias, coberturas, alertas, variacoes,
     insights: gerarInsights({ linhas, variacoes, coberturaBaixa, parados }),
-    parados, devolucoesNaoAtribuidas, historicoDesde,
+    parados: parados.length, devolucoesNaoAtribuidas, historicoDesde,
   };
 }

@@ -27,6 +27,7 @@ import { useTiposProdutoHabilitados } from '@/hooks/useTiposProdutoHabilitados';
 import { supabase } from '@/lib/supabase';
 import { QK } from '@/lib/queries';
 import { parseNumeroPtBr } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 import { effectiveOrgId, useSupportStore, canWrite } from '@/stores/support-store';
 import { storageOwnerForUpload } from '@/hooks/useUploadLote';
 import { uploadFile, buildStoragePath } from '@/lib/storage';
@@ -528,7 +529,7 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
           <DialogHeader>
             <DialogTitle>Adicionar à grade</DialogTitle>
             <DialogDescription>
-              {produto?.nomePai}. Os SKUs novos vão direto para o Mercado Livre, sem passar pela
+              {formatarNomeProduto(produto?.nomePai)}. Os SKUs novos vão direto para o Mercado Livre, sem passar pela
               Revisão. Os já publicados não mudam.
             </DialogDescription>
           </DialogHeader>
@@ -567,7 +568,7 @@ export function DialogEstenderGrade({ produto, aberto, onFechar, onNaoEhGrade }:
               )}
 
               <div className="flex items-center justify-between rounded-md border border-dashed px-3 py-2 text-sm">
-                <span>{produto?.nomePai}</span>
+                <span>{formatarNomeProduto(produto?.nomePai)}</span>
                 <span className="text-muted-foreground">
                   Gênero: {generoNorm ? ROTULO_GENERO[generoNorm] : '—'}
                 </span>

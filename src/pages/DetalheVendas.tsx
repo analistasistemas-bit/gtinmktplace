@@ -22,6 +22,7 @@ import { useSessionState } from '@/hooks/useSessionState';
 import { urlAnuncioML } from '@/lib/ml-status';
 import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { useAliquotas } from '@/hooks/useConfiguracoes';
+import { formatarNomeProduto } from '@/lib/texto';
 
 function pct(n: number): string {
   return `${n.toFixed(1).replace('.', ',')}%`;
@@ -218,7 +219,7 @@ function SecaoTabela({ titulo, sub, secao, mostrarMargem = false, linkavel = fal
                   <TableCell className="align-top text-sm tabular-nums text-muted-foreground">{l.codigo ?? '—'}</TableCell>
                   <TableCell className="align-top text-sm tabular-nums text-muted-foreground">{l.ean ?? '—'}</TableCell>
                   <TableCell className="align-top text-sm">
-                    <span className="block max-w-[420px] whitespace-normal break-words uppercase">{l.titulo}</span>
+                    <span className="block max-w-[420px] whitespace-normal break-words">{formatarNomeProduto(l.titulo)}</span>
                   </TableCell>
                   {linkavel && (
                     <TableCell className="align-top">

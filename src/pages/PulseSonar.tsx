@@ -40,6 +40,7 @@ import {
   aplicarFiltrosAnuncios, temFiltroAnunciosAtivo, FILTROS_ANUNCIOS_VAZIOS, type FiltrosAnuncios,
 } from '@/lib/sonar-filtros';
 import { fmtBRL, fmtInt, fmtMilhar } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 import { useAuthStore } from '@/stores/auth-store';
 import { useSupportStore } from '@/stores/support-store';
 
@@ -146,13 +147,13 @@ export function SonarVendas({ resp }: { resp: PainelVendasSonar }) {
                   href={hrefDestaque}
                   target="_blank"
                   rel="noreferrer"
-                  title={destaque.titulo}
+                  title={formatarNomeProduto(destaque.titulo)}
                   className="block truncate text-sm font-medium hover:underline"
                 >
-                  {destaque.titulo}
+                  {formatarNomeProduto(destaque.titulo)}
                 </a>
               ) : (
-                <div className="truncate text-sm font-medium" title={destaque.titulo}>{destaque.titulo}</div>
+                <div className="truncate text-sm font-medium" title={formatarNomeProduto(destaque.titulo)}>{formatarNomeProduto(destaque.titulo)}</div>
               )}
               <div className="text-xs text-muted-foreground">
                 {destaque.vendidos != null ? `≈ ${fmtMilhar(destaque.vendidos, 1)} vendidos` : '— vendidos'}
@@ -460,9 +461,9 @@ export default function PulseSonar() {
   const nomeProdutoEan = useMemo(() => {
     if (!eanBuscado) return null;
     const doCatalogo = cruzamentoEan?.minhas.find((v) => v.nome)?.nome;
-    if (doCatalogo) return { texto: doCatalogo, deAnuncio: false };
+    if (doCatalogo) return { texto: formatarNomeProduto(doCatalogo), deAnuncio: false };
     const doAnuncio = itens[0]?.titulo;
-    return doAnuncio ? { texto: doAnuncio, deAnuncio: true } : null;
+    return doAnuncio ? { texto: formatarNomeProduto(doAnuncio), deAnuncio: true } : null;
   }, [eanBuscado, cruzamentoEan, itens]);
 
   // Visitas (D3): dispara quando a lista de anúncios chega. Grátis (API oficial) — retry ok.
@@ -572,7 +573,7 @@ export default function PulseSonar() {
         <div className="flex items-center gap-2">
           {i.imagem && <img src={i.imagem} alt="" className="h-9 w-9 shrink-0 rounded bg-white object-contain" />}
           <div className="min-w-0">
-            <span className="block truncate" title={i.titulo}>{i.titulo}</span>
+            <span className="block truncate" title={formatarNomeProduto(i.titulo)}>{formatarNomeProduto(i.titulo)}</span>
             {(i.selo || i.catalog_product_id) && (
               <div className="mt-0.5 flex flex-wrap gap-1">
                 {i.selo && <Badge variant="secondary" className="text-[10px]">{i.selo}</Badge>}
@@ -683,7 +684,7 @@ export default function PulseSonar() {
             {href && (
               <Button asChild variant="ghost" size="icon-sm">
                 <a href={href} target="_blank" rel="noopener noreferrer"
-                  aria-label={`Abrir "${i.titulo}" no Mercado Livre (nova aba)`} title="Abrir no Mercado Livre">
+                  aria-label={`Abrir "${formatarNomeProduto(i.titulo)}" no Mercado Livre (nova aba)`} title="Abrir no Mercado Livre">
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               </Button>

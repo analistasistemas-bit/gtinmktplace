@@ -17,6 +17,7 @@ import {
 } from '@/lib/pulse-formato';
 import { insumoFaltante, margemEhEstimativa, margemEstimada } from '@/lib/pulse-margem';
 import { fmtBRL } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 import { cn } from '@/lib/utils';
 
 function relativo(iso: string | null): string {
@@ -102,7 +103,7 @@ export function TabelaRadar({
             <div className="min-w-0">
               {/* Ficha sem nome ainda: o código do ML não é nome de produto, vai só no title. */}
               <span className="block truncate font-medium" title={p.titulo ? undefined : p.catalog_product_id}>
-                {p.titulo ?? 'Ficha sem nome'}
+                {formatarNomeProduto(p.titulo) || 'Ficha sem nome'}
               </span>
               <span className="text-xs tabular-nums text-muted-foreground">
                 {p.gtin ?? p.codigo_pai ?? '—'}
@@ -347,7 +348,7 @@ export function TabelaRadar({
               // oferecer o atalho de reagir sem ele devolve inteiro o problema que a coluna
               // existe para resolver.
               className="hidden md:inline-flex"
-              aria-label={`Reprecificar ${p.titulo ?? p.catalog_product_id}`}
+              aria-label={`Reprecificar ${formatarNomeProduto(p.titulo) || p.catalog_product_id}`}
               // A linha inteira é clicável: sem isto, reprecificar abriria o detalhe por baixo.
               onClick={(e) => { e.stopPropagation(); onReprecificar(p); }}
             >
@@ -359,7 +360,7 @@ export function TabelaRadar({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                aria-label={`Mais ações para ${p.titulo ?? p.catalog_product_id}`}
+                aria-label={`Mais ações para ${formatarNomeProduto(p.titulo) || p.catalog_product_id}`}
                 // O clique do menu não pode abrir o detalhe da linha (a linha inteira é clicável).
                 onClick={(e) => e.stopPropagation()}
               >

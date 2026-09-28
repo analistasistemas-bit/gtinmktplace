@@ -1,5 +1,27 @@
 import { describe, expect, it } from 'vitest';
-import { normalizarParaBusca } from '../texto';
+import { formatarNomeProduto, normalizarParaBusca } from '../texto';
+
+describe('formatarNomeProduto', () => {
+  it('nome todo em maiúsculas vira iniciais maiúsculas, conectivos em minúscula', () => {
+    expect(formatarNomeProduto('LAPIS COMUM FANTASIA POTE C/72UND')).toBe('Lapis Comum Fantasia Pote C/72UND');
+    expect(formatarNomeProduto('FRANJA 5CM 100%FIBRA DE POLI 5MT OURO')).toBe('Franja 5CM 100%FIBRA de Poli 5MT Ouro');
+    expect(formatarNomeProduto('FITA DE CETIM P/ PRESENTE AZUL-MARINHO')).toBe('Fita de Cetim p/ Presente Azul-Marinho');
+    expect(formatarNomeProduto('ÁGUA E SABÃO')).toBe('Água e Sabão');
+  });
+  it('siglas conhecidas ficam em maiúsculas; conectivo no início é capitalizado', () => {
+    expect(formatarNomeProduto('PLACA DE EVA COM LED')).toBe('Placa de EVA com LED');
+    expect(formatarNomeProduto('DE VOLTA AO LAR')).toBe('De Volta ao Lar');
+  });
+  it('nome que já tem minúsculas fica como está', () => {
+    expect(formatarNomeProduto('Tecido Oxford Liso de 10m PVC')).toBe('Tecido Oxford Liso de 10m PVC');
+    expect(formatarNomeProduto('Verde Musgo')).toBe('Verde Musgo');
+  });
+  it('vazio e nulo', () => {
+    expect(formatarNomeProduto(null)).toBe('');
+    expect(formatarNomeProduto('')).toBe('');
+    expect(formatarNomeProduto('123')).toBe('123');
+  });
+});
 
 describe('normalizarParaBusca', () => {
   it('remove acentos comuns do português e converte para minúsculas', () => {

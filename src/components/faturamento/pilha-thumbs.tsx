@@ -1,5 +1,6 @@
 import { Package } from 'lucide-react';
 import { useImageUrl } from '@/hooks/useImageUrl';
+import { formatarNomeProduto } from '@/lib/texto';
 
 /** Item mínimo p/ a miniatura: foto (storage path) + título (alt/hover). */
 export interface ItemThumb {
@@ -11,14 +12,15 @@ export interface ItemThumb {
 /** Miniatura quadrada da foto do produto (signed URL). Fallback: ícone de pacote. */
 export function ThumbProduto({ path, titulo, size = 36 }: { path: string | null; titulo: string | null; size?: number }) {
   const { data: url } = useImageUrl(path);
+  const nome = formatarNomeProduto(titulo);
   return (
     <div
       className="relative shrink-0 overflow-hidden rounded-md border bg-muted"
       style={{ width: size, height: size }}
-      title={titulo ?? undefined}
+      title={nome || undefined}
     >
       {url
-        ? <img src={url} alt={titulo ?? ''} loading="lazy" className="h-full w-full object-cover" />
+        ? <img src={url} alt={nome} loading="lazy" className="h-full w-full object-cover" />
         : <Package className="absolute inset-0 m-auto h-4 w-4 text-muted-foreground" />}
     </div>
   );

@@ -6,6 +6,7 @@ import type { ProdutoCalculadoraML, TaxasManuaisML } from '@/hooks/useCalculador
 import type { DimensoesProduto, EntradaCalculadoraML } from '@/lib/calculadora-ml'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { formatarNomeProduto } from '@/lib/texto'
 
 interface FormularioCalculadoraMLProps {
   entrada: EntradaCalculadoraML
@@ -85,7 +86,7 @@ export function FormularioCalculadoraML({ entrada, taxas, produtos, produtoSelec
           <div className="relative">
             <select id="produto-cadastrado" className="h-8 w-full appearance-none rounded-lg border border-input bg-transparent px-2.5 pr-8 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" value={produtoSelecionado?.codigoPai ?? ''} onChange={(event) => onProduto(produtos.find((produto) => produto.codigoPai === event.target.value) ?? null)} disabled={produtosCarregando}>
               <option value="">Produto avulso</option>
-              {produtos.map((produto) => <option key={produto.codigoPai} value={produto.codigoPai}>{produto.nomePai}</option>)}
+              {produtos.map((produto) => <option key={produto.codigoPai} value={produto.codigoPai}>{formatarNomeProduto(produto.nomePai)}</option>)}
             </select>
             <ChevronDown className="pointer-events-none absolute right-2 top-2 size-4 text-muted-foreground" aria-hidden="true" />
           </div>

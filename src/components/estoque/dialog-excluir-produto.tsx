@@ -12,6 +12,7 @@ import {
 import { excluirProduto } from '@/lib/excluir';
 import { QK } from '@/lib/queries';
 import type { ProdutoEstoqueResumo } from '@/lib/produtos-saldo';
+import { formatarNomeProduto } from '@/lib/texto';
 
 export function DialogExcluirProduto({ produto, aberto, onFechar }: {
   produto: ProdutoEstoqueResumo | null;
@@ -48,7 +49,7 @@ export function DialogExcluirProduto({ produto, aberto, onFechar }: {
         <DialogHeader>
           <DialogTitle>Excluir produto</DialogTitle>
           <DialogDescription>
-            {produto?.nomePai}. Apaga o cadastro, as fotos e o histórico de movimentos deste
+            {formatarNomeProduto(produto?.nomePai)}. Apaga o cadastro, as fotos e o histórico de movimentos deste
             produto. Não tem desfazer.
           </DialogDescription>
         </DialogHeader>

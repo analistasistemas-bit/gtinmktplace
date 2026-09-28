@@ -457,14 +457,23 @@ export async function upsertVenda(
 
   // Substitui os itens. Idempotente: unique (venda_id, ml_item_id, variation_id) impede
   // duplicata quando dois syncs do mesmo pedido correm concorrentes (ver plans/012).
-  await admin.from('ml_vendas_itens').delete().eq('venda_id', vendaId);
+  // Grava ANTES de apagar as sobras: apagando primeiro, a função derrubada por "CPU Time exceeded"
+  // entre os dois passos deixava o pedido pago sem nenhum item (incidente 2026-09, 5 pedidos).
+  let manter: string[] = [];
   if (itens.length > 0) {
-    const { error: itensErr } = await admin.from('ml_vendas_itens').upsert(
+    const { data: gravados, error: itensErr } = await admin.from('ml_vendas_itens').upsert(
       itens.map((i: VendaItemRow) => ({ user_id: userId, org_id: orgId, venda_id: vendaId, ...i })),
       { onConflict: 'venda_id,ml_item_id,variation_id' },
-    );
+    ).select('id');
     if (itensErr) throw new Error(`upsert ml_vendas_itens: ${itensErr.message}`);
+    manter = (gravados ?? []).map((r: { id: string }) => r.id);
+    // Sem ids, o delete abaixo viraria "apaga tudo" — o mesmo estrago do incidente.
+    if (manter.length === 0) throw new Error('upsert ml_vendas_itens voltou sem linhas');
   }
+  let sobras = admin.from('ml_vendas_itens').delete().eq('venda_id', vendaId);
+  if (manter.length > 0) sobras = sobras.not('id', 'in', `(${manter.join(',')})`);
+  const { error: sobrasErr } = await sobras;
+  if (sobrasErr) throw new Error(`limpar itens antigos: ${sobrasErr.message}`);
 
   // ADR-0109 — congela o custo do produto no instante da venda. Fica FORA do delete/upsert acima
   // de propósito: `venda_item_custo` é outra tabela justamente para o DELETE dos itens não a

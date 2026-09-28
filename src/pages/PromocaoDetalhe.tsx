@@ -13,6 +13,7 @@ import { useItensPromocao, usePromocoes } from '@/hooks/usePromocoes';
 import { calcularMarkup } from '@/lib/markup';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
+import { formatarNomeProduto } from '@/lib/texto';
 import {
   URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type SemaforoPromo,
@@ -106,7 +107,7 @@ export default function PromocaoDetalhe() {
         <div className={`flex min-w-0 items-center gap-3 ${r.pior_semaforo === 'indisponivel' ? 'text-muted-foreground' : ''}`}>
           {r.thumbnail && <img src={r.thumbnail} alt="" className="size-10 shrink-0 rounded object-cover" loading="lazy" />}
           <div className="min-w-0 max-w-[14rem] 2xl:max-w-[24rem]">
-            <p className="truncate" title={r.titulo ?? r.ml_item_id}>{r.titulo ?? r.ml_item_id}</p>
+            <p className="truncate" title={formatarNomeProduto(r.titulo) || r.ml_item_id}>{formatarNomeProduto(r.titulo) || r.ml_item_id}</p>
             <p className="text-xs text-muted-foreground">{r.ml_item_id}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
           </div>
         </div>
@@ -233,7 +234,7 @@ function ListaMobile({ linhas, loading, onAbrir }: {
                   <span className="sr-only">{ui.label}</span>
                 </span>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{r.titulo ?? r.ml_item_id}</p>
+                  <p className="truncate text-sm font-medium">{formatarNomeProduto(r.titulo) || r.ml_item_id}</p>
                   <p className="text-xs text-muted-foreground">{r.ml_item_id}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
                 </div>
               </div>

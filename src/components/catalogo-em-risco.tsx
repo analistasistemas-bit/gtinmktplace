@@ -1,6 +1,7 @@
 import { AlertTriangle, ExternalLink } from 'lucide-react';
 import { ROTULO_RISCO, type AnuncioEmRisco } from '@/lib/catalogo-risco';
 import { useExtensaoCatalogo } from '@/hooks/useExtensaoCatalogo';
+import { formatarNomeProduto } from '@/lib/texto';
 
 /**
  * Card "Catálogo em risco" (spec 2026-08-12, escopo restrito 2026-08-13): recebe só os anúncios
@@ -47,7 +48,7 @@ export function CatalogoEmRisco({ itens }: { itens: AnuncioEmRisco[] }) {
       <ul className="divide-y divide-warning/20 border-t border-warning/20">
         {itens.map((i) => (
           <li key={i.mlItemId} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2">
-            <span className="font-medium text-foreground">{i.titulo}</span>
+            <span className="font-medium text-foreground">{formatarNomeProduto(i.titulo)}</span>
             <span>{i.qtdSemFicha === 1 ? '1 variação' : `${i.qtdSemFicha} variações`}</span>
             <span className="rounded bg-warning/20 px-1.5 py-0.5 text-xs">{ROTULO_RISCO[i.motivoPredominante]}</span>
             <a
