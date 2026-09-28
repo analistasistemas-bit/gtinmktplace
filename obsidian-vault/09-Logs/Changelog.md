@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-09-24
+atualizado: 2026-09-28
 ---
 
 # Changelog
@@ -8,6 +8,25 @@ atualizado: 2026-09-24
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-09-28
+
+- **Fan-out por org dos workers agendados ([[Índice de ADRs|ADR-0173]]) — deploy e ativação em
+  produção.** Correção do incidente de CPU 546 (`pulse-coletar`, `backfill-faturamento`,
+  `reconciliar-faturamento` estourando `CPU Time exceeded` ao processar todas as orgs numa
+  requisição só), diagnosticado em 27/09.
+  - **Deploy (~00:28-00:29 UTC):** migration `20260927205804_worker_rodadas.sql` (tabelas
+    `worker_rodadas`/`worker_pendencias`, 7 RPCs, colunas novas em `pulse_produtos`/`notificacoes`)
+    + as 17 funções que importam `_shared` alterado.
+  - **Ativação (~00:33-00:42 UTC):** as 3 flags (`FANOUT_BACKFILL`/`FANOUT_PULSE`/
+    `FANOUT_RECONCILIAR`) ligadas, uma função por vez, cada uma medida por disparo manual via
+    QStash: backfill 3 orgs `ok` (CPU mediana 197 ms), pulse só DSA `ok` (21 produtos, 7 alertas),
+    reconciliar 3 orgs `ok` (CPU mediana 142 ms, inclui `liberacoes` dentro do portão de 1.500 ms).
+  - **Recuperação histórica do backfill (~00:55 UTC):** janela 10/09-28/09, 3 orgs `ok`, 1.241
+    vendas regravadas (estado/frete/estorno/líquido), 0 falhas.
+  - **Checagem (01:07 UTC):** 188 shutdowns nas 3 funções desde a ativação, 0 por `CPUTime`.
+  - **Pendente:** validação de 3 dias em produção (a partir de 01/10) para o ADR virar `Aceito`
+    (continua `Proposto`).
 
 ## 2026-09-24
 

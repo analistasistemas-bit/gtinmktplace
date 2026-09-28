@@ -113,14 +113,13 @@ relógio, não CPU, e por isso não evitam a queda. Reduzi-las não resolve.
 Código completo na branch `worktree-diag-cpu-546` (Tasks 1-7 do plano de execução em
 `docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`): migration `worker_rodadas`/
 `worker_pendencias`, protocolo compartilhado `_shared/rodada/rodada.ts`, e as 3 funções com o modo
-fan-out atrás das flags. **Status ainda `Proposto`: nada ativado em produção** — as flags
-`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR` não estão setadas, deploy e ativação medida
-ficam para a Task 8 (portão local, revisão, deploy com as flags desligadas, ativação por função com
-OK do Diego, validação de 3 dias, recuperação histórica). Vira `Aceito` só depois da ativação em
-produção. Runbook completo em `docs/reference/edge-functions.md`; modelo de dados em
-`docs/reference/modelo-de-dados.md`.
+fan-out atrás das flags. Runbook completo em `docs/reference/edge-functions.md`; modelo de dados em
+`docs/reference/modelo-de-dados.md`. Deploy, ativação medida e recuperação histórica: ver
+"Implantação (2026-09-28)" abaixo. **Status ainda `Proposto`** — vira `Aceito` só depois da
+validação de 3 dias em produção (a partir de 01/10, critério no fim da seção seguinte).
 
-Ponto 5 (líquido do MP) — **no protocolo NOVO por org** (ainda não deployado): as etapas
+Ponto 5 (líquido do MP) — **no protocolo NOVO por org** (ativo em produção desde 28/09, atrás das
+flags): as etapas
 `pendencias`/`claims`/`vendas` do reconciliar e a etapa `vendas` do backfill (que não tem etapa
 `pendencias` — o cursor do backfill começa direto em `vendas`, `backfill-faturamento/passo.ts:42`)
 lêem o líquido por pedido (`carregarLiquidoMPDoPedido`). A etapa `liberacoes` do reconciliar é a
@@ -130,7 +129,60 @@ lêem o líquido por pedido (`carregarLiquidoMPDoPedido`). A etapa `liberacoes` 
 dois caminhos (mesmo líquido/liberação para o mesmo pedido, incluindo estorno total e parcial) está
 provada em `supabase/functions/_shared/faturamento/__tests__/mp-por-pedido.test.ts`, sem
 divergência nos 4 casos testados — isso mostra que a alternativa por pedido É viável para a etapa
-`liberacoes` se o portão de CPU disparar na ativação, mas não implementa essa alternativa.
+`liberacoes` se o portão de CPU disparar na ativação, mas não implementa essa alternativa. Medido
+na ativação: a etapa `liberacoes` ficou em 142 ms de mediana / 299 ms de máximo — bem abaixo do
+portão de 1.500 ms.
+
+## Implantação (2026-09-28)
+
+Merge fast-forward na main (`48fad83f..fb3b2c72`, ~00:30 UTC). `supabase db push` aplicou
+`20260927205804_worker_rodadas.sql` (~00:28 UTC): tabelas `worker_rodadas`/`worker_pendencias`, as 7
+RPCs de posse/CAS/pendência, colunas `pulse_produtos.coleta_tentativa_em`/`coleta_falhas_seguidas`,
+`notificacoes.chave` + índice único, RLS ligada nas 2 tabelas novas (escrita só `service_role`);
+`npm run db:check` alinhado. Deploy das 17 funções que importam `_shared` alterado (~00:29 UTC),
+todas `ACTIVE`.
+
+**Flags ligadas (~00:33–00:42 UTC, digest conferido = sha256("1")):** `FANOUT_BACKFILL=1`,
+`FANOUT_PULSE=1`, `FANOUT_RECONCILIAR=1`. Schedules do QStash não mudaram.
+
+**Ativação medida** (1 disparo manual por função, mesmo body do schedule):
+
+- **backfill** (`{"dias":7}`): 3 orgs `ok`, rodada ~4 min, 38 mensagens, `cpu_time_used` mediana
+  197 ms / máx 311 ms, 0 `CPUTime`, 0 falhas, 0 pendências.
+- **pulse** (`{"tier":"completo"}`): só a DSA (Avil e Daludi Shop sem o módulo `pulse`), `ok`, 21
+  produtos, 7 alertas (0 de ação), 1 notificação com chave (sem duplicata), 5 mensagens, máx
+  1.152 ms.
+- **reconciliar** (sem body): 3 orgs `ok`, 30 mensagens, mediana 142 ms / máx 299 ms (inclui a etapa
+  `liberacoes` — portão de 1.500 ms atendido), 0 falhas.
+- 1ª execução pelo schedule (reconciliar, 01:00 UTC 28/09): `ok` nas 3 orgs.
+
+**Recuperação histórica do backfill** (Step 8 do plano de execução, 28/09 ~00:55 UTC):
+`{"desde":"2026-09-10T00:00:00Z","ate":"2026-09-28T00:55:00Z"}` → job `backfill-recuperacao`. 3
+orgs `ok`; 1.241 vendas regravadas (Avil 955, DSA 200, Daludi Shop 86); 0 falhas, 0 leitura de MP
+nula, 0 pendências; 64 mensagens, CPU mediana 223 ms / máx 358 ms. O ML devolveu 429
+(`local_rate_limited`) no meio da janela de 18 dias (a etapa relê a janela inteira por lote) e o
+retry do QStash absorveu. Nenhuma venda faltava (contagem igual antes/depois, 0 vendas sem itens) —
+a recuperação regravou estado/frete/estorno/líquido, não inseriu venda nova.
+
+**Checagem (28/09 01:07 UTC):** 188 shutdowns das 3 funções desde 00:30 UTC, 0 por `CPUTime`. Os 3
+`CPUTime` vistos nas 24h anteriores são de antes da ativação.
+
+**Pendente — validação de 3 dias (a partir de 01/10):** 0 `CPUTime`; nenhuma linha
+`worker_rodadas` `rodando` com posse vencida > 1h; `worker_pendencias` sem crescimento; ≤ 1
+notificação por `(user_id, chave)`. Só ao validar isso o ADR-0173 passa a **Aceito**; até lá
+continua **Proposto**.
+
+**Rollback:** `supabase secrets unset FANOUT_X` volta o disparador ao caminho legado no próximo
+schedule; mensagens `MsgOrg` já na fila seguem sendo consumidas pelo código novo (que permanece
+deployado) — nunca redeployar versão sem a guarda de `MsgOrg`.
+
+**Follow-ups (não bloqueiam):** pack de mensagens com 5xx permanente trava a etapa `mensagens` da
+org até o próximo ciclo; pedido com leitura do MP nula e sem pendência prévia não é retentado depois
+de sair da janela de 72h (reconciliar e backfill — ver Ruling 14 acima); teste de concorrência
+`supabase/tests/worker_rodadas_concorrencia.sh` usa `sleep 1` (pode oscilar); contagem de descarte
+pode dobrar se um lote for refeito; `contaExternaId` não numérico vira `"NaN"` no frete do Pulse;
+`materializar-metricas` sem schedule em produção (0 invocações em 7 dias até 27/09, fora do escopo
+deste ADR).
 
 ## Alternativas descartadas
 
