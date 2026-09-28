@@ -37,6 +37,7 @@ import { LogoCanal } from '@/components/canal-badge';
 import { useCanaisHabilitados } from '@/hooks/useCanaisHabilitados';
 import { avisosCapabilities } from '@/lib/capabilities-canal';
 import { useReprocessar, useSetAtacadoLote } from '@/hooks/useFamiliaMutations';
+import { useItensUpPorCodigoPai, useParticipacoesPorItem } from '@/hooks/usePromocoes';
 import { AtacadoEditor } from '@/components/atacado-editor';
 import { validarFaixas, type FaixaAtacado } from '@/lib/atacado';
 import { cn } from '@/lib/utils';
@@ -73,6 +74,32 @@ export function filtrarFamilias(
       )
     );
   });
+}
+
+/** Task 9 (ADR-0174 decisão 9): aviso — não bloqueia — na Revisão quando uma família UPDATE com
+ *  preço alterado tem algum anúncio participando (`started`/`pending`) de campanha do ML. Um
+ *  aviso por família (a primeira campanha achada entre os MLBs dela). `itensUp` são os MLBs por
+ *  cor de família User Products (`anuncios_externos_itens.item_externo_id`, chave `codigoPai`) —
+ *  Legacy não entra em `itensUp` e usa só `familia.mlItemId`. `participacoes` é `ml_item_id -> nome
+ *  da promoção` (só quem está participando agora). */
+export function avisosParticipacaoPromocao(
+  familias: Familia[],
+  itensUp: Map<string, string[]>,
+  participacoes: Map<string, string>,
+): { id: string; texto: string }[] {
+  const avisos: { id: string; texto: string }[] = [];
+  for (const f of familias) {
+    if (f.operacao !== 'UPDATE' || !temAlteracaoPreco(f)) continue;
+    const ids = [f.mlItemId, ...(itensUp.get(f.codigoPai) ?? [])].filter((id): id is string => !!id);
+    const promocao = ids.map((id) => participacoes.get(id)).find((nome) => nome != null);
+    if (promocao) {
+      avisos.push({
+        id: f.id,
+        texto: `⚠️ ${f.titulo} participa da ${promocao}: mudar o preço pode tirar o anúncio da promoção.`,
+      });
+    }
+  }
+  return avisos;
 }
 
 /** ADR-0151 D-2: sinaliza no card (sempre visível, sem precisar expandir) que a família tem
@@ -326,6 +353,23 @@ export default function Revisao() {
   // Selecionadas com badge "preço alterado" (D4/ADR-0078): candidatas ao override por produto.
   const familiasComPrecoAlterado = familias.filter(
     (f) => selecionadas.has(f.id) && f.operacao === 'UPDATE' && temAlteracaoPreco(f),
+  );
+
+  // Task 9 (ADR-0174 decisão 9): só busca com o diálogo aberto — clicar em produtos na lista não
+  // deve disparar refetch a cada seleção.
+  const codigosPaiUp = confirmando
+    ? familiasComPrecoAlterado.filter((f) => f.formatoPublicacaoMl === 'user_products').map((f) => f.codigoPai)
+    : [];
+  const { data: itensUp } = useItensUpPorCodigoPai(codigosPaiUp);
+  const idsParaChecarPromocao = confirmando
+    ? [
+        ...familiasComPrecoAlterado.map((f) => f.mlItemId).filter((id): id is string => !!id),
+        ...[...(itensUp?.values() ?? [])].flat(),
+      ]
+    : [];
+  const { data: participacoesPromocao } = useParticipacoesPorItem(idsParaChecarPromocao);
+  const avisosPromocao = avisosParticipacaoPromocao(
+    familiasComPrecoAlterado, itensUp ?? new Map(), participacoesPromocao ?? new Map(),
   );
 
   async function confirmarPublicacao() {
@@ -715,6 +759,11 @@ export default function Revisao() {
                       </span>
                     </label>
                   ))}
+                </div>
+              )}
+              {avisosPromocao.length > 0 && (
+                <div className="mt-2 space-y-1 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+                  {avisosPromocao.map((a) => <p key={a.id}>{a.texto}</p>)}
                 </div>
               )}
             </div>
