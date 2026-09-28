@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { BadgePercent } from 'lucide-react';
@@ -16,6 +16,7 @@ import { PainelEstadoSync } from '@/components/promocoes/painel-estado-sync';
 import { ListaOperacoes } from '@/components/promocoes/lista-operacoes';
 
 type AbaTela = AbaPromo | 'operacoes';
+const ABAS: readonly AbaTela[] = ['ativas', 'futuras', 'encerradas', 'operacoes'];
 
 const VAZIO: Record<AbaPromo, string> = {
   ativas: 'Nenhuma campanha ativa.', futuras: 'Nenhuma campanha futura.', encerradas: 'Nenhuma campanha encerrada nos últimos 30 dias.',
@@ -34,8 +35,17 @@ export default function Promocoes() {
   const promocoes = usePromocoes();
   const estado = useEstadoSyncPromocoes();
   const atualizar = useAtualizarPromocoes();
-  const [searchParams] = useSearchParams();
-  const [aba, setAba] = useState<AbaTela>(searchParams.get('aba') === 'operacoes' ? 'operacoes' : 'ativas');
+  // Fix round 1 (achado 3 da revisão): a aba ativa vive na URL (?aba=operacoes), não num useState
+  // que só lê o param na 1ª montagem — senão clicar numa aba não grava, e recarregar a página
+  // depois de clicar volta pra Ativas.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const abaParam = searchParams.get('aba');
+  const aba: AbaTela = ABAS.includes(abaParam as AbaTela) ? (abaParam as AbaTela) : 'ativas';
+  const setAba = (v: string) => setSearchParams((prev) => {
+    const p = new URLSearchParams(prev);
+    if (v === 'ativas') p.delete('aba'); else p.set('aba', v);
+    return p;
+  }, { replace: true });
   const agora = Date.now();
 
   const porAba = useMemo(() => {
@@ -86,7 +96,7 @@ export default function Promocoes() {
           {[0, 1, 2].map((i) => <Skeleton key={i} className="h-[228px] rounded-xl" />)}
         </div>
       ) : temDados && (
-        <Tabs value={aba} onValueChange={(v) => setAba(v as AbaTela)}>
+        <Tabs value={aba} onValueChange={setAba}>
           <TabsList>
             <TabsTrigger value="ativas">Ativas{' '}<span className="tabular-nums text-muted-foreground">{porAba.ativas.length}</span></TabsTrigger>
             <TabsTrigger value="futuras">Futuras{' '}<span className="tabular-nums text-muted-foreground">{porAba.futuras.length}</span></TabsTrigger>

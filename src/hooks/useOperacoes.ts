@@ -1,4 +1,5 @@
 // ADR-0174 — hooks de operações em massa (aderir/sair de promoções DEAL/SMART do ML).
+import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import type { Tables } from '@/lib/database.types';
@@ -46,9 +47,13 @@ export function useOperacoes() {
 }
 
 /** Fix round 1 (achado 3): recarrega a cada 5 s enquanto a operação (`operacoes_massa.status`)
- *  ainda está `executando` — senão o detalhe (mensagem, `saida_solicitada`) fica parado. */
+ *  ainda está `executando` — senão o detalhe (mensagem, `saida_solicitada`) fica parado.
+ *  Fix round 2 (achado 2 da revisão): ao `executando` virar `false`, o intervalo desliga sem um
+ *  fetch final — quem está com o sheet aberto ficava vendo o último status do ciclo anterior
+ *  (ex.: "Na fila"/"Enviando", Reverter escondido) até fechar e abrir de novo. Um `refetch()` na
+ *  borda `true → false` garante o estado final mesmo sem reabrir o sheet. */
 export function useItensOperacao(operacaoId: string, executando = false) {
-  return useQuery({
+  const query = useQuery({
     queryKey: [...QK_OPERACOES, operacaoId, 'itens'],
     queryFn: async () => {
       const { data, error } = await supabase.from('operacoes_massa_itens')
@@ -58,6 +63,27 @@ export function useItensOperacao(operacaoId: string, executando = false) {
     },
     enabled: !!operacaoId,
     refetchInterval: executando ? 5_000 : false,
+  });
+  const refetch = query.refetch;
+  const eraExecutando = useRef(executando);
+  useEffect(() => {
+    if (eraExecutando.current && !executando) refetch();
+    eraExecutando.current = executando;
+  }, [executando, refetch]);
+  return query;
+}
+
+/** Fix round 2 (achado 4 da revisão): a operação original de um Reverter pode ter saído da página
+ *  de 50 (`useOperacoes`) — busca-a por id só quando ela não está na lista já carregada. */
+export function useOperacao(id: string | null) {
+  return useQuery({
+    queryKey: [...QK_OPERACOES, id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('operacoes_massa').select('*').eq('id', id!).single();
+      if (error) throw error;
+      return data as Tables<'operacoes_massa'>;
+    },
+    enabled: !!id,
   });
 }
 

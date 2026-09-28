@@ -1,6 +1,6 @@
 // ADR-0174 — aba "Operações": lista de operações em massa da org, detalhe por item e Reverter
 // (nova operação com a ação inversa, origem_id apontando a original).
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { History, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { formatarNomeProduto } from '@/lib/texto';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
-import { useItensOperacao, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
+import { useItensOperacao, useOperacao, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
 import { ROTULO_STATUS, inversa, itensRevertiveis, type AcaoOperacao, type StatusItemOperacao } from '@/lib/operacoes';
 import type { ItemPromocao } from '@/lib/promocoes';
@@ -118,11 +118,21 @@ export function ListaOperacoes() {
   const opAberta = operacoes.data?.find((o) => o.id === abertaId) ?? null;
   const itensOp = useItensOperacao(abertaId ?? '', opAberta?.status === 'executando');
   const central = useItensPromocao(opAberta?.promocao_id ?? '');
-  const original = opAberta?.origem_id ? operacoes.data?.find((o) => o.id === opAberta.origem_id) ?? null : null;
+  // Fix round 2 (achado 4): a original pode ter saído da página de 50 de `useOperacoes` — busca
+  // por id só quando não estiver na lista já carregada.
+  const originalNaLista = opAberta?.origem_id ? operacoes.data?.find((o) => o.id === opAberta.origem_id) ?? null : null;
+  const originalBuscada = useOperacao(opAberta?.origem_id && !originalNaLista ? opAberta.origem_id : null);
+  const original = originalNaLista ?? originalBuscada.data ?? null;
 
   const idsRevertiveis = opAberta && itensOp.data ? itensRevertiveis(opAberta.acao as AcaoOperacao, paraRevertiveis(itensOp.data)) : [];
   const podeReverter = podeExecutar && opAberta?.status === 'concluida' && idsRevertiveis.length > 0;
-  const reversao = opAberta && itensOp.data ? montarReversao(opAberta, itensOp.data, central.data ?? []) : null;
+  // Fix round 2 (achado 1): `useMemo` — sem isso, `reversao.itens`/`.naoRevertiveis` nascem com
+  // referência nova a cada render e o `useEffect` do preview (que depende deles) reseta preços,
+  // marcas e o checkbox de risco a cada refetch em segundo plano (foco, intervalo de 5 s).
+  const reversao = useMemo(
+    () => (opAberta && itensOp.data ? montarReversao(opAberta, itensOp.data, central.data ?? []) : null),
+    [opAberta, itensOp.data, central.data],
+  );
 
   function nomeDe(id: string | null) {
     return (id && nomes?.get(id)) || id || '—';

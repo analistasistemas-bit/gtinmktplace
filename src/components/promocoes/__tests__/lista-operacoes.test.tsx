@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ListaOperacoes } from '../lista-operacoes';
-import { useCriarOperacao, useItensOperacao, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
+import { useCriarOperacao, useItensOperacao, useOperacao, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
 import type { CorProjetada, ItemPromocao } from '@/lib/promocoes';
@@ -11,7 +11,10 @@ import type { CorProjetada, ItemPromocao } from '@/lib/promocoes';
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/hooks/useOperacoes', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/useOperacoes')>('@/hooks/useOperacoes');
-  return { ...actual, useOperacoes: vi.fn(), useItensOperacao: vi.fn(), usePodeExecutarOperacao: vi.fn(), useCriarOperacao: vi.fn() };
+  return {
+    ...actual, useOperacoes: vi.fn(), useItensOperacao: vi.fn(), usePodeExecutarOperacao: vi.fn(),
+    useCriarOperacao: vi.fn(), useOperacao: vi.fn(),
+  };
 });
 vi.mock('@/hooks/usePromocoes', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/usePromocoes')>('@/hooks/usePromocoes');
@@ -64,6 +67,7 @@ beforeEach(() => {
   vi.mocked(useNomesUsuarios).mockReturnValue({ data: new Map([['U1', 'Diego']]) } as never);
   vi.mocked(useItensPromocao).mockReturnValue({ data: [itemCentral()] } as never);
   vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog()] } as never);
+  vi.mocked(useOperacao).mockReturnValue({ data: undefined } as never);
 });
 
 function renderLista() {
@@ -148,5 +152,30 @@ describe('ListaOperacoes', () => {
       itens: [{ ml_item_id: 'MLB1', preco: 85, confirmado_risco: false }],
       // preco: preco_sugerido do item central (DEAL aderir usa o sugerido, não o preço no ar).
     }));
+  });
+
+  it('mantém a seleção do preview do Reverter entre re-renders sem mudança real de dados (fix round 1, achado 1)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ id: 'OP1', acao: 'sair', itens: [{ status: 'aplicado' }] })], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })] } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({ data: [itemCentral({ ml_item_id: 'MLB1', status: 'candidate' })] } as never);
+
+    const { rerender } = renderLista();
+    await user.click(screen.getByText('Sair de Campanha X'));
+    await user.click(screen.getByRole('button', { name: 'Reverter' }));
+
+    // Edição do usuário no preview: desmarca a única linha (nasce marcada — verde).
+    await user.click(screen.getByLabelText('Selecionar MLB1'));
+    expect(screen.getByLabelText('Selecionar MLB1')).not.toBeChecked();
+
+    // Re-render "de fora" sem nenhuma mudança real de dados (ex.: o poll de 5s da lista enquanto
+    // outra operação está executando). Sem `useMemo` em `reversao`, `montarReversao` roda de novo
+    // a cada render e o `useEffect` do preview (que depende de `itens`/`naoRevertiveis` por
+    // referência) reseta a seleção pro estado inicial.
+    rerender(<MemoryRouter><ListaOperacoes /></MemoryRouter>);
+
+    expect(screen.getByLabelText('Selecionar MLB1')).not.toBeChecked();
   });
 });
