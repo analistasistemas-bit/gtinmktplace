@@ -2,7 +2,7 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Operações em massa — aderir/sair de promoção (ADR-0174, 2026-09-28) — código pronto, deploy pendente
+## Operações em massa — aderir/sair de promoção (ADR-0174, 2026-09-28) — em produção
 
 I5 (motor de operações em massa) + Promoções V2 (aderir/sair de campanha) resolvidos como uma
 única entrega: aderir um anúncio a uma promoção é uma operação em massa de tamanho 1, não existe

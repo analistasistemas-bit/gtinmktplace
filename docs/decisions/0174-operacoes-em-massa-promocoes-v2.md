@@ -1,6 +1,6 @@
 # ADR-0174 — Operações em massa, começando por aderir/sair de promoção (I5 + Promoções V2)
 
-**Status:** Aceito (implementado em 2026-09-28; deploy pendente)
+**Status:** Aceito — em produção desde 2026-09-28
 **Data:** 2026-09-26
 **Relacionado:** [ADR-0170](0170-central-de-promocoes-ml.md) (Central de Promoções, só leitura),
 [ADR-0060](0060-pausar-reativar-anuncio-ml.md) (pausar/reativar restrito a admin),
@@ -101,8 +101,10 @@ scope do momento da autorização.
 
 ## Implementação
 
-Código pronto na branch `worktree-i5-operacoes-em-massa-design` (2026-09-28); **deploy pendente**
-(migration + edge function).
+Em produção desde 2026-09-28: migration `20260928013318_operacoes_massa` aplicada, edge `operacoes-massa`
+v1 ativa (e `sincronizar-promocoes` v9 redeployada pela extração em `_shared/promocoes/deps.ts`), front
+na main `d5c79ac3`. Validado de ponta a ponta na DSA: operação real com 3 itens (Feito / Mudou desde o
+preview / Bloqueado pelo par de catálogo), Reverter com saída SMART confirmada pela conferência em ~5 min.
 
 - **Schema** (`supabase/migrations/20260928013318_operacoes_massa.sql`): `operacoes_massa` (1 linha
   por operação: `acao`, `promocao_id`/`promocao_tipo`, `origem_id` para o Reverter, `status`

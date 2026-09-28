@@ -659,7 +659,7 @@ e o plano `docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`. **Achado la
 `materializar-metricas` está documentado com schedule diário mas sem invocações em produção em 7
 dias até 27/09 — investigar fora deste ADR.
 
-## ADR-0174: Operações em massa — aderir/sair de promoção (2026-09-28) — código pronto, deploy pendente
+## ADR-0174: Operações em massa — aderir/sair de promoção (2026-09-28) — em produção
 
 **Não está em produção.** I5 (motor de operações em massa) e Promoções V2 (aderir/sair de campanha
 pelo app) resolvidos juntos: aderir um anúncio numa promoção é uma operação em massa de tamanho 1.
