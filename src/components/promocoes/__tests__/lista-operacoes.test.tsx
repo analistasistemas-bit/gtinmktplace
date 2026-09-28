@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ListaOperacoes } from '../lista-operacoes';
-import { useCriarOperacao, useItensOperacao, useOperacao, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
+import { useCriarOperacao, useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
 import type { CorProjetada, ItemPromocao } from '@/lib/promocoes';
@@ -13,9 +13,12 @@ vi.mock('@/hooks/useOperacoes', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/useOperacoes')>('@/hooks/useOperacoes');
   return {
     ...actual, useOperacoes: vi.fn(), useItensOperacao: vi.fn(), usePodeExecutarOperacao: vi.fn(),
-    useCriarOperacao: vi.fn(), useOperacao: vi.fn(),
+    useCriarOperacao: vi.fn(), useOperacao: vi.fn(), useOperacaoPorOrigem: vi.fn(),
   };
 });
+
+// Mesmo formato de `dataHora` em lista-operacoes.tsx — não exportado, replicado só p/ montar o texto esperado.
+const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 vi.mock('@/hooks/usePromocoes', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/usePromocoes')>('@/hooks/usePromocoes');
   return { ...actual, useItensPromocao: vi.fn() };
@@ -68,6 +71,7 @@ beforeEach(() => {
   vi.mocked(useItensPromocao).mockReturnValue({ data: [itemCentral()] } as never);
   vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog()] } as never);
   vi.mocked(useOperacao).mockReturnValue({ data: undefined } as never);
+  vi.mocked(useOperacaoPorOrigem).mockReturnValue({ data: null } as never);
 });
 
 function renderLista() {
@@ -177,5 +181,95 @@ describe('ListaOperacoes', () => {
     rerender(<MemoryRouter><ListaOperacoes /></MemoryRouter>);
 
     expect(screen.getByLabelText('Selecionar MLB1')).not.toBeChecked();
+  });
+
+  it('achado C (revisão UX): Reverter fecha o detalhe e abre só o preview — nunca os dois montados juntos', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ id: 'OP1', acao: 'sair', itens: [{ status: 'aplicado' }] })], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({
+      data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })],
+    } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({
+      data: [itemCentral({ ml_item_id: 'MLB1', status: 'candidate' })],
+    } as never);
+
+    renderLista();
+    await user.click(screen.getByText('Sair de Campanha X'));
+    // Título do Sheet (heading) — distinto do texto homônimo no card da lista atrás.
+    expect(screen.getByRole('heading', { name: 'Sair de Campanha X' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Aderir à Campanha X' })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Reverter' }));
+
+    // Um clique é suficiente e determinístico: o detalhe (título "Sair") fecha e só o preview
+    // (título "Aderir", ação inversa) fica montado — os dois nunca coexistem.
+    expect(screen.queryByRole('heading', { name: 'Sair de Campanha X' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Aderir à Campanha X' })).toBeInTheDocument();
+  });
+
+  it('achado A (revisão UX): sucesso do Reverter fecha o preview e o detalhe', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ id: 'OP1', acao: 'sair', itens: [{ status: 'aplicado' }] })], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({
+      data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })],
+    } as never);
+    vi.mocked(useItensPromocao).mockReturnValue({
+      data: [itemCentral({ ml_item_id: 'MLB1', status: 'candidate' })],
+    } as never);
+
+    renderLista();
+    await user.click(screen.getByText('Sair de Campanha X'));
+    await user.click(screen.getByRole('button', { name: 'Reverter' }));
+    expect(screen.getByRole('button', { name: 'Executar' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Executar' }));
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+
+    // Nem o preview (título "Aderir") nem o detalhe (título "Sair") sobram na tela — volta pra lista.
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Executar' })).not.toBeInTheDocument());
+    expect(screen.queryByRole('heading', { name: 'Aderir à Campanha X' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Sair de Campanha X' })).not.toBeInTheDocument();
+  });
+
+  it('achado B (revisão UX): mostra "Revertida em ..." no lugar do botão quando já existe uma reversão na lista', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [
+        op({ id: 'OP2', acao: 'aderir', origem_id: 'OP1', criado_em: '2026-09-05T12:00:00Z', itens: [] }),
+        op({ id: 'OP1', acao: 'sair', itens: [{ status: 'aplicado' }] }),
+      ], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({
+      data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })],
+    } as never);
+
+    renderLista();
+    await user.click(screen.getByText('Sair de Campanha X'));
+
+    expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
+    expect(screen.getByText(`Revertida em ${dataHora('2026-09-05T12:00:00Z')}`)).toBeInTheDocument();
+  });
+
+  it('achado B (revisão UX): busca a reversão por origem_id quando ela não está na página carregada', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ id: 'OP1', acao: 'sair', itens: [{ status: 'aplicado' }] })], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({
+      data: [itemLog({ ml_item_id: 'MLB1', status: 'aplicado' })],
+    } as never);
+    vi.mocked(useOperacaoPorOrigem).mockReturnValue({
+      data: op({ id: 'OP9', origem_id: 'OP1', criado_em: '2026-09-06T08:00:00Z' }),
+    } as never);
+
+    renderLista();
+    await user.click(screen.getByText('Sair de Campanha X'));
+
+    expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
+    expect(screen.getByText(`Revertida em ${dataHora('2026-09-06T08:00:00Z')}`)).toBeInTheDocument();
   });
 });

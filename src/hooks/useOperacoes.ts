@@ -87,6 +87,22 @@ export function useOperacao(id: string | null) {
   });
 }
 
+/** Revisão UX (achado B): saber se uma operação já foi revertida (existe outra operação com
+ *  `origem_id` = este id) para trocar o botão Reverter por um aviso. Mesmo padrão de `useOperacao`:
+ *  busca só quando a reversão não está na página de 50 já carregada. */
+export function useOperacaoPorOrigem(id: string | null) {
+  return useQuery({
+    queryKey: [...QK_OPERACOES, 'origem', id],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('operacoes_massa').select('*')
+        .eq('origem_id', id!).order('criado_em', { ascending: false }).limit(1).maybeSingle();
+      if (error) throw error;
+      return data as Tables<'operacoes_massa'> | null;
+    },
+    enabled: !!id,
+  });
+}
+
 /** Cria a operação e publica a 1ª etapa no QStash (a edge faz isso); invalida a lista e a Central. */
 export function useCriarOperacao() {
   const qc = useQueryClient();

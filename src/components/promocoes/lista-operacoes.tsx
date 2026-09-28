@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { formatarNomeProduto } from '@/lib/texto';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
-import { useItensOperacao, useOperacao, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
+import { useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
 import { ROTULO_STATUS, inversa, itensRevertiveis, type AcaoOperacao, type StatusItemOperacao } from '@/lib/operacoes';
 import type { ItemPromocao } from '@/lib/promocoes';
@@ -113,7 +113,9 @@ export function ListaOperacoes() {
   const podeExecutar = usePodeExecutarOperacao();
   const { data: nomes } = useNomesUsuarios();
   const [abertaId, setAbertaId] = useState<string | null>(null);
-  const [revertendo, setRevertendo] = useState(false);
+  // Revisão UX (achado C): dados do preview de reversão num estado próprio, snapshot no momento
+  // do clique — não pode depender de `opAberta`/`reversao`, que são zerados ao fechar o detalhe.
+  const [reversaoAtiva, setReversaoAtiva] = useState<({ op: OperacaoRow } & ReturnType<typeof montarReversao>) | null>(null);
 
   const opAberta = operacoes.data?.find((o) => o.id === abertaId) ?? null;
   const itensOp = useItensOperacao(abertaId ?? '', opAberta?.status === 'executando');
@@ -123,6 +125,10 @@ export function ListaOperacoes() {
   const originalNaLista = opAberta?.origem_id ? operacoes.data?.find((o) => o.id === opAberta.origem_id) ?? null : null;
   const originalBuscada = useOperacao(opAberta?.origem_id && !originalNaLista ? opAberta.origem_id : null);
   const original = originalNaLista ?? originalBuscada.data ?? null;
+  // Revisão UX (achado B): já foi revertida? (existe outra operação com origem_id = a desta).
+  const revertidaNaLista = opAberta ? operacoes.data?.find((o) => o.origem_id === opAberta.id) ?? null : null;
+  const revertidaBuscada = useOperacaoPorOrigem(opAberta && !revertidaNaLista ? opAberta.id : null);
+  const revertida = revertidaNaLista ?? revertidaBuscada.data ?? null;
 
   const idsRevertiveis = opAberta && itensOp.data ? itensRevertiveis(opAberta.acao as AcaoOperacao, paraRevertiveis(itensOp.data)) : [];
   const podeReverter = podeExecutar && opAberta?.status === 'concluida' && idsRevertiveis.length > 0;
@@ -139,7 +145,19 @@ export function ListaOperacoes() {
   }
   function fecharDetalhe() {
     setAbertaId(null);
-    setRevertendo(false);
+  }
+  // Revisão UX (achado C): fecha o detalhe e abre só o preview de reversão — os dois `Sheet`
+  // (Radix `Dialog.Root`) montados ao mesmo tempo tornavam o 1º clique em Reverter não-determinístico
+  // (o Dialog que acabou de montar podia disparar o dismiss do que já estava aberto). Com um só
+  // Sheet por vez a transição fica determinística, e como fechar o detalhe zera `opAberta`/
+  // `reversao`, o necessário pro preview vai num snapshot em estado próprio.
+  function iniciarReversao() {
+    if (!opAberta || !reversao) return;
+    setReversaoAtiva({ op: opAberta, ...reversao });
+    setAbertaId(null);
+  }
+  function fecharPreviewReversao() {
+    setReversaoAtiva(null);
   }
 
   if (operacoes.isLoading) {
@@ -192,7 +210,11 @@ export function ListaOperacoes() {
               </ul>
               {podeReverter && (
                 <div className="border-t p-4">
-                  <Button onClick={() => setRevertendo(true)}>Reverter</Button>
+                  {revertida ? (
+                    <p className="text-sm text-muted-foreground">Revertida em {dataHora(revertida.criado_em)}</p>
+                  ) : (
+                    <Button onClick={iniciarReversao}>Reverter</Button>
+                  )}
                 </div>
               )}
             </>
@@ -200,12 +222,12 @@ export function ListaOperacoes() {
         </SheetContent>
       </Sheet>
 
-      {opAberta && reversao && (
+      {reversaoAtiva && (
         <PreviewOperacao
-          acao={reversao.acaoNova} tipo={opAberta.promocao_tipo === 'SMART' ? 'SMART' : 'DEAL'}
-          promocaoId={opAberta.promocao_id} promocaoNome={opAberta.promocao_nome ?? opAberta.promocao_id}
-          itens={reversao.itens} origemId={opAberta.id} naoRevertiveis={reversao.naoRevertiveis}
-          aberto={revertendo} onClose={() => setRevertendo(false)}
+          acao={reversaoAtiva.acaoNova} tipo={reversaoAtiva.op.promocao_tipo === 'SMART' ? 'SMART' : 'DEAL'}
+          promocaoId={reversaoAtiva.op.promocao_id} promocaoNome={reversaoAtiva.op.promocao_nome ?? reversaoAtiva.op.promocao_id}
+          itens={reversaoAtiva.itens} origemId={reversaoAtiva.op.id} naoRevertiveis={reversaoAtiva.naoRevertiveis}
+          aberto onClose={fecharPreviewReversao} onSucesso={fecharPreviewReversao}
         />
       )}
     </>
