@@ -291,7 +291,8 @@ tela /estoque  (menu só aparece com o módulo 'estoque' na org)
   │    ├─ marca o lote 'processando' SÓ DEPOIS do insert da família
   │    ├─ estoque inicial → RPC registrar_entrada  [caminho único de escrita, D-15]
   │    └─ enfileirarFamilia → IA de atributos, INTACTA
-  │    → etapa de fotos → /revisao/{loteId}   ← fluxo existente daqui pra frente
+  │    → upload das fotos (diálogo segue "processando")
+  │    → /revisao/{loteId} direto; etapa de fotos só se algo falhou   ← fluxo existente daqui pra frente
   │
   └─ [Dar entrada] → edge entrada-estoque  →  RPC registrar_entrada
        └─ enfileira push absoluto para TODOS os canais (canal_origem: null)

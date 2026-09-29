@@ -629,8 +629,18 @@ describe('DialogCadastroGrade — salvar', () => {
   }
 
   it('sem pendência, fecha e abre a Revisão sem parar na etapa de fotos', async () => {
+    const { uploadFotoProduto } = await import('@/lib/produtos-saldo');
+    let terminarUpload: () => void = () => {};
+    vi.mocked(uploadFotoProduto).mockImplementationOnce(() => new Promise<void>((r) => { terminarUpload = r; }));
     const onFechar = vi.fn();
     await cadastrarPretoPComFoto(onFechar);
+
+    // Durante o upload: ainda na grade, congelada, com o progresso no botão — não na etapa de fotos.
+    expect(await screen.findByRole('button', { name: 'Enviando fotos (0/1)…' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Branco' })).toBeDisabled();
+    expect(screen.queryByText(/revise a foto de cada SKU/)).not.toBeInTheDocument();
+
+    terminarUpload();
     await waitFor(() => expect(screen.getByTestId('rota')).toHaveTextContent('/revisao/l1'));
     expect(onFechar).toHaveBeenCalledTimes(1);
   });

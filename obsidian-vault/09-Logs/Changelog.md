@@ -11,6 +11,13 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-09-29
 
+**Cadastro manual (normal e em grade) segue "processando" até abrir a Revisão.** O operador ficava ~15 s
+perdido: a barra de processando rolava para fora (o diálogo inteiro rolava) e, no meio do upload das fotos, a
+tela pulava para a etapa de fotos parecendo concluída. Agora só o corpo do diálogo rola, o formulário fica
+travado com "Enviando fotos (x/y)…" e, sem pendência, o diálogo fecha e abre `/revisao/{loteId}`; a etapa de
+fotos virou só caminho de correção. Viabilidade mantém o fluxo antigo. Revisões Codex gpt-6-sol (2 rodadas) e
+Grok 4.7 xHigh; só frontend.
+
 **Dedupe de notificações sem erro 23505 no log.** Os ~600–850 `duplicate key ... ml_notificacoes_enviadas_pkey`
 por dia no log do Postgres eram o dedupe de notificação de faturamento funcionando (tenta inserir; se a chave
 existe, "já avisado"). `reservarNotificacao` passou a usar `INSERT ... ON CONFLICT DO NOTHING RETURNING`: mesma

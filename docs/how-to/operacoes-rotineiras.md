@@ -153,16 +153,20 @@ Fluxo do operador de uma org com o módulo `estoque` habilitado.
    assim mesmo — o semáforo é que avisa ("Abaixo do mínimo" 🟡, prejuízo 🔴).
    **Sem coluna de SKU** — o GTIN continua sendo o lugar do EAN; o SKU é gerado junto com o
    código do PAI.
-3. Salvar. Se aparecer aviso de pendência (**"Reprocessar"** ou lista de SKUs sem estoque),
-   resolva antes de seguir — o botão "Ir para a Revisão" fica travado de propósito, porque
-   cadastro parcial reportado como sucesso é a pior falha possível aqui.
-4. Etapa de fotos: capa (até 3) e uma foto por variação, já pelo código **gerado**. As fotos
-   escolhidas na etapa 1 **já subiram** durante o Salvar — a etapa 2 mostra cada uma como
-   miniatura com **"✓ enviada"** e um botão "Trocar", e só apresenta campo de upload para o que
-   falta ou falhou. Ela **não** está pedindo a mesma foto de novo; é a tela de conferência e
-   retry.
-5. "Ir para a Revisão" — **o cadastro não publica nada**; publicar continua sendo ato explícito
-   na Revisão, como no fluxo de planilha.
+3. Cadastrar. O diálogo fica em **processando** (aura nas bordas + barra no topo, que não rola
+   para fora — só o corpo do formulário rola) até o fim: primeiro "Cadastrando…", depois
+   "Enviando fotos (x/y)…" enquanto as fotos escolhidas na etapa 1 sobem. O formulário fica
+   travado nesse intervalo (edição ali não seria salva).
+4. Sem pendência nenhuma, o diálogo **fecha e abre a Revisão sozinho** (`/revisao/{loteId}`).
+   A etapa de fotos só aparece como **caminho de correção**, quando algo falhou:
+   - foto que falhou: miniatura com retry — as que subiram aparecem como **"✓ enviada"**;
+   - aviso de pendência (**"Reprocessar"** ou lista de SKUs sem estoque): resolva antes de
+     seguir — o botão "Ir para a Revisão" fica travado de propósito, porque cadastro parcial
+     reportado como sucesso é a pior falha possível aqui.
+   O cadastro **em grade** segue o mesmo fluxo. Pela Viabilidade (cadastro pré-preenchido) o
+   diálogo **não** navega sozinho — o operador continua na análise e usa "Ir para a Revisão".
+5. **O cadastro não publica nada**; publicar continua sendo ato explícito na Revisão, como no
+   fluxo de planilha.
 
 Produtos cadastrados em sequência caem no **mesmo lote** (a "sessão de cadastro"). Na tela de
 Lotes eles aparecem com o chip **Cadastro manual**, para distinguir do fluxo de planilha.
