@@ -1004,6 +1004,9 @@ describe('DialogCadastroProduto — irParaRevisaoAoConcluir', () => {
     expect(await screen.findByRole('button', { name: 'Enviando fotos (0/1)…' })).toBeDisabled();
     expect(screen.getByRole('dialog')).toHaveAttribute('aria-busy', 'true');
     expect(screen.queryByText(/Fotos do produto · etapa/)).not.toBeInTheDocument();
+    // Formulário congelado: editar aqui não seria salvo e trocar linhas desalinharia as fotos.
+    expect(screen.getByLabelText('Nome')).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Adicionar variação/ })).toBeDisabled();
 
     terminarUpload();
     await waitFor(() => expect(screen.getByTestId('rota')).toHaveTextContent('/revisao/l1'));

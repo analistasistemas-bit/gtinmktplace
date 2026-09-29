@@ -185,8 +185,10 @@ export function DialogCadastroProduto({
         {/* Só o corpo rola: cabeçalho, rodapé (botão Cadastrar) e a barra de processando no topo
             ficam sempre à vista. Com o diálogo inteiro rolando, a barra sumia para cima justo
             quando o operador clicava em Cadastrar no fim do formulário. -mx-4/px-4: o anel de
-            foco dos inputs não é cortado pelo overflow. */}
-        <div className="-mx-4 min-h-0 overflow-y-auto px-4">
+            foco dos inputs não é cortado pelo overflow. `fieldset disabled`: o formulário fica na
+            tela durante o upload e congela inteiro — editar ali não seria salvo, e trocar linhas
+            desalinharia o casamento posicional das fotos na etapa de correção. */}
+        <fieldset disabled={api.salvando} className="-mx-4 min-h-0 min-w-0 overflow-y-auto px-4">
         {!resultado && etapaFiscal ? (
           <EtapaFiscalForm
             valor={fiscal}
@@ -357,7 +359,7 @@ export function DialogCadastroProduto({
             }}
           />
         )}
-        </div>
+        </fieldset>
 
         <DialogFooter>
           {!resultado && etapaFiscal ? (

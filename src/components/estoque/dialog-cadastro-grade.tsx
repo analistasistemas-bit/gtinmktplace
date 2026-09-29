@@ -461,8 +461,9 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
 
           {/* Só o corpo rola: cabeçalho, rodapé e a barra de processando no topo ficam sempre à
               vista (com o diálogo inteiro rolando, a barra sumia para cima). -mx-4/px-4: o anel
-              de foco não é cortado pelo overflow. */}
-          <div className="-mx-4 min-h-0 overflow-y-auto px-4">
+              de foco não é cortado pelo overflow. `fieldset disabled`: a grade fica na tela durante
+              o upload e congela inteira — edição ali não seria salva. */}
+          <fieldset disabled={api.salvando} className="-mx-4 min-h-0 min-w-0 overflow-y-auto px-4">
           {resultado ? (
             <EtapaFotos
               api={api}
@@ -723,7 +724,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
               <span className="text-xs text-muted-foreground">* obrigatório</span>
             </div>
           ) : null}
-          </div>
+          </fieldset>
 
           <DialogFooter>
             {resultado ? (
