@@ -122,12 +122,27 @@ function paraPack(v: CadastroVariacao, n: number): CadastroVariacao | MotivoKit 
   };
 }
 
+type Lado = { v: CadastroVariacao; p: CadastroVariacao | MotivoKit };
+
+/** Duas leituras do mesmo anúncio no pacote de `n`: precisam bater; empate vai para o cadastro nativo do pacote. */
+function combinar(a: Lado, b: Lado, n: number): Lado | MotivoKit {
+  if (typeof a.p === 'string' || typeof b.p === 'string') {
+    // Um lado inválido: só serve o outro se ele já for o cadastro daquele pacote, completo.
+    if (typeof b.p !== 'string' && b.v.kit === n) return b;
+    if (typeof a.p !== 'string' && a.v.kit === n) return a;
+    return (typeof a.p === 'string' ? a.p : b.p) as MotivoKit;
+  }
+  if (!mesmoPacote(a.p, b.p)) return 'kit_ambiguo';
+  return b.v.kit === n && a.v.kit !== n ? b : a;
+}
+
 /**
  * resolverCor + nº de unidades do anúncio (`UNITS_PER_PACK`; null = o ML não informa → vale o cadastro).
- * O kit publica o GTIN da unidade (ADR-0151), então o GTIN casa a base mesmo quando o SKU aponta o kit
- * próprio: com pacote, GTIN e SKU que casam cadastros diferentes precisam dar o mesmo custo, medidas e
- * origem — senão é ambíguo e nada é chutado. Empate vai para o cadastro que já é daquele pacote (piso
- * próprio). `formatoKit` (SALE_FORMAT=Kit) sem quantidade e sem cadastro de kit → ⚪.
+ * O kit publica o GTIN da unidade (ADR-0151), então o GTIN casa a base mesmo quando o SKU ou o vínculo
+ * apontam o kit próprio: com pacote, todo cadastro que o SKU e o GTIN casam precisa dar o mesmo custo,
+ * medidas e origem que o resolvido — senão é ambíguo e nada é chutado. Consequência aceita: custo da base
+ * reajustado sem refletir no kit (ADR-0151 não propaga) deixa o kit ⚪ até o cadastro ser alinhado.
+ * `formatoKit` (SALE_FORMAT=Kit) sem quantidade e sem cadastro de kit → ⚪.
  */
 export function resolverPack(
   c: Cadastro,
@@ -137,20 +152,17 @@ export function resolverPack(
 ): CadastroVariacao | MotivoKit | null {
   const r = resolverCor(c, q);
   if (!r) return null;
-  const porSku = q.sku ? c.porCodigo.get(normGtin(q.sku.trim())) : undefined;
-  const outro = porSku && porSku !== r ? porSku : undefined;
-  const n = unidades ?? Math.max(r.kit, outro?.kit ?? 1);
+  const casa = (m: Map<string, CadastroVariacao>, k: string | null) => (k ? m.get(normGtin(k.trim())) : undefined);
+  const outros = [...new Set([casa(c.porCodigo, q.sku), casa(c.porGtin, q.gtin)])]
+    .filter((o): o is CadastroVariacao => o != null && o !== r);
+  const n = unidades ?? Math.max(r.kit, ...outros.map((o) => o.kit));
   // Fora de pacote a cadeia do resolverCor vale como sempre (ADR-0108).
   if (n === 1) return r.kit !== 1 || (unidades == null && formatoKit) ? 'kit_divergente' : r;
-  const alvo = paraPack(r, n);
-  if (!outro) return alvo;
-  const alt = paraPack(outro, n);
-  if (typeof alvo === 'string' || typeof alt === 'string') {
-    // Um lado inválido: só serve o outro se ele já for o cadastro daquele pacote, completo.
-    if (typeof alt !== 'string' && outro.kit === n) return alt;
-    if (typeof alvo !== 'string' && r.kit === n) return alvo;
-    return typeof alvo === 'string' ? alvo : (alt as MotivoKit);
+  let atual: Lado = { v: r, p: paraPack(r, n) };
+  for (const o of outros) {
+    const x = combinar(atual, { v: o, p: paraPack(o, n) }, n);
+    if (typeof x === 'string') return x;
+    atual = x;
   }
-  if (!mesmoPacote(alvo, alt)) return 'kit_ambiguo';
-  return outro.kit === n && r.kit !== n ? alt : alvo;
+  return atual.p;
 }

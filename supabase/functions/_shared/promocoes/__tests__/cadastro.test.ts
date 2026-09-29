@@ -145,6 +145,13 @@ describe('resolverPack (kit — ADR-0151)', () => {
       .toMatchObject({ variacao_id: 'kit', custo: 59.8 });
   });
 
+  it('vínculo direto resolve o kit: o GTIN da unidade também é conferido (Codex, rodada 3)', () => {
+    const qq = q({ item_id: 'MLBKIT', sku: '00000012', gtin: '7891010027858' });
+    expect(resolverPack(montarCadastro([base, kit], []), qq, 2)).toMatchObject({ variacao_id: 'kit', custo: 59.8 });
+    const baseReajustada = { ...base, custo: 35 };
+    expect(resolverPack(montarCadastro([baseReajustada, kit], []), qq, 2)).toBe('kit_ambiguo');
+  });
+
   it('nada casa → null', () => {
     expect(resolverPack(montarCadastro([], []), q({ gtin: '1' }), 2)).toBeNull();
   });
