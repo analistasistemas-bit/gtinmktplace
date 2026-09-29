@@ -105,8 +105,14 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
 
   const api = useCadastroProduto({ aberto });
   // Alias de leitura, sem dependência de nada — movido para antes do `useEffect` de reconciliação
-  // logo abaixo, que lê `resultado` na guarda central.
-  const resultado = api.resultado;
+  // logo abaixo, que lê `resultado` na guarda central. `null` enquanto `salvando`: a tela segue na
+  // grade com o sinal de processando até o lote de fotos terminar (senão o operador via a etapa de
+  // fotos no meio do upload e achava que tinha acabado). A guarda central continua fechada nesse
+  // intervalo porque ela testa `api.salvando || resultado`.
+  const resultado = api.salvando ? null : api.resultado;
+  const rotuloSalvando = api.enviandoFotos
+    ? `Enviando fotos (${api.enviandoFotos.feitos}/${api.enviandoFotos.total})…`
+    : 'Cadastrando…';
   // A MESMA sugestão de NCM do dialog normal — o hook, nunca o efeito copiado. Duplicar as ~15
   // linhas da flag `ignore` aqui reintroduziria o bug F1 (resposta de um produto aplicada em
   // outro) nesta tela, sem nenhum teste acusar.
@@ -358,7 +364,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
       ? 'Preencha o preço mínimo (líquido) — obrigatório em toda a grade.'
       : `Preencha o preço mínimo (líquido) em: ${semPreco.slice(0, 3).map((r) => `${r.cor} · ${r.tamanho}`).join(', ')}${semPreco.length > 3 ? ` e mais ${semPreco.length - 3}` : ''}.`;
 
-  function submeter() {
+  async function submeter() {
     if (!origem || !genero) return;
     setTentouSalvar(true);
     // `resolvidas` é a MESMA lista que a tela mostra — o payload nunca resolve herança por conta
@@ -369,13 +375,16 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
       pesoGramas: r.pesoGramas, alturaCm: r.alturaCm, larguraCm: r.larguraCm,
       comprimentoCm: r.comprimentoCm, foto: r.foto,
     }));
-    api.salvar(
+    const loteId = await api.salvar(
       montarPayload(
         { nomePai, descricaoPai, unidade, fornecedor, origem, genero },
         variacoes, api.chaveCadastro, fiscalAtivo ? fiscal : undefined,
       ),
       { capa: fotosCapa, porLinha: resolvidas.map((r) => r.foto) },
     );
+    // Sem pendência (fotos, fila, estoque) → direto para a Revisão; a etapa de fotos fica só como
+    // caminho de correção quando algo falhou.
+    if (loteId) { onFechar(); api.irParaRevisao(loteId); }
   }
 
   const passo0 = tipos.length > 1 && tipoEscolhido === null;
@@ -435,7 +444,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
         <DialogContent
           processando={api.ocupado}
           rotuloProcessando="Cadastrando a grade e enviando fotos"
-          className="max-h-[90vh] sm:max-w-5xl overflow-y-auto"
+          className="max-h-[90vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-5xl"
         >
           <DialogHeader>
             {/* "em grade" é literal no título — é a âncora de que esta é a tela da grade, e não
@@ -450,6 +459,10 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
             </DialogDescription>
           </DialogHeader>
 
+          {/* Só o corpo rola: cabeçalho, rodapé e a barra de processando no topo ficam sempre à
+              vista (com o diálogo inteiro rolando, a barra sumia para cima). -mx-4/px-4: o anel
+              de foco não é cortado pelo overflow. */}
+          <div className="-mx-4 min-h-0 overflow-y-auto px-4">
           {resultado ? (
             <EtapaFotos
               api={api}
@@ -710,6 +723,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
               <span className="text-xs text-muted-foreground">* obrigatório</span>
             </div>
           ) : null}
+          </div>
 
           <DialogFooter>
             {resultado ? (
@@ -730,7 +744,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                   Voltar
                 </Button>
                 <Button onClick={submeter} disabled={!fiscalCompleto(fiscal, origem) || api.salvando}>
-                  {api.salvando ? 'Cadastrando…' : 'Cadastrar'}
+                  {api.salvando ? rotuloSalvando : 'Cadastrar'}
                 </Button>
               </>
             ) : fiscalAtivo ? (
@@ -748,7 +762,7 @@ export function DialogCadastroGrade({ aberto, onFechar }: {
                   Cancelar
                 </Button>
                 <Button onClick={submeter} disabled={!podeSalvar || api.salvando} title={motivoBloqueio}>
-                  {api.salvando ? 'Cadastrando…' : 'Cadastrar'}
+                  {api.salvando ? rotuloSalvando : 'Cadastrar'}
                 </Button>
               </>
             )}

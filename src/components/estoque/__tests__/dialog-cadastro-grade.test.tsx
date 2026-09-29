@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { DialogCadastroGrade } from '../dialog-cadastro-grade';
 
 const cadastrarProdutoMock = vi.fn();
@@ -596,6 +596,53 @@ describe('DialogCadastroGrade — salvar', () => {
 
     await waitFor(() => expect(cadastrarProdutoMock).toHaveBeenCalledTimes(1));
     expect(cadastrarProdutoMock.mock.calls[0][0].variacoes[0].preco).toBe(129.9);
+  });
+
+  // A etapa de fotos parecia "terminou" enquanto o upload ainda rodava. Agora: tudo certo → Revisão
+  // direto; algo falhou → a etapa de fotos continua sendo o caminho de correção.
+  function OndeEstou() {
+    return <span data-testid="rota">{useLocation().pathname}</span>;
+  }
+  async function cadastrarPretoPComFoto(onFechar: () => void) {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000001' }],
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/estoque']}>
+          <OndeEstou />
+          <DialogCadastroGrade aberto onFechar={onFechar} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText('Nome'), 'Camiseta');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.selectOptions(screen.getByLabelText(/^Gênero/i), 'masculino');
+    await user.type(screen.getByLabelText('Preço mínimo (líquido)'), '99,90');
+    await user.click(screen.getByRole('checkbox', { name: 'Preto' }));
+    await user.click(screen.getByRole('checkbox', { name: 'P' }));
+    await user.upload(screen.getByLabelText('Foto da cor Preto'), new File(['x'], 'preto.jpg', { type: 'image/jpeg' }));
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+  }
+
+  it('sem pendência, fecha e abre a Revisão sem parar na etapa de fotos', async () => {
+    const onFechar = vi.fn();
+    await cadastrarPretoPComFoto(onFechar);
+    await waitFor(() => expect(screen.getByTestId('rota')).toHaveTextContent('/revisao/l1'));
+    expect(onFechar).toHaveBeenCalledTimes(1);
+  });
+
+  it('com foto que falhou, para na etapa de fotos e não navega', async () => {
+    const { uploadFotoProduto } = await import('@/lib/produtos-saldo');
+    vi.mocked(uploadFotoProduto).mockRejectedValueOnce(new Error('falhou'));
+    const onFechar = vi.fn();
+    await cadastrarPretoPComFoto(onFechar);
+    expect(await screen.findByText(/Falha ao enviar a foto de/)).toBeInTheDocument();
+    expect(screen.getByTestId('rota')).toHaveTextContent('/estoque');
+    expect(onFechar).not.toHaveBeenCalled();
   });
 
   it('a foto da COR vai para TODA linha daquela cor, uma por SKU', async () => {
