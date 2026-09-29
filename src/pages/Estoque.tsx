@@ -261,6 +261,7 @@ export default function Estoque() {
       <DialogCadastroProduto
         aberto={cadastroAberto}
         onFechar={() => setCadastroAberto(false)}
+        irParaRevisaoAoConcluir
       />
       <DialogCadastroGrade aberto={gradeAberta} onFechar={() => setGradeAberta(false)} />
       <DialogAdicionarVariacaoRoteador

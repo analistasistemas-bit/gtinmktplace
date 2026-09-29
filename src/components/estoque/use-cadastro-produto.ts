@@ -105,7 +105,9 @@ export interface CadastroProdutoApi {
   ocupado: boolean;
   /** Cadastro gravado mas incompleto (fila ou estoque) — trava "Ir para a Revisão". */
   pendencias: boolean;
-  salvar: (payload: ProdutoEntrada, fotos: FotosDoCadastro) => Promise<void>;
+  /** `loteId` quando tudo deu certo (cadastro, fila, estoque e fotos) — o dialog pode seguir
+   *  direto para a Revisão; `null` = há algo a corrigir na etapa de fotos (ou erro). */
+  salvar: (payload: ProdutoEntrada, fotos: FotosDoCadastro) => Promise<string | null>;
   subirFoto: (arquivo: File, alvo: AlvoFoto, loteId: string) => Promise<void>;
   reprocessar: (familiaId: string) => Promise<void>;
   comConfirmacao: (acao: () => void) => void;
@@ -187,7 +189,7 @@ export function useCadastroProduto(
    * Contagem divergente = retry idempotente devolveu o cadastro ORIGINAL da edge, que pode ter
    * outra quantidade de variações. Pular o casamento é mais seguro que arriscar o índice errado.
    */
-  async function subirLoteDeFotos(r: ResultadoCadastro, fotos: FotosDoCadastro) {
+  async function subirLoteDeFotos(r: ResultadoCadastro, fotos: FotosDoCadastro): Promise<number> {
     const alvos: Array<{ arquivo: File; alvo: AlvoFoto; rotulo: string; chave: string }> = [];
     (['capa', 'capa2', 'capa3'] as const).forEach((tipo) => {
       const arquivo = fotos.capa[tipo];
@@ -207,7 +209,7 @@ export function useCadastroProduto(
         }
       });
     }
-    if (alvos.length === 0 && falhas.length === 0) return;
+    if (alvos.length === 0 && falhas.length === 0) return 0;
 
     if (alvos.length > 0) {
       setEnviandoFotos({ feitos: 0, total: alvos.length });
@@ -225,9 +227,10 @@ export function useCadastroProduto(
       setFotosEnviadas((prev) => new Set([...prev, ...enviadosNesteLote]));
     }
     setFalhasFoto(falhas);
+    return falhas.length;
   }
 
-  async function salvar(payload: ProdutoEntrada, fotos: FotosDoCadastro) {
+  async function salvar(payload: ProdutoEntrada, fotos: FotosDoCadastro): Promise<string | null> {
     setSalvando(true);
     setResultadoAmbiguo(false);
     try {
@@ -236,11 +239,12 @@ export function useCadastroProduto(
       onCadastrado?.();
       setChaveCadastro(crypto.randomUUID());
       qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
-      await subirLoteDeFotos(r, fotos);
+      const falhasDeFoto = await subirLoteDeFotos(r, fotos);
       // Segunda invalidação OBRIGATÓRIA: `imagem_path`/`capa_storage_path` só são gravados
       // dentro de uploadFotoProduto, depois da primeira.
       qc.invalidateQueries({ queryKey: QK.produtosEstoqueResumo });
       if (r.filaOk && r.falhasEstoque.length === 0) toast.success('✓ Produto cadastrado');
+      return r.filaOk && r.falhasEstoque.length === 0 && falhasDeFoto === 0 ? r.loteId : null;
     } catch (e) {
       if (e instanceof ProdutoJaExisteError) {
         setDivergencia({ mensagem: e.message, loteId: e.loteId });
@@ -253,6 +257,7 @@ export function useCadastroProduto(
       } else {
         toast.error(e instanceof Error ? e.message : 'Falha ao cadastrar o produto.');
       }
+      return null;
     } finally {
       setSalvando(false);
     }

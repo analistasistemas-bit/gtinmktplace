@@ -47,7 +47,9 @@ export interface CadastroInicial {
     'gtin' | 'preco' | 'custo' | 'pesoGramas' | 'alturaCm' | 'larguraCm' | 'comprimentoCm'>>;
 }
 
-export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado }: {
+export function DialogCadastroProduto({
+  aberto, onFechar, inicial, onCadastrado, irParaRevisaoAoConcluir = false,
+}: {
   aberto: boolean;
   onFechar: () => void;
   /** Snapshot de pré-preenchimento vindo da Viabilidade (T5). Precisa ser um snapshot ESTÁVEL
@@ -58,6 +60,10 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
   /** Chamado em `salvar()` logo após o sucesso do cadastro — permite ao chamador (ex.: a linha
    *  da Viabilidade) marcar o item como já cadastrado sem esperar nova análise. */
   onCadastrado?: () => void;
+  /** Cadastro + fotos sem nenhuma pendência → fecha e abre a Revisão direto, sem parar na etapa
+   *  de fotos. O diálogo segue "processando" até a navegação. A Viabilidade não liga: o operador
+   *  cadastra vários itens da mesma análise e não pode ser tirado da lista. */
+  irParaRevisaoAoConcluir?: boolean;
 }) {
   const navigate = useNavigate();
   const { data: modulos } = useModulosHabilitados();
@@ -114,10 +120,10 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
   // clicável quando `podeSalvar` já é true — ou seja, sem nenhum campo com erro — então este
   // ramo nunca revela mensagem nova hoje. Só passaria a importar se o gate `disabled={!podeSalvar}`
   // abaixo for removido.
-  function submeter() {
+  async function submeter() {
     if (!origem) return;
     setTentouSalvar(true);
-    api.salvar(
+    const loteId = await api.salvar(
       montarPayload(
         {
           nomePai, descricaoPai, unidade, fornecedor, origem,
@@ -130,9 +136,15 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
       ),
       { capa: fotosCapa, porLinha: linhas.map((l) => l.foto) },
     );
+    if (loteId && irParaRevisaoAoConcluir) { onFechar(); navigate(`/revisao/${loteId}`); }
   }
 
-  const resultado = api.resultado;
+  // Enquanto o lote de fotos sobe, a tela continua no formulário com o sinal de processando —
+  // trocar para a etapa de fotos no meio do upload parecia "terminou" e o operador ficava parado.
+  const resultado = api.salvando ? null : api.resultado;
+  const rotuloSalvando = api.enviandoFotos
+    ? `Enviando fotos (${api.enviandoFotos.feitos}/${api.enviandoFotos.total})…`
+    : 'Cadastrando…';
   const divergencia = api.divergencia;
 
   return (
@@ -146,7 +158,7 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
       <DialogContent
         processando={api.ocupado}
         rotuloProcessando="Cadastrando produto e enviando fotos"
-        className="max-h-[90vh] sm:max-w-3xl overflow-y-auto"
+        className="max-h-[90vh] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-3xl"
       >
         <DialogHeader>
           {/* Item 6 da auditoria: o dialog tem 2 etapas e nada indicava isso. Com o módulo
@@ -170,6 +182,11 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
           </DialogDescription>
         </DialogHeader>
 
+        {/* Só o corpo rola: cabeçalho, rodapé (botão Cadastrar) e a barra de processando no topo
+            ficam sempre à vista. Com o diálogo inteiro rolando, a barra sumia para cima justo
+            quando o operador clicava em Cadastrar no fim do formulário. -mx-4/px-4: o anel de
+            foco dos inputs não é cortado pelo overflow. */}
+        <div className="-mx-4 min-h-0 overflow-y-auto px-4">
         {!resultado && etapaFiscal ? (
           <EtapaFiscalForm
             valor={fiscal}
@@ -340,6 +357,7 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
             }}
           />
         )}
+        </div>
 
         <DialogFooter>
           {!resultado && etapaFiscal ? (
@@ -349,7 +367,7 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
                 onClick={submeter}
                 disabled={!fiscalCompleto(fiscal, origem) || api.salvando}
               >
-                {api.salvando ? 'Cadastrando…' : 'Cadastrar'}
+                {api.salvando ? rotuloSalvando : 'Cadastrar'}
               </Button>
             </>
           ) : !resultado && fiscalAtivo ? (
@@ -361,7 +379,7 @@ export function DialogCadastroProduto({ aberto, onFechar, inicial, onCadastrado 
             <>
               <Button variant="outline" onClick={() => api.comConfirmacao(onFechar)} disabled={api.ocupado}>Cancelar</Button>
               <Button onClick={submeter} disabled={!podeSalvar || api.salvando}>
-                {api.salvando ? 'Cadastrando…' : 'Cadastrar'}
+                {api.salvando ? rotuloSalvando : 'Cadastrar'}
               </Button>
             </>
           ) : (

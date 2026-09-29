@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import { DialogCadastroProduto, type CadastroInicial } from '../dialog-cadastro-produto';
 import { QK } from '@/lib/queries';
 import { ProdutoJaExisteError, CadastroResultadoAmbiguoError } from '@/lib/produtos-saldo';
@@ -946,5 +946,84 @@ describe('DialogCadastroProduto — sem eixo de grade, mesmo com tipo habilitado
     const payload = cadastrarProdutoMock.mock.calls[0][0];
     expect(payload).toHaveProperty('genero', null);
     expect(payload.variacoes[0]).toHaveProperty('tamanho', null);
+  });
+});
+
+// Estoque: o operador ficava ~15 s olhando a etapa de fotos subir sem saber se tinha terminado.
+// Com `irParaRevisaoAoConcluir`, o formulário segue "processando" até abrir a Revisão.
+describe('DialogCadastroProduto — irParaRevisaoAoConcluir', () => {
+  beforeEach(() => {
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: vi.fn((f: File) => `blob:${f.name}`),
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+  });
+  afterEach(() => {
+    cleanup();
+    Reflect.deleteProperty(URL, 'createObjectURL');
+    Reflect.deleteProperty(URL, 'revokeObjectURL');
+    uploadFotoProdutoMock.mockClear();
+  });
+
+  function OndeEstou() {
+    return <span data-testid="rota">{useLocation().pathname}</span>;
+  }
+  function renderIrParaRevisao(onFechar: () => void) {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/estoque']}>
+          <OndeEstou />
+          <DialogCadastroProduto aberto onFechar={onFechar} irParaRevisaoAoConcluir />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+  async function preencherComCapa(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(screen.getByLabelText('Nome'), 'Produto Teste');
+    await user.click(screen.getByRole('radio', { name: 'Nacional' }));
+    await user.type(screen.getByLabelText('Preço mínimo (líquido) da variação 1'), '10');
+    await user.upload(screen.getByLabelText('Capa'), new File(['c'], 'capa.png', { type: 'image/png' }));
+  }
+
+  it('segue processando durante o upload e abre a Revisão ao terminar sem pendência', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000005' }],
+    });
+    let terminarUpload: () => void = () => {};
+    uploadFotoProdutoMock.mockImplementationOnce(() => new Promise<void>((r) => { terminarUpload = r; }));
+    const onFechar = vi.fn();
+    const user = userEvent.setup();
+    renderIrParaRevisao(onFechar);
+    await preencherComCapa(user);
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    // Ainda no formulário, com o sinal de processando — não na etapa de fotos.
+    expect(await screen.findByRole('button', { name: 'Enviando fotos (0/1)…' })).toBeDisabled();
+    expect(screen.getByRole('dialog')).toHaveAttribute('aria-busy', 'true');
+    expect(screen.queryByText(/Fotos do produto · etapa/)).not.toBeInTheDocument();
+
+    terminarUpload();
+    await waitFor(() => expect(screen.getByTestId('rota')).toHaveTextContent('/revisao/l1'));
+    expect(onFechar).toHaveBeenCalledTimes(1);
+  });
+
+  it('com foto que falhou, para na etapa de fotos e não navega', async () => {
+    cadastrarProdutoMock.mockResolvedValueOnce({
+      loteId: 'l1', familiaId: 'f1', filaOk: true, falhasEstoque: [],
+      variacoes: [{ id: 'v1', codigo: '00000005' }],
+    });
+    uploadFotoProdutoMock.mockRejectedValueOnce(new Error('falhou'));
+    const onFechar = vi.fn();
+    const user = userEvent.setup();
+    renderIrParaRevisao(onFechar);
+    await preencherComCapa(user);
+    await user.click(screen.getByRole('button', { name: 'Cadastrar' }));
+
+    expect(await screen.findByText(/Falha ao enviar a foto de/)).toBeInTheDocument();
+    expect(screen.getByTestId('rota')).toHaveTextContent('/estoque');
+    expect(onFechar).not.toHaveBeenCalled();
   });
 });
