@@ -9,6 +9,14 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
 
+## 2026-09-29
+
+**Dedupe de notificações sem erro 23505 no log.** Os ~600–850 `duplicate key ... ml_notificacoes_enviadas_pkey`
+por dia no log do Postgres eram o dedupe de notificação de faturamento funcionando (tenta inserir; se a chave
+existe, "já avisado"). `reservarNotificacao` passou a usar `INSERT ... ON CONFLICT DO NOTHING RETURNING`: mesma
+garantia de 1 notificação por chave, sem ERROR no log. Validado em Postgres real com chamadas concorrentes.
+Não era regressão do [[Índice de ADRs|ADR-0173]] (volume igual antes e depois).
+
 ## 2026-09-28
 
 **Correções do menu Faturamento (Vendas SKU / Dossiê), só frontend.** Auditoria de navegação e valores (Avil, só leitura) achou 4 bugs, corrigidos na mesma entrega: (1) período vai na URL — ranking e dossiê preservam o mesmo período na ida e na volta, inclusive entre dossiês (Mix, base do kit, família), trilha `Faturamento › Vendas SKU › …`; paridade ranking × dossiê conferida no SKU 02989271 em 29/06–26/09; (2) na aba Vendas, o código do item do pedido abre o dossiê do SKU (Financeiro inalterado); (3) selo de Tráfego e oferta pelo alcance real — "deste SKU", "do anúncio · compartilhado com N variações", "família" (semântica conferida nos vínculos reais por SQL read-only em produção); (4) semana com 0 visitas medidas vira anel no gráfico, com legenda; ausência de dado segue lacuna. Revisão Grok 4.7 xHigh aprovada sem achados; preflight 6473 testes verde; sem deploy de backend. Main `f98ca90b`.

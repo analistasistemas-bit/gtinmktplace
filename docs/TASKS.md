@@ -53,6 +53,15 @@ números da implantação em
 - [ ] Follow-up: contagem de descarte pode dobrar se um lote for refeito.
 - [ ] Follow-up: `contaExternaId` não numérico vira `"NaN"` no frete do Pulse.
 - [ ] Follow-up: `materializar-metricas` sem schedule em produção (0 invocações em 7 dias até 27/09) — investigar fora deste ADR.
+- [x] **Dedupe de notificações sem ruído 23505 no log do Postgres (2026-09-29).** `reservarNotificacao`
+  (`_shared/faturamento/notificacoes-dedupe.ts`) passou de `insert` + tratar 23505 para
+  `upsert(..., { onConflict: 'org_id,entidade,chave', ignoreDuplicates: true }).select('chave')`
+  (`INSERT ... ON CONFLICT DO NOTHING RETURNING`): só quem insere recebe a linha e notifica. Mesma
+  garantia de "1 notificação por chave"; some o ERROR `ml_notificacoes_enviadas_pkey` (~600–850/dia,
+  medido antes e depois do ADR-0173 — ruído antigo, não regressão). Validado em Postgres real via
+  PostgREST: 5 chamadas concorrentes com `user_id` diferentes → 1 vencedora; chamada tardia → `false`;
+  0 `duplicate key` no log. Plano revisado pelo Codex (aprovado). Redeploy: `operacoes-massa`,
+  `reconciliar-faturamento`, `sincronizar-promocoes`, `sync-devolucao`, `sync-pergunta`, `sync-venda`.
 
 ## Vendas SKU — Fatias 1, 2a, 2b e 2c (ADR-0172) — EM PRODUÇÃO desde 2026-09-27
 
