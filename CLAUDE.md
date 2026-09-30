@@ -46,17 +46,10 @@ Após mudança estrutural relevante, atualizar o Graphify (ver skill `graphify-u
 
 # Roteamento de modelos (economia de tokens)
 
-Tabela e regras gerais: `~/.claude/CLAUDE.md` §0.1 (opus / sonnet / haiku). Deltas deste projeto:
+Tabela e regras gerais: `~/.claude/CLAUDE.md` §0.1 (opus / sonnet / haiku) + revisores (Codex plano, Grok diff). Deltas deste projeto:
 - Edge functions → sonnet.
 - Nunca rebaixar modelo também em: publicação em marketplace (além de migrations, RLS, financeiro).
 - Haiku nunca em ADR/docs (conteúdo factual).
-
-Revisores (externos, nunca revisor Claude):
-
-| Revisão | Modelo | Como |
-|---|---|---|
-| Plano de implementação (antes de executar) | Codex `gpt-sol-6.1` · high | `codex exec -m gpt-sol-6.1 -c model_reasoning_effort=high -s read-only … < /dev/null` |
-| Diff por task + pré-merge da branch | Grok 4.7 xhigh | `cursor-agent -p --mode ask --model grok-4.7-xhigh … < /dev/null` |
 
 ---
 
