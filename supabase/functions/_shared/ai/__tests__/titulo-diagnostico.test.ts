@@ -86,7 +86,38 @@ describe('diagnosticarTitulo (ADR-0116)', () => {
     expect(descartes.length).toBeGreaterThan(0);
     for (const d of descartes) {
       expect(d.slot).toBeTruthy();
-      expect(['normalizacao', 'guards', 'ancoragem', 'corte']).toContain(d.etapa);
+      expect(['normalizacao', 'guards', 'ancoragem', 'redundancia', 'corte']).toContain(d.etapa);
     }
+  });
+
+  describe('slot redundante (lote #5 Hairfly: "... Trat Pós Química 1000g Pós Química")', () => {
+    const FONTE_TANOX = {
+      nomePai: 'Máscara Tanox Trat Pós Química 1000g',
+      descricaoPai: 'Máscara nutritiva Tanox Trat Pós Química para cabelos.',
+      tipoProdutoBusca: '',
+      cores: [],
+      fornecedor: null,
+    };
+    const SLOTS_TANOX = {
+      ...SLOTS_VAZIOS,
+      produto: 'Máscara Nutritiva', marca: 'Tanox', modelo: 'Trat Pós Química',
+      medida: '1000g', aplicacao: 'Pós Química',
+    };
+
+    it('slot cujas palavras já estão num slot anterior sai do título', () => {
+      expect(posProcessarTitulo(SLOTS_TANOX, FONTE_TANOX)).toBe('Máscara Nutritiva Tanox Trat Pós Química 1000g');
+    });
+
+    it('descarte registrado na etapa redundancia', () => {
+      const { descartes } = diagnosticarTitulo(SLOTS_TANOX, FONTE_TANOX);
+      expect(descartes.find((x) => x.slot === 'aplicacao')).toMatchObject({
+        etapa: 'redundancia', de: 'Pós Química', para: '',
+      });
+    });
+
+    it('slot só parcialmente coberto fica', () => {
+      const slots = { ...SLOTS_TANOX, produto: 'Máscara', aplicacao: 'Química Capilar' };
+      expect(posProcessarTitulo(slots, FONTE_TANOX)).toBe('Máscara Tanox Trat Pós Química 1000g Química Capilar');
+    });
   });
 });

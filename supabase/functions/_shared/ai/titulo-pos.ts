@@ -1,4 +1,4 @@
-import { aplicarGuardsTitulo, normalizarSlots, validarSlotsAncorados, type DadosFonteTitulo } from './titulo-guards.ts';
+import { aplicarGuardsTitulo, normalizarSlots, removerSlotsRedundantes, validarSlotsAncorados, type DadosFonteTitulo } from './titulo-guards.ts';
 import { montarTituloDetalhado } from './titulo-montar.ts';
 import { ORDEM_LEITURA, type SlotTitulo, type TituloSlots } from './titulo-slots.ts';
 import { ehCorIndefinida } from '../cor/indefinida.ts';
@@ -6,7 +6,7 @@ import { ehCorIndefinida } from '../cor/indefinida.ts';
 export type { DadosFonteTitulo };
 
 /** Etapa do pipeline que alterou ou removeu o valor de um slot. */
-export type EtapaTitulo = 'normalizacao' | 'guards' | 'ancoragem' | 'corte';
+export type EtapaTitulo = 'normalizacao' | 'guards' | 'ancoragem' | 'redundancia' | 'corte';
 
 export interface DescarteTitulo {
   slot: SlotTitulo;
@@ -43,7 +43,8 @@ function diff(antes: TituloSlots, depois: TituloSlots, etapa: EtapaTitulo): Desc
  *   1. normalizarSlots        — higieniza e canonicaliza
  *   2. aplicarGuardsTitulo    — crava o que a fonte garante
  *   3. validarSlotsAncorados  — derruba o que não tem respaldo
- *   4. montarTitulo           — ÚNICA montagem, ao final
+ *   4. removerSlotsRedundantes — derruba slot repetido em slot anterior
+ *   5. montarTitulo           — ÚNICA montagem, ao final
  *
  * A montagem acontecer uma vez só, depois de todos os guards, é o ponto central do desenho.
  * Um guard que injetasse depois da montagem devolveria o sistema ao bug original: injeção e
@@ -71,11 +72,13 @@ export function posProcessarTitulo(slotsIa: TituloSlots, fonte: DadosFonteTitulo
 export function diagnosticarTitulo(slotsIa: TituloSlots, fonte: DadosFonteTitulo): TituloDiagnosticado {
   const slots = normalizarSlots(slotsIa);
   const garantidos = aplicarGuardsTitulo(slots, fonte);
-  const validados = validarSlotsAncorados(garantidos, fonte);
+  const ancorados = validarSlotsAncorados(garantidos, fonte);
+  const validados = removerSlotsRedundantes(ancorados);
   const descartes = [
     ...diff(slotsIa, slots, 'normalizacao'),
     ...diff(slots, garantidos, 'guards'),
-    ...diff(garantidos, validados, 'ancoragem'),
+    ...diff(garantidos, ancorados, 'ancoragem'),
+    ...diff(ancorados, validados, 'redundancia'),
   ];
   // `variacao` discrimina quando a família é mono-cor: a planilha separou as cores em PAI
   // distintos, então a cor é o que diferencia esta família das irmãs (ADR-0044).

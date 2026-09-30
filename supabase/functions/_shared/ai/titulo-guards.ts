@@ -554,3 +554,24 @@ export function validarSlotsAncorados(slots: TituloSlots, fonte: DadosFonteTitul
 
   return out;
 }
+
+// Incortáveis (titulo-montar.ts) ficam de fora: se o slot que os cobre for cortado nos 60 chars,
+// o dado sumiria do título.
+const NUNCA_REDUNDANTE = new Set<SlotTitulo>(['produto', 'medida', 'variacao']);
+
+/**
+ * Passo 5: slot cujas palavras já estão todas em slots anteriores (ordem de leitura) sai — a IA
+ * repete o mesmo termo em dois slots (lote #5 Hairfly: modelo "Trat Pós Química" + aplicacao
+ * "Pós Química" → "... Pós Química 1000g Pós Química"). Nenhum dado sai do título.
+ */
+export function removerSlotsRedundantes(slots: TituloSlots): TituloSlots {
+  const out = { ...slots };
+  let anteriores = '';
+  for (const slot of ORDEM_LEITURA) {
+    const v = out[slot]?.trim();
+    if (!v) continue;
+    if (!NUNCA_REDUNDANTE.has(slot) && todasPalavrasCobertas(anteriores, v)) out[slot] = '';
+    else anteriores += ` ${v}`;
+  }
+  return out;
+}
