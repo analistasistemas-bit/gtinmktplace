@@ -51,16 +51,12 @@ Tabela e regras gerais: `~/.claude/CLAUDE.md` §0.1 (opus / sonnet / haiku). Del
 - Nunca rebaixar modelo também em: publicação em marketplace (além de migrations, RLS, financeiro).
 - Haiku nunca em ADR/docs (conteúdo factual).
 
----|---|---|
-| Planejamento, arquitetura, ADR, debug difícil, revisão de segurança | opus | novo épico, decisão de schema, incidente em produção |
-| Implementação padrão, refactor, testes, edge functions | sonnet | feature já planejada, correção com causa conhecida |
-| Tarefa mecânica auto-verificável (a entrada determina a saída) | haiku | localizar arquivo/call sites, extrair lista, rename, reformatar, transcrever texto já verificado |
+Revisores (externos, nunca revisor Claude):
 
-Regras:
-- Nunca rebaixar modelo em: migrations, RLS, publicação em marketplace, código financeiro.
-- Tarefa "simples" que revelar complexidade → escalar para o modelo acima e avisar.
-- Planejamento fica no loop principal (Opus); só a execução desce de modelo.
-- Haiku só quando a saída é auto-verificável e você não vai reconferir. NUNCA para conteúdo factual (números, IDs, caminhos, ADR/docs) — ele preenche lacunas com dado plausível-porém-errado. Doc factual → Sonnet, ou entregue o texto já verificado para o Haiku só transcrever.
+| Revisão | Modelo | Como |
+|---|---|---|
+| Plano de implementação (antes de executar) | Codex `gpt-sol-6.1` · high | `codex exec -m gpt-sol-6.1 -c model_reasoning_effort=high -s read-only … < /dev/null` |
+| Diff por task + pré-merge da branch | Grok 4.7 xhigh | `cursor-agent -p --mode ask --model grok-4.7-xhigh … < /dev/null` |
 
 ---
 
