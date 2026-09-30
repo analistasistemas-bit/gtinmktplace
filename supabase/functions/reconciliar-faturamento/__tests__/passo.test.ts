@@ -90,7 +90,7 @@ describe('passoReconciliar', () => {
     expect(lote().map((c) => c.id)).toEqual(Array.from({ length: 10 }, (_, i) => 101 + i));
     expect(lote()[0]).toEqual({ id: 101, status: 'opened' });
     expect(r1.proximo).toBe('claims|110');
-    expect(deps.claimsPendentes).toHaveBeenCalledWith('tok', 'user-1');
+    expect(deps.claimsPendentes).toHaveBeenCalledWith('tok', 'user-1', '999');
     expect(deps.processarClaims).toHaveBeenCalledWith('tok', CX, 'user-1', 'org-1', expect.any(Array));
 
     const r2 = await rodar(deps, r1.proximo, r1.acumulado);

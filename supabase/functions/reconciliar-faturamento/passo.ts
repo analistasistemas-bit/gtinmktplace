@@ -19,8 +19,8 @@ export interface DepsReconciliar {
    *  !jaAlertado e lança SemAcessoRodada. Chamado em TODA etapa. */
   token(cx: ConexaoCanal): Promise<string>;
   perguntas(token: string, userId: string, orgId: string): Promise<number>;
-  /** buscarClaimsSeller + carregarDevolucoesLocais + claimPrecisaProcessar: os OBJETOS pendentes. */
-  claimsPendentes(token: string, userId: string): Promise<ClaimML[]>;
+  /** buscarClaimsSeller + claimsDeVenda + carregarDevolucoesLocais + claimPrecisaProcessar: os OBJETOS pendentes. */
+  claimsPendentes(token: string, userId: string, contaExternaId: string | null): Promise<ClaimML[]>;
   /** Nunca lança por claim. */
   processarClaims(token: string, cx: ConexaoCanal, userId: string, orgId: string, claims: ClaimML[]): Promise<number>;
   pedidosDaJanela(token: string, janela: { desde: string; ate: string }): Promise<PedidoML[]>;
@@ -112,7 +112,7 @@ export function passoReconciliar(deps: DepsReconciliar, orgId: string): Passo<Pa
 
     if (c.etapa === 'claims') {
       const desde = posNumerica('claims', c.pos);
-      const lote = (await deps.claimsPendentes(token, userId))
+      const lote = (await deps.claimsPendentes(token, userId, cx.contaExternaId))
         .filter((cl) => Number(cl.id) > desde)
         .sort((a, b) => Number(a.id) - Number(b.id))
         .slice(0, LOTE_CLAIMS);

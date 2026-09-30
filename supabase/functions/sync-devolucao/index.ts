@@ -68,7 +68,7 @@ Deno.serve(async (req) => {
   // "sem return ainda" é estado de negócio válido, não indica token morto).
   const ret = await buscarReturn(token, job.claim_id);
 
-  const { nova, row } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret, conexao.contaExternaId);
+  const { nova, row, ignorado } = await upsertDevolucao(admin, job.user_id, orgId, claim, ret, conexao.contaExternaId);
 
   if (nova && orgId && await reservarNotificacao(admin, orgId, job.user_id, 'devolucao_nova', String(row.claim_id))) {
     await notificarCategoria(admin, orgId, 'pos_venda', montarMensagemNovaDevolucao({
@@ -83,7 +83,9 @@ Deno.serve(async (req) => {
   // upsertVenda é idempotente: pedido já pago não gera novaPaga=true de novo, então não reenvia
   // alerta/mensagem de nova venda. Falha aqui usa o mesmo retry via QStash de buscarClaim acima —
   // o claim já está gravado (upsertDevolucao), então um retry não duplica nada.
-  if (row.order_id != null) {
+  // Claim de compra (ignorado): o pedido é de outro vendedor — o MP daria 404 e o 502 abaixo faria o
+  // QStash re-tentar à toa. Segue direto para marcar o evento processado.
+  if (row.order_id != null && !ignorado) {
     try {
       const pedido = await buscarPedido(token, String(row.order_id));
       const { idsPubliai, codigoResolver, eanResolver, infoPorGtin, custoVigenteResolver } = await carregarCatalogo(admin, job.user_id);

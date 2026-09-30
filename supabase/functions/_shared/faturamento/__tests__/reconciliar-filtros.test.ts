@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  perguntaPrecisaUpsert, claimPrecisaProcessar, GRACA_CLAIM_DIAS,
+  perguntaPrecisaUpsert, claimPrecisaProcessar, claimsDeVenda, GRACA_CLAIM_DIAS,
   type PerguntaLocal, type DevolucaoLocal,
 } from '../reconciliar-filtros';
 import { memoCatalogo } from '../io';
@@ -119,6 +119,28 @@ describe('claimPrecisaProcessar', () => {
   it('cai para aberto_em quando fechado_em é nulo', () => {
     const semFecho = { ...FECHADO_ANTIGO, fechado_em: null, aberto_em: diasAtras(1) };
     expect(claimPrecisaProcessar(claim(), semFecho, AGORA)).toBe(true);
+  });
+});
+
+describe('claimsDeVenda', () => {
+  // Claim de COMPRA nunca é gravado (upsertDevolucao o ignora), então claimPrecisaProcessar o via
+  // como "novo" toda hora e o reconciliar refazia pedido + frete + MP (404: o pagamento é do outro
+  // vendedor) para nada. O corte é antes de ler ml_devolucoes.
+  const CONTA = '999';
+  const compra = { id: 1, players: [{ type: 'buyer', user_id: 999 }, { type: 'seller', user_id: 555 }] };
+  const venda = { id: '2', players: [{ type: 'buyer', user_id: 111 }, { type: 'seller', user_id: '999' }] };
+  const ambos = { id: 3, players: [{ type: 'buyer', user_id: 999 }, { type: 'seller', user_id: 999 }] };
+  const soReceiver = { id: 4, players: [{ type: 'receiver', user_id: 999 }] };
+  const semPlayers = { id: 5 };
+
+  it('tira só o claim em que a conta é compradora', () => {
+    expect(claimsDeVenda([compra, venda, ambos, soReceiver, semPlayers], CONTA).map((c) => c.id))
+      .toEqual(['2', 3, 4, 5]);
+  });
+
+  it('sem conta resolvida não tira nada (ehClaimDeCompra só decide com evidência)', () => {
+    expect(claimsDeVenda([compra, venda], null)).toHaveLength(2);
+    expect(claimsDeVenda([compra, venda], undefined)).toHaveLength(2);
   });
 });
 

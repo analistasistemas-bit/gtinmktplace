@@ -12,6 +12,8 @@
 // Puros de propósito: `reconciliar-faturamento/index.ts` é entrypoint Deno (`Deno.serve`) e não é
 // importável pelo vitest; a decisão precisa morar em módulo testável.
 
+import { ehClaimDeCompra, type ClaimML } from './devolucao.ts';
+
 /** Colunas de `ml_perguntas` que o predicado compara. */
 export interface PerguntaLocal {
   status: string | null;
@@ -89,4 +91,15 @@ export function claimPrecisaProcessar(
   const referencia = Date.parse(local.fechado_em ?? local.aberto_em ?? '');
   if (!Number.isFinite(referencia)) return true; // sem data confiável: não arrisca
   return agoraMs - referencia < gracaDias * 24 * 60 * 60 * 1000;
+}
+
+/**
+ * Tira os claims em que a conta é COMPRADORA. `upsertDevolucao` não os grava, então
+ * `claimPrecisaProcessar` os via como "novos" a cada varredura e o chamador refazia pedido, frete e
+ * MP (404: o pagamento é do outro vendedor) para nada. Aplicar ANTES de ler `ml_devolucoes`.
+ */
+export function claimsDeVenda<C extends Pick<ClaimML, 'players'>>(
+  claims: C[], contaExternaId: string | null | undefined,
+): C[] {
+  return claims.filter((c) => !ehClaimDeCompra(c, contaExternaId));
 }

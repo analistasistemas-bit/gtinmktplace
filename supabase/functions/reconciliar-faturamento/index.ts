@@ -13,7 +13,7 @@ import { buscarClaimsSeller, buscarReturn, upsertDevolucao, carregarDevolucoesLo
 import { mapearPergunta } from '../_shared/faturamento/pergunta.ts';
 import { tratarPedidoCancelado } from '../_shared/estoque/cancelamento.ts';
 import { depsCancelamento } from '../_shared/estoque/cancelamento-deps.ts';
-import { perguntaPrecisaUpsert, claimPrecisaProcessar } from '../_shared/faturamento/reconciliar-filtros.ts';
+import { perguntaPrecisaUpsert, claimPrecisaProcessar, claimsDeVenda } from '../_shared/faturamento/reconciliar-filtros.ts';
 import { chunk } from '../_shared/faturamento/utils.ts';
 import { classificarErroML, MLApiError } from '../_shared/ml/erro-ml.ts';
 import { registrarFalhaAuth, registrarSyncOk } from '../_shared/ml/liveness.ts';
@@ -122,7 +122,7 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
     } catch { /* segue */ }
 
     try {
-      const claims = await buscarClaimsSeller(token);
+      const claims = claimsDeVenda(await buscarClaimsSeller(token), cx.contaExternaId);
       // Reprocessar um claim custa ~8 requisições REST (return + devolução + pedido + venda
       // inteira). Claim fechado há semanas, com dinheiro resolvido e mesmo status/stage, não tem
       // o que atualizar — ver reconciliar-filtros.ts. Filtra ANTES de buscar o return no ML.
@@ -139,8 +139,8 @@ async function legado(admin: ReturnType<typeof adminClient>): Promise<Response> 
         await Promise.all(lote.map(async (claim) => {
           try {
             const ret = await buscarReturn(token, String(claim.id));
-            const { row } = await upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId);
-            if (row.order_id == null) return;
+            const { row, ignorado } = await upsertDevolucao(admin, userId, orgId, claim, ret, cx.contaExternaId);
+            if (ignorado || row.order_id == null) return;
             const pedido = await buscarPedido(token, String(row.order_id));
             const shippingId = pedido.shipping?.id ?? null;
             const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([
@@ -323,9 +323,9 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
       return n;
     },
 
-    async claimsPendentes(token, userId) {
+    async claimsPendentes(token, userId, contaExternaId) {
       try {
-        const claims = await buscarClaimsSeller(token);
+        const claims = claimsDeVenda(await buscarClaimsSeller(token), contaExternaId);
         // Filtra ANTES de buscar o return no ML — ver reconciliar-filtros.ts.
         const locaisDev = await carregarDevolucoesLocais(
           admin, userId, claims.map((c) => Number(c.id)).filter((x) => Number.isFinite(x)),
@@ -349,8 +349,8 @@ function depsReconciliarReal(admin: ReturnType<typeof adminClient>, orgId: strin
         await Promise.all(lote.map(async (claim) => {
           try {
             const ret = await buscarReturn(token, String(claim.id));
-            const { row } = await upsertDevolucao(admin, userId, org, claim, ret, cx.contaExternaId);
-            if (row.order_id == null) { n++; return; }
+            const { row, ignorado } = await upsertDevolucao(admin, userId, org, claim, ret, cx.contaExternaId);
+            if (ignorado || row.order_id == null) { n++; return; }
             const pedido = await buscarPedido(token, String(row.order_id));
             const shippingId = pedido.shipping?.id ?? null;
             const [frete, shipment, liquidoPorPayment, gtinPorItem] = await Promise.all([

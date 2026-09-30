@@ -53,6 +53,15 @@ números da implantação em
 - [ ] Follow-up: contagem de descarte pode dobrar se um lote for refeito.
 - [ ] Follow-up: `contaExternaId` não numérico vira `"NaN"` no frete do Pulse.
 - [ ] Follow-up: `materializar-metricas` sem schedule em produção (0 invocações em 7 dias até 27/09) — investigar fora deste ADR.
+- [x] **Claims de COMPRA fora do reconciliar (2026-09-30).** `upsertDevolucao` já ignorava claim em que
+  a conta é compradora (`ehClaimDeCompra`), mas não o gravava — então `claimPrecisaProcessar` o via como
+  "novo" toda hora e o reconciliar refazia return + pedido + frete + MP (404, pagamento de outro
+  vendedor): ~25 claims da Avil por hora, 6 `MP /payments 404` por hora no log. Novo `claimsDeVenda`
+  (`_shared/faturamento/reconciliar-filtros.ts`) corta antes de ler `ml_devolucoes` no reconciliar
+  (fan-out e legado) e no backfill; consumidores respeitam `ignorado`; `sync-devolucao` não roda mais a
+  cadeia pedido/MP de compra (dava 502 → retry do QStash). Nenhum dado errado era gravado
+  (`ehVendaDaConta`). Plano revisado pelo Codex. Redeploy: `reconciliar-faturamento`,
+  `backfill-faturamento`, `sync-devolucao`.
 - [x] **Dedupe de notificações sem ruído 23505 no log do Postgres (2026-09-29).** `reservarNotificacao`
   (`_shared/faturamento/notificacoes-dedupe.ts`) passou de `insert` + tratar 23505 para
   `upsert(..., { onConflict: 'org_id,entidade,chave', ignoreDuplicates: true }).select('chave')`

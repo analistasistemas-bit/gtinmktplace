@@ -95,6 +95,17 @@ describe('processarConexao (caminho manual/legado) — caracterização', () => 
     expect(io.carregarLiquidoMP).toHaveBeenCalledWith('tok', 999);
   });
 
+  it('claim em que a conta é COMPRADORA não chega a buscarReturn nem upsertDevolucao', async () => {
+    const io = criarIo();
+    const compra = { id: 'c2', players: [{ type: 'buyer', user_id: 999 }, { type: 'seller', user_id: 555 }] };
+    io.buscarClaimsSeller.mockResolvedValue([{ id: 'c1' }, compra] as never);
+    // deno-lint-ignore no-explicit-any
+    await processarConexao({} as any, CX, INTERVALO, false, io as any);
+    expect(io.buscarReturn).toHaveBeenCalledTimes(1);
+    expect(io.buscarReturn).toHaveBeenCalledWith('tok', 'c1');
+    expect(io.upsertDevolucao).toHaveBeenCalledTimes(1);
+  });
+
   it('MP null → mpFalhou e upsert com liquidoPorPayment undefined; token falha → leituraFalhou', async () => {
     const io = criarIo();
     io.carregarLiquidoMP.mockResolvedValue(null as unknown as typeof LIQUIDO);

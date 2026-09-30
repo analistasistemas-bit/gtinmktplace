@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-09-28
+atualizado: 2026-09-30
 ---
 
 # Changelog
@@ -8,6 +8,15 @@ atualizado: 2026-09-28
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-09-30
+
+**Reconciliar para de reprocessar claims de compra.** Claims em que a própria conta é a compradora não
+são gravados (não são devolução de venda), então o reconciliar os tratava como "novos" a cada hora e
+buscava return, pedido, frete e pagamentos do MP (404, o pagamento é do outro vendedor) só para descartar
+tudo no fim — ~25 claims da Avil por hora. Agora eles saem antes de qualquer chamada (reconciliar,
+backfill) e o `sync-devolucao` não re-tenta mais o webhook de compra via QStash. Nenhum dado era gravado
+errado; ganho é cota do ML/MP e log limpo.
 
 ## 2026-09-29
 

@@ -25,6 +25,7 @@ import {
   buscarMensagensPackEstrito, upsertMensagensEstrito, listarPacksDeVendasEstrito,
 } from '../_shared/faturamento/mensagens-io.ts';
 import { buscarClaimsSeller, buscarReturn, upsertDevolucao } from '../_shared/faturamento/devolucoes-io.ts';
+import { claimsDeVenda } from '../_shared/faturamento/reconciliar-filtros.ts';
 import { registrarPendencias } from '../_shared/faturamento/pendencias.ts';
 import type { PedidoML } from '../_shared/faturamento/venda.ts';
 import { chunk } from '../_shared/faturamento/utils.ts';
@@ -155,7 +156,8 @@ export async function processarConexao(admin: ReturnType<typeof adminClient>, cx
 
   // 2. Devoluções/claims (sem alerta no backfill).
   try {
-    const claims = await io.buscarClaimsSeller(token);
+    // Claim de compra: upsertDevolucao não o grava — buscar o return dele é desperdício.
+    const claims = claimsDeVenda(await io.buscarClaimsSeller(token), cx.contaExternaId);
     for (const lote of chunk(claims, PARALELAS)) {
       await Promise.all(lote.map(async (claim) => {
         try {
