@@ -31,8 +31,8 @@ Operador principal: Diego. Domínios: lotes, famílias, variações, anúncios e
 Ordem obrigatória antes de tocar código:
 
 1. **Graphify** — arquitetura, dependências, impacto de mudanças.
-2. **docs/** — `README.md`, `project-status.md`, `ROADMAP.md`, `TASKS.md` + ADR relacionado em `docs/decisions/`.
-3. **obsidian-vault/** — documentação viva (decisões, fluxos, roadmap, contexto).
+2. **obsidian-vault/** — documentação viva (decisões, fluxos, roadmap, contexto).
+3. **docs/** — `README.md`, `project-status.md`, `ROADMAP.md`, `TASKS.md` + ADR relacionado em `docs/decisions/`.
 
 Protocolo de investigação (antes de qualquer `grep`/`rg`):
 
@@ -46,10 +46,12 @@ Após mudança estrutural relevante, atualizar o Graphify (ver skill `graphify-u
 
 # Roteamento de modelos (economia de tokens)
 
-A sessão principal roda no Opus. Delegar execução a subagents com `model` explícito conforme a demanda:
+Tabela e regras gerais: `~/.claude/CLAUDE.md` §0.1 (opus / sonnet / haiku). Deltas deste projeto:
+- Edge functions → sonnet.
+- Nunca rebaixar modelo também em: publicação em marketplace (além de migrations, RLS, financeiro).
+- Haiku nunca em ADR/docs (conteúdo factual).
 
-| Demanda | Modelo | Exemplos |
-|---|---|---|
+---|---|---|
 | Planejamento, arquitetura, ADR, debug difícil, revisão de segurança | opus | novo épico, decisão de schema, incidente em produção |
 | Implementação padrão, refactor, testes, edge functions | sonnet | feature já planejada, correção com causa conhecida |
 | Tarefa mecânica auto-verificável (a entrada determina a saída) | haiku | localizar arquivo/call sites, extrair lista, rename, reformatar, transcrever texto já verificado |
