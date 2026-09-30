@@ -55,8 +55,7 @@ Ver [[Publicação Mercado Livre]] (fluxo de publicação), [[Marketplace]] (mó
   disparador (1 mensagem QStash por org), `worker_rodadas` é a fonte da verdade (posse com lease,
   CAS do cursor), pedido que falha vira pendência por org (`worker_pendencias`). Ativação por flag
   (`FANOUT_BACKFILL`/`FANOUT_PULSE`/`FANOUT_RECONCILIAR`), uma função por vez — as 3 ligadas e
-  medidas, 0 `CPUTime` pós-ativação; ADR ainda `Proposto` até a validação de 3 dias (a partir de
-  01/10). Ver runbook em `docs/reference/edge-functions.md`.
+  medidas, 0 `CPUTime` pós-ativação; ADR `Aceito` em 30/09 após validação em produção. Ver runbook em `docs/reference/edge-functions.md`.
 
 ## Incidente resolvido — divergência de `verify_jwt`
 

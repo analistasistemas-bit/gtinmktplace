@@ -154,8 +154,7 @@ Lucro/Markup/Margem s/ venda, ABC e Tendência. Ver [ADR-0172](decisions/0172-ve
   não pôde ser atribuído"). Medido em 27/09: Avil ~3,1 %, DSA ~7,4 %, Daludi Shop ~14 %.
 - [x] **Incidente de CPU pré-existente (não causado pela Vendas SKU), diagnosticado em 27/09** —
   ver a seção "Fan-out por org — incidente CPU 546 (ADR-0173)" no topo deste arquivo: deployado e
-  ativo em produção desde 28/09; falta só a validação de 3 dias (a partir de 01/10) para o ADR
-  virar `Aceito`.
+  ativo em produção desde 28/09; validado em 30/09 e ADR `Aceito`.
 
 ## Renovação proativa do token ML (ADR-0171) — 2026-09-26
 

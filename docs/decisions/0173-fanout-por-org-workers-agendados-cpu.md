@@ -173,12 +173,12 @@ a recuperação regravou estado/frete/estorno/líquido, não inseriu venda nova.
 - 0 shutdown por `CPUTime` nas 3 funções. `cpu_time_used` máx: reconciliar 493 ms (mediana 119),
   pulse 158 ms, backfill sem shutdown registrado na janela — teto é 2.000 ms, portão da etapa
   `liberacoes` (1.500 ms) atendido.
-- `worker_rodadas`: todas as rodadas das 4 orgs (a Hairflay entrou sozinha, sem configuração) em `ok`,
+- `worker_rodadas`: todas as rodadas das 4 orgs (Avil, DSA, Daludi Shop, Hairflay) em `ok`,
   nenhuma `rodando` com posse vencida.
 - `worker_pendencias`: 0 ativas, 0 descartadas.
 - 0 notificação duplicada por `(user_id, chave)`; 0 venda sem itens desde 10/09.
-- Os HTTP 500 residuais do reconciliar (10 em 48 h) são 429 do ML (`/orders local_rate_limited`) num
-  lote; o retry do QStash reprocessou e a rodada fechou `ok`.
+- HTTP 500 residuais do reconciliar (10 no log de borda em 48 h): os investigados são 429 do ML
+  (`/orders local_rate_limited`) num lote; as rodadas finais fecharam todas `ok`.
 
 Correções vizinhas achadas durante a validação (não mudam esta decisão): dedupe de notificação sem
 ERROR 23505 no log (`367bfde8`) e claims de COMPRA fora do reconciliar/backfill/`sync-devolucao`

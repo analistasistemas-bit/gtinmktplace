@@ -11,6 +11,10 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-09-30
 
+**ADR-0173 (fan-out por org) Aceito.** Validado com ~48 h de produção (Diego aceitou antes dos 3 dias
+previstos): 0 `CPUTime` nas 3 funções (máx 493 ms, teto 2.000), rodadas das 4 orgs `ok`, 0
+pendências, 0 notificação duplicada. O "pendente" registrado em 28/09 abaixo fica encerrado.
+
 **Reconciliar para de reprocessar claims de compra.** Claims em que a própria conta é a compradora não
 são gravados (não são devolução de venda), então o reconciliar os tratava como "novos" a cada hora e
 buscava return, pedido, frete e pagamentos do MP (404, o pagamento é do outro vendedor) só para descartar

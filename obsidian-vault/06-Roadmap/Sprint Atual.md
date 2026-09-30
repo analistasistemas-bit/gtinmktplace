@@ -73,8 +73,7 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > `reconciliar-faturamento` estouravam o limite de 2 s de CPU por requisição da edge (QStash 546);
 > `backfill-faturamento` sem execução completa desde ~10/09. Correção: fan-out por org via QStash
 > ([[Índice de ADRs|ADR-0173]]) — deployado e ativo em produção desde 28/09, com a recuperação
-> histórica do backfill feita; falta a validação de 3 dias (a partir de 01/10) para o ADR virar
-> `Aceito`.
+> histórica do backfill feita; validado em 30/09 e ADR `Aceito`.
 
 ## Passo anterior (2026-09-20) — EM PRODUÇÃO
 

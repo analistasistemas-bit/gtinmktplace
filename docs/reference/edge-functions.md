@@ -210,8 +210,7 @@ escopo do ADR-0173, registrado aqui só para não se perder.
 feita. Ativação medida por função (backfill → pulse → reconciliar), sem nenhum `CPUTime` desde a
 virada — detalhes e números em
 [ADR-0173 → Implantação (2026-09-28)](../decisions/0173-fanout-por-org-workers-agendados-cpu.md#implantação-2026-09-28).
-ADR ainda **Proposto**: falta só a validação de 3 dias em produção (a partir de 01/10) para virar
-`Aceito`. O runbook abaixo (ativação/rollback) segue valendo tal como está — é o procedimento usado
+ADR **Aceito** em 30/09, após validação em produção. O runbook abaixo (ativação/rollback) segue valendo tal como está — é o procedimento usado
 na ativação e o que vale para reativar ou rollback. Modelo de dados em
 [modelo-de-dados.md](modelo-de-dados.md#fan-out-por-org-dos-workers-agendados-adr-0173).
 

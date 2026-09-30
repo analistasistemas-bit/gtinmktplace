@@ -8,7 +8,7 @@ atualizado: 2026-08-25
 Ocorrências reais em produção, documentadas em ADRs e `docs/TASKS.md`/`project-history.md`. Ver
 [[Bugs Conhecidos]] (o que ainda está aberto), [[Problemas Resolvidos]].
 
-## 2026-09-27 — `pulse-coletar`/`backfill-faturamento`/`reconciliar-faturamento` estourando CPU (HTTP 546) — **corrigido e ativo em produção, validação de 3 dias pendente**
+## 2026-09-27 — `pulse-coletar`/`backfill-faturamento`/`reconciliar-faturamento` estourando CPU (HTTP 546) — **corrigido e ativo em produção, ADR Aceito (30/09)**
 
 Três edge functions agendadas passaram a falhar com `CPU Time exceeded` (HTTP 546): o Supabase
 encerra a requisição ao somar 2s de CPU. `pulse-coletar` (tier completo) caía todo dia depois da
@@ -28,8 +28,8 @@ uma função por vez, com medição de CPU antes de ligar a próxima.
 **Status em 2026-09-28:** deployado e ativo em produção — migration `20260927205804_worker_rodadas.sql`
 aplicada, 17 funções redeployadas, as 3 flags ligadas (ativação medida, uma função por vez) e a
 recuperação histórica do backfill feita (1.241 vendas regravadas, 0 falhas). Checagem pós-ativação:
-188 shutdowns nas 3 funções, 0 por `CPUTime`. ADR ainda `Proposto`: falta a validação de 3 dias em
-produção (a partir de 01/10) para virar `Aceito`. Runbook em `docs/reference/edge-functions.md`.
+188 shutdowns nas 3 funções, 0 por `CPUTime`. Validado em 30/09 (~48 h, 0 `CPUTime`, máx 493 ms) — ADR
+`Aceito`. Runbook em `docs/reference/edge-functions.md`.
 Ver [[Índice de ADRs|ADR-0173]].
 
 **Achado lateral (não relacionado ao fan-out):** `materializar-metricas` está documentado com
