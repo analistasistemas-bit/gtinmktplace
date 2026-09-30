@@ -634,7 +634,7 @@ Período de 51 commits que não criou ADR: são extensões e correções dentro 
   [plano](superpowers/plans/2026-09-24-estoque-grade-operacao.md) e o amendment 2026-09-24c do
   [ADR-0166](decisions/0166-tipo-de-produto-por-organizacao.md).
 
-## Incidente CPU 546 e fan-out por org (ADR-0173, 25-28/09/2026) — resolvido em produção, validação de 3 dias pendente
+## Incidente CPU 546 e fan-out por org (ADR-0173, 25-30/09/2026) — resolvido em produção, ADR Aceito
 
 `pulse-coletar`, `backfill-faturamento` e `reconciliar-faturamento` passaram a falhar com `CPU Time
 exceeded` (HTTP 546, teto de 2s de CPU por requisição) porque processavam todas as organizações
@@ -653,8 +653,8 @@ completos em
 Runbook completo em
 [edge-functions.md](reference/edge-functions.md#fan-out-por-org-adr-0173-protocolo-ativação-e-rollback).
 
-**Pendente:** validação de 3 dias em produção (a partir de 01/10) — só depois disso o ADR-0173
-passa de `Proposto` para `Aceito`. Ver [ADR-0173](decisions/0173-fanout-por-org-workers-agendados-cpu.md)
+**Validado (30/09):** ~48 h em produção com 0 `CPUTime` (máx 493 ms), rodadas `ok`, 0 pendências e
+0 notificação duplicada — ADR-0173 `Aceito`. Ver [ADR-0173](decisions/0173-fanout-por-org-workers-agendados-cpu.md)
 e o plano `docs/superpowers/plans/2026-09-27-fanout-workers-cpu.md`. **Achado lateral:**
 `materializar-metricas` está documentado com schedule diário mas sem invocações em produção em 7
 dias até 27/09 — investigar fora deste ADR.

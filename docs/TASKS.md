@@ -22,7 +22,7 @@ caminho unitário separado. 10 tasks (SDD, revisor Grok 4.7 xHigh por task), rel
 - [x] Task 10: esta documentação (ADR-0174 aceito, edge-functions.md, modelo-de-dados.md, glossário).
 - [ ] **Deploy (pendente, faz o controlador):** `supabase db push` + `supabase functions deploy operacoes-massa` + confirmar versão ativa antes de considerar a entrega em produção.
 
-## Fan-out por org — incidente CPU 546 (ADR-0173) — DEPLOYADO e ATIVO, validação de 3 dias pendente
+## Fan-out por org — incidente CPU 546 (ADR-0173) — ATIVO e validado, ADR Aceito (30/09)
 
 Correção do incidente diagnosticado em 27/09: `pulse-coletar`, `backfill-faturamento` e
 `reconciliar-faturamento` estouravam `CPU Time exceeded` (546) por processar todas as orgs numa
@@ -44,9 +44,9 @@ números da implantação em
   máximo de CPU por função: backfill 311 ms, pulse 1.152 ms, reconciliar 299 ms) e recuperação
   histórica do backfill (1.241 vendas regravadas, 0 falhas).** Detalhes em
   [ADR-0173 → Implantação](decisions/0173-fanout-por-org-workers-agendados-cpu.md#implantação-2026-09-28).
-- [ ] **Validar 3 dias em produção a partir de 01/10** (0 `CPUTime`; nenhuma `worker_rodadas`
-  `rodando` com posse vencida > 1h; `worker_pendencias` sem crescimento; ≤ 1 notificação por
-  `(user_id, chave)`) — só então o ADR-0173 passa de `Proposto` para `Aceito`.
+- [x] **Validação em produção (30/09, ~48 h — Diego aceitou antes dos 3 dias previstos):** 0
+  `CPUTime` (máx 493 ms), nenhuma `worker_rodadas` presa, 0 `worker_pendencias`, 0 notificação
+  duplicada por `(user_id, chave)` — ADR-0173 passou de `Proposto` para `Aceito`.
 - [ ] Follow-up: pack de mensagens com 5xx permanente trava a etapa `mensagens` da org até o próximo ciclo.
 - [ ] Follow-up: pedido com leitura do MP nula e sem pendência prévia não é retentado depois de sair da janela de 72h (reconciliar e backfill — Ruling 14 do ADR).
 - [ ] Follow-up: teste de concorrência `supabase/tests/worker_rodadas_concorrencia.sh` usa `sleep 1` (pode oscilar).

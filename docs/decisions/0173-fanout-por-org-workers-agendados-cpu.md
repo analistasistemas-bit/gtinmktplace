@@ -1,6 +1,6 @@
 # ADR-0173 — Fan-out por organização, em lotes retomáveis, para os workers agendados multi-org
 
-**Status:** Proposto
+**Status:** Aceito (2026-09-30, após validação em produção — ver "Validação" no fim de "Implantação")
 **Data:** 2026-09-27
 **Relacionado:** [ADR-0006](0006-qstash-em-vez-de-postgres-queue.md) (QStash),
 [ADR-0037](0037-modulo-faturamento-webhooks-ml.md) (backfill/reconciliação de faturamento),
@@ -115,8 +115,8 @@ Código completo na branch `worktree-diag-cpu-546` (Tasks 1-7 do plano de execu�
 `worker_pendencias`, protocolo compartilhado `_shared/rodada/rodada.ts`, e as 3 funções com o modo
 fan-out atrás das flags. Runbook completo em `docs/reference/edge-functions.md`; modelo de dados em
 `docs/reference/modelo-de-dados.md`. Deploy, ativação medida e recuperação histórica: ver
-"Implantação (2026-09-28)" abaixo. **Status ainda `Proposto`** — vira `Aceito` só depois da
-validação de 3 dias em produção (a partir de 01/10, critério no fim da seção seguinte).
+"Implantação (2026-09-28)" abaixo. Passou a `Aceito` em 2026-09-30, depois da validação em
+produção registrada no fim da seção seguinte.
 
 Ponto 5 (líquido do MP) — **no protocolo NOVO por org** (ativo em produção desde 28/09, atrás das
 flags): as etapas
@@ -167,10 +167,22 @@ a recuperação regravou estado/frete/estorno/líquido, não inseriu venda nova.
 **Checagem (28/09 01:07 UTC):** 188 shutdowns das 3 funções desde 00:30 UTC, 0 por `CPUTime`. Os 3
 `CPUTime` vistos nas 24h anteriores são de antes da ativação.
 
-**Pendente — validação de 3 dias (a partir de 01/10):** 0 `CPUTime`; nenhuma linha
-`worker_rodadas` `rodando` com posse vencida > 1h; `worker_pendencias` sem crescimento; ≤ 1
-notificação por `(user_id, chave)`. Só ao validar isso o ADR-0173 passa a **Aceito**; até lá
-continua **Proposto**.
+**Validação (2026-09-30) → Aceito.** O plano previa 3 dias a partir de 01/10; Diego aceitou com
+~48 h de produção (28/09 ~00:33 → 30/09 01:16 UTC), critério integral:
+
+- 0 shutdown por `CPUTime` nas 3 funções. `cpu_time_used` máx: reconciliar 493 ms (mediana 119),
+  pulse 158 ms, backfill sem shutdown registrado na janela — teto é 2.000 ms, portão da etapa
+  `liberacoes` (1.500 ms) atendido.
+- `worker_rodadas`: todas as rodadas das 4 orgs (a Hairflay entrou sozinha, sem configuração) em `ok`,
+  nenhuma `rodando` com posse vencida.
+- `worker_pendencias`: 0 ativas, 0 descartadas.
+- 0 notificação duplicada por `(user_id, chave)`; 0 venda sem itens desde 10/09.
+- Os HTTP 500 residuais do reconciliar (10 em 48 h) são 429 do ML (`/orders local_rate_limited`) num
+  lote; o retry do QStash reprocessou e a rodada fechou `ok`.
+
+Correções vizinhas achadas durante a validação (não mudam esta decisão): dedupe de notificação sem
+ERROR 23505 no log (`367bfde8`) e claims de COMPRA fora do reconciliar/backfill/`sync-devolucao`
+(`561627d6`) — ver `docs/TASKS.md`.
 
 **Rollback:** `supabase secrets unset FANOUT_X` volta o disparador ao caminho legado no próximo
 schedule; mensagens `MsgOrg` já na fila seguem sendo consumidas pelo código novo (que permanece
