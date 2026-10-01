@@ -1,5 +1,6 @@
 import type { MLVariacaoAtual, VariacaoUpdate, VariacaoNovaPut } from './atualizar.ts';
 import { humanizarErroML } from './erro-ml.ts';
+import { parseStatusML, type ItemMLStatus } from './status.ts';
 import type { AtributoItem } from '../canais/contrato.ts';
 
 export interface ItemMLAtual {
@@ -166,22 +167,33 @@ export async function atualizarStatusML(accessToken: string, itemId: string, sta
 }
 
 // ADR-0060 (aditivo 2026-10-01): o anúncio de catálogo é OUTRO item (`item_relations`, estoque
-// compartilhado) e o ML não propaga pausa/reativação entre eles. Só mexe no relacionado que está
-// no estado oposto reversível (active↔paused) — encerrado/moderado nunca é tocado (ADR-0111).
+// compartilhado) e o ML não propaga pausa/reativação entre eles. Só mexe no relacionado cujo
+// status parseado é o oposto reversível (ativo↔pausado) — moderado (inclusive `paused` com
+// sub_status de moderação), excluído e encerrado nunca são tocados (ADR-0111). Quem chama roda isto
+// ANTES do PUT do item: se falhar, o item segue no status antigo e o retry (QStash/operador) repete
+// tudo — ao contrário, `sincronizar-estoque` leria o item já ativo e nunca voltaria ao catálogo.
 export async function propagarStatusRelacionadosML(accessToken: string, itemId: string, status: 'active' | 'paused'): Promise<void> {
   const headers = { Authorization: `Bearer ${accessToken}` };
   const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}?attributes=id,item_relations`, { headers });
   const json = await resp.json().catch(() => ({}));
   if (!resp.ok) throw erroML(resp.status, json);
-  const ids = ((json.item_relations ?? []) as Array<{ id?: string }>).map((r) => r.id).filter(Boolean);
+  const ids = ((json.item_relations ?? []) as Array<{ id?: string }>).map((r) => r.id).filter((id): id is string => !!id);
   if (ids.length === 0) return;
 
-  const multi = await fetch(`https://api.mercadolibre.com/items?ids=${ids.join(',')}&attributes=id,status`, { headers });
-  const lote = await multi.json().catch(() => []);
+  const multi = await fetch(`https://api.mercadolibre.com/items?ids=${ids.join(',')}&attributes=id,status,sub_status`, { headers });
+  const lote = await multi.json().catch(() => null);
   if (!multi.ok) throw erroML(multi.status, lote);
-  const oposto = status === 'active' ? 'paused' : 'active';
-  for (const { body } of lote as Array<{ body?: { id?: string; status?: string } }>) {
-    if (body?.id && body.status === oposto) await atualizarStatusML(accessToken, body.id, status);
+  const porId = new Map<string, ItemMLStatus>();
+  for (const r of (Array.isArray(lote) ? lote : []) as Array<{ code?: number; body?: ItemMLStatus }>) {
+    if (r.code === 200 && r.body?.id) porId.set(r.body.id, r.body);
+  }
+  const oposto = status === 'active' ? 'pausado' : 'ativo';
+  for (const id of ids) {
+    const rel = porId.get(id);
+    // Sem leitura confiável não dá para afirmar que o catálogo saiu do ar — falha alto.
+    if (!rel) throw erroML(502, { message: `Não foi possível ler o anúncio de catálogo ${id} no Mercado Livre.` });
+    if ((rel.sub_status ?? []).includes('deleted')) continue;
+    if (parseStatusML(rel).status === oposto) await atualizarStatusML(accessToken, id, status);
   }
 }
 

@@ -439,8 +439,8 @@ export const mercadoLivreConnector: ChannelConnector = {
     const token = await ctx.getToken();
     try {
       const mlStatus = status === 'ativo' ? 'active' : 'paused';
-      await atualizarStatusML(token, itemExternoId, mlStatus);
       await propagarStatusRelacionadosML(token, itemExternoId, mlStatus);
+      await atualizarStatusML(token, itemExternoId, mlStatus);
       return { ok: true };
     } catch (e) {
       return { ok: false, erro: classificarErroCanal(e) };

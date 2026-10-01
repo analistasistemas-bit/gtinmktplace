@@ -48,11 +48,13 @@ MLB5312481169) continuaram ativos e vendendo. No ML o anúncio de catálogo é *
 ao tradicional por `item_relations` (estoque compartilhado, `stock_relation: 1`), e o ML **não
 propaga** pausa/reativação entre eles.
 
-Decisão: `atualizarStatus` do conector ML, depois do PUT no item, lê `item_relations` e aplica o
-mesmo status a cada relacionado que esteja no estado oposto reversível (`active`↔`paused`).
-Relacionado encerrado, excluído ou moderado nunca é tocado (mesma regra do ADR-0111). Falha no
-relacionado devolve erro (o operador não pode achar que tudo saiu do ar); repetir é seguro porque
-o PUT de status é idempotente. Vale para os dois chamadores: o botão Pausar/Reativar e a
+Decisão: `atualizarStatus` do conector ML lê `item_relations` e aplica o mesmo status a cada
+relacionado cujo status parseado (`parseStatusML`, com `sub_status`) seja o oposto reversível
+(ativo↔pausado). Relacionado encerrado, excluído ou moderado — inclusive `paused` com sub_status de
+moderação — nunca é tocado (mesma regra do ADR-0111). A propagação roda **antes** do PUT do item:
+se falhar (ou um relacionado não voltar legível no multiget), o item fica no status antigo e o
+erro sobe, então o retry do operador ou do QStash repete tudo. Na ordem inversa, o
+`sincronizar-estoque` leria o item já ativo e nunca voltaria ao catálogo. Vale para os dois chamadores: o botão Pausar/Reativar e a
 reativação após reposição (`sincronizar-estoque`, ADR-0111).
 
 ## Como reverter
