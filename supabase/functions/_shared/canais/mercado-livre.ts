@@ -9,7 +9,7 @@ import { lerSchemaAtributos } from '../categoria/schema.ts';
 import { criarItemML, garantirDescricaoML, buscarDescricaoML, resolverDescricaoUpdate } from '../ml/criar-item.ts';
 import { precisaItemPlano, precisaGtinDePack } from '../ml/erro-ml.ts';
 import { categoriaExigeFamilyName } from '../categoria/atributos.ts';
-import { buscarItemML, atualizarItemML, atualizarItemPlanoML, atualizarStatusML } from '../ml/atualizar-item.ts';
+import { buscarItemML, atualizarItemML, atualizarItemPlanoML, atualizarStatusML, propagarStatusRelacionadosML } from '../ml/atualizar-item.ts';
 import { migracaoEmAndamento, motivoAnuncioNaoAtualizavel, subStatusMorto } from '../ml/anuncio-atualizavel.ts';
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
 import { montarAtributosPacote, fmt } from '../ml/pacote.ts';
@@ -438,7 +438,9 @@ export const mercadoLivreConnector: ChannelConnector = {
   async atualizarStatus(ctx: ContextoCanal, itemExternoId: string, status: 'ativo' | 'pausado'): Promise<ResultadoCanal<void>> {
     const token = await ctx.getToken();
     try {
-      await atualizarStatusML(token, itemExternoId, status === 'ativo' ? 'active' : 'paused');
+      const mlStatus = status === 'ativo' ? 'active' : 'paused';
+      await atualizarStatusML(token, itemExternoId, mlStatus);
+      await propagarStatusRelacionadosML(token, itemExternoId, mlStatus);
       return { ok: true };
     } catch (e) {
       return { ok: false, erro: classificarErroCanal(e) };

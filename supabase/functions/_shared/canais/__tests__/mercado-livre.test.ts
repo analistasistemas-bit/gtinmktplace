@@ -521,3 +521,57 @@ describe('lerStatus — catalogForewarning (E5 fase3)', () => {
     expect(out.MLB2.catalogForewarning).toBe(false);
   });
 });
+
+// ADR-0060 (aditivo 2026-10-01): o anúncio de catálogo é OUTRO item no ML (`item_relations`,
+// estoque compartilhado) e não herda o status. Pausar só o tradicional deixava o catálogo vendendo
+// (Hairflay, MLB7717167310/MLB5312481169).
+describe('atualizarStatus propaga para o anúncio de catálogo relacionado', () => {
+  function stubRelacionados(relacionados: Array<{ id: string; status: string }>, falharPutEm?: string) {
+    const puts: Array<{ id: string; status: string }> = [];
+    const json = (b: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(b), { status }));
+    globalThis.fetch = ((url: string, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        const id = url.split('/items/')[1];
+        if (id === falharPutEm) return json({ message: 'boom' }, 400);
+        puts.push({ id, status: JSON.parse(init.body as string).status });
+        return json({});
+      }
+      if (url.includes('/items/MLB1?')) return json({ id: 'MLB1', item_relations: relacionados.map((r) => ({ id: r.id })) });
+      return json(relacionados.map((r) => ({ code: 200, body: r })));
+    }) as typeof fetch;
+    return puts;
+  }
+
+  it('pausar: pausa o tradicional E o catálogo ativo', async () => {
+    const puts = stubRelacionados([{ id: 'MLB9', status: 'active' }]);
+    const res = await mercadoLivreConnector.atualizarStatus(ctxFake, 'MLB1', 'pausado');
+    expect(res.ok).toBe(true);
+    expect(puts).toEqual([{ id: 'MLB1', status: 'paused' }, { id: 'MLB9', status: 'paused' }]);
+  });
+
+  it('reativar: reativa o catálogo pausado', async () => {
+    const puts = stubRelacionados([{ id: 'MLB9', status: 'paused' }]);
+    await mercadoLivreConnector.atualizarStatus(ctxFake, 'MLB1', 'ativo');
+    expect(puts).toEqual([{ id: 'MLB1', status: 'active' }, { id: 'MLB9', status: 'active' }]);
+  });
+
+  it('catálogo encerrado/moderado ou já no status pedido fica intocado', async () => {
+    const puts = stubRelacionados([
+      { id: 'MLB7', status: 'closed' }, { id: 'MLB8', status: 'under_review' }, { id: 'MLB9', status: 'active' },
+    ]);
+    await mercadoLivreConnector.atualizarStatus(ctxFake, 'MLB1', 'ativo');
+    expect(puts).toEqual([{ id: 'MLB1', status: 'active' }]);
+  });
+
+  it('sem item_relations: só o PUT do próprio item', async () => {
+    const puts = stubRelacionados([]);
+    await mercadoLivreConnector.atualizarStatus(ctxFake, 'MLB1', 'pausado');
+    expect(puts).toEqual([{ id: 'MLB1', status: 'paused' }]);
+  });
+
+  it('falha no catálogo vira erro — o operador não pode achar que tudo saiu do ar', async () => {
+    stubRelacionados([{ id: 'MLB9', status: 'active' }], 'MLB9');
+    const res = await mercadoLivreConnector.atualizarStatus(ctxFake, 'MLB1', 'pausado');
+    expect(res.ok).toBe(false);
+  });
+});

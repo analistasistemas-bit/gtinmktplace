@@ -165,6 +165,26 @@ export async function atualizarStatusML(accessToken: string, itemId: string, sta
   if (!resp.ok) throw erroML(resp.status, json);
 }
 
+// ADR-0060 (aditivo 2026-10-01): o anúncio de catálogo é OUTRO item (`item_relations`, estoque
+// compartilhado) e o ML não propaga pausa/reativação entre eles. Só mexe no relacionado que está
+// no estado oposto reversível (active↔paused) — encerrado/moderado nunca é tocado (ADR-0111).
+export async function propagarStatusRelacionadosML(accessToken: string, itemId: string, status: 'active' | 'paused'): Promise<void> {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+  const resp = await fetch(`https://api.mercadolibre.com/items/${itemId}?attributes=id,item_relations`, { headers });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw erroML(resp.status, json);
+  const ids = ((json.item_relations ?? []) as Array<{ id?: string }>).map((r) => r.id).filter(Boolean);
+  if (ids.length === 0) return;
+
+  const multi = await fetch(`https://api.mercadolibre.com/items?ids=${ids.join(',')}&attributes=id,status`, { headers });
+  const lote = await multi.json().catch(() => []);
+  if (!multi.ok) throw erroML(multi.status, lote);
+  const oposto = status === 'active' ? 'paused' : 'active';
+  for (const { body } of lote as Array<{ body?: { id?: string; status?: string } }>) {
+    if (body?.id && body.status === oposto) await atualizarStatusML(accessToken, body.id, status);
+  }
+}
+
 /** ADR-0168: encerra (`closed`) e apaga (`deleted:"true"`) um item no ML, com retry curto em 409. */
 export async function excluirItemML(
   accessToken: string,

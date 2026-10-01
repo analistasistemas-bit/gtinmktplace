@@ -1760,7 +1760,8 @@ um smoke test contra Postgres real antes do primeiro deploy.
   por canal, lê em lote por canal. Escopo e token da **operação** (todos os anúncios da org),
   não do chamador (ADR-0056).
 - **atualizar-status-publicado** — pausa/reativa um anúncio (`{ml_item_id, status, canal?}`)
-  via `ChannelConnector.atualizarStatus` (PUT parcial `status`). Gate `requireAdmin` (não só
+  via `ChannelConnector.atualizarStatus` (PUT parcial `status`; no ML propaga ao anúncio de
+  catálogo relacionado via `item_relations`, só active↔paused — aditivo 2026-10-01). Gate `requireAdmin` (não só
   `requireUser`) — primeira ação de escrita restrita a admin do projeto (ADR-0060). **E6 (ADR-0061):**
   canal opcional (default `'mercado_livre'`). Token da operação, mesmo padrão do `status-publicados`.
   **ADR-0161 (J13):** recusa (400) enquanto o produto estiver migrando para preço por variação — o
