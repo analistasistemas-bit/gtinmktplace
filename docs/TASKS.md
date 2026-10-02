@@ -4,7 +4,7 @@
 
 ## Arquivar organização (ADR-0175, 2026-10-01) — código pronto na branch `worktree-arquivar-org`
 
-Soft delete de organização (caso Hairflay → Hairfly Cosmeticos). **Nada deployado ainda.**
+Soft delete de organização (caso Hairflay → Hairfly Cosmeticos). **Em produção desde 02/10/2026 02:09 UTC.**
 
 - [x] Migration `20261002012346_adr175_arquivar_organizacao.sql`: `organizations.arquivada_em`, `arquivar_organizacao`/`desarquivar_organizacao`, trava de org arquivada em `upsert_marketplace_connection`.
 - [x] Edge `usuarios`: ações `archive_org`/`unarchive_org` (`arquivar-org.ts`), `list_orgs` com `arquivada_em`, 409 em `invite`/`set_active` de org arquivada.
@@ -12,7 +12,7 @@ Soft delete de organização (caso Hairflay → Hairfly Cosmeticos). **Nada depl
 - [x] Rotinas que pulam org arquivada: `sincronizar-promocoes`, `materializar-metricas`, `notificar-liberacao`, `reconciliar-estoque`, `reconciliar-convergencia-up` (`_shared/orgs-arquivadas.ts`).
 - [x] Front: `Organizacoes.tsx` (menu ⋯, filtro "Incluir arquivadas", selo) + `dialog-arquivar-org.tsx` (digitar o slug).
 - [x] Docs: ADR-0175 aceito, índices, modelo-de-dados, edge-functions, central-organizacoes, operacoes-rotineiras.
-- [ ] **Deploy (pendente):** `supabase db push` + `supabase functions deploy` das edges afetadas (`usuarios`, `platform-admin` e as 5 rotinas acima; `_shared/` mudou) + conferir versões ativas; só então merge.
+- [x] **Deploy (02/10):** migration `20261002012346_adr175_arquivar_organizacao.sql` aplicada (`db:check` alinhado; teste SQL validado em transação desfeita + smoke pós-push); edges `usuarios` v42, `platform-admin` v12, `sincronizar-promocoes` v12, `materializar-metricas` v8, `notificar-liberacao` v36, `reconciliar-estoque` v22, `reconciliar-convergencia-up` v53 ACTIVE; merge fast-forward na main.
 
 ## Operações em massa — aderir/sair de promoção (ADR-0174, 2026-09-28) — em produção
 
