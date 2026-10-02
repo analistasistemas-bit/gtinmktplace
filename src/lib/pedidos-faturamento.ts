@@ -70,6 +70,8 @@ export interface Pedido {
   shipping_status: string | null;
   /** Substatus do envio (desmembra ready_to_ship: aguardando NF / a caminho). */
   shipping_substatus: string | null;
+  /** Tipo de logística do envio (`ml_vendas.shipping_logistic`: fulfillment, self_service, xd_drop_off…). */
+  shipping_logistic: string | null;
   /** UF do destinatário do envio (coluna ml_vendas.uf, sem prefixo "BR-"). */
   uf: string | null;
   /** Cidade do destinatário do envio (coluna ml_vendas.cidade). */
@@ -251,6 +253,7 @@ export function agruparPorPedido(
       statusDetail: primeiro.status_detail,
       shipping_status: primeiro.shipping_status,
       shipping_substatus: primeiro.shipping_substatus,
+      shipping_logistic: primeiro.shipping_logistic ?? null,
       money_release_date,
       temMembrosSemDataLiberacao,
       sacado_em,

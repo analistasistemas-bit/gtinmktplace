@@ -1,22 +1,39 @@
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtBRL, fmtMarkup } from '@/lib/formato';
-import { urlVendaML } from '@/lib/ml-status';
-import type { Pedido } from '@/lib/pedidos-faturamento';
+import { fmtBRL, fmtBRLSinal, fmtMarkup } from '@/lib/formato';
+import { fmtDataCurta, labelLogisticaEnvio, labelStatusEnvio, urlVendaML } from '@/lib/ml-status';
+import { cascataDoPedido } from '@/lib/cascata-pedido';
+import { labelStatusLiberacao, statusLiberacao } from '@/lib/status-liberacao';
+import { nomeExibicaoComprador, type ItemPedido, type Pedido } from '@/lib/pedidos-faturamento';
 import { formatarNomeProduto } from '@/lib/texto';
-import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
+import { useDetalheMLPedido } from '@/hooks/useDetalheMLPedido';
+import { BotaoCopiar } from '@/components/ui/botao-copiar';
+import { Skeleton } from '@/components/ui/skeleton';
 import { ThumbProduto } from './pilha-thumbs';
 
 /** Alíquota em pt-BR: inteira no caso normal ("8"), com 1 decimal só quando o pedido mistura origens. */
 const PCT = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 1 });
 
+const TITULO_ZONA = 'mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground';
+
+/** dd/mm/aaaa HH:mm. '—' se nulo/inválido. */
+function fmtDataHora(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+}
+
 /**
- * Conteúdo expansível de um pedido (linha aberta): meta (pedido/pack, comissão, frete, rastreio),
- * tabela de itens com custo/líquido/markup por item, e link p/ o Mercado Livre. Compartilhado entre
- * o menu Faturamento e o Detalhe do líquido (Financeiro) — mesma análise detalhada nos dois.
+ * Conteúdo expansível de um pedido (linha aberta), em 3 zonas: PEDIDO (comprador, envio, pagamento),
+ * ITENS (um bloco por item com custo/líquido/markup) e DINHEIRO (cascata venda → margem de
+ * contribuição). Compartilhado entre o menu Faturamento, o Detalhe do líquido (Financeiro) e o dossiê
+ * do SKU — as zonas se organizam pela largura do próprio container, não da tela (o dossiê abre num
+ * Sheet estreito).
  *
- * `liquidoBruto`: no Financeiro (Detalhe do líquido) a coluna "Líquido" tem que bater com o dinheiro
+ * `liquidoBruto`: no Financeiro (Detalhe do líquido) o "Líquido" do item tem que bater com o dinheiro
  * que efetivamente cai no Mercado Pago — nunca pode descontar o imposto estimado (ADR-0055). O
  * Faturamento continua mostrando o líquido já líquido de imposto (default). O Markup não muda: nos
  * dois casos usa `it.markup`, que continua calculado líquido de imposto.
@@ -28,97 +45,184 @@ export function DetalhePedidoItens({ pedido: p, liquidoBruto = false, destaque, 
   /** Dossiê do SKU: marca os itens destes códigos num pedido que também tem outros produtos. */
   destaque?: { codigos: ReadonlySet<string>; rotulo: string };
 }) {
+  const ml = useDetalheMLPedido(p.vendaIds);
+  return (
+    <div className="@container">
+      <div className="grid grid-cols-1 gap-y-4 px-4 py-3 @3xl:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,17rem)] @3xl:px-10">
+        <ZonaPedido p={p} ml={ml} />
+        <ZonaItens p={p} liquidoBruto={liquidoBruto} destaque={destaque} linkSku={linkSku} />
+        <ZonaDinheiro p={p} tipoAnuncio={ml.data?.tiposAnuncio.length === 1 ? ml.data.tiposAnuncio[0] : null} />
+      </div>
+    </div>
+  );
+}
+
+function ZonaPedido({ p, ml }: { p: Pedido; ml: ReturnType<typeof useDetalheMLPedido> }) {
   // `chave` já é `pack_id ?? order_id`, e a rota aceita os dois (ver `urlVendaML`). A rota antiga
   // `/vendas/pacote/…` foi descontinuada pelo ML e devolvia 301 para a lista de vendas.
   const urlVenda = urlVendaML(p.chave);
-  // Alíquota exibida vem de `it.aliquotaPct` (o valor cru do resolver — 8/16, ADR-0055), NUNCA
-  // reconstruída de `imposto ÷ valor`: o imposto é arredondado a centavos e a divisão de volta erra
-  // a alíquota (R$ 44,55 a 8% → 7,99%). Média ponderada pelo valor cobre pedido com origens mistas.
-  const tributados = p.itens.filter((it) => it.imposto > 0 && it.aliquotaPct != null);
-  const baseTributada = tributados.reduce((s, it) => s + it.unit_price * it.quantity, 0);
-  const aliquotaPct = baseTributada > 0
-    ? tributados.reduce((s, it) => s + (it.aliquotaPct ?? 0) * it.unit_price * it.quantity, 0) / baseTributada
-    : null;
+  const numero = p.isPack ? p.chave : String(p.orderIds[0]);
+  const local = [p.cidade, p.uf].filter(Boolean).join('/');
+  const envio = [labelLogisticaEnvio(p.shipping_logistic), p.shipping_status ? labelStatusEnvio(p.shipping_status, p.shipping_substatus).label : null]
+    .filter(Boolean).join(' · ');
+  const nome = nomeExibicaoComprador(p);
+  const d = ml.data;
   return (
-    <div className="px-10 py-3">
-      <div className="mb-2 grid grid-cols-2 gap-x-8 gap-y-1 text-xs text-muted-foreground sm:grid-cols-4">
+    <section aria-label="Pedido" className="min-w-0 @3xl:pr-5">
+      <h3 className={TITULO_ZONA}>Pedido</h3>
+      <div className="space-y-1 text-xs text-muted-foreground">
         <div>
-          {p.isPack
-            ? <>Pack <span className="font-medium text-foreground tabular-nums">{p.chave}</span></>
-            : <>Pedido <span className="font-medium text-foreground tabular-nums">{p.orderIds[0]}</span></>}
+          <div className="truncate text-sm font-medium text-foreground" title={nome}>{nome}</div>
+          {p.comprador_nome && p.comprador_nick && <div>@{p.comprador_nick}</div>}
         </div>
-        <div>Comissão ML <span className="font-medium text-foreground tabular-nums">{fmtBRL(p.comissao)}</span></div>
-        <div>Frete vendedor <span className="font-medium text-foreground tabular-nums">{p.frete != null ? fmtBRL(p.frete) : '—'}</span></div>
-        <div>
-          Imposto <span className="whitespace-nowrap font-medium text-foreground tabular-nums">
-            {fmtBRL(p.imposto)}
-            {/* Só no desktop: no mobile este bloco divide 2 colunas estreitas e o % vira ruído. */}
-            {aliquotaPct != null && <span className="hidden font-normal text-muted-foreground sm:inline"> ({PCT.format(aliquotaPct)}%)</span>}
-          </span>
+        <div className="flex items-center gap-1">
+          <span>{p.isPack ? 'Pack' : 'Pedido'}</span>
+          <span className="font-medium text-foreground tabular-nums">{numero}</span>
+          <BotaoCopiar texto={numero} rotulo={p.isPack ? 'Copiar número do pack' : 'Copiar número do pedido'} />
+          {p.isPack && <span className="ml-1 rounded bg-muted px-1.5 py-px text-[11px]">{p.orderIds.length} pedidos</span>}
         </div>
-        <div>Rastreio <span className="font-medium text-foreground">{p.rastreio ?? '—'}</span></div>
-      </div>
-      <Table className="text-xs">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Item</TableHead>
-            <TableHead>Cor</TableHead>
-            <TableHead>Código</TableHead>
-            <TableHead>EAN</TableHead>
-            <TableHead className="text-right">Qtd</TableHead>
-            <TableHead className="text-right">Preço un.</TableHead>
-            <TableHead className="text-right">Custo</TableHead>
-            <TableHead className="text-right">Líquido</TableHead>
-            <TableHead className="text-right">Markup</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {p.itens.map((it) => {
-            const mCor = it.markup == null ? undefined
-              : it.markup >= 0 ? 'text-success' : 'text-destructive';
-            // O "estornado" do pedido não dizia de qual item vinha (pack 2000014844302469).
-            const marca = [!it.faturavel && 'cancelado', it.estorno > 0 && `estornado ${fmtBRL(it.estorno)}`]
-              .filter(Boolean).join(' · ');
-            const destacado = !!destaque && destaque.codigos.has(it.codigo?.trim() ?? '');
-            const nomeItem = formatarNomeProduto(it.titulo);
-            return (
-              <TableRow key={it.id} className={destacado ? 'bg-primary/5 hover:bg-primary/10' : undefined}>
-                <TableCell className="max-w-[280px]" title={nomeItem}>
-                  <span className="flex items-center gap-2">
-                    <ThumbProduto path={it.imagem_path} titulo={it.titulo} size={28} />
-                    <span className="min-w-0">
-                      <span className="block truncate">{nomeItem || '—'}</span>
-                      {destacado && <span className="block text-[11px] font-medium normal-case text-primary">{destaque.rotulo}</span>}
-                      {marca && <span className="block normal-case text-destructive">{marca}</span>}
-                    </span>
-                  </span>
-                </TableCell>
-                <TableCell>{it.cor ?? '—'}</TableCell>
-                <TableCell className="tabular-nums">
-                  {linkSku && it.codigo?.trim()
-                    ? <Link to={`/faturamento/sku/${encodeURIComponent(it.codigo.trim())}`} className="underline-offset-2 hover:underline">{it.codigo}</Link>
-                    : it.codigo ?? '—'}
-                </TableCell>
-                <TableCell className="tabular-nums">{it.ean ?? '—'}</TableCell>
-                <TableCell className="text-right tabular-nums">{it.quantity}</TableCell>
-                <TableCell className="text-right tabular-nums">{fmtBRL(it.unit_price)}</TableCell>
-                <TableCell className="text-right tabular-nums">{it.custo != null ? fmtBRL(it.custo) : '—'}</TableCell>
-                <TableCell className="text-right tabular-nums text-success">
-                  {fmtBRL(liquidoBruto ? it.liquido + it.imposto : it.liquido)}
-                </TableCell>
-                <TableCell className={cn('text-right tabular-nums', mCor)}>
-                  {it.markup != null ? fmtMarkup(it.markup) : '—'}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-      <div className="mt-2">
-        <a href={urlVenda} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs text-info hover:underline">
+        <div className="tabular-nums">{fmtDataHora(p.data)}</div>
+        {local && <div>{local}</div>}
+        {envio && <div>Envio <span className="font-medium text-foreground">{envio}</span></div>}
+        {ml.isPending && <Skeleton data-testid="pagamento-carregando" className="h-4 w-40" />}
+        {d && d.pagamentos.length > 0 && (
+          <div className="break-words" title={d.aprovadoEm ? `Aprovado em ${fmtDataHora(d.aprovadoEm)}` : undefined}>
+            Pagamento <span className="font-medium text-foreground">{d.pagamentos.join(' + ')}</span>
+          </div>
+        )}
+        {d && d.freteComprador > 0 && (
+          <div>Frete pago pelo comprador <span className="font-medium text-foreground tabular-nums">{fmtBRL(d.freteComprador)}</span></div>
+        )}
+        {d && d.cupom > 0 && (
+          <div>Cupom <span className="font-medium text-foreground tabular-nums">{fmtBRL(d.cupom)}</span></div>
+        )}
+        <a href={urlVenda} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 pt-1 text-info hover:underline">
           Ver no Mercado Livre <ExternalLink className="h-3 w-3" />
         </a>
       </div>
+    </section>
+  );
+}
+
+function ZonaItens({ p, liquidoBruto, destaque, linkSku }: {
+  p: Pedido; liquidoBruto: boolean; linkSku: boolean;
+  destaque?: { codigos: ReadonlySet<string>; rotulo: string };
+}) {
+  return (
+    <section aria-label="Itens" className="min-w-0 border-t pt-4 @3xl:border-l @3xl:border-t-0 @3xl:px-5 @3xl:pt-0">
+      <h3 className={TITULO_ZONA}>{p.itens.length > 1 ? `${p.itens.length} itens` : 'Itens'}</h3>
+      <ul className="divide-y">
+        {p.itens.map((it) => (
+          <ItemBloco key={it.id} it={it} liquidoBruto={liquidoBruto} linkSku={linkSku}
+            destacado={!!destaque && destaque.codigos.has(it.codigo?.trim() ?? '')} rotulo={destaque?.rotulo} />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ItemBloco({ it, liquidoBruto, linkSku, destacado, rotulo }: {
+  it: ItemPedido; liquidoBruto: boolean; linkSku: boolean; destacado: boolean; rotulo?: string;
+}) {
+  const mCor = it.markup == null ? undefined : it.markup >= 0 ? 'text-success' : 'text-destructive';
+  // O "estornado" do pedido não dizia de qual item vinha (pack 2000014844302469).
+  const marca = [!it.faturavel && 'cancelado', it.estorno > 0 && `estornado ${fmtBRL(it.estorno)}`]
+    .filter(Boolean).join(' · ');
+  const nomeItem = formatarNomeProduto(it.titulo);
+  const codigo = it.codigo?.trim();
+  return (
+    <li className={cn('flex gap-3 py-2 text-xs first:pt-0 last:pb-0', destacado && 'rounded-md bg-primary/5 px-2')}>
+      <ThumbProduto path={it.imagem_path} titulo={it.titulo} size={40} />
+      <div className="min-w-0 flex-1 space-y-0.5">
+        <div className="truncate text-sm font-medium" title={nomeItem}>{nomeItem || '—'}</div>
+        {destacado && rotulo && <div className="text-[11px] font-medium text-primary">{rotulo}</div>}
+        {marca && <div className="text-destructive">{marca}</div>}
+        <div className="flex flex-wrap gap-x-2 text-muted-foreground">
+          {codigo && (
+            <span className="tabular-nums">
+              Cód{' '}
+              {linkSku
+                ? <Link to={`/faturamento/sku/${encodeURIComponent(codigo)}`} className="underline-offset-2 hover:underline">{it.codigo}</Link>
+                : it.codigo}
+            </span>
+          )}
+          {it.ean && <span className="tabular-nums">EAN {it.ean}</span>}
+          {it.cor && <span>Cor {it.cor}</span>}
+        </div>
+        <div className="flex flex-wrap items-baseline gap-x-3 tabular-nums">
+          <span>{it.quantity} × {fmtBRL(it.unit_price)}</span>
+          <span className="text-muted-foreground">Custo {it.custo != null ? fmtBRL(it.custo) : '—'}</span>
+          <span className="text-success">Líq {fmtBRL(liquidoBruto ? it.liquido + it.imposto : it.liquido)}</span>
+          <span className={mCor ?? 'text-muted-foreground'}>Markup {it.markup != null ? fmtMarkup(it.markup) : '—'}</span>
+        </div>
+      </div>
+    </li>
+  );
+}
+
+function Linha({ op, rotulo, valor, subtotal, forte, cor }: {
+  /** Sinal da conta (−, =) — decorativo, fora do texto do rótulo. */
+  op?: string; rotulo: ReactNode; valor: ReactNode; subtotal?: boolean; forte?: boolean; cor?: string;
+}) {
+  return (
+    <div className={cn('flex items-baseline justify-between gap-3 py-0.5', subtotal && 'border-t pt-1', forte && 'font-semibold')}>
+      <dt className="flex min-w-0 items-baseline gap-1.5 text-muted-foreground">
+        <span aria-hidden className="w-2.5 shrink-0 text-center">{op}</span>
+        {rotulo}
+      </dt>
+      <dd className={cn('shrink-0 tabular-nums', forte ? 'text-sm' : 'text-foreground', cor)}>{valor}</dd>
     </div>
+  );
+}
+
+function ZonaDinheiro({ p, tipoAnuncio }: { p: Pedido; tipoAnuncio: string | null }) {
+  const c = cascataDoPedido(p);
+  const semCusto = c.custo == null;
+  const parcial = !semCusto && !c.custoCompleto;
+  const liberacao = statusLiberacao({
+    money_release_date: p.money_release_date, sacado_em: p.sacado_em,
+    temMembrosSemDataLiberacao: p.temMembrosSemDataLiberacao, faturavel: p.faturavel,
+  });
+  const dataLiberacao = liberacao === 'sacado' ? p.sacado_em : p.money_release_date;
+  const textoLiberacao = liberacao === 'sacado' ? 'Sacado em'
+    : liberacao === 'liberado' ? 'Liberado em'
+      : liberacao === 'aliberar' ? 'Libera em' : null;
+  const foraDaConta = p.bruto - p.brutoFaturavel;
+  const corMargem = c.margem != null ? (c.margem >= 0 ? 'text-success' : 'text-destructive') : undefined;
+  return (
+    <section aria-label="Dinheiro" className="min-w-0 border-t pt-4 @3xl:border-l @3xl:border-t-0 @3xl:pl-5 @3xl:pt-0">
+      <h3 className={TITULO_ZONA}>Dinheiro</h3>
+      <dl className="text-xs">
+        <Linha rotulo="Venda" valor={fmtBRL(c.venda)} />
+        {foraDaConta >= 0.01 && (
+          <p className="pl-4 text-[11px] text-muted-foreground">{fmtBRL(foraDaConta)} de itens cancelados fora da conta</p>
+        )}
+        <Linha op="−" rotulo={tipoAnuncio ? `Comissão ${tipoAnuncio}` : 'Comissão ML'} valor={fmtBRL(c.comissao)} />
+        <Linha op="−" rotulo="Frete vendedor" valor={p.frete != null && p.faturavel ? fmtBRL(c.frete) : '—'} />
+        {Math.abs(c.ajustes) >= 0.01 && (
+          // `ajustes` é o que ainda sai da venda até o líquido: positivo = desconto (−), negativo = crédito (+).
+          <Linha rotulo="Outros ajustes" valor={c.ajustes > 0 ? `−${fmtBRL(c.ajustes)}` : `+${fmtBRL(-c.ajustes)}`} />
+        )}
+        <Linha op="=" subtotal rotulo="Líquido após ML" valor={fmtBRL(c.recebido)} />
+        <Linha op="−" rotulo={c.aliquotaPct != null ? `Imposto ${PCT.format(c.aliquotaPct)}%` : 'Imposto'} valor={fmtBRL(c.imposto)} />
+        <Linha op="−" rotulo="Custo" valor={c.custo != null ? `${fmtBRL(c.custo)}${parcial ? ' (parcial)' : ''}` : '—'} />
+        <Linha op="=" subtotal forte cor={corMargem} rotulo="Margem de contribuição"
+          valor={c.margem != null ? fmtBRLSinal(c.margem) : '—'} />
+      </dl>
+      <div className="mt-1 space-y-0.5 pl-4 text-[11px] text-muted-foreground tabular-nums">
+        {c.margemPct != null && <div>{PCT.format(Math.round(c.margemPct * 10) / 10)}% da venda</div>}
+        {c.markup != null && <div>Markup {fmtMarkup(c.markup)}{parcial ? ' (parcial)' : ''}</div>}
+        {semCusto && <div>Cadastre o custo para ver a margem</div>}
+        {parcial && <div>Custo incompleto</div>}
+      </div>
+      {textoLiberacao && dataLiberacao && (
+        <div className={cn(
+          'mt-2 border-t pt-2 text-xs tabular-nums',
+          liberacao === 'sacado' ? 'text-primary' : liberacao === 'liberado' ? 'text-success' : 'text-warning',
+        )} title={labelStatusLiberacao(liberacao)}>
+          {textoLiberacao} {fmtDataCurta(dataLiberacao)}
+        </div>
+      )}
+    </section>
   );
 }

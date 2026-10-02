@@ -70,6 +70,9 @@ vi.mock('@/hooks/useCoresProduto', () => ({
 vi.mock('@/hooks/useAnuncioCanonico', () => ({
   useAnuncioCanonico: () => ({ data: undefined }),
 }));
+vi.mock('@/hooks/useDetalheMLPedido', () => ({
+  useDetalheMLPedido: () => ({ data: undefined, isPending: false, isError: false }),
+}));
 vi.mock('@/hooks/useImageUrl', () => ({
   useImageUrl: () => ({ data: undefined }),
 }));

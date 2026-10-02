@@ -4,6 +4,7 @@ import { labelStatusEnvio } from './ml-status';
 import { ehFaturavel } from './resumo-vendas';
 import { buscarTodasPaginas } from './paginacao-supabase';
 import { round2 } from './formato';
+import type { DetalheMLVenda } from './detalhe-ml-pedido';
 import type { CanalAtivo } from './canal-ativo';
 import { comCustoCongelado, type CustoCongeladoRow, type OrigemVenda, type Venda } from '../../supabase/functions/_shared/platform-admin/sales-types';
 export { comCustoCongelado, type CustoCongeladoRow, type OrigemVenda, type Venda, type VendaItem } from '../../supabase/functions/_shared/platform-admin/sales-types';
@@ -69,6 +70,19 @@ export async function buscarVendasPorIds(ids: string[]): Promise<Venda[]> {
   return vendas
     .map(posProcessarVenda)
     .sort((a, b) => (b.date_closed ?? '').localeCompare(a.date_closed ?? '') || a.id.localeCompare(b.id));
+}
+
+/** Trechos do payload cru `/orders` (pagamento, cupom, tipo de anúncio) das vendas de UM pedido.
+ *  Fora do `SELECT_VENDAS` de propósito: o `raw` pesa e a lista carrega milhares de linhas; aqui
+ *  só é lido quando o detalhe abre. RLS por org, igual `buscarVendas`. */
+export async function buscarDetalheMLDasVendas(vendaIds: string[]): Promise<DetalheMLVenda[]> {
+  if (vendaIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('ml_vendas')
+    .select('id, pagamentos:raw->payments, cupom:raw->coupon, itens_ml:raw->order_items')
+    .in('id', vendaIds);
+  if (error) throw new Error(error.message);
+  return (data ?? []) as unknown as DetalheMLVenda[];
 }
 
 /** Folga da marca d'água. `atualizado_em = now()` no Postgres é o timestamp do INÍCIO da

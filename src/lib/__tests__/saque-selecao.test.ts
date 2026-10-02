@@ -19,6 +19,7 @@ function pedido(chave: string, faturavel = true): Pedido {
     statusDetail: null,
     shipping_status: null,
     shipping_substatus: null,
+    shipping_logistic: null,
     uf: null,
     cidade: null,
     unidades: 1,

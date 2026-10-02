@@ -49,6 +49,20 @@ export function labelStatusEnvio(
   return ENVIO[status] ?? { label: status, tom: 'muted' };
 }
 
+const LOGISTICA: Record<string, string> = {
+  fulfillment: 'Full',
+  self_service: 'Flex',
+  xd_drop_off: 'Places',
+  drop_off: 'Agência/Correios',
+  cross_docking: 'Coleta',
+};
+
+/** Rótulo do tipo de logística do envio (`shipping_logistic`). Valor desconhecido volta cru; null → null. */
+export function labelLogisticaEnvio(logistica: string | null | undefined): string | null {
+  if (!logistica) return null;
+  return LOGISTICA[logistica] ?? logistica;
+}
+
 /** Data curta pt-BR (dd/mm) a partir de ISO. '—' se nulo. */
 export function fmtDataCurta(iso: string | null | undefined): string {
   if (!iso) return '—';
