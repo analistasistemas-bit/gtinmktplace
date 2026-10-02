@@ -31,8 +31,10 @@ cancelado não conta (`ehFaturavel`). "Unidades por visita" segue só no Dossiê
 pela pergunta "a visita virou compra?" — pedido de 10 unidades distorceria o ranking — e bater com o que o
 vendedor vê no ML.
 
-**D-4 — Dias sem dado.** Período termina em **D-2** (visitas fecham em 48 h) e a tela diz isso. Soma só
-pares MLB × dia `ok`; pedidos contam **nos mesmos pares**. **Cobertura** < 95% → aviso discreto; < 80% →
+**D-4 — Dias sem dado.** Período termina em **D-3**: o coletor só marca `ok` 48 h após o **fim** do dia, então D-2 ainda é
+`pendente` (medido em 02/10: 24–29/09 `ok`, 30/09 `pendente`). A tela diz isso. Soma só
+pares MLB × dia `ok`; dia sem linha conta como não-`ok` (grade MLB × dia); vendas de **kit virtual**
+contam no MLB do kit (`ml_vendas.kit_item_id`), não no componente; pedidos contam **nos mesmos pares**. **Cobertura** < 95% → aviso discreto; < 80% →
 número vazio. Rejeitado: regra estrita do Dossiê (na conta inteira deixaria a tela quase sempre vazia) e
 incluir hoje (queda falsa diária). Não há banner de "vendas não importadas": vendas entram por webhook +
 reconciliação horária + backfill.
@@ -49,7 +51,7 @@ reconciliação horária + backfill.
 
 | Rótulo | Critério inicial | Ação sugerida |
 |---|---|---|
-| Invisível | ativo, com estoque, 0 visitas há ≥ 7 dias | moderação/indexação — sempre no topo |
+| Invisível | ativo (o ML pausa anúncio sem estoque), 0 visitas nos 7 últimos dias `ok` | moderação/indexação — sempre no topo |
 | Vitrine sem venda | ≥ 100 visitas e conversão < 50% da média da conta | preço/foto/título (link Dossiê) |
 | Converte e ninguém vê | ≥ 5 pedidos, conversão ≥ 1,5× média, visitas < mediana; selo "sem Ads"/"em Ads" | Ads |
 | Perdendo visitas | ≥ 100 visitas no período anterior e queda > 30% | concorrência/posição |
@@ -68,7 +70,10 @@ navegador (paginação pesada a cada troca de período) e tudo no SQL (calibrar 
 
 ## Consequências
 
-- Migration nova (RPC + `MenuKey` se houver CHECK/enum), testada contra Postgres real.
+- Migration nova (RPC + backfill de `profiles.allowed_menus`), testada contra Postgres real. A RPC recusa
+  período inválido ou > 182 dias.
+- `MenuKey` nova também no espelho da edge `usuarios` (senão `sanitizeMenus` descarta a permissão) →
+  redeploy de `usuarios`.
 - Ads é por grupo (ADR-0172): o selo "em Ads" diz se o MLB pertence a algum grupo ativo, sem ratear gasto.
 - Vínculo MLB→código é o atual (sem vigência histórica), herdado do ADR-0172.
 - Fora de escopo: Shopee (E5), posição na busca, alertas/notificação dos rótulos.
