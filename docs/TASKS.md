@@ -8,7 +8,7 @@ Linha expandida de Faturamento › Vendas (também no Financeiro e no dossiê do
 
 - [x] Zona **Pedido**: nome + @apelido, pedido/pack com copiar, data e hora, cidade/UF, logística + status do envio, pagamento, frete pago pelo comprador, cupom, link do ML. **Rastreio removido** (pedido do Diego).
 - [x] Zona **Itens**: um bloco por item (código, EAN, cor, qtd × preço, custo, líquido, markup), sem colunas vazias.
-- [x] Zona **Dinheiro**: cascata venda → comissão (Clássico/Premium) → frete → líquido após ML → imposto → custo → **margem de contribuição** (R$ e % da venda) + markup + liberação (`cascata-pedido.ts`).
+- [x] Zona **Dinheiro**: cascata venda → comissão (Clássico/Premium) → frete → líquido após ML → imposto → custo → **Lucro** (R$) + **Margem s/ venda** (%) + markup, mesmos rótulos de Vendas SKU + liberação (`cascata-pedido.ts`).
 - [x] Pagamento, frete do comprador, cupom e tipo de anúncio lidos de `ml_vendas.raw` só ao expandir (`buscarDetalheMLDasVendas`, `useDetalheMLPedido`); a lista não carrega o `raw`.
 - [x] Validado com dados reais (pedido simples, pack de 4 pedidos, dossiê na gaveta, tema claro).
 - [ ] Fora do escopo (nível 3, exige ADR + `/shipments`): CEP, prazo de postagem, entrega prevista, dimensões do ML.

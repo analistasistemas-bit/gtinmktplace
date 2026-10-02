@@ -206,11 +206,12 @@ function ZonaDinheiro({ p, tipoAnuncio }: { p: Pedido; tipoAnuncio: string | nul
         <Linha op="=" subtotal rotulo="Líquido após ML" valor={fmtBRL(c.recebido)} />
         <Linha op="−" rotulo={c.aliquotaPct != null ? `Imposto ${PCT.format(c.aliquotaPct)}%` : 'Imposto'} valor={fmtBRL(c.imposto)} />
         <Linha op="−" rotulo="Custo" valor={c.custo != null ? `${fmtBRL(c.custo)}${parcial ? ' (parcial)' : ''}` : '—'} />
-        <Linha op="=" subtotal forte cor={corMargem} rotulo="Margem de contribuição"
+        <Linha op="=" subtotal forte cor={corMargem} rotulo="Lucro"
           valor={c.margem != null ? fmtBRLSinal(c.margem) : '—'} />
       </dl>
       <div className="mt-1 space-y-0.5 pl-4 text-[11px] text-muted-foreground tabular-nums">
-        {c.margemPct != null && <div>{PCT.format(Math.round(c.margemPct * 10) / 10)}% da venda</div>}
+        {/* Mesmo rótulo e base de Vendas SKU (ADR-0150): lucro ÷ preço de venda. */}
+        {c.margemPct != null && <div>Margem s/ venda {PCT.format(Math.round(c.margemPct * 10) / 10)}%</div>}
         {c.markup != null && <div>Markup {fmtMarkup(c.markup)}{parcial ? ' (parcial)' : ''}</div>}
         {semCusto && <div>Cadastre o custo para ver a margem</div>}
         {parcial && <div>Custo incompleto</div>}

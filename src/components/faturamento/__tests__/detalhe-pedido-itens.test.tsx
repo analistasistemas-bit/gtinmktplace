@@ -134,15 +134,15 @@ describe('DetalhePedidoItens', () => {
 });
 
 describe('DetalhePedidoItens — cascata de dinheiro', () => {
-  it('mostra venda, líquido após ML, margem de contribuição, % da venda e markup', () => {
+  it('mostra venda, líquido após ML, lucro, margem s/ venda e markup', () => {
     renderDetalhe(pedidoCompleto());
     const dinheiro = screen.getByRole('region', { name: 'Dinheiro' });
     expect(within(dinheiro).getByText('Venda')).toBeInTheDocument();
     expect(within(dinheiro).getByText('Líquido após ML')).toBeInTheDocument();
     expect(within(dinheiro).getByText('R$ 28,16')).toBeInTheDocument();
-    expect(within(dinheiro).getByText('Margem de contribuição')).toBeInTheDocument();
+    expect(within(dinheiro).getByText('Lucro')).toBeInTheDocument();
     expect(within(dinheiro).getByText('R$ 10,23')).toBeInTheDocument();
-    expect(within(dinheiro).getByText('25,6% da venda')).toBeInTheDocument();
+    expect(within(dinheiro).getByText('Margem s/ venda 25,6%')).toBeInTheDocument();
     expect(within(dinheiro).getByText('Markup +89%')).toBeInTheDocument();
     expect(within(dinheiro).queryByText(/Recebido no MP/)).not.toBeInTheDocument();
     expect(within(dinheiro).queryByText('Outros ajustes')).not.toBeInTheDocument();
@@ -323,7 +323,7 @@ describe('DetalhePedidoItens — dados lazy do pagamento', () => {
     renderDetalhe(pedidoCompleto());
     expect(screen.queryByTestId('pagamento-carregando')).not.toBeInTheDocument();
     expect(screen.queryByText(/Pagamento/)).not.toBeInTheDocument();
-    expect(screen.getByText('Margem de contribuição')).toBeInTheDocument();
+    expect(screen.getByText('Lucro')).toBeInTheDocument();
     expect(screen.getByText('Comissão ML')).toBeInTheDocument();
   });
 
