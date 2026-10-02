@@ -1395,7 +1395,7 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 |---|---|
 | `update_lote_counters()` | Trigger: recalcula contadores de `lotes` + transição de status |
 | `current_org_id()` | **Pivô da RLS por org** (ADR-0027): `org_id` do chamador ativo (`is_active`) |
-| `vitrine_resumo(p_inicio, p_fim)` | Vitrine (ADR-0176): `jsonb` com visitas, pedidos, conversão e lista "Onde agir" da org do chamador (`current_org_id()`); `stable`, só `authenticated`; recusa período nulo/invertido/> 182 dias. Lê `ml_item_visitas_dia`, `ml_vendas(_itens)`, `ml_trafego_item`, `ml_ads_grupo(_item)` |
+| `vitrine_resumo(p_inicio, p_fim)` | Vitrine (ADR-0176): `jsonb` da org do chamador (`current_org_id()`) com visitas, pedidos, receita e pares (ok/total) por MLB (período e anterior), por semana e por dia da semana; conversão, rótulos e frases ("Onde agir") são calculados no front (`src/lib/vitrine.ts`). Kit virtual conta 1 pedido por `pack_id` (o ML emite 1 order por componente) e o título vem de `kits_virtuais` (migration `20261002225552_vitrine_kit_pedido`). `stable`, só `authenticated`; recusa período nulo/invertido/> 182 dias. Lê `ml_item_visitas_dia`, `ml_vendas(_itens)`, `ml_trafego_item`, `ml_ads_grupo(_item)`, `kits_virtuais` |
 | `is_super_admin()` | O chamador tem `profiles.is_super_admin` |
 | `start_support_session(request_id, requester_id, now)` | Inicia uma sessão aprovada ou renova atomicamente nos 15 minutos finais; somente `service_role` |
 | `cleanup_support_audit_events()` | Remove auditoria com mais de um ano sem `legal_hold`; chamada pelo cron diário |

@@ -19,7 +19,7 @@ function Delta({ atual, anterior, pp }: { atual: number | null; anterior: number
   const Seta = sinal > 0 ? ArrowUp : sinal < 0 ? ArrowDown : null;
   return (
     <span className={cn('inline-flex items-center gap-0.5 text-xs font-medium tabular-nums', sinal > 0 ? 'text-success' : sinal < 0 ? 'text-danger' : 'text-muted-foreground')}>
-      {Seta && <Seta className="size-3" aria-hidden />}{texto}
+      <span aria-hidden className="inline-flex items-center gap-0.5">{Seta && <Seta className="size-3" />}{texto}</span>
       <span className="sr-only">{sinal > 0 ? ' alta de' : sinal < 0 ? ' queda de' : ' sem variação'} {sinal === 0 ? '' : `${texto} `}contra o período anterior</span>
     </span>
   );

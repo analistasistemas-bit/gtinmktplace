@@ -1,14 +1,16 @@
 import { useMemo } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { fmtInt } from '@/lib/formato';
 import { serieVitrine, type SemanaVitrine } from '@/lib/vitrine';
 import { EIXO, EIXO_LUCRO, EIXO_UNID, MARGEM, TOOLTIP, kCompacto } from '@/components/sku-dossie/serie-pontos';
 
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 const pct = (x: number) => `${(x * 100).toFixed(1).replace('.', ',')}%`;
+const dec1 = (x: number) => x.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 export function GraficoVitrine({ semanas, inicio, fim }: { semanas: SemanaVitrine[]; inicio: string; fim: string }) {
   const dados = useMemo(() => serieVitrine(semanas, inicio, fim).map((p) => ({ ...p, rotulo: ddmm(p.semana) })), [semanas, inicio, fim]);
+  // máximo < 10 visitas/dia: eixo com fração (senão 0, 1, 1, 2… repetidos)
+  const fracao = dados.every((p) => (p.visitasDia ?? 0) < 10);
   return (
     <section aria-labelledby="vitrine-serie" className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-sm">
       <h2 id="vitrine-serie" className="text-sm font-medium">Visitas por dia e conversão por semana</h2>
@@ -21,14 +23,14 @@ export function GraficoVitrine({ semanas, inicio, fim }: { semanas: SemanaVitrin
           <ComposedChart data={dados} margin={{ top: 16, right: MARGEM, left: MARGEM, bottom: 0 }}>
             <CartesianGrid yAxisId="v" strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
             <XAxis dataKey="rotulo" tick={EIXO} stroke="var(--border)" interval="preserveStartEnd" minTickGap={12} />
-            <YAxis yAxisId="v" width={EIXO_UNID + 8} tick={EIXO} stroke="var(--border)" allowDecimals={false} tickFormatter={(v) => kCompacto(Number(v))} />
+            <YAxis yAxisId="v" width={EIXO_UNID + 8} tick={EIXO} stroke="var(--border)" allowDecimals={fracao} tickFormatter={(v) => (fracao ? dec1(Number(v)) : kCompacto(Number(v)))} />
             <YAxis yAxisId="c" orientation="right" width={EIXO_LUCRO + 8} tick={EIXO} stroke="var(--border)" tickFormatter={(v) => pct(Number(v))} />
             <Tooltip {...TOOLTIP}
               labelFormatter={(_, payload) => {
                 const d = payload?.[0]?.payload as { rotulo: string; dias: number } | undefined;
                 return d ? `Semana de ${d.rotulo}${d.dias < 7 ? ` · ${d.dias} ${d.dias === 1 ? 'dia' : 'dias'} no período` : ''}` : '';
               }}
-              formatter={(v, nome) => [nome === 'Conversão' ? pct(Number(v)) : fmtInt(Math.round(Number(v))), nome]} />
+              formatter={(v, nome) => [nome === 'Conversão' ? pct(Number(v)) : dec1(Number(v)), nome]} />
             <Bar yAxisId="v" dataKey="visitasDia" name="Visitas por dia" fill="var(--chart-1)" radius={[3, 3, 0, 0]} maxBarSize={36} isAnimationActive={false} />
             <Line yAxisId="c" dataKey="conv" name="Conversão" stroke="var(--success)" strokeWidth={2}
               dot={{ r: 2.5, fill: 'var(--success)', strokeWidth: 0 }} activeDot={{ r: 4 }} connectNulls={false} isAnimationActive={false} />
