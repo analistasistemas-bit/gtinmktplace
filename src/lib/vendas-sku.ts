@@ -341,6 +341,8 @@ const MAX_INSIGHTS = 6;
  *  A queda de lucro de um SKU não entra: o painel "Quem explica a variação do lucro" já mostra. */
 export function gerarInsights(p: {
   linhas: LinhaSku[]; alertas: Map<string, Alerta[]>; tendencias: Map<string, Tendencia>;
+  /** Unidades nos 30 dias até o fim e nos 30 anteriores: a base da tendência. */
+  u30: Map<string, number>; uAnt: Map<string, number>;
   coberturaBaixa: SkuInsight[]; parados: SkuInsight[];
 }): Insight[] {
   const out: Insight[] = [];
@@ -355,10 +357,12 @@ export function gerarInsights(p: {
     out.push({ texto: `${um(prej.length, 'SKU deu', 'SKUs deram')} prejuízo: −${fmtBRL0(-total)}.`,
       skus: prej.map((l) => item(l, `−${fmtBRL0(-l.m.lucro!)}`)) });
   }
-  const semCusto = com('sem_custo').sort((a, b) => b.acc.bruto - a.acc.bruto);
+  // O alerta junta "sem custo" e "parcial" (custo em só parte das vendas): a frase vale para os dois.
+  const parcial = (l: LinhaSku) => (l.m.fonteCusto === 'parcial' ? 1 : 0);
+  const semCusto = com('sem_custo').sort((a, b) => parcial(a) - parcial(b) || b.acc.bruto - a.acc.bruto);
   if (semCusto.length) out.push({
-    texto: `${um(semCusto.length, 'SKU vendeu', 'SKUs venderam')} sem custo cadastrado: o lucro ${semCusto.length === 1 ? 'dele' : 'deles'} fica incompleto.`,
-    skus: semCusto.map((l) => item(l, `${fmtBRL0(l.acc.bruto)} vendidos`)),
+    texto: `${um(semCusto.length, 'SKU tem', 'SKUs têm')} venda sem custo cadastrado: o lucro ${semCusto.length === 1 ? 'dele' : 'deles'} fica incompleto.`,
+    skus: semCusto.map((l) => item(l, parcial(l) ? 'custo parcial' : 'sem custo')),
   });
   const nc = p.coberturaBaixa.length;
   if (nc > 0) out.push({ texto: `${um(nc, 'SKU tem', 'SKUs têm')} estoque para menos de ${LIMITES.coberturaMinDias} dias.`, skus: p.coberturaBaixa });
@@ -378,10 +382,13 @@ export function gerarInsights(p: {
       skus: pos.slice(0, k).map((l) => item(l, fmtBRL0(l.m.lucro!))),
     });
   }
-  const alta = skus.filter((l) => p.tendencias.get(l.codigo) === 'em_alta').sort((a, b) => b.acc.unidades - a.acc.unidades);
+  // Sem "%": em_alta inclui quem saiu do zero, onde porcentagem não existe.
+  const u = (m: Map<string, number>, l: LinhaSku) => m.get(l.codigo) ?? 0;
+  const alta = skus.filter((l) => p.tendencias.get(l.codigo) === 'em_alta').sort((a, b) => u(p.u30, b) - u(p.u30, a));
+  const dias = LIMITES.janelaTendenciaDias;
   if (alta.length) out.push({
-    texto: `${um(alta.length, 'SKU', 'SKUs')} em alta: ${alta.length === 1 ? 'vende' : 'vendem'} ${LIMITES.variacaoTendencia * 100}% mais nos últimos ${LIMITES.janelaTendenciaDias} dias.`,
-    skus: alta.map((l) => item(l, `${l.acc.unidades} un. no período`)),
+    texto: `${um(alta.length, 'SKU', 'SKUs')} em alta: ${alta.length === 1 ? 'vende' : 'vendem'} mais nos últimos ${dias} dias que nos ${dias} anteriores.`,
+    skus: alta.map((l) => item(l, `${u(p.u30, l)} un. em ${dias} dias (antes ${u(p.uAnt, l)})`)),
   });
   return out.slice(0, MAX_INSIGHTS);
 }
@@ -474,7 +481,7 @@ export function montarVendasSku(p: {
     linhas, linhasAnterior,
     kpis: calcularKpisSku(linhas), kpisAnterior: calcularKpisSku(linhasAnterior),
     tendencias, coberturas, alertas, variacoes,
-    insights: gerarInsights({ linhas, alertas, tendencias, coberturaBaixa, parados }),
+    insights: gerarInsights({ linhas, alertas, tendencias, u30, uAnt, coberturaBaixa, parados }),
     parados: parados.length, devolucoesNaoAtribuidas, historicoDesde,
   };
 }

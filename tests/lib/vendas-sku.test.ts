@@ -245,7 +245,7 @@ describe('nomeSku', () => {
 });
 
 describe('gerarInsights', () => {
-  const vazio = { linhas: [] as LinhaSku[], alertas: new Map(), tendencias: new Map(), coberturaBaixa: [], parados: [] };
+  const vazio = { linhas: [] as LinhaSku[], alertas: new Map(), tendencias: new Map(), u30: new Map(), uAnt: new Map(), coberturaBaixa: [], parados: [] };
   const it1 = { codigo: 'x', nome: 'X', detalhe: '' };
 
   it('só com evidência: sem sinal, nenhuma frase', () => {
@@ -275,11 +275,13 @@ describe('gerarInsights', () => {
     expect(ins.skus?.map((s) => [s.codigo, s.detalhe])).toEqual([['b', '−R$\u00a030,00'], ['a', '−R$\u00a010,00']]);
   });
 
-  it('sem custo: maior faturamento primeiro', () => {
-    const ls = [linha('a', null, 50), linha('b', null, 200)];
-    const ins = gerarInsights({ ...vazio, linhas: ls, alertas: new Map([['a', ['sem_custo']], ['b', ['sem_custo']]]) });
-    expect(ins[0].texto).toBe('2 SKUs venderam sem custo cadastrado: o lucro deles fica incompleto.');
-    expect(ins[0].skus?.map((s) => [s.codigo, s.detalhe])).toEqual([['b', 'R$\u00a0200,00 vendidos'], ['a', 'R$\u00a050,00 vendidos']]);
+  it('sem custo: sem custo nenhum antes do parcial, depois maior faturamento', () => {
+    const ls = [linha('a', null, 50), linha('b', null, 200), linha('c', 5, 900)];
+    ls[2].m = { ...ls[2].m, fonteCusto: 'parcial' };
+    const al = new Map([['a', ['sem_custo']], ['b', ['sem_custo']], ['c', ['sem_custo']]]);
+    const ins = gerarInsights({ ...vazio, linhas: ls, alertas: new Map(al) });
+    expect(ins[0].texto).toBe('3 SKUs têm venda sem custo cadastrado: o lucro deles fica incompleto.');
+    expect(ins[0].skus?.map((s) => [s.codigo, s.detalhe])).toEqual([['b', 'sem custo'], ['a', 'sem custo'], ['c', 'custo parcial']]);
   });
 
   it('devolução alta e em alta', () => {
@@ -287,13 +289,14 @@ describe('gerarInsights', () => {
     ls[0].m = { ...ls[0].m, taxaDevolucao: 0.125 };
     ls[1].acc = { ...ls[1].acc, unidades: 12 };
     const ins = gerarInsights({ ...vazio, linhas: ls,
-      alertas: new Map([['a', ['devolucao_alta']]]), tendencias: new Map([['b', 'em_alta'], ['a', 'estavel']]) });
+      alertas: new Map([['a', ['devolucao_alta']]]), tendencias: new Map([['b', 'em_alta'], ['a', 'estavel']]),
+      u30: new Map([['b', 6]]), uAnt: new Map([['b', 0]]) });
     expect(ins.map((i) => i.texto)).toEqual([
       '1 SKU com devolução acima de 5%.',
-      '1 SKU em alta: vende 20% mais nos últimos 30 dias.',
+      '1 SKU em alta: vende mais nos últimos 30 dias que nos 30 anteriores.',
     ]);
     expect(ins[0].skus?.[0].detalhe).toBe('12,5% devolvido');
-    expect(ins[1].skus?.[0].detalhe).toBe('12 un. no período');
+    expect(ins[1].skus?.[0].detalhe).toBe('6 un. em 30 dias (antes 0)');
   });
 
   it('no máximo 6; o que pede ação vem antes do informativo', () => {
@@ -304,11 +307,11 @@ describe('gerarInsights', () => {
     expect(ins).toHaveLength(6);
     expect(ins.map((i) => i.texto)).toEqual([
       '1 SKU deu prejuízo: −R$\u00a05,00.',
-      '1 SKU vendeu sem custo cadastrado: o lucro dele fica incompleto.',
+      '1 SKU tem venda sem custo cadastrado: o lucro dele fica incompleto.',
       '1 SKU tem estoque para menos de 15 dias.',
       '1 SKU com devolução acima de 5%.',
       '1 SKU parou de vender há mais de 30 dias.',
-      '1 SKU em alta: vende 20% mais nos últimos 30 dias.',
+      '1 SKU em alta: vende mais nos últimos 30 dias que nos 30 anteriores.',
     ]);
   });
 });
@@ -408,7 +411,7 @@ describe('SEM_CODIGO fora dos rankings', () => {
 
   it('insight "metade do lucro" não conta a linha sem código', () => {
     const ls = ['a', 'b', 'c', 'd', 'e'].map((c) => linha(c, 10));
-    const ins = gerarInsights({ linhas: [linha(SEM_CODIGO, 1000), ...ls], alertas: new Map(), tendencias: new Map(), coberturaBaixa: [], parados: [] });
+    const ins = gerarInsights({ linhas: [linha(SEM_CODIGO, 1000), ...ls], alertas: new Map(), tendencias: new Map(), u30: new Map(), uAnt: new Map(), coberturaBaixa: [], parados: [] });
     expect(ins.some((s) => s.texto.includes('metade do lucro'))).toBe(false); // 5 × 10: 3 SKUs fazem metade, acima de 20%
   });
 
