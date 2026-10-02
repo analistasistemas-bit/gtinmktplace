@@ -204,10 +204,11 @@ begin
   if exists (select 1 from public.profiles where org_id = p_org_id and is_active) then
     raise exception 'A organização ainda possui membros ativos.' using errcode = '55000';
   end if;
-  for v_cx in select * from public.marketplace_connections where org_id = p_org_id for update loop
-    delete from vault.secrets where id = v_cx.access_token_secret_id;
-    delete from vault.secrets where id = v_cx.refresh_token_secret_id;
-    delete from public.marketplace_connections where id = v_cx.id;
+  -- Reusa a RPC existente (mesma ordem de locks Vault → conexão que o "Desconectar" de Canais):
+  -- travar a conexão aqui e o Vault depois criaria ciclo de deadlock com uma desconexão concorrente
+  -- (Codex rodada 2, #1). A RPC é idempotente se a conexão já sumiu.
+  for v_cx in select * from public.marketplace_connections where org_id = p_org_id loop
+    perform public.delete_marketplace_connection(v_cx.id);
   end loop;
   update public.organizations set arquivada_em = v_agora where id = p_org_id;
   return v_agora;
@@ -296,6 +297,11 @@ describe('executarArquivamento', () => {
     expect(d.auditar).not.toHaveBeenCalled();
     expect(d.rpc).not.toHaveBeenCalled();
   });
+  it('500 (não 404) quando a leitura da org falha', async () => {
+    const d = base({ existe: vi.fn().mockRejectedValue(new Error('db down')) });
+    expect((await executarArquivamento(d)).status).toBe(500);
+    expect(d.auditar).not.toHaveBeenCalled();
+  });
   it('arquiva: intent → rpc → success', async () => {
     const d = base();
     const r = await executarArquivamento(d);
@@ -358,7 +364,11 @@ export async function executarArquivamento(d: ArquivamentoDeps): Promise<Respost
   if (!d.orgAlvo || !UUID.test(d.orgAlvo)) return { status: 400, body: { error: 'org_id inválido' } };
   if (d.orgAlvo === d.orgDoChamador) return { status: 400, body: { error: 'Não é possível arquivar a sua própria empresa.' } };
   // platform_audit_events.org_id tem FK para organizations: auditar org inexistente daria 500.
-  if (!(await d.existe(d.orgAlvo))) return { status: 404, body: { error: 'Empresa não encontrada.' } };
+  // `existe` LANÇA em erro de consulta — falha de banco não pode virar 404 (Codex rodada 2, #5).
+  let existe: boolean;
+  try { existe = await d.existe(d.orgAlvo); }
+  catch (e) { return { status: 500, body: { error: `Falha ao ler a empresa: ${e instanceof Error ? e.message : String(e)}` } }; }
+  if (!existe) return { status: 404, body: { error: 'Empresa não encontrada.' } };
   const intent = await d.auditar(d.orgAlvo, 'intent');
   if (intent) return { status: 500, body: { error: `Falha ao registrar auditoria (intent): ${intent}` } };
   const fn = d.arquivar ? 'arquivar_organizacao' : 'desarquivar_organizacao';
@@ -385,7 +395,8 @@ export async function executarArquivamento(d: ArquivamentoDeps): Promise<Respost
         orgDoChamador: (me.org_id as string | null) ?? null,
         arquivar: action === 'archive_org',
         existe: async (id) => {
-          const { data } = await db.from('organizations').select('id').eq('id', id).maybeSingle();
+          const { data, error } = await db.from('organizations').select('id').eq('id', id).maybeSingle();
+          if (error) throw new Error(error.message);
           return !!data;
         },
         // db.rpc devolve um builder PromiseLike — o await converte para a Promise que o helper tipa.
@@ -422,7 +433,7 @@ e `import { executarArquivamento } from './arquivar-org.ts';`. Em `list_orgs`, i
   - (c) `organization(orgId)` devolve org arquivada (detalhe continua acessível).
   - Em `handler.test.ts:62` atualizar a expectativa para incluir `include_archived: false`.
 - [ ] **Step 2: Rodar e ver falhar.**
-- [ ] **Step 3: Implementar** — `DbQuery` (`repository.ts:5`) declara `is(column: string, value: null): DbQuery`; `OrgRow` ganha `arquivada_em: string | null`; o parâmetro inline de `enrichOne` (`repository.ts:86`) passa a ser `OrgRow`; selects passam a `'id,nome,slug,is_test,arquivada_em'`; `loadOrganizations(includeTest, includeArchived)` adiciona `if (!includeArchived) query = query.is('arquivada_em', null);`; `wallet` recebe `include_archived?: boolean`; `enrichOne` copia `arquivada_em` para o summary; **os totais (`repository.ts:154-163`) somam só `summaries.filter((s) => !s.arquivada_em)`**.
+- [ ] **Step 3: Implementar** — `DbQuery` (`repository.ts:5`) declara `is(column: string, value: null): DbQuery`; `OrgRow` ganha `arquivada_em: string | null`; o parâmetro inline de `enrichOne` (`repository.ts:86`) passa a ser `OrgRow`; selects passam a `'id,nome,slug,is_test,arquivada_em'`; `loadOrganizations(includeTest, includeArchived)` adiciona `if (!includeArchived) query = query.is('arquivada_em', null);`; `wallet` recebe `include_archived?: boolean`; `enrichOne` copia `arquivada_em` para o summary; **totais, `completeMetrics`, `completePreviews` e warnings (`repository.ts:143-163`) são todos calculados sobre `const ativas = summaries.filter((s) => !s.arquivada_em)`** — as linhas da tabela continuam usando `summaries` (Codex rodada 2, #3; teste: arquivada com leitura falhando + `include_archived: true` não deixa total `null`).
 - [ ] **Step 4: Rotinas que listam `organizations` direto** — `sincronizar-promocoes:72`: `admin.from('organizations').select('id').contains('modulos_habilitados', ['promocoes']).is('arquivada_em', null)`; `materializar-metricas:41`: `admin.from('organizations').select('id').is('arquivada_em', null)`.
 - [ ] **Step 4b (Codex #2): rotinas que enumeram por vendas/movimentos/anúncios** — criar `supabase/functions/_shared/orgs-arquivadas.ts`:
 
@@ -431,17 +442,26 @@ e `import { executarArquivamento } from './arquivar-org.ts';`. Em `list_orgs`, i
 // conexão precisam pular orgs arquivadas explicitamente.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 
+import { paginarTudo } from './pagina.ts';
+
 export async function listarOrgsArquivadas(admin: SupabaseClient): Promise<Set<string>> {
-  const { data, error } = await admin.from('organizations').select('id').not('arquivada_em', 'is', null);
-  if (error) throw new Error(`orgs arquivadas: ${error.message}`);
-  return new Set(((data ?? []) as Array<{ id: string }>).map((o) => o.id));
+  // Paginado (teto de 1000 linhas do PostgREST): id omitido seria tratado como org ativa.
+  const linhas = await paginarTudo<{ id: string }>(
+    (de, ate) => admin.from('organizations').select('id').not('arquivada_em', 'is', null).order('id').range(de, ate),
+  );
+  return new Set(linhas.map((o) => o.id));
+}
+
+/** Filtro PostgREST `not.in` — vazio quando não há arquivadas (aplicar só se `!== null`). */
+export function filtroNotIn(ids: Set<string>): string | null {
+  return ids.size === 0 ? null : `(${[...ids].join(',')})`;
 }
 ```
 
-  com teste `supabase/functions/_shared/__tests__/orgs-arquivadas.test.ts` (fake devolvendo 2 ids → Set com 2; erro → throw). Aplicar:
-  - `notificar-liberacao/index.ts:~38`: após a query de `ml_vendas`, `const arquivadas = await listarOrgsArquivadas(admin);` e descartar `vendas` com `arquivadas.has(v.org_id)` **antes** de notificar/marcar.
-  - `reconciliar-estoque/index.ts:~36`: filtrar `movs` e `pendentes` por `!arquivadas.has(m.org_id)` antes de montar `orgsComPendencia`/produtos.
-  - `reconciliar-convergencia-up/processar.ts:19`: `listarRaizesTravadas` passa a selecionar `id, org_id` e devolve só raízes de orgs não arquivadas (recebe o Set via `deps`; o chamador em `index.ts` carrega com `listarOrgsArquivadas`). Ajustar o teste existente de `listarRaizesTravadas`, se houver (`grep -rn listarRaizesTravadas supabase/functions`).
+  (Conferir a assinatura de `paginarTudo` em `_shared/pagina.ts:15` e como ela propaga `error` — copiar o uso de `reconciliar-estoque/index.ts:36`.) Teste `supabase/functions/_shared/__tests__/orgs-arquivadas.test.ts`: fake paginado com 1001 ids → Set com 1001; erro → throw; `filtroNotIn(new Set())` → null; `filtroNotIn(new Set(['a','b']))` → `'(a,b)'`. Aplicar, **excluindo na consulta** (antes do limite de linhas — Codex rodada 2, #2):
+  - `notificar-liberacao/index.ts:~38`: `const arquivadas = filtroNotIn(await listarOrgsArquivadas(admin));` e, na query de `ml_vendas`, `if (arquivadas) q = q.not('org_id', 'in', arquivadas);` (montar a query em variável `let q = admin.from('ml_vendas')...` antes do `await`).
+  - `reconciliar-estoque/index.ts:~36`: idem nas duas queries de `estoque_movimentos` dentro dos callbacks de `paginarTudo`.
+  - `reconciliar-convergencia-up/processar.ts:19`: `listarRaizesTravadas(deps, limite)` com `deps: { admin; orgsArquivadas: Set<string> }` aplica `.not('org_id', 'in', ...)` quando houver; o chamador em `index.ts` carrega com `listarOrgsArquivadas`. Ajustar o teste existente de `listarRaizesTravadas`, se houver (`grep -rn listarRaizesTravadas supabase/functions`).
 - [ ] **Step 5: `pnpm test -- supabase/functions/_shared/platform-admin supabase/functions/_shared/__tests__/orgs-arquivadas.test.ts supabase/functions/reconciliar-convergencia-up`** verde; `deno check` nos arquivos alterados (`deno check supabase/functions/<fn>/index.ts` para usuarios, platform-admin, sincronizar-promocoes, materializar-metricas, notificar-liberacao, reconciliar-estoque, reconciliar-convergencia-up); `pnpm lint`.
 - [ ] **Step 6: Commit** `feat(adr-0175): Central e rotinas ignoram org arquivada`.
 
