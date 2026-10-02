@@ -2223,6 +2223,7 @@ export type Database = {
       }
       organizations: {
         Row: {
+          arquivada_em: string | null
           atualizado_em: string
           canais_habilitados: string[]
           criado_em: string
@@ -2238,6 +2239,7 @@ export type Database = {
           tipos_produto_habilitados: string[]
         }
         Insert: {
+          arquivada_em?: string | null
           atualizado_em?: string
           canais_habilitados?: string[]
           criado_em?: string
@@ -2253,6 +2255,7 @@ export type Database = {
           tipos_produto_habilitados?: string[]
         }
         Update: {
+          arquivada_em?: string | null
           atualizado_em?: string
           canais_habilitados?: string[]
           criado_em?: string
@@ -3690,6 +3693,10 @@ export type Database = {
         }
         Returns: number
       }
+      arquivar_organizacao: {
+        Args: { p_org_id: string }
+        Returns: string
+      }
       avancar_ads_cursor: {
         Args: {
           p_cursor_atual: string | null
@@ -3757,6 +3764,10 @@ export type Database = {
       }
       delete_ml_credentials: { Args: { p_user_id: string }; Returns: undefined }
       desfazer_saque_ml_vendas: { Args: { p_ids: string[] }; Returns: number }
+      desarquivar_organizacao: {
+        Args: { p_org_id: string }
+        Returns: undefined
+      }
       estornar_estoque: {
         Args: {
           p_canal: string
