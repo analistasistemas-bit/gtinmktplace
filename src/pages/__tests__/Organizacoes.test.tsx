@@ -313,7 +313,9 @@ describe('Organizacoes', () => {
     expect(searchValuesSeen).toEqual(new Set(['avil']));
   });
 
-  describe('arquivar organização (ADR-0175)', () => {
+  // Runner do CI é ~10x mais lento que o local (1º teste do arquivo: 1,5 s lá, 0,1 s aqui); os
+  // fluxos abaixo abrem menu Radix + digitam o slug e estouravam o limite padrão de 5 s.
+  describe('arquivar organização (ADR-0175)', { timeout: 20000 }, () => {
     const abrirMenu = async (user: ReturnType<typeof userEvent.setup>) => {
       await user.click(screen.getByRole('button', { name: 'Ações' }));
     };
