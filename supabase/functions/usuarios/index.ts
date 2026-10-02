@@ -58,15 +58,17 @@ Deno.serve(async (req) => {
     json({ error: `Falha ao registrar auditoria (${result}): ${error}` }, 500);
 
   // ADR-0175 (Codex #6): org arquivada não recebe convite nem reativação de membro.
-  const orgArquivada = async (): Promise<boolean> => {
-    const { data } = await db.from('organizations').select('arquivada_em').eq('id', orgId).maybeSingle();
-    return !!data?.arquivada_em;
+  // Falha de leitura NÃO libera a gravação (Grok): devolve a resposta de erro em vez de seguir.
+  const bloqueioArquivada = async (): Promise<Response | null> => {
+    const { data, error } = await db.from('organizations').select('arquivada_em').eq('id', orgId).maybeSingle();
+    if (error) return json({ error: `Falha ao ler a empresa: ${error.message}` }, 500);
+    return data?.arquivada_em ? json({ error: 'Empresa arquivada: desarquive antes.' }, 409) : null;
   };
-  const ARQUIVADA = 'Empresa arquivada: desarquive antes.';
 
   switch (action) {
     case 'invite': {
-      if (await orgArquivada()) return json({ error: ARQUIVADA }, 409);
+      const bloqueio = await bloqueioArquivada();
+      if (bloqueio) return bloqueio;
       const email = String(body.email ?? '').trim().toLowerCase();
       if (!email) return json({ error: 'email obrigatório' }, 400);
       // E7: novo usuário herda a org do admin que convida (handle_new_user consome org_id).
@@ -107,7 +109,10 @@ Deno.serve(async (req) => {
     }
     case 'set_active': {
       if (body.id === caller.id && !body.is_active) return json({ error: 'não pode se desativar' }, 400);
-      if (body.is_active === true && await orgArquivada()) return json({ error: ARQUIVADA }, 409);
+      if (body.is_active === true) {
+        const bloqueio = await bloqueioArquivada();
+        if (bloqueio) return bloqueio;
+      }
       const { data: alvo } = await db.from('profiles').select('is_super_admin')
         .eq('id', body.id).eq('org_id', orgId).maybeSingle();
       if (alvo?.is_super_admin && !me.is_super_admin) {

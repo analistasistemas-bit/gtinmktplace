@@ -238,7 +238,8 @@ export default function Organizacoes() {
     toast.success(modo === 'arquivar' ? '✓ Organização arquivada' : '✓ Organização desarquivada');
     setArquivarAlvo(null);
     // Sai da lista com o filtro padrão: se era a única linha da página, volta uma página (sem tela vazia).
-    if (orgs.length <= 1 && page > 1) setPage(page - 1);
+    // Só some da lista ao arquivar com o filtro desligado; desarquivar mantém a linha.
+    if (modo === 'arquivar' && !includeArchived && orgs.length <= 1 && page > 1) setPage(page - 1);
     setTravado(null);
     await qc.invalidateQueries({ queryKey: ['platform-admin'] });
   }
@@ -530,7 +531,7 @@ export default function Organizacoes() {
       />
 
       <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <HeroCarteira totals={totals} orgs={orgs} loading={wallet.isLoading} className="col-span-2 sm:col-span-3 lg:col-span-2" />
+        <HeroCarteira totals={totals} orgs={orgs.filter((o) => !o.arquivada_em)} loading={wallet.isLoading} className="col-span-2 sm:col-span-3 lg:col-span-2" />
         <KpiCard
           label="Previsão de cobrança" icon={WalletIcon} infoKey="Previsão de cobrança"
           loading={wallet.isLoading}
