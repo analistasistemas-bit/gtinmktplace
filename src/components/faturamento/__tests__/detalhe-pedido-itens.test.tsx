@@ -177,12 +177,34 @@ describe('DetalhePedidoItens — cascata de dinheiro', () => {
     }));
     expect(screen.getByText('R$ 11,55 (parcial)')).toBeInTheDocument();
     expect(screen.getByText('Custo incompleto')).toBeInTheDocument();
-    expect(screen.getByText('Markup +89% (parcial)')).toBeInTheDocument();
+    // O líquido do item sem custo inflaria o markup: sem custo completo, nada de markup.
+    expect(screen.queryByText(/^Markup .*\(parcial\)/)).not.toBeInTheDocument();
   });
 
   it('pack misto: nota com o valor dos itens cancelados fora da conta', () => {
     renderDetalhe(pedidoCompleto({ bruto: 79.8 }));
-    expect(screen.getByText('R$ 39,90 de itens cancelados fora da conta')).toBeInTheDocument();
+    expect(screen.getByText('R$ 39,90 fora do faturamento (cancelado/devolvido)')).toBeInTheDocument();
+  });
+
+  it('pedido cancelado com custo no item não pede para cadastrar custo', () => {
+    renderDetalhe(pedido({
+      faturavel: false, bruto: 50, brutoFaturavel: 0, frete: 7.15, comissao: 0, liquido: 0, custo: null,
+      itens: [item({ faturavel: false, liquido: 0, custo: 11.55 })],
+    }));
+    expect(screen.queryByText('Cadastre o custo para ver a margem')).not.toBeInTheDocument();
+  });
+
+  it('estorno aparece no Dinheiro, fora da conta', () => {
+    renderDetalhe(pedidoCompleto({ estorno: 12.3 }));
+    const dinheiro = screen.getByRole('region', { name: 'Dinheiro' });
+    expect(within(dinheiro).getByText('Estornado ao comprador R$ 12,30 (fora da conta)')).toBeInTheDocument();
+  });
+
+  it('sinais da cascata são lidos pelo leitor de tela', () => {
+    renderDetalhe(pedidoCompleto());
+    const dinheiro = screen.getByRole('region', { name: 'Dinheiro' });
+    expect(within(dinheiro).getAllByText('menos', { exact: false }).length).toBeGreaterThan(0);
+    expect(dinheiro.querySelector('dl > p')).toBeNull();
   });
 
   it('pedido cancelado: frete zerado na cascata', () => {
@@ -318,11 +340,11 @@ describe('DetalhePedidoItens — dados lazy do pagamento', () => {
     expect(screen.queryByText(/Pagamento/)).not.toBeInTheDocument();
   });
 
-  it('erro: omite as linhas e o resto do detalhe segue', () => {
+  it('erro: avisa "Pagamento indisponível" e o resto do detalhe segue', () => {
     lazy.estado = { data: undefined, isPending: false, isError: true };
     renderDetalhe(pedidoCompleto());
     expect(screen.queryByTestId('pagamento-carregando')).not.toBeInTheDocument();
-    expect(screen.queryByText(/Pagamento/)).not.toBeInTheDocument();
+    expect(screen.getByText('Pagamento indisponível')).toBeInTheDocument();
     expect(screen.getByText('Lucro')).toBeInTheDocument();
     expect(screen.getByText('Comissão ML')).toBeInTheDocument();
   });

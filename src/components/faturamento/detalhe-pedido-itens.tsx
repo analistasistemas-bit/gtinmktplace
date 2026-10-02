@@ -84,6 +84,7 @@ function ZonaPedido({ p, ml }: { p: Pedido; ml: ReturnType<typeof useDetalheMLPe
         <div className="tabular-nums">{fmtDataHora(p.data)}</div>
         {local && <div>{local}</div>}
         {envio && <div>Envio <span className="font-medium text-foreground">{envio}</span></div>}
+        {ml.isError && <div>Pagamento indisponível</div>}
         {ml.isPending && <Skeleton data-testid="pagamento-carregando" className="h-4 w-40" />}
         {d && d.pagamentos.length > 0 && (
           <div className="break-words" title={d.aprovadoEm ? `Aprovado em ${fmtDataHora(d.aprovadoEm)}` : undefined}>
@@ -168,6 +169,7 @@ function Linha({ op, rotulo, valor, subtotal, forte, cor }: {
     <div className={cn('flex items-baseline justify-between gap-3 py-0.5', subtotal && 'border-t pt-1', forte && 'font-semibold')}>
       <dt className="flex min-w-0 items-baseline gap-1.5 text-muted-foreground">
         <span aria-hidden className="w-2.5 shrink-0 text-center">{op}</span>
+        {op && <span className="sr-only">{op === '−' ? 'menos ' : 'igual a '}</span>}
         {rotulo}
       </dt>
       <dd className={cn('shrink-0 tabular-nums', forte ? 'text-sm' : 'text-foreground', cor)}>{valor}</dd>
@@ -195,7 +197,10 @@ function ZonaDinheiro({ p, tipoAnuncio }: { p: Pedido; tipoAnuncio: string | nul
       <dl className="text-xs">
         <Linha rotulo="Venda" valor={fmtBRL(c.venda)} />
         {foraDaConta >= 0.01 && (
-          <p className="pl-4 text-[11px] text-muted-foreground">{fmtBRL(foraDaConta)} de itens cancelados fora da conta</p>
+          <div className="pl-4 text-[11px] text-muted-foreground">
+            <dt className="sr-only">Fora do faturamento</dt>
+            <dd>{fmtBRL(foraDaConta)} fora do faturamento (cancelado/devolvido)</dd>
+          </div>
         )}
         <Linha op="−" rotulo={tipoAnuncio ? `Comissão ${tipoAnuncio}` : 'Comissão ML'} valor={fmtBRL(c.comissao)} />
         <Linha op="−" rotulo="Frete vendedor" valor={p.frete != null && p.faturavel ? fmtBRL(c.frete) : '—'} />
@@ -212,9 +217,11 @@ function ZonaDinheiro({ p, tipoAnuncio }: { p: Pedido; tipoAnuncio: string | nul
       <div className="mt-1 space-y-0.5 pl-4 text-[11px] text-muted-foreground tabular-nums">
         {/* Mesmo rótulo e base de Vendas SKU (ADR-0150): lucro ÷ preço de venda. */}
         {c.margemPct != null && <div>Margem s/ venda {PCT.format(Math.round(c.margemPct * 10) / 10)}%</div>}
-        {c.markup != null && <div>Markup {fmtMarkup(c.markup)}{parcial ? ' (parcial)' : ''}</div>}
-        {semCusto && <div>Cadastre o custo para ver a margem</div>}
+        {c.markup != null && <div>Markup {fmtMarkup(c.markup)}</div>}
+        {/* Pedido cancelado zera o custo do total: aí não falta cadastro, só não há venda. */}
+        {semCusto && p.faturavel && <div>Cadastre o custo para ver a margem</div>}
         {parcial && <div>Custo incompleto</div>}
+        {p.estorno >= 0.01 && <div>Estornado ao comprador {fmtBRL(p.estorno)} (fora da conta)</div>}
       </div>
       {textoLiberacao && dataLiberacao && (
         <div className={cn(

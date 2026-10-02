@@ -57,7 +57,7 @@ describe('cascataDoPedido', () => {
     expect(c.custo).toBe(11.55);
     expect(c.custoCompleto).toBe(false);
     expect(c.margem).toBeNull();
-    expect(c.markup).toBeCloseTo(0.886, 3);
+    expect(c.markup).toBeNull(); // custo incompleto infla o markup (revisão Grok)
   });
 
   it('item não faturável sem custo não impede custo completo', () => {

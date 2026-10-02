@@ -10,7 +10,8 @@ export interface CascataPedido {
   comissao: number;
   /** Frete do vendedor; 0 quando o pedido todo é cancelado/devolvido. */
   frete: number;
-  /** Resíduo para a conta fechar (arredondamento, estorno parcial); 0 na maioria dos pedidos. */
+  /** Resíduo para a conta fechar (arredondamento, rateio do frete no pack); 0 na maioria dos pedidos.
+   *  Não é estorno: o líquido não desconta `estorno`, que o detalhe mostra à parte. */
   ajustes: number;
   /** `liquido + imposto`: líquido após ML, antes do imposto estimado (ADR-0042/0055). */
   recebido: number;
@@ -54,6 +55,7 @@ export function cascataDoPedido(p: Pedido): CascataPedido {
     custoCompleto,
     margem,
     margemPct: margem != null && venda > 0 ? (margem / venda) * 100 : null,
-    markup: p.markup,
+    // Com custo faltando, o líquido do item sem custo entra no numerador e infla o markup.
+    markup: custoCompleto ? p.markup : null,
   };
 }
