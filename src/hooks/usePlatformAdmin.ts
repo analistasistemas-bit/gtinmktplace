@@ -19,6 +19,7 @@ export type PlatformWalletParams = {
   month: Month;
   search?: string;
   include_test?: boolean;
+  include_archived?: boolean;
   page?: number;
   page_size?: number;
   sort?: 'name' | 'slug' | 'gross_desc';
@@ -65,6 +66,7 @@ export const platformAdminKeys = {
     key(userId, 'wallet', null, params.month, filters({
       search: params.search,
       include_test: params.include_test,
+      include_archived: params.include_archived,
       page: params.page,
       page_size: params.page_size,
       sort: params.sort,

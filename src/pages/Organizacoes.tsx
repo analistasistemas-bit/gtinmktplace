@@ -28,6 +28,7 @@ import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import { cancelSupport, listSupportRequests, type SupportRequest } from '@/lib/suporte';
 import { useSupportStore } from '@/stores/support-store';
+import { DialogArquivarOrg } from '@/components/platform-admin/dialog-arquivar-org';
 import { SupportRequestDialog } from '@/components/platform-admin/support-request-dialog';
 
 const PAGE_SIZE = 10;
@@ -166,6 +167,8 @@ export default function Organizacoes() {
   const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [includeTest, setIncludeTest] = useState(false);
+  const [includeArchived, setIncludeArchived] = useState(false);
+  const [arquivarAlvo, setArquivarAlvo] = useState<{ org: OrgSummary; modo: 'arquivar' | 'desarquivar' } | null>(null);
   const [sort, setSort] = useState<'name' | 'slug' | 'gross_desc'>('gross_desc');
   const [page, setPage] = useState(1);
   const [somentePendencias, setSomentePendencias] = useState(false);
@@ -187,7 +190,7 @@ export default function Organizacoes() {
   }, [searchInput]);
 
   // Filtro novo (mês/busca/teste) muda o total da carteira filtrada — reavalia se ainda cabe tudo.
-  useEffect(() => { setTravado(null); }, [month, search, includeTest]);
+  useEffect(() => { setTravado(null); }, [month, search, includeTest, includeArchived]);
 
   const netSort = travado?.sort ?? sort;
   const netPage = travado?.page ?? page;
@@ -195,6 +198,7 @@ export default function Organizacoes() {
     month,
     search: search.trim() || undefined,
     include_test: includeTest,
+    include_archived: includeArchived,
     sort: netSort,
     page: netPage,
     page_size: PAGE_SIZE,
@@ -220,13 +224,24 @@ export default function Organizacoes() {
     return [...rows].sort(comparar).slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   }, [wallet.data, walletCompleta, sort, page]);
   const orgs = useMemo(
-    () => pageRows.filter((org) => includeTest || !org.is_test),
-    [pageRows, includeTest],
+    () => pageRows.filter((org) => (includeTest || !org.is_test) && (includeArchived || !org.arquivada_em)),
+    [pageRows, includeTest, includeArchived],
   );
   const orgsVisiveis = useMemo(
     () => somentePendencias ? orgs.filter((o) => (o.pending_count ?? 0) > 0 || o.modality == null) : orgs,
     [orgs, somentePendencias],
   );
+  async function confirmarArquivar() {
+    if (!arquivarAlvo) return;
+    const { org, modo } = arquivarAlvo;
+    await callUsuarios({ action: modo === 'arquivar' ? 'archive_org' : 'unarchive_org', org_id: org.id });
+    toast.success(modo === 'arquivar' ? '✓ Organização arquivada' : '✓ Organização desarquivada');
+    setArquivarAlvo(null);
+    // Sai da lista com o filtro padrão: se era a única linha da página, volta uma página (sem tela vazia).
+    if (orgs.length <= 1 && page > 1) setPage(page - 1);
+    setTravado(null);
+    await qc.invalidateQueries({ queryKey: ['platform-admin'] });
+  }
   const sortLabel = sort === 'gross_desc' ? 'faturamento' : sort === 'slug' ? 'slug' : 'nome';
 
   const support = useQuery<SupportRequest[]>({
@@ -353,6 +368,7 @@ export default function Organizacoes() {
                 {o.nome}
               </Link>
               {o.is_test && <Badge variant="outline">Teste</Badge>}
+              {o.arquivada_em && <Badge variant="outline">Arquivada</Badge>}
               {request?.status === 'active' && <StatusPill tone="info">Acesso ativo</StatusPill>}
               {request?.status === 'pending' && <StatusPill tone="neutral">Aguardando aprovação</StatusPill>}
             </div>
@@ -476,6 +492,9 @@ export default function Organizacoes() {
                 <DropdownMenuItem asChild>
                   <Link to={`/admin/organizacoes/${o.id}?mes=${month}&aba=configuracoes`}>Configurações</Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setArquivarAlvo({ org: o, modo: o.arquivada_em ? 'desarquivar' : 'arquivar' })}>
+                  {o.arquivada_em ? 'Desarquivar' : 'Arquivar'}
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
@@ -594,6 +613,14 @@ export default function Organizacoes() {
           />
           Incluir testes
         </label>
+        <label className="flex items-center gap-2 text-sm" htmlFor="include-archived-organizations">
+          <Checkbox
+            id="include-archived-organizations"
+            checked={includeArchived}
+            onCheckedChange={(checked) => { setIncludeArchived(checked === true); setPage(1); }}
+          />
+          Incluir arquivadas
+        </label>
       </div>
       {/* Só com dado: `?? 0` afirmava "0 organizações" enquanto carregava e, pior, logo acima da
           faixa de erro — número falso onde o resto da tela usa skeleton. */}
@@ -655,6 +682,13 @@ export default function Organizacoes() {
           qc.invalidateQueries({ queryKey: ['organizacoes'] }),
           qc.invalidateQueries({ queryKey: ['platform-admin'] }),
         ])}
+      />
+      <DialogArquivarOrg
+        key={arquivarAlvo?.org.id ?? 'nenhuma'}
+        org={arquivarAlvo?.org ?? null}
+        modo={arquivarAlvo?.modo ?? 'arquivar'}
+        onClose={() => setArquivarAlvo(null)}
+        onConfirm={confirmarArquivar}
       />
       <SupportRequestDialog
         org={supportOrg}

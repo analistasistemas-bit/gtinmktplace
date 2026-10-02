@@ -174,7 +174,7 @@ describe('Organizacoes', () => {
 
     expect(screen.queryByText('Org teste')).not.toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar a carteira');
-    expect(usePlatformWallet).toHaveBeenCalledWith(expect.objectContaining({ include_test: false }));
+    expect(usePlatformWallet).toHaveBeenCalledWith(expect.objectContaining({ include_test: false, include_archived: false }));
   });
 
   it('org sem condições comerciais ganha pill "Sem condições" e item "Cadastrar" na faixa de atenção', async () => {
@@ -311,5 +311,86 @@ describe('Organizacoes', () => {
     // Só o valor final chegou ao hook — nenhum 'a' ou 'av' intermediário vazou de um timer não cancelado.
     const searchValuesSeen = new Set(usePlatformWallet.mock.calls.map(([params]) => params.search).filter((value) => value !== undefined));
     expect(searchValuesSeen).toEqual(new Set(['avil']));
+  });
+
+  describe('arquivar organização (ADR-0175)', () => {
+    const abrirMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(screen.getByRole('button', { name: 'Ações' }));
+    };
+
+    it('menu mostra "Arquivar" para org ativa e "Desarquivar" + selo para arquivada', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await abrirMenu(user);
+      expect(await screen.findByText('Arquivar')).toBeInTheDocument();
+      expect(screen.queryByText('Desarquivar')).not.toBeInTheDocument();
+      cleanup();
+
+      usePlatformWallet.mockReturnValue(makeWallet([makeOrg({ arquivada_em: '2026-09-30T10:00:00Z' })]));
+      renderPage();
+      await user.click(screen.getByRole('checkbox', { name: 'Incluir arquivadas' }));
+      expect(await screen.findByText('Arquivada')).toBeInTheDocument();
+      await abrirMenu(user);
+      expect(await screen.findByText('Desarquivar')).toBeInTheDocument();
+    });
+
+    it('confirmar exige o slug exato e chama archive_org', async () => {
+      invoke.mockResolvedValue({ data: { ok: true, arquivada_em: '2026-10-01T00:00:00Z' }, error: null });
+      const user = userEvent.setup();
+      renderPage();
+      await abrirMenu(user);
+      await user.click(await screen.findByText('Arquivar'));
+      const confirmar = screen.getByRole('button', { name: 'Arquivar' });
+      expect(confirmar).toBeDisabled();
+      await user.type(screen.getByLabelText(/Digite/), 'clien');
+      expect(confirmar).toBeDisabled();
+      await user.type(screen.getByLabelText(/Digite/), 'te');
+      expect(confirmar).toBeEnabled();
+      await user.click(confirmar);
+      await waitFor(() => expect(invoke).toHaveBeenCalledWith('usuarios', { body: { action: 'archive_org', org_id: 'org-1' } }));
+    });
+
+    it('desarquivar usa o mesmo diálogo e chama unarchive_org', async () => {
+      invoke.mockResolvedValue({ data: { ok: true }, error: null });
+      usePlatformWallet.mockReturnValue(makeWallet([makeOrg({ arquivada_em: '2026-09-30T10:00:00Z' })]));
+      const user = userEvent.setup();
+      renderPage();
+      await user.click(screen.getByRole('checkbox', { name: 'Incluir arquivadas' }));
+      await abrirMenu(user);
+      await user.click(await screen.findByText('Desarquivar'));
+      await user.type(screen.getByLabelText(/Digite/), 'cliente');
+      await user.click(screen.getByRole('button', { name: 'Desarquivar' }));
+      await waitFor(() => expect(invoke).toHaveBeenCalledWith('usuarios', { body: { action: 'unarchive_org', org_id: 'org-1' } }));
+    });
+
+    it('esconde arquivada mesmo se a edge devolver (filtro cliente)', () => {
+      usePlatformWallet.mockReturnValue(makeWallet([makeOrg({ id: 'arq', nome: 'Velha', arquivada_em: '2026-09-30T10:00:00Z' })]));
+      renderPage();
+      expect(screen.queryByText('Velha')).not.toBeInTheDocument();
+    });
+
+    it('trocar "Incluir arquivadas" volta à página 1 e refaz a consulta', async () => {
+      const user = userEvent.setup();
+      renderPage();
+      await user.click(screen.getByRole('checkbox', { name: 'Incluir arquivadas' }));
+      expect(usePlatformWallet).toHaveBeenLastCalledWith(expect.objectContaining({ include_archived: true, page: 1 }));
+    });
+
+    it('arquivar a única org da última página volta para a página anterior', async () => {
+      invoke.mockResolvedValue({ data: { ok: true, arquivada_em: 'x' }, error: null });
+      const rows = Array.from({ length: 11 }, (_, n) => makeOrg({ id: `o${n}`, nome: `Org ${String(n).padStart(2, '0')}`, slug: `org-${n}` }));
+      const wallet = makeWallet(rows);
+      usePlatformWallet.mockImplementation(() => wallet);
+      const user = userEvent.setup();
+      renderPage();
+      await user.click(screen.getByRole('button', { name: 'Próxima página' }));
+      expect(screen.getByText('Org 10')).toBeInTheDocument();
+      await abrirMenu(user);
+      await user.click(await screen.findByText('Arquivar'));
+      await user.type(screen.getByLabelText(/Digite/), 'org-10');
+      await user.click(screen.getByRole('button', { name: 'Arquivar' }));
+      expect(await screen.findByText('Org 00')).toBeInTheDocument();
+      expect(screen.queryByText('Org 10')).not.toBeInTheDocument();
+    });
   });
 });
