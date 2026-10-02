@@ -17,15 +17,16 @@ const PRESETS: { id: Preset; label: string }[] = [
 export default function Vitrine() {
   const [preset, setPreset] = useState<Preset>('4s');
   const periodo = useMemo(() => periodoVitrine(preset, Date.now()), [preset]);
+  const { inicio, fim } = periodo;
   const [dados, setDados] = useState<ResumoVitrine | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
     setDados(null); setErro(null);
-    carregarVitrine(periodo).then((d) => { if (vivo) setDados(d); }).catch((e: Error) => { if (vivo) setErro(e.message); });
+    carregarVitrine({ inicio, fim }).then((d) => { if (vivo) setDados(d); }).catch((e: Error) => { if (vivo) setErro(e.message); });
     return () => { vivo = false; };
-  }, [periodo]);
+  }, [inicio, fim]);
 
   const kpis = useMemo(() => (dados ? kpisVitrine(dados.itens) : null), [dados]);
   const acoes = useMemo(() => (dados && kpis ? ondeAgir(dados.itens, kpis.atual.conversao) : []), [dados, kpis]);
@@ -60,7 +61,7 @@ export default function Vitrine() {
       ) : (
         <div className="flex flex-col gap-4">
           <PulsoVitrine kpis={kpis} frases={frases} />
-          <GraficoVitrine semanas={dados.semanas} />
+          <GraficoVitrine semanas={dados.semanas} inicio={periodo.inicio} fim={periodo.fim} />
           <OndeAgir acoes={acoes} />
         </div>
       )}

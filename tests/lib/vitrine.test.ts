@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { periodoVitrine, kpisVitrine, serieVitrine, delta, ondeAgir, frasesVitrine, zProp,
+import { periodoVitrine, kpisVitrine, serieVitrine, delta, deltaPP, ondeAgir, frasesVitrine, zProp,
   type ItemVitrine, type ResumoVitrine } from '@/lib/vitrine';
 
 const item = (o: Partial<ItemVitrine> = {}): ItemVitrine => ({
@@ -60,18 +60,31 @@ describe('kpisVitrine', () => {
 });
 
 describe('serieVitrine', () => {
-  it('semana com cobertura < 80% vira lacuna (null), não número', () => {
+  const P = { inicio: '2026-09-02', fim: '2026-09-29' };
+  it('semana com cobertura < 80% vira lacuna (null), semana cheia = 7 dias', () => {
     expect(serieVitrine([
       { semana: '2026-09-07', visitas: 700, pedidos: 21, receita: 0, pares_ok: 7, pares_total: 7 },
       { semana: '2026-09-14', visitas: 100, pedidos: 9, receita: 0, pares_ok: 1, pares_total: 7 },
-    ])).toEqual([
-      { semana: '2026-09-07', visitas: 700, conv: 0.03 },
-      { semana: '2026-09-14', visitas: null, conv: null },
+    ], P.inicio, P.fim)).toEqual([
+      { semana: '2026-09-07', dias: 7, visitasDia: 100, conv: 0.03 },
+      { semana: '2026-09-14', dias: 7, visitasDia: null, conv: null },
     ]);
+  });
+  it('semanas parciais: visitas ÷ dias dentro do período', () => {
+    const [ini, fim] = serieVitrine([
+      { semana: '2026-08-31', visitas: 500, pedidos: 5, receita: 0, pares_ok: 5, pares_total: 5 },
+      { semana: '2026-09-28', visitas: 200, pedidos: 2, receita: 0, pares_ok: 2, pares_total: 2 },
+    ], P.inicio, P.fim);
+    expect(ini).toMatchObject({ dias: 5, visitasDia: 100, conv: 0.01 });
+    expect(fim).toMatchObject({ dias: 2, visitasDia: 100, conv: 0.01 });
   });
 });
 
 describe('delta', () => {
+  it('deltaPP: diferença absoluta × 100; null se faltar um lado', () => {
+    expect(deltaPP(0.0302, 0.03)).toBeCloseTo(0.02);
+    expect(deltaPP(0.03, null)).toBeNull();
+  });
   it('variação relativa', () => expect(delta(110, 100)).toBeCloseTo(0.1));
   it('anterior null ou 0 → null (sem +∞%)', () => {
     expect(delta(10, null)).toBeNull();
@@ -160,6 +173,11 @@ describe('frasesVitrine', () => {
   });
   it('diferença pequena (ruído) não vira frase', () => {
     const itens = [item({ visitas: 10000, pedidos: 310, pares_ok: 28, pares_total: 28, visitas_ant: 10000, pedidos_ant: 300, pares_ok_ant: 28, pares_total_ant: 28 })];
+    expect(frasesVitrine(resumo({ itens }), kpisVitrine(itens), [])).toEqual([]);
+  });
+  it('mesmo texto de % antes e depois (1 casa) não emite a frase', () => {
+    // 30,000% → 30,045%: z alto com amostra enorme, mas "30,0% para 30,0%" não informa nada
+    const itens = [item({ visitas: 10_000_000, pedidos: 3_004_500, pares_ok: 28, pares_total: 28, visitas_ant: 10_000_000, pedidos_ant: 3_000_000, pares_ok_ant: 28, pares_total_ant: 28 })];
     expect(frasesVitrine(resumo({ itens }), kpisVitrine(itens), [])).toEqual([]);
   });
   it('dia da semana só quando TODO dow tem ≥ 12 datas medidas e cobertura ≥ 80%', () => {

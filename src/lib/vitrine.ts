@@ -14,7 +14,7 @@ export type Preset = '4s' | '12s' | '6m';
 export type Recorte = { visitas: number | null; pedidos: number; receita: number; cobertura: number;
   conversao: number | null; vendaPorVisita: number | null; avisoCobertura: boolean };
 export type KpisVitrine = { atual: Recorte; anterior: Recorte };
-export type PontoSerie = { semana: string; visitas: number | null; conv: number | null };
+export type PontoSerie = { semana: string; dias: number; visitasDia: number | null; conv: number | null };
 export const COBERTURA_AVISO = 0.95;
 export const COBERTURA_MINIMA = 0.8;
 
@@ -52,10 +52,24 @@ export function kpisVitrine(itens: ItemVitrine[]): KpisVitrine {
   };
 }
 
-export const serieVitrine = (semanas: SemanaVitrine[]): PontoSerie[] =>
-  semanas.map((s) => valida(s.pares_ok, s.pares_total)
-    ? { semana: s.semana, visitas: s.visitas, conv: taxa(s.pedidos, s.visitas) }
-    : { semana: s.semana, visitas: null, conv: null });
+// semana = segunda..domingo; dias = quantos caem dentro de [inicio, fim] (1ª/última semana são parciais)
+const diasNoPeriodo = (semana: string, inicio: string, fim: string): number => {
+  let n = 0;
+  for (let k = 0; k < 7; k++) { const d = somaDias(semana, k); if (d >= inicio && d <= fim) n++; }
+  return n;
+};
+
+export const serieVitrine = (semanas: SemanaVitrine[], inicio: string, fim: string): PontoSerie[] =>
+  semanas.map((s) => {
+    const dias = diasNoPeriodo(s.semana, inicio, fim);
+    return valida(s.pares_ok, s.pares_total) && dias > 0
+      ? { semana: s.semana, dias, visitasDia: s.visitas / dias, conv: taxa(s.pedidos, s.visitas) }
+      : { semana: s.semana, dias, visitasDia: null, conv: null };
+  });
+
+// Δ absoluto (atual − anterior) em pontos percentuais; usado na Conversão
+export const deltaPP = (atual: number | null, anterior: number | null): number | null =>
+  atual == null || anterior == null ? null : (atual - anterior) * 100;
 
 export const delta = (atual: number | null, anterior: number | null): number | null =>
   atual == null || anterior == null || anterior === 0 ? null : (atual - anterior) / anterior;
@@ -117,6 +131,7 @@ export function frasesVitrine(r: ResumoVitrine, k: KpisVitrine, acoes: ItemAcao[
   const f: string[] = [];
   const { atual: a, anterior: b } = k;
   if (a.conversao != null && b.conversao != null && a.pedidos >= MIN_PEDIDOS && b.pedidos >= MIN_PEDIDOS
+      && pct(a.conversao) !== pct(b.conversao)
       && Math.abs(zProp(a.pedidos, a.visitas ?? 0, b.pedidos, b.visitas ?? 0)) >= Z)
     f.push(`Conversão ${a.conversao > b.conversao ? 'subiu' : 'caiu'} de ${pct(b.conversao)} para ${pct(a.conversao)} contra o período anterior.`);
 

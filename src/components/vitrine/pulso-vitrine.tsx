@@ -2,23 +2,30 @@ import { ArrowDown, ArrowUp } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
-import { delta, type KpisVitrine } from '@/lib/vitrine';
+import { delta, deltaPP, type KpisVitrine } from '@/lib/vitrine';
 
 const pct = (x: number) => `${(x * 100).toFixed(1).replace('.', ',')}%`;
 
-function Delta({ atual, anterior }: { atual: number | null; anterior: number | null }) {
-  const d = delta(atual, anterior);
+const num = (x: number, casas: number) => Math.abs(x).toFixed(casas).replace('.', ',');
+
+// pp = Δ absoluto em pontos percentuais (Conversão); senão Δ relativo em %
+function Delta({ atual, anterior, pp }: { atual: number | null; anterior: number | null; pp?: boolean }) {
+  const rel = delta(atual, anterior);
+  const d = pp ? deltaPP(atual, anterior) : rel == null ? null : rel * 100;
   if (d == null) return null;
-  const Seta = d >= 0 ? ArrowUp : ArrowDown;
+  const casas = pp ? 2 : 1;
+  const texto = `${num(d, casas)}${pp ? ' p.p.' : '%'}`;
+  const sinal = Number(d.toFixed(casas)) === 0 ? 0 : Math.sign(d);
+  const Seta = sinal > 0 ? ArrowUp : sinal < 0 ? ArrowDown : null;
   return (
-    <span className={cn('inline-flex items-center gap-0.5 text-xs font-medium tabular-nums', d >= 0 ? 'text-success' : 'text-danger')}>
-      <Seta className="size-3" aria-hidden />{Math.abs(d * 100).toFixed(1).replace('.', ',')}%
-      <span className="sr-only"> contra o período anterior</span>
+    <span className={cn('inline-flex items-center gap-0.5 text-xs font-medium tabular-nums', sinal > 0 ? 'text-success' : sinal < 0 ? 'text-danger' : 'text-muted-foreground')}>
+      {Seta && <Seta className="size-3" aria-hidden />}{texto}
+      <span className="sr-only">{sinal > 0 ? ' alta de' : sinal < 0 ? ' queda de' : ' sem variação'} {sinal === 0 ? '' : `${texto} `}contra o período anterior</span>
     </span>
   );
 }
 
-function Card({ titulo, valor, atual, anterior }: { titulo: string; valor: string | null; atual: number | null; anterior: number | null }) {
+function Card({ titulo, valor, atual, anterior, pp }: { titulo: string; valor: string | null; atual: number | null; anterior: number | null; pp?: boolean }) {
   return (
     <div className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm">
       <p className="text-xs text-muted-foreground">{titulo}</p>
@@ -33,7 +40,7 @@ function Card({ titulo, valor, atual, anterior }: { titulo: string; valor: strin
         ) : (
           <span className="text-2xl font-semibold tabular-nums">{valor}</span>
         )}
-        <Delta atual={atual} anterior={anterior} />
+        <Delta atual={atual} anterior={anterior} pp={pp} />
       </div>
     </div>
   );
@@ -46,11 +53,11 @@ export function PulsoVitrine({ kpis, frases }: { kpis: KpisVitrine; frases: stri
       <TooltipProvider>
         <div className="grid gap-3 sm:grid-cols-3">
           <Card titulo="Visitas" valor={a.visitas == null ? null : fmtInt(a.visitas)} atual={a.visitas} anterior={b.visitas} />
-          <Card titulo="Conversão" valor={a.conversao == null ? null : pct(a.conversao)} atual={a.conversao} anterior={b.conversao} />
+          <Card titulo="Conversão" valor={a.conversao == null ? null : pct(a.conversao)} atual={a.conversao} anterior={b.conversao} pp />
           <Card titulo="Venda por visita" valor={a.vendaPorVisita == null ? null : fmtBRL(a.vendaPorVisita)} atual={a.vendaPorVisita} anterior={b.vendaPorVisita} />
         </div>
       </TooltipProvider>
-      {a.avisoCobertura && <p className="text-xs text-muted-foreground">Dados de {Math.round(a.cobertura * 100)}% dos dias medidos.</p>}
+      {a.avisoCobertura && <p className="text-xs text-muted-foreground">Dados de {pct(a.cobertura)} dos dias medidos.</p>}
       {frases.length > 0 && (
         <ul className="flex list-disc flex-col gap-1 pl-5 text-sm">
           {frases.map((f) => <li key={f}>{f}</li>)}

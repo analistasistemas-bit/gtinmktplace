@@ -43,7 +43,13 @@ function Linha({ a }: { a: ItemAcao }) {
 
 export function OndeAgir({ acoes }: { acoes: ItemAcao[] }) {
   const [todos, setTodos] = useState(false);
-  const lista = todos ? acoes : acoes.slice(0, TOP);
+  const [filtro, setFiltro] = useState<Rotulo | null>(null);
+  const chips = (Object.keys(ROTULO) as Rotulo[])
+    .map((r) => ({ r, n: acoes.filter((a) => a.rotulo === r).length }))
+    .filter((c) => c.n > 0);
+  const filtrada = filtro ? acoes.filter((a) => a.rotulo === filtro) : acoes;
+  const lista = todos ? filtrada : filtrada.slice(0, TOP);
+  const escolher = (r: Rotulo | null) => { setFiltro(r); setTodos(false); };
   return (
     <section aria-labelledby="vitrine-agir" className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm">
       <h2 id="vitrine-agir" className="text-sm font-medium">Onde agir</h2>
@@ -51,10 +57,20 @@ export function OndeAgir({ acoes }: { acoes: ItemAcao[] }) {
         <p className="py-3 text-sm text-muted-foreground">Nada pedindo ação agora.</p>
       ) : (
         <>
+          <div role="group" aria-label="Filtrar por rótulo" className="flex flex-wrap gap-1.5 py-2">
+            <Button size="sm" variant={filtro == null ? 'default' : 'outline'} aria-pressed={filtro == null} onClick={() => escolher(null)}>
+              Todos {acoes.length}
+            </Button>
+            {chips.map(({ r, n }) => (
+              <Button key={r} size="sm" variant={filtro === r ? 'default' : 'outline'} aria-pressed={filtro === r} onClick={() => escolher(r)}>
+                {ROTULO[r].label} {n}
+              </Button>
+            ))}
+          </div>
           <ul className="divide-y divide-border">{lista.map((a) => <Linha key={a.item.ml_item_id} a={a} />)}</ul>
-          {acoes.length > TOP && (
-            <Button variant="ghost" size="sm" className="self-start" onClick={() => setTodos(!todos)}>
-              {todos ? 'Ver só os 10 primeiros' : `Ver todos (${acoes.length})`}
+          {filtrada.length > TOP && (
+            <Button variant="outline" size="sm" className="mt-2 self-start" onClick={() => setTodos(!todos)}>
+              {todos ? 'Ver só os 10 primeiros' : `Ver todos (${filtrada.length})`}
             </Button>
           )}
         </>
