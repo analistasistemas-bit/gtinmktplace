@@ -57,9 +57,9 @@ describe('ThemeToggle', () => {
 describe('SidebarNav', () => {
   beforeEach(() => { modulosHabilitados = []; alertasPulse = 0; });
 
-  it('org sem o módulo estoque: renderiza os 9 links com hrefs corretos, sem Estoque', () => {
+  it('org sem o módulo estoque: renderiza os 10 links com hrefs corretos, sem Estoque', () => {
     renderNav();
-    expect(screen.getAllByRole('link')).toHaveLength(9);
+    expect(screen.getAllByRole('link')).toHaveLength(10);
     expect(screen.queryByRole('link', { name: /Estoque/i })).toBeNull();
     expect(screen.getByRole('link', { name: /Dashboard/i }).getAttribute('href')).toBe('/');
     expect(screen.getByRole('link', { name: /Publicados/i }).getAttribute('href')).toBe('/publicados');
@@ -72,7 +72,7 @@ describe('SidebarNav', () => {
   it('org COM o módulo estoque: o menu Estoque aparece', () => {
     modulosHabilitados = ['estoque'];
     renderNav();
-    expect(screen.getAllByRole('link')).toHaveLength(10);
+    expect(screen.getAllByRole('link')).toHaveLength(11);
     expect(screen.getByRole('link', { name: /Estoque/i }).getAttribute('href')).toBe('/estoque');
   });
 

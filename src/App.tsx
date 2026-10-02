@@ -29,6 +29,7 @@ const PromocaoDetalhe = lazy(() => import('@/pages/PromocaoDetalhe'));
 const SkuDossie = lazy(() => import('@/pages/SkuDossie'));
 const Estoque = lazy(() => import('@/pages/Estoque'));
 const Pulse = lazy(() => import('@/pages/Pulse'));
+const Vitrine = lazy(() => import('@/pages/Vitrine'));
 const DetalheVendas = lazy(() => import('@/pages/DetalheVendas'));
 const Faturamento = lazy(() => import('@/pages/Faturamento'));
 const Financeiro = lazy(() => import('@/pages/Financeiro'));
@@ -68,6 +69,7 @@ export function AppRoutes() {
             <Route path="/faturamento/sku/familia/:codigoPai" element={<SkuDossie />} />
             <Route path="/estoque" element={<Estoque />} />
             <Route path="/pulse" element={<Pulse />} />
+            <Route path="/vitrine" element={<Vitrine />} />
             <Route path="/faturamento" element={<Faturamento />} />
             <Route path="/financeiro" element={<Financeiro />} />
             <Route path="/financeiro/detalhe" element={<DetalheFinanceiro />} />

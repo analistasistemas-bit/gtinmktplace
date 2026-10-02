@@ -24,6 +24,7 @@ describe('menus', () => {
     expect(menuKeyForPath('/revisao/123')).toBe('revisao');
     expect(menuKeyForPath('/financeiro/detalhe')).toBe('financeiro');
     expect(menuKeyForPath('/usuarios')).toBe('usuarios');
+    expect(menuKeyForPath('/vitrine')).toBe('vitrine');
   });
   it('rota sem menu retorna null (libera)', () => {
     expect(menuKeyForPath('/style-guide')).toBeNull();

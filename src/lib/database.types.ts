@@ -4155,6 +4155,7 @@ export type Database = {
       vendas_sku_codigos_mlbs: { Args: { p_mlbs: string[] }; Returns: Json }
       vendas_sku_dossie_ids: { Args: { p_codigos: string[] }; Returns: string[] }
       vendas_sku_mlbs: { Args: { p_codigos: string[] }; Returns: Json }
+      vitrine_resumo: { Args: { p_inicio: string; p_fim: string }; Returns: Json }
     }
     Enums: {
       canal_externo: "mercado_livre"
