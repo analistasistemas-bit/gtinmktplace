@@ -48,6 +48,8 @@ let mockVendas: Venda[] = [];
 vi.mock('@/hooks/useVendas', () => ({
   useVendas: () => ({ data: mockVendas, isFetching: false, refetch: vi.fn() }),
 }));
+vi.mock('@/hooks/useCustos', () => ({ useCustos: () => ({ data: undefined }) }));
+vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => ({ data: undefined }) }));
 
 function renderAba() {
   return render(<AbaGeografia />);
