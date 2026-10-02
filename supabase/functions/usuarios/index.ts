@@ -4,6 +4,7 @@ import { requireUser } from '../_shared/auth.ts';
 import { sanitizarDestinatario } from '../_shared/notificacoes/destinatario.ts';
 import { pendenciasAtivacaoFiscal } from '../_shared/fiscal/ativacao.ts';
 import { sanearTiposProduto } from './tipos-produto.ts';
+import { executarArquivamento } from './arquivar-org.ts';
 
 // Espelho de src/lib/menus.ts. Divergir daqui faz `allowed_menus` sanitizar e descartar
 // silenciosamente a permissão do menu novo.
@@ -29,7 +30,7 @@ Deno.serve(async (req) => {
   const { data: me } = await db.from('profiles')
     .select('is_admin, is_super_admin, is_active, org_id').eq('id', caller.id).single();
   if (!me || !me.is_active) return json({ error: 'forbidden' }, 403);
-  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'set_modulos_org', 'set_tipos_produto_org', 'set_tipo_pessoa_org', 'delete_org'].includes(action);
+  const platformAction = ['list_orgs', 'create_org', 'set_canais_org', 'set_modulos_org', 'set_tipos_produto_org', 'set_tipo_pessoa_org', 'delete_org', 'archive_org', 'unarchive_org'].includes(action);
   if (!(me.is_super_admin && !me.org_id && platformAction)) {
     if (!me.org_id || !me.is_admin) return json({ error: 'forbidden' }, 403);
   }
@@ -56,8 +57,16 @@ Deno.serve(async (req) => {
   const auditWriteError = (result: 'intent' | 'success' | 'failure', error: string) =>
     json({ error: `Falha ao registrar auditoria (${result}): ${error}` }, 500);
 
+  // ADR-0175 (Codex #6): org arquivada não recebe convite nem reativação de membro.
+  const orgArquivada = async (): Promise<boolean> => {
+    const { data } = await db.from('organizations').select('arquivada_em').eq('id', orgId).maybeSingle();
+    return !!data?.arquivada_em;
+  };
+  const ARQUIVADA = 'Empresa arquivada: desarquive antes.';
+
   switch (action) {
     case 'invite': {
+      if (await orgArquivada()) return json({ error: ARQUIVADA }, 409);
       const email = String(body.email ?? '').trim().toLowerCase();
       if (!email) return json({ error: 'email obrigatório' }, 400);
       // E7: novo usuário herda a org do admin que convida (handle_new_user consome org_id).
@@ -98,6 +107,7 @@ Deno.serve(async (req) => {
     }
     case 'set_active': {
       if (body.id === caller.id && !body.is_active) return json({ error: 'não pode se desativar' }, 400);
+      if (body.is_active === true && await orgArquivada()) return json({ error: ARQUIVADA }, 409);
       const { data: alvo } = await db.from('profiles').select('is_super_admin')
         .eq('id', body.id).eq('org_id', orgId).maybeSingle();
       if (alvo?.is_super_admin && !me.is_super_admin) {
@@ -126,7 +136,7 @@ Deno.serve(async (req) => {
     case 'list_orgs': {
       if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
       const [{ data: orgs }, { data: profiles }] = await Promise.all([
-        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, modulos_habilitados, tipos_produto_habilitados, is_test, tipo_pessoa').order('criado_em'),
+        db.from('organizations').select('id, nome, slug, criado_em, canais_habilitados, modulos_habilitados, tipos_produto_habilitados, is_test, tipo_pessoa, arquivada_em').order('criado_em'),
         db.from('profiles').select('org_id'),
       ]);
       const counts = new Map<string, number>();
@@ -135,7 +145,7 @@ Deno.serve(async (req) => {
           id: o.id, nome: o.nome, slug: o.slug, criado_em: o.criado_em,
           canais_habilitados: o.canais_habilitados, modulos_habilitados: o.modulos_habilitados ?? [],
           tipos_produto_habilitados: o.tipos_produto_habilitados ?? [],
-          is_test: o.is_test, membros: counts.get(o.id) ?? 0, tipo_pessoa: o.tipo_pessoa,
+          is_test: o.is_test, membros: counts.get(o.id) ?? 0, tipo_pessoa: o.tipo_pessoa, arquivada_em: o.arquivada_em ?? null,
       }));
       return json({ orgs: result });
     }
@@ -306,6 +316,24 @@ Deno.serve(async (req) => {
       const resultAuditError = await auditPlatformAction(alvo, action, 'failure', { reason: 'sequential_delete_is_not_atomic' });
       if (resultAuditError) return auditWriteError('failure', resultAuditError);
       return json({ error: 'Exclusão desabilitada: o fluxo atual não garante remoção atômica sem apagar parcialmente a organização.' }, 409);
+    }
+    case 'archive_org':
+    case 'unarchive_org': {
+      if (!me.is_super_admin) return json({ error: 'forbidden' }, 403);
+      const r = await executarArquivamento({
+        orgAlvo: String(body.org_id ?? ''),
+        orgDoChamador: (me.org_id as string | null) ?? null,
+        arquivar: action === 'archive_org',
+        existe: async (id) => {
+          const { data, error } = await db.from('organizations').select('id').eq('id', id).maybeSingle();
+          if (error) throw new Error(error.message);
+          return !!data;
+        },
+        // db.rpc devolve um builder PromiseLike — o await converte para a Promise que o helper tipa.
+        rpc: async (fn, args) => await db.rpc(fn, args),
+        auditar: (orgId, result, details) => auditPlatformAction(orgId, action, result, details),
+      });
+      return json(r.body, r.status);
     }
     default:
       return json({ error: 'ação inválida' }, 400);
