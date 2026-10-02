@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { periodoVitrine, kpisVitrine, serieVitrine, delta, type ItemVitrine } from '@/lib/vitrine';
+import { periodoVitrine, kpisVitrine, serieVitrine, delta, ondeAgir, type ItemVitrine } from '@/lib/vitrine';
 
 const item = (o: Partial<ItemVitrine> = {}): ItemVitrine => ({
   ml_item_id: 'MLB1', titulo: 't', codigo_pai: '1', status: 'active', em_ads: false,
@@ -75,5 +75,55 @@ describe('delta', () => {
   it('anterior null ou 0 → null (sem +∞%)', () => {
     expect(delta(10, null)).toBeNull();
     expect(delta(10, 0)).toBeNull();
+  });
+});
+
+const cheio = { pares_ok: 28, pares_total: 28, pares_ok_ant: 28, pares_total_ant: 28 };
+
+describe('ondeAgir', () => {
+  it('Invisível: ativo, 7 dias ok com 0 visitas → topo, mesmo com emJogo menor', () => {
+    const r = ondeAgir([
+      item({ ml_item_id: 'SV', ...cheio, visitas: 1000, pedidos: 1, visitas_ult7: 200, dias_ok_ult7: 7 }),
+      item({ ml_item_id: 'INV', ...cheio, visitas: 50, pedidos_ant: 2, visitas_ult7: 0, dias_ok_ult7: 7 }),
+    ], 0.03);
+    expect(r[0]).toMatchObject({ rotulo: 'invisivel', item: { ml_item_id: 'INV' } });
+    expect(r[1].rotulo).toBe('sem_venda');
+  });
+  it('não marca Invisível com menos de 7 dias ok (anúncio novo / coleta falhou)', () => {
+    expect(ondeAgir([item({ ...cheio, visitas_ult7: 0, dias_ok_ult7: 3 })], 0.03)).toEqual([]);
+  });
+  it('ignora pausado', () => {
+    expect(ondeAgir([item({ ...cheio, status: 'paused', visitas_ult7: 0, dias_ok_ult7: 7 })], 0.03)).toEqual([]);
+  });
+  it('Vitrine sem venda: ≥100 visitas e conversão < 0,5× média; emJogo = visitas × (média − conv)', () => {
+    const [a] = ondeAgir([item({ ...cheio, visitas: 1000, pedidos: 10, visitas_ult7: 100, dias_ok_ult7: 7 })], 0.03);
+    expect(a.rotulo).toBe('sem_venda');
+    expect(a.emJogo).toBeCloseTo(1000 * (0.03 - 0.01));
+  });
+  it('Converte e ninguém vê: ≥5 pedidos, conv ≥1,5× média, visitas < mediana', () => {
+    const r = ondeAgir([
+      item({ ml_item_id: 'C', ...cheio, visitas: 100, pedidos: 10, visitas_ult7: 20, dias_ok_ult7: 7 }),
+      item({ ml_item_id: 'X', ...cheio, visitas: 5000, pedidos: 150, visitas_ult7: 900, dias_ok_ult7: 7 }),
+      item({ ml_item_id: 'Y', ...cheio, visitas: 4000, pedidos: 120, visitas_ult7: 900, dias_ok_ult7: 7 }),
+    ], 0.03);
+    const c = r.find((x) => x.item.ml_item_id === 'C')!;
+    expect(c.rotulo).toBe('converte');
+    expect(c.emJogo).toBeCloseTo(0.5 * 100 * 0.1);
+  });
+  it('Perdendo visitas: ≥100 no anterior e queda > 30%; emJogo = visitas perdidas × conv anterior', () => {
+    const [a] = ondeAgir([item({ ...cheio, visitas: 600, pedidos: 18, visitas_ant: 1000, pedidos_ant: 30, visitas_ult7: 100, dias_ok_ult7: 7 })], 0.03);
+    expect(a.rotulo).toBe('perdendo');
+    expect(a.emJogo).toBeCloseTo(400 * 0.03);
+  });
+  it('não marca Perdendo quando o anterior tem cobertura < 80% (anúncio criado no meio)', () => {
+    expect(ondeAgir([item({ ...cheio, pares_ok_ant: 5, visitas: 600, pedidos: 18, visitas_ant: 1000, pedidos_ant: 30, visitas_ult7: 100, dias_ok_ult7: 7 })], 0.03)).toEqual([]);
+  });
+  it('um rótulo por anúncio: fica o de maior emJogo', () => {
+    // sem_venda: 1000×(0.03−0.005)=25 ; perdendo: 2000×(10/3000)=6,7
+    const [a] = ondeAgir([item({ ...cheio, visitas: 1000, pedidos: 5, visitas_ant: 3000, pedidos_ant: 10, visitas_ult7: 100, dias_ok_ult7: 7 })], 0.03);
+    expect(a.rotulo).toBe('sem_venda');
+  });
+  it('média null (cobertura da conta < 80%) → só Invisível', () => {
+    expect(ondeAgir([item({ ...cheio, visitas: 1000, pedidos: 1, visitas_ult7: 100, dias_ok_ult7: 7 })], null)).toEqual([]);
   });
 });

@@ -59,3 +59,42 @@ export const serieVitrine = (semanas: SemanaVitrine[]): PontoSerie[] =>
 
 export const delta = (atual: number | null, anterior: number | null): number | null =>
   atual == null || anterior == null || anterior === 0 ? null : (atual - anterior) / anterior;
+
+// ponytail: limites iniciais (ADR-0176 D-6), calibrados contra a Avil na Task 6.
+export const LIMITES = { minVisitasSemVenda: 100, fatorSemVenda: 0.5, minPedidosConverte: 5,
+  fatorConverte: 1.5, minVisitasAntQueda: 100, quedaPerdendo: 0.3, diasInvisivel: 7, coberturaItem: 0.8 } as const;
+export type Rotulo = 'invisivel' | 'sem_venda' | 'converte' | 'perdendo';
+export type ItemAcao = { item: ItemVitrine; rotulo: Rotulo; emJogo: number };
+
+const mediana = (xs: number[]): number => {
+  if (!xs.length) return 0;
+  const s = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+const cobre = (ok: number, total: number) => total > 0 && ok / total >= LIMITES.coberturaItem;
+
+export function ondeAgir(itens: ItemVitrine[], convMedia: number | null): ItemAcao[] {
+  const ativos = itens.filter((i) => i.status === 'active');
+  const med = mediana(ativos.filter((i) => cobre(i.pares_ok, i.pares_total)).map((i) => i.visitas));
+  const out: ItemAcao[] = [];
+  for (const i of ativos) {
+    if (i.dias_ok_ult7 >= LIMITES.diasInvisivel && i.visitas_ult7 === 0) {
+      out.push({ item: i, rotulo: 'invisivel', emJogo: i.pedidos_ant });
+      continue;
+    }
+    if (convMedia == null || !cobre(i.pares_ok, i.pares_total)) continue;
+    const conv = taxa(i.pedidos, i.visitas) ?? 0;
+    const cands: ItemAcao[] = [];
+    if (i.visitas >= LIMITES.minVisitasSemVenda && conv < LIMITES.fatorSemVenda * convMedia)
+      cands.push({ item: i, rotulo: 'sem_venda', emJogo: i.visitas * (convMedia - conv) });
+    if (i.pedidos >= LIMITES.minPedidosConverte && conv >= LIMITES.fatorConverte * convMedia && i.visitas < med)
+      cands.push({ item: i, rotulo: 'converte', emJogo: 0.5 * i.visitas * conv });
+    if (cobre(i.pares_ok_ant, i.pares_total_ant) && i.visitas_ant >= LIMITES.minVisitasAntQueda
+        && i.visitas < i.visitas_ant * (1 - LIMITES.quedaPerdendo))
+      cands.push({ item: i, rotulo: 'perdendo', emJogo: (i.visitas_ant - i.visitas) * (taxa(i.pedidos_ant, i.visitas_ant) ?? 0) });
+    if (cands.length) out.push(cands.reduce((a, b) => (b.emJogo > a.emJogo ? b : a)));
+  }
+  return out.sort((a, b) =>
+    Number(b.rotulo === 'invisivel') - Number(a.rotulo === 'invisivel') || b.emJogo - a.emJogo);
+}
