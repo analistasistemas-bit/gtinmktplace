@@ -31,6 +31,7 @@ function fakeDb(tables: Tables, previews: Record<string, Row | Error> = {}) {
       const query = {
         select(_columns?: string, options?: { count?: string; head?: boolean }) { countRequested = options?.count === 'exact'; head = options?.head === true; return query; },
         eq(column: string, value: unknown) { calls.push({ table, op: 'eq', column, value }); filters.push((row) => row[column] === value); return query; },
+        is(column: string, value: null) { filters.push((row) => (row[column] ?? null) === value); return query; },
         gte(column: string, value: unknown) { filters.push((row) => String(row[column] ?? '') >= String(value)); return query; },
         gt(column: string, value: unknown) { calls.push({ table, op: 'gt', column, value }); filters.push((row) => String(row[column] ?? '') > String(value)); return query; },
         lt(column: string, value: unknown) { filters.push((row) => String(row[column] ?? '') < String(value)); return query; },
@@ -60,8 +61,8 @@ const preview = (total: number, blockers: Row[] = [], terms: Row | null = { moda
 describe('createPlatformAdminRepository', () => {
   it('totals the whole wallet before paginating and leaves organizations without terms out of the forecast', async () => {
     const organizations = [
-      { id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false },
-      { id: 'org-b', nome: 'Beta', slug: 'beta', is_test: false },
+      { id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false, arquivada_em: null },
+      { id: 'org-b', nome: 'Beta', slug: 'beta', is_test: false, arquivada_em: null },
     ];
     const db = fakeDb(
       { organizations: { rows: organizations }, ml_vendas: { rows: [sale('sale-1', 'org-a', 100), sale('sale-2', 'org-b', 300)] }, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} },
@@ -92,9 +93,9 @@ describe('createPlatformAdminRepository', () => {
   // essa informação (o frontend não tem como saber).
   it('distinguishes no terms, future terms, and current terms for the displayed month', async () => {
     const organizations = [
-      { id: 'org-sem', nome: 'SemNada', slug: 'sem-nada', is_test: false },
-      { id: 'org-futuro', nome: 'Futuro', slug: 'futuro', is_test: false },
-      { id: 'org-vigente', nome: 'Vigente', slug: 'vigente', is_test: false },
+      { id: 'org-sem', nome: 'SemNada', slug: 'sem-nada', is_test: false, arquivada_em: null },
+      { id: 'org-futuro', nome: 'Futuro', slug: 'futuro', is_test: false, arquivada_em: null },
+      { id: 'org-vigente', nome: 'Vigente', slug: 'vigente', is_test: false, arquivada_em: null },
     ];
     const terms = [
       // Duas vigências futuras: vale a MENOR (a que começa antes).
@@ -126,7 +127,7 @@ describe('createPlatformAdminRepository', () => {
 
   it('never claims a future term when the preview failed', async () => {
     const db = fakeDb(
-      { organizations: { rows: [{ id: 'org-futuro', nome: 'Futuro', slug: 'futuro', is_test: false }] },
+      { organizations: { rows: [{ id: 'org-futuro', nome: 'Futuro', slug: 'futuro', is_test: false, arquivada_em: null }] },
         platform_commercial_terms: { rows: [{ org_id: 'org-futuro', starts_on: '2026-10-01' }] },
         ml_vendas: {}, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} },
       { 'org-futuro': new Error('preview unavailable') },
@@ -136,7 +137,7 @@ describe('createPlatformAdminRepository', () => {
   });
 
   it('loads and enriches one organization by id', async () => {
-    const organizations = [{ id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false }];
+    const organizations = [{ id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false, arquivada_em: null }];
     const db = fakeDb({ organizations: { rows: organizations }, ml_vendas: { rows: [sale('sale-1', 'org-a', 100)] }, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} }, { 'org-a': preview(10) });
     const repository = createPlatformAdminRepository(db as never, () => new Date('2026-09-06T12:00:00Z'));
     await expect(repository.organization('actor', 'org-a', '2026-08')).resolves.toMatchObject({
@@ -158,7 +159,7 @@ describe('createPlatformAdminRepository', () => {
   });
 
   it('keeps metric and preview failures unknown and warns instead of emitting silent zeroes', async () => {
-    const organizations = [{ id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false }];
+    const organizations = [{ id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false, arquivada_em: null }];
     const db = fakeDb({ organizations: { rows: organizations }, ml_vendas: { error: 'metrics unavailable' }, platform_sonar_searches: {} }, { 'org-a': new Error('preview unavailable') });
     const repository = createPlatformAdminRepository(db as never);
     const wallet = await repository.wallet('actor', { month: '2026-08', page: 1, page_size: 20, sort: 'name' });
@@ -174,12 +175,49 @@ describe('createPlatformAdminRepository', () => {
     expect(blockedWallet.totals).toMatchObject({ forecast_cents: 0, orgs_without_terms: 0, pending_count: 1 });
   });
 
+  // ADR-0175: org arquivada some da carteira e dos totais; o detalhe continua acessível.
+  describe('organizações arquivadas (ADR-0175)', () => {
+    const base = [
+      { id: 'org-a', nome: 'Alpha', slug: 'alpha', is_test: false, arquivada_em: null },
+      { id: 'org-x', nome: 'Arquivada', slug: 'arquivada', is_test: false, arquivada_em: '2026-10-01T00:00:00Z' },
+    ];
+    const tables = (extra: Tables = {}) => ({ organizations: { rows: base }, ml_vendas: { rows: [sale('sale-1', 'org-a', 100), sale('sale-2', 'org-x', 300)] }, variacoes: {}, configuracoes: {}, platform_sonar_searches: {}, ...extra });
+    const previews = { 'org-a': preview(10), 'org-x': preview(50) };
+    const input = { month: '2026-08', page: 1, page_size: 20, sort: 'name' };
+    const now = () => new Date('2026-09-06T12:00:00Z');
+
+    it('wallet sem flag não devolve a arquivada nem a conta nos totais', async () => {
+      const wallet = await createPlatformAdminRepository(fakeDb(tables(), previews) as never, now).wallet('actor', input);
+      expect(wallet.rows.map((r) => r.id)).toEqual(['org-a']);
+      expect(wallet.totals).toMatchObject({ org_count: 1, gross_cents: 10_000, forecast_cents: 10, orders: 1 });
+    });
+
+    it('include_archived devolve a linha com arquivada_em, mas os totais seguem só das ativas', async () => {
+      const wallet = await createPlatformAdminRepository(fakeDb(tables(), previews) as never, now).wallet('actor', { ...input, include_archived: true });
+      expect(wallet.rows.map((r) => r.id)).toEqual(['org-a', 'org-x']);
+      expect(wallet.rows[1].arquivada_em).toBe('2026-10-01T00:00:00Z');
+      expect(wallet.totals).toMatchObject({ org_count: 1, gross_cents: 10_000, forecast_cents: 10, orders: 1 });
+    });
+
+    it('arquivada com leitura falhando não deixa total null nem gera warning', async () => {
+      const db = fakeDb(tables(), { 'org-a': preview(10), 'org-x': new Error('preview unavailable') });
+      const wallet = await createPlatformAdminRepository(db as never, now).wallet('actor', { ...input, include_archived: true });
+      expect(wallet.totals).toMatchObject({ gross_cents: 10_000, pending_count: 0 });
+      expect(wallet.totals.warnings).toEqual([]);
+    });
+
+    it('organization(orgId) devolve a org arquivada', async () => {
+      const org = await createPlatformAdminRepository(fakeDb(tables(), previews) as never, now).organization('actor', 'org-x', '2026-08');
+      expect(org).toMatchObject({ id: 'org-x', arquivada_em: '2026-10-01T00:00:00Z' });
+    });
+  });
+
   // Perf FASE 2.4: "devolver tudo" só vale até 200 organizações — acima disso o comportamento de
   // sempre (corte de página no servidor) tem que continuar intacto.
   it('keeps server-side pagination once the wallet has more than 200 organizations', async () => {
     const organizations = Array.from({ length: 201 }, (_, n) => {
       const label = String(n).padStart(3, '0');
-      return { id: `org-${label}`, nome: `Org ${label}`, slug: `org-${label}`, is_test: false };
+      return { id: `org-${label}`, nome: `Org ${label}`, slug: `org-${label}`, is_test: false, arquivada_em: null };
     });
     const db = fakeDb({ organizations: { rows: organizations }, ml_vendas: {}, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} });
     const wallet = await createPlatformAdminRepository(db as never).wallet('actor', { month: '2026-08', page: 2, page_size: 50, sort: 'name' });
@@ -258,9 +296,9 @@ describe('createPlatformAdminRepository', () => {
 
   it('filtra a carteira de organizações de forma insensível a acentos e maiúsculas', async () => {
     const organizations = [
-      { id: 'org-1', nome: 'AVIL Confecções', slug: 'empresa-um', is_test: false },
-      { id: 'org-2', nome: 'Padaria do Pão de Açúcar', slug: 'empresa-dois', is_test: false },
-      { id: 'org-3', nome: 'Outro Negócio', slug: 'empresa-tres', is_test: false },
+      { id: 'org-1', nome: 'AVIL Confecções', slug: 'empresa-um', is_test: false, arquivada_em: null },
+      { id: 'org-2', nome: 'Padaria do Pão de Açúcar', slug: 'empresa-dois', is_test: false, arquivada_em: null },
+      { id: 'org-3', nome: 'Outro Negócio', slug: 'empresa-tres', is_test: false, arquivada_em: null },
     ];
     const db = fakeDb(
       { organizations: { rows: organizations }, ml_vendas: {}, variacoes: {}, configuracoes: {}, platform_sonar_searches: {} },

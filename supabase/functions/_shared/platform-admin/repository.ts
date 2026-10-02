@@ -5,6 +5,7 @@ type DbResult = { data: unknown; error: { message: string } | null; count?: numb
 type DbQuery = PromiseLike<DbResult> & {
   select(columns: string, options?: { count?: 'exact'; head?: boolean }): DbQuery;
   eq(column: string, value: unknown): DbQuery;
+  is(column: string, value: null): DbQuery;
   order(column: string, options?: { ascending: boolean }): DbQuery;
   range(from: number, to: number): DbQuery;
   maybeSingle(): DbQuery;
@@ -19,7 +20,7 @@ type DbQuery = PromiseLike<DbResult> & {
 type DbTable = { select(columns: string, options?: { count?: 'exact'; head?: boolean }): DbQuery };
 type Db = { from(table: string): DbTable; rpc(name: string, args: Record<string, unknown>): PromiseLike<DbResult> };
 
-type OrgRow = { id: string; nome: string; slug: string; is_test: boolean };
+type OrgRow = { id: string; nome: string; slug: string; is_test: boolean; arquivada_em: string | null };
 type StatementRow = { id: string; snapshot: BillingStatement; closed_at: string; closed_by: string };
 type SearchRow = {
   id: string; actor_id: string; created_at: string; normalized_query: string; query_type: string;
@@ -83,7 +84,7 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
     for (const row of rows) if (!starts.has(row.org_id)) starts.set(row.org_id, row.starts_on);
     return starts;
   };
-  const enrichOne = async (actorId: string, org: { id: string; nome: string; slug: string; is_test: boolean }, month: string, nextStartsOn: string | null, cache?: MetricsCache): Promise<OrgSummary> => {
+  const enrichOne = async (actorId: string, org: OrgRow, month: string, nextStartsOn: string | null, cache?: MetricsCache): Promise<OrgSummary> => {
     const [metricsResult, previewResult, daludi] = await Promise.all([
       readOrgMetrics(db as never, org.id, month, now(), cache).then((value) => ({ value })).catch(() => ({ value: null })),
       rpc<BillingPreview>('platform_billing_preview', { p_actor: actorId, p_org: org.id, p_month: monthDate(month) }).then((value) => ({ value })).catch(() => ({ value: null })),
@@ -114,9 +115,11 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       return;
     }
   };
-  const loadOrganizations = (includeTest: boolean) => allRows<OrgRow>((from, to) => {
-    let query = db.from('organizations').select('id,nome,slug,is_test').order('id');
-    if (!includeTest) query = query.eq('is_test', false); return query.range(from, to);
+  const loadOrganizations = (includeTest: boolean, includeArchived: boolean) => allRows<OrgRow>((from, to) => {
+    let query = db.from('organizations').select('id,nome,slug,is_test,arquivada_em').order('id');
+    if (!includeTest) query = query.eq('is_test', false);
+    if (!includeArchived) query = query.is('arquivada_em', null);
+    return query.range(from, to);
   });
 
   return {
@@ -124,17 +127,17 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       const { data, error } = await db.from('organizations').select('id').eq('id', orgId).maybeSingle(); fail(error); return !!data;
     },
     async organization(actorId: string, orgId: string, month: string): Promise<OrgSummary | null> {
-      const { data, error } = await db.from('organizations').select('id,nome,slug,is_test').eq('id', orgId).maybeSingle(); fail(error);
+      const { data, error } = await db.from('organizations').select('id,nome,slug,is_test,arquivada_em').eq('id', orgId).maybeSingle(); fail(error);
       if (!data) return null;
       const starts = await nextTermsStarts([orgId], month);
       return enrichOne(actorId, data as OrgRow, month, starts.get(orgId) ?? null);
     },
     // ADR-0158 §3: uma ação por render — enriquece cada organização UMA vez e devolve totais da
     // carteira inteira (antes de paginar) junto com a página.
-    async wallet(actorId: string, input: { month: string; search?: string; include_test?: boolean; page: number; page_size: number; sort: string }): Promise<Wallet> {
+    async wallet(actorId: string, input: { month: string; search?: string; include_test?: boolean; include_archived?: boolean; page: number; page_size: number; sort: string }): Promise<Wallet> {
       const normalizar = (s: string | null | undefined) => (s ?? '').normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase('pt-BR').trim();
       const needle = normalizar(input.search);
-      const organizations = (await loadOrganizations(!!input.include_test)).filter((org) => !needle || normalizar(org.nome).includes(needle) || normalizar(org.slug).includes(needle));
+      const organizations = (await loadOrganizations(!!input.include_test, !!input.include_archived)).filter((org) => !needle || normalizar(org.nome).includes(needle) || normalizar(org.slug).includes(needle));
       const nextStarts = await nextTermsStarts(organizations.map((org) => org.id), input.month);
       // Perf FASE 3.3: UMA leitura do cache de meses fechados para a carteira INTEIRA (nunca por
       // org) — `readOrgMetrics` só valida o que já veio pronto aqui, em vez de repetir a validação
@@ -144,21 +147,23 @@ export function createPlatformAdminRepository(db: Db, now = () => new Date()) {
       summaries.sort(input.sort === 'gross_desc'
         ? (a, b) => (b.metrics?.gross_cents ?? -1) - (a.metrics?.gross_cents ?? -1) || a.nome.localeCompare(b.nome)
         : input.sort === 'slug' ? (a, b) => a.slug.localeCompare(b.slug) : (a, b) => a.nome.localeCompare(b.nome));
-      const completeMetrics = summaries.every((row) => row.metrics);
-      const completePreviews = summaries.every((row) => row.pending_count !== null);
+      // ADR-0175 §6: arquivada aparece na tabela, mas nunca entra em totais/completude/warnings.
+      const ativas = summaries.filter((s) => !s.arquivada_em);
+      const completeMetrics = ativas.every((row) => row.metrics);
+      const completePreviews = ativas.every((row) => row.pending_count !== null);
       const warnings: string[] = [];
       if (!completeMetrics) warnings.push('Métricas indisponíveis para parte da carteira');
       // `pending_count === null` só vem de prévia que falhou: a previsão sai incompleta sem que
       // `orgs_without_terms` distinga isso de "sem contrato".
       if (!completePreviews) warnings.push('Prévia indisponível para parte da carteira');
       const totals: WalletTotals = {
-        gross_cents: completeMetrics ? summaries.reduce((sum, row) => sum + (row.metrics?.gross_cents ?? 0), 0) : null,
-        forecast_cents: summaries.reduce((sum, row) => sum + (row.forecast_cents ?? 0), 0),
-        orgs_without_terms: summaries.filter((row) => row.modality === null).length,
-        orgs_future_terms: summaries.filter((row) => row.next_terms_starts_on !== null).length,
-        org_count: summaries.length,
-        pending_count: completePreviews ? summaries.reduce((sum, row) => sum + (row.pending_count ?? 0), 0) : null,
-        orders: completeMetrics ? summaries.reduce((sum, row) => sum + (row.metrics?.orders ?? 0), 0) : null,
+        gross_cents: completeMetrics ? ativas.reduce((sum, row) => sum + (row.metrics?.gross_cents ?? 0), 0) : null,
+        forecast_cents: ativas.reduce((sum, row) => sum + (row.forecast_cents ?? 0), 0),
+        orgs_without_terms: ativas.filter((row) => row.modality === null).length,
+        orgs_future_terms: ativas.filter((row) => row.next_terms_starts_on !== null).length,
+        org_count: ativas.length,
+        pending_count: completePreviews ? ativas.reduce((sum, row) => sum + (row.pending_count ?? 0), 0) : null,
+        orders: completeMetrics ? ativas.reduce((sum, row) => sum + (row.metrics?.orders ?? 0), 0) : null,
         warnings,
       };
       // Perf FASE 2.4: o servidor já enriqueceu TODAS as organizações acima (precisa, para os

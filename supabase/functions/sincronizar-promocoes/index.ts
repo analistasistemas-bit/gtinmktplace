@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
       try { payload = body ? JSON.parse(body) : {}; } catch { /* body vazio */ }
 
       if (!payload.org_id) {
-        const { data: orgs, error } = await admin.from('organizations').select('id').contains('modulos_habilitados', ['promocoes']);
+        const { data: orgs, error } = await admin.from('organizations').select('id').contains('modulos_habilitados', ['promocoes']).is('arquivada_em', null);
         if (error) throw new Error(`orgs com módulo: ${error.message}`);
         const alvo = `${Deno.env.get('SUPABASE_URL')}/functions/v1/sincronizar-promocoes`;
         for (const o of orgs ?? []) await qstashClient().publishJSON({ url: alvo, body: { etapa: 'lista', org_id: o.id }, retries: 1 });

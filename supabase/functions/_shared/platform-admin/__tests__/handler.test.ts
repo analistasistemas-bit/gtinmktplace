@@ -59,7 +59,7 @@ describe('createPlatformAdminHandler', () => {
   });
 
   it.each([
-    ['wallet', 'wallet', { month: '2026-08', page: 2, page_size: 10, sort: 'slug' }, [ACTOR, { month: '2026-08', search: undefined, include_test: false, page: 2, page_size: 10, sort: 'slug' }]],
+    ['wallet', 'wallet', { month: '2026-08', page: 2, page_size: 10, sort: 'slug' }, [ACTOR, { month: '2026-08', search: undefined, include_test: false, include_archived: false, page: 2, page_size: 10, sort: 'slug' }]],
     ['organization', 'organization', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['metrics', 'metrics', { org_id: ORG, month: '2026-08' }, [ACTOR, ORG, '2026-08']],
     ['terms', 'terms', { org_id: ORG }, [ACTOR, ORG]],

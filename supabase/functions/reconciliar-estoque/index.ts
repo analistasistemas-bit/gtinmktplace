@@ -11,6 +11,7 @@ import { corsHeaders, handleOptions } from '../_shared/cors.ts';
 import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura, enfileirarSincronizacaoEstoque } from '../_shared/queue.ts';
 import { paginarTudo } from '../_shared/pagina.ts';
+import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts';
 import { lerPushPendente, despacharPushPendente } from '../_shared/estoque/baixa.ts';
 
 /** Teto operacional por execução: 5 páginas × 200 = 1.000 movimentos por org. */
@@ -28,21 +29,31 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const desde = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  // ADR-0175: org arquivada fica fora das duas consultas (antes de paginar).
+  const arquivadas = filtroNotIn(await listarOrgsArquivadas(admin));
 
   // PAGINAÇÃO OBRIGATÓRIA: o PostgREST trunca em ~1000 linhas. Sem isto a
   // reconciliação ignoraria movimentos em silêncio.
 
   // (a) Produtos com movimento nas últimas 24h.
   const movs = await paginarTudo<{ org_id: string; codigo_pai: string }>(
-    (de, ate) => admin.from('estoque_movimentos')
-      .select('org_id, codigo_pai').gte('criado_em', desde).neq('codigo_pai', '').range(de, ate),
+    (de, ate) => {
+      let q = admin.from('estoque_movimentos')
+        .select('org_id, codigo_pai').gte('criado_em', desde).neq('codigo_pai', '');
+      if (arquivadas) q = q.not('org_id', 'in', arquivadas);
+      return q.range(de, ate);
+    },
   );
 
   // (b) Outbox: movimento aplicado cujo push nunca foi entregue, de qualquer idade.
   const pendentes = await paginarTudo<{ org_id: string; codigo_pai: string }>(
-    (de, ate) => admin.from('estoque_movimentos')
-      .select('org_id, codigo_pai')
-      .is('push_enfileirado_em', null).neq('codigo_pai', '').range(de, ate),
+    (de, ate) => {
+      let q = admin.from('estoque_movimentos')
+        .select('org_id, codigo_pai')
+        .is('push_enfileirado_em', null).neq('codigo_pai', '');
+      if (arquivadas) q = q.not('org_id', 'in', arquivadas);
+      return q.range(de, ate);
+    },
   );
 
   // 1) OUTBOX: drena pelo MESMO dispatcher do sync-venda, para que a intenção de

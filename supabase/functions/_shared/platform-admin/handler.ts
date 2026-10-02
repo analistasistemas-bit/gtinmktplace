@@ -33,7 +33,7 @@ export function createPlatformAdminHandler(deps: Dependencies): (req: Request) =
       switch (action) {
         case 'wallet': {
           const sort = body.sort === undefined ? 'name' : requiredString(body.sort, 'sort'); if (!['name','slug','gross_desc'].includes(sort)) throw new TypeError('sort inválido');
-          result = await deps.repository.wallet(userId, { month: month(body.month), search: typeof body.search === 'string' ? body.search.trim() : undefined, include_test: body.include_test === true, page: page(body.page), page_size: pageSize(body.page_size), sort }); break;
+          result = await deps.repository.wallet(userId, { month: month(body.month), search: typeof body.search === 'string' ? body.search.trim() : undefined, include_test: body.include_test === true, include_archived: body.include_archived === true, page: page(body.page), page_size: pageSize(body.page_size), sort }); break;
         }
         case 'organization': {
           result = await deps.repository.organization(userId, orgId, month(body.month));

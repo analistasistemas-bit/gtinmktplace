@@ -27,6 +27,7 @@ function fakeAdmin(
   updateErros: Record<string, string> = {}, leituraErros: Record<string, string> = {},
 ) {
   const updates: { tabela: string; payload: Record<string, unknown> }[] = [];
+  const nots: unknown[][] = [];
   const proximo = (tabela: string) => {
     const fila = filas[tabela] ?? [];
     return fila.length ? fila.shift() : [];
@@ -36,6 +37,7 @@ function fakeAdmin(
       select: () => obj,
       eq: () => obj,
       lt: () => obj,
+      not: (...args: unknown[]) => { nots.push(args); return obj; },
       maybeSingle: async () => (leituraErros[tabela]
         ? { data: null, error: { message: leituraErros[tabela] } }
         : { data: proximo(tabela), error: null }),
@@ -52,7 +54,7 @@ function fakeAdmin(
     from: (tabela: string) => chain(tabela),
     rpc: async (nome: string, args: Record<string, unknown>) => ({ data: (rpcs[nome] as (a: unknown) => unknown)?.(args) ?? null, error: null }),
   };
-  return { admin, updates };
+  return { admin, updates, nots };
 }
 
 const FAMILIA_OK = { id: 'fam-1', org_id: 'org-1', codigo_pai: '00012345', lote_id: 'lote-1' };
@@ -72,14 +74,26 @@ const CLAIM_ROW = {
 describe('listarRaizesTravadas', () => {
   it('lista os ids das raízes retornadas pela query', async () => {
     const { admin } = fakeAdmin({ anuncios_externos: [[{ id: 'root-1' }, { id: 'root-2' }]] });
-    const ids = await listarRaizesTravadas({ admin }, '2026-01-01T00:00:00Z');
+    const ids = await listarRaizesTravadas({ admin, orgsArquivadas: new Set() }, '2026-01-01T00:00:00Z');
     expect(ids).toEqual(['root-1', 'root-2']);
+  });
+
+  it('exclui orgs arquivadas na consulta (not.in)', async () => {
+    const { admin, nots } = fakeAdmin({ anuncios_externos: [[{ id: 'root-1' }]] });
+    await listarRaizesTravadas({ admin, orgsArquivadas: new Set(['org-x', 'org-y']) }, '2026-01-01T00:00:00Z');
+    expect(nots).toEqual([['org_id', 'in', '(org-x,org-y)']]);
+  });
+
+  it('sem arquivadas não aplica not.in', async () => {
+    const { admin, nots } = fakeAdmin({ anuncios_externos: [[]] });
+    await listarRaizesTravadas({ admin, orgsArquivadas: new Set() }, '2026-01-01T00:00:00Z');
+    expect(nots).toEqual([]);
   });
 
   it('erro na query → lança (fail-closed)', async () => {
     const { admin } = fakeAdmin();
     admin.from = () => ({ select: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ lt: async () => ({ data: null, error: { message: 'timeout' } }) }) }) }) }) });
-    await expect(listarRaizesTravadas({ admin }, '2026-01-01T00:00:00Z')).rejects.toThrow(/timeout/);
+    await expect(listarRaizesTravadas({ admin, orgsArquivadas: new Set() }, '2026-01-01T00:00:00Z')).rejects.toThrow(/timeout/);
   });
 });
 

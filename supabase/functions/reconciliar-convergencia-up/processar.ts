@@ -2,6 +2,7 @@
 // padrão de remover-publicado/processar.ts e update-familia-ml/processar.ts. Monta as portas reais
 // (`PortasConvergencia`) fechando sobre Supabase + API do ML e roda `reconciliarConvergencia`.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
+import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getConnector } from '../_shared/canais/registry.ts';
@@ -13,14 +14,18 @@ import {
 
 export const CANAL = 'mercado_livre';
 
-export interface ListarDeps { admin: SupabaseClient }
+export interface ListarDeps { admin: SupabaseClient; orgsArquivadas: Set<string> }
 
 export async function listarRaizesTravadas(deps: ListarDeps, limite: string): Promise<string[]> {
-  const { data, error } = await deps.admin.from('anuncios_externos')
+  let q = deps.admin.from('anuncios_externos')
     .select('id')
     .eq('canal', CANAL).eq('particao', 0)
     .eq('mudando_composicao', true)
     .lt('atualizado_em', limite);
+  // ADR-0175: org arquivada fica fora (excluída na consulta).
+  const arquivadas = filtroNotIn(deps.orgsArquivadas);
+  if (arquivadas) q = q.not('org_id', 'in', arquivadas);
+  const { data, error } = await q;
   if (error) throw new Error(`listar raízes travadas: ${error.message}`);
   return ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
 }
@@ -126,7 +131,8 @@ export function criarPortasConvergencia(admin: SupabaseClient, limite: string): 
 
 export async function processarConvergencia(admin: SupabaseClient, janelaMs: number): Promise<ResultadoRaiz[]> {
   const limite = new Date(Date.now() - janelaMs).toISOString();
-  const rootIds = await listarRaizesTravadas({ admin }, limite);
+  const orgsArquivadas = await listarOrgsArquivadas(admin);
+  const rootIds = await listarRaizesTravadas({ admin, orgsArquivadas }, limite);
   const portas = criarPortasConvergencia(admin, limite);
   return reconciliarConvergencia(portas, rootIds);
 }

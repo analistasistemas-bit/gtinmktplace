@@ -129,6 +129,8 @@ export type OrgSummary = {
    *  "não sei" nunca vira "começa em". Opcional de propósito: a Edge Function precisa ir ao ar antes
    *  do frontend, e no intervalo a resposta antiga não traz o campo. */
   next_terms_starts_on?: string | null;
+  /** ADR-0175: data em que a organização foi arquivada; `null`/ausente = ativa. */
+  arquivada_em?: string | null;
 };
 
 export type Page<T> = { rows: T[]; total: number; page: number; page_size: number };

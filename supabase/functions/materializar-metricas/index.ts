@@ -38,7 +38,7 @@ Deno.serve(async (req) => {
 
   const admin = adminClient();
   const now = new Date();
-  const { data: organizations, error } = await admin.from('organizations').select('id');
+  const { data: organizations, error } = await admin.from('organizations').select('id').is('arquivada_em', null);
   if (error) {
     console.error('materializar-metricas: falha ao listar organizações:', error.message);
     return new Response(JSON.stringify({ ok: false, error: error.message }), {

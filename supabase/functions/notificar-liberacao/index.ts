@@ -11,6 +11,7 @@ import { adminClient } from '../_shared/supabase.ts';
 import { verificarAssinatura } from '../_shared/queue.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemLiberacao } from '../_shared/notificacoes/telegram.ts';
+import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -35,13 +36,17 @@ Deno.serve(async (req) => {
   const desde = `${hoje}T00:00:00-03:00`;
   const ate = `${amanha}T00:00:00-03:00`;
 
-  const { data: vendas, error } = await admin
+  // ADR-0175: org arquivada não notifica (excluída na consulta, antes de marcar/enviar).
+  const arquivadas = filtroNotIn(await listarOrgsArquivadas(admin));
+  let q = admin
     .from('ml_vendas')
     .select('id, org_id, liquido, money_release_date, status')
     .gte('money_release_date', desde)
     .lt('money_release_date', ate)
     .is('liberacao_notificada_em', null)
     .in('status', ['paid', 'partially_refunded', 'refunded']);
+  if (arquivadas) q = q.not('org_id', 'in', arquivadas);
+  const { data: vendas, error } = await q;
 
   if (error) {
     return json({ erro: error.message }, 500);
