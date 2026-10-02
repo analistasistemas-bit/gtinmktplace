@@ -268,10 +268,13 @@ export function AbaGeografia() {
 
             {/* Top cidades */}
             <div className="flex max-h-80 min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-sm lg:max-h-none">
-              <div className="flex shrink-0 items-center justify-between border-b px-4 py-2.5">
-                <h3 className="text-sm font-medium">
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b px-4 py-2.5">
+                <h3 className="shrink-0 whitespace-nowrap text-sm font-medium">
                   {selecionada ? `Cidades · ${selecionada}` : 'Top cidades'}
                 </h3>
+                {!selecionada && (
+                  <span className="text-right text-xs text-muted-foreground">Clique num estado para ver as cidades dele</span>
+                )}
                 {selecionada && (
                   <Button
                     size="sm"

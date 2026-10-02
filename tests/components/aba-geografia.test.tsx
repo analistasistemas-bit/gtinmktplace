@@ -99,6 +99,7 @@ describe('AbaGeografia', () => {
   it('tabela top cidades lista São Paulo e Recife', () => {
     renderAba();
     expect(screen.getByText('Top cidades')).toBeInTheDocument();
+    expect(screen.getByText('Clique num estado para ver as cidades dele')).toBeInTheDocument();
     expect(screen.getByText('São Paulo')).toBeInTheDocument();
     expect(screen.getByText('Recife')).toBeInTheDocument();
   });
