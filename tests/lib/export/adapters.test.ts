@@ -284,16 +284,37 @@ describe('buildFinanceiroReport — KPIs completos', () => {
 describe('buildGeografiaReport', () => {
   it('aninha cidades sob cada UF', () => {
     const geo = {
-      porUf: [{ uf: 'SP', pedidos: 3, unidades: 5, valor: 300, pctPedidos: 75 }],
+      porUf: [{
+        uf: 'SP', pedidos: 3, unidades: 5, valor: 300, pctPedidos: 75, pctValor: 75,
+        ticketMedio: 100, freteMedio: 12.5, markup: 0.4,
+      }],
       porCidade: [
         { cidade: 'São Paulo', uf: 'SP', pedidos: 2, valor: 200 },
         { cidade: 'Rio', uf: 'RJ', pedidos: 1, valor: 100 },
       ],
       estadosAtingidos: 2, totalPedidos: 3, semGeo: 0,
+      valorTotal: 400, concentracao: { estados: 1, pctValor: 75 },
     };
     const r = buildGeografiaReport({ geo, periodo: { tipo: 'preset', dias: 30 }, config: cfg() });
     expect(r.linhas).toHaveLength(1); // só SP em porUf
     expect(r.linhas[0].sublinhas?.linhas).toHaveLength(1); // só a cidade de SP
     expect(r.linhas[0].sublinhas?.linhas[0].cidade).toBe('São Paulo');
+  });
+
+  it('exporta ticket, frete médio, markup e concentração', () => {
+    const geo = {
+      porUf: [{
+        uf: 'SP', pedidos: 3, unidades: 5, valor: 300, pctPedidos: 75, pctValor: 75,
+        ticketMedio: 100, freteMedio: 12.5, markup: 0.4,
+      }],
+      porCidade: [],
+      estadosAtingidos: 1, totalPedidos: 3, semGeo: 0,
+      valorTotal: 300, concentracao: { estados: 1, pctValor: 100 },
+    };
+    const r = buildGeografiaReport({ geo, periodo: { tipo: 'preset', dias: 30 }, config: cfg() });
+    expect(r.linhas[0].celulas).toMatchObject({
+      ticket: fmtBRL(100), frete: fmtBRL(12.5), markup: '+40%',
+    });
+    expect(r.kpis?.find((k) => k.label === 'Concentração')?.valor).toBe('1 estado · 100% do valor');
   });
 });

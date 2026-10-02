@@ -45,6 +45,7 @@ O **markup líquido por pedido/produto** fica no Faturamento por ser atributo da
 - O endereço do comprador **não está em `ml_vendas`** hoje (o `raw.shipping` traz só `{id}`; `raw.buyer` só `{id, nickname}`). Mas o backfill **já chama** `/shipments/{id}` (`buscarShipment`, em `_shared/faturamento/io.ts`) para status/rastreio/logística — e o `receiver_address` (cidade/estado) **vem nessa mesma resposta**. Logo, **não há chamada nova ao ML**: basta estender `buscarShipment` para extrair `receiver_address.city.name` (cidade) e `receiver_address.state.id` (UF, ex. `BR-SP`).
 - Novas colunas `cidade text` e `uf text` em `ml_vendas`. Captura ambas (cidade vem de graça); a UI da Fase 2 mostra **mapa de calor do Brasil por UF** (SVG inline, sem dependência pesada), "estados atingidos", top estado (%) e top cidades.
 - **Risco:** o `receiver_address` pode vir limitado por privacidade do ML em parte das vendas (especialmente FULL). UF tende a ser confiável; confirmar o formato exato do shipment na implementação e tratar `null` como "não informado".
+- _Atualização 2026-10-02:_ o ranking de UFs ganhou **Ticket**, **Frete méd.** e **Markup** por UF (mesma fórmula do markup do pedido, só pedidos com custo), o clique no estado filtra as cidades e entrou o KPI **Concentração** (menor nº de UFs que soma ≥ 80% do valor). Valor por UF passou a usar `brutoFaturavel` (pack misto não soma o cancelado).
 
 ## Consequências
 

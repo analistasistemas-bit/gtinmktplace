@@ -42,6 +42,7 @@ const ALL_EXPECTED_KEYS = [
   'Estados atingidos',
   'Top estado',
   'Cidades',
+  'Concentração',
   'Sem localização',
   // Páginas de detalhe (drill-down)
   'Líquido total (você recebe)',

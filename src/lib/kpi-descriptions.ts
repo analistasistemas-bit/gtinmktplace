@@ -84,6 +84,8 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Estado com mais pedidos no período, e o quanto ele representa do total.',
   Cidades:
     'Número de cidades diferentes com pelo menos 1 pedido no período.',
+  Concentração:
+    'Menor número de estados que, somados, chegam a 80% do valor faturado no período. Quanto menor, mais o faturamento depende de poucos estados.',
   'Sem localização':
     'Pedidos do período sem UF identificada — o endereço de entrega não veio disponível pela API do Mercado Livre.',
 

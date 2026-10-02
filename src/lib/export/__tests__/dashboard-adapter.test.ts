@@ -56,11 +56,14 @@ function fixtureArgs({
     geografia: {
       porUf: Array.from({ length: ufCount }, (_, i) => ({
         uf: `U${i}`, pedidos: i + 1, unidades: 0, valor: 0, pctPedidos: i + 0.5,
+        pctValor: 0, ticketMedio: 0, freteMedio: 0, markup: null,
       })),
       porCidade: [],
       estadosAtingidos: ufCount,
       totalPedidos: ufCount,
       semGeo: 2,
+      valorTotal: 0,
+      concentracao: null,
     },
     periodo: { tipo: 'hoje' },
     canal: 'todos',

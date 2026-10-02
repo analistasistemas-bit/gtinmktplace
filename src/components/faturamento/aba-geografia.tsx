@@ -1,9 +1,12 @@
 import { useMemo, useState } from 'react';
-import { MapPin, Building2, AlertCircle } from 'lucide-react';
+import { MapPin, Building2, AlertCircle, PieChart, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { fmtBRL, fmtInt } from '@/lib/formato';
+import { fmtBRL, fmtInt, fmtMarkup, fmtPct } from '@/lib/formato';
 import { resolverJanela, type Periodo, type PeriodoDias } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
+import { useCustos } from '@/hooks/useCustos';
+import { useAliquotas } from '@/hooks/useConfiguracoes';
+import { montarCustoResolver, montarPesoResolver, montarAliquotaResolver } from '@/lib/custos';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { agruparPorGeografia } from '@/lib/geografia-vendas';
 import { MapaBrasil } from '@/components/faturamento/mapa-brasil';
@@ -45,7 +48,20 @@ export function AbaGeografia() {
 
   const { data: vendas, isFetching } = useVendas(janela, 'todos');
 
-  const pedidos = useMemo(() => agruparPorPedido(vendas ?? []), [vendas]);
+  const { data: custos } = useCustos();
+  const { data: aliquotas } = useAliquotas();
+
+  // Mesmos resolvers da aba Vendas: sem custo/imposto o markup por UF não fecha com ela.
+  const pedidos = useMemo(
+    () => agruparPorPedido(
+      vendas ?? [],
+      montarCustoResolver(custos),
+      montarPesoResolver(custos),
+      undefined,
+      montarAliquotaResolver(custos, aliquotas ?? { nacional: 8, importado: 16 }),
+    ),
+    [vendas, custos, aliquotas],
+  );
   const geo = useMemo(() => agruparPorGeografia(pedidos), [pedidos]);
   const valores = useMemo(
     () => Object.fromEntries(geo.porUf.map((u) => [u.uf, u.pedidos])),
@@ -54,6 +70,12 @@ export function AbaGeografia() {
 
   const topUf = geo.porUf[0];
   const topUfSub = topUf ? `${topUf.pctPedidos}% dos pedidos` : undefined;
+  const topValor = geo.porUf.reduce<(typeof geo.porUf)[number] | undefined>(
+    (m, u) => (m == null || u.valor > m.valor ? u : m), undefined,
+  );
+  const cidades = selecionada
+    ? geo.porCidade.filter((c) => c.uf === selecionada)
+    : geo.porCidade.slice(0, 8);
 
   const semDados = geo.totalPedidos === 0 && !isFetching;
   const carregando = isFetching && (vendas == null || vendas.length === 0);
@@ -134,6 +156,16 @@ export function AbaGeografia() {
           value={fmtInt(geo.porCidade.length)}
           tom="info"
         />
+        {geo.concentracao && (
+          <KpiCard
+            size="compact"
+            icon={PieChart}
+            label="Concentração"
+            value={`${geo.concentracao.estados} ${geo.concentracao.estados === 1 ? 'estado' : 'estados'}`}
+            tom="info"
+            hint={`somam ${fmtPct(geo.concentracao.pctValor)} do valor`}
+          />
+        )}
         {geo.semGeo > 0 && (
           <KpiCard
             size="compact"
@@ -145,6 +177,13 @@ export function AbaGeografia() {
           />
         )}
       </div>
+
+      {topValor && !carregando && (
+        <p className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">{topValor.uf}</span> concentrou{' '}
+          {fmtPct(topValor.pctValor)} do faturamento do período.
+        </p>
+      )}
 
       {/* Estado de carregando / vazio */}
       {carregando && (
@@ -160,7 +199,7 @@ export function AbaGeografia() {
       {!semDados && !carregando && (
         <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
           {/* Mapa */}
-          <div className="rounded-lg border bg-card p-4 shadow-sm">
+          <div className="min-w-0 rounded-lg border bg-card p-4 shadow-sm">
             <h3 className="mb-3 text-sm font-medium text-muted-foreground">Mapa de calor por estado</h3>
             <MapaBrasil
               valores={valores}
@@ -170,10 +209,12 @@ export function AbaGeografia() {
             />
           </div>
 
-          {/* Rankings — altura igual ao mapa via flex h-full */}
-          <div className="flex h-full flex-col gap-4">
+          {/* Rankings — no lg a altura é a do mapa (absolute inset-0) e as listas rolam por dentro,
+              senão a lista completa de UFs/cidades estica o card do mapa. */}
+          <div className="min-w-0 lg:relative">
+          <div className="flex flex-col gap-4 lg:absolute lg:inset-0">
             {/* Top estados */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
+            <div className="flex max-h-80 min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-sm lg:max-h-none">
               <div className="shrink-0 border-b px-4 py-2.5">
                 <h3 className="text-sm font-medium">Top estados</h3>
               </div>
@@ -185,10 +226,13 @@ export function AbaGeografia() {
                       <TableHead className="py-2 text-right">Pedidos</TableHead>
                       <TableHead className="py-2 text-right">%</TableHead>
                       <TableHead className="py-2 text-right">Valor</TableHead>
+                      <TableHead className="py-2 text-right">Ticket</TableHead>
+                      <TableHead className="py-2 text-right">Frete méd.</TableHead>
+                      <TableHead className="py-2 text-right">Markup</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {geo.porUf.slice(0, 8).map((u) => (
+                    {geo.porUf.map((u) => (
                       <TableRow
                         key={u.uf}
                         className={cn(
@@ -203,6 +247,18 @@ export function AbaGeografia() {
                           {u.pctPedidos}%
                         </TableCell>
                         <TableCell className="py-1.5 text-right tabular-nums">{fmtBRL(u.valor)}</TableCell>
+                        <TableCell className="py-1.5 text-right tabular-nums">{fmtBRL(u.ticketMedio)}</TableCell>
+                        <TableCell className="py-1.5 text-right tabular-nums text-muted-foreground">
+                          {u.freteMedio > 0 ? fmtBRL(u.freteMedio) : '—'}
+                        </TableCell>
+                        <TableCell
+                          className={cn(
+                            'py-1.5 text-right tabular-nums',
+                            u.markup != null && u.markup < 0 && 'text-destructive',
+                          )}
+                        >
+                          {fmtMarkup(u.markup)}
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -211,9 +267,21 @@ export function AbaGeografia() {
             </div>
 
             {/* Top cidades */}
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-sm">
-              <div className="shrink-0 border-b px-4 py-2.5">
-                <h3 className="text-sm font-medium">Top cidades</h3>
+            <div className="flex max-h-80 min-h-0 flex-1 flex-col overflow-hidden rounded-lg border bg-card shadow-sm lg:max-h-none">
+              <div className="flex shrink-0 items-center justify-between border-b px-4 py-2.5">
+                <h3 className="text-sm font-medium">
+                  {selecionada ? `Cidades · ${selecionada}` : 'Top cidades'}
+                </h3>
+                {selecionada && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 gap-1 px-2 text-xs"
+                    onClick={() => setSelecionada(null)}
+                  >
+                    <X className="h-3 w-3" /> Todas
+                  </Button>
+                )}
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent">
                 <Table>
@@ -226,7 +294,7 @@ export function AbaGeografia() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {geo.porCidade.slice(0, 8).map((c) => (
+                    {cidades.map((c) => (
                       <TableRow key={`${c.cidade}|${c.uf}`} className="text-xs">
                         <TableCell className="py-1.5 font-medium">{c.cidade}</TableCell>
                         <TableCell className="py-1.5 text-muted-foreground">{c.uf}</TableCell>
@@ -238,6 +306,7 @@ export function AbaGeografia() {
                 </Table>
               </div>
             </div>
+          </div>
           </div>
         </div>
       )}

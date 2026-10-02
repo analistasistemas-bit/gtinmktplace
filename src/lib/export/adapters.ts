@@ -1,4 +1,4 @@
-import { fmtBRL, fmtInt, fmtMarkup } from '@/lib/formato';
+import { fmtBRL, fmtInt, fmtMarkup, fmtPct } from '@/lib/formato';
 import { fmtDataCurta, labelStatusPedido, labelStatusEnvio } from '@/lib/ml-status';
 import { rotuloTipo, type PublicadoItem, type FiltroPublicados } from '@/lib/publicados';
 import { calcularResumoPublicados } from '@/lib/resumo-publicados';
@@ -467,6 +467,9 @@ const COLS_GEO_UF: Coluna[] = [
   { chave: 'pedidos', titulo: 'Pedidos', alinhamento: DIR },
   { chave: 'pct', titulo: '%', alinhamento: DIR },
   { chave: 'valor', titulo: 'Valor', alinhamento: DIR },
+  { chave: 'ticket', titulo: 'Ticket', alinhamento: DIR },
+  { chave: 'frete', titulo: 'Frete méd.', alinhamento: DIR },
+  { chave: 'markup', titulo: 'Markup', alinhamento: DIR },
 ];
 
 const COLS_GEO_CIDADE: Coluna[] = [
@@ -489,6 +492,13 @@ export function buildGeografiaReport(args: GeografiaArgs): ReportData {
     { label: 'Top estado', valor: topUf ? `${topUf.uf} · ${topUf.pctPedidos}% dos pedidos` : '—' },
     { label: 'Cidades', valor: fmtInt(geo.porCidade.length) },
   ];
+  if (geo.concentracao) {
+    const { estados, pctValor } = geo.concentracao;
+    kpis.push({
+      label: 'Concentração',
+      valor: `${estados} ${estados === 1 ? 'estado' : 'estados'} · ${fmtPct(pctValor)} do valor`,
+    });
+  }
   if (geo.semGeo > 0) kpis.push({ label: 'Sem localização', valor: fmtInt(geo.semGeo) });
   return {
     titulo: 'Faturamento · Geografia',
@@ -501,6 +511,9 @@ export function buildGeografiaReport(args: GeografiaArgs): ReportData {
         pedidos: fmtInt(u.pedidos),
         pct: `${u.pctPedidos}%`,
         valor: fmtBRL(u.valor),
+        ticket: fmtBRL(u.ticketMedio),
+        frete: fmtBRL(u.freteMedio),
+        markup: fmtMarkup(u.markup),
       },
       sublinhas: {
         colunas: COLS_GEO_CIDADE,

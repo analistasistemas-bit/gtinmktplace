@@ -11,6 +11,14 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-02
 
+**Geografia ganha rentabilidade por UF (Faturamento › Geografia).** Comparada ao "Vendas por Estado"
+do Mercado Turbo, sem copiar: o ranking de estados mostra agora **Ticket**, **Frete méd.** (frete do
+vendedor por pedido) e **Markup** (Σ líquido − Σ custo ÷ Σ custo, só pedidos com custo); a aba passou a
+montar os pedidos com custo/imposto (antes não tinha, o markup sairia sempre "—"). Clique no estado
+filtra as cidades. KPI **Concentração** (menor nº de UFs que soma ≥ 80% do valor) + linha "UF concentrou
+X% do faturamento". Correção: pack misto contava pelo status do membro mais antigo e somava o bruto do
+cancelado — agora `faturavel`/`brutoFaturavel` (vale também para o mapa do Dashboard). Só frontend.
+
 **Detalhe da venda reorganizado (Faturamento › Vendas, Financeiro, dossiê do SKU).** A linha expandida
 espalhava 4 números numa faixa horizontal e repetia o produto numa tabela larga. Inspirado no Mercado
 Turbo, virou 3 zonas: **Pedido** (comprador, nº com copiar, envio, pagamento, frete do comprador, cupom),
