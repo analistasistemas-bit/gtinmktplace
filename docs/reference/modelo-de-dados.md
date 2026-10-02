@@ -26,6 +26,11 @@
 O tenant. Hoje 2 linhas — **Avil** (`slug='avil'`, dona de todos os dados do backfill do E7) e
 **DSA** (`slug='diego-souza'`). *Migration `20260705163656_e7_organizations.sql`.*
 
+**`arquivada_em timestamptz null`** (migration `20261002012346_adr175_arquivar_organizacao.sql`,
+ADR-0175): null = org ativa; preenchida = arquivada (soft delete, reversível). Escrita só pelas
+funções abaixo. Org arquivada sai da Central (salvo filtro "Incluir arquivadas") e das rotinas
+agendadas.
+
 `id`, `nome`, `slug` (único), `marca_padrao` (resolve o hard-code `'Avil'` de `atributos.ts`),
 `lote_seq` (contador da numeração de lote por org — ver `lotes.numero_org`), `criado_em`,
 `atualizado_em`. RLS: SELECT do membro da própria org; UPDATE só admin da própria org; criação
@@ -1396,7 +1401,9 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 | `org_id_default()` | Trigger `BEFORE INSERT`: preenche `org_id` do INSERT a partir de `current_org_id()` quando ausente |
 | `proximo_numero_lote(org)` | Incrementa `organizations.lote_seq` e retorna o próximo `numero_org` (row-lock na org) |
 | `proximo_codigo_produto(p_org, p_qtd, p_resync default false)` | ADR-0096: reserva `p_qtd` números de `organizations.produto_seq` num `update … returning` atômico e devolve o **último** da faixa; rejeita `p_qtd <= 0`. Com `p_resync=true`, primeiro eleva a sequência ao maior código existente na org (comparação numérica) antes de reservar — caminho da colisão, não do cadastro feliz. `search_path=''`, revogada de `public`/`anon`/`authenticated`, concedida só a `service_role` — o browser nunca chama, só a edge `cadastrar-produto` |
-| `upsert_marketplace_connection(...)` | Grava conexão de canal por org, criando/atualizando secrets no Vault |
+| `upsert_marketplace_connection(...)` | Grava conexão de canal por org, criando/atualizando secrets no Vault. ADR-0175: recusa org arquivada ou inexistente (SQLSTATE `55000`, trava `FOR SHARE` na org) — OAuth em org arquivada falha; desarquive antes |
+| `arquivar_organizacao(p_org_id uuid)` → `timestamptz` | ADR-0175: `security definer`, só `service_role`. Trava a org (`FOR UPDATE`), idempotente (já arquivada devolve a marca existente), recusa membros ativos (`55000`) e org inexistente (`P0002`); desconecta os canais reusando `delete_marketplace_connection` (secrets do Vault incluídos) e grava `arquivada_em` |
+| `desarquivar_organizacao(p_org_id uuid)` → `void` | ADR-0175: só `service_role`; só limpa `arquivada_em`. A conexão **não** volta — reconectar o ML em Canais |
 | `get_connection_tokens(connection_id)` | Lê tokens descriptografados do Vault (só `service_role`) |
 | `delete_marketplace_connection(connection_id)` | Remove conexão + secrets (idempotente) |
 | `canais_habilitados_da_org()` | `security definer`, `search_path=''`: retorna `organizations.canais_habilitados` da própria org (evita abrir SELECT direto em `organizations`) |

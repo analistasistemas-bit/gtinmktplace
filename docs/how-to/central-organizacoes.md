@@ -104,6 +104,28 @@ acionado por fora do fluxo normal.
 Fatos tardios entram como ajustes rastreáveis em período posterior e usam a condição original.
 Créditos são transportados; um total negativo deve ser tratado como crédito, não como pagamento.
 
+## Arquivar e desarquivar
+
+Arquivar é o caminho para "remover" uma empresa que não opera mais (ADR-0175). Histórico
+comercial, vendas e auditoria ficam intactos; é reversível.
+
+Antes de arquivar:
+
+1. **Pause ou encerre os anúncios no ML.** Depois do arquivamento a conta é desconectada e a tela
+   não alcança mais o ML; os anúncios continuam no ar, mas o PubliAI não registra vendas nem baixa
+   estoque.
+2. **Deixe a org sem membros ativos** (mova ou desative os usuários). Com membro ativo a ação
+   responde 409.
+
+Para arquivar: Central de organizações → menu **⋯** da linha → **Arquivar** → digite o slug para
+confirmar. A org desconecta os canais e ganha o selo "Arquivada"; some da lista, dos totais e da
+previsão de cobrança. Marque **Incluir arquivadas** para vê-la. Não é possível arquivar a própria
+org.
+
+Para desarquivar: **⋯ → Desarquivar**. A conexão **não** volta: reconecte o ML em **Canais**, com
+a conta da empresa (em janela anônima, se o navegador estiver logado em outra conta ML). Enquanto
+arquivada, convidar/ativar usuário e conectar o ML (OAuth) são recusados.
+
 ## Central e suporte são acessos diferentes
 
 A central entrega agregados administrativos ao super-admin. Ela não concede acesso implícito a
@@ -121,5 +143,8 @@ de suporte e respeite o escopo, a aprovação e a validade existentes.
 - Contagens operacionais (anúncios ativos, publicações) e custo medido do fornecedor não são
   exibidos nesta versão: nunca foram implementados e exigem definir a fonte de dados.
 - `delete_org` está desabilitado: a limpeza sequencial existente não garante exclusão atômica nem
-  preservação segura de todo o histórico comercial.
+  preservação segura de todo o histórico comercial. Use [Arquivar e desarquivar](#arquivar-e-desarquivar);
+  exclusão definitiva é uma fatia futura que exigirá org arquivada.
+- Arquivar tem janela de segundos: mensagens já enfileiradas e execuções em voo no momento do
+  arquivamento podem terminar. Ativar um membro ao mesmo tempo só é barrado pela edge.
 - Locks compartilhados usados no fechamento podem atrasar brevemente operações de outros tenants.

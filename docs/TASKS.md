@@ -2,6 +2,18 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Arquivar organização (ADR-0175, 2026-10-01) — código pronto na branch `worktree-arquivar-org`
+
+Soft delete de organização (caso Hairflay → Hairfly Cosmeticos). **Nada deployado ainda.**
+
+- [x] Migration `20261002012346_adr175_arquivar_organizacao.sql`: `organizations.arquivada_em`, `arquivar_organizacao`/`desarquivar_organizacao`, trava de org arquivada em `upsert_marketplace_connection`.
+- [x] Edge `usuarios`: ações `archive_org`/`unarchive_org` (`arquivar-org.ts`), `list_orgs` com `arquivada_em`, 409 em `invite`/`set_active` de org arquivada.
+- [x] Central (`_shared/platform-admin`): wallet com `include_archived`; arquivada fora de totais/completude/warnings.
+- [x] Rotinas que pulam org arquivada: `sincronizar-promocoes`, `materializar-metricas`, `notificar-liberacao`, `reconciliar-estoque`, `reconciliar-convergencia-up` (`_shared/orgs-arquivadas.ts`).
+- [x] Front: `Organizacoes.tsx` (menu ⋯, filtro "Incluir arquivadas", selo) + `dialog-arquivar-org.tsx` (digitar o slug).
+- [x] Docs: ADR-0175 aceito, índices, modelo-de-dados, edge-functions, central-organizacoes, operacoes-rotineiras.
+- [ ] **Deploy (pendente):** `supabase db push` + `supabase functions deploy` das edges afetadas (`usuarios`, `platform-admin` e as 5 rotinas acima; `_shared/` mudou) + conferir versões ativas; só então merge.
+
 ## Operações em massa — aderir/sair de promoção (ADR-0174, 2026-09-28) — em produção
 
 I5 (motor de operações em massa) + Promoções V2 (aderir/sair de campanha) resolvidos como uma

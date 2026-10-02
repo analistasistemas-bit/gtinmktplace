@@ -1,6 +1,6 @@
 # ADR-0175 — Arquivar organização (soft delete) antes de excluir
 
-- **Status:** Proposto
+- **Status:** Aceito (2026-10-01)
 - **Data:** 2026-10-01
 - **Relacionados:** ADR-0027 (multi-tenancy), ADR-0158 (Central de organizações), ADR-0173 (fan-out por org), ADR-0090 (lockdown de `profiles`)
 
@@ -53,3 +53,14 @@ Não há ponto único de enumeração: ~10 rotinas repetem
   (depois, sem conexão, a tela não alcança mais o ML).
 - Desarquivar exige reconectar o ML — custo aceito em troca de não tocar ~10 rotinas.
 - `delete_org` continua desabilitado até a fatia 2.
+- **Trava no upsert:** `upsert_marketplace_connection` passou a recusar org arquivada ou inexistente
+  (SQLSTATE 55000, trava `FOR SHARE` na org). Sem isso, um OAuth em andamento reconectaria o ML
+  numa org arquivada. Para reconectar, desarquive antes.
+- **Rotinas que enumeram por domínio** (e não por conexão) pulam org arquivada explicitamente:
+  `notificar-liberacao`, `reconciliar-estoque` e `reconciliar-convergencia-up`
+  (`_shared/orgs-arquivadas.ts`); `sincronizar-promocoes` e `materializar-metricas` filtram
+  `arquivada_em is null`. As demais param porque partem de `marketplace_connections`.
+- **Riscos aceitos (revisão Codex):** (a) corrida entre ativar um membro e arquivar a org só é
+  mitigada pela recusa na edge (`invite` e `set_active` respondem 409 em org arquivada), não por
+  trava no banco; (b) mensagens já enfileiradas e execuções em voo no momento do arquivamento
+  podem terminar (janela de segundos).

@@ -256,6 +256,15 @@ mesmo por engano.
    para até o próximo ciclo, que a assume do zero. As pendências de pedido não se perdem (seguem em
    `worker_pendencias`). Fica visível como uma linha `rodando` com posse vencida em `worker_rodadas`.
 
+> **Org arquivada (ADR-0175).** `sincronizar-promocoes` e `materializar-metricas` filtram
+> `organizations.arquivada_em is null`; `notificar-liberacao`, `reconciliar-estoque` e
+> `reconciliar-convergencia-up` excluem os `org_id` de `_shared/orgs-arquivadas.ts`
+> (`listarOrgsArquivadas`/`filtroNotIn`). As demais rotinas (`reconciliar-faturamento`,
+> `pulse-coletar`, `coletar-ads-ml`, `coletar-trafego-ml`, `monitorar-moderados`,
+> `renovar-tokens-ml`, `ml-webhook`) param sozinhas: partem de `marketplace_connections`, que o
+> arquivamento apaga. A wallet da Central (`_shared/platform-admin`) aceita `include_archived`
+> (padrão false): arquivada só aparece na tabela com o filtro e nunca entra em totais.
+
 ---
 
 ## Módulos compartilhados (`_shared/`)
@@ -1871,6 +1880,12 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `list_orgs` passou a devolver `canais_habilitados` de cada org. Requer o secret `APP_URL`.
   **`set_tipos_produto_org`** (ADR-0166): grava `organizations.tipos_produto_habilitados` da org alvo,
   filtrando contra `TIPOS_PRODUTO_VALIDOS` (`'roupa'`, `'calcado'`) e deduplicando.
+  **`archive_org`** / **`unarchive_org`** (ADR-0175, super-admin sem org; body `{ action, org_id }`,
+  helper `usuarios/arquivar-org.ts`): chamam as RPCs `arquivar_organizacao`/`desarquivar_organizacao`.
+  400 `org_id` inválido ou a própria org do chamador, 404 org inexistente, 409 org com membros
+  ativos, 500 falha; auditoria em `platform_audit_events` (intent + success/failure). `list_orgs`
+  devolve `arquivada_em`; `invite` e `set_active(is_active=true)` respondem 409 "Empresa arquivada:
+  desarquive antes." em org arquivada. `delete_org` segue desabilitado.
   **`promocoes`** (ADR-0170, redeploy v36): entrou no espelho `MENU_KEYS` e em `MODULOS_VALIDOS`.
   **Menu `canais`** entrou em `MENU_KEYS` (tela `/canais`, ex-OAuth de Configurações) — mudança em
   `MENU_KEYS`/`_shared/` exige redeploy da `usuarios` via CLI completa (conferir versão pós-deploy).
