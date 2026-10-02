@@ -385,6 +385,9 @@ describe('Organizacoes', () => {
       usePlatformWallet.mockImplementation(() => wallet);
       const user = userEvent.setup();
       renderPage();
+      // O debounce da busca (Organizacoes.tsx, 300 ms) também roda na montagem e faz setPage(1);
+      // no CI lento ele caía depois do clique em "Ações" e fechava o menu. Espera assentar.
+      await new Promise((r) => setTimeout(r, 400));
       await user.click(screen.getByRole('button', { name: 'Próxima página' }));
       expect(screen.getByText('Org 10')).toBeInTheDocument();
       await abrirMenu(user);
