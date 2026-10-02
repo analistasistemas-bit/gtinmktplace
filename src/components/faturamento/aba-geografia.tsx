@@ -218,8 +218,8 @@ export function AbaGeografia() {
               <div className="shrink-0 border-b px-4 py-2.5">
                 <h3 className="text-sm font-medium">Top estados</h3>
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent">
-                <Table>
+              <div className="min-h-0 flex-1 overflow-auto [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent">
+                <Table containerClassName="overflow-visible">
                   <TableHeader>
                     <TableRow className="text-xs text-muted-foreground hover:bg-transparent">
                       <TableHead className="py-2">UF</TableHead>
@@ -283,8 +283,8 @@ export function AbaGeografia() {
                   </Button>
                 )}
               </div>
-              <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent">
-                <Table>
+              <div className="min-h-0 flex-1 overflow-auto [scrollbar-color:hsl(var(--border))_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent">
+                <Table containerClassName="overflow-visible">
                   <TableHeader>
                     <TableRow className="text-xs text-muted-foreground hover:bg-transparent">
                       <TableHead className="py-2">Cidade</TableHead>

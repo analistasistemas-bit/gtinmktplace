@@ -184,6 +184,16 @@ describe('agruparPorGeografia — concentração', () => {
     expect(geo.concentracao).toEqual({ estados: 2, pctValor: 80 });
   });
 
+  it('valor faturável sem UF entra no denominador do % e da concentração', () => {
+    const geo = agruparPorGeografia([
+      pedido({ chave: '1', uf: 'SP', bruto: 100 }),
+      pedido({ chave: '2', uf: null, cidade: null, bruto: 50 }),
+    ]);
+    expect(geo.valorTotal).toBe(150);
+    expect(geo.porUf[0].pctValor).toBe(66.7);
+    expect(geo.concentracao).toBeNull(); // UFs somam só 66,7% < 80%
+  });
+
   it('concentração null sem pedidos', () => {
     expect(agruparPorGeografia([]).concentracao).toBeNull();
   });

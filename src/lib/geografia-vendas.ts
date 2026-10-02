@@ -38,9 +38,9 @@ export interface GeografiaVendas {
   totalPedidos: number;
   /** Pedidos faturáveis sem UF (null) — excluídos dos rankings mas contados aqui. */
   semGeo: number;
-  /** Σ valor faturável dos pedidos com UF. */
+  /** Σ valor faturável do período, inclusive pedidos sem UF (denominador do % e da concentração). */
   valorTotal: number;
-  /** Menor nº de UFs (por valor desc) que soma ≥ 80% do valor. null sem pedidos. */
+  /** Menor nº de UFs (por valor desc) que soma ≥ 80% do valor. null sem valor ou se as UFs não chegam a 80%. */
   concentracao: { estados: number; pctValor: number } | null;
 }
 
@@ -52,6 +52,7 @@ export function agruparPorGeografia(pedidos: Pedido[]): GeografiaVendas {
 
   let totalPedidos = 0;
   let semGeo = 0;
+  let valorSemGeo = 0;
 
   for (const p of pedidos) {
     // `faturavel`/`brutoFaturavel`, não `status`/`bruto`: num pack misto o status representativo
@@ -60,6 +61,7 @@ export function agruparPorGeografia(pedidos: Pedido[]): GeografiaVendas {
 
     if (p.uf == null) {
       semGeo += 1;
+      valorSemGeo += p.brutoFaturavel;
       continue;
     }
 
@@ -87,7 +89,7 @@ export function agruparPorGeografia(pedidos: Pedido[]): GeografiaVendas {
     }
   }
 
-  const valorTotal = round2(Array.from(porUfMap.values()).reduce((s, acc) => s + acc.valor, 0));
+  const valorTotal = round2(Array.from(porUfMap.values()).reduce((s, acc) => s + acc.valor, valorSemGeo));
   const porUf: UfAgregado[] = Array.from(porUfMap.entries())
     .map(([uf, acc]) => ({
       uf,
@@ -120,7 +122,9 @@ export function agruparPorGeografia(pedidos: Pedido[]): GeografiaVendas {
       estados += 1;
       if (acumulado >= valorTotal * 0.8) break;
     }
-    concentracao = { estados, pctValor: round1((acumulado / valorTotal) * 100) };
+    if (acumulado >= valorTotal * 0.8) {
+      concentracao = { estados, pctValor: round1((acumulado / valorTotal) * 100) };
+    }
   }
 
   return {
