@@ -60,26 +60,28 @@ export const serieVitrine = (semanas: SemanaVitrine[]): PontoSerie[] =>
 export const delta = (atual: number | null, anterior: number | null): number | null =>
   atual == null || anterior == null || anterior === 0 ? null : (atual - anterior) / anterior;
 
-// ponytail: limites iniciais (ADR-0176 D-6), calibrados contra a Avil na Task 6.
+// ponytail: limites calibrados contra a Avil em 02/10/2026 (ADR-0176 D-6).
 export const LIMITES = { minVisitasSemVenda: 100, fatorSemVenda: 0.5, minPedidosConverte: 5,
-  fatorConverte: 1.5, minVisitasAntQueda: 100, quedaPerdendo: 0.3, diasInvisivel: 7, coberturaItem: 0.8 } as const;
+  fatorConverte: 1.5, minVisitasAntQueda: 100, quedaPerdendo: 0.3, diasInvisivel: 7, coberturaItem: 0.8,
+  esperadoInvisivel: 3, percentilConverte: 0.75 } as const;
 export type Rotulo = 'invisivel' | 'sem_venda' | 'converte' | 'perdendo';
 export type ItemAcao = { item: ItemVitrine; rotulo: Rotulo; emJogo: number };
 
-const mediana = (xs: number[]): number => {
+const percentil = (xs: number[], p: number): number => {
   if (!xs.length) return 0;
   const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+  return s[Math.floor(s.length * p)];
 };
 const cobre = (ok: number, total: number) => total > 0 && ok / total >= LIMITES.coberturaItem;
 
 export function ondeAgir(itens: ItemVitrine[], convMedia: number | null): ItemAcao[] {
   const ativos = itens.filter((i) => i.status === 'active');
-  const med = mediana(ativos.filter((i) => cobre(i.pares_ok, i.pares_total)).map((i) => i.visitas));
+  const p75 = percentil(ativos.filter((i) => i.pedidos >= 1 && cobre(i.pares_ok, i.pares_total)).map((i) => i.visitas), LIMITES.percentilConverte);
   const out: ItemAcao[] = [];
   for (const i of ativos) {
-    if (i.dias_ok_ult7 >= LIMITES.diasInvisivel && i.visitas_ult7 === 0) {
+    const diasOutros = i.pares_ok - i.dias_ok_ult7;
+    const esperado7 = diasOutros > 0 ? (i.visitas - i.visitas_ult7) * 7 / diasOutros : 0;
+    if (i.dias_ok_ult7 >= LIMITES.diasInvisivel && i.visitas_ult7 === 0 && esperado7 >= LIMITES.esperadoInvisivel) {
       out.push({ item: i, rotulo: 'invisivel', emJogo: i.pedidos_ant });
       continue;
     }
@@ -88,7 +90,7 @@ export function ondeAgir(itens: ItemVitrine[], convMedia: number | null): ItemAc
     const cands: ItemAcao[] = [];
     if (i.visitas >= LIMITES.minVisitasSemVenda && conv < LIMITES.fatorSemVenda * convMedia)
       cands.push({ item: i, rotulo: 'sem_venda', emJogo: i.visitas * (convMedia - conv) });
-    if (i.pedidos >= LIMITES.minPedidosConverte && conv >= LIMITES.fatorConverte * convMedia && i.visitas < med)
+    if (i.pedidos >= LIMITES.minPedidosConverte && conv >= LIMITES.fatorConverte * convMedia && i.visitas < p75)
       cands.push({ item: i, rotulo: 'converte', emJogo: 0.5 * i.visitas * conv });
     if (cobre(i.pares_ok_ant, i.pares_total_ant) && i.visitas_ant >= LIMITES.minVisitasAntQueda
         && i.visitas < i.visitas_ant * (1 - LIMITES.quedaPerdendo))

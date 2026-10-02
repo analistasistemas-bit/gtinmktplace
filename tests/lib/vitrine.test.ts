@@ -101,15 +101,31 @@ describe('ondeAgir', () => {
     expect(a.rotulo).toBe('sem_venda');
     expect(a.emJogo).toBeCloseTo(1000 * (0.03 - 0.01));
   });
-  it('Converte e ninguém vê: ≥5 pedidos, conv ≥1,5× média, visitas < mediana', () => {
-    const r = ondeAgir([
-      item({ ml_item_id: 'C', ...cheio, visitas: 100, pedidos: 10, visitas_ult7: 20, dias_ok_ult7: 7 }),
-      item({ ml_item_id: 'X', ...cheio, visitas: 5000, pedidos: 150, visitas_ult7: 900, dias_ok_ult7: 7 }),
-      item({ ml_item_id: 'Y', ...cheio, visitas: 4000, pedidos: 120, visitas_ult7: 900, dias_ok_ult7: 7 }),
-    ], 0.03);
+  it('Invisível: cauda longa (esperado7 < 3) não marca', () => {
+    // 6 × 7 / 21 = 2
+    expect(ondeAgir([item({ ...cheio, visitas: 6, visitas_ult7: 0, dias_ok_ult7: 7 })], 0.03)).toEqual([]);
+  });
+  it('Invisível: limite exato esperado7 = 3 marca', () => {
+    // 9 × 7 / 21 = 3
+    const r = ondeAgir([item({ ...cheio, visitas: 9, visitas_ult7: 0, dias_ok_ult7: 7 })], 0.03);
+    expect(r[0].rotulo).toBe('invisivel');
+  });
+  it('Invisível: só 7 dias medidos (pares_ok = dias_ok_ult7) não marca', () => {
+    expect(ondeAgir([item({ ...cheio, pares_ok: 7, pares_total: 7, visitas: 50, visitas_ult7: 0, dias_ok_ult7: 7 })], 0.03)).toEqual([]);
+  });
+  const vendedores = [
+    item({ ml_item_id: 'C', ...cheio, visitas: 100, pedidos: 10, visitas_ult7: 20, dias_ok_ult7: 7 }),
+    item({ ml_item_id: 'X', ...cheio, visitas: 5000, pedidos: 150, visitas_ult7: 900, dias_ok_ult7: 7 }),
+    item({ ml_item_id: 'Y', ...cheio, visitas: 4000, pedidos: 120, visitas_ult7: 900, dias_ok_ult7: 7 }),
+    item({ ml_item_id: 'Z', ...cheio, visitas: 3000, pedidos: 90, visitas_ult7: 900, dias_ok_ult7: 7 }),
+  ];
+  it('Converte e ninguém vê: ≥5 pedidos, conv ≥1,5× média, visitas < p75 dos vendedores', () => {
+    const r = ondeAgir(vendedores, 0.03);
     const c = r.find((x) => x.item.ml_item_id === 'C')!;
     expect(c.rotulo).toBe('converte');
     expect(c.emJogo).toBeCloseTo(0.5 * 100 * 0.1);
+    // p75 = 5000: X (visitas = p75) tem conv alta mas não ganha converte
+    expect(r.find((x) => x.item.ml_item_id === 'X')).toBeUndefined();
   });
   it('Perdendo visitas: ≥100 no anterior e queda > 30%; emJogo = visitas perdidas × conv anterior', () => {
     const [a] = ondeAgir([item({ ...cheio, visitas: 600, pedidos: 18, visitas_ant: 1000, pedidos_ant: 30, visitas_ult7: 100, dias_ok_ult7: 7 })], 0.03);
