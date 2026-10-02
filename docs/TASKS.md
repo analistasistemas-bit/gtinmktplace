@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Vitrine (ADR-0176, 2026-10-02) — branch `worktree-vitrine-design`
+
+Tela `/vitrine` (menu entre Pulse e Faturamento): visitas, pedidos, conversão e lista "Onde agir".
+
+- [x] Migration `20261002214830_vitrine.sql` (RPC `vitrine_resumo`) + teste `supabase/tests/vitrine.sql`; `db push` feito em 02/10.
+- [x] Edge `usuarios` v43 (`MenuKey` `vitrine`) + backfill de `allowed_menus`.
+- [x] Regras puras `src/lib/vitrine.ts`, calibradas com dados da Avil (Invisível 11, Vitrine sem venda 22, Converte 5, Perdendo 9 em 4 semanas); RPC 284 ms (28 d) / 968 ms (182 d).
+- [ ] Merge na `main`.
+
 ## Detalhe da venda reorganizado (2026-10-02) — branch `worktree-detalhe-venda-redesign`
 
 Linha expandida de Faturamento › Vendas (também no Financeiro e no dossiê do SKU) em 3 zonas, inspirada no Mercado Turbo. Só frontend: sem migration, sem edge.

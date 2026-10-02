@@ -1887,6 +1887,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
   devolve `arquivada_em`; `invite` e `set_active(is_active=true)` respondem 409 "Empresa arquivada:
   desarquive antes." em org arquivada. `delete_org` segue desabilitado.
   **`promocoes`** (ADR-0170, redeploy v36): entrou no espelho `MENU_KEYS` e em `MODULOS_VALIDOS`.
+  **Menu `vitrine`** (ADR-0176, tela `/vitrine`) entrou em `MENU_KEYS` — redeploy da `usuarios` v43 (2026-10-02); backfill: quem tinha `faturamento` ganhou `vitrine`.
   **Menu `canais`** entrou em `MENU_KEYS` (tela `/canais`, ex-OAuth de Configurações) — mudança em
   `MENU_KEYS`/`_shared/` exige redeploy da `usuarios` via CLI completa (conferir versão pós-deploy).
   **Em produção desde 2026-07-15** (migration `20260715014055_menus_multicanal` + esta edge

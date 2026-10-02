@@ -1,6 +1,6 @@
 # ADR-0176 — Vitrine: visitas e conversão da conta, com lista "Onde agir"
 
-- **Status:** Aceito (2026-10-02) — design; implementação pendente
+- **Status:** Aceito (2026-10-02) — implementado
 - **Data:** 2026-10-02
 - **Relacionados:** ADR-0172 (Vendas SKU — coleta de visitas e Ads, Fatias 2b/2c), ADR-0047 (menu por papel), ADR-0037 (faturamento), ADR-0173 (fan-out por org)
 
@@ -49,17 +49,17 @@ reconciliação horária + backfill.
 
 **D-6 — Onde agir.** Universo: anúncios ativos. Um rótulo por anúncio (o de maior impacto):
 
-| Rótulo | Critério inicial | Ação sugerida |
+| Rótulo | Critério (calibrado) | Ação sugerida |
 |---|---|---|
-| Invisível | ativo (o ML pausa anúncio sem estoque), 0 visitas nos 7 últimos dias `ok` | moderação/indexação — sempre no topo |
+| Invisível | ativo (o ML pausa anúncio sem estoque), 7 dias `ok` com 0 visitas **e esperado7 ≥ 3** (esperado7 = visitas dos outros dias medidos do período × 7 ÷ nº desses dias; P(0 por acaso) ≈ 5%) | moderação/indexação — sempre no topo |
 | Vitrine sem venda | ≥ 100 visitas e conversão < 50% da média da conta | preço/foto/título (link Dossiê) |
-| Converte e ninguém vê | ≥ 5 pedidos, conversão ≥ 1,5× média, visitas < mediana; selo "sem Ads"/"em Ads" | Ads |
+| Converte e ninguém vê | ≥ 5 pedidos, conversão ≥ 1,5× média, visitas < **p75 das visitas dos ativos que venderam ≥ 1 pedido**; selo "sem Ads"/"em Ads" | Ads |
 | Perdendo visitas | ≥ 100 visitas no período anterior e queda > 30% | concorrência/posição |
 
 Ordem por **pedidos em jogo** (mesma escala para todos): sem venda = visitas × (conv. média − conv.
 anúncio); perdendo = visitas perdidas × conv. do anúncio; converte e ninguém vê = ganho com +50% de
-visitas. Top 10 + "ver todos". **Limites são iniciais**: medir contra dados reais da Avil e calibrar antes
-do merge.
+visitas. Top 10 + "ver todos". **Limites calibrados com dados reais da Avil**
+(ver Nota abaixo); cobertura por item ≥ 80%.
 
 **D-7 — Onde roda.** 1 RPC SQL `vitrine_resumo(inicio, fim)` escopada por `current_org_id()`, só leitura:
 KPIs (período e anterior), série semanal e uma linha por MLB (visitas, pedidos, cobertura, visitas do
@@ -77,3 +77,10 @@ navegador (paginação pesada a cada troca de período) e tudo no SQL (calibrar 
 - Ads é por grupo (ADR-0172): o selo "em Ads" diz se o MLB pertence a algum grupo ativo, sem ratear gasto.
 - Vínculo MLB→código é o atual (sem vigência histórica), herdado do ADR-0172.
 - Fora de escopo: Shopee (E5), posição na busca, alertas/notificação dos rótulos.
+
+## Nota — Implementação e calibração (2026-10-02)
+
+- RPC `public.vitrine_resumo(p_inicio date, p_fim date) returns jsonb` (plpgsql, stable, security definer, `search_path ''`, escopo `current_org_id()`, grant só `authenticated`; recusa período nulo, invertido ou > 182 dias). Migration `20261002214830_vitrine.sql`, aplicada em produção por `supabase db push` em 2026-10-02; teste SQL `supabase/tests/vitrine.sql`. Edge `usuarios` redeployada (versão 43) por causa do `MenuKey` `vitrine`; backfill deu `vitrine` a quem tinha `faturamento`.
+- Regras em TS puro (`src/lib/vitrine.ts`, `tests/lib/vitrine.test.ts`): período termina em hoje BRT − 3; presets 4 sem/12 sem/6 meses; cobertura < 95% avisa, < 80% esconde.
+- Calibração (Avil, 4 semanas): com os limites iniciais, Invisível marcava 135 de 497 ativos (cauda longa que nunca teve visita) e Converte 0–1. Depois (esperado7 ≥ 3 e p75 dos vendedores): Invisível 11, Vitrine sem venda 22, Converte 5, Perdendo 9 (47 no total). Em 12 semanas: 14/42/18/2.
+- Performance em produção (EXPLAIN ANALYZE, Avil, 575 MLBs): 284 ms (28 dias), 968 ms (182 dias).
