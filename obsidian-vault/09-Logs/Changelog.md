@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-09-30
+atualizado: 2026-10-02
 ---
 
 # Changelog
@@ -8,6 +8,16 @@ atualizado: 2026-09-30
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-10-02
+
+**Detalhe da venda reorganizado (Faturamento › Vendas, Financeiro, dossiê do SKU).** A linha expandida
+espalhava 4 números numa faixa horizontal e repetia o produto numa tabela larga. Inspirado no Mercado
+Turbo, virou 3 zonas: **Pedido** (comprador, nº com copiar, envio, pagamento, frete do comprador, cupom),
+**Itens** (um bloco por produto) e **Dinheiro** (cascata venda → comissão Clássico/Premium → frete →
+líquido após ML → imposto → custo → **Lucro**, com **Margem s/ venda** e markup, mesmos rótulos de Vendas
+SKU). O rastreio saiu. Pagamento, cupom e tipo de anúncio vêm de `ml_vendas.raw` só ao expandir a linha.
+Só frontend (`f9591250`). Fica para depois, com ADR: CEP, prazo de postagem e dimensões (`/shipments`).
 
 ## 2026-09-30
 

@@ -29,6 +29,7 @@ O **markup líquido por pedido/produto** fica no Faturamento por ser atributo da
 - **`pedido = pack_id ?? order_id`**: uma linha por pedido. Pedidos sem pack (compra de 1 item) seguem sendo 1 linha — `order_id` é a chave nesse caso.
 - **Linha do pedido:** data · comprador (+ selo "recorrente" quando o `comprador_id` repete no período) · nº de itens · **valor pago real (`paid_amount`)** · status de pagamento · status de envio · origem (PubliAI/Fora) · **markup líquido do pedido**.
 - **Detalhe (expand):** os produtos do pedido (título, cor, código, EAN, qtd, preço, **markup líquido por produto**) + frete único do envio, comissão e rastreio do pacote.
+  _Atualização 2026-10-02:_ o detalhe foi reorganizado em 3 zonas (Pedido, Itens, Dinheiro), com a cascata venda → comissão → frete → imposto → custo → **Lucro** + **Margem s/ venda** + markup. O **rastreio saiu** a pedido do Diego (ver `docs/TASKS.md`, "Detalhe da venda reorganizado"). A visão por pedido decidida aqui não mudou.
 - Reaproveita o agrupamento por `shipping_id ?? pack_id` (já em `ratearLiquidoPorFrete`, ADR-0033) e custo/líquido/markup (`calcularResumo`, `calcularMarkup`, `useCustos`). **Frete conta uma vez por pack** (não dupli-contar). Markup do pedido = `(líquido do pack − custo dos produtos do pack) ÷ custo`; por produto = `(líquido rateado do item − custo do item) ÷ custo`. Sem custo cadastrado → "—" (igual `DetalheFinanceiro`).
 - **KPIs corrigidos:** "Pedidos" passa a contar pedidos reais (packs); "Ticket médio" usa o valor do checkout.
 
