@@ -302,7 +302,10 @@ export function curvaAbc(todas: LinhaSku[], base: 'lucro' | 'bruto'): Map<string
   return out;
 }
 
-export interface VariacaoLucro { codigo: string; titulo: string | null; delta: number; situacao: 'entrou' | 'saiu' | 'mudou' }
+/** `titulo`: nome completo (frases). `nome` + `familia`: separados para a lista, onde a família na frente esconde a cor no corte. */
+export interface VariacaoLucro {
+  codigo: string; titulo: string | null; nome: string; familia: string | null; delta: number; situacao: 'entrou' | 'saiu' | 'mudou';
+}
 
 /** Quem explica a variação do lucro, em R$. Só SKUs com lucro calculado em algum dos períodos. */
 export function explicarVariacao(atual: LinhaSku[], anterior: LinhaSku[], n = 5): VariacaoLucro[] {
@@ -315,7 +318,11 @@ export function explicarVariacao(atual: LinhaSku[], anterior: LinhaSku[], n = 5)
     if (a?.m.lucro == null && b?.m.lucro == null) continue;
     const delta = round2((a?.m.lucro ?? 0) - (b?.m.lucro ?? 0));
     if (delta === 0) continue;
-    out.push({ codigo, titulo: nomeSku((a ?? b)!), delta, situacao: !b ? 'entrou' : !a ? 'saiu' : 'mudou' });
+    const l = (a ?? b)!;
+    const titulo = nomeSku(l);
+    const nome = formatarNomeProduto(l.titulo) || titulo;
+    out.push({ codigo, titulo, nome, familia: nome === titulo ? null : formatarNomeProduto(l.nomeFamilia) || null,
+      delta, situacao: !b ? 'entrou' : !a ? 'saiu' : 'mudou' });
   }
   return out.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta)).slice(0, n);
 }

@@ -240,16 +240,30 @@ export function AbaVendasSku() {
           )}
           {dados.variacoes.length > 0 && (
             <Painel icone={TrendingUp} titulo={`Quem explica a variação do lucro (${rot})`}>
-              <ul className="space-y-1 text-sm">
+              <ul className="space-y-2 text-sm">
                 {dados.variacoes.map((v) => (
-                  <li key={v.codigo} className="flex items-baseline gap-1.5">
-                    <span className="min-w-0 truncate" title={v.titulo ?? v.codigo}>{v.titulo ?? v.codigo}</span>
-                    {v.situacao !== 'mudou' && (
-                      <span className="shrink-0 text-xs text-muted-foreground">{v.situacao === 'entrou' ? 'entrou' : 'deixou de vender'}</span>
-                    )}
-                    <span className={cn('ml-auto shrink-0 pl-2 font-medium tabular-nums', v.delta < 0 ? 'text-destructive' : 'text-success')}>
-                      {v.delta > 0 ? '+' : '−'}{fmtBRL(Math.abs(v.delta))}
-                    </span>
+                  <li key={v.codigo} className="min-w-0">
+                    <div className="flex items-baseline gap-2">
+                      <LinkDossie to={`/faturamento/sku/${encodeURIComponent(v.codigo)}`} className="min-w-0 truncate">
+                        <span title={v.titulo ?? v.codigo}>{v.nome}</span>
+                      </LinkDossie>
+                      {v.situacao !== 'mudou' && (
+                        <span className="shrink-0 rounded-full border px-1.5 text-[10px] font-medium leading-4 text-muted-foreground">
+                          {v.situacao === 'entrou' ? 'novo' : 'parou de vender'}
+                        </span>
+                      )}
+                      <span className={cn('ml-auto shrink-0 pl-2 font-medium tabular-nums', v.delta < 0 ? 'text-destructive' : 'text-success')}>
+                        {v.delta > 0 ? '+' : '−'}{fmtBRL(Math.abs(v.delta))}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                      <span className="min-w-0 flex-1 truncate">{v.codigo}{v.familia && ` · ${v.familia}`}</span>
+                      {/* Barra ∝ |Δ| do maior da lista: mostra quem pesa sem precisar comparar os valores. */}
+                      <span className="h-1 w-20 shrink-0 overflow-hidden rounded-full bg-muted" aria-hidden>
+                        <span className={cn('block h-full rounded-full', v.delta < 0 ? 'bg-destructive/70' : 'bg-success/70')}
+                          style={{ width: `${Math.max(4, (Math.abs(v.delta) / Math.abs(dados.variacoes[0].delta)) * 100)}%` }} />
+                      </span>
+                    </div>
                   </li>
                 ))}
               </ul>

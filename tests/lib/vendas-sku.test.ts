@@ -235,6 +235,13 @@ describe('nomeSku', () => {
     const v = explicarVariacao([linha('a', 100, 100, { titulo: 'Verde Musgo', nomeFamilia: 'Tecido Oxford' })], []);
     expect(v[0].titulo).toBe('Tecido Oxford · Verde Musgo');
   });
+  it('explicarVariacao separa o título da família (a parte que distingue vem primeiro na tela)', () => {
+    const v = explicarVariacao([
+      linha('a', 100, 100, { titulo: 'Verde Musgo', nomeFamilia: 'Tecido Oxford' }),
+      linha('b', 50, 50, { titulo: 'Tapete Azul', nomeFamilia: 'Tapete' }),
+    ], []);
+    expect(v.map((x) => [x.nome, x.familia])).toEqual([['Verde Musgo', 'Tecido Oxford'], ['Tapete Azul', null]]);
+  });
 });
 
 describe('gerarInsights', () => {
