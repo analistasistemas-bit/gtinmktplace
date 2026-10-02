@@ -98,3 +98,39 @@ export function ondeAgir(itens: ItemVitrine[], convMedia: number | null): ItemAc
   return out.sort((a, b) =>
     Number(b.rotulo === 'invisivel') - Number(a.rotulo === 'invisivel') || b.emJogo - a.emJogo);
 }
+
+const DOW = ['', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+const pct = (x: number) => `${(x * 100).toFixed(1).replace('.', ',')}%`;
+const MIN_PEDIDOS = 30;
+const Z = 1.96;
+
+export function zProp(x1: number, n1: number, x2: number, n2: number): number {
+  if (!n1 || !n2) return 0;
+  const p = (x1 + x2) / (n1 + n2);
+  const se = Math.sqrt(p * (1 - p) * (1 / n1 + 1 / n2));
+  return se ? (x1 / n1 - x2 / n2) / se : 0;
+}
+
+export function frasesVitrine(r: ResumoVitrine, k: KpisVitrine, acoes: ItemAcao[]): string[] {
+  const f: string[] = [];
+  const { atual: a, anterior: b } = k;
+  if (a.conversao != null && b.conversao != null && a.pedidos >= MIN_PEDIDOS && b.pedidos >= MIN_PEDIDOS
+      && Math.abs(zProp(a.pedidos, a.visitas ?? 0, b.pedidos, b.visitas ?? 0)) >= Z)
+    f.push(`Conversão ${a.conversao > b.conversao ? 'subiu' : 'caiu'} de ${pct(b.conversao)} para ${pct(a.conversao)} contra o período anterior.`);
+
+  // CADA dia da semana: ≥ 12 datas medidas E cobertura ≥ 80% dos pares (1 MLB ok por data não basta)
+  if (r.dias_semana.length === 7 && r.dias_semana.every((d) =>
+      d.semanas >= 12 && d.pares_total > 0 && d.pares_ok / d.pares_total >= COBERTURA_MINIMA)) {
+    const melhor = r.dias_semana.reduce((x, y) => ((taxa(y.pedidos, y.visitas) ?? 0) > (taxa(x.pedidos, x.visitas) ?? 0) ? y : x));
+    const resto = r.dias_semana.filter((d) => d.dow !== melhor.dow);
+    const rv = resto.reduce((s, d) => s + d.visitas, 0);
+    const rp = resto.reduce((s, d) => s + d.pedidos, 0);
+    if (melhor.pedidos >= MIN_PEDIDOS && rp >= MIN_PEDIDOS && zProp(melhor.pedidos, melhor.visitas, rp, rv) >= Z)
+      f.push(`${DOW[melhor.dow]} converte mais: ${pct(melhor.pedidos / melhor.visitas)} contra ${pct(rp / rv)} nos outros dias.`);
+  }
+
+  const n = acoes.filter((x) => x.rotulo === 'invisivel').length;
+  if (n === 1) f.push('1 anúncio ativo está sem visita há 7 dias — veja abaixo.');
+  else if (n > 1) f.push(`${n} anúncios ativos estão sem visita há 7 dias — veja abaixo.`);
+  return f.slice(0, 3);
+}

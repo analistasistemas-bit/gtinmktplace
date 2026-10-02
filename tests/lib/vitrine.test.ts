@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { periodoVitrine, kpisVitrine, serieVitrine, delta, ondeAgir, type ItemVitrine } from '@/lib/vitrine';
+import { periodoVitrine, kpisVitrine, serieVitrine, delta, ondeAgir, frasesVitrine, zProp,
+  type ItemVitrine, type ResumoVitrine } from '@/lib/vitrine';
 
 const item = (o: Partial<ItemVitrine> = {}): ItemVitrine => ({
   ml_item_id: 'MLB1', titulo: 't', codigo_pai: '1', status: 'active', em_ads: false,
@@ -126,4 +127,35 @@ describe('ondeAgir', () => {
   it('média null (cobertura da conta < 80%) → só Invisível', () => {
     expect(ondeAgir([item({ ...cheio, visitas: 1000, pedidos: 1, visitas_ult7: 100, dias_ok_ult7: 7 })], null)).toEqual([]);
   });
+});
+
+const resumo = (o: Partial<ResumoVitrine> = {}): ResumoVitrine => ({ inicio: '2026-09-03', fim: '2026-09-30', itens: [], semanas: [], dias_semana: [], ...o });
+
+describe('frasesVitrine', () => {
+  it('tendência significativa vira frase', () => {
+    const itens = [item({ visitas: 10000, pedidos: 400, pares_ok: 28, pares_total: 28, visitas_ant: 10000, pedidos_ant: 300, pares_ok_ant: 28, pares_total_ant: 28 })];
+    const f = frasesVitrine(resumo({ itens }), kpisVitrine(itens), []);
+    expect(f[0]).toBe('Conversão subiu de 3,0% para 4,0% contra o período anterior.');
+  });
+  it('diferença pequena (ruído) não vira frase', () => {
+    const itens = [item({ visitas: 10000, pedidos: 310, pares_ok: 28, pares_total: 28, visitas_ant: 10000, pedidos_ant: 300, pares_ok_ant: 28, pares_total_ant: 28 })];
+    expect(frasesVitrine(resumo({ itens }), kpisVitrine(itens), [])).toEqual([]);
+  });
+  it('dia da semana só quando TODO dow tem ≥ 12 datas medidas e cobertura ≥ 80%', () => {
+    // 10 MLBs × 12 datas = 120 pares por dow; KPIs da conta sem tendência (anterior vazio) → só a frase de dow
+    const dias = (semanas: number, ok = 120) => [1, 2, 3, 4, 5, 6, 7].map((dow) =>
+      ({ dow, visitas: 2000, pedidos: dow === 2 ? 120 : 60, semanas, pares_ok: ok, pares_total: 120 }));
+    const k = kpisVitrine([item({ visitas: 14000, pedidos: 480, pares_ok: 840, pares_total: 840 })]);
+    expect(frasesVitrine(resumo({ dias_semana: dias(4) }), k, [])).toEqual([]);
+    const um11 = dias(12).map((d) => (d.dow === 5 ? { ...d, semanas: 11 } : d));
+    expect(frasesVitrine(resumo({ dias_semana: um11 }), k, [])).toEqual([]);
+    expect(frasesVitrine(resumo({ dias_semana: dias(12, 12) }), k, [])).toEqual([]); // 1 MLB ok por data = 10%
+    expect(frasesVitrine(resumo({ dias_semana: dias(12) }), k, [])).toEqual(['Terça converte mais: 6,0% contra 3,0% nos outros dias.']);
+  });
+  it('invisíveis: plural e singular', () => {
+    const a = { item: item(), rotulo: 'invisivel' as const, emJogo: 0 };
+    expect(frasesVitrine(resumo(), kpisVitrine([]), [a])).toEqual(['1 anúncio ativo está sem visita há 7 dias — veja abaixo.']);
+    expect(frasesVitrine(resumo(), kpisVitrine([]), [a, a])[0]).toBe('2 anúncios ativos estão sem visita há 7 dias — veja abaixo.');
+  });
+  it('zProp com n = 0 não dá NaN', () => expect(zProp(0, 0, 0, 0)).toBe(0));
 });
