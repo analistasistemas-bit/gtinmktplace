@@ -322,7 +322,7 @@ describe('Organizacoes', () => {
       const user = userEvent.setup();
       renderPage();
       await abrirMenu(user);
-      expect(await screen.findByText('Arquivar')).toBeInTheDocument();
+      expect(await screen.findByRole('menuitem', { name: 'Arquivar' }, { timeout: 5000 })).toBeInTheDocument();
       expect(screen.queryByText('Desarquivar')).not.toBeInTheDocument();
       cleanup();
 
@@ -331,7 +331,7 @@ describe('Organizacoes', () => {
       await user.click(screen.getByRole('checkbox', { name: 'Incluir arquivadas' }));
       expect(await screen.findByText('Arquivada')).toBeInTheDocument();
       await abrirMenu(user);
-      expect(await screen.findByText('Desarquivar')).toBeInTheDocument();
+      expect(await screen.findByRole('menuitem', { name: 'Desarquivar' }, { timeout: 5000 })).toBeInTheDocument();
     });
 
     it('confirmar exige o slug exato e chama archive_org', async () => {
@@ -339,7 +339,7 @@ describe('Organizacoes', () => {
       const user = userEvent.setup();
       renderPage();
       await abrirMenu(user);
-      await user.click(await screen.findByText('Arquivar'));
+      await user.click(await screen.findByRole('menuitem', { name: 'Arquivar' }, { timeout: 5000 }));
       const confirmar = screen.getByRole('button', { name: 'Arquivar' });
       expect(confirmar).toBeDisabled();
       await user.type(screen.getByLabelText(/Digite/), 'clien');
@@ -357,7 +357,7 @@ describe('Organizacoes', () => {
       renderPage();
       await user.click(screen.getByRole('checkbox', { name: 'Incluir arquivadas' }));
       await abrirMenu(user);
-      await user.click(await screen.findByText('Desarquivar'));
+      await user.click(await screen.findByRole('menuitem', { name: 'Desarquivar' }, { timeout: 5000 }));
       await user.type(screen.getByLabelText(/Digite/), 'cliente');
       await user.click(screen.getByRole('button', { name: 'Desarquivar' }));
       await waitFor(() => expect(invoke).toHaveBeenCalledWith('usuarios', { body: { action: 'unarchive_org', org_id: 'org-1' } }));
@@ -386,7 +386,8 @@ describe('Organizacoes', () => {
       await user.click(screen.getByRole('button', { name: 'Próxima página' }));
       expect(screen.getByText('Org 10')).toBeInTheDocument();
       await abrirMenu(user);
-      await user.click(await screen.findByText('Arquivar'));
+      // CI lento: o menu levou ~1,5 s para abrir (findBy padrão espera 1 s).
+      await user.click(await screen.findByRole('menuitem', { name: 'Arquivar' }, { timeout: 5000 }));
       await user.type(screen.getByLabelText(/Digite/), 'org-10');
       await user.click(screen.getByRole('button', { name: 'Arquivar' }));
       expect(await screen.findByText('Org 00')).toBeInTheDocument();
