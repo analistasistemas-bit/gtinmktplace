@@ -45,7 +45,9 @@ atalhos de período (lá é texto dd/mm/aaaa).
 - **Quem explica a variação do lucro:** os SKUs que mais somaram ou tiraram em R$, incluindo "entrou no
   período" e "deixou de vender".
 - **Insights:** de 0 a 3, só com evidência (ex.: "3 SKUs fazem 50% do lucro", "4 SKUs com cobertura
-  < 15 dias").
+  < 15 dias"). **Revisado em 2026-10-02 (Diego):** de 0 a 6, na ordem prejuízo → sem custo → estoque curto →
+  devolução alta → parados → concentração → em alta. A frase "SKU X tirou R$ Y do lucro" saiu: repetia o
+  painel "Quem explica a variação do lucro".
 - **Ranking:** código + título + miniatura, unidades, faturamento, lucro, **lucro por unidade**, Markup,
   Margem s/ venda, ticket, canceladas, taxa de devolução, **tendência** e **alertas** (glossário). Ordena
   por lucro por padrão. Selos: "custo estimado", "lucro parcial", "sem custo". Linha extra: "devolução não

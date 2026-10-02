@@ -329,31 +329,61 @@ export function explicarVariacao(atual: LinhaSku[], anterior: LinhaSku[], n = 5)
 
 const fmtBRL0 = (n: number) => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
-/** 0 a 3 frases, só quando a evidência existe. */
+/** Um SKU citado numa leitura, com o número que justifica a citação. */
 export interface SkuInsight { codigo: string; nome: string; detalhe: string }
 /** `skus`: de quem a frase fala, para a tela listar. */
 export interface Insight { texto: string; skus?: SkuInsight[] }
 
-/** 0 a 3 frases, só quando a evidência existe. */
-export function gerarInsights(p: { linhas: LinhaSku[]; variacoes: VariacaoLucro[]; coberturaBaixa: SkuInsight[]; parados: SkuInsight[] }): Insight[] {
+const pctDevolvido = (t: number) => `${(t * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}% devolvido`;
+const MAX_INSIGHTS = 6;
+
+/** 0 a 6 frases, só quando a evidência existe. Primeiro o que pede ação, depois o informativo.
+ *  A queda de lucro de um SKU não entra: o painel "Quem explica a variação do lucro" já mostra. */
+export function gerarInsights(p: {
+  linhas: LinhaSku[]; alertas: Map<string, Alerta[]>; tendencias: Map<string, Tendencia>;
+  coberturaBaixa: SkuInsight[]; parados: SkuInsight[];
+}): Insight[] {
   const out: Insight[] = [];
-  const pos = p.linhas.filter((l) => l.codigo !== SEM_CODIGO && (l.m.lucro ?? 0) > 0).sort((a, b) => b.m.lucro! - a.m.lucro!);
+  const skus = p.linhas.filter((l) => l.codigo !== SEM_CODIGO);
+  const com = (a: Alerta) => skus.filter((l) => p.alertas.get(l.codigo)?.includes(a));
+  const item = (l: LinhaSku, detalhe: string): SkuInsight => ({ codigo: l.codigo, nome: nomeSku(l), detalhe });
+  const um = (n: number, s: string, pl: string) => `${n} ${n === 1 ? s : pl}`;
+
+  const prej = com('lucro_negativo').sort((a, b) => a.m.lucro! - b.m.lucro!);
+  if (prej.length) {
+    const total = prej.reduce((s, l) => s + l.m.lucro!, 0);
+    out.push({ texto: `${um(prej.length, 'SKU deu', 'SKUs deram')} prejuízo: −${fmtBRL0(-total)}.`,
+      skus: prej.map((l) => item(l, `−${fmtBRL0(-l.m.lucro!)}`)) });
+  }
+  const semCusto = com('sem_custo').sort((a, b) => b.acc.bruto - a.acc.bruto);
+  if (semCusto.length) out.push({
+    texto: `${um(semCusto.length, 'SKU vendeu', 'SKUs venderam')} sem custo cadastrado: o lucro ${semCusto.length === 1 ? 'dele' : 'deles'} fica incompleto.`,
+    skus: semCusto.map((l) => item(l, `${fmtBRL0(l.acc.bruto)} vendidos`)),
+  });
+  const nc = p.coberturaBaixa.length;
+  if (nc > 0) out.push({ texto: `${um(nc, 'SKU tem', 'SKUs têm')} estoque para menos de ${LIMITES.coberturaMinDias} dias.`, skus: p.coberturaBaixa });
+  const dev = com('devolucao_alta').sort((a, b) => b.m.taxaDevolucao! - a.m.taxaDevolucao!);
+  if (dev.length) out.push({ texto: `${um(dev.length, 'SKU', 'SKUs')} com devolução acima de ${LIMITES.taxaDevolucaoMax * 100}%.`,
+    skus: dev.map((l) => item(l, pctDevolvido(l.m.taxaDevolucao!))) });
+  const np = p.parados.length;
+  if (np > 0) out.push({ texto: `${um(np, 'SKU parou', 'SKUs pararam')} de vender há mais de ${LIMITES.janelaTendenciaDias} dias.`, skus: p.parados });
+
+  const pos = skus.filter((l) => (l.m.lucro ?? 0) > 0).sort((a, b) => b.m.lucro! - a.m.lucro!);
   if (pos.length >= 5) {
     const metade = pos.reduce((s, l) => s + l.m.lucro!, 0) / 2;
     let acum = 0; let k = 0;
     while (acum < metade) acum += pos[k++].m.lucro!;
     if (k <= Math.ceil(pos.length * 0.2)) out.push({
-      texto: `${k} ${k === 1 ? 'SKU faz' : 'SKUs fazem'} metade do lucro do período.`,
-      skus: pos.slice(0, k).map((l) => ({ codigo: l.codigo, nome: nomeSku(l), detalhe: fmtBRL0(l.m.lucro!) })),
+      texto: `${um(k, 'SKU faz', 'SKUs fazem')} metade do lucro do período.`,
+      skus: pos.slice(0, k).map((l) => item(l, fmtBRL0(l.m.lucro!))),
     });
   }
-  const queda = p.variacoes.find((v) => v.delta < 0 && v.situacao !== 'entrou');
-  if (queda) out.push({ texto: `${queda.titulo ?? queda.codigo} tirou ${fmtBRL0(-queda.delta)} do lucro contra o período anterior.` });
-  const nc = p.coberturaBaixa.length;
-  if (nc > 0) out.push({ texto: `${nc} ${nc === 1 ? 'SKU tem' : 'SKUs têm'} estoque para menos de ${LIMITES.coberturaMinDias} dias.`, skus: p.coberturaBaixa });
-  const np = p.parados.length;
-  if (np > 0) out.push({ texto: `${np} ${np === 1 ? 'SKU parou' : 'SKUs pararam'} de vender há mais de ${LIMITES.janelaTendenciaDias} dias.`, skus: p.parados });
-  return out.slice(0, 3);
+  const alta = skus.filter((l) => p.tendencias.get(l.codigo) === 'em_alta').sort((a, b) => b.acc.unidades - a.acc.unidades);
+  if (alta.length) out.push({
+    texto: `${um(alta.length, 'SKU', 'SKUs')} em alta: ${alta.length === 1 ? 'vende' : 'vendem'} ${LIMITES.variacaoTendencia * 100}% mais nos últimos ${LIMITES.janelaTendenciaDias} dias.`,
+    skus: alta.map((l) => item(l, `${l.acc.unidades} un. no período`)),
+  });
+  return out.slice(0, MAX_INSIGHTS);
 }
 
 export interface LinhaFamilia { codigoPai: string; nomeFamilia: string | null; acc: AcumuladorSku; m: MetricasSku; filhos: LinhaSku[] }
@@ -444,7 +474,7 @@ export function montarVendasSku(p: {
     linhas, linhasAnterior,
     kpis: calcularKpisSku(linhas), kpisAnterior: calcularKpisSku(linhasAnterior),
     tendencias, coberturas, alertas, variacoes,
-    insights: gerarInsights({ linhas, variacoes, coberturaBaixa, parados }),
+    insights: gerarInsights({ linhas, alertas, tendencias, coberturaBaixa, parados }),
     parados: parados.length, devolucoesNaoAtribuidas, historicoDesde,
   };
 }

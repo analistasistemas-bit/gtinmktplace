@@ -245,28 +245,71 @@ describe('nomeSku', () => {
 });
 
 describe('gerarInsights', () => {
-  const vazio = { variacoes: [], coberturaBaixa: [], parados: [] };
-  it('no máximo 3, e só com evidência', () => {
+  const vazio = { linhas: [] as LinhaSku[], alertas: new Map(), tendencias: new Map(), coberturaBaixa: [], parados: [] };
+  const it1 = { codigo: 'x', nome: 'X', detalhe: '' };
+
+  it('só com evidência: sem sinal, nenhuma frase', () => {
     expect(gerarInsights({ ...vazio, linhas: [linha('a', 10)] })).toEqual([]);
-    const it1 = { codigo: 'x', nome: 'X', detalhe: '' };
-    const ins = gerarInsights({ linhas: [], variacoes: [{ codigo: 'a', titulo: 'Fita', delta: -50, situacao: 'mudou' }],
-      coberturaBaixa: [it1, it1], parados: [it1, it1, it1] });
-    expect(ins.length).toBeLessThanOrEqual(3);
-    expect(ins[0].texto).toContain('Fita');
   });
+
   it('cada leitura diz de quais SKUs fala', () => {
     const ls = [linha('a', 100, 100, { titulo: 'Preto', nomeFamilia: 'Fita' }), ...['b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j'].map((c) => linha(c, 1))];
     const cob = [{ codigo: 'b', nome: 'B', detalhe: '3 dias' }];
     const par = [{ codigo: 'z', nome: 'Z', detalhe: '9 un. em estoque' }];
-    const ins = gerarInsights({ linhas: ls, variacoes: [], coberturaBaixa: cob, parados: par });
+    const ins = gerarInsights({ ...vazio, linhas: ls, coberturaBaixa: cob, parados: par });
     expect(ins.map((i) => i.texto)).toEqual([
-      '1 SKU faz metade do lucro do período.',
       '1 SKU tem estoque para menos de 15 dias.',
       '1 SKU parou de vender há mais de 30 dias.',
+      '1 SKU faz metade do lucro do período.',
     ]);
-    expect(ins[0].skus).toEqual([{ codigo: 'a', nome: 'Fita · Preto', detalhe: 'R$\u00a0100,00' }]);
-    expect(ins[1].skus).toBe(cob);
-    expect(ins[2].skus).toBe(par);
+    expect(ins[0].skus).toBe(cob);
+    expect(ins[1].skus).toBe(par);
+    expect(ins[2].skus).toEqual([{ codigo: 'a', nome: 'Fita · Preto', detalhe: 'R$\u00a0100,00' }]);
+  });
+
+  it('prejuízo: soma, pior primeiro', () => {
+    const ls = [linha('a', -10), linha('b', -30), linha('c', 50)];
+    const alertas = new Map([['a', ['lucro_negativo']], ['b', ['lucro_negativo']]] as const);
+    const [ins] = gerarInsights({ ...vazio, linhas: ls, alertas: new Map(alertas) });
+    expect(ins.texto).toBe('2 SKUs deram prejuízo: −R$\u00a040,00.');
+    expect(ins.skus?.map((s) => [s.codigo, s.detalhe])).toEqual([['b', '−R$\u00a030,00'], ['a', '−R$\u00a010,00']]);
+  });
+
+  it('sem custo: maior faturamento primeiro', () => {
+    const ls = [linha('a', null, 50), linha('b', null, 200)];
+    const ins = gerarInsights({ ...vazio, linhas: ls, alertas: new Map([['a', ['sem_custo']], ['b', ['sem_custo']]]) });
+    expect(ins[0].texto).toBe('2 SKUs venderam sem custo cadastrado: o lucro deles fica incompleto.');
+    expect(ins[0].skus?.map((s) => [s.codigo, s.detalhe])).toEqual([['b', 'R$\u00a0200,00 vendidos'], ['a', 'R$\u00a050,00 vendidos']]);
+  });
+
+  it('devolução alta e em alta', () => {
+    const ls = [linha('a', 10), linha('b', 10)];
+    ls[0].m = { ...ls[0].m, taxaDevolucao: 0.125 };
+    ls[1].acc = { ...ls[1].acc, unidades: 12 };
+    const ins = gerarInsights({ ...vazio, linhas: ls,
+      alertas: new Map([['a', ['devolucao_alta']]]), tendencias: new Map([['b', 'em_alta'], ['a', 'estavel']]) });
+    expect(ins.map((i) => i.texto)).toEqual([
+      '1 SKU com devolução acima de 5%.',
+      '1 SKU em alta: vende 20% mais nos últimos 30 dias.',
+    ]);
+    expect(ins[0].skus?.[0].detalhe).toBe('12,5% devolvido');
+    expect(ins[1].skus?.[0].detalhe).toBe('12 un. no período');
+  });
+
+  it('no máximo 6; o que pede ação vem antes do informativo', () => {
+    const ls = [linha('a', -5), linha('b', null), linha('c', 10), linha('d', 10)];
+    const alertas = new Map([['a', ['lucro_negativo']], ['b', ['sem_custo']], ['c', ['devolucao_alta']]]);
+    const ins = gerarInsights({ ...vazio, linhas: ls, alertas: new Map(alertas), tendencias: new Map([['d', 'em_alta']]),
+      coberturaBaixa: [it1], parados: [it1] });
+    expect(ins).toHaveLength(6);
+    expect(ins.map((i) => i.texto)).toEqual([
+      '1 SKU deu prejuízo: −R$\u00a05,00.',
+      '1 SKU vendeu sem custo cadastrado: o lucro dele fica incompleto.',
+      '1 SKU tem estoque para menos de 15 dias.',
+      '1 SKU com devolução acima de 5%.',
+      '1 SKU parou de vender há mais de 30 dias.',
+      '1 SKU em alta: vende 20% mais nos últimos 30 dias.',
+    ]);
   });
 });
 
@@ -365,7 +408,7 @@ describe('SEM_CODIGO fora dos rankings', () => {
 
   it('insight "metade do lucro" não conta a linha sem código', () => {
     const ls = ['a', 'b', 'c', 'd', 'e'].map((c) => linha(c, 10));
-    const ins = gerarInsights({ linhas: [linha(SEM_CODIGO, 1000), ...ls], variacoes: [], coberturaBaixa: [], parados: [] });
+    const ins = gerarInsights({ linhas: [linha(SEM_CODIGO, 1000), ...ls], alertas: new Map(), tendencias: new Map(), coberturaBaixa: [], parados: [] });
     expect(ins.some((s) => s.texto.includes('metade do lucro'))).toBe(false); // 5 × 10: 3 SKUs fazem metade, acima de 20%
   });
 
