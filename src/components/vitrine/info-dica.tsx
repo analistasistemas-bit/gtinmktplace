@@ -12,15 +12,21 @@ export function InfoDica({ titulo, children, className }: { titulo: string; chil
         <button
           type="button"
           aria-label={`Como ler: ${titulo}`}
-          // padding + margem negativa = alvo ≥ 44px sem mexer no layout
-          className="-m-3.5 inline-flex shrink-0 items-center justify-center rounded-full p-3.5 text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          // alvo ≥ 44px no mobile (46) e 34px no desktop; margem negativa só em cima/embaixo/direita para o anel não cobrir o rótulo
+          className="-my-4 -mr-4 inline-flex shrink-0 items-center justify-center rounded-full p-4 sm:-my-2.5 sm:-mr-2.5 sm:p-2.5 text-muted-foreground/70 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
           <Info className="size-3.5" aria-hidden />
         </button>
       </PopoverTrigger>
-      <PopoverContent aria-labelledby={id} className={cn('max-h-[min(70vh,32rem)] overflow-y-auto text-sm', className)}>
-        <div id={id} className="mb-2 text-sm font-semibold text-foreground">{titulo}</div>
-        {children}
+      <PopoverContent
+        aria-labelledby={id} collisionPadding={16} avoidCollisions
+        className={cn('max-w-[calc(100vw-2rem)] overflow-visible p-0 text-sm', className)}
+      >
+        {/* a rolagem fica aqui dentro para não cortar a seta do popover */}
+        <div className="max-h-[min(var(--radix-popover-content-available-height),70vh)] overflow-y-auto p-3">
+          <div id={id} className="mb-2 text-sm font-semibold text-foreground">{titulo}</div>
+          {children}
+        </div>
       </PopoverContent>
     </Popover>
   );

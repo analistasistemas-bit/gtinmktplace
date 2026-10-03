@@ -205,6 +205,7 @@ describe('esperado7', () => {
 });
 describe('linkML', () => {
   it('usa o permalink', () => expect(linkML({ ml_item_id: 'MLB1', permalink: 'https://p/1' })).toBe('https://p/1'));
+  it('apara o permalink', () => expect(linkML({ ml_item_id: 'MLB1', permalink: '  https://p/1' })).toBe('https://p/1'));
   it('sem permalink monta pelo MLB', () => expect(linkML({ ml_item_id: 'MLB4876171545', permalink: null })).toBe('https://produto.mercadolivre.com.br/MLB-4876171545'));
   it('permalink vazio = ausente', () => expect(linkML({ ml_item_id: 'MLB7', permalink: '  ' })).toBe('https://produto.mercadolivre.com.br/MLB-7'));
 });

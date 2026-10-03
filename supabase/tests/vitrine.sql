@@ -91,7 +91,7 @@ begin
      or (r->'semanas'->0->>'pedidos')::int is distinct from 3
      or (r->'semanas'->0->>'pares_total')::int is distinct from 12
      or (r->'semanas'->0->>'pares_ok')::int is distinct from 3 then raise exception 'semanas %', r->'semanas'; end if;
-  -- dow 2 (terça 01/09): pares_ok 2 (A1+K1), pares_total 2
+  -- dow 2 (terça 01/09): pares_ok 2 (A1+K1), pares_total 3 (A1+K1+C1)
   if (select (e->>'pares_ok')::int from jsonb_array_elements(r->'dias_semana') e where (e->>'dow')::int = 2) is distinct from 2
      or (select (e->>'pedidos')::int from jsonb_array_elements(r->'dias_semana') e where (e->>'dow')::int = 2) is distinct from 3
      then raise exception 'dias_semana %', r->'dias_semana'; end if;

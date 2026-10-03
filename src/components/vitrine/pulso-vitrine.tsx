@@ -30,10 +30,10 @@ function Delta({ atual, anterior, pp }: { atual: number | null; anterior: number
 function Card({ titulo, dica, valor, atual, anterior, pp }: { titulo: string; dica: keyof typeof DICAS; valor: string | null; atual: number | null; anterior: number | null; pp?: boolean }) {
   return (
     <div className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm">
-      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         {titulo}
         <InfoDica titulo={titulo}><DicaTexto {...DICAS[dica]} /></InfoDica>
-      </p>
+      </div>
       <div className="flex items-baseline gap-2">
         {valor == null ? (
           <Tooltip>

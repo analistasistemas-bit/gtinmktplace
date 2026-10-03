@@ -48,7 +48,7 @@ function Linha({ a, preset }: { a: ItemAcao; preset: Preset }) {
           {i.variacao && <span className="shrink-0 rounded-full border px-2 py-0.5 text-xs text-muted-foreground">{i.variacao}</span>}
           <a
             href={linkML(i)} target="_blank" rel="noopener noreferrer" aria-label="Abrir anúncio no Mercado Livre"
-            className="-m-3 inline-flex shrink-0 items-center justify-center rounded-full p-3 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:absolute max-sm:right-0 max-sm:top-2.5"
+            className="-m-4 inline-flex shrink-0 items-center justify-center rounded-full p-4 sm:-m-2.5 sm:p-2.5 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring max-sm:absolute max-sm:right-0 max-sm:top-2.5"
           >
             <ExternalLink className="size-3.5" aria-hidden />
           </a>
@@ -64,7 +64,7 @@ function Linha({ a, preset }: { a: ItemAcao; preset: Preset }) {
       <p className="text-xs sm:col-span-4">
         {r.acao}
         {i.codigo_pai && (
-          <> <Link className="font-medium underline underline-offset-2" to={`/faturamento/sku/familia/${encodeURIComponent(i.codigo_pai)}`}>Ver no dossiê ›</Link></>
+          <> <Link className="whitespace-nowrap font-medium underline underline-offset-2" to={`/faturamento/sku/familia/${encodeURIComponent(i.codigo_pai)}`}>Ver no dossiê ›</Link></>
         )}
       </p>
     </li>
@@ -74,7 +74,7 @@ function Linha({ a, preset }: { a: ItemAcao; preset: Preset }) {
 function Legenda() {
   return (
     <div className="flex flex-col gap-3 text-xs sm:gap-2">
-      <div aria-hidden className={`hidden gap-3 font-medium text-foreground sm:grid sm:grid-cols-[7rem_1fr_1fr_1fr]`}>
+      <div className={`hidden gap-3 font-medium text-foreground sm:grid sm:grid-cols-[7rem_1fr_1fr_1fr]`}>
         <span>Rótulo</span><span>Significa</span><span>O que fazer</span><span>Por que entrou</span>
       </div>
       {LEGENDA.map((l) => (
@@ -102,7 +102,7 @@ export function OndeAgir({ acoes, preset }: { acoes: ItemAcao[]; preset: Preset 
     <section aria-labelledby="vitrine-agir" className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm">
       <div className="flex items-center gap-1.5">
         <h2 id="vitrine-agir" className="text-sm font-medium">Onde agir</h2>
-        <InfoDica titulo="Onde agir" className="w-[min(92vw,46rem)]"><Legenda /></InfoDica>
+        <InfoDica titulo="Onde agir" className="w-[min(calc(100vw-2rem),40rem)]"><Legenda /></InfoDica>
       </div>
       {acoes.length === 0 ? (
         <p className="py-3 text-sm text-muted-foreground">Nada pedindo ação agora.</p>

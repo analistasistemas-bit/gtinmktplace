@@ -98,6 +98,13 @@ describe('preservarStatus', () => {
   });
 });
 
+describe('preservarStatus com título', () => {
+  it("'desconhecido' com título preenchido troca só o status", () => {
+    const i = { ml_item_id: 'MLB1', status: 'desconhecido', ultimo_ok_em: null, titulo: 'Fita X', permalink: 'https://p/1', variacao: 'Verde' };
+    expect(preservarStatus([i], new Map([['MLB1', 'closed']]))).toEqual([{ ...i, status: 'closed' }]);
+  });
+});
+
 describe('classificarItensTrafego', () => {
   it('encerrado = closed há mais de 30 dias; comColetaOk = ultimo_ok_em não nulo', () => {
     const agora = Date.parse('2026-09-27T12:00:00Z');

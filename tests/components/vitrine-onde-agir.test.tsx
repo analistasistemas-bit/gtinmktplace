@@ -54,6 +54,9 @@ describe('OndeAgir (ⓘ legenda)', () => {
       await user.keyboard(tecla);
       const dlg = screen.getByRole('dialog', { name: /Onde agir/ });
       expect(LEGENDA).toHaveLength(4);
+      for (const nome of ['Invisível', 'Vitrine sem venda', 'Converte e ninguém vê', 'Perdendo visitas']) {
+        expect(within(dlg).getByText(nome)).toBeTruthy();
+      }
       for (const l of LEGENDA) {
         expect(within(dlg).getAllByText(l.significa).length).toBeGreaterThan(0);
         expect(within(dlg).getAllByText(l.fazer).length).toBeGreaterThan(0);

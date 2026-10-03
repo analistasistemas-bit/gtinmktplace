@@ -92,7 +92,7 @@ export function esperado7(i: ItemVitrine): number {
   return diasOutros > 0 ? (i.visitas - i.visitas_ult7) * 7 / diasOutros : 0;
 }
 export const linkML = (i: Pick<ItemVitrine, 'ml_item_id' | 'permalink'>): string =>
-  i.permalink?.trim() ? i.permalink : `https://produto.mercadolivre.com.br/MLB-${i.ml_item_id.replace(/\D/g, '')}`;
+  i.permalink?.trim() || `https://produto.mercadolivre.com.br/MLB-${i.ml_item_id.replace(/\D/g, '')}`;
 const cobre = (ok: number, total: number) => total > 0 && ok / total >= LIMITES.coberturaItem;
 
 export function ondeAgir(itens: ItemVitrine[], convMedia: number | null): ItemAcao[] {
