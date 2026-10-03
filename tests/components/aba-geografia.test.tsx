@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { AbaGeografia } from '@/components/faturamento/aba-geografia';
 import type { Venda } from '@/lib/faturamento';
 
@@ -45,8 +45,12 @@ const VENDA_PE: Venda = {
 
 let mockVendas: Venda[] = [];
 
+const { useVendasSpy } = vi.hoisted(() => ({ useVendasSpy: vi.fn() }));
 vi.mock('@/hooks/useVendas', () => ({
-  useVendas: () => ({ data: mockVendas, isFetching: false, refetch: vi.fn() }),
+  useVendas: (...args: unknown[]) => {
+    useVendasSpy(...args);
+    return { data: mockVendas, isFetching: false, refetch: vi.fn() };
+  },
 }));
 vi.mock('@/hooks/useCustos', () => ({ useCustos: () => ({ data: undefined }) }));
 vi.mock('@/hooks/useConfiguracoes', () => ({ useAliquotas: () => ({ data: undefined }) }));
@@ -115,5 +119,13 @@ describe('AbaGeografia', () => {
     renderAba();
     // Com isFetching:false o estado de loading não deve aparecer
     expect(screen.queryByText('Carregando…')).not.toBeInTheDocument();
+  });
+
+  it('botão "Mês atual" busca as vendas desde o dia 1 do mês corrente', () => {
+    renderAba();
+    fireEvent.click(screen.getByRole('button', { name: 'Mês atual' }));
+    const janela = useVendasSpy.mock.calls.at(-1)![0] as { desde: string };
+    const hoje = new Date();
+    expect(janela.desde).toBe(new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString());
   });
 });
