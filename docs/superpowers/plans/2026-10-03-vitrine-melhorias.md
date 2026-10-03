@@ -12,7 +12,8 @@
 
 ## Global Constraints
 
-- ML: só GET; nenhuma requisição nova — apenas ampliar `attributes=` do multiget existente (`deps.ts` `lerStatusItens`).
+- ML: só GET; nenhuma requisição nova — apenas ampliar os campos do multiget de status existente (`deps.ts` `lerStatusItens`). O ML exige migrar `/items?ids=` → `/items/bulk?ids=` até **25/10/2026** (envelope `status_code` e seleção `body.*`): a Task 2 decide o endpoint pelo **spike real** (Step 0) e trata URL + parser juntos; o parser aceita os dois envelopes (`code`/`status_code`). Lote ≤ 20 ids (já é o atual).
+- Coleta manual de validação: **só a org Avil**, publish QStash com corpo `{"org_id":"<id confirmado por SQL>","primeira":true}` — nunca publish sem `org_id` (dispara fan-out de todas as orgs + limpeza de retenção).
 - `variacao` = `value_name` de `COLOR` e `SIZE` (nessa ordem) em `body.attributes`, unidos por " · "; ausentes omitidos; nenhum → `null`. Strings vazias/espaço = ausente.
 - Coleta nunca apaga `titulo/permalink/variacao` existente com `null` (`coalesce(excluded.x, a.x)`).
 - Migrations novas (as de 02/10 já estão em produção): `supabase migration new …` + `db push` só na Task 5. `20261002225552_vitrine_kit_pedido.sql` NÃO pode ser editada.
@@ -67,7 +68,7 @@
   - Na venda paga A-2, item MLBA1 com `cor = 'Verde'` (coluna existente em `ml_vendas_itens`).
   - `anuncios_externos` extra (org A) para `MLBK1` com `titulo null`, `codigo_pai 'P-K'`, `permalink 'https://ae/k'` (é o caso do bug: fonte prio 1 com título nulo).
   - Asserções (sempre `IS DISTINCT FROM`): MLBA1 `titulo = 'Título do ML A'` (ML vence cadastro), `permalink = 'https://ml/a'`, `variacao = 'Verde'` (fallback da venda mais recente); MLBK1 `titulo = 'Kit virtual teste'` (fonte nula não bloqueia), `codigo_pai = 'P-K'`, `permalink = 'https://ae/k'`, `variacao` nula. Ajustar asserções antigas que o cenário novo mude (ex.: `codigo_pai` de MLBK1), mantendo todas as demais (pedidos, receita, pares, kit por pack, semanas, dow, período inválido).
-  - Teste de `gravar_trafego_item` (em `vitrine.sql` ou `vendas_sku_trafego.sql`, onde a RPC já é testada): chamar com `{ml_item_id:'MLBG1', status:'active', titulo:'T1', permalink:'P1', variacao:'Azul'}`, depois com `{ml_item_id:'MLBG1', status:'paused'}` (sem os campos) → linha final `status 'paused'`, `titulo 'T1'`, `permalink 'P1'`, `variacao 'Azul'` (nulo não apaga); terceira chamada com `titulo:'T2'` → `titulo 'T2'`.
+  - Teste de `gravar_trafego_item` (em `vitrine.sql` ou `vendas_sku_trafego.sql`, onde a RPC já é testada): chamar com `{ml_item_id:'MLBG1', status:'active', titulo:'T1', permalink:'P1', variacao:'Azul'}`, depois com `{ml_item_id:'MLBG1', status:'paused'}` (sem os campos) e também com `{ml_item_id:'MLBG1', status:'paused', titulo:null, permalink:null, variacao:null}` (nulos explícitos) → linha final `status 'paused'`, `titulo 'T1'`, `permalink 'P1'`, `variacao 'Azul'` (nulo não apaga); terceira chamada com `titulo:'T2'` → `titulo 'T2'`.
   - Rodar e ver FALHAR (colunas inexistentes).
 - [ ] **Step 2: Migration.**
 
@@ -120,6 +121,7 @@ $$;
 - `StatusItemGravar` = `{ ml_item_id; status; ultimo_ok_em; titulo: string | null; permalink: string | null; variacao: string | null }`.
 - `lerStatusItens` com o tipo novo; URL `…&attributes=id,status,title,permalink,attributes`.
 
+- [ ] **Step 0: Spike real (só GET, antes de qualquer código).** Script descartável em `$CLAUDE_JOB_DIR/tmp` (Python): ler o access token ML da org Avil por SQL read-only (Management API; sem refresh, como na validação T8 do ADR-0172), escolher 20 MLBs ativos da Avil incluindo os da "FITA CETIM PROGRESSO N.3" (UP), MLB4876171545 e um Legacy com variações; chamar (a) `/items?ids=…&attributes=id,status,title,permalink,attributes` e (b) `/items/bulk?ids=…` com a seleção equivalente que a doc de "Itens e buscas" do ML indicar para `body.*`. Registrar por endpoint: HTTP, envelope (`code` vs `status_code`), tamanho em bytes e tempo, presença de `title/permalink`, e `COLOR`/`SIZE` no `attributes` do item (UP × Legacy). Salvar uma resposta como fixture `supabase/functions/_shared/trafego/__tests__/fixtures/multiget-status-ampliado.json` (só campos usados; sem dados sensíveis). **Decisão:** usar `/items/bulk` se responder 200 com os campos; senão manter `/items?ids=` e registrar no relatório que a migração do endpoint fica pendente (prazo 25/10). Reportar os números no relatório.
 - [ ] **Step 1: Testes (vermelho)** em `fiacao.test.ts`:
 
 ```ts
@@ -145,7 +147,9 @@ describe('parseMultigetStatus com campos novos', () => {
   });
 });
 ```
-  Em `sincronizar.test.ts`: ajustar o mock de `lerStatusItens` para devolver os campos novos e a asserção existente (`toContainEqual({ ml_item_id:'MLB2', status:'active', ultimo_ok_em:null })`) passa a incluir `titulo/permalink/variacao` repassados; caso de MLB sem status (`desconhecido`) grava os 3 como `null`.
+  Mais: teste do parser com a **fixture real do Step 0** (e, se o endpoint escolhido for `/items/bulk`, um caso com envelope `status_code`) — envelope antigo e novo produzem o mesmo resultado.
+  **Atualizar TODAS as expectativas exatas afetadas** (não só uma): `fiacao.test.ts:43` e `:51`, `sincronizar.test.ts:194`, `:276`, `:286` (e qualquer outro `toEqual/toContainEqual` sobre itens de status — grep `ultimo_ok_em` nos testes), mocks de `lerStatusItens` devolvendo o formato novo, e os argumentos de `preservarStatus`. Caso de MLB sem status (`desconhecido`) grava os 3 como `null`.
+  Em `sincronizar.ts:221–231` (`gravarStatus`): guardar o **registro completo** por MLB (não só o status), preservando a deduplicação e a restrição ao lote atuais.
 - [ ] **Step 2: Implementar.** `variacaoDeAtributos`: se não for array → null; pega `value_name` (string, `trim`, não vazio) do primeiro `id==='COLOR'` e do primeiro `id==='SIZE'`; junta `[cor, tam].filter(Boolean).join(' · ') || null`. `parseMultigetStatus`: mantém o filtro atual (code 200, id/status string) e acrescenta `titulo: typeof body.title === 'string' && body.title.trim() ? body.title.trim() : null`, `permalink` idem, `variacao: variacaoDeAtributos(body.attributes)`. `sincronizar.gravarStatus` repassa os 3 campos (MLB sem status → null). `deps.ts`: só a URL e o mapeamento para a RPC (os 3 campos vão no `p_itens`).
 - [ ] **Step 3:** `pnpm exec vitest run supabase/functions/_shared/trafego/__tests__/` verde; `deno check supabase/functions/coletar-trafego-ml/index.ts` (ou o lint de backend que o CI roda — conferir `package.json`/CI `backend-lint`).
 - [ ] **Step 4: Commit** `feat(trafego): coletor traz título, link e variação no multiget de status`.
@@ -183,16 +187,18 @@ describe('linkML', () => {
 
 ### Task 4: UI — ⓘ, legenda e linha nova (model: sonnet)
 
-**Files:** criar `src/components/vitrine/info-dica.tsx`, `src/components/vitrine/dicas.ts`, `tests/components/vitrine-onde-agir.test.tsx`; modificar `pulso-vitrine.tsx`, `grafico-vitrine.tsx`, `onde-agir.tsx`.
+**Files:** criar `src/components/vitrine/info-dica.tsx`, `src/components/vitrine/dicas.ts`, `tests/components/vitrine-onde-agir.test.tsx`; modificar `pulso-vitrine.tsx`, `grafico-vitrine.tsx`, `onde-agir.tsx`, `src/pages/Vitrine.tsx` (passa `preset` ao `OndeAgir`), `tests/pages/Vitrine.test.tsx`.
 
-**Interfaces:** `InfoDica({ titulo: string; children: ReactNode })` — botão ⓘ (`Info` do lucide, `aria-label="Como ler: {titulo}"`) + `Popover` (padrão de `KpiInfoButton` em `src/components/ui/kpi-card.tsx:45-79`). `dicas.ts` exporta `DICAS: Record<'visitas'|'conversao'|'vendaPorVisita'|'grafico', { oQueE: string; comoLer: string[] }>` e `LEGENDA: { rotulo: Rotulo; significa: string; fazer: string; porQue: string }[]` — **textos verbatim do Apêndice do spec** (cada frase de "Como ler" vira um item).
+**Interfaces:** `InfoDica({ titulo: string; children: ReactNode })` — botão ⓘ (`Info` do lucide, `aria-label="Como ler: {titulo}"`) + `Popover` (padrão de `KpiInfoButton` em `src/components/ui/kpi-card.tsx:45-79`), com `useId` e `PopoverContent aria-labelledby={idDoTitulo}` (o título do popover nomeia o diálogo). Conteúdo com `max-h` limitado à viewport e rolagem vertical (a legenda pode ser alta no mobile).
+**TooltipProvider:** `OndeAgir` é irmão do Pulso (o provider atual só envolve os cards — `Tooltip must be used within TooltipProvider` foi reproduzido). Envolver os chips de filtro em `TooltipProvider` dentro do próprio `OndeAgir`, com `TooltipTrigger asChild` sobre o `Button` existente. `dicas.ts` exporta `DICAS: Record<'visitas'|'conversao'|'vendaPorVisita'|'grafico', { oQueE: string; comoLer: string[] }>` e `LEGENDA: { rotulo: Rotulo; significa: string; fazer: string; porQue: string }[]` — **textos verbatim do Apêndice do spec** (cada frase de "Como ler" vira um item).
 
 - [ ] **Step 1: Testes de componente (vermelho)** em `tests/components/vitrine-onde-agir.test.tsx` (Testing Library, padrão de `tests/pages/Vitrine.test.tsx`):
   1. Linha com `titulo: 'FITA CETIM PROGRESSO N.3 | 10 METROS'`, `variacao: 'Marsala'` → mostra `Fita Cetim Progresso N.3 | 10 Metros` e `Marsala`.
   2. Link `getByRole('link', { name: 'Abrir anúncio no Mercado Livre' })` com `href` = permalink; sem permalink → URL montada; `target="_blank"` e `rel` contendo `noopener`.
   3. Sem título → mostra o `ml_item_id` e o texto `título ainda não coletado`.
   4. Invisível mostra `o normal seria ~N` com N = `Math.round(esperado7)`.
-  5. ⓘ do "Onde agir": clicar abre a legenda com as 4 linhas (os 4 rótulos e seus textos); `Escape` fecha; foco volta ao botão.
+  5. ⓘ do "Onde agir" **por teclado**: Tab até o botão → Enter (e, noutro caso, Espaço) abre a legenda com as 4 linhas (os 4 rótulos e seus textos), diálogo nomeado pelo título (`getByRole('dialog', { name: … })`); `Escape` fecha; foco volta ao botão.
+  6. Em `tests/pages/Vitrine.test.tsx`: novo teste **preenchido** (itens com ações reais, sem `TooltipProvider` no wrapper do teste) — renderiza o "Onde agir" com chips e tooltips sem erro; trocar para "12 semanas" muda o texto de período nas linhas ("em 12 sem").
 - [ ] **Step 2: Implementar.**
   - `pulso-vitrine.tsx`: `InfoDica` ao lado do rótulo de cada card (Visitas, Conversão, Venda por visita) com `DICAS[...]`.
   - `grafico-vitrine.tsx`: `InfoDica` ao lado do `h2`.
@@ -208,7 +214,7 @@ describe('linkML', () => {
 ### Task 5: Deploy, coleta manual, validação e docs (loop principal)
 
 - [ ] **Step 1:** `supabase db push` (migration da Task 1); `supabase functions deploy coletar-trafego-ml`; conferir versão ativa (`supabase functions list`).
-- [ ] **Step 2: Coleta manual** via QStash publish (não esperar o cron 09:17 UTC): `POST https://qstash.upstash.io/v2/publish/https://txvncrgkoynoxwopfkbp.supabase.co/functions/v1/coletar-trafego-ml` com `Authorization: Bearer $QSTASH_TOKEN` (de `.env.local`, nunca impresso) e `Upstash-Retries: 1`. Acompanhar até `ml_trafego_item.titulo` preenchido para a org Avil (SQL read-only). Medir: % de MLBs com título, com variação; conferir MLB4876171545 (título) e os 36 "FITA CETIM PROGRESSO N.3" (variações distintas).
-- [ ] **Step 3: Validação visual** (skill `playwright-cli`, sessão isolada, login VALIDATION, JSON real da Avil coletado da RPC nova e injetado): desktop 1440, 390px, tema claro; abrir os 5 ⓘ; legenda; clicar ↗ (confere `href`); hover nos chips; screenshots; console limpo.
+- [ ] **Step 2: Coleta manual SÓ da Avil** via QStash publish (não esperar o cron 09:17 UTC): resolver `org_id` da Avil por SQL (nome + id); `POST https://qstash.upstash.io/v2/publish/https://txvncrgkoynoxwopfkbp.supabase.co/functions/v1/coletar-trafego-ml` com `Authorization: Bearer $QSTASH_TOKEN` (de `.env.local`, nunca impresso), `Content-Type: application/json`, `Upstash-Retries: 1` e corpo `{"org_id":"<avil>","primeira":true}` (formato de mensagem por org — conferir em `fiacao.ts:~128`/`index.ts` antes). **Nunca** publish sem `org_id`. Conferir com predicado de org que só linhas da Avil mudaram (contagem de `ml_trafego_item` com `titulo` por org antes/depois). Acompanhar até `ml_trafego_item.titulo` preenchido para a org Avil (SQL read-only). Medir: % de MLBs com título, com variação; conferir MLB4876171545 (título) e os 36 "FITA CETIM PROGRESSO N.3" (variações distintas).
+- [ ] **Step 3: Validação visual** (skill `playwright-cli`, sessão isolada, login VALIDATION, JSON real da Avil coletado da RPC nova e injetado): desktop 1440 e 390px, **nos dois temas** (claro e escuro); abrir os 5 ⓘ (inclusive por teclado); legenda; clicar ↗ (confere `href`); hover nos chips; screenshots; console limpo.
 - [ ] **Step 4: Docs:** nota no ADR-0176 ("Nota — identificação e dicas, 2026-10-03"), `docs/reference/modelo-de-dados.md` (colunas novas + RPC v3), `docs/reference/edge-functions.md` (multiget ampliado), `docs/runbooks/coletar-trafego-ml.md` (comando de coleta manual via QStash publish), `docs/TASKS.md` — skill `docs-update-checklist`.
 - [ ] **Step 5:** revisão final Grok 4.7 xhigh da branch, correções, `pnpm preflight`, CI verde → parar no ponto de merge e chamar o Diego.
