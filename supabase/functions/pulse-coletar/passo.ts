@@ -8,7 +8,8 @@ import { elegivelPorBackoff, type ContextoColeta, type ProdutoColeta, type Resul
 
 export interface ParamsPulse extends Record<string, unknown> { tier: 'completo' | 'quente' }
 
-export const LOTE_COMPLETO = 20;
+// 10, não 20: lote de 20 da DSA chegou a 1.926 ms de CPU (02/10), a 74 ms do teto de 2 s da edge.
+export const LOTE_COMPLETO = 10;
 export const LOTE_QUENTE = 40;
 // Janela de LEITURA por mensagem — maior que o lote processado: dá margem para pular produtos em
 // backoff sem precisar de mais uma viagem ao banco só para achar quem é elegível.
