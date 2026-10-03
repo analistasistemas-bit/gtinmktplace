@@ -1716,7 +1716,11 @@ um smoke test contra Postgres real antes do primeiro deploy.
     org+rodada+cursor+tentativa; 429 → `delay` = Retry-After), `concluir_trafego_rodada` no fim.
   - Por MLB: 1 GET de visitas (`/visits/time_window`, 150 dias na carga inicial ou para MLB sem
     coleta `ok`; senão janela móvel de 7 dias, estendida até o dia seguinte ao último `ok`), 1 GET de `sale_price` por dia (só se ainda não há
-    preço de hoje) e o multiget de status do lote (consultivo).
+    preço de hoje) e o multiget de status do lote (consultivo). **v6 (2026-10-03, ADR-0176):** o multiget
+    usa `/items/bulk?ids=…&attributes=status_code,body.id,body.status,body.title,body.permalink,body.attributes`
+    (o ML exige sair de `/items?ids=` até 25/10/2026; parser aceita envelopes `code` e `status_code`) e grava
+    também `titulo`, `permalink` e `variacao` (COLOR · SIZE) em `ml_trafego_item`. `coletar-ads-ml` redeployado
+    junto (v6) por compartilhar `_shared/trafego/fiacao.ts`.
   - Respostas: `erro` → 500 (1 retry do QStash); `ok`/`continua`/`obsoleta`/`sem_acesso` → 200;
     sem assinatura → 401.
   - Tabelas e RPCs: `docs/reference/modelo-de-dados.md` § Tráfego e oferta.

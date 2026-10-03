@@ -356,7 +356,7 @@ mas não é literalmente clicar na tela. Ver
 
 ## Vitrine (ADR-0176, 2026-10-02) — backend em produção
 
-Tela `/vitrine` (visitas, pedidos, conversão, lista "Onde agir"). Migration `20261002214830_vitrine` (RPC `vitrine_resumo`) e edge `usuarios` v43 já em produção; frontend aguarda merge. Limites calibrados com a Avil. Ver [ADR-0176](decisions/0176-vitrine-visitas-conversao.md).
+Tela `/vitrine` (visitas, pedidos, conversão, lista "Onde agir"). Migration `20261002214830_vitrine` (RPC `vitrine_resumo`) e edge `usuarios` v43 já em produção; frontend aguarda merge. Limites calibrados com a Avil. Melhorias de 2026-10-03 (título, variação e link do ML por anúncio; dicas ⓘ): migration `20261003232750_vitrine_identificacao` e `coletar-trafego-ml`/`coletar-ads-ml` v6 em produção; frontend aguarda merge. Ver [ADR-0176](decisions/0176-vitrine-visitas-conversao.md).
 
 ## Entregas de setembro de 2026 (até 24/09) — em produção
 

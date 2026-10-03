@@ -85,6 +85,24 @@ Esperado ao fim da cadeia: `estado = 'ok'`, `posse_ate` e `cursor` nulos, `carga
 preenchido; visitas majoritariamente `ok` (os 2 dias mais recentes ficam `pendente` até fechar 48 h);
 1 linha de preço por MLB no dia de hoje.
 
+### Execução manual de uma org (validação)
+
+Publicar pelo QStash com `org_id` — dispara só aquela org:
+
+```bash
+curl -X POST "https://qstash.upstash.io/v2/publish/https://txvncrgkoynoxwopfkbp.supabase.co/functions/v1/coletar-trafego-ml" \
+  -H "Authorization: Bearer $QSTASH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Upstash-Retries: 1" \
+  -d '{"org_id":"<org>","primeira":true}'
+```
+
+**Nunca omitir `org_id`:** corpo vazio/`{}` dispara o fan-out de todas as orgs e a limpeza de retenção.
+
+Multiget de status: desde a v6 (2026-10-03) usa `/items/bulk?ids=…&attributes=status_code,body.id,body.status,body.title,body.permalink,body.attributes`
+(o ML exige sair de `/items?ids=` até 25/10/2026) e grava `titulo`, `permalink` e `variacao` em `ml_trafego_item`.
+Conferir após a coleta: `select count(*), count(titulo), count(variacao) from ml_trafego_item where org_id = '<org>';`
+
 ## 5. Como ler `ml_trafego_sync`
 
 | `estado` | Significa | O que fazer |

@@ -11,6 +11,13 @@ Tela `/vitrine` (menu entre Pulse e Faturamento): visitas, pedidos, conversão e
 - [x] Regras puras `src/lib/vitrine.ts`, calibradas com dados da Avil (Invisível 11, Vitrine sem venda 22, Converte 5, Perdendo 9 em 4 semanas); RPC 284 ms (28 d) / 968 ms (182 d).
 - [ ] Merge na `main`.
 
+### Vitrine — identificação e dicas (2026-10-03) — branch `worktree-vitrine-melhorias`
+
+- [x] Migration `20261003232750_vitrine_identificacao.sql` (`titulo`/`permalink`/`variacao`, `vitrine_resumo` v3); `db push` feito em 03/10.
+- [x] Coletor `coletar-trafego-ml` e `coletar-ads-ml` v6 (multiget via `/items/bulk`); coleta manual só da Avil (título 575/575, variação 502/575).
+- [x] Front: título, variação, link ↗ e dicas ⓘ.
+- [ ] Merge na `main`.
+
 ## Detalhe da venda reorganizado (2026-10-02) — branch `worktree-detalhe-venda-redesign`
 
 Linha expandida de Faturamento › Vendas (também no Financeiro e no dossiê do SKU) em 3 zonas, inspirada no Mercado Turbo. Só frontend: sem migration, sem edge.

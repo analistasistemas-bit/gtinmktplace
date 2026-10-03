@@ -84,3 +84,13 @@ navegador (paginação pesada a cada troca de período) e tudo no SQL (calibrar 
 - Regras em TS puro (`src/lib/vitrine.ts`, `tests/lib/vitrine.test.ts`): período termina em hoje BRT − 3; presets 4 sem/12 sem/6 meses; cobertura < 95% avisa, < 80% esconde.
 - Calibração (Avil, 4 semanas): com os limites iniciais, Invisível marcava 135 de 497 ativos (cauda longa que nunca teve visita) e Converte 0–1. Depois (esperado7 ≥ 3 e p75 dos vendedores): Invisível 11, Vitrine sem venda 22, Converte 5, Perdendo 9 (47 no total). Em 12 semanas: 14/42/18/2.
 - Performance em produção (EXPLAIN ANALYZE, Avil, 575 MLBs): 284 ms (28 dias), 968 ms (182 dias).
+
+## Nota — Identificação e dicas (2026-10-03)
+
+Spec `docs/superpowers/specs/2026-10-03-vitrine-melhorias-design.md`; plano `docs/superpowers/plans/2026-10-03-vitrine-melhorias.md`.
+
+- Migration `20261003232750_vitrine_identificacao.sql` (aplicada em produção por `db push` em 2026-10-03): `ml_trafego_item` ganha `titulo`, `permalink` e `variacao` (nulas). `gravar_trafego_item` v2 (mesma assinatura, só `service_role`) aceita os 3 campos com `coalesce` — nulo nunca apaga.
+- `vitrine_resumo` v3: título = primeiro não-nulo entre `ml_trafego_item.titulo` → cadastro (Legacy, UP, kit, catálogo, família) → vendas (antes, fonte com título nulo bloqueava as seguintes — caso MLB4876171545). Campos novos por item: `variacao` (`ml_trafego_item` → cor da venda mais recente) e `permalink` (`ml_trafego_item` → `anuncios_externos`/`_itens`; catálogo UP não usa `aei.permalink`; o front monta `https://produto.mercadolivre.com.br/MLB-<n>`).
+- Coletor `coletar-trafego-ml` v6 (deploy 2026-10-03; `coletar-ads-ml` também v6 por compartilhar `_shared/trafego/fiacao.ts`): o multiget de status migrou para `/items/bulk?ids=…&attributes=status_code,body.id,body.status,body.title,body.permalink,body.attributes` (o ML exige sair de `/items?ids=` até 25/10/2026). O parser aceita envelopes `code` e `status_code`; `variacao` = `value_name` de COLOR · SIZE do item (Legacy com `variations` fica nula). Spike real (Avil, 20 MLBs): 200, ~0,37 s, ~58 KB, título/link 20/20.
+- Coleta manual de validação só da Avil: título 575/575, variação 502/575; fingerprints md5 por org das tabelas de tráfego idênticos nas outras orgs. Os 36 anúncios "Fita de Cetim … Progresso N°03" passaram a ter 36 títulos e 35 cores distintas.
+- Front: títulos com `formatarNomeProduto`; etiqueta de variação; ícone ↗ para o ML; ⓘ "O que é / Como ler" em Visitas, Conversão, Venda por visita, gráfico e Onde agir (legenda dos 4 rótulos: Significa / O que fazer / Por que entrou).

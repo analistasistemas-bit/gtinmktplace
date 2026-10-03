@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-02
+atualizado: 2026-10-03
 ---
 
 # Changelog
@@ -8,6 +8,10 @@ atualizado: 2026-10-02
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-10-03
+
+**Vitrine identifica o anúncio e explica as métricas (ADR-0176).** Cada linha mostra título, variação (cor · tamanho) e ícone ↗ para o ML; dicas ⓘ explicam Visitas, Conversão, Venda por visita, gráfico e os 4 rótulos de Onde agir. Migration `20261003232750_vitrine_identificacao` (`ml_trafego_item` + `titulo`/`permalink`/`variacao`, `gravar_trafego_item` v2, `vitrine_resumo` v3) em produção; `coletar-trafego-ml` e `coletar-ads-ml` v6 — multiget de status migrou para `/items/bulk` (o ML exige até 25/10/2026). Coleta manual só da Avil: título 575/575, variação 502/575.
 
 ## 2026-10-02
 

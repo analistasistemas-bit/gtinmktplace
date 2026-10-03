@@ -984,7 +984,7 @@ Estado da coleta por organização. `org_id` (PK), `estado` (`sincronizando|ok|s
 ### `ml_trafego_item`
 Status do anúncio por MLB (multiget `/items?attributes=id,status`). `org_id` + `ml_item_id` (PK),
 `status`, `status_desde` (só muda quando o status muda), `ultimo_ok_em` (última coleta de visitas
-`ok`; MLB sem ela recebe a janela de 150 dias). `closed` há mais de 30 dias sai do inventário.
+`ok`; MLB sem ela recebe a janela de 150 dias). `closed` há mais de 30 dias sai do inventário. Identificação (migration `20261003232750_vitrine_identificacao`, ADR-0176): `titulo`, `permalink` e `variacao` (COLOR · SIZE; nulos; Legacy com `variations` fica nula), vindos do multiget `/items/bulk`.
 
 RLS nas quatro: `select` por `org_id = current_org_id()`; `anon` sem privilégio; `authenticated`
 só `SELECT`. Escrita só por `service_role`, pelas RPCs abaixo (todas `security definer`,
@@ -996,7 +996,7 @@ só `SELECT`. Escrita só por `service_role`, pelas RPCs abaixo (todas `security
 | `avancar_trafego_cursor(p_org, p_rodada, p_cursor_atual, p_cursor_novo)` | CAS do cursor + renovação da posse. `false` = rodada obsoleta. |
 | `gravar_visitas_dia(p_org, p_rodada, p_pontos)` | Upsert das visitas. Rodada mais antiga nunca sobrescreve; `ok` só é trocado por outro `ok`. |
 | `gravar_preco_dia(p_org, p_pontos)` | Insere o preço do dia; já existindo, mantém a 1ª observação. |
-| `gravar_trafego_item(p_org, p_itens)` | Upsert do status; `status_desde` só muda com o status; `ultimo_ok_em` só avança. |
+| `gravar_trafego_item(p_org, p_itens)` | Upsert do status (v2: aceita também `titulo`/`permalink`/`variacao`, com `coalesce` — nulo nunca apaga); `status_desde` só muda com o status; `ultimo_ok_em` só avança. |
 | `concluir_trafego_rodada(p_org, p_rodada, p_estado, p_erro, p_carga_concluida)` | Fecha a rodada (só a dona) e solta a posse; marca a carga inicial concluída. `false` = obsoleta. |
 
 Retenção de 13 meses em `ml_item_visitas_dia` e `ml_item_preco_dia` (limpeza diária do worker).
@@ -1395,7 +1395,7 @@ INSERT/UPDATE/DELETE continuam "own" (`auth.uid()` == 1º segmento). *Migration 
 |---|---|
 | `update_lote_counters()` | Trigger: recalcula contadores de `lotes` + transição de status |
 | `current_org_id()` | **Pivô da RLS por org** (ADR-0027): `org_id` do chamador ativo (`is_active`) |
-| `vitrine_resumo(p_inicio, p_fim)` | Vitrine (ADR-0176): `jsonb` da org do chamador (`current_org_id()`) com visitas, pedidos, receita e pares (ok/total) por MLB (período e anterior), por semana e por dia da semana; conversão, rótulos e frases ("Onde agir") são calculados no front (`src/lib/vitrine.ts`). Kit virtual conta 1 pedido por `pack_id` (o ML emite 1 order por componente) e o título vem de `kits_virtuais` (migration `20261002225552_vitrine_kit_pedido`). `stable`, só `authenticated`; recusa período nulo/invertido/> 182 dias. Lê `ml_item_visitas_dia`, `ml_vendas(_itens)`, `ml_trafego_item`, `ml_ads_grupo(_item)`, `kits_virtuais` |
+| `vitrine_resumo(p_inicio, p_fim)` | Vitrine (ADR-0176): `jsonb` da org do chamador (`current_org_id()`) com visitas, pedidos, receita e pares (ok/total) por MLB (período e anterior), por semana e por dia da semana; conversão, rótulos e frases ("Onde agir") são calculados no front (`src/lib/vitrine.ts`). Kit virtual conta 1 pedido por `pack_id` (o ML emite 1 order por componente) e o título vem de `kits_virtuais` (migration `20261002225552_vitrine_kit_pedido`). **v3** (`20261003232750_vitrine_identificacao`): título = primeiro não-nulo entre `ml_trafego_item.titulo` → cadastro (Legacy, UP, kit, catálogo, família) → vendas; campos novos por item `variacao` (`ml_trafego_item` → cor da venda mais recente) e `permalink` (`ml_trafego_item` → `anuncios_externos`/`_itens`; catálogo UP não usa `aei.permalink`). `stable`, só `authenticated`; recusa período nulo/invertido/> 182 dias. Lê `ml_item_visitas_dia`, `ml_vendas(_itens)`, `ml_trafego_item`, `ml_ads_grupo(_item)`, `kits_virtuais` |
 | `is_super_admin()` | O chamador tem `profiles.is_super_admin` |
 | `start_support_session(request_id, requester_id, now)` | Inicia uma sessão aprovada ou renova atomicamente nos 15 minutos finais; somente `service_role` |
 | `cleanup_support_audit_events()` | Remove auditoria com mais de um ano sem `legal_hold`; chamada pelo cron diário |
