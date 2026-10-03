@@ -5,6 +5,7 @@ export type ItemVitrine = {
   visitas: number; pedidos: number; receita: number; pares_ok: number; pares_total: number;
   visitas_ant: number; pedidos_ant: number; receita_ant: number; pares_ok_ant: number; pares_total_ant: number;
   visitas_ult7: number; dias_ok_ult7: number;
+  variacao: string | null; permalink: string | null;
 };
 export type SemanaVitrine = { semana: string; visitas: number; pedidos: number; receita: number; pares_ok: number; pares_total: number };
 export type DiaSemanaVitrine = { dow: number; visitas: number; pedidos: number; semanas: number; pares_ok: number; pares_total: number };
@@ -86,6 +87,12 @@ const percentil = (xs: number[], p: number): number => {
   const s = [...xs].sort((a, b) => a - b);
   return s[Math.floor(s.length * p)];
 };
+export function esperado7(i: ItemVitrine): number {
+  const diasOutros = i.pares_ok - i.dias_ok_ult7;
+  return diasOutros > 0 ? (i.visitas - i.visitas_ult7) * 7 / diasOutros : 0;
+}
+export const linkML = (i: Pick<ItemVitrine, 'ml_item_id' | 'permalink'>): string =>
+  i.permalink?.trim() ? i.permalink : `https://produto.mercadolivre.com.br/MLB-${i.ml_item_id.replace(/\D/g, '')}`;
 const cobre = (ok: number, total: number) => total > 0 && ok / total >= LIMITES.coberturaItem;
 
 export function ondeAgir(itens: ItemVitrine[], convMedia: number | null): ItemAcao[] {
@@ -93,9 +100,7 @@ export function ondeAgir(itens: ItemVitrine[], convMedia: number | null): ItemAc
   const p75 = percentil(ativos.filter((i) => i.pedidos >= 1 && cobre(i.pares_ok, i.pares_total)).map((i) => i.visitas), LIMITES.percentilConverte);
   const out: ItemAcao[] = [];
   for (const i of ativos) {
-    const diasOutros = i.pares_ok - i.dias_ok_ult7;
-    const esperado7 = diasOutros > 0 ? (i.visitas - i.visitas_ult7) * 7 / diasOutros : 0;
-    if (i.dias_ok_ult7 >= LIMITES.diasInvisivel && i.visitas_ult7 === 0 && esperado7 >= LIMITES.esperadoInvisivel) {
+    if (i.dias_ok_ult7 >= LIMITES.diasInvisivel && i.visitas_ult7 === 0 && esperado7(i) >= LIMITES.esperadoInvisivel) {
       out.push({ item: i, rotulo: 'invisivel', emJogo: i.pedidos_ant });
       continue;
     }

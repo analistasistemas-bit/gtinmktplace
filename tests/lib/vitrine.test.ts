@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { periodoVitrine, kpisVitrine, serieVitrine, delta, deltaPP, ondeAgir, frasesVitrine, zProp,
+import { periodoVitrine, kpisVitrine, serieVitrine, delta, deltaPP, ondeAgir, frasesVitrine, zProp, esperado7, linkML,
   type ItemVitrine, type ResumoVitrine } from '@/lib/vitrine';
 
 const item = (o: Partial<ItemVitrine> = {}): ItemVitrine => ({
   ml_item_id: 'MLB1', titulo: 't', codigo_pai: '1', status: 'active', em_ads: false,
   visitas: 0, pedidos: 0, receita: 0, pares_ok: 0, pares_total: 0,
   visitas_ant: 0, pedidos_ant: 0, receita_ant: 0, pares_ok_ant: 0, pares_total_ant: 0,
-  visitas_ult7: 0, dias_ok_ult7: 0, ...o,
+  visitas_ult7: 0, dias_ok_ult7: 0, variacao: null, permalink: null, ...o,
 });
 
 describe('periodoVitrine', () => {
@@ -197,4 +197,14 @@ describe('frasesVitrine', () => {
     expect(frasesVitrine(resumo(), kpisVitrine([]), [a, a])[0]).toBe('2 anúncios ativos estão sem visita há 7 dias — veja abaixo.');
   });
   it('zProp com n = 0 não dá NaN', () => expect(zProp(0, 0, 0, 0)).toBe(0));
+});
+
+describe('esperado7', () => {
+  it('taxa dos outros dias × 7', () => expect(esperado7(item({ visitas: 50, visitas_ult7: 0, pares_ok: 28, dias_ok_ult7: 7 }))).toBeCloseTo(50 * 7 / 21));
+  it('divisor ≤ 0 → 0', () => expect(esperado7(item({ visitas: 9, pares_ok: 7, dias_ok_ult7: 7 }))).toBe(0));
+});
+describe('linkML', () => {
+  it('usa o permalink', () => expect(linkML({ ml_item_id: 'MLB1', permalink: 'https://p/1' })).toBe('https://p/1'));
+  it('sem permalink monta pelo MLB', () => expect(linkML({ ml_item_id: 'MLB4876171545', permalink: null })).toBe('https://produto.mercadolivre.com.br/MLB-4876171545'));
+  it('permalink vazio = ausente', () => expect(linkML({ ml_item_id: 'MLB7', permalink: '  ' })).toBe('https://produto.mercadolivre.com.br/MLB-7'));
 });
