@@ -1,0 +1,73 @@
+[
+  {
+    "status_code": 200,
+    "body": {
+      "id": "MLB4876171545",
+      "title": "Fita Refletiva Fluorescente Cinza 5cm X 100m Cinza",
+      "permalink": "https://produto.mercadolivre.com.br/MLB-4876171545-fita-refletiva-fluorescente-cinza-5cm-x-100m-cinza-_JM",
+      "attributes": [
+        {
+          "id": "COLOR",
+          "value_name": "Cinza"
+        },
+        {
+          "id": "BRAND",
+          "value_name": "Búfalo"
+        }
+      ],
+      "status": "active"
+    }
+  },
+  {
+    "status_code": 200,
+    "body": {
+      "id": "MLB4772357033",
+      "title": "Fita De Cetim Progresso Cf003 15mm N 3 Com 10 Metros Cor Rosa Claro 206 Liso",
+      "permalink": "https://produto.mercadolivre.com.br/MLB-4772357033-fita-de-cetim-progresso-cf003-15mm-n-3-com-10-metros-cor-rosa-claro-206-liso-_JM",
+      "attributes": [
+        {
+          "id": "BRAND",
+          "value_name": "Fitas Progresso"
+        },
+        {
+          "id": "COLOR",
+          "value_name": "Rosa-claro"
+        }
+      ],
+      "status": "active"
+    }
+  },
+  {
+    "status_code": 200,
+    "body": {
+      "id": "MLB4765613429",
+      "title": "Fita Cetim Bufalo N.5 50mt | 100% Poliéster | Rolo Econômico",
+      "permalink": "https://produto.mercadolivre.com.br/MLB-4765613429-fita-cetim-bufalo-n5-50mt-100-poliester-rolo-econmico-_JM",
+      "attributes": [
+        {
+          "id": "BRAND",
+          "value_name": "Búfalo"
+        }
+      ],
+      "status": "active"
+    }
+  },
+  {
+    "status_code": 200,
+    "body": {
+      "id": "MLB2626050977",
+      "title": "Cola De Silicone Liquida 250ml - Merletto",
+      "permalink": "https://produto.mercadolivre.com.br/MLB-2626050977-cola-de-silicone-liquida-250ml-merletto-_JM",
+      "attributes": [
+        {
+          "id": "BRAND",
+          "value_name": "Merletto"
+        }
+      ],
+      "status": "closed"
+    }
+  },
+  {
+    "status_code": 404
+  }
+]

@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   buscarML, classificarItensTrafego, corteRetencao, corteVendidos, dedupContinuacao, dedupFanout,
-  delaySegundos, parseMultigetStatus, parseRetryAfterMs, preservarStatus, TIMEOUT_ML_MS, tratarRequisicao, type Rotas,
+  delaySegundos, parseMultigetStatus, variacaoDeAtributos, parseRetryAfterMs, preservarStatus, TIMEOUT_ML_MS, tratarRequisicao, type Rotas,
 } from '../fiacao.ts';
+import fixtureAmpliado from './fixtures/multiget-status-ampliado.json' with { type: 'json' };
 
 describe('ids de deduplicação do QStash', () => {
   it('fan-out = org + dia, só caracteres aceitos', () => {
@@ -40,22 +41,59 @@ describe('parseMultigetStatus', () => {
       { code: 404, body: { id: 'MLB2', status: 'closed' } },
       { code: 200, body: { id: 'MLB3' } },
       null,
-    ])).toEqual([{ ml_item_id: 'MLB1', status: 'active' }]);
+    ])).toEqual([{ ml_item_id: 'MLB1', status: 'active', titulo: null, permalink: null, variacao: null }]);
     expect(parseMultigetStatus({ erro: 1 })).toEqual([]);
   });
 });
 
+describe('variacaoDeAtributos', () => {
+  it('cor', () => expect(variacaoDeAtributos([{ id: 'COLOR', value_name: 'Marsala' }])).toBe('Marsala'));
+  it('cor · tamanho, nessa ordem', () =>
+    expect(variacaoDeAtributos([{ id: 'SIZE', value_name: 'G' }, { id: 'COLOR', value_name: 'Azul' }])).toBe('Azul · G'));
+  it('sem cor/tamanho, vazio ou não-array → null', () => {
+    expect(variacaoDeAtributos([{ id: 'BRAND', value_name: 'Búfalo' }])).toBeNull();
+    expect(variacaoDeAtributos([{ id: 'COLOR', value_name: '  ' }])).toBeNull();
+    expect(variacaoDeAtributos(undefined)).toBeNull();
+  });
+});
+
+describe('parseMultigetStatus com campos novos', () => {
+  it('extrai título, link e variação', () => {
+    expect(parseMultigetStatus([{ code: 200, body: { id: 'MLB1', status: 'active', title: 'Fita X', permalink: 'https://p/1',
+      attributes: [{ id: 'COLOR', value_name: 'Verde' }] } }]))
+      .toEqual([{ ml_item_id: 'MLB1', status: 'active', titulo: 'Fita X', permalink: 'https://p/1', variacao: 'Verde' }]);
+  });
+  it('item sem title/attributes continua com status; campos novos null', () => {
+    expect(parseMultigetStatus([{ code: 200, body: { id: 'MLB2', status: 'closed' } }]))
+      .toEqual([{ ml_item_id: 'MLB2', status: 'closed', titulo: null, permalink: null, variacao: null }]);
+  });
+  it('envelope antigo (code) e novo (status_code) dão o mesmo resultado', () => {
+    const corpo = { id: 'MLB9', status: 'active', title: 'T', permalink: 'https://p/9', attributes: [{ id: 'COLOR', value_name: 'Rosa' }] };
+    expect(parseMultigetStatus([{ status_code: 200, body: corpo }])).toEqual(parseMultigetStatus([{ code: 200, body: corpo }]));
+    expect(parseMultigetStatus([{ status_code: 200, body: corpo }])).toHaveLength(1);
+    expect(parseMultigetStatus([{ status_code: 404 }, {}])).toEqual([]);
+  });
+  it('fixture real de /items/bulk: 4 itens (o 404 cai), cor só onde há COLOR', () => {
+    const r = parseMultigetStatus(fixtureAmpliado);
+    expect(r).toHaveLength(4);
+    expect(r[0]).toMatchObject({ ml_item_id: 'MLB4876171545', status: 'active', variacao: 'Cinza' });
+    expect(r.every((i) => i.titulo && i.permalink?.startsWith('https://'))).toBe(true);
+    expect(r.find((i) => i.ml_item_id === 'MLB4765613429')?.variacao).toBeNull();
+  });
+});
+
+const NOVOS = { titulo: null, permalink: null, variacao: null };
 describe('preservarStatus', () => {
   it("'desconhecido' não sobrescreve status já gravado (closed segue closed); MLB novo fica desconhecido", () => {
     const iso = '2026-09-27T12:00:00.000Z';
     expect(preservarStatus([
-      { ml_item_id: 'MLB1', status: 'desconhecido', ultimo_ok_em: iso },
-      { ml_item_id: 'MLB2', status: 'desconhecido', ultimo_ok_em: iso },
-      { ml_item_id: 'MLB3', status: 'active', ultimo_ok_em: null },
+      { ml_item_id: 'MLB1', status: 'desconhecido', ultimo_ok_em: iso, ...NOVOS },
+      { ml_item_id: 'MLB2', status: 'desconhecido', ultimo_ok_em: iso, ...NOVOS },
+      { ml_item_id: 'MLB3', status: 'active', ultimo_ok_em: null, ...NOVOS },
     ], new Map([['MLB1', 'closed'], ['MLB3', 'paused']]))).toEqual([
-      { ml_item_id: 'MLB1', status: 'closed', ultimo_ok_em: iso },
-      { ml_item_id: 'MLB2', status: 'desconhecido', ultimo_ok_em: iso },
-      { ml_item_id: 'MLB3', status: 'active', ultimo_ok_em: null },
+      { ml_item_id: 'MLB1', status: 'closed', ultimo_ok_em: iso, ...NOVOS },
+      { ml_item_id: 'MLB2', status: 'desconhecido', ultimo_ok_em: iso, ...NOVOS },
+      { ml_item_id: 'MLB3', status: 'active', ultimo_ok_em: null, ...NOVOS },
     ]);
   });
 });

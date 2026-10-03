@@ -24,7 +24,10 @@ export interface PontoPrecoGravar {
   ml_item_id: string; dia: string; preco: number; preco_regular: number | null; moeda: string;
   observado_em: string; origem: string;
 }
-export interface StatusItemGravar { ml_item_id: string; status: string; ultimo_ok_em: string | null }
+export interface StatusItemGravar {
+  ml_item_id: string; status: string; ultimo_ok_em: string | null;
+  titulo: string | null; permalink: string | null; variacao: string | null;
+}
 export type ResultadoTrafego = 'ok' | 'continua' | 'obsoleta' | 'erro' | 'sem_acesso';
 
 /** Deps ligadas a uma org. Erro de token/conexão → lançar `SemAcessoTrafego`. */
@@ -42,8 +45,8 @@ export interface DepsTrafego {
    * tiveram coleta `ok` (`ultimo_ok_em` não nulo). MLB fora de `comColetaOk` recebe a janela de 150 dias.
    */
   lerInventario(): Promise<{ fontes: FontesInventario; encerradosHaMaisDe30d: Set<string>; comColetaOk: Set<string> }>;
-  /** Multiget ML `/items?ids=…&attributes=id,status` dos MLBs do lote (≤ 20). Consultivo: erro não derruba a org. */
-  lerStatusItens(ids: string[]): Promise<{ ml_item_id: string; status: string }[]>;
+  /** Multiget ML `/items/bulk` (status, título, link, atributos) dos MLBs do lote (≤ 20). Consultivo: erro não derruba a org. */
+  lerStatusItens(ids: string[]): Promise<Omit<StatusItemGravar, 'ultimo_ok_em'>[]>;
   /** GET /items/{id}/visits/time_window?unit=day&last&ending — nunca lança por status HTTP. */
   buscarVisitas(id: string, p: { last: number; ending: string }): Promise<RespostaML>;
   /** GET /items/{id}/sale_price?context=channel_marketplace — nunca lança por status HTTP. */
@@ -218,16 +221,22 @@ export async function sincronizarTrafegoOrg(
  * preserva o status já gravado).
  */
 async function gravarStatus(deps: DepsTrafego, lote: string[], feitos: ColetaItem[], orgId: string) {
-  let lidos: { ml_item_id: string; status: string }[] = [];
+  let lidos: Awaited<ReturnType<DepsTrafego['lerStatusItens']>> = [];
   try {
     lidos = await deps.lerStatusItens(lote);
   } catch (e) {
     console.warn('[trafego] status dos itens indisponível', { org_id: orgId, erro: mensagem(e) });
   }
-  const statusDe = new Map<string, string>();
-  for (const s of lidos) if (!statusDe.has(s.ml_item_id)) statusDe.set(s.ml_item_id, s.status);
+  const statusDe = new Map<string, (typeof lidos)[number]>();
+  for (const s of lidos) if (!statusDe.has(s.ml_item_id)) statusDe.set(s.ml_item_id, s);
   const itens = feitos
     .filter((r) => r.ultimoOkEm != null || statusDe.has(r.id))
-    .map((r) => ({ ml_item_id: r.id, status: statusDe.get(r.id) ?? STATUS_DESCONHECIDO, ultimo_ok_em: r.ultimoOkEm }));
+    .map((r) => {
+      const s = statusDe.get(r.id);
+      return {
+        ml_item_id: r.id, status: s?.status ?? STATUS_DESCONHECIDO, ultimo_ok_em: r.ultimoOkEm,
+        titulo: s?.titulo ?? null, permalink: s?.permalink ?? null, variacao: s?.variacao ?? null,
+      };
+    });
   if (itens.length) await deps.gravarStatusItens(itens);
 }

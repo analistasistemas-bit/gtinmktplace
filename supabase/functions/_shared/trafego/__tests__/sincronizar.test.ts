@@ -22,6 +22,9 @@ const visitas200 = ok({
 });
 const preco200 = ok({ amount: 49.9, regular_amount: 59.9, currency_id: 'BRL' });
 
+const NOVOS_A = { titulo: 'Fita A', permalink: 'https://p/a', variacao: 'Verde' };
+const NOVOS_B = { titulo: 'Fita B', permalink: 'https://p/b', variacao: null };
+const SEM_NOVOS = { titulo: null, permalink: null, variacao: null };
 type Fake = DepsTrafego & Record<keyof DepsTrafego, ReturnType<typeof vi.fn>> & { relogio: { t: number } };
 function fake(o: Partial<DepsTrafego> = {}, mlbs = ['MLB3', 'MLB1', 'MLB2']): Fake {
   const relogio = { t: T0 };
@@ -33,7 +36,7 @@ function fake(o: Partial<DepsTrafego> = {}, mlbs = ['MLB3', 'MLB1', 'MLB2']): Fa
     avancarCursor: vi.fn(async () => true),
     lerEstadoSync: vi.fn(async () => ({ cargaInicialConcluida: true, ultimoDiaOk: '2026-09-25' })),
     lerInventario: vi.fn(async () => ({ fontes: { ...vazio, familias: mlbs }, encerradosHaMaisDe30d: new Set<string>(), comColetaOk: new Set(mlbs) })),
-    lerStatusItens: vi.fn(async (ids: string[]) => ids.map((id) => ({ ml_item_id: id, status: 'active' }))),
+    lerStatusItens: vi.fn(async (ids: string[]) => ids.map((id) => ({ ml_item_id: id, status: 'active', titulo: `T ${id}`, permalink: `https://p/${id}`, variacao: 'Azul · G' }))),
     buscarVisitas: vi.fn(async () => visitas200),
     buscarPreco: vi.fn(async () => preco200),
     precoJaGravadoHoje: vi.fn(async () => new Set<string>()),
@@ -173,7 +176,9 @@ describe('sincronizarTrafegoOrg', () => {
     expect(p2).toHaveLength(7);
     expect(p2.every((x) => x.estado === 'falha' && x.visitas === null)).toBe(true);
     expect(pontos(d).filter((x) => x.ml_item_id === 'MLB1').every((x) => x.estado !== 'falha')).toBe(true);
-    expect(d.gravarStatusItens.mock.calls[0][0]).toContainEqual({ ml_item_id: 'MLB2', status: 'active', ultimo_ok_em: null });
+    expect(d.gravarStatusItens.mock.calls[0][0]).toContainEqual({
+      ml_item_id: 'MLB2', status: 'active', ultimo_ok_em: null, titulo: 'T MLB2', permalink: 'https://p/MLB2', variacao: 'Azul · G',
+    });
   });
 
   it('corpo inválido → falha do MLB', async () => {
@@ -185,15 +190,15 @@ describe('sincronizarTrafegoOrg', () => {
   it('status dos itens vai sem duplicatas e só dos MLBs do lote', async () => {
     const d = fake({
       lerStatusItens: vi.fn(async () => [
-        { ml_item_id: 'MLB1', status: 'active' }, { ml_item_id: 'MLB1', status: 'active' },
-        { ml_item_id: 'MLB9', status: 'closed' }, { ml_item_id: 'MLB2', status: 'closed' },
+        { ml_item_id: 'MLB1', status: 'active', ...NOVOS_A }, { ml_item_id: 'MLB1', status: 'active', ...NOVOS_B },
+        { ml_item_id: 'MLB9', status: 'closed', ...NOVOS_A }, { ml_item_id: 'MLB2', status: 'closed', ...NOVOS_A },
       ]),
     }, ['MLB1', 'MLB2']);
     await sincronizarTrafegoOrg(d, primeira);
     const iso = new Date(T0).toISOString();
     expect(d.gravarStatusItens.mock.calls).toEqual([[[
-      { ml_item_id: 'MLB1', status: 'active', ultimo_ok_em: iso },
-      { ml_item_id: 'MLB2', status: 'closed', ultimo_ok_em: iso },
+      { ml_item_id: 'MLB1', status: 'active', ultimo_ok_em: iso, ...NOVOS_A },
+      { ml_item_id: 'MLB2', status: 'closed', ultimo_ok_em: iso, ...NOVOS_A },
     ]]]);
   });
 
@@ -274,18 +279,18 @@ describe('sincronizarTrafegoOrg', () => {
     expect(await sincronizarTrafegoOrg(d, primeira)).toEqual({ resultado: 'ok' });
     // MLB2 sem visitas ok e sem status: nada a gravar dele
     expect(d.gravarStatusItens.mock.calls).toEqual([[[
-      { ml_item_id: 'MLB1', status: 'desconhecido', ultimo_ok_em: new Date(T0).toISOString() },
+      { ml_item_id: 'MLB1', status: 'desconhecido', ultimo_ok_em: new Date(T0).toISOString(), ...SEM_NOVOS },
     ]]]);
     expect(d.avancarCursor).toHaveBeenCalledWith(RODADA, null, 'MLB2');
   });
 
   it('MLB com visitas ok que o multiget não trouxe → ultimo_ok_em gravado com status desconhecido', async () => {
-    const d = fake({ lerStatusItens: vi.fn(async () => [{ ml_item_id: 'MLB1', status: 'active' }]) }, ['MLB1', 'MLB2']);
+    const d = fake({ lerStatusItens: vi.fn(async () => [{ ml_item_id: 'MLB1', status: 'active', ...NOVOS_A }]) }, ['MLB1', 'MLB2']);
     await sincronizarTrafegoOrg(d, primeira);
     const iso = new Date(T0).toISOString();
     expect(d.gravarStatusItens.mock.calls).toEqual([[[
-      { ml_item_id: 'MLB1', status: 'active', ultimo_ok_em: iso },
-      { ml_item_id: 'MLB2', status: 'desconhecido', ultimo_ok_em: iso },
+      { ml_item_id: 'MLB1', status: 'active', ultimo_ok_em: iso, ...NOVOS_A },
+      { ml_item_id: 'MLB2', status: 'desconhecido', ultimo_ok_em: iso, ...SEM_NOVOS },
     ]]]);
   });
 

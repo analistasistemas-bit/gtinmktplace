@@ -50,14 +50,34 @@ export async function buscarML(
   }
 }
 
-/** `/items?ids=…&attributes=id,status` → `[{code, body:{id,status}}]`; só as entradas 200 completas. */
-export function parseMultigetStatus(corpo: unknown): { ml_item_id: string; status: string }[] {
+/** "Cor · Tamanho" dos atributos do item (UP traz COLOR/SIZE no item; Legacy com variations não). */
+export function variacaoDeAtributos(attrs: unknown): string | null {
+  if (!Array.isArray(attrs)) return null;
+  const valor = (id: string) => {
+    const v = attrs.find((a) => a?.id === id)?.value_name;
+    return typeof v === 'string' && v.trim() ? v.trim() : null;
+  };
+  return [valor('COLOR'), valor('SIZE')].filter(Boolean).join(' · ') || null;
+}
+
+const textoOuNull = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+
+/**
+ * Multiget `/items/bulk?ids=…&attributes=status_code,body.id,body.status,body.title,body.permalink,body.attributes`
+ * → `[{status_code|code, body}]`; só as entradas 200 com id e status. Aceita os dois envelopes.
+ */
+export function parseMultigetStatus(corpo: unknown): {
+  ml_item_id: string; status: string; titulo: string | null; permalink: string | null; variacao: string | null;
+}[] {
   if (!Array.isArray(corpo)) return [];
-  const out: { ml_item_id: string; status: string }[] = [];
+  const out: ReturnType<typeof parseMultigetStatus> = [];
   for (const e of corpo) {
     const b = e?.body;
-    if (e?.code === 200 && typeof b?.id === 'string' && typeof b?.status === 'string') {
-      out.push({ ml_item_id: b.id, status: b.status });
+    if ((e?.code ?? e?.status_code) === 200 && typeof b?.id === 'string' && typeof b?.status === 'string') {
+      out.push({
+        ml_item_id: b.id, status: b.status, titulo: textoOuNull(b.title), permalink: textoOuNull(b.permalink),
+        variacao: variacaoDeAtributos(b.attributes),
+      });
     }
   }
   return out;

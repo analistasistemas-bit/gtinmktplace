@@ -132,7 +132,9 @@ export function depsTrafego(admin: SupabaseClient, orgId: string): DepsTrafego {
     },
 
     async lerStatusItens(ids) {
-      const r = await get(`/items?ids=${ids.map(encodeURIComponent).join(',')}&attributes=id,status`);
+      // /items/bulk (o multiget /items?ids= sai em 25/10); `status_code` precisa estar na seleção ou o envelope perde o código.
+      const r = await get(`/items/bulk?ids=${ids.map(encodeURIComponent).join(',')}`
+        + '&attributes=status_code,body.id,body.status,body.title,body.permalink,body.attributes');
       if (r.status !== 200) throw new Error(`multiget de status: HTTP ${r.status}`);
       return parseMultigetStatus(r.corpo);
     },
