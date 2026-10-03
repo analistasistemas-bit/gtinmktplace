@@ -62,7 +62,7 @@ export default function Vitrine() {
         <div className="flex flex-col gap-4">
           <PulsoVitrine kpis={kpis} frases={frases} />
           <GraficoVitrine semanas={dados.semanas} inicio={periodo.inicio} fim={periodo.fim} />
-          <OndeAgir acoes={acoes} />
+          <OndeAgir acoes={acoes} preset={preset} />
         </div>
       )}
     </div>

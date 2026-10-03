@@ -2,6 +2,8 @@ import { ArrowDown, ArrowUp } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
+import { InfoDica, DicaTexto } from '@/components/vitrine/info-dica';
+import { DICAS } from '@/components/vitrine/dicas';
 import { delta, deltaPP, type KpisVitrine } from '@/lib/vitrine';
 
 const pct = (x: number) => `${(x * 100).toFixed(1).replace('.', ',')}%`;
@@ -25,10 +27,13 @@ function Delta({ atual, anterior, pp }: { atual: number | null; anterior: number
   );
 }
 
-function Card({ titulo, valor, atual, anterior, pp }: { titulo: string; valor: string | null; atual: number | null; anterior: number | null; pp?: boolean }) {
+function Card({ titulo, dica, valor, atual, anterior, pp }: { titulo: string; dica: keyof typeof DICAS; valor: string | null; atual: number | null; anterior: number | null; pp?: boolean }) {
   return (
     <div className="flex flex-col gap-1 rounded-lg border bg-card p-4 shadow-sm">
-      <p className="text-xs text-muted-foreground">{titulo}</p>
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        {titulo}
+        <InfoDica titulo={titulo}><DicaTexto {...DICAS[dica]} /></InfoDica>
+      </p>
       <div className="flex items-baseline gap-2">
         {valor == null ? (
           <Tooltip>
@@ -52,9 +57,9 @@ export function PulsoVitrine({ kpis, frases }: { kpis: KpisVitrine; frases: stri
     <section aria-label="Resumo" className="flex flex-col gap-3">
       <TooltipProvider>
         <div className="grid gap-3 sm:grid-cols-3">
-          <Card titulo="Visitas" valor={a.visitas == null ? null : fmtInt(a.visitas)} atual={a.visitas} anterior={b.visitas} />
-          <Card titulo="Conversão" valor={a.conversao == null ? null : pct(a.conversao)} atual={a.conversao} anterior={b.conversao} pp />
-          <Card titulo="Venda por visita" valor={a.vendaPorVisita == null ? null : fmtBRL(a.vendaPorVisita)} atual={a.vendaPorVisita} anterior={b.vendaPorVisita} />
+          <Card titulo="Visitas" dica="visitas" valor={a.visitas == null ? null : fmtInt(a.visitas)} atual={a.visitas} anterior={b.visitas} />
+          <Card titulo="Conversão" dica="conversao" valor={a.conversao == null ? null : pct(a.conversao)} atual={a.conversao} anterior={b.conversao} pp />
+          <Card titulo="Venda por visita" dica="vendaPorVisita" valor={a.vendaPorVisita == null ? null : fmtBRL(a.vendaPorVisita)} atual={a.vendaPorVisita} anterior={b.vendaPorVisita} />
         </div>
       </TooltipProvider>
       {a.avisoCobertura && <p className="text-xs text-muted-foreground">Dados de {pct(a.cobertura)} dos dias medidos.</p>}

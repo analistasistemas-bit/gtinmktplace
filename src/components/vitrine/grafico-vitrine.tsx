@@ -1,6 +1,8 @@
 import { useMemo } from 'react';
 import { Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { serieVitrine, type SemanaVitrine } from '@/lib/vitrine';
+import { InfoDica, DicaTexto } from '@/components/vitrine/info-dica';
+import { DICAS } from '@/components/vitrine/dicas';
 import { EIXO, EIXO_LUCRO, EIXO_UNID, MARGEM, TOOLTIP, kCompacto } from '@/components/sku-dossie/serie-pontos';
 
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
@@ -13,7 +15,10 @@ export function GraficoVitrine({ semanas, inicio, fim }: { semanas: SemanaVitrin
   const fracao = dados.every((p) => (p.visitasDia ?? 0) < 10);
   return (
     <section aria-labelledby="vitrine-serie" className="flex flex-col gap-3 rounded-lg border bg-card p-4 shadow-sm">
-      <h2 id="vitrine-serie" className="text-sm font-medium">Visitas por dia e conversão por semana</h2>
+      <div className="flex items-center gap-1.5">
+        <h2 id="vitrine-serie" className="text-sm font-medium">Visitas por dia e conversão por semana</h2>
+        <InfoDica titulo="Visitas por dia e conversão por semana"><DicaTexto {...DICAS.grafico} /></InfoDica>
+      </div>
       <ul className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground" aria-hidden>
         <li className="flex items-center gap-1.5"><span className="size-2.5 rounded-[2px] bg-chart-1" />Visitas por dia (média da semana)</li>
         <li className="flex items-center gap-1.5"><span className="h-0.5 w-3.5 rounded-full bg-success" />Conversão (eixo à direita)</li>
