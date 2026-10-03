@@ -145,6 +145,19 @@ begin
   perform public.gravar_trafego_item('94000000-0000-0000-0000-000000000001', '[{"ml_item_id":"MLB1","status":"closed"}]');
   select * into r from public.ml_trafego_item where ml_item_id = 'MLB1';
   if r.status <> 'closed' or r.status_desde <= '2026-01-01' or r.ultimo_ok_em is null then raise exception 'troca de status errada: %', r; end if;
+
+  -- Identificação (título/link/variação): nulo — ausente ou explícito — nunca apaga o valor gravado.
+  perform public.gravar_trafego_item('94000000-0000-0000-0000-000000000001',
+    '[{"ml_item_id":"MLBG1","status":"active","titulo":"T1","permalink":"P1","variacao":"Azul"}]');
+  perform public.gravar_trafego_item('94000000-0000-0000-0000-000000000001', '[{"ml_item_id":"MLBG1","status":"paused"}]');
+  perform public.gravar_trafego_item('94000000-0000-0000-0000-000000000001',
+    '[{"ml_item_id":"MLBG1","status":"paused","titulo":null,"permalink":null,"variacao":null}]');
+  select * into r from public.ml_trafego_item where ml_item_id = 'MLBG1';
+  if r.status is distinct from 'paused' or r.titulo is distinct from 'T1' or r.permalink is distinct from 'P1'
+     or r.variacao is distinct from 'Azul' then raise exception 'nulo apagou identificação: %', r; end if;
+  perform public.gravar_trafego_item('94000000-0000-0000-0000-000000000001', '[{"ml_item_id":"MLBG1","status":"paused","titulo":"T2"}]');
+  select * into r from public.ml_trafego_item where ml_item_id = 'MLBG1';
+  if r.titulo is distinct from 'T2' or r.permalink is distinct from 'P1' then raise exception 'título novo não gravou: %', r; end if;
 end $$;
 reset role;
 
@@ -157,7 +170,7 @@ begin
   if exists (select 1 from public.ml_item_visitas_dia where org_id <> '94000000-0000-0000-0000-000000000001')
     then raise exception 'org 2 vazou'; end if;
   if (select count(*) from public.ml_item_preco_dia) <> 1 or (select count(*) from public.ml_trafego_sync) <> 1
-     or (select count(*) from public.ml_trafego_item) <> 1 then raise exception 'leitura da própria org falhou'; end if;
+     or (select count(*) from public.ml_trafego_item) <> 2 then raise exception 'leitura da própria org falhou'; end if;
   begin
     insert into public.ml_item_visitas_dia (org_id, ml_item_id, dia, visitas, estado, coletado_em, rodada)
       values ('94000000-0000-0000-0000-000000000001', 'MLB9', '2026-09-01', 1, 'ok', now(), now());
