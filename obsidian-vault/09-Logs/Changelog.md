@@ -27,6 +27,12 @@ líquido após ML → imposto → custo → **Lucro**, com **Margem s/ venda** e
 SKU). O rastreio saiu. Pagamento, cupom e tipo de anúncio vêm de `ml_vendas.raw` só ao expandir a linha.
 Só frontend (`f9591250`). Fica para depois, com ADR: CEP, prazo de postagem e dimensões (`/shipments`).
 
+## 2026-10-03
+
+**Pulse completo processa 10 produtos por mensagem, não 20.** Preventivo: na checagem de 3 dias do
+fan-out, um lote de 20 da DSA chegou a 1.926 ms de CPU (teto 2.000). Com 10, cada mensagem fica perto
+da metade disso; a coleta e os alertas não mudam, só há uma mensagem a mais por rodada.
+
 ## 2026-09-30
 
 **ADR-0173 (fan-out por org) Aceito.** Validado com ~48 h de produção (Diego aceitou antes dos 3 dias

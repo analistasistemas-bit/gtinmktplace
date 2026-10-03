@@ -85,6 +85,10 @@ números da implantação em
 - [ ] Follow-up: contagem de descarte pode dobrar se um lote for refeito.
 - [ ] Follow-up: `contaExternaId` não numérico vira `"NaN"` no frete do Pulse.
 - [ ] Follow-up: `materializar-metricas` sem schedule em produção (0 invocações em 7 dias até 27/09) — investigar fora deste ADR.
+- [x] **Lote do Pulse completo 20 → 10 (2026-10-03).** Na validação de 3 dias do ADR-0173, um lote de
+  20 produtos da DSA (02/10 09:01 UTC) usou 1.926 ms de CPU — a 74 ms do teto de 2 s. `LOTE_COMPLETO`
+  (`pulse-coletar/passo.ts`) caiu para 10; o quente segue em 40 (mediana 103 ms). Mais uma mensagem
+  QStash por rodada; resultado idêntico (cursor retoma). Redeploy: `pulse-coletar`.
 - [x] **Claims de COMPRA fora do reconciliar (2026-09-30).** `upsertDevolucao` já ignorava claim em que
   a conta é compradora (`ehClaimDeCompra`), mas não o gravava — então `claimPrecisaProcessar` o via como
   "novo" toda hora e o reconciliar refazia return + pedido + frete + MP (404, pagamento de outro

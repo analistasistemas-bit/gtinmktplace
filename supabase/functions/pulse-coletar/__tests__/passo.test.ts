@@ -69,16 +69,16 @@ describe('passoPulse (ADR-0173)', () => {
     await expect(rodar(deps2, 'produtos|p10', QUENTE)).rejects.toBeInstanceOf(SemAcessoRodada);
   });
 
-  it('4. 45 elegíveis p01..p45 → lote p01..p20, proximo produtos|p20', async () => {
-    expect(LOTE_COMPLETO).toBe(20);
+  it('4. 45 elegíveis p01..p45 → lote p01..p10, proximo produtos|p10', async () => {
+    expect(LOTE_COMPLETO).toBe(10);
     const deps = criarDeps({ produtos: vi.fn(async () => produtos(45)) });
     const r = await rodar(deps, 'produtos|', COMPLETO);
     const lote = (deps.processarLote as ReturnType<typeof vi.fn>).mock.calls[0][1] as ProdutoColeta[];
-    expect(lote.map((p) => p.id)).toEqual(produtos(20).map((p) => p.id));
-    expect(r.proximo).toBe('produtos|p20');
+    expect(lote.map((p) => p.id)).toEqual(produtos(10).map((p) => p.id));
+    expect(r.proximo).toBe('produtos|p10');
   });
 
-  it('5. p01..p10 em backoff + resto elegível → lote p11..p30, proximo produtos|p30', async () => {
+  it('5. p01..p10 em backoff + resto elegível → lote p11..p20, proximo produtos|p20', async () => {
     // completo: 3+ falhas com tentativa RECENTE (< 3 dias) barra; tentativa `null` não bastaria.
     const recente = new Date(AGORA).toISOString();
     const lidos = produtos(45).map((p, i) => (
@@ -87,8 +87,8 @@ describe('passoPulse (ADR-0173)', () => {
     const deps = criarDeps({ produtos: vi.fn(async () => lidos) });
     const r = await rodar(deps, 'produtos|', COMPLETO);
     const lote = (deps.processarLote as ReturnType<typeof vi.fn>).mock.calls[0][1] as ProdutoColeta[];
-    expect(lote.map((p) => p.id)).toEqual(Array.from({ length: 20 }, (_, i) => `p${String(i + 11).padStart(2, '0')}`));
-    expect(r.proximo).toBe('produtos|p30');
+    expect(lote.map((p) => p.id)).toEqual(Array.from({ length: 10 }, (_, i) => `p${String(i + 11).padStart(2, '0')}`));
+    expect(r.proximo).toBe('produtos|p20');
   });
 
   it('6. janela lida toda em backoff → sem lote, cursor no último lido', async () => {
