@@ -31,7 +31,7 @@ Só frontend (`f9591250`). Fica para depois, com ADR: CEP, prazo de postagem e d
 
 **Pulse completo processa 10 produtos por mensagem, não 20.** Preventivo: na checagem de 3 dias do
 fan-out, um lote de 20 da DSA chegou a 1.926 ms de CPU (teto 2.000). Com 10, cada mensagem fica perto
-da metade disso; a coleta e os alertas não mudam, só há uma mensagem a mais por rodada.
+da metade disso; a coleta e os alertas não mudam, só o número de mensagens dobra (1 a cada 10 produtos, antes 1 a cada 20).
 
 ## 2026-09-30
 
