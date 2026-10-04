@@ -49,7 +49,7 @@ A qualificação é executada pelo classificador canônico unificado em `_shared
 
 Para contornar limitações da API oficial do Mercado Livre (que restringe a visualização de métricas detalhadas de vendas de concorrentes):
 - O Sonar consome o ator de scraping da Apify (`karamelo/mercadolivre-scraper-brasil-portugues`) via Edge Function `pulse-sonar-vendas`.
-- O cliente `_shared/apify/client.ts` possui fallback reativo entre até 4 tokens configurados (`APIFY_TOKEN`, `APIFY_TOKEN_2`, `_3`, `_4`), monitorando o saldo mensal e alternando automaticamente em respostas 401/402/403.
+- O cliente `_shared/apify/client.ts` possui fallback reativo entre até 5 tokens configurados (`APIFY_TOKEN`, `APIFY_TOKEN_2` … `_5`; o `_5` entrou em 2026-10-03), monitorando o saldo mensal e alternando automaticamente em respostas 401/402/403.
 
 ---
 

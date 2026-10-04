@@ -139,7 +139,7 @@ voltar a expor `sold_quantity` de terceiros na API oficial.
   org se o gasto incomodar.
 - A conta Apify é **global** (não uma chave por org): todo o consumo de todas as orgs cai na
   fatura da DALUDI. No plano FREE (US$ 5/mês) isso dá ~50 termos novos por mês por conta — o cache
-  de 7 dias é o que estica esse número na prática. Desde o Adendo 2026-08-22, até 5 contas em
+  de 7 dias é o que estica esse número na prática. Desde o Adendo 2026-08-22, até 4 contas (5 a partir de 2026-10-03) em
   fallback por saldo multiplicam esse teto, mas o consumo continua sem cota por org dentro de cada
   conta.
 - `vendas_totais` soma faixas arredondadas do ML (100 / 500 / 1k / … / 250k), então o total exibido
