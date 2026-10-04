@@ -1,5 +1,6 @@
-// ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART e pausar/reativar anúncios do ML). Modos:
+// ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART, pausar/reativar e reajustar preço — ADR-0178). Modos:
 //  - Usuário (admin ou suporte full): cria a operação a partir da Central e publica { etapa: 'executar' }.
+//  - Usuário, reajuste: { etapa: 'preview' } (qualquer membro) grava o rascunho; { etapa: 'confirmar' } (admin/suporte full) publica.
 //  - QStash { etapa: 'executar' | 'conferir', operacao_id }: executor com continuação e conferência da saída.
 // Escrita no ML só em /seller-promotions (ml.ts); claim por item garante que reentrega não escreve duas vezes.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
@@ -21,6 +22,13 @@ import {
   lerConexaoML, MSG_RECONECTAR, MSG_SEM_CONEXAO, respostaFalhaCriacao, SemConexaoML,
 } from '../_shared/operacoes/falhas.ts';
 import type { Acao, AcaoStatus } from '../_shared/operacoes/tipos.ts';
+import { SemAcessoStatusML } from '../_shared/operacoes/ml-status.ts';
+import { SemAcessoPromocoes } from '../_shared/promocoes/ml.ts';
+import { executarReajuste, type OperacaoReajusteRow } from '../_shared/operacoes/reajuste/executar.ts';
+import { montarPreview } from '../_shared/operacoes/reajuste/preview.ts';
+import { etapaReajuste } from '../_shared/operacoes/reajuste/etapa.ts';
+import { lerConfirmar, lerPreview, linhasDoRascunho, respostaConfirmar } from '../_shared/operacoes/reajuste/pedido.ts';
+import { depsLacoReajuste, depsPreview, depsReajuste, ForaDaOrg } from '../_shared/operacoes/reajuste/deps.ts';
 
 const EXECUCAO = { limiteMs: 90_000, lote: 20, maxItens: 100 };
 const SEM_MODULO = 'A Central de Promoções não está habilitada para esta organização.';
@@ -55,10 +63,22 @@ async function etapaQStash(admin: Admin, req: Request, body: string): Promise<Re
     return json({ ok: false, erro: 'mensagem inválida' });
   }
   const { data: linha, error } = await admin.from('operacoes_massa')
-    .select('id, org_id, acao, promocao_id, promocao_tipo, status').eq('id', payload.operacao_id).maybeSingle();
+    .select('id, org_id, acao, promocao_id, promocao_tipo, status, origem_id').eq('id', payload.operacao_id).maybeSingle();
   if (error) throw new Error(`operacoes_massa: ${error.message}`);
   if (!linha) return json({ ok: false, erro: 'operação não encontrada' });
   if (linha.status === 'concluida') return json({ ok: true, ignorada: true });
+
+  // Reajuste: sem módulo `promocoes`; executar e conferir rodam o mesmo laço (conferindo vencido entra nos pendentes).
+  if (linha.acao === 'reajustar') {
+    if (linha.status !== 'executando') return json({ ok: true, ignorada: true }); // rascunho nunca executa
+    const op: OperacaoReajusteRow = { id: linha.id, org_id: linha.org_id, origem_id: linha.origem_id ?? null };
+    const chave = req.headers.get('upstash-message-id') ?? crypto.randomUUID();
+    return json(await etapaReajuste(op, {
+      conexao: () => conexaoDaOrg(admin, linha.org_id),
+      banco: depsLacoReajuste(admin, op, chave),
+      executar: (cx) => executarReajuste(op, depsReajuste(admin, cx, op, chave), EXECUCAO),
+    }));
+  }
 
   // Pausar/reativar: sem promoção nem módulo `promocoes`.
   if (linha.acao === 'pausar' || linha.acao === 'reativar') {
@@ -282,6 +302,121 @@ async function gravarEPublicar(
   return json({ operacao_id: alvo.id }, 201);
 }
 
+type Ctx = Awaited<ReturnType<typeof requireUserOrg>>;
+const podeExecutar = (ctx: Ctx) => ctx.isAdmin || ctx.support?.scope === 'full';
+const SO_ADMIN = 'Só administradores executam operações em massa.';
+const RASCUNHO_MS = 30 * 60_000;
+const semAcesso = (e: unknown) => e instanceof SemAcessoStatusML || e instanceof SemAcessoPromocoes ||
+  (e instanceof MLApiError && e.oauthError === 'invalid_grant');
+
+async function autenticar(req: Request): Promise<Ctx | Response> {
+  try {
+    return await requireUserOrg(req, { access: 'write' });
+  } catch (resp) {
+    if (resp instanceof Response) return resp;
+    throw resp;
+  }
+}
+
+/** Usuário: reajuste (preview/confirmar) ou criação de promoção/status (inalterada). */
+function usuario(admin: Admin, req: Request, body: string): Promise<Response> {
+  let bruto: Record<string, unknown> | null = null;
+  try { bruto = JSON.parse(body); } catch { /* criar responde */ }
+  if (bruto?.etapa === 'preview') return previewReajuste(admin, req, bruto);
+  if (bruto?.etapa === 'confirmar') return confirmarReajuste(admin, req, bruto);
+  return criar(admin, req, body);
+}
+
+/** Preview do reajuste (qualquer membro; Reverter só admin/suporte full). executaveis = 0 → nada gravado (C4). */
+async function previewReajuste(admin: Admin, req: Request, bruto: unknown): Promise<Response> {
+  const ctx = await autenticar(req);
+  if (ctx instanceof Response) return ctx;
+  const { orgId, userId } = ctx;
+  const pedido = lerPreview(bruto);
+  if (!pedido) return json({ erro: 'Pedido inválido.' }, 400);
+  if (pedido.origem_id) {
+    if (!podeExecutar(ctx)) {
+      await auditarOperacaoSuporte(admin, ctx, { type: 'org', id: orgId }, 'denied');
+      return json({ erro: SO_ADMIN }, 403);
+    }
+    const { data: origem, error } = await admin.from('operacoes_massa').select('acao')
+      .eq('org_id', orgId).eq('id', pedido.origem_id).maybeSingle();
+    if (error) throw new Error(`origem: ${error.message}`);
+    if (origem?.acao !== 'reajustar') return json({ erro: REVERSAO_INVALIDA }, 400);
+  }
+
+  const velhos = await admin.from('operacoes_massa').delete().eq('org_id', orgId).eq('acao', 'reajustar')
+    .eq('status', 'rascunho').lt('expira_em', new Date().toISOString());
+  if (velhos.error) throw new Error(`rascunhos expirados: ${velhos.error.message}`);
+
+  let r: Awaited<ReturnType<typeof montarPreview>>;
+  try {
+    const cx = await conexaoDaOrg(admin, orgId);
+    if (!cx) return json({ erro: MSG_SEM_CONEXAO }, 400);
+    r = await montarPreview(pedido, depsPreview(admin, cx));
+  } catch (e) {
+    if (e instanceof ForaDaOrg) {
+      const motivo = 'Anúncio não encontrado nesta organização';
+      return json({ erro: `${motivo}.`, itens: e.ids.map((id) => ({ ml_item_id: id, motivo })) }, 400);
+    }
+    if (semAcesso(e)) return json({ erro: MSG_RECONECTAR }, 403);
+    throw e;
+  }
+  if (!r.ok) return json({ erro: r.erro }, 400);
+  if (r.executaveis === 0) return json({ operacao_id: null, itens: r.itens });
+
+  const expira_em = new Date(Date.now() + RASCUNHO_MS).toISOString();
+  const { data: op, error: eOp } = await admin.from('operacoes_massa').insert({
+    org_id: orgId, acao: 'reajustar', status: 'rascunho', expira_em, origem_id: pedido.origem_id ?? null, criado_por: userId,
+  }).select('id').single();
+  if (eOp || !op) throw new Error(`criar rascunho: ${eOp?.message}`);
+  const { error: eItens } = await admin.from('operacoes_massa_itens').insert(linhasDoRascunho(r.itens).map((i) => ({
+    operacao_id: op.id, org_id: orgId, ...i,
+  })));
+  if (eItens) {
+    await admin.from('operacoes_massa').delete().eq('org_id', orgId).eq('id', op.id);
+    throw new Error(`itens do rascunho: ${eItens.message}`);
+  }
+  return json({ operacao_id: op.id, itens: r.itens, expira_em }, 201);
+}
+
+/** Confirma o rascunho (RPC transacional) e publica a execução. Repetir é seguro: 'ja_confirmada' republica (dedup). */
+async function confirmarReajuste(admin: Admin, req: Request, bruto: unknown): Promise<Response> {
+  const ctx = await autenticar(req);
+  if (ctx instanceof Response) return ctx;
+  const { orgId } = ctx;
+  if (!podeExecutar(ctx)) {
+    await auditarOperacaoSuporte(admin, ctx, { type: 'org', id: orgId }, 'denied');
+    return json({ erro: SO_ADMIN }, 403);
+  }
+  const pedido = lerConfirmar(bruto);
+  if (!pedido) return json({ erro: 'Pedido inválido.' }, 400);
+
+  const { data, error } = await admin.rpc('reajuste_confirmar', {
+    p_org: orgId, p_operacao: pedido.operacao_id, p_confirmacoes: pedido.confirmacoes,
+  });
+  if (error && !(error.code === 'P0001' && /^(ocupado|sem_produto):/.test(error.message))) {
+    throw new Error(`reajuste_confirmar: ${error.message}`);
+  }
+  const r = respostaConfirmar(error ? error.message : String(data));
+  if (!r.publicar) return json(r.corpo, r.status);
+
+  const alvo = { type: 'operacao_massa', id: pedido.operacao_id } as const;
+  try {
+    await qstashClient().publishJSON({
+      url: urlOperacoes(), body: { etapa: 'executar', operacao_id: pedido.operacao_id }, retries: 3,
+      deduplicationId: dedup(`executar_${pedido.operacao_id}_0`),
+    });
+  } catch (e) {
+    // Sem encerrarComErro: a operação já está `executando`; o retry recebe 'ja_confirmada' e republica.
+    console.error('[operacoes-massa] publicar reajuste', { operacao_id: pedido.operacao_id, erro: e instanceof Error ? e.message : String(e) });
+    await auditarOperacaoSuporte(admin, ctx, alvo, 'failed');
+    return json({ erro: 'Não foi possível iniciar a execução. Tente confirmar de novo.' }, 500);
+  }
+  await auditarOperacaoSuporte(admin, ctx, alvo, 'succeeded');
+  return json({ operacao_id: pedido.operacao_id });
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
   if (req.method !== 'POST') return new Response('Method not allowed', { status: 405, headers: corsHeaders });
@@ -292,7 +427,7 @@ Deno.serve(async (req) => {
       if (!(await verificarAssinatura(req, body))) return new Response('Invalid signature', { status: 401, headers: corsHeaders });
       return await etapaQStash(admin, req, body);
     }
-    return await criar(admin, req, body);
+    return await usuario(admin, req, body);
   } catch (e) {
     console.error('[operacoes-massa]', e instanceof Error ? e.message : String(e));
     return json({ ok: false, erro: e instanceof Error ? e.message : String(e) }, 500);
