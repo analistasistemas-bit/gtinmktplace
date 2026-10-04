@@ -7,6 +7,9 @@ import type { PromocaoML } from '../tipos.ts';
 import promocoesUsuario from './fixtures/promocoes-usuario.json';
 import itensDeal from './fixtures/itens-deal-p1.json';
 import multiget from './fixtures/multiget.json';
+import bulkPromo from '../../ml/__tests__/fixtures/bulk-promocoes-bulk.json' with { type: 'json' };
+import antigoPromo from '../../ml/__tests__/fixtures/bulk-promocoes-antigo.json' with { type: 'json' };
+import idsPromo from '../../ml/__tests__/fixtures/bulk-promocoes-ids.json' with { type: 'json' };
 
 describe('normalizadores', () => {
   it('promoção: campos do v2; sem id (PRICE_DISCOUNT) → null', () => {
@@ -101,6 +104,16 @@ describe('paginação', () => {
     expect(get).toHaveBeenCalledTimes(3);
     expect(m.size).toBe(44);
     expect(m.has('MLB3')).toBe(false);
+    expect(get.mock.calls[0][0]).toMatch(/^\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.title,body\.thumbnail,body\.secure_thumbnail,body\.permalink,body\.listing_type_id,body\.category_id,body\.seller_custom_field,body\.attributes,body\.variations&include_attributes=all$/);
+  });
+
+  // ADR-0177: par real antigo × bulk (mesmos ids) normaliza igual; o 404 sem body fica fora.
+  it('multiget real: bulk e antigo dão o mesmo Map de itens', async () => {
+    const ids = idsPromo as string[];
+    const viaBulk = await buscarItensML(vi.fn(async () => bulkPromo), ids);
+    const viaAntigo = await buscarItensML(vi.fn(async () => antigoPromo), ids);
+    expect(viaBulk).toEqual(viaAntigo);
+    expect(viaBulk.size).toBe(ids.length - 1);
   });
 });
 

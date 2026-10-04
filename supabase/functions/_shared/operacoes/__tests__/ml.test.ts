@@ -116,14 +116,30 @@ describe('del', () => {
 describe('lerRelacoes', () => {
   it('item + relacionados por multiget: 2 GETs', async () => {
     const f = vi.fn()
-      .mockResolvedValueOnce(resp(200, [{ code: 200, body: { id: 'MLB1', catalog_listing: false,
+      .mockResolvedValueOnce(resp(200, [{ status_code: 200, body: { id: 'MLB1', catalog_listing: false,
         item_relations: [{ id: 'MLB2', variation_id: null, stock_relation: 1 }] } }]))
-      .mockResolvedValueOnce(resp(200, [{ code: 200, body: { id: 'MLB2', catalog_listing: true } }]));
+      .mockResolvedValueOnce(resp(200, [{ status_code: 200, body: { id: 'MLB2', catalog_listing: true } }]));
     const ml = criarClienteML('tok', f, semEspera());
     expect(await ml.lerRelacoes('MLB1')).toEqual({ catalog_listing: false, relacionados: [{ id: 'MLB2', catalog_listing: true }] });
     expect(f).toHaveBeenCalledTimes(2);
-    expect(f.mock.calls[0][0]).toBe(`${API}/items?ids=MLB1&attributes=id,catalog_listing,item_relations`);
-    expect(f.mock.calls[1][0]).toBe(`${API}/items?ids=MLB2&attributes=id,catalog_listing`);
+    expect(f.mock.calls[0][0]).toBe(`${API}/items/bulk?ids=MLB1&attributes=status_code,body.id,body.catalog_listing,body.item_relations`);
+    expect(f.mock.calls[1][0]).toBe(`${API}/items/bulk?ids=MLB2&attributes=status_code,body.id,body.catalog_listing`);
+  });
+
+  it('bulk: relacionado 404 sem body → rejeita (não vira catalog_listing:false)', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ status_code: 200, body: { id: 'MLB1', catalog_listing: false,
+        item_relations: [{ id: 'MLB2', variation_id: null, stock_relation: 1 }] } }]))
+      .mockResolvedValueOnce(resp(200, [{ status_code: 404 }]));
+    await expect(criarClienteML('tok', f, semEspera()).lerRelacoes('MLB1')).rejects.toThrow('MLB2');
+  });
+
+  it('bulk: relacionado repetido vai UMA vez na URL', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ status_code: 200, body: { id: 'MLB1', catalog_listing: false, item_relations: [{ id: 'MLB2' }, { id: 'MLB2' }] } }]))
+      .mockResolvedValueOnce(resp(200, [{ status_code: 200, body: { id: 'MLB2', catalog_listing: true } }]));
+    await criarClienteML('tok', f, semEspera()).lerRelacoes('MLB1');
+    expect(new URL(String(f.mock.calls[1][0])).searchParams.get('ids')).toBe('MLB2');
   });
 
   it('sem relações → 1 GET; 403 → SemEscritaPromocoes', async () => {
@@ -146,5 +162,32 @@ describe('lerRelacoes', () => {
   it('item não devolvido pelo multiget → Error', async () => {
     const f = vi.fn().mockResolvedValue(resp(200, [{ code: 404, body: { message: 'not found' } }]));
     await expect(criarClienteML('tok', f, semEspera()).lerRelacoes('MLB1')).rejects.toThrow('MLB1');
+  });
+});
+
+// ADR-0177: a saída de lerRelacoes é a entrada única do `decidir` (operacoes/decidir.ts). Nos dois
+// envelopes, os casos que poderiam liberar a inscrição precisam sair iguais (caracterização).
+describe.each(['code', 'status_code'] as const)('lerRelacoes — fronteira do motor de promoções [%s]', (campo) => {
+  const cliente = (...respostas: unknown[]) => {
+    const f = vi.fn();
+    for (const r of respostas) f.mockResolvedValueOnce(resp(200, r));
+    return criarClienteML('tok', f, semEspera());
+  };
+  it('item principal 200 SEM body → lança (não vira catalog_listing:false, que liberaria a inscrição)', async () => {
+    await expect(cliente([{ [campo]: 200 }]).lerRelacoes('MLB1')).rejects.toThrow('MLB1');
+  });
+  it('relacionado 200 SEM body → rejeita (igual ao 404)', async () => {
+    const c = cliente([{ [campo]: 200, body: { id: 'MLB1', catalog_listing: false, item_relations: [{ id: 'MLB2' }] } }], [{ [campo]: 200 }]);
+    await expect(c.lerRelacoes('MLB1')).rejects.toThrow('MLB2');
+  });
+  it('relacionado repetido em item_relations: retorno conserva a repetição', async () => {
+    const c = cliente(
+      [{ [campo]: 200, body: { id: 'MLB1', catalog_listing: false, item_relations: [{ id: 'MLB2' }, { id: 'MLB2' }] } }],
+      [{ [campo]: 200, body: { id: 'MLB2', catalog_listing: true } }],
+    );
+    expect(await c.lerRelacoes('MLB1')).toEqual({
+      catalog_listing: false,
+      relacionados: [{ id: 'MLB2', catalog_listing: true }, { id: 'MLB2', catalog_listing: true }],
+    });
   });
 });

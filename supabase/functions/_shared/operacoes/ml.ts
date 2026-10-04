@@ -1,6 +1,7 @@
 // ADR-0174 — cliente ML do motor de operações em massa: leitura fresca na VISÃO DA CAMPANHA (a visão por item
 // atrasa) e escrita em /seller-promotions. 401/403 em qualquer chamada → SemEscritaPromocoes (reconectar a conta).
 import type { ItemNaCampanha, Relacoes, TipoPromocao } from './tipos.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 
 type Obj = Record<string, unknown>;
 export class SemEscritaPromocoes extends Error {}
@@ -19,7 +20,6 @@ const num = (x: unknown): number | null => {
 };
 const str = (x: unknown): string | null => (typeof x === 'string' && x !== '' ? x : null);
 const lista = (x: unknown): Obj[] => (Array.isArray(x) ? (x as Obj[]) : []);
-const ids = (xs: string[]) => xs.map(encodeURIComponent).join(',');
 const dormir = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: (ms: number) => Promise<void> = dormir): ClienteML {
@@ -37,10 +37,10 @@ export function criarClienteML(token: string, f: typeof fetch = fetch, esperar: 
   };
   const multiget = async (xs: string[], atributos: string): Promise<Map<string, Obj>> => {
     // ponytail: um bloco só (limite de 20 ids do ML); relações de um item são 1–2 na prática.
-    const r = await chamar('GET', `/items?ids=${ids(xs)}&attributes=${atributos}`);
+    const r = await chamar('GET', caminhoMultiget(xs, atributos));
     if (!r.ok) throw await falha(r);
     const m = new Map<string, Obj>();
-    for (const x of lista(await r.json())) {
+    for (const x of lista(comoEnvelopeAntigo(await r.json(), xs))) {
       const b = x.body as Obj | null;
       if (x.code === 200 && b && typeof b === 'object') m.set(String(b.id), b);
     }

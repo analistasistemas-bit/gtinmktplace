@@ -32,10 +32,13 @@ function stub(opts: {
     const responder = (body: unknown) => Promise.resolve({
       ok: true, status: 200, json: () => Promise.resolve(body),
     });
-    if (url.includes('/items?ids=')) {
-      const ids = decodeURIComponent(url.split('ids=')[1].split('&')[0]).split(',');
+    const bulk = url.includes('/items/bulk?ids=');
+    if (bulk || url.includes('/items?ids=')) {
+      const ids = [...new Set(decodeURIComponent(url.split('ids=')[1].split('&')[0]).split(','))];
       return responder(ids.map((id) => (
-        opts.itens[id] ? { code: 200, body: opts.itens[id] } : { code: 404, body: { id } }
+        opts.itens[id]
+          ? (bulk ? { status_code: 200, body: opts.itens[id] } : { code: 200, body: opts.itens[id] })
+          : (bulk ? { status_code: 404 } : { code: 404, body: { id } })
       )));
     }
     const results = url.includes('family_id=')
@@ -160,7 +163,26 @@ describe('descobrirFamiliaUP (ADR-0105)', () => {
       itens: { MLB1: irmao('MLB1', 'Cru 100') },
     });
     await descobrirFamiliaUP(fetchLike, CRIT);
-    expect(chamadas.every((u) => u.includes('/items/search') || u.includes('/items?ids='))).toBe(true);
+    expect(chamadas.every((u) => u.includes('/items/search') || u.includes('/items/bulk?ids='))).toBe(true);
+    expect(chamadas.some((u) => u.includes('&attributes=status_code,body.id,body.seller_id,body.category_id,body.family_id,body.family_name,body.status,body.variations,body.attributes'))).toBe(true);
+  });
+
+  // ADR-0177 / spec §4.3: o bulk devolve na ordem pedida (o antigo, em ordem arbitrária). Com os
+  // mesmos irmãos em ordens diferentes, a família descoberta é a mesma.
+  it('mesmos irmãos em ordens diferentes → mesma família, mesmo itemPorCor', async () => {
+    const itens = {
+      [MORTO]: { id: MORTO, seller_id: SELLER, category_id: CATEGORIA, status: 'closed', variations: [{}] },
+      MLB7210143182: irmao('MLB7210143182', 'Cru 100'),
+      MLB7210143184: irmao('MLB7210143184', 'Vermelho 1000'),
+    };
+    const a = await descobrirFamiliaUP(stub({ porTitulo: [MORTO, 'MLB7210143182', 'MLB7210143184'], itens }).fetchLike, CRIT);
+    const b = await descobrirFamiliaUP(stub({ porTitulo: ['MLB7210143184', MORTO, 'MLB7210143182'], itens }).fetchLike, CRIT);
+    expect(a.tipo).toBe('achada');
+    if (a.tipo !== 'achada' || b.tipo !== 'achada') throw new Error('esperava achada nos dois');
+    expect(b.familia.familyId).toBe(a.familia.familyId);
+    expect(b.familia.familyName).toBe(a.familia.familyName);
+    expect(Object.fromEntries(b.familia.itemPorCor)).toEqual(Object.fromEntries(a.familia.itemPorCor));
+    expect([...b.familia.coresAmbiguas].sort()).toEqual([...a.familia.coresAmbiguas].sort());
   });
 });
 

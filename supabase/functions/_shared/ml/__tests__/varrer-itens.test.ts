@@ -3,6 +3,9 @@
 // item que o ML não devolveu com 200 — tratar erro como ausência viraria "órfão" falso.
 import { describe, it, expect, vi } from 'vitest';
 import { listarIdsDoSeller, detalharItens, classificar } from '../varrer-itens';
+import bulkVarrer from './fixtures/bulk-varrer-itens-bulk.json' with { type: 'json' };
+import antigoVarrer from './fixtures/bulk-varrer-itens-antigo.json' with { type: 'json' };
+import idsVarrer from './fixtures/bulk-varrer-itens-ids.json' with { type: 'json' };
 
 const resp = (body: unknown, ok = true, status = 200) =>
   Promise.resolve({ ok, status, json: () => Promise.resolve(body) } as Response);
@@ -57,6 +60,26 @@ describe('detalharItens', () => {
     const fetchMock = vi.fn(() => resp([]));
     await detalharItens(fetchMock as never, 'tok', Array.from({ length: 45 }, (_, i) => `MLB${i}`));
     expect(fetchMock).toHaveBeenCalledTimes(3); // 20 + 20 + 5
+  });
+
+  // ADR-0177: /items/bulk com status_code + body.; o 404 sem body fica fora; par real igual ao antigo.
+  it('usa /items/bulk e lê o envelope status_code', async () => {
+    const fetchMock = vi.fn((_u: string) => resp([
+      { status_code: 200, body: { id: 'MLB1', title: 'Kit 2 Un', status: 'active', permalink: 'http://x', available_quantity: 25, seller_custom_field: '00000099', catalog_listing: false } },
+      { status_code: 404 },
+    ]));
+    const r = await detalharItens(fetchMock as never, 'tok', ['MLB1', 'MLB2']);
+    expect(fetchMock.mock.calls[0][0]).toBe('https://api.mercadolibre.com/items/bulk?ids=MLB1,MLB2&attributes=status_code,body.id,body.title,body.status,body.permalink,body.available_quantity,body.seller_custom_field,body.catalog_listing');
+    expect(r.map((x) => x.id)).toEqual(['MLB1']);
+  });
+
+  it('par real: bulk e antigo dão os mesmos itens (multiconjunto por id)', async () => {
+    const ids = idsVarrer as string[];
+    const porId = (xs: Array<{ id: string }>) => [...xs].sort((a, b) => a.id.localeCompare(b.id));
+    const novo = await detalharItens((() => resp(bulkVarrer)) as never, 'tok', ids);
+    const velho = await detalharItens((() => resp(antigoVarrer)) as never, 'tok', ids);
+    expect(porId(novo)).toEqual(porId(velho));
+    expect(novo).toHaveLength(ids.length - 1);
   });
 });
 

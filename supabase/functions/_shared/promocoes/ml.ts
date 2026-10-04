@@ -1,5 +1,6 @@
 // ADR-0170 — leitura das promoções do ML. SÓ GET: este arquivo não tem nenhum outro verbo HTTP.
 import type { ItemML, ItemPromocaoML, PromocaoML, VariacaoML } from './tipos.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 
 type Obj = Record<string, unknown>;
 export type GetJson = (path: string) => Promise<unknown>;
@@ -123,7 +124,7 @@ export async function buscarItensML(get: GetJson, ids: string[]): Promise<Map<st
   const m = new Map<string, ItemML>();
   for (let i = 0; i < ids.length; i += 20) {
     const bloco = ids.slice(i, i + 20);
-    const r = await get(`/items?ids=${encodeURIComponent(bloco.join(','))}&attributes=${ATRIBUTOS_ITEM}&include_attributes=all`);
+    const r = comoEnvelopeAntigo(await get(caminhoMultiget(bloco, ATRIBUTOS_ITEM, '&include_attributes=all')), bloco);
     for (const x of lista(r)) {
       if (x.code === 200 && x.body && typeof x.body === 'object') {
         const it = normalizarItemML(x.body as Obj);

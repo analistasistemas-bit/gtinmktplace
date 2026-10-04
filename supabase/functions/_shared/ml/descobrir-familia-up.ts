@@ -15,6 +15,7 @@
 // ADR-0105 §2.
 
 import type { FetchLike } from './buscar-item.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from './multiget.ts';
 
 const API = 'https://api.mercadolibre.com';
 const LIMITE_PAGINA = 100;
@@ -126,11 +127,10 @@ async function multiget(
 ): Promise<ItemBruto[]> {
   const out: ItemBruto[] = [];
   for (const bloco of chunk(ids, MULTIGET_CHUNK)) {
-    const url = `${API}/items?ids=${bloco.join(',')}`
-      + '&attributes=id,seller_id,category_id,family_id,family_name,status,variations,attributes';
+    const url = `${API}${caminhoMultiget(bloco, 'id,seller_id,category_id,family_id,family_name,status,variations,attributes')}`;
     const resp = await fetchLike(url, { headers });
     if (!resp.ok) throw new Error(`multiget de família migrada (${resp.status})`);
-    const arr = (await resp.json()) as Array<{ code?: number; body?: ItemBruto }>;
+    const arr = comoEnvelopeAntigo(await resp.json(), bloco) as Array<{ code?: number; body?: ItemBruto }>;
     for (const entry of Array.isArray(arr) ? arr : []) {
       if (entry?.code === 200 && entry.body?.id) out.push(entry.body);
     }

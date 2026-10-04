@@ -3,6 +3,8 @@
 // vendendo sem que nada no sistema soubesse).
 //
 // Só leitura. Nunca escreve no ML.
+import { caminhoMultiget, comoEnvelopeAntigo } from './multiget.ts';
+
 const API = 'https://api.mercadolibre.com';
 const LIMITE_PAGINA = 100;
 // O `offset` do search para de funcionar em 1000 (limite do ML). Ir além exige `search_type=scan`,
@@ -80,11 +82,10 @@ export async function detalharItens(
   const out: ItemDoSeller[] = [];
   for (let i = 0; i < ids.length; i += MULTIGET_CHUNK) {
     const bloco = ids.slice(i, i + MULTIGET_CHUNK);
-    const url = `${API}/items?ids=${bloco.join(',')}`
-      + '&attributes=id,title,status,permalink,available_quantity,seller_custom_field,catalog_listing';
+    const url = `${API}${caminhoMultiget(bloco, 'id,title,status,permalink,available_quantity,seller_custom_field,catalog_listing')}`;
     const resp = await fetchLike(url, { headers });
     if (!resp.ok) throw new Error(`detalhes dos anúncios: ML respondeu ${resp.status}`);
-    const arr = (await resp.json()) as Array<{
+    const arr = comoEnvelopeAntigo(await resp.json(), bloco) as Array<{
       code?: number;
       body?: {
         id?: string; title?: string; status?: string; permalink?: string;
