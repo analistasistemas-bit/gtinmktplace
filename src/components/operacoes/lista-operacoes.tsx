@@ -13,10 +13,12 @@ import { formatarNomeProduto } from '@/lib/texto';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
 import { useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
-import { ROTULO_STATUS, inversa, itensRevertiveis, ehAcaoStatus, tituloOperacao, type AcaoOperacao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
+import { ROTULO_STATUS, inversa, itensRevertiveis, ehAcaoStatus, tituloOperacao, totalDoTitulo, type AcaoOperacao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
 import type { ItemPromocao } from '@/lib/promocoes';
 import { PreviewOperacao } from '@/components/promocoes/preview-operacao';
 import { PreviewStatus } from './preview-status';
+import { PreviewReajuste } from './preview-reajuste';
+import { fmtBRL } from '@/lib/formato';
 
 const TONE_STATUS: Record<StatusItemOperacao, StatusTone> = {
   rascunho: 'neutral', pendente: 'neutral', enviando: 'info', conferindo: 'info', aplicado: 'success', ja_estava: 'success',
@@ -29,6 +31,12 @@ const MOTIVO_NAO_REVERTIVEL = 'Não revertível: o anúncio não está mais conv
 // Revisão Grok (achado IMPORTANTE): status de item que prova que a reversão pegou pelo menos um
 // anúncio; sem nenhum destes (tudo erro/mudou/bloqueado — `encerrarComErro`) não conta como revertida.
 const ITENS_REVERSAO_OK: StatusItemOperacao[] = ['aplicado', 'ja_estava'];
+
+// Só `executando` é "Executando" (rascunho nem chega à lista; fica de fallback neutro).
+const STATUS_OPERACAO: Record<string, { rotulo: string; tone: StatusTone }> = {
+  executando: { rotulo: 'Executando', tone: 'info' }, concluida: { rotulo: 'Concluída', tone: 'success' },
+};
+const statusOperacao = (s: string) => STATUS_OPERACAO[s] ?? { rotulo: 'Rascunho', tone: 'neutral' as StatusTone };
 
 const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
@@ -75,8 +83,10 @@ function contarPorStatus(itens: { status: StatusItemOperacao }[]): Partial<Recor
 
 function CardOperacao({ op, quem, onAbrir }: { op: OperacaoRow; quem: string; onAbrir: () => void }) {
   const contagem = contarPorStatus(op.itens);
-  const total = op.itens.length;
-  const emAndamento = op.itens.filter((i) => NAO_TERMINAL.includes(i.status)).length;
+  // Reajuste: progresso sobre os incluídos (fora/sem alteração/desmarcado não são trabalho) — igual ao título.
+  const doLote = op.acao === 'reajustar' ? op.itens.filter((i) => i.incluido !== false) : op.itens;
+  const total = doLote.length;
+  const emAndamento = doLote.filter((i) => NAO_TERMINAL.includes(i.status)).length;
   const feitos = total - emAndamento;
   const soAguardandoMl = op.status === 'executando' && emAndamento === 0 && (contagem.saida_solicitada ?? 0) > 0;
 
@@ -89,9 +99,7 @@ function CardOperacao({ op, quem, onAbrir }: { op: OperacaoRow; quem: string; on
             <p className="truncate font-medium">{tituloOperacao(op, total)}</p>
             <p className="text-xs text-muted-foreground">{dataHora(op.criado_em)} · {quem}</p>
           </div>
-          <StatusPill tone={op.status === 'concluida' ? 'success' : 'info'} className="shrink-0">
-            {op.status === 'concluida' ? 'Concluída' : 'Executando'}
-          </StatusPill>
+          <StatusPill tone={statusOperacao(op.status).tone} className="shrink-0">{statusOperacao(op.status).rotulo}</StatusPill>
         </div>
         <div className="mt-3 flex flex-wrap gap-1.5">
           {ORDEM_STATUS.filter((s) => (contagem[s] ?? 0) > 0).map((s) => (
@@ -124,6 +132,7 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
   // do clique — não pode depender de `opAberta`/`reversao`, que são zerados ao fechar o detalhe.
   const [reversaoAtiva, setReversaoAtiva] = useState<({ op: OperacaoRow } & NonNullable<ReturnType<typeof montarReversao>>) | null>(null);
 
+  const [reversaoReajuste, setReversaoReajuste] = useState<string | null>(null);
   const [reversaoStatus, setReversaoStatus] = useState<{ op: OperacaoRow; itens: { ml_item_id: string; titulo: string | null }[] } | null>(null);
 
   const opAberta = operacoes.data?.find((o) => o.id === abertaId) ?? null;
@@ -152,7 +161,9 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
 
   const idsRevertiveis = opAberta && itensOp.data
     ? itensRevertiveis(opAberta.acao as AcaoOperacao, paraRevertiveis(itensOp.data)) : [];
-  const podeReverter = podeExecutar && opAberta?.status === 'concluida' && idsRevertiveis.length > 0;
+  // Reajuste: os itens já `aplicado` revertem mesmo com a operação executando (os `conferindo` não impedem).
+  const podeReverter = podeExecutar && idsRevertiveis.length > 0
+    && (opAberta?.status === 'concluida' || opAberta?.acao === 'reajustar');
   // Fix round 2 (achado 1): `useMemo` — sem isso, `reversao.itens`/`.naoRevertiveis` nascem com
   // referência nova a cada render e o `useEffect` do preview (que depende deles) reseta preços,
   // marcas e o checkbox de risco a cada refetch em segundo plano (foco, intervalo de 5 s).
@@ -174,7 +185,9 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
   // `reversao`, o necessário pro preview vai num snapshot em estado próprio.
   function iniciarReversao() {
     if (!opAberta) return;
-    if (ehAcaoStatus(opAberta.acao)) {
+    if (opAberta.acao === 'reajustar') {
+      setReversaoReajuste(opAberta.id); // o preview do servidor relê a origem (itens `aplicado`)
+    } else if (ehAcaoStatus(opAberta.acao)) {
       // Pausar/reativar: o handler revalida no ML; não há Central para confrontar.
       const porLog = new Map((itensOp.data ?? []).map((i) => [i.ml_item_id, i]));
       setReversaoStatus({
@@ -189,6 +202,7 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
   function fecharPreviewReversao() {
     setReversaoAtiva(null);
     setReversaoStatus(null);
+    setReversaoReajuste(null);
   }
 
   if (operacoes.isLoading) {
@@ -219,7 +233,7 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
           {opAberta && (
             <>
               <SheetHeader>
-                <SheetTitle className="pr-8">{tituloOperacao(opAberta, opAberta.itens.length)}</SheetTitle>
+                <SheetTitle className="pr-8">{tituloOperacao(opAberta, totalDoTitulo(opAberta))}</SheetTitle>
                 <SheetDescription>
                   {dataHora(opAberta.criado_em)} · {nomeDe(opAberta.criado_por)}
                   {original && <><br />Reverte a operação de {dataHora(original.criado_em)}</>}
@@ -233,6 +247,9 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
                       <div className="min-w-0">
                         <p className="truncate font-medium">{formatarNomeProduto(it.titulo) || it.ml_item_id}</p>
                         <p className="text-xs text-muted-foreground">{it.ml_item_id}</p>
+                        {opAberta.acao === 'reajustar' && it.preco_anterior != null && it.preco != null && (
+                          <p className="text-xs tabular-nums">{fmtBRL(it.preco_anterior)} → {fmtBRL(it.preco)}</p>
+                        )}
                         {it.mensagem && <p className="text-xs text-muted-foreground">{it.mensagem}</p>}
                       </div>
                       <StatusPill tone={TONE_STATUS[status]} className="shrink-0">{ROTULO_STATUS[status]}</StatusPill>
@@ -260,6 +277,13 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
         <PreviewStatus
           acao={inversa(reversaoStatus.op.acao as AcaoStatus)} itens={reversaoStatus.itens} foraDoLote={[]}
           origemId={reversaoStatus.op.id} aberto onFechar={fecharPreviewReversao} onCriada={() => { toast.success('Operação iniciada'); fecharPreviewReversao(); }}
+        />
+      )}
+
+      {reversaoReajuste && (
+        <PreviewReajuste
+          pedido={{ origem_id: reversaoReajuste }} onFechar={fecharPreviewReversao}
+          onCriada={() => { toast.success('Reversão iniciada'); fecharPreviewReversao(); }}
         />
       )}
 

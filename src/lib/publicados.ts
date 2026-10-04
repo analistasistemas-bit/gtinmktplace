@@ -86,6 +86,9 @@ export interface PublicadoItem {
    *  trataria como novas e duplicaria variações num anúncio real. A edge function também recusa;
    *  aqui o botão simplesmente não aparece, para não oferecer o que vai ser negado. */
   produtoDividido?: boolean;
+  /** ADR-0088: produto em User Products (cada cor = um MLB próprio). O reajuste em massa (I5) manda
+   *  a FAMÍLIA, que o servidor expande em todos os SKUs; a linha mostra um MLB só. `undefined` = Legacy. */
+  userProducts?: boolean;
 }
 
 /**

@@ -25,6 +25,9 @@ vi.mock('@/hooks/usePromocoes', async () => {
   return { ...actual, useItensPromocao: vi.fn() };
 });
 vi.mock('@/hooks/useNomesUsuarios', () => ({ useNomesUsuarios: vi.fn() }));
+vi.mock('../preview-reajuste', () => ({
+  PreviewReajuste: ({ pedido }: { pedido: unknown }) => <div data-testid="preview-reajuste">{JSON.stringify(pedido)}</div>,
+}));
 
 function op(over: Partial<OperacaoRow> = {}): OperacaoRow {
   return {
@@ -375,5 +378,46 @@ describe('ListaOperacoes', () => {
     expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
     expect(screen.queryByText(/Revertida em/)).not.toBeInTheDocument();
     expect(screen.queryByText('Reversão em andamento')).not.toBeInTheDocument();
+  });
+
+  describe('reajuste (I5)', () => {
+    const reaj = (over: Partial<OperacaoRow> = {}) => op({
+      acao: 'reajustar', promocao_id: null, promocao_nome: null, promocao_tipo: null, status: 'executando', concluido_em: null,
+      itens: [{ status: 'aplicado', incluido: true }, { status: 'conferindo', incluido: true },
+        { status: 'bloqueado', incluido: false }, { status: 'ja_estava', incluido: false }],
+      ...over,
+    });
+
+    it('título conta só os incluídos; status "Executando" só para executando', () => {
+      vi.mocked(useOperacoes).mockReturnValue({ data: [reaj(), reaj({ id: 'OP2', status: 'concluida' })], isLoading: false } as never);
+      renderLista();
+      expect(screen.getAllByText('Reajustar preço de 2 anúncios')).toHaveLength(2);
+      expect(screen.getByText('1/2')).toBeInTheDocument(); // progresso só sobre os incluídos (aplicado + conferindo)
+      expect(screen.getAllByText('Executando')).toHaveLength(1);
+      expect(screen.getByText('Concluída')).toBeInTheDocument();
+    });
+
+    it('Reverter com a operação ainda executando (conferindo não impede) abre o preview com origem_id', async () => {
+      const user = userEvent.setup();
+      vi.mocked(useOperacoes).mockReturnValue({ data: [reaj()], isLoading: false } as never);
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [
+        itemLog({ ml_item_id: 'MLB1', status: 'aplicado', preco_anterior: 10, preco: 11 }),
+        itemLog({ ml_item_id: 'MLB2', status: 'conferindo', preco_anterior: 20, preco: 22 }),
+      ] } as never);
+      renderLista();
+      await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
+      expect(screen.getByText(/R\$\s10,00 → R\$\s11,00/)).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Reverter' }));
+      expect(screen.getByTestId('preview-reajuste')).toHaveTextContent('{"origem_id":"OP1"}');
+    });
+
+    it('sem item aplicado não há Reverter', async () => {
+      const user = userEvent.setup();
+      vi.mocked(useOperacoes).mockReturnValue({ data: [reaj()], isLoading: false } as never);
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'conferindo' })] } as never);
+      renderLista();
+      await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
+      expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
+    });
   });
 });

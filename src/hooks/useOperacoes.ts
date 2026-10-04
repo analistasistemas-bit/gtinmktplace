@@ -11,7 +11,8 @@ import { useSupportStore } from '@/stores/support-store';
 
 export const QK_OPERACOES = ['operacoes'] as const;
 
-export type OperacaoRow = Tables<'operacoes_massa'> & { itens: { status: StatusItemOperacao }[] };
+/** `incluido`: reajuste conta no título só o que entrou (fora/sem alteração/desmarcado = false). */
+export type OperacaoRow = Tables<'operacoes_massa'> & { itens: { status: StatusItemOperacao; incluido?: boolean }[] };
 export type ItemOperacaoRow = Tables<'operacoes_massa_itens'>;
 
 interface ItemPedido { ml_item_id: string; preco: number | null; confirmado_risco: boolean }
@@ -44,7 +45,7 @@ export function useOperacoes(filtro?: 'promocao') {
   const query = useQuery({
     queryKey: [...QK_OPERACOES, 'lista', filtro ?? 'todas'],
     queryFn: async () => {
-      let q = supabase.from('operacoes_massa').select('*, itens:operacoes_massa_itens(status)').neq('status', 'rascunho');
+      let q = supabase.from('operacoes_massa').select('*, itens:operacoes_massa_itens(status, incluido)').neq('status', 'rascunho');
       if (filtro === 'promocao') q = q.in('acao', ['aderir', 'sair']);
       const { data, error } = await q.order('criado_em', { ascending: false }).limit(50);
       if (error) throw error;
@@ -78,19 +79,22 @@ export function useAcompanharOperacao(id: string | null) {
   const { data } = useQuery({
     queryKey: [...QK_OPERACOES, id, 'acompanhar'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('operacoes_massa').select('status').eq('id', id!).single();
+      const { data, error } = await supabase.from('operacoes_massa').select('status, acao').eq('id', id!).single();
       if (error) throw error;
-      return data as { status: string };
+      return data as { status: string; acao: string };
     },
     enabled: !!id,
     refetchInterval: (q) => (q.state.data?.status === 'concluida' ? false : 5_000),
   });
   const concluida = data?.status === 'concluida';
+  const reajuste = data?.acao === 'reajustar';
   useEffect(() => {
     if (!concluida) return;
     qc.invalidateQueries({ queryKey: QK.statusPublicados });
     qc.invalidateQueries({ queryKey: QK_OPERACOES });
-  }, [concluida, qc]);
+    // Reajuste muda o preço (e fixa `preco_publicacao`) que a lista de Publicados lê do banco.
+    if (reajuste) qc.invalidateQueries({ queryKey: QK.publicados });
+  }, [concluida, reajuste, qc]);
 }
 
 /** Fix round 1 (achado 3): recarrega a cada 5 s enquanto a operação (`operacoes_massa.status`)
@@ -145,8 +149,9 @@ export function useOperacaoPorOrigem(id: string | null) {
     queryKey: [...QK_OPERACOES, 'origem', id],
     queryFn: async () => {
       const { data, error } = await supabase.from('operacoes_massa')
-        .select('*, itens:operacoes_massa_itens(status)')
-        .eq('origem_id', id!).order('criado_em', { ascending: false }).limit(1).maybeSingle();
+        .select('*, itens:operacoes_massa_itens(status, incluido)')
+        // Rascunho (preview de Reverter abandonado) não é reversão.
+        .eq('origem_id', id!).neq('status', 'rascunho').order('criado_em', { ascending: false }).limit(1).maybeSingle();
       if (error) throw error;
       return data as unknown as OperacaoRow | null;
     },

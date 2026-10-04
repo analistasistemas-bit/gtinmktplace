@@ -14,6 +14,7 @@ function fakeChain(resultado: unknown) {
     eq: () => chain,
     in: () => chain,
     order: () => chain,
+    range: () => chain,
     then: (resolve: any) => Promise.resolve(resultado).then(resolve),
   };
   return chain;
@@ -47,5 +48,16 @@ describe('fetchPublicados', () => {
 
     const itens = await fetchPublicados();
     expect(itens.map((i) => i.mlItemId)).toEqual(['MLB1', 'MLB2']);
+  });
+
+  it('marca userProducts quando o produto tem SKUs ativos no ML (I5: reajuste manda a família)', async () => {
+    mockFrom.mockImplementation((tabela: string) => {
+      if (tabela === 'familias') return fakeChain({ data: [FAMILIA], error: null });
+      if (tabela === 'anuncios_externos') return fakeChain({ data: [{ id: 'R1', codigo_pai: '02835002' }], error: null });
+      if (tabela === 'anuncios_externos_itens') return fakeChain({ data: [{ anuncio_externo_id: 'R1', sku: '0283500201', item_externo_id: 'MLB1' }], error: null });
+      return fakeChain({ data: [], error: null });
+    });
+    const [item] = await fetchPublicados();
+    expect(item.userProducts).toBe(true);
   });
 });

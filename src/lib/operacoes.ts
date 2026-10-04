@@ -107,6 +107,11 @@ export function tituloOperacao(
   return `${op.acao === 'aderir' ? 'Aderir à' : 'Sair de'} ${nome}`;
 }
 
+/** N do título: reajuste conta só o que entrou (`incluido`) — fora, sem alteração e desmarcado no preview não. */
+export function totalDoTitulo(op: { acao: string; itens: { incluido?: boolean }[] }): number {
+  return op.acao === 'reajustar' ? op.itens.filter((i) => i.incluido !== false).length : op.itens.length;
+}
+
 export function motivoNaoSelecionavel(
   i: Pick<PublicadoItem, 'ehKitVirtual' | 'publicacaoIncompleta' | 'migracaoEmAndamento' | 'status'>,
 ): string | null {

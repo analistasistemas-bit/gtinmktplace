@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   inversa, itensRevertiveis, montarPreview, motivoNaoSelecionavel, parsePreco, precisaConfirmarRisco, semaforoNoPreco,
-  separarSelecao, tituloOperacao,
+  separarSelecao, tituloOperacao, totalDoTitulo,
 } from '../operacoes';
 import type { CorProjetada, ItemPromocao } from '../promocoes';
 import { semaforoNoPreco as semaforoNoPrecoBackend } from '../../../supabase/functions/_shared/operacoes/validar';
@@ -131,6 +131,11 @@ describe('operações de status (emenda 2026-10-04)', () => {
     expect(tituloOperacao({ acao: 'reativar', promocao_nome: null, promocao_id: null }, 1)).toBe('Reativar 1 anúncio');
     expect(tituloOperacao({ acao: 'aderir', promocao_nome: '10.10', promocao_id: 'P1' }, 3)).toBe('Aderir à 10.10');
     expect(tituloOperacao({ acao: 'sair', promocao_nome: null, promocao_id: 'P1' }, 3)).toBe('Sair de P1');
+  });
+  it('N do título do reajuste conta só os incluídos', () => {
+    const itens = [{ incluido: true }, { incluido: false }, { incluido: false }, { incluido: true }];
+    expect(totalDoTitulo({ acao: 'reajustar', itens })).toBe(2);
+    expect(totalDoTitulo({ acao: 'pausar', itens })).toBe(4);
   });
   it('quem não entra na seleção', () => {
     expect(motivoNaoSelecionavel({ status: 'ativo' })).toBeNull();

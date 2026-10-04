@@ -9,7 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // traz os status no mesmo select, já tinha atualizado). Este teste prova o refetch nessa borda sem
 // depender de temporizador (a correção dispara num `useEffect`, não no `refetchInterval`).
 const orderMock = vi.fn();
-const eqMock = vi.fn(() => ({ order: orderMock }));
+const singleMock = vi.fn();
+const eqMock = vi.fn(() => ({ order: orderMock, single: singleMock }));
 // `useOperacoes`: select → (in)? → order → limit. `limitMock` resolve a lista; `inMock` registra o filtro.
 const limitMock = vi.fn();
 const inMock = vi.fn();
@@ -25,7 +26,7 @@ const fromMock = vi.fn(() => ({ select: selectMock }));
 const invokeMock = vi.fn();
 vi.mock('@/lib/supabase', () => ({ supabase: { from: fromMock, functions: { invoke: invokeMock } } }));
 
-const { useItensOperacao, useOperacoes, usePreviewReajuste, useConfirmarReajuste, ErroOperacao, QK_OPERACOES } = await import('../useOperacoes');
+const { useAcompanharOperacao, useItensOperacao, useOperacoes, usePreviewReajuste, useConfirmarReajuste, ErroOperacao, QK_OPERACOES } = await import('../useOperacoes');
 const { QK } = await import('@/lib/queries');
 
 let queryClient: QueryClient;
@@ -159,6 +160,27 @@ describe('useOperacoes — status ao vivo do Publicados (emenda 2026-10-04)', ()
     limitMock.mockResolvedValue({ data: [op({})], error: null });
     montar();
     await waitFor(() => expect(statusInvalidado()).toBe(1));
+    expect(invalidou(QK.publicados)).toBe(0);
+  });
+});
+
+describe('useAcompanharOperacao (fluxo Publicados)', () => {
+  const montar = () => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalida = vi.spyOn(queryClient, 'invalidateQueries');
+    renderHook(() => useAcompanharOperacao('OP1'), { wrapper });
+    return (chave: readonly unknown[]) => invalida.mock.calls.filter(([f]) => JSON.stringify((f as { queryKey: unknown }).queryKey) === JSON.stringify(chave)).length;
+  };
+  it('reajuste concluído invalida também a lista de Publicados', async () => {
+    singleMock.mockResolvedValue({ data: { status: 'concluida', acao: 'reajustar' }, error: null });
+    const invalidou = montar();
+    await waitFor(() => expect(invalidou(QK.statusPublicados)).toBe(1));
+    expect(invalidou(QK.publicados)).toBe(1);
+  });
+  it('pausa concluída não invalida a lista de Publicados', async () => {
+    singleMock.mockResolvedValue({ data: { status: 'concluida', acao: 'pausar' }, error: null });
+    const invalidou = montar();
+    await waitFor(() => expect(invalidou(QK.statusPublicados)).toBe(1));
     expect(invalidou(QK.publicados)).toBe(0);
   });
 });

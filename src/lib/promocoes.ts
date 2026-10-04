@@ -150,3 +150,11 @@ export async function fetchEstadoSyncPromocoes(): Promise<EstadoSyncPromo | null
   if (error) throw error;
   return (data as EstadoSyncPromo | null) ?? null;
 }
+
+/** Motivo de cor sem líquido (projeção da Central e avaliação do reajuste I5) → texto da tela. */
+export const MOTIVO_COR: Record<string, string> = {
+  sem_cadastro: 'Sem custo no PubliAI', sem_custo: 'Sem custo no PubliAI', sem_origem: 'Sem origem no cadastro',
+  sem_preco: 'Sem preço na promoção', sem_categoria: 'Anúncio não lido no Mercado Livre', erro_tarifa: 'Tarifa do Mercado Livre indisponível',
+  kit_divergente: 'Kit: unidades do anúncio diferentes do cadastro', kit_ambiguo: 'Kit: GTIN e SKU apontam cadastros diferentes',
+  kit_sem_dimensao: 'Kit sem medidas no cadastro (frete incerto)',
+};

@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { buscarTodasPaginas } from './paginacao-supabase';
 import { signedUrl } from './storage';
 import { effectiveOrgId } from '@/stores/support-store';
 import { STATUS_RISCO, type FamiliaRiscoRow } from '@/lib/catalogo-risco';
@@ -211,24 +212,35 @@ async function fetchAnunciosPorCodigoPai(codigosPai: string[]): Promise<Map<stri
 async function fetchSkusAtivosUP(codigosPai: string[]): Promise<Map<string, Set<string>>> {
   const porCodigo = new Map<string, Set<string>>();
   if (codigosPai.length === 0) return porCodigo;
-  const { data: raizes } = await supabase
-    .from('anuncios_externos')
-    .select('id, codigo_pai')
-    .eq('canal', 'mercado_livre')
-    .eq('particao', 0)
-    .in('codigo_pai', codigosPai);
+  // I5: Publicados passa TODOS os produtos publicados — paginar (teto de 1000 linhas do PostgREST), senão
+  // produto UP além do teto parece Legacy e o reajuste pega só um SKU. Erro continua degradando para
+  // "sem SKUs" (comportamento anterior dos outros chamadores).
+  let raizes: { id: string; codigo_pai: string }[];
+  let itens: { anuncio_externo_id: string; sku: string }[];
+  try {
+    raizes = await buscarTodasPaginas((de, ate) => supabase
+      .from('anuncios_externos')
+      .select('id, codigo_pai')
+      .eq('canal', 'mercado_livre')
+      .eq('particao', 0)
+      .in('codigo_pai', codigosPai)
+      .order('id')
+      .range(de, ate));
+    const rootIdsPag = raizes.map((r) => r.id);
+    itens = rootIdsPag.length === 0 ? [] : await buscarTodasPaginas((de, ate) => supabase
+      .from('anuncios_externos_itens')
+      .select('anuncio_externo_id, sku')
+      .in('anuncio_externo_id', rootIdsPag)
+      .eq('retirado', false)
+      .not('item_externo_id', 'is', null)
+      .order('id')
+      .range(de, ate));
+  } catch {
+    return porCodigo;
+  }
   const codigoPorRaiz = new Map<string, string>();
-  for (const r of raizes ?? []) codigoPorRaiz.set(r.id, r.codigo_pai);
-  const rootIds = [...codigoPorRaiz.keys()];
-  if (rootIds.length === 0) return porCodigo;
-
-  const { data: itens } = await supabase
-    .from('anuncios_externos_itens')
-    .select('anuncio_externo_id, sku')
-    .in('anuncio_externo_id', rootIds)
-    .eq('retirado', false)
-    .not('item_externo_id', 'is', null);
-  for (const it of itens ?? []) {
+  for (const r of raizes) codigoPorRaiz.set(r.id, r.codigo_pai);
+  for (const it of itens) {
     const codigoPai = codigoPorRaiz.get(it.anuncio_externo_id);
     if (!codigoPai) continue;
     const set = porCodigo.get(codigoPai) ?? new Set<string>();
@@ -1109,7 +1121,7 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
   // ADR-0161: quais produtos estão migrando para preço por variação. Durante a migração o ML recusa
   // qualquer alteração no anúncio, então a tela desabilita migrar/pausar/reativar/remover — as edge
   // functions também recusam (J13), mas deixar o botão clicável só entregaria um erro evitável.
-  const anunciosPorPai = await fetchAnunciosPorCodigoPai(codigosPai);
+  const [anunciosPorPai, skusUp] = await Promise.all([fetchAnunciosPorCodigoPai(codigosPai), fetchSkusAtivosUP(codigosPai)]);
   const paisMigrando = new Set(
     [...anunciosPorPai.entries()]
       .filter(([, lista]) => lista.some(
@@ -1124,6 +1136,7 @@ export async function fetchPublicados(): Promise<PublicadoItem[]> {
       ...publicadoFromRow(r, itensUpPorCodigo.get(r.codigo_pai)),
       migracaoEmAndamento: paisMigrando.has(r.codigo_pai),
       produtoDividido: (anunciosPorPai.get(r.codigo_pai) ?? []).length > 1,
+      userProducts: (skusUp.get(r.codigo_pai)?.size ?? 0) > 0,
     })),
   );
 

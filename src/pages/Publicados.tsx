@@ -85,6 +85,9 @@ import { motivoNaoSelecionavel, separarSelecao, type AcaoStatus } from '@/lib/op
 import { useAcompanharOperacao } from '@/hooks/useOperacoes';
 import { BarraSelecaoPublicados } from '@/components/operacoes/barra-selecao-publicados';
 import { PreviewStatus } from '@/components/operacoes/preview-status';
+import { DialogReajuste } from '@/components/operacoes/dialog-reajuste';
+import { PreviewReajuste } from '@/components/operacoes/preview-reajuste';
+import type { PedidoPreviewReajuste } from '@/hooks/useOperacoes';
 
 // ============================================================================
 // Badge de status
@@ -1250,6 +1253,16 @@ export default function Publicados() {
   const selecionaveis = useMemo(() => itensExibidos.filter((i) => !motivoNaoSelecionavel(i)), [itensExibidos]);
   const itensSelecionados = useMemo(() => itensExibidos.filter((i) => selecao.has(i.mlItemId)), [itensExibidos, selecao]);
   const { ativos, pausados } = separarSelecao(itensSelecionados);
+  // I5: reajuste vale para ativos e pausados. UP manda a FAMÍLIA (o servidor expande em todos os SKUs);
+  // Legacy manda o MLB (a família expandiria partições do split que não foram selecionadas).
+  const [reajuste, setReajuste] = useState<{ pedido: PedidoPreviewReajuste | null } | null>(null);
+  const pedidoReajuste = (): Omit<PedidoPreviewReajuste, 'ajuste'> => {
+    const alvo = itensSelecionados.filter((i) => i.status === 'ativo' || i.status === 'pausado');
+    return {
+      familias: [...new Set(alvo.filter((i) => i.userProducts).map((i) => i.familiaId))],
+      ml_item_ids: alvo.filter((i) => !i.userProducts).map((i) => i.mlItemId),
+    };
+  };
   const topoRef = useRef<HTMLDivElement>(null);
 
   const irPara = (p: number) => {
@@ -1663,6 +1676,7 @@ export default function Publicados() {
             pausados={pausados.length}
             onPausar={() => setPreviewAcao('pausar')}
             onReativar={() => setPreviewAcao('reativar')}
+            onReajustar={() => setReajuste({ pedido: null })}
             onLimpar={() => setSelecao(new Set())}
           />
 
@@ -1685,6 +1699,26 @@ export default function Publicados() {
                 setSelecao(new Set());
                 setAcompanhando(id);
                 toast.success('Operação iniciada', { action: { label: 'Ver em Operações', onClick: () => navigate('/operacoes') } });
+              }}
+            />
+          )}
+
+          {reajuste && !reajuste.pedido && (
+            <DialogReajuste
+              quantidade={ativos.length + pausados.length}
+              onFechar={() => setReajuste(null)}
+              onVerPreview={(ajuste) => setReajuste({ pedido: { ...pedidoReajuste(), ajuste } })}
+            />
+          )}
+          {reajuste?.pedido && (
+            <PreviewReajuste
+              pedido={reajuste.pedido}
+              onFechar={() => setReajuste(null)}
+              onCriada={(id) => {
+                setReajuste(null);
+                setSelecao(new Set());
+                setAcompanhando(id);
+                toast.success('Reajuste iniciado', { action: { label: 'Ver em Operações', onClick: () => navigate('/operacoes') } });
               }}
             />
           )}

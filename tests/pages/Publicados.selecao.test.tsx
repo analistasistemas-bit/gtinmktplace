@@ -244,6 +244,11 @@ vi.mock('@/hooks/useOperacoes', async (importOriginal) => {
 });
 
 
+// I5: o preview do reajuste chama a edge; aqui só interessa o pedido que a tela monta.
+vi.mock('@/components/operacoes/preview-reajuste', () => ({
+  PreviewReajuste: ({ pedido }: { pedido: unknown }) => <div data-testid="preview-reajuste">{JSON.stringify(pedido)}</div>,
+}));
+
 const FORNECEDORES = ['BUFALO', 'ACME'];
 function lote() {
   // 11 anúncios ativos (BUFALO nos pares, ACME nos ímpares) + 1 Kit Virtual + 1 moderado = 13 (2 páginas de 10).
@@ -315,5 +320,21 @@ describe('Publicados — seleção em massa', () => {
     expect(screen.getByText('11 selecionados')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Pausar 11' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Reativar 0' })).toBeDisabled();
+  });
+
+  it('Reajustar preço: UP manda a família, Legacy manda o MLB', async () => {
+    const { data } = usePublicadosMock() as { data: PublicadoItem[] };
+    usePublicadosMock.mockReturnValue({
+      data: data.map((i) => (i.mlItemId === 'MLB1' ? { ...i, userProducts: true } : i)), isLoading: false, error: null, refetch: vi.fn(),
+    });
+    renderPagina();
+    fireEvent.click(caixaTitulo('01'));
+    fireEvent.click(caixaTitulo('02'));
+    fireEvent.click(screen.getByRole('button', { name: 'Reajustar preço (2)' }));
+    fireEvent.change(await screen.findByLabelText('Valor do ajuste'), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ver preview' }));
+    expect(JSON.parse((await screen.findByTestId('preview-reajuste')).textContent!)).toEqual({
+      familias: ['f1'], ml_item_ids: ['MLB2'], ajuste: { tipo: 'pct', sentido: '+', valor: 5 },
+    });
   });
 });
