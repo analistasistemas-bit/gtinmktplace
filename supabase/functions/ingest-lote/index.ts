@@ -19,6 +19,7 @@ import { exigirFiscalExplicito, resolverCamposFiscais } from './verificar-fiscal
 import { exigirModulo } from '../_shared/produto/modulo.ts';
 import { enfileirarFamilias } from '../_shared/queue.ts';
 import { casarVariacoesUpdate, type VarAnterior } from '../_shared/update/casar.ts';
+import { precoHerdadoUpdate } from './preco-herdado.ts';
 import { donoDoPathNaOrg, filtrarPathsDeDonos } from '../_shared/lote/exclusao.ts';
 import { herdarPictureId } from '../_shared/update/heranca-foto.ts';
 import { reconciliarCasamentoComML } from '../_shared/update/reconciliar.ts';
@@ -147,7 +148,7 @@ Deno.serve(async (req) => {
     // preço e análise de concorrência de OUTRA org para dentro desta família.
     const { data: anteriores } = await admin
       .from('familias')
-      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, categoria_nome, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, cest, origem_nfe, tributacao_icms, tributacao_icms_regime, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao)')
+      .select('codigo_pai, ml_item_id, ml_permalink, titulo_ml, descricao_ml, categoria_ml_id, categoria_nome, atributos_ml, tipo_aviamento, capa_ml_picture_id, publicado_em, concorrencia_vendedores, concorrencia_preco_min, concorrencia_origem, concorrencia_classe, estrategia_preco, estrategia_motivo, analise_mercado, cest, origem_nfe, tributacao_icms, tributacao_icms_regime, variacoes(codigo, ml_variation_id, cor, cor_origem, ml_picture_id, estoque, preco_publicacao, preco_editado_pelo_operador)')
       .in('codigo_pai', codigosPai)
       .eq('org_id', lote.org_id)
       .not('ml_item_id', 'is', null)
@@ -172,6 +173,7 @@ Deno.serve(async (req) => {
         ml_picture_id: v.ml_picture_id,
         estoque: v.estoque,
         preco_publicacao: v.preco_publicacao,
+        preco_editado_pelo_operador: v.preco_editado_pelo_operador,
       }));
       const novas = g.variacoes.map((v) => ({ codigo: normalizarCodigo(v.CODIGO) }));
       casamentoPorPai.set(g.codigo_pai, casarVariacoesUpdate(novas, varsAnteriores));
@@ -334,7 +336,8 @@ Deno.serve(async (req) => {
             estoque_anterior: h?.estoque_anterior ?? null,
             // ADR-0016: UPDATE preserva o preço já publicado. Cor nova (sem preço anterior)
             // herda o preço de venda das outras cores da família; só cai na planilha se não houver.
-            preco_publicacao: h?.preco_publicacao ?? precoPubFamilia ?? v.PRECO,
+            // D1 do reajuste: a marca de preço fixado vem junto (process-familia a respeita).
+            ...precoHerdadoUpdate(h, precoPubFamilia, v.PRECO),
             excluida_da_publicacao: h?.ml_variation_id == null && !(base.imagem_path != null && base.estoque > 0),
           });
         } else {

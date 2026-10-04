@@ -47,6 +47,7 @@ function fakeAdmin(over: {
   itensErr?: boolean;  // simula erro na query de roteamento (itens UP)
   lote?: Record<string, unknown> | null; // ADR-0129 D-11: lotes.select('origem')
   modulosHabilitados?: string[];
+  reajusteAtivo?: string | null; // rpc reajuste_ativo_produto (spec reajuste C2)
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
@@ -91,7 +92,8 @@ function fakeAdmin(over: {
     return api;
   }
   const storage = { from: () => ({ createSignedUrl: async () => ({ data: { signedUrl: 'x' }, error: null }) }) };
-  return { admin: { from: chain, storage } as never, writes };
+  const rpc = async (fn: string) => ({ data: fn === 'reajuste_ativo_produto' ? (over.reajusteAtivo ?? null) : null, error: null });
+  return { admin: { from: chain, storage, rpc } as never, writes };
 }
 
 function baseDeps(admin: never, extra: Partial<ProcessarDeps> = {}): ProcessarDeps {
@@ -691,5 +693,16 @@ describe('processarAtualizacaoFamilia — sino gated (ADR-0129 D-11)', () => {
     const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
     expect(r.tipo).toBe('retry');
     expect(notificarCategoriaSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('processarAtualizacaoFamilia — barreira do reajuste de preço em massa (spec C2)', () => {
+  it('reajuste ativo no produto → erro definitivo, sem tocar o ML', async () => {
+    const { admin, writes } = fakeAdmin({ reajusteAtivo: 'MLB-EXISTENTE' });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r).toEqual({ tipo: 'erro', mensagem: 'Há reajuste de preço em massa em andamento neste produto (400)' });
+    expect(fakeConnector.chamadas).toHaveLength(0);
+    expect(writes.find((w) => w.table === 'familias' && w.payload.status === 'erro')?.payload.erro_mensagem)
+      .toBe('Há reajuste de preço em massa em andamento neste produto (400)');
   });
 });

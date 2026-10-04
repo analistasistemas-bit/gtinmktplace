@@ -32,19 +32,37 @@ export interface PortasDisparo {
   /** `variations[]` ao vivo, para o snapshot. */
   lerVariacoes(mlItemId: string): Promise<VariacaoSnapshot[]>;
   /**
-   * Claim ATÔMICO: grava `solicitada` + snapshot + `ml_item_id_anterior` na raiz, e devolve `false`
-   * se outra migração já estava em curso. Check-then-set não serve — dois admins (ou um clique
-   * duplo) leem `null` ao mesmo tempo e ambos disparam.
+   * Claim ATÔMICO (RPC `familia_reservar_migracao_pxv`): grava `solicitada` + snapshot +
+   * `ml_item_id_anterior` na raiz e devolve `'ok'`, ou o motivo textual da recusa (outra migração
+   * já em curso, reajuste de preço em massa ativo). Check-then-set não serve — dois admins (ou um
+   * clique duplo) leem `null` ao mesmo tempo e ambos disparam.
    */
   reservar(entrada: {
     codigoPai: string; snapshot: VariacaoSnapshot[]; mlItemIdAnterior: string;
-  }): Promise<boolean>;
+  }): Promise<string>;
   /** POST no ML. Nunca chamado mais de uma vez por disparo. */
   dispararNoML(mlItemId: string): Promise<void>;
   /** Registra a falha do POST na raiz, preservando `solicitada`. */
   registrarFalha(codigoPai: string, motivo: string): Promise<void>;
   /** Enfileira a primeira rodada de acompanhamento. */
   enfileirarAcompanhamento(codigoPai: string): Promise<void>;
+}
+
+/** Motivo que a RPC devolve quando a raiz já não está com `migracao_pxv_status` nulo. */
+const MOTIVO_RPC_JA_SOLICITADA = 'Migração já solicitada';
+
+/** `p_campos` da RPC de reserva: exatamente os campos que o update direto gravava antes dela. */
+export function camposReservaPxv(
+  snapshot: VariacaoSnapshot[], mlItemIdAnterior: string, agora: Date = new Date(),
+): Record<string, unknown> {
+  return {
+    migracao_pxv_status: 'solicitada',
+    migracao_pxv_solicitada_em: agora.toISOString(),
+    migracao_pxv_snapshot: snapshot,
+    migracao_pxv_erro: null,
+    migracao_pxv_tentativa: 0,
+    ml_item_id_anterior: mlItemIdAnterior,
+  };
 }
 
 export async function dispararMigracaoPxv(
@@ -162,11 +180,16 @@ export async function dispararMigracaoPxv(
   }
 
   // Reserva atômica: quem perder a corrida não dispara.
-  const reservou = await portas.reservar({
+  const reserva = await portas.reservar({
     codigoPai: familia.codigoPai, snapshot, mlItemIdAnterior: familia.mlItemId,
   });
-  if (!reservou) {
-    return { tipo: 'recusado', motivo: 'Já existe uma migração em andamento para este produto.' };
+  if (reserva !== 'ok') {
+    return {
+      tipo: 'recusado',
+      motivo: reserva === MOTIVO_RPC_JA_SOLICITADA
+        ? 'Já existe uma migração em andamento para este produto.'
+        : reserva,
+    };
   }
 
   try {

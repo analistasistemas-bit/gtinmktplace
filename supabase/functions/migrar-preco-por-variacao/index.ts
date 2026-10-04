@@ -13,7 +13,7 @@ import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { buscarItemML } from '../_shared/ml/atualizar-item.ts';
 import { validarElegibilidadeUPtin, dispararUPtin, type VariacaoSnapshot } from '../_shared/ml/migracao-pxv.ts';
 import { enfileirarAcompanhamentoMigracaoPxv } from '../_shared/queue.ts';
-import { dispararMigracaoPxv, type PortasDisparo } from './processar.ts';
+import { dispararMigracaoPxv, camposReservaPxv, type PortasDisparo } from './processar.ts';
 
 const CANAL = 'mercado_livre';
 /** Primeira consulta de acompanhamento. A migração é assíncrona e sem SLA publicado. */
@@ -111,22 +111,14 @@ Deno.serve(async (req) => {
       }));
     },
 
-    // Claim atômico: `is null` no WHERE é o que impede clique duplo e dois admins simultâneos.
-    // Check-then-set não serve — ambos leriam `null` e ambos disparariam uma migração irreversível.
+    // Claim atômico na RPC (spec reajuste C2): `is null` no WHERE impede clique duplo e dois admins
+    // simultâneos; o lock do produto impede entrar em PxV com reajuste de preço em massa ativo.
     reservar: async ({ codigoPai, snapshot, mlItemIdAnterior }) => {
-      const { data } = await admin.from('anuncios_externos')
-        .update({
-          migracao_pxv_status: 'solicitada',
-          migracao_pxv_solicitada_em: new Date().toISOString(),
-          migracao_pxv_snapshot: snapshot,
-          migracao_pxv_erro: null,
-          migracao_pxv_tentativa: 0,
-          ml_item_id_anterior: mlItemIdAnterior,
-        })
-        .eq('org_id', orgId).eq('canal', CANAL).eq('codigo_pai', codigoPai).eq('particao', 0)
-        .is('migracao_pxv_status', null)
-        .select('id');
-      return (data ?? []).length > 0;
+      const { data, error } = await admin.rpc('familia_reservar_migracao_pxv', {
+        p_org: orgId, p_codigo_pai: codigoPai, p_campos: camposReservaPxv(snapshot, mlItemIdAnterior),
+      });
+      if (error) return `Falha ao reservar a migração: ${error.message}. Nada foi alterado.`;
+      return data as string;
     },
 
     dispararNoML: async (mlItemId) => {

@@ -9,7 +9,25 @@ vi.mock('@/lib/supabase', () => ({
   },
 }));
 
+const { warningSpy } = vi.hoisted(() => ({ warningSpy: vi.fn() }));
+vi.mock('sonner', () => ({ toast: { warning: warningSpy } }));
+
 describe('publicarFamilias', () => {
+  it('recusadas pelo reajuste em massa → toast de aviso; sem recusa, nenhum toast', async () => {
+    const motivo = 'Há reajuste de preço em massa em andamento no anúncio MLB1';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ enfileiradas: 1, recusadas: [{ familia_id: 'F2', motivo }] }),
+    }));
+    await publicarFamilias(['F1', 'F2']);
+    expect(warningSpy).toHaveBeenCalledWith('1 produto(s) não enviado(s)', { description: motivo });
+
+    warningSpy.mockClear();
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ enfileiradas: 1, recusadas: [] }) }));
+    await publicarFamilias(['F1']);
+    expect(warningSpy).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
   it('inclui a escolha de somente estoque no body', async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

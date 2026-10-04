@@ -1,3 +1,4 @@
+import { toast } from 'sonner';
 import { supabase } from './supabase';
 
 /** Marca/desmarca a cor para exclusão da publicação (persiste na hora). */
@@ -13,6 +14,7 @@ export interface ResultadoPublicar {
   enfileiradas: number;
   porCanal?: Record<string, number>;
   canaisIgnorados?: string[];
+  recusadas?: Array<{ familia_id: string; motivo: string }>;
 }
 
 export type ListingType = 'gold_special' | 'gold_pro';
@@ -54,5 +56,13 @@ export async function publicarFamilias(
     const texto = await resp.text();
     throw new Error(`Publicação falhou (${resp.status}): ${texto}`);
   }
-  return resp.json();
+  const resultado: ResultadoPublicar = await resp.json();
+  // Spec reajuste C2: famílias com reajuste de preço em massa ativo ficam de fora (intocadas).
+  const recusadas = resultado.recusadas ?? [];
+  if (recusadas.length > 0) {
+    toast.warning(`${recusadas.length} produto(s) não enviado(s)`, {
+      description: [...new Set(recusadas.map((r) => r.motivo))].join('; '),
+    });
+  }
+  return resultado;
 }

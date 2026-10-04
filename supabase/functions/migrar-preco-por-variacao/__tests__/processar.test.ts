@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { dispararMigracaoPxv, type PortasDisparo } from '../processar';
+import { dispararMigracaoPxv, camposReservaPxv, type PortasDisparo } from '../processar';
 import type { VariacaoSnapshot } from '../../_shared/ml/migracao-pxv';
 
 const SNAP: VariacaoSnapshot[] = [
@@ -18,6 +18,7 @@ function fakeMundo(over: Partial<{
   causas: string[];
   snapshot: VariacaoSnapshot[];
   reservaOk: boolean;
+  reservaMotivo: string; // texto devolvido pela RPC quando recusa (default: corrida perdida)
   falharDisparo: string | null;
 }> = {}) {
   const chamadas = {
@@ -42,7 +43,10 @@ function fakeMundo(over: Partial<{
       chamadas.leuVariacoes += 1;
       return Promise.resolve(over.snapshot ?? SNAP);
     },
-    reservar: () => { chamadas.reservou += 1; return Promise.resolve(over.reservaOk ?? true); },
+    reservar: () => {
+      chamadas.reservou += 1;
+      return Promise.resolve((over.reservaOk ?? true) ? 'ok' : (over.reservaMotivo ?? 'Migração já solicitada'));
+    },
     dispararNoML: () => {
       chamadas.disparou += 1;
       if (over.falharDisparo) return Promise.reject(new Error(over.falharDisparo));
@@ -188,5 +192,34 @@ describe('dispararMigracaoPxv — falha no POST preserva o estado', () => {
     expect(w.chamadas.falhasRegistradas[0]).toMatch(/boom/);
     // Acompanha mesmo assim: se o ML tiver iniciado, o worker descobre e adota.
     expect(w.chamadas.acompanhamentos).toBe(1);
+  });
+});
+
+// Spec reajuste C2: a reserva passou para a RPC `familia_reservar_migracao_pxv`.
+describe('dispararMigracaoPxv — reserva via RPC', () => {
+  it('corrida perdida mantém a mensagem de antes', async () => {
+    const w = fakeMundo({ reservaOk: false });
+    expect(await dispararMigracaoPxv(w.portas, 'fam-1'))
+      .toEqual({ tipo: 'recusado', motivo: 'Já existe uma migração em andamento para este produto.' });
+  });
+
+  it('reajuste ativo → motivo textual da RPC chega ao operador, ML intocado', async () => {
+    const motivo = 'Há reajuste de preço em massa em andamento no anúncio MLB1';
+    const w = fakeMundo({ reservaOk: false, reservaMotivo: motivo });
+    expect(await dispararMigracaoPxv(w.portas, 'fam-1')).toEqual({ tipo: 'recusado', motivo });
+    expect(w.chamadas.disparou).toBe(0);
+    expect(w.chamadas.acompanhamentos).toBe(0);
+  });
+
+  it('p_campos = exatamente os campos do update direto anterior', () => {
+    const agora = new Date('2026-10-04T12:00:00.000Z');
+    expect(camposReservaPxv(SNAP, 'MLB1', agora)).toStrictEqual({
+      migracao_pxv_status: 'solicitada',
+      migracao_pxv_solicitada_em: '2026-10-04T12:00:00.000Z',
+      migracao_pxv_snapshot: SNAP,
+      migracao_pxv_erro: null,
+      migracao_pxv_tentativa: 0,
+      ml_item_id_anterior: 'MLB1',
+    });
   });
 });

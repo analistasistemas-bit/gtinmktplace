@@ -12,6 +12,7 @@ import { separarCanais } from '../_shared/canais/selecao.ts';
 import { resolverSomenteEstoque } from './somente-estoque.ts';
 import { decidirSplit } from './decidir-split.ts';
 import { precoCentavos } from '../_shared/preco/grupos.ts';
+import { reservarFamilias, mensagemTudoRecusado, type FamiliaRecusada } from './reservar.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -40,39 +41,27 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
   const admin = adminClient();
   let enfileiradas = 0;
   let loteId: string | null = null;
+  const recusadas: FamiliaRecusada[] = [];
 
   // ─── Caminho ML (intocado — roda quando 'mercado_livre' está entre os canais) ───────────
   if (incluiML) {
     // Claim CREATE: 'pronto'/'erro', ainda não publicado. Escopo da operação (sem filtro por
     // user.id): qualquer membro publica as famílias selecionadas (ADR-0047/0056).
-    const { data: novos, error: errC } = await admin
-      .from('familias')
-      .update({ status: 'publicando', erro_mensagem: null })
-      .in('id', familia_ids)
-      .eq('operacao', 'CREATE')
-      .in('status', ['pronto', 'erro'])
-      .is('ml_item_id', null)
-      .eq('org_id', orgId)
-      .select('id, lote_id, user_id, codigo_pai');
+    // Via RPC (spec reajuste C2): mesmos filtros de antes, sob o lock do produto; produto com
+    // reajuste de preço em massa ativo volta em `recusadas`, intocado.
+    const { reservadas: novos, recusadas: recC, error: errC } = await reservarFamilias(admin, orgId, familia_ids, 'CREATE');
     if (errC) {
       await auditarOperacaoSuporte(admin, context, target, 'failed');
       return new Response(`Erro no claim CREATE: ${errC.message}`, { status: 500, headers: corsHeaders });
     }
 
     // Claim UPDATE: 'pronto'/'erro', já publicado (tem ml_item_id herdado).
-    const { data: updates, error: errU } = await admin
-      .from('familias')
-      .update({ status: 'publicando', erro_mensagem: null })
-      .in('id', familia_ids)
-      .eq('operacao', 'UPDATE')
-      .in('status', ['pronto', 'erro'])
-      .not('ml_item_id', 'is', null)
-      .eq('org_id', orgId)
-      .select('id, lote_id, user_id, codigo_pai');
+    const { reservadas: updates, recusadas: recU, error: errU } = await reservarFamilias(admin, orgId, familia_ids, 'UPDATE');
     if (errU) {
       await auditarOperacaoSuporte(admin, context, target, 'failed');
       return new Response(`Erro no claim UPDATE: ${errU.message}`, { status: 500, headers: corsHeaders });
     }
+    recusadas.push(...recC, ...recU);
 
     // Serializa as escritas no ML por CONTA de vendedor (ADR-0034): parallelism=1 evita
     // publicações concorrentes que tornam o processamento de foto do ML lento. A fila é keyed
@@ -241,8 +230,14 @@ try { ({ userId, orgId } = context = await requireUserOrg(req, { access: 'write'
     }
   }
 
+  const tudoRecusado = mensagemTudoRecusado(enfileiradas, recusadas);
+  if (tudoRecusado) {
+    await auditarOperacaoSuporte(admin, context, target, 'denied');
+    return new Response(tudoRecusado, { status: 409, headers: corsHeaders });
+  }
+
   await auditarOperacaoSuporte(admin, context, target, 'succeeded');
-  return new Response(JSON.stringify({ enfileiradas, porCanal, canaisIgnorados }), {
+  return new Response(JSON.stringify({ enfileiradas, porCanal, canaisIgnorados, recusadas }), {
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   });
 });

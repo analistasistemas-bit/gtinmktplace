@@ -6,6 +6,8 @@ export interface VarAnterior {
   ml_picture_id: string | null;
   estoque: number;
   preco_publicacao: number | string | null;
+  /** D1 do reajuste: preço fixado pelo operador/reajuste — o re-ingest herda junto com o preço. */
+  preco_editado_pelo_operador?: boolean;
 }
 export interface VarNova { codigo: string; }
 
@@ -16,6 +18,7 @@ export interface Herdado {
   ml_picture_id: string | null;
   estoque_anterior: number | null;
   preco_publicacao: number | string | null;
+  preco_editado_pelo_operador?: boolean;
 }
 export interface MudancaEstrutural {
   novas: string[];
@@ -45,6 +48,7 @@ export function casarVariacoesUpdate(
         ml_picture_id: ant.ml_picture_id,
         estoque_anterior: ant.estoque,
         preco_publicacao: ant.preco_publicacao,
+        preco_editado_pelo_operador: ant.preco_editado_pelo_operador,
       };
     } else {
       herdados[n.codigo] = { ml_variation_id: null, cor: null, cor_origem: null, ml_picture_id: null, estoque_anterior: null, preco_publicacao: null };
