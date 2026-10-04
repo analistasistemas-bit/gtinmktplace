@@ -20,7 +20,10 @@ const igual = (a: number | null, b: number | null) => (a === null || b === null 
 
 export function mudouAvaliacao(antes: Avaliacao, agora: Avaliacao): boolean {
   const mapa = new Map(agora.cores.map((c) => [chave(c), c]));
-  if (mapa.size !== new Set(antes.cores.map(chave)).size) return true;
+  const chavesAntes = new Set(antes.cores.map(chave));
+  // chave repetida = não dá para casar cor a cor → conservador, força novo preview
+  if (mapa.size !== agora.cores.length || chavesAntes.size !== antes.cores.length) return true;
+  if (mapa.size !== chavesAntes.size) return true;
   for (const a of antes.cores) {
     const b = mapa.get(chave(a));
     if (!b || a.origem !== b.origem) return true;

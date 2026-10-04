@@ -56,6 +56,16 @@ describe('mudouAvaliacao', () => {
       expect(mudouAvaliacao(nulo, nulo), k).toBe(false);
     }
   });
+  it('chave de cor repetida → true (conservador)', () => {
+    const nulas = (custo: number) => resumir([
+      cor('verde', { variation_id: null, sku: null, custo }),
+      cor('verde', { variation_id: null, sku: null }),
+    ]);
+    expect(mudouAvaliacao(nulas(5), nulas(9))).toBe(true);
+    const dup = resumir([cor('verde'), cor('verde')]);
+    expect(mudouAvaliacao(dup, dup)).toBe(true);
+    expect(mudouAvaliacao(resumir([cor('verde')]), dup)).toBe(true);
+  });
   it('origem diferente → true', () => {
     expect(mudouAvaliacao(resumir([cor('verde')]), resumir([cor('verde', { origem: 'importado' })]))).toBe(true);
     expect(mudouAvaliacao(resumir([cor('verde')]), resumir([cor('verde', { origem: null })]))).toBe(true);
