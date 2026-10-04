@@ -1710,8 +1710,8 @@ um smoke test contra Postgres real antes do primeiro deploy.
   - Telas: seleção → preview → Executar no detalhe da campanha (`PromocaoDetalhe.tsx`); aba
     **Operações** em Promoções (`Promocoes.tsx`, `lista-operacoes.tsx`) para acompanhar e
     reverter. Ver [ADR-0174](../decisions/0174-operacoes-em-massa-promocoes-v2.md).
-  - **Pausar/reativar (emenda 2026-10-04 — na branch `worktree-i5-pausar-reativar-massa`,
-    aguardando merge/deploy):** `acao` `pausar|reativar`, sem `promocao_id` (pedido com
+  - **Pausar/reativar (emenda 2026-10-04 — em produção desde 2026-10-04,
+    `operacoes-massa` v9):** `acao` `pausar|reativar`, sem `promocao_id` (pedido com
     `promocao_id` é recusado) e **sem exigir o módulo `promocoes`**. Criação (`criarStatus`): só
     admin/suporte full; até 500 anúncios por operação (`MAX_ITENS`; 100 por mensagem QStash); recusa repetido, Kit Virtual e anúncio que
     não é da org (`validar-status.ts`); sem trava financeira. Reverter = operação inversa com

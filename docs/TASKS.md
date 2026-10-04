@@ -2,14 +2,14 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Pausar/reativar em massa (ADR-0174, emenda 2026-10-04) — implementado na branch `worktree-i5-pausar-reativar-massa`, aguardando merge/deploy
+## Pausar/reativar em massa (ADR-0174, emenda 2026-10-04) — em produção desde 2026-10-04
 
 2º tipo do motor de operações em massa. Spec `docs/superpowers/specs/2026-10-04-pausar-reativar-em-massa-design.md`; plano `docs/superpowers/plans/2026-10-04-pausar-reativar-em-massa.md` (revisado pelo Codex em 3 rodadas).
 
 - [x] Migration `20261004165122_operacoes_massa_status.sql`: `acao` aceita `pausar|reativar`; `promocao_id`/`promocao_tipo` nullable com check de coerência por ação; índice único parcial `operacoes_massa_itens_status_unico`.
 - [x] `_shared/operacoes/`: laço comum (`laco.ts`), `decidir-status.ts`, `validar-status.ts`, `ml-status.ts`, `executar-status.ts`, `deps.ts` (`depsStatus`); edge `operacoes-massa` cria e executa pausar/reativar (sem módulo `promocoes`).
 - [x] Front: seleção + barra + preview em Publicados; tela global `/operacoes` (`Operacoes.tsx`, `components/operacoes/`); aba Operações de Promoções = a mesma lista filtrada por promoção.
-- [ ] **Deploy (pendente):** `supabase db push` + `supabase functions deploy operacoes-massa` (conferir versão ativa) + merge na `main`.
+- [x] **Deploy (2026-10-04):** `supabase db push` (migration `20261004165122_operacoes_massa_status`) + edge `operacoes-massa` v9 ativa (18:51 UTC) + front mergeado na `main` (`0eeca309`). Validação em campo na DSA: lote de 3 anúncios pausado e revertido (Reverter) pelo app, relacionados de catálogo acompanharam, seleção mista mostrou "Pausar 1 · Reativar 1".
 
 ## Promoções: Relâmpago, CPU e teto por contagem (2026-10-04)
 

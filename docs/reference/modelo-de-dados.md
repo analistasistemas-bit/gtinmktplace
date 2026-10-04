@@ -929,8 +929,8 @@ revogados) — escrita só por `service_role` (worker `sincronizar-promocoes`).
 
 Motor de operações em massa; primeira operação: aderir/sair de promoção `DEAL`/`SMART`.
 *Migration `20260928013318_operacoes_massa.sql` (em produção desde 2026-09-28).* Emenda
-2026-10-04 (pausar/reativar): migration `20261004165122_operacoes_massa_status.sql` — implementada
-na branch `worktree-i5-pausar-reativar-massa`, aguardando `db push`.
+2026-10-04 (pausar/reativar): migration `20261004165122_operacoes_massa_status.sql` — em produção
+desde 2026-10-04 (aplicada via `db push`).
 
 ### `operacoes_massa`
 Uma linha por operação. `id` (PK), `org_id`, `acao` (`aderir|sair|pausar|reativar`), `promocao_id`

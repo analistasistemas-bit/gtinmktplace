@@ -146,6 +146,8 @@ preview / Bloqueado pelo par de catálogo), Reverter com saída SMART confirmada
 
 ## Emenda 2026-10-04 — 2º tipo: pausar/reativar em massa
 
+**Status da emenda:** em produção desde 2026-10-04 (migration `20261004165122_operacoes_massa_status`, edge `operacoes-massa` v9). Validação em campo na DSA: lote de 3 anúncios pausado e revertido (Reverter) pelo app, relacionados de catálogo acompanharam, seleção mista mostrou "Pausar 1 · Reativar 1".
+
 Discovery com o Diego (2026-10-04): a Avil repete em lote reajuste de preço, pausar/reativar e estoque.
 Ordem decidida: **pausar/reativar primeiro**, depois preço, depois estoque — cada um com spec própria.
 Design: `docs/superpowers/specs/2026-10-04-pausar-reativar-em-massa-design.md`.
