@@ -73,6 +73,20 @@ interface PerfilVendedorAtual {
 
 // 1) sincronizarRadar (só tier completo): espelha anuncios_externos publicados em pulse_produtos
 // e arquiva os que saíram da lista de publicados.
+/** Situação dos NOSSOS anúncios pelo multiget (blocos de 20). Exportada para teste (ADR-0177). */
+export async function lerSituacaoAnuncios(ids: string[], token: string): Promise<Map<string, AnuncioMultiget>> {
+  const infoPorItem = new Map<string, AnuncioMultiget>();
+  for (let i = 0; i < ids.length; i += 20) {
+    const lote = ids.slice(i, i + 20);
+    const json = await mlGet(
+      `${API}/items?ids=${lote.join(',')}&attributes=id,status,sub_status,category_id,listing_type_id,price`,
+      token,
+    );
+    for (const st of parseStatusAnuncios(json)) infoPorItem.set(st.item_id, st);
+  }
+  return infoPorItem;
+}
+
 export async function sincronizarRadar(admin: SupabaseClient, orgId: string): Promise<void> {
   const publicados = await paginarTudo<AnuncioPublicadoRow>((de, ate) =>
     admin.from('anuncios_externos')
@@ -680,15 +694,7 @@ export async function processarLoteProdutos(
       }
 
       const ids = [...new Set(itemPorCodigo.values())];
-      const infoPorItem = new Map<string, AnuncioMultiget>();
-      for (let i = 0; i < ids.length; i += 20) {
-        const lote = ids.slice(i, i + 20);
-        const json = await mlGet(
-          `${API}/items?ids=${lote.join(',')}&attributes=id,status,sub_status,category_id,listing_type_id,price`,
-          token,
-        );
-        for (const st of parseStatusAnuncios(json)) infoPorItem.set(st.item_id, st);
-      }
+      const infoPorItem = await lerSituacaoAnuncios(ids, token);
 
       // Comissão do ML na FAIXA do preço EFETIVO (Erratas 6 e 7). `listing_prices` não tem
       // multiget, mas é uma chamada por anúncio, no mesmo passo em lote e fora do teto de tempo do

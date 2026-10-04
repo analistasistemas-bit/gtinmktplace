@@ -10,7 +10,7 @@ import { verificarAssinatura, enfileirarAcompanhamentoMigracaoPxv, enfileirarSin
 import { resolverConexao } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { lerStatusUPtin, type VariacaoSnapshot } from '../_shared/ml/migracao-pxv.ts';
-import { corDaVariacaoML } from '../_shared/ml/atualizar-item.ts';
+import { lerCoresML, lerEstoqueVivoML } from './leitura-ml.ts';
 import { criarPortasRevinculo } from '../_shared/user-products/portas-supabase.ts';
 import { adotarFamiliaMigrada } from '../_shared/user-products/adotar-familia-migrada.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
@@ -91,21 +91,8 @@ Deno.serve(async (req) => {
     // Multiget: a COLOR dos anúncios NOVOS, para o degrau (b) do casamento. Só ids que o próprio ML
     // devolveu como filhos desta migração — nunca uma busca por título.
     lerCores: async (itemIds) => {
-      const out = new Map<string, string | null>();
-      if (itemIds.length === 0) return out;
-      const token = await getToken();
-      const url = `${API}/items?ids=${itemIds.join(',')}&attributes=id,attributes`;
-      const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      // Lança em vez de devolver mapa vazio: um 5xx transitório do ML viraria "nenhuma cor lida" →
-      // casamento falho → `erro` definitivo, com a migração já concluída do outro lado. O catch do
-      // worker trata como transitório e reagenda dentro do orçamento.
-      if (!resp.ok) throw new Error(`multiget de cores falhou (${resp.status})`);
-      const json = await resp.json() as Array<{ code?: number; body?: { id?: string; attributes?: unknown } }>;
-      for (const linha of json ?? []) {
-        if (linha?.code !== 200 || !linha.body?.id) continue;
-        out.set(String(linha.body.id), corDaVariacaoML(linha.body.attributes));
-      }
-      return out;
+      if (itemIds.length === 0) return new Map<string, string | null>();
+      return lerCoresML(await getToken(), itemIds);
     },
 
     lerVariacoesLocais: async () => {
@@ -170,17 +157,7 @@ Deno.serve(async (req) => {
       const localPorSku = new Map((data ?? []).map((v) => [v.codigo as string, (v.estoque as number) ?? 0]));
 
       const ids = [...itemPorSku.values()];
-      const vivoPorItem = new Map<string, number>();
-      if (ids.length > 0) {
-        const url = `${API}/items?ids=${ids.join(',')}&attributes=id,available_quantity`;
-        const resp = await fetch(url, { headers: { Authorization: `Bearer ${await getToken()}` } });
-        if (resp.ok) {
-          const json = await resp.json() as Array<{ code?: number; body?: { id?: string; available_quantity?: number } }>;
-          for (const l of json ?? []) {
-            if (l?.code === 200 && l.body?.id) vivoPorItem.set(String(l.body.id), l.body.available_quantity ?? 0);
-          }
-        }
-      }
+      const vivoPorItem = ids.length > 0 ? await lerEstoqueVivoML(getToken, ids) : new Map<string, number>();
       const saldos: Array<{ sku: string; local: number; vivo: number }> = [];
       for (const [sku, itemId] of itemPorSku) {
         const vivo = vivoPorItem.get(itemId);
