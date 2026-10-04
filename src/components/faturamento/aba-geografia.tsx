@@ -40,9 +40,11 @@ export function AbaGeografia() {
 
   const presetAtivo = !modoCustom && periodo.tipo === 'preset' ? periodo.dias : null;
   const ehHoje = !modoCustom && periodo.tipo === 'hoje';
+  const ehMesAtual = !modoCustom && periodo.tipo === 'mes_atual';
   const rascunhoValido = !!rascunho.desde && !!rascunho.ate && rascunho.desde <= rascunho.ate;
   const escolherPreset = (d: PeriodoDias) => { setModoCustom(false); setSelecionada(null); setPeriodo({ tipo: 'preset', dias: d }); };
   const escolherHoje = () => { setModoCustom(false); setSelecionada(null); setPeriodo({ tipo: 'hoje' }); };
+  const escolherMesAtual = () => { setModoCustom(false); setSelecionada(null); setPeriodo({ tipo: 'mes_atual' }); };
   const abrirCustom = () => { setRascunho(rascunhoDe(periodo)); setModoCustom(true); };
   const aplicarCustom = () => { if (rascunhoValido) { setSelecionada(null); setPeriodo({ tipo: 'range', desde: rascunho.desde, ate: rascunho.ate }); } };
 
@@ -104,6 +106,14 @@ export function AbaGeografia() {
             {p.label}
           </Button>
         ))}
+        <Button
+          size="sm"
+          variant={ehMesAtual ? 'default' : 'outline'}
+          className="h-7 px-2.5 text-xs"
+          onClick={escolherMesAtual}
+        >
+          Mês atual
+        </Button>
         <Button
           size="sm"
           variant={modoCustom ? 'default' : 'outline'}
