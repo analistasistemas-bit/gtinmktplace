@@ -1,52 +1,50 @@
-# Reajuste de preço em massa — Implementation Plan
+# Reajuste de preço em massa — Implementation Plan (v2, pós-revisão Codex)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Reajustar (±% / ±R$) o preço de N anúncios do ML a partir da tela Publicados, durável no banco, com trava financeira, serialização atômica com os outros escritores de preço, recuperação de envio incerto e Reverter — 3º tipo do motor de operações em massa.
 
-**Architecture:** Preview calculado no servidor e gravado como operação `rascunho`; `confirmar` publica a execução no QStash; handler `reajustar` no laço comum (`_shared/operacoes/laco.ts`) com claim próprio (`reajuste_reivindicar`, RPC com lock de família + advisory lock por MLB). Escrita só-preço no ML (Legacy `{variations:[{id,price}]}`, plano/UP `{price}`), confirmação por GET, persistência atômica no banco (`reajuste_persistir`). Publicação/UPDATE, adesão a promoção e entrada em PxV passam a reservar via RPCs que recusam MLB/família com reajuste ativo.
+**Architecture:** Preview no servidor gravado como operação `rascunho`; `confirmar` (RPC transacional) publica a execução no QStash; handler `reajustar` no laço comum com claim único (`reajuste_reivindicar`: lock do produto `codigo_pai` + famílias + MLB). Escrita só-preço no ML, confirmação por GET, persistência atômica (`reajuste_persistir`). Publicação/UPDATE, adesão a promoção e entrada em PxV reservam com o mesmo lock de produto/MLB e recusam com reajuste ativo.
 
-**Tech Stack:** Supabase Postgres (RPCs plpgsql security definer), Edge Functions Deno, QStash, React + TanStack Query, vitest + Testing Library, testes SQL em Postgres local (Docker) ou receita de produção em transação desfeita.
+**Tech Stack:** Supabase Postgres (plpgsql security definer), Edge Functions Deno, QStash, React + TanStack Query, vitest, testes SQL em Postgres local (Docker).
 
-**Spec:** `docs/superpowers/specs/2026-10-04-reajuste-preco-em-massa-design.md` (aprovada pelo GPT-6 Astra como representante do Diego) · **ADR:** `docs/decisions/0178-reajuste-de-preco-em-massa.md`. Leia os contratos **C1–C5** da spec antes de qualquer task.
+**Spec:** `docs/superpowers/specs/2026-10-04-reajuste-preco-em-massa-design.md` (aprovada pelo GPT-6 Astra) · **ADR:** `docs/decisions/0178-reajuste-de-preco-em-massa.md`. Ler os contratos **C1–C5** antes de qualquer task.
 
 ## Global Constraints
 
-- Roteamento (CLAUDE.md): **opus** em migration, RPC, handler, trava/margem, fiação de edge, C2 nos fluxos de publicação/PxV/promoção, e no preview (calcula margem). **sonnet** só em UI sem cálculo e docs. Revisão de diff por task: **Grok 4.7 xhigh** via `cursor-agent` (nunca revisor Claude).
-- Migrations só `supabase migration new` + `supabase db push` (ADR-0043); `db push` só na Task 12, depois do merge aprovado. Antes de DROP CONSTRAINT/REPLACE FUNCTION, ler o nome/definição real no banco.
-- `pnpm test` exige `.env.test`; dev exige `.env.local` (já copiados no worktree). Rodar teste focado com `pnpm exec vitest run <path>` (o `pnpm test -- <path>` ignora o filtro). **Duas árvores de teste:** `src/**/__tests__` e `tests/` — rodar ambas antes de declarar pronto.
-- Git: `/usr/bin/git` com comandos simples; commit `-F <arquivo>` em `/Users/diego/.claude/jobs/628d3bf1/tmp/` (nome único); mensagem termina com `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Sem push nas tasks.
-- Toda query service role filtra `org_id`. Permissão de criar rascunho: membro; `confirmar` e Reverter: `ctx.isAdmin || ctx.support?.scope === 'full'` (servidor).
-- Valores monetários: centavos inteiros, half-up, calculados por **uma** função pura (`_shared/operacoes/reajuste/alvo.ts`) importada também pelo front (o front já importa de `supabase/functions/_shared/`, ex.: `src/lib/custos.ts`).
-- **Origem ausente → ⚪** (já é o comportamento de `cadastro.ts:56`; não alterar). Nunca default nacional.
-- Não-regressão: arquivos de teste existentes de `_shared/operacoes/__tests__/` não podem ser editados; suítes de promoção e de pausar/reativar intactas.
-- Nada de escrita direta no ML fora do fluxo do app (testes usam mocks; campo só pelo app, Task 12).
-- Teto: 500 MLBs únicos por operação (servidor rejeita, sem truncar); 100 itens por mensagem QStash.
+- Roteamento: **opus** em todas as tasks de código (escrita em marketplace, financeiro, RPC/locks, preview com margem); **sonnet** só na Task 11 (docs). Revisão por task: **Grok 4.7 xhigh** via `cursor-agent`.
+- Migrations só `supabase migration new` + `supabase db push` (ADR-0043); `db push` só na Task 12. Antes de DROP CONSTRAINT/REPLACE FUNCTION, ler definição real (`pg_get_constraintdef`, `pg_get_functiondef`).
+- Testes: focado `pnpm exec vitest run <path>`; **duas árvores** (`src/**/__tests__` e `tests/`). SQL: Postgres local via `docker exec -i supabase_db_<ref> psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1`; o teste **concorrente exige Docker** (se não subir: reportar BLOCKED, não pular).
+- Git: `/usr/bin/git` simples; commit `-F` com arquivo em `/Users/diego/.claude/jobs/628d3bf1/tmp/` (nome único); `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Sem push.
+- Service role sempre com `org_id`. Rascunho: qualquer membro; `confirmar` e Reverter: admin ou suporte `full` (servidor).
+- Dinheiro em centavos, half-up, uma função pura (`_shared/operacoes/reajuste/alvo.ts`), importada pelo front (o front já importa de `supabase/functions/_shared/`).
+- Origem ausente → ⚪ (comportamento atual de `cadastro.ts:56`; não alterar).
+- Não-regressão: testes existentes de `_shared/operacoes/__tests__/` não editados; promoções e pausar/reativar intactos; publicação idêntica quando não há reajuste.
+- **Identidade de serialização = `(org_id, codigo_pai)`** (produto), resolvida do MLB dentro das RPCs. Ordem de locks: produto (`codigo_pai`) → MLB. Chaves: `hashtextextended('rp:'||org||':'||codigo_pai, 0)` e `hashtextextended('rm:'||org||':'||ml_item, 0)`.
+- Nada de escrita direta no ML fora do app (testes com mocks).
+- Teto 500 MLBs/operação (servidor rejeita); 100 itens/mensagem QStash.
 
 ## Review Focus
 
-1. **Corrida reajuste × publicação/UPDATE** (mesma família em segundos) → uma das duas recusa com mensagem clara; nunca as duas escrevem. → teste concorrente SQL na Task 2.
-2. **PUT aplicado com resposta perdida + consulta de promoção falhando** → o item termina `aplicado` (conferência sem elegibilidade). → Task 6.
-3. **Legacy com variação cujo preço não mudou no ML** (todas devem ter o alvo) → não conta como confirmado. → Task 4 e 6.
-4. **Rascunho expirado ou confirmação para semáforo diferente do gravado** → recusa no `confirmar`. → Task 7.
-5. **Reverter com edição local concorrente** → `reajuste_reivindicar` recusa antes do PUT; `reajuste_persistir` devolve `conflito`. → Tasks 2 e 6.
+1. Corrida reajuste × publicação de **família criada depois do preview** (mesmo `codigo_pai`) → uma recusa. → Task 2 (concorrência).
+2. PUT aplicado + `invalid_grant`/401 depois → item continua recuperável (`conferindo`), operação não conclui. → Tasks 6/7.
+3. Persistência com conflito na **segunda** cor → nenhuma cor alterada. → Task 2.
+4. Tarifa do ML muda entre preview e execução → `mudou`. → Tasks 5/6.
+5. Confirmou → editou preço → precisa confirmar de novo. → Tasks 7/10.
 
 ---
 
 ### Task 1: Migration de schema (opus)
 
-**Files:**
-- Create: `supabase/migrations/<ts>_reajuste_preco_schema.sql` (via `supabase migration new reajuste_preco_schema`)
-- Modify: `supabase/tests/operacoes_massa.sql` (bloco novo no fim, antes do `rollback`)
-- Modify: `src/lib/database.types.ts` (novas colunas/valores)
+**Files:** Create `supabase/migrations/<ts>_reajuste_preco_schema.sql` (`supabase migration new reajuste_preco_schema`); Modify `supabase/tests/operacoes_massa.sql`, `src/lib/database.types.ts`, `supabase/functions/_shared/operacoes/tipos.ts`, `src/lib/operacoes.ts`, `src/components/operacoes/lista-operacoes.tsx` (só tipos/rótulos).
 
-**Interfaces — Produces:**
-- `operacoes_massa.acao` ∈ {aderir, sair, pausar, reajustar, reativar}; `status` ∈ {rascunho, executando, concluida}; `expira_em timestamptz null`.
-- `operacoes_massa_itens.status` ∈ {rascunho, pendente, enviando, conferindo, aplicado, ja_estava, mudou, bloqueado, erro, saida_solicitada}; colunas `preco_anterior numeric`, `etapa text` (`escrita_pedida`|`ml_confirmado`|null), `confirmado_sem_dado boolean not null default false`, `incluido boolean not null default true`, `avaliacao jsonb`, `estado_anterior jsonb`, `variacoes_ml jsonb`, `familia_ids uuid[]` (famílias do MLB, gravadas no preview — usadas pelo lock).
-- Índice `operacoes_massa_itens_status_unico` recriado: `(org_id, ml_item_id) where promocao_id is null and status in ('pendente','enviando','conferindo')`.
+**Produces:**
+- `operacoes_massa.acao` + `'reajustar'`; CHECK coerência: `reajustar` com `promocao_*` nulos; `status` + `'rascunho'`; coluna `expira_em timestamptz`.
+- `operacoes_massa_itens.status` + `'rascunho'`, `'conferindo'`; colunas `preco_anterior numeric`, `etapa text check (etapa in ('escrita_pedida','ml_confirmado'))`, `confirmado_sem_dado boolean not null default false`, `incluido boolean not null default true`, `avaliacao jsonb`, `estado_anterior jsonb`, `variacoes_ml jsonb`, `variacao_ids uuid[]`, `codigo_pai text`.
+- Índice `operacoes_massa_itens_status_unico` recriado com `status in ('pendente','enviando','conferindo')`.
+- Backend `tipos.ts`: `StatusItem` + `'rascunho' | 'conferindo'`; `CamposItem` + `etapa: 'escrita_pedida'|'ml_confirmado'|null`, `preco_anterior`, `incluido`. Front `StatusItemOperacao` + mesmos; `ROTULO_STATUS` (`rascunho:'Rascunho'`, `conferindo:'Conferindo no ML'`); `TONE_STATUS` (`rascunho:'neutral'`, `conferindo:'info'`); `NAO_TERMINAL` da lista inclui `'conferindo'`.
 
-- [ ] **Step 1: Teste SQL (vermelho)** — acrescentar a `supabase/tests/operacoes_massa.sql`:
-
+- [ ] **Step 1 (vermelho)** — bloco novo em `supabase/tests/operacoes_massa.sql` (antes do rollback):
 ```sql
 -- ADR-0178 (reajuste de preço em massa): schema.
 reset role;
@@ -62,11 +60,9 @@ begin
     insert into public.operacoes_massa (org_id, acao, promocao_id, promocao_tipo) values (v_org, 'reajustar', 'P', 'DEAL');
     raise exception 'CHECK: reajustar com promoção aceito';
   exception when check_violation then null; end;
-
-  insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, preco, preco_anterior, etapa)
-    values (v_r, v_org, 'MLBR1', 'rascunho', 10.10, 10.00, null);
-  -- rascunho não reserva: o mesmo MLB pode estar pendente noutra operação
-  insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status) values (v_r2, v_org, 'MLBR1', 'conferindo');
+  insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, preco, preco_anterior, codigo_pai)
+    values (v_r, v_org, 'MLBR1', 'rascunho', 10.10, 10.00, 'PAI1');
+  insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, codigo_pai) values (v_r2, v_org, 'MLBR1', 'conferindo', 'PAI1');
   begin
     insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status)
       values ('91000000-0000-0000-0000-000000000301', v_org, 'MLBR1', 'pendente');
@@ -78,12 +74,8 @@ begin
   exception when check_violation then null; end;
 end; $$;
 ```
-(`...0301` é a operação `pausar` criada pelo bloco anterior do arquivo; conferir o id real no arquivo.)
-
-- [ ] **Step 2:** rodar contra Postgres local: `docker exec -i supabase_db_<ref> psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 < supabase/tests/operacoes_massa.sql` → falha (`reajustar` não aceito). Sem Docker: receita da memória `reference_teste_sql_sem_docker` (transação desfeita em produção, `TESTE_OK`, prova de vermelho sem a migration).
-
-- [ ] **Step 3: Migration** (conferir antes os nomes reais: `select conname from pg_constraint where conrelid in ('public.operacoes_massa'::regclass,'public.operacoes_massa_itens'::regclass)`):
-
+- [ ] **Step 2:** rodar → falha.
+- [ ] **Step 3: migration**
 ```sql
 -- ADR-0178 — reajuste de preço em massa: rascunho, conferindo, colunas do item.
 alter table public.operacoes_massa drop constraint operacoes_massa_acao_check;
@@ -109,60 +101,64 @@ alter table public.operacoes_massa_itens
   add column avaliacao jsonb,
   add column estado_anterior jsonb,
   add column variacoes_ml jsonb,
-  add column familia_ids uuid[];
+  add column variacao_ids uuid[],
+  add column codigo_pai text;
 
 drop index public.operacoes_massa_itens_status_unico;
 create unique index operacoes_massa_itens_status_unico on public.operacoes_massa_itens (org_id, ml_item_id)
   where promocao_id is null and status in ('pendente','enviando','conferindo');
+create index operacoes_massa_itens_reajuste_ativo on public.operacoes_massa_itens (org_id, codigo_pai)
+  where status in ('pendente','enviando','conferindo') and codigo_pai is not null;
 ```
-
-- [ ] **Step 4:** teste SQL verde + `npm run db:check` (só a migration nova pendente).
-- [ ] **Step 5:** `src/lib/database.types.ts`: novas colunas (Row/Insert/Update) — `preco_anterior: number | null`, `etapa: string | null`, `confirmado_sem_dado: boolean`, `incluido: boolean`, `avaliacao: Json | null`, `estado_anterior: Json | null`, `variacoes_ml: Json | null`, `familia_ids: string[] | null`; `operacoes_massa.expira_em: string | null`. `pnpm exec tsc -b` → 0 erros. Ajustar `src/lib/operacoes.ts` `StatusItemOperacao` (+ `'rascunho' | 'conferindo'`) e `ROTULO_STATUS` (`rascunho: 'Rascunho'`, `conferindo: 'Conferindo no ML'`) e o `TONE_STATUS` da lista (`rascunho: 'neutral'`, `conferindo: 'info'`) para compilar.
+- [ ] **Step 4:** SQL verde; `npm run db:check`.
+- [ ] **Step 5:** tipos (database.types + backend/front unions acima); `pnpm exec tsc -b` 0 erros; `pnpm exec vitest run supabase/functions/_shared/operacoes src/lib src/components/operacoes` verde.
 - [ ] **Step 6:** commit `feat(operacoes): schema do reajuste de preço em massa`.
 
 ---
 
-### Task 2: RPCs de reserva e persistência (opus)
+### Task 2: RPCs de reserva, confirmação e persistência (opus)
 
-**Files:**
-- Create: `supabase/migrations/<ts>_reajuste_preco_rpcs.sql`
-- Create: `supabase/tests/reajuste_preco.sql` (funcional) e `supabase/tests/reajuste_preco_concorrencia.sh` (duas sessões, modelo `worker_rodadas_concorrencia.sh`)
+**Files:** Create `supabase/migrations/<ts>_reajuste_preco_rpcs.sql`, `supabase/tests/reajuste_preco.sql`, `supabase/tests/reajuste_preco_concorrencia.sh`; Modify `src/lib/database.types.ts` (Functions).
 
-**Interfaces — Produces (todas `security definer`, `set search_path = ''`, `revoke ... from public, anon, authenticated; grant execute ... to service_role`):**
-- `public.reajuste_reivindicar(p_org uuid, p_operacao uuid, p_ml_item text) returns text` — `'ok'` | `'ocupado'` (outro worker/sem linha elegível) | motivo legível (recusa; o chamador grava o item `bloqueado` ou `mudou`).
-- `public.familia_reservar_publicacao(p_org uuid, p_familia_ids uuid[], p_operacao text) returns table(id uuid, lote_id uuid, user_id uuid, codigo_pai text, motivo text)` — devolve as famílias reservadas (motivo null) e as recusadas por reajuste (motivo preenchido); `p_operacao` ∈ {CREATE, UPDATE} replica os filtros atuais de `publicar-familias`.
-- `public.familia_reservar_migracao_pxv(p_org uuid, p_codigo_pai text) returns text` — `'ok'` | motivo.
-- `public.operacoes_massa_reivindicar` (REPLACE, mesma assinatura e retorno boolean): para operação `aderir` toma o advisory lock do MLB e não reivindica se houver reajuste ativo no MLB (grava o item `mudou` com mensagem `'Reajuste de preço em andamento neste anúncio'`).
-- `public.reajuste_persistir(p_org uuid, p_operacao uuid, p_ml_item text, p_preco_confirmado numeric, p_restaurar jsonb) returns text` — `'ok'` | `'conflito'` | `'ja_aplicado'`.
+**Produces** (todas `language plpgsql security definer set search_path = ''`; `revoke execute ... from public, anon, authenticated; grant execute ... to service_role`):
+- `public.reajuste_codigo_pai(p_org uuid, p_ml_item text) returns text` — resolve o produto do MLB: `familias.codigo_pai where ml_item_id = p_ml_item` → senão `anuncios_externos.codigo_pai where item_externo_id = p_ml_item` → senão `anuncios_externos.codigo_pai` via `anuncios_externos_itens.item_externo_id = p_ml_item` (join `anuncio_externo_id`); null se não achar. Tudo com `org_id = p_org`.
+- `public.reajuste_ativo_produto(p_org uuid, p_codigo_pai text) returns text` — `ml_item_id` de algum item de operação `reajustar` com `codigo_pai = p_codigo_pai` e `status in ('pendente','enviando','conferindo')`, ou null.
+- `public.reajuste_reivindicar(p_org uuid, p_operacao uuid, p_ml_item text) returns text` — `'ok' | 'ocupado' | <motivo>`.
+- `public.reajuste_confirmar(p_org uuid, p_operacao uuid, p_confirmacoes jsonb) returns text` — `'ok' | 'ja_confirmada' | 'expirado' | 'nenhum' | 'confirmacao_faltando:<ml>' | 'ocupado:<ml>'`.
+- `public.reajuste_persistir(p_org uuid, p_operacao uuid, p_ml_item text, p_preco_confirmado numeric, p_restaurar jsonb) returns text` — `'ok' | 'ja_aplicado' | 'conflito'`.
+- `public.familia_reservar_publicacao(p_org uuid, p_familia_ids uuid[], p_operacao text) returns table(id uuid, lote_id uuid, user_id uuid, codigo_pai text, motivo text)`.
+- `public.familia_reservar_migracao_pxv(p_org uuid, p_codigo_pai text, p_campos jsonb) returns text` — `'ok' | <motivo>`.
+- `public.operacoes_massa_reivindicar` — REPLACE (mesma assinatura/retorno boolean).
 
-Regras comuns:
-- **Lock do MLB:** `perform pg_advisory_xact_lock(hashtextextended(p_org::text || ':' || p_ml_item, 0));`
-- **Famílias do MLB** = `operacoes_massa_itens.familia_ids` do item (gravadas no preview) — `select ... from public.familias where id = any(v_familias) and org_id = p_org for update`.
-- **Reajuste ativo num MLB/família:** existe item `operacoes_massa_itens` com `org_id = p_org`, operação `reajustar` (join `operacoes_massa`), `status in ('pendente','enviando','conferindo')` e (`ml_item_id = X` | `familia_ids && array[família]`).
+Lógica (testar cada item):
+- **Locks:** helper interno `perform pg_advisory_xact_lock(hashtextextended('rp:'||p_org||':'||codigo_pai,0))` para produto; `('rm:'||p_org||':'||ml_item)` para MLB. Ordem sempre produto → MLB. Famílias: `perform 1 from public.familias where org_id = p_org and codigo_pai = v_pai for update`.
+- **`reajuste_reivindicar`:** `v_pai := reajuste_codigo_pai(p_org, p_ml_item)` (null → `'Anúncio não encontrado nesta organização'`); lock produto + famílias + MLB; `select * into v_it from operacoes_massa_itens where org_id=p_org and operacao_id=p_operacao and ml_item_id=p_ml_item for update`; claimável se `status='pendente'` ou (`status='conferindo'` e `proxima_conferencia <= now()`) ou (`status='enviando'` e `atualizado_em < now()-interval '2 minutes'`), senão `'ocupado'`. Se `v_it.etapa is null`: recusas — família do produto `status='publicando'` → `'Família em publicação/atualização — tente depois'`; `anuncios_externos.migracao_pxv_status in ('solicitada','em_andamento')` do produto → `'Migração para preço por variação em curso'`; item de operação `aderir`/`sair` do MLB em `pendente`/`enviando`/`saida_solicitada` → `'Anúncio em operação de promoção em andamento'`; se a operação tem `origem_id` (Reverter): para cada `e` em `v_it.estado_anterior` (estado a restaurar) a variação atual (`variacoes` `org_id`/`id`) deve ter `preco_publicacao = (origem.item.preco)` e `preco_editado_pelo_operador = true` → senão `'Não revertível: o preço mudou depois do reajuste'`. Recusa → **não altera o item** (o chamador grava). Claim: `update ... set status='enviando', codigo_pai = v_pai, atualizado_em=now()` (preserva `etapa`); `'ok'`.
+- **`reajuste_confirmar`:** `select * into v_op from operacoes_massa where org_id=p_org and id=p_operacao and acao='reajustar' for update`; `status='executando'` → `'ja_confirmada'`; `status<>'rascunho'` → `'nenhum'`; `expira_em < now()` → `'expirado'`; para cada item `status='rascunho'` com `incluido` decidido por `p_confirmacoes` (`[{ml_item_id, incluir, risco, sem_dado}]`; item ausente = mantém `incluido` do rascunho): se incluído e `(avaliacao->>'tem_vermelho')::boolean and not risco` → `'confirmacao_faltando:'||ml`; idem `tem_sem_dado`/`sem_dado`; grava `incluido`, `confirmado_risco`, `confirmado_sem_dado`. Nenhum incluído → `'nenhum'`. Para cada incluído: `update status='pendente'` — `exception when unique_violation then return 'ocupado:'||ml` (a função inteira é desfeita: `raise` personalizado capturado no bloco externo com `rollback` implícito — implementar com bloco `begin ... exception when unique_violation then v_res := 'ocupado:'||v_ml; raise exception using errcode = 'P0001', message = v_res; end` e o chamador (edge) mapeia `P0001` com prefixo `ocupado:` → 409). Itens não incluídos → `status='bloqueado', mensagem='Desmarcado no preview'`. `update operacoes_massa set status='executando', expira_em=null`; `'ok'`.
+- **`reajuste_persistir`:** lock produto (via `codigo_pai` do item) + MLB; item `for update`; `status='aplicado'` → `'ja_aplicado'`. `p_restaurar` = array de `{variacao_id, esperado:{preco_publicacao, preco_editado_pelo_operador}, novo:{preco_publicacao, preco_editado_pelo_operador}}`. **Fase 1 (só leitura):** para cada entrada, `select preco_publicacao, preco_editado_pelo_operador into ... from variacoes where org_id=p_org and id=variacao_id for update`; `not found` ou `preco_publicacao is distinct from esperado` ou `editado is distinct from esperado` → marca conflito. Se conflito: `update item set status='erro', etapa=null, mensagem='Conflito: o preço de uma cor foi alterado por outro fluxo durante o reajuste — ML ficou com o preço novo; o próximo UPDATE publicará o valor do banco'` e `return 'conflito'` (**nenhuma variação alterada**). **Fase 2:** atualiza todas (`preco_publicacao=novo.preco_publicacao, preco_editado_pelo_operador=novo..., preco_publicado_ml=p_preco_confirmado`) e o item `status='aplicado', etapa=null, mensagem=null`; `'ok'`.
+- **`familia_reservar_publicacao`:** para os `codigo_pai` distintos das famílias pedidas (ordem alfabética), lock produto; famílias do pedido `for update` com os filtros atuais (`operacao=p_operacao`, `status in ('pronto','erro')`, `ml_item_id is null` se CREATE / `not null` se UPDATE); para cada uma: `reajuste_ativo_produto(p_org, codigo_pai)` não nulo → devolve com `motivo = 'Há reajuste de preço em massa em andamento no anúncio '||ml` (sem alterar); senão `update status='publicando', erro_mensagem=null` e devolve com `motivo null`.
+- **`familia_reservar_migracao_pxv`:** lock produto + famílias; reajuste ativo → motivo; senão `update public.anuncios_externos set` **todos** os campos de `p_campos` (exatamente os que `migrar-preco-por-variacao/index.ts:~115-127` grava hoje: `migracao_pxv_status='solicitada'`, `migracao_pxv_snapshot`, `ml_item_id_anterior`, etc. — ler o código e mapear chave a chave) `where org_id=p_org and codigo_pai=p_codigo_pai and particao=0 and migracao_pxv_status is null`; 0 linhas → `'Migração já solicitada'`; `'ok'`.
+- **`operacoes_massa_reivindicar` (replace):** lê `acao`; se `aderir`: lock MLB; item claimável pelo predicado atual? não → `return false` (sem alterar); claimável e `exists` item `reajustar` do MLB em `pendente/enviando/conferindo` → `update status='mudou', mensagem='Reajuste de preço em andamento neste anúncio'` e `return false`; senão claim como hoje. Demais ações: corpo atual, idêntico.
 
-Lógica:
-- `reajuste_reivindicar`: lock do MLB → carrega o item (`for update`); elegível para claim se `status='pendente'` **ou** (`status='conferindo'` e `proxima_conferencia <= now()`) **ou** (`status='enviando'` e `atualizado_em < now() - interval '2 minutes'`); senão `'ocupado'`. Trava as famílias (`for update`). Se `etapa is null` (envio novo): recusa `'Família em publicação/atualização — tente depois'` se alguma família `status='publicando'`; recusa `'Migração para preço por variação em curso'` se `anuncios_externos.migracao_pxv_status in ('solicitada','em_andamento')` para o `codigo_pai` de alguma família; recusa `'Anúncio participando de operação de promoção em andamento'` se existir item de operação `aderir`/`sair` do MLB em `pendente/enviando/saida_solicitada`. Se a operação tem `origem_id` (Reverter) e `etapa is null`: compara as variações atuais com o que a origem gravou (para cada `variacao_id` do `estado_anterior` da origem: `preco_publicacao = origem.preco` e `preco_editado_pelo_operador = true`) → diferente: `'Não revertível: o preço mudou depois do reajuste'`. Retomadas (`etapa` preenchida) **não** passam por essas recusas (C3). Ao final: `update ... set status='enviando', atualizado_em=now()` (preserva `etapa`) e `'ok'`.
-- `familia_reservar_publicacao`: trava `familias where id = any(p_familia_ids) and org_id = p_org and operacao = p_operacao and status in ('pronto','erro') and (ml_item_id is null) = (p_operacao = 'CREATE') for update`; para cada uma: reajuste ativo (por `familia_ids && array[id]`) → devolve com `motivo` sem alterar; senão `update set status='publicando', erro_mensagem=null` e devolve com `motivo null`.
-- `familia_reservar_migracao_pxv`: trava `familias where codigo_pai = p_codigo_pai and org_id = p_org for update`; reajuste ativo em alguma → motivo `'Há reajuste de preço em massa em andamento neste produto'`; senão `update public.anuncios_externos set migracao_pxv_status='solicitada', ... where org_id=p_org and codigo_pai=p_codigo_pai and particao=0 and migracao_pxv_status is null` (copiar exatamente os campos que `migrar-preco-por-variacao/index.ts:~115-127` grava hoje) e `'ok'`; nenhuma linha atualizada → `'Migração já solicitada'`.
-- `operacoes_massa_reivindicar` (replace): ler `acao` da operação; se `aderir`: advisory lock do MLB + se reajuste ativo no MLB → `update set status='mudou', mensagem=..., atualizado_em=now()` e `return false`; demais ações: comportamento idêntico ao atual.
-- `reajuste_persistir`: lock do MLB; item `for update`; se `status='aplicado'` → `'ja_aplicado'`; `p_restaurar` = `[{variacao_id, esperado:{preco_publicacao, preco_editado_pelo_operador}, novo:{preco_publicacao, preco_editado_pelo_operador}}]`; para cada variação: `select ... from variacoes where id = variacao_id and org_id = p_org for update` e compara com `esperado` (numeric igual e boolean igual) — qualquer diferença → `update item set status='erro', etapa=null, mensagem='Conflito: o preço desta cor foi alterado por outro fluxo durante o reajuste — ML ficou com o preço novo; o próximo UPDATE publicará o valor do banco', atualizado_em=now()` e `'conflito'`; senão `update variacoes set preco_publicacao = novo.preco_publicacao, preco_editado_pelo_operador = novo.preco_editado_pelo_operador, preco_publicado_ml = p_preco_confirmado` e `update item set status='aplicado', etapa=null, mensagem=null, atualizado_em=now()`; `'ok'`. Tudo numa transação (a função).
-  (Conferir se `variacoes` tem `org_id`; se não, escopar por `familia_id in (select id from familias where org_id = p_org)`.)
-
-- [ ] **Step 1: testes funcionais (vermelho)** em `supabase/tests/reajuste_preco.sql` (begin/rollback, fixtures: org, família Legacy `ml_item_id='MLBX'` com 2 variações, operação `reajustar` executando com item `pendente` `familia_ids={fam}`): (a) reivindicar → `'ok'` e item `enviando`; de novo → `'ocupado'`; (b) família `publicando` + item novo → motivo; (c) item `conferindo` com `proxima_conferencia` futura → `'ocupado'`; vencida → `'ok'` e `etapa` preservada; (d) `familia_reservar_publicacao` com reajuste ativo → linha com motivo e família continua `pronto`; sem reajuste → `publicando`; (e) `familia_reservar_migracao_pxv` com reajuste ativo → motivo; (f) persistir com esperado igual → `'ok'`, variações gravadas, item `aplicado`; chamar de novo → `'ja_aplicado'`; com esperado diferente → `'conflito'` e variações intocadas; (g) aderir: operação `aderir` com item do mesmo MLB e reajuste ativo → `operacoes_massa_reivindicar` false e item `mudou`; sem reajuste → true (regressão do comportamento atual: `pausar` e `sair` inalterados); (h) Reverter com variação editada depois → motivo "Não revertível".
-- [ ] **Step 2: teste concorrente (vermelho)** `reajuste_preco_concorrencia.sh`: fixtures via psql; variantes, cada uma com sessão A segurando a transação 3 s e B medida: (1) A = `reajuste_reivindicar` (begin; select; pg_sleep(3); commit) × B = `familia_reservar_publicacao` da mesma família → B espera ≥1 s e devolve motivo; (2) A = `familia_reservar_publicacao` (família vira publicando) × B = `reajuste_reivindicar` → B espera e devolve motivo de publicação; (3) A = `reajuste_reivindicar` × B = `operacoes_massa_reivindicar` de `aderir` do mesmo MLB → B espera e devolve false; (4) A = `reajuste_reivindicar` × B = `familia_reservar_migracao_pxv` → motivo; (5) duas sessões `reajuste_reivindicar` no mesmo item `conferindo` vencido → exatamente uma `'ok'`, a outra `'ocupado'`. Cleanup no `trap`.
-- [ ] **Step 3:** escrever a migration com as 5 funções.
-- [ ] **Step 4:** os dois testes verdes no Postgres local (Docker). Sem Docker: o funcional pela receita de produção (`TESTE_OK`); o concorrente **exige** Docker — se não subir, registrar no relatório como pendente e avisar o controlador (não pular em silêncio).
-- [ ] **Step 5:** `database.types.ts` — `Functions` com as 4 novas assinaturas (args/returns). `tsc -b`.
-- [ ] **Step 6:** commit `feat(operacoes): RPCs de reserva e persistência do reajuste`.
+- [ ] **Step 1 — funcionais (vermelho)** `supabase/tests/reajuste_preco.sql` (begin…rollback; fixtures: org; família Legacy F1 `codigo_pai='PAI1'`, `ml_item_id='MLBX'`, 2 variações; operação `reajustar` executando com item `pendente` `codigo_pai='PAI1'`):
+  (a) reivindicar `'ok'`→`enviando`; de novo `'ocupado'`. (b) F1 `publicando` → motivo, item intacto. (c) **família F2 nova do mesmo `codigo_pai`** em `publicando` → motivo. (d) `conferindo` futuro → `'ocupado'`; vencido → `'ok'` com `etapa` preservada; com `etapa` e F1 `publicando` → `'ok'` (retomada não recusa). (e) `familia_reservar_publicacao` de F2 (mesmo produto) com reajuste ativo → motivo, F2 continua `pronto`; sem reajuste → `publicando`. (f) PxV com reajuste ativo → motivo; sem → `'ok'` e campos gravados. (g) persistir ok → variações e item; de novo `'ja_aplicado'`; **conflito na segunda variação** → `'conflito'` e a **primeira variação inalterada**; variação inexistente no `p_restaurar` → `'conflito'`. (h) aderir: item `aderir` `pendente` + reajuste ativo → false e `mudou`; item `aderir` `enviando` recente + reajuste ativo → false e **status continua `enviando`**; sem reajuste → true; `pausar`/`sair` idênticos ao atual. (i) Reverter com variação editada → motivo. (j) `reajuste_confirmar`: falta `risco` num 🔴 incluído → `confirmacao_faltando:`; expirado → `'expirado'`; ok → itens `pendente`/`bloqueado` e operação `executando`; repetir → `'ja_confirmada'`; colisão de índice → erro `P0001` `ocupado:<ml>` e **nada alterado** (operação continua `rascunho`).
+- [ ] **Step 2 — concorrência (vermelho)** `reajuste_preco_concorrencia.sh` (modelo `worker_rodadas_concorrencia.sh`; cada variante com fixture própria; A segura 3 s; verificar resultado de B, tempo de espera ≥1 s **e estado final**):
+  1. A `reajuste_reivindicar` × B `familia_reservar_publicacao` (F1) → B motivo; F1 `pronto`.
+  2. A `familia_reservar_publicacao` (F1 vira publicando; **sem item de reajuste ainda pendente — o item é inserido em `pendente` só depois do commit de A**) × B `reajuste_reivindicar` → B motivo de publicação; item `pendente`.
+  3. A `reajuste_reivindicar` × B `familia_reservar_publicacao` de **F2 recém-criada do mesmo produto** → B motivo.
+  4. A `reajuste_reivindicar` × B `operacoes_massa_reivindicar` (aderir do MLB, pendente) → B false, item aderir `mudou`.
+  5. A `operacoes_massa_reivindicar` (aderir claim → enviando) × B `reajuste_reivindicar` → B motivo de promoção.
+  6. A `reajuste_reivindicar` × B `familia_reservar_migracao_pxv` → B motivo; A `familia_reservar_migracao_pxv` × B `reajuste_reivindicar` → B motivo PxV.
+  7. Duas sessões `reajuste_reivindicar` no mesmo item `conferindo` vencido → uma `'ok'`, outra `'ocupado'`; idem `enviando` parado.
+  8. Duas sessões `reajuste_confirmar` da mesma operação → uma `'ok'`, outra `'ja_confirmada'`.
+- [ ] **Step 3:** migration. **Step 4:** ambos verdes no Docker. **Step 5:** `database.types.ts` Functions; `tsc -b`. **Step 6:** commit `feat(operacoes): RPCs de reserva, confirmação e persistência do reajuste`.
 
 ---
 
-### Task 3: Núcleo puro — alvo, elegibilidade, decisão por etapa, avaliação (opus)
+### Task 3: Núcleo puro (opus)
 
-**Files:**
-- Create: `supabase/functions/_shared/operacoes/reajuste/alvo.ts`, `elegibilidade.ts`, `decidir.ts`, `avaliacao.ts`, `tipos.ts` + `__tests__/` de cada.
+**Files:** Create `supabase/functions/_shared/operacoes/reajuste/{tipos,alvo,elegibilidade,decidir,avaliacao}.ts` + `__tests__/` de cada.
 
-**Interfaces — Produces:**
+**Produces:**
 ```ts
 // tipos.ts
 export type TipoAjuste = 'pct' | 'reais';
@@ -172,184 +168,179 @@ export interface CorAvaliada { variation_id: string | null; sku: string | null; 
   origem: 'nacional' | 'importado' | null; aliquota_pct: number | null; comissao_pct: number | null; comissao_fixa: number | null;
   frete: number | null; liquido: number | null; semaforo: Semaforo; motivo: string | null }
 export interface Avaliacao { cores: CorAvaliada[]; pior: Semaforo; tem_vermelho: boolean; tem_sem_dado: boolean }
-export interface VivoItem { preco: number | null; variacoes: { id: string; preco: number }[] | null; status: string; sub_status: string[];
-  catalog_listing: boolean; tem_relacoes: boolean }
+export interface EstadoVariacao { preco_publicacao: number | null; preco_editado_pelo_operador: boolean }
+export interface EntradaRestauracao { variacao_id: string; esperado: EstadoVariacao; novo: EstadoVariacao } // tipo ÚNICO usado no preview, executor e RPC
+export type Etapa = 'escrita_pedida' | 'ml_confirmado' | null;
+export interface VivoItem { preco: number | null; variacoes: { id: string; preco: number }[] | null; status: string;
+  sub_status: string[]; catalog_listing: boolean; tem_relacoes: boolean }
 // alvo.ts
-export const centavos: (reais: number) => number;           // half-up
-export const reais: (centavos: number) => number;
-export function calcularAlvo(base: number, a: Ajuste): number | null; // null = inválido (≤ 0)
-export function semAlteracao(base: number, alvo: number): boolean;     // iguais em centavos
+export function centavos(v: number): number;   // Math.round(v * 100) com correção: Math.round((v + Number.EPSILON) * 100)
+export function reais(c: number): number;      // c / 100
+export function calcularAlvo(base: number, a: Ajuste): number | null; // ≤ 0 → null
+export function semAlteracao(base: number, alvo: number): boolean;
 // elegibilidade.ts
-export interface FatosElegibilidade { vivo: VivoItem; ehKit: boolean; temAtacado: boolean; participaPromocao: boolean | null; // null = leitura falhou
+export interface FatosElegibilidade { vivo: VivoItem; ehKit: boolean; temAtacado: boolean;
+  promocaoBanco: boolean;            // ml_promocao_itens pending/started
+  promocaoML: boolean | null;        // leitura fresca (null = inconclusiva)
   familiaPublicando: boolean; migracaoPxv: boolean }
 export function motivoInelegivel(f: FatosElegibilidade): string | null;
 // decidir.ts
-export type Etapa = 'escrita_pedida' | 'ml_confirmado' | null;
 export type Vivo = { kind: 'ok'; preco: number; todasIguais: boolean; composicao: string[] | null } | { kind: 'falhou' };
-export type DecisaoReajuste =
-  | { tipo: 'persistir' } | { tipo: 'escrever' } | { tipo: 'voltar_pendente' }
+export type DecisaoReajuste = { tipo: 'persistir' } | { tipo: 'escrever' } | { tipo: 'voltar_pendente' }
   | { tipo: 'fim'; status: 'mudou' | 'erro' | 'conferindo'; mensagem: string };
 export function decidirReajuste(etapa: Etapa, alvo: number, anterior: number, vivo: Vivo, composicaoEsperada: string[] | null): DecisaoReajuste;
 // avaliacao.ts
-export function mudouAvaliacao(antes: Avaliacao, agora: Avaliacao): boolean; // compara custo/origem/aliquota/piso/comissao/fixa/frete por cor (centavos/igualdade), composição de cores
 export function resumir(cores: CorAvaliada[]): Avaliacao;
+export function mudouAvaliacao(antes: Avaliacao, agora: Avaliacao): boolean;
 ```
-
-Regras (testar cada linha):
-- `calcularAlvo`: pct → `round_half_up(base × (100 ± valor)/100)` em centavos (`Math.round` sobre centavos inteiros com correção de float: usar `Math.round((centavos(base) * (100 ± valor)) / 100)` com `valor` em até 2 casas → multiplicar por 100 e trabalhar em inteiros: `Math.round(centavos(base) * (10000 ± valor*100) / 10000)`); reais → `centavos(base) ± centavos(valor)`; resultado ≤ 0 → `null`. Casos: 100,00 +1% = 101,00; 19,99 +10% = 21,99 (21,989 → 21,99); 10,05 −5% = 9,55 (9,5475 → 9,55); 0,50 −R$1 → null; 33,33 +0% → 33,33 (sem alteração).
-- `motivoInelegivel` (ordem; primeira que bater): `vivo.status` ∉ {active, paused} ou `sub_status` com moderação (`forbidden`,`waiting_for_patch`,`poor_quality_thumbnail`,`poor_quality_picture`) → `'Anúncio moderado, encerrado ou inativo'`; `ehKit` → `'Kit Virtual não entra no reajuste'`; `catalog_listing || tem_relacoes` → `'Anúncio de catálogo (ou com par de catálogo) fica fora do reajuste'`; `temAtacado` → `'Anúncio com preço de atacado fica fora do reajuste'`; `participaPromocao === true` → `'Participando de promoção'`; `participaPromocao === null` → `'Não foi possível conferir promoções — tente de novo'`; `familiaPublicando` → `'Família em publicação/atualização'`; `migracaoPxv` → `'Migração para preço por variação em curso'`.
-- `decidirReajuste` (spec "Execução por item"):
-  - `etapa='ml_confirmado'` → `persistir`.
-  - `etapa='escrita_pedida'`: vivo falhou → `fim conferindo 'Aguardando confirmação do ML'`; composição ≠ esperada → `fim erro 'Variações do anúncio mudaram durante o reajuste'`; `todasIguais && preco===alvo` → `persistir`; `todasIguais && preco===anterior` → `voltar_pendente`; senão `fim erro 'Preço alterado por terceiros durante o reajuste'`.
-  - `etapa=null`: vivo falhou → `fim erro 'Não foi possível ler o anúncio'`; composição ≠ esperada → `fim mudou 'Variações do anúncio mudaram — refaça o preview'`; `!todasIguais || preco !== anterior` → `fim mudou 'O preço mudou desde o preview'`; senão `escrever`.
-  - comparar preços em centavos.
-- `mudouAvaliacao`: mesma quantidade/ordem de cores (por `variation_id ?? sku`) e, por cor, iguais: `custo`, `piso`, `origem`, `aliquota_pct`, `comissao_pct`, `comissao_fixa`, `frete` (numéricos comparados em centavos/2 casas) → senão `true`.
-- `resumir`: `pior` = maior de {indisponivel:0? não: ordem de gravidade} — **vermelho > indisponivel > amarelo > verde** para o resumo de bloqueio, mas `tem_vermelho` e `tem_sem_dado` independentes (C5/D12: um não esconde o outro).
-
-- [ ] Steps TDD por arquivo (teste vermelho → implementação → verde), `pnpm exec vitest run supabase/functions/_shared/operacoes/reajuste`; commit `feat(operacoes): núcleo puro do reajuste de preço`.
+Regras/casos (um teste por linha):
+- `calcularAlvo` em inteiros: `c = centavos(base)`; pct: `Math.round(c * (10000 + s*Math.round(valor*100)) / 10000)` (s = ±1); reais: `c + s*centavos(valor)`; `≤ 0 → null`; retorna `reais(...)`. Casos: 100,00 +1% → 101,00; 19,99 +10% → 21,99; 10,05 −5% → 9,55; 0,50 −R$1 → null; 33,33 +0% → 33,33 e `semAlteracao` true; 49,90 +R$0,10 → 50,00.
+- `motivoInelegivel` (ordem): `vivo.status` ∉ {active, paused} ou `sub_status` ∩ {forbidden, waiting_for_patch, poor_quality_thumbnail, poor_quality_picture} → `'Anúncio moderado, encerrado ou inativo'`; `ehKit` → `'Kit Virtual não entra no reajuste'`; `catalog_listing || tem_relacoes` → `'Anúncio de catálogo (ou com par de catálogo) fica fora do reajuste'`; `temAtacado` → `'Anúncio com preço de atacado fica fora do reajuste'`; `promocaoBanco || promocaoML === true` → `'Participando de promoção'`; `promocaoML === null` → `'Não foi possível conferir promoções — tente de novo'`; `familiaPublicando` → `'Família em publicação/atualização'`; `migracaoPxv` → `'Migração para preço por variação em curso'`.
+- `decidirReajuste` (centavos): `ml_confirmado` → persistir. `escrita_pedida`: falhou → `fim conferindo 'Aguardando confirmação do ML'`; composição ≠ esperada → `fim erro 'Variações do anúncio mudaram durante o reajuste'`; todasIguais e =alvo → persistir; todasIguais e =anterior → voltar_pendente; senão `fim erro 'Preço alterado por terceiros durante o reajuste'`. `null`: falhou → `fim erro 'Não foi possível ler o anúncio'`; composição ≠ → `fim mudou 'Variações do anúncio mudaram — refaça o preview'`; `!todasIguais || ≠ anterior` → `fim mudou 'O preço mudou desde o preview'`; senão escrever.
+- `resumir`: `tem_vermelho` = alguma cor vermelha; `tem_sem_dado` = alguma indisponivel; `pior` por gravidade vermelho > indisponivel > amarelo > verde.
+- `mudouAvaliacao`: chave por cor `variation_id ?? sku`; conjuntos de chaves diferentes → true; por cor, `custo, piso, aliquota_pct, comissao_pct, comissao_fixa, frete` comparados em centavos (null≠número), `origem` igual → senão true.
+- [ ] TDD por arquivo; `pnpm exec vitest run supabase/functions/_shared/operacoes/reajuste`; commit `feat(operacoes): núcleo puro do reajuste`.
 
 ---
 
 ### Task 4: Cliente ML do reajuste (opus)
 
-**Files:** Create `supabase/functions/_shared/operacoes/reajuste/ml.ts` + `__tests__/ml.test.ts`.
+**Files:** Create `supabase/functions/_shared/operacoes/reajuste/ml.ts` + teste.
 
-**Interfaces — Consumes:** `caminhoMultiget`, `comoEnvelopeAntigo` (`_shared/ml/multiget.ts`); `SemAcessoStatusML` (`../ml-status.ts`) como erro fatal de acesso. **Produces:**
+**Produces:**
 ```ts
 export type ResultadoPut = { kind: 'ok' } | { kind: 'sem_escrita'; status: number; mensagem: string } | { kind: 'desconhecido'; mensagem: string };
 export interface ClienteReajusteML {
-  lerVivo(itemId: string): Promise<VivoItem & { variacoesComPreco: { id: string; preco: number }[] | null }>; // lança SemAcessoStatusML em 401/403 (HTTP ou envelope); Error comum nos demais
-  putPreco(itemId: string, alvo: number, variacaoIds: string[] | null): Promise<ResultadoPut>;          // nunca lança (exceto SemAcessoStatusML)
-  participaPromocao(itemId: string): Promise<boolean | null>;                                           // null = leitura falhou
+  lerVivo(itemId: string): Promise<VivoItem>;                       // lança SemAcessoStatusML em 401/403 (HTTP ou envelope); Error nos demais
+  putPreco(itemId: string, alvo: number, variacaoIds: string[] | null): Promise<ResultadoPut>; // lança só SemAcessoStatusML
+  participaPromocaoML(itemId: string): Promise<boolean | null>;     // null = inconclusivo
 }
 export function criarClienteReajusteML(token: string, f?: typeof fetch): ClienteReajusteML;
 ```
-Regras:
-- `lerVivo`: `GET /items/bulk?ids=<id>&attributes=status_code,body.id,body.price,body.status,body.sub_status,body.variations,body.catalog_listing,body.item_relations` (usar `caminhoMultiget([id], 'id,price,status,sub_status,variations,catalog_listing,item_relations')`); envelope 401/403 → `SemAcessoStatusML`; 404 → `Error('ML não devolveu o anúncio')`; `variations` → `[{id: String(v.id), preco: v.price}]` ou `null` se vazio; `tem_relacoes` = `item_relations` não vazio.
-- `putPreco`: Legacy (`variacaoIds` não nulo) body `{variations: variacaoIds.map(id => ({id: Number(id), price: alvo}))}`; plano/UP body `{price: alvo}`; `PUT /items/{id}`. Resposta 200/201 → `ok`; 401/403 → lança `SemAcessoStatusML`; 400/404/409/422 (o ML respondeu e recusou) → `sem_escrita` com `message` do corpo; 429 → `sem_escrita` (status 429, retentável pelo executor); 5xx, timeout (`AbortController` 15 s) ou `fetch` lançando → `desconhecido`.
-- `participaPromocao`: `GET /seller-promotions/items/{id}?app_version=v2` → lista; alguma com `status` `pending`/`started` → `true`; para cada uma com `candidate` → `GET /seller-promotions/promotions/{promotion_id}/items?promotion_type={type}&item_id={id}&app_version=v2` (visão da campanha) → `pending`/`started` → `true`; qualquer falha (exceto 404 do item = sem promoções → `false`) → `null`. 401/403 → `null` (não fatal aqui; a elegibilidade bloqueia).
-- Testes com `vi.fn()` de fetch (modelo `_shared/operacoes/__tests__/ml.test.ts`): cada branch acima, URLs e bodies exatos.
+- `lerVivo`: `caminhoMultiget([id], 'id,price,status,sub_status,variations,catalog_listing,item_relations')`; envelope 401/403 → `SemAcessoStatusML`; 404/sem body → `Error('ML não devolveu o anúncio')`; `variacoes` = `[{id: String(v.id), preco: Number(v.price)}]` ou null se vazio.
+- `putPreco`: Legacy body `{variations: ids.map(id => ({id: Number(id), price: alvo}))}`; plano/UP `{price: alvo}`; timeout 15 s (`AbortController`). 200/201 → ok; 401/403 → lança; 4xx (inclui 429) com resposta → `sem_escrita` (`status`, `message` do corpo); 5xx, abort, `fetch` lançando → `desconhecido`.
+- `participaPromocaoML`: `GET /seller-promotions/items/{id}?app_version=v2` — 200 com lista: alguma `pending/started` → true; para cada `candidate`: `GET /seller-promotions/promotions/{pid}/items?promotion_type={type}&item_id={id}&app_version=v2` → `results[0].status` `pending/started` → true; falha nessa leitura → null; nenhuma → false. **Qualquer não-200 na visão por item (inclui 404) → null** (inconclusivo, a elegibilidade bloqueia).
+- Testes com fetch mock (URLs e bodies exatos, cada ramo).
 - [ ] TDD; commit `feat(operacoes): cliente ML do reajuste`.
 
 ---
 
 ### Task 5: Preview no servidor (opus)
 
-**Files:** Create `supabase/functions/_shared/operacoes/reajuste/preview.ts` + `__tests__/preview.test.ts`.
+**Files:** Create `supabase/functions/_shared/operacoes/reajuste/preview.ts` + teste. Modify `supabase/functions/_shared/promocoes/deps.ts`: `criarTarifaEm(cx, opts?: { fresco?: boolean })` — `fresco` ignora a **leitura** do cache (continua gravando); default inalterado (promoções intactas; teste novo cobre `fresco`).
 
-**Interfaces — Consumes:** Task 3 (`calcularAlvo`, `semAlteracao`, `motivoInelegivel`, `resumir`), Task 4 (`ClienteReajusteML`), `projetarItem`, `carregarCadastro`, `lerAliquotas`, `criarTarifaEm`, `buscarItensML`/`criarGetJson` (`_shared/promocoes/`). **Produces:**
+**Produces:**
 ```ts
-export interface PedidoPreview { familias: string[]; ml_item_ids: string[]; ajuste: Ajuste; precos?: Record<string, number>; origem_id?: string | null }
-export interface ItemPreview { ml_item_id: string; familia_ids: string[]; titulo: string | null; sku: string | null;
-  preco_anterior: number; preco: number; avaliacao: Avaliacao; estado_anterior: EstadoVariacao[]; variacoes_ml: string[] | null;
-  situacao: 'elegivel' | 'fora' | 'sem_alteracao'; motivo: string | null }
-export interface EstadoVariacao { variacao_id: string; preco_publicacao: number | null; preco_editado_pelo_operador: boolean }
+export interface PedidoPreview { familias: string[]; ml_item_ids: string[]; ajuste: Ajuste | null; precos?: Record<string, number>; origem_id?: string | null }
+export interface AlvoExpandido { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; variacoes_ml_esperadas: string[] | null;
+  sku: string | null; titulo: string | null; ehKit: boolean; temAtacado: boolean; promocaoBanco: boolean; familiaPublicando: boolean; migracaoPxv: boolean }
+export interface ItemPreview { ml_item_id: string; codigo_pai: string; variacao_ids: string[]; titulo: string | null; sku: string | null;
+  preco_anterior: number; preco: number; avaliacao: Avaliacao | null; estado_anterior: EstadoVariacao[] | null; variacoes_ml: string[] | null;
+  situacao: 'elegivel' | 'fora' | 'sem_alteracao'; motivo: string | null; incluido: boolean; aviso: string | null }
 export interface DepsPreview {
-  expandir(orgId: string, familias: string[], mlItemIds: string[]): Promise<{ ml_item_id: string; familia_ids: string[]; variacao_ids: string[]; sku: string | null; titulo: string | null; ehKit: boolean; temAtacado: boolean; familiaPublicando: boolean; migracaoPxv: boolean }[]>;
-  estadoVariacoes(orgId: string, variacaoIds: string[]): Promise<EstadoVariacao[]>;
+  expandir(familias: string[], mlItemIds: string[]): Promise<AlvoExpandido[]>;
+  estadoVariacoes(variacaoIds: string[]): Promise<Map<string, EstadoVariacao>>;
   ml: ClienteReajusteML;
-  avaliar(mlItemId: string, preco: number): Promise<Avaliacao>; // projetarItem com cadastro/alíquotas carregados 1x
-  origem?(orgId: string, origemId: string): Promise<{ itens: Map<string, { preco_anterior: number; preco: number; estado_anterior: EstadoVariacao[] }> } | null>;
+  avaliar(mlItemId: string, preco: number): Promise<Avaliacao>;
+  origem(origemId: string): Promise<Map<string, { preco_anterior: number; preco: number; restaurar: EntradaRestauracao[] }> | null>; // só itens aplicado
 }
 export const MAX_MLBS = 500;
-export async function montarPreview(orgId: string, p: PedidoPreview, deps: DepsPreview): Promise<{ ok: true; itens: ItemPreview[] } | { ok: false; erro: string }>;
+export async function montarPreview(p: PedidoPreview, deps: DepsPreview): Promise<{ ok: true; itens: ItemPreview[]; executaveis: number } | { ok: false; erro: string }>;
 ```
 Regras:
-- Expansão deduplicada por `ml_item_id`; `> MAX_MLBS` → `{ok:false, erro:'No máximo 500 anúncios por operação (a seleção expandiu para N).'}`.
-- Por MLB (em paralelo limitado a 5): `lerVivo`; `participaPromocao`; base = vivo (Legacy: exige `todasIguais`, senão `fora` "Variações com preços diferentes no ML"); `motivoInelegivel` → `fora`; alvo = `precos[ml]` (normalizado em centavos) ?? `calcularAlvo(base, ajuste)`; `null` → `fora` "Preço resultante inválido"; `semAlteracao` → `sem_alteracao`; senão `avaliar(ml, alvo)` e `estadoVariacoes`.
-- Reverter (`origem_id`): ignora `ajuste`; só MLBs `aplicado` na origem; alvo = `preco_anterior` da origem; se vivo ≠ `preco` da origem → `fora` "Não revertível: o preço mudou depois do reajuste"; `estado_anterior` = o da origem (é o estado a restaurar), e o "estado esperado" para a RPC é `{preco_publicacao: origem.preco, editado: true}` por variação.
-- Testes com deps falsos: expansão > 500; cada motivo fora; sem alteração; preço editado sobrescreve; Legacy com preços divergentes; reverter (aplicado / mudou depois / não aplicado).
-- [ ] TDD; commit `feat(operacoes): preview do reajuste no servidor`.
+- **Expansão** (implementada no deps da Task 7, testada aqui com fake): Legacy partição 0 = `familias.ml_item_id = X` (canônica por `publicado_em desc`), `variacao_ids` = variações cujo SKU está no mapa da partição 0 em `anuncios_externos.variacoes_externas` se houver split, senão todas as variações publicadas da família (excluir `excluida_da_publicacao` se a coluna existir); partição > 0 = `anuncios_externos.item_externo_id = X` → `codigo_pai` e `variacao_ids` pelo mapa `variacoes_externas` daquela partição; UP = `anuncios_externos_itens` não retirados (por família selecionada: todos os SKUs) → `variacao_ids` = `[variacao_id]` (ou `variacoes(familia_id, codigo=sku)`). Dedup por MLB; `> 500` → `{ok:false, erro:'No máximo 500 anúncios por operação (a seleção expandiu para N).'}`.
+- Por MLB (paralelismo 5): `lerVivo`; Legacy exige `todasIguais` (senão `fora` 'Variações com preços diferentes no ML'); `participaPromocaoML`; `motivoInelegivel` → `fora`; alvo = `precos[ml]` normalizado ?? `calcularAlvo(base, ajuste)`; null → `fora` 'Preço resultante inválido'; `semAlteracao` → `sem_alteracao`; senão `avaliar(ml, alvo)`, `estado_anterior` (das `variacao_ids`, ordem fixa), `incluido = !(tem_vermelho || tem_sem_dado)` (D7: 🔴/⚪ desmarcados), aviso `🟡` se `pior==='amarelo'`.
+- **Reverter** (`origem_id`): ignora `ajuste`/`precos`; MLBs = itens `aplicado` da origem; alvo = `preco_anterior` da origem; vivo ≠ `preco` da origem → `fora` 'Não revertível: o preço mudou depois do reajuste'; **banco**: `estadoVariacoes` ≠ `{preco_publicacao: origem.preco, editado: true}` em alguma variação → `fora` 'Não revertível: o preço foi editado depois do reajuste'; `aviso` com D10 ("o preço restaurado volta a divergir do banco/ML se já divergia; cores com marca desligada voltam a ser recalculadas no re-ingest"); `restaurar` vem da origem (`esperado` = estado gravado pela origem, `novo` = estado anterior da origem).
+- `executaveis` = elegíveis; 0 → a Task 7 **não grava operação** (C4).
+- Testes: > 500; cada motivo `fora` (inclui `promocaoBanco` true com ML false); sem alteração; preço editado sobrescreve; Legacy divergente; partição > 0 só com suas variações; 🔴/⚪ `incluido=false`; reverter (aplicado / ML mudou / banco mudou / aviso); `criarTarifaEm` `fresco` não lê cache.
+- [ ] TDD; commit `feat(operacoes): preview do reajuste`.
 
 ---
 
-### Task 6: Handler `reajustar` no laço (opus)
+### Task 6: Handler `reajustar` e ajuste mínimo do laço (opus)
 
-**Files:** Create `supabase/functions/_shared/operacoes/reajuste/executar.ts` + `__tests__/executar.test.ts`. Modify `supabase/functions/_shared/operacoes/laco.ts` **só se** necessário para aceitar `reivindicar` que devolve motivo (preferir adaptar no deps: `reivindicar` booleano + gravação do motivo).
+**Files:** Create `supabase/functions/_shared/operacoes/reajuste/executar.ts` + teste; Modify `supabase/functions/_shared/operacoes/laco.ts` (uma linha: o caminho `fatal.encerrar` termina com `return finalizar(operacaoId, deps, processados)` em vez de `deps.concluir()` direto — `finalizar` conclui quando não há `enviando` nem itens a conferir; os testes de status existentes continuam verdes porque `itensAConferir` deles devolve `[]`).
 
-**Interfaces — Produces:**
+**Produces:**
 ```ts
 export interface OperacaoReajusteRow { id: string; org_id: string; origem_id: string | null }
-export interface ItemReajusteRow extends ItemRow { preco_anterior: number; etapa: Etapa; avaliacao: Avaliacao; estado_anterior: EstadoVariacao[];
-  variacoes_ml: string[] | null; confirmado_sem_dado: boolean }
+export interface ItemReajuste { ml_item_id: string; status: StatusItem; preco: number; preco_anterior: number; etapa: Etapa;
+  conferencias: number; avaliacao: Avaliacao; restaurar: EntradaRestauracao[]; variacoes_ml: string[] | null;
+  confirmado_risco: boolean; confirmado_sem_dado: boolean; codigo_pai: string; variacao_ids: string[] }
 export interface DepsReajuste extends DepsLaco {
   ml: ClienteReajusteML;
-  itensReajuste(operacaoId: string, limite: number): Promise<ItemReajusteRow[]>; // pendente + conferindo vencido + enviando parado
-  reivindicarReajuste(operacaoId: string, mlItemId: string): Promise<'ok' | 'ocupado' | string>;
-  avaliar(mlItemId: string, preco: number): Promise<Avaliacao>;
-  fatosElegibilidade(mlItemId: string, familiaIds: string[]): Promise<Omit<FatosElegibilidade, 'vivo' | 'participaPromocao'>>;
-  persistir(operacaoId: string, mlItemId: string, precoConfirmado: number, restaurar: unknown): Promise<'ok' | 'conflito' | 'ja_aplicado'>;
-  agendarConferenciaItem(operacaoId: string, mlItemId: string, conferencias: number): Promise<void>; // status conferindo + proxima_conferencia (5,10,20,40,60 min)
+  lerItem(operacaoId: string, mlItemId: string): Promise<ItemReajuste>;   // re-leitura APÓS o claim (etapa atual)
+  avaliarFresco(mlItemId: string, preco: number): Promise<Avaliacao>;     // tarifa fresca (C1)
+  fatos(item: ItemReajuste): Promise<{ ehKit: boolean; temAtacado: boolean; promocaoBanco: boolean; familiaPublicando: boolean; migracaoPxv: boolean }>;
+  persistir(operacaoId: string, mlItemId: string, precoConfirmado: number, restaurar: EntradaRestauracao[]): Promise<'ok' | 'conflito' | 'ja_aplicado'>;
+  agendarConferenciaItem(operacaoId: string, mlItemId: string, conferencias: number): Promise<void>;
+  encerrarSemEtapa(operacaoId: string, mensagem: string): Promise<void>; // pendente/enviando SEM etapa → erro; com etapa → conferindo (agendado)
 }
 export function executarReajuste(op: OperacaoReajusteRow, deps: DepsReajuste, opts: { limiteMs: number; lote: number; maxItens?: number }): Promise<{ processados: number; continuou: boolean }>;
 ```
-Fluxo por item (spec "Execução por item"; recuperação antes das travas):
-1. claim `reivindicarReajuste`: `'ocupado'` → pula; motivo → `gravarItem({status: motivo começa com 'Não revertível' ? 'mudou' : 'bloqueado', mensagem: motivo})`.
-2. `etapa='ml_confirmado'` → `persistir` (`'ok'|'ja_aplicado'` → pronto; `'conflito'` → já gravado pela RPC; erro de banco → `agendarConferenciaItem`).
-3. `etapa='escrita_pedida'` → `lerVivo` (falha → `agendarConferenciaItem`) → `decidirReajuste` → `persistir`/`voltar_pendente` (`gravarItem({status:'pendente', etapa:null})`) / fim. **Sem elegibilidade.**
-4. `etapa=null` → `lerVivo` (falha → `erro` com tentativa retentável até 3 via `conferencias`) → `participaPromocao` + `fatosElegibilidade` → `motivoInelegivel` → `bloqueado`; `decidirReajuste` → `mudou`; `avaliar(alvo)` + `mudouAvaliacao(item.avaliacao, agora)` → `mudou 'Dados financeiros mudaram desde o preview — refaça o preview'`; trava: `agora.tem_vermelho && !confirmado_risco` ou `agora.tem_sem_dado && !confirmado_sem_dado` → `mudou` (defesa; o `confirmar` já exige).
-5. `gravarItem({etapa:'escrita_pedida'})` → `putPreco` → `sem_escrita` (429 → tentativa até 3 com `etapa:null` e volta `pendente`; demais → `erro` mensagem do ML, `etapa:null`) | `desconhecido` → `agendarConferenciaItem` | `ok` → `lerVivo` (falha → `agendarConferenciaItem`) → todas = alvo → `gravarItem({etapa:'ml_confirmado'})` → `persistir`; senão `erro 'Preço não aplicado pelo ML'` (`etapa:null`).
-6. Fatal (`SemAcessoStatusML`): itens sem etapa → `erro 'Reconecte a conta do ML em Canais'`; itens com etapa ficam `conferindo` (não usar `encerrarRestantes` genérico do status: implementar `encerrarSemEtapa`).
-- `restaurar` para `persistir`: envio normal = por variação `{variacao_id, esperado: estado_anterior[i], novo: {preco_publicacao: alvo, preco_editado_pelo_operador: true}}`; Reverter = `{esperado: {preco_publicacao: origem.preco, editado: true}, novo: estado_anterior_da_origem[i]}`.
-- Testes (mocks como `executar-status.test.ts`): sucesso Legacy/plano/UP; `sem_escrita` 400 → erro; 429 ×3 → erro; `desconhecido` → conferindo; conferência alvo → aplicado **mesmo com `participaPromocao` falhando** (Review Focus 2); conferência anterior → pendente sem etapa; terceiros → erro; Legacy uma variação diferente → não confirma; persistir conflito; banco falha após ml_confirmado → conferindo; fatal com mix de itens; Reverter.
-- [ ] TDD; suites antigas intactas; `pnpm lint:functions && pnpm check:functions`; commit `feat(operacoes): handler de reajuste de preço`.
+- **Claim único:** `DepsReajuste.itensPendentes` (consulta pendente + conferindo vencido + enviando parado) e `DepsReajuste.reivindicar` (wrapper de `reajuste_reivindicar`: `'ok'` → true; `'ocupado'` → false; motivo → grava `status` `mudou` se começa com 'Não revertível', senão `bloqueado`, com a mensagem, e false). O laço chama esses dois; o `processar` faz `deps.lerItem` para pegar a `etapa` atual.
+- `restaurar` do item: envio normal → `variacao_ids` × `estado_anterior` (`esperado` = estado do preview, `novo` = `{preco_publicacao: preco, editado: true}`); Reverter → `restaurar` da origem (gravado no preview). Persistido no item como `estado_anterior` = `EntradaRestauracao[]` (formato único).
+- Fluxo (recuperação antes de travas): (1) `ml_confirmado` → `persistir` (erro de banco → lança `FalhaPosEscrita` → laço relança → retomada). (2) `escrita_pedida` → `lerVivo` (falha → `agendarConferenciaItem`) → `decidirReajuste` (sem elegibilidade) → persistir / `gravarItem({status:'pendente', etapa:null})` / fim (`conferindo` via `agendarConferenciaItem`). (3) sem etapa → `lerVivo` (falha → retentável: `conferencias+1 < 3` → `gravarItem({status:'pendente', conferencias+1, mensagem})`, senão `erro`) → `participaPromocaoML` + `fatos` → `motivoInelegivel` → `bloqueado`; `decidirReajuste` → `mudou`; `avaliarFresco` + `mudouAvaliacao` → `mudou 'Dados financeiros mudaram desde o preview — refaça o preview'`; defesa C5 (`tem_vermelho && !confirmado_risco` etc.) → `mudou`. (4) `gravarPos(gravarItem({etapa:'escrita_pedida'}))` → `putPreco`: `sem_escrita` 429 → retentável (volta `pendente`, `etapa:null`, até 3) / demais → `erro` mensagem do ML (`etapa:null`); `desconhecido` → `agendarConferenciaItem`; `ok` → `lerVivo` (falha → `agendarConferenciaItem`) → todas = alvo → `gravarPos(gravarItem({etapa:'ml_confirmado'}))` → `persistir`; senão `erro 'Preço não aplicado pelo ML'` (`etapa:null`).
+- Fatal (`SemAcessoStatusML`): `Fatal{ eh, mensagem: MSG_RECONECTAR, encerrar: (m) => deps.encerrarSemEtapa(op.id, m) }` — o item atual, se tinha etapa, **não** vira erro: o `processar` captura `SemAcessoStatusML` quando a etapa está preenchida e chama `agendarConferenciaItem` antes de relançar (o laço só grava `erro` no item atual quando não há etapa: implementar o processar para gravar o estado correto e relançar um `SemAcessoStatusML` marcado `{jaGravado:true}`; adaptar a linha do laço que grava o item atual no fatal para pular quando `e.jaGravado`).
+- Testes **usando o `laco` real** (deps falsos): sucesso Legacy/plano/UP; 400 → erro; 429×3; desconhecido → conferindo e operação **não conclui** (agenda); conferência alvo → aplicado mesmo com `participaPromocaoML` lançando/null; conferência anterior → pendente sem etapa; terceiros → erro; Legacy com 1 variação divergente → não confirma; conflito; banco falha após `ml_confirmado` → item continua `enviando` com etapa e a chamada relança; **fatal com mix**: item sem etapa → erro, item com etapa → conferindo, operação não conclui; Reverter (restaurar da origem); tarifa mudou → mudou. E: suíte `executar-status.test.ts` e demais antigas verdes.
+- [ ] TDD; `pnpm lint:functions && pnpm check:functions`; commit `feat(operacoes): handler de reajuste de preço`.
 
 ---
 
 ### Task 7: Fiação na edge `operacoes-massa` (opus)
 
-**Files:** Modify `supabase/functions/operacoes-massa/index.ts`, `supabase/functions/_shared/operacoes/deps.ts`; Create `supabase/functions/_shared/operacoes/reajuste/deps.ts`.
+**Files:** Modify `supabase/functions/operacoes-massa/index.ts`; Create `supabase/functions/_shared/operacoes/reajuste/deps.ts`.
 
-Contratos:
-- `POST {etapa:'preview', acao:'reajustar', ...PedidoPreview}` (usuário, `requireUserOrg` write; qualquer membro): `montarPreview` → grava operação `rascunho` (`expira_em = now()+30min`, `origem_id`, `criado_por`) e itens `rascunho` (todas as colunas da Task 1; `semaforo` = `avaliacao.pior`; `incluido` default true; fora/sem alteração gravados com `status='bloqueado'`/`'ja_estava'` e `mensagem`) → `201 {operacao_id, itens}`. Antes de gravar, apaga rascunhos expirados da org.
-- `POST {etapa:'confirmar', operacao_id, confirmacoes:[{ml_item_id, incluir, risco?, sem_dado?}]}` (admin/suporte full; auditoria): operação `rascunho` da org e não expirada (senão 400 "O preview expirou — gere de novo"); para cada item elegível incluído: `avaliacao.tem_vermelho → risco === true`, `tem_sem_dado → sem_dado === true` (senão 400 com `itens` recusados); grava `incluido`, `confirmado_risco`, `confirmado_sem_dado`; itens incluídos `rascunho → pendente` (colisão de índice → 409 "Algum destes anúncios já está numa operação em andamento"); operação `rascunho → executando`; publica QStash `executar` (mesmo `dedup`). Nenhum incluído → 400.
-- Etapa QStash para `reajustar`: igual ao ramo `pausar/reativar` (conexão, `invalid_grant` → `encerrarComErro`), chamando `executarReajuste` com `depsReajuste`; etapa `conferir` também executa (o laço pega `conferindo` vencido); ao terminar sem pendentes mas com `conferindo` → agenda nova mensagem para a menor `proxima_conferencia` (reaproveitar `agendarOuConcluir` com os itens `conferindo`).
-- `depsReajuste` (service role, tudo por `org_id`): `expandir` (Legacy: `familias` com `ml_item_id` = X, canônica por `publicado_em desc`, todas as famílias com esse `ml_item_id` em `familia_ids`; UP: `anuncios_externos` (`codigo_pai`, `status='publicado'`) → `anuncios_externos_itens` não retirados com `item_externo_id`; família = a do `codigo_pai`; `variacao_ids` via `anuncios_externos_itens.variacao_id` ou `variacoes(familia_id, codigo=sku)`; kit = `kits_virtuais` publicado; atacado = `familias.atacado` ou `variacoes.atacado` não vazio; publicando = `familias.status='publicando'`; PxV = `motivoMigracaoPxvPorItem`), `estadoVariacoes`, `avaliar` (carrega `carregarCadastro`/`lerAliquotas` uma vez por instância e `buscarItensML` em lote no preview; `projetarItem` com item sintético como `criarSemaforoExato`), `reivindicarReajuste` (RPC), `persistir` (RPC), `itensReajuste` (SQL: `status='pendente'` ∪ `conferindo` com `proxima_conferencia <= now()` ∪ `enviando` com `atualizado_em < now()-2min`), `agendarConferenciaItem`.
-- Verificação: `pnpm lint:functions && pnpm check:functions`; vitest `_shared/operacoes`. Commit `feat(operacoes-massa): preview, confirmar e executar reajuste`.
-
----
-
-### Task 8: C2 nos outros escritores (opus)
-
-**Files:** Modify `supabase/functions/publicar-familias/index.ts` (claims CREATE/UPDATE → `familia_reservar_publicacao`), `supabase/functions/update-familia-ml/processar.ts` (guard ao lado do PxV, linha ~151: mesma consulta "reajuste ativo na família" → `Error(... (400))` com `status=400`), `supabase/functions/migrar-preco-por-variacao/index.ts` (escrita de `solicitada` → `familia_reservar_migracao_pxv`); testes nos `__tests__` desses módulos (seguir os existentes; se a edge não tiver teste, extrair a decisão para função pura testável).
-- `publicar-familias`: chamar a RPC duas vezes (CREATE e UPDATE) com `familia_ids`; as linhas com `motivo` viram resposta ao operador: incluir na resposta JSON um array `recusadas: [{familia_id, motivo}]` e manter o status 200 se houve alguma enfileirada (comportamento atual de contagem `enfileiradas`); se todas foram recusadas → 409 com a mensagem. Conferir como o front (`useConfirmarPublicacao` ou equivalente) exibe a resposta e mostrar `recusadas` num toast (ajuste mínimo no hook do front).
-- Testes: claim com reajuste ativo → família não muda de status e aparece em `recusadas`; sem reajuste → comportamento idêntico ao de hoje (snapshot do que era enfileirado).
-- Commit `feat(publicacao): reserva atômica contra reajuste em andamento`.
+- `POST {etapa:'preview', acao:'reajustar', familias, ml_item_ids, ajuste, precos?, origem_id?}` (membro; `requireUserOrg` write): Reverter exige admin/suporte full e origem `reajustar` da org; apaga rascunhos expirados da org; `montarPreview`; `executaveis === 0` → `200 {operacao_id: null, itens}` **sem gravar**; senão grava operação `rascunho` (`expira_em = now()+30 min`, `origem_id`, `criado_por`) e itens (`status`: elegível → `rascunho`; fora → `bloqueado`; sem alteração → `ja_estava`; demais colunas da Task 1; `estado_anterior` = `EntradaRestauracao[]`; `semaforo = avaliacao.pior`) → `201 {operacao_id, itens, expira_em}`.
+- `POST {etapa:'confirmar', operacao_id, confirmacoes}` (admin/suporte full; auditoria): `reajuste_confirmar` → `'ok'`/`'ja_confirmada'` → publica QStash `executar` com `deduplicationId: dedup('executar_'+op+'_0')` (repetir é seguro: dedup) → `200`; `'expirado'` → 400 "O preview expirou — gere de novo"; `confirmacao_faltando:<ml>` → 400 com `itens:[{ml_item_id, motivo:'Confirme o risco deste anúncio'}]`; `'nenhum'` → 400; erro `P0001` `ocupado:<ml>` → 409. Falha ao publicar → **não** chamar `encerrarComErro` (sem escrita ainda, mas a operação já está `executando`): responder 500 "Tente confirmar de novo" — o retry recebe `ja_confirmada` e republica (dedup).
+- QStash `reajustar` (executar/conferir): conexão; `invalid_grant` → `deps.encerrarSemEtapa(op, MSG_RECONECTAR)` + agenda conferência para os itens com etapa (via `agendarOuConcluir`) — **nunca** `encerrarComErro`; sem conexão → idem com `MSG_SEM_CONEXAO`; senão `executarReajuste`.
+- `depsReajuste` (service role, `org_id` sempre): `itensPendentes` (pendente ∪ conferindo vencido ∪ enviando parado), `reivindicar` (RPC + gravação do motivo), `lerItem`, `itensAConferir` (conferindo com `proxima_conferencia`), `agendarConferenciaItem` (5/10/20/40/60 min), `persistir` (RPC), `encerrarSemEtapa`, `avaliarFresco` (`carregarCadastro`/`lerAliquotas` uma vez; `buscarItensML`; `projetarItem` com item sintético como `criarSemaforoExato`; `criarTarifaEm(cx, {fresco:true})`; mapeia `LinhaItem.projecao` → `CorAvaliada` e `resumir`), `fatos`, `expandir`/`estadoVariacoes`/`origem` do preview (regras da Task 5).
+- `pnpm lint:functions && pnpm check:functions`; vitest `_shared/operacoes`. Commit `feat(operacoes-massa): preview, confirmar e executar reajuste`.
 
 ---
 
-### Task 9: Front — lib e hooks (opus — calcula preço/semáforo)
+### Task 8: Barreiras nos outros escritores (opus)
 
-**Files:** Create `src/lib/reajuste.ts` (+ teste), Modify `src/hooks/useOperacoes.ts` (+ teste), `src/lib/operacoes.ts` (título/inversa/revertíveis para `reajustar`).
-- `src/lib/reajuste.ts` re-exporta `calcularAlvo`, `semAlteracao`, `centavos`, `reais` de `../../supabase/functions/_shared/operacoes/reajuste/alvo.ts` (mesma função do servidor) e define `formatarAjuste(a)`, `precisaConfirmar(item)` (`{risco: tem_vermelho, semDado: tem_sem_dado}`).
-- `src/lib/operacoes.ts`: `AcaoOperacao` inclui `'reajustar'`; `tituloOperacao` → `"Reajustar preço de N anúncios"` (ou `"Reverter reajuste de N anúncios"` com `origem_id`); `itensRevertiveis('reajustar', …)` = só `aplicado`; `ehAcaoStatus` inalterado.
-- Hooks: `usePreviewReajuste()` (mutation `{etapa:'preview', ...}` → `{operacao_id, itens}`), `useConfirmarReajuste()` (mutation `{etapa:'confirmar', ...}`; invalida `QK_OPERACOES`); `useOperacoes` conclusão de `reajustar` também invalida `QK.statusPublicados` e as queries de Publicados (preço publicado).
-- Testes: título, revertíveis, paridade (o front usa o mesmo `calcularAlvo` — teste importando dos dois caminhos e comparando 20 casos).
-- Commit `feat(front): lib e hooks do reajuste de preço`.
+**Files:** Modify `supabase/functions/publicar-familias/index.ts` (claims CREATE/UPDATE → `familia_reservar_publicacao`), `supabase/functions/update-familia-ml/processar.ts` (guard ao lado do PxV ~151: `reajuste_ativo_produto(org, codigo_pai)` não nulo → `Error('Há reajuste de preço em massa em andamento neste produto (400)')` com `status=400`), `supabase/functions/migrar-preco-por-variacao/index.ts` (escrita de `solicitada` → `familia_reservar_migracao_pxv` com **todos** os campos atuais em `p_campos`; a porta que hoje devolve boolean passa a devolver o motivo textual, exibido ao operador); o hook do front que dispara a publicação exibe `recusadas` (toast).
+- `publicar-familias`: duas chamadas RPC (CREATE, UPDATE); `recusadas: [{familia_id, motivo}]` na resposta; todas recusadas → 409 com a mensagem; resto idêntico (o que segue para fila/split recebe as mesmas colunas `id, lote_id, user_id, codigo_pai`).
+- Testes (seguir os `__tests__` desses módulos; se a lógica estiver no `index.ts`, extrair a decisão para função pura testável): recusa com reajuste ativo; comportamento idêntico sem reajuste; PxV grava os mesmos campos de antes (snapshot) e devolve motivo textual.
+- Commit `feat(publicacao): barreiras atômicas contra reajuste em andamento`.
 
 ---
 
-### Task 10: Front — diálogo, preview e Publicados (opus no preview, sonnet aceitável no diálogo — manter opus por simplicidade)
+### Task 9: Front — lib e hooks (opus)
 
-**Files:** Create `src/components/operacoes/dialog-reajuste.tsx`, `src/components/operacoes/preview-reajuste.tsx` (+ testes); Modify `src/components/operacoes/barra-selecao-publicados.tsx` (prop `onReajustar`, botão `Reajustar preço (N)` com N = ativos+pausados selecionáveis), `src/pages/Publicados.tsx` (estado e abertura), `src/components/operacoes/lista-operacoes.tsx` (título + Reverter de `reajustar` → gera preview com `origem_id` e abre `PreviewReajuste`).
-- Diálogo: Aumentar/Diminuir, %/R$, valor (input numérico, vírgula aceita), botão "Ver preview" → `usePreviewReajuste` com `familias` (UP: `familiaId` das linhas selecionadas) e `ml_item_ids` (Legacy/plano) — o servidor expande.
-- Preview: tabela por MLB (UP: uma linha por SKU) — título/SKU, atual → novo (input editável: ao editar, chama de novo `usePreviewReajuste` com `precos` e substitui o rascunho), líquido/markup da pior cor, semáforo, expandir cores; seções "Fora do lote" (motivo) e "Sem alteração"; checkbox incluir por item; checkboxes de confirmação separados "Confirmo os itens com prejuízo (🔴)" e "Confirmo os itens sem cálculo (⚪)" (só aparecem se houver); avisos: fixação do preço (D1), 🟡; contador de expiração (30 min); botão "Reajustar N anúncios" (admin/suporte full) ou "Só administradores executam."; erros 400/409 com recusas por item.
-- Testes: cálculo exibido = `calcularAlvo`; 🔴 e ⚪ exigem confirmações separadas; editar preço chama preview com `precos`; membro não executa; expiração.
+**Files:** Create `src/lib/reajuste.ts` (+ teste); Modify `src/hooks/useOperacoes.ts` (+ teste), `src/lib/operacoes.ts`.
+- `src/lib/reajuste.ts` re-exporta `calcularAlvo`, `semAlteracao`, `centavos`, `reais` de `../../supabase/functions/_shared/operacoes/reajuste/alvo.ts`; `formatarAjuste(a)`.
+- `src/lib/operacoes.ts`: `AcaoOperacao` + `'reajustar'`; `inversa` overload `inversa(a:'reajustar'): 'reajustar'` (Reverter de reajuste é reajuste com origem); `tituloOperacao` → `'Reajustar preço de N anúncios'` / com `origem_id` `'Reverter reajuste de N anúncios'`; `itensRevertiveis('reajustar', …)` = só `aplicado`.
+- `useOperacoes`: query exclui `status='rascunho'` (`.neq('status','rascunho')`) antes do limit; conclusão de `reajustar` invalida `QK.statusPublicados` e as queries de Publicados (`QK.publicados` ou equivalente).
+- Hooks: `usePreviewReajuste()` (mutation `{etapa:'preview', acao:'reajustar', ...}` → `{operacao_id|null, itens, expira_em}`), `useConfirmarReajuste()` (mutation `{etapa:'confirmar', ...}`; trata 400/409 com `ErroOperacao.itens`; invalida `QK_OPERACOES`).
+- Testes: título, revertíveis, inversa, filtro de rascunho, paridade (`calcularAlvo` do front = do backend em 20 casos).
+- Commit `feat(front): lib e hooks do reajuste`.
+
+---
+
+### Task 10: Front — diálogo, preview, Publicados e Operações (opus)
+
+**Files:** Create `src/components/operacoes/dialog-reajuste.tsx`, `src/components/operacoes/preview-reajuste.tsx` (+ testes); Modify `src/components/operacoes/barra-selecao-publicados.tsx` (prop `onReajustar`; botão `Reajustar preço (N)`; N = selecionáveis ativos+pausados), `src/pages/Publicados.tsx`, `src/components/operacoes/lista-operacoes.tsx`.
+- Diálogo: Aumentar/Diminuir, %/R$, valor (aceita vírgula) → "Ver preview" (`familias` = `familiaId` das linhas UP; `ml_item_ids` = demais).
+- Preview: por MLB (UP: por SKU) — título/SKU, atual → novo (input; editar chama preview de novo com `precos` → **novo rascunho, confirmações zeradas**), líquido/markup da pior cor, semáforo, expandir cores; seções "Fora do lote" (motivo) e "Sem alteração"; checkbox incluir por item (🔴/⚪ vêm desmarcados); confirmações separadas "Assumo o prejuízo nos itens 🔴 incluídos" e "Assumo os itens ⚪ sem cálculo incluídos" (só aparecem se houver incluídos dessas cores); avisos D1 (fixação) e 🟡; contador até `expira_em`; `operacao_id: null` → mensagem "Nenhum anúncio muda de preço"; botão "Reajustar N anúncios" (admin/suporte full) ou "Só administradores executam."; erros com recusas por item.
+- Lista de operações: título por `tituloOperacao`; Reverter de `reajustar` disponível para itens `aplicado` **mesmo com a operação ainda executando** (itens `conferindo` não impedem) → abre o preview com `origem_id`; `conferindo` aparece como não terminal.
+- Testes: cálculo exibido = `calcularAlvo`; 🔴/⚪ desmarcados; confirmar exige as duas confirmações quando aplicável; **confirmou → editou preço → confirmações zeradas**; membro não executa; nenhum muda → sem operação; Reverter com operação executando.
 - Commit `feat(front): reajuste de preço na tela Publicados`.
 
 ---
 
 ### Task 11: Docs (sonnet)
 
-`docs-update-checklist`: TASKS.md, `docs/reference/edge-functions.md` (operacoes-massa preview/confirmar/reajustar; publicar-familias recusadas; migrar-preco-por-variacao), `docs/reference/modelo-de-dados.md` (colunas/status/RPCs), glossário (rascunho, conferindo, reajuste), obsidian (Promoções/Operações, Changelog, Sprint). ADR-0178 → "Aceito" com a seção Implementação. `pnpm docs:links`. Commit.
+`docs-update-checklist` (TASKS, edge-functions: operacoes-massa preview/confirmar/reajustar, publicar-familias `recusadas`, migrar-preco-por-variacao; modelo-de-dados: colunas/status/RPCs; glossário: rascunho, conferindo, reajuste; obsidian). ADR-0178 → "Aceito" + Implementação. `pnpm docs:links`. Commit.
 
 ---
 
-### Task 12: Portão, revisão final, merge, deploy e validação (controlador)
+### Task 12: Portão, revisão final, deploy e validação (controlador)
 
-1. `pnpm preflight` (estático + as duas árvores) verde; testes SQL e o concorrente verdes (Docker).
-2. Revisão final Grok 4.7 xhigh (rodada única) do branch inteiro + correções → teste + CI.
-3. CI verde → merge fast-forward `push origin <sha>:main`.
-4. `supabase db push` (2 migrations) → conferir constraints/funções; deploy **na ordem**: `operacoes-massa`, `publicar-familias`, `update-familia-ml`, `migrar-preco-por-variacao` (e qualquer outra edge que importe arquivos alterados de `_shared` — listar com grep) → conferir versões ativas.
-5. Validação de campo na DSA pelo app (Playwright isolado, magic link da conta admin DSA, logout global no fim): registrar org/`org_id`/MLBs/preço anterior e alvo; 2–3 MLBs elegíveis (Legacy com variações, plano, UP se houver); +1% → `/operacoes` concluída → GET no ML e SQL no banco (`preco_publicacao`, `editado`, `preco_publicado_ml`) → Reverter → GET + SQL restaurados; prints 1440/360 (diálogo, preview, operações). Promoções/Avil intocadas.
-6. Docs "em produção", limpeza (branch/worktree), relatório com rulings.
+1. `pnpm preflight` verde; `supabase/tests/reajuste_preco.sql`, `operacoes_massa.sql` e `reajuste_preco_concorrencia.sh` verdes no Docker.
+2. Revisão final Grok 4.7 xhigh (rodada única) → correções → testes → CI verde.
+3. **Ordem de produção (barreiras antes do reajuste):** `supabase db push` (2 migrations) → conferir funções/constraints → deploy `publicar-familias`, `update-familia-ml`, `migrar-preco-por-variacao` (e qualquer edge que importe `_shared/promocoes/deps.ts` alterado — `grep -rl "promocoes/deps" supabase/functions` — e redeploy delas) → deploy `operacoes-massa` → conferir versões → merge fast-forward na main (front via Render).
+4. Validação de campo na DSA pelo app (Playwright isolado; magic link admin DSA; logout global no fim): registrar org/`org_id`/MLBs/preço anterior e alvo; 2–3 MLBs elegíveis (Legacy com variações, plano, UP se houver); +1% → `/operacoes` → GET no ML + SQL (`preco_publicacao`, `preco_editado_pelo_operador`, `preco_publicado_ml`) → Reverter → GET + SQL restaurados; prints 1440/360 (diálogo, preview, operações, Publicados). Avil e promoções intocadas.
+5. Docs "em produção", limpeza, relatório com rulings.
