@@ -101,6 +101,8 @@ curl -X POST "https://qstash.upstash.io/v2/publish/https://txvncrgkoynoxwopfkbp.
 
 Multiget de status: desde a v6 (2026-10-03) usa `/items/bulk?ids=…&attributes=status_code,body.id,body.status,body.title,body.permalink,body.attributes`
 (o ML exige sair de `/items?ids=` até 25/10/2026) e grava `titulo`, `permalink` e `variacao` em `ml_trafego_item`.
+Os demais módulos migraram depois pelo adaptador central `_shared/ml/multiget.ts` (ADR-0177); este coletor
+(`fiacao.ts`, primeiro a migrar) ficou como está — lê `code ?? status_code` direto.
 Conferir após a coleta: `select count(*), count(titulo), count(variacao) from ml_trafego_item where org_id = '<org>';`
 
 ## 5. Como ler `ml_trafego_sync`

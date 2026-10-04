@@ -2,6 +2,16 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Multiget ML `/items?ids=` → `/items/bulk` (ADR-0177, prazo externo 25/10/2026) — branch `worktree-ml-items-bulk`
+
+Plano `docs/superpowers/plans/2026-10-03-ml-items-bulk.md`; spec `docs/superpowers/specs/2026-10-03-ml-items-bulk-design.md`.
+
+- [x] Spike real (4 orgs, só GET): bodies idênticos; bulk exige `status_code` + `body.`; id repetido → 400; 404 sem body na posição.
+- [x] T0 adaptador `_shared/ml/multiget.ts` + 16 pares reais de fixtures + ADR-0177.
+- [x] F1 `lerStatus`/`buscar-item`/`atualizar-item` · F2 `vendas`/`pedidos` · F3 kit · F4 promoções/operações/órfãos/família UP · F5 Pulse/PxV — testes verdes e A/B ao vivo IDÊNTICO nas 4 orgs em todas.
+- [ ] Revisão Grok 4.7 xhigh + portão do consultor (Astra) por entrega.
+- [ ] Merge, deploy das edges (`deno info`) com manifesto de hash e observação em produção.
+
 ## Vitrine (ADR-0176, 2026-10-02) — branch `worktree-vitrine-design`
 
 Tela `/vitrine` (menu entre Pulse e Faturamento): visitas, pedidos, conversão e lista "Onde agir".

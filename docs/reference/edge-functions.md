@@ -256,6 +256,16 @@ mesmo por engano.
    para até o próximo ciclo, que a assume do zero. As pendências de pedido não se perdem (seguem em
    `worker_pendencias`). Fica visível como uma linha `rodando` com posse vencida em `worker_rodadas`.
 
+> **Multiget do ML via `/items/bulk` (ADR-0177).** O ML desliga `GET /items?ids=` em 25/10/2026.
+> Toda leitura em lote de anúncios passa por `_shared/ml/multiget.ts`: `caminhoMultiget` monta
+> `/items/bulk?ids=…&attributes=status_code,body.<campo>…` (dedup dentro da requisição — o bulk
+> responde 400 ao lote inteiro com id repetido) e `comoEnvelopeAntigo` devolve o envelope antigo
+> `[{code, body}]` (o 404 do bulk vem sem body; o id é recolocado pela posição). Edges afetadas
+> (fecho de imports por `deno info`): as de `lerStatus` (status-publicados, sincronizar-estoque,
+> publicar-split-ml, monitorar-moderados…), faturamento (sync-venda, reconciliar-faturamento…),
+> kit, promoções/operações, órfãos, família UP, Pulse e PxV. **Filtros de log:** procurar
+> `/items/bulk`, não mais `/items?ids=`. Escrever `/items?ids=` à mão é regressão.
+
 > **Org arquivada (ADR-0175).** `sincronizar-promocoes` e `materializar-metricas` filtram
 > `organizations.arquivada_em is null`; `notificar-liberacao`, `reconciliar-estoque` e
 > `reconciliar-convergencia-up` excluem os `org_id` de `_shared/orgs-arquivadas.ts`
