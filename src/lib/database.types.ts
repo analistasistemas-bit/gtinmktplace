@@ -3807,6 +3807,20 @@ export type Database = {
         }
         Returns: Json
       }
+      familia_reservar_migracao_pxv: {
+        Args: { p_campos: Json; p_codigo_pai: string; p_org: string }
+        Returns: string
+      }
+      familia_reservar_publicacao: {
+        Args: { p_familia_ids: string[]; p_operacao: string; p_org: string }
+        Returns: {
+          codigo_pai: string
+          id: string
+          lote_id: string
+          motivo: string
+          user_id: string
+        }[]
+      }
       get_connection_tokens: {
         Args: { p_connection_id: string }
         Returns: {
@@ -4045,6 +4059,48 @@ export type Database = {
         Returns: number
       }
       proximo_numero_lote: { Args: { p_org: string }; Returns: number }
+      reajuste_ativo_produto: {
+        Args: { p_codigo_pai: string; p_org: string }
+        Returns: string
+      }
+      reajuste_codigo_pai: {
+        Args: { p_ml_item: string; p_org: string }
+        Returns: string
+      }
+      reajuste_confirmar: {
+        Args: { p_confirmacoes: Json; p_operacao: string; p_org: string }
+        Returns: string
+      }
+      reajuste_persistir: {
+        Args: {
+          p_ml_item: string
+          p_operacao: string
+          p_org: string
+          p_preco_confirmado: number
+          p_restaurar: Json
+        }
+        Returns: string
+      }
+      reajuste_reivindicar: {
+        Args: { p_ml_item: string; p_operacao: string; p_org: string }
+        Returns: string
+      }
+      reajuste_trava_produto: {
+        Args: { p_codigo_pai: string; p_org: string }
+        Returns: undefined
+      }
+      reajuste_variacoes_do_mlb: {
+        Args: {
+          p_codigo_pai: string
+          p_ml_item: string
+          p_ml_variation_ids: string[]
+          p_org: string
+        }
+        Returns: {
+          ml_variation_id: string
+          variacao_id: string
+        }[]
+      }
       reconciliar_backfill_up_candidatas: {
         Args: { p_org_id: string }
         Returns: {
