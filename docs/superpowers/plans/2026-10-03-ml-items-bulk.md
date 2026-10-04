@@ -1,36 +1,46 @@
-# Multiget ML `/items?ids=` → `/items/bulk` — Implementation Plan
+# Multiget ML `/items?ids=` → `/items/bulk` — Implementation Plan (v2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** trocar as 14 chamadas a `GET /items?ids=` (13 arquivos) por `GET /items/bulk?ids=` antes de 25/10/2026, sem mudar nenhuma saída observável dos módulos e sem nenhuma escrita no Mercado Livre fora do fluxo do app.
+**Goal:** trocar as 14 chamadas a `GET /items?ids=` (13 arquivos) por `GET /items/bulk?ids=` antes de 25/10/2026, mantendo equivalentes as decisões de negócio e sem nenhuma escrita no Mercado Livre fora do fluxo do app.
 
-**Architecture:** um helper **puro** em `_shared/ml/multiget.ts` monta a URL do bulk (`status_code` + prefixo `body.`), quebra os ids em blocos únicos de ≤20 e normaliza os dois envelopes (`code`/`status_code`). Cada módulo mantém o próprio transporte e a própria semântica de erro e troca só três coisas: o laço de blocos, a URL e o filtro `code === 200`. A migração sai em 6 fatias, cada uma com TDD, A/B contra a `main` com token real (só GET, com a escrita bloqueada por uma guarda), revisão do Codex, merge, deploy e observação em produção.
+**Architecture:** um **adaptador** puro (`_shared/ml/multiget.ts`) monta a URL do bulk, deduplicando dentro da requisição, e converte a resposta de volta no **envelope antigo** (`[{code, body}]`, com o id recolocado pela posição no 404 sem body). Cada módulo troca só a URL e passa o JSON pelo adaptador; laços, predicados e erros continuam como estão. As leituras inline ganham uma extração mínima, num commit separado, para poderem ser testadas. Cada fatia passa por TDD, A/B em duas fases (gravação e replay, só GET ao vivo, escrita simulada) e revisão do Codex. Depois do merge, a fatia tem deploy com manifesto de hash por edge e observação.
 
-**Tech Stack:** Deno (Supabase Edge Functions), TypeScript, vitest (`pnpm test`), Supabase CLI, Codex CLI.
+**Tech Stack:** Deno (Supabase Edge Functions), TypeScript, vitest (`pnpm test`), Supabase CLI 2.101, Codex CLI.
 
-**Spec:** `docs/superpowers/specs/2026-10-03-ml-items-bulk-design.md`. A tabela da §2 é o contrato medido e a §3 é o inventário.
+**Spec:** `docs/superpowers/specs/2026-10-03-ml-items-bulk-design.md` (v2). §2 é o contrato medido, §3 o inventário, §4.3 as diferenças aceitas e §5 a validação.
+
+**Histórico:** a v1 levou REVISAR do Codex `gpt-6.1-sol` high (18 achados). A v2 responde todos (tabela no fim) e incorpora a consultoria do `gpt-6-astra` high.
 
 ## Global Constraints
 
-- **No ML, só GET** durante spike, A/B e validação. **Nunca** PUT/POST/DELETE em anúncio fora do fluxo normal do app, nem para teste.
-- O token ML é lido por SQL read-only (`get_connection_tokens`) via Management API (`SUPABASE_ACCESS_TOKEN` do `.env.local` da raiz). **Nunca** renovar, imprimir ou gravar o token. Scripts descartáveis ficam em `$CLAUDE_JOB_DIR/tmp` (`/Users/diego/.claude/jobs/b87cbc02/tmp`).
-- Lote: **no máximo 20 ids, sem repetição** (bulk: 21 → 400; repetido → 400 no lote inteiro).
-- A seleção do bulk sempre começa com `status_code` e todo campo do item leva o prefixo `body.`.
-- Nenhuma mudança de comportamento observável: mesma saída, mesmo `throw` e `[]`, mesmos logs. Exceção declarada: dedup e blocos onde antes não havia (PxV, operações). Hoje esses casos já quebrariam com 400.
-- `fiacao.ts` e `coletar-trafego-ml/deps.ts` (referência já migrada) **não mudam**.
-- Deploy **só depois do merge** na `main`. A lista de edges sai de `deno info`, não de grep. A versão ativa é conferida com `supabase functions list`.
+- **No ML, só GET** em spike, A/B e validação. **Nunca** PUT, POST ou DELETE em anúncio fora do fluxo normal do app, nem para teste.
+- O token ML é lido por SQL read-only (`get_connection_tokens`) via Management API (`SUPABASE_ACCESS_TOKEN` do `.env.local` da raiz). **Nunca** renovar, imprimir ou gravar o token. 401/403 encerra o A/B.
+- Scripts descartáveis ficam em `$CLAUDE_JOB_DIR/tmp` (`/Users/diego/.claude/jobs/b87cbc02/tmp`).
+- **Equivalência estrita:** os módulos mantêm particionamento, predicados, transporte, `throw`/`[]`/`continue`, o comportamento diante de resposta não-array e a contagem de chamadas a `getToken()`. As únicas diferenças aceitas são as do spec §4.3.
+- **Fora de escopo:** melhorias funcionais (mais de 20 relacionados na propagação, mais de 20 ids no PxV, dedup global). Hoje respondem 400 e continuam assim.
+- O helper **não** divide em blocos, **não** filtra, **não** faz `trim` e **não** lança.
+- `fiacao.ts` e `coletar-trafego-ml/deps.ts` **não mudam**.
+- Deploy **só depois do merge**. Edges por `deno info` (com caminho decodificado). `--project-ref txvncrgkoynoxwopfkbp` explícito. Manifesto com hash do código baixado antes e depois.
 - Merge: fast-forward, com CI verde (`frontend`, `backend-lint`) e **OK do Diego por fatia**. Nunca `--admin` nem force-push.
-- Revisão: o Codex `gpt-6.1-sol` high revisa o plano, o diff de cada fatia e o pré-merge (`codex exec -m gpt-6.1-sol -c model_reasoning_effort=high -s read-only "<prompt>" < /dev/null`). A consultoria em caso de dúvida é o `gpt-6-astra` high.
-- git em worktree: usar `/usr/bin/git` com comando simples e commit por `-F <arquivo em $CLAUDE_JOB_DIR/tmp>`. Fim de toda mensagem de commit: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
-- Prazo: tudo em produção até **15/10/2026**.
+- Revisão: o Codex `gpt-6.1-sol` high revisa o plano, cada fatia e o pré-merge (`codex exec -m gpt-6.1-sol -c model_reasoning_effort=high -s read-only - < <prompt> > <saída>`, sempre com stdin de arquivo). A consultoria é o `gpt-6-astra` high.
+- git no worktree: `/usr/bin/git` com comando simples, commit por `-F <arquivo em $CLAUDE_JOB_DIR/tmp>`. Fim de toda mensagem: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- Prazo: em produção até **15/10/2026**.
+- Datas-alvo:
+  - T0 + T1: 05/10
+  - T2: 07/10
+  - T3: 08/10
+  - T4: 10/10
+  - T5: 13/10
+  - T6: 14/10
 
 ## Review Focus
 
-1. **Id repetido na entrada**, comum quando N SKUs apontam para o mesmo item (PxV antes da migração, partições). Esperado: uma consulta por id e nenhum 400. Testes em T0 (`blocosMultiget`) e nos testes de módulo de T1, T2 e T5 com ids repetidos.
-2. **Id inexistente ou removido no meio do lote.** O bulk devolve `{status_code:404}` **sem body**. Esperado: os outros 19 seguem normais e aquele id fica ausente, como hoje. Testes em T0 (`itensMultiget`) e no fixture de cada fatia (todos incluem a entrada 404).
-3. **Mais de 20 ids** num módulo que hoje não divide em blocos (PxV `lerCores`/estoque vivo, `operacoes.lerRelacoes`). Esperado: dividir em blocos, sem 400. Testes em T4 e T5.
-4. **`lerStatus` alimentando escrita** (`sincronizar-estoque` reativa quando lê `pausado`; `publicar-split-ml` usa `preco`). Esperado: `StatusCanal` idêntico ao da `main` nos mesmos anúncios. Teste em T1 (fixture) e no A/B de T1, que compara o objeto inteiro.
-5. **Propagação de status para relacionados de catálogo** (`propagarStatusRelacionadosML`). Esperado: os mesmos PUTs que a `main` faria. Teste novo em T1 e A/B de T1, com a guarda bloqueando e registrando os PUTs, sem rede.
+1. **Mesmo id em dois blocos, com 200 num e 404 sem body no outro (`lerStatus`).** Esperado: resultado final igual ao do antigo (`null` → `indisponivel`). Teste em T1 Step 1.
+2. **Resposta não-array (objeto, `null`, texto) no PxV e nos demais.** Esperado: o mesmo comportamento de hoje (`TypeError` que reagenda, ou vazio onde já era vazio). Testes em T0 (o adaptador devolve intacto) e T5.
+3. **Relacionados de catálogo mistos `[ativo, ilegível]` e `[pausado, ativo]` nos dois sentidos.** Esperado: a mesma sequência de PUTs de hoje, inclusive o PUT antes do 502, que já existe e fica caracterizado, sem prometer atomicidade. Teste em T1 Step 1.
+4. **Id repetido no bloco, e mais de 20 posições com até 20 ids únicos.** Esperado: uma consulta e nenhum 400, como no antigo, que deduplica antes do limite. Testes em T0 e no teste de URL de cada módulo.
+5. **`lerStatus` real alimentando a reativação no `sincronizar-estoque`.** Esperado: pausado → reativa; 404 sem body → não reativa. Teste em T1 Step 1.
 
 ---
 
@@ -38,439 +48,785 @@
 
 | Arquivo | Responsabilidade | Tarefa |
 |---|---|---|
-| `supabase/functions/_shared/ml/multiget.ts` (novo) | URL do bulk, blocos únicos ≤20, normalização do envelope | T0 |
-| `supabase/functions/_shared/ml/__tests__/multiget.test.ts` (novo) | Contrato do helper com o fixture real | T0 |
-| `supabase/functions/_shared/ml/__tests__/fixtures/bulk-*.json` (novos) | Respostas reais enxutas do bulk (spike de 03/10) | T0 |
-| `docs/decisions/0177-multiget-ml-items-bulk.md` (novo) | ADR da migração | T0 |
-| `$CLAUDE_JOB_DIR/tmp/ab/` (fora do repo) | Harness A/B com a guarda de fetch | T0 |
-| `_shared/canais/mercado-livre.ts`, `_shared/ml/buscar-item.ts`, `_shared/ml/atualizar-item.ts` + testes | Fatia 1 | T1 |
-| `_shared/ml/vendas.ts`, `_shared/ml/pedidos.ts` + testes | Fatia 2 | T2 |
-| `_shared/ml/kit-virtual.ts`, `buscar-componentes-kit-virtual/index.ts` + testes | Fatia 3 | T3 |
-| `_shared/promocoes/ml.ts`, `_shared/operacoes/ml.ts`, `_shared/ml/varrer-itens.ts`, `_shared/ml/descobrir-familia-up.ts` + testes | Fatia 4 | T4 |
-| `_shared/pulse/parse.ts`, `pulse-coletar/processar.ts`, `acompanhar-migracao-pxv/index.ts`, `buscar-componentes-kit-virtual/processar.ts` (comentário) + testes | Fatia 5 | T5 |
-| `docs/reference/edge-functions.md`, `obsidian-vault/03-Módulos/Estoque.md`, runbooks, ADR-0177 | Fatia 6 (docs) | T6 |
+| `supabase/functions/_shared/ml/multiget.ts` (novo) | `caminhoMultiget`, `comoEnvelopeAntigo` | T0 |
+| `supabase/functions/_shared/ml/__tests__/multiget.test.ts` (novo) | contrato do adaptador com fixtures reais | T0 |
+| `supabase/functions/_shared/ml/__tests__/fixtures/bulk-*.json` (novos) | pares reais antigo/bulk, alinhados por id | T0 |
+| `docs/decisions/0177-multiget-ml-items-bulk.md` (novo) | ADR | T0 |
+| `$CLAUDE_JOB_DIR/tmp/ab/*` (fora do repo) | guarda, replay, cenários, runner e testes | T0 |
+| `$CLAUDE_JOB_DIR/tmp/edges_afetadas.py`, `manifesto.py` (fora do repo) | lista de edges e manifesto de deploy | T0 |
+| `_shared/canais/mercado-livre.ts`, `_shared/ml/buscar-item.ts`, `_shared/ml/atualizar-item.ts` + testes | F1 | T1 |
+| `_shared/ml/vendas.ts`, `_shared/ml/pedidos.ts` + testes | F2 | T2 |
+| `_shared/ml/kit-virtual.ts`, `buscar-componentes-kit-virtual/{index.ts, leitura-ml.ts (novo), processar.ts}` + testes | F3 | T3 |
+| `_shared/promocoes/ml.ts`, `_shared/operacoes/ml.ts`, `_shared/ml/varrer-itens.ts`, `_shared/ml/descobrir-familia-up.ts` + testes | F4 | T4 |
+| `pulse-coletar/processar.ts`, `acompanhar-migracao-pxv/{index.ts, leitura-ml.ts (novo)}` + testes | F5 | T5 |
+| docs vivas | F6 | T6 |
 
-Caminhos relativos a `supabase/functions/` quando começam por `_shared/` ou pelo nome de uma edge. O worktree é `/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/verif-items-bulk`, na branch `worktree-ml-items-bulk`.
-
----
-
-## Procedimentos comuns (referenciados por cada fatia; o texto completo está aqui)
-
-### P-A/B: contraprova contra a `main` (rodar em T1–T5)
-
-1. Extrair a árvore da `main` **do commit anterior à fatia**:
-   `rm -rf $CLAUDE_JOB_DIR/tmp/ab/main && mkdir -p $CLAUDE_JOB_DIR/tmp/ab/main && /usr/bin/git archive origin/main supabase/functions | tar -x -C $CLAUDE_JOB_DIR/tmp/ab/main`
-2. Rodar `python3 $CLAUDE_JOB_DIR/tmp/ab/rodar.py <fatia>`. O script lê os tokens das 4 orgs por SQL read-only e, para cada org, chama `deno run --allow-net=api.mercadolibre.com --allow-read --allow-env=ML_TOKEN,AB_ARVORE,AB_AMOSTRA $CLAUDE_JOB_DIR/tmp/ab/ab.ts <fatia>` **duas vezes**: com `AB_ARVORE=<main>` e com `AB_ARVORE=<worktree>/supabase/functions`. O token só passa por env do subprocesso.
-3. O `ab.ts` instala a guarda **antes** de qualquer import dinâmico, importa os módulos da árvore indicada, roda os cenários da fatia e imprime um JSON canônico (chaves ordenadas; arrays `tags` ordenados) com `{saida, escritasBloqueadas}`.
-4. O `rodar.py` compara os dois JSON. **Critério: idênticos.** Qualquer diferença bloqueia a fatia até ser explicada e aceita pelo Diego. As respostas ficam em `$CLAUDE_JOB_DIR/tmp/ab/out/<fatia>-<org>-{main,branch}.json`.
-5. O `--allow-net=api.mercadolibre.com` é uma segunda trava: o Deno recusa qualquer outro host.
-
-### P-Deploy: fecho de imports, deploy e versão (rodar em T1–T5, só depois do merge)
-
-1. `python3 $CLAUDE_JOB_DIR/tmp/edges_afetadas.py <arquivo1> [arquivo2…]`. Para cada `supabase/functions/<fn>/index.ts`, roda `deno info --json` e lista as funções cujo grafo de módulos contém algum dos arquivos. Imprime a lista e o total.
-2. `supabase functions list > $CLAUDE_JOB_DIR/tmp/versoes-antes-<fatia>.txt`, para anotar as versões que servem de rollback.
-3. `supabase functions deploy <fn1> <fn2> …`, a partir da raiz do worktree já em fast-forward com a `main`.
-4. `supabase functions list > $CLAUDE_JOB_DIR/tmp/versoes-depois-<fatia>.txt`. Comparar: **toda** função da lista precisa ter a versão incrementada e `updated_at` recente.
-5. **Rollback** (só se a observação falhar): `git archive <sha_main_anterior> supabase/functions | tar -x -C $CLAUDE_JOB_DIR/tmp/rollback`, depois `supabase functions deploy <fns> --workdir $CLAUDE_JOB_DIR/tmp/rollback` (copiar `supabase/config.toml` junto), e reverter o commit na `main` por `git revert` + push. O endpoint antigo vale até 25/10.
-
-### P-Observação: produção (rodar em T1–T5)
-
-Logs pelo endpoint de analytics da Management API, com `iso_timestamp_start` e `iso_timestamp_end` (janela: do deploy até a primeira execução real + 10 min). Filtrar pela edge e procurar `multiget`, `bulk`, `Too many IDs`, `Duplicate item id`, `400` e exceções. Critério: zero erro novo e o resultado de negócio igual ao anterior (definido por fatia).
-
-### P-Revisão Codex (rodar em T0–T6)
-
-`/usr/bin/git diff origin/main...HEAD > $CLAUDE_JOB_DIR/tmp/diff-<fatia>.patch`, depois:
-
-```
-codex exec -m gpt-6.1-sol -c model_reasoning_effort=high -s read-only "Revisão MINUCIOSA do diff em $CLAUDE_JOB_DIR/tmp/diff-<fatia>.patch (fatia <N> da migração /items?ids= → /items/bulk; spec docs/superpowers/specs/2026-10-03-ml-items-bulk-design.md; plano docs/superpowers/plans/2026-10-03-ml-items-bulk.md). Procure: qualquer mudança de saída observável, erro engolido/novo, id repetido chegando ao bulk, campo sem body., status_code ausente, regressão no tratamento de 404 sem body, teste que não prova o que diz. Liste achados com arquivo:linha e severidade; diga APROVADO só se não houver nenhum bloqueante." < /dev/null
-```
-
-Corrigir os bloqueantes, rodar os testes de novo e seguir. Não reenviar ao Codex só porque a correção é trivial. Se for estrutural, reenviar uma vez.
-
-### P-Portão de merge (rodar em T1–T6)
-
-1. `pnpm preflight` no worktree (3min37; é o portão de pré-push).
-2. `/usr/bin/git push origin worktree-ml-items-bulk` e esperar CI verde (`gh run watch`).
-3. **Parar e reportar ao Diego:** testes, A/B (orgs e anúncios comparados, 0 diferenças), achados do Codex, edges a deployar e decisões tomadas. Esperar o OK.
-4. Com o OK: `/usr/bin/git push origin HEAD:main` (fast-forward), seguido de P-Deploy e P-Observação.
+Caminhos que começam por `_shared/` ou pelo nome de uma edge são relativos a `supabase/functions/`. Worktree: `/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/verif-items-bulk`, branch `worktree-ml-items-bulk`.
 
 ---
 
-### Task T0: helper `multiget.ts`, fixtures reais, ADR-0177 e harness A/B (sem deploy)
+## Procedimentos comuns
+
+### P-A/B (T1–T5): duas fases, baseline fixa
+
+1. **Baseline:** `BASE=$(/usr/bin/git rev-parse <commit pai do primeiro commit da fatia>)`. Extrair:
+   `rm -rf $CLAUDE_JOB_DIR/tmp/ab/base && mkdir -p $CLAUDE_JOB_DIR/tmp/ab/base && /usr/bin/git archive $BASE supabase/functions | tar -x -C $CLAUDE_JOB_DIR/tmp/ab/base`.
+   Numa fatia com extração (T3, T5), a baseline é o **commit da extração**, que ainda usa o endpoint antigo. A extração em si é validada no P-Extração.
+2. **Produção ≡ baseline** (antes da 1ª fatia e antes de cada deploy): `python3 $CLAUDE_JOB_DIR/tmp/manifesto.py conferir <BASE> <edges da fatia>`. Bloqueia se algum arquivo do bundle em produção diferir da árvore `BASE`.
+3. Rodar `python3 $CLAUDE_JOB_DIR/tmp/ab/rodar.py <fatia> $CLAUDE_JOB_DIR/tmp/ab/base/supabase/functions <worktree>/supabase/functions`. Para cada org:
+   - fase A (baseline, grava);
+   - fase B (nova, replay);
+   - fase A' (baseline de novo, replay).
+4. **Critério:**
+   - B == A, sob a canonização da fatia, nas 4 orgs;
+   - toda checagem de cobertura positiva verde;
+   - nenhuma escrita inesperada;
+   - nenhuma gravação sobrando.
+   - Se A ≠ B e A' == B, a diferença é preço ou estoque mudando entre as fases: repetir, até 3 vezes.
+   - Qualquer outra diferença bloqueia até ser explicada e aceita pelo Diego.
+5. **Pós-deploy:** o mesmo runner, com a árvore nova = código **baixado de produção** (`$CLAUDE_JOB_DIR/tmp/dl/<fatia>-depois/<edge>/supabase/functions`), uma edge representativa por módulo.
+
+### P-Extração (T3, T5)
+
+1. Escrever primeiro os testes de caracterização da função extraída, com URL e envelope **antigos**.
+2. Mover o código (commit `refactor(...)`, sem mudar o endpoint).
+3. `/usr/bin/git diff --color-moved=zebra HEAD~1 -- <arquivos>`: o diff precisa ser **só movimento**, mais import/export e a chamada no lugar antigo.
+4. Rodar os testes.
+5. Rodar o A/B com baseline = commit pai da extração e árvore nova = commit da extração. As duas usam o endpoint antigo, e a igualdade prova que mover o código não mudou nada.
+6. Codex revisa o commit de extração isolado.
+
+### P-Deploy (T1–T5, só depois do merge)
+
+1. `python3 $CLAUDE_JOB_DIR/tmp/edges_afetadas.py <arquivos alterados na fatia, incluindo _shared/ml/multiget.ts na 1ª>`. O script **recusa** lista vazia.
+2. `python3 $CLAUDE_JOB_DIR/tmp/manifesto.py antes <fatia> <BASE> <edges>`. Para cada edge:
+   - baixa um snapshot em diretório próprio (fonte do rollback);
+   - grava `verify_jwt` e a versão;
+   - confere o hash contra `BASE`.
+   Divergência bloqueia.
+3. Conferir que `origin/main` == HEAD local (ninguém empurrou outra coisa) e que nenhuma edge da lista mudou de versão desde o passo 2.
+4. `supabase functions deploy <edges…> --project-ref txvncrgkoynoxwopfkbp`, na raiz do worktree (o `config.toml` define `verify_jwt`).
+5. `python3 $CLAUDE_JOB_DIR/tmp/manifesto.py depois <fatia> <SHA_MAIN> <edges>`. Para cada edge:
+   - baixa de novo;
+   - confere o hash de cada arquivo contra `SHA_MAIN`;
+   - confere `verify_jwt` igual ao de antes e versão incrementada.
+   Qualquer falha é **deploy parcial**: completar o deploy da edge que faltou ou reverter todas, e não avançar de fatia.
+6. **Rollback** (só até 25/10):
+   - para cada edge, `supabase functions deploy <edge> --project-ref txvncrgkoynoxwopfkbp --workdir $CLAUDE_JOB_DIR/tmp/dl/<fatia>-antes/<edge>` com `--no-verify-jwt` quando o manifesto registrou `false`;
+   - depois, `manifesto.py conferir <BASE> <edges>`;
+   - o código volta por branch `revert/<fatia>` → CI verde → fast-forward.
+
+### P-Observação (T1–T5)
+
+- Logs pelo endpoint de analytics da Management API, com `iso_timestamp_start/end`: do deploy até a 1ª execução real + 10 min.
+- Procurar `items/bulk`, `Too many IDs`, `Duplicate item id`, ` 400`, `TypeError`, `multiget`.
+- Critério: zero erro novo e a comparação **por id e campo** definida na fatia.
+- Prazo de observação: 24 h por fatia. Se não houver execução real, registrar "não observado; coberto por teste + A/B (+ A/B pós-deploy)".
+
+### P-Revisão Codex (T0–T6)
+
+`/usr/bin/git diff <BASE>..HEAD > $CLAUDE_JOB_DIR/tmp/diff-<fatia>.patch`. Escrever em `$CLAUDE_JOB_DIR/tmp/prompt-rev-<fatia>.txt`:
+
+```
+Revisão MINUCIOSA do diff em $CLAUDE_JOB_DIR/tmp/diff-<fatia>.patch (fatia <N> da migração /items?ids= → /items/bulk; spec docs/superpowers/specs/2026-10-03-ml-items-bulk-design.md; plano docs/superpowers/plans/2026-10-03-ml-items-bulk.md). Leia também o código completo dos arquivos tocados. Promessa: decisões de negócio equivalentes, diferenças só as do spec §4.3. Procure: qualquer mudança de particionamento, predicado, throw/[]/continue, comportamento com não-array, contagem de getToken; adaptador mal aplicado (ids errados no comoEnvelopeAntigo); teste que não prova o que diz; risco de escrita no ML. Liste achados com arquivo:linha e severidade (BLOQUEANTE/IMPORTANTE/MENOR). Termine com VEREDITO: APROVADO ou VEREDITO: REVISAR.
+```
+
+Rodar: `codex exec -m gpt-6.1-sol -c model_reasoning_effort=high -s read-only - < $CLAUDE_JOB_DIR/tmp/prompt-rev-<fatia>.txt > $CLAUDE_JOB_DIR/tmp/rev-<fatia>.txt 2>&1` (em background). Corrigir os bloqueantes. Correção estrutural volta ao Codex uma vez; correção pontual segue com teste.
+
+### P-Portão de merge (T1–T6)
+
+1. `pnpm preflight`.
+2. `/usr/bin/git push origin worktree-ml-items-bulk` e `gh run watch` (CI verde).
+3. **Parar e reportar ao Diego:**
+   - testes;
+   - A/B (orgs, n de ids, cobertura positiva, 0 diferenças);
+   - Codex (achados e o que foi feito);
+   - edges a deployar;
+   - decisões.
+   Esperar o OK.
+4. Com o OK: `/usr/bin/git fetch origin`. Se a `origin/main` andou, `/usr/bin/git merge origin/main`, testes de novo e CI. Depois `/usr/bin/git push origin HEAD:main` (fast-forward), P-Deploy e P-Observação.
+
+---
+
+### Task T0: adaptador, fixtures alinhados, ADR-0177 e ferramental (sem deploy)
 
 **Files:**
 - Create: `supabase/functions/_shared/ml/multiget.ts`
 - Create: `supabase/functions/_shared/ml/__tests__/multiget.test.ts`
-- Create: `supabase/functions/_shared/ml/__tests__/fixtures/bulk-*.json` (gerados no Step 1)
+- Create: `supabase/functions/_shared/ml/__tests__/fixtures/bulk-<conjunto>-{antigo,bulk}.json`
 - Create: `docs/decisions/0177-multiget-ml-items-bulk.md`
-- Create (fora do repo): `$CLAUDE_JOB_DIR/tmp/ab/guarda.ts`, `guarda.test.ts`, `ab.ts`, `rodar.py`; `$CLAUDE_JOB_DIR/tmp/edges_afetadas.py`
+- Create (fora do repo): `$CLAUDE_JOB_DIR/tmp/ab/{guarda.ts, guarda.test.ts, cenarios.ts, ab.ts, rodar.py}`, `$CLAUDE_JOB_DIR/tmp/{fixtures.py, edges_afetadas.py, manifesto.py}`
 
 **Interfaces:**
 - Produces:
-  - `LIMITE_MULTIGET: 20`
-  - `blocosMultiget(ids: readonly string[]): string[][]`
-  - `caminhoMultiget(bloco: readonly string[], campos: readonly string[], extra?: string): string`, que devolve um caminho relativo começando por `/items/bulk?ids=`
-  - `entradasMultiget<T = Record<string, unknown>>(json: unknown): Array<{ code: number | null; body: T | null }>`
-  - `itensMultiget<T extends { id?: unknown } = Record<string, unknown>>(json: unknown): T[]`
+  - `caminhoMultiget(ids: readonly string[], campos: string, extra?: string): string`, que devolve `"/items/bulk?ids=…&attributes=status_code,body.…"`
+  - `comoEnvelopeAntigo(json: unknown, idsPedidos: readonly string[]): unknown`
 
-- [ ] **Step 1: Gerar fixtures enxutos a partir do spike**
+- [ ] **Step 1: Fixtures alinhados por id**
 
-Criar `$CLAUDE_JOB_DIR/tmp/fixtures.py`:
+`$CLAUDE_JOB_DIR/tmp/fixtures.py`:
 
 ```python
 import json, pathlib
 SPK = pathlib.Path('/Users/diego/.claude/jobs/b87cbc02/tmp/spike')
 DST = pathlib.Path('/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/verif-items-bulk/supabase/functions/_shared/ml/__tests__/fixtures')
 DST.mkdir(parents=True, exist_ok=True)
-# conjunto do spike → nome do fixture. Mantém 3 itens 200 (o 1º com variations/attributes quando houver) + a entrada 404 sem body.
+INVALIDO = 'MLB0000000001'
+
+def carregar(nome):
+    return json.loads((SPK / nome).read_text())
+
+def por_id(arr):
+    return {(e.get('body') or {}).get('id'): e for e in arr if (e.get('body') or {}).get('id')}
+
+def escolher(antigo, prefer):
+    """3 ids presentes nos dois lados, priorizando os que têm os atributos que os testes usam."""
+    ok = [i for i, e in por_id(antigo).items() if e.get('code') == 200]
+    def peso(i):
+        b = por_id(antigo)[i]['body']
+        attrs = {a.get('id') for a in (b.get('attributes') or [])}
+        tem_var = bool(b.get('variations'))
+        return (-(len(attrs & prefer)), -int(tem_var), i)
+    return sorted(ok, key=peso)[:3]
+
+def gravar(conj, antigo, bulk, ids, prefer):
+    A, B = por_id(antigo), por_id(bulk)
+    assert all(i in A and i in B for i in ids), (conj, ids)
+    def enxuto(e):
+        e = json.loads(json.dumps(e))
+        b = e['body']
+        for k in ('attributes',):
+            if isinstance(b.get(k), list):
+                manter = [a for a in b[k] if a.get('id') in prefer][:6] or b[k][:3]
+                b[k] = manter
+        if isinstance(b.get('variations'), list):
+            b['variations'] = b['variations'][:2]
+        return e
+    lado_antigo = [enxuto(A[i]) for i in ids] + [e for e in antigo if (e.get('body') or {}).get('id') == INVALIDO]
+    # bulk: na ordem pedida (é como o bulk responde) e com o 404 sem body no fim, onde foi pedido
+    lado_bulk = [enxuto(B[i]) for i in ids] + [e for e in bulk if e.get('status_code') == 404 and not e.get('body')][:1]
+    for lado, arr in (('antigo', lado_antigo), ('bulk', lado_bulk)):
+        (DST / f'bulk-{conj}-{lado}.json').write_text(json.dumps(arr, ensure_ascii=False, indent=1) + '\n')
+    (DST / f'bulk-{conj}-ids.json').write_text(json.dumps(ids + [INVALIDO]) + '\n')
+
+PREF = {'GTIN', 'COLOR', 'BRAND', 'MODEL', 'SELLER_SKU'}
 for conj in ['canais', 'atualizar_item', 'buscar_item', 'descobrir_familia', 'varrer_itens', 'vendas',
              'pedidos_pxv_cores', 'kit_virtual', 'componentes_kit', 'operacoes', 'pulse', 'pxv_estoque', 'promocoes']:
-    for lado in ['bulk', 'antigo']:
-        arr = json.loads((SPK / f'{conj}-{lado}.json').read_text())
-        ok = [e for e in arr if (e.get('code') or e.get('status_code')) == 200][:3]
-        err = [e for e in arr if (e.get('code') or e.get('status_code')) != 200][:1]
-        for e in ok:  # enxuga listas grandes sem mudar a forma
-            b = e['body']
-            for k in ('attributes', 'variations'):
-                if isinstance(b.get(k), list): b[k] = b[k][:4]
-        (DST / f'bulk-{conj.replace("_", "-")}-{lado}.json').write_text(json.dumps(ok + err, ensure_ascii=False, indent=1) + '\n')
+    antigo, bulk = carregar(f'{conj}-antigo.json'), carregar(f'{conj}-bulk.json')
+    gravar(conj.replace('_', '-'), antigo, bulk, escolher(antigo, PREF), PREF)
 for org, nome in [('DSA', 'kit'), ('Avil', 'catalogo'), ('Avil', 'relacionados')]:
-    for lado in ['bulk', 'antigo']:
-        arr = json.loads((SPK / f'{org}-{nome}-{lado}.json').read_text())
-        (DST / f'bulk-{nome}-{lado}.json').write_text(json.dumps(arr[:3], ensure_ascii=False, indent=1) + '\n')
-print(sorted(p.name for p in DST.glob('bulk-*.json')))
+    antigo, bulk = carregar(f'{org}-{nome}-antigo.json'), carregar(f'{org}-{nome}-bulk.json')
+    ids = sorted(set(por_id(antigo)) & set(por_id(bulk)))[:3]
+    gravar(nome, antigo, bulk, ids, PREF)
+print(sorted(p.name for p in DST.glob('bulk-*-ids.json')))
 ```
 
 Run: `python3 $CLAUDE_JOB_DIR/tmp/fixtures.py`
-Expected: 32 arquivos `bulk-<conjunto>-{bulk,antigo}.json`. Conferir que todo `-bulk.json` tem `status_code` e nenhum tem `code`, e que todo `-antigo.json` tem `code`:
-`grep -L '"status_code"' supabase/functions/_shared/ml/__tests__/fixtures/bulk-*-bulk.json` → vazio;
-`grep -l '"code"' supabase/functions/_shared/ml/__tests__/fixtures/bulk-*-bulk.json` → vazio.
+Expected: 16 trincas `bulk-<conj>-{antigo,bulk,ids}.json`. Conferir:
+- `grep -L status_code fixtures/bulk-*-bulk.json` → vazio;
+- `grep -l '"code"' fixtures/bulk-*-bulk.json` → vazio;
+- `grep -c '"GTIN"' fixtures/bulk-pedidos-pxv-cores-antigo.json fixtures/bulk-vendas-antigo.json` → ≥1 cada;
+- `grep -c '"COLOR"' fixtures/bulk-pedidos-pxv-cores-antigo.json` → ≥1.
 
-- [ ] **Step 2: Escrever o teste do helper (falhando)**
+Os fixtures de kit, catálogo e relacionados não têm 404, porque o spike não pediu id inválido nesses casos. O teste de kit insere o 404 explicitamente (T3).
+
+- [ ] **Step 2: Teste do adaptador (falhando)**
 
 `supabase/functions/_shared/ml/__tests__/multiget.test.ts`:
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import {
-  blocosMultiget, caminhoMultiget, entradasMultiget, itensMultiget, LIMITE_MULTIGET,
-} from '../multiget.ts';
-import bulkCanais from './fixtures/bulk-canais-bulk.json' with { type: 'json' };
-import antigoCanais from './fixtures/bulk-canais-antigo.json' with { type: 'json' };
+import { caminhoMultiget, comoEnvelopeAntigo } from '../multiget.ts';
 
-const ids = (n: number) => Array.from({ length: n }, (_, i) => `MLB${1000 + i}`);
+const CONJUNTOS = [
+  'canais', 'atualizar-item', 'buscar-item', 'descobrir-familia', 'varrer-itens', 'vendas', 'pedidos-pxv-cores',
+  'kit-virtual', 'componentes-kit', 'operacoes', 'pulse', 'pxv-estoque', 'promocoes', 'kit', 'catalogo', 'relacionados',
+] as const;
+const carregar = async (c: string, lado: 'antigo' | 'bulk' | 'ids') =>
+  (await import(`./fixtures/bulk-${c}-${lado}.json`, { with: { type: 'json' } })).default as unknown;
 
-describe('blocosMultiget', () => {
-  it('limite é 20', () => expect(LIMITE_MULTIGET).toBe(20));
-  it('blocos de ≤20 na ordem original', () => {
-    const b = blocosMultiget(ids(45));
-    expect(b.map((x) => x.length)).toEqual([20, 20, 5]);
-    expect(b.flat()).toEqual(ids(45));
-  });
-  it('remove repetidos (bulk responde 400 ao lote inteiro com id repetido) e vazios', () => {
-    expect(blocosMultiget(['MLB1', 'MLB2', 'MLB1', '', '  ', 'MLB2', 'MLB3'])).toEqual([['MLB1', 'MLB2', 'MLB3']]);
-  });
-  it('21 ids distintos → 2 blocos (bulk responde 400 a 21)', () => {
-    expect(blocosMultiget(ids(21)).map((x) => x.length)).toEqual([20, 1]);
-  });
-  it('lista vazia → nenhum bloco (nenhuma chamada)', () => expect(blocosMultiget([])).toEqual([]));
-});
+type Env = { code?: number; body?: { id?: string; tags?: string[] } & Record<string, unknown> };
+/** Antigo e bulk comparados por id (a ordem do antigo é arbitrária) e com `tags` ordenado (spec §4.3). */
+const normalizar = (arr: unknown) =>
+  (arr as Env[]).map((e) => ({
+    code: e.code,
+    id: e.body?.id,
+    body: e.code === 200 ? { ...e.body, ...(e.body?.tags ? { tags: [...e.body.tags].sort() } : {}) } : undefined,
+  })).sort((a, b) => String(a.id).localeCompare(String(b.id)));
 
 describe('caminhoMultiget', () => {
-  it('status_code primeiro, prefixo body. em todo campo, id garantido', () => {
-    expect(caminhoMultiget(['MLB1', 'MLB2'], ['status', 'price']))
+  it('status_code primeiro e prefixo body. em cada campo, na ordem dada', () => {
+    expect(caminhoMultiget(['MLB1', 'MLB2'], 'id,status,price'))
       .toBe('/items/bulk?ids=MLB1,MLB2&attributes=status_code,body.id,body.status,body.price');
   });
-  it('não duplica id quando já está na lista e preserva a ordem dos campos', () => {
-    expect(caminhoMultiget(['MLB1'], ['id', 'title', 'attributes']))
-      .toBe('/items/bulk?ids=MLB1&attributes=status_code,body.id,body.title,body.attributes');
+  it('deduplica DENTRO da requisição, preservando a 1ª ocorrência (o antigo deduplicava antes do limite)', () => {
+    expect(caminhoMultiget(['MLB2', 'MLB1', 'MLB2'], 'id')).toBe('/items/bulk?ids=MLB2,MLB1&attributes=status_code,body.id');
   });
-  it('extra vai no fim, sem tocar a seleção', () => {
-    expect(caminhoMultiget(['MLB1'], ['id'], '&include_attributes=all'))
-      .toBe('/items/bulk?ids=MLB1&attributes=status_code,body.id&include_attributes=all');
+  it('21 posições com 20 únicos → 20 na URL', () => {
+    const ids = Array.from({ length: 20 }, (_, i) => `MLB${i}`);
+    const q = new URL(`https://x${caminhoMultiget([...ids, ids[0]], 'id')}`).searchParams.get('ids')!.split(',');
+    expect(q).toEqual(ids);
   });
-  it('codifica cada id', () => {
-    expect(caminhoMultiget(['MLB 1'], ['id'])).toBe('/items/bulk?ids=MLB%201&attributes=status_code,body.id');
+  it('não divide, não filtra, não lança: 21 distintos ficam na URL (o ML responde 400, como hoje)', () => {
+    const ids = Array.from({ length: 21 }, (_, i) => `MLB${i}`);
+    expect(new URL(`https://x${caminhoMultiget(ids, 'id')}`).searchParams.get('ids')!.split(',')).toHaveLength(21);
+    expect(() => caminhoMultiget([], 'id')).not.toThrow();
   });
-  it('recusa bloco vazio, >20 ou com repetido (erro de programação, nunca chega ao ML)', () => {
-    expect(() => caminhoMultiget([], ['id'])).toThrow();
-    expect(() => caminhoMultiget(ids(21), ['id'])).toThrow();
-    expect(() => caminhoMultiget(['MLB1', 'MLB1'], ['id'])).toThrow();
+  it('extra vai no fim e cada id é codificado', () => {
+    expect(caminhoMultiget(['MLB 1'], 'id', '&include_attributes=all'))
+      .toBe('/items/bulk?ids=MLB%201&attributes=status_code,body.id&include_attributes=all');
   });
 });
 
-describe('entradasMultiget / itensMultiget', () => {
-  it('fixture real do bulk: 3 itens 200 + o 404 sem body', () => {
-    const e = entradasMultiget(bulkCanais);
-    expect(e.map((x) => x.code)).toEqual([200, 200, 200, 404]);
-    expect(e[3].body).toBeNull();
-    expect(itensMultiget<{ id: string }>(bulkCanais).map((b) => b.id)).toHaveLength(3);
+describe('comoEnvelopeAntigo', () => {
+  it.each(CONJUNTOS)('%s: resposta real do bulk vira o envelope antigo dos mesmos ids', async (c) => {
+    const ids = (await carregar(c, 'ids')) as string[];
+    const bulk = await carregar(c, 'bulk');
+    const antigo = await carregar(c, 'antigo');
+    const pedidos = (bulk as unknown[]).length === ids.length ? ids : ids.slice(0, -1);
+    expect(normalizar(comoEnvelopeAntigo(bulk, pedidos))).toEqual(normalizar(antigo));
   });
-  it('envelope antigo (code) dá o mesmo resultado que o bulk (status_code) nos mesmos ids', () => {
-    expect(itensMultiget(antigoCanais)).toEqual(itensMultiget(bulkCanais));
+  it('404 sem body recebe o id pela posição', () => {
+    const r = comoEnvelopeAntigo(
+      [{ status_code: 200, body: { id: 'MLB1' } }, { status_code: 404 }, { status_code: 200, body: { id: 'MLB3' } }],
+      ['MLB1', 'MLB2', 'MLB3'],
+    );
+    expect(r).toEqual([{ code: 200, body: { id: 'MLB1' } }, { code: 404, body: { id: 'MLB2' } }, { code: 200, body: { id: 'MLB3' } }]);
   });
-  it('não-array, null e entradas malformadas → vazio, sem lançar', () => {
-    expect(entradasMultiget(null)).toEqual([]);
-    expect(entradasMultiget({ message: 'x' })).toEqual([]);
-    expect(itensMultiget([null, 1, { status_code: 200 }, { status_code: 200, body: { id: 5 } }, { code: 500, body: { id: 'MLB1' } }])).toEqual([]);
+  it('posição conta sobre os ids ÚNICOS enviados', () => {
+    expect(comoEnvelopeAntigo([{ status_code: 200, body: { id: 'MLB1' } }, { status_code: 404 }], ['MLB1', 'MLB1', 'MLB2']))
+      .toEqual([{ code: 200, body: { id: 'MLB1' } }, { code: 404, body: { id: 'MLB2' } }]);
+  });
+  it('quantidade diferente da de ids: só traduz o código, sem inventar id', () => {
+    expect(comoEnvelopeAntigo([{ status_code: 404 }], ['MLB1', 'MLB2'])).toEqual([{ code: 404 }]);
+  });
+  it('code tem prioridade sobre status_code (mesma regra de fiacao.ts) e envelope antigo passa intacto', () => {
+    expect(comoEnvelopeAntigo([{ code: 200, status_code: 404, body: { id: 'MLB1' } }], ['MLB1']))
+      .toEqual([{ code: 200, body: { id: 'MLB1' } }]);
+    const antigo = [{ code: 404, body: { id: 'MLB9', message: 'x' } }];
+    expect(comoEnvelopeAntigo(antigo, ['MLB9'])).toEqual(antigo);
+  });
+  it('não-array volta INTACTO (preserva TypeError/vazio de cada módulo)', () => {
+    const obj = { message: 'erro' };
+    expect(comoEnvelopeAntigo(obj, ['MLB1'])).toBe(obj);
+    expect(comoEnvelopeAntigo(null, ['MLB1'])).toBeNull();
+    expect(comoEnvelopeAntigo('x', ['MLB1'])).toBe('x');
+  });
+  it('entrada que não é objeto volta intacta na posição', () => {
+    expect(comoEnvelopeAntigo([null, 5], ['MLB1', 'MLB2'])).toEqual([null, 5]);
+  });
+  it('body que já existe nunca é trocado, mesmo sem id', () => {
+    expect(comoEnvelopeAntigo([{ status_code: 500, body: { message: 'x' } }], ['MLB1']))
+      .toEqual([{ code: 500, body: { message: 'x' } }]);
   });
 });
 ```
 
-O teste "antigo dá o mesmo resultado" depende de os bodies serem idênticos, o que o spike provou. Se o fixture antigo trouxer o body de erro do 404, ele também é filtrado por `itensMultiget`, porque o código é 404.
+No teste `it.each`, os fixtures de kit, catálogo e relacionados não têm o 404, então `pedidos` usa os ids sem o inválido. Nos demais, a última posição é o 404.
 
 - [ ] **Step 3: Rodar e ver falhar**
 
 Run: `pnpm test supabase/functions/_shared/ml/__tests__/multiget.test.ts`
-Expected: FAIL, com o erro "Failed to resolve import ../multiget.ts".
+Expected: FAIL (`Failed to resolve import "../multiget.ts"`).
 
-- [ ] **Step 4: Implementar o helper**
+- [ ] **Step 4: Implementar**
 
 `supabase/functions/_shared/ml/multiget.ts`:
 
 ```ts
-// Multiget de anúncios do ML via `/items/bulk` (o `/items?ids=` sai do ar em 25/10/2026, ADR-0177).
-// Puro de propósito: cada módulo mantém o próprio transporte e a própria semântica de erro.
-// Contrato medido no spike de 03/10/2026 (spec 2026-10-03-ml-items-bulk-design.md §2):
+// Multiget de anúncios do ML via `/items/bulk` (`/items?ids=` sai do ar em 25/10/2026, ADR-0177).
+// ADAPTADOR, não parser: devolve a resposta no envelope antigo para que nenhum módulo mude
+// predicado, laço ou tratamento de erro. Contrato medido em 03/10/2026 (spec §2):
 // - seleção com `status_code` + `body.<campo>`; sem `status_code` o envelope perde o código;
-// - id repetido → HTTP 400 no lote inteiro; 21 ids → 400; id inexistente → `{status_code:404}` sem body.
+// - id repetido → 400 no lote inteiro (o antigo deduplicava antes do limite de 20);
+// - id inexistente → `{status_code:404}` SEM body, na posição do id pedido.
 
-export const LIMITE_MULTIGET = 20;
+const unicos = (ids: readonly string[]): string[] => [...new Set(ids)];
 
-/** Ids únicos (ordem preservada, vazios fora) em blocos de ≤20. */
-export function blocosMultiget(ids: readonly string[]): string[][] {
-  const unicos = [...new Set(ids.map((i) => i.trim()).filter((i) => i.length > 0))];
-  const out: string[][] = [];
-  for (let i = 0; i < unicos.length; i += LIMITE_MULTIGET) out.push(unicos.slice(i, i + LIMITE_MULTIGET));
-  return out;
+/** Caminho relativo do bulk. Dedup só dentro da requisição; não divide, não filtra, não lança. */
+export function caminhoMultiget(ids: readonly string[], campos: string, extra = ''): string {
+  const sel = campos.split(',').map((c) => `body.${c}`).join(',');
+  return `/items/bulk?ids=${unicos(ids).map(encodeURIComponent).join(',')}&attributes=status_code,${sel}${extra}`;
 }
 
-/** Caminho relativo do bulk. Lança se o bloco tiver 0 ou mais de 20 ids, ou id repetido. Isso é erro de programação. */
-export function caminhoMultiget(bloco: readonly string[], campos: readonly string[], extra = ''): string {
-  if (bloco.length === 0 || bloco.length > LIMITE_MULTIGET || new Set(bloco).size !== bloco.length) {
-    throw new Error(`multiget: bloco inválido (${bloco.length} ids; use blocosMultiget)`);
-  }
-  const sel = ['id', ...campos.filter((c) => c !== 'id')].map((c) => `body.${c}`);
-  return `/items/bulk?ids=${bloco.map(encodeURIComponent).join(',')}&attributes=status_code,${sel.join(',')}${extra}`;
-}
-
-/** Normaliza `{code|status_code, body}` (envelope antigo e bulk) para `{ code, body }`. */
-export function entradasMultiget<T = Record<string, unknown>>(json: unknown): Array<{ code: number | null; body: T | null }> {
-  if (!Array.isArray(json)) return [];
-  return json.map((e) => {
-    const env = (e && typeof e === 'object' ? e : {}) as { code?: unknown; status_code?: unknown; body?: unknown };
-    const c = env.status_code ?? env.code;
-    const body = env.body && typeof env.body === 'object' ? (env.body as T) : null;
-    return { code: typeof c === 'number' ? c : null, body };
+/** Resposta do bulk → envelope antigo `[{code, body}]`. Não-array volta intacto. */
+export function comoEnvelopeAntigo(json: unknown, idsPedidos: readonly string[]): unknown {
+  if (!Array.isArray(json)) return json;
+  const enviados = unicos(idsPedidos);
+  const alinhado = json.length === enviados.length;
+  return json.map((e, i) => {
+    if (!e || typeof e !== 'object') return e;
+    const { status_code, code, body, ...resto } = e as Record<string, unknown>;
+    void resto; // `id` de topo (bulk sem attributes=) não existe no envelope antigo
+    const out: Record<string, unknown> = { code: code ?? status_code };
+    if (body !== undefined) out.body = body;
+    else if (alinhado) out.body = { id: enviados[i] };
+    return out;
   });
-}
-
-/** Bodies com código 200 e `body.id` string, o filtro que os módulos repetiam. */
-export function itensMultiget<T extends { id?: unknown } = Record<string, unknown>>(json: unknown): T[] {
-  return entradasMultiget<T>(json)
-    .filter((e) => e.code === 200 && e.body !== null && typeof e.body.id === 'string')
-    .map((e) => e.body as T);
 }
 ```
 
 - [ ] **Step 5: Rodar e ver passar**
 
-Run: `pnpm test supabase/functions/_shared/ml/__tests__/multiget.test.ts`
-Expected: PASS (todos os casos).
+Run: `pnpm test supabase/functions/_shared/ml/__tests__/multiget.test.ts` → PASS.
 
-- [ ] **Step 6: Guarda de fetch + teste da guarda (fora do repo)**
+- [ ] **Step 6: Guarda com replay + testes**
 
 `$CLAUDE_JOB_DIR/tmp/ab/guarda.ts`:
 
 ```ts
-// Guarda do A/B: só GET em api.mercadolibre.com chega à rede. Qualquer outra escrita no ML é
-// registrada e respondida com 200 sintético, SEM rede. Qualquer outro host lança.
-export const escritasBloqueadas: Array<{ metodo: string; url: string; corpo: string | null }> = [];
-const fetchReal = globalThis.fetch.bind(globalThis);
-export function instalarGuarda(): void {
-  globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+// Guarda do A/B. Fase 'gravar': GET em api.mercadolibre.com vai à rede e é gravado. Fase 'replay':
+// GET que não é multiget sai da gravação (faltou → erro), multiget vai à rede. Em qualquer fase,
+// escrita só por rota prevista (resposta simulada, sem rede); qualquer outra escrita ou host → erro.
+export type Gravacao = { metodo: string; url: string; status: number; corpo: string };
+export type Escrita = { metodo: string; url: string; corpo: string | null };
+export type ChamadaGet = { url: string; status: number };
+const MULTIGET = /\/items(\/bulk)?\?ids=/;
+
+export function criarGuarda(opts: {
+  fase: 'gravar' | 'replay';
+  gravadas?: Gravacao[];
+  fetchReal?: typeof fetch;
+}) {
+  const fetchReal = opts.fetchReal ?? globalThis.fetch.bind(globalThis);
+  const fila = new Map<string, Gravacao[]>();
+  for (const g of opts.gravadas ?? []) fila.set(g.url, [...(fila.get(g.url) ?? []), g]);
+  const gravacoes: Gravacao[] = [];
+  const escritas: Escrita[] = [];
+  const gets: ChamadaGet[] = [];
+  const fetchGuardado = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const req = new Request(input, init);
     const u = new URL(req.url);
-    if (u.protocol !== 'https:' || u.hostname !== 'api.mercadolibre.com') {
-      throw new Error(`GUARDA: host proibido ${u.hostname}`);
+    if (u.protocol !== 'https:' || u.hostname !== 'api.mercadolibre.com' || (u.port && u.port !== '443')) {
+      throw new Error(`GUARDA: destino proibido ${u.origin}`);
     }
     if (req.method !== 'GET') {
-      escritasBloqueadas.push({ metodo: req.method, url: req.url, corpo: req.body ? await req.text() : null });
-      return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+      const corpo = req.body ? await req.text() : null;
+      escritas.push({ metodo: req.method, url: req.url, corpo });
+      if (req.method === 'PUT' && /^\/items\/MLB[0-9]+$/.test(u.pathname)) {
+        return new Response(JSON.stringify({ id: u.pathname.split('/')[2], ...(corpo ? JSON.parse(corpo) : {}) }), { status: 200 });
+      }
+      throw new Error(`GUARDA: escrita não prevista ${req.method} ${u.pathname}`);
     }
-    return fetchReal(req);
+    if (opts.fase === 'replay' && !MULTIGET.test(req.url)) {
+      const g = fila.get(req.url)?.shift();
+      if (!g) throw new Error(`GUARDA: GET sem gravação no replay ${req.url}`);
+      gets.push({ url: req.url, status: g.status });
+      return new Response(g.corpo, { status: g.status });
+    }
+    const r = await fetchReal(req);
+    const corpo = await r.text();
+    gets.push({ url: req.url, status: r.status });
+    if (r.status === 401 || r.status === 403) throw new Error(`GUARDA: HTTP ${r.status} (token expirado? não renovar) ${u.pathname}`);
+    if (!MULTIGET.test(req.url)) gravacoes.push({ metodo: 'GET', url: req.url, status: r.status, corpo });
+    return new Response(corpo, { status: r.status, headers: r.headers });
   };
+  const sobras = () => [...fila.values()].flat().map((g) => g.url);
+  return { fetchGuardado, gravacoes, escritas, gets, sobras };
 }
 ```
 
-`$CLAUDE_JOB_DIR/tmp/ab/guarda.test.ts`, que roda **sem rede** (`--allow-net` ausente, para provar que o PUT não sai):
+`$CLAUDE_JOB_DIR/tmp/ab/guarda.test.ts`:
 
 ```ts
 import { assertEquals, assertRejects } from 'jsr:@std/assert@1';
-import { escritasBloqueadas, instalarGuarda } from './guarda.ts';
-instalarGuarda();
-Deno.test('PUT no ML é bloqueado, registrado e não toca a rede', async () => {
-  const r = await fetch('https://api.mercadolibre.com/items/MLB1', { method: 'PUT', body: '{"status":"paused"}' });
-  assertEquals(r.status, 200);
-  assertEquals(escritasBloqueadas, [{ metodo: 'PUT', url: 'https://api.mercadolibre.com/items/MLB1', corpo: '{"status":"paused"}' }]);
+import { criarGuarda } from './guarda.ts';
+
+function espiao() {
+  const vistos: Array<{ metodo: string; url: string }> = [];
+  const f = ((input: RequestInfo | URL, init?: RequestInit) => {
+    const r = new Request(input, init);
+    vistos.push({ metodo: r.method, url: r.url });
+    return Promise.resolve(new Response('[]', { status: 200 }));
+  }) as typeof fetch;
+  return { f, vistos };
+}
+
+Deno.test('GET no ML é encaminhado ao fetch real e gravado (exceto multiget)', async () => {
+  const { f, vistos } = espiao();
+  const g = criarGuarda({ fase: 'gravar', fetchReal: f });
+  await g.fetchGuardado('https://api.mercadolibre.com/items/MLB1?attributes=id');
+  await g.fetchGuardado('https://api.mercadolibre.com/items/bulk?ids=MLB1&attributes=status_code,body.id');
+  assertEquals(vistos.map((v) => v.metodo), ['GET', 'GET']);
+  assertEquals(g.gravacoes.map((x) => x.url), ['https://api.mercadolibre.com/items/MLB1?attributes=id']);
 });
-Deno.test('POST e DELETE também são bloqueados', async () => {
-  await fetch('https://api.mercadolibre.com/items', { method: 'POST', body: '{}' });
-  await fetch('https://api.mercadolibre.com/items/MLB1', { method: 'DELETE' });
-  assertEquals(escritasBloqueadas.slice(-2).map((e) => e.metodo), ['POST', 'DELETE']);
+Deno.test('PUT por string, Request e init.method nunca chega ao fetch real', async () => {
+  const { f, vistos } = espiao();
+  const g = criarGuarda({ fase: 'gravar', fetchReal: f });
+  await g.fetchGuardado('https://api.mercadolibre.com/items/MLB1', { method: 'PUT', body: '{"status":"paused"}' });
+  await g.fetchGuardado(new Request('https://api.mercadolibre.com/items/MLB2', { method: 'PUT', body: '{"status":"active"}' }));
+  await g.fetchGuardado(new Request('https://api.mercadolibre.com/items/MLB3'), { method: 'PUT', body: '{}' });
+  assertEquals(vistos, []);
+  assertEquals(g.escritas.map((e) => [e.metodo, e.url, e.corpo]), [
+    ['PUT', 'https://api.mercadolibre.com/items/MLB1', '{"status":"paused"}'],
+    ['PUT', 'https://api.mercadolibre.com/items/MLB2', '{"status":"active"}'],
+    ['PUT', 'https://api.mercadolibre.com/items/MLB3', '{}'],
+  ]);
 });
-Deno.test('outro host lança', async () => {
-  await assertRejects(() => fetch('https://example.com/'), Error, 'GUARDA');
+Deno.test('POST/DELETE ou PUT fora da rota prevista → erro, sem rede', async () => {
+  const { f, vistos } = espiao();
+  const g = criarGuarda({ fase: 'gravar', fetchReal: f });
+  await assertRejects(() => g.fetchGuardado('https://api.mercadolibre.com/items', { method: 'POST', body: '{}' }), Error, 'não prevista');
+  await assertRejects(() => g.fetchGuardado('https://api.mercadolibre.com/items/MLB1', { method: 'DELETE' }), Error, 'não prevista');
+  await assertRejects(() => g.fetchGuardado('https://api.mercadolibre.com/items/MLB1/description', { method: 'PUT', body: '{}' }), Error, 'não prevista');
+  assertEquals(vistos, []);
 });
-Deno.test('GET no ML passa para a rede (sem permissão de rede → erro de permissão, provando que tentou sair)', async () => {
-  await assertRejects(() => fetch('https://api.mercadolibre.com/sites/MLB'));
+Deno.test('outro host, http ou outra porta → erro, sem rede', async () => {
+  const { f, vistos } = espiao();
+  const g = criarGuarda({ fase: 'gravar', fetchReal: f });
+  for (const u of ['https://example.com/', 'http://api.mercadolibre.com/items/MLB1', 'https://api.mercadolibre.com:8443/x']) {
+    await assertRejects(() => g.fetchGuardado(u), Error, 'destino proibido');
+  }
+  assertEquals(vistos, []);
+});
+Deno.test('replay: GET não-multiget vem da gravação, sem rede; sobra é detectável; faltante → erro', async () => {
+  const { f, vistos } = espiao();
+  const g = criarGuarda({ fase: 'replay', fetchReal: f, gravadas: [
+    { metodo: 'GET', url: 'https://api.mercadolibre.com/a', status: 200, corpo: '{"x":1}' },
+    { metodo: 'GET', url: 'https://api.mercadolibre.com/b', status: 200, corpo: '{}' },
+  ] });
+  assertEquals(await (await g.fetchGuardado('https://api.mercadolibre.com/a')).json(), { x: 1 });
+  assertEquals(vistos, []);
+  assertEquals(g.sobras(), ['https://api.mercadolibre.com/b']);
+  await assertRejects(() => g.fetchGuardado('https://api.mercadolibre.com/a'), Error, 'sem gravação');
+  await g.fetchGuardado('https://api.mercadolibre.com/items/bulk?ids=MLB1&attributes=status_code,body.id');
+  assertEquals(vistos.length, 1); // só o multiget foi à rede
+});
+Deno.test('401/403 encerra (token não é renovado)', async () => {
+  const f = (() => Promise.resolve(new Response('{}', { status: 401 }))) as typeof fetch;
+  const g = criarGuarda({ fase: 'gravar', fetchReal: f });
+  await assertRejects(() => g.fetchGuardado('https://api.mercadolibre.com/items/MLB1'), Error, 'HTTP 401');
 });
 ```
 
-Run: `deno test --allow-read $CLAUDE_JOB_DIR/tmp/ab/guarda.test.ts`
-Expected: 4 passed.
+Run: `deno test --no-prompt --allow-read $CLAUDE_JOB_DIR/tmp/ab/guarda.test.ts` (sem `--allow-net`)
+Expected: 6 passed.
 
-- [ ] **Step 7: `ab.ts` (cenários por fatia) e `rodar.py`**
+- [ ] **Step 7: Cenários, runner e canonização**
 
-`$CLAUDE_JOB_DIR/tmp/ab/ab.ts`:
+`$CLAUDE_JOB_DIR/tmp/ab/ab.ts`. Roda **uma** fase de **uma** árvore para **uma** org e escreve JSON em stdout:
 
 ```ts
-import { escritasBloqueadas, instalarGuarda } from './guarda.ts';
-instalarGuarda(); // ANTES de qualquer import de módulo do app
-const ARV = Deno.env.get('AB_ARVORE')!;
-const TOKEN = Deno.env.get('ML_TOKEN')!;
-const A = JSON.parse(Deno.env.get('AB_AMOSTRA')!) as { ids: string[]; catalogo: string[]; kits: string[]; sellerId: string };
-const imp = (p: string) => import(`file://${ARV}/${p}`);
-const canon = (x: unknown): unknown =>
-  Array.isArray(x) ? x.map(canon)
-  : x instanceof Map ? canon(Object.fromEntries([...x.entries()].sort()))
-  : x && typeof x === 'object' ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => [k, k === 'tags' && Array.isArray(v) ? [...v].sort() : canon(v)]))
-  : x;
-const comDup = (xs: string[]) => [...xs, ...xs.slice(0, 2)]; // repetidos de propósito (Review Focus 1)
+import { criarGuarda, type Gravacao } from './guarda.ts';
+import { CENARIOS } from './cenarios.ts';
 
-const cenarios: Record<string, () => Promise<unknown>> = {
-  async F1() {
-    const { mercadoLivreConnector } = await imp('_shared/canais/mercado-livre.ts');
-    const { propagarStatusRelacionadosML } = await imp('_shared/ml/atualizar-item.ts');
-    const ctx = { getToken: async () => TOKEN };
-    const status = await mercadoLivreConnector.lerStatus(ctx, comDup([...A.ids, ...A.catalogo, 'MLB0000000001']));
-    const propag: Record<string, unknown> = {};
-    for (const id of A.catalogo) {
-      const antes = escritasBloqueadas.length;
-      try { await propagarStatusRelacionadosML(TOKEN, id, 'paused'); propag[id] = escritasBloqueadas.slice(antes); }
-      catch (e) { propag[id] = `ERRO ${(e as Error).message}`; }
-    }
-    return { status, propag };
-  },
-  async F2() {
-    const { buscarGtinsDosItens } = await imp('_shared/ml/pedidos.ts');
-    const v = await imp('_shared/ml/vendas.ts');
-    return {
-      gtins: await buscarGtinsDosItens(TOKEN, comDup([...A.ids, 'MLB0000000001'])),
-      vendas: await v.buscarTitulosEGtins(TOKEN, comDup([...A.ids, 'MLB0000000001']), AbortSignal.timeout(30_000)),
-    };
-  },
-  async F3() {
-    const { buscarListingTypeItensML } = await imp('_shared/ml/kit-virtual.ts');
-    return { lt: await buscarListingTypeItensML(TOKEN, comDup([...A.ids, ...A.kits, 'MLB0000000001'])) };
-  },
-  async F4() {
-    const { buscarItensML, criarGetJson } = await imp('_shared/promocoes/ml.ts');
-    const { criarClienteML } = await imp('_shared/operacoes/ml.ts');
-    const { detalharItens } = await imp('_shared/ml/varrer-itens.ts');
-    const cli = criarClienteML(TOKEN);
-    const rel: Record<string, unknown> = {};
-    for (const id of A.catalogo) {
-      try { rel[id] = await cli.lerRelacoes(id); } catch (e) { rel[id] = `ERRO ${(e as Error).message}`; }
-    }
-    return {
-      promo: await buscarItensML(criarGetJson(TOKEN), comDup([...A.ids, 'MLB0000000001'])),
-      rel,
-      varrer: await detalharItens(fetch, TOKEN, comDup([...A.ids, 'MLB0000000001'])),
-    };
-  },
-  async F5() {
-    const { parseStatusAnuncios } = await imp('_shared/pulse/parse.ts');
-    // Pulse e PxV montam a URL inline. O A/B compara o parse de cada árvore sobre a resposta do endpoint que aquela árvore chama.
-    const antigo = ARV.includes('/ab/main');
-    const q = [...A.ids, 'MLB0000000001'].join(',');
-    const url = antigo
-      ? `https://api.mercadolibre.com/items?ids=${q}&attributes=id,status,sub_status,category_id,listing_type_id,price`
-      : `https://api.mercadolibre.com/items/bulk?ids=${q}&attributes=status_code,body.id,body.status,body.sub_status,body.category_id,body.listing_type_id,body.price`;
-    const json = await (await fetch(url, { headers: { Authorization: `Bearer ${TOKEN}` } })).json();
-    return { pulse: parseStatusAnuncios(json) };
-  },
+const fase = Deno.env.get('AB_FASE') as 'gravar' | 'replay';
+const arquivoGravadas = Deno.env.get('AB_GRAVADAS');
+const gravadas: Gravacao[] = fase === 'replay' ? JSON.parse(await Deno.readTextFile(arquivoGravadas!)) : [];
+const guarda = criarGuarda({ fase, gravadas });
+globalThis.fetch = guarda.fetchGuardado as typeof fetch; // ANTES de qualquer import do app
+
+const ctx = {
+  arvore: Deno.env.get('AB_ARVORE')!,
+  token: Deno.env.get('ML_TOKEN')!,
+  amostra: JSON.parse(Deno.env.get('AB_AMOSTRA')!),
+  imp: (p: string) => import(`file://${Deno.env.get('AB_ARVORE')}/${p}`),
+  escritas: guarda.escritas,
 };
 const fatia = Deno.args[0];
-const saida = await cenarios[fatia]();
-console.log(JSON.stringify(canon({ saida, escritasBloqueadas })));
+const resultado: Record<string, unknown> = {};
+for (const c of CENARIOS[fatia]) {
+  try { resultado[c.nome] = { ok: true, valor: c.canon(await c.rodar(ctx)) }; }
+  catch (e) { resultado[c.nome] = { ok: false, erro: (e as Error).message.replace(/MLB\d+/g, 'MLB#').slice(0, 300) }; }
+}
+if (fase === 'gravar' && arquivoGravadas) await Deno.writeTextFile(arquivoGravadas, JSON.stringify(guarda.gravacoes));
+console.log(JSON.stringify({
+  resultado,
+  escritas: guarda.escritas,
+  sobras: fase === 'replay' ? guarda.sobras() : [],
+  getsComErro: guarda.gets.filter((g) => g.status >= 400 && g.status !== 404),
+}));
 ```
 
-**Pré-condição do Step 7, a conferir antes de rodar:** `buscarTitulosEGtins` hoje não é exportada (`_shared/ml/vendas.ts:127`). A T2 adiciona `export` nela, **e** o A/B da T2 roda com a árvore `main` corrigida só nessa palavra (`sed -i '' 's/^async function buscarTitulosEGtins/export async function buscarTitulosEGtins/'` na cópia de `$CLAUDE_JOB_DIR/tmp/ab/main`). O comportamento não muda, só a visibilidade.
+`$CLAUDE_JOB_DIR/tmp/ab/cenarios.ts`. Um cenário = `{ nome, rodar, canon, positivo, esperaErro? }`:
 
-`$CLAUDE_JOB_DIR/tmp/ab/rodar.py` reaproveita `sql()` de `$CLAUDE_JOB_DIR/tmp/spike_bulk.py`:
+```ts
+type Ctx = {
+  arvore: string; token: string; imp: (p: string) => Promise<any>;
+  escritas: Array<{ metodo: string; url: string; corpo: string | null }>;
+  amostra: { ids: string[]; catalogo: string[]; kits: string[]; sellerId: string; skuPorItem: Record<string, string> };
+};
+export type Cenario = {
+  nome: string; rodar: (c: Ctx) => Promise<unknown>; canon: (v: unknown) => unknown;
+  positivo: (v: any) => boolean; esperaErro?: boolean;
+};
+
+const ord = (x: unknown): unknown =>
+  x instanceof Map ? ord(Object.fromEntries([...x.entries()]))
+  : Array.isArray(x) ? x.map(ord)
+  : x && typeof x === 'object' ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1)).map(([k, v]) => [k, ord(v)]))
+  : x;
+const estrito = (v: unknown) => ord(v);
+/** Multiconjunto (spec §4.3): ordena por chave estável SEM remover repetidos. */
+const multiconjunto = (chave: (x: any) => string) => (v: unknown) =>
+  (ord(v) as any[]).slice().sort((a, b) => (chave(a) < chave(b) ? -1 : chave(a) > chave(b) ? 1 : 0));
+const bloco20 = (xs: string[]) => xs.slice(0, 20);
+const comRepetidos = (xs: string[]) => [...xs, xs[0], xs[1]]; // repetidos dentro E entre blocos
+const INVALIDO = 'MLB0000000001';
+
+export const CENARIOS: Record<string, Cenario[]> = {
+  F1: [
+    { nome: 'lerStatus', canon: estrito,
+      rodar: async (c) => (await c.imp('_shared/canais/mercado-livre.ts')).mercadoLivreConnector
+        .lerStatus({ getToken: async () => c.token }, comRepetidos([...c.amostra.ids, ...c.amostra.catalogo, INVALIDO])),
+      positivo: (v) => Object.values(v).some((s: any) => s.status !== 'indisponivel') && v[INVALIDO]?.status === 'indisponivel' },
+    { nome: 'propagarPausar', canon: estrito,
+      rodar: async (c) => {
+        const { propagarStatusRelacionadosML } = await c.imp('_shared/ml/atualizar-item.ts');
+        const out: Record<string, unknown> = {};
+        for (const id of c.amostra.catalogo) {
+          const antes = c.escritas.length;
+          try { await propagarStatusRelacionadosML(c.token, id, 'paused'); out[id] = { escritas: c.escritas.slice(antes) }; }
+          catch (e) { out[id] = { erro: (e as Error).message }; }
+        }
+        return out;
+      },
+      positivo: (v) => Object.keys(v).length === 0 || Object.values(v).some((r: any) => r.escritas) },
+    { nome: 'propagarAtivar', canon: estrito,
+      rodar: async (c) => {
+        const { propagarStatusRelacionadosML } = await c.imp('_shared/ml/atualizar-item.ts');
+        const out: Record<string, unknown> = {};
+        for (const id of c.amostra.catalogo) {
+          const antes = c.escritas.length;
+          try { await propagarStatusRelacionadosML(c.token, id, 'active'); out[id] = { escritas: c.escritas.slice(antes) }; }
+          catch (e) { out[id] = { erro: (e as Error).message }; }
+        }
+        return out;
+      },
+      positivo: (v) => Object.keys(v).length === 0 || Object.values(v).some((r: any) => r.escritas) },
+    { nome: 'buscarItemPorSku', canon: estrito,
+      rodar: async (c) => {
+        const { buscarItemPorSku } = await c.imp('_shared/ml/buscar-item.ts');
+        const out: Record<string, unknown> = {};
+        for (const [item, sku] of Object.entries(c.amostra.skuPorItem).slice(0, 3)) {
+          const det = await (await fetch(`https://api.mercadolibre.com/items/${item}?attributes=id,category_id,family_name`,
+            { headers: { Authorization: `Bearer ${c.token}` } })).json();
+          if (!det.family_name) continue;
+          out[item] = await buscarItemPorSku(fetch, { accessToken: c.token, sellerId: c.amostra.sellerId,
+            categoriaId: det.category_id, familyName: det.family_name, desdeMs: 0 }, sku);
+        }
+        return out;
+      },
+      positivo: (v) => Object.keys(v).length === 0 || Object.values(v).some((r: any) => r && r.tipo !== 'nenhum') },
+  ],
+  F2: [
+    { nome: 'gtinsPedidos', canon: estrito,
+      rodar: async (c) => (await c.imp('_shared/ml/pedidos.ts')).buscarGtinsDosItens(c.token, comRepetidos([...c.amostra.ids, INVALIDO])),
+      positivo: (v) => Object.keys(v).length > 0 },
+    { nome: 'titulosEGtins', canon: estrito,
+      rodar: async (c) => (await c.imp('_shared/ml/vendas.ts')).buscarTitulosEGtins(c.token, comRepetidos([...c.amostra.ids, INVALIDO]), AbortSignal.timeout(60_000)),
+      positivo: (v) => Object.keys(v.titulos).length > 0 },
+  ],
+  F3: [
+    { nome: 'listingTypes', canon: estrito,
+      rodar: async (c) => (await c.imp('_shared/ml/kit-virtual.ts')).buscarListingTypeItensML(c.token, comRepetidos([...c.amostra.ids, ...c.amostra.kits, INVALIDO])),
+      positivo: (v) => Object.keys(v).length > 0 },
+    { nome: 'componentes', canon: multiconjunto((x) => x.itemId),
+      rodar: async (c) => (await c.imp('buscar-componentes-kit-virtual/leitura-ml.ts')).buscarUserProductIdsML(c.token, comRepetidos([...c.amostra.ids, INVALIDO])),
+      positivo: (v) => v.length > 0 },
+  ],
+  F4: [
+    { nome: 'promocoesItens', canon: estrito,
+      rodar: async (c) => { const m = await c.imp('_shared/promocoes/ml.ts'); return m.buscarItensML(m.criarGetJson(c.token), comRepetidos([...c.amostra.ids, INVALIDO])); },
+      positivo: (v) => Object.keys(v).length > 0 },
+    { nome: 'lerRelacoes', canon: estrito,
+      rodar: async (c) => {
+        const cli = (await c.imp('_shared/operacoes/ml.ts')).criarClienteML(c.token);
+        const out: Record<string, unknown> = {};
+        for (const id of c.amostra.catalogo) { try { out[id] = await cli.lerRelacoes(id); } catch (e) { out[id] = { erro: (e as Error).message }; } }
+        return out;
+      },
+      positivo: (v) => Object.keys(v).length === 0 || Object.values(v).some((r: any) => !r.erro) },
+    { nome: 'detalharItens', canon: multiconjunto((x) => x.id),
+      rodar: async (c) => (await c.imp('_shared/ml/varrer-itens.ts')).detalharItens(fetch, c.token, comRepetidos([...c.amostra.ids, INVALIDO])),
+      positivo: (v) => v.length > 0 },
+    { nome: 'descobrirFamiliaUP', canon: (v: any) => ord(v?.porCor ? { ...v, porCor: Object.fromEntries(Object.entries(v.porCor).map(([k, a]: any) => [k, [...a].sort()])) } : v),
+      rodar: async (c) => {
+        const { descobrirFamiliaUP } = await c.imp('_shared/ml/descobrir-familia-up.ts');
+        const out: Record<string, unknown> = {};
+        for (const item of c.amostra.ids.slice(0, 3)) {
+          const det = await (await fetch(`https://api.mercadolibre.com/items/${item}?attributes=id,title,category_id`,
+            { headers: { Authorization: `Bearer ${c.token}` } })).json();
+          out[item] = await descobrirFamiliaUP(fetch, { getToken: async () => c.token, sellerId: c.amostra.sellerId,
+            titulo: det.title, categoriaId: det.category_id, itemMortoId: 'MLB0' });
+        }
+        return out;
+      },
+      positivo: () => true }, // o critério é o A/B estrito; "nenhuma" é legítimo
+  ],
+  F5: [
+    { nome: 'situacaoPulse', canon: estrito,
+      rodar: async (c) => (await c.imp('pulse-coletar/processar.ts')).lerSituacaoAnuncios([...new Set([...c.amostra.ids, INVALIDO])], c.token),
+      positivo: (v) => Object.keys(v).length > 0 },
+    { nome: 'coresPxV', canon: estrito,
+      rodar: async (c) => (await c.imp('acompanhar-migracao-pxv/leitura-ml.ts')).lerCoresML(c.token, comRepetidos([...bloco20(c.amostra.ids).slice(0, 17), INVALIDO])),
+      positivo: (v) => Object.keys(v).length > 0 },
+    { nome: 'estoqueVivoPxV', canon: estrito,
+      rodar: async (c) => (await c.imp('acompanhar-migracao-pxv/leitura-ml.ts')).lerEstoqueVivoML(c.token, comRepetidos([...bloco20(c.amostra.ids).slice(0, 17), INVALIDO])),
+      positivo: (v) => Object.keys(v).length > 0 },
+    { nome: 'coresPxV21distintos', canon: estrito, esperaErro: true,
+      rodar: async (c) => (await c.imp('acompanhar-migracao-pxv/leitura-ml.ts')).lerCoresML(c.token, [...c.amostra.ids.slice(0, 21)]),
+      positivo: () => true },
+  ],
+};
+```
+
+O `descobrirFamiliaUP` exige mais campos em `CriteriosDescoberta` do que os mostrados. Na execução, ler a interface (`_shared/ml/descobrir-familia-up.ts:54-70`) e preencher **todos** os campos obrigatórios com valores reais do item. Se faltar um campo real, o cenário falha alto, nunca usa valor inventado.
+
+`$CLAUDE_JOB_DIR/tmp/ab/rodar.py <fatia> <arvore_base> <arvore_nova>` reaproveita `sql()` de `spike_bulk.py`:
 
 ```python
 import json, os, subprocess, sys, pathlib
 sys.path.insert(0, '/Users/diego/.claude/jobs/b87cbc02/tmp')
 import spike_bulk as s
-AB = pathlib.Path('/Users/diego/.claude/jobs/b87cbc02/tmp/ab')
-WT = '/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/verif-items-bulk/supabase/functions'
-fatia = sys.argv[1]
-(AB / 'out').mkdir(exist_ok=True)
-falhas = 0
-for org in s.sql("select o.id, o.nome, c.id as cx, c.conta_externa_id as seller from public.organizations o "
-                 "join public.marketplace_connections c on c.org_id=o.id and c.canal::text ilike '%livre%'"):
+AB = pathlib.Path('/Users/diego/.claude/jobs/b87cbc02/tmp/ab'); (AB / 'out').mkdir(exist_ok=True)
+fatia, base, nova = sys.argv[1], sys.argv[2], sys.argv[3]
+ORGS_ESPERADAS = {'Avil', 'DSA', 'Daludi Shop', 'Hairfly Cosmeticos'}
+
+def rodar(arvore, fase, gravadas, tok, amostra):
+    env = {'PATH': os.environ['PATH'], 'HOME': os.environ['HOME'], 'ML_TOKEN': tok, 'AB_ARVORE': arvore,
+           'AB_AMOSTRA': json.dumps(amostra), 'AB_FASE': fase, 'AB_GRAVADAS': str(gravadas)}
+    p = subprocess.run(['deno', 'run', '--no-prompt', '--allow-net=api.mercadolibre.com:443', '--allow-read',
+                        f'--allow-write={gravadas}', '--allow-env', str(AB / 'ab.ts'), fatia],
+                       env=env, capture_output=True, text=True, timeout=900)
+    if p.returncode != 0:
+        raise SystemExit(f'deno falhou ({fase}): {p.stderr[-1500:]}')
+    return json.loads(p.stdout.strip().splitlines()[-1])
+
+orgs = s.sql("select o.id, o.nome, c.id as cx, c.conta_externa_id as seller from public.organizations o "
+             "join public.marketplace_connections c on c.org_id=o.id and c.canal::text ilike '%livre%'")
+faltando = ORGS_ESPERADAS - {o['nome'] for o in orgs}
+if faltando: raise SystemExit(f'orgs faltando: {faltando}')
+falhas = []
+for org in orgs:
     tok = s.sql(f"select access_token from public.get_connection_tokens('{org['cx']}'::uuid)")[0]['access_token']
+    pares = s.sql(f"select a.item_externo_id as item, e.k as sku from public.anuncios_externos a, jsonb_each(a.variacoes_externas) e(k, v) "
+                  f"where a.org_id='{org['id']}' and a.status='publicado' and a.item_externo_id like 'MLB%' order by md5(a.item_externo_id) limit 60")
     amostra = {
-        'ids': [r['item_externo_id'] for r in s.sql(f"select item_externo_id from public.anuncios_externos where org_id='{org['id']}' and status='publicado' and item_externo_id like 'MLB%' order by md5(item_externo_id) limit 40")],
+        'ids': list(dict.fromkeys(p['item'] for p in pares))[:40],
+        'skuPorItem': {p['item']: p['sku'] for p in pares},
         'catalogo': [r['x'] for r in s.sql(f"select distinct v->>'catalog_listing_id' as x from public.anuncios_externos a, jsonb_each(a.variacoes_externas) e(k,v) where a.org_id='{org['id']}' and v->>'catalog_listing_id' like 'MLB%' limit 5")],
         'kits': [r['ml_item_id'] for r in s.sql(f"select ml_item_id from public.kits_virtuais where org_id='{org['id']}' and ml_item_id is not null limit 5")],
         'sellerId': str(org['seller']),
     }
-    res = {}
-    for lado, arv in [('main', str(AB / 'main' / 'supabase' / 'functions')), ('branch', WT)]:
-        env = {'PATH': os.environ['PATH'], 'HOME': os.environ['HOME'], 'ML_TOKEN': tok, 'AB_ARVORE': arv, 'AB_AMOSTRA': json.dumps(amostra)}
-        p = subprocess.run(['deno', 'run', '--allow-net=api.mercadolibre.com', '--allow-read', '--allow-env=ML_TOKEN,AB_ARVORE,AB_AMOSTRA',
-                            str(AB / 'ab.ts'), fatia], env=env, capture_output=True, text=True, timeout=600)
-        if p.returncode != 0:
-            print(org['nome'], lado, 'FALHOU', p.stderr[-800:]); falhas += 1; continue
-        res[lado] = p.stdout.strip().splitlines()[-1]
-        (AB / 'out' / f"{fatia}-{org['nome'].replace(' ', '_')}-{lado}.json").write_text(res[lado])
+    if len(amostra['ids']) < 21: falhas.append(f"{org['nome']}: amostra com {len(amostra['ids'])} ids (<21)"); continue
+    grav = AB / 'out' / f"{fatia}-{org['nome'].replace(' ', '_')}-gravadas.json"
+    a = rodar(base, 'gravar', grav, tok, amostra)
+    b = rodar(nova, 'replay', grav, tok, amostra)
     del tok
-    igual = res.get('main') is not None and res.get('main') == res.get('branch')
-    falhas += 0 if igual else 1
-    print(f"{org['nome']}: ids={len(amostra['ids'])} catalogo={len(amostra['catalogo'])} kits={len(amostra['kits'])} → {'IDÊNTICO' if igual else 'DIFERENTE'}")
+    nome = org['nome'].replace(' ', '_')
+    for lado, r in (('A', a), ('B', b)): (AB / 'out' / f'{fatia}-{nome}-{lado}.json').write_text(json.dumps(r, ensure_ascii=False, indent=1))
+    problemas = []
+    if b['sobras']: problemas.append(f"gravações não consumidas: {b['sobras'][:3]}")
+    if a['getsComErro'] or b['getsComErro']: problemas.append(f"HTTP inesperado: {(a['getsComErro'] + b['getsComErro'])[:3]}")
+    if a['escritas'] != b['escritas']: problemas.append('escritas simuladas diferentes')
+    for cen, ra in a['resultado'].items():
+        rb = b['resultado'].get(cen)
+        if ra != rb: problemas.append(f'{cen}: A≠B')
+    if problemas:  # A' para separar mudança de preço/estoque entre as fases
+        tok = s.sql(f"select access_token from public.get_connection_tokens('{org['cx']}'::uuid)")[0]['access_token']
+        a2 = rodar(base, 'replay', grav, tok, amostra); del tok
+        (AB / 'out' / f'{fatia}-{nome}-A2.json').write_text(json.dumps(a2, ensure_ascii=False, indent=1))
+        deriva = all(a2['resultado'].get(c) == b['resultado'].get(c) for c in a['resultado']) and a2['escritas'] == b['escritas']
+        problemas.append('(A\'==B: deriva de dados ao vivo; repetir)' if deriva else '(A\'≠B: diferença real)')
+    print(f"{org['nome']}: ids={len(amostra['ids'])} catalogo={len(amostra['catalogo'])} kits={len(amostra['kits'])} → "
+          f"{'IDÊNTICO' if not problemas else ' | '.join(problemas)}")
+    falhas += [f"{org['nome']}: {p}" for p in problemas]
 sys.exit(1 if falhas else 0)
 ```
 
-O `lerStatus` fatia 40 ids em 2 blocos, o que exercita a divisão em blocos ao vivo. O `comDup` exercita a dedup ao vivo: na `main`, o endpoint antigo deduplica sozinho; na branch, quem deduplica é o helper. Se a branch não deduplicar, o bulk responde 400 e o A/B acusa a diferença.
+A cobertura positiva e o `esperaErro` são checados por `cenarios.ts` depois de cada fase. Acrescentar ao fim do laço em `ab.ts`:
 
-- [ ] **Step 8: Script de edges afetadas**
+```ts
+for (const c of CENARIOS[fatia]) {
+  const r = resultado[c.nome] as { ok: boolean; valor?: unknown };
+  if (c.esperaErro ? r.ok : !r.ok || !c.positivo(r.valor)) {
+    console.error(`COBERTURA: cenário ${c.nome} ${c.esperaErro ? 'devia falhar' : 'sem resultado positivo'}`);
+    Deno.exit(3);
+  }
+}
+```
+
+Esse bloco fica **antes** do `console.log` final. A amostra é a mesma nas duas fases, então um cenário que lança na baseline e na nova com a mesma mensagem conta como equivalente só quando `esperaErro: true`. Nos demais casos, lançar reprova.
+
+- [ ] **Step 8: Edges afetadas (caminho decodificado) e manifesto**
 
 `$CLAUDE_JOB_DIR/tmp/edges_afetadas.py`:
 
 ```python
 import json, pathlib, subprocess, sys
+from urllib.parse import urlparse, unquote
 FN = pathlib.Path('/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/verif-items-bulk/supabase/functions')
-alvos = {str((FN / a).resolve()) for a in sys.argv[1:]}
+alvos = {(FN / a).resolve() for a in sys.argv[1:]}
+assert alvos and all(p.exists() for p in alvos), f'alvo inexistente: {[str(p) for p in alvos if not p.exists()]}'
 afetadas = []
 for idx in sorted(FN.glob('*/index.ts')):
     if idx.parent.name.startswith('_'): continue
-    p = subprocess.run(['deno', 'info', '--json', str(idx)], capture_output=True, text=True, timeout=120)
-    if p.returncode != 0:
-        print('ERRO deno info', idx.parent.name, p.stderr[-300:]); sys.exit(2)
-    locais = {m['specifier'].removeprefix('file://') for m in json.loads(p.stdout)['modules'] if m['specifier'].startswith('file://')}
+    p = subprocess.run(['deno', 'info', '--json', str(idx)], capture_output=True, text=True, timeout=180)
+    if p.returncode != 0: raise SystemExit(f'deno info falhou em {idx.parent.name}: {p.stderr[-300:]}')
+    g = json.loads(p.stdout)
+    erros = [m for m in g['modules'] if m.get('error') and m['specifier'].startswith('file:')]
+    if erros: raise SystemExit(f'grafo com erro em {idx.parent.name}: {erros[:1]}')
+    locais = {pathlib.Path(unquote(urlparse(m['specifier']).path)).resolve() for m in g['modules'] if m['specifier'].startswith('file:')}
     if locais & alvos: afetadas.append(idx.parent.name)
-print(len(afetadas), ' '.join(afetadas))
+if not afetadas: raise SystemExit('lista de edges VAZIA: recusado (não deployar)')
+print(len(afetadas)); print(' '.join(afetadas))
 ```
 
-Run (sanidade): `python3 $CLAUDE_JOB_DIR/tmp/edges_afetadas.py _shared/trafego/fiacao.ts`
-Expected: inclui `coletar-trafego-ml`. Isso prova que o script enxerga `_shared`.
+Sanidade, obrigatória antes do 1º uso:
+- `python3 $CLAUDE_JOB_DIR/tmp/edges_afetadas.py _shared/trafego/fiacao.ts` precisa listar `coletar-trafego-ml`;
+- `python3 $CLAUDE_JOB_DIR/tmp/edges_afetadas.py _shared/canais/mercado-livre.ts` precisa listar `status-publicados` e `sincronizar-estoque`.
+
+`$CLAUDE_JOB_DIR/tmp/manifesto.py` tem os modos `conferir <SHA> <edges…>`, `antes <fatia> <SHA> <edges…>` e `depois <fatia> <SHA> <edges…>`:
+
+```python
+import hashlib, json, pathlib, subprocess, sys, shutil
+REF = 'txvncrgkoynoxwopfkbp'
+TMP = pathlib.Path('/Users/diego/.claude/jobs/b87cbc02/tmp')
+WT = '/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/verif-items-bulk'
+modo = sys.argv[1]
+fatia, sha, edges = (('-', sys.argv[2], sys.argv[3:]) if modo == 'conferir' else (sys.argv[2], sys.argv[3], sys.argv[4:]))
+assert edges, 'sem edges'
+
+def baixar(edge, destino):
+    shutil.rmtree(destino, ignore_errors=True); (destino / 'supabase').mkdir(parents=True)
+    p = subprocess.run(['supabase', 'functions', 'download', edge, '--project-ref', REF, '--use-api', '--workdir', str(destino)],
+                       capture_output=True, text=True, timeout=300)
+    if p.returncode != 0: raise SystemExit(f'download {edge}: {p.stderr[-300:]}')
+
+def no_sha(caminho_rel):
+    p = subprocess.run(['/usr/bin/git', 'show', f'{sha}:{caminho_rel}'], cwd=WT, capture_output=True)
+    return hashlib.sha256(p.stdout).hexdigest() if p.returncode == 0 else None
+
+lista = json.loads(subprocess.run(['supabase', 'functions', 'list', '--project-ref', REF, '-o', 'json'],
+                                  capture_output=True, text=True, timeout=120).stdout)
+info = {f['slug']: {'versao': f.get('version'), 'verify_jwt': f.get('verify_jwt')} for f in lista}
+manif, divergencias = {}, []
+for edge in edges:
+    destino = TMP / 'dl' / f'{fatia}-{modo}' / edge
+    baixar(edge, destino)
+    arquivos = sorted(p for p in (destino / 'supabase' / 'functions').rglob('*') if p.is_file())
+    if not any(a.parent.name == edge and a.name == 'index.ts' for a in arquivos): divergencias.append(f'{edge}: download sem index.ts')
+    for a in arquivos:
+        rel = 'supabase/functions/' + str(a.relative_to(destino / 'supabase' / 'functions'))
+        if hashlib.sha256(a.read_bytes()).hexdigest() != no_sha(rel): divergencias.append(f'{edge}: {rel}')
+    manif[edge] = {**info.get(edge, {}), 'arquivos': len(arquivos)}
+(TMP / f'manifesto-{fatia}-{modo}.json').write_text(json.dumps({'sha': sha, 'edges': manif}, indent=1))
+if modo == 'depois':
+    antes = json.loads((TMP / f'manifesto-{fatia}-antes.json').read_text())['edges']
+    for e in edges:
+        if manif[e]['verify_jwt'] != antes[e]['verify_jwt']: divergencias.append(f'{e}: verify_jwt mudou')
+        if not (manif[e]['versao'] or 0) > (antes[e]['versao'] or 0): divergencias.append(f'{e}: versão não incrementou')
+print(json.dumps(manif, indent=1)); print('DIVERGÊNCIAS:', divergencias or 'nenhuma')
+sys.exit(1 if divergencias else 0)
+```
+
+Sanidade, obrigatória antes do 1º uso: `python3 $CLAUDE_JOB_DIR/tmp/manifesto.py conferir 3b68f702 coletar-trafego-ml`. O resultado esperado é "nenhuma" divergência, ou divergências explicáveis por um commit da `main` posterior ao deploy daquela edge. Nesse caso, achar o SHA que bate (`git log -- supabase/functions/coletar-trafego-ml supabase/functions/_shared/trafego`) e anotar.
 
 - [ ] **Step 9: ADR-0177**
 
-`/usr/bin/git fetch origin` e depois `ls docs/decisions | sort | tail -2`. Se `0177` já existir na `origin/main`, usar o próximo número livre e trocar em todo o plano e na spec. Criar `docs/decisions/0177-multiget-ml-items-bulk.md`:
+Antes de escrever, rodar `/usr/bin/git fetch origin` e `/usr/bin/git ls-tree --name-only origin/main docs/decisions/ | sort | tail -3`. Se a 0177 já existir, usar o próximo número livre em todo lugar.
+
+`docs/decisions/0177-multiget-ml-items-bulk.md`:
 
 ```markdown
 # ADR-0177 — Multiget do Mercado Livre via `/items/bulk`
@@ -479,713 +835,759 @@ Expected: inclui `coletar-trafego-ml`. Isso prova que o script enxerga `_shared`
 
 ## Contexto
 14 chamadas em 13 arquivos usavam `/items?ids=`. O substituto `GET /items/bulk?ids=` muda o
-envelope (`status_code` no lugar de `code`). O spike real de 03/10/2026 (4 orgs) mediu:
-- os bodies são idênticos aos do endpoint antigo; só a ordem de `tags` varia;
-- a seleção precisa de `status_code` e do prefixo `body.`;
-- id repetido no lote → HTTP 400 no lote inteiro (o antigo deduplicava);
+envelope (`status_code` no lugar de `code`). Os spikes reais de 03/10/2026 (4 orgs, só GET) mediram:
+- bodies idênticos ao endpoint antigo;
+- seleção com `status_code` e prefixo `body.`;
+- id repetido → HTTP 400 no lote inteiro (o antigo deduplicava antes do limite);
 - 21 ids → 400;
-- id inexistente → `{status_code:404}` sem body.
+- id inexistente → `{status_code:404}` SEM body, na posição pedida;
+- ordem dos envelopes = a pedida (a do antigo era arbitrária).
 
 ## Decisão
-- Helper puro `_shared/ml/multiget.ts` (`blocosMultiget`, `caminhoMultiget`, `entradasMultiget`,
-  `itensMultiget`). Ele deduplica, divide em blocos de ≤20, monta a seleção e normaliza os dois envelopes.
-- Cada módulo mantém o próprio transporte e a própria semântica de erro, porque os 4 transportes
-  diferentes (fetchLike, `GetJson` com 429, `chamar`, `mlGet`) seguem como estão.
-- `fiacao.ts` (primeiro módulo migrado, commit `6f8f6c9b`) fica como está.
-- Migração em fatias, cada uma com A/B contra a `main` usando token real (só GET; escrita
-  bloqueada por guarda), deploy por `deno info` e observação em produção.
+- **Adaptador, não parser:** `_shared/ml/multiget.ts`.
+  - `caminhoMultiget` monta a URL com dedup só dentro da requisição.
+  - `comoEnvelopeAntigo` converte a resposta no envelope antigo `[{code, body}]` e recoloca o id do 404 pela posição.
+  - Nenhum módulo muda predicado, particionamento ou tratamento de erro.
+- Leituras inline (componentes de kit, PxV, Pulse) ganham uma extração mínima num commit separado, só para serem testáveis.
+- `fiacao.ts` (primeiro módulo migrado, `6f8f6c9b`) não muda.
+- Validação por fatia: testes com fixtures reais, A/B em duas fases contra a baseline (só GET ao vivo, escrita simulada) e deploy com manifesto de hash por edge.
 
 ## Consequências
-- Nenhuma saída observável muda.
-- Onde antes não havia blocos (PxV, operações), mais de 20 ids passa a funcionar.
-- Um módulo novo que precise de multiget usa o helper. Escrever `/items?ids=` à mão é regressão.
+- As decisões de negócio ficam equivalentes.
+- A ordem das listas passa a seguir a ordem pedida, e logs que imprimem a URL mostram `/items/bulk`.
+- Melhorias funcionais (mais de 20 ids onde não há blocos) ficam fora; continuam respondendo 400 como antes.
+- Um módulo novo que precise de multiget usa o adaptador. Escrever `/items?ids=` à mão é regressão.
 ```
 
-- [ ] **Step 10: Verificação, revisão Codex e commit da T0**
+- [ ] **Step 10: Codex + commit da T0**
 
-Run: `pnpm test supabase/functions/_shared/ml` → PASS. Depois aplicar a P-Revisão Codex (fatia T0) e corrigir os bloqueantes.
+Run: `pnpm test supabase/functions/_shared/ml` → PASS. P-Revisão Codex (fatia T0, que inclui ferramental: mandar também `$CLAUDE_JOB_DIR/tmp/ab/*.ts`, `rodar.py`, `edges_afetadas.py` e `manifesto.py` no prompt).
 
 ```
-/usr/bin/git add supabase/functions/_shared/ml/multiget.ts supabase/functions/_shared/ml/__tests__/multiget.test.ts supabase/functions/_shared/ml/__tests__/fixtures docs/decisions/0177-multiget-ml-items-bulk.md docs/superpowers/plans/2026-10-03-ml-items-bulk.md
+/usr/bin/git add supabase/functions/_shared/ml/multiget.ts supabase/functions/_shared/ml/__tests__/multiget.test.ts supabase/functions/_shared/ml/__tests__/fixtures docs/decisions/0177-multiget-ml-items-bulk.md
 /usr/bin/git commit -F $CLAUDE_JOB_DIR/tmp/msg-t0.txt
 ```
 
-Mensagem: `feat(ml): helper multiget via /items/bulk + fixtures reais + ADR-0177`. Sem deploy: nenhuma edge importa o helper. O merge da T0 entra junto com a T1, no mesmo portão.
+Mensagem: `feat(ml): adaptador /items/bulk → envelope antigo + fixtures reais + ADR-0177`. Sem deploy; o merge vai junto com a T1.
 
 ---
 
-### Task T1 (Fatia 1): `lerStatus`, `buscar-item`, `atualizar-item`
+### Task T1 (F1): `lerStatus`, `buscar-item`, `atualizar-item`
 
 **Files:**
-- Modify: `_shared/canais/mercado-livre.ts:410-436` (`lerStatus`)
-- Modify: `_shared/ml/buscar-item.ts:76-93`
-- Modify: `_shared/ml/atualizar-item.ts:175-189` (`propagarStatusRelacionadosML`)
-- Test: `_shared/canais/__tests__/mercado-livre.test.ts`, `_shared/ml/__tests__/buscar-item.test.ts`, **novo** `_shared/ml/__tests__/propagar-status-relacionados.test.ts`
+- Modify: `_shared/canais/mercado-livre.ts:414-420`
+- Modify: `_shared/ml/buscar-item.ts:79-83`
+- Modify: `_shared/ml/atualizar-item.ts:183-184`
+- Test: `_shared/canais/__tests__/mercado-livre.test.ts` (507-597), `_shared/ml/__tests__/buscar-item.test.ts`, `sincronizar-estoque/__tests__/processar.test.ts`
 
-**Interfaces:**
-- Consumes: `blocosMultiget`, `caminhoMultiget`, `itensMultiget` (T0)
-- Produces: as mesmas assinaturas públicas de hoje (nenhuma muda)
+**Interfaces:** consome `caminhoMultiget` e `comoEnvelopeAntigo`. Nenhuma assinatura pública muda.
 
-- [ ] **Step 1: Confirmar que a ordem de `tags` é irrelevante**
+- [ ] **Step 1: Testes falhando**
 
-Run: `grep -n "tags" supabase/functions/_shared/ml/status.ts supabase/functions/_shared/canais/mercado-livre.ts`
-Expected: só usos do tipo `includes(...)`/`some(...)`. Se algum uso depender da ordem (índice, `join`, comparação de arrays), **parar** e levar ao Codex astra.
-
-- [ ] **Step 2: Testes falhando**
-
-Em `_shared/canais/__tests__/mercado-livre.test.ts`, no `describe` de `lerStatus` (localizar com `grep -n "lerStatus" …`), adicionar:
+Em `mercado-livre.test.ts`, depois do `describe('lerStatus — catalogForewarning (E5 fase3)')`:
 
 ```ts
 import bulkCanais from '../../ml/__tests__/fixtures/bulk-canais-bulk.json' with { type: 'json' };
 import antigoCanais from '../../ml/__tests__/fixtures/bulk-canais-antigo.json' with { type: 'json' };
+import idsCanais from '../../ml/__tests__/fixtures/bulk-canais-ids.json' with { type: 'json' };
 
-it('lerStatus: usa /items/bulk com status_code e prefixo body., e lê o envelope status_code', async () => {
-  const ids = (bulkCanais as Array<{ body?: { id: string } }>).flatMap((e) => (e.body ? [e.body.id] : []));
-  const urls: string[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return new Response(JSON.stringify(bulkCanais)); }));
-  const r = await mercadoLivreConnector.lerStatus({ getToken: async () => 't' }, [...ids, ids[0], 'MLB0000000001']);
-  expect(urls).toEqual([`https://api.mercadolibre.com/items/bulk?ids=${[...ids, 'MLB0000000001'].join(',')}&attributes=status_code,body.id,body.status,body.sub_status,body.available_quantity,body.price,body.listing_type_id,body.tags`]);
-  // mesmo resultado que o envelope antigo nos mesmos ids
-  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(antigoCanais))));
-  const r0 = await mercadoLivreConnector.lerStatus({ getToken: async () => 't' }, [...ids, 'MLB0000000001']);
-  expect(r).toEqual(r0);
-  expect(r['MLB0000000001'].status).toBe('indisponivel');
-  for (const id of ids) expect(r[id].status).not.toBe('indisponivel');
-});
-
-it('lerStatus: 45 ids → 3 chamadas de ≤20, sem repetidos', async () => {
-  const urls: string[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return new Response('[]'); }));
-  const ids = Array.from({ length: 45 }, (_, i) => `MLB${i}`);
-  await mercadoLivreConnector.lerStatus({ getToken: async () => 't' }, [...ids, ...ids]);
-  expect(urls).toHaveLength(3);
-  for (const u of urls) {
-    const q = new URL(u).searchParams.get('ids')!.split(',');
-    expect(q.length).toBeLessThanOrEqual(20);
-    expect(new Set(q).size).toBe(q.length);
-  }
+describe('lerStatus via /items/bulk (ADR-0177)', () => {
+  const ctx = { getToken: async () => 't' };
+  it('URL do bulk com os mesmos campos e mesmo resultado que o envelope antigo', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = ((u: string) => { urls.push(u); return Promise.resolve(new Response(JSON.stringify(bulkCanais))); }) as typeof fetch;
+    const novo = await mercadoLivreConnector.lerStatus(ctx, idsCanais as string[]);
+    expect(urls).toEqual([`https://api.mercadolibre.com/items/bulk?ids=${(idsCanais as string[]).join(',')}&attributes=status_code,body.id,body.status,body.sub_status,body.available_quantity,body.price,body.listing_type_id,body.tags`]);
+    globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify(antigoCanais)))) as typeof fetch;
+    expect(novo).toEqual(await mercadoLivreConnector.lerStatus(ctx, idsCanais as string[]));
+    expect(novo['MLB0000000001'].status).toBe('indisponivel');
+  });
+  it('id repetido no bloco: uma consulta, sem repetição na URL', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = ((u: string) => { urls.push(u); return Promise.resolve(new Response('[]')); }) as typeof fetch;
+    await mercadoLivreConnector.lerStatus(ctx, ['MLB1', 'MLB2', 'MLB1']);
+    expect(new URL(urls[0]).searchParams.get('ids')).toBe('MLB1,MLB2');
+  });
+  it('mesmo id em dois blocos: 200 pausado no 1º, 404 sem body no 2º → indisponivel (igual ao antigo)', async () => {
+    const ids = Array.from({ length: 20 }, (_, i) => `MLB${100 + i}`);
+    globalThis.fetch = ((u: string) => {
+      const q = new URL(u).searchParams.get('ids')!.split(',');
+      if (q.length === 20) return Promise.resolve(new Response(JSON.stringify(q.map((id) => ({ status_code: 200, body: { id, status: 'paused', sub_status: [] } })))));
+      return Promise.resolve(new Response(JSON.stringify(q.map(() => ({ status_code: 404 })))));
+    }) as typeof fetch;
+    const r = await mercadoLivreConnector.lerStatus(ctx, [...ids, ids[0]]);
+    expect(r[ids[0]].status).toBe('indisponivel');
+    expect(r[ids[1]].status).toBe('pausado');
+  });
+  it('pausado e preço chegam ao StatusCanal (alimentam reativação e faixa do split)', async () => {
+    globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify([
+      { status_code: 200, body: { id: 'MLB1', status: 'paused', sub_status: [], price: 49.9, available_quantity: 3 } },
+    ])))) as typeof fetch;
+    const r = await mercadoLivreConnector.lerStatus(ctx, ['MLB1']);
+    expect(r.MLB1.status).toBe('pausado');
+    expect(r.MLB1.preco).toBe(49.9);
+  });
 });
 ```
 
-Se o arquivo de teste usar outro padrão de mock de fetch (por exemplo, uma variável `fetchMock`), seguir o padrão existente e manter as mesmas asserções. No fim do arquivo, garantir `afterEach(() => vi.unstubAllGlobals())` se ainda não houver.
+O valor esperado de `status` vem dos rótulos de `StatusCanal` em `_shared/ml/status.ts`. Conferir `'pausado'` e `'indisponivel'` com `grep -n "'pausado'\|'indisponivel'" _shared/ml/status.ts` antes de rodar.
 
-Em `_shared/ml/__tests__/buscar-item.test.ts`, trocar o roteamento `if (url.includes('/items?ids='))` (linha 24) por `if (url.includes('/items/bulk?ids='))`. A resposta mockada nesse ramo passa a usar `status_code` no lugar de `code`. Adicionar:
+A propagação (`describe('atualizarStatus propaga…')`, linhas 531-597) passa a rodar **nos dois envelopes**. Trocar `describe(` por `describe.each(['code', 'status_code'] as const)('atualizarStatus propaga… [%s]', (campo) => {`. Em `stubRelacionados`:
 
 ```ts
-it('multiget de adoção usa o bulk com os campos de validação', async () => {
-  // reaproveitar o fetch fake do arquivo; capturar a URL do multiget
-  // (localizar o helper do arquivo com `grep -n "function fake\|const fake" buscar-item.test.ts`)
-  expect(urlMultiget).toContain('/items/bulk?ids=');
-  expect(urlMultiget).toContain('&attributes=status_code,body.id,body.category_id,body.family_name,body.seller_id,body.date_created');
-});
+      if (url.includes('/items/MLB1?')) return json({ id: 'MLB1', item_relations: relacionados.map((r) => ({ id: r.id })) });
+      if (campo === 'status_code') expect(url).toMatch(/\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.status,body\.sub_status$/);
+      return json(relacionados.map((r) => (r.id === opts.ilegivel
+        ? (campo === 'status_code' ? { status_code: 404 } : { code: 404, body: { message: 'not found' } })
+        : { [campo]: 200, body: r })));
 ```
 
-Na execução, essa asserção vai dentro de um teste existente que já percorre o multiget: capturar a URL no fetch fake e checar o conteúdo, em vez de criar um fake novo.
-
-Novo `_shared/ml/__tests__/propagar-status-relacionados.test.ts`:
+E acrescentar ao `describe.each`:
 
 ```ts
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { propagarStatusRelacionadosML } from '../atualizar-item.ts';
+  it('mistos ao pausar: [ativo, ilegível] → PUT no ativo ANTES do 502 (comportamento atual, caracterizado)', async () => {
+    const puts = stubRelacionados([{ id: 'MLB8', status: 'active' }, { id: 'MLB9', status: 'active' }], { ilegivel: 'MLB9' });
+    const res = await mercadoLivreConnector.atualizarStatus(ctxFake, 'MLB1', 'pausado');
+    expect(res.ok).toBe(false);
+    expect(res.erro?.retentavel).toBe(true);
+    expect(puts).toEqual(PUTS_ESPERADOS_MISTO_PAUSAR);
+  });
+  it('mistos ao reativar: [pausado, ativo] → só o pausado e o próprio item', async () => {
+    const puts = stubRelacionados([{ id: 'MLB8', status: 'paused' }, { id: 'MLB9', status: 'active' }]);
+    await mercadoLivreConnector.atualizarStatus(ctxFake, 'MLB1', 'ativo');
+    expect(puts).toEqual([{ id: 'MLB8', status: 'active' }, { id: 'MLB1', status: 'active' }]);
+  });
+```
 
-type Rota = { metodo: string; url: string; corpo?: string };
-function fakeML(itemRelations: string[], multiget: unknown) {
-  const chamadas: Rota[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
-    const metodo = init?.method ?? 'GET';
-    chamadas.push({ metodo, url: u, corpo: init?.body as string | undefined });
-    if (metodo !== 'GET') return new Response('{}');
-    if (u.includes('/items/bulk?ids=')) return new Response(JSON.stringify(multiget));
-    return new Response(JSON.stringify({ id: 'MLB9', item_relations: itemRelations.map((id) => ({ id })) }));
-  }));
-  return chamadas;
+`PUTS_ESPERADOS_MISTO_PAUSAR` é caracterização. **Antes** de mudar o código de produção, rodar esse teste no envelope `code` com `expect(puts).toEqual([])` provisório, ler o valor real que falhou, fixar a constante com ele (`[{ id: 'MLB8', status: 'paused' }]` ou `[]`, conforme o código atual de `atualizar-item.ts:190-200`) e comentar a linha com a origem. Nunca ajustar o código de produção para casar com o teste.
+
+Em `buscar-item.test.ts`, o `fakeFetch` (linhas 13-29) passa a atender as duas rotas, cada uma com seu envelope, e a registrar as URLs:
+
+```ts
+const vistos: string[] = [];
+// Monta um fetch fake que responde à busca (paginada) e ao multiget (antigo /items?ids= ou /items/bulk?ids=).
+function fakeFetch(searchPages: Array<{ results: string[]; total: number }>, itens: Record<string, unknown>): FetchLike {
+  let page = 0;
+  return (url: string) => {
+    if (url.includes('/items/search')) {
+      const p = searchPages[Math.min(page, searchPages.length - 1)];
+      page++;
+      const offsetMatch = /offset=(\d+)/.exec(url);
+      const offset = offsetMatch ? Number(offsetMatch[1]) : 0;
+      return resp({ results: p.results, paging: { total: p.total, offset, limit: 100 } });
+    }
+    const bulk = url.includes('/items/bulk?ids=');
+    if (bulk || url.includes('/items?ids=')) {
+      vistos.push(url);
+      // ids únicos por requisição: é assim que os dois endpoints respondem
+      const ids = [...new Set(decodeURIComponent(/ids=([^&]+)/.exec(url)![1]).split(','))];
+      return resp(ids.map((id) => (itens[id]
+        ? (bulk ? { status_code: 200, body: itens[id] } : { code: 200, body: itens[id] })
+        : (bulk ? { status_code: 404 } : { code: 404, body: { id } }))));
+    }
+    return resp({}, false, 500);
+  };
 }
-afterEach(() => vi.unstubAllGlobals());
+```
 
-describe('propagarStatusRelacionadosML via bulk', () => {
-  it('lê os relacionados por /items/bulk (status_code) e pausa só os ativos', async () => {
-    const ch = fakeML(['MLB1', 'MLB2'], [
-      { status_code: 200, body: { id: 'MLB1', status: 'active', sub_status: [] } },
-      { status_code: 200, body: { id: 'MLB2', status: 'paused', sub_status: [] } },
-    ]);
-    await propagarStatusRelacionadosML('t', 'MLB9', 'paused');
-    expect(ch.find((c) => c.url.includes('/items/bulk'))!.url)
-      .toBe('https://api.mercadolibre.com/items/bulk?ids=MLB1,MLB2&attributes=status_code,body.id,body.status,body.sub_status');
-    expect(ch.filter((c) => c.metodo === 'PUT').map((c) => c.url)).toEqual(['https://api.mercadolibre.com/items/MLB1']);
+Testes novos no `describe` existente:
+
+```ts
+  it('multiget de adoção usa /items/bulk com os campos de validação', async () => {
+    vistos.length = 0;
+    const f = fakeFetch([{ results: ['MLB1'], total: 1 }], { MLB1: item() });
+    expect(await buscarItemPorSku(f, CRIT, 's1')).toEqual({ tipo: 'um', itemExternoId: 'MLB1' });
+    expect(vistos).toEqual(['https://api.mercadolibre.com/items/bulk?ids=MLB1&attributes=status_code,body.id,body.category_id,body.family_name,body.seller_id,body.date_created']);
   });
-  it('relacionado que volta 404 sem body → falha alto (502), nenhum PUT', async () => {
-    const ch = fakeML(['MLB1'], [{ status_code: 404 }]);
-    await expect(propagarStatusRelacionadosML('t', 'MLB9', 'paused')).rejects.toThrow();
-    expect(ch.filter((c) => c.metodo !== 'GET')).toEqual([]);
+
+  it('mesmo id em dois blocos (20 distintos + o 1º repetido) → ambiguo, como no endpoint antigo', async () => {
+    // O antigo deduplicava só DENTRO da requisição: o MLB1 válido aparece no bloco 1 e no bloco 2.
+    // Caracterização confirmada pelo Codex na main (achado 5 da revisão do plano v1).
+    const results = [...Array.from({ length: 20 }, (_, i) => `MLB${i + 1}`), 'MLB1'];
+    const f = fakeFetch([{ results, total: 21 }], { MLB1: item() });
+    expect(await buscarItemPorSku(f, CRIT, 's1')).toEqual({ tipo: 'ambiguo' });
   });
-  it('relacionado deleted é pulado', async () => {
-    const ch = fakeML(['MLB1'], [{ status_code: 200, body: { id: 'MLB1', status: 'closed', sub_status: ['deleted'] } }]);
-    await propagarStatusRelacionadosML('t', 'MLB9', 'paused');
-    expect(ch.filter((c) => c.metodo !== 'GET')).toEqual([]);
+```
+
+O segundo teste precisa **passar também antes** da mudança de produção, com o fake respondendo pela rota antiga, porque é caracterização. Rodá-lo no Step 2 e conferir que ele passa (ele não deve estar entre os que falham). Se falhar antes da mudança, o valor esperado está errado: ler o real e corrigir **o teste**.
+
+Em `sincronizar-estoque/__tests__/processar.test.ts`, adicionar:
+
+```ts
+import { mercadoLivreConnector } from '../../_shared/canais/mercado-livre.ts';
+
+describe('reativação com o lerStatus REAL lendo /items/bulk', () => {
+  it.each([
+    ['pausado no bulk → reativa', [{ status_code: 200, body: { id: 'FK1', status: 'paused', sub_status: [] } }], [{ itemExternoId: 'FK1', status: 'ativo' }]],
+    ['404 sem body → não reativa', [{ status_code: 404 }], []],
+  ])('%s', async (_n, resposta, esperado) => {
+    const fetchOriginal = globalThis.fetch;
+    globalThis.fetch = ((u: string) => Promise.resolve(new Response(JSON.stringify(u.includes('/items/bulk') ? resposta : {})))) as typeof fetch;
+    try {
+      fakeConnector.lerStatus = (ctx, ids) => mercadoLivreConnector.lerStatus(ctx, ids);
+      await processarSincronizacao(deps(umAnuncio(7)), { ...JOB, reativar: true });
+      expect(chamadasDeStatus()).toEqual(esperado);
+    } finally { globalThis.fetch = fetchOriginal; }
   });
 });
 ```
 
-Antes de fixar as asserções de PUT, ler `atualizar-item.ts:175-200` inteiro e alinhar ao que a função faz hoje: quais status ela pula, como é a URL do PUT e se usa `atualizarStatusML`. O teste fixa o comportamento **atual**. Se o primeiro teste falhar só por divergir do comportamento atual (e não pela URL do bulk), corrigir o teste, nunca o código.
+Adaptar a sobrescrita de `lerStatus` ao formato do `fakeConnector` do arquivo (ver `processar.test.ts`, onde o fake é criado). Se o fake não permitir sobrescrever, criar a variante com `{ ...fakeConnector, lerStatus: … }` passada pelo `getConnector` de `deps`.
 
-- [ ] **Step 3: Rodar e ver falhar**
+- [ ] **Step 2: Rodar e ver falhar.** Run: `pnpm test supabase/functions/_shared/canais supabase/functions/_shared/ml supabase/functions/sincronizar-estoque` → FAIL nos novos.
 
-Run: `pnpm test supabase/functions/_shared/canais supabase/functions/_shared/ml`
-Expected: FAIL nos testes novos (URL ainda é `/items?ids=`; o envelope `status_code` não é lido).
+- [ ] **Step 3: Implementar (só URL + adaptador)**
 
-- [ ] **Step 4: Implementar**
-
-`_shared/canais/mercado-livre.ts`: adicionar o import `import { blocosMultiget, caminhoMultiget, itensMultiget } from '../ml/multiget.ts';` e trocar o corpo de `lerStatus`:
+`mercado-livre.ts`, com o import `import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';`:
 
 ```ts
-  async lerStatus(ctx: ContextoCanal, ids: string[]): Promise<Record<string, StatusCanal>> {
-    const token = await ctx.getToken();
-    // Chunks em paralelo (latência O(1) em vez de O(n/20) serial). Bulk: ids únicos, ≤20 (ADR-0177).
-    const respostas = await Promise.all(blocosMultiget(ids).map(async (bloco) => {
-      const url = `https://api.mercadolibre.com${caminhoMultiget(bloco, CAMPOS_STATUS_ML)}`;
+      const url = `https://api.mercadolibre.com${caminhoMultiget(bloco, 'id,status,sub_status,available_quantity,price,listing_type_id,tags')}`;
       try {
         const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         if (!resp.ok) { console.warn(`lerStatus ML ${resp.status} (bloco)`); return []; }
-        return itensMultiget<ItemMLStatus & { id: string }>(await resp.json());
-      } catch (e) {
-        console.warn('lerStatus ML falhou (bloco):', (e as Error).message);
-        return [];
-      }
-    }));
-    const porId = new Map<string, ItemMLStatus | null>();
-    for (const body of respostas.flat()) porId.set(body.id, body);
-    const out: Record<string, StatusCanal> = {};
-    for (const id of ids) out[id] = parseStatusML(porId.get(id) ?? null);
-    return out;
-  },
+        const arr = comoEnvelopeAntigo(await resp.json(), bloco); // [{ code, body }] (ADR-0177)
+        return Array.isArray(arr) ? arr : [];
 ```
 
-E, no topo do arquivo (perto dos outros `const`): `const CAMPOS_STATUS_ML = ['id', 'status', 'sub_status', 'available_quantity', 'price', 'listing_type_id', 'tags'];`.
+O resto (linhas 421-435) não muda.
 
-Equivalência: hoje um não-200 **com** id grava `null` e um id ausente cai em `?? null`. Os dois dão `parseStatusML(null)`, e o novo código produz o mesmo resultado. O `chunk` local continua usado em outro lugar? Rodar `grep -n "chunk(" supabase/functions/_shared/canais/mercado-livre.ts`. Se o `chunk` ficou órfão, removê-lo junto com o import.
-
-`_shared/ml/buscar-item.ts`, linhas 76-93:
+`buscar-item.ts`:
 
 ```ts
-  for (const bloco of blocosMultiget(ids)) {
-    const url = `${API}${caminhoMultiget(bloco, ['id', 'category_id', 'family_name', 'seller_id', 'date_created'])}`;
+    const url = `${API}${caminhoMultiget(bloco, 'id,category_id,family_name,seller_id,date_created')}`;
     const resp = await fetchLike(url, { headers });
     if (!resp.ok) throw new Error(`multiget de adoção (${resp.status})`);
-    for (const b of itensMultiget<ItemMultiget>(await resp.json())) {
-      if (b.category_id !== crit.categoriaId) continue;
-      if (b.family_name !== crit.familyName) continue;
-      if (String(b.seller_id) !== crit.sellerId) continue;
-      if (!(Date.parse(b.date_created) >= crit.desdeMs)) continue;
-      validos.push(b.id);
+    const arr = comoEnvelopeAntigo(await resp.json(), bloco) as Array<{ code?: number; body?: ItemMultiget }>;
 ```
 
-O resto do laço continua como está. Importar `blocosMultiget, caminhoMultiget, itensMultiget` de `./multiget.ts`. Remover `MULTIGET_CHUNK` e `chunk` se ficarem órfãos (`grep -n "MULTIGET_CHUNK\|chunk(" buscar-item.ts`). **Atenção:** `descobrir-familia-up.ts` importa `FetchLike` deste arquivo; não mexer nesse export.
-
-Nota de equivalência: hoje `entry.body` sem `id` passa no filtro (`!entry.body` só exige truthy), mas `validos.push(b.id)` empurraria `undefined`. O `itensMultiget` exige `id` string. Isso só exclui um caso degenerado que o ML não produz (confirmado no spike) e vale citar na revisão.
-
-`_shared/ml/atualizar-item.ts`, linhas 183-189:
+`atualizar-item.ts`:
 
 ```ts
-  const porId = new Map<string, ItemMLStatus>();
-  for (const bloco of blocosMultiget(ids)) {
-    const multi = await fetch(`https://api.mercadolibre.com${caminhoMultiget(bloco, ['id', 'status', 'sub_status'])}`, { headers });
-    const lote = await multi.json().catch(() => null);
-    if (!multi.ok) throw erroML(multi.status, lote);
-    for (const b of itensMultiget<ItemMLStatus & { id: string }>(lote)) porId.set(b.id, b);
-  }
+  const multi = await fetch(`https://api.mercadolibre.com${caminhoMultiget(ids, 'id,status,sub_status')}`, { headers });
+  const lote = comoEnvelopeAntigo(await multi.json().catch(() => null), ids);
 ```
 
-Importar de `./multiget.ts`. Daqui para baixo (linha 190 em diante) nada muda: um relacionado ausente continua lançando 502.
+Imports: `import { caminhoMultiget, comoEnvelopeAntigo } from './multiget.ts';` nos dois. **Nenhuma outra linha muda.**
 
-- [ ] **Step 5: Rodar e ver passar + suíte inteira do backend**
+- [ ] **Step 4: Rodar e ver passar.** Run: `pnpm test supabase/functions` → PASS. Depois `deno check` nos `index.ts` de `status-publicados`, `sincronizar-estoque`, `update-familia-ml`, `publicar-split-ml`, `monitorar-moderados` e `remover-publicado`.
 
-Run: `pnpm test supabase/functions/_shared supabase/functions/status-publicados supabase/functions/sincronizar-estoque supabase/functions/publicar-split-ml supabase/functions/update-familia-ml supabase/functions/remover-publicado`
-Expected: PASS. Depois `deno check` nas edges afetadas: `deno check supabase/functions/status-publicados/index.ts supabase/functions/sincronizar-estoque/index.ts supabase/functions/update-familia-ml/index.ts` → sem erro.
+- [ ] **Step 5: A/B `F1`** (P-A/B; baseline = commit da T0). Esperado: `IDÊNTICO` nas 4 orgs, com cobertura positiva verde.
 
-- [ ] **Step 6: A/B (P-A/B, fatia `F1`)**
+- [ ] **Step 6: Varredura, commit, Codex e portão.**
+  - `grep -n "items?ids=" <3 arquivos>` → vazio.
+  - Commit `feat(ml): fatia 1 do /items/bulk — lerStatus, adoção e propagação de status`.
+  - P-Revisão Codex.
+  - P-Portão, com as edges de `edges_afetadas.py _shared/ml/multiget.ts _shared/canais/mercado-livre.ts _shared/ml/buscar-item.ts _shared/ml/atualizar-item.ts`.
 
-Run: `python3 $CLAUDE_JOB_DIR/tmp/ab/rodar.py F1`
-Expected: `IDÊNTICO` nas 4 orgs, exit 0. Conferir em `out/F1-*-branch.json`:
-- `escritasBloqueadas` igual ao da `main`. É a lista de PUTs que a propagação **faria**; nenhum saiu para a rede, por causa da guarda;
-- `status` com 40+ ids e `MLB0000000001` = `indisponivel`.
-
-- [ ] **Step 7: Varredura da fatia + commit + Codex + portão**
-
-`grep -n "items?ids=" supabase/functions/_shared/canais/mercado-livre.ts supabase/functions/_shared/ml/buscar-item.ts supabase/functions/_shared/ml/atualizar-item.ts` → vazio.
-Commit (`feat(ml): fatia 1 do /items/bulk — lerStatus, adoção e propagação de status`), depois P-Revisão Codex e P-Portão de merge. No relatório ao Diego, incluir as edges vindas de `edges_afetadas.py _shared/ml/multiget.ts _shared/canais/mercado-livre.ts _shared/ml/buscar-item.ts _shared/ml/atualizar-item.ts` (cerca de 15 esperadas).
-
-- [ ] **Step 8: Deploy + observação (depois do OK e do merge)**
-
-P-Deploy com a lista do Step 7. P-Observação nas edges:
-- `sincronizar-estoque`: dispara a cada movimento de estoque. Nos logs, sem `lerStatus ML 400` e sem exceção; `estoque_reativou_anuncio` só onde houver reposição real;
-- `monitorar-moderados`: sem erro novo;
-- `status-publicados`: pedir ao Diego que abra a tela Publicados (ou observar a próxima chamada nos logs). A contagem por status bate com o `status` do A/B da Avil.
+- [ ] **Step 7: Deploy e observação** (P-Deploy, P-Observação).
+  - A/B pós-deploy com o código baixado de `status-publicados` (cobre `lerStatus`) e de `update-familia-ml` (cobre `buscar-item` e `atualizar-item`).
+  - Logs de `sincronizar-estoque`, `monitorar-moderados` e `status-publicados`.
+  - Por id: amostra de 10 anúncios Avil; o status na tela Publicados (ou no A/B pós-deploy) é igual ao status na fase A.
 
 ---
 
-### Task T2 (Fatia 2): `vendas.ts`, `pedidos.ts`
+### Task T2 (F2): `vendas.ts`, `pedidos.ts`
 
 **Files:**
-- Modify: `_shared/ml/vendas.ts:127-159` (`buscarTitulosEGtins`, que passa a ser exportada)
-- Modify: `_shared/ml/pedidos.ts:23-52` (`buscarGtinsDosItens`)
+- Modify: `_shared/ml/vendas.ts:127` (`export`), `:139-142`
+- Modify: `_shared/ml/pedidos.ts:35-38`
 - Test: `_shared/ml/__tests__/vendas.test.ts`, **novo** `_shared/ml/__tests__/pedidos-gtin.test.ts`
-
-**Interfaces:**
-- Consumes: T0
-- Produces: `export async function buscarTitulosEGtins(token: string, ids: string[], signal: AbortSignal): Promise<{ titulos: Record<string, string>; gtins: Record<string, string> }>`. Só a visibilidade muda.
 
 - [ ] **Step 1: Testes falhando**
 
-Novo `_shared/ml/__tests__/pedidos-gtin.test.ts`:
+`_shared/ml/__tests__/pedidos-gtin.test.ts`:
 
 ```ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buscarGtinsDosItens } from '../pedidos.ts';
 import bulk from './fixtures/bulk-pedidos-pxv-cores-bulk.json' with { type: 'json' };
 import antigo from './fixtures/bulk-pedidos-pxv-cores-antigo.json' with { type: 'json' };
+import ids from './fixtures/bulk-pedidos-pxv-cores-ids.json' with { type: 'json' };
 afterEach(() => vi.unstubAllGlobals());
-const idsDo = (arr: unknown) => (arr as Array<{ body?: { id?: string } }>).flatMap((e) => (e.body?.id ? [e.body.id] : []));
 
 describe('buscarGtinsDosItens via bulk', () => {
-  it('URL do bulk com id,attributes e GTIN igual ao do envelope antigo', async () => {
-    const ids = idsDo(bulk);
+  it('URL do bulk e GTINs iguais aos do envelope antigo, nos mesmos ids', async () => {
     const urls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return new Response(JSON.stringify(bulk)); }));
-    const novo = await buscarGtinsDosItens('t', [...ids, ids[0]]);
-    expect(urls).toEqual([`https://api.mercadolibre.com/items/bulk?ids=${ids.join(',')}&attributes=status_code,body.id,body.attributes`]);
+    const novo = await buscarGtinsDosItens('t', ids as string[]);
+    expect(urls).toEqual([`https://api.mercadolibre.com/items/bulk?ids=${(ids as string[]).join(',')}&attributes=status_code,body.id,body.attributes`]);
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(antigo))));
-    expect(novo).toEqual(await buscarGtinsDosItens('t', ids));
+    const velho = await buscarGtinsDosItens('t', ids as string[]);
+    expect(novo).toEqual(velho);
+    expect(Object.keys(novo).length).toBeGreaterThan(0);
   });
-  it('bloco com HTTP de erro é pulado sem derrubar os outros', async () => {
+  it('bloco do meio com HTTP 500: os outros dois blocos sobrevivem com os GTINs certos', async () => {
+    const todos = Array.from({ length: 45 }, (_, i) => `MLB${i}`);
     let n = 0;
-    vi.stubGlobal('fetch', vi.fn(async () => (n++ === 0 ? new Response('x', { status: 500 }) : new Response(JSON.stringify(bulk)))));
-    const ids = Array.from({ length: 21 }, (_, i) => `MLB${i}`);
-    await expect(buscarGtinsDosItens('t', ids)).resolves.toBeTypeOf('object');
-    expect(n).toBe(2);
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => {
+      n++;
+      if (n === 2) return new Response('x', { status: 500 });
+      const q = new URL(u).searchParams.get('ids')!.split(',');
+      return new Response(JSON.stringify(q.map((id) => ({ status_code: 200, body: { id, attributes: [{ id: 'GTIN', value_name: `789${id.slice(3)}` }] } }))));
+    }));
+    const r = await buscarGtinsDosItens('t', todos);
+    expect(n).toBe(3);
+    expect(Object.keys(r).sort()).toEqual([...todos.slice(0, 20), ...todos.slice(40)].sort());
+    expect(r.MLB0).toBe('7890');
   });
 });
 ```
 
-O teste de igualdade só faz sentido se o fixture tiver pelo menos um GTIN. Conferir com `grep -c '"GTIN"' supabase/functions/_shared/ml/__tests__/fixtures/bulk-pedidos-pxv-cores-bulk.json` (≥1). Se der 0, gerar de novo o fixture desse conjunto (T0 Step 1), escolhendo itens com o atributo `GTIN`. No spike, os 18 itens da Avil têm `attributes` completos.
+O formato exato que `extrairGtin` aceita (`value_name` contra `values[0].name`) precisa ser conferido em `pedidos.ts:12-21` antes de rodar. Ajustar o atributo sintético a esse formato.
 
-Em `_shared/ml/__tests__/vendas.test.ts`, adicionar o mesmo par (URL do bulk `&attributes=status_code,body.id,body.title,body.attributes` e igualdade com o envelope antigo) para `buscarTitulosEGtins`, com os fixtures `bulk-vendas-{bulk,antigo}.json`. Passar `AbortSignal.timeout(5000)`.
+Em `vendas.test.ts`, adicionar o par com `buscarTitulosEGtins` (agora exportada): fixtures `bulk-vendas-*`, URL `&attributes=status_code,body.id,body.title,body.attributes`, igualdade com o envelope antigo e `Object.keys(r.titulos).length > 0`.
 
-- [ ] **Step 2: Rodar e ver falhar**
+- [ ] **Step 2: Rodar e ver falhar.**
 
-Run: `pnpm test supabase/functions/_shared/ml/__tests__/pedidos-gtin.test.ts supabase/functions/_shared/ml/__tests__/vendas.test.ts`
-Expected: FAIL (URL antiga; `buscarTitulosEGtins` não exportada).
+- [ ] **Step 3: Implementar.**
+  - `vendas.ts:127`: `export async function buscarTitulosEGtins(`.
+  - `vendas.ts:139`: `const url = \`${API}${caminhoMultiget(bloco, 'id,title,attributes')}\`;`
+  - `vendas.ts:142`: `const arr = comoEnvelopeAntigo(await resp.json(), bloco) as any; // [{ code, body }] (ADR-0177)`. Usar o mesmo tipo implícito de hoje: se `arr` hoje é `any`, manter.
+  - `pedidos.ts:35`: `const url = \`${API}${caminhoMultiget(bloco, 'id,attributes')}\`;`
+  - `pedidos.ts:38`: `const arr = comoEnvelopeAntigo(await resp.json(), bloco) as unknown[];`. Conferir o tipo usado depois, na linha 40 (`for (const e of arr)`); se hoje é `any`, usar `as any`.
+  - Imports de `./multiget.ts`.
 
-- [ ] **Step 3: Implementar**
+- [ ] **Step 4: Testes de sync-venda, reconciliar-faturamento, backfill-faturamento, sync-devolucao e _shared → PASS.** Depois `deno check` nos `index.ts`.
 
-`vendas.ts`: `async function buscarTitulosEGtins(` → `export async function buscarTitulosEGtins(`, e o laço:
+- [ ] **Step 5: A/B `F2`.** Antes, aplicar o `export` também na baseline extraída:
+  `sed -i '' 's/^async function buscarTitulosEGtins/export async function buscarTitulosEGtins/' $CLAUDE_JOB_DIR/tmp/ab/base/supabase/functions/_shared/ml/vendas.ts`.
+  Esperado: `IDÊNTICO`.
 
-```ts
-  for (const bloco of blocosMultiget(ids)) {
-    try {
-      const url = `${API}${caminhoMultiget(bloco, ['id', 'title', 'attributes'])}`;
-      const resp = await fetch(url, { headers, signal });
-      if (!resp.ok) continue;
-      for (const b of itensMultiget<{ id: string; title?: string; attributes?: AtributoML[] }>(await resp.json())) {
-        titulos[b.id] = b.title ?? b.id;
-        const gtin = extrairGtin(b.attributes);
-        if (gtin) gtins[b.id] = gtin;
-      }
-    } catch (e) {
-```
+- [ ] **Step 6: Commit (`feat(ml): fatia 2 do /items/bulk — GTIN de vendas e faturamento`), Codex e portão.** Edges: `edges_afetadas.py _shared/ml/vendas.ts _shared/ml/pedidos.ts`.
 
-O `catch` fica como está. Remover o `chunk` local se ficar órfão.
-
-`pedidos.ts`:
-
-```ts
-  for (const bloco of blocosMultiget(itemIds)) {
-    try {
-      const url = `${API}${caminhoMultiget(bloco, ['id', 'attributes'])}`;
-      const resp = await fetch(url, { headers, signal });
-      if (!resp.ok) continue;
-      for (const b of itensMultiget<ItemComAtributos & { id: string }>(await resp.json())) {
-        const gtin = extrairGtin(b);
-        if (gtin) out[b.id] = gtin;
-      }
-    } catch {
-```
-
-Importar de `./multiget.ts` nos dois. O tipo `ItemComAtributos` já existe em `pedidos.ts` (linha ~6); conferir o nome com `grep -n "ItemComAtributos" pedidos.ts`.
-
-- [ ] **Step 4: Rodar e ver passar**
-
-Run: `pnpm test supabase/functions/_shared supabase/functions/sync-venda supabase/functions/reconciliar-faturamento supabase/functions/backfill-faturamento supabase/functions/sync-devolucao`
-Expected: PASS.
-
-- [ ] **Step 5: A/B (fatia `F2`)**
-
-Preparar a cópia da `main` com o `export` (ver a pré-condição do T0 Step 7):
-`sed -i '' 's/^async function buscarTitulosEGtins/export async function buscarTitulosEGtins/' $CLAUDE_JOB_DIR/tmp/ab/main/supabase/functions/_shared/ml/vendas.ts`
-Run: `python3 $CLAUDE_JOB_DIR/tmp/ab/rodar.py F2` → `IDÊNTICO` nas 4 orgs. Conferir que `gtins` não veio vazio em pelo menos uma org.
-
-- [ ] **Step 6: Commit + Codex + portão**
-
-`feat(ml): fatia 2 do /items/bulk — GTIN de vendas e faturamento`. Edges: `edges_afetadas.py _shared/ml/vendas.ts _shared/ml/pedidos.ts`.
-
-- [ ] **Step 7: Deploy + observação**
-
-`sync-venda`: a próxima venda real. Pelo SQL read-only, a linha de faturamento dessa venda tem GTIN e markup preenchidos como nas anteriores. `reconciliar-faturamento` (cron `0 * * * *`): sem erro. `metricas-vendas`: sem erro quando a tela abrir.
+- [ ] **Step 7: Deploy e observação.**
+  - Por id: as 3 próximas vendas reais têm GTIN preenchido na linha de faturamento, igual ao GTIN da fase A para o mesmo item (SQL read-only).
+  - `reconciliar-faturamento` (cron `0 * * * *`) sem erro.
 
 ---
 
-### Task T3 (Fatia 3): kit virtual
+### Task T3 (F3): kit virtual
 
 **Files:**
-- Modify: `_shared/ml/kit-virtual.ts:84-107` (`buscarListingTypeItensML`)
-- Modify: `buscar-componentes-kit-virtual/index.ts:51-72` (`buscarUserProductIdsML`)
-- Test: `_shared/ml/__tests__/kit-virtual-status.test.ts:118-130`, `buscar-componentes-kit-virtual/__tests__/processar.test.ts` (não muda: testa `processar.ts`)
+- Modify: `_shared/ml/kit-virtual.ts:74` (comentário), `:91`, `:97`
+- Create: `buscar-componentes-kit-virtual/leitura-ml.ts` (extração)
+- Modify: `buscar-componentes-kit-virtual/index.ts:46-72` (passa a importar), `processar.ts:26` (comentário)
+- Test: `_shared/ml/__tests__/kit-virtual-status.test.ts`, **novo** `buscar-componentes-kit-virtual/__tests__/leitura-ml.test.ts`
 
-- [ ] **Step 1: Testes falhando**
+- [ ] **Step 1: Caracterização da leitura de componentes (endpoint antigo), falhando**
 
-Em `kit-virtual-status.test.ts:122`, a expectativa vira
-`'https://api.mercadolibre.com/items/bulk?ids=MLB1,MLB2&attributes=status_code,body.id,body.listing_type_id'`, e o mock de resposta desse teste passa de `code` para `status_code`. Adicionar:
+`buscar-componentes-kit-virtual/__tests__/leitura-ml.test.ts`:
 
 ```ts
-it('fixture real: kit e itens comuns, 404 sem body fica fora do mapa, repetido vira uma consulta', async () => {
-  const urls: string[] = [];
-  vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return new Response(JSON.stringify(bulkKit)); }));
-  const ids = (bulkKit as Array<{ body?: { id: string } }>).flatMap((e) => (e.body ? [e.body.id] : []));
-  const m = await buscarListingTypeItensML('t', [...ids, ids[0]]);
-  expect(urls).toHaveLength(1);
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { buscarUserProductIdsML } from '../leitura-ml.ts';
+afterEach(() => vi.unstubAllGlobals());
+const resp = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
+
+describe('buscarUserProductIdsML', () => {
+  it('blocos de 20, mapeia user_product_id/price/category_id e ignora não-200', async () => {
+    const ids = Array.from({ length: 21 }, (_, i) => `MLB${i}`);
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => {
+      urls.push(u);
+      const q = (new URL(u).searchParams.get('ids') ?? '').split(',');
+      return resp(q.map((id) => (id === 'MLB3' ? { code: 404, body: { id } } : { code: 200, body: { id, user_product_id: `UP${id}`, price: 10, category_id: 'MLB1' } })));
+    }));
+    const r = await buscarUserProductIdsML('t', ids);
+    expect(urls).toHaveLength(2);
+    expect(r).toHaveLength(20);
+    expect(r[0]).toEqual({ itemId: 'MLB0', userProductId: 'UPMLB0', precoAtualML: 10, categoriaMlId: 'MLB1' });
+  });
+  it('bloco com HTTP de erro (mlGet devolve null) é pulado sem derrubar', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp({}, 500)));
+    expect(await buscarUserProductIdsML('t', ['MLB1'])).toEqual([]);
+  });
+});
+```
+
+Essa versão usa o envelope `code`, porque é caracterização do comportamento atual. No commit do bulk (Step 4), o primeiro teste troca para `status_code`, o `MLB3` passa a responder `{ status_code: 404 }` sem body e entra uma asserção de URL do bulk.
+
+- [ ] **Step 2: Extração (P-Extração).** Criar `buscar-componentes-kit-virtual/leitura-ml.ts` com:
+  - o comentário das linhas 45-50;
+  - `export async function buscarUserProductIdsML(...)`, copiada **sem alteração** de `index.ts:51-72`;
+  - `const API = 'https://api.mercadolibre.com';`;
+  - os imports `import { mlGet } from '../_shared/ml/http.ts';` e `import type { ItemBridge } from './processar.ts';`.
+
+  Em `index.ts`: apagar a função e importar `import { buscarUserProductIdsML } from './leitura-ml.ts';`. Remover de `index.ts` o import `mlGet` e o `const API` **só** se ficarem órfãos (`grep -n "mlGet\|API" index.ts`).
+  - Rodar o teste → PASS.
+  - `git diff --color-moved=zebra` → só movimento.
+  - Commit `refactor(kit): extrair leitura de componentes do ML (sem mudança de comportamento)`.
+  - A/B de extração: baseline = pai, árvore nova = este commit, cenário `componentes`. Esperado: `IDÊNTICO`.
+
+- [ ] **Step 3: Testes do bulk, falhando.**
+  - `kit-virtual-status.test.ts:122`: a expectativa vira `'https://api.mercadolibre.com/items/bulk?ids=MLB1,MLB2&attributes=status_code,body.id,body.listing_type_id'`, e o mock desse teste responde `status_code`.
+  - Novo teste com o fixture real do kit **mais um 404 inserido**:
+
+```ts
+import bulkKit from './fixtures/bulk-kit-bulk.json' with { type: 'json' };
+import idsKit from './fixtures/bulk-kit-ids.json' with { type: 'json' };
+it('fixture real do kit + 404 sem body: o 404 fica fora do mapa, os demais entram', async () => {
+  const ids = (idsKit as string[]).filter((i) => i !== 'MLB0000000001');
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([...(bulkKit as unknown[]), { status_code: 404 }]))));
+  const m = await buscarListingTypeItensML('t', [...ids, 'MLB0000000001']);
   expect([...m.keys()].sort()).toEqual([...ids].sort());
 });
 ```
 
-Com `import bulkKit from './fixtures/bulk-kit-bulk.json' with { type: 'json' };`. O fixture do kit DSA vem do `spike_bulk2.py`, com os campos `id,listing_type_id,…`.
+  E o teste de componentes migra para o bulk, como descrito no Step 1.
 
-- [ ] **Step 2: Rodar e ver falhar.** Run: `pnpm test supabase/functions/_shared/ml/__tests__/kit-virtual-status.test.ts` → FAIL.
+- [ ] **Step 4: Implementar.**
+  - `kit-virtual.ts:91`: `` `https://api.mercadolibre.com${caminhoMultiget(bloco, 'id,listing_type_id')}` ``.
+  - `kit-virtual.ts:97`: `const arr = comoEnvelopeAntigo(await resp.json().catch(() => null), bloco);`.
+  - `kit-virtual.ts:74` (comentário): `(\`GET /items/bulk?ids=...&attributes=...\`, ADR-0177)`.
+  - `leitura-ml.ts`: `const url = \`${API}${caminhoMultiget(bloco, 'id,user_product_id,price,category_id')}\`;` e `const arr = comoEnvelopeAntigo(await mlGet(url, token), bloco);`.
+  - `processar.ts:26` (comentário): `GET /items/bulk?ids=...&attributes=status_code,body.id,body.user_product_id,body.price,body.category_id`.
+  - Imports do adaptador.
 
-- [ ] **Step 3: Implementar**
+- [ ] **Step 5: Testes (`_shared/ml`, `buscar-componentes-kit-virtual`, `criar-kit-virtual`, `status-publicados`) → PASS.** Depois `deno check`.
 
-`kit-virtual.ts`:
+- [ ] **Step 6: A/B `F3`** (baseline = commit da extração). Esperado: `IDÊNTICO`, com a DSA mostrando `kits=2`.
 
-```ts
-  for (const bloco of blocosMultiget(itemIds)) {
-    const resp = await fetch(
-      `https://api.mercadolibre.com${caminhoMultiget(bloco, ['id', 'listing_type_id'])}`,
-      { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15_000) },
-    );
-    if (!resp.ok) {
-      throw new Error(`Falha ao consultar o listing type dos componentes (${resp.status}): ${await resp.text()}`);
-    }
-    const arr = await resp.json().catch(() => null);
-    if (!Array.isArray(arr)) {
-      throw new Error('O Mercado Livre devolveu uma resposta inesperada ao consultar o listing type dos componentes.');
-    }
-    for (const b of itensMultiget<{ id: string; listing_type_id?: string }>(arr)) {
-      if (b.listing_type_id) out.set(b.id, b.listing_type_id);
-    }
-  }
-```
+- [ ] **Step 7: Commit (`feat(ml): fatia 3 do /items/bulk — kit virtual`), Codex e portão.** Edges: `edges_afetadas.py _shared/ml/kit-virtual.ts buscar-componentes-kit-virtual/index.ts buscar-componentes-kit-virtual/leitura-ml.ts`.
 
-`buscar-componentes-kit-virtual/index.ts`:
-
-```ts
-  for (const bloco of blocosMultiget(itemIds)) {
-    const url = `${API}${caminhoMultiget(bloco, ['id', 'user_product_id', 'price', 'category_id'])}`;
-    const arr = await mlGet(url, token);
-    for (const b of itensMultiget<{ id: string; user_product_id?: string | null; price?: number | null; category_id?: string | null }>(arr)) {
-      out.push({
-        itemId: b.id,
-        userProductId: b.user_product_id ?? null,
-        precoAtualML: typeof b.price === 'number' ? b.price : null,
-        categoriaMlId: b.category_id ?? null,
-      });
-    }
-  }
-```
-
-Import: `import { blocosMultiget, caminhoMultiget, itensMultiget } from '../_shared/ml/multiget.ts';`. Se `mlGet` lançar em erro HTTP, nada muda. Hoje `!Array.isArray(arr)` → `continue`, e `itensMultiget` já devolve `[]` para não-array, o que é equivalente. Atualizar o comentário de `processar.ts:26` para `GET /items/bulk?ids=...&attributes=status_code,body.id,...`.
-
-- [ ] **Step 4: Rodar e ver passar.** Run: `pnpm test supabase/functions/_shared/ml supabase/functions/buscar-componentes-kit-virtual supabase/functions/criar-kit-virtual supabase/functions/status-publicados` → PASS. Depois `deno check supabase/functions/buscar-componentes-kit-virtual/index.ts supabase/functions/criar-kit-virtual/index.ts`.
-
-- [ ] **Step 5: A/B `F3`.** `python3 $CLAUDE_JOB_DIR/tmp/ab/rodar.py F3` → `IDÊNTICO`. A DSA precisa aparecer com `kits=2`. O `buscarUserProductIdsML` (inline em `index.ts`) é coberto pelo parse do helper (T0) e pelo par de fixtures `bulk-componentes-kit-{bulk,antigo}.json`. Adicionar em `multiget.test.ts`: `expect(itensMultiget(antigoComponentes)).toEqual(itensMultiget(bulkComponentes))`.
-
-- [ ] **Step 6: Commit + Codex + portão.** `feat(ml): fatia 3 do /items/bulk — kit virtual`. Edges: `edges_afetadas.py _shared/ml/kit-virtual.ts buscar-componentes-kit-virtual/index.ts`.
-
-- [ ] **Step 7: Deploy + observação.** `status-publicados` com kit da DSA sem erro. Se o Diego abrir o diálogo de kit, `buscar-componentes-kit-virtual` sem erro. `criar-kit-virtual` só é validado quando um kit real for criado pelo app.
+- [ ] **Step 8: Deploy e observação.**
+  - `status-publicados` com os 2 kits DSA: o `listing_type_id` de cada componente é igual ao da fase A.
+  - `buscar-componentes-kit-virtual` e `criar-kit-virtual` ficam com observação passiva até 24 h.
 
 ---
 
-### Task T4 (Fatia 4): promoções, operações, varredura de órfãos, descoberta de família UP
+### Task T4 (F4): promoções, operações, órfãos, família UP
 
 **Files:**
-- Modify: `_shared/promocoes/ml.ts:122-135` (`buscarItensML`)
-- Modify: `_shared/operacoes/ml.ts:38-48` (`multiget` interno)
-- Modify: `_shared/ml/varrer-itens.ts:74-110` (`detalharItens`)
-- Modify: `_shared/ml/descobrir-familia-up.ts:122-139` (`multiget` interno)
-- Test: `_shared/promocoes/__tests__/ml.test.ts` (+ `fixtures/multiget.json`), `_shared/promocoes/__tests__/sincronizar.test.ts`, `_shared/operacoes/__tests__/ml.test.ts:117-150`, `_shared/ml/__tests__/varrer-itens.test.ts`, `_shared/ml/__tests__/descobrir-familia-up.test.ts:21-40,157-165`
+- Modify: `_shared/promocoes/ml.ts:126-127`
+- Modify: `_shared/operacoes/ml.ts:40-43`
+- Modify: `_shared/ml/varrer-itens.ts:83-94`
+- Modify: `_shared/ml/descobrir-familia-up.ts:129-133`
+- Test: `_shared/promocoes/__tests__/ml.test.ts` (+ `fixtures/multiget.json`), `_shared/operacoes/__tests__/ml.test.ts`, `_shared/ml/__tests__/varrer-itens.test.ts`, `_shared/ml/__tests__/descobrir-familia-up.test.ts`
 
 - [ ] **Step 1: Testes falhando**
+  - `operacoes/__tests__/ml.test.ts:125-126`:
+    - `` `${API}/items/bulk?ids=MLB1&attributes=status_code,body.id,body.catalog_listing,body.item_relations` ``;
+    - `` `${API}/items/bulk?ids=MLB2&attributes=status_code,body.id,body.catalog_listing` ``.
 
-`operacoes/__tests__/ml.test.ts:125-126` passa a esperar:
-
-```ts
-expect(f.mock.calls[0][0]).toBe(`${API}/items/bulk?ids=MLB1&attributes=status_code,body.id,body.catalog_listing,body.item_relations`);
-expect(f.mock.calls[1][0]).toBe(`${API}/items/bulk?ids=MLB2&attributes=status_code,body.id,body.catalog_listing`);
-```
-
-Os mocks de resposta do arquivo passam de `code:` para `status_code:`. Os testes "relacionado com code 404" (linha 138) e "item não devolvido" (linha 146) continuam iguais no comportamento, só com `status_code`. Adicionar:
+    Os mocks do arquivo passam a responder `status_code`. Nos testes de 404 (linhas 138 e 146), a resposta vira `{ status_code: 404 }` sem body, e o comportamento esperado (rejeita; Error) **não muda**. Adicionar:
 
 ```ts
-it('lerRelacoes com 25 relacionados → 2 blocos (antes estourava o limite de 20)', async () => {
-  const rels = Array.from({ length: 25 }, (_, i) => ({ id: `MLR${i}` }));
+it('relacionado repetido em item_relations: uma consulta só, resultado igual', async () => {
   const f = vi.fn(async (u: string) => {
-    if (u.includes('body.item_relations')) return new Response(JSON.stringify([{ status_code: 200, body: { id: 'MLB1', catalog_listing: false, item_relations: rels } }]));
-    const ids = new URL(u).searchParams.get('ids')!.split(',');
-    return new Response(JSON.stringify(ids.map((id) => ({ status_code: 200, body: { id, catalog_listing: true } }))));
+    if (u.includes('body.item_relations')) return new Response(JSON.stringify([{ status_code: 200, body: { id: 'MLB1', catalog_listing: false, item_relations: [{ id: 'MLB2' }, { id: 'MLB2' }] } }]));
+    return new Response(JSON.stringify([{ status_code: 200, body: { id: 'MLB2', catalog_listing: true } }]));
   });
-  const cli = criarClienteML('t', f as unknown as typeof fetch);
-  await cli.lerRelacoes('MLB1');
-  expect(f.mock.calls.length).toBe(3);
+  const r = await criarClienteML('t', f as unknown as typeof fetch).lerRelacoes('MLB1');
+  expect(new URL(String(f.mock.calls[1][0])).searchParams.get('ids')).toBe('MLB2');
+  expect(r).toEqual(RELACOES_ESPERADAS_REPETIDO);
 });
 ```
 
-Antes de fixar o número de chamadas, ler `operacoes/ml.ts:66-80` e alinhar com o que `lerRelacoes` faz.
+    `RELACOES_ESPERADAS_REPETIDO` é caracterização. Rodar o teste em `main` com o envelope `code` (o antigo deduplicava), ler o resultado e fixar.
 
-`promocoes/__tests__/ml.test.ts`: converter `fixtures/multiget.json` com `sed -i '' 's/"code":/"status_code":/' …/promocoes/__tests__/fixtures/multiget.json` e conferir o resultado com `grep -c status_code`. No teste da linha 94 ("blocos de 20 e ignora code ≠ 200"), passar a checar a URL:
-`expect(urls[0]).toMatch(/^\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.title,body\.thumbnail,body\.secure_thumbnail,body\.permalink,body\.listing_type_id,body\.category_id,body\.seller_custom_field,body\.attributes,body\.variations&include_attributes=all$/)`, e checar que nenhum bloco repete id. Linha 135: o cast `{ code: number; … }` vira `{ status_code: number; … }`.
-
-`varrer-itens.test.ts`: os mocks passam de `code` para `status_code`. A asserção do teste da linha 56 ("quebra a consulta em blocos") continua válida. Adicionar uma checagem de URL: `toContain('/items/bulk?ids=')` e `toContain('&attributes=status_code,body.id,body.title,body.status,body.permalink,body.available_quantity,body.seller_custom_field,body.catalog_listing')`.
-
-`descobrir-familia-up.test.ts`: linhas 35 e 163 passam de `'/items?ids='` para `'/items/bulk?ids='`, e o mock de resposta passa de `code` para `status_code`.
-
-- [ ] **Step 2: Rodar e ver falhar.** Run: `pnpm test supabase/functions/_shared/promocoes supabase/functions/_shared/operacoes supabase/functions/_shared/ml` → FAIL nos alterados.
-
-- [ ] **Step 3: Implementar**
-
-`promocoes/ml.ts`:
+  - `promocoes/__tests__/ml.test.ts`: o fixture `fixtures/multiget.json` passa a ter `status_code` (`sed -i '' 's/"code":/"status_code":/'` e conferir com `grep -c`). O cast da linha 135 vira `{ status_code: number; … }`. O teste da linha 94 ganha a asserção:
 
 ```ts
-const CAMPOS_ITEM = ['id', 'title', 'thumbnail', 'secure_thumbnail', 'permalink', 'listing_type_id', 'category_id', 'seller_custom_field', 'attributes', 'variations'];
-// …
-export async function buscarItensML(get: GetJson, ids: string[]): Promise<Map<string, ItemML>> {
-  const m = new Map<string, ItemML>();
-  for (const bloco of blocosMultiget(ids)) {
-    const r = await get(caminhoMultiget(bloco, CAMPOS_ITEM, '&include_attributes=all'));
-    for (const b of itensMultiget<Obj>(r)) {
-      const it = normalizarItemML(b);
-      m.set(it.id, it);
-    }
-  }
-  return m;
-}
+expect(chamadas[0]).toMatch(/^\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.title,body\.thumbnail,body\.secure_thumbnail,body\.permalink,body\.listing_type_id,body\.category_id,body\.seller_custom_field,body\.attributes,body\.variations&include_attributes=all$/);
 ```
 
-Remover `ATRIBUTOS_ITEM` (linha 11) se ficar órfão. O `get` recebe um caminho relativo, como antes (`/items?ids=…`). Mudança de forma: antes a lista de ids ia toda dentro de um `encodeURIComponent` (`%2C`); agora vai id a id, com vírgula crua. O spike provou que as duas formas funcionam. Equivalência do filtro: antes era `x.code === 200 && x.body && typeof x.body === 'object'`; agora `itensMultiget` exige também `body.id` string. Isso é seguro, porque `normalizarItemML` usa `id` como chave do mapa.
+    Usar o nome real da variável que guarda as chamadas no teste.
 
-`operacoes/ml.ts`:
+    Mais um teste com os fixtures reais alinhados `bulk-promocoes-*`: `buscarItensML` com um `GetJson` falso que devolve o bulk, e outro que devolve o antigo, nos mesmos ids. Os resultados devem ser iguais (`toEqual` dos dois `Map`).
+  - `varrer-itens.test.ts`: mocks com `status_code`. Asserção de URL: `toContain('&attributes=status_code,body.id,body.title,body.status,body.permalink,body.available_quantity,body.seller_custom_field,body.catalog_listing')`. Mais um par com os fixtures reais `bulk-varrer-itens-*`, comparado como multiconjunto por `id`.
+  - `descobrir-familia-up.test.ts:35` e `:163`: rotas `'/items/bulk?ids='`. O fake responde `status_code`. Mais um teste de **permutação**: os mesmos irmãos em duas ordens dão o mesmo resultado (`porCor` comparado como conjunto e o mesmo `familyName`). O spec §4.3 define que nomes divergentes vão ao Diego, e esse caso não é testado como "certo".
+
+- [ ] **Step 2: Rodar e ver falhar.**
+
+- [ ] **Step 3: Implementar.**
+  - `promocoes/ml.ts:126-127`:
 
 ```ts
-  const multiget = async (xs: string[], atributos: string[]): Promise<Map<string, Obj>> => {
+    const r = comoEnvelopeAntigo(await get(caminhoMultiget(bloco, ATRIBUTOS_ITEM, '&include_attributes=all')), bloco);
+    for (const x of lista(r)) {
+```
+
+    O `encodeURIComponent(bloco.join(','))` some: o adaptador codifica id a id. Diferença de forma, não de conteúdo: o spike mediu `%2C` e vírgula crua como equivalentes.
+  - `operacoes/ml.ts:40-43`:
+
+```ts
+    const r = await chamar('GET', caminhoMultiget(xs, atributos));
+    if (!r.ok) throw await falha(r);
     const m = new Map<string, Obj>();
-    for (const bloco of blocosMultiget(xs)) {
-      const r = await chamar('GET', caminhoMultiget(bloco, atributos));
-      if (!r.ok) throw await falha(r);
-      for (const b of itensMultiget<Obj>(await r.json())) m.set(String(b.id), b);
-    }
-    return m;
-  };
+    for (const x of lista(comoEnvelopeAntigo(await r.json(), xs))) {
 ```
 
-As chamadas passam a usar arrays: `multiget([itemId], ['id', 'catalog_listing', 'item_relations'])` e `multiget(rels, ['id', 'catalog_listing'])`. Remover o comentário `ponytail: um bloco só` e o helper `ids` (linha 22), se ficar órfão (`grep -n "ids(" operacoes/ml.ts`). `chamar` recebe caminho relativo (ver a linha 40 atual).
-
-`varrer-itens.ts`:
+    Remover o helper `ids` (linha 22) **só** se ficar órfão.
+  - `varrer-itens.ts:83-87`:
 
 ```ts
-  for (const bloco of blocosMultiget(ids)) {
-    const url = `${API}${caminhoMultiget(bloco, ['id', 'title', 'status', 'permalink', 'available_quantity', 'seller_custom_field', 'catalog_listing'])}`;
+    const url = `${API}${caminhoMultiget(bloco, 'id,title,status,permalink,available_quantity,seller_custom_field,catalog_listing')}`;
     const resp = await fetchLike(url, { headers });
     if (!resp.ok) throw new Error(`detalhes dos anúncios: ML respondeu ${resp.status}`);
-    for (const b of itensMultiget<{
-      id: string; title?: string; status?: string; permalink?: string;
-      available_quantity?: number; seller_custom_field?: string | null; catalog_listing?: boolean;
-    }>(await resp.json())) {
-      out.push({
-        id: b.id,
-        titulo: b.title ?? null,
-        status: b.status ?? null,
-        permalink: b.permalink ?? null,
-        estoque: typeof b.available_quantity === 'number' ? b.available_quantity : null,
-        sku: b.seller_custom_field ?? null,
-        catalogo: b.catalog_listing === true,
-      });
-    }
-  }
+    const arr = comoEnvelopeAntigo(await resp.json(), bloco) as Array<{
 ```
 
-`descobrir-familia-up.ts`:
+    O tipo que vem depois (linhas 88-94) fica.
+  - `descobrir-familia-up.ts:129-133`:
 
 ```ts
-  for (const bloco of blocosMultiget(ids)) {
-    const url = `${API}${caminhoMultiget(bloco, ['id', 'seller_id', 'category_id', 'family_id', 'family_name', 'status', 'variations', 'attributes'])}`;
+    const url = `${API}${caminhoMultiget(bloco, 'id,seller_id,category_id,family_id,family_name,status,variations,attributes')}`;
     const resp = await fetchLike(url, { headers });
     if (!resp.ok) throw new Error(`multiget de família migrada (${resp.status})`);
-    out.push(...itensMultiget<ItemBruto>(await resp.json()));
-  }
+    const arr = comoEnvelopeAntigo(await resp.json(), bloco) as Array<{ code?: number; body?: ItemBruto }>;
 ```
 
-Remover `MULTIGET_CHUNK` e `chunk` órfãos de `varrer-itens.ts` e `descobrir-familia-up.ts`. Atenção: `ItemBruto` precisa aceitar `id: string`. Conferir o tipo; se `id` for opcional, usar `itensMultiget<ItemBruto & { id: string }>`.
+  - Imports do adaptador nos quatro arquivos.
 
-- [ ] **Step 4: Rodar e ver passar.** Run: `pnpm test supabase/functions/_shared supabase/functions/operacoes-massa supabase/functions/sincronizar-promocoes supabase/functions/coletar-ads-ml supabase/functions/coletar-trafego-ml supabase/functions/varrer-anuncios-orfaos supabase/functions/update-familia-ml` → PASS. Depois `deno check` nos `index.ts` dessas edges.
+- [ ] **Step 4: Testes (`_shared`, `operacoes-massa`, `sincronizar-promocoes`, `coletar-ads-ml`, `coletar-trafego-ml`, `varrer-anuncios-orfaos`, `update-familia-ml`) → PASS.** Depois `deno check`.
 
-- [ ] **Step 5: A/B `F4`.** `python3 $CLAUDE_JOB_DIR/tmp/ab/rodar.py F4` → `IDÊNTICO` nas 4 orgs (inclui `rel` de catálogo e `promo` com `include_attributes=all`). O `descobrirFamiliaUP` faz uma busca por título antes do multiget, e uma busca de mercado não é determinística entre duas chamadas. Por isso fica coberto pelo par de fixtures `bulk-descobrir-familia-{bulk,antigo}.json`: adicionar em `multiget.test.ts` `expect(itensMultiget(antigoDescobrir)).toEqual(itensMultiget(bulkDescobrir))`.
+- [ ] **Step 5: A/B `F4`.** Esperado: `IDÊNTICO`.
 
-- [ ] **Step 6: Commit + Codex + portão.** `feat(ml): fatia 4 do /items/bulk — promoções, operações, órfãos e família UP`. Edges: `edges_afetadas.py _shared/promocoes/ml.ts _shared/operacoes/ml.ts _shared/ml/varrer-itens.ts _shared/ml/descobrir-familia-up.ts`.
+- [ ] **Step 6: Commit (`feat(ml): fatia 4 do /items/bulk — promoções, operações, órfãos e família UP`), Codex e portão.** Edges: `edges_afetadas.py _shared/promocoes/ml.ts _shared/operacoes/ml.ts _shared/ml/varrer-itens.ts _shared/ml/descobrir-familia-up.ts`. A lista precisa incluir `coletar-trafego-ml`.
 
-- [ ] **Step 7: Deploy + observação.** `sincronizar-promocoes` (cron `10 */6 * * *`): o número de itens e categorias gravados na rodada bate com a rodada anterior, comparado por SQL read-only nas tabelas da Central de Promoções (localizar com `grep -n "^### " docs/reference/modelo-de-dados.md | grep -i promo`). `coletar-trafego-ml` (cron `17 9`): segue ok. `operacoes-massa` e `varrer-anuncios-orfaos` só rodam por ação do usuário, então ficam com observação passiva.
+- [ ] **Step 7: Deploy e observação.**
+  - `sincronizar-promocoes` (cron `10 */6 * * *`): por id, 10 itens da Central (categoria, título, cor) iguais aos da rodada anterior para os mesmos ids (SQL read-only nas tabelas de promoção; localizar com `grep -n "^### " docs/reference/modelo-de-dados.md | grep -i promo`).
+  - `coletar-trafego-ml` (cron `17 9`): sem erro.
+  - `operacoes-massa` e `varrer-anuncios-orfaos`: observação passiva até 24 h.
 
 ---
 
-### Task T5 (Fatia 5): Pulse e PxV
+### Task T5 (F5): Pulse e PxV
 
 **Files:**
-- Modify: `_shared/pulse/parse.ts:91-124` (`parseStatusAnuncios` + comentário)
-- Modify: `pulse-coletar/processar.ts:682-691`
-- Modify: `acompanhar-migracao-pxv/index.ts:93-108` (`lerCores`) e `:172-183` (estoque vivo)
-- Test: `_shared/pulse/__tests__/parse.test.ts`; novo caso em `_shared/ml/__tests__/multiget.test.ts` (pares PxV)
+- Modify: `pulse-coletar/processar.ts:682-691` (extração para `export async function lerSituacaoAnuncios`)
+- Create: `acompanhar-migracao-pxv/leitura-ml.ts` (`lerCoresML`, `lerEstoqueVivoML`)
+- Modify: `acompanhar-migracao-pxv/index.ts:93-108`, `:172-183`
+- Modify: `_shared/pulse/parse.ts:91` (só comentário)
+- Test: **novos** `pulse-coletar/__tests__/situacao.test.ts`, `acompanhar-migracao-pxv/__tests__/leitura-ml.test.ts`
 
-- [ ] **Step 1: Testes falhando**
+- [ ] **Step 1: Caracterização (endpoint antigo), falhando**
 
-Em `parse.test.ts`, adicionar:
+`acompanhar-migracao-pxv/__tests__/leitura-ml.test.ts`:
 
 ```ts
-import bulkPulse from '../../ml/__tests__/fixtures/bulk-pulse-bulk.json' with { type: 'json' };
-import antigoPulse from '../../ml/__tests__/fixtures/bulk-pulse-antigo.json' with { type: 'json' };
-it('parseStatusAnuncios lê o envelope do bulk (status_code) igual ao antigo; 404 sem body fica fora', () => {
-  const novo = parseStatusAnuncios(bulkPulse);
-  expect(novo).toHaveLength(3);
-  expect(novo).toEqual(parseStatusAnuncios(antigoPulse));
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { lerCoresML, lerEstoqueVivoML } from '../leitura-ml.ts';
+afterEach(() => vi.unstubAllGlobals());
+const resp = (b: unknown, status = 200) => new Response(typeof b === 'string' ? b : JSON.stringify(b), { status });
+
+describe('lerCoresML', () => {
+  it('uma requisição com todos os ids; cor por item; não-200 fica fora', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return resp([
+      { code: 200, body: { id: 'MLB1', attributes: [{ id: 'COLOR', value_name: 'Azul' }] } },
+      { code: 404, body: { id: 'MLB2' } },
+    ]); }));
+    const m = await lerCoresML('t', ['MLB1', 'MLB2']);
+    expect(urls).toHaveLength(1);
+    expect([...m.keys()]).toEqual(['MLB1']);
+  });
+  it('HTTP de erro → lança (o worker reagenda)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp({}, 503)));
+    await expect(lerCoresML('t', ['MLB1'])).rejects.toThrow('multiget de cores falhou (503)');
+  });
+  it('resposta objeto (não-array) → lança TypeError, como hoje (reagenda, não marca erro)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp({ message: 'x' })));
+    await expect(lerCoresML('t', ['MLB1'])).rejects.toThrow(TypeError);
+  });
+  it('resposta null → mapa vazio, como hoje (json ?? [])', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp('null')));
+    expect((await lerCoresML('t', ['MLB1'])).size).toBe(0);
+  });
+});
+describe('lerEstoqueVivoML', () => {
+  it('available_quantity por item; ausente vira 0; HTTP de erro → mapa vazio (sem lançar)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp([{ code: 200, body: { id: 'MLB1', available_quantity: 4 } }, { code: 200, body: { id: 'MLB2' } }])));
+    expect(Object.fromEntries(await lerEstoqueVivoML('t', ['MLB1', 'MLB2']))).toEqual({ MLB1: 4, MLB2: 0 });
+    vi.stubGlobal('fetch', vi.fn(async () => resp({}, 500)));
+    expect((await lerEstoqueVivoML('t', ['MLB1'])).size).toBe(0);
+  });
+  it('resposta objeto com HTTP 200 → lança TypeError, como hoje', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => resp({ message: 'x' })));
+    await expect(lerEstoqueVivoML('t', ['MLB1'])).rejects.toThrow(TypeError);
+  });
 });
 ```
 
-Em `multiget.test.ts`, adicionar os pares PxV (`bulk-pedidos-pxv-cores-*` e `bulk-pxv-estoque-*`): `expect(itensMultiget(antigo)).toEqual(itensMultiget(bulk))`.
+`corDaVariacaoML` decide se `[{id:'COLOR', value_name}]` é o formato certo. Conferir em `_shared/ml/atualizar-item.ts:51` e, se esperar `attribute_combinations`, usar o formato que a função lê, mantendo a asserção sobre `keys`.
 
-- [ ] **Step 2: Rodar e ver falhar.** Run: `pnpm test supabase/functions/_shared/pulse` → FAIL (`parseStatusAnuncios` só lê `code`).
-
-- [ ] **Step 3: Implementar**
-
-`parse.ts`:
+`pulse-coletar/__tests__/situacao.test.ts`:
 
 ```ts
-export function parseStatusAnuncios(json: unknown): AnuncioMultiget[] {
-  return itensMultiget(json).map((b) => ({
-    item_id: b.id as string,
-    status: typeof b.status === 'string' ? b.status : null,
-    sub_status: Array.isArray(b.sub_status) ? (b.sub_status as unknown[]).filter((s): s is string => typeof s === 'string') : null,
-    category_id: typeof b.category_id === 'string' ? b.category_id : null,
-    listing_type_id: typeof b.listing_type_id === 'string' ? b.listing_type_id : null,
-    price: typeof b.price === 'number' ? b.price : null,
-  }));
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { lerSituacaoAnuncios } from '../processar.ts';
+afterEach(() => vi.unstubAllGlobals());
+
+describe('lerSituacaoAnuncios', () => {
+  it('blocos de 20; situação por item; não-200 fora; bloco com erro não derruba', async () => {
+    const ids = Array.from({ length: 41 }, (_, i) => `MLB${i}`);
+    let n = 0;
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => {
+      n++;
+      if (n === 2) return new Response('x', { status: 500 });
+      const q = (new URL(u).searchParams.get('ids') ?? '').split(',');
+      return new Response(JSON.stringify(q.map((id) => ({ code: 200, body: { id, status: 'active', sub_status: [], category_id: 'C', listing_type_id: 'gold_pro', price: 9 } }))));
+    }));
+    const m = await lerSituacaoAnuncios(ids, 't');
+    expect(n).toBe(3);
+    expect([...m.keys()].sort()).toEqual([...ids.slice(0, 20), ids[40]].sort());
+    expect(m.get('MLB0')).toEqual({ item_id: 'MLB0', status: 'active', sub_status: [], category_id: 'C', listing_type_id: 'gold_pro', price: 9 });
+  });
+});
+```
+
+Se `mlGet` fizer retry em 500 (só em 429 hoje: `http.ts:11`), a contagem `n` continua 3.
+
+- [ ] **Step 2: Extração (P-Extração).**
+
+`acompanhar-migracao-pxv/leitura-ml.ts`:
+
+```ts
+// Leituras multiget do worker PxV, extraídas de index.ts para teste (ADR-0177). Mesma semântica de antes.
+import { corDaVariacaoML } from '../_shared/ml/atualizar-item.ts';
+
+const API = 'https://api.mercadolibre.com';
+
+/** COLOR dos anúncios NOVOS. Lança em HTTP de erro (o worker reagenda). */
+export async function lerCoresML(token: string, itemIds: string[]): Promise<Map<string, string | null>> {
+  const out = new Map<string, string | null>();
+  const url = `${API}/items?ids=${itemIds.join(',')}&attributes=id,attributes`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  // Lança em vez de devolver mapa vazio: um 5xx transitório do ML viraria "nenhuma cor lida" →
+  // casamento falho → `erro` definitivo, com a migração já concluída do outro lado. O catch do
+  // worker trata como transitório e reagenda dentro do orçamento.
+  if (!resp.ok) throw new Error(`multiget de cores falhou (${resp.status})`);
+  const json = await resp.json() as Array<{ code?: number; body?: { id?: string; attributes?: unknown } }>;
+  for (const linha of json ?? []) {
+    if (linha?.code !== 200 || !linha.body?.id) continue;
+    out.set(String(linha.body.id), corDaVariacaoML(linha.body.attributes));
+  }
+  return out;
+}
+
+/** Estoque vivo por item. HTTP de erro → mapa vazio (sem lançar), como antes. */
+export async function lerEstoqueVivoML(token: string, ids: string[]): Promise<Map<string, number>> {
+  const vivoPorItem = new Map<string, number>();
+  const url = `${API}/items?ids=${ids.join(',')}&attributes=id,available_quantity`;
+  const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (resp.ok) {
+    const json = await resp.json() as Array<{ code?: number; body?: { id?: string; available_quantity?: number } }>;
+    for (const l of json ?? []) {
+      if (l?.code === 200 && l.body?.id) vivoPorItem.set(String(l.body.id), l.body.available_quantity ?? 0);
+    }
+  }
+  return vivoPorItem;
 }
 ```
 
-Importar `itensMultiget` de `../ml/multiget.ts`. **Conferir antes** que `_shared/pulse/parse.ts` não tem restrição de import: rodar `head -15` no arquivo e ver se há o comentário "sem import". `vendedores-do-catalogo.ts` importa este arquivo, e o helper é puro, então não cria dependência Deno/npm. O comentário da linha 91 passa a dizer: `Multiget \`/items/bulk?ids=…\` (ADR-0177) — situação dos NOSSOS anúncios. A resposta é uma lista de envelopes \`{ status_code, body }\` (o antigo usava \`code\`; os dois são aceitos)`.
+Antes de colar, comparar linha a linha com `index.ts:93-108` e `:172-183`. Se o original tiver qualquer linha a mais dentro do trecho (por exemplo, um `return out` em outra posição), copiar o original, não o texto acima.
 
-`pulse-coletar/processar.ts`:
-
-```ts
-      for (const lote of blocosMultiget(ids)) {
-        const json = await mlGet(
-          `${API}${caminhoMultiget(lote, ['id', 'status', 'sub_status', 'category_id', 'listing_type_id', 'price'])}`,
-          token,
-        );
-        for (const st of parseStatusAnuncios(json)) infoPorItem.set(st.item_id, st);
-      }
-```
-
-O `const ids = [...new Set(...)]` da linha 682 fica.
-
-`acompanhar-migracao-pxv/index.ts`, em `lerCores`:
+Em `index.ts`, `lerCores` passa a ser:
 
 ```ts
-      const token = await getToken();
-      for (const bloco of blocosMultiget(itemIds)) {
-        const url = `${API}${caminhoMultiget(bloco, ['id', 'attributes'])}`;
-        const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-        // Lança em vez de devolver mapa vazio: (comentário existente, mantido)
-        if (!resp.ok) throw new Error(`multiget de cores falhou (${resp.status})`);
-        for (const b of itensMultiget<{ id: string; attributes?: unknown }>(await resp.json())) {
-          out.set(String(b.id), corDaVariacaoML(b.attributes));
-        }
-      }
+    lerCores: async (itemIds) => {
+      if (itemIds.length === 0) return new Map();
+      return lerCoresML(await getToken(), itemIds);
+    },
 ```
 
-O comentário das linhas 99-101 fica, colado ao `if (!resp.ok)`.
-
-Estoque vivo (linhas 172-183):
+E o estoque vivo:
 
 ```ts
       const ids = [...itemPorSku.values()];
-      const vivoPorItem = new Map<string, number>();
-      for (const bloco of blocosMultiget(ids)) {
-        const url = `${API}${caminhoMultiget(bloco, ['id', 'available_quantity'])}`;
-        const resp = await fetch(url, { headers: { Authorization: `Bearer ${await getToken()}` } });
-        if (!resp.ok) continue;
-        for (const b of itensMultiget<{ id: string; available_quantity?: number }>(await resp.json())) {
-          vivoPorItem.set(String(b.id), b.available_quantity ?? 0);
-        }
-      }
+      const vivoPorItem = ids.length > 0 ? await lerEstoqueVivoML(await getToken(), ids) : new Map<string, number>();
 ```
 
-Equivalência: hoje um `!resp.ok` pula o lote inteiro (só havia um lote). Agora pula só o bloco com falha. Para ≤20 ids sem repetição, o resultado é idêntico. Repetidos e >20 hoje dão 400 → mapa vazio; agora funcionam. É a exceção declarada nas Global Constraints. Importar de `../_shared/ml/multiget.ts`.
+`getToken()` continua sendo chamado uma vez, só quando há ids e antes do fetch, como hoje. Import: `import { lerCoresML, lerEstoqueVivoML } from './leitura-ml.ts';`. Remover de `index.ts` o import de `corDaVariacaoML` só se ficar órfão.
 
-- [ ] **Step 4: Rodar e ver passar.** Run: `pnpm test supabase/functions/_shared supabase/functions/pulse-coletar supabase/functions/acompanhar-migracao-pxv supabase/functions/pulse-analise-secoes237` → PASS. Depois `deno check supabase/functions/pulse-coletar/index.ts supabase/functions/acompanhar-migracao-pxv/index.ts`.
+`pulse-coletar/processar.ts`: extrair o laço das linhas 684-691 para uma função exportada no mesmo arquivo, perto do topo das funções de ML:
 
-- [ ] **Step 5: A/B `F5`.** `python3 $CLAUDE_JOB_DIR/tmp/ab/rodar.py F5` → `IDÊNTICO`. Antes de rodar, conferir que `edges_afetadas.py _shared/pulse/parse.ts` lista `pulse-analise-secoes237`, para confirmar que é edge real e não pasta morta.
+```ts
+/** Situação dos NOSSOS anúncios pelo multiget (blocos de 20). Exportada para teste (ADR-0177). */
+export async function lerSituacaoAnuncios(ids: string[], token: string): Promise<Map<string, AnuncioMultiget>> {
+  const infoPorItem = new Map<string, AnuncioMultiget>();
+  for (let i = 0; i < ids.length; i += 20) {
+    const lote = ids.slice(i, i + 20);
+    const json = await mlGet(
+      `${API}/items?ids=${lote.join(',')}&attributes=id,status,sub_status,category_id,listing_type_id,price`,
+      token,
+    );
+    for (const st of parseStatusAnuncios(json)) infoPorItem.set(st.item_id, st);
+  }
+  return infoPorItem;
+}
+```
 
-- [ ] **Step 6: Commit + Codex + portão.** `feat(ml): fatia 5 do /items/bulk — Pulse e migração PxV`. Edges: `edges_afetadas.py _shared/pulse/parse.ts pulse-coletar/processar.ts acompanhar-migracao-pxv/index.ts`.
+No lugar original fica `const infoPorItem = await lerSituacaoAnuncios(ids, token);`. Conferir que `API` e `AnuncioMultiget` estão no escopo do módulo (`grep -n "const API\|AnuncioMultiget" processar.ts`).
 
-- [ ] **Step 7: Deploy + observação.** `pulse-coletar` tier quente (cron `0 */6 * * *`): sem erro, e a situação dos anúncios gravada na rodada tem a mesma contagem por status da rodada anterior (SQL read-only). PxV: conferir por SQL se há migração ativa. Sem migração ativa, A/B + testes bastam, e isso fica registrado.
+- Rodar os testes de caracterização → PASS.
+- `git diff --color-moved=zebra` → só movimento.
+- Commit `refactor(pulse,pxv): extrair leituras do ML (sem mudança de comportamento)`.
+- A/B de extração: baseline = pai, árvore nova = este commit, cenários F5. Esperado: `IDÊNTICO`.
+
+- [ ] **Step 3: Testes do bulk, falhando.** Converter os testes de caracterização para o bulk: respostas com `status_code`, 404 como `{ status_code: 404 }` e asserção de URL:
+  - `lerCoresML`: `…/items/bulk?ids=MLB1,MLB2&attributes=status_code,body.id,body.attributes`;
+  - `lerEstoqueVivoML`: `…&attributes=status_code,body.id,body.available_quantity`;
+  - Pulse: `…&attributes=status_code,body.id,body.status,body.sub_status,body.category_id,body.listing_type_id,body.price`.
+
+  Os testes de não-array (objeto → TypeError, `null` → vazio) **ficam iguais**: eles provam que o adaptador não muda isso. Mais um teste: `lerCoresML('t', ['MLB1', 'MLB1'])` → URL com `ids=MLB1`.
+
+- [ ] **Step 4: Implementar.**
+  - Em `leitura-ml.ts`: as URLs passam a `` `${API}${caminhoMultiget(itemIds, 'id,attributes')}` `` e `` `${API}${caminhoMultiget(ids, 'id,available_quantity')}` ``.
+  - O `json` lido passa por `comoEnvelopeAntigo(await resp.json(), itemIds)` e por `comoEnvelopeAntigo(await resp.json(), ids)`. Os tipos e os laços ficam.
+  - Em `processar.ts`: `` `${API}${caminhoMultiget(lote, 'id,status,sub_status,category_id,listing_type_id,price')}` `` e `parseStatusAnuncios(comoEnvelopeAntigo(json, lote))`.
+  - O comentário de `parse.ts:91` cita `/items/bulk` (ADR-0177) e o envelope antigo entregue pelo adaptador.
+
+- [ ] **Step 5: Testes (`_shared`, `pulse-coletar`, `pulse-analise-secoes237`, `acompanhar-migracao-pxv`) → PASS.** Depois `deno check`.
+
+- [ ] **Step 6: A/B `F5`** (baseline = commit da extração). Esperado: `IDÊNTICO`, inclusive `coresPxV21distintos` falhando igual nos dois lados (400 preservado).
+
+- [ ] **Step 7: Commit (`feat(ml): fatia 5 do /items/bulk — Pulse e migração PxV`), Codex e portão.** Edges: `edges_afetadas.py pulse-coletar/processar.ts acompanhar-migracao-pxv/index.ts acompanhar-migracao-pxv/leitura-ml.ts`.
+
+- [ ] **Step 8: Deploy e observação.**
+  - `pulse-coletar` tier quente (cron `0 */6 * * *`): por id, 10 anúncios cuja situação gravada (status, sub_status, preço) é igual à da fase A, para itens sem mudança real entre as rodadas.
+  - PxV: SQL read-only para ver se há migração ativa. Sem migração ativa, registrar "não observado; A/B + testes".
 
 ---
 
-### Task T6 (Fatia 6): varredura final e docs
+### Task T6 (F6): varredura final e docs
 
 **Files:**
-- Modify: `docs/reference/edge-functions.md` (multiget nas edges afetadas + nota ADR-0177)
-- Modify: `obsidian-vault/03-Módulos/Estoque.md:231`
-- Modify: `docs/runbooks/coletar-trafego-ml.md` (linha 102: o helper central existe; a referência fica)
-- Modify: `obsidian-vault/04-Decisões/Índice de ADRs.md` (linha da 0177), `docs/project-status.md`, `docs/TASKS.md`, `obsidian-vault/09-Logs/Changelog.md`. Seguir a skill `docs-update-checklist`.
+- Modify: `docs/reference/edge-functions.md`, `obsidian-vault/03-Módulos/Estoque.md:231`, `docs/runbooks/coletar-trafego-ml.md:102`, `obsidian-vault/04-Decisões/Índice de ADRs.md`, `docs/project-status.md`, `docs/TASKS.md`, `obsidian-vault/09-Logs/Changelog.md`. Seguir a skill `docs-update-checklist`.
 
-- [ ] **Step 1: Varredura**
+- [ ] **Step 1: Varredura** (código executável separado de comentário):
+  - `grep -rn "items?ids=" supabase/functions src tests --include=*.ts --include=*.tsx | grep -v "^\S*:\s*//\|^\S*:\s*\*"` → **vazio**.
+  - `grep -rn "items?ids=" supabase/functions src tests` → só comentários históricos datados: `coletar-trafego-ml/deps.ts:135`, `vendedores-do-catalogo.ts:3` e comentários de teste que descrevem o envelope antigo do adaptador.
+  - `grep -rnE "(code|status_code)\s*\?\?" supabase/functions --include=*.ts | grep -v __tests__` → `fiacao.ts:76` e `multiget.ts`.
+  - `python3 $CLAUDE_JOB_DIR/tmp/edges_afetadas.py _shared/ml/multiget.ts`, seguido de `manifesto.py conferir <SHA_MAIN> <todas>` → nenhuma divergência. Isso prova que **toda** edge que importa o adaptador está com o código da `main`.
 
-Run: `grep -rn "items?ids=" supabase/functions src`
-Expected: só comentários históricos explicitamente datados, ou zero. Hoje sobram `coletar-trafego-ml/deps.ts:135` ("o multiget /items?ids= sai em 25/10") e `vendedores-do-catalogo.ts:3` ("Medido em 2026-08-29… `/items?ids=` devolve 403"). Os dois são históricos e ficam. Qualquer outra ocorrência é bug.
+- [ ] **Step 2: Docs.** Uma linha por arquivo, citando a ADR-0177. Em `Estoque.md:231`: `multiget /items/bulk (ADR-0177)`. Em `edge-functions.md`: nota de que os filtros de log usam `/items/bulk`. Depois atualizar o Graphify (skill `graphify-update-maintenance`).
 
-Run: `grep -rnE "\.code\s*[!=]==?\s*200" supabase/functions --include=*.ts | grep -v __tests__`
-Expected: só `fiacao.ts:76` (`code ?? status_code`).
-
-Run: `grep -rn "'/items?ids=\|\"/items?ids=" supabase/functions --include=*.ts`
-Expected: vazio, incluindo os testes.
-
-- [ ] **Step 2: Docs**
-
-Atualizar os arquivos listados com uma linha cada, citando a ADR-0177: `Estoque.md:231` passa a dizer `multiget /items/bulk (ADR-0177)`. Atualizar o Graphify depois da mudança (skill `graphify-update-maintenance`).
-
-- [ ] **Step 3: Portão final**
-
-`pnpm preflight` verde, CI verde e P-Revisão Codex do diff completo da branch contra a `main` antes da 1ª fatia (pré-merge). Merge dos docs com o OK do Diego. Remover a branch e o worktree no fim, conforme o CLAUDE.md.
-
-- [ ] **Step 4: Teste de fumaça pós-tudo**
-
-Rodar `python3 $CLAUDE_JOB_DIR/tmp/edges_afetadas.py _shared/ml/multiget.ts` e conferir em `supabase functions list` que **todas** as edges listadas têm versão posterior ao deploy da sua fatia. Nenhuma edge que importa o helper pode estar numa versão anterior.
+- [ ] **Step 3: Pré-merge.**
+  - `pnpm preflight`;
+  - CI verde;
+  - P-Revisão Codex do **diff completo** da branch (`3b68f702..HEAD`);
+  - OK do Diego;
+  - merge.
+  - No fim, remover a branch e o worktree (`rm -rf` + `git worktree prune`, conforme a memória sobre iCloud).
 
 ---
 
-## Self-review
+## Resposta aos 18 achados do Codex (v1 → v2)
 
-- Cobertura da spec:
-  - §2 (contrato) → T0, com testes do helper e fixtures reais;
-  - §3 (inventário, 13 arquivos e 14 chamadas) → T1 (3), T2 (2), T3 (2), T4 (4), T5 (3 arquivos, 4 chamadas);
-  - comentários e docs → T3, T5, T6;
-  - §5 (validação) → P-A/B, P-Observação e o teste da guarda;
-  - §6 (fatias) → T0 a T6;
-  - §7 (pronto) → T6.
-- Os nomes `blocosMultiget`, `caminhoMultiget`, `entradasMultiget` e `itensMultiget` são os mesmos em todas as tarefas.
-- Review Focus 1 a 5 → T0 (dedup, 404, >20), T4 e T5 (blocos onde não havia), T1 (lerStatus + propagação com guarda).
+| # | Achado | Onde a v2 responde |
+|---|---|---|
+| 1 | fixtures com ids diferentes | T0 Step 1 (alinhados por id, GTIN/COLOR preservados), comparação por id com `tags` ordenado |
+| 2 | PxV: não-array virava erro definitivo | adaptador devolve não-array intacto; T5 testa objeto → TypeError e `null` → vazio |
+| 3 | `%20` no inventário de edges | `edges_afetadas.py` com `unquote`, grafo sem erro, recusa lista vazia, sanidade obrigatória |
+| 4 | F5 comparando erros | cenários com cobertura positiva obrigatória, `esperaErro` explícito, transportes reais (funções extraídas), blocos de ≤20 |
+| 5 | dedup global mudava decisões | dedup só por requisição; particionamento intacto; teste "ambíguo" em T1 |
+| 6 | filtro comum ≠ filtros atuais | sem filtro comum: o adaptador devolve o envelope antigo e os predicados não mudam |
+| 7 | ordem dos envelopes | medido (o antigo era arbitrário); spec §4.3; multiconjunto declarado; teste de permutação na descoberta |
+| 8 | propagação >20 virava melhoria | sem blocos novos (fora de escopo); justificativa sobre duplicados corrigida (o antigo deduplicava antes do limite) |
+| 9 | A/B não cobria adaptadores | cenários para `buscarItemPorSku`, componentes, `descobrirFamiliaUP`, Pulse e as 2 leituras PxV |
+| 10 | falhas iguais aprovavam | `ok:false` reprova, salvo `esperaErro`; 401/403 encerra; orgs e amostra mínima obrigatórias |
+| 11 | decisões de escrita sem prova | propagação nos dois envelopes, casos mistos nos dois sentidos, sequência caracterizada; reativação com `lerStatus` real |
+| 12 | guarda sem teste positivo | `fetchReal` espião; `Request` e `init.method`; porta 443; `--no-prompt`; escrita só por rota prevista |
+| 13 | testes fracos | respostas derivadas dos ids pedidos, saídas exatas, bloco do meio com erro, 404 explícito no kit |
+| 14 | rollback incompleto | snapshot baixado por edge, `--project-ref`, `verify_jwt` do manifesto, reversão via CI |
+| 15 | versão não prova conteúdo | manifesto com hash por arquivo contra o SHA, antes e depois; deploy parcial bloqueia |
+| 16 | observação por contagem | comparação por id e campo, prazo de 24 h, "não observado" registrado |
+| 17 | varreduras erradas | grep separando código de comentário, inclui `tests/`, exceções nomeadas |
+| 18 | "mesmos logs" | spec §4.3 declara a mudança de logs e de filtros; descrição correta de `mlGet` (não lança) |

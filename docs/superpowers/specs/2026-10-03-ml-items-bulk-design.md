@@ -1,203 +1,195 @@
 # Migrar o multiget do Mercado Livre de `/items?ids=` para `/items/bulk` (prazo: 25/10/2026)
 
-**Status:** spec. A instrução de handoff original foi reescrita com a verificação de 03/10/2026, que cruzou grep, Graphify e obsidian-vault, e com o spike real nas 4 orgs.
+**Status:** spec v2 (03/10/2026). A v1 foi revisada pelo Codex `gpt-6.1-sol` high (18 achados, veredito REVISAR) e passou por consultoria do `gpt-6-astra` high. Esta versão incorpora os dois e o spike 3.
 **Executor:** Claude (Opus), seguindo o workflow Superpowers.
-**Revisão:** o Codex `gpt-6.1-sol` high revisa o plano, o diff de cada fatia e o pré-merge, por pedido explícito do Diego. A consultoria em caso de dúvida é o Codex `gpt-6-astra` high.
-**Meta:** tudo em produção até **15/10/2026**, com folga de 10 dias antes do desligamento.
+**Revisão:** o Codex `gpt-6.1-sol` high revisa o plano, o diff de cada fatia e o pré-merge, por pedido explícito do Diego. A consultoria em caso de dúvida é o `gpt-6-astra` high.
+**Meta:** tudo em produção até **15/10/2026**, com deploy e observação incluídos e folga de 10 dias antes do desligamento.
 
 ## 1. Contexto
 
-O Mercado Livre desliga `GET /items?ids=…` em **25/10/2026**. O substituto é `GET /items/bulk?ids=…`. A resposta do bulk traz `status_code` onde o endpoint antigo trazia `code`. Trocar só a URL faz todo `entry.code === 200` virar falso, e os módulos passam a tratar todos os anúncios como ausentes **sem erro nenhum**.
+O Mercado Livre desliga `GET /items?ids=…` em **25/10/2026**. O substituto, `GET /items/bulk?ids=…`, tem outro envelope e outro comportamento em casos-limite (§2). Trocar só a URL faz todo `entry.code === 200` virar falso, e os módulos passam a tratar todos os anúncios como ausentes **sem erro**.
 
-A implementação de referência já está em produção desde 03/10, no commit `6f8f6c9b`:
-- `supabase/functions/coletar-trafego-ml/deps.ts:135`;
-- `_shared/trafego/fiacao.ts` → `parseMultigetStatus`, que aceita `code ?? status_code`;
-- o fixture `_shared/trafego/__tests__/fixtures/multiget-status-ampliado.json`.
+A referência já migrada está em produção desde 03/10 (commit `6f8f6c9b`):
+- `coletar-trafego-ml/deps.ts:135`;
+- `_shared/trafego/fiacao.ts` (`parseMultigetStatus`, que lê `code ?? status_code`).
 
-Ela fica **intocada** nesta migração, porque já funciona.
+Ela fica **intocada**.
 
-## 2. Contrato do bulk, medido no spike real de 03/10/2026 (só GET)
+**Promessa desta migração:** as **decisões de negócio** ficam equivalentes: status, preço, estoque, GTIN, vínculos e o que é escrito ou deixa de ser escrito no ML. As diferenças de protocolo ficam **explicitamente delimitadas** (§4.3). Não se promete igualdade literal de logs nem de ordem de listas, porque a ordem do endpoint antigo já era arbitrária.
 
-O spike rodou nas orgs Avil, DSA, Daludi Shop e Hairfly. Para cada conjunto de campos usado por um módulo, ele chamou o endpoint antigo e o bulk com os mesmos ids e comparou os `body` campo a campo. A tabela abaixo é a fonte da verdade desta spec.
+## 2. Contrato do bulk (medido; spikes de 03/10/2026, só GET, 4 orgs)
 
 | Fato | Medido |
 |---|---|
 | Sintaxe | `/items/bulk?ids=A,B&attributes=status_code,body.id,body.status,…`. Os campos do item levam o prefixo `body.` |
-| Envelope | `[{status_code, body}]`. Sem `attributes=` o envelope traz também `id` no topo |
-| `status_code` fora da seleção | O envelope vem só com `body` e o código se perde. É obrigatório incluir `status_code` |
-| Campo sem o prefixo `body.` | Volta só `{id, status_code}`, sem body. É erro silencioso |
-| Igualdade de conteúdo | **Os `body` são idênticos ao endpoint antigo** nos 13 conjuntos de campos dos módulos: 18 anúncios Avil, mais catálogo (`item_relations`) e relacionados nas 4 orgs e 2 kits DSA. Única diferença: a **ordem** do array `tags` |
-| `include_attributes=all` | É aceito e devolve o mesmo conteúdo (promoções) |
-| Vírgula codificada (`%2C`) | É aceita |
-| id inexistente | O antigo devolve `{code:404, body:{id,…}}`. O bulk devolve **`{status_code:404}` sem body**, então não dá para saber de qual id é |
-| id duplicado no lote | O antigo deduplica e responde 200. **O bulk responde HTTP 400 e o lote inteiro falha** |
-| 21 ids | Os dois respondem HTTP 400 (bulk: `Too many IDs. Maximum allowed: 20`) |
-| Latência e tamanho | De 250 a 470 ms por lote de 20. Tamanho igual ao antigo, +10 bytes |
-| Docs do ML | A página respondeu 403. Tudo acima foi descoberto testando |
+| Envelope | `[{status_code, body}]`. Sem `attributes=`, ganha também `id` no topo |
+| `status_code` fora da seleção | O envelope perde o código |
+| Campo sem o prefixo `body.` | Volta só `{id, status_code}`, sem body, em silêncio |
+| Conteúdo | **Os `body` são idênticos ao endpoint antigo** nos 13 conjuntos de campos dos módulos: 18 anúncios Avil, catálogo e relacionados (`item_relations`) nas 4 orgs, 2 kits DSA. Única diferença dentro do body: a ordem do array `tags` |
+| Ordem dos envelopes | **Antigo: arbitrária, muda de chamada para chamada.** Bulk: a ordem dos ids pedidos |
+| id inexistente | Antigo: `{code:404, body:{id, message, error, status, cause}}`. Bulk: **`{status_code:404}` sem body**, **na mesma posição do id pedido** (lote `[ok, ruim, ok, ruim, ok]` → `[200, 404, 200, 404, 200]`) |
+| id repetido | Antigo: deduplica e responde 200. Bulk: **HTTP 400 no lote inteiro** |
+| Limite | Os dois respondem 400 a 21 ids distintos. O antigo **deduplica antes de aplicar o limite** (21 posições com 20 únicos → 200 com 20 itens) |
+| `include_attributes=all` e `%2C` | Aceitos pelo bulk |
+| Item de outro vendedor | Não medido: a busca pública respondeu 403. Nenhum dos 13 módulos lê item de terceiro por multiget; `vendedores-do-catalogo.ts` usa outra rota de propósito (ADR-0143) |
+| Latência | De 250 a 470 ms por lote de 20; tamanho igual ao antigo |
 
-As respostas cruas ficam em `$CLAUDE_JOB_DIR/tmp/spike/`, fora do repo. Os fixtures do repo são versões **enxutas** delas.
+As respostas cruas ficam em `$CLAUDE_JOB_DIR/tmp/spike/`, fora do repo.
 
-## 3. Inventário verificado (grep + Graphify + obsidian-vault, 03/10/2026, `main` = `3b68f702`)
+## 3. Inventário verificado (grep + Graphify + obsidian-vault; `main` = `3b68f702`)
 
-**Chamadas reais: 13 arquivos, 14 chamadas.** Nenhuma pede o item inteiro: todas têm `attributes=`, às vezes na linha de continuação.
+**Chamadas reais: 13 arquivos, 14 chamadas.** Nenhuma pede o item inteiro.
 
-| # | Arquivo:linha | `attributes=` hoje | Como reage a erro | Quem usa em produção |
+| # | Arquivo:linha | `attributes=` | Blocos hoje | Uso em produção (escrita a jusante) |
 |---|---|---|---|---|
-| 1 | `_shared/canais/mercado-livre.ts:415` (`lerStatus`) | id,status,sub_status,available_quantity,price,listing_type_id,tags | bloco com erro → `[]`; não-200 → `null` → `indisponivel` | `status-publicados` (tela), `sincronizar-estoque` (**decide reativar = PUT**), `publicar-split-ml` (**preço vivo → faixa**), `monitorar-moderados`; o fecho de imports cobre 11 edges |
-| 2 | `_shared/ml/buscar-item.ts:79` | id,category_id,family_name,seller_id,date_created | `throw` | adoção UP (`update-familia-ml`, `reconciliar-*`, `remover-publicado`) |
-| 3 | `_shared/ml/atualizar-item.ts:183` (`propagarStatusRelacionadosML`) | id,status,sub_status | `throw` (relacionado ilegível → 502) | pausar/reativar (ADR-0060), estoque. **Antecede um PUT** |
-| 4 | `_shared/ml/vendas.ts:139` | id,title,attributes | — | métricas de vendas (via canais) |
-| 5 | `_shared/ml/pedidos.ts:35` | id,attributes | — | GTIN no faturamento: `sync-venda`, `sync-devolucao`, `backfill-faturamento`, `reconciliar-faturamento` |
-| 6 | `_shared/ml/kit-virtual.ts:91` | id,listing_type_id | — | `criar-kit-virtual`, `status-publicados` |
-| 7 | `buscar-componentes-kit-virtual/index.ts:55` | id,user_product_id,price,category_id | — | tela de kit (admin) |
-| 8 | `_shared/promocoes/ml.ts:126` | id,title,thumbnail,secure_thumbnail,permalink,listing_type_id,category_id,seller_custom_field,attributes,variations + `include_attributes=all` | — | `sincronizar-promocoes` (cron), `operacoes-massa`, `coletar-ads-ml`, `coletar-trafego-ml` |
-| 9 | `_shared/operacoes/ml.ts:40` | id,catalog_listing,item_relations / id,catalog_listing | `throw falha(r)`; ausente → Error | `operacoes-massa` (**antecede escrita em promoção**) |
-| 10 | `_shared/ml/varrer-itens.ts:83` | id,title,status,permalink,available_quantity,seller_custom_field,catalog_listing | `throw` | `varrer-anuncios-orfaos` (admin, leitura) |
-| 11 | `_shared/ml/descobrir-familia-up.ts:129` | id,seller_id,category_id,family_id,family_name,status,variations,attributes | `throw` | `update-familia-ml` |
-| 12 | `pulse-coletar/processar.ts:687` (parser `_shared/pulse/parse.ts:105`) | id,status,sub_status,category_id,listing_type_id,price | não-200 ignorado | `pulse-coletar` (cron) |
-| 13 | `acompanhar-migracao-pxv/index.ts:97` e `:175` | id,attributes / id,available_quantity | `throw` | worker QStash da migração PxV |
+| 1 | `_shared/canais/mercado-livre.ts:415` (`lerStatus`) | id,status,sub_status,available_quantity,price,listing_type_id,tags | 20, em paralelo | `status-publicados`, `sincronizar-estoque` (**reativa se `pausado`**), `publicar-split-ml` (**`preco` → faixa**), `monitorar-moderados` |
+| 2 | `_shared/ml/buscar-item.ts:79` | id,category_id,family_name,seller_id,date_created | 20 | adoção UP (`ambiguo`/`um` **libera atualização**) |
+| 3 | `_shared/ml/atualizar-item.ts:183` (`propagarStatusRelacionadosML`) | id,status,sub_status | **nenhum** | pausar/reativar (ADR-0060), estoque. **Antecede PUT** |
+| 4 | `_shared/ml/vendas.ts:139` (`buscarTitulosEGtins`, não exportada) | id,title,attributes | 20 | métricas de vendas |
+| 5 | `_shared/ml/pedidos.ts:35` | id,attributes | 20 | GTIN → markup no faturamento |
+| 6 | `_shared/ml/kit-virtual.ts:91` | id,listing_type_id | 20 | `criar-kit-virtual`, `status-publicados` |
+| 7 | `buscar-componentes-kit-virtual/index.ts:55` (inline) | id,user_product_id,price,category_id | 20 | tela de kit (admin) |
+| 8 | `_shared/promocoes/ml.ts:126` | id,title,thumbnail,secure_thumbnail,permalink,listing_type_id,category_id,seller_custom_field,attributes,variations + `include_attributes=all` | 20 | `sincronizar-promocoes`, `operacoes-massa`, `coletar-ads-ml`, `coletar-trafego-ml` |
+| 9 | `_shared/operacoes/ml.ts:40` | id,catalog_listing,item_relations / id,catalog_listing | **nenhum** | `operacoes-massa` (**antecede escrita em promoção**) |
+| 10 | `_shared/ml/varrer-itens.ts:83` | id,title,status,permalink,available_quantity,seller_custom_field,catalog_listing | 20 | `varrer-anuncios-orfaos` (leitura) |
+| 11 | `_shared/ml/descobrir-familia-up.ts:129` | id,seller_id,category_id,family_id,family_name,status,variations,attributes | 20 | `update-familia-ml` (vínculo de cor → escrita) |
+| 12 | `pulse-coletar/processar.ts:687` (inline; parser `_shared/pulse/parse.ts`) | id,status,sub_status,category_id,listing_type_id,price | 20, ids já únicos | `pulse-coletar` (grava a situação) |
+| 13 | `acompanhar-migracao-pxv/index.ts:97` e `:175` (inline) | id,attributes / id,available_quantity | **nenhum** | worker da migração PxV (casamento, reposição) |
 
-**Não mudam** (eram falso positivo da lista original):
-- `_shared/analise/vendedores-do-catalogo.ts:3`: é só um comentário, que diz para *não* usar multiget.
-- `buscar-componentes-kit-virtual/processar.ts:26`: é só comentário.
-
-**Leitores do envelope `code`:** foram varridos com `grep "\.code\s*[!=]==?\s*200"`. Todos estão nos 13 arquivos acima, mais o `fiacao.ts` de referência.
+**Não mudam:** `vendedores-do-catalogo.ts:3` e `buscar-componentes-kit-virtual/processar.ts:26`. São só comentários; o segundo é atualizado.
 
 **Testes afetados:**
-- Com a URL antiga escrita por inteiro: `operacoes/__tests__/ml.test.ts:125-126` e `ml/__tests__/kit-virtual-status.test.ts:122`.
-- Roteando por `includes('/items?ids=')`: `ml/__tests__/buscar-item.test.ts`, `ml/__tests__/descobrir-familia-up.test.ts:35,163`.
-- Com envelope `code`: `canais/__tests__/mercado-livre.test.ts`, `ml/__tests__/varrer-itens.test.ts`, `pulse/__tests__/parse.test.ts`, `promocoes/__tests__/ml.test.ts` + `fixtures/multiget.json`, `promocoes/__tests__/sincronizar.test.ts`.
-- **Sem teste do multiget hoje:** `atualizar-item.ts` (propagação) e `pedidos.ts`. As fatias desses dois **criam** o teste.
+- URL antiga escrita por inteiro: `operacoes/__tests__/ml.test.ts:125-126`, `ml/__tests__/kit-virtual-status.test.ts:122`.
+- Roteamento por `includes('/items?ids=')`: `buscar-item.test.ts:24`, `descobrir-familia-up.test.ts:35,163`.
+- Envelope `code`: `canais/__tests__/mercado-livre.test.ts` (inclusive a propagação, 531-597), `varrer-itens.test.ts`, `pulse/__tests__/parse.test.ts`, `promocoes/__tests__/ml.test.ts` + `fixtures/multiget.json`, `promocoes/__tests__/sincronizar.test.ts`.
+- **Sem teste do multiget hoje:** `pedidos.ts`, os três trechos inline (componentes, PxV, Pulse).
 
-**Docs vivas a atualizar:**
-- `docs/reference/edge-functions.md`;
-- `obsidian-vault/03-Módulos/Estoque.md:231`;
-- os runbooks afetados.
-
-ADRs antigos, `plans/`, `specs/` e spikes são histórico e não são reescritos. `scripts/spike-trafego-ml.py:81` é um script de spike histórico e fica.
+**Docs vivas a atualizar:** `docs/reference/edge-functions.md`, `obsidian-vault/03-Módulos/Estoque.md:231` e o runbook `coletar-trafego-ml.md`. Histórico (ADRs antigos, plans, specs, spikes) não é reescrito.
 
 ## 4. Design
 
-### Abordagem escolhida: helper **puro** (URL + lotes + parse), com o transporte em cada módulo
+### 4.1 Adaptador de envelope (o helper)
 
-A instrução original pedia um `multigetItens()` que também fizesse o fetch. Esta spec escolhe não fazer isso. Os módulos usam 4 transportes diferentes:
-- `fetchLike` com headers;
-- o `get` de promoções, com tratamento próprio de 429;
-- o `chamar` de operações;
-- o `fetch` do Pulse.
-
-E cada um tem semântica de erro diferente: `throw`, `[]` ou `falha(r)`. Centralizar o fetch mudaria retry e propagação de erro em fluxos que escrevem no ML. O helper puro centraliza exatamente o que muda (URL, envelope, lotes e dedup) e deixa intacto o que não muda.
-
-`supabase/functions/_shared/ml/multiget.ts`, sem import Deno/npm, para o vitest carregar:
+`supabase/functions/_shared/ml/multiget.ts`, puro (sem import Deno/npm):
 
 ```ts
-export const LIMITE_MULTIGET = 20;
+/** Caminho relativo do bulk. Deduplica DENTRO da requisição (o antigo deduplicava antes do limite).
+ *  Não divide em blocos, não filtra, não lança: o particionamento e os erros continuam com o módulo. */
+export function caminhoMultiget(ids: readonly string[], campos: string, extra?: string): string;
 
-/** Ids únicos (ordem preservada, vazios fora) em blocos de ≤20. O bulk responde 400 ao lote inteiro com id repetido. */
-export function blocosMultiget(ids: readonly string[]): string[][];
-
-/** `/items/bulk?ids=…&attributes=status_code,body.<campo>,…[extra]`. Garante `id` na seleção.
- *  Lança erro (de programação) se o bloco tiver 0 ou mais de 20 ids, ou id repetido. */
-export function caminhoMultiget(bloco: readonly string[], campos: readonly string[], extra?: string): string;
-
-/** Normaliza os dois envelopes (`code` antigo, `status_code` bulk) → `{ code, body }`. Não-array → []. */
-export function entradasMultiget<T = Record<string, unknown>>(json: unknown): Array<{ code: number | null; body: T | null }>;
-
-/** Só os bodies com código 200 e `body.id` string, o filtro que 12 dos 13 módulos repetem hoje. */
-export function itensMultiget<T extends { id?: unknown }>(json: unknown): T[];
+/** Converte a resposta do bulk no ENVELOPE ANTIGO: `[{code, body}]`, com `code ?? status_code`.
+ *  Entrada sem body (o 404 do bulk) recebe `body: {id}` pela posição, quando o número de
+ *  entradas bate com o de ids únicos enviados. Resposta não-array volta INTACTA (null, objeto,
+ *  string), para preservar o comportamento atual de cada módulo diante dela. Entrada que não é
+ *  objeto também volta intacta. */
+export function comoEnvelopeAntigo(json: unknown, idsPedidos: readonly string[]): unknown;
 ```
 
-Cada módulo troca três coisas:
-1. o laço de blocos por `blocosMultiget(ids)`;
-2. a URL por `${API}${caminhoMultiget(bloco, CAMPOS)}` ou pelo caminho relativo no transporte dele;
-3. o filtro `code === 200` por `itensMultiget` ou `entradasMultiget`.
+Cada módulo troca **duas coisas**:
+1. a URL, por `${API}${caminhoMultiget(bloco, '<os mesmos campos de hoje>')}`;
+2. o JSON lido, por `comoEnvelopeAntigo(json, bloco)`, antes do código que já existe.
 
-O resto do módulo não muda: tratamento de `!resp.ok`, `throw` contra `[]`, mapa por id e saída.
+**Nenhum predicado, laço, `throw`/`[]`/`continue`, tipo ou acesso a `entry.code` muda.** Os módulos continuam lendo o envelope antigo.
 
-### Comportamentos preservados de propósito
-- **`lerStatus`:** um id que não volta com 200 continua virando `null` → `indisponivel`, pelo `porId.get(id) ?? null`. Hoje o 404 já vira `null`. No bulk ele vem sem body e cai no mesmo `?? null`.
-- **Ordem de `tags`:** o consumidor só usa `includes`. A fatia 1 confirma isso no código antes de mudar.
-- **Dedup:** o endpoint antigo já deduplicava, e o helper só reproduz isso.
+**Por que adaptador, e não um parser novo.** A v1 trocava os filtros de cada módulo por um filtro comum, e o Codex mostrou 6 classes de diferença:
+- id numérico, vazio ou ausente;
+- `null` contra objeto;
+- prioridade entre `code` e `status_code`;
+- dedup global mudando `ambiguo` para `um`;
+- erro transitório que vira definitivo no PxV;
+- 404 sem id que deixa de sobrescrever um status anterior.
 
-### Riscos e onde cada um é pego
+Devolver o envelope antigo elimina todas: o código a jusante recebe a mesma forma de sempre.
 
-| Risco | Efeito se escapar | Onde é pego |
-|---|---|---|
-| Parse lê `code` e ignora `status_code` | Tudo vira ausente: status `indisponivel`, preço nulo, GTIN nulo | teste com fixture real do bulk + A/B |
-| Id duplicado chega ao bulk | Lote inteiro em 400: promoções, faturamento ou status param naquele lote | `blocosMultiget` deduplica + teste |
-| Campo esquecido sem `body.` ou sem `status_code` | Body vazio em silêncio | `caminhoMultiget` monta a seleção sozinho; o teste compara a URL exata |
-| `lerStatus` errado alimentando escrita | Reativação indevida (`sincronizar-estoque`) ou faixa de preço errada (`publicar-split-ml`) | A/B: saída idêntica, campo a campo, à da `main` nos mesmos anúncios |
-| Propagação de status (`atualizar-item`) | PUT em relacionado errado ou faltando | teste novo + A/B com **PUT bloqueado e registrado**: compara os PUTs que *seriam* feitos |
-| Redeploy incompleto de `_shared` | Edge antiga chamando `/items?ids=` depois de 25/10 | lista por `deno info` (não por grep) + `supabase functions list` + varredura final |
+### 4.2 Extração mínima de leituras inline (só para testar o transporte real)
 
-## 5. Como validar sem tocar nos anúncios (obrigatório em toda fatia)
+`buscar-componentes-kit-virtual/index.ts`, `acompanhar-migracao-pxv/index.ts` (`lerCores` e estoque vivo) e o laço do `pulse-coletar/processar.ts` não podem ser importados em teste, porque `index.ts` sobe `Deno.serve`. Eles ganham funções exportadas num arquivo próprio, **num commit de refatoração pura antes do bulk**. A extração move só URL → requisição → leitura → retorno, preservando:
+- laços, predicados e comportamento com não-array;
+- **quando e quantas vezes `getToken()` é chamado**.
 
-1. **Regra inviolável:** no ML, só GET durante spike, A/B e validação. Nenhum PUT/POST em anúncio fora do fluxo normal do app, nem para teste. UPDATE, publicação, pausa e reativação reais só são validados quando acontecem pelo fluxo do app.
-2. **Teste unitário com fixture real enxuta** de cada conjunto de campos, cobrindo:
-   - o envelope novo e o antigo;
-   - 404 sem body;
-   - lote com duplicado;
-   - mais de 20 ids.
-3. **Contraprova A/B local, a rede de segurança principal.** Um script Deno descartável em `$CLAUDE_JOB_DIR/tmp`:
-   - importa a função de leitura do módulo duas vezes, uma da árvore `origin/main` (extraída com `git archive`) e outra da branch;
-   - roda as duas com o token real (SQL read-only, sem refresh, nunca impresso) nos mesmos anúncios das 4 orgs;
-   - exige saída **idêntica**.
+A função `buscarTitulosEGtins` de `vendas.ts` só ganha `export`.
 
-   O `fetch` global é trocado **antes** do import por uma guarda que:
-   - deixa passar só `GET https://api.mercadolibre.com/*`;
-   - recusa qualquer outro método ou host **sem tocar a rede** e registra a tentativa (método, URL, corpo).
+### 4.3 Diferenças de protocolo aceitas (declaradas)
+- **Ordem dos envelopes:** antes arbitrária, agora a ordem pedida. Saídas que conservam a ordem (lista de órfãos, `porCor` na descoberta) são comparadas como **multiconjunto**. A escolha do primeiro `family_name` na descoberta só pode divergir se irmãos da mesma família tiverem nomes diferentes. O A/B verifica isso, e qualquer divergência vai ao Diego.
+- **Body do 404:** antes `{id, message, error, status, cause}`, agora `{id}`. Nenhum consumidor lê os outros campos do 404 (Codex, achado 17).
+- **Ordem de `tags`:** só lida por `includes` (`_shared/ml/status.ts:76`).
+- **Logs e mensagens:** onde o módulo imprime a URL (o `mlGet` imprime a URL inteira) ou cita a rota, a nova aparece. Filtros de log operacionais passam a procurar `/items/bulk`.
+- **Número de entradas devolvidas:** igual (dedup por requisição dos dois lados).
 
-   A guarda tem teste próprio: um PUT de teste precisa ser bloqueado e registrado sem sair da máquina. Nas funções que escrevem depois da leitura (`propagarStatusRelacionadosML`, operações), o A/B compara a lista de escritas **bloqueadas** do antigo com a do novo.
-4. **Depois do deploy**, observar uma execução real (cron, QStash ou tela):
-   - logs da edge pelo endpoint de analytics da Management API, com `iso_timestamp_start/end`;
-   - zero erro de parse e zero HTTP 400 do bulk;
-   - o resultado bate com o anterior (status, preço e GTIN iguais nos mesmos anúncios).
-5. **Rollback por fatia:** antes do deploy, anotar a versão ativa de cada edge (`supabase functions list`). Para voltar, redeployar as mesmas edges a partir do commit anterior da `main` (via `git archive` num diretório temporário). O endpoint antigo vale até 25/10, então o rollback é seguro até lá.
+### 4.4 Riscos e onde cada um é pego
 
-## 6. Fatias (uma por vez: commit, revisão, merge, deploy e observação)
+| Risco | Onde é pego |
+|---|---|
+| Parser não lê `status_code` | o adaptador entrega `code`; teste por módulo com fixture real do bulk |
+| Id repetido no bloco → 400 | `caminhoMultiget` deduplica; teste por módulo com repetido no bloco |
+| Repetido **entre** blocos (200 num bloco, 404 no outro) | o adaptador recoloca o id no 404, então o comportamento antigo de sobrescrever volta; teste no `lerStatus` |
+| `lerStatus` → reativação ou faixa de preço | teste com o `lerStatus` real dentro do `sincronizar-estoque` + A/B |
+| Propagação de status (PUT em relacionados) | testes parametrizados nos dois envelopes, casos mistos nos dois sentidos, sequência de PUTs caracterizada (inclusive o PUT antes do 502 que já existe hoje) + A/B com as escritas simuladas |
+| Deploy parcial ou com conteúdo errado | manifesto por edge: hash do código baixado de produção contra a árvore do SHA, antes e depois |
 
-| Fatia | Conteúdo | Validação em produção |
-|---|---|---|
-| **F0** | `_shared/ml/multiget.ts` + testes + fixtures do spike + ADR-0177 + harness A/B com teste da guarda. Sem deploy: nenhuma edge importa o helper ainda | — |
-| **F1** | `canais/mercado-livre.ts` (`lerStatus`), `ml/buscar-item.ts`, `ml/atualizar-item.ts` (+ teste novo da propagação) | `monitorar-moderados`/`sincronizar-estoque` sem erro nos logs; tela Publicados com a mesma contagem por status do A/B |
-| **F2** | `ml/vendas.ts`, `ml/pedidos.ts` (+ teste novo) | `sync-venda` da próxima venda real com GTIN preenchido; `reconciliar-faturamento` (cron `0 * * * *`) sem erro |
-| **F3** | `ml/kit-virtual.ts`, `buscar-componentes-kit-virtual/index.ts` | `status-publicados` com kit (DSA); preview de kit sem erro, se o Diego abrir |
-| **F4** | `promocoes/ml.ts`, `operacoes/ml.ts`, `ml/varrer-itens.ts`, `ml/descobrir-familia-up.ts` | `sincronizar-promocoes` (cron `10 */6`) com o mesmo número de itens/categorias da rodada anterior; `coletar-trafego-ml` (cron `17 9`) seguindo ok |
-| **F5** | `pulse/parse.ts` + `pulse-coletar/processar.ts`, `acompanhar-migracao-pxv/index.ts` (2 chamadas); comentário de `buscar-componentes-kit-virtual/processar.ts` | `pulse-coletar` quente (`0 */6`) sem erro e com status gravado; PxV sem migração ativa → A/B basta |
-| **F6** | Varredura final + docs vivas + nota no ADR | `grep -rn "items?ids=" supabase/functions src` = 0 fora de comentários históricos |
+## 5. Validação sem tocar nos anúncios
 
-O conjunto de edges de cada fatia sai de `deno info` sobre cada `index.ts`, porque `canais/mercado-livre.ts` entra pelas edges via `registry.ts`. Estimativa feita por fecho de imports em 03/10, a confirmar com `deno info`:
-- F1: 15 edges (`process-familia`, `publish-familia-ml`, `update-familia-ml`, `status-publicados`, `sincronizar-estoque`…);
-- F2: canais + 4 edges de faturamento;
-- F3: 3 edges;
-- F4: 6 edges, incluindo `coletar-trafego-ml`;
-- F5: 3 edges;
-- total: cerca de 29 das 77.
+1. **Inviolável:** no ML, só GET em spike, A/B e validação. UPDATE, publicação, pausa e reativação reais só são validados quando acontecem pelo fluxo normal do app.
+2. **Testes unitários** com fixtures reais **alinhados pelos mesmos ids** nos dois envelopes. Preservam os atributos que os cenários usam (GTIN, COLOR, `attribute_combinations`) e incluem a entrada 404.
+3. **A/B em duas fases** (harness descartável em `$CLAUDE_JOB_DIR/tmp/ab`):
+   - Fase A: roda a árvore **baseline** com a guarda. Só GET em `api.mercadolibre.com` vai à rede. Toda escrita recebe uma resposta **simulada por rota** e é registrada, e todo GET é gravado.
+   - Fase B: roda a árvore **nova**. GETs que não são multiget vêm do **replay** da fase A; GET inesperado ou gravação não consumida reprova, nunca cai na rede em silêncio. Só o multiget é ao vivo.
+   - Depois roda A de novo: se A ≠ B mas A' = B, a diferença é preço ou estoque mudando entre as fases, e a comparação é repetida.
+   - A comparação é estrita. Multiconjunto só onde o §4.3 declara. As escritas simuladas são comparadas em sequência, com método, alvo e corpo.
+   - Reprova com: 401/403 (token expirado não é renovado), HTTP inesperado, org faltando, amostra vazia ou cenário positivo sem resultado positivo.
+4. **Baseline:**
+   - código baixado de produção (`supabase functions download --use-api`, um diretório por edge) ≡ árvore do commit anterior à fatia;
+   - se divergir, bloqueia até explicar;
+   - SHAs fixos, nunca `origin/main` móvel.
+5. **Pós-deploy:**
+   - novo download por edge, com hash por arquivo igual à árvore do SHA implantado (o mesmo para `verify_jwt`);
+   - A/B com o código **baixado** como árvore nova;
+   - observação de uma execução real com comparação **por id e campo**.
+   - Caminho sem atividade até o prazo da fatia (24 h) fica registrado como "não observado; coberto por teste + A/B".
+6. **Rollback** (só até 25/10):
+   - redeploy do snapshot baixado antes do deploy, com `--project-ref` explícito e `verify_jwt` do manifesto;
+   - reverter o código por branch → CI → fast-forward.
+   - Rollback restaura código, não desfaz o que o fluxo normal já fez. Depois de 25/10, só correção para a frente (o bulk é o único caminho).
+
+## 6. Fatias
+
+| Fatia | Conteúdo |
+|---|---|
+| **F0** | Helper + testes + fixtures alinhados + ADR-0177 + harness A/B (com testes da guarda e do replay) + manifesto de deploy. Sem deploy |
+| **F1** | `lerStatus`, `buscar-item`, `atualizar-item` |
+| **F2** | `vendas`, `pedidos` |
+| **F3** | `kit-virtual`; `buscar-componentes-kit-virtual` (extração + bulk) |
+| **F4** | `promocoes`, `operacoes`, `varrer-itens`, `descobrir-familia-up` |
+| **F5** | Pulse (extração + bulk) e PxV (extração + bulk, 2 leituras) |
+| **F6** | Varredura final, docs, Graphify |
 
 **Ciclo de cada fatia:**
 1. TDD;
-2. A/B idêntico;
-3. revisão do diff pelo Codex sol (minuciosa);
+2. A/B;
+3. revisão do diff pelo Codex sol;
 4. `pnpm preflight`;
-5. push na branch e CI verde (`frontend`, `backend-lint`);
-6. **parar e voltar ao Diego** com o resumo (testes, A/B, edges, decisões);
-7. com o OK do Diego: merge fast-forward na `main`;
-8. `supabase functions deploy` das edges da fatia;
-9. conferir a versão ativa;
-10. observar em produção;
-11. só então a próxima fatia.
+5. CI verde;
+6. **parar e voltar ao Diego**;
+7. merge fast-forward;
+8. download pré-deploy + manifesto;
+9. deploy das edges listadas por `deno info`;
+10. download pós-deploy + hash;
+11. A/B pós-deploy;
+12. observação;
+13. só então a próxima fatia.
 
-O deploy só sai depois do merge, para o código no ar nunca ficar à frente da `main`.
+Deploy parcial interrompe o avanço até completar ou reverter todas as edges da fatia.
 
 ## 7. Critério de pronto
-- Nenhuma chamada a `/items?ids=` em `supabase/functions` nem em `src`, e todos os 13 módulos usando o helper.
-- Cada fatia com fixture real, testes verdes, A/B idêntico, deploy feito e versão ativa conferida.
-- Uma execução real por fatia observada em produção, sem erro.
-- `pnpm preflight` e o CI verdes.
+- Nenhuma chamada a `/items?ids=` em código executável de `supabase/functions` e `src`.
+- Os 13 módulos usam o adaptador.
+- Em cada fatia: fixtures reais alinhados, testes verdes, A/B aprovado, deploy com hash conferido e observação registrada.
+- `pnpm preflight` e CI verdes.
 - ADR-0177 e docs vivas atualizadas.
 - Tudo em produção até 15/10/2026.
 
 ## 8. Fora de escopo
-- `fiacao.ts`/`coletar-trafego-ml/deps.ts` (referência já migrada) continuam como estão.
+- Melhorias funcionais: mais de 20 relacionados na propagação, mais de 20 ids no PxV, dedup global. Hoje esses casos já respondem 400 e continuam assim.
+- `fiacao.ts` e `coletar-trafego-ml/deps.ts`.
 - Outros endpoints do ML.
 - `scripts/spike-trafego-ml.py`.
