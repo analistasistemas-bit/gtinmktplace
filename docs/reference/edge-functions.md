@@ -1713,7 +1713,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
   - **Pausar/reativar (emenda 2026-10-04 — na branch `worktree-i5-pausar-reativar-massa`,
     aguardando merge/deploy):** `acao` `pausar|reativar`, sem `promocao_id` (pedido com
     `promocao_id` é recusado) e **sem exigir o módulo `promocoes`**. Criação (`criarStatus`): só
-    admin/suporte full; até 100 anúncios (`MAX_ITENS`); recusa repetido, Kit Virtual e anúncio que
+    admin/suporte full; até 500 anúncios por operação (`MAX_ITENS`; 100 por mensagem QStash); recusa repetido, Kit Virtual e anúncio que
     não é da org (`validar-status.ts`); sem trava financeira. Reverter = operação inversa com
     `origem_id`, revalidada no servidor (`reversaoValida`: origem `concluida`, ação inversa, só ids
     que ela `aplicou`); 409 se algum anúncio já está em operação em andamento (índice
