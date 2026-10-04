@@ -92,7 +92,7 @@
 | sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
-| *(ADR-0178, implementado na branch, aguardando deploy)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
+| *(ADR-0178, implementado na branch, aguardando deploy)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'`/`'retomar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
 | **Tráfego e oferta (ADR-0172, Fatia 2b)** ||||
 | coletar-trafego-ml | false | QStash (fan-out por org + cadeia de continuações) | sim (posse + CAS do cursor, `ok` nunca vira `falha`, `deduplicationId`) |
 | **Ads por grupo (ADR-0172, Fatia 2c)** ||||
@@ -1735,6 +1735,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
 - **operacoes-massa**, `acao='reajustar'` (sem módulo `promocoes`; código em `_shared/operacoes/reajuste/`):
   - **`{etapa:'preview'}`** (HTTP, qualquer membro; Reverter via `origem_id` só admin/suporte full): calcula no servidor (tarifa exata no preço novo, imposto pela origem, ⚪ se origem ausente) e grava `operacoes_massa` em `rascunho` (`expira_em` +30 min; rascunhos vencidos da org são apagados). Sem item executável (`executaveis = 0`) devolve `operacao_id: null` e não grava. Teto 500 MLBs únicos.
   - **`{etapa:'confirmar'}`** (HTTP, só admin/suporte full): RPC `reajuste_confirmar` (transacional; colisão de reserva → `ocupado:<mlb>`) e publica `{etapa:'executar'}` no QStash. Repetir é seguro (`ja_confirmada` republica).
+  - **`{etapa:'retomar', operacao_id}`** (HTTP, só admin/suporte full, org-scoped): só `acao='reajustar'` em `executando` (senão 404/400). Republica `{etapa:'executar'}` com `deduplicationId` novo `retomar_<op>_<minuto>` — o `executar_<op>_0` estável engoliria a retomada. Uso: a mensagem `conferir` esgotou os retries e há item `conferindo` vencido ou `enviando` parado (não há varredura automática); botão **Retomar** no detalhe da operação (aba Operações) aparece com item `conferindo` vencido há > 2 min ou `enviando` parado > 2 min.
   - **`executar`/`conferir`** (QStash): mesmo laço; claim por item via `reajuste_reivindicar`; escrita só-preço no ML (Legacy `PUT variations[{id,price}]` com todas as variações; plano/UP `PUT {price}`) e confirmação por GET; `etapa` `escrita_pedida` → `ml_confirmado` e persistência por `reajuste_persistir`. Resultado desconhecido do ML = item `conferindo` (mantém a reserva, não expira).
 - **publicar-familias**: claim por `familia_reservar_publicacao`; família de produto com reajuste ativo volta em `recusadas` (`{familia_id, motivo}`) sem alteração; se nada foi enfileirado e houve recusa, **409**.
 - **update-familia-ml / publish-familia-ml / publicar-split-ml**: `exigirSemReajusteAtivo` (`_shared/publicacao/guard-reajuste.ts`) — reajuste ativo = 400 definitivo; erro da RPC `reajuste_ativo_produto` = fail-closed, retentável.

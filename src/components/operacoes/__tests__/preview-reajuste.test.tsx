@@ -158,6 +158,30 @@ describe('PreviewReajuste', () => {
     expect(confirmarMut).toHaveBeenCalledWith(expect.objectContaining({ operacao_id: 'OP_NOVO' }));
   });
 
+  it('re-preview falho: botão desabilitado, input volta ao preço do rascunho válido e a edição falha não vaza', async () => {
+    montar([item('MLB1'), item('MLB4')]);
+    const input = await screen.findByLabelText('Novo preço de MLB1');
+    previewMut.mockRejectedValueOnce(new ErroOperacao('Falha de rede'));
+    await userEvent.clear(input);
+    await userEvent.type(input, '12,50{Enter}');
+    expect(await screen.findByText(/o preço voltou ao do preview válido/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Novo preço de MLB1')).toHaveValue('11,00');
+    expect(botao()).toBeDisabled();
+    await userEvent.click(botao());
+    expect(confirmarMut).not.toHaveBeenCalled();
+
+    // Outra edição depois da falha: não carrega o 12,50 que nunca virou rascunho.
+    previewMut.mockResolvedValueOnce({ operacao_id: 'OP2', itens: [item('MLB1'), item('MLB4', { preco: 15 })], expira_em: expira() });
+    const input4 = screen.getByLabelText('Novo preço de MLB4');
+    await userEvent.clear(input4);
+    await userEvent.type(input4, '15{Enter}');
+    await waitFor(() => expect(previewMut).toHaveBeenLastCalledWith({ ml_item_ids: ['MLB1', 'MLB4'], ajuste, precos: { MLB4: 15 } }));
+    await waitFor(() => expect(botao()).toBeEnabled());
+    expect(screen.queryByText(/o preço voltou ao do preview válido/)).not.toBeInTheDocument();
+    await userEvent.click(botao());
+    expect(confirmarMut).toHaveBeenCalledWith(expect.objectContaining({ operacao_id: 'OP2' }));
+  });
+
   it('membro comum vê o preview mas não executa', async () => {
     vi.mocked(usePodeExecutarOperacao).mockReturnValue(false);
     montar([item('MLB1')]);

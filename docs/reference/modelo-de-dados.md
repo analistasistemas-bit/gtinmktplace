@@ -954,7 +954,8 @@ saída), `atualizado_em`. Índice `(org_id)`. Índice único de anti-duplicidade
 o mesmo anúncio não fica em andamento em duas operações da mesma promoção. `promocao_id` é
 nullable (pausar/reativar); como NULL não colide nesse índice, as operações sem promoção têm o
 próprio índice único parcial `operacoes_massa_itens_status_unico`
-`(org_id, ml_item_id) where promocao_id is null and status in ('pendente','enviando')`.
+`(org_id, ml_item_id) where promocao_id is null and status in ('pendente','enviando','conferindo')`
+(`conferindo` desde o reajuste, ADR-0178).
 Em pausar/reativar `saida_pedida_em` = "escrita pedida ao ML em" e `conferencias` = tentativas
 retentáveis; `semaforo` é `null`.
 
@@ -972,7 +973,7 @@ RLS nas duas tabelas: `select` por `org_id = current_org_id()`; escrita só por 
 
 - `operacoes_massa`: `acao` aceita `reajustar` (sem `promocao_id`/`promocao_tipo`, como pausar/reativar); `status` ganha `rascunho` (preview gravado, sem efeito até confirmar); nova coluna `expira_em`.
 - `operacoes_massa_itens`: `status` ganha `rascunho` e `conferindo` (resultado desconhecido do ML; mantém a reserva). Colunas novas: `preco_anterior`, `etapa` (`escrita_pedida|ml_confirmado`), `confirmado_sem_dado`, `incluido` (default true), `avaliacao` jsonb, `estado_anterior` jsonb, `variacoes_ml` jsonb, `variacao_ids` uuid[], `codigo_pai`. `operacoes_massa_itens_status_unico` passa a cobrir `conferindo`; índice `operacoes_massa_itens_reajuste_ativo (org_id, codigo_pai)` (parcial, em andamento).
-- RPCs (todas `service_role` only; identidade de serialização `(org_id, codigo_pai)`, locks produto → MLB): `reajuste_codigo_pai(p_org, p_ml_item)`, `reajuste_ativo_produto(p_org, p_codigo_pai)`, `reajuste_trava_produto`, `reajuste_reivindicar(p_org, p_operacao, p_ml_item)`, `reajuste_variacoes_do_mlb(p_org, p_codigo_pai, p_ml_item, p_ml_variation_ids)`, `reajuste_confirmar(p_org, p_operacao, p_confirmacoes)`, `reajuste_persistir(p_org, p_operacao, p_ml_item, numeric, jsonb)`, `familia_reservar_publicacao(p_org, p_familia_ids, p_operacao)`, `familia_reservar_migracao_pxv(p_org, p_codigo_pai, p_campos)`. `operacoes_massa_reivindicar` foi substituída (`aderir` ganha lock do MLB e a barreira do reajuste).
+- RPCs (todas `service_role` only; identidade de serialização `(org_id, codigo_pai)`, locks produto → MLB): `reajuste_codigo_pai(p_org, p_ml_item)`, `reajuste_ativo_produto(p_org, p_codigo_pai)`, `reajuste_trava_produto`, `reajuste_reivindicar(p_org, p_operacao, p_ml_item)` (item com `etapa` = retomada: trava pelo `codigo_pai` gravado no item e nunca recusa por "não encontrado" — o vínculo pode ter sido removido depois da escrita no ML), `reajuste_variacoes_do_mlb(p_org, p_codigo_pai, p_ml_item, p_ml_variation_ids)`, `reajuste_confirmar(p_org, p_operacao, p_confirmacoes)`, `reajuste_persistir(p_org, p_operacao, p_ml_item, numeric, jsonb)`, `familia_reservar_publicacao(p_org, p_familia_ids, p_operacao)`, `familia_reservar_migracao_pxv(p_org, p_codigo_pai, p_campos)`. `operacoes_massa_reivindicar` foi substituída (`aderir` ganha lock do MLB e a barreira do reajuste).
 - Efeito em `variacoes`: confirmado no ML → `preco_publicacao` = novo, `preco_editado_pelo_operador = true`, `preco_publicado_ml` = confirmado.
 
 ## Tráfego e oferta (ADR-0172, Fatia 2b)

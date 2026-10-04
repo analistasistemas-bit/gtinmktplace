@@ -11,9 +11,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
 import { formatarNomeProduto } from '@/lib/texto';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
-import { useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
+import { useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, useRetomarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
-import { ROTULO_STATUS, inversa, itensRevertiveis, ehAcaoStatus, tituloOperacao, totalDoTitulo, type AcaoOperacao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
+import { ROTULO_STATUS, inversa, itensRevertiveis, ehAcaoStatus, precisaRetomar, tituloOperacao, totalDoTitulo, type AcaoOperacao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
 import type { ItemPromocao } from '@/lib/promocoes';
 import { PreviewOperacao } from '@/components/promocoes/preview-operacao';
 import { PreviewStatus } from './preview-status';
@@ -172,6 +172,18 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
     [opAberta, itensOp.data, central.data],
   );
 
+  const retomar = useRetomarOperacao();
+  const podeRetomar = podeExecutar && !!opAberta && precisaRetomar(opAberta, itensOp.data ?? [], Date.now());
+  async function retomarOperacao() {
+    if (!opAberta) return;
+    try {
+      await retomar.mutateAsync(opAberta.id);
+      toast.success('Operação retomada');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Não foi possível retomar a operação.');
+    }
+  }
+
   function nomeDe(id: string | null) {
     return (id && nomes?.get(id)) || id || '—';
   }
@@ -257,6 +269,12 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
                   );
                 })}
               </ul>
+              {podeRetomar && (
+                <div className="flex items-center justify-between gap-3 border-t p-4">
+                  <p className="text-sm text-muted-foreground">A conferência parou de rodar.</p>
+                  <Button variant="outline" onClick={retomarOperacao} disabled={retomar.isPending}>Retomar</Button>
+                </div>
+              )}
               {podeReverter && !carregandoRevertida && (
                 <div className="border-t p-4">
                   {revertidaAndamento ? (

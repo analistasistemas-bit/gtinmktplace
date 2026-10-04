@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ListaOperacoes } from '../lista-operacoes';
-import { useCriarOperacao, useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
+import { useCriarOperacao, useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, useRetomarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
 import type { CorProjetada, ItemPromocao } from '@/lib/promocoes';
@@ -14,7 +14,7 @@ vi.mock('@/hooks/useOperacoes', async () => {
   const actual = await vi.importActual<typeof import('@/hooks/useOperacoes')>('@/hooks/useOperacoes');
   return {
     ...actual, useOperacoes: vi.fn(), useItensOperacao: vi.fn(), usePodeExecutarOperacao: vi.fn(),
-    useCriarOperacao: vi.fn(), useOperacao: vi.fn(), useOperacaoPorOrigem: vi.fn(),
+    useCriarOperacao: vi.fn(), useOperacao: vi.fn(), useOperacaoPorOrigem: vi.fn(), useRetomarOperacao: vi.fn(),
   };
 });
 
@@ -68,10 +68,13 @@ function itemCentral(over: Partial<ItemPromocao> = {}): ItemPromocao {
 }
 
 const mutateAsync = vi.fn();
+const retomarMut = vi.fn();
 
 beforeEach(() => {
   mutateAsync.mockReset().mockResolvedValue({ operacao_id: 'op-nova' });
   vi.mocked(useCriarOperacao).mockReturnValue({ mutateAsync, isPending: false } as never);
+  retomarMut.mockReset().mockResolvedValue(undefined);
+  vi.mocked(useRetomarOperacao).mockReturnValue({ mutateAsync: retomarMut, isPending: false } as never);
   vi.mocked(usePodeExecutarOperacao).mockReturnValue(true);
   vi.mocked(useNomesUsuarios).mockReturnValue({ data: new Map([['U1', 'Diego']]) } as never);
   vi.mocked(useItensPromocao).mockReturnValue({ data: [itemCentral()] } as never);
@@ -412,6 +415,36 @@ describe('ListaOperacoes', () => {
       expect(screen.getByText(/R\$\s10,00 → R\$\s11,00/)).toBeInTheDocument();
       await user.click(screen.getByRole('button', { name: 'Reverter' }));
       expect(screen.getByTestId('preview-reajuste')).toHaveTextContent('{"origem_id":"OP1"}');
+    });
+
+    it('Retomar: conferindo vencido há > 2 min → botão chama a edge e avisa', async () => {
+      const user = userEvent.setup();
+      const vencido = new Date(Date.now() - 5 * 60_000).toISOString();
+      vi.mocked(useOperacoes).mockReturnValue({ data: [reaj()], isLoading: false } as never);
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'conferindo', proxima_conferencia: vencido })] } as never);
+      renderLista();
+      await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
+      await user.click(screen.getByRole('button', { name: 'Retomar' }));
+      expect(retomarMut).toHaveBeenCalledWith('OP1');
+      await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Operação retomada'));
+    });
+
+    it('Retomar: agendado no futuro, operação concluída ou sem permissão → sem botão', async () => {
+      const user = userEvent.setup();
+      const futuro = new Date(Date.now() + 5 * 60_000).toISOString();
+      const vencido = new Date(Date.now() - 5 * 60_000).toISOString();
+      vi.mocked(useOperacoes).mockReturnValue({ data: [reaj()], isLoading: false } as never);
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'conferindo', proxima_conferencia: futuro })] } as never);
+      const { unmount } = renderLista();
+      await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
+      expect(screen.queryByRole('button', { name: 'Retomar' })).not.toBeInTheDocument();
+      unmount();
+
+      vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'conferindo', proxima_conferencia: vencido })] } as never);
+      vi.mocked(usePodeExecutarOperacao).mockReturnValue(false);
+      renderLista();
+      await user.click(screen.getByText('Reajustar preço de 2 anúncios'));
+      expect(screen.queryByRole('button', { name: 'Retomar' })).not.toBeInTheDocument();
     });
 
     it('sem item aplicado não há Reverter', async () => {

@@ -89,6 +89,10 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
   // Só a resposta do pedido mais recente vale: duas edições rápidas não podem ser sobrescritas pela mais lenta.
   const ultimoPedido = useRef(0);
   const respAtual = useRef<RespostaPreviewReajuste | null>(null);
+  // Preview que falha não pode deixar a tela com um preço e o rascunho válido com outro: os preços editados
+  // voltam aos do rascunho válido e o input remonta (versaoInput na key) com o preço dele.
+  const precosValidos = useRef<Record<string, number>>({});
+  const [versaoInput, setVersaoInput] = useState(0);
   async function pedir(p: Record<string, number>) {
     const id = ++ultimoPedido.current;
     setErroPreview(null);
@@ -101,10 +105,13 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
       const mesmoPreco = new Set(r.itens.filter((i) => antes.get(i.ml_item_id) === i.preco).map((i) => i.ml_item_id));
       setIncluir((s) => Object.fromEntries(Object.entries(s).filter(([ml, v]) => v === false && mesmoPreco.has(ml))));
       respAtual.current = r;
+      precosValidos.current = p;
       setResp(r); setConfVermelho(false); setConfSemDado(false); setRecusas([]);
     } catch (e) {
       if (id !== ultimoPedido.current) return;
       setErroPreview(e instanceof ErroOperacao ? e : new ErroOperacao('Não foi possível calcular o preview.'));
+      setPrecos(precosValidos.current);
+      setVersaoInput((v) => v + 1);
     }
   }
   // ponytail: ref evita 2 rascunhos no StrictMode (o efeito roda 2× em dev).
@@ -134,7 +141,7 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
   const expirado = restanteS === 0;
 
   const ocupado = preview.isPending || confirmar.isPending;
-  const podeConfirmar = !!resp?.operacao_id && incluidos.length > 0 && !expirado && !ocupado
+  const podeConfirmar = !!resp?.operacao_id && incluidos.length > 0 && !expirado && !ocupado && !erroPreview
     && (!temVermelho || confVermelho) && (!temSemDado || confSemDado);
 
   function editarPreco(i: ItemPreview, texto: string) {
@@ -193,6 +200,7 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
           {erroPreview && (
             <div className="rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm" role="alert">
               <p className="font-medium text-danger">{erroPreview.message}</p>
+              {resp && <p>Não foi possível recalcular — o preço voltou ao do preview válido.</p>}
               {erroPreview.itens?.map((r) => <p key={r.ml_item_id}>{r.ml_item_id}: {r.motivo}</p>)}
               <Button size="sm" variant="outline" className="mt-2" onClick={() => void pedir(precos)}>Tentar de novo</Button>
             </div>
@@ -247,7 +255,7 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
                         <span className="font-medium tabular-nums">{fmtBRL(i.preco)}</span>
                       ) : (
                         <Input
-                          key={`${resp?.operacao_id}-${i.preco}`}
+                          key={`${resp?.operacao_id}-${i.preco}-${versaoInput}`}
                           defaultValue={formatarInput(i.preco)} inputMode="decimal" disabled={ocupado}
                           aria-label={`Novo preço de ${i.ml_item_id}`} className="h-8 w-28"
                           onBlur={(e) => editarPreco(i, e.target.value)}

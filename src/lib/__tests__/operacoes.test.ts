@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  inversa, itensRevertiveis, montarPreview, motivoNaoSelecionavel, parsePreco, precisaConfirmarRisco, semaforoNoPreco,
+  inversa, itensRevertiveis, montarPreview, motivoNaoSelecionavel, parsePreco, precisaConfirmarRisco, precisaRetomar, semaforoNoPreco,
   separarSelecao, tituloOperacao, totalDoTitulo,
 } from '../operacoes';
 import type { CorProjetada, ItemPromocao } from '../promocoes';
@@ -170,5 +170,28 @@ describe('reajuste de preço (I5)', () => {
       { ml_item_id: 'C', status: 'mudou' as const }, { ml_item_id: 'D', status: 'rascunho' as const },
     ];
     expect(itensRevertiveis('reajustar', itens)).toEqual(['A']);
+  });
+});
+
+describe('precisaRetomar', () => {
+  const agora = Date.UTC(2026, 9, 4, 12, 0, 0);
+  const iso = (msAtras: number) => new Date(agora - msAtras).toISOString();
+  const reaj = { acao: 'reajustar', status: 'executando' };
+  const it_ = (status: string, prox: string | null, atu: string) => ({ status, proxima_conferencia: prox, atualizado_em: atu });
+
+  it('conferindo vencido há mais de 2 min ou enviando parado → retomar', () => {
+    expect(precisaRetomar(reaj, [it_('conferindo', iso(3 * 60_000), iso(0))], agora)).toBe(true);
+    expect(precisaRetomar(reaj, [it_('enviando', null, iso(3 * 60_000))], agora)).toBe(true);
+  });
+  it('dentro da folga, agendado no futuro ou terminal → não', () => {
+    expect(precisaRetomar(reaj, [it_('conferindo', iso(30_000), iso(0))], agora)).toBe(false);
+    expect(precisaRetomar(reaj, [it_('conferindo', iso(-60_000), iso(0))], agora)).toBe(false);
+    expect(precisaRetomar(reaj, [it_('enviando', null, iso(60_000))], agora)).toBe(false);
+    expect(precisaRetomar(reaj, [it_('aplicado', null, iso(9e6))], agora)).toBe(false);
+  });
+  it('só reajuste executando', () => {
+    const parado = [it_('conferindo', iso(9e6), iso(9e6))];
+    expect(precisaRetomar({ acao: 'reajustar', status: 'concluida' }, parado, agora)).toBe(false);
+    expect(precisaRetomar({ acao: 'pausar', status: 'executando' }, parado, agora)).toBe(false);
   });
 });

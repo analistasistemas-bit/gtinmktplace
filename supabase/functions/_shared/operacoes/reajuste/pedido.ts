@@ -76,7 +76,25 @@ export function respostaConfirmar(r: string):
   return { publicar: false, status: 400, corpo: { erro: 'Nada a executar neste preview — gere de novo.' } };
 }
 
-const STATUS_RASCUNHO = { elegivel: 'rascunho', fora: 'bloqueado', sem_alteracao: 'ja_estava' } as const;
+export const lerRetomar = (x: unknown): { operacao_id: string } | null => {
+  const b = x as Record<string, unknown> | null;
+  return b && ehUuid(b.operacao_id) ? { operacao_id: b.operacao_id } : null;
+};
+
+/** Retomar (C3): só reajuste `executando` da org (null = não achou nesta org). */
+export function decidirRetomar(op: { acao: string; status: string } | null):
+  | { ok: true } | { ok: false; status: 400 | 404; erro: string } {
+  if (!op) return { ok: false, status: 404, erro: 'Operação não encontrada.' };
+  if (op.acao !== 'reajustar' || op.status !== 'executando') {
+    return { ok: false, status: 400, erro: 'Só um reajuste em execução pode ser retomado.' };
+  }
+  return { ok: true };
+}
+
+/** Id novo por minuto: o `executar_<op>_0` estável engoliria a retomada; 2 cliques no mesmo minuto viram 1. */
+export const idRetomada = (operacaoId: string, agoraMs: number) => `retomar_${operacaoId}_${Math.floor(agoraMs / 60_000)}`;
+
+const STATUS_RASCUNHO ={ elegivel: 'rascunho', fora: 'bloqueado', sem_alteracao: 'ja_estava' } as const;
 
 /** Linhas do rascunho (sem operacao_id/org_id). `estado_anterior` = `restaurar` (formato único, lido pelo executor). */
 export function linhasDoRascunho(itens: ItemPreview[]) {

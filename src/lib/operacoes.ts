@@ -107,6 +107,19 @@ export function tituloOperacao(
   return `${op.acao === 'aderir' ? 'Aderir à' : 'Sair de'} ${nome}`;
 }
 
+const PARADO_MS = 2 * 60_000; // mesmo limite de `enviando` parado na RPC reajuste_reivindicar
+/** Retomar (C3): reajuste executando com item `conferindo` vencido ou `enviando` parado há mais de 2 min — sinal de
+ *  que a mensagem QStash esgotou os retries. ponytail: a folga de 2 min no `conferindo` evita o botão piscar no
+ *  intervalo normal entre `proxima_conferencia` e a entrega da mensagem agendada. */
+export function precisaRetomar(
+  op: { acao: string; status: string },
+  itens: { status: string; proxima_conferencia: string | null; atualizado_em: string }[], agora: number,
+): boolean {
+  if (op.acao !== 'reajustar' || op.status !== 'executando') return false;
+  const antes = (iso: string | null) => iso != null && Date.parse(iso) < agora - PARADO_MS;
+  return itens.some((i) => (i.status === 'conferindo' && antes(i.proxima_conferencia)) || (i.status === 'enviando' && antes(i.atualizado_em)));
+}
+
 /** N do título: reajuste conta só o que entrou (`incluido`) — fora, sem alteração e desmarcado no preview não. */
 export function totalDoTitulo(op: { acao: string; itens: { incluido?: boolean }[] }): number {
   return op.acao === 'reajustar' ? op.itens.filter((i) => i.incluido !== false).length : op.itens.length;

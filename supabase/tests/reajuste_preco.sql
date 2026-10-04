@@ -410,6 +410,38 @@ select pg_temp.ok(public.reajuste_codigo_pai(:org, 'MLBU1') = '09310005', 'resol
 select pg_temp.ok((select count(*) = 1 and bool_and(variacao_id = '93000000-0000-0000-0000-000000000431') from public.reajuste_variacoes_do_mlb(:org, '09310005', 'MLBU1', '{}')), '(l) UP → variacao_id do item');
 select pg_temp.ok((select count(*) = 1 and bool_and(variacao_id = '93000000-0000-0000-0000-000000000432') from public.reajuste_variacoes_do_mlb(:org, '09310005', 'MLBU2', '{}')), '(l) UP fallback por sku');
 
+-- (o) vínculo removido (Remover: familias.ml_item_id zerado, anuncios_externos apagado) com o item em retomada.
+-- Com etapa (ML já escrito) → claim ok pelo codigo_pai do item e persistir ok; sem etapa → recusa.
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, status, origem, chave_cadastro, ml_item_id, publicado_em) values
+  ('93000000-0000-0000-0000-000000000341', '93000000-0000-0000-0000-000000000201', :usr, :org, '09310077', 'P7', 'CREATE', 'publicado', 'nacional', gen_random_uuid(), 'MLBR', now()),
+  ('93000000-0000-0000-0000-000000000342', '93000000-0000-0000-0000-000000000201', :usr, :org, '09310078', 'P8', 'CREATE', 'publicado', 'nacional', gen_random_uuid(), 'MLBS', now());
+insert into public.variacoes (id, familia_id, user_id, org_id, codigo, nome, preco, preco_publicacao, preco_editado_pelo_operador) values
+  ('93000000-0000-0000-0000-000000000441', '93000000-0000-0000-0000-000000000341', :usr, :org, '09310071', 'U', 10, 50, false);
+insert into public.anuncios_externos (id, user_id, org_id, canal, codigo_pai, particao, item_externo_id) values
+  ('93000000-0000-0000-0000-000000000641', :usr, :org, 'mercado_livre', '09310077', 0, 'MLBR');
+insert into public.operacoes_massa (id, org_id, acao, status) values ('93000000-0000-0000-0000-000000000509', :org, 'reajustar', 'executando');
+insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, etapa, proxima_conferencia, preco, codigo_pai, variacao_ids) values
+  ('93000000-0000-0000-0000-000000000509', :org, 'MLBR', 'conferindo', 'ml_confirmado', now() - interval '1 minute', 55, '09310077',
+   array['93000000-0000-0000-0000-000000000441']::uuid[]),
+  ('93000000-0000-0000-0000-000000000509', :org, 'MLBS', 'pendente', null, null, 66, '09310078', null);
+update public.familias set ml_item_id = null where id in ('93000000-0000-0000-0000-000000000341', '93000000-0000-0000-0000-000000000342');
+delete from public.anuncios_externos where id = '93000000-0000-0000-0000-000000000641';
+select pg_temp.ok(public.reajuste_codigo_pai(:org, 'MLBR') is null and public.reajuste_codigo_pai(:org, 'MLBS') is null, '(o) vínculos removidos');
+select pg_temp.ok(public.reajuste_reivindicar(:org, '93000000-0000-0000-0000-000000000509', 'MLBR') = 'ok', '(o) com etapa → ok');
+select pg_temp.ok((select status = 'enviando' and etapa = 'ml_confirmado' and codigo_pai = '09310077' from public.operacoes_massa_itens
+                   where operacao_id = '93000000-0000-0000-0000-000000000509' and ml_item_id = 'MLBR'), '(o) enviando, etapa e codigo_pai preservados');
+select pg_temp.ok(public.reajuste_persistir(:org, '93000000-0000-0000-0000-000000000509', 'MLBR', 55, jsonb_build_array(
+  jsonb_build_object('variacao_id', '93000000-0000-0000-0000-000000000441', 'esperado', '{"preco_publicacao":50,"preco_editado_pelo_operador":false}'::jsonb,
+                     'novo', '{"preco_publicacao":55,"preco_editado_pelo_operador":true}'::jsonb))) = 'ok', '(o) persistir ok');
+select pg_temp.ok((select preco_publicacao = 55 and preco_editado_pelo_operador and preco_publicado_ml = 55 from public.variacoes
+                   where id = '93000000-0000-0000-0000-000000000441'), '(o) variação gravada');
+select pg_temp.ok((select status = 'aplicado' from public.operacoes_massa_itens
+                   where operacao_id = '93000000-0000-0000-0000-000000000509' and ml_item_id = 'MLBR'), '(o) item aplicado');
+select pg_temp.ok(public.reajuste_reivindicar(:org, '93000000-0000-0000-0000-000000000509', 'MLBS') = 'Anúncio não encontrado nesta organização', '(o) sem etapa → recusa');
+select pg_temp.ok((select status = 'bloqueado' and mensagem = 'Anúncio não encontrado nesta organização' from public.operacoes_massa_itens
+                   where operacao_id = '93000000-0000-0000-0000-000000000509' and ml_item_id = 'MLBS'), '(o) sem etapa → bloqueado');
+select pg_temp.ok(public.reajuste_ativo_produto(:org, '09310078') is null, '(o) reserva solta');
+
 -- reajuste_ativo_produto.
 select pg_temp.ok(public.reajuste_ativo_produto(:org, '09310001') is null, 'ativo: nenhum');
 update public.operacoes_massa_itens set status = 'conferindo' where operacao_id = :op1 and ml_item_id = 'MLBX';

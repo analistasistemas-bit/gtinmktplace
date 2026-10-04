@@ -1,6 +1,7 @@
 // ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART, pausar/reativar e reajustar preço — ADR-0178). Modos:
 //  - Usuário (admin ou suporte full): cria a operação a partir da Central e publica { etapa: 'executar' }.
-//  - Usuário, reajuste: { etapa: 'preview' } (qualquer membro) grava o rascunho; { etapa: 'confirmar' } (admin/suporte full) publica.
+//  - Usuário, reajuste: { etapa: 'preview' } (qualquer membro) grava o rascunho; { etapa: 'confirmar' } (admin/suporte full) publica;
+//    { etapa: 'retomar' } (admin/suporte full) republica a execução de um reajuste executando parado (dedup novo).
 //  - QStash { etapa: 'executar' | 'conferir', operacao_id }: executor com continuação e conferência da saída.
 // Escrita no ML só em /seller-promotions (ml.ts); claim por item garante que reentrega não escreve duas vezes.
 import { corsHeaders, handleOptions } from '../_shared/cors.ts';
@@ -27,7 +28,9 @@ import { SemAcessoPromocoes } from '../_shared/promocoes/ml.ts';
 import { executarReajuste, type OperacaoReajusteRow } from '../_shared/operacoes/reajuste/executar.ts';
 import { montarPreview } from '../_shared/operacoes/reajuste/preview.ts';
 import { etapaReajuste } from '../_shared/operacoes/reajuste/etapa.ts';
-import { lerConfirmar, lerPreview, linhasDoRascunho, respostaConfirmar } from '../_shared/operacoes/reajuste/pedido.ts';
+import {
+  decidirRetomar, idRetomada, lerConfirmar, lerPreview, lerRetomar, linhasDoRascunho, respostaConfirmar,
+} from '../_shared/operacoes/reajuste/pedido.ts';
 import { depsLacoReajuste, depsPreview, depsReajuste, ForaDaOrg } from '../_shared/operacoes/reajuste/deps.ts';
 
 const EXECUCAO = { limiteMs: 90_000, lote: 20, maxItens: 100 };
@@ -324,6 +327,7 @@ function usuario(admin: Admin, req: Request, body: string): Promise<Response> {
   try { bruto = JSON.parse(body); } catch { /* criar responde */ }
   if (bruto?.etapa === 'preview') return previewReajuste(admin, req, bruto);
   if (bruto?.etapa === 'confirmar') return confirmarReajuste(admin, req, bruto);
+  if (bruto?.etapa === 'retomar') return retomarReajuste(admin, req, bruto);
   return criar(admin, req, body);
 }
 
@@ -412,6 +416,39 @@ async function confirmarReajuste(admin: Admin, req: Request, bruto: unknown): Pr
     console.error('[operacoes-massa] publicar reajuste', { operacao_id: pedido.operacao_id, erro: e instanceof Error ? e.message : String(e) });
     await auditarOperacaoSuporte(admin, ctx, alvo, 'failed');
     return json({ erro: 'Não foi possível iniciar a execução. Tente confirmar de novo.' }, 500);
+  }
+  await auditarOperacaoSuporte(admin, ctx, alvo, 'succeeded');
+  return json({ operacao_id: pedido.operacao_id });
+}
+
+/** Retomada manual (C3): a mensagem QStash de conferência esgotou os retries e há item `conferindo` vencido ou
+ *  `enviando` parado. Republica `executar` com dedup novo; o claim por item impede escrita dupla. */
+async function retomarReajuste(admin: Admin, req: Request, bruto: unknown): Promise<Response> {
+  const ctx = await autenticar(req);
+  if (ctx instanceof Response) return ctx;
+  const { orgId } = ctx;
+  if (!podeExecutar(ctx)) {
+    await auditarOperacaoSuporte(admin, ctx, { type: 'org', id: orgId }, 'denied');
+    return json({ erro: SO_ADMIN }, 403);
+  }
+  const pedido = lerRetomar(bruto);
+  if (!pedido) return json({ erro: 'Pedido inválido.' }, 400);
+  const { data, error } = await admin.from('operacoes_massa').select('acao, status')
+    .eq('org_id', orgId).eq('id', pedido.operacao_id).maybeSingle();
+  if (error) throw new Error(`operacoes_massa: ${error.message}`);
+  const d = decidirRetomar(data);
+  if (!d.ok) return json({ erro: d.erro }, d.status);
+
+  const alvo = { type: 'operacao_massa', id: pedido.operacao_id } as const;
+  try {
+    await qstashClient().publishJSON({
+      url: urlOperacoes(), body: { etapa: 'executar', operacao_id: pedido.operacao_id }, retries: 3,
+      deduplicationId: dedup(idRetomada(pedido.operacao_id, Date.now())),
+    });
+  } catch (e) {
+    console.error('[operacoes-massa] retomar', { operacao_id: pedido.operacao_id, erro: e instanceof Error ? e.message : String(e) });
+    await auditarOperacaoSuporte(admin, ctx, alvo, 'failed');
+    return json({ erro: 'Não foi possível retomar. Tente de novo.' }, 500);
   }
   await auditarOperacaoSuporte(admin, ctx, alvo, 'succeeded');
   return json({ operacao_id: pedido.operacao_id });

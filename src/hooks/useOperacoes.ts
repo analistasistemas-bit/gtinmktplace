@@ -206,6 +206,18 @@ export function useConfirmarReajuste() {
   });
 }
 
+/** Retomar (C3): republica a execução de um reajuste executando parado (admin/suporte full; a edge revalida). */
+export function useRetomarOperacao() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (operacao_id: string) => {
+      const { error } = await supabase.functions.invoke('operacoes-massa', { body: { etapa: 'retomar', operacao_id } });
+      if (error) throw await lerErroEdge(error, 'Não foi possível retomar a operação.');
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK_OPERACOES }); },
+  });
+}
+
 /** Ajuste 10: quem pode Executar/Reverter — mesmo predicado de `configuracoes/permissoes.ts`
  *  (`podeEditarConfig`): em sessão de suporte vale só o escopo `full` (mesmo super-admin, que
  *  carrega `profiles.is_admin = true`, fica de fora em `read`); fora de suporte vale `isAdmin`.

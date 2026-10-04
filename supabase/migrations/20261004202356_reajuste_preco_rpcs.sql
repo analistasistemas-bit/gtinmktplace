@@ -81,8 +81,15 @@ declare
   v_origem uuid;
   v_motivo text;
   v_e jsonb;
+  v_etapa text;
 begin
-  v_pai := public.reajuste_codigo_pai(p_org, p_ml_item);
+  -- Leitura sem lock (a ordem é produto → MLB → item). Retomada (etapa preenchida): o ML já pode ter o preço
+  -- novo, então o produto é o codigo_pai gravado no item — o vínculo pode ter sido removido depois (Remover).
+  select i.codigo_pai, i.etapa into v_pai, v_etapa from public.operacoes_massa_itens i
+  where i.org_id = p_org and i.operacao_id = p_operacao and i.ml_item_id = p_ml_item;
+  if v_etapa is null or v_pai is null then
+    v_pai := public.reajuste_codigo_pai(p_org, p_ml_item);
+  end if;
   if v_pai is not null then
     perform public.reajuste_trava_produto(p_org, v_pai);
   end if;
@@ -98,9 +105,12 @@ begin
     return 'ocupado';
   end if;
 
-  if v_pai is null then
+  if v_it.etapa is not null then
+    -- A etapa apareceu entre a leitura e o lock: o lock foi tirado com o produto resolvido; tenta de novo.
+    if v_it.codigo_pai is not null and v_it.codigo_pai is distinct from v_pai then return 'ocupado'; end if;
+  elsif v_pai is null then
     v_motivo := 'Anúncio não encontrado nesta organização';
-  elsif v_it.etapa is null then
+  else
     -- Recusas só antes da escrita: retomada (etapa preenchida) segue, a escrita já aconteceu.
     if exists (select 1 from public.familias f
                where f.org_id = p_org and f.codigo_pai = v_pai and f.status = 'publicando') then
@@ -141,7 +151,7 @@ begin
   end if;
 
   update public.operacoes_massa_itens i
-  set status = 'enviando', codigo_pai = v_pai, atualizado_em = now()
+  set status = 'enviando', codigo_pai = coalesce(v_pai, i.codigo_pai), atualizado_em = now()
   where i.org_id = p_org and i.operacao_id = p_operacao and i.ml_item_id = p_ml_item;
   return 'ok';
 end;

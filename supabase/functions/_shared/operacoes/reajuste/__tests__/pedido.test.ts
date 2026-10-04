@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { lerConfirmar, lerPreview, linhasDoRascunho, MSG_CONFIRMAR_RISCO, MSG_EXPIRADO, respostaConfirmar } from '../pedido.ts';
+import {
+  decidirRetomar, idRetomada, lerConfirmar, lerPreview, lerRetomar, linhasDoRascunho, MSG_CONFIRMAR_RISCO, MSG_EXPIRADO, respostaConfirmar,
+} from '../pedido.ts';
 import type { ItemPreview } from '../preview.ts';
 
 const U = '11111111-2222-4333-8444-555555555555';
@@ -70,5 +72,28 @@ describe('linhasDoRascunho', () => {
     expect(el).toMatchObject({ status: 'rascunho', estado_anterior: base.restaurar, codigo_pai: 'P1', semaforo: 'vermelho', incluido: false, preco: 110, preco_anterior: 100, variacao_ids: ['v1'] });
     expect(fora).toMatchObject({ status: 'bloqueado', mensagem: 'Kit', preco: null, codigo_pai: 'P1', semaforo: null });
     expect(igual).toMatchObject({ status: 'ja_estava', codigo_pai: 'P1' });
+  });
+});
+
+describe('retomar', () => {
+  it('lê só operacao_id uuid', () => {
+    expect(lerRetomar({ etapa: 'retomar', operacao_id: U })).toEqual({ operacao_id: U });
+    expect(lerRetomar({ etapa: 'retomar', operacao_id: 'x' })).toBeNull();
+    expect(lerRetomar(null)).toBeNull();
+  });
+
+  it('só reajuste executando da org', () => {
+    expect(decidirRetomar({ acao: 'reajustar', status: 'executando' })).toEqual({ ok: true });
+    expect(decidirRetomar(null)).toMatchObject({ ok: false, status: 404 });
+    expect(decidirRetomar({ acao: 'reajustar', status: 'concluida' })).toMatchObject({ ok: false, status: 400 });
+    expect(decidirRetomar({ acao: 'reajustar', status: 'rascunho' })).toMatchObject({ ok: false, status: 400 });
+    expect(decidirRetomar({ acao: 'pausar', status: 'executando' })).toMatchObject({ ok: false, status: 400 });
+  });
+
+  it('dedup novo por minuto, nunca o executar_<op>_0', () => {
+    const t = Date.UTC(2026, 9, 4, 12, 0, 10);
+    expect(idRetomada(U, t)).toBe(idRetomada(U, t + 40_000));
+    expect(idRetomada(U, t)).not.toBe(idRetomada(U, t + 60_000));
+    expect(idRetomada(U, t)).toMatch(/^retomar_/);
   });
 });
