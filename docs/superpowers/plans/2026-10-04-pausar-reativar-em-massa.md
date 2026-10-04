@@ -246,7 +246,9 @@ export function decidirStatus(acao: AcaoStatus, atual: StatusAnuncioCanal | null
       agendarConferencia(delaySeg: number): Promise<void>;
       concluir(): Promise<void>;
     }
-    export interface Fatal { eh(e: unknown): boolean; mensagem: string }
+    /** `encerrar` (opcional): encerra TODOS os itens não terminais da operação (inclusive `enviando` recente) e o
+     *  laço conclui sem continuação. Sem ele, comportamento atual da promoção (varre `itensPendentes`). */
+    export interface Fatal { eh(e: unknown): boolean; mensagem: string; encerrar?: (mensagem: string) => Promise<void> }
     export class FalhaPosEscrita extends Error { constructor(readonly causa: unknown) }
     export const gravarPos: (p: Promise<void>) => Promise<void>;
     export const mensagemDe: (e: unknown) => string;
@@ -268,6 +270,7 @@ export function decidirStatus(acao: AcaoStatus, atual: StatusAnuncioCanal | null
       lerStatus(mlItemId: string): Promise<StatusAnuncioCanal | null>;
       migracaoPxv(mlItemId: string): Promise<string | null>;
       atualizarStatus(mlItemId: string, alvo: 'ativo' | 'pausado'): Promise<ResultadoCanal<void>>;
+      encerrarRestantes(mensagem: string): Promise<void>;
     }
     export const MSG_FALHA_STATUS = 'Falha ao atualizar status no Mercado Livre.';
     export const TENTATIVAS_STATUS = 3;
@@ -314,8 +317,11 @@ function montar(itens: Linha[], status: Record<string, StatusAnuncioCanal | null
     lerStatus: vi.fn(async (id) => status[id] ?? null),
     migracaoPxv: vi.fn(async (id) => opts.pxv?.[id] ?? null),
     atualizarStatus: vi.fn(async (id) => (opts.falhaCanal?.includes(id)
-      ? { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'ML recusou', retentavel: false } }
+      ? { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'ML recusou', retentavel: false, status: 400 } }
       : { ok: true })) as DepsStatus['atualizarStatus'],
+    encerrarRestantes: vi.fn(async (mensagem: string) => {
+      for (const i of itens) if (i.status === 'pendente' || i.status === 'enviando') Object.assign(i, { status: 'erro', mensagem });
+    }),
   };
   return deps;
 }
@@ -423,9 +429,22 @@ describe('executarStatus', () => {
 
     const itens2 = [item('C')];
     const deps2 = montar(itens2, { C: 'ativo' });
-    deps2.atualizarStatus = vi.fn(async () => ({ ok: false, erro: { codigo: 'AUTENTICACAO', mensagemOperador: 'token', retentavel: false } }));
+    deps2.atualizarStatus = vi.fn(async () => ({ ok: false, erro: { codigo: 'AUTENTICACAO', mensagemOperador: 'token', retentavel: false, status: 401 } }));
     await executarStatus(PAUSAR, deps2, OPTS);
     expect(itens2[0]).toMatchObject({ status: 'erro', mensagem: MSG_RECONECTAR });
+  });
+
+  it('A retentável e depois B fatal → A também vira erro de reconexão; conclui sem continuação', async () => {
+    const itens = [item('A'), item('B')];
+    const deps = montar(itens, { A: 'ativo', B: 'ativo' });
+    deps.atualizarStatus = vi.fn(async (id: string) => (id === 'A'
+      ? { ok: false, erro: { codigo: 'INDISPONIVEL', mensagemOperador: 'ML fora', retentavel: true, status: 502 } }
+      : { ok: false, erro: { codigo: 'AUTENTICACAO', mensagemOperador: 'token', retentavel: false, status: 403 } }));
+    const r = await executarStatus(PAUSAR, deps, OPTS);
+    expect(r).toEqual({ processados: 2, continuou: false });
+    expect(itens.map((i) => [i.status, i.mensagem])).toEqual([['erro', MSG_RECONECTAR], ['erro', MSG_RECONECTAR]]);
+    expect(deps.continuar).not.toHaveBeenCalled();
+    expect(deps.concluir).toHaveBeenCalledTimes(1);
   });
 
   it('teto por contagem: continua via QStash sem concluir', async () => {
@@ -467,7 +486,7 @@ Em `executar.ts`: remover as duas interfaces e acrescentar `export type { ItemRo
 import type { CamposItem, ItemRow } from './tipos.ts';
 
 export interface DepsLaco { /* exatamente a lista do bloco Interfaces acima */ }
-export interface Fatal { eh(e: unknown): boolean; mensagem: string }
+export interface Fatal { eh(e: unknown): boolean; mensagem: string; encerrar?: (mensagem: string) => Promise<void> }
 
 const ESPERA_ENVIANDO_SEG = 150; // > 2 min: o enviando do worker morto já volta em itensPendentes
 
@@ -520,6 +539,13 @@ export async function laco(
         }
         // Fatal (ex.: sem permissão na conta): nada mais passa — encerra este e todos os restantes.
         await deps.gravarItem(operacaoId, it.ml_item_id, { status: 'erro', mensagem: fatal.mensagem });
+        if (fatal.encerrar) {
+          // Status: também há itens `enviando` recentes (retentáveis aguardando a continuação) que itensPendentes
+          // não devolve por 2 min — sem isto eles escreveriam no ML depois do encerramento fatal.
+          await fatal.encerrar(fatal.mensagem);
+          await deps.concluir();
+          return { processados, continuou: false };
+        }
         for (let resto = await deps.itensPendentes(operacaoId, opts.lote); resto.length; resto = await deps.itensPendentes(operacaoId, opts.lote)) {
           for (const r of resto) await deps.gravarItem(operacaoId, r.ml_item_id, { status: 'erro', mensagem: fatal.mensagem });
         }
@@ -589,6 +615,8 @@ export interface DepsStatus extends DepsLaco {
   /** Mensagem do guard de migração PxV (ADR-0161) ou null. */
   migracaoPxv(mlItemId: string): Promise<string | null>;
   atualizarStatus(mlItemId: string, alvo: 'ativo' | 'pausado'): Promise<ResultadoCanal<void>>;
+  /** Fatal: todo item `pendente`/`enviando` da operação → `erro` com a mensagem. */
+  encerrarRestantes(mensagem: string): Promise<void>;
 }
 
 export const MSG_FALHA_STATUS = 'Falha ao atualizar status no Mercado Livre.';
@@ -614,7 +642,7 @@ async function processarStatus(op: OperacaoStatusRow, it: ItemRow, deps: DepsSta
   // propagação ao catálogo pode já ter mudado um relacionado). O item FICA `enviando` com a tentativa contada e o
   // laço segue com os outros; no fim, `finalizar` vê o `enviando` e agenda continuação em 150 s, quando o item
   // (parado > 2 min) volta a `itensPendentes`. Nada relança: uma mensagem com vários 502 não esgota o retry do QStash.
-  const retentavel = r.erro?.retentavel === true || r.erro?.status === undefined;
+  const retentavel = r.erro?.retentavel === true || (r.erro !== undefined && r.erro.status === undefined);
   if (retentavel && it.conferencias + 1 < TENTATIVAS_STATUS) {
     return deps.gravarItem(op.id, id, { conferencias: it.conferencias + 1, mensagem });
   }
@@ -625,7 +653,7 @@ export function executarStatus(
   op: OperacaoStatusRow, deps: DepsStatus, opts: { limiteMs: number; lote: number; maxItens?: number },
 ): Promise<{ processados: number; continuou: boolean }> {
   return laco(op.id, deps, opts, (it) => processarStatus(op, it, deps),
-    { eh: (e) => e instanceof SemAcessoStatusML, mensagem: MSG_RECONECTAR });
+    { eh: (e) => e instanceof SemAcessoStatusML, mensagem: MSG_RECONECTAR, encerrar: (m) => deps.encerrarRestantes(m) });
 }
 ```
 Atenção ao mock de `gravarItem` no teste: ele faz `Object.assign` — o caso retentável espera `status: 'enviando'` porque o claim do mock marca `enviando` e o handler não grava status nesse ramo. Em `itensPendentes` do mock só volta `pendente`; o teste de recuperação começa o item como `pendente` com `saida_pedida_em` preenchido, o que reproduz o estado lido após o claim de um `enviando` parado.
@@ -785,6 +813,11 @@ export function depsStatus(admin: SupabaseClient, cx: Cx, op: OperacaoStatusRow,
     lerStatus: (mlItemId) => lerStatusML(cx.token, mlItemId), // 401/403 lança SemAcessoStatusML (fatal)
     migracaoPxv: (mlItemId) => motivoMigracaoPxvPorItem(admin, op.org_id, mlItemId),
     atualizarStatus: (mlItemId, alvo) => conn.atualizarStatus(ctx, mlItemId, alvo),
+    async encerrarRestantes(mensagem) {
+      const { error } = await admin.from(ITENS).update({ status: 'erro', mensagem, atualizado_em: agoraIso() })
+        .eq('org_id', op.org_id).eq('operacao_id', op.id).in('status', ['pendente', 'enviando']);
+      falhou('encerrarRestantes', error);
+    },
   };
 }
 
