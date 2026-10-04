@@ -17,6 +17,12 @@ export interface ResultadoPublicar {
   recusadas?: Array<{ familia_id: string; motivo: string }>;
 }
 
+/** Famílias efetivamente enviadas, para o toast de sucesso: a seleção menos as recusadas (reajuste
+ *  em massa ativo). Não usa `enfileiradas`, que soma (família × canal) nos canais extras. */
+export function familiasEnviadas(selecionadas: number, resultado: ResultadoPublicar): number {
+  return selecionadas - (resultado.recusadas?.length ?? 0);
+}
+
 export type ListingType = 'gold_special' | 'gold_pro';
 
 export interface OpcoesPublicar {

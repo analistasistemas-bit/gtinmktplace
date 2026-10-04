@@ -29,6 +29,7 @@ import { talvezFinalizarLote } from '../_shared/lote/finalizar.ts';
 import { aplicarEstoqueDerivado } from '../_shared/estoque/kit.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { motivoMigracaoPxvEmCurso } from '../_shared/user-products/guard-migracao-pxv.ts';
+import { exigirSemReajusteAtivo } from '../_shared/publicacao/guard-reajuste.ts';
 
 const CANAL = 'mercado_livre';
 
@@ -156,16 +157,8 @@ async function executarAtualizacaoFamilia(deps: ProcessarDeps, job: Job, opts: P
       err.status = 400;
       throw err;
     }
-    // Spec reajuste C2: a barreira atômica é o claim de publicar-familias; aqui é defesa (reajuste
-    // confirmado depois do claim). ponytail: fail-open em erro de consulta, como o guard de PxV acima.
-    const { data: reajusteMl } = await admin.rpc('reajuste_ativo_produto', {
-      p_org: familia.org_id, p_codigo_pai: familia.codigo_pai,
-    });
-    if (reajusteMl) {
-      const err = new Error('Há reajuste de preço em massa em andamento neste produto (400)') as Error & { status?: number };
-      err.status = 400;
-      throw err;
-    }
+    // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
+    await exigirSemReajusteAtivo(admin, familia.org_id as string, familia.codigo_pai as string);
 
     // Cores incluídas: casadas (têm ml_variation_id) repõem estoque; novas (sem
     // ml_variation_id) são criadas como variação. Excluídas ficam de fora.

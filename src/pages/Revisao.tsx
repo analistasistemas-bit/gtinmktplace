@@ -30,7 +30,7 @@ import { familiaPublicavel, familiaIncompleta, idsPublicaveis, loteTemPublicacao
 import { ordenarPorExcecao } from '@/lib/revisao-ordem';
 import { coresNovasSemFoto } from '@/lib/cores-novas';
 import { coresNovasComEstoque } from '@/lib/revisao-variacoes';
-import { publicarFamilias, type ListingType } from '@/lib/publicar';
+import { publicarFamilias, familiasEnviadas, type ListingType } from '@/lib/publicar';
 import { contarKitsAguardandoPorPai } from '@/lib/kit';
 import { canaisOperaveis, canaisEmBreve } from '@/lib/canais';
 import { LogoCanal } from '@/components/canal-badge';
@@ -389,7 +389,7 @@ export default function Revisao() {
     setPublicando(true);
     const total = selecionadas.size;
     try {
-      await publicarFamilias([...selecionadas], listingType, canaisEfetivos, {
+      const resultado = await publicarFamilias([...selecionadas], listingType, canaisEfetivos, {
         somenteEstoqueGlobal,
         somenteEstoqueOverrides: [...somenteEstoqueOverrides],
       });
@@ -402,7 +402,7 @@ export default function Revisao() {
       setSelecionadas(new Set());
       setSomenteEstoqueOverrides(new Set());
       setConfirmando(false);
-      toast.success(`${total} família(s) enfileirada(s) para publicação`, {
+      toast.success(`${familiasEnviadas(total, resultado)} família(s) enfileirada(s) para publicação`, {
         description: 'Acompanhe o andamento no relatório.',
       });
       nav(`/relatorio/${loteId}`);

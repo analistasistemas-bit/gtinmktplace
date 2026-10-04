@@ -13,7 +13,7 @@ import { JornadaLote } from '@/components/jornada-lote';
 import { resultadoPublicacao } from '@/lib/jornada';
 import { totalAnomalias } from '@/lib/tipos-dominio';
 import { familiasElegiveisEstoqueRapido, deveExibirGateEstoqueRapido } from '@/lib/estoque-rapido';
-import { publicarFamilias } from '@/lib/publicar';
+import { publicarFamilias, familiasEnviadas } from '@/lib/publicar';
 import { QK } from '@/lib/queries';
 
 export default function Progresso() {
@@ -81,7 +81,7 @@ export default function Progresso() {
     if (!loteId) return;
     setConfirmando(true);
     try {
-      await publicarFamilias(
+      const resultado = await publicarFamilias(
         elegiveis.map((f) => f.id),
         'gold_special',
         ['mercado_livre'],
@@ -89,7 +89,7 @@ export default function Progresso() {
       );
       qc.invalidateQueries({ queryKey: QK.familias(loteId) });
       qc.invalidateQueries({ queryKey: QK.lote(loteId) });
-      toast.success(`${elegiveis.length} família(s) enfileirada(s) para atualização de estoque`, {
+      toast.success(`${familiasEnviadas(elegiveis.length, resultado)} família(s) enfileirada(s) para atualização de estoque`, {
         description: 'Acompanhe o andamento no relatório.',
       });
       nav(`/relatorio/${loteId}`);

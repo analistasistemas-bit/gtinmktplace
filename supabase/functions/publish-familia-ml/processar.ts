@@ -15,6 +15,7 @@ import { aplicarEstoqueDerivado } from '../_shared/estoque/kit.ts';
 import { garantirPrecoUniforme } from '../_shared/preco/grupos.ts';
 import { exigirFiscalCompletoSePreciso } from '../_shared/fiscal/gate.ts';
 import { decidirErroCriarAnuncio, mensagemErroFotoRecuperavel, decidirRetryTransitorio } from '../_shared/publicacao/retry.ts';
+import { exigirSemReajusteAtivo } from '../_shared/publicacao/guard-reajuste.ts';
 import {
   enfileirarVinculacaoCatalogo, enfileirarSincronizacaoFiscal, enfileirarPublicacoes,
 } from '../_shared/queue.ts';
@@ -128,6 +129,9 @@ export async function processarFamiliaML(deps: ProcessarDeps, job: Job, opts: Pr
   }
 
   try {
+    // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
+    await exigirSemReajusteAtivo(admin, familia.org_id as string, familia.codigo_pai as string);
+
     const { data: variacoes } = await admin.from('variacoes')
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
     if (!variacoes || variacoes.length === 0) throw new Error('Sem cores incluídas para publicar');

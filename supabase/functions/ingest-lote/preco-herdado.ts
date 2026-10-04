@@ -2,9 +2,10 @@ import type { Herdado } from '../_shared/update/casar.ts';
 
 /**
  * Preço de publicação de uma variação no UPDATE (ADR-0016) + a marca de preço fixado (D1 do
- * reajuste). Cor casada herda preço E marca da variação anterior — sem a marca, o process-familia
- * de um re-ingest com cor nova recalcularia por custo o preço que o reajuste fixou. Cor nova herda
- * o preço de venda da família (ou a planilha) e nasce sem marca.
+ * reajuste). Cor casada herda preço E marca da variação anterior; com a marca herdada, o
+ * process-familia de um re-ingest com cor nova pula essa cor e o preço fixado pelo reajuste
+ * sobrevive (a marca zerada é que o deixaria recalcular por custo). Cor nova herda o preço de venda
+ * da família (ou a planilha) e nasce sem marca.
  */
 export function precoHerdadoUpdate(
   h: Herdado | undefined, precoPubFamilia: number | null, precoPlanilha: number,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { publicarFamilias } from '@/lib/publicar';
+import { publicarFamilias, familiasEnviadas } from '@/lib/publicar';
 
 vi.mock('@/lib/supabase', () => ({
   supabase: {
@@ -45,5 +45,14 @@ describe('publicarFamilias', () => {
     expect(body.somente_estoque_overrides).toEqual(['F1']);
 
     vi.unstubAllGlobals();
+  });
+});
+
+describe('familiasEnviadas (toast de sucesso de Revisão/Progresso)', () => {
+  it('recusa parcial desconta as recusadas; sem recusa = seleção (igual a antes)', () => {
+    expect(familiasEnviadas(3, { enfileiradas: 2, recusadas: [{ familia_id: 'F3', motivo: 'x' }] })).toBe(2);
+    expect(familiasEnviadas(3, { enfileiradas: 3 })).toBe(3);
+    // Canais extras: enfileiradas soma (família × canal), a contagem de famílias não.
+    expect(familiasEnviadas(2, { enfileiradas: 4, recusadas: [] })).toBe(2);
   });
 });

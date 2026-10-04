@@ -20,6 +20,7 @@ import { montarAncoragem } from '../_shared/split/ancoragem.ts';
 import { particionarPorPreco } from '../_shared/split/particionar.ts';
 import { gerarTituloParticao } from '../_shared/split/titulo-particao.ts';
 import { decidirRetryTransitorio, mensagemErroFotoRecuperavel } from '../_shared/publicacao/retry.ts';
+import { exigirSemReajusteAtivo } from '../_shared/publicacao/guard-reajuste.ts';
 import { resolverModeloTexto } from '../_shared/ai/modelos.ts';
 import { precoAConfirmar } from '../_shared/preco/preco-confirmado.ts';
 import { precosDivergentes, precoCentavos } from '../_shared/preco/grupos.ts';
@@ -92,6 +93,10 @@ Deno.serve(async (req) => {
   let capa3SubidaAgora = false;
 
   try {
+    // Spec reajuste C2: reajuste de preço em massa ativo → 400 definitivo (erro de consulta retenta).
+    // Dentro do try (não logo após o check de 'publicando') para cair no catch de retry/erro.
+    await exigirSemReajusteAtivo(admin, familia.org_id as string, familia.codigo_pai as string);
+
     const { data: variacoes } = await admin.from('variacoes')
       .select('*').eq('familia_id', job.familia_id).eq('excluida_da_publicacao', false);
     if (!variacoes || variacoes.length === 0) {

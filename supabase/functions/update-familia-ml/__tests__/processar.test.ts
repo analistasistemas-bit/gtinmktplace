@@ -48,6 +48,7 @@ function fakeAdmin(over: {
   lote?: Record<string, unknown> | null; // ADR-0129 D-11: lotes.select('origem')
   modulosHabilitados?: string[];
   reajusteAtivo?: string | null; // rpc reajuste_ativo_produto (spec reajuste C2)
+  reajusteErro?: boolean;         // rpc reajuste_ativo_produto falha (timeout, função ausente)
 } = {}) {
   const writes: Array<{ table: string; payload: Record<string, unknown>; filters: Record<string, unknown> }> = [];
   const familia = over.familia === undefined ? { ...FAMILIA_BASE } : over.familia;
@@ -92,7 +93,9 @@ function fakeAdmin(over: {
     return api;
   }
   const storage = { from: () => ({ createSignedUrl: async () => ({ data: { signedUrl: 'x' }, error: null }) }) };
-  const rpc = async (fn: string) => ({ data: fn === 'reajuste_ativo_produto' ? (over.reajusteAtivo ?? null) : null, error: null });
+  const rpc = async (fn: string) => (fn === 'reajuste_ativo_produto' && over.reajusteErro
+    ? { data: null, error: { message: 'timeout' } }
+    : { data: fn === 'reajuste_ativo_produto' ? (over.reajusteAtivo ?? null) : null, error: null });
   return { admin: { from: chain, storage, rpc } as never, writes };
 }
 
@@ -704,5 +707,13 @@ describe('processarAtualizacaoFamilia — barreira do reajuste de preço em mass
     expect(fakeConnector.chamadas).toHaveLength(0);
     expect(writes.find((w) => w.table === 'familias' && w.payload.status === 'erro')?.payload.erro_mensagem)
       .toBe('Há reajuste de preço em massa em andamento neste produto (400)');
+  });
+
+  it('RPC falha → retry (fail-closed), sem tocar o ML nem marcar erro', async () => {
+    const { admin, writes } = fakeAdmin({ reajusteErro: true });
+    const r = await processarAtualizacaoFamilia(baseDeps(admin), JOB, { tentativas: 0 });
+    expect(r).toEqual({ tipo: 'retry', mensagem: 'Falha ao conferir reajuste de preço em massa: timeout' });
+    expect(fakeConnector.chamadas).toHaveLength(0);
+    expect(writes.some((w) => w.table === 'familias' && w.payload.status === 'erro')).toBe(false);
   });
 });
