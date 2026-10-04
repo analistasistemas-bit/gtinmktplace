@@ -202,7 +202,7 @@ export function umaOfertaPorAnuncio(itens: ItemPromocaoML[]): ItemPromocaoML[] {
 const porId = (a: ItemPromocaoML, b: ItemPromocaoML) => (a.ml_item_id < b.ml_item_id ? -1 : a.ml_item_id > b.ml_item_id ? 1 : 0);
 
 export async function sincronizarPromocao(
-  deps: DepsLeitura, msg: MsgLeitura, opts: { limiteMs: number; lote: number; concorrencia: number },
+  deps: DepsLeitura, msg: MsgLeitura, opts: { limiteMs: number; lote: number; concorrencia: number; maxItens: number },
 ): Promise<{ resultado: 'concluida' | 'continua' | 'obsoleta' | 'erro'; processados: number }> {
   const inicio = deps.agora();
   if (!mesmaRodada(await deps.rodadaEmCurso(), msg.rodada)) return { resultado: 'obsoleta', processados: 0 };
@@ -220,7 +220,8 @@ export async function sincronizarPromocao(
     while (feitos < pendentes.length) {
       // Posse antes de cada lote: uma cadeia velha nunca escreve por cima de uma rodada nova.
       if (!mesmaRodada(await deps.rodadaEmCurso(), msg.rodada)) return { resultado: 'obsoleta', processados: feitos };
-      if (feitos > 0 && deps.agora() - inicio > opts.limiteMs) {
+      // Teto por contagem (ADR-0173 §4): o Supabase derruba por CPU (2 s), não por relógio; o relógio fica de reserva.
+      if (feitos > 0 && (feitos >= opts.maxItens || deps.agora() - inicio > opts.limiteMs)) {
         await deps.continuar(pendentes[feitos - 1].ml_item_id);
         return { resultado: 'continua', processados: feitos };
       }

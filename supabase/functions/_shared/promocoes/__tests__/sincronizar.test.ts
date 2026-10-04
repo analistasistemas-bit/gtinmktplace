@@ -212,7 +212,7 @@ function depsLeitura(o: Partial<DepsLeitura> = {}): FakeLeitura {
   } as unknown as FakeLeitura;
 }
 const msg: MsgLeitura = { etapa: 'promocao', org_id: 'org', promocao_id: 'P', tipo: 'DEAL', rodada: ctx.rodada, cursor: null };
-const opts = { limiteMs: 90_000, lote: 2, concorrencia: 4 };
+const opts = { limiteMs: 90_000, lote: 2, concorrencia: 4, maxItens: 1000 };
 
 describe('mesmaRodada', () => {
   it('compara instantes, não texto', () => {
@@ -261,6 +261,16 @@ describe('sincronizarPromocao', () => {
     const d = depsLeitura();
     d.gravarLote.mockImplementation(async () => { d.avancar(100_000); });
     const r = await sincronizarPromocao(d, msg, opts);
+    expect(r).toEqual({ resultado: 'continua', processados: 2 });
+    expect(d.continuar).toHaveBeenCalledWith('MLB2');
+    expect(d.concluir).not.toHaveBeenCalled();
+  });
+
+  // 11.11 da Black (Avil, 04/10/2026): 220 anúncios em ~89 s de relógio estouraram os 2 s de CPU (546).
+  // O relógio não protege a CPU (ADR-0173 §4): o teto por mensagem é por contagem.
+  it('teto por contagem: para em maxItens e continua do cursor mesmo com o relógio parado', async () => {
+    const d = depsLeitura();
+    const r = await sincronizarPromocao(d, msg, { ...opts, maxItens: 2 });
     expect(r).toEqual({ resultado: 'continua', processados: 2 });
     expect(d.continuar).toHaveBeenCalledWith('MLB2');
     expect(d.concluir).not.toHaveBeenCalled();

@@ -14,7 +14,8 @@ import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { sincronizarLista, sincronizarPromocao, type MsgLeitura } from '../_shared/promocoes/sincronizar.ts';
 import { depsLeitura, depsLista } from '../_shared/promocoes/deps.ts';
 
-const LEITURA = { limiteMs: 90_000, lote: 20, concorrencia: 6 };
+// maxItens: a 11.11 da Avil caiu por CPU (546) com ~220 anúncios numa mensagem (04/10/2026).
+const LEITURA = { limiteMs: 90_000, lote: 20, concorrencia: 6, maxItens: 100 };
 const THROTTLE_MS = 2 * 60_000;
 const TRAVA_LISTA_MS = 5 * 60_000;
 

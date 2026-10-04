@@ -124,3 +124,11 @@ unidade (ADR-0151) e SKU do kit próprio (`00000012`). O resolvedor tenta GTIN a
 - **Semáforo** (aqui e em `src/lib/semaforo.ts`, ADR-0020): `líquido < custo` → 🔴 antes de olhar o piso.
 - **"Até quanto descer"** mira `max(piso, custo)`.
 
+- **Emenda 2026-10-04 — teto por contagem na leitura (ADR-0173 §4).** A leitura da "11.11 da Black" na Avil
+  (475 anúncios, todos convidados, logo com o "até quanto" calculado em cada um) caiu com
+  `546 CPU Time exceeded` ~89 s depois de começar, sempre depois de gravar 220 anúncios. Isso aconteceu
+  duas vezes, e as duas mensagens foram para a DLQ. O retry repetia a mensagem com `cursor: null` e nunca
+  avançava. A parada da cadeia passou a ser `maxItens` (100 por mensagem); os 90 s de relógio ficam só de reserva.
+- **Emenda 2026-10-04 — uma oferta por anúncio.** Na Relâmpago o ML lista o mesmo anúncio duas vezes: uma
+  oferta genérica com estoque e outra por horário. A leitura grava uma só: a oferta em que já participa;
+  entre iguais, a de menor preço avaliado. O estoque vem da outra oferta quando falta.
