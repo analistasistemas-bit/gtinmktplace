@@ -57,7 +57,8 @@ Novo ramo de validação para `pausar|reativar` (o de promoção não muda):
      ("Anúncio moderado/encerrado — não dá para alternar");
    - em migração "preço por variação" (`motivoMigracaoPxvPorItem`, ADR-0161) → `bloqueado` com a
      mesma mensagem da pausa individual;
-   - pausar exige `ativo`, reativar exige `pausado`; outro status reversível inesperado → `mudou`.
+   - ML não devolveu o anúncio (`indisponivel`) → `erro` ("O ML não devolveu o anúncio");
+   - sobrou só ativo/pausado: é o status de origem da ação → escreve. (`mudou` não ocorre nesta ação.)
 3. Senão → `conn.atualizarStatus(ctx, id, alvo)` (propaga ao catálogo relacionado, aditivo ADR-0060)
    → `aplicado`; erro do canal → `erro` com `mensagemOperador`. 401/403 de token → `erro` "Reconecte a conta".
 4. Mantém claim (`operacoes_massa_reivindicar`), dedup QStash por message-id e o teto por mensagem já
@@ -104,7 +105,7 @@ em lote (próximos handlers, specs próprias), pausar kit.
 
 - **Não-regressão:** a suíte atual `_shared/operacoes/__tests__` passa sem alteração.
 - Handler de status: um teste por desfecho (`ja_estava`, `bloqueado` moderado, `bloqueado` PxV,
-  `mudou`, `aplicado`, `erro` do canal).
+  `erro` sem leitura, `aplicado`, `erro` do canal).
 - Validação: kit recusado, repetido recusado, item de outra org recusado, > 500 recusado.
 - Migration contra Postgres real: check de coerência (aderir sem promoção falha; pausar com promoção
   falha) e índice anti-duplicidade (2º `pendente` do mesmo anúncio sem promoção falha; promoção não afetada).
