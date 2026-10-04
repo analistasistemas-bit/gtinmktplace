@@ -40,8 +40,8 @@ function Linha({ a, preset }: { a: ItemAcao; preset: Preset }) {
           </span>
           {rotulo === 'converte' && <StatusPill>{i.em_ads ? 'em Ads' : 'sem Ads'}</StatusPill>}
         </div>
-        <div className="flex min-w-0 items-center gap-2 pr-8 sm:pr-0">
-          <span className="min-w-0 truncate text-sm font-medium" title={formatarNomeProduto(i.titulo) || i.ml_item_id}>
+        <div className="flex min-w-0 items-start gap-2 pr-8 sm:pr-0">
+          <span className="min-w-0 line-clamp-2 text-sm font-medium" title={formatarNomeProduto(i.titulo) || i.ml_item_id}>
             {i.titulo ? formatarNomeProduto(i.titulo) : i.ml_item_id}
           </span>
           {!i.titulo && <StatusPill>título ainda não coletado</StatusPill>}
