@@ -225,7 +225,7 @@ export async function sincronizarPromocao(
         await deps.continuar(pendentes[feitos - 1].ml_item_id);
         return { resultado: 'continua', processados: feitos };
       }
-      const lote = pendentes.slice(feitos, feitos + opts.lote);
+      const lote = pendentes.slice(feitos, feitos + Math.min(opts.lote, opts.maxItens - feitos));
       const ml = await deps.buscarItensML(lote.map((x) => x.ml_item_id));
       const linhas = await emParalelo(lote, opts.concorrencia, (it) =>
         projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q)));

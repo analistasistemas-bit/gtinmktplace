@@ -276,6 +276,13 @@ describe('sincronizarPromocao', () => {
     expect(d.concluir).not.toHaveBeenCalled();
   });
 
+  it('teto que não é múltiplo do lote corta o lote no teto', async () => {
+    const d = depsLeitura();
+    const r = await sincronizarPromocao(d, msg, { ...opts, maxItens: 1 });
+    expect(r).toEqual({ resultado: 'continua', processados: 1 });
+    expect(d.continuar).toHaveBeenCalledWith('MLB1');
+  });
+
   it('retoma depois do último id processado', async () => {
     const d = depsLeitura();
     await sincronizarPromocao(d, { ...msg, cursor: 'MLB2' }, opts);
