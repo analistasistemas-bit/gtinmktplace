@@ -204,4 +204,28 @@ describe('participaPromocaoML', () => {
     const f = vi.fn().mockResolvedValue(resp(200, { erro: 'x' }));
     expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBeNull();
   });
+
+  // ML real: PRICE_DISCOUNT candidate vem SEM id (desconto próprio possível, não campanha).
+  it('candidate sem id (PRICE_DISCOUNT) → false, sem consultar campanha', async () => {
+    const f = vi.fn().mockResolvedValue(resp(200, [{ type: 'PRICE_DISCOUNT', status: 'candidate' }, { id: '', type: 'X', status: 'candidate' }]));
+    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(false);
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it('candidate sem id + candidate com id cuja campanha está started → true', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ type: 'PRICE_DISCOUNT', status: 'candidate' }, { id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', status: 'started' }] }));
+    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(true);
+    expect(f).toHaveBeenNthCalledWith(2, urlCand('C1', 'SMART'), GET);
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+
+  it('candidate sem id + candidate com id cuja campanha falha → null', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ type: 'PRICE_DISCOUNT', status: 'candidate' }, { id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(500));
+    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBeNull();
+    expect(f).toHaveBeenNthCalledWith(2, urlCand('C1', 'SMART'), GET);
+  });
 });
