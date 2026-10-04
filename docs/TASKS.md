@@ -2,6 +2,15 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Promoções: Relâmpago, CPU e teto por contagem (2026-10-04)
+
+- [x] Relâmpago duplicada: 1 oferta por anúncio (`7cc6332d`); Avil 227/227 sem erro.
+- [x] Leitura da 11.11 caindo por `CPU Time exceeded` aos 220: teto de 100 itens por mensagem (`0e9ea515`); 475/475.
+- [x] Mesmo teto preventivo em `operacoes-massa`, `coletar-ads-ml`, `coletar-trafego-ml` (`3322ed48`).
+- [x] Emendas ADR-0170 e ADR-0173; Grok sem achados pendentes; CI verde; edges deployadas.
+- [x] Promoções ligado na Avil (decisão do Diego, 04/10).
+- [ ] Observar a 1ª coleta agendada de ads e tráfego com o teto novo (sem `CPU Time exceeded`).
+
 ## Multiget ML `/items?ids=` → `/items/bulk` (ADR-0177, prazo externo 25/10/2026) — branch `worktree-ml-items-bulk`
 
 Plano `docs/superpowers/plans/2026-10-03-ml-items-bulk.md`; spec `docs/superpowers/specs/2026-10-03-ml-items-bulk-design.md`.

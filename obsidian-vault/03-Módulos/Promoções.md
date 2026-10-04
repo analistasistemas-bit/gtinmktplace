@@ -39,8 +39,8 @@ Edge nova, `verify_jwt=false` (valida assinatura QStash **ou** JWT do usuário).
 - **QStash `{}`** (schedule `scd_5FKHhPTKCNtqp31W8nruJdVCLCRm`, `0 */6 * * *`) → fan-out por org
   com o módulo ativo. Etapa **`lista`**: trava de 5 min, lista as promoções, encerra as que
   sumiram, roda os alertas lendo o banco, reserva + enfileira 1 leitura por promoção
-  `pending`/`started` não-cupom. Etapa **`promocao`**: lotes de 20 itens, orçamento de 90s,
-  continuação pelo último `ml_item_id`, posse da rodada conferida antes de cada lote e na
+  `pending`/`started` não-cupom. Etapa **`promocao`**: uma oferta por anúncio, lotes de 20 itens,
+  **teto de 100 itens por mensagem** (90 s de relógio só de reserva), continuação pelo último `ml_item_id`, posse da rodada conferida antes de cada lote e na
   conclusão, `deduplicationId`.
 - **Usuário logado** → dispara a etapa de lista só da própria org, throttle de 2 min, `403` sem o
   módulo.
@@ -70,9 +70,19 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Aba **Operações**: resultado por anúncio; **Reverter** = nova operação inversa com preview; já revertida mostra "Revertida em {data}".
 - Só admin executa (suporte só com acesso total). Conta ML precisa reconectar para ganhar `offers:/read-write`.
 
+## Correções de 2026-10-04
+
+- **Relâmpago duplicada** (`7cc6332d`): o ML lista o mesmo anúncio 2× (oferta genérica com estoque +
+  oferta por horário); o upsert recusava o lote inteiro ("cannot affect row a second time") e o card
+  mostrava "Não foi possível ler os anúncios". Agora fica 1 oferta por anúncio: a em que já participa;
+  entre iguais, a de menor preço; o estoque vem da irmã. Avil `LGH-MLB1000`: 240 linhas → 227 anúncios.
+- **Leitura caindo por CPU** (`0e9ea515`): a 11.11 da Black (Avil, 475 anúncios) caía com
+  `546 CPU Time exceeded` sempre após 220 anúncios e travava o botão em "Atualizando…" por 30 min;
+  o retry recomeçava do zero. Teto de 100 itens por mensagem (ADR-0173 §4) → 475/475 sem erro.
+
 ## Pendências conhecidas
 
-- Ligar módulo/alertas na Avil — decisão do Diego.
+- ~~Ligar módulo na Avil~~ — ligado em 2026-10-04 (5 orgs); alertas seguem desligados em todas.
 - Heartbeat da reserva de 30 min se a cadeia real de sincronização passar de ~20 min.
 - `CanalTabs` mostra dados do ML em qualquer aba de canal — revisar no E5.
 - Toast de sucesso aparece mesmo quando a lista volta com estado erro.

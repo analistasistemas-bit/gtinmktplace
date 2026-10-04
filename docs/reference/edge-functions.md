@@ -1669,8 +1669,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
   - **QStash `{}`** → fan-out por org com o módulo `promocoes` ativo, disparando `{etapa:'lista',
     org_id}` por org. Etapa **`lista`**: trava de 5 min, lista as promoções da conta, encerra as
     que sumiram, roda os alertas lendo o banco, e reserva + enfileira 1 leitura por promoção
-    `pending`/`started` não-cupom. Etapa **`promocao`**: lotes de 20 itens, orçamento de 90s,
-    continuação pelo último `ml_item_id`, posse da rodada (`rodada_em_curso`) conferida antes de
+    `pending`/`started` não-cupom. Etapa **`promocao`**: uma oferta por anúncio (a Relâmpago lista o
+    mesmo item 2×; fica a que participa, senão a de menor preço), lotes de 20 itens, **teto de 100
+    itens por mensagem** (ADR-0173 §4; 90 s de relógio só de reserva), continuação pelo último `ml_item_id`, posse da rodada (`rodada_em_curso`) conferida antes de
     cada lote e na conclusão, `deduplicationId` no enfileiramento QStash.
   - **Usuário logado** → dispara a etapa de lista só da própria org, throttle de 2 min, `403` sem
     o módulo `promocoes`.
@@ -1691,7 +1692,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
     (`deduplicationId` pelo id da mensagem). Falha ao publicar → todos os itens `erro`, resposta
     500.
   - **QStash `{etapa:'executar'|'conferir', operacao_id}`** — `executar`: laço sequencial com
-    orçamento de 90s/lote de 20, claim por item (`operacoes_massa_reivindicar`) antes de
+    lote de 20, **teto de 100 itens por mensagem** (ADR-0173 §4; 90 s de relógio só de reserva), claim por item (`operacoes_massa_reivindicar`) antes de
     POST/DELETE em `/seller-promotions`, revalidação do semáforo contra a Central atual antes de
     cada aderir (sem risco confirmado, resultado pior que o preview → `mudou`). DELETE aceito
     (200) não prova saída: item vira `saida_solicitada` e a conferência (`conferir`) confere a
@@ -1722,7 +1723,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
     (`deduplicationId` org+dia BRT) e, depois, a retenção de 13 meses.
   - **`{org_id, …}`** → uma mensagem da cadeia (`sincronizarTrafegoOrg`): posse
     (`reservar_trafego_posse`), inventário (as 7 fontes de `varrer-anuncios-orfaos` + vendidos em
-    180 dias, sem `closed` há > 30 dias), lotes de 20 MLBs com concorrência 6 e orçamento de 90 s,
+    180 dias, sem `closed` há > 30 dias), lotes de 20 MLBs com concorrência 6, **teto de 100 MLBs por mensagem** (ADR-0173 §4) e orçamento de 90 s,
     cursor por CAS (`avancar_trafego_cursor`), continuação pelo QStash (`deduplicationId`
     org+rodada+cursor+tentativa; 429 → `delay` = Retry-After), `concluir_trafego_rodada` no fim.
   - Por MLB: 1 GET de visitas (`/visits/time_window`, 150 dias na carga inicial ou para MLB sem
@@ -1749,7 +1750,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
   - **`{org_id, …}`** → uma mensagem da cadeia (`sincronizarAdsOrg`): posse (`reservar_ads_posse`),
     anunciante, `ad_groups/search` com gasto na janela (carga inicial de 90 dias; depois 15 dias
     relidos), série diária por grupo e membros de FAMILY/CATALOG (sempre na janela de 90 dias), lotes
-    de 20 grupos com concorrência 6 e orçamento de 90 s, cursor por CAS, continuação pelo QStash (a
+    de 20 grupos com concorrência 6, **teto de 100 grupos por mensagem** (ADR-0173 §4) e orçamento de 90 s, cursor por CAS, continuação pelo QStash (a
     flag `falhou`, o `descontar` e os ids em `descontados` viajam na cadeia) e `concluir_ads_rodada`
     no fim.
   - Falhas (Rulings 2c-5/2c-6): grupo não lido depois de 5 adiamentos fecha a rodada em `erro` (nunca

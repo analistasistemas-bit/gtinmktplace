@@ -11,6 +11,8 @@ Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado at�
 
 ## 2026-10-04
 
+**Central de Promoções: Relâmpago e leitura por CPU corrigidas; teto por contagem nos workers.** Promoções ligado na Avil. A Relâmpago falhava porque o ML lista o mesmo anúncio 2× (oferta genérica + por horário) e o upsert recusava o lote — agora 1 oferta por anúncio, a de menor preço (`7cc6332d`). A leitura da 11.11 da Black caía com `CPU Time exceeded` sempre aos 220 anúncios e travava o botão "Atualizando…": o worker parava só por relógio (90 s) e o Supabase derruba por CPU (2 s). Teto de 100 itens por mensagem (ADR-0173 §4, `0e9ea515`) → 475/475. O mesmo teto foi aplicado, preventivo, em `operacoes-massa`, `coletar-ads-ml` e `coletar-trafego-ml` (`3322ed48`). Emendas nos ADR-0170 e 0173.
+
 **Multiget do Mercado Livre migrado para `/items/bulk` (ADR-0177).** O ML desliga `GET /items?ids=` em 25/10/2026; as 14 chamadas restantes (13 arquivos) passaram pelo adaptador `_shared/ml/multiget.ts`, que devolve o envelope antigo. Os módulos só trocaram a URL. Validado por A/B ao vivo nas 4 orgs (só GET, escrita simulada), por revisão do Grok 4.7 xhigh por fatia e por comparação por id em produção. Implantado em 5 fatias, com manifesto de hash por edge: 28 edges iguais à `main`.
 
 ## 2026-10-03
