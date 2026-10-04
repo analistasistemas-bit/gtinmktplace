@@ -353,7 +353,7 @@ async function previewReajuste(admin: Admin, req: Request, bruto: unknown): Prom
   try {
     const cx = await conexaoDaOrg(admin, orgId);
     if (!cx) return json({ erro: MSG_SEM_CONEXAO }, 400);
-    r = await montarPreview(pedido, depsPreview(admin, cx));
+    r = await montarPreview(pedido, depsPreview(admin, cx, { reverter: !!pedido.origem_id }));
   } catch (e) {
     if (e instanceof ForaDaOrg) {
       const motivo = 'Anúncio não encontrado nesta organização';

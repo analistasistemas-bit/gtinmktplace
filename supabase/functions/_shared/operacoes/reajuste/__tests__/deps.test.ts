@@ -17,7 +17,10 @@ vi.mock('../../../promocoes/ml.ts', async (orig) => ({
   criarGetJson: () => vi.fn(),
   buscarItensML: async (_g: unknown, ids: string[]) => new Map(ids.map((id) => [id, m.itemML(id)])),
 }));
-import { criarAvaliador, depsLacoReajuste, depsPreview, MSG_AGUARDANDO } from '../deps.ts';
+import { criarAvaliador, depsLacoReajuste, depsPreview, ForaDaOrg, MSG_AGUARDANDO } from '../deps.ts';
+import { montarPreview } from '../preview.ts';
+import { linhasDoRascunho } from '../pedido.ts';
+import { resumir } from '../avaliacao.ts';
 
 type Op = [string, unknown[]];
 type Chamada = { tabela: string; ops: Op[] };
@@ -95,9 +98,40 @@ describe('depsLacoReajuste', () => {
 });
 
 describe('depsPreview', () => {
+  const cxT = { orgId: 'org', mlUserId: 'u', token: 't' };
+  // MLB1 tem produto; MLB2 perdeu o produto (RPC null) e não é kit.
+  const semProduto = () => fakeAdmin(() => [], (fn, a) => (fn === 'reajuste_codigo_pai' ? (a.p_ml_item === 'MLB1' ? 'P1' : null) : null));
+
+  it('pedido do usuário com MLB sem produto → ForaDaOrg (400)', async () => {
+    await expect(depsPreview(semProduto().admin, cxT, { reverter: false }).expandir([], ['MLB1', 'MLB2']))
+      .rejects.toEqual(new ForaDaOrg(['MLB2']));
+  });
+
+  it('Reverter com 2 aplicados, um sem produto → rascunho com um elegível e um fora', async () => {
+    const restaurar = (v: string) => [{ variacao_id: v, esperado: { preco_publicacao: 100, preco_editado_pelo_operador: false }, novo: { preco_publicacao: 110, preco_editado_pelo_operador: true } }];
+    const origem = new Map([
+      ['MLB1', { codigo_pai: 'P1', preco_anterior: 100, preco: 110, restaurar: restaurar('v1') }],
+      ['MLB2', { codigo_pai: 'P2', preco_anterior: 100, preco: 110, restaurar: restaurar('v2') }],
+    ]);
+    const vivo = { preco: 110, variacoes: null, status: 'active', sub_status: [], catalog_listing: false, tem_relacoes: false };
+    const r = await montarPreview({ familias: [], ml_item_ids: [], ajuste: null, origem_id: 'o' }, {
+      expandir: depsPreview(semProduto().admin, cxT, { reverter: true }).expandir,
+      origem: async () => origem,
+      ml: { lerVivo: async () => vivo, putPreco: vi.fn(), participaPromocaoML: async () => false },
+      variacoesDoMlb: async () => [{ ml_variation_id: '', variacao_id: 'v1' }],
+      estadoVariacoes: async () => new Map([['v1', { preco_publicacao: 110, preco_editado_pelo_operador: true }]]),
+      avaliar: async () => resumir([]),
+    });
+    expect(r).toMatchObject({ ok: true, executaveis: 1 });
+    const itens = r.ok ? r.itens : [];
+    expect(itens.map((i) => [i.ml_item_id, i.situacao])).toEqual([['MLB1', 'elegivel'], ['MLB2', 'fora']]);
+    expect(itens[1].motivo).toBe('Anúncio não encontrado no cadastro');
+    expect(linhasDoRascunho(itens).map((l) => [l.status, l.codigo_pai])).toEqual([['rascunho', 'P1'], ['bloqueado', 'P2']]);
+  });
+
   it('variacoesDoMlb não descarta linhas (plano/UP: ml_variation_id null → "")', async () => {
     const f = fakeAdmin(() => [], () => [{ ml_variation_id: null, variacao_id: 'v1' }, { ml_variation_id: '2', variacao_id: null }]);
-    const d = depsPreview(f.admin, { orgId: 'org', mlUserId: 'u', token: 't' });
+    const d = depsPreview(f.admin, { orgId: 'org', mlUserId: 'u', token: 't' }, { reverter: false });
     expect(await d.variacoesDoMlb('P', 'MLB1', ['2'])).toEqual([{ ml_variation_id: '', variacao_id: 'v1' }, { ml_variation_id: '2', variacao_id: null }]);
     expect(f.rpcs[0]).toEqual(['reajuste_variacoes_do_mlb', { p_org: 'org', p_codigo_pai: 'P', p_ml_item: 'MLB1', p_ml_variation_ids: ['2'] }]);
   });
@@ -106,7 +140,7 @@ describe('depsPreview', () => {
     const restaurar = [{ variacao_id: 'v1', esperado: { preco_publicacao: 100, preco_editado_pelo_operador: false }, novo: { preco_publicacao: 110, preco_editado_pelo_operador: true } }];
     const f = fakeAdmin((c) => (c.tabela === 'operacoes_massa' ? { id: 'o' }
       : [{ ml_item_id: 'MLB1', codigo_pai: 'P1', preco: '110', preco_anterior: '100', estado_anterior: restaurar }]));
-    const o = await depsPreview(f.admin, { orgId: 'org', mlUserId: 'u', token: 't' }).origem('o');
+    const o = await depsPreview(f.admin, { orgId: 'org', mlUserId: 'u', token: 't' }, { reverter: false }).origem('o');
     expect(o?.get('MLB1')).toEqual({ codigo_pai: 'P1', preco_anterior: 100, preco: 110, restaurar });
     expect(op(f.chamadas[1], 'eq')).toEqual(expect.arrayContaining([['org_id', 'org'], ['status', 'aplicado']]));
   });

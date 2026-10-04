@@ -205,7 +205,9 @@ async function flagsDe(admin: SupabaseClient, orgId: string, alvos: { ml: string
 
 /** Família → todos os MLBs do produto (UP: SKUs não retirados; Legacy: a família + partições > 0); MLB solto → produto
  *  pela mesma regra da RPC (reajuste_codigo_pai). Kit Virtual entra sem produto (o preview o tira com motivo). */
-async function expandir(admin: SupabaseClient, orgId: string, familiaIds: string[], mlItemIds: string[]): Promise<AlvoExpandido[]> {
+async function expandir(
+  admin: SupabaseClient, orgId: string, familiaIds: string[], mlItemIds: string[], reverter: boolean,
+): Promise<AlvoExpandido[]> {
   const pares = new Map<string, { pai: string; sku: string | null }>();
   if (familiaIds.length) {
     const fams: { id: string; codigo_pai: string; ml_item_id: string | null }[] = [];
@@ -257,15 +259,17 @@ async function expandir(admin: SupabaseClient, orgId: string, familiaIds: string
     falhou('kits_virtuais', error);
     for (const r of data ?? []) kits.add(String(r.ml_item_id));
   }
-  const fora = semProduto.filter((ml) => !kits.has(ml));
-  if (fora.length) throw new ForaDaOrg(fora);
+  const fora = new Set(semProduto.filter((ml) => !kits.has(ml)));
+  // Pedido do usuário: id fora da org → 400. Reverter: o MLB da origem que perdeu o produto só é omitido — o
+  // preview o lista como `fora` ("não encontrado no cadastro") e os demais seguem revertíveis.
+  if (fora.size && !reverter) throw new ForaDaOrg([...fora]);
   const skus = new Map<string, string>();
   for (const b of blocos(soltos.filter((_, i) => paisSoltos[i]))) {
     const { data, error } = await admin.from('anuncios_externos_itens').select('item_externo_id, sku').eq('org_id', orgId).in('item_externo_id', b);
     falhou('anuncios_externos_itens.sku', error);
     for (const r of data ?? []) skus.set(String(r.item_externo_id), String(r.sku));
   }
-  soltos.forEach((ml, i) => pares.set(ml, { pai: paisSoltos[i] ?? '', sku: skus.get(ml) ?? null }));
+  soltos.forEach((ml, i) => { if (!fora.has(ml)) pares.set(ml, { pai: paisSoltos[i] ?? '', sku: skus.get(ml) ?? null }); });
 
   const flags = await flagsDe(admin, orgId, [...pares].map(([ml, p]) => ({ ml, pai: p.pai })));
   return [...pares].map(([ml, p]) => ({
@@ -273,10 +277,11 @@ async function expandir(admin: SupabaseClient, orgId: string, familiaIds: string
   }));
 }
 
-export function depsPreview(admin: SupabaseClient, cx: Cx): DepsPreview {
+/** `reverter` = preview com origem_id (os MLBs vêm da origem, não do usuário). */
+export function depsPreview(admin: SupabaseClient, cx: Cx, opts: { reverter: boolean }): DepsPreview {
   const orgId = cx.orgId;
   return {
-    expandir: (familias, mlItemIds) => expandir(admin, orgId, familias, mlItemIds),
+    expandir: (familias, mlItemIds) => expandir(admin, orgId, familias, mlItemIds, opts.reverter),
 
     // Uma linha POR id pedido (a RPC garante); plano/UP vem com ml_variation_id null → '' (nunca filtrar).
     async variacoesDoMlb(codigoPai, mlItem, mlVariationIds) {
