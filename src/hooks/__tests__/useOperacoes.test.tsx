@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -87,47 +87,50 @@ describe('useOperacoes — status ao vivo do Publicados (emenda 2026-10-04)', ()
   it('1ª leitura já concluída invalida uma vez; refetch com o mesmo dado não invalida de novo', async () => {
     limitMock.mockResolvedValue({ data: [op({})], error: null });
     const { result } = montar();
-    await tick();
-    expect(statusInvalidado()).toBe(1);
+    await waitFor(() => expect(statusInvalidado()).toBe(1));
     await act(async () => { await result.current.refetch(); });
+    await waitFor(() => expect(result.current.isFetching).toBe(false));
+    await tick();
     expect(statusInvalidado()).toBe(1);
   });
 
   it('executando → concluída invalida', async () => {
     limitMock.mockResolvedValue({ data: [op({ status: 'executando', concluido_em: null })], error: null });
     const { result } = montar();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
     await tick();
     expect(statusInvalidado()).toBe(0);
     limitMock.mockResolvedValue({ data: [op({})], error: null });
     await act(async () => { await result.current.refetch(); });
-    await tick();
-    expect(statusInvalidado()).toBe(1);
+    await waitFor(() => expect(statusInvalidado()).toBe(1));
   });
 
   it('conclusão de 1 h atrás não invalida', async () => {
     limitMock.mockResolvedValue({ data: [op({ concluido_em: new Date(Date.now() - 3_600_000).toISOString() })], error: null });
-    montar();
+    const { result } = montar();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
     await tick();
     expect(statusInvalidado()).toBe(0);
   });
 
   it('operação de promoção concluída não invalida', async () => {
     limitMock.mockResolvedValue({ data: [op({ acao: 'aderir' })], error: null });
-    montar();
+    const { result } = montar();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
     await tick();
     expect(statusInvalidado()).toBe(0);
   });
 
   it("filtro 'promocao' aplica .in('acao', …) antes do .limit(50); sem filtro não", async () => {
     limitMock.mockResolvedValue({ data: [], error: null });
-    montar('promocao');
-    await tick();
+    const { result: r1 } = montar('promocao');
+    await waitFor(() => expect(r1.current.isSuccess).toBe(true));
     expect(inMock).toHaveBeenCalledWith('acao', ['aderir', 'sair']);
     expect(inLimitMock).toHaveBeenCalledWith(50); // limit no builder retornado por .in
     expect(listaOrderMock).not.toHaveBeenCalled(); // o builder original não é usado depois do .in
     inMock.mockClear();
-    montar();
-    await tick();
+    const { result: r2 } = montar();
+    await waitFor(() => expect(r2.current.isSuccess).toBe(true));
     expect(inMock).not.toHaveBeenCalled();
     expect(limitMock).toHaveBeenCalledWith(50);
   });
