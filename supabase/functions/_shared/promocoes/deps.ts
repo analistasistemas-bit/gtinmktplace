@@ -37,11 +37,13 @@ export async function lerAliquotas(admin: SupabaseClient, orgId: string): Promis
   return { nacional: Number(data.aliquota_nacional_pct), importado: Number(data.aliquota_importado_pct) };
 }
 
-async function emCache<T>(chave: string, calcular: () => Promise<T>): Promise<T> {
-  try {
-    const hit = await redisGet(chave);
-    if (hit) return JSON.parse(hit) as T;
-  } catch { /* cache é otimização */ }
+async function emCache<T>(chave: string, calcular: () => Promise<T>, fresco = false): Promise<T> {
+  if (!fresco) {
+    try {
+      const hit = await redisGet(chave);
+      if (hit) return JSON.parse(hit) as T;
+    } catch { /* cache é otimização */ }
+  }
   const v = await calcular(); // lança → não grava
   try { await redisSet(chave, JSON.stringify(v), TTL_S); } catch { /* idem */ }
   return v;
@@ -59,8 +61,9 @@ export async function carregarCadastro(admin: SupabaseClient, orgId: string): Pr
   return montarCadastro(variacoes, itensUp);
 }
 
-/** Comissão + frete exatos num preço (cache `promo:` no Redis); estimado lança TarifaEstimada. */
-export function criarTarifaEm(cx: Cx): (q: QueryTarifa) => Promise<Tarifa> {
+/** Comissão + frete exatos num preço (cache `promo:` no Redis); estimado lança TarifaEstimada.
+ * `fresco` (reajuste, C1): não lê o cache — mudança de tarifa do ML não passa despercebida; ainda grava. */
+export function criarTarifaEm(cx: Cx, opts?: { fresco?: boolean }): (q: QueryTarifa) => Promise<Tarifa> {
   return async ({ preco, categoria, listingType, dim }) => {
     const p = preco.toFixed(2);
     const dimKey = dim ? `${dim.altura_cm}x${dim.largura_cm}x${dim.comprimento_cm}x${dim.peso_gramas}` : 'padrao';
@@ -69,13 +72,13 @@ export function criarTarifaEm(cx: Cx): (q: QueryTarifa) => Promise<Tarifa> {
         const c = comissaoDeComProveniencia(await buscarListingPrice(cx.token, preco, categoria, listingType));
         if (c.proveniencia === 'estimated') throw new TarifaEstimada(c.motivo ?? 'comissão estimada');
         return c.valor;
-      }),
+      }, opts?.fresco),
       emCache<number>(`promo:frete:v1:${cx.mlUserId}:${categoria}:${p}:${dimKey}`, async () => {
         const f = await buscarFreteVendedorComProveniencia(cx.token, cx.mlUserId, preco, categoria, dim);
         // 'partial' (pacote padrão por falta de dimensão) é o mesmo número que a Revisão mostra: aceito.
         if (f.proveniencia === 'estimated') throw new TarifaEstimada(f.motivo ?? 'frete estimado');
         return f.valor;
-      }),
+      }, opts?.fresco),
     ]);
     return { comissao, frete };
   };
