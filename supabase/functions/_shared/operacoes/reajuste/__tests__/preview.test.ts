@@ -57,6 +57,11 @@ describe('montarPreview — pedido', () => {
     expect(d.ml.lerVivo).not.toHaveBeenCalled();
   });
 
+  it('dedup por MLB soma as flags de bloqueio (OU)', async () => {
+    const r = await montarPreview(pct(10), deps({ alvos: [alvo('MLB1'), alvo('MLB1', { promocaoBanco: true })] }));
+    expect(r.ok && r.itens).toMatchObject([{ situacao: 'fora', motivo: 'Participando de promoção' }]);
+  });
+
   it('dedup por MLB', async () => {
     const r = await montarPreview(pct(10), deps({ alvos: [alvo('MLB1'), alvo('MLB1')] }));
     expect(r.ok && r.itens.length).toBe(1);
@@ -159,32 +164,42 @@ describe('montarPreview — item', () => {
 describe('montarPreview — Reverter', () => {
   // origem: 100 → 110; banco antes {100, false}, gravado {110, true}
   const restOrigem: EntradaRestauracao[] = [{ variacao_id: 'V-1', esperado: est(100, false), novo: est(110, true) }];
-  const origem = new Map([['MLB1', { preco_anterior: 100, preco: 110, restaurar: restOrigem }]]);
+  const origem = new Map([['MLB1', { codigo_pai: 'P-MLB1', preco_anterior: 100, preco: 110, restaurar: restOrigem }]]);
+  const v110 = (ids = ['1'], preco = 110) => vivo({ preco, variacoes: ids.map((id) => ({ id, preco })) });
   const rev: PedidoPreview = { familias: [], ml_item_ids: [], ajuste: { tipo: 'pct', sentido: '+', valor: 50 }, precos: { MLB1: 1.001 }, origem_id: 'op-1' };
 
   it('aplicado: alvo = preco_anterior, restaurar invertido, aviso D10; ignora ajuste/precos', async () => {
-    const d = deps({ vivos: { MLB1: vivo({ preco: 110 }) }, estados: { 'V-1': est(110, true) }, origem });
+    const d = deps({ vivos: { MLB1: v110() }, estados: { 'V-1': est(110, true) }, origem });
     const it0 = await um(rev, d);
     expect(it0).toMatchObject({ situacao: 'elegivel', preco_anterior: 110, preco: 100, variacao_ids: ['V-1'], codigo_pai: 'P-MLB1', executaveis: 1 });
     expect(it0.restaurar).toEqual([{ variacao_id: 'V-1', esperado: est(110, true), novo: est(100, false) }]);
     expect(it0.aviso).toContain('re-ingest');
     expect(d.expandir).toHaveBeenCalledWith([], ['MLB1']);
-    expect(d.variacoesDoMlb).not.toHaveBeenCalled();
+    expect(d.variacoesDoMlb).toHaveBeenCalledWith('P-MLB1', 'MLB1', ['1']);
   });
 
   it('ML mudou depois → não revertível', async () => {
-    const d = deps({ vivos: { MLB1: vivo({ preco: 115 }) }, estados: { 'V-1': est(110, true) }, origem });
+    const d = deps({ vivos: { MLB1: v110(['1'], 115) }, estados: { 'V-1': est(110, true) }, origem });
     expect(await um(rev, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o preço mudou depois do reajuste' });
   });
 
   it('banco editado depois → não revertível', async () => {
-    const d = deps({ vivos: { MLB1: vivo({ preco: 110 }) }, estados: { 'V-1': est(112, true) }, origem });
+    const d = deps({ vivos: { MLB1: v110() }, estados: { 'V-1': est(112, true) }, origem });
     expect(await um(rev, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: o preço foi editado depois do reajuste' });
   });
 
   it('item da origem fora do cadastro → fora, não some', async () => {
     const r = await montarPreview(rev, deps({ alvos: [], origem }));
-    expect(r.ok && r.itens).toMatchObject([{ ml_item_id: 'MLB1', situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro' }]);
+    expect(r.ok && r.itens).toMatchObject([{ ml_item_id: 'MLB1', codigo_pai: 'P-MLB1', situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro' }]);
+  });
+
+  it.each([
+    ['C entrou no ML com o mesmo preço', v110(['1', '2'])],
+    ['cor da origem saiu do ML', v110(['2'])],
+    ['cor sem casamento', v110(['1', 'sem'])],
+  ])('variações mudaram: %s → não revertível', async (_n, v) => {
+    const d = deps({ vivos: { MLB1: v }, estados: { 'V-1': est(110, true), 'V-2': est(110, true) }, origem });
+    expect(await um(rev, d)).toMatchObject({ situacao: 'fora', motivo: 'Não revertível: as variações do anúncio mudaram depois do reajuste', restaurar: null });
   });
 
   it('origem inexistente → recusa', async () => {

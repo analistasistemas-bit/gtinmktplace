@@ -16,12 +16,13 @@ export interface ItemPreview { ml_item_id: string; codigo_pai: string; variacao_
 // `restaurar` é o ÚNICO formato de estado: gravado na coluna `estado_anterior` (Task 7), lido pelo executor e enviado à RPC.
 export interface DepsPreview {
   expandir(familias: string[], mlItemIds: string[]): Promise<AlvoExpandido[]>;
+  /** Uma linha POR id pedido (plano/UP: `[]` → a variação única); sem casamento → `variacao_id: null`. Nunca omitir linhas. */
   variacoesDoMlb(codigoPai: string, mlItem: string, mlVariationIds: string[]): Promise<{ ml_variation_id: string; variacao_id: string | null }[]>;
   estadoVariacoes(variacaoIds: string[]): Promise<Map<string, EstadoVariacao>>;
   ml: ClienteReajusteML;
   avaliar(mlItemId: string, preco: number): Promise<Avaliacao>;
   /** Itens `aplicado` da origem; `restaurar` = o `estado_anterior` gravado nela (esperado = antes, novo = gravado). */
-  origem(origemId: string): Promise<Map<string, { preco_anterior: number; preco: number; restaurar: EntradaRestauracao[] }> | null>;
+  origem(origemId: string): Promise<Map<string, Origem> | null>;
 }
 
 export const MAX_MLBS = 500;
@@ -30,7 +31,7 @@ const SEM_CASAMENTO = 'Não foi possível casar todas as variações do anúncio
 const AVISO_AMARELO = '🟡 Abaixo do piso em alguma cor';
 const AVISO_D10 = 'Reverter: o preço restaurado volta a divergir do banco/ML se já divergia; cores com marca desligada voltam a ser recalculadas no re-ingest.';
 
-type Origem = { preco_anterior: number; preco: number; restaurar: EntradaRestauracao[] };
+export type Origem = { codigo_pai: string; preco_anterior: number; preco: number; restaurar: EntradaRestauracao[] };
 const mesmoEstado = (a: EstadoVariacao, b: EstadoVariacao) =>
   a.preco_editado_pelo_operador === b.preco_editado_pelo_operador &&
   (a.preco_publicacao === null || b.preco_publicacao === null
@@ -53,7 +54,16 @@ export async function montarPreview(
     if (p.ajuste && p.ajuste.valor < 0) return { ok: false, erro: 'Ajuste inválido' };
     alvos = await deps.expandir(p.familias, p.ml_item_ids);
   }
-  const unicos = [...new Map(alvos.map((a) => [a.ml_item_id, a])).values()];
+  // Dedup por MLB; flags de bloqueio somadas por OU (conservador: qualquer linha bloqueando bloqueia o MLB).
+  const porMl = new Map<string, AlvoExpandido>();
+  for (const a of alvos) {
+    const b = porMl.get(a.ml_item_id);
+    porMl.set(a.ml_item_id, !b ? a : {
+      ...b, ehKit: b.ehKit || a.ehKit, temAtacado: b.temAtacado || a.temAtacado, promocaoBanco: b.promocaoBanco || a.promocaoBanco,
+      familiaPublicando: b.familiaPublicando || a.familiaPublicando, migracaoPxv: b.migracaoPxv || a.migracaoPxv,
+    });
+  }
+  const unicos = [...porMl.values()];
   if (unicos.length > MAX_MLBS) {
     return { ok: false, erro: `No máximo ${MAX_MLBS} anúncios por operação (a seleção expandiu para ${unicos.length}).` };
   }
@@ -63,7 +73,7 @@ export async function montarPreview(
     if (unicos.some((a) => a.ml_item_id === ml)) continue;
     const o = origem!.get(ml)!;
     itens.push({
-      ml_item_id: ml, codigo_pai: '', variacao_ids: [], titulo: null, sku: null, preco_anterior: o.preco, preco: o.preco_anterior,
+      ml_item_id: ml, codigo_pai: o.codigo_pai, variacao_ids: [], titulo: null, sku: null, preco_anterior: o.preco, preco: o.preco_anterior,
       avaliacao: null, restaurar: null, variacoes_ml: null, situacao: 'fora', motivo: 'Anúncio não encontrado no cadastro', incluido: false, aviso: null,
     });
   }
@@ -102,15 +112,18 @@ async function avaliarItem(a: AlvoExpandido, p: PedidoPreview, deps: DepsPreview
   });
   if (motivo) return fora(motivo);
 
-  // Variações: Reverter usa as da origem (o conjunto tem de bater com o restaurar); senão casamento pelo vivo.
-  let ids: string[];
+  // Variações casadas pelo vivo. Reverter: o conjunto tem de ser exatamente o do restaurar da origem
+  // (cor que entrou/saiu depois receberia o preço antigo sem ser restaurada no banco).
+  const casadas = await deps.variacoesDoMlb(a.codigo_pai, ml, item.variacoes_ml ?? []);
+  const semCasar = !casadas.length || casadas.some((c) => !c.variacao_id);
+  let ids = [...new Set(casadas.map((c) => c.variacao_id as string))].sort();
   if (orig) {
+    const daOrigem = [...new Set(orig.restaurar.map((r) => r.variacao_id))].sort();
+    if (semCasar || ids.join('\u0000') !== daOrigem.join('\u0000')) {
+      return fora('Não revertível: as variações do anúncio mudaram depois do reajuste');
+    }
     ids = orig.restaurar.map((r) => r.variacao_id);
-  } else {
-    const casadas = await deps.variacoesDoMlb(a.codigo_pai, ml, item.variacoes_ml ?? []);
-    if (!casadas.length || casadas.some((c) => !c.variacao_id)) return fora(SEM_CASAMENTO);
-    ids = [...new Set(casadas.map((c) => c.variacao_id as string))].sort();
-  }
+  } else if (semCasar) return fora(SEM_CASAMENTO);
   const estados = await deps.estadoVariacoes(ids);
   if (ids.some((id) => !estados.has(id))) return fora(SEM_CASAMENTO);
   item.variacao_ids = ids;
