@@ -1,4 +1,4 @@
-// ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART do ML). Modos:
+// ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART e pausar/reativar anúncios do ML). Modos:
 //  - Usuário (admin ou suporte full): cria a operação a partir da Central e publica { etapa: 'executar' }.
 //  - QStash { etapa: 'executar' | 'conferir', operacao_id }: executor com continuação e conferência da saída.
 // Escrita no ML só em /seller-promotions (ml.ts); claim por item garante que reentrega não escreve duas vezes.
@@ -9,13 +9,18 @@ import { auditarOperacaoSuporte } from '../_shared/support-audit.ts';
 import { qstashClient, verificarAssinatura } from '../_shared/queue.ts';
 import { exigirModulo, moduloHabilitadoStrict } from '../_shared/produto/modulo.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
+import { MLApiError } from '../_shared/ml/erro-ml.ts';
 import { conferir, executar, type OperacaoRow } from '../_shared/operacoes/executar.ts';
-import { validarPedido, type ItemPedido, type LinhaCentral } from '../_shared/operacoes/validar.ts';
+import { executarStatus, type OperacaoStatusRow } from '../_shared/operacoes/executar-status.ts';
+import { MAX_ITENS, validarPedido, type ItemPedido, type LinhaCentral } from '../_shared/operacoes/validar.ts';
+import { reversaoValida, validarPedidoStatus, type ItemPedidoStatus } from '../_shared/operacoes/validar-status.ts';
 import {
-  COLS_CENTRAL, criarSemaforoExato, dedup, depsExecutar, encerrarComErro, linhaCentral, urlOperacoes,
+  COLS_CENTRAL, criarSemaforoExato, dedup, depsExecutar, depsStatus, encerrarComErro, idsDaOrg, linhaCentral, urlOperacoes,
 } from '../_shared/operacoes/deps.ts';
-import { lerConexaoML, MSG_SEM_CONEXAO, respostaFalhaCriacao, SemConexaoML } from '../_shared/operacoes/falhas.ts';
-import type { Acao } from '../_shared/operacoes/tipos.ts';
+import {
+  lerConexaoML, MSG_RECONECTAR, MSG_SEM_CONEXAO, respostaFalhaCriacao, SemConexaoML,
+} from '../_shared/operacoes/falhas.ts';
+import type { Acao, AcaoStatus } from '../_shared/operacoes/tipos.ts';
 
 const EXECUCAO = { limiteMs: 90_000, lote: 20, maxItens: 100 };
 const SEM_MODULO = 'A Central de Promoções não está habilitada para esta organização.';
@@ -55,13 +60,37 @@ async function etapaQStash(admin: Admin, req: Request, body: string): Promise<Re
   if (!linha) return json({ ok: false, erro: 'operação não encontrada' });
   if (linha.status === 'concluida') return json({ ok: true, ignorada: true });
 
+  // Pausar/reativar: sem promoção nem módulo `promocoes`.
+  if (linha.acao === 'pausar' || linha.acao === 'reativar') {
+    let cx: Awaited<ReturnType<typeof conexaoDaOrg>>;
+    try {
+      cx = await conexaoDaOrg(admin, linha.org_id);
+    } catch (e) {
+      // Refresh recusado (invalid_grant) nunca se resolve sozinho: sem isto, toda reentrega dá 500 e os itens
+      // ficam `pendente` para sempre, presos no índice anti-duplicidade. Erro transitório segue relançando.
+      if (e instanceof MLApiError && e.oauthError === 'invalid_grant') {
+        await encerrarComErro(admin, linha, MSG_RECONECTAR);
+        return json({ ok: false, erro: MSG_RECONECTAR });
+      }
+      throw e;
+    }
+    if (!cx) {
+      await encerrarComErro(admin, linha, MSG_SEM_CONEXAO);
+      return json({ ok: false, erro: MSG_SEM_CONEXAO });
+    }
+    const op: OperacaoStatusRow = { id: linha.id, org_id: linha.org_id, acao: linha.acao };
+    const chave = req.headers.get('upstash-message-id') ?? crypto.randomUUID();
+    // Sem etapa de conferência: o PUT de status é síncrono (qualquer etapa executa).
+    return json({ ok: true, ...(await executarStatus(op, depsStatus(admin, cx, op, chave), EXECUCAO)) });
+  }
+
   // Encerrar só com ausência REAL (módulo desligado, promoção encerrada, conta não conectada): erro de leitura
   // lança → 500 → QStash reentrega. Encerrar por engano solta do índice anti-duplicidade item em saída pedida.
   if (!(await moduloHabilitadoStrict(admin, linha.org_id, 'promocoes'))) {
     await encerrarComErro(admin, linha, SEM_MODULO);
     return json({ ok: false, erro: SEM_MODULO });
   }
-  const promo = await lerPromocao(admin, linha.org_id, linha.promocao_id);
+  const promo = await lerPromocao(admin, linha.org_id, linha.promocao_id!);
   if (!ativa(promo?.status)) {
     await encerrarComErro(admin, linha, PROMOCAO_ENCERRADA);
     return json({ ok: false, erro: PROMOCAO_ENCERRADA });
@@ -73,8 +102,8 @@ async function etapaQStash(admin: Admin, req: Request, body: string): Promise<Re
   }
 
   const op: OperacaoRow = {
-    id: linha.id, org_id: linha.org_id, acao: linha.acao as Acao, promocao_id: linha.promocao_id,
-    promocao_tipo: linha.promocao_tipo as OperacaoRow['promocao_tipo'], promocao_status: promo!.status as OperacaoRow['promocao_status'],
+    id: linha.id, org_id: linha.org_id, acao: linha.acao as Acao, promocao_id: linha.promocao_id!,
+    promocao_tipo: linha.promocao_tipo! as OperacaoRow['promocao_tipo'], promocao_status: promo!.status as OperacaoRow['promocao_status'],
   };
   // ponytail: sem o header (não acontece em entrega do QStash) a chave é nova — perde só o dedup da continuação;
   // a escrita no ML continua protegida pelo claim.
@@ -84,19 +113,33 @@ async function etapaQStash(admin: Admin, req: Request, body: string): Promise<Re
   return json({ ok: true, ...r });
 }
 
-interface Pedido { acao: Acao; promocao_id: string; origem_id: string | null; itens: ItemPedido[] }
+type PedidoStatus = { acao: AcaoStatus; origem_id: string | null; itens: ItemPedidoStatus[] };
+type Pedido =
+  | { acao: Acao; promocao_id: string; origem_id: string | null; itens: ItemPedido[] }
+  | PedidoStatus;
+const ehStatus = (p: Pedido): p is PedidoStatus => p.acao === 'pausar' || p.acao === 'reativar';
 function lerPedido(x: unknown): Pedido | null {
   const b = x as Record<string, unknown> | null;
-  if (!b || (b.acao !== 'aderir' && b.acao !== 'sair') || typeof b.promocao_id !== 'string' || !b.promocao_id) return null;
-  if (b.origem_id != null && typeof b.origem_id !== 'string') return null;
-  if (!Array.isArray(b.itens)) return null;
+  if (!b || (b.origem_id != null && typeof b.origem_id !== 'string') || !Array.isArray(b.itens)) return null;
+  const origem_id = (b.origem_id as string | null | undefined) ?? null;
+  if (b.acao === 'pausar' || b.acao === 'reativar') {
+    if (b.promocao_id != null) return null;
+    const itens: ItemPedidoStatus[] = [];
+    for (const i of b.itens as Record<string, unknown>[]) {
+      if (!i || typeof i.ml_item_id !== 'string' || !i.ml_item_id) return null;
+      if (i.titulo != null && typeof i.titulo !== 'string') return null;
+      itens.push({ ml_item_id: i.ml_item_id, titulo: (i.titulo as string | null | undefined) ?? null });
+    }
+    return { acao: b.acao, origem_id, itens };
+  }
+  if ((b.acao !== 'aderir' && b.acao !== 'sair') || typeof b.promocao_id !== 'string' || !b.promocao_id) return null;
   const itens: ItemPedido[] = [];
   for (const i of b.itens as Record<string, unknown>[]) {
     if (!i || typeof i.ml_item_id !== 'string' || !i.ml_item_id) return null;
     if (i.preco != null && typeof i.preco !== 'number') return null;
     itens.push({ ml_item_id: i.ml_item_id, preco: (i.preco as number | null | undefined) ?? null, confirmado_risco: i.confirmado_risco === true });
   }
-  return { acao: b.acao, promocao_id: b.promocao_id, origem_id: (b.origem_id as string | null | undefined) ?? null, itens };
+  return { acao: b.acao, promocao_id: b.promocao_id, origem_id, itens };
 }
 
 /** Usuário: valida o pedido contra a Central, grava a operação e publica a 1ª etapa. */
@@ -108,16 +151,17 @@ async function criar(admin: Admin, req: Request, body: string): Promise<Response
     if (resp instanceof Response) return resp;
     throw resp;
   }
-  const { orgId, userId } = ctx;
+  const { orgId } = ctx;
   if (!ctx.isAdmin && ctx.support?.scope !== 'full') {
     await auditarOperacaoSuporte(admin, ctx, { type: 'org', id: orgId }, 'denied');
     return json({ erro: 'Só administradores executam operações em massa.' }, 403);
   }
-  if (!(await exigirModulo(admin, orgId, 'promocoes'))) return json({ erro: SEM_MODULO }, 403);
 
   let bruto: unknown = null;
   try { bruto = JSON.parse(body); } catch { /* inválido */ }
   const pedido = lerPedido(bruto);
+  if (pedido && ehStatus(pedido)) return criarStatus(admin, ctx, pedido);
+  if (!(await exigirModulo(admin, orgId, 'promocoes'))) return json({ erro: SEM_MODULO }, 403);
   if (!pedido) return json({ erro: 'Pedido inválido.' }, 400);
 
   const promo = await lerPromocao(admin, orgId, pedido.promocao_id);
@@ -162,16 +206,60 @@ async function criar(admin: Admin, req: Request, body: string): Promise<Response
   }
   if (!v.ok) return json({ erro: v.erro, ...(v.itens ? { itens: v.itens } : {}) }, 400);
 
+  return gravarEPublicar(admin, ctx, {
+    acao: pedido.acao, promocao_id: pedido.promocao_id, promocao_tipo: promo.tipo,
+    promocao_nome: promo.nome, origem_id: pedido.origem_id,
+  }, v.itens.map((i) => ({
+    promocao_id: pedido.promocao_id, ml_item_id: i.ml_item_id, titulo: i.titulo,
+    preco: i.preco, semaforo: i.semaforo, confirmado_risco: i.confirmado_risco,
+  })));
+}
+
+const REVERSAO_INVALIDA = 'A operação de origem não pode ser revertida por este pedido.';
+
+/** Pausar/reativar: só anúncios da org, Reverter revalidado no servidor. Não exige o módulo de promoções. */
+async function criarStatus(admin: Admin, ctx: Awaited<ReturnType<typeof requireUserOrg>>, pedido: PedidoStatus): Promise<Response> {
+  const { orgId } = ctx;
+  const ids = [...new Set(pedido.itens.map((i) => i.ml_item_id))];
+  if (pedido.origem_id) {
+    const { data: origem, error } = await admin.from('operacoes_massa').select('acao, promocao_id, status')
+      .eq('org_id', orgId).eq('id', pedido.origem_id).maybeSingle();
+    if (error) throw new Error(`origem: ${error.message}`);
+    const aplicados = new Set<string>();
+    if (origem) {
+      const r = await admin.from('operacoes_massa_itens').select('ml_item_id')
+        .eq('org_id', orgId).eq('operacao_id', pedido.origem_id).eq('status', 'aplicado');
+      if (r.error) throw new Error(`itens da origem: ${r.error.message}`);
+      for (const x of r.data ?? []) aplicados.add(String(x.ml_item_id));
+    }
+    if (!reversaoValida(origem, aplicados, { acao: pedido.acao, ids })) return json({ erro: REVERSAO_INVALIDA }, 400);
+  }
+
+  const { daOrg, kits } = ids.length && ids.length <= MAX_ITENS
+    ? await idsDaOrg(admin, orgId, ids)
+    : { daOrg: new Set<string>(), kits: new Set<string>() };
+  const v = validarPedidoStatus(pedido.itens, daOrg, kits);
+  if (!v.ok) return json({ erro: v.erro, ...(v.itens ? { itens: v.itens } : {}) }, 400);
+
+  return gravarEPublicar(admin, ctx, { acao: pedido.acao, origem_id: pedido.origem_id }, v.itens.map((i) => ({
+    promocao_id: null, ml_item_id: i.ml_item_id, titulo: i.titulo, semaforo: null, confirmado_risco: false,
+  })));
+}
+
+/** Grava cabeçalho + itens (23505 → 409), publica a 1ª etapa e audita. Comum a promoção e status. */
+async function gravarEPublicar(
+  admin: Admin, ctx: Awaited<ReturnType<typeof requireUserOrg>>,
+  cabecalho: Record<string, unknown>, itens: Record<string, unknown>[],
+): Promise<Response> {
+  const { orgId, userId } = ctx;
   const { data: op, error: eOp } = await admin.from('operacoes_massa').insert({
-    org_id: orgId, acao: pedido.acao, promocao_id: pedido.promocao_id, promocao_tipo: promo.tipo,
-    promocao_nome: promo.nome, origem_id: pedido.origem_id, criado_por: userId,
+    org_id: orgId, ...cabecalho, criado_por: userId,
   }).select('id').single();
   if (eOp || !op) throw new Error(`criar operação: ${eOp?.message}`);
   const alvo = { id: op.id as string, org_id: orgId };
 
-  const { error: eItens } = await admin.from('operacoes_massa_itens').insert(v.itens.map((i) => ({
-    operacao_id: alvo.id, org_id: orgId, promocao_id: pedido.promocao_id, ml_item_id: i.ml_item_id, titulo: i.titulo,
-    preco: i.preco, semaforo: i.semaforo, confirmado_risco: i.confirmado_risco,
+  const { error: eItens } = await admin.from('operacoes_massa_itens').insert(itens.map((i) => ({
+    operacao_id: alvo.id, org_id: orgId, ...i,
   })));
   if (eItens) {
     await admin.from('operacoes_massa').delete().eq('org_id', orgId).eq('id', alvo.id);

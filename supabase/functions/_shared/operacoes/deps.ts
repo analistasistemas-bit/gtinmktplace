@@ -1,5 +1,5 @@
 // ADR-0174 — fiação real do motor de operações em massa (service role). Só ligação, nenhuma decisão: a regra vive
-// em decidir.ts / executar.ts / validar.ts (vitest). Service role ignora RLS → toda query filtra por org_id.
+// em decidir.ts / executar.ts / executar-status.ts / validar.ts (vitest). Service role ignora RLS → toda query filtra por org_id.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import { qstashClient } from '../queue.ts';
 import { buscarItensML, criarGetJson } from '../promocoes/ml.ts';
@@ -10,6 +10,11 @@ import type { Aliquotas, ProjecaoCor, Semaforo } from '../promocoes/tipos.ts';
 import { criarClienteML } from './ml.ts';
 import { semaforoReal, type LinhaCentral, type SemaforoExato } from './validar.ts';
 import type { DepsExecutar, ItemRow, OperacaoRow } from './executar.ts';
+import type { DepsLaco } from './laco.ts';
+import type { DepsStatus, OperacaoStatusRow } from './executar-status.ts';
+import { lerStatusML } from './ml-status.ts';
+import { getConnector } from '../canais/registry.ts';
+import { motivoMigracaoPxvPorItem } from '../user-products/guard-migracao-pxv.ts';
 
 const ITENS = 'operacoes_massa_itens';
 const COLS_ITEM = 'ml_item_id, preco, status, conferencias, semaforo, confirmado_risco, proxima_conferencia, saida_pedida_em';
@@ -59,8 +64,7 @@ export function criarSemaforoExato(admin: SupabaseClient, cx: Cx): SemaforoExato
  * `chave` = id da mensagem QStash que está sendo processada (`upstash-message-id`, igual nas reentregas):
  * a continuação de uma mensagem tem sempre o mesmo deduplicationId, e mensagens diferentes nunca colidem.
  */
-export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, chave: string): DepsExecutar {
-  const semaforoExato = criarSemaforoExato(admin, cx);
+export function depsLaco(admin: SupabaseClient, op: { id: string; org_id: string }, chave: string): DepsLaco {
   const linhas = (data: unknown): ItemRow[] => ((data ?? []) as Record<string, unknown>[])
     .map((r) => ({ ...(r as unknown as ItemRow), preco: numOuNull(r.preco) }));
   const publicar = async (etapa: 'executar' | 'conferir', delay?: number) => {
@@ -71,7 +75,6 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
   };
 
   return {
-    ml: criarClienteML(cx.token),
     agora: () => Date.now(),
 
     async reivindicar(operacaoId, mlItemId) {
@@ -108,6 +111,23 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
       falhou('gravarItem', error);
     },
 
+    continuar: (delaySeg) => publicar('executar', delaySeg),
+    agendarConferencia: (delaySeg) => publicar('conferir', delaySeg),
+
+    async concluir() {
+      const { error } = await admin.from('operacoes_massa').update({ status: 'concluida', concluido_em: agoraIso() })
+        .eq('org_id', op.org_id).eq('id', op.id);
+      falhou('concluir', error);
+    },
+  };
+}
+
+export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, chave: string): DepsExecutar {
+  const semaforoExato = criarSemaforoExato(admin, cx);
+  return {
+    ...depsLaco(admin, op, chave),
+    ml: criarClienteML(cx.token),
+
     async semaforoAtual(promocaoId, mlItemId, preco): Promise<Semaforo | null> {
       const { data, error } = await admin.from('ml_promocao_itens').select(COLS_CENTRAL)
         .eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId).maybeSingle();
@@ -124,16 +144,47 @@ export function depsExecutar(admin: SupabaseClient, cx: Cx, op: OperacaoRow, cha
       const { error } = await q.eq('org_id', op.org_id).eq('promocao_id', promocaoId).eq('ml_item_id', mlItemId);
       falhou('espelharStatusCentral', error);
     },
+  };
+}
 
-    continuar: (delaySeg) => publicar('executar', delaySeg),
-    agendarConferencia: (delaySeg) => publicar('conferir', delaySeg),
-
-    async concluir() {
-      const { error } = await admin.from('operacoes_massa').update({ status: 'concluida', concluido_em: agoraIso() })
-        .eq('org_id', op.org_id).eq('id', op.id);
-      falhou('concluir', error);
+/** Pausar/reativar: leitura e escrita pelo conector ML (ADR-0060), token da conexão da org. */
+export function depsStatus(admin: SupabaseClient, cx: Cx, op: OperacaoStatusRow, chave: string): DepsStatus {
+  const conn = getConnector('mercado_livre');
+  const ctx = { getToken: () => Promise.resolve(cx.token) };
+  return {
+    ...depsLaco(admin, op, chave),
+    lerStatus: (mlItemId) => lerStatusML(cx.token, mlItemId), // 401/403 lança SemAcessoStatusML (fatal)
+    migracaoPxv: (mlItemId) => motivoMigracaoPxvPorItem(admin, op.org_id, mlItemId),
+    atualizarStatus: (mlItemId, alvo) => conn.atualizarStatus(ctx, mlItemId, alvo),
+    async encerrarRestantes(mensagem) {
+      const { error } = await admin.from(ITENS).update({ status: 'erro', mensagem, atualizado_em: agoraIso() })
+        .eq('org_id', op.org_id).eq('operacao_id', op.id).in('status', ['pendente', 'enviando']);
+      falhou('encerrarRestantes', error);
     },
   };
+}
+
+/** Quais ids são anúncios da org (mesmas 3 fontes de status-publicados) e quais são Kit Virtual. */
+export async function idsDaOrg(admin: SupabaseClient, orgId: string, ids: string[]): Promise<{ daOrg: Set<string>; kits: Set<string> }> {
+  const daOrg = new Set<string>();
+  const kits = new Set<string>();
+  // Blocos de 100: `.in()` com 500 ids (~7 KB) encosta no limite de URL do PostgREST.
+  for (let i = 0; i < ids.length; i += 100) {
+    const bloco = ids.slice(i, i + 100);
+    const [f, e, u, k] = await Promise.all([
+      admin.from('familias').select('ml_item_id').eq('org_id', orgId).in('ml_item_id', bloco),
+      admin.from('anuncios_externos').select('item_externo_id').eq('org_id', orgId).in('item_externo_id', bloco),
+      admin.from('anuncios_externos_itens').select('item_externo_id').eq('org_id', orgId).in('item_externo_id', bloco),
+      admin.from('kits_virtuais').select('ml_item_id').eq('org_id', orgId).eq('status', 'publicado').in('ml_item_id', bloco),
+    ]);
+    for (const [onde, r] of [['familias', f], ['anuncios_externos', e], ['anuncios_externos_itens', u], ['kits_virtuais', k]] as const) falhou(onde, r.error);
+    for (const r of f.data ?? []) daOrg.add(String(r.ml_item_id));
+    for (const r of e.data ?? []) daOrg.add(String(r.item_externo_id));
+    for (const r of u.data ?? []) daOrg.add(String(r.item_externo_id));
+    for (const r of k.data ?? []) kits.add(String(r.ml_item_id));
+  }
+  for (const id of kits) daOrg.add(id); // kit é da org; a recusa vem pelo motivo "Kit Virtual"
+  return { daOrg, kits };
 }
 
 /** Encerra a operação sem executar (módulo desligado, sem conexão, promoção encerrada): nada fica em andamento. */
