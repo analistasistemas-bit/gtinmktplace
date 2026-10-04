@@ -34,10 +34,13 @@ laço, claim, preview, trava e Reverter.
    publicando, moderado/encerrado, **atacado PxQ** (faixas absolutas).
 6. **Reverter** restaura ML e banco (`preco_publicacao` e a marca `editado` anteriores; `preco_publicado_ml` = preço
    confirmado na reversão) só se ambos seguem como a operação deixou (comparação atômica).
-7. **Integridade (garantias):** snapshot financeiro por cor revalidado na execução (qualquer mudança → refazer
-   preview); serialização cruzada com UPDATE/publicação e com aderir a promoção (recusam MLB/família com reajuste
-   pendente); recuperação por etapa (`escrita_pedida` → `ml_confirmado` → `aplicado`) sem reaplicar o percentual;
-   falha de banco após o ML confirmar não expira e mantém o bloqueio — o preço antigo nunca é republicado em silêncio;
+7. **Integridade (garantias):** preview calculado no servidor e gravado como `rascunho` (as confirmações valem para
+   ele); snapshot financeiro por cor revalidado na execução (qualquer mudança → refazer preview); **serialização
+   atômica** em Postgres — o reajuste reivindica o item travando as famílias do MLB (`for update`) e um advisory lock
+   por MLB, e a publicação/UPDATE (`familia_reservar_publicacao`), a adesão a promoção e a entrada em migração PxV
+   recusam MLB/família com reajuste ativo; recuperação por etapa (`escrita_pedida` → `ml_confirmado`) sem reaplicar
+   o percentual; resultado desconhecido do ML vira `conferindo` (não expira, mantém a reserva); persistência das
+   variações e conclusão do item na mesma transação; conflito com edição concorrente vira erro explícito;
    valores em centavos half-up, iguais no preview, na trava e no PUT; preço igual ao vivo = sem alteração.
 
 ## Consequências
