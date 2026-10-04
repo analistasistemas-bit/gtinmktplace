@@ -393,6 +393,9 @@ describe('ListaOperacoes', () => {
       renderLista();
       expect(screen.getAllByText('Reajustar preço de 2 anúncios')).toHaveLength(2);
       expect(screen.getByText('1/2')).toBeInTheDocument(); // progresso só sobre os incluídos (aplicado + conferindo)
+      // chips também só sobre os incluídos: bloqueado/ja_estava com incluido=false não aparecem
+      expect(screen.queryByText(/^Bloqueado/)).not.toBeInTheDocument();
+      expect(screen.queryByText(/^Já estava/)).not.toBeInTheDocument();
       expect(screen.getAllByText('Executando')).toHaveLength(1);
       expect(screen.getByText('Concluída')).toBeInTheDocument();
     });

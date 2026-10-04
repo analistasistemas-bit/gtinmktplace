@@ -82,9 +82,9 @@ function contarPorStatus(itens: { status: StatusItemOperacao }[]): Partial<Recor
 }
 
 function CardOperacao({ op, quem, onAbrir }: { op: OperacaoRow; quem: string; onAbrir: () => void }) {
-  const contagem = contarPorStatus(op.itens);
-  // Reajuste: progresso sobre os incluídos (fora/sem alteração/desmarcado não são trabalho) — igual ao título.
+  // Reajuste: chips e progresso sobre os incluídos (fora/sem alteração/desmarcado não são trabalho) — igual ao título.
   const doLote = op.acao === 'reajustar' ? op.itens.filter((i) => i.incluido !== false) : op.itens;
+  const contagem = contarPorStatus(doLote);
   const total = doLote.length;
   const emAndamento = doLote.filter((i) => NAO_TERMINAL.includes(i.status)).length;
   const feitos = total - emAndamento;

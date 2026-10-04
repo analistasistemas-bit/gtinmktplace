@@ -119,6 +119,45 @@ describe('PreviewReajuste', () => {
     expect(confirmarMut).toHaveBeenCalledWith(expect.objectContaining({ operacao_id: 'OP2' }));
   });
 
+  it('editar preço mantém o desmarque manual de item cujo preço não mudou, e zera as confirmações', async () => {
+    montar([item('MLB1'), item('MLB4'), vermelho()]);
+    await userEvent.click(await screen.findByLabelText('Incluir MLB4'));
+    expect(screen.getByLabelText('Incluir MLB4')).not.toBeChecked();
+    await userEvent.click(screen.getByLabelText('Incluir MLB2'));
+    await userEvent.click(screen.getByLabelText(/Assumo o prejuízo/));
+
+    previewMut.mockResolvedValueOnce({ operacao_id: 'OP2', itens: [item('MLB1', { preco: 12.5 }), item('MLB4'), vermelho()], expira_em: expira() });
+    const input = screen.getByLabelText('Novo preço de MLB1');
+    await userEvent.clear(input);
+    await userEvent.type(input, '12,50{Enter}');
+    await waitFor(() => expect(previewMut).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByLabelText('Incluir MLB2')).not.toBeChecked());
+    expect(screen.getByLabelText('Incluir MLB4')).not.toBeChecked(); // desmarque manual preservado
+    expect(screen.getByLabelText('Incluir MLB1')).toBeChecked();
+    expect(screen.queryByText(/Assumo o prejuízo/)).not.toBeInTheDocument();
+  });
+
+  it('resposta lenta de uma edição antiga não sobrescreve o rascunho mais novo', async () => {
+    montar([item('MLB1')]);
+    const input = await screen.findByLabelText('Novo preço de MLB1');
+    let soltarLento!: (v: unknown) => void;
+    previewMut
+      .mockImplementationOnce(() => new Promise((r) => { soltarLento = r; }))
+      .mockResolvedValueOnce({ operacao_id: 'OP_NOVO', itens: [item('MLB1', { preco: 13 })], expira_em: expira() });
+    vi.mocked(usePreviewReajuste).mockReturnValue({ mutateAsync: previewMut, isPending: false } as never);
+    await userEvent.clear(input);
+    await userEvent.type(input, '12{Enter}');
+    const input2 = screen.getByLabelText('Novo preço de MLB1');
+    await userEvent.clear(input2);
+    await userEvent.type(input2, '13{Enter}');
+    await waitFor(() => expect(screen.getByLabelText('Novo preço de MLB1')).toHaveValue('13,00'));
+    soltarLento({ operacao_id: 'OP_VELHO', itens: [item('MLB1', { preco: 12 })], expira_em: expira() });
+    await new Promise((r) => setTimeout(r));
+    expect(screen.getByLabelText('Novo preço de MLB1')).toHaveValue('13,00');
+    await userEvent.click(botao());
+    expect(confirmarMut).toHaveBeenCalledWith(expect.objectContaining({ operacao_id: 'OP_NOVO' }));
+  });
+
   it('membro comum vê o preview mas não executa', async () => {
     vi.mocked(usePodeExecutarOperacao).mockReturnValue(false);
     montar([item('MLB1')]);

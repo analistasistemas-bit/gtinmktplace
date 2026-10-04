@@ -86,13 +86,24 @@ export function PreviewReajuste({ pedido, onFechar, onCriada }: {
   const [recusas, setRecusas] = useState<RecusaItem[]>([]);
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
 
+  // Só a resposta do pedido mais recente vale: duas edições rápidas não podem ser sobrescritas pela mais lenta.
+  const ultimoPedido = useRef(0);
+  const respAtual = useRef<RespostaPreviewReajuste | null>(null);
   async function pedir(p: Record<string, number>) {
+    const id = ++ultimoPedido.current;
     setErroPreview(null);
     try {
       const r = await preview.mutateAsync({ ...pedido, ...(Object.keys(p).length ? { precos: p } : {}) });
-      // Novo rascunho: marcações e confirmações voltam ao padrão do servidor (C5).
-      setResp(r); setIncluir({}); setConfVermelho(false); setConfSemDado(false); setRecusas([]);
+      if (id !== ultimoPedido.current) return;
+      // Novo rascunho: confirmações zeradas (C5); mantém só o desmarque manual de item cujo preço não mudou
+      // (🔴/⚪ seguem o padrão do rascunho novo: desmarcados).
+      const antes = new Map((respAtual.current?.itens ?? []).map((i) => [i.ml_item_id, i.preco]));
+      const mesmoPreco = new Set(r.itens.filter((i) => antes.get(i.ml_item_id) === i.preco).map((i) => i.ml_item_id));
+      setIncluir((s) => Object.fromEntries(Object.entries(s).filter(([ml, v]) => v === false && mesmoPreco.has(ml))));
+      respAtual.current = r;
+      setResp(r); setConfVermelho(false); setConfSemDado(false); setRecusas([]);
     } catch (e) {
+      if (id !== ultimoPedido.current) return;
       setErroPreview(e instanceof ErroOperacao ? e : new ErroOperacao('Não foi possível calcular o preview.'));
     }
   }

@@ -60,4 +60,17 @@ describe('fetchPublicados', () => {
     const [item] = await fetchPublicados();
     expect(item.userProducts).toBe(true);
   });
+
+  it('partição de split nunca herda userProducts do produto (I5: vai por MLB no reajuste)', async () => {
+    const particao = { codigo_pai: '02835002', item_externo_id: 'MLB2', permalink: null, titulo: 'X', publicado_em: '2026-06-07', variacoes_externas: {} };
+    mockFrom.mockImplementation((tabela: string) => {
+      if (tabela === 'familias') return fakeChain({ data: [FAMILIA], error: null });
+      if (tabela === 'anuncios_externos') return fakeChain({ data: [{ id: 'R1', ...particao }], error: null });
+      if (tabela === 'anuncios_externos_itens') return fakeChain({ data: [{ anuncio_externo_id: 'R1', sku: '0283500201', item_externo_id: 'MLB9' }], error: null });
+      return fakeChain({ data: [], error: null });
+    });
+    const itens = await fetchPublicados();
+    expect(itens.find((i) => i.mlItemId === 'MLB1')?.userProducts).toBe(true);
+    expect(itens.find((i) => i.mlItemId === 'MLB2')?.userProducts).toBe(false);
+  });
 });

@@ -337,4 +337,21 @@ describe('Publicados — seleção em massa', () => {
       familias: ['f1'], ml_item_ids: ['MLB2'], ajuste: { tipo: 'pct', sentido: '+', valor: 5 },
     });
   });
+
+  it('Reajustar preço: partição Legacy de produto UP vai pelo MLB, sem mandar a família', async () => {
+    const { data } = usePublicadosMock() as { data: PublicadoItem[] };
+    // MLB1 = linha da família (UP); MLB2 = partição do mesmo produto (fetchPublicados marca userProducts:false).
+    usePublicadosMock.mockReturnValue({
+      data: data.map((i) => (i.mlItemId === 'MLB1' ? { ...i, userProducts: true } : i.mlItemId === 'MLB2' ? { ...i, familiaId: 'f1', userProducts: false } : i)),
+      isLoading: false, error: null, refetch: vi.fn(),
+    });
+    renderPagina();
+    fireEvent.click(caixaTitulo('02'));
+    fireEvent.click(screen.getByRole('button', { name: 'Reajustar preço (1)' }));
+    fireEvent.change(await screen.findByLabelText('Valor do ajuste'), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ver preview' }));
+    expect(JSON.parse((await screen.findByTestId('preview-reajuste')).textContent!)).toEqual({
+      familias: [], ml_item_ids: ['MLB2'], ajuste: { tipo: 'pct', sentido: '+', valor: 5 },
+    });
+  });
 });
