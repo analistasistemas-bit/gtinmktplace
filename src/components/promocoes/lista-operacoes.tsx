@@ -240,7 +240,7 @@ export function ListaOperacoes() {
       {reversaoAtiva && (
         <PreviewOperacao
           acao={reversaoAtiva.acaoNova} tipo={reversaoAtiva.op.promocao_tipo === 'SMART' ? 'SMART' : 'DEAL'}
-          promocaoId={reversaoAtiva.op.promocao_id} promocaoNome={reversaoAtiva.op.promocao_nome ?? reversaoAtiva.op.promocao_id}
+          promocaoId={reversaoAtiva.op.promocao_id ?? ''} promocaoNome={reversaoAtiva.op.promocao_nome ?? reversaoAtiva.op.promocao_id ?? ''}
           itens={reversaoAtiva.itens} origemId={reversaoAtiva.op.id} naoRevertiveis={reversaoAtiva.naoRevertiveis}
           aberto onClose={fecharPreviewReversao} onSucesso={fecharPreviewReversao}
         />

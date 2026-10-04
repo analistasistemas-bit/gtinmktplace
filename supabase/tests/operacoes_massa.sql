@@ -118,6 +118,41 @@ begin
 end;
 $$;
 
+-- Emenda 2026-10-04 (pausar/reativar): coerência ação × promoção e anti-duplicidade sem promoção.
+reset role;
+do $$
+declare v_op1 uuid := '91000000-0000-0000-0000-000000000301';
+        v_op2 uuid := '91000000-0000-0000-0000-000000000302';
+        v_org uuid := '91000000-0000-0000-0000-000000000001';
+begin
+  insert into public.operacoes_massa (id, org_id, acao) values (v_op1, v_org, 'pausar'), (v_op2, v_org, 'reativar');
+
+  begin
+    insert into public.operacoes_massa (org_id, acao) values (v_org, 'aderir');
+    raise exception 'CHECK: aderir sem promoção foi aceito';
+  exception when check_violation then null; end;
+
+  begin
+    insert into public.operacoes_massa (org_id, acao, promocao_id, promocao_tipo) values (v_org, 'pausar', 'P-X', 'DEAL');
+    raise exception 'CHECK: pausar com promoção foi aceito';
+  exception when check_violation then null; end;
+
+  insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id) values (v_op1, v_org, 'MLB9');
+  begin
+    insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id) values (v_op2, v_org, 'MLB9');
+    raise exception 'ÍNDICE: mesmo anúncio em duas operações de status pendentes';
+  exception when unique_violation then null; end;
+
+  -- Terminado libera o anúncio.
+  update public.operacoes_massa_itens set status = 'aplicado' where operacao_id = v_op1 and ml_item_id = 'MLB9';
+  insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id) values (v_op2, v_org, 'MLB9');
+
+  -- Operação de promoção do mesmo anúncio não é barrada pelo índice de status.
+  insert into public.operacoes_massa_itens (operacao_id, org_id, promocao_id, ml_item_id)
+    values ('91000000-0000-0000-0000-000000000201', v_org, 'P-A', 'MLB9');
+end;
+$$;
+
 select 'operacoes_massa: ok' as resultado;
 
 rollback;

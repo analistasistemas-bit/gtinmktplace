@@ -2104,9 +2104,9 @@ export type Database = {
           id: string
           org_id: string
           origem_id: string | null
-          promocao_id: string
+          promocao_id: string | null
           promocao_nome: string | null
-          promocao_tipo: string
+          promocao_tipo: string | null
           status: string
         }
         Insert: {
@@ -2117,9 +2117,9 @@ export type Database = {
           id?: string
           org_id: string
           origem_id?: string | null
-          promocao_id: string
+          promocao_id?: string | null
           promocao_nome?: string | null
-          promocao_tipo: string
+          promocao_tipo?: string | null
           status?: string
         }
         Update: {
@@ -2130,9 +2130,9 @@ export type Database = {
           id?: string
           org_id?: string
           origem_id?: string | null
-          promocao_id?: string
+          promocao_id?: string | null
           promocao_nome?: string | null
-          promocao_tipo?: string
+          promocao_tipo?: string | null
           status?: string
         }
         Relationships: [
@@ -2163,7 +2163,7 @@ export type Database = {
           operacao_id: string
           org_id: string
           preco: number | null
-          promocao_id: string
+          promocao_id: string | null
           proxima_conferencia: string | null
           saida_pedida_em: string | null
           semaforo: string | null
@@ -2180,7 +2180,7 @@ export type Database = {
           operacao_id: string
           org_id: string
           preco?: number | null
-          promocao_id: string
+          promocao_id?: string | null
           proxima_conferencia?: string | null
           saida_pedida_em?: string | null
           semaforo?: string | null
@@ -2197,7 +2197,7 @@ export type Database = {
           operacao_id?: string
           org_id?: string
           preco?: number | null
-          promocao_id?: string
+          promocao_id?: string | null
           proxima_conferencia?: string | null
           saida_pedida_em?: string | null
           semaforo?: string | null
