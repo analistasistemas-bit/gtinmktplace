@@ -37,9 +37,11 @@ laço, claim, preview, trava e Reverter.
 7. **Integridade (garantias):** preview calculado no servidor e gravado como `rascunho` (as confirmações valem para
    ele); snapshot financeiro por cor revalidado na execução (qualquer mudança → refazer preview); **serialização
    atômica** em Postgres — o reajuste reivindica o item travando as famílias do MLB (`for update`) e um advisory lock
-   por MLB, e a publicação/UPDATE (`familia_reservar_publicacao`), a adesão a promoção e a entrada em migração PxV
-   recusam MLB/família com reajuste ativo; recuperação por etapa (`escrita_pedida` → `ml_confirmado`) sem reaplicar
-   o percentual; resultado desconhecido do ML vira `conferindo` (não expira, mantém a reserva); persistência das
+   por MLB, e a publicação/UPDATE (`familia_reservar_publicacao`), a adesão a promoção (claim com o mesmo advisory
+   lock) e a entrada em migração PxV (`familia_reservar_migracao_pxv`, que grava `solicitada` na mesma transação)
+   recusam MLB/família com reajuste ativo; recuperação por etapa (`escrita_pedida` → `ml_confirmado`) **antes** de
+   qualquer trava de novo envio e sem reaplicar o percentual (conferência só por GET; reenvio só pelo fluxo normal);
+   resultado desconhecido do ML vira `conferindo` (não expira, mantém a reserva, retomada com claim exclusivo); persistência das
    variações e conclusão do item na mesma transação; conflito com edição concorrente vira erro explícito;
    valores em centavos half-up, iguais no preview, na trava e no PUT; preço igual ao vivo = sem alteração.
 
