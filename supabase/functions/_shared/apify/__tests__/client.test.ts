@@ -41,6 +41,25 @@ describe('apifyConfigurado', () => {
   });
 });
 
+describe('buscarAnunciosML — 5º token', () => {
+  it('cai no token 5 quando os tokens 1 a 4 estão sem saldo', async () => {
+    env.APIFY_TOKEN = 'tok1';
+    env.APIFY_TOKEN_2 = 'tok2';
+    env.APIFY_TOKEN_3 = 'tok3';
+    env.APIFY_TOKEN_4 = 'tok4';
+    env.APIFY_TOKEN_5 = 'tok5';
+    const runs: string[] = [];
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
+      const token = tokenDaChamada(init);
+      if (String(url) === LIMITS_URL) return respLimits(5, token === 'Bearer tok5' ? 0 : 4.9);
+      runs.push(token!);
+      return respItens([{ ok: true }]);
+    });
+    expect(await buscarAnunciosML('termo')).toEqual([{ ok: true }]);
+    expect(runs).toEqual(['Bearer tok5']);
+  });
+});
+
 describe('buscarAnunciosML — sem token', () => {
   it('retorna null sem chamar fetch', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch');

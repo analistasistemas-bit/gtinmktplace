@@ -78,8 +78,8 @@ Chave de cache bumpada para `sonar:vendas:v4` (v3 aposentada guarda painéis do 
 
 A premissa "conta única e global" (Consequências, abaixo) criava um teto rígido: no plano FREE
 (~50 termos novos/mês), esgotar o saldo do mês derrubava o Sonar para todas as orgs até o reset.
-Passou a suportar **até 4 tokens** (`APIFY_TOKEN`, `APIFY_TOKEN_2`, `APIFY_TOKEN_3`,
-`APIFY_TOKEN_4`, cada um de uma conta Apify distinta), tentados em **ordem fixa de prioridade** —
+Passou a suportar **até 5 tokens** (`APIFY_TOKEN` a `APIFY_TOKEN_5` — o 5º entrou em 2026-10-03;
+cada um de uma conta Apify distinta), tentados em **ordem fixa de prioridade** —
 não round-robin, para manter previsível qual conta é cobrada primeiro.
 
 Antes de cada tentativa, checa o saldo mensal restante da conta candidata via
@@ -98,7 +98,7 @@ saldo normal acabando.
 
 Implementado só em `_shared/apify/client.ts` (`buscarAnunciosML`/`apifyConfigurado`); nenhuma
 mudança no consumidor (`pulse-sonar-vendas`) nem na semântica de `{ configurado: false }` — ela
-agora significa "nenhum dos até 4 tokens está presente", não "falta o único token".
+agora significa "nenhum dos até 5 tokens está presente", não "falta o único token".
 
 ## Alternativas descartadas
 
@@ -139,7 +139,7 @@ voltar a expor `sold_quantity` de terceiros na API oficial.
   org se o gasto incomodar.
 - A conta Apify é **global** (não uma chave por org): todo o consumo de todas as orgs cai na
   fatura da DALUDI. No plano FREE (US$ 5/mês) isso dá ~50 termos novos por mês por conta — o cache
-  de 7 dias é o que estica esse número na prática. Desde o Adendo 2026-08-22, até 4 contas em
+  de 7 dias é o que estica esse número na prática. Desde o Adendo 2026-08-22, até 5 contas em
   fallback por saldo multiplicam esse teto, mas o consumo continua sem cota por org dentro de cada
   conta.
 - `vendas_totais` soma faixas arredondadas do ML (100 / 500 / 1k / … / 250k), então o total exibido

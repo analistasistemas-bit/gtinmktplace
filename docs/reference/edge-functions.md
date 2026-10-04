@@ -1580,7 +1580,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
   **continua deployada em produção** enquanto o front no ar a chamar; o `supabase functions delete
   pulse-sonar` é pendência pós-merge, rastreada em `docs/TASKS.md`). Recebe `{termo}` (mínimo 3 caracteres, mesma normalização);
   sem nenhum `APIFY_TOKEN*` configurado devolve `{configurado:false}` com 200 (indisponível ≠
-  erro). Até 4 tokens (`APIFY_TOKEN`, `APIFY_TOKEN_2`, `APIFY_TOKEN_3`, `APIFY_TOKEN_4`), tentados
+  erro). Até 5 tokens (`APIFY_TOKEN`, `APIFY_TOKEN_2` … `APIFY_TOKEN_5`), tentados
   em ordem fixa de prioridade — antes de cada tentativa checa o saldo mensal restante da conta
   (`GET /v2/users/me/limits`) e pula pro próximo token se sobrar menos de US$ 0,15; se a busca em
   si estourar cota (`402`) ou o token for rejeitado (`401`/`403` — revogado, expirado, secret

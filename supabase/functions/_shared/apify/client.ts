@@ -18,7 +18,7 @@ const TIMEOUT_RUN_S = 120;
 // alavanca é a QUANTIDADE. Reavaliar se a Apify passar a cobrar menos por item em plano pago.
 const TETO_USD = 0.10;
 
-// Fallback multi-conta (2026-08-22): a conta Apify deixou de ser única — até 4 tokens, tentados
+// Fallback multi-conta (2026-08-22): a conta Apify deixou de ser única — até 5 tokens, tentados
 // em ordem fixa de prioridade. Antes de cada tentativa, checa o saldo mensal restante da conta
 // (GET /v2/users/me/limits); abaixo de SALDO_MINIMO_USD (folga sobre o teto de $0.10/busca) pula
 // pro próximo token sem gastar a chamada. Se a checagem de saldo falhar (rede), não bloqueia — a
@@ -26,7 +26,7 @@ const TETO_USD = 0.10;
 // (401/403 — revogado, expirado, secret errado), também tenta o próximo token, com um warning
 // no segundo caso (não deve virar rotina silenciosa); qualquer outro erro (actor FAILED, timeout,
 // 5xx) desiste, pois trocar de conta não resolve.
-const TOKEN_ENV_VARS = ['APIFY_TOKEN', 'APIFY_TOKEN_2', 'APIFY_TOKEN_3', 'APIFY_TOKEN_4'];
+const TOKEN_ENV_VARS = ['APIFY_TOKEN', 'APIFY_TOKEN_2', 'APIFY_TOKEN_3', 'APIFY_TOKEN_4', 'APIFY_TOKEN_5'];
 const SALDO_MINIMO_USD = 0.15;
 
 const tokensConfigurados = (): string[] =>
