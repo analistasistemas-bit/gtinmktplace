@@ -15,6 +15,8 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > Monitor de Frete ✅ → Central de Promoções (MVP só leitura) ✅ → Operações em Massa ✅ → Promoções V2
 > (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
 >
+> **🟡 Reajuste de preço em massa ([[0178-reajuste-de-preco-em-massa|ADR-0178]])** — 3º tipo do motor (I5), **implementado na branch `worktree-i5-reajuste-preco-massa`, aguardando merge/deploy** (2 migrations + `operacoes-massa` + 6 edges de barreira). Ver `docs/TASKS.md`.
+>
 > **🟢 Pausar/reativar em massa (emenda 2026-10-04 do ADR-0174)** — 2º tipo do motor (I5), **em produção desde 2026-10-04** (migration
 > `20261004165122_operacoes_massa_status`, edge `operacoes-massa` v9). Validado em campo na DSA: lote de 3 pausado e revertido, relacionados de catálogo acompanharam, seleção mista "Pausar 1 · Reativar 1".
 > Ordem combinada: pausar/reativar → preço → estoque. Ver `docs/TASKS.md`.

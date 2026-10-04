@@ -2,6 +2,16 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## Reajuste de preço em massa (ADR-0178) — implementado na branch, aguardando merge/deploy
+
+3º tipo do motor de operações em massa. Spec `docs/superpowers/specs/2026-10-04-reajuste-preco-em-massa-design.md` (D1–D15, C1–C5); plano `docs/superpowers/plans/2026-10-04-reajuste-preco-em-massa.md`.
+
+- [x] Migrations `20261004200804_reajuste_preco_schema.sql` e `20261004202356_reajuste_preco_rpcs.sql`: `reajustar`, status `rascunho`/`conferindo`, colunas do item, RPCs de reserva/confirmação/persistência.
+- [x] Edge `operacoes-massa`: preview (rascunho), confirmar, executar/conferir (`_shared/operacoes/reajuste/`).
+- [x] Barreiras: `publicar-familias` (`recusadas`/409), `update-familia-ml`, `publish-familia-ml`, `publicar-split-ml` (guard fail-closed), `migrar-preco-por-variacao` (RPC), `ingest-lote` herda `preco_editado_pelo_operador` (D15).
+- [x] Front: Publicados "Reajustar preço" + dialog + preview; Operações (título/Reverter); Revisão "Preço fixado pelo operador" + "Voltar ao automático".
+- [ ] **Deploy:** `supabase db push` → `publicar-familias`, `update-familia-ml`, `publish-familia-ml`, `publicar-split-ml`, `migrar-preco-por-variacao`, `ingest-lote` → `operacoes-massa` → merge; conferir versões ativas.
+
 ## Pausar/reativar em massa (ADR-0174, emenda 2026-10-04) — em produção desde 2026-10-04
 
 2º tipo do motor de operações em massa. Spec `docs/superpowers/specs/2026-10-04-pausar-reativar-em-massa-design.md`; plano `docs/superpowers/plans/2026-10-04-pausar-reativar-em-massa.md` (revisado pelo Codex em 3 rodadas).

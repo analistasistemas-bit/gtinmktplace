@@ -1,6 +1,6 @@
 # ADR-0178 — Reajuste de preço em massa (3º tipo do motor de operações)
 
-**Status:** Proposto
+**Status:** Aceito (2026-10-04) — implementado na branch `worktree-i5-reajuste-preco-massa`, aguardando merge/deploy
 **Data:** 2026-10-04
 **Relacionado:** [ADR-0174](0174-operacoes-em-massa-promocoes-v2.md) (motor + emenda 2026-10-04),
 [ADR-0020](0020-estrategia-de-preco-liquido-minimo.md) (piso/semáforo), [ADR-0055](0055-imposto-por-origem-nacional-importado.md) (imposto por origem),
@@ -58,3 +58,17 @@ laço, claim, preview, trava e Reverter.
 - Gravar no banco sem fixar (re-ingest desfaz).
 - Reaplicar atacado após o novo preço (falha deixaria base nova com faixas velhas).
 - Spike de escrita direta no ML para medir promoção/catálogo (fora do fluxo do app).
+
+## Implementação
+
+**Migrations** (aplicar com `supabase db push`):
+- `20261004200804_reajuste_preco_schema.sql` — `operacoes_massa.acao` aceita `reajustar`; `status` ganha `rascunho` (e `expira_em`); itens ganham `rascunho`/`conferindo` e as colunas `preco_anterior`, `etapa` (`escrita_pedida|ml_confirmado`), `confirmado_sem_dado`, `incluido`, `avaliacao`, `estado_anterior`, `variacoes_ml`, `variacao_ids`, `codigo_pai`; índice único de reserva inclui `conferindo`; índice `operacoes_massa_itens_reajuste_ativo (org_id, codigo_pai)`.
+- `20261004202356_reajuste_preco_rpcs.sql` — `reajuste_codigo_pai`, `reajuste_ativo_produto`, `reajuste_trava_produto`, `reajuste_reivindicar`, `reajuste_variacoes_do_mlb`, `reajuste_confirmar`, `reajuste_persistir`, `familia_reservar_publicacao`, `familia_reservar_migracao_pxv`; `operacoes_massa_reivindicar` substituída (`aderir` ganha lock do MLB e a barreira). Todas `service_role` only. Identidade de serialização = `(org_id, codigo_pai)`; ordem de locks produto → MLB.
+
+**Edge `operacoes-massa`** (`_shared/operacoes/reajuste/*`: `alvo`, `avaliacao`, `decidir`, `deps`, `elegibilidade`, `etapa`, `executar`, `ml`, `pedido`, `preview`, `tipos`): `{etapa:'preview'}` (qualquer membro; Reverter só admin/suporte full) grava o `rascunho` (expira em 30 min; `executaveis = 0` não grava nada); `{etapa:'confirmar'}` (admin/suporte full) chama `reajuste_confirmar` e publica `executar`; `executar`/`conferir` rodam o mesmo laço. Teto de 500 MLBs únicos (`MAX_MLBS`).
+
+**Barreiras**: `publicar-familias` reserva via `familia_reservar_publicacao` e devolve `recusadas` (409 se nada foi enfileirado); `update-familia-ml`, `publish-familia-ml` e `publicar-split-ml` chamam `_shared/publicacao/guard-reajuste.ts` (400 definitivo com reajuste ativo; erro da RPC é fail-closed e retentável); `migrar-preco-por-variacao` entra em PxV pela RPC `familia_reservar_migracao_pxv`; `ingest-lote` herda `preco_editado_pelo_operador` da cor casada no UPDATE (D15).
+
+**Front**: Publicados — "Reajustar preço" na barra de seleção + dialog + preview (`components/operacoes/`); Operações — título "Reajustar preço de N anúncios" e Reverter pelo preview; Revisão — selo "Preço fixado pelo operador — mantido nos próximos lotes" e "Voltar ao automático".
+
+**Deploy (ordem):** `supabase db push` → `publicar-familias`, `update-familia-ml`, `publish-familia-ml`, `publicar-split-ml`, `migrar-preco-por-variacao`, `ingest-lote` → `operacoes-massa` → merge do front. Conferir a versão ativa de cada função após o deploy.

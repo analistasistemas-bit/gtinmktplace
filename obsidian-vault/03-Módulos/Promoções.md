@@ -76,6 +76,12 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Lê o status fresco no ML antes de escrever; já no alvo = "já estava"; moderado/encerrado/migração PxV = bloqueado; Kit Virtual fora. Reverter só sobre o que a original aplicou.
 - Ver `docs/reference/edge-functions.md` (operacoes-massa) e ADR-0174 (emenda 2026-10-04).
 
+### Reajuste de preço em massa (ADR-0178 — implementado na branch, aguardando merge/deploy)
+
+- 3º tipo do motor, também fora de Promoções: botão "Reajustar preço" em Publicados → preview (rascunho de 30 min, trava financeira, 🔴/⚪ só com confirmação) → confirmar (admin). Acompanhamento e Reverter em `/operacoes`.
+- Só o preço vai ao ML; o banco guarda o novo valor com a marca "Preço fixado pelo operador" (Revisão: "Voltar ao automático" remove). Promoção ativa (pending/started), Kit Virtual, catálogo, PxV e atacado PxQ ficam de fora; produto com reajuste ativo recusa publicar/UPDATE/migrar PxV.
+- Ver `docs/reference/edge-functions.md` (operacoes-massa) e ADR-0178.
+
 ## Correções de 2026-10-04
 
 - **Relâmpago duplicada** (`7cc6332d`): o ML lista o mesmo anúncio 2× (oferta genérica com estoque +

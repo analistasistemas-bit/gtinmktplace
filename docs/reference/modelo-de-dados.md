@@ -966,6 +966,15 @@ worker já pegou. `revoke all from public, anon, authenticated`; `grant execute 
 RLS nas duas tabelas: `select` por `org_id = current_org_id()`; escrita só por `service_role`
 (edge `operacoes-massa`, que é a única escritora).
 
+### Reajuste de preço em massa (ADR-0178) — implementado na branch, aguardando `db push`
+
+*Migrations `20261004200804_reajuste_preco_schema.sql` e `20261004202356_reajuste_preco_rpcs.sql`.*
+
+- `operacoes_massa`: `acao` aceita `reajustar` (sem `promocao_id`/`promocao_tipo`, como pausar/reativar); `status` ganha `rascunho` (preview gravado, sem efeito até confirmar); nova coluna `expira_em`.
+- `operacoes_massa_itens`: `status` ganha `rascunho` e `conferindo` (resultado desconhecido do ML; mantém a reserva). Colunas novas: `preco_anterior`, `etapa` (`escrita_pedida|ml_confirmado`), `confirmado_sem_dado`, `incluido` (default true), `avaliacao` jsonb, `estado_anterior` jsonb, `variacoes_ml` jsonb, `variacao_ids` uuid[], `codigo_pai`. `operacoes_massa_itens_status_unico` passa a cobrir `conferindo`; índice `operacoes_massa_itens_reajuste_ativo (org_id, codigo_pai)` (parcial, em andamento).
+- RPCs (todas `service_role` only; identidade de serialização `(org_id, codigo_pai)`, locks produto → MLB): `reajuste_codigo_pai(p_org, p_ml_item)`, `reajuste_ativo_produto(p_org, p_codigo_pai)`, `reajuste_trava_produto`, `reajuste_reivindicar(p_org, p_operacao, p_ml_item)`, `reajuste_variacoes_do_mlb(p_org, p_codigo_pai, p_ml_item, p_ml_variation_ids)`, `reajuste_confirmar(p_org, p_operacao, p_confirmacoes)`, `reajuste_persistir(p_org, p_operacao, p_ml_item, numeric, jsonb)`, `familia_reservar_publicacao(p_org, p_familia_ids, p_operacao)`, `familia_reservar_migracao_pxv(p_org, p_codigo_pai, p_campos)`. `operacoes_massa_reivindicar` foi substituída (`aderir` ganha lock do MLB e a barreira do reajuste).
+- Efeito em `variacoes`: confirmado no ML → `preco_publicacao` = novo, `preco_editado_pelo_operador = true`, `preco_publicado_ml` = confirmado.
+
 ## Tráfego e oferta (ADR-0172, Fatia 2b)
 
 Visitas por dia e preço de oferta observado por MLB, coletados pelo worker `coletar-trafego-ml`

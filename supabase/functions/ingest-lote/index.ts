@@ -336,7 +336,7 @@ Deno.serve(async (req) => {
             estoque_anterior: h?.estoque_anterior ?? null,
             // ADR-0016: UPDATE preserva o preço já publicado. Cor nova (sem preço anterior)
             // herda o preço de venda das outras cores da família; só cai na planilha se não houver.
-            // D1 do reajuste: a marca de preço fixado vem junto (process-familia a respeita).
+            // D15 do reajuste: a marca de preço fixado vem junto (selo na Revisão; o preço em si já é copiado).
             ...precoHerdadoUpdate(h, precoPubFamilia, v.PRECO),
             excluida_da_publicacao: h?.ml_variation_id == null && !(base.imagem_path != null && base.estoque > 0),
           });
