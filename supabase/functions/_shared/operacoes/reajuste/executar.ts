@@ -89,7 +89,8 @@ async function processar(operacaoId: string, ml: string, deps: DepsReajuste): Pr
     }
     const d = decidirReajuste('escrita_pedida', item.preco, item.preco_anterior, vivo, item.variacoes_ml);
     if (d.tipo === 'persistir') return confirmar();
-    if (d.tipo === 'voltar_pendente') return gravar({ status: 'pendente', etapa: null, mensagem: null });
+    // Conferência provou que nada foi aplicado → reenvio começa com tentativas zeradas (conferencias acumulou agendamentos).
+    if (d.tipo === 'voltar_pendente') return gravar({ status: 'pendente', etapa: null, mensagem: null, conferencias: 0 });
     if (d.tipo === 'fim' && d.status === 'conferindo') return agendar();
     if (d.tipo === 'fim') return gravar({ status: d.status, etapa: null, mensagem: d.mensagem });
     throw new Error(`decisão inesperada na conferência: ${d.tipo}`);
@@ -132,7 +133,9 @@ async function processar(operacaoId: string, ml: string, deps: DepsReajuste): Pr
       return agendar();
     }
     if (conf.kind === 'falhou') return agendar();
-    if (conf.todasIguais && centavos(conf.preco) === centavos(item.preco)) return confirmar();
+    // Mesma regra da conferência (decidir.ts): composição = variacoes_ml E todas no alvo. Qualquer outra coisa após
+    // um PUT 200 → erro (sem voltar_pendente aqui).
+    if (decidirReajuste('escrita_pedida', item.preco, item.preco_anterior, conf, item.variacoes_ml).tipo === 'persistir') return confirmar();
     return gravar({ status: 'erro', etapa: null, mensagem: MSG_NAO_APLICADO });
   };
 

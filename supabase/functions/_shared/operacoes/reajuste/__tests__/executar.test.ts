@@ -124,6 +124,19 @@ describe('executarReajuste — envio novo', () => {
     expect(deps.persistir).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['ML devolve só uma das variações (no alvo)', () => legacy(110)],
+    ['variação a mais no ML', () => legacy(110, 110, 110)],
+    ['todas no preço antigo', () => legacy(100, 100)],
+  ])('Legacy após PUT ok: %s → erro "não aplicado", não persiste', async (_n, depois) => {
+    const itens = [item('A', { variacoes_ml: ['1', '2'] })];
+    const deps = montar(itens, { A: legacy(100, 100) });
+    deps.ml.lerVivo.mockResolvedValueOnce(legacy(100, 100)).mockResolvedValueOnce(depois());
+    await executarReajuste(OP, deps, OPTS);
+    expect(resumo(itens[0])).toEqual({ status: 'erro', etapa: null, mensagem: MSG_NAO_APLICADO });
+    expect(deps.persistir).not.toHaveBeenCalled();
+  });
+
   it('400 do ML → erro com a mensagem do ML, etapa limpa', async () => {
     const itens = [item('A')];
     const deps = montar(itens, { A: plano(100) });
@@ -279,10 +292,29 @@ describe('executarReajuste — recuperação', () => {
     const itens = [conferindo()];
     const deps = montar(itens, { A: plano(100) });
     await executarReajuste(OP, deps, OPTS);
-    expect(deps.gravarItem).toHaveBeenCalledWith('op', 'A', { status: 'pendente', etapa: null, mensagem: null });
+    expect(deps.gravarItem).toHaveBeenCalledWith('op', 'A', { status: 'pendente', etapa: null, mensagem: null, conferencias: 0 });
     expect(deps.ml.participaPromocaoML).toHaveBeenCalledTimes(1); // elegibilidade no reenvio
     expect(deps.ml.putPreco).toHaveBeenCalledTimes(1);
     expect(itens[0].status).toBe('aplicado');
+  });
+
+  it('desconhecido → conferência falha → conferência acha o anterior: reenvio com tentativas zeradas (falha transitória retenta, não erro)', async () => {
+    const itens = [item('A')];
+    const vivo = { A: plano(100) };
+    const deps = montar(itens, vivo);
+    deps.ml.putPreco.mockResolvedValueOnce({ kind: 'desconhecido', mensagem: 'timeout' });
+    await executarReajuste(OP, deps, OPTS); // conferindo, conferencias 1
+    expect(itens[0]).toMatchObject({ status: 'conferindo', conferencias: 1 });
+    itens[0].proxima_conferencia = PASSADO;
+    deps.ml.lerVivo.mockRejectedValueOnce(new Error('ML 500'));
+    await executarReajuste(OP, deps, OPTS); // re-agenda, conferencias 2
+    expect(itens[0]).toMatchObject({ status: 'conferindo', conferencias: 2 });
+    itens[0].proxima_conferencia = PASSADO;
+    // conferência lê o anterior → pendente (conferencias 0) → reenvio no mesmo laço: lerVivo falha transitório
+    deps.ml.lerVivo.mockResolvedValueOnce(plano(100)).mockRejectedValueOnce(new Error('ML 502'));
+    await executarReajuste(OP, deps, OPTS);
+    expect(deps.gravarItem).toHaveBeenCalledWith('op', 'A', { status: 'pendente', etapa: null, mensagem: null, conferencias: 0 });
+    expect(itens[0]).toMatchObject({ status: 'enviando', etapa: null, conferencias: 1, mensagem: 'ML 502' });
   });
 
   it('conferência acha outro valor → erro "terceiros"', async () => {
