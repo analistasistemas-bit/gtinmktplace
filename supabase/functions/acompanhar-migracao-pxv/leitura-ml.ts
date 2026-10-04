@@ -4,9 +4,12 @@ import { caminhoMultiget, comoEnvelopeAntigo } from '../_shared/ml/multiget.ts';
 
 const API = 'https://api.mercadolibre.com';
 
-/** COLOR dos anúncios NOVOS. Lança em HTTP de erro (o worker reagenda). Quem chama já pegou o token. */
-export async function lerCoresML(token: string, itemIds: string[]): Promise<Map<string, string | null>> {
+/** COLOR dos anúncios NOVOS. Lança em HTTP de erro (o worker reagenda). Ordem do original:
+ *  lista vazia → nada (nem token); senão token → URL → fetch. */
+export async function lerCoresML(getToken: () => Promise<string>, itemIds: string[]): Promise<Map<string, string | null>> {
   const out = new Map<string, string | null>();
+  if (itemIds.length === 0) return out;
+  const token = await getToken();
   const url = `${API}${caminhoMultiget(itemIds, 'id,attributes')}`;
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
   // Lança em vez de devolver mapa vazio: um 5xx transitório do ML viraria "nenhuma cor lida" →
@@ -21,9 +24,11 @@ export async function lerCoresML(token: string, itemIds: string[]): Promise<Map<
   return out;
 }
 
-/** Estoque vivo por item. HTTP de erro → mapa vazio. `getToken` é chamado depois de montar a URL, como no original. */
+/** Estoque vivo por item. HTTP de erro → mapa vazio. Ordem do original: lista vazia → nada (nem token);
+ *  senão URL → token (dentro dos headers) → fetch. */
 export async function lerEstoqueVivoML(getToken: () => Promise<string>, ids: string[]): Promise<Map<string, number>> {
   const vivoPorItem = new Map<string, number>();
+  if (ids.length === 0) return vivoPorItem;
   const url = `${API}${caminhoMultiget(ids, 'id,available_quantity')}`;
   const resp = await fetch(url, { headers: { Authorization: `Bearer ${await getToken()}` } });
   if (resp.ok) {

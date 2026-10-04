@@ -90,10 +90,7 @@ Deno.serve(async (req) => {
 
     // Multiget: a COLOR dos anúncios NOVOS, para o degrau (b) do casamento. Só ids que o próprio ML
     // devolveu como filhos desta migração — nunca uma busca por título.
-    lerCores: async (itemIds) => {
-      if (itemIds.length === 0) return new Map<string, string | null>();
-      return lerCoresML(await getToken(), itemIds);
-    },
+    lerCores: (itemIds) => lerCoresML(getToken, itemIds),
 
     lerVariacoesLocais: async () => {
       const fam = await familiaRepresentante();
@@ -157,7 +154,7 @@ Deno.serve(async (req) => {
       const localPorSku = new Map((data ?? []).map((v) => [v.codigo as string, (v.estoque as number) ?? 0]));
 
       const ids = [...itemPorSku.values()];
-      const vivoPorItem = ids.length > 0 ? await lerEstoqueVivoML(getToken, ids) : new Map<string, number>();
+      const vivoPorItem = await lerEstoqueVivoML(getToken, ids);
       const saldos: Array<{ sku: string; local: number; vivo: number }> = [];
       for (const [sku, itemId] of itemPorSku) {
         const vivo = vivoPorItem.get(itemId);

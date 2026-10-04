@@ -1,27 +1,59 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buscarUserProductIdsML } from '../leitura-ml.ts';
 afterEach(() => vi.unstubAllGlobals());
-const resp = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status });
+const resp = (b: unknown, status = 200) => new Response(typeof b === 'string' ? b : JSON.stringify(b), { status });
+const CAMPOS = '&attributes=status_code,body.id,body.user_product_id,body.price,body.category_id';
+const ids21 = Array.from({ length: 21 }, (_, i) => `MLB${i}`);
+
+/** fetch que responde por bloco (lista de ids da URL) e registra URL + Bearer. */
+function porBloco(responder: (ids: string[], n: number) => Response) {
+  const chamadas: Array<{ url: string; auth: string | null }> = [];
+  vi.stubGlobal('fetch', vi.fn(async (u: string, init?: RequestInit) => {
+    chamadas.push({ url: u, auth: new Headers(init?.headers).get('Authorization') });
+    return responder((new URL(u).searchParams.get('ids') ?? '').split(','), chamadas.length);
+  }));
+  return chamadas;
+}
+const ok = (id: string) => ({ status_code: 200, body: { id, user_product_id: `UP${id}`, price: 10, category_id: 'MLB1' } });
 
 describe('buscarUserProductIdsML', () => {
-  it('blocos de 20 via /items/bulk, mapeia user_product_id/price/category_id e ignora o 404 sem body', async () => {
-    const ids = Array.from({ length: 21 }, (_, i) => `MLB${i}`);
-    const urls: string[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (u: string) => {
-      urls.push(u);
-      const q = (new URL(u).searchParams.get('ids') ?? '').split(',');
-      return resp(q.map((id) => (id === 'MLB3' ? { status_code: 404 } : { status_code: 200, body: { id, user_product_id: `UP${id}`, price: 10, category_id: 'MLB1' } })));
-    }));
-    const r = await buscarUserProductIdsML('t', ids);
-    expect(urls).toHaveLength(2);
-    expect(urls[0]).toContain('/items/bulk?ids=');
-    expect(urls[0]).toContain('&attributes=status_code,body.id,body.user_product_id,body.price,body.category_id');
-    expect(r).toHaveLength(20);
-    expect(r.find((x) => x.itemId === 'MLB3')).toBeUndefined();
+  it('blocos de 20 + 1: URL completa do bulk com os ids exatos de cada bloco e Bearer; 404 sem body fora', async () => {
+    const chamadas = porBloco((ids) => resp(ids.map((id) => (id === 'MLB3' ? { status_code: 404 } : ok(id)))));
+    const r = await buscarUserProductIdsML('tok', ids21);
+    expect(chamadas).toEqual([
+      { url: `https://api.mercadolibre.com/items/bulk?ids=${ids21.slice(0, 20).join(',')}${CAMPOS}`, auth: 'Bearer tok' },
+      { url: `https://api.mercadolibre.com/items/bulk?ids=MLB20${CAMPOS}`, auth: 'Bearer tok' },
+    ]);
+    expect(r.map((x) => x.itemId)).toEqual(ids21.filter((i) => i !== 'MLB3'));
     expect(r[0]).toEqual({ itemId: 'MLB0', userProductId: 'UPMLB0', precoAtualML: 10, categoriaMlId: 'MLB1' });
   });
-  it('bloco com HTTP de erro (mlGet devolve null) é pulado', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => resp({}, 500)));
-    expect(await buscarUserProductIdsML('t', ['MLB1'])).toEqual([]);
+  it('bloco do meio com HTTP 500 (mlGet → null) é pulado e os outros seguem', async () => {
+    const ids41 = Array.from({ length: 41 }, (_, i) => `MLB${i}`);
+    porBloco((ids, n) => (n === 2 ? resp({}, 500) : resp(ids.map(ok))));
+    const r = await buscarUserProductIdsML('tok', ids41);
+    expect(r.map((x) => x.itemId)).toEqual([...ids41.slice(0, 20), 'MLB40']);
+  });
+  it('HTTP 200 com objeto ou null (não-array) → bloco ignorado, sem lançar, próximo bloco segue', async () => {
+    porBloco((ids, n) => (n === 1 ? resp({ message: 'x' }) : resp(ids.map(ok))));
+    expect((await buscarUserProductIdsML('tok', ids21)).map((x) => x.itemId)).toEqual(['MLB20']);
+    porBloco((ids, n) => (n === 1 ? resp('null') : resp(ids.map(ok))));
+    expect((await buscarUserProductIdsML('tok', ids21)).map((x) => x.itemId)).toEqual(['MLB20']);
+  });
+  it('entrada sem body ou sem id fica fora; campos ausentes viram null; preço não numérico vira null', async () => {
+    porBloco(() => resp([
+      { status_code: 200 },
+      { status_code: 200, body: { user_product_id: 'UPX' } },
+      { status_code: 200, body: { id: 'MLB3' } },
+      { status_code: 200, body: { id: 'MLB4', user_product_id: 'UP4', price: '10', category_id: 'C' } },
+    ]));
+    expect(await buscarUserProductIdsML('tok', ['MLB1', 'MLB2', 'MLB3', 'MLB4'])).toEqual([
+      { itemId: 'MLB3', userProductId: null, precoAtualML: null, categoriaMlId: null },
+      { itemId: 'MLB4', userProductId: 'UP4', precoAtualML: null, categoriaMlId: 'C' },
+    ]);
+  });
+  it('lista vazia → nenhuma chamada', async () => {
+    const chamadas = porBloco(() => resp([]));
+    expect(await buscarUserProductIdsML('tok', [])).toEqual([]);
+    expect(chamadas).toEqual([]);
   });
 });

@@ -18,8 +18,15 @@ describe('lerSituacaoAnuncios', () => {
     }));
     const m = await lerSituacaoAnuncios(ids, 't');
     expect(n).toBe(3);
-    expect(String((fetch as unknown as { mock: { calls: string[][] } }).mock.calls[0][0])).toContain('/items/bulk?ids=');
-    expect(String((fetch as unknown as { mock: { calls: string[][] } }).mock.calls[0][0])).toContain('&attributes=status_code,body.id,body.status,body.sub_status,body.category_id,body.listing_type_id,body.price');
+    // URL completa e ids exatos de cada bloco (20 + 20 + 1), com Bearer
+    const calls = (fetch as unknown as { mock: { calls: Array<[string, RequestInit]> } }).mock.calls;
+    const CAMPOS = '&attributes=status_code,body.id,body.status,body.sub_status,body.category_id,body.listing_type_id,body.price';
+    expect(calls.map((c) => c[0])).toEqual([
+      `https://api.mercadolibre.com/items/bulk?ids=${ids.slice(0, 20).join(',')}${CAMPOS}`,
+      `https://api.mercadolibre.com/items/bulk?ids=${ids.slice(20, 40).join(',')}${CAMPOS}`,
+      `https://api.mercadolibre.com/items/bulk?ids=MLB40${CAMPOS}`,
+    ]);
+    expect(new Headers(calls[0][1]?.headers).get('Authorization')).toBe('Bearer t');
     expect([...m.keys()].sort()).toEqual([...ids.slice(0, 20).filter((i) => i !== 'MLB5'), ids[40]].sort());
     expect(m.get('MLB0')).toEqual({ item_id: 'MLB0', status: 'active', sub_status: [], category_id: 'C', listing_type_id: 'gold_pro', price: 9 });
   });

@@ -608,6 +608,10 @@ const multiconjunto = (chave: (x: any) => string) => (v: unknown) =>
 const comRepetidos = (xs: string[]) => [...xs, xs[0], xs[1]];
 const INVALIDO = 'MLB0000000001';
 const STATUS: Permissao[] = [{ metodo: 'PUT', rota: /^\/items\/MLB\d+$/, camposCorpo: ['status'], valores: { status: ['paused', 'active'] } }];
+/** lerCoresML mudou de `(token, ids)` (extração 47a95b33) para `(getToken, ids)` (guarda + token dentro, Codex r-extração):
+ *  chama cada árvore com a assinatura dela, detectada pelo próprio fonte da função. */
+const lerCores = (mod: any, token: string, ids: string[]) =>
+  String(mod.lerCoresML).includes('getToken') ? mod.lerCoresML(async () => token, ids) : mod.lerCoresML(token, ids);
 const getItem = async (c: Ctx, id: string, campos: string) =>
   (await fetch(`https://api.mercadolibre.com/items/${id}?attributes=${campos}`, { headers: { Authorization: `Bearer ${c.token}` } })).json();
 
@@ -702,7 +706,7 @@ export const CENARIOS: Cenario[] = [
     rodar: async (c) => (await c.imp('pulse-coletar/processar.ts')).lerSituacaoAnuncios([...new Set([...c.amostra.ids, INVALIDO])], c.token),
     cobertura: (v: Map<string, unknown>, c) => (v.size >= c.amostra.ids.length ? 'coberto' : 'falhou') },
   { nome: 'coresPxV', fatia: 'F5', capacidade: 'cor', canon: estrito,
-    rodar: async (c) => (await c.imp('acompanhar-migracao-pxv/leitura-ml.ts')).lerCoresML(c.token, comRepetidos([...c.amostra.ids.slice(0, 17), INVALIDO])),
+    rodar: async (c) => lerCores(await c.imp('acompanhar-migracao-pxv/leitura-ml.ts'), c.token, comRepetidos([...c.amostra.ids.slice(0, 17), INVALIDO])),
     cobertura: (v: Map<string, string | null>) => (v.size === 0 ? 'falhou' : [...v.values()].some((cor) => cor) ? 'coberto' : 'na') },
   { nome: 'estoqueVivoPxV', fatia: 'F5', capacidade: 'estoque', canon: estrito,
     rodar: async (c) => (await c.imp('acompanhar-migracao-pxv/leitura-ml.ts')).lerEstoqueVivoML(async () => c.token, comRepetidos([...c.amostra.ids.slice(0, 17), INVALIDO])),
@@ -711,7 +715,7 @@ export const CENARIOS: Cenario[] = [
   { nome: 'coresPxV21distintos', fatia: 'F5', capacidade: 'limite', canon: estrito,
     // o ab.ts também exige a prova: um GET multiget deste cenário com 21 ids distintos que voltou 400
     erroEsperado: { status: 400, mensagem: /multiget de cores falhou \(400\)/, idsNoGet: 21 },
-    rodar: async (c) => (await c.imp('acompanhar-migracao-pxv/leitura-ml.ts')).lerCoresML(c.token, c.amostra.ids.slice(0, 21)),
+    rodar: async (c) => lerCores(await c.imp('acompanhar-migracao-pxv/leitura-ml.ts'), c.token, c.amostra.ids.slice(0, 21)),
     cobertura: () => 'coberto' },
 ];
 /** Capacidade que precisa estar 'coberto' em PELO MENOS uma org (as demais podem ser 'na'). */
