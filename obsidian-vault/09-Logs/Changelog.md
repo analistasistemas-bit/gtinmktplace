@@ -1,6 +1,6 @@
 ---
 tags: [logs, changelog]
-atualizado: 2026-10-03
+atualizado: 2026-10-04
 ---
 
 # Changelog
@@ -8,6 +8,10 @@ atualizado: 2026-10-03
 Linha do tempo real, não redigida. Fonte: `docs/project-history.md` (curado até 2026-06-15) +
 `docs/project-status.md` (snapshot mais recente) + histórico de commits na `main`. Ver
 [[Sprint Atual]], [[Problemas Resolvidos]].
+
+## 2026-10-04
+
+**Multiget do Mercado Livre migrado para `/items/bulk` (ADR-0177).** O ML desliga `GET /items?ids=` em 25/10/2026; as 14 chamadas restantes (13 arquivos) passaram pelo adaptador `_shared/ml/multiget.ts`, que devolve o envelope antigo. Os módulos só trocaram a URL. Validado por A/B ao vivo nas 4 orgs (só GET, escrita simulada), por revisão do Grok 4.7 xhigh por fatia e por comparação por id em produção. Implantado em 5 fatias, com manifesto de hash por edge: 28 edges iguais à `main`.
 
 ## 2026-10-03
 

@@ -9,8 +9,9 @@ Plano `docs/superpowers/plans/2026-10-03-ml-items-bulk.md`; spec `docs/superpowe
 - [x] Spike real (4 orgs, só GET): bodies idênticos; bulk exige `status_code` + `body.`; id repetido → 400; 404 sem body na posição.
 - [x] T0 adaptador `_shared/ml/multiget.ts` + 16 pares reais de fixtures + ADR-0177.
 - [x] F1 `lerStatus`/`buscar-item`/`atualizar-item` · F2 `vendas`/`pedidos` · F3 kit · F4 promoções/operações/órfãos/família UP · F5 Pulse/PxV — testes verdes e A/B ao vivo IDÊNTICO nas 4 orgs em todas.
-- [ ] Revisão Grok 4.7 xhigh + portão do consultor (Astra) por entrega.
-- [ ] Merge, deploy das edges (`deno info`) com manifesto de hash e observação em produção.
+- [x] Revisão Grok 4.7 xhigh por fatia (todas APROVADO; MENORES com disposição) + Codex sol nas extrações + portão do consultor (Astra) por entrega.
+- [x] Merge e deploy em produção em 04/10/2026, fatia por fatia (F1 `7d73850f`, F2 `753d01a3`, F3 `d3deb6a5`, F4 `3fc4b7b8`, F5 `480e3fcf`), com manifesto de hash antes/depois: as 28 edges que importam o adaptador estão byte a byte iguais à `main`.
+- [x] Observação por id em produção: F1 28 anúncios, F2 títulos, F3 81 campos de componentes, F4 7 órfãos + 34 itens da Central, todos com 0 diferenças. Não observados por dependerem do operador ou por escreverem no ML: pausar/reativar, adoção UP, criar kit, operações em massa, PxV (sem migração ativa).
 
 ## Vitrine (ADR-0176, 2026-10-02) — branch `worktree-vitrine-design`
 
