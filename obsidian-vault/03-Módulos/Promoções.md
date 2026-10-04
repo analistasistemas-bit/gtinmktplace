@@ -70,6 +70,12 @@ acesso/sem promoções/erro (dados injetados); 4 defeitos visuais achados e corr
 - Aba **Operações**: resultado por anúncio; **Reverter** = nova operação inversa com preview; já revertida mostra "Revertida em {data}".
 - Só admin executa (suporte só com acesso total). Conta ML precisa reconectar para ganhar `offers:/read-write`.
 
+### Pausar/reativar em massa (emenda 2026-10-04 — na branch, aguardando merge/deploy)
+
+- 2º tipo do mesmo motor, mas **fora de Promoções**: seleção, barra e preview em Publicados; acompanhamento na tela global `/operacoes` (sem gate de módulo). Esta aba Operações é a mesma lista filtrada por promoção.
+- Lê o status fresco no ML antes de escrever; já no alvo = "já estava"; moderado/encerrado/migração PxV = bloqueado; Kit Virtual fora. Reverter só sobre o que a original aplicou.
+- Ver `docs/reference/edge-functions.md` (operacoes-massa) e ADR-0174 (emenda 2026-10-04).
+
 ## Correções de 2026-10-04
 
 - **Relâmpago duplicada** (`7cc6332d`): o ML lista o mesmo anúncio 2× (oferta genérica com estoque +

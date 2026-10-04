@@ -15,6 +15,10 @@ setembro de 2026"). Ver [[Próximas Features]], [[Backlog]].
 > Monitor de Frete ✅ → Central de Promoções (MVP só leitura) ✅ → Operações em Massa ✅ → Promoções V2
 > (adesão em massa) ✅ — as duas últimas entregues juntas em 28/09 ([[0174-operacoes-em-massa-promocoes-v2|ADR-0174]]) → Painel de Ads (se a Avil investir em Ads). E5 Shopee entra quando houver conta.
 >
+> **🟡 Pausar/reativar em massa (emenda 2026-10-04 do ADR-0174)** — 2º tipo do motor (I5), implementado na
+> branch `worktree-i5-pausar-reativar-massa`, **aguardando merge/deploy** (`db push` + `functions deploy operacoes-massa`).
+> Ordem combinada: pausar/reativar → preço → estoque. Ver `docs/TASKS.md`.
+>
 > **✅ Monitor de frete ([[0169-monitor-de-frete|ADR-0169]])** — alerta quando o frete de um anúncio
 > sobe >10% e ≥R$2 vs a venda anterior; switch em Configurações > Notificações (nasce desligado).
 >

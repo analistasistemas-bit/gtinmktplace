@@ -928,11 +928,15 @@ revogados) — escrita só por `service_role` (worker `sincronizar-promocoes`).
 ## Operações em massa (ADR-0174) — código pronto, deploy pendente
 
 Motor de operações em massa; primeira operação: aderir/sair de promoção `DEAL`/`SMART`.
-*Migration `20260928013318_operacoes_massa.sql` (ainda não aplicada em produção).*
+*Migration `20260928013318_operacoes_massa.sql` (ainda não aplicada em produção).* Emenda
+2026-10-04 (pausar/reativar): migration `20261004165122_operacoes_massa_status.sql` — implementada
+na branch `worktree-i5-pausar-reativar-massa`, aguardando `db push`.
 
 ### `operacoes_massa`
-Uma linha por operação. `id` (PK), `org_id`, `acao` (`aderir|sair`), `promocao_id`,
-`promocao_tipo` (`DEAL|SMART`), `promocao_nome`, `origem_id` (FK para `operacoes_massa`, `set
+Uma linha por operação. `id` (PK), `org_id`, `acao` (`aderir|sair|pausar|reativar`), `promocao_id`
+(nullable), `promocao_tipo` (`DEAL|SMART`, nullable), `promocao_nome`; check de coerência
+`operacoes_massa_acao_promocao_check`: `aderir|sair` exigem promoção, `pausar|reativar` exigem
+`promocao_id` e `promocao_tipo` nulos, `origem_id` (FK para `operacoes_massa`, `set
 null` — a operação original quando esta é um Reverter), `status` (`executando|concluida`),
 `criado_por`, `criado_em`, `concluido_em`. Índice `(org_id, criado_em desc)`.
 
@@ -947,7 +951,12 @@ visão da campanha devolve no participante, não esta coluna), `status`
 `conferencias`, `proxima_conferencia`, `saida_pedida_em` (relógio das 24h da conferência de
 saída), `atualizado_em`. Índice `(org_id)`. Índice único de anti-duplicidade
 `(org_id, promocao_id, ml_item_id) where status in ('pendente','enviando','saida_solicitada')` —
-o mesmo anúncio não fica em andamento em duas operações da mesma promoção.
+o mesmo anúncio não fica em andamento em duas operações da mesma promoção. `promocao_id` é
+nullable (pausar/reativar); como NULL não colide nesse índice, as operações sem promoção têm o
+próprio índice único parcial `operacoes_massa_itens_status_unico`
+`(org_id, ml_item_id) where promocao_id is null and status in ('pendente','enviando')`.
+Em pausar/reativar `saida_pedida_em` = "escrita pedida ao ML em" e `conferencias` = tentativas
+retentáveis; `semaforo` é `null`.
 
 ### `operacoes_massa_reivindicar(p_org, p_operacao, p_ml_item)` — RPC
 Claim atômico do item antes de escrever no ML (idempotência do QStash): `pendente`, ou `enviando`

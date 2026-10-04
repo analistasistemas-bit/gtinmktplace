@@ -1710,6 +1710,24 @@ um smoke test contra Postgres real antes do primeiro deploy.
   - Telas: seleção → preview → Executar no detalhe da campanha (`PromocaoDetalhe.tsx`); aba
     **Operações** em Promoções (`Promocoes.tsx`, `lista-operacoes.tsx`) para acompanhar e
     reverter. Ver [ADR-0174](../decisions/0174-operacoes-em-massa-promocoes-v2.md).
+  - **Pausar/reativar (emenda 2026-10-04 — na branch `worktree-i5-pausar-reativar-massa`,
+    aguardando merge/deploy):** `acao` `pausar|reativar`, sem `promocao_id` (pedido com
+    `promocao_id` é recusado) e **sem exigir o módulo `promocoes`**. Criação (`criarStatus`): só
+    admin/suporte full; até 100 anúncios (`MAX_ITENS`); recusa repetido, Kit Virtual e anúncio que
+    não é da org (`validar-status.ts`); sem trava financeira. Reverter = operação inversa com
+    `origem_id`, revalidada no servidor (`reversaoValida`: origem `concluida`, ação inversa, só ids
+    que ela `aplicou`); 409 se algum anúncio já está em operação em andamento (índice
+    `operacoes_massa_itens_status_unico`). QStash (`executar`; `conferir` também executa — o PUT é
+    síncrono, sem conferência): `executarStatus` roda no laço comum (`laco.ts`; mesmo teto de 100 por
+    mensagem), com status **fresco** do ML por item (`ml-status.ts`, `/items/bulk`) e guard de migração
+    PxV (ADR-0161); `decidirStatus` → `ja_estava` / `bloqueado` (moderado, encerrado ou PxV) / `erro`
+    (ML não devolveu o anúncio) / escrever via `atualizarStatus` do conector (ADR-0060, propaga ao
+    catálogo relacionado). Falha 5xx/429 ou de transporte: até 3 tentativas
+    (`TENTATIVAS_STATUS`), continuação em 150 s; 401/403 → `erro` nos restantes
+    ("reconectar"); `invalid_grant` no refresh ou org sem conta ML → operação encerrada com erro.
+    Telas: seleção/barra/preview em Publicados (`barra-selecao-publicados.tsx`,
+    `preview-status.tsx`) e tela global `/operacoes` (`Operacoes.tsx`, sem gate de módulo; a aba
+    Operações de Promoções é a mesma lista filtrada).
 
 ### Tráfego e oferta (ADR-0172, Fatia 2b)
 - **coletar-trafego-ml** *(nova, `verify_jwt=false`, só QStash; **deployada e ACTIVE (v1) desde
