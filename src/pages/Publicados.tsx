@@ -1,8 +1,9 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { RefreshCw, ExternalLink, Trash2, Pause, Play, PackageOpen, PackagePlus, ArrowUp, ArrowDown, ChevronsUpDown, Wallet, ChevronRight, AlertTriangle, RotateCcw, Boxes, Package, Split, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusPill, type StatusTone } from '@/components/ui/status-pill';
@@ -80,6 +81,10 @@ import { paginar } from '@/lib/paginacao';
 import { paramsParaEstado, estadoParaParams, type EstadoPublicados } from '@/lib/publicados-url';
 import { FiltrosAtivos, type ChaveFiltro } from '@/components/filtros-ativos';
 import { Pagination } from '@/components/ui/pagination';
+import { motivoNaoSelecionavel, separarSelecao, type AcaoStatus } from '@/lib/operacoes';
+import { useAcompanharOperacao } from '@/hooks/useOperacoes';
+import { BarraSelecaoPublicados } from '@/components/operacoes/barra-selecao-publicados';
+import { PreviewStatus } from '@/components/operacoes/preview-status';
 
 // ============================================================================
 // Badge de status
@@ -238,6 +243,9 @@ interface LinhaProps {
   onCriarKit: (item: PublicadoItem) => void;
   onMigrarPrecoPorVariacao: (familiaId: string) => Promise<void>;
   migrando: boolean;
+  selecionado: boolean;
+  onSelecionar: (v: boolean) => void;
+  motivoNaoSelecionavel: string | null;
 }
 
 const CONTEUDO_ML = (
@@ -266,6 +274,7 @@ function LinhaTabela({
   item, onRemover, removendo, onRepublicar, republicando, onPausarReativar, pausando,
   onRetentarCatalogo, retentandoCatalogo, isAdmin, temFiscal, onPreencherFiscal,
   temModuloEstoque, onCriarKit, onMigrarPrecoPorVariacao, migrando,
+  selecionado, onSelecionar, motivoNaoSelecionavel: motivoSelecao,
 }: LinhaProps) {
   // Expansão persistida (sobrevive a ordenar/filtrar/paginar, que remonta a linha), como o sort.
   // Chave por anúncio (mlItemId): familiaId é compartilhado entre anúncios split (ADR-0048).
@@ -314,6 +323,15 @@ function LinhaTabela({
       onClick={() => setAberto((a) => !a)}
       className={cn('cursor-pointer', aberto && 'border-b-0 bg-muted/20')}
     >
+      <TableCell onClick={(e) => e.stopPropagation()}>
+        <Checkbox
+          checked={selecionado}
+          disabled={!!motivoSelecao}
+          title={motivoSelecao ?? undefined}
+          aria-label={`Selecionar ${item.titulo}`}
+          onCheckedChange={(v) => onSelecionar(v === true)}
+        />
+      </TableCell>
       <TableCell className="whitespace-normal sticky left-0 z-10 bg-background sm:static sm:z-auto sm:bg-transparent">
         <div className="flex items-start gap-1.5">
           <button
@@ -631,7 +649,7 @@ function LinhaTabela({
     </TableRow>
     {aberto && (
       <TableRow className="hover:bg-transparent">
-        <TableCell colSpan={temFiscal ? 10 : 9} className="whitespace-normal bg-muted/30 p-3">
+        <TableCell colSpan={temFiscal ? 11 : 10} className="whitespace-normal bg-muted/30 p-3">
           {carregandoFamilia ? (
             <p className="text-xs text-muted-foreground">carregando análise…</p>
           ) : erroFamilia || !familia ? (
@@ -692,6 +710,7 @@ function LinhaIncompleta({ item, temFiscal, onRemover, removendo }: LinhaIncompl
   const [removerAberto, setRemoverAberto] = useState(false);
   return (
     <TableRow className="bg-destructive/5 hover:bg-destructive/10">
+      <TableCell />
       <TableCell className="whitespace-normal sticky left-0 z-10 bg-background sm:static sm:z-auto sm:bg-transparent">
         <div className="max-w-[260px]">
           <StatusPill tone="danger" className="mb-1 w-fit">
@@ -792,6 +811,7 @@ function LinhaKitVirtual({ item, isAdmin, temFiscal, onRefazer, refazendo }: Lin
   const [refazerAberto, setRefazerAberto] = useState(false);
   return (
     <TableRow>
+      <TableCell />
       <TableCell className="whitespace-normal sticky left-0 z-10 bg-background sm:static sm:z-auto sm:bg-transparent">
         <div className="max-w-[260px]">
           <StatusPill tone="info" className="mb-1 w-fit">
@@ -1217,6 +1237,19 @@ export default function Publicados() {
     [doCanal, filtro, ord],
   );
   const pag = useMemo(() => paginar(itensExibidos, pagina, tamanho), [itensExibidos, pagina, tamanho]);
+
+  // ADR-0174 emenda: seleção em massa (pausar/reativar). Sobrevive a paginar/ordenar; zera só quando o
+  // FILTRO muda. `filtro` é recriado a cada mudança de searchParams (inclusive página/ordem), então a
+  // dependência é a representação estável.
+  const [selecao, setSelecao] = useState<Set<string>>(new Set());
+  const [previewAcao, setPreviewAcao] = useState<AcaoStatus | null>(null);
+  const [acompanhando, setAcompanhando] = useState<string | null>(null);
+  useAcompanharOperacao(acompanhando);
+  const chaveFiltro = JSON.stringify(filtro);
+  useEffect(() => { setSelecao(new Set()); }, [chaveFiltro]);
+  const selecionaveis = useMemo(() => itensExibidos.filter((i) => !motivoNaoSelecionavel(i)), [itensExibidos]);
+  const itensSelecionados = useMemo(() => itensExibidos.filter((i) => selecao.has(i.mlItemId)), [itensExibidos, selecao]);
+  const { ativos, pausados } = separarSelecao(itensSelecionados);
   const topoRef = useRef<HTMLDivElement>(null);
 
   const irPara = (p: number) => {
@@ -1548,6 +1581,13 @@ export default function Publicados() {
             <Table>
               <TableHeader>
                 <TableRow className="bg-muted/50 text-xs text-muted-foreground hover:bg-muted/50">
+                  <TableHead className="w-8">
+                    <Checkbox
+                      aria-label={`Selecionar todos do filtro (${selecionaveis.length})`}
+                      checked={selecionaveis.length > 0 && selecionaveis.every((i) => selecao.has(i.mlItemId))}
+                      onCheckedChange={(v) => setSelecao(v ? new Set(selecionaveis.map((i) => i.mlItemId)) : new Set())}
+                    />
+                  </TableHead>
                   <ThOrdenavel coluna="titulo" label="Título" ord={ord} onOrdenar={ordenarPor} className="sticky left-0 z-10 bg-muted/50 sm:static sm:z-auto sm:bg-transparent" />
                   <ThOrdenavel coluna="precoPublicacao" label="Preço publicado" ord={ord} onOrdenar={ordenarPor} />
                   <ThOrdenavel coluna="estoque" label="Estoque atual" ord={ord} onOrdenar={ordenarPor} />
@@ -1563,7 +1603,7 @@ export default function Publicados() {
               <TableBody>
                 {itensExibidos.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={temFiscal ? 10 : 9} className="py-6 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={temFiscal ? 11 : 10} className="py-6 text-center text-sm text-muted-foreground">
                       Nenhum resultado para os filtros aplicados.
                     </TableCell>
                   </TableRow>
@@ -1607,6 +1647,9 @@ export default function Publicados() {
                         onCriarKit={handleCriarKit}
                         onMigrarPrecoPorVariacao={handleMigrarPrecoPorVariacao}
                         migrando={migrando && migrandoId === item.familiaId}
+                        selecionado={selecao.has(item.mlItemId)}
+                        onSelecionar={(v) => setSelecao((s) => { const n = new Set(s); if (v) n.add(item.mlItemId); else n.delete(item.mlItemId); return n; })}
+                        motivoNaoSelecionavel={motivoNaoSelecionavel(item)}
                       />
                     )
                   ))
@@ -1614,6 +1657,37 @@ export default function Publicados() {
               </TableBody>
             </Table>
           </div>
+
+          <BarraSelecaoPublicados
+            ativos={ativos.length}
+            pausados={pausados.length}
+            onPausar={() => setPreviewAcao('pausar')}
+            onReativar={() => setPreviewAcao('reativar')}
+            onLimpar={() => setSelecao(new Set())}
+          />
+
+          {previewAcao && (
+            <PreviewStatus
+              acao={previewAcao}
+              itens={(previewAcao === 'pausar' ? ativos : pausados).map((id) => ({
+                ml_item_id: id,
+                titulo: itensSelecionados.find((x) => x.mlItemId === id)?.titulo ?? null,
+              }))}
+              foraDoLote={[{
+                motivo: previewAcao === 'pausar' ? 'já pausados' : 'já ativos',
+                quantidade: (previewAcao === 'pausar' ? pausados : ativos).length,
+              }].filter((f) => f.quantidade > 0)}
+              origemId={null}
+              aberto
+              onFechar={() => setPreviewAcao(null)}
+              onCriada={(id) => {
+                setPreviewAcao(null);
+                setSelecao(new Set());
+                setAcompanhando(id);
+                toast.success('Operação iniciada', { action: { label: 'Ver em Operações', onClick: () => navigate('/operacoes') } });
+              }}
+            />
+          )}
 
           <Pagination
             rotuloItem="anúncio"

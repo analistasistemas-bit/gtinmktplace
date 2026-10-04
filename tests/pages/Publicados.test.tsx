@@ -25,6 +25,12 @@ const useModulosHabilitadosMock = vi.fn();
 const useKitsDoProdutoMock = vi.fn();
 const useEncerrarKitVirtualMock = vi.fn();
 
+// Seleção em massa (ADR-0174): a página acompanha a operação via react-query; sem QueryClient no harness, mock.
+vi.mock('@/hooks/useOperacoes', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/hooks/useOperacoes')>();
+  return { ...actual, useAcompanharOperacao: () => undefined };
+});
+
 vi.mock('@/hooks/usePublicados', () => ({
   usePublicados: () => usePublicadosMock(),
 }));
