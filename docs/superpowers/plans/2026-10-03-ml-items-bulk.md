@@ -23,7 +23,22 @@
 **Histórico:**
 - v1: REVISAR do Codex `gpt-6.1-sol` high, com 18 achados.
 - v2: incorporou a consultoria `gpt-6-astra` high. Teve REVISAR: 6 resolvidos, 12 parciais e 16 novos.
-- v3: responde os 12 parciais e os 16 novos (tabelas no fim).
+- v3: responde os 12 parciais e os 16 novos (tabelas no fim). Na r3 do Codex, o adaptador ficou resolvido e sobraram 12 itens.
+- v3.1: corrige os 12 itens da r3:
+  - `deno eval` sem `--no-prompt`;
+  - cobertura de `Map` com `has/size/values`;
+  - corpo interrompido vira violação fatal;
+  - propagação com prova de relacionados;
+  - erro esperado com prova do GET de 21 ids;
+  - SKU e catálogo também dos filhos UP;
+  - `SHA_AB_APROVADO` (merge que muda `supabase/` exige novo A/B);
+  - `verify_jwt` efetivo conferido antes do deploy;
+  - dependências do rollback como risco declarado;
+  - caracterização de relacionado repetido sem URL pré-mudança;
+  - mock de `token.ts` no teste do Pulse;
+  - comentário do teste de kit;
+  - `get.mock.calls`.
+- **Próxima revisão (por pedido do Diego): Grok 4.7 high via `cursor-agent`.**
 
 ## Global Constraints
 
@@ -139,6 +154,7 @@ O A/B ao vivo **não** valida a extração: os símbolos novos não existem no c
    - Depois, `manifesto.py depois <fatia>-rollback <SHA_PRODUCAO> <edges>`, que confere arquivos e `verify_jwt` contra o manifesto `antes`.
    - O código volta por branch `revert/<fatia>` → CI → fast-forward.
    - Depois de 25/10 não há rollback para o endpoint antigo, só correção para a frente.
+   - **Risco aceito, decisão do Diego (Codex r3, achado 8):** a CLI 2.101 resolve dependências no bundler remoto, e há imports por faixa (`jsr:@supabase/supabase-js@2`, `npm:@upstash/qstash@^2`). Por isso o rollback reconstrói as **mesmas fontes** com resolução de dependências do momento, igual a qualquer deploy de rotina deste projeto, e não reproduz byte a byte o bundle antigo. A conferência pós-rollback prova as fontes e o `verify_jwt`. O `ezbr_sha256` pode diferir do antigo, e isso fica registrado, sem bloquear. Congelar dependências (vendor) seria mudança de infraestrutura fora do escopo.
 
 ### P-Observação (T1–T5)
 
@@ -168,7 +184,12 @@ Revisão MINUCIOSA do diff em $CLAUDE_JOB_DIR/tmp/diff-<fatia>.patch (fatia <N> 
    - edges;
    - decisões.
    Esperar o OK.
-4. Com o OK: `/usr/bin/git fetch origin`. Se a `origin/main` andou, `/usr/bin/git merge origin/main`, testes e CI de novo. Depois `/usr/bin/git push origin HEAD:main`, P-Deploy e P-Observação.
+4. Registrar `SHA_AB_APROVADO` (o HEAD que passou no A/B, na revisão e no OK do Diego) em `$CLAUDE_JOB_DIR/tmp/aprovado-<fatia>.txt`.
+5. Com o OK: `/usr/bin/git fetch origin`. Se a `origin/main` andou:
+   - `/usr/bin/git merge origin/main`, testes e CI de novo;
+   - **se `/usr/bin/git diff --stat <SHA_AB_APROVADO> HEAD -- supabase` não estiver vazio, a árvore mudou**: novo A/B (com `SHA_BASELINE_AB` = `origin/main` antes da fatia), revisão do Codex só do merge e novo OK do Diego. Só então o novo HEAD vira `SHA_AB_APROVADO`.
+   - Nunca implantar uma árvore cujo `supabase/` difere do `SHA_AB_APROVADO`.
+6. `/usr/bin/git push origin HEAD:main`, depois P-Deploy e P-Observação.
 
 ---
 
@@ -427,13 +448,20 @@ export function criarGuarda(opts: { fase: 'gravar' | 'replay'; gravadas?: Gravac
       return new Response(g!.corpo, { status: g!.status });
     }
     let r: Response;
-    try { r = await fetchReal(req); } catch (e) {
+    let corpo: string;
+    try {
+      r = await fetchReal(req);
+      if (r.status === 401 || r.status === 403) {
+        gets.push({ cenario: estado.cenario, url: req.url, status: r.status });
+        return violar(`HTTP ${r.status} (token expirado? não renovar) ${u.pathname}`);
+      }
+      corpo = await r.text(); // corpo interrompido também é falha de transporte fatal
+    } catch (e) {
+      if ((e as Error).message.startsWith('GUARDA:')) throw e;
       gets.push({ cenario: estado.cenario, url: req.url, status: 'falha' });
       return violar(`falha de transporte ${u.pathname}: ${(e as Error).message}`);
     }
-    const corpo = await r.text();
     gets.push({ cenario: estado.cenario, url: req.url, status: r.status });
-    if (r.status === 401 || r.status === 403) violar(`HTTP ${r.status} (token expirado? não renovar) ${u.pathname}`);
     if (!MULTIGET.test(req.url)) gravacoes.push({ url: req.url, status: r.status, corpo });
     return new Response(corpo, { status: r.status, headers: r.headers });
   };
@@ -515,7 +543,7 @@ Deno.test('replay: não-multiget da gravação; faltante e sobra detectáveis; m
   await g.fetchGuardado('https://api.mercadolibre.com/items/bulk?ids=MLB1&attributes=status_code,body.id');
   assertEquals(vistos.length, 1);
 });
-Deno.test('401 e falha de transporte → violação fatal', async () => {
+Deno.test('401, falha de transporte e corpo interrompido → violação fatal', async () => {
   const g1 = criarGuarda({ fase: 'gravar', fetchReal: (() => Promise.resolve(new Response('{}', { status: 401 }))) as typeof fetch });
   await g1.fetchGuardado('https://api.mercadolibre.com/items/MLB1').catch(() => {});
   assertEquals(g1.violacoes.length, 1);
@@ -523,6 +551,11 @@ Deno.test('401 e falha de transporte → violação fatal', async () => {
   await g2.fetchGuardado('https://api.mercadolibre.com/items/MLB1').catch(() => {});
   assertEquals(g2.violacoes.length, 1);
   assertEquals(g2.gets[0].status, 'falha');
+  const quebrado = new ReadableStream({ start(c) { c.error(new Error('corpo cortado')); } });
+  const g3 = criarGuarda({ fase: 'gravar', fetchReal: (() => Promise.resolve(new Response(quebrado, { status: 200 }))) as typeof fetch });
+  await g3.fetchGuardado('https://api.mercadolibre.com/items/MLB1').catch(() => {});
+  assertEquals(g3.violacoes.length, 1);
+  assertEquals(g3.gets[0].status, 'falha');
 });
 ```
 
@@ -544,7 +577,7 @@ export type Cenario = {
   nome: string; fatia: string; capacidade: string; permissoes?: Permissao[];
   rodar: (c: Ctx) => Promise<unknown>; canon: (v: unknown) => unknown;
   cobertura: (v: any, c: Ctx) => Cobertura | 'falhou';
-  erroEsperado?: { status: number; mensagem: RegExp };
+  erroEsperado?: { status: number; mensagem: RegExp; idsNoGet: number };
 };
 
 const ord = (x: unknown): unknown =>
@@ -566,10 +599,18 @@ const propagar = (status: 'paused' | 'active'): Cenario['rodar'] => async (c) =>
   const { propagarStatusRelacionadosML } = await c.imp('_shared/ml/atualizar-item.ts');
   const out: Record<string, unknown> = {};
   for (const id of c.amostra.catalogo) {
-    try { await propagarStatusRelacionadosML(c.token, id, status); out[id] = 'ok'; }
-    catch (e) { out[id] = { erro: (e as Error).message }; }
+    // evidência: quantos relacionados o item tem (sem relacionado não há multiget nem PUT para provar nada)
+    const rel = ((await getItem(c, id, 'id,item_relations')).item_relations ?? []).length;
+    try { await propagarStatusRelacionadosML(c.token, id, status); out[id] = { ok: true, relacionados: rel }; }
+    catch (e) { out[id] = { erro: (e as Error).message, relacionados: rel }; }
   }
   return out; // as escritas simuladas são comparadas em sequência pelo runner
+};
+const coberturaPropagar: Cenario['cobertura'] = (v, c) => {
+  if (c.amostra.catalogo.length === 0) return 'na';
+  const rs = Object.values(v) as Array<{ ok?: boolean; relacionados: number }>;
+  if (!rs.every((r) => r.ok)) return 'falhou';
+  return rs.some((r) => r.relacionados > 0) ? 'coberto' : 'na';
 };
 const descobrirCanon = (v: unknown) => ord(Object.fromEntries(Object.entries(v as Record<string, any>).map(([k, r]) => [k,
   r?.tipo === 'achada' ? { ...r, familia: { ...r.familia, itemPorCor: Object.fromEntries([...r.familia.itemPorCor.entries()]), coresAmbiguas: [...r.familia.coresAmbiguas].sort() } }
@@ -581,10 +622,8 @@ export const CENARIOS: Cenario[] = [
     rodar: async (c) => (await c.imp('_shared/canais/mercado-livre.ts')).mercadoLivreConnector
       .lerStatus({ getToken: async () => c.token }, comRepetidos([...c.amostra.ids, ...c.amostra.catalogo, INVALIDO])),
     cobertura: (v) => (Object.values(v).some((s: any) => s.status !== 'indisponivel') && v[INVALIDO]?.status === 'indisponivel' ? 'coberto' : 'falhou') },
-  { nome: 'propagarPausar', fatia: 'F1', capacidade: 'catalogo', permissoes: STATUS, canon: estrito, rodar: propagar('paused'),
-    cobertura: (v, c) => (c.amostra.catalogo.length === 0 ? 'na' : Object.values(v).every((r) => r === 'ok') ? 'coberto' : 'falhou') },
-  { nome: 'propagarAtivar', fatia: 'F1', capacidade: 'catalogo', permissoes: STATUS, canon: estrito, rodar: propagar('active'),
-    cobertura: (v, c) => (c.amostra.catalogo.length === 0 ? 'na' : Object.values(v).every((r) => r === 'ok') ? 'coberto' : 'falhou') },
+  { nome: 'propagarPausar', fatia: 'F1', capacidade: 'catalogo', permissoes: STATUS, canon: estrito, rodar: propagar('paused'), cobertura: coberturaPropagar },
+  { nome: 'propagarAtivar', fatia: 'F1', capacidade: 'catalogo', permissoes: STATUS, canon: estrito, rodar: propagar('active'), cobertura: coberturaPropagar },
   { nome: 'buscarItemPorSku', fatia: 'F1', capacidade: 'adocao', canon: estrito,
     rodar: async (c) => {
       const { buscarItemPorSku } = await c.imp('_shared/ml/buscar-item.ts');
@@ -609,14 +648,14 @@ export const CENARIOS: Cenario[] = [
   // F3
   { nome: 'listingTypes', fatia: 'F3', capacidade: 'kit', canon: estrito,
     rodar: async (c) => (await c.imp('_shared/ml/kit-virtual.ts')).buscarListingTypeItensML(c.token, comRepetidos([...c.amostra.ids, ...c.amostra.kits, INVALIDO])),
-    cobertura: (v, c) => (c.amostra.kits.length === 0 ? 'na' : c.amostra.kits.every((k) => v[k]) ? 'coberto' : 'falhou') },
+    cobertura: (v: Map<string, string>, c) => (c.amostra.kits.length === 0 ? 'na' : c.amostra.kits.every((k) => v.has(k)) ? 'coberto' : 'falhou') },
   { nome: 'componentes', fatia: 'F3', capacidade: 'userProduct', canon: multiconjunto((x) => x.itemId),
     rodar: async (c) => (await c.imp('buscar-componentes-kit-virtual/leitura-ml.ts')).buscarUserProductIdsML(c.token, comRepetidos([...c.amostra.ids, INVALIDO])),
     cobertura: (v) => (v.some((x: any) => x.userProductId) ? 'coberto' : 'na') },
   // F4
   { nome: 'promocoesItens', fatia: 'F4', capacidade: 'promocoes', canon: estrito,
     rodar: async (c) => { const m = await c.imp('_shared/promocoes/ml.ts'); return m.buscarItensML(m.criarGetJson(c.token), comRepetidos([...c.amostra.ids, INVALIDO])); },
-    cobertura: (v, c) => (Object.keys(v).length >= c.amostra.ids.length ? 'coberto' : 'falhou') },
+    cobertura: (v: Map<string, unknown>, c) => (v.size >= c.amostra.ids.length ? 'coberto' : 'falhou') },
   { nome: 'lerRelacoes', fatia: 'F4', capacidade: 'catalogo', canon: estrito,
     rodar: async (c) => {
       const cli = (await c.imp('_shared/operacoes/ml.ts')).criarClienteML(c.token);
@@ -644,15 +683,16 @@ export const CENARIOS: Cenario[] = [
   // F5
   { nome: 'situacaoPulse', fatia: 'F5', capacidade: 'pulse', canon: estrito,
     rodar: async (c) => (await c.imp('pulse-coletar/processar.ts')).lerSituacaoAnuncios([...new Set([...c.amostra.ids, INVALIDO])], c.token),
-    cobertura: (v, c) => (Object.keys(v).length >= c.amostra.ids.length ? 'coberto' : 'falhou') },
+    cobertura: (v: Map<string, unknown>, c) => (v.size >= c.amostra.ids.length ? 'coberto' : 'falhou') },
   { nome: 'coresPxV', fatia: 'F5', capacidade: 'cor', canon: estrito,
     rodar: async (c) => (await c.imp('acompanhar-migracao-pxv/leitura-ml.ts')).lerCoresML(c.token, comRepetidos([...c.amostra.ids.slice(0, 17), INVALIDO])),
-    cobertura: (v) => (Object.values(v).some((cor) => cor) ? 'coberto' : 'na') },
+    cobertura: (v: Map<string, string | null>) => (v.size === 0 ? 'falhou' : [...v.values()].some((cor) => cor) ? 'coberto' : 'na') },
   { nome: 'estoqueVivoPxV', fatia: 'F5', capacidade: 'estoque', canon: estrito,
     rodar: async (c) => (await c.imp('acompanhar-migracao-pxv/leitura-ml.ts')).lerEstoqueVivoML(async () => c.token, comRepetidos([...c.amostra.ids.slice(0, 17), INVALIDO])),
-    cobertura: (v) => (Object.keys(v).length > 0 ? 'coberto' : 'falhou') },
+    cobertura: (v: Map<string, number>) => (v.size >= 17 ? 'coberto' : 'falhou') },
   { nome: 'coresPxV21distintos', fatia: 'F5', capacidade: 'limite', canon: estrito,
-    erroEsperado: { status: 400, mensagem: /multiget de cores falhou \(400\)/ },
+    // o ab.ts também exige a prova: um GET multiget deste cenário com 21 ids distintos que voltou 400
+    erroEsperado: { status: 400, mensagem: /multiget de cores falhou \(400\)/, idsNoGet: 21 },
     rodar: async (c) => (await c.imp('acompanhar-migracao-pxv/leitura-ml.ts')).lerCoresML(c.token, c.amostra.ids.slice(0, 21)),
     cobertura: () => 'coberto' },
 ];
@@ -685,20 +725,26 @@ for (const c of CENARIOS.filter((x) => x.fatia === fatia && (!filtro || filtro.i
     resultado[c.nome] = c.erroEsperado ? { erroAusente: true } : { valor: c.canon(v), cobertura: c.cobertura(v, ctx) };
   } catch (e) {
     const msg = (e as Error).message;
-    const ok = !!c.erroEsperado && c.erroEsperado.mensagem.test(msg) && !msg.startsWith('GUARDA');
-    resultado[c.nome] = ok ? { erroEsperado: msg.replace(/MLB\d+/g, 'MLB#') } : { erroInesperado: msg.slice(0, 300) };
+    const ee = c.erroEsperado;
+    // prova do erro esperado: a mensagem E um GET multiget deste cenário, com N ids distintos, que voltou com o status declarado
+    const provado = !!ee && ee.mensagem.test(msg) && !msg.startsWith('GUARDA') && guarda.gets.some((g) =>
+      g.cenario === c.nome && g.status === ee.status && /\/items(\/bulk)?\?ids=/.test(g.url)
+      && new Set((new URL(g.url).searchParams.get('ids') ?? '').split(',')).size === ee.idsNoGet);
+    resultado[c.nome] = provado ? { erroEsperado: msg.replace(/MLB\d+/g, 'MLB#') } : { erroInesperado: msg.slice(0, 300) };
   }
 }
 guarda.entrarCenario('-');
 if (fase === 'gravar') await Deno.writeTextFile(arq, JSON.stringify(guarda.gravacoes));
-const esperados = new Map(CENARIOS.filter((c) => c.erroEsperado).map((c) => [c.nome, c.erroEsperado!.status]));
+const esperado = (g: { cenario: string; url: string; status: number | 'falha' }) => {
+  const ee = CENARIOS.find((c) => c.nome === g.cenario)?.erroEsperado;
+  return !!ee && g.status === ee.status && /\/items(\/bulk)?\?ids=/.test(g.url);
+};
 console.log(JSON.stringify({
   resultado,
   escritas: guarda.escritas,
   violacoes: guarda.violacoes,
   sobras: fase === 'replay' ? guarda.sobras() : [],
-  getsComErro: guarda.gets.filter((g) => g.status === 'falha'
-    || ((g.status as number) >= 400 && g.status !== 404 && esperados.get(g.cenario) !== g.status)),
+  getsComErro: guarda.gets.filter((g) => g.status === 'falha' || ((g.status as number) >= 400 && g.status !== 404 && !esperado(g))),
 }));
 ```
 
@@ -711,7 +757,7 @@ import spike_bulk as s
 AB = pathlib.Path('/Users/diego/.claude/jobs/b87cbc02/tmp/ab'); (AB / 'out').mkdir(exist_ok=True)
 fatia, base, nova = sys.argv[1], sys.argv[2], sys.argv[3]
 ORGS = {'Avil', 'DSA', 'Daludi Shop', 'Hairfly Cosmeticos'}
-OBRIG = json.loads(subprocess.run(['deno', 'eval', '--no-prompt',
+OBRIG = json.loads(subprocess.run(['deno', 'eval',
     f"import {{ CAPACIDADES_OBRIGATORIAS as C, CENARIOS }} from '{AB}/cenarios.ts'; console.log(JSON.stringify({{obrig: C['{fatia}'], cap: Object.fromEntries(CENARIOS.map((c) => [c.nome, c.capacidade]))}}))"],
     capture_output=True, text=True, check=True).stdout)
 
@@ -728,10 +774,19 @@ def amostra_de(org):
          f"union select i.item_externo_id, a.codigo_pai from public.anuncios_externos_itens i join public.anuncios_externos a on a.id=i.anuncio_externo_id "
          f"where i.org_id='{org['id']}' and i.item_externo_id like 'MLB%' and not i.retirado) select distinct item from ids order by item limit 40")
     ids = [r['item'] for r in s.sql(q)]
-    skus = s.sql(f"select a.item_externo_id as item, min(e.k) as sku from public.anuncios_externos a, jsonb_each(a.variacoes_externas) e(k, v) "
-                 f"where a.org_id='{org['id']}' and a.status='publicado' and a.item_externo_id = any(array{ids or ['-']}::text[]) group by 1 order by 1 limit 10")
+    arr = f"array{ids or ['-']}::text[]"
+    # SKU e catálogo vêm das DUAS fontes: legado (variacoes_externas) e filhos técnicos UP (anuncios_externos_itens)
+    skus = s.sql(f"select item, min(sku) as sku from ("
+                 f"select a.item_externo_id as item, e.k as sku from public.anuncios_externos a, jsonb_each(a.variacoes_externas) e(k, v) "
+                 f"where a.org_id='{org['id']}' and a.status='publicado' and a.item_externo_id = any({arr}) "
+                 f"union all select i.item_externo_id, i.sku from public.anuncios_externos_itens i "
+                 f"where i.org_id='{org['id']}' and not i.retirado and i.item_externo_id = any({arr})) x group by 1 order by 1 limit 10")
+    catalogo = s.sql(f"select distinct x from ("
+                     f"select v->>'catalog_listing_id' as x from public.anuncios_externos a, jsonb_each(a.variacoes_externas) e(k, v) where a.org_id='{org['id']}' "
+                     f"union select i.catalog_listing_id from public.anuncios_externos_itens i where i.org_id='{org['id']}' and not i.retirado"
+                     f") c where x like 'MLB%' order by 1 limit 5")
     return {'ids': ids, 'skuPorItem': {r['item']: r['sku'] for r in skus},
-            'catalogo': [r['x'] for r in s.sql(f"select distinct v->>'catalog_listing_id' as x from public.anuncios_externos a, jsonb_each(a.variacoes_externas) e(k,v) where a.org_id='{org['id']}' and v->>'catalog_listing_id' like 'MLB%' order by 1 limit 5")],
+            'catalogo': [r['x'] for r in catalogo],
             'kits': [r['ml_item_id'] for r in s.sql(f"select ml_item_id from public.kits_virtuais where org_id='{org['id']}' and ml_item_id is not null order by 1 limit 5")],
             'sellerId': str(org['seller'])}
 
@@ -825,6 +880,13 @@ def listagem():
         out[f['slug']] = {'versao': f['version'], 'verify_jwt': f['verify_jwt'], 'ezbr': f['ezbr_sha256']}
     return out
 
+def jwt_efetivo(sha, edge):
+    """verify_jwt que a CLI aplicará ao deployar a árvore `sha`: [functions.<edge>] do config.toml, padrão true."""
+    import tomllib
+    p = subprocess.run(['/usr/bin/git', 'show', f'{sha}:supabase/config.toml'], cwd=WT, capture_output=True)
+    if p.returncode != 0: raise SystemExit(f'config.toml ausente em {sha}')
+    return tomllib.loads(p.stdout.decode()).get('functions', {}).get(edge, {}).get('verify_jwt', True)
+
 def hash_no_sha(sha, rel):
     p = subprocess.run(['/usr/bin/git', 'show', f'{sha}:{rel}'], cwd=WT, capture_output=True)
     return hashlib.sha256(p.stdout).hexdigest() if p.returncode == 0 else None
@@ -860,6 +922,11 @@ for edge in edges:
             if h != hash_no_sha(sha_main, rel): div.append(f'{edge}: {rel} ≠ {sha_main}')
         else:
             if h != hash_no_sha(sha_prod, rel): div.append(f'{edge}: {rel} ≠ produção esperada {sha_prod}')
+    if modo == 'antes':
+        # política JWT conferida ANTES de aplicar: a do deploy (SHA_MAIN) e a do rollback (SHA_PRODUCAO) = a de produção
+        for nome_sha, sha in (('deploy', sha_main), ('rollback', sha_prod)):
+            if jwt_efetivo(sha, edge) != snap['verify_jwt']:
+                div.append(f"{edge}: verify_jwt do {nome_sha} ({sha}) = {jwt_efetivo(sha, edge)} ≠ produção {snap['verify_jwt']}")
     manif[edge] = snap
 (TMP / f'manifesto-{fatia}-{modo}.json').write_text(json.dumps({'projeto': REF, 'sha_prod': sha_prod, 'sha_main': sha_main, 'edges': manif}, indent=1))
 if modo == 'depois':
@@ -1260,7 +1327,7 @@ describe('buscarUserProductIdsML', () => {
   - Codex revisa este commit isolado.
 
 - [ ] **Step 3: Testes do bulk, falhando.**
-  - `kit-virtual-status.test.ts:122` passa a esperar `'https://api.mercadolibre.com/items/bulk?ids=MLB1,MLB2&attributes=status_code,body.id,body.listing_type_id'`, e o mock desse teste responde `status_code`.
+  - `kit-virtual-status.test.ts:122` passa a esperar `'https://api.mercadolibre.com/items/bulk?ids=MLB1,MLB2&attributes=status_code,body.id,body.listing_type_id'`, e o mock desse teste responde `status_code`. O comentário da linha 118 passa a dizer `GET /items/bulk?ids=...&attributes=...` (ADR-0177).
   - Teste novo com o kit real, mais o 404 inserido:
 
 ```ts
@@ -1322,8 +1389,8 @@ describe.each(['code', 'status_code'] as const)('lerRelacoes — fronteira do mo
     const { c } = cli([{ [campo]: 200, body: { id: 'MLB1', catalog_listing: false, item_relations: [{ id: 'MLB2' }] } }], [{ [campo]: 200 }]);
     await expect(c.lerRelacoes('MLB1')).rejects.toThrow();
   });
-  it('relacionado repetido em item_relations: uma consulta, retorno conserva a repetição', async () => {
-    const { f, c } = cli(
+  it('relacionado repetido em item_relations: retorno conserva a repetição', async () => {
+    const { c } = cli(
       [{ [campo]: 200, body: { id: 'MLB1', catalog_listing: false, item_relations: [{ id: 'MLB2' }, { id: 'MLB2' }] } }],
       [{ [campo]: 200, body: { id: 'MLB2', catalog_listing: true } }],
     );
@@ -1331,8 +1398,16 @@ describe.each(['code', 'status_code'] as const)('lerRelacoes — fronteira do mo
       catalog_listing: false,
       relacionados: [{ id: 'MLB2', catalog_listing: true }, { id: 'MLB2', catalog_listing: true }],
     });
-    expect(new URL(String(f.mock.calls[1][0]), 'https://x').searchParams.get('ids')).toBe('MLB2');
   });
+});
+
+// Só depois da migração (Step 3): hoje o código envia `ids=MLB2,MLB2` e quem deduplica é o servidor.
+it('lerRelacoes: relacionado repetido vai UMA vez na URL do bulk', async () => {
+  const f = vi.fn(async (u: string) => new Response(JSON.stringify(f.mock.calls.length === 1
+    ? [{ status_code: 200, body: { id: 'MLB1', catalog_listing: false, item_relations: [{ id: 'MLB2' }, { id: 'MLB2' }] } }]
+    : [{ status_code: 200, body: { id: 'MLB2', catalog_listing: true } }])));
+  await criarClienteML('t', f as unknown as typeof fetch).lerRelacoes('MLB1');
+  expect(new URL(String(f.mock.calls[1][0]), 'https://x').searchParams.get('ids')).toBe('MLB2');
 });
 ```
 
@@ -1341,7 +1416,7 @@ Esses valores são a caracterização conferida pelo Codex (r2, achado 12). No e
 `promocoes/__tests__/ml.test.ts`:
 - `fixtures/multiget.json`: `sed -i '' 's/"code":/"status_code":/'`, depois conferir com `grep -c`.
 - Linha 135: o cast passa a `{ status_code: number; … }`.
-- Teste da linha 94: asserção `expect(<chamadas>[0]).toMatch(/^\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.title,body\.thumbnail,body\.secure_thumbnail,body\.permalink,body\.listing_type_id,body\.category_id,body\.seller_custom_field,body\.attributes,body\.variations&include_attributes=all$/)`, usando o nome real da variável de chamadas.
+- Teste da linha 94: asserção `expect(get.mock.calls[0][0]).toMatch(/^\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.title,body\.thumbnail,body\.secure_thumbnail,body\.permalink,body\.listing_type_id,body\.category_id,body\.seller_custom_field,body\.attributes,body\.variations&include_attributes=all$/)`, usando o nome real da variável de chamadas.
 - Par real: `buscarItensML` com `GetJson` falso devolvendo `bulk-promocoes-bulk.json` contra o mesmo com `bulk-promocoes-antigo.json` (mesmos ids, `bulk-promocoes-ids.json`). Os dois `Map` devem ser iguais (`toEqual`), e os valores normalizados de um item devem conter `UNITS_PER_PACK`/`SALE_FORMAT` quando o fixture tiver esses atributos (`normalizarItemML`, `promocoes/ml.ts:61`).
 
 `varrer-itens.test.ts`:
@@ -1485,6 +1560,8 @@ describe('lerEstoqueVivoML', () => {
 
 ```ts
 import { afterEach, describe, expect, it, vi } from 'vitest';
+// processar.ts → token.ts → supabase.ts alcança import `jsr:`; mesmo mock dos testes existentes do Pulse.
+vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: async () => 'fake-token' }));
 import { lerSituacaoAnuncios } from '../processar.ts';
 afterEach(() => vi.unstubAllGlobals());
 
