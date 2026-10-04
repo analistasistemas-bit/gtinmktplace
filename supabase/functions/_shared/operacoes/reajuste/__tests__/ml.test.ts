@@ -162,6 +162,20 @@ describe('participaPromocaoML', () => {
     expect(f).toHaveBeenCalledTimes(2);
   });
 
+  it('candidate com visão da campanha sem status → null (inconclusivo)', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(200, { results: [{ id: 'MLB1', offer_id: 'OFFER-X' }] }));
+    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBeNull();
+  });
+
+  it('candidate com visão da campanha results vazio → false', async () => {
+    const f = vi.fn()
+      .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))
+      .mockResolvedValueOnce(resp(200, { results: [] }));
+    expect(await criarClienteReajusteML('tok', f).participaPromocaoML('MLB1')).toBe(false);
+  });
+
   it('falha na visão da campanha → null', async () => {
     const f = vi.fn()
       .mockResolvedValueOnce(resp(200, [{ id: 'C1', type: 'SMART', status: 'candidate' }]))

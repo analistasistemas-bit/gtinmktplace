@@ -83,8 +83,9 @@ export function criarClienteReajusteML(token: string, f: typeof fetch = fetch): 
         for (const p of promos.filter((p) => p?.status === 'candidate')) {
           const rc = await get(`/seller-promotions/promotions/${encodeURIComponent(String(p.id))}/items?promotion_type=${encodeURIComponent(String(p.type))}&item_id=${id}&app_version=v2`);
           if (rc.status !== 200) return null;
-          const st = ((await rc.json()) as { results?: { status?: unknown }[] })?.results?.[0]?.status;
-          if (ATIVA.has(String(st))) return true;
+          const r0 = ((await rc.json()) as { results?: { status?: unknown }[] | null })?.results?.[0];
+          if (r0 && typeof r0.status !== 'string') return null; // sem status = inconclusivo, nunca "não participa"
+          if (r0 && ATIVA.has(r0.status as string)) return true;
         }
         return false;
       } catch {
