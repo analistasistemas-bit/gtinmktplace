@@ -110,7 +110,17 @@ update public.operacoes_massa_itens set status = 'aplicado' where operacao_id = 
 select pg_temp.ok((select motivo is null and codigo_pai = '09310001' and lote_id = '93000000-0000-0000-0000-000000000202'
                    from public.familia_reservar_publicacao(:org, array[:f2]::uuid[], 'UPDATE')), '(e) sem reajuste → reserva');
 select pg_temp.ok((select status = 'publicando' and erro_mensagem is null from public.familias where id = :f2), '(e) F2 publicando');
+-- Família em `erro` também é reservável (filtro pronto/erro) e tem o erro limpo.
+update public.familias set status = 'erro', erro_mensagem = 'falhou antes' where id = :f2;
+select pg_temp.ok((select motivo is null from public.familia_reservar_publicacao(:org, array[:f2]::uuid[], 'UPDATE')), '(e) erro → reserva');
+select pg_temp.ok((select status = 'publicando' and erro_mensagem is null from public.familias where id = :f2), '(e) erro → publicando, erro limpo');
 update public.familias set status = 'pronto' where id = :f2;
+-- CREATE positivo: família nova sem ml_item_id.
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, status, origem, chave_cadastro)
+values ('93000000-0000-0000-0000-000000000309', '93000000-0000-0000-0000-000000000201', :usr, :org, '09310009', 'P9', 'CREATE', 'pronto', 'nacional', gen_random_uuid());
+select pg_temp.ok((select motivo is null and codigo_pai = '09310009'
+                   from public.familia_reservar_publicacao(:org, array['93000000-0000-0000-0000-000000000309']::uuid[], 'CREATE')), '(e) CREATE → reserva');
+select pg_temp.ok((select status = 'publicando' from public.familias where id = '93000000-0000-0000-0000-000000000309'), '(e) CREATE publicando');
 
 -- (f)/(m) PxV: raiz ML partição 0 de PAI1, partição 1 de PAI1 e raiz ML de outro produto.
 -- (m) "raiz de outro canal": o enum canal_externo só tem 'mercado_livre' — não construível; o
@@ -151,6 +161,9 @@ select pg_temp.ok((select migracao_pxv_status is null and ml_item_id_anterior is
 update public.operacoes_massa_itens set status = 'pendente' where operacao_id = :op1;
 select pg_temp.ok(public.reajuste_reivindicar(:org, :op1, 'MLBX') = 'Migração para preço por variação em curso', '(f) reajuste recusa PxV');
 select pg_temp.ok((select status = 'bloqueado' from public.operacoes_massa_itens where operacao_id = :op1), '(f) item bloqueado');
+update public.anuncios_externos set migracao_pxv_status = 'em_andamento' where id = '93000000-0000-0000-0000-000000000601';
+update public.operacoes_massa_itens set status = 'pendente', mensagem = null where operacao_id = :op1;
+select pg_temp.ok(public.reajuste_reivindicar(:org, :op1, 'MLBX') = 'Migração para preço por variação em curso', '(f) reajuste recusa PxV em_andamento');
 update public.anuncios_externos set migracao_pxv_status = null where id = '93000000-0000-0000-0000-000000000601';
 
 -- (g) persistir ok → variações e item; de novo ja_aplicado.
@@ -174,6 +187,14 @@ select pg_temp.ok(public.reajuste_persistir(:org, :op1, 'MLBX', 120, jsonb_build
 select pg_temp.ok((select preco_publicacao = 110 and preco_publicado_ml = 110 from public.variacoes where id = :v1a), '(g) 1ª cor inalterada');
 select pg_temp.ok((select preco_publicacao = 220 from public.variacoes where id = :v1b), '(g) 2ª cor inalterada');
 select pg_temp.ok((select status = 'erro' and etapa is null and mensagem like 'Conflito:%' from public.operacoes_massa_itens where operacao_id = :op1), '(g) item erro');
+-- Repetir depois do erro, com payload válido → estado_invalido, nada gravado.
+select pg_temp.ok(public.reajuste_persistir(:org, :op1, 'MLBX', 120, jsonb_build_array(
+  jsonb_build_object('variacao_id', :v1a, 'esperado', '{"preco_publicacao":110,"preco_editado_pelo_operador":true}'::jsonb,
+                     'novo', '{"preco_publicacao":120,"preco_editado_pelo_operador":true}'::jsonb),
+  jsonb_build_object('variacao_id', :v1b, 'esperado', '{"preco_publicacao":220,"preco_editado_pelo_operador":true}'::jsonb,
+                     'novo', '{"preco_publicacao":230,"preco_editado_pelo_operador":true}'::jsonb))) = 'estado_invalido', '(g) após erro → estado_invalido');
+select pg_temp.ok((select count(*) = 2 from public.variacoes where id in (:v1a, :v1b) and preco_publicacao in (110, 220) and preco_publicado_ml = 110), '(g) estado_invalido: nada gravado');
+select pg_temp.ok((select status = 'erro' and mensagem like 'Conflito:%' from public.operacoes_massa_itens where operacao_id = :op1), '(g) estado_invalido: item intacto');
 -- Variação inexistente (no item e no p_restaurar) → conflito.
 update public.operacoes_massa_itens set status = 'conferindo', variacao_ids = array[:v1a, '93000000-0000-0000-0000-000000000499']::uuid[] where operacao_id = :op1;
 select pg_temp.ok(public.reajuste_persistir(:org, :op1, 'MLBX', 120, jsonb_build_array(
@@ -189,6 +210,8 @@ select pg_temp.ok(public.reajuste_persistir(:org, :op1, 'MLBX', 120, jsonb_build
   jsonb_build_object('variacao_id', :v1a, 'esperado', '{"preco_publicacao":110,"preco_editado_pelo_operador":true}'::jsonb,
                      'novo', '{"preco_publicacao":120,"preco_editado_pelo_operador":true}'::jsonb))) = 'conflito', '(k) omitindo 2ª cor');
 select pg_temp.ok((select preco_publicacao = 110 from public.variacoes where id = :v1a), '(k) omitindo: nada alterado');
+select pg_temp.ok((select status = 'erro' and mensagem = 'Conjunto de variações do anúncio não confere com o preview — nada foi gravado no banco'
+                   from public.operacoes_massa_itens where operacao_id = :op1), '(k) mensagem própria da completude');
 update public.operacoes_massa_itens set status = 'conferindo' where operacao_id = :op1;
 select pg_temp.ok(public.reajuste_persistir(:org, :op1, 'MLBX', 120, '[]') = 'conflito', '(k) vazio');
 update public.operacoes_massa_itens set status = 'conferindo' where operacao_id = :op1;
@@ -234,6 +257,14 @@ select pg_temp.ok(public.operacoes_massa_reivindicar(:org, :oppa, 'MLBPAUSA'), '
 -- reajuste recusa MLB com item de promoção em andamento (aderir enviando).
 update public.operacoes_massa_itens set status = 'pendente' where operacao_id = :op1;
 select pg_temp.ok(public.reajuste_reivindicar(:org, :op1, 'MLBX') = 'Anúncio em operação de promoção em andamento', '(h) reajuste recusa promoção');
+-- Só o `sair` ativo (enviando) e depois em saida_solicitada também recusam.
+update public.operacoes_massa_itens set status = 'aplicado' where operacao_id = :opad;
+update public.operacoes_massa_itens set status = 'enviando' where operacao_id = :opsa;
+update public.operacoes_massa_itens set status = 'pendente', mensagem = null where operacao_id = :op1;
+select pg_temp.ok(public.reajuste_reivindicar(:org, :op1, 'MLBX') = 'Anúncio em operação de promoção em andamento', '(h) recusa por sair enviando');
+update public.operacoes_massa_itens set status = 'saida_solicitada' where operacao_id = :opsa;
+update public.operacoes_massa_itens set status = 'pendente', mensagem = null where operacao_id = :op1;
+select pg_temp.ok(public.reajuste_reivindicar(:org, :op1, 'MLBX') = 'Anúncio em operação de promoção em andamento', '(h) recusa por saida_solicitada');
 update public.operacoes_massa_itens set status = 'aplicado' where operacao_id in (:opad, :opsa);
 update public.operacoes_massa_itens set status = 'aplicado', mensagem = null where operacao_id = :op1;
 
@@ -263,10 +294,14 @@ update public.operacoes_massa_itens set status = 'aplicado' where operacao_id = 
 
 -- (j) reajuste_confirmar.
 insert into public.operacoes_massa (id, org_id, acao, status, expira_em) values (:opr, :org, 'reajustar', 'rascunho', now() + interval '30 minutes');
-insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, avaliacao) values
-  (:opr, :org, 'MLBJ1', 'rascunho', '{"tem_vermelho":false,"tem_sem_dado":false}'),
-  (:opr, :org, 'MLBJ2', 'rascunho', '{"tem_vermelho":true,"tem_sem_dado":false}'),
-  (:opr, :org, 'MLBJ3', 'rascunho', '{"tem_vermelho":false,"tem_sem_dado":true}');
+-- MLBJ1/MLBJ2 já trazem codigo_pai do preview; MLBJ3 não — o confirmar resolve pela família 306.
+insert into public.familias (id, lote_id, user_id, org_id, codigo_pai, nome_pai, operacao, status, origem, chave_cadastro, ml_item_id, publicado_em)
+values ('93000000-0000-0000-0000-000000000306', '93000000-0000-0000-0000-000000000201', :usr, :org, '09310006', 'P6', 'UPDATE', 'pronto', 'nacional',
+        gen_random_uuid(), 'MLBJ3', now());
+insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, avaliacao, codigo_pai) values
+  (:opr, :org, 'MLBJ1', 'rascunho', '{"tem_vermelho":false,"tem_sem_dado":false}', '09310007'),
+  (:opr, :org, 'MLBJ2', 'rascunho', '{"tem_vermelho":true,"tem_sem_dado":false}', '09310007'),
+  (:opr, :org, 'MLBJ3', 'rascunho', '{"tem_vermelho":false,"tem_sem_dado":true}', null);
 create temp table snap as select ml_item_id, status, incluido, confirmado_risco, confirmado_sem_dado, mensagem
   from public.operacoes_massa_itens where operacao_id = :opr;
 create function pg_temp.intacto() returns boolean language sql as $$
@@ -308,9 +343,31 @@ select pg_temp.ok((select status = 'bloqueado' and mensagem = 'Desmarcado no pre
 select pg_temp.ok((select status = 'pendente' and incluido and confirmado_risco from public.operacoes_massa_itens where operacao_id = :opr and ml_item_id = 'MLBJ2'), '(j) MLBJ2 pendente');
 select pg_temp.ok((select status = 'pendente' and incluido and confirmado_sem_dado from public.operacoes_massa_itens where operacao_id = :opr and ml_item_id = 'MLBJ3'), '(j) MLBJ3 pendente');
 select pg_temp.ok((select status = 'executando' and expira_em is null from public.operacoes_massa where id = :opr), '(j) operação executando');
+-- A reserva nasce no confirmar: codigo_pai resolvido, visível para publicação.
+select pg_temp.ok((select codigo_pai = '09310006' from public.operacoes_massa_itens where operacao_id = :opr and ml_item_id = 'MLBJ3'), '(j) codigo_pai resolvido');
+select pg_temp.ok(public.reajuste_ativo_produto(:org, '09310006') = 'MLBJ3', '(j) reajuste_ativo_produto vê o confirmado');
+select pg_temp.ok((select motivo = 'Há reajuste de preço em massa em andamento no anúncio MLBJ3'
+                   from public.familia_reservar_publicacao(:org, array['93000000-0000-0000-0000-000000000306']::uuid[], 'UPDATE')), '(j) publicação recusa após confirmar');
+select pg_temp.ok((select status = 'pronto' from public.familias where id = '93000000-0000-0000-0000-000000000306'), '(j) família continua pronto');
 select pg_temp.ok(public.reajuste_confirmar(:org, :opr, '[]') = 'ja_confirmada', '(j) ja_confirmada');
 update public.operacoes_massa set status = 'concluida' where id = :opr;
 select pg_temp.ok(public.reajuste_confirmar(:org, :opr, '[]') = 'nenhum', '(j) concluida → nenhum');
+-- Produto não resolvível (último item) → P0001 sem_produto:<ml>; nada alterado (o 1º item já tinha sido escrito).
+insert into public.operacoes_massa (id, org_id, acao, status, expira_em) values
+  ('93000000-0000-0000-0000-000000000508', :org, 'reajustar', 'rascunho', now() + interval '30 minutes');
+insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, avaliacao, codigo_pai) values
+  ('93000000-0000-0000-0000-000000000508', :org, 'MLBA0', 'rascunho', '{}', '09310008'),
+  ('93000000-0000-0000-0000-000000000508', :org, 'MLBZZ', 'rascunho', '{}', null);
+do $$
+begin
+  perform public.reajuste_confirmar('93000000-0000-0000-0000-000000000001', '93000000-0000-0000-0000-000000000508', '[]');
+  raise exception 'FALHA: (j) sem_produto devia lançar';
+exception when sqlstate 'P0001' then
+  if sqlerrm <> 'sem_produto:MLBZZ' then raise exception 'FALHA: (j) sem_produto msg=%', sqlerrm; end if;
+end $$;
+select pg_temp.ok((select status = 'rascunho' from public.operacoes_massa where id = '93000000-0000-0000-0000-000000000508')
+                  and (select count(*) = 2 from public.operacoes_massa_itens where operacao_id = '93000000-0000-0000-0000-000000000508' and status = 'rascunho'),
+                  '(j) sem_produto: nada alterado');
 
 -- (l) reajuste_variacoes_do_mlb.
 -- PAI2: G1 antiga (A/B), G2 nova de reposição parcial (só A), ambas com ml_variation_id.

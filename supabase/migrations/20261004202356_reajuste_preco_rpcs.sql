@@ -220,6 +220,7 @@ declare
   v_incl boolean;
   v_risco boolean;
   v_sem boolean;
+  v_pai text;
   v_algum boolean := false;
 begin
   select * into v_op from public.operacoes_massa o
@@ -248,7 +249,7 @@ begin
   if not v_algum then return 'nenhum'; end if;
 
   -- Fase 2: escrita.
-  for v_it in select i.ml_item_id, i.incluido from public.operacoes_massa_itens i
+  for v_it in select i.ml_item_id, i.incluido, i.codigo_pai from public.operacoes_massa_itens i
               where i.org_id = p_org and i.operacao_id = p_operacao and i.status = 'rascunho'
               order by i.ml_item_id loop
     v_c := (select e from jsonb_array_elements(coalesce(p_confirmacoes, '[]'::jsonb)) e
@@ -257,10 +258,15 @@ begin
     v_risco := coalesce((v_c->>'risco')::boolean, false);
     v_sem := coalesce((v_c->>'sem_dado')::boolean, false);
     if v_incl then
+      -- A reserva nasce aqui: sem codigo_pai o item ficaria invisível a reajuste_ativo_produto.
+      v_pai := coalesce(v_it.codigo_pai, public.reajuste_codigo_pai(p_org, v_it.ml_item_id));
+      if v_pai is null then
+        raise exception using errcode = 'P0001', message = 'sem_produto:' || v_it.ml_item_id;
+      end if;
       begin
         update public.operacoes_massa_itens i
         set incluido = true, confirmado_risco = v_risco, confirmado_sem_dado = v_sem,
-            status = 'pendente', atualizado_em = now()
+            codigo_pai = v_pai, status = 'pendente', atualizado_em = now()
         where i.org_id = p_org and i.operacao_id = p_operacao and i.ml_item_id = v_it.ml_item_id;
       exception when unique_violation then
         raise exception using errcode = 'P0001', message = 'ocupado:' || v_it.ml_item_id;
@@ -294,7 +300,7 @@ declare
   v_pub numeric;
   v_edit boolean;
   v_ids uuid[];
-  v_conflito boolean := false;
+  v_conflito text;
 begin
   select i.codigo_pai into v_pai from public.operacoes_massa_itens i
   where i.org_id = p_org and i.operacao_id = p_operacao and i.ml_item_id = p_ml_item;
@@ -308,6 +314,8 @@ begin
   where i.org_id = p_org and i.operacao_id = p_operacao and i.ml_item_id = p_ml_item
   for update;
   if v_it.status = 'aplicado' then return 'ja_aplicado'; end if;
+  -- Só persiste quem detém a reserva; repetir depois de `erro`/`mudou` não pode gravar.
+  if v_it.status not in ('enviando','conferindo') then return 'estado_invalido'; end if;
 
   -- Completude: conjunto de variacao_id de p_restaurar = item.variacao_ids, sem duplicata, não vazio.
   if jsonb_typeof(p_restaurar) = 'array' then
@@ -316,7 +324,7 @@ begin
   if coalesce(cardinality(v_ids), 0) = 0
      or cardinality(v_ids) <> (select count(distinct x) from unnest(v_ids) x)
      or not (v_ids @> coalesce(v_it.variacao_ids, '{}') and v_ids <@ coalesce(v_it.variacao_ids, '{}')) then
-    v_conflito := true;
+    v_conflito := 'Conjunto de variações do anúncio não confere com o preview — nada foi gravado no banco';
   else
     -- Fase 1: só leitura (com lock das linhas, em ordem de id).
     for v_e in select e from jsonb_array_elements(p_restaurar) e order by (e->>'variacao_id')::uuid loop
@@ -327,16 +335,15 @@ begin
       if not found
          or v_pub is distinct from (v_e->'esperado'->>'preco_publicacao')::numeric
          or v_edit is distinct from (v_e->'esperado'->>'preco_editado_pelo_operador')::boolean then
-        v_conflito := true;
+        v_conflito := 'Conflito: o preço de uma cor foi alterado por outro fluxo durante o reajuste — ML ficou com o preço novo; o próximo UPDATE publicará o valor do banco';
         exit;
       end if;
     end loop;
   end if;
 
-  if v_conflito then
+  if v_conflito is not null then
     update public.operacoes_massa_itens i
-    set status = 'erro', etapa = null, atualizado_em = now(),
-        mensagem = 'Conflito: o preço de uma cor foi alterado por outro fluxo durante o reajuste — ML ficou com o preço novo; o próximo UPDATE publicará o valor do banco'
+    set status = 'erro', etapa = null, atualizado_em = now(), mensagem = v_conflito
     where i.org_id = p_org and i.operacao_id = p_operacao and i.ml_item_id = p_ml_item;
     return 'conflito';
   end if;

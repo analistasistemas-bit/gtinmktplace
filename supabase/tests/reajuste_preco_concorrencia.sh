@@ -190,9 +190,9 @@ fixture 11 none
 R2=$(u 11 504)
 psql_ -c "update public.operacoes_massa set status = 'rascunho', expira_em = now() + interval '30 minutes' where id = '$OP';
           insert into public.operacoes_massa (id, org_id, acao, status, expira_em) values ('$R2', '$ORG', 'reajustar', 'rascunho', now() + interval '30 minutes');
-          insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, avaliacao) values
-            ('$OP', '$ORG', 'MLBC11Y', 'rascunho', '{}'), ('$OP', '$ORG', 'MLBC11X', 'rascunho', '{}'),
-            ('$R2', '$ORG', 'MLBC11X', 'rascunho', '{}'), ('$R2', '$ORG', 'MLBC11Y', 'rascunho', '{}')"
+          insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, avaliacao, codigo_pai) values
+            ('$OP', '$ORG', 'MLBC11Y', 'rascunho', '{}', '$PAI'), ('$OP', '$ORG', 'MLBC11X', 'rascunho', '{}', '$PAI'),
+            ('$R2', '$ORG', 'MLBC11X', 'rascunho', '{}', '$PAI'), ('$R2', '$ORG', 'MLBC11Y', 'rascunho', '{}', '$PAI')"
 corrida "9 rascunhos sobrepostos" \
   "select public.reajuste_confirmar('$ORG', '$OP', '[]')" \
   "select public.reajuste_confirmar('$ORG', '$R2', '[]')"
