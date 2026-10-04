@@ -3,7 +3,7 @@
 import type { DimensoesPacote } from '../ml/pacote.ts';
 import { resolverPack, type Cadastro } from './cadastro.ts';
 import { SemAcessoPromocoes, TIPOS_CUPOM } from './ml.ts';
-import { ateQuantoDescer, liquidoNoPreco, precoAvaliado, semaforo, semaforoDaLinha } from './projecao.ts';
+import { ateQuantoDescer, ehParticipando, liquidoNoPreco, precoAvaliado, semaforo, semaforoDaLinha } from './projecao.ts';
 import type {
   Aliquotas, ItemML, ItemPromocaoML, LinhaItem, MotivoSemLiquido, ProjecaoCor, PromocaoML, Tarifa,
 } from './tipos.ts';
@@ -178,6 +178,27 @@ export function mesmaRodada(a: string | null, b: string): boolean {
   return a != null && Date.parse(a) === Date.parse(b);
 }
 
+/**
+ * Uma oferta por anúncio: na Relâmpago o ML lista o mesmo item 2× (oferta genérica com stock + oferta por
+ * horário), e o upsert por (org, promoção, item) recusa o lote inteiro. Fica a oferta em que já participa;
+ * entre iguais, a de menor preço avaliado (pior caso de margem). O estoque vem da irmã quando faltar.
+ */
+export function umaOfertaPorAnuncio(itens: ItemPromocaoML[]): ItemPromocaoML[] {
+  const m = new Map<string, ItemPromocaoML>();
+  const melhor = (a: ItemPromocaoML, b: ItemPromocaoML) => {
+    if (ehParticipando(a.status) !== ehParticipando(b.status)) return ehParticipando(a.status) ? a : b;
+    const pa = precoAvaliado(a), pb = precoAvaliado(b);
+    return pb != null && (pa == null || pb < pa) ? b : a;
+  };
+  for (const it of itens) {
+    const ant = m.get(it.ml_item_id);
+    if (!ant) { m.set(it.ml_item_id, it); continue; }
+    const v = melhor(ant, it), o = v === ant ? it : ant;
+    m.set(it.ml_item_id, { ...v, estoque_min: v.estoque_min ?? o.estoque_min, estoque_max: v.estoque_max ?? o.estoque_max });
+  }
+  return [...m.values()];
+}
+
 const porId = (a: ItemPromocaoML, b: ItemPromocaoML) => (a.ml_item_id < b.ml_item_id ? -1 : a.ml_item_id > b.ml_item_id ? 1 : 0);
 
 export async function sincronizarPromocao(
@@ -193,7 +214,7 @@ export async function sincronizarPromocao(
       return { resultado: 'erro', processados: 0 };
     }
     // Cursor = último ml_item_id processado; a comparação é a mesma da ordenação (code units).
-    const pendentes = (await deps.listarItens()).sort(porId)
+    const pendentes = umaOfertaPorAnuncio(await deps.listarItens()).sort(porId)
       .filter((x) => msg.cursor == null || x.ml_item_id > msg.cursor);
     const cadastro = await deps.carregarCadastro();
     while (feitos < pendentes.length) {

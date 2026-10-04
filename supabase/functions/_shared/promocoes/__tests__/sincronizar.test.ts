@@ -231,6 +231,32 @@ describe('sincronizarPromocao', () => {
     expect(d.concluir).toHaveBeenCalledTimes(1);
   });
 
+  // LGH-MLB1000 (Avil, 04/10/2026): o ML lista o anúncio 2× (oferta genérica com stock + oferta por horário);
+  // o upsert por (org, promoção, item) recusava o lote inteiro ("cannot affect row a second time").
+  it('anúncio repetido (Relâmpago): grava uma linha, a de menor preço, herdando o estoque', async () => {
+    const d = depsLeitura({
+      listarItens: vi.fn(async () => [
+        item({ ml_item_id: 'MLB7', preco_promo: 27.54, estoque_min: 5, estoque_max: 84 }),
+        item({ ml_item_id: 'MLB7', preco_promo: 24.64 }),
+      ]),
+    });
+    expect(await sincronizarPromocao(d, msg, opts)).toEqual({ resultado: 'concluida', processados: 1 });
+    const [linha] = d.gravarLote.mock.calls[0][0];
+    expect(d.gravarLote.mock.calls[0][0]).toHaveLength(1);
+    expect(linha).toMatchObject({ ml_item_id: 'MLB7', preco_promo: 24.64, estoque_min: 5, estoque_max: 84 });
+  });
+
+  it('anúncio repetido: a oferta em que já participa ganha da candidata mais barata', async () => {
+    const d = depsLeitura({
+      listarItens: vi.fn(async () => [
+        item({ ml_item_id: 'MLB7', status: 'candidate', preco_promo: 20 }),
+        item({ ml_item_id: 'MLB7', status: 'started', preco_promo: 25 }),
+      ]),
+    });
+    await sincronizarPromocao(d, msg, opts);
+    expect(d.gravarLote.mock.calls[0][0]).toEqual([expect.objectContaining({ status: 'started', preco_promo: 25 })]);
+  });
+
   it('orçamento esgotado: grava o que fez e continua do cursor', async () => {
     const d = depsLeitura();
     d.gravarLote.mockImplementation(async () => { d.avancar(100_000); });
