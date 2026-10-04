@@ -1,6 +1,8 @@
 // Leitura de GTIN dos anúncios do ML, usada como fallback do enriquecimento do faturamento
 // quando o GTIN não veio pelo caminho principal.
 
+import { caminhoMultiget, comoEnvelopeAntigo } from './multiget.ts';
+
 const API = 'https://api.mercadolibre.com';
 
 interface ItemComAtributos {
@@ -32,10 +34,10 @@ export async function buscarGtinsDosItens(
   for (let i = 0; i < itemIds.length; i += 20) {
     const bloco = itemIds.slice(i, i + 20);
     try {
-      const url = `${API}/items?ids=${bloco.join(',')}&attributes=id,attributes`;
+      const url = `${API}${caminhoMultiget(bloco, 'id,attributes')}`;
       const resp = await fetch(url, { headers, signal });
       if (!resp.ok) continue;
-      const arr = await resp.json(); // [{ code, body: { id, attributes } }]
+      const arr = comoEnvelopeAntigo(await resp.json(), bloco); // [{ code, body: { id, attributes } }] (ADR-0177)
       if (!Array.isArray(arr)) continue;
       for (const e of arr) {
         if (e?.code !== 200) continue;

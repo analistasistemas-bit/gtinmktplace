@@ -1,5 +1,23 @@
-import { describe, it, expect } from 'vitest';
-import { agregarPedidos, montarExternos, reclassificarPorGtin, extrairGtin, type PedidoML } from '../vendas.ts';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { agregarPedidos, montarExternos, reclassificarPorGtin, extrairGtin, buscarTitulosEGtins, type PedidoML } from '../vendas.ts';
+import bulkVendas from './fixtures/bulk-vendas-bulk.json' with { type: 'json' };
+import antigoVendas from './fixtures/bulk-vendas-antigo.json' with { type: 'json' };
+import idsVendas from './fixtures/bulk-vendas-ids.json' with { type: 'json' };
+
+// ADR-0177: título e GTIN dos itens de venda lidos pelo /items/bulk — mesma saída do endpoint antigo.
+describe('buscarTitulosEGtins via bulk', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('URL do bulk e títulos/GTINs iguais aos do envelope antigo, nos mesmos ids', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return new Response(JSON.stringify(bulkVendas)); }));
+    const novo = await buscarTitulosEGtins('t', idsVendas as string[], AbortSignal.timeout(5000));
+    expect(urls).toEqual([`https://api.mercadolibre.com/items/bulk?ids=${(idsVendas as string[]).join(',')}&attributes=status_code,body.id,body.title,body.attributes`]);
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(antigoVendas))));
+    expect(novo).toEqual(await buscarTitulosEGtins('t', idsVendas as string[], AbortSignal.timeout(5000)));
+    expect(Object.keys(novo.titulos)).toHaveLength(3);
+    expect(Object.keys(novo.gtins).length).toBeGreaterThan(0);
+  });
+});
 
 // Semântica (ADR-0032): `totais` reflete TODA a conta do vendedor no período (bate com a
 // tela de Métricas do ML), enquanto `porItem` continua restrito ao escopo do app (tabela,

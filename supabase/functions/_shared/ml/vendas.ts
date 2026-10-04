@@ -1,4 +1,5 @@
 import type { MetricasVendasCanal, ItemExternoVenda } from '../canais/contrato.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from './multiget.ts';
 
 /** Pedido do ML, recorte usado para agregar vendas (campos além destes são ignorados). */
 export interface PedidoML {
@@ -125,7 +126,7 @@ export function montarExternos(
  * Resolve título e GTIN de N itens via /items em lote (resiliente: bloco que falha é ignorado).
  * O GTIN serve para reclassificar venda de catálogo no produto do usuário (ADR-0045).
  */
-async function buscarTitulosEGtins(
+export async function buscarTitulosEGtins(
   token: string,
   ids: string[],
   signal: AbortSignal,
@@ -136,10 +137,10 @@ async function buscarTitulosEGtins(
   const headers = { Authorization: `Bearer ${token}` };
   for (const bloco of chunk(ids, 20)) {
     try {
-      const url = `${API}/items?ids=${bloco.join(',')}&attributes=id,title,attributes`;
+      const url = `${API}${caminhoMultiget(bloco, 'id,title,attributes')}`;
       const resp = await fetch(url, { headers, signal });
       if (!resp.ok) continue;
-      const arr = await resp.json(); // [{ code, body:{ id, title, attributes } }]
+      const arr = comoEnvelopeAntigo(await resp.json(), bloco); // [{ code, body:{ id, title, attributes } }] (ADR-0177)
       if (Array.isArray(arr)) {
         for (const e of arr) {
           const id = e?.body?.id;
