@@ -1,0 +1,29 @@
+[
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4752971229",
+   "catalog_listing": false,
+   "item_relations": []
+  }
+ },
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4753131889",
+   "catalog_listing": false,
+   "item_relations": []
+  }
+ },
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4765613429",
+   "catalog_listing": false,
+   "item_relations": []
+  }
+ },
+ {
+  "status_code": 404
+ }
+]

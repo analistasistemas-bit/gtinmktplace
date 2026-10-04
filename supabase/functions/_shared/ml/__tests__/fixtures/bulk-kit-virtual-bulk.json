@@ -1,0 +1,26 @@
+[
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4752971229",
+   "listing_type_id": "gold_special"
+  }
+ },
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4753131889",
+   "listing_type_id": "gold_special"
+  }
+ },
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4765613429",
+   "listing_type_id": "gold_special"
+  }
+ },
+ {
+  "status_code": 404
+ }
+]

@@ -1,0 +1,36 @@
+[
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB4752971229",
+   "catalog_listing": false,
+   "item_relations": []
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB4753131889",
+   "catalog_listing": false,
+   "item_relations": []
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB4765613429",
+   "catalog_listing": false,
+   "item_relations": []
+  }
+ },
+ {
+  "code": 404,
+  "body": {
+   "id": "MLB0000000001",
+   "message": "Item with id MLB0000000001 not found",
+   "error": "not_found",
+   "status": 404,
+   "cause": []
+  }
+ }
+]

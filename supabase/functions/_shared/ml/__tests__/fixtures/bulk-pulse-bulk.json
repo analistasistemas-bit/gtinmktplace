@@ -1,0 +1,38 @@
+[
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4752971229",
+   "category_id": "MLB255054",
+   "price": 23.9,
+   "listing_type_id": "gold_special",
+   "status": "active",
+   "sub_status": []
+  }
+ },
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4753131889",
+   "category_id": "MLB255054",
+   "price": 21.9,
+   "listing_type_id": "gold_special",
+   "status": "active",
+   "sub_status": []
+  }
+ },
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4765613429",
+   "category_id": "MLB255054",
+   "price": 19.7,
+   "listing_type_id": "gold_special",
+   "status": "active",
+   "sub_status": []
+  }
+ },
+ {
+  "status_code": 404
+ }
+]

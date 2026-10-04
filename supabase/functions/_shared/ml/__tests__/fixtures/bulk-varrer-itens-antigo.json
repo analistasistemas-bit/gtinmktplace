@@ -1,0 +1,48 @@
+[
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB4752971229",
+   "title": "Fita Cetim Progresso N.1 100mt | 100% Poliéster | Versátil",
+   "available_quantity": 3588,
+   "permalink": "https://produto.mercadolivre.com.br/MLB-4752971229-fita-cetim-progresso-n1-100mt-100-poliester-versatil-_JM",
+   "status": "active",
+   "seller_custom_field": null,
+   "catalog_listing": false
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB4753131889",
+   "title": "Fita Cetim Progresso N.07 10mt | 100% Poliéster | Elegante",
+   "available_quantity": 3789,
+   "permalink": "https://produto.mercadolivre.com.br/MLB-4753131889-fita-cetim-progresso-n07-10mt-100-poliester-elegante-_JM",
+   "status": "active",
+   "seller_custom_field": null,
+   "catalog_listing": false
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB4765613429",
+   "title": "Fita Cetim Bufalo N.5 50mt | 100% Poliéster | Rolo Econômico",
+   "available_quantity": 1199,
+   "permalink": "https://produto.mercadolivre.com.br/MLB-4765613429-fita-cetim-bufalo-n5-50mt-100-poliester-rolo-econmico-_JM",
+   "status": "active",
+   "seller_custom_field": null,
+   "catalog_listing": false
+  }
+ },
+ {
+  "code": 404,
+  "body": {
+   "id": "MLB0000000001",
+   "message": "Item with id MLB0000000001 not found",
+   "error": "not_found",
+   "status": 404,
+   "cause": []
+  }
+ }
+]

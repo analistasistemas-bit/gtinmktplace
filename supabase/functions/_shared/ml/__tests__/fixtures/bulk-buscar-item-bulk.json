@@ -1,0 +1,35 @@
+[
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4752971229",
+   "family_name": null,
+   "seller_id": 1003820507,
+   "category_id": "MLB255054",
+   "date_created": "2026-06-09T17:26:30.702Z"
+  }
+ },
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4753131889",
+   "family_name": null,
+   "seller_id": 1003820507,
+   "category_id": "MLB255054",
+   "date_created": "2026-06-09T17:54:39.075Z"
+  }
+ },
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4765613429",
+   "family_name": null,
+   "seller_id": 1003820507,
+   "category_id": "MLB255054",
+   "date_created": "2026-06-11T20:48:37.090Z"
+  }
+ },
+ {
+  "status_code": 404
+ }
+]

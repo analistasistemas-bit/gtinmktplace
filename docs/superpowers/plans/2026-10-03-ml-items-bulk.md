@@ -163,7 +163,21 @@ O A/B ao vivo **não** valida a extração: os símbolos novos não existem no c
 - Critério: zero erro novo e a comparação **por id e campo** definida na fatia.
 - Prazo: 24 h. Sem execução real, registrar "não observado; coberto por teste + A/B + manifesto".
 
-### P-Revisão Codex (T0–T6)
+### P-Revisão (T0–T6), decisão D3 do Astra
+
+- **Diff de cada fatia e pré-merge:** Grok 4.7 **xhigh**, obrigatório:
+  `python3 $CLAUDE_JOB_DIR/tmp/rodar_grok.py $CLAUDE_JOB_DIR/tmp/prompt-rev-<fatia>.txt $CLAUDE_JOB_DIR/tmp/rev-<fatia>.txt grok-4.7-xhigh`
+  O wrapper chama `cursor-agent -p --mode ask` com stdin em `/dev/null`.
+- **Complementar, só no ferramental da T0 e nos commits de extração (T3, T5):** Codex `gpt-6.1-sol` high, com o comando abaixo.
+- Se o revisor estiver indisponível, a decisão é explícita do Astra. Nunca dispensa silenciosa.
+- **Portão da fatia (decisão D2):** é aprovado pelo Astra (`gpt-6-astra` high) com base no relatório. Critérios:
+  - testes, `deno check`, preflight e CI verdes no `SHA_AB_APROVADO`;
+  - A/B com as 4 orgs identificadas, capacidades obrigatórias cobertas, zero diferenças não aceitas, zero violações e escritas simuladas equivalentes;
+  - revisão sem achados BLOQUEANTE ou IMPORTANTE pendentes, e cada MENOR com disposição registrada;
+  - deploy com grafo completo, manifesto `antes` consistente, JWT conferido e rollback preparado;
+  - o avanço para a próxima fatia exige manifesto `depois` válido e P-Observação cumprido.
+
+  Evidência ausente barra o portão.
 
 `/usr/bin/git diff <SHA_BASELINE_AB>..HEAD > $CLAUDE_JOB_DIR/tmp/diff-<fatia>.patch`. Prompt em `$CLAUDE_JOB_DIR/tmp/prompt-rev-<fatia>.txt`:
 
@@ -177,17 +191,16 @@ Revisão MINUCIOSA do diff em $CLAUDE_JOB_DIR/tmp/diff-<fatia>.patch (fatia <N> 
 
 1. `pnpm preflight`.
 2. `/usr/bin/git push origin worktree-ml-items-bulk` e `gh run watch` (CI verde).
-3. **Parar e reportar ao Diego:**
-   - testes;
-   - A/B (orgs, n de ids, capacidades cobertas ou N/A, 0 diferenças, 0 violações);
-   - Codex;
-   - edges;
-   - decisões.
-   Esperar o OK.
+3. **Portão do Astra** (D2, delegado pelo Diego): enviar o relatório (testes, A/B com orgs, n de ids, capacidades cobertas ou N/A, 0 diferenças, 0 violações; revisão do Grok; edges; manifesto; decisões) e esperar APROVADO. Se vier BARRADO, corrigir e reenviar.
 4. Registrar `SHA_AB_APROVADO` (o HEAD que passou no A/B, na revisão e no OK do Diego) em `$CLAUDE_JOB_DIR/tmp/aprovado-<fatia>.txt`.
 5. Com o OK: `/usr/bin/git fetch origin`. Se a `origin/main` andou:
    - `/usr/bin/git merge origin/main`, testes e CI de novo;
-   - **se `/usr/bin/git diff --stat <SHA_AB_APROVADO> HEAD -- supabase` não estiver vazio, a árvore mudou**: novo A/B (com `SHA_BASELINE_AB` = `origin/main` antes da fatia), revisão do Codex só do merge e novo OK do Diego. Só então o novo HEAD vira `SHA_AB_APROVADO`.
+   - **se `/usr/bin/git diff --stat <SHA_AB_APROVADO> HEAD -- supabase` não estiver vazio, a árvore mudou**: novo A/B, revisão do Grok só do merge e novo portão do Astra. Só então o novo HEAD vira `SHA_AB_APROVADO`.
+   - A baseline pós-merge (D4) é a árvore do novo HEAD **menos o diff do commit do bulk da fatia**, para preservar as extrações revisadas (T3, T5) e o endpoint antigo:
+     `rm -rf $CLAUDE_JOB_DIR/tmp/ab/base && mkdir -p $CLAUDE_JOB_DIR/tmp/ab/base && /usr/bin/git archive HEAD supabase | tar -x -C $CLAUDE_JOB_DIR/tmp/ab/base`
+     `/usr/bin/git diff <commit_bulk>^ <commit_bulk> -- supabase > $CLAUDE_JOB_DIR/tmp/bulk-<fatia>.patch`
+     `patch -R -p1 --dry-run -d $CLAUDE_JOB_DIR/tmp/ab/base < $CLAUDE_JOB_DIR/tmp/bulk-<fatia>.patch`, e só se passar, rodar o mesmo comando sem `--dry-run`.
+     Se o `patch -R` falhar, o merge tocou as mesmas linhas: parar e consultar o Astra.
    - Nunca implantar uma árvore cujo `supabase/` difere do `SHA_AB_APROVADO`.
 6. `/usr/bin/git push origin HEAD:main`, depois P-Deploy e P-Observação.
 
@@ -578,6 +591,8 @@ export type Cenario = {
   rodar: (c: Ctx) => Promise<unknown>; canon: (v: unknown) => unknown;
   cobertura: (v: any, c: Ctx) => Cobertura | 'falhou';
   erroEsperado?: { status: number; mensagem: RegExp; idsNoGet: number };
+  /** 'coberto' só vale se o cenário fez ao menos um GET multiget 200 (prova de execução, D4 do Astra). */
+  exigeMultiget?: boolean;
 };
 
 const ord = (x: unknown): unknown =>
@@ -622,8 +637,8 @@ export const CENARIOS: Cenario[] = [
     rodar: async (c) => (await c.imp('_shared/canais/mercado-livre.ts')).mercadoLivreConnector
       .lerStatus({ getToken: async () => c.token }, comRepetidos([...c.amostra.ids, ...c.amostra.catalogo, INVALIDO])),
     cobertura: (v) => (Object.values(v).some((s: any) => s.status !== 'indisponivel') && v[INVALIDO]?.status === 'indisponivel' ? 'coberto' : 'falhou') },
-  { nome: 'propagarPausar', fatia: 'F1', capacidade: 'catalogo', permissoes: STATUS, canon: estrito, rodar: propagar('paused'), cobertura: coberturaPropagar },
-  { nome: 'propagarAtivar', fatia: 'F1', capacidade: 'catalogo', permissoes: STATUS, canon: estrito, rodar: propagar('active'), cobertura: coberturaPropagar },
+  { nome: 'propagarPausar', fatia: 'F1', capacidade: 'catalogo', permissoes: STATUS, canon: estrito, rodar: propagar('paused'), cobertura: coberturaPropagar, exigeMultiget: true },
+  { nome: 'propagarAtivar', fatia: 'F1', capacidade: 'catalogo', permissoes: STATUS, canon: estrito, rodar: propagar('active'), cobertura: coberturaPropagar, exigeMultiget: true },
   { nome: 'buscarItemPorSku', fatia: 'F1', capacidade: 'adocao', canon: estrito,
     rodar: async (c) => {
       const { buscarItemPorSku } = await c.imp('_shared/ml/buscar-item.ts');
@@ -637,7 +652,8 @@ export const CENARIOS: Cenario[] = [
       }
       return out;
     },
-    cobertura: (v) => (Object.keys(v).length === 0 ? 'na' : Object.values(v).some((r: any) => r.tipo === 'um' || r.tipo === 'ambiguo') ? 'coberto' : 'falhou') },
+    // 'nenhum' é legítimo (sem candidato de adoção; medido na Avil, calibração de 03/10): conta como 'na', não 'falhou'
+    cobertura: (v) => (Object.values(v).some((r: any) => r.tipo === 'um' || r.tipo === 'ambiguo') ? 'coberto' : 'na'), exigeMultiget: true },
   // F2
   { nome: 'gtinsPedidos', fatia: 'F2', capacidade: 'gtin', canon: estrito,
     rodar: async (c) => (await c.imp('_shared/ml/pedidos.ts')).buscarGtinsDosItens(c.token, comRepetidos([...c.amostra.ids, INVALIDO])),
@@ -719,10 +735,17 @@ const fatia = Deno.args[0];
 const filtro = Deno.env.get('AB_CENARIOS')?.split(',');
 const resultado: Record<string, unknown> = {};
 for (const c of CENARIOS.filter((x) => x.fatia === fatia && (!filtro || filtro.includes(x.nome)))) {
+  // org pequena (ex.: Hairfly com 5 anúncios) não tem ids para o cenário de limite: 'na' nesta org
+  if (c.erroEsperado && ctx.amostra.ids.length < c.erroEsperado.idsNoGet) { resultado[c.nome] = { cobertura: 'na', motivo: 'ids insuficientes' }; continue; }
   guarda.entrarCenario(c.nome, c.permissoes ?? []);
   try {
     const v = await c.rodar(ctx);
-    resultado[c.nome] = c.erroEsperado ? { erroAusente: true } : { valor: c.canon(v), cobertura: c.cobertura(v, ctx) };
+    let cob = c.cobertura(v, ctx);
+    const multigetOk = guarda.gets.some((g) => g.cenario === c.nome && g.status === 200 && /\/items(\/bulk)?\?ids=/.test(g.url));
+    if (c.exigeMultiget && cob === 'coberto' && !multigetOk) cob = 'falhou';
+    const escritasDoCenario = guarda.escritas.filter((e) => e.cenario === c.nome).length;
+    resultado[c.nome] = c.erroEsperado ? { erroAusente: true }
+      : { valor: c.canon(v), cobertura: cob, multigetOk, escritasSimuladas: escritasDoCenario };
   } catch (e) {
     const msg = (e as Error).message;
     const ee = c.erroEsperado;
@@ -792,11 +815,14 @@ def amostra_de(org):
 
 orgs = s.sql("select o.id, o.nome, c.id as cx, c.conta_externa_id as seller from public.organizations o "
              "join public.marketplace_connections c on c.org_id=o.id and c.canal::text ilike '%livre%'")
-if ORGS - {o['nome'] for o in orgs}: raise SystemExit(f'orgs faltando: {ORGS - {o["nome"] for o in orgs}}')
-falhas, coberto = [], {c: False for c in OBRIG['obrig']}
+orgs = [o for o in orgs if o['nome'] in ORGS]  # filtro efetivo (D4): só as 4 orgs esperadas
+if {o['nome'] for o in orgs} != ORGS or len(orgs) != len(ORGS): raise SystemExit(f'orgs esperadas ≠ encontradas: {[(o["nome"], o["id"]) for o in orgs]}')
+for o in orgs: print(f"org {o['nome']} id={o['id']}")  # registrado antes de qualquer token
+falhas, coberto, tem_dois_blocos = [], {c: False for c in OBRIG['obrig']}, False
 for org in orgs:
     amostra = amostra_de(org); nome = org['nome'].replace(' ', '_')
-    if len(amostra['ids']) < 21: falhas.append(f"{org['nome']}: {len(amostra['ids'])} ids (<21)"); continue
+    if not amostra['ids']: falhas.append(f"{org['nome']}: amostra vazia"); continue
+    if len(amostra['ids']) > 20: tem_dois_blocos = True  # pelo menos uma org precisa exercitar 2 blocos de 20
     grav = AB / 'out' / f'{fatia}-{nome}-gravadas.json'
     tok = s.sql(f"select access_token from public.get_connection_tokens('{org['cx']}'::uuid)")[0]['access_token']
     a = rodar(base, 'gravar', grav, tok, amostra); b = rodar(nova, 'replay', grav, tok, amostra); del tok
@@ -823,6 +849,7 @@ for org in orgs:
     falhas += [f"{org['nome']}: {p}" for p in prob]
 faltou = [c for c, ok in coberto.items() if not ok]
 if faltou: falhas.append(f'capacidades sem cobertura em nenhuma org: {faltou}')
+if not tem_dois_blocos: falhas.append('nenhuma org com mais de 20 ids: blocos de 20 não exercitados')
 print('FALHAS:', falhas or 'nenhuma'); sys.exit(1 if falhas else 0)
 ```
 
@@ -873,12 +900,17 @@ WT = '/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/verif-items-bu
 def listagem():
     p = subprocess.run(['supabase', 'functions', 'list', '--project-ref', REF, '-o', 'json'], capture_output=True, text=True, timeout=120)
     if p.returncode != 0: raise SystemExit(f'functions list: {p.stderr[-300:]}')
-    out = {}
-    for f in json.loads(p.stdout):
-        if not isinstance(f.get('version'), int) or not isinstance(f.get('verify_jwt'), bool) or not f.get('ezbr_sha256'):
-            raise SystemExit(f"metadado ausente/inválido em {f.get('slug')}: {f}")
-        out[f['slug']] = {'versao': f['version'], 'verify_jwt': f['verify_jwt'], 'ezbr': f['ezbr_sha256']}
-    return out
+    # versão e verify_jwt são obrigatórios (conferidos por edge em `meta`); ezbr é informativo e
+    # falta em funções implantadas por CLIs antigas (medido: renovar-tokens-ml v5 sem ezbr_sha256)
+    return {f['slug']: {'versao': f.get('version'), 'verify_jwt': f.get('verify_jwt'), 'ezbr': f.get('ezbr_sha256')}
+            for f in json.loads(p.stdout)}
+
+def meta(lista, edge):
+    m = lista.get(edge)
+    if not m: raise SystemExit(f'edge ausente na produção: {edge}')
+    if not isinstance(m['versao'], int) or not isinstance(m['verify_jwt'], bool):
+        raise SystemExit(f'metadado ausente/inválido em {edge}: {m}')
+    return m
 
 def jwt_efetivo(sha, edge):
     """verify_jwt que a CLI aplicará ao deployar a árvore `sha`: [functions.<edge>] do config.toml, padrão true."""
@@ -893,17 +925,16 @@ def hash_no_sha(sha, rel):
 
 def snapshot(edge, destino):
     shutil.rmtree(destino, ignore_errors=True); (destino / 'supabase').mkdir(parents=True)
-    l1 = listagem()
-    if edge not in l1: raise SystemExit(f'edge ausente na produção: {edge}')
+    m1 = meta(listagem(), edge)
     p = subprocess.run(['supabase', 'functions', 'download', edge, '--project-ref', REF, '--use-api', '--workdir', str(destino)],
                        capture_output=True, text=True, timeout=300)
     if p.returncode != 0: raise SystemExit(f'download {edge}: {p.stderr[-300:]}')
-    l2 = listagem()
-    if l1[edge] != l2[edge]: raise SystemExit(f'{edge} mudou durante o download: {l1[edge]} → {l2[edge]}')
+    m2 = meta(listagem(), edge)
+    if m1 != m2: raise SystemExit(f'{edge} mudou durante o download: {m1} → {m2}')
     base = destino / 'supabase' / 'functions'
     arqs = {('supabase/functions/' + str(a.relative_to(base))): hashlib.sha256(a.read_bytes()).hexdigest() for a in sorted(base.rglob('*')) if a.is_file()}
     if f'supabase/functions/{edge}/index.ts' not in arqs: raise SystemExit(f'{edge}: download sem index.ts')
-    return {**l2[edge], 'arquivos': arqs}
+    return {**m2, 'arquivos': arqs}
 
 modo = sys.argv[1]
 if modo == 'estavel':
@@ -937,7 +968,9 @@ if modo == 'depois':
             if manif[e]['arquivos'] != antes[e]['arquivos']: div.append(f'{e}: rollback não restaurou os arquivos')
         else:
             if not manif[e]['versao'] > antes[e]['versao']: div.append(f'{e}: versão não incrementou')
-            if (manif[e]['arquivos'] != antes[e]['arquivos']) != (manif[e]['ezbr'] != antes[e]['ezbr']): div.append(f'{e}: ezbr incoerente com os arquivos')
+            # ezbr é informativo (D4 do Astra): dependências remotas mudam o bundle sem mudar fontes
+            if (manif[e]['arquivos'] != antes[e]['arquivos']) != (manif[e]['ezbr'] != antes[e]['ezbr']):
+                print(f'AVISO {e}: ezbr mudou={manif[e]["ezbr"] != antes[e]["ezbr"]} com fontes mudadas={manif[e]["arquivos"] != antes[e]["arquivos"]} (investigar, não bloqueia)')
 print(json.dumps({e: {k: v for k, v in m.items() if k != 'arquivos'} | {'n_arquivos': len(m['arquivos'])} for e, m in manif.items()}, indent=1))
 print('DIVERGÊNCIAS:', div or 'nenhuma'); sys.exit(1 if div else 0)
 ```

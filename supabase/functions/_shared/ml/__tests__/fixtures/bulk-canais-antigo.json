@@ -1,0 +1,61 @@
+[
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB4752971229",
+   "price": 23.9,
+   "available_quantity": 3588,
+   "listing_type_id": "gold_special",
+   "status": "active",
+   "sub_status": [],
+   "tags": [
+    "standard_price_by_quantity",
+    "good_quality_thumbnail",
+    "immediate_payment",
+    "cart_eligible"
+   ]
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB4753131889",
+   "price": 21.9,
+   "available_quantity": 3789,
+   "listing_type_id": "gold_special",
+   "status": "active",
+   "sub_status": [],
+   "tags": [
+    "good_quality_thumbnail",
+    "immediate_payment",
+    "cart_eligible"
+   ]
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB4765613429",
+   "price": 19.7,
+   "available_quantity": 1199,
+   "listing_type_id": "gold_special",
+   "status": "active",
+   "sub_status": [],
+   "tags": [
+    "good_quality_thumbnail",
+    "immediate_payment",
+    "cart_eligible"
+   ]
+  }
+ },
+ {
+  "code": 404,
+  "body": {
+   "id": "MLB0000000001",
+   "message": "Item with id MLB0000000001 not found",
+   "error": "not_found",
+   "status": 404,
+   "cause": []
+  }
+ }
+]

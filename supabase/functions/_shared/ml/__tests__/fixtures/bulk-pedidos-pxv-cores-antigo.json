@@ -1,0 +1,792 @@
+[
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB4912020819",
+   "attributes": [
+    {
+     "id": "BRAND",
+     "name": "Marca",
+     "value_id": "9165622",
+     "value_name": "Búfalo",
+     "values": [
+      {
+       "id": "9165622",
+       "name": "Búfalo",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "COLOR",
+     "name": "Cor",
+     "value_id": "52055",
+     "value_name": "Branco",
+     "values": [
+      {
+       "id": "52055",
+       "name": "Branco",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "GTIN",
+     "name": "Código universal de produto",
+     "value_id": null,
+     "value_name": "7890384053289",
+     "values": [
+      {
+       "id": null,
+       "name": "7890384053289",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "IS_ELASTICIZED",
+     "name": "É elástico",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "IS_SUITABLE_FOR_DYEING",
+     "name": "É adequado para tingimento",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "ITEM_CONDITION",
+     "name": "Condição do item",
+     "value_id": "2230284",
+     "value_name": "Novo",
+     "values": [
+      {
+       "id": "2230284",
+       "name": "Novo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "LACE_EDGING_TYPE",
+     "name": "Tipo de renda",
+     "value_id": null,
+     "value_name": "BORDADO INGLÊS BÚFALO",
+     "values": [
+      {
+       "id": null,
+       "name": "BORDADO INGLÊS BÚFALO",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "LENGTH",
+     "name": "Comprimento",
+     "value_id": null,
+     "value_name": "1371 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "1371 cm",
+       "struct": {
+        "number": 1371,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "LINE",
+     "name": "Linha",
+     "value_id": null,
+     "value_name": "BORDADO INGLÊS BÚFALO",
+     "values": [
+      {
+       "id": null,
+       "name": "BORDADO INGLÊS BÚFALO",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "MODEL",
+     "name": "Modelo",
+     "value_id": null,
+     "value_name": "BORDADO EM PECA REF.CORES 10CM  C/13,71MT",
+     "values": [
+      {
+       "id": null,
+       "name": "BORDADO EM PECA REF.CORES 10CM  C/13,71MT",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "PACKAGING_TYPE",
+     "name": "Tipo de embalagem",
+     "value_id": "26270460",
+     "value_name": "peça",
+     "values": [
+      {
+       "id": "26270460",
+       "name": "peça",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "SALE_FORMAT",
+     "name": "Formato de venda",
+     "value_id": "1359391",
+     "value_name": "Unidade",
+     "values": [
+      {
+       "id": "1359391",
+       "name": "Unidade",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "SELLER_PACKAGE_HEIGHT",
+     "name": "Altura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "28 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "28 cm",
+       "struct": {
+        "number": 28,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_LENGTH",
+     "name": "Comprimento da embalagem do vendor",
+     "value_id": null,
+     "value_name": "4 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "4 cm",
+       "struct": {
+        "number": 4,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WEIGHT",
+     "name": "Peso da embalagem do vendor",
+     "value_id": null,
+     "value_name": "88 g",
+     "values": [
+      {
+       "id": null,
+       "name": "88 g",
+       "struct": {
+        "number": 88,
+        "unit": "g"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WIDTH",
+     "name": "Largura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "12 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "12 cm",
+       "struct": {
+        "number": 12,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "UNITS_PER_PACK",
+     "name": "Quantidade de rendas",
+     "value_id": null,
+     "value_name": "1",
+     "values": [
+      {
+       "id": null,
+       "name": "1",
+       "struct": null
+      }
+     ],
+     "value_type": "number"
+    },
+    {
+     "id": "WIDTH",
+     "name": "Largura",
+     "value_id": null,
+     "value_name": "10 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "10 cm",
+       "struct": {
+        "number": 10,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    }
+   ]
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB7159558156",
+   "attributes": [
+    {
+     "id": "COLOR",
+     "name": "Cor",
+     "value_id": null,
+     "value_name": "Verde",
+     "values": [
+      {
+       "id": null,
+       "name": "Verde",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "BRAND",
+     "name": "Marca",
+     "value_id": "9165622",
+     "value_name": "Búfalo",
+     "values": [
+      {
+       "id": "9165622",
+       "name": "Búfalo",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "GTIN",
+     "name": "Código universal de produto",
+     "value_id": null,
+     "value_name": "7898569715328",
+     "values": [
+      {
+       "id": null,
+       "name": "7898569715328",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "IS_PASTEL_PENCIL",
+     "name": "É lápis pastel",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "IS_WATERCOLOR_PENCIL",
+     "name": "É lápis aquarelável",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "ITEM_CONDITION",
+     "name": "Condição do item",
+     "value_id": "2230284",
+     "value_name": "Novo",
+     "values": [
+      {
+       "id": "2230284",
+       "name": "Novo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "MODEL",
+     "name": "Modelo",
+     "value_id": null,
+     "value_name": "LAPIS DE ESCREVER RESINA DE 7 VERDE REF.SL101066-8 C/12UN",
+     "values": [
+      {
+       "id": null,
+       "name": "LAPIS DE ESCREVER RESINA DE 7 VERDE REF.SL101066-8 C/12UN",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "PENCIL_TYPE",
+     "name": "Tipo de lápis",
+     "value_id": "2791997",
+     "value_name": "Grafite",
+     "values": [
+      {
+       "id": "2791997",
+       "name": "Grafite",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "SALE_FORMAT",
+     "name": "Formato de venda",
+     "value_id": "1359392",
+     "value_name": "Kit",
+     "values": [
+      {
+       "id": "1359392",
+       "name": "Kit",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "SELLER_PACKAGE_HEIGHT",
+     "name": "Altura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "21 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "21 cm",
+       "struct": {
+        "number": 21,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_LENGTH",
+     "name": "Comprimento da embalagem do vendor",
+     "value_id": null,
+     "value_name": "5 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "5 cm",
+       "struct": {
+        "number": 5,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WEIGHT",
+     "name": "Peso da embalagem do vendor",
+     "value_id": null,
+     "value_name": "550 g",
+     "values": [
+      {
+       "id": null,
+       "name": "550 g",
+       "struct": {
+        "number": 550,
+        "unit": "g"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WIDTH",
+     "name": "Largura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "14 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "14 cm",
+       "struct": {
+        "number": 14,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "UNITS_PER_PACK",
+     "name": "Unidades por kit",
+     "value_id": null,
+     "value_name": "12",
+     "values": [
+      {
+       "id": null,
+       "name": "12",
+       "struct": null
+      }
+     ],
+     "value_type": "number"
+    },
+    {
+     "id": "UNITS_PER_PACKAGE",
+     "name": "Unidades por embalagem",
+     "value_id": null,
+     "value_name": "12",
+     "values": [
+      {
+       "id": null,
+       "name": "12",
+       "struct": null
+      }
+     ],
+     "value_type": "number"
+    },
+    {
+     "id": "WITH_DUAL_TIPS",
+     "name": "Com ponta dupla",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    }
+   ]
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB7159664156",
+   "attributes": [
+    {
+     "id": "COLOR",
+     "name": "Cor",
+     "value_id": null,
+     "value_name": "Preto",
+     "values": [
+      {
+       "id": null,
+       "name": "Preto",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "BRAND",
+     "name": "Marca",
+     "value_id": "9165622",
+     "value_name": "Búfalo",
+     "values": [
+      {
+       "id": "9165622",
+       "name": "Búfalo",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "GTIN",
+     "name": "Código universal de produto",
+     "value_id": null,
+     "value_name": "7898569714925",
+     "values": [
+      {
+       "id": null,
+       "name": "7898569714925",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "IS_PASTEL_PENCIL",
+     "name": "É lápis pastel",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "IS_WATERCOLOR_PENCIL",
+     "name": "É lápis aquarelável",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    },
+    {
+     "id": "ITEM_CONDITION",
+     "name": "Condição do item",
+     "value_id": "2230284",
+     "value_name": "Novo",
+     "values": [
+      {
+       "id": "2230284",
+       "name": "Novo",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "MODEL",
+     "name": "Modelo",
+     "value_id": null,
+     "value_name": "LAPIS DE ESCREVER RESINA RED N.2 PRETO TRACOS C/144UND",
+     "values": [
+      {
+       "id": null,
+       "name": "LAPIS DE ESCREVER RESINA RED N.2 PRETO TRACOS C/144UND",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "PENCIL_GRADING",
+     "name": "Graduação",
+     "value_id": "74149455",
+     "value_name": "Nº 2",
+     "values": [
+      {
+       "id": "74149455",
+       "name": "Nº 2",
+       "struct": null
+      }
+     ],
+     "value_type": "string"
+    },
+    {
+     "id": "PENCIL_TYPE",
+     "name": "Tipo de lápis",
+     "value_id": "2791997",
+     "value_name": "Grafite",
+     "values": [
+      {
+       "id": "2791997",
+       "name": "Grafite",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "SALE_FORMAT",
+     "name": "Formato de venda",
+     "value_id": "1359392",
+     "value_name": "Kit",
+     "values": [
+      {
+       "id": "1359392",
+       "name": "Kit",
+       "struct": null
+      }
+     ],
+     "value_type": "list"
+    },
+    {
+     "id": "SELLER_PACKAGE_HEIGHT",
+     "name": "Altura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "23 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "23 cm",
+       "struct": {
+        "number": 23,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_LENGTH",
+     "name": "Comprimento da embalagem do vendor",
+     "value_id": null,
+     "value_name": "11 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "11 cm",
+       "struct": {
+        "number": 11,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WEIGHT",
+     "name": "Peso da embalagem do vendor",
+     "value_id": null,
+     "value_name": "1420 g",
+     "values": [
+      {
+       "id": null,
+       "name": "1420 g",
+       "struct": {
+        "number": 1420,
+        "unit": "g"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "SELLER_PACKAGE_WIDTH",
+     "name": "Largura da embalagem do vendor",
+     "value_id": null,
+     "value_name": "15 cm",
+     "values": [
+      {
+       "id": null,
+       "name": "15 cm",
+       "struct": {
+        "number": 15,
+        "unit": "cm"
+       }
+      }
+     ],
+     "value_type": "number_unit"
+    },
+    {
+     "id": "UNITS_PER_PACK",
+     "name": "Unidades por kit",
+     "value_id": null,
+     "value_name": "144",
+     "values": [
+      {
+       "id": null,
+       "name": "144",
+       "struct": null
+      }
+     ],
+     "value_type": "number"
+    },
+    {
+     "id": "UNITS_PER_PACKAGE",
+     "name": "Unidades por embalagem",
+     "value_id": null,
+     "value_name": "144",
+     "values": [
+      {
+       "id": null,
+       "name": "144",
+       "struct": null
+      }
+     ],
+     "value_type": "number"
+    },
+    {
+     "id": "WITH_DUAL_TIPS",
+     "name": "Com ponta dupla",
+     "value_id": "242084",
+     "value_name": "Não",
+     "values": [
+      {
+       "id": "242084",
+       "name": "Não",
+       "struct": null
+      }
+     ],
+     "value_type": "boolean"
+    }
+   ]
+  }
+ },
+ {
+  "code": 404,
+  "body": {
+   "id": "MLB0000000001",
+   "message": "Item with id MLB0000000001 not found",
+   "error": "not_found",
+   "status": 404,
+   "cause": []
+  }
+ }
+]

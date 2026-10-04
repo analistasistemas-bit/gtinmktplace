@@ -1,0 +1,26 @@
+[
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4752971229",
+   "available_quantity": 3588
+  }
+ },
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4753131889",
+   "available_quantity": 3789
+  }
+ },
+ {
+  "status_code": 200,
+  "body": {
+   "id": "MLB4765613429",
+   "available_quantity": 1199
+  }
+ },
+ {
+  "status_code": 404
+ }
+]

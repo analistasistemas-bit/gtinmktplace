@@ -1,0 +1,26 @@
+[
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB5194783047",
+   "user_product_id": "MLBU5093385337",
+   "price": 43.99,
+   "available_quantity": 3,
+   "listing_type_id": "gold_special",
+   "status": "closed",
+   "sub_status": []
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB5194848525",
+   "user_product_id": "MLBU5093521637",
+   "price": 56.32,
+   "available_quantity": 3,
+   "listing_type_id": "gold_special",
+   "status": "closed",
+   "sub_status": []
+  }
+ }
+]

@@ -1,0 +1,50 @@
+[
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB5056778429",
+   "status": "active",
+   "sub_status": [],
+   "catalog_listing": true,
+   "item_relations": [
+    {
+     "id": "MLB4929737689",
+     "variation_id": null,
+     "stock_relation": 1
+    }
+   ]
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB7573762818",
+   "status": "active",
+   "sub_status": [],
+   "catalog_listing": true,
+   "item_relations": [
+    {
+     "id": "MLB7078322766",
+     "variation_id": 197240123284,
+     "stock_relation": 1
+    }
+   ]
+  }
+ },
+ {
+  "code": 200,
+  "body": {
+   "id": "MLB7573792762",
+   "status": "active",
+   "sub_status": [],
+   "catalog_listing": true,
+   "item_relations": [
+    {
+     "id": "MLB7078322766",
+     "variation_id": 197240123270,
+     "stock_relation": 1
+    }
+   ]
+  }
+ }
+]
