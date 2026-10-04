@@ -52,7 +52,7 @@ function montarReversao(op: OperacaoRow, itensOp: ItemOperacaoRow[], itensCentra
   // `acao` chega `string`; o CHECK do banco garante uma AcaoOperacao. Pausar/reativar não tem reversão
   // de promoção (o Reverter de status vai por `PreviewStatus`) — `null` impede abrir o preview de promoção com ação errada.
   const acao = op.acao as AcaoOperacao;
-  if (ehAcaoStatus(acao)) return null;
+  if (ehAcaoStatus(acao) || acao === 'reajustar') return null; // reajuste reverte pelo próprio preview (I5)
   const acaoNova = inversa(acao);
   const ids = itensRevertiveis(acao, paraRevertiveis(itensOp));
   const porCentral = new Map(itensCentral.map((i) => [i.ml_item_id, i]));

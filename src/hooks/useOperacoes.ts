@@ -1,10 +1,11 @@
-// ADR-0174 — hooks de operações em massa (aderir/sair de promoções DEAL/SMART do ML e pausar/reativar anúncios).
+// ADR-0174 — hooks de operações em massa (aderir/sair de promoções DEAL/SMART do ML, pausar/reativar e reajustar preço — I5).
 import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import type { Tables } from '@/lib/database.types';
 import { ehAcaoStatus, type AcaoPromocao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
 import { QK } from '@/lib/queries';
+import type { Ajuste, Confirmacao, ItemPreview } from '@/lib/reajuste';
 import { useProfile } from '@/hooks/useProfile';
 import { useSupportStore } from '@/stores/support-store';
 
@@ -36,13 +37,14 @@ async function lerErroEdge(error: unknown, fallback: string): Promise<ErroOperac
 }
 
 /** Lista da org, mais recente primeiro; recarrega a cada 5 s enquanto alguma operação está executando.
- *  `filtro='promocao'` filtra no servidor (senão 50 pausas empurram uma operação de promoção para fora da página). */
+ *  `filtro='promocao'` filtra no servidor (senão 50 pausas empurram uma operação de promoção para fora da página).
+ *  Rascunho de reajuste (preview não confirmado, expira em 30 min) não é operação: fica fora da lista, no servidor. */
 export function useOperacoes(filtro?: 'promocao') {
   const qc = useQueryClient();
   const query = useQuery({
     queryKey: [...QK_OPERACOES, 'lista', filtro ?? 'todas'],
     queryFn: async () => {
-      let q = supabase.from('operacoes_massa').select('*, itens:operacoes_massa_itens(status)');
+      let q = supabase.from('operacoes_massa').select('*, itens:operacoes_massa_itens(status)').neq('status', 'rascunho');
       if (filtro === 'promocao') q = q.in('acao', ['aderir', 'sair']);
       const { data, error } = await q.order('criado_em', { ascending: false }).limit(50);
       if (error) throw error;
@@ -57,11 +59,13 @@ export function useOperacoes(filtro?: 'promocao') {
   const montadoEm = useRef(Date.now());
   const tratadas = useRef(new Set<string>());
   useEffect(() => {
-    const novas = (query.data ?? []).filter((o) => ehAcaoStatus(o.acao) && o.status === 'concluida' && !tratadas.current.has(o.id)
+    const novas = (query.data ?? []).filter((o) => (ehAcaoStatus(o.acao) || o.acao === 'reajustar') && o.status === 'concluida' && !tratadas.current.has(o.id)
       && Date.parse(o.concluido_em ?? '') > montadoEm.current - JANELA_STATUS_MS);
     if (!novas.length) return;
     for (const o of novas) tratadas.current.add(o.id);
     qc.invalidateQueries({ queryKey: QK.statusPublicados });
+    // Reajuste muda preço (e fixa `preco_publicacao`), que a lista de Publicados lê do banco.
+    if (novas.some((o) => o.acao === 'reajustar')) qc.invalidateQueries({ queryKey: QK.publicados });
   }, [query.data, qc]);
   return query;
 }
@@ -163,6 +167,37 @@ export function useCriarOperacao() {
       qc.invalidateQueries({ queryKey: QK_OPERACOES });
       qc.invalidateQueries({ queryKey: ['promocoes'] });
     },
+  });
+}
+
+/** I5 — pedido de preview do reajuste. Reverter = `origem_id` (sem `ajuste`); `precos` sobrescreve o alvo de itens editados. */
+export interface PedidoPreviewReajuste {
+  familias?: string[]; ml_item_ids?: string[]; ajuste?: Ajuste | null; precos?: Record<string, number>; origem_id?: string | null;
+}
+/** 201: rascunho gravado. 200 com `operacao_id: null`: nada a executar (tudo sem alteração/fora) — nada gravado. */
+export interface RespostaPreviewReajuste { operacao_id: string | null; itens: ItemPreview[]; expira_em?: string }
+
+/** Calcula o preview no servidor e grava o rascunho (C1). Não invalida nada: rascunho não aparece em lista. */
+export function usePreviewReajuste() {
+  return useMutation({
+    mutationFn: async (pedido: PedidoPreviewReajuste) => {
+      const { data, error } = await supabase.functions.invoke('operacoes-massa', { body: { etapa: 'preview', acao: 'reajustar', ...pedido } });
+      if (error) throw await lerErroEdge(error, 'Não foi possível calcular o preview.');
+      return data as RespostaPreviewReajuste;
+    },
+  });
+}
+
+/** Confirma o rascunho (C5) e publica a execução. 400 (risco faltando, expirado) / 409 (ocupado) → `ErroOperacao.itens`. */
+export function useConfirmarReajuste() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (pedido: { operacao_id: string; confirmacoes: Confirmacao[] }) => {
+      const { data, error } = await supabase.functions.invoke('operacoes-massa', { body: { etapa: 'confirmar', ...pedido } });
+      if (error) throw await lerErroEdge(error, 'Não foi possível executar o reajuste.');
+      return data as { operacao_id: string };
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: QK_OPERACOES }); },
   });
 }
 

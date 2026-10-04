@@ -1,11 +1,11 @@
-// ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART do ML e pausar/reativar anúncios): regras puras do front.
+// ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART do ML, pausar/reativar e reajustar preço — I5): regras puras do front.
 import { calcularSemaforo, type Semaforo } from '@/lib/semaforo';
 import { ateQuantoDaLinha, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
 import type { PublicadoItem } from '@/lib/publicados';
 
 export type AcaoPromocao = 'aderir' | 'sair';
 export type AcaoStatus = 'pausar' | 'reativar';
-export type AcaoOperacao = AcaoPromocao | AcaoStatus;
+export type AcaoOperacao = AcaoPromocao | AcaoStatus | 'reajustar';
 export const ehAcaoStatus = (a: string): a is AcaoStatus => a === 'pausar' || a === 'reativar';
 export type StatusItemOperacao =
   | 'rascunho' | 'pendente' | 'enviando' | 'conferindo'
@@ -78,6 +78,8 @@ export const ROTULO_STATUS: Record<StatusItemOperacao, string> = {
 // Overloads por família: o tipo de retorno é a família, não a mesma ação (inversa('pausar') é 'reativar').
 export function inversa(a: AcaoPromocao): AcaoPromocao;
 export function inversa(a: AcaoStatus): AcaoStatus;
+/** Reverter de reajuste é outro reajuste (com `origem_id`), não uma ação oposta. */
+export function inversa(a: 'reajustar'): 'reajustar';
 export function inversa(a: AcaoOperacao): AcaoOperacao;
 export function inversa(a: AcaoOperacao): AcaoOperacao {
   switch (a) {
@@ -85,6 +87,7 @@ export function inversa(a: AcaoOperacao): AcaoOperacao {
     case 'sair': return 'aderir';
     case 'pausar': return 'reativar';
     case 'reativar': return 'pausar';
+    case 'reajustar': return 'reajustar';
   }
 }
 
@@ -94,8 +97,12 @@ export function itensRevertiveis(acao: AcaoOperacao, itens: { ml_item_id: string
   return itens.filter((i) => aceitos.includes(i.status)).map((i) => i.ml_item_id);
 }
 
-export function tituloOperacao(op: { acao: string; promocao_nome: string | null; promocao_id: string | null }, total: number): string {
-  if (ehAcaoStatus(op.acao)) return `${op.acao === 'pausar' ? 'Pausar' : 'Reativar'} ${total} anúncio${total === 1 ? '' : 's'}`;
+export function tituloOperacao(
+  op: { acao: string; promocao_nome: string | null; promocao_id: string | null; origem_id?: string | null }, total: number,
+): string {
+  const anuncios = `${total} anúncio${total === 1 ? '' : 's'}`;
+  if (op.acao === 'reajustar') return op.origem_id ? `Reverter reajuste de ${anuncios}` : `Reajustar preço de ${anuncios}`;
+  if (ehAcaoStatus(op.acao)) return `${op.acao === 'pausar' ? 'Pausar' : 'Reativar'} ${anuncios}`;
   const nome = op.promocao_nome ?? op.promocao_id ?? '';
   return `${op.acao === 'aderir' ? 'Aderir à' : 'Sair de'} ${nome}`;
 }

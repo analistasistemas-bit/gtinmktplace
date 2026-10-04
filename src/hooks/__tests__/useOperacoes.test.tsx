@@ -18,11 +18,14 @@ const listaQuery = { in: inMock, order: listaOrderMock };
 // Builder devolvido por `.in(...)`: distinto do original, para provar que o encadeamento usa o retorno.
 const inOrderMock = vi.fn();
 const inLimitMock = vi.fn();
-const selectMock = vi.fn(() => ({ eq: eqMock, ...listaQuery }));
+// I5: `.neq('status','rascunho')` vem logo depois do select e devolve o builder da lista.
+const neqMock = vi.fn(() => listaQuery);
+const selectMock = vi.fn(() => ({ eq: eqMock, neq: neqMock, ...listaQuery }));
 const fromMock = vi.fn(() => ({ select: selectMock }));
-vi.mock('@/lib/supabase', () => ({ supabase: { from: fromMock } }));
+const invokeMock = vi.fn();
+vi.mock('@/lib/supabase', () => ({ supabase: { from: fromMock, functions: { invoke: invokeMock } } }));
 
-const { useItensOperacao, useOperacoes } = await import('../useOperacoes');
+const { useItensOperacao, useOperacoes, usePreviewReajuste, useConfirmarReajuste, ErroOperacao, QK_OPERACOES } = await import('../useOperacoes');
 const { QK } = await import('@/lib/queries');
 
 let queryClient: QueryClient;
@@ -73,7 +76,8 @@ describe('useOperacoes — status ao vivo do Publicados (emenda 2026-10-04)', ()
     invalida = vi.spyOn(queryClient, 'invalidateQueries');
     return renderHook((p: { filtro?: 'promocao' }) => useOperacoes(p.filtro), { initialProps: { filtro }, wrapper });
   };
-  const statusInvalidado = () => invalida.mock.calls.filter(([f]) => JSON.stringify((f as { queryKey: unknown }).queryKey) === JSON.stringify(QK.statusPublicados)).length;
+  const invalidou = (chave: readonly unknown[]) => invalida.mock.calls.filter(([f]) => JSON.stringify((f as { queryKey: unknown }).queryKey) === JSON.stringify(chave)).length;
+  const statusInvalidado = () => invalidou(QK.statusPublicados);
   const tick = () => act(async () => { await new Promise((r) => setTimeout(r)); });
 
   beforeEach(() => {
@@ -133,5 +137,93 @@ describe('useOperacoes — status ao vivo do Publicados (emenda 2026-10-04)', ()
     await waitFor(() => expect(r2.current.isSuccess).toBe(true));
     expect(inMock).not.toHaveBeenCalled();
     expect(limitMock).toHaveBeenCalledWith(50);
+  });
+
+  it('exclui rascunhos de reajuste no servidor, antes do .limit(50)', async () => {
+    neqMock.mockClear();
+    limitMock.mockResolvedValue({ data: [], error: null });
+    const { result } = montar();
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(neqMock).toHaveBeenCalledWith('status', 'rascunho');
+    expect(neqMock.mock.invocationCallOrder[0]).toBeLessThan(limitMock.mock.invocationCallOrder.at(-1)!);
+  });
+
+  it('reajuste concluído invalida status ao vivo e a lista de Publicados', async () => {
+    limitMock.mockResolvedValue({ data: [op({ acao: 'reajustar' })], error: null });
+    montar();
+    await waitFor(() => expect(statusInvalidado()).toBe(1));
+    expect(invalidou(QK.publicados)).toBe(1);
+  });
+
+  it('pausa concluída não invalida a lista de Publicados (só o status)', async () => {
+    limitMock.mockResolvedValue({ data: [op({})], error: null });
+    montar();
+    await waitFor(() => expect(statusInvalidado()).toBe(1));
+    expect(invalidou(QK.publicados)).toBe(0);
+  });
+});
+
+describe('reajuste — preview e confirmar (I5)', () => {
+  const ajuste = { tipo: 'pct' as const, sentido: '+' as const, valor: 10 };
+  // Erro do supabase-js para status ≠ 2xx: `context` é a Response.
+  const erroEdge = (corpo: unknown) => ({ context: { json: async () => corpo } });
+
+  beforeEach(() => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    invokeMock.mockReset();
+  });
+
+  it('preview envia etapa/acao + pedido e devolve o rascunho', async () => {
+    const resp = { operacao_id: 'OP1', itens: [{ ml_item_id: 'MLB1' }], expira_em: '2026-10-04T19:00:00Z' };
+    invokeMock.mockResolvedValue({ data: resp, error: null });
+    const { result } = renderHook(() => usePreviewReajuste(), { wrapper });
+    let r: unknown;
+    await act(async () => { r = await result.current.mutateAsync({ ml_item_ids: ['MLB1'], familias: ['F1'], ajuste, precos: { MLB1: 21.99 } }); });
+    expect(invokeMock).toHaveBeenCalledWith('operacoes-massa', {
+      body: { etapa: 'preview', acao: 'reajustar', ml_item_ids: ['MLB1'], familias: ['F1'], ajuste, precos: { MLB1: 21.99 } },
+    });
+    expect(r).toEqual(resp);
+  });
+
+  it('preview sem alteração: operacao_id null', async () => {
+    invokeMock.mockResolvedValue({ data: { operacao_id: null, itens: [] }, error: null });
+    const { result } = renderHook(() => usePreviewReajuste(), { wrapper });
+    let r: { operacao_id: string | null } | undefined;
+    await act(async () => { r = await result.current.mutateAsync({ ml_item_ids: ['MLB1'], ajuste }); });
+    expect(r?.operacao_id).toBeNull();
+  });
+
+  it('preview com erro vira ErroOperacao com itens', async () => {
+    invokeMock.mockResolvedValue({ data: null, error: erroEdge({ erro: 'Fora da org.', itens: [{ ml_item_id: 'MLB9', motivo: 'Fora da org' }] }) });
+    const { result } = renderHook(() => usePreviewReajuste(), { wrapper });
+    let e: unknown;
+    await act(async () => { e = await result.current.mutateAsync({ ml_item_ids: ['MLB9'], ajuste }).catch((x) => x); });
+    expect(e).toBeInstanceOf(ErroOperacao);
+    expect((e as InstanceType<typeof ErroOperacao>).message).toBe('Fora da org.');
+    expect((e as InstanceType<typeof ErroOperacao>).itens).toEqual([{ ml_item_id: 'MLB9', motivo: 'Fora da org' }]);
+  });
+
+  it('confirmar envia as confirmações e invalida a lista de operações', async () => {
+    invokeMock.mockResolvedValue({ data: { operacao_id: 'OP1' }, error: null });
+    const invalida = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useConfirmarReajuste(), { wrapper });
+    const confirmacoes = [{ ml_item_id: 'MLB1', incluir: true, risco: true, sem_dado: false }];
+    await act(async () => { await result.current.mutateAsync({ operacao_id: 'OP1', confirmacoes }); });
+    expect(invokeMock).toHaveBeenCalledWith('operacoes-massa', { body: { etapa: 'confirmar', operacao_id: 'OP1', confirmacoes } });
+    expect(invalida).toHaveBeenCalledWith({ queryKey: QK_OPERACOES });
+  });
+
+  it.each([
+    ['400 risco', { erro: 'Confirme o risco deste anúncio', itens: [{ ml_item_id: 'MLB1', motivo: 'Confirme o risco deste anúncio' }] }],
+    ['409 ocupado', { erro: 'Algum destes anúncios já está numa operação em andamento.', itens: [{ ml_item_id: 'MLB2', motivo: 'x' }] }],
+    ['400 expirado (sem itens)', { erro: 'O preview expirou — gere de novo' }],
+  ])('confirmar %s → ErroOperacao com erro/itens do corpo', async (_n, corpo) => {
+    invokeMock.mockResolvedValue({ data: null, error: erroEdge(corpo) });
+    const { result } = renderHook(() => useConfirmarReajuste(), { wrapper });
+    let e: unknown;
+    await act(async () => { e = await result.current.mutateAsync({ operacao_id: 'OP1', confirmacoes: [] }).catch((x) => x); });
+    expect(e).toBeInstanceOf(ErroOperacao);
+    expect((e as InstanceType<typeof ErroOperacao>).message).toBe(corpo.erro);
+    expect((e as InstanceType<typeof ErroOperacao>).itens).toEqual((corpo as { itens?: unknown }).itens);
   });
 });
