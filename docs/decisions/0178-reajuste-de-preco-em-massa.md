@@ -22,7 +22,8 @@ laço, claim, preview, trava e Reverter.
    entrada ±% ou ±R$, alvo absoluto em centavos, editável por item; a mesma operação reverte com `origem_id`.
 2. **Escrita só-preço no ML:** Legacy `PUT {variations:[{id, price}]}` com todas as variações do MLB (doc
    oficial; sem quantidade/fotos → sem corrida com estoque); item plano `PUT {price}`; UP `PUT {price}` por MLB.
-   Confirmação por GET; preço não aplicado (automação de preços) = erro.
+   Confirmação por GET (Legacy: todas as variações); preço divergente = erro "preço não aplicado pelo ML", sem
+   atribuir causa. Executar e Reverter: admin/suporte full, até 500 MLBs únicos, validado no servidor.
 3. **Durável no banco:** confirmado no ML → `preco_publicacao` = novo, `preco_editado_pelo_operador = true`,
    `preco_publicado_ml` = confirmado (via RPC por MLB, escopada por org). **Isto muda a garantia do ADR-0020/0055
    de recalcular por custo no re-ingest** para as cores reajustadas — o preview avisa; o próximo repasse é outro
@@ -31,7 +32,13 @@ laço, claim, preview, trava e Reverter.
    🟡 marcado com aviso. **Origem ausente → ⚪ (nunca default nacional)** — mais restrito que o texto original do ADR-0055.
 5. **Fora do MVP:** promoção (pending/started), Kit Virtual, catálogo/par de catálogo, migração PxV, família
    publicando, moderado/encerrado, **atacado PxQ** (faixas absolutas).
-6. **Reverter** restaura ML e banco (incluindo a marca `editado` anterior) só se ambos seguem como a operação deixou.
+6. **Reverter** restaura ML e banco (`preco_publicacao` e a marca `editado` anteriores; `preco_publicado_ml` = preço
+   confirmado na reversão) só se ambos seguem como a operação deixou (comparação atômica).
+7. **Integridade (garantias):** snapshot financeiro por cor revalidado na execução (qualquer mudança → refazer
+   preview); serialização cruzada com UPDATE/publicação e com aderir a promoção (recusam MLB/família com reajuste
+   pendente); recuperação por etapa (`escrita_pedida` → `ml_confirmado` → `aplicado`) sem reaplicar o percentual;
+   falha de banco após o ML confirmar não expira e mantém o bloqueio — o preço antigo nunca é republicado em silêncio;
+   valores em centavos half-up, iguais no preview, na trava e no PUT; preço igual ao vivo = sem alteração.
 
 ## Consequências
 
