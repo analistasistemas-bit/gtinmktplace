@@ -144,6 +144,26 @@ preview / Bloqueado pelo par de catálogo), Reverter com saída SMART confirmada
   Revisão avisa quando a família tem anúncio participando de promoção, sem bloquear (`Revisao.tsx`).
   Permissão de Executar/Reverter: `isAdmin || suporte.scope === 'full'` (`usePodeExecutarOperacao`).
 
+## Emenda 2026-10-04 — 2º tipo: pausar/reativar em massa
+
+Discovery com o Diego (2026-10-04): a Avil repete em lote reajuste de preço, pausar/reativar e estoque.
+Ordem decidida: **pausar/reativar primeiro**, depois preço, depois estoque — cada um com spec própria.
+Design: `docs/superpowers/specs/2026-10-04-pausar-reativar-em-massa-design.md`.
+
+1. **Motor generalizado, não duplicado:** um laço de execução, um handler por `acao`. O handler de
+   promoção fica intacto (a suíte atual é a prova de não-regressão). `acao` ganha `pausar|reativar`;
+   `promocao_id`/`promocao_tipo` viram nullable com check de coerência por ação, e um índice
+   anti-duplicidade próprio `(org_id, ml_item_id)` cobre as operações sem promoção (NULL não colide no índice atual).
+2. **Escrita reaproveita o ADR-0060:** `conn.atualizarStatus` (propaga ao catálogo relacionado),
+   com GET fresco antes e as mesmas travas da pausa individual (moderado/encerrado e migração PxV,
+   ADR-0161 → `bloqueado`). Kits ficam fora (status em kit não testado).
+3. **ADR-0111 mantido:** pausa em lote não resiste à reativação por reposição de estoque; o preview avisa.
+4. **Seleção na tela Publicados** (filtros existentes, "todos do filtro"); acompanhamento numa **tela global
+   de Operações** (`/operacoes`, sem gate de módulo) — cumpre a decisão 7 agora que existe o 2º tipo. A aba
+   Operações em Promoções continua como a mesma lista filtrada.
+5. Permissão, Reverter (operação inversa só sobre `aplicado`, com preview) e teto por mensagem
+   (`maxItens: 100`) seguem as regras acima.
+
 ## Consequências
 
 - O motor nasce com os requisitos reais de uma operação (promoção); o segundo tipo testa se ele é genérico de
