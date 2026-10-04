@@ -23,7 +23,7 @@ export interface PaginaComponentesML {
   searchAfterHash: string | null;
 }
 
-/** Ponte `user_product_id → item_id` de um item local (GET /items?ids=...&attributes=id,user_product_id,price,category_id).
+/** Ponte `user_product_id → item_id` de um item local (GET /items/bulk?ids=...&attributes=status_code,body.id,body.user_product_id,body.price,body.category_id; ADR-0177).
  *  `preco-kit-virtual`/`preview-kit-virtual` exigem preço e categoria por componente — esta é a
  *  fonte confiável (service_role, org-scoped) para os dois, lida no mesmo multiget que já resolve
  *  a ponte, então não custa uma chamada extra ao ML. */

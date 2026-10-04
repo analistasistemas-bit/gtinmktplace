@@ -3,6 +3,8 @@
 // com isso para tolerar falha individual sem derrubar a resposta inteira.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { lerPrecoKitML, lerEstoqueKitML, buscarListingTypeItensML } from '../kit-virtual';
+import bulkKit from './fixtures/bulk-kit-bulk.json' with { type: 'json' };
+import idsKit from './fixtures/bulk-kit-ids.json' with { type: 'json' };
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -115,18 +117,24 @@ describe('lerEstoqueKitML', () => {
 
 // Bug real 2026-09-06: `listing_type_id` fixo (`gold_pro`) não bate com o dos componentes e o ML
 // recusa o kit inteiro (`listing_type_mismatch`). Mesmo padrão de multiget que
-// `buscar-componentes-kit-virtual` já usa (`GET /items?ids=...&attributes=...`).
+// `buscar-componentes-kit-virtual` já usa (`GET /items/bulk?ids=...&attributes=...`, ADR-0177).
 describe('buscarListingTypeItensML', () => {
   it('mapeia item_id → listing_type_id a partir do multiget', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      expect(url).toBe('https://api.mercadolibre.com/items?ids=MLB1,MLB2&attributes=id,listing_type_id');
+      expect(url).toBe('https://api.mercadolibre.com/items/bulk?ids=MLB1,MLB2&attributes=status_code,body.id,body.listing_type_id');
       return resp([
-        { code: 200, body: { id: 'MLB1', listing_type_id: 'gold_special' } },
-        { code: 200, body: { id: 'MLB2', listing_type_id: 'gold_pro' } },
+        { status_code: 200, body: { id: 'MLB1', listing_type_id: 'gold_special' } },
+        { status_code: 200, body: { id: 'MLB2', listing_type_id: 'gold_pro' } },
       ]);
     }));
     const mapa = await buscarListingTypeItensML('tok', ['MLB1', 'MLB2']);
     expect(mapa).toEqual(new Map([['MLB1', 'gold_special'], ['MLB2', 'gold_pro']]));
+  });
+
+  it('kit real + 404 sem body: o 404 fica fora do mapa, os demais entram com o listing_type certo', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([...(bulkKit as unknown[]), { status_code: 404 }]))));
+    const m = await buscarListingTypeItensML('t', [...(idsKit as string[]), 'MLB0000000001']);
+    expect(Object.fromEntries(m)).toEqual(Object.fromEntries((bulkKit as Array<{ body: { id: string; listing_type_id: string } }>).map((e) => [e.body.id, e.body.listing_type_id])));
   });
 
   it('item que o ML não devolveu (code !== 200) fica de fora do mapa', async () => {

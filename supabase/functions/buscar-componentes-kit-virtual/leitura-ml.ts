@@ -1,6 +1,7 @@
 // Leitura multiget de buscar-componentes-kit-virtual, extraída de index.ts para teste (ADR-0177).
 // Movida sem alteração: mesma semântica de antes.
 import { mlGet } from '../_shared/ml/http.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from '../_shared/ml/multiget.ts';
 import type { ItemBridge } from './processar.ts';
 
 const API = 'https://api.mercadolibre.com';
@@ -14,8 +15,8 @@ export async function buscarUserProductIdsML(token: string, itemIds: string[]): 
   const out: ItemBridge[] = [];
   for (let i = 0; i < itemIds.length; i += 20) {
     const bloco = itemIds.slice(i, i + 20);
-    const url = `${API}/items?ids=${bloco.join(',')}&attributes=id,user_product_id,price,category_id`;
-    const arr = await mlGet(url, token);
+    const url = `${API}${caminhoMultiget(bloco, 'id,user_product_id,price,category_id')}`;
+    const arr = comoEnvelopeAntigo(await mlGet(url, token), bloco);
     if (!Array.isArray(arr)) continue;
     for (const entry of arr as {
       code?: number;

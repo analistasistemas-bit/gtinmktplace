@@ -7,6 +7,7 @@
 // Erro sai humanizado (`humanizarErroML`) com `.status` anexado, no mesmo formato de
 // `criarItemML` — é o que `criar-kit-virtual/processar.ts` grava em `erro_mensagem`.
 import { humanizarErroML } from './erro-ml.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from './multiget.ts';
 
 export interface ComponentePayloadML {
   type: 'user_product';
@@ -71,7 +72,7 @@ export async function criarKitVirtualML(
 // Bug real 2026-09-06: um `listing_type_id` fixo (`gold_pro`) no CREATE não bate com o listing
 // type real dos componentes e o ML recusa o kit inteiro (`listing_type_mismatch`). O listing type
 // tem que vir dos componentes — mesmo padrão de multiget de `buscar-componentes-kit-virtual`
-// (`GET /items?ids=...&attributes=...`), só que com `listing_type_id` em vez de
+// (`GET /items/bulk?ids=...&attributes=...`, ADR-0177), só que com `listing_type_id` em vez de
 // `user_product_id,price,category_id`. Lotes de 20 (limite do ML).
 //
 // AO CONTRÁRIO de `lerPrecoKitML`/`lerEstoqueKitML` (enriquecimento de exibição, tolerado nulo),
@@ -88,13 +89,13 @@ export async function buscarListingTypeItensML(
   for (let i = 0; i < itemIds.length; i += 20) {
     const bloco = itemIds.slice(i, i + 20);
     const resp = await fetch(
-      `https://api.mercadolibre.com/items?ids=${bloco.join(',')}&attributes=id,listing_type_id`,
+      `https://api.mercadolibre.com${caminhoMultiget(bloco, 'id,listing_type_id')}`,
       { headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15_000) },
     );
     if (!resp.ok) {
       throw new Error(`Falha ao consultar o listing type dos componentes (${resp.status}): ${await resp.text()}`);
     }
-    const arr = await resp.json().catch(() => null);
+    const arr = comoEnvelopeAntigo(await resp.json().catch(() => null), bloco);
     if (!Array.isArray(arr)) {
       throw new Error('O Mercado Livre devolveu uma resposta inesperada ao consultar o listing type dos componentes.');
     }
