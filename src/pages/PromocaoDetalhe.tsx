@@ -15,7 +15,7 @@ import { calcularMarkup } from '@/lib/markup';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
-import type { AcaoOperacao } from '@/lib/operacoes';
+import type { AcaoPromocao } from '@/lib/operacoes';
 import {
   URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type SemaforoPromo,
@@ -81,7 +81,7 @@ export default function PromocaoDetalhe() {
   const [participando, setParticipando] = useState(false);
   const [aberto, setAberto] = useState<ItemPromocao | null>(null);
   const [selecionados, setSelecionados] = useState<Set<string>>(new Set());
-  const [preview, setPreview] = useState<{ acao: AcaoOperacao; itens: ItemPromocao[] } | null>(null);
+  const [preview, setPreview] = useState<{ acao: AcaoPromocao; itens: ItemPromocao[] } | null>(null);
 
   const promo = promocoes.data?.find((p) => p.promocao_id === promocaoId) ?? null;
   // Trocar de campanha (navegação entre detalhes) não deve arrastar a seleção anterior.

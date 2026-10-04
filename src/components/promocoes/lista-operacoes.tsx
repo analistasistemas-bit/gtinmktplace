@@ -12,7 +12,7 @@ import { formatarNomeProduto } from '@/lib/texto';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
 import { useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
-import { ROTULO_STATUS, inversa, itensRevertiveis, type AcaoOperacao, type StatusItemOperacao } from '@/lib/operacoes';
+import { ROTULO_STATUS, inversa, itensRevertiveis, type AcaoOperacao, type AcaoPromocao, type StatusItemOperacao } from '@/lib/operacoes';
 import type { ItemPromocao } from '@/lib/promocoes';
 import { PreviewOperacao } from './preview-operacao';
 
@@ -49,7 +49,7 @@ const paraRevertiveis = (itens: ItemOperacaoRow[]) => itens.map((i) => ({ ml_ite
 /** Reverter: itens elegíveis pelo log da operação (`itensRevertiveis`) confrontados com o estado
  *  atual da Central — quem não está mais no estado exigido pela ação inversa entra em `naoRevertiveis`. */
 function montarReversao(op: OperacaoRow, itensOp: ItemOperacaoRow[], itensCentral: ItemPromocao[]) {
-  const acaoNova = inversa(op.acao as AcaoOperacao);
+  const acaoNova = inversa(op.acao as AcaoPromocao); // Task 7 passa a listar só promoções aqui
   const ids = itensRevertiveis(op.acao as AcaoOperacao, paraRevertiveis(itensOp));
   const porCentral = new Map(itensCentral.map((i) => [i.ml_item_id, i]));
   const porLog = new Map(itensOp.map((i) => [i.ml_item_id, i]));

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  inversa, itensRevertiveis, montarPreview, parsePreco, precisaConfirmarRisco, semaforoNoPreco,
+  inversa, itensRevertiveis, montarPreview, motivoNaoSelecionavel, parsePreco, precisaConfirmarRisco, semaforoNoPreco,
+  separarSelecao, tituloOperacao,
 } from '../operacoes';
 import type { CorProjetada, ItemPromocao } from '../promocoes';
 import { semaforoNoPreco as semaforoNoPrecoBackend } from '../../../supabase/functions/_shared/operacoes/validar';
@@ -114,5 +115,34 @@ describe('paridade semáforo front × backend (operações)', () => {
     const kit = { ...semCadastro, motivo: 'kit_divergente' as const };
     expect(semaforoNoPreco([cAzul, kit] as unknown as CorProjetada[], 85)).toBe('indisponivel');
     expect(semaforoNoPrecoBackend([cAzul, kit], 85)).toBe('indisponivel');
+  });
+});
+
+describe('operações de status (emenda 2026-10-04)', () => {
+  it('inversa e revertíveis', () => {
+    expect(inversa('pausar')).toBe('reativar');
+    expect(inversa('reativar')).toBe('pausar');
+    const itens = [{ ml_item_id: 'A', status: 'aplicado' as const }, { ml_item_id: 'B', status: 'ja_estava' as const }];
+    expect(itensRevertiveis('pausar', itens)).toEqual(['A']); // ja_estava não fomos nós que mudamos
+    expect(itensRevertiveis('aderir', itens)).toEqual(['A', 'B']); // regra antiga intacta
+  });
+  it('título por tipo', () => {
+    expect(tituloOperacao({ acao: 'pausar', promocao_nome: null, promocao_id: null }, 47)).toBe('Pausar 47 anúncios');
+    expect(tituloOperacao({ acao: 'reativar', promocao_nome: null, promocao_id: null }, 1)).toBe('Reativar 1 anúncio');
+    expect(tituloOperacao({ acao: 'aderir', promocao_nome: '10.10', promocao_id: 'P1' }, 3)).toBe('Aderir à 10.10');
+    expect(tituloOperacao({ acao: 'sair', promocao_nome: null, promocao_id: 'P1' }, 3)).toBe('Sair de P1');
+  });
+  it('quem não entra na seleção', () => {
+    expect(motivoNaoSelecionavel({ status: 'ativo' })).toBeNull();
+    expect(motivoNaoSelecionavel({ status: 'pausado' })).toBeNull();
+    expect(motivoNaoSelecionavel({ status: 'ativo', ehKitVirtual: true })).toBe('Kit Virtual não entra em pausar/reativar em massa');
+    expect(motivoNaoSelecionavel({ status: 'ativo', publicacaoIncompleta: true })).toBe('Publicação incompleta');
+    expect(motivoNaoSelecionavel({ status: 'ativo', migracaoEmAndamento: true })).toBe('Migração para preço por variação em andamento');
+    expect(motivoNaoSelecionavel({ status: 'moderado' })).toBe('Só anúncio ativo ou pausado');
+    expect(motivoNaoSelecionavel({ status: undefined })).toBe('Só anúncio ativo ou pausado');
+  });
+  it('separa ativos e pausados', () => {
+    expect(separarSelecao([{ mlItemId: 'A', status: 'ativo' }, { mlItemId: 'B', status: 'pausado' }, { mlItemId: 'C', status: 'moderado' }]))
+      .toEqual({ ativos: ['A'], pausados: ['B'] });
   });
 });

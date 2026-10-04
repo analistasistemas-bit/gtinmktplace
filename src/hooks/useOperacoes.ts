@@ -1,9 +1,10 @@
-// ADR-0174 — hooks de operações em massa (aderir/sair de promoções DEAL/SMART do ML).
+// ADR-0174 — hooks de operações em massa (aderir/sair de promoções DEAL/SMART do ML e pausar/reativar anúncios).
 import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
 import type { Tables } from '@/lib/database.types';
-import type { AcaoOperacao, StatusItemOperacao } from '@/lib/operacoes';
+import { ehAcaoStatus, type AcaoPromocao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
+import { QK } from '@/lib/queries';
 import { useProfile } from '@/hooks/useProfile';
 import { useSupportStore } from '@/stores/support-store';
 
@@ -13,7 +14,10 @@ export type OperacaoRow = Tables<'operacoes_massa'> & { itens: { status: StatusI
 export type ItemOperacaoRow = Tables<'operacoes_massa_itens'>;
 
 interface ItemPedido { ml_item_id: string; preco: number | null; confirmado_risco: boolean }
-export interface PedidoOperacao { acao: AcaoOperacao; promocao_id: string; origem_id: string | null; itens: ItemPedido[] }
+export interface PedidoOperacao { acao: AcaoPromocao; promocao_id: string; origem_id: string | null; itens: ItemPedido[] }
+export interface PedidoOperacaoStatus {
+  acao: AcaoStatus; origem_id: string | null; itens: { ml_item_id: string; titulo: string | null }[];
+}
 export interface RecusaItem { ml_item_id: string; motivo: string; semaforo?: string }
 
 /** Erro da edge `operacoes-massa`: `erro` sempre vem; `itens` só em recusa de validação (400). */
@@ -31,19 +35,58 @@ async function lerErroEdge(error: unknown, fallback: string): Promise<ErroOperac
   return new ErroOperacao(c?.erro ?? fallback, c?.itens);
 }
 
-/** Lista da org, mais recente primeiro; recarrega a cada 5 s enquanto alguma operação está executando. */
-export function useOperacoes() {
-  return useQuery({
-    queryKey: [...QK_OPERACOES, 'lista'],
+/** Lista da org, mais recente primeiro; recarrega a cada 5 s enquanto alguma operação está executando.
+ *  `filtro='promocao'` filtra no servidor (senão 50 pausas empurram uma operação de promoção para fora da página). */
+export function useOperacoes(filtro?: 'promocao') {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: [...QK_OPERACOES, 'lista', filtro ?? 'todas'],
     queryFn: async () => {
-      const { data, error } = await supabase.from('operacoes_massa')
-        .select('*, itens:operacoes_massa_itens(status)').order('criado_em', { ascending: false }).limit(50);
+      let q = supabase.from('operacoes_massa').select('*, itens:operacoes_massa_itens(status)');
+      if (filtro === 'promocao') q = q.in('acao', ['aderir', 'sair']);
+      const { data, error } = await q.order('criado_em', { ascending: false }).limit(50);
       if (error) throw error;
       return (data ?? []) as unknown as OperacaoRow[];
     },
     staleTime: 30_000,
     refetchInterval: (q) => ((q.state.data ?? []).some((o) => o.status === 'executando') ? 5_000 : false),
   });
+  // Conclusão vista na lista (tela Operações, Reverter) também atualiza o status ao vivo do Publicados — inclusive
+  // quando a 1ª leitura já chega concluída (navegou para cá logo depois de executar). Janela = staleTime do status
+  // ao vivo (5 min): conclusão mais antiga que a montagem − 5 min já foi coberta pelo próprio cache expirando.
+  const montadoEm = useRef(Date.now());
+  const tratadas = useRef(new Set<string>());
+  useEffect(() => {
+    const novas = (query.data ?? []).filter((o) => ehAcaoStatus(o.acao) && o.status === 'concluida' && !tratadas.current.has(o.id)
+      && Date.parse(o.concluido_em ?? '') > montadoEm.current - JANELA_STATUS_MS);
+    if (!novas.length) return;
+    for (const o of novas) tratadas.current.add(o.id);
+    qc.invalidateQueries({ queryKey: QK.statusPublicados });
+  }, [query.data, qc]);
+  return query;
+}
+const JANELA_STATUS_MS = 5 * 60_000; // = staleTime de useStatusPublicados
+
+/** Emenda 2026-10-04: acompanha uma operação criada na tela Publicados; ao concluir, força o status ao vivo
+ *  (`QK.statusPublicados`, cache de 5 min) e a lista de operações a recarregarem. */
+export function useAcompanharOperacao(id: string | null) {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: [...QK_OPERACOES, id, 'acompanhar'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('operacoes_massa').select('status').eq('id', id!).single();
+      if (error) throw error;
+      return data as { status: string };
+    },
+    enabled: !!id,
+    refetchInterval: (q) => (q.state.data?.status === 'concluida' ? false : 5_000),
+  });
+  const concluida = data?.status === 'concluida';
+  useEffect(() => {
+    if (!concluida) return;
+    qc.invalidateQueries({ queryKey: QK.statusPublicados });
+    qc.invalidateQueries({ queryKey: QK_OPERACOES });
+  }, [concluida, qc]);
 }
 
 /** Fix round 1 (achado 3): recarrega a cada 5 s enquanto a operação (`operacoes_massa.status`)
@@ -111,7 +154,7 @@ export function useOperacaoPorOrigem(id: string | null) {
 export function useCriarOperacao() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (pedido: PedidoOperacao) => {
+    mutationFn: async (pedido: PedidoOperacao | PedidoOperacaoStatus) => {
       const { data, error } = await supabase.functions.invoke('operacoes-massa', { body: pedido });
       if (error) throw await lerErroEdge(error, 'Não foi possível criar a operação.');
       return data as { operacao_id: string };

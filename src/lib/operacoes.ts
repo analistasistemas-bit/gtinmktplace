@@ -1,8 +1,12 @@
-// ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART do ML): regras puras do front.
+// ADR-0174 — operações em massa (aderir/sair de promoções DEAL/SMART do ML e pausar/reativar anúncios): regras puras do front.
 import { calcularSemaforo, type Semaforo } from '@/lib/semaforo';
 import { ateQuantoDaLinha, type CorProjetada, type ItemPromocao } from '@/lib/promocoes';
+import type { PublicadoItem } from '@/lib/publicados';
 
-export type AcaoOperacao = 'aderir' | 'sair';
+export type AcaoPromocao = 'aderir' | 'sair';
+export type AcaoStatus = 'pausar' | 'reativar';
+export type AcaoOperacao = AcaoPromocao | AcaoStatus;
+export const ehAcaoStatus = (a: string): a is AcaoStatus => a === 'pausar' || a === 'reativar';
 export type StatusItemOperacao =
   | 'pendente' | 'enviando' | 'aplicado' | 'ja_estava' | 'mudou' | 'bloqueado' | 'erro' | 'saida_solicitada';
 
@@ -41,7 +45,7 @@ export function semaforoNoPreco(projecao: CorProjetada[], preco: number | null):
 
 /** Preview do pedido: aderir usa o preço sugerido (DEAL) ou o preço da oferta (SMART) e só marca o verde;
  *  sair usa o preço no ar e marca tudo — o cálculo do front é só orientação, o backend revalida. */
-export function montarPreview(acao: AcaoOperacao, tipo: 'DEAL' | 'SMART', itens: ItemPromocao[]): LinhaPreview[] {
+export function montarPreview(acao: AcaoPromocao, tipo: 'DEAL' | 'SMART', itens: ItemPromocao[]): LinhaPreview[] {
   return itens.map((it) => {
     const preco = acao === 'sair' ? it.preco_promo : tipo === 'DEAL' ? it.preco_sugerido : it.preco_promo;
     const semaforo = semaforoNoPreco(it.projecao, preco);
@@ -56,7 +60,7 @@ export function montarPreview(acao: AcaoOperacao, tipo: 'DEAL' | 'SMART', itens:
 /** Quantas linhas marcadas exigem o checkbox de risco confirmado (trava financeira do backend).
  *  Fix round 1 (achado 1): `sair` nunca exige — `validar.ts` não olha semáforo na saída (não cria
  *  prejuízo), então o checkbox de risco é só do `aderir`. */
-export function precisaConfirmarRisco(acao: AcaoOperacao, linhas: LinhaPreview[]): { vermelho: number; indisponivel: number } {
+export function precisaConfirmarRisco(acao: AcaoPromocao, linhas: LinhaPreview[]): { vermelho: number; indisponivel: number } {
   if (acao === 'sair') return { vermelho: 0, indisponivel: 0 };
   const marcadas = linhas.filter((l) => l.marcado);
   return {
@@ -70,15 +74,44 @@ export const ROTULO_STATUS: Record<StatusItemOperacao, string> = {
   mudou: 'Mudou desde o preview', bloqueado: 'Bloqueado', erro: 'Erro', saida_solicitada: 'Saída pedida',
 };
 
+// Overloads por família: o tipo de retorno é a família, não a mesma ação (inversa('pausar') é 'reativar').
+export function inversa(a: AcaoPromocao): AcaoPromocao;
+export function inversa(a: AcaoStatus): AcaoStatus;
+export function inversa(a: AcaoOperacao): AcaoOperacao;
 export function inversa(a: AcaoOperacao): AcaoOperacao {
-  return a === 'aderir' ? 'sair' : 'aderir';
+  switch (a) {
+    case 'aderir': return 'sair';
+    case 'sair': return 'aderir';
+    case 'pausar': return 'reativar';
+    case 'reativar': return 'pausar';
+  }
 }
 
-/** Ajuste 4: `sair` só reverte item que saiu de fato (`aplicado`); `aderir` reverte tanto o que entrou
- *  (`aplicado`) quanto o que já estava participando (`ja_estava`). */
-export function itensRevertiveis(
-  acao: AcaoOperacao, itens: { ml_item_id: string; status: StatusItemOperacao }[],
-): string[] {
-  const aceitos: StatusItemOperacao[] = acao === 'sair' ? ['aplicado'] : ['aplicado', 'ja_estava'];
+/** Ajuste 4: só `aderir` reverte também o que já estava participando; o resto só o que NÓS mudamos (`aplicado`). */
+export function itensRevertiveis(acao: AcaoOperacao, itens: { ml_item_id: string; status: StatusItemOperacao }[]): string[] {
+  const aceitos: StatusItemOperacao[] = acao === 'aderir' ? ['aplicado', 'ja_estava'] : ['aplicado'];
   return itens.filter((i) => aceitos.includes(i.status)).map((i) => i.ml_item_id);
+}
+
+export function tituloOperacao(op: { acao: string; promocao_nome: string | null; promocao_id: string | null }, total: number): string {
+  if (ehAcaoStatus(op.acao)) return `${op.acao === 'pausar' ? 'Pausar' : 'Reativar'} ${total} anúncio${total === 1 ? '' : 's'}`;
+  const nome = op.promocao_nome ?? op.promocao_id ?? '';
+  return `${op.acao === 'aderir' ? 'Aderir à' : 'Sair de'} ${nome}`;
+}
+
+export function motivoNaoSelecionavel(
+  i: Pick<PublicadoItem, 'ehKitVirtual' | 'publicacaoIncompleta' | 'migracaoEmAndamento' | 'status'>,
+): string | null {
+  if (i.ehKitVirtual) return 'Kit Virtual não entra em pausar/reativar em massa';
+  if (i.publicacaoIncompleta) return 'Publicação incompleta';
+  if (i.migracaoEmAndamento) return 'Migração para preço por variação em andamento';
+  if (i.status !== 'ativo' && i.status !== 'pausado') return 'Só anúncio ativo ou pausado';
+  return null;
+}
+
+export function separarSelecao(itens: Pick<PublicadoItem, 'mlItemId' | 'status'>[]) {
+  return {
+    ativos: itens.filter((i) => i.status === 'ativo').map((i) => i.mlItemId),
+    pausados: itens.filter((i) => i.status === 'pausado').map((i) => i.mlItemId),
+  };
 }

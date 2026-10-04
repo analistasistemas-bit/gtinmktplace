@@ -12,7 +12,7 @@ import { formatarNomeProduto } from '@/lib/texto';
 import { cn } from '@/lib/utils';
 import {
   montarPreview, parsePreco, precisaConfirmarRisco, semaforoNoPreco,
-  type AcaoOperacao, type LinhaPreview,
+  type AcaoPromocao, type LinhaPreview,
 } from '@/lib/operacoes';
 import type { ItemPromocao } from '@/lib/promocoes';
 import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao } from '@/hooks/useOperacoes';
@@ -33,7 +33,7 @@ function aplicarPreco(l: LinhaEditavel, texto: string, itens: ItemPromocao[]): L
   return { ...l, preco, precoTexto: texto, semaforo, motivoErro: undefined };
 }
 
-function construirLinhas(acao: AcaoOperacao, tipo: 'DEAL' | 'SMART', itens: ItemPromocao[], naoRevertiveis?: Map<string, string>): LinhaEditavel[] {
+function construirLinhas(acao: AcaoPromocao, tipo: 'DEAL' | 'SMART', itens: ItemPromocao[], naoRevertiveis?: Map<string, string>): LinhaEditavel[] {
   return montarPreview(acao, tipo, itens).map((l) => {
     const motivoBloqueio = naoRevertiveis?.get(l.ml_item_id);
     return { ...l, marcado: motivoBloqueio ? false : l.marcado, motivoBloqueio, precoTexto: formatarInput(l.preco) };
@@ -48,7 +48,7 @@ function textoRisco(vermelho: number, indisponivel: number): string {
 }
 
 export function PreviewOperacao({ acao, tipo, promocaoId, promocaoNome, itens, origemId, aberto, onClose, onSucesso, naoRevertiveis }: {
-  acao: AcaoOperacao; tipo: 'DEAL' | 'SMART'; promocaoId: string; promocaoNome: string; itens: ItemPromocao[];
+  acao: AcaoPromocao; tipo: 'DEAL' | 'SMART'; promocaoId: string; promocaoNome: string; itens: ItemPromocao[];
   origemId?: string | null; aberto: boolean; onClose: () => void;
   /** Achado 2 (revisão): só a criação com sucesso limpa a seleção de quem chamou — fechar o
    *  sheet (X, Esc, overlay) não pode apagar a seleção que o operador fez nas duas abas. */

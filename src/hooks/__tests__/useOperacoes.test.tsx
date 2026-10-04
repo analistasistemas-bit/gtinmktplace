@@ -10,19 +10,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // depender de temporizador (a correção dispara num `useEffect`, não no `refetchInterval`).
 const orderMock = vi.fn();
 const eqMock = vi.fn(() => ({ order: orderMock }));
-const selectMock = vi.fn(() => ({ eq: eqMock }));
+// `useOperacoes`: select → (in)? → order → limit. `limitMock` resolve a lista; `inMock` registra o filtro.
+const limitMock = vi.fn();
+const inMock = vi.fn();
+const listaOrderMock = vi.fn();
+const listaQuery = { in: inMock, order: listaOrderMock };
+const selectMock = vi.fn(() => ({ eq: eqMock, ...listaQuery }));
 const fromMock = vi.fn(() => ({ select: selectMock }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: fromMock } }));
 
-const { useItensOperacao } = await import('../useOperacoes');
+const { useItensOperacao, useOperacoes } = await import('../useOperacoes');
+const { QK } = await import('@/lib/queries');
 
+let queryClient: QueryClient;
 function wrapper({ children }: { children: ReactNode }) {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient ??= new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
 describe('useItensOperacao', () => {
   beforeEach(() => {
+    queryClient = undefined as unknown as QueryClient;
     orderMock.mockReset().mockResolvedValue({ data: [], error: null });
     fromMock.mockClear();
   });
@@ -51,5 +59,69 @@ describe('useItensOperacao', () => {
     });
     await act(async () => { await Promise.resolve(); });
     expect(fromMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('useOperacoes — status ao vivo do Publicados (emenda 2026-10-04)', () => {
+  const op = (over: Record<string, unknown>) => ({ id: 'OP1', acao: 'pausar', status: 'concluida', concluido_em: new Date().toISOString(), itens: [], ...over });
+  let invalida: { mock: { calls: unknown[][] } };
+  const montar = (filtro?: 'promocao') => {
+    queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    invalida = vi.spyOn(queryClient, 'invalidateQueries');
+    return renderHook((p: { filtro?: 'promocao' }) => useOperacoes(p.filtro), { initialProps: { filtro }, wrapper });
+  };
+  const statusInvalidado = () => invalida.mock.calls.filter(([f]) => JSON.stringify((f as { queryKey: unknown }).queryKey) === JSON.stringify(QK.statusPublicados)).length;
+  const tick = () => act(async () => { await new Promise((r) => setTimeout(r)); });
+
+  beforeEach(() => {
+    limitMock.mockReset();
+    inMock.mockReset().mockImplementation(() => ({ order: listaOrderMock }));
+    listaOrderMock.mockReset().mockImplementation(() => ({ limit: limitMock }));
+  });
+
+  it('1ª leitura já concluída invalida uma vez; refetch com o mesmo dado não invalida de novo', async () => {
+    limitMock.mockResolvedValue({ data: [op({})], error: null });
+    const { result } = montar();
+    await tick();
+    expect(statusInvalidado()).toBe(1);
+    await act(async () => { await result.current.refetch(); });
+    expect(statusInvalidado()).toBe(1);
+  });
+
+  it('executando → concluída invalida', async () => {
+    limitMock.mockResolvedValue({ data: [op({ status: 'executando', concluido_em: null })], error: null });
+    const { result } = montar();
+    await tick();
+    expect(statusInvalidado()).toBe(0);
+    limitMock.mockResolvedValue({ data: [op({})], error: null });
+    await act(async () => { await result.current.refetch(); });
+    await tick();
+    expect(statusInvalidado()).toBe(1);
+  });
+
+  it('conclusão de 1 h atrás não invalida', async () => {
+    limitMock.mockResolvedValue({ data: [op({ concluido_em: new Date(Date.now() - 3_600_000).toISOString() })], error: null });
+    montar();
+    await tick();
+    expect(statusInvalidado()).toBe(0);
+  });
+
+  it('operação de promoção concluída não invalida', async () => {
+    limitMock.mockResolvedValue({ data: [op({ acao: 'aderir' })], error: null });
+    montar();
+    await tick();
+    expect(statusInvalidado()).toBe(0);
+  });
+
+  it("filtro 'promocao' aplica .in('acao', …) antes do .limit(50); sem filtro não", async () => {
+    limitMock.mockResolvedValue({ data: [], error: null });
+    montar('promocao');
+    await tick();
+    expect(inMock).toHaveBeenCalledWith('acao', ['aderir', 'sair']);
+    expect(limitMock).toHaveBeenCalledWith(50);
+    inMock.mockClear();
+    montar();
+    await tick();
+    expect(inMock).not.toHaveBeenCalled();
   });
 });
