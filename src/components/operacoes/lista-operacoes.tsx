@@ -19,12 +19,12 @@ import { PreviewOperacao } from '@/components/promocoes/preview-operacao';
 import { PreviewStatus } from './preview-status';
 
 const TONE_STATUS: Record<StatusItemOperacao, StatusTone> = {
-  pendente: 'neutral', enviando: 'info', aplicado: 'success', ja_estava: 'success',
+  rascunho: 'neutral', pendente: 'neutral', enviando: 'info', conferindo: 'info', aplicado: 'success', ja_estava: 'success',
   mudou: 'warning', bloqueado: 'neutral', erro: 'danger', saida_solicitada: 'info',
 };
 // Ordem estável dos chips: a mesma do enum, não a ordem de inserção do array de itens.
 const ORDEM_STATUS = Object.keys(ROTULO_STATUS) as StatusItemOperacao[];
-const NAO_TERMINAL: StatusItemOperacao[] = ['pendente', 'enviando'];
+const NAO_TERMINAL: StatusItemOperacao[] = ['pendente', 'enviando', 'conferindo'];
 const MOTIVO_NAO_REVERTIVEL = 'Não revertível: o anúncio não está mais convidado/participando';
 // Revisão Grok (achado IMPORTANTE): status de item que prova que a reversão pegou pelo menos um
 // anúncio; sem nenhum destes (tudo erro/mudou/bloqueado — `encerrarComErro`) não conta como revertida.

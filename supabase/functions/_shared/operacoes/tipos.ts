@@ -3,7 +3,9 @@ import type { Semaforo } from '../promocoes/tipos.ts';
 
 export type Acao = 'aderir' | 'sair';
 export type TipoPromocao = 'DEAL' | 'SMART';
-export type StatusItem = 'pendente' | 'enviando' | 'aplicado' | 'ja_estava' | 'mudou' | 'bloqueado' | 'erro' | 'saida_solicitada';
+export type StatusItem =
+  | 'rascunho' | 'pendente' | 'enviando' | 'conferindo'
+  | 'aplicado' | 'ja_estava' | 'mudou' | 'bloqueado' | 'erro' | 'saida_solicitada';
 
 export interface ItemRow {
   ml_item_id: string; preco: number | null; status: StatusItem; conferencias: number;
@@ -14,6 +16,8 @@ export interface ItemRow {
 export interface CamposItem {
   status: StatusItem; mensagem: string | null; offer_id: string | null; conferencias: number;
   proxima_conferencia: string | null; saida_pedida_em: string | null;
+  // ADR-0178 (reajuste): etapa da escrita no ML, preço antes do reajuste, item marcado no rascunho.
+  etapa: 'escrita_pedida' | 'ml_confirmado' | null; preco_anterior: number | null; incluido: boolean;
 }
 
 /** Leitura fresca da visão da campanha para UM item; null = o item não aparece na campanha. */

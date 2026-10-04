@@ -2101,6 +2101,7 @@ export type Database = {
           concluido_em: string | null
           criado_em: string
           criado_por: string | null
+          expira_em: string | null
           id: string
           org_id: string
           origem_id: string | null
@@ -2114,6 +2115,7 @@ export type Database = {
           concluido_em?: string | null
           criado_em?: string
           criado_por?: string | null
+          expira_em?: string | null
           id?: string
           org_id: string
           origem_id?: string | null
@@ -2127,6 +2129,7 @@ export type Database = {
           concluido_em?: string | null
           criado_em?: string
           criado_por?: string | null
+          expira_em?: string | null
           id?: string
           org_id?: string
           origem_id?: string | null
@@ -2155,37 +2158,55 @@ export type Database = {
       operacoes_massa_itens: {
         Row: {
           atualizado_em: string
+          avaliacao: Json | null
+          codigo_pai: string | null
           conferencias: number
           confirmado_risco: boolean
+          confirmado_sem_dado: boolean
+          estado_anterior: Json | null
+          etapa: string | null
+          incluido: boolean
           mensagem: string | null
           ml_item_id: string
           offer_id: string | null
           operacao_id: string
           org_id: string
           preco: number | null
+          preco_anterior: number | null
           promocao_id: string | null
           proxima_conferencia: string | null
           saida_pedida_em: string | null
           semaforo: string | null
           status: string
           titulo: string | null
+          variacao_ids: string[] | null
+          variacoes_ml: Json | null
         }
         Insert: {
           atualizado_em?: string
+          avaliacao?: Json | null
+          codigo_pai?: string | null
           conferencias?: number
           confirmado_risco?: boolean
+          confirmado_sem_dado?: boolean
+          estado_anterior?: Json | null
+          etapa?: string | null
+          incluido?: boolean
           mensagem?: string | null
           ml_item_id: string
           offer_id?: string | null
           operacao_id: string
           org_id: string
           preco?: number | null
+          preco_anterior?: number | null
           promocao_id?: string | null
           proxima_conferencia?: string | null
           saida_pedida_em?: string | null
           semaforo?: string | null
           status?: string
           titulo?: string | null
+          variacao_ids?: string[] | null
+          variacoes_ml?: Json | null
         }
         Update: {
           atualizado_em?: string

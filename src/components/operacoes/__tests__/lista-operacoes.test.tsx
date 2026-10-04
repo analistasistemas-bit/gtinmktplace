@@ -30,7 +30,7 @@ function op(over: Partial<OperacaoRow> = {}): OperacaoRow {
   return {
     id: 'OP1', org_id: 'ORG1', acao: 'aderir', promocao_id: 'P1', promocao_nome: 'Campanha X', promocao_tipo: 'DEAL',
     status: 'concluida', criado_em: '2026-09-01T10:00:00Z', criado_por: 'U1', concluido_em: '2026-09-01T10:05:00Z',
-    origem_id: null, itens: [], ...over,
+    origem_id: null, expira_em: null, itens: [], ...over,
   };
 }
 function itemLog(over: Partial<ItemOperacaoRow> = {}): ItemOperacaoRow {
@@ -38,6 +38,8 @@ function itemLog(over: Partial<ItemOperacaoRow> = {}): ItemOperacaoRow {
     ml_item_id: 'MLB1', operacao_id: 'OP1', org_id: 'ORG1', promocao_id: 'P1', status: 'aplicado',
     titulo: 'Produto 1', preco: 20, semaforo: 'verde', mensagem: null, offer_id: null, confirmado_risco: false,
     conferencias: 0, proxima_conferencia: null, saida_pedida_em: null, atualizado_em: '2026-09-01T10:05:00Z',
+    preco_anterior: null, etapa: null, confirmado_sem_dado: false, incluido: true, avaliacao: null,
+    estado_anterior: null, variacoes_ml: null, variacao_ids: null, codigo_pai: null,
     ...over,
   };
 }

@@ -8,7 +8,8 @@ export type AcaoStatus = 'pausar' | 'reativar';
 export type AcaoOperacao = AcaoPromocao | AcaoStatus;
 export const ehAcaoStatus = (a: string): a is AcaoStatus => a === 'pausar' || a === 'reativar';
 export type StatusItemOperacao =
-  | 'pendente' | 'enviando' | 'aplicado' | 'ja_estava' | 'mudou' | 'bloqueado' | 'erro' | 'saida_solicitada';
+  | 'rascunho' | 'pendente' | 'enviando' | 'conferindo'
+  | 'aplicado' | 'ja_estava' | 'mudou' | 'bloqueado' | 'erro' | 'saida_solicitada';
 
 export interface LinhaPreview {
   ml_item_id: string; titulo: string | null; preco: number | null; min: number | null; max: number | null;
@@ -70,7 +71,7 @@ export function precisaConfirmarRisco(acao: AcaoPromocao, linhas: LinhaPreview[]
 }
 
 export const ROTULO_STATUS: Record<StatusItemOperacao, string> = {
-  pendente: 'Na fila', enviando: 'Enviando', aplicado: 'Feito', ja_estava: 'Já estava',
+  rascunho: 'Rascunho', pendente: 'Na fila', enviando: 'Enviando', conferindo: 'Conferindo no ML', aplicado: 'Feito', ja_estava: 'Já estava',
   mudou: 'Mudou desde o preview', bloqueado: 'Bloqueado', erro: 'Erro', saida_solicitada: 'Saída pedida',
 };
 

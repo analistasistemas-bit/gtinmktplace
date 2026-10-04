@@ -153,6 +153,34 @@ begin
 end;
 $$;
 
+-- ADR-0178 (reajuste de preço em massa): schema.
+reset role;
+do $$
+declare v_org uuid := '91000000-0000-0000-0000-000000000001';
+        v_r uuid := '91000000-0000-0000-0000-000000000401';
+        v_r2 uuid := '91000000-0000-0000-0000-000000000402';
+begin
+  insert into public.operacoes_massa (id, org_id, acao, status, expira_em) values
+    (v_r, v_org, 'reajustar', 'rascunho', now() + interval '30 minutes'),
+    (v_r2, v_org, 'reajustar', 'executando', null);
+  begin
+    insert into public.operacoes_massa (org_id, acao, promocao_id, promocao_tipo) values (v_org, 'reajustar', 'P', 'DEAL');
+    raise exception 'CHECK: reajustar com promoção aceito';
+  exception when check_violation then null; end;
+  insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, preco, preco_anterior, codigo_pai)
+    values (v_r, v_org, 'MLBR1', 'rascunho', 10.10, 10.00, 'PAI1');
+  insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status, codigo_pai) values (v_r2, v_org, 'MLBR1', 'conferindo', 'PAI1');
+  begin
+    insert into public.operacoes_massa_itens (operacao_id, org_id, ml_item_id, status)
+      values ('91000000-0000-0000-0000-000000000301', v_org, 'MLBR1', 'pendente');
+    raise exception 'ÍNDICE: conferindo não reservou o MLB';
+  exception when unique_violation then null; end;
+  begin
+    update public.operacoes_massa_itens set etapa = 'x' where operacao_id = v_r and ml_item_id = 'MLBR1';
+    raise exception 'CHECK: etapa inválida aceita';
+  exception when check_violation then null; end;
+end; $$;
+
 select 'operacoes_massa: ok' as resultado;
 
 rollback;
