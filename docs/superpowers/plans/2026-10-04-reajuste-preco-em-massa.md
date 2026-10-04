@@ -340,6 +340,17 @@ export function executarReajuste(op: OperacaoReajusteRow, deps: DepsReajuste, op
 
 ---
 
+### Task 10b: Revisão — preço fixado e "Voltar ao automático" (opus)
+
+**Origem:** decisão D15 do Astra (a herança da marca no re-ingest vale também para edição manual).
+**Files:** Modify o componente da Revisão que renderiza o preço por cor (localizar a partir de `src/components/familia-row.tsx` e do input que chama `updateVariacaoPreco` em `src/lib/queries.ts:~398`); `src/lib/queries.ts` (nova `voltarPrecoAutomatico(variacaoId)`: `update variacoes set preco_editado_pelo_operador=false` + o `editado_em` conforme o padrão do ADR-0116 que o arquivo já segue — ler o comentário logo abaixo de `updateVariacaoPreco`); testes no padrão do componente.
+- Cada cor com `editadoPeloOperador` mostra o selo/tooltip "Preço fixado pelo operador — mantido nos próximos lotes" e a ação "Voltar ao automático" (confirmação simples: "O preço desta cor volta a ser calculado no próximo lote"); ao confirmar, chama `voltarPrecoAutomatico` e invalida a query da família.
+- Editar o valor continua gravando a marca (comportamento atual, inalterado).
+- Testes: selo aparece só com a marca; "Voltar ao automático" chama a mutation e some o selo após refetch; editar valor mantém a marca.
+- Commit `feat(revisao): preço fixado pelo operador e voltar ao automático`.
+
+---
+
 ### Task 11: Docs (sonnet)
 
 `docs-update-checklist` (TASKS, edge-functions: operacoes-massa preview/confirmar/reajustar, publicar-familias `recusadas`, migrar-preco-por-variacao; modelo-de-dados: colunas/status/RPCs; glossário: rascunho, conferindo, reajuste; obsidian). ADR-0178 → "Aceito" + Implementação. `pnpm docs:links`. Commit.

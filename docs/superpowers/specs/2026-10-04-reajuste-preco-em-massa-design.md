@@ -24,6 +24,7 @@ Repasse de custo do fornecedor e ajustes de catálogo hoje exigem editar famíli
 | D11 | Até **500 MLBs únicos** após expandir famílias (sem corte silencioso); só admin/suporte full executa; servidor confere org e pertencimento. |
 | D12 | Botão **"Reajustar preço"** na barra de seleção de Publicados → diálogo (tipo, %, R$) → preview. |
 | D13 | ADR novo (0178) + esta spec. |
+| D15 | (Astra, na implementação) **Marca herdada no re-ingest para todos:** preço com `preco_editado_pelo_operador` (reajuste OU edição manual na Revisão) sobrevive aos próximos lotes. Na Revisão, cada cor fixada mostra "Preço fixado pelo operador — mantido nos próximos lotes" e oferece **"Voltar ao automático"** (remove a marca; a cor volta a ser calculada no próximo lote). Alterar o valor à mão mantém a marca. |
 | D14 | Validação de campo pelo app na DSA, +1% e Reverter; MLBs escolhidos pelo agente (ver Validação). |
 
 ### Contratos de integridade (revisão do Astra, 2026-10-04)
