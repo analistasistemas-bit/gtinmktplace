@@ -19,7 +19,7 @@ export interface DepsLaco {
   concluir(): Promise<void>;
 }
 /** `encerrar` (opcional): encerra TODOS os itens não terminais da operação (inclusive `enviando` recente) e o
- *  laço conclui sem continuação. Sem ele, comportamento da promoção (varre `itensPendentes`). */
+ *  laço finaliza: conclui, ou agenda a conferência dos itens que ficaram a conferir (reajuste com etapa). Sem ele, comportamento da promoção (varre `itensPendentes`). */
 export interface Fatal { eh(e: unknown): boolean; mensagem: string; encerrar?: (mensagem: string) => Promise<void> }
 
 const ESPERA_ENVIANDO_SEG = 150; // > 2 min: o enviando do worker morto já volta em itensPendentes
@@ -75,13 +75,16 @@ export async function laco(
           continue;
         }
         // Fatal (ex.: sem permissão na conta): nada mais passa — encerra este e todos os restantes.
-        await deps.gravarItem(operacaoId, it.ml_item_id, { status: 'erro', mensagem: fatal.mensagem });
+        // `jaGravado`: o processar já deixou o item no estado certo (reajuste com etapa → conferindo).
+        if (!(e as { jaGravado?: boolean }).jaGravado) {
+          await deps.gravarItem(operacaoId, it.ml_item_id, { status: 'erro', mensagem: fatal.mensagem });
+        }
         if (fatal.encerrar) {
           // Status: também há itens `enviando` recentes (retentáveis aguardando a continuação) que itensPendentes
           // não devolve por 2 min — sem isto eles escreveriam no ML depois do encerramento fatal.
           await fatal.encerrar(fatal.mensagem);
-          await deps.concluir();
-          return { processados, continuou: false };
+          // Reajuste: itens com etapa ficam `conferindo` → agenda a conferência em vez de concluir.
+          return finalizar(operacaoId, deps, processados);
         }
         for (let resto = await deps.itensPendentes(operacaoId, opts.lote); resto.length; resto = await deps.itensPendentes(operacaoId, opts.lote)) {
           for (const r of resto) await deps.gravarItem(operacaoId, r.ml_item_id, { status: 'erro', mensagem: fatal.mensagem });
