@@ -2945,7 +2945,7 @@ Revisão integral do módulo (33 arquivos), relatório em
   antes de 2026-11-14.
 - [x] ~~**Pulse v2: extensão coletora de DOM — PRIORIDADE ALTA, é o que dá cobertura ao módulo.**~~
   **Cancelado em 2026-10-04 (Diego):** o roadmap de 2026-09-21 (`docs/Roadmap/ROADMAP-MELHORIAS-PUBLIAI.md`,
-  lista "Não fazer") descartou extensão de navegador — complexidade alta, benefício difuso; o
+  lista "Não fazer") descartou extensão de navegador — "complexidade sem benefício claro"; o
   ADR-0142 já recusara a extensão como coletora do relatório mensal. Contexto original abaixo.
   Medição de 16/08 (errata 2 do ADR-0119): o radar alcança **5 de 7** anúncios da DSA e apenas
   **15 de 133** da Avil — 89% dela está fora porque são aviamentos sem ficha de catálogo no ML
