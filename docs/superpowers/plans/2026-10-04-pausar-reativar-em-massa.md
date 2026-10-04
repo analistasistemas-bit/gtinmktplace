@@ -366,19 +366,41 @@ describe('executarStatus', () => {
     expect(itens.map((i) => i.status)).toEqual(['erro', 'aplicado']);
   });
 
-  it('erro RETENTÁVEL do canal (ex.: 502 após pausar 1 relacionado): item segue enviando, conta tentativa e relança (QStash reentrega)', async () => {
+  it('erro RETENTÁVEL (502 após pausar 1 relacionado): item segue enviando com a tentativa contada, os OUTROS itens seguem, continua em 150 s sem relançar', async () => {
+    const itens = [item('A'), item('B')];
+    const deps = montar(itens, { A: 'ativo', B: 'ativo' });
+    deps.atualizarStatus = vi.fn(async (id: string) => (id === 'A'
+      ? { ok: false, erro: { codigo: 'INDISPONIVEL', mensagemOperador: 'ML fora', retentavel: true, status: 502 } }
+      : { ok: true }));
+    const r = await executarStatus(PAUSAR, deps, OPTS);
+    expect(r).toEqual({ processados: 2, continuou: true });
+    expect(itens[0]).toMatchObject({ status: 'enviando', conferencias: 1, mensagem: 'ML fora' });
+    expect(itens[0].saida_pedida_em).not.toBeNull(); // marca gravada antes do PUT
+    expect(itens[1].status).toBe('aplicado');
+    expect(deps.continuar).toHaveBeenCalledWith(150);
+    expect(deps.concluir).not.toHaveBeenCalled();
+  });
+
+  it('falha de TRANSPORTE (erro sem status HTTP, conector diz não retentável) também é retentada', async () => {
     const itens = [item('A')];
     const deps = montar(itens, { A: 'ativo' });
-    deps.atualizarStatus = vi.fn(async () => ({ ok: false, erro: { codigo: 'INDISPONIVEL', mensagemOperador: 'ML fora', retentavel: true } }));
-    await expect(executarStatus(PAUSAR, deps, OPTS)).rejects.toThrow('ML fora');
+    deps.atualizarStatus = vi.fn(async () => ({ ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'fetch failed', retentavel: false } }));
+    await executarStatus(PAUSAR, deps, OPTS);
     expect(itens[0]).toMatchObject({ status: 'enviando', conferencias: 1 });
-    expect(itens[0].saida_pedida_em).not.toBeNull(); // marca gravada antes do PUT
+  });
+
+  it('recuperação com gravação de aplicado falhando relança (item fica enviando, não vira erro)', async () => {
+    const itens = [{ ...item('A'), saida_pedida_em: '2026-10-04T12:00:00Z' }];
+    const deps = montar(itens, { A: 'pausado' });
+    deps.gravarItem = vi.fn(async () => { throw new Error('db fora'); });
+    await expect(executarStatus(PAUSAR, deps, OPTS)).rejects.toThrow('db fora');
+    expect(itens[0].status).toBe('enviando');
   });
 
   it('retentável esgotado (3ª tentativa) → erro terminal', async () => {
     const itens = [{ ...item('A'), conferencias: 2 }];
     const deps = montar(itens, { A: 'ativo' });
-    deps.atualizarStatus = vi.fn(async () => ({ ok: false, erro: { codigo: 'INDISPONIVEL', mensagemOperador: 'ML fora', retentavel: true } }));
+    deps.atualizarStatus = vi.fn(async () => ({ ok: false, erro: { codigo: 'INDISPONIVEL', mensagemOperador: 'ML fora', retentavel: true, status: 502 } }));
     await executarStatus(PAUSAR, deps, OPTS);
     expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'ML fora' });
   });
@@ -537,13 +559,15 @@ export async function lerStatusML(token: string, itemId: string, f: typeof fetch
     { headers: { Authorization: `Bearer ${token}` } });
   if (r.status === 401 || r.status === 403) throw new SemAcessoStatusML(`ML ${r.status} ao ler o anúncio`);
   if (!r.ok) throw new Error(`ML ${r.status} ao ler o anúncio ${itemId}`);
+  // Um id só → a única entrada. O código vem do ENVELOPE: o bulk responde HTTP 200 com
+  // `[{status_code: 403}]` sem body, e procurar por body.id descartaria o 403 em silêncio.
   const lote = comoEnvelopeAntigo(await r.json(), [itemId]);
-  const x = (Array.isArray(lote) ? lote : []).find((e: { body?: { id?: string } }) => e?.body?.id === itemId) as
-    { code?: number; body?: ItemMLStatus } | undefined;
-  return x?.code === 200 && x.body ? parseStatusML(x.body).status : null;
+  const x = (Array.isArray(lote) ? lote[0] : undefined) as { code?: number; body?: ItemMLStatus } | undefined;
+  if (x?.code === 401 || x?.code === 403) throw new SemAcessoStatusML(`ML ${x.code} ao ler o anúncio`);
+  return x?.code === 200 && x.body?.id === itemId ? parseStatusML(x.body).status : null;
 }
 ```
-Testes: (a) 200 `[{ status_code: 200, body: { id: 'MLB1', status: 'active', sub_status: [] } }]` → `'ativo'` e URL `${API}/items/bulk?ids=MLB1&attributes=status_code,body.id,body.status,body.sub_status`; (b) `status: 'paused', sub_status: ['forbidden']` → `'moderado'`; (c) `[{ status_code: 404 }]` → `null`; (d) HTTP 403 → `rejects.toBeInstanceOf(SemAcessoStatusML)`; (e) HTTP 500 → rejeita com `Error` comum (não fatal).
+Testes: (a) 200 `[{ status_code: 200, body: { id: 'MLB1', status: 'active', sub_status: [] } }]` → `'ativo'` e URL `${API}/items/bulk?ids=MLB1&attributes=status_code,body.id,body.status,body.sub_status`; (b) `status: 'paused', sub_status: ['forbidden']` → `'moderado'`; (c) `[{ status_code: 404 }]` → `null`; (d) HTTP 403 → `rejects.toBeInstanceOf(SemAcessoStatusML)`; (e) **HTTP 200 com `[{ status_code: 403 }]`** → `rejects.toBeInstanceOf(SemAcessoStatusML)`; (f) HTTP 500 → rejeita com `Error` comum (não fatal).
 
 - [ ] **Step 5b: Criar `executar-status.ts`**
 
@@ -554,7 +578,7 @@ Testes: (a) 200 `[{ status_code: 200, body: { id: 'MLB1', status: 'active', sub_
 import type { ResultadoCanal, StatusAnuncioCanal } from '../canais/contrato.ts';
 import { decidirStatus } from './decidir-status.ts';
 import { MSG_RECONECTAR } from './falhas.ts';
-import { FalhaPosEscrita, gravarPos, laco, type DepsLaco } from './laco.ts';
+import { gravarPos, laco, type DepsLaco } from './laco.ts';
 import { SemAcessoStatusML } from './ml-status.ts';
 import type { AcaoStatus, ItemRow } from './tipos.ts';
 
@@ -578,19 +602,21 @@ async function processarStatus(op: OperacaoStatusRow, it: ItemRow, deps: DepsSta
     // Recuperação: uma tentativa anterior já pediu a escrita e o anúncio está no alvo → foi esta operação
     // (sem isso o Reverter perderia o item). ponytail: se outra pessoa mudou o status entre a marca e o PUT,
     // conta como nosso — o Reverter revalida no ML antes de escrever.
-    const status = d.status === 'ja_estava' && it.saida_pedida_em ? 'aplicado' : d.status;
-    return deps.gravarItem(op.id, id, { status, mensagem: d.mensagem });
+    if (d.status === 'ja_estava' && it.saida_pedida_em) return gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null }));
+    return deps.gravarItem(op.id, id, { status: d.status, mensagem: d.mensagem });
   }
   if (!it.saida_pedida_em) await deps.gravarItem(op.id, id, { saida_pedida_em: new Date(deps.agora()).toISOString() });
   const r = await deps.atualizarStatus(id, d.alvo);
   if (r.ok) return gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null }));
   if (r.erro?.codigo === 'AUTENTICACAO') throw new SemAcessoStatusML(r.erro.mensagemOperador);
   const mensagem = r.erro?.mensagemOperador ?? MSG_FALHA_STATUS;
-  // Retentável (ex.: 502 depois de pausar 1 relacionado): o item segue `enviando`, conta a tentativa e a mensagem
-  // inteira volta 500 → QStash reentrega; o `enviando` parado > 2 min é retomado e a propagação é idempotente.
-  if (r.erro?.retentavel && it.conferencias + 1 < TENTATIVAS_STATUS) {
-    await deps.gravarItem(op.id, id, { conferencias: it.conferencias + 1, mensagem });
-    throw new FalhaPosEscrita(new Error(mensagem));
+  // Retentável — 5xx/429, ou falha de transporte sem HTTP (fetch lançou; o conector a marca não retentável, mas a
+  // propagação ao catálogo pode já ter mudado um relacionado). O item FICA `enviando` com a tentativa contada e o
+  // laço segue com os outros; no fim, `finalizar` vê o `enviando` e agenda continuação em 150 s, quando o item
+  // (parado > 2 min) volta a `itensPendentes`. Nada relança: uma mensagem com vários 502 não esgota o retry do QStash.
+  const retentavel = r.erro?.retentavel === true || r.erro?.status === undefined;
+  if (retentavel && it.conferencias + 1 < TENTATIVAS_STATUS) {
+    return deps.gravarItem(op.id, id, { conferencias: it.conferencias + 1, mensagem });
   }
   return deps.gravarItem(op.id, id, { status: 'erro', mensagem });
 }
@@ -1009,18 +1035,23 @@ export function useOperacoes(filtro?: 'promocao') {
     staleTime: 30_000,
     refetchInterval: (q) => ((q.state.data ?? []).some((o) => o.status === 'executando') ? 5_000 : false),
   });
-  // Conclusão vista na lista (tela Operações, Reverter) também atualiza o status ao vivo do Publicados.
-  const executandoStatus = useRef(new Set<string>());
+  // Conclusão vista na lista (tela Operações, Reverter) também atualiza o status ao vivo do Publicados — inclusive
+  // quando a 1ª leitura já chega concluída (navegou para cá logo depois de executar). Janela = staleTime do status
+  // ao vivo (5 min): conclusão mais antiga que a montagem − 5 min já foi coberta pelo próprio cache expirando.
+  const montadoEm = useRef(Date.now());
+  const tratadas = useRef(new Set<string>());
   useEffect(() => {
-    const ops = query.data ?? [];
-    const concluiu = ops.some((o) => ehAcaoStatus(o.acao) && o.status === 'concluida' && executandoStatus.current.has(o.id));
-    executandoStatus.current = new Set(ops.filter((o) => ehAcaoStatus(o.acao) && o.status === 'executando').map((o) => o.id));
-    if (concluiu) qc.invalidateQueries({ queryKey: QK.statusPublicados });
+    const novas = (query.data ?? []).filter((o) => ehAcaoStatus(o.acao) && o.status === 'concluida' && !tratadas.current.has(o.id)
+      && Date.parse(o.concluido_em ?? '') > montadoEm.current - JANELA_STATUS_MS);
+    if (!novas.length) return;
+    for (const o of novas) tratadas.current.add(o.id);
+    qc.invalidateQueries({ queryKey: QK.statusPublicados });
   }, [query.data, qc]);
   return query;
 }
+const JANELA_STATUS_MS = 5 * 60_000; // = staleTime de useStatusPublicados
 ```
-Teste novo em `src/hooks/__tests__/` (ou onde já houver testes de hooks — `tests/hooks/` existe; seguir a árvore que já testa `useOperacoes`, se houver; senão `src/hooks/__tests__/useOperacoes.test.tsx`): com `supabase` mockado devolvendo 1ª leitura `[{ id: 'OP1', acao: 'pausar', status: 'executando', itens: [] }]` e 2ª `[{ …, status: 'concluida' }]`, após o refetch `invalidateQueries` é chamado com `{ queryKey: QK.statusPublicados }`; e com `filtro='promocao'` a query chama `.in('acao', ['aderir','sair'])` antes do `.limit(50)`.
+Teste novo em `src/hooks/__tests__/` (ou onde já houver testes de hooks — `tests/hooks/` existe; seguir a árvore que já testa `useOperacoes`, se houver; senão `src/hooks/__tests__/useOperacoes.test.tsx`), com `supabase` mockado: (a) 1ª leitura já `[{ id: 'OP1', acao: 'pausar', status: 'concluida', concluido_em: <agora>, itens: [] }]` → `invalidateQueries({ queryKey: QK.statusPublicados })` 1 vez, e um refetch com o mesmo dado NÃO invalida de novo; (b) `executando` → `concluida` invalida; (c) conclusão de 1 h atrás não invalida; (d) operação `aderir` concluída não invalida; (e) com `filtro='promocao'` a query chama `.in('acao', ['aderir','sair'])` antes do `.limit(50)`. Conferir o `staleTime` real em `src/hooks/useStatusPublicados.ts` e usar o mesmo valor em `JANELA_STATUS_MS`.
 
 - [ ] **Step 5:** `pnpm test -- src/lib/__tests__/operacoes.test.ts src/components/promocoes` → PASS; `pnpm exec tsc -b` sem erro.
 - [ ] **Step 6: Commit** — `feat(front): regras e hooks de pausar/reativar em massa`.

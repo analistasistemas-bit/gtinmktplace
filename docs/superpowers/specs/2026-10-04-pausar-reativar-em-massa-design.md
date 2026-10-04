@@ -61,9 +61,9 @@ Novo ramo de validação para `pausar|reativar` (o de promoção não muda):
    - sobrou só ativo/pausado: é o status de origem da ação → escreve. (`mudou` não ocorre nesta ação.)
 3. Senão → grava a marca "escrita pedida" (`saida_pedida_em`) e chama `conn.atualizarStatus(ctx, id, alvo)`
    (propaga ao catálogo relacionado, aditivo ADR-0060) → `aplicado`.
-   - Erro **retentável** do canal (ex.: 502 depois de já pausar um relacionado): item segue `enviando`, conta
-     a tentativa (`conferencias`) e a mensagem volta 500 → QStash reentrega; a propagação é idempotente.
-     3ª tentativa → `erro`.
+   - Erro **retentável** do canal (5xx/429, ou falha de transporte sem HTTP — ex.: 502 depois de já pausar
+     um relacionado): item segue `enviando` e conta a tentativa (`conferencias`); o laço segue com os outros
+     itens e a continuação de 150 s retoma o item parado. A propagação é idempotente. 3ª tentativa → `erro`.
    - Erro não retentável → `erro` com `mensagemOperador`.
    - 401/403 na leitura, `AUTENTICACAO` na escrita ou refresh `invalid_grant` → fatal: a operação encerra
      com "Reconecte a conta" em todos os itens restantes.
