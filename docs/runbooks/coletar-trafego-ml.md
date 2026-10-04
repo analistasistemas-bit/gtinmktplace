@@ -3,7 +3,7 @@
 Operação do worker da Fatia 2b de Vendas SKU: todo dia lê no Mercado Livre as **visitas por dia**
 de cada MLB da org (`GET /items/{id}/visits/time_window`), o **preço de oferta observado**
 (`GET /items/{id}/sale_price?context=channel_marketplace`) e o status do anúncio (multiget
-`GET /items?ids=…&attributes=id,status`). **Só GET no ML** — o único POST é o refresh OAuth de
+`GET /items/bulk?ids=…&attributes=status_code,body.id,body.status,…` desde a v6 — ver abaixo). **Só GET no ML** — o único POST é o refresh OAuth de
 `_shared/ml/token.ts`. Nada é alterado em anúncio.
 
 Grava em `ml_item_visitas_dia`, `ml_item_preco_dia`, `ml_trafego_item` e `ml_trafego_sync`, só pelas

@@ -2,9 +2,11 @@
 
 > Documento vivo. Este e o retrato curto do estado atual do projeto. Historico detalhado fica em `project-history.md`.
 
-**Ultima atualizacao:** 2026-09-28
+**Ultima atualizacao:** 2026-10-04
 
 ## Snapshot
+
+- **Multiget do ML via `/items/bulk` EM PRODUÇÃO (2026-10-04, ADR-0177)** — o ML desliga `GET /items?ids=` em 25/10/2026; as 14 chamadas restantes passam pelo adaptador `_shared/ml/multiget.ts` (envelope antigo preservado), implantado em 5 fatias com manifesto de hash (28 edges iguais à `main`). Pendente: atualizar o Graphify a partir da raiz.
 
 - Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`; **`E7` multi-tenancy + `E6` orquestracao multicanal EM PRODUCAO (2026-07-05/06)**
 - Epicos validados em producao: `E1`, `E1b`, `E2`, `E3`, `E4`, `E7`, `E6`, `E6b` (Blocos A e B)

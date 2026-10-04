@@ -173,10 +173,9 @@ A função `buscarTitulosEGtins` de `vendas.ts` só ganha `export`.
 7. merge fast-forward;
 8. download pré-deploy + manifesto;
 9. deploy das edges listadas por `deno info`;
-10. download pós-deploy + hash;
-11. A/B pós-deploy;
-12. observação;
-13. só então a próxima fatia.
+10. download pós-deploy + hash (prova de que o implantado é o testado; sem A/B pós-deploy, §5.5);
+11. observação;
+12. só então a próxima fatia.
 
 Deploy parcial interrompe o avanço até completar ou reverter todas as edges da fatia.
 

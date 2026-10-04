@@ -257,7 +257,8 @@ mesmo por engano.
    `worker_pendencias`). Fica visível como uma linha `rodando` com posse vencida em `worker_rodadas`.
 
 > **Multiget do ML via `/items/bulk` (ADR-0177).** O ML desliga `GET /items?ids=` em 25/10/2026.
-> Toda leitura em lote de anúncios passa por `_shared/ml/multiget.ts`: `caminhoMultiget` monta
+> Toda leitura em lote de anúncios passa por `_shared/ml/multiget.ts` (exceção: o coletor de tráfego,
+> `coletar-trafego-ml`/`_shared/trafego/fiacao.ts`, primeiro a migrar, monta `/items/bulk` e lê `code ?? status_code` direto): `caminhoMultiget` monta
 > `/items/bulk?ids=…&attributes=status_code,body.<campo>…` (dedup dentro da requisição — o bulk
 > responde 400 ao lote inteiro com id repetido) e `comoEnvelopeAntigo` devolve o envelope antigo
 > `[{code, body}]` (o 404 do bulk vem sem body; o id é recolocado pela posição). Edges afetadas
@@ -1102,8 +1103,8 @@ produto.
 - **buscar-componentes-kit-virtual** (D-12) — lista candidatos a componente. Read-only e
   idempotente. Body `{ search_text? }`. Busca `POST /users/$SELLER_ID/kits/components/search` no
   ML (paginado por `search_after_hash`), enriquece cada `user_product_id` retornado com
-  `price`/`category_id` (multiget `GET /items?ids=...&attributes=id,user_product_id,price,
-  category_id`, em lotes de 20) e cruza com o catálogo local por dois caminhos: família legacy
+  `price`/`category_id` (multiget `GET /items/bulk?ids=...&attributes=status_code,body.id,body.user_product_id,body.price,
+  body.category_id` via `_shared/ml/multiget.ts`, ADR-0177, em lotes de 20) e cruza com o catálogo local por dois caminhos: família legacy
   single-item (`familias.ml_item_id`) ou item plano do ADR-0088
   (`anuncios_externos_itens.item_externo_id`) — só atribui `codigo`/`custo` quando a família tem
   exatamente 1 variação (best-effort, D-12). Resposta `{ ok: true, elegiveis: [...],
@@ -1485,7 +1486,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
   `variacoes_externas` e, **só para os códigos publicados sem nenhum cpid ali**, cai em
   `variacoes` da família mais recente com `catalog_status='vinculado'` — sem esse resgate, anúncio
   publicado e vinculado ficava inteiro fora do radar (Errata 5). Passo em lote à parte lê a
-  situação do anúncio (`/items?ids=…`, 20 por chamada) para `anuncio_status` e consulta
+  situação do anúncio (`/items/bulk?ids=…` via `_shared/ml/multiget.ts`, ADR-0177, 20 por chamada) para `anuncio_status` e consulta
   `/sites/MLB/listing_prices` para a estrutura da comissão. Essa consulta usa o preço **efetivo**
   (`meu_preco`, colhido no passo de ofertas desta mesma execução) sempre que ele existe para o
   **mesmo** `item_id`, e só cai no `price` do multiget — que é o preço base, sem promoção — quando
