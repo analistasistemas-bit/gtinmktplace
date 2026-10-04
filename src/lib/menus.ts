@@ -25,6 +25,7 @@ const PREFIX: Record<string, MenuKey> = {
   relatorio: 'revisao',
   publicados: 'publicados',
   promocoes: 'promocoes',
+  operacoes: 'publicados',
   estoque: 'estoque',
   pulse: 'pulse',
   vitrine: 'vitrine',

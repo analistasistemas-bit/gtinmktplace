@@ -13,7 +13,7 @@ vi.mock('@/hooks/usePromocoes', () => ({
 }));
 vi.mock('@/hooks/useCanalAtivo', () => ({ useCanalAtivo: vi.fn() }));
 // A aba Operações é testada isolada em lista-operacoes.test.tsx; aqui só o roteamento da página.
-vi.mock('@/components/promocoes/lista-operacoes', () => ({ ListaOperacoes: () => <div data-testid="lista-operacoes" /> }));
+vi.mock('@/components/operacoes/lista-operacoes', () => ({ ListaOperacoes: () => <div data-testid="lista-operacoes" /> }));
 
 const QUERY_PENDENTE = { data: undefined, isLoading: true, isPending: true };
 const QUERY_VAZIA = { data: [], isLoading: false, isPending: false };

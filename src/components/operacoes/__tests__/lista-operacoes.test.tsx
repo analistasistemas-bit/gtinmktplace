@@ -74,8 +74,8 @@ beforeEach(() => {
   vi.mocked(useOperacaoPorOrigem).mockReturnValue({ data: null, isLoading: false } as never);
 });
 
-function renderLista() {
-  return render(<MemoryRouter><ListaOperacoes /></MemoryRouter>);
+function renderLista(filtro?: 'promocao') {
+  return render(<MemoryRouter><ListaOperacoes filtro={filtro} /></MemoryRouter>);
 }
 
 describe('ListaOperacoes', () => {
@@ -83,7 +83,30 @@ describe('ListaOperacoes', () => {
     vi.mocked(useOperacoes).mockReturnValue({ data: [], isLoading: false } as never);
     renderLista();
     expect(screen.getByText('Nenhuma operação ainda.')).toBeInTheDocument();
+    expect(screen.getByText('Selecione anúncios em Publicados ou numa campanha de Promoções.')).toBeInTheDocument();
+  });
+
+  it('lista vazia com filtro de promoção mantém a dica de campanha', () => {
+    vi.mocked(useOperacoes).mockReturnValue({ data: [], isLoading: false } as never);
+    renderLista('promocao');
     expect(screen.getByText('Selecione anúncios numa campanha para aderir ou sair.')).toBeInTheDocument();
+  });
+
+  it('operação de pausar mostra "Pausar 3 anúncios"', () => {
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ acao: 'pausar', promocao_id: null, promocao_nome: null, promocao_tipo: null,
+        itens: [{ status: 'aplicado' }, { status: 'aplicado' }, { status: 'erro' }] })], isLoading: false,
+    } as never);
+    renderLista();
+    expect(screen.getByText('Pausar 3 anúncios')).toBeInTheDocument();
+  });
+
+  it('filtro="promocao" é repassado ao hook (filtro no servidor); sem filtro, não', () => {
+    vi.mocked(useOperacoes).mockReturnValue({ data: [], isLoading: false } as never);
+    renderLista('promocao');
+    expect(useOperacoes).toHaveBeenLastCalledWith('promocao');
+    renderLista();
+    expect(useOperacoes).toHaveBeenLastCalledWith(undefined);
   });
 
   it('mostra as contagens por status em chips', () => {
@@ -115,16 +138,17 @@ describe('ListaOperacoes', () => {
     expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
   });
 
-  it('operação de pausar concluída não mostra o Reverter de promoção (Task 7 traz o de status)', async () => {
+  it('operação de pausar concluída: Reverter abre o preview de status (Reativar) com origem na operação', async () => {
     const user = userEvent.setup();
     vi.mocked(useOperacoes).mockReturnValue({
-      data: [op({ acao: 'pausar', promocao_id: null, promocao_nome: null, promocao_tipo: null, itens: [{ status: 'aplicado' }] })], isLoading: false,
+      data: [op({ acao: 'pausar', promocao_id: null, promocao_nome: null, promocao_tipo: null, itens: [{ status: 'aplicado' }, { status: 'erro' }] })], isLoading: false,
     } as never);
-    vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'aplicado' })] } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'aplicado' }), itemLog({ ml_item_id: 'MLB2', status: 'erro' })] } as never);
     renderLista();
     await user.click(screen.getByRole('button', { name: /Diego/ }));
-    expect(screen.getByText('MLB1')).toBeInTheDocument(); // detalhe abriu
-    expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('button', { name: 'Reverter' }));
+    await user.click(await screen.findByRole('button', { name: 'Reativar 1 anúncio' }));
+    expect(mutateAsync).toHaveBeenCalledWith({ acao: 'reativar', origem_id: 'OP1', itens: [{ ml_item_id: 'MLB1', titulo: 'Produto 1' }] });
   });
 
   it('Reverter não aparece enquanto a operação está executando', async () => {

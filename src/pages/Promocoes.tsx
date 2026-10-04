@@ -13,7 +13,7 @@ import { useAtualizarPromocoes, useEstadoSyncPromocoes, usePromocoes } from '@/h
 import { abaDa, avisoAtualizacao, emLeitura, sincronizandoAgora, type AbaPromo } from '@/lib/promocoes';
 import { CardCampanha } from '@/components/promocoes/card-campanha';
 import { PainelEstadoSync } from '@/components/promocoes/painel-estado-sync';
-import { ListaOperacoes } from '@/components/promocoes/lista-operacoes';
+import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
 
 type AbaTela = AbaPromo | 'operacoes';
 const ABAS: readonly AbaTela[] = ['ativas', 'futuras', 'encerradas', 'operacoes'];
@@ -104,7 +104,7 @@ export default function Promocoes() {
             <TabsTrigger value="operacoes">Operações</TabsTrigger>
           </TabsList>
           {aba === 'operacoes' ? (
-            <ListaOperacoes />
+            <ListaOperacoes filtro="promocao" />
           ) : porAba[aba].length === 0 ? (
             <EmptyState icon={BadgePercent} title={VAZIO[aba]} className="mt-4" />
           ) : (

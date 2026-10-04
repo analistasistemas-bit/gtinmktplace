@@ -12,9 +12,10 @@ import { formatarNomeProduto } from '@/lib/texto';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
 import { useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
-import { ROTULO_STATUS, inversa, itensRevertiveis, ehAcaoStatus, type AcaoOperacao, type StatusItemOperacao } from '@/lib/operacoes';
+import { ROTULO_STATUS, inversa, itensRevertiveis, ehAcaoStatus, tituloOperacao, type AcaoOperacao, type AcaoStatus, type StatusItemOperacao } from '@/lib/operacoes';
 import type { ItemPromocao } from '@/lib/promocoes';
-import { PreviewOperacao } from './preview-operacao';
+import { PreviewOperacao } from '@/components/promocoes/preview-operacao';
+import { PreviewStatus } from './preview-status';
 
 const TONE_STATUS: Record<StatusItemOperacao, StatusTone> = {
   pendente: 'neutral', enviando: 'info', aplicado: 'success', ja_estava: 'success',
@@ -29,8 +30,6 @@ const MOTIVO_NAO_REVERTIVEL = 'Não revertível: o anúncio não está mais conv
 const ITENS_REVERSAO_OK: StatusItemOperacao[] = ['aplicado', 'ja_estava'];
 
 const dataHora = (iso: string) => new Date(iso).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-const tituloOperacao = (op: Pick<OperacaoRow, 'acao' | 'promocao_nome' | 'promocao_id'>) =>
-  `${op.acao === 'aderir' ? 'Aderir à' : 'Sair de'} ${op.promocao_nome ?? op.promocao_id}`;
 
 /** Item da Central para a linha do Reverter; quando o anúncio saiu do cache (ex.: saída SMART apaga
  *  a linha de `ml_promocao_itens`), usa um "stub" com os dados do próprio log da operação — o
@@ -50,7 +49,7 @@ const paraRevertiveis = (itens: ItemOperacaoRow[]) => itens.map((i) => ({ ml_ite
  *  atual da Central — quem não está mais no estado exigido pela ação inversa entra em `naoRevertiveis`. */
 function montarReversao(op: OperacaoRow, itensOp: ItemOperacaoRow[], itensCentral: ItemPromocao[]) {
   // `acao` chega `string`; o CHECK do banco garante uma AcaoOperacao. Pausar/reativar não tem reversão
-  // de promoção (Task 7 traz o Reverter de status) — `null` impede abrir o preview de promoção com ação errada.
+  // de promoção (o Reverter de status vai por `PreviewStatus`) — `null` impede abrir o preview de promoção com ação errada.
   const acao = op.acao as AcaoOperacao;
   if (ehAcaoStatus(acao)) return null;
   const acaoNova = inversa(acao);
@@ -86,7 +85,7 @@ function CardOperacao({ op, quem, onAbrir }: { op: OperacaoRow; quem: string; on
         className="w-full rounded-xl p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="truncate font-medium">{tituloOperacao(op)}</p>
+            <p className="truncate font-medium">{tituloOperacao(op, total)}</p>
             <p className="text-xs text-muted-foreground">{dataHora(op.criado_em)} · {quem}</p>
           </div>
           <StatusPill tone={op.status === 'concluida' ? 'success' : 'info'} className="shrink-0">
@@ -115,8 +114,8 @@ function CardOperacao({ op, quem, onAbrir }: { op: OperacaoRow; quem: string; on
   );
 }
 
-export function ListaOperacoes() {
-  const operacoes = useOperacoes();
+export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
+  const operacoes = useOperacoes(filtro);
   const podeExecutar = usePodeExecutarOperacao();
   const { data: nomes } = useNomesUsuarios();
   const [abertaId, setAbertaId] = useState<string | null>(null);
@@ -124,9 +123,12 @@ export function ListaOperacoes() {
   // do clique — não pode depender de `opAberta`/`reversao`, que são zerados ao fechar o detalhe.
   const [reversaoAtiva, setReversaoAtiva] = useState<({ op: OperacaoRow } & NonNullable<ReturnType<typeof montarReversao>>) | null>(null);
 
+  const [reversaoStatus, setReversaoStatus] = useState<{ op: OperacaoRow; itens: { ml_item_id: string; titulo: string | null }[] } | null>(null);
+
   const opAberta = operacoes.data?.find((o) => o.id === abertaId) ?? null;
   const itensOp = useItensOperacao(abertaId ?? '', opAberta?.status === 'executando');
-  const central = useItensPromocao(opAberta?.promocao_id ?? '');
+  // Operação de status não carrega a Central.
+  const central = useItensPromocao(opAberta && !ehAcaoStatus(opAberta.acao) ? opAberta.promocao_id ?? '' : '');
   // Fix round 2 (achado 4): a original pode ter saído da página de 50 de `useOperacoes` — busca
   // por id só quando não estiver na lista já carregada.
   const originalNaLista = opAberta?.origem_id ? operacoes.data?.find((o) => o.id === opAberta.origem_id) ?? null : null;
@@ -147,7 +149,7 @@ export function ListaOperacoes() {
   // mostra o botão — evita reabrir uma reversão que só não chegou ainda.
   const carregandoRevertida = buscandoRevertida && revertidaBuscada.isLoading;
 
-  const idsRevertiveis = opAberta && itensOp.data && !ehAcaoStatus(opAberta.acao)
+  const idsRevertiveis = opAberta && itensOp.data
     ? itensRevertiveis(opAberta.acao as AcaoOperacao, paraRevertiveis(itensOp.data)) : [];
   const podeReverter = podeExecutar && opAberta?.status === 'concluida' && idsRevertiveis.length > 0;
   // Fix round 2 (achado 1): `useMemo` — sem isso, `reversao.itens`/`.naoRevertiveis` nascem com
@@ -170,12 +172,22 @@ export function ListaOperacoes() {
   // Sheet por vez a transição fica determinística, e como fechar o detalhe zera `opAberta`/
   // `reversao`, o necessário pro preview vai num snapshot em estado próprio.
   function iniciarReversao() {
-    if (!opAberta || !reversao) return;
-    setReversaoAtiva({ op: opAberta, ...reversao });
+    if (!opAberta) return;
+    if (ehAcaoStatus(opAberta.acao)) {
+      // Pausar/reativar: o handler revalida no ML; não há Central para confrontar.
+      const porLog = new Map((itensOp.data ?? []).map((i) => [i.ml_item_id, i]));
+      setReversaoStatus({
+        op: opAberta,
+        itens: idsRevertiveis.map((id) => ({ ml_item_id: id, titulo: porLog.get(id)?.titulo ?? null })),
+      });
+    } else if (reversao) {
+      setReversaoAtiva({ op: opAberta, ...reversao });
+    } else return;
     setAbertaId(null);
   }
   function fecharPreviewReversao() {
     setReversaoAtiva(null);
+    setReversaoStatus(null);
   }
 
   if (operacoes.isLoading) {
@@ -188,7 +200,8 @@ export function ListaOperacoes() {
   if ((operacoes.data ?? []).length === 0) {
     return (
       <EmptyState icon={History} title="Nenhuma operação ainda."
-        description="Selecione anúncios numa campanha para aderir ou sair." className="mt-4" />
+        description={filtro === 'promocao' ? 'Selecione anúncios numa campanha para aderir ou sair.' : 'Selecione anúncios em Publicados ou numa campanha de Promoções.'}
+        className="mt-4" />
     );
   }
 
@@ -205,7 +218,7 @@ export function ListaOperacoes() {
           {opAberta && (
             <>
               <SheetHeader>
-                <SheetTitle className="pr-8">{tituloOperacao(opAberta)}</SheetTitle>
+                <SheetTitle className="pr-8">{tituloOperacao(opAberta, opAberta.itens.length)}</SheetTitle>
                 <SheetDescription>
                   {dataHora(opAberta.criado_em)} · {nomeDe(opAberta.criado_por)}
                   {original && <><br />Reverte a operação de {dataHora(original.criado_em)}</>}
@@ -241,6 +254,13 @@ export function ListaOperacoes() {
           )}
         </SheetContent>
       </Sheet>
+
+      {reversaoStatus && (
+        <PreviewStatus
+          acao={inversa(reversaoStatus.op.acao as AcaoStatus)} itens={reversaoStatus.itens} foraDoLote={[]}
+          origemId={reversaoStatus.op.id} aberto onFechar={fecharPreviewReversao} onCriada={fecharPreviewReversao}
+        />
+      )}
 
       {reversaoAtiva && (
         <PreviewOperacao
