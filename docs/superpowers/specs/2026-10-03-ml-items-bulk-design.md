@@ -77,11 +77,12 @@ As respostas cruas ficam em `$CLAUDE_JOB_DIR/tmp/spike/`, fora do repo.
  *  Não divide em blocos, não filtra, não lança: o particionamento e os erros continuam com o módulo. */
 export function caminhoMultiget(ids: readonly string[], campos: string, extra?: string): string;
 
-/** Converte a resposta do bulk no ENVELOPE ANTIGO: `[{code, body}]`, com `code ?? status_code`.
- *  Entrada sem body (o 404 do bulk) recebe `body: {id}` pela posição, quando o número de
- *  entradas bate com o de ids únicos enviados. Resposta não-array volta INTACTA (null, objeto,
- *  string), para preservar o comportamento atual de cada módulo diante dela. Entrada que não é
- *  objeto também volta intacta. */
+/** Converte a resposta do bulk no ENVELOPE ANTIGO `[{code, body}]` (regra final, plano v3.1):
+ *  - só reinterpreta entrada SEM a chave `code` (formato bulk): vira `{code: status_code, body?}`;
+ *  - entrada no formato antigo (tem `code`, inclusive `code: null`) volta byte a byte intacta;
+ *  - SÓ o 404 sem body ganha `body: {id}`, pela posição, e só se a cardinalidade bate com os ids
+ *    únicos enviados E todo id presente está na sua posição; 200/500 sem body nunca ganham body;
+ *  - resposta não-array e entrada não-objeto voltam intactas. */
 export function comoEnvelopeAntigo(json: unknown, idsPedidos: readonly string[]): unknown;
 ```
 
@@ -141,11 +142,10 @@ A função `buscarTitulosEGtins` de `vendas.ts` só ganha `export`.
    - código baixado de produção (`supabase functions download --use-api`, um diretório por edge) ≡ árvore do commit anterior à fatia;
    - se divergir, bloqueia até explicar;
    - SHAs fixos, nunca `origin/main` móvel.
-5. **Pós-deploy:**
-   - novo download por edge, com hash por arquivo igual à árvore do SHA implantado (o mesmo para `verify_jwt`);
-   - A/B com o código **baixado** como árvore nova;
-   - observação de uma execução real com comparação **por id e campo**.
-   - Caminho sem atividade até o prazo da fatia (24 h) fica registrado como "não observado; coberto por teste + A/B".
+5. **Pós-deploy** (forma final, plano v3.1):
+   - novo download por edge, com hash por arquivo igual à árvore do SHA implantado e `verify_jwt` igual. Como a árvore implantada é a que passou no A/B, esse hash é a prova de que o código implantado é o testado; não há A/B pós-deploy;
+   - observação de execuções reais (cron/QStash) sem erro, mais comparação **por id e campo** do resultado do código implantado. Ela é feita pela conta de teste, com sessão por magic link via Admin API (sem trocar a senha) e logout local; o consultor aprovou trocar a Avil pela DSA;
+   - caminho que depende do operador ou que escreveria no ML fica registrado como "não observado; coberto por teste + A/B + manifesto".
 6. **Rollback** (só até 25/10):
    - redeploy do snapshot baixado antes do deploy, com `--project-ref` explícito e `verify_jwt` do manifesto;
    - reverter o código por branch → CI → fast-forward.
