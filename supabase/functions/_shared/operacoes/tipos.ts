@@ -31,7 +31,7 @@ export interface PedidoItem { ml_item_id: string; preco: number | null }
 export type Decisao =
   | { tipo: 'post'; body: Record<string, unknown> }
   | { tipo: 'delete'; query: string }
-  | { tipo: 'fim'; status: Exclude<StatusItem, 'pendente' | 'enviando'>; mensagem: string | null };
+  | { tipo: 'fim'; status: Exclude<StatusItem, 'rascunho' | 'pendente' | 'enviando' | 'conferindo'>; mensagem: string | null };
 
 /** Emenda 2026-10-04 — 2º tipo do motor: status do anúncio (ADR-0060), sem promoção. */
 export type AcaoStatus = 'pausar' | 'reativar';
