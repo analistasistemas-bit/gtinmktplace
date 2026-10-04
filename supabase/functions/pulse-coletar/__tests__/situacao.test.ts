@@ -26,7 +26,7 @@ describe('lerSituacaoAnuncios', () => {
       `https://api.mercadolibre.com/items/bulk?ids=${ids.slice(20, 40).join(',')}${CAMPOS}`,
       `https://api.mercadolibre.com/items/bulk?ids=MLB40${CAMPOS}`,
     ]);
-    expect(new Headers(calls[0][1]?.headers).get('Authorization')).toBe('Bearer t');
+    for (const c of calls) expect(new Headers(c[1]?.headers).get('Authorization')).toBe('Bearer t'); // todos os blocos
     expect([...m.keys()].sort()).toEqual([...ids.slice(0, 20).filter((i) => i !== 'MLB5'), ids[40]].sort());
     expect(m.get('MLB0')).toEqual({ item_id: 'MLB0', status: 'active', sub_status: [], category_id: 'C', listing_type_id: 'gold_pro', price: 9 });
   });
