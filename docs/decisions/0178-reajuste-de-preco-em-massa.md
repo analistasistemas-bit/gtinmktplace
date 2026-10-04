@@ -1,6 +1,7 @@
 # ADR-0178 — Reajuste de preço em massa (3º tipo do motor de operações)
 
-**Status:** Aceito (2026-10-04) — implementado na branch `worktree-i5-reajuste-preco-massa`, aguardando merge/deploy
+**Status:** Aceito (2026-10-04) — em produção desde 2026-10-04
+**Produção:** em produção desde 2026-10-04 (migrations `20261004200804_reajuste_preco_schema` e `20261004202356_reajuste_preco_rpcs` via `db push`; edges `ingest-lote` v76, `publicar-familias` v49, `publish-familia-ml` v141, `update-familia-ml` v125, `publicar-split-ml` v107, `migrar-preco-por-variacao` v14, `sincronizar-promocoes` v17, `operacoes-massa` v10 → v11 com o fix da promoção `candidate` sem `id`, pulada em vez de tornar a checagem inconclusiva). Validado em campo na DSA: MLB5140706557 (Legacy sem variações) R$ 39,99 → +1% → R$ 40,39 conferido no ML e no banco, Reverter restaurou ML e banco; os outros 6 ativos ficaram fora do lote (par de catálogo); preview ~6–10 s para 7 itens. Não validado em campo: Legacy com variações e User Products (sem elegíveis na DSA).
 **Data:** 2026-10-04
 **Relacionado:** [ADR-0174](0174-operacoes-em-massa-promocoes-v2.md) (motor + emenda 2026-10-04),
 [ADR-0020](0020-estrategia-de-preco-liquido-minimo.md) (piso/semáforo), [ADR-0055](0055-imposto-por-origem-nacional-importado.md) (imposto por origem),

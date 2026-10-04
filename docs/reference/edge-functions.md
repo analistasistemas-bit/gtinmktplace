@@ -92,7 +92,7 @@
 | sincronizar-promocoes | false | QStash (fan-out por org) **ou** HTTP (JWT do usuário) | sim (reserva de rodada + `deduplicationId`) |
 | **Operações em massa (ADR-0174) — código pronto, deploy pendente** ||||
 | operacoes-massa | false | HTTP (JWT do usuário, criação) **ou** QStash (`executar`/`conferir`) | sim (claim por item + `deduplicationId`) |
-| *(ADR-0178, implementado na branch, aguardando deploy)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'`/`'retomar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
+| *(ADR-0178, em produção desde 2026-10-04)* `operacoes-massa` ganha `etapa: 'preview'`/`'confirmar'`/`'retomar'` do reajuste de preço; `publicar-familias` devolve `recusadas`; `migrar-preco-por-variacao` reserva por RPC ||||
 | **Tráfego e oferta (ADR-0172, Fatia 2b)** ||||
 | coletar-trafego-ml | false | QStash (fan-out por org + cadeia de continuações) | sim (posse + CAS do cursor, `ok` nunca vira `falha`, `deduplicationId`) |
 | **Ads por grupo (ADR-0172, Fatia 2c)** ||||
@@ -1731,7 +1731,8 @@ um smoke test contra Postgres real antes do primeiro deploy.
     Operações de Promoções é a mesma lista filtrada).
 
 
-#### Reajuste de preço em massa (ADR-0178) — implementado na branch, aguardando merge/deploy
+#### Reajuste de preço em massa (ADR-0178) — em produção desde 2026-10-04
+- **Versões ativas (04/10):** `ingest-lote` v76, `publicar-familias` v49, `publish-familia-ml` v141, `update-familia-ml` v125, `publicar-split-ml` v107, `migrar-preco-por-variacao` v14, `sincronizar-promocoes` v17, `operacoes-massa` v11 (v10 às ~23:11 UTC; v11 às 23:25 UTC com o fix: promoção `candidate` sem `id` — possibilidade PRICE_DISCOUNT do próprio vendedor — é pulada em vez de tornar a checagem de promoção inconclusiva). Validado em campo na DSA (Legacy sem variações, +1% e Reverter); Legacy com variações e User Products não validados em campo.
 - **operacoes-massa**, `acao='reajustar'` (sem módulo `promocoes`; código em `_shared/operacoes/reajuste/`):
   - **`{etapa:'preview'}`** (HTTP, qualquer membro; Reverter via `origem_id` só admin/suporte full): calcula no servidor (tarifa exata no preço novo, imposto pela origem, ⚪ se origem ausente) e grava `operacoes_massa` em `rascunho` (`expira_em` +30 min; rascunhos vencidos da org são apagados). Sem item executável (`executaveis = 0`) devolve `operacao_id: null` e não grava. Teto 500 MLBs únicos.
   - **`{etapa:'confirmar'}`** (HTTP, só admin/suporte full): RPC `reajuste_confirmar` (transacional; colisão de reserva → `ocupado:<mlb>`) e publica `{etapa:'executar'}` no QStash. Repetir é seguro (`ja_confirmada` republica).

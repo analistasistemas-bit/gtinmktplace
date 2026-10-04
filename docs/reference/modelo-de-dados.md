@@ -967,7 +967,7 @@ worker já pegou. `revoke all from public, anon, authenticated`; `grant execute 
 RLS nas duas tabelas: `select` por `org_id = current_org_id()`; escrita só por `service_role`
 (edge `operacoes-massa`, que é a única escritora).
 
-### Reajuste de preço em massa (ADR-0178) — implementado na branch, aguardando `db push`
+### Reajuste de preço em massa (ADR-0178) — em produção desde 2026-10-04 (`db push` aplicado)
 
 *Migrations `20261004200804_reajuste_preco_schema.sql` e `20261004202356_reajuste_preco_rpcs.sql`.*
 

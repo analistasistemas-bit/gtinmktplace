@@ -2,7 +2,7 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
-## Reajuste de preço em massa (ADR-0178) — implementado na branch, aguardando merge/deploy
+## Reajuste de preço em massa (ADR-0178) — em produção desde 2026-10-04
 
 3º tipo do motor de operações em massa. Spec `docs/superpowers/specs/2026-10-04-reajuste-preco-em-massa-design.md` (D1–D15, C1–C5); plano `docs/superpowers/plans/2026-10-04-reajuste-preco-em-massa.md`.
 
@@ -10,7 +10,9 @@
 - [x] Edge `operacoes-massa`: preview (rascunho), confirmar, executar/conferir (`_shared/operacoes/reajuste/`).
 - [x] Barreiras: `publicar-familias` (`recusadas`/409), `update-familia-ml`, `publish-familia-ml`, `publicar-split-ml` (guard fail-closed), `migrar-preco-por-variacao` (RPC), `ingest-lote` herda `preco_editado_pelo_operador` (D15).
 - [x] Front: Publicados "Reajustar preço" + dialog + preview; Operações (título/Reverter); Revisão "Preço fixado pelo operador" + "Voltar ao automático".
-- [ ] **Deploy:** `supabase db push` → `publicar-familias`, `update-familia-ml`, `publish-familia-ml`, `publicar-split-ml`, `migrar-preco-por-variacao`, `ingest-lote` → `operacoes-massa` → merge; conferir versões ativas.
+- [x] **Deploy (2026-10-04):** `supabase db push` (as 2 migrations) → edges ~23:11 UTC: `ingest-lote` v76, `publicar-familias` v49, `publish-familia-ml` v141, `update-familia-ml` v125, `publicar-split-ml` v107, `migrar-preco-por-variacao` v14, `sincronizar-promocoes` v17, `operacoes-massa` v10 → v11 às 23:25 UTC (fix: promoção `candidate` sem `id` — a possibilidade PRICE_DISCOUNT do próprio vendedor — é pulada em vez de tornar a checagem de promoção inconclusiva); front na main (`b552c75f` + padding da tela Operações).
+- [x] **Validação em campo (DSA, pelo app):** MLB5140706557 (plano/Legacy sem variações) R$ 39,99 → +1% → R$ 40,39 confirmado no ML e no banco (`preco_publicacao`, `preco_editado_pelo_operador=true`, `preco_publicado_ml`); Reverter devolveu o ML a R$ 39,99 e o banco ao estado anterior. Os outros 6 anúncios ativos da DSA ficaram corretamente fora do lote (par de catálogo). Latência do preview ~6–10 s para 7 itens.
+- [ ] **Não validado em campo:** Legacy com variações e User Products (sem anúncios elegíveis na DSA).
 
 ## Pausar/reativar em massa (ADR-0174, emenda 2026-10-04) — em produção desde 2026-10-04
 
