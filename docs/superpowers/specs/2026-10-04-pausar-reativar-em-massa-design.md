@@ -59,15 +59,24 @@ Novo ramo de validação para `pausar|reativar` (o de promoção não muda):
      mesma mensagem da pausa individual;
    - ML não devolveu o anúncio (`indisponivel`) → `erro` ("O ML não devolveu o anúncio");
    - sobrou só ativo/pausado: é o status de origem da ação → escreve. (`mudou` não ocorre nesta ação.)
-3. Senão → `conn.atualizarStatus(ctx, id, alvo)` (propaga ao catálogo relacionado, aditivo ADR-0060)
-   → `aplicado`; erro do canal → `erro` com `mensagemOperador`. 401/403 de token → `erro` "Reconecte a conta".
+3. Senão → grava a marca "escrita pedida" (`saida_pedida_em`) e chama `conn.atualizarStatus(ctx, id, alvo)`
+   (propaga ao catálogo relacionado, aditivo ADR-0060) → `aplicado`.
+   - Erro **retentável** do canal (ex.: 502 depois de já pausar um relacionado): item segue `enviando`, conta
+     a tentativa (`conferencias`) e a mensagem volta 500 → QStash reentrega; a propagação é idempotente.
+     3ª tentativa → `erro`.
+   - Erro não retentável → `erro` com `mensagemOperador`.
+   - 401/403 na leitura, `AUTENTICACAO` na escrita ou refresh `invalid_grant` → fatal: a operação encerra
+     com "Reconecte a conta" em todos os itens restantes.
+   - Recuperação: marca de escrita presente e anúncio já no alvo → `aplicado` (não `ja_estava`), para o
+     Reverter não perder o item.
 4. Mantém claim (`operacoes_massa_reivindicar`), dedup QStash por message-id e o teto por mensagem já
    em produção (`maxItens: 100`, ADR-0173 §4). Sem etapa `conferir`: sem pendentes → conclui.
 
 ### Reverter
 
 Operação inversa (pausar ↔ reativar) só sobre itens `aplicado`, com preview e confirmação
-(decisão 2 do ADR-0174). O handler revalida no ML; item que mudou de status no meio cai em `ja_estava`/`bloqueado`.
+(decisão 2 do ADR-0174). O servidor confere: origem concluída, da ação inversa, sem promoção, e todo id
+pedido `aplicado` naquela origem. O handler revalida no ML; item que mudou de status no meio cai em `ja_estava`/`bloqueado`.
 
 ## Telas
 

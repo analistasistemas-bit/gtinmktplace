@@ -29,10 +29,12 @@
 ## Review Focus
 
 1. **Duplicidade sem promoção:** mesmo anúncio em duas operações de pausa simultâneas → a 2ª criação recebe 409 (índice parcial novo); operação de promoção do mesmo anúncio NÃO é barrada por isso. → teste SQL na Task 1.
-2. **Item moderado/encerrado entre seleção e execução:** status ao vivo do Publicados tem cache de 5 min; o handler relê e grava `bloqueado`, nunca chama `atualizarStatus`. → teste na Task 2/3.
-3. **Reverter de operação de status** só sobre `aplicado` (não `ja_estava`: não fomos nós que mudamos) e a origem tem que ser a ação inversa sem promoção. → testes nas Tasks 4 e 6.
-4. **"Todos do filtro" com filtro trocado:** seleção feita num filtro não pode vazar para outro → limpar seleção quando `filtro` muda. → teste na Task 6 (lógica pura) e validação de campo.
-5. **Token recusado/conta desconectada no meio:** `atualizarStatus` devolve `ok:false` → item `erro` com `mensagemOperador`, operação conclui (não fica `executando` para sempre); sem conexão na etapa QStash → `encerrarComErro`. → testes nas Tasks 3 e 5.
+2. **Falha parcial e retry:** 502 depois de pausar 1 anúncio de catálogo relacionado não pode virar erro terminal (item segue `enviando`, até 3 tentativas); PUT aceito com gravação perdida volta como `aplicado`, não `ja_estava` (senão o Reverter perde o item). → testes na Task 3.
+3. **Reverter adulterado:** o servidor só aceita origem concluída, da ação inversa, sem promoção, e ids que ELA aplicou. → `reversaoValida` na Task 4.
+4. **Seleção x navegação:** paginar/ordenar não limpa a seleção; trocar o filtro limpa. → teste de página na Task 8.
+5. **Token recusado:** refresh `invalid_grant` encerra a operação com "reconecte"; 401/403 na leitura ou `AUTENTICACAO` na escrita é fatal para o resto da operação; nada fica `executando` para sempre. → testes nas Tasks 3 e 5.
+
+Também tratados (revisão Codex 2026-10-04): item moderado entre seleção e execução → `bloqueado` sem escrever (Task 2); filtro de ação no servidor antes do `limit(50)` (Task 6); conclusão vista na lista global invalida o status do Publicados (Task 6); recusas por anúncio visíveis no preview (Task 7).
 
 ---
 
@@ -221,6 +223,7 @@ export function decidirStatus(acao: AcaoStatus, atual: StatusAnuncioCanal | null
 
 **Files:**
 - Create: `supabase/functions/_shared/operacoes/laco.ts`
+- Create: `supabase/functions/_shared/operacoes/ml-status.ts` + `__tests__/ml-status.test.ts`
 - Create: `supabase/functions/_shared/operacoes/executar-status.ts`
 - Create: `supabase/functions/_shared/operacoes/__tests__/executar-status.test.ts`
 - Modify: `supabase/functions/_shared/operacoes/executar.ts` (o corpo de `executar` passa a chamar `laco`; `finalizar`/`agendarOuConcluir`/`FalhaPosEscrita`/`mensagemDe`/`ESPERA_ENVIANDO_SEG` mudam para `laco.ts`)
@@ -252,17 +255,25 @@ export function decidirStatus(acao: AcaoStatus, atual: StatusAnuncioCanal | null
     export async function agendarOuConcluir(deps: DepsLaco, aConferir: ItemRow[]): Promise<void>;
     ```
   - `executar.ts`: `DepsExecutar extends DepsLaco` (só os campos de promoção: `ml`, `semaforoAtual`, `espelharStatusCentral`); `executar(op, deps, opts)` com a MESMA assinatura de hoje.
+  - `ml-status.ts` (novo, leitura própria — `conn.lerStatus` engole 401/403 e devolveria "indisponivel"):
+    ```ts
+    export class SemAcessoStatusML extends Error {}
+    export function lerStatusML(token: string, itemId: string, f?: typeof fetch): Promise<StatusAnuncioCanal | null>;
+    ```
   - `executar-status.ts`:
     ```ts
     export interface OperacaoStatusRow { id: string; org_id: string; acao: AcaoStatus }
     export interface DepsStatus extends DepsLaco {
+      /** Lança SemAcessoStatusML em 401/403 (fatal: encerra a operação pedindo reconexão). */
       lerStatus(mlItemId: string): Promise<StatusAnuncioCanal | null>;
       migracaoPxv(mlItemId: string): Promise<string | null>;
       atualizarStatus(mlItemId: string, alvo: 'ativo' | 'pausado'): Promise<ResultadoCanal<void>>;
     }
     export const MSG_FALHA_STATUS = 'Falha ao atualizar status no Mercado Livre.';
+    export const TENTATIVAS_STATUS = 3;
     export function executarStatus(op: OperacaoStatusRow, deps: DepsStatus, opts: { limiteMs: number; lote: number; maxItens?: number }): Promise<{ processados: number; continuou: boolean }>;
     ```
+  - Colunas reaproveitadas no item de status (sem migration extra): `saida_pedida_em` = "escrita pedida ao ML em" (marca gravada ANTES do PUT); `conferencias` = tentativas de escrita com erro retentável.
 
 - [ ] **Step 1: Teste do executor de status (vermelho)** — `executar-status.test.ts`:
 
@@ -270,6 +281,8 @@ export function decidirStatus(acao: AcaoStatus, atual: StatusAnuncioCanal | null
 import { describe, expect, it, vi } from 'vitest';
 import { executarStatus, MSG_FALHA_STATUS, type DepsStatus, type OperacaoStatusRow } from '../executar-status.ts';
 import { MSG_BLOQUEADO_STATUS } from '../decidir-status.ts';
+import { MSG_RECONECTAR } from '../falhas.ts';
+import { SemAcessoStatusML } from '../ml-status.ts';
 import type { ItemRow } from '../tipos.ts';
 import type { StatusAnuncioCanal } from '../../canais/contrato.ts';
 
@@ -301,7 +314,7 @@ function montar(itens: Linha[], status: Record<string, StatusAnuncioCanal | null
     lerStatus: vi.fn(async (id) => status[id] ?? null),
     migracaoPxv: vi.fn(async (id) => opts.pxv?.[id] ?? null),
     atualizarStatus: vi.fn(async (id) => (opts.falhaCanal?.includes(id)
-      ? { ok: false, erro: { codigo: 'desconhecido', mensagemOperador: 'ML recusou', retentavel: false } }
+      ? { ok: false, erro: { codigo: 'DESCONHECIDO', mensagemOperador: 'ML recusou', retentavel: false } }
       : { ok: true })) as DepsStatus['atualizarStatus'],
   };
   return deps;
@@ -351,6 +364,46 @@ describe('executarStatus', () => {
     deps.lerStatus = vi.fn(async (id: string) => { if (id === 'A') throw new Error('ML 500'); return 'ativo' as const; });
     await executarStatus(PAUSAR, deps, OPTS);
     expect(itens.map((i) => i.status)).toEqual(['erro', 'aplicado']);
+  });
+
+  it('erro RETENTÁVEL do canal (ex.: 502 após pausar 1 relacionado): item segue enviando, conta tentativa e relança (QStash reentrega)', async () => {
+    const itens = [item('A')];
+    const deps = montar(itens, { A: 'ativo' });
+    deps.atualizarStatus = vi.fn(async () => ({ ok: false, erro: { codigo: 'INDISPONIVEL', mensagemOperador: 'ML fora', retentavel: true } }));
+    await expect(executarStatus(PAUSAR, deps, OPTS)).rejects.toThrow('ML fora');
+    expect(itens[0]).toMatchObject({ status: 'enviando', conferencias: 1 });
+    expect(itens[0].saida_pedida_em).not.toBeNull(); // marca gravada antes do PUT
+  });
+
+  it('retentável esgotado (3ª tentativa) → erro terminal', async () => {
+    const itens = [{ ...item('A'), conferencias: 2 }];
+    const deps = montar(itens, { A: 'ativo' });
+    deps.atualizarStatus = vi.fn(async () => ({ ok: false, erro: { codigo: 'INDISPONIVEL', mensagemOperador: 'ML fora', retentavel: true } }));
+    await executarStatus(PAUSAR, deps, OPTS);
+    expect(itens[0]).toMatchObject({ status: 'erro', mensagem: 'ML fora' });
+  });
+
+  it('recuperação: escrita já pedida e anúncio no alvo → aplicado (não ja_estava), sem escrever de novo', async () => {
+    const itens = [{ ...item('A'), saida_pedida_em: '2026-10-04T12:00:00Z' }];
+    const deps = montar(itens, { A: 'pausado' });
+    await executarStatus(PAUSAR, deps, OPTS);
+    expect(itens[0].status).toBe('aplicado');
+    expect(deps.atualizarStatus).not.toHaveBeenCalled();
+  });
+
+  it('AUTENTICACAO na escrita ou 401/403 na leitura → fatal: este e todos os restantes viram erro de reconexão', async () => {
+    const itens = [item('A'), item('B')];
+    const deps = montar(itens, { A: 'ativo', B: 'ativo' });
+    deps.lerStatus = vi.fn(async () => { throw new SemAcessoStatusML('ML 403'); });
+    await executarStatus(PAUSAR, deps, OPTS);
+    expect(itens.map((i) => [i.status, i.mensagem])).toEqual([['erro', MSG_RECONECTAR], ['erro', MSG_RECONECTAR]]);
+    expect(deps.concluir).toHaveBeenCalled();
+
+    const itens2 = [item('C')];
+    const deps2 = montar(itens2, { C: 'ativo' });
+    deps2.atualizarStatus = vi.fn(async () => ({ ok: false, erro: { codigo: 'AUTENTICACAO', mensagemOperador: 'token', retentavel: false } }));
+    await executarStatus(PAUSAR, deps2, OPTS);
+    expect(itens2[0]).toMatchObject({ status: 'erro', mensagem: MSG_RECONECTAR });
   });
 
   it('teto por contagem: continua via QStash sem concluir', async () => {
@@ -468,19 +521,46 @@ export function executar(
 ```
 `conferir` continua em `executar.ts` e passa a usar `agendarOuConcluir` importado.
 
-- [ ] **Step 5: Criar `executar-status.ts`**
+- [ ] **Step 5a: Criar `ml-status.ts` + teste `__tests__/ml-status.test.ts`** (mesmo padrão de `resp()`/`vi.fn()` de `ml.test.ts`; o bulk responde `[{ status_code, body }]`):
+
+```ts
+// ADR-0174 emenda 2026-10-04 — leitura FRESCA do status de UM anúncio para pausar/reativar. Não usa
+// conn.lerStatus: ele engole 401/403 como "indisponivel" e o operador não saberia que precisa reconectar.
+import type { StatusAnuncioCanal } from '../canais/contrato.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
+import { parseStatusML, type ItemMLStatus } from '../ml/status.ts';
+
+export class SemAcessoStatusML extends Error {}
+
+export async function lerStatusML(token: string, itemId: string, f: typeof fetch = fetch): Promise<StatusAnuncioCanal | null> {
+  const r = await f(`https://api.mercadolibre.com${caminhoMultiget([itemId], 'id,status,sub_status')}`,
+    { headers: { Authorization: `Bearer ${token}` } });
+  if (r.status === 401 || r.status === 403) throw new SemAcessoStatusML(`ML ${r.status} ao ler o anúncio`);
+  if (!r.ok) throw new Error(`ML ${r.status} ao ler o anúncio ${itemId}`);
+  const lote = comoEnvelopeAntigo(await r.json(), [itemId]);
+  const x = (Array.isArray(lote) ? lote : []).find((e: { body?: { id?: string } }) => e?.body?.id === itemId) as
+    { code?: number; body?: ItemMLStatus } | undefined;
+  return x?.code === 200 && x.body ? parseStatusML(x.body).status : null;
+}
+```
+Testes: (a) 200 `[{ status_code: 200, body: { id: 'MLB1', status: 'active', sub_status: [] } }]` → `'ativo'` e URL `${API}/items/bulk?ids=MLB1&attributes=status_code,body.id,body.status,body.sub_status`; (b) `status: 'paused', sub_status: ['forbidden']` → `'moderado'`; (c) `[{ status_code: 404 }]` → `null`; (d) HTTP 403 → `rejects.toBeInstanceOf(SemAcessoStatusML)`; (e) HTTP 500 → rejeita com `Error` comum (não fatal).
+
+- [ ] **Step 5b: Criar `executar-status.ts`**
 
 ```ts
 // ADR-0174 emenda 2026-10-04 — executor de pausar/reativar em massa. Escrita via conn.atualizarStatus (ADR-0060:
 // propaga ao anúncio de catálogo relacionado antes do PUT do item). Status relido fresco antes de cada escrita.
+// No item de status, `saida_pedida_em` = "escrita pedida ao ML em" e `conferencias` = tentativas retentáveis.
 import type { ResultadoCanal, StatusAnuncioCanal } from '../canais/contrato.ts';
 import { decidirStatus } from './decidir-status.ts';
-import { gravarPos, laco, type DepsLaco } from './laco.ts';
+import { MSG_RECONECTAR } from './falhas.ts';
+import { FalhaPosEscrita, gravarPos, laco, type DepsLaco } from './laco.ts';
+import { SemAcessoStatusML } from './ml-status.ts';
 import type { AcaoStatus, ItemRow } from './tipos.ts';
 
 export interface OperacaoStatusRow { id: string; org_id: string; acao: AcaoStatus }
 export interface DepsStatus extends DepsLaco {
-  /** Status FRESCO no ML (parseStatusML, com sub_status de moderação); null = o ML não devolveu o item. */
+  /** Status FRESCO no ML; null = o ML não devolveu o item. Lança SemAcessoStatusML em 401/403. */
   lerStatus(mlItemId: string): Promise<StatusAnuncioCanal | null>;
   /** Mensagem do guard de migração PxV (ADR-0161) ou null. */
   migracaoPxv(mlItemId: string): Promise<string | null>;
@@ -488,23 +568,41 @@ export interface DepsStatus extends DepsLaco {
 }
 
 export const MSG_FALHA_STATUS = 'Falha ao atualizar status no Mercado Livre.';
+export const TENTATIVAS_STATUS = 3;
 
 async function processarStatus(op: OperacaoStatusRow, it: ItemRow, deps: DepsStatus): Promise<void> {
   const id = it.ml_item_id;
   const [atual, migracao] = await Promise.all([deps.lerStatus(id), deps.migracaoPxv(id)]);
   const d = decidirStatus(op.acao, atual, migracao);
-  if (d.tipo === 'fim') return deps.gravarItem(op.id, id, { status: d.status, mensagem: d.mensagem });
+  if (d.tipo === 'fim') {
+    // Recuperação: uma tentativa anterior já pediu a escrita e o anúncio está no alvo → foi esta operação
+    // (sem isso o Reverter perderia o item). ponytail: se outra pessoa mudou o status entre a marca e o PUT,
+    // conta como nosso — o Reverter revalida no ML antes de escrever.
+    const status = d.status === 'ja_estava' && it.saida_pedida_em ? 'aplicado' : d.status;
+    return deps.gravarItem(op.id, id, { status, mensagem: d.mensagem });
+  }
+  if (!it.saida_pedida_em) await deps.gravarItem(op.id, id, { saida_pedida_em: new Date(deps.agora()).toISOString() });
   const r = await deps.atualizarStatus(id, d.alvo);
-  if (!r.ok) return deps.gravarItem(op.id, id, { status: 'erro', mensagem: r.erro?.mensagemOperador ?? MSG_FALHA_STATUS });
-  await gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null }));
+  if (r.ok) return gravarPos(deps.gravarItem(op.id, id, { status: 'aplicado', mensagem: null }));
+  if (r.erro?.codigo === 'AUTENTICACAO') throw new SemAcessoStatusML(r.erro.mensagemOperador);
+  const mensagem = r.erro?.mensagemOperador ?? MSG_FALHA_STATUS;
+  // Retentável (ex.: 502 depois de pausar 1 relacionado): o item segue `enviando`, conta a tentativa e a mensagem
+  // inteira volta 500 → QStash reentrega; o `enviando` parado > 2 min é retomado e a propagação é idempotente.
+  if (r.erro?.retentavel && it.conferencias + 1 < TENTATIVAS_STATUS) {
+    await deps.gravarItem(op.id, id, { conferencias: it.conferencias + 1, mensagem });
+    throw new FalhaPosEscrita(new Error(mensagem));
+  }
+  return deps.gravarItem(op.id, id, { status: 'erro', mensagem });
 }
 
 export function executarStatus(
   op: OperacaoStatusRow, deps: DepsStatus, opts: { limiteMs: number; lote: number; maxItens?: number },
 ): Promise<{ processados: number; continuou: boolean }> {
-  return laco(op.id, deps, opts, (it) => processarStatus(op, it, deps));
+  return laco(op.id, deps, opts, (it) => processarStatus(op, it, deps),
+    { eh: (e) => e instanceof SemAcessoStatusML, mensagem: MSG_RECONECTAR });
 }
 ```
+Atenção ao mock de `gravarItem` no teste: ele faz `Object.assign` — o caso retentável espera `status: 'enviando'` porque o claim do mock marca `enviando` e o handler não grava status nesse ramo. Em `itensPendentes` do mock só volta `pendente`; o teste de recuperação começa o item como `pendente` com `saida_pedida_em` preenchido, o que reproduz o estado lido após o claim de um `enviando` parado.
 
 - [ ] **Step 6:** `pnpm test -- supabase/functions/_shared/operacoes` → TODOS passam, inclusive os 5 arquivos antigos sem edição. Conferir com `/usr/bin/git diff --stat -- supabase/functions/_shared/operacoes/__tests__/` que só o arquivo novo mudou.
 - [ ] **Step 7: Commit** — `refactor(operacoes): laço comum + executor de pausar/reativar`.
@@ -522,12 +620,13 @@ export function executarStatus(
 - Produces:
   - `export interface ItemPedidoStatus { ml_item_id: string; titulo: string | null }`
   - `export function validarPedidoStatus(itens: ItemPedidoStatus[], daOrg: Set<string>, kits: Set<string>): { ok: true; itens: ItemPedidoStatus[] } | { ok: false; erro: string; itens?: Recusa[] }`
+  - `export function reversaoValida(origem: { acao: string; promocao_id: string | null; status: string } | null, idsAplicados: Set<string>, pedido: { acao: AcaoStatus; ids: string[] }): boolean`
 
 - [ ] **Step 1: Teste (vermelho)**
 
 ```ts
 import { describe, expect, it } from 'vitest';
-import { validarPedidoStatus } from '../validar-status.ts';
+import { reversaoValida, validarPedidoStatus } from '../validar-status.ts';
 import { MAX_ITENS } from '../validar.ts';
 
 const it1 = (id: string, titulo: string | null = 'T') => ({ ml_item_id: id, titulo });
@@ -551,6 +650,23 @@ describe('validarPedidoStatus', () => {
     expect(validarPedidoStatus([], org, kits)).toEqual({ ok: false, erro: 'Selecione ao menos um anúncio.' });
     const muitos = Array.from({ length: MAX_ITENS + 1 }, (_, i) => it1(`MLB${i}`));
     expect(validarPedidoStatus(muitos, org, kits)).toEqual({ ok: false, erro: `No máximo ${MAX_ITENS} anúncios por operação.` });
+  });
+});
+
+describe('reversaoValida (Reverter não confia no front)', () => {
+  const origem = { acao: 'pausar', promocao_id: null, status: 'concluida' };
+  const aplicados = new Set(['MLB1', 'MLB2']);
+  it('todos os pedidos aplicados numa pausa concluída → reativar vale', () => {
+    expect(reversaoValida(origem, aplicados, { acao: 'reativar', ids: ['MLB1', 'MLB2'] })).toBe(true);
+  });
+  it('recusa: ação não inversa, origem de promoção, origem executando, origem ausente', () => {
+    expect(reversaoValida(origem, aplicados, { acao: 'pausar', ids: ['MLB1'] })).toBe(false);
+    expect(reversaoValida({ ...origem, promocao_id: 'P1' }, aplicados, { acao: 'reativar', ids: ['MLB1'] })).toBe(false);
+    expect(reversaoValida({ ...origem, status: 'executando' }, aplicados, { acao: 'reativar', ids: ['MLB1'] })).toBe(false);
+    expect(reversaoValida(null, aplicados, { acao: 'reativar', ids: ['MLB1'] })).toBe(false);
+  });
+  it('recusa id que não foi aplicado nesta origem (ja_estava, erro, de fora)', () => {
+    expect(reversaoValida(origem, aplicados, { acao: 'reativar', ids: ['MLB1', 'MLB3'] })).toBe(false);
   });
 });
 ```
@@ -584,8 +700,20 @@ export function validarPedidoStatus(
   }
   return recusas.length ? { ok: false, erro: 'Alguns anúncios não podem entrar na operação.', itens: recusas } : { ok: true, itens: ok };
 }
+
+const INVERSA_STATUS: Record<AcaoStatus, AcaoStatus> = { pausar: 'reativar', reativar: 'pausar' };
+
+/** Reverter de pausar/reativar: origem concluída, da ação inversa, sem promoção, e só ids que ELA aplicou. */
+export function reversaoValida(
+  origem: { acao: string; promocao_id: string | null; status: string } | null,
+  idsAplicados: Set<string>, pedido: { acao: AcaoStatus; ids: string[] },
+): boolean {
+  if (!origem || origem.promocao_id !== null || origem.status !== 'concluida') return false;
+  if (origem.acao !== INVERSA_STATUS[pedido.acao]) return false;
+  return pedido.ids.every((id) => idsAplicados.has(id));
+}
 ```
-(Se `Recusa` não estiver exportada em `validar.ts`, ela está — `export interface Recusa`.)
+(import `type { AcaoStatus } from './tipos.ts'`. `Recusa` já é exportada em `validar.ts`.)
 
 - [ ] **Step 4:** rodar → PASS. **Step 5: Commit** — `feat(operacoes): validação do pedido de pausar/reativar`.
 
@@ -628,9 +756,7 @@ export function depsStatus(admin: SupabaseClient, cx: Cx, op: OperacaoStatusRow,
   const ctx = { getToken: async () => cx.token };
   return {
     ...depsLaco(admin, op, chave),
-    async lerStatus(mlItemId) {
-      return (await conn.lerStatus(ctx, [mlItemId]))[mlItemId]?.status ?? null;
-    },
+    lerStatus: (mlItemId) => lerStatusML(cx.token, mlItemId), // 401/403 lança SemAcessoStatusML (fatal)
     migracaoPxv: (mlItemId) => motivoMigracaoPxvPorItem(admin, op.org_id, mlItemId),
     atualizarStatus: (mlItemId, alvo) => conn.atualizarStatus(ctx, mlItemId, alvo),
   };
@@ -655,7 +781,7 @@ export async function idsDaOrg(admin: SupabaseClient, orgId: string, ids: string
   return { daOrg, kits };
 }
 ```
-Imports novos em `deps.ts`: `getConnector` (`../canais/registry.ts`), `motivoMigracaoPxvPorItem` (`../user-products/guard-migracao-pxv.ts`), `DepsLaco` (`./laco.ts`), `DepsStatus`, `OperacaoStatusRow` (`./executar-status.ts`). Se `.in()` com 500 ids estourar a URL (PostgREST ~8 KB por query string), quebrar `ids` em blocos de 100 e unir — 500 × ~14 chars = 7 KB, no limite: **fazer em blocos de 100 desde já**.
+Imports novos em `deps.ts`: `lerStatusML` (`./ml-status.ts`), `getConnector` (`../canais/registry.ts`), `motivoMigracaoPxvPorItem` (`../user-products/guard-migracao-pxv.ts`), `DepsLaco` (`./laco.ts`), `DepsStatus`, `OperacaoStatusRow` (`./executar-status.ts`). Se `.in()` com 500 ids estourar a URL (PostgREST ~8 KB por query string), quebrar `ids` em blocos de 100 e unir — 500 × ~14 chars = 7 KB, no limite: **fazer em blocos de 100 desde já**.
 
 - [ ] **Step 2: `index.ts` — criação.**
   - `lerPedido` passa a devolver uma união:
@@ -671,7 +797,7 @@ Imports novos em `deps.ts`: `getConnector` (`../canais/registry.ts`), `motivoMig
     ```
     (o `exigirModulo(..., 'promocoes')` fica só no ramo de promoção — mover para depois desse `if`).
   - `criarStatus`:
-    1. `origem_id` (Reverter): ler `operacoes_massa (acao, promocao_id)` da org; exige `origem.acao === inversaStatus(pedido.acao)` e `origem.promocao_id === null`, senão 400 `'A operação de origem não pode ser revertida por este pedido.'`.
+    1. `origem_id` (Reverter) — o servidor não confia no front: ler `operacoes_massa (acao, promocao_id, status)` com `.eq('org_id', orgId).eq('id', origem_id)`; exige `origem.acao === inversaStatus(pedido.acao)`, `origem.promocao_id === null` e `origem.status === 'concluida'`; depois ler `operacoes_massa_itens (ml_item_id)` com `.eq('org_id', orgId).eq('operacao_id', origem_id).eq('status', 'aplicado')` e exigir que TODO id pedido esteja nesse conjunto. Qualquer falha → 400 `'A operação de origem não pode ser revertida por este pedido.'`. Extrair a regra em função pura `reversaoValida(origem, idsAplicados: Set<string>, pedido): boolean` em `validar-status.ts` e testá-la na Task 4 (casos: ação não inversa, origem com promoção, origem executando, id `ja_estava`/ausente na origem → false; todos aplicados → true).
     2. `const ids = [...new Set(pedido.itens.map((i) => i.ml_item_id))]`; se `ids.length && ids.length <= MAX_ITENS` → `idsDaOrg(admin, orgId, ids)`, senão sets vazios.
     3. `validarPedidoStatus(...)`; `!ok` → 400 com `itens`.
     4. Insert em `operacoes_massa` `{ org_id, acao, origem_id, criado_por: userId }` (sem promoção), itens com `promocao_id: null`, `titulo`, `semaforo: null`, `confirmado_risco: false`. Mesmo tratamento de `23505` → 409 `'Algum destes anúncios já está numa operação em andamento.'`, mesmo publish QStash, mesma auditoria — **reaproveitar o trecho atual extraindo-o para uma função `gravarEPublicar(admin, ctx, cabecalho, itens)`** usada pelos dois ramos, em vez de copiar.
@@ -679,7 +805,18 @@ Imports novos em `deps.ts`: `getConnector` (`../canais/registry.ts`), `motivoMig
 - [ ] **Step 3: `index.ts` — etapa QStash.** Depois de ler `linha` e checar `concluida`, antes do bloco de módulo/promoção:
     ```ts
     if (linha.acao === 'pausar' || linha.acao === 'reativar') {
-      const cx = await conexaoDaOrg(admin, linha.org_id);
+      let cx: Awaited<ReturnType<typeof conexaoDaOrg>>;
+      try {
+        cx = await conexaoDaOrg(admin, linha.org_id);
+      } catch (e) {
+        // Refresh recusado (invalid_grant) nunca se resolve sozinho: sem isto, toda reentrega dá 500 e os itens
+        // ficam `pendente` para sempre, presos no índice anti-duplicidade. Erro transitório segue relançando.
+        if (e instanceof MLApiError && e.oauthError === 'invalid_grant') {
+          await encerrarComErro(admin, linha, MSG_RECONECTAR);
+          return json({ ok: false, erro: MSG_RECONECTAR });
+        }
+        throw e;
+      }
       if (!cx) {
         await encerrarComErro(admin, linha, MSG_SEM_CONEXAO);
         return json({ ok: false, erro: MSG_SEM_CONEXAO });
@@ -690,7 +827,7 @@ Imports novos em `deps.ts`: `getConnector` (`../canais/registry.ts`), `motivoMig
       return json({ ok: true, ...(await executarStatus(op, depsStatus(admin, cx, op, chave), EXECUCAO)) });
     }
     ```
-    O `select` de `linha` não muda. `OperacaoRow` do ramo de promoção passa a receber `linha.promocao_id!`/`linha.promocao_tipo!` (o CHECK da Task 1 garante).
+    Imports novos em `index.ts`: `MLApiError` (`../_shared/ml/erro-ml.ts`), `MSG_RECONECTAR` (`../_shared/operacoes/falhas.ts`), `executarStatus`/`OperacaoStatusRow`, `depsStatus`/`idsDaOrg`, `validarPedidoStatus`/`reversaoValida`/`ItemPedidoStatus`, `AcaoStatus`. O `select` de `linha` não muda. `OperacaoRow` do ramo de promoção passa a receber `linha.promocao_id!`/`linha.promocao_tipo!` (o CHECK da Task 1 garante).
   - Atualizar o comentário de cabeçalho do arquivo: "aderir/sair de promoções DEAL/SMART e pausar/reativar anúncios".
 - [ ] **Step 4: Verificar** — `pnpm lint:functions && pnpm check:functions` → sem erro; `pnpm test -- supabase/functions/_shared/operacoes` → PASS.
 - [ ] **Step 5: Commit** — `feat(operacoes-massa): criar e executar pausar/reativar`.
@@ -711,7 +848,9 @@ Imports novos em `deps.ts`: `getConnector` (`../canais/registry.ts`), `motivoMig
   export type AcaoStatus = 'pausar' | 'reativar';
   export type AcaoOperacao = AcaoPromocao | AcaoStatus;
   export const ehAcaoStatus: (a: string) => a is AcaoStatus;
-  export function inversa<A extends AcaoOperacao>(a: A): A;   // aderir↔sair, pausar↔reativar
+  export function inversa(a: AcaoPromocao): AcaoPromocao;     // overloads: aderir↔sair
+  export function inversa(a: AcaoStatus): AcaoStatus;         //            pausar↔reativar
+  export function inversa(a: AcaoOperacao): AcaoOperacao;
   export function itensRevertiveis(acao: AcaoOperacao, itens: {ml_item_id; status}[]): string[]; // aderir: aplicado+ja_estava; demais: aplicado
   export function tituloOperacao(op: { acao: string; promocao_nome: string | null; promocao_id: string | null }, total: number): string;
   export function motivoNaoSelecionavel(i: Pick<PublicadoItem, 'ehKitVirtual' | 'publicacaoIncompleta' | 'migracaoEmAndamento' | 'status'>): string | null;
@@ -770,9 +909,17 @@ export type AcaoStatus = 'pausar' | 'reativar';
 export type AcaoOperacao = AcaoPromocao | AcaoStatus;
 export const ehAcaoStatus = (a: string): a is AcaoStatus => a === 'pausar' || a === 'reativar';
 
-const INVERSA: Record<AcaoOperacao, AcaoOperacao> = { aderir: 'sair', sair: 'aderir', pausar: 'reativar', reativar: 'pausar' };
-export function inversa<A extends AcaoOperacao>(a: A): A {
-  return INVERSA[a] as A;
+// Overloads por família: o tipo de retorno é a família, não a mesma ação (inversa('pausar') é 'reativar').
+export function inversa(a: AcaoPromocao): AcaoPromocao;
+export function inversa(a: AcaoStatus): AcaoStatus;
+export function inversa(a: AcaoOperacao): AcaoOperacao;
+export function inversa(a: AcaoOperacao): AcaoOperacao {
+  switch (a) {
+    case 'aderir': return 'sair';
+    case 'sair': return 'aderir';
+    case 'pausar': return 'reativar';
+    case 'reativar': return 'pausar';
+  }
 }
 
 /** Ajuste 4: só `aderir` reverte também o que já estava participando; o resto só o que NÓS mudamos (`aplicado`). */
@@ -804,7 +951,13 @@ export function separarSelecao(itens: Pick<PublicadoItem, 'mlItemId' | 'status'>
   };
 }
 ```
-Substituir as versões antigas de `inversa` e `itensRevertiveis`; trocar `acao: AcaoOperacao` por `acao: AcaoPromocao` em `montarPreview` e `precisaConfirmarRisco`. Atualizar o comentário do topo ("aderir/sair de promoções e pausar/reativar anúncios"). Se `PublicadoItem['status']` não aceitar `undefined` no `Pick`, ajustar o teste para `status: 'indisponivel'`.
+Substituir as versões antigas de `inversa` e `itensRevertiveis`. **Estreitar para `AcaoPromocao` todo o caminho de promoção** (sem casts, sem `?? ''` para calar o compilador):
+  - `src/lib/operacoes.ts`: `montarPreview(acao: AcaoPromocao, …)`, `precisaConfirmarRisco(acao: AcaoPromocao, …)`;
+  - `src/components/promocoes/preview-operacao.tsx` linhas ~15, 36 e 51: `AcaoOperacao` → `AcaoPromocao`;
+  - `src/pages/PromocaoDetalhe.tsx` linhas ~18 e 84: idem;
+  - `src/hooks/useOperacoes.ts`: `PedidoOperacao.acao: AcaoPromocao`;
+  - `lista-operacoes.tsx` (Task 7): no ramo de promoção, estreitar com `!ehAcaoStatus(op.acao)` antes de chamar `inversa`/`PreviewOperacao` (o type guard faz o TS inferir `AcaoPromocao` se a coluna for tipada; como `operacoes_massa.acao` chega `string`, usar `const acao = op.acao as AcaoOperacao` UMA vez na entrada da lista, documentado pelo CHECK do banco — mesmo padrão do `status as StatusItemOperacao` que o arquivo já usa).
+  Rodar `pnpm exec tsc -b` e só seguir com zero erros. Atualizar o comentário do topo ("aderir/sair de promoções e pausar/reativar anúncios"). Se `PublicadoItem['status']` não aceitar `undefined` no `Pick`, ajustar o teste para `status: 'indisponivel'`.
 
 - [ ] **Step 4: Hooks** — em `src/hooks/useOperacoes.ts`:
 
@@ -838,7 +991,36 @@ export function useAcompanharOperacao(id: string | null) {
   }, [concluida, qc]);
 }
 ```
-(import `QK` de `@/lib/queries`; `AcaoStatus` de `@/lib/operacoes`.)
+(import `QK` de `@/lib/queries`; `AcaoStatus`, `ehAcaoStatus` de `@/lib/operacoes`.)
+
+**`useOperacoes` com filtro no servidor** (senão 50 pausas empurram uma saída de promoção ainda em conferência para fora da aba Promoções):
+```ts
+export function useOperacoes(filtro?: 'promocao') {
+  const qc = useQueryClient();
+  const query = useQuery({
+    queryKey: [...QK_OPERACOES, 'lista', filtro ?? 'todas'],
+    queryFn: async () => {
+      let q = supabase.from('operacoes_massa').select('*, itens:operacoes_massa_itens(status)');
+      if (filtro === 'promocao') q = q.in('acao', ['aderir', 'sair']);
+      const { data, error } = await q.order('criado_em', { ascending: false }).limit(50);
+      if (error) throw error;
+      return (data ?? []) as unknown as OperacaoRow[];
+    },
+    staleTime: 30_000,
+    refetchInterval: (q) => ((q.state.data ?? []).some((o) => o.status === 'executando') ? 5_000 : false),
+  });
+  // Conclusão vista na lista (tela Operações, Reverter) também atualiza o status ao vivo do Publicados.
+  const executandoStatus = useRef(new Set<string>());
+  useEffect(() => {
+    const ops = query.data ?? [];
+    const concluiu = ops.some((o) => ehAcaoStatus(o.acao) && o.status === 'concluida' && executandoStatus.current.has(o.id));
+    executandoStatus.current = new Set(ops.filter((o) => ehAcaoStatus(o.acao) && o.status === 'executando').map((o) => o.id));
+    if (concluiu) qc.invalidateQueries({ queryKey: QK.statusPublicados });
+  }, [query.data, qc]);
+  return query;
+}
+```
+Teste novo em `src/hooks/__tests__/` (ou onde já houver testes de hooks — `tests/hooks/` existe; seguir a árvore que já testa `useOperacoes`, se houver; senão `src/hooks/__tests__/useOperacoes.test.tsx`): com `supabase` mockado devolvendo 1ª leitura `[{ id: 'OP1', acao: 'pausar', status: 'executando', itens: [] }]` e 2ª `[{ …, status: 'concluida' }]`, após o refetch `invalidateQueries` é chamado com `{ queryKey: QK.statusPublicados }`; e com `filtro='promocao'` a query chama `.in('acao', ['aderir','sair'])` antes do `.limit(50)`.
 
 - [ ] **Step 5:** `pnpm test -- src/lib/__tests__/operacoes.test.ts src/components/promocoes` → PASS; `pnpm exec tsc -b` sem erro.
 - [ ] **Step 6: Commit** — `feat(front): regras e hooks de pausar/reativar em massa`.
@@ -873,7 +1055,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PreviewStatus } from '../preview-status';
-import { useCriarOperacao, usePodeExecutarOperacao } from '@/hooks/useOperacoes';
+import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao } from '@/hooks/useOperacoes';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/hooks/useOperacoes', async () => {
@@ -908,6 +1090,14 @@ describe('PreviewStatus', () => {
     render(<PreviewStatus acao="reativar" itens={itens} foraDoLote={[]} origemId={null} aberto onFechar={() => {}} onCriada={() => {}} />);
     expect(screen.queryByText(/repor estoque reativa/i)).not.toBeInTheDocument();
   });
+  it('recusa da edge mostra cada anúncio e o motivo', async () => {
+    mutateAsync.mockRejectedValueOnce(new ErroOperacao('Alguns anúncios não podem entrar na operação.', [
+      { ml_item_id: 'MLB2', motivo: 'O anúncio não é desta organização' },
+    ]));
+    render(<PreviewStatus acao="pausar" itens={itens} foraDoLote={[]} origemId={null} aberto onFechar={() => {}} onCriada={() => {}} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Pausar 2 anúncios' }));
+    expect(await screen.findByText(/Toalha Verde \(MLB2\): O anúncio não é desta organização/)).toBeInTheDocument();
+  });
   it('membro comum vê o preview mas não executa', () => {
     vi.mocked(usePodeExecutarOperacao).mockReturnValue(false);
     render(<PreviewStatus acao="pausar" itens={itens} foraDoLote={[]} origemId={null} aberto onFechar={() => {}} onCriada={() => {}} />);
@@ -922,10 +1112,11 @@ describe('PreviewStatus', () => {
 
 ```tsx
 // ADR-0174 emenda 2026-10-04 — preview de pausar/reativar em massa: o que muda, o que fica de fora e os avisos.
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao } from '@/hooks/useOperacoes';
+import { ErroOperacao, useCriarOperacao, usePodeExecutarOperacao, type RecusaItem } from '@/hooks/useOperacoes';
 import type { AcaoStatus } from '@/lib/operacoes';
 import { formatarNomeProduto } from '@/lib/texto';
 
@@ -945,13 +1136,16 @@ export function PreviewStatus({ acao, itens, foraDoLote, origemId, aberto, onFec
   const verbo = acao === 'pausar' ? 'Pausar' : 'Reativar';
   const rotulo = `${verbo} ${itens.length} anúncio${itens.length === 1 ? '' : 's'}`;
 
+  const [recusas, setRecusas] = useState<RecusaItem[]>([]);
+  const tituloDe = (id: string) => itens.find((i) => i.ml_item_id === id)?.titulo ?? id;
   const executar = async () => {
+    setRecusas([]);
     try {
       const r = await criar.mutateAsync({ acao, origem_id: origemId, itens: itens.map((i) => ({ ml_item_id: i.ml_item_id, titulo: i.titulo })) });
       onCriada(r.operacao_id);
     } catch (e) {
-      const msg = e instanceof ErroOperacao ? e.message : 'Não foi possível criar a operação.';
-      toast.error(msg);
+      if (e instanceof ErroOperacao && e.itens?.length) setRecusas(e.itens); // mostra quais e por quê
+      toast.error(e instanceof ErroOperacao ? e.message : 'Não foi possível criar a operação.');
     }
   };
 
@@ -968,6 +1162,11 @@ export function PreviewStatus({ acao, itens, foraDoLote, origemId, aberto, onFec
         {foraDoLote.map((f) => (
           <p key={f.motivo} className="text-sm text-muted-foreground">{f.quantidade} fora do lote: {f.motivo}</p>
         ))}
+        {recusas.length > 0 && (
+          <ul className="space-y-1 rounded border border-destructive/40 bg-destructive/5 p-2 text-sm" aria-label="Anúncios recusados">
+            {recusas.map((r) => <li key={r.ml_item_id}>{tituloDe(r.ml_item_id)} ({r.ml_item_id}): {r.motivo}</li>)}
+          </ul>
+        )}
         <ul className="max-h-72 divide-y overflow-y-auto rounded border text-sm">
           {itens.map((i) => (
             <li key={i.ml_item_id} className="flex items-center gap-2 p-2">
@@ -992,7 +1191,7 @@ Se `formatarNomeProduto` alterar o texto do teste ("Toalha Azul"), trocar o test
 
 - [ ] **Step 4: Mover e generalizar `ListaOperacoes`.**
   - `/usr/bin/git mv` dos dois arquivos; atualizar import em `Promocoes.tsx` e o import de `PreviewOperacao` dentro da lista para `@/components/promocoes/preview-operacao`.
-  - Prop `filtro?: 'promocao'`: `const lista = filtro === 'promocao' ? ops.filter((o) => !ehAcaoStatus(o.acao)) : ops;`.
+  - Prop `filtro?: 'promocao'`, repassada a `useOperacoes(filtro)` (o filtro é no servidor, Task 6 — nada de filtrar no cliente).
   - Trocar o `tituloOperacao` local por `tituloOperacao(op, op.itens.length)` de `@/lib/operacoes`.
   - `useItensPromocao(opAberta && !ehAcaoStatus(opAberta.acao) ? opAberta.promocao_id ?? '' : '')` — operação de status não carrega a Central.
   - Reverter de operação de status: `ids = itensRevertiveis(op.acao, paraRevertiveis(itensOp))`; abre `<PreviewStatus acao={inversa(op.acao)} itens={ids.map(id => ({ ml_item_id: id, titulo: porLog.get(id)?.titulo ?? null }))} foraDoLote={[]} origemId={op.id} ... />` (o handler revalida no ML; não há "Central" para confrontar). Reverter de promoção: caminho atual, intacto.
@@ -1009,13 +1208,13 @@ import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
 export default function Operacoes() {
   return (
     <div className="space-y-4">
-      <PageHeader title="Operações" description="Operações em massa da organização: andamento, resultado por anúncio e Reverter." />
+      <PageHeader title="Operações" subtitle="Operações em massa da organização: andamento, resultado por anúncio e Reverter." />
       <ListaOperacoes />
     </div>
   );
 }
 ```
-(`PageHeader` de `@/components/ui/page-header`, export default — igual a `Promocoes.tsx`; conferir as props reais de `PageHeader` lá. Em `App.tsx`: `const Operacoes = lazy(() => import('@/pages/Operacoes'));`, como as demais páginas.)
+(`PageHeader` é export **nomeado** e aceita `title`/`subtitle`/`actions`; a página é export default porque `App.tsx` carrega as páginas com `lazy(() => import('@/pages/X'))` — acrescentar `const Operacoes = lazy(() => import('@/pages/Operacoes'));`.)
 `App.tsx`: `<Route path="/operacoes" element={<Operacoes />} />` junto das rotas de Promoções. `menus.ts`: `operacoes: 'publicados',` no `PREFIX`. `sidebar.tsx`: item novo após Promoções, ícone `History` do `lucide-react`.
 - [ ] **Step 6:** `pnpm test -- src/components/operacoes src/components/promocoes src/lib` → PASS; `pnpm exec tsc -b` → sem erro.
 - [ ] **Step 7: Commit** — `feat(front): tela global de Operações e preview de pausar/reativar`.
@@ -1084,7 +1283,7 @@ export function BarraSelecaoPublicados({ ativos, pausados, onPausar, onReativar,
 
 - [ ] **Step 4: Integrar em `Publicados.tsx`** (arquivo grande — mudanças cirúrgicas):
   1. Estado: `const [selecao, setSelecao] = useState<Set<string>>(new Set());`, `const [previewAcao, setPreviewAcao] = useState<AcaoStatus | null>(null);`, `const [acompanhando, setAcompanhando] = useState<string | null>(null);` + `useAcompanharOperacao(acompanhando);`.
-  2. Limpar ao trocar o filtro: `useEffect(() => { setSelecao(new Set()); }, [filtro]);` — `filtro` vem de `useMemo` sobre `searchParams`; se a identidade mudar a cada render, usar `JSON.stringify(filtro)` como dependência.
+  2. Limpar só quando o FILTRO muda — não ao paginar, ordenar ou trocar o tamanho da página. `filtro` é recriado a cada mudança de `searchParams` (inclusive página/ordem), então a dependência é a representação estável: `const chaveFiltro = JSON.stringify(filtro); useEffect(() => { setSelecao(new Set()); }, [chaveFiltro]);`. Teste de página (Step 5): selecionar 1 anúncio → ir à página 2 → voltar: continua selecionado; ordenar por outra coluna: continua; mudar o filtro de fornecedor: a seleção zera. Se não houver suíte de página para `Publicados`, criar `src/pages/__tests__/Publicados.selecao.test.tsx` mockando `usePublicados`/`useStatusPublicados` como os testes de página vizinhos fazem (procurar um teste existente de página com `MemoryRouter` e copiar a montagem).
   3. `const selecionaveis = useMemo(() => itensExibidos.filter((i) => !motivoNaoSelecionavel(i)), [itensExibidos]);` e `const itensSelecionados = useMemo(() => itensExibidos.filter((i) => selecao.has(i.mlItemId)), [itensExibidos, selecao]);` + `const { ativos, pausados } = separarSelecao(itensSelecionados);`.
   4. Cabeçalho: nova `<TableHead className="w-8">` como **primeira** coluna com `<Checkbox aria-label={`Selecionar todos do filtro (${selecionaveis.length})`} checked={selecionaveis.length > 0 && selecionaveis.every((i) => selecao.has(i.mlItemId))} onCheckedChange={(v) => setSelecao(v ? new Set(selecionaveis.map((i) => i.mlItemId)) : new Set())} />` (componente `Checkbox` de `@/components/ui/checkbox`; confirmar que existe — é o usado em `PromocaoDetalhe.tsx`). Ajustar a coluna "Título" (sticky) para não sobrepor: a célula do checkbox fica `sm:static` igual.
   5. Linhas: `LinhaTabela` ganha props `selecionado: boolean`, `onSelecionar: (v: boolean) => void`, `motivoNaoSelecionavel: string | null`; primeira `<TableCell>` com `<Checkbox checked={selecionado} disabled={!!motivo} title={motivo ?? undefined} aria-label={`Selecionar ${item.titulo}`} onCheckedChange={(v) => onSelecionar(v === true)} />`. `LinhaIncompleta` e `LinhaKitVirtual` ganham uma `<TableCell />` vazia como primeira célula (mantém colunas alinhadas). Todos os `colSpan={temFiscal ? 10 : 9}` viram `temFiscal ? 11 : 10`.
