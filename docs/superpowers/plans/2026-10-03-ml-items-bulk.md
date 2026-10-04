@@ -106,7 +106,8 @@ Caminhos que começam por `_shared/` ou pelo nome de uma edge são relativos a `
 
 1. Extrair `SHA_BASELINE_AB`:
    `rm -rf $CLAUDE_JOB_DIR/tmp/ab/base && mkdir -p $CLAUDE_JOB_DIR/tmp/ab/base && /usr/bin/git archive <SHA_BASELINE_AB> supabase/functions | tar -x -C $CLAUDE_JOB_DIR/tmp/ab/base`
-2. `python3 $CLAUDE_JOB_DIR/tmp/ab/rodar.py <fatia> $CLAUDE_JOB_DIR/tmp/ab/base/supabase/functions <worktree>/supabase/functions`. Para cada org (as 4):
+2. Pré-carregar o cache do Deno (o A/B roda com rede só para `api.mercadolibre.com:443`, e os imports `jsr:`/`npm:` precisam estar em cache — Grok r4, achado 4): `deno cache --config <arvore>/deno.json <arvore>/<cada módulo importado pelos cenários da fatia>` nas duas árvores. Um import fora do cache vira `erroInesperado` e reprova (falha alto, nunca passa).
+3. `python3 $CLAUDE_JOB_DIR/tmp/ab/rodar.py <fatia> $CLAUDE_JOB_DIR/tmp/ab/base/supabase/functions <worktree>/supabase/functions`. Para cada org (as 4):
    - fase A: baseline, com gravação;
    - fase B: árvore nova, com replay;
    - fase A': baseline com replay, só se houver diferença.
@@ -705,7 +706,8 @@ export const CENARIOS: Cenario[] = [
     cobertura: (v: Map<string, string | null>) => (v.size === 0 ? 'falhou' : [...v.values()].some((cor) => cor) ? 'coberto' : 'na') },
   { nome: 'estoqueVivoPxV', fatia: 'F5', capacidade: 'estoque', canon: estrito,
     rodar: async (c) => (await c.imp('acompanhar-migracao-pxv/leitura-ml.ts')).lerEstoqueVivoML(async () => c.token, comRepetidos([...c.amostra.ids.slice(0, 17), INVALIDO])),
-    cobertura: (v: Map<string, number>) => (v.size >= 17 ? 'coberto' : 'falhou') },
+    // limiar = ids reais pedidos (org pequena, ex.: Hairfly com 5); o inválido não entra no mapa
+    cobertura: (v: Map<string, number>, c) => (v.size >= Math.min(17, c.amostra.ids.length) ? 'coberto' : 'falhou') },
   { nome: 'coresPxV21distintos', fatia: 'F5', capacidade: 'limite', canon: estrito,
     // o ab.ts também exige a prova: um GET multiget deste cenário com 21 ids distintos que voltou 400
     erroEsperado: { status: 400, mensagem: /multiget de cores falhou \(400\)/, idsNoGet: 21 },
@@ -744,6 +746,8 @@ for (const c of CENARIOS.filter((x) => x.fatia === fatia && (!filtro || filtro.i
     const multigetOk = guarda.gets.some((g) => g.cenario === c.nome && g.status === 200 && /\/items(\/bulk)?\?ids=/.test(g.url));
     if (c.exigeMultiget && cob === 'coberto' && !multigetOk) cob = 'falhou';
     const escritasDoCenario = guarda.escritas.filter((e) => e.cenario === c.nome).length;
+    // cenário com permissão de escrita só prova a decisão se houve ao menos uma escrita simulada (Grok r4, achado 3)
+    if (c.permissoes?.length && cob === 'coberto' && escritasDoCenario === 0) cob = 'na';
     resultado[c.nome] = c.erroEsperado ? { erroAusente: true }
       : { valor: c.canon(v), cobertura: cob, multigetOk, escritasSimuladas: escritasDoCenario };
   } catch (e) {
@@ -892,7 +896,7 @@ Se `deno info` acusar erro de grafo em alguma edge **na main**, parar e reportar
 - `conferir <SHA> <edges…>`
 
 ```python
-import hashlib, json, pathlib, subprocess, sys, shutil
+import hashlib, json, os, pathlib, subprocess, sys, shutil
 REF = 'txvncrgkoynoxwopfkbp'
 TMP = pathlib.Path('/Users/diego/.claude/jobs/b87cbc02/tmp')
 WT = '/Users/diego/Desktop/IA/Anuncios MktPlace/.claude/worktrees/verif-items-bulk'
@@ -952,7 +956,12 @@ for edge in edges:
         if modo == 'depois':
             if h != hash_no_sha(sha_main, rel): div.append(f'{edge}: {rel} ≠ {sha_main}')
         else:
-            if h != hash_no_sha(sha_prod, rel): div.append(f'{edge}: {rel} ≠ produção esperada {sha_prod}')
+            # defasagem pré-existente, conferida e aceita NOMINALMENTE (ex.: reconciliar-user-products com o
+            # token.ts de a9ab654; o diff até 3b68f702 é só a função nova renovarTokenConexao, que ela não usa)
+            aceitas = {x for x in os.environ.get('MANIFESTO_ACEITAR', '').split(',') if x}
+            if h != hash_no_sha(sha_prod, rel):
+                if f'{edge}:{rel}' in aceitas: print(f'ACEITA (pré-existente): {edge}: {rel}')
+                else: div.append(f'{edge}: {rel} ≠ produção esperada {sha_prod}')
     if modo == 'antes':
         # política JWT conferida ANTES de aplicar: a do deploy (SHA_MAIN) e a do rollback (SHA_PRODUCAO) = a de produção
         for nome_sha, sha in (('deploy', sha_main), ('rollback', sha_prod)):
@@ -965,7 +974,11 @@ if modo == 'depois':
     for e in edges:
         if manif[e]['verify_jwt'] != antes[e]['verify_jwt']: div.append(f'{e}: verify_jwt mudou')
         if fatia.endswith('-rollback'):
-            if manif[e]['arquivos'] != antes[e]['arquivos']: div.append(f'{e}: rollback não restaurou os arquivos')
+            # exceção nominal (MANIFESTO_ACEITAR): o rollback sai da árvore do SHA_PRODUCAO, então o arquivo
+            # aceito volta na versão desse SHA (já conferida arquivo a arquivo acima), não na do snapshot antigo
+            aceitas = {x.split(':', 1)[1] for x in os.environ.get('MANIFESTO_ACEITAR', '').split(',') if x.startswith(f'{e}:')}
+            sem = lambda d: {k: v for k, v in d.items() if k not in aceitas}
+            if sem(manif[e]['arquivos']) != sem(antes[e]['arquivos']): div.append(f'{e}: rollback não restaurou os arquivos')
         else:
             if not manif[e]['versao'] > antes[e]['versao']: div.append(f'{e}: versão não incrementou')
             # ezbr é informativo (D4 do Astra): dependências remotas mudam o bundle sem mudar fontes
