@@ -115,6 +115,18 @@ describe('ListaOperacoes', () => {
     expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
   });
 
+  it('operação de pausar concluída não mostra o Reverter de promoção (Task 7 traz o de status)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useOperacoes).mockReturnValue({
+      data: [op({ acao: 'pausar', promocao_id: null, promocao_nome: null, promocao_tipo: null, itens: [{ status: 'aplicado' }] })], isLoading: false,
+    } as never);
+    vi.mocked(useItensOperacao).mockReturnValue({ data: [itemLog({ status: 'aplicado' })] } as never);
+    renderLista();
+    await user.click(screen.getByRole('button', { name: /Diego/ }));
+    expect(screen.getByText('MLB1')).toBeInTheDocument(); // detalhe abriu
+    expect(screen.queryByRole('button', { name: 'Reverter' })).not.toBeInTheDocument();
+  });
+
   it('Reverter não aparece enquanto a operação está executando', async () => {
     const user = userEvent.setup();
     vi.mocked(useOperacoes).mockReturnValue({

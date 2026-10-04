@@ -15,6 +15,9 @@ const limitMock = vi.fn();
 const inMock = vi.fn();
 const listaOrderMock = vi.fn();
 const listaQuery = { in: inMock, order: listaOrderMock };
+// Builder devolvido por `.in(...)`: distinto do original, para provar que o encadeamento usa o retorno.
+const inOrderMock = vi.fn();
+const inLimitMock = vi.fn();
 const selectMock = vi.fn(() => ({ eq: eqMock, ...listaQuery }));
 const fromMock = vi.fn(() => ({ select: selectMock }));
 vi.mock('@/lib/supabase', () => ({ supabase: { from: fromMock } }));
@@ -75,7 +78,9 @@ describe('useOperacoes — status ao vivo do Publicados (emenda 2026-10-04)', ()
 
   beforeEach(() => {
     limitMock.mockReset();
-    inMock.mockReset().mockImplementation(() => ({ order: listaOrderMock }));
+    inLimitMock.mockReset().mockResolvedValue({ data: [], error: null });
+    inOrderMock.mockReset().mockImplementation(() => ({ limit: inLimitMock }));
+    inMock.mockReset().mockImplementation(() => ({ order: inOrderMock }));
     listaOrderMock.mockReset().mockImplementation(() => ({ limit: limitMock }));
   });
 
@@ -118,10 +123,12 @@ describe('useOperacoes — status ao vivo do Publicados (emenda 2026-10-04)', ()
     montar('promocao');
     await tick();
     expect(inMock).toHaveBeenCalledWith('acao', ['aderir', 'sair']);
-    expect(limitMock).toHaveBeenCalledWith(50);
+    expect(inLimitMock).toHaveBeenCalledWith(50); // limit no builder retornado por .in
+    expect(listaOrderMock).not.toHaveBeenCalled(); // o builder original não é usado depois do .in
     inMock.mockClear();
     montar();
     await tick();
     expect(inMock).not.toHaveBeenCalled();
+    expect(limitMock).toHaveBeenCalledWith(50);
   });
 });

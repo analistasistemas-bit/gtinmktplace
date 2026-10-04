@@ -12,7 +12,7 @@ import { formatarNomeProduto } from '@/lib/texto';
 import { useNomesUsuarios } from '@/hooks/useNomesUsuarios';
 import { useItensOperacao, useOperacao, useOperacaoPorOrigem, useOperacoes, usePodeExecutarOperacao, type ItemOperacaoRow, type OperacaoRow } from '@/hooks/useOperacoes';
 import { useItensPromocao } from '@/hooks/usePromocoes';
-import { ROTULO_STATUS, inversa, itensRevertiveis, type AcaoOperacao, type AcaoPromocao, type StatusItemOperacao } from '@/lib/operacoes';
+import { ROTULO_STATUS, inversa, itensRevertiveis, ehAcaoStatus, type AcaoOperacao, type StatusItemOperacao } from '@/lib/operacoes';
 import type { ItemPromocao } from '@/lib/promocoes';
 import { PreviewOperacao } from './preview-operacao';
 
@@ -49,8 +49,12 @@ const paraRevertiveis = (itens: ItemOperacaoRow[]) => itens.map((i) => ({ ml_ite
 /** Reverter: itens elegíveis pelo log da operação (`itensRevertiveis`) confrontados com o estado
  *  atual da Central — quem não está mais no estado exigido pela ação inversa entra em `naoRevertiveis`. */
 function montarReversao(op: OperacaoRow, itensOp: ItemOperacaoRow[], itensCentral: ItemPromocao[]) {
-  const acaoNova = inversa(op.acao as AcaoPromocao); // Task 7 passa a listar só promoções aqui
-  const ids = itensRevertiveis(op.acao as AcaoOperacao, paraRevertiveis(itensOp));
+  // `acao` chega `string`; o CHECK do banco garante uma AcaoOperacao. Pausar/reativar não tem reversão
+  // de promoção (Task 7 traz o Reverter de status) — `null` impede abrir o preview de promoção com ação errada.
+  const acao = op.acao as AcaoOperacao;
+  if (ehAcaoStatus(acao)) return null;
+  const acaoNova = inversa(acao);
+  const ids = itensRevertiveis(acao, paraRevertiveis(itensOp));
   const porCentral = new Map(itensCentral.map((i) => [i.ml_item_id, i]));
   const porLog = new Map(itensOp.map((i) => [i.ml_item_id, i]));
   const naoRevertiveis = new Map<string, string>();
@@ -118,7 +122,7 @@ export function ListaOperacoes() {
   const [abertaId, setAbertaId] = useState<string | null>(null);
   // Revisão UX (achado C): dados do preview de reversão num estado próprio, snapshot no momento
   // do clique — não pode depender de `opAberta`/`reversao`, que são zerados ao fechar o detalhe.
-  const [reversaoAtiva, setReversaoAtiva] = useState<({ op: OperacaoRow } & ReturnType<typeof montarReversao>) | null>(null);
+  const [reversaoAtiva, setReversaoAtiva] = useState<({ op: OperacaoRow } & NonNullable<ReturnType<typeof montarReversao>>) | null>(null);
 
   const opAberta = operacoes.data?.find((o) => o.id === abertaId) ?? null;
   const itensOp = useItensOperacao(abertaId ?? '', opAberta?.status === 'executando');
@@ -143,7 +147,8 @@ export function ListaOperacoes() {
   // mostra o botão — evita reabrir uma reversão que só não chegou ainda.
   const carregandoRevertida = buscandoRevertida && revertidaBuscada.isLoading;
 
-  const idsRevertiveis = opAberta && itensOp.data ? itensRevertiveis(opAberta.acao as AcaoOperacao, paraRevertiveis(itensOp.data)) : [];
+  const idsRevertiveis = opAberta && itensOp.data && !ehAcaoStatus(opAberta.acao)
+    ? itensRevertiveis(opAberta.acao as AcaoOperacao, paraRevertiveis(itensOp.data)) : [];
   const podeReverter = podeExecutar && opAberta?.status === 'concluida' && idsRevertiveis.length > 0;
   // Fix round 2 (achado 1): `useMemo` — sem isso, `reversao.itens`/`.naoRevertiveis` nascem com
   // referência nova a cada render e o `useEffect` do preview (que depende deles) reseta preços,
