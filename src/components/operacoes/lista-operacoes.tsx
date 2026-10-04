@@ -2,6 +2,7 @@
 // (nova operação com a ação inversa, origem_id apontando a original).
 import { useMemo, useState } from 'react';
 import { History, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Progress } from '@/components/ui/progress';
@@ -258,7 +259,7 @@ export function ListaOperacoes({ filtro }: { filtro?: 'promocao' } = {}) {
       {reversaoStatus && (
         <PreviewStatus
           acao={inversa(reversaoStatus.op.acao as AcaoStatus)} itens={reversaoStatus.itens} foraDoLote={[]}
-          origemId={reversaoStatus.op.id} aberto onFechar={fecharPreviewReversao} onCriada={fecharPreviewReversao}
+          origemId={reversaoStatus.op.id} aberto onFechar={fecharPreviewReversao} onCriada={() => { toast.success('Operação iniciada'); fecharPreviewReversao(); }}
         />
       )}
 

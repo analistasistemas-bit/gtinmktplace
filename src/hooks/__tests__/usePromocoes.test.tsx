@@ -28,7 +28,7 @@ const fromMock = vi.fn((tabela: string) => {
 });
 vi.mock('@/lib/supabase', () => ({ supabase: { from: fromMock } }));
 
-const { useParticipacoesPorItem } = await import('../usePromocoes');
+const { useParticipacoesPorItem, useItensPromocao } = await import('../usePromocoes');
 
 function wrapper({ children }: { children: ReactNode }) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -84,5 +84,13 @@ describe('useParticipacoesPorItem', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(itensQueryMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('useItensPromocao', () => {
+  it("id vazio não consulta o supabase", () => {
+    fromMock.mockClear();
+    renderHook(() => useItensPromocao(''), { wrapper });
+    expect(fromMock).not.toHaveBeenCalled();
   });
 });

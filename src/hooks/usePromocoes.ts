@@ -15,6 +15,7 @@ export function usePromocoes() {
 export function useItensPromocao(promocaoId: string, lendo = false) {
   return useQuery({
     queryKey: [...QK_PROMO, 'itens', promocaoId], queryFn: () => fetchItensPromocao(promocaoId), staleTime: 60_000,
+    enabled: promocaoId.length > 0, // id vazio = nada aberto / operação sem campanha
     refetchInterval: lendo ? 15_000 : false,
   });
 }

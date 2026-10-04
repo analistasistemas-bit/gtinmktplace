@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
+import { toast } from 'sonner';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { ListaOperacoes } from '../lista-operacoes';
@@ -149,6 +150,9 @@ describe('ListaOperacoes', () => {
     await user.click(await screen.findByRole('button', { name: 'Reverter' }));
     await user.click(await screen.findByRole('button', { name: 'Reativar 1 anúncio' }));
     expect(mutateAsync).toHaveBeenCalledWith({ acao: 'reativar', origem_id: 'OP1', itens: [{ ml_item_id: 'MLB1', titulo: 'Produto 1' }] });
+    expect(toast.success).toHaveBeenCalledWith('Operação iniciada');
+    // operação de status não consulta a Central (id vazio)
+    expect(useItensPromocao).toHaveBeenLastCalledWith('');
   });
 
   it('Reverter não aparece enquanto a operação está executando', async () => {
