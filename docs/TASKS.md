@@ -2943,7 +2943,10 @@ Revisão integral do módulo (33 arquivos), relatório em
   anterior em vez de esconder selo bom (Errata 3 do ADR-0119).
 - [ ] Pulse: job de agregação semanal + prune de 90d + auto-pausa de produto sem acesso há 60d —
   antes de 2026-11-14.
-- [ ] **Pulse v2: extensão coletora de DOM — PRIORIDADE ALTA, é o que dá cobertura ao módulo.**
+- [x] ~~**Pulse v2: extensão coletora de DOM — PRIORIDADE ALTA, é o que dá cobertura ao módulo.**~~
+  **Cancelado em 2026-10-04 (Diego):** o roadmap de 2026-09-21 (`docs/Roadmap/ROADMAP-MELHORIAS-PUBLIAI.md`,
+  lista "Não fazer") descartou extensão de navegador — complexidade alta, benefício difuso; o
+  ADR-0142 já recusara a extensão como coletora do relatório mensal. Contexto original abaixo.
   Medição de 16/08 (errata 2 do ADR-0119): o radar alcança **5 de 7** anúncios da DSA e apenas
   **15 de 133** da Avil — 89% dela está fora porque são aviamentos sem ficha de catálogo no ML
   (códigos de barras internos, faixa GS1 `2`, não GTIN global). Verificado que **não há caminho
