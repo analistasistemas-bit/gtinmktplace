@@ -1,6 +1,7 @@
 import type { MLVariacaoAtual, VariacaoUpdate, VariacaoNovaPut } from './atualizar.ts';
 import { humanizarErroML } from './erro-ml.ts';
 import { parseStatusML, type ItemMLStatus } from './status.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from './multiget.ts';
 import type { AtributoItem } from '../canais/contrato.ts';
 
 export interface ItemMLAtual {
@@ -180,8 +181,8 @@ export async function propagarStatusRelacionadosML(accessToken: string, itemId: 
   const ids = ((json.item_relations ?? []) as Array<{ id?: string }>).map((r) => r.id).filter((id): id is string => !!id);
   if (ids.length === 0) return;
 
-  const multi = await fetch(`https://api.mercadolibre.com/items?ids=${ids.join(',')}&attributes=id,status,sub_status`, { headers });
-  const lote = await multi.json().catch(() => null);
+  const multi = await fetch(`https://api.mercadolibre.com${caminhoMultiget(ids, 'id,status,sub_status')}`, { headers });
+  const lote = comoEnvelopeAntigo(await multi.json().catch(() => null), ids);
   if (!multi.ok) throw erroML(multi.status, lote);
   const porId = new Map<string, ItemMLStatus>();
   for (const r of (Array.isArray(lote) ? lote : []) as Array<{ code?: number; body?: ItemMLStatus }>) {

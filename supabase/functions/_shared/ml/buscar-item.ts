@@ -8,6 +8,8 @@
 // janela de recência) são validados via multiget dos IDs retornados, nunca presumidos filtrados.
 
 /** fetch-like injetável (testável sem rede; produção passa o `fetch` global). */
+import { caminhoMultiget, comoEnvelopeAntigo } from './multiget.ts';
+
 export type FetchLike = (
   url: string,
   init?: { headers?: Record<string, string> },
@@ -76,11 +78,10 @@ export async function buscarItemPorSku(
   // 2. Multiget dos ids retornados e validação local (category_id, family_name exato, seller, recência).
   const validos: string[] = [];
   for (const bloco of chunk(ids, MULTIGET_CHUNK)) {
-    const url = `${API}/items?ids=${bloco.join(',')}`
-      + `&attributes=id,category_id,family_name,seller_id,date_created`;
+    const url = `${API}${caminhoMultiget(bloco, 'id,category_id,family_name,seller_id,date_created')}`;
     const resp = await fetchLike(url, { headers });
     if (!resp.ok) throw new Error(`multiget de adoção (${resp.status})`);
-    const arr = (await resp.json()) as Array<{ code?: number; body?: ItemMultiget }>;
+    const arr = comoEnvelopeAntigo(await resp.json(), bloco) as Array<{ code?: number; body?: ItemMultiget }>;
     for (const entry of Array.isArray(arr) ? arr : []) {
       if (entry?.code !== 200 || !entry.body) continue;
       const b = entry.body;

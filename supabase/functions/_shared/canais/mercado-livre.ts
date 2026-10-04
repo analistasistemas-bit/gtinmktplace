@@ -14,6 +14,7 @@ import { migracaoEmAndamento, motivoAnuncioNaoAtualizavel, subStatusMorto } from
 import { montarVariacoesUpdate, montarVariacaoNova } from '../ml/atualizar.ts';
 import { montarAtributosPacote, fmt } from '../ml/pacote.ts';
 import { parseStatusML, type ItemMLStatus } from '../ml/status.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from '../ml/multiget.ts';
 import { subirFotoML } from '../ml/fotos.ts';
 import { aplicarPxQ, type FaixaAtacado } from '../ml/atacado.ts';
 import { mapearVariacoesExternas, mapearVariacoesPorSku, classificarErroCanal } from './mapeamento.ts';
@@ -412,11 +413,11 @@ export const mercadoLivreConnector: ChannelConnector = {
     const token = await ctx.getToken();
     // Chunks em paralelo (latência O(1) em vez de O(n/20) serial).
     const respostas = await Promise.all(chunk(ids, 20).map(async (bloco) => {
-      const url = `https://api.mercadolibre.com/items?ids=${bloco.join(',')}&attributes=id,status,sub_status,available_quantity,price,listing_type_id,tags`;
+      const url = `https://api.mercadolibre.com${caminhoMultiget(bloco, 'id,status,sub_status,available_quantity,price,listing_type_id,tags')}`;
       try {
         const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
         if (!resp.ok) { console.warn(`lerStatus ML ${resp.status} (bloco)`); return []; }
-        const arr = await resp.json(); // [{ code, body }]
+        const arr = comoEnvelopeAntigo(await resp.json(), bloco); // [{ code, body }] (ADR-0177)
         return Array.isArray(arr) ? arr : [];
       } catch (e) {
         console.warn('lerStatus ML falhou (bloco):', (e as Error).message);

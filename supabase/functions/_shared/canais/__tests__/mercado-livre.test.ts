@@ -1,6 +1,9 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mercadoLivreConnector } from '../mercado-livre';
 import type { AtualizacaoCanonica, AnuncioCanonico } from '../contrato';
+import bulkCanais from '../../ml/__tests__/fixtures/bulk-canais-bulk.json' with { type: 'json' };
+import antigoCanais from '../../ml/__tests__/fixtures/bulk-canais-antigo.json' with { type: 'json' };
+import idsCanais from '../../ml/__tests__/fixtures/bulk-canais-ids.json' with { type: 'json' };
 
 const globalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = globalFetch; });
@@ -522,10 +525,53 @@ describe('lerStatus — catalogForewarning (E5 fase3)', () => {
   });
 });
 
+describe('lerStatus via /items/bulk (ADR-0177)', () => {
+  const ctx = { getToken: async () => 't' };
+  it('URL do bulk e resultado igual ao do envelope antigo nos mesmos ids', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = ((u: string) => { urls.push(u); return Promise.resolve(new Response(JSON.stringify(bulkCanais))); }) as typeof fetch;
+    const novo = await mercadoLivreConnector.lerStatus(ctx, idsCanais as string[]);
+    expect(urls).toEqual([`https://api.mercadolibre.com/items/bulk?ids=${(idsCanais as string[]).join(',')}&attributes=status_code,body.id,body.status,body.sub_status,body.available_quantity,body.price,body.listing_type_id,body.tags`]);
+    globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify(antigoCanais)))) as typeof fetch;
+    expect(novo).toEqual(await mercadoLivreConnector.lerStatus(ctx, idsCanais as string[]));
+    expect(novo['MLB0000000001'].status).toBe('indisponivel');
+  });
+  it('id repetido no bloco: URL sem repetição', async () => {
+    const urls: string[] = [];
+    globalThis.fetch = ((u: string) => { urls.push(u); return Promise.resolve(new Response('[]')); }) as typeof fetch;
+    await mercadoLivreConnector.lerStatus(ctx, ['MLB1', 'MLB2', 'MLB1']);
+    expect(new URL(urls[0]).searchParams.get('ids')).toBe('MLB1,MLB2');
+  });
+  it('mesmo id em dois blocos: 200 pausado no 1º, 404 sem body no 2º → indisponivel (igual ao antigo)', async () => {
+    const ids = Array.from({ length: 20 }, (_, i) => `MLB${100 + i}`);
+    globalThis.fetch = ((u: string) => {
+      const q = new URL(u).searchParams.get('ids')!.split(',');
+      return Promise.resolve(new Response(JSON.stringify(q.length === 20
+        ? q.map((id) => ({ status_code: 200, body: { id, status: 'paused', sub_status: [] } }))
+        : q.map(() => ({ status_code: 404 })))));
+    }) as typeof fetch;
+    const r = await mercadoLivreConnector.lerStatus(ctx, [...ids, ids[0]]);
+    expect(r[ids[0]].status).toBe('indisponivel');
+    expect(r[ids[1]].status).toBe('pausado');
+  });
+  it('pausado e preço chegam ao StatusCanal (entradas da reativação e da faixa do split)', async () => {
+    globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify([
+      { status_code: 200, body: { id: 'MLB1', status: 'paused', sub_status: [], price: 49.9, available_quantity: 3 } },
+    ])))) as typeof fetch;
+    const r = await mercadoLivreConnector.lerStatus(ctx, ['MLB1']);
+    expect(r.MLB1.status).toBe('pausado');
+    expect(r.MLB1.preco).toBe(49.9);
+  });
+  it('200 sem body no bulk → indisponivel (como {code:200} sem body no antigo)', async () => {
+    globalThis.fetch = (() => Promise.resolve(new Response(JSON.stringify([{ status_code: 200 }])))) as typeof fetch;
+    expect((await mercadoLivreConnector.lerStatus(ctx, ['MLB1'])).MLB1.status).toBe('indisponivel');
+  });
+});
+
 // ADR-0060 (aditivo 2026-10-01): o anúncio de catálogo é OUTRO item no ML (`item_relations`,
 // estoque compartilhado) e não herda o status. Pausar só o tradicional deixava o catálogo vendendo
 // (Hairflay, MLB7717167310/MLB5312481169).
-describe('atualizarStatus propaga para o anúncio de catálogo relacionado', () => {
+describe.each(['code', 'status_code'] as const)('atualizarStatus propaga para o anúncio de catálogo relacionado [%s]', (campo) => {
   type Rel = { id: string; status: string; sub_status?: string[] };
   function stubRelacionados(relacionados: Rel[], opts: { falharPutEm?: string; ilegivel?: string } = {}) {
     const puts: Array<{ id: string; status: string }> = [];
@@ -538,9 +584,10 @@ describe('atualizarStatus propaga para o anúncio de catálogo relacionado', () 
         return json({});
       }
       if (url.includes('/items/MLB1?')) return json({ id: 'MLB1', item_relations: relacionados.map((r) => ({ id: r.id })) });
+      if (campo === 'status_code') expect(url).toMatch(/\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.status,body\.sub_status$/);
       return json(relacionados.map((r) => (r.id === opts.ilegivel
-        ? { code: 404, body: { message: 'not found' } }
-        : { code: 200, body: r })));
+        ? (campo === 'status_code' ? { status_code: 404 } : { code: 404, body: { message: 'not found' } })
+        : { [campo]: 200, body: r })));
     }) as typeof fetch;
     return puts;
   }
@@ -587,5 +634,21 @@ describe('atualizarStatus propaga para o anúncio de catálogo relacionado', () 
     expect(res.ok).toBe(false);
     expect(res.erro?.retentavel).toBe(true);
     expect(puts).toEqual([]);
+  });
+
+  // Caracterização do comportamento atual (Codex r2, achado 12): a leitura é toda feita antes, mas
+  // o ilegível só é detectado no laço — o ativo anterior já recebeu o PUT. Sem promessa de atomicidade.
+  it('mistos ao pausar: [ativo, ilegível] → PUT no ativo ANTES do 502 (comportamento atual, caracterizado)', async () => {
+    const puts = stubRelacionados([{ id: 'MLB8', status: 'active' }, { id: 'MLB9', status: 'active' }], { ilegivel: 'MLB9' });
+    const res = await mercadoLivreConnector.atualizarStatus(ctxFake, 'MLB1', 'pausado');
+    expect(res.ok).toBe(false);
+    expect(res.erro?.retentavel).toBe(true);
+    expect(puts).toEqual([{ id: 'MLB8', status: 'paused' }]);
+  });
+
+  it('mistos ao reativar: [pausado, ativo] → só o pausado e o próprio item', async () => {
+    const puts = stubRelacionados([{ id: 'MLB8', status: 'paused' }, { id: 'MLB9', status: 'active' }]);
+    await mercadoLivreConnector.atualizarStatus(ctxFake, 'MLB1', 'ativo');
+    expect(puts).toEqual([{ id: 'MLB8', status: 'active' }, { id: 'MLB1', status: 'active' }]);
   });
 });

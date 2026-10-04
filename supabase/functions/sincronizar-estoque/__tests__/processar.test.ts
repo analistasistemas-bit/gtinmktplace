@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 // ml/token.ts importa _shared/supabase.ts, que faz `import { createClient } from 'jsr:...'`
 // (valor real, não elidido pelo bundler). Sob vitest isso quebra a resolução do módulo.
@@ -6,6 +6,7 @@ vi.mock('../../_shared/ml/token.ts', () => ({ getValidAccessTokenConexao: async 
 
 import { processarSincronizacao, type DepsSincronizacao } from '../processar';
 import { fakeConnector } from '../../_shared/canais/fake';
+import { mercadoLivreConnector } from '../../_shared/canais/mercado-livre';
 import type { ChannelConnector } from '../../_shared/canais/contrato';
 
 interface MovimentoFake {
@@ -297,6 +298,23 @@ describe('processarSincronizacao — reativação ao repor estoque (ADR-0111)', 
     variacoes: [{ codigo: 'A1', estoque }],
     anuncios: [{ id: 'x', canal: 'fake', item_externo_id: 'FK1', variacoes_externas: { A1: {} } }],
     itensUP: [],
+  });
+
+  // ADR-0177: o gate de reativação alimentado pelo lerStatus REAL lendo a resposta do /items/bulk.
+  describe('com o lerStatus REAL lendo /items/bulk', () => {
+    let fetchOriginal: typeof fetch;
+    beforeEach(() => { fetchOriginal = globalThis.fetch; });
+    afterEach(() => { globalThis.fetch = fetchOriginal; vi.restoreAllMocks(); });
+    it.each([
+      ['pausado no bulk → reativa', [{ status_code: 200, body: { id: 'FK1', status: 'paused', sub_status: [] } }], [{ itemExternoId: 'FK1', status: 'ativo' }]],
+      ['404 sem body → não reativa', [{ status_code: 404 }], []],
+      ['ativo no bulk → não reativa', [{ status_code: 200, body: { id: 'FK1', status: 'active', sub_status: [] } }], []],
+    ])('%s', async (_n, resposta, esperado) => {
+      globalThis.fetch = ((u: string) => Promise.resolve(new Response(JSON.stringify(u.includes('/items/bulk') ? resposta : {})))) as typeof fetch;
+      vi.spyOn(fakeConnector, 'lerStatus').mockImplementation((ctx, ids) => mercadoLivreConnector.lerStatus(ctx, ids));
+      await processarSincronizacao(deps(umAnuncio(7)), { ...JOB, reativar: true });
+      expect(chamadasDeStatus()).toEqual(esperado);
+    });
   });
 
   it('anúncio pausado + saldo > 0 → reativa', async () => {

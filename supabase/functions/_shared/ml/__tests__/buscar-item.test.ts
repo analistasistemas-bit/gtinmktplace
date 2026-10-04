@@ -10,7 +10,8 @@ function resp(json: unknown, ok = true, status = 200) {
   return Promise.resolve({ ok, status, json: () => Promise.resolve(json) });
 }
 
-// Monta um fetch fake que responde à busca (paginada) e ao multiget /items?ids=.
+const vistos: string[] = [];
+// Monta um fetch fake que responde à busca (paginada) e ao multiget (antigo /items?ids= ou /items/bulk?ids=).
 function fakeFetch(searchPages: Array<{ results: string[]; total: number }>, itens: Record<string, unknown>): FetchLike {
   let page = 0;
   return (url: string) => {
@@ -21,9 +22,14 @@ function fakeFetch(searchPages: Array<{ results: string[]; total: number }>, ite
       const offset = offsetMatch ? Number(offsetMatch[1]) : 0;
       return resp({ results: p.results, paging: { total: p.total, offset, limit: 100 } });
     }
-    if (url.includes('/items?ids=')) {
-      const ids = decodeURIComponent(/ids=([^&]+)/.exec(url)![1]).split(',');
-      return resp(ids.map((id) => (itens[id] ? { code: 200, body: itens[id] } : { code: 404, body: { id } })));
+    const bulk = url.includes('/items/bulk?ids=');
+    if (bulk || url.includes('/items?ids=')) {
+      vistos.push(url);
+      // ids únicos por requisição: é assim que os dois endpoints respondem
+      const ids = [...new Set(decodeURIComponent(/ids=([^&]+)/.exec(url)![1]).split(','))];
+      return resp(ids.map((id) => (itens[id]
+        ? (bulk ? { status_code: 200, body: itens[id] } : { code: 200, body: itens[id] })
+        : (bulk ? { status_code: 404 } : { code: 404, body: { id } }))));
     }
     return resp({}, false, 500);
   };
@@ -43,6 +49,20 @@ describe('buscarItemPorSku (adoção de órfão por seller_custom_field)', () =>
   it('exatamente 1 match válido → um (adota o id)', async () => {
     const f = fakeFetch([{ results: ['MLB1'], total: 1 }], { MLB1: item() });
     expect(await buscarItemPorSku(f, CRIT, 's1')).toEqual({ tipo: 'um', itemExternoId: 'MLB1' });
+  });
+
+  it('multiget de adoção usa /items/bulk com os campos de validação', async () => {
+    vistos.length = 0;
+    const f = fakeFetch([{ results: ['MLB1'], total: 1 }], { MLB1: item() });
+    expect(await buscarItemPorSku(f, CRIT, 's1')).toEqual({ tipo: 'um', itemExternoId: 'MLB1' });
+    expect(vistos).toEqual(['https://api.mercadolibre.com/items/bulk?ids=MLB1&attributes=status_code,body.id,body.category_id,body.family_name,body.seller_id,body.date_created']);
+  });
+
+  it('mesmo id em dois blocos (20 distintos + o 1º repetido) → ambiguo, como no endpoint antigo', async () => {
+    // O antigo deduplicava só DENTRO da requisição: o MLB1 válido aparece no bloco 1 e no bloco 2.
+    const results = [...Array.from({ length: 20 }, (_, i) => `MLB${i + 1}`), 'MLB1'];
+    const f = fakeFetch([{ results, total: 21 }], { MLB1: item() });
+    expect(await buscarItemPorSku(f, CRIT, 's1')).toEqual({ tipo: 'ambiguo' });
   });
 
   it('>1 match válido → ambiguo (nunca adota o primeiro)', async () => {
