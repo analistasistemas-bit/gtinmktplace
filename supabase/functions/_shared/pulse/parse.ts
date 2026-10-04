@@ -88,9 +88,10 @@ export function leituraCompletaDaFicha(json: unknown): boolean {
 }
 
 /**
- * Multiget `/items?ids=...` — situação dos NOSSOS anúncios. A resposta é uma lista de envelopes
- * `{ code, body }`: um id inválido volta com `code` de erro no meio dos que deram certo, e tratar
- * o lote inteiro como perdido apagaria a situação de todos os outros.
+ * Multiget `/items/bulk?ids=...` (ADR-0177) — situação dos NOSSOS anúncios. O adaptador
+ * (`comoEnvelopeAntigo`) entrega a lista de envelopes `{ code, body }`: um id inválido volta com
+ * `code` de erro no meio dos que deram certo, e tratar o lote inteiro como perdido apagaria a
+ * situação de todos os outros.
  */
 export interface AnuncioMultiget {
   item_id: string;

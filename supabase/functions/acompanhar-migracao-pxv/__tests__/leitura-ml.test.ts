@@ -7,12 +7,12 @@ describe('lerCoresML', () => {
   it('uma requisição; cor por item com o VALOR certo; não-200 fica fora', async () => {
     const urls: string[] = [];
     vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return resp([
-      { code: 200, body: { id: 'MLB1', attributes: [{ id: 'COLOR', value_name: 'Azul' }] } },
-      { code: 200, body: { id: 'MLB3', attributes: [{ id: 'BRAND', value_name: 'X' }] } },
-      { code: 404, body: { id: 'MLB2' } },
+      { status_code: 200, body: { id: 'MLB1', attributes: [{ id: 'COLOR', value_name: 'Azul' }] } },
+      { status_code: 200, body: { id: 'MLB3', attributes: [{ id: 'BRAND', value_name: 'X' }] } },
+      { status_code: 404 },
     ]); }));
     const m = await lerCoresML('t', ['MLB1', 'MLB2', 'MLB3']);
-    expect(urls).toHaveLength(1);
+    expect(urls).toEqual(['https://api.mercadolibre.com/items/bulk?ids=MLB1,MLB2,MLB3&attributes=status_code,body.id,body.attributes']);
     expect(Object.fromEntries(m)).toEqual({ MLB1: 'Azul', MLB3: null });
   });
   it('HTTP de erro → lança (o worker reagenda)', async () => {
@@ -29,10 +29,21 @@ describe('lerCoresML', () => {
   });
 });
 
+describe('lerCoresML — dedup', () => {
+  it('id repetido vai uma vez na URL (o bulk responde 400 a repetido)', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return resp([]); }));
+    await lerCoresML('t', ['MLB1', 'MLB1']);
+    expect(new URL(urls[0]).searchParams.get('ids')).toBe('MLB1');
+  });
+});
+
 describe('lerEstoqueVivoML', () => {
   it('available_quantity por item; ausente vira 0; HTTP de erro → mapa vazio sem lançar', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => resp([{ code: 200, body: { id: 'MLB1', available_quantity: 4 } }, { code: 200, body: { id: 'MLB2' } }])));
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (u: string) => { urls.push(u); return resp([{ status_code: 200, body: { id: 'MLB1', available_quantity: 4 } }, { status_code: 200, body: { id: 'MLB2' } }]); }));
     expect(Object.fromEntries(await lerEstoqueVivoML(async () => 't', ['MLB1', 'MLB2']))).toEqual({ MLB1: 4, MLB2: 0 });
+    expect(urls[0]).toBe('https://api.mercadolibre.com/items/bulk?ids=MLB1,MLB2&attributes=status_code,body.id,body.available_quantity');
     vi.stubGlobal('fetch', vi.fn(async () => resp({}, 500)));
     expect((await lerEstoqueVivoML(async () => 't', ['MLB1'])).size).toBe(0);
   });

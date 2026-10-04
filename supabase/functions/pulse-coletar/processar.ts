@@ -3,6 +3,7 @@ import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
 import type { ConexaoCanal } from '../_shared/canais/conexao.ts';
 import { getValidAccessTokenConexao } from '../_shared/ml/token.ts';
 import { mlGet } from '../_shared/ml/http.ts';
+import { caminhoMultiget, comoEnvelopeAntigo } from '../_shared/ml/multiget.ts';
 import { buscarFreteVendedor } from '../_shared/ml/frete.ts';
 import { buscarPerfilVendedor } from '../_shared/ml/perfil-vendedor.ts';
 import { buscarVisitas30d } from '../_shared/ml/visitas-item.ts';
@@ -79,10 +80,10 @@ export async function lerSituacaoAnuncios(ids: string[], token: string): Promise
   for (let i = 0; i < ids.length; i += 20) {
     const lote = ids.slice(i, i + 20);
     const json = await mlGet(
-      `${API}/items?ids=${lote.join(',')}&attributes=id,status,sub_status,category_id,listing_type_id,price`,
+      `${API}${caminhoMultiget(lote, 'id,status,sub_status,category_id,listing_type_id,price')}`,
       token,
     );
-    for (const st of parseStatusAnuncios(json)) infoPorItem.set(st.item_id, st);
+    for (const st of parseStatusAnuncios(comoEnvelopeAntigo(json, lote))) infoPorItem.set(st.item_id, st);
   }
   return infoPorItem;
 }
