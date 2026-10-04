@@ -408,6 +408,15 @@ describe('sincronizarAdsOrg', () => {
       { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
   });
 
+  // ADR-0173 §4: o Supabase derruba por CPU (2 s), não por relógio — teto por contagem por mensagem.
+  it('teto por contagem: para em maxItens e continua do cursor com o relógio parado', async () => {
+    const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'ITEM')])) });
+    expect(await sincronizarAdsOrg(d, primeira, { limiteMs: 90_000, lote: 1, concorrencia: 1, maxItens: 1 }))
+      .toEqual({ resultado: 'continua' });
+    expect(d.buscarSerieGrupo).toHaveBeenCalledTimes(1);
+    expect(d.continuar).toHaveBeenCalledWith(expect.objectContaining({ cursor: '11', primeira: false }), {});
+  });
+
   // IMPORTANTE: item que começaria depois do fim do orçamento não é lido (nunca abre uma requisição sem orçamento).
   it('item que começaria depois do fim do orçamento não é lido: adia com atrasoMs 0', async () => {
     const d = fake({ buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'ITEM')])) });

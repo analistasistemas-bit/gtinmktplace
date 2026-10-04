@@ -114,6 +114,16 @@ describe('sincronizarTrafegoOrg', () => {
     expect(d.concluir).not.toHaveBeenCalled();
   });
 
+  // ADR-0173 §4: o Supabase derruba por CPU (2 s), não por relógio — teto por contagem por mensagem.
+  it('teto por contagem: para em maxItens e continua do último MLB com o relógio parado', async () => {
+    const d = fake({}, ['MLB1', 'MLB2', 'MLB3', 'MLB4']);
+    const r = await sincronizarTrafegoOrg(d, primeira, { limiteMs: 90_000, lote: 2, concorrencia: 6, maxItens: 2 });
+    expect(r).toEqual({ resultado: 'continua' });
+    expect(idsVisitados(d)).toEqual(['MLB1', 'MLB2']);
+    expect(d.continuar).toHaveBeenCalledWith({ org_id: ORG, rodada: RODADA, cursor: 'MLB2', primeira: false, tentativa: 0 }, {});
+    expect(d.concluir).not.toHaveBeenCalled();
+  });
+
   it('continuação parte depois do cursor e renova a posse antes de buscar', async () => {
     const d = fake({}, ['MLB1', 'MLB2', 'MLB3', 'MLB4']);
     const r = await sincronizarTrafegoOrg(d, { org_id: ORG, rodada: RODADA, cursor: 'MLB2', primeira: false });

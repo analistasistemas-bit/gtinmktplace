@@ -204,3 +204,13 @@ deste ADR).
 - **Outro runtime (worker fora do Supabase):** resolve CPU, mas cria infraestrutura nova para operar,
   sem necessidade enquanto os lotes couberem.
 - **Schedule por org:** exigiria criar e apagar schedules a cada org nova.
+
+## Emenda 2026-10-04 — §4 estendido aos workers que nasceram depois
+
+Os workers por cadeia QStash criados depois deste ADR paravam só por relógio (`limiteMs` 90 s):
+`sincronizar-promocoes` (ADR-0170), `operacoes-massa` (ADR-0174), `coletar-ads-ml` e
+`coletar-trafego-ml` (ADR-0172). A 11.11 da Black da Avil derrubou `sincronizar-promocoes` com
+`CPU Time exceeded` aos ~220 anúncios por mensagem (04/10). Os quatro passam a parar também em
+`maxItens` = 100 por mensagem, sempre múltiplo do lote. O relógio fica só de reserva. Nos sete dias
+anteriores (28/09–04/10) só `sincronizar-promocoes` registrou `CPU Time exceeded`; nos outros três a
+mudança é preventiva.

@@ -138,7 +138,7 @@ async function agendarOuConcluir(deps: DepsExecutar, aConferir: ItemRow[]): Prom
 }
 
 export async function executar(
-  op: OperacaoRow, deps: DepsExecutar, opts: { limiteMs: number; lote: number },
+  op: OperacaoRow, deps: DepsExecutar, opts: { limiteMs: number; lote: number; maxItens?: number },
 ): Promise<{ processados: number; continuou: boolean }> {
   const inicio = deps.agora();
   let processados = 0;
@@ -147,7 +147,8 @@ export async function executar(
     const lote = await deps.itensPendentes(op.id, opts.lote);
     if (!lote.length) break;
     for (const it of lote) {
-      if (deps.agora() - inicio >= opts.limiteMs) {
+      // Teto por contagem (ADR-0173 §4): o Supabase derruba por CPU (2 s), não por relógio.
+      if (processados >= (opts.maxItens ?? Infinity) || deps.agora() - inicio >= opts.limiteMs) {
         await deps.continuar();
         return { processados, continuou: true };
       }

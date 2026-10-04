@@ -215,6 +215,17 @@ describe('executar — aderir', () => {
   });
 });
 
+describe('executar — teto por contagem (ADR-0173 §4)', () => {
+  it('para em maxItens e continua, com o relógio parado', async () => {
+    const itens = Array.from({ length: 5 }, (_, i) => item(`MLB${i}`));
+    const { deps } = montar(itens);
+    const r = await executar(DEAL_ADERIR, deps, { limiteMs: 60_000, lote: 10, maxItens: 2 });
+    expect(r).toEqual({ processados: 2, continuou: true });
+    expect(deps.continuar).toHaveBeenCalledTimes(1);
+    expect(deps.concluir).not.toHaveBeenCalled();
+  });
+});
+
 describe('executar — sair', () => {
   it('DELETE → saida_solicitada com saida_pedida_em, conferência em 5 min + agendarConferencia(300)', async () => {
     const itens = [item('MLB1')];

@@ -98,7 +98,8 @@ const meta = (g: GrupoConhecido): GrupoConhecido =>
 export async function sincronizarAdsOrg(
   deps: DepsAds,
   msg: MsgAds,
-  cfg = { limiteMs: 90_000, lote: 20, concorrencia: 6 },
+  cfg: { limiteMs: number; lote: number; concorrencia: number; maxItens?: number } =
+    { limiteMs: 90_000, lote: 20, concorrencia: 6, maxItens: 100 },
 ): Promise<{ resultado: ResultadoAds }> {
   const inicio = deps.agora();
   const fim = inicio + cfg.limiteMs;
@@ -197,7 +198,8 @@ export async function sincronizarAdsOrg(
       ? `${naoLidos} ${naoLidos === 1 ? 'grupo não lido' : 'grupos não lidos'} depois de ${LIMITE_ADIAMENTOS} adiamentos (429/5xx/tempo)`
       : 'grupo(s) não lido(s) em mensagem anterior desta rodada (429/5xx/tempo)';
     for (let i = 0; i < pendentes.length; i += cfg.lote) {
-      if (i > 0 && deps.agora() - inicio > cfg.limiteMs) return await continuar(cursor);
+      // Teto por contagem (ADR-0173 §4): o Supabase derruba por CPU (2 s), não por relógio; múltiplo do lote.
+      if (i > 0 && (i >= (cfg.maxItens ?? Infinity) || deps.agora() - inicio > cfg.limiteMs)) return await continuar(cursor);
       const lote = pendentes.slice(i, i + cfg.lote);
       const vinculos = await deps.contarVinculos(lote.map((g) => g.ad_group_id));
       let adiarMs: number | null = null;

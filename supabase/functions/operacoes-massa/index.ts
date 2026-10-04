@@ -17,7 +17,7 @@ import {
 import { lerConexaoML, MSG_SEM_CONEXAO, respostaFalhaCriacao, SemConexaoML } from '../_shared/operacoes/falhas.ts';
 import type { Acao } from '../_shared/operacoes/tipos.ts';
 
-const EXECUCAO = { limiteMs: 90_000, lote: 20 };
+const EXECUCAO = { limiteMs: 90_000, lote: 20, maxItens: 100 };
 const SEM_MODULO = 'A Central de Promoções não está habilitada para esta organização.';
 const PROMOCAO_ENCERRADA = 'A promoção não está mais ativa no Mercado Livre';
 const NAO_INICIOU = 'Não foi possível iniciar a operação. Tente de novo.';

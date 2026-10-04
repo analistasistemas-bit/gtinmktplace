@@ -89,7 +89,8 @@ interface ColetaItem { id: string; pontos: PontoVisitasGravar[]; ultimoOkEm: str
 export async function sincronizarTrafegoOrg(
   deps: DepsTrafego,
   msg: MsgTrafego,
-  cfg = { limiteMs: 90_000, lote: 20, concorrencia: 6 },
+  cfg: { limiteMs: number; lote: number; concorrencia: number; maxItens?: number } =
+    { limiteMs: 90_000, lote: 20, concorrencia: 6, maxItens: 100 },
 ): Promise<{ resultado: ResultadoTrafego }> {
   const inicio = deps.agora();
   const fim = inicio + cfg.limiteMs;
@@ -135,7 +136,8 @@ export async function sincronizarTrafegoOrg(
       .filter((id) => inicial == null || id > inicial);
 
     for (let i = 0; i < pendentes.length; i += cfg.lote) {
-      if (i > 0 && deps.agora() - inicio > cfg.limiteMs) return await continuar(cursor);
+      // Teto por contagem (ADR-0173 §4): o Supabase derruba por CPU (2 s), não por relógio; múltiplo do lote.
+      if (i > 0 && (i >= (cfg.maxItens ?? Infinity) || deps.agora() - inicio > cfg.limiteMs)) return await continuar(cursor);
       const lote = pendentes.slice(i, i + cfg.lote);
       // Preço só no dia de `agora` e só se ainda não há linha desse dia (1 GET por MLB por execução).
       const diaPreco = diaDeHoje(new Date(deps.agora()), CALENDARIO);
