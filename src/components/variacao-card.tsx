@@ -1,6 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Lock, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 import { useQueryClient } from '@tanstack/react-query';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { useVoltarPrecoAutomatico } from '@/hooks/useFamiliaMutations';
 import { Input } from '@/components/ui/input';
 import { StatusInline, type SaveStatus } from '@/components/status-inline';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -62,6 +75,7 @@ export function VariacaoCard({
 }: VariacaoCardProps) {
   const { data: imgUrl } = useImageUrl(variacao.fotoPath);
   const qc = useQueryClient();
+  const voltarAutomatico = useVoltarPrecoAutomatico(loteId);
   const [trocaStatus, setTrocaStatus] = useState<SaveStatus>(undefined);
   const [fotoAberta, setFotoAberta] = useState(false);
   const criticaId = criticas.length > 0 ? `criticas-${variacao.codigo}` : undefined;
@@ -234,7 +248,48 @@ export function VariacaoCard({
               classe de informação. Texto curto ("sugerido pela IA", não "preço sugerido pela
               IA"): a coluna é `shrink-0` de largura apertada (input de 96px) numa linha que já
               estourou uma vez em mobile ~374px (ver comentário da linha 78 acima). */}
-          {variacao.precoPublicacao != null && variacao.precoPublicacao !== variacao.preco && (
+          {/* D15 (reajuste em massa): preço com a marca sobrevive ao re-ingest. O selo diz isso e
+              "Voltar ao automático" remove a marca — o valor fica até o próximo lote recalcular.
+              Com a marca o número é do operador, então o selo "sugerido pela IA" não se aplica. */}
+          {variacao.editadoPeloOperador && (
+            <div className="flex flex-col items-start gap-0.5">
+              <StatusPill tone="neutral" title="Preço fixado pelo operador — mantido nos próximos lotes">
+                <Lock className="h-3 w-3" /> preço fixado
+              </StatusPill>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <button
+                    type="button"
+                    disabled={voltarAutomatico.isPending || !variacao.id}
+                    className="pl-0.5 text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50"
+                  >
+                    Voltar ao automático
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Voltar ao preço automático?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      O preço desta cor volta a ser calculado no próximo lote.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() =>
+                        voltarAutomatico.mutate(variacao.id!, {
+                          onError: () => toast.error('Não foi possível voltar ao preço automático.'),
+                        })
+                      }
+                    >
+                      Voltar ao automático
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          )}
+          {!variacao.editadoPeloOperador && variacao.precoPublicacao != null && variacao.precoPublicacao !== variacao.preco && (
             <StatusPill
               tone="info"
               // Os dois números NÃO são a mesma grandeza e o texto precisa dizer isso: `preco` é

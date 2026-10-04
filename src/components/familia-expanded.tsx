@@ -129,6 +129,17 @@ export function FamiliaExpanded({ familia, focoCodigo, onFocoConcluido, ocultarS
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [precosKey]);
+  // D15: a marca "preço fixado" só muda no servidor (salvar preço / "Voltar ao automático" →
+  // invalidate). Sem este merge o selo do VariacaoCard ficaria preso ao snapshot inicial.
+  const fixadosKey = familia.variacoes.map((v) => `${v.codigo}:${v.editadoPeloOperador ? 1 : 0}`).join('|');
+  useEffect(() => {
+    setVariacoes((vs) => vs.map((v) => {
+      const servidor = familia.variacoes.find((x) => x.codigo === v.codigo);
+      return servidor && servidor.editadoPeloOperador !== v.editadoPeloOperador
+        ? { ...v, editadoPeloOperador: servidor.editadoPeloOperador } : v;
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fixadosKey]);
 
   // Re-sincroniza o estado local quando o servidor altera a FOTO de alguma variação
   // (upload pela câmera → invalidate → refetch). Sem isso, o estado local — inicializado

@@ -24,6 +24,7 @@ vi.mock('@/components/variacao-card', () => ({
         value={variacao.precoPublicacao ?? ''}
         onChange={(e) => onMudarPreco(variacao.codigo, Number(e.target.value))}
       />
+      {variacao.editadoPeloOperador && <span>fixado-{variacao.codigo}</span>}
     </div>
   ),
 }));
@@ -149,5 +150,17 @@ describe('FamiliaExpanded — resync pós-IA (lote manual #21)', () => {
 
     fireEvent.blur(screen.getByLabelText('DESCRIÇÃO'));
     expect(updateDescricaoSpy).toHaveBeenCalledWith({ id: 'fam-1', descricao: 'Texto do operador' });
+  });
+
+  it('D15: a marca de preço fixado acompanha o servidor (aparece ao salvar, some ao voltar ao automático)', () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { rerender } = render(renderCom(qc, posIA()));
+    expect(screen.queryByText('fixado-V1')).not.toBeInTheDocument();
+
+    rerender(renderCom(qc, familia({ ...posIA(), variacoes: [variacao({ precoPublicacao: 73.2, editadoPeloOperador: true })] })));
+    expect(screen.getByText('fixado-V1')).toBeInTheDocument();
+
+    rerender(renderCom(qc, familia({ ...posIA(), variacoes: [variacao({ precoPublicacao: 73.2, editadoPeloOperador: false })] })));
+    expect(screen.queryByText('fixado-V1')).not.toBeInTheDocument();
   });
 });

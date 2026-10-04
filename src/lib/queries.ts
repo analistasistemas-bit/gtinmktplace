@@ -410,6 +410,19 @@ export async function updateVariacaoPreco(
 }
 
 /**
+ * "Voltar ao automático" (D15 do reajuste em massa): remove a marca que faz o preço sobreviver ao
+ * re-ingest; o valor atual fica e a cor volta a ser calculada no próximo lote. Só a flag — sem
+ * `editado_em`: o padrão do ADR-0116 abaixo vale para `familias`; `variacoes` não tem a coluna.
+ */
+export async function voltarPrecoAutomatico(variacaoId: string): Promise<void> {
+  const { error } = await supabase
+    .from('variacoes')
+    .update({ preco_editado_pelo_operador: false })
+    .eq('id', variacaoId);
+  if (error) throw error;
+}
+
+/**
  * `editado_em` é gravado junto com a flag, e não só a flag (ADR-0116).
  *
  * A coluna existia e nunca era preenchida por estes dois pontos — as duas únicas escritas de

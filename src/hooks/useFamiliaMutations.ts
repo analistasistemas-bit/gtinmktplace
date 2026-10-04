@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   updateVariacaoPreco,
+  voltarPrecoAutomatico,
   updateVariacaoCor,
   updateVariacaoGtin,
   updateFamiliaTitulo,
@@ -22,6 +23,15 @@ export function useUpdateVariacaoPreco(loteId: string) {
   return useMutation({
     mutationFn: ({ id, preco }: { id: string; preco: number }) =>
       updateVariacaoPreco(id, preco),
+    onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
+  });
+}
+
+/** D15: remove a marca de preço fixado; a cor volta a ser calculada no próximo lote. */
+export function useVoltarPrecoAutomatico(loteId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => voltarPrecoAutomatico(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.familias(loteId) }),
   });
 }
