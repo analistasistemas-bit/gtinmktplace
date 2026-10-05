@@ -301,7 +301,7 @@ iniciativa I1 do roadmap de melhorias. Ver
 - [ ] heartbeat da reserva de 30 min se a cadeia real de sincronização passar de ~20 min.
 - [ ] `CanalTabs` mostra dados do ML em qualquer aba de canal — revisar no E5.
 - [x] toast de sucesso aparece mesmo quando a lista volta com estado erro. Resolvido em 26/09 (`50f8c4bc`): `avisoAtualizacao` escolhe sucesso/erro/info pelo estado devolvido.
-- [x] "Nenhum preço da faixa atinge o mínimo" ocupa 3 linhas na tabela. Resolvido em 26/09 (`50f8c4bc`): célula mostra "Sem preço viável" e a frase completa vai para o tooltip.
+- [x] "Nenhum preço da faixa atinge o mínimo" ocupa 3 linhas na tabela. Resolvido em 26/09 (`8515ef06`): célula mostra "Sem preço viável" e a explicação vai para o tooltip.
 
 ## Monitor de frete (ADR-0169) — 2026-09-24
 
