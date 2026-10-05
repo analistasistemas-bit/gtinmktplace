@@ -1,7 +1,9 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import type { PainelAds } from '@/lib/ads-painel';
+import type { RetornoAdsPainel } from '@/hooks/useAdsPainel';
+import { PERIODO_PADRAO_ADS } from '@/lib/ads-painel-dados';
 
 const hook = vi.hoisted(() => vi.fn());
 vi.mock('@/hooks/useAdsPainel', () => ({ useAdsPainel: hook }));
@@ -23,13 +25,33 @@ const PAINEL: PainelAds = {
   ],
   compartilhados: [{ id: 9, custo: 20, familias: ['A', 'B'], semCodigo: 0 }],
 };
-const RETORNO = { janela: { desde: '2026-09-04', ate: '2026-10-03' }, situacaoPeriodo: 'pronto', historicoDesde: null,
-  ultimoOkEm: null, isLoading: false, isFetching: false, isError: false };
-const montar = (painel: PainelAds | null = PAINEL) => {
-  hook.mockReturnValue({ ...RETORNO, painel, refetch: vi.fn() });
+const montar = (
+  painel: PainelAds | null = PAINEL,
+  extra: Partial<RetornoAdsPainel> = {},
+) => {
+  const retorno: RetornoAdsPainel = {
+    painel,
+    janela: { desde: '2026-09-04', ate: '2026-10-03' },
+    situacaoPeriodo: 'pronto',
+    historicoDesde: '2026-01-01T03:00:00.000Z',
+    ultimoOkEm: '2026-10-04T14:17:00Z',
+    isLoading: false,
+    isFetching: false,
+    isError: false,
+    refetch: vi.fn().mockResolvedValue(undefined),
+    ...extra,
+  };
+
+  hook.mockReturnValue(retorno);
   return render(<MemoryRouter><Ads /></MemoryRouter>);
 };
-beforeEach(() => hook.mockReset());
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  localStorage.clear();
+  hook.mockReset();
+});
+afterEach(() => vi.restoreAllMocks());
 
 describe('Ads', () => {
   it('resumo da conta com as 3 parcelas da despesa e o resultado', () => {
@@ -77,10 +99,9 @@ describe('Ads', () => {
     expect(within(screen.getByRole('row', { name: /Fam A/ })).queryByText(/dentro/i)).not.toBeInTheDocument();
   });
   it('mostra desde quando há vendas; com histórico incompleto, lucro e resultado não aparecem', () => {
-    hook.mockReturnValue({ painel: { ...PAINEL, conta: { ...PAINEL.conta!, lucroAntes: null, resultado: null },
+    montar({ ...PAINEL, conta: { ...PAINEL.conta!, lucroAntes: null, resultado: null },
       familias: [{ ...PAINEL.familias[0], lucroAntes: null, resultado: null, motivo: 'historico' }] },
-      ...RETORNO, historicoDesde: '2026-09-10T15:00:00.000Z', refetch: vi.fn() });
-    render(<MemoryRouter><Ads /></MemoryRouter>);
+    { historicoDesde: '2026-09-10T15:00:00.000Z' });
     expect(screen.getByText(/Vendas desde/)).toBeInTheDocument();
     expect(within(screen.getByRole('row', { name: /Fam A/ })).getByText(/antes do histórico de vendas/i)).toBeInTheDocument();
   });
@@ -94,11 +115,143 @@ describe('Ads', () => {
     expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
     expect(screen.getByText(/anunciante/i)).toBeInTheDocument();
   });
-  it('período sempre visível com a data final', () => {
+  it.each([7, 30, 90] as const)('preserva a preferência existente de %i dias', dias => {
+    localStorage.setItem('ads-painel-dias', String(dias));
     montar();
-    // Só a data: o fim pode ser ontem de propósito (sync nulo, worker parado), não "o último coletado".
-    expect(screen.getByText('04/09 – 03/10 · até 03/10')).toBeInTheDocument();
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias });
   });
+
+  it.each([null, '', '31', '0', '030', 'range', '{"tipo":"mes_atual"}'])(
+    'usa o padrão para preferência inválida %s',
+    valor => {
+      if (valor !== null) localStorage.setItem('ads-painel-dias', valor);
+      montar();
+      expect(hook).toHaveBeenLastCalledWith(PERIODO_PADRAO_ADS);
+    },
+  );
+
+  it('salva e restaura mês atual na chave existente', () => {
+    const primeira = montar();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mês atual' }));
+
+    expect(localStorage.getItem('ads-painel-dias')).toBe('mes_atual');
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'mes_atual' });
+
+    primeira.unmount();
+    montar();
+
+    expect(screen.getByRole('button', { name: 'Mês atual' }))
+      .toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('permite selecionar período com storage bloqueado', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+
+    montar();
+
+    expect(hook).toHaveBeenLastCalledWith(PERIODO_PADRAO_ADS);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Mês atual' }));
+
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'mes_atual' });
+    expect(screen.getByRole('button', { name: 'Mês atual' }))
+      .toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('mês aguardando oferece os últimos 30 dias sem apresentar números', () => {
+    localStorage.setItem('ads-painel-dias', 'mes_atual');
+    montar(null, { janela: null, situacaoPeriodo: 'aguardando_mes' });
+
+    expect(screen.getByText('Aguardando o primeiro dia de Ads deste mês'))
+      .toBeVisible();
+    expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver últimos 30 dias' }));
+
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 30 });
+    expect(localStorage.getItem('ads-painel-dias')).toBe('30');
+  });
+
+  it('mostra o intervalo completo em BRT', () => {
+    montar();
+    expect(screen.getByText('04/09/2026 a 03/10/2026 · BRT')).toBeVisible();
+  });
+
+  it.each(['sem_permissao', 'sem_acesso'] as const)(
+    '%s oferece Canais sem apresentar resultado',
+    estado => {
+      montar({ ...PAINEL, estado, conta: null, familias: [], compartilhados: [] });
+
+      expect(screen.getByRole('link', { name: 'Abrir Canais' }))
+        .toHaveAttribute('href', '/canais');
+      expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
+    },
+  );
+
+  it('erro oferece uma nova consulta', () => {
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    montar(null, { isError: true, refetch });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar de novo' }));
+
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('erro do sync mostra o alerta, não o skeleton', () => {
+    montar(null, { janela: null, situacaoPeriodo: 'carregando', isError: true, ultimoOkEm: null });
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Não foi possível carregar o painel de Ads.');
+    expect(screen.queryByLabelText('Carregando')).not.toBeInTheDocument();
+  });
+
+  it('aguardando_mes não mostra skeleton', () => {
+    montar(null, { janela: null, situacaoPeriodo: 'aguardando_mes', isLoading: false });
+
+    expect(screen.getByText('Aguardando o primeiro dia de Ads deste mês')).toBeVisible();
+    expect(screen.queryByLabelText('Carregando')).not.toBeInTheDocument();
+  });
+
+  it('refetch mantém os dados da mesma janela visíveis', () => {
+    montar(PAINEL, { isFetching: true });
+
+    expect(screen.getByText('Atualizando…')).toBeVisible();
+    expect(screen.getByRole('region', { name: 'Resumo da conta' }))
+      .toBeInTheDocument();
+  });
+
+  it('sem_ads oferece os últimos 90 dias', () => {
+    montar({ ...PAINEL, estado: 'sem_ads', conta: null, familias: [], compartilhados: [] });
+
+    expect(screen.getByText('Nenhum gasto de Ads no período')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver últimos 90 dias' }));
+
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 90 });
+  });
+
+  it('sem_ads com 90 dias selecionado não repete a ação', () => {
+    localStorage.setItem('ads-painel-dias', '90');
+    montar({ ...PAINEL, estado: 'sem_ads', conta: null, familias: [], compartilhados: [] });
+
+    expect(screen.getByText('Nenhum gasto de Ads no período')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Ver últimos 90 dias' })).not.toBeInTheDocument();
+  });
+
+  it.each(['sem_coleta', 'coletando'] as const)('%s permite verificar novamente', estado => {
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    montar({ ...PAINEL, estado, conta: null, familias: [], compartilhados: [] }, { refetch });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Verificar novamente' }));
+
+    expect(refetch).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
+  });
+
   it('compartilhado e não identificado: valor na coluna Gasto', () => {
     montar();
     for (const nome of [/Compartilhado entre famílias/, /Gasto de Ads não identificado/]) {
@@ -125,9 +278,8 @@ describe('Ads', () => {
     expect(screen.queryByText(/sem família \+/)).not.toBeInTheDocument();
   });
   it('motivo histórico com a data da 1ª venda', () => {
-    hook.mockReturnValue({ painel: { ...PAINEL, familias: [{ ...PAINEL.familias[0], lucroAntes: null, resultado: null, motivo: 'historico' }] },
-      ...RETORNO, historicoDesde: '2026-08-03T15:00:00.000Z', refetch: vi.fn() });
-    render(<MemoryRouter><Ads /></MemoryRouter>);
+    montar({ ...PAINEL, familias: [{ ...PAINEL.familias[0], lucroAntes: null, resultado: null, motivo: 'historico' }] },
+      { historicoDesde: '2026-08-03T15:00:00.000Z' });
     expect(within(screen.getByRole('row', { name: /Fam A/ })).getByText(/antes do histórico de vendas \(desde 03\/08\/2026\)/)).toBeInTheDocument();
   });
 });
