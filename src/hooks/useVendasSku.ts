@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { resolverJanela, janelaAnterior, type Periodo } from '@/lib/metricas';
+import { resolverJanela, janelaAnterior, type Janela, type Periodo } from '@/lib/metricas';
 import { useVendas } from '@/hooks/useVendas';
 import { useCustos } from '@/hooks/useCustos';
 import { useFotosProduto } from '@/hooks/useFotosProduto';
@@ -16,8 +16,9 @@ import type { Venda } from '@/lib/faturamento';
 import { janelaEstendida, montarVendasSku, type VendasSku } from '@/lib/vendas-sku';
 
 /** Mesmos resolvers e mesma fonte da aba Vendas (aba-vendas.tsx:173-190): é isso que faz a soma bater. */
-export function useVendasSku(periodo: Periodo) {
-  const janela = useMemo(() => resolverJanela(periodo), [periodo]);
+/** `janelaFixa`: janela ISO pronta (ex.: dias BRT do painel de Ads), no lugar de `resolverJanela(periodo)`. */
+export function useVendasSku(periodo: Periodo, janelaFixa?: Janela) {
+  const janela = useMemo(() => janelaFixa ?? resolverJanela(periodo), [periodo, janelaFixa]);
   const anterior = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
   const estendida = useMemo(() => janelaEstendida(janela, anterior), [janela, anterior]);
   const vendasQ = useVendas(estendida, 'todos');

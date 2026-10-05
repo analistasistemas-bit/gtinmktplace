@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { montarPainelAds, type FontePainelAds, type GrupoPainel } from '@/lib/ads-painel';
+import { janelaBRT, lucroPorFamilia } from '@/lib/ads-painel-dados';
+import { agruparPorPedido } from '@/lib/pedidos-faturamento';
+import { montarVendasSku } from '@/lib/vendas-sku';
+import type { Venda, VendaItem } from '@/lib/faturamento';
+import type { CatalogoSku } from '@/lib/vendas-sku-catalogo';
 
 const janela = { desde: '2026-09-01', ate: '2026-09-02' };
 const agora = new Date('2026-10-04T15:00:00-03:00');
@@ -155,5 +160,56 @@ describe('montarPainelAds', () => {
   it('famílias ordenadas por gasto', () => {
     const p = montarPainelAds(base({ grupos: [grupo(1, 10, ['MLB1']), grupo(2, 50, ['MLB3'])] }));
     expect(p.familias.map((f) => f.codigoPai)).toEqual(['B', 'A']);
+  });
+});
+
+// Sem mock: vendas reais → montarVendasSku → lucroPorFamilia (a MESMA função que o useAdsPainel chama) → montarPainelAds.
+// Fixtures copiadas de tests/lib/vendas-sku.test.ts / useSkuDossie.test.ts (importar o arquivo registraria a suíte dele aqui).
+describe('montarPainelAds × vendas reais (integração)', () => {
+  const item = (over: Partial<VendaItem> = {}): VendaItem => ({ id: 'it1', ml_item_id: 'MLB1', variation_id: null,
+    titulo: 'FITA', codigo: 'A1', cor: null, ean: '789', quantity: 1, unit_price: 10, sale_fee: 0, is_publiai: true,
+    custo_congelado: null, ...over } as VendaItem);
+  const venda = (over: Partial<Venda> = {}): Venda => ({ id: 'v1', order_id: 1, pack_id: null, status: 'paid',
+    status_detail: null, date_closed: '2026-09-01T12:00:00Z', date_created: null, comprador_nick: 'c', comprador_nome: null,
+    comprador_id: 100, uf: null, cidade: null, sacado_em: null, sacado_por: null, atualizado_em: '2026-09-01T12:00:00Z',
+    total_amount: 10, paid_amount: 10, sale_fee_total: 0, frete_vendedor: null, liquido: 10, estorno: null,
+    money_release_date: null, currency: 'BRL', shipping_id: null, shipping_status: null, shipping_substatus: null,
+    shipping_logistic: null, tracking_number: null, is_publiai: true, tem_devolucao: false, kit_item_id: null,
+    itens: [item()], ...over } as Venda);
+  const cat = (codigo: string, codigoPai: string, over: Partial<CatalogoSku> = {}): CatalogoSku => ({ codigo, codigoPai,
+    nomeFamilia: `Fam ${codigoPai}`, nome: codigo, cor: null, tamanho: null, estoque: 5, fornecedor: null, origem: 'nacional',
+    ehKit: false, primeiraVenda: '2026-01-01T03:00:00.000Z', ultimaVenda: null, kitMultiplicador: null, kitBaseCodigo: null,
+    estoqueKit: null, ...over });
+
+  it('kit, cancelada e item sem custo chegam ao painel com bruto, fonte de custo e motivo certos', () => {
+    const custos: Record<string, number> = { A1: 4, K2: 8 };
+    const vendas = [
+      venda({ id: 'a', order_id: 1, itens: [item({ id: 'i1', codigo: 'A1', custo_congelado: 4 })] }),
+      venda({ id: 'c', order_id: 2, status: 'cancelled', itens: [item({ id: 'i2', codigo: 'A1', custo_congelado: 4 })] }),
+      venda({ id: 'k', order_id: 3, total_amount: 30, paid_amount: 30, liquido: 30, kit_item_id: 'MLBK',
+        itens: [item({ id: 'i3', ml_item_id: 'MLBK', codigo: 'K2', unit_price: 30, custo_congelado: 8 })] }),
+      venda({ id: 'b', order_id: 4, itens: [item({ id: 'i4', ml_item_id: 'MLBB', codigo: 'B1' })] }),
+    ];
+    const catalogo = [cat('A1', 'A'), cat('K2', 'K', { ehKit: true, kitMultiplicador: 2, kitBaseCodigo: 'A1' }), cat('B1', 'B')];
+    const jv = janelaBRT(janela.desde, janela.ate);
+    const vs = montarVendasSku({ vendas, agrupar: (v) => agruparPorPedido(v, (it) => custos[it.codigo ?? ''] ?? null),
+      janela: jv, anterior: { desde: '2026-08-01T03:00:00.000Z', ate: jv.desde },
+      catalogo: new Map(catalogo.map((c) => [c.codigo, c])), devolucoes: [] });
+
+    const lucro = lucroPorFamilia(vs.linhas);
+    expect(lucro.get('A')).toEqual({ nome: 'Fam A', lucro: 6, brutoComCusto: 10, fonteCusto: 'real' });   // cancelada fora
+    expect(lucro.get('K')).toEqual({ nome: 'Fam K', lucro: 22, brutoComCusto: 30, fonteCusto: 'real' });
+    expect(lucro.get('B')).toEqual({ nome: 'Fam B', lucro: null, brutoComCusto: 0, fonteCusto: 'sem_custo' });
+
+    const p = montarPainelAds({ ...base({ grupos: [grupo(1, 2, ['MLB1'], 10, 10), grupo(2, 3, ['MLBK'], 30, 30),
+      grupo(3, 1, ['MLBB'], 10, 10)] }),
+      codigosPorMlb: new Map([['MLB1', ['A1']], ['MLBK', ['K2']], ['MLBB', ['B1']]]),
+      familiaDoCodigo: new Map(catalogo.map((c) => [c.codigo, c.codigoPai!])),
+      lucroPorFamilia: lucro, historicoDesde: vs.historicoDesde });
+    const f = (c: string) => p.familias.find((x) => x.codigoPai === c)!;
+    expect(f('A')).toMatchObject({ lucroAntes: 6, resultado: 4, acosEquilibrio: 0.6, fonteCusto: 'real', motivo: null });
+    expect(f('K')).toMatchObject({ lucroAntes: 22, resultado: 19, fonteCusto: 'real', motivo: null });
+    expect(f('K').acosEquilibrio).toBeCloseTo(22 / 30);
+    expect(f('B')).toMatchObject({ lucroAntes: null, resultado: null, acosEquilibrio: null, semaforo: null, motivo: 'sem_custo' });
   });
 });

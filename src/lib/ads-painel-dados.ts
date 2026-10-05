@@ -1,0 +1,44 @@
+// Painel de Ads (I2, ADR-0179): período BRT, janela de vendas BRT e leitura da RPC `ads_painel`.
+import { supabase } from '@/lib/supabase';
+import type { FontePainelAds, LucroFamilia } from '@/lib/ads-painel';
+import type { Janela } from '@/lib/metricas';
+import { agruparPorFamilia, type LinhaSku } from '@/lib/vendas-sku';
+
+export type DiasAds = 7 | 30 | 90;
+const diaBRT = (d: Date) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(d);
+const somarDias = (dia: string, n: number) =>
+  new Date(Date.parse(`${dia}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+/** Dias BRT inteiros terminando ontem: o Ads não tem o dia de hoje (spike 053 §3.2), então as vendas também não. */
+export function periodoAds(dias: DiasAds, agora: Date): { desde: string; ate: string } {
+  const ate = somarDias(diaBRT(agora), -1);
+  return { desde: somarDias(ate, -(dias - 1)), ate };
+}
+
+/** Dias BRT → janela ISO com offset fixo (Brasil sem horário de verão desde 2019): não depende do fuso do navegador. */
+export function janelaBRT(desde: string, ate: string): Janela {
+  return { desde: new Date(`${desde}T00:00:00-03:00`).toISOString(), ate: new Date(`${ate}T23:59:59.999-03:00`).toISOString() };
+}
+
+/** codigoPai → lucro do período. Usado pelo hook e pelo teste de integração (mesma fiação). */
+export function lucroPorFamilia(linhas: LinhaSku[]): Map<string, LucroFamilia> {
+  return new Map(agruparPorFamilia(linhas).map((f) =>
+    [f.codigoPai, { nome: f.nomeFamilia, lucro: f.m.lucro, brutoComCusto: f.acc.brutoComCusto, fonteCusto: f.m.fonteCusto }]));
+}
+
+const num = (v: unknown) => Number(v ?? 0);
+export async function buscarPainelAds(desde: string, ate: string): Promise<FontePainelAds> {
+  const { data, error } = await supabase.rpc('ads_painel', { p_desde: desde, p_ate: ate });
+  if (error) throw new Error(error.message);
+  const r = data as { sync: FontePainelAds['sync']; conta: Record<string, unknown>[]; grupos: Record<string, unknown>[] };
+  return {
+    sync: r.sync,
+    conta: r.conta.map((d) => ({ dia: String(d.dia), cost: num(d.cost), clicks: num(d.clicks), prints: num(d.prints),
+      direct_amount: num(d.direct_amount), indirect_amount: num(d.indirect_amount), total_amount: num(d.total_amount),
+      coletado_em: String(d.coletado_em) })),
+    grupos: r.grupos.map((g) => ({ ad_group_id: num(g.ad_group_id), tipo: g.tipo as 'ITEM' | 'FAMILY' | 'CATALOG',
+      status: String(g.status), cost: num(g.cost), clicks: num(g.clicks), prints: num(g.prints),
+      direct_amount: num(g.direct_amount), indirect_amount: num(g.indirect_amount), total_amount: num(g.total_amount),
+      membros: (g.membros as string[]) ?? [] })),
+  };
+}

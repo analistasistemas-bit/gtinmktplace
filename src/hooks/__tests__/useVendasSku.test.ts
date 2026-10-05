@@ -3,15 +3,18 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { montarMapasCusto } from '@/lib/custos';
+import { resolverJanela, janelaAnterior } from '@/lib/metricas';
+import { janelaEstendida } from '@/lib/vendas-sku';
 
-const { custosQ, catQ, devQ } = vi.hoisted(() => ({
+const { custosQ, catQ, devQ, useVendas } = vi.hoisted(() => ({
+  useVendas: vi.fn(),
   custosQ: { data: undefined as unknown, isLoading: true, isFetching: true, isError: false },
   catQ: { data: [] as unknown, isLoading: false, isFetching: false, isError: false, refetch: () => Promise.resolve() },
   devQ: { data: [] as unknown, isLoading: false, isFetching: false, isError: false, refetch: () => Promise.resolve() },
 }));
 const q = (data: unknown) => ({ data, isLoading: false, isFetching: false, isError: false, refetch: vi.fn() });
 
-vi.mock('@/hooks/useVendas', () => ({ useVendas: () => q([]) }));
+vi.mock('@/hooks/useVendas', () => ({ useVendas: (...a: unknown[]) => { useVendas(...a); return q([]); } }));
 vi.mock('@/hooks/useCustos', () => ({ useCustos: () => custosQ }));
 vi.mock('@/hooks/useFotosProduto', () => ({ useFotosProduto: () => q(undefined) }));
 vi.mock('@/hooks/useCoresProduto', () => ({ useCoresProduto: () => q(undefined) }));
@@ -73,5 +76,24 @@ describe('useVendasSku — espera as devoluções', () => {
     expect(r.isError).toBe(true);
     expect(r.dados).toBeNull();
     Object.assign(devQ, { data: [], isError: false });
+  });
+});
+
+describe('useVendasSku — janelaFixa', () => {
+  const range = { tipo: 'range', desde: '2026-09-04', ate: '2026-10-03' } as const;
+
+  it('com janelaFixa, a query de vendas usa exatamente aquela janela (estendida para a tendência)', () => {
+    // Diferente de resolverJanela(range) em qualquer fuso: prova que a fixa vence o período.
+    const fixa = { desde: '2026-09-04T07:00:00.000Z', ate: '2026-10-04T06:59:59.999Z' };
+    useVendas.mockClear();
+    renderHook(() => useVendasSku(range, fixa));
+    expect(useVendas).toHaveBeenLastCalledWith(janelaEstendida(fixa, janelaAnterior(fixa, range)), 'todos');
+  });
+
+  it('sem janelaFixa, o comportamento atual não muda (resolverJanela do período)', () => {
+    const j = resolverJanela(range);
+    useVendas.mockClear();
+    renderHook(() => useVendasSku(range));
+    expect(useVendas).toHaveBeenLastCalledWith(janelaEstendida(j, janelaAnterior(j, range)), 'todos');
   });
 });
