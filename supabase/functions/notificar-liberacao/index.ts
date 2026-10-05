@@ -12,6 +12,7 @@ import { verificarAssinatura } from '../_shared/queue.ts';
 import { notificarCategoria } from '../_shared/notificacoes/config.ts';
 import { montarMensagemLiberacao } from '../_shared/notificacoes/telegram.ts';
 import { filtroNotIn, listarOrgsArquivadas } from '../_shared/orgs-arquivadas.ts';
+import { liquidoDasLiberadas, type VendaLiberacao } from '../_shared/faturamento/liberacao.ts';
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return handleOptions();
@@ -40,7 +41,7 @@ Deno.serve(async (req) => {
   const arquivadas = filtroNotIn(await listarOrgsArquivadas(admin));
   let q = admin
     .from('ml_vendas')
-    .select('id, org_id, liquido, money_release_date, status')
+    .select(`id, org_id, money_release_date, ${COLUNAS_RATEIO}`)
     .gte('money_release_date', desde)
     .lt('money_release_date', ate)
     .is('liberacao_notificada_em', null)
@@ -57,13 +58,7 @@ Deno.serve(async (req) => {
 
   // Filtra em JS pelo dia BRT exato (double-check após a query de janela larga).
   // Garante que o fuso -03:00 explícito na query e a comparação JS coincidam.
-  const vendasHoje = (vendas as Array<{
-    id: string;
-    org_id: string;
-    liquido: number | null;
-    money_release_date: string;
-    status: string;
-  }>).filter(
+  const vendasHoje = (vendas as Array<VendaLiberacao & { org_id: string; money_release_date: string }>).filter(
     (v) =>
       new Date(v.money_release_date).toLocaleDateString('en-CA', {
         timeZone: 'America/Sao_Paulo',
@@ -74,12 +69,18 @@ Deno.serve(async (req) => {
     return json({ notificados: 0, usuarios: 0 });
   }
 
+  // Demais orders dos mesmos envios/packs (inclusive as que liberam em outro dia): o frete do envio
+  // é gravado inteiro em cada order e precisa ser rateado entre todas — ver liquidoDasLiberadas.
+  const membros = await carregarMembrosDosEnvios(admin, vendasHoje);
+  if (membros === null) return json({ erro: 'falha ao carregar membros dos envios' }, 500);
+  const liquidoPorVenda = liquidoDasLiberadas(vendasHoje, membros);
+
   // Agrupa por org_id (E7 — config do Telegram é por organização, não por usuário).
   const porOrg = new Map<string, { ids: string[]; total: number }>();
   for (const v of vendasHoje) {
     const acc = porOrg.get(v.org_id) ?? { ids: [], total: 0 };
     acc.ids.push(v.id);
-    acc.total += v.liquido ?? 0;
+    acc.total += liquidoPorVenda.get(v.id) ?? 0;
     porOrg.set(v.org_id, acc);
   }
 
@@ -109,6 +110,31 @@ Deno.serve(async (req) => {
 
   return json({ notificados, usuarios });
 });
+
+const COLUNAS_RATEIO = 'status, shipping_id, pack_id, frete_vendedor, sale_fee_total, total_amount, cupom_vendedor, liquido';
+
+/** Todas as orders (da mesma org) que compartilham envio ou pack com as liberadas. null = erro. */
+async function carregarMembrosDosEnvios(
+  admin: ReturnType<typeof adminClient>,
+  vendas: Array<VendaLiberacao & { org_id: string }>,
+): Promise<VendaLiberacao[] | null> {
+  const membros: VendaLiberacao[] = [];
+  for (const orgId of new Set(vendas.map((v) => v.org_id))) {
+    const daOrg = vendas.filter((v) => v.org_id === orgId);
+    const envios = [...new Set(daOrg.map((v) => v.shipping_id).filter((x) => x != null))];
+    const packs = [...new Set(daOrg.map((v) => v.pack_id).filter((x) => x != null))];
+    const filtros = [
+      envios.length ? `shipping_id.in.(${envios.join(',')})` : null,
+      packs.length ? `pack_id.in.(${packs.join(',')})` : null,
+    ].filter(Boolean).join(',');
+    if (!filtros) continue;
+    const { data, error } = await admin.from('ml_vendas').select(`id, ${COLUNAS_RATEIO}`)
+      .eq('org_id', orgId).or(filtros);
+    if (error) { console.error(`membros dos envios (org ${orgId}):`, error.message); return null; }
+    membros.push(...(data as VendaLiberacao[]));
+  }
+  return membros;
+}
 
 function json(o: unknown, status = 200): Response {
   return new Response(JSON.stringify(o), {

@@ -9,6 +9,7 @@
 - [x] Revisões: Codex gpt-6.1-sol (plano e diff; achados corrigidos) e Grok 4.7 xhigh pré-merge (aprovado). `db push`; deploy de 22 edges (ex.: `sync-venda` v99, `reconciliar-faturamento` v96, `platform-admin` v14), `verify_jwt` conferido.
 - [x] Backfill autorizado pelo Diego (prévia read-only): Avil 73 orders com cupom (R$ 230,00, desde 09/09/2026); demais orders lidas gravadas com 0. Sem leitura: 2 da DSA (MP 404) e 14 da Hairflay (sem conexão). Pack do caso no banco: líquido 37,93 por order (= `net_received_amount` do MP); pelas funções do app, Venda 127,80 · Líquido 94,16 · Imposto 20,44 · Lucro 21,72.
 - Pendência: billing da plataforma sobre o valor sem cupom, se o Diego decidir (ADR-0180 item 6).
+- [x] `notificar-liberacao`: o aviso "Hoje libera" somava o `liquido` gravado, que traz o frete INTEIRO do envio em cada order do pack (pack do caso: R$ 75,86 em vez de 94,16; Avil, 30 dias: 95 envios, R$ 3.849,62 de frete contado a mais). Agora rateia o frete entre todos os membros do envio (`_shared/faturamento/liberacao.ts` → `ratearLiquidoPorFrete`, mesma regra do Financeiro).
 - Follow-up fora do escopo: `notificar-liberacao` soma o frete repetido por order do pack (bug anterior, independente do cupom).
 
 ## Promoções: aba "Em promoção" + par normal/catálogo em uma linha (ADR-0174, emenda 2026-10-05) — em produção desde 2026-10-05 (main f99e1e42)
