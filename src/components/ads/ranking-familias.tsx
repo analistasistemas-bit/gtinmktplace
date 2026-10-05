@@ -155,6 +155,10 @@ function CartaoFamilia({ f, liberado, conta, historicoDesde }: PropsFamilia) {
   );
 }
 
+// O (i) do KpiCard tem 38 px; no mobile o alvo de toque sobe para 44 px (14 + 2×15) sem mexer no layout
+// (margem negativa igual ao padding). Fica aqui, não no KpiCard, para não alterar as outras telas.
+const CARD_FILTRO = 'sm:min-w-36 max-sm:[&_button]:p-[15px] max-sm:[&_button]:-m-[15px]';
+
 /** Ranking por gasto (ordem do domínio) com os filtros por semáforo; filtro e expansões são locais e a página
  *  reinicia tudo pela `key` quando a seleção ou a janela mudam. */
 export function RankingFamilias({ painel, historicoDesde }: { painel: PainelAds; historicoDesde: string | null }) {
@@ -176,15 +180,15 @@ export function RankingFamilias({ painel, historicoDesde }: { painel: PainelAds;
     <div className="space-y-2">
       <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
         <KpiCard size="compact" label="Todas" infoKey="Todas::Ads" value={contagem.total}
-          ativo={filtro === 'todas'} onClick={() => setFiltro('todas')} className="sm:min-w-36" />
+          ativo={filtro === 'todas'} onClick={() => setFiltro('todas')} className={CARD_FILTRO} />
         {atencao > 0 && (
           <KpiCard size="compact" label="Em atenção" infoKey="Em atenção::Ads" value={atencao} tom="warning"
-            ativo={filtro === 'atencao'} onClick={() => alternar('atencao')} className="sm:min-w-36" />
+            ativo={filtro === 'atencao'} onClick={() => alternar('atencao')} className={CARD_FILTRO} />
         )}
         <KpiCard size="compact" label="Dentro do equilíbrio" infoKey="Dentro do equilíbrio::Ads" value={contagem.dentro}
-          tom={liberado ? 'success' : undefined} ativo={filtro === 'dentro'} onClick={() => alternar('dentro')} desabilitado={contagem.dentro === 0} className="sm:min-w-36" />
+          tom={liberado ? 'success' : undefined} ativo={filtro === 'dentro'} onClick={() => alternar('dentro')} desabilitado={contagem.dentro === 0} className={CARD_FILTRO} />
         <KpiCard size="compact" label="Sem referência" infoKey="Sem referência::Ads" value={contagem.semReferencia}
-          ativo={filtro === 'sem_referencia'} onClick={() => alternar('sem_referencia')} desabilitado={contagem.semReferencia === 0} className="sm:min-w-36" />
+          ativo={filtro === 'sem_referencia'} onClick={() => alternar('sem_referencia')} desabilitado={contagem.semReferencia === 0} className={CARD_FILTRO} />
       </div>
       {fraseAtencao && <p className="text-sm text-muted-foreground">{fraseAtencao}</p>}
     </div>

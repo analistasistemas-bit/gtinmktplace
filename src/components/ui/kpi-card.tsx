@@ -66,7 +66,7 @@ export function KpiInfoButton({ infoKey, tom }: { infoKey: string; tom?: KpiTom 
             setOpen((o) => !o);
           }}
           className={cn(
-            'inline-flex shrink-0 items-center justify-center rounded-full p-[15px] -m-[15px] sm:p-3 sm:-m-3 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground',
+            'inline-flex shrink-0 items-center justify-center rounded-full p-3 -m-3 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground',
             tomCls,
           )}
         >
