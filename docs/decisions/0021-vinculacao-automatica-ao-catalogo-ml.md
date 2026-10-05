@@ -206,6 +206,12 @@ devolve `catalog_product_id.not_modificable` (400) em item ativo com vendas; o o
    `vinculado` com o listing id lido de `GET /items/{id}?attributes=item_relations`, em vez de
    contar como `nao_elegivel` — que gerava backoff inútil e alerta de no-match falso num item que
    já está competindo.
+   **Adendo 2026-10-05:** `FLEX_PRODUCT` (reason `catalog_convertible`, não documentado pelo ML)
+   segue a mesma ação. O ML cria uma ficha `type:"flex"` a partir do próprio item User Products,
+   que já vem `catalog_listing:true` e é a oferta da ficha — compete sem opt-in e sem
+   `item_relations` (listing id fica nulo). Medido em 3 itens planos de 2 orgs (MLB5322386919,
+   MLB7736309520, MLB7731389424); antes viravam `nao_elegivel` e, após 5 tentativas, alerta falso
+   de "elegibilidade esgotada".
 6. **Trava de domínio (adicionada após o incidente abaixo):** `fichaEquivalente` reprova quando o
    `domain_id` da ficha difere do `domain_id` do nosso item, com motivo `dominio_<ficha>_vs_<item>`.
    Ambos já vêm de graça (`/products/search` e o GET do item que a trava de metragem já faz). Só

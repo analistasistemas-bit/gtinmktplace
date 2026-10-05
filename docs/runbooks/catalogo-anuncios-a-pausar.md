@@ -90,6 +90,7 @@ O status de cada cor fica assim:
 |---|---|
 | `LOOPING_ITEM` | declarada como "não encontro" — não compete, mas **não pausa o anúncio** |
 | `ALREADY_OPTED_IN` | vinculada e competindo — preservada |
+| `FLEX_PRODUCT` | item UP que virou a oferta de uma ficha `flex` criada pelo ML — já compete, nada a fazer |
 
 ---
 

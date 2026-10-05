@@ -105,7 +105,11 @@ export function decidirAcaoCatalogo(
   if (!elig || !elig.status) return 'pendente'; // sem entrada/sem status = ainda computando
   // Já competindo no catálogo (opt-in anterior, nosso ou manual do operador): não é falha de
   // elegibilidade — só falta o listing id local, resolvido via item_relations pelo orquestrador.
-  if (elig.status === 'ALREADY_OPTED_IN') return 'ja_vinculado';
+  // `FLEX_PRODUCT` (reason `catalog_convertible`, não documentado): o ML criou uma ficha `type:"flex"`
+  // a partir do próprio item UP, que já vem `catalog_listing:true` e é a oferta dela — compete sem
+  // opt-in. Medido em 2026-10-05 (MLB5322386919, MLB7736309520, MLB7731389424). Antes caía em
+  // `nao_elegivel` e gerava alerta falso de "elegibilidade esgotada".
+  if (elig.status === 'ALREADY_OPTED_IN' || elig.status === 'FLEX_PRODUCT') return 'ja_vinculado';
   if (podeTentarOptin(elig)) {
     if (!estado.catalogProductId) return 'sem_produto';
     // Trava de equivalência (ADR-0021 pós-incidente): só vincula a ficha equivalente. Quando a

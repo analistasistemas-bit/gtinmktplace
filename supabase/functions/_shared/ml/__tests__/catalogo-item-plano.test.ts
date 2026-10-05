@@ -167,6 +167,16 @@ describe('decidirAcaoCatalogo — item plano', () => {
       { id: 'MLB1', status: 'ALREADY_OPTED_IN', buy_box_eligible: false, reason: 'item_has_item_relations' },
     )).toBe('ja_vinculado');
   });
+
+  // Caso real (MLB5322386919, 2026-10-05): o ML criou ficha `type:"flex"` a partir do próprio item
+  // UP, que já tem `catalog_listing:true` e é a única oferta dela. Antes caía em nao_elegivel e o
+  // worker alertava "elegibilidade esgotada / ML pode pausar" para um anúncio que já compete.
+  it('FLEX_PRODUCT (catalog_convertible) → ja_vinculado (o item já é a oferta da ficha flex)', () => {
+    expect(decidirAcaoCatalogo(
+      { catalogListingId: null, catalogProductId: null },
+      { id: 'MLB5322386919', status: 'FLEX_PRODUCT', buy_box_eligible: false, reason: 'catalog_convertible' },
+    )).toBe('ja_vinculado');
+  });
 });
 
 describe('detalharErroOptin — o motivo real vem em cause[], não em message', () => {
@@ -272,6 +282,18 @@ describe('vincularVariacoesCatalogo — item plano', () => {
     expect(posts.length).toBe(0);
     expect(writes.find((w) => w.values.catalog_status === 'vinculado')?.values.catalog_listing_id)
       .toBe('MLB-JA-VINCULADO');
+  });
+
+  it('FLEX_PRODUCT → vinculado, SEM POST e sem contar como nao_elegivel (não alerta)', async () => {
+    const posts = stubFetch({
+      elig: { id: 'MLB-PLANO', status: 'FLEX_PRODUCT', buy_box_eligible: false, reason: 'catalog_convertible', variations: [], site_items: [] },
+    });
+    const { admin, writes } = fakeAdmin();
+    const resumo = await vincularVariacoesCatalogo('tok', admin, 'MLB-PLANO', [varPlana()]);
+    expect(resumo.vinculado).toBe(1);
+    expect(resumo.nao_elegivel).toBe(0);
+    expect(posts.length).toBe(0);
+    expect(writes.find((w) => w.values.catalog_status === 'vinculado')).toBeTruthy();
   });
 
   it('item plano ainda sem status na raiz → segue pendente (retentável)', async () => {
