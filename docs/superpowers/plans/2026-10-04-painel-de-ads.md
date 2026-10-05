@@ -126,14 +126,13 @@ insert into public.ml_ads_grupo (org_id, ad_group_id, tipo, status, atualizado_e
   ('96000000-0000-0000-0000-000000000001', 9601, 'FAMILY', 'ACTIVE', now()),
   ('96000000-0000-0000-0000-000000000001', 9602, 'FAMILY', 'PAUSED', now()),   -- sem membro
   ('96000000-0000-0000-0000-000000000001', 9603, 'ITEM', 'ACTIVE', now()),     -- gasto só fora do período
-  ('96000000-0000-0000-0000-000000000002', 9601, 'FAMILY', 'ACTIVE', now());
+  ('96000000-0000-0000-0000-000000000002', 9601, 'FAMILY', 'ACTIVE', now()),
+  ('96000000-0000-0000-0000-000000000002', 9602, 'FAMILY', 'ACTIVE', now());   -- antes dos membros (FK)
 insert into public.ml_ads_grupo_item (org_id, ad_group_id, ml_item_id, visto_em) values
   ('96000000-0000-0000-0000-000000000001', 9601, 'MLB1', now()),
   ('96000000-0000-0000-0000-000000000001', 9601, 'MLB2', now()),
   ('96000000-0000-0000-0000-000000000002', 9601, 'MLB9', now()),
   ('96000000-0000-0000-0000-000000000002', 9602, 'MLB8', now());
-insert into public.ml_ads_grupo (org_id, ad_group_id, tipo, status, atualizado_em) values
-  ('96000000-0000-0000-0000-000000000002', 9602, 'FAMILY', 'ACTIVE', now());
 insert into public.ml_ads_grupo_dia (org_id, ad_group_id, dia, cost, clicks, prints, direct_amount, indirect_amount, total_amount, direct_units, units, coletado_em) values
   ('96000000-0000-0000-0000-000000000001', 9601, '2026-09-01', 90, 9, 900, 800, 100, 900, 3, 4, now()),
   ('96000000-0000-0000-0000-000000000001', 9601, '2026-09-02', 40, 4, 400, 0, 0, 0, 0, 0, now()),
@@ -174,7 +173,15 @@ begin
   exception when others then if sqlerrm not like 'ads_painel: período inválido%' then raise; end if; end;
   begin perform public.ads_painel('2026-09-02', '2026-09-01'); raise exception 'aceitou período invertido';
   exception when others then if sqlerrm not like 'ads_painel: período inválido%' then raise; end if; end;
+  begin perform public.ads_painel(null, '2026-09-01'); raise exception 'painel aceitou nulo';
+  exception when others then if sqlerrm not like 'ads_painel: período inválido%' then raise; end if; end;
+  -- resumo: 366 dias inclusivos passam; 367 não; nulo/invertido não
+  perform public.ads_resumo_periodo('2025-09-02', '2026-09-02');
+  begin perform public.ads_resumo_periodo('2025-09-01', '2026-09-02'); raise exception 'resumo aceitou 367 dias';
+  exception when others then if sqlerrm not like 'ads_resumo_periodo: período inválido%' then raise; end if; end;
   begin perform public.ads_resumo_periodo(null, '2026-09-01'); raise exception 'aceitou nulo';
+  exception when others then if sqlerrm not like 'ads_resumo_periodo: período inválido%' then raise; end if; end;
+  begin perform public.ads_resumo_periodo('2026-09-02', '2026-09-01'); raise exception 'resumo aceitou invertido';
   exception when others then if sqlerrm not like 'ads_resumo_periodo: período inválido%' then raise; end if; end;
   begin
     perform public.gravar_ads_conta_dias('96000000-0000-0000-0000-000000000001', '2026-10-01 10:00+00', now(), '[]');
@@ -363,7 +370,8 @@ set local request.jwt.claims = '{"sub":"<uuid de um usuário ativo da Avil>","ro
 explain (analyze, buffers) select public.ads_painel(current_date - 90, current_date - 1);
 rollback;
 ```
-Orçamento: **≤ 300 ms** de execução para 90 dias na Avil (~300 grupos). Acima disso, trocar o subselect de membros por um `left join lateral` agregado e medir de novo; registrar o tempo no ADR-0179.
+Na mesma transação: `explain (analyze, buffers) select public.ads_resumo_periodo(current_date - 366, current_date - 1);` (o limite suportado pelo dossiê).
+Orçamento: **≤ 300 ms** de execução para cada uma, com o volume da Avil (~300 grupos, 90 dias no painel e 366 no resumo). Acima disso, trocar o subselect de membros por um `left join lateral` agregado e medir de novo; registrar o tempo no ADR-0179.
 
 - [ ] **Step 7: Tipos**
 
@@ -538,12 +546,43 @@ Novos testes no `describe('sincronizarAdsOrg')`:
     expect(d.concluir).not.toHaveBeenCalled();
   });
 
-  it('concluir lança depois de gravar a conta → erro; a próxima rodada regrava os mesmos dias (idempotente)', async () => {
-    const d = fake({ concluir: vi.fn(async () => { throw new Error('rede'); }) });
-    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'erro' });
-    const d2 = fake();
+  // Armazenamento simulado compartilhado entre entregas: reproduz o estado persistido pela RPC
+  // (upsert por dia; conta_cobertura_desde = 1º dia da 1ª gravação, depois não muda).
+  function store() {
+    const dias = new Map<string, number>();
+    let cobertura: string | null = null;
+    return {
+      dias, get cobertura() { return cobertura; },
+      gravar: vi.fn(async (_r: string, _c: string, ds: { dia: string; cost: number }[]) => {
+        for (const x of ds) dias.set(x.dia, x.cost);
+        cobertura ??= ds.length ? ds.map((x) => x.dia).sort()[0] : null;
+        return true;
+      }),
+    };
+  }
+
+  it('backfill: concluir falha depois de gravar a conta; a reentrega relê a janela curta, sem duplicar, e conclui', async () => {
+    const s = store();
+    const estado = () => ({ cargaInicialOk: true, ultimoOkEm: '2026-09-26T14:20:00Z', contaCoberturaDesde: s.cobertura });
+    const d1 = fake({ lerEstadoSync: vi.fn(async () => estado()), gravarContaDias: s.gravar,
+      concluir: vi.fn(async () => { throw new Error('rede'); }) });
+    expect(await sincronizarAdsOrg(d1, primeira)).toEqual({ resultado: 'erro' });
+    expect(d1.buscarSerieConta).toHaveBeenCalledWith(1000001, JANELA_90);
+    expect(s.dias.size).toBe(90);
+    expect(s.cobertura).toBe('2026-06-29');
+    const d2 = fake({ lerEstadoSync: vi.fn(async () => estado()), gravarContaDias: s.gravar });
     expect(await sincronizarAdsOrg(d2, primeira)).toEqual({ resultado: 'ok' });
-    expect(d2.gravarContaDias.mock.calls[0][2]).toEqual(d.gravarContaDias.mock.calls[0][2]);
+    expect(d2.buscarSerieConta).toHaveBeenCalledWith(1000001, JANELA_DIARIA);   // cobertura preservada
+    expect(s.dias.size).toBe(90);                                               // sem duplicar
+    expect(s.cobertura).toBe('2026-06-29');
+    expect(d2.concluir).toHaveBeenCalledWith(RODADA, 'ok', null, expect.objectContaining({ cargaConcluida: true }));
+  });
+
+  it('concluir devolve false (perdeu a posse ao fechar) → obsoleta, conta já gravada fica', async () => {
+    const s = store();
+    const d = fake({ gravarContaDias: s.gravar, concluir: vi.fn(async () => false) });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'obsoleta' });
+    expect(s.dias.size).toBe(15);
   });
 
   it('cadeia com 2 mensagens (teto de itens): a série da conta é lida só na última, uma vez', async () => {
@@ -659,6 +698,7 @@ export interface ContaPainel extends MetricasAds {
 export interface PainelAds {
   estado: EstadoPainel; desatualizado: boolean;
   gruposCobertos: boolean;              // período inteiro dentro da cobertura dos grupos (mesma regra do dossiê)
+  semaforoLiberado: boolean;            // = baseAcosValidada
   conta: ContaPainel | null;            // null = série da conta não cobre o período
   contaMotivo: 'cobertura' | null;
   familias: FamiliaPainel[];            // ordenadas por custo desc
@@ -671,17 +711,21 @@ export function montarPainelAds(p: {
   lucroPorFamilia: Map<string, LucroFamilia>;     // codigoPai → lucro do período (só famílias com linha de venda)
   lucroConta: { lucro: number | null; fonteCusto: FonteCusto };
   historicoDesde: string | null;                  // VendasSku.historicoDesde (ISO) — antes dele não há venda conhecida
+  baseAcosValidada: boolean;                      // BASE_ACOS_VALIDADA (spike 055)
   agora: Date;
 }): PainelAds
+export const BASE_ACOS_VALIDADA = false;          // vira true no commit que registra o spike 055 aprovado
 ```
 
 Regras (cada uma com teste):
 - **Bucket do grupo:** `membros` vazio → **não identificado**. Todo MLB com códigos e todos os códigos na **mesma** família → essa família. Qualquer MLB sem código, código sem família, ou 2+ famílias → **compartilhado** (`semCodigo` = MLBs sem código + códigos sem família); as famílias resolvidas desse grupo recebem o custo dele em `custoCompartilhado`.
 - **Família tocada por grupo compartilhado** (`custoCompartilhado > 0`): parte da despesa dela é desconhecida → `resultado`, `margemConsumida` e `semaforo` = `null`, `motivo = 'compartilhado'`. Gasto e métricas dos grupos exclusivos continuam visíveis (rótulo "só dos grupos exclusivos"). Nunca ratear.
-- **Conta:** `custo` = Σ `conta[].cost`; `somaGrupos` = Σ grupos com membro. Se `somaGrupos > custo + 0,01` → `divergente = true`, `naoIdentificado = null`, `naoIdentificadoPct = null` (mostra os valores observados e o aviso; nada é ajustado). Senão `naoIdentificado = round2(custo − emFamilias − compartilhado)` — inclui os grupos sem membro, que não estão em `somaGrupos` — e a identidade `emFamilias + compartilhado + naoIdentificado === custo` vale exatamente (teste). `naoIdentificadoPct = custo > 0 ? naoIdentificado / custo : null`.
+- **Conta (em centavos inteiros):** cada valor vira `c = Math.round(x * 100)` antes de somar. `custoC` = Σ `conta[].cost` em centavos; `somaGruposC` = Σ grupos com membro em centavos. Se `somaGruposC > custoC` (**um centavo a mais já é divergência**; não há tolerância além do arredondamento para centavo) → `divergente = true`, `naoIdentificado = null`, `naoIdentificadoPct = null` (valores observados mantidos, aviso; nada é ajustado). Senão `naoIdentificadoC = custoC − emFamiliasC − compartilhadoC` (inclui os grupos sem membro) e a identidade `emFamiliasC + compartilhadoC + naoIdentificadoC === custoC` vale exatamente; os campos expostos são `centavos / 100`. `naoIdentificadoPct = custoC > 0 ? naoIdentificadoC / custoC : null`.
 - **Cobertura da conta:** `conta_cobertura_desde == null || > janela.desde || conta.length < diasNaJanela` → `conta = null`, `contaMotivo = 'cobertura'`.
 - **Cobertura dos grupos** (mesma regra de `src/lib/sku-ads.ts:126-131`): `ultimoDia = diaBRT(ultimo_ok_em) − 1`; coberto se todo dia da janela ∈ [`cobertura_desde`, `ultimoDia`] e `carga_inicial_ok`. Descoberto → `gruposCobertos = false` e toda família com `resultado/semaforo = null`, `motivo = 'cobertura'` (gasto parcial nunca vira resultado).
-- **Histórico de vendas:** `historicoDesde == null || diaBRT(historicoDesde) > janela.desde` → lucro desconhecido no início do período → toda família e a conta com `lucroAntes = null`, `motivo = 'historico'`.
+- **Histórico de vendas:** o banco não tem marcador de cobertura das vendas; o único marco é `VendasSku.historicoDesde` = primeira venda faturável registrada na org (ADR-0172 D-2, `vendas-sku.ts:459`). Regra: comparar **ISO com ISO** — `historicoDesde == null || Date.parse(historicoDesde) > Date.parse(janelaBRT(janela.desde, janela.ate).desde)` → lucro desconhecido → toda família e a conta com `lucroAntes = null`, `motivo = 'historico'`. Um histórico que começa no meio do 1º dia do período bloqueia (não libera o dia inteiro). Limite assumido e documentado no ADR-0179: dentro do histórico, ausência de venda é tratada como zero (mesma premissa do Vendas SKU).
+- **Conta sem nenhuma venda faturável** (histórico coberto): `lucroConta` chega como `{ lucro: 0, fonteCusto: 'real' }` (o hook decide, ver Task 4) → `lucroAntes = 0`, `resultado = −custo`. Distinto de `sem_custo` (null) e de `historico` (null).
+- **Base do ACOS validada:** parâmetro `baseAcosValidada: boolean` (constante `BASE_ACOS_VALIDADA` exportada de `ads-painel.ts`, **`false`** até o spike 055 aprovar na Task 7). Com `false`: `acosEquilibrio` é exibido, mas `semaforo = null` em todas as famílias e `PainelAds.semaforoLiberado = false` (a tela diz "semáforo em validação"). Os motivos de família não mudam.
 - **Métricas por Σ:** `roas = vendasTotais / custo`, `roasDireto = vendasDiretas / custo`, `acos = custo / vendasTotais`, `acosDireto = custo / vendasDiretas`; denominador 0 → `null`.
 - **Lucro da família** (precedência, primeiro que casar): ausente do mapa → `lucroAntes = 0`, `motivo = 'sem_vendas'`; `lucro == null && fonteCusto === 'sem_custo'` → `null`, `'sem_custo'`; `lucro == null` (só canceladas/devolvidas) → `0`, `'sem_vendas'`; `fonteCusto === 'parcial'` → lucro mostrado, mas `acosEquilibrio`/`semaforo = null`, `'custo_parcial'` (base não comparável).
 - `resultado = lucroAntes − custo` (null se lucroAntes null). `margemConsumida = lucroAntes > 0 ? custo / lucroAntes : null`.
@@ -708,7 +752,7 @@ const sync = { estado: 'ok', erro: null, ultimo_ok_em: '2026-10-04T14:00:00Z', c
   cobertura_desde: '2026-06-29', conta_cobertura_desde: '2026-06-29' };
 const base = (f: Partial<FontePainelAds> = {}) => ({
   fonte: { sync, conta: [dia('2026-09-01', 60), dia('2026-09-02', 40)], grupos: [], ...f },
-  janela, agora, historicoDesde: '2026-01-01T03:00:00.000Z',
+  janela, agora, historicoDesde: '2026-01-01T03:00:00.000Z', baseAcosValidada: true,
   codigosPorMlb: new Map([['MLB1', ['A1']], ['MLB2', ['A2']], ['MLB3', ['B1']], ['MLB4', []]]),
   familiaDoCodigo: new Map([['A1', 'A'], ['A2', 'A'], ['B1', 'B']]),
   lucroPorFamilia: new Map([['A', { nome: 'Fam A', lucro: 250, brutoComCusto: 1000, fonteCusto: 'real' as const }]]),
@@ -747,9 +791,17 @@ describe('montarPainelAds', () => {
     const p = montarPainelAds(base({ grupos: [grupo(1, 101, ['MLB1'])] }));
     expect(p.conta).toMatchObject({ custo: 100, emFamilias: 101, divergente: true, naoIdentificado: null, naoIdentificadoPct: null });
   });
-  it('diferença de arredondamento (≤ R$0,01) não é divergência', () => {
-    const p = montarPainelAds(base({ grupos: [grupo(1, 100.005, ['MLB1'])] }));
-    expect(p.conta?.divergente).toBe(false);
+  it('um centavo acima da conta já é divergência', () => {
+    expect(montarPainelAds(base({ grupos: [grupo(1, 100.01, ['MLB1'])] })).conta?.divergente).toBe(true);
+  });
+  it('ruído de ponto flutuante abaixo do centavo não é divergência, e a identidade fecha em centavos', () => {
+    const p = montarPainelAds(base({ conta: [dia('2026-09-01', 0.1), dia('2026-09-02', 0.2)],
+      grupos: [grupo(1, 0.1, ['MLB1']), grupo(2, 0.2 + 1e-12, ['MLB3'])] }));
+    const c = p.conta!;
+    expect(c.divergente).toBe(false);
+    expect(Math.round(c.emFamilias * 100) + Math.round(c.compartilhado * 100) + Math.round(c.naoIdentificado! * 100))
+      .toBe(Math.round(c.custo * 100));
+    expect(c.naoIdentificado).toBe(0);
   });
   it('série da conta sem cobrir o período → conta null, famílias continuam', () => {
     const p = montarPainelAds(base({ conta: [dia('2026-09-02', 40)], grupos: [grupo(1, 50, ['MLB1'])] }));
@@ -768,6 +820,26 @@ describe('montarPainelAds', () => {
     const p = montarPainelAds(b);
     expect(p.familias[0]).toMatchObject({ lucroAntes: null, resultado: null, motivo: 'historico' });
     expect(p.conta?.lucroAntes).toBeNull();
+  });
+  it('histórico começando no meio do 1º dia do período bloqueia (ISO, não dia)', () => {
+    const b = base({ grupos: [grupo(1, 30, ['MLB3'])] });
+    b.historicoDesde = '2026-09-01T15:00:00.000Z';   // 12:00 BRT do 1º dia
+    expect(montarPainelAds(b).familias[0].motivo).toBe('historico');
+    b.historicoDesde = '2026-09-01T03:00:00.000Z';   // 00:00 BRT exato: coberto
+    expect(montarPainelAds(b).familias[0].motivo).toBe('sem_vendas');
+  });
+  it('conta sem nenhuma venda faturável: lucro 0, resultado −despesa', () => {
+    const b = base();
+    b.lucroConta = { lucro: 0, fonteCusto: 'real' };
+    b.lucroPorFamilia = new Map();
+    expect(montarPainelAds(b).conta).toMatchObject({ lucroAntes: 0, resultado: -100 });
+  });
+  it('base do ACOS não validada: equilíbrio exibido, semáforo desligado', () => {
+    const b = base({ grupos: [grupo(1, 80, ['MLB1', 'MLB2'], 800, 700)] });
+    b.baseAcosValidada = false;
+    const p = montarPainelAds(b);
+    expect(p.semaforoLiberado).toBe(false);
+    expect(p.familias[0]).toMatchObject({ acosEquilibrio: 0.25, semaforo: null, motivo: null });
   });
   it('família com gasto e sem venda: lucro 0, resultado −gasto, sem equilíbrio', () => {
     const p = montarPainelAds(base({ grupos: [grupo(1, 30, ['MLB3'])] }));
@@ -822,7 +894,7 @@ Run: `pnpm vitest run tests/lib/ads-painel.test.ts` → FAIL (módulo não exist
 
 Depois da Task 4, acrescentar em `tests/lib/ads-painel.test.ts` um teste de integração **sem mock** que monta `lucroPorFamilia` a partir de `agruparPorFamilia(montarVendasSku(...).linhas)` com 1 kit, 1 devolução e 1 item sem custo (reusar as fixtures de `tests/lib/vendas-sku.test.ts`) e confere `brutoComCusto`, `fonteCusto` e o motivo resultante.
 
-- [ ] **Step 2: Implementar `src/lib/ads-painel.ts`** seguindo as regras acima (funções pequenas: `bucketDoGrupo`, `somarMetricas`, `lucroDaFamilia`, `semaforo`, `estadoDo`; `round2` local; `diaBRT` e a regra `coberto` copiadas de `src/lib/sku-ads.ts` — exportar de lá em vez de duplicar). Dentro da tolerância de R$0,01 sem divergência, `naoIdentificado = max(0, round2(custo − emFamilias − compartilhado))`. Comentário de topo citando ADR-0179 D1–D4 e spikes 053/054.
+- [ ] **Step 2: Implementar `src/lib/ads-painel.ts`** seguindo as regras acima (funções pequenas: `bucketDoGrupo`, `somarMetricas`, `lucroDaFamilia`, `semaforo`, `estadoDo`; `round2` local; `diaBRT` e a regra `coberto` copiadas de `src/lib/sku-ads.ts` — exportar de lá em vez de duplicar). Toda a conta da reconciliação em **centavos inteiros** (`Math.round(x * 100)`), sem tolerância extra; só a saída volta para reais. Comentário de topo citando ADR-0179 D1–D4 e spikes 053/054.
 
 - [ ] **Step 3: Rodar** → PASS. `pnpm lint` → PASS.
 
@@ -898,7 +970,7 @@ describe('buscarPainelAds', () => {
   });
 });
 ```
-`src/hooks/__tests__/useAdsPainel.test.ts`: mockar `@/lib/ads-painel-dados` (`buscarPainelAds`), `@/lib/sku-dossie-dados` (`buscarCodigosMlbs`), `@/hooks/useVendasSku` e o hook do catálogo com `vi.hoisted` (padrão de `src/hooks/__tests__/useSkuDossie.test.ts`) e provar: (a) `useVendasSku` recebe `({ tipo: 'range', desde, ate }, janelaBRT(desde, ate))` com os mesmos dias da janela do Ads; (a2) `montarPainelAds` recebe `historicoDesde` de `vendas.dados.historicoDesde`; (a3) em `useVendasSku.test`, com `janelaFixa` a query de vendas usa exatamente aquela janela e sem ela o comportamento atual não muda; (b) `buscarCodigosMlbs` recebe os MLBs únicos e ordenados de todos os grupos; (c) `painel` fica `null` até vendas, catálogo e códigos chegarem; (d) erro em qualquer fonte → `isError`.
+`src/hooks/__tests__/useAdsPainel.test.ts`: mockar `@/lib/ads-painel-dados` (`buscarPainelAds`), `@/lib/sku-dossie-dados` (`buscarCodigosMlbs`), `@/hooks/useVendasSku` e o hook do catálogo com `vi.hoisted` (padrão de `src/hooks/__tests__/useSkuDossie.test.ts`) e provar: (a) `useVendasSku` recebe `({ tipo: 'range', desde, ate }, janelaBRT(desde, ate))` com os mesmos dias da janela do Ads; (a2) `montarPainelAds` recebe `historicoDesde` de `vendas.dados.historicoDesde`; (a3) em `useVendasSku.test`, com `janelaFixa` a query de vendas usa exatamente aquela janela e sem ela o comportamento atual não muda; (a4) com `vendas.dados.linhas` vazio (`pedidos === 0`), `montarPainelAds` recebe `lucroConta = { lucro: 0, fonteCusto: 'real' }`; com vendas só sem custo, recebe `{ lucro: null, fonteCusto: 'sem_custo' }`; (b) `buscarCodigosMlbs` recebe os MLBs únicos e ordenados de todos os grupos; (c) `painel` fica `null` até vendas, catálogo e códigos chegarem; (d) erro em qualquer fonte → `isError`.
 
 Run: `pnpm vitest run tests/lib/ads-painel-dados.test.ts src/hooks/__tests__/useAdsPainel.test.ts` → FAIL.
 
@@ -949,7 +1021,7 @@ export async function buscarPainelAds(desde: string, ate: string): Promise<Fonte
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { buscarPainelAds, janelaBRT, periodoAds, type DiasAds } from '@/lib/ads-painel-dados';
-import { montarPainelAds, type LucroFamilia } from '@/lib/ads-painel';
+import { BASE_ACOS_VALIDADA, montarPainelAds, type LucroFamilia } from '@/lib/ads-painel';
 import { buscarCodigosMlbs } from '@/lib/sku-dossie-dados';
 import { useVendasSku } from '@/hooks/useVendasSku';
 import { useCatalogoVendasSku } from '@/hooks/useCatalogoVendasSku';   // conferir o caminho real do hook
@@ -971,12 +1043,15 @@ export function useAdsPainel(dias: DiasAds) {
     if (!fonteQ.data || !codQ.data || !catQ.data || !vendas.dados) return null;
     const lucroPorFamilia = new Map<string, LucroFamilia>(agruparPorFamilia(vendas.dados.linhas).map((f) =>
       [f.codigoPai, { nome: f.nomeFamilia, lucro: f.m.lucro, brutoComCusto: f.acc.brutoComCusto, fonteCusto: f.m.fonteCusto }]));
-    const total = metricas(somarAcumuladores(vendas.dados.linhas.map((l) => l.acc)));
+    const acc = somarAcumuladores(vendas.dados.linhas.map((l) => l.acc));
+    const total = metricas(acc);
+    // Nenhuma venda faturável no período (com histórico coberto): lucro 0, não "sem custo" (achado #9).
+    const lucroConta = acc.pedidos === 0 ? { lucro: 0, fonteCusto: 'real' as const } : { lucro: total.lucro, fonteCusto: total.fonteCusto };
     return montarPainelAds({
       fonte: fonteQ.data, janela, agora: new Date(), codigosPorMlb: codQ.data,
       familiaDoCodigo: new Map(catQ.data.filter((c) => c.codigoPai).map((c) => [c.codigo, c.codigoPai!])),
-      lucroPorFamilia, lucroConta: { lucro: total.lucro, fonteCusto: total.fonteCusto },
-      historicoDesde: vendas.dados.historicoDesde,
+      lucroPorFamilia, lucroConta,
+      historicoDesde: vendas.dados.historicoDesde, baseAcosValidada: BASE_ACOS_VALIDADA,
     });
   }, [fonteQ.data, codQ.data, catQ.data, vendas.dados, janela]);
 
@@ -996,7 +1071,9 @@ Antes de escrever: localizar o arquivo real de `useCatalogoVendasSku` (`grep -rn
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/lib/ads-painel-dados.ts src/hooks/useAdsPainel.ts tests/lib/ads-painel-dados.test.ts src/hooks/__tests__/useAdsPainel.test.ts
+git add src/lib/ads-painel-dados.ts src/hooks/useAdsPainel.ts src/hooks/useVendasSku.ts src/hooks/__tests__/useVendasSku.test.ts tests/lib/ads-painel-dados.test.ts src/hooks/__tests__/useAdsPainel.test.ts
+git status --short   # nada de src/ pode sobrar fora do commit
+pnpm build            # valida o conteúdo commitado (TS2554 se useVendasSku.ts ficasse de fora)
 git commit -m "feat(ads): dados e hook do painel com o mesmo recorte de vendas"
 ```
 
@@ -1033,7 +1110,7 @@ import Ads from '@/pages/Ads';
 
 const metr = { cliques: 0, impressoes: 0 };
 const PAINEL: PainelAds = {
-  estado: 'ok', desatualizado: false, gruposCobertos: true, contaMotivo: null,
+  estado: 'ok', desatualizado: false, gruposCobertos: true, semaforoLiberado: true, contaMotivo: null,
   conta: { ...metr, custo: 100, vendasDiretas: 700, vendasTotais: 800, roas: 8, roasDireto: 7, acos: 0.125,
     lucroAntes: 300, resultado: 200, margemConsumida: 1 / 3, fonteCusto: 'real',
     emFamilias: 50, compartilhado: 20, naoIdentificado: 30, naoIdentificadoPct: 0.3, divergente: false, diasAbertos: 0 },
@@ -1087,6 +1164,11 @@ describe('Ads', () => {
     montar({ ...PAINEL, familias: [{ ...PAINEL.familias[0], custoCompartilhado: 20, resultado: null, semaforo: null, motivo: 'compartilhado' }] });
     expect(within(screen.getByRole('row', { name: /Fam A/ })).getByText(/gasto compartilhado com outra família/i)).toBeInTheDocument();
   });
+  it('semáforo em validação: mostra o ACOS de equilíbrio sem verde/vermelho', () => {
+    montar({ ...PAINEL, semaforoLiberado: false, familias: [{ ...PAINEL.familias[0], semaforo: null }] });
+    expect(screen.getByText(/semáforo em validação/i)).toBeInTheDocument();
+    expect(within(screen.getByRole('row', { name: /Fam A/ })).queryByText(/dentro/i)).not.toBeInTheDocument();
+  });
   it('conta divergente: mostra o aviso e não mostra o não identificado', () => {
     montar({ ...PAINEL, conta: { ...PAINEL.conta!, divergente: true, naoIdentificado: null, naoIdentificadoPct: null } });
     expect(screen.getByText(/não fecha com o total da conta/i)).toBeInTheDocument();
@@ -1132,8 +1214,9 @@ git commit -m "feat(ads): tela /ads com resumo da conta e ranking de famílias (
 - Produces:
   - `export async function buscarResumoAds(desde: string, ate: string): Promise<ResumoAds | null>` em `sku-dossie-dados.ts`, com `export interface ResumoAds { custo_conta: number; dias_conta: number; custo_grupos_com_membro: number }`
   - `MotivoSemLucro = 'compartilhado' | 'sem_lucro' | 'cobertura' | null` (sai `'fora_dos_grupos'`)
-  - `AdsDossie` ganha `naoIdentificadoPct: number | null`
-  - `montarAds` recebe `resumo: ResumoAds | null | 'carregando' | 'erro'` e `diasFinanceiros: { desde: string; ate: string }`
+  - `AdsDossie` ganha `naoIdentificadoPct: number | null` e `naoIdentificadoMotivo: 'periodo_longo' | 'incompleto' | 'divergente' | 'erro' | null` (por que o % não aparece; a tela mostra o motivo — "aviso indisponível para períodos acima de 1 ano", etc.)
+  - `montarAds` recebe `resumo: ResumoAds | null | 'carregando' | 'erro' | 'periodo_longo'` e `diasFinanceiros: { desde: string; ate: string }`
+  - `useSkuDossie`: com mais de 366 dias financeiros a query do resumo **não** roda e passa `'periodo_longo'` (o intervalo livre do dossiê não tem teto — `src/lib/metricas.ts:114`)
   - `DossieSku` ganha `lucroAds: { lucro: number | null; fonteCusto: FonteCusto } | null` (lucro do alvo só nos dias que o Ads cobre)
 
 Três correções sobre a primeira versão (achado #5 do Astra):
@@ -1160,6 +1243,12 @@ it('resumo carregando ou com erro → % null, sem bloquear', () => {
   expect(montarAds({ ...entrada, resumo: 'erro' }).naoIdentificadoPct).toBeNull();
   expect(montarAds({ ...entrada, resumo: 'carregando' }).lucroAposAds).not.toBeNull();
 });
+it('período financeiro acima de 366 dias → sem consulta, % null com motivo explícito', () => {
+  const a = montarAds({ ...entrada, resumo: 'periodo_longo' });
+  expect(a.naoIdentificadoPct).toBeNull();
+  expect(a.naoIdentificadoMotivo).toBe('periodo_longo');
+  expect(a.lucroAposAds).not.toBeNull();
+});
 it('grupos acima da conta no período → % null (divergente), nunca negativo', () => {
   expect(montarAds({ ...entrada, resumo: { custo_conta: 100, dias_conta: DIAS, custo_grupos_com_membro: 101 } }).naoIdentificadoPct).toBeNull();
 });
@@ -1184,8 +1273,13 @@ Run: `pnpm vitest run tests/lib/sku-ads.test.ts tests/lib/sku-dossie.test.ts tes
     ```ts
     const nDias = diasEntre(p.diasFinanceiros.desde, p.diasFinanceiros.ate).length;
     const r = typeof p.resumo === 'object' ? p.resumo : null;
-    const naoIdentificadoPct = r && r.dias_conta >= nDias && r.custo_conta > 0 && r.custo_grupos_com_membro <= r.custo_conta + 0.01
-      ? Math.max(0, r.custo_conta - r.custo_grupos_com_membro) / r.custo_conta : null;
+    const contaC = r ? Math.round(r.custo_conta * 100) : 0;
+    const gruposC = r ? Math.round(r.custo_grupos_com_membro * 100) : 0;
+    const naoIdentificadoMotivo = p.resumo === 'periodo_longo' ? 'periodo_longo'
+      : p.resumo === 'erro' ? 'erro'
+      : !r || r.dias_conta < nDias ? (p.resumo === 'carregando' ? null : 'incompleto')
+      : gruposC > contaC ? 'divergente' : null;
+    const naoIdentificadoPct = naoIdentificadoMotivo == null && r && contaC > 0 ? (contaC - gruposC) / contaC : null;
     ```
   - `ads-dossie.tsx`: remover o caso `fora_dos_grupos` de `textoSemLucro` (linha 60); com `naoIdentificadoPct > 0.005`, aviso sob o Lucro após Ads com `Math.round(pct * 100)` %.
   Run os testes do Step 1 → PASS; depois `pnpm vitest run src/components/sku-dossie src/hooks src/pages/__tests__/SkuDossie.test.tsx tests/lib` → PASS (ajustar os mocks que agora precisam de `buscarResumoAds`/`lucroAds`).
@@ -1221,7 +1315,13 @@ update public.profiles set allowed_menus = array_append(allowed_menus, 'ads')
 `supabase db push --linked --dry-run` (só ela) → `db push` → `npm run db:check`; conferir por SQL: nenhum perfil com `faturamento` sem `ads`.
 - [ ] **Step 6: Validação visual** (skill `playwright-cli`, sessão isolada, nunca o Chrome do Diego): `/ads` em 1440/1920/360 px com a conta de validação e dados injetados (memória `reference_validacao_dados_injetados`); prints reais (não só snapshot de acessibilidade); estados ok, provisório, conta indisponível, divergente, compartilhado, sem anunciante.
 - [ ] **Step 7: Prova numérica técnica** — por SQL só-leitura, Avil, últimos 30 dias até ontem: Σ `ml_ads_conta_dia.cost` = soma das 3 parcelas mostradas (identidade exata); nenhum `ad_group_id` em duas famílias; nenhuma família com grupo compartilhado mostrando resultado.
-- [ ] **Step 8: Validação da base do ACOS de equilíbrio (achado #8)** — para as 6 famílias de maior gasto da Avil em 30 dias, registrar em `docs/spikes/055-base-acos-equilibrio.md`: Σ `direct_amount` do Ads × `bruto` do PubliAI da família (itens faturáveis, preço × quantidade) e `brutoComCusto`. Esperado: venda direta atribuída ≤ bruto da família (a atribuída é um subconjunto). Se alguma família tiver direta > bruto em mais de 5 %, a base não é comparável para ela: abrir achado e marcar essas famílias como indisponíveis (motivo novo `base_divergente`) antes da Task 8. Documentar kits, devoluções e custo parcial/estimado encontrados.
+- [ ] **Step 8: Validação da base do ACOS de equilíbrio (achado #8)** — o semáforo nasce **desligado** (`BASE_ACOS_VALIDADA = false`, Task 3) e só liga com este spike aprovado. Registrar em `docs/spikes/055-base-acos-equilibrio.md`, só leitura, Avil, 90 dias:
+  1. **Equivalência do preço unitário** (o teste que prova a mesma base monetária): para grupos **ITEM de um único código** com `direct_units > 0`, comparar dia a dia o preço médio atribuído `direct_amount / direct_units` com o preço médio faturável do PubliAI do mesmo MLB no mesmo dia (`bruto / unidades` de `ml_vendas_itens`, itens faturáveis). Critério: diferença ≤ 2 % em ≥ 90 % dos dias com venda dos dois lados.
+  2. **Descontos e promoções:** separar os dias com promoção ativa (`ml_promocao_itens`) e repetir o critério 1 — o ML pode atribuir pelo preço com desconto; o PubliAI soma `unit_price` faturado.
+  3. **Kits:** um kit vendido por Ads conta como 1 unidade no ML; conferir que `bruto/unidades` do kit no PubliAI usa o mesmo preço do kit (não o dos componentes).
+  4. **Devoluções/canceladas:** conferir se a venda atribuída do ML continua contando uma venda depois cancelada/devolvida (o PubliAI tira as canceladas do bruto); medir o tamanho do efeito no período.
+  5. **Sanidade agregada:** Σ `direct_amount` ≤ bruto da família (as 6 famílias de maior gasto, 30 dias).
+  **Decisão:** critérios 1–3 dentro → commit `BASE_ACOS_VALIDADA = true` + teste do semáforo ligado; algum fora → semáforo segue desligado, achado aberto no ADR-0179 e no `docs/TASKS.md` com os números, e o painel vai ao piloto só com ACOS de equilíbrio como referência. Documentar custo parcial/estimado encontrado.
 - [ ] **Step 9: Commit dos docs** (+ spike 055) no fluxo de merge.
 
 ### Task 8: Piloto e aceite (D7) — o épico só fecha aqui
