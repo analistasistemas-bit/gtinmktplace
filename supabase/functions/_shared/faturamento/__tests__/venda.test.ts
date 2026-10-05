@@ -10,6 +10,7 @@ import {
   escolherCompradorNome,
   preservarDadosMP,
   ratearCupomNosItens,
+  totalNovaVenda,
 } from '../venda';
 
 describe('extrairGeo', () => {
@@ -101,6 +102,20 @@ describe('preservarDadosMP — cupom do vendedor (ADR-0180)', () => {
       { estorno: 0, money_release_date: null, cupom_vendedor: 0 },
       { estorno: 0, money_release_date: null, cupom_vendedor: 2.5 },
     ).cupom_vendedor).toBe(0);
+  });
+});
+
+describe('totalNovaVenda', () => {
+  const itens = [{ cupom_vendedor: 2.5 }];
+  it('desconta o cupom do vendedor', () => {
+    expect(totalNovaVenda({ total_amount: 66.4, tags: [] }, itens, true)).toBe(63.9);
+  });
+  // Revisão Codex: com o MP fora do ar o cupom é desconhecido e o alerta é disparado uma vez só.
+  it('MP não lido + order com desconto → null (sem valor no alerta)', () => {
+    expect(totalNovaVenda({ total_amount: 66.4, tags: ['order_has_discount'] }, [{ cupom_vendedor: 0 }], false)).toBeNull();
+  });
+  it('MP não lido sem tag de desconto → valor cheio', () => {
+    expect(totalNovaVenda({ total_amount: 66.4, tags: ['paid'] }, [{ cupom_vendedor: 0 }], false)).toBe(66.4);
   });
 });
 

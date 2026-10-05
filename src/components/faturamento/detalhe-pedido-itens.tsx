@@ -94,10 +94,10 @@ function ZonaPedido({ p, ml }: { p: Pedido; ml: ReturnType<typeof useDetalheMLPe
         {d && d.freteComprador > 0 && (
           <div>Frete pago pelo comprador <span className="font-medium text-foreground tabular-nums">{fmtBRL(d.freteComprador)}</span></div>
         )}
-        {/* ADR-0180: `raw.coupon` não diz quem pagou. Com cupom do vendedor gravado (coupon_fee do MP),
-            ele já aparece no Dinheiro; sem ele, o cupom do pedido foi bancado pelo ML. */}
+        {/* ADR-0180: `raw.coupon` não diz quem pagou (ML ou vendedor), daí o rótulo neutro. Com cupom do vendedor gravado,
+            ele já aparece no Dinheiro e esta linha some para não contar duas vezes. */}
         {d && d.cupom > 0 && cupomDoVendedor(p) < 0.01 && (
-          <div>Cupom pago pelo ML <span className="font-medium text-foreground tabular-nums">{fmtBRL(d.cupom)}</span></div>
+          <div>Cupom no pedido <span className="font-medium text-foreground tabular-nums">{fmtBRL(d.cupom)}</span></div>
         )}
         <a href={urlVenda} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 pt-1 text-info hover:underline">
           Ver no Mercado Livre <ExternalLink className="h-3 w-3" />

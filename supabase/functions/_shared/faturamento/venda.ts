@@ -169,6 +169,8 @@ export interface PedidoML {
     tags?: string[] | null;
   }> | null;
   payments?: Array<{ id?: number | string | null; status?: string | null } | null> | null;
+  /** `order_has_discount` indica desconto (promoção ou cupom) — usado no alerta de nova venda. */
+  tags?: string[] | null;
 }
 
 export interface MapearOpts {
@@ -255,6 +257,20 @@ export function preservarDadosMP(
     // ADR-0180: sem esta preservação, um sync com o MP fora do ar reinflaria o líquido pelo cupom.
     cupom_vendedor: novo.cupom_vendedor ?? anterior?.cupom_vendedor ?? null,
   };
+}
+
+/**
+ * Valor do alerta de nova venda: o que o comprador pagou (total − cupom do vendedor, ADR-0180).
+ * null quando o MP não foi lido e a order tem desconto — o cupom é desconhecido e o alerta sai uma
+ * vez só, então é melhor sem valor do que com o valor cheio. Pura.
+ */
+export function totalNovaVenda(
+  pedido: { total_amount?: number | null; tags?: string[] | null },
+  itens: Array<{ cupom_vendedor?: number | null }>,
+  mpLido: boolean,
+): number | null {
+  if (!mpLido && (pedido.tags ?? []).includes('order_has_discount')) return null;
+  return round2(Number(pedido.total_amount ?? 0) - itens.reduce((s, i) => s + (i.cupom_vendedor ?? 0), 0));
 }
 
 /**

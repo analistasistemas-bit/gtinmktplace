@@ -47,6 +47,10 @@ describe('montarMensagemNovaVenda (link ML)', () => {
   });
   // `/vendas/pacote/{id}/detalhe` devolve 301 para /vendas/lista no ML (medido em 15/09/2026), e
   // `/vendas/{id}/detalhe` aceita pack ou order. Com pack, linkar o pack abre o pacote inteiro.
+  it('total null (cupom não confirmado no MP) sai sem valor', () => {
+    const msg = montarMensagemNovaVenda({ ...base, order_id: 123, total: null });
+    expect(msg.split('\n')[0]).toBe('💰 Nova venda de Maria');
+  });
   it('linka o pack pela rota de venda quando há pack_id', () => {
     const msg = montarMensagemNovaVenda({ ...base, order_id: 123, pack_id: 456 });
     expect(msg).toContain('https://www.mercadolivre.com.br/vendas/456/detalhe');

@@ -84,7 +84,8 @@ export interface NovaVendaAlerta {
   pack_id?: number | null;
   comprador: string | null;
   itens: Array<{ titulo: string | null; quantity: number; ean: string | null }>;
-  total: number;
+  /** null = valor não confirmado (cupom do vendedor sem leitura do MP, ADR-0180) — sai sem valor. */
+  total: number | null;
   moeda: string;
 }
 
@@ -107,7 +108,7 @@ export function montarMensagemNovaVenda(v: NovaVendaAlerta): string {
     .join('\n');
   const comprador = v.comprador ? ` de ${v.comprador}` : '';
   return [
-    `💰 Nova venda${comprador} — ${fmtBRL(v.total, v.moeda)}`,
+    `💰 Nova venda${comprador}${v.total != null ? ` — ${fmtBRL(v.total, v.moeda)}` : ''}`,
     itens,
     `Pedido ${v.order_id}`,
     urlVendaML(v.pack_id ?? v.order_id),

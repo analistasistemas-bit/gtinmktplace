@@ -66,9 +66,12 @@ export function serieDoSku(p: {
       for (const it of ped.itens) {
         if (!it.faturavel || !codigos.has(it.codigo?.trim() || SEM_CODIGO)) continue;
         qtd += it.quantity;
-        valor += it.unit_price * it.quantity - it.cupom_vendedor;
-        min = min == null ? it.unit_price : Math.min(min, it.unit_price);
-        max = max == null ? it.unit_price : Math.max(max, it.unit_price);
+        // Preço unitário efetivo (sem o cupom do vendedor, ADR-0180) — mesma base da média.
+        const valorItem = it.unit_price * it.quantity - it.cupom_vendedor;
+        const unit = it.quantity > 0 ? round2(valorItem / it.quantity) : it.unit_price;
+        valor += valorItem;
+        min = min == null ? unit : Math.min(min, unit);
+        max = max == null ? unit : Math.max(max, unit);
       }
     }
     return {

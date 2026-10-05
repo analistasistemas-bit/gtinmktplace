@@ -30,6 +30,16 @@ const IVS = intervalosBRT('2026-09-14T03:00:00.000Z', '2026-09-27T02:59:59.999Z'
 const J_ADS = { desde: '2026-09-16T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' };
 const S1 = { desde: '2026-09-14T03:00:00.000Z', ate: '2026-09-21T02:59:59.999Z' };
 
+describe('serieDoSku — cupom do vendedor (ADR-0180)', () => {
+  // Revisão Codex: média descontava o cupom e mínimo/máximo não → média abaixo do mínimo.
+  it('média, mínimo e máximo na mesma base (preço sem o cupom)', () => {
+    const vendas = [venda({ id: 'a', date_closed: '2026-09-15T12:00:00Z', total_amount: 66.4, cupom_vendedor: 2.5, liquido: 37.93,
+      itens: [item({ codigo: 'A', unit_price: 66.4, cupom_vendedor: 2.5 })] })];
+    const [s1] = serieDoSku({ vendas, agrupar, codigos: ['A'], intervalos: IVS, catalogo: new Map(), ordensDevolvidas: new Set() });
+    expect(s1).toMatchObject({ bruto: 63.9, precoMedio: 63.9, precoMin: 63.9, precoMax: 63.9 });
+  });
+});
+
 describe('serieDoSku', () => {
   it('série: bate com agregarPorSku no mesmo intervalo; preço médio ponderado; intervalo sem venda sem preço', () => {
     const vendas = [

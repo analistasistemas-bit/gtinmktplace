@@ -351,19 +351,19 @@ describe('DetalhePedidoItens — dados lazy do pagamento', () => {
 
   // ADR-0180: cupom bancado pelo vendedor sai da Venda e é explicado ali; o cupom cru do pedido
   // (`raw.coupon`) some da zona Pedido para não aparecer duas vezes.
-  it('cupom do vendedor: nota sob a Venda e sem a linha de cupom do ML', () => {
+  it('cupom do vendedor: nota sob a Venda e sem a linha de cupom do pedido', () => {
     lazy.estado = { data: detalheML({ cupom: 5 }), isPending: false, isError: false };
     renderDetalhe(pedidoCompleto({
       itens: [item({ unit_price: 39.9, cupom_vendedor: 2.5, custo: 11.55, liquido: 21.78, imposto: 6.38, aliquotaPct: 16, markup: 0.886 })],
     }));
     expect(screen.getByText('já sem R$ 2,50 de cupom do vendedor')).toBeInTheDocument();
-    expect(screen.queryByText(/Cupom pago pelo ML/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Cupom no pedido/)).not.toBeInTheDocument();
   });
 
-  it('cupom bancado pelo ML aparece rotulado na zona Pedido', () => {
+  it('cupom sem cupom do vendedor gravado aparece com rótulo neutro na zona Pedido', () => {
     lazy.estado = { data: detalheML({ cupom: 6 }), isPending: false, isError: false };
     renderDetalhe(pedidoCompleto());
-    expect(screen.getByText(/Cupom pago pelo ML/)).toBeInTheDocument();
+    expect(screen.getByText(/Cupom no pedido/)).toBeInTheDocument();
     expect(screen.queryByText(/cupom do vendedor/)).not.toBeInTheDocument();
   });
 
