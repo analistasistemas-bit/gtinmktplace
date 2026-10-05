@@ -23,8 +23,10 @@ const PAINEL: PainelAds = {
   ],
   compartilhados: [{ id: 9, custo: 20, familias: ['A', 'B'], semCodigo: 0 }],
 };
+const RETORNO = { janela: { desde: '2026-09-04', ate: '2026-10-03' }, situacaoPeriodo: 'pronto', historicoDesde: null,
+  ultimoOkEm: null, isLoading: false, isFetching: false, isError: false };
 const montar = (painel: PainelAds | null = PAINEL) => {
-  hook.mockReturnValue({ painel, janela: { desde: '2026-09-04', ate: '2026-10-03' }, isLoading: false, isError: false, refetch: vi.fn() });
+  hook.mockReturnValue({ ...RETORNO, painel, refetch: vi.fn() });
   return render(<MemoryRouter><Ads /></MemoryRouter>);
 };
 beforeEach(() => hook.mockReset());
@@ -55,11 +57,15 @@ describe('Ads', () => {
     expect(screen.getByText(/Total da conta indisponível/)).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /Fam A/ })).toBeInTheDocument();
   });
-  it('trocar o período chama o hook com os dias', () => {
+  it('trocar o período chama o hook com o preset estruturado', () => {
+    localStorage.setItem('ads-painel-dias', '30');
     montar();
-    expect(hook).toHaveBeenLastCalledWith(30);
+
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 30 });
+
     fireEvent.click(screen.getByRole('button', { name: '7 dias' }));
-    expect(hook).toHaveBeenLastCalledWith(7);
+
+    expect(hook).toHaveBeenLastCalledWith({ tipo: 'preset', dias: 7 });
   });
   it('família com gasto compartilhado: resultado indisponível com o motivo', () => {
     montar({ ...PAINEL, familias: [{ ...PAINEL.familias[0], custoCompartilhado: 20, resultado: null, semaforo: null, motivo: 'compartilhado' }] });
@@ -73,8 +79,7 @@ describe('Ads', () => {
   it('mostra desde quando há vendas; com histórico incompleto, lucro e resultado não aparecem', () => {
     hook.mockReturnValue({ painel: { ...PAINEL, conta: { ...PAINEL.conta!, lucroAntes: null, resultado: null },
       familias: [{ ...PAINEL.familias[0], lucroAntes: null, resultado: null, motivo: 'historico' }] },
-      janela: { desde: '2026-09-04', ate: '2026-10-03' }, historicoDesde: '2026-09-10T15:00:00.000Z',
-      isLoading: false, isError: false, refetch: vi.fn() });
+      ...RETORNO, historicoDesde: '2026-09-10T15:00:00.000Z', refetch: vi.fn() });
     render(<MemoryRouter><Ads /></MemoryRouter>);
     expect(screen.getByText(/Vendas desde/)).toBeInTheDocument();
     expect(within(screen.getByRole('row', { name: /Fam A/ })).getByText(/antes do histórico de vendas/i)).toBeInTheDocument();
@@ -121,8 +126,7 @@ describe('Ads', () => {
   });
   it('motivo histórico com a data da 1ª venda', () => {
     hook.mockReturnValue({ painel: { ...PAINEL, familias: [{ ...PAINEL.familias[0], lucroAntes: null, resultado: null, motivo: 'historico' }] },
-      janela: { desde: '2026-09-04', ate: '2026-10-03' }, historicoDesde: '2026-08-03T15:00:00.000Z',
-      isLoading: false, isError: false, refetch: vi.fn() });
+      ...RETORNO, historicoDesde: '2026-08-03T15:00:00.000Z', refetch: vi.fn() });
     render(<MemoryRouter><Ads /></MemoryRouter>);
     expect(within(screen.getByRole('row', { name: /Fam A/ })).getByText(/antes do histórico de vendas \(desde 03\/08\/2026\)/)).toBeInTheDocument();
   });

@@ -34,7 +34,13 @@ const AVISO: Partial<Record<EstadoPainel, string>> = {
 
 export default function Ads() {
   const [dias, setDias] = useState<DiasAds>(diasSalvos);
-  const { painel, janela, historicoDesde, isError, refetch } = useAdsPainel(dias);
+  const {
+    painel,
+    janela,
+    historicoDesde,
+    isError,
+    refetch,
+  } = useAdsPainel({ tipo: 'preset', dias });
   const escolher = (d: DiasAds) => {
     setDias(d);
     try { localStorage.setItem(CHAVE, String(d)); } catch { /* sem storage: vale só nesta visita */ }
@@ -97,7 +103,7 @@ export default function Ads() {
             </Button>
           ))}
         </div>
-        {painel && (
+        {painel && janela && (
           <p className="text-xs text-muted-foreground tabular-nums">
             {`${diaMesLiteral(janela.desde)} – ${diaMesLiteral(janela.ate)} · até ${diaMesLiteral(janela.ate)}`}
           </p>
