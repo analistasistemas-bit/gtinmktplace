@@ -91,8 +91,8 @@ describe('Ads', () => {
   });
   it('período sempre visível com a data final', () => {
     montar();
-    expect(screen.getByText(/04\/09 – 03\/10/)).toBeInTheDocument();
-    expect(screen.getByText(/até 03\/10/)).toBeInTheDocument();
+    // Só a data: o fim pode ser ontem de propósito (sync nulo, worker parado), não "o último coletado".
+    expect(screen.getByText('04/09 – 03/10 · até 03/10')).toBeInTheDocument();
   });
   it('compartilhado e não identificado: valor na coluna Gasto', () => {
     montar();

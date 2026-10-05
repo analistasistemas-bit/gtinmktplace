@@ -280,4 +280,26 @@ describe('montarAds — fim no último dia coletado', () => {
     expect(a).toMatchObject({ motivoSemLucro: null, lucroAposAds: 494 });
     expect(a.serieDiaria.at(-1)!.intervalo.rotulo).toBe('03/10');
   });
+  const AGORA8 = new Date('2026-10-05T08:00:00-03:00');
+  const SYNC8 = { ...SYNC, ultimo_ok_em: '2026-10-04T14:17:00Z' };
+  const J8 = { desde: '2026-09-28T03:00:00.000Z', ate: '2026-10-06T02:59:59.999Z' };
+  const DIAS8 = ['2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03'].map((d) => dia(11, d, { cost: 1 }));
+  const f8 = fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: DIAS8, sync: SYNC8 });
+  it('semana e mês às 08:00: o intervalo que contém ontem (não coletado) tem valor dos dias coletados', () => {
+    for (const passo of ['semana', 'mes'] as const) {
+      const a = monta({ agora: AGORA8, janela: J8, intervalos: intervalosBRT(J8.desde, J8.ate, passo, AGORA8),
+        diasFinanceiros: { desde: '2026-09-28', ate: '2026-10-03' }, fonte: f8 });
+      const custos = a.serie.map((p) => p.custo);
+      expect(custos.filter((c) => c != null).reduce((x, c) => x! + c!, 0)).toBe(6);
+      // O intervalo que contém 03/10 (último coletado) e 04/10 (ontem, não coletado) tem valor; só o de hoje fica sem dado.
+      const comFim = a.serie.find((p) => p.intervalo.inicio <= '2026-10-03T03:00:00.000Z' && p.intervalo.fim > '2026-10-03T03:00:00.000Z')!;
+      expect(comFim.custo).toBe(passo === 'semana' ? 6 : 3);
+    }
+  });
+  it('um fim só: dias financeiros até ontem (sync-fim falhou) → lucro e Ads no mesmo recorte, indisponível por cobertura', () => {
+    const a = monta({ agora: AGORA8, janela: J8, intervalos: intervalosBRT(J8.desde, J8.ate, 'semana', AGORA8),
+      diasFinanceiros: { desde: '2026-09-28', ate: '2026-10-04' }, fonte: f8 });
+    expect(a.fimDia).toBe('2026-10-04');
+    expect(a).toMatchObject({ motivoSemLucro: 'cobertura', lucroAposAds: null });
+  });
 });

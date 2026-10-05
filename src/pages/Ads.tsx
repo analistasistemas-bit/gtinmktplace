@@ -99,7 +99,7 @@ export default function Ads() {
         </div>
         {painel && (
           <p className="text-xs text-muted-foreground tabular-nums">
-            {`${diaMesLiteral(janela.desde)} – ${diaMesLiteral(janela.ate)} · até ${diaMesLiteral(janela.ate)}, último dia com Ads coletado`}
+            {`${diaMesLiteral(janela.desde)} – ${diaMesLiteral(janela.ate)} · até ${diaMesLiteral(janela.ate)}`}
           </p>
         )}
       </div>

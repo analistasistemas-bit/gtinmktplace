@@ -144,7 +144,7 @@ export function montarAds(p: {
   fonte: FonteAds | 'carregando' | 'erro';
   /** Resumo da conta (ads_resumo_periodo) nos dias financeiros; 'periodo_longo' = acima de 366 dias, não consultado. */
   resumo: ResumoAds | null | 'carregando' | 'erro' | 'periodo_longo';
-  /** Dias BRT do 1º dia do período até min(último dia, ontem). */
+  /** Dias BRT do 1º dia do período até min(último dia, fimDiasAds) — o fim único do período de Ads. */
   diasFinanceiros: { desde: string; ate: string };
   /** 1ª venda da ORG (mínimo do catálogo inteiro, como vendas-sku), nunca a do alvo. */
   historicoDesde: string | null;
@@ -165,8 +165,6 @@ export function montarAds(p: {
     return { ...vazio(sync.estado, sync.erro), ultimoOkEm: sync.ultimo_ok_em };
   }
 
-  const hoje = diaBRT(p.agora.getTime());
-  const ontem = somarDias(hoje, -1);
   const parcial = !sync.carga_inicial_ok;
   const coberto = (d: string) => diaCoberto(d, sync);
   const aberto = (d: string, coletadoEm: string | null) => !coletadoEm || !atribuicaoFinal(d, coletadoEm);
@@ -180,12 +178,13 @@ export function montarAds(p: {
   // Um grupo entra uma vez, por mais MLBs do alvo que ele tenha.
   const doAlvo = [...membros].filter(([, ms]) => [...ms].some((m) => mlbsAlvo.has(m))).map(([id]) => id);
   const ids = new Set(doAlvo);
-  const linhas = [...new Map(f.dias.filter((d) => ids.has(d.ad_group_id) && d.dia <= ontem)
-    .map((d) => [`${d.ad_group_id}|${d.dia}`, d] as const)).values()];
   const desdeDia = diaBRT(Date.parse(p.janela.desde));
   const fimJanela = diaBRT(Date.parse(p.janela.ate));
-  const fimAds = fimDiasAds(p.agora, sync.ultimo_ok_em);
-  const ateDia = fimJanela < fimAds ? fimJanela : fimAds;
+  // Um fim só: o dos dias financeiros (o chamador já aplicou fimDiasAds). Lucro, despesa, série e gráfico
+  // param no mesmo dia — recalcular aqui divergiria se o chamador caiu para "ontem" (sync-fim com erro).
+  const ateDia = fimJanela < p.diasFinanceiros.ate ? fimJanela : p.diasFinanceiros.ate;
+  const linhas = [...new Map(f.dias.filter((d) => ids.has(d.ad_group_id) && d.dia <= ateDia)
+    .map((d) => [`${d.ad_group_id}|${d.dia}`, d] as const)).values()];
   // Despesa do período = mesmo recorte do gráfico: só dia coberto. Na carga parcial não há despesa (totais null).
   const doPeriodo = linhas.filter((d) => d.dia >= desdeDia && d.dia <= ateDia && coberto(d.dia));
   const diasPeriodo = diasEntre(desdeDia, ateDia);
@@ -234,7 +233,7 @@ export function montarAds(p: {
   const porDia = new Map<string, AdsDia[]>();
   for (const l of linhas) porDia.set(l.dia, [...(porDia.get(l.dia) ?? []), l]);
   const ponto = (intervalo: Intervalo): PontoAds => {
-    const ds = diasDoIntervalo(intervalo, p.agora).filter((d) => d <= ontem);
+    const ds = diasDoIntervalo(intervalo, p.agora).filter((d) => d <= ateDia);
     const doIv = ds.flatMap((d) => porDia.get(d) ?? []);
     // Valor com todos os dias cobertos (dia sem linha soma 0); fora da cobertura ou carga parcial → sem valor.
     const provado = !parcial && ds.length > 0 && ds.every(coberto);

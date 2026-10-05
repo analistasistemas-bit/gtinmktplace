@@ -326,6 +326,17 @@ describe('useSkuDossie — tráfego', () => {
     expect(montarAdsSpy.mock.lastCall![0].diasFinanceiros.ate).toBe('2026-10-03');
   });
 
+  it('Ads: sync-fim com erro → dias financeiros até ontem, e é esse o fim que montarAds recebe', async () => {
+    vi.setSystemTime(new Date('2026-10-05T08:00:00-03:00'));
+    servir([venda({ id: 'a' })], { MLB1: ['A'] });
+    dados.buscarUltimoOkAds.mockRejectedValue(new Error('rls'));
+    montarAdsSpy.mockClear();
+    const h = renderHook(() => useSkuDossie(sku('A'), { tipo: 'range', desde: '2026-09-28', ate: '2026-10-05' }, 'semana'), { wrapper });
+    await waitFor(() => expect(h.result.current.ads?.estado ?? 'carregando').not.toBe('carregando'));
+    expect(h.result.current.estado).toBe('ok');
+    expect(montarAdsSpy.mock.lastCall![0].diasFinanceiros).toEqual({ desde: '2026-09-28', ate: '2026-10-04' });
+  });
+
   it('Ads: histórico = 1ª venda da ORG (catálogo inteiro), não a do alvo', async () => {
     Object.assign(catQ, { data: [cat({ primeiraVenda: '2026-09-20T12:00:00Z' }),
       cat({ codigo: 'B', codigoPai: 'Q', primeiraVenda: '2026-03-01T12:00:00Z' })] });
