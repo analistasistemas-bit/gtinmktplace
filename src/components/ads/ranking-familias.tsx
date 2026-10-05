@@ -33,7 +33,8 @@ interface PropsFamilia {
 function NomeFamilia({ f }: { f: FamiliaPainel }) {
   return (
     <>
-      <Link to={`/faturamento/sku/familia/${encodeURIComponent(f.codigoPai)}`} className={cn(LINK, 'line-clamp-2 break-words')}>
+      <Link to={`/faturamento/sku/familia/${encodeURIComponent(f.codigoPai)}`} className={cn(LINK, 'line-clamp-2 break-words')}
+        title={f.nome ?? f.codigoPai}>
         {f.nome ?? f.codigoPai}
       </Link>
       {f.nome && <span className="block text-xs text-muted-foreground tabular-nums">{f.codigoPai}</span>}
@@ -181,16 +182,21 @@ export function RankingFamilias({ painel, historicoDesde }: { painel: PainelAds;
             ativo={filtro === 'atencao'} onClick={() => alternar('atencao')} className="sm:min-w-36" />
         )}
         <KpiCard size="compact" label="Dentro do equilíbrio" infoKey="Dentro do equilíbrio::Ads" value={contagem.dentro}
-          tom={liberado ? 'success' : undefined} ativo={filtro === 'dentro'} onClick={() => alternar('dentro')} className="sm:min-w-36" />
+          tom={liberado ? 'success' : undefined} ativo={filtro === 'dentro'} onClick={() => alternar('dentro')} desabilitado={contagem.dentro === 0} className="sm:min-w-36" />
         <KpiCard size="compact" label="Sem referência" infoKey="Sem referência::Ads" value={contagem.semReferencia}
-          ativo={filtro === 'sem_referencia'} onClick={() => alternar('sem_referencia')} className="sm:min-w-36" />
+          ativo={filtro === 'sem_referencia'} onClick={() => alternar('sem_referencia')} desabilitado={contagem.semReferencia === 0} className="sm:min-w-36" />
       </div>
       {fraseAtencao && <p className="text-sm text-muted-foreground">{fraseAtencao}</p>}
     </div>
   );
 
   const props = (f: FamiliaPainel) => ({ f, liberado, conta, historicoDesde });
-  const conteudoRanking = (
+  const conteudoRanking = visiveis.length === 0 ? (
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+      <p>Nenhuma família neste filtro no período.</p>
+      <Button type="button" variant="outline" size="sm" className="h-11 sm:h-8" onClick={() => setFiltro('todas')}>Ver todas</Button>
+    </div>
+  ) : (
     <>
       <div className="hidden rounded-lg border border-border xl:block">
         <Table aria-label="Famílias por gasto" className="table-fixed">

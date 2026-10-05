@@ -35,6 +35,8 @@ interface KpiCardProps {
   onClick?: () => void;
   /** Só com `onClick`: filtro correspondente está aplicado. */
   ativo?: boolean;
+  /** Só com `onClick`: filtro sem linhas — o card fica visível mas não clicável. */
+  desabilitado?: boolean;
 }
 
 /**
@@ -64,7 +66,7 @@ export function KpiInfoButton({ infoKey, tom }: { infoKey: string; tom?: KpiTom 
             setOpen((o) => !o);
           }}
           className={cn(
-            'inline-flex shrink-0 items-center justify-center rounded-full p-3 -m-3 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground',
+            'inline-flex shrink-0 items-center justify-center rounded-full p-[15px] -m-[15px] sm:p-3 sm:-m-3 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground',
             tomCls,
           )}
         >
@@ -81,7 +83,7 @@ export function KpiInfoButton({ infoKey, tom }: { infoKey: string; tom?: KpiTom 
 
 export function KpiCard({
   label, value, icon: Icon, delta, deltaTrend = 'neutral', hint, loading, className, valueClassName,
-  variant = 'default', to, size = 'default', tom, infoKey, onClick, ativo,
+  variant = 'default', to, size = 'default', tom, infoKey, onClick, ativo, desabilitado,
 }: KpiCardProps) {
   const compact = size === 'compact';
 
@@ -172,7 +174,9 @@ export function KpiCard({
   // O "i" de explicação já é um botão — aninhar botões é HTML inválido, e a área sobreposta
   // impedia o popover do Radix de abrir. Mesmo padrão das linhas clicáveis do DataTable, onde o
   // menu ⋮ convive com a linha: quem está dentro para a propagação.
-  const propsFiltro = onClick
+  const propsFiltro = onClick && desabilitado
+    ? { role: 'button' as const, 'aria-disabled': true, 'aria-pressed': ativo, 'aria-label': `Filtrar por ${label}` }
+    : onClick
     ? {
         role: 'button' as const,
         tabIndex: 0,
@@ -194,7 +198,8 @@ export function KpiCard({
       {...propsFiltro}
       className={cn(
         'h-full rounded-lg border bg-card px-3 py-2.5 shadow-sm transition-all duration-200 hover:shadow-md hover:brightness-105 dark:hover:brightness-110',
-        (to || onClick) && 'cursor-pointer',
+        (to || onClick) && !desabilitado && 'cursor-pointer',
+        desabilitado && 'opacity-60 hover:shadow-sm hover:brightness-100 dark:hover:brightness-100',
         onClick && 'outline-none focus-visible:ring-2 focus-visible:ring-ring',
         ativo && 'border-primary/60 bg-primary/5 ring-1 ring-primary/40',
         className,

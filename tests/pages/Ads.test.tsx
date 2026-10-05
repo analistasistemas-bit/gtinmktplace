@@ -593,4 +593,40 @@ describe('Ads', () => {
     expect(tabela.getByRole('row', { name: /Fam A/ })).toBeInTheDocument();
     expect(tabela.getByRole('button', { name: 'Ver detalhes de Fam B' })).toHaveAttribute('aria-expanded', 'false');
   });
+  it('card com contagem 0 fica desabilitado, exceto Todas', () => {
+    montar({ ...PAINEL, familias: [PAINEL.familias[0]] });
+
+    const semRef = screen.getByRole('button', { name: 'Filtrar por Sem referência' });
+    expect(semRef).toHaveAttribute('aria-disabled', 'true');
+    fireEvent.click(semRef);
+    expect(semRef).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('row', { name: /Fam A/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Filtrar por Dentro do equilíbrio' })).not.toHaveAttribute('aria-disabled');
+    expect(screen.getByRole('button', { name: 'Remover filtro Todas' })).not.toHaveAttribute('aria-disabled');
+  });
+
+  it('filtro ativo sem família mostra vazio com Ver todas', () => {
+    const view = montar();
+    const ultimo = (): RetornoAdsPainel => hook.mock.results.at(-1)?.value;
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Dentro do equilíbrio' }));
+
+    // Refetch da mesma janela preserva o filtro, mas a família saiu de "dentro".
+    const familias = [{ ...PAINEL.familias[0], semaforo: 'acima' as const }, PAINEL.familias[1]];
+    hook.mockReturnValue({ ...ultimo(), painel: { ...PAINEL, familias } });
+    view.rerender(<MemoryRouter><Ads /></MemoryRouter>);
+
+    expect(screen.getByText('Nenhuma família neste filtro no período.')).toBeVisible();
+    expect(screen.queryByRole('table', { name: 'Famílias por gasto' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver todas' }));
+    expect(screen.queryByText('Nenhuma família neste filtro no período.')).not.toBeInTheDocument();
+    expect(screen.getByRole('row', { name: /Fam A/ })).toBeInTheDocument();
+  });
+
+  it('nome da família tem title com o nome completo na tabela e no cartão', () => {
+    montar();
+
+    const links = screen.getAllByRole('link', { name: 'Fam A' });
+    expect(links).toHaveLength(2);
+    for (const l of links) expect(l).toHaveAttribute('title', 'Fam A');
+  });
 });
