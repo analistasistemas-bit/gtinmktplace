@@ -60,7 +60,7 @@ const DIA_MS = 86_400_000;
 const DESATUALIZADO_MS = 48 * 3_600_000;
 const somarDias = (dia: string, n: number) => new Date(Date.parse(`${dia}T00:00:00Z`) + n * DIA_MS).toISOString().slice(0, 10);
 const difDias = (a: string, b: string) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / DIA_MS);
-function diasEntre(desde: string, ate: string): string[] {
+export function diasEntre(desde: string, ate: string): string[] {
   const out: string[] = [];
   for (let d = desde; d <= ate; d = somarDias(d, 1)) out.push(d);
   return out;
@@ -69,6 +69,14 @@ function diasEntre(desde: string, ate: string): string[] {
 /** A atribuição do dia fecha quando ele foi relido 15+ dias depois (D-1 + 14 dias de janela). Medido pelo
  *  coletado_em: com o worker parado, o dia continua em aberto por mais velho que seja. */
 export const atribuicaoFinal = (dia: string, coletadoEm: string) => difDias(diaBRT(Date.parse(coletadoEm)), dia) >= 15;
+
+/** Último dia que uma coleta ok cobriu (ela lê até D-1). Coberto = dentro de [cobertura_desde, ultimoDia].
+ *  Dentro da cobertura, dia sem linha = gasto zero real (conferido no worker: ele grava a série densa de
+ *  todo grupo com gasto na janela; grupo sem gasto não tem linha). Fora dela = sem dado. */
+export function diaCoberto(d: string, sync: { cobertura_desde: string | null; ultimo_ok_em: string | null }): boolean {
+  const ultimoDia = sync.ultimo_ok_em ? somarDias(diaBRT(Date.parse(sync.ultimo_ok_em)), -1) : null;
+  return sync.cobertura_desde != null && ultimoDia != null && d >= sync.cobertura_desde && d <= ultimoDia;
+}
 
 /** Σ por campo e razões Σ/Σ — nunca a média dos percentuais diários (o parser do worker nem os lê). */
 export function totaisAds(linhas: AdsDia[]): TotaisAds {
@@ -127,11 +135,7 @@ export function montarAds(p: {
   const hoje = diaBRT(p.agora.getTime());
   const ontem = somarDias(hoje, -1);
   const parcial = !sync.carga_inicial_ok;
-  // Último dia que uma coleta ok cobriu (ela lê até D-1). Coberto = dentro de [cobertura_desde, ultimoDia].
-  // Dentro da cobertura, dia sem linha = gasto zero real (conferido no worker: ele grava a série densa de
-  // todo grupo com gasto na janela; grupo sem gasto não tem linha). Fora dela = sem dado.
-  const ultimoDia = sync.ultimo_ok_em ? somarDias(diaBRT(Date.parse(sync.ultimo_ok_em)), -1) : null;
-  const coberto = (d: string) => sync.cobertura_desde != null && ultimoDia != null && d >= sync.cobertura_desde && d <= ultimoDia;
+  const coberto = (d: string) => diaCoberto(d, sync);
   const aberto = (d: string, coletadoEm: string | null) => !coletadoEm || !atribuicaoFinal(d, coletadoEm);
 
   const membros = new Map<number, Set<string>>();
