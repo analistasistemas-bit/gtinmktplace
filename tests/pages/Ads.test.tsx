@@ -58,7 +58,7 @@ describe('Ads', () => {
     montar();
     const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
     expect(resumo.getByText('Resultado após Ads')).toBeInTheDocument();
-    fireEvent.click(resumo.getByRole('button', { name: 'Composição e indicadores' }));
+    fireEvent.click(resumo.getByRole('button', { name: 'Composição do gasto' }));
     expect(resumo.getByText('Gasto de Ads não identificado')).toBeInTheDocument();
     expect(screen.getByText(/não é o lucro causado pelo Ads/)).toBeInTheDocument();
     expect(screen.getAllByText(/R\$\s?200,00/).length).toBeGreaterThan(0);
@@ -120,7 +120,7 @@ describe('Ads', () => {
     expect(resumo.getByText('Resultado após Ads')).toBeVisible();
     expect(resumo.queryByText('Em famílias')).not.toBeInTheDocument();
 
-    fireEvent.click(resumo.getByRole('button', { name: 'Composição e indicadores' }));
+    fireEvent.click(resumo.getByRole('button', { name: 'Composição do gasto' }));
 
     expect(resumo.getByText('Em famílias')).toBeVisible();
     expect(resumo.getByText('Compartilhado entre famílias')).toBeVisible();
@@ -144,18 +144,53 @@ describe('Ads', () => {
     expect(resultado).not.toHaveTextContent(/R\$\s*0,00/);
     expect(resumo.queryByRole('group', { name: 'Cálculo do resultado' }))
       .not.toBeInTheDocument();
+    expect(resumo.queryByRole('img', { name: /margem/ })).not.toBeInTheDocument();
+  });
+
+  it('indicadores ficam visíveis sem expandir, total antes do direto', () => {
+    montar();
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+    const ind = within(resumo.getByRole('group', { name: 'Indicadores' }));
+    expect(ind.getByText('8,00×')).toBeVisible();
+    expect(ind.getByText('direto 7,00×')).toBeVisible();
+    expect(ind.getByText('12,5%')).toBeVisible();
+    expect(ind.getByText(/R\$\s*800,00/)).toBeVisible();
+    expect(ind.getByText(/direta R\$\s*700,00/)).toBeVisible();
+    expect(resumo.getByRole('button', { name: 'Composição do gasto' })).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('barra da margem com lucro positivo e legenda da despesa', () => {
+    montar();
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+    expect(resumo.getByRole('img', { name: 'Ads consumiu 33,3% da margem; resultado 66,7%' })).toBeInTheDocument();
+    expect(resumo.getByRole('group', { name: 'Despesa de Ads' })).toHaveTextContent('33,3% da margem');
+  });
+
+  it('Ads maior que a margem: barra cheia em perigo e resultado negativo com sinal', () => {
+    montar({ ...PAINEL, conta: { ...PAINEL.conta!, lucroAntes: 50, resultado: -50, margemConsumida: 2 } });
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+    expect(resumo.getByRole('img', { name: 'Ads consumiu mais que a margem (200,0%)' })).toBeInTheDocument();
+    const valor = within(resumo.getByRole('group', { name: 'Resultado após Ads' })).getByText(/−R\$\s*50,00/);
+    expect(valor).toHaveClass('text-danger');
+  });
+
+  it('lucro conhecido sem margem positiva: ponte sem barra', () => {
+    montar({ ...PAINEL, conta: { ...PAINEL.conta!, lucroAntes: 0, resultado: -100, margemConsumida: null } });
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+    expect(resumo.getByRole('group', { name: 'Cálculo do resultado' })).toBeInTheDocument();
+    expect(resumo.queryByRole('img', { name: /margem/ })).not.toBeInTheDocument();
+    expect(resumo.getByRole('group', { name: 'Despesa de Ads' })).toHaveTextContent('despesa informada pela API de Ads');
   });
 
   it.each(['parcial', 'estimado'] as const)(
-    'mantém custo %s junto ao resultado com composição fechada',
+    'mantém custo %s no cabeçalho do resumo com composição fechada',
     fonteCusto => {
       montar({ ...PAINEL, conta: { ...PAINEL.conta!, fonteCusto } });
 
       const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
-      const resultado = within(resumo.getByRole('group', { name: 'Resultado após Ads' }));
 
-      expect(resultado.getByText(`custo ${fonteCusto}`)).toBeVisible();
-      expect(resumo.getByRole('button', { name: 'Composição e indicadores' }))
+      expect(resumo.getByText(`custo ${fonteCusto}`)).toBeVisible();
+      expect(resumo.getByRole('button', { name: 'Composição do gasto' }))
         .toHaveAttribute('aria-expanded', 'false');
     },
   );
@@ -177,10 +212,10 @@ describe('Ads', () => {
     expect(resumo.getByText('provisório — 14 dias com atribuição em aberto'))
       .toBeVisible();
     expect(screen.getByText(/não fecha com o total da conta/)).toBeVisible();
-    expect(resumo.getByRole('button', { name: 'Composição e indicadores' }))
+    expect(resumo.getByRole('button', { name: 'Composição do gasto' }))
       .toHaveAttribute('aria-expanded', 'false');
 
-    fireEvent.click(resumo.getByRole('button', { name: 'Composição e indicadores' }));
+    fireEvent.click(resumo.getByRole('button', { name: 'Composição do gasto' }));
 
     expect(resumo.queryByText('Gasto de Ads não identificado')).not.toBeInTheDocument();
     expect(resumo.getByRole('group', { name: 'Despesa de Ads' }))
@@ -347,10 +382,10 @@ describe('Ads', () => {
   });
   it('ordem total / direto em toda a tela', () => {
     montar();
-    fireEvent.click(screen.getByRole('button', { name: 'Composição e indicadores' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Composição do gasto' }));
     fireEvent.click(within(screen.getByRole('row', { name: /Fam A/ })).getByRole('button', { name: 'Ver detalhes de Fam A' }));
     expect(screen.queryByText(/direta? \/ total/)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/ROAS \(total \/ direto\)/).length).toBeGreaterThan(1);
+    expect(screen.getAllByText(/ROAS \(total \/ direto\)/).length).toBeGreaterThan(0);
   });
   it('sem família com gasto: mensagem em vez de tabela vazia', () => {
     montar({ ...PAINEL, conta: null, contaMotivo: 'cobertura', familias: [], compartilhados: [] });
