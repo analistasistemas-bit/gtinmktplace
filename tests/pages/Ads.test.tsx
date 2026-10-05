@@ -77,7 +77,8 @@ describe('Ads', () => {
   });
   it('conta indisponível mantém o ranking', () => {
     montar({ ...PAINEL, conta: null, contaMotivo: 'cobertura' });
-    expect(screen.getByText(/Total da conta indisponível/)).toBeInTheDocument();
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+    expect(resumo.getByText(/Total da conta indisponível: a coleta ainda não cobre este período\./)).toBeInTheDocument();
     expect(screen.getByRole('row', { name: /Fam A/ })).toBeInTheDocument();
   });
   it('trocar o período chama o hook com o preset estruturado', () => {
@@ -469,6 +470,35 @@ describe('Ads', () => {
 
     expect(resultado).toHaveTextContent('—');
     expect(resultado).toHaveTextContent('gasto compartilhado com outra família');
+    expect(screen.getByRole('row', { name: /Fam A/ })).not.toHaveTextContent(/R\$\s*0,00/);
+  });
+
+  it('custo parcial com outro motivo mostra os dois sem prometer semáforo', () => {
+    montar({
+      ...PAINEL,
+      familias: [{
+        ...PAINEL.familias[0],
+        resultado: null,
+        custoCompartilhado: 20,
+        semaforo: null,
+        motivo: 'compartilhado',
+        fonteCusto: 'parcial',
+      }],
+    });
+
+    const resultado = within(screen.getByRole('row', { name: /Fam A/ }))
+      .getByRole('group', { name: 'Resultado após Ads' });
+
+    expect(resultado).toHaveTextContent('custo parcial');
+    expect(resultado).toHaveTextContent('gasto compartilhado com outra família');
+    expect(resultado).not.toHaveTextContent('sem semáforo');
+  });
+
+  it('semáforo desligado não pinta o filtro Dentro do equilíbrio de sucesso', () => {
+    montar({ ...PAINEL, semaforoLiberado: false, familias: [{ ...PAINEL.familias[0], semaforo: null }] });
+
+    const filtro = screen.getByRole('button', { name: 'Filtrar por Dentro do equilíbrio' });
+    expect(within(filtro).getByText('Dentro do equilíbrio')).not.toHaveClass('text-success');
   });
 
   it('conta divergente marca as linhas com a indicação curta', () => {

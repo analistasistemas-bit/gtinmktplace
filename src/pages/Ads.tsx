@@ -206,7 +206,11 @@ export default function Ads() {
         )}
         {painel.conta
           ? <ResumoConta conta={painel.conta} historicoDesde={historicoDesde} />
-          : <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">Total da conta indisponível: a coleta ainda não cobre este período.</p>}
+          : (
+            <section aria-label="Resumo da conta" className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
+              <p>Total da conta indisponível: a coleta ainda não cobre este período.</p>
+            </section>
+          )}
         {/* A key reinicia filtro e detalhes ao trocar seleção ou janela; refetch da mesma janela não muda a key. */}
         <RankingFamilias key={`${atual}:${janela?.desde}:${janela?.ate}`} painel={painel} historicoDesde={historicoDesde} />
         <GastosAssociados painel={painel} />

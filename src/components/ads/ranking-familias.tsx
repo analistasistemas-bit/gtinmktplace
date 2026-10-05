@@ -58,7 +58,13 @@ function Referencia({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
 
 /** Resultado após Ads com tudo o que o condiciona: travessão + motivo, marca de custo e divergência da conta. */
 function Resultado({ f, conta, historicoDesde }: Omit<PropsFamilia, 'liberado'>) {
-  const parcial = f.motivo === 'custo_parcial' || f.fonteCusto === 'parcial';
+  // O texto longo só vale quando o motivo é custo_parcial; com outro motivo, a fonte vira marca curta.
+  const marca =
+    f.motivo === 'custo_parcial'
+      ? textoMotivo('custo_parcial', null)
+      : f.fonteCusto === 'parcial' || f.fonteCusto === 'estimado'
+        ? `custo ${f.fonteCusto}`
+        : null;
   return (
     <div role="group" aria-label="Resultado após Ads" className="space-y-1">
       <span className={cn('block font-medium tabular-nums', f.resultado != null && f.resultado < 0 && 'text-danger')}>
@@ -67,9 +73,7 @@ function Resultado({ f, conta, historicoDesde }: Omit<PropsFamilia, 'liberado'>)
       {f.motivo && f.motivo !== 'custo_parcial' && (
         <span className="block text-xs text-muted-foreground">{textoMotivo(f.motivo, historicoDesde)}</span>
       )}
-      {(parcial || f.fonteCusto === 'estimado') && (
-        <StatusPill tone="neutral">{parcial ? textoMotivo('custo_parcial', null) : 'custo estimado'}</StatusPill>
-      )}
+      {marca && <StatusPill tone="neutral">{marca}</StatusPill>}
       {conta?.divergente && <span className="block text-xs text-warning">Composição da conta divergente</span>}
     </div>
   );
@@ -177,7 +181,7 @@ export function RankingFamilias({ painel, historicoDesde }: { painel: PainelAds;
             ativo={filtro === 'atencao'} onClick={() => alternar('atencao')} className="sm:min-w-36" />
         )}
         <KpiCard size="compact" label="Dentro do equilíbrio" infoKey="Dentro do equilíbrio::Ads" value={contagem.dentro}
-          tom="success" ativo={filtro === 'dentro'} onClick={() => alternar('dentro')} className="sm:min-w-36" />
+          tom={liberado ? 'success' : undefined} ativo={filtro === 'dentro'} onClick={() => alternar('dentro')} className="sm:min-w-36" />
         <KpiCard size="compact" label="Sem referência" infoKey="Sem referência::Ads" value={contagem.semReferencia}
           ativo={filtro === 'sem_referencia'} onClick={() => alternar('sem_referencia')} className="sm:min-w-36" />
       </div>
