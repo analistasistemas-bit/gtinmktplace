@@ -98,11 +98,13 @@ export function guardKitVinculado(
  */
 export function anuncioSemVariacao(
   a:
-    | { tipo: 'legacy'; mlItemId: string; variacoes: Array<{ ml_variation_id: string | null }> }
+    | { tipo: 'legacy'; mlItemId: string; variacoes: Array<{ ml_variation_id: string | null; excluida_da_publicacao?: boolean | null }> }
     | { tipo: 'up'; mlItemId: string; qtdItensUP: number },
 ): boolean {
   if (a.tipo === 'up') return a.qtdItensUP === 1;
-  return a.variacoes.length === 1 && a.variacoes[0].ml_variation_id === a.mlItemId;
+  // Mesmo recorte da vinculação: linha excluída da publicação não existe no anúncio.
+  const publicadas = a.variacoes.filter((v) => !v.excluida_da_publicacao);
+  return publicadas.length === 1 && publicadas[0].ml_variation_id === a.mlItemId;
 }
 
 export interface RodarVinculacaoDeps {

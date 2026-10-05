@@ -116,7 +116,7 @@ Deno.serve(async (req) => {
     let semVariacao: boolean;
     if (vinc.tipo === 'legacy') {
       const { data: varsEspelho } = await admin.from('variacoes')
-        .select('codigo, cor, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status')
+        .select('codigo, cor, ml_variation_id, catalog_product_id, catalog_listing_id, catalog_status, excluida_da_publicacao')
         .eq('familia_id', job.familia_id);
       await espelharAnuncioExterno(admin, {
         user_id: familia.user_id,

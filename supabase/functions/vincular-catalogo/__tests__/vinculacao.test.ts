@@ -196,6 +196,12 @@ describe('anuncioSemVariacao — alerta no-match fala do anúncio, não de "vari
   it('Legacy com variação real (id numérico do ML) não é sem variação', () => {
     expect(anuncioSemVariacao({ tipo: 'legacy', mlItemId: 'MLB1', variacoes: [{ ml_variation_id: '182736451' }] })).toBe(false);
   });
+  it('Legacy item plano com outra linha excluída da publicação continua sem variação', () => {
+    expect(anuncioSemVariacao({ tipo: 'legacy', mlItemId: 'MLB1', variacoes: [
+      { ml_variation_id: 'MLB1', excluida_da_publicacao: false },
+      { ml_variation_id: null, excluida_da_publicacao: true },
+    ] })).toBe(true);
+  });
   it('Legacy com várias variações não é sem variação', () => {
     expect(anuncioSemVariacao({ tipo: 'legacy', mlItemId: 'MLB1', variacoes: [{ ml_variation_id: 'MLB1' }, { ml_variation_id: '9' }] })).toBe(false);
   });
