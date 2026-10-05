@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { montarPainelAds, type FontePainelAds, type GrupoPainel } from '@/lib/ads-painel';
+import { BASE_ACOS_VALIDADA, montarPainelAds, type FontePainelAds, type GrupoPainel } from '@/lib/ads-painel';
+
+// Decisão do Diego em 05/10/2026, com os números do spike 055 (ADR-0179): semáforo ligado.
+it('semáforo do ACOS de equilíbrio ligado', () => {
+  expect(BASE_ACOS_VALIDADA).toBe(true);
+});
 import { janelaBRT, lucroPorFamilia, periodoAds } from '@/lib/ads-painel-dados';
 import { diasEntre } from '@/lib/sku-ads';
 import { agruparPorPedido } from '@/lib/pedidos-faturamento';

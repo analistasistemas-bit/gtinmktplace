@@ -13,7 +13,7 @@ Spec `docs/superpowers/specs/2026-10-04-painel-de-ads-design.md`; plano `docs/su
 - [ ] Merge da branch na `main` (revisão pré-merge Grok + CI verde); módulo `ads` nasce desligado em todas as orgs.
 - [ ] Task 7 Step 5: migration de backfill de `allowed_menus` com `'ads'`, só depois do deploy do front.
 - [ ] Task 8 (Diego): ligar o módulo na Avil, conferir o total com o Mercado Ads (≤ 1 %), 2 semanas de piloto, ≥ 1 decisão registrada. O épico só fecha aqui.
-- [ ] Decisão do Diego: ligar o semáforo do ACOS de equilíbrio (`BASE_ACOS_VALIDADA`); spike 055 indica a mesma base de preço.
+- [x] Decisão do Diego: ligar o semáforo do ACOS de equilíbrio (`BASE_ACOS_VALIDADA = true`, 05/10); spike 055 indica a mesma base de preço. Observar no piloto se alguma família no limite aparece "dentro" por causa das canceladas.
 - Minors do ledger (diferidos): teste SQL não cobre `limpar_ads_retencao`; `parsers.test` fora-da-janela/repetido não isolam a regra estrita; motivo `sem_vendas` junto de resultado negativo; marca de custo parcial/estimado difere do Vendas SKU; `pct`/`razao` exportados do componente (warning react-refresh); remedir `ads_painel` quando a Avil passar de ~300 grupos.
 
 ## Reajuste de preço em massa (ADR-0178) — em produção desde 2026-10-04

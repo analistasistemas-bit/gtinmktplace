@@ -6,7 +6,7 @@
 
 ## Snapshot
 
-- **I2 Painel de Ads com margem real, EM PILOTO (2026-10-05, ADR-0179)** — em produção: migration `20261005013741_ads_painel`, `coletar-ads-ml` v12 (série diária do anunciante) e `usuarios` v45 (menu `ads`). Tela `/ads`, módulo `ads` e dossiê D2 entram com o merge da branch `worktree-i2-painel-ads`; o módulo nasce desligado em todas as orgs. Semáforo do ACOS de equilíbrio desligado (spike 055). Emenda ao ADR-0172: gasto fora dos grupos vira aviso, não bloqueio. Falta a Task 8 (Diego: ligar na Avil, total ≤ 1 % do Mercado Ads, 2 semanas, ≥ 1 decisão). Ver `docs/TASKS.md`.
+- **I2 Painel de Ads com margem real, EM PILOTO (2026-10-05, ADR-0179)** — em produção: migration `20261005013741_ads_painel`, `coletar-ads-ml` v12 (série diária do anunciante) e `usuarios` v45 (menu `ads`). Tela `/ads`, módulo `ads` e dossiê D2 entram com o merge da branch `worktree-i2-painel-ads`; o módulo nasce desligado em todas as orgs. Semáforo do ACOS de equilíbrio ligado em 05/10 pelo Diego (spike 055; ACOS do Ads 1,5–7 % otimista por canceladas). Emenda ao ADR-0172: gasto fora dos grupos vira aviso, não bloqueio. Falta a Task 8 (Diego: ligar na Avil, total ≤ 1 % do Mercado Ads, 2 semanas, ≥ 1 decisão). Ver `docs/TASKS.md`.
 - **Multiget do ML via `/items/bulk` EM PRODUÇÃO (2026-10-04, ADR-0177)** — o ML desliga `GET /items?ids=` em 25/10/2026; as 14 chamadas restantes passam pelo adaptador `_shared/ml/multiget.ts` (envelope antigo preservado), implantado em 5 fatias com manifesto de hash (28 edges iguais à `main`). Pendente: atualizar o Graphify a partir da raiz.
 
 - Fase atual: Evolucao SaaS, Fase 1 concluida ate `E4`; **`E7` multi-tenancy + `E6` orquestracao multicanal EM PRODUCAO (2026-07-05/06)**

@@ -46,9 +46,10 @@ está indisponível nas 3 orgs pela regra de gasto fora dos grupos.
 - **Premissa herdada (vendas):** não há marcador de cobertura das vendas no backend (webhook `sync-venda` +
   `reconciliar-faturamento`); como Faturamento, Vendas SKU e Financeiro, o painel assume histórico completo a partir
   da primeira venda registrada e mostra essa data. Antes dela, lucro indisponível (`historico`).
-- **Semáforo desligado nesta entrega:** o spike 055 mede se o valor atribuído pelo ML e o bruto do PubliAI são a mesma
-  base (preço unitário, promoções, kits, devoluções); ligar o semáforo é entrega separada, com validade por
-  família/período.
+- **Semáforo:** nasceu desligado; o spike 055 mostrou a mesma base de preço (100 % dos dias comparáveis) e o Diego o
+  **ligou em 2026-10-05** (`BASE_ACOS_VALIDADA = true`). Ressalva aceita: o ML conta vendas depois canceladas, então
+  o ACOS do Ads sai 1,5–7 % otimista (família no limite pode aparecer "dentro"); kits não foram testados (Avil sem
+  kit). Custo parcial, gasto compartilhado, cobertura incompleta e histórico seguem sem semáforo.
 
 - O Lucro após Ads do dossiê passa a aparecer quando o gasto é exclusivo, com aviso do % não identificado.
 - "Resultado após Ads" não é lucro causado pelo Ads; a interface diz isso. Despesa é a informada pela API, não a
@@ -71,8 +72,8 @@ está indisponível nas 3 orgs pela regra de gasto fora dos grupos.
 - **Regras fixadas na validação visual:** o período termina no último dia coletado (recuo máx. de 1 dia; antes, das
   00h às ~11h17 BRT o painel ficava indisponível); o dossiê usa lucro e Ads nos mesmos dias e aplica a trava de
   histórico da org (mínimo da primeira venda do catálogo), em paridade com o painel.
-- **Semáforo do ACOS de equilíbrio desligado** (`BASE_ACOS_VALIDADA = false`). O spike 055
-  (`docs/spikes/055-base-acos-equilibrio.md`) indica a mesma base de preço; ligar é decisão do Diego.
+- **Semáforo do ACOS de equilíbrio ligado em 2026-10-05** por decisão do Diego (`BASE_ACOS_VALIDADA = true`), com
+  base no spike 055 (`docs/spikes/055-base-acos-equilibrio.md`).
 - **Emenda ao ADR-0172:** `fora_dos_grupos` deixa de bloquear o Lucro após Ads (vira aviso do % do período).
 - **Pendente (Task 8, Diego):** ligar o módulo na Avil, conferir o total com o Mercado Ads (≤ 1 %), 2 semanas de
   piloto e ≥ 1 decisão registrada. Só então o épico fecha; até lá o status é "em piloto".

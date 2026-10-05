@@ -47,8 +47,9 @@ export interface PainelAds {
   compartilhados: { id: number; custo: number; familias: string[]; semCodigo: number }[];
 }
 
-/** Liga o semáforo (spike 055). Fica false nesta entrega; ligar é entrega separada (Task 7, Step 8). */
-export const BASE_ACOS_VALIDADA = false;
+/** Liga o semáforo. Ligado pelo Diego em 05/10/2026 com os números do spike 055 (mesma base de preço; o ML conta
+ *  canceladas, ACOS 1,5–7 % otimista). Custo parcial, compartilhado, cobertura e histórico seguem sem semáforo. */
+export const BASE_ACOS_VALIDADA = true;
 
 const DESATUALIZADO_MS = 48 * 3_600_000;
 const cents = (x: number) => Math.round(x * 100);
