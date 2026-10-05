@@ -221,8 +221,8 @@ Entregue a segunda parte de D-6: gasto e vendas atribuídas do **Product Ads** d
 - **Consequência (2c-7 + 2c-8):** enquanto houver gasto de grupos excluídos ou sem membros nos últimos 90
   dias, o Lucro após Ads fica indisponível em toda a conta; hoje, na Avil, ~3 % do gasto está fora dos
   grupos, e por isso o Lucro após Ads fica indisponível. A despesa, o ROAS e o ACOS continuam visíveis.
-  **Decisão pendente do Diego:** manter essa regra rígida ou mostrar o Lucro após Ads com um aviso
-  ("~N % do gasto de Ads da conta não pôde ser atribuído").
+  **Superado em 2026-10-05 (ADR-0179 D2):** o Lucro após Ads passa a aparecer com aviso do % de gasto
+  não identificado no período — ver a emenda no fim do documento.
 - **Fora da 2c:** posição na busca (a fonte seria scraping, proibido pela cláusula 7.6 dos termos do
   programa de desenvolvedores do ML; `/sites/MLB/search` dá 403, ADR-0119); Ads no ranking, na curva ABC,
   no Financeiro e no billing; conferência com a fatura `PADS` (o app não tem permissão de faturamento: 403).
@@ -259,8 +259,8 @@ ranking, dossiê e as abas Vendas / Tráfego e oferta / Ads OK, sem regressão n
 0 erros de console, RPCs e tabelas novas respondendo 200.
 
 O gasto de Ads fora dos grupos listados (últimos 90 dias) segue acima do esperado nas 3 orgs (Avil ~3,1 %,
-DSA ~7,4 %, Daludi Shop ~14 %), então o **Lucro após Ads** aparece indisponível nas 3 — decisão pendente do
-Diego sobre manter a regra rígida ou mostrar o lucro com aviso (ver Ruling 2c-7/2c-8 acima).
+DSA ~7,4 %, Daludi Shop ~14 %), então o **Lucro após Ads** aparecia indisponível nas 3 pela regra rígida (Ruling 2c-7/2c-8 acima).
+Resolvido em 2026-10-05 pelo ADR-0179 D2: o lucro aparece com aviso (ver emenda abaixo).
 
 **Fora do escopo desta entrega, adiados por decisão do Diego:** Fatia 3 (recompra, XLSX, atalhos — plano em
 `docs/superpowers/plans/2026-09-27-vendas-sku-fatia-3.md`) e posição na busca (fora do escopo, ver
