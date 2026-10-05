@@ -36,6 +36,10 @@ export interface ItemML {
   /** SALE_FORMAT=Kit: sinal de pack mesmo sem UNITS_PER_PACK (categoria que não o expõe, ADR-0151). */
   formato_kit: boolean;
   variacoes: VariacaoML[];
+  /** catalog_listing do ML. */
+  catalogo: boolean;
+  /** item_relations sem variation_id: o par normal/catálogo do mesmo User Product (ADR-0174, emenda 2026-10-05). */
+  relacionados: string[];
 }
 export interface CadastroVariacao {
   variacao_id: string; custo: number | null; piso: number | null; origem: Origem;
@@ -53,6 +57,8 @@ export interface ProjecaoCor {
 export interface LinhaItem extends ItemPromocaoML {
   titulo: string | null; thumbnail: string | null; permalink: string | null; listing_type_id: string | null;
   preco_avaliado: number | null; projecao: ProjecaoCor[]; pior_semaforo: Semaforo;
+  /** Linha do catálogo exibida com a cara do normal do mesmo User Product (ADR-0174, emenda 2026-10-05). */
+  anuncio_normal_id: string | null;
 }
 export interface Contagem {
   convidados: number; convidados_verde: number; participando: number; verde: number; amarelo: number;

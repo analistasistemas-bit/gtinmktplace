@@ -53,6 +53,16 @@ describe('normalizadores', () => {
       variations: [{ id: 1, attributes: [{ id: 'UNITS_PER_PACK', value_name: '3' }] }, { id: 2 }] });
     expect(porVar.variacoes.map((v) => v.unidades)).toEqual([3, null]);
   });
+
+  // Hairfly 05/10/2026: MLB5322348511 (normal) ↔ MLB7736509406 (catálogo), mesmo User Product.
+  it('par UP/catálogo: catalog_listing e relacionados sem variação (relação por variação não conta)', () => {
+    const cat = normalizarItemML({ id: 'MLB7736509406', catalog_listing: true,
+      item_relations: [{ id: 'MLB5322348511', variation_id: null, stock_relation: 1 }] });
+    expect(cat).toMatchObject({ catalogo: true, relacionados: ['MLB5322348511'] });
+    const legacy = normalizarItemML({ id: 'MLB1', item_relations: [{ id: 'MLB2', variation_id: 123 }] });
+    expect(legacy).toMatchObject({ catalogo: false, relacionados: [] });
+    expect(normalizarItemML({ id: 'MLB3' })).toMatchObject({ catalogo: false, relacionados: [] });
+  });
 });
 
 describe('paginação', () => {
@@ -104,7 +114,7 @@ describe('paginação', () => {
     expect(get).toHaveBeenCalledTimes(3);
     expect(m.size).toBe(44);
     expect(m.has('MLB3')).toBe(false);
-    expect(get.mock.calls[0][0]).toMatch(/^\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.title,body\.thumbnail,body\.secure_thumbnail,body\.permalink,body\.listing_type_id,body\.category_id,body\.seller_custom_field,body\.attributes,body\.variations&include_attributes=all$/);
+    expect(get.mock.calls[0][0]).toMatch(/^\/items\/bulk\?ids=[^&]+&attributes=status_code,body\.id,body\.title,body\.thumbnail,body\.secure_thumbnail,body\.permalink,body\.listing_type_id,body\.category_id,body\.seller_custom_field,body\.attributes,body\.variations,body\.catalog_listing,body\.item_relations&include_attributes=all$/);
   });
 
   // ADR-0177: par real antigo × bulk (mesmos ids) normaliza igual; o 404 sem body fica fora.

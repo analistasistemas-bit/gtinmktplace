@@ -1621,6 +1621,7 @@ export type Database = {
       }
       ml_promocao_itens: {
         Row: {
+          anuncio_normal_id: string | null
           estoque_max: number | null
           estoque_min: number | null
           listing_type_id: string | null
@@ -1644,6 +1645,7 @@ export type Database = {
           vendedor_pct: number | null
         }
         Insert: {
+          anuncio_normal_id?: string | null
           estoque_max?: number | null
           estoque_min?: number | null
           listing_type_id?: string | null
@@ -1667,6 +1669,7 @@ export type Database = {
           vendedor_pct?: number | null
         }
         Update: {
+          anuncio_normal_id?: string | null
           estoque_max?: number | null
           estoque_min?: number | null
           listing_type_id?: string | null

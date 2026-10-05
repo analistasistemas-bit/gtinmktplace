@@ -166,6 +166,30 @@ Design: `docs/superpowers/specs/2026-10-04-pausar-reativar-em-massa-design.md`.
 5. Permissão, Reverter (operação inversa só sobre `aplicado`, com preview) e teto por mensagem
    (`maxItens: 100`) seguem as regras acima.
 
+## Emenda 2026-10-05 — aba "Em promoção" e par normal/catálogo em uma linha
+
+**Status da emenda:** aceita em 2026-10-05 (pedido do Diego); implementação na branch `worktree-promocoes-em-promocao`.
+
+Achado em produção (Hairfly, DEAL `P-MLB18061082`): o produto `00000009` aparecia 2× na campanha —
+`MLB5322348511` (normal) e `MLB7736509406` (catálogo), mesmo `user_product_id` (`MLBU5371930296`), ligados
+por `item_relations` sem `variation_id`. O ML convida os dois, mas só aceita a promoção pelo de catálogo
+(spike acima; `decidir.ts` bloqueia o normal).
+
+1. **Uma linha por par, com a cara do normal.** O sync (`sincronizarPromocao`) resolve o par na gravação:
+   quando o de catálogo e o normal relacionado estão na mesma campanha, grava **só a linha do catálogo**
+   (chave e operações continuam no id que o ML aceita) com título/foto/link do normal e
+   `ml_promocao_itens.anuncio_normal_id` = MLB do normal. A linha do normal não é gravada.
+   Contagem do card, validação e motor seguem iguais, porque continuam vendo uma linha só, a do catálogo.
+2. **Exceções que mantêm as duas linhas:** normal já participando (inscrição antiga via API, invisível no
+   Seller Center — precisa continuar visível para sair); relação com `variation_id` (Legacy com variações:
+   o catálogo cobre uma variação só); relacionado que o multiget não devolveu (na dúvida, não esconde).
+3. **Tela:** o MLB exibido é `anuncio_normal_id ?? ml_item_id`, com a indicação "promoção via catálogo
+   MLB…" quando difere.
+4. **Aba "Em promoção"** em Promoções (`?aba=participando`): todos os anúncios `started`/`pending` das
+   campanhas ativas/futuras, agrupados por campanha. DEAL/SMART têm seleção e "Sair" por campanha, que abre
+   o mesmo preview/motor (uma operação por campanha); demais tipos ficam só leitura com link para o
+   Seller Center. Cupons e campanhas encerradas ficam fora.
+
 ## Consequências
 
 - O motor nasce com os requisitos reais de uma operação (promoção); o segundo tipo testa se ele é genérico de

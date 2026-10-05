@@ -14,6 +14,7 @@ vi.mock('@/hooks/usePromocoes', () => ({
 vi.mock('@/hooks/useCanalAtivo', () => ({ useCanalAtivo: vi.fn() }));
 // A aba Operações é testada isolada em lista-operacoes.test.tsx; aqui só o roteamento da página.
 vi.mock('@/components/operacoes/lista-operacoes', () => ({ ListaOperacoes: () => <div data-testid="lista-operacoes" /> }));
+vi.mock('@/components/promocoes/lista-participando', () => ({ ListaParticipando: () => <div data-testid="lista-participando" /> }));
 
 const QUERY_PENDENTE = { data: undefined, isLoading: true, isPending: true };
 const QUERY_VAZIA = { data: [], isLoading: false, isPending: false };
@@ -98,6 +99,16 @@ describe('Promocoes', () => {
 
       expect(screen.getByTestId('location-search')).toHaveTextContent('');
       expect(screen.queryByTestId('lista-operacoes')).not.toBeInTheDocument();
+    });
+
+    it('clicar em Em promoção grava ?aba=participando e mostra a lista de participações', async () => {
+      const user = userEvent.setup();
+      renderPromocoes();
+
+      await user.click(screen.getByRole('tab', { name: 'Em promoção' }));
+
+      expect(screen.getByTestId('location-search')).toHaveTextContent('?aba=participando');
+      expect(screen.getByTestId('lista-participando')).toBeInTheDocument();
     });
   });
 });

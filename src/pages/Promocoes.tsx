@@ -14,9 +14,10 @@ import { abaDa, avisoAtualizacao, emLeitura, sincronizandoAgora, type AbaPromo }
 import { CardCampanha } from '@/components/promocoes/card-campanha';
 import { PainelEstadoSync } from '@/components/promocoes/painel-estado-sync';
 import { ListaOperacoes } from '@/components/operacoes/lista-operacoes';
+import { ListaParticipando } from '@/components/promocoes/lista-participando';
 
-type AbaTela = AbaPromo | 'operacoes';
-const ABAS: readonly AbaTela[] = ['ativas', 'futuras', 'encerradas', 'operacoes'];
+type AbaTela = AbaPromo | 'participando' | 'operacoes';
+const ABAS: readonly AbaTela[] = ['ativas', 'futuras', 'encerradas', 'participando', 'operacoes'];
 
 const VAZIO: Record<AbaPromo, string> = {
   ativas: 'Nenhuma campanha ativa.', futuras: 'Nenhuma campanha futura.', encerradas: 'Nenhuma campanha encerrada nos últimos 30 dias.',
@@ -101,10 +102,13 @@ export default function Promocoes() {
             <TabsTrigger value="ativas">Ativas{' '}<span className="tabular-nums text-muted-foreground">{porAba.ativas.length}</span></TabsTrigger>
             <TabsTrigger value="futuras">Futuras{' '}<span className="tabular-nums text-muted-foreground">{porAba.futuras.length}</span></TabsTrigger>
             <TabsTrigger value="encerradas">Encerradas</TabsTrigger>
+            <TabsTrigger value="participando">Em promoção</TabsTrigger>
             <TabsTrigger value="operacoes">Operações</TabsTrigger>
           </TabsList>
           {aba === 'operacoes' ? (
             <ListaOperacoes filtro="promocao" />
+          ) : aba === 'participando' ? (
+            <ListaParticipando />
           ) : porAba[aba].length === 0 ? (
             <EmptyState icon={BadgePercent} title={VAZIO[aba]} className="mt-4" />
           ) : (

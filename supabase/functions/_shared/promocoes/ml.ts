@@ -9,7 +9,7 @@ export const TIPOS_CUPOM = new Set(['SELLER_COUPON_CAMPAIGN']);
 
 const API = 'https://api.mercadolibre.com';
 const LIMITE = 50;
-const ATRIBUTOS_ITEM = 'id,title,thumbnail,secure_thumbnail,permalink,listing_type_id,category_id,seller_custom_field,attributes,variations';
+const ATRIBUTOS_ITEM = 'id,title,thumbnail,secure_thumbnail,permalink,listing_type_id,category_id,seller_custom_field,attributes,variations,catalog_listing,item_relations';
 
 const num = (x: unknown): number | null => {
   const n = Number(x);
@@ -78,6 +78,10 @@ export function normalizarItemML(raw: Obj): ItemML {
     unidades: unidades(atributo(raw.attributes, 'UNITS_PER_PACK')),
     formato_kit: atributo(raw.attributes, 'SALE_FORMAT')?.toLowerCase() === 'kit',
     variacoes,
+    catalogo: raw.catalog_listing === true,
+    // Relação por variação (Legacy) não é o par do User Product: o catálogo cobre uma variação só.
+    relacionados: lista(raw.item_relations).filter((r) => r.variation_id == null).map((r) => str(r.id))
+      .filter((x): x is string => x != null),
   };
 }
 

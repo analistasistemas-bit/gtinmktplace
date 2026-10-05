@@ -28,7 +28,12 @@ export interface ItemPromocao {
   preco_sugerido: number | null; preco_avaliado: number | null; ml_pct: number | null; estoque_min: number | null;
   titulo: string | null; thumbnail: string | null; permalink: string | null;
   projecao: CorProjetada[]; pior_semaforo: SemaforoPromo;
+  /** Linha do catálogo exibida com a cara do normal do mesmo User Product (ADR-0174, emenda 2026-10-05). */
+  anuncio_normal_id?: string | null;
 }
+/** Item participando, com a campanha (aba "Em promoção"). */
+export type Participacao = ItemPromocao & { promocao_id: string };
+export interface GrupoParticipacao { promocao: Promocao; itens: Participacao[]; operavel: boolean }
 export interface EstadoSyncPromo {
   estado: 'sincronizando' | 'ok' | 'sem_acesso' | 'sem_promocoes' | 'erro';
   iniciado_em: string | null; ultimo_ok_em: string | null; ultimo_erro_em: string | null; erro: string | null;
@@ -58,6 +63,26 @@ export function abaDa(p: Pick<Promocao, 'status' | 'fim'>, agoraMs: number): Aba
   const acabou = p.status === 'finished' || (Number.isFinite(fim) && fim < agoraMs);
   if (!acabou) return p.status === 'started' ? 'ativas' : p.status === 'pending' ? 'futuras' : null;
   return Number.isFinite(fim) && fim >= agoraMs - 30 * DIA ? 'encerradas' : null;
+}
+
+/** MLB que a tela mostra: o normal quando a linha é do catálogo do mesmo User Product (a operação segue no catálogo). */
+export const rotuloMlb = (it: Pick<ItemPromocao, 'ml_item_id' | 'anuncio_normal_id'>) =>
+  (it.anuncio_normal_id ? `${it.anuncio_normal_id} · promoção via catálogo ${it.ml_item_id}` : it.ml_item_id);
+
+/** Aba "Em promoção": só campanhas ativas/futuras (não cupom), pelo fim mais próximo; DEAL/SMART saem pelo motor. */
+export function agruparParticipacoes(itens: Participacao[], promocoes: Promocao[], agoraMs: number): GrupoParticipacao[] {
+  const vivas = new Map(promocoes.filter((p) => !ehCupom(p.tipo) && (abaDa(p, agoraMs) === 'ativas' || abaDa(p, agoraMs) === 'futuras'))
+    .map((p) => [p.promocao_id, p]));
+  const grupos = new Map<string, GrupoParticipacao>();
+  for (const it of itens) {
+    const promocao = vivas.get(it.promocao_id);
+    if (!promocao) continue;
+    const g = grupos.get(it.promocao_id) ?? { promocao, itens: [], operavel: promocao.tipo === 'DEAL' || promocao.tipo === 'SMART' };
+    g.itens.push(it);
+    grupos.set(it.promocao_id, g);
+  }
+  const fim = (g: GrupoParticipacao) => (g.promocao.fim ? Date.parse(g.promocao.fim) : Infinity);
+  return [...grupos.values()].sort((a, b) => fim(a) - fim(b));
 }
 
 /** A leitura dos anúncios de uma campanha está em curso (reserva de 30 min, igual a RESERVA_MIN do worker). */
@@ -129,7 +154,7 @@ export function filtrarItens(itens: ItemPromocao[], f: { semaforo: SemaforoPromo
 }
 
 const COLS_PROMO = 'promocao_id, tipo, nome, status, inicio, fim, prazo_adesao, beneficios, contagem, erro, itens_sincronizados_em, rodada_em_curso';
-const COLS_ITEM = 'ml_item_id, status, preco_original, preco_promo, preco_min, preco_max, preco_sugerido, preco_avaliado, ml_pct, estoque_min, titulo, thumbnail, permalink, projecao, pior_semaforo';
+const COLS_ITEM = 'ml_item_id, status, preco_original, preco_promo, preco_min, preco_max, preco_sugerido, preco_avaliado, ml_pct, estoque_min, titulo, thumbnail, permalink, projecao, pior_semaforo, anuncio_normal_id';
 
 export async function fetchPromocoes(): Promise<Promocao[]> {
   const { data, error } = await supabase.from('ml_promocoes').select(COLS_PROMO)
@@ -142,6 +167,12 @@ export async function fetchItensPromocao(promocaoId: string): Promise<ItemPromoc
   return buscarTodasPaginas<ItemPromocao>((de, ate) =>
     supabase.from('ml_promocao_itens').select(COLS_ITEM).eq('promocao_id', promocaoId)
       .order('ml_item_id').range(de, ate) as never);
+}
+
+export async function fetchParticipacoes(): Promise<Participacao[]> {
+  return buscarTodasPaginas<Participacao>((de, ate) =>
+    supabase.from('ml_promocao_itens').select(`promocao_id, ${COLS_ITEM}`).in('status', ['started', 'pending'])
+      .order('promocao_id').order('ml_item_id').range(de, ate) as never);
 }
 
 export async function fetchEstadoSyncPromocoes(): Promise<EstadoSyncPromo | null> {

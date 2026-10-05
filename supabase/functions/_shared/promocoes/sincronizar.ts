@@ -3,6 +3,7 @@
 import type { DimensoesPacote } from '../ml/pacote.ts';
 import { resolverPack, type Cadastro } from './cadastro.ts';
 import { SemAcessoPromocoes, TIPOS_CUPOM } from './ml.ts';
+import { papelNoPar, relacionadosFaltando } from './pares.ts';
 import { ateQuantoDescer, ehParticipando, liquidoNoPreco, precoAvaliado, semaforo, semaforoDaLinha } from './projecao.ts';
 import type {
   Aliquotas, ItemML, ItemPromocaoML, LinhaItem, MotivoSemLiquido, ProjecaoCor, PromocaoML, Tarifa,
@@ -126,7 +127,7 @@ export async function projetarItem(
   return {
     ...it,
     titulo: ml?.titulo ?? null, thumbnail: ml?.thumbnail ?? null, permalink: ml?.permalink ?? null,
-    listing_type_id: ml?.listing_type_id ?? null, preco_avaliado: preco, projecao,
+    listing_type_id: ml?.listing_type_id ?? null, preco_avaliado: preco, projecao, anuncio_normal_id: null,
     pior_semaforo: semaforoDaLinha(projecao, projecao.map((p) => p.semaforo)),
   };
 }
@@ -214,8 +215,9 @@ export async function sincronizarPromocao(
       return { resultado: 'erro', processados: 0 };
     }
     // Cursor = último ml_item_id processado; a comparação é a mesma da ordenação (code units).
-    const pendentes = umaOfertaPorAnuncio(await deps.listarItens()).sort(porId)
-      .filter((x) => msg.cursor == null || x.ml_item_id > msg.cursor);
+    const todos = umaOfertaPorAnuncio(await deps.listarItens()).sort(porId);
+    const campanha = new Map(todos.map((x) => [x.ml_item_id, x]));
+    const pendentes = todos.filter((x) => msg.cursor == null || x.ml_item_id > msg.cursor);
     const cadastro = await deps.carregarCadastro();
     while (feitos < pendentes.length) {
       // Posse antes de cada lote: uma cadeia velha nunca escreve por cima de uma rodada nova.
@@ -226,12 +228,21 @@ export async function sincronizarPromocao(
         return { resultado: 'continua', processados: feitos };
       }
       const lote = pendentes.slice(feitos, feitos + Math.min(opts.lote, opts.maxItens - feitos));
-      const ml = await deps.buscarItensML(lote.map((x) => x.ml_item_id));
-      const linhas = await emParalelo(lote, opts.concorrencia, (it) =>
-        projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q)));
+      const ids = lote.map((x) => x.ml_item_id);
+      const ml = new Map(await deps.buscarItensML(ids));
+      const faltam = relacionadosFaltando(ids, ml, campanha);
+      if (faltam.length) for (const [k, v] of await deps.buscarItensML(faltam)) ml.set(k, v);
+      const visiveis = lote.map((it) => ({ it, par: papelNoPar(it.ml_item_id, ml, campanha) }))
+        .filter((x) => x.par.papel !== 'normal_escondido');
+      const linhas = await emParalelo(visiveis, opts.concorrencia, async ({ it, par }) => {
+        const l = await projetarItem(it, ml.get(it.ml_item_id) ?? null, cadastro, aliq, (q) => deps.tarifaEm(q));
+        if (par.papel !== 'catalogo') return l;
+        const n = par.normal;
+        return { ...l, titulo: n.titulo, thumbnail: n.thumbnail, permalink: n.permalink, anuncio_normal_id: n.id };
+      });
       // O lote leva segundos: reconfere a posse logo antes de escrever.
       if (!mesmaRodada(await deps.rodadaEmCurso(), msg.rodada)) return { resultado: 'obsoleta', processados: feitos };
-      await deps.gravarLote(linhas);
+      if (linhas.length) await deps.gravarLote(linhas);
       feitos += lote.length;
     }
     if (!(await deps.concluir())) return { resultado: 'obsoleta', processados: feitos };

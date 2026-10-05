@@ -17,7 +17,7 @@ import { fmtBRL, fmtMarkup, fmtPct } from '@/lib/formato';
 import { formatarNomeProduto } from '@/lib/texto';
 import type { AcaoPromocao } from '@/lib/operacoes';
 import {
-  URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, rotuloSemLiquido, rotuloTipo,
+  URL_PROMOCOES_ML, ateQuantoDaLinha, corDeReferencia, descontoPct, emLeitura, filtrarItens, rotuloMlb, rotuloSemLiquido, rotuloTipo,
   type ItemPromocao, type SemaforoPromo,
 } from '@/lib/promocoes';
 import { ChipFiltro, ContagemSemaforo, SEMAFORO_UI } from '@/components/promocoes/contagem-semaforo';
@@ -149,7 +149,7 @@ export default function PromocaoDetalhe() {
           {r.thumbnail && <img src={r.thumbnail} alt="" className="size-10 shrink-0 rounded object-cover" loading="lazy" />}
           <div className="min-w-0 max-w-[14rem] 2xl:max-w-[24rem]">
             <p className="truncate" title={formatarNomeProduto(r.titulo) || r.ml_item_id}>{formatarNomeProduto(r.titulo) || r.ml_item_id}</p>
-            <p className="text-xs text-muted-foreground">{r.ml_item_id}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
+            <p className="text-xs text-muted-foreground">{rotuloMlb(r)}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
           </div>
         </div>
       ),
@@ -312,7 +312,7 @@ function ListaMobile({ linhas, loading, onAbrir, podeSelecionar, selecionados, o
                 </span>
                 <div className="min-w-0">
                   <p className="truncate text-sm font-medium">{formatarNomeProduto(r.titulo) || r.ml_item_id}</p>
-                  <p className="text-xs text-muted-foreground">{r.ml_item_id}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
+                  <p className="text-xs text-muted-foreground">{rotuloMlb(r)}{r.estoque_min != null ? ` · Estoque mín. ${r.estoque_min}` : ''}</p>
                 </div>
               </div>
               <dl className="mt-3 grid grid-cols-3 gap-2">

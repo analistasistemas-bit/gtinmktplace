@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   abaDa, ateQuantoDaLinha, corDeReferencia, descontoPct, ehCupom, emLeitura, filtrarItens, prazoUrgente,
   avisoAtualizacao, rotuloSemLiquido, rotuloTipo, sincronizandoAgora, type CorProjetada, type ItemPromocao,
+  agruparParticipacoes, rotuloMlb, type Participacao, type Promocao,
 } from '../promocoes';
 
 const agora = Date.parse('2026-10-06T12:00:00Z');
@@ -113,5 +114,43 @@ describe('avisoAtualizacao', () => {
   });
   it('resposta sem estado conhecido: não afirma sucesso', () => {
     expect(avisoAtualizacao(null).tipo).toBe('info');
+  });
+});
+
+describe('par normal/catálogo (ADR-0174, emenda 2026-10-05)', () => {
+  it('rotuloMlb: o normal, avisando o catálogo, quando a linha é do catálogo; senão o próprio', () => {
+    expect(rotuloMlb({ ml_item_id: 'MLB7', anuncio_normal_id: 'MLB5' })).toBe('MLB5 · promoção via catálogo MLB7');
+    expect(rotuloMlb({ ml_item_id: 'MLB7', anuncio_normal_id: null })).toBe('MLB7');
+    expect(rotuloMlb({ ml_item_id: 'MLB7' })).toBe('MLB7');
+  });
+});
+
+describe('agruparParticipacoes', () => {
+  const promo = (o: Partial<Promocao>): Promocao => ({
+    promocao_id: 'P', tipo: 'DEAL', nome: 'Campanha', status: 'started', inicio: null, fim: null, prazo_adesao: null,
+    beneficios: null, contagem: null, erro: null, itens_sincronizados_em: null, rodada_em_curso: null, ...o,
+  });
+  const part = (promocao_id: string, ml_item_id: string) => ({ promocao_id, ml_item_id }) as Participacao;
+
+  it('agrupa por campanha, ordena pelo fim e marca DEAL/SMART como operáveis', () => {
+    const promos = [
+      promo({ promocao_id: 'A', tipo: 'MARKETPLACE_CAMPAIGN', fim: new Date(agora + 5 * dia).toISOString() }),
+      promo({ promocao_id: 'B', tipo: 'SMART', fim: new Date(agora + 2 * dia).toISOString() }),
+    ];
+    const g = agruparParticipacoes([part('A', 'MLB1'), part('B', 'MLB2'), part('B', 'MLB3')], promos, agora);
+    expect(g.map((x) => [x.promocao.promocao_id, x.operavel, x.itens.map((i) => i.ml_item_id)])).toEqual([
+      ['B', true, ['MLB2', 'MLB3']], ['A', false, ['MLB1']],
+    ]);
+  });
+
+  it('fora: campanha encerrada (status ou fim vencido), cupom, campanha desconhecida', () => {
+    const promos = [
+      promo({ promocao_id: 'F', status: 'finished' }),
+      promo({ promocao_id: 'V', fim: new Date(agora - dia).toISOString() }),
+      promo({ promocao_id: 'C', tipo: 'SELLER_COUPON_CAMPAIGN' }),
+      promo({ promocao_id: 'OK', status: 'pending' }),
+    ];
+    const g = agruparParticipacoes([part('F', 'a'), part('V', 'b'), part('C', 'c'), part('X', 'd'), part('OK', 'e')], promos, agora);
+    expect(g.map((x) => x.promocao.promocao_id)).toEqual(['OK']);
   });
 });

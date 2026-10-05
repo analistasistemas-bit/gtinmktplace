@@ -20,7 +20,8 @@ const item = (o: Partial<ItemPromocaoML> = {}): ItemPromocaoML => ({
 });
 const itemMl = (o: Partial<ItemML> = {}): ItemML => ({
   id: 'MLB1', titulo: 'Toalha', thumbnail: null, permalink: 'https://p', listing_type_id: 'gold_special',
-  categoria: 'MLB123', sku: null, gtin: null, unidades: null, formato_kit: false, variacoes: [], ...o,
+  categoria: 'MLB123', sku: null, gtin: null, unidades: null, formato_kit: false, variacoes: [],
+  catalogo: false, relacionados: [], ...o,
 });
 
 describe('projetarItem', () => {
@@ -255,6 +256,55 @@ describe('sincronizarPromocao', () => {
     });
     await sincronizarPromocao(d, msg, opts);
     expect(d.gravarLote.mock.calls[0][0]).toEqual([expect.objectContaining({ status: 'started', preco_promo: 25 })]);
+  });
+
+  // ADR-0174, emenda 2026-10-05 — Hairfly: normal MLB5322348511 ↔ catálogo MLB7736509406 (mesmo User Product).
+  describe('par normal/catálogo', () => {
+    const N = 'MLB5', C = 'MLB7';
+    const mlPar = (o: Record<string, Partial<ItemML>> = {}) => new Map<string, ItemML>([
+      [N, itemMl({ id: N, titulo: 'Nutritiva Tanox', thumbnail: 'https://n.jpg', permalink: 'https://n', relacionados: [C], ...o[N] })],
+      [C, itemMl({ id: C, titulo: 'Reconstrutora Hair Fly', thumbnail: 'https://c.jpg', permalink: 'https://c', catalogo: true, relacionados: [N], ...o[C] })],
+    ]);
+    const buscar = (m: Map<string, ItemML>) => vi.fn(async (ids: string[]) => new Map(ids.filter((id) => m.has(id)).map((id) => [id, m.get(id)!])));
+    const gravados = (d: FakeLeitura) => d.gravarLote.mock.calls.flatMap((c) => c[0]);
+
+    it('grava só a linha do catálogo, com a cara do normal, mesmo com o par em lotes diferentes', async () => {
+      const ids = [N, 'MLB6', C];
+      const d = depsLeitura({ listarItens: vi.fn(async () => ids.map((id) => item({ ml_item_id: id }))), buscarItensML: buscar(new Map([...mlPar(), ['MLB6', itemMl({ id: 'MLB6' })]])) });
+      expect(await sincronizarPromocao(d, msg, opts)).toEqual({ resultado: 'concluida', processados: 3 });
+      expect(gravados(d).map((l) => l.ml_item_id)).toEqual(['MLB6', C]);
+      expect(gravados(d).find((l) => l.ml_item_id === C)).toMatchObject({
+        anuncio_normal_id: N, titulo: 'Nutritiva Tanox', thumbnail: 'https://n.jpg', permalink: 'https://n',
+      });
+      expect(gravados(d).find((l) => l.ml_item_id === 'MLB6')).toMatchObject({ anuncio_normal_id: null });
+    });
+
+    it('retomada depois do cursor: o normal já processado ainda conta para o par', async () => {
+      const d = depsLeitura({ listarItens: vi.fn(async () => [item({ ml_item_id: N }), item({ ml_item_id: C })]), buscarItensML: buscar(mlPar()) });
+      await sincronizarPromocao(d, { ...msg, cursor: N }, opts);
+      expect(gravados(d)).toEqual([expect.objectContaining({ ml_item_id: C, anuncio_normal_id: N })]);
+    });
+
+    it('normal já participando: as duas linhas ficam, cada uma com a própria cara', async () => {
+      const d = depsLeitura({ listarItens: vi.fn(async () => [item({ ml_item_id: N, status: 'started' }), item({ ml_item_id: C })]), buscarItensML: buscar(mlPar()) });
+      await sincronizarPromocao(d, msg, opts);
+      expect(gravados(d).map((l) => [l.ml_item_id, l.anuncio_normal_id, l.titulo])).toEqual([[N, null, 'Nutritiva Tanox'], [C, null, 'Reconstrutora Hair Fly']]);
+    });
+
+    it('sem par 1↔1 (relacionado fora da campanha, ausente do multiget ou relação múltipla): nada muda', async () => {
+      const fora = depsLeitura({ listarItens: vi.fn(async () => [item({ ml_item_id: C })]), buscarItensML: buscar(mlPar()) });
+      await sincronizarPromocao(fora, msg, opts);
+      expect(gravados(fora)).toEqual([expect.objectContaining({ ml_item_id: C, anuncio_normal_id: null, titulo: 'Reconstrutora Hair Fly' })]);
+
+      const semN = new Map([[C, mlPar().get(C)!]]);
+      const ausente = depsLeitura({ listarItens: vi.fn(async () => [item({ ml_item_id: N }), item({ ml_item_id: C })]), buscarItensML: buscar(semN) });
+      await sincronizarPromocao(ausente, msg, opts);
+      expect(gravados(ausente).map((l) => [l.ml_item_id, l.anuncio_normal_id])).toEqual([[N, null], [C, null]]);
+
+      const multipla = depsLeitura({ listarItens: vi.fn(async () => [item({ ml_item_id: N }), item({ ml_item_id: C })]), buscarItensML: buscar(mlPar({ [C]: { relacionados: [N, 'MLB9'] } })) });
+      await sincronizarPromocao(multipla, msg, opts);
+      expect(gravados(multipla).map((l) => [l.ml_item_id, l.anuncio_normal_id])).toEqual([[N, null], [C, null]]);
+    });
   });
 
   it('orçamento esgotado: grava o que fez e continua do cursor', async () => {

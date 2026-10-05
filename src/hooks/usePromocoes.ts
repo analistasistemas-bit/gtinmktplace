@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/lib/supabase';
-import { emLeitura, fetchEstadoSyncPromocoes, fetchItensPromocao, fetchPromocoes, rotuloTipo } from '@/lib/promocoes';
+import { emLeitura, fetchEstadoSyncPromocoes, fetchItensPromocao, fetchParticipacoes, fetchPromocoes, rotuloTipo } from '@/lib/promocoes';
 import { useModulosHabilitados } from '@/hooks/useModulosHabilitados';
 
 const QK_PROMO = ['promocoes'] as const;
@@ -18,6 +18,9 @@ export function useItensPromocao(promocaoId: string, lendo = false) {
     enabled: promocaoId.length > 0, // id vazio = nada aberto / operação sem campanha
     refetchInterval: lendo ? 15_000 : false,
   });
+}
+export function useParticipacoes() {
+  return useQuery({ queryKey: [...QK_PROMO, 'participacoes-todas'], queryFn: fetchParticipacoes, staleTime: 60_000 });
 }
 export function useEstadoSyncPromocoes() {
   return useQuery({ queryKey: [...QK_PROMO, 'estado'], queryFn: fetchEstadoSyncPromocoes, staleTime: 30_000 });

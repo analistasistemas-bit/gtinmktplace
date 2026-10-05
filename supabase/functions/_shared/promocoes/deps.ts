@@ -168,7 +168,7 @@ export function depsLeitura(admin: SupabaseClient, cx: Cx, msg: MsgLeitura): Dep
         preco_sugerido: l.preco_sugerido, preco_avaliado: l.preco_avaliado, ml_pct: l.ml_pct, vendedor_pct: l.vendedor_pct,
         estoque_min: l.estoque_min, estoque_max: l.estoque_max, titulo: l.titulo, thumbnail: l.thumbnail,
         permalink: l.permalink, listing_type_id: l.listing_type_id, projecao: l.projecao,
-        pior_semaforo: l.pior_semaforo, sincronizado_em: msg.rodada,
+        pior_semaforo: l.pior_semaforo, anuncio_normal_id: l.anuncio_normal_id, sincronizado_em: msg.rodada,
       })), { onConflict: 'org_id,promocao_id,ml_item_id' });
       falhou('gravarLote', error);
     },
