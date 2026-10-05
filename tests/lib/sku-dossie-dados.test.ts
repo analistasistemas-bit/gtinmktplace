@@ -243,3 +243,23 @@ describe('buscarFonteAds (Fatia 2c)', () => {
     expect(mockRpc).not.toHaveBeenCalled();
   });
 });
+
+describe('buscarResumoAds (I2)', () => {
+  beforeEach(() => { mockRpc.mockReset(); });
+  it('chama ads_resumo_periodo com o período e converte numeric (string) em número', async () => {
+    mockRpc.mockResolvedValueOnce({ data: { custo_conta: '200.50', dias_conta: 13, custo_grupos_com_membro: '190.25' }, error: null });
+    const { buscarResumoAds } = await import('@/lib/sku-dossie-dados');
+    expect(await buscarResumoAds('2026-09-14', '2026-09-26')).toEqual({ custo_conta: 200.5, dias_conta: 13, custo_grupos_com_membro: 190.25 });
+    expect(mockRpc).toHaveBeenCalledWith('ads_resumo_periodo', { p_desde: '2026-09-14', p_ate: '2026-09-26' });
+  });
+  it('RPC devolve null → null', async () => {
+    mockRpc.mockResolvedValueOnce({ data: null, error: null });
+    const { buscarResumoAds } = await import('@/lib/sku-dossie-dados');
+    expect(await buscarResumoAds('2026-09-14', '2026-09-26')).toBeNull();
+  });
+  it('erro propaga', async () => {
+    mockRpc.mockResolvedValueOnce({ data: null, error: { message: 'ads_resumo_periodo: período inválido' } });
+    const { buscarResumoAds } = await import('@/lib/sku-dossie-dados');
+    await expect(buscarResumoAds('2026-09-26', '2026-09-14')).rejects.toThrow('período inválido');
+  });
+});

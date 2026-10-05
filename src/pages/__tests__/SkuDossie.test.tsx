@@ -34,7 +34,7 @@ const cat: CatalogoSku = {
 const dossie = (over: Partial<DossieSku> = {}): DossieSku => ({
   codigos: ['00123'], titulo: 'Camiseta Dry Azul M', catalogo: [cat],
   historicoDesde: '2026-05-10T12:00:00Z', ultimaVenda: '2026-09-20T12:00:00Z',
-  linhaPeriodo: linha('00123', 'Camiseta Dry Azul M'), linhaAnterior: null,
+  linhaPeriodo: linha('00123', 'Camiseta Dry Azul M'), linhaAnterior: null, lucroAds: null,
   tendencia: 'em_alta', cobertura: 40, estoque: 12, alertas: [], serie: [], eventos: [], perguntasPorIntervalo: [],
   ufs: { valores: {}, semUf: 0 }, mix: null, campanhas: [], mlbs: new Map(), kitVirtual: null,
   qualidade: { pctBrutoCustoReal: 0.9, fontesParciais: ['Promoções: só a situação atual'] },

@@ -13,7 +13,7 @@ const base: DadosAds = {
   estado: 'ok', alcance: 'sku',
   totais: { custo: 100, cliques: 50, impressoes: 900, vendasDiretas: 100, vendasIndiretas: 90, vendasTotais: 190,
     unidadesDiretas: 2, unidades: 3, cpc: 2, roas: 1.9, acos: 100 / 190 },
-  lucroAposAds: 400, fonteLucro: 'real', motivoSemLucro: null, compartilhadoCom: { codigos: [], semVinculo: 0 },
+  lucroAposAds: 400, fonteLucro: 'real', motivoSemLucro: null, naoIdentificadoPct: null, naoIdentificadoMotivo: null, compartilhadoCom: { codigos: [], semVinculo: 0 },
   serie: IVS.map((intervalo, i) => ({ intervalo, custo: i ? 90 : 10, vendas: i ? 90 : 100, aberto: i === 1 })),
   serieDiaria: ['14', '15'].map((d) => ({ intervalo: dia(d), custo: 5, vendas: 20, aberto: true })),
   grupos: [{ id: 3000001, tipo: 'FAMILY', status: 'ACTIVE', campanhaId: 2000001, custo: 100, exclusivo: true, mlbs: ['MLB1'], codigos: ['A'], semVinculo: 0 }],
@@ -33,7 +33,7 @@ describe('PainelAds', () => {
     expect(screen.getByText('1,9×')).toBeInTheDocument();
     expect(screen.getByText('Lucro após Ads')).toBeInTheDocument();
     expect(screen.getByText('Vendas atribuídas · 12 dias com atribuição em aberto')).toBeInTheDocument();
-    expect(screen.getByText(/lucro atual do período − despesa de Ads até ontem/)).toBeInTheDocument();
+    expect(screen.getByText(/lucro do período até ontem − despesa de Ads até ontem/)).toBeInTheDocument();
   });
 
   it('"Dia" troca para a série diária (rótulo dd/mm) sem mexer no Passo do dossiê', () => {
@@ -79,11 +79,18 @@ describe('PainelAds', () => {
     expect(screen.getByText(/Nenhum gasto de Ads nos anúncios vinculados a este SKU/)).toBeInTheDocument();
   });
 
-  it('gasto fora dos grupos listados: lucro após Ads indisponível, despesa continua', () => {
-    renderiza({ ...base, lucroAposAds: null, motivoSemLucro: 'fora_dos_grupos' });
-    expect(screen.getAllByText(/gasto fora dos grupos listados \(provável grupo excluído\)/).length).toBeGreaterThan(0);
-    expect(screen.getByText('Despesa de Ads do período')).toBeInTheDocument();
-    expect(screen.getByText('indisponível')).toBeInTheDocument();
+  it('gasto da conta sem família identificada: mostra o lucro e o % (acima de 0,5%); abaixo disso, nada', () => {
+    const r = renderiza({ ...base, naoIdentificadoPct: 0.05 });
+    expect(screen.getAllByText(/5% do gasto de Ads da conta neste período não tem família identificada/).length).toBeGreaterThan(0);
+    expect(screen.getByText('R$ 400,00')).toBeInTheDocument();
+    r.unmount();
+    renderiza({ ...base, naoIdentificadoPct: 0.004 });
+    expect(screen.queryByText(/não tem família identificada/)).toBeNull();
+  });
+
+  it('% não identificado indisponível: a tela diz o motivo (período acima de 1 ano)', () => {
+    renderiza({ ...base, naoIdentificadoMotivo: 'periodo_longo' });
+    expect(screen.getAllByText(/aviso indisponível para períodos acima de 1 ano/).length).toBeGreaterThan(0);
   });
 
   it('status do grupo EMPTY traduzido para "vazio" (item 3 da correção final: o mais comum não tinha tradução)', () => {
@@ -159,12 +166,12 @@ describe('PainelAds', () => {
     const r1 = renderiza({ ...base, fonteLucro: 'parcial' });
     expect(screen.getByText('· custo parcial')).toHaveClass('block');
     expect(screen.getByText('R$ 400,00')).toBeInTheDocument();
-    expect(screen.getByText(/lucro atual do período \(parcial: só os itens com custo\) − despesa de Ads até ontem/)).toBeInTheDocument();
+    expect(screen.getByText(/lucro do período até ontem \(parcial: só os itens com custo\) − despesa de Ads até ontem/)).toBeInTheDocument();
     expect(screen.getByText(/Lucro após Ads R\$\s400,00, custo parcial\./)).toBeInTheDocument();
     r1.unmount();
     renderiza({ ...base, fonteLucro: 'estimado' });
     expect(screen.getByText('· custo estimado')).toBeInTheDocument();
-    expect(screen.getByText(/lucro atual do período \(com custo estimado do cadastro\) − despesa/)).toBeInTheDocument();
+    expect(screen.getByText(/lucro do período até ontem \(com custo estimado do cadastro\) − despesa/)).toBeInTheDocument();
     expect(screen.getByText(/Lucro após Ads R\$\s400,00, custo estimado\./)).toBeInTheDocument();
   });
 

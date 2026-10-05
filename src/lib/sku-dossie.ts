@@ -237,6 +237,8 @@ export interface DossieSku {
   /** KPIs do período = linha do ranking (montarVendasSku); família numa chave só (pedidos por order). */
   linhaPeriodo: LinhaSku | null;
   linhaAnterior: LinhaSku | null;
+  /** Lucro do alvo só nos dias que o Ads cobre (do 1º dia do período até ontem); null sem linha. */
+  lucroAds: { lucro: number | null; fonteCusto: FonteCusto } | null;
   /** Posição de hoje (30 dias até agora); null sem venda nenhuma. */
   tendencia: Tendencia | null;
   cobertura: Cobertura;
@@ -270,6 +272,9 @@ export function montarDossie(p: {
   alvo: AlvoDossie; codigos: string[]; vendas: Venda[]; agrupar: (vs: Venda[]) => Pedido[];
   catalogo: CatalogoSku[]; devolucoes: Devolucao[];
   janela: Janela; anterior: Janela; hoje: Janela; hojeAnterior: Janela; intervalos: Intervalo[];
+  /** Dias do Ads (período até ontem, em ISO): o Lucro após Ads usa o lucro desses mesmos dias.
+   *  null = período só de hoje (sem dia financeiro) → lucroAds null. */
+  janelaAds: Janela | null;
   mlbs: Map<string, string[]>; movimentos: Movimento[]; moderacoes: Moderacao[]; perguntas: Pergunta[];
   campanhas: ItemCampanha[];
 }): { estado: Exclude<EstadoDossie, 'carregando' | 'erro'>; dados: Omit<DossieSku, 'trafego'> | null } {
@@ -292,6 +297,8 @@ export function montarDossie(p: {
   const periodo = montarVendasSku({ ...base, janela: p.janela, anterior: p.anterior });
   const hoje = montarVendasSku({ ...base, janela: p.hoje, anterior: p.hojeAnterior });
   const daChave = (ls: LinhaSku[]) => ls.find((l) => l.codigo === chave) ?? null;
+  const mAds = p.janelaAds && daChave(montarVendasSku({ ...base, janela: p.janelaAds, anterior: p.janelaAds }).linhas)?.m;
+  const lucroAds = mAds ? { lucro: mAds.lucro, fonteCusto: mAds.fonteCusto } : null;
 
   // Kit só quando todos os códigos são kit: numa família mista, kits (estoque da base) e unidades
   // não se somam — o saldo é o das variações comuns e a cobertura segue em dias.
@@ -335,7 +342,7 @@ export function montarDossie(p: {
 
   const dados: Omit<DossieSku, 'trafego'> = {
     codigos: p.codigos, titulo, catalogo, historicoDesde, ultimaVenda,
-    linhaPeriodo, linhaAnterior: vestir(daChave(periodo.linhasAnterior)),
+    linhaPeriodo, linhaAnterior: vestir(daChave(periodo.linhasAnterior)), lucroAds,
     tendencia, cobertura, estoque,
     alertas: linhaPeriodo ? alertasSku(linhaPeriodo, cobertura) : [],
     serie,

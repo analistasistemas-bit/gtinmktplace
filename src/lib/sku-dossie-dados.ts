@@ -169,3 +169,15 @@ export async function buscarFonteAds(mlbs: string[], desde: string, ate: string)
   }));
   return { sync, grupos, membros, dias: diasNum, codigosDosMembros };
 }
+
+export interface ResumoAds { custo_conta: number; dias_conta: number; custo_grupos_com_membro: number }
+
+/** Gasto de Ads da conta no período e quanto dele cai em grupos com membro — RPC `ads_resumo_periodo` (I2).
+ *  numeric pode vir como string: Number() nos três campos. */
+export async function buscarResumoAds(desde: string, ate: string): Promise<ResumoAds | null> {
+  const { data, error } = await supabase.rpc('ads_resumo_periodo', { p_desde: desde, p_ate: ate });
+  if (error) throw new Error(error.message);
+  if (data == null) return null;
+  const r = data as Record<string, unknown>;
+  return { custo_conta: Number(r.custo_conta), dias_conta: Number(r.dias_conta), custo_grupos_com_membro: Number(r.custo_grupos_com_membro) };
+}

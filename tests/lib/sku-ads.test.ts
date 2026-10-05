@@ -34,8 +34,14 @@ function fonte(p: { membros: [number, string][]; codigos: Record<string, string[
 type Entrada = Parameters<typeof montarAds>[0];
 const monta = (o: Partial<Entrada> & Pick<Entrada, 'fonte'>) => montarAds({
   alvo: { tipo: 'sku', codigo: 'A' }, codigos: ['A'], mlbs: new Map([['MLB1', ['A']]]),
-  intervalos: IVS, janela: JANELA, lucroPeriodo: 500, fonteCusto: 'real', agora: AGORA, ...o,
+  intervalos: IVS, janela: JANELA, lucroPeriodo: 500, fonteCusto: 'real', agora: AGORA,
+  resumo: 'carregando', diasFinanceiros: DIAS_FIN, ...o,
 });
+const DIAS_FIN = { desde: '2026-09-14', ate: '2026-09-26' };
+const DIAS = 13;
+/** Caso ok exclusivo: grupo só do SKU, período inteiramente coberto. */
+const fOk = fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: diasDe(11, 14, 26, { cost: 1 }) });
+const entrada = { fonte: fOk };
 
 describe('atribuicaoFinal', () => {
   it('fecha só quando o dia foi relido 15+ dias depois dele (D-1 + 14 de atribuição)', () => {
@@ -135,12 +141,39 @@ describe('montarAds', () => {
     expect([...parcial.serie, ...parcial.serieDiaria].every((p) => p.custo === null)).toBe(true);
   });
 
-  it('gasto fora dos grupos listados (provável grupo excluído): despesa aparece, lucro após Ads indisponível', () => {
-    const a = monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: [dia(11, '2026-09-15', { cost: 10 })],
-      sync: { ...SYNC, custo_resumo: 100, custo_listado: 97.4 } }) });
-    expect(a.totais!.custo).toBe(10);
-    expect(a.lucroAposAds).toBeNull();
-    expect(a.motivoSemLucro).toBe('fora_dos_grupos');
+  it('gasto da conta fora dos grupos no período: lucro após Ads aparece, com o % não identificado', () => {
+    const a = monta({ ...entrada, resumo: { custo_conta: 200, dias_conta: DIAS, custo_grupos_com_membro: 190 } });
+    expect(a.motivoSemLucro).toBeNull();
+    expect(a.lucroAposAds).not.toBeNull();
+    expect(a.naoIdentificadoPct).toBeCloseTo(0.05);
+    expect(a.naoIdentificadoMotivo).toBeNull();
+  });
+  it('série da conta incompleta no período financeiro → % null, lucro após Ads continua', () => {
+    const a = monta({ ...entrada, resumo: { custo_conta: 200, dias_conta: DIAS - 1, custo_grupos_com_membro: 190 } });
+    expect(a.naoIdentificadoPct).toBeNull();
+    expect(a.naoIdentificadoMotivo).toBe('incompleto');
+    expect(a.lucroAposAds).not.toBeNull();
+  });
+  it('resumo carregando ou com erro → % null, sem bloquear', () => {
+    expect(monta({ ...entrada, resumo: 'erro' })).toMatchObject({ naoIdentificadoPct: null, naoIdentificadoMotivo: 'erro' });
+    expect(monta({ ...entrada, resumo: 'carregando' })).toMatchObject({ naoIdentificadoPct: null, naoIdentificadoMotivo: null });
+    expect(monta({ ...entrada, resumo: 'carregando' }).lucroAposAds).not.toBeNull();
+  });
+  it('período financeiro acima de 366 dias → sem consulta, % null com motivo explícito', () => {
+    const a = monta({ ...entrada, resumo: 'periodo_longo' });
+    expect(a.naoIdentificadoPct).toBeNull();
+    expect(a.naoIdentificadoMotivo).toBe('periodo_longo');
+    expect(a.lucroAposAds).not.toBeNull();
+  });
+  it('grupos acima da conta no período → % null (divergente), nunca negativo', () => {
+    const a = monta({ ...entrada, resumo: { custo_conta: 100, dias_conta: DIAS, custo_grupos_com_membro: 101 } });
+    expect(a.naoIdentificadoPct).toBeNull();
+    expect(a.naoIdentificadoMotivo).toBe('divergente');
+  });
+  it('período só de hoje (sem dia financeiro): sem %, lucro após Ads indisponível por cobertura', () => {
+    const a = monta({ ...entrada, lucroPeriodo: null, resumo: null, diasFinanceiros: { desde: '2026-09-27', ate: '2026-09-26' },
+      janela: { desde: '2026-09-27T03:00:00.000Z', ate: '2026-09-28T02:59:59.999Z' } });
+    expect(a).toMatchObject({ lucroAposAds: null, motivoSemLucro: 'cobertura', naoIdentificadoPct: null, naoIdentificadoMotivo: null });
   });
 
   it('fonte do lucro: parcial e estimado seguem com o número e a marca; real também; sem lucro após Ads, sem fonte', () => {
@@ -178,14 +211,6 @@ describe('montarAds', () => {
   it('denominador zero: CPC, ROAS e ACOS nulos (nunca 0, Infinity ou NaN)', () => {
     const a = monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] }, dias: diasDe(11, 14, 26) }) });
     expect(a.totais).toMatchObject({ custo: 0, cliques: 0, vendasTotais: 0, cpc: null, roas: null, acos: null });
-  });
-
-  it('fora_dos_grupos: diferença de 0,004 é ruído e libera o lucro; 0,006 bloqueia', () => {
-    const com = (custo_listado: number) => monta({ fonte: fonte({ membros: [[11, 'MLB1']], codigos: { MLB1: ['A'] },
-      dias: diasDe(11, 14, 26, { cost: 1 }), sync: { ...SYNC, custo_resumo: 100, custo_listado } }) });
-    expect(com(99.996)).toMatchObject({ motivoSemLucro: null, lucroAposAds: 487 });
-    // 0,006 e não 0,01 — em float 100 − 99.99 = 0,010000000000005 e deixaria passar o mutante `> 0.01`.
-    expect(com(99.994)).toMatchObject({ motivoSemLucro: 'fora_dos_grupos', lucroAposAds: null });
   });
 
   it('estados honestos', () => {

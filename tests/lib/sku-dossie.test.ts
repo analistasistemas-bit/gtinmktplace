@@ -26,6 +26,8 @@ const custo: CustoResolver = () => 4; // R$ 4 por unidade (custo atual → estim
 const agrupar = (vs: Venda[]) => agruparPorPedido(vs, custo);
 // Semanas BRT de 14/09 e 21/09 (segundas, 03:00Z).
 const IVS = intervalosBRT('2026-09-14T03:00:00.000Z', '2026-09-27T02:59:59.999Z', 'semana', new Date('2026-10-01T12:00:00Z'));
+// Dias do Ads (até ontem) nos testes que não tratam dele.
+const J_ADS = { desde: '2026-09-16T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' };
 const S1 = { desde: '2026-09-14T03:00:00.000Z', ate: '2026-09-21T02:59:59.999Z' };
 
 describe('serieDoSku', () => {
@@ -106,7 +108,7 @@ describe('montarDossie: kitVirtual', () => {
     anterior: { desde: '2026-09-05T03:00:00.000Z', ate: '2026-09-16T02:59:59.999Z' },
     hoje: { desde: '2026-08-28T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
     hojeAnterior: { desde: '2026-07-29T03:00:00.000Z', ate: '2026-08-28T02:59:59.999Z' },
-    intervalos: IVS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
+    intervalos: IVS, janelaAds: J_ADS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
   });
 
   it('unidades dentro de kit no período (corte da janela) e por intervalo (corte do intervalo)', () => {
@@ -126,6 +128,38 @@ describe('montarDossie: kitVirtual', () => {
   });
 });
 
+describe('montarDossie: lucroAds (mesmos dias do Ads, até ontem)', () => {
+  const cat: CatalogoSku = {
+    codigo: 'A', codigoPai: null, nomeFamilia: null, nome: 'FITA A', cor: null, tamanho: null, estoque: 5, fornecedor: null,
+    origem: 'nacional', ehKit: false, primeiraVenda: '2026-09-01T12:00:00Z', ultimaVenda: '2026-09-27T15:00:00Z',
+    kitMultiplicador: null, kitBaseCodigo: null, estoqueKit: null,
+  };
+  const ontem = venda({ id: 'o', order_id: 1, date_closed: '2026-09-26T15:00:00Z', itens: [item({ id: 'i1', codigo: 'A', quantity: 1, unit_price: 30 })] });
+  const hoje = venda({ id: 'h', order_id: 2, date_closed: '2026-09-27T15:00:00Z', itens: [item({ id: 'i2', codigo: 'A', quantity: 2, unit_price: 50 })] });
+  const monta = (vendas: Venda[], janelaAds = { desde: '2026-09-25T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' }) => montarDossie({
+    alvo: { tipo: 'sku', codigo: 'A' }, codigos: ['A'], vendas, agrupar, catalogo: [cat], devolucoes: [],
+    janela: { desde: '2026-09-25T03:00:00.000Z', ate: '2026-09-28T02:59:59.999Z' }, // 25/09 a hoje (27/09)
+    anterior: { desde: '2026-09-22T03:00:00.000Z', ate: '2026-09-25T02:59:59.999Z' },
+    hoje: { desde: '2026-08-29T03:00:00.000Z', ate: '2026-09-28T02:59:59.999Z' },
+    hojeAnterior: { desde: '2026-07-30T03:00:00.000Z', ate: '2026-08-29T02:59:59.999Z' },
+    intervalos: IVS, janelaAds, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
+  }).dados!;
+
+  it('venda de hoje fica fora do lucroAds; linhaPeriodo continua com as duas', () => {
+    const d = monta([ontem, hoje]);
+    const soOntem = monta([ontem]);
+    expect(d.linhaPeriodo!.acc.unidades).toBe(3);
+    expect(d.lucroAds).not.toBeNull();
+    expect(d.lucroAds!.lucro).toBeCloseTo(soOntem.linhaPeriodo!.m.lucro!, 2);
+    expect(d.lucroAds!.lucro).not.toBeCloseTo(d.linhaPeriodo!.m.lucro!, 2);
+    expect(d.lucroAds!.fonteCusto).toBe(soOntem.linhaPeriodo!.m.fonteCusto);
+  });
+
+  it('sem venda nos dias do Ads → lucroAds null', () => {
+    expect(monta([hoje]).lucroAds).toBeNull();
+  });
+});
+
 describe('montarDossie: estoque com kit', () => {
   const cat = (codigo: string, over: Partial<CatalogoSku> = {}): CatalogoSku => ({
     codigo, codigoPai: 'P', nomeFamilia: 'Fam', nome: codigo, cor: null, tamanho: null, estoque: 10, fornecedor: null,
@@ -140,7 +174,7 @@ describe('montarDossie: estoque com kit', () => {
     anterior: { desde: '2026-09-05T03:00:00.000Z', ate: '2026-09-16T02:59:59.999Z' },
     hoje: { desde: '2026-08-28T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
     hojeAnterior: { desde: '2026-07-29T03:00:00.000Z', ate: '2026-08-28T02:59:59.999Z' },
-    intervalos: IVS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
+    intervalos: IVS, janelaAds: J_ADS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
   }).dados!;
 
   it('família com irmã kit: saldo só das unidades não-kit e cobertura em dias (não soma kits com unidades)', () => {
@@ -160,7 +194,7 @@ describe('montarDossie: estoque com kit', () => {
       anterior: { desde: '2026-09-05T03:00:00.000Z', ate: '2026-09-16T02:59:59.999Z' },
       hoje: { desde: '2026-08-28T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
       hojeAnterior: { desde: '2026-07-29T03:00:00.000Z', ate: '2026-08-28T02:59:59.999Z' },
-      intervalos: IVS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
+      intervalos: IVS, janelaAds: J_ADS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
     }).dados!;
     // 10 un. ÷ (3 un. de A em 30 dias) = 100 dias; contando os 3 kits daria 50
     expect(d.cobertura).toBe(100);
@@ -175,7 +209,7 @@ describe('montarDossie: estoque com kit', () => {
       anterior: { desde: '2026-09-05T03:00:00.000Z', ate: '2026-09-16T02:59:59.999Z' },
       hoje: { desde: '2026-08-28T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
       hojeAnterior: { desde: '2026-07-29T03:00:00.000Z', ate: '2026-08-28T02:59:59.999Z' },
-      intervalos: IVS, mlbs: new Map(), moderacoes: [], perguntas: [], campanhas: [],
+      intervalos: IVS, janelaAds: J_ADS, mlbs: new Map(), moderacoes: [], perguntas: [], campanhas: [],
       movimentos: [
         mov({ id: 'ma', codigo: 'A', estoque_anterior: 2, estoque_resultante: 0 }),
         mov({ id: 'mx', codigo: 'X', estoque_anterior: 3, estoque_resultante: 0, criado_em: '2026-09-11T12:00:00Z' }),
@@ -220,7 +254,7 @@ describe('montarDossie: chave da família (familia:<pai>) — paridade de dinhei
       janela, anterior,
       hoje: { desde: '2026-08-28T03:00:00.000Z', ate: '2026-09-27T02:59:59.999Z' },
       hojeAnterior: { desde: '2026-07-29T03:00:00.000Z', ate: '2026-08-28T02:59:59.999Z' },
-      intervalos: IVS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
+      intervalos: IVS, janelaAds: J_ADS, mlbs: new Map(), movimentos: [], moderacoes: [], perguntas: [], campanhas: [],
     }).dados!;
     const ranking = montarVendasSku({ vendas, agrupar, janela, anterior, catalogo: new Map(catalogo.map((c) => [c.codigo, c])), devolucoes: [] });
     const irmas = ranking.linhas.filter((l) => ['A', 'B', 'C'].includes(l.codigo));

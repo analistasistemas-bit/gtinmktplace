@@ -5,13 +5,15 @@ import { diaBRT, type Intervalo } from './calendario-brt';
 import { round2 } from './formato';
 import { diasDoIntervalo } from './sku-trafego';
 import type { AlvoDossie } from './sku-dossie';
-import type { AdsDia, FonteAds } from './sku-dossie-dados';
+import type { AdsDia, FonteAds, ResumoAds } from './sku-dossie-dados';
 import type { FonteCusto } from './vendas-sku';
 
 export type AlcanceAds = 'sku' | 'anuncio' | 'familia' | 'indisponivel';
 export type EstadoAds = 'carregando' | 'erro' | 'sem_coleta' | 'sem_permissao' | 'sem_advertiser' | 'sem_acesso'
   | 'parcial' | 'desatualizado' | 'sem_ads' | 'ok';
-export type MotivoSemLucro = 'compartilhado' | 'sem_lucro' | 'cobertura' | 'fora_dos_grupos' | null;
+export type MotivoSemLucro = 'compartilhado' | 'sem_lucro' | 'cobertura' | null;
+/** Por que o % de gasto não identificado não aparece (a tela diz o motivo). */
+export type MotivoSemNaoIdentificado = 'periodo_longo' | 'incompleto' | 'divergente' | 'erro' | null;
 
 export interface TotaisAds {
   custo: number; cliques: number; impressoes: number; vendasDiretas: number; vendasIndiretas: number; vendasTotais: number;
@@ -41,6 +43,10 @@ export interface AdsDossie {
    *  null quando não há Lucro após Ads. */
   fonteLucro: Exclude<FonteCusto, 'sem_custo'> | null;
   motivoSemLucro: MotivoSemLucro;
+  /** Fração do gasto de Ads da conta nos dias financeiros sem família identificada (grupo sem membro);
+   *  null quando não dá para medir (ver naoIdentificadoMotivo) ou ainda carregando. */
+  naoIdentificadoPct: number | null;
+  naoIdentificadoMotivo: MotivoSemNaoIdentificado;
   /** Códigos de fora do alvo e membros sem código nos grupos do alcance. */
   compartilhadoCom: { codigos: string[]; semVinculo: number };
   /** Pelos intervalos do dossiê (Semana/Mês). */
@@ -109,18 +115,22 @@ export function montarAds(p: {
   intervalos: Intervalo[];
   /** Período do dossiê (ISO). */
   janela: { desde: string; ate: string };
-  /** Lucro atual do período (linhaPeriodo.m.lucro); null = sem custo. */
+  /** Lucro do alvo nos mesmos dias do Ads (dossie.lucroAds.lucro); null = sem custo ou sem venda. */
   lucroPeriodo: number | null;
-  /** linhaPeriodo.m.fonteCusto: a marca do lucro atual segue para o Lucro após Ads. */
+  /** dossie.lucroAds.fonteCusto: a marca do lucro segue para o Lucro após Ads. */
   fonteCusto: FonteCusto | null;
   agora: Date;
   fonte: FonteAds | 'carregando' | 'erro';
+  /** Resumo da conta (ads_resumo_periodo) nos dias financeiros; 'periodo_longo' = acima de 366 dias, não consultado. */
+  resumo: ResumoAds | null | 'carregando' | 'erro' | 'periodo_longo';
+  /** Dias BRT do 1º dia do período até min(último dia, ontem). */
+  diasFinanceiros: { desde: string; ate: string };
 }): AdsDossie {
   const cods = new Set(p.codigos);
   const mlbsAlvo = new Set([...p.mlbs].filter(([, cs]) => cs.some((c) => cods.has(c))).map(([m]) => m));
   const vazio = (estado: EstadoAds, erro: string | null = null): AdsDossie => ({
     estado, alcance: 'indisponivel', totais: null, lucroAposAds: null, fonteLucro: null, motivoSemLucro: null,
-    compartilhadoCom: { codigos: [], semVinculo: 0 }, serie: [], serieDiaria: [], grupos: [], coberturaDesde: null, ultimoOkEm: null,
+    naoIdentificadoPct: null, naoIdentificadoMotivo: null, compartilhadoCom: { codigos: [], semVinculo: 0 }, serie: [], serieDiaria: [], grupos: [], coberturaDesde: null, ultimoOkEm: null,
     diasAbertos: 0, erro,
   });
   if (!mlbsAlvo.size) return vazio('ok');
@@ -177,11 +187,21 @@ export function montarAds(p: {
   const estado: EstadoAds = !totais ? 'parcial'
     : !sync.ultimo_ok_em || p.agora.getTime() - Date.parse(sync.ultimo_ok_em) > DESATUALIZADO_MS ? 'desatualizado'
       : totais.custo === 0 && periodoCoberto ? 'sem_ads' : 'ok';
-  // Gasto do anunciante fora de qualquer grupo listado (provável grupo excluído): a despesa do alcance pode
-  // estar abaixo do real, então não há "Lucro após Ads" — a despesa continua aparecendo.
-  const foraDosGrupos = sync.custo_resumo != null && sync.custo_listado != null && sync.custo_resumo - sync.custo_listado > 0.005;
+  // Sem dia financeiro (período só de hoje) não há o que medir: cobertura, não "sem custo".
   const motivoSemLucro: MotivoSemLucro = alcance === 'anuncio' ? 'compartilhado'
-    : p.lucroPeriodo == null ? 'sem_lucro' : !periodoCoberto ? 'cobertura' : foraDosGrupos ? 'fora_dos_grupos' : null;
+    : p.lucroPeriodo == null && diasPeriodo.length ? 'sem_lucro' : !periodoCoberto ? 'cobertura' : null;
+  // Gasto da conta fora dos grupos com membro (provável grupo excluído) não bloqueia mais: vira o % de aviso,
+  // medido no período financeiro (não na faixa do gráfico) — trocar Semana/Mês não muda o aviso.
+  const nDias = diasEntre(p.diasFinanceiros.desde, p.diasFinanceiros.ate).length;
+  const r = typeof p.resumo === 'object' ? p.resumo : null;
+  const contaC = r ? Math.round(r.custo_conta * 100) : 0;
+  const gruposC = r ? Math.round(r.custo_grupos_com_membro * 100) : 0;
+  const naoIdentificadoMotivo: MotivoSemNaoIdentificado = !nDias ? null
+    : p.resumo === 'periodo_longo' ? 'periodo_longo'
+      : p.resumo === 'erro' ? 'erro'
+        : !r || r.dias_conta < nDias ? (p.resumo === 'carregando' ? null : 'incompleto')
+          : gruposC > contaC ? 'divergente' : null;
+  const naoIdentificadoPct = naoIdentificadoMotivo == null && r && contaC > 0 ? (contaC - gruposC) / contaC : null;
   const lucroAposAds = motivoSemLucro == null && p.lucroPeriodo != null && totais ? round2(p.lucroPeriodo - totais.custo) : null;
   const fonteLucro = lucroAposAds == null ? null : p.fonteCusto === 'parcial' || p.fonteCusto === 'estimado' ? p.fonteCusto : 'real';
 
@@ -206,7 +226,7 @@ export function montarAds(p: {
   });
 
   return {
-    estado, alcance, totais, lucroAposAds, fonteLucro, motivoSemLucro,
+    estado, alcance, totais, lucroAposAds, fonteLucro, motivoSemLucro, naoIdentificadoPct, naoIdentificadoMotivo,
     compartilhadoCom: {
       codigos: [...new Set(grupos.flatMap((g) => g.codigos.filter((c) => !cods.has(c))))].sort(),
       semVinculo: grupos.reduce((s, g) => s + g.semVinculo, 0),

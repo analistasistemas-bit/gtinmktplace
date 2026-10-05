@@ -56,8 +56,23 @@ function textoSemLucro(a: DadosAds): string {
   }
   if (a.motivoSemLucro === 'sem_lucro') return 'indisponível: lucro do período sem custo cadastrado';
   if (a.motivoSemLucro === 'cobertura') return 'indisponível: a coleta de Ads não cobre o período inteiro';
-  if (a.motivoSemLucro === 'fora_dos_grupos') return 'indisponível: gasto fora dos grupos listados (provável grupo excluído)';
   return '';
+}
+
+const SEM_NAO_IDENTIFICADO: Record<Exclude<DadosAds['naoIdentificadoMotivo'], null>, string> = {
+  periodo_longo: 'aviso indisponível para períodos acima de 1 ano',
+  incompleto: 'aviso indisponível: a série da conta não cobre o período inteiro',
+  divergente: 'aviso indisponível: os grupos somam mais que a conta no período',
+  erro: 'aviso indisponível: falha ao ler o resumo da conta',
+};
+/** Aviso sob o Lucro após Ads: % do gasto da conta sem família identificada (acima de 0,5%) ou por que não há %. */
+function textoNaoIdentificado(a: DadosAds): string | null {
+  if (a.naoIdentificadoPct != null) {
+    return a.naoIdentificadoPct > 0.005
+      ? `${Math.round(a.naoIdentificadoPct * 100)}% do gasto de Ads da conta neste período não tem família identificada.`
+      : null;
+  }
+  return a.naoIdentificadoMotivo ? `Gasto de Ads sem família identificada: ${SEM_NAO_IDENTIFICADO[a.naoIdentificadoMotivo]}.` : null;
 }
 
 /** As mesmas linhas no tooltip, no detalhe e no rótulo do botão da régua. Zero medido ≠ sem dado. */
@@ -211,6 +226,7 @@ export function PainelAds({ ads: a, familia, passo, onPasso, onTentar }: Props) 
       a.lucroAposAds != null
         ? `Lucro após Ads ${fmtBRL(a.lucroAposAds)}${marcaLucro(a.fonteLucro) ? `, ${marcaLucro(a.fonteLucro)}` : ''}.`
         : `Lucro após Ads ${textoSemLucro(a)}.`,
+      a.lucroAposAds != null ? textoNaoIdentificado(a) ?? '' : '',
       a.diasAbertos && a.estado !== 'sem_ads' ? `${plural(a.diasAbertos, 'dia', 'dias')} com atribuição em aberto.` : '',
       n ? `Série ${diario ? 'diária' : passo === 'semana' ? 'semanal' : 'mensal'} de ${serie[0].intervalo.rotulo} a ${serie[n - 1].intervalo.rotulo}.` : '',
       n ? 'Os botões de cada intervalo mostram o detalhe; as setas andam entre eles.' : '',
@@ -248,10 +264,13 @@ export function PainelAds({ ads: a, familia, passo, onPasso, onTentar }: Props) 
         </dl>
         <p className="text-xs text-muted-foreground">
           {a.lucroAposAds != null
-            ? `Lucro após Ads = lucro atual do período${a.fonteLucro === 'parcial' || a.fonteLucro === 'estimado'
+            ? `Lucro após Ads = lucro do período até ontem${a.fonteLucro === 'parcial' || a.fonteLucro === 'estimado'
               ? ` (${HINT_CUSTO[a.fonteLucro].charAt(0).toLowerCase()}${HINT_CUSTO[a.fonteLucro].slice(1)})` : ''} − despesa de Ads até ontem. O lucro atual não muda.`
             : `Lucro após Ads ${textoSemLucro(a)}.`}
         </p>
+        {a.lucroAposAds != null && textoNaoIdentificado(a) && (
+          <p className="text-xs text-muted-foreground">{textoNaoIdentificado(a)}</p>
+        )}
 
         <p className="sr-only">{resumo}</p>
         {comSerie && (

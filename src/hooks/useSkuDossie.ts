@@ -15,12 +15,13 @@ import { agruparPorPedido } from '@/lib/pedidos-faturamento';
 import { buscarVendasPorIds, type Venda } from '@/lib/faturamento';
 import {
   buscarIdsDossie, buscarMlbsDossie, buscarMovimentos, buscarModeracoes, buscarPerguntas, buscarCampanhas,
-  buscarVisitasDia, buscarPrecoDia, buscarTrafegoSync, buscarFonteAds,
+  buscarVisitasDia, buscarPrecoDia, buscarTrafegoSync, buscarFonteAds, buscarResumoAds,
 } from '@/lib/sku-dossie-dados';
-import { intervalosBRT, type Passo } from '@/lib/calendario-brt';
+import { diaBRT, intervalosBRT, type Passo } from '@/lib/calendario-brt';
+import { janelaBRT } from '@/lib/ads-painel-dados';
 import { montarDossie, type AlvoDossie, type DossieSku, type EstadoDossie } from '@/lib/sku-dossie';
 import { conjuntoTrafego, faixaTrafego, montarTrafego } from '@/lib/sku-trafego';
-import { montarAds, type AdsDossie } from '@/lib/sku-ads';
+import { diasEntre, montarAds, type AdsDossie } from '@/lib/sku-ads';
 
 const HOJE_30: Periodo = { tipo: 'preset', dias: 30 };
 
@@ -30,6 +31,17 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
   const janela = useMemo(() => resolverJanela(periodo), [periodo]);
   const anterior = useMemo(() => janelaAnterior(janela, periodo), [janela, periodo]);
   const intervalos = useMemo(() => intervalosBRT(janela.desde, janela.ate, passo), [janela, passo]);
+  // Dias financeiros do Ads: do 1º dia do período até min(último dia, ontem) — o Ads nunca tem hoje.
+  // Período só de hoje → desde > ate: sem dias (sem resumo nem lucroAds).
+  const diasFin = useMemo(() => {
+    const ontem = diaBRT(Date.now() - 86_400_000);
+    const ate = diaBRT(Date.parse(janela.ate));
+    return { desde: diaBRT(Date.parse(janela.desde)), ate: ate < ontem ? ate : ontem };
+  }, [janela]);
+  const semDiasFin = diasFin.desde > diasFin.ate;
+  const janelaAds = useMemo(() => (semDiasFin ? null : janelaBRT(diasFin.desde, diasFin.ate)), [diasFin, semDiasFin]);
+  // O resumo recusa > 366 dias; o intervalo livre do dossiê não tem teto: acima disso não consulta.
+  const longo = diasEntre(diasFin.desde, diasFin.ate).length > 366;
 
   const custosQ = useCustos();
   const custos = custosQ.data;
@@ -104,6 +116,12 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
     enabled: temAds,
     staleTime: 5 * 60_000,
   });
+  const resumoQ = useQuery({
+    queryKey: ['sku-dossie-ads-resumo', diasFin],
+    queryFn: () => buscarResumoAds(diasFin.desde, diasFin.ate),
+    enabled: temAds && !longo && !semDiasFin,
+    staleTime: 5 * 60_000,
+  });
 
   const agrupar = useMemo(() => {
     const custoR = montarCustoResolver(custos);
@@ -123,10 +141,11 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
     const hoje = resolverJanela(HOJE_30); // posição de hoje: "agora" reancora a cada recálculo
     return montarDossie({
       alvo: alvoM, codigos, vendas: vendasQ.data, agrupar,
-      catalogo: catQ.data, devolucoes: devQ.data, janela, anterior, hoje, hojeAnterior: janelaAnterior(hoje, HOJE_30), intervalos, ...extrasQ.data,
+      catalogo: catQ.data, devolucoes: devQ.data, janela, anterior, hoje, hojeAnterior: janelaAnterior(hoje, HOJE_30), intervalos,
+      janelaAds, ...extrasQ.data,
     });
   }, [catQ.isError, devQ.isError, vendasQ.isError, extrasQ.isError, catQ.data, alvoM, codigos, vendasQ.data, extrasQ.data, devQ.data,
-    custos, custosQ.isError, agrupar, janela, anterior, intervalos]);
+    custos, custosQ.isError, agrupar, janela, anterior, intervalos, janelaAds]);
 
   // Memo à parte: o tráfego chegar (ou falhar) não recalcula o dossiê.
   const dados = useMemo<DossieSku | null>(() => {
@@ -144,19 +163,22 @@ export function useSkuDossie(alvo: AlvoDossie, periodo: Periodo, passo: Passo) {
     if (!r.dados || !extrasQ.data) return null;
     return montarAds({
       alvo: alvoM, codigos, mlbs: extrasQ.data.mlbs, intervalos, janela,
-      lucroPeriodo: r.dados.linhaPeriodo?.m.lucro ?? null, fonteCusto: r.dados.linhaPeriodo?.m.fonteCusto ?? null, agora: new Date(),
+      lucroPeriodo: r.dados.lucroAds?.lucro ?? null, fonteCusto: r.dados.lucroAds?.fonteCusto ?? null, agora: new Date(),
       fonte: adsQ.isError ? 'erro' : adsQ.data ?? 'carregando',
+      resumo: semDiasFin ? null : longo ? 'periodo_longo' : resumoQ.isError ? 'erro' : resumoQ.data === undefined ? 'carregando' : resumoQ.data,
+      diasFinanceiros: diasFin,
     });
-  }, [r.dados, extrasQ.data, alvoM, codigos, intervalos, janela, adsQ.isError, adsQ.data]);
+  }, [r.dados, extrasQ.data, alvoM, codigos, intervalos, janela, adsQ.isError, adsQ.data, semDiasFin, longo, resumoQ.isError, resumoQ.data, diasFin]);
 
   return {
     estado: r.estado, dados, ads,
     refetch: () => Promise.all([catQ.refetch(), devQ.refetch(), vendasQ.refetch(), extrasQ.refetch(),
       // refetch() roda a queryFn mesmo com enabled=false: sem conjunto, não há o que ler.
-      ...(temTrafego ? [trafegoQ.refetch()] : []), ...(temAds ? [adsQ.refetch()] : [])]),
+      ...(temTrafego ? [trafegoQ.refetch()] : []), ...(temAds ? [adsQ.refetch()] : []),
+      ...(temAds && !longo && !semDiasFin ? [resumoQ.refetch()] : [])]),
     /** "Tentar de novo" do painel de tráfego: só a query dele. */
     refetchTrafego: async () => { if (temTrafego) await trafegoQ.refetch(); },
     /** "Tentar de novo" da aba Ads: só a query dela. */
-    refetchAds: async () => { if (temAds) await adsQ.refetch(); },
+    refetchAds: async () => { if (temAds) await Promise.all([adsQ.refetch(), ...(!longo && !semDiasFin ? [resumoQ.refetch()] : [])]); },
   };
 }
