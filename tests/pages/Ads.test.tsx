@@ -58,9 +58,9 @@ describe('Ads', () => {
     montar();
     const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
     expect(resumo.getByText('Resultado após Ads')).toBeInTheDocument();
+    expect(resumo.getByText(/não é o lucro causado pelo Ads/)).toBeVisible();
     fireEvent.click(resumo.getByRole('button', { name: 'Composição do gasto' }));
-    expect(resumo.getByText('Gasto de Ads não identificado')).toBeInTheDocument();
-    expect(screen.getByText(/não é o lucro causado pelo Ads/)).toBeInTheDocument();
+    expect(resumo.getByText('Gasto de Ads não identificado')).toBeVisible();
     expect(screen.getAllByText(/R\$\s?200,00/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Despesa informada pela API de Ads/)).toBeInTheDocument();
   });
@@ -118,7 +118,9 @@ describe('Ads', () => {
 
     expect(resumo.getByText('Despesa de Ads')).toBeVisible();
     expect(resumo.getByText('Resultado após Ads')).toBeVisible();
-    expect(resumo.queryByText('Em famílias')).not.toBeInTheDocument();
+    expect(resumo.getByText('Em famílias')).not.toBeVisible();
+    const botao = resumo.getByRole('button', { name: 'Composição do gasto' });
+    expect(document.getElementById(botao.getAttribute('aria-controls')!)).toBeInTheDocument();
 
     fireEvent.click(resumo.getByRole('button', { name: 'Composição do gasto' }));
 
@@ -156,6 +158,8 @@ describe('Ads', () => {
     expect(ind.getByText('12,5%')).toBeVisible();
     expect(ind.getByText(/R\$\s*800,00/)).toBeVisible();
     expect(ind.getByText(/direta R\$\s*700,00/)).toBeVisible();
+    expect(ind.getByText('ROAS').closest('dl')).toHaveTextContent(/8,00×[\s\S]*direto 7,00×/);
+    expect(ind.getByText('Vendas atribuídas').closest('dl')).toHaveTextContent(/800,00[\s\S]*direta R\$\s*700,00/);
     expect(resumo.getByRole('button', { name: 'Composição do gasto' })).toHaveAttribute('aria-expanded', 'false');
   });
 
@@ -169,9 +173,18 @@ describe('Ads', () => {
   it('Ads maior que a margem: barra cheia em perigo e resultado negativo com sinal', () => {
     montar({ ...PAINEL, conta: { ...PAINEL.conta!, lucroAntes: 50, resultado: -50, margemConsumida: 2 } });
     const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
-    expect(resumo.getByRole('img', { name: 'Ads consumiu mais que a margem (200,0%)' })).toBeInTheDocument();
+    const barra = resumo.getByRole('img', { name: 'Ads consumiu mais que a margem (200,0%)' });
+    expect(barra.children).toHaveLength(1);
+    expect(barra.firstElementChild).toHaveClass('bg-danger', 'w-full');
     const valor = within(resumo.getByRole('group', { name: 'Resultado após Ads' })).getByText(/−R\$\s*50,00/);
     expect(valor).toHaveClass('text-danger');
+  });
+
+  it('lucro ≤ 0 nunca desenha a barra, mesmo com margem preenchida', () => {
+    montar({ ...PAINEL, conta: { ...PAINEL.conta!, lucroAntes: -10, resultado: -110, margemConsumida: 0.5 } });
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+    expect(resumo.getByRole('group', { name: 'Cálculo do resultado' })).toBeInTheDocument();
+    expect(resumo.queryByRole('img', { name: /margem/ })).not.toBeInTheDocument();
   });
 
   it('lucro conhecido sem margem positiva: ponte sem barra', () => {
@@ -385,7 +398,8 @@ describe('Ads', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Composição do gasto' }));
     fireEvent.click(within(screen.getByRole('row', { name: /Fam A/ })).getByRole('button', { name: 'Ver detalhes de Fam A' }));
     expect(screen.queryByText(/direta? \/ total/)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/ROAS \(total \/ direto\)/).length).toBeGreaterThan(0);
+    // Resumo usa ROAS + "direto" (ordem coberta no teste dos indicadores); a frase fica só no detalhe da família.
+    expect(screen.getAllByText(/ROAS \(total \/ direto\)/)).toHaveLength(1);
   });
   it('sem família com gasto: mensagem em vez de tabela vazia', () => {
     montar({ ...PAINEL, conta: null, contaMotivo: 'cobertura', familias: [], compartilhados: [] });

@@ -190,7 +190,7 @@ export function ResumoConta({ conta, historicoDesde }: { conta: ContaPainel; his
             <Operador icone={Equal} texto="igual a" separador />
             <PainelResultado conta={conta} motivo={motivo} />
           </div>
-          {conta.margemConsumida != null && <BarraMargem consumida={conta.margemConsumida} />}
+          {conta.lucroAntes! > 0 && conta.margemConsumida != null && <BarraMargem consumida={conta.margemConsumida} />}
         </div>
       ) : (
         <div className="grid gap-3 md:grid-cols-[1fr_1.25fr] md:items-center md:gap-6 lg:grid-cols-[1fr_2rem_1fr_2rem_1.25fr] lg:gap-4">
@@ -222,25 +222,25 @@ export function ResumoConta({ conta, historicoDesde }: { conta: ContaPainel; his
           </div>
         </div>
 
-        {aberto && (
-          <div id={idComposicao} role="region" aria-label="Composição do gasto" className="space-y-3 rounded-md bg-muted/30 p-3 sm:p-4">
-            {segmentos && (
-              <div aria-hidden className="flex h-1.5 overflow-hidden rounded-full bg-muted">
-                {segmentos.map(s => (
-                  <div key={s.cor} className={cn('h-full', s.cor)} style={{ width: `${(s.v / conta.custo) * 100}%` }} />
-                ))}
-              </div>
+        {/* Montada sempre (hidden quando fechada) para o aria-controls apontar para um id existente. */}
+        <div id={idComposicao} role="region" aria-label="Composição do gasto" hidden={!aberto}
+          className="space-y-3 rounded-md bg-muted/30 p-3 sm:p-4">
+          {segmentos && (
+            <div aria-hidden className="flex h-1.5 overflow-hidden rounded-full bg-muted">
+              {segmentos.map(s => (
+                <div key={s.cor} className={cn('h-full', s.cor)} style={{ width: `${(s.v / conta.custo) * 100}%` }} />
+              ))}
+            </div>
+          )}
+          <dl className="space-y-1.5">
+            <LinhaComposicao cor="bg-primary" rotulo="Em famílias" valor={fmtBRL(conta.emFamilias)} />
+            <LinhaComposicao cor="bg-primary/50" rotulo="Compartilhado entre famílias" valor={fmtBRL(conta.compartilhado)} />
+            {!conta.divergente && conta.naoIdentificado != null && (
+              <LinhaComposicao cor="bg-muted-foreground/40" rotulo="Gasto de Ads não identificado"
+                valor={`${fmtBRL(conta.naoIdentificado)}${conta.naoIdentificadoPct != null ? ` (${pct(conta.naoIdentificadoPct)})` : ''}`} />
             )}
-            <dl className="space-y-1.5">
-              <LinhaComposicao cor="bg-primary" rotulo="Em famílias" valor={fmtBRL(conta.emFamilias)} />
-              <LinhaComposicao cor="bg-primary/50" rotulo="Compartilhado entre famílias" valor={fmtBRL(conta.compartilhado)} />
-              {!conta.divergente && conta.naoIdentificado != null && (
-                <LinhaComposicao cor="bg-muted-foreground/40" rotulo="Gasto de Ads não identificado"
-                  valor={`${fmtBRL(conta.naoIdentificado)}${conta.naoIdentificadoPct != null ? ` (${pct(conta.naoIdentificadoPct)})` : ''}`} />
-              )}
-            </dl>
-          </div>
-        )}
+          </dl>
+        </div>
       </div>
 
       <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
