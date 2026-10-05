@@ -75,6 +75,8 @@ A Avil tem 0 `kits_virtuais`, 0 vendas com `kit_item_id` e nenhum grupo ou membr
 
 **Decisão (conforme o plano):** nesta entrega o semáforo **segue desligado** (`BASE_ACOS_VALIDADA = false`). Os números indicam que a base monetária é a mesma (preço unitário na data da venda), com duas ressalvas para a decisão: (a) canceladas continuam na venda atribuída do ML (1,5 % a 7 %), (b) kits e cupom não foram provados. Ligar o semáforo é entrega separada, com decisão do Diego sobre estes números e validade por família/período encaminhada ao cálculo (por exemplo, excluir kits e famílias com cupom ativo).
 
+**Atualização 2026-10-05:** o Diego decidiu ligar o semáforo com estes números (`BASE_ACOS_VALIDADA = true`), aceitando as ressalvas (a) e (b) sem validade por família/período; o piloto da Avil observa se alguma família no limite aparece "dentro" por causa das canceladas (ADR-0179).
+
 ## Queries
 
 Executadas via `POST https://api.supabase.com/v1/projects/txvncrgkoynoxwopfkbp/database/query` com `read_only: true`. O processamento dos critérios (divisões, contagem ≤ 2 %, teto/piso de canceladas) foi feito em Python sobre o resultado da query 1.
