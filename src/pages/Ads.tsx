@@ -9,6 +9,7 @@ import type { DiasAds } from '@/lib/ads-painel-dados';
 import type { EstadoPainel } from '@/lib/ads-painel';
 import { ResumoConta } from '@/components/ads/resumo-conta';
 import { RankingFamilias } from '@/components/ads/ranking-familias';
+import { dataBRT, diaMesLiteral } from '@/components/sku-dossie/formato-dossie';
 
 const PRESETS: { dias: DiasAds; label: string }[] = [
   { dias: 7, label: '7 dias' }, { dias: 30, label: '30 dias' }, { dias: 90, label: '90 dias' },
@@ -33,7 +34,7 @@ const AVISO: Partial<Record<EstadoPainel, string>> = {
 
 export default function Ads() {
   const [dias, setDias] = useState<DiasAds>(diasSalvos);
-  const { painel, historicoDesde, isError, refetch } = useAdsPainel(dias);
+  const { painel, janela, historicoDesde, isError, refetch } = useAdsPainel(dias);
   const escolher = (d: DiasAds) => {
     setDias(d);
     try { localStorage.setItem(CHAVE, String(d)); } catch { /* sem storage: vale só nesta visita */ }
@@ -71,13 +72,13 @@ export default function Ads() {
         {painel.conta
           ? <ResumoConta conta={painel.conta} />
           : <p className="rounded-lg border bg-card p-4 text-sm text-muted-foreground">Total da conta indisponível: a coleta ainda não cobre este período.</p>}
-        <RankingFamilias painel={painel} />
+        <RankingFamilias painel={painel} historicoDesde={historicoDesde} />
         <div className="space-y-1 text-xs text-muted-foreground">
           <p>Despesa informada pela API de Ads do Mercado Livre.</p>
           <p>Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.</p>
           <p>
             {historicoDesde
-              ? `Vendas desde ${new Date(historicoDesde).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}, quando a organização começou a vender pelo PubliAI.`
+              ? `Vendas desde ${dataBRT(historicoDesde)}, quando a organização começou a vender pelo PubliAI.`
               : 'Vendas desde a entrada da organização no PubliAI.'}
           </p>
         </div>
@@ -88,12 +89,19 @@ export default function Ads() {
   return (
     <div className="p-4 sm:p-6">
       <PageHeader title="Ads" subtitle="Quanto o Ads custa e o que sobra depois dele." />
-      <div role="group" aria-label="Período" className="mb-4 flex gap-1">
-        {PRESETS.map((p) => (
-          <Button key={p.dias} size="sm" variant={dias === p.dias ? 'default' : 'outline'} aria-pressed={dias === p.dias} onClick={() => escolher(p.dias)}>
-            {p.label}
-          </Button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div role="group" aria-label="Período" className="flex gap-1">
+          {PRESETS.map((p) => (
+            <Button key={p.dias} size="sm" variant={dias === p.dias ? 'default' : 'outline'} aria-pressed={dias === p.dias} onClick={() => escolher(p.dias)}>
+              {p.label}
+            </Button>
+          ))}
+        </div>
+        {painel && (
+          <p className="text-xs text-muted-foreground tabular-nums">
+            {`${diaMesLiteral(janela.desde)} – ${diaMesLiteral(janela.ate)} · até ${diaMesLiteral(janela.ate)}, último dia com Ads coletado`}
+          </p>
+        )}
       </div>
       {corpo}
     </div>

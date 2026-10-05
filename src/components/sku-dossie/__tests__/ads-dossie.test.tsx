@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { PainelAds } from '../ads-dossie';
-import { intervalosBRT } from '@/lib/calendario-brt';
+import { diaBRT, intervalosBRT } from '@/lib/calendario-brt';
 import type { AdsDossie as DadosAds } from '@/lib/sku-ads';
 
 const AGORA = new Date('2026-09-27T15:00:00Z');
@@ -14,7 +14,7 @@ const base: DadosAds = {
   totais: { custo: 100, cliques: 50, impressoes: 900, vendasDiretas: 100, vendasIndiretas: 90, vendasTotais: 190,
     unidadesDiretas: 2, unidades: 3, cpc: 2, roas: 1.9, acos: 100 / 190 },
   lucroAposAds: 400, fonteLucro: 'real', motivoSemLucro: null, naoIdentificadoPct: null, naoIdentificadoMotivo: null, compartilhadoCom: { codigos: [], semVinculo: 0 },
-  historicoDesde: '2026-01-01T03:00:00.000Z', fimDia: '2026-09-26',
+  historicoDesde: '2026-01-01T03:00:00.000Z', fimDia: diaBRT(Date.now() - 86_400_000), // ontem: os textos dizem "ontem"
   serie: IVS.map((intervalo, i) => ({ intervalo, custo: i ? 90 : 10, vendas: i ? 90 : 100, aberto: i === 1 })),
   serieDiaria: ['14', '15'].map((d) => ({ intervalo: dia(d), custo: 5, vendas: 20, aberto: true })),
   grupos: [{ id: 3000001, tipo: 'FAMILY', status: 'ACTIVE', campanhaId: 2000001, custo: 100, exclusivo: true, mlbs: ['MLB1'], codigos: ['A'], semVinculo: 0 }],
@@ -82,7 +82,7 @@ describe('PainelAds', () => {
 
   it('gasto da conta sem família identificada: mostra o lucro e o % (acima de 0,5%); abaixo disso, nada', () => {
     const r = renderiza({ ...base, naoIdentificadoPct: 0.05 });
-    expect(screen.getAllByText(/5% do gasto de Ads da conta neste período não tem família identificada/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/5,0% do gasto de Ads da conta neste período não tem família identificada/).length).toBeGreaterThan(0);
     expect(screen.getByText('R$ 400,00')).toBeInTheDocument();
     r.unmount();
     renderiza({ ...base, naoIdentificadoPct: 0.004 });
@@ -109,6 +109,23 @@ describe('PainelAds', () => {
     renderiza({ ...base, alcance: 'anuncio', lucroAposAds: null, motivoSemLucro: 'compartilhado', compartilhadoCom: { codigos: ['B'], semVinculo: 1 } });
     expect(screen.getAllByText(/gasto compartilhado com 1 código de fora e 1 anúncio sem vínculo/).length).toBeGreaterThan(0);
     expect(screen.getByText('Gasto dos grupos compartilhados: não é só deste SKU')).toBeInTheDocument();
+  });
+
+  it('histórico: mesmo texto do painel, com a data da 1ª venda da org', () => {
+    renderiza({ ...base, lucroAposAds: null, motivoSemLucro: 'historico', historicoDesde: '2026-08-03T15:00:00Z' });
+    expect(screen.getAllByText(/período antes do histórico de vendas \(desde 03\/08\/2026\)/).length).toBeGreaterThan(0);
+  });
+
+  it('% não identificado com 1 casa decimal, igual ao painel', () => {
+    renderiza({ ...base, naoIdentificadoPct: 0.074 });
+    expect(screen.getAllByText(/7,4% do gasto de Ads da conta/).length).toBeGreaterThan(0);
+  });
+
+  it('fim do período antes de ontem (coleta do dia pendente): textos dizem a data, não "ontem"', () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-09-27T11:00:00Z') });
+    renderiza({ ...base, fimDia: '2026-09-25' });
+    expect(screen.getByText(/lucro do período até 25\/09 − despesa de Ads até 25\/09/)).toBeInTheDocument();
+    vi.useRealTimers();
   });
 
   it('cobertura: motivo próprio', () => {

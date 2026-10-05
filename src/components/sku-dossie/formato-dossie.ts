@@ -1,4 +1,6 @@
 export const dataBR = (iso: string) => new Date(iso).toLocaleDateString('pt-BR');
+/** dd/mm/aaaa no calendário de São Paulo (instante ISO). */
+export const dataBRT = (iso: string) => new Date(iso).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
 
 // Calendário fixo de São Paulo (os blocos novos): um instante às 02:00Z ainda é o dia anterior.
 const DIA_MES = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', timeZone: 'America/Sao_Paulo' });

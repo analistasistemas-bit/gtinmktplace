@@ -6,12 +6,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { StatusPill } from '@/components/ui/status-pill';
 import { cn } from '@/lib/utils';
 import { fmtBRL, fmtInt } from '@/lib/formato';
-import type { Passo } from '@/lib/calendario-brt';
+import { diaBRT, type Passo } from '@/lib/calendario-brt';
 import type { AdsDossie as DadosAds, GrupoAdsDossie, PontoAds } from '@/lib/sku-ads';
 import { Fato } from './cabecalho-dossie';
 import { Aviso } from './trafego-dossie';
 import { EIXO, EIXO_LUCRO, MARGEM, MIN_POR_INTERVALO, TOOLTIP, escalaRedonda, kCompacto, marcaParcial, passosRotulo } from './serie-pontos';
-import { HINT_CUSTO, asHoraDeBRT, diaMesLiteral, pctBR } from './formato-dossie';
+import { HINT_CUSTO, asHoraDeBRT, dataBRT, diaMesLiteral, pctBR } from './formato-dossie';
 
 const TIPO: Record<GrupoAdsDossie['tipo'], string> = { ITEM: 'Anúncio', FAMILY: 'Família (UP)', CATALOG: 'Catálogo' };
 const STATUS: Record<string, string> = { active: 'ativo', paused: 'pausado', idle: 'parado', hold: 'retido', empty: 'vazio', desconhecido: 'status desconhecido' };
@@ -38,6 +38,10 @@ function vistaAds(a: DadosAds | null): Vista {
   return 'dados';
 }
 
+/** "ontem", ou dd/mm quando o período termina antes (coleta do dia ainda não rodou). */
+const ateRotulo = (a: DadosAds) =>
+  a.fimDia && a.fimDia !== diaBRT(Date.now() - 86_400_000) ? diaMesLiteral(a.fimDia) : 'ontem';
+
 function textoAlcance(a: DadosAds, familia: boolean): string {
   if (a.alcance === 'sku') return 'Gasto dos grupos exclusivos deste SKU';
   if (a.alcance === 'familia') return 'Gasto dos grupos exclusivos da família (cada grupo contado uma vez)';
@@ -54,6 +58,9 @@ function textoSemLucro(a: DadosAds): string {
     ].filter(Boolean);
     return `indisponível: gasto compartilhado com ${partes.join(' e ')}`;
   }
+  if (a.motivoSemLucro === 'historico') {
+    return `indisponível: período antes do histórico de vendas${a.historicoDesde ? ` (desde ${dataBRT(a.historicoDesde)})` : ''}`;
+  }
   if (a.motivoSemLucro === 'sem_lucro') return 'indisponível: lucro do período sem custo cadastrado';
   if (a.motivoSemLucro === 'cobertura') return 'indisponível: a coleta de Ads não cobre o período inteiro';
   return '';
@@ -69,7 +76,7 @@ const SEM_NAO_IDENTIFICADO: Record<Exclude<DadosAds['naoIdentificadoMotivo'], nu
 function textoNaoIdentificado(a: DadosAds): string | null {
   if (a.naoIdentificadoPct != null) {
     return a.naoIdentificadoPct > 0.005
-      ? `${Math.round(a.naoIdentificadoPct * 100)}% do gasto de Ads da conta neste período não tem família identificada.`
+      ? `${pctBR(a.naoIdentificadoPct)} do gasto de Ads da conta neste período não tem família identificada.`
       : null;
   }
   return a.naoIdentificadoMotivo ? `Gasto de Ads sem família identificada: ${SEM_NAO_IDENTIFICADO[a.naoIdentificadoMotivo]}.` : null;
@@ -264,8 +271,8 @@ export function PainelAds({ ads: a, familia, passo, onPasso, onTentar }: Props) 
         </dl>
         <p className="text-xs text-muted-foreground">
           {a.lucroAposAds != null
-            ? `Lucro após Ads = lucro do período até ontem${a.fonteLucro === 'parcial' || a.fonteLucro === 'estimado'
-              ? ` (${HINT_CUSTO[a.fonteLucro].charAt(0).toLowerCase()}${HINT_CUSTO[a.fonteLucro].slice(1)})` : ''} − despesa de Ads até ontem. O lucro atual não muda.`
+            ? `Lucro após Ads = lucro do período até ${ateRotulo(a)}${a.fonteLucro === 'parcial' || a.fonteLucro === 'estimado'
+              ? ` (${HINT_CUSTO[a.fonteLucro].charAt(0).toLowerCase()}${HINT_CUSTO[a.fonteLucro].slice(1)})` : ''} − despesa de Ads até ${ateRotulo(a)}. O lucro atual não muda.`
             : `Lucro após Ads ${textoSemLucro(a)}.`}
         </p>
         {a.lucroAposAds != null && textoNaoIdentificado(a) && (
@@ -388,7 +395,7 @@ export function PainelAds({ ads: a, familia, passo, onPasso, onTentar }: Props) 
             {n > 0 && <Detalhe p={serie[focoAtual]} nome={nomeIntervalo(serie[focoAtual])} />}
 
             <p className="text-xs text-muted-foreground tabular-nums">
-              {`Até ontem, no calendário de São Paulo (o dia de hoje não entra). Vendas atribuídas pelo Mercado Livre em até 14 dias depois do clique: dia com menos de 15 dias é provisório.${a.coberturaDesde ? ` Coleta de Ads desde ${diaMesLiteral(a.coberturaDesde)}.` : ''}`}
+              {`Até ${ateRotulo(a)}, no calendário de São Paulo (o dia de hoje não entra${ateRotulo(a) === 'ontem' ? '' : '; ontem entra depois da coleta diária'}). Vendas atribuídas pelo Mercado Livre em até 14 dias depois do clique: dia com menos de 15 dias é provisório.${a.coberturaDesde ? ` Coleta de Ads desde ${diaMesLiteral(a.coberturaDesde)}.` : ''}`}
             </p>
           </>
         )}

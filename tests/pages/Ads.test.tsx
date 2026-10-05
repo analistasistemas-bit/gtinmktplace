@@ -89,4 +89,41 @@ describe('Ads', () => {
     expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
     expect(screen.getByText(/anunciante/i)).toBeInTheDocument();
   });
+  it('período sempre visível com a data final', () => {
+    montar();
+    expect(screen.getByText(/04\/09 – 03\/10/)).toBeInTheDocument();
+    expect(screen.getByText(/até 03\/10/)).toBeInTheDocument();
+  });
+  it('compartilhado e não identificado: valor na coluna Gasto', () => {
+    montar();
+    for (const nome of [/Compartilhado entre famílias/, /Gasto de Ads não identificado/]) {
+      const celulas = within(screen.getByRole('row', { name: nome })).getAllByRole('cell');
+      expect(celulas[0]).not.toHaveAttribute('colspan');
+      expect(celulas[1]).toHaveTextContent(/R\$/);
+    }
+    const cab = screen.getAllByRole('columnheader');
+    expect(cab[1]).toHaveTextContent('Gasto');
+  });
+  it('ordem total / direto em toda a tela', () => {
+    montar();
+    expect(screen.queryByText(/direta? \/ total/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/ROAS \(total \/ direto\)/).length).toBeGreaterThan(1);
+  });
+  it('sem família com gasto: mensagem em vez de tabela vazia', () => {
+    montar({ ...PAINEL, conta: null, contaMotivo: 'cobertura', familias: [], compartilhados: [] });
+    expect(screen.getAllByText('Nenhum gasto de Ads por família no período.').length).toBeGreaterThan(0);
+  });
+  it('grupo sem família (só anúncio sem código): rótulo "sem código identificado"', () => {
+    montar({ ...PAINEL, compartilhados: [{ id: 7, custo: 2.02, familias: [], semCodigo: 1 }] });
+    fireEvent.click(screen.getAllByRole('button', { name: /Compartilhado|sem código/ })[0]);
+    expect(screen.getAllByText(/Grupo 7: sem código identificado/).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/sem família \+/)).not.toBeInTheDocument();
+  });
+  it('motivo histórico com a data da 1ª venda', () => {
+    hook.mockReturnValue({ painel: { ...PAINEL, familias: [{ ...PAINEL.familias[0], lucroAntes: null, resultado: null, motivo: 'historico' }] },
+      janela: { desde: '2026-09-04', ate: '2026-10-03' }, historicoDesde: '2026-08-03T15:00:00.000Z',
+      isLoading: false, isError: false, refetch: vi.fn() });
+    render(<MemoryRouter><Ads /></MemoryRouter>);
+    expect(within(screen.getByRole('row', { name: /Fam A/ })).getByText(/antes do histórico de vendas \(desde 03\/08\/2026\)/)).toBeInTheDocument();
+  });
 });
