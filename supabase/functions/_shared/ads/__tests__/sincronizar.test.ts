@@ -24,6 +24,9 @@ const serie = (j: { desde: string; ate: string }) => ok({ results: diasDe(j).map
   date, clicks: 2, prints: 100, cost: 1.25, cpc: 0.62, direct_amount: 10, indirect_amount: 0, total_amount: 10,
   direct_units_quantity: 1, units_quantity: 1, acos: 12.5, roas: 8,
 })) });
+const serieConta = (j: { desde: string; ate: string }) => ok({ results: diasDe(j).map((date) => ({
+  date, clicks: 2, prints: 100, cost: 3, direct_amount: 20, indirect_amount: 5, total_amount: 25,
+})) });
 const membros = (itens: string[], total = itens.length) =>
   ok({ paging: { total, offset: 0, limit: 100 }, results: itens.map((item_id) => ({ item_id })) });
 const DIA = { cost: 1.25, clicks: 2, prints: 100, direct_amount: 10, indirect_amount: 0, total_amount: 10, direct_units: 1, units: 1 };
@@ -37,13 +40,15 @@ function fake(o: Partial<DepsAds> = {}): Fake {
     esperar: vi.fn(async (ms: number) => { relogio.t += ms; }),
     reservarPosse: vi.fn(async () => ({ rodada: RODADA, cursor: null })),
     avancarCursor: vi.fn(async () => true),
-    lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: true, ultimoOkEm: '2026-09-26T14:20:00Z' })),
+    lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: true, ultimoOkEm: '2026-09-26T14:20:00Z', contaCoberturaDesde: '2026-06-29' })),
     lerGruposComGasto: vi.fn(async () => []),
     contarVinculos: vi.fn(async () => new Map<number, number>()),
     buscarAdvertiser: vi.fn(async () => ok({ advertisers: [{ advertiser_id: 1000001, site_id: 'MLB' }] })),
     buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY'), grupo(13, 'CATALOG', 0)])),
     buscarSerieGrupo: vi.fn(async (_id: number, j: { desde: string; ate: string }) => serie(j)),
     buscarMembros: vi.fn(async () => membros(['MLB21', 'MLB22'])),
+    buscarSerieConta: vi.fn(async (_adv: number, j: { desde: string; ate: string }) => serieConta(j)),
+    gravarContaDias: vi.fn(async () => true),
     gravarLote: vi.fn(async () => true),
     continuar: vi.fn(async () => {}),
     concluir: vi.fn(async () => true),
@@ -79,7 +84,7 @@ describe('sincronizarAdsOrg', () => {
   });
 
   it('carga inicial: janela de 90 dias terminando ontem', async () => {
-    const d = fake({ lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })) });
+    const d = fake({ lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null, contaCoberturaDesde: null })) });
     await sincronizarAdsOrg(d, primeira);
     expect(d.buscarGrupos).toHaveBeenCalledWith(1000001, JANELA_90, 0);
     expect(gravados(d)[0].dias).toHaveLength(90);
@@ -90,7 +95,7 @@ describe('sincronizarAdsOrg', () => {
     // Carga inicial: sem a busca extra de 90 dias do Ruling 2c-8 (o mock ignora a janela e duplicaria a
     // paginação); a mecânica testada aqui (seguir o offset) é a mesma nos dois modos.
     const d = fake({
-      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null, contaCoberturaDesde: null })),
       buscarGrupos: vi.fn(async (_a: number, _j: unknown, offset: number) =>
         (offset === 0 ? busca([grupo(11, 'ITEM'), grupo(12, 'ITEM')], 3) : busca([grupo(14, 'ITEM')], 3))),
     });
@@ -191,7 +196,7 @@ describe('sincronizarAdsOrg', () => {
 
   it('CARGA INICIAL — 404 de grupo listado com gasto: o custo dele sai do custoListado', async () => {
     const d = fake({
-      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null, contaCoberturaDesde: null })),
       buscarSerieGrupo: vi.fn(async (id: number, j: { desde: string; ate: string }) =>
         (id === 11 ? http(404, { error_code: 'ad_group_not_found_exception' }) : serie(j))),
     });
@@ -221,7 +226,7 @@ describe('sincronizarAdsOrg', () => {
   });
 
   it('CARGA INICIAL — 404 com gasto numa mensagem que continua: o desconto viaja na continuação e fecha na última', async () => {
-    const inicial = { lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })) };
+    const inicial = { lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null, contaCoberturaDesde: null })) };
     const d = fake({ ...inicial, buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM', 7.5), grupo(12, 'ITEM'), grupo(14, 'ITEM')])) });
     d.buscarSerieGrupo.mockImplementation(async (id: number, j: { desde: string; ate: string }) => {
       d.relogio.t += 40_000; return id === 11 ? http(404, null) : serie(j);
@@ -250,7 +255,7 @@ describe('sincronizarAdsOrg', () => {
 
   it('CARGA INICIAL — Ruling 2c-7: FAMILY listado com gasto, /ads vazio e sem vínculo gravado: o custo sai do custoListado', async () => {
     const d = fake({
-      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null, contaCoberturaDesde: null })),
       buscarGrupos: vi.fn(async () => busca([grupo(11, 'ITEM'), grupo(12, 'FAMILY', 4)])),
       buscarMembros: vi.fn(async () => membros([])),
     });
@@ -282,7 +287,7 @@ describe('sincronizarAdsOrg', () => {
 
   it('CARGA INICIAL — desconto herdado maior que o listado: custoListado nunca negativo', async () => {
     const d = fake({
-      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null, contaCoberturaDesde: null })),
       buscarGrupos: vi.fn(async () => busca([grupo(12, 'ITEM', 5)])),
     });
     await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: '11', primeira: false, descontar: 50 });
@@ -397,7 +402,7 @@ describe('sincronizarAdsOrg', () => {
   // com o lote padrão (20) os dois grupos pendentes cabem no mesmo lote, e o cursor nunca sai de null.
   it('CRÍTICO — carga inicial com falha: cursor zera na hora, sem nunca ter avançado (recomeça do início)', async () => {
     const d = fake({
-      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null, contaCoberturaDesde: null })),
       buscarSerieGrupo: vi.fn(async () => http(429, null, 120_000)),
     });
     expect(await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 }))
@@ -456,7 +461,7 @@ describe('sincronizarAdsOrg', () => {
   // Ruling 2c-6 (fix round 2): na carga inicial a regra não espera o fim da cadeia.
   it('CARGA INICIAL (Ruling 2c-6) — lote 1 preso: zera o cursor e fecha em erro na mesma mensagem, sem publicar continuação', async () => {
     const d = fake({
-      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null, contaCoberturaDesde: null })),
       buscarSerieGrupo: vi.fn(async () => http(429, null, 120_000)),
     });
     const r = await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 },
@@ -472,7 +477,7 @@ describe('sincronizarAdsOrg', () => {
 
   it('CARGA INICIAL (Ruling 2c-6) — exceção no lote 2 depois de um lote ok: o cursor é zerado', async () => {
     const d = fake({
-      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })),
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null, contaCoberturaDesde: null })),
       buscarSerieGrupo: vi.fn(async (id: number, j: { desde: string; ate: string }) =>
         (id === 11 ? serie(j) : ok({ results: [{ date: '2026-09-26', cost: 'x' }] }))),
     });
@@ -525,7 +530,7 @@ describe('sincronizarAdsOrg', () => {
   });
 
   it('Ruling 2c-8 (c) — carga inicial não faz a busca extra de 90 dias (a busca principal já é de 90 dias)', async () => {
-    const d = fake({ lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null })) });
+    const d = fake({ lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: false, ultimoOkEm: null, contaCoberturaDesde: null })) });
     expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
     expect(d.buscarGrupos).toHaveBeenCalledTimes(1);
   });
@@ -676,5 +681,140 @@ describe('sincronizarAdsOrg', () => {
     // Σ (10+40, sem dedup) − 80 (12 descontado 2×, uma por página) = −30 sem o piso; com o piso, 0.
     expect(d.concluir).toHaveBeenCalledWith(RODADA, 'ok', null,
       expect.objectContaining({ custoResumo: 99, custoListado: 0 }));
+  });
+
+  it('série da conta: lida na janela relida e gravada antes de concluir ok', async () => {
+    const d = fake();
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    expect(d.buscarSerieConta).toHaveBeenCalledTimes(1);
+    expect(d.buscarSerieConta).toHaveBeenCalledWith(1000001, JANELA_DIARIA);
+    const [rodada, coletadoEm, dias] = d.gravarContaDias.mock.calls[0];
+    expect([rodada, coletadoEm]).toEqual([RODADA, new Date(T0).toISOString()]);
+    expect(dias).toHaveLength(15);
+    expect(dias[0]).toEqual({ dia: '2026-09-12', cost: 3, clicks: 2, prints: 100, direct_amount: 20, indirect_amount: 5, total_amount: 25 });
+    expect(d.gravarContaDias.mock.invocationCallOrder[0]).toBeLessThan(d.concluir.mock.invocationCallOrder[0]);
+  });
+
+  it('série da conta nunca coletada → lê 90 dias', async () => {
+    const d = fake({ lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: true, ultimoOkEm: '2026-09-26T14:20:00Z', contaCoberturaDesde: null })) });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'ok' });
+    expect(d.buscarSerieConta).toHaveBeenCalledWith(1000001, JANELA_90);
+    expect(d.gravarContaDias.mock.calls[0][2]).toHaveLength(90);
+  });
+
+  it('série da conta com dia faltando → rodada em erro, nada gravado, nunca ok', async () => {
+    const d = fake({ buscarSerieConta: vi.fn(async () => ok({ results: [{ date: '2026-09-12', clicks: 0, prints: 0, cost: 0,
+      direct_amount: 0, indirect_amount: 0, total_amount: 0 }] })) });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'erro' });
+    expect(d.gravarContaDias).not.toHaveBeenCalled();
+    expect(d.concluir.mock.calls.some((c) => c[1] === 'ok')).toBe(false);
+  });
+
+  it('429 constante na série da conta tem teto de adiamento: presa, a rodada fecha em erro', async () => {
+    const d = fake({ buscarGrupos: vi.fn(async () => busca([])), buscarSerieConta: vi.fn(async () => http(429, null, 120_000)) });
+    expect(await sincronizarAdsOrg(d, { org_id: ORG, rodada: RODADA, cursor: null, primeira: false, tentativa: 5 }))
+      .toEqual({ resultado: 'erro' });
+    expect(d.continuar).not.toHaveBeenCalled();
+    expect(d.concluir).toHaveBeenCalledWith(RODADA, 'erro', expect.stringContaining('série da conta'),
+      { cargaConcluida: false, advertiserId: 1000001, coberturaDesde: null, custoResumo: null, custoListado: null });
+  });
+
+  it('429 na série da conta sem estar presa → continua (não conclui)', async () => {
+    const d = fake({ buscarGrupos: vi.fn(async () => busca([])), buscarSerieConta: vi.fn(async () => http(429, null, 120_000)) });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'continua' });
+    expect(d.continuar).toHaveBeenCalledTimes(1);
+    expect(d.concluir).not.toHaveBeenCalled();
+  });
+
+  it('403 na série da conta → sem_permissao', async () => {
+    const d = fake({ buscarSerieConta: vi.fn(async () => http(403, { blocked_by: 'PolicyAgent' })) });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'sem_permissao' });
+    expect(d.concluir.mock.calls.at(-1)?.[1]).toBe('sem_permissao');
+  });
+
+  it('perdeu a posse ao gravar a série da conta → obsoleta, não conclui', async () => {
+    const d = fake({ gravarContaDias: vi.fn(async () => false) });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'obsoleta' });
+    expect(d.concluir).not.toHaveBeenCalled();
+  });
+
+  // Banco simulado compartilhado entre entregas: dias da conta (upsert por dia), conta_cobertura_desde
+  // (1ª gravação define), e a POSSE como em reservar_ads_posse/concluir_ads_rodada: reserva só se não houver
+  // posse viva; concluir solta; exceção no concluir deixa a posse viva até expirar (posse_ate).
+  const POSSE_MS = 5 * 60_000;
+  function banco(cargaInicialOk = true) {
+    const relogio = { t: T0 };
+    const dias = new Map<string, number>();
+    const s = { cobertura: null as string | null, rodada: null as string | null, posseAte: 0, cargaInicialOk, n: 0 };
+    const deps = (o: Partial<DepsAds> = {}) => fake({
+      agora: vi.fn(() => relogio.t),
+      reservarPosse: vi.fn(async () => {
+        if (s.rodada && s.posseAte > relogio.t) return null;          // posse viva: recusa
+        s.n += 1; s.rodada = `rodada-${s.n}`; s.posseAte = relogio.t + POSSE_MS;
+        return { rodada: s.rodada, cursor: null };
+      }),
+      avancarCursor: vi.fn(async (r: string) => r === s.rodada),
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: s.cargaInicialOk, ultimoOkEm: '2026-09-26T14:20:00Z',
+        contaCoberturaDesde: s.cobertura })),
+      gravarContaDias: vi.fn(async (r: string, _c: string, ds: { dia: string; cost: number }[]) => {
+        if (r !== s.rodada) return false;
+        for (const x of ds) dias.set(x.dia, x.cost);
+        s.cobertura ??= ds.map((x) => x.dia).sort()[0] ?? null;
+        return true;
+      }),
+      gravarLote: vi.fn(async (r: string) => r === s.rodada),
+      concluir: vi.fn(async (r: string, estado: string) => {
+        if (r !== s.rodada) return false;
+        s.rodada = null; s.posseAte = 0;
+        if (estado === 'ok') s.cargaInicialOk = true;
+        return true;
+      }),
+      ...o,
+    });
+    return { relogio, dias, s, deps };
+  }
+
+  for (const cargaInicialOk of [true, false]) {
+    it(`concluir lança depois de gravar a conta (cargaInicialOk=${cargaInicialOk}): reentrega imediata recusada; após expirar, nova rodada conclui sem duplicar`, async () => {
+      const b = banco(cargaInicialOk);
+      const d1 = b.deps({ concluir: vi.fn(async () => { throw new Error('rede'); }) });
+      expect(await sincronizarAdsOrg(d1, primeira)).toEqual({ resultado: 'erro' });
+      expect(d1.buscarSerieConta).toHaveBeenCalledWith(1000001, JANELA_90);    // nunca coletada → 90 dias
+      expect(b.dias.size).toBe(90);
+      expect(b.s.cobertura).toBe('2026-06-29');
+      expect(b.s.rodada).toBe('rodada-1');                                     // posse continua viva
+
+      const d2 = b.deps();
+      expect(await sincronizarAdsOrg(d2, primeira)).toEqual({ resultado: 'obsoleta' });   // reentrega imediata
+      expect(d2.buscarSerieConta).not.toHaveBeenCalled();
+
+      b.relogio.t += POSSE_MS + 1;                                             // posse expira
+      const d3 = b.deps();
+      expect(await sincronizarAdsOrg(d3, primeira)).toEqual({ resultado: 'ok' });
+      expect(b.s.n).toBe(2);                                                   // rodada nova
+      expect(d3.buscarSerieConta).toHaveBeenCalledWith(1000001,
+        cargaInicialOk ? JANELA_DIARIA : JANELA_90);                           // cobertura da conta preservada
+      expect(b.dias.size).toBe(90);                                            // sem duplicar
+      expect(b.s.cobertura).toBe('2026-06-29');
+      expect(b.s.rodada).toBeNull();                                           // concluiu e soltou a posse
+    });
+  }
+
+  it('concluir devolve false (perdeu a posse ao fechar) → obsoleta, conta já gravada fica', async () => {
+    const b = banco();
+    const d = b.deps({ concluir: vi.fn(async () => false) });
+    expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'obsoleta' });
+    expect(b.dias.size).toBe(90);
+  });
+
+  it('cadeia com 2 mensagens (teto de itens): a série da conta é lida só na última, uma vez', async () => {
+    const muitos = Array.from({ length: 25 }, (_, i) => grupo(100 + i, 'ITEM'));
+    const d = fake({ buscarGrupos: vi.fn(async (_a: number, j: { desde: string }) => (j.desde === JANELA_90.desde ? busca([]) : busca(muitos))) });
+    const cfg = { limiteMs: 90_000, lote: 20, concorrencia: 6, maxItens: 20 };
+    expect(await sincronizarAdsOrg(d, primeira, cfg)).toEqual({ resultado: 'continua' });
+    expect(d.buscarSerieConta).not.toHaveBeenCalled();
+    const msg = d.continuar.mock.calls[0][0];
+    expect(await sincronizarAdsOrg(d, msg, cfg)).toEqual({ resultado: 'ok' });
+    expect(d.buscarSerieConta).toHaveBeenCalledTimes(1);
   });
 });

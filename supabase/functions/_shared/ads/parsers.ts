@@ -94,6 +94,28 @@ export function parseSerieGrupo(corpo: unknown, janela: { desde: string; ate: st
   return [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
 }
 
+export interface DiaConta {
+  dia: string; cost: number; clicks: number; prints: number; direct_amount: number; indirect_amount: number;
+  total_amount: number;
+}
+
+/** `…/campaigns/search?aggregation_type=DAILY` (total do anunciante, spike 054): densa como a do grupo. */
+export function parseSerieConta(corpo: unknown, janela: { desde: string; ate: string }): DiaConta[] | null {
+  if (!obj(corpo) || !Array.isArray(corpo.results)) return null;
+  const porDia = new Map<string, DiaConta>();
+  for (const r of corpo.results) {
+    if (!obj(r) || typeof r.date !== 'string') return null;
+    const dia = r.date.slice(0, 10);
+    if (!DIA_RE.test(dia) || dia < janela.desde || dia > janela.ate || porDia.has(dia)) return null;
+    const { cost, clicks, prints, direct_amount: direto, indirect_amount: indireto, total_amount: total } = r;
+    if (!naoNeg(cost) || !inteiro(clicks) || !inteiro(prints) || !naoNeg(direto) || !naoNeg(indireto)
+      || !naoNeg(total)) return null;
+    porDia.set(dia, { dia, cost, clicks, prints, direct_amount: direto, indirect_amount: indireto, total_amount: total });
+  }
+  if (porDia.size !== diasNaJanela(janela)) return null;
+  return [...porDia.values()].sort((a, b) => a.dia.localeCompare(b.dia));
+}
+
 /** `…/ad_groups/{id}/ads` (uma página): os MLBs membros atuais. As métricas por MLB não são lidas (R2). */
 export function parseMembros(corpo: unknown): { total: number; itens: string[] } | null {
   if (!obj(corpo) || !obj(corpo.paging) || !Array.isArray(corpo.results)) return null;

@@ -3,7 +3,7 @@ import { buscarML, dedupFanout, tratarRequisicao } from '../../trafego/fiacao.ts
 import type { RespostaML } from '../../trafego/sincronizar.ts';
 import {
   HEADERS_ADS, HEADERS_ADVERTISER, dedupContinuacaoAds, dedupFanoutAds, getComReautenticacao, msgAdsDoCorpo,
-  resultadoParaFiacaoTrafego, urlAdvertiser, urlBuscaGrupos, urlMembros, urlSerieGrupo,
+  resultadoParaFiacaoTrafego, urlAdvertiser, urlBuscaGrupos, urlMembros, urlSerieConta, urlSerieGrupo,
 } from '../fiacao.ts';
 
 const J = { desde: '2026-09-12', ate: '2026-09-26' };
@@ -28,6 +28,7 @@ describe('fiação de Ads', () => {
     expect(urlSerieGrupo(3000001, J)).toBe('/marketplace/advertising/MLB/product_ads/ad_groups/3000001?date_from=2026-09-12&date_to=2026-09-26'
       + '&metrics=CLICKS,PRINTS,COST,DIRECT_AMOUNT,INDIRECT_AMOUNT,TOTAL_AMOUNT,DIRECT_UNITS_QUANTITY,UNITS_QUANTITY&aggregation_type=daily');
     expect(urlMembros(3000001, J, 0)).toBe('/marketplace/advertising/MLB/product_ads/ad_groups/3000001/ads?limit=100&offset=0&date_from=2026-09-12&date_to=2026-09-26&metrics=COST');
+    expect(urlSerieConta(7, { desde: '2026-09-01', ate: '2026-09-02' })).toBe('/marketplace/advertising/MLB/advertisers/7/product_ads/campaigns/search?limit=50&offset=0&date_from=2026-09-01&date_to=2026-09-02&metrics=clicks,prints,cost,direct_amount,indirect_amount,total_amount&aggregation_type=DAILY&filters[status]=active,paused,deleted,error');
     for (const u of [busca, urlSerieGrupo(1, J), urlMembros(1, J, 0)]) {
       expect(u).not.toMatch(/ads\/search|product_ads\/items/); // endpoints legados proibidos
     }

@@ -10,7 +10,7 @@ import { diaDeHoje } from '../_shared/trafego/janelas.ts';
 import { buscarML, corteRetencao, delaySegundos } from '../_shared/trafego/fiacao.ts';
 import {
   HEADERS_ADS, HEADERS_ADVERTISER, ML_API, dedupContinuacaoAds, dedupFanoutAds, getComReautenticacao,
-  urlAdvertiser, urlBuscaGrupos, urlMembros, urlSerieGrupo,
+  urlAdvertiser, urlBuscaGrupos, urlMembros, urlSerieConta, urlSerieGrupo,
 } from '../_shared/ads/fiacao.ts';
 import { ParadaAds, type DepsAds, type GrupoConhecido } from '../_shared/ads/sincronizar.ts';
 
@@ -70,9 +70,14 @@ export function depsAds(admin: SupabaseClient, orgId: string, tokenFixo?: () => 
       (await rpc('avancar_ads_cursor', { p_org: orgId, p_rodada: rodada, p_cursor_atual: atual, p_cursor_novo: novo })) === true,
 
     async lerEstadoSync() {
-      const { data, error } = await admin.from('ml_ads_sync').select('carga_inicial_ok, ultimo_ok_em').eq('org_id', orgId).maybeSingle();
+      const { data, error } = await admin.from('ml_ads_sync')
+        .select('carga_inicial_ok, ultimo_ok_em, conta_cobertura_desde').eq('org_id', orgId).maybeSingle();
       falhouRpc('lerEstadoSync', error);
-      return { cargaInicialOk: data?.carga_inicial_ok === true, ultimoOkEm: (data?.ultimo_ok_em as string | null | undefined) ?? null };
+      return {
+        cargaInicialOk: data?.carga_inicial_ok === true,
+        ultimoOkEm: (data?.ultimo_ok_em as string | null | undefined) ?? null,
+        contaCoberturaDesde: (data?.conta_cobertura_desde as string | null | undefined) ?? null,
+      };
     },
 
     async lerGruposComGasto(desde, ate) {
@@ -101,6 +106,9 @@ export function depsAds(admin: SupabaseClient, orgId: string, tokenFixo?: () => 
     buscarGrupos: (adv, j, offset) => get(urlBuscaGrupos(adv, j, offset), HEADERS_ADS),
     buscarSerieGrupo: (id, j) => get(urlSerieGrupo(id, j), HEADERS_ADS),
     buscarMembros: (id, j, offset) => get(urlMembros(id, j, offset), HEADERS_ADS),
+    buscarSerieConta: (adv, j) => get(urlSerieConta(adv, j), HEADERS_ADS),
+    gravarContaDias: async (rodada, coletadoEm, dias) =>
+      (await rpc('gravar_ads_conta_dias', { p_org: orgId, p_rodada: rodada, p_coletado_em: coletadoEm, p_dias: dias })) === true,
 
     gravarLote: async (rodada, coletadoEm, grupos) =>
       (await rpc('gravar_ads_lote', { p_org: orgId, p_rodada: rodada, p_coletado_em: coletadoEm, p_grupos: grupos })) === true,

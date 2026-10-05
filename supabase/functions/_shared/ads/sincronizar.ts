@@ -7,8 +7,8 @@ import { TIMEOUT_ML_MS } from '../trafego/fiacao.ts';
 import type { MsgTrafego, RespostaML } from '../trafego/sincronizar.ts';
 import { janelaAds, type JanelaAds } from './janelas.ts';
 import {
-  classificarResposta, parseAdvertiser, parseBuscaGrupos, parseMembros, parseSerieGrupo,
-  type DiaAds, type GrupoBusca, type TipoGrupo,
+  classificarResposta, parseAdvertiser, parseBuscaGrupos, parseMembros, parseSerieConta, parseSerieGrupo,
+  type DiaAds, type DiaConta, type GrupoBusca, type TipoGrupo,
 } from './parsers.ts';
 
 export type EstadoParada = 'sem_acesso' | 'sem_permissao' | 'sem_advertiser';
@@ -43,7 +43,7 @@ export interface DepsAds {
   reservarPosse(): Promise<{ rodada: string; cursor: string | null } | null>;
   /** avancar_ads_cursor (CAS; renova a posse). novo = atual só confere. false = obsoleta. */
   avancarCursor(rodada: string, atual: string | null, novo: string | null): Promise<boolean>;
-  lerEstadoSync(): Promise<{ cargaInicialOk: boolean; ultimoOkEm: string | null }>;
+  lerEstadoSync(): Promise<{ cargaInicialOk: boolean; ultimoOkEm: string | null; contaCoberturaDesde: string | null }>;
   /** Grupos com linha de custo > 0 gravada em [desde, ate] (relidos mesmo fora do search). */
   lerGruposComGasto(desde: string, ate: string): Promise<GrupoConhecido[]>;
   /** Nº de MLBs no vínculo gravado de cada grupo (ml_ads_grupo_item). */
@@ -54,6 +54,10 @@ export interface DepsAds {
   buscarGrupos(advertiserId: number, janela: JanelaAds, offset: number): Promise<RespostaML>;
   buscarSerieGrupo(adGroupId: number, janela: JanelaAds): Promise<RespostaML>;
   buscarMembros(adGroupId: number, janela: JanelaAds, offset: number): Promise<RespostaML>;
+  /** campaigns/search diário: total do anunciante por dia (spike 054). */
+  buscarSerieConta(advertiserId: number, janela: JanelaAds): Promise<RespostaML>;
+  /** gravar_ads_conta_dias: false = a rodada não é mais a dona. */
+  gravarContaDias(rodada: string, coletadoEm: string, dias: DiaConta[]): Promise<boolean>;
   /** gravar_ads_lote: false = a rodada não é mais a dona. */
   gravarLote(rodada: string, coletadoEm: string, grupos: GrupoGravar[]): Promise<boolean>;
   continuar(msg: MsgAds, opts: { atrasoMs?: number }): Promise<void>;
@@ -331,6 +335,19 @@ export async function sincronizarAdsOrg(
       }
       custoResumoFinal = custoResumo90;
       custoListadoFinal = Math.max(0, Math.round((listados90.reduce((s, g) => s + g.cost, 0) - descontar90) * 100) / 100);
+    }
+    // Spike 054: total diário do anunciante, que fecha o total da conta em qualquer período. Nunca coletada →
+    // 90 dias; depois, a mesma janela relida dos grupos (encosta no último ok, cobre a atribuição em aberto).
+    const janelaConta = estado.contaCoberturaDesde == null ? janelaMembros : janela;
+    for (;;) {
+      if (deps.agora() > fim) return preso() ? await fecharPreso('série da conta') : await continuar(cursor, 0);
+      const r = await comRetry(deps, fim, () => deps.buscarSerieConta(adv, janelaConta));
+      if ('adiar' in r) return preso() ? await fecharPreso('série da conta') : await continuar(cursor, r.adiar);
+      exigir(r, 'campaigns/search (diária)');
+      const dias = parseSerieConta(r.corpo, janelaConta);
+      if (!dias) throw new Error('campaigns/search (diária): resposta inválida');
+      if (!(await deps.gravarContaDias(dona, new Date(deps.agora()).toISOString(), dias))) return { resultado: 'obsoleta' };
+      break;
     }
     console.info('[ads] custo da janela', {
       org_id: msg.org_id, janela, listadoSobreResumo: custoResumoFinal ? custoListadoFinal / custoResumoFinal : null,

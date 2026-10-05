@@ -27,6 +27,13 @@ export const urlSerieGrupo = (id: number, j: JanelaAds) =>
 export const urlMembros = (id: number, j: JanelaAds, offset: number) =>
   `${BASE}/product_ads/ad_groups/${id}/ads?limit=${LIMITE_PAGINA}&offset=${offset}&${periodo(j)}&metrics=COST`;
 
+// Spike 054: o total do anunciante por dia; sem `error` no filtro some campanha com gasto (spike 053 §3.1).
+export const STATUS_CAMPANHAS = 'active,paused,deleted,error';
+export const urlSerieConta = (adv: number, j: JanelaAds) =>
+  `${BASE}/advertisers/${adv}/product_ads/campaigns/search?limit=50&offset=0&${periodo(j)}`
+  + `&metrics=clicks,prints,cost,direct_amount,indirect_amount,total_amount&aggregation_type=DAILY`
+  + `&filters[status]=${STATUS_CAMPANHAS}`;
+
 /**
  * GET com 1 releitura do token em caso de 401: o token pode ter sido rotacionado no meio da cadeia (ex.:
  * renovar-tokens-ml). `renovar` só descarta o token em memória; o próximo `token()` passa de novo por

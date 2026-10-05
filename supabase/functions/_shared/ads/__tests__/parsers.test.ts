@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classificarResposta, parseAdvertiser, parseBuscaGrupos, parseMembros, parseSerieGrupo } from '../parsers.ts';
+import { classificarResposta, parseAdvertiser, parseBuscaGrupos, parseMembros, parseSerieConta, parseSerieGrupo } from '../parsers.ts';
 
 const JANELA = { desde: '2026-09-12', ate: '2026-09-26' };
 /** Os 15 dias da janela (a série do ML é densa: toda resposta válida traz todos). */
@@ -95,6 +95,27 @@ describe('parseSerieGrupo', () => {
     expect(parseSerieGrupo(completa((d) => (d === '2026-09-26' ? { units_quantity: undefined } : {})), JANELA)).toBeNull();
     expect(parseSerieGrupo(completa((d) => (d === '2026-09-26' ? { clicks: 1.5 } : {})), JANELA)).toBeNull();
     expect(parseSerieGrupo({ results: 'x' }, JANELA)).toBeNull();
+  });
+});
+
+describe('parseSerieConta', () => {
+  const janela = { desde: '2026-09-01', ate: '2026-09-02' };
+  const linha = (date: string, cost = 10) =>
+    ({ date, cost, clicks: 1, prints: 100, direct_amount: 50, indirect_amount: 5, total_amount: 55 });
+  it('série densa válida', () => {
+    expect(parseSerieConta({ results: [linha('2026-09-02'), linha('2026-09-01', 0)] }, janela)).toEqual([
+      { dia: '2026-09-01', cost: 0, clicks: 1, prints: 100, direct_amount: 50, indirect_amount: 5, total_amount: 55 },
+      { dia: '2026-09-02', cost: 10, clicks: 1, prints: 100, direct_amount: 50, indirect_amount: 5, total_amount: 55 },
+    ]);
+  });
+  it('dia faltando → null (nunca completa com zero)', () => {
+    expect(parseSerieConta({ results: [linha('2026-09-01')] }, janela)).toBeNull();
+  });
+  it('dia fora da janela, repetido ou campo inválido → null', () => {
+    expect(parseSerieConta({ results: [linha('2026-09-01'), linha('2026-09-03')] }, janela)).toBeNull();
+    expect(parseSerieConta({ results: [linha('2026-09-01'), linha('2026-09-01')] }, janela)).toBeNull();
+    expect(parseSerieConta({ results: [linha('2026-09-01'), { ...linha('2026-09-02'), cost: -1 }] }, janela)).toBeNull();
+    expect(parseSerieConta({ nada: 1 }, janela)).toBeNull();
   });
 });
 
