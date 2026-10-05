@@ -47,17 +47,19 @@ const INFO_USO = `${ROTULO_USO}::Ads`;
 
 function CabecalhoUso() {
   return (
-    <span className="inline-flex items-center gap-1.5">{ROTULO_USO}<KpiInfoButton infoKey={INFO_USO} /></span>
+    <span className="inline-flex items-center gap-1.5 max-sm:[&_button]:-m-[15px] max-sm:[&_button]:p-[15px]">
+      {ROTULO_USO}<KpiInfoButton infoKey={INFO_USO} />
+    </span>
   );
 }
 
-/** Uso da margem pelo Ads: ACOS direto sobre o ACOS de equilíbrio. Cor e selo vêm do semáforo do domínio (nunca
- *  fabricados aqui); a largura é só a proporção, travada em 100%. */
+/** Uso da margem pelo Ads: ACOS direto sobre o ACOS de equilíbrio. Barra só com semáforo do domínio (cor e selo nunca
+ *  fabricados aqui); a largura é só a proporção, travada em 100%. Sem semáforo, fica só o texto. */
 function UsoMargem({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
   const sem = liberado && f.semaforo ? SEMAFORO[f.semaforo] : null;
   const ads = f.vendasDiretas === 0 ? null : f.acosDireto;
   const eq = f.acosEquilibrio;
-  const largura = ads != null && eq != null && eq > 0 ? Math.min(ads / eq, 1) : null;
+  const largura = sem && ads != null && eq != null && eq > 0 ? Math.min(ads / eq, 1) : null;
   const limite = eq == null ? ' · sem referência' : eq <= 0 ? ' · sem margem para Ads'
     : ads == null ? ` · até ${pct(eq)} possíveis` : ` de ${pct(eq)} possíveis`;
   return (
@@ -66,7 +68,7 @@ function UsoMargem({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
         <div aria-hidden className="ml-auto h-1.5 w-full max-w-40 overflow-hidden rounded-full bg-muted">
           <div data-testid="barra-uso-margem" style={{ width: `${largura * 100}%` }}
             className={cn('h-full rounded-full motion-safe:transition-[width]',
-              sem?.tom === 'danger' ? 'bg-danger' : sem?.tom === 'success' ? 'bg-success' : 'bg-primary')} />
+              sem?.tom === 'danger' ? 'bg-danger' : 'bg-success')} />
         </div>
       )}
       <span className="block tabular-nums">

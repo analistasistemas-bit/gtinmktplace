@@ -160,6 +160,11 @@ describe('montarPainelAds', () => {
     b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: 20, brutoComCusto: 80, fonteCusto: 'parcial', markup: 0.4 });
     expect(montarPainelAds(b).familias[0]).toMatchObject({ lucroAntes: 20, markup: null, acosEquilibrio: null, semaforo: null, motivo: 'custo_parcial' });
   });
+  it('preço zero com custo → markup some junto com o equilíbrio', () => {
+    const b = base({ grupos: [grupo(1, 10, ['MLB1'], 100, 100)] });
+    b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: -5, brutoComCusto: 0, fonteCusto: 'real', markup: -1 });
+    expect(montarPainelAds(b).familias[0]).toMatchObject({ acosEquilibrio: null, markup: null });
+  });
   it('sem custo cadastrado → lucro null com motivo', () => {
     const b = base({ grupos: [grupo(1, 10, ['MLB1'], 100)] });
     b.lucroPorFamilia.set('A', { nome: 'Fam A', lucro: null, brutoComCusto: 0, fonteCusto: 'sem_custo', markup: null });

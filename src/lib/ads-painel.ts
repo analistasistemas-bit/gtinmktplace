@@ -171,7 +171,7 @@ export function montarPainelAds(p: {
       margemConsumida: !bloqueado && lucroAntes != null && lucroAntes > 0 ? m.custo / lucroAntes : null,
       acosDireto, acosEquilibrio,
       semaforo: p.baseAcosValidada && !bloqueado ? semaforo(acosEquilibrio, m.vendasDiretas, acosDireto) : null,
-      motivo, fonteCusto: l?.fonteCusto ?? null, markup: lucroConfiavel ? l.markup : null,
+      motivo, fonteCusto: l?.fonteCusto ?? null, markup: lucroConfiavel && l.brutoComCusto > 0 ? l.markup : null,
     };
   }).sort((a, b) => b.custo - a.custo || a.codigoPai.localeCompare(b.codigoPai));
 

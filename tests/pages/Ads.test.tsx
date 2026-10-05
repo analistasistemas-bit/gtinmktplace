@@ -697,6 +697,13 @@ describe('Ads', () => {
     expect(barra).toHaveClass('bg-danger');
   });
 
+  it('uso da margem sem semáforo: texto sem barra, mesmo com equilíbrio e venda direta', () => {
+    montar({ ...PAINEL, semaforoLiberado: false, familias: [{ ...PAINEL.familias[0], semaforo: null }] });
+    const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+    expect(linha.getByText('Ads 12,5% de 25,0% possíveis')).toBeVisible();
+    expect(linha.queryByTestId('barra-uso-margem')).not.toBeInTheDocument();
+  });
+
   it('uso da margem sem referência: texto sem barra', () => {
     montar();
     const linha = within(screen.getByRole('row', { name: /Fam B/ }));
