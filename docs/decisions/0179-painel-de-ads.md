@@ -43,6 +43,13 @@ está indisponível nas 3 orgs pela regra de gasto fora dos grupos.
 
 ## Consequências
 
+- **Premissa herdada (vendas):** não há marcador de cobertura das vendas no backend (webhook `sync-venda` +
+  `reconciliar-faturamento`); como Faturamento, Vendas SKU e Financeiro, o painel assume histórico completo a partir
+  da primeira venda registrada e mostra essa data. Antes dela, lucro indisponível (`historico`).
+- **Semáforo desligado nesta entrega:** o spike 055 mede se o valor atribuído pelo ML e o bruto do PubliAI são a mesma
+  base (preço unitário, promoções, kits, devoluções); ligar o semáforo é entrega separada, com validade por
+  família/período.
+
 - O Lucro após Ads do dossiê passa a aparecer quando o gasto é exclusivo, com aviso do % não identificado.
 - "Resultado após Ads" não é lucro causado pelo Ads; a interface diz isso. Despesa é a informada pela API, não a
   fatura PADS.

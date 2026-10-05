@@ -546,43 +546,73 @@ Novos testes no `describe('sincronizarAdsOrg')`:
     expect(d.concluir).not.toHaveBeenCalled();
   });
 
-  // Armazenamento simulado compartilhado entre entregas: reproduz o estado persistido pela RPC
-  // (upsert por dia; conta_cobertura_desde = 1º dia da 1ª gravação, depois não muda).
-  function store() {
+  // Banco simulado compartilhado entre entregas: dias da conta (upsert por dia), conta_cobertura_desde
+  // (1ª gravação define), e a POSSE como em reservar_ads_posse/concluir_ads_rodada: reserva só se não houver
+  // posse viva; concluir solta; exceção no concluir deixa a posse viva até expirar (posse_ate).
+  const POSSE_MS = 5 * 60_000;
+  function banco(cargaInicialOk = true) {
+    const relogio = { t: T0 };
     const dias = new Map<string, number>();
-    let cobertura: string | null = null;
-    return {
-      dias, get cobertura() { return cobertura; },
-      gravar: vi.fn(async (_r: string, _c: string, ds: { dia: string; cost: number }[]) => {
+    const s = { cobertura: null as string | null, rodada: null as string | null, posseAte: 0, cargaInicialOk, n: 0 };
+    const deps = (o: Partial<DepsAds> = {}) => fake({
+      agora: vi.fn(() => relogio.t),
+      reservarPosse: vi.fn(async () => {
+        if (s.rodada && s.posseAte > relogio.t) return null;          // posse viva: recusa
+        s.n += 1; s.rodada = `rodada-${s.n}`; s.posseAte = relogio.t + POSSE_MS;
+        return { rodada: s.rodada, cursor: null };
+      }),
+      avancarCursor: vi.fn(async (r: string) => r === s.rodada),
+      lerEstadoSync: vi.fn(async () => ({ cargaInicialOk: s.cargaInicialOk, ultimoOkEm: '2026-09-26T14:20:00Z',
+        contaCoberturaDesde: s.cobertura })),
+      gravarContaDias: vi.fn(async (r: string, _c: string, ds: { dia: string; cost: number }[]) => {
+        if (r !== s.rodada) return false;
         for (const x of ds) dias.set(x.dia, x.cost);
-        cobertura ??= ds.length ? ds.map((x) => x.dia).sort()[0] : null;
+        s.cobertura ??= ds.map((x) => x.dia).sort()[0] ?? null;
         return true;
       }),
-    };
+      gravarLote: vi.fn(async (r: string) => r === s.rodada),
+      concluir: vi.fn(async (r: string, estado: string) => {
+        if (r !== s.rodada) return false;
+        s.rodada = null; s.posseAte = 0;
+        if (estado === 'ok') s.cargaInicialOk = true;
+        return true;
+      }),
+      ...o,
+    });
+    return { relogio, dias, s, deps };
   }
 
-  it('backfill: concluir falha depois de gravar a conta; a reentrega relê a janela curta, sem duplicar, e conclui', async () => {
-    const s = store();
-    const estado = () => ({ cargaInicialOk: true, ultimoOkEm: '2026-09-26T14:20:00Z', contaCoberturaDesde: s.cobertura });
-    const d1 = fake({ lerEstadoSync: vi.fn(async () => estado()), gravarContaDias: s.gravar,
-      concluir: vi.fn(async () => { throw new Error('rede'); }) });
-    expect(await sincronizarAdsOrg(d1, primeira)).toEqual({ resultado: 'erro' });
-    expect(d1.buscarSerieConta).toHaveBeenCalledWith(1000001, JANELA_90);
-    expect(s.dias.size).toBe(90);
-    expect(s.cobertura).toBe('2026-06-29');
-    const d2 = fake({ lerEstadoSync: vi.fn(async () => estado()), gravarContaDias: s.gravar });
-    expect(await sincronizarAdsOrg(d2, primeira)).toEqual({ resultado: 'ok' });
-    expect(d2.buscarSerieConta).toHaveBeenCalledWith(1000001, JANELA_DIARIA);   // cobertura preservada
-    expect(s.dias.size).toBe(90);                                               // sem duplicar
-    expect(s.cobertura).toBe('2026-06-29');
-    expect(d2.concluir).toHaveBeenCalledWith(RODADA, 'ok', null, expect.objectContaining({ cargaConcluida: true }));
-  });
+  for (const cargaInicialOk of [true, false]) {
+    it(`concluir lança depois de gravar a conta (cargaInicialOk=${cargaInicialOk}): reentrega imediata recusada; após expirar, nova rodada conclui sem duplicar`, async () => {
+      const b = banco(cargaInicialOk);
+      const d1 = b.deps({ concluir: vi.fn(async () => { throw new Error('rede'); }) });
+      expect(await sincronizarAdsOrg(d1, primeira)).toEqual({ resultado: 'erro' });
+      expect(d1.buscarSerieConta).toHaveBeenCalledWith(1000001, JANELA_90);    // nunca coletada → 90 dias
+      expect(b.dias.size).toBe(90);
+      expect(b.s.cobertura).toBe('2026-06-29');
+      expect(b.s.rodada).toBe('rodada-1');                                     // posse continua viva
+
+      const d2 = b.deps();
+      expect(await sincronizarAdsOrg(d2, primeira)).toEqual({ resultado: 'obsoleta' });   // reentrega imediata
+      expect(d2.buscarSerieConta).not.toHaveBeenCalled();
+
+      b.relogio.t += POSSE_MS + 1;                                             // posse expira
+      const d3 = b.deps();
+      expect(await sincronizarAdsOrg(d3, primeira)).toEqual({ resultado: 'ok' });
+      expect(b.s.n).toBe(2);                                                   // rodada nova
+      expect(d3.buscarSerieConta).toHaveBeenCalledWith(1000001,
+        cargaInicialOk ? JANELA_DIARIA : JANELA_90);                           // cobertura da conta preservada
+      expect(b.dias.size).toBe(90);                                            // sem duplicar
+      expect(b.s.cobertura).toBe('2026-06-29');
+      expect(b.s.rodada).toBeNull();                                           // concluiu e soltou a posse
+    });
+  }
 
   it('concluir devolve false (perdeu a posse ao fechar) → obsoleta, conta já gravada fica', async () => {
-    const s = store();
-    const d = fake({ gravarContaDias: s.gravar, concluir: vi.fn(async () => false) });
+    const b = banco();
+    const d = b.deps({ concluir: vi.fn(async () => false) });
     expect(await sincronizarAdsOrg(d, primeira)).toEqual({ resultado: 'obsoleta' });
-    expect(s.dias.size).toBe(15);
+    expect(b.dias.size).toBe(90);
   });
 
   it('cadeia com 2 mensagens (teto de itens): a série da conta é lida só na última, uma vez', async () => {
@@ -596,6 +626,7 @@ Novos testes no `describe('sincronizarAdsOrg')`:
     expect(d.buscarSerieConta).toHaveBeenCalledTimes(1);
   });
 ```
+(nos testes de retomada: com `cargaInicialOk=false` a janela principal já é de 90 dias, então a série da conta também é lida em 90 dias na 3ª entrega; `JANELA_90`/`JANELA_DIARIA` são as constantes do topo do arquivo, `T0` = 2026-09-27 12:00 BRT; só os asserts da conta e da posse importam ali.)
 (no teste da cadeia, o `avancarCursor` do fake devolve `true` para qualquer cursor — como nos testes existentes de continuação; se o fake exigir a mesma `rodada`, a `msg` publicada já a carrega.)
 Run: `pnpm vitest run supabase/functions/_shared/ads/__tests__/sincronizar.test.ts` → FAIL (os 6 novos). Se o `comRetry` esperar o `Retry-After` dentro do orçamento em vez de devolver `adiar` no teste "sem estar presa", ajustar o `Retry-After` para além do `limiteMs` (120_000 já é > 90_000).
 
@@ -714,7 +745,7 @@ export function montarPainelAds(p: {
   baseAcosValidada: boolean;                      // BASE_ACOS_VALIDADA (spike 055)
   agora: Date;
 }): PainelAds
-export const BASE_ACOS_VALIDADA = false;          // vira true no commit que registra o spike 055 aprovado
+export const BASE_ACOS_VALIDADA = false;          // fica false nesta entrega; ligar é entrega separada (Task 7, Step 8)
 ```
 
 Regras (cada uma com teste):
@@ -723,7 +754,7 @@ Regras (cada uma com teste):
 - **Conta (em centavos inteiros):** cada valor vira `c = Math.round(x * 100)` antes de somar. `custoC` = Σ `conta[].cost` em centavos; `somaGruposC` = Σ grupos com membro em centavos. Se `somaGruposC > custoC` (**um centavo a mais já é divergência**; não há tolerância além do arredondamento para centavo) → `divergente = true`, `naoIdentificado = null`, `naoIdentificadoPct = null` (valores observados mantidos, aviso; nada é ajustado). Senão `naoIdentificadoC = custoC − emFamiliasC − compartilhadoC` (inclui os grupos sem membro) e a identidade `emFamiliasC + compartilhadoC + naoIdentificadoC === custoC` vale exatamente; os campos expostos são `centavos / 100`. `naoIdentificadoPct = custoC > 0 ? naoIdentificadoC / custoC : null`.
 - **Cobertura da conta:** `conta_cobertura_desde == null || > janela.desde || conta.length < diasNaJanela` → `conta = null`, `contaMotivo = 'cobertura'`.
 - **Cobertura dos grupos** (mesma regra de `src/lib/sku-ads.ts:126-131`): `ultimoDia = diaBRT(ultimo_ok_em) − 1`; coberto se todo dia da janela ∈ [`cobertura_desde`, `ultimoDia`] e `carga_inicial_ok`. Descoberto → `gruposCobertos = false` e toda família com `resultado/semaforo = null`, `motivo = 'cobertura'` (gasto parcial nunca vira resultado).
-- **Histórico de vendas:** o banco não tem marcador de cobertura das vendas; o único marco é `VendasSku.historicoDesde` = primeira venda faturável registrada na org (ADR-0172 D-2, `vendas-sku.ts:459`). Regra: comparar **ISO com ISO** — `historicoDesde == null || Date.parse(historicoDesde) > Date.parse(janelaBRT(janela.desde, janela.ate).desde)` → lucro desconhecido → toda família e a conta com `lucroAntes = null`, `motivo = 'historico'`. Um histórico que começa no meio do 1º dia do período bloqueia (não libera o dia inteiro). Limite assumido e documentado no ADR-0179: dentro do histórico, ausência de venda é tratada como zero (mesma premissa do Vendas SKU).
+- **Histórico de vendas:** o banco não tem marcador de cobertura das vendas; o único marco é `VendasSku.historicoDesde` = primeira venda faturável registrada na org (ADR-0172 D-2, `vendas-sku.ts:459`). Regra: comparar **ISO com ISO** — `historicoDesde == null || Date.parse(historicoDesde) > Date.parse(janelaBRT(janela.desde, janela.ate).desde)` → lucro desconhecido → toda família e a conta com `lucroAntes = null`, `motivo = 'historico'`. Um histórico que começa no meio do 1º dia do período bloqueia (não libera o dia inteiro). **Premissa explícita (revisão do Astra, rodada 3, achado #3 — decisão do Diego):** o PubliAI não tem marcador de cobertura das vendas no backend; elas chegam por webhook (`sync-venda`) e pela reconciliação diária (`reconciliar-faturamento`). Faturamento, Vendas SKU e Financeiro já assumem histórico completo a partir da primeira venda. O painel herda essa premissa e diz isso na tela ("vendas desde <data da 1ª venda>"); uma prova de cobertura das vendas é infraestrutura própria, fora do I2. Registrar no ADR-0179 (Consequências).
 - **Conta sem nenhuma venda faturável** (histórico coberto): `lucroConta` chega como `{ lucro: 0, fonteCusto: 'real' }` (o hook decide, ver Task 4) → `lucroAntes = 0`, `resultado = −custo`. Distinto de `sem_custo` (null) e de `historico` (null).
 - **Base do ACOS validada:** parâmetro `baseAcosValidada: boolean` (constante `BASE_ACOS_VALIDADA` exportada de `ads-painel.ts`, **`false`** até o spike 055 aprovar na Task 7). Com `false`: `acosEquilibrio` é exibido, mas `semaforo = null` em todas as famílias e `PainelAds.semaforoLiberado = false` (a tela diz "semáforo em validação"). Os motivos de família não mudam.
 - **Métricas por Σ:** `roas = vendasTotais / custo`, `roasDireto = vendasDiretas / custo`, `acos = custo / vendasTotais`, `acosDireto = custo / vendasDiretas`; denominador 0 → `null`.
@@ -1321,7 +1352,7 @@ update public.profiles set allowed_menus = array_append(allowed_menus, 'ads')
   3. **Kits:** um kit vendido por Ads conta como 1 unidade no ML; conferir que `bruto/unidades` do kit no PubliAI usa o mesmo preço do kit (não o dos componentes).
   4. **Devoluções/canceladas:** conferir se a venda atribuída do ML continua contando uma venda depois cancelada/devolvida (o PubliAI tira as canceladas do bruto); medir o tamanho do efeito no período.
   5. **Sanidade agregada:** Σ `direct_amount` ≤ bruto da família (as 6 famílias de maior gasto, 30 dias).
-  **Decisão:** critérios 1–3 dentro → commit `BASE_ACOS_VALIDADA = true` + teste do semáforo ligado; algum fora → semáforo segue desligado, achado aberto no ADR-0179 e no `docs/TASKS.md` com os números, e o painel vai ao piloto só com ACOS de equilíbrio como referência. Documentar custo parcial/estimado encontrado.
+  **Nesta entrega `BASE_ACOS_VALIDADA` fica `false`** (alternativa mínima da revisão do Astra, rodada 3, achado #8): o spike 055 só produz a evidência, com os critérios 1–5 (inclusive devoluções/cancelamentos) e o escopo coberto (quais famílias, quais períodos). Ligar o semáforo é uma **entrega separada**, com decisão do Diego sobre os números e validade por família/período encaminhada ao cálculo — não um commit de constante global. O painel vai ao piloto com o ACOS de equilíbrio como referência e o aviso "semáforo em validação". Documentar custo parcial/estimado encontrado.
 - [ ] **Step 9: Commit dos docs** (+ spike 055) no fluxo de merge.
 
 ### Task 8: Piloto e aceite (D7) — o épico só fecha aqui
