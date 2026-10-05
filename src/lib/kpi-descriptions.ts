@@ -144,6 +144,16 @@ export const KPI_DESCRIPTIONS: Record<string, string> = {
     'Lucro ÷ preço de venda dos itens com custo. Mede a saúde do preço.',
   'Faturamento com custo real::vendas-sku':
     'Quanto do faturamento tem custo congelado na venda. O resto usa o custo atual do cadastro (custo estimado) ou não tem custo.',
+
+  // ── Ads: filtros do ranking de famílias (ADR-0179) ──
+  'Todas::Ads':
+    'Famílias presentes no painel neste período, mantendo a ordem por gasto.',
+  'Em atenção::Ads':
+    'Famílias acima do ACOS de equilíbrio ou sem espaço para Ads. O filtro usa o semáforo existente e não recomenda alteração de orçamento.',
+  'Dentro do equilíbrio::Ads':
+    'Famílias cujo ACOS direto está dentro da referência pela margem observada no período.',
+  'Sem referência::Ads':
+    'Famílias sem semáforo disponível. Inclui todas as famílias enquanto o semáforo estiver em validação.',
 };
 
 /** Resolve a descrição de um KPI pelo `label` (ou `infoKey` composto). undefined = sem entrada

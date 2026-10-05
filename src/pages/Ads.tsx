@@ -10,6 +10,7 @@ import { PERIODO_PADRAO_ADS, type DiasAds, type PeriodoAds } from '@/lib/ads-pai
 import type { EstadoPainel } from '@/lib/ads-painel';
 import { ResumoConta } from '@/components/ads/resumo-conta';
 import { RankingFamilias } from '@/components/ads/ranking-familias';
+import { GastosAssociados } from '@/components/ads/gastos-associados';
 import { dataBRT } from '@/components/sku-dossie/formato-dossie';
 
 const PRESETS: {
@@ -206,7 +207,9 @@ export default function Ads() {
         {painel.conta
           ? <ResumoConta conta={painel.conta} historicoDesde={historicoDesde} />
           : <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">Total da conta indisponível: a coleta ainda não cobre este período.</p>}
-        <RankingFamilias painel={painel} historicoDesde={historicoDesde} />
+        {/* A key reinicia filtro e detalhes ao trocar seleção ou janela; refetch da mesma janela não muda a key. */}
+        <RankingFamilias key={`${atual}:${janela?.desde}:${janela?.ate}`} painel={painel} historicoDesde={historicoDesde} />
+        <GastosAssociados painel={painel} />
       </>
     );
   }

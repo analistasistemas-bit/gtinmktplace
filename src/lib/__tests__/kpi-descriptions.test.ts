@@ -67,6 +67,11 @@ const ALL_EXPECTED_KEYS = [
   'Mercado endereçável',
   'Concorrentes vendendo mais que há um ano',
   'Média mensal por vendedor (12 meses)',
+  // Ads (filtros do ranking de famílias)
+  'Todas::Ads',
+  'Em atenção::Ads',
+  'Dentro do equilíbrio::Ads',
+  'Sem referência::Ads',
 ];
 
 describe('kpi-descriptions', () => {

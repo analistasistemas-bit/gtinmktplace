@@ -1,193 +1,222 @@
-import { Fragment, useState, type ReactNode } from 'react';
+import { useId, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ChevronDown } from 'lucide-react';
 import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from '@/components/ui/table';
+import { Button } from '@/components/ui/button';
+import { KpiCard } from '@/components/ui/kpi-card';
+import { Section } from '@/components/ui/section';
 import { StatusPill } from '@/components/ui/status-pill';
 import { fmtBRL, fmtBRLSinal } from '@/lib/formato';
-import type { FamiliaPainel, MotivoFamilia, PainelAds, Semaforo } from '@/lib/ads-painel';
-import { pct, razao } from '@/components/ads/resumo-conta';
-import { dataBRT } from '@/components/sku-dossie/formato-dossie';
+import { cn } from '@/lib/utils';
+import type { ContaPainel, FamiliaPainel, PainelAds, Semaforo } from '@/lib/ads-painel';
+import {
+  NADA, pct, textoMotivo, contarFamiliasAds, filtrarFamiliasAds, type FiltroFamiliasAds,
+} from '@/lib/ads-apresentacao';
+import { DetalheFamilia } from '@/components/ads/detalhe-familia';
 
-const NADA = '—';
-const MOTIVO: Record<Exclude<MotivoFamilia, null>, string> = {
-  compartilhado: 'gasto compartilhado com outra família',
-  cobertura: 'coleta de Ads incompleta no período',
-  historico: 'período antes do histórico de vendas',
-  sem_vendas: 'sem vendas no período',
-  sem_custo: 'sem custo cadastrado',
-  custo_parcial: 'custo parcial: sem semáforo',
-};
 const SEMAFORO: Record<Semaforo, { tom: 'success' | 'danger'; txt: string }> = {
-  dentro: { tom: 'success', txt: 'dentro' },
-  acima: { tom: 'danger', txt: 'acima' },
-  sem_espaco: { tom: 'danger', txt: 'sem espaço para Ads' },
+  dentro: { tom: 'success', txt: 'Dentro do equilíbrio' },
+  acima: { tom: 'danger', txt: 'Acima do equilíbrio' },
+  sem_espaco: { tom: 'danger', txt: 'Sem espaço para Ads' },
 };
 const LINK = 'font-medium underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm';
+const CELULA = 'px-3 py-3 align-top whitespace-normal';
+const NUM = `${CELULA} text-right tabular-nums`;
 
-const nomeFamilia = (f: FamiliaPainel) => f.nome ?? f.codigoPai;
-/** Par total / direto (mesma ordem do resumo): total em cima, direto abaixo — 2 linhas para caber em 1440 px. */
-const Par = ({ total, direto, rotulo }: { total: string; direto: string; rotulo: string }) => (
-  <><span className="block">{total}</span><span className="block text-xs text-muted-foreground">{`${rotulo} ${direto}`}</span></>
-);
-const textoMotivo = (m: Exclude<MotivoFamilia, null>, historicoDesde: string | null) =>
-  m === 'historico' && historicoDesde ? `${MOTIVO.historico} (desde ${dataBRT(historicoDesde)})` : MOTIVO[m];
+interface PropsFamilia {
+  f: FamiliaPainel;
+  liberado: boolean;
+  conta: ContaPainel | null;
+  historicoDesde: string | null;
+}
 
-function Equilibrio({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
+function NomeFamilia({ f }: { f: FamiliaPainel }) {
+  return (
+    <>
+      <Link to={`/faturamento/sku/familia/${encodeURIComponent(f.codigoPai)}`} className={cn(LINK, 'line-clamp-2 break-words')}>
+        {f.nome ?? f.codigoPai}
+      </Link>
+      {f.nome && <span className="block text-xs text-muted-foreground tabular-nums">{f.codigoPai}</span>}
+    </>
+  );
+}
+
+/** ACOS direto × equilíbrio + semáforo recebido do domínio (nunca fabricado aqui). */
+function Referencia({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
   const sem = liberado && f.semaforo ? SEMAFORO[f.semaforo] : null;
   return (
-    <>
-      <span className="block">{pct(f.acos)} / {pct(f.acosDireto)}</span>
-      <span className="flex flex-wrap items-center justify-end gap-1 text-xs text-muted-foreground">
-        equilíbrio {pct(f.acosEquilibrio)}
-        {sem && <StatusPill tone={sem.tom}>{sem.txt}</StatusPill>}
+    <div className="space-y-1">
+      <span className="block tabular-nums">
+        {f.vendasDiretas === 0 ? <span>sem venda direta</span> : pct(f.acosDireto)}
+        <span className="text-muted-foreground"> × </span>
+        {pct(f.acosEquilibrio)}
       </span>
-    </>
+      {sem && <StatusPill tone={sem.tom}>{sem.txt}</StatusPill>}
+    </div>
   );
 }
 
-function Resultado({ f, historicoDesde }: { f: FamiliaPainel; historicoDesde: string | null }) {
-  const motivo = f.motivo && f.motivo !== 'custo_parcial'
-    ? <span className="block text-xs text-muted-foreground">{textoMotivo(f.motivo, historicoDesde)}</span> : null;
+/** Resultado após Ads com tudo o que o condiciona: travessão + motivo, marca de custo e divergência da conta. */
+function Resultado({ f, conta, historicoDesde }: Omit<PropsFamilia, 'liberado'>) {
+  const parcial = f.motivo === 'custo_parcial' || f.fonteCusto === 'parcial';
+  return (
+    <div role="group" aria-label="Resultado após Ads" className="space-y-1">
+      <span className={cn('block font-medium tabular-nums', f.resultado != null && f.resultado < 0 && 'text-danger')}>
+        {f.resultado == null ? NADA : fmtBRLSinal(f.resultado)}
+      </span>
+      {f.motivo && f.motivo !== 'custo_parcial' && (
+        <span className="block text-xs text-muted-foreground">{textoMotivo(f.motivo, historicoDesde)}</span>
+      )}
+      {(parcial || f.fonteCusto === 'estimado') && (
+        <StatusPill tone="neutral">{parcial ? textoMotivo('custo_parcial', null) : 'custo estimado'}</StatusPill>
+      )}
+      {conta?.divergente && <span className="block text-xs text-warning">Composição da conta divergente</span>}
+    </div>
+  );
+}
+
+function BotaoDetalhes({ f, aberto, controla, onClick, compacto }: {
+  f: FamiliaPainel; aberto: boolean; controla: string; onClick: () => void; compacto?: boolean;
+}) {
+  return (
+    <Button
+      type="button"
+      variant={compacto ? 'ghost' : 'outline'}
+      size="sm"
+      className={compacto ? 'h-11 w-11 px-0 sm:h-8 sm:w-8' : 'h-11 sm:h-8'}
+      aria-label={`Ver detalhes de ${f.nome ?? f.codigoPai}`}
+      aria-expanded={aberto}
+      aria-controls={controla}
+      onClick={onClick}
+    >
+      {!compacto && 'Detalhes'}
+      <ChevronDown aria-hidden className={cn('h-4 w-4 transition-transform', aberto && 'rotate-180')} />
+    </Button>
+  );
+}
+
+function LinhaFamilia({ f, liberado, conta, historicoDesde }: PropsFamilia) {
+  const [aberto, setAberto] = useState(false);
+  const id = useId();
   return (
     <>
-      {f.resultado != null && <span className={f.resultado < 0 ? 'text-danger' : undefined}>{fmtBRLSinal(f.resultado)}</span>}
-      {f.resultado == null && !motivo && NADA}
-      {motivo}
+      <TableRow>
+        <TableCell className={CELULA}><NomeFamilia f={f} /></TableCell>
+        <TableCell className={NUM}>{fmtBRL(f.custo)}</TableCell>
+        <TableCell className={NUM}><Referencia f={f} liberado={liberado} /></TableCell>
+        <TableCell className={NUM}><Resultado f={f} conta={conta} historicoDesde={historicoDesde} /></TableCell>
+        <TableCell className={`${CELULA} text-right`}>
+          <BotaoDetalhes f={f} aberto={aberto} controla={id} onClick={() => setAberto(v => !v)} compacto />
+        </TableCell>
+      </TableRow>
+      {aberto && (
+        <TableRow className="bg-muted/30 hover:bg-muted/30">
+          <TableCell id={id} colSpan={5} className="px-3 py-3 whitespace-normal">
+            <DetalheFamilia familia={f} conta={conta} />
+          </TableCell>
+        </TableRow>
+      )}
     </>
   );
 }
 
-/** Motivo que não bloqueia o resultado (custo parcial): aparece como marca ao lado. */
-const MarcaCusto = ({ f }: { f: FamiliaPainel }) =>
-  f.motivo === 'custo_parcial' || f.fonteCusto === 'parcial' || f.fonteCusto === 'estimado'
-    ? <StatusPill tone="neutral" className="ml-1">{f.motivo === 'custo_parcial' ? MOTIVO.custo_parcial : `custo ${f.fonteCusto}`}</StatusPill>
-    : null;
-
-function Cartao({ f, liberado, historicoDesde }: { f: FamiliaPainel; liberado: boolean; historicoDesde: string | null }) {
-  const linhas: [string, ReactNode][] = [
-    ['Gasto', fmtBRL(f.custo)],
-    ['Vendas (total / direta)', `${fmtBRL(f.vendasTotais)} / ${fmtBRL(f.vendasDiretas)}`],
-    ['ROAS (total / direto)', `${razao(f.roas)} / ${razao(f.roasDireto)}`],
-    ['ACOS (total / direto) × equilíbrio', <Equilibrio key="e" f={f} liberado={liberado} />],
-    ['Lucro antes', f.lucroAntes == null ? NADA : fmtBRLSinal(f.lucroAntes)],
-    ['Resultado após Ads', <Resultado key="r" f={f} historicoDesde={historicoDesde} />],
-    ['Margem consumida', pct(f.margemConsumida)],
-  ];
+function CartaoFamilia({ f, liberado, conta, historicoDesde }: PropsFamilia) {
+  const [aberto, setAberto] = useState(false);
+  const id = useId();
   return (
-    <li className="rounded-lg border bg-card p-3">
-      <Link to={`/faturamento/sku/familia/${f.codigoPai}`} className={LINK}>{nomeFamilia(f)}</Link>
-      <MarcaCusto f={f} />
-      <dl className="mt-2 space-y-1 text-sm">
-        {linhas.map(([k, v]) => (
-          <div key={k} className="flex items-baseline justify-between gap-3">
-            <dt className="text-muted-foreground">{k}</dt>
-            <dd className="text-right tabular-nums">{v}</dd>
-          </div>
-        ))}
+    <li className="min-w-0 space-y-3 rounded-lg border border-border bg-card p-3">
+      <div className="min-w-0"><NomeFamilia f={f} /></div>
+      <dl className="space-y-2 text-sm">
+        <div className="flex items-baseline justify-between gap-3">
+          <dt className="text-muted-foreground">Gasto</dt>
+          <dd className="text-right tabular-nums">{fmtBRL(f.custo)}</dd>
+        </div>
+        <div className="flex items-start justify-between gap-3">
+          <dt className="text-muted-foreground">ACOS direto × equilíbrio</dt>
+          <dd className="text-right"><Referencia f={f} liberado={liberado} /></dd>
+        </div>
+        <div className="flex items-start justify-between gap-3">
+          <dt className="text-muted-foreground">Resultado após Ads</dt>
+          <dd className="text-right"><Resultado f={f} conta={conta} historicoDesde={historicoDesde} /></dd>
+        </div>
       </dl>
+      <BotaoDetalhes f={f} aberto={aberto} controla={id} onClick={() => setAberto(v => !v)} />
+      {aberto && (
+        <div id={id} className="border-t border-border pt-3">
+          <DetalheFamilia familia={f} conta={conta} />
+        </div>
+      )}
     </li>
   );
 }
 
+/** Ranking por gasto (ordem do domínio) com os filtros por semáforo; filtro e expansões são locais e a página
+ *  reinicia tudo pela `key` quando a seleção ou a janela mudam. */
 export function RankingFamilias({ painel, historicoDesde }: { painel: PainelAds; historicoDesde: string | null }) {
-  const [aberto, setAberto] = useState(false);
-  const { conta, familias, compartilhados, semaforoLiberado } = painel;
-  const temCompartilhado = compartilhados.length > 0;
-  const totalCompartilhado = conta?.compartilhado ?? compartilhados.reduce((s, g) => s + g.custo, 0);
-  const detalheGrupo = (g: PainelAds['compartilhados'][number]) =>
-    g.familias.length
-      ? `Grupo ${g.id}: ${g.familias.join(', ')}${g.semCodigo > 0 ? ` + ${g.semCodigo} sem código` : ''}`
-      : `Grupo ${g.id}: sem código identificado (${g.semCodigo} ${g.semCodigo === 1 ? 'anúncio' : 'anúncios'})`;
-  const naoId = conta?.naoIdentificado;
-  const num = 'text-right tabular-nums';
-  const cab = 'text-right whitespace-normal align-bottom';
-  const temLinhas = familias.length > 0 || temCompartilhado || naoId != null;
+  const [filtro, setFiltro] = useState<FiltroFamiliasAds>('todas');
+  const { conta, familias, semaforoLiberado: liberado } = painel;
+  const contagem = contarFamiliasAds(familias, liberado);
+  const atencao = contagem.acima + contagem.semEspaco;
+  const visiveis = filtrarFamiliasAds(familias, filtro, liberado);
+  const alternar = (alvo: FiltroFamiliasAds) => setFiltro(atual => (atual === alvo ? 'todas' : alvo));
+
+  // Semáforo desligado: a única mensagem é a de validação, na página.
+  const fraseAtencao = !liberado || atencao > 0
+    ? null
+    : contagem.semReferencia > 0
+      ? 'Nenhuma família avaliável acima do equilíbrio. Há famílias sem referência.'
+      : 'Nenhuma família acima do equilíbrio neste período.';
+
+  const filtros = (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
+        <KpiCard size="compact" label="Todas" infoKey="Todas::Ads" value={contagem.total}
+          ativo={filtro === 'todas'} onClick={() => setFiltro('todas')} className="sm:min-w-36" />
+        {atencao > 0 && (
+          <KpiCard size="compact" label="Em atenção" infoKey="Em atenção::Ads" value={atencao} tom="warning"
+            ativo={filtro === 'atencao'} onClick={() => alternar('atencao')} className="sm:min-w-36" />
+        )}
+        <KpiCard size="compact" label="Dentro do equilíbrio" infoKey="Dentro do equilíbrio::Ads" value={contagem.dentro}
+          tom="success" ativo={filtro === 'dentro'} onClick={() => alternar('dentro')} className="sm:min-w-36" />
+        <KpiCard size="compact" label="Sem referência" infoKey="Sem referência::Ads" value={contagem.semReferencia}
+          ativo={filtro === 'sem_referencia'} onClick={() => alternar('sem_referencia')} className="sm:min-w-36" />
+      </div>
+      {fraseAtencao && <p className="text-sm text-muted-foreground">{fraseAtencao}</p>}
+    </div>
+  );
+
+  const props = (f: FamiliaPainel) => ({ f, liberado, conta, historicoDesde });
+  const conteudoRanking = (
+    <>
+      <div className="hidden rounded-lg border border-border xl:block">
+        <Table aria-label="Famílias por gasto" className="table-fixed">
+          <TableHeader>
+            <TableRow>
+              <TableHead scope="col" className="w-[34%] px-3 align-bottom whitespace-normal">Família</TableHead>
+              <TableHead scope="col" className="w-[14%] px-3 text-right align-bottom whitespace-normal">Gasto</TableHead>
+              <TableHead scope="col" className="w-[22%] px-3 text-right align-bottom whitespace-normal">ACOS direto × equilíbrio</TableHead>
+              <TableHead scope="col" className="w-[24%] px-3 text-right align-bottom whitespace-normal">Resultado após Ads</TableHead>
+              <TableHead scope="col" className="w-[6%] px-3 text-right align-bottom whitespace-normal"><span className="sr-only">Detalhes</span></TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {visiveis.map(f => <LinhaFamilia key={f.codigoPai} {...props(f)} />)}
+          </TableBody>
+        </Table>
+      </div>
+      <ul aria-label="Famílias por gasto em cartões" className="grid gap-3 md:grid-cols-2 xl:hidden">
+        {visiveis.map(f => <CartaoFamilia key={f.codigoPai} {...props(f)} />)}
+      </ul>
+    </>
+  );
 
   return (
-    <section aria-label="Ranking de famílias">
-      <h2 className="mb-2 text-sm font-medium">Famílias por gasto</h2>
-
-      {!familias.length && <p className="mb-2 text-sm text-muted-foreground">Nenhum gasto de Ads por família no período.</p>}
-
-      <ul className="space-y-2 md:hidden">
-        {familias.map((f) => <Cartao key={f.codigoPai} f={f} liberado={semaforoLiberado} historicoDesde={historicoDesde} />)}
-      </ul>
-
-      {temLinhas && (
-        <div className="hidden rounded-lg border md:block">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="align-bottom">Família</TableHead>
-                <TableHead className={cab}>Gasto</TableHead>
-                <TableHead className={cab}>Vendas (total / direta)</TableHead>
-                <TableHead className={cab}>ROAS (total / direto)</TableHead>
-                <TableHead className={cab}>ACOS (total / direto) × equilíbrio</TableHead>
-                <TableHead className={cab}>Lucro antes</TableHead>
-                <TableHead className={cab}>Resultado após Ads</TableHead>
-                <TableHead className={cab}>Margem consumida</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {familias.map((f) => (
-                <TableRow key={f.codigoPai}>
-                  <TableCell className="min-w-[12rem] max-w-[18rem] whitespace-normal break-words">
-                    <Link to={`/faturamento/sku/familia/${f.codigoPai}`} className={LINK}>{nomeFamilia(f)}</Link>
-                    <MarcaCusto f={f} />
-                  </TableCell>
-                  <TableCell className={num}>{fmtBRL(f.custo)}</TableCell>
-                  <TableCell className={num}><Par total={fmtBRL(f.vendasTotais)} direto={fmtBRL(f.vendasDiretas)} rotulo="direta" /></TableCell>
-                  <TableCell className={num}><Par total={razao(f.roas)} direto={razao(f.roasDireto)} rotulo="direto" /></TableCell>
-                  <TableCell className={num}><Equilibrio f={f} liberado={semaforoLiberado} /></TableCell>
-                  <TableCell className={num}>{f.lucroAntes == null ? NADA : fmtBRLSinal(f.lucroAntes)}</TableCell>
-                  <TableCell className={`${num} max-w-[11rem] whitespace-normal`}><Resultado f={f} historicoDesde={historicoDesde} /></TableCell>
-                  <TableCell className={num}>{pct(f.margemConsumida)}</TableCell>
-                </TableRow>
-              ))}
-              {temCompartilhado && (
-                <Fragment>
-                  <TableRow className="bg-muted/30">
-                    <TableCell className="whitespace-normal">
-                      <button type="button" aria-expanded={aberto} onClick={() => setAberto((v) => !v)} className={LINK}>
-                        Compartilhado entre famílias ({compartilhados.length} {compartilhados.length === 1 ? 'grupo' : 'grupos'})
-                      </button>
-                    </TableCell>
-                    <TableCell className={num}>{fmtBRL(totalCompartilhado)}</TableCell>
-                    <TableCell colSpan={6} />
-                  </TableRow>
-                  {aberto && compartilhados.map((g) => (
-                    <TableRow key={g.id} className="text-muted-foreground">
-                      <TableCell className="whitespace-normal">{detalheGrupo(g)}</TableCell>
-                      <TableCell className={num}>{fmtBRL(g.custo)}</TableCell>
-                      <TableCell colSpan={6} />
-                    </TableRow>
-                  ))}
-                </Fragment>
-              )}
-              {naoId != null && (
-                <TableRow className="bg-muted/30">
-                  <TableCell className="whitespace-normal">Gasto de Ads não identificado</TableCell>
-                  <TableCell className={num}>{fmtBRL(naoId)}</TableCell>
-                  <TableCell colSpan={6} />
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-
-      {temCompartilhado && (
-        <div className="mt-2 text-sm md:hidden">
-          <button type="button" aria-expanded={aberto} onClick={() => setAberto((v) => !v)} className={LINK}>
-            Compartilhado entre famílias: {fmtBRL(totalCompartilhado)}
-          </button>
-          {aberto && (
-            <ul className="mt-1 space-y-1 text-muted-foreground">
-              {compartilhados.map((g) => <li key={g.id}>{detalheGrupo(g)} — {fmtBRL(g.custo)}</li>)}
-            </ul>
-          )}
-        </div>
-      )}
-      {naoId != null && <p className="mt-1 text-sm text-muted-foreground md:hidden">Gasto de Ads não identificado: {fmtBRL(naoId)}</p>}
-    </section>
+    <div role="region" aria-label="Ranking de famílias">
+      <Section title="Famílias por gasto" description="ACOS direto comparado à margem observada.">
+        {familias.length === 0
+          ? <p className="text-sm text-muted-foreground">Nenhum gasto de Ads por família no período.</p>
+          : <>{filtros}{conteudoRanking}</>}
+      </Section>
+    </div>
   );
 }

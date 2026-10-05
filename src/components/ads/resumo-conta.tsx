@@ -5,11 +5,8 @@ import { StatusPill } from '@/components/ui/status-pill';
 import { fmtBRLSinal, fmtBRL } from '@/lib/formato';
 import { cn } from '@/lib/utils';
 import type { ContaPainel } from '@/lib/ads-painel';
+import { NADA, pct, razao } from '@/lib/ads-apresentacao';
 import { dataBRT } from '@/components/sku-dossie/formato-dossie';
-
-const NADA = '—';
-export const pct = (v: number | null) => (v == null ? NADA : `${(v * 100).toFixed(1).replace('.', ',')}%`);
-export const razao = (v: number | null) => (v == null ? NADA : `${v.toFixed(2).replace('.', ',')}×`);
 
 const VALOR_PRIMARIO = 'text-2xl font-semibold tracking-tight tabular-nums sm:text-3xl';
 

@@ -94,11 +94,6 @@ describe('Ads', () => {
     montar({ ...PAINEL, familias: [{ ...PAINEL.familias[0], custoCompartilhado: 20, resultado: null, semaforo: null, motivo: 'compartilhado' }] });
     expect(within(screen.getByRole('row', { name: /Fam A/ })).getByText(/gasto compartilhado com outra família/i)).toBeInTheDocument();
   });
-  it('semáforo em validação: mostra o ACOS de equilíbrio sem verde/vermelho', () => {
-    montar({ ...PAINEL, semaforoLiberado: false, familias: [{ ...PAINEL.familias[0], semaforo: null }] });
-    expect(screen.getByText(/semáforo em validação/i)).toBeInTheDocument();
-    expect(within(screen.getByRole('row', { name: /Fam A/ })).queryByText(/dentro/i)).not.toBeInTheDocument();
-  });
   it('mostra desde quando há vendas; com histórico incompleto, lucro e resultado não aparecem', () => {
     montar({ ...PAINEL, conta: { ...PAINEL.conta!, lucroAntes: null, resultado: null, fonteCusto: null },
       familias: [{ ...PAINEL.familias[0], lucroAntes: null, resultado: null, motivo: 'historico' }] },
@@ -338,34 +333,234 @@ describe('Ads', () => {
     expect(screen.queryByText('Resultado após Ads')).not.toBeInTheDocument();
   });
 
-  it('compartilhado e não identificado: valor na coluna Gasto', () => {
+  it('compartilhado e não identificado ficam em Gastos associados, fora das famílias', () => {
     montar();
-    for (const nome of [/Compartilhado entre famílias/, /Gasto de Ads não identificado/]) {
-      const celulas = within(screen.getByRole('row', { name: nome })).getAllByRole('cell');
-      expect(celulas[0]).not.toHaveAttribute('colspan');
-      expect(celulas[1]).toHaveTextContent(/R\$/);
-    }
-    const cab = screen.getAllByRole('columnheader');
-    expect(cab[1]).toHaveTextContent('Gasto');
+    const associados = within(screen.getByRole('region', { name: 'Gastos associados' }));
+    expect(associados.getByRole('button', { name: /Compartilhado entre famílias/ })).toBeInTheDocument();
+    expect(associados.getByText(/R\$\s*20,00/)).toBeInTheDocument();
+    expect(associados.getByText('Gasto de Ads não identificado')).toBeInTheDocument();
+    expect(associados.getByText(/R\$\s*30,00/)).toBeInTheDocument();
+    const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+    expect(tabela.queryByRole('row', { name: /Compartilhado|não identificado/ })).not.toBeInTheDocument();
+    expect(tabela.getAllByRole('columnheader')[1]).toHaveTextContent('Gasto');
   });
   it('ordem total / direto em toda a tela', () => {
     montar();
+    fireEvent.click(screen.getByRole('button', { name: 'Composição e indicadores' }));
+    fireEvent.click(within(screen.getByRole('row', { name: /Fam A/ })).getByRole('button', { name: 'Ver detalhes de Fam A' }));
     expect(screen.queryByText(/direta? \/ total/)).not.toBeInTheDocument();
     expect(screen.getAllByText(/ROAS \(total \/ direto\)/).length).toBeGreaterThan(1);
   });
   it('sem família com gasto: mensagem em vez de tabela vazia', () => {
     montar({ ...PAINEL, conta: null, contaMotivo: 'cobertura', familias: [], compartilhados: [] });
-    expect(screen.getAllByText('Nenhum gasto de Ads por família no período.').length).toBeGreaterThan(0);
+    expect(screen.getByText('Nenhum gasto de Ads por família no período.')).toBeVisible();
+    expect(screen.queryByRole('table', { name: 'Famílias por gasto' })).not.toBeInTheDocument();
   });
   it('grupo sem família (só anúncio sem código): rótulo "sem código identificado"', () => {
     montar({ ...PAINEL, compartilhados: [{ id: 7, custo: 2.02, familias: [], semCodigo: 1 }] });
-    fireEvent.click(screen.getAllByRole('button', { name: /Compartilhado|sem código/ })[0]);
-    expect(screen.getAllByText(/Grupo 7: sem código identificado/).length).toBeGreaterThan(0);
+    const associados = within(screen.getByRole('region', { name: 'Gastos associados' }));
+    fireEvent.click(associados.getByRole('button', { name: /Compartilhado entre famílias/ }));
+    expect(associados.getByText(/Grupo 7: sem código identificado \(1 anúncio\)/)).toBeInTheDocument();
     expect(screen.queryByText(/sem família \+/)).not.toBeInTheDocument();
   });
   it('motivo histórico com a data da 1ª venda', () => {
     montar({ ...PAINEL, familias: [{ ...PAINEL.familias[0], lucroAntes: null, resultado: null, motivo: 'historico' }] },
       { historicoDesde: '2026-08-03T15:00:00.000Z' });
     expect(within(screen.getByRole('row', { name: /Fam A/ })).getByText(/antes do histórico de vendas \(desde 03\/08\/2026\)/)).toBeInTheDocument();
+  });
+
+  it('os cartões de contagem filtram sem alterar gastos associados', () => {
+    montar({
+      ...PAINEL,
+      familias: [
+        PAINEL.familias[0],
+        { ...PAINEL.familias[1], semaforo: 'acima', acosEquilibrio: 0.2 },
+      ],
+    });
+
+    const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+    const associados = screen.getByRole('region', { name: 'Gastos associados' });
+    const antes = associados.textContent;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Em atenção' }));
+
+    expect(tabela.queryByRole('row', { name: /Fam A/ })).not.toBeInTheDocument();
+    expect(tabela.getByRole('row', { name: /Fam B/ })).toBeInTheDocument();
+    expect(associados.textContent).toBe(antes);
+    expect(screen.getByRole('button', { name: 'Remover filtro Em atenção' }))
+      .toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('zero em atenção mostra frase sem botão de atenção', () => {
+    montar();
+
+    expect(screen.queryByRole('button', { name: /Filtrar por Em atenção/ }))
+      .not.toBeInTheDocument();
+    expect(screen.getByText(
+      'Nenhuma família avaliável acima do equilíbrio. Há famílias sem referência.',
+    )).toBeVisible();
+  });
+
+  it('zero em atenção com todas avaliáveis tem a frase própria', () => {
+    montar({ ...PAINEL, familias: [PAINEL.familias[0]] });
+
+    expect(screen.getByText('Nenhuma família acima do equilíbrio neste período.')).toBeVisible();
+    // Dentro e Sem referência ficam sempre visíveis, mesmo com zero (§2.3); só Em atenção some.
+    expect(screen.getByRole('button', { name: 'Filtrar por Sem referência' })).toHaveTextContent('0');
+    expect(screen.getByRole('button', { name: 'Filtrar por Dentro do equilíbrio' })).toHaveTextContent('1');
+  });
+
+  it('sem venda direta tem texto explícito e preserva o semáforo', () => {
+    montar({
+      ...PAINEL,
+      familias: [{
+        ...PAINEL.familias[0],
+        vendasDiretas: 0,
+        acosDireto: null,
+        acosEquilibrio: 0.25,
+        semaforo: 'acima',
+      }],
+    });
+
+    const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+
+    expect(linha.getByText('sem venda direta')).toBeVisible();
+    expect(linha.getByText('Acima do equilíbrio')).toBeVisible();
+  });
+
+  it.each(['parcial', 'estimado'] as const)(
+    'família mantém custo %s no resultado fechado',
+    fonteCusto => {
+      montar({
+        ...PAINEL,
+        familias: [{
+          ...PAINEL.familias[0],
+          fonteCusto,
+          motivo: fonteCusto === 'parcial' ? 'custo_parcial' : null,
+          semaforo: fonteCusto === 'parcial' ? null : 'dentro',
+        }],
+      });
+
+      const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+      const resultado = linha.getByRole('group', { name: 'Resultado após Ads' });
+
+      expect(resultado).toHaveTextContent(
+        fonteCusto === 'parcial' ? 'custo parcial: sem semáforo' : 'custo estimado',
+      );
+      expect(linha.getByRole('button', { name: 'Ver detalhes de Fam A' }))
+        .toHaveAttribute('aria-expanded', 'false');
+    },
+  );
+
+  it('resultado bloqueado conserva travessão e motivo', () => {
+    montar({
+      ...PAINEL,
+      familias: [{
+        ...PAINEL.familias[0],
+        resultado: null,
+        custoCompartilhado: 20,
+        semaforo: null,
+        motivo: 'compartilhado',
+      }],
+    });
+
+    const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+    const resultado = linha.getByRole('group', { name: 'Resultado após Ads' });
+
+    expect(resultado).toHaveTextContent('—');
+    expect(resultado).toHaveTextContent('gasto compartilhado com outra família');
+  });
+
+  it('conta divergente marca as linhas com a indicação curta', () => {
+    montar({ ...PAINEL, conta: { ...PAINEL.conta!, divergente: true, naoIdentificado: null, naoIdentificadoPct: null } });
+
+    const resultado = within(screen.getByRole('row', { name: /Fam A/ })).getByRole('group', { name: 'Resultado após Ads' });
+    expect(resultado).toHaveTextContent('Composição da conta divergente');
+    expect(resultado).toHaveTextContent(/R\$\s*200,00/);
+    expect(screen.getAllByText(/não fecha com o total da conta/)).toHaveLength(1);
+  });
+
+  it('expande métricas secundárias e preserva o link do nome', () => {
+    montar();
+
+    const linha = within(screen.getByRole('row', { name: /Fam A/ }));
+    const botao = linha.getByRole('button', { name: 'Ver detalhes de Fam A' });
+
+    fireEvent.click(botao);
+
+    expect(botao).toHaveAttribute('aria-expanded', 'true');
+
+    const id = botao.getAttribute('aria-controls');
+    if (!id) throw new Error('Expansão sem aria-controls');
+
+    const detalhe = document.getElementById(id);
+    if (!detalhe) throw new Error('Conteúdo da expansão não encontrado');
+
+    expect(within(detalhe).getByText('ROAS (total / direto)')).toBeVisible();
+    expect(within(detalhe).getByText('Vendas atribuídas (total / direta)'))
+      .toBeVisible();
+    expect(linha.getByRole('link', { name: /Fam A/ }))
+      .toHaveAttribute('href', '/faturamento/sku/familia/A');
+  });
+
+  it('detalhe informa o não identificado sem ratear', () => {
+    montar();
+    const botao = within(screen.getByRole('row', { name: /Fam A/ }))
+      .getByRole('button', { name: 'Ver detalhes de Fam A' });
+    fireEvent.click(botao);
+    const detalhe = document.getElementById(botao.getAttribute('aria-controls') ?? '');
+    if (!detalhe) throw new Error('Conteúdo da expansão não encontrado');
+    expect(within(detalhe).getByText(
+      '30,0% do gasto da conta não tem família identificada e não foi rateado entre famílias.',
+    )).toBeVisible();
+  });
+
+  it('cartão e linha usam ids de expansão distintos', () => {
+    montar();
+    const lista = within(screen.getByRole('list', { name: 'Famílias por gasto em cartões' }));
+    const botaoCartao = lista.getByRole('button', { name: 'Ver detalhes de Fam A' });
+    const botaoLinha = within(screen.getByRole('row', { name: /Fam A/ }))
+      .getByRole('button', { name: 'Ver detalhes de Fam A' });
+    expect(botaoCartao.getAttribute('aria-controls')).toBeTruthy();
+    expect(botaoCartao.getAttribute('aria-controls')).not.toBe(botaoLinha.getAttribute('aria-controls'));
+  });
+
+  it('semáforo em validação tem uma única mensagem', () => {
+    montar({
+      ...PAINEL,
+      semaforoLiberado: false,
+      familias: [{ ...PAINEL.familias[0], semaforo: null }],
+    });
+
+    expect(screen.getByText(/Semáforo em validação:/)).toBeVisible();
+    expect(screen.getAllByText(/Semáforo em validação:/)).toHaveLength(1);
+    expect(within(screen.getByRole('row', { name: /Fam A/ }))
+      .queryByText('Dentro do equilíbrio')).not.toBeInTheDocument();
+  });
+
+  it('trocar o período reinicia filtro e detalhes; refetch da mesma janela preserva', () => {
+    const familias = [PAINEL.familias[0], { ...PAINEL.familias[1], semaforo: 'acima' as const, acosEquilibrio: 0.2 }];
+    const view = montar({ ...PAINEL, familias });
+    const ultimo = (): RetornoAdsPainel => hook.mock.results.at(-1)?.value;
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filtrar por Em atenção' }));
+    fireEvent.click(within(screen.getByRole('row', { name: /Fam B/ }))
+      .getByRole('button', { name: 'Ver detalhes de Fam B' }));
+
+    // Refetch da mesma janela: filtro e detalhe permanecem.
+    hook.mockReturnValue({ ...ultimo(), isFetching: true });
+    view.rerender(<MemoryRouter><Ads /></MemoryRouter>);
+    expect(screen.getByRole('button', { name: 'Remover filtro Em atenção' }))
+      .toHaveAttribute('aria-pressed', 'true');
+    expect(within(screen.getByRole('table', { name: 'Famílias por gasto' }))
+      .getByRole('button', { name: 'Ver detalhes de Fam B' })).toHaveAttribute('aria-expanded', 'true');
+
+    // Troca de período: volta a todas, detalhes fechados.
+    hook.mockReturnValue({ ...ultimo(), isFetching: false, janela: { desde: '2026-09-27', ate: '2026-10-03' } });
+    fireEvent.click(screen.getByRole('button', { name: '7 dias' }));
+    expect(screen.queryByRole('button', { name: 'Remover filtro Em atenção' })).not.toBeInTheDocument();
+    const tabela = within(screen.getByRole('table', { name: 'Famílias por gasto' }));
+    expect(tabela.getByRole('row', { name: /Fam A/ })).toBeInTheDocument();
+    expect(tabela.getByRole('button', { name: 'Ver detalhes de Fam B' })).toHaveAttribute('aria-expanded', 'false');
   });
 });
