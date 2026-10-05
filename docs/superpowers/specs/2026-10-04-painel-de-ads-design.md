@@ -34,7 +34,7 @@ A Avil investe em Product Ads e decide pelo ACOS/ROAS do ML, que não conhecem o
 
 ## Escopo do MVP
 
-**Fatia 0 — spike (só GET, ~½ dia).** `GET /marketplace/advertising/MLB/advertisers/{adv}/product_ads/ad_groups/search` com datas arbitrárias e `metrics_summary=true`: medir resumo × soma paginada em 7/30/90 dias e conferir com o relatório do Mercado Ads. Decide como o **total da conta por período** e o **gasto não identificado por período** são obtidos (hoje o banco só guarda `custo_resumo` de 90 dias). Sem esse número a D2 não fecha para 7/30 dias.
+**Fatia 0 — spike ✅ concluído em 2026-10-04 ([spike 054](../../spikes/054-total-de-ads-por-periodo.md)).** Resumo dos grupos, resumo das campanhas e Σ da série diária do anunciante batem ao centavo em 7/30/90 dias nas 3 orgs; a série diária é densa. Desenho resultante: **gravar o total diário da conta** (`campaigns/search?aggregation_type=DAILY&filters[status]=active,paused,deleted,error`, relido nos mesmos 15 dias) e calcular **não identificado(período) = Σ conta − Σ grupos**. O gasto não identificado é antigo (Avil: 0 % em 7 d, 0,03 % em 30 d, 2,6 % em 90 d), então o % do aviso (D2) passa a ser **do período exibido**, não fixo em 90 dias como a Ruling 2c-8.
 
 **Fatia 1 — resultado da conta.** Cartão de topo: lucro antes de Ads (vendas do período, margem real) → despesa de Ads (identificada + não identificada) → resultado após Ads; % da margem consumida; ROAS/ACOS total e direto; selo provisório (D3). Inclui a mudança do dossiê SKU (D2).
 

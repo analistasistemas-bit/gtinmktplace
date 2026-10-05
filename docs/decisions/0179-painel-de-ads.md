@@ -1,6 +1,6 @@
 # ADR-0179 — Painel de Ads com margem real (I2)
 
-**Status:** Proposto (2026-10-04) — aguardando a Fatia 0 (spike de período) e o plano
+**Status:** Proposto (2026-10-04) — Fatia 0 (spike 054) concluída; aguardando o plano
 **Data:** 2026-10-04
 **Relacionado:** [ADR-0172](0172-vendas-sku-analise-por-variacao.md) (Fatia 2c: coleta de Ads e dossiê SKU),
 [ADR-0109](0109-custo-congelado-por-venda.md) (custo congelado por venda),
@@ -27,8 +27,11 @@ está indisponível nas 3 orgs pela regra de gasto fora dos grupos.
 3. **ACOS de equilíbrio** (margem % antes de Ads da família) como referência, com semáforo contra o ACOS real;
    sem meta configurável no MVP.
 4. **Tela própria `/ads`**, módulo por org, nasce desligado; ligado na Avil no lançamento.
-5. **Só leitura no ML.** Total da conta por período depende da Fatia 0 (spike de `ad_groups/search` com datas e
-   `metrics_summary`); sem ela, 7/30 dias não fecham.
+5. **Só leitura no ML.** Total da conta por período vem de uma **série diária do anunciante** gravada por org
+   (`campaigns/search?aggregation_type=DAILY`, todos os status), relida nos 15 dias da atribuição em aberto;
+   **não identificado(período) = Σ conta − Σ grupos** e o % do aviso é o do período exibido, não fixo em 90 dias
+   (substitui a Ruling 2c-8 para este fim). Medido no [spike 054](../spikes/054-total-de-ads-por-periodo.md):
+   4 fontes do ML batem ao centavo; Avil 0,03 % não identificado em 30 dias.
 
 ## Alternativas descartadas
 
