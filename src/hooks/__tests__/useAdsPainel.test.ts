@@ -99,7 +99,7 @@ describe('useAdsPainel', () => {
     const r2 = render();
     await waitFor(() => expect(r2.result.current.painel).not.toBeNull());
     expect(ultimaChamada().lucroConta).toEqual({ lucro: null, fonteCusto: 'sem_custo' });
-    expect(ultimaChamada().lucroPorFamilia.get('A')).toEqual({ nome: 'A', lucro: null, brutoComCusto: 0, fonteCusto: 'sem_custo' });
+    expect(ultimaChamada().lucroPorFamilia.get('A')).toEqual({ nome: 'A', lucro: null, brutoComCusto: 0, fonteCusto: 'sem_custo', markup: null });
   });
 
   it('(b) códigos buscados para os MLBs únicos e ordenados de todos os grupos', async () => {
