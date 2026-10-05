@@ -31,6 +31,9 @@ export interface PagamentoMP {
   transaction_details?: {
     net_received_amount?: number | null; // líquido que o vendedor recebe
   } | null;
+  /** Tarifas do pagamento. `coupon_fee` pago pelo `collector` = cupom bancado pelo vendedor, que o
+   *  `/orders` do ML não mostra (ADR-0180). */
+  fee_details?: Array<{ type?: string | null; fee_payer?: string | null; amount?: number | null }> | null;
 }
 
 const MP_API = 'https://api.mercadopago.com';

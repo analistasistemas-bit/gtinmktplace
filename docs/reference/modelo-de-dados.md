@@ -774,7 +774,12 @@ Uma linha por pedido do ML (webhook + backfill + reconciliação).
 Pedido: `order_id` (único com `user_id`), `pack_id`, `status`, `status_detail`,
 `date_created`, `date_closed`. Comprador: `comprador_id/nick/nome`, `cidade`, `uf` (ADR-0039).
 Valores: `total_amount`, `paid_amount`, `sale_fee_total`, `frete_vendedor`, `liquido`
-(`bruto − comissão − frete real`, não vem do MP desde o ADR-0042), `estorno`, `currency`.
+(`bruto − comissão − frete real − cupom_vendedor`, não vem do MP desde o ADR-0042), `estorno`, `currency`.
+**`cupom_vendedor` numeric** (*migration `20261005143525_cupom_vendedor.sql`*, ADR-0180): cupom bancado
+pelo vendedor = Σ `fee_details[type=coupon_fee, fee_payer=collector]` dos pagamentos no MP — o
+`/orders` do ML não o mostra. `null` = MP não lido (preservado como `estorno` por `preservarDadosMP`).
+Valor da venda em toda tela = `total_amount − cupom_vendedor` (`brutoDaVenda`); `total_amount` segue
+cru do ML e é o que o billing da plataforma usa (decisão do ADR-0180).
 Envio: `shipping_id/status/substatus/logistic`, `tracking_number`.
 Financeiro: `money_release_date`, `liberacao_notificada_em` (ADR-0040),
 `sacado_em`/`sacado_por` (*migration `20260702162832_ml_vendas_saque.sql`*) — marca manual de
@@ -831,7 +836,9 @@ fica registrado como melhoria futura, não bloqueante nesta fatia (ver `progress
 ### `ml_vendas_itens`
 Itens de um pedido. *Mesma migration + `20260623104822` + `20260627095025` (unique).*
 `venda_id` (FK→ml_vendas, cascade), `ml_item_id`, `variation_id`, `titulo`, `codigo`, `cor`,
-`ean`, `quantity`, `unit_price`, `sale_fee`, `is_publiai`.
+`ean`, `quantity`, `unit_price`, `sale_fee`, `is_publiai`, `cupom_vendedor` (numeric not null default
+0, ADR-0180 — fatia do cupom do vendedor da order; valor do item = `unit_price × quantity −
+cupom_vendedor`, via `valorDoItem`, e é a base do imposto).
 `sale_fee` é a tarifa do ML **por unidade**; a comissão do pedido (`ml_vendas.sale_fee_total`)
 é `Σ(sale_fee × quantity)` — sem `× quantity` o líquido de pedidos com qtd>1 fica inflado.
 

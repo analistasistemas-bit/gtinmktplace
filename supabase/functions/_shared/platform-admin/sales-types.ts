@@ -11,6 +11,8 @@ export interface VendaItem {
   sale_fee: number;
   is_publiai: boolean;
   custo_congelado?: number | null;
+  /** Fatia do cupom bancado pelo vendedor neste item (ADR-0180). Use `valorDoItem`. */
+  cupom_vendedor?: number | null;
 }
 
 export interface Venda {
@@ -30,6 +32,8 @@ export interface Venda {
   total_amount: number;
   paid_amount: number | null;
   liquido: number | null;
+  /** Cupom bancado pelo vendedor (ADR-0180), já descontado de `liquido`. Use `brutoDaVenda`. */
+  cupom_vendedor?: number | null;
   sale_fee_total: number | null;
   frete_vendedor: number | null;
   estorno: number | null;

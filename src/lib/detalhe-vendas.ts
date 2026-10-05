@@ -1,5 +1,5 @@
 import type { Venda } from './faturamento';
-import { ehFaturavel, ratearLiquidoPorFrete, impostoDoItem, type CustoResolver, type PesoResolver, type AliquotaResolver } from './resumo-vendas';
+import { ehFaturavel, ratearLiquidoPorFrete, impostoDoItem, brutoDaVenda, valorDoItem, type CustoResolver, type PesoResolver, type AliquotaResolver } from './resumo-vendas';
 import { canonizarItem, type MapaCanonico } from './anuncio-canonico';
 import { round2 } from './formato';
 import { normalizarParaBusca } from './texto';
@@ -162,7 +162,7 @@ export function montarDetalheVendas(
     if (!ehFaturavel(v.status)) continue;
     const pk = String(v.pack_id ?? v.order_id);
     liquidoPorPack.set(pk, (liquidoPorPack.get(pk) ?? 0) + liquidoPedido(v));
-    const valorV = v.itens.reduce((s, it) => s + it.unit_price * it.quantity, 0);
+    const valorV = v.itens.reduce((s, it) => s + valorDoItem(it), 0);
     valorItensPorPack.set(pk, (valorItensPorPack.get(pk) ?? 0) + valorV);
   }
 
@@ -172,7 +172,7 @@ export function montarDetalheVendas(
 
   for (const v of vendas) {
     if (!ehFaturavel(v.status)) continue;
-    total += v.total_amount;
+    total += brutoDaVenda(v);
     pedidos += 1;
     const pk = String(v.pack_id ?? v.order_id);
     const liqPack = round2(liquidoPorPack.get(pk) ?? 0);
@@ -184,7 +184,7 @@ export function montarDetalheVendas(
       const key = it.ml_item_id ? canonizarItem(it.ml_item_id, canonico, it.ean) : it.id;
       const g = grupos.get(key)
         ?? { unidades: 0, valor: 0, liquido: 0, comissao: 0, imposto: 0, custo: 0, temCusto: false, titulo: null, tituloDono: null, codigo: null, ean: null, publiai: it.is_publiai };
-      const valorItem = it.unit_price * it.quantity;
+      const valorItem = valorDoItem(it);
       g.unidades += it.quantity;
       g.valor += valorItem;
       g.comissao += it.sale_fee * it.quantity;

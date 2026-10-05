@@ -72,9 +72,10 @@ export function ehVendaDaConta(
   return seller === String(contaExternaId);
 }
 
-/** Líquido estimado: total − comissão ML − frete do vendedor (frete null = 0). 2 casas. */
-export function calcularLiquido(total: number, saleFee: number, frete: number | null): number {
-  return round2(total - saleFee - (frete ?? 0));
+/** Líquido estimado: total − comissão ML − frete do vendedor (frete null = 0) − cupom bancado pelo
+ *  vendedor (ADR-0180). 2 casas. */
+export function calcularLiquido(total: number, saleFee: number, frete: number | null, cupom: number | null = 0): number {
+  return round2(total - saleFee - (frete ?? 0) - (cupom ?? 0));
 }
 
 export interface VendaRow {
@@ -96,6 +97,8 @@ export interface VendaRow {
   estorno: number | null;
   /** Data de liberação do recebimento (MP money_release_date). null = sem dado. */
   money_release_date: string | null;
+  /** Cupom bancado pelo vendedor (MP coupon_fee, ADR-0180). null = MP não lido. Já descontado do líquido. */
+  cupom_vendedor: number | null;
   currency: string;
   shipping_id: number | null;
   is_publiai: boolean;
@@ -112,6 +115,8 @@ export interface DadosPagamentoMP {
   releaseDate: string | null;
   /** order.id do pagamento (== ml_vendas.order_id). null quando o MP não informa. */
   orderId: string | null;
+  /** Σ fee_details coupon_fee pago pelo vendedor (collector) — cupom bancado por ele (ADR-0180). */
+  cupom: number;
 }
 
 export interface VendaItemRow {
@@ -127,6 +132,8 @@ export interface VendaItemRow {
   unit_price: number;
   sale_fee: number;
   is_publiai: boolean;
+  /** Fatia do cupom do vendedor da order neste item (ADR-0180). */
+  cupom_vendedor: number;
 }
 
 /** Recorte do pedido do ML (/orders/{id}) usado no mapeamento. */
@@ -161,7 +168,7 @@ export interface PedidoML {
     bundle?: { parent_item?: { id?: string | null } | null } | null;
     tags?: string[] | null;
   }> | null;
-  payments?: Array<{ id?: number | string | null } | null> | null;
+  payments?: Array<{ id?: number | string | null; status?: string | null } | null> | null;
 }
 
 export interface MapearOpts {
@@ -239,13 +246,31 @@ export function escolherCompradorNome(
  * cancelado no MP) e sobrescreve normalmente. Pura.
  */
 export function preservarDadosMP(
-  novo: { estorno: number | null; money_release_date: string | null },
-  anterior: { estorno: number | null; money_release_date: string | null } | null,
-): { estorno: number | null; money_release_date: string | null } {
+  novo: { estorno: number | null; money_release_date: string | null; cupom_vendedor?: number | null },
+  anterior: { estorno: number | null; money_release_date: string | null; cupom_vendedor?: number | null } | null,
+): { estorno: number | null; money_release_date: string | null; cupom_vendedor: number | null } {
   return {
     estorno: novo.estorno ?? anterior?.estorno ?? null,
     money_release_date: novo.money_release_date ?? anterior?.money_release_date ?? null,
+    // ADR-0180: sem esta preservação, um sync com o MP fora do ar reinflaria o líquido pelo cupom.
+    cupom_vendedor: novo.cupom_vendedor ?? anterior?.cupom_vendedor ?? null,
   };
+}
+
+/**
+ * Cupom do vendedor da order rateado pelos itens (unit_price × qty), resíduo de centavos no item de
+ * maior valor. Na prática toda order do ML tem 1 item (0 de 4.801 com 2+, medido em 2026-10-05). Pura.
+ */
+export function ratearCupomNosItens(
+  itens: Array<{ unit_price: number; quantity: number }>, cupom: number | null,
+): number[] {
+  const valores = itens.map((it) => it.unit_price * it.quantity);
+  const base = valores.reduce((s, v) => s + v, 0);
+  if (!cupom || base <= 0) return itens.map(() => 0);
+  const partes = valores.map((v) => round2((cupom * v) / base));
+  const idxMaior = valores.indexOf(Math.max(...valores));
+  partes[idxMaior] = round2(partes[idxMaior] + cupom - partes.reduce((s, p) => s + p, 0));
+  return partes;
 }
 
 const num = (v: unknown): number | null => {
@@ -266,7 +291,7 @@ export function mapearPedidoParaVenda(
   // só extrai o que o ML já manda em bundle.parent_item.
   const kitItemId = itensRaw.map((oi) => oi?.bundle?.parent_item?.id).find((id) => id != null) ?? null;
 
-  const itens: VendaItemRow[] = itensRaw.map((oi) => {
+  const itens: Omit<VendaItemRow, 'cupom_vendedor'>[] = itensRaw.map((oi) => {
     const mlItemId = oi?.item?.id ?? null;
     const variationId = num(oi?.item?.variation_id ?? null);
     // sale_fee do ML é a tarifa POR UNIDADE; a comissão do pedido é sale_fee × quantidade.
@@ -327,18 +352,25 @@ export function mapearPedidoParaVenda(
   // Estorno/liberação seguem vindo do MP (informação confiável por pagamento). Ver ADR-0042.
   let estorno: number | null = null;
   let releaseDate: string | null = null;
+  let cupom: number | null = null;
   if (opts.liquidoPorPayment) {
-    let somaEstorno = 0, achou = false;
+    let somaEstorno = 0, somaCupom = 0, achou = false, faltouAprovado = false;
     for (const pg of pedido.payments ?? []) {
       const id = pg?.id != null ? String(pg.id) : null;
       const d = id ? opts.liquidoPorPayment.get(id) : undefined;
       if (d) {
         somaEstorno += d.estorno;
+        somaCupom += d.cupom ?? 0;
         if (d.releaseDate && (!releaseDate || d.releaseDate > releaseDate)) releaseDate = d.releaseDate;
         achou = true;
+      } else if (pg?.status === 'approved' || pg?.status === 'refunded') {
+        faltouAprovado = true;
       }
     }
     if (achou) estorno = round2(somaEstorno);
+    // ADR-0180: cupom só com TODOS os pagamentos aprovados lidos — leitura parcial (página do MP
+    // perdida) daria um cupom menor que sobrescreveria o certo. null = preserva o gravado.
+    if (achou && !faltouAprovado) cupom = round2(somaCupom);
   }
 
   const venda: VendaRow = {
@@ -355,14 +387,16 @@ export function mapearPedidoParaVenda(
     paid_amount: num(pedido.paid_amount ?? null),
     sale_fee_total: saleFeeTotal,
     frete_vendedor: frete,
-    liquido: calcularLiquido(total, saleFeeTotal, frete),
+    liquido: calcularLiquido(total, saleFeeTotal, frete, cupom),
     estorno,
     money_release_date: releaseDate,
+    cupom_vendedor: cupom,
     currency: pedido.currency_id ?? 'BRL',
     shipping_id: num(pedido.shipping?.id ?? null),
     is_publiai: isPubliai,
     kit_item_id: kitItemId,
   };
 
-  return { venda, itens };
+  const cupomItens = ratearCupomNosItens(itens, cupom);
+  return { venda, itens: itens.map((it, i) => ({ ...it, cupom_vendedor: cupomItens[i] })) };
 }

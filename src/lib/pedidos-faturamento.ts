@@ -2,7 +2,7 @@
 // numa única linha — um carrinho do cliente vira um pedido, e os produtos vão para o detalhe.
 // Reaproveita o rateio de frete (ratearLiquidoPorFrete) e o custo (CustoResolver). Pura e testável.
 import type { Venda, VendaItem } from './faturamento';
-import { ehFaturavel, ratearLiquidoPorFrete, impostoDoItem, type CustoResolver, type PesoResolver, type AliquotaResolver } from './resumo-vendas';
+import { ehFaturavel, ratearLiquidoPorFrete, impostoDoItem, brutoDaVenda, valorDoItem, type CustoResolver, type PesoResolver, type AliquotaResolver } from './resumo-vendas';
 import type { FotoResolver } from './fotos-produto';
 import type { CorResolver } from './cor-produto';
 import { calcularMarkup } from './markup';
@@ -20,6 +20,8 @@ export interface ItemPedido {
   ean: string | null;
   quantity: number;
   unit_price: number;
+  /** Fatia do cupom bancado pelo vendedor neste item (ADR-0180). 0 sem cupom. */
+  cupom_vendedor: number;
   /** Storage path da foto do produto (bucket `imagens`). null = sem foto cadastrada. */
   imagem_path: string | null;
   /** Custo total do item (custo unitário × qtd), em R$. null = sem custo cadastrado. */
@@ -80,7 +82,7 @@ export interface Pedido {
   unidades: number;
   /** Só itens de orders faturáveis — o que o KPI "Unidades" conta (pack misto não conta o cancelado). */
   unidadesFaturaveis: number;
-  /** Valor do checkout: soma de total_amount dos orders do pedido, faturáveis ou não. */
+  /** Valor do checkout: soma de total_amount − cupom do vendedor dos orders do pedido, faturáveis ou não. */
   bruto: number;
   /** Bruto que conta como faturamento (ADR-0038): só os membros `paid/partially_refunded/refunded`.
    *  Difere de `bruto` quando o pack mistura orders canceladas com pagas, e é 0 no pedido totalmente
@@ -124,7 +126,7 @@ function custoDoItem(it: VendaItem, resolver?: CustoResolver): number | null {
 
 /**
  * Agrupa as vendas (linhas de ml_vendas, 1 por order_id) em PEDIDOS por `pack_id ?? order_id`.
- * Totais por pedido: bruto = Σ total_amount; líquido = Σ líquido rateado; frete = max (uma vez);
+ * Totais por pedido: bruto = Σ (total_amount − cupom do vendedor, ADR-0180); líquido = Σ líquido rateado; frete = max (uma vez);
  * custo = Σ custo dos itens. Markup do pedido = (líquido − custo) ÷ custo. Por item, o líquido é
  * rateado pelo valor bruto do item e o markup recalculado. Ordena do mais recente ao mais antigo.
  */
@@ -149,9 +151,9 @@ export function agruparPorPedido(
   const pedidos: Pedido[] = [];
   for (const [chave, membros] of grupos) {
     membros.sort((a, b) => a.order_id - b.order_id);
-    const bruto = round2(membros.reduce((s, v) => s + v.total_amount, 0));
+    const bruto = round2(membros.reduce((s, v) => s + brutoDaVenda(v), 0));
     const brutoFaturavel = round2(
-      membros.reduce((s, v) => s + (ehFaturavel(v.status) ? v.total_amount : 0), 0),
+      membros.reduce((s, v) => s + (ehFaturavel(v.status) ? brutoDaVenda(v) : 0), 0),
     );
     const liquido = round2(membros.reduce((s, v) => s + liquidoMembro(v), 0));
     const freteMax = Math.max(0, ...membros.map((v) => v.frete_vendedor ?? 0));
@@ -175,15 +177,15 @@ export function agruparPorPedido(
     // líquido (que também só soma membros faturáveis; ver liquidoMembro acima).
     const valorItensFaturaveis = itensFlat
       .filter(({ faturavel }) => faturavel)
-      .reduce((s, { it }) => s + it.unit_price * it.quantity, 0);
+      .reduce((s, { it }) => s + valorDoItem(it), 0);
     // Fatia do líquido por item, com o resíduo de centavos no item faturável de maior valor (mesma
     // regra do rateio de frete): a soma dos itens bate com o líquido do pedido (Vendas SKU, ADR-0172).
     const liqItens = itensFlat.map(({ it, faturavel }) => (faturavel && valorItensFaturaveis > 0
-      ? round2((liquido * it.unit_price * it.quantity) / valorItensFaturaveis)
+      ? round2((liquido * valorDoItem(it)) / valorItensFaturaveis)
       : 0));
     let idxMaior = -1;
     itensFlat.forEach(({ it, faturavel }, i) => {
-      if (faturavel && (idxMaior < 0 || it.unit_price * it.quantity > itensFlat[idxMaior].it.unit_price * itensFlat[idxMaior].it.quantity)) idxMaior = i;
+      if (faturavel && (idxMaior < 0 || valorDoItem(it) > valorDoItem(itensFlat[idxMaior].it))) idxMaior = i;
     });
     if (idxMaior >= 0 && valorItensFaturaveis > 0) {
       liqItens[idxMaior] = round2(liqItens[idxMaior] + liquido - liqItens.reduce((s, x) => s + x, 0));
@@ -208,7 +210,7 @@ export function agruparPorPedido(
         // Item plano (filho User Products, família de 1 variação) vende sem variação, então o ML
         // não manda `variation_attributes` e `it.cor` vem nula — resolve pelo catálogo.
         cor: it.cor ?? corResolver?.(it) ?? null,
-        ean: it.ean, quantity: it.quantity, unit_price: it.unit_price,
+        ean: it.ean, quantity: it.quantity, unit_price: it.unit_price, cupom_vendedor: it.cupom_vendedor ?? 0,
         imagem_path: fotoResolver?.(it) ?? null,
         custo, liquido: liqItemComImposto, imposto, aliquotaPct, markup, faturavel, estorno,
         custoEstimado: custo != null && it.custo_congelado == null,

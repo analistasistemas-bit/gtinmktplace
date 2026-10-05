@@ -5,7 +5,7 @@ import type { ItemPedido, Pedido } from '../pedidos-faturamento';
 function item(o: Partial<ItemPedido> = {}): ItemPedido {
   return {
     id: 'i1', ml_item_id: null, titulo: 'Produto', codigo: null, cor: null, ean: null,
-    quantity: 1, unit_price: 39.9, imagem_path: null, custo: 11.55, liquido: 21.78,
+    quantity: 1, unit_price: 39.9, cupom_vendedor: 0, imagem_path: null, custo: 11.55, liquido: 21.78,
     imposto: 6.38, aliquotaPct: 16, markup: 0.886, faturavel: true, estorno: 0,
     custoEstimado: false, temDevolucao: false, orderId: 1, uf: null, dentroDeKit: false, ...o,
   };

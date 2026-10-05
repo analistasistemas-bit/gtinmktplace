@@ -129,8 +129,8 @@ describe('readOrgMetrics', () => {
     const columns = db.calls.find((call) => call.table === 'ml_vendas' && call.op === 'select')?.value as string;
     expect(columns).toBe(
       'id, org_id, order_id, pack_id, status, date_closed, date_created, uf, total_amount, '
-      + 'sale_fee_total, frete_vendedor, liquido, estorno, atualizado_em, shipping_id, '
-      + 'itens:ml_vendas_itens(ml_item_id, variation_id, codigo, ean, quantity, unit_price), '
+      + 'sale_fee_total, frete_vendedor, liquido, cupom_vendedor, estorno, atualizado_em, shipping_id, '
+      + 'itens:ml_vendas_itens(ml_item_id, variation_id, codigo, ean, quantity, unit_price, cupom_vendedor), '
       + 'custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)',
     );
   });

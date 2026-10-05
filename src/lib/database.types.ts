@@ -1879,6 +1879,7 @@ export type Database = {
           canal: string
           cidade: string | null
           comprador_id: number | null
+          cupom_vendedor: number | null
           comprador_nick: string | null
           comprador_nome: string | null
           criado_em: string
@@ -1918,6 +1919,7 @@ export type Database = {
           canal?: string
           cidade?: string | null
           comprador_id?: number | null
+          cupom_vendedor?: number | null
           comprador_nick?: string | null
           comprador_nome?: string | null
           criado_em?: string
@@ -1957,6 +1959,7 @@ export type Database = {
           canal?: string
           cidade?: string | null
           comprador_id?: number | null
+          cupom_vendedor?: number | null
           comprador_nick?: string | null
           comprador_nome?: string | null
           criado_em?: string
@@ -2013,6 +2016,7 @@ export type Database = {
           codigo: string | null
           cor: string | null
           ean: string | null
+          cupom_vendedor: number
           id: string
           is_publiai: boolean
           ml_item_id: string | null
@@ -2029,6 +2033,7 @@ export type Database = {
           codigo?: string | null
           cor?: string | null
           ean?: string | null
+          cupom_vendedor?: number
           id?: string
           is_publiai?: boolean
           ml_item_id?: string | null
@@ -2045,6 +2050,7 @@ export type Database = {
           codigo?: string | null
           cor?: string | null
           ean?: string | null
+          cupom_vendedor?: number
           id?: string
           is_publiai?: boolean
           ml_item_id?: string | null

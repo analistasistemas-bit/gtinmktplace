@@ -4,7 +4,7 @@
 // de pendências cross-módulo. Testável (cockpit.test.ts).
 import type { Venda } from './faturamento';
 import type { VendaResumo } from './resumo-vendas';
-import { ehFaturavel } from './resumo-vendas';
+import { ehFaturavel, valorDoItem } from './resumo-vendas';
 import { canonizarItem, type MapaCanonico } from './anuncio-canonico';
 import { round2 } from './formato';
 
@@ -30,7 +30,7 @@ export function topProdutos(vendas: Venda[], n = 5, canonico?: MapaCanonico): Pr
       if ((!acc.titulo || acc.titulo === chave) && it.titulo) acc.titulo = it.titulo;
       if (it.ml_item_id === chave && it.titulo) acc.tituloDono ??= it.titulo;
       acc.unidades += it.quantity;
-      acc.valor += it.unit_price * it.quantity;
+      acc.valor += valorDoItem(it);
       m.set(chave, acc);
     }
   }

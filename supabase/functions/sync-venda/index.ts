@@ -13,6 +13,7 @@ import {
   buscarPedido, buscarFreteVendedor, buscarShipment, carregarCatalogo, upsertVenda, resolverOrgPorUserId,
 } from '../_shared/faturamento/io.ts';
 import { ehVendaDaConta } from '../_shared/faturamento/venda.ts';
+import { round2 } from '../_shared/dinheiro.ts';
 import { reservarNotificacao } from '../_shared/faturamento/notificacoes-dedupe.ts';
 import { verificarAltaFrete } from '../_shared/faturamento/monitor-frete.ts';
 import { depsMonitorFrete } from '../_shared/faturamento/monitor-frete-deps.ts';
@@ -126,7 +127,8 @@ Deno.serve(async (req) => {
       pack_id: pedido.pack_id != null ? Number(pedido.pack_id) : null,
       comprador: compradorNome,
       itens: itens.map((i) => ({ titulo: i.titulo, quantity: i.quantity, ean: i.ean })),
-      total: Number(pedido.total_amount ?? 0),
+      // ADR-0180: valor que o comprador pagou — sem o cupom bancado pelo vendedor.
+      total: round2(Number(pedido.total_amount ?? 0) - itens.reduce((s, i) => s + (i.cupom_vendedor ?? 0), 0)),
       moeda: pedido.currency_id ?? 'BRL',
     }));
 

@@ -110,11 +110,22 @@ function custoDaVenda(v: Venda, resolver?: CustoResolver): number | null {
   return achou ? round2(total) : null;
 }
 
-/** Imposto (R$) de um item (ADR-0055/0112): valor de venda (unit × qtd) × alíquota/100, onde a
- *  alíquota depende da origem e da UF de entrega do pedido. 0 sem alíquota. */
+/** Valor da venda (R$) — `total_amount` menos o cupom bancado pelo vendedor (ADR-0180). É o
+ *  "Preço dos produtos" do ML. Toda conta de bruto/faturamento passa por aqui. */
+export function brutoDaVenda(v: Pick<Venda, 'total_amount' | 'cupom_vendedor'>): number {
+  return round2(v.total_amount - (v.cupom_vendedor ?? 0));
+}
+
+/** Valor de um item (R$) — `unit_price × qtd` menos a fatia do cupom do vendedor (ADR-0180). */
+export function valorDoItem(it: Pick<VendaItem, 'unit_price' | 'quantity' | 'cupom_vendedor'>): number {
+  return it.unit_price * it.quantity - (it.cupom_vendedor ?? 0);
+}
+
+/** Imposto (R$) de um item (ADR-0055/0112, base emendada pelo ADR-0180): valor do item já sem o
+ *  cupom do vendedor × alíquota/100, onde a alíquota depende da origem e da UF de entrega. 0 sem alíquota. */
 export function impostoDoItem(it: VendaItem, resolver: AliquotaResolver | undefined, uf: string | null): number {
   const pct = resolver?.(it, uf) ?? null;
-  return pct != null && pct > 0 ? round2((it.unit_price * it.quantity * pct) / 100) : 0;
+  return pct != null && pct > 0 ? round2((valorDoItem(it) * pct) / 100) : 0;
 }
 
 /** Imposto total (R$) de uma venda: soma do imposto dos itens. */
@@ -170,7 +181,7 @@ export function calcularResumo(
     estornos += est;
     if (!ehFaturavel(v.status)) continue;
     const liq = liqRateado.get(v.id)?.liquido ?? v.liquido ?? 0;
-    bruto += v.total_amount;
+    bruto += brutoDaVenda(v);
     liquido += liq;
     packsFaturaveis.add(String(v.pack_id ?? v.order_id));
 
@@ -183,7 +194,7 @@ export function calcularResumo(
         const chave = canonizarItem(it.ml_item_id, canonico, it.ean);
         const acc = porItem[chave] ?? { unidades: 0, valor: 0 };
         acc.unidades += it.quantity;
-        acc.valor += it.unit_price * it.quantity;
+        acc.valor += valorDoItem(it);
         porItem[chave] = acc;
       }
     }
@@ -223,9 +234,9 @@ export function calcularResumo(
       dataLiberacao: v.money_release_date,
       descricao: descricaoVenda(v),
       codigo: v.itens.find((i) => i.codigo)?.codigo ?? null,
-      bruto: round2(v.total_amount),
+      bruto: brutoDaVenda(v),
       liquido: round2(liq),
-      retido: round2(v.total_amount - liq),
+      retido: round2(brutoDaVenda(v) - liq),
       estorno: round2(est),
       custo,
     });
@@ -340,7 +351,7 @@ export function ratearLiquidoPorFrete(
 
     const pesos = membros.map((m) => pesoDaVenda(m, pesoResolver));
     const usaPeso = pesos.every((p) => p > 0);
-    const base = usaPeso ? pesos : membros.map((m) => m.total_amount);
+    const base = usaPeso ? pesos : membros.map((m) => brutoDaVenda(m));
     const baseTotal = base.reduce((s, b) => s + b, 0);
     if (baseTotal <= 0) continue;
     // Maior base absorve o resíduo de centavos do arredondamento do frete.
@@ -350,7 +361,7 @@ export function ratearLiquidoPorFrete(
     // Frete do envio rateado (peso, senão valor); comissão = sale_fee_total real de cada pedido.
     const fretes = ratearProporcional(freteEnvio, base, idxMax);
     membros.forEach((m, i) => {
-      const liquido = round2(m.total_amount - (m.sale_fee_total ?? 0) - fretes[i]);
+      const liquido = round2(brutoDaVenda(m) - (m.sale_fee_total ?? 0) - fretes[i]);
       out.set(m.id, { liquido, frete: fretes[i] });
     });
   }

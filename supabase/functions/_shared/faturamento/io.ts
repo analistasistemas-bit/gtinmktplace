@@ -2,7 +2,7 @@
 // Usa Deno/supabase-js; a lógica pura fica em venda.ts. Só `upsertVenda` tem teste de vitest
 // (io.test.ts, com um fake do client) — é o caminho que grava estorno/liberação.
 import type { SupabaseClient } from 'jsr:@supabase/supabase-js@2';
-import { ehVendaDaConta, mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, preservarDadosMP, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
+import { ehVendaDaConta, mapearPedidoParaVenda, normGtin, extrairGeo, extrairReceiverNome, escolherCompradorNome, preservarDadosMP, ratearCupomNosItens, calcularLiquido, type PedidoML, type VendaItemRow, type DadosPagamentoMP } from './venda.ts';
 import { round2 } from '../dinheiro.ts';
 import { MLApiError } from '../ml/erro-ml.ts';
 import { fundirItensUP } from './catalogo-up.ts';
@@ -423,14 +423,23 @@ export async function upsertVenda(
   // Estado anterior (para detectar "nova venda paga" e não realertar, não perder um comprador_nome
   // real já capturado — o ML é inconsistente e às vezes some com o buyer — e não apagar
   // estorno/liberação já gravados quando a leitura do MP falha ou não acha o pagamento).
-  const { data: anterior } = await admin.from('ml_vendas')
-    .select('id, status, comprador_nome, estorno, money_release_date').eq('user_id', userId).eq('order_id', venda.order_id).maybeSingle();
+  const { data: anterior, error: erroAnterior } = await admin.from('ml_vendas')
+    .select('id, status, comprador_nome, estorno, money_release_date, cupom_vendedor').eq('user_id', userId).eq('order_id', venda.order_id).maybeSingle();
+  // Sem o estado anterior a preservação do MP (estorno, liberação, cupom) não funciona: falha o sync
+  // para o QStash re-tentar, em vez de regravar o líquido sem o cupom.
+  if (erroAnterior) throw new Error(`ler ml_vendas anterior: ${erroAnterior.message}`);
 
+  // ADR-0180: o líquido e o rateio por item usam o cupom JÁ preservado — com o MP fora do ar o
+  // mapeamento vem com cupom null, e recalcular daqui evita reinflar o líquido pelo cupom.
+  const dadosMP = preservarDadosMP(venda, anterior ?? null);
+  const cupomItens = ratearCupomNosItens(itens, dadosMP.cupom_vendedor);
+  for (let i = 0; i < itens.length; i++) itens[i] = { ...itens[i], cupom_vendedor: cupomItens[i] };
   const row = {
     user_id: userId,
     org_id: orgId,
     ...venda,
-    ...preservarDadosMP(venda, anterior ?? null),
+    ...dadosMP,
+    liquido: calcularLiquido(venda.total_amount, venda.sale_fee_total, venda.frete_vendedor, dadosMP.cupom_vendedor),
     comprador_nome: escolherCompradorNome(venda.comprador_nome, anterior?.comprador_nome ?? null, opts.shipment?.receiverNome ?? null),
     raw: pedido as unknown as Record<string, unknown>,
     shipping_status: opts.shipment?.status ?? null,

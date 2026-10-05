@@ -40,8 +40,8 @@ const CACHE_COLUMNS = 'org_id,month,gross_cents,orders,ticket_cents,markup,cost_
  *  venda; id, titulo, cor, sale_fee, is_publiai do item (`titulo` alimenta `descricaoVenda`, mas o
  *  resultado vai para `summary.vendas`, que este arquivo descarta). */
 const SALES_COLUMNS = 'id, org_id, order_id, pack_id, status, date_closed, date_created, uf, total_amount, '
-  + 'sale_fee_total, frete_vendedor, liquido, estorno, atualizado_em, shipping_id, '
-  + 'itens:ml_vendas_itens(ml_item_id, variation_id, codigo, ean, quantity, unit_price), '
+  + 'sale_fee_total, frete_vendedor, liquido, cupom_vendedor, estorno, atualizado_em, shipping_id, '
+  + 'itens:ml_vendas_itens(ml_item_id, variation_id, codigo, ean, quantity, unit_price, cupom_vendedor), '
   + 'custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)';
 
 function addMonths(month: string, delta: number): string {

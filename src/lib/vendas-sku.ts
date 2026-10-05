@@ -117,7 +117,7 @@ export function agregarPorSku(
       }
       const a = g.acc;
       const devolvido = ordensDevolvidas.has(it.orderId);
-      const valor = it.unit_price * it.quantity;
+      const valor = it.unit_price * it.quantity - it.cupom_vendedor;
       g.chaves.add(p.chave);
       g.titulo ??= it.titulo;
       g.imagem ??= it.imagem_path;

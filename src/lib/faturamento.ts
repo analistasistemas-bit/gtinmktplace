@@ -1,7 +1,7 @@
 import { supabase } from './supabase';
 import type { Janela } from './metricas';
 import { labelStatusEnvio } from './ml-status';
-import { ehFaturavel } from './resumo-vendas';
+import { ehFaturavel, brutoDaVenda } from './resumo-vendas';
 import { buscarTodasPaginas } from './paginacao-supabase';
 import { round2 } from './formato';
 import type { DetalheMLVenda } from './detalhe-ml-pedido';
@@ -10,7 +10,7 @@ import { comCustoCongelado, type CustoCongeladoRow, type OrigemVenda, type Venda
 export { comCustoCongelado, type CustoCongeladoRow, type OrigemVenda, type Venda, type VendaItem } from '../../supabase/functions/_shared/platform-admin/sales-types';
 
 /** Mesmo `select` da aba Vendas (`buscarVendas`) — reusado por `buscarVendasPorIds` (dossiê do SKU). */
-export const SELECT_VENDAS = 'id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, kit_item_id, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai), custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)';
+export const SELECT_VENDAS = 'id, order_id, pack_id, status, status_detail, date_closed, date_created, comprador_nick, comprador_nome, comprador_id, uf, cidade, total_amount, paid_amount, sale_fee_total, frete_vendedor, liquido, cupom_vendedor, estorno, money_release_date, sacado_em, sacado_por, atualizado_em, currency, shipping_id, shipping_status, shipping_substatus, shipping_logistic, tracking_number, is_publiai, tem_devolucao, kit_item_id, itens:ml_vendas_itens(id, ml_item_id, variation_id, titulo, codigo, cor, ean, quantity, unit_price, sale_fee, is_publiai, cupom_vendedor), custos:venda_item_custo(ml_item_id, variation_id, custo_unitario)';
 
 /** Lê as vendas do período direto da tabela (RLS por user). Inclui os itens.
  *  Pagina (`.range`) para não truncar em ~1000 linhas (teto padrão do PostgREST).
@@ -265,7 +265,7 @@ export function calcularKpis(vendas: Venda[]): KpisVendas {
     const st = labelStatusEnvio(v.shipping_status, v.shipping_substatus).label;
     porStatusEnvio[st] = (porStatusEnvio[st] ?? 0) + 1;
     if (!ehFaturavel(v.status)) continue;
-    faturamento += v.total_amount;
+    faturamento += brutoDaVenda(v);
     liquido += v.liquido ?? 0;
     for (const i of v.itens) unidades += i.quantity;
     pedidos += 1;

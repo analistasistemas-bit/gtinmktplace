@@ -20,6 +20,7 @@ describe('montarMapaLiquido', () => {
       estorno: 10,
       releaseDate: '2026-07-30T00:00:00.000-04:00',
       orderId: null,
+      cupom: 0,
     });
   });
 
@@ -37,6 +38,20 @@ describe('montarMapaLiquido', () => {
       pag({ id: 2, collector_id: 123, description: 'marketplace_shipment' }),
     ], 123);
     expect([...mapa.keys()]).toEqual(['1']);
+  });
+
+  // ADR-0180: o cupom bancado pelo vendedor só aparece aqui (coupon_fee pago pelo collector).
+  it('soma o coupon_fee pago pelo vendedor e ignora outras tarifas', () => {
+    const mapa = montarMapaLiquido([
+      pag({ id: 1, collector_id: 123, fee_details: [
+        { type: 'coupon_fee', fee_payer: 'collector', amount: 2.5 },
+        { type: 'mercadopago_fee', fee_payer: 'collector', amount: 3 },
+        { type: 'coupon_fee', fee_payer: 'payer', amount: 9 },
+      ] }),
+      pag({ id: 2, collector_id: 123 }),
+    ], 123);
+    expect(mapa.get('1')?.cupom).toBe(2.5);
+    expect(mapa.get('2')?.cupom).toBe(0);
   });
 
   // Sem conta resolvida não dá para saber o que é venda da conta. `Number(null)` é 0, então sem
@@ -110,8 +125,8 @@ describe('carregarLiquidoMPDoPedido', () => {
     const mapa = await carregarLiquidoMPDoPedido('token', 123, [1, '2']);
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(String(vi.mocked(fetch).mock.calls[0][0])).toBe('https://api.mercadopago.com/v1/payments/1');
-    expect(mapa?.get('1')).toEqual({ estorno: 10, releaseDate: '2026-07-30T00:00:00.000-04:00', orderId: null });
-    expect(mapa?.get('2')).toEqual({ estorno: 0, releaseDate: '2026-07-30T00:00:00.000-04:00', orderId: null });
+    expect(mapa?.get('1')).toEqual({ estorno: 10, releaseDate: '2026-07-30T00:00:00.000-04:00', orderId: null, cupom: 0 });
+    expect(mapa?.get('2')).toEqual({ estorno: 0, releaseDate: '2026-07-30T00:00:00.000-04:00', orderId: null, cupom: 0 });
   });
 
   // Os mesmos filtros da varredura: collector alheio e perna de frete (montarMapaLiquido), e
@@ -138,7 +153,7 @@ describe('carregarLiquidoMPDoPedido', () => {
       id: 1, status: 'refunded', collector_id: 123, transaction_amount_refunded: 59.99,
     }) as unknown as Response);
     const mapa = await carregarLiquidoMPDoPedido('token', 123, [1]);
-    expect(mapa?.get('1')).toEqual({ estorno: 59.99, releaseDate: null, orderId: null });
+    expect(mapa?.get('1')).toEqual({ estorno: 59.99, releaseDate: null, orderId: null, cupom: 0 });
   });
 });
 

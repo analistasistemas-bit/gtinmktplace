@@ -117,6 +117,22 @@ describe('upsertVenda — compra da empresa', () => {
   });
 });
 
+describe('upsertVenda — cupom do vendedor (ADR-0180)', () => {
+  it('reprocessar sem o MP mantém o cupom e o líquido descontado (não reinfla)', async () => {
+    const { admin, upsertVendas, itens } = criarAdminFake();
+    const mp = new Map([['1', { estorno: 0, releaseDate: null, orderId: '555', cupom: 2.5 }]]);
+
+    await upsertVenda(admin, 'user-1', 'org-1', pedido, { ...opts, liquidoPorPayment: mp });
+    // 100 − 10 (comissão) − 5 (frete) − 2,50 (cupom)
+    expect(upsertVendas.mock.calls[0][0]).toMatchObject({ cupom_vendedor: 2.5, liquido: 82.5 });
+    expect(itens[0].cupom_vendedor).toBe(2.5);
+
+    await upsertVenda(admin, 'user-1', 'org-1', pedido, { ...opts, liquidoPorPayment: undefined });
+    expect(upsertVendas.mock.calls[1][0]).toMatchObject({ cupom_vendedor: 2.5, liquido: 82.5 });
+    expect(itens[0].cupom_vendedor).toBe(2.5);
+  });
+});
+
 describe('upsertVenda', () => {
   // O bug que o ADR-0093 fecha: o upsert regrava a linha inteira, então um sync em que a leitura
   // do MP falhou (liquidoPorPayment undefined) apagaria estorno/liberação já corretos — o selo de

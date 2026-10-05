@@ -3,6 +3,7 @@
 import { buscarPagamentoMP, buscarPagamentosMP, type PagamentoMP } from '../mercadopago/financeiro.ts';
 import { buscarGtinsDosItens } from '../ml/pedidos.ts';
 import type { PedidoML, DadosPagamentoMP } from './venda.ts';
+import { round2 } from '../dinheiro.ts';
 
 /** paymentId → dados do MP, só das vendas da própria conta. Pura. */
 export function montarMapaLiquido(
@@ -22,6 +23,10 @@ export function montarMapaLiquido(
       estorno: Number(p.transaction_amount_refunded ?? 0),
       releaseDate: p.money_release_date ?? null,
       orderId: p.order?.id != null ? String(p.order.id) : null,
+      // ADR-0180: só o coupon_fee pago pelo vendedor. Cupom bancado pelo ML não gera esta tarifa.
+      cupom: round2((p.fee_details ?? [])
+        .filter((f) => f?.type === 'coupon_fee' && f?.fee_payer === 'collector')
+        .reduce((s, f) => s + Number(f?.amount ?? 0), 0)),
     });
   }
   return mapa;

@@ -79,7 +79,7 @@ describe('equivalência: varredura de 120 dias × leitura por pedido (ADR-0173)'
     ];
     const r = await comparar(pool, [601]);
     expect(r.porPedido.porPayment).toEqual(r.varredura.porPayment);
-    expect(r.porPedido.porPayment?.get('601')).toEqual({ estorno: 89.9, releaseDate: null, orderId: ORDER });
+    expect(r.porPedido.porPayment?.get('601')).toEqual({ estorno: 89.9, releaseDate: null, orderId: ORDER, cupom: 0 });
   });
 
   it('estorno parcial (pagamento continua approved, com transaction_amount_refunded > 0)', async () => {

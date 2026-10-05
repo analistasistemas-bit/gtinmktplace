@@ -66,7 +66,7 @@ export function serieDoSku(p: {
       for (const it of ped.itens) {
         if (!it.faturavel || !codigos.has(it.codigo?.trim() || SEM_CODIGO)) continue;
         qtd += it.quantity;
-        valor += it.unit_price * it.quantity;
+        valor += it.unit_price * it.quantity - it.cupom_vendedor;
         min = min == null ? it.unit_price : Math.min(min, it.unit_price);
         max = max == null ? it.unit_price : Math.max(max, it.unit_price);
       }
@@ -171,7 +171,7 @@ export function ufsDoSku(pedidos: Pedido[], codigos: string[]): { valores: Recor
   let semUf = 0;
   for (const ped of pedidos) for (const it of ped.itens) {
     if (!it.faturavel || !cods.has(it.codigo?.trim() || SEM_CODIGO)) continue;
-    const v = it.unit_price * it.quantity;
+    const v = it.unit_price * it.quantity - it.cupom_vendedor;
     if (it.uf) valores[it.uf] = round2((valores[it.uf] ?? 0) + v);
     else semUf = round2(semUf + v);
   }

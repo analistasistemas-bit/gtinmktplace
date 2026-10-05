@@ -3,6 +3,7 @@
 // líquido/imposto/markup — só reapresenta os números que `agruparPorPedido` já fechou.
 import type { Pedido } from './pedidos-faturamento';
 import { round2 } from './formato';
+import { valorDoItem } from './resumo-vendas';
 
 export interface CascataPedido {
   /** Valor da venda que conta como faturamento (`brutoFaturavel`). */
@@ -32,9 +33,9 @@ export function cascataDoPedido(p: Pedido): CascataPedido {
   // Alíquota exibida vem de `it.aliquotaPct` (valor cru do resolver — 8/16, ADR-0055), nunca de
   // `imposto ÷ valor` (o imposto é arredondado a centavos). Média ponderada cobre origens mistas.
   const tributados = p.itens.filter((it) => it.imposto > 0 && it.aliquotaPct != null);
-  const baseTributada = tributados.reduce((s, it) => s + it.unit_price * it.quantity, 0);
+  const baseTributada = tributados.reduce((s, it) => s + valorDoItem(it), 0);
   const aliquotaPct = baseTributada > 0
-    ? tributados.reduce((s, it) => s + (it.aliquotaPct ?? 0) * it.unit_price * it.quantity, 0) / baseTributada
+    ? tributados.reduce((s, it) => s + (it.aliquotaPct ?? 0) * valorDoItem(it), 0) / baseTributada
     : null;
 
   const venda = p.brutoFaturavel;

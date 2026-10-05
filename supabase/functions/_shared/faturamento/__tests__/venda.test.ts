@@ -9,6 +9,7 @@ import {
   extrairReceiverNome,
   escolherCompradorNome,
   preservarDadosMP,
+  ratearCupomNosItens,
 } from '../venda';
 
 describe('extrairGeo', () => {
@@ -62,29 +63,61 @@ describe('preservarDadosMP', () => {
     expect(preservarDadosMP(
       { estorno: null, money_release_date: null },
       { estorno: 12.5, money_release_date: '2026-07-30T00:00:00.000-04:00' },
-    )).toEqual({ estorno: 12.5, money_release_date: '2026-07-30T00:00:00.000-04:00' });
+    )).toMatchObject({ estorno: 12.5, money_release_date: '2026-07-30T00:00:00.000-04:00' });
   });
   it('dado novo do MP sobrescreve o anterior', () => {
     expect(preservarDadosMP(
       { estorno: 30, money_release_date: '2026-08-05' },
       { estorno: 12.5, money_release_date: '2026-07-30' },
-    )).toEqual({ estorno: 30, money_release_date: '2026-08-05' });
+    )).toMatchObject({ estorno: 30, money_release_date: '2026-08-05' });
   });
   it('estorno 0 sobrescreve valor antigo (estorno cancelado no MP não fica travado)', () => {
     expect(preservarDadosMP(
       { estorno: 0, money_release_date: '2026-08-05' },
       { estorno: 12.5, money_release_date: '2026-07-30' },
-    )).toEqual({ estorno: 0, money_release_date: '2026-08-05' });
+    )).toMatchObject({ estorno: 0, money_release_date: '2026-08-05' });
   });
   it('campos independentes: estorno novo entra, data null preserva a antiga', () => {
     expect(preservarDadosMP(
       { estorno: 30, money_release_date: null },
       { estorno: 12.5, money_release_date: '2026-07-30' },
-    )).toEqual({ estorno: 30, money_release_date: '2026-07-30' });
+    )).toMatchObject({ estorno: 30, money_release_date: '2026-07-30' });
   });
   it('venda nova (sem linha anterior) grava o que veio', () => {
     expect(preservarDadosMP({ estorno: 0, money_release_date: '2026-08-01' }, null))
-      .toEqual({ estorno: 0, money_release_date: '2026-08-01' });
+      .toMatchObject({ estorno: 0, money_release_date: '2026-08-01' });
+  });
+});
+
+describe('preservarDadosMP — cupom do vendedor (ADR-0180)', () => {
+  it('MP não lido (null) mantém o cupom gravado — falha do MP não reinfla o líquido', () => {
+    expect(preservarDadosMP(
+      { estorno: null, money_release_date: null, cupom_vendedor: null },
+      { estorno: 0, money_release_date: null, cupom_vendedor: 2.5 },
+    ).cupom_vendedor).toBe(2.5);
+  });
+  it('cupom 0 lido do MP sobrescreve', () => {
+    expect(preservarDadosMP(
+      { estorno: 0, money_release_date: null, cupom_vendedor: 0 },
+      { estorno: 0, money_release_date: null, cupom_vendedor: 2.5 },
+    ).cupom_vendedor).toBe(0);
+  });
+});
+
+describe('ratearCupomNosItens', () => {
+  it('order de 1 item fica com o cupom inteiro', () => {
+    expect(ratearCupomNosItens([{ unit_price: 66.4, quantity: 1 }], 2.5)).toEqual([2.5]);
+  });
+  it('rateia pelo valor do item, resíduo no maior', () => {
+    expect(ratearCupomNosItens([{ unit_price: 10, quantity: 1 }, { unit_price: 20, quantity: 1 }], 1))
+      .toEqual([0.33, 0.67]);
+  });
+  it('cupom quebrado em 3 itens iguais fecha o total', () => {
+    const p = ratearCupomNosItens([{ unit_price: 10, quantity: 1 }, { unit_price: 10, quantity: 1 }, { unit_price: 10, quantity: 1 }], 1);
+    expect(Math.round(p.reduce((s, x) => s + x, 0) * 100) / 100).toBe(1);
+  });
+  it('sem cupom → zeros', () => {
+    expect(ratearCupomNosItens([{ unit_price: 10, quantity: 2 }], null)).toEqual([0]);
   });
 });
 
@@ -184,6 +217,7 @@ describe('calcularLiquido', () => {
   });
   it('frete null → total - comissão', () => {
     expect(calcularLiquido(100, 16, null)).toBe(84);
+    expect(calcularLiquido(66.4, 7.67, 18.3, 2.5)).toBe(37.93);
   });
   it('arredonda 2 casas', () => {
     expect(calcularLiquido(99.99, 16.001, 0)).toBe(83.99);
@@ -243,6 +277,63 @@ describe('mapearPedidoParaVenda', () => {
       sale_fee: 7.2,
       is_publiai: true,
     });
+  });
+
+  // Caso real (ADR-0180): order 2000018370038668 do pack 2000014948061807. O MP traz coupon_fee
+  // 2,50 pago pelo vendedor; net_received_amount do MP = 37,93.
+  it('desconta o cupom do vendedor do líquido e rateia no item', () => {
+    const { venda, itens } = mapearPedidoParaVenda({
+      ...pedidoBase, total_amount: 66.4, paid_amount: 66.4,
+      order_items: [{ ...pedidoBase.order_items[0], quantity: 1, unit_price: 66.4, sale_fee: 7.67 }],
+      payments: [{ id: 178129876796 }],
+    }, {
+      idsPubliai: new Set(['MLB111']), codigoResolver: () => null, freteVendedor: 18.3,
+      liquidoPorPayment: new Map([['178129876796', { estorno: 0, releaseDate: null, orderId: null, cupom: 2.5 }]]),
+    });
+    expect(venda.total_amount).toBe(66.4);
+    expect(venda.cupom_vendedor).toBe(2.5);
+    expect(venda.liquido).toBe(37.93);
+    expect(itens[0].cupom_vendedor).toBe(2.5);
+  });
+
+  // Revisão Codex: a varredura do MP aceita páginas parciais. Somar só o que achou viraria um cupom
+  // numérico menor, que sobrescreveria o certo. Sem todos os pagamentos aprovados → null (preserva).
+  it('leitura parcial (falta um pagamento aprovado) → cupom null', () => {
+    const { venda } = mapearPedidoParaVenda({
+      ...pedidoBase, payments: [{ id: 1, status: 'approved' }, { id: 2, status: 'approved' }, { id: 3, status: 'rejected' }],
+    }, {
+      idsPubliai: new Set(), codigoResolver: () => null,
+      liquidoPorPayment: new Map([['1', { estorno: 0, releaseDate: null, orderId: null, cupom: 2.5 }]]),
+    });
+    expect(venda.cupom_vendedor).toBeNull();
+    expect(venda.estorno).toBe(0); // estorno segue a regra antiga (soma do que achou)
+  });
+
+  it('pagamento recusado não conta para a cobertura', () => {
+    const { venda } = mapearPedidoParaVenda({
+      ...pedidoBase, payments: [{ id: 1, status: 'approved' }, { id: 3, status: 'rejected' }],
+    }, {
+      idsPubliai: new Set(), codigoResolver: () => null,
+      liquidoPorPayment: new Map([['1', { estorno: 0, releaseDate: null, orderId: null, cupom: 2.5 }]]),
+    });
+    expect(venda.cupom_vendedor).toBe(2.5);
+  });
+
+  it('qty > 1: cupom inteiro da order no item', () => {
+    const { itens, venda } = mapearPedidoParaVenda(pedidoBase, {
+      idsPubliai: new Set(), codigoResolver: () => null, freteVendedor: 10,
+      liquidoPorPayment: new Map([['1', { estorno: 0, releaseDate: null, orderId: null, cupom: 4.51 }]]),
+    });
+    expect(itens[0].cupom_vendedor).toBe(4.51);
+    expect(venda.liquido).toBe(61.29); // 90,20 − 14,40 − 10 − 4,51
+  });
+
+  it('sem leitura do MP o cupom fica null (não lido) e o líquido não desconta nada', () => {
+    const { venda, itens } = mapearPedidoParaVenda(pedidoBase, {
+      idsPubliai: new Set(['MLB111']), codigoResolver: () => null,
+    });
+    expect(venda.cupom_vendedor).toBeNull();
+    expect(itens[0].cupom_vendedor).toBe(0);
   });
 
   it('mapeia nome real do comprador a partir do buyer do pedido', () => {

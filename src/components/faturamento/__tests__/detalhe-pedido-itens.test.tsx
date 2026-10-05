@@ -28,7 +28,7 @@ beforeEach(() => {
 function item(overrides: Partial<ItemPedido>): ItemPedido {
   return {
     id: 'i1', ml_item_id: null, titulo: 'Produto', codigo: null, cor: null, ean: null,
-    quantity: 1, unit_price: 50, imagem_path: null, custo: null, liquido: 40,
+    quantity: 1, unit_price: 50, cupom_vendedor: 0, imagem_path: null, custo: null, liquido: 40,
     imposto: 0, aliquotaPct: null, markup: null, faturavel: true, estorno: 0,
     custoEstimado: false, temDevolucao: false, orderId: 1, uf: null, dentroDeKit: false,
     ...overrides,
@@ -347,6 +347,24 @@ describe('DetalhePedidoItens — dados lazy do pagamento', () => {
     expect(screen.getByText('Pagamento indisponível')).toBeInTheDocument();
     expect(screen.getByText('Lucro')).toBeInTheDocument();
     expect(screen.getByText('Comissão ML')).toBeInTheDocument();
+  });
+
+  // ADR-0180: cupom bancado pelo vendedor sai da Venda e é explicado ali; o cupom cru do pedido
+  // (`raw.coupon`) some da zona Pedido para não aparecer duas vezes.
+  it('cupom do vendedor: nota sob a Venda e sem a linha de cupom do ML', () => {
+    lazy.estado = { data: detalheML({ cupom: 5 }), isPending: false, isError: false };
+    renderDetalhe(pedidoCompleto({
+      itens: [item({ unit_price: 39.9, cupom_vendedor: 2.5, custo: 11.55, liquido: 21.78, imposto: 6.38, aliquotaPct: 16, markup: 0.886 })],
+    }));
+    expect(screen.getByText('já sem R$ 2,50 de cupom do vendedor')).toBeInTheDocument();
+    expect(screen.queryByText(/Cupom pago pelo ML/)).not.toBeInTheDocument();
+  });
+
+  it('cupom bancado pelo ML aparece rotulado na zona Pedido', () => {
+    lazy.estado = { data: detalheML({ cupom: 6 }), isPending: false, isError: false };
+    renderDetalhe(pedidoCompleto());
+    expect(screen.getByText(/Cupom pago pelo ML/)).toBeInTheDocument();
+    expect(screen.queryByText(/cupom do vendedor/)).not.toBeInTheDocument();
   });
 
   it('dados: pagamento, frete do comprador, cupom e tipo de anúncio na comissão', () => {

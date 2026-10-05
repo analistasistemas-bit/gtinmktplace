@@ -94,8 +94,10 @@ function ZonaPedido({ p, ml }: { p: Pedido; ml: ReturnType<typeof useDetalheMLPe
         {d && d.freteComprador > 0 && (
           <div>Frete pago pelo comprador <span className="font-medium text-foreground tabular-nums">{fmtBRL(d.freteComprador)}</span></div>
         )}
-        {d && d.cupom > 0 && (
-          <div>Cupom <span className="font-medium text-foreground tabular-nums">{fmtBRL(d.cupom)}</span></div>
+        {/* ADR-0180: `raw.coupon` não diz quem pagou. Com cupom do vendedor gravado (coupon_fee do MP),
+            ele já aparece no Dinheiro; sem ele, o cupom do pedido foi bancado pelo ML. */}
+        {d && d.cupom > 0 && cupomDoVendedor(p) < 0.01 && (
+          <div>Cupom pago pelo ML <span className="font-medium text-foreground tabular-nums">{fmtBRL(d.cupom)}</span></div>
         )}
         <a href={urlVenda} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 pt-1 text-info hover:underline">
           Ver no Mercado Livre <ExternalLink className="h-3 w-3" />
@@ -177,6 +179,11 @@ function Linha({ op, rotulo, valor, subtotal, forte, cor }: {
   );
 }
 
+/** Cupom bancado pelo vendedor nos itens faturáveis (ADR-0180) — já descontado da Venda. */
+function cupomDoVendedor(p: Pedido): number {
+  return p.itens.reduce((s, it) => s + (it.faturavel ? it.cupom_vendedor : 0), 0);
+}
+
 function ZonaDinheiro({ p, tipoAnuncio }: { p: Pedido; tipoAnuncio: string | null }) {
   const c = cascataDoPedido(p);
   const semCusto = c.custo == null;
@@ -190,12 +197,19 @@ function ZonaDinheiro({ p, tipoAnuncio }: { p: Pedido; tipoAnuncio: string | nul
     : liberacao === 'liberado' ? 'Liberado em'
       : liberacao === 'aliberar' ? 'Libera em' : null;
   const foraDaConta = p.bruto - p.brutoFaturavel;
+  const cupomVendedor = cupomDoVendedor(p);
   const corMargem = c.margem != null ? (c.margem >= 0 ? 'text-success' : 'text-destructive') : undefined;
   return (
     <section aria-label="Dinheiro" className="min-w-0 border-t pt-4 @3xl:border-l @3xl:border-t-0 @3xl:pl-5 @3xl:pt-0">
       <h3 className={TITULO_ZONA}>Dinheiro</h3>
       <dl className="text-xs">
         <Linha rotulo="Venda" valor={fmtBRL(c.venda)} />
+        {cupomVendedor >= 0.01 && (
+          <div className="pl-4 text-[11px] text-muted-foreground">
+            <dt className="sr-only">Cupom do vendedor</dt>
+            <dd>já sem {fmtBRL(cupomVendedor)} de cupom do vendedor</dd>
+          </div>
+        )}
         {foraDaConta >= 0.01 && (
           <div className="pl-4 text-[11px] text-muted-foreground">
             <dt className="sr-only">Fora do faturamento</dt>
