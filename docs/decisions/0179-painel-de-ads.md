@@ -1,6 +1,6 @@
 # ADR-0179 — Painel de Ads com margem real (I2)
 
-**Status:** Proposto (2026-10-04) — Fatia 0 (spike 054) concluída; aguardando o plano
+**Status:** Aceito (2026-10-05) — em piloto (aceite D7 pendente: Task 8, Diego)
 **Data:** 2026-10-04
 **Relacionado:** [ADR-0172](0172-vendas-sku-analise-por-variacao.md) (Fatia 2c: coleta de Ads e dossiê SKU),
 [ADR-0109](0109-custo-congelado-por-venda.md) (custo congelado por venda),
@@ -55,3 +55,24 @@ está indisponível nas 3 orgs pela regra de gasto fora dos grupos.
   fatura PADS.
 - Aceite por piloto de 2 semanas na Avil: total bate com o Mercado Ads (≤ 1 %), sem dupla contagem, toda
   indisponibilidade com motivo, ≥ 1 decisão concreta tomada pelo painel.
+
+## Produção (2026-10-04/05)
+
+- **Em produção:** migration `20261005013741_ads_painel` (tabela `ml_ads_conta_dia`, coluna
+  `ml_ads_sync.conta_cobertura_desde`, RPCs `gravar_ads_conta_dias`, `ads_painel`, `ads_resumo_periodo`; teste SQL
+  em transação desfeita); edge `coletar-ads-ml` v12 (grava a série diária do anunciante; carga de 90 dias nas 3
+  orgs, Σ igual ao spike 054 ao centavo); edge `usuarios` v45 (aceita menu/módulo `ads`).
+- **Medições:** `EXPLAIN` na Avil (135 grupos, 12.161 linhas em `ml_ads_grupo_dia`): `ads_painel` 164 ms,
+  `ads_resumo_periodo` 9 ms (orçamento 300 ms; remedir quando a Avil passar de ~300 grupos). CPU do worker v12: máx.
+  123 ms por mensagem (teto 2 s), cada org fecha em 1 mensagem.
+- **Front** (`/ads`, módulo `ads`, dossiê D2) entra com o merge da branch `worktree-i2-painel-ads`. O módulo `ads`
+  nasce **desligado** em todas as orgs; o backfill de `allowed_menus` com `'ads'` vai numa migration depois do deploy
+  do front (plano, Task 7 Step 5).
+- **Regras fixadas na validação visual:** o período termina no último dia coletado (recuo máx. de 1 dia; antes, das
+  00h às ~11h17 BRT o painel ficava indisponível); o dossiê usa lucro e Ads nos mesmos dias e aplica a trava de
+  histórico da org (mínimo da primeira venda do catálogo), em paridade com o painel.
+- **Semáforo do ACOS de equilíbrio desligado** (`BASE_ACOS_VALIDADA = false`). O spike 055
+  (`docs/spikes/055-base-acos-equilibrio.md`) indica a mesma base de preço; ligar é decisão do Diego.
+- **Emenda ao ADR-0172:** `fora_dos_grupos` deixa de bloquear o Lucro após Ads (vira aviso do % do período).
+- **Pendente (Task 8, Diego):** ligar o módulo na Avil, conferir o total com o Mercado Ads (≤ 1 %), 2 semanas de
+  piloto e ≥ 1 decisão registrada. Só então o épico fecha; até lá o status é "em piloto".

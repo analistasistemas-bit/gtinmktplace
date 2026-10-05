@@ -1005,6 +1005,14 @@ Status do anúncio por MLB (multiget `/items?attributes=id,status`). `org_id` + 
 `status`, `status_desde` (só muda quando o status muda), `ultimo_ok_em` (última coleta de visitas
 `ok`; MLB sem ela recebe a janela de 150 dias). `closed` há mais de 30 dias sai do inventário. Identificação (migration `20261003232750_vitrine_identificacao`, ADR-0176): `titulo`, `permalink` e `variacao` (COLOR · SIZE; nulos; Legacy com `variations` fica nula), vindos do multiget `/items/bulk`.
 
+### `ml_ads_conta_dia` (ADR-0179)
+Série diária do **anunciante** (total da conta, inclusive o gasto fora dos grupos listados). PK `(org_id, dia)`,
+gravada só por `gravar_ads_conta_dias`; `ml_ads_sync.conta_cobertura_desde` marca o início da cobertura. RLS `select`
+por `org_id = current_org_id()`. *Migration `20261005013741_ads_painel.sql`, em produção desde 2026-10-05.*
+Leitura: `ads_painel(p_inicio, p_fim)` (≤ 90 dias; sync, conta e grupos com membros; `authenticated`, org do chamador)
+e `ads_resumo_periodo(p_inicio, p_fim)` (≤ 366 dias; `custo_conta`, `dias_conta`, `custo_grupos_com_membro`, usado
+pelo aviso do dossiê). `limpar_ads_retencao` também limpa a série da conta.
+
 RLS nas quatro: `select` por `org_id = current_org_id()`; `anon` sem privilégio; `authenticated`
 só `SELECT`. Escrita só por `service_role`, pelas RPCs abaixo (todas `security definer`,
 `search_path=''`, revogadas de `public`/`anon`/`authenticated`, concedidas a `service_role`):

@@ -271,3 +271,9 @@ Diagnosticado em 27/09, **incidente pré-existente e não causado pela Vendas SK
 requisição da edge (QStash 546); `backfill-faturamento` não completa desde ~10/09. Correção recomendada:
 fan-out por org via QStash (ADR a escrever), tratada por outro agente em branch separada. Registrado em
 `docs/TASKS.md`.
+
+## Emenda (2026-10-05, ADR-0179 D2)
+
+`fora_dos_grupos` deixa de bloquear o **Lucro após Ads**: o valor aparece com aviso do % de gasto não identificado
+no período exibido. O dossiê passa a usar lucro e Ads nos mesmos dias (até o último dia coletado) e a trava de
+histórico da org. Ver [ADR-0179](0179-painel-de-ads.md).

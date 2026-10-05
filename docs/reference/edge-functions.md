@@ -1795,6 +1795,9 @@ um smoke test contra Postgres real antes do primeiro deploy.
     continuação (Ruling 2c-9, ~3 GETs a mais por dia na Avil, só na última mensagem da rodada): o
     aviso `fora_dos_grupos` sempre cobre os últimos 90 dias. 403 = `sem_permissao`, 404 do anunciante
     = `sem_advertiser`.
+  - **v12 (2026-10-05, ADR-0179):** também grava a série diária do **anunciante** (`ml_ads_conta_dia`, via
+    `gravar_ads_conta_dias`; carga de 90 dias, relê 15 dias por dia), com `ml_ads_sync.conta_cobertura_desde`. CPU máx.
+    123 ms por mensagem; cada org fecha em 1 mensagem.
   - Tabelas e RPCs: `docs/reference/modelo-de-dados.md` § Ads por grupo.
   - **Redeploy junto:** a 2c alterou `_shared/trafego/fiacao.ts`, importado também por
     `coletar-trafego-ml`; no deploy, publicar `coletar-ads-ml` **e** `coletar-trafego-ml`
@@ -1936,6 +1939,7 @@ um smoke test contra Postgres real antes do primeiro deploy.
   devolve `arquivada_em`; `invite` e `set_active(is_active=true)` respondem 409 "Empresa arquivada:
   desarquive antes." em org arquivada. `delete_org` segue desabilitado.
   **`promocoes`** (ADR-0170, redeploy v36): entrou no espelho `MENU_KEYS` e em `MODULOS_VALIDOS`.
+  **Menu `ads`** (ADR-0179, tela `/ads`) entrou em `MENU_KEYS` — `usuarios` v45 (2026-10-05); o backfill de `allowed_menus` vai depois do deploy do front.
   **Menu `vitrine`** (ADR-0176, tela `/vitrine`) entrou em `MENU_KEYS` — redeploy da `usuarios` v43 (2026-10-02); backfill: quem tinha `faturamento` ganhou `vitrine`.
   **Menu `canais`** entrou em `MENU_KEYS` (tela `/canais`, ex-OAuth de Configurações) — mudança em
   `MENU_KEYS`/`_shared/` exige redeploy da `usuarios` via CLI completa (conferir versão pós-deploy).

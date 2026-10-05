@@ -2,6 +2,20 @@
 
 > Checklist operacional. Atualize o status conforme as tarefas avançam. Para visão estratégica das fases, ver [ROADMAP.md](ROADMAP.md).
 
+## I2 — Painel de Ads com margem real (ADR-0179) — em piloto (2026-10-05) — branch `worktree-i2-painel-ads`
+
+Spec `docs/superpowers/specs/2026-10-04-painel-de-ads-design.md`; plano `docs/superpowers/plans/2026-10-04-painel-de-ads.md`; spikes `docs/spikes/054-total-de-ads-por-periodo.md` e `055-base-acos-equilibrio.md`.
+
+- [x] Task 1: migration `20261005013741_ads_painel` aplicada (`ml_ads_conta_dia`, `conta_cobertura_desde`, RPCs); `EXPLAIN` `ads_painel` 164 ms, `ads_resumo_periodo` 9 ms.
+- [x] Task 2: `coletar-ads-ml` v12 (série diária da conta); 90 dias nas 3 orgs, CPU máx. 123 ms.
+- [x] Tasks 3-6: regra do painel, dados/hook, tela `/ads` (módulo `ads`) e dossiê D2 (lucro após Ads nos mesmos dias).
+- [x] Task 7: `usuarios` v45 (aceita `ads`); spike 055; validação visual e correções (período até o último dia coletado, trava de histórico no dossiê, tabela cabe em 1440 px); `pnpm preflight` verde.
+- [ ] Merge da branch na `main` (revisão pré-merge Grok + CI verde); módulo `ads` nasce desligado em todas as orgs.
+- [ ] Task 7 Step 5: migration de backfill de `allowed_menus` com `'ads'`, só depois do deploy do front.
+- [ ] Task 8 (Diego): ligar o módulo na Avil, conferir o total com o Mercado Ads (≤ 1 %), 2 semanas de piloto, ≥ 1 decisão registrada. O épico só fecha aqui.
+- [ ] Decisão do Diego: ligar o semáforo do ACOS de equilíbrio (`BASE_ACOS_VALIDADA`); spike 055 indica a mesma base de preço.
+- Minors do ledger (diferidos): teste SQL não cobre `limpar_ads_retencao`; `parsers.test` fora-da-janela/repetido não isolam a regra estrita; motivo `sem_vendas` junto de resultado negativo; marca de custo parcial/estimado difere do Vendas SKU; `pct`/`razao` exportados do componente (warning react-refresh); remedir `ads_painel` quando a Avil passar de ~300 grupos.
+
 ## Reajuste de preço em massa (ADR-0178) — em produção desde 2026-10-04
 
 3º tipo do motor de operações em massa. Spec `docs/superpowers/specs/2026-10-04-reajuste-preco-em-massa-design.md` (D1–D15, C1–C5); plano `docs/superpowers/plans/2026-10-04-reajuste-preco-em-massa.md`.

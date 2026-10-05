@@ -7,7 +7,7 @@ diária de cada grupo (`/ad_groups/{id}?aggregation_type=daily`) e os membros at
 (`/ad_groups/{id}/ads`). O único POST é o refresh OAuth de `_shared/ml/token.ts`. Nada é alterado em
 anúncio ou campanha.
 
-Grava em `ml_ads_sync`, `ml_ads_grupo`, `ml_ads_grupo_item` e `ml_ads_grupo_dia`, só pelas RPCs de
+Grava em `ml_ads_sync`, `ml_ads_grupo`, `ml_ads_grupo_item`, `ml_ads_grupo_dia` e (v12, ADR-0179) `ml_ads_conta_dia`, só pelas RPCs de
 `supabase/migrations/20260927124602_vendas_sku_ads.sql`. Contrato: plano
 `docs/superpowers/plans/2026-09-27-vendas-sku-fatia-2c.md`; spike `docs/spikes/053-product-ads-ml.md`.
 
@@ -108,6 +108,22 @@ Outros sinais:
   leitura mais recente vence (inclusive para baixo).
 - Retenção: depois do fan-out, apaga dias anteriores a hoje − 13 meses e grupos sem dia retido, e avança
   `cobertura_desde` para o corte. Falha só aparece no log, nunca como 500.
+
+## 5b. Série diária da conta (ADR-0179, v12)
+
+Além dos grupos, o worker lê a série diária do anunciante e grava em `ml_ads_conta_dia` (`gravar_ads_conta_dias`);
+`ml_ads_sync.conta_cobertura_desde` é o início da cobertura. Conferência (read-only):
+
+```sql
+select org_id, count(*), min(dia), max(dia), sum(cost) from ml_ads_conta_dia group by 1;
+select org_id, conta_cobertura_desde, ultimo_ok_em from ml_ads_sync;
+```
+
+Esperado: 90 linhas por org após a carga, `max(dia)` = ontem, Σ igual ao `metrics_summary` do ML.
+
+**Disparo manual direto:** se o fan-out do dia já foi deduplicado (`deduplicationId` `ads:<org>:<dia BRT>`),
+republicar no QStash uma mensagem `{org_id, primeira:true}` por org direto na URL do worker (o que o fan-out
+publicaria). A rodada extra só move `ultimo_ok_em`; a janela seguinte continua D-1 + 14.
 
 ## 6. Pausar / retomar
 
