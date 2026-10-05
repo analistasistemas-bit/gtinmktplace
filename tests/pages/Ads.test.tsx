@@ -32,8 +32,10 @@ beforeEach(() => hook.mockReset());
 describe('Ads', () => {
   it('resumo da conta com as 3 parcelas da despesa e o resultado', () => {
     montar();
-    expect(screen.getByText('Resultado após Ads')).toBeInTheDocument();
-    expect(screen.getByText('Gasto de Ads não identificado')).toBeInTheDocument();
+    const resumo = within(screen.getByRole('region', { name: 'Resumo da conta' }));
+    expect(resumo.getByText('Resultado após Ads')).toBeInTheDocument();
+    expect(resumo.getByText('Gasto de Ads não identificado')).toBeInTheDocument();
+    expect(screen.getByText(/não é o lucro causado pelo Ads/)).toBeInTheDocument();
     expect(screen.getAllByText(/R\$\s?200,00/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Despesa informada pela API de Ads/)).toBeInTheDocument();
   });
@@ -80,6 +82,7 @@ describe('Ads', () => {
   it('conta divergente: mostra o aviso e não mostra o não identificado', () => {
     montar({ ...PAINEL, conta: { ...PAINEL.conta!, divergente: true, naoIdentificado: null, naoIdentificadoPct: null } });
     expect(screen.getByText(/não fecha com o total da conta/i)).toBeInTheDocument();
+    expect(screen.queryByText('Gasto de Ads não identificado')).not.toBeInTheDocument();
   });
   it('sem anunciante: aviso e nenhum número', () => {
     montar({ ...PAINEL, estado: 'sem_advertiser', conta: null, familias: [], compartilhados: [] });

@@ -8,9 +8,9 @@ export const pct = (v: number | null) => (v == null ? NADA : `${(v * 100).toFixe
 export const razao = (v: number | null) => (v == null ? NADA : `${v.toFixed(2).replace('.', ',')}×`);
 const brl = (v: number | null) => (v == null ? NADA : fmtBRL(v));
 
-function Bloco({ rotulo, children, title }: { rotulo: string; children: ReactNode; title?: string }) {
+function Bloco({ rotulo, children }: { rotulo: string; children: ReactNode }) {
   return (
-    <div className="min-w-0" title={title}>
+    <div className="min-w-0">
       <p className="text-xs text-muted-foreground">{rotulo}</p>
       <p className="text-lg font-semibold tabular-nums">{children}</p>
     </div>
@@ -46,19 +46,19 @@ export function ResumoConta({ conta }: { conta: ContaPainel }) {
           <p className="text-lg font-semibold tabular-nums">{fmtBRL(conta.custo)}</p>
           <Linha rotulo="Em famílias" valor={fmtBRL(conta.emFamilias)} />
           <Linha rotulo="Compartilhado entre famílias" valor={fmtBRL(conta.compartilhado)} />
-          {conta.naoIdentificado != null && (
+          {!conta.divergente && conta.naoIdentificado != null && (
             <Linha rotulo="Gasto de Ads não identificado"
               valor={`${fmtBRL(conta.naoIdentificado)}${conta.naoIdentificadoPct != null ? ` (${pct(conta.naoIdentificadoPct)})` : ''}`} />
           )}
         </div>
-        <Bloco rotulo="Resultado após Ads" title="Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.">
+        <Bloco rotulo="Resultado após Ads">
           <span className={conta.resultado != null && conta.resultado < 0 ? 'text-danger' : undefined}>
             {conta.resultado == null ? NADA : fmtBRLSinal(conta.resultado)}
           </span>
         </Bloco>
       </div>
       {conta.divergente && (
-        <p role="alert" className="mt-3 text-sm text-warning">A soma dos grupos não fecha com o total da conta; o detalhamento da despesa fica suspenso.</p>
+        <p role="alert" className="mt-3 text-sm text-warning">A soma dos grupos não fecha com o total da conta; o gasto não identificado fica oculto.</p>
       )}
       <div className="mt-4 grid grid-cols-2 gap-4 border-t pt-3 sm:grid-cols-4">
         <Bloco rotulo="Margem consumida">{pct(conta.margemConsumida)}</Bloco>

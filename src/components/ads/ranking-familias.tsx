@@ -60,7 +60,7 @@ function Cartao({ f, liberado }: { f: FamiliaPainel; liberado: boolean }) {
     ['ROAS (direto / total)', par(razao(f.roasDireto), razao(f.roas))],
     ['ACOS (direto / total) × equilíbrio', <Equilibrio key="e" f={f} liberado={liberado} />],
     ['Lucro antes', f.lucroAntes == null ? NADA : fmtBRLSinal(f.lucroAntes)],
-    ['Resultado', <Resultado key="r" f={f} />],
+    ['Resultado após Ads', <Resultado key="r" f={f} />],
     ['Margem consumida', pct(f.margemConsumida)],
   ];
   return (
@@ -83,6 +83,9 @@ export function RankingFamilias({ painel }: { painel: PainelAds }) {
   const [aberto, setAberto] = useState(false);
   const { conta, familias, compartilhados, semaforoLiberado } = painel;
   const temCompartilhado = compartilhados.length > 0;
+  const totalCompartilhado = conta?.compartilhado ?? compartilhados.reduce((s, g) => s + g.custo, 0);
+  const detalheGrupo = (g: PainelAds['compartilhados'][number]) =>
+    `Grupo ${g.id}: ${g.familias.join(', ') || 'sem família'}${g.semCodigo > 0 ? ` + ${g.semCodigo} sem código` : ''}`;
   const naoId = conta?.naoIdentificado;
   const num = 'text-right tabular-nums';
 
@@ -104,7 +107,7 @@ export function RankingFamilias({ painel }: { painel: PainelAds }) {
               <TableHead className="text-right">ROAS (direto / total)</TableHead>
               <TableHead className="text-right">ACOS (direto / total) × equilíbrio</TableHead>
               <TableHead className="text-right">Lucro antes</TableHead>
-              <TableHead className="text-right">Resultado</TableHead>
+              <TableHead className="text-right">Resultado após Ads</TableHead>
               <TableHead className="text-right">Margem consumida</TableHead>
             </TableRow>
           </TableHeader>
@@ -132,12 +135,12 @@ export function RankingFamilias({ painel }: { painel: PainelAds }) {
                       Compartilhado entre famílias ({compartilhados.length} {compartilhados.length === 1 ? 'grupo' : 'grupos'})
                     </button>
                   </TableCell>
-                  <TableCell className={num}>{fmtBRL(conta?.compartilhado ?? compartilhados.reduce((s, g) => s + g.custo, 0))}</TableCell>
+                  <TableCell className={num}>{fmtBRL(totalCompartilhado)}</TableCell>
                 </TableRow>
                 {aberto && compartilhados.map((g) => (
                   <TableRow key={g.id} className="text-muted-foreground">
                     <TableCell colSpan={7}>
-                      Grupo {g.id}: {g.familias.join(', ') || 'sem família'}{g.semCodigo > 0 ? ` + ${g.semCodigo} sem código` : ''}
+                      {detalheGrupo(g)}
                     </TableCell>
                     <TableCell className={num}>{fmtBRL(g.custo)}</TableCell>
                   </TableRow>
@@ -146,7 +149,7 @@ export function RankingFamilias({ painel }: { painel: PainelAds }) {
             )}
             {naoId != null && (
               <TableRow className="bg-muted/30">
-                <TableCell colSpan={7}>Não identificado (fora dos grupos listados)</TableCell>
+                <TableCell colSpan={7}>Gasto de Ads não identificado</TableCell>
                 <TableCell className={num}>{fmtBRL(naoId)}</TableCell>
               </TableRow>
             )}
@@ -157,16 +160,16 @@ export function RankingFamilias({ painel }: { painel: PainelAds }) {
       {temCompartilhado && (
         <div className="mt-2 text-sm md:hidden">
           <button type="button" aria-expanded={aberto} onClick={() => setAberto((v) => !v)} className={LINK}>
-            Compartilhado entre famílias: {fmtBRL(compartilhados.reduce((s, g) => s + g.custo, 0))}
+            Compartilhado entre famílias: {fmtBRL(totalCompartilhado)}
           </button>
           {aberto && (
             <ul className="mt-1 space-y-1 text-muted-foreground">
-              {compartilhados.map((g) => <li key={g.id}>Grupo {g.id}: {g.familias.join(', ') || 'sem família'} — {fmtBRL(g.custo)}</li>)}
+              {compartilhados.map((g) => <li key={g.id}>{detalheGrupo(g)} — {fmtBRL(g.custo)}</li>)}
             </ul>
           )}
         </div>
       )}
-      {naoId != null && <p className="mt-1 text-sm text-muted-foreground md:hidden">Não identificado: {fmtBRL(naoId)}</p>}
+      {naoId != null && <p className="mt-1 text-sm text-muted-foreground md:hidden">Gasto de Ads não identificado: {fmtBRL(naoId)}</p>}
     </section>
   );
 }

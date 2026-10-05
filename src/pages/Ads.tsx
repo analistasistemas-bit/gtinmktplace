@@ -74,6 +74,7 @@ export default function Ads() {
         <RankingFamilias painel={painel} />
         <div className="space-y-1 text-xs text-muted-foreground">
           <p>Despesa informada pela API de Ads do Mercado Livre.</p>
+          <p>Resultado depois da despesa de Ads; não é o lucro causado pelo Ads.</p>
           <p>
             {historicoDesde
               ? `Vendas desde ${new Date(historicoDesde).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })}, quando a organização começou a vender pelo PubliAI.`
